@@ -15,7 +15,6 @@ package labels
 
 import (
 	"fmt"
-	"regexp"
 )
 
 // MatchType is an enum for label matching types.
@@ -48,7 +47,7 @@ type Matcher struct {
 	Name  string
 	Value string
 
-	re *regexp.Regexp
+	re *FastRegexMatcher
 }
 
 // NewMatcher returns a matcher object.
@@ -59,7 +58,7 @@ func NewMatcher(t MatchType, n, v string) (*Matcher, error) {
 		Value: v,
 	}
 	if t == MatchRegexp || t == MatchNotRegexp {
-		re, err := regexp.Compile("^(?:" + v + ")$")
+		re, err := NewFastRegexMatcher(v)
 		if err != nil {
 			return nil, err
 		}
@@ -116,5 +115,5 @@ func (m *Matcher) GetRegexString() string {
 	if m.re == nil {
 		return ""
 	}
-	return m.re.String()
+	return m.re.GetRegexString()
 }

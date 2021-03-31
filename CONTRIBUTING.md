@@ -19,7 +19,7 @@ Prometheus uses GitHub to manage reviews of pull requests.
   Practices for Production
   Environments](https://peter.bourgon.org/go-in-production/#formatting-and-style).
 
-* Be sure to sign off on the [DCO](https://github.com/probot/dco#how-it-works)
+* Be sure to sign off on the [DCO](https://github.com/probot/dco#how-it-works).
 
 
 ## Steps to Contribute
@@ -27,6 +27,8 @@ Prometheus uses GitHub to manage reviews of pull requests.
 Should you wish to work on an issue, please claim it first by commenting on the GitHub issue that you want to work on it. This is to prevent duplicated efforts from contributors on the same issue.
 
 Please check the [`low-hanging-fruit`](https://github.com/prometheus/prometheus/issues?q=is%3Aissue+is%3Aopen+label%3A%22low+hanging+fruit%22) label to find issues that are good for getting started. If you have questions about one of the issues, with or without the tag, please comment on them and one of the maintainers will clarify it. For a quicker response, contact us over [IRC](https://prometheus.io/community).
+
+You can [spin up a prebuilt dev environment](https://gitpod.io/#https://github.com/prometheus/prometheus) using Gitpod.io.
 
 For complete instructions on how to compile see: [Building From Source](https://github.com/prometheus/prometheus#building-from-source)
 
@@ -46,7 +48,7 @@ All our issues are regularly tagged so that you can also filter down the issues 
 
 ## Pull Request Checklist
 
-* Branch from the master branch and, if needed, rebase to the current master branch before submitting your pull request. If it doesn't merge cleanly with master you may be asked to rebase your changes.
+* Branch from the main branch and, if needed, rebase to the current main branch before submitting your pull request. If it doesn't merge cleanly with main you may be asked to rebase your changes.
 
 * Commits should be as small as possible, while ensuring that each commit is correct independently (i.e., each commit should compile and pass tests).
 
@@ -56,9 +58,7 @@ All our issues are regularly tagged so that you can also filter down the issues 
 
 ## Dependency management
 
-The Prometheus project uses [Go modules](https://golang.org/cmd/go/#hdr-Modules__module_versions__and_more) to manage dependencies on external packages. This requires a working Go environment with version 1.13 or greater installed.
-
-All dependencies are vendored in the `vendor/` directory.
+The Prometheus project uses [Go modules](https://golang.org/cmd/go/#hdr-Modules__module_versions__and_more) to manage dependencies on external packages.
 
 To add or update a new dependency, use the `go get` command:
 
@@ -70,14 +70,11 @@ go get example.com/some/module/pkg
 go get example.com/some/module/pkg@vX.Y.Z
 ```
 
-Tidy up the `go.mod` and `go.sum` files and copy the new/updated dependency to the `vendor/` directory:
-
+Tidy up the `go.mod` and `go.sum` files:
 
 ```bash
 # The GO111MODULE variable can be omitted when the code isn't located in GOPATH.
 GO111MODULE=on go mod tidy
-
-GO111MODULE=on go mod vendor
 ```
 
-You have to commit the changes to `go.mod`, `go.sum` and the `vendor/` directory before submitting the pull request.
+You have to commit the changes to `go.mod` and `go.sum` before submitting the pull request.

@@ -7,14 +7,14 @@ sort_rank: 8
 
 In line with our [stability promise](https://prometheus.io/blog/2016/07/18/prometheus-1-0-released/#fine-print),
 the Prometheus 2.0 release contains a number of backwards incompatible changes.
-This document offers guidance on migrating from Prometheus 1.8 to Prometheus 2.0.
+This document offers guidance on migrating from Prometheus 1.8 to Prometheus 2.0 and newer versions.
 
 ## Flags
 
-The format of the Prometheus command line flags has changed. Instead of a
+The format of Prometheus command line flags has changed. Instead of a
 single dash, all flags now use a double dash. Common flags (`--config.file`,
-`--web.listen-address` and `--web.external-url`) are still the same but beyond
-that, almost all the storage-related flags have been removed.
+`--web.listen-address` and `--web.external-url`) remain but
+almost all storage-related flags have been removed.
 
 Some notable flags which have been removed:
 
@@ -27,11 +27,11 @@ Some notable flags which have been removed:
 - `-query.staleness-delta` has been renamed to `--query.lookback-delta`; Prometheus
   2.0 introduces a new mechanism for handling staleness, see [staleness](querying/basics.md#staleness).
 
-- `-storage.local.*` Prometheus 2.0 introduces a new storage engine, as such all
+- `-storage.local.*` Prometheus 2.0 introduces a new storage engine; as such all
   flags relating to the old engine have been removed.  For information on the
   new engine, see [Storage](#storage).
 
-- `-storage.remote.*` Prometheus 2.0 has removed the already deprecated remote
+- `-storage.remote.*` Prometheus 2.0 has removed the deprecated remote
   storage flags, and will fail to start if they are supplied. To write to
   InfluxDB, Graphite, or OpenTSDB use the relevant storage adapter.
 
@@ -120,12 +120,12 @@ new format. For example:
 $ promtool update rules example.rules
 ```
 
-Note that you will need to use promtool from 2.0, not 1.8.
+You will need to use `promtool` from [Prometheus 2.5](https://github.com/prometheus/prometheus/releases/tag/v2.5.0) as later versions no longer contain the above subcommand.
 
 ## Storage
 
 The data format in Prometheus 2.0 has completely changed and is not backwards
-compatible with 1.8. To retain access to your historic monitoring data we
+compatible with 1.8 and older versions. To retain access to your historic monitoring data we
 recommend you run a non-scraping Prometheus instance running at least version
 1.8.1 in parallel with your Prometheus 2.0 instance, and have the new server
 read existing data from the old one via the remote read protocol.
@@ -189,7 +189,7 @@ for more details.
 If you're using Docker, then the following snippet would be used:
 
 ```
-docker run -u root -p 80:80 prom/prometheus:v2.0.0-rc.2  --web.listen-address :80
+docker run -p 9090:9090 prom/prometheus:latest
 ```
 
 ### Prometheus lifecycle

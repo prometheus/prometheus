@@ -15,6 +15,7 @@ package tombstones
 
 import (
 	"io/ioutil"
+	"math"
 	"math/rand"
 	"os"
 	"sync"
@@ -22,13 +23,18 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 )
 
-func TestWriteAndReadbackTombStones(t *testing.T) {
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m)
+}
+
+func TestWriteAndReadbackTombstones(t *testing.T) {
 	tmpdir, _ := ioutil.TempDir("", "test")
 	defer func() {
-		testutil.Ok(t, os.RemoveAll(tmpdir))
+		require.NoError(t, os.RemoveAll(tmpdir))
 	}()
 
 	ref := uint64(0)
@@ -48,13 +54,13 @@ func TestWriteAndReadbackTombStones(t *testing.T) {
 	}
 
 	_, err := WriteFile(log.NewNopLogger(), tmpdir, stones)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	restr, _, err := ReadTombstones(tmpdir)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	// Compare the two readers.
-	testutil.Equals(t, stones, restr)
+	require.Equal(t, stones, restr)
 }
 
 func TestAddingNewIntervals(t *testing.T) {
@@ -80,18 +86,18 @@ func TestAddingNewIntervals(t *testing.T) {
 		},
 		{
 			exist: Intervals{{1, 10}, {12, 20}, {25, 30}},
-			new:   Interval{21, 23},
-			exp:   Intervals{{1, 10}, {12, 23}, {25, 30}},
+			new:   Interval{21, 25},
+			exp:   Intervals{{1, 10}, {12, 30}},
+		},
+		{
+			exist: Intervals{{1, 10}, {12, 20}, {25, 30}},
+			new:   Interval{22, 23},
+			exp:   Intervals{{1, 10}, {12, 20}, {22, 23}, {25, 30}},
 		},
 		{
 			exist: Intervals{{1, 2}, {3, 5}, {7, 7}},
 			new:   Interval{6, 7},
 			exp:   Intervals{{1, 2}, {3, 7}},
-		},
-		{
-			exist: Intervals{{1, 10}, {12, 20}, {25, 30}},
-			new:   Interval{21, 25},
-			exp:   Intervals{{1, 10}, {12, 30}},
 		},
 		{
 			exist: Intervals{{1, 10}, {12, 20}, {25, 30}},
@@ -123,11 +129,36 @@ func TestAddingNewIntervals(t *testing.T) {
 			new:   Interval{1, 3},
 			exp:   Intervals{{1, 3}, {5, 10}, {12, 20}, {25, 30}},
 		},
+		{
+			exist: Intervals{{5, 10}, {12, 20}, {25, 30}},
+			new:   Interval{35, 40},
+			exp:   Intervals{{5, 10}, {12, 20}, {25, 30}, {35, 40}},
+		},
+		{
+			new: Interval{math.MinInt64, 2},
+			exp: Intervals{{math.MinInt64, 2}},
+		},
+		{
+			exist: Intervals{{math.MinInt64, 2}},
+			new:   Interval{9, math.MaxInt64},
+			exp:   Intervals{{math.MinInt64, 2}, {9, math.MaxInt64}},
+		},
+		{
+			exist: Intervals{{9, math.MaxInt64}},
+			new:   Interval{math.MinInt64, 2},
+			exp:   Intervals{{math.MinInt64, 2}, {9, math.MaxInt64}},
+		},
+		{
+			exist: Intervals{{9, math.MaxInt64}},
+			new:   Interval{math.MinInt64, 10},
+			exp:   Intervals{{math.MinInt64, math.MaxInt64}},
+		},
 	}
 
 	for _, c := range cases {
-
-		testutil.Equals(t, c.exp, c.exist.Add(c.new))
+		t.Run("", func(t *testing.T) {
+			require.Equal(t, c.exp, c.exist.Add(c.new))
+		})
 	}
 }
 
@@ -147,7 +178,7 @@ func TestMemTombstonesConcurrency(t *testing.T) {
 	go func() {
 		for x := 0; x < totalRuns; x++ {
 			_, err := tomb.Get(uint64(x))
-			testutil.Ok(t, err)
+			require.NoError(t, err)
 		}
 		wg.Done()
 	}()

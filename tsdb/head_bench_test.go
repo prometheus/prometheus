@@ -17,22 +17,27 @@ import (
 	"io/ioutil"
 	"os"
 	"strconv"
-	"sync/atomic"
 	"testing"
 
+	"github.com/pkg/errors"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
+
 	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func BenchmarkHeadStripeSeriesCreate(b *testing.B) {
 	chunkDir, err := ioutil.TempDir("", "chunk_dir")
-	testutil.Ok(b, err)
+	require.NoError(b, err)
 	defer func() {
-		testutil.Ok(b, os.RemoveAll(chunkDir))
+		require.NoError(b, os.RemoveAll(chunkDir))
 	}()
 	// Put a series, select it. GC it and then access it.
-	h, err := NewHead(nil, nil, nil, 1000, chunkDir, nil, DefaultStripeSize)
-	testutil.Ok(b, err)
+	opts := DefaultHeadOptions()
+	opts.ChunkRange = 1000
+	opts.ChunkDirRoot = chunkDir
+	h, err := NewHead(nil, nil, nil, opts)
+	require.NoError(b, err)
 	defer h.Close()
 
 	for i := 0; i < b.N; i++ {
@@ -42,21 +47,53 @@ func BenchmarkHeadStripeSeriesCreate(b *testing.B) {
 
 func BenchmarkHeadStripeSeriesCreateParallel(b *testing.B) {
 	chunkDir, err := ioutil.TempDir("", "chunk_dir")
-	testutil.Ok(b, err)
+	require.NoError(b, err)
 	defer func() {
-		testutil.Ok(b, os.RemoveAll(chunkDir))
+		require.NoError(b, os.RemoveAll(chunkDir))
 	}()
 	// Put a series, select it. GC it and then access it.
-	h, err := NewHead(nil, nil, nil, 1000, chunkDir, nil, DefaultStripeSize)
-	testutil.Ok(b, err)
+	opts := DefaultHeadOptions()
+	opts.ChunkRange = 1000
+	opts.ChunkDirRoot = chunkDir
+	h, err := NewHead(nil, nil, nil, opts)
+	require.NoError(b, err)
 	defer h.Close()
 
-	var count int64
+	var count atomic.Int64
 
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			i := atomic.AddInt64(&count, 1)
+			i := count.Inc()
 			h.getOrCreate(uint64(i), labels.FromStrings("a", strconv.Itoa(int(i))))
 		}
 	})
 }
+
+func BenchmarkHeadStripeSeriesCreate_PreCreationFailure(b *testing.B) {
+	chunkDir, err := ioutil.TempDir("", "chunk_dir")
+	require.NoError(b, err)
+	defer func() {
+		require.NoError(b, os.RemoveAll(chunkDir))
+	}()
+	// Put a series, select it. GC it and then access it.
+	opts := DefaultHeadOptions()
+	opts.ChunkRange = 1000
+	opts.ChunkDirRoot = chunkDir
+
+	// Mock the PreCreation() callback to fail on each series.
+	opts.SeriesCallback = failingSeriesLifecycleCallback{}
+
+	h, err := NewHead(nil, nil, nil, opts)
+	require.NoError(b, err)
+	defer h.Close()
+
+	for i := 0; i < b.N; i++ {
+		h.getOrCreate(uint64(i), labels.FromStrings("a", strconv.Itoa(i)))
+	}
+}
+
+type failingSeriesLifecycleCallback struct{}
+
+func (failingSeriesLifecycleCallback) PreCreation(labels.Labels) error { return errors.New("failed") }
+func (failingSeriesLifecycleCallback) PostCreation(labels.Labels)      {}
+func (failingSeriesLifecycleCallback) PostDeletion(...labels.Labels)   {}

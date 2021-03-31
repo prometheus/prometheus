@@ -1,0 +1,4 @@
+scrape_configs:
+- openstack_sd_configs:
+  - availability: invalid
+

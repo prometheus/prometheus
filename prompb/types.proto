@@ -18,6 +18,26 @@ option go_package = "prompb";
 
 import "gogoproto/gogo.proto";
 
+message MetricMetadata {
+  enum MetricType {
+    UNKNOWN        = 0;
+    COUNTER        = 1;
+    GAUGE          = 2;
+    HISTOGRAM      = 3;
+    GAUGEHISTOGRAM = 4;
+    SUMMARY        = 5;
+    INFO           = 6;
+    STATESET       = 7;
+  }
+
+  // Represents the metric type, these match the set from Prometheus.
+  // Refer to pkg/textparse/interface.go for details.
+  MetricType type = 1;
+  string metric_family_name = 2;
+  string help = 4;
+  string unit = 5;
+}
+
 message Sample {
   double value    = 1;
   int64 timestamp = 2;

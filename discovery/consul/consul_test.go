@@ -15,18 +15,23 @@ package consul
 
 import (
 	"context"
-	"testing"
-	"time"
-
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"testing"
+	"time"
 
 	"github.com/go-kit/kit/log"
 	"github.com/prometheus/common/model"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
+
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-	"github.com/prometheus/prometheus/util/testutil"
 )
+
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m)
+}
 
 func TestConfiguredService(t *testing.T) {
 	conf := &SDConfig{
@@ -192,7 +197,7 @@ const (
 		"Service": "test",
 		"Tags": ["tag1"],
 		"Address": "",
-		"Meta": {"version":"1.0.0","environment":"stagging"},
+		"Meta": {"version":"1.0.0","environment":"staging"},
 		"Port": 3341,
 		"Weights": {
 			"Passing": 1,
@@ -223,20 +228,20 @@ func newServer(t *testing.T) (*httptest.Server, *SDConfig) {
 		switch r.URL.String() {
 		case "/v1/agent/self":
 			response = AgentAnswer
-		case "/v1/health/service/test?node-meta=rack_name%3A2304&stale=&tag=tag1&wait=30000ms":
+		case "/v1/health/service/test?node-meta=rack_name%3A2304&stale=&tag=tag1&wait=120000ms":
 			response = ServiceTestAnswer
-		case "/v1/health/service/test?wait=30000ms":
+		case "/v1/health/service/test?wait=120000ms":
 			response = ServiceTestAnswer
-		case "/v1/health/service/other?wait=30000ms":
+		case "/v1/health/service/other?wait=120000ms":
 			response = `[]`
-		case "/v1/catalog/services?node-meta=rack_name%3A2304&stale=&wait=30000ms":
+		case "/v1/catalog/services?node-meta=rack_name%3A2304&stale=&wait=120000ms":
 			response = ServicesTestAnswer
-		case "/v1/catalog/services?wait=30000ms":
+		case "/v1/catalog/services?wait=120000ms":
 			response = ServicesTestAnswer
-		case "/v1/catalog/services?index=1&node-meta=rack_name%3A2304&stale=&wait=30000ms":
+		case "/v1/catalog/services?index=1&node-meta=rack_name%3A2304&stale=&wait=120000ms":
 			time.Sleep(5 * time.Second)
 			response = ServicesTestAnswer
-		case "/v1/catalog/services?index=1&wait=30000ms":
+		case "/v1/catalog/services?index=1&wait=120000ms":
 			time.Sleep(5 * time.Second)
 			response = ServicesTestAnswer
 		default:
@@ -246,7 +251,7 @@ func newServer(t *testing.T) (*httptest.Server, *SDConfig) {
 		w.Write([]byte(response))
 	}))
 	stuburl, err := url.Parse(stub.URL)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	config := &SDConfig{
 		Server:          stuburl.Host,
@@ -259,18 +264,18 @@ func newServer(t *testing.T) (*httptest.Server, *SDConfig) {
 func newDiscovery(t *testing.T, config *SDConfig) *Discovery {
 	logger := log.NewNopLogger()
 	d, err := NewDiscovery(config, logger)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 	return d
 }
 
 func checkOneTarget(t *testing.T, tg []*targetgroup.Group) {
-	testutil.Equals(t, 1, len(tg))
+	require.Equal(t, 1, len(tg))
 	target := tg[0]
-	testutil.Equals(t, "test-dc", string(target.Labels["__meta_consul_dc"]))
-	testutil.Equals(t, target.Source, string(target.Labels["__meta_consul_service"]))
+	require.Equal(t, "test-dc", string(target.Labels["__meta_consul_dc"]))
+	require.Equal(t, target.Source, string(target.Labels["__meta_consul_service"]))
 	if target.Source == "test" {
 		// test service should have one node.
-		testutil.Assert(t, len(target.Targets) > 0, "Test service should have one node")
+		require.Greater(t, len(target.Targets), 0, "Test service should have one node")
 	}
 }
 
@@ -283,10 +288,14 @@ func TestAllServices(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	ch := make(chan []*targetgroup.Group)
-	go d.Run(ctx, ch)
+	go func() {
+		d.Run(ctx, ch)
+		close(ch)
+	}()
 	checkOneTarget(t, <-ch)
 	checkOneTarget(t, <-ch)
 	cancel()
+	<-ch
 }
 
 // Watch only the test service.
@@ -319,9 +328,13 @@ func TestAllOptions(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	ch := make(chan []*targetgroup.Group)
-	go d.Run(ctx, ch)
+	go func() {
+		d.Run(ctx, ch)
+		close(ch)
+	}()
 	checkOneTarget(t, <-ch)
 	cancel()
+	<-ch
 }
 
 func TestGetDatacenterShouldReturnError(t *testing.T) {
@@ -346,7 +359,7 @@ func TestGetDatacenterShouldReturnError(t *testing.T) {
 	} {
 		stub := httptest.NewServer(http.HandlerFunc(tc.handler))
 		stuburl, err := url.Parse(stub.URL)
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 
 		config := &SDConfig{
 			Server:          stuburl.Host,
@@ -357,13 +370,13 @@ func TestGetDatacenterShouldReturnError(t *testing.T) {
 		d := newDiscovery(t, config)
 
 		// Should be empty if not initialized.
-		testutil.Equals(t, "", d.clientDatacenter)
+		require.Equal(t, "", d.clientDatacenter)
 
 		err = d.getDatacenter()
 
 		// An error should be returned.
-		testutil.Equals(t, tc.errMessage, err.Error())
+		require.Equal(t, tc.errMessage, err.Error())
 		// Should still be empty.
-		testutil.Equals(t, "", d.clientDatacenter)
+		require.Equal(t, "", d.clientDatacenter)
 	}
 }

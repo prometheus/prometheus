@@ -9,7 +9,12 @@ alerting:
   alertmanagers:
   - static_configs:
     - targets:
-      # - alertmanager:9093
+       - alertmanager:9093
+       - alertmanager:9092
+  - static_configs:
+    - targets:
+       - alertmanager:9094
+       - alertmanager:9095
 
 # Load rules once and periodically evaluate them according to the global 'evaluation_interval'.
 rule_files:

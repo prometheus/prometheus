@@ -61,6 +61,8 @@ type metricWithBuckets struct {
 // happening during evaluations of AST functions, we should report those
 // explicitly):
 //
+// If 'buckets' has 0 observations, NaN is returned.
+//
 // If 'buckets' has fewer than 2 elements, NaN is returned.
 //
 // If the highest bucket is not +Inf, NaN is returned.
@@ -86,8 +88,11 @@ func bucketQuantile(q float64, buckets buckets) float64 {
 	if len(buckets) < 2 {
 		return math.NaN()
 	}
-
-	rank := q * buckets[len(buckets)-1].count
+	observations := buckets[len(buckets)-1].count
+	if observations == 0 {
+		return math.NaN()
+	}
+	rank := q * observations
 	b := sort.Search(len(buckets)-1, func(i int) bool { return buckets[i].count >= rank })
 
 	if b == len(buckets)-1 {
@@ -163,7 +168,7 @@ func coalesceBuckets(buckets buckets) buckets {
 
 func ensureMonotonic(buckets buckets) {
 	max := buckets[0].count
-	for i := range buckets[1:] {
+	for i := 1; i < len(buckets); i++ {
 		switch {
 		case buckets[i].count > max:
 			max = buckets[i].count

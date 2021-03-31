@@ -14,11 +14,16 @@
 package azure
 
 import (
-	"reflect"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2018-10-01/compute"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 )
+
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m)
+}
 
 func TestMapFromVMWithEmptyTags(t *testing.T) {
 	id := "test"
@@ -58,9 +63,7 @@ func TestMapFromVMWithEmptyTags(t *testing.T) {
 
 	actualVM := mapFromVM(testVM)
 
-	if !reflect.DeepEqual(expectedVM, actualVM) {
-		t.Errorf("Expected %v got %v", expectedVM, actualVM)
-	}
+	require.Equal(t, expectedVM, actualVM)
 }
 
 func TestMapFromVMWithTags(t *testing.T) {
@@ -104,9 +107,7 @@ func TestMapFromVMWithTags(t *testing.T) {
 
 	actualVM := mapFromVM(testVM)
 
-	if !reflect.DeepEqual(expectedVM, actualVM) {
-		t.Errorf("Expected %v got %v", expectedVM, actualVM)
-	}
+	require.Equal(t, expectedVM, actualVM)
 }
 
 func TestMapFromVMScaleSetVMWithEmptyTags(t *testing.T) {
@@ -149,9 +150,7 @@ func TestMapFromVMScaleSetVMWithEmptyTags(t *testing.T) {
 
 	actualVM := mapFromVMScaleSetVM(testVM, scaleSet)
 
-	if !reflect.DeepEqual(expectedVM, actualVM) {
-		t.Errorf("Expected %v got %v", expectedVM, actualVM)
-	}
+	require.Equal(t, expectedVM, actualVM)
 }
 
 func TestMapFromVMScaleSetVMWithTags(t *testing.T) {
@@ -197,7 +196,24 @@ func TestMapFromVMScaleSetVMWithTags(t *testing.T) {
 
 	actualVM := mapFromVMScaleSetVM(testVM, scaleSet)
 
-	if !reflect.DeepEqual(expectedVM, actualVM) {
-		t.Errorf("Expected %v got %v", expectedVM, actualVM)
+	require.Equal(t, expectedVM, actualVM)
+}
+
+func TestNewAzureResourceFromID(t *testing.T) {
+	for _, tc := range []struct {
+		id       string
+		expected azureResource
+	}{
+		{
+			id:       "/a/b/c/group/d/e/f/name",
+			expected: azureResource{"name", "group"},
+		},
+		{
+			id:       "/a/b/c/group/d/e/f/name/g/h",
+			expected: azureResource{"name", "group"},
+		},
+	} {
+		actual, _ := newAzureResourceFromID(tc.id, nil)
+		require.Equal(t, tc.expected, actual)
 	}
 }

@@ -99,14 +99,14 @@
         <tr>
            <th>Number Of Series </th>
            <th>Number of Chunks</th>
-           <th>Current Max Time</th>
            <th>Current Min Time</th>
+           <th>Current Max Time</th>
         </tr>
         <tr>
           <td scope="row">{{ .NumSeries}}</td>
-          <td>{{.ChunkCount}}</td>  
-          <td>{{ .MaxTime}}</td>
-          <td>{{ .MinTime}}</td>
+          <td>{{.ChunkCount}}</td>
+          <td>{{ .MinTime | unixToTime }} ({{ .MinTime }})</td>
+          <td>{{ .MaxTime | unixToTime }} ({{ .MaxTime }})</td>
         </tr>
       </tbody>
     </table>
@@ -121,7 +121,7 @@
         {{ range .Stats.CardinalityLabelStats }}
         <tr>
           <td scope="row">{{.Name}}</td>
-          <td>{{.Count}}</td>  
+          <td>{{.Count}}</td>
         </tr>
         {{end}}
       </tbody>
@@ -136,7 +136,7 @@
           {{ range .Stats.CardinalityMetricsStats }}
           <tr>
             <td scope="row">{{.Name}}</td>
-            <td>{{.Count}}</td>  
+            <td>{{.Count}}</td>
           </tr>
           {{end}}
         </tbody>
@@ -151,11 +151,11 @@
             {{ range .Stats.LabelValueStats }}
             <tr>
               <td scope="row">{{.Name}}</td>
-              <td>{{.Count}}</td>  
+              <td>{{.Count}}</td>
             </tr>
             {{end}}
           </tbody>
-        </table>      
+        </table>
         <h3 id="headstatus">Most Common Label Pairs</h3>
         <table class="table table-sm table-bordered table-striped table-hover">
             <tbody>
@@ -166,10 +166,10 @@
               {{ range .Stats.LabelValuePairsStats }}
               <tr>
                 <td scope="row">{{.Name}}</td>
-                <td>{{.Count}}</td>  
+                <td>{{.Count}}</td>
               </tr>
               {{end}}
             </tbody>
-        </table>   
+        </table>
   </div>
 {{end}}

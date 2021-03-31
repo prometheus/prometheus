@@ -19,6 +19,7 @@ import (
 	"sort"
 
 	"github.com/pkg/errors"
+
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
@@ -28,8 +29,8 @@ import (
 type Type uint8
 
 const (
-	// Invalid is returned for unrecognised WAL record types.
-	Invalid Type = 255
+	// Unknown is returned for unrecognised WAL record types.
+	Unknown Type = 255
 	// Series is used to match WAL records of type Series.
 	Series Type = 1
 	// Samples is used to match WAL records of type Samples.
@@ -62,16 +63,16 @@ type Decoder struct {
 }
 
 // Type returns the type of the record.
-// Returns RecordInvalid if no valid record type is found.
+// Returns RecordUnknown if no valid record type is found.
 func (d *Decoder) Type(rec []byte) Type {
 	if len(rec) < 1 {
-		return Invalid
+		return Unknown
 	}
 	switch t := Type(rec[0]); t {
 	case Series, Samples, Tombstones:
 		return t
 	}
-	return Invalid
+	return Unknown
 }
 
 // Series appends series in rec to the given slice.

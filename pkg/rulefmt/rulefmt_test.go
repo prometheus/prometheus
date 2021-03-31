@@ -18,7 +18,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/stretchr/testify/require"
 )
 
 func TestParseFileSuccess(t *testing.T) {
@@ -66,6 +66,14 @@ func TestParseFileFailure(t *testing.T) {
 		{
 			filename: "invalid_record_name.bad.yaml",
 			errMsg:   "invalid recording rule name",
+		},
+		{
+			filename: "bad_field.bad.yaml",
+			errMsg:   "field annotation not found",
+		},
+		{
+			filename: "invalid_label_name.bad.yaml",
+			errMsg:   "invalid label name",
 		},
 	}
 
@@ -155,9 +163,9 @@ groups:
 
 	for _, tst := range tests {
 		rgs, errs := Parse([]byte(tst.ruleString))
-		testutil.Assert(t, rgs != nil, "Rule parsing, rule=\n"+tst.ruleString)
+		require.NotNil(t, rgs, "Rule parsing, rule=\n"+tst.ruleString)
 		passed := (tst.shouldPass && len(errs) == 0) || (!tst.shouldPass && len(errs) > 0)
-		testutil.Assert(t, passed, "Rule validation failed, rule=\n"+tst.ruleString)
+		require.True(t, passed, "Rule validation failed, rule=\n"+tst.ruleString)
 	}
 
 }

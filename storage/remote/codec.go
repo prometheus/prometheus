@@ -19,12 +19,15 @@ import (
 	"io/ioutil"
 	"net/http"
 	"sort"
+	"strings"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
+
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/textparse"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -107,7 +110,7 @@ func ToQuery(from, to int64, matchers []*labels.Matcher, hints *storage.SelectHi
 }
 
 // ToQueryResult builds a QueryResult proto.
-func ToQueryResult(ss storage.SeriesSet, sampleLimit int) (*prompb.QueryResult, error) {
+func ToQueryResult(ss storage.SeriesSet, sampleLimit int) (*prompb.QueryResult, storage.Warnings, error) {
 	numSamples := 0
 	resp := &prompb.QueryResult{}
 	for ss.Next() {
@@ -118,7 +121,7 @@ func ToQueryResult(ss storage.SeriesSet, sampleLimit int) (*prompb.QueryResult, 
 		for iter.Next() {
 			numSamples++
 			if sampleLimit > 0 && numSamples > sampleLimit {
-				return nil, HTTPError{
+				return nil, ss.Warnings(), HTTPError{
 					msg:    fmt.Sprintf("exceeded sample limit (%d)", sampleLimit),
 					status: http.StatusBadRequest,
 				}
@@ -130,7 +133,7 @@ func ToQueryResult(ss storage.SeriesSet, sampleLimit int) (*prompb.QueryResult, 
 			})
 		}
 		if err := iter.Err(); err != nil {
-			return nil, err
+			return nil, ss.Warnings(), err
 		}
 
 		resp.Timeseries = append(resp.Timeseries, &prompb.TimeSeries{
@@ -138,25 +141,18 @@ func ToQueryResult(ss storage.SeriesSet, sampleLimit int) (*prompb.QueryResult, 
 			Samples: samples,
 		})
 	}
-	if err := ss.Err(); err != nil {
-		return nil, err
-	}
-	return resp, nil
+	return resp, ss.Warnings(), ss.Err()
 }
 
 // FromQueryResult unpacks and sorts a QueryResult proto.
 func FromQueryResult(sortSeries bool, res *prompb.QueryResult) storage.SeriesSet {
 	series := make([]storage.Series, 0, len(res.Timeseries))
 	for _, ts := range res.Timeseries {
-		labels := labelProtosToLabels(ts.Labels)
-		if err := validateLabelsAndMetricName(labels); err != nil {
+		lbls := labelProtosToLabels(ts.Labels)
+		if err := validateLabelsAndMetricName(lbls); err != nil {
 			return errSeriesSet{err: err}
 		}
-
-		series = append(series, &concreteSeries{
-			labels:  labels,
-			samples: ts.Samples,
-		})
+		series = append(series, &concreteSeries{labels: lbls, samples: ts.Samples})
 	}
 
 	if sortSeries {
@@ -188,19 +184,17 @@ func NegotiateResponseType(accepted []prompb.ReadRequest_ResponseType) (prompb.R
 }
 
 // StreamChunkedReadResponses iterates over series, builds chunks and streams those to the caller.
-// TODO(bwplotka): Encode only what's needed. Fetch the encoded series from blocks instead of re-encoding everything.
+// It expects Series set with populated chunks.
 func StreamChunkedReadResponses(
 	stream io.Writer,
 	queryIndex int64,
-	ss storage.SeriesSet,
+	ss storage.ChunkSeriesSet,
 	sortedExternalLabels []prompb.Label,
 	maxBytesInFrame int,
-) error {
+) (storage.Warnings, error) {
 	var (
-		chks     []prompb.Chunk
-		lbls     []prompb.Label
-		err      error
-		lblsSize int
+		chks []prompb.Chunk
+		lbls []prompb.Label
 	)
 
 	for ss.Next() {
@@ -208,111 +202,56 @@ func StreamChunkedReadResponses(
 		iter := series.Iterator()
 		lbls = MergeLabels(labelsToLabelsProto(series.Labels(), lbls), sortedExternalLabels)
 
-		lblsSize = 0
+		frameBytesLeft := maxBytesInFrame
 		for _, lbl := range lbls {
-			lblsSize += lbl.Size()
+			frameBytesLeft -= lbl.Size()
 		}
 
+		isNext := iter.Next()
+
 		// Send at most one series per frame; series may be split over multiple frames according to maxBytesInFrame.
-		for {
-			// TODO(bwplotka): Use ChunkIterator once available in TSDB instead of re-encoding: https://github.com/prometheus/prometheus/pull/5882
-			chks, err = encodeChunks(iter, chks, maxBytesInFrame-lblsSize)
-			if err != nil {
-				return err
+		for isNext {
+			chk := iter.At()
+
+			if chk.Chunk == nil {
+				return ss.Warnings(), errors.Errorf("StreamChunkedReadResponses: found not populated chunk returned by SeriesSet at ref: %v", chk.Ref)
 			}
 
-			if len(chks) == 0 {
-				break
+			// Cut the chunk.
+			chks = append(chks, prompb.Chunk{
+				MinTimeMs: chk.MinTime,
+				MaxTimeMs: chk.MaxTime,
+				Type:      prompb.Chunk_Encoding(chk.Chunk.Encoding()),
+				Data:      chk.Chunk.Bytes(),
+			})
+			frameBytesLeft -= chks[len(chks)-1].Size()
+
+			// We are fine with minor inaccuracy of max bytes per frame. The inaccuracy will be max of full chunk size.
+			isNext = iter.Next()
+			if frameBytesLeft > 0 && isNext {
+				continue
 			}
+
 			b, err := proto.Marshal(&prompb.ChunkedReadResponse{
 				ChunkedSeries: []*prompb.ChunkedSeries{
-					{
-						Labels: lbls,
-						Chunks: chks,
-					},
+					{Labels: lbls, Chunks: chks},
 				},
 				QueryIndex: queryIndex,
 			})
 			if err != nil {
-				return errors.Wrap(err, "marshal ChunkedReadResponse")
+				return ss.Warnings(), errors.Wrap(err, "marshal ChunkedReadResponse")
 			}
 
 			if _, err := stream.Write(b); err != nil {
-				return errors.Wrap(err, "write to stream")
+				return ss.Warnings(), errors.Wrap(err, "write to stream")
 			}
-
 			chks = chks[:0]
 		}
-
 		if err := iter.Err(); err != nil {
-			return err
+			return ss.Warnings(), err
 		}
 	}
-	if err := ss.Err(); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// encodeChunks expects iterator to be ready to use (aka iter.Next() called before invoking).
-func encodeChunks(iter chunkenc.Iterator, chks []prompb.Chunk, frameBytesLeft int) ([]prompb.Chunk, error) {
-	const maxSamplesInChunk = 120
-
-	var (
-		chkMint int64
-		chkMaxt int64
-		chk     *chunkenc.XORChunk
-		app     chunkenc.Appender
-		err     error
-	)
-
-	for iter.Next() {
-		if chk == nil {
-			chk = chunkenc.NewXORChunk()
-			app, err = chk.Appender()
-			if err != nil {
-				return nil, err
-			}
-			chkMint, _ = iter.At()
-		}
-
-		app.Append(iter.At())
-		chkMaxt, _ = iter.At()
-
-		if chk.NumSamples() < maxSamplesInChunk {
-			continue
-		}
-
-		// Cut the chunk.
-		chks = append(chks, prompb.Chunk{
-			MinTimeMs: chkMint,
-			MaxTimeMs: chkMaxt,
-			Type:      prompb.Chunk_Encoding(chk.Encoding()),
-			Data:      chk.Bytes(),
-		})
-		chk = nil
-		frameBytesLeft -= chks[len(chks)-1].Size()
-
-		// We are fine with minor inaccuracy of max bytes per frame. The inaccuracy will be max of full chunk size.
-		if frameBytesLeft <= 0 {
-			break
-		}
-	}
-	if iter.Err() != nil {
-		return nil, errors.Wrap(iter.Err(), "iter TSDB series")
-	}
-
-	if chk != nil {
-		// Cut the chunk if exists.
-		chks = append(chks, prompb.Chunk{
-			MinTimeMs: chkMint,
-			MaxTimeMs: chkMaxt,
-			Type:      prompb.Chunk_Encoding(chk.Encoding()),
-			Data:      chk.Bytes(),
-		})
-	}
-	return chks, nil
+	return ss.Warnings(), ss.Err()
 }
 
 // MergeLabels merges two sets of sorted proto labels, preferring those in
@@ -365,6 +304,8 @@ func (e errSeriesSet) Err() error {
 	return e.err
 }
 
+func (e errSeriesSet) Warnings() storage.Warnings { return nil }
+
 // concreteSeriesSet implements storage.SeriesSet.
 type concreteSeriesSet struct {
 	cur    int
@@ -383,6 +324,8 @@ func (c *concreteSeriesSet) At() storage.Series {
 func (c *concreteSeriesSet) Err() error {
 	return nil
 }
+
+func (c *concreteSeriesSet) Warnings() storage.Warnings { return nil }
 
 // concreteSeries implements storage.Series.
 type concreteSeries struct {
@@ -542,4 +485,36 @@ func labelsToLabelsProto(labels labels.Labels, buf []prompb.Label) []prompb.Labe
 		})
 	}
 	return result
+}
+
+// metricTypeToMetricTypeProto transforms a Prometheus metricType into prompb metricType. Since the former is a string we need to transform it to an enum.
+func metricTypeToMetricTypeProto(t textparse.MetricType) prompb.MetricMetadata_MetricType {
+	mt := strings.ToUpper(string(t))
+	v, ok := prompb.MetricMetadata_MetricType_value[mt]
+	if !ok {
+		return prompb.MetricMetadata_UNKNOWN
+	}
+
+	return prompb.MetricMetadata_MetricType(v)
+}
+
+// DecodeWriteRequest from an io.Reader into a prompb.WriteRequest, handling
+// snappy decompression.
+func DecodeWriteRequest(r io.Reader) (*prompb.WriteRequest, error) {
+	compressed, err := ioutil.ReadAll(r)
+	if err != nil {
+		return nil, err
+	}
+
+	reqBuf, err := snappy.Decode(nil, compressed)
+	if err != nil {
+		return nil, err
+	}
+
+	var req prompb.WriteRequest
+	if err := proto.Unmarshal(reqBuf, &req); err != nil {
+		return nil, err
+	}
+
+	return &req, nil
 }

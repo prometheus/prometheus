@@ -1,0 +1,2333 @@
+[
+  {
+    "ID": "40wy6ekgchzz38dqjv07qt79w",
+    "Version": {
+      "Index": 62
+    },
+    "CreatedAt": "2020-06-19T19:14:29.276423191Z",
+    "UpdatedAt": "2020-06-19T19:14:39.901147202Z",
+    "Labels": {},
+    "Spec": {
+      "ContainerSpec": {
+        "Image": "stefanprodan/swarmprom-node-exporter:v0.16.0@sha256:1d2518ec0501dd848e718bf008df37852b1448c862d6f256f2d39244975758d6",
+        "Labels": {
+          "com.docker.stack.namespace": "mon"
+        },
+        "Args": [
+          "--path.sysfs=/host/sys",
+          "--path.procfs=/host/proc",
+          "--collector.textfile.directory=/etc/node-exporter/",
+          "--collector.filesystem.ignored-mount-points=^/(sys|proc|dev|host|etc)($|/)",
+          "--no-collector.ipvs"
+        ],
+        "Env": [
+          "NODE_ID={{.Node.ID}}"
+        ],
+        "Privileges": {
+          "CredentialSpec": null,
+          "SELinuxContext": null
+        },
+        "Mounts": [
+          {
+            "Type": "bind",
+            "Source": "/proc",
+            "Target": "/host/proc",
+            "ReadOnly": true
+          },
+          {
+            "Type": "bind",
+            "Source": "/sys",
+            "Target": "/host/sys",
+            "ReadOnly": true
+          },
+          {
+            "Type": "bind",
+            "Source": "/",
+            "Target": "/rootfs",
+            "ReadOnly": true
+          },
+          {
+            "Type": "bind",
+            "Source": "/etc/hostname",
+            "Target": "/etc/nodename"
+          }
+        ],
+        "Isolation": "default"
+      },
+      "Resources": {
+        "Limits": {
+          "MemoryBytes": 134217728
+        },
+        "Reservations": {
+          "MemoryBytes": 67108864
+        }
+      },
+      "Placement": {
+        "Platforms": [
+          {
+            "Architecture": "amd64",
+            "OS": "linux"
+          }
+        ]
+      },
+      "Networks": [
+        {
+          "Target": "npq2closzy836m07eaq1425k3",
+          "Aliases": [
+            "node-exporter"
+          ]
+        }
+      ],
+      "ForceUpdate": 0
+    },
+    "ServiceID": "3qvd7bwfptmoht16t1f7jllb6",
+    "NodeID": "ldawcom10uqi6owysgi28n4ve",
+    "Status": {
+      "Timestamp": "2020-06-19T19:14:39.869087726Z",
+      "State": "running",
+      "Message": "started",
+      "ContainerStatus": {
+        "ContainerID": "a137690f7070c536470aeae2d40cd4ecabe59842e5c2fce0cc7596f7d3d85c59",
+        "PID": 555,
+        "ExitCode": 0
+      },
+      "PortStatus": {}
+    },
+    "DesiredState": "running",
+    "NetworksAttachments": [
+      {
+        "Network": {
+          "ID": "qvwhwd6p61k4o0ulsknqb066z",
+          "Version": {
+            "Index": 6
+          },
+          "CreatedAt": "2020-06-19T19:14:11.450350109Z",
+          "UpdatedAt": "2020-06-19T19:14:11.46002574Z",
+          "Spec": {
+            "Name": "ingress",
+            "Labels": {},
+            "DriverConfiguration": {},
+            "Ingress": true,
+            "IPAMOptions": {
+              "Driver": {}
+            },
+            "Scope": "swarm"
+          },
+          "DriverState": {
+            "Name": "overlay",
+            "Options": {
+              "com.docker.network.driver.overlay.vxlanid_list": "4096"
+            }
+          },
+          "IPAMOptions": {
+            "Driver": {
+              "Name": "default"
+            },
+            "Configs": [
+              {
+                "Subnet": "10.0.0.0/24",
+                "Gateway": "10.0.0.1"
+              }
+            ]
+          }
+        },
+        "Addresses": [
+          "10.0.0.8/24"
+        ]
+      },
+      {
+        "Network": {
+          "ID": "npq2closzy836m07eaq1425k3",
+          "Version": {
+            "Index": 34
+          },
+          "CreatedAt": "2020-06-19T19:14:26.719270674Z",
+          "UpdatedAt": "2020-06-19T19:14:26.722438125Z",
+          "Spec": {
+            "Name": "mon_net",
+            "Labels": {
+              "com.docker.stack.namespace": "mon"
+            },
+            "DriverConfiguration": {
+              "Name": "overlay"
+            },
+            "Attachable": true,
+            "Scope": "swarm"
+          },
+          "DriverState": {
+            "Name": "overlay",
+            "Options": {
+              "com.docker.network.driver.overlay.vxlanid_list": "4097"
+            }
+          },
+          "IPAMOptions": {
+            "Driver": {
+              "Name": "default"
+            },
+            "Configs": [
+              {
+                "Subnet": "10.0.1.0/24",
+                "Gateway": "10.0.1.1"
+              }
+            ]
+          }
+        },
+        "Addresses": [
+          "10.0.1.3/24"
+        ]
+      }
+    ]
+  },
+  {
+    "ID": "7ogolpkgw2d2amnht1fbtm9oq",
+    "Version": {
+      "Index": 398
+    },
+    "CreatedAt": "2020-06-19T19:17:03.267177009Z",
+    "UpdatedAt": "2020-06-19T19:17:03.564352646Z",
+    "Labels": {},
+    "Spec": {
+      "ContainerSpec": {
+        "Image": "google/cadvisor:latest@sha256:815386ebbe9a3490f38785ab11bda34ec8dacf4634af77b8912832d4f85dca04",
+        "Labels": {
+          "com.docker.stack.namespace": "mon"
+        },
+        "Args": [
+          "-logtostderr",
+          "-docker_only"
+        ],
+        "Privileges": {
+          "CredentialSpec": null,
+          "SELinuxContext": null
+        },
+        "Mounts": [
+          {
+            "Type": "bind",
+            "Source": "/var/run/docker.sock",
+            "Target": "/var/run/docker.sock",
+            "ReadOnly": true
+          },
+          {
+            "Type": "bind",
+            "Source": "/",
+            "Target": "/rootfs",
+            "ReadOnly": true
+          },
+          {
+            "Type": "bind",
+            "Source": "/var/run",
+            "Target": "/var/run"
+          },
+          {
+            "Type": "bind",
+            "Source": "/sys",
+            "Target": "/sys",
+            "ReadOnly": true
+          },
+          {
+            "Type": "bind",
+            "Source": "/var/lib/docker/",
+            "Target": "/var/lib/docker",
+            "ReadOnly": true
+          }
+        ],
+        "Isolation": "default"
+      },
+      "Resources": {
+        "Limits": {
+          "MemoryBytes": 134217728
+        },
+        "Reservations": {
+          "MemoryBytes": 67108864
+        }
+      },
+      "Placement": {
+        "Platforms": [
+          {
+            "Architecture": "amd64",
+            "OS": "linux"
+          }
+        ]
+      },
+      "Networks": [
+        {
+          "Target": "npq2closzy836m07eaq1425k3",
+          "Aliases": [
+            "cadvisor"
+          ]
+        }
+      ],
+      "ForceUpdate": 0
+    },
+    "ServiceID": "iml8vdd2dudvq457sbirpf66z",
+    "NodeID": "i9woemzxymn1n98o9ufebclgm",
+    "Status": {
+      "Timestamp": "2020-06-19T19:17:03.493026315Z",
+      "State": "rejected",
+      "Message": "preparing",
+      "Err": "invalid mount config for type \"bind\": bind source path does not exist: /var/run/docker.sock",
+      "ContainerStatus": {
+        "ContainerID": "",
+        "PID": 0,
+        "ExitCode": 0
+      },
+      "PortStatus": {}
+    },
+    "DesiredState": "ready",
+    "NetworksAttachments": [
+      {
+        "Network": {
+          "ID": "npq2closzy836m07eaq1425k3",
+          "Version": {
+            "Index": 34
+          },
+          "CreatedAt": "2020-06-19T19:14:26.719270674Z",
+          "UpdatedAt": "2020-06-19T19:14:26.722438125Z",
+          "Spec": {
+            "Name": "mon_net",
+            "Labels": {
+              "com.docker.stack.namespace": "mon"
+            },
+            "DriverConfiguration": {
+              "Name": "overlay"
+            },
+            "Attachable": true,
+            "Scope": "swarm"
+          },
+          "DriverState": {
+            "Name": "overlay",
+            "Options": {
+              "com.docker.network.driver.overlay.vxlanid_list": "4097"
+            }
+          },
+          "IPAMOptions": {
+            "Driver": {
+              "Name": "default"
+            },
+            "Configs": [
+              {
+                "Subnet": "10.0.1.0/24",
+                "Gateway": "10.0.1.1"
+              }
+            ]
+          }
+        },
+        "Addresses": [
+          "10.0.1.88/24"
+        ]
+      }
+    ]
+  },
+  {
+    "ID": "b5sk2vnp3gj9j4kmcklzkmkt0",
+    "Version": {
+      "Index": 64
+    },
+    "CreatedAt": "2020-06-19T19:14:29.277913622Z",
+    "UpdatedAt": "2020-06-19T19:14:41.113552426Z",
+    "Labels": {},
+    "Spec": {
+      "ContainerSpec": {
+        "Image": "stefanprodan/swarmprom-node-exporter:v0.16.0@sha256:1d2518ec0501dd848e718bf008df37852b1448c862d6f256f2d39244975758d6",
+        "Labels": {
+          "com.docker.stack.namespace": "mon"
+        },
+        "Args": [
+          "--path.sysfs=/host/sys",
+          "--path.procfs=/host/proc",
+          "--collector.textfile.directory=/etc/node-exporter/",
+          "--collector.filesystem.ignored-mount-points=^/(sys|proc|dev|host|etc)($|/)",
+          "--no-collector.ipvs"
+        ],
+        "Env": [
+          "NODE_ID={{.Node.ID}}"
+        ],
+        "Privileges": {
+          "CredentialSpec": null,
+          "SELinuxContext": null
+        },
+        "Mounts": [
+          {
+            "Type": "bind",
+            "Source": "/proc",
+            "Target": "/host/proc",
+            "ReadOnly": true
+          },
+          {
+            "Type": "bind",
+            "Source": "/sys",
+            "Target": "/host/sys",
+            "ReadOnly": true
+          },
+          {
+            "Type": "bind",
+            "Source": "/",
+            "Target": "/rootfs",
+            "ReadOnly": true
+          },
+          {
+            "Type": "bind",
+            "Source": "/etc/hostname",
+            "Target": "/etc/nodename"
+          }
+        ],
+        "Isolation": "default"
+      },
+      "Resources": {
+        "Limits": {
+          "MemoryBytes": 134217728
+        },
+        "Reservations": {
+          "MemoryBytes": 67108864
+        }
+      },
+      "Placement": {
+        "Platforms": [
+          {
+            "Architecture": "amd64",
+            "OS": "linux"
+          }
+        ]
+      },
+      "Networks": [
+        {
+          "Target": "npq2closzy836m07eaq1425k3",
+          "Aliases": [
+            "node-exporter"
+          ]
+        }
+      ],
+      "ForceUpdate": 0
+    },
+    "ServiceID": "3qvd7bwfptmoht16t1f7jllb6",
+    "NodeID": "jkc2xd7p3xdazf0u6sh1m9dmr",
+    "Status": {
+      "Timestamp": "2020-06-19T19:14:41.067992561Z",
+      "State": "running",
+      "Message": "started",
+      "ContainerStatus": {
+        "ContainerID": "fe665e092d225bb42da4f9af3439f91c8379f37f1928d74d8f8ae8797f456737",
+        "PID": 555,
+        "ExitCode": 0
+      },
+      "PortStatus": {}
+    },
+    "DesiredState": "running",
+    "NetworksAttachments": [
+      {
+        "Network": {
+          "ID": "qvwhwd6p61k4o0ulsknqb066z",
+          "Version": {
+            "Index": 6
+          },
+          "CreatedAt": "2020-06-19T19:14:11.450350109Z",
+          "UpdatedAt": "2020-06-19T19:14:11.46002574Z",
+          "Spec": {
+            "Name": "ingress",
+            "Labels": {},
+            "DriverConfiguration": {},
+            "Ingress": true,
+            "IPAMOptions": {
+              "Driver": {}
+            },
+            "Scope": "swarm"
+          },
+          "DriverState": {
+            "Name": "overlay",
+            "Options": {
+              "com.docker.network.driver.overlay.vxlanid_list": "4096"
+            }
+          },
+          "IPAMOptions": {
+            "Driver": {
+              "Name": "default"
+            },
+            "Configs": [
+              {
+                "Subnet": "10.0.0.0/24",
+                "Gateway": "10.0.0.1"
+              }
+            ]
+          }
+        },
+        "Addresses": [
+          "10.0.0.12/24"
+        ]
+      },
+      {
+        "Network": {
+          "ID": "npq2closzy836m07eaq1425k3",
+          "Version": {
+            "Index": 34
+          },
+          "CreatedAt": "2020-06-19T19:14:26.719270674Z",
+          "UpdatedAt": "2020-06-19T19:14:26.722438125Z",
+          "Spec": {
+            "Name": "mon_net",
+            "Labels": {
+              "com.docker.stack.namespace": "mon"
+            },
+            "DriverConfiguration": {
+              "Name": "overlay"
+            },
+            "Attachable": true,
+            "Scope": "swarm"
+          },
+          "DriverState": {
+            "Name": "overlay",
+            "Options": {
+              "com.docker.network.driver.overlay.vxlanid_list": "4097"
+            }
+          },
+          "IPAMOptions": {
+            "Driver": {
+              "Name": "default"
+            },
+            "Configs": [
+              {
+                "Subnet": "10.0.1.0/24",
+                "Gateway": "10.0.1.1"
+              }
+            ]
+          }
+        },
+        "Addresses": [
+          "10.0.1.7/24"
+        ]
+      }
+    ]
+  },
+  {
+    "ID": "daxcdhbv3oupklh04l4sxy005",
+    "Version": {
+      "Index": 71
+    },
+    "CreatedAt": "2020-06-19T19:14:29.277779281Z",
+    "UpdatedAt": "2020-06-19T19:14:41.926802331Z",
+    "Labels": {},
+    "Spec": {
+      "ContainerSpec": {
+        "Image": "stefanprodan/swarmprom-node-exporter:v0.16.0@sha256:1d2518ec0501dd848e718bf008df37852b1448c862d6f256f2d39244975758d6",
+        "Labels": {
+          "com.docker.stack.namespace": "mon"
+        },
+        "Args": [
+          "--path.sysfs=/host/sys",
+          "--path.procfs=/host/proc",
+          "--collector.textfile.directory=/etc/node-exporter/",
+          "--collector.filesystem.ignored-mount-points=^/(sys|proc|dev|host|etc)($|/)",
+          "--no-collector.ipvs"
+        ],
+        "Env": [
+          "NODE_ID={{.Node.ID}}"
+        ],
+        "Privileges": {
+          "CredentialSpec": null,
+          "SELinuxContext": null
+        },
+        "Mounts": [
+          {
+            "Type": "bind",
+            "Source": "/proc",
+            "Target": "/host/proc",
+            "ReadOnly": true
+          },
+          {
+            "Type": "bind",
+            "Source": "/sys",
+            "Target": "/host/sys",
+            "ReadOnly": true
+          },
+          {
+            "Type": "bind",
+            "Source": "/",
+            "Target": "/rootfs",
+            "ReadOnly": true
+          },
+          {
+            "Type": "bind",
+            "Source": "/etc/hostname",
+            "Target": "/etc/nodename"
+          }
+        ],
+        "Isolation": "default"
+      },
+      "Resources": {
+        "Limits": {
+          "MemoryBytes": 134217728
+        },
+        "Reservations": {
+          "MemoryBytes": 67108864
+        }
+      },
+      "Placement": {
+        "Platforms": [
+          {
+            "Architecture": "amd64",
+            "OS": "linux"
+          }
+        ]
+      },
+      "Networks": [
+        {
+          "Target": "npq2closzy836m07eaq1425k3",
+          "Aliases": [
+            "node-exporter"
+          ]
+        }
+      ],
+      "ForceUpdate": 0
+    },
+    "ServiceID": "3qvd7bwfptmoht16t1f7jllb6",
+    "NodeID": "bvtjl7pnrtg0k88ywialsldpd",
+    "Status": {
+      "Timestamp": "2020-06-19T19:14:41.899340388Z",
+      "State": "running",
+      "Message": "started",
+      "ContainerStatus": {
+        "ContainerID": "85fcbc74e09fc86532773a757527fca6af60b81bfb4ef6962098c3ae46e0b0b9",
+        "PID": 555,
+        "ExitCode": 0
+      },
+      "PortStatus": {}
+    },
+    "DesiredState": "running",
+    "NetworksAttachments": [
+      {
+        "Network": {
+          "ID": "qvwhwd6p61k4o0ulsknqb066z",
+          "Version": {
+            "Index": 6
+          },
+          "CreatedAt": "2020-06-19T19:14:11.450350109Z",
+          "UpdatedAt": "2020-06-19T19:14:11.46002574Z",
+          "Spec": {
+            "Name": "ingress",
+            "Labels": {},
+            "DriverConfiguration": {},
+            "Ingress": true,
+            "IPAMOptions": {
+              "Driver": {}
+            },
+            "Scope": "swarm"
+          },
+          "DriverState": {
+            "Name": "overlay",
+            "Options": {
+              "com.docker.network.driver.overlay.vxlanid_list": "4096"
+            }
+          },
+          "IPAMOptions": {
+            "Driver": {
+              "Name": "default"
+            },
+            "Configs": [
+              {
+                "Subnet": "10.0.0.0/24",
+                "Gateway": "10.0.0.1"
+              }
+            ]
+          }
+        },
+        "Addresses": [
+          "10.0.0.11/24"
+        ]
+      },
+      {
+        "Network": {
+          "ID": "npq2closzy836m07eaq1425k3",
+          "Version": {
+            "Index": 34
+          },
+          "CreatedAt": "2020-06-19T19:14:26.719270674Z",
+          "UpdatedAt": "2020-06-19T19:14:26.722438125Z",
+          "Spec": {
+            "Name": "mon_net",
+            "Labels": {
+              "com.docker.stack.namespace": "mon"
+            },
+            "DriverConfiguration": {
+              "Name": "overlay"
+            },
+            "Attachable": true,
+            "Scope": "swarm"
+          },
+          "DriverState": {
+            "Name": "overlay",
+            "Options": {
+              "com.docker.network.driver.overlay.vxlanid_list": "4097"
+            }
+          },
+          "IPAMOptions": {
+            "Driver": {
+              "Name": "default"
+            },
+            "Configs": [
+              {
+                "Subnet": "10.0.1.0/24",
+                "Gateway": "10.0.1.1"
+              }
+            ]
+          }
+        },
+        "Addresses": [
+          "10.0.1.6/24"
+        ]
+      }
+    ]
+  },
+  {
+    "ID": "fwifn031bokjisimj5q76jwdc",
+    "Version": {
+      "Index": 71
+    },
+    "CreatedAt": "2020-06-19T19:14:29.277584671Z",
+    "UpdatedAt": "2020-06-19T19:14:41.926661896Z",
+    "Labels": {},
+    "Spec": {
+      "ContainerSpec": {
+        "Image": "stefanprodan/swarmprom-node-exporter:v0.16.0@sha256:1d2518ec0501dd848e718bf008df37852b1448c862d6f256f2d39244975758d6",
+        "Labels": {
+          "com.docker.stack.namespace": "mon"
+        },
+        "Args": [
+          "--path.sysfs=/host/sys",
+          "--path.procfs=/host/proc",
+          "--collector.textfile.directory=/etc/node-exporter/",
+          "--collector.filesystem.ignored-mount-points=^/(sys|proc|dev|host|etc)($|/)",
+          "--no-collector.ipvs"
+        ],
+        "Env": [
+          "NODE_ID={{.Node.ID}}"
+        ],
+        "Privileges": {
+          "CredentialSpec": null,
+          "SELinuxContext": null
+        },
+        "Mounts": [
+          {
+            "Type": "bind",
+            "Source": "/proc",
+            "Target": "/host/proc",
+            "ReadOnly": true
+          },
+          {
+            "Type": "bind",
+            "Source": "/sys",
+            "Target": "/host/sys",
+            "ReadOnly": true
+          },
+          {
+            "Type": "bind",
+            "Source": "/",
+            "Target": "/rootfs",
+            "ReadOnly": true
+          },
+          {
+            "Type": "bind",
+            "Source": "/etc/hostname",
+            "Target": "/etc/nodename"
+          }
+        ],
+        "Isolation": "default"
+      },
+      "Resources": {
+        "Limits": {
+          "MemoryBytes": 134217728
+        },
+        "Reservations": {
+          "MemoryBytes": 67108864
+        }
+      },
+      "Placement": {
+        "Platforms": [
+          {
+            "Architecture": "amd64",
+            "OS": "linux"
+          }
+        ]
+      },
+      "Networks": [
+        {
+          "Target": "npq2closzy836m07eaq1425k3",
+          "Aliases": [
+            "node-exporter"
+          ]
+        }
+      ],
+      "ForceUpdate": 0
+    },
+    "ServiceID": "3qvd7bwfptmoht16t1f7jllb6",
+    "NodeID": "i9woemzxymn1n98o9ufebclgm",
+    "Status": {
+      "Timestamp": "2020-06-19T19:14:41.862748177Z",
+      "State": "running",
+      "Message": "started",
+      "ContainerStatus": {
+        "ContainerID": "f8e4457895c8ddf4723db4b129b55f904cf2ecde18dbf4a744c85470798813f9",
+        "PID": 555,
+        "ExitCode": 0
+      },
+      "PortStatus": {}
+    },
+    "DesiredState": "running",
+    "NetworksAttachments": [
+      {
+        "Network": {
+          "ID": "qvwhwd6p61k4o0ulsknqb066z",
+          "Version": {
+            "Index": 6
+          },
+          "CreatedAt": "2020-06-19T19:14:11.450350109Z",
+          "UpdatedAt": "2020-06-19T19:14:11.46002574Z",
+          "Spec": {
+            "Name": "ingress",
+            "Labels": {},
+            "DriverConfiguration": {},
+            "Ingress": true,
+            "IPAMOptions": {
+              "Driver": {}
+            },
+            "Scope": "swarm"
+          },
+          "DriverState": {
+            "Name": "overlay",
+            "Options": {
+              "com.docker.network.driver.overlay.vxlanid_list": "4096"
+            }
+          },
+          "IPAMOptions": {
+            "Driver": {
+              "Name": "default"
+            },
+            "Configs": [
+              {
+                "Subnet": "10.0.0.0/24",
+                "Gateway": "10.0.0.1"
+              }
+            ]
+          }
+        },
+        "Addresses": [
+          "10.0.0.10/24"
+        ]
+      },
+      {
+        "Network": {
+          "ID": "npq2closzy836m07eaq1425k3",
+          "Version": {
+            "Index": 34
+          },
+          "CreatedAt": "2020-06-19T19:14:26.719270674Z",
+          "UpdatedAt": "2020-06-19T19:14:26.722438125Z",
+          "Spec": {
+            "Name": "mon_net",
+            "Labels": {
+              "com.docker.stack.namespace": "mon"
+            },
+            "DriverConfiguration": {
+              "Name": "overlay"
+            },
+            "Attachable": true,
+            "Scope": "swarm"
+          },
+          "DriverState": {
+            "Name": "overlay",
+            "Options": {
+              "com.docker.network.driver.overlay.vxlanid_list": "4097"
+            }
+          },
+          "IPAMOptions": {
+            "Driver": {
+              "Name": "default"
+            },
+            "Configs": [
+              {
+                "Subnet": "10.0.1.0/24",
+                "Gateway": "10.0.1.1"
+              }
+            ]
+          }
+        },
+        "Addresses": [
+          "10.0.1.5/24"
+        ]
+      }
+    ]
+  },
+  {
+    "ID": "i9skiw2n5jkjoq7gix2t9uzhy",
+    "Version": {
+      "Index": 128
+    },
+    "CreatedAt": "2020-06-19T19:15:16.683986875Z",
+    "UpdatedAt": "2020-06-19T19:15:31.456132401Z",
+    "Labels": {},
+    "Spec": {
+      "ContainerSpec": {
+        "Image": "cloudflare/unsee:v0.8.0@sha256:28398f47f63feb1647887999701fa730da351fc6d3cc7228e5da44b40a663ada",
+        "Labels": {
+          "com.docker.stack.namespace": "mon"
+        },
+        "Env": [
+          "ALERTMANAGER_URIS=default:http://alertmanager:9093"
+        ],
+        "Privileges": {
+          "CredentialSpec": null,
+          "SELinuxContext": null
+        },
+        "Isolation": "default"
+      },
+      "Resources": {},
+      "Placement": {
+        "Platforms": [
+          {
+            "Architecture": "amd64",
+            "OS": "linux"
+          }
+        ]
+      },
+      "Networks": [
+        {
+          "Target": "npq2closzy836m07eaq1425k3",
+          "Aliases": [
+            "unsee"
+          ]
+        }
+      ],
+      "ForceUpdate": 0
+    },
+    "ServiceID": "9bbq7j55tzzz85k2gg52x73rg",
+    "Slot": 1,
+    "NodeID": "jkc2xd7p3xdazf0u6sh1m9dmr",
+    "Status": {
+      "Timestamp": "2020-06-19T19:15:31.421312229Z",
+      "State": "running",
+      "Message": "started",
+      "ContainerStatus": {
+        "ContainerID": "a0734f9421e710b654ca9e67010cbb55c1d5f92c17cc9e6590ab61130a3587e0",
+        "PID": 958,
+        "ExitCode": 0
+      },
+      "PortStatus": {}
+    },
+    "DesiredState": "running",
+    "NetworksAttachments": [
+      {
+        "Network": {
+          "ID": "npq2closzy836m07eaq1425k3",
+          "Version": {
+            "Index": 34
+          },
+          "CreatedAt": "2020-06-19T19:14:26.719270674Z",
+          "UpdatedAt": "2020-06-19T19:14:26.722438125Z",
+          "Spec": {
+            "Name": "mon_net",
+            "Labels": {
+              "com.docker.stack.namespace": "mon"
+            },
+            "DriverConfiguration": {
+              "Name": "overlay"
+            },
+            "Attachable": true,
+            "Scope": "swarm"
+          },
+          "DriverState": {
+            "Name": "overlay",
+            "Options": {
+              "com.docker.network.driver.overlay.vxlanid_list": "4097"
+            }
+          },
+          "IPAMOptions": {
+            "Driver": {
+              "Name": "default"
+            },
+            "Configs": [
+              {
+                "Subnet": "10.0.1.0/24",
+                "Gateway": "10.0.1.1"
+              }
+            ]
+          }
+        },
+        "Addresses": [
+          "10.0.1.35/24"
+        ]
+      }
+    ]
+  },
+  {
+    "ID": "irj35fr4j59f1kvi0xdin9oly",
+    "Version": {
+      "Index": 60
+    },
+    "CreatedAt": "2020-06-19T19:14:31.719516443Z",
+    "UpdatedAt": "2020-06-19T19:14:32.478364281Z",
+    "Labels": {},
+    "Spec": {
+      "ContainerSpec": {
+        "Image": "stefanprodan/swarmprom-prometheus:v2.5.0@sha256:f1a3781c4785637ba088dcf54889f77d9b6b69f21b2c0a167c1347473f4e2587",
+        "Labels": {
+          "com.docker.stack.namespace": "mon"
+        },
+        "Args": [
+          "--config.file=/etc/prometheus/prometheus.yml",
+          "--storage.tsdb.path=/prometheus",
+          "--storage.tsdb.retention=24h"
+        ],
+        "Privileges": {
+          "CredentialSpec": null,
+          "SELinuxContext": null
+        },
+        "Mounts": [
+          {
+            "Type": "volume",
+            "Source": "mon_prometheus",
+            "Target": "/prometheus",
+            "VolumeOptions": {
+              "Labels": {
+                "com.docker.stack.namespace": "mon"
+              }
+            }
+          }
+        ],
+        "Configs": [
+          {
+            "File": {
+              "Name": "/etc/prometheus/swarm_node.rules.yml",
+              "UID": "0",
+              "GID": "0",
+              "Mode": 292
+            },
+            "ConfigID": "zffindunvquarrlgdrklzczbz",
+            "ConfigName": "mon_node_rules"
+          },
+          {
+            "File": {
+              "Name": "/etc/prometheus/swarm_task.rules.yml",
+              "UID": "0",
+              "GID": "0",
+              "Mode": 292
+            },
+            "ConfigID": "fbhk5cmleeicn5fkzujm909k7",
+            "ConfigName": "mon_task_rules"
+          }
+        ],
+        "Isolation": "default"
+      },
+      "Resources": {
+        "Limits": {
+          "MemoryBytes": 2147483648
+        },
+        "Reservations": {
+          "MemoryBytes": 134217728
+        }
+      },
+      "Placement": {
+        "Constraints": [
+          "node.role == manager"
+        ],
+        "Platforms": [
+          {
+            "Architecture": "amd64",
+            "OS": "linux"
+          }
+        ]
+      },
+      "Networks": [
+        {
+          "Target": "npq2closzy836m07eaq1425k3",
+          "Aliases": [
+            "prometheus"
+          ]
+        }
+      ],
+      "ForceUpdate": 0
+    },
+    "ServiceID": "hv645udwaaewyw7wuc6nspm68",
+    "Slot": 1,
+    "NodeID": "d3cw2msquo0d71yn42qrnb0tu",
+    "Status": {
+      "Timestamp": "2020-06-19T19:14:32.449055718Z",
+      "State": "running",
+      "Message": "started",
+      "ContainerStatus": {
+        "ContainerID": "f35e071f1251951a09566a2231cb318a1a29e158a3c3d15ad68fd937184c56b6",
+        "PID": 254282,
+        "ExitCode": 0
+      },
+      "PortStatus": {}
+    },
+    "DesiredState": "running",
+    "NetworksAttachments": [
+      {
+        "Network": {
+          "ID": "npq2closzy836m07eaq1425k3",
+          "Version": {
+            "Index": 34
+          },
+          "CreatedAt": "2020-06-19T19:14:26.719270674Z",
+          "UpdatedAt": "2020-06-19T19:14:26.722438125Z",
+          "Spec": {
+            "Name": "mon_net",
+            "Labels": {
+              "com.docker.stack.namespace": "mon"
+            },
+            "DriverConfiguration": {
+              "Name": "overlay"
+            },
+            "Attachable": true,
+            "Scope": "swarm"
+          },
+          "DriverState": {
+            "Name": "overlay",
+            "Options": {
+              "com.docker.network.driver.overlay.vxlanid_list": "4097"
+            }
+          },
+          "IPAMOptions": {
+            "Driver": {
+              "Name": "default"
+            },
+            "Configs": [
+              {
+                "Subnet": "10.0.1.0/24",
+                "Gateway": "10.0.1.1"
+              }
+            ]
+          }
+        },
+        "Addresses": [
+          "10.0.1.14/24"
+        ]
+      }
+    ]
+  },
+  {
+    "ID": "k8x2806pevvxigagsxovjmur1",
+    "Version": {
+      "Index": 79
+    },
+    "CreatedAt": "2020-06-19T19:14:45.318001626Z",
+    "UpdatedAt": "2020-06-19T19:14:46.158581759Z",
+    "Labels": {},
+    "Spec": {
+      "ContainerSpec": {
+        "Image": "stefanprodan/caddy:latest@sha256:44541cfacb66f4799f81f17fcfb3cb757ccc8f327592745549f5930c42d115c9",
+        "Labels": {
+          "com.docker.stack.namespace": "mon"
+        },
+        "Env": [
+          "DOCKER_GWBRIDGE_IP=172.18.0.1"
+        ],
+        "Privileges": {
+          "CredentialSpec": null,
+          "SELinuxContext": null
+        },
+        "Configs": [
+          {
+            "File": {
+              "Name": "/etc/caddy/Caddyfile",
+              "UID": "0",
+              "GID": "0",
+              "Mode": 292
+            },
+            "ConfigID": "4glhzmw6fndnkjn2cok90a9gu",
+            "ConfigName": "mon_dockerd_config"
+          }
+        ],
+        "Isolation": "default"
+      },
+      "Resources": {
+        "Limits": {
+          "MemoryBytes": 134217728
+        },
+        "Reservations": {
+          "MemoryBytes": 67108864
+        }
+      },
+      "Placement": {
+        "Platforms": [
+          {
+            "Architecture": "amd64",
+            "OS": "linux"
+          }
+        ]
+      },
+      "Networks": [
+        {
+          "Target": "npq2closzy836m07eaq1425k3",
+          "Aliases": [
+            "dockerd-exporter"
+          ]
+        }
+      ],
+      "ForceUpdate": 0
+    },
+    "ServiceID": "ul5qawv4s7f7msm7dtyfarw80",
+    "NodeID": "d3cw2msquo0d71yn42qrnb0tu",
+    "Status": {
+      "Timestamp": "2020-06-19T19:14:46.137227811Z",
+      "State": "running",
+      "Message": "started",
+      "ContainerStatus": {
+        "ContainerID": "3cee48a5b2b363576b255207aae2d1bd0d8872aa61c3ff3b6d180d78d672a943",
+        "PID": 255586,
+        "ExitCode": 0
+      },
+      "PortStatus": {}
+    },
+    "DesiredState": "running",
+    "NetworksAttachments": [
+      {
+        "Network": {
+          "ID": "npq2closzy836m07eaq1425k3",
+          "Version": {
+            "Index": 34
+          },
+          "CreatedAt": "2020-06-19T19:14:26.719270674Z",
+          "UpdatedAt": "2020-06-19T19:14:26.722438125Z",
+          "Spec": {
+            "Name": "mon_net",
+            "Labels": {
+              "com.docker.stack.namespace": "mon"
+            },
+            "DriverConfiguration": {
+              "Name": "overlay"
+            },
+            "Attachable": true,
+            "Scope": "swarm"
+          },
+          "DriverState": {
+            "Name": "overlay",
+            "Options": {
+              "com.docker.network.driver.overlay.vxlanid_list": "4097"
+            }
+          },
+          "IPAMOptions": {
+            "Driver": {
+              "Name": "default"
+            },
+            "Configs": [
+              {
+                "Subnet": "10.0.1.0/24",
+                "Gateway": "10.0.1.1"
+              }
+            ]
+          }
+        },
+        "Addresses": [
+          "10.0.1.20/24"
+        ]
+      }
+    ]
+  },
+  {
+    "ID": "mita4y262u04g4c7zz7ns032a",
+    "Version": {
+      "Index": 101
+    },
+    "CreatedAt": "2020-06-19T19:14:45.318738021Z",
+    "UpdatedAt": "2020-06-19T19:14:59.348076412Z",
+    "Labels": {},
+    "Spec": {
+      "ContainerSpec": {
+        "Image": "stefanprodan/caddy:latest@sha256:44541cfacb66f4799f81f17fcfb3cb757ccc8f327592745549f5930c42d115c9",
+        "Labels": {
+          "com.docker.stack.namespace": "mon"
+        },
+        "Env": [
+          "DOCKER_GWBRIDGE_IP=172.18.0.1"
+        ],
+        "Privileges": {
+          "CredentialSpec": null,
+          "SELinuxContext": null
+        },
+        "Configs": [
+          {
+            "File": {
+              "Name": "/etc/caddy/Caddyfile",
+              "UID": "0",
+              "GID": "0",
+              "Mode": 292
+            },
+            "ConfigID": "4glhzmw6fndnkjn2cok90a9gu",
+            "ConfigName": "mon_dockerd_config"
+          }
+        ],
+        "Isolation": "default"
+      },
+      "Resources": {
+        "Limits": {
+          "MemoryBytes": 134217728
+        },
+        "Reservations": {
+          "MemoryBytes": 67108864
+        }
+      },
+      "Placement": {
+        "Platforms": [
+          {
+            "Architecture": "amd64",
+            "OS": "linux"
+          }
+        ]
+      },
+      "Networks": [
+        {
+          "Target": "npq2closzy836m07eaq1425k3",
+          "Aliases": [
+            "dockerd-exporter"
+          ]
+        }
+      ],
+      "ForceUpdate": 0
+    },
+    "ServiceID": "ul5qawv4s7f7msm7dtyfarw80",
+    "NodeID": "ldawcom10uqi6owysgi28n4ve",
+    "Status": {
+      "Timestamp": "2020-06-19T19:14:59.300519997Z",
+      "State": "running",
+      "Message": "started",
+      "ContainerStatus": {
+        "ContainerID": "d5fd335a33c1fca8fffa1ec17bb5010a6bb7fba7aa72fd2209c25be8f5d1b975",
+        "PID": 815,
+        "ExitCode": 0
+      },
+      "PortStatus": {}
+    },
+    "DesiredState": "running",
+    "NetworksAttachments": [
+      {
+        "Network": {
+          "ID": "npq2closzy836m07eaq1425k3",
+          "Version": {
+            "Index": 34
+          },
+          "CreatedAt": "2020-06-19T19:14:26.719270674Z",
+          "UpdatedAt": "2020-06-19T19:14:26.722438125Z",
+          "Spec": {
+            "Name": "mon_net",
+            "Labels": {
+              "com.docker.stack.namespace": "mon"
+            },
+            "DriverConfiguration": {
+              "Name": "overlay"
+            },
+            "Attachable": true,
+            "Scope": "swarm"
+          },
+          "DriverState": {
+            "Name": "overlay",
+            "Options": {
+              "com.docker.network.driver.overlay.vxlanid_list": "4097"
+            }
+          },
+          "IPAMOptions": {
+            "Driver": {
+              "Name": "default"
+            },
+            "Configs": [
+              {
+                "Subnet": "10.0.1.0/24",
+                "Gateway": "10.0.1.1"
+              }
+            ]
+          }
+        },
+        "Addresses": [
+          "10.0.1.19/24"
+        ]
+      }
+    ]
+  },
+  {
+    "ID": "nm3v4jifzhfkw3rz33gmnaq2z",
+    "Version": {
+      "Index": 99
+    },
+    "CreatedAt": "2020-06-19T19:14:45.318607933Z",
+    "UpdatedAt": "2020-06-19T19:14:58.639130689Z",
+    "Labels": {},
+    "Spec": {
+      "ContainerSpec": {
+        "Image": "stefanprodan/caddy:latest@sha256:44541cfacb66f4799f81f17fcfb3cb757ccc8f327592745549f5930c42d115c9",
+        "Labels": {
+          "com.docker.stack.namespace": "mon"
+        },
+        "Env": [
+          "DOCKER_GWBRIDGE_IP=172.18.0.1"
+        ],
+        "Privileges": {
+          "CredentialSpec": null,
+          "SELinuxContext": null
+        },
+        "Configs": [
+          {
+            "File": {
+              "Name": "/etc/caddy/Caddyfile",
+              "UID": "0",
+              "GID": "0",
+              "Mode": 292
+            },
+            "ConfigID": "4glhzmw6fndnkjn2cok90a9gu",
+            "ConfigName": "mon_dockerd_config"
+          }
+        ],
+        "Isolation": "default"
+      },
+      "Resources": {
+        "Limits": {
+          "MemoryBytes": 134217728
+        },
+        "Reservations": {
+          "MemoryBytes": 67108864
+        }
+      },
+      "Placement": {
+        "Platforms": [
+          {
+            "Architecture": "amd64",
+            "OS": "linux"
+          }
+        ]
+      },
+      "Networks": [
+        {
+          "Target": "npq2closzy836m07eaq1425k3",
+          "Aliases": [
+            "dockerd-exporter"
+          ]
+        }
+      ],
+      "ForceUpdate": 0
+    },
+    "ServiceID": "ul5qawv4s7f7msm7dtyfarw80",
+    "NodeID": "jkc2xd7p3xdazf0u6sh1m9dmr",
+    "Status": {
+      "Timestamp": "2020-06-19T19:14:58.606846177Z",
+      "State": "running",
+      "Message": "started",
+      "ContainerStatus": {
+        "ContainerID": "ca72094e1ec0547e84aba227dd44446588172fa9ee273de9bf4e6040ff6937bd",
+        "PID": 825,
+        "ExitCode": 0
+      },
+      "PortStatus": {}
+    },
+    "DesiredState": "running",
+    "NetworksAttachments": [
+      {
+        "Network": {
+          "ID": "npq2closzy836m07eaq1425k3",
+          "Version": {
+            "Index": 34
+          },
+          "CreatedAt": "2020-06-19T19:14:26.719270674Z",
+          "UpdatedAt": "2020-06-19T19:14:26.722438125Z",
+          "Spec": {
+            "Name": "mon_net",
+            "Labels": {
+              "com.docker.stack.namespace": "mon"
+            },
+            "DriverConfiguration": {
+              "Name": "overlay"
+            },
+            "Attachable": true,
+            "Scope": "swarm"
+          },
+          "DriverState": {
+            "Name": "overlay",
+            "Options": {
+              "com.docker.network.driver.overlay.vxlanid_list": "4097"
+            }
+          },
+          "IPAMOptions": {
+            "Driver": {
+              "Name": "default"
+            },
+            "Configs": [
+              {
+                "Subnet": "10.0.1.0/24",
+                "Gateway": "10.0.1.1"
+              }
+            ]
+          }
+        },
+        "Addresses": [
+          "10.0.1.18/24"
+        ]
+      }
+    ]
+  },
+  {
+    "ID": "pxdv57mpvquv2zbt7faz3xux9",
+    "Version": {
+      "Index": 348
+    },
+    "CreatedAt": "2020-06-19T19:16:33.65450754Z",
+    "UpdatedAt": "2020-06-19T19:16:43.599926775Z",
+    "Labels": {},
+    "Spec": {
+      "ContainerSpec": {
+        "Image": "google/cadvisor:latest@sha256:815386ebbe9a3490f38785ab11bda34ec8dacf4634af77b8912832d4f85dca04",
+        "Labels": {
+          "com.docker.stack.namespace": "mon"
+        },
+        "Args": [
+          "-logtostderr",
+          "-docker_only"
+        ],
+        "Privileges": {
+          "CredentialSpec": null,
+          "SELinuxContext": null
+        },
+        "Mounts": [
+          {
+            "Type": "bind",
+            "Source": "/var/run/docker.sock",
+            "Target": "/var/run/docker.sock",
+            "ReadOnly": true
+          },
+          {
+            "Type": "bind",
+            "Source": "/",
+            "Target": "/rootfs",
+            "ReadOnly": true
+          },
+          {
+            "Type": "bind",
+            "Source": "/var/run",
+            "Target": "/var/run"
+          },
+          {
+            "Type": "bind",
+            "Source": "/sys",
+            "Target": "/sys",
+            "ReadOnly": true
+          },
+          {
+            "Type": "bind",
+            "Source": "/var/lib/docker/",
+            "Target": "/var/lib/docker",
+            "ReadOnly": true
+          }
+        ],
+        "Isolation": "default"
+      },
+      "Resources": {
+        "Limits": {
+          "MemoryBytes": 134217728
+        },
+        "Reservations": {
+          "MemoryBytes": 67108864
+        }
+      },
+      "Placement": {
+        "Platforms": [
+          {
+            "Architecture": "amd64",
+            "OS": "linux"
+          }
+        ]
+      },
+      "Networks": [
+        {
+          "Target": "npq2closzy836m07eaq1425k3",
+          "Aliases": [
+            "cadvisor"
+          ]
+        }
+      ],
+      "ForceUpdate": 0
+    },
+    "ServiceID": "iml8vdd2dudvq457sbirpf66z",
+    "NodeID": "ldawcom10uqi6owysgi28n4ve",
+    "Status": {
+      "Timestamp": "2020-06-19T19:16:33.859232727Z",
+      "State": "rejected",
+      "Message": "preparing",
+      "Err": "invalid mount config for type \"bind\": bind source path does not exist: /var/run/docker.sock",
+      "ContainerStatus": {
+        "ContainerID": "",
+        "PID": 0,
+        "ExitCode": 0
+      },
+      "PortStatus": {}
+    },
+    "DesiredState": "shutdown",
+    "NetworksAttachments": [
+      {
+        "Network": {
+          "ID": "npq2closzy836m07eaq1425k3",
+          "Version": {
+            "Index": 34
+          },
+          "CreatedAt": "2020-06-19T19:14:26.719270674Z",
+          "UpdatedAt": "2020-06-19T19:14:26.722438125Z",
+          "Spec": {
+            "Name": "mon_net",
+            "Labels": {
+              "com.docker.stack.namespace": "mon"
+            },
+            "DriverConfiguration": {
+              "Name": "overlay"
+            },
+            "Attachable": true,
+            "Scope": "swarm"
+          },
+          "DriverState": {
+            "Name": "overlay",
+            "Options": {
+              "com.docker.network.driver.overlay.vxlanid_list": "4097"
+            }
+          },
+          "IPAMOptions": {
+            "Driver": {
+              "Name": "default"
+            },
+            "Configs": [
+              {
+                "Subnet": "10.0.1.0/24",
+                "Gateway": "10.0.1.1"
+              }
+            ]
+          }
+        },
+        "Addresses": [
+          "10.0.1.75/24"
+        ]
+      }
+    ]
+  },
+  {
+    "ID": "qtr16op0cz5pdbx4rylm7up4g",
+    "Version": {
+      "Index": 372
+    },
+    "CreatedAt": "2020-06-19T19:16:43.499761686Z",
+    "UpdatedAt": "2020-06-19T19:16:49.372976922Z",
+    "Labels": {},
+    "Spec": {
+      "ContainerSpec": {
+        "Image": "stefanprodan/caddy:latest@sha256:44541cfacb66f4799f81f17fcfb3cb757ccc8f327592745549f5930c42d115c9",
+        "Labels": {
+          "com.docker.stack.namespace": "mon"
+        },
+        "Env": [
+          "ADMIN_PASSWORD=admin",
+          "ADMIN_USER=admin"
+        ],
+        "Privileges": {
+          "CredentialSpec": null,
+          "SELinuxContext": null
+        },
+        "Healthcheck": {
+          "Test": [
+            "CMD",
+            "curl",
+            "-f",
+            "http://localhost:3000"
+          ],
+          "Interval": 5000000000,
+          "Timeout": 1000000000,
+          "Retries": 5
+        },
+        "Configs": [
+          {
+            "File": {
+              "Name": "/etc/caddy/Caddyfile",
+              "UID": "0",
+              "GID": "0",
+              "Mode": 292
+            },
+            "ConfigID": "pkjteflcny7cc633glg3m6ck2",
+            "ConfigName": "mon_caddy_config"
+          }
+        ],
+        "Isolation": "default"
+      },
+      "Resources": {
+        "Limits": {
+          "MemoryBytes": 134217728
+        },
+        "Reservations": {
+          "MemoryBytes": 67108864
+        }
+      },
+      "Placement": {
+        "Constraints": [
+          "node.role == manager"
+        ],
+        "Platforms": [
+          {
+            "Architecture": "amd64",
+            "OS": "linux"
+          }
+        ]
+      },
+      "Networks": [
+        {
+          "Target": "npq2closzy836m07eaq1425k3",
+          "Aliases": [
+            "caddy"
+          ]
+        }
+      ],
+      "ForceUpdate": 0
+    },
+    "ServiceID": "tkv91uso46cck763aaqcb4rek",
+    "Slot": 1,
+    "NodeID": "i9woemzxymn1n98o9ufebclgm",
+    "Status": {
+      "Timestamp": "2020-06-19T19:16:49.326110652Z",
+      "State": "starting",
+      "Message": "starting",
+      "ContainerStatus": {
+        "ContainerID": "5d00e145527f14d1bb2b13601000f1de9c95fc8ec1ccc1ff8291cadc31232957",
+        "PID": 0,
+        "ExitCode": 0
+      },
+      "PortStatus": {}
+    },
+    "DesiredState": "running",
+    "NetworksAttachments": [
+      {
+        "Network": {
+          "ID": "qvwhwd6p61k4o0ulsknqb066z",
+          "Version": {
+            "Index": 6
+          },
+          "CreatedAt": "2020-06-19T19:14:11.450350109Z",
+          "UpdatedAt": "2020-06-19T19:14:11.46002574Z",
+          "Spec": {
+            "Name": "ingress",
+            "Labels": {},
+            "DriverConfiguration": {},
+            "Ingress": true,
+            "IPAMOptions": {
+              "Driver": {}
+            },
+            "Scope": "swarm"
+          },
+          "DriverState": {
+            "Name": "overlay",
+            "Options": {
+              "com.docker.network.driver.overlay.vxlanid_list": "4096"
+            }
+          },
+          "IPAMOptions": {
+            "Driver": {
+              "Name": "default"
+            },
+            "Configs": [
+              {
+                "Subnet": "10.0.0.0/24",
+                "Gateway": "10.0.0.1"
+              }
+            ]
+          }
+        },
+        "Addresses": [
+          "10.0.0.19/24"
+        ]
+      },
+      {
+        "Network": {
+          "ID": "npq2closzy836m07eaq1425k3",
+          "Version": {
+            "Index": 34
+          },
+          "CreatedAt": "2020-06-19T19:14:26.719270674Z",
+          "UpdatedAt": "2020-06-19T19:14:26.722438125Z",
+          "Spec": {
+            "Name": "mon_net",
+            "Labels": {
+              "com.docker.stack.namespace": "mon"
+            },
+            "DriverConfiguration": {
+              "Name": "overlay"
+            },
+            "Attachable": true,
+            "Scope": "swarm"
+          },
+          "DriverState": {
+            "Name": "overlay",
+            "Options": {
+              "com.docker.network.driver.overlay.vxlanid_list": "4097"
+            }
+          },
+          "IPAMOptions": {
+            "Driver": {
+              "Name": "default"
+            },
+            "Configs": [
+              {
+                "Subnet": "10.0.1.0/24",
+                "Gateway": "10.0.1.1"
+              }
+            ]
+          }
+        },
+        "Addresses": [
+          "10.0.1.81/24"
+        ]
+      }
+    ]
+  },
+  {
+    "ID": "s0rh3k9l7ii9vb62lsfp4wc93",
+    "Version": {
+      "Index": 89
+    },
+    "CreatedAt": "2020-06-19T19:14:49.176995607Z",
+    "UpdatedAt": "2020-06-19T19:14:50.005083819Z",
+    "Labels": {},
+    "Spec": {
+      "ContainerSpec": {
+        "Image": "google/cadvisor:latest@sha256:815386ebbe9a3490f38785ab11bda34ec8dacf4634af77b8912832d4f85dca04",
+        "Labels": {
+          "com.docker.stack.namespace": "mon"
+        },
+        "Args": [
+          "-logtostderr",
+          "-docker_only"
+        ],
+        "Privileges": {
+          "CredentialSpec": null,
+          "SELinuxContext": null
+        },
+        "Mounts": [
+          {
+            "Type": "bind",
+            "Source": "/var/run/docker.sock",
+            "Target": "/var/run/docker.sock",
+            "ReadOnly": true
+          },
+          {
+            "Type": "bind",
+            "Source": "/",
+            "Target": "/rootfs",
+            "ReadOnly": true
+          },
+          {
+            "Type": "bind",
+            "Source": "/var/run",
+            "Target": "/var/run"
+          },
+          {
+            "Type": "bind",
+            "Source": "/sys",
+            "Target": "/sys",
+            "ReadOnly": true
+          },
+          {
+            "Type": "bind",
+            "Source": "/var/lib/docker/",
+            "Target": "/var/lib/docker",
+            "ReadOnly": true
+          }
+        ],
+        "Isolation": "default"
+      },
+      "Resources": {
+        "Limits": {
+          "MemoryBytes": 134217728
+        },
+        "Reservations": {
+          "MemoryBytes": 67108864
+        }
+      },
+      "Placement": {
+        "Platforms": [
+          {
+            "Architecture": "amd64",
+            "OS": "linux"
+          }
+        ]
+      },
+      "Networks": [
+        {
+          "Target": "npq2closzy836m07eaq1425k3",
+          "Aliases": [
+            "cadvisor"
+          ]
+        }
+      ],
+      "ForceUpdate": 0
+    },
+    "ServiceID": "iml8vdd2dudvq457sbirpf66z",
+    "NodeID": "d3cw2msquo0d71yn42qrnb0tu",
+    "Status": {
+      "Timestamp": "2020-06-19T19:14:49.985945334Z",
+      "State": "running",
+      "Message": "started",
+      "ContainerStatus": {
+        "ContainerID": "81dd017b6d9f36d779a3217021111ffc77dcdbd5f26da86c2ae8fada86f33d17",
+        "PID": 256308,
+        "ExitCode": 0
+      },
+      "PortStatus": {}
+    },
+    "DesiredState": "running",
+    "NetworksAttachments": [
+      {
+        "Network": {
+          "ID": "npq2closzy836m07eaq1425k3",
+          "Version": {
+            "Index": 34
+          },
+          "CreatedAt": "2020-06-19T19:14:26.719270674Z",
+          "UpdatedAt": "2020-06-19T19:14:26.722438125Z",
+          "Spec": {
+            "Name": "mon_net",
+            "Labels": {
+              "com.docker.stack.namespace": "mon"
+            },
+            "DriverConfiguration": {
+              "Name": "overlay"
+            },
+            "Attachable": true,
+            "Scope": "swarm"
+          },
+          "DriverState": {
+            "Name": "overlay",
+            "Options": {
+              "com.docker.network.driver.overlay.vxlanid_list": "4097"
+            }
+          },
+          "IPAMOptions": {
+            "Driver": {
+              "Name": "default"
+            },
+            "Configs": [
+              {
+                "Subnet": "10.0.1.0/24",
+                "Gateway": "10.0.1.1"
+              }
+            ]
+          }
+        },
+        "Addresses": [
+          "10.0.1.24/24"
+        ]
+      }
+    ]
+  },
+  {
+    "ID": "sxwkumr37wjaqzir89uepm4nc",
+    "Version": {
+      "Index": 199
+    },
+    "CreatedAt": "2020-06-19T19:15:09.847180822Z",
+    "UpdatedAt": "2020-06-19T19:15:55.315460585Z",
+    "Labels": {},
+    "Spec": {
+      "ContainerSpec": {
+        "Image": "stefanprodan/swarmprom-alertmanager:v0.14.0@sha256:7069b656bd5df0606ff1db81a7553a25dc72be51d3aca6a7e08d776566cefbd8",
+        "Labels": {
+          "com.docker.stack.namespace": "mon"
+        },
+        "Args": [
+          "--config.file=/etc/alertmanager/alertmanager.yml",
+          "--storage.path=/alertmanager"
+        ],
+        "Env": [
+          "SLACK_CHANNEL=devops-alerts",
+          "SLACK_URL=https://hooks.slack.com/services/TOKEN",
+          "SLACK_USER=alertmanager"
+        ],
+        "Privileges": {
+          "CredentialSpec": null,
+          "SELinuxContext": null
+        },
+        "Mounts": [
+          {
+            "Type": "volume",
+            "Source": "mon_alertmanager",
+            "Target": "/alertmanager",
+            "VolumeOptions": {
+              "Labels": {
+                "com.docker.stack.namespace": "mon"
+              }
+            }
+          }
+        ],
+        "Isolation": "default"
+      },
+      "Resources": {
+        "Limits": {
+          "MemoryBytes": 134217728
+        },
+        "Reservations": {
+          "MemoryBytes": 67108864
+        }
+      },
+      "Placement": {
+        "Constraints": [
+          "node.role == manager"
+        ]
+      },
+      "Networks": [
+        {
+          "Target": "npq2closzy836m07eaq1425k3",
+          "Aliases": [
+            "alertmanager"
+          ]
+        }
+      ],
+      "ForceUpdate": 0
+    },
+    "ServiceID": "rl4jhdws3r4lkfvq8kx6c4xnr",
+    "Slot": 1,
+    "NodeID": "bvtjl7pnrtg0k88ywialsldpd",
+    "Status": {
+      "Timestamp": "2020-06-19T19:15:55.294782105Z",
+      "State": "running",
+      "Message": "started",
+      "ContainerStatus": {
+        "ContainerID": "2c753737f2ac7b01b577324513d9bd2a1754e65ab2a44714090eb5d83d2961b2",
+        "PID": 1264,
+        "ExitCode": 0
+      },
+      "PortStatus": {}
+    },
+    "DesiredState": "running",
+    "NetworksAttachments": [
+      {
+        "Network": {
+          "ID": "npq2closzy836m07eaq1425k3",
+          "Version": {
+            "Index": 34
+          },
+          "CreatedAt": "2020-06-19T19:14:26.719270674Z",
+          "UpdatedAt": "2020-06-19T19:14:26.722438125Z",
+          "Spec": {
+            "Name": "mon_net",
+            "Labels": {
+              "com.docker.stack.namespace": "mon"
+            },
+            "DriverConfiguration": {
+              "Name": "overlay"
+            },
+            "Attachable": true,
+            "Scope": "swarm"
+          },
+          "DriverState": {
+            "Name": "overlay",
+            "Options": {
+              "com.docker.network.driver.overlay.vxlanid_list": "4097"
+            }
+          },
+          "IPAMOptions": {
+            "Driver": {
+              "Name": "default"
+            },
+            "Configs": [
+              {
+                "Subnet": "10.0.1.0/24",
+                "Gateway": "10.0.1.1"
+              }
+            ]
+          }
+        },
+        "Addresses": [
+          "10.0.1.32/24"
+        ]
+      }
+    ]
+  },
+  {
+    "ID": "tj683w0alx5hqaewks4rg0452",
+    "Version": {
+      "Index": 217
+    },
+    "CreatedAt": "2020-06-19T19:14:54.293630398Z",
+    "UpdatedAt": "2020-06-19T19:15:58.34853857Z",
+    "Labels": {},
+    "Spec": {
+      "ContainerSpec": {
+        "Image": "stefanprodan/swarmprom-grafana:5.3.4@sha256:2aca8aa5716e6e0eed3fcdc88fec256a0a1828c491a8cf240486ae7cc473092d",
+        "Labels": {
+          "com.docker.stack.namespace": "mon"
+        },
+        "Env": [
+          "GF_SECURITY_ADMIN_PASSWORD=admin",
+          "GF_SECURITY_ADMIN_USER=admin",
+          "GF_USERS_ALLOW_SIGN_UP=false"
+        ],
+        "Privileges": {
+          "CredentialSpec": null,
+          "SELinuxContext": null
+        },
+        "Mounts": [
+          {
+            "Type": "volume",
+            "Source": "mon_grafana",
+            "Target": "/var/lib/grafana",
+            "VolumeOptions": {
+              "Labels": {
+                "com.docker.stack.namespace": "mon"
+              }
+            }
+          }
+        ],
+        "Isolation": "default"
+      },
+      "Resources": {
+        "Limits": {
+          "MemoryBytes": 134217728
+        },
+        "Reservations": {
+          "MemoryBytes": 67108864
+        }
+      },
+      "Placement": {
+        "Constraints": [
+          "node.role == manager"
+        ],
+        "Platforms": [
+          {
+            "Architecture": "amd64",
+            "OS": "linux"
+          }
+        ]
+      },
+      "Networks": [
+        {
+          "Target": "npq2closzy836m07eaq1425k3",
+          "Aliases": [
+            "grafana"
+          ]
+        }
+      ],
+      "ForceUpdate": 0
+    },
+    "ServiceID": "uk9su5tb9ykfzew3qtmp14uzh",
+    "Slot": 1,
+    "NodeID": "bvtjl7pnrtg0k88ywialsldpd",
+    "Status": {
+      "Timestamp": "2020-06-19T19:15:58.295334307Z",
+      "State": "running",
+      "Message": "started",
+      "ContainerStatus": {
+        "ContainerID": "5b4fc187b14eeba86381b50fc2ae652e74d6cbea5acae0bda72eaf3db0f59f0c",
+        "PID": 1433,
+        "ExitCode": 0
+      },
+      "PortStatus": {}
+    },
+    "DesiredState": "running",
+    "NetworksAttachments": [
+      {
+        "Network": {
+          "ID": "qvwhwd6p61k4o0ulsknqb066z",
+          "Version": {
+            "Index": 6
+          },
+          "CreatedAt": "2020-06-19T19:14:11.450350109Z",
+          "UpdatedAt": "2020-06-19T19:14:11.46002574Z",
+          "Spec": {
+            "Name": "ingress",
+            "Labels": {},
+            "DriverConfiguration": {},
+            "Ingress": true,
+            "IPAMOptions": {
+              "Driver": {}
+            },
+            "Scope": "swarm"
+          },
+          "DriverState": {
+            "Name": "overlay",
+            "Options": {
+              "com.docker.network.driver.overlay.vxlanid_list": "4096"
+            }
+          },
+          "IPAMOptions": {
+            "Driver": {
+              "Name": "default"
+            },
+            "Configs": [
+              {
+                "Subnet": "10.0.0.0/24",
+                "Gateway": "10.0.0.1"
+              }
+            ]
+          }
+        },
+        "Addresses": [
+          "10.0.0.16/24"
+        ]
+      },
+      {
+        "Network": {
+          "ID": "npq2closzy836m07eaq1425k3",
+          "Version": {
+            "Index": 34
+          },
+          "CreatedAt": "2020-06-19T19:14:26.719270674Z",
+          "UpdatedAt": "2020-06-19T19:14:26.722438125Z",
+          "Spec": {
+            "Name": "mon_net",
+            "Labels": {
+              "com.docker.stack.namespace": "mon"
+            },
+            "DriverConfiguration": {
+              "Name": "overlay"
+            },
+            "Attachable": true,
+            "Scope": "swarm"
+          },
+          "DriverState": {
+            "Name": "overlay",
+            "Options": {
+              "com.docker.network.driver.overlay.vxlanid_list": "4097"
+            }
+          },
+          "IPAMOptions": {
+            "Driver": {
+              "Name": "default"
+            },
+            "Configs": [
+              {
+                "Subnet": "10.0.1.0/24",
+                "Gateway": "10.0.1.1"
+              }
+            ]
+          }
+        },
+        "Addresses": [
+          "10.0.1.30/24"
+        ]
+      }
+    ]
+  },
+  {
+    "ID": "zhoo9feqxfyi9zg6acnt1eam2",
+    "Version": {
+      "Index": 97
+    },
+    "CreatedAt": "2020-06-19T19:14:45.318462725Z",
+    "UpdatedAt": "2020-06-19T19:14:58.030023591Z",
+    "Labels": {},
+    "Spec": {
+      "ContainerSpec": {
+        "Image": "stefanprodan/caddy:latest@sha256:44541cfacb66f4799f81f17fcfb3cb757ccc8f327592745549f5930c42d115c9",
+        "Labels": {
+          "com.docker.stack.namespace": "mon"
+        },
+        "Env": [
+          "DOCKER_GWBRIDGE_IP=172.18.0.1"
+        ],
+        "Privileges": {
+          "CredentialSpec": null,
+          "SELinuxContext": null
+        },
+        "Configs": [
+          {
+            "File": {
+              "Name": "/etc/caddy/Caddyfile",
+              "UID": "0",
+              "GID": "0",
+              "Mode": 292
+            },
+            "ConfigID": "4glhzmw6fndnkjn2cok90a9gu",
+            "ConfigName": "mon_dockerd_config"
+          }
+        ],
+        "Isolation": "default"
+      },
+      "Resources": {
+        "Limits": {
+          "MemoryBytes": 134217728
+        },
+        "Reservations": {
+          "MemoryBytes": 67108864
+        }
+      },
+      "Placement": {
+        "Platforms": [
+          {
+            "Architecture": "amd64",
+            "OS": "linux"
+          }
+        ]
+      },
+      "Networks": [
+        {
+          "Target": "npq2closzy836m07eaq1425k3",
+          "Aliases": [
+            "dockerd-exporter"
+          ]
+        }
+      ],
+      "ForceUpdate": 0
+    },
+    "ServiceID": "ul5qawv4s7f7msm7dtyfarw80",
+    "NodeID": "bvtjl7pnrtg0k88ywialsldpd",
+    "Status": {
+      "Timestamp": "2020-06-19T19:14:58.00716792Z",
+      "State": "running",
+      "Message": "started",
+      "ContainerStatus": {
+        "ContainerID": "dd50c428ebc7a7bd786c7b0db873bf53ed5cbe5312995a76eb8fd325dcf16032",
+        "PID": 805,
+        "ExitCode": 0
+      },
+      "PortStatus": {
+        "Ports": [
+          {
+            "Protocol": "tcp",
+            "TargetPort": 82,
+            "PublishedPort": 82,
+            "PublishMode": "host"
+          }
+        ]
+      }
+    },
+    "DesiredState": "running",
+    "NetworksAttachments": [
+      {
+        "Network": {
+          "ID": "npq2closzy836m07eaq1425k3",
+          "Version": {
+            "Index": 34
+          },
+          "CreatedAt": "2020-06-19T19:14:26.719270674Z",
+          "UpdatedAt": "2020-06-19T19:14:26.722438125Z",
+          "Spec": {
+            "Name": "mon_net",
+            "Labels": {
+              "com.docker.stack.namespace": "mon"
+            },
+            "DriverConfiguration": {
+              "Name": "overlay"
+            },
+            "Attachable": true,
+            "Scope": "swarm"
+          },
+          "DriverState": {
+            "Name": "overlay",
+            "Options": {
+              "com.docker.network.driver.overlay.vxlanid_list": "4097"
+            }
+          },
+          "IPAMOptions": {
+            "Driver": {
+              "Name": "default"
+            },
+            "Configs": [
+              {
+                "Subnet": "10.0.1.0/24",
+                "Gateway": "10.0.1.1"
+              }
+            ]
+          }
+        },
+        "Addresses": [
+          "10.0.1.22/24"
+        ]
+      }
+    ]
+  }
+]

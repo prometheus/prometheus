@@ -18,10 +18,11 @@ import (
 	"testing"
 
 	"github.com/pkg/errors"
+	"github.com/stretchr/testify/require"
+
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
-	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestRecord_EncodeDecode(t *testing.T) {
@@ -41,8 +42,8 @@ func TestRecord_EncodeDecode(t *testing.T) {
 		},
 	}
 	decSeries, err := dec.Series(enc.Series(series, nil), nil)
-	testutil.Ok(t, err)
-	testutil.Equals(t, series, decSeries)
+	require.NoError(t, err)
+	require.Equal(t, series, decSeries)
 
 	samples := []RefSample{
 		{Ref: 0, T: 12423423, V: 1.2345},
@@ -50,8 +51,8 @@ func TestRecord_EncodeDecode(t *testing.T) {
 		{Ref: 2, T: 0, V: 99999},
 	}
 	decSamples, err := dec.Samples(enc.Samples(samples, nil), nil)
-	testutil.Ok(t, err)
-	testutil.Equals(t, samples, decSamples)
+	require.NoError(t, err)
+	require.Equal(t, samples, decSamples)
 
 	// Intervals get split up into single entries. So we don't get back exactly
 	// what we put in.
@@ -66,8 +67,8 @@ func TestRecord_EncodeDecode(t *testing.T) {
 		}},
 	}
 	decTstones, err := dec.Tombstones(enc.Tombstones(tstones, nil), nil)
-	testutil.Ok(t, err)
-	testutil.Equals(t, []tombstones.Stone{
+	require.NoError(t, err)
+	require.Equal(t, []tombstones.Stone{
 		{Ref: 123, Intervals: tombstones.Intervals{{Mint: -1000, Maxt: 1231231}}},
 		{Ref: 123, Intervals: tombstones.Intervals{{Mint: 5000, Maxt: 0}}},
 		{Ref: 13, Intervals: tombstones.Intervals{{Mint: -1000, Maxt: -11}}},
@@ -91,7 +92,7 @@ func TestRecord_Corrupted(t *testing.T) {
 
 		corrupted := enc.Series(series, nil)[:8]
 		_, err := dec.Series(corrupted, nil)
-		testutil.Equals(t, err, encoding.ErrInvalidSize)
+		require.Equal(t, err, encoding.ErrInvalidSize)
 	})
 
 	t.Run("Test corrupted sample record", func(t *testing.T) {
@@ -101,7 +102,7 @@ func TestRecord_Corrupted(t *testing.T) {
 
 		corrupted := enc.Samples(samples, nil)[:8]
 		_, err := dec.Samples(corrupted, nil)
-		testutil.Equals(t, errors.Cause(err), encoding.ErrInvalidSize)
+		require.Equal(t, errors.Cause(err), encoding.ErrInvalidSize)
 	})
 
 	t.Run("Test corrupted tombstone record", func(t *testing.T) {
@@ -114,6 +115,29 @@ func TestRecord_Corrupted(t *testing.T) {
 
 		corrupted := enc.Tombstones(tstones, nil)[:8]
 		_, err := dec.Tombstones(corrupted, nil)
-		testutil.Equals(t, err, encoding.ErrInvalidSize)
+		require.Equal(t, err, encoding.ErrInvalidSize)
 	})
+}
+
+func TestRecord_Type(t *testing.T) {
+	var enc Encoder
+	var dec Decoder
+
+	series := []RefSeries{{Ref: 100, Labels: labels.FromStrings("abc", "123")}}
+	recordType := dec.Type(enc.Series(series, nil))
+	require.Equal(t, Series, recordType)
+
+	samples := []RefSample{{Ref: 123, T: 12345, V: 1.2345}}
+	recordType = dec.Type(enc.Samples(samples, nil))
+	require.Equal(t, Samples, recordType)
+
+	tstones := []tombstones.Stone{{Ref: 1, Intervals: tombstones.Intervals{{Mint: 1, Maxt: 2}}}}
+	recordType = dec.Type(enc.Tombstones(tstones, nil))
+	require.Equal(t, Tombstones, recordType)
+
+	recordType = dec.Type(nil)
+	require.Equal(t, Unknown, recordType)
+
+	recordType = dec.Type([]byte{0})
+	require.Equal(t, Unknown, recordType)
 }

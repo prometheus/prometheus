@@ -15,6 +15,7 @@ package openstack
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -23,9 +24,10 @@ import (
 	"github.com/gophercloud/gophercloud/openstack"
 	conntrack "github.com/mwitkow/go-conntrack"
 	"github.com/pkg/errors"
-	config_util "github.com/prometheus/common/config"
+	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
+	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/refresh"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
@@ -34,27 +36,46 @@ import (
 var DefaultSDConfig = SDConfig{
 	Port:            80,
 	RefreshInterval: model.Duration(60 * time.Second),
+	Availability:    "public",
+}
+
+func init() {
+	discovery.RegisterConfig(&SDConfig{})
 }
 
 // SDConfig is the configuration for OpenStack based service discovery.
 type SDConfig struct {
-	IdentityEndpoint            string                `yaml:"identity_endpoint"`
-	Username                    string                `yaml:"username"`
-	UserID                      string                `yaml:"userid"`
-	Password                    config_util.Secret    `yaml:"password"`
-	ProjectName                 string                `yaml:"project_name"`
-	ProjectID                   string                `yaml:"project_id"`
-	DomainName                  string                `yaml:"domain_name"`
-	DomainID                    string                `yaml:"domain_id"`
-	ApplicationCredentialName   string                `yaml:"application_credential_name"`
-	ApplicationCredentialID     string                `yaml:"application_credential_id"`
-	ApplicationCredentialSecret config_util.Secret    `yaml:"application_credential_secret"`
-	Role                        Role                  `yaml:"role"`
-	Region                      string                `yaml:"region"`
-	RefreshInterval             model.Duration        `yaml:"refresh_interval,omitempty"`
-	Port                        int                   `yaml:"port"`
-	AllTenants                  bool                  `yaml:"all_tenants,omitempty"`
-	TLSConfig                   config_util.TLSConfig `yaml:"tls_config,omitempty"`
+	IdentityEndpoint            string           `yaml:"identity_endpoint"`
+	Username                    string           `yaml:"username"`
+	UserID                      string           `yaml:"userid"`
+	Password                    config.Secret    `yaml:"password"`
+	ProjectName                 string           `yaml:"project_name"`
+	ProjectID                   string           `yaml:"project_id"`
+	DomainName                  string           `yaml:"domain_name"`
+	DomainID                    string           `yaml:"domain_id"`
+	ApplicationCredentialName   string           `yaml:"application_credential_name"`
+	ApplicationCredentialID     string           `yaml:"application_credential_id"`
+	ApplicationCredentialSecret config.Secret    `yaml:"application_credential_secret"`
+	Role                        Role             `yaml:"role"`
+	Region                      string           `yaml:"region"`
+	RefreshInterval             model.Duration   `yaml:"refresh_interval"`
+	Port                        int              `yaml:"port"`
+	AllTenants                  bool             `yaml:"all_tenants,omitempty"`
+	TLSConfig                   config.TLSConfig `yaml:"tls_config,omitempty"`
+	Availability                string           `yaml:"availability,omitempty"`
+}
+
+// Name returns the name of the Config.
+func (*SDConfig) Name() string { return "openstack" }
+
+// NewDiscoverer returns a Discoverer for the Config.
+func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
+	return NewDiscovery(c, opts.Logger)
+}
+
+// SetDirectory joins any relative file paths with dir.
+func (c *SDConfig) SetDirectory(dir string) {
+	c.TLSConfig.SetDirectory(dir)
 }
 
 // Role is the role of the target in OpenStack.
@@ -91,12 +112,20 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err != nil {
 		return err
 	}
+
+	switch c.Availability {
+	case "public", "internal", "admin":
+	default:
+		return fmt.Errorf("unknown availability %s, must be one of admin, internal or public", c.Availability)
+	}
+
 	if c.Role == "" {
 		return errors.New("role missing (one of: instance, hypervisor)")
 	}
 	if c.Region == "" {
 		return errors.New("openstack SD configuration requires a region")
 	}
+
 	return nil
 }
 
@@ -146,26 +175,27 @@ func newRefresher(conf *SDConfig, l log.Logger) (refresher, error) {
 	if err != nil {
 		return nil, err
 	}
-	tls, err := config_util.NewTLSConfig(&conf.TLSConfig)
+	tls, err := config.NewTLSConfig(&conf.TLSConfig)
 	if err != nil {
 		return nil, err
 	}
 	client.HTTPClient = http.Client{
 		Transport: &http.Transport{
-			IdleConnTimeout: 5 * time.Duration(conf.RefreshInterval),
+			IdleConnTimeout: 2 * time.Duration(conf.RefreshInterval),
 			TLSClientConfig: tls,
 			DialContext: conntrack.NewDialContextFunc(
 				conntrack.DialWithTracing(),
 				conntrack.DialWithName("openstack_sd"),
 			),
 		},
-		Timeout: 5 * time.Duration(conf.RefreshInterval),
+		Timeout: time.Duration(conf.RefreshInterval),
 	}
+	availability := gophercloud.Availability(conf.Availability)
 	switch conf.Role {
 	case OpenStackRoleHypervisor:
-		return newHypervisorDiscovery(client, &opts, conf.Port, conf.Region, l), nil
+		return newHypervisorDiscovery(client, &opts, conf.Port, conf.Region, availability, l), nil
 	case OpenStackRoleInstance:
-		return newInstanceDiscovery(client, &opts, conf.Port, conf.Region, conf.AllTenants, l), nil
+		return newInstanceDiscovery(client, &opts, conf.Port, conf.Region, conf.AllTenants, availability, l), nil
 	}
 	return nil, errors.New("unknown OpenStack discovery role")
 }

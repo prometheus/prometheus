@@ -17,8 +17,7 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/prometheus/prometheus/tsdb/tsdbutil"
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/stretchr/testify/require"
 )
 
 func TestSampleRing(t *testing.T) {
@@ -78,9 +77,9 @@ func TestSampleRing(t *testing.T) {
 				}
 
 				if found {
-					testutil.Assert(t, sold.t >= s.t-c.delta, "%d: unexpected sample %d in buffer; buffer %v", i, sold.t, buffered)
+					require.GreaterOrEqual(t, sold.t, s.t-c.delta, "%d: unexpected sample %d in buffer; buffer %v", i, sold.t, buffered)
 				} else {
-					testutil.Assert(t, sold.t < s.t-c.delta, "%d: expected sample %d to be in buffer but was not; buffer %v", i, sold.t, buffered)
+					require.Less(t, sold.t, s.t-c.delta, "%d: expected sample %d to be in buffer but was not; buffer %v", i, sold.t, buffered)
 				}
 			}
 		}
@@ -97,15 +96,21 @@ func TestBufferedSeriesIterator(t *testing.T) {
 			t, v := bit.At()
 			b = append(b, sample{t: t, v: v})
 		}
-		testutil.Equals(t, exp, b, "buffer mismatch")
+		require.Equal(t, exp, b, "buffer mismatch")
 	}
 	sampleEq := func(ets int64, ev float64) {
 		ts, v := it.Values()
-		testutil.Equals(t, ets, ts, "timestamp mismatch")
-		testutil.Equals(t, ev, v, "value mismatch")
+		require.Equal(t, ets, ts, "timestamp mismatch")
+		require.Equal(t, ev, v, "value mismatch")
+	}
+	prevSampleEq := func(ets int64, ev float64, eok bool) {
+		ts, v, ok := it.PeekBack(1)
+		require.Equal(t, eok, ok, "exist mismatch")
+		require.Equal(t, ets, ts, "timestamp mismatch")
+		require.Equal(t, ev, v, "value mismatch")
 	}
 
-	it = NewBufferIterator(NewListSeriesIterator([]tsdbutil.Sample{
+	it = NewBufferIterator(NewListSeriesIterator(samples{
 		sample{t: 1, v: 2},
 		sample{t: 2, v: 3},
 		sample{t: 3, v: 4},
@@ -116,29 +121,34 @@ func TestBufferedSeriesIterator(t *testing.T) {
 		sample{t: 101, v: 10},
 	}), 2)
 
-	testutil.Assert(t, it.Seek(-123), "seek failed")
+	require.True(t, it.Seek(-123), "seek failed")
 	sampleEq(1, 2)
+	prevSampleEq(0, 0, false)
 	bufferEq(nil)
 
-	testutil.Assert(t, it.Next(), "next failed")
+	require.True(t, it.Next(), "next failed")
 	sampleEq(2, 3)
+	prevSampleEq(1, 2, true)
 	bufferEq([]sample{{t: 1, v: 2}})
 
-	testutil.Assert(t, it.Next(), "next failed")
-	testutil.Assert(t, it.Next(), "next failed")
-	testutil.Assert(t, it.Next(), "next failed")
+	require.True(t, it.Next(), "next failed")
+	require.True(t, it.Next(), "next failed")
+	require.True(t, it.Next(), "next failed")
 	sampleEq(5, 6)
+	prevSampleEq(4, 5, true)
 	bufferEq([]sample{{t: 2, v: 3}, {t: 3, v: 4}, {t: 4, v: 5}})
 
-	testutil.Assert(t, it.Seek(5), "seek failed")
+	require.True(t, it.Seek(5), "seek failed")
 	sampleEq(5, 6)
+	prevSampleEq(4, 5, true)
 	bufferEq([]sample{{t: 2, v: 3}, {t: 3, v: 4}, {t: 4, v: 5}})
 
-	testutil.Assert(t, it.Seek(101), "seek failed")
+	require.True(t, it.Seek(101), "seek failed")
 	sampleEq(101, 10)
+	prevSampleEq(100, 9, true)
 	bufferEq([]sample{{t: 99, v: 8}, {t: 100, v: 9}})
 
-	testutil.Assert(t, !it.Next(), "next succeeded unexpectedly")
+	require.False(t, it.Next(), "next succeeded unexpectedly")
 }
 
 // At() should not be called once Next() returns false.
@@ -148,7 +158,7 @@ func TestBufferedSeriesIteratorNoBadAt(t *testing.T) {
 	m := &mockSeriesIterator{
 		seek: func(int64) bool { return false },
 		at: func() (int64, float64) {
-			testutil.Assert(t, !done, "unexpectedly done")
+			require.False(t, done, "unexpectedly done")
 			done = true
 			return 0, 0
 		},
@@ -172,7 +182,7 @@ func BenchmarkBufferedSeriesIterator(b *testing.B) {
 	for it.Next() {
 		// scan everything
 	}
-	testutil.Ok(b, it.Err())
+	require.NoError(b, it.Err())
 }
 
 type mockSeriesIterator struct {

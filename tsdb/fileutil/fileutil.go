@@ -65,7 +65,7 @@ func copyFile(src, dest string) error {
 		return err
 	}
 
-	err = ioutil.WriteFile(dest, data, 0644)
+	err = ioutil.WriteFile(dest, data, 0666)
 	if err != nil {
 		return err
 	}
@@ -125,19 +125,5 @@ func Replace(from, to string) error {
 		}
 	}
 
-	if err := os.Rename(from, to); err != nil {
-		return err
-	}
-
-	// Directory was renamed; sync parent dir to persist rename.
-	pdir, err := OpenDir(filepath.Dir(to))
-	if err != nil {
-		return err
-	}
-
-	if err = pdir.Sync(); err != nil {
-		pdir.Close()
-		return err
-	}
-	return pdir.Close()
+	return Rename(from, to)
 }

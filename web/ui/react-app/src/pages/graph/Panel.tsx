@@ -5,13 +5,14 @@ import { Alert, Button, Col, Nav, NavItem, NavLink, Row, TabContent, TabPane } f
 import moment from 'moment-timezone';
 
 import ExpressionInput from './ExpressionInput';
+import CMExpressionInput from './CMExpressionInput';
 import GraphControls from './GraphControls';
 import { GraphTabContent } from './GraphTabContent';
 import DataTable from './DataTable';
 import TimeInput from './TimeInput';
 import QueryStatsView, { QueryStats } from './QueryStatsView';
-import PathPrefixProps from '../../types/PathPrefixProps';
 import { QueryParams } from '../../types/types';
+import { API_PATH } from '../../constants/constants';
 
 interface PanelProps {
   options: PanelOptions;
@@ -21,12 +22,18 @@ interface PanelProps {
   metricNames: string[];
   removePanel: () => void;
   onExecuteQuery: (query: string) => void;
+  pathPrefix: string;
+  useExperimentalEditor: boolean;
+  enableAutocomplete: boolean;
+  enableHighlighting: boolean;
+  enableLinter: boolean;
 }
 
 interface PanelState {
   data: any; // TODO: Type data.
   lastQueryParams: QueryParams | null;
   loading: boolean;
+  warnings: string[] | null;
   error: string | null;
   stats: QueryStats | null;
   exprInputValue: string;
@@ -35,7 +42,7 @@ interface PanelState {
 export interface PanelOptions {
   expr: string;
   type: PanelType;
-  range: number; // Range in seconds.
+  range: number; // Range in milliseconds.
   endTime: number | null; // Timestamp in milliseconds.
   resolution: number | null; // Resolution in seconds.
   stacked: boolean;
@@ -49,13 +56,13 @@ export enum PanelType {
 export const PanelDefaultOptions: PanelOptions = {
   type: PanelType.Table,
   expr: '',
-  range: 3600,
+  range: 60 * 60 * 1000,
   endTime: null,
   resolution: null,
   stacked: false,
 };
 
-class Panel extends Component<PanelProps & PathPrefixProps, PanelState> {
+class Panel extends Component<PanelProps, PanelState> {
   private abortInFlightFetch: (() => void) | null = null;
 
   constructor(props: PanelProps) {
@@ -65,6 +72,7 @@ class Panel extends Component<PanelProps & PathPrefixProps, PanelState> {
       data: null,
       lastQueryParams: null,
       loading: false,
+      warnings: null,
       error: null,
       stats: null,
       exprInputValue: props.options.expr,
@@ -108,8 +116,8 @@ class Panel extends Component<PanelProps & PathPrefixProps, PanelState> {
     this.setState({ loading: true });
 
     const endTime = this.getEndTime().valueOf() / 1000; // TODO: shouldn't valueof only work when it's a moment?
-    const startTime = endTime - this.props.options.range;
-    const resolution = this.props.options.resolution || Math.max(Math.floor(this.props.options.range / 250), 1);
+    const startTime = endTime - this.props.options.range / 1000;
+    const resolution = this.props.options.resolution || Math.max(Math.floor(this.props.options.range / 250000), 1);
     const params: URLSearchParams = new URLSearchParams({
       query: expr,
     });
@@ -117,21 +125,20 @@ class Panel extends Component<PanelProps & PathPrefixProps, PanelState> {
     let path: string;
     switch (this.props.options.type) {
       case 'graph':
-        path = '/api/v1/query_range';
+        path = 'query_range';
         params.append('start', startTime.toString());
         params.append('end', endTime.toString());
         params.append('step', resolution.toString());
-        // TODO path prefix here and elsewhere.
         break;
       case 'table':
-        path = '/api/v1/query';
+        path = 'query';
         params.append('time', endTime.toString());
         break;
       default:
         throw new Error('Invalid panel type "' + this.props.options.type + '"');
     }
 
-    fetch(`${this.props.pathPrefix}${path}?${params}`, {
+    fetch(`${this.props.pathPrefix}/${API_PATH}/${path}?${params}`, {
       cache: 'no-store',
       credentials: 'same-origin',
       signal: abortController.signal,
@@ -155,6 +162,7 @@ class Panel extends Component<PanelProps & PathPrefixProps, PanelState> {
         this.setState({
           error: null,
           data: json.data,
+          warnings: json.warnings,
           lastQueryParams: {
             startTime,
             endTime,
@@ -210,6 +218,10 @@ class Panel extends Component<PanelProps & PathPrefixProps, PanelState> {
   };
 
   handleChangeType = (type: PanelType) => {
+    if (this.props.options.type === type) {
+      return;
+    }
+
     this.setState({ data: null });
     this.setOptions({ type: type });
   };
@@ -224,21 +236,39 @@ class Panel extends Component<PanelProps & PathPrefixProps, PanelState> {
       <div className="panel">
         <Row>
           <Col>
-            <ExpressionInput
-              value={this.state.exprInputValue}
-              onExpressionChange={this.handleExpressionChange}
-              executeQuery={this.executeQuery}
-              loading={this.state.loading}
-              autocompleteSections={{
-                'Query History': pastQueries,
-                'Metric Names': metricNames,
-              }}
-            />
+            {this.props.useExperimentalEditor ? (
+              <CMExpressionInput
+                value={this.state.exprInputValue}
+                onExpressionChange={this.handleExpressionChange}
+                executeQuery={this.executeQuery}
+                loading={this.state.loading}
+                enableAutocomplete={this.props.enableAutocomplete}
+                enableHighlighting={this.props.enableHighlighting}
+                enableLinter={this.props.enableLinter}
+                queryHistory={pastQueries}
+                metricNames={metricNames}
+              />
+            ) : (
+              <ExpressionInput
+                value={this.state.exprInputValue}
+                onExpressionChange={this.handleExpressionChange}
+                executeQuery={this.executeQuery}
+                loading={this.state.loading}
+                enableAutocomplete={this.props.enableAutocomplete}
+                queryHistory={pastQueries}
+                metricNames={metricNames}
+              />
+            )}
           </Col>
         </Row>
         <Row>
           <Col>{this.state.error && <Alert color="danger">{this.state.error}</Alert>}</Col>
         </Row>
+        {this.state.warnings?.map((warning, index) => (
+          <Row key={index}>
+            <Col>{warning && <Alert color="warning">{warning}</Alert>}</Col>
+          </Row>
+        ))}
         <Row>
           <Col>
             <Nav tabs>

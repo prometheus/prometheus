@@ -39,7 +39,7 @@ class TimeInput extends Component<TimeInputProps> {
     return this.props.time || moment().valueOf();
   };
 
-  calcShiftRange = () => (this.props.range * 1000) / 2;
+  calcShiftRange = () => this.props.range / 2;
 
   increaseTime = (): void => {
     const time = this.getBaseTime() + this.calcShiftRange();

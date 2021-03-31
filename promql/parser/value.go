@@ -24,20 +24,20 @@ type ValueType string
 
 // The valid value types.
 const (
-	ValueTypeNone   = "none"
-	ValueTypeVector = "vector"
-	ValueTypeScalar = "scalar"
-	ValueTypeMatrix = "matrix"
-	ValueTypeString = "string"
+	ValueTypeNone   ValueType = "none"
+	ValueTypeVector ValueType = "vector"
+	ValueTypeScalar ValueType = "scalar"
+	ValueTypeMatrix ValueType = "matrix"
+	ValueTypeString ValueType = "string"
 )
 
 // DocumentedType returns the internal type to the equivalent
 // user facing terminology as defined in the documentation.
 func DocumentedType(t ValueType) string {
 	switch t {
-	case "vector":
+	case ValueTypeVector:
 		return "instant vector"
-	case "matrix":
+	case ValueTypeMatrix:
 		return "range vector"
 	default:
 		return string(t)

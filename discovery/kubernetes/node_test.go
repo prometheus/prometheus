@@ -14,6 +14,7 @@
 package kubernetes
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -63,7 +64,7 @@ func TestNodeDiscoveryBeforeStart(t *testing.T) {
 				map[string]string{"test-label": "testvalue"},
 				map[string]string{"test-annotation": "testannotationvalue"},
 			)
-			c.CoreV1().Nodes().Create(obj)
+			c.CoreV1().Nodes().Create(context.Background(), obj, metav1.CreateOptions{})
 		},
 		expectedMaxItems: 1,
 		expectedRes: map[string]*targetgroup.Group{
@@ -95,7 +96,7 @@ func TestNodeDiscoveryAdd(t *testing.T) {
 		discovery: n,
 		afterStart: func() {
 			obj := makeEnumeratedNode(1)
-			c.CoreV1().Nodes().Create(obj)
+			c.CoreV1().Nodes().Create(context.Background(), obj, metav1.CreateOptions{})
 		},
 		expectedMaxItems: 1,
 		expectedRes: map[string]*targetgroup.Group{
@@ -123,7 +124,7 @@ func TestNodeDiscoveryDelete(t *testing.T) {
 	k8sDiscoveryTest{
 		discovery: n,
 		afterStart: func() {
-			c.CoreV1().Nodes().Delete(obj.Name, &metav1.DeleteOptions{})
+			c.CoreV1().Nodes().Delete(context.Background(), obj.Name, metav1.DeleteOptions{})
 		},
 		expectedMaxItems: 2,
 		expectedRes: map[string]*targetgroup.Group{
@@ -141,14 +142,14 @@ func TestNodeDiscoveryUpdate(t *testing.T) {
 		discovery: n,
 		afterStart: func() {
 			obj1 := makeEnumeratedNode(0)
-			c.CoreV1().Nodes().Create(obj1)
+			c.CoreV1().Nodes().Create(context.Background(), obj1, metav1.CreateOptions{})
 			obj2 := makeNode(
 				"test0",
 				"1.2.3.4",
 				map[string]string{"Unschedulable": "true"},
 				map[string]string{},
 			)
-			c.CoreV1().Nodes().Update(obj2)
+			c.CoreV1().Nodes().Update(context.Background(), obj2, metav1.UpdateOptions{})
 		},
 		expectedMaxItems: 2,
 		expectedRes: map[string]*targetgroup.Group{

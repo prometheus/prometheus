@@ -15,15 +15,14 @@ package remote
 
 import (
 	"sync"
-	"sync/atomic"
 	"time"
+
+	"go.uber.org/atomic"
 )
 
 // ewmaRate tracks an exponentially weighted moving average of a per-second rate.
 type ewmaRate struct {
-	// Keep all 64bit atomically accessed variables at the top of this struct.
-	// See https://golang.org/pkg/sync/atomic/#pkg-note-BUG for more info.
-	newEvents int64
+	newEvents atomic.Int64
 
 	alpha    float64
 	interval time.Duration
@@ -50,7 +49,7 @@ func (r *ewmaRate) rate() float64 {
 
 // tick assumes to be called every r.interval.
 func (r *ewmaRate) tick() {
-	newEvents := atomic.SwapInt64(&r.newEvents, 0)
+	newEvents := r.newEvents.Swap(0)
 	instantRate := float64(newEvents) / r.interval.Seconds()
 
 	r.mutex.Lock()
@@ -66,5 +65,5 @@ func (r *ewmaRate) tick() {
 
 // inc counts one event.
 func (r *ewmaRate) incr(incr int64) {
-	atomic.AddInt64(&r.newEvents, incr)
+	r.newEvents.Add(incr)
 }

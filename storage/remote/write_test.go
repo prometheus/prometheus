@@ -20,12 +20,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	common_config "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/stretchr/testify/require"
+
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/relabel"
-	"github.com/prometheus/prometheus/util/testutil"
 )
 
 var cfg = config.RemoteWriteConfig{
@@ -41,8 +43,10 @@ var cfg = config.RemoteWriteConfig{
 
 func TestNoDuplicateWriteConfigs(t *testing.T) {
 	dir, err := ioutil.TempDir("", "TestNoDuplicateWriteConfigs")
-	testutil.Ok(t, err)
-	defer os.RemoveAll(dir)
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, os.RemoveAll(dir))
+	}()
 
 	cfg1 := config.RemoteWriteConfig{
 		Name: "write-1",
@@ -111,55 +115,103 @@ func TestNoDuplicateWriteConfigs(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		s := NewWriteStorage(nil, nil, dir, time.Millisecond)
+		s := NewWriteStorage(nil, nil, dir, time.Millisecond, nil)
 		conf := &config.Config{
 			GlobalConfig:       config.DefaultGlobalConfig,
 			RemoteWriteConfigs: tc.cfgs,
 		}
 		err := s.ApplyConfig(conf)
 		gotError := err != nil
-		testutil.Equals(t, tc.err, gotError)
+		require.Equal(t, tc.err, gotError)
 
 		err = s.Close()
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 	}
 }
 
 func TestRestartOnNameChange(t *testing.T) {
 	dir, err := ioutil.TempDir("", "TestRestartOnNameChange")
-	testutil.Ok(t, err)
-	defer os.RemoveAll(dir)
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, os.RemoveAll(dir))
+	}()
 
 	hash, err := toHash(cfg)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
-	s := NewWriteStorage(nil, nil, dir, time.Millisecond)
+	s := NewWriteStorage(nil, nil, dir, time.Millisecond, nil)
 	conf := &config.Config{
 		GlobalConfig: config.DefaultGlobalConfig,
 		RemoteWriteConfigs: []*config.RemoteWriteConfig{
 			&cfg,
 		},
 	}
-	testutil.Ok(t, s.ApplyConfig(conf))
-	testutil.Equals(t, s.queues[hash].client().Name(), cfg.Name)
+	require.NoError(t, s.ApplyConfig(conf))
+	require.Equal(t, s.queues[hash].client().Name(), cfg.Name)
 
 	// Change the queues name, ensure the queue has been restarted.
 	conf.RemoteWriteConfigs[0].Name = "dev-2"
-	testutil.Ok(t, s.ApplyConfig(conf))
+	require.NoError(t, s.ApplyConfig(conf))
 	hash, err = toHash(cfg)
-	testutil.Ok(t, err)
-	testutil.Equals(t, s.queues[hash].client().Name(), conf.RemoteWriteConfigs[0].Name)
+	require.NoError(t, err)
+	require.Equal(t, s.queues[hash].client().Name(), conf.RemoteWriteConfigs[0].Name)
 
 	err = s.Close()
-	testutil.Ok(t, err)
+	require.NoError(t, err)
+}
+
+func TestUpdateWithRegisterer(t *testing.T) {
+	dir, err := ioutil.TempDir("", "TestRestartWithRegisterer")
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, os.RemoveAll(dir))
+	}()
+
+	s := NewWriteStorage(nil, prometheus.NewRegistry(), dir, time.Millisecond, nil)
+	c1 := &config.RemoteWriteConfig{
+		Name: "named",
+		URL: &common_config.URL{
+			URL: &url.URL{
+				Scheme: "http",
+				Host:   "localhost",
+			},
+		},
+		QueueConfig: config.DefaultQueueConfig,
+	}
+	c2 := &config.RemoteWriteConfig{
+		URL: &common_config.URL{
+			URL: &url.URL{
+				Scheme: "http",
+				Host:   "localhost",
+			},
+		},
+		QueueConfig: config.DefaultQueueConfig,
+	}
+	conf := &config.Config{
+		GlobalConfig:       config.DefaultGlobalConfig,
+		RemoteWriteConfigs: []*config.RemoteWriteConfig{c1, c2},
+	}
+	require.NoError(t, s.ApplyConfig(conf))
+
+	c1.QueueConfig.MaxShards = 10
+	c2.QueueConfig.MaxShards = 10
+	require.NoError(t, s.ApplyConfig(conf))
+	for _, queue := range s.queues {
+		require.Equal(t, 10, queue.cfg.MaxShards)
+	}
+
+	err = s.Close()
+	require.NoError(t, err)
 }
 
 func TestWriteStorageLifecycle(t *testing.T) {
 	dir, err := ioutil.TempDir("", "TestWriteStorageLifecycle")
-	testutil.Ok(t, err)
-	defer os.RemoveAll(dir)
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, os.RemoveAll(dir))
+	}()
 
-	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline)
+	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil)
 	conf := &config.Config{
 		GlobalConfig: config.DefaultGlobalConfig,
 		RemoteWriteConfigs: []*config.RemoteWriteConfig{
@@ -167,18 +219,20 @@ func TestWriteStorageLifecycle(t *testing.T) {
 		},
 	}
 	s.ApplyConfig(conf)
-	testutil.Equals(t, 1, len(s.queues))
+	require.Equal(t, 1, len(s.queues))
 
 	err = s.Close()
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 }
 
 func TestUpdateExternalLabels(t *testing.T) {
 	dir, err := ioutil.TempDir("", "TestUpdateExternalLabels")
-	testutil.Ok(t, err)
-	defer os.RemoveAll(dir)
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, os.RemoveAll(dir))
+	}()
 
-	s := NewWriteStorage(nil, nil, dir, time.Second)
+	s := NewWriteStorage(nil, prometheus.NewRegistry(), dir, time.Second, nil)
 
 	externalLabels := labels.FromStrings("external", "true")
 	conf := &config.Config{
@@ -188,28 +242,30 @@ func TestUpdateExternalLabels(t *testing.T) {
 		},
 	}
 	hash, err := toHash(conf.RemoteWriteConfigs[0])
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 	s.ApplyConfig(conf)
-	testutil.Equals(t, 1, len(s.queues))
-	testutil.Equals(t, labels.Labels(nil), s.queues[hash].externalLabels)
+	require.Equal(t, 1, len(s.queues))
+	require.Equal(t, labels.Labels(nil), s.queues[hash].externalLabels)
 
 	conf.GlobalConfig.ExternalLabels = externalLabels
 	hash, err = toHash(conf.RemoteWriteConfigs[0])
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 	s.ApplyConfig(conf)
-	testutil.Equals(t, 1, len(s.queues))
-	testutil.Equals(t, externalLabels, s.queues[hash].externalLabels)
+	require.Equal(t, 1, len(s.queues))
+	require.Equal(t, externalLabels, s.queues[hash].externalLabels)
 
 	err = s.Close()
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 }
 
 func TestWriteStorageApplyConfigsIdempotent(t *testing.T) {
 	dir, err := ioutil.TempDir("", "TestWriteStorageApplyConfigsIdempotent")
-	testutil.Ok(t, err)
-	defer os.RemoveAll(dir)
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, os.RemoveAll(dir))
+	}()
 
-	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline)
+	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil)
 
 	conf := &config.Config{
 		GlobalConfig: config.GlobalConfig{},
@@ -224,32 +280,34 @@ func TestWriteStorageApplyConfigsIdempotent(t *testing.T) {
 		},
 	}
 	hash, err := toHash(conf.RemoteWriteConfigs[0])
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	s.ApplyConfig(conf)
-	testutil.Equals(t, 1, len(s.queues))
+	require.Equal(t, 1, len(s.queues))
 
 	s.ApplyConfig(conf)
-	testutil.Equals(t, 1, len(s.queues))
+	require.Equal(t, 1, len(s.queues))
 	_, hashExists := s.queues[hash]
-	testutil.Assert(t, hashExists, "Queue pointer should have remained the same")
+	require.True(t, hashExists, "Queue pointer should have remained the same")
 
 	err = s.Close()
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 }
 
 func TestWriteStorageApplyConfigsPartialUpdate(t *testing.T) {
 	dir, err := ioutil.TempDir("", "TestWriteStorageApplyConfigsPartialUpdate")
-	testutil.Ok(t, err)
-	defer os.RemoveAll(dir)
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, os.RemoveAll(dir))
+	}()
 
-	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline)
+	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil)
 
 	c0 := &config.RemoteWriteConfig{
 		RemoteTimeout: model.Duration(10 * time.Second),
 		QueueConfig:   config.DefaultQueueConfig,
 		WriteRelabelConfigs: []*relabel.Config{
-			&relabel.Config{
+			{
 				Regex: relabel.MustNewRegexp(".+"),
 			},
 		},
@@ -278,15 +336,15 @@ func TestWriteStorageApplyConfigsPartialUpdate(t *testing.T) {
 			},
 		}
 	}
-	testutil.Ok(t, s.ApplyConfig(conf))
-	testutil.Equals(t, 3, len(s.queues))
+	require.NoError(t, s.ApplyConfig(conf))
+	require.Equal(t, 3, len(s.queues))
 
 	hashes := make([]string, len(conf.RemoteWriteConfigs))
 	queues := make([]*QueueManager, len(conf.RemoteWriteConfigs))
 	storeHashes := func() {
 		for i := range conf.RemoteWriteConfigs {
 			hash, err := toHash(conf.RemoteWriteConfigs[i])
-			testutil.Ok(t, err)
+			require.NoError(t, err)
 			hashes[i] = hash
 			queues[i] = s.queues[hash]
 		}
@@ -300,32 +358,32 @@ func TestWriteStorageApplyConfigsPartialUpdate(t *testing.T) {
 		GlobalConfig:       config.GlobalConfig{},
 		RemoteWriteConfigs: []*config.RemoteWriteConfig{c0, c1, c2},
 	}
-	testutil.Ok(t, s.ApplyConfig(conf))
-	testutil.Equals(t, 3, len(s.queues))
+	require.NoError(t, s.ApplyConfig(conf))
+	require.Equal(t, 3, len(s.queues))
 
 	_, hashExists := s.queues[hashes[0]]
-	testutil.Assert(t, !hashExists, "The queue for the first remote write configuration should have been restarted because the relabel configuration has changed.")
+	require.False(t, hashExists, "The queue for the first remote write configuration should have been restarted because the relabel configuration has changed.")
 	q, hashExists := s.queues[hashes[1]]
-	testutil.Assert(t, hashExists, "Hash of unchanged queue should have remained the same")
-	testutil.Assert(t, q == queues[1], "Pointer of unchanged queue should have remained the same")
+	require.True(t, hashExists, "Hash of unchanged queue should have remained the same")
+	require.Equal(t, q, queues[1], "Pointer of unchanged queue should have remained the same")
 	_, hashExists = s.queues[hashes[2]]
-	testutil.Assert(t, !hashExists, "The queue for the third remote write configuration should have been restarted because the timeout has changed.")
+	require.False(t, hashExists, "The queue for the third remote write configuration should have been restarted because the timeout has changed.")
 
 	storeHashes()
 	secondClient := s.queues[hashes[1]].client()
 	// Update c1.
 	c1.HTTPClientConfig.BearerToken = "bar"
 	err = s.ApplyConfig(conf)
-	testutil.Ok(t, err)
-	testutil.Equals(t, 3, len(s.queues))
+	require.NoError(t, err)
+	require.Equal(t, 3, len(s.queues))
 
 	_, hashExists = s.queues[hashes[0]]
-	testutil.Assert(t, hashExists, "Pointer of unchanged queue should have remained the same")
+	require.True(t, hashExists, "Pointer of unchanged queue should have remained the same")
 	q, hashExists = s.queues[hashes[1]]
-	testutil.Assert(t, hashExists, "Hash of queue with secret change should have remained the same")
-	testutil.Assert(t, secondClient != q.client(), "Pointer of a client with a secret change should not be the same")
+	require.True(t, hashExists, "Hash of queue with secret change should have remained the same")
+	require.NotEqual(t, secondClient, q.client(), "Pointer of a client with a secret change should not be the same")
 	_, hashExists = s.queues[hashes[2]]
-	testutil.Assert(t, hashExists, "Pointer of unchanged queue should have remained the same")
+	require.True(t, hashExists, "Pointer of unchanged queue should have remained the same")
 
 	storeHashes()
 	// Delete c0.
@@ -334,15 +392,15 @@ func TestWriteStorageApplyConfigsPartialUpdate(t *testing.T) {
 		RemoteWriteConfigs: []*config.RemoteWriteConfig{c1, c2},
 	}
 	s.ApplyConfig(conf)
-	testutil.Equals(t, 2, len(s.queues))
+	require.Equal(t, 2, len(s.queues))
 
 	_, hashExists = s.queues[hashes[0]]
-	testutil.Assert(t, !hashExists, "If a config is removed, the queue should be stopped and recreated.")
+	require.False(t, hashExists, "If a config is removed, the queue should be stopped and recreated.")
 	_, hashExists = s.queues[hashes[1]]
-	testutil.Assert(t, hashExists, "Pointer of unchanged queue should have remained the same")
+	require.True(t, hashExists, "Pointer of unchanged queue should have remained the same")
 	_, hashExists = s.queues[hashes[2]]
-	testutil.Assert(t, hashExists, "Pointer of unchanged queue should have remained the same")
+	require.True(t, hashExists, "Pointer of unchanged queue should have remained the same")
 
 	err = s.Close()
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 }

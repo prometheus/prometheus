@@ -22,8 +22,7 @@ You can use `promtool` to test your rules.
 rule_files:
   [ - <file_name> ]
 
-# optional, default = 1m
-evaluation_interval: <duration>
+[ evaluation_interval: <duration> | default = 1m ]
 
 # The order in which group names are listed below will be the order of evaluation of
 # rule groups (at a given evaluation time). The order is guaranteed only for the groups mentioned below.
@@ -43,6 +42,9 @@ tests:
 interval: <duration>
 input_series:
   [ - <series> ]
+
+# Name of the test group
+[ name: <string> ]
 
 # Unit tests for the above data.
 

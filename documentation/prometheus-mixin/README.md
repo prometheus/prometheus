@@ -10,12 +10,12 @@ To use them, you need to have `jsonnet` (v0.13+) and `jb` installed. If you
 have a working Go development environment, it's easiest to run the following:
 ```bash
 $ go get github.com/google/go-jsonnet/cmd/jsonnet
+$ go get github.com/google/go-jsonnet/cmd/jsonnetfmt 
 $ go get github.com/jsonnet-bundler/jsonnet-bundler/cmd/jb
 ```
 
 _Note: The make targets `lint` and `fmt` need the `jsonnetfmt` binary, which is
-currently not included in the Go implementation of `jsonnet`. For the time
-being, you have to install the [C++ version of
+available from [v.0.16.0](https://github.com/google/jsonnet/releases/tag/v0.16.0) in the Go implementation of `jsonnet`. If your jsonnet version is older than 0.16.0 you have to either upgrade or install the [C++ version of
 jsonnetfmt](https://github.com/google/jsonnet) if you want to use `make lint`
 or `make fmt`._
 

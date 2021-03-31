@@ -25,10 +25,10 @@ import (
 	"sort"
 	"strconv"
 	"sync"
-	"sync/atomic"
-	"time"
 
 	"github.com/pkg/errors"
+	"go.uber.org/atomic"
+
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
@@ -40,7 +40,6 @@ const (
 	MagicHeadChunks = 0x0130BC91
 
 	headChunksFormatV1 = 1
-	writeBufferSize    = 4 * 1024 * 1024 // 4 MiB.
 )
 
 var (
@@ -50,12 +49,6 @@ var (
 )
 
 const (
-	// DefaultHeadChunkFileMaxTimeRange is the default head chunk file time range.
-	// Assuming a general scrape interval of 15s, a chunk with 120 samples would
-	// be cut every 30m, so anything <30m will cause lots of empty files. And keeping
-	// it exactly 30m also has a chance of having empty files as its near that border.
-	// Hence keeping it a little more than 30m, i.e. 40m.
-	DefaultHeadChunkFileMaxTimeRange = 40 * int64(time.Minute/time.Millisecond)
 	// MintMaxtSize is the size of the mint/maxt for head chunk file and chunks.
 	MintMaxtSize = 8
 	// SeriesRefSize is the size of series reference on disk.
@@ -63,15 +56,21 @@ const (
 	// HeadChunkFileHeaderSize is the total size of the header for the head chunk file.
 	HeadChunkFileHeaderSize = SegmentHeaderSize
 	// MaxHeadChunkFileSize is the max size of a head chunk file.
-	MaxHeadChunkFileSize = 512 * 1024 * 1024 // 512 MiB.
+	MaxHeadChunkFileSize = 128 * 1024 * 1024 // 128 MiB.
 	// CRCSize is the size of crc32 sum on disk.
 	CRCSize = 4
 	// MaxHeadChunkMetaSize is the max size of an mmapped chunks minus the chunks data.
 	// Max because the uvarint size can be smaller.
 	MaxHeadChunkMetaSize = SeriesRefSize + 2*MintMaxtSize + ChunksFormatVersionSize + MaxChunkLengthFieldSize + CRCSize
+	// MinWriteBufferSize is the minimum write buffer size allowed.
+	MinWriteBufferSize = 64 * 1024 // 64KB.
+	// MaxWriteBufferSize is the maximum write buffer size allowed.
+	MaxWriteBufferSize = 8 * 1024 * 1024 // 8 MiB.
+	// DefaultWriteBufferSize is the default write buffer size.
+	DefaultWriteBufferSize = 4 * 1024 * 1024 // 4 MiB.
 )
 
-// corruptionErr is an error that's returned when corruption is encountered.
+// CorruptionErr is an error that's returned when corruption is encountered.
 type CorruptionErr struct {
 	Dir       string
 	FileIndex int
@@ -85,20 +84,20 @@ func (e *CorruptionErr) Error() string {
 // ChunkDiskMapper is for writing the Head block chunks to the disk
 // and access chunks via mmapped file.
 type ChunkDiskMapper struct {
+	curFileNumBytes atomic.Int64 // Bytes written in current open file.
+
 	/// Writer.
-	dir *os.File
+	dir             *os.File
+	writeBufferSize int
 
 	curFile         *os.File // File being written to.
 	curFileSequence int      // Index of current open file being appended to.
-	curFileMint     int64    // Used to check for a chunk crossing the max file time range.
 	curFileMaxt     int64    // Used for the size retention.
-	curFileNumBytes int64    // Bytes written in current open file.
-	maxFileTime     int64    // Max time range (curFileMaxt-curFileMint) for a file.
 
 	byteBuf      [MaxHeadChunkMetaSize]byte // Buffer used to write the header of the chunk.
 	chkWriter    *bufio.Writer              // Writer for the current open file.
 	crc32        hash.Hash
-	writePathMtx sync.RWMutex
+	writePathMtx sync.Mutex
 
 	/// Reader.
 	// The int key in the map is the file number on the disk.
@@ -111,10 +110,6 @@ type ChunkDiskMapper struct {
 	// We flush chunks to disk in batches. Hence, we store them in this buffer
 	// from which chunks are served till they are flushed and are ready for m-mapping.
 	chunkBuffer *chunkBuffer
-
-	// The total size of bytes in the closed files.
-	// Needed to calculate the total size of all segments on disk.
-	size int64
 
 	// If 'true', it indicated that the maxt of all the on-disk files were set
 	// after iterating through all the chunks in those files.
@@ -132,13 +127,13 @@ type mmappedChunkFile struct {
 // using the default head chunk file duration.
 // NOTE: 'IterateAllChunks' method needs to be called at least once after creating ChunkDiskMapper
 // to set the maxt of all the file.
-func NewChunkDiskMapper(dir string, pool chunkenc.Pool) (*ChunkDiskMapper, error) {
-	return newChunkDiskMapper(dir, DefaultHeadChunkFileMaxTimeRange, pool)
-}
-
-func newChunkDiskMapper(dir string, maxFileDuration int64, pool chunkenc.Pool) (*ChunkDiskMapper, error) {
-	if maxFileDuration <= 0 {
-		maxFileDuration = DefaultHeadChunkFileMaxTimeRange
+func NewChunkDiskMapper(dir string, pool chunkenc.Pool, writeBufferSize int) (*ChunkDiskMapper, error) {
+	// Validate write buffer size.
+	if writeBufferSize < MinWriteBufferSize || writeBufferSize > MaxWriteBufferSize {
+		return nil, errors.Errorf("ChunkDiskMapper write buffer size should be between %d and %d (actual: %d)", MinWriteBufferSize, MaxHeadChunkFileSize, writeBufferSize)
+	}
+	if writeBufferSize%1024 != 0 {
+		return nil, errors.Errorf("ChunkDiskMapper write buffer size should be a multiple of 1024 (actual: %d)", writeBufferSize)
 	}
 
 	if err := os.MkdirAll(dir, 0777); err != nil {
@@ -150,11 +145,11 @@ func newChunkDiskMapper(dir string, maxFileDuration int64, pool chunkenc.Pool) (
 	}
 
 	m := &ChunkDiskMapper{
-		dir:         dirFile,
-		maxFileTime: maxFileDuration,
-		pool:        pool,
-		crc32:       newCRC32(),
-		chunkBuffer: newChunkBuffer(),
+		dir:             dirFile,
+		pool:            pool,
+		writeBufferSize: writeBufferSize,
+		crc32:           newCRC32(),
+		chunkBuffer:     newChunkBuffer(),
 	}
 
 	if m.pool == nil {
@@ -169,10 +164,7 @@ func (cdm *ChunkDiskMapper) openMMapFiles() (returnErr error) {
 	cdm.closers = map[int]io.Closer{}
 	defer func() {
 		if returnErr != nil {
-			var merr tsdb_errors.MultiError
-			merr.Add(returnErr)
-			merr.Add(closeAllFromMap(cdm.closers))
-			returnErr = merr.Err()
+			returnErr = tsdb_errors.NewMulti(returnErr, closeAllFromMap(cdm.closers)).Err()
 
 			cdm.mmappedChunkFiles = nil
 			cdm.closers = nil
@@ -184,18 +176,21 @@ func (cdm *ChunkDiskMapper) openMMapFiles() (returnErr error) {
 		return err
 	}
 
+	files, err = repairLastChunkFile(files)
+	if err != nil {
+		return err
+	}
+
 	chkFileIndices := make([]int, 0, len(files))
 	for seq, fn := range files {
 		f, err := fileutil.OpenMmapFile(fn)
 		if err != nil {
-			return errors.Wrap(err, "mmap files")
+			return errors.Wrapf(err, "mmap files, file: %s", fn)
 		}
 		cdm.closers[seq] = f
 		cdm.mmappedChunkFiles[seq] = &mmappedChunkFile{byteSlice: realByteSlice(f.Bytes())}
 		chkFileIndices = append(chkFileIndices, seq)
 	}
-
-	cdm.size = 0
 
 	// Check for gaps in the files.
 	sort.Ints(chkFileIndices)
@@ -205,26 +200,24 @@ func (cdm *ChunkDiskMapper) openMMapFiles() (returnErr error) {
 	lastSeq := chkFileIndices[0]
 	for _, seq := range chkFileIndices[1:] {
 		if seq != lastSeq+1 {
-			return errors.Errorf("found unsequential head chunk files %d and %d", lastSeq, seq)
+			return errors.Errorf("found unsequential head chunk files %s (index: %d) and %s (index: %d)", files[lastSeq], lastSeq, files[seq], seq)
 		}
 		lastSeq = seq
 	}
 
 	for i, b := range cdm.mmappedChunkFiles {
 		if b.byteSlice.Len() < HeadChunkFileHeaderSize {
-			return errors.Wrapf(errInvalidSize, "invalid head chunk file header in file %d", i)
+			return errors.Wrapf(errInvalidSize, "%s: invalid head chunk file header", files[i])
 		}
 		// Verify magic number.
 		if m := binary.BigEndian.Uint32(b.byteSlice.Range(0, MagicChunksSize)); m != MagicHeadChunks {
-			return errors.Errorf("invalid magic number %x", m)
+			return errors.Errorf("%s: invalid magic number %x", files[i], m)
 		}
 
 		// Verify chunk format version.
 		if v := int(b.byteSlice.Range(MagicChunksSize, MagicChunksSize+ChunksFormatVersionSize)[0]); v != chunksFormatV1 {
-			return errors.Errorf("invalid chunk format version %d", v)
+			return errors.Errorf("%s: invalid chunk format version %d", files[i], v)
 		}
-
-		cdm.size += int64(b.byteSlice.Len())
 	}
 
 	return nil
@@ -243,7 +236,38 @@ func listChunkFiles(dir string) (map[int]string, error) {
 		}
 		res[int(seq)] = filepath.Join(dir, fi.Name())
 	}
+
 	return res, nil
+}
+
+// repairLastChunkFile deletes the last file if it's empty.
+// Because we don't fsync when creating these file, we could end
+// up with an empty file at the end during an abrupt shutdown.
+func repairLastChunkFile(files map[int]string) (_ map[int]string, returnErr error) {
+	lastFile := -1
+	for seq := range files {
+		if seq > lastFile {
+			lastFile = seq
+		}
+	}
+
+	if lastFile <= 0 {
+		return files, nil
+	}
+
+	info, err := os.Stat(files[lastFile])
+	if err != nil {
+		return files, errors.Wrap(err, "file stat during last head chunk file repair")
+	}
+	if info.Size() == 0 {
+		// Corrupt file, hence remove it.
+		if err := os.RemoveAll(files[lastFile]); err != nil {
+			return files, errors.Wrap(err, "delete corrupted, empty head chunk file during last file repair")
+		}
+		delete(files, lastFile)
+	}
+
+	return files, nil
 }
 
 // WriteChunk writes the chunk to the disk.
@@ -256,15 +280,15 @@ func (cdm *ChunkDiskMapper) WriteChunk(seriesRef uint64, mint, maxt int64, chk c
 		return 0, ErrChunkDiskMapperClosed
 	}
 
-	if cdm.shouldCutNewFile(len(chk.Bytes()), maxt) {
-		if err := cdm.cut(mint); err != nil {
+	if cdm.shouldCutNewFile(len(chk.Bytes())) {
+		if err := cdm.cut(); err != nil {
 			return 0, err
 		}
 	}
 
 	// if len(chk.Bytes())+MaxHeadChunkMetaSize >= writeBufferSize, it means that chunk >= the buffer size;
 	// so no need to flush here, as we have to flush at the end (to not keep partial chunks in buffer).
-	if len(chk.Bytes())+MaxHeadChunkMetaSize < writeBufferSize && cdm.chkWriter.Available() < MaxHeadChunkMetaSize+len(chk.Bytes()) {
+	if len(chk.Bytes())+MaxHeadChunkMetaSize < cdm.writeBufferSize && cdm.chkWriter.Available() < MaxHeadChunkMetaSize+len(chk.Bytes()) {
 		if err := cdm.flushBuffer(); err != nil {
 			return 0, err
 		}
@@ -275,7 +299,7 @@ func (cdm *ChunkDiskMapper) WriteChunk(seriesRef uint64, mint, maxt int64, chk c
 
 	// The upper 4 bytes are for the head chunk file index and
 	// the lower 4 bytes are for the head chunk file offset where to start reading this chunk.
-	chkRef = chunkRef(uint64(cdm.curFileSequence), uint64(cdm.curFileNumBytes))
+	chkRef = chunkRef(uint64(cdm.curFileSequence), uint64(cdm.curFileSize()))
 
 	binary.BigEndian.PutUint64(cdm.byteBuf[bytesWritten:], seriesRef)
 	bytesWritten += SeriesRefSize
@@ -301,13 +325,10 @@ func (cdm *ChunkDiskMapper) WriteChunk(seriesRef uint64, mint, maxt int64, chk c
 	if maxt > cdm.curFileMaxt {
 		cdm.curFileMaxt = maxt
 	}
-	if mint < cdm.curFileMint {
-		cdm.curFileMint = mint
-	}
 
 	cdm.chunkBuffer.put(chkRef, chk)
 
-	if len(chk.Bytes())+MaxHeadChunkMetaSize >= writeBufferSize {
+	if len(chk.Bytes())+MaxHeadChunkMetaSize >= cdm.writeBufferSize {
 		// The chunk was bigger than the buffer itself.
 		// Flushing to not keep partial chunks in buffer.
 		if err := cdm.flushBuffer(); err != nil {
@@ -325,19 +346,27 @@ func chunkRef(seq, offset uint64) (chunkRef uint64) {
 // shouldCutNewFile decides the cutting of a new file based on time and size retention.
 // Size retention: because depending on the system architecture, there is a limit on how big of a file we can m-map.
 // Time retention: so that we can delete old chunks with some time guarantee in low load environments.
-func (cdm *ChunkDiskMapper) shouldCutNewFile(chunkSize int, maxt int64) bool {
-	return cdm.curFileNumBytes == 0 || // First head chunk file.
-		(maxt-cdm.curFileMint > cdm.maxFileTime && cdm.curFileNumBytes > HeadChunkFileHeaderSize) || // Time duration reached for the existing file.
-		cdm.curFileNumBytes+int64(chunkSize+MaxHeadChunkMetaSize) > MaxHeadChunkFileSize // Exceeds the max head chunk file size.
+func (cdm *ChunkDiskMapper) shouldCutNewFile(chunkSize int) bool {
+	return cdm.curFileSize() == 0 || // First head chunk file.
+		cdm.curFileSize()+int64(chunkSize+MaxHeadChunkMetaSize) > MaxHeadChunkFileSize // Exceeds the max head chunk file size.
 }
 
-func (cdm *ChunkDiskMapper) cut(mint int64) (returnErr error) {
+// CutNewFile creates a new m-mapped file.
+func (cdm *ChunkDiskMapper) CutNewFile() (returnErr error) {
+	cdm.writePathMtx.Lock()
+	defer cdm.writePathMtx.Unlock()
+
+	return cdm.cut()
+}
+
+// cut creates a new m-mapped file. The write lock should be held before calling this.
+func (cdm *ChunkDiskMapper) cut() (returnErr error) {
 	// Sync current tail to disk and close.
 	if err := cdm.finalizeCurFile(); err != nil {
 		return err
 	}
 
-	n, newFile, seq, err := cutSegmentFile(cdm.dir, MagicHeadChunks, headChunksFormatV1, int64(MaxHeadChunkFileSize))
+	n, newFile, seq, err := cutSegmentFile(cdm.dir, MagicHeadChunks, headChunksFormatV1, HeadChunkFilePreallocationSize)
 	if err != nil {
 		return err
 	}
@@ -345,15 +374,11 @@ func (cdm *ChunkDiskMapper) cut(mint int64) (returnErr error) {
 		// The file should not be closed if there is no error,
 		// its kept open in the ChunkDiskMapper.
 		if returnErr != nil {
-			var merr tsdb_errors.MultiError
-			merr.Add(returnErr)
-			merr.Add(newFile.Close())
-			returnErr = merr.Err()
+			returnErr = tsdb_errors.NewMulti(returnErr, newFile.Close()).Err()
 		}
 	}()
 
-	cdm.size += cdm.curFileNumBytes
-	atomic.StoreInt64(&cdm.curFileNumBytes, int64(n))
+	cdm.curFileNumBytes.Store(int64(n))
 
 	if cdm.curFile != nil {
 		cdm.readPathMtx.Lock()
@@ -366,16 +391,15 @@ func (cdm *ChunkDiskMapper) cut(mint int64) (returnErr error) {
 		return err
 	}
 
+	cdm.readPathMtx.Lock()
 	cdm.curFileSequence = seq
-	cdm.curFileMint = mint
 	cdm.curFile = newFile
 	if cdm.chkWriter != nil {
 		cdm.chkWriter.Reset(newFile)
 	} else {
-		cdm.chkWriter = bufio.NewWriterSize(newFile, writeBufferSize)
+		cdm.chkWriter = bufio.NewWriterSize(newFile, cdm.writeBufferSize)
 	}
 
-	cdm.readPathMtx.Lock()
 	cdm.closers[cdm.curFileSequence] = mmapFile
 	cdm.mmappedChunkFiles[cdm.curFileSequence] = &mmappedChunkFile{byteSlice: realByteSlice(mmapFile.Bytes())}
 	cdm.readPathMtx.Unlock()
@@ -405,7 +429,7 @@ func (cdm *ChunkDiskMapper) finalizeCurFile() error {
 
 func (cdm *ChunkDiskMapper) write(b []byte) error {
 	n, err := cdm.chkWriter.Write(b)
-	atomic.AddInt64(&cdm.curFileNumBytes, int64(n))
+	cdm.curFileNumBytes.Add(int64(n))
 	return err
 }
 
@@ -432,7 +456,6 @@ func (cdm *ChunkDiskMapper) flushBuffer() error {
 }
 
 // Chunk returns a chunk from a given reference.
-// Note: The returned chunk will turn invalid after closing ChunkDiskMapper.
 func (cdm *ChunkDiskMapper) Chunk(ref uint64) (chunkenc.Chunk, error) {
 	cdm.readPathMtx.RLock()
 	// We hold this read lock for the entire duration because if the Close()
@@ -466,13 +489,25 @@ func (cdm *ChunkDiskMapper) Chunk(ref uint64) (chunkenc.Chunk, error) {
 	mmapFile, ok := cdm.mmappedChunkFiles[sgmIndex]
 	if !ok {
 		if sgmIndex > cdm.curFileSequence {
-			return nil, errors.Errorf("head chunk file index %d more than current open file", sgmIndex)
+			return nil, &CorruptionErr{
+				Dir:       cdm.dir.Name(),
+				FileIndex: -1,
+				Err:       errors.Errorf("head chunk file index %d more than current open file", sgmIndex),
+			}
 		}
-		return nil, errors.Errorf("head chunk file index %d does not exist on disk", sgmIndex)
+		return nil, &CorruptionErr{
+			Dir:       cdm.dir.Name(),
+			FileIndex: sgmIndex,
+			Err:       errors.New("head chunk file index %d does not exist on disk"),
+		}
 	}
 
 	if chkStart+MaxChunkLengthFieldSize > mmapFile.byteSlice.Len() {
-		return nil, errors.Errorf("head chunk file doesn't include enough bytes to read the chunk size data field - required:%v, available:%v, file:%d", chkStart+MaxChunkLengthFieldSize, mmapFile.byteSlice.Len(), sgmIndex)
+		return nil, &CorruptionErr{
+			Dir:       cdm.dir.Name(),
+			FileIndex: sgmIndex,
+			Err:       errors.Errorf("head chunk file doesn't include enough bytes to read the chunk size data field - required:%v, available:%v", chkStart+MaxChunkLengthFieldSize, mmapFile.byteSlice.Len()),
+		}
 	}
 
 	// Encoding.
@@ -485,27 +520,51 @@ func (cdm *ChunkDiskMapper) Chunk(ref uint64) (chunkenc.Chunk, error) {
 	c := mmapFile.byteSlice.Range(chkDataLenStart, chkDataLenStart+MaxChunkLengthFieldSize)
 	chkDataLen, n := binary.Uvarint(c)
 	if n <= 0 {
-		return nil, errors.Errorf("reading chunk length failed with %d", n)
+		return nil, &CorruptionErr{
+			Dir:       cdm.dir.Name(),
+			FileIndex: sgmIndex,
+			Err:       errors.Errorf("reading chunk length failed with %d", n),
+		}
 	}
 
 	// Verify the chunk data end.
 	chkDataEnd := chkDataLenStart + n + int(chkDataLen)
 	if chkDataEnd > mmapFile.byteSlice.Len() {
-		return nil, errors.Errorf("head chunk file doesn't include enough bytes to read the chunk - required:%v, available:%v", chkDataEnd, mmapFile.byteSlice.Len())
+		return nil, &CorruptionErr{
+			Dir:       cdm.dir.Name(),
+			FileIndex: sgmIndex,
+			Err:       errors.Errorf("head chunk file doesn't include enough bytes to read the chunk - required:%v, available:%v", chkDataEnd, mmapFile.byteSlice.Len()),
+		}
 	}
 
 	// Check the CRC.
 	sum := mmapFile.byteSlice.Range(chkDataEnd, chkDataEnd+CRCSize)
 	if _, err := chkCRC32.Write(mmapFile.byteSlice.Range(chkStart-(SeriesRefSize+2*MintMaxtSize), chkDataEnd)); err != nil {
-		return nil, err
+		return nil, &CorruptionErr{
+			Dir:       cdm.dir.Name(),
+			FileIndex: sgmIndex,
+			Err:       err,
+		}
 	}
 	if act := chkCRC32.Sum(nil); !bytes.Equal(act, sum) {
-		return nil, errors.Errorf("checksum mismatch expected:%x, actual:%x", sum, act)
+		return nil, &CorruptionErr{
+			Dir:       cdm.dir.Name(),
+			FileIndex: sgmIndex,
+			Err:       errors.Errorf("checksum mismatch expected:%x, actual:%x", sum, act),
+		}
 	}
 
 	// The chunk data itself.
 	chkData := mmapFile.byteSlice.Range(chkDataEnd-int(chkDataLen), chkDataEnd)
-	return cdm.pool.Get(chunkenc.Encoding(chkEnc), chkData)
+	chk, err := cdm.pool.Get(chunkenc.Encoding(chkEnc), chkData)
+	if err != nil {
+		return nil, &CorruptionErr{
+			Dir:       cdm.dir.Name(),
+			FileIndex: sgmIndex,
+			Err:       err,
+		}
+	}
+	return chk, nil
 }
 
 // IterateAllChunks iterates on all the chunks in its byte slices in the order of the head chunk file sequence
@@ -517,9 +576,7 @@ func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef, chunkRef uint64, 
 	defer cdm.writePathMtx.Unlock()
 
 	defer func() {
-		if err == nil {
-			cdm.fileMaxtSet = true
-		}
+		cdm.fileMaxtSet = true
 	}()
 
 	chkCRC32 := newCRC32()
@@ -534,7 +591,7 @@ func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef, chunkRef uint64, 
 		mmapFile := cdm.mmappedChunkFiles[segID]
 		fileEnd := mmapFile.byteSlice.Len()
 		if segID == cdm.curFileSequence {
-			fileEnd = int(cdm.curFileNumBytes)
+			fileEnd = int(cdm.curFileSize())
 		}
 		idx := HeadChunkFileHeaderSize
 		for idx < fileEnd {
@@ -548,12 +605,14 @@ func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef, chunkRef uint64, 
 					}
 				}
 				if allZeros {
+					// End of segment chunk file content.
 					break
 				}
 				return &CorruptionErr{
 					Dir:       cdm.dir.Name(),
 					FileIndex: segID,
-					Err:       errors.Errorf("head chunk file doesn't include enough bytes to read the chunk header - required:%v, available:%v, file:%d", idx+MaxHeadChunkMetaSize, fileEnd, segID),
+					Err: errors.Errorf("head chunk file has some unread data, but doesn't include enough bytes to read the chunk header"+
+						" - required:%v, available:%v, file:%d", idx+MaxHeadChunkMetaSize, fileEnd, segID),
 				}
 			}
 			chkCRC32.Reset()
@@ -611,6 +670,11 @@ func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef, chunkRef uint64, 
 			}
 
 			if err := f(seriesRef, chunkRef, mint, maxt, numSamples); err != nil {
+				if cerr, ok := err.(*CorruptionErr); ok {
+					cerr.Dir = cdm.dir.Name()
+					cerr.FileIndex = segID
+					return cerr
+				}
 				return err
 			}
 		}
@@ -646,8 +710,8 @@ func (cdm *ChunkDiskMapper) Truncate(mint int64) error {
 
 	var removedFiles []int
 	for _, seq := range chkFileIndices {
-		if seq == cdm.curFileSequence {
-			continue
+		if seq == cdm.curFileSequence || cdm.mmappedChunkFiles[seq].maxt >= mint {
+			break
 		}
 		if cdm.mmappedChunkFiles[seq].maxt < mint {
 			removedFiles = append(removedFiles, seq)
@@ -655,7 +719,13 @@ func (cdm *ChunkDiskMapper) Truncate(mint int64) error {
 	}
 	cdm.readPathMtx.RUnlock()
 
-	return cdm.deleteFiles(removedFiles)
+	errs := tsdb_errors.NewMulti()
+	// Cut a new file only if the current file has some chunks.
+	if cdm.curFileSize() > HeadChunkFileHeaderSize {
+		errs.Add(cdm.CutNewFile())
+	}
+	errs.Add(cdm.deleteFiles(removedFiles))
+	return errs.Err()
 }
 
 func (cdm *ChunkDiskMapper) deleteFiles(removedFiles []int) error {
@@ -665,7 +735,6 @@ func (cdm *ChunkDiskMapper) deleteFiles(removedFiles []int) error {
 			cdm.readPathMtx.Unlock()
 			return err
 		}
-		cdm.size -= int64(cdm.mmappedChunkFiles[seq].byteSlice.Len())
 		delete(cdm.mmappedChunkFiles, seq)
 		delete(cdm.closers, seq)
 	}
@@ -692,18 +761,24 @@ func (cdm *ChunkDiskMapper) DeleteCorrupted(originalErr error) error {
 
 	// Delete all the head chunk files following the corrupt head chunk file.
 	segs := []int{}
+	cdm.readPathMtx.RLock()
 	for seg := range cdm.mmappedChunkFiles {
 		if seg >= cerr.FileIndex {
 			segs = append(segs, seg)
 		}
 	}
+	cdm.readPathMtx.RUnlock()
+
 	return cdm.deleteFiles(segs)
 }
 
 // Size returns the size of the chunk files.
-func (cdm *ChunkDiskMapper) Size() int64 {
-	n := atomic.LoadInt64(&cdm.curFileNumBytes)
-	return cdm.size + n
+func (cdm *ChunkDiskMapper) Size() (int64, error) {
+	return fileutil.DirSize(cdm.dir.Name())
+}
+
+func (cdm *ChunkDiskMapper) curFileSize() int64 {
+	return cdm.curFileNumBytes.Load()
 }
 
 // Close closes all the open files in ChunkDiskMapper.
@@ -721,23 +796,23 @@ func (cdm *ChunkDiskMapper) Close() error {
 	}
 	cdm.closed = true
 
-	var merr tsdb_errors.MultiError
-	merr.Add(closeAllFromMap(cdm.closers))
-	merr.Add(cdm.finalizeCurFile())
-	merr.Add(cdm.dir.Close())
-
+	errs := tsdb_errors.NewMulti(
+		closeAllFromMap(cdm.closers),
+		cdm.finalizeCurFile(),
+		cdm.dir.Close(),
+	)
 	cdm.mmappedChunkFiles = map[int]*mmappedChunkFile{}
 	cdm.closers = map[int]io.Closer{}
 
-	return merr.Err()
+	return errs.Err()
 }
 
 func closeAllFromMap(cs map[int]io.Closer) error {
-	var merr tsdb_errors.MultiError
+	errs := tsdb_errors.NewMulti()
 	for _, c := range cs {
-		merr.Add(c.Close())
+		errs.Add(c.Close())
 	}
-	return merr.Err()
+	return errs.Err()
 }
 
 const inBufferShards = 128 // 128 is a randomly chosen number.

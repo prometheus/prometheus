@@ -1,3 +1,9 @@
+html {
+  /* https://github.com/prometheus/prometheus/issues/7434 */
+  /* Scroll to hash-fragment-links counting the fixed navbar 40px tall + 16px padding */
+  scroll-padding-top: 56px;
+}
+
 /* Move down content because we have a fixed navbar that is 50px tall with 20px padding */
 body {
   padding-top: 70px;

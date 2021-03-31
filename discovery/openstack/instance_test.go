@@ -16,19 +16,14 @@ package openstack
 import (
 	"context"
 	"fmt"
-	"strings"
 	"testing"
 
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/stretchr/testify/require"
 )
 
 type OpenstackSDInstanceTestSuite struct {
 	Mock *SDMock
-}
-
-func (s *OpenstackSDInstanceTestSuite) TearDownSuite() {
-	s.Mock.ShutdownServer()
 }
 
 func (s *OpenstackSDInstanceTestSuite) SetupTest(t *testing.T) {
@@ -61,18 +56,18 @@ func TestOpenstackSDInstanceRefresh(t *testing.T) {
 	mock.SetupTest(t)
 
 	instance, err := mock.openstackAuthSuccess()
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	ctx := context.Background()
 	tgs, err := instance.refresh(ctx)
 
-	testutil.Ok(t, err)
-	testutil.Equals(t, 1, len(tgs))
+	require.NoError(t, err)
+	require.Equal(t, 1, len(tgs))
 
 	tg := tgs[0]
-	testutil.Assert(t, tg != nil, "")
-	testutil.Assert(t, tg.Targets != nil, "")
-	testutil.Equals(t, 4, len(tg.Targets))
+	require.NotNil(t, tg)
+	require.NotNil(t, tg.Targets)
+	require.Equal(t, 4, len(tg.Targets))
 
 	for i, lbls := range []model.LabelSet{
 		{
@@ -125,11 +120,9 @@ func TestOpenstackSDInstanceRefresh(t *testing.T) {
 		},
 	} {
 		t.Run(fmt.Sprintf("item %d", i), func(t *testing.T) {
-			testutil.Equals(t, lbls, tg.Targets[i])
+			require.Equal(t, lbls, tg.Targets[i])
 		})
 	}
-
-	mock.TearDownSuite()
 }
 
 func TestOpenstackSDInstanceRefreshWithDoneContext(t *testing.T) {
@@ -140,8 +133,6 @@ func TestOpenstackSDInstanceRefreshWithDoneContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	_, err := hypervisor.refresh(ctx)
-	testutil.NotOk(t, err)
-	testutil.Assert(t, strings.Contains(err.Error(), context.Canceled.Error()), "%q doesn't contain %q", err, context.Canceled)
-
-	mock.TearDownSuite()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), context.Canceled.Error(), "%q doesn't contain %q", err, context.Canceled)
 }

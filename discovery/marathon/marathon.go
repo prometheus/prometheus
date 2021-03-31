@@ -28,9 +28,10 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/pkg/errors"
-	config_util "github.com/prometheus/common/config"
+	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
+	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/refresh"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/strutil"
@@ -60,16 +61,35 @@ const (
 
 // DefaultSDConfig is the default Marathon SD configuration.
 var DefaultSDConfig = SDConfig{
-	RefreshInterval: model.Duration(30 * time.Second),
+	RefreshInterval:  model.Duration(30 * time.Second),
+	HTTPClientConfig: config.DefaultHTTPClientConfig,
+}
+
+func init() {
+	discovery.RegisterConfig(&SDConfig{})
 }
 
 // SDConfig is the configuration for services running on Marathon.
 type SDConfig struct {
-	Servers          []string                     `yaml:"servers,omitempty"`
-	RefreshInterval  model.Duration               `yaml:"refresh_interval,omitempty"`
-	AuthToken        config_util.Secret           `yaml:"auth_token,omitempty"`
-	AuthTokenFile    string                       `yaml:"auth_token_file,omitempty"`
-	HTTPClientConfig config_util.HTTPClientConfig `yaml:",inline"`
+	Servers          []string                `yaml:"servers,omitempty"`
+	RefreshInterval  model.Duration          `yaml:"refresh_interval,omitempty"`
+	AuthToken        config.Secret           `yaml:"auth_token,omitempty"`
+	AuthTokenFile    string                  `yaml:"auth_token_file,omitempty"`
+	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
+}
+
+// Name returns the name of the Config.
+func (*SDConfig) Name() string { return "marathon" }
+
+// NewDiscoverer returns a Discoverer for the Config.
+func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
+	return NewDiscovery(*c, opts.Logger)
+}
+
+// SetDirectory joins any relative file paths with dir.
+func (c *SDConfig) SetDirectory(dir string) {
+	c.HTTPClientConfig.SetDirectory(dir)
+	c.AuthTokenFile = config.JoinDir(dir, c.AuthTokenFile)
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -92,6 +112,9 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if (len(c.HTTPClientConfig.BearerToken) > 0 || len(c.HTTPClientConfig.BearerTokenFile) > 0) && (len(c.AuthToken) > 0 || len(c.AuthTokenFile) > 0) {
 		return errors.New("marathon_sd: at most one of bearer_token, bearer_token_file, auth_token & auth_token_file must be configured")
 	}
+	if c.HTTPClientConfig.Authorization != nil && (len(c.AuthToken) > 0 || len(c.AuthTokenFile) > 0) {
+		return errors.New("marathon_sd: at most one of auth_token, auth_token_file & authorization must be configured")
+	}
 	return c.HTTPClientConfig.Validate()
 }
 
@@ -108,7 +131,7 @@ type Discovery struct {
 
 // NewDiscovery returns a new Marathon Discovery.
 func NewDiscovery(conf SDConfig, logger log.Logger) (*Discovery, error) {
-	rt, err := config_util.NewRoundTripperFromConfig(conf.HTTPClientConfig, "marathon_sd", false)
+	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "marathon_sd", false, false)
 	if err != nil {
 		return nil, err
 	}
@@ -137,12 +160,12 @@ func NewDiscovery(conf SDConfig, logger log.Logger) (*Discovery, error) {
 }
 
 type authTokenRoundTripper struct {
-	authToken config_util.Secret
+	authToken config.Secret
 	rt        http.RoundTripper
 }
 
 // newAuthTokenRoundTripper adds the provided auth token to a request.
-func newAuthTokenRoundTripper(token config_util.Secret, rt http.RoundTripper) (http.RoundTripper, error) {
+func newAuthTokenRoundTripper(token config.Secret, rt http.RoundTripper) (http.RoundTripper, error) {
 	return &authTokenRoundTripper{token, rt}, nil
 }
 

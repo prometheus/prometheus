@@ -86,7 +86,7 @@ the "Alerts" tab of your Prometheus instance. This will show you the exact
 label sets for which each defined alert is currently active.
 
 For pending and firing alerts, Prometheus also stores synthetic time series of
-the form `ALERTS{alertname="<alert name>", alertstate="pending|firing", <additional alert labels>}`.
+the form `ALERTS{alertname="<alert name>", alertstate="<pending or firing>", <additional alert labels>}`.
 The sample value is set to `1` as long as the alert is in the indicated active
 (pending or firing) state, and the series is marked stale when this is no
 longer the case.

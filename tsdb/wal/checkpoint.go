@@ -25,7 +25,10 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/go-kit/kit/log"
+	"github.com/go-kit/kit/log/level"
 	"github.com/pkg/errors"
+
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/record"
@@ -65,14 +68,12 @@ func DeleteCheckpoints(dir string, maxIndex int) error {
 		return err
 	}
 
-	var errs tsdb_errors.MultiError
+	errs := tsdb_errors.NewMulti()
 	for _, checkpoint := range checkpoints {
 		if checkpoint.index >= maxIndex {
 			break
 		}
-		if err := os.RemoveAll(filepath.Join(dir, checkpoint.name)); err != nil {
-			errs.Add(err)
-		}
+		errs.Add(os.RemoveAll(filepath.Join(dir, checkpoint.name)))
 	}
 	return errs.Err()
 }
@@ -87,9 +88,11 @@ const checkpointPrefix = "checkpoint."
 // segmented format as the original WAL itself.
 // This makes it easy to read it through the WAL package and concatenate
 // it with the original WAL.
-func Checkpoint(w *WAL, from, to int, keep func(id uint64) bool, mint int64) (*CheckpointStats, error) {
+func Checkpoint(logger log.Logger, w *WAL, from, to int, keep func(id uint64) bool, mint int64) (*CheckpointStats, error) {
 	stats := &CheckpointStats{}
 	var sgmReader io.ReadCloser
+
+	level.Info(logger).Log("msg", "Creating checkpoint", "from_segment", from, "to_segment", to, "mint", mint)
 
 	{
 
@@ -217,7 +220,8 @@ func Checkpoint(w *WAL, from, to int, keep func(id uint64) bool, mint int64) (*C
 			stats.DroppedTombstones += len(tstones) - len(repl)
 
 		default:
-			return nil, errors.New("invalid record type")
+			// Unknown record type, probably from a future Prometheus version.
+			continue
 		}
 		if len(buf[start:]) == 0 {
 			continue // All contents discarded.
@@ -245,6 +249,20 @@ func Checkpoint(w *WAL, from, to int, keep func(id uint64) bool, mint int64) (*C
 	if err := cp.Close(); err != nil {
 		return nil, errors.Wrap(err, "close checkpoint")
 	}
+
+	// Sync temporary directory before rename.
+	df, err := fileutil.OpenDir(cpdirtmp)
+	if err != nil {
+		return nil, errors.Wrap(err, "open temporary checkpoint directory")
+	}
+	if err := df.Sync(); err != nil {
+		df.Close()
+		return nil, errors.Wrap(err, "sync temporary checkpoint directory")
+	}
+	if err = df.Close(); err != nil {
+		return nil, errors.Wrap(err, "close temporary checkpoint directory")
+	}
+
 	if err := fileutil.Replace(cpdirtmp, cpdir); err != nil {
 		return nil, errors.Wrap(err, "rename checkpoint directory")
 	}

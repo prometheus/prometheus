@@ -19,10 +19,8 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/cespare/xxhash"
+	"github.com/cespare/xxhash/v2"
 )
-
-const sep = '\xff'
 
 // Well-known label names used by Prometheus components.
 const (
@@ -30,7 +28,11 @@ const (
 	AlertName    = "alertname"
 	BucketLabel  = "le"
 	InstanceName = "instance"
+
+	labelSep = '\xfe'
 )
+
+var seps = []byte{'\xff'}
 
 // Label is a key/value pair of strings.
 type Label struct {
@@ -59,8 +61,23 @@ func (ls Labels) String() string {
 		b.WriteString(strconv.Quote(l.Value))
 	}
 	b.WriteByte('}')
-
 	return b.String()
+}
+
+// Bytes returns ls as a byte slice.
+// It uses an byte invalid character as a separator and so should not be used for printing.
+func (ls Labels) Bytes(buf []byte) []byte {
+	b := bytes.NewBuffer(buf[:0])
+	b.WriteByte(labelSep)
+	for i, l := range ls {
+		if i > 0 {
+			b.WriteByte(seps[0])
+		}
+		b.WriteString(l.Name)
+		b.WriteByte(seps[0])
+		b.WriteString(l.Value)
+	}
+	return b.Bytes()
 }
 
 // MarshalJSON implements json.Marshaler.
@@ -118,13 +135,26 @@ func (ls Labels) MatchLabels(on bool, names ...string) Labels {
 
 // Hash returns a hash value for the label set.
 func (ls Labels) Hash() uint64 {
+	// Use xxhash.Sum64(b) for fast path as it's faster.
 	b := make([]byte, 0, 1024)
+	for i, v := range ls {
+		if len(b)+len(v.Name)+len(v.Value)+2 >= cap(b) {
+			// If labels entry is 1KB+ do not allocate whole entry.
+			h := xxhash.New()
+			_, _ = h.Write(b)
+			for _, v := range ls[i:] {
+				_, _ = h.WriteString(v.Name)
+				_, _ = h.Write(seps)
+				_, _ = h.WriteString(v.Value)
+				_, _ = h.Write(seps)
+			}
+			return h.Sum64()
+		}
 
-	for _, v := range ls {
 		b = append(b, v.Name...)
-		b = append(b, sep)
+		b = append(b, seps[0])
 		b = append(b, v.Value...)
-		b = append(b, sep)
+		b = append(b, seps[0])
 	}
 	return xxhash.Sum64(b)
 }
@@ -141,9 +171,9 @@ func (ls Labels) HashForLabels(b []byte, names ...string) (uint64, []byte) {
 			i++
 		} else {
 			b = append(b, ls[i].Name...)
-			b = append(b, sep)
+			b = append(b, seps[0])
 			b = append(b, ls[i].Value...)
-			b = append(b, sep)
+			b = append(b, seps[0])
 			i++
 			j++
 		}
@@ -165,11 +195,49 @@ func (ls Labels) HashWithoutLabels(b []byte, names ...string) (uint64, []byte) {
 			continue
 		}
 		b = append(b, ls[i].Name...)
-		b = append(b, sep)
+		b = append(b, seps[0])
 		b = append(b, ls[i].Value...)
-		b = append(b, sep)
+		b = append(b, seps[0])
 	}
 	return xxhash.Sum64(b), b
+}
+
+// WithLabels returns a new labels.Labels from ls that only contains labels matching names.
+// 'names' have to be sorted in ascending order.
+func (ls Labels) WithLabels(names ...string) Labels {
+	ret := make([]Label, 0, len(ls))
+
+	i, j := 0, 0
+	for i < len(ls) && j < len(names) {
+		if names[j] < ls[i].Name {
+			j++
+		} else if ls[i].Name < names[j] {
+			i++
+		} else {
+			ret = append(ret, ls[i])
+			i++
+			j++
+		}
+	}
+	return ret
+}
+
+// WithoutLabels returns a new labels.Labels from ls that contains labels not matching names.
+// 'names' have to be sorted in ascending order.
+func (ls Labels) WithoutLabels(names ...string) Labels {
+	ret := make([]Label, 0, len(ls))
+
+	j := 0
+	for i := range ls {
+		for j < len(names) && names[j] < ls[i].Name {
+			j++
+		}
+		if ls[i].Name == MetricName || (j < len(names) && ls[i].Name == names[j]) {
+			continue
+		}
+		ret = append(ret, ls[i])
+	}
+	return ret
 }
 
 // Copy returns a copy of the labels.
@@ -221,6 +289,7 @@ func (ls Labels) WithoutEmpty() Labels {
 		if v.Value != "" {
 			continue
 		}
+		// Do not copy the slice until it's necessary.
 		els := make(Labels, 0, len(ls)-1)
 		for _, v := range ls {
 			if v.Value != "" {

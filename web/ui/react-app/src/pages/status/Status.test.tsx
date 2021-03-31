@@ -11,8 +11,6 @@ describe('Status', () => {
         CWD: '/home/boyskila/Desktop/prometheus',
         reloadConfigSuccess: true,
         lastConfigTime: '2019-10-30T22:03:23+02:00',
-        chunkCount: 1383,
-        timeSeriesCount: 461,
         corruptionCount: 0,
         goroutineCount: 37,
         GOMAXPROCS: 4,

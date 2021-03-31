@@ -18,7 +18,12 @@ import (
 	"time"
 
 	"github.com/prometheus/common/model"
+	"go.uber.org/goleak"
 )
+
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m)
+}
 
 func TestNewDiscoveryError(t *testing.T) {
 	_, err := NewDiscovery(

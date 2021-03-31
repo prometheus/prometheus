@@ -55,10 +55,23 @@ Example:
 
 ### Float literals
 
-Scalar float values can be literally written as numbers of the form
-`[-](digits)[.(digits)]`.
+Scalar float values can be written as literal integer or floating-point numbers in the format (whitespace only included for better readability):
 
+    [-+]?(
+          [0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?
+        | 0[xX][0-9a-fA-F]+
+        | [nN][aA][nN]
+        | [iI][nN][fF]
+    )
+
+Examples:
+
+    23
     -2.43
+    3.4e-9
+    0x8f
+    -Inf
+    NaN
 
 ## Time series Selectors
 
@@ -132,26 +145,39 @@ syntax](https://github.com/google/re2/wiki/Syntax).
 ### Range Vector Selectors
 
 Range vector literals work like instant vector literals, except that they
-select a range of samples back from the current instant. Syntactically, a range
-duration is appended in square brackets (`[]`) at the end of a vector selector
-to specify how far back in time values should be fetched for each resulting
-range vector element.
-
-Time durations are specified as a number, followed immediately by one of the
-following units:
-
-* `s` - seconds
-* `m` - minutes
-* `h` - hours
-* `d` - days
-* `w` - weeks
-* `y` - years
+select a range of samples back from the current instant. Syntactically, a [time
+duration](#time-durations) is appended in square brackets (`[]`) at the end of a
+vector selector to specify how far back in time values should be fetched for
+each resulting range vector element.
 
 In this example, we select all the values we have recorded within the last 5
 minutes for all time series that have the metric name `http_requests_total` and
 a `job` label set to `prometheus`:
 
     http_requests_total{job="prometheus"}[5m]
+
+### Time Durations
+
+Time durations are specified as a number, followed immediately by one of the
+following units:
+
+* `ms` - milliseconds
+* `s` - seconds
+* `m` - minutes
+* `h` - hours
+* `d` - days - assuming a day has always 24h
+* `w` - weeks - assuming a week has always 7d
+* `y` - years - assuming a year has always 365d
+
+Time durations can be combined, by concatenation. Units must be ordered from the
+longest to the shortest. A given unit must only appear once in a time duration.
+
+Here are some examples of valid time durations:
+
+    5h
+    1h30m
+    5m
+    10s
 
 ### Offset modifier
 
@@ -178,11 +204,69 @@ The same works for range vectors. This returns the 5-minute rate that
 
     rate(http_requests_total[5m] offset 1w)
 
+For comparisons with temporal shifts forward in time, a negative offset
+can be specified:
+
+    rate(http_requests_total[5m] offset -1w)
+
+This feature is enabled by setting `--enable-feature=promql-negative-offset`
+flag. See [disabled features](../disabled_features.md) for more details about
+this flag.
+
+### @ modifier
+
+The `@` modifier allows changing the evaluation time for individual instant
+and range vectors in a query. The time supplied to the `@` modifier
+is a unix timestamp and described with a float literal. 
+
+For example, the following expression returns the value of
+`http_requests_total` at `2021-01-04T07:40:00+00:00`:
+
+    http_requests_total @ 1609746000
+
+Note that the `@` modifier always needs to follow the selector
+immediately, i.e. the following would be correct:
+
+    sum(http_requests_total{method="GET"} @ 1609746000) // GOOD.
+
+While the following would be *incorrect*:
+
+    sum(http_requests_total{method="GET"}) @ 1609746000 // INVALID.
+
+The same works for range vectors. This returns the 5-minute rate that
+`http_requests_total` had at `2021-01-04T07:40:00+00:00`:
+
+    rate(http_requests_total[5m] @ 1609746000)
+
+The `@` modifier supports all representation of float literals described
+above within the limits of `int64`. It can also be used along
+with the `offset` modifier where the offset is applied relative to the `@`
+modifier time irrespective of which modifier is written first.
+These 2 queries will produce the same result.
+
+    # offset after @
+    http_requests_total @ 1609746000 offset 5m
+    # offset before @
+    http_requests_total offset 5m @ 1609746000
+
+This modifier is disabled by default since it breaks the invariant that PromQL
+does not look ahead of the evaluation time for samples. It can be enabled by setting
+`--enable-feature=promql-at-modifier` flag. See [disabled features](../disabled_features.md) for more details about this flag.
+
+Additionally, `start()` and `end()` can also be used as values for the `@` modifier as special values.
+
+For a range query, they resolve to the start and end of the range query respectively and remain the same for all steps.
+
+For an instant query, `start()` and `end()` both resolve to the evaluation time.
+
+    http_requests_total @ start()
+    rate(http_requests_total[5m] @ end())
+
 ## Subquery
 
-Subquery allows you to run an instant query for a given range and resolution. The result of a subquery is a range vector. 
+Subquery allows you to run an instant query for a given range and resolution. The result of a subquery is a range vector.
 
-Syntax: `<instant_query> '[' <range> ':' [<resolution>] ']' [ offset <duration> ]`
+Syntax: `<instant_query> '[' <range> ':' [<resolution>] ']' [ @ <float_literal> ] [ offset <duration> ]`
 
 * `<resolution>` is optional. Default is the global evaluation interval.
 

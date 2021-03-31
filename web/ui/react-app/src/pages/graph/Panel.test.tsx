@@ -32,6 +32,7 @@ const defaultProps = {
   onExecuteQuery: (): void => {
     // Do nothing.
   },
+  enableAutocomplete: true,
 };
 
 describe('Panel', () => {
@@ -40,14 +41,12 @@ describe('Panel', () => {
   it('renders an ExpressionInput', () => {
     const input = panel.find(ExpressionInput);
     expect(input.prop('value')).toEqual('prometheus_engine');
-    expect(input.prop('autocompleteSections')).toEqual({
-      'Metric Names': [
-        'prometheus_engine_queries',
-        'prometheus_engine_queries_concurrent_max',
-        'prometheus_engine_query_duration_seconds',
-      ],
-      'Query History': [],
-    });
+    expect(input.prop('metricNames')).toEqual([
+      'prometheus_engine_queries',
+      'prometheus_engine_queries_concurrent_max',
+      'prometheus_engine_query_duration_seconds',
+    ]);
+    expect(input.prop('queryHistory')).toEqual([]);
   });
 
   it('renders NavLinks', () => {
@@ -65,9 +64,13 @@ describe('Panel', () => {
       const className = tc.active ? 'active' : '';
       expect(link.prop('className')).toEqual(className);
       link.simulate('click');
-      expect(results).toHaveLength(1);
-      expect(results[0].type).toEqual(tc.panelType.toLowerCase());
-      results.pop();
+      if (tc.active) {
+        expect(results).toHaveLength(0);
+      } else {
+        expect(results).toHaveLength(1);
+        expect(results[0].type).toEqual(tc.panelType.toLowerCase());
+        results.pop();
+      }
     });
   });
 
@@ -116,6 +119,23 @@ describe('Panel', () => {
         expect(panel.state('data')).toEqual('somedata');
         instance.handleChangeType(to);
         expect(panel.state('data')).toBeNull();
+      });
+    });
+  });
+
+  describe('when clicking on current mode', () => {
+    [PanelType.Table, PanelType.Graph].forEach((mode: PanelType) => {
+      it(`${mode} keeps data`, () => {
+        const props = {
+          ...defaultProps,
+          options: { ...defaultProps.options, type: mode },
+        };
+        const panel = shallow(<Panel {...props} />);
+        const instance: any = panel.instance();
+        panel.setState({ data: 'somedata' });
+        expect(panel.state('data')).toEqual('somedata');
+        instance.handleChangeType(mode);
+        expect(panel.state('data')).toEqual('somedata');
       });
     });
   });
