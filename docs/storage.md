@@ -175,6 +175,7 @@ The recording rule files provided should be a normal [Prometheus rules file](htt
 The output of `promtool tsdb create-blocks-from rules` command is a directory that contains blocks with the historical rule data for all rules in the recording rule files. By default the output directory is `data/`. In order to make use of this new block data, the blocks must be moved to a running Prometheus instance data dir `storage.tsdb.path` that has the flag `--storage.tsdb.allow-overlapping-blocks` enabled. Once moved, the new blocks will merge with existing blocks when the next compaction runs.
 
 ### Limitations
+
 - If you run the rule backfiller multiple times with the overlapping start/end times, blocks containing the same data will be created each time the rule backfiller is run.
 - All rules in the recording rule files will be evaluated.
 - If the `interval` is set in the recording rule file that will take priority over the `eval-interval` flag in the rule backfill command.
