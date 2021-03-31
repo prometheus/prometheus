@@ -175,7 +175,7 @@ func (c *EC2SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
 func (c *LightsailSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	*c = LightsailDefaultSDConfig
-	type plain EC2SDConfig
+	type plain LightsailSDConfig
 	err := unmarshal((*plain)(c))
 	if err != nil {
 		return err
@@ -185,7 +185,9 @@ func (c *LightsailSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 		if err != nil {
 			return err
 		}
+
 		metadata := ec2metadata.New(sess)
+
 		region, err := metadata.Region()
 		if err != nil {
 			return errors.New("Lightsail SD configuration requires a region")
@@ -439,7 +441,7 @@ func (d *LightsailDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group,
 
 	input := &lightsail.GetInstancesInput{}
 
-	srvs, err := lightsailClient.GetInstancesWithContext(ctx, input)
+	output, err := lightsailClient.GetInstancesWithContext(ctx, input)
 	if err != nil {
 		if awsErr, ok := err.(awserr.Error); ok && (awsErr.Code() == "AuthFailure" || awsErr.Code() == "UnauthorizedOperation") {
 			d.lightsail = nil
@@ -447,7 +449,7 @@ func (d *LightsailDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group,
 		return nil, errors.Wrap(err, "could not describe instances")
 	}
 
-	for _, inst := range srvs.Instances {
+	for _, inst := range output.Instances {
 		if inst.PrivateIpAddress == nil {
 			continue
 		}

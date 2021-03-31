@@ -466,14 +466,14 @@ var expectedConf = &Config{
 			HTTPClientConfig: config.DefaultHTTPClientConfig,
 
 			ServiceDiscoveryConfigs: discovery.Configs{
-				&ec2.SDConfig{
+				&amazon.EC2SDConfig{
 					Region:          "us-east-1",
 					AccessKey:       "access",
 					SecretKey:       "mysecret",
 					Profile:         "profile",
 					RefreshInterval: model.Duration(60 * time.Second),
 					Port:            80,
-					Filters: []*ec2.Filter{
+					Filters: []*amazon.Filter{
 						{
 							Name:   "tag:environment",
 							Values: []string{"prod"},
@@ -483,6 +483,38 @@ var expectedConf = &Config{
 							Values: []string{"web", "db"},
 						},
 					},
+				},
+			},
+		},
+		{
+			JobName: "service-lightsail",
+
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
+
+			MetricsPath:      DefaultScrapeConfig.MetricsPath,
+			Scheme:           DefaultScrapeConfig.Scheme,
+			HTTPClientConfig: config.DefaultHTTPClientConfig,
+
+			ServiceDiscoveryConfigs: discovery.Configs{
+				&amazon.LightsailSDConfig{
+					Region:          "us-east-1",
+					AccessKey:       "access",
+					SecretKey:       "mysecret",
+					Profile:         "profile",
+					RefreshInterval: model.Duration(60 * time.Second),
+					Port:            80,
+				//	Filters: []*amazon.Filter{
+				//		{
+				//			Name:   "tag:environment",
+				//			Values: []string{"prod"},
+				//		},
+				//		{
+				//			Name:   "tag:service",
+				//			Values: []string{"web", "db"},
+				//		},
+				//	},
 				},
 			},
 		},
@@ -887,7 +919,7 @@ func TestElideSecrets(t *testing.T) {
 	yamlConfig := string(config)
 
 	matches := secretRe.FindAllStringIndex(yamlConfig, -1)
-	require.Equal(t, 12, len(matches), "wrong number of secret matches found")
+	require.Equal(t, 13, len(matches), "wrong number of secret matches found")
 	require.NotContains(t, yamlConfig, "mysecret",
 		"yaml marshal reveals authentication credentials.")
 }
