@@ -426,14 +426,6 @@ func (n *Manager) Alertmanagers() []*url.URL {
 	return res
 }
 
-// Alertmanagers returns a slice of Alertmanager URLs.
-func (n *Manager) GetAlertManagers() map[string]*alertmanagerSet {
-	n.mtx.RLock()
-	amSets := n.alertmanagers
-	n.mtx.RUnlock()
-	return amSets
-}
-
 // DroppedAlertmanagers returns a slice of Alertmanager URLs.
 func (n *Manager) DroppedAlertmanagers() []*url.URL {
 	n.mtx.RLock()
