@@ -99,7 +99,7 @@ type TargetRetriever interface {
 type AlertmanagerRetriever interface {
 	Alertmanagers() []*url.URL
 	DroppedAlertmanagers() []*url.URL
-	TargetsAll() map[string][]notifier.Alertmanager
+	TargetsAll() map[string][]notifier.Target
 }
 
 // RulesRetriever provides a list of active rules and alerts.

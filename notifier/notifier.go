@@ -408,7 +408,6 @@ func (n *Manager) setMore() {
 	}
 }
 
-// Alertmanagers returns a slice of Alertmanager URLs.
 func (n *Manager) Alertmanagers() []*url.URL {
 	n.mtx.RLock()
 	amSets := n.alertmanagers
@@ -425,6 +424,14 @@ func (n *Manager) Alertmanagers() []*url.URL {
 	}
 
 	return res
+}
+
+// Alertmanagers returns a slice of Alertmanager URLs.
+func (n *Manager) GetAlertManagers() map[string]*alertmanagerSet {
+	n.mtx.RLock()
+	amSets := n.alertmanagers
+	n.mtx.RUnlock()
+	return amSets
 }
 
 // DroppedAlertmanagers returns a slice of Alertmanager URLs.
@@ -602,11 +609,24 @@ func (n *Manager) Stop() {
 	n.cancel()
 }
 
-// Alertmanager holds Alertmanager endpoint information.
-type Alertmanager interface {
+// alertmanager holds Alertmanager endpoint information.
+type alertmanager interface {
 	url() *url.URL
-	Labels() labels.Labels
-	DiscoveredLabels() labels.Labels
+}
+
+type alertmanagerLabels struct {
+	labels.Labels
+	discoveredLabels labels.Labels
+}
+
+const pathLabel = "__alerts_path__"
+
+func (a alertmanagerLabels) url() *url.URL {
+	return &url.URL{
+		Scheme: a.Get(model.SchemeLabel),
+		Host:   a.Get(model.AddressLabel),
+		Path:   a.Get(pathLabel),
+	}
 }
 
 type Target struct {
@@ -614,20 +634,10 @@ type Target struct {
 	labels           labels.Labels
 }
 
-const pathLabel = "__alerts_path__"
-
-func (a Target) url() *url.URL {
-	return &url.URL{
-		Scheme: a.labels.Get(model.SchemeLabel),
-		Host:   a.labels.Get(model.AddressLabel),
-		Path:   a.labels.Get(pathLabel),
-	}
-}
-
 func (a Target) Labels() labels.Labels {
 	lset := make(labels.Labels, 0, len(a.labels))
 	for _, l := range a.labels {
-		if !strings.HasPrefix(l.Name, model.ReservedLabelPrefix) {
+		if l.Name == model.AddressLabel || !strings.HasPrefix(l.Name, model.ReservedLabelPrefix) {
 			lset = append(lset, l)
 		}
 	}
@@ -640,16 +650,26 @@ func (a Target) DiscoveredLabels() labels.Labels {
 	return lset
 }
 
-func (n *Manager) TargetsAll() map[string][]Alertmanager {
+func (n *Manager) TargetsAll() map[string][]Target {
 	n.mtx.Lock()
 	defer n.mtx.Unlock()
-	targets := make(map[string][]Alertmanager, len(n.alertmanagers))
+	targets := make(map[string][]Target, len(n.alertmanagers))
 	for key, am := range n.alertmanagers {
-		if am.droppedAms == nil {
-			targets[key] = am.ams
+		if am.droppedAms == nil || len(am.droppedAms) == 0 {
+			tars := make([]Target, 0, len(am.ams))
+			for _, a := range am.ams {
+				alb := a.(alertmanagerLabels)
+				tars = append(tars, Target{labels: alb.Labels, discoveredLabels: alb.discoveredLabels})
+			}
+			targets[key] = tars
 			continue
 		}
-		targets[key] = append(am.ams, am.droppedAms...)
+		tars := make([]Target, 0, len(am.droppedAms))
+		for _, a := range am.droppedAms {
+			alb := a.(alertmanagerLabels)
+			tars = append(tars, Target{labels: alb.Labels, discoveredLabels: alb.discoveredLabels})
+		}
+		targets[key] = tars
 	}
 	return targets
 }
@@ -663,8 +683,8 @@ type alertmanagerSet struct {
 	metrics *alertMetrics
 
 	mtx        sync.RWMutex
-	ams        []Alertmanager
-	droppedAms []Alertmanager
+	ams        []alertmanager
+	droppedAms []alertmanager
 	logger     log.Logger
 }
 
@@ -685,8 +705,8 @@ func newAlertmanagerSet(cfg *config.AlertmanagerConfig, logger log.Logger, metri
 // sync extracts a deduplicated set of Alertmanager endpoints from a list
 // of target groups definitions.
 func (s *alertmanagerSet) sync(tgs []*targetgroup.Group) {
-	allAms := []Alertmanager{}
-	allDroppedAms := []Alertmanager{}
+	allAms := []alertmanager{}
+	allDroppedAms := []alertmanager{}
 
 	for _, tg := range tgs {
 		ams, droppedAms, err := alertmanagerFromGroup(tg, s.cfg)
@@ -701,8 +721,8 @@ func (s *alertmanagerSet) sync(tgs []*targetgroup.Group) {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 	// Set new Alertmanagers and deduplicate them along their unique URL.
-	s.ams = []Alertmanager{}
-	s.droppedAms = []Alertmanager{}
+	s.ams = []alertmanager{}
+	s.droppedAms = []alertmanager{}
 	s.droppedAms = append(s.droppedAms, allDroppedAms...)
 	seen := map[string]struct{}{}
 
@@ -728,9 +748,9 @@ func postPath(pre string, v config.AlertmanagerAPIVersion) string {
 
 // alertmanagerFromGroup extracts a list of alertmanagers from a target group
 // and an associated AlertmanagerConfig.
-func alertmanagerFromGroup(tg *targetgroup.Group, cfg *config.AlertmanagerConfig) ([]Alertmanager, []Alertmanager, error) {
-	var res []Alertmanager
-	var droppedAlertManagers []Alertmanager
+func alertmanagerFromGroup(tg *targetgroup.Group, cfg *config.AlertmanagerConfig) ([]alertmanager, []alertmanager, error) {
+	var res []alertmanager
+	var droppedAlertManagers []alertmanager
 
 	for _, tlset := range tg.Targets {
 		lbls := make([]labels.Label, 0, len(tlset)+2+len(tg.Labels))
@@ -751,7 +771,7 @@ func alertmanagerFromGroup(tg *targetgroup.Group, cfg *config.AlertmanagerConfig
 
 		lset := relabel.Process(labels.New(lbls...), cfg.RelabelConfigs...)
 		if lset == nil {
-			droppedAlertManagers = append(droppedAlertManagers, Target{labels: lbls, discoveredLabels: lbls})
+			droppedAlertManagers = append(droppedAlertManagers, alertmanagerLabels{Labels: lbls, discoveredLabels: lbls})
 			continue
 		}
 
@@ -796,7 +816,7 @@ func alertmanagerFromGroup(tg *targetgroup.Group, cfg *config.AlertmanagerConfig
 			}
 		}
 
-		res = append(res, Target{labels: lset, discoveredLabels: lbls})
+		res = append(res, alertmanagerLabels{Labels: lset, discoveredLabels: lbls})
 	}
 	return res, droppedAlertManagers, nil
 }
