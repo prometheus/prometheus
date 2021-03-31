@@ -104,7 +104,7 @@ check_circleci_orb() {
     return 1
   fi
 
-  if [[ "${orb_version}" != "${prometheus_orb_version}" ]]; then
+  if [[ "${orb_version}" != "null" && "${orb_version}" != "${prometheus_orb_version}" ]]; then
     echo "CircleCI-orb"
   fi
 }
