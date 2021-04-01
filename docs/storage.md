@@ -150,3 +150,34 @@ promtool tsdb create-blocks-from openmetrics <input file> [<output directory>]
 ```
 
 After the creation of the blocks, move it to the data directory of Prometheus. If there is an overlap with the existing blocks in Prometheus, the flag `--storage.tsdb.allow-overlapping-blocks` needs to be set. Note that any backfilled data is subject to the retention configured for your Prometheus server (by time or size).
+
+## Backfilling for Recording Rules
+
+### Overview
+
+When a new recording rule is created, there is no historical data for it. Recording rule data only exists from the creation time on. `promtool` makes it possible to create historical recording rule data.
+
+### Usage
+
+To see all options, use: `$ promtool tsdb create-blocks-from rules --help`.
+
+Example usage:
+```
+$ promtool tsdb create-blocks-from rules \
+    --start 1617079873 \
+    --end 1617097873 \
+    --url http://mypromserver.com:9090 \
+    rules.yaml rules2.yaml
+```
+
+The recording rule files provided should be a normal [Prometheus rules file](https://prometheus.io/docs/prometheus/latest/configuration/recording_rules/).
+
+The output of `promtool tsdb create-blocks-from rules` command is a directory that contains blocks with the historical rule data for all rules in the recording rule files. By default the output directory is `data/`. In order to make use of this new block data, the blocks must be moved to a running Prometheus instance data dir `storage.tsdb.path` that has the flag `--storage.tsdb.allow-overlapping-blocks` enabled. Once moved, the new blocks will merge with existing blocks when the next compaction runs.
+
+### Limitations
+
+- If you run the rule backfiller multiple times with the overlapping start/end times, blocks containing the same data will be created each time the rule backfiller is run.
+- All rules in the recording rule files will be evaluated.
+- If the `interval` is set in the recording rule file that will take priority over the `eval-interval` flag in the rule backfill command.
+- Alerts are currently ignored if they are in the recording rule file.
+- Rules in the same group cannot see the results of previous rules. Meaning that rules that refer to other rules being backfilled is not supported. A workaround is to backfill mulitple times and create the dependent data first (and move dependent data to the Prometheus server data dir so that it is accessible from the Prometheus API).
