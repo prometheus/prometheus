@@ -3125,12 +3125,131 @@ func TestNoPanicOnTSDBOpenError(t *testing.T) {
 	require.NoError(t, lockf.Release())
 }
 
+func TestQuerier_ShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChunks(t *testing.T) {
+	const (
+		numSeries                = 1000
+		numStressIterations      = 10000
+		minStressAllocationBytes = 1 * 1024 * 1024
+		maxStressAllocationBytes = 2 * 1024 * 1024
+	)
+
+	db := openTestDB(t, nil, nil)
+	defer func() {
+		require.NoError(t, db.Close())
+	}()
+
+	// Disable compactions so we can control it.
+	db.DisableCompactions()
+
+	// Generate the metrics we're going to append.
+	metrics := make([]labels.Labels, 0, numSeries)
+	for i := 0; i < numSeries; i++ {
+		metrics = append(metrics, labels.Labels{{Name: labels.MetricName, Value: fmt.Sprintf("test_%d", i)}})
+	}
+
+	// Push 1 sample every 15s for 2x the block duration period.
+	ctx := context.Background()
+	interval := int64(15 * time.Second / time.Millisecond)
+	ts := int64(0)
+
+	for ; ts < 2*DefaultBlockDuration; ts += interval {
+		app := db.Appender(ctx)
+
+		for _, metric := range metrics {
+			_, err := app.Append(0, metric, ts, float64(ts))
+			require.NoError(t, err)
+		}
+
+		require.NoError(t, app.Commit())
+	}
+
+	// Compact the TSDB head for the first time. We expect the head chunks file has been cut.
+	require.NoError(t, db.Compact())
+	require.Equal(t, float64(1), prom_testutil.ToFloat64(db.Head().metrics.headTruncateTotal))
+
+	// Push more samples for another 1x block duration period.
+	for ; ts < 3*DefaultBlockDuration; ts += interval {
+		app := db.Appender(ctx)
+
+		for _, metric := range metrics {
+			_, err := app.Append(0, metric, ts, float64(ts))
+			require.NoError(t, err)
+		}
+
+		require.NoError(t, app.Commit())
+	}
+
+	// At this point we expect 2 mmap-ed head chunks.
+
+	// Get a querier and make sure it's closed only once the test is over.
+	querier, err := db.Querier(ctx, 0, math.MaxInt64)
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, querier.Close())
+	}()
+
+	// Query back all series.
+	hints := &storage.SelectHints{Start: 0, End: math.MaxInt64, Step: interval}
+	seriesSet := querier.Select(true, hints, labels.MustNewMatcher(labels.MatchRegexp, labels.MetricName, ".+"))
+
+	// Fetch samples iterators from all series.
+	var iterators []chunkenc.Iterator
+	actualSeries := 0
+	for seriesSet.Next() {
+		actualSeries++
+
+		// Get the iterator and call Next() so that we're sure the chunk is loaded.
+		it := seriesSet.At().Iterator()
+		it.Next()
+		it.At()
+
+		iterators = append(iterators, it)
+	}
+	require.NoError(t, seriesSet.Err())
+	require.Equal(t, actualSeries, numSeries)
+
+	// Compact the TSDB head again.
+	require.NoError(t, db.Compact())
+	require.Equal(t, float64(2), prom_testutil.ToFloat64(db.Head().metrics.headTruncateTotal))
+
+	// At this point we expect 1 head chunk has been deleted.
+
+	// Stress the memory and call GC. This is required to increase the chances
+	// the chunk memory area is released to the kernel.
+	var buf []byte
+	for i := 0; i < numStressIterations; i++ {
+		buf = append(buf, make([]byte, minStressAllocationBytes+rand.Int31n(maxStressAllocationBytes-minStressAllocationBytes))...)
+		if i%1000 == 0 {
+			buf = nil
+		}
+	}
+	runtime.GC()
+
+	// Iterate samples. Here we're summing it just to make sure no golang compiler
+	// optimization triggers in case we discard the result of it.At().
+	var sum float64
+	var firstErr error
+	for _, it := range iterators {
+		for it.Next() {
+			_, v := it.At()
+			sum += v
+		}
+
+		if err := it.Err(); err != nil {
+			firstErr = err
+		}
+	}
+
+	// After having iterated all samples we also want to be sure no error occurred.
+	require.NoError(t, firstErr)
+}
+
 func TestChunkQuerier_ShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChunks(t *testing.T) {
 	const (
-		numSeries                = 100
+		numSeries                = 1000
 		numStressIterations      = 10000
-		minStressAllocationBytes = 100 * 1024
-		maxStressAllocationBytes = 1024 * 1024
+		minStressAllocationBytes = 1 * 1024 * 1024
+		maxStressAllocationBytes = 2 * 1024 * 1024
 	)
 
 	db := openTestDB(t, nil, nil)
@@ -3184,9 +3303,9 @@ func TestChunkQuerier_ShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChu
 	// Get a querier and make sure it's closed only once the test is over.
 	querier, err := db.ChunkQuerier(ctx, 0, math.MaxInt64)
 	require.NoError(t, err)
-	t.Cleanup(func() {
+	defer func() {
 		require.NoError(t, querier.Close())
-	})
+	}()
 
 	// Query back all series.
 	hints := &storage.SelectHints{Start: 0, End: math.MaxInt64, Step: interval}
@@ -3215,7 +3334,7 @@ func TestChunkQuerier_ShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChu
 	var buf []byte
 	for i := 0; i < numStressIterations; i++ {
 		buf = append(buf, make([]byte, minStressAllocationBytes+rand.Int31n(maxStressAllocationBytes-minStressAllocationBytes))...)
-		if i%100 == 0 {
+		if i%1000 == 0 {
 			buf = nil
 		}
 	}
