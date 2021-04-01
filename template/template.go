@@ -22,6 +22,7 @@ import (
 	"net/url"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	text_template "text/template"
 	"time"
@@ -97,6 +98,17 @@ func query(ctx context.Context, q string, ts time.Time, queryFn QueryFunc) (quer
 	return result, nil
 }
 
+func convertToFloat(i interface{}) (float64, error) {
+	switch v := i.(type) {
+	case float64:
+		return v, nil
+	case string:
+		return strconv.ParseFloat(v, 64)
+	default:
+		return 0, fmt.Errorf("can't convert %T to float", v)
+	}
+}
+
 // Expander executes templates in text or HTML mode with a common set of Prometheus template functions.
 type Expander struct {
 	text    string
@@ -163,9 +175,13 @@ func NewTemplateExpander(
 				sort.Stable(sorter)
 				return v
 			},
-			"humanize": func(v float64) string {
+			"humanize": func(i interface{}) (string, error) {
+				v, err := convertToFloat(i)
+				if err != nil {
+					return "", err
+				}
 				if v == 0 || math.IsNaN(v) || math.IsInf(v, 0) {
-					return fmt.Sprintf("%.4g", v)
+					return fmt.Sprintf("%.4g", v), nil
 				}
 				if math.Abs(v) >= 1 {
 					prefix := ""
@@ -176,7 +192,7 @@ func NewTemplateExpander(
 						prefix = p
 						v /= 1000
 					}
-					return fmt.Sprintf("%.4g%s", v, prefix)
+					return fmt.Sprintf("%.4g%s", v, prefix), nil
 				}
 				prefix := ""
 				for _, p := range []string{"m", "u", "n", "p", "f", "a", "z", "y"} {
@@ -186,11 +202,15 @@ func NewTemplateExpander(
 					prefix = p
 					v *= 1000
 				}
-				return fmt.Sprintf("%.4g%s", v, prefix)
+				return fmt.Sprintf("%.4g%s", v, prefix), nil
 			},
-			"humanize1024": func(v float64) string {
+			"humanize1024": func(i interface{}) (string, error) {
+				v, err := convertToFloat(i)
+				if err != nil {
+					return "", err
+				}
 				if math.Abs(v) <= 1 || math.IsNaN(v) || math.IsInf(v, 0) {
-					return fmt.Sprintf("%.4g", v)
+					return fmt.Sprintf("%.4g", v), nil
 				}
 				prefix := ""
 				for _, p := range []string{"ki", "Mi", "Gi", "Ti", "Pi", "Ei", "Zi", "Yi"} {
@@ -200,14 +220,18 @@ func NewTemplateExpander(
 					prefix = p
 					v /= 1024
 				}
-				return fmt.Sprintf("%.4g%s", v, prefix)
+				return fmt.Sprintf("%.4g%s", v, prefix), nil
 			},
-			"humanizeDuration": func(v float64) string {
+			"humanizeDuration": func(i interface{}) (string, error) {
+				v, err := convertToFloat(i)
+				if err != nil {
+					return "", err
+				}
 				if math.IsNaN(v) || math.IsInf(v, 0) {
-					return fmt.Sprintf("%.4g", v)
+					return fmt.Sprintf("%.4g", v), nil
 				}
 				if v == 0 {
-					return fmt.Sprintf("%.4gs", v)
+					return fmt.Sprintf("%.4gs", v), nil
 				}
 				if math.Abs(v) >= 1 {
 					sign := ""
@@ -221,16 +245,16 @@ func NewTemplateExpander(
 					days := int64(v) / 60 / 60 / 24
 					// For days to minutes, we display seconds as an integer.
 					if days != 0 {
-						return fmt.Sprintf("%s%dd %dh %dm %ds", sign, days, hours, minutes, seconds)
+						return fmt.Sprintf("%s%dd %dh %dm %ds", sign, days, hours, minutes, seconds), nil
 					}
 					if hours != 0 {
-						return fmt.Sprintf("%s%dh %dm %ds", sign, hours, minutes, seconds)
+						return fmt.Sprintf("%s%dh %dm %ds", sign, hours, minutes, seconds), nil
 					}
 					if minutes != 0 {
-						return fmt.Sprintf("%s%dm %ds", sign, minutes, seconds)
+						return fmt.Sprintf("%s%dm %ds", sign, minutes, seconds), nil
 					}
 					// For seconds, we display 4 significant digits.
-					return fmt.Sprintf("%s%.4gs", sign, v)
+					return fmt.Sprintf("%s%.4gs", sign, v), nil
 				}
 				prefix := ""
 				for _, p := range []string{"m", "u", "n", "p", "f", "a", "z", "y"} {
@@ -240,17 +264,25 @@ func NewTemplateExpander(
 					prefix = p
 					v *= 1000
 				}
-				return fmt.Sprintf("%.4g%ss", v, prefix)
+				return fmt.Sprintf("%.4g%ss", v, prefix), nil
 			},
-			"humanizePercentage": func(v float64) string {
-				return fmt.Sprintf("%.4g%%", v*100)
+			"humanizePercentage": func(i interface{}) (string, error) {
+				v, err := convertToFloat(i)
+				if err != nil {
+					return "", err
+				}
+				return fmt.Sprintf("%.4g%%", v*100), nil
 			},
-			"humanizeTimestamp": func(v float64) string {
+			"humanizeTimestamp": func(i interface{}) (string, error) {
+				v, err := convertToFloat(i)
+				if err != nil {
+					return "", err
+				}
 				if math.IsNaN(v) || math.IsInf(v, 0) {
-					return fmt.Sprintf("%.4g", v)
+					return fmt.Sprintf("%.4g", v), nil
 				}
 				t := model.TimeFromUnixNano(int64(v * 1e9)).Time().UTC()
-				return fmt.Sprint(t)
+				return fmt.Sprint(t), nil
 			},
 			"pathPrefix": func() string {
 				return externalURL.Path
