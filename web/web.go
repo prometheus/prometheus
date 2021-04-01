@@ -265,7 +265,7 @@ func New(logger log.Logger, o *Options) *Handler {
 
 	cwd, err := os.Getwd()
 	if err != nil {
-		cwd = ""
+		cwd = "<error retrieving current working directory>"
 	}
 
 	h := &Handler{
@@ -370,7 +370,7 @@ func New(logger log.Logger, o *Options) *Handler {
 		fs := server.StaticFileServer(ui.Assets)
 		fs.ServeHTTP(w, r)
 	})
-	// Make sure that "/classic" is redirected to "/classic/" and
+	// Make sure that "<path-prefix>/classic" is redirected to "<path-prefix>/classic/" and
 	// not just the naked "/classic/", which would be the default behavior of the router
 	// with the "RedirectTrailingSlash" option (https://godoc.org/github.com/julienschmidt/httprouter#Router.RedirectTrailingSlash),
 	// and which breaks users with a --web.route-prefix that deviates from the path derived
