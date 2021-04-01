@@ -3184,9 +3184,6 @@ func TestChunkQuerier_ShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChu
 	// Get a querier and make sure it's closed only once the test is over.
 	querier, err := db.ChunkQuerier(ctx, 0, math.MaxInt64)
 	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, querier.Close())
-	})
 
 	// Query back all series.
 	hints := &storage.SelectHints{Start: 0, End: math.MaxInt64, Step: interval}
@@ -3205,8 +3202,13 @@ func TestChunkQuerier_ShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChu
 	require.Equal(t, actualSeries, numSeries)
 
 	// Compact the TSDB head again.
-	require.NoError(t, db.Compact())
-	require.Equal(t, float64(2), prom_testutil.ToFloat64(db.Head().metrics.headTruncateTotal))
+	compact := sync.WaitGroup{}
+	compact.Add(1)
+	go func() {
+		defer compact.Done()
+		require.NoError(t, db.Compact())
+		require.Equal(t, float64(2), prom_testutil.ToFloat64(db.Head().metrics.headTruncateTotal))
+	}()
 
 	// At this point we expect 1 head chunk has been deleted.
 
@@ -3231,4 +3233,10 @@ func TestChunkQuerier_ShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChu
 		_, err := chkCRC32.Write(chunk.Bytes())
 		require.NoError(t, err)
 	}
+
+	// Close querier.
+	require.NoError(t, querier.Close())
+
+	// Wait until Compact() has done. We expect to succeed once we close the querier.
+	compact.Wait()
 }
