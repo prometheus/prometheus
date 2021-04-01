@@ -25,6 +25,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"sync"
@@ -41,6 +42,7 @@ import (
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/index"
@@ -3121,4 +3123,112 @@ func TestNoPanicOnTSDBOpenError(t *testing.T) {
 	require.Error(t, err)
 
 	require.NoError(t, lockf.Release())
+}
+
+func TestChunkQuerier_ShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChunks(t *testing.T) {
+	const (
+		numSeries                = 100
+		numStressIterations      = 10000
+		minStressAllocationBytes = 100 * 1024
+		maxStressAllocationBytes = 1024 * 1024
+	)
+
+	db := openTestDB(t, nil, nil)
+	defer func() {
+		require.NoError(t, db.Close())
+	}()
+
+	// Disable compactions so we can control it.
+	db.DisableCompactions()
+
+	// Generate the metrics we're going to append.
+	metrics := make([]labels.Labels, 0, numSeries)
+	for i := 0; i < numSeries; i++ {
+		metrics = append(metrics, labels.Labels{{Name: labels.MetricName, Value: fmt.Sprintf("test_%d", i)}})
+	}
+
+	// Push 1 sample every 15s for 2x the block duration period.
+	ctx := context.Background()
+	interval := int64(15 * time.Second / time.Millisecond)
+	ts := int64(0)
+
+	for ; ts < 2*DefaultBlockDuration; ts += interval {
+		app := db.Appender(ctx)
+
+		for _, metric := range metrics {
+			_, err := app.Append(0, metric, ts, float64(ts))
+			require.NoError(t, err)
+		}
+
+		require.NoError(t, app.Commit())
+	}
+
+	// Compact the TSDB head for the first time. We expect the head chunks file has been cut.
+	require.NoError(t, db.Compact())
+	require.Equal(t, float64(1), prom_testutil.ToFloat64(db.Head().metrics.headTruncateTotal))
+
+	// Push more samples for another 1x block duration period.
+	for ; ts < 3*DefaultBlockDuration; ts += interval {
+		app := db.Appender(ctx)
+
+		for _, metric := range metrics {
+			_, err := app.Append(0, metric, ts, float64(ts))
+			require.NoError(t, err)
+		}
+
+		require.NoError(t, app.Commit())
+	}
+
+	// At this point we expect 2 mmap-ed head chunks.
+
+	// Get a querier and make sure it's closed only once the test is over.
+	querier, err := db.ChunkQuerier(ctx, 0, math.MaxInt64)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, querier.Close())
+	})
+
+	// Query back all series.
+	hints := &storage.SelectHints{Start: 0, End: math.MaxInt64, Step: interval}
+	seriesSet := querier.Select(true, hints, labels.MustNewMatcher(labels.MatchRegexp, labels.MetricName, ".+"))
+
+	// Iterate all series and get their chunks.
+	var chunks []chunkenc.Chunk
+	actualSeries := 0
+	for seriesSet.Next() {
+		actualSeries++
+		for it := seriesSet.At().Iterator(); it.Next(); {
+			chunks = append(chunks, it.At().Chunk)
+		}
+	}
+	require.NoError(t, seriesSet.Err())
+	require.Equal(t, actualSeries, numSeries)
+
+	// Compact the TSDB head again.
+	require.NoError(t, db.Compact())
+	require.Equal(t, float64(2), prom_testutil.ToFloat64(db.Head().metrics.headTruncateTotal))
+
+	// At this point we expect 1 head chunk has been deleted.
+
+	// Stress the memory and call GC. This is required to increase the chances
+	// the chunk memory area is released to the kernel.
+	var buf []byte
+	for i := 0; i < numStressIterations; i++ {
+		buf = append(buf, make([]byte, minStressAllocationBytes+rand.Int31n(maxStressAllocationBytes-minStressAllocationBytes))...)
+		if i%100 == 0 {
+			buf = nil
+		}
+	}
+	runtime.GC()
+
+	// Iterate chunks and read their bytes slice. Here we're computing the CRC32
+	// just to iterate through the bytes slice. We don't really care the reason why
+	// we read this data, we just need to read it to make sure the memory address
+	// of the []byte is still valid.
+	chkCRC32 := newCRC32()
+	for _, chunk := range chunks {
+		chkCRC32.Reset()
+		_, err := chkCRC32.Write(chunk.Bytes())
+		require.NoError(t, err)
+	}
 }
