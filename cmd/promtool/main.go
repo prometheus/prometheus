@@ -46,6 +46,7 @@ import (
 	_ "github.com/prometheus/prometheus/discovery/install" // Register service discovery implementations.
 	"github.com/prometheus/prometheus/discovery/kubernetes"
 	"github.com/prometheus/prometheus/pkg/rulefmt"
+	"github.com/prometheus/prometheus/pkg/rulegraph"
 )
 
 func main() {
@@ -75,6 +76,7 @@ func main() {
 
 	checkMetricsCmd := checkCmd.Command("metrics", checkMetricsUsage)
 
+	graphCmd := app.Command("graph", "Graph resources.")
 	graphRulesCmd := graphCmd.Command("rules", "Check rules, if they are all OK, prepare a graph of how metrics are used.")
 	graphRuleFiles := graphRulesCmd.Arg(
 		"rule-files",
