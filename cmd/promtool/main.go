@@ -75,6 +75,12 @@ func main() {
 
 	checkMetricsCmd := checkCmd.Command("metrics", checkMetricsUsage)
 
+	graphRulesCmd := graphCmd.Command("rules", "Check rules, if they are all OK, prepare a graph of how metrics are used.")
+	graphRuleFiles := graphRulesCmd.Arg(
+		"rule-files",
+		"The rule files to check.",
+	).Required().ExistingFiles()
+
 	queryCmd := app.Command("query", "Run query against a Prometheus server.")
 	queryCmdFmt := queryCmd.Flag("format", "Output format of the query.").Short('o').Default("promql").Enum("promql", "json")
 
@@ -183,6 +189,9 @@ func main() {
 
 	case checkMetricsCmd.FullCommand():
 		os.Exit(CheckMetrics())
+
+	case graphRulesCmd.FullCommand():
+		os.Exit(GraphRules(*graphRuleFiles...))
 
 	case queryInstantCmd.FullCommand():
 		os.Exit(QueryInstant(*queryInstantServer, *queryInstantExpr, *queryInstantTime, p))
@@ -443,6 +452,51 @@ func checkDuplicates(groups []rulefmt.RuleGroup) []compareRuleType {
 		}
 	}
 	return duplicates
+}
+
+func GraphRules(files ...string) int {
+	failed := false
+	var allGroups []rulefmt.RuleGroup
+
+	for _, f := range files {
+		if groups, errs := graphRules(f); errs != nil {
+			fmt.Fprintln(os.Stderr, "  FAILED:")
+			for _, e := range errs {
+				fmt.Fprintln(os.Stderr, e.Error())
+			}
+			failed = true
+		} else {
+			allGroups = append(allGroups, groups...)
+		}
+		fmt.Println()
+	}
+	if failed {
+		return 1
+	}
+
+	rulegraph.BuildRuleDiagram(allGroups, os.Stdout)
+	return 0
+}
+
+func graphRules(filename string) ([]rulefmt.RuleGroup, []error) {
+	rgs, errs := rulefmt.ParseFile(filename)
+	if errs != nil {
+		return []rulefmt.RuleGroup{}, errs
+	}
+
+	dRules := checkDuplicates(rgs.Groups)
+	if len(dRules) != 0 {
+		fmt.Printf("%d duplicate rule(s) found.\n", len(dRules))
+		for _, n := range dRules {
+			fmt.Printf("Metric: %s\nLabel(s):\n", n.metric)
+			for i, l := range n.label {
+				fmt.Printf("\t%s: %s\n", i, l)
+			}
+		}
+		fmt.Println("Might cause inconsistency while recording expressions.")
+	}
+
+	return rgs.Groups, nil
 }
 
 func ruleMetric(rule rulefmt.RuleNode) string {
