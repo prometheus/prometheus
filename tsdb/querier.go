@@ -778,18 +778,12 @@ func (m *mergedStringIter) Next() bool {
 		return false
 	}
 
-	if !m.aok {
+	if !m.aok || m.a.At() > m.b.At(){
 		m.cur = m.b.At()
 		m.bok = m.b.Next()
-	} else if !m.bok {
+	} else if !m.bok || m.b.At() > m.a.At() {
 		m.cur = m.a.At()
 		m.aok = m.a.Next()
-	} else if m.b.At() > m.a.At() {
-		m.cur = m.a.At()
-		m.aok = m.a.Next()
-	} else if m.a.At() > m.b.At() {
-		m.cur = m.b.At()
-		m.bok = m.b.Next()
 	} else { // Equal.
 		m.cur = m.b.At()
 		m.aok = m.a.Next()
