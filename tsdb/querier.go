@@ -792,6 +792,7 @@ func (m *mergedStringIter) Next() bool {
 
 	return true
 }
+
 func (m mergedStringIter) At() string { return m.cur }
 func (m mergedStringIter) Err() error {
 	if m.a.Err() != nil {
