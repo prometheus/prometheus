@@ -184,7 +184,7 @@ func newMultipleAppender(ctx context.Context, blockWriter *tsdb.BlockWriter) *mu
 }
 
 // multipleAppender keeps track of how many series have been added to the current appender.
-// If the max samples have been added, then all series are commited and a new appender is created.
+// If the max samples have been added, then all series are committed and a new appender is created.
 type multipleAppender struct {
 	maxSamplesInMemory int
 	currentSampleCount int
