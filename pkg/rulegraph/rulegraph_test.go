@@ -21,7 +21,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
-func TestMetricFinder(t *testing.T) {
+func TestGraphFinder(t *testing.T) {
 	cases := []struct {
 		expr string
 		want []string
@@ -31,7 +31,7 @@ func TestMetricFinder(t *testing.T) {
 	}
 
 	for ix, c := range cases {
-		var mf metricFinder
+		var mf Graph
 		expr, err := parser.ParseExpr(c.expr)
 		if err != nil {
 			t.Errorf("Case #%d, unexpected error: %v", ix, err)
@@ -40,8 +40,8 @@ func TestMetricFinder(t *testing.T) {
 
 		parser.Walk(&mf, expr, nil)
 		want := strings.Join(c.want, ",")
-		sort.Strings(mf.names)
-		saw := strings.Join(mf.names, ",")
+		sort.Strings(mf.nexts)
+		saw := strings.Join(mf.nexts, ",")
 		if saw != want {
 			t.Errorf("Case #%d, saw %s want %s", ix, saw, want)
 		}

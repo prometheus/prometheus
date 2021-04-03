@@ -29,50 +29,63 @@ const (
 	alert    ruleType = 1
 )
 
-type metricFinder struct {
-	names  []string
-	visits int
+type Graph struct {
+	nodes map[string]ruleType
+	edges map[string]bool
+	nexts []string
 }
 
-func (mf *metricFinder) Visit(node parser.Node, path []parser.Node) (parser.Visitor, error) {
+func newGraph() *Graph {
+	rv := new(Graph)
+	rv.nodes = make(map[string]ruleType)
+	rv.edges = make(map[string]bool)
+	return rv
+}
+
+func (g *Graph) Visit(node parser.Node, path []parser.Node) (parser.Visitor, error) {
 	if node == nil && path == nil {
 		return nil, nil
 	}
 
-	mf.visits++
-
 	if vs, ok := node.(*parser.VectorSelector); ok {
-		mf.names = append(mf.names, vs.Name)
-		return nil, nil
+		// We have something that can be used
+		switch {
+		case vs.Name == "ALERTS":
+			// We need to parse out possible alerts...
+			for _, m := range vs.LabelMatchers {
+				if m.Name == "alertname" {
+					for name, rt := range g.nodes {
+						if rt == alert && m.Matches(name) {
+							g.nexts = append(g.nexts, name)
+						}
+					}
+
+				}
+			}
+		case vs.Name != "":
+			g.nexts = append(g.nexts, vs.Name)
+		}
 	}
 
-	return mf, nil
+	return g, nil
 }
 
-// Return all dependency edges from a single rule, this is basically
-// "record/alerd name -> <each metric used in the expr>" with all
-// label filters stripped out.
-func diagramEdges(r rulefmt.RuleNode) []string {
-	var acc []string
+func buildEdge(from, to string) string {
+	return fmt.Sprintf("%s -> %s", from, to)
+}
 
-	name := ruleName(r)
-	parsed, err := parser.ParseExpr(r.Expr.Value)
-	if err != nil {
-		// This should already have been verified
-		return acc
+func (g *Graph) getEdges(r rulefmt.RuleNode) {
+	g.nexts = []string{}
+
+	expr, _ := parser.ParseExpr(r.Expr.Value)
+
+	parser.Walk(g, expr, nil)
+
+	from := ruleName(r)
+	for _, next := range g.nexts {
+		edge := buildEdge(from, next)
+		g.edges[edge] = true
 	}
-
-	var mf metricFinder
-	err = parser.Walk(&mf, parsed, nil)
-	if err != nil {
-		return acc
-	}
-
-	for _, next := range mf.names {
-		acc = append(acc, fmt.Sprintf("%s -> %s", name, next))
-	}
-
-	return acc
 }
 
 func getType(r rulefmt.RuleNode) ruleType {
@@ -102,21 +115,27 @@ func ruleName(r rulefmt.RuleNode) string {
 //
 // When we have processed these, simply serialise the graph as a DOT
 // graph to w.
-func BuildRuleDiagram(groups []rulefmt.RuleGroup, w io.Writer) {
-	nodes := make(map[string]ruleType)
-	edges := make(map[string]bool)
+func BuildRuleDiagram(groups []rulefmt.RuleGroup) *Graph {
+	g := newGraph()
 
 	for _, group := range groups {
 		for _, rule := range group.Rules {
-			nodes[ruleName(rule)] = getType(rule)
-			for _, edge := range diagramEdges(rule) {
-				edges[edge] = true
-			}
+			g.nodes[ruleName(rule)] = getType(rule)
 		}
 	}
 
+	for _, group := range groups {
+		for _, rule := range group.Rules {
+			g.getEdges(rule)
+		}
+	}
+
+	return g
+}
+
+func EmitGraph(g *Graph, w io.Writer) {
 	fmt.Fprintf(w, "digraph {\n")
-	for name, t := range nodes {
+	for name, t := range g.nodes {
 		switch {
 		case t == recorded:
 			fmt.Fprintf(w, "  %s [shape=oval]\n", name)
@@ -129,7 +148,7 @@ func BuildRuleDiagram(groups []rulefmt.RuleGroup, w io.Writer) {
 
 	fmt.Fprintf(w, "\n")
 
-	for edge, _ := range edges {
+	for edge := range g.edges {
 		fmt.Fprintf(w, "  %s\n", edge)
 	}
 
