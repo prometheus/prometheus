@@ -476,7 +476,8 @@ func GraphRules(files ...string) int {
 		return 1
 	}
 
-	rulegraph.BuildRuleDiagram(allGroups, os.Stdout)
+	graph := rulegraph.BuildRuleDiagram(allGroups)
+	rulegraph.EmitGraph(graph, os.Stdout)
 	return 0
 }
 
