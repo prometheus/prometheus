@@ -98,6 +98,7 @@ type ClientConfig struct {
 	Timeout          model.Duration
 	HTTPClientConfig config_util.HTTPClientConfig
 	SigV4Config      *config.SigV4Config
+	OAuth2Config     *config.OAuth2Config
 	Headers          map[string]string
 	RetryOnRateLimit bool
 }
@@ -147,6 +148,10 @@ func NewWriteClient(name string, conf *ClientConfig) (WriteClient, error) {
 		if err != nil {
 			return nil, err
 		}
+	}
+
+	if conf.OAuth2Config != nil {
+		t = newOAuth2RoundTripper(conf.OAuth2Config, httpClient.Transport)
 	}
 
 	if len(conf.Headers) > 0 {

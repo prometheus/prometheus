@@ -2037,6 +2037,11 @@ sigv4:
   # AWS Role ARN, an alternative to using AWS API keys.
   [ role_arn: <string> ]
 
+# Optionally configures OAuth 2.0 authorization for requests.
+oauth2:
+    # Your access token with the needed scopes.
+    [ access_token: <string> ]
+
 # Configures the remote write request's TLS settings.
 tls_config:
   [ <tls_config> ]

@@ -629,6 +629,7 @@ type RemoteWriteConfig struct {
 	QueueConfig      QueueConfig             `yaml:"queue_config,omitempty"`
 	MetadataConfig   MetadataConfig          `yaml:"metadata_config,omitempty"`
 	SigV4Config      *SigV4Config            `yaml:"sigv4,omitempty"`
+	OAuth2Config     *OAuth2Config           `yaml:"oauth2,omitempty"`
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -665,8 +666,8 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 	httpClientConfigAuthEnabled := c.HTTPClientConfig.BasicAuth != nil ||
 		c.HTTPClientConfig.Authorization != nil
 
-	if httpClientConfigAuthEnabled && c.SigV4Config != nil {
-		return fmt.Errorf("at most one of basic_auth, authorization, & sigv4 must be configured")
+	if (httpClientConfigAuthEnabled && (c.SigV4Config != nil || c.OAuth2Config != nil)) || (c.SigV4Config != nil && c.OAuth2Config != nil) {
+		return fmt.Errorf("at most one of basic_auth, authorization, sigv4, & oauth2 must be configured")
 	}
 
 	return nil
@@ -727,6 +728,10 @@ type SigV4Config struct {
 	SecretKey config.Secret `yaml:"secret_key,omitempty"`
 	Profile   string        `yaml:"profile,omitempty"`
 	RoleARN   string        `yaml:"role_arn,omitempty"`
+}
+
+type OAuth2Config struct {
+	AccessToken string `yaml:"access_token,omitempty"`
 }
 
 // RemoteReadConfig is the configuration for reading from remote storage.

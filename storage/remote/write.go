@@ -136,6 +136,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			Timeout:          rwConf.RemoteTimeout,
 			HTTPClientConfig: rwConf.HTTPClientConfig,
 			SigV4Config:      rwConf.SigV4Config,
+			OAuth2Config:     rwConf.OAuth2Config,
 			Headers:          rwConf.Headers,
 			RetryOnRateLimit: rwConf.QueueConfig.RetryOnRateLimit,
 		})
