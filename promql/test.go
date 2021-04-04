@@ -571,7 +571,7 @@ func (t *Test) exec(tc testCommand) error {
 			vec := make(Vector, 0, len(mat))
 			for _, series := range mat {
 				for _, point := range series.Points {
-					if point.T == timeMilliseconds(iq.evalTime) {
+					if point.T == timestamp.FromTime(iq.evalTime) {
 						vec = append(vec, Sample{Metric: series.Metric, Point: point})
 						break
 					}

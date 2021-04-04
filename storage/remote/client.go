@@ -184,20 +184,9 @@ func (t *injectHeadersRoundTripper) RoundTrip(req *http.Request) (*http.Response
 
 const defaultBackoff = 0
 
-type retry struct {
-	after       model.Duration
-	shouldLimit bool
-	maxCount    int
-}
-
 type RecoverableError struct {
 	error
 	retryAfter model.Duration
-}
-
-// DropError is an error such that the samples in the request must be dropped.
-type DropError struct {
-	error
 }
 
 // Store sends a batch of samples to the HTTP endpoint, the request is the proto marshalled

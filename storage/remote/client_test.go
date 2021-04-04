@@ -92,6 +92,14 @@ func TestClientRetryAfter(t *testing.T) {
 	)
 	defer server.Close()
 
+	getClient := func(conf *ClientConfig) WriteClient {
+		hash, err := toHash(conf)
+		require.NoError(t, err)
+		c, err := NewWriteClient(hash, conf)
+		require.NoError(t, err)
+		return c
+	}
+
 	serverURL, err := url.Parse(server.URL)
 	require.NoError(t, err)
 
@@ -101,7 +109,7 @@ func TestClientRetryAfter(t *testing.T) {
 		RetryOnRateLimit: false,
 	}
 
-	c := getClient(t, conf)
+	c := getClient(conf)
 	err = c.Store(context.Background(), []byte{})
 	if _, ok := err.(RecoverableError); ok {
 		t.Fatal("recoverable error not expected")
@@ -113,42 +121,11 @@ func TestClientRetryAfter(t *testing.T) {
 		RetryOnRateLimit: true,
 	}
 
-	c = getClient(t, conf)
+	c = getClient(conf)
 	err = c.Store(context.Background(), []byte{})
 	if _, ok := err.(RecoverableError); !ok {
 		t.Fatal("recoverable error was expected")
 	}
-}
-
-func TestDropSamplesOnUnprocessableStatus(t *testing.T) {
-	server := httptest.NewServer(
-		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			http.Error(w, longErrMessage, 422)
-		}),
-	)
-	defer server.Close()
-
-	serverURL, err := url.Parse(server.URL)
-	require.NoError(t, err)
-
-	conf := &ClientConfig{
-		URL:     &config_util.URL{URL: serverURL},
-		Timeout: model.Duration(time.Second),
-	}
-
-	c := getClient(t, conf)
-	err = c.Store(context.Background(), []byte{})
-	if _, ok := err.(DropError); !ok {
-		t.Fatal("drop error was expected")
-	}
-}
-
-func getClient(t *testing.T, conf *ClientConfig) WriteClient {
-	hash, err := toHash(conf)
-	require.NoError(t, err)
-	c, err := NewWriteClient(hash, conf)
-	require.NoError(t, err)
-	return c
 }
 
 func TestRetryAfterDuration(t *testing.T) {

@@ -60,7 +60,6 @@ func newHighestTimestampMetric() *maxTimestamp {
 }
 
 func TestSampleDelivery(t *testing.T) {
-
 	testcases := []struct {
 		name      string
 		samples   bool
@@ -153,20 +152,107 @@ func TestSampleDelivery(t *testing.T) {
 }
 
 func TestSampleDeliveryWithPolicy(t *testing.T) {
-	n := config.DefaultQueueConfig.MaxSamplesPerSend * 20
+	testcases := []struct {
+		name      string
+		samples   bool
+		exemplars bool
+	}{
+		{samples: true, exemplars: false, name: "samples only"},
+		{samples: true, exemplars: true, name: "both samples and exemplars"},
+		{samples: false, exemplars: true, name: "exemplars only"},
+	}
+
+	dir, err := ioutil.TempDir("", "TestSampleDeliveryWithPolicy")
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, os.RemoveAll(dir))
+	}()
+
+	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil)
+	defer s.Close()
+
+	queueConfig := config.DefaultQueueConfig
+	queueConfig.BatchSendDeadline = model.Duration(100 * time.Millisecond)
+	queueConfig.MaxShards = 1
+
+	writeConfig := config.DefaultRemoteWriteConfig
+	// We need to set URL's so that metric creation doesn't panic.
+	writeConfig.URL = &common_config.URL{
+		URL: &url.URL{
+			Host: "http://test-storage.com",
+		},
+	}
+	writeConfig.QueueConfig = queueConfig
+	writeConfig.SendExemplars = true
+	conf := &config.Config{
+		GlobalConfig: config.DefaultGlobalConfig,
+		RemoteWriteConfigs: []*config.RemoteWriteConfig{
+			&writeConfig,
+		},
+	}
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+			var (
+				series          []record.RefSeries
+				samples         []record.RefSample
+				expectedSamples []record.RefSample
+				exemplars       []record.RefExemplar
+			)
+			n := config.DefaultQueueConfig.MaxSamplesPerSend * 2
+			offset := time.Minute * 30
+			from := n / 2
+
+			// Generates same series in both cases.
+			if tc.samples {
+				samples, expectedSamples, series = createTimeseriesWithOffset(n, n, offset, from)
+			}
+			if tc.exemplars {
+				exemplars, series = createExemplars(n, n)
+			}
+
+			// Apply new config.
+			writeConfig.QueueConfig = config.DefaultQueueConfig
+			writeConfig.QueueConfig.BatchSendDeadline = model.Duration(100 * time.Millisecond)
+			writeConfig.QueueConfig.MaxShards = 1
+			writeConfig.QueueConfig.Capacity = len(samples)
+			writeConfig.QueueConfig.MaxSamplesPerSend = 500
+			writeConfig.QueueConfig.RetryPolicy = &config.RetryPolicy{MinSampleAge: model.Duration(time.Minute * 10)}
+
+			require.NoError(t, s.ApplyConfig(conf))
+			hash, err := toHash(writeConfig)
+			require.NoError(t, err)
+			qm := s.rws.queues[hash]
+
+			c := NewTestWriteClient()
+			qm.SetClient(c)
+
+			qm.StoreSeries(series, 0)
+
+			// Send data.
+			c.expectSamples(expectedSamples, series)
+			c.expectExemplars(exemplars, series)
+			qm.Append(samples)
+			qm.AppendExemplars(exemplars)
+			c.waitForExpectedData(t)
+		})
+	}
+}
+
+func TestSampleDeliveryWithPolicy(t *testing.T) {
+	n := config.DefaultQueueConfig.MaxSamplesPerSend * 2
 	offset := time.Minute * 30
 	from := n / 2
-	samples, series := createTimeseriesWithOffset(n, 1, offset, from)
+	samples, expectedSamples, series := createTimeseriesWithOffset(n, n, offset, from)
 
 	c := NewTestWriteClient()
-	c.expectSamples(samples[:from], series)
+	c.expectSamples(expectedSamples, series)
 
 	queueConfig := config.DefaultQueueConfig
 	queueConfig.BatchSendDeadline = model.Duration(100 * time.Millisecond)
 	queueConfig.MaxShards = 1
 	queueConfig.Capacity = len(samples)
-	queueConfig.MaxSamplesPerSend = len(samples) / 2
-	queueConfig.Retry.Policy.MinSampleAge = model.Duration(offset - time.Minute*10)
+	queueConfig.MaxSamplesPerSend = 500
+	queueConfig.Retry.Policy = &config.RetryPolicy{MinSampleAge: model.Duration(offset - time.Minute*10)}
 
 	dir, err := ioutil.TempDir("", "TestSampleDeliver")
 	require.NoError(t, err)
@@ -525,6 +611,83 @@ func TestShouldReshard(t *testing.T) {
 	}
 }
 
+func TestShouldAttempt(t *testing.T) {
+	tcs := []struct {
+		name            string
+		policy          *config.RetryPolicy
+		minTs           int64
+		previousRetries int
+		shouldAttempt   bool
+	}{
+		{
+			name:          "retry policy is unset",
+			shouldAttempt: true,
+		},
+		{
+			name:          "should retry: policy is time-based",
+			policy:        &config.RetryPolicy{MinSampleAge: model.Duration(time.Minute * 5)},
+			minTs:         timestamp.FromTime(time.Now()),
+			shouldAttempt: true,
+		},
+		{
+			name:   "should not retry: policy is time-based",
+			policy: &config.RetryPolicy{MinSampleAge: model.Duration(time.Minute * 5)},
+			minTs:  timestamp.FromTime(time.Now().Add(-time.Minute * 6)),
+		},
+		{
+			name:            "should retry: policy is retry count based",
+			policy:          &config.RetryPolicy{MaxRetries: 20},
+			previousRetries: 19,
+			shouldAttempt:   true,
+		},
+		{
+			name:            "should retry: policy is retry count based",
+			policy:          &config.RetryPolicy{MaxRetries: 20},
+			previousRetries: 20,
+			shouldAttempt:   true,
+		},
+		{
+			name:            "should not retry: policy is retry count based",
+			policy:          &config.RetryPolicy{MaxRetries: 20},
+			previousRetries: 21,
+		},
+		{
+			name:            "should retry: policy is both retry-count & time based",
+			policy:          &config.RetryPolicy{MinSampleAge: model.Duration(time.Minute * 5), MaxRetries: 20},
+			minTs:           timestamp.FromTime(time.Now()),
+			previousRetries: 20,
+			shouldAttempt:   true,
+		},
+		{
+			name:            "should not retry: policy is both retry-count & time based",
+			policy:          &config.RetryPolicy{MinSampleAge: model.Duration(time.Minute * 5), MaxRetries: 20},
+			minTs:           timestamp.FromTime(time.Now().Add(-time.Minute * 6)),
+			previousRetries: 20,
+		},
+		{
+			name:            "should not retry: policy is both retry-count & time based",
+			policy:          &config.RetryPolicy{MinSampleAge: model.Duration(time.Minute * 5), MaxRetries: 20},
+			minTs:           timestamp.FromTime(time.Now()),
+			previousRetries: 21,
+		},
+		{
+			name:            "should not retry: policy is both retry-count & time based",
+			policy:          &config.RetryPolicy{MinSampleAge: model.Duration(time.Minute * 5), MaxRetries: 20},
+			minTs:           timestamp.FromTime(time.Now().Add(-time.Minute * 6)),
+			previousRetries: 21,
+		},
+	}
+
+	for _, tc := range tcs {
+		result := shouldAttempt(tc.policy, tc.minTs, tc.previousRetries)
+		if tc.shouldAttempt {
+			require.True(t, result, tc.name)
+		} else {
+			require.False(t, result, tc.name)
+		}
+	}
+}
+
 func createTimeseries(numSamples, numSeries int, extraLabels ...labels.Label) ([]record.RefSample, []record.RefSeries) {
 	samples := make([]record.RefSample, 0, numSamples)
 	series := make([]record.RefSeries, 0, numSeries)
@@ -567,28 +730,60 @@ func createExemplars(numExemplars, numSeries int) ([]record.RefExemplar, []recor
 	return exemplars, series
 }
 
-func createTimeseriesWithOffset(numSamples, numSeries int, offsetAfterMid time.Duration, applyOffsetAfterNumSamples int) ([]record.RefSample, []record.RefSeries) {
-	samples := make([]record.RefSample, 0, numSamples)
-	series := make([]record.RefSeries, 0, numSeries)
+func createTimeseriesWithOffset(numSamples, numSeries int, offsetAfterMid time.Duration, applyOffsetAfterNumSamples int) (samples, expectedSamples []record.RefSample, series []record.RefSeries) {
+	samples = make([]record.RefSample, 0, numSamples)
+	expectedSamples = make([]record.RefSample, 0)
+	series = make([]record.RefSeries, 0, numSeries)
 	t := time.Now().UnixNano() / int64(time.Millisecond/time.Nanosecond)
 	for i := 0; i < numSeries; i++ {
 		name := fmt.Sprintf("test_metric_%d", i)
 		for j := 0; j < numSamples; j++ {
-			samples = append(samples, record.RefSample{
+			s := record.RefSample{
 				Ref: uint64(i),
 				T:   t + int64(j),
 				V:   float64(i),
-			})
+			}
+			if j >= applyOffsetAfterNumSamples {
+				s.T -= offsetAfterMid.Milliseconds()
+			} else {
+				expectedSamples = append(expectedSamples, s)
+			}
+			samples = append(samples, s)
 		}
 		series = append(series, record.RefSeries{
 			Ref:    uint64(i),
 			Labels: labels.Labels{{Name: "__name__", Value: name}},
 		})
 	}
-	for i := applyOffsetAfterNumSamples + 1; i < len(samples); i++ {
-		samples[i].T -= offsetAfterMid.Milliseconds()
+	return samples, expectedSamples, series
+}
+
+func createTimeseriesWithOffset(numSamples, numSeries int, offsetAfterMid time.Duration, applyOffsetAfterNumSamples int) (samples, expectedSamples []record.RefSample, series []record.RefSeries) {
+	samples = make([]record.RefSample, 0, numSamples)
+	expectedSamples = make([]record.RefSample, 0)
+	series = make([]record.RefSeries, 0, numSeries)
+	t := time.Now().UnixNano() / int64(time.Millisecond/time.Nanosecond)
+	for i := 0; i < numSeries; i++ {
+		name := fmt.Sprintf("test_metric_%d", i)
+		for j := 0; j < numSamples; j++ {
+			s := record.RefSample{
+				Ref: uint64(i),
+				T:   t + int64(j),
+				V:   float64(i),
+			}
+			if j >= applyOffsetAfterNumSamples {
+				s.T -= offsetAfterMid.Milliseconds()
+			} else {
+				expectedSamples = append(expectedSamples, s)
+			}
+			samples = append(samples, s)
+		}
+		series = append(series, record.RefSeries{
+			Ref:    uint64(i),
+			Labels: labels.Labels{{Name: "__name__", Value: name}},
+		})
 	}
-	return samples, series
+	return samples, expectedSamples, series
 }
 
 func getSeriesNameFromRef(r record.RefSeries) string {

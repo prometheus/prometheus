@@ -1,0 +1,7 @@
+remote_write:
+  - url: localhost:9090
+    queue_config:
+      retry_policy:
+          min_sample_age: 5m
+          max_retries: 20
+  - url: localhost:9201

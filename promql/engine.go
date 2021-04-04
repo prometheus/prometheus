@@ -550,10 +550,6 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v parser.Value, ws storag
 	panic(errors.Errorf("promql.Engine.exec: unhandled statement of type %T", q.Statement()))
 }
 
-func timeMilliseconds(t time.Time) int64 {
-	return t.UnixNano() / int64(time.Millisecond/time.Nanosecond)
-}
-
 func durationMilliseconds(d time.Duration) int64 {
 	return int64(d / (time.Millisecond / time.Nanosecond))
 }
@@ -574,11 +570,11 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 
 	// Modify the offset of vector and matrix selectors for the @ modifier
 	// w.r.t. the start time since only 1 evaluation will be done on them.
-	setOffsetForAtModifier(timeMilliseconds(s.Start), s.Expr)
+	setOffsetForAtModifier(timestamp.FromTime(s.Start), s.Expr)
 	evalSpanTimer, ctxInnerEval := query.stats.GetSpanTimer(ctx, stats.InnerEvalTime, ng.metrics.queryInnerEval)
 	// Instant evaluation. This is executed as a range evaluation with one step.
 	if s.Start == s.End && s.Interval == 0 {
-		start := timeMilliseconds(s.Start)
+		start := timestamp.FromTime(s.Start)
 		evaluator := &evaluator{
 			startTimestamp:           start,
 			endTimestamp:             start,
@@ -630,8 +626,8 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 
 	// Range evaluation.
 	evaluator := &evaluator{
-		startTimestamp:           timeMilliseconds(s.Start),
-		endTimestamp:             timeMilliseconds(s.End),
+		startTimestamp:           timestamp.FromTime(s.Start),
+		endTimestamp:             timestamp.FromTime(s.End),
 		interval:                 durationMilliseconds(s.Interval),
 		ctx:                      ctxInnerEval,
 		maxSamples:               ng.maxSamplesPerQuery,
