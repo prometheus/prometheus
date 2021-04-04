@@ -446,7 +446,7 @@ some increase in memory usage, CPU usage, or query latency.
 * [FEATURE] Add option to use Alertmanager API v2. [#5482](https://github.com/prometheus/prometheus/pull/5482)
 * [FEATURE] Added `humanizePercentage` function for templates. [#5670](https://github.com/prometheus/prometheus/pull/5670)
 * [FEATURE] Include InitContainers in Kubernetes Service Discovery. [#5598](https://github.com/prometheus/prometheus/pull/5598)
-* [FEATURE] Provide option to compress WAL records using Snappy. [#609](https://github.com/prometheus-junkyard/tsdb/pull/609)
+* [FEATURE] Provide option to compress WAL records using Snappy. [tsdb#609](https://github.com/prometheus-junkyard/tsdb/pull/609)
 * [ENHANCEMENT] Create new clean segment when starting the WAL. [tsdb#608](https://github.com/prometheus-junkyard/tsdb/pull/608)
 * [ENHANCEMENT] Reduce allocations in PromQL aggregations. [#5641](https://github.com/prometheus/prometheus/pull/5641)
 * [ENHANCEMENT] Add storage warnings to LabelValues and LabelNames API results. [#5673](https://github.com/prometheus/prometheus/pull/5673)
