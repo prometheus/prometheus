@@ -1255,7 +1255,7 @@ This release contains multiple breaking changes to the configuration schema.
 This version contains a breaking change to the query language. Please read
 the documentation on the grouping behavior of vector matching:
 
-https://prometheus.io/docs/querying/operators/vector-matching
+https://prometheus.io/docs/querying/operators/#vector-matching
 
 * [FEATURE] Add experimental Microsoft Azure service discovery
 * [FEATURE] Add `ignoring` modifier for binary operations
