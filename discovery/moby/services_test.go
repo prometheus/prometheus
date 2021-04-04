@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package dockerswarm
+package moby
 
 import (
 	"context"
@@ -35,7 +35,7 @@ func TestDockerSwarmSDServicesRefresh(t *testing.T) {
 role: services
 host: %s
 `, url)
-	var cfg SDConfig
+	var cfg DockerSwarmSDConfig
 	require.NoError(t, yaml.Unmarshal([]byte(cfgString), &cfg))
 
 	d, err := NewDiscovery(&cfg, log.NewNopLogger())
@@ -329,7 +329,7 @@ filters:
 - name: name
   values: ["mon_node-exporter", "mon_grafana"]
 `, url)
-	var cfg SDConfig
+	var cfg DockerSwarmSDConfig
 	require.NoError(t, yaml.Unmarshal([]byte(cfgString), &cfg))
 
 	d, err := NewDiscovery(&cfg, log.NewNopLogger())

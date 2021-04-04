@@ -34,13 +34,13 @@ import (
 	"github.com/prometheus/prometheus/discovery/consul"
 	"github.com/prometheus/prometheus/discovery/digitalocean"
 	"github.com/prometheus/prometheus/discovery/dns"
-	"github.com/prometheus/prometheus/discovery/dockerswarm"
 	"github.com/prometheus/prometheus/discovery/ec2"
 	"github.com/prometheus/prometheus/discovery/eureka"
 	"github.com/prometheus/prometheus/discovery/file"
 	"github.com/prometheus/prometheus/discovery/hetzner"
 	"github.com/prometheus/prometheus/discovery/kubernetes"
 	"github.com/prometheus/prometheus/discovery/marathon"
+	"github.com/prometheus/prometheus/discovery/moby"
 	"github.com/prometheus/prometheus/discovery/openstack"
 	"github.com/prometheus/prometheus/discovery/scaleway"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -658,8 +658,8 @@ var expectedConf = &Config{
 			HTTPClientConfig: config.DefaultHTTPClientConfig,
 
 			ServiceDiscoveryConfigs: discovery.Configs{
-				&dockerswarm.DockerSDConfig{
-					Filters:          []dockerswarm.Filter{},
+				&moby.DockerSDConfig{
+					Filters:          []moby.Filter{},
 					Host:             "unix:///var/run/docker.sock",
 					Port:             80,
 					RefreshInterval:  model.Duration(60 * time.Second),
@@ -679,8 +679,8 @@ var expectedConf = &Config{
 			HTTPClientConfig: config.DefaultHTTPClientConfig,
 
 			ServiceDiscoveryConfigs: discovery.Configs{
-				&dockerswarm.SDConfig{
-					Filters:          []dockerswarm.Filter{},
+				&moby.DockerSwarmSDConfig{
+					Filters:          []moby.Filter{},
 					Host:             "http://127.0.0.1:2375",
 					Role:             "nodes",
 					Port:             80,

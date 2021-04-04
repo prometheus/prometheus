@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package dockerswarm
+package moby
 
 import (
 	"context"
@@ -38,8 +38,8 @@ const (
 
 var userAgent = fmt.Sprintf("Prometheus/%s", version.Version)
 
-// DefaultSDConfig is the default Docker Swarm SD configuration.
-var DefaultSDConfig = SDConfig{
+// DefaultDockerSwarmSDConfig is the default Docker Swarm SD configuration.
+var DefaultDockerSwarmSDConfig = DockerSwarmSDConfig{
 	RefreshInterval:  model.Duration(60 * time.Second),
 	Port:             80,
 	Filters:          []Filter{},
@@ -47,11 +47,11 @@ var DefaultSDConfig = SDConfig{
 }
 
 func init() {
-	discovery.RegisterConfig(&SDConfig{})
+	discovery.RegisterConfig(&DockerSwarmSDConfig{})
 }
 
-// SDConfig is the configuration for Docker Swarm based service discovery.
-type SDConfig struct {
+// DockerSwarmSDConfig is the configuration for Docker Swarm based service discovery.
+type DockerSwarmSDConfig struct {
 	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
 
 	Host    string   `yaml:"host"`
@@ -70,22 +70,22 @@ type Filter struct {
 }
 
 // Name returns the name of the Config.
-func (*SDConfig) Name() string { return "dockerswarm" }
+func (*DockerSwarmSDConfig) Name() string { return "dockerswarm" }
 
 // NewDiscoverer returns a Discoverer for the Config.
-func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
+func (c *DockerSwarmSDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
 	return NewDiscovery(c, opts.Logger)
 }
 
 // SetDirectory joins any relative file paths with dir.
-func (c *SDConfig) SetDirectory(dir string) {
+func (c *DockerSwarmSDConfig) SetDirectory(dir string) {
 	c.HTTPClientConfig.SetDirectory(dir)
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	*c = DefaultSDConfig
-	type plain SDConfig
+func (c *DockerSwarmSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = DefaultDockerSwarmSDConfig
+	type plain DockerSwarmSDConfig
 	err := unmarshal((*plain)(c))
 	if err != nil {
 		return err
@@ -117,7 +117,7 @@ type Discovery struct {
 }
 
 // NewDiscovery returns a new Discovery which periodically refreshes its targets.
-func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
+func NewDiscovery(conf *DockerSwarmSDConfig, logger log.Logger) (*Discovery, error) {
 	var err error
 
 	d := &Discovery{
