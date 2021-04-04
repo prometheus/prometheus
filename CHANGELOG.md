@@ -521,8 +521,8 @@ and the memory is available to the kernel when it needs it.
 * [ENHANCEMENT] Check for cancellation on every step of a range evaluation. [#5131](https://github.com/prometheus/prometheus/pull/5131)
 * [ENHANCEMENT] String interning for labels & values in the remote_write path. [#5316](https://github.com/prometheus/prometheus/pull/5316)
 * [ENHANCEMENT] Don't lose the scrape cache on a failed scrape. [#5414](https://github.com/prometheus/prometheus/pull/5414)
-* [ENHANCEMENT] Reload cert files from disk automatically.  [common#173](https://github.com/prometheus/common/pull/173)
-* [ENHANCEMENT] Use fixed length millisecond timestamp format for logs.  [common#172](https://github.com/prometheus/common/pull/172)
+* [ENHANCEMENT] Reload cert files from disk automatically. [common#173](https://github.com/prometheus/common/pull/173)
+* [ENHANCEMENT] Use fixed length millisecond timestamp format for logs. [common#172](https://github.com/prometheus/common/pull/172)
 * [ENHANCEMENT] Performance improvements for postings. [tsdb#509](https://github.com/prometheus-junkyard/tsdb/pull/509) [tsdb#572](https://github.com/prometheus-junkyard/tsdb/pull/572)
 * [BUGFIX] Remote Write: fix checkpoint reading. [#5429](https://github.com/prometheus/prometheus/pull/5429)
 * [BUGFIX] Check if label value is valid when unmarshaling external labels from YAML. [#5316](https://github.com/prometheus/prometheus/pull/5316)
@@ -531,7 +531,7 @@ and the memory is available to the kernel when it needs it.
 * [BUGFIX] Exponentiation operator to drop metric name in result of operation. [#5329](https://github.com/prometheus/prometheus/pull/5329)
 * [BUGFIX] Config: resolve more file paths. [#5284](https://github.com/prometheus/prometheus/pull/5284)
 * [BUGFIX] Promtool: resolve relative paths in alert test files. [#5336](https://github.com/prometheus/prometheus/pull/5336)
-* [BUGFIX] Set TLSHandshakeTimeout in HTTP transport.  [common#179](https://github.com/prometheus/common/pull/179)
+* [BUGFIX] Set TLSHandshakeTimeout in HTTP transport. [common#179](https://github.com/prometheus/common/pull/179)
 * [BUGFIX] Use fsync to be more resilient to machine crashes. [tsdb#573](https://github.com/prometheus-junkyard/tsdb/pull/573) [tsdb#578](https://github.com/prometheus-junkyard/tsdb/pull/578)
 * [BUGFIX] Keep series that are still in WAL in checkpoints. [tsdb#577](https://github.com/prometheus-junkyard/tsdb/pull/577)
 * [BUGFIX] Fix output sample values for scalar-to-vector comparison operations. [#5454](https://github.com/prometheus/prometheus/pull/5454)
@@ -545,10 +545,10 @@ and the memory is available to the kernel when it needs it.
 This release uses Write-Ahead Logging (WAL) for the remote_write API. This currently causes a slight increase in memory usage, which will be addressed in future releases.
 
 * [CHANGE] Default time retention is used only when no size based retention is specified. These are flags where time retention is specified by the flag `--storage.tsdb.retention` and size retention by `--storage.tsdb.retention.size`. [#5216](https://github.com/prometheus/prometheus/pull/5216)
-* [CHANGE] `prometheus_tsdb_storage_blocks_bytes_total` is now `prometheus_tsdb_storage_blocks_bytes`.  [tsdb#506](https://github.com/prometheus-junkyard/tsdb/pull/506)
-* [FEATURE] [EXPERIMENTAL] Time overlapping blocks are now allowed; vertical compaction and vertical query merge. It is an optional feature which is controlled by the `--storage.tsdb.allow-overlapping-blocks` flag, disabled by default.  [tsdb#370](https://github.com/prometheus-junkyard/tsdb/pull/370)
+* [CHANGE] `prometheus_tsdb_storage_blocks_bytes_total` is now `prometheus_tsdb_storage_blocks_bytes`. [tsdb#506](https://github.com/prometheus-junkyard/tsdb/pull/506)
+* [FEATURE] [EXPERIMENTAL] Time overlapping blocks are now allowed; vertical compaction and vertical query merge. It is an optional feature which is controlled by the `--storage.tsdb.allow-overlapping-blocks` flag, disabled by default. [tsdb#370](https://github.com/prometheus-junkyard/tsdb/pull/370)
 * [ENHANCEMENT] Use the WAL for remote_write API. [#4588](https://github.com/prometheus/prometheus/pull/4588)
-* [ENHANCEMENT] Query performance improvements.  [tsdb#531](https://github.com/prometheus-junkyard/tsdb/pull/531)
+* [ENHANCEMENT] Query performance improvements. [tsdb#531](https://github.com/prometheus-junkyard/tsdb/pull/531)
 * [ENHANCEMENT] UI enhancements with upgrade to Bootstrap 4. [#5226](https://github.com/prometheus/prometheus/pull/5226)
 * [ENHANCEMENT] Reduce time that Alertmanagers are in flux when reloaded. [#5126](https://github.com/prometheus/prometheus/pull/5126)
 * [ENHANCEMENT] Limit number of metrics displayed on UI to 10000. [#5139](https://github.com/prometheus/prometheus/pull/5139)
@@ -583,7 +583,7 @@ We're rolling back the Dockerfile changes introduced in 2.6.0. If you made chang
 
 * [CHANGE] Rollback Dockerfile to version at 2.5.0. Rollback of the breaking change introduced in 2.6.0. [#5122](https://github.com/prometheus/prometheus/pull/5122)
 * [FEATURE] Add subqueries to PromQL. [#4831](https://github.com/prometheus/prometheus/pull/4831)
-* [FEATURE] [EXPERIMENTAL] Add support for disk size based retention. Note that we don't consider the WAL size which could be significant and the time based retention policy also applies. [#5109](https://github.com/prometheus/prometheus/pull/5109)  [tsdb#343](https://github.com/prometheus-junkyard/tsdb/pull/343)
+* [FEATURE] [EXPERIMENTAL] Add support for disk size based retention. Note that we don't consider the WAL size which could be significant and the time based retention policy also applies. [#5109](https://github.com/prometheus/prometheus/pull/5109) [tsdb#343](https://github.com/prometheus-junkyard/tsdb/pull/343)
 * [FEATURE] Add CORS origin flag. [#5011](https://github.com/prometheus/prometheus/pull/5011)
 * [ENHANCEMENT] Consul SD: Add tagged address to the discovery metadata. [#5001](https://github.com/prometheus/prometheus/pull/5001)
 * [ENHANCEMENT] Kubernetes SD: Add service external IP and external name to the discovery metadata. [#4940](https://github.com/prometheus/prometheus/pull/4940)
@@ -595,8 +595,8 @@ We're rolling back the Dockerfile changes introduced in 2.6.0. If you made chang
 * [BUGFIX] Don't depend on given order when comparing samples in alert unit testing. [#5049](https://github.com/prometheus/prometheus/pull/5049)
 * [BUGFIX] Make sure the retention period doesn't overflow. [#5112](https://github.com/prometheus/prometheus/pull/5112)
 * [BUGFIX] Make sure the blocks don't get very large. [#5112](https://github.com/prometheus/prometheus/pull/5112)
-* [BUGFIX] Don't generate blocks with no samples.  [tsdb#374](https://github.com/prometheus-junkyard/tsdb/pull/374)
-* [BUGFIX] Reintroduce metric for WAL corruptions.  [tsdb#473](https://github.com/prometheus-junkyard/tsdb/pull/473)
+* [BUGFIX] Don't generate blocks with no samples. [tsdb#374](https://github.com/prometheus-junkyard/tsdb/pull/374)
+* [BUGFIX] Reintroduce metric for WAL corruptions. [tsdb#473](https://github.com/prometheus-junkyard/tsdb/pull/473)
 
 ## 2.6.1 / 2019-01-15
 
@@ -689,12 +689,12 @@ We're rolling back the Dockerfile changes introduced in 2.6.0. If you made chang
 
  The last release didn't have bugfix included due to a vendoring error.
 
- * [BUGFIX] Handle WAL corruptions properly  [tsdb#389](https://github.com/prometheus-junkyard/tsdb/pull/389)
- * [BUGFIX] Handle WAL migrations correctly on Windows  [tsdb#392](https://github.com/prometheus-junkyard/tsdb/pull/392)
+ * [BUGFIX] Handle WAL corruptions properly [tsdb#389](https://github.com/prometheus-junkyard/tsdb/pull/389)
+ * [BUGFIX] Handle WAL migrations correctly on Windows [tsdb#392](https://github.com/prometheus-junkyard/tsdb/pull/392)
 
 ## 2.4.1 / 2018-09-19
 
-* [ENHANCEMENT] New TSDB metrics  [tsdb#375](https://github.com/prometheus-junkyard/tsdb/pull/375) [tsdb#363](https://github.com/prometheus-junkyard/tsdb/pull/363)
+* [ENHANCEMENT] New TSDB metrics [tsdb#375](https://github.com/prometheus-junkyard/tsdb/pull/375) [tsdb#363](https://github.com/prometheus-junkyard/tsdb/pull/363)
 * [BUGFIX] Render UI correctly for Windows [#4616](https://github.com/prometheus/prometheus/pull/4616)
 
 ## 2.4.0 / 2018-09-11
