@@ -15,10 +15,10 @@ Note that from this release Prometheus is using Alertmanager v2 by default.
 * [ENHANCEMENT] PromQL: Add `last_over_time`, `sgn`, `clamp` functions. [#8457](https://github.com/prometheus/prometheus/pull/8457)
 * [ENHANCEMENT] Scrape: Add support for specifying type of Authorization header credentials with Bearer by default. [#8512](https://github.com/prometheus/prometheus/pull/8512)
 * [ENHANCEMENT] Scrape: Add `follow_redirects` option to scrape configuration. [#8546](https://github.com/prometheus/prometheus/pull/8546)
-* [ENHANCEMENT] Remote: Allow retries on HTTP 429 response code for remote_write. Disabled by default. See [configuration docs](https://prometheus.io/docs/prometheus/latest/configuration/configuration/remote_write) for details. [#8237](https://github.com/prometheus/prometheus/pull/#8237) #8477
+* [ENHANCEMENT] Remote: Allow retries on HTTP 429 response code for remote_write. Disabled by default. See [configuration docs](https://prometheus.io/docs/prometheus/latest/configuration/configuration/remote_write) for details. [#8237](https://github.com/prometheus/prometheus/pull/#8237) [#8477](https://github.com/prometheus/prometheus/pull/8477)
 * [ENHANCEMENT] Remote: Allow configuring custom headers for remote_read. See [configuration docs](https://prometheus.io/docs/prometheus/latest/configuration/configuration/remote_read) for details. [#8516](https://github.com/prometheus/prometheus/pull/#8516)
 * [ENHANCEMENT] UI: Hitting Enter now triggers new query. [#8581](https://github.com/prometheus/prometheus/pull/8581)
-* [ENHANCEMENT] UI: Better handling of long rule and names on the `/rules` and `/targets` pages. [#8608](https://github.com/prometheus/prometheus/pull/8608) #8609
+* [ENHANCEMENT] UI: Better handling of long rule and names on the `/rules` and `/targets` pages. [#8608](https://github.com/prometheus/prometheus/pull/8608) [#8609](https://github.com/prometheus/prometheus/pull/8609)
 * [ENHANCEMENT] UI: Add collapse/expand all button on the `/targets` page. [#8486](https://github.com/prometheus/prometheus/pull/8486)
 * [BUGFIX] TSDB: Eager deletion of removable blocks on every compaction, saving disk peak space usage. [#8007](https://github.com/prometheus/prometheus/pull/8007)
 * [BUGFIX] PromQL: Fix parser support for special characters like`炬`. [#8517](https://github.com/prometheus/prometheus/pull/8517)
@@ -45,7 +45,7 @@ Alertmanager API v2 was released in Alertmanager v0.16.0 (released in January
 2019).
 
 * [FEATURE] **experimental** API: Accept remote_write requests. Behind the --enable-feature=remote-write-receiver flag. [#8424](https://github.com/prometheus/prometheus/pull/8424)
-* [FEATURE] **experimental** PromQL: Add '@ <timestamp>' modifier. Behind the --enable-feature=promql-at-modifier flag. [#8121](https://github.com/prometheus/prometheus/pull/8121) #8436 #8425
+* [FEATURE] **experimental** PromQL: Add '@ <timestamp>' modifier. Behind the --enable-feature=promql-at-modifier flag. [#8121](https://github.com/prometheus/prometheus/pull/8121) [#8436](https://github.com/prometheus/prometheus/pull/8436) [#8425](https://github.com/prometheus/prometheus/pull/8425)
 * [ENHANCEMENT] Add optional name property to testgroup for better test failure output. [#8440](https://github.com/prometheus/prometheus/pull/8440)
 * [ENHANCEMENT] Add warnings into React Panel on the Graph page. [#8427](https://github.com/prometheus/prometheus/pull/8427)
 * [ENHANCEMENT] TSDB: Increase the number of buckets for the compaction duration metric. [#8342](https://github.com/prometheus/prometheus/pull/8342)
@@ -134,7 +134,7 @@ removed.
 * [ENHANCEMENT] React UI: Implement missing TSDB head stats section. [#7876](https://github.com/prometheus/prometheus/pull/7876)
 * [ENHANCEMENT] UI: Add Collapse all button to targets page. [#6957](https://github.com/prometheus/prometheus/pull/6957)
 * [ENHANCEMENT] UI: Clarify alert state toggle via checkbox icon. [#7936](https://github.com/prometheus/prometheus/pull/7936)
-* [ENHANCEMENT] Add `rule_group_last_evaluation_samples` and `prometheus_tsdb_data_replay_duration_seconds` metrics. [#7737](https://github.com/prometheus/prometheus/pull/7737) #7977
+* [ENHANCEMENT] Add `rule_group_last_evaluation_samples` and `prometheus_tsdb_data_replay_duration_seconds` metrics. [#7737](https://github.com/prometheus/prometheus/pull/7737) [#7977](https://github.com/prometheus/prometheus/pull/7977)
 * [ENHANCEMENT] Gracefully handle unknown WAL record types. [#8004](https://github.com/prometheus/prometheus/pull/8004)
 * [ENHANCEMENT] Issue a warning for 64 bit systems running 32 bit binaries. [#8012](https://github.com/prometheus/prometheus/pull/8012)
 * [BUGFIX] Adjust scrape timestamps to align them to the intended schedule, effectively reducing block size. Workaround for a regression in go1.14+. [#7976](https://github.com/prometheus/prometheus/pull/7976)
@@ -152,7 +152,7 @@ In the unlikely case that you use the gRPC API v2 (which is limited to TSDB
 admin commands), please note that we will remove this experimental API in the
 next minor release 2.22.
 
-* [CHANGE] Disable HTTP/2 because of concerns with the Go HTTP/2 client. [#7588](https://github.com/prometheus/prometheus/pull/7588) #7701
+* [CHANGE] Disable HTTP/2 because of concerns with the Go HTTP/2 client. [#7588](https://github.com/prometheus/prometheus/pull/7588) [#7701](https://github.com/prometheus/prometheus/pull/7701)
 * [CHANGE] PromQL: `query_log_file` path is now relative to the config file. [#7701](https://github.com/prometheus/prometheus/pull/7701)
 * [CHANGE] Promtool: Replace the tsdb command line tool by a promtool tsdb subcommand. [#6088](https://github.com/prometheus/prometheus/pull/6088)
 * [CHANGE] Rules: Label `rule_group_iterations` metric with group name. [#7823](https://github.com/prometheus/prometheus/pull/7823)
@@ -160,7 +160,7 @@ next minor release 2.22.
 * [FEATURE] Hetzner SD: New service discovery. [#7822](https://github.com/prometheus/prometheus/pull/7822)
 * [FEATURE] Kubernetes SD: Support Kubernetes EndpointSlices. [#6838](https://github.com/prometheus/prometheus/pull/6838)
 * [FEATURE] Scrape: Add per scrape-config targets limit. [#7554](https://github.com/prometheus/prometheus/pull/7554)
-* [ENHANCEMENT] Support composite durations in PromQL, config and UI, e.g. 1h30m. [#7713](https://github.com/prometheus/prometheus/pull/7713) #7833
+* [ENHANCEMENT] Support composite durations in PromQL, config and UI, e.g. 1h30m. [#7713](https://github.com/prometheus/prometheus/pull/7713) [#7833](https://github.com/prometheus/prometheus/pull/7833)
 * [ENHANCEMENT] DNS SD: Add SRV record target and port meta labels. [#7678](https://github.com/prometheus/prometheus/pull/7678)
 * [ENHANCEMENT] Docker Swarm SD: Support tasks and service without published ports. [#7686](https://github.com/prometheus/prometheus/pull/7686)
 * [ENHANCEMENT] PromQL: Reduce the amount of data queried by remote read when a subquery has an offset. [#7667](https://github.com/prometheus/prometheus/pull/7667)
@@ -201,7 +201,7 @@ This release changes WAL compression from opt-in to default. WAL compression wil
 * [FEATURE] SD: Added Openstack config option to query alternative endpoints. [#7494](https://github.com/prometheus/prometheus/pull/7494)
 * [ENHANCEMENT] Configuration: Exit early on invalid config file and signal it with exit code 2. [#7399](https://github.com/prometheus/prometheus/pull/7399)
 * [ENHANCEMENT] PromQL: `without` is now a valid metric identifier. [#7533](https://github.com/prometheus/prometheus/pull/7533)
-* [ENHANCEMENT] PromQL: Optimized regex label matching for literals within the pattern or as prefix/suffix. [#7453](https://github.com/prometheus/prometheus/pull/7453) #7503
+* [ENHANCEMENT] PromQL: Optimized regex label matching for literals within the pattern or as prefix/suffix. [#7453](https://github.com/prometheus/prometheus/pull/7453) [#7503](https://github.com/prometheus/prometheus/pull/7503)
 * [ENHANCEMENT] promtool: Added time range parameters for labels API in promtool. [#7463](https://github.com/prometheus/prometheus/pull/7463)
 * [ENHANCEMENT] Remote write: Include samples waiting in channel in pending samples metric. Log number of dropped samples on hard shutdown. [#7335](https://github.com/prometheus/prometheus/pull/7335)
 * [ENHANCEMENT] Scrape: Ingest synthetic scrape report metrics atomically with the corresponding scraped metrics. [#7562](https://github.com/prometheus/prometheus/pull/7562)
@@ -278,7 +278,7 @@ This release changes WAL compression from opt-in to default. WAL compression wil
 * [BUGFIX] PromQL: Fix panic in parser error handling [#7132](https://github.com/prometheus/prometheus/pull/7132)
 * [BUGFIX] Rules: Fix reloads hanging when deleting a rule group that is being evaluated [#7138](https://github.com/prometheus/prometheus/pull/7138)
 * [BUGFIX] TSDB: Fix a memory leak when prometheus starts with an empty TSDB WAL [#7135](https://github.com/prometheus/prometheus/pull/7135)
-* [BUGFIX] TSDB: Make isolation more robust to panics in web handlers [#7129](https://github.com/prometheus/prometheus/pull/7129) #7136
+* [BUGFIX] TSDB: Make isolation more robust to panics in web handlers [#7129](https://github.com/prometheus/prometheus/pull/7129) [#7136](https://github.com/prometheus/prometheus/pull/7136)
 
 ## 2.17.1 / 2020-03-26
 
@@ -303,10 +303,10 @@ some increase in memory usage, CPU usage, or query latency.
 * [ENHANCEMENT] Kubernetes SD: Expose service type as meta label for K8s service role [#6684](https://github.com/prometheus/prometheus/pull/6684)
 * [ENHANCEMENT] Kubernetes SD: Expose label_selector and field_selector [#6807](https://github.com/prometheus/prometheus/pull/6807)
 * [ENHANCEMENT] Openstack SD: Expose hypervisor id as meta label [#6962](https://github.com/prometheus/prometheus/pull/6962)
-* [BUGFIX] PromQL: Do not escape HTML-like chars in query log [#6834](https://github.com/prometheus/prometheus/pull/6834) #6795
+* [BUGFIX] PromQL: Do not escape HTML-like chars in query log [#6834](https://github.com/prometheus/prometheus/pull/6834) [#6795](https://github.com/prometheus/prometheus/pull/6795)
 * [BUGFIX] React UI: Fix data table matrix values [#6896](https://github.com/prometheus/prometheus/pull/6896)
 * [BUGFIX] React UI: Fix new targets page not loading when using non-ASCII characters [#6892](https://github.com/prometheus/prometheus/pull/6892)
-* [BUGFIX] Remote read: Fix duplication of metrics read from remote storage with external labels [#6967](https://github.com/prometheus/prometheus/pull/6967) #7018
+* [BUGFIX] Remote read: Fix duplication of metrics read from remote storage with external labels [#6967](https://github.com/prometheus/prometheus/pull/6967) [#7018](https://github.com/prometheus/prometheus/pull/7018)
 * [BUGFIX] Remote write: Register WAL watcher and live reader metrics for all remotes, not just the first one [#6998](https://github.com/prometheus/prometheus/pull/6998)
 * [BUGFIX] Scrape: Prevent removal of metric names upon relabeling [#6891](https://github.com/prometheus/prometheus/pull/6891)
 * [BUGFIX] Scrape: Fix 'superfluous response.WriteHeader call' errors when scrape fails under some circonstances [#6986](https://github.com/prometheus/prometheus/pull/6986)
@@ -355,15 +355,15 @@ some increase in memory usage, CPU usage, or query latency.
 
 * [CHANGE] Discovery: Removed `prometheus_sd_kubernetes_cache_*` metrics. Additionally `prometheus_sd_kubernetes_workqueue_latency_seconds` and `prometheus_sd_kubernetes_workqueue_work_duration_seconds` metrics now show correct values in seconds. [#6393](https://github.com/prometheus/prometheus/pull/6393)
 * [CHANGE] Remote write: Changed `query` label on `prometheus_remote_storage_*` metrics to `remote_name` and `url`. [#6043](https://github.com/prometheus/prometheus/pull/6043)
-* [FEATURE] API: Added new endpoint for exposing per metric metadata `/metadata`. [#6420](https://github.com/prometheus/prometheus/pull/6420) #6442
-* [ENHANCEMENT] TSDB: Significantly reduced memory footprint of loaded TSDB blocks. [#6418](https://github.com/prometheus/prometheus/pull/6418) #6461
-* [ENHANCEMENT] TSDB: Significantly optimized what we buffer during compaction which should result in lower memory footprint during compaction. [#6422](https://github.com/prometheus/prometheus/pull/6422) #6452 #6468 #6475
+* [FEATURE] API: Added new endpoint for exposing per metric metadata `/metadata`. [#6420](https://github.com/prometheus/prometheus/pull/6420) [#6442](https://github.com/prometheus/prometheus/pull/6442)
+* [ENHANCEMENT] TSDB: Significantly reduced memory footprint of loaded TSDB blocks. [#6418](https://github.com/prometheus/prometheus/pull/6418) [#6461](https://github.com/prometheus/prometheus/pull/6461)
+* [ENHANCEMENT] TSDB: Significantly optimized what we buffer during compaction which should result in lower memory footprint during compaction. [#6422](https://github.com/prometheus/prometheus/pull/6422) [#6452](https://github.com/prometheus/prometheus/pull/6452) [#6468](https://github.com/prometheus/prometheus/pull/6468) #6475
 * [ENHANCEMENT] TSDB: Improve replay latency. [#6230](https://github.com/prometheus/prometheus/pull/6230)
 * [ENHANCEMENT] TSDB: WAL size is now used for size based retention calculation. [#5886](https://github.com/prometheus/prometheus/pull/5886)
 * [ENHANCEMENT] Remote read: Added query grouping and range hints to the remote read request [#6401](https://github.com/prometheus/prometheus/pull/6401)
 * [ENHANCEMENT] Remote write: Added `prometheus_remote_storage_sent_bytes_total` counter per queue. [#6344](https://github.com/prometheus/prometheus/pull/6344)
 * [ENHANCEMENT] promql: Improved PromQL parser performance. [#6356](https://github.com/prometheus/prometheus/pull/6356)
-* [ENHANCEMENT] React UI: Implemented missing pages like `/targets` [#6276](https://github.com/prometheus/prometheus/pull/6276), TSDB status page #6281 #6267 and many other fixes and performance improvements.
+* [ENHANCEMENT] React UI: Implemented missing pages like `/targets` [#6276](https://github.com/prometheus/prometheus/pull/6276), TSDB status page [#6281](https://github.com/prometheus/prometheus/pull/6281) [#6267](https://github.com/prometheus/prometheus/pull/6267) and many other fixes and performance improvements.
 * [ENHANCEMENT] promql: Prometheus now accepts spaces between time range and square bracket. e.g `[ 5m]` [#6065](https://github.com/prometheus/prometheus/pull/6065)
 * [BUGFIX] Config: Fixed alertmanager configuration to not miss targets when configurations are similar. [#6455](https://github.com/prometheus/prometheus/pull/6455)
 * [BUGFIX] Remote write: Value of `prometheus_remote_storage_shards_desired` gauge shows raw value of desired shards and it's updated correctly. [#6378](https://github.com/prometheus/prometheus/pull/6378)
@@ -385,7 +385,7 @@ some increase in memory usage, CPU usage, or query latency.
 * [BUGFIX] Promtool: Remove false duplicate rule warnings when checking rule files with alerts. [#6270](https://github.com/prometheus/prometheus/pull/6270)
 * [BUGFIX] Remote write: restore use of deduplicating logger in remote write. [#6113](https://github.com/prometheus/prometheus/pull/6113)
 * [BUGFIX] Remote write: do not reshard when unable to send samples. [#6111](https://github.com/prometheus/prometheus/pull/6111)
-* [BUGFIX] Service discovery: errors are no longer logged on context cancellation. [#6116](https://github.com/prometheus/prometheus/pull/6116), #6133
+* [BUGFIX] Service discovery: errors are no longer logged on context cancellation. [#6116](https://github.com/prometheus/prometheus/pull/6116), [#6133](https://github.com/prometheus/prometheus/pull/6133)
 * [BUGFIX] UI: handle null response from API properly. [#6071](https://github.com/prometheus/prometheus/pull/6071)
 
 ## 2.13.1 / 2019-10-16
@@ -484,7 +484,7 @@ some increase in memory usage, CPU usage, or query latency.
 * [BUGFIX] TSDB: Don't panic when running out of disk space and recover nicely from the condition. tsdb#582
 * [BUGFIX] TSDB: Correctly handle empty labels. tsdb#594
 * [BUGFIX] TSDB: Don't crash on an unknown tombstone reference. tsdb#604
-* [BUGFIX] Storage/remote: Remove queue-manager specific metrics if queue no longer exists. [#5445](https://github.com/prometheus/prometheus/pull/5445) #5485 #5555
+* [BUGFIX] Storage/remote: Remove queue-manager specific metrics if queue no longer exists. [#5445](https://github.com/prometheus/prometheus/pull/5445) [#5485](https://github.com/prometheus/prometheus/pull/5485) [#5555](https://github.com/prometheus/prometheus/pull/5555)
 * [BUGFIX] PromQL: Correctly display `{__name__="a"}`. [#5552](https://github.com/prometheus/prometheus/pull/5552)
 * [BUGFIX] Discovery/kubernetes: Use `service` rather than `ingress` as the name for the service workqueue. [#5520](https://github.com/prometheus/prometheus/pull/5520)
 * [BUGFIX] Discovery/azure: Don't panic on a VM with a public IP. [#5587](https://github.com/prometheus/prometheus/pull/5587)
@@ -514,7 +514,7 @@ and the memory is available to the kernel when it needs it.
 * [FEATURE] Add honor_timestamps scrape option. [#5304](https://github.com/prometheus/prometheus/pull/5304)
 * [ENHANCEMENT] Discovery/kubernetes: add present labels for labels/annotations. [#5443](https://github.com/prometheus/prometheus/pull/5443)
 * [ENHANCEMENT] OpenStack SD: Add ProjectID and UserID meta labels. [#5431](https://github.com/prometheus/prometheus/pull/5431)
-* [ENHANCEMENT] Add GODEBUG and retention to the runtime page. [#5324](https://github.com/prometheus/prometheus/pull/5324) #5322
+* [ENHANCEMENT] Add GODEBUG and retention to the runtime page. [#5324](https://github.com/prometheus/prometheus/pull/5324) [#5322](https://github.com/prometheus/prometheus/pull/5322)
 * [ENHANCEMENT] Add support for POSTing to /series endpoint. [#5422](https://github.com/prometheus/prometheus/pull/5422)
 * [ENHANCEMENT] Support PUT methods for Lifecycle and Admin APIs. [#5376](https://github.com/prometheus/prometheus/pull/5376)
 * [ENHANCEMENT] Scrape: Add global jitter for HA server. [#5181](https://github.com/prometheus/prometheus/pull/5181)
@@ -630,7 +630,7 @@ We're rolling back the Dockerfile changes introduced in 2.6.0. If you made chang
 * [ENHANCEMENT] Web: Log stack traces on panic. [#4221](https://github.com/prometheus/prometheus/pull/4221)
 * [ENHANCEMENT] Web UI: Add copy to clipboard button for configuration. [#4410](https://github.com/prometheus/prometheus/pull/4410)
 * [ENHANCEMENT] Web UI: Support console queries at specific times. [#4764](https://github.com/prometheus/prometheus/pull/4764)
-* [ENHANCEMENT] Web UI: group targets by job then instance. [#4898](https://github.com/prometheus/prometheus/pull/4898) #4806
+* [ENHANCEMENT] Web UI: group targets by job then instance. [#4898](https://github.com/prometheus/prometheus/pull/4898) [#4806](https://github.com/prometheus/prometheus/pull/4806)
 * [BUGFIX] Deduplicate handler labels for HTTP metrics. [#4732](https://github.com/prometheus/prometheus/pull/4732)
 * [BUGFIX] Fix leaked queriers causing shutdowns to hang. [#4922](https://github.com/prometheus/prometheus/pull/4922)
 * [BUGFIX] Fix configuration loading panics on nil pointer slice elements. [#4942](https://github.com/prometheus/prometheus/pull/4942)
@@ -652,7 +652,7 @@ We're rolling back the Dockerfile changes introduced in 2.6.0. If you made chang
 
 ## 2.5.0 / 2018-11-06
 
-* [CHANGE] Group targets by scrape config instead of job name. [#4806](https://github.com/prometheus/prometheus/pull/4806) #4526
+* [CHANGE] Group targets by scrape config instead of job name. [#4806](https://github.com/prometheus/prometheus/pull/4806) [#4526](https://github.com/prometheus/prometheus/pull/4526)
 * [CHANGE] Marathon SD: Various changes to adapt to Marathon 1.5+. [#4499](https://github.com/prometheus/prometheus/pull/4499)
 * [CHANGE] Discovery: Split `prometheus_sd_discovered_targets` metric by scrape and notify (Alertmanager SD) as well as by section in the respective configuration. [#4753](https://github.com/prometheus/prometheus/pull/4753)
 * [FEATURE] Add OpenMetrics support for scraping (EXPERIMENTAL). [#4700](https://github.com/prometheus/prometheus/pull/4700)
@@ -705,7 +705,7 @@ This release includes multiple bugfixes and features. Further, the WAL implement
 * [CHANGE] Remove /heap endpoint [#4460](https://github.com/prometheus/prometheus/pull/4460)
 * [FEATURE] Persist alert 'for' state across restarts [#4061](https://github.com/prometheus/prometheus/pull/4061)
 * [FEATURE] Add API providing per target metric metadata [#4183](https://github.com/prometheus/prometheus/pull/4183)
-* [FEATURE] Add API providing recording and alerting rules [#4318](https://github.com/prometheus/prometheus/pull/4318) #4501
+* [FEATURE] Add API providing recording and alerting rules [#4318](https://github.com/prometheus/prometheus/pull/4318) [#4501](https://github.com/prometheus/prometheus/pull/4501)
 * [ENHANCEMENT] Brand new WAL implementation for TSDB. Forwards incompatible with previous WAL.
 * [ENHANCEMENT] Show rule evaluation errors in UI [#4457](https://github.com/prometheus/prometheus/pull/4457)
 * [ENHANCEMENT] Throttle resends of alerts to Alertmanager [#4538](https://github.com/prometheus/prometheus/pull/4538)
@@ -713,7 +713,7 @@ This release includes multiple bugfixes and features. Further, the WAL implement
 * [ENHANCEMENT] Limit the samples returned by remote read endpoint [#4532](https://github.com/prometheus/prometheus/pull/4532)
 * [ENHANCEMENT] Limit the data read in through remote read [#4239](https://github.com/prometheus/prometheus/pull/4239)
 * [ENHANCEMENT] Coalesce identical SD configurations [#3912](https://github.com/prometheus/prometheus/pull/3912)
-* [ENHANCEMENT] `promtool`: Add new commands for debugging and querying [#4247](https://github.com/prometheus/prometheus/pull/4247) #4308 #4346 #4454
+* [ENHANCEMENT] `promtool`: Add new commands for debugging and querying [#4247](https://github.com/prometheus/prometheus/pull/4247) [#4308](https://github.com/prometheus/prometheus/pull/4308) [#4346](https://github.com/prometheus/prometheus/pull/4346) #4454
 * [ENHANCEMENT] Update console examples for node_exporter v0.16.0 [#4208](https://github.com/prometheus/prometheus/pull/4208)
 * [ENHANCEMENT] Optimize PromQL aggregations [#4248](https://github.com/prometheus/prometheus/pull/4248)
 * [ENHANCEMENT] Remote read: Add Offset to hints [#4226](https://github.com/prometheus/prometheus/pull/4226)
@@ -721,7 +721,7 @@ This release includes multiple bugfixes and features. Further, the WAL implement
 * [ENHANCEMENT] `ec2_sd`: Maintain order of subnet_id label [#4405](https://github.com/prometheus/prometheus/pull/4405)
 * [ENHANCEMENT] `ec2_sd`: Add support for custom endpoint to support EC2 compliant APIs [#4333](https://github.com/prometheus/prometheus/pull/4333)
 * [ENHANCEMENT] `ec2_sd`: Add instance_owner label [#4514](https://github.com/prometheus/prometheus/pull/4514)
-* [ENHANCEMENT] `azure_sd`: Add support for VMSS discovery and multiple environments [#4202](https://github.com/prometheus/prometheus/pull/4202) #4569
+* [ENHANCEMENT] `azure_sd`: Add support for VMSS discovery and multiple environments [#4202](https://github.com/prometheus/prometheus/pull/4202) [#4569](https://github.com/prometheus/prometheus/pull/4569)
 * [ENHANCEMENT] `gce_sd`: Add instance_id label [#4488](https://github.com/prometheus/prometheus/pull/4488)
 * [ENHANCEMENT] Forbid rule-abiding robots from indexing [#4266](https://github.com/prometheus/prometheus/pull/4266)
 * [ENHANCEMENT] Log virtual memory limits on startup [#4418](https://github.com/prometheus/prometheus/pull/4418)
@@ -741,7 +741,7 @@ This release includes multiple bugfixes and features. Further, the WAL implement
 * [BUGFIX] Exit with non-zero code on error [#4296](https://github.com/prometheus/prometheus/pull/4296)
 * [BUGFIX] discovery/kubernetes/ingress: fix scheme discovery [#4329](https://github.com/prometheus/prometheus/pull/4329)
 * [BUGFIX] Fix race in zookeeper sd [#4355](https://github.com/prometheus/prometheus/pull/4355)
-* [BUGFIX] Better timeout handling in promql [#4291](https://github.com/prometheus/prometheus/pull/4291) #4300
+* [BUGFIX] Better timeout handling in promql [#4291](https://github.com/prometheus/prometheus/pull/4291) [#4300](https://github.com/prometheus/prometheus/pull/4300)
 * [BUGFIX] Propagate errors when selecting series from the tsdb [#4136](https://github.com/prometheus/prometheus/pull/4136)
 
 ## 2.3.1 / 2018-06-19
