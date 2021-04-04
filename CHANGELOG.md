@@ -357,7 +357,7 @@ some increase in memory usage, CPU usage, or query latency.
 * [CHANGE] Remote write: Changed `query` label on `prometheus_remote_storage_*` metrics to `remote_name` and `url`. [#6043](https://github.com/prometheus/prometheus/pull/6043)
 * [FEATURE] API: Added new endpoint for exposing per metric metadata `/metadata`. [#6420](https://github.com/prometheus/prometheus/pull/6420) [#6442](https://github.com/prometheus/prometheus/pull/6442)
 * [ENHANCEMENT] TSDB: Significantly reduced memory footprint of loaded TSDB blocks. [#6418](https://github.com/prometheus/prometheus/pull/6418) [#6461](https://github.com/prometheus/prometheus/pull/6461)
-* [ENHANCEMENT] TSDB: Significantly optimized what we buffer during compaction which should result in lower memory footprint during compaction. [#6422](https://github.com/prometheus/prometheus/pull/6422) [#6452](https://github.com/prometheus/prometheus/pull/6452) [#6468](https://github.com/prometheus/prometheus/pull/6468) #6475
+* [ENHANCEMENT] TSDB: Significantly optimized what we buffer during compaction which should result in lower memory footprint during compaction. [#6422](https://github.com/prometheus/prometheus/pull/6422) [#6452](https://github.com/prometheus/prometheus/pull/6452) [#6468](https://github.com/prometheus/prometheus/pull/6468) [#6475](https://github.com/prometheus/prometheus/pull/6475)
 * [ENHANCEMENT] TSDB: Improve replay latency. [#6230](https://github.com/prometheus/prometheus/pull/6230)
 * [ENHANCEMENT] TSDB: WAL size is now used for size based retention calculation. [#5886](https://github.com/prometheus/prometheus/pull/5886)
 * [ENHANCEMENT] Remote read: Added query grouping and range hints to the remote read request [#6401](https://github.com/prometheus/prometheus/pull/6401)
