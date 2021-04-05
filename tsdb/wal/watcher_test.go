@@ -132,7 +132,7 @@ func TestTailSamples(t *testing.T) {
 					sample := enc.Samples([]record.RefSample{
 						{
 							Ref: uint64(inner),
-							T:   int64(now.UnixNano()) + 1,
+							T:   now.UnixNano() + 1,
 							V:   float64(i),
 						},
 					}, nil)
