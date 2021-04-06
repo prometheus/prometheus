@@ -143,7 +143,7 @@ func (c *LightsailSDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (dis
 	return NewLightsailDiscovery(c, opts.Logger), nil
 }
 
-// UnmarshalYAML implements the yaml.Unmarshaler interface.
+// UnmarshalYAML implements the yaml.Unmarshaler interface for the EC2 Config.
 func (c *EC2SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	*c = EC2DefaultSDConfig
 	type plain EC2SDConfig
@@ -171,7 +171,7 @@ func (c *EC2SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	return nil
 }
 
-// UnmarshalYAML implements the yaml.Unmarshaler interface.
+// UnmarshalYAML implements the yaml.Unmarshaler interface for the Lightsail Config.
 func (c *LightsailSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	*c = LightsailDefaultSDConfig
 	type plain LightsailSDConfig
