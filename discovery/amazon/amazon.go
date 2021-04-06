@@ -115,7 +115,7 @@ type EC2SDConfig struct {
 	Filters         []*EC2Filter   `yaml:"filters"`
 }
 
-// LightsailSDConfig is the configuration for EC2 based service discovery.
+// LightsailSDConfig is the configuration for Lightsail based service discovery.
 type LightsailSDConfig struct {
 	Endpoint        string         `yaml:"endpoint"`
 	Region          string         `yaml:"region"`
