@@ -78,8 +78,8 @@ const (
 )
 
 var (
-	// Ec2DefaultSDConfig is the default EC2 SD configuration.
-	Ec2DefaultSDConfig = EC2SDConfig{
+	// EC2DefaultSDConfig is the default EC2 SD configuration.
+	EC2DefaultSDConfig = EC2SDConfig{
 		Port:            80,
 		RefreshInterval: model.Duration(60 * time.Second),
 	}
@@ -97,7 +97,7 @@ func init() {
 }
 
 // Filter is the configuration for filtering EC2 instances.
-type Filter struct {
+type EC2Filter struct {
 	Name   string   `yaml:"name"`
 	Values []string `yaml:"values"`
 }
@@ -112,7 +112,7 @@ type EC2SDConfig struct {
 	RoleARN         string         `yaml:"role_arn,omitempty"`
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
 	Port            int            `yaml:"port"`
-	Filters         []*Filter      `yaml:"filters"`
+	Filters         []*EC2Filter   `yaml:"filters"`
 }
 
 // LightsailSDConfig is the configuration for EC2 based service discovery.
@@ -125,7 +125,6 @@ type LightsailSDConfig struct {
 	RoleARN         string         `yaml:"role_arn,omitempty"`
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
 	Port            int            `yaml:"port"`
-	Filters         []*Filter      `yaml:"filters"`
 }
 
 // Name returns the name of the EC2 Config.
@@ -146,7 +145,7 @@ func (c *LightsailSDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (dis
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
 func (c *EC2SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	*c = Ec2DefaultSDConfig
+	*c = EC2DefaultSDConfig
 	type plain EC2SDConfig
 	err := unmarshal((*plain)(c))
 	if err != nil {
@@ -194,13 +193,6 @@ func (c *LightsailSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 		}
 		c.Region = region
 	}
-
-	// lightsail.GetInstancesInput does not accept a filter
-	//for _, f := range c.Filters {
-	//	if len(f.Values) == 0 {
-	//		return errors.New("Lightsail SD configuration filter values cannot be empty")
-	//	}
-	//}
 	return nil
 }
 

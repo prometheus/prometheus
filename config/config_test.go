@@ -473,7 +473,7 @@ var expectedConf = &Config{
 					Profile:         "profile",
 					RefreshInterval: model.Duration(60 * time.Second),
 					Port:            80,
-					Filters: []*amazon.Filter{
+					Filters: []*amazon.EC2Filter{
 						{
 							Name:   "tag:environment",
 							Values: []string{"prod"},
@@ -505,16 +505,6 @@ var expectedConf = &Config{
 					Profile:         "profile",
 					RefreshInterval: model.Duration(60 * time.Second),
 					Port:            80,
-				//	Filters: []*amazon.Filter{
-				//		{
-				//			Name:   "tag:environment",
-				//			Values: []string{"prod"},
-				//		},
-				//		{
-				//			Name:   "tag:service",
-				//			Values: []string{"web", "db"},
-				//		},
-				//	},
 				},
 			},
 		},
