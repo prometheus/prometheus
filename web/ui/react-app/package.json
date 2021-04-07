@@ -29,7 +29,7 @@
     "@types/react-resize-detector": "^5.0.0",
     "@types/sanitize-html": "^1.20.2",
     "bootstrap": "^4.2.1",
-    "codemirror-promql": "^0.14.0",
+    "codemirror-promql": "^0.14.1",
     "css.escape": "^1.5.1",
     "downshift": "^3.4.8",
     "enzyme-to-json": "^3.4.3",
