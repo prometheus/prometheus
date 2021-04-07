@@ -361,11 +361,11 @@ func TestHandlerQueuing(t *testing.T) {
 	go h.Run(nil)
 	defer h.Stop()
 
-	var alerts []*Alert
+	alerts := make([]*Alert, 20*maxBatchSize)
 	for i := range make([]struct{}, 20*maxBatchSize) {
-		alerts = append(alerts, &Alert{
+		alerts[i] = &Alert{
 			Labels: labels.FromStrings("alertname", fmt.Sprintf("%d", i)),
-		})
+		}
 	}
 
 	assertAlerts := func(expected []*Alert) {
