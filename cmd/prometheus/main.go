@@ -944,7 +944,7 @@ type reloader struct {
 
 func reloadConfig(filename string, expandExternalLabels bool, logger log.Logger, noStepSuqueryInterval *safePromQLNoStepSubqueryInterval, rls ...reloader) (err error) {
 	start := time.Now()
-	timings := []interface{}{}
+	var timings []interface{}
 	level.Info(logger).Log("msg", "Loading configuration file", "filename", filename)
 
 	defer func() {
