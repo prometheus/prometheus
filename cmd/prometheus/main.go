@@ -1225,7 +1225,6 @@ func (rm *readyScrapeManager) Get() (*scrape.Manager, error) {
 // tsdbOptions is tsdb.Option version with defined units.
 // This is required as tsdb.Option fields are unit agnostic (time).
 type tsdbOptions struct {
-
 	WALSegmentSize           units.Base2Bytes
 	MaxBlockChunkSegmentSize units.Base2Bytes
 	RetentionDuration        model.Duration
