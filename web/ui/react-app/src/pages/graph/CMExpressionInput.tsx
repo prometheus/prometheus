@@ -96,16 +96,17 @@ const CMExpressionInput: FC<CMExpressionInputProps> = ({
   // (Re)initialize editor based on settings / setting changes.
   useEffect(() => {
     // Build the dynamic part of the config.
-    promqlExtension.activateCompletion(enableAutocomplete);
-    promqlExtension.activateLinter(enableLinter);
-    promqlExtension.setComplete({
-      completeStrategy: new HistoryCompleteStrategy(
-        newCompleteStrategy({
-          remote: { url: pathPrefix },
-        }),
-        queryHistory
-      ),
-    });
+    promqlExtension
+      .activateCompletion(enableAutocomplete)
+      .activateLinter(enableLinter)
+      .setComplete({
+        completeStrategy: new HistoryCompleteStrategy(
+          newCompleteStrategy({
+            remote: { url: pathPrefix },
+          }),
+          queryHistory
+        ),
+      });
     const dynamicConfig = [enableHighlighting ? promqlHighlighter : [], promqlExtension.asExtension()];
 
     // Create or reconfigure the editor.
