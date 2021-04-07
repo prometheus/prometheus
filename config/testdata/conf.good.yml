@@ -268,6 +268,10 @@ scrape_configs:
     - authorization:
         credentials: abcdef
 
+- job_name: docker
+  docker_sd_configs:
+  - host: unix:///var/run/docker.sock
+
 - job_name: dockerswarm
   dockerswarm_sd_configs:
   - host: http://127.0.0.1:2375

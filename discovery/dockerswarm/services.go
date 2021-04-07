@@ -51,7 +51,7 @@ func (d *Discovery) refreshServices(ctx context.Context) ([]*targetgroup.Group, 
 		return nil, fmt.Errorf("error while listing swarm services: %w", err)
 	}
 
-	networkLabels, err := d.getNetworksLabels(ctx)
+	networkLabels, err := getNetworksLabels(ctx, d.client, swarmLabel)
 	if err != nil {
 		return nil, fmt.Errorf("error while computing swarm network labels: %w", err)
 	}

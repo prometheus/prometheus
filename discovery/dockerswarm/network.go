@@ -18,37 +18,37 @@ import (
 	"fmt"
 
 	"github.com/docker/docker/api/types"
-
+	"github.com/docker/docker/client"
 	"github.com/prometheus/prometheus/util/strutil"
 )
 
 const (
-	swarmLabelNetworkPrefix      = swarmLabel + "network_"
-	swarmLabelNetworkID          = swarmLabelNetworkPrefix + "id"
-	swarmLabelNetworkName        = swarmLabelNetworkPrefix + "name"
-	swarmLabelNetworkScope       = swarmLabelNetworkPrefix + "scope"
-	swarmLabelNetworkInternal    = swarmLabelNetworkPrefix + "internal"
-	swarmLabelNetworkIngress     = swarmLabelNetworkPrefix + "ingress"
-	swarmLabelNetworkLabelPrefix = swarmLabelNetworkPrefix + "label_"
+	labelNetworkPrefix      = "network_"
+	labelNetworkID          = labelNetworkPrefix + "id"
+	labelNetworkName        = labelNetworkPrefix + "name"
+	labelNetworkScope       = labelNetworkPrefix + "scope"
+	labelNetworkInternal    = labelNetworkPrefix + "internal"
+	labelNetworkIngress     = labelNetworkPrefix + "ingress"
+	labelNetworkLabelPrefix = labelNetworkPrefix + "label_"
 )
 
-func (d *Discovery) getNetworksLabels(ctx context.Context) (map[string]map[string]string, error) {
-	networks, err := d.client.NetworkList(ctx, types.NetworkListOptions{})
+func getNetworksLabels(ctx context.Context, client *client.Client, labelPrefix string) (map[string]map[string]string, error) {
+	networks, err := client.NetworkList(ctx, types.NetworkListOptions{})
 	if err != nil {
 		return nil, err
 	}
 	labels := make(map[string]map[string]string, len(networks))
 	for _, network := range networks {
 		labels[network.ID] = map[string]string{
-			swarmLabelNetworkID:       network.ID,
-			swarmLabelNetworkName:     network.Name,
-			swarmLabelNetworkScope:    network.Scope,
-			swarmLabelNetworkInternal: fmt.Sprintf("%t", network.Internal),
-			swarmLabelNetworkIngress:  fmt.Sprintf("%t", network.Ingress),
+			labelPrefix + labelNetworkID:       network.ID,
+			labelPrefix + labelNetworkName:     network.Name,
+			labelPrefix + labelNetworkScope:    network.Scope,
+			labelPrefix + labelNetworkInternal: fmt.Sprintf("%t", network.Internal),
+			labelPrefix + labelNetworkIngress:  fmt.Sprintf("%t", network.Ingress),
 		}
 		for k, v := range network.Labels {
 			ln := strutil.SanitizeLabelName(k)
-			labels[network.ID][swarmLabelNetworkLabelPrefix+ln] = v
+			labels[network.ID][labelPrefix+labelNetworkLabelPrefix+ln] = v
 		}
 	}
 

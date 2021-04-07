@@ -15,6 +15,9 @@ package scaleway
 
 import (
 	"context"
+	"io/ioutil"
+	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-kit/kit/log"
@@ -83,6 +86,8 @@ type SDConfig struct {
 	AccessKey string `yaml:"access_key"`
 	// SecretKey used to authenticate on Scaleway APIs.
 	SecretKey config.Secret `yaml:"secret_key"`
+	// SecretKey used to authenticate on Scaleway APIs.
+	SecretKeyFile string `yaml:"secret_key_file"`
 	// NameFilter to filter on during the ListServers.
 	NameFilter string `yaml:"name_filter,omitempty"`
 	// TagsFilter to filter on during the ListServers.
@@ -98,6 +103,15 @@ type SDConfig struct {
 
 func (c SDConfig) Name() string {
 	return "scaleway"
+}
+
+// secretKeyForConfig returns a secret key that looks like a UUID, even if we
+// take the actuel secret from a file.
+func (c SDConfig) secretKeyForConfig() string {
+	if c.SecretKeyFile != "" {
+		return "00000000-0000-0000-0000-000000000000"
+	}
+	return string(c.SecretKey)
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -117,8 +131,12 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return errors.New("project_id is mandatory")
 	}
 
-	if c.SecretKey == "" {
-		return errors.New("secret_key is mandatory")
+	if c.SecretKey == "" && c.SecretKeyFile == "" {
+		return errors.New("one of secret_key & secret_key_file must be configured")
+	}
+
+	if c.SecretKey != "" && c.SecretKeyFile != "" {
+		return errors.New("at most one of secret_key & secret_key_file must be configured")
 	}
 
 	if c.AccessKey == "" {
@@ -145,6 +163,7 @@ func (c SDConfig) NewDiscoverer(options discovery.DiscovererOptions) (discovery.
 
 // SetDirectory joins any relative file paths with dir.
 func (c *SDConfig) SetDirectory(dir string) {
+	c.SecretKeyFile = config.JoinDir(dir, c.SecretKeyFile)
 	c.HTTPClientConfig.SetDirectory(dir)
 }
 
@@ -190,11 +209,37 @@ func loadProfile(sdConfig *SDConfig) (*scw.Profile, error) {
 	prometheusConfigProfile := &scw.Profile{
 		DefaultZone:      scw.StringPtr(sdConfig.Zone),
 		APIURL:           scw.StringPtr(sdConfig.APIURL),
-		SecretKey:        scw.StringPtr(string(sdConfig.SecretKey)),
+		SecretKey:        scw.StringPtr(sdConfig.secretKeyForConfig()),
 		AccessKey:        scw.StringPtr(sdConfig.AccessKey),
 		DefaultProjectID: scw.StringPtr(sdConfig.Project),
 		SendTelemetry:    scw.BoolPtr(false),
 	}
 
 	return prometheusConfigProfile, nil
+}
+
+type authTokenFileRoundTripper struct {
+	authTokenFile string
+	rt            http.RoundTripper
+}
+
+// newAuthTokenFileRoundTripper adds the auth token read from the file to a request.
+func newAuthTokenFileRoundTripper(tokenFile string, rt http.RoundTripper) (http.RoundTripper, error) {
+	// fail-fast if we can't read the file.
+	_, err := ioutil.ReadFile(tokenFile)
+	if err != nil {
+		return nil, errors.Wrapf(err, "unable to read auth token file %s", tokenFile)
+	}
+	return &authTokenFileRoundTripper{tokenFile, rt}, nil
+}
+
+func (rt *authTokenFileRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {
+	b, err := ioutil.ReadFile(rt.authTokenFile)
+	if err != nil {
+		return nil, errors.Wrapf(err, "unable to read auth token file %s", rt.authTokenFile)
+	}
+	authToken := strings.TrimSpace(string(b))
+
+	request.Header.Set("X-Auth-Token", authToken)
+	return rt.rt.RoundTrip(request)
 }

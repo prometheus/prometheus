@@ -17,11 +17,13 @@ import (
 	"encoding/json"
 	"io/ioutil"
 	"net/url"
+	"os"
 	"path/filepath"
 	"regexp"
 	"testing"
 	"time"
 
+	"github.com/go-kit/kit/log"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
@@ -645,6 +647,27 @@ var expectedConf = &Config{
 			},
 		},
 		{
+			JobName: "docker",
+
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
+
+			MetricsPath:      DefaultScrapeConfig.MetricsPath,
+			Scheme:           DefaultScrapeConfig.Scheme,
+			HTTPClientConfig: config.DefaultHTTPClientConfig,
+
+			ServiceDiscoveryConfigs: discovery.Configs{
+				&dockerswarm.DockerSDConfig{
+					Filters:          []dockerswarm.Filter{},
+					Host:             "unix:///var/run/docker.sock",
+					Port:             80,
+					RefreshInterval:  model.Duration(60 * time.Second),
+					HTTPClientConfig: config.DefaultHTTPClientConfig,
+				},
+			},
+		},
+		{
 			JobName: "dockerswarm",
 
 			HonorTimestamps: true,
@@ -805,7 +828,7 @@ var expectedConf = &Config{
 }
 
 func TestYAMLRoundtrip(t *testing.T) {
-	want, err := LoadFile("testdata/roundtrip.good.yml")
+	want, err := LoadFile("testdata/roundtrip.good.yml", false, log.NewNopLogger())
 	require.NoError(t, err)
 
 	out, err := yaml.Marshal(want)
@@ -818,7 +841,7 @@ func TestYAMLRoundtrip(t *testing.T) {
 }
 
 func TestRemoteWriteRetryOnRateLimit(t *testing.T) {
-	want, err := LoadFile("testdata/remote_write_retry_on_rate_limit.good.yml")
+	want, err := LoadFile("testdata/remote_write_retry_on_rate_limit.good.yml", false, log.NewNopLogger())
 	require.NoError(t, err)
 
 	out, err := yaml.Marshal(want)
@@ -834,16 +857,16 @@ func TestRemoteWriteRetryOnRateLimit(t *testing.T) {
 func TestLoadConfig(t *testing.T) {
 	// Parse a valid file that sets a global scrape timeout. This tests whether parsing
 	// an overwritten default field in the global config permanently changes the default.
-	_, err := LoadFile("testdata/global_timeout.good.yml")
+	_, err := LoadFile("testdata/global_timeout.good.yml", false, log.NewNopLogger())
 	require.NoError(t, err)
 
-	c, err := LoadFile("testdata/conf.good.yml")
+	c, err := LoadFile("testdata/conf.good.yml", false, log.NewNopLogger())
 	require.NoError(t, err)
 	require.Equal(t, expectedConf, c)
 }
 
 func TestScrapeIntervalLarger(t *testing.T) {
-	c, err := LoadFile("testdata/scrape_interval_larger.good.yml")
+	c, err := LoadFile("testdata/scrape_interval_larger.good.yml", false, log.NewNopLogger())
 	require.NoError(t, err)
 	require.Equal(t, 1, len(c.ScrapeConfigs))
 	for _, sc := range c.ScrapeConfigs {
@@ -853,7 +876,7 @@ func TestScrapeIntervalLarger(t *testing.T) {
 
 // YAML marshaling must not reveal authentication credentials.
 func TestElideSecrets(t *testing.T) {
-	c, err := LoadFile("testdata/conf.good.yml")
+	c, err := LoadFile("testdata/conf.good.yml", false, log.NewNopLogger())
 	require.NoError(t, err)
 
 	secretRe := regexp.MustCompile(`\\u003csecret\\u003e|<secret>`)
@@ -870,26 +893,26 @@ func TestElideSecrets(t *testing.T) {
 
 func TestLoadConfigRuleFilesAbsolutePath(t *testing.T) {
 	// Parse a valid file that sets a rule files with an absolute path
-	c, err := LoadFile(ruleFilesConfigFile)
+	c, err := LoadFile(ruleFilesConfigFile, false, log.NewNopLogger())
 	require.NoError(t, err)
 	require.Equal(t, ruleFilesExpectedConf, c)
 }
 
 func TestKubernetesEmptyAPIServer(t *testing.T) {
-	_, err := LoadFile("testdata/kubernetes_empty_apiserver.good.yml")
+	_, err := LoadFile("testdata/kubernetes_empty_apiserver.good.yml", false, log.NewNopLogger())
 	require.NoError(t, err)
 }
 
 func TestKubernetesSelectors(t *testing.T) {
-	_, err := LoadFile("testdata/kubernetes_selectors_endpoints.good.yml")
+	_, err := LoadFile("testdata/kubernetes_selectors_endpoints.good.yml", false, log.NewNopLogger())
 	require.NoError(t, err)
-	_, err = LoadFile("testdata/kubernetes_selectors_node.good.yml")
+	_, err = LoadFile("testdata/kubernetes_selectors_node.good.yml", false, log.NewNopLogger())
 	require.NoError(t, err)
-	_, err = LoadFile("testdata/kubernetes_selectors_ingress.good.yml")
+	_, err = LoadFile("testdata/kubernetes_selectors_ingress.good.yml", false, log.NewNopLogger())
 	require.NoError(t, err)
-	_, err = LoadFile("testdata/kubernetes_selectors_pod.good.yml")
+	_, err = LoadFile("testdata/kubernetes_selectors_pod.good.yml", false, log.NewNopLogger())
 	require.NoError(t, err)
-	_, err = LoadFile("testdata/kubernetes_selectors_service.good.yml")
+	_, err = LoadFile("testdata/kubernetes_selectors_service.good.yml", false, log.NewNopLogger())
 	require.NoError(t, err)
 }
 
@@ -1136,11 +1159,23 @@ var expectedErrors = []struct {
 		filename: "eureka_invalid_server.bad.yml",
 		errMsg:   "invalid eureka server URL",
 	},
+	{
+		filename: "scaleway_role.bad.yml",
+		errMsg:   `unknown role "invalid"`,
+	},
+	{
+		filename: "scaleway_no_secret.bad.yml",
+		errMsg:   "one of secret_key & secret_key_file must be configured",
+	},
+	{
+		filename: "scaleway_two_secrets.bad.yml",
+		errMsg:   "at most one of secret_key & secret_key_file must be configured",
+	},
 }
 
 func TestBadConfigs(t *testing.T) {
 	for _, ee := range expectedErrors {
-		_, err := LoadFile("testdata/" + ee.filename)
+		_, err := LoadFile("testdata/"+ee.filename, false, log.NewNopLogger())
 		require.Error(t, err, "%s", ee.filename)
 		require.Contains(t, err.Error(), ee.errMsg,
 			"Expected error for %s to contain %q but got: %s", ee.filename, ee.errMsg, err)
@@ -1164,14 +1199,38 @@ func TestBadStaticConfigsYML(t *testing.T) {
 }
 
 func TestEmptyConfig(t *testing.T) {
-	c, err := Load("")
+	c, err := Load("", false, log.NewNopLogger())
 	require.NoError(t, err)
 	exp := DefaultConfig
 	require.Equal(t, exp, *c)
 }
 
+func TestExpandExternalLabels(t *testing.T) {
+	// Cleanup ant TEST env variable that could exist on the system.
+	os.Setenv("TEST", "")
+
+	c, err := LoadFile("testdata/external_labels.good.yml", false, log.NewNopLogger())
+	require.NoError(t, err)
+	require.Equal(t, labels.Label{Name: "bar", Value: "foo"}, c.GlobalConfig.ExternalLabels[0])
+	require.Equal(t, labels.Label{Name: "baz", Value: "foo${TEST}bar"}, c.GlobalConfig.ExternalLabels[1])
+	require.Equal(t, labels.Label{Name: "foo", Value: "${TEST}"}, c.GlobalConfig.ExternalLabels[2])
+
+	c, err = LoadFile("testdata/external_labels.good.yml", true, log.NewNopLogger())
+	require.NoError(t, err)
+	require.Equal(t, labels.Label{Name: "bar", Value: "foo"}, c.GlobalConfig.ExternalLabels[0])
+	require.Equal(t, labels.Label{Name: "baz", Value: "foobar"}, c.GlobalConfig.ExternalLabels[1])
+	require.Equal(t, labels.Label{Name: "foo", Value: ""}, c.GlobalConfig.ExternalLabels[2])
+
+	os.Setenv("TEST", "TestValue")
+	c, err = LoadFile("testdata/external_labels.good.yml", true, log.NewNopLogger())
+	require.NoError(t, err)
+	require.Equal(t, labels.Label{Name: "bar", Value: "foo"}, c.GlobalConfig.ExternalLabels[0])
+	require.Equal(t, labels.Label{Name: "baz", Value: "fooTestValuebar"}, c.GlobalConfig.ExternalLabels[1])
+	require.Equal(t, labels.Label{Name: "foo", Value: "TestValue"}, c.GlobalConfig.ExternalLabels[2])
+}
+
 func TestEmptyGlobalBlock(t *testing.T) {
-	c, err := Load("global:\n")
+	c, err := Load("global:\n", false, log.NewNopLogger())
 	require.NoError(t, err)
 	exp := DefaultConfig
 	require.Equal(t, exp, *c)

@@ -75,10 +75,18 @@ func newBaremetalDiscovery(conf *SDConfig) (*baremetalDiscovery, error) {
 		return nil, err
 	}
 
+	if conf.SecretKeyFile != "" {
+		rt, err = newAuthTokenFileRoundTripper(conf.SecretKeyFile, rt)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	profile, err := loadProfile(conf)
 	if err != nil {
 		return nil, err
 	}
+
 	d.client, err = scw.NewClient(
 		scw.WithHTTPClient(&http.Client{
 			Transport: rt,

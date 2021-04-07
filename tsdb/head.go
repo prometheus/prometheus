@@ -1109,11 +1109,11 @@ func (a *initAppender) AppendExemplar(ref uint64, l labels.Labels, e exemplar.Ex
 
 var _ storage.GetRef = &initAppender{}
 
-func (a *initAppender) GetRef(lset labels.Labels) uint64 {
+func (a *initAppender) GetRef(lset labels.Labels) (uint64, labels.Labels) {
 	if g, ok := a.app.(storage.GetRef); ok {
 		return g.GetRef(lset)
 	}
-	return 0
+	return 0, nil
 }
 
 func (a *initAppender) Commit() error {
@@ -1342,12 +1342,13 @@ func (a *headAppender) AppendExemplar(ref uint64, _ labels.Labels, e exemplar.Ex
 
 var _ storage.GetRef = &headAppender{}
 
-func (a *headAppender) GetRef(lset labels.Labels) uint64 {
+func (a *headAppender) GetRef(lset labels.Labels) (uint64, labels.Labels) {
 	s := a.head.series.getByHash(lset.Hash(), lset)
 	if s == nil {
-		return 0
+		return 0, nil
 	}
-	return s.ref
+	// returned labels must be suitable to pass to Append()
+	return s.ref, s.lset
 }
 
 func (a *headAppender) log() error {

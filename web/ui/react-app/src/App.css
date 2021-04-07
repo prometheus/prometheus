@@ -32,8 +32,11 @@ input[type='checkbox']:checked + label {
   text-transform: capitalize;
 }
 
-.expression-input {
+/* Using a more specific selector here to be able to override Bootstrap's default input group styles. */
+.input-group.expression-input {
   margin-bottom: 10px;
+  /* Prevent the input group from wrapping around when the editor content is too long for a line. */
+  flex-wrap: nowrap;
 }
 
 .expression-input .cm-expression-input {
