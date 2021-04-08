@@ -39,7 +39,7 @@ func main() {
 			fmt.Println(m)
 
 			for _, s := range ts.Samples {
-				fmt.Printf("  %f %d\n", s.Value, s.Timestamp)
+				fmt.Printf("\tSample:  %f %d\n", s.Value, s.Timestamp)
 			}
 
 			for _, e := range ts.Exemplars {
@@ -47,7 +47,7 @@ func main() {
 				for _, l := range e.Labels {
 					m[model.LabelName(l.Name)] = model.LabelValue(l.Value)
 				}
-				fmt.Printf("  %+v %f %d\n", m, e.Value, e.Timestamp)
+				fmt.Printf("\tExemplar:  %+v %f %d\n", m, e.Value, e.Timestamp)
 			}
 		}
 	})
