@@ -53,25 +53,31 @@ const (
 type queueManagerMetrics struct {
 	reg prometheus.Registerer
 
-	samplesTotal         prometheus.Counter
-	metadataTotal        prometheus.Counter
-	failedSamplesTotal   prometheus.Counter
-	failedMetadataTotal  prometheus.Counter
-	retriedSamplesTotal  prometheus.Counter
-	retriedMetadataTotal prometheus.Counter
-	droppedSamplesTotal  prometheus.Counter
-	enqueueRetriesTotal  prometheus.Counter
-	sentBatchDuration    prometheus.Histogram
-	highestSentTimestamp *maxTimestamp
-	pendingSamples       prometheus.Gauge
-	shardCapacity        prometheus.Gauge
-	numShards            prometheus.Gauge
-	maxNumShards         prometheus.Gauge
-	minNumShards         prometheus.Gauge
-	desiredNumShards     prometheus.Gauge
-	samplesBytesTotal    prometheus.Counter
-	metadataBytesTotal   prometheus.Counter
-	maxSamplesPerSend    prometheus.Gauge
+	samplesTotal          prometheus.Counter
+	exemplarsTotal        prometheus.Counter
+	metadataTotal         prometheus.Counter
+	failedSamplesTotal    prometheus.Counter
+	failedExemplarsTotal  prometheus.Counter
+	failedMetadataTotal   prometheus.Counter
+	retriedSamplesTotal   prometheus.Counter
+	retriedExemplarsTotal prometheus.Counter
+	retriedMetadataTotal  prometheus.Counter
+	droppedSamplesTotal   prometheus.Counter
+	droppedExemplarsTotal prometheus.Counter
+	enqueueRetriesTotal   prometheus.Counter
+	sentBatchDuration     prometheus.Histogram
+	highestSentTimestamp  *maxTimestamp
+	pendingSamples        prometheus.Gauge
+	pendingExemplars      prometheus.Gauge
+	shardCapacity         prometheus.Gauge
+	numShards             prometheus.Gauge
+	maxNumShards          prometheus.Gauge
+	minNumShards          prometheus.Gauge
+	desiredNumShards      prometheus.Gauge
+	samplesBytesTotal     prometheus.Counter
+	//exemplarsBytesTotal?
+	metadataBytesTotal prometheus.Counter
+	maxSamplesPerSend  prometheus.Gauge
 }
 
 func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManagerMetrics {
@@ -90,6 +96,13 @@ func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManager
 		Help:        "Total number of samples sent to remote storage.",
 		ConstLabels: constLabels,
 	})
+	m.exemplarsTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace:   namespace,
+		Subsystem:   subsystem,
+		Name:        "exemplars_total",
+		Help:        "Total number of exemplars sent to remote storage.",
+		ConstLabels: constLabels,
+	})
 	m.metadataTotal = prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace:   namespace,
 		Subsystem:   subsystem,
@@ -102,6 +115,13 @@ func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManager
 		Subsystem:   subsystem,
 		Name:        "samples_failed_total",
 		Help:        "Total number of samples which failed on send to remote storage, non-recoverable errors.",
+		ConstLabels: constLabels,
+	})
+	m.failedExemplarsTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace:   namespace,
+		Subsystem:   subsystem,
+		Name:        "exemplars_failed_total",
+		Help:        "Total number of exemplars which failed on send to remote storage, non-recoverable errors.",
 		ConstLabels: constLabels,
 	})
 	m.failedMetadataTotal = prometheus.NewCounter(prometheus.CounterOpts{
@@ -118,6 +138,13 @@ func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManager
 		Help:        "Total number of samples which failed on send to remote storage but were retried because the send error was recoverable.",
 		ConstLabels: constLabels,
 	})
+	m.retriedExemplarsTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace:   namespace,
+		Subsystem:   subsystem,
+		Name:        "exemplars_retried_total",
+		Help:        "Total number of exemplars which failed on send to remote storage but were retried because the send error was recoverable.",
+		ConstLabels: constLabels,
+	})
 	m.retriedMetadataTotal = prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace:   namespace,
 		Subsystem:   subsystem,
@@ -130,6 +157,13 @@ func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManager
 		Subsystem:   subsystem,
 		Name:        "samples_dropped_total",
 		Help:        "Total number of samples which were dropped after being read from the WAL before being sent via remote write.",
+		ConstLabels: constLabels,
+	})
+	m.droppedExemplarsTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace:   namespace,
+		Subsystem:   subsystem,
+		Name:        "exemplars_dropped_total",
+		Help:        "Total number of exemplars which were dropped after being read from the WAL before being sent via remote write.",
 		ConstLabels: constLabels,
 	})
 	m.enqueueRetriesTotal = prometheus.NewCounter(prometheus.CounterOpts{
@@ -161,6 +195,13 @@ func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManager
 		Subsystem:   subsystem,
 		Name:        "samples_pending",
 		Help:        "The number of samples pending in the queues shards to be sent to the remote storage.",
+		ConstLabels: constLabels,
+	})
+	m.pendingExemplars = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace:   namespace,
+		Subsystem:   subsystem,
+		Name:        "exemplars_pending",
+		Help:        "The number of exemplars pending in the queues shards to be sent to the remote storage.",
 		ConstLabels: constLabels,
 	})
 	m.shardCapacity = prometheus.NewGauge(prometheus.GaugeOpts{
@@ -202,7 +243,7 @@ func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManager
 		Namespace:   namespace,
 		Subsystem:   subsystem,
 		Name:        "samples_bytes_total",
-		Help:        "The total number of bytes of samples sent by the queue after compression.",
+		Help:        "The total number of bytes of samples sent by the queue after compression. Note that when exemplars over remote write is enabled the exemplars included in a remote write request count towards this metric.",
 		ConstLabels: constLabels,
 	})
 	m.metadataBytesTotal = prometheus.NewCounter(prometheus.CounterOpts{
@@ -216,7 +257,7 @@ func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManager
 		Namespace:   namespace,
 		Subsystem:   subsystem,
 		Name:        "max_samples_per_send",
-		Help:        "The maximum number of samples to be sent, in a single request, to the remote storage.",
+		Help:        "The maximum number of samples to be sent, in a single request, to the remote storage. Note that when exemplars over remote write is enabled exemplars count against this limt",
 		ConstLabels: constLabels,
 	})
 
@@ -227,16 +268,21 @@ func (m *queueManagerMetrics) register() {
 	if m.reg != nil {
 		m.reg.MustRegister(
 			m.samplesTotal,
+			m.exemplarsTotal,
 			m.metadataTotal,
 			m.failedSamplesTotal,
+			m.failedExemplarsTotal,
 			m.failedMetadataTotal,
 			m.retriedSamplesTotal,
+			m.retriedExemplarsTotal,
 			m.retriedMetadataTotal,
 			m.droppedSamplesTotal,
+			m.droppedExemplarsTotal,
 			m.enqueueRetriesTotal,
 			m.sentBatchDuration,
 			m.highestSentTimestamp,
 			m.pendingSamples,
+			m.pendingExemplars,
 			m.shardCapacity,
 			m.numShards,
 			m.maxNumShards,
@@ -493,7 +539,12 @@ outer:
 		t.seriesMtx.Lock()
 		lbls, ok := t.seriesLabels[e.Ref]
 		if !ok {
-			// todo: metric to track dropped exemplars?
+			t.metrics.droppedExemplarsTotal.Inc()
+			// Track dropped exemplars in the same EWMA for sharding calc., maybe todo: change the name?
+			t.samplesDropped.incr(1)
+			if _, ok := t.droppedSeries[e.Ref]; !ok {
+				level.Info(t.logger).Log("msg", "Dropped exemplar for series that was not explicitly dropped via relabelling", "ref", e.Ref)
+			}
 			t.seriesMtx.Unlock()
 			continue
 		}
@@ -844,6 +895,9 @@ type shards struct {
 
 	qm     *QueueManager
 	queues []chan interface{}
+	// So we can accurately track how many of each are lost during shard shutdowns.
+	enqueuedSamples   atomic.Int64
+	enqueuedExemplars atomic.Int64
 
 	// Emulate a wait group with a channel and an atomic int, as you
 	// cannot select on a wait group.
@@ -855,8 +909,9 @@ type shards struct {
 
 	// Hard shutdown context is used to terminate outgoing HTTP connections
 	// after giving them a chance to terminate.
-	hardShutdown          context.CancelFunc
-	droppedOnHardShutdown atomic.Uint32
+	hardShutdown                   context.CancelFunc
+	samplesDroppedOnHardShutdown   atomic.Uint32
+	exemplarsDroppedOnHardShutdown atomic.Uint32
 }
 
 // start the shards; must be called before any call to enqueue.
@@ -879,7 +934,8 @@ func (s *shards) start(n int) {
 	s.softShutdown = make(chan struct{})
 	s.running.Store(int32(n))
 	s.done = make(chan struct{})
-	s.droppedOnHardShutdown.Store(0)
+	s.samplesDroppedOnHardShutdown.Store(0)
+	s.exemplarsDroppedOnHardShutdown.Store(0)
 	for i := 0; i < n; i++ {
 		go s.runShard(hardShutdownCtx, i, newQueues[i])
 	}
@@ -912,8 +968,11 @@ func (s *shards) stop() {
 	// Force an unclean shutdown.
 	s.hardShutdown()
 	<-s.done
-	if dropped := s.droppedOnHardShutdown.Load(); dropped > 0 {
+	if dropped := s.samplesDroppedOnHardShutdown.Load(); dropped > 0 {
 		level.Error(s.qm.logger).Log("msg", "Failed to flush all samples on shutdown", "count", dropped)
+	}
+	if dropped := s.exemplarsDroppedOnHardShutdown.Load(); dropped > 0 {
+		level.Error(s.qm.logger).Log("msg", "Failed to flush all exemplars on shutdown", "count", dropped)
 	}
 }
 
@@ -934,7 +993,14 @@ func (s *shards) enqueue(ref uint64, sample interface{}) bool {
 	case <-s.softShutdown:
 		return false
 	case s.queues[shard] <- sample:
-		s.qm.metrics.pendingSamples.Inc()
+		switch sample.(type) {
+		case rwSample:
+			s.qm.metrics.pendingSamples.Inc()
+			s.enqueuedSamples.Inc()
+		case rwExemplar:
+			s.qm.metrics.pendingExemplars.Inc()
+			s.enqueuedExemplars.Inc()
+		}
 		return true
 	}
 }
@@ -952,10 +1018,13 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue chan interface
 	// If we have fewer samples than that, flush them out after a deadline
 	// anyways.
 	var (
-		max            = s.qm.cfg.MaxSamplesPerSend
-		nPending       = 0
-		pendingSamples = allocateTimeSeries(max)
-		buf            []byte
+		max                                = s.qm.cfg.MaxSamplesPerSend
+		nPendingSamples, nPendingExemplars = 0, 0
+		pendingSamples                     = allocateTimeSeries(max)
+		// Rough estimate, 1% of active series will contain an exemplar on each scrape.
+		// todo: casting this many times smells, also we could get index out of bounds issues here.
+		pendingExemplars = allocateTimeSeries(int(math.Max(1, float64(max/10))))
+		buf              []byte
 	)
 
 	timer := time.NewTimer(time.Duration(s.qm.cfg.BatchSendDeadline))
@@ -974,18 +1043,23 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue chan interface
 		case <-ctx.Done():
 			// In this case we drop all samples in the buffer and the queue.
 			// Remove them from pending and mark them as failed.
-			droppedSamples := nPending + len(queue)
+			droppedSamples := nPendingSamples + int(s.enqueuedSamples.Load())
+			droppedExemplars := nPendingExemplars + int(s.enqueuedExemplars.Load())
 			s.qm.metrics.pendingSamples.Sub(float64(droppedSamples))
+			s.qm.metrics.pendingExemplars.Sub(float64(droppedExemplars))
 			s.qm.metrics.failedSamplesTotal.Add(float64(droppedSamples))
-			s.droppedOnHardShutdown.Add(uint32(droppedSamples))
+			s.qm.metrics.failedSamplesTotal.Add(float64(droppedSamples))
+			s.samplesDroppedOnHardShutdown.Add(uint32(droppedSamples))
+			s.exemplarsDroppedOnHardShutdown.Add(uint32(droppedExemplars))
 			return
 
 		case sample, ok := <-queue:
 			if !ok {
-				if nPending > 0 {
-					level.Debug(s.qm.logger).Log("msg", "Flushing samples to remote storage...", "count", nPending)
-					s.sendSamples(ctx, pendingSamples[:nPending], &buf)
-					s.qm.metrics.pendingSamples.Sub(float64(nPending))
+				if nPendingSamples > 0 || nPendingExemplars > 0 {
+					level.Debug(s.qm.logger).Log("msg", "Flushing data to remote storage...", "samples", nPendingSamples, "exemplars", nPendingExemplars)
+					s.sendSamples(ctx, pendingSamples[:nPendingSamples], pendingExemplars[:nPendingExemplars], &buf)
+					s.qm.metrics.pendingSamples.Sub(float64(nPendingSamples))
+					s.qm.metrics.pendingExemplars.Sub(float64(nPendingExemplars))
 					level.Debug(s.qm.logger).Log("msg", "Done flushing.")
 				}
 				return
@@ -996,23 +1070,24 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue chan interface
 			// stop reading from the queue. This makes it safe to reference pendingSamples by index.
 			switch d := sample.(type) {
 			case rwSample:
-				pendingSamples[nPending].Labels = labelsToLabelsProto(d.labels, pendingSamples[nPending].Labels)
-				pendingSamples[nPending].Samples[0].Timestamp = d.t
-				pendingSamples[nPending].Samples[0].Value = d.v
-				nPending++
+				pendingSamples[nPendingSamples].Labels = labelsToLabelsProto(d.labels, pendingSamples[nPendingSamples].Labels)
+				pendingSamples[nPendingSamples].Samples[0].Timestamp = d.t
+				pendingSamples[nPendingSamples].Samples[0].Value = d.v
+				nPendingSamples++
 			case rwExemplar:
-				pendingSamples[nPending].Labels = labelsToLabelsProto(d.seriesLabels, pendingSamples[nPending].Labels)
-				pendingSamples[nPending].Exemplars = append(pendingSamples[nPending].Exemplars[:0], prompb.Exemplar{
+				pendingExemplars[nPendingExemplars].Labels = labelsToLabelsProto(d.seriesLabels, pendingExemplars[nPendingExemplars].Labels)
+				pendingExemplars[nPendingExemplars].Exemplars = append(pendingExemplars[nPendingExemplars].Exemplars[:0], prompb.Exemplar{
 					Labels:    labelsToLabelsProto(d.labels, nil),
 					Value:     d.v,
 					Timestamp: d.t,
 				})
-				nPending++
+				nPendingExemplars++
 			}
 
-			if nPending >= max {
-				s.sendSamples(ctx, pendingSamples, &buf)
-				nPending = 0
+			if nPendingSamples+nPendingExemplars >= max {
+				s.sendSamples(ctx, pendingSamples, pendingExemplars, &buf)
+				nPendingSamples = 0
+				nPendingExemplars = 0
 				s.qm.metrics.pendingSamples.Sub(float64(max))
 
 				stop()
@@ -1020,20 +1095,22 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue chan interface
 			}
 
 		case <-timer.C:
-			if nPending > 0 {
-				level.Debug(s.qm.logger).Log("msg", "runShard timer ticked, sending samples", "samples", nPending, "shard", shardNum)
-				s.sendSamples(ctx, pendingSamples[:nPending], &buf)
-				s.qm.metrics.pendingSamples.Sub(float64(nPending))
-				nPending = 0
+			if nPendingSamples > 0 || nPendingExemplars > 0 {
+				level.Debug(s.qm.logger).Log("msg", "runShard timer ticked, sending buffered data", "samples", nPendingSamples, "exemplars", nPendingExemplars, "shard", shardNum)
+				s.sendSamples(ctx, pendingSamples[:nPendingSamples], pendingExemplars[:nPendingExemplars], &buf)
+				s.qm.metrics.pendingSamples.Sub(float64(nPendingSamples))
+				s.qm.metrics.pendingExemplars.Sub(float64(nPendingExemplars))
+				nPendingSamples = 0
+				nPendingExemplars = 0
 			}
 			timer.Reset(time.Duration(s.qm.cfg.BatchSendDeadline))
 		}
 	}
 }
 
-func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, buf *[]byte) {
+func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, exemplars []prompb.TimeSeries, buf *[]byte) {
 	begin := time.Now()
-	err := s.sendSamplesWithBackoff(ctx, samples, buf)
+	err := s.sendSamplesWithBackoff(ctx, samples, exemplars, buf)
 	if err != nil {
 		level.Error(s.qm.logger).Log("msg", "non-recoverable error", "count", len(samples), "err", err)
 		s.qm.metrics.failedSamplesTotal.Add(float64(len(samples)))
@@ -1047,9 +1124,9 @@ func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, b
 }
 
 // sendSamples to the remote storage with backoff for recoverable errors.
-func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.TimeSeries, buf *[]byte) error {
+func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.TimeSeries, exemplars []prompb.TimeSeries, buf *[]byte) error {
 	// Build the WriteRequest with no metadata.
-	req, highest, err := buildWriteRequest(samples, nil, *buf)
+	req, highest, err := buildWriteRequest(append(samples, exemplars...), nil, *buf)
 	if err != nil {
 		// Failing to build the write request is non-recoverable, since it will
 		// only error if marshaling the proto to bytes fails.
@@ -1058,6 +1135,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 
 	reqSize := len(*buf)
 	sampleCount := len(samples)
+	exemplarCount := len(exemplars)
 	*buf = req
 
 	// An anonymous function allows us to defer the completion of our per-try spans
@@ -1068,6 +1146,9 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 		defer span.Finish()
 
 		span.SetTag("samples", sampleCount)
+		if exemplarCount > 0 {
+			span.SetTag("exemplars", exemplarCount)
+		}
 		span.SetTag("request_size", reqSize)
 		span.SetTag("try", try)
 		span.SetTag("remote_name", s.qm.storeClient.Name())
@@ -1075,6 +1156,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 
 		begin := time.Now()
 		s.qm.metrics.samplesTotal.Add(float64(sampleCount))
+		s.qm.metrics.exemplarsTotal.Add(float64(exemplarCount))
 		err := s.qm.client().Store(ctx, *buf)
 		s.qm.metrics.sentBatchDuration.Observe(time.Since(begin).Seconds())
 
@@ -1089,6 +1171,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 
 	onRetry := func() {
 		s.qm.metrics.retriedSamplesTotal.Add(float64(sampleCount))
+		s.qm.metrics.retriedExemplarsTotal.Add(float64(exemplarCount))
 	}
 
 	err = sendWriteRequestWithBackoff(ctx, s.qm.cfg, s.qm.logger, attemptStore, onRetry)
