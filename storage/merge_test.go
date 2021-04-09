@@ -468,18 +468,18 @@ func TestCompactingChunkSeriesMerger(t *testing.T) {
 		{
 			name: "110 overlapping",
 			input: []ChunkSeries{
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), tsdbutil.GenerateSamples(0, 110)), // 0 - 110
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), tsdbutil.GenerateSamples(60, 50)), // 60 - 110
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), tsdbutil.GenerateSamples(0, 110)), // [0 - 110)
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), tsdbutil.GenerateSamples(60, 50)), // [60 - 110)
 			},
 			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
 				tsdbutil.GenerateSamples(0, 110),
 			),
 		},
 		{
-			name: "150 overlapping split chunk",
+			name: "150 overlapping samples, split chunk",
 			input: []ChunkSeries{
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), tsdbutil.GenerateSamples(0, 90)),  // 0 - 90
-				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), tsdbutil.GenerateSamples(60, 90)), // 90 - 150
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), tsdbutil.GenerateSamples(0, 90)),  // [0 - 90)
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), tsdbutil.GenerateSamples(60, 90)), // [90 - 150)
 			},
 			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
 				tsdbutil.GenerateSamples(0, 120),
