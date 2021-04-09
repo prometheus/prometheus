@@ -1084,8 +1084,10 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue chan interface
 				nPendingExemplars++
 			}
 
-			if nPendingSamples+nPendingExemplars >= max {
-				s.sendSamples(ctx, pendingSamples, pendingExemplars, &buf)
+			if nPendingSamples >= max || nPendingExemplars >= len(pendingExemplars) {
+				// We need to specify an end index here so that we're not sending the entire buffer of each type
+				// since each is not necessarily full with the new logic that includes exemplars.
+				s.sendSamples(ctx, pendingSamples[:nPendingSamples], pendingExemplars[:nPendingExemplars], &buf)
 				nPendingSamples = 0
 				nPendingExemplars = 0
 				s.qm.metrics.pendingSamples.Sub(float64(max))
