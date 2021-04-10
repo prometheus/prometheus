@@ -31,7 +31,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/config"
-
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/relabel"
 	"github.com/prometheus/prometheus/prompb"
@@ -298,16 +297,21 @@ func (m *queueManagerMetrics) register() {
 func (m *queueManagerMetrics) unregister() {
 	if m.reg != nil {
 		m.reg.Unregister(m.samplesTotal)
+		m.reg.Unregister(m.exemplarsTotal)
 		m.reg.Unregister(m.metadataTotal)
 		m.reg.Unregister(m.failedSamplesTotal)
+		m.reg.Unregister(m.failedExemplarsTotal)
 		m.reg.Unregister(m.failedMetadataTotal)
 		m.reg.Unregister(m.retriedSamplesTotal)
+		m.reg.Unregister(m.retriedExemplarsTotal)
 		m.reg.Unregister(m.retriedMetadataTotal)
 		m.reg.Unregister(m.droppedSamplesTotal)
+		m.reg.Unregister(m.droppedExemplarsTotal)
 		m.reg.Unregister(m.enqueueRetriesTotal)
 		m.reg.Unregister(m.sentBatchDuration)
 		m.reg.Unregister(m.highestSentTimestamp)
 		m.reg.Unregister(m.pendingSamples)
+		m.reg.Unregister(m.pendingExemplars)
 		m.reg.Unregister(m.shardCapacity)
 		m.reg.Unregister(m.numShards)
 		m.reg.Unregister(m.maxNumShards)
