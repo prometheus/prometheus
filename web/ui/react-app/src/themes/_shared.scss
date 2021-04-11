@@ -23,3 +23,16 @@
   font-size: 0.7rem;
   color: $query-stats-color;
 }
+
+.metrics-explorer.modal-dialog {
+  max-width: 750px;
+  overflow-wrap: break-word;
+}
+.metrics-explorer .metric {
+  cursor: pointer;
+  margin: 0;
+  padding: 5px;
+}
+.metrics-explorer .metric:hover {
+  background: $metrics-explorer-bg;
+}

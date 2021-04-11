@@ -13,6 +13,8 @@ $config-yaml-border: $gray-700;
 
 $query-stats-color: $secondary;
 
+$metrics-explorer-bg: $dropdown-link-hover-bg;
+
 .bootstrap-dark {
   @import '../App.css';
   @import './shared';
