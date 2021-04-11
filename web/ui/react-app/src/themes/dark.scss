@@ -1,5 +1,13 @@
 @import '~@forevolve/bootstrap-dark/dist/css/toggle-bootstrap-dark.min.css';
 
+@import '~bootstrap/scss/functions';
+@import '~bootstrap/scss/variables';
+@import '~@forevolve/bootstrap-dark/scss/_dark-variables.scss';
+
+$alert-cell-color: $white;
+$rule-cell-bg: $gray-900;
+
 .bootstrap-dark {
   @import '../App.css';
+  @import './shared';
 }

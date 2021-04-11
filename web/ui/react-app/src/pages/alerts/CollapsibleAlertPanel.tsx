@@ -28,7 +28,7 @@ const CollapsibleAlertPanel: FC<CollapsibleAlertPanelProps> = ({ rule, showAnnot
         <strong>{rule.name}</strong> ({`${rule.alerts.length} active`})
       </Alert>
       <Collapse isOpen={open} className="mb-2">
-        <pre style={{ background: '#f5f5f5', padding: 15 }}>
+        <pre className="alert-cell">
           <code>
             <div>
               name: <Link to={createExpressionLink(`ALERTS{alertname="${rule.name}"}`)}>{rule.name}</Link>
