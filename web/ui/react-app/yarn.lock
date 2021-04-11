@@ -1303,6 +1303,15 @@
   resolved "https://registry.yarnpkg.com/@csstools/normalize.css/-/normalize.css-10.1.0.tgz#f0950bba18819512d42f7197e56c518aa491cf18"
   integrity sha512-ij4wRiunFfaJxjB0BdrYHIH8FxBJpOwNPhhAcunlmPdXudL1WQV1qoP9un6JsEBAgQH+7UXyyjh0g7jTxXK6tg==
 
+"@forevolve/bootstrap-dark@^1.0.0":
+  version "1.0.0"
+  resolved "https://registry.yarnpkg.com/@forevolve/bootstrap-dark/-/bootstrap-dark-1.0.0.tgz#05fb14e73fbf5ce159a5ba5d1aee151a57c79bca"
+  integrity sha512-DrW2ztlas60UgumD0KZP/MzfO2WQd8U1vT3O7aSG7ACXeVYGb+WnGz4H3LL3PD7/nOQunK+U57rVeJcyQ/uivA==
+  dependencies:
+    bootstrap "^4.6.0"
+    jquery "^3.5.1"
+    popper.js "^1.16.1"
+
 "@fortawesome/fontawesome-common-types@^0.2.35":
   version "0.2.35"
   resolved "https://registry.yarnpkg.com/@fortawesome/fontawesome-common-types/-/fontawesome-common-types-0.2.35.tgz#01dd3d054da07a00b764d78748df20daf2b317e9"
@@ -12025,6 +12034,11 @@ url@^0.11.0:
   dependencies:
     punycode "1.3.2"
     querystring "0.2.0"
+
+use-media@^1.4.0:
+  version "1.4.0"
+  resolved "https://registry.yarnpkg.com/use-media/-/use-media-1.4.0.tgz#e777bf1f382a7aacabbd1f9ce3da2b62e58b2a98"
+  integrity sha512-XsgyUAf3nhzZmEfhc5MqLHwyaPjs78bgytpVJ/xDl0TF4Bptf3vEpBNBBT/EIKOmsOc8UbuECq3mrP3mt1QANA==
 
 use@^3.1.0:
   version "3.1.1"

@@ -2,7 +2,8 @@ import './globals';
 import React from 'react';
 import ReactDOM from 'react-dom';
 import App from './App';
-import 'bootstrap/dist/css/bootstrap.min.css';
+import './themes/light.scss';
+import './themes/dark.scss';
 import './fonts/codicon.ttf';
 import { isPresent } from './utils';
 

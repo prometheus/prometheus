@@ -15,6 +15,7 @@
     "@codemirror/search": "^0.18.2",
     "@codemirror/state": "^0.18.2",
     "@codemirror/view": "^0.18.3",
+    "@forevolve/bootstrap-dark": "^1.0.0",
     "@fortawesome/fontawesome-svg-core": "^1.2.14",
     "@fortawesome/free-solid-svg-icons": "^5.7.1",
     "@fortawesome/react-fontawesome": "^0.1.4",
@@ -43,7 +44,8 @@
     "sanitize-html": "^1.20.1",
     "tempusdominus-bootstrap-4": "^5.1.2",
     "tempusdominus-core": "^5.0.3",
-    "typescript": "^3.3.3"
+    "typescript": "^3.3.3",
+    "use-media": "^1.4.0"
   },
   "scripts": {
     "start": "react-scripts start",

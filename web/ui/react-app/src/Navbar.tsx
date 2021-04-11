@@ -13,6 +13,7 @@ import {
   DropdownItem,
 } from 'reactstrap';
 import { usePathPrefix } from './contexts/PathPrefixContext';
+import { ThemeToggle } from './Theme';
 
 interface NavbarProps {
   consolesLink: string | null;
@@ -81,6 +82,7 @@ const Navigation: FC<NavbarProps> = ({ consolesLink }) => {
           </NavItem>
         </Nav>
       </Collapse>
+      <ThemeToggle />
     </Navbar>
   );
 };
