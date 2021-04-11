@@ -85,7 +85,7 @@ export const RulesContent: FC<RouteComponentProps & RulesContentProps> = ({ resp
                 {g.rules.map((r, i) => {
                   return (
                     <tr key={i}>
-                      <td style={{ backgroundColor: '#F5F5F5' }} className="rule_cell">
+                      <td className="rule-cell">
                         {r.alerts ? (
                           <GraphExpressionLink title="alert" text={r.name} expr={`ALERTS{alertname="${r.name}"}`} />
                         ) : (
