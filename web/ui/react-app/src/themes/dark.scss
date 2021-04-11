@@ -7,6 +7,10 @@
 $alert-cell-color: $white;
 $rule-cell-bg: $gray-900;
 
+$config-yaml-color: $black;
+$config-yaml-bg: $gray-500;
+$config-yaml-border: $gray-700;
+
 .bootstrap-dark {
   @import '../App.css';
   @import './shared';

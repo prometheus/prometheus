@@ -6,6 +6,10 @@
 $alert-cell-color: inherit;
 $rule-cell-bg: #f5f5f5;
 
+$config-yaml-color: #333;
+$config-yaml-bg: #f5f5f5;
+$config-yaml-border: #ccc;
+
 .bootstrap {
   @import '../App.css';
   @import './shared';

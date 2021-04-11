@@ -6,3 +6,14 @@
 .rule-cell {
   background-color: $rule-cell-bg;
 }
+
+.config-yaml {
+  display: block;
+  padding: 10px;
+  font-size: 13px;
+  color: $config-yaml-color;
+  word-break: break-all;
+  background-color: $config-yaml-bg;
+  border: 1px solid $config-yaml-border;
+  border-radius: 4px;
+}
