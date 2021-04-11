@@ -39,21 +39,10 @@ input[type='checkbox']:checked + label {
   flex-wrap: nowrap;
 }
 
-.expression-input .cm-expression-input {
-  border: 1px solid #ced4da;
-  flex: 1 1 auto;
-  padding: 4px 0 0 8px;
-  font-size: 15px;
-}
-
 /* Font used for autocompletion item icons. */
 @font-face {
   font-family: 'codicon';
   src: local('codicon'), url(./fonts/codicon.ttf) format('truetype');
-}
-
-button.execute-btn {
-  width: 84px;
 }
 
 .alert.alert-danger {

@@ -218,11 +218,13 @@ const CMExpressionInput: FC<CMExpressionInputProps> = ({
         </InputGroupAddon>
         <div ref={containerRef} className="cm-expression-input" />
         <InputGroupAddon addonType="append">
-          <Button className="btn-light border" title="Open metrics explorer" onClick={() => setShowMetricsExplorer(true)}>
+          <Button
+            className="metrics-explorer-btn"
+            title="Open metrics explorer"
+            onClick={() => setShowMetricsExplorer(true)}
+          >
             <FontAwesomeIcon icon={faGlobeEurope} />
           </Button>
-        </InputGroupAddon>
-        <InputGroupAddon addonType="append">
           <Button className="execute-btn" color="primary" onClick={executeQuery}>
             Execute
           </Button>

@@ -36,6 +36,11 @@
 .metrics-explorer .metric:hover {
   background: $metrics-explorer-bg;
 }
+button.metrics-explorer-btn {
+  color: $input-group-addon-color;
+  background-color: $input-group-addon-bg;
+  border: $input-border-width solid $input-group-addon-border-color;
+}
 
 .graph-controls button.clear-time-btn,
 .table-controls button.clear-time-btn {
@@ -46,4 +51,16 @@
   &:hover {
     color: darken($secondary, 10%);
   }
+}
+
+button.execute-btn {
+  width: 84px;
+  border: $input-border-width solid darken($primary, 5%);
+}
+
+.expression-input .cm-expression-input {
+  border: $input-border-width solid $input-border-color;
+  flex: 1 1 auto;
+  padding: 4px 0 0 8px;
+  font-size: 15px;
 }
