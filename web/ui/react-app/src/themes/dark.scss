@@ -11,6 +11,8 @@ $config-yaml-color: $black;
 $config-yaml-bg: $gray-500;
 $config-yaml-border: $gray-700;
 
+$query-stats-color: $secondary;
+
 .bootstrap-dark {
   @import '../App.css';
   @import './shared';

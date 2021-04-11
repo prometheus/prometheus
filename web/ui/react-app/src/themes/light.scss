@@ -10,6 +10,8 @@ $config-yaml-color: #333;
 $config-yaml-bg: #f5f5f5;
 $config-yaml-border: #ccc;
 
+$query-stats-color: #71808e;
+
 .bootstrap {
   @import '../App.css';
   @import './shared';

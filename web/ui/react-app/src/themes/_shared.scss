@@ -17,3 +17,9 @@
   border: 1px solid $config-yaml-border;
   border-radius: 4px;
 }
+
+.query-stats {
+  flex-grow: 1;
+  font-size: 0.7rem;
+  color: $query-stats-color;
+}
