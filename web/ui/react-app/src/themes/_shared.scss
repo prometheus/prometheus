@@ -36,3 +36,14 @@
 .metrics-explorer .metric:hover {
   background: $metrics-explorer-bg;
 }
+
+.graph-controls button.clear-time-btn,
+.table-controls button.clear-time-btn {
+  background-color: $input-bg;
+  border: $input-border-width solid $input-border-color;
+  border-left: none;
+
+  &:hover {
+    color: darken($secondary, 10%);
+  }
+}

@@ -150,15 +150,6 @@ button.execute-btn {
   margin-left: 20px;
 }
 
-.graph-controls .clear-time-btn,
-.table-controls .clear-time-btn {
-  background: #fff;
-  border-left: none;
-  border-top: 1px solid #ced4da;
-  border-bottom: 1px solid #ced4da;
-  color: #495057;
-}
-
 .graph-legend {
   margin: 15px 0 15px 55px;
   font-size: 0.75em;
