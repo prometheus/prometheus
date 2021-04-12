@@ -121,9 +121,7 @@ func TestSelectExemplar(t *testing.T) {
 	require.NoError(t, err)
 	es := exs.(*CircularExemplarStorage)
 
-	l := labels.Labels{
-		{Name: "service", Value: "asdf"},
-	}
+	l := labels.Labels{{Name: "service", Value: "asdf"}}
 	e := exemplar.Exemplar{
 		Labels: labels.Labels{
 			labels.Label{
