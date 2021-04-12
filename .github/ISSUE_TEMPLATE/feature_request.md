@@ -8,14 +8,16 @@ assignees: ''
 
 <!--
 
-    Please do *NOT* ask usage questions in Github issues.
+    Please do *NOT* ask support questions in Github issues.
 
-    If your issue is not a feature request or bug report use:
-    https://groups.google.com/forum/#!forum/prometheus-users. If
-    you are unsure whether you hit a bug, search and ask in the
-    mailing list first.
+    If your issue is not a feature request or bug report use our
+    community support.
 
-    You can find more information at: https://prometheus.io/community/
+    https://prometheus.io/community/
+
+    There is also commercial support available.
+
+    https://prometheus.io/support-training/
 
 -->
 ## Proposal
