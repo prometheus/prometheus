@@ -191,6 +191,12 @@ func TestTemplateExpansion(t *testing.T) {
 			output: "0:1:1.235M:120m:",
 		},
 		{
+			// Humanize - string with error.
+			text:       `{{ humanize "one" }}`,
+			shouldFail: true,
+			errorMsg:   `strconv.ParseFloat: parsing "one": invalid syntax`,
+		},
+		{
 			// Humanize1024 - float64.
 			text:   "{{ range . }}{{ humanize1024 . }}:{{ end }}",
 			input:  []float64{0.0, 1.0, 1048576.0, .12},
@@ -201,6 +207,12 @@ func TestTemplateExpansion(t *testing.T) {
 			text:   "{{ range . }}{{ humanize1024 . }}:{{ end }}",
 			input:  []string{"0.0", "1.0", "1048576.0", ".12"},
 			output: "0:1:1Mi:0.12:",
+		},
+		{
+			// Humanize1024 - string with error.
+			text:       `{{ humanize1024 "one" }}`,
+			shouldFail: true,
+			errorMsg:   `strconv.ParseFloat: parsing "one": invalid syntax`,
 		},
 		{
 			// HumanizeDuration - seconds - float64.
@@ -227,6 +239,12 @@ func TestTemplateExpansion(t *testing.T) {
 			output: "100ms:100us:123.5ms:1m 0s:1m 0s:1.234s:12.35s:",
 		},
 		{
+			// HumanizeDuration - string with error.
+			text:       `{{ humanizeDuration "one" }}`,
+			shouldFail: true,
+			errorMsg:   `strconv.ParseFloat: parsing "one": invalid syntax`,
+		},
+		{
 			// Humanize* Inf and NaN - float64.
 			text:   "{{ range . }}{{ humanize . }}:{{ humanize1024 . }}:{{ humanizeDuration . }}:{{humanizeTimestamp .}}:{{ end }}",
 			input:  []float64{math.Inf(1), math.Inf(-1), math.NaN()},
@@ -247,6 +265,12 @@ func TestTemplateExpansion(t *testing.T) {
 			// HumanizePercentage - model.SampleValue input - string.
 			text:   `{{ "-0.22222" | humanizePercentage }}:{{ "0.0" | humanizePercentage }}:{{ "0.1234567" | humanizePercentage }}:{{ "1.23456" | humanizePercentage }}`,
 			output: "-22.22%:0%:12.35%:123.5%",
+		},
+		{
+			// HumanizePercentage - model.SampleValue input - string with error.
+			text:       `{{ "one" | humanizePercentage }}`,
+			shouldFail: true,
+			errorMsg:   `strconv.ParseFloat: parsing "one": invalid syntax`,
 		},
 		{
 			// HumanizeTimestamp - model.SampleValue input - float64.
