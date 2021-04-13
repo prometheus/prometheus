@@ -64,3 +64,10 @@ button.execute-btn {
   padding: 4px 0 0 8px;
   font-size: 15px;
 }
+
+.tab-content {
+  border-left: 1px solid $nav-tabs-border-color;
+  border-right: 1px solid $nav-tabs-border-color;
+  border-bottom: 1px solid $nav-tabs-border-color;
+  padding: 10px;
+}
