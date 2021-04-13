@@ -71,3 +71,9 @@ button.execute-btn {
   border-bottom: 1px solid $nav-tabs-border-color;
   padding: 10px;
 }
+
+/* bootstrap-dark seems to break overflow on modals, making them unscrollable
+   this fixes it by allowing overflow and enabling scrolling */
+.modal.show {
+  overflow-y: auto;
+}
