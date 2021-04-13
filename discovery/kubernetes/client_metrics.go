@@ -14,6 +14,7 @@
 package kubernetes
 
 import (
+	"context"
 	"net/url"
 	"time"
 
@@ -120,10 +121,10 @@ func (f *clientGoRequestMetricAdapter) Register(registerer prometheus.Registerer
 		clientGoRequestLatencyMetricVec,
 	)
 }
-func (clientGoRequestMetricAdapter) Increment(code string, method string, host string) {
+func (clientGoRequestMetricAdapter) Increment(ctx context.Context, code string, method string, host string) {
 	clientGoRequestResultMetricVec.WithLabelValues(code).Inc()
 }
-func (clientGoRequestMetricAdapter) Observe(verb string, u url.URL, latency time.Duration) {
+func (clientGoRequestMetricAdapter) Observe(ctx context.Context, verb string, u url.URL, latency time.Duration) {
 	clientGoRequestLatencyMetricVec.WithLabelValues(u.EscapedPath()).Observe(latency.Seconds())
 }
 
