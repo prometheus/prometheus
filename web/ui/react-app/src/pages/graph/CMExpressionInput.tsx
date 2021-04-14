@@ -11,15 +11,15 @@ import { closeBrackets, closeBracketsKeymap } from '@codemirror/closebrackets';
 import { searchKeymap, highlightSelectionMatches } from '@codemirror/search';
 import { commentKeymap } from '@codemirror/comment';
 import { lintKeymap } from '@codemirror/lint';
-import { PromQLExtension } from 'codemirror-promql';
+import { PromQLExtension, CompleteStrategy } from 'codemirror-promql';
 import { autocompletion, completionKeymap, CompletionContext, CompletionResult } from '@codemirror/autocomplete';
 import { theme, promqlHighlighter } from './CMTheme';
 
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faSearch, faSpinner, faGlobeEurope } from '@fortawesome/free-solid-svg-icons';
 import MetricsExplorer from './MetricsExplorer';
-import { CompleteStrategy, newCompleteStrategy } from 'codemirror-promql/complete';
 import { usePathPrefix } from '../../contexts/PathPrefixContext';
+import { newCompleteStrategy } from 'codemirror-promql/cjs/complete';
 
 const promqlExtension = new PromQLExtension();
 
@@ -102,7 +102,7 @@ const CMExpressionInput: FC<CMExpressionInputProps> = ({
       .setComplete({
         completeStrategy: new HistoryCompleteStrategy(
           newCompleteStrategy({
-            remote: { url: pathPrefix },
+            remote: { url: pathPrefix, cache: { initialMetricList: metricNames } },
           }),
           queryHistory
         ),

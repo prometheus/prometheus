@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { mount, ReactWrapper } from 'enzyme';
 import CMExpressionInput from './CMExpressionInput';
-import { Button, InputGroup, InputGroupAddon, Input } from 'reactstrap';
+import { Button, InputGroup, InputGroupAddon } from 'reactstrap';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faSearch, faSpinner } from '@fortawesome/free-solid-svg-icons';
 

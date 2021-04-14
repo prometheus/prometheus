@@ -3418,10 +3418,10 @@ coa@^2.0.2:
     chalk "^2.4.1"
     q "^1.1.2"
 
-codemirror-promql@^0.14.1:
-  version "0.14.1"
-  resolved "https://registry.yarnpkg.com/codemirror-promql/-/codemirror-promql-0.14.1.tgz#ea927f347effd7f28e4c1f87dcd8898d1681ea40"
-  integrity sha512-zAdvVrvehVToPBlwySVlTXCY3hzOMPgO1B0m7O6PBY5BUOYbNIDk+DSjrc7glUTwySUwkyWt/x7kDabGv4tXNg==
+codemirror-promql@^0.15.0:
+  version "0.15.0"
+  resolved "https://registry.yarnpkg.com/codemirror-promql/-/codemirror-promql-0.15.0.tgz#dd6365ea5c2d18421d225cef12b74e64d8cab280"
+  integrity sha512-u5f6Narj8Kx79AHMPlr8vogGUhinZfsZVT00R7wStquDA3kRTvxfEBYK77UtWNNJshxC1B3EZnHzXN2K9RzVXw==
   dependencies:
     lezer-promql "^0.18.0"
     lru-cache "^6.0.0"
