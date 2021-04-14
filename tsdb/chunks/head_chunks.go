@@ -26,6 +26,7 @@ import (
 	"sort"
 	"strconv"
 	"sync"
+	"time"
 
 	"github.com/pkg/errors"
 	"go.uber.org/atomic"
@@ -102,9 +103,9 @@ type ChunkDiskMapper struct {
 
 	/// Reader.
 	// The int key in the map is the file number on the disk.
-	mmappedChunkFiles map[int]*mmappedChunkFile // Contains the m-mapped files for each chunk file mapped with its index.
-	readPathMtx       sync.RWMutex              // Mutex used to protect the above 2 maps.
-	pool              chunkenc.Pool             // This is used when fetching a chunk from the disk to allocate a chunk.
+	mmappedChunkFilesMx sync.RWMutex
+	mmappedChunkFiles   map[int]*mmappedChunkFile // Contains the m-mapped files for each chunk file mapped with its index.
+	pool                chunkenc.Pool             // This is used when fetching a chunk from the disk to allocate a chunk.
 
 	// Writer and Reader.
 	// We flush chunks to disk in batches. Hence, we store them in this buffer
@@ -116,6 +117,9 @@ type ChunkDiskMapper struct {
 	fileMaxtSet bool
 
 	closed bool
+
+	runClose   chan struct{}
+	runRoutine sync.WaitGroup
 }
 
 type mmappedChunkFileState int
@@ -172,13 +176,23 @@ func NewChunkDiskMapper(dir string, pool chunkenc.Pool, writeBufferSize int) (*C
 		writeBufferSize: writeBufferSize,
 		crc32:           newCRC32(),
 		chunkBuffer:     newChunkBuffer(),
+		runClose:        make(chan struct{}),
 	}
 
 	if m.pool == nil {
 		m.pool = chunkenc.NewPool()
 	}
 
-	return m, m.openMMapFiles()
+	if err := m.openMMapFiles(); err != nil {
+		return nil, err
+	}
+
+	// Start a background routine to periodically close and deleted mmap-ed files
+	// which are in the deleting state.
+	m.runRoutine.Add(1)
+	go m.run()
+
+	return m, nil
 }
 
 func (cdm *ChunkDiskMapper) openMMapFiles() (returnErr error) {
@@ -244,6 +258,20 @@ func (cdm *ChunkDiskMapper) openMMapFiles() (returnErr error) {
 	}
 
 	return nil
+}
+
+func (cdm *ChunkDiskMapper) run() {
+	defer cdm.runRoutine.Done()
+
+	for {
+		select {
+		case <-cdm.runClose:
+			return
+		case <-time.Tick(time.Minute):
+			// TODO log the error
+			_ = cdm.safeDeleteTruncatedFiles()
+		}
+	}
 }
 
 func listChunkFiles(dir string) (map[int]string, error) {
@@ -404,9 +432,9 @@ func (cdm *ChunkDiskMapper) cut() (returnErr error) {
 	cdm.curFileNumBytes.Store(int64(n))
 
 	if cdm.curFile != nil {
-		cdm.readPathMtx.Lock()
+		cdm.mmappedChunkFilesMx.Lock()
 		cdm.mmappedChunkFiles[cdm.curFileSequence].maxt = cdm.curFileMaxt
-		cdm.readPathMtx.Unlock()
+		cdm.mmappedChunkFilesMx.Unlock()
 	}
 
 	mmapFile, err := fileutil.OpenMmapFileWithSize(newFile.Name(), int(MaxHeadChunkFileSize))
@@ -414,7 +442,7 @@ func (cdm *ChunkDiskMapper) cut() (returnErr error) {
 		return err
 	}
 
-	cdm.readPathMtx.Lock()
+	cdm.mmappedChunkFilesMx.Lock()
 	cdm.curFileSequence = seq
 	cdm.curFile = newFile
 	if cdm.chkWriter != nil {
@@ -428,7 +456,7 @@ func (cdm *ChunkDiskMapper) cut() (returnErr error) {
 		byteSlice:       realByteSlice(mmapFile.Bytes()),
 		byteSliceCloser: mmapFile,
 	}
-	cdm.readPathMtx.Unlock()
+	cdm.mmappedChunkFilesMx.Unlock()
 
 	cdm.curFileMaxt = 0
 
@@ -484,11 +512,11 @@ func (cdm *ChunkDiskMapper) flushBuffer() error {
 // GetChunk returns a chunk from a given reference and the reference to use to release
 // it once done.
 func (cdm *ChunkDiskMapper) GetChunk(ref uint64) (chk chunkenc.Chunk, chkReleaseRef uint64, err error) {
-	cdm.readPathMtx.RLock()
+	cdm.mmappedChunkFilesMx.RLock()
 	// We hold this read lock for the entire duration because if the Close()
 	// is called, the data in the byte slice will get corrupted as the mmapped
 	// file will be closed.
-	defer cdm.readPathMtx.RUnlock()
+	defer cdm.mmappedChunkFilesMx.RUnlock()
 
 	var (
 		// Get the upper 4 bytes.
@@ -626,8 +654,8 @@ func (cdm *ChunkDiskMapper) ReleaseChunks(refs ...uint64) {
 	}
 
 	// Decrease the number of pending readers for each chunk file.
-	cdm.readPathMtx.RLock()
-	defer cdm.readPathMtx.RUnlock()
+	cdm.mmappedChunkFilesMx.RLock()
+	defer cdm.mmappedChunkFilesMx.RUnlock()
 
 	for sgmIndex, count := range countBySgm {
 		mmapFile := cdm.mmappedChunkFiles[sgmIndex]
@@ -784,7 +812,7 @@ func (cdm *ChunkDiskMapper) Truncate(mint int64) error {
 	if !cdm.fileMaxtSet {
 		return errors.New("maxt of the files are not set")
 	}
-	cdm.readPathMtx.RLock()
+	cdm.mmappedChunkFilesMx.RLock()
 
 	// Sort the file indices, else if files deletion fails in between,
 	// it can lead to unsequential files as the map is not sorted.
@@ -807,7 +835,7 @@ func (cdm *ChunkDiskMapper) Truncate(mint int64) error {
 
 		removedFiles = append(removedFiles, seq)
 	}
-	cdm.readPathMtx.RUnlock()
+	cdm.mmappedChunkFilesMx.RUnlock()
 
 	errs := tsdb_errors.NewMulti()
 
@@ -818,11 +846,13 @@ func (cdm *ChunkDiskMapper) Truncate(mint int64) error {
 
 	// Change the file state to deleting but do not immediately  delete it because
 	// there may be pending readers (will be checked later).
-	cdm.readPathMtx.Lock()
+	// Takes an exclusive lock to change the state, in order to guarantee no other
+	// goroutine will concurrently read the state.
+	cdm.mmappedChunkFilesMx.Lock()
 	for _, seq := range removedFiles {
 		cdm.mmappedChunkFiles[seq].state = deleting
 	}
-	cdm.readPathMtx.Unlock()
+	cdm.mmappedChunkFilesMx.Unlock()
 
 	// Try to immediately delete files marked as deleting.
 	errs.Add(cdm.safeDeleteTruncatedFiles())
@@ -840,8 +870,7 @@ func (cdm *ChunkDiskMapper) safeDeleteTruncatedFiles() error {
 
 	// Find the file indices what are in deleting state and safe to be deleted
 	// because there are no more pending readers.
-	// TODO RLock() may be enough
-	cdm.readPathMtx.Lock()
+	cdm.mmappedChunkFilesMx.RLock()
 	for seq, file := range cdm.mmappedChunkFiles {
 		if seq < lowestID {
 			lowestID = seq
@@ -851,7 +880,7 @@ func (cdm *ChunkDiskMapper) safeDeleteTruncatedFiles() error {
 			deletableIDs = append(deletableIDs, seq)
 		}
 	}
-	cdm.readPathMtx.Unlock()
+	cdm.mmappedChunkFilesMx.RUnlock()
 
 	// Return if there's nothing to do.
 	if len(deletableIDs) == 0 {
@@ -880,7 +909,7 @@ func (cdm *ChunkDiskMapper) safeDeleteTruncatedFiles() error {
 // check is expected to be done by the caller. Breaks on first error encountered.
 func (cdm *ChunkDiskMapper) deleteFiles(seqs []int) error {
 	for _, seq := range seqs {
-		if err := cdm.deleteFile(seq); err != nil {
+		if err := cdm.deleteFile(seq, true); err != nil {
 			return err
 		}
 	}
@@ -890,15 +919,22 @@ func (cdm *ChunkDiskMapper) deleteFiles(seqs []int) error {
 // deleteFile closes and deletes a single mmap-ed chunk file, referenced by the provided
 // seq number. This function doesn't check if the file is safe to be deleted, cause such
 // check is expected to be done by the caller.
-func (cdm *ChunkDiskMapper) deleteFile(seq int) error {
+func (cdm *ChunkDiskMapper) deleteFile(seq int, lock bool) error {
+	mx := cdm.mmappedChunkFilesMx
+	if !lock {
+		// If we shouldn't lock, we just lock a new mutex to keep the rest
+		// of this function logic easier. This doesn't not run on the hot path.
+		mx = sync.RWMutex{}
+	}
+
 	// Close the mmap-ed chunk file.
-	cdm.readPathMtx.Lock()
+	mx.Lock()
 	if err := cdm.mmappedChunkFiles[seq].Close(); err != nil {
-		cdm.readPathMtx.Unlock()
+		mx.Unlock()
 		return err
 	}
 	delete(cdm.mmappedChunkFiles, seq)
-	cdm.readPathMtx.Unlock()
+	mx.Unlock()
 
 	// We actually delete the files separately to not block the readPathMtx for long.
 	return os.Remove(segmentFile(cdm.dir.Name(), seq))
@@ -915,13 +951,13 @@ func (cdm *ChunkDiskMapper) DeleteCorrupted(originalErr error) error {
 
 	// Delete all the head chunk files following the corrupt head chunk file.
 	segs := []int{}
-	cdm.readPathMtx.RLock()
+	cdm.mmappedChunkFilesMx.RLock()
 	for seg, file := range cdm.mmappedChunkFiles {
 		if file.state != deleting && seg >= cerr.FileIndex {
 			segs = append(segs, seg)
 		}
 	}
-	cdm.readPathMtx.RUnlock()
+	cdm.mmappedChunkFilesMx.RUnlock()
 
 	// Immediately delete chunk files without going through the deleting state
 	// because corrupted.
@@ -940,19 +976,34 @@ func (cdm *ChunkDiskMapper) curFileSize() int64 {
 // Close closes all the open files in ChunkDiskMapper.
 // It is not longer safe to access chunks from this struct after calling Close.
 func (cdm *ChunkDiskMapper) Close() error {
+	// Stop the run loop and wait until done.
+	// TODO should be done after the check if already closed, but we cannot do it
+	// after taking the lock otherwise we may endup in a deadlock.
+	close(cdm.runClose)
+	cdm.runRoutine.Wait()
+
 	// 'WriteChunk' locks writePathMtx first and then readPathMtx for cutting head chunk file.
 	// The lock order should not be reversed here else it can cause deadlocks.
 	cdm.writePathMtx.Lock()
 	defer cdm.writePathMtx.Unlock()
-	cdm.readPathMtx.Lock()
-	defer cdm.readPathMtx.Unlock()
+	cdm.mmappedChunkFilesMx.Lock()
+	defer cdm.mmappedChunkFilesMx.Unlock()
 
 	if cdm.closed {
 		return nil
 	}
 	cdm.closed = true
 
-	errs := tsdb_errors.NewMulti(
+	errs := tsdb_errors.NewMulti()
+
+	// Delete all chunk files in deleting state, regardless they have pending readers.
+	for seq, file := range cdm.mmappedChunkFiles {
+		if file.state == deleting {
+			errs.Add(cdm.deleteFile(seq, false))
+		}
+	}
+
+	errs.Add(
 		closeAllFromMap(cdm.mmappedChunkFiles),
 		cdm.finalizeCurFile(),
 		cdm.dir.Close(),
