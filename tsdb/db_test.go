@@ -28,6 +28,7 @@ import (
 	"runtime"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -3218,6 +3219,7 @@ func TestQuerier_ShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChunks(t
 	// the chunk memory area is released to the kernel.
 	var buf []byte
 	for i := 0; i < numStressIterations; i++ {
+		//nolint:staticcheck
 		buf = append(buf, make([]byte, minStressAllocationBytes+rand.Int31n(maxStressAllocationBytes-minStressAllocationBytes))...)
 		if i%1000 == 0 {
 			buf = nil
@@ -3240,8 +3242,13 @@ func TestQuerier_ShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChunks(t
 		}
 	}
 
-	// After having iterated all samples we also want to be sure no error occurred.
-	require.NoError(t, firstErr)
+	// After having iterated all samples we also want to be sure no error occurred or
+	// the "cannot populate chunk XXX: not found" error occurred. This error can occur
+	// when the iterator tries to fetch an head chunk which has been offloaded because
+	// of the head compaction in the meanwhile.
+	if firstErr != nil && !strings.Contains(firstErr.Error(), "cannot populate chunk") {
+		t.Fatalf("unexpected error: %s", firstErr.Error())
+	}
 }
 
 func TestChunkQuerier_ShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChunks(t *testing.T) {
@@ -3333,6 +3340,7 @@ func TestChunkQuerier_ShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChu
 	// the chunk memory area is released to the kernel.
 	var buf []byte
 	for i := 0; i < numStressIterations; i++ {
+		//nolint:staticcheck
 		buf = append(buf, make([]byte, minStressAllocationBytes+rand.Int31n(maxStressAllocationBytes-minStressAllocationBytes))...)
 		if i%1000 == 0 {
 			buf = nil
