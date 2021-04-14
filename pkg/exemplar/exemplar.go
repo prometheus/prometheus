@@ -20,7 +20,7 @@ type Exemplar struct {
 	Labels labels.Labels `json:"labels"`
 	Value  float64       `json:"value"`
 	Ts     int64         `json:"timestamp"`
-	HasTs  bool          `json:"hasTimestamp"`
+	HasTs  bool
 }
 
 type QueryResult struct {

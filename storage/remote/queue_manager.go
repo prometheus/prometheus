@@ -256,7 +256,7 @@ func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManager
 		Namespace:   namespace,
 		Subsystem:   subsystem,
 		Name:        "max_samples_per_send",
-		Help:        "The maximum number of samples to be sent, in a single request, to the remote storage. Note that when exemplars over remote write is enabled exemplars count against this limt",
+		Help:        "The maximum number of samples to be sent, in a single request, to the remote storage. Note that, when sending of exemplars over remote write is enabled, exemplars count towards this limt.",
 		ConstLabels: constLabels,
 	})
 
@@ -562,12 +562,7 @@ outer:
 			default:
 			}
 
-			if t.shards.enqueue(e.Ref, rwExemplar{
-				seriesLabels: lbls,
-				labels:       e.Labels,
-				t:            e.T,
-				v:            e.V,
-			}) {
+			if t.shards.enqueue(e.Ref, rwExemplar{seriesLabels: lbls, labels: e.Labels, t: e.T, v: e.V}) {
 				continue outer
 			}
 
@@ -980,9 +975,9 @@ func (s *shards) stop() {
 	}
 }
 
-// enqueue a sample.  If we are currently in the process of shutting down or resharding,
+// enqueue an object (sample or exemplar).  If we are currently in the process of shutting down or resharding,
 // will return false; in this case, you should back off and retry.
-func (s *shards) enqueue(ref uint64, sample interface{}) bool {
+func (s *shards) enqueue(ref uint64, data interface{}) bool {
 	s.mtx.RLock()
 	defer s.mtx.RUnlock()
 
@@ -996,14 +991,16 @@ func (s *shards) enqueue(ref uint64, sample interface{}) bool {
 	select {
 	case <-s.softShutdown:
 		return false
-	case s.queues[shard] <- sample:
-		switch sample.(type) {
+	case s.queues[shard] <- data:
+		switch data.(type) {
 		case rwSample:
 			s.qm.metrics.pendingSamples.Inc()
 			s.enqueuedSamples.Inc()
 		case rwExemplar:
 			s.qm.metrics.pendingExemplars.Inc()
 			s.enqueuedExemplars.Inc()
+		default:
+			level.Warn(s.qm.logger).Log("msg", "invalid object type in shards enqueue")
 		}
 		return true
 	}
