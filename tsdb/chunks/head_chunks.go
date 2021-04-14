@@ -263,11 +263,14 @@ func (cdm *ChunkDiskMapper) openMMapFiles() (returnErr error) {
 func (cdm *ChunkDiskMapper) run() {
 	defer cdm.runRoutine.Done()
 
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
+
 	for {
 		select {
 		case <-cdm.runClose:
 			return
-		case <-time.Tick(time.Minute):
+		case <-ticker.C:
 			// TODO log the error
 			_ = cdm.safeDeleteTruncatedFiles()
 		}
@@ -665,11 +668,12 @@ func (cdm *ChunkDiskMapper) ReleaseChunks(refs ...uint64) {
 			continue
 		}
 
-		newPendingReaders := mmapFile.pendingReaders.Sub(count)
-		if newPendingReaders < 0 {
-			// If this happens then it's a bug.
-			// TODO log it
-		}
+		mmapFile.pendingReaders.Sub(count)
+		//newPendingReaders := mmapFile.pendingReaders.Sub(count)
+		//if newPendingReaders < 0 {
+		//	// If this happens then it's a bug.
+		//	// TODO log it
+		//}
 	}
 }
 
@@ -920,21 +924,20 @@ func (cdm *ChunkDiskMapper) deleteFiles(seqs []int) error {
 // seq number. This function doesn't check if the file is safe to be deleted, cause such
 // check is expected to be done by the caller.
 func (cdm *ChunkDiskMapper) deleteFile(seq int, lock bool) error {
-	mx := cdm.mmappedChunkFilesMx
-	if !lock {
-		// If we shouldn't lock, we just lock a new mutex to keep the rest
-		// of this function logic easier. This doesn't not run on the hot path.
-		mx = sync.RWMutex{}
-	}
-
 	// Close the mmap-ed chunk file.
-	mx.Lock()
+	if lock {
+		cdm.mmappedChunkFilesMx.Lock()
+	}
 	if err := cdm.mmappedChunkFiles[seq].Close(); err != nil {
-		mx.Unlock()
+		if lock {
+			cdm.mmappedChunkFilesMx.Unlock()
+		}
 		return err
 	}
 	delete(cdm.mmappedChunkFiles, seq)
-	mx.Unlock()
+	if lock {
+		cdm.mmappedChunkFilesMx.Unlock()
+	}
 
 	// We actually delete the files separately to not block the readPathMtx for long.
 	return os.Remove(segmentFile(cdm.dir.Name(), seq))
