@@ -23,7 +23,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/credentials"
-	//"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
+	"github.com/aws/aws-sdk-go/aws/credentials/stscreds"
 	"github.com/aws/aws-sdk-go/aws/ec2metadata"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/lightsail"
@@ -157,7 +157,12 @@ func (d *LightsailDiscovery) lightsailClient() (*lightsail.Lightsail, error) {
 		return nil, errors.Wrap(err, "could not create aws session")
 	}
 
-	d.lightsail = lightsail.New(sess)
+	if d.cfg.RoleARN != "" {
+		creds := stscreds.NewCredentials(sess, d.cfg.RoleARN)
+		d.lightsail = lightsail.New(sess, &aws.Config{Credentials: creds})
+	} else {
+		d.lightsail = lightsail.New(sess)
+	}
 
 	return d.lightsail, nil
 }
