@@ -135,12 +135,6 @@ input[type='checkbox']:checked + label {
   flex-wrap: nowrap;
 }
 
-/* Font used for autocompletion item icons. */
-@font-face {
-  font-family: 'codicon';
-  src: local('codicon'), url(../fonts/codicon.ttf) format('truetype');
-}
-
 .alert.alert-danger {
   margin-bottom: 10px;
 }
