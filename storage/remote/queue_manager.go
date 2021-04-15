@@ -1019,13 +1019,15 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue chan interface
 	// If we have fewer samples than that, flush them out after a deadline
 	// anyways.
 	var (
-		max                                = s.qm.cfg.MaxSamplesPerSend
-		nPendingSamples, nPendingExemplars = 0, 0
-		pendingSamples                     = allocateTimeSeries(max)
+		max = s.qm.cfg.MaxSamplesPerSend
 		// Rough estimate, 1% of active series will contain an exemplar on each scrape.
 		// todo: casting this many times smells, also we could get index out of bounds issues here.
-		pendingExemplars = allocateTimeSeriesForExemplars(int(math.Max(1, float64(max/10))))
-		buf              []byte
+		maxExemplars                             = int(math.Max(1, float64(max/10)))
+		next, nPendingSamples, nPendingExemplars = 0, 0, 0
+		pendingSamples                           = make([]prompb.TimeSeries, max+maxExemplars)
+		sampleBuffer                             = allocateSampleBuffer(max)
+		exemplarBuffer                           = allocateExemplarBuffer(maxExemplars)
+		buf                                      []byte
 	)
 
 	timer := time.NewTimer(time.Duration(s.qm.cfg.BatchSendDeadline))
@@ -1058,7 +1060,7 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue chan interface
 			if !ok {
 				if nPendingSamples > 0 || nPendingExemplars > 0 {
 					level.Debug(s.qm.logger).Log("msg", "Flushing data to remote storage...", "samples", nPendingSamples, "exemplars", nPendingExemplars)
-					s.sendSamples(ctx, pendingSamples[:nPendingSamples], pendingExemplars[:nPendingExemplars], &buf)
+					s.sendSamples(ctx, pendingSamples[:next], nPendingSamples, nPendingExemplars, &buf)
 					s.qm.metrics.pendingSamples.Sub(float64(nPendingSamples))
 					s.qm.metrics.pendingExemplars.Sub(float64(nPendingExemplars))
 					level.Debug(s.qm.logger).Log("msg", "Done flushing.")
@@ -1071,24 +1073,34 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue chan interface
 			// stop reading from the queue. This makes it safe to reference pendingSamples by index.
 			switch d := sample.(type) {
 			case rwSample:
-				pendingSamples[nPendingSamples].Labels = labelsToLabelsProto(d.labels, pendingSamples[nPendingSamples].Labels)
-				pendingSamples[nPendingSamples].Samples[0].Timestamp = d.t
-				pendingSamples[nPendingSamples].Samples[0].Value = d.v
+				sampleBuffer[nPendingSamples][0].Timestamp = d.t
+				sampleBuffer[nPendingSamples][0].Value = d.v
+
+				pendingSamples[next].Labels = labelsToLabelsProto(d.labels, pendingSamples[next].Labels)
+				pendingSamples[next].Samples = sampleBuffer[nPendingSamples]
+				pendingSamples[next].Exemplars = nil
 				nPendingSamples++
+				next++
+
 			case rwExemplar:
-				pendingExemplars[nPendingExemplars].Labels = labelsToLabelsProto(d.seriesLabels, pendingExemplars[nPendingExemplars].Labels)
-				pendingExemplars[nPendingExemplars].Exemplars[0].Labels = labelsToLabelsProto(d.labels, nil)
-				pendingExemplars[nPendingExemplars].Exemplars[0].Timestamp = d.t
-				pendingExemplars[nPendingExemplars].Exemplars[0].Value = d.v
+				exemplarBuffer[nPendingExemplars][0].Labels = labelsToLabelsProto(d.labels, exemplarBuffer[nPendingExemplars][0].Labels)
+				exemplarBuffer[nPendingExemplars][0].Timestamp = d.t
+				exemplarBuffer[nPendingExemplars][0].Value = d.v
+
+				pendingSamples[next].Labels = labelsToLabelsProto(d.seriesLabels, pendingSamples[next].Labels)
+				pendingSamples[next].Samples = nil
+				pendingSamples[next].Exemplars = exemplarBuffer[nPendingExemplars]
 				nPendingExemplars++
+				next++
 			}
 
-			if nPendingSamples >= max || nPendingExemplars >= len(pendingExemplars) {
+			if nPendingSamples >= max || nPendingExemplars >= maxExemplars {
 				// We need to specify an end index here so that we're not sending the entire buffer of each type
 				// since each is not necessarily full with the new logic that includes exemplars.
-				s.sendSamples(ctx, pendingSamples[:nPendingSamples], pendingExemplars[:nPendingExemplars], &buf)
+				s.sendSamples(ctx, pendingSamples[:next], nPendingSamples, nPendingExemplars, &buf)
 				nPendingSamples = 0
 				nPendingExemplars = 0
+				next = 0
 				s.qm.metrics.pendingSamples.Sub(float64(max))
 
 				stop()
@@ -1098,20 +1110,21 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue chan interface
 		case <-timer.C:
 			if nPendingSamples > 0 || nPendingExemplars > 0 {
 				level.Debug(s.qm.logger).Log("msg", "runShard timer ticked, sending buffered data", "samples", nPendingSamples, "exemplars", nPendingExemplars, "shard", shardNum)
-				s.sendSamples(ctx, pendingSamples[:nPendingSamples], pendingExemplars[:nPendingExemplars], &buf)
+				s.sendSamples(ctx, pendingSamples[:next], nPendingSamples, nPendingExemplars, &buf)
 				s.qm.metrics.pendingSamples.Sub(float64(nPendingSamples))
 				s.qm.metrics.pendingExemplars.Sub(float64(nPendingExemplars))
 				nPendingSamples = 0
 				nPendingExemplars = 0
+				next = 0
 			}
 			timer.Reset(time.Duration(s.qm.cfg.BatchSendDeadline))
 		}
 	}
 }
 
-func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, exemplars []prompb.TimeSeries, buf *[]byte) {
+func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, sampleCount int, exemplarCount int, buf *[]byte) {
 	begin := time.Now()
-	err := s.sendSamplesWithBackoff(ctx, samples, exemplars, buf)
+	err := s.sendSamplesWithBackoff(ctx, samples, sampleCount, exemplarCount, buf)
 	if err != nil {
 		level.Error(s.qm.logger).Log("msg", "non-recoverable error", "count", len(samples), "err", err)
 		s.qm.metrics.failedSamplesTotal.Add(float64(len(samples)))
@@ -1125,12 +1138,9 @@ func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, e
 }
 
 // sendSamples to the remote storage with backoff for recoverable errors.
-func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.TimeSeries, exemplars []prompb.TimeSeries, buf *[]byte) error {
+func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.TimeSeries, sampleCount int, exemplarCount int, buf *[]byte) error {
 	// Build the WriteRequest with no metadata.
-	allSeries := make([]prompb.TimeSeries, 0, len(samples)+len(exemplars))
-	allSeries = append(allSeries, samples...)
-	allSeries = append(allSeries, exemplars...)
-	req, highest, err := buildWriteRequest(allSeries, nil, *buf)
+	req, highest, err := buildWriteRequest(samples, nil, *buf)
 	if err != nil {
 		// Failing to build the write request is non-recoverable, since it will
 		// only error if marshaling the proto to bytes fails.
@@ -1138,8 +1148,6 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 	}
 
 	reqSize := len(*buf)
-	sampleCount := len(samples)
-	exemplarCount := len(exemplars)
 	*buf = req
 
 	// An anonymous function allows us to defer the completion of our per-try spans
@@ -1270,20 +1278,18 @@ func buildWriteRequest(samples []prompb.TimeSeries, metadata []prompb.MetricMeta
 	return compressed, highest, nil
 }
 
-func allocateTimeSeries(capacity int) []prompb.TimeSeries {
-	timeseries := make([]prompb.TimeSeries, capacity)
-	// We only ever send one sample per timeseries, so preallocate with length one.
-	for i := range timeseries {
-		timeseries[i].Samples = []prompb.Sample{{}}
+func allocateSampleBuffer(capacity int) [][]prompb.Sample {
+	buf := make([][]prompb.Sample, capacity)
+	for i := range buf {
+		buf[i] = []prompb.Sample{{}}
 	}
-	return timeseries
+	return buf
 }
 
-func allocateTimeSeriesForExemplars(capacity int) []prompb.TimeSeries {
-	timeseries := make([]prompb.TimeSeries, capacity)
-	// We only ever send one exemplar per timeseries, so preallocate with length one.
-	for i := range timeseries {
-		timeseries[i].Exemplars = []prompb.Exemplar{{}}
+func allocateExemplarBuffer(capacity int) [][]prompb.Exemplar {
+	buf := make([][]prompb.Exemplar, capacity)
+	for i := range buf {
+		buf[i] = []prompb.Exemplar{{}}
 	}
-	return timeseries
+	return buf
 }
