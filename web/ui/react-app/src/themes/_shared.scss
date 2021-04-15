@@ -1,3 +1,25 @@
+/* This file contains styles shared by both light & dark themes.
+   Style rules can be customised using SCSS variables set in dark.scss & light.sccs.
+   How to add a rule that uses different values for each theme.
+
+   1. Add a variable in light.scss & dark.scss files, it needs to be set before
+      "@import ./shared" statement.
+      Example:
+
+      $foo = '#000';
+ 
+   2. Add a style rule in _shared.scss (this file) that uses new variable.
+      Example:
+
+      .my-class { background-color: $foo; }
+
+   Instead of setting custom variables you can re-use any of bootstrap SCSS variables
+   as they are all imported and ready.
+   Resources:
+   - https://getbootstrap.com/docs/4.6/getting-started/theming/
+   - https://github.com/twbs/bootstrap/blob/v4.6.0/scss/_variables.scss
+  */
+
 .alert-cell {
   color: $alert-cell-color;
   background: $rule-cell-bg;
@@ -76,12 +98,6 @@ button.execute-btn {
    this fixes it by allowing overflow and enabling scrolling */
 .modal.show {
   overflow-y: auto;
-}
-
-html {
-  /* https://github.com/prometheus/prometheus/issues/7434 */
-  /* Scroll to hash-fragment-links counting the fixed navbar 40px tall with 16px padding */
-  scroll-padding-top: 56px;
 }
 
 .panel {
