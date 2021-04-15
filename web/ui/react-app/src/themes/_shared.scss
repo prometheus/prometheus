@@ -1,7 +1,103 @@
-html {
-  /* https://github.com/prometheus/prometheus/issues/7434 */
-  /* Scroll to hash-fragment-links counting the fixed navbar 40px tall with 16px padding */
-  scroll-padding-top: 56px;
+/* This file contains styles shared by both light & dark themes.
+   Style rules can be customised using SCSS variables set in dark.scss & light.sccs.
+   How to add a rule that uses different values for each theme.
+
+   1. Add a variable in light.scss & dark.scss files, it needs to be set before
+      "@import ./shared" statement.
+      Example:
+
+      $foo = '#000';
+ 
+   2. Add a style rule in _shared.scss (this file) that uses new variable.
+      Example:
+
+      .my-class { background-color: $foo; }
+
+   Instead of setting custom variables you can re-use any of bootstrap SCSS variables
+   as they are all imported and ready.
+   Resources:
+   - https://getbootstrap.com/docs/4.6/getting-started/theming/
+   - https://github.com/twbs/bootstrap/blob/v4.6.0/scss/_variables.scss
+  */
+
+.alert-cell {
+  color: $alert-cell-color;
+  background: $rule-cell-bg;
+}
+
+.rule-cell {
+  background-color: $rule-cell-bg;
+}
+
+.config-yaml {
+  display: block;
+  padding: 10px;
+  font-size: 13px;
+  color: $config-yaml-color;
+  word-break: break-all;
+  background-color: $config-yaml-bg;
+  border: 1px solid $config-yaml-border;
+  border-radius: 4px;
+}
+
+.query-stats {
+  flex-grow: 1;
+  font-size: 0.7rem;
+  color: $query-stats-color;
+}
+
+.metrics-explorer.modal-dialog {
+  max-width: 750px;
+  overflow-wrap: break-word;
+}
+.metrics-explorer .metric {
+  cursor: pointer;
+  margin: 0;
+  padding: 5px;
+}
+.metrics-explorer .metric:hover {
+  background: $metrics-explorer-bg;
+}
+button.metrics-explorer-btn {
+  color: $input-group-addon-color;
+  background-color: $input-group-addon-bg;
+  border: $input-border-width solid $input-group-addon-border-color;
+}
+
+.graph-controls button.clear-time-btn,
+.table-controls button.clear-time-btn {
+  background-color: $input-bg;
+  border: $input-border-width solid $input-border-color;
+  border-left: none;
+
+  &:hover {
+    color: darken($secondary, 10%);
+  }
+}
+
+button.execute-btn {
+  width: 84px;
+  border: $input-border-width solid darken($primary, 5%);
+}
+
+.expression-input .cm-expression-input {
+  border: $input-border-width solid $input-border-color;
+  flex: 1 1 auto;
+  padding: 4px 0 0 8px;
+  font-size: 15px;
+}
+
+.tab-content {
+  border-left: 1px solid $nav-tabs-border-color;
+  border-right: 1px solid $nav-tabs-border-color;
+  border-bottom: 1px solid $nav-tabs-border-color;
+  padding: 10px;
+}
+
+/* bootstrap-dark seems to break overflow on modals, making them unscrollable
+   this fixes it by allowing overflow and enabling scrolling */
+.modal.show {
+  overflow-y: auto;
 }
 
 .panel {
@@ -39,36 +135,12 @@ input[type='checkbox']:checked + label {
   flex-wrap: nowrap;
 }
 
-.expression-input .cm-expression-input {
-  border: 1px solid #ced4da;
-  flex: 1 1 auto;
-  padding: 4px 0 0 8px;
-  font-size: 15px;
-}
-
-/* Font used for autocompletion item icons. */
-@font-face {
-  font-family: 'codicon';
-  src: local('codicon'), url(./fonts/codicon.ttf) format('truetype');
-}
-
-button.execute-btn {
-  width: 84px;
-}
-
 .alert.alert-danger {
   margin-bottom: 10px;
 }
 
 .nav-tabs .nav-link {
   cursor: pointer;
-}
-
-.tab-content {
-  border-left: 1px solid #dee2e6;
-  border-right: 1px solid #dee2e6;
-  border-bottom: 1px solid #dee2e6;
-  padding: 10px;
 }
 
 .tab-content .alert {
@@ -148,15 +220,6 @@ button.execute-btn {
 
 .graph-controls > :not(:first-child) {
   margin-left: 20px;
-}
-
-.graph-controls .clear-time-btn,
-.table-controls .clear-time-btn {
-  background: #fff;
-  border-left: none;
-  border-top: 1px solid #ced4da;
-  border-bottom: 1px solid #ced4da;
-  color: #495057;
 }
 
 .graph-legend {

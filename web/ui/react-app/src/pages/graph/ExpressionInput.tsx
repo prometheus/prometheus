@@ -215,7 +215,7 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
                   value={value}
                 />
                 <InputGroupAddon addonType="append">
-                  <Button className="btn-light border" title="Open metrics explorer" onClick={this.openMetricsExplorer}>
+                  <Button className="metrics-explorer-btn" title="Open metrics explorer" onClick={this.openMetricsExplorer}>
                     <FontAwesomeIcon icon={faGlobeEurope} />
                   </Button>
                 </InputGroupAddon>

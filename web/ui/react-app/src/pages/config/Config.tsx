@@ -3,7 +3,6 @@ import { RouteComponentProps } from '@reach/router';
 import { Button } from 'reactstrap';
 import CopyToClipboard from 'react-copy-to-clipboard';
 
-import './Config.css';
 import { withStatusIndicator } from '../../components/withStatusIndicator';
 import { useFetch } from '../../hooks/useFetch';
 import { usePathPrefix } from '../../contexts/PathPrefixContext';
