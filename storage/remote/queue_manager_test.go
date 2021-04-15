@@ -112,6 +112,119 @@ func TestSampleDelivery(t *testing.T) {
 	c.waitForExpectedSamples(t)
 }
 
+func TestBothSamplesAndExemplarsDelivery(t *testing.T) {
+	// Let's create an even number of send batches so we don't run into the
+	// batch timeout case.
+	n := config.DefaultQueueConfig.MaxSamplesPerSend * 2
+	exemplars, _ := createExemplars(n, n)
+	samples, series := createTimeseries(n, n)
+
+	c := NewTestWriteClient()
+	c.expectSamples(samples[:len(samples)/2], series)
+	c.expectExemplars(exemplars[:len(exemplars)/2], series)
+
+	queueConfig := config.DefaultQueueConfig
+	queueConfig.BatchSendDeadline = model.Duration(100 * time.Millisecond)
+	queueConfig.MaxShards = 1
+	queueConfig.Capacity = len(exemplars)
+	queueConfig.MaxSamplesPerSend = len(exemplars) / 2
+
+	dir, err := ioutil.TempDir("", "TestSampleDeliver")
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, os.RemoveAll(dir))
+	}()
+
+	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil)
+	defer s.Close()
+
+	writeConfig := config.DefaultRemoteWriteConfig
+	conf := &config.Config{
+		GlobalConfig: config.DefaultGlobalConfig,
+		RemoteWriteConfigs: []*config.RemoteWriteConfig{
+			&writeConfig,
+		},
+	}
+	// We need to set URL's so that metric creation doesn't panic.
+	writeConfig.URL = &common_config.URL{
+		URL: &url.URL{
+			Host: "http://test-storage.com",
+		},
+	}
+	writeConfig.QueueConfig = queueConfig
+	require.NoError(t, s.ApplyConfig(conf))
+	hash, err := toHash(writeConfig)
+	require.NoError(t, err)
+	qm := s.rws.queues[hash]
+	qm.SetClient(c)
+
+	qm.StoreSeries(series, 0)
+
+	qm.Append(samples[:len(samples)/2])
+	qm.AppendExemplars(exemplars[:len(exemplars)/2])
+	c.waitForExpectedSamples(t)
+
+	c.expectSamples(samples[len(samples)/2:], series)
+	c.expectExemplars(exemplars[len(exemplars)/2:], series)
+	qm.Append(samples[len(samples)/2:])
+	qm.AppendExemplars(exemplars[len(exemplars)/2:])
+	c.waitForExpectedSamples(t)
+}
+
+func TestExemplarDelivery(t *testing.T) {
+	// Let's create an even number of send batches so we don't run into the
+	// batch timeout case.
+	n := config.DefaultQueueConfig.MaxSamplesPerSend * 2
+	exemplars, series := createExemplars(n, n)
+
+	c := NewTestWriteClient()
+	c.expectExemplars(exemplars[:len(exemplars)/2], series)
+
+	queueConfig := config.DefaultQueueConfig
+	queueConfig.BatchSendDeadline = model.Duration(100 * time.Millisecond)
+	queueConfig.MaxShards = 1
+	queueConfig.Capacity = len(exemplars)
+	queueConfig.MaxSamplesPerSend = len(exemplars) / 2
+
+	dir, err := ioutil.TempDir("", "TestSampleDeliver")
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, os.RemoveAll(dir))
+	}()
+
+	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil)
+	defer s.Close()
+
+	writeConfig := config.DefaultRemoteWriteConfig
+	conf := &config.Config{
+		GlobalConfig: config.DefaultGlobalConfig,
+		RemoteWriteConfigs: []*config.RemoteWriteConfig{
+			&writeConfig,
+		},
+	}
+	// We need to set URL's so that metric creation doesn't panic.
+	writeConfig.URL = &common_config.URL{
+		URL: &url.URL{
+			Host: "http://test-storage.com",
+		},
+	}
+	writeConfig.QueueConfig = queueConfig
+	require.NoError(t, s.ApplyConfig(conf))
+	hash, err := toHash(writeConfig)
+	require.NoError(t, err)
+	qm := s.rws.queues[hash]
+	qm.SetClient(c)
+
+	qm.StoreSeries(series, 0)
+
+	qm.AppendExemplars(exemplars[:len(exemplars)/2])
+	c.waitForExpectedSamples(t)
+
+	c.expectExemplars(exemplars[len(exemplars)/2:], series)
+	qm.AppendExemplars(exemplars[len(exemplars)/2:])
+	c.waitForExpectedSamples(t)
+}
+
 func TestMetadataDelivery(t *testing.T) {
 	c := NewTestWriteClient()
 
@@ -446,6 +559,28 @@ func createTimeseries(numSamples, numSeries int) ([]record.RefSample, []record.R
 	return samples, series
 }
 
+func createExemplars(numExemplars, numSeries int) ([]record.RefExemplar, []record.RefSeries) {
+	exemplars := make([]record.RefExemplar, 0, numExemplars)
+	series := make([]record.RefSeries, 0, numSeries)
+	for i := 0; i < numSeries; i++ {
+		name := fmt.Sprintf("test_metric_%d", i)
+		for j := 0; j < numExemplars; j++ {
+			exemplars = append(exemplars, record.RefExemplar{
+				Ref:    uint64(i),
+				T:      int64(j),
+				V:      float64(i),
+				Labels: labels.FromStrings("traceID", fmt.Sprintf("trace-%d", i)),
+			})
+
+		}
+		series = append(series, record.RefSeries{
+			Ref:    uint64(i),
+			Labels: labels.Labels{{Name: "__name__", Value: name}},
+		})
+	}
+	return exemplars, series
+}
+
 func getSeriesNameFromRef(r record.RefSeries) string {
 	for _, l := range r.Labels {
 		if l.Name == "__name__" {
@@ -456,13 +591,15 @@ func getSeriesNameFromRef(r record.RefSeries) string {
 }
 
 type TestWriteClient struct {
-	receivedSamples  map[string][]prompb.Sample
-	expectedSamples  map[string][]prompb.Sample
-	receivedMetadata map[string][]prompb.MetricMetadata
-	withWaitGroup    bool
-	wg               sync.WaitGroup
-	mtx              sync.Mutex
-	buf              []byte
+	receivedSamples   map[string][]prompb.Sample
+	expectedSamples   map[string][]prompb.Sample
+	receivedExemplars map[string][]prompb.Exemplar
+	expectedExemplars map[string][]prompb.Exemplar
+	receivedMetadata  map[string][]prompb.MetricMetadata
+	withWaitGroup     bool
+	wg                sync.WaitGroup
+	mtx               sync.Mutex
+	buf               []byte
 }
 
 func NewTestWriteClient() *TestWriteClient {
@@ -494,6 +631,27 @@ func (c *TestWriteClient) expectSamples(ss []record.RefSample, series []record.R
 	c.wg.Add(len(ss))
 }
 
+func (c *TestWriteClient) expectExemplars(ss []record.RefExemplar, series []record.RefSeries) {
+	if !c.withWaitGroup {
+		return
+	}
+	c.mtx.Lock()
+	defer c.mtx.Unlock()
+
+	c.expectedExemplars = map[string][]prompb.Exemplar{}
+	c.receivedExemplars = map[string][]prompb.Exemplar{}
+
+	for _, s := range ss {
+		seriesName := getSeriesNameFromRef(series[s.Ref])
+		c.expectedExemplars[seriesName] = append(c.expectedExemplars[seriesName], prompb.Exemplar{
+			Labels:    labelsToLabelsProto(s.Labels, nil),
+			Timestamp: s.T,
+			Value:     s.V,
+		})
+	}
+	c.wg.Add(len(ss))
+}
+
 func (c *TestWriteClient) waitForExpectedSamples(tb testing.TB) {
 	if !c.withWaitGroup {
 		return
@@ -503,6 +661,9 @@ func (c *TestWriteClient) waitForExpectedSamples(tb testing.TB) {
 	defer c.mtx.Unlock()
 	for ts, expectedSamples := range c.expectedSamples {
 		require.Equal(tb, expectedSamples, c.receivedSamples[ts], ts)
+	}
+	for ts, expectedExemplar := range c.expectedExemplars {
+		require.Equal(tb, expectedExemplar, c.receivedExemplars[ts], ts)
 	}
 }
 
@@ -552,6 +713,11 @@ func (c *TestWriteClient) Store(_ context.Context, req []byte) error {
 		for _, sample := range ts.Samples {
 			count++
 			c.receivedSamples[seriesName] = append(c.receivedSamples[seriesName], sample)
+		}
+
+		for _, ex := range ts.Exemplars {
+			count++
+			c.receivedExemplars[seriesName] = append(c.receivedExemplars[seriesName], ex)
 		}
 	}
 	if c.withWaitGroup {

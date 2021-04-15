@@ -1024,7 +1024,7 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue chan interface
 		pendingSamples                     = allocateTimeSeries(max)
 		// Rough estimate, 1% of active series will contain an exemplar on each scrape.
 		// todo: casting this many times smells, also we could get index out of bounds issues here.
-		pendingExemplars = allocateTimeSeries(int(math.Max(1, float64(max/10))))
+		pendingExemplars = allocateTimeSeriesForExemplars(int(math.Max(1, float64(max/10))))
 		buf              []byte
 	)
 
@@ -1077,11 +1077,9 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue chan interface
 				nPendingSamples++
 			case rwExemplar:
 				pendingExemplars[nPendingExemplars].Labels = labelsToLabelsProto(d.seriesLabels, pendingExemplars[nPendingExemplars].Labels)
-				pendingExemplars[nPendingExemplars].Exemplars = append(pendingExemplars[nPendingExemplars].Exemplars[:0], prompb.Exemplar{
-					Labels:    labelsToLabelsProto(d.labels, nil),
-					Value:     d.v,
-					Timestamp: d.t,
-				})
+				pendingExemplars[nPendingExemplars].Exemplars[0].Labels = labelsToLabelsProto(d.labels, nil)
+				pendingExemplars[nPendingExemplars].Exemplars[0].Timestamp = d.t
+				pendingExemplars[nPendingExemplars].Exemplars[0].Value = d.v
 				nPendingExemplars++
 			}
 
@@ -1129,7 +1127,10 @@ func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, e
 // sendSamples to the remote storage with backoff for recoverable errors.
 func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.TimeSeries, exemplars []prompb.TimeSeries, buf *[]byte) error {
 	// Build the WriteRequest with no metadata.
-	req, highest, err := buildWriteRequest(append(samples, exemplars...), nil, *buf)
+	allSeries := make([]prompb.TimeSeries, 0, len(samples)+len(exemplars))
+	allSeries = append(allSeries, samples...)
+	allSeries = append(allSeries, exemplars...)
+	req, highest, err := buildWriteRequest(allSeries, nil, *buf)
 	if err != nil {
 		// Failing to build the write request is non-recoverable, since it will
 		// only error if marshaling the proto to bytes fails.
@@ -1241,9 +1242,12 @@ func sendWriteRequestWithBackoff(ctx context.Context, cfg config.QueueConfig, l 
 func buildWriteRequest(samples []prompb.TimeSeries, metadata []prompb.MetricMetadata, buf []byte) ([]byte, int64, error) {
 	var highest int64
 	for _, ts := range samples {
-		// At the moment we only ever append a TimeSeries with a single sample in it.
-		if ts.Samples[0].Timestamp > highest {
+		// At the moment we only ever append a TimeSeries with a single sample or exemplar in it.
+		if len(ts.Samples) > 0 && ts.Samples[0].Timestamp > highest {
 			highest = ts.Samples[0].Timestamp
+		}
+		if len(ts.Exemplars) > 0 && ts.Exemplars[0].Timestamp > highest {
+			highest = ts.Exemplars[0].Timestamp
 		}
 	}
 
@@ -1271,6 +1275,15 @@ func allocateTimeSeries(capacity int) []prompb.TimeSeries {
 	// We only ever send one sample per timeseries, so preallocate with length one.
 	for i := range timeseries {
 		timeseries[i].Samples = []prompb.Sample{{}}
+	}
+	return timeseries
+}
+
+func allocateTimeSeriesForExemplars(capacity int) []prompb.TimeSeries {
+	timeseries := make([]prompb.TimeSeries, capacity)
+	// We only ever send one exemplar per timeseries, so preallocate with length one.
+	for i := range timeseries {
+		timeseries[i].Exemplars = []prompb.Exemplar{{}}
 	}
 	return timeseries
 }

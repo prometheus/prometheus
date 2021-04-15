@@ -1433,7 +1433,7 @@ func (a *headAppender) log() error {
 }
 
 func exemplarsForEncoding(es []exemplarWithSeriesRef) []record.RefExemplar {
-	ret := make([]record.RefExemplar, len(es))
+	ret := make([]record.RefExemplar, 0, len(es))
 	for _, e := range es {
 		ret = append(ret, record.RefExemplar{
 			Ref:    e.ref,
@@ -1528,6 +1528,7 @@ func (a *headAppender) Rollback() (err error) {
 	a.head.putAppendBuffer(a.samples)
 	a.head.putExemplarBuffer(a.exemplars)
 	a.samples = nil
+	a.exemplars = nil
 
 	// Series are created in the head memory regardless of rollback. Thus we have
 	// to log them to the WAL in any case.
