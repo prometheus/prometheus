@@ -2,7 +2,6 @@ import React, { FC } from 'react';
 import Navigation from './Navbar';
 import { Container } from 'reactstrap';
 
-import './App.css';
 import { Router, Redirect } from '@reach/router';
 import useMedia from 'use-media';
 import { Alerts, Config, Flags, Rules, ServiceDiscovery, Status, Targets, TSDBStatus, PanelList } from './pages';
