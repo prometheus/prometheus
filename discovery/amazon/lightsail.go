@@ -184,7 +184,7 @@ func (d *LightsailDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group,
 		if awsErr, ok := err.(awserr.Error); ok && (awsErr.Code() == "AuthFailure" || awsErr.Code() == "UnauthorizedOperation") {
 			d.lightsail = nil
 		}
-		return nil, errors.Wrap(err, "could not describe instances")
+		return nil, errors.Wrap(err, "could not get instances")
 	}
 
 	for _, inst := range output.Instances {
