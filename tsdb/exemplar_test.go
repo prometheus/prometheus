@@ -46,7 +46,7 @@ func TestAddExemplar(t *testing.T) {
 
 	err = es.AddExemplar(l, e)
 	require.NoError(t, err)
-	require.Equal(t, es.index[l.String()].last, 0, "exemplar was not stored correctly")
+	require.Equal(t, es.index[l.String()].newest, 0, "exemplar was not stored correctly")
 
 	e2 := exemplar.Exemplar{
 		Labels: labels.Labels{
@@ -61,8 +61,8 @@ func TestAddExemplar(t *testing.T) {
 
 	err = es.AddExemplar(l, e2)
 	require.NoError(t, err)
-	require.Equal(t, es.index[l.String()].last, 1, "exemplar was not stored correctly, location of newest exemplar for series in index did not update")
-	require.True(t, es.exemplars[es.index[l.String()].last].exemplar.Equals(e2), "exemplar was not stored correctly, expected %+v got: %+v", e2, es.exemplars[es.index[l.String()].last].exemplar)
+	require.Equal(t, es.index[l.String()].newest, 1, "exemplar was not stored correctly, location of newest exemplar for series in index did not update")
+	require.True(t, es.exemplars[es.index[l.String()].newest].exemplar.Equals(e2), "exemplar was not stored correctly, expected %+v got: %+v", e2, es.exemplars[es.index[l.String()].newest].exemplar)
 
 	err = es.AddExemplar(l, e2)
 	require.NoError(t, err, "no error is expected attempting to add duplicate exemplar")
@@ -121,9 +121,7 @@ func TestSelectExemplar(t *testing.T) {
 	require.NoError(t, err)
 	es := exs.(*CircularExemplarStorage)
 
-	l := labels.Labels{
-		{Name: "service", Value: "asdf"},
-	}
+	l := labels.Labels{{Name: "service", Value: "asdf"}}
 	e := exemplar.Exemplar{
 		Labels: labels.Labels{
 			labels.Label{
@@ -228,7 +226,7 @@ func TestSelectExemplar_TimeRange(t *testing.T) {
 			Ts:    int64(101 + i),
 		})
 		require.NoError(t, err)
-		require.Equal(t, es.index[l.String()].last, i, "exemplar was not stored correctly")
+		require.Equal(t, es.index[l.String()].newest, i, "exemplar was not stored correctly")
 	}
 
 	m, err := labels.NewMatcher(labels.MatchEqual, l[0].Name, l[0].Value)

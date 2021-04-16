@@ -151,7 +151,7 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 				level.Info(logger).Log("msg", "Experimental expand-external-labels enabled")
 			case "exemplar-storage":
 				c.tsdb.MaxExemplars = maxExemplars
-				level.Info(logger).Log("msg", "Experimental in-memory exemplar storage enabled")
+				level.Info(logger).Log("msg", "Experimental in-memory exemplar storage enabled", "maxExemplars", maxExemplars)
 			case "":
 				continue
 			default:
