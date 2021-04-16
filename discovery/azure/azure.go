@@ -373,7 +373,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	var tg targetgroup.Group
 	for tgt := range ch {
 		if tgt.err != nil {
-			return nil, errors.Wrap(err, "unable to complete Azure service discovery")
+			return nil, errors.Wrap(tgt.err, "unable to complete Azure service discovery")
 		}
 		if tgt.labelSet != nil {
 			tg.Targets = append(tg.Targets, tgt.labelSet)
