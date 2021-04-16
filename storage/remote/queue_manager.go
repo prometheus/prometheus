@@ -1022,12 +1022,12 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue chan interface
 		max = s.qm.cfg.MaxSamplesPerSend
 		// Rough estimate, 1% of active series will contain an exemplar on each scrape.
 		// todo: casting this many times smells, also we could get index out of bounds issues here.
-		maxExemplars                             = int(math.Max(1, float64(max/10)))
-		next, nPendingSamples, nPendingExemplars = 0, 0, 0
-		pendingSamples                           = make([]prompb.TimeSeries, max+maxExemplars)
-		sampleBuffer                             = allocateSampleBuffer(max)
-		exemplarBuffer                           = allocateExemplarBuffer(maxExemplars)
-		buf                                      []byte
+		maxExemplars                                 = int(math.Max(1, float64(max/10)))
+		nPending, nPendingSamples, nPendingExemplars = 0, 0, 0
+		pendingSamples                               = make([]prompb.TimeSeries, max+maxExemplars)
+		sampleBuffer                                 = allocateSampleBuffer(max)
+		exemplarBuffer                               = allocateExemplarBuffer(maxExemplars)
+		buf                                          []byte
 	)
 
 	timer := time.NewTimer(time.Duration(s.qm.cfg.BatchSendDeadline))
@@ -1051,7 +1051,7 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue chan interface
 			s.qm.metrics.pendingSamples.Sub(float64(droppedSamples))
 			s.qm.metrics.pendingExemplars.Sub(float64(droppedExemplars))
 			s.qm.metrics.failedSamplesTotal.Add(float64(droppedSamples))
-			s.qm.metrics.failedSamplesTotal.Add(float64(droppedSamples))
+			s.qm.metrics.failedExemplarsTotal.Add(float64(droppedExemplars))
 			s.samplesDroppedOnHardShutdown.Add(uint32(droppedSamples))
 			s.exemplarsDroppedOnHardShutdown.Add(uint32(droppedExemplars))
 			return
@@ -1060,7 +1060,7 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue chan interface
 			if !ok {
 				if nPendingSamples > 0 || nPendingExemplars > 0 {
 					level.Debug(s.qm.logger).Log("msg", "Flushing data to remote storage...", "samples", nPendingSamples, "exemplars", nPendingExemplars)
-					s.sendSamples(ctx, pendingSamples[:next], nPendingSamples, nPendingExemplars, &buf)
+					s.sendSamples(ctx, pendingSamples[:nPending], nPendingSamples, nPendingExemplars, &buf)
 					s.qm.metrics.pendingSamples.Sub(float64(nPendingSamples))
 					s.qm.metrics.pendingExemplars.Sub(float64(nPendingExemplars))
 					level.Debug(s.qm.logger).Log("msg", "Done flushing.")
@@ -1076,32 +1076,31 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue chan interface
 				sampleBuffer[nPendingSamples][0].Timestamp = d.t
 				sampleBuffer[nPendingSamples][0].Value = d.v
 
-				pendingSamples[next].Labels = labelsToLabelsProto(d.labels, pendingSamples[next].Labels)
-				pendingSamples[next].Samples = sampleBuffer[nPendingSamples]
-				pendingSamples[next].Exemplars = nil
+				pendingSamples[nPending].Labels = labelsToLabelsProto(d.labels, pendingSamples[nPending].Labels)
+				pendingSamples[nPending].Samples = sampleBuffer[nPendingSamples]
+				pendingSamples[nPending].Exemplars = nil
 				nPendingSamples++
-				next++
+				nPending++
 
 			case rwExemplar:
 				exemplarBuffer[nPendingExemplars][0].Labels = labelsToLabelsProto(d.labels, exemplarBuffer[nPendingExemplars][0].Labels)
 				exemplarBuffer[nPendingExemplars][0].Timestamp = d.t
 				exemplarBuffer[nPendingExemplars][0].Value = d.v
 
-				pendingSamples[next].Labels = labelsToLabelsProto(d.seriesLabels, pendingSamples[next].Labels)
-				pendingSamples[next].Samples = nil
-				pendingSamples[next].Exemplars = exemplarBuffer[nPendingExemplars]
+				pendingSamples[nPending].Labels = labelsToLabelsProto(d.seriesLabels, pendingSamples[nPending].Labels)
+				pendingSamples[nPending].Samples = nil
+				pendingSamples[nPending].Exemplars = exemplarBuffer[nPendingExemplars]
 				nPendingExemplars++
-				next++
+				nPending++
 			}
 
 			if nPendingSamples >= max || nPendingExemplars >= maxExemplars {
-				// We need to specify an end index here so that we're not sending the entire buffer of each type
-				// since each is not necessarily full with the new logic that includes exemplars.
-				s.sendSamples(ctx, pendingSamples[:next], nPendingSamples, nPendingExemplars, &buf)
+				s.sendSamples(ctx, pendingSamples[:nPending], nPendingSamples, nPendingExemplars, &buf)
+				s.qm.metrics.pendingSamples.Sub(float64(nPendingSamples))
+				s.qm.metrics.pendingExemplars.Sub(float64(nPendingExemplars))
 				nPendingSamples = 0
 				nPendingExemplars = 0
-				next = 0
-				s.qm.metrics.pendingSamples.Sub(float64(max))
+				nPending = 0
 
 				stop()
 				timer.Reset(time.Duration(s.qm.cfg.BatchSendDeadline))
@@ -1110,12 +1109,12 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue chan interface
 		case <-timer.C:
 			if nPendingSamples > 0 || nPendingExemplars > 0 {
 				level.Debug(s.qm.logger).Log("msg", "runShard timer ticked, sending buffered data", "samples", nPendingSamples, "exemplars", nPendingExemplars, "shard", shardNum)
-				s.sendSamples(ctx, pendingSamples[:next], nPendingSamples, nPendingExemplars, &buf)
+				s.sendSamples(ctx, pendingSamples[:nPending], nPendingSamples, nPendingExemplars, &buf)
 				s.qm.metrics.pendingSamples.Sub(float64(nPendingSamples))
 				s.qm.metrics.pendingExemplars.Sub(float64(nPendingExemplars))
 				nPendingSamples = 0
 				nPendingExemplars = 0
-				next = 0
+				nPending = 0
 			}
 			timer.Reset(time.Duration(s.qm.cfg.BatchSendDeadline))
 		}
@@ -1126,8 +1125,9 @@ func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, s
 	begin := time.Now()
 	err := s.sendSamplesWithBackoff(ctx, samples, sampleCount, exemplarCount, buf)
 	if err != nil {
-		level.Error(s.qm.logger).Log("msg", "non-recoverable error", "count", len(samples), "err", err)
-		s.qm.metrics.failedSamplesTotal.Add(float64(len(samples)))
+		level.Error(s.qm.logger).Log("msg", "non-recoverable error", "count", sampleCount, "exemplarCount", exemplarCount, "err", err)
+		s.qm.metrics.failedSamplesTotal.Add(float64(sampleCount))
+		s.qm.metrics.failedExemplarsTotal.Add(float64(exemplarCount))
 	}
 
 	// These counters are used to calculate the dynamic sharding, and as such
