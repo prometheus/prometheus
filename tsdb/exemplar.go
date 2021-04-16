@@ -75,7 +75,7 @@ func NewCircularExemplarStorage(len int, reg prometheus.Registerer) (ExemplarSto
 			Help: "Number of series with exemplars currently in circular storage.",
 		}),
 		lastExemplarsTs: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "prometheus_tsdb_exemplar_last_exemplars_timestamp",
+			Name: "prometheus_tsdb_exemplar_last_exemplars_timestamp_seconds",
 			Help: "The timestamp of the oldest exemplar stored in circular storage. Useful to check for what time" +
 				"range the current exemplar buffer limit allows. This usually means the last timestamp" +
 				"for all exemplars for a typical setup. This is not true though if one of the series timestamp is in future compared to rest series.",
