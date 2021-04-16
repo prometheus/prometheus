@@ -139,14 +139,14 @@ func TestSampleDelivery(t *testing.T) {
 			c.expectExemplars(exemplars[:len(exemplars)/2], series)
 			qm.Append(samples[:len(samples)/2])
 			qm.AppendExemplars(exemplars[:len(exemplars)/2])
-			c.waitForExpectedSamples(t)
+			c.waitForExpectedData(t)
 
 			// Second half
 			c.expectSamples(samples[len(samples)/2:], series)
 			c.expectExemplars(exemplars[len(exemplars)/2:], series)
 			qm.Append(samples[len(samples)/2:])
 			qm.AppendExemplars(exemplars[len(exemplars)/2:])
-			c.waitForExpectedSamples(t)
+			c.waitForExpectedData(t)
 		})
 	}
 }
@@ -204,11 +204,11 @@ func TestSampleDeliveryTimeout(t *testing.T) {
 	// Send the samples twice, waiting for the samples in the meantime.
 	c.expectSamples(samples, series)
 	m.Append(samples)
-	c.waitForExpectedSamples(t)
+	c.waitForExpectedData(t)
 
 	c.expectSamples(samples, series)
 	m.Append(samples)
-	c.waitForExpectedSamples(t)
+	c.waitForExpectedData(t)
 }
 
 func TestSampleDeliveryOrder(t *testing.T) {
@@ -249,7 +249,7 @@ func TestSampleDeliveryOrder(t *testing.T) {
 	defer m.Stop()
 	// These should be received by the client.
 	m.Append(samples)
-	c.waitForExpectedSamples(t)
+	c.waitForExpectedData(t)
 }
 
 func TestShutdown(t *testing.T) {
@@ -361,7 +361,7 @@ func TestReshard(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 	}
 
-	c.waitForExpectedSamples(t)
+	c.waitForExpectedData(t)
 }
 
 func TestReshardRaceWithStop(t *testing.T) {
@@ -576,7 +576,7 @@ func (c *TestWriteClient) expectExemplars(ss []record.RefExemplar, series []reco
 	c.wg.Add(len(ss))
 }
 
-func (c *TestWriteClient) waitForExpectedSamples(tb testing.TB) {
+func (c *TestWriteClient) waitForExpectedData(tb testing.TB) {
 	if !c.withWaitGroup {
 		return
 	}
@@ -591,7 +591,7 @@ func (c *TestWriteClient) waitForExpectedSamples(tb testing.TB) {
 	}
 }
 
-func (c *TestWriteClient) expectSampleCount(numSamples int) {
+func (c *TestWriteClient) expectDataCount(numSamples int) {
 	if !c.withWaitGroup {
 		return
 	}
@@ -600,7 +600,7 @@ func (c *TestWriteClient) expectSampleCount(numSamples int) {
 	c.wg.Add(numSamples)
 }
 
-func (c *TestWriteClient) waitForExpectedSampleCount() {
+func (c *TestWriteClient) waitForExpectedDataCount() {
 	if !c.withWaitGroup {
 		return
 	}
@@ -720,9 +720,9 @@ func BenchmarkSampleDelivery(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		c.expectSampleCount(len(samples))
+		c.expectDataCount(len(samples))
 		m.Append(samples)
-		c.waitForExpectedSampleCount()
+		c.waitForExpectedDataCount()
 	}
 	// Do not include shutdown
 	b.StopTimer()
