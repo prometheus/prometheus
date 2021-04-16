@@ -60,19 +60,20 @@ func newHighestTimestampMetric() *maxTimestamp {
 }
 
 func TestSampleDelivery(t *testing.T) {
+
+	testcases := []struct {
+		name      string
+		samples   bool
+		exemplars bool
+	}{
+		{samples: true, exemplars: false, name: "samples only"},
+		{samples: true, exemplars: true, name: "both samples and exemplars"},
+		{samples: false, exemplars: true, name: "exemplars only"},
+	}
+
 	// Let's create an even number of send batches so we don't run into the
 	// batch timeout case.
 	n := config.DefaultQueueConfig.MaxSamplesPerSend * 2
-	samples, series := createTimeseries(n, n)
-
-	c := NewTestWriteClient()
-	c.expectSamples(samples[:len(samples)/2], series)
-
-	queueConfig := config.DefaultQueueConfig
-	queueConfig.BatchSendDeadline = model.Duration(100 * time.Millisecond)
-	queueConfig.MaxShards = 1
-	queueConfig.Capacity = len(samples)
-	queueConfig.MaxSamplesPerSend = len(samples) / 2
 
 	dir, err := ioutil.TempDir("", "TestSampleDeliver")
 	require.NoError(t, err)
@@ -83,68 +84,11 @@ func TestSampleDelivery(t *testing.T) {
 	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil)
 	defer s.Close()
 
-	writeConfig := config.DefaultRemoteWriteConfig
-	conf := &config.Config{
-		GlobalConfig: config.DefaultGlobalConfig,
-		RemoteWriteConfigs: []*config.RemoteWriteConfig{
-			&writeConfig,
-		},
-	}
-	// We need to set URL's so that metric creation doesn't panic.
-	writeConfig.URL = &common_config.URL{
-		URL: &url.URL{
-			Host: "http://test-storage.com",
-		},
-	}
-	writeConfig.QueueConfig = queueConfig
-	require.NoError(t, s.ApplyConfig(conf))
-	hash, err := toHash(writeConfig)
-	require.NoError(t, err)
-	qm := s.rws.queues[hash]
-	qm.SetClient(c)
-
-	qm.StoreSeries(series, 0)
-
-	qm.Append(samples[:len(samples)/2])
-	c.waitForExpectedSamples(t)
-	c.expectSamples(samples[len(samples)/2:], series)
-	qm.Append(samples[len(samples)/2:])
-	c.waitForExpectedSamples(t)
-}
-
-func TestBothSamplesAndExemplarsDelivery(t *testing.T) {
-	// Let's create an even number of send batches so we don't run into the
-	// batch timeout case.
-	n := config.DefaultQueueConfig.MaxSamplesPerSend * 2
-	exemplars, _ := createExemplars(n, n)
-	samples, series := createTimeseries(n, n)
-
-	c := NewTestWriteClient()
-	c.expectSamples(samples[:len(samples)/2], series)
-	c.expectExemplars(exemplars[:len(exemplars)/2], series)
-
 	queueConfig := config.DefaultQueueConfig
 	queueConfig.BatchSendDeadline = model.Duration(100 * time.Millisecond)
 	queueConfig.MaxShards = 1
-	queueConfig.Capacity = len(exemplars)
-	queueConfig.MaxSamplesPerSend = len(exemplars) / 2
-
-	dir, err := ioutil.TempDir("", "TestSampleDeliver")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
-
-	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil)
-	defer s.Close()
 
 	writeConfig := config.DefaultRemoteWriteConfig
-	conf := &config.Config{
-		GlobalConfig: config.DefaultGlobalConfig,
-		RemoteWriteConfigs: []*config.RemoteWriteConfig{
-			&writeConfig,
-		},
-	}
 	// We need to set URL's so that metric creation doesn't panic.
 	writeConfig.URL = &common_config.URL{
 		URL: &url.URL{
@@ -152,77 +96,59 @@ func TestBothSamplesAndExemplarsDelivery(t *testing.T) {
 		},
 	}
 	writeConfig.QueueConfig = queueConfig
-	require.NoError(t, s.ApplyConfig(conf))
-	hash, err := toHash(writeConfig)
-	require.NoError(t, err)
-	qm := s.rws.queues[hash]
-	qm.SetClient(c)
 
-	qm.StoreSeries(series, 0)
-
-	qm.Append(samples[:len(samples)/2])
-	qm.AppendExemplars(exemplars[:len(exemplars)/2])
-	c.waitForExpectedSamples(t)
-
-	c.expectSamples(samples[len(samples)/2:], series)
-	c.expectExemplars(exemplars[len(exemplars)/2:], series)
-	qm.Append(samples[len(samples)/2:])
-	qm.AppendExemplars(exemplars[len(exemplars)/2:])
-	c.waitForExpectedSamples(t)
-}
-
-func TestExemplarDelivery(t *testing.T) {
-	// Let's create an even number of send batches so we don't run into the
-	// batch timeout case.
-	n := config.DefaultQueueConfig.MaxSamplesPerSend * 2
-	exemplars, series := createExemplars(n, n)
-
-	c := NewTestWriteClient()
-	c.expectExemplars(exemplars[:len(exemplars)/2], series)
-
-	queueConfig := config.DefaultQueueConfig
-	queueConfig.BatchSendDeadline = model.Duration(100 * time.Millisecond)
-	queueConfig.MaxShards = 1
-	queueConfig.Capacity = len(exemplars)
-	queueConfig.MaxSamplesPerSend = len(exemplars) / 2
-
-	dir, err := ioutil.TempDir("", "TestSampleDeliver")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
-
-	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil)
-	defer s.Close()
-
-	writeConfig := config.DefaultRemoteWriteConfig
 	conf := &config.Config{
 		GlobalConfig: config.DefaultGlobalConfig,
 		RemoteWriteConfigs: []*config.RemoteWriteConfig{
 			&writeConfig,
 		},
 	}
-	// We need to set URL's so that metric creation doesn't panic.
-	writeConfig.URL = &common_config.URL{
-		URL: &url.URL{
-			Host: "http://test-storage.com",
-		},
+
+	for _, tc := range testcases {
+		t.Run(tc.name, func(t *testing.T) {
+
+			var (
+				series    []record.RefSeries
+				samples   []record.RefSample
+				exemplars []record.RefExemplar
+			)
+
+			// generates same series in both cases
+			if tc.samples {
+				samples, series = createTimeseries(n, n)
+			}
+			if tc.exemplars {
+				exemplars, series = createExemplars(n, n)
+			}
+
+			// Apply new config
+			queueConfig.Capacity = len(samples)
+			queueConfig.MaxSamplesPerSend = len(samples) / 2
+			require.NoError(t, s.ApplyConfig(conf))
+			hash, err := toHash(writeConfig)
+			require.NoError(t, err)
+			qm := s.rws.queues[hash]
+
+			c := NewTestWriteClient()
+			qm.SetClient(c)
+
+			qm.StoreSeries(series, 0)
+
+			// First half
+			c.expectSamples(samples[:len(samples)/2], series)
+			c.expectExemplars(exemplars[:len(exemplars)/2], series)
+			qm.Append(samples[:len(samples)/2])
+			qm.AppendExemplars(exemplars[:len(exemplars)/2])
+			c.waitForExpectedSamples(t)
+
+			// Second half
+			c.expectSamples(samples[len(samples)/2:], series)
+			c.expectExemplars(exemplars[len(exemplars)/2:], series)
+			qm.Append(samples[len(samples)/2:])
+			qm.AppendExemplars(exemplars[len(exemplars)/2:])
+			c.waitForExpectedSamples(t)
+		})
 	}
-	writeConfig.QueueConfig = queueConfig
-	require.NoError(t, s.ApplyConfig(conf))
-	hash, err := toHash(writeConfig)
-	require.NoError(t, err)
-	qm := s.rws.queues[hash]
-	qm.SetClient(c)
-
-	qm.StoreSeries(series, 0)
-
-	qm.AppendExemplars(exemplars[:len(exemplars)/2])
-	c.waitForExpectedSamples(t)
-
-	c.expectExemplars(exemplars[len(exemplars)/2:], series)
-	qm.AppendExemplars(exemplars[len(exemplars)/2:])
-	c.waitForExpectedSamples(t)
 }
 
 func TestMetadataDelivery(t *testing.T) {
@@ -549,7 +475,6 @@ func createTimeseries(numSamples, numSeries int) ([]record.RefSample, []record.R
 				T:   int64(j),
 				V:   float64(i),
 			})
-
 		}
 		series = append(series, record.RefSeries{
 			Ref:    uint64(i),
@@ -571,7 +496,6 @@ func createExemplars(numExemplars, numSeries int) ([]record.RefExemplar, []recor
 				V:      float64(i),
 				Labels: labels.FromStrings("traceID", fmt.Sprintf("trace-%d", i)),
 			})
-
 		}
 		series = append(series, record.RefSeries{
 			Ref:    uint64(i),
