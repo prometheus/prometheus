@@ -1041,20 +1041,23 @@ The following endpoint returns information about the WAL replay:
 GET /api/v1/status/walreplay
 ```
 
-**first**: The first segment needed to be replayed.
-**last**: The last segment needed to be replayed.
-**read**: The latest segment replayed.
+**read**: The number of segments replayed so far.
+**total**: The total number segments needed to be replayed.
+**progress**: The progress of the replay (0 - 100%).
+**state**: The state of the replay. Possible states:
+- **waiting**: Waiting for the replay to start.
+- **in progress**: The replay is in progress.
+- **done**: The replay has finished.
 
 ```json
 $ curl http://localhost:9090/api/v1/status/walreplay
 {
   "status": "success",
   "data": {
-    "first": 1076,
-    "last": 1230,
-    "read": 1201,
-    "started": true,
-    "done": false
+    "read": 2,
+    "total": 5
+    "progress": 40,
+    "state": "in progress"
   }
 }
 ```

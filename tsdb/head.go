@@ -53,22 +53,12 @@ var (
 	// ErrAppenderClosed is returned if an appender has already be successfully
 	// rolled back or committed.
 	ErrAppenderClosed = errors.New("appender closed")
-
-	WALReplayStatus walReplayStatus
 )
 
 type ExemplarStorage interface {
 	storage.ExemplarQueryable
 	AddExemplar(labels.Labels, exemplar.Exemplar) error
 	ValidateExemplar(labels.Labels, exemplar.Exemplar) error
-}
-
-type walReplayStatus struct {
-	First   int
-	Last    int
-	Read    int
-	Started bool
-	Done    bool
 }
 
 // Head handles reads and writes of time series data within a time window.
@@ -115,6 +105,8 @@ type Head struct {
 
 	closedMtx sync.Mutex
 	closed    bool
+
+	stats *HeadStats
 }
 
 // HeadOptions are parameters for the Head block.
@@ -317,6 +309,64 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 	return m
 }
 
+// HeadStats are the statistics for the head component of the DB.
+type HeadStats struct {
+	WALReplayStatus *WALReplayStatus
+}
+
+// NewHeadStats returns a new HeadStats object.
+func NewHeadStats() *HeadStats {
+	return &HeadStats{
+		WALReplayStatus: &WALReplayStatus{},
+	}
+}
+
+// WALReplayStatus contains status information about the WAL replay.
+type WALReplayStatus struct {
+	sync.RWMutex
+	Read  int
+	Total int
+	// Progess is a progress bar, 0 - 100%.
+	Progress int
+	State    WALReplayState
+}
+
+// WALReplayState is the state of the WAL replay.
+type WALReplayState int
+
+const (
+	// WALReplayWaiting is the state before the WAL replay has started.
+	WALReplayWaiting WALReplayState = iota
+	// WALReplayInProgress is the state while the WAL replay is in progress.
+	WALReplayInProgress
+	// WALReplayDone is the state after the the WAL replay has finished.
+	WALReplayDone
+)
+
+var walReplayStates = []string{
+	"waiting",
+	"in progress",
+	"done",
+}
+
+// String returns the string format of a WALReplayState
+func (state WALReplayState) String() string {
+	if state < WALReplayWaiting || state > WALReplayDone {
+		return "unknown"
+	}
+
+	return walReplayStates[state]
+}
+
+// GetWALReplayStatus returns the WAL replay status information.
+func (s *WALReplayStatus) GetWALReplayStatus() *WALReplayStatus {
+	s.RLock()
+	x := s
+	s.RUnlock()
+
+	return x
+}
+
 const cardinalityCacheExpirationTime = time.Duration(30) * time.Second
 
 // PostingsCardinalityStats returns top 10 highest cardinality stats By label and value names.
@@ -338,7 +388,7 @@ func (h *Head) PostingsCardinalityStats(statsByLabelName string) *index.Postings
 }
 
 // NewHead opens the head block in dir.
-func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, opts *HeadOptions) (*Head, error) {
+func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, opts *HeadOptions, stats *HeadStats) (*Head, error) {
 	if l == nil {
 		l = log.NewNopLogger()
 	}
@@ -370,6 +420,7 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, opts *HeadOpti
 				return &memChunk{}
 			},
 		},
+		stats: stats,
 	}
 	h.chunkRange.Store(opts.ChunkRange)
 	h.minTime.Store(math.MaxInt64)
@@ -805,9 +856,7 @@ func (h *Head) Init(minValidTime int64) error {
 		return errors.Wrap(err, "finding WAL segments")
 	}
 
-	WALReplayStatus.Started = true
-	WALReplayStatus.First = startFrom + 1
-	WALReplayStatus.Last = last + 1
+	h.startWALReplayStatus(startFrom, last)
 
 	// Backfill segments from the most recent checkpoint onwards.
 	for i := startFrom; i <= last; i++ {
@@ -825,7 +874,7 @@ func (h *Head) Init(minValidTime int64) error {
 			return err
 		}
 		level.Info(h.logger).Log("msg", "WAL segment loaded", "segment", i, "maxSegment", last)
-		WALReplayStatus.Read = i + 1
+		h.updateWALReplayStatusRead()
 	}
 
 	walReplayDuration := time.Since(start)
@@ -836,7 +885,7 @@ func (h *Head) Init(minValidTime int64) error {
 		"wal_replay_duration", time.Since(walReplayStart).String(),
 		"total_replay_duration", walReplayDuration.String(),
 	)
-	WALReplayStatus.Done = true
+	h.endWALReplayStatus()
 
 	return nil
 }
@@ -2716,4 +2765,29 @@ func (h *Head) Size() int64 {
 
 func (h *RangeHead) Size() int64 {
 	return h.head.Size()
+}
+
+func (h *Head) startWALReplayStatus(startFrom, last int) {
+	h.stats.WALReplayStatus.Lock()
+	defer h.stats.WALReplayStatus.Unlock()
+
+	h.stats.WALReplayStatus.State = WALReplayInProgress
+	h.stats.WALReplayStatus.Total = last - startFrom + 1
+}
+
+func (h *Head) updateWALReplayStatusRead() {
+	h.stats.WALReplayStatus.Lock()
+	defer h.stats.WALReplayStatus.Unlock()
+
+	h.stats.WALReplayStatus.Read++
+	h.stats.WALReplayStatus.Progress =
+		int((float64((h.stats.WALReplayStatus.Read)) /
+			(float64(h.stats.WALReplayStatus.Total))) * 100)
+}
+
+func (h *Head) endWALReplayStatus() {
+	h.stats.WALReplayStatus.Lock()
+	defer h.stats.WALReplayStatus.Unlock()
+
+	h.stats.WALReplayStatus.State = WALReplayDone
 }

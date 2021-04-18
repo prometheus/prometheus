@@ -87,7 +87,7 @@ func benchmarkWrite(outPath, samplesFile string, numMetrics, numScrapes int) err
 	st, err := tsdb.Open(dir, l, nil, &tsdb.Options{
 		RetentionDuration: int64(15 * 24 * time.Hour / time.Millisecond),
 		MinBlockDuration:  int64(2 * time.Hour / time.Millisecond),
-	})
+	}, tsdb.NewDBStats())
 	if err != nil {
 		return err
 	}
