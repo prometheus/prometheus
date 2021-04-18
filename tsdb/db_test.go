@@ -62,10 +62,10 @@ func openTestDB(t testing.TB, opts *Options, rngs []int64) (db *DB) {
 	require.NoError(t, err)
 
 	if len(rngs) == 0 {
-		db, err = Open(tmpdir, nil, nil, opts)
+		db, err = Open(tmpdir, nil, nil, opts, nil)
 	} else {
 		opts, rngs = validateOpts(opts, rngs)
-		db, err = open(tmpdir, nil, nil, opts, rngs)
+		db, err = open(tmpdir, nil, nil, opts, rngs, nil)
 	}
 	require.NoError(t, err)
 
@@ -241,7 +241,7 @@ func TestNoPanicAfterWALCorruption(t *testing.T) {
 
 	// Query the data.
 	{
-		db, err := Open(db.Dir(), nil, nil, nil)
+		db, err := Open(db.Dir(), nil, nil, nil, nil)
 		require.NoError(t, err)
 		defer func() {
 			require.NoError(t, db.Close())
@@ -581,7 +581,7 @@ func TestDB_Snapshot(t *testing.T) {
 	require.NoError(t, db.Close())
 
 	// reopen DB from snapshot
-	db, err = Open(snap, nil, nil, nil)
+	db, err = Open(snap, nil, nil, nil, nil)
 	require.NoError(t, err)
 	defer func() { require.NoError(t, db.Close()) }()
 
@@ -633,7 +633,7 @@ func TestDB_Snapshot_ChunksOutsideOfCompactedRange(t *testing.T) {
 	require.NoError(t, db.Close())
 
 	// Reopen DB from snapshot.
-	db, err = Open(snap, nil, nil, nil)
+	db, err = Open(snap, nil, nil, nil, nil)
 	require.NoError(t, err)
 	defer func() { require.NoError(t, db.Close()) }()
 
@@ -703,7 +703,7 @@ Outer:
 		require.NoError(t, db.Close())
 
 		// reopen DB from snapshot
-		db, err = Open(snap, nil, nil, nil)
+		db, err = Open(snap, nil, nil, nil, nil)
 		require.NoError(t, err)
 		defer func() { require.NoError(t, db.Close()) }()
 
@@ -923,7 +923,7 @@ func TestWALFlushedOnDBClose(t *testing.T) {
 
 	require.NoError(t, db.Close())
 
-	db, err = Open(dirDb, nil, nil, nil)
+	db, err = Open(dirDb, nil, nil, nil, nil)
 	require.NoError(t, err)
 	defer func() { require.NoError(t, db.Close()) }()
 
@@ -1046,7 +1046,7 @@ func TestTombstoneClean(t *testing.T) {
 		require.NoError(t, db.Close())
 
 		// Reopen DB from snapshot.
-		db, err = Open(snap, nil, nil, nil)
+		db, err = Open(snap, nil, nil, nil, nil)
 		require.NoError(t, err)
 		defer db.Close()
 
@@ -1135,7 +1135,7 @@ func TestTombstoneCleanResultEmptyBlock(t *testing.T) {
 	require.NoError(t, db.Close())
 
 	// Reopen DB from snapshot.
-	db, err = Open(snap, nil, nil, nil)
+	db, err = Open(snap, nil, nil, nil, nil)
 	require.NoError(t, err)
 	defer db.Close()
 
@@ -1757,7 +1757,7 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 			require.NoError(t, os.RemoveAll(dir))
 		}()
 
-		db, err := Open(dir, nil, nil, nil)
+		db, err := Open(dir, nil, nil, nil, nil)
 		require.NoError(t, err)
 		defer db.Close()
 
@@ -1799,7 +1799,7 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, w.Close())
 
-		db, err := Open(dir, nil, nil, nil)
+		db, err := Open(dir, nil, nil, nil, nil)
 		require.NoError(t, err)
 		defer db.Close()
 
@@ -1815,7 +1815,7 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 
 		createBlock(t, dir, genSeries(1, 1, 1000, 2000))
 
-		db, err := Open(dir, nil, nil, nil)
+		db, err := Open(dir, nil, nil, nil, nil)
 		require.NoError(t, err)
 		defer db.Close()
 
@@ -1851,7 +1851,7 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 
 		r := prometheus.NewRegistry()
 
-		db, err := Open(dir, nil, r, nil)
+		db, err := Open(dir, nil, r, nil, nil)
 		require.NoError(t, err)
 		defer db.Close()
 
@@ -2125,7 +2125,7 @@ func TestBlockRanges(t *testing.T) {
 	// when a non standard block already exists.
 	firstBlockMaxT := int64(3)
 	createBlock(t, dir, genSeries(1, 1, 0, firstBlockMaxT))
-	db, err := open(dir, logger, nil, DefaultOptions(), []int64{10000})
+	db, err := open(dir, logger, nil, DefaultOptions(), []int64{10000}, nil)
 	require.NoError(t, err)
 
 	rangeToTriggerCompaction := db.compactor.(*LeveledCompactor).ranges[0]/2*3 + 1
@@ -2177,7 +2177,7 @@ func TestBlockRanges(t *testing.T) {
 	thirdBlockMaxt := secondBlockMaxt + 2
 	createBlock(t, dir, genSeries(1, 1, secondBlockMaxt+1, thirdBlockMaxt))
 
-	db, err = open(dir, logger, nil, DefaultOptions(), []int64{10000})
+	db, err = open(dir, logger, nil, DefaultOptions(), []int64{10000}, nil)
 	require.NoError(t, err)
 
 	defer db.Close()
@@ -2245,7 +2245,7 @@ func TestDBReadOnly(t *testing.T) {
 
 	// Open a normal db to use for a comparison.
 	{
-		dbWritable, err := Open(dbDir, logger, nil, nil)
+		dbWritable, err := Open(dbDir, logger, nil, nil, nil)
 		require.NoError(t, err)
 		dbWritable.DisableCompactions()
 
@@ -2347,7 +2347,7 @@ func TestDBReadOnly_FlushWAL(t *testing.T) {
 		}()
 
 		// Append data to the WAL.
-		db, err := Open(dbDir, logger, nil, nil)
+		db, err := Open(dbDir, logger, nil, nil, nil)
 		require.NoError(t, err)
 		db.DisableCompactions()
 		app := db.Appender(ctx)
@@ -2408,7 +2408,7 @@ func TestDBCannotSeePartialCommits(t *testing.T) {
 		require.NoError(t, os.RemoveAll(tmpdir))
 	}()
 
-	db, err := Open(tmpdir, nil, nil, nil)
+	db, err := Open(tmpdir, nil, nil, nil, nil)
 	require.NoError(t, err)
 	defer db.Close()
 
@@ -2478,7 +2478,7 @@ func TestDBQueryDoesntSeeAppendsAfterCreation(t *testing.T) {
 		require.NoError(t, os.RemoveAll(tmpdir))
 	}()
 
-	db, err := Open(tmpdir, nil, nil, nil)
+	db, err := Open(tmpdir, nil, nil, nil, nil)
 	require.NoError(t, err)
 	defer db.Close()
 
@@ -2805,7 +2805,7 @@ func TestCompactHead(t *testing.T) {
 		WALCompression:    true,
 	}
 
-	db, err := Open(dbDir, log.NewNopLogger(), prometheus.NewRegistry(), tsdbCfg)
+	db, err := Open(dbDir, log.NewNopLogger(), prometheus.NewRegistry(), tsdbCfg, nil)
 	require.NoError(t, err)
 	ctx := context.Background()
 	app := db.Appender(ctx)
@@ -2826,7 +2826,7 @@ func TestCompactHead(t *testing.T) {
 	// Delete everything but the new block and
 	// reopen the db to query it to ensure it includes the head data.
 	require.NoError(t, deleteNonBlocks(db.Dir()))
-	db, err = Open(dbDir, log.NewNopLogger(), prometheus.NewRegistry(), tsdbCfg)
+	db, err = Open(dbDir, log.NewNopLogger(), prometheus.NewRegistry(), tsdbCfg, nil)
 	require.NoError(t, err)
 	require.Equal(t, 1, len(db.Blocks()))
 	require.Equal(t, int64(maxt), db.Head().MinTime())
@@ -2955,7 +2955,7 @@ func TestOpen_VariousBlockStates(t *testing.T) {
 
 	opts := DefaultOptions()
 	opts.RetentionDuration = 0
-	db, err := Open(tmpDir, log.NewLogfmtLogger(os.Stderr), nil, opts)
+	db, err := Open(tmpDir, log.NewLogfmtLogger(os.Stderr), nil, opts, nil)
 	require.NoError(t, err)
 
 	loadedBlocks := db.Blocks()
@@ -3000,7 +3000,7 @@ func TestOneCheckpointPerCompactCall(t *testing.T) {
 		require.NoError(t, os.RemoveAll(tmpDir))
 	})
 
-	db, err := Open(tmpDir, log.NewNopLogger(), prometheus.NewRegistry(), tsdbCfg)
+	db, err := Open(tmpDir, log.NewNopLogger(), prometheus.NewRegistry(), tsdbCfg, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		require.NoError(t, db.Close())
@@ -3061,7 +3061,7 @@ func TestOneCheckpointPerCompactCall(t *testing.T) {
 
 	createBlock(t, db.dir, genSeries(1, 1, newBlockMint, newBlockMaxt))
 
-	db, err = Open(db.dir, log.NewNopLogger(), prometheus.NewRegistry(), tsdbCfg)
+	db, err = Open(db.dir, log.NewNopLogger(), prometheus.NewRegistry(), tsdbCfg, nil)
 	require.NoError(t, err)
 	db.DisableCompactions()
 
@@ -3119,7 +3119,7 @@ func TestNoPanicOnTSDBOpenError(t *testing.T) {
 	lockf, _, err := fileutil.Flock(filepath.Join(absdir, "lock"))
 	require.NoError(t, err)
 
-	_, err = Open(tmpdir, nil, nil, DefaultOptions())
+	_, err = Open(tmpdir, nil, nil, DefaultOptions(), nil)
 	require.Error(t, err)
 
 	require.NoError(t, lockf.Release())

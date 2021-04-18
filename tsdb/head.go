@@ -404,6 +404,10 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, opts *HeadOpti
 		return nil, err
 	}
 
+	if stats == nil {
+		stats = NewHeadStats()
+	}
+
 	h := &Head{
 		wal:        wal,
 		logger:     l,

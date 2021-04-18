@@ -559,11 +559,7 @@ func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, stat
 	var rngs []int64
 	opts, rngs = validateOpts(opts, nil)
 
-	if stats == nil {
-		stats = NewDBStats()
-	}
-
-	return open(dir, l, r, opts, stats, rngs)
+	return open(dir, l, r, opts, rngs, stats)
 }
 
 func validateOpts(opts *Options, rngs []int64) (*Options, []int64) {
@@ -594,12 +590,15 @@ func validateOpts(opts *Options, rngs []int64) (*Options, []int64) {
 	return opts, rngs
 }
 
-func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, stats *DBStats, rngs []int64) (_ *DB, returnedErr error) {
+func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs []int64, stats *DBStats) (_ *DB, returnedErr error) {
 	if err := os.MkdirAll(dir, 0777); err != nil {
 		return nil, err
 	}
 	if l == nil {
 		l = log.NewNopLogger()
+	}
+	if stats == nil {
+		stats = NewDBStats()
 	}
 
 	for i, v := range rngs {
