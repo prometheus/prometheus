@@ -32,7 +32,7 @@
     "jsdom": "^16.4.0",
     "moment": "^2.24.0",
     "moment-timezone": "^0.5.23",
-    "node-sass": "4.14.1",
+    "sass": "1.32.10",
     "popper.js": "^1.14.3",
     "react": "^16.7.0",
     "react-copy-to-clipboard": "^5.0.1",
