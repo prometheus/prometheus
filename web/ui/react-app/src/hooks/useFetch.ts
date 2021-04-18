@@ -88,7 +88,7 @@ export const useFetchReadyInterval = (pathPrefix: string, options?: RequestInit)
   useEffect(() => {
     const interval = setInterval(async () => {
       try {
-        var res = await fetch(`${pathPrefix}/-/ready`, { cache: 'no-store', credentials: 'same-origin', ...options });
+        let res = await fetch(`${pathPrefix}/-/ready`, { cache: 'no-store', credentials: 'same-origin', ...options });
         if (res.status === 200) {
           setReady(true);
           clearInterval(interval);
