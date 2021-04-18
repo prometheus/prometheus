@@ -154,6 +154,7 @@ type TSDBAdminStats interface {
 	Snapshot(dir string, withHead bool) error
 
 	Stats(statsByLabelName string) (*tsdb.Stats, error)
+	WALReplayStatus() (*tsdb.WALReplayStatus, error)
 }
 
 // API can register a set of endpoints in a router and handle
@@ -1353,21 +1354,23 @@ func (api *API) serveTSDBStatus(*http.Request) apiFuncResult {
 }
 
 type walReplayStatus struct {
-	First   int  `json:"first"`
-	Last    int  `json:"last"`
-	Read    int  `json:"read"`
-	Started bool `json:"started"`
-	Done    bool `json:"done"`
+	Read    int    `json:"read"`
+	Total   int    `json:"total"`
+	Progess int    `json:"progress"`
+	State   string `json:"state"`
 }
 
 func (api *API) serveWALReplayStatus(w http.ResponseWriter, r *http.Request) {
 	httputil.SetCORS(w, api.CORSOrigin, r)
+	status, err := api.db.WALReplayStatus()
+	if err != nil {
+		api.respondError(w, &apiError{errorInternal, err}, nil)
+	}
 	api.respond(w, walReplayStatus{
-		First:   tsdb.WALReplayStatus.First,
-		Last:    tsdb.WALReplayStatus.Last,
-		Read:    tsdb.WALReplayStatus.Read,
-		Started: tsdb.WALReplayStatus.Started,
-		Done:    tsdb.WALReplayStatus.Done,
+		Read:    status.Read,
+		Total:   status.Total,
+		Progess: status.Progress,
+		State:   status.State.String(),
 	}, nil)
 }
 

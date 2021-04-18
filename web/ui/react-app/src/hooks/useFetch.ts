@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { API_PATH } from '../constants/constants';
+import { WALReplayStatus } from '../types/types';
 
 export type APIResponse<T> = { status: string; data: T };
 
@@ -14,18 +15,6 @@ export interface FetchStateReady {
   isUnexpected: boolean;
   isLoading: boolean;
 }
-
-export type WALReplayData = {
-  first: number;
-  last: number;
-  read: number;
-  started: boolean;
-  done: boolean;
-};
-
-export type WALReplayStatus = {
-  data?: WALReplayData;
-};
 
 export interface FetchStateReadyInterval {
   ready: boolean;
