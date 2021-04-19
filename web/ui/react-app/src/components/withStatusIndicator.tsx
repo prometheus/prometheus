@@ -3,7 +3,7 @@ import { Alert } from 'reactstrap';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faSpinner } from '@fortawesome/free-solid-svg-icons';
 
-interface StatusIndicatorProps {
+export interface StatusIndicatorProps {
   error?: Error;
   isLoading?: boolean;
   customErrorMsg?: JSX.Element;

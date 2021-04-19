@@ -1,7 +1,7 @@
 import React, { FC, memo, CSSProperties } from 'react';
 import { FormGroup, Label, Input, InputProps } from 'reactstrap';
 
-interface CheckboxProps extends InputProps {
+export interface CheckboxProps extends InputProps {
   wrapperStyles?: CSSProperties;
 }
 

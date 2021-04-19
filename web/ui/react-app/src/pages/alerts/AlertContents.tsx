@@ -17,6 +17,7 @@ export interface RuleStatus<T> {
 export interface AlertsProps {
   groups?: RuleGroup[];
   statsCount: RuleStatus<number>;
+  defaultIsExpanded?: boolean;
 }
 
 export interface Alert {
@@ -27,7 +28,7 @@ export interface Alert {
   activeAt: string;
 }
 
-interface RuleGroup {
+export interface RuleGroup {
   name: string;
   file: string;
   rules: Rule[];
@@ -40,7 +41,7 @@ const stateColorTuples: Array<[RuleState, 'success' | 'warning' | 'danger']> = [
   ['firing', 'danger'],
 ];
 
-const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
+const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount, defaultIsExpanded = false }) => {
   const [filter, setFilter] = useLocalStorage('alerts-status-filter', {
     firing: true,
     pending: true,
@@ -92,7 +93,12 @@ const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
             {group.rules.map((rule, j) => {
               return (
                 filter[rule.state] && (
-                  <CollapsibleAlertPanel key={rule.name + j} showAnnotations={showAnnotations.checked} rule={rule} />
+                  <CollapsibleAlertPanel
+                    key={rule.name + j}
+                    showAnnotations={showAnnotations.checked}
+                    rule={rule}
+                    defaultIsExpanded={defaultIsExpanded}
+                  />
                 )
               );
             })}

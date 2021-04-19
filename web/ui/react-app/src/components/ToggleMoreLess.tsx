@@ -1,7 +1,7 @@
 import React, { FC } from 'react';
 import { Button } from 'reactstrap';
 
-interface ToggleMoreLessProps {
+export interface ToggleMoreLessProps {
   event(): void;
   showMore: boolean;
 }

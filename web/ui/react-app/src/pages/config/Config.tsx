@@ -10,7 +10,7 @@ import { API_PATH } from '../../constants/constants';
 
 type YamlConfig = { yaml?: string };
 
-interface ConfigContentProps {
+export interface ConfigContentProps {
   error?: Error;
   data?: YamlConfig;
 }

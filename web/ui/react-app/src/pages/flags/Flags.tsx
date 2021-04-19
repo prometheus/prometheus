@@ -6,11 +6,11 @@ import { useFetch } from '../../hooks/useFetch';
 import { usePathPrefix } from '../../contexts/PathPrefixContext';
 import { API_PATH } from '../../constants/constants';
 
-interface FlagMap {
+export interface FlagMap {
   [key: string]: string;
 }
 
-interface FlagsProps {
+export interface FlagsProps {
   data?: FlagMap;
 }
 

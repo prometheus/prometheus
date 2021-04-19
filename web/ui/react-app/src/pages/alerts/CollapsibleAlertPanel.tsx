@@ -10,6 +10,7 @@ import { createExpressionLink, parsePrometheusFloat, formatDuration } from '../.
 interface CollapsibleAlertPanelProps {
   rule: Rule;
   showAnnotations: boolean;
+  defaultIsExpanded?: boolean;
 }
 
 const alertColors: RuleStatus<string> = {
@@ -18,8 +19,8 @@ const alertColors: RuleStatus<string> = {
   inactive: 'success',
 };
 
-const CollapsibleAlertPanel: FC<CollapsibleAlertPanelProps> = ({ rule, showAnnotations }) => {
-  const [open, toggle] = useState(false);
+const CollapsibleAlertPanel: FC<CollapsibleAlertPanelProps> = ({ rule, showAnnotations, defaultIsExpanded }) => {
+  const [open, toggle] = useState(defaultIsExpanded);
 
   return (
     <>
