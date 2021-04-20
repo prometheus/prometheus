@@ -60,7 +60,7 @@ describe('GraphHelpers', () => {
         { input: 2e-24, output: '2.00y' },
         { input: 2e-25, output: '0.20y' },
         { input: 2e-26, output: '0.02y' },
-      ].map(t => {
+      ].map((t) => {
         expect(formatValue(t.input)).toBe(t.output);
       });
     });
@@ -80,7 +80,7 @@ describe('GraphHelpers', () => {
       };
       expect(
         getColors(data)
-          .map(c => c.toString())
+          .map((c) => c.toString())
           .join(',')
       ).toEqual(
         'rgb(237,194,64),rgb(175,216,248),rgb(203,75,75),rgb(77,167,77),rgb(148,64,237),rgb(189,155,51),rgb(140,172,198)'

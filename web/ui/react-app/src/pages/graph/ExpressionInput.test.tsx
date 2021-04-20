@@ -47,14 +47,14 @@ describe('ExpressionInput', () => {
   });
 
   it('renders a search icon when it is not loading', () => {
-    const addon = expressionInput.find(InputGroupAddon).filterWhere(addon => addon.prop('addonType') === 'prepend');
+    const addon = expressionInput.find(InputGroupAddon).filterWhere((addon) => addon.prop('addonType') === 'prepend');
     const icon = addon.find(FontAwesomeIcon);
     expect(icon.prop('icon')).toEqual(faSearch);
   });
 
   it('renders a loading icon when it is loading', () => {
     const expressionInput = mount(<ExpressionInput {...expressionInputProps} loading={true} />);
-    const addon = expressionInput.find(InputGroupAddon).filterWhere(addon => addon.prop('addonType') === 'prepend');
+    const addon = expressionInput.find(InputGroupAddon).filterWhere((addon) => addon.prop('addonType') === 'prepend');
     const icon = addon.find(FontAwesomeIcon);
     expect(icon.prop('icon')).toEqual(faSpinner);
     expect(icon.prop('spin')).toBe(true);
@@ -75,7 +75,7 @@ describe('ExpressionInput', () => {
       const downshift = expressionInput.find(Downshift);
       const input = downshift.find(Input);
       downshift.setState({ isOpen: false });
-      ['Home', 'End', 'ArrowUp', 'ArrowDown'].forEach(key => {
+      ['Home', 'End', 'ArrowUp', 'ArrowDown'].forEach((key) => {
         const event = getKeyEvent(key);
         input.simulate('keydown', event);
         const nativeEvent = event.nativeEvent as any;
@@ -122,7 +122,7 @@ describe('ExpressionInput', () => {
       const spyExecuteQuery = jest.fn();
       const props = { ...expressionInputProps, executeQuery: spyExecuteQuery };
       const wrapper = mount(<ExpressionInput {...props} />);
-      const btn = wrapper.find(Button).filterWhere(btn => btn.hasClass('execute-btn'));
+      const btn = wrapper.find(Button).filterWhere((btn) => btn.hasClass('execute-btn'));
       btn.simulate('click');
       expect(spyExecuteQuery).toHaveBeenCalledTimes(1);
     });
@@ -226,7 +226,7 @@ describe('ExpressionInput', () => {
       const downshift = expressionInput.find(Downshift);
       const input = downshift.find(Input);
       downshift.setState({ isOpen: true });
-      ['ArrowUp', 'ArrowDown'].forEach(key => {
+      ['ArrowUp', 'ArrowDown'].forEach((key) => {
         const event = getKeyEvent(key);
         input.simulate('keydown', event);
         const nativeEvent = event.nativeEvent as any;
@@ -248,7 +248,7 @@ describe('ExpressionInput', () => {
         const ul = downshift.find('ul');
         expect(ul.prop('className')).toEqual('card list-group');
         const items = ul.find('li');
-        expect(items.map(item => item.text()).join(', ')).toEqual(
+        expect(items.map((item) => item.text()).join(', ')).toEqual(
           'node_cpu_guest_seconds_total, node_cpu_seconds_total, instance:node_cpu_utilisation:rate1m'
         );
       });
@@ -256,11 +256,8 @@ describe('ExpressionInput', () => {
   });
 
   it('renders an execute Button', () => {
-    const addon = expressionInput.find(InputGroupAddon).filterWhere(addon => addon.prop('addonType') === 'append');
-    const button = addon
-      .find(Button)
-      .find('.execute-btn')
-      .first();
+    const addon = expressionInput.find(InputGroupAddon).filterWhere((addon) => addon.prop('addonType') === 'append');
+    const button = addon.find(Button).find('.execute-btn').first();
     expect(button.prop('color')).toEqual('primary');
     expect(button.text()).toEqual('Execute');
   });

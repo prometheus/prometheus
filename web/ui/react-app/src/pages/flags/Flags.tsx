@@ -20,7 +20,7 @@ export const FlagsContent: FC<FlagsProps> = ({ data = {} }) => {
       <h2>Command-Line Flags</h2>
       <Table bordered size="sm" striped>
         <tbody>
-          {Object.keys(data).map(key => (
+          {Object.keys(data).map((key) => (
             <tr key={key}>
               <th>{key}</th>
               <td>{data[key]}</td>

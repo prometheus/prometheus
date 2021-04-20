@@ -13,7 +13,7 @@ describe('App', () => {
     expect(app.find(Navigation)).toHaveLength(1);
   });
   it('routes', () => {
-    [Alerts, Config, Flags, Rules, ServiceDiscovery, Status, Targets, TSDBStatus, PanelList].forEach(component => {
+    [Alerts, Config, Flags, Rules, ServiceDiscovery, Status, Targets, TSDBStatus, PanelList].forEach((component) => {
       const c = app.find(component);
       expect(c).toHaveLength(1);
     });

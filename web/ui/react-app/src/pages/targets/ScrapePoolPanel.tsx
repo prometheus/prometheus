@@ -37,7 +37,7 @@ const ScrapePoolPanel: FC<PanelProps> = ({ scrapePool, targetGroup, expanded, to
         <Table className={styles.table} size="sm" bordered hover striped>
           <thead>
             <tr key="header">
-              {columns.map(column => (
+              {columns.map((column) => (
                 <th key={column}>{column}</th>
               ))}
             </tr>

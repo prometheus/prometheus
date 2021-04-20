@@ -114,7 +114,7 @@ export const getOptions = (stacked: boolean, useLocalTime: boolean): jquery.flot
             <div>
             <div class="labels mt-1">
               ${Object.keys(labels)
-                .map(k =>
+                .map((k) =>
                   k !== '__name__' ? `<div class="mb-1"><strong>${k}</strong>: ${escapeHTML(labels[k])}</div>` : ''
                 )
                 .join('')}

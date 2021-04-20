@@ -113,7 +113,7 @@ class TimeInput extends Component<TimeInputProps> {
           innerRef={this.timeInputRef}
           onFocus={() => this.$time.datetimepicker('show')}
           onBlur={() => this.$time.datetimepicker('hide')}
-          onKeyDown={e => ['Escape', 'Enter'].includes(e.key) && this.$time.datetimepicker('hide')}
+          onKeyDown={(e) => ['Escape', 'Enter'].includes(e.key) && this.$time.datetimepicker('hide')}
         />
 
         {/* CAUTION: While the datetimepicker also has an option to show a 'clear' button,

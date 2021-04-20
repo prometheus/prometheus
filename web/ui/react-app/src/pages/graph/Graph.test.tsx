@@ -58,9 +58,9 @@ describe('Graph', () => {
     };
     it('renders a graph with props', () => {
       const graph = shallow(<Graph {...props} />);
-      const div = graph.find('div').filterWhere(elem => elem.prop('className') === 'graph');
+      const div = graph.find('div').filterWhere((elem) => elem.prop('className') === 'graph');
       const resize = div.find(ReactResizeDetector);
-      const innerdiv = div.find('div').filterWhere(elem => elem.prop('className') === 'graph-chart');
+      const innerdiv = div.find('div').filterWhere((elem) => elem.prop('className') === 'graph-chart');
       expect(resize.prop('handleWidth')).toBe(true);
       expect(div).toHaveLength(1);
       expect(innerdiv).toHaveLength(1);
@@ -236,10 +236,7 @@ describe('Graph', () => {
       );
       (graph.instance() as any).plot(); // create chart
       const spyPlotSetAndDraw = jest.spyOn(graph.instance() as any, 'plotSetAndDraw');
-      graph
-        .find('.legend-item')
-        .at(0)
-        .simulate('mouseover');
+      graph.find('.legend-item').at(0).simulate('mouseover');
       expect(spyPlotSetAndDraw).toHaveBeenCalledTimes(1);
     });
     it('should call spyPlotSetAndDraw with chartDate from state as default value', () => {

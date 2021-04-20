@@ -143,8 +143,8 @@ class Panel extends Component<PanelProps, PanelState> {
       credentials: 'same-origin',
       signal: abortController.signal,
     })
-      .then(resp => resp.json())
-      .then(json => {
+      .then((resp) => resp.json())
+      .then((json) => {
         if (json.status !== 'success') {
           throw new Error(json.error || 'invalid response JSON');
         }
@@ -177,7 +177,7 @@ class Panel extends Component<PanelProps, PanelState> {
         });
         this.abortInFlightFetch = null;
       })
-      .catch(error => {
+      .catch((error) => {
         if (error.name === 'AbortError') {
           // Aborts are expected, don't show an error for them.
           return;
@@ -189,7 +189,7 @@ class Panel extends Component<PanelProps, PanelState> {
       });
   };
 
-  setOptions(opts: object): void {
+  setOptions(opts: Record<string, unknown>): void {
     const newOpts = { ...this.props.options, ...opts };
     this.props.onOptionsChanged(newOpts);
   }

@@ -45,7 +45,7 @@ class GraphControls extends Component<GraphControlsProps> {
     182 * 24 * 60 * 60,
     365 * 24 * 60 * 60,
     730 * 24 * 60 * 60,
-  ].map(s => s * 1000);
+  ].map((s) => s * 1000);
 
   onChangeRangeInput = (rangeText: string): void => {
     const range = parseDuration(rangeText);
@@ -91,7 +91,7 @@ class GraphControls extends Component<GraphControlsProps> {
 
   render() {
     return (
-      <Form inline className="graph-controls" onSubmit={e => e.preventDefault()}>
+      <Form inline className="graph-controls" onSubmit={(e) => e.preventDefault()}>
         <InputGroup className="range-input" size="sm">
           <InputGroupAddon addonType="prepend">
             <Button title="Decrease range" onClick={this.decreaseRange}>
