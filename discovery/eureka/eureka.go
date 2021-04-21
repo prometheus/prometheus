@@ -118,7 +118,7 @@ type Discovery struct {
 
 // New creates a new Eureka discovery for the given role.
 func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
-	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "eureka_sd", false, false)
+	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "eureka_sd", config.WithHTTP2Disabled())
 	if err != nil {
 		return nil, err
 	}
