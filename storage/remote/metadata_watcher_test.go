@@ -137,8 +137,8 @@ func TestWatchScrapeManager_ReadyForCollection(t *testing.T) {
 
 	manager := &fakeManager{
 		activeTargets: map[string][]*scrape.Target{
-			"job": []*scrape.Target{target},
-			"dup": []*scrape.Target{targetWithDup},
+			"job": {target},
+			"dup": {targetWithDup},
 		},
 	}
 
