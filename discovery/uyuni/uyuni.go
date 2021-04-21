@@ -103,13 +103,13 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 	if c.Host == "" {
-		return errors.New("Uyuni SD configuration requires a Host")
+		return errors.New("Uyuni SD configuration requires a host")
 	}
 	if c.User == "" {
-		return errors.New("Uyuni SD configuration requires a Username")
+		return errors.New("Uyuni SD configuration requires a username")
 	}
 	if c.Pass == "" {
-		return errors.New("Uyuni SD configuration requires a Password")
+		return errors.New("Uyuni SD configuration requires a password")
 	}
 	if c.RefreshInterval <= 0 {
 		return errors.New("Uyuni SD configuration requires RefreshInterval to be a positive integer")
@@ -147,7 +147,7 @@ func getSystemGroupsInfoOfMonitoredClients(rpcclient *xmlrpc.Client, token strin
 	return result, nil
 }
 
-// GetSystemNetworkInfo lists client FQDNs
+// GetSystemNetworkInfo lists client FQDNs.
 func getNetworkInformationForSystems(rpcclient *xmlrpc.Client, token string, systemIDs []int) (map[int]networkInfo, error) {
 	var networkInfos []networkInfo
 	err := rpcclient.Call("system.getNetworkForSystems", []interface{}{token, systemIDs}, &networkInfos)
@@ -177,7 +177,7 @@ func getEndpointInfoForSystems(
 	return endpointInfos, err
 }
 
-// NewDiscovery returns a new file discovery for the given paths.
+// NewDiscovery returns a uyuni discovery for the given configuration.
 func NewDiscovery(conf *SDConfig, logger log.Logger) *Discovery {
 	d := &Discovery{
 		interval: time.Duration(conf.RefreshInterval),
@@ -266,12 +266,12 @@ func (d *Discovery) getTargetsForSystems(
 
 	endpointInfos, err := getEndpointInfoForSystems(rpcClient, token, systemIDs)
 	if err != nil {
-		return nil, errors.Wrap(err, "Unable to get endpoints information")
+		return nil, errors.Wrap(err, "unable to get endpoints information")
 	}
 
 	networkInfoBySystemID, err := getNetworkInformationForSystems(rpcClient, token, systemIDs)
 	if err != nil {
-		return nil, errors.Wrap(err, "Unable to get the systems network information")
+		return nil, errors.Wrap(err, "unable to get the systems network information")
 	}
 
 	for _, endpoint := range endpointInfos {
@@ -314,7 +314,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 
 	token, err := login(rpcClient, cfg.User, string(cfg.Pass))
 	if err != nil {
-		return nil, errors.Wrap(err, "Unable to login to Uyuni API")
+		return nil, errors.Wrap(err, "unable to login to Uyuni API")
 	}
 	defer func() {
 		if err := logout(rpcClient, token); err != nil {
@@ -324,7 +324,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 
 	systemGroupIDsBySystemID, err := getSystemGroupsInfoOfMonitoredClients(rpcClient, token)
 	if err != nil {
-		return nil, errors.Wrap(err, "Unable to get the managed system groups information of monitored clients")
+		return nil, errors.Wrap(err, "unable to get the managed system groups information of monitored clients")
 	}
 
 	targets := make([]model.LabelSet, 0)

@@ -2246,13 +2246,13 @@ The following meta labels are available on targets during [relabeling](#relabel_
 
 * `__meta_uyuni_endpoint_name`: the name of the application endpoint
 * `__meta_uyuni_exporter`: the exporter exposing metrics for the target
-* `__meta_uyuni_groups`: system groups of the target
+* `__meta_uyuni_groups`: the system groups of the target
 * `__meta_uyuni_metrics_path`: metrics path for the target
 * `__meta_uyuni_minion_hostname`: hostname of Uyuni client
 * `__meta_uyuni_proxy_module`: the module name if
 [exporter_exporter](https://github.com/QubitProducts/exporter_exporter/blob/master/README.md)
  is configured for the target
-* `__meta_uyuni_system_id`: system ID of the client
+* `__meta_uyuni_system_id`: the system ID of the client
 
 See below for the configuration options for Uyuni discovery:
 
