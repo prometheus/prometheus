@@ -129,30 +129,34 @@ func readTestWAL(t testing.TB, dir string) (recs []interface{}) {
 func BenchmarkLoadWAL(b *testing.B) {
 	cases := []struct {
 		// Total series is (batches*seriesPerBatch).
-		batches          int
-		seriesPerBatch   int
-		samplesPerSeries int
+		batches            int
+		seriesPerBatch     int
+		samplesPerSeries   int
+		exemplarsPerSeries int
 	}{
 		{ // Less series and more samples. 2 hour WAL with 1 second scrape interval.
-			batches:          10,
-			seriesPerBatch:   100,
-			samplesPerSeries: 7200,
+			batches:            10,
+			seriesPerBatch:     100,
+			samplesPerSeries:   7200,
+			exemplarsPerSeries: 200,
 		},
 		{ // More series and less samples.
-			batches:          10,
-			seriesPerBatch:   10000,
-			samplesPerSeries: 50,
+			batches:            10,
+			seriesPerBatch:     10000,
+			samplesPerSeries:   50,
+			exemplarsPerSeries: 2,
 		},
 		{ // In between.
-			batches:          10,
-			seriesPerBatch:   1000,
-			samplesPerSeries: 480,
+			batches:            10,
+			seriesPerBatch:     1000,
+			samplesPerSeries:   480,
+			exemplarsPerSeries: 20,
 		},
 	}
 
 	labelsPerSeries := 5
 	for _, c := range cases {
-		b.Run(fmt.Sprintf("batches=%d,seriesPerBatch=%d,samplesPerSeries=%d", c.batches, c.seriesPerBatch, c.samplesPerSeries),
+		b.Run(fmt.Sprintf("batches=%d,seriesPerBatch=%d,samplesPerSeries=%d,exemplarsPerSeries=%d", c.batches, c.seriesPerBatch, c.samplesPerSeries, c.exemplarsPerSeries),
 			func(b *testing.B) {
 				dir, err := ioutil.TempDir("", "test_load_wal")
 				require.NoError(b, err)
@@ -191,6 +195,23 @@ func BenchmarkLoadWAL(b *testing.B) {
 							})
 						}
 						populateTestWAL(b, w, []interface{}{refSamples})
+					}
+				}
+
+				// Write samples.
+				refExemplars := make([]record.RefExemplar, 0, c.seriesPerBatch)
+				for i := 0; i < c.exemplarsPerSeries; i++ {
+					for j := 0; j < c.batches; j++ {
+						refExemplars = refExemplars[:0]
+						for k := j * c.seriesPerBatch; k < (j+1)*c.seriesPerBatch; k++ {
+							refExemplars = append(refExemplars, record.RefExemplar{
+								Ref:    uint64(k) * 100,
+								T:      int64(i) * 10,
+								V:      float64(i) * 100,
+								Labels: labels.FromStrings("traceID", fmt.Sprintf("trace-%d", i)),
+							})
+						}
+						populateTestWAL(b, w, []interface{}{refExemplars})
 					}
 				}
 
