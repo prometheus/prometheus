@@ -128,7 +128,7 @@ func TestMetadataDelivery(t *testing.T) {
 	defer m.Stop()
 
 	m.AppendMetadata(context.Background(), []scrape.MetricMetadata{
-		scrape.MetricMetadata{
+		{
 			Metric: "prometheus_remote_storage_sent_metadata_bytes_total",
 			Type:   textparse.MetricTypeCounter,
 			Help:   "a nice help text",
