@@ -3130,8 +3130,8 @@ func TestQuerier_ShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChunks(t
 	const (
 		numSeries                = 1000
 		numStressIterations      = 10000
-		minStressAllocationBytes = 1 * 1024 * 1024
-		maxStressAllocationBytes = 2 * 1024 * 1024
+		minStressAllocationBytes = 128 * 1024
+		maxStressAllocationBytes = 512 * 1024
 	)
 
 	db := openTestDB(t, nil, nil)
@@ -3223,6 +3223,7 @@ func TestQuerier_ShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChunks(t
 		buf = append(buf, make([]byte, minStressAllocationBytes+rand.Int31n(maxStressAllocationBytes-minStressAllocationBytes))...)
 		if i%1000 == 0 {
 			buf = nil
+			runtime.GC()
 		}
 	}
 	runtime.GC()
@@ -3255,8 +3256,8 @@ func TestChunkQuerier_ShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChu
 	const (
 		numSeries                = 1000
 		numStressIterations      = 10000
-		minStressAllocationBytes = 1 * 1024 * 1024
-		maxStressAllocationBytes = 2 * 1024 * 1024
+		minStressAllocationBytes = 128 * 1024
+		maxStressAllocationBytes = 512 * 1024
 	)
 
 	db := openTestDB(t, nil, nil)
@@ -3344,6 +3345,7 @@ func TestChunkQuerier_ShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChu
 		buf = append(buf, make([]byte, minStressAllocationBytes+rand.Int31n(maxStressAllocationBytes-minStressAllocationBytes))...)
 		if i%1000 == 0 {
 			buf = nil
+			runtime.GC()
 		}
 	}
 	runtime.GC()
