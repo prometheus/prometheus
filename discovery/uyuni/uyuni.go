@@ -33,13 +33,22 @@ import (
 )
 
 const (
-	monitoringEntitlementLabel = "monitoring_entitled"
-	uyuniXMLRPCAPIPath         = "/rpc/api"
-	uyuniMetaLabelPrefix       = model.MetaLabelPrefix + "uyuni_"
+	uyuniXMLRPCAPIPath       = "/rpc/api"
+	uyuniMetaLabelPrefix     = model.MetaLabelPrefix + "uyuni_"
+	uyuniLabelMinionHostname = uyuniMetaLabelPrefix + "minion_hostname"
+	uyuniLabelPrimaryFQDN    = uyuniMetaLabelPrefix + "primary_fqdn"
+	uyuniLablelSystemID      = uyuniMetaLabelPrefix + "system_id"
+	uyuniLablelGroups        = uyuniMetaLabelPrefix + "groups"
+	uyuniLablelEndpointName  = uyuniMetaLabelPrefix + "endpoint_name"
+	uyuniLablelExporter      = uyuniMetaLabelPrefix + "exporter"
+	uyuniLabelProxyModule    = uyuniMetaLabelPrefix + "proxy_module"
+	uyuniLabelMetricsPath    = uyuniMetaLabelPrefix + "metrics_path"
 )
 
 // DefaultSDConfig is the default Uyuni SD configuration.
 var DefaultSDConfig = SDConfig{
+	Entitlement:     "monitoring_entitled",
+	GroupsSeparator: ",",
 	RefreshInterval: model.Duration(1 * time.Minute),
 }
 
@@ -50,8 +59,10 @@ func init() {
 // SDConfig is the configuration for Uyuni based service discovery.
 type SDConfig struct {
 	Host            string         `yaml:"host"`
-	User            string         `yaml:"username"`
-	Pass            config.Secret  `yaml:"password"`
+	Username        string         `yaml:"username"`
+	Password        config.Secret  `yaml:"password"`
+	Entitlement     string         `yaml:"entitlement,omitempty"`
+	GroupsSeparator string         `yaml:"groups_separator,omitempty"`
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
 }
 
@@ -105,14 +116,15 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if c.Host == "" {
 		return errors.New("Uyuni SD configuration requires a host")
 	}
-	if c.User == "" {
+	_, err = url.ParseRequestURI(c.Host + uyuniXMLRPCAPIPath)
+	if err != nil {
+		return errors.Wrap(err, "Uyuni Server URL is not valid")
+	}
+	if c.Username == "" {
 		return errors.New("Uyuni SD configuration requires a username")
 	}
-	if c.Pass == "" {
+	if c.Password == "" {
 		return errors.New("Uyuni SD configuration requires a password")
-	}
-	if c.RefreshInterval <= 0 {
-		return errors.New("Uyuni SD configuration requires RefreshInterval to be a positive integer")
 	}
 	return nil
 }
@@ -126,17 +138,16 @@ func login(rpcclient *xmlrpc.Client, user string, pass string) (string, error) {
 
 // Logout from Uyuni API
 func logout(rpcclient *xmlrpc.Client, token string) error {
-	err := rpcclient.Call("auth.logout", token, nil)
-	return err
+	return rpcclient.Call("auth.logout", token, nil)
 }
 
 // Get the system groups information of monitored clients
-func getSystemGroupsInfoOfMonitoredClients(rpcclient *xmlrpc.Client, token string) (map[int][]systemGroupID, error) {
+func getSystemGroupsInfoOfMonitoredClients(rpcclient *xmlrpc.Client, token string, entitlement string) (map[int][]systemGroupID, error) {
 	var systemGroupsInfos []struct {
 		SystemID     int             `xmlrpc:"id"`
 		SystemGroups []systemGroupID `xmlrpc:"system_groups"`
 	}
-	err := rpcclient.Call("system.listSystemGroupsForSystemsWithEntitlement", []interface{}{token, monitoringEntitlementLabel}, &systemGroupsInfos)
+	err := rpcclient.Call("system.listSystemGroupsForSystemsWithEntitlement", []interface{}{token, entitlement}, &systemGroupsInfos)
 	if err != nil {
 		return nil, err
 	}
@@ -202,38 +213,20 @@ func (d *Discovery) getEndpointLabels(
 	var hostname string
 	var addr string
 	managedGroupNames := getSystemGroupNames(systemGroupIDs)
-	if len(networkInfo.PrimaryFQDN) > 0 {
-		hostname = networkInfo.PrimaryFQDN
-	} else {
-		hostname = networkInfo.Hostname
-	}
-	if endpoint.Port > 0 {
-		addr = fmt.Sprintf("%s:%d", hostname, endpoint.Port)
-	} else {
-		addr = hostname
-	}
+	addr = fmt.Sprintf("%s:%d", hostname, endpoint.Port)
 
 	result := model.LabelSet{
-		model.AddressLabel:                       model.LabelValue(addr),
-		uyuniMetaLabelPrefix + "minion_hostname": model.LabelValue(hostname),
-		uyuniMetaLabelPrefix + "system_id":       model.LabelValue(fmt.Sprintf("%d", endpoint.SystemID)),
+		model.AddressLabel:       model.LabelValue(addr),
+		uyuniLabelMinionHostname: model.LabelValue(networkInfo.Hostname),
+		uyuniLabelPrimaryFQDN:    model.LabelValue(networkInfo.PrimaryFQDN),
+		uyuniLablelSystemID:      model.LabelValue(fmt.Sprintf("%d", endpoint.SystemID)),
+		uyuniLablelGroups:        model.LabelValue(strings.Join(managedGroupNames, d.sdConfig.GroupsSeparator)),
+		uyuniLablelEndpointName:  model.LabelValue(endpoint.EndpointName),
+		uyuniLablelExporter:      model.LabelValue(endpoint.ExporterName),
+		uyuniLabelProxyModule:    model.LabelValue(endpoint.Module),
+		uyuniLabelMetricsPath:    model.LabelValue(endpoint.Path),
 	}
 
-	if len(managedGroupNames) > 0 {
-		result[uyuniMetaLabelPrefix+"groups"] = model.LabelValue(strings.Join(managedGroupNames, ","))
-	}
-	if len(endpoint.EndpointName) > 0 {
-		result[uyuniMetaLabelPrefix+"endpoint_name"] = model.LabelValue(endpoint.EndpointName)
-	}
-	if len(endpoint.ExporterName) > 0 {
-		result[uyuniMetaLabelPrefix+"exporter"] = model.LabelValue(endpoint.ExporterName)
-	}
-	if len(endpoint.Module) > 0 {
-		result[uyuniMetaLabelPrefix+"proxy_module"] = model.LabelValue(endpoint.Module)
-	}
-	if len(endpoint.Path) > 0 {
-		result[uyuniMetaLabelPrefix+"metrics_path"] = model.LabelValue(endpoint.Path)
-	}
 	level.Debug(d.logger).Log("msg", "Configured target", "Labels", fmt.Sprintf("%+v", result))
 
 	return result
@@ -245,19 +238,21 @@ func getSystemGroupNames(systemGroupsIDs []systemGroupID) []string {
 		managedGroupNames = append(managedGroupNames, systemGroupInfo.GroupName)
 	}
 
-	if len(managedGroupNames) == 0 {
-		managedGroupNames = []string{"No group"}
-	}
 	return managedGroupNames
 }
 
 func (d *Discovery) getTargetsForSystems(
 	rpcClient *xmlrpc.Client,
 	token string,
-	systemGroupIDsBySystemID map[int][]systemGroupID,
+	entitlement string,
 ) ([]model.LabelSet, error) {
 
 	result := make([]model.LabelSet, 0)
+
+	systemGroupIDsBySystemID, err := getSystemGroupsInfoOfMonitoredClients(rpcClient, token, entitlement)
+	if err != nil {
+		return nil, errors.Wrap(err, "unable to get the managed system groups information of monitored clients")
+	}
 
 	systemIDs := make([]int, 0, len(systemGroupIDsBySystemID))
 	for systemID := range systemGroupIDsBySystemID {
@@ -285,9 +280,7 @@ func (d *Discovery) getTargetsForSystems(
 		if networkInfoBySystemID[systemID].Hostname != "" {
 			level.Debug(d.logger).Log("msg", "Found endpoint",
 				"Host", networkInfoBySystemID[systemID].Hostname,
-				"PrimaryFQDN", networkInfoBySystemID[systemID].PrimaryFQDN,
-				"Network", fmt.Sprintf("%+v", networkInfoBySystemID[systemID]),
-				"Groups", fmt.Sprintf("%+v", systemGroupIDsBySystemID[systemID]))
+				"PrimaryFQDN", networkInfoBySystemID[systemID].PrimaryFQDN)
 		}
 	}
 
@@ -298,46 +291,29 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	cfg := d.sdConfig
 	apiURL := cfg.Host + uyuniXMLRPCAPIPath
 
-	startTime := time.Now()
-
-	// Check if the URL is valid and create rpc client
-	_, err := url.ParseRequestURI(apiURL)
-	if err != nil {
-		return nil, errors.Wrap(err, "Uyuni Server URL is not valid")
-	}
-
 	rpcClient, err := xmlrpc.NewClient(apiURL, nil)
 	if err != nil {
 		return nil, err
 	}
 	defer rpcClient.Close()
 
-	token, err := login(rpcClient, cfg.User, string(cfg.Pass))
+	token, err := login(rpcClient, cfg.Username, string(cfg.Password))
 	if err != nil {
 		return nil, errors.Wrap(err, "unable to login to Uyuni API")
 	}
 	defer func() {
 		if err := logout(rpcClient, token); err != nil {
-			level.Warn(d.logger).Log("msg", "Failed to log out from Uyuni API", "err", err)
+			level.Debug(d.logger).Log("msg", "Failed to log out from Uyuni API", "err", err)
 		}
 	}()
 
-	systemGroupIDsBySystemID, err := getSystemGroupsInfoOfMonitoredClients(rpcClient, token)
+	targetsForSystems, err := d.getTargetsForSystems(rpcClient, token, cfg.Entitlement)
 	if err != nil {
-		return nil, errors.Wrap(err, "unable to get the managed system groups information of monitored clients")
+		return nil, err
 	}
 
 	targets := make([]model.LabelSet, 0)
-	if len(systemGroupIDsBySystemID) > 0 {
-		targetsForSystems, err := d.getTargetsForSystems(rpcClient, token, systemGroupIDsBySystemID)
-		if err != nil {
-			return nil, err
-		}
-		targets = append(targets, targetsForSystems...)
-		level.Info(d.logger).Log("msg", "Total discovery time", "time", time.Since(startTime))
-	} else {
-		level.Debug(d.logger).Log("msg", "Found 0 systems")
-	}
+	targets = append(targets, targetsForSystems...)
 
 	return []*targetgroup.Group{{Targets: targets, Source: cfg.Host}}, nil
 }
