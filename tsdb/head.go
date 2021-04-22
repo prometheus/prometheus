@@ -464,10 +464,11 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64, mmappedChunks 
 	// They are connected through a ring of channels which ensures that all sample batches
 	// read from the WAL are processed in order.
 	var (
-		wg      sync.WaitGroup
-		n       = runtime.GOMAXPROCS(0)
-		inputs  = make([]chan []record.RefSample, n)
-		outputs = make([]chan []record.RefSample, n)
+		wg             sync.WaitGroup
+		n              = runtime.GOMAXPROCS(0)
+		inputs         = make([]chan []record.RefSample, n)
+		outputs        = make([]chan []record.RefSample, n)
+		exemplarsInput chan record.RefExemplar
 
 		dec    record.Decoder
 		shards = make([][]record.RefSample, n)
@@ -505,6 +506,7 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64, mmappedChunks 
 				for range outputs[i] {
 				}
 			}
+			close(exemplarsInput)
 			wg.Wait()
 		}
 	}()
@@ -520,6 +522,29 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64, mmappedChunks 
 			wg.Done()
 		}(inputs[i], outputs[i])
 	}
+
+	wg.Add(1)
+	exemplarsInput = make(chan record.RefExemplar, 300)
+	go func(input <-chan record.RefExemplar) {
+		for e := range input {
+			ms := h.series.getByID(e.Ref)
+			if ms == nil {
+				unknownRefs.Inc()
+				continue
+			}
+
+			if e.T < h.minValidTime.Load() {
+				continue
+			}
+			// At the moment the only possible error here is out of order exemplars, which we shouldn't see when
+			// replaying the WAL, so lets just log the error if it's not that type.
+			err = h.exemplars.AddExemplar(ms.lset, exemplar.Exemplar{Ts: e.T, Value: e.V, Labels: e.Labels})
+			if err != nil && err == storage.ErrOutOfOrderExemplar {
+				level.Warn(h.logger).Log("msg", "unexpected error when replaying WAL on exemplar record", "err", err)
+			}
+		}
+		wg.Done()
+	}(exemplarsInput)
 
 	go func() {
 		defer close(decoded)
@@ -664,24 +689,8 @@ Outer:
 			//nolint:staticcheck // Ignore SA6002 relax staticcheck verification.
 			tstonesPool.Put(v)
 		case []record.RefExemplar:
-			// todo (Callum): do we expect exemplar records to reach anywhere near the same level as samples,
-			// should they be processed in batches the same way samples are?
 			for _, e := range v {
-				// get labels
-				s := h.series.getByID(e.Ref)
-				if s == nil {
-					unknownRefs.Inc()
-					continue
-				}
-				if e.T < h.minValidTime.Load() {
-					continue
-				}
-				// At the moment the only possible error here is out of order exemplars, which we shouldn't see when
-				// replaying the WAL, so lets just log the error if it's not that type.
-				err = h.exemplars.AddExemplar(s.lset, exemplar.Exemplar{Ts: e.T, Value: e.V, Labels: e.Labels})
-				if err != nil && err == storage.ErrOutOfOrderExemplar {
-					level.Warn(h.logger).Log("msg", "unexpected error when replaying WAL on exemplar record", "err", err)
-				}
+				exemplarsInput <- e
 			}
 			//nolint:staticcheck // Ignore SA6002 relax staticcheck verification.
 			exemplarsPool.Put(v)
@@ -706,6 +715,7 @@ Outer:
 		for range outputs[i] {
 		}
 	}
+	close(exemplarsInput)
 	wg.Wait()
 
 	if r.Err() != nil {

@@ -2333,7 +2333,6 @@ func TestReuseCacheRace(t *testing.T) {
 			ScrapeInterval: model.Duration(5 * time.Second),
 			MetricsPath:    "/metrics",
 		}
-
 		sp, _ = newScrapePool(cfg, app, 0, nil)
 		t1    = &Target{
 			discoveredLabels: labels.Labels{
