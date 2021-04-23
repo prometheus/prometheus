@@ -28,6 +28,7 @@ export const ConfigContent: FC<ConfigContentProps> = ({ error, data }) => {
       <h2>
         Configuration&nbsp;
         <CopyToClipboard
+          // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
           text={config!}
           onCopy={(_, result) => {
             setCopied(result);

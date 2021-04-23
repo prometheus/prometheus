@@ -29,7 +29,7 @@ const SeriesName: FC<SeriesNameProps> = ({ labels, format }) => {
 
     return (
       <div>
-        <span className="legend-metric-name">{labels!.__name__ || ''}</span>
+        <span className="legend-metric-name">{labels?.__name__ || ''}</span>
         <span className="legend-label-brace">{'{'}</span>
         {labelNodes}
         <span className="legend-label-brace">{'}'}</span>
@@ -46,6 +46,7 @@ const SeriesName: FC<SeriesNameProps> = ({ labels, format }) => {
   }
   // Return a simple text node. This is much faster to scroll through
   // for longer lists (hundreds of items).
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
   return <>{metricToSeriesName(labels!)}</>;
 };
 

@@ -20,7 +20,10 @@ export interface TargetLabels {
   isDropped: boolean;
 }
 
-export const processSummary = (activeTargets: Target[], droppedTargets: DroppedTarget[]) => {
+export const processSummary = (
+  activeTargets: Target[],
+  droppedTargets: DroppedTarget[]
+): Record<string, { active: number; total: number }> => {
   const targets: Record<string, { active: number; total: number }> = {};
 
   // Get targets of each type along with the total and active end points
@@ -49,7 +52,7 @@ export const processSummary = (activeTargets: Target[], droppedTargets: DroppedT
   return targets;
 };
 
-export const processTargets = (activeTargets: Target[], droppedTargets: DroppedTarget[]) => {
+export const processTargets = (activeTargets: Target[], droppedTargets: DroppedTarget[]): Record<string, TargetLabels[]> => {
   const labels: Record<string, TargetLabels[]> = {};
 
   for (const target of activeTargets) {

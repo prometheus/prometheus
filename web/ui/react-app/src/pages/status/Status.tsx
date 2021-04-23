@@ -13,6 +13,7 @@ interface StatusPageProps {
 
 export const statusConfig: Record<
   string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   { title?: string; customizeValue?: (v: any, key: string) => any; customRow?: boolean; skip?: boolean }
 > = {
   startTime: { title: 'Start time', customizeValue: (v: string) => new Date(v).toUTCString() },
@@ -58,6 +59,7 @@ export const StatusContent: FC<StatusPageProps> = ({ data, title }) => {
       <Table className="h-auto" size="sm" bordered striped>
         <tbody>
           {Object.entries(data).map(([k, v]) => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const { title = k, customizeValue = (val: any) => val, customRow, skip } = statusConfig[k] || {};
             if (skip) {
               return null;

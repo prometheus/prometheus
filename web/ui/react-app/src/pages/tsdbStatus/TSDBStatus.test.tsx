@@ -7,6 +7,8 @@ import TSDBStatus from './TSDBStatus';
 import { TSDBMap } from './TSDBStatus';
 import { PathPrefixContext } from '../../contexts/PathPrefixContext';
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 const fakeTSDBStatusResponse: {
   status: string;
   data: TSDBMap;

@@ -9,6 +9,8 @@ import { Target } from './target';
 import { FetchMock } from 'jest-fetch-mock/types';
 import { PathPrefixContext } from '../../contexts/PathPrefixContext';
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 describe('ScrapePoolList', () => {
   beforeEach(() => {
     fetchMock.resetMocks();

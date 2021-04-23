@@ -5,6 +5,7 @@ import { StatusContent } from './Status';
 
 describe('Status', () => {
   describe('Snapshot testing', () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const response: any = [
       {
         startTime: '2019-10-30T22:03:23.247913868+02:00',

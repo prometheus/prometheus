@@ -140,6 +140,7 @@ describe('Utils', () => {
           it(t.input, () => {
             const d = parseDuration(t.input);
             expect(d).toEqual(t.output);
+            // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
             expect(formatDuration(d!)).toEqual(t.expectedString || t.input);
           });
         });
@@ -202,6 +203,7 @@ describe('Utils', () => {
   });
 
   describe('URL Params', () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const panels: any = [
       {
         key: '0',

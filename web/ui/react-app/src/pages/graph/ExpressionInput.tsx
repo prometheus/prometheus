@@ -35,34 +35,38 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
     };
   }
 
-  componentDidMount() {
+  componentDidMount(): void {
     this.setHeight();
   }
 
-  setHeight = () => {
+  setHeight = (): void => {
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     const { offsetHeight, clientHeight, scrollHeight } = this.exprInputRef.current!;
     const offset = offsetHeight - clientHeight; // Needed in order for the height to be more accurate.
     this.setState({ height: scrollHeight + offset });
   };
 
-  handleInput = () => {
-    this.setValue(this.exprInputRef.current!.value);
+  handleInput = (): void => {
+    this.setValue(this.exprInputRef.current?.value);
   };
 
-  setValue = (value: string) => {
+  setValue = (value: string | undefined): void => {
+    if (!value) {
+      return;
+    }
     const { onExpressionChange } = this.props;
     onExpressionChange(value);
     this.setState({ height: 'auto' }, this.setHeight);
   };
 
-  componentDidUpdate(prevProps: ExpressionInputProps) {
+  componentDidUpdate(prevProps: ExpressionInputProps): void {
     const { value } = this.props;
     if (value !== prevProps.value) {
       this.setValue(value);
     }
   }
 
-  handleKeyPress = (event: React.KeyboardEvent<HTMLInputElement>) => {
+  handleKeyPress = (event: React.KeyboardEvent<HTMLInputElement>): void => {
     const { executeQuery } = this.props;
     if (event.key === 'Enter' && !event.shiftKey) {
       executeQuery();
@@ -70,14 +74,15 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
     }
   };
 
-  getSearchMatches = (input: string, expressions: string[]) => {
+  getSearchMatches = (input: string, expressions: string[]): fuzzy.FilterResult<string>[] => {
     return fuzzy.filter(input.replace(/ /g, ''), expressions, {
       pre: '<strong>',
       post: '</strong>',
     });
   };
 
-  createAutocompleteSection = (downshift: ControllerStateAndHelpers<any>) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  createAutocompleteSection = (downshift: ControllerStateAndHelpers<any>): JSX.Element | null => {
     const { inputValue = '', closeMenu, highlightedIndex } = downshift;
     const autocompleteSections = {
       'Query History': this.props.queryHistory,
@@ -85,9 +90,9 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
     };
     let index = 0;
     const sections =
-      inputValue!.length && this.props.enableAutocomplete
+      inputValue?.length && this.props.enableAutocomplete
         ? Object.entries(autocompleteSections).reduce((acc, [title, items]) => {
-            const matches = this.getSearchMatches(inputValue!, items);
+            const matches = this.getSearchMatches(inputValue, items);
             return !matches.length
               ? acc
               : [
@@ -132,19 +137,19 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
     );
   };
 
-  openMetricsExplorer = () => {
+  openMetricsExplorer = (): void => {
     this.setState({
       showMetricsExplorer: true,
     });
   };
 
-  updateShowMetricsExplorer = (show: boolean) => {
+  updateShowMetricsExplorer = (show: boolean): void => {
     this.setState({
       showMetricsExplorer: show,
     });
   };
 
-  insertAtCursor = (value: string) => {
+  insertAtCursor = (value: string): void => {
     if (!this.exprInputRef.current) return;
 
     const startPosition = this.exprInputRef.current.selectionStart;
@@ -162,7 +167,7 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
     this.setValue(newValue);
   };
 
-  render() {
+  render(): JSX.Element {
     const { executeQuery, value } = this.props;
     const { height } = this.state;
     return (
@@ -192,11 +197,13 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
                         case 'End':
                           // We want to be able to jump to the beginning/end of the input field.
                           // By default, Downshift otherwise jumps to the first/last suggestion item instead.
+                          // eslint-disable-next-line @typescript-eslint/no-explicit-any
                           (event.nativeEvent as any).preventDownshiftDefault = true;
                           break;
                         case 'ArrowUp':
                         case 'ArrowDown':
                           if (!downshift.isOpen) {
+                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
                             (event.nativeEvent as any).preventDownshiftDefault = true;
                           }
                           break;
@@ -205,12 +212,13 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
                           break;
                         case 'Escape':
                           if (!downshift.isOpen) {
-                            this.exprInputRef.current!.blur();
+                            this.exprInputRef.current?.blur();
                           }
                           break;
                         default:
                       }
                     },
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
                   } as any)}
                   value={value}
                 />

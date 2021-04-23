@@ -5,6 +5,8 @@ import Graph from './Graph';
 import ReactResizeDetector from 'react-resize-detector';
 import { Legend } from './Legend';
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 describe('Graph', () => {
   beforeAll(() => {
     jest.spyOn(window, 'requestAnimationFrame').mockImplementation((cb: any) => cb());

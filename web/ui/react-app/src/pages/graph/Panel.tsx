@@ -30,6 +30,7 @@ interface PanelProps {
 }
 
 interface PanelState {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   data: any; // TODO: Type data.
   lastQueryParams: QueryParams | null;
   loading: boolean;
@@ -79,7 +80,7 @@ class Panel extends Component<PanelProps, PanelState> {
     };
   }
 
-  componentDidUpdate({ options: prevOpts }: PanelProps) {
+  componentDidUpdate({ options: prevOpts }: PanelProps): void {
     const { endTime, range, resolution, type } = this.props.options;
     if (
       prevOpts.endTime !== endTime ||
@@ -91,7 +92,7 @@ class Panel extends Component<PanelProps, PanelState> {
     }
   }
 
-  componentDidMount() {
+  componentDidMount(): void {
     this.executeQuery();
   }
 
@@ -209,15 +210,15 @@ class Panel extends Component<PanelProps, PanelState> {
     return this.props.options.endTime;
   };
 
-  handleChangeEndTime = (endTime: number | null) => {
+  handleChangeEndTime = (endTime: number | null): void => {
     this.setOptions({ endTime: endTime });
   };
 
-  handleChangeResolution = (resolution: number | null) => {
+  handleChangeResolution = (resolution: number | null): void => {
     this.setOptions({ resolution: resolution });
   };
 
-  handleChangeType = (type: PanelType) => {
+  handleChangeType = (type: PanelType): void => {
     if (this.props.options.type === type) {
       return;
     }
@@ -226,11 +227,11 @@ class Panel extends Component<PanelProps, PanelState> {
     this.setOptions({ type: type });
   };
 
-  handleChangeStacking = (stacked: boolean) => {
+  handleChangeStacking = (stacked: boolean): void => {
     this.setOptions({ stacked: stacked });
   };
 
-  render() {
+  render(): JSX.Element {
     const { pastQueries, metricNames, options } = this.props;
     return (
       <div className="panel">

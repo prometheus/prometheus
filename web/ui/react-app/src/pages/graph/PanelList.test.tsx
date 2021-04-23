@@ -5,6 +5,8 @@ import Checkbox from '../../components/Checkbox';
 import { Button } from 'reactstrap';
 import Panel from './Panel';
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 describe('PanelList', () => {
   it('renders configuration checkboxes', () => {
     [

@@ -15,6 +15,8 @@ const getKeyEvent = (key: string): React.KeyboardEvent<HTMLInputElement> =>
     },
   } as React.KeyboardEvent<HTMLInputElement>);
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 describe('ExpressionInput', () => {
   const metricNames = ['instance:node_cpu_utilisation:rate1m', 'node_cpu_guest_seconds_total', 'node_cpu_seconds_total'];
   const expressionInputProps = {

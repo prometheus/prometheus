@@ -5,6 +5,7 @@ import { QueryParams } from '../../types/types';
 import { isPresent } from '../../utils';
 
 interface GraphTabContentProps {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   data: any;
   stacked: boolean;
   useLocalTime: boolean;

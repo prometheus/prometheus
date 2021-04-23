@@ -3,6 +3,8 @@ import { shallow } from 'enzyme';
 import { Alert } from 'reactstrap';
 import { GraphTabContent } from './GraphTabContent';
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 describe('GraphTabContent', () => {
   it('renders an alert if data result type is different than "matrix"', () => {
     const props: any = {

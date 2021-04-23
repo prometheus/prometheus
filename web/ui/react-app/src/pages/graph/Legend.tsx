@@ -18,12 +18,12 @@ export class Legend extends PureComponent<LegendProps, LegendState> {
   state = {
     selectedIndexes: [] as number[],
   };
-  componentDidUpdate(prevProps: LegendProps) {
+  componentDidUpdate(prevProps: LegendProps): void {
     if (this.props.shouldReset && prevProps.shouldReset !== this.props.shouldReset) {
       this.setState({ selectedIndexes: [] });
     }
   }
-  handleSeriesSelect = (index: number) => (ev: React.MouseEvent<HTMLDivElement, MouseEvent>) => {
+  handleSeriesSelect = (index: number) => (ev: React.MouseEvent<HTMLDivElement, MouseEvent>): void => {
     // TODO: add proper event type
     const { selectedIndexes } = this.state;
 
@@ -47,7 +47,7 @@ export class Legend extends PureComponent<LegendProps, LegendState> {
     this.props.onSeriesToggle(selected, index);
   };
 
-  render() {
+  render(): JSX.Element {
     const { chartData, onLegendMouseOut, onHover } = this.props;
     const { selectedIndexes } = this.state;
     const canUseHover = chartData.length > 1 && selectedIndexes.length === 0;

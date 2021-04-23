@@ -8,6 +8,8 @@ import TimeInput from './TimeInput';
 import DataTable from './DataTable';
 import { GraphTabContent } from './GraphTabContent';
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 const defaultProps = {
   options: {
     expr: 'prometheus_engine',

@@ -44,7 +44,7 @@ class Graph extends PureComponent<GraphProps, GraphState> {
     chartData: normalizeData(this.props),
   };
 
-  componentDidUpdate(prevProps: GraphProps) {
+  componentDidUpdate(prevProps: GraphProps): void {
     const { data, stacked, useLocalTime } = this.props;
     if (prevProps.data !== data) {
       this.selectedSeriesIndexes = [];
@@ -64,15 +64,15 @@ class Graph extends PureComponent<GraphProps, GraphState> {
     }
   }
 
-  componentDidMount() {
+  componentDidMount(): void {
     this.plot();
   }
 
-  componentWillUnmount() {
+  componentWillUnmount(): void {
     this.destroyPlot();
   }
 
-  plot = (data: GraphSeries[] = this.state.chartData) => {
+  plot = (data: GraphSeries[] = this.state.chartData): void => {
     if (!this.chartRef.current) {
       return;
     }
@@ -81,20 +81,20 @@ class Graph extends PureComponent<GraphProps, GraphState> {
     this.$chart = $.plot($(this.chartRef.current), data, getOptions(this.props.stacked, this.props.useLocalTime));
   };
 
-  destroyPlot = () => {
+  destroyPlot = (): void => {
     if (isPresent(this.$chart)) {
       this.$chart.destroy();
     }
   };
 
-  plotSetAndDraw(data: GraphSeries[] = this.state.chartData) {
+  plotSetAndDraw(data: GraphSeries[] = this.state.chartData): void {
     if (isPresent(this.$chart)) {
       this.$chart.setData(data);
       this.$chart.draw();
     }
   }
 
-  handleSeriesSelect = (selected: number[], selectedIndex: number) => {
+  handleSeriesSelect = (selected: number[], selectedIndex: number): void => {
     const { chartData } = this.state;
     this.plot(
       this.selectedSeriesIndexes.length === 1 && this.selectedSeriesIndexes.includes(selectedIndex)
@@ -104,7 +104,7 @@ class Graph extends PureComponent<GraphProps, GraphState> {
     this.selectedSeriesIndexes = selected;
   };
 
-  handleSeriesHover = (index: number) => () => {
+  handleSeriesHover = (index: number) => (): void => {
     if (this.rafID) {
       cancelAnimationFrame(this.rafID);
     }
@@ -113,18 +113,18 @@ class Graph extends PureComponent<GraphProps, GraphState> {
     });
   };
 
-  handleLegendMouseOut = () => {
+  handleLegendMouseOut = (): void => {
     cancelAnimationFrame(this.rafID);
     this.plotSetAndDraw();
   };
 
-  handleResize = () => {
+  handleResize = (): void => {
     if (isPresent(this.$chart)) {
       this.plot(this.$chart.getData() as GraphSeries[]);
     }
   };
 
-  render() {
+  render(): JSX.Element {
     const { chartData } = this.state;
     return (
       <div className="graph">

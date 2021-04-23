@@ -2,6 +2,8 @@ import { formatValue, getColors, parseValue, getOptions } from './GraphHelpers';
 import moment from 'moment';
 require('../../vendor/flot/jquery.flot'); // need for $.colors
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 describe('GraphHelpers', () => {
   describe('formatValue', () => {
     it('formats tick values correctly', () => {
@@ -60,6 +62,7 @@ describe('GraphHelpers', () => {
         { input: 2e-24, output: '2.00y' },
         { input: 2e-25, output: '0.20y' },
         { input: 2e-26, output: '0.02y' },
+        // eslint-disable-next-line array-callback-return
       ].map((t) => {
         expect(formatValue(t.input)).toBe(t.output);
       });

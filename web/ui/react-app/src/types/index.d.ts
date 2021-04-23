@@ -1,8 +1,10 @@
 declare namespace jquery.flot {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   interface plot extends jquery.flot.plot {
     destroy: () => void;
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   interface plotOptions extends jquery.flot.plotOptions {
     tooltip: {
       show?: boolean;

@@ -33,13 +33,14 @@ interface TimeInputProps {
 
 class TimeInput extends Component<TimeInputProps> {
   private timeInputRef = React.createRef<HTMLInputElement>();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private $time: any = null;
 
   getBaseTime = (): number => {
     return this.props.time || moment().valueOf();
   };
 
-  calcShiftRange = () => this.props.range / 2;
+  calcShiftRange = (): number => this.props.range / 2;
 
   increaseTime = (): void => {
     const time = this.getBaseTime() + this.calcShiftRange();
@@ -59,7 +60,8 @@ class TimeInput extends Component<TimeInputProps> {
     return this.props.useLocalTime ? moment.tz.guess() : 'UTC';
   };
 
-  componentDidMount() {
+  componentDidMount(): void {
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     this.$time = $(this.timeInputRef.current!);
 
     this.$time.datetimepicker({
@@ -77,7 +79,7 @@ class TimeInput extends Component<TimeInputProps> {
       timeZone: this.timezone(),
       defaultDate: this.props.time,
     });
-
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     this.$time.on('change.datetimepicker', (e: any) => {
       if (e.date) {
         this.props.onChangeTime(e.date.valueOf());
@@ -85,11 +87,11 @@ class TimeInput extends Component<TimeInputProps> {
     });
   }
 
-  componentWillUnmount() {
+  componentWillUnmount(): void {
     this.$time.datetimepicker('destroy');
   }
 
-  componentDidUpdate(prevProps: TimeInputProps) {
+  componentDidUpdate(prevProps: TimeInputProps): void {
     const { time, useLocalTime } = this.props;
     if (prevProps.time !== time) {
       this.$time.datetimepicker('date', time ? moment(time) : null);
@@ -99,7 +101,7 @@ class TimeInput extends Component<TimeInputProps> {
     }
   }
 
-  render() {
+  render(): JSX.Element {
     return (
       <InputGroup className="time-input" size="sm">
         <InputGroupAddon addonType="prepend">

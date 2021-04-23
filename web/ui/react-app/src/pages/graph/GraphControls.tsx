@@ -57,6 +57,7 @@ class GraphControls extends Component<GraphControlsProps> {
   };
 
   changeRangeInput = (range: number): void => {
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     this.rangeRef.current!.value = formatDuration(range);
   };
 
@@ -80,16 +81,17 @@ class GraphControls extends Component<GraphControlsProps> {
     }
   };
 
-  componentDidUpdate(prevProps: GraphControlsProps) {
+  componentDidUpdate(prevProps: GraphControlsProps): void {
     if (prevProps.range !== this.props.range) {
       this.changeRangeInput(this.props.range);
     }
     if (prevProps.resolution !== this.props.resolution) {
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       this.resolutionRef.current!.value = this.props.resolution !== null ? this.props.resolution.toString() : '';
     }
   }
 
-  render() {
+  render(): JSX.Element {
     return (
       <Form inline className="graph-controls" onSubmit={(e) => e.preventDefault()}>
         <InputGroup className="range-input" size="sm">
@@ -102,8 +104,10 @@ class GraphControls extends Component<GraphControlsProps> {
           <Input
             defaultValue={formatDuration(this.props.range)}
             innerRef={this.rangeRef}
+            // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
             onBlur={() => this.onChangeRangeInput(this.rangeRef.current!.value)}
             onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) =>
+              // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
               e.key === 'Enter' && this.onChangeRangeInput(this.rangeRef.current!.value)
             }
           />
@@ -129,6 +133,7 @@ class GraphControls extends Component<GraphControlsProps> {
           defaultValue={this.props.resolution !== null ? this.props.resolution.toString() : ''}
           innerRef={this.resolutionRef}
           onBlur={() => {
+            // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
             const res = parseInt(this.resolutionRef.current!.value);
             this.props.onChangeResolution(res ? res : null);
           }}
