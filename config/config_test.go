@@ -15,6 +15,7 @@ package config
 
 import (
 	"encoding/json"
+	"github.com/prometheus/prometheus/discovery/huawei"
 	"io/ioutil"
 	"net/url"
 	"os"
@@ -802,6 +803,32 @@ var expectedConf = &Config{
 				},
 			},
 		},
+		{
+			JobName: "service-huawei",
+
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
+
+			MetricsPath:      DefaultScrapeConfig.MetricsPath,
+			Scheme:           DefaultScrapeConfig.Scheme,
+			HTTPClientConfig: config.DefaultHTTPClientConfig,
+
+			ServiceDiscoveryConfigs: discovery.Configs{
+				&huawei.SDConfig{
+					ProjectName:     "test",
+					DomainName:      "test",
+					Region:          "ap-southeast-2",
+					AccessKey:       "access",
+					SecretKey:       "secret",
+					AuthURL:         "https://iam.xxx.myhuaweicloud.com/v3",
+					UserName:        "",
+					Password:        "",
+					RefreshInterval: model.Duration(60 * time.Second),
+					Port:            80,
+				},
+			},
+		},
 	},
 	AlertingConfig: AlertingConfig{
 		AlertmanagerConfigs: []*AlertmanagerConfig{
@@ -1170,6 +1197,47 @@ var expectedErrors = []struct {
 	{
 		filename: "scaleway_two_secrets.bad.yml",
 		errMsg:   "at most one of secret_key & secret_key_file must be configured",
+	},
+	{
+		filename: "huawei_region_missing.bad.yml",
+		errMsg:   "huawei SD configuration requires a region",
+	},
+	{
+		filename: "huawei_region_missing.bad.yml",
+		errMsg:   "huawei SD configuration requires a region",
+	},
+	{
+		filename: "huawei_project_name_missing.bad.yml",
+		errMsg:   "huawei SD configuration requires a project_name",
+	},
+	{
+		filename: "huawei_auth_url_missing.bad.yml",
+		errMsg:   "huawei SD configuration requires a auth_url",
+	},
+	{
+		filename: "huawei_aksk_accesskey_missing.bad.yml",
+		errMsg: "unknown authentication_type, huawei support aksk with [access_key, secret_key] " +
+			"or password with [domain_name, user_name, password]",
+	},
+	{
+		filename: "huawei_aksk_secretkey_missing.bad.yml",
+		errMsg: "unknown authentication_type, huawei support aksk with [access_key, secret_key] " +
+			"or password with [domain_name, user_name, password]",
+	},
+	{
+		filename: "huawei_pw_domain_missing.bad.yml",
+		errMsg: "unknown authentication_type, huawei support aksk with [access_key, secret_key] " +
+			"or password with [domain_name, user_name, password]",
+	},
+	{
+		filename: "huawei_pw_username_missing.bad.yml",
+		errMsg: "unknown authentication_type, huawei support aksk with [access_key, secret_key] " +
+			"or password with [domain_name, user_name, password]",
+	},
+	{
+		filename: "huawei_pw_password_missing.bad.yml",
+		errMsg: "unknown authentication_type, huawei support aksk with [access_key, secret_key] " +
+			"or password with [domain_name, user_name, password]",
 	},
 }
 

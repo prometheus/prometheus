@@ -313,6 +313,19 @@ scrape_configs:
       access_key: SCWXXXXXXXXXXXXXXXXX
       secret_key: 11111111-1111-1111-1111-111111111111
 
+- job_name: service-huawei
+  huawei_sd_configs:
+    - project_name: test
+      domain_name: test
+      region: ap-southeast-2
+      access_key: access
+      secret_key: secret
+      auth_url: https://iam.xxx.myhuaweicloud.com/v3
+      username:
+      password:
+      port: 80
+      refresh_interval: 1m
+
 alerting:
   alertmanagers:
   - scheme: https
