@@ -1086,7 +1086,7 @@ func (a *initAppender) Append(ref uint64, lset labels.Labels, t int64, v float64
 
 func (a *initAppender) AppendExemplar(ref uint64, l labels.Labels, e exemplar.Exemplar) (uint64, error) {
 	// Check if exemplar storage is enabled.
-	if a.head.opts.NumExemplars == 0 {
+	if a.head.opts.NumExemplars <= 0 {
 		return 0, nil
 	}
 
@@ -1142,6 +1142,12 @@ func (h *Head) appender() *headAppender {
 	appendID := h.iso.newAppendID()
 	cleanupAppendIDsBelow := h.iso.lowWatermark()
 
+	// Allocate the exemplars buffer only if exemplars are enabled.
+	var exemplarsBuf []exemplarWithSeriesRef
+	if h.opts.NumExemplars > 0 {
+		exemplarsBuf = h.getExemplarBuffer()
+	}
+
 	return &headAppender{
 		head:                  h,
 		minValidTime:          h.appendableMinValidTime(),
@@ -1149,7 +1155,7 @@ func (h *Head) appender() *headAppender {
 		maxt:                  math.MinInt64,
 		samples:               h.getAppendBuffer(),
 		sampleSeries:          h.getSeriesBuffer(),
-		exemplars:             h.getExemplarBuffer(),
+		exemplars:             exemplarsBuf,
 		appendID:              appendID,
 		cleanupAppendIDsBelow: cleanupAppendIDsBelow,
 		exemplarAppender:      h.exemplars,
@@ -1204,6 +1210,10 @@ func (h *Head) getExemplarBuffer() []exemplarWithSeriesRef {
 }
 
 func (h *Head) putExemplarBuffer(b []exemplarWithSeriesRef) {
+	if b == nil {
+		return
+	}
+
 	//nolint:staticcheck // Ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
 	h.exemplarsPool.Put(b[:0])
 }
@@ -1317,7 +1327,7 @@ func (a *headAppender) Append(ref uint64, lset labels.Labels, t int64, v float64
 // use getOrCreate or make any of the lset sanity checks that Append does.
 func (a *headAppender) AppendExemplar(ref uint64, _ labels.Labels, e exemplar.Exemplar) (uint64, error) {
 	// Check if exemplar storage is enabled.
-	if a.head.opts.NumExemplars == 0 {
+	if a.head.opts.NumExemplars <= 0 {
 		return 0, nil
 	}
 
