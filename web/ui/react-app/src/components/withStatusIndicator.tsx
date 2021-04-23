@@ -10,9 +10,14 @@ interface StatusIndicatorProps {
   componentTitle?: string;
 }
 
-export const withStatusIndicator = <T extends Record<string, unknown>>(
-  Component: ComponentType<T>
-): FC<StatusIndicatorProps & T> => ({ error, isLoading, customErrorMsg, componentTitle, ...rest }) => {
+// eslint-disable-next-line @typescript-eslint/ban-types
+export const withStatusIndicator = <T extends {}>(Component: ComponentType<T>): FC<StatusIndicatorProps & T> => ({
+  error,
+  isLoading,
+  customErrorMsg,
+  componentTitle,
+  ...rest
+}) => {
   if (error) {
     return (
       <Alert color="danger">
