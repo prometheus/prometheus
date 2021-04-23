@@ -9,6 +9,7 @@
  *
  */
 
+/* eslint-disable prettier/prettier */
 /* eslint-disable prefer-rest-params */
 /* eslint-disable no-useless-concat */
 /* eslint-disable default-case */

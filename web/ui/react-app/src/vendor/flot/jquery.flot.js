@@ -9,6 +9,7 @@
  *
  */
 
+/* eslint-disable prettier/prettier */
 /* eslint-disable prefer-spread */
 /* eslint-disable no-loop-func */
 /* eslint-disable @typescript-eslint/no-this-alias */
