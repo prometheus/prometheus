@@ -16,6 +16,12 @@ package huawei
 import (
 	"context"
 	"fmt"
+	"net"
+	"net/http"
+	"strconv"
+	"strings"
+	"time"
+
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/huaweicloud/golangsdk"
@@ -26,11 +32,6 @@ import (
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/refresh"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-	"net"
-	"net/http"
-	"strconv"
-	"strings"
-	"time"
 )
 
 const (
@@ -80,7 +81,7 @@ type SDConfig struct {
 }
 
 func (*SDConfig) Name() string {
-	return "huawei"
+	return "huaweicloud_ecs"
 }
 
 func (c *SDConfig) NewDiscoverer(options discovery.DiscovererOptions) (discovery.Discoverer, error) {
@@ -106,7 +107,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}
 	if !(validateAuthParam(c.AccessKey) && validateAuthParam(c.SecretKey)) &&
 		!(validateAuthParam(c.UserName) && validateAuthParam(c.Password) && validateAuthParam(c.DomainName)) {
-		return errors.Errorf("unknown authentication_type, huawei support aksk with [access_key, secret_key] "+
+		return errors.Errorf("unknown authentication_type, huawei cloud support aksk with [access_key, secret_key] " +
 			"or password with [domain_name, user_name, password]")
 	}
 	return nil
@@ -114,7 +115,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 func validateAuthParamWithErr(param, name string) (bool, error) {
 	if len(param) == 0 {
-		return false, errors.Errorf("huawei SD configuration requires a %s", name)
+		return false, errors.Errorf("huawei cloud SD configuration requires a %s", name)
 	}
 	return true, nil
 }
@@ -140,7 +141,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) *Discovery {
 	}
 	d.Discovery = refresh.NewDiscovery(
 		logger,
-		"huawei",
+		"huaweicloud_ecs",
 		time.Duration(d.cfg.RefreshInterval),
 		d.refresh,
 	)
@@ -156,7 +157,7 @@ func (d *Discovery) buildHWClient() (*golangsdk.ProviderClient, error) {
 	} else if validateAuthParam(d.cfg.UserName) && validateAuthParam(d.cfg.Password) && validateAuthParam(d.cfg.DomainName) {
 		return buildClientByPassword(d.cfg)
 	}
-	return nil, errors.Errorf("build huawei client fail , please check your huawei SD configuration")
+	return nil, errors.Errorf("build huawei cloud client fail , please check your huawei cloud SD configuration")
 }
 
 func buildClientByAKSK(c *SDConfig) (*golangsdk.ProviderClient, error) {
@@ -239,6 +240,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	allPages, err := cloudservers.List(client, cloudservers.ListOpts{}).AllPages()
 	if err != nil {
 		level.Error(d.logger).Log("List Servers error: %s", err.Error())
+		return nil, err
 	}
 	servers, err := cloudservers.ExtractServers(allPages)
 	if err != nil {

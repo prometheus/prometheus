@@ -314,7 +314,7 @@ scrape_configs:
       secret_key: 11111111-1111-1111-1111-111111111111
 
 - job_name: service-huawei
-  huawei_sd_configs:
+  huaweicloud_ecs_sd_configs:
     - project_name: test
       domain_name: test
       region: ap-southeast-2

@@ -1,6 +1,6 @@
 scrape_configs:
   - job_name: huawei
-    huawei_sd_configs:
+    huaweicloud_ecs_sd_configs:
     - region:
       project_name: aaa
       auth_url: https://iam.xxx.myhuaweicloud.com/v3

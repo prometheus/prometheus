@@ -16,10 +16,11 @@ package huawei
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/huaweicloud/golangsdk/openstack/identity/v3/tokens"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/huaweicloud/golangsdk/openstack/identity/v3/tokens"
 )
 
 type SDMock struct {
@@ -64,24 +65,24 @@ func (m *SDMock) HandleGetToken() {
 			Token: &Token{
 				Entries: []tokens.CatalogEntry{
 					{
-						ID: "ee4e76bc704d447fa188397bd851d891",
+						ID:   "ee4e76bc704d447fa188397bd851d891",
 						Name: "ecs",
 						Type: "ecs",
 						Endpoints: []tokens.Endpoint{
 							{
-								ID: "edee92705bb64a8fb57e3ccf400985b1",
-								Region: "ap-southeast-2",
+								ID:        "edee92705bb64a8fb57e3ccf400985b1",
+								Region:    "ap-southeast-2",
 								Interface: "public",
-								URL: m.Server.URL + "/v1/0bdfeaac5280f5eb2ff3c00f6512b576",
+								URL:       m.Server.URL + "/v1/0bdfeaac5280f5eb2ff3c00f6512b576",
 							},
 						},
 					},
 				},
 				Project: &tokens.Project{
-					ID: "0bdfeaac5280f5eb2ff3c00f6512b576",
+					ID:   "0bdfeaac5280f5eb2ff3c00f6512b576",
 					Name: "ap-southeast-2",
 					Domain: tokens.Domain{
-						ID: "0bde1aa04b800fc00f69c00f1b059d80",
+						ID:   "0bde1aa04b800fc00f69c00f1b059d80",
 						Name: "xxxx",
 					},
 				},
@@ -124,15 +125,15 @@ func (m *SDMock) HandleListCatalog() {
 		serviceCatalog := &tokens.ServiceCatalog{
 			Entries: []tokens.CatalogEntry{
 				{
-					ID: "ee4e76bc704d447fa188397bd851d891",
+					ID:   "ee4e76bc704d447fa188397bd851d891",
 					Name: "ecs",
 					Type: "ecs",
 					Endpoints: []tokens.Endpoint{
 						{
-							ID: "edee92705bb64a8fb57e3ccf400985b1",
-							Region: "ap-southeast-2",
+							ID:        "edee92705bb64a8fb57e3ccf400985b1",
+							Region:    "ap-southeast-2",
 							Interface: "public",
-							URL: m.Server.URL + "/v1/0bdfeaac5280f5eb2ff3c00f6512b576",
+							URL:       m.Server.URL + "/v1/0bdfeaac5280f5eb2ff3c00f6512b576",
 						},
 					},
 				},
