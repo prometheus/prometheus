@@ -629,13 +629,13 @@ func processExternalLabels(ls labels.Labels, externalLabels labels.Labels) label
 			j++
 		}
 	}
-	for ; i < len(ls); i++ {
-		result = append(result, labels.Label{
-			Name:  ls[i].Name,
-			Value: ls[i].Value,
-		})
+
+	if i < len(ls) {
+		result = append(result, ls[i:]...)
+	} else if j < len(externalLabels) {
+		result = append(result, externalLabels[j:]...)
 	}
-	result = append(result, externalLabels[j:]...)
+
 	return result
 }
 
