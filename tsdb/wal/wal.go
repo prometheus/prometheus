@@ -218,7 +218,7 @@ func newWALMetrics(r prometheus.Registerer) *walMetrics {
 		Help: "Total number of completed pages.",
 	})
 	m.truncateFail = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "prometheus_tsdb_wal_truncations_failed_total",
+		Name: "prometheus_tsdb_wal_failed_truncations_total",
 		Help: "Total number of WAL truncations that failed.",
 	})
 	m.truncateTotal = prometheus.NewCounter(prometheus.CounterOpts{
@@ -230,7 +230,7 @@ func newWALMetrics(r prometheus.Registerer) *walMetrics {
 		Help: "WAL segment index that TSDB is currently writing to.",
 	})
 	m.writesFailed = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "prometheus_tsdb_wal_writes_failed_total",
+		Name: "prometheus_tsdb_wal_failed_writes_total",
 		Help: "Total number of WAL writes that failed.",
 	})
 

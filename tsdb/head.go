@@ -222,7 +222,7 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			Help: "Total number of out of order samples ingestion failed attempts.",
 		}),
 		headTruncateFail: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "prometheus_tsdb_head_truncations_failed_total",
+			Name: "prometheus_tsdb_head_failed_truncations_total",
 			Help: "Total number of head truncations that failed.",
 		}),
 		headTruncateTotal: prometheus.NewCounter(prometheus.CounterOpts{
@@ -230,7 +230,7 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			Help: "Total number of head truncations attempted.",
 		}),
 		checkpointDeleteFail: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "prometheus_tsdb_checkpoint_deletions_failed_total",
+			Name: "prometheus_tsdb_checkpoint_failed_deletions_total",
 			Help: "Total number of checkpoint deletions that failed.",
 		}),
 		checkpointDeleteTotal: prometheus.NewCounter(prometheus.CounterOpts{
@@ -238,7 +238,7 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			Help: "Total number of checkpoint deletions attempted.",
 		}),
 		checkpointCreationFail: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "prometheus_tsdb_checkpoint_creations_failed_total",
+			Name: "prometheus_tsdb_checkpoint_failed_creations_total",
 			Help: "Total number of checkpoint creations that failed.",
 		}),
 		checkpointCreationTotal: prometheus.NewCounter(prometheus.CounterOpts{

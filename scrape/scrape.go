@@ -83,7 +83,7 @@ var (
 	)
 	targetScrapePoolsFailed = prometheus.NewCounter(
 		prometheus.CounterOpts{
-			Name: "prometheus_target_scrape_pools_failed_total",
+			Name: "prometheus_target_failed_scrape_pools_total",
 			Help: "Total number of scrape pool creations that failed.",
 		},
 	)
