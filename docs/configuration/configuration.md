@@ -1988,6 +1988,10 @@ hetzner_sd_configs:
 kubernetes_sd_configs:
   [ - <kubernetes_sd_config> ... ]
 
+# List of Lightsail service discovery configurations.
+lightsail_sd_configs:
+        [ - <lightsail_sd_config> ... ]
+
 # List of Marathon service discovery configurations.
 marathon_sd_configs:
   [ - <marathon_sd_config> ... ]
