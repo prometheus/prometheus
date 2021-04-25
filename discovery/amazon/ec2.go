@@ -63,7 +63,7 @@ const (
 
 var (
 	// EC2DefaultSDConfig is the default EC2 SD configuration.
-	EC2DefaultSDConfig = EC2SDConfig{
+	DefaultEC2SDConfig = EC2SDConfig{
 		Port:            80,
 		RefreshInterval: model.Duration(60 * time.Second),
 	}
@@ -102,7 +102,7 @@ func (c *EC2SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface for the EC2 Config.
 func (c *EC2SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	*c = EC2DefaultSDConfig
+	*c = DefaultEC2SDConfig
 	type plain EC2SDConfig
 	err := unmarshal((*plain)(c))
 	if err != nil {

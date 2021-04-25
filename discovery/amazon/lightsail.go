@@ -55,7 +55,7 @@ const (
 
 var (
 	// LightsailDefaultSDConfig is the default Lightsail SD configuration.
-	LightsailDefaultSDConfig = LightsailSDConfig{
+	DefaultLightsailSDConfig = LightsailSDConfig{
 		Port:            80,
 		RefreshInterval: model.Duration(60 * time.Second),
 	}
@@ -87,7 +87,7 @@ func (c *LightsailSDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (dis
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface for the Lightsail Config.
 func (c *LightsailSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	*c = LightsailDefaultSDConfig
+	*c = DefaultLightsailSDConfig
 	type plain LightsailSDConfig
 	err := unmarshal((*plain)(c))
 	if err != nil {
