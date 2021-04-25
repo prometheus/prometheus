@@ -1360,7 +1360,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_lightsail_instance_state`: the state of the Lightsail instance
 * `__meta_lightsail_instance_support_code`: the support code of the Lightsail instance
 * `__meta_lightsail_ipv6_addresses`: comma separated list of IPv6 addresses assigned to the instance's network interfaces, if present
-* `__meta_lightsail_private_ip`: the private IP address of the instance, if present
+* `__meta_lightsail_private_ip`: the private IP address of the instance
 * `__meta_lightsail_public_ip`: the public IP address of the instance, if available
 * `__meta_lightsail_tag_<tagkey>`: each tag value of the instance
 
