@@ -1347,7 +1347,7 @@ which automates the Prometheus setup on top of Kubernetes.
 
 ### `<lightsail_sd_config>`
 
-Lightsail SD configurations allow retrieving scrape targets from AWS Lightsail
+Lightsail SD configurations allow retrieving scrape targets from [AWS Lightsail](https://aws.amazon.com/lightsail/)
 instances. The private IP address is used by default, but may be changed to
 the public IP address with relabeling.
 
