@@ -30,7 +30,7 @@ import (
 	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/discovery"
-	"github.com/prometheus/prometheus/discovery/amazon"
+	"github.com/prometheus/prometheus/discovery/aws"
 	"github.com/prometheus/prometheus/discovery/azure"
 	"github.com/prometheus/prometheus/discovery/consul"
 	"github.com/prometheus/prometheus/discovery/digitalocean"
@@ -465,14 +465,14 @@ var expectedConf = &Config{
 			HTTPClientConfig: config.DefaultHTTPClientConfig,
 
 			ServiceDiscoveryConfigs: discovery.Configs{
-				&amazon.EC2SDConfig{
+				&aws.EC2SDConfig{
 					Region:          "us-east-1",
 					AccessKey:       "access",
 					SecretKey:       "mysecret",
 					Profile:         "profile",
 					RefreshInterval: model.Duration(60 * time.Second),
 					Port:            80,
-					Filters: []*amazon.EC2Filter{
+					Filters: []*aws.EC2Filter{
 						{
 							Name:   "tag:environment",
 							Values: []string{"prod"},
@@ -497,7 +497,7 @@ var expectedConf = &Config{
 			HTTPClientConfig: config.DefaultHTTPClientConfig,
 
 			ServiceDiscoveryConfigs: discovery.Configs{
-				&amazon.LightsailSDConfig{
+				&aws.LightsailSDConfig{
 					Region:          "us-east-1",
 					AccessKey:       "access",
 					SecretKey:       "mysecret",

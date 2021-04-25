@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package amazon
+package aws
 
 import (
 	"context"
@@ -193,13 +193,13 @@ func (d *LightsailDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group,
 		}
 
 		labels := model.LabelSet{
-			lightsailLabelAZ: model.LabelValue(*inst.Location.AvailabilityZone),
-			lightsailLabelBlueprintID: model.LabelValue(*inst.BlueprintId),
-			lightsailLabelBundleID: model.LabelValue(*inst.BundleId),
-			lightsailLabelInstanceName: model.LabelValue(*inst.Name),
-			lightsailLabelInstanceState: model.LabelValue(*inst.State.Name),
+			lightsailLabelAZ:                  model.LabelValue(*inst.Location.AvailabilityZone),
+			lightsailLabelBlueprintID:         model.LabelValue(*inst.BlueprintId),
+			lightsailLabelBundleID:            model.LabelValue(*inst.BundleId),
+			lightsailLabelInstanceName:        model.LabelValue(*inst.Name),
+			lightsailLabelInstanceState:       model.LabelValue(*inst.State.Name),
 			lightsailLabelInstanceSupportCode: model.LabelValue(*inst.SupportCode),
-			lightsailLabelPrivateIP: model.LabelValue(*inst.PrivateIpAddress),
+			lightsailLabelPrivateIP:           model.LabelValue(*inst.PrivateIpAddress),
 		}
 
 		addr := net.JoinHostPort(*inst.PrivateIpAddress, fmt.Sprintf("%d", d.cfg.Port))
