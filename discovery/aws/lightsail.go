@@ -54,7 +54,7 @@ const (
 )
 
 var (
-	// LightsailDefaultSDConfig is the default Lightsail SD configuration.
+	// DefaultLightsailSDConfig is the default Lightsail SD configuration.
 	DefaultLightsailSDConfig = LightsailSDConfig{
 		Port:            80,
 		RefreshInterval: model.Duration(60 * time.Second),

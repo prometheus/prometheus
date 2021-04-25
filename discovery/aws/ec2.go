@@ -62,7 +62,7 @@ const (
 )
 
 var (
-	// EC2DefaultSDConfig is the default EC2 SD configuration.
+	// DefaultEC2SDConfig is the default EC2 SD configuration.
 	DefaultEC2SDConfig = EC2SDConfig{
 		Port:            80,
 		RefreshInterval: model.Duration(60 * time.Second),
