@@ -193,10 +193,15 @@ func (d *LightsailDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group,
 		}
 
 		labels := model.LabelSet{
+			lightsailLabelAZ: model.LabelValue(*inst.Location.AvailabilityZone),
+			lightsailLabelBlueprintID: model.LabelValue(*inst.BlueprintId),
+			lightsailLabelBundleID: model.LabelValue(*inst.BundleId),
+			lightsailLabelInstanceName: model.LabelValue(*inst.Name),
+			lightsailLabelInstanceState: model.LabelValue(*inst.State.Name),
 			lightsailLabelInstanceSupportCode: model.LabelValue(*inst.SupportCode),
+			lightsailLabelPrivateIP: model.LabelValue(*inst.PrivateIpAddress),
 		}
 
-		labels[lightsailLabelPrivateIP] = model.LabelValue(*inst.PrivateIpAddress)
 		addr := net.JoinHostPort(*inst.PrivateIpAddress, fmt.Sprintf("%d", d.cfg.Port))
 		labels[model.AddressLabel] = model.LabelValue(addr)
 
@@ -214,12 +219,6 @@ func (d *LightsailDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group,
 					strings.Join(ipv6addrs, lightsailLabelSeparator) +
 					lightsailLabelSeparator)
 		}
-
-		labels[lightsailLabelAZ] = model.LabelValue(*inst.Location.AvailabilityZone)
-		labels[lightsailLabelBlueprintID] = model.LabelValue(*inst.BlueprintId)
-		labels[lightsailLabelBundleID] = model.LabelValue(*inst.BundleId)
-		labels[lightsailLabelInstanceName] = model.LabelValue(*inst.Name)
-		labels[lightsailLabelInstanceState] = model.LabelValue(*inst.State.Name)
 
 		for _, t := range inst.Tags {
 			if t == nil || t.Key == nil || t.Value == nil {
