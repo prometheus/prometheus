@@ -2067,3 +2067,71 @@ func BenchmarkHeadLabelValuesWithMatchers(b *testing.B) {
 		require.Equal(b, 9, len(actualValues))
 	}
 }
+
+func TestMemSafeIteratorSeekIntoBuffer(t *testing.T) {
+	dir, err := ioutil.TempDir("", "iterator_seek")
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, os.RemoveAll(dir))
+	}()
+	// This is usually taken from the Head, but passing manually here.
+	chunkDiskMapper, err := chunks.NewChunkDiskMapper(dir, chunkenc.NewPool(), chunks.DefaultWriteBufferSize)
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, chunkDiskMapper.Close())
+	}()
+
+	s := newMemSeries(labels.Labels{}, 1, 500, nil)
+
+	for i := 0; i < 7; i++ {
+		ok, _ := s.append(int64(i), float64(i), 0, chunkDiskMapper)
+		require.True(t, ok, "sample append failed")
+	}
+
+	it := s.iterator(s.chunkID(len(s.mmappedChunks)), nil, chunkDiskMapper, nil)
+	_, ok := it.(*memSafeIterator)
+	require.True(t, ok)
+
+	// First point.
+	ok = it.Seek(0)
+	require.True(t, ok)
+	ts, val := it.At()
+	require.Equal(t, int64(0), ts)
+	require.Equal(t, float64(0), val)
+
+	// Advance one point.
+	ok = it.Next()
+	require.True(t, ok)
+	ts, val = it.At()
+	require.Equal(t, int64(1), ts)
+	require.Equal(t, float64(1), val)
+
+	// Seeking an older timestamp shouldn't cause the iterator to go backwards.
+	ok = it.Seek(0)
+	require.True(t, ok)
+	ts, val = it.At()
+	require.Equal(t, int64(1), ts)
+	require.Equal(t, float64(1), val)
+
+	// Seek into the buffer.
+	ok = it.Seek(3)
+	require.True(t, ok)
+	ts, val = it.At()
+	require.Equal(t, int64(3), ts)
+	require.Equal(t, float64(3), val)
+
+	// Iterate through the rest of the buffer.
+	for i := 4; i < 7; i++ {
+		ok = it.Next()
+		require.True(t, ok)
+		ts, val = it.At()
+		require.Equal(t, int64(i), ts)
+		require.Equal(t, float64(i), val)
+	}
+
+	// Run out of elements in the iterator.
+	ok = it.Next()
+	require.False(t, ok)
+	ok = it.Seek(7)
+	require.False(t, ok)
+}
