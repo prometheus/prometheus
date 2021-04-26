@@ -2191,16 +2191,7 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 				lb.Del(labels.MetricName)
 				m = lb.Labels()
 			} else {
-				m = make(labels.Labels, 0, len(grouping))
-				for _, l := range metric {
-					for _, n := range grouping {
-						if l.Name == n {
-							m = append(m, l)
-							break
-						}
-					}
-				}
-				sort.Sort(m)
+				m = metric.WithLabels(grouping...)
 			}
 			result[groupingKey] = &groupedAggregation{
 				labels:     m,
@@ -2339,7 +2330,7 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 			continue // Bypass default append.
 
 		case parser.BOTTOMK:
-			// The heap keeps the lowest value on top, so reverse it.
+			// The heap keeps the highest value on top, so reverse it.
 			sort.Sort(sort.Reverse(aggr.reverseHeap))
 			for _, v := range aggr.reverseHeap {
 				enh.Out = append(enh.Out, Sample{
