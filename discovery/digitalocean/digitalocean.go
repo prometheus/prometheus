@@ -24,10 +24,11 @@ import (
 
 	"github.com/digitalocean/godo"
 	"github.com/go-kit/kit/log"
-	config_util "github.com/prometheus/common/config"
+	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
 
+	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/refresh"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
@@ -37,6 +38,7 @@ const (
 	doLabelID          = doLabel + "droplet_id"
 	doLabelName        = doLabel + "droplet_name"
 	doLabelImage       = doLabel + "image"
+	doLabelImageName   = doLabel + "image_name"
 	doLabelPrivateIPv4 = doLabel + "private_ipv4"
 	doLabelPublicIPv4  = doLabel + "public_ipv4"
 	doLabelPublicIPv6  = doLabel + "public_ipv6"
@@ -45,21 +47,40 @@ const (
 	doLabelStatus      = doLabel + "status"
 	doLabelFeatures    = doLabel + "features"
 	doLabelTags        = doLabel + "tags"
+	doLabelVPC         = doLabel + "vpc"
 	separator          = ","
 )
 
 // DefaultSDConfig is the default DigitalOcean SD configuration.
 var DefaultSDConfig = SDConfig{
-	Port:            80,
-	RefreshInterval: model.Duration(60 * time.Second),
+	Port:             80,
+	RefreshInterval:  model.Duration(60 * time.Second),
+	HTTPClientConfig: config.DefaultHTTPClientConfig,
+}
+
+func init() {
+	discovery.RegisterConfig(&SDConfig{})
 }
 
 // SDConfig is the configuration for DigitalOcean based service discovery.
 type SDConfig struct {
-	HTTPClientConfig config_util.HTTPClientConfig `yaml:",inline"`
+	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
 
 	RefreshInterval model.Duration `yaml:"refresh_interval"`
 	Port            int            `yaml:"port"`
+}
+
+// Name returns the name of the Config.
+func (*SDConfig) Name() string { return "digitalocean" }
+
+// NewDiscoverer returns a Discoverer for the Config.
+func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
+	return NewDiscovery(c, opts.Logger)
+}
+
+// SetDirectory joins any relative file paths with dir.
+func (c *SDConfig) SetDirectory(dir string) {
+	c.HTTPClientConfig.SetDirectory(dir)
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -70,7 +91,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err != nil {
 		return err
 	}
-	return nil
+	return c.HTTPClientConfig.Validate()
 }
 
 // Discovery periodically performs DigitalOcean requests. It implements
@@ -87,7 +108,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 		port: conf.Port,
 	}
 
-	rt, err := config_util.NewRoundTripperFromConfig(conf.HTTPClientConfig, "digitalocean_sd", false)
+	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "digitalocean_sd", config.WithHTTP2Disabled())
 	if err != nil {
 		return nil, err
 	}
@@ -143,12 +164,14 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 			doLabelID:          model.LabelValue(fmt.Sprintf("%d", droplet.ID)),
 			doLabelName:        model.LabelValue(droplet.Name),
 			doLabelImage:       model.LabelValue(droplet.Image.Slug),
+			doLabelImageName:   model.LabelValue(droplet.Image.Name),
 			doLabelPrivateIPv4: model.LabelValue(privateIPv4),
 			doLabelPublicIPv4:  model.LabelValue(publicIPv4),
 			doLabelPublicIPv6:  model.LabelValue(publicIPv6),
 			doLabelRegion:      model.LabelValue(droplet.Region.Slug),
 			doLabelSize:        model.LabelValue(droplet.SizeSlug),
 			doLabelStatus:      model.LabelValue(droplet.Status),
+			doLabelVPC:         model.LabelValue(droplet.VPCUUID),
 		}
 
 		addr := net.JoinHostPort(publicIPv4, strconv.FormatUint(uint64(d.port), 10))

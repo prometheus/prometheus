@@ -11,6 +11,7 @@ benchmark.txt
 /cmd/prometheus/data
 /cmd/prometheus/debug
 /benchout
+/cmd/promtool/data
 
 !/.travis.yml
 !/.promu.yml
@@ -21,3 +22,6 @@ benchmark.txt
 npm_licenses.tar.bz2
 /web/ui/static/react
 /web/ui/assets_vfsdata.go
+
+/vendor
+/.build

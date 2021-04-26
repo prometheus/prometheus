@@ -31,7 +31,7 @@ scalar that is the result of the operator applied to both scalar operands.
 **Between an instant vector and a scalar**, the operator is applied to the
 value of every data sample in the vector. E.g. if a time series instant vector
 is multiplied by 2, the result is another vector in which every sample value of
-the original vector is multiplied by 2.
+the original vector is multiplied by 2. The metric name is dropped.
 
 **Between two instant vectors**, a binary arithmetic operator is applied to
 each entry in the left-hand side vector and its [matching element](#vector-matching)
@@ -64,7 +64,8 @@ operators result in another scalar that is either `0` (`false`) or `1`
 value of every data sample in the vector, and vector elements between which the
 comparison result is `false` get dropped from the result vector. If the `bool`
 modifier is provided, vector elements that would be dropped instead have the value
-`0` and vector elements that would be kept have the value `1`.
+`0` and vector elements that would be kept have the value `1`. The metric name
+is dropped if the `bool` modifier is provided.
 
 **Between two instant vectors**, these operators behave as a filter by default,
 applied to matching entries. Vector elements for which the expression is not
@@ -74,6 +75,7 @@ with the grouping labels becoming the output label set.
 If the `bool` modifier is provided, vector elements that would have been
 dropped instead have the value `0` and vector elements that would be kept have
 the value `1`, with the grouping labels again becoming the output label set.
+The metric name is dropped if the `bool` modifier is provided.
 
 ### Logical/set binary operators
 

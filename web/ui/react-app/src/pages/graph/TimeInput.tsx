@@ -39,7 +39,7 @@ class TimeInput extends Component<TimeInputProps> {
     return this.props.time || moment().valueOf();
   };
 
-  calcShiftRange = () => (this.props.range * 1000) / 2;
+  calcShiftRange = () => this.props.range / 2;
 
   increaseTime = (): void => {
     const time = this.getBaseTime() + this.calcShiftRange();
@@ -120,7 +120,7 @@ class TimeInput extends Component<TimeInputProps> {
             that functionality is broken, so we create an external solution instead. */}
         {this.props.time && (
           <InputGroupAddon addonType="append">
-            <Button className="clear-time-btn" title="Clear time" onClick={this.clearTime}>
+            <Button outline className="clear-time-btn" title="Clear time" onClick={this.clearTime}>
               <FontAwesomeIcon icon={faTimes} fixedWidth />
             </Button>
           </InputGroupAddon>

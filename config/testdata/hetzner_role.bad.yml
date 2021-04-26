@@ -1,0 +1,4 @@
+scrape_configs:
+- hetzner_sd_configs:
+  - role: invalid
+

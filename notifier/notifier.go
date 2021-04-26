@@ -32,13 +32,13 @@ import (
 	"github.com/go-kit/kit/log/level"
 	"github.com/go-openapi/strfmt"
 	"github.com/pkg/errors"
-	"go.uber.org/atomic"
-
 	"github.com/prometheus/alertmanager/api/v2/models"
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
+	"go.uber.org/atomic"
+
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -634,7 +634,7 @@ type alertmanagerSet struct {
 }
 
 func newAlertmanagerSet(cfg *config.AlertmanagerConfig, logger log.Logger, metrics *alertMetrics) (*alertmanagerSet, error) {
-	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, "alertmanager", false)
+	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, "alertmanager", config_util.WithHTTP2Disabled())
 	if err != nil {
 		return nil, err
 	}

@@ -49,6 +49,11 @@ function init() {
   $("#alertFilters :input").change(function() {
         const target = $(this).attr("id");
         var shouldHide = $(this).parent().hasClass("active");
+        var checkClass = shouldHide ? 'unchecked' : 'check';
+        $(this).parent().find('i.glyphicon')
+          .removeClass("glyphicon-check")
+          .removeClass("glyphicon-unchecked")
+          .addClass("glyphicon-" + checkClass);
         if (target === "inactiveAlerts") {
             localStorage.setItem("hideInactiveAlerts", shouldHide);
             displayAlerts("alert-success", !shouldHide);

@@ -19,15 +19,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
+	"github.com/stretchr/testify/require"
 	yaml "gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/relabel"
-	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestPopulateLabels(t *testing.T) {
@@ -36,7 +35,7 @@ func TestPopulateLabels(t *testing.T) {
 		cfg     *config.ScrapeConfig
 		res     labels.Labels
 		resOrig labels.Labels
-		err     error
+		err     string
 	}{
 		// Regular population of scrape config options.
 		{
@@ -129,7 +128,7 @@ func TestPopulateLabels(t *testing.T) {
 			},
 			res:     nil,
 			resOrig: nil,
-			err:     errors.New("no address"),
+			err:     "no address",
 		},
 		// Address label missing, but added in relabelling.
 		{
@@ -208,17 +207,21 @@ func TestPopulateLabels(t *testing.T) {
 			},
 			res:     nil,
 			resOrig: nil,
-			err:     errors.New("invalid label value for \"custom\": \"\\xbd\""),
+			err:     "invalid label value for \"custom\": \"\\xbd\"",
 		},
 	}
 	for _, c := range cases {
 		in := c.in.Copy()
 
 		res, orig, err := populateLabels(c.in, c.cfg)
-		testutil.ErrorEqual(t, c.err, err)
-		testutil.Equals(t, c.in, in)
-		testutil.Equals(t, c.res, res)
-		testutil.Equals(t, c.resOrig, orig)
+		if c.err != "" {
+			require.EqualError(t, err, c.err)
+		} else {
+			require.NoError(t, err)
+		}
+		require.Equal(t, c.in, in)
+		require.Equal(t, c.res, res)
+		require.Equal(t, c.resOrig, orig)
 	}
 }
 
@@ -362,7 +365,7 @@ func TestManagerTargetsUpdates(t *testing.T) {
 	m.mtxScrape.Unlock()
 
 	// Make sure all updates have been received.
-	testutil.Equals(t, tgSent, tsetActual)
+	require.Equal(t, tgSent, tsetActual)
 
 	select {
 	case <-m.triggerReload:

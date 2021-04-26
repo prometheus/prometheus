@@ -46,21 +46,20 @@ The JSON response envelope format is as follows:
 }
 ```
 
-Input timestamps may be provided either in
+Generic placeholders are defined as follows:
+
+* `<rfc3339 | unix_timestamp>`: Input timestamps may be provided either in
 [RFC3339](https://www.ietf.org/rfc/rfc3339.txt) format or as a Unix timestamp
 in seconds, with optional decimal places for sub-second precision. Output
 timestamps are always represented as Unix timestamps in seconds.
-
-Names of query parameters that may be repeated end with `[]`.
-
-`<series_selector>` placeholders refer to Prometheus [time series
+* `<series_selector>`: Prometheus [time series
 selectors](basics.md#time-series-selectors) like `http_requests_total` or
 `http_requests_total{method=~"(GET|POST)"}` and need to be URL-encoded.
-
-`<duration>` placeholders refer to [Prometheus duration strings](basics.md#time_durations).
+* `<duration>`: [Prometheus duration strings](basics.md#time_durations).
 For example, `5m` refers to a duration of 5 minutes.
+* `<bool>`: boolean values (strings `true` and `false`).
 
-`<bool>` placeholders refer to boolean values (strings `true` and `false`).
+Note: Names of query parameters that may be repeated end with `[]`.
 
 ## Expression queries
 
@@ -209,6 +208,10 @@ $ curl 'http://localhost:9090/api/v1/query_range?query=up&start=2015-07-01T20:10
 
 ## Querying metadata
 
+Prometheus offers a set of API endpoints to query metadata about series and their labels.
+
+NOTE: These API endpoints may return metadata for series for which there is no sample within the selected time range, and/or for series whose samples have been marked as deleted via the deletion API endpoint. The exact extent of additionally returned series metadata is an implementation detail that may change in the future.
+
 ### Finding series by label matchers
 
 The following endpoint returns the list of time series that match a certain label set.
@@ -272,6 +275,8 @@ URL query parameters:
 
 - `start=<rfc3339 | unix_timestamp>`: Start timestamp. Optional.
 - `end=<rfc3339 | unix_timestamp>`: End timestamp. Optional.
+- `match[]=<series_selector>`: Repeated series selector argument that selects the
+  series from which to read the label names. Optional.
 
 
 The `data` section of the JSON response is a list of string label names.
@@ -320,6 +325,8 @@ URL query parameters:
 
 - `start=<rfc3339 | unix_timestamp>`: Start timestamp. Optional.
 - `end=<rfc3339 | unix_timestamp>`: End timestamp. Optional.
+- `match[]=<series_selector>`: Repeated series selector argument that selects the
+  series from which to read the label values. Optional.
 
 
 The `data` section of the JSON response is a list of string label values.
@@ -334,6 +341,72 @@ $ curl http://localhost:9090/api/v1/label/job/values
       "node",
       "prometheus"
    ]
+}
+```
+
+## Querying exemplars
+
+This is **experimental** and might change in the future.
+The following endpoint returns a list of exemplars for a valid PromQL query for a specific time range:
+
+```
+GET /api/v1/query_exemplars
+POST /api/v1/query_exemplars
+```
+
+URL query parameters:
+
+- `query=<string>`: Prometheus expression query string.
+- `start=<rfc3339 | unix_timestamp>`: Start timestamp.
+- `end=<rfc3339 | unix_timestamp>`: End timestamp.
+
+```json
+$ curl -g 'http://localhost:9090/api/v1/query_exemplars?query=test_exemplar_metric_total&start=2020-09-14T15:22:25.479Z&end=020-09-14T15:23:25.479Z'
+{
+    "status": "success",
+    "data": [
+        {
+            "seriesLabels": {
+                "__name__": "test_exemplar_metric_total",
+                "instance": "localhost:8090",
+                "job": "prometheus",
+                "service": "bar"
+            },
+            "exemplars": [
+                {
+                    "labels": {
+                        "traceID": "EpTxMJ40fUus7aGY"
+                    },
+                    "value": "6",
+                    "timestamp": 1600096945.479,
+                }
+            ]
+        },
+        {
+            "seriesLabels": {
+                "__name__": "test_exemplar_metric_total",
+                "instance": "localhost:8090",
+                "job": "prometheus",
+                "service": "foo"
+            },
+            "exemplars": [
+                {
+                    "labels": {
+                        "traceID": "Olp9XHlq763ccsfa"
+                    },
+                    "value": "19",
+                    "timestamp": 1600096955.479,
+                },
+                {
+                    "labels": {
+                        "traceID": "hCtjygkIHwAN9vs4"
+                    },
+                    "value": "20",
+                    "timestamp": 1600096965.489,
+                },
+            ]
+        }
+    ]
 }
 ```
 
@@ -425,6 +498,7 @@ $ curl http://localhost:9090/api/v1/targets
         },
         "scrapePool": "prometheus",
         "scrapeUrl": "http://127.0.0.1:9090/metrics",
+        "globalUrl": "http://example-prometheus:9090/metrics",
         "lastError": "",
         "lastScrape": "2017-01-17T15:07:44.723715405+01:00",
         "lastScrapeDuration": 0.050688943,
@@ -469,6 +543,7 @@ $ curl 'http://localhost:9090/api/v1/targets?state=active'
         },
         "scrapePool": "prometheus",
         "scrapeUrl": "http://127.0.0.1:9090/metrics",
+        "globalUrl": "http://example-prometheus:9090/metrics",
         "lastError": "",
         "lastScrape": "2017-01-17T15:07:44.723715405+01:00",
         "lastScrapeDuration": 50688943,
@@ -840,7 +915,6 @@ $ curl http://localhost:9090/api/v1/status/runtimeinfo
     "CWD": "/",
     "reloadConfigSuccess": true,
     "lastConfigTime": "2019-11-02T17:23:59+01:00",
-    "chunkCount": 873,
     "timeSeriesCount": 873,
     "corruptionCount": 0,
     "goroutineCount": 48,
@@ -852,7 +926,7 @@ $ curl http://localhost:9090/api/v1/status/runtimeinfo
 }
 ```
 
-**NOTE**: The exact returned runtime properties may change without notice between Prometheus versions.
+NOTE: The exact returned runtime properties may change without notice between Prometheus versions.
 
 *New in v2.14*
 
@@ -881,7 +955,7 @@ $ curl http://localhost:9090/api/v1/status/buildinfo
 }
 ```
 
-**NOTE**: The exact returned build properties may change without notice between Prometheus versions.
+NOTE: The exact returned build properties may change without notice between Prometheus versions.
 
 *New in v2.14*
 
@@ -892,6 +966,11 @@ The following endpoint returns various cardinality statistics about the Promethe
 ```
 GET /api/v1/status/tsdb
 ```
+- **headStats**: This provides the following data about the head block of the TSDB:
+  - **numSeries**: The number of series.
+  - **chunkCount**: The number of chunks.
+  - **minTime**: The current minimum timestamp in milliseconds.
+  - **maxTime**: The current maximum timestamp in milliseconds.
 - **seriesCountByMetricName:**  This will provide a list of metrics names and their series count.
 - **labelValueCountByLabelName:** This will provide a list of the label names and their value count.
 - **memoryInBytesByLabelName** This will provide a list of the label names and memory used in bytes. Memory usage is calculated by adding the length of all values for a given label name.
@@ -902,6 +981,12 @@ $ curl http://localhost:9090/api/v1/status/tsdb
 {
   "status": "success",
   "data": {
+    "headStats": {
+      "numSeries": 508,
+      "chunkCount": 937,
+      "minTime": 1591516800000,
+      "maxTime": 1598896800143,
+    },
     "seriesCountByMetricName": [
       {
         "name": "net_conntrack_dialer_conn_failed_total",
@@ -951,8 +1036,6 @@ $ curl http://localhost:9090/api/v1/status/tsdb
 ## TSDB Admin APIs
 These are APIs that expose database functionalities for the advanced user. These APIs are not enabled unless the `--web.enable-admin-api` is set.
 
-We also expose a gRPC API whose definition can be found [here](https://github.com/prometheus/prometheus/blob/master/prompb/rpc.proto). This is experimental and might change in the future.
-
 ### Snapshot
 Snapshot creates a snapshot of all current data into `snapshots/<datetime>-<rand>` under the TSDB's data directory and returns the directory as response.
 It will optionally skip snapshotting data that is only present in the head block, and which has not yet been compacted to disk.
@@ -980,7 +1063,7 @@ The snapshot now exists at `<data-dir>/snapshots/20171210T211224Z-2be650b6d019eb
 *New in v2.1 and supports PUT from v2.9*
 
 ### Delete Series
-DeleteSeries deletes data for a selection of series in a time range. The actual data still exists on disk and is cleaned up in future compactions or can be explicitly cleaned up by hitting the Clean Tombstones endpoint.
+DeleteSeries deletes data for a selection of series in a time range. The actual data still exists on disk and is cleaned up in future compactions or can be explicitly cleaned up by hitting the [Clean Tombstones](#clean-tombstones) endpoint.
 
 If successful, a `204` is returned.
 
@@ -1003,6 +1086,9 @@ Example:
 $ curl -X POST \
   -g 'http://localhost:9090/api/v1/admin/tsdb/delete_series?match[]=up&match[]=process_start_time_seconds{job="prometheus"}'
 ```
+
+NOTE: This endpoint marks samples from series as deleted, but will not necessarily prevent associated series metadata from still being returned in metadata queries for the affected time range (even after cleaning tombstones). The exact extent of metadata deletion is an implementation detail that may change in the future.
+
 *New in v2.1 and supports PUT from v2.9*
 
 ### Clean Tombstones

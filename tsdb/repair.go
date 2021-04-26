@@ -23,6 +23,7 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/pkg/errors"
+
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 )
@@ -82,18 +83,18 @@ func repairBadIndexVersion(logger log.Logger, dir string) error {
 			return errors.Wrapf(err, "copy content of index to index.repaired for block dir: %v", d)
 		}
 
-		var merr tsdb_errors.MultiError
-
 		// Set the 5th byte to 2 to indicate the correct file format version.
 		if _, err := repl.WriteAt([]byte{2}, 4); err != nil {
-			merr.Add(errors.Wrap(err, "rewrite of index.repaired"))
-			merr.Add(errors.Wrap(repl.Close(), "close"))
-			return errors.Wrapf(merr.Err(), "block dir: %v", d)
+			return tsdb_errors.NewMulti(
+				errors.Wrapf(err, "rewrite of index.repaired for block dir: %v", d),
+				errors.Wrap(repl.Close(), "close"),
+			).Err()
 		}
 		if err := repl.Sync(); err != nil {
-			merr.Add(errors.Wrap(err, "sync of index.repaired"))
-			merr.Add(errors.Wrap(repl.Close(), "close"))
-			return errors.Wrapf(merr.Err(), "block dir: %v", d)
+			return tsdb_errors.NewMulti(
+				errors.Wrapf(err, "sync of index.repaired for block dir: %v", d),
+				errors.Wrap(repl.Close(), "close"),
+			).Err()
 		}
 		if err := repl.Close(); err != nil {
 			return errors.Wrapf(repl.Close(), "close repaired index for block dir: %v", d)

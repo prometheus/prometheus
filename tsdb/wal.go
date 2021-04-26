@@ -31,6 +31,7 @@ import (
 	"github.com/go-kit/kit/log/level"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
@@ -889,19 +890,19 @@ func (r *walReader) Read(
 				if seriesf != nil {
 					seriesf(v)
 				}
-				//lint:ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
+				//nolint:staticcheck // Ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
 				seriesPool.Put(v[:0])
 			case []record.RefSample:
 				if samplesf != nil {
 					samplesf(v)
 				}
-				//lint:ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
+				//nolint:staticcheck // Ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
 				samplePool.Put(v[:0])
 			case []tombstones.Stone:
 				if deletesf != nil {
 					deletesf(v)
 				}
-				//lint:ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
+				//nolint:staticcheck // Ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
 				deletePool.Put(v[:0])
 			default:
 				level.Error(r.logger).Log("msg", "unexpected data type")

@@ -24,9 +24,9 @@ It is terminated by a table of contents which serves as an entry point into the 
 │ ├──────────────────────────────────────────────┤ │
 │ │                   Postings N                 │ │
 │ ├──────────────────────────────────────────────┤ │
-│ │               Label Index Table              │ │
+│ │               Label Offset Table             │ │
 │ ├──────────────────────────────────────────────┤ │
-│ │                 Postings Table               │ │
+│ │             Postings Offset Table            │ │
 │ ├──────────────────────────────────────────────┤ │
 │ │                      TOC                     │ │
 │ └──────────────────────────────────────────────┘ │

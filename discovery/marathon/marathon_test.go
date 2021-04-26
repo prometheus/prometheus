@@ -22,6 +22,7 @@ import (
 	"testing"
 
 	"github.com/prometheus/common/model"
+
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 

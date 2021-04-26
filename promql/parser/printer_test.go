@@ -16,7 +16,7 @@ package parser
 import (
 	"testing"
 
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/stretchr/testify/require"
 )
 
 func TestExprString(t *testing.T) {
@@ -78,10 +78,16 @@ func TestExprString(t *testing.T) {
 			in: `a offset 1m`,
 		},
 		{
+			in: `a offset -7m`,
+		},
+		{
 			in: `a{c="d"}[5m] offset 1m`,
 		},
 		{
 			in: `a[5m] offset 1m`,
+		},
+		{
+			in: `a[12m] offset -3m`,
 		},
 		{
 			in: `a[1h:5m] offset 1m`,
@@ -98,17 +104,37 @@ func TestExprString(t *testing.T) {
 		{
 			in: `a{b!~"c"}[1m]`,
 		},
+		{
+			in:  `a @ 10`,
+			out: `a @ 10.000`,
+		},
+		{
+			in:  `a[1m] @ 10`,
+			out: `a[1m] @ 10.000`,
+		},
+		{
+			in: `a @ start()`,
+		},
+		{
+			in: `a @ end()`,
+		},
+		{
+			in: `a[1m] @ start()`,
+		},
+		{
+			in: `a[1m] @ end()`,
+		},
 	}
 
 	for _, test := range inputs {
 		expr, err := ParseExpr(test.in)
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 
 		exp := test.in
 		if test.out != "" {
 			exp = test.out
 		}
 
-		testutil.Equals(t, exp, expr.String())
+		require.Equal(t, exp, expr.String())
 	}
 }

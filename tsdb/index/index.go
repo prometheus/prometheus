@@ -29,7 +29,9 @@ import (
 	"unsafe"
 
 	"github.com/pkg/errors"
+
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
@@ -102,6 +104,12 @@ func newCRC32() hash.Hash32 {
 	return crc32.New(castagnoliTable)
 }
 
+type symbolCacheEntry struct {
+	index          uint32
+	lastValue      string
+	lastValueIndex uint32
+}
+
 // Writer implements the IndexWriter interface for the standard
 // serialization format.
 type Writer struct {
@@ -124,10 +132,11 @@ type Writer struct {
 	buf1 encoding.Encbuf
 	buf2 encoding.Encbuf
 
-	numSymbols int
-	symbols    *Symbols
-	symbolFile *fileutil.MmapFile
-	lastSymbol string
+	numSymbols  int
+	symbols     *Symbols
+	symbolFile  *fileutil.MmapFile
+	lastSymbol  string
+	symbolCache map[string]symbolCacheEntry
 
 	labelIndexes []labelIndexHashEntry // Label index offsets.
 	labelNames   map[string]uint64     // Label names, and their usage.
@@ -223,8 +232,9 @@ func NewWriter(ctx context.Context, fn string) (*Writer, error) {
 		buf1: encoding.Encbuf{B: make([]byte, 0, 1<<22)},
 		buf2: encoding.Encbuf{B: make([]byte, 0, 1<<22)},
 
-		labelNames: make(map[string]uint64, 1<<8),
-		crc32:      newCRC32(),
+		symbolCache: make(map[string]symbolCacheEntry, 1<<8),
+		labelNames:  make(map[string]uint64, 1<<8),
+		crc32:       newCRC32(),
 	}
 	if err := iw.writeMeta(); err != nil {
 		return nil, err
@@ -429,18 +439,31 @@ func (w *Writer) AddSeries(ref uint64, lset labels.Labels, chunks ...chunks.Meta
 	w.buf2.PutUvarint(len(lset))
 
 	for _, l := range lset {
-		index, err := w.symbols.ReverseLookup(l.Name)
-		if err != nil {
-			return errors.Errorf("symbol entry for %q does not exist, %v", l.Name, err)
+		var err error
+		cacheEntry, ok := w.symbolCache[l.Name]
+		nameIndex := cacheEntry.index
+		if !ok {
+			nameIndex, err = w.symbols.ReverseLookup(l.Name)
+			if err != nil {
+				return errors.Errorf("symbol entry for %q does not exist, %v", l.Name, err)
+			}
 		}
 		w.labelNames[l.Name]++
-		w.buf2.PutUvarint32(index)
+		w.buf2.PutUvarint32(nameIndex)
 
-		index, err = w.symbols.ReverseLookup(l.Value)
-		if err != nil {
-			return errors.Errorf("symbol entry for %q does not exist, %v", l.Value, err)
+		valueIndex := cacheEntry.lastValueIndex
+		if !ok || cacheEntry.lastValue != l.Value {
+			valueIndex, err = w.symbols.ReverseLookup(l.Value)
+			if err != nil {
+				return errors.Errorf("symbol entry for %q does not exist, %v", l.Value, err)
+			}
+			w.symbolCache[l.Name] = symbolCacheEntry{
+				index:          nameIndex,
+				lastValue:      l.Value,
+				lastValueIndex: valueIndex,
+			}
 		}
-		w.buf2.PutUvarint32(index)
+		w.buf2.PutUvarint32(valueIndex)
 	}
 
 	w.buf2.PutUvarint(len(chunks))
@@ -1074,10 +1097,10 @@ func NewFileReader(path string) (*Reader, error) {
 	}
 	r, err := newReader(realByteSlice(f.Bytes()), f)
 	if err != nil {
-		var merr tsdb_errors.MultiError
-		merr.Add(err)
-		merr.Add(f.Close())
-		return nil, merr
+		return nil, tsdb_errors.NewMulti(
+			err,
+			f.Close(),
+		).Err()
 	}
 
 	return r, nil
@@ -1421,8 +1444,8 @@ func (r *Reader) SymbolTableSize() uint64 {
 // SortedLabelValues returns value tuples that exist for the given label name.
 // It is not safe to use the return value beyond the lifetime of the byte slice
 // passed into the Reader.
-func (r *Reader) SortedLabelValues(name string) ([]string, error) {
-	values, err := r.LabelValues(name)
+func (r *Reader) SortedLabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
+	values, err := r.LabelValues(name, matchers...)
 	if err == nil && r.version == FormatV1 {
 		sort.Strings(values)
 	}
@@ -1432,7 +1455,12 @@ func (r *Reader) SortedLabelValues(name string) ([]string, error) {
 // LabelValues returns value tuples that exist for the given label name.
 // It is not safe to use the return value beyond the lifetime of the byte slice
 // passed into the Reader.
-func (r *Reader) LabelValues(name string) ([]string, error) {
+// TODO(replay): Support filtering by matchers
+func (r *Reader) LabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
+	if len(matchers) > 0 {
+		return nil, errors.Errorf("matchers parameter is not implemented: %+v", matchers)
+	}
+
 	if r.version == FormatV1 {
 		e, ok := r.postingsV1[name]
 		if !ok {
@@ -1481,6 +1509,32 @@ func (r *Reader) LabelValues(name string) ([]string, error) {
 		return nil, errors.Wrap(d.Err(), "get postings offset entry")
 	}
 	return values, nil
+}
+
+// LabelValueFor returns label value for the given label name in the series referred to by ID.
+func (r *Reader) LabelValueFor(id uint64, label string) (string, error) {
+	offset := id
+	// In version 2 series IDs are no longer exact references but series are 16-byte padded
+	// and the ID is the multiple of 16 of the actual position.
+	if r.version == FormatV2 {
+		offset = id * 16
+	}
+	d := encoding.NewDecbufUvarintAt(r.b, int(offset), castagnoliTable)
+	buf := d.Get()
+	if d.Err() != nil {
+		return "", errors.Wrap(d.Err(), "label values for")
+	}
+
+	value, err := r.dec.LabelValueFor(buf, label)
+	if err != nil {
+		return "", storage.ErrNotFound
+	}
+
+	if value == "" {
+		return "", storage.ErrNotFound
+	}
+
+	return value, nil
 }
 
 // Series reads the series with the given ID and writes its labels and chunks into lbls and chks.
@@ -1623,7 +1677,7 @@ func (r *Reader) LabelNames() ([]string, error) {
 	return labelNames, nil
 }
 
-// NewStringListIterator returns a StringIter for the given sorted list of strings.
+// NewStringListIter returns a StringIter for the given sorted list of strings.
 func NewStringListIter(s []string) StringIter {
 	return &stringListIter{l: s}
 }
@@ -1659,6 +1713,37 @@ func (dec *Decoder) Postings(b []byte) (int, Postings, error) {
 	n := d.Be32int()
 	l := d.Get()
 	return n, newBigEndianPostings(l), d.Err()
+}
+
+// LabelValueFor decodes a label for a given series.
+func (dec *Decoder) LabelValueFor(b []byte, label string) (string, error) {
+	d := encoding.Decbuf{B: b}
+	k := d.Uvarint()
+
+	for i := 0; i < k; i++ {
+		lno := uint32(d.Uvarint())
+		lvo := uint32(d.Uvarint())
+
+		if d.Err() != nil {
+			return "", errors.Wrap(d.Err(), "read series label offsets")
+		}
+
+		ln, err := dec.LookupSymbol(lno)
+		if err != nil {
+			return "", errors.Wrap(err, "lookup label name")
+		}
+
+		if ln == label {
+			lv, err := dec.LookupSymbol(lvo)
+			if err != nil {
+				return "", errors.Wrap(err, "lookup label value")
+			}
+
+			return lv, nil
+		}
+	}
+
+	return "", d.Err()
 }
 
 // Series decodes a series entry from the given byte slice into lset and chks.

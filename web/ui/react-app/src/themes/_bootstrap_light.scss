@@ -1,0 +1,70 @@
+/* This file is a copy of ForEvolve/bootstrap-dark light theme:
+   https://github.com/ForEvolve/bootstrap-dark/blob/master/scss/toggle-bootstrap.scss
+   but with Bootstrap reboot moved out of .bootstrap{} selector so it applies to
+   the root of the document.
+   See https://github.com/prometheus/prometheus/pull/8604#issuecomment-820391870
+   and https://github.com/ForEvolve/bootstrap-dark/issues/49
+*/
+
+@import 'node_modules/bootstrap/scss/functions';
+@import 'node_modules/bootstrap/scss/variables';
+
+@import 'node_modules/bootstrap/scss/mixins';
+@import 'node_modules/@forevolve/bootstrap-dark/scss/mixins-overrides';
+
+/* Add reboot styles using light theme variables */
+@import 'node_modules/bootstrap/scss/reboot';
+
+body.bootstrap {
+  margin: 0; // 1
+  font-family: $font-family-base;
+  @include font-size($font-size-base);
+  font-weight: $font-weight-base;
+  line-height: $line-height-base;
+  color: $body-color;
+  text-align: left; // 3
+  background-color: $body-bg; // 2
+}
+
+.bootstrap {
+  @import 'node_modules/bootstrap/scss/root';
+  @import 'node_modules/bootstrap/scss/type';
+  @import 'node_modules/bootstrap/scss/images';
+  @import 'node_modules/bootstrap/scss/code';
+  @import 'node_modules/bootstrap/scss/grid';
+  @import 'node_modules/bootstrap/scss/tables';
+
+  @import 'node_modules/bootstrap/scss/forms';
+  @import 'node_modules/@forevolve/bootstrap-dark/scss/form-overrides';
+
+  @import 'node_modules/bootstrap/scss/buttons';
+  @import 'node_modules/bootstrap/scss/transitions';
+  @import 'node_modules/bootstrap/scss/dropdown';
+  @import 'node_modules/bootstrap/scss/button-group';
+  @import 'node_modules/bootstrap/scss/input-group';
+  @import 'node_modules/bootstrap/scss/custom-forms';
+  @import 'node_modules/bootstrap/scss/nav';
+  @import 'node_modules/bootstrap/scss/navbar';
+  @import 'node_modules/bootstrap/scss/card';
+  @import 'node_modules/bootstrap/scss/breadcrumb';
+  @import 'node_modules/bootstrap/scss/pagination';
+  @import 'node_modules/bootstrap/scss/badge';
+  @import 'node_modules/bootstrap/scss/jumbotron';
+  @import 'node_modules/bootstrap/scss/alert';
+  @import 'node_modules/bootstrap/scss/progress';
+  @import 'node_modules/bootstrap/scss/media';
+  @import 'node_modules/bootstrap/scss/list-group';
+  @import 'node_modules/bootstrap/scss/close';
+  @import 'node_modules/bootstrap/scss/toasts';
+  @import 'node_modules/bootstrap/scss/modal';
+  @import 'node_modules/bootstrap/scss/tooltip';
+  @import 'node_modules/bootstrap/scss/popover';
+  @import 'node_modules/bootstrap/scss/carousel';
+  @import 'node_modules/bootstrap/scss/spinners';
+  @import 'node_modules/bootstrap/scss/utilities';
+
+  .navbar-themed {
+    @extend .bg-light;
+    @extend .navbar-light;
+  }
+}

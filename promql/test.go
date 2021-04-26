@@ -25,7 +25,9 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
+
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
@@ -104,6 +106,15 @@ func (t *Test) Storage() storage.Storage {
 // TSDB returns test's TSDB.
 func (t *Test) TSDB() *tsdb.DB {
 	return t.storage.DB
+}
+
+// ExemplarStorage returns the test's exemplar storage.
+func (t *Test) ExemplarStorage() storage.ExemplarStorage {
+	return t.storage
+}
+
+func (t *Test) ExemplarQueryable() storage.ExemplarQueryable {
+	return t.storage.ExemplarQueryable()
 }
 
 func raise(line int, format string, v ...interface{}) error {
@@ -305,7 +316,7 @@ func (cmd *loadCmd) append(a storage.Appender) error {
 		m := cmd.metrics[h]
 
 		for _, s := range smpls {
-			if _, err := a.Add(m, s.T, s.V); err != nil {
+			if _, err := a.Append(0, m, s.T, s.V); err != nil {
 				return err
 			}
 		}
@@ -426,6 +437,74 @@ func (t *Test) Run() error {
 	return nil
 }
 
+type atModifierTestCase struct {
+	expr     string
+	evalTime time.Time
+}
+
+func atModifierTestCases(exprStr string, evalTime time.Time) ([]atModifierTestCase, error) {
+	expr, err := parser.ParseExpr(exprStr)
+	if err != nil {
+		return nil, err
+	}
+	ts := timestamp.FromTime(evalTime)
+
+	containsNonStepInvariant := false
+	// Setting the @ timestamp for all selectors to be evalTime.
+	// If there is a subquery, then the selectors inside it don't get the @ timestamp.
+	// If any selector already has the @ timestamp set, then it is untouched.
+	parser.Inspect(expr, func(node parser.Node, path []parser.Node) error {
+		_, _, subqTs := subqueryTimes(path)
+		if subqTs != nil {
+			// There is a subquery with timestamp in the path,
+			// hence don't change any timestamps further.
+			return nil
+		}
+		switch n := node.(type) {
+		case *parser.VectorSelector:
+			if n.Timestamp == nil {
+				n.Timestamp = makeInt64Pointer(ts)
+			}
+
+		case *parser.MatrixSelector:
+			if vs := n.VectorSelector.(*parser.VectorSelector); vs.Timestamp == nil {
+				vs.Timestamp = makeInt64Pointer(ts)
+			}
+
+		case *parser.SubqueryExpr:
+			if n.Timestamp == nil {
+				n.Timestamp = makeInt64Pointer(ts)
+			}
+
+		case *parser.Call:
+			_, ok := AtModifierUnsafeFunctions[n.Func.Name]
+			containsNonStepInvariant = containsNonStepInvariant || ok
+		}
+		return nil
+	})
+
+	if containsNonStepInvariant {
+		// Since there is a step invariant function, we cannot automatically
+		// generate step invariant test cases for it sanely.
+		return nil, nil
+	}
+
+	newExpr := expr.String() // With all the @ evalTime set.
+	additionalEvalTimes := []int64{-10 * ts, 0, ts / 5, ts, 10 * ts}
+	if ts == 0 {
+		additionalEvalTimes = []int64{-1000, -ts, 1000}
+	}
+	testCases := make([]atModifierTestCase, 0, len(additionalEvalTimes))
+	for _, et := range additionalEvalTimes {
+		testCases = append(testCases, atModifierTestCase{
+			expr:     newExpr,
+			evalTime: timestamp.Time(et),
+		})
+	}
+
+	return testCases, nil
+}
+
 // exec processes a single step of the test.
 func (t *Test) exec(tc testCommand) error {
 	switch cmd := tc.(type) {
@@ -444,59 +523,66 @@ func (t *Test) exec(tc testCommand) error {
 		}
 
 	case *evalCmd:
-		q, err := t.QueryEngine().NewInstantQuery(t.storage, cmd.expr, cmd.start)
+		queries, err := atModifierTestCases(cmd.expr, cmd.start)
 		if err != nil {
 			return err
 		}
-		defer q.Close()
-		res := q.Exec(t.context)
-		if res.Err != nil {
-			if cmd.fail {
-				return nil
+		queries = append([]atModifierTestCase{{expr: cmd.expr, evalTime: cmd.start}}, queries...)
+		for _, iq := range queries {
+			q, err := t.QueryEngine().NewInstantQuery(t.storage, iq.expr, iq.evalTime)
+			if err != nil {
+				return err
 			}
-			return errors.Wrapf(res.Err, "error evaluating query %q (line %d)", cmd.expr, cmd.line)
-		}
-		if res.Err == nil && cmd.fail {
-			return errors.Errorf("expected error evaluating query %q (line %d) but got none", cmd.expr, cmd.line)
-		}
+			defer q.Close()
+			res := q.Exec(t.context)
+			if res.Err != nil {
+				if cmd.fail {
+					continue
+				}
+				return errors.Wrapf(res.Err, "error evaluating query %q (line %d)", iq.expr, cmd.line)
+			}
+			if res.Err == nil && cmd.fail {
+				return errors.Errorf("expected error evaluating query %q (line %d) but got none", iq.expr, cmd.line)
+			}
+			err = cmd.compareResult(res.Value)
+			if err != nil {
+				return errors.Wrapf(err, "error in %s %s", cmd, iq.expr)
+			}
 
-		err = cmd.compareResult(res.Value)
-		if err != nil {
-			return errors.Wrapf(err, "error in %s %s", cmd, cmd.expr)
-		}
-
-		// Check query returns same result in range mode,
-		// by checking against the middle step.
-		q, err = t.queryEngine.NewRangeQuery(t.storage, cmd.expr, cmd.start.Add(-time.Minute), cmd.start.Add(time.Minute), time.Minute)
-		if err != nil {
-			return err
-		}
-		rangeRes := q.Exec(t.context)
-		if rangeRes.Err != nil {
-			return errors.Wrapf(rangeRes.Err, "error evaluating query %q (line %d) in range mode", cmd.expr, cmd.line)
-		}
-		defer q.Close()
-		if cmd.ordered {
-			// Ordering isn't defined for range queries.
-			return nil
-		}
-		mat := rangeRes.Value.(Matrix)
-		vec := make(Vector, 0, len(mat))
-		for _, series := range mat {
-			for _, point := range series.Points {
-				if point.T == timeMilliseconds(cmd.start) {
-					vec = append(vec, Sample{Metric: series.Metric, Point: point})
-					break
+			// Check query returns same result in range mode,
+			// by checking against the middle step.
+			q, err = t.queryEngine.NewRangeQuery(t.storage, iq.expr, iq.evalTime.Add(-time.Minute), iq.evalTime.Add(time.Minute), time.Minute)
+			if err != nil {
+				return err
+			}
+			rangeRes := q.Exec(t.context)
+			if rangeRes.Err != nil {
+				return errors.Wrapf(rangeRes.Err, "error evaluating query %q (line %d) in range mode", iq.expr, cmd.line)
+			}
+			defer q.Close()
+			if cmd.ordered {
+				// Ordering isn't defined for range queries.
+				continue
+			}
+			mat := rangeRes.Value.(Matrix)
+			vec := make(Vector, 0, len(mat))
+			for _, series := range mat {
+				for _, point := range series.Points {
+					if point.T == timeMilliseconds(iq.evalTime) {
+						vec = append(vec, Sample{Metric: series.Metric, Point: point})
+						break
+					}
 				}
 			}
-		}
-		if _, ok := res.Value.(Scalar); ok {
-			err = cmd.compareResult(Scalar{V: vec[0].Point.V})
-		} else {
-			err = cmd.compareResult(vec)
-		}
-		if err != nil {
-			return errors.Wrapf(err, "error in %s %s (line %d) rande mode", cmd, cmd.expr, cmd.line)
+			if _, ok := res.Value.(Scalar); ok {
+				err = cmd.compareResult(Scalar{V: vec[0].Point.V})
+			} else {
+				err = cmd.compareResult(vec)
+			}
+			if err != nil {
+				return errors.Wrapf(err, "error in %s %s (line %d) rande mode", cmd, iq.expr, cmd.line)
+			}
+
 		}
 
 	default:
@@ -523,6 +609,7 @@ func (t *Test) clear() {
 		MaxSamples:               10000,
 		Timeout:                  100 * time.Second,
 		NoStepSubqueryIntervalFn: func(int64) int64 { return durationMilliseconds(1 * time.Minute) },
+		EnableAtModifier:         true,
 	}
 
 	t.queryEngine = NewEngine(opts)
@@ -579,7 +666,8 @@ type LazyLoader struct {
 
 	loadCmd *loadCmd
 
-	storage storage.Storage
+	storage          storage.Storage
+	SubqueryInterval time.Duration
 
 	queryEngine *Engine
 	context     context.Context
@@ -632,10 +720,12 @@ func (ll *LazyLoader) clear() {
 	ll.storage = teststorage.New(ll)
 
 	opts := EngineOpts{
-		Logger:     nil,
-		Reg:        nil,
-		MaxSamples: 10000,
-		Timeout:    100 * time.Second,
+		Logger:                   nil,
+		Reg:                      nil,
+		MaxSamples:               10000,
+		Timeout:                  100 * time.Second,
+		NoStepSubqueryIntervalFn: func(int64) int64 { return durationMilliseconds(ll.SubqueryInterval) },
+		EnableAtModifier:         true,
 	}
 
 	ll.queryEngine = NewEngine(opts)
@@ -653,7 +743,7 @@ func (ll *LazyLoader) appendTill(ts int64) error {
 				ll.loadCmd.defs[h] = smpls[i:]
 				break
 			}
-			if _, err := app.Add(m, s.T, s.V); err != nil {
+			if _, err := app.Append(0, m, s.T, s.V); err != nil {
 				return err
 			}
 			if i == len(smpls)-1 {

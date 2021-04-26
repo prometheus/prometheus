@@ -8,7 +8,13 @@ h2.danger a {
     color: rgb(242, 65, 65);
 }
 
-div#showTargets .btn {
+.options-container {
+    display: flex;
+    justify-content: flex-start;
+    align-items: baseline;
+}
+
+.options-container .btn {
     border-radius: 0px;
     margin-top: 10px;
     margin-bottom: 15px;

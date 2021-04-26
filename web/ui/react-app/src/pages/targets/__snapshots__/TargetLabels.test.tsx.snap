@@ -7,7 +7,7 @@ exports[`targetLabels renders discovered labels 1`] = `
     id="series-labels-cortex/node-exporter_group/0-1"
   >
     <Badge
-      className="mr-1 instance"
+      className="mr-1"
       color="primary"
       key="instance"
       pill={false}
@@ -16,7 +16,7 @@ exports[`targetLabels renders discovered labels 1`] = `
       instance="localhost:9100"
     </Badge>
     <Badge
-      className="mr-1 job"
+      className="mr-1"
       color="primary"
       key="job"
       pill={false}
@@ -25,7 +25,7 @@ exports[`targetLabels renders discovered labels 1`] = `
       job="node_exporter"
     </Badge>
     <Badge
-      className="mr-1 foo"
+      className="mr-1"
       color="primary"
       key="foo"
       pill={false}

@@ -1,21 +1,24 @@
 {{define "head"}}
-<link type="text/css" rel="stylesheet" href="{{ pathPrefix }}/static/css/targets.css?v={{ buildVersion }}">
-<script src="{{ pathPrefix }}/static/js/targets.js?v={{ buildVersion }}"></script>
+<link type="text/css" rel="stylesheet" href="{{ pathPrefix }}/classic/static/css/targets.css?v={{ buildVersion }}">
+<script src="{{ pathPrefix }}/classic/static/js/targets.js?v={{ buildVersion }}"></script>
 {{end}}
 
 
 {{define "content"}}
   <div class="container-fluid">
     <h1>Targets</h1>
-    <div id="showTargets" class="btn-group btn-group-toggle" data-toggle="buttons">
-      <label class="btn btn-primary">
-        <input type="radio" name="targets" id="all-targets" autocomplete="off" checked> All
-      </label>
-      <label class="btn btn-primary">
-        <input type="radio" name="targets" id="unhealthy-targets" autocomplete="off"> Unhealthy
-      </label>
-      <br />
-  </div>
+    <div class="options-container">
+      <div id="showTargets" class="btn-group btn-group-toggle" data-toggle="buttons">
+        <label class="btn btn-primary">
+          <input type="radio" name="targets" id="all-targets" autocomplete="off" checked> All
+        </label>
+        <label class="btn btn-primary">
+          <input type="radio" name="targets" id="unhealthy-targets" autocomplete="off"> Unhealthy
+        </label>
+        <br />
+      </div>
+      <button type="button" class="collapse-all btn btn-primary">Collapse All</button>
+    </div>
 
     {{- range $job, $pool := .TargetPools}}
     {{- $healthy := numHealthy $pool}}

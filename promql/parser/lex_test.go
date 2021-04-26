@@ -16,7 +16,7 @@ package parser
 import (
 	"testing"
 
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/stretchr/testify/require"
 )
 
 type testCase struct {
@@ -225,14 +225,15 @@ var tests = []struct {
 		tests: []testCase{
 			{
 				input:    `=`,
-				expected: []Item{{ASSIGN, 0, `=`}},
+				expected: []Item{{EQL, 0, `=`}},
 			}, {
-				// Inside braces equality is a single '=' character.
+				// Inside braces equality is a single '=' character but in terms of a token
+				// it should be treated as ASSIGN.
 				input:    `{=}`,
 				expected: []Item{{LEFT_BRACE, 0, `{`}, {EQL, 1, `=`}, {RIGHT_BRACE, 2, `}`}},
 			}, {
 				input:    `==`,
-				expected: []Item{{EQL, 0, `==`}},
+				expected: []Item{{EQLC, 0, `==`}},
 			}, {
 				input:    `!=`,
 				expected: []Item{{NEQ, 0, `!=`}},
@@ -275,6 +276,9 @@ var tests = []struct {
 			}, {
 				input:    `unless`,
 				expected: []Item{{LUNLESS, 0, `unless`}},
+			}, {
+				input:    `@`,
+				expected: []Item{{AT, 0, `@`}},
 			},
 		},
 	},
@@ -335,6 +339,19 @@ var tests = []struct {
 			}, {
 				input:    "bool",
 				expected: []Item{{BOOL, 0, "bool"}},
+			},
+		},
+	},
+	{
+		name: "preprocessors",
+		tests: []testCase{
+			{
+				input:    `start`,
+				expected: []Item{{START, 0, `start`}},
+			},
+			{
+				input:    `end`,
+				expected: []Item{{END, 0, `end`}},
 			},
 		},
 	},
@@ -730,10 +747,10 @@ func TestLexer(t *testing.T) {
 				}
 
 				eofItem := Item{EOF, Pos(len(test.input)), ""}
-				testutil.Equals(t, lastItem, eofItem, "%d: input %q", i, test.input)
+				require.Equal(t, lastItem, eofItem, "%d: input %q", i, test.input)
 
 				out = out[:len(out)-1]
-				testutil.Equals(t, test.expected, out, "%d: input %q", i, test.input)
+				require.Equal(t, test.expected, out, "%d: input %q", i, test.input)
 			}
 		})
 	}

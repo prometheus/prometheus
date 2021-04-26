@@ -17,9 +17,9 @@ import (
 	"testing"
 
 	"github.com/prometheus/common/model"
+	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestRelabel(t *testing.T) {
@@ -235,6 +235,24 @@ func TestRelabel(t *testing.T) {
 		},
 		{
 			input: labels.FromMap(map[string]string{
+				"a": "foo\nbar",
+			}),
+			relabel: []*Config{
+				{
+					SourceLabels: model.LabelNames{"a"},
+					TargetLabel:  "b",
+					Separator:    ";",
+					Action:       HashMod,
+					Modulus:      1000,
+				},
+			},
+			output: labels.FromMap(map[string]string{
+				"a": "foo\nbar",
+				"b": "734",
+			}),
+		},
+		{
+			input: labels.FromMap(map[string]string{
 				"a":  "foo",
 				"b1": "bar",
 				"b2": "baz",
@@ -413,8 +431,24 @@ func TestRelabel(t *testing.T) {
 	}
 
 	for _, test := range tests {
+		// Setting default fields, mimicking the behaviour in Prometheus.
+		for _, cfg := range test.relabel {
+			if cfg.Action == "" {
+				cfg.Action = DefaultRelabelConfig.Action
+			}
+			if cfg.Separator == "" {
+				cfg.Separator = DefaultRelabelConfig.Separator
+			}
+			if cfg.Regex.original == "" {
+				cfg.Regex = DefaultRelabelConfig.Regex
+			}
+			if cfg.Replacement == "" {
+				cfg.Replacement = DefaultRelabelConfig.Replacement
+			}
+		}
+
 		res := Process(test.input, test.relabel...)
-		testutil.Equals(t, test.output, res)
+		require.Equal(t, test.output, res)
 	}
 }
 
@@ -440,7 +474,7 @@ func TestTargetLabelValidity(t *testing.T) {
 		{"foo${bar}foo", true},
 	}
 	for _, test := range tests {
-		testutil.Assert(t, relabelTarget.Match([]byte(test.str)) == test.valid,
+		require.Equal(t, test.valid, relabelTarget.Match([]byte(test.str)),
 			"Expected %q to be %v", test.str, test.valid)
 	}
 }

@@ -19,12 +19,15 @@ import (
 	"io/ioutil"
 	"net/http"
 	"sort"
+	"strings"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
+
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/textparse"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -482,4 +485,36 @@ func labelsToLabelsProto(labels labels.Labels, buf []prompb.Label) []prompb.Labe
 		})
 	}
 	return result
+}
+
+// metricTypeToMetricTypeProto transforms a Prometheus metricType into prompb metricType. Since the former is a string we need to transform it to an enum.
+func metricTypeToMetricTypeProto(t textparse.MetricType) prompb.MetricMetadata_MetricType {
+	mt := strings.ToUpper(string(t))
+	v, ok := prompb.MetricMetadata_MetricType_value[mt]
+	if !ok {
+		return prompb.MetricMetadata_UNKNOWN
+	}
+
+	return prompb.MetricMetadata_MetricType(v)
+}
+
+// DecodeWriteRequest from an io.Reader into a prompb.WriteRequest, handling
+// snappy decompression.
+func DecodeWriteRequest(r io.Reader) (*prompb.WriteRequest, error) {
+	compressed, err := ioutil.ReadAll(r)
+	if err != nil {
+		return nil, err
+	}
+
+	reqBuf, err := snappy.Decode(nil, compressed)
+	if err != nil {
+		return nil, err
+	}
+
+	var req prompb.WriteRequest
+	if err := proto.Unmarshal(reqBuf, &req); err != nil {
+		return nil, err
+	}
+
+	return &req, nil
 }

@@ -8,7 +8,7 @@ jobs:
     if: github.event.action == 'funcbench_start'
     runs-on: ubuntu-latest
     env:
-      AUTH_FILE: ${{ secrets.TEST_INFRA_GKE_AUTH }}
+      AUTH_FILE: ${{ secrets.TEST_INFRA_PROVIDER_AUTH }}
       BRANCH: ${{ github.event.client_payload.BRANCH }}
       BENCH_FUNC_REGEX: ${{ github.event.client_payload.BENCH_FUNC_REGEX }}
       PACKAGE_PATH: ${{ github.event.client_payload.PACKAGE_PATH }}
@@ -17,8 +17,9 @@ jobs:
       GITHUB_REPO: prometheus
       GITHUB_STATUS_TARGET_URL: https://github.com/${{github.repository}}/actions/runs/${{github.run_id}}
       LAST_COMMIT_SHA: ${{ github.event.client_payload.LAST_COMMIT_SHA }}
-      PROJECT_ID: macro-mile-203600
+      GKE_PROJECT_ID: macro-mile-203600
       PR_NUMBER: ${{ github.event.client_payload.PR_NUMBER }}
+      PROVIDER: gke
       ZONE: europe-west3-a
     steps:
     - name: Update status to pending

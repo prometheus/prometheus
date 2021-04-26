@@ -17,7 +17,7 @@ import (
 	"regexp/syntax"
 	"testing"
 
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/stretchr/testify/require"
 )
 
 func TestNewFastRegexMatcher(t *testing.T) {
@@ -54,8 +54,8 @@ func TestNewFastRegexMatcher(t *testing.T) {
 
 	for _, c := range cases {
 		m, err := NewFastRegexMatcher(c.regex)
-		testutil.Ok(t, err)
-		testutil.Equals(t, c.expected, m.MatchString(c.value))
+		require.NoError(t, err)
+		require.Equal(t, c.expected, m.MatchString(c.value))
 	}
 }
 
@@ -76,15 +76,23 @@ func TestOptimizeConcatRegex(t *testing.T) {
 		{regex: ".*foo.*bar.*", prefix: "", suffix: "", contains: "foo"},
 		{regex: ".*(foo|bar).*", prefix: "", suffix: "", contains: ""},
 		{regex: ".*[abc].*", prefix: "", suffix: "", contains: ""},
+		{regex: ".*((?i)abc).*", prefix: "", suffix: "", contains: ""},
+		{regex: ".*(?i:abc).*", prefix: "", suffix: "", contains: ""},
+		{regex: "(?i:abc).*", prefix: "", suffix: "", contains: ""},
+		{regex: ".*(?i:abc)", prefix: "", suffix: "", contains: ""},
+		{regex: ".*(?i:abc)def.*", prefix: "", suffix: "", contains: "def"},
+		{regex: "(?i).*(?-i:abc)def", prefix: "", suffix: "", contains: "abc"},
+		{regex: ".*(?msU:abc).*", prefix: "", suffix: "", contains: "abc"},
+		{regex: "[aA]bc.*", prefix: "", suffix: "", contains: "bc"},
 	}
 
 	for _, c := range cases {
 		parsed, err := syntax.Parse(c.regex, syntax.Perl)
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 
 		prefix, suffix, contains := optimizeConcatRegex(parsed)
-		testutil.Equals(t, c.prefix, prefix)
-		testutil.Equals(t, c.suffix, suffix)
-		testutil.Equals(t, c.contains, contains)
+		require.Equal(t, c.prefix, prefix)
+		require.Equal(t, c.suffix, suffix)
+		require.Equal(t, c.contains, contains)
 	}
 }

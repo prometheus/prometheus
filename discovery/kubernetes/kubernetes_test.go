@@ -20,11 +20,13 @@ import (
 	"time"
 
 	"github.com/go-kit/kit/log"
+	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/cache"
 
+	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -47,7 +49,7 @@ func makeDiscovery(role Role, nsDiscovery NamespaceDiscovery, objects ...runtime
 
 type k8sDiscoveryTest struct {
 	// discovery is instance of discovery.Discoverer
-	discovery discoverer
+	discovery discovery.Discoverer
 	// beforeRun runs before discoverer run
 	beforeRun func()
 	// afterStart runs after discoverer has synced
@@ -149,7 +151,7 @@ func requireTargetGroups(t *testing.T, expected, res map[string]*targetgroup.Gro
 		panic(err)
 	}
 
-	testutil.Equals(t, string(b1), string(b2))
+	require.Equal(t, string(b1), string(b2))
 }
 
 type hasSynced interface {
