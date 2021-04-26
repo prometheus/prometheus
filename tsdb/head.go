@@ -2538,6 +2538,23 @@ type memSafeIterator struct {
 	buf   [4]sample
 }
 
+func (it *memSafeIterator) Seek(t int64) bool {
+	if it.Err() != nil {
+		return false
+	}
+
+	ts, _ := it.At()
+
+	for t > ts || it.i == -1 {
+		if !it.Next() {
+			return false
+		}
+		ts, _ = it.At()
+	}
+
+	return true
+}
+
 func (it *memSafeIterator) Next() bool {
 	if it.i+1 >= it.stopAfter {
 		return false
