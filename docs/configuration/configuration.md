@@ -475,7 +475,8 @@ authorization:
 
 # Optional OAuth 2.0 configuration.
 # Cannot be used at the same time as basic_auth or authorization.
-oauth2: [ <oauth2> ]
+oauth2: 
+  [ <oauth2> ]
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
@@ -571,7 +572,8 @@ authorization:
 
 # Optional OAuth 2.0 configuration.
 # Cannot be used at the same time as basic_auth or authorization.
-oauth2: [ <oauth2> ]
+oauth2: 
+  [ <oauth2> ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <bool> | default = true ]
@@ -733,7 +735,8 @@ authorization:
 
 # Optional OAuth 2.0 configuration.
 # Cannot be used at the same time as basic_auth or authorization.
-oauth2: [ <oauth2> ]
+oauth2: 
+  [ <oauth2> ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <bool> | default = true ]
@@ -1145,7 +1148,8 @@ authorization:
 
 # Optional OAuth 2.0 configuration.
 # Cannot be used at the same time as basic_auth or authorization.
-oauth2: [ <oauth2> ]
+oauth2: 
+  [ <oauth2> ]
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
@@ -1320,7 +1324,8 @@ authorization:
 
 # Optional OAuth 2.0 configuration.
 # Cannot be used at the same time as basic_auth or authorization.
-oauth2: [ <oauth2> ]
+oauth2: 
+  [ <oauth2> ]
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
@@ -1424,7 +1429,8 @@ authorization:
 
 # Optional OAuth 2.0 configuration.
 # Cannot be used at the same time as basic_auth or authorization.
-oauth2: [ <oauth2> ]
+oauth2: 
+  [ <oauth2> ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <bool> | default = true ]
@@ -1626,7 +1632,8 @@ authorization:
 
 # Optional OAuth 2.0 configuration.
 # Cannot be used at the same time as basic_auth or authorization.
-oauth2: [ <oauth2> ]
+oauth2: 
+  [ <oauth2> ]
 
 # Configures the scrape request's TLS settings.
 tls_config:
@@ -1908,7 +1915,8 @@ authorization:
 
 # Optional OAuth 2.0 configuration.
 # Cannot be used at the same time as basic_auth or authorization.
-oauth2: [ <oauth2> ]
+oauth2: 
+  [ <oauth2> ]
 
 # Configures the scrape request's TLS settings.
 tls_config:
@@ -2071,7 +2079,8 @@ sigv4:
 
 # Optional OAuth 2.0 configuration.
 # Cannot be used at the same time as basic_auth, authorization, or sigv4.
-oauth2: [ <oauth2> ]
+oauth2: 
+  [ <oauth2> ]
 
 # Configures the remote write request's TLS settings.
 tls_config:
@@ -2169,7 +2178,8 @@ authorization:
 
 # Optional OAuth 2.0 configuration.
 # Cannot be used at the same time as basic_auth or authorization.
-oauth2: [ <oauth2> ]
+oauth2: 
+  [ <oauth2> ]
 
 # Configures the remote read request's TLS settings.
 tls_config:
@@ -2200,7 +2210,7 @@ client_id: <string>
 # It is mutually exclusive with `client_secret`.
 [ client_secret_file: <filename> ]
 
-# Specify scopes for the token request.
+# Scopes for the token request.
 scopes:
   [ - <string> ... ]
 
