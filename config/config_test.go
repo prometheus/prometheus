@@ -995,7 +995,7 @@ var expectedErrors = []struct {
 		errMsg:   "at most one of bearer_token & bearer_token_file must be configured",
 	}, {
 		filename: "bearertoken_basicauth.bad.yml",
-		errMsg:   "at most one of basic_auth, bearer_token & bearer_token_file must be configured",
+		errMsg:   "at most one of basic_auth, oauth2, bearer_token & bearer_token_file must be configured",
 	}, {
 		filename: "kubernetes_http_config_without_api_server.bad.yml",
 		errMsg:   "to use custom HTTP client configuration please provide the 'api_server' URL explicitly",
@@ -1031,10 +1031,10 @@ var expectedErrors = []struct {
 		errMsg:   "invalid selector: 'metadata.status-Running'; can't understand 'metadata.status-Running'",
 	}, {
 		filename: "kubernetes_bearertoken_basicauth.bad.yml",
-		errMsg:   "at most one of basic_auth, bearer_token & bearer_token_file must be configured",
+		errMsg:   "at most one of basic_auth, oauth2, bearer_token & bearer_token_file must be configured",
 	}, {
 		filename: "kubernetes_authorization_basicauth.bad.yml",
-		errMsg:   "at most one of basic_auth & authorization must be configured",
+		errMsg:   "at most one of basic_auth, oauth2 & authorization must be configured",
 	}, {
 		filename: "marathon_no_servers.bad.yml",
 		errMsg:   "marathon_sd: must contain at least one Marathon server",
@@ -1079,7 +1079,7 @@ var expectedErrors = []struct {
 		errMsg:   `x-prometheus-remote-write-version is a reserved header. It must not be changed`,
 	}, {
 		filename: "remote_write_authorization_header.bad.yml",
-		errMsg:   `authorization header must be changed via the basic_auth or authorization parameter`,
+		errMsg:   `authorization header must be changed via the basic_auth, authorization, oauth2, or sigv4 parameter`,
 	}, {
 		filename: "remote_write_url_missing.bad.yml",
 		errMsg:   `url for remote_write is empty`,
