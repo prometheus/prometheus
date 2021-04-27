@@ -90,9 +90,15 @@ var expectedConf = &Config{
 					Action:       relabel.Drop,
 				},
 			},
-			QueueConfig:      DefaultQueueConfig,
-			MetadataConfig:   DefaultMetadataConfig,
-			HTTPClientConfig: config.DefaultHTTPClientConfig,
+			QueueConfig:    DefaultQueueConfig,
+			MetadataConfig: DefaultMetadataConfig,
+			HTTPClientConfig: config.HTTPClientConfig{
+				OAuth2: config.OAuth2{
+					ClientID:     "123",
+					ClientSecret: "456",
+					TokenURL:     "http://remote1/auth",
+				},
+			},
 		},
 		{
 			URL:            mustParseURL("http://remote2/push"),
