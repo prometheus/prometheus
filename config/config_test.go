@@ -93,11 +93,12 @@ var expectedConf = &Config{
 			QueueConfig:    DefaultQueueConfig,
 			MetadataConfig: DefaultMetadataConfig,
 			HTTPClientConfig: config.HTTPClientConfig{
-				OAuth2: config.OAuth2{
+				OAuth2: &config.OAuth2{
 					ClientID:     "123",
 					ClientSecret: "456",
 					TokenURL:     "http://remote1/auth",
 				},
+				FollowRedirects: true,
 			},
 		},
 		{
@@ -892,7 +893,7 @@ func TestElideSecrets(t *testing.T) {
 	yamlConfig := string(config)
 
 	matches := secretRe.FindAllStringIndex(yamlConfig, -1)
-	require.Equal(t, 12, len(matches), "wrong number of secret matches found")
+	require.Equal(t, 13, len(matches), "wrong number of secret matches found")
 	require.NotContains(t, yamlConfig, "mysecret",
 		"yaml marshal reveals authentication credentials.")
 }
