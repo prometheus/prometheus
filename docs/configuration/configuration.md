@@ -2073,7 +2073,6 @@ sigv4:
 # Cannot be used at the same time as basic_auth, authorization, or sigv4.
 oauth2: [ <oauth2> ]
 
-
 # Configures the remote write request's TLS settings.
 tls_config:
   [ <tls_config> ]
@@ -2194,11 +2193,11 @@ Prometheus fetches an access token from the specified endpoint with
 the given client access and secret keys.
 
 ```yaml
-[ client_id: <string> ]
+client_id: <string>
 [ client_secret: <secret> ]
 
-# Read the client secret from a file instead of specifying the value
-# in `client_secret`.
+# Read the client secret from a file.
+# It is mutually exclusive with `client_secret`.
 [ client_secret_file: <filename> ]
 
 # Specify scopes for the token request.
@@ -2206,7 +2205,7 @@ scopes:
   [ - <string> ... ]
 
 # The URL to fetch the token from.
-[ token_url: <string> ]
+token_url: <string>
 
 # Optional parameters to append to the token URL.
 endpoint_params:
