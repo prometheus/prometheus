@@ -23,6 +23,7 @@ import (
 	"runtime"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -2024,6 +2025,31 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64) (float64, bool) {
 	panic(errors.Errorf("operator %q not allowed for operations between Vectors", op))
 }
 
+// openMetricsFloatString formats a float inline with the OpenMetrics rendering
+// for floats.
+func openMetricsFloatString(f float64) string {
+	switch {
+	case f == 1:
+		return "1.0"
+	case f == 0:
+		return "0.0"
+	case f == -1:
+		return "-1"
+	case math.IsNaN(f):
+		return "NaN"
+	case math.IsInf(f, +1):
+		return "+Inf"
+	case math.IsInf(f, -1):
+		return "-Inf"
+	default:
+		str := strconv.FormatFloat(f, 'g', -1, 64)
+		if !strings.ContainsAny(str, "e.") {
+			str += ".0"
+		}
+		return str
+	}
+}
+
 type groupedAggregation struct {
 	labels      labels.Labels
 	value       float64
@@ -2071,7 +2097,7 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 
 		if op == parser.COUNT_VALUES {
 			lb.Reset(metric)
-			lb.Set(valueLabel, strconv.FormatFloat(s.V, 'f', -1, 64))
+			lb.Set(valueLabel, openMetricsFloatString(s.V))
 			metric = lb.Labels()
 		}
 
