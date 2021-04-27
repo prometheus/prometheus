@@ -480,18 +480,18 @@ authorization:
 oauth2:
   [ client_id: <string> ]
   [ client_secret: <secret> ]
-	
+
   # Read the client secret from a file instead of specifying the value
   # in `client_secret`.
   [ client_secret_file: <string> ]
-	
+
   # Optionally specify scopes for the token.
   scopes:
     [ - <string> ... ]
-	
+
   # The URL to fetch the token from.
   [ token_url: <string> ]
-	
+
   # Optional parameters to append to the token URL.
   # Takes the form of `- name: value`.
   endpoint_params:
@@ -596,18 +596,18 @@ authorization:
 oauth2:
   [ client_id: <string> ]
   [ client_secret: <secret> ]
-	
+
   # Read the client secret from a file instead of specifying the value
   # in `client_secret`.
   [ client_secret_file: <string> ]
-	
+
   # Optionally specify scopes for the token.
   scopes:
     [ - <string> ... ]
-	
+
   # The URL to fetch the token from.
   [ token_url: <string> ]
-	
+
   # Optional parameters to append to the token URL.
   # Takes the form of `- name: value`.
   endpoint_params:
@@ -778,18 +778,18 @@ authorization:
 oauth2:
   [ client_id: <string> ]
   [ client_secret: <secret> ]
-	
+
   # Read the client secret from a file instead of specifying the value
   # in `client_secret`.
   [ client_secret_file: <string> ]
-	
+
   # Optionally specify scopes for the token.
   scopes:
     [ - <string> ... ]
-	
+
   # The URL to fetch the token from.
   [ token_url: <string> ]
-	
+
   # Optional parameters to append to the token URL.
   # Takes the form of `- name: value`.
   endpoint_params:
@@ -1210,18 +1210,18 @@ authorization:
 oauth2:
   [ client_id: <string> ]
   [ client_secret: <secret> ]
-	
+
   # Read the client secret from a file instead of specifying the value
   # in `client_secret`.
   [ client_secret_file: <string> ]
-	
+
   # Optionally specify scopes for the token.
   scopes:
     [ - <string> ... ]
-	
+
   # The URL to fetch the token from.
   [ token_url: <string> ]
-	
+
   # Optional parameters to append to the token URL.
   # Takes the form of `- name: value`.
   endpoint_params:
@@ -1405,18 +1405,18 @@ authorization:
 oauth2:
   [ client_id: <string> ]
   [ client_secret: <secret> ]
-	
+
   # Read the client secret from a file instead of specifying the value
   # in `client_secret`.
   [ client_secret_file: <string> ]
-	
+
   # Optionally specify scopes for the token.
   scopes:
     [ - <string> ... ]
-	
+
   # The URL to fetch the token from.
   [ token_url: <string> ]
-	
+
   # Optional parameters to append to the token URL.
   # Takes the form of `- name: value`.
   endpoint_params:
@@ -1529,18 +1529,18 @@ authorization:
 oauth2:
   [ client_id: <string> ]
   [ client_secret: <secret> ]
-	
+
   # Read the client secret from a file instead of specifying the value
   # in `client_secret`.
   [ client_secret_file: <string> ]
-	
+
   # Optionally specify scopes for the token.
   scopes:
     [ - <string> ... ]
-	
+
   # The URL to fetch the token from.
   [ token_url: <string> ]
-	
+
   # Optional parameters to append to the token URL.
   # Takes the form of `- name: value`.
   endpoint_params:
@@ -1751,18 +1751,18 @@ authorization:
 oauth2:
   [ client_id: <string> ]
   [ client_secret: <secret> ]
-	
+
   # Read the client secret from a file instead of specifying the value
   # in `client_secret`.
   [ client_secret_file: <string> ]
-	
+
   # Optionally specify scopes for the token.
   scopes:
     [ - <string> ... ]
-	
+
   # The URL to fetch the token from.
   [ token_url: <string> ]
-	
+
   # Optional parameters to append to the token URL.
   # Takes the form of `- name: value`.
   endpoint_params:
@@ -2053,18 +2053,18 @@ authorization:
 oauth2:
   [ client_id: <string> ]
   [ client_secret: <secret> ]
-	
+
   # Read the client secret from a file instead of specifying the value
   # in `client_secret`.
   [ client_secret_file: <string> ]
-	
+
   # Optionally specify scopes for the token.
   scopes:
     [ - <string> ... ]
-	
+
   # The URL to fetch the token from.
   [ token_url: <string> ]
-	
+
   # Optional parameters to append to the token URL.
   # Takes the form of `- name: value`.
   endpoint_params:
@@ -2236,23 +2236,23 @@ sigv4:
 oauth2:
   [ client_id: <string> ]
   [ client_secret: <secret> ]
-	
+
   # Read the client secret from a file instead of specifying the value
   # in `client_secret`.
   [ client_secret_file: <string> ]
-	
+
   # Optionally specify scopes for the token.
   scopes:
     [ - <string> ... ]
-	
+
   # The URL to fetch the token from.
   [ token_url: <string> ]
-	
+
   # Optional parameters to append to the token URL.
   # Takes the form of `- name: value`.
   endpoint_params:
     [ <string>: <string> ... ]
-	
+
 
 # Configures the remote write request's TLS settings.
 tls_config:
@@ -2355,18 +2355,18 @@ authorization:
 oauth2:
   [ client_id: <string> ]
   [ client_secret: <secret> ]
-	
+
   # Read the client secret from a file instead of specifying the value
   # in `client_secret`.
   [ client_secret_file: <string> ]
-	
+
   # Optionally specify scopes for the token.
   scopes:
     [ - <string> ... ]
-	
+
   # The URL to fetch the token from.
   [ token_url: <string> ]
-	
+
   # Optional parameters to append to the token URL.
   # Takes the form of `- name: value`.
   endpoint_params:
