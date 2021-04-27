@@ -473,29 +473,9 @@ authorization:
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
-# Optionally configures OAuth 2.0 authentication using the
-# client credentials grant type. Fetches the token from the
-# specified endpoint using the client access and secret keys.
-# Cannot be used at the same time as basic_auth, authorization, or sigv4.
-oauth2:
-  [ client_id: <string> ]
-  [ client_secret: <secret> ]
-
-  # Read the client secret from a file instead of specifying the value
-  # in `client_secret`.
-  [ client_secret_file: <string> ]
-
-  # Optionally specify scopes for the token.
-  scopes:
-    [ - <string> ... ]
-
-  # The URL to fetch the token from.
-  [ token_url: <string> ]
-
-  # Optional parameters to append to the token URL.
-  # Takes the form of `- name: value`.
-  endpoint_params:
-    [ <string>: <string> ... ]
+# Optionally configures OAuth 2.0 authentication.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2: [ <oauth2> ]
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
@@ -589,29 +569,9 @@ authorization:
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
-# Optionally configures OAuth 2.0 authentication using the
-# client credentials grant type. Fetches the token from the
-# specified endpoint using the client access and secret keys.
-# Cannot be used at the same time as basic_auth, authorization, or sigv4.
-oauth2:
-  [ client_id: <string> ]
-  [ client_secret: <secret> ]
-
-  # Read the client secret from a file instead of specifying the value
-  # in `client_secret`.
-  [ client_secret_file: <string> ]
-
-  # Optionally specify scopes for the token.
-  scopes:
-    [ - <string> ... ]
-
-  # The URL to fetch the token from.
-  [ token_url: <string> ]
-
-  # Optional parameters to append to the token URL.
-  # Takes the form of `- name: value`.
-  endpoint_params:
-    [ <string>: <string> ... ]
+# Optionally configures OAuth 2.0 authentication.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2: [ <oauth2> ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <bool> | default = true ]
@@ -771,29 +731,9 @@ authorization:
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
-# Optionally configures OAuth 2.0 authentication using the
-# client credentials grant type. Fetches the token from the
-# specified endpoint using the client access and secret keys.
-# Cannot be used at the same time as basic_auth, authorization, or sigv4.
-oauth2:
-  [ client_id: <string> ]
-  [ client_secret: <secret> ]
-
-  # Read the client secret from a file instead of specifying the value
-  # in `client_secret`.
-  [ client_secret_file: <string> ]
-
-  # Optionally specify scopes for the token.
-  scopes:
-    [ - <string> ... ]
-
-  # The URL to fetch the token from.
-  [ token_url: <string> ]
-
-  # Optional parameters to append to the token URL.
-  # Takes the form of `- name: value`.
-  endpoint_params:
-    [ <string>: <string> ... ]
+# Optionally configures OAuth 2.0 authentication.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2: [ <oauth2> ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <bool> | default = true ]
@@ -1203,29 +1143,9 @@ authorization:
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
-# Optionally configures OAuth 2.0 authentication using the
-# client credentials grant type. Fetches the token from the
-# specified endpoint using the client access and secret keys.
-# Cannot be used at the same time as basic_auth, authorization, or sigv4.
-oauth2:
-  [ client_id: <string> ]
-  [ client_secret: <secret> ]
-
-  # Read the client secret from a file instead of specifying the value
-  # in `client_secret`.
-  [ client_secret_file: <string> ]
-
-  # Optionally specify scopes for the token.
-  scopes:
-    [ - <string> ... ]
-
-  # The URL to fetch the token from.
-  [ token_url: <string> ]
-
-  # Optional parameters to append to the token URL.
-  # Takes the form of `- name: value`.
-  endpoint_params:
-    [ <string>: <string> ... ]
+# Optionally configures OAuth 2.0 authentication.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2: [ <oauth2> ]
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
@@ -1398,29 +1318,9 @@ authorization:
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
-# Optionally configures OAuth 2.0 authentication using the
-# client credentials grant type. Fetches the token from the
-# specified endpoint using the client access and secret keys.
-# Cannot be used at the same time as basic_auth, authorization, or sigv4.
-oauth2:
-  [ client_id: <string> ]
-  [ client_secret: <secret> ]
-
-  # Read the client secret from a file instead of specifying the value
-  # in `client_secret`.
-  [ client_secret_file: <string> ]
-
-  # Optionally specify scopes for the token.
-  scopes:
-    [ - <string> ... ]
-
-  # The URL to fetch the token from.
-  [ token_url: <string> ]
-
-  # Optional parameters to append to the token URL.
-  # Takes the form of `- name: value`.
-  endpoint_params:
-    [ <string>: <string> ... ]
+# Optionally configures OAuth 2.0 authentication.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2: [ <oauth2> ]
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
@@ -1522,29 +1422,9 @@ authorization:
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
-# Optionally configures OAuth 2.0 authentication using the
-# client credentials grant type. Fetches the token from the
-# specified endpoint using the client access and secret keys.
-# Cannot be used at the same time as basic_auth, authorization, or sigv4.
-oauth2:
-  [ client_id: <string> ]
-  [ client_secret: <secret> ]
-
-  # Read the client secret from a file instead of specifying the value
-  # in `client_secret`.
-  [ client_secret_file: <string> ]
-
-  # Optionally specify scopes for the token.
-  scopes:
-    [ - <string> ... ]
-
-  # The URL to fetch the token from.
-  [ token_url: <string> ]
-
-  # Optional parameters to append to the token URL.
-  # Takes the form of `- name: value`.
-  endpoint_params:
-    [ <string>: <string> ... ]
+# Optionally configures OAuth 2.0 authentication.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2: [ <oauth2> ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <bool> | default = true ]
@@ -1744,29 +1624,9 @@ authorization:
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
-# Optionally configures OAuth 2.0 authentication using the
-# client credentials grant type. Fetches the token from the
-# specified endpoint using the client access and secret keys.
-# Cannot be used at the same time as basic_auth, authorization, or sigv4.
-oauth2:
-  [ client_id: <string> ]
-  [ client_secret: <secret> ]
-
-  # Read the client secret from a file instead of specifying the value
-  # in `client_secret`.
-  [ client_secret_file: <string> ]
-
-  # Optionally specify scopes for the token.
-  scopes:
-    [ - <string> ... ]
-
-  # The URL to fetch the token from.
-  [ token_url: <string> ]
-
-  # Optional parameters to append to the token URL.
-  # Takes the form of `- name: value`.
-  endpoint_params:
-    [ <string>: <string> ... ]
+# Optionally configures OAuth 2.0 authentication.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2: [ <oauth2> ]
 
 # Configures the scrape request's TLS settings.
 tls_config:
@@ -2046,29 +1906,9 @@ authorization:
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
-# Optionally configures OAuth 2.0 authentication using the
-# client credentials grant type. Fetches the token from the
-# specified endpoint using the client access and secret keys.
-# Cannot be used at the same time as basic_auth, authorization, or sigv4.
-oauth2:
-  [ client_id: <string> ]
-  [ client_secret: <secret> ]
-
-  # Read the client secret from a file instead of specifying the value
-  # in `client_secret`.
-  [ client_secret_file: <string> ]
-
-  # Optionally specify scopes for the token.
-  scopes:
-    [ - <string> ... ]
-
-  # The URL to fetch the token from.
-  [ token_url: <string> ]
-
-  # Optional parameters to append to the token URL.
-  # Takes the form of `- name: value`.
-  endpoint_params:
-    [ <string>: <string> ... ]
+# Optionally configures OAuth 2.0 authentication.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2: [ <oauth2> ]
 
 # Configures the scrape request's TLS settings.
 tls_config:
@@ -2229,29 +2069,9 @@ sigv4:
   # AWS Role ARN, an alternative to using AWS API keys.
   [ role_arn: <string> ]
 
-# Optionally configures OAuth 2.0 authentication using the
-# client credentials grant type. Fetches the token from the
-# specified endpoint using the client access and secret keys.
+# Optionally configures OAuth 2.0 authentication.
 # Cannot be used at the same time as basic_auth, authorization, or sigv4.
-oauth2:
-  [ client_id: <string> ]
-  [ client_secret: <secret> ]
-
-  # Read the client secret from a file instead of specifying the value
-  # in `client_secret`.
-  [ client_secret_file: <string> ]
-
-  # Optionally specify scopes for the token.
-  scopes:
-    [ - <string> ... ]
-
-  # The URL to fetch the token from.
-  [ token_url: <string> ]
-
-  # Optional parameters to append to the token URL.
-  # Takes the form of `- name: value`.
-  endpoint_params:
-    [ <string>: <string> ... ]
+oauth2: [ <oauth2> ]
 
 
 # Configures the remote write request's TLS settings.
@@ -2348,29 +2168,10 @@ authorization:
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
-# Optionally configures OAuth 2.0 authentication using the
-# client credentials grant type. Fetches the token from the
-# specified endpoint using the client access and secret keys.
-# Cannot be used at the same time as basic_auth, authorization, or sigv4.
-oauth2:
-  [ client_id: <string> ]
-  [ client_secret: <secret> ]
+# Optionally configures OAuth 2.0 authentication.
+# Cannot be used at the same time as basic_auth, or authorization.
+oauth2: [ <oauth2> ]
 
-  # Read the client secret from a file instead of specifying the value
-  # in `client_secret`.
-  [ client_secret_file: <string> ]
-
-  # Optionally specify scopes for the token.
-  scopes:
-    [ - <string> ... ]
-
-  # The URL to fetch the token from.
-  [ token_url: <string> ]
-
-  # Optional parameters to append to the token URL.
-  # Takes the form of `- name: value`.
-  endpoint_params:
-    [ <string>: <string> ... ]
 
 # Configures the remote read request's TLS settings.
 tls_config:
@@ -2386,3 +2187,28 @@ tls_config:
 There is a list of
 [integrations](https://prometheus.io/docs/operating/integrations/#remote-endpoints-and-storage)
 with this feature.
+
+### `oauth2`
+
+OAuth 2.0 authentication using the client credentials grant type.
+Fetches the token from the specified endpoint with the client access and secret keys.
+
+```yaml
+[ client_id: <string> ]
+[ client_secret: <secret> ]
+
+# Read the client secret from a file instead of specifying the value
+# in `client_secret`.
+[ client_secret_file: <filename> ]
+
+# Optionally specify scopes for the token.
+scopes:
+  [ - <string> ... ]
+
+# The URL to fetch the token from.
+  [ token_url: <string> ]
+
+# Optional parameters to append to the token URL.
+endpoint_params:
+  [ <string>: <string> ... ]
+```
