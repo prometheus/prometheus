@@ -2206,7 +2206,7 @@ scopes:
   [ - <string> ... ]
 
 # The URL to fetch the token from.
-  [ token_url: <string> ]
+[ token_url: <string> ]
 
 # Optional parameters to append to the token URL.
 endpoint_params:
