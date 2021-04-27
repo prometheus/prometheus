@@ -473,7 +473,7 @@ authorization:
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
-# Optionally configures OAuth 2.0 authentication.
+# Optional OAuth 2.0 configuration.
 # Cannot be used at the same time as basic_auth or authorization.
 oauth2: [ <oauth2> ]
 
@@ -569,7 +569,7 @@ authorization:
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
-# Optionally configures OAuth 2.0 authentication.
+# Optional OAuth 2.0 configuration.
 # Cannot be used at the same time as basic_auth or authorization.
 oauth2: [ <oauth2> ]
 
@@ -731,7 +731,7 @@ authorization:
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
-# Optionally configures OAuth 2.0 authentication.
+# Optional OAuth 2.0 configuration.
 # Cannot be used at the same time as basic_auth or authorization.
 oauth2: [ <oauth2> ]
 
@@ -1143,7 +1143,7 @@ authorization:
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
-# Optionally configures OAuth 2.0 authentication.
+# Optional OAuth 2.0 configuration.
 # Cannot be used at the same time as basic_auth or authorization.
 oauth2: [ <oauth2> ]
 
@@ -1318,7 +1318,7 @@ authorization:
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
-# Optionally configures OAuth 2.0 authentication.
+# Optional OAuth 2.0 configuration.
 # Cannot be used at the same time as basic_auth or authorization.
 oauth2: [ <oauth2> ]
 
@@ -1422,7 +1422,7 @@ authorization:
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
-# Optionally configures OAuth 2.0 authentication.
+# Optional OAuth 2.0 configuration.
 # Cannot be used at the same time as basic_auth or authorization.
 oauth2: [ <oauth2> ]
 
@@ -1624,7 +1624,7 @@ authorization:
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
-# Optionally configures OAuth 2.0 authentication.
+# Optional OAuth 2.0 configuration.
 # Cannot be used at the same time as basic_auth or authorization.
 oauth2: [ <oauth2> ]
 
@@ -1906,7 +1906,7 @@ authorization:
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
-# Optionally configures OAuth 2.0 authentication.
+# Optional OAuth 2.0 configuration.
 # Cannot be used at the same time as basic_auth or authorization.
 oauth2: [ <oauth2> ]
 
@@ -2051,7 +2051,7 @@ authorization:
   [ credentials_file: <filename> ]
 
 # Optionally configures AWS's Signature Verification 4 signing process to
-# sign requests. Cannot be set at the same time as basic_auth, authorization or oauth2.
+# sign requests. Cannot be set at the same time as basic_auth, authorization, or oauth2.
 # To use the default credentials from the AWS SDK, use `sigv4: {}`.
 sigv4:
   # The AWS region. If blank, the region from the default credentials chain
@@ -2069,7 +2069,7 @@ sigv4:
   # AWS Role ARN, an alternative to using AWS API keys.
   [ role_arn: <string> ]
 
-# Optionally configures OAuth 2.0 authentication.
+# Optional OAuth 2.0 configuration.
 # Cannot be used at the same time as basic_auth, authorization, or sigv4.
 oauth2: [ <oauth2> ]
 
@@ -2168,10 +2168,9 @@ authorization:
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
-# Optionally configures OAuth 2.0 authentication.
-# Cannot be used at the same time as basic_auth, or authorization.
+# Optional OAuth 2.0 configuration.
+# Cannot be used at the same time as basic_auth or authorization.
 oauth2: [ <oauth2> ]
-
 
 # Configures the remote read request's TLS settings.
 tls_config:
@@ -2191,7 +2190,8 @@ with this feature.
 ### `oauth2`
 
 OAuth 2.0 authentication using the client credentials grant type.
-Fetches the token from the specified endpoint with the client access and secret keys.
+Prometheus fetches an access token from the specified endpoint with 
+the given client access and secret keys.
 
 ```yaml
 [ client_id: <string> ]
@@ -2201,7 +2201,7 @@ Fetches the token from the specified endpoint with the client access and secret 
 # in `client_secret`.
 [ client_secret_file: <filename> ]
 
-# Optionally specify scopes for the token.
+# Specify scopes for the token request.
 scopes:
   [ - <string> ... ]
 
