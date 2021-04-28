@@ -23,7 +23,7 @@ remote_write:
       client_id: "123"
       client_secret: "456"
       token_url: "http://remote1/auth"
-        
+
   - url: http://remote2/push
     name: rw_tls
     tls_config:
