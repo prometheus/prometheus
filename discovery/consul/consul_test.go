@@ -298,6 +298,23 @@ func TestAllServices(t *testing.T) {
 	<-ch
 }
 
+// targetgroup with no targets is emitted if no services were discovered.
+func TestNoTargets(t *testing.T) {
+	stub, config := newServer(t)
+	defer stub.Close()
+	config.ServiceTags = []string{"missing"}
+
+	d := newDiscovery(t, config)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	ch := make(chan []*targetgroup.Group)
+	go d.Run(ctx, ch)
+
+	targets := (<-ch)[0].Targets
+	require.Equal(t, 0, len(targets))
+	cancel()
+}
+
 // Watch only the test service.
 func TestOneService(t *testing.T) {
 	stub, config := newServer(t)
