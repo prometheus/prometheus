@@ -180,6 +180,11 @@ authorization:
   # configured file. It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
+# Optional OAuth 2.0 configuration.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2:
+  [ <oauth2> ]
+
 # Configure whether scrape requests follow HTTP 3xx redirects.
 [ follow_redirects: <bool> | default = true ]
 
@@ -311,6 +316,32 @@ A `tls_config` allows configuring TLS connections.
 
 # Disable validation of the server certificate.
 [ insecure_skip_verify: <boolean> ]
+```
+
+### `oauth2`
+
+OAuth 2.0 authentication using the client credentials grant type.
+Prometheus fetches an access token from the specified endpoint with
+the given client access and secret keys.
+
+```yaml
+client_id: <string>
+[ client_secret: <secret> ]
+
+# Read the client secret from a file.
+# It is mutually exclusive with `client_secret`.
+[ client_secret_file: <filename> ]
+
+# Scopes for the token request.
+scopes:
+  [ - <string> ... ]
+
+# The URL to fetch the token from.
+token_url: <string>
+
+# Optional parameters to append to the token URL.
+endpoint_params:
+  [ <string>: <string> ... ]
 ```
 
 ### `<azure_sd_config>`
@@ -477,6 +508,11 @@ authorization:
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
+# Optional OAuth 2.0 configuration.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2:
+  [ <oauth2> ]
+
 # Optional proxy URL.
 [ proxy_url: <string> ]
 
@@ -568,6 +604,11 @@ authorization:
   # Sets the credentials with the credentials read from the configured file.
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
+
+# Optional OAuth 2.0 configuration.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2:
+  [ <oauth2> ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <bool> | default = true ]
@@ -726,6 +767,11 @@ authorization:
   # Sets the credentials with the credentials read from the configured file.
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
+
+# Optional OAuth 2.0 configuration.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2:
+  [ <oauth2> ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <bool> | default = true ]
@@ -1135,6 +1181,11 @@ authorization:
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
+# Optional OAuth 2.0 configuration.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2:
+  [ <oauth2> ]
+
 # Optional proxy URL.
 [ proxy_url: <string> ]
 
@@ -1306,6 +1357,11 @@ authorization:
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
+# Optional OAuth 2.0 configuration.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2:
+  [ <oauth2> ]
+
 # Optional proxy URL.
 [ proxy_url: <string> ]
 
@@ -1453,6 +1509,11 @@ authorization:
   # Sets the credentials with the credentials read from the configured file.
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
+
+# Optional OAuth 2.0 configuration.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2:
+  [ <oauth2> ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <bool> | default = true ]
@@ -1651,6 +1712,11 @@ authorization:
   # Sets the credentials with the credentials read from the configured file.
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
+
+# Optional OAuth 2.0 configuration.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2:
+  [ <oauth2> ]
 
 # Configures the scrape request's TLS settings.
 tls_config:
@@ -1930,6 +1996,11 @@ authorization:
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
+# Optional OAuth 2.0 configuration.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2:
+  [ <oauth2> ]
+
 # Configures the scrape request's TLS settings.
 tls_config:
   [ <tls_config> ]
@@ -2075,7 +2146,7 @@ authorization:
   [ credentials_file: <filename> ]
 
 # Optionally configures AWS's Signature Verification 4 signing process to
-# sign requests. Cannot be set at the same time as basic_auth or authorization.
+# sign requests. Cannot be set at the same time as basic_auth, authorization, or oauth2.
 # To use the default credentials from the AWS SDK, use `sigv4: {}`.
 sigv4:
   # The AWS region. If blank, the region from the default credentials chain
@@ -2092,6 +2163,11 @@ sigv4:
 
   # AWS Role ARN, an alternative to using AWS API keys.
   [ role_arn: <string> ]
+
+# Optional OAuth 2.0 configuration.
+# Cannot be used at the same time as basic_auth, authorization, or sigv4.
+oauth2:
+  [ <oauth2> ]
 
 # Configures the remote write request's TLS settings.
 tls_config:
@@ -2186,6 +2262,11 @@ authorization:
   # Sets the credentials with the credentials read from the configured file.
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
+
+# Optional OAuth 2.0 configuration.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2:
+  [ <oauth2> ]
 
 # Configures the remote read request's TLS settings.
 tls_config:

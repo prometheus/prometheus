@@ -663,10 +663,10 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 	}
 
 	httpClientConfigAuthEnabled := c.HTTPClientConfig.BasicAuth != nil ||
-		c.HTTPClientConfig.Authorization != nil
+		c.HTTPClientConfig.Authorization != nil || c.HTTPClientConfig.OAuth2 != nil
 
 	if httpClientConfigAuthEnabled && c.SigV4Config != nil {
-		return fmt.Errorf("at most one of basic_auth, authorization, & sigv4 must be configured")
+		return fmt.Errorf("at most one of basic_auth, authorization, oauth2, & sigv4 must be configured")
 	}
 
 	return nil
@@ -675,7 +675,7 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 func validateHeaders(headers map[string]string) error {
 	for header := range headers {
 		if strings.ToLower(header) == "authorization" {
-			return errors.New("authorization header must be changed via the basic_auth or authorization parameter")
+			return errors.New("authorization header must be changed via the basic_auth, authorization, oauth2, or sigv4 parameter")
 		}
 		if _, ok := reservedHeaders[strings.ToLower(header)]; ok {
 			return errors.Errorf("%s is a reserved header. It must not be changed", header)
