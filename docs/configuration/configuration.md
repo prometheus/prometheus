@@ -238,6 +238,10 @@ hetzner_sd_configs:
 kubernetes_sd_configs:
   [ - <kubernetes_sd_config> ... ]
 
+# List of Lightsail service discovery configurations.
+lightsail_sd_configs:
+  [ - <lightsail_sd_config> ... ]
+
 # List of Marathon service discovery configurations.
 marathon_sd_configs:
   [ - <marathon_sd_config> ... ]
@@ -1341,6 +1345,54 @@ for a detailed example of configuring Prometheus for Kubernetes.
 You may wish to check out the 3rd party [Prometheus Operator](https://github.com/coreos/prometheus-operator),
 which automates the Prometheus setup on top of Kubernetes.
 
+### `<lightsail_sd_config>`
+
+Lightsail SD configurations allow retrieving scrape targets from [AWS Lightsail](https://aws.amazon.com/lightsail/)
+instances. The private IP address is used by default, but may be changed to
+the public IP address with relabeling.
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_lightsail_availability_zone`: the availability zone in which the instance is running
+* `__meta_lightsail_blueprint_id`: the Lightsail blueprint ID
+* `__meta_lightsail_bundle_id`: the Lightsail bundle ID
+* `__meta_lightsail_instance_name`: the name of the Lightsail instance
+* `__meta_lightsail_instance_state`: the state of the Lightsail instance
+* `__meta_lightsail_instance_support_code`: the support code of the Lightsail instance
+* `__meta_lightsail_ipv6_addresses`: comma separated list of IPv6 addresses assigned to the instance's network interfaces, if present
+* `__meta_lightsail_private_ip`: the private IP address of the instance
+* `__meta_lightsail_public_ip`: the public IP address of the instance, if available
+* `__meta_lightsail_tag_<tagkey>`: each tag value of the instance
+
+See below for the configuration options for Lightsail discovery:
+
+```yaml
+# The information to access the Lightsail API.
+
+# The AWS region. If blank, the region from the instance metadata is used.
+[ region: <string> ]
+
+# Custom endpoint to be used.
+[ endpoint: <string> ]
+
+# The AWS API keys. If blank, the environment variables `AWS_ACCESS_KEY_ID`
+# and `AWS_SECRET_ACCESS_KEY` are used.
+[ access_key: <string> ]
+[ secret_key: <secret> ]
+# Named AWS profile used to connect to the API.
+[ profile: <string> ]
+
+# AWS Role ARN, an alternative to using AWS API keys.
+[ role_arn: <string> ]
+
+# Refresh interval to re-read the instance list.
+[ refresh_interval: <duration> | default = 60s ]
+
+# The port to scrape metrics from. If using the public IP address, this must
+# instead be specified in the relabeling rule.
+[ port: <int> | default = 80 ]
+```
+
 ### `<marathon_sd_config>`
 
 Marathon SD configurations allow retrieving scrape targets using the
@@ -1935,6 +1987,10 @@ hetzner_sd_configs:
 # List of Kubernetes service discovery configurations.
 kubernetes_sd_configs:
   [ - <kubernetes_sd_config> ... ]
+
+# List of Lightsail service discovery configurations.
+lightsail_sd_configs:
+        [ - <lightsail_sd_config> ... ]
 
 # List of Marathon service discovery configurations.
 marathon_sd_configs:
