@@ -110,7 +110,7 @@ func (c *LightsailSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 	return nil
 }
 
-// Discovery periodically performs Lightsail-SD requests. It implements
+// LightsailDiscovery periodically performs Lightsail-SD requests. It implements
 // the Discoverer interface.
 type LightsailDiscovery struct {
 	*refresh.Discovery
