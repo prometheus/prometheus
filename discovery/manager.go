@@ -89,7 +89,7 @@ func NewManager(ctx context.Context, logger log.Logger, options ...func(*Manager
 	}
 	mgr := &Manager{
 		logger:         logger,
-		syncCh:         make(chan map[string][]*targetgroup.Group),
+		syncCh:         make(chan map[string][]*targetgroup.Group, 1),
 		targets:        make(map[poolKey]map[string]*targetgroup.Group),
 		discoverCancel: []context.CancelFunc{},
 		ctx:            ctx,
