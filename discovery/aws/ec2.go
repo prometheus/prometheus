@@ -73,7 +73,7 @@ func init() {
 	discovery.RegisterConfig(&EC2SDConfig{})
 }
 
-// Filter is the configuration for filtering EC2 instances.
+// EC2Filter is the configuration for filtering EC2 instances.
 type EC2Filter struct {
 	Name   string   `yaml:"name"`
 	Values []string `yaml:"values"`
@@ -128,7 +128,7 @@ func (c *EC2SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	return nil
 }
 
-// Discovery periodically performs EC2-SD requests. It implements
+// EC2Discovery periodically performs EC2-SD requests. It implements
 // the Discoverer interface.
 type EC2Discovery struct {
 	*refresh.Discovery
