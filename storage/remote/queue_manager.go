@@ -73,10 +73,9 @@ type queueManagerMetrics struct {
 	maxNumShards          prometheus.Gauge
 	minNumShards          prometheus.Gauge
 	desiredNumShards      prometheus.Gauge
-	samplesBytesTotal     prometheus.Counter
-	//exemplarsBytesTotal?
-	metadataBytesTotal prometheus.Counter
-	maxSamplesPerSend  prometheus.Gauge
+	sentBytesTotal        prometheus.Counter
+	metadataBytesTotal    prometheus.Counter
+	maxSamplesPerSend     prometheus.Gauge
 }
 
 func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManagerMetrics {
@@ -155,14 +154,14 @@ func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManager
 		Namespace:   namespace,
 		Subsystem:   subsystem,
 		Name:        "samples_dropped_total",
-		Help:        "Total number of samples which were dropped after being read from the WAL before being sent via remote write.",
+		Help:        "Total number of samples which were dropped after being read from the WAL before being sent via remote write, either via relabelling or unintentionally because of an unknown reference ID.",
 		ConstLabels: constLabels,
 	})
 	m.droppedExemplarsTotal = prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace:   namespace,
 		Subsystem:   subsystem,
 		Name:        "exemplars_dropped_total",
-		Help:        "Total number of exemplars which were dropped after being read from the WAL before being sent via remote write.",
+		Help:        "Total number of exemplars which were dropped after being read from the WAL before being sent via remote write, either via relabelling or unintentionally because of an unknown reference ID.",
 		ConstLabels: constLabels,
 	})
 	m.enqueueRetriesTotal = prometheus.NewCounter(prometheus.CounterOpts{
@@ -238,11 +237,11 @@ func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManager
 		Help:        "The number of shards that the queues shard calculation wants to run based on the rate of samples in vs. samples out.",
 		ConstLabels: constLabels,
 	})
-	m.samplesBytesTotal = prometheus.NewCounter(prometheus.CounterOpts{
+	m.sentBytesTotal = prometheus.NewCounter(prometheus.CounterOpts{
 		Namespace:   namespace,
 		Subsystem:   subsystem,
-		Name:        "samples_bytes_total",
-		Help:        "The total number of bytes of samples sent by the queue after compression. Note that when exemplars over remote write is enabled the exemplars included in a remote write request count towards this metric.",
+		Name:        "bytes_total",
+		Help:        "The total number of bytes of data (not metadata) sent by the queue after compression. Note that when exemplars over remote write is enabled the exemplars included in a remote write request count towards this metric.",
 		ConstLabels: constLabels,
 	})
 	m.metadataBytesTotal = prometheus.NewCounter(prometheus.CounterOpts{
@@ -287,7 +286,7 @@ func (m *queueManagerMetrics) register() {
 			m.maxNumShards,
 			m.minNumShards,
 			m.desiredNumShards,
-			m.samplesBytesTotal,
+			m.sentBytesTotal,
 			m.metadataBytesTotal,
 			m.maxSamplesPerSend,
 		)
@@ -317,7 +316,7 @@ func (m *queueManagerMetrics) unregister() {
 		m.reg.Unregister(m.maxNumShards)
 		m.reg.Unregister(m.minNumShards)
 		m.reg.Unregister(m.desiredNumShards)
-		m.reg.Unregister(m.samplesBytesTotal)
+		m.reg.Unregister(m.sentBytesTotal)
 		m.reg.Unregister(m.metadataBytesTotal)
 		m.reg.Unregister(m.maxSamplesPerSend)
 	}
@@ -363,7 +362,7 @@ type QueueManager struct {
 	quit        chan struct{}
 	wg          sync.WaitGroup
 
-	samplesIn, samplesDropped, samplesOut, samplesOutDuration *ewmaRate
+	dataIn, dataDropped, dataOut, dataOutDuration *ewmaRate
 
 	metrics              *queueManagerMetrics
 	interner             *pool
@@ -410,10 +409,10 @@ func NewQueueManager(
 		reshardChan: make(chan int),
 		quit:        make(chan struct{}),
 
-		samplesIn:          samplesIn,
-		samplesDropped:     newEWMARate(ewmaWeight, shardUpdateDuration),
-		samplesOut:         newEWMARate(ewmaWeight, shardUpdateDuration),
-		samplesOutDuration: newEWMARate(ewmaWeight, shardUpdateDuration),
+		dataIn:          samplesIn,
+		dataDropped:     newEWMARate(ewmaWeight, shardUpdateDuration),
+		dataOut:         newEWMARate(ewmaWeight, shardUpdateDuration),
+		dataOutDuration: newEWMARate(ewmaWeight, shardUpdateDuration),
 
 		metrics:              metrics,
 		interner:             interner,
@@ -495,13 +494,14 @@ func (t *QueueManager) sendMetadataWithBackoff(ctx context.Context, metadata []p
 // Append queues a sample to be sent to the remote storage. Blocks until all samples are
 // enqueued on their shards or a shutdown signal is received.
 func (t *QueueManager) Append(samples []record.RefSample) bool {
+	var appendSample prompb.Sample
 outer:
 	for _, s := range samples {
 		t.seriesMtx.Lock()
 		lbls, ok := t.seriesLabels[s.Ref]
 		if !ok {
 			t.metrics.droppedSamplesTotal.Inc()
-			t.samplesDropped.incr(1)
+			t.dataDropped.incr(1)
 			if _, ok := t.droppedSeries[s.Ref]; !ok {
 				level.Info(t.logger).Log("msg", "Dropped sample for series that was not explicitly dropped via relabelling", "ref", s.Ref)
 			}
@@ -517,12 +517,9 @@ outer:
 				return false
 			default:
 			}
-
-			if t.shards.enqueue(s.Ref, rwSample{
-				labels: lbls,
-				t:      s.T,
-				v:      s.V,
-			}) {
+			appendSample.Value = s.V
+			appendSample.Timestamp = s.T
+			if t.shards.enqueue(s.Ref, writeSample{lbls, appendSample}) {
 				continue outer
 			}
 
@@ -538,14 +535,15 @@ outer:
 }
 
 func (t *QueueManager) AppendExemplars(exemplars []record.RefExemplar) bool {
+	var appendExemplar prompb.Exemplar
 outer:
 	for _, e := range exemplars {
 		t.seriesMtx.Lock()
 		lbls, ok := t.seriesLabels[e.Ref]
 		if !ok {
 			t.metrics.droppedExemplarsTotal.Inc()
-			// Track dropped exemplars in the same EWMA for sharding calc., maybe todo: change the name?
-			t.samplesDropped.incr(1)
+			// Track dropped exemplars in the same EWMA for sharding calc.
+			t.dataDropped.incr(1)
 			if _, ok := t.droppedSeries[e.Ref]; !ok {
 				level.Info(t.logger).Log("msg", "Dropped exemplar for series that was not explicitly dropped via relabelling", "ref", e.Ref)
 			}
@@ -561,8 +559,10 @@ outer:
 				return false
 			default:
 			}
-
-			if t.shards.enqueue(e.Ref, rwExemplar{seriesLabels: lbls, labels: e.Labels, t: e.T, v: e.V}) {
+			appendExemplar.Labels = labelsToLabelsProto(e.Labels, nil)
+			appendExemplar.Timestamp = e.T
+			appendExemplar.Value = e.V
+			if t.shards.enqueue(e.Ref, writeExemplar{seriesLabels: lbls, exemplar: appendExemplar}) {
 				continue outer
 			}
 
@@ -778,27 +778,27 @@ func (t *QueueManager) shouldReshard(desiredShards int) bool {
 // outlined in this functions implementation. It is up to the caller to reshard, or not,
 // based on the return value.
 func (t *QueueManager) calculateDesiredShards() int {
-	t.samplesOut.tick()
-	t.samplesDropped.tick()
-	t.samplesOutDuration.tick()
+	t.dataOut.tick()
+	t.dataDropped.tick()
+	t.dataOutDuration.tick()
 
 	// We use the number of incoming samples as a prediction of how much work we
 	// will need to do next iteration.  We add to this any pending samples
 	// (received - send) so we can catch up with any backlog. We use the average
 	// outgoing batch latency to work out how many shards we need.
 	var (
-		samplesInRate      = t.samplesIn.rate()
-		samplesOutRate     = t.samplesOut.rate()
-		samplesKeptRatio   = samplesOutRate / (t.samplesDropped.rate() + samplesOutRate)
-		samplesOutDuration = t.samplesOutDuration.rate() / float64(time.Second)
-		samplesPendingRate = samplesInRate*samplesKeptRatio - samplesOutRate
-		highestSent        = t.metrics.highestSentTimestamp.Get()
-		highestRecv        = t.highestRecvTimestamp.Get()
-		delay              = highestRecv - highestSent
-		samplesPending     = delay * samplesInRate * samplesKeptRatio
+		dataInRate      = t.dataIn.rate()
+		dataOutRate     = t.dataOut.rate()
+		dataKeptRatio   = dataOutRate / (t.dataDropped.rate() + dataOutRate)
+		dataOutDuration = t.dataOutDuration.rate() / float64(time.Second)
+		dataPendingRate = dataInRate*dataKeptRatio - dataOutRate
+		highestSent     = t.metrics.highestSentTimestamp.Get()
+		highestRecv     = t.highestRecvTimestamp.Get()
+		delay           = highestRecv - highestSent
+		dataPending     = delay * dataInRate * dataKeptRatio
 	)
 
-	if samplesOutRate <= 0 {
+	if dataOutRate <= 0 {
 		return t.numShards
 	}
 
@@ -808,17 +808,17 @@ func (t *QueueManager) calculateDesiredShards() int {
 	const integralGain = 0.1 / float64(shardUpdateDuration/time.Second)
 
 	var (
-		timePerSample = samplesOutDuration / samplesOutRate
-		desiredShards = timePerSample * (samplesInRate*samplesKeptRatio + integralGain*samplesPending)
+		timePerSample = dataOutDuration / dataOutRate
+		desiredShards = timePerSample * (dataInRate*dataKeptRatio + integralGain*dataPending)
 	)
 	t.metrics.desiredNumShards.Set(desiredShards)
 	level.Debug(t.logger).Log("msg", "QueueManager.calculateDesiredShards",
-		"samplesInRate", samplesInRate,
-		"samplesOutRate", samplesOutRate,
-		"samplesKeptRatio", samplesKeptRatio,
-		"samplesPendingRate", samplesPendingRate,
-		"samplesPending", samplesPending,
-		"samplesOutDuration", samplesOutDuration,
+		"dataInRate", dataInRate,
+		"dataOutRate", dataOutRate,
+		"dataKeptRatio", dataKeptRatio,
+		"dataPendingRate", dataPendingRate,
+		"dataPending", dataPending,
+		"dataOutDuration", dataOutDuration,
 		"timePerSample", timePerSample,
 		"desiredShards", desiredShards,
 		"highestSent", highestSent,
@@ -876,17 +876,17 @@ func (t *QueueManager) newShards() *shards {
 	return s
 }
 
-type rwSample struct {
-	labels labels.Labels
-	t      int64
-	v      float64
+type writeSample struct {
+	seriesLabels labels.Labels
+	sample       prompb.Sample
 }
 
-type rwExemplar struct {
+type writeExemplar struct {
 	seriesLabels labels.Labels
-	labels       labels.Labels
-	t            int64
-	v            float64
+	exemplar     prompb.Exemplar
+	// labels       labels.Labels
+	// t            int64
+	// v            float64
 }
 
 type shards struct {
@@ -993,10 +993,10 @@ func (s *shards) enqueue(ref uint64, data interface{}) bool {
 		return false
 	case s.queues[shard] <- data:
 		switch data.(type) {
-		case rwSample:
+		case writeSample:
 			s.qm.metrics.pendingSamples.Inc()
 			s.enqueuedSamples.Inc()
-		case rwExemplar:
+		case writeExemplar:
 			s.qm.metrics.pendingExemplars.Inc()
 			s.enqueuedExemplars.Inc()
 		default:
@@ -1072,21 +1072,16 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue chan interface
 			// retries endlessly, so once we reach max samples, if we can never send to the endpoint we'll
 			// stop reading from the queue. This makes it safe to reference pendingSamples by index.
 			switch d := sample.(type) {
-			case rwSample:
-				sampleBuffer[nPendingSamples][0].Timestamp = d.t
-				sampleBuffer[nPendingSamples][0].Value = d.v
-
-				pendingSamples[nPending].Labels = labelsToLabelsProto(d.labels, pendingSamples[nPending].Labels)
+			case writeSample:
+				sampleBuffer[nPendingSamples][0] = d.sample
+				pendingSamples[nPending].Labels = labelsToLabelsProto(d.seriesLabels, pendingSamples[nPending].Labels)
 				pendingSamples[nPending].Samples = sampleBuffer[nPendingSamples]
 				pendingSamples[nPending].Exemplars = nil
 				nPendingSamples++
 				nPending++
 
-			case rwExemplar:
-				exemplarBuffer[nPendingExemplars][0].Labels = labelsToLabelsProto(d.labels, exemplarBuffer[nPendingExemplars][0].Labels)
-				exemplarBuffer[nPendingExemplars][0].Timestamp = d.t
-				exemplarBuffer[nPendingExemplars][0].Value = d.v
-
+			case writeExemplar:
+				exemplarBuffer[nPendingExemplars][0] = d.exemplar
 				pendingSamples[nPending].Labels = labelsToLabelsProto(d.seriesLabels, pendingSamples[nPending].Labels)
 				pendingSamples[nPending].Samples = nil
 				pendingSamples[nPending].Exemplars = exemplarBuffer[nPendingExemplars]
@@ -1132,8 +1127,8 @@ func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, s
 
 	// These counters are used to calculate the dynamic sharding, and as such
 	// should be maintained irrespective of success or failure.
-	s.qm.samplesOut.incr(int64(len(samples)))
-	s.qm.samplesOutDuration.incr(int64(time.Since(begin)))
+	s.qm.dataOut.incr(int64(len(samples)))
+	s.qm.dataOutDuration.incr(int64(time.Since(begin)))
 	s.qm.lastSendTimestamp.Store(time.Now().Unix())
 }
 
@@ -1190,7 +1185,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 	if err != nil {
 		return err
 	}
-	s.qm.metrics.samplesBytesTotal.Add(float64(reqSize))
+	s.qm.metrics.sentBytesTotal.Add(float64(reqSize))
 	s.qm.metrics.highestSentTimestamp.Set(float64(highest / 1000))
 	return nil
 }

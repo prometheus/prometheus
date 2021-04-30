@@ -1,0 +1,83 @@
+goos: linux
+goarch: amd64
+pkg: github.com/prometheus/prometheus/tsdb
+cpu: Intel(R) Core(TM) i5-8350U CPU @ 1.70GHz
+BenchmarkLoadWAL/batches=10,seriesPerBatch=100,samplesPerSeries=7200,exemplarsPerSeries=200-8         	       2	 535941670 ns/op	66922460 B/op	 1387536 allocs/op
+BenchmarkLoadWAL/batches=10,seriesPerBatch=100,samplesPerSeries=7200,exemplarsPerSeries=200-8         	       2	 533035644 ns/op	66925728 B/op	 1387539 allocs/op
+BenchmarkLoadWAL/batches=10,seriesPerBatch=100,samplesPerSeries=7200,exemplarsPerSeries=200-8         	       2	 515099616 ns/op	66911032 B/op	 1387508 allocs/op
+BenchmarkLoadWAL/batches=10,seriesPerBatch=100,samplesPerSeries=7200,exemplarsPerSeries=200-8         	       3	 445938226 ns/op	60397813 B/op	 1341666 allocs/op
+BenchmarkLoadWAL/batches=10,seriesPerBatch=100,samplesPerSeries=7200,exemplarsPerSeries=200-8         	       3	 452834253 ns/op	60336781 B/op	 1341524 allocs/op
+BenchmarkLoadWAL/batches=10,seriesPerBatch=100,samplesPerSeries=7200,exemplarsPerSeries=200-8         	       3	 466900136 ns/op	60439930 B/op	 1341723 allocs/op
+BenchmarkLoadWAL/batches=10,seriesPerBatch=100,samplesPerSeries=7200,exemplarsPerSeries=200-8         	       3	 450595629 ns/op	60470658 B/op	 1341732 allocs/op
+BenchmarkLoadWAL/batches=10,seriesPerBatch=100,samplesPerSeries=7200,exemplarsPerSeries=200-8         	       3	 448446651 ns/op	60408549 B/op	 1341697 allocs/op
+BenchmarkLoadWAL/batches=10,seriesPerBatch=100,samplesPerSeries=7200,exemplarsPerSeries=200-8         	       3	 450502817 ns/op	60410416 B/op	 1341670 allocs/op
+BenchmarkLoadWAL/batches=10,seriesPerBatch=100,samplesPerSeries=7200,exemplarsPerSeries=200-8         	       3	 450540476 ns/op	60390581 B/op	 1341663 allocs/op
+BenchmarkLoadWAL/batches=10,seriesPerBatch=10000,samplesPerSeries=50,exemplarsPerSeries=2-8           	       2	 836710849 ns/op	399828648 B/op	 3291975 allocs/op
+BenchmarkLoadWAL/batches=10,seriesPerBatch=10000,samplesPerSeries=50,exemplarsPerSeries=2-8           	       2	 865026542 ns/op	394574564 B/op	 3292051 allocs/op
+BenchmarkLoadWAL/batches=10,seriesPerBatch=10000,samplesPerSeries=50,exemplarsPerSeries=2-8           	       2	 856274852 ns/op	404954148 B/op	 3292091 allocs/op
+BenchmarkLoadWAL/batches=10,seriesPerBatch=10000,samplesPerSeries=50,exemplarsPerSeries=2-8           	       2	 867832484 ns/op	400638260 B/op	 3291973 allocs/op
+BenchmarkLoadWAL/batches=10,seriesPerBatch=10000,samplesPerSeries=50,exemplarsPerSeries=2-8           	       2	 854822761 ns/op	403491576 B/op	 3291976 allocs/op
+BenchmarkLoadWAL/batches=10,seriesPerBatch=10000,samplesPerSeries=50,exemplarsPerSeries=2-8           	       2	 846611552 ns/op	406125056 B/op	 3292138 allocs/op
+BenchmarkLoadWAL/batches=10,seriesPerBatch=10000,samplesPerSeries=50,exemplarsPerSeries=2-8           	       2	 846863645 ns/op	404361988 B/op	 3292489 allocs/op
+BenchmarkLoadWAL/batches=10,seriesPerBatch=10000,samplesPerSeries=50,exemplarsPerSeries=2-8           	       2	 838069538 ns/op	401761828 B/op	 3292146 allocs/op
+BenchmarkLoadWAL/batches=10,seriesPerBatch=10000,samplesPerSeries=50,exemplarsPerSeries=2-8           	       2	 855955234 ns/op	409379504 B/op	 3292404 allocs/op
+BenchmarkLoadWAL/batches=10,seriesPerBatch=10000,samplesPerSeries=50,exemplarsPerSeries=2-8           	       2	 847233985 ns/op	405214008 B/op	 3292350 allocs/op
+BenchmarkLoadWAL/batches=10,seriesPerBatch=1000,samplesPerSeries=480,exemplarsPerSeries=20-8          	       4	 307483893 ns/op	70011332 B/op	 1280747 allocs/op
+BenchmarkLoadWAL/batches=10,seriesPerBatch=1000,samplesPerSeries=480,exemplarsPerSeries=20-8          	       4	 306979856 ns/op	71716300 B/op	 1281528 allocs/op
+BenchmarkLoadWAL/batches=10,seriesPerBatch=1000,samplesPerSeries=480,exemplarsPerSeries=20-8          	       4	 315808420 ns/op	73096960 B/op	 1282001 allocs/op
+BenchmarkLoadWAL/batches=10,seriesPerBatch=1000,samplesPerSeries=480,exemplarsPerSeries=20-8          	       4	 317471866 ns/op	72035252 B/op	 1281681 allocs/op
+BenchmarkLoadWAL/batches=10,seriesPerBatch=1000,samplesPerSeries=480,exemplarsPerSeries=20-8          	       4	 319435451 ns/op	72891008 B/op	 1281980 allocs/op
+BenchmarkLoadWAL/batches=10,seriesPerBatch=1000,samplesPerSeries=480,exemplarsPerSeries=20-8          	       4	 315338744 ns/op	71458458 B/op	 1281356 allocs/op
+BenchmarkLoadWAL/batches=10,seriesPerBatch=1000,samplesPerSeries=480,exemplarsPerSeries=20-8          	       4	 304172938 ns/op	72700058 B/op	 1281901 allocs/op
+BenchmarkLoadWAL/batches=10,seriesPerBatch=1000,samplesPerSeries=480,exemplarsPerSeries=20-8          	--- FAIL: BenchmarkLoadWAL/batches=10,seriesPerBatch=1000,samplesPerSeries=480,exemplarsPerSeries=20-8
+    head_test.go:92: 
+        	Error Trace:	head_test.go:92
+        	            				head_test.go:214
+        	            				benchmark.go:192
+        	            				benchmark.go:325
+        	            				asm_amd64.s:1371
+        	Error:      	Received unexpected error:
+        	            	write /tmp/test_load_wal467462933/00000000: no space left on device
+        	Test:       	BenchmarkLoadWAL/batches=10,seriesPerBatch=1000,samplesPerSeries=480,exemplarsPerSeries=20
+BenchmarkLoadWAL/batches=10,seriesPerBatch=1000,samplesPerSeries=480,exemplarsPerSeries=20-8          	--- FAIL: BenchmarkLoadWAL/batches=10,seriesPerBatch=1000,samplesPerSeries=480,exemplarsPerSeries=20
+    head_test.go:86: 
+        	Error Trace:	head_test.go:86
+        	            				head_test.go:182
+        	            				benchmark.go:192
+        	            				benchmark.go:232
+        	            				asm_amd64.s:1371
+        	Error:      	Received unexpected error:
+        	            	write /tmp/test_load_wal081342832/00000000: no space left on device
+        	Test:       	BenchmarkLoadWAL/batches=10,seriesPerBatch=1000,samplesPerSeries=480,exemplarsPerSeries=20
+--- FAIL: BenchmarkLoadWAL/batches=10,seriesPerBatch=1000,samplesPerSeries=480,exemplarsPerSeries=20-8
+    head_test.go:86: 
+        	Error Trace:	head_test.go:86
+        	            				head_test.go:182
+        	            				benchmark.go:192
+        	            				benchmark.go:232
+        	            				asm_amd64.s:1371
+        	Error:      	Received unexpected error:
+        	            	write /tmp/test_load_wal081342832/00000000: no space left on device
+        	Test:       	BenchmarkLoadWAL/batches=10,seriesPerBatch=1000,samplesPerSeries=480,exemplarsPerSeries=20
+BenchmarkLoadWAL/batches=10,seriesPerBatch=1000,samplesPerSeries=480,exemplarsPerSeries=20-8          	--- FAIL: BenchmarkLoadWAL/batches=10,seriesPerBatch=1000,samplesPerSeries=480,exemplarsPerSeries=20
+    head_test.go:86: 
+        	Error Trace:	head_test.go:86
+        	            				head_test.go:182
+        	            				benchmark.go:192
+        	            				benchmark.go:232
+        	            				asm_amd64.s:1371
+        	Error:      	Received unexpected error:
+        	            	write /tmp/test_load_wal016333839/00000000: no space left on device
+        	Test:       	BenchmarkLoadWAL/batches=10,seriesPerBatch=1000,samplesPerSeries=480,exemplarsPerSeries=20
+--- FAIL: BenchmarkLoadWAL/batches=10,seriesPerBatch=1000,samplesPerSeries=480,exemplarsPerSeries=20-8
+    head_test.go:86: 
+        	Error Trace:	head_test.go:86
+        	            				head_test.go:182
+        	            				benchmark.go:192
+        	            				benchmark.go:232
+        	            				asm_amd64.s:1371
+        	Error:      	Received unexpected error:
+        	            	write /tmp/test_load_wal016333839/00000000: no space left on device
+        	Test:       	BenchmarkLoadWAL/batches=10,seriesPerBatch=1000,samplesPerSeries=480,exemplarsPerSeries=20
+PASS
+ok  	github.com/prometheus/prometheus/tsdb	100.288s

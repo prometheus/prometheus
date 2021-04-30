@@ -50,6 +50,7 @@ func retry(t *testing.T, interval time.Duration, n int, f func() bool) {
 
 type writeToMock struct {
 	samplesAppended      int
+	exemplarsAppended    int
 	seriesLock           sync.Mutex
 	seriesSegmentIndexes map[uint64]int
 }
@@ -60,7 +61,7 @@ func (wtm *writeToMock) Append(s []record.RefSample) bool {
 }
 
 func (wtm *writeToMock) AppendExemplars(e []record.RefExemplar) bool {
-	//todo
+	wtm.exemplarsAppended += len(e)
 	return true
 }
 
@@ -100,6 +101,7 @@ func TestTailSamples(t *testing.T) {
 	pageSize := 32 * 1024
 	const seriesCount = 10
 	const samplesCount = 250
+	const exemplarsCount = 25
 	for _, compress := range []bool{false, true} {
 		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
 			now := time.Now()
@@ -143,6 +145,19 @@ func TestTailSamples(t *testing.T) {
 					}, nil)
 					require.NoError(t, w.Log(sample))
 				}
+
+				for j := 0; j < exemplarsCount; j++ {
+					inner := rand.Intn(ref + 1)
+					exemplar := enc.Exemplars([]record.RefExemplar{
+						{
+							Ref:    uint64(inner),
+							T:      now.UnixNano() + 1,
+							V:      float64(i),
+							Labels: labels.FromStrings("traceID", fmt.Sprintf("trace-%d", inner)),
+						},
+					}, nil)
+					require.NoError(t, w.Log(exemplar))
+				}
 			}
 
 			// Start read after checkpoint, no more data written.
@@ -167,11 +182,13 @@ func TestTailSamples(t *testing.T) {
 
 			expectedSeries := seriesCount
 			expectedSamples := seriesCount * samplesCount
+			expectedExemplars := seriesCount * exemplarsCount
 			retry(t, defaultRetryInterval, defaultRetries, func() bool {
 				return wt.checkNumLabels() >= expectedSeries
 			})
-			require.Equal(t, expectedSeries, wt.checkNumLabels())
-			require.Equal(t, expectedSamples, wt.samplesAppended)
+			require.Equal(t, expectedSeries, wt.checkNumLabels(), "did not receive the expected number of series")
+			require.Equal(t, expectedSamples, wt.samplesAppended, "did not receive the expected number of samples")
+			require.Equal(t, expectedExemplars, wt.exemplarsAppended, "did not receive the expected number of exemplars")
 		})
 	}
 }
