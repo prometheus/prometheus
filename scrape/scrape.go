@@ -602,31 +602,27 @@ func (sp *scrapePool) refreshTargetLimitErr() error {
 }
 
 func verifyLabelLimits(lset labels.Labels, limits labelLimits) error {
+	met := lset.Get(labels.MetricName)
+
 	if limits.labelLimit != 0 {
-		// Skip metric name in the count.
-		nbLabels := len(lset) - 1
+		nbLabels := len(lset)
 		if nbLabels > int(limits.labelLimit) {
-			return fmt.Errorf("label_limit exceeded (metric: %v, number of label: %d, limit: %d)", lset, nbLabels, limits.labelLimit)
+			return fmt.Errorf("label_limit exceeded (metric: %.50s, number of label: %d, limit: %d)", met, nbLabels, limits.labelLimit)
 		}
 	}
 
 	for _, l := range lset {
-		// Skip metric name since we don't need to apply constraints to it.
-		if l.Name == labels.MetricName {
-			continue
-		}
-
 		if limits.labelNameLengthLimit != 0 {
 			nameLength := len(l.Name)
 			if nameLength > int(limits.labelNameLengthLimit) {
-				return fmt.Errorf("label_name_length_limit exceeded (metric: %v, name length: %d, limit: %d)", lset, nameLength, limits.labelNameLengthLimit)
+				return fmt.Errorf("label_name_length_limit exceeded (metric: %.50s, label: %.50v, name length: %d, limit: %d)", met, l, nameLength, limits.labelNameLengthLimit)
 			}
 		}
 
 		if limits.labelValueLengthLimit != 0 {
 			valueLength := len(l.Value)
 			if valueLength > int(limits.labelValueLengthLimit) {
-				return fmt.Errorf("label_name_length_limit exceeded (metric: %v, value length: %d, limit: %d)", lset, valueLength, limits.labelValueLengthLimit)
+				return fmt.Errorf("label_name_length_limit exceeded (metric: %.50s, label: %.50v, value length: %d, limit: %d)", met, l, valueLength, limits.labelValueLengthLimit)
 			}
 		}
 	}
