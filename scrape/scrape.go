@@ -170,6 +170,33 @@ var (
 			Help: "Total number of exemplar rejected due to not being out of the expected order.",
 		},
 	)
+	targetScrapePoolExceededLabelLimits = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "prometheus_target_scrape_pool_exceeded_label_limits_total",
+			Help: "Total number of times scrape pools hit the label limits, during sync or config reload.",
+		},
+	)
+	targetScrapePoolLabelLimit = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "prometheus_target_scrape_pool_label_limit",
+			Help: "Maximum number of label allowed in this scrape pool.",
+		},
+		[]string{"scrape_job"},
+	)
+	targetScrapePoolLabelNameLengthLimit = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "prometheus_target_scrape_pool_label_name_length_limit",
+			Help: "Maximum label name length allowed in this scrape pool.",
+		},
+		[]string{"scrape_job"},
+	)
+	targetScrapePoolLabelValueLengthLimit = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "prometheus_target_scrape_pool_label_value_length_limit",
+			Help: "Maximum label value length allowed in this scrape pool.",
+		},
+		[]string{"scrape_job"},
+	)
 )
 
 func init() {
@@ -192,6 +219,10 @@ func init() {
 		targetScrapeCacheFlushForced,
 		targetMetadataCache,
 		targetScrapeExemplarOutOfOrder,
+		targetScrapePoolExceededLabelLimits,
+		targetScrapePoolLabelLimit,
+		targetScrapePoolLabelNameLengthLimit,
+		targetScrapePoolLabelValueLengthLimit,
 	)
 }
 
@@ -338,6 +369,9 @@ func (sp *scrapePool) stop() {
 		targetScrapePoolSyncsCounter.DeleteLabelValues(sp.config.JobName)
 		targetScrapePoolTargetLimit.DeleteLabelValues(sp.config.JobName)
 		targetScrapePoolTargetsAdded.DeleteLabelValues(sp.config.JobName)
+		targetScrapePoolLabelLimit.DeleteLabelValues(sp.config.JobName)
+		targetScrapePoolLabelNameLengthLimit.DeleteLabelValues(sp.config.JobName)
+		targetScrapePoolLabelValueLengthLimit.DeleteLabelValues(sp.config.JobName)
 		targetSyncIntervalLength.DeleteLabelValues(sp.config.JobName)
 	}
 }
@@ -363,6 +397,9 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 	sp.client = client
 
 	targetScrapePoolTargetLimit.WithLabelValues(sp.config.JobName).Set(float64(sp.config.TargetLimit))
+	targetScrapePoolLabelLimit.WithLabelValues(sp.config.JobName).Set(float64(sp.config.TargetLimit))
+	targetScrapePoolLabelNameLengthLimit.WithLabelValues(sp.config.JobName).Set(float64(sp.config.TargetLimit))
+	targetScrapePoolLabelValueLengthLimit.WithLabelValues(sp.config.JobName).Set(float64(sp.config.TargetLimit))
 
 	var (
 		wg          sync.WaitGroup
@@ -1404,6 +1441,7 @@ loop:
 
 			// If any label limits is exceeded the scrape should fail.
 			if err = verifyLabelLimits(lset, sl.labelLimits); err != nil {
+				targetScrapePoolExceededLabelLimits.Inc()
 				break loop
 			}
 		}
