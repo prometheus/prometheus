@@ -16,6 +16,7 @@ package kubernetes
 import (
 	"context"
 	"fmt"
+	"k8s.io/client-go/tools/clientcmd"
 	"reflect"
 	"strings"
 	"sync"
@@ -114,6 +115,7 @@ func (c *Role) UnmarshalYAML(unmarshal func(interface{}) error) error {
 type SDConfig struct {
 	APIServer          config.URL              `yaml:"api_server,omitempty"`
 	Role               Role                    `yaml:"role"`
+	KubeConfig 		 string			`yaml:"kube_config"`
 	HTTPClientConfig   config.HTTPClientConfig `yaml:",inline"`
 	NamespaceDiscovery NamespaceDiscovery      `yaml:"namespaces,omitempty"`
 	Selectors          []SelectorConfig        `yaml:"selectors,omitempty"`
@@ -256,7 +258,14 @@ func New(l log.Logger, conf *SDConfig) (*Discovery, error) {
 		kcfg *rest.Config
 		err  error
 	)
-	if conf.APIServer.URL == nil {
+	if conf.KubeConfig != ""{
+		// if kubeConfig provided, then use kubeConfig build kube client
+		kcfg,err = clientcmd.BuildConfigFromFlags("", conf.KubeConfig)
+		if err != nil{
+			return nil, err
+		}
+		level.Info(l).Log("msg", "Using kubeConfig build rest.Config")
+	} else if conf.APIServer.URL == nil {
 		// Use the Kubernetes provided pod service account
 		// as described in https://kubernetes.io/docs/admin/service-accounts-admin/
 		kcfg, err = rest.InClusterConfig()
