@@ -727,14 +727,8 @@ func processExternalLabels(ls labels.Labels, externalLabels labels.Labels) label
 			j++
 		}
 	}
-	for ; i < len(ls); i++ {
-		result = append(result, labels.Label{
-			Name:  ls[i].Name,
-			Value: ls[i].Value,
-		})
-	}
-	result = append(result, externalLabels[j:]...)
-	return result
+
+	return append(append(result, ls[i:]...), externalLabels[j:]...)
 }
 
 func (t *QueueManager) updateShardsLoop() {
