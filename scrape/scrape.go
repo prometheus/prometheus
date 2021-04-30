@@ -218,10 +218,17 @@ type scrapePool struct {
 	newLoop func(scrapeLoopOptions) loop
 }
 
+type labelLimits struct {
+	labelLimit            int
+	labelNameLengthLimit  int
+	labelValueLengthLimit int
+}
+
 type scrapeLoopOptions struct {
 	target          *Target
 	scraper         scraper
-	limit           int
+	sampleLimit     int
+	labelLimits     labelLimits
 	honorLabels     bool
 	honorTimestamps bool
 	mrc             []*relabel.Config
@@ -273,10 +280,11 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed 
 				return mutateSampleLabels(l, opts.target, opts.honorLabels, opts.mrc)
 			},
 			func(l labels.Labels) labels.Labels { return mutateReportSampleLabels(l, opts.target) },
-			func(ctx context.Context) storage.Appender { return appender(app.Appender(ctx), opts.limit) },
+			func(ctx context.Context) storage.Appender { return appender(app.Appender(ctx), opts.sampleLimit) },
 			cache,
 			jitterSeed,
 			opts.honorTimestamps,
+			opts.labelLimits,
 		)
 	}
 
@@ -357,10 +365,15 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 	targetScrapePoolTargetLimit.WithLabelValues(sp.config.JobName).Set(float64(sp.config.TargetLimit))
 
 	var (
-		wg              sync.WaitGroup
-		interval        = time.Duration(sp.config.ScrapeInterval)
-		timeout         = time.Duration(sp.config.ScrapeTimeout)
-		limit           = int(sp.config.SampleLimit)
+		wg          sync.WaitGroup
+		interval    = time.Duration(sp.config.ScrapeInterval)
+		timeout     = time.Duration(sp.config.ScrapeTimeout)
+		sampleLimit = int(sp.config.SampleLimit)
+		labelLimits = labelLimits{
+			labelLimit:            int(sp.config.LabelLimit),
+			labelNameLengthLimit:  int(sp.config.LabelNameLengthLimit),
+			labelValueLengthLimit: int(sp.config.LabelValueLengthLimit),
+		}
 		honorLabels     = sp.config.HonorLabels
 		honorTimestamps = sp.config.HonorTimestamps
 		mrc             = sp.config.MetricRelabelConfigs
@@ -383,7 +396,8 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 			newLoop = sp.newLoop(scrapeLoopOptions{
 				target:          t,
 				scraper:         s,
-				limit:           limit,
+				sampleLimit:     sampleLimit,
+				labelLimits:     labelLimits,
 				honorLabels:     honorLabels,
 				honorTimestamps: honorTimestamps,
 				mrc:             mrc,
@@ -451,10 +465,15 @@ func (sp *scrapePool) Sync(tgs []*targetgroup.Group) {
 // It returns after all stopped scrape loops terminated.
 func (sp *scrapePool) sync(targets []*Target) {
 	var (
-		uniqueLoops     = make(map[uint64]loop)
-		interval        = time.Duration(sp.config.ScrapeInterval)
-		timeout         = time.Duration(sp.config.ScrapeTimeout)
-		limit           = int(sp.config.SampleLimit)
+		uniqueLoops = make(map[uint64]loop)
+		interval    = time.Duration(sp.config.ScrapeInterval)
+		timeout     = time.Duration(sp.config.ScrapeTimeout)
+		sampleLimit = int(sp.config.SampleLimit)
+		labelLimits = labelLimits{
+			labelLimit:            int(sp.config.LabelLimit),
+			labelNameLengthLimit:  int(sp.config.LabelNameLengthLimit),
+			labelValueLengthLimit: int(sp.config.LabelValueLengthLimit),
+		}
 		honorLabels     = sp.config.HonorLabels
 		honorTimestamps = sp.config.HonorTimestamps
 		mrc             = sp.config.MetricRelabelConfigs
@@ -469,7 +488,8 @@ func (sp *scrapePool) sync(targets []*Target) {
 			l := sp.newLoop(scrapeLoopOptions{
 				target:          t,
 				scraper:         s,
-				limit:           limit,
+				sampleLimit:     sampleLimit,
+				labelLimits:     labelLimits,
 				honorLabels:     honorLabels,
 				honorTimestamps: honorTimestamps,
 				mrc:             mrc,
@@ -542,6 +562,38 @@ func (sp *scrapePool) refreshTargetLimitErr() error {
 		err = fmt.Errorf("target_limit exceeded (number of targets: %d, limit: %d)", l, sp.config.TargetLimit)
 	}
 	return err
+}
+
+func verifyLabelLimits(lset labels.Labels, limits labelLimits) error {
+	if limits.labelLimit != 0 {
+		// Skip metric name in the count.
+		nbLabels := len(lset) - 1
+		if nbLabels > int(limits.labelLimit) {
+			return fmt.Errorf("label_limit exceeded (metric: %v, number of label: %d, limit: %d)", lset, nbLabels, limits.labelLimit)
+		}
+	}
+
+	for _, l := range lset {
+		// Skip metric name since we don't need to apply constraints to it.
+		if l.Name == labels.MetricName {
+			continue
+		}
+
+		if limits.labelNameLengthLimit != 0 {
+			nameLength := len(l.Name)
+			if nameLength > int(limits.labelNameLengthLimit) {
+				return fmt.Errorf("label_name_length_limit exceeded (metric: %v, name length: %d, limit: %d)", lset, nameLength, limits.labelNameLengthLimit)
+			}
+		}
+
+		if limits.labelValueLengthLimit != 0 {
+			valueLength := len(l.Value)
+			if valueLength > int(limits.labelValueLengthLimit) {
+				return fmt.Errorf("label_name_length_limit exceeded (metric: %v, value length: %d, limit: %d)", lset, valueLength, limits.labelValueLengthLimit)
+			}
+		}
+	}
+	return nil
 }
 
 func mutateSampleLabels(lset labels.Labels, target *Target, honor bool, rc []*relabel.Config) labels.Labels {
@@ -707,6 +759,7 @@ type scrapeLoop struct {
 	honorTimestamps bool
 	forcedErr       error
 	forcedErrMtx    sync.Mutex
+	labelLimits     labelLimits
 
 	appender            func(ctx context.Context) storage.Appender
 	sampleMutator       labelsMutator
@@ -974,6 +1027,7 @@ func newScrapeLoop(ctx context.Context,
 	cache *scrapeCache,
 	jitterSeed uint64,
 	honorTimestamps bool,
+	labelLimits labelLimits,
 ) *scrapeLoop {
 	if l == nil {
 		l = log.NewNopLogger()
@@ -996,6 +1050,7 @@ func newScrapeLoop(ctx context.Context,
 		l:                   l,
 		parentCtx:           ctx,
 		honorTimestamps:     honorTimestamps,
+		labelLimits:         labelLimits,
 	}
 	sl.ctx, sl.cancel = context.WithCancel(ctx)
 
@@ -1346,6 +1401,11 @@ loop:
 				err = errNameLabelMandatory
 				break loop
 			}
+
+			// If any label limits is exceeded the scrape should fail.
+			if err = verifyLabelLimits(lset, sl.labelLimits); err != nil {
+				break loop
+			}
 		}
 
 		ref, err = app.Append(ref, lset, t, v)
@@ -1577,6 +1637,9 @@ func zeroConfig(c *config.ScrapeConfig) *config.ScrapeConfig {
 	z.ScrapeInterval = 0
 	z.ScrapeTimeout = 0
 	z.SampleLimit = 0
+	z.LabelLimit = 0
+	z.LabelNameLengthLimit = 0
+	z.LabelValueLengthLimit = 0
 	z.HTTPClientConfig = config_util.HTTPClientConfig{}
 	return &z
 }
