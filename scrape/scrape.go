@@ -176,27 +176,6 @@ var (
 			Help: "Total number of times scrape pools hit the label limits, during sync or config reload.",
 		},
 	)
-	targetScrapePoolLabelLimit = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "prometheus_target_scrape_pool_label_limit",
-			Help: "Maximum number of label allowed in this scrape pool.",
-		},
-		[]string{"scrape_job"},
-	)
-	targetScrapePoolLabelNameLengthLimit = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "prometheus_target_scrape_pool_label_name_length_limit",
-			Help: "Maximum label name length allowed in this scrape pool.",
-		},
-		[]string{"scrape_job"},
-	)
-	targetScrapePoolLabelValueLengthLimit = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "prometheus_target_scrape_pool_label_value_length_limit",
-			Help: "Maximum label value length allowed in this scrape pool.",
-		},
-		[]string{"scrape_job"},
-	)
 )
 
 func init() {
@@ -220,9 +199,6 @@ func init() {
 		targetMetadataCache,
 		targetScrapeExemplarOutOfOrder,
 		targetScrapePoolExceededLabelLimits,
-		targetScrapePoolLabelLimit,
-		targetScrapePoolLabelNameLengthLimit,
-		targetScrapePoolLabelValueLengthLimit,
 	)
 }
 
@@ -259,7 +235,7 @@ type scrapeLoopOptions struct {
 	target          *Target
 	scraper         scraper
 	sampleLimit     int
-	labelLimits     labelLimits
+	labelLimits     *labelLimits
 	honorLabels     bool
 	honorTimestamps bool
 	mrc             []*relabel.Config
@@ -369,9 +345,6 @@ func (sp *scrapePool) stop() {
 		targetScrapePoolSyncsCounter.DeleteLabelValues(sp.config.JobName)
 		targetScrapePoolTargetLimit.DeleteLabelValues(sp.config.JobName)
 		targetScrapePoolTargetsAdded.DeleteLabelValues(sp.config.JobName)
-		targetScrapePoolLabelLimit.DeleteLabelValues(sp.config.JobName)
-		targetScrapePoolLabelNameLengthLimit.DeleteLabelValues(sp.config.JobName)
-		targetScrapePoolLabelValueLengthLimit.DeleteLabelValues(sp.config.JobName)
 		targetSyncIntervalLength.DeleteLabelValues(sp.config.JobName)
 	}
 }
@@ -397,16 +370,13 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 	sp.client = client
 
 	targetScrapePoolTargetLimit.WithLabelValues(sp.config.JobName).Set(float64(sp.config.TargetLimit))
-	targetScrapePoolLabelLimit.WithLabelValues(sp.config.JobName).Set(float64(sp.config.TargetLimit))
-	targetScrapePoolLabelNameLengthLimit.WithLabelValues(sp.config.JobName).Set(float64(sp.config.TargetLimit))
-	targetScrapePoolLabelValueLengthLimit.WithLabelValues(sp.config.JobName).Set(float64(sp.config.TargetLimit))
 
 	var (
 		wg          sync.WaitGroup
 		interval    = time.Duration(sp.config.ScrapeInterval)
 		timeout     = time.Duration(sp.config.ScrapeTimeout)
 		sampleLimit = int(sp.config.SampleLimit)
-		labelLimits = labelLimits{
+		labelLimits = &labelLimits{
 			labelLimit:            int(sp.config.LabelLimit),
 			labelNameLengthLimit:  int(sp.config.LabelNameLengthLimit),
 			labelValueLengthLimit: int(sp.config.LabelValueLengthLimit),
@@ -506,7 +476,7 @@ func (sp *scrapePool) sync(targets []*Target) {
 		interval    = time.Duration(sp.config.ScrapeInterval)
 		timeout     = time.Duration(sp.config.ScrapeTimeout)
 		sampleLimit = int(sp.config.SampleLimit)
-		labelLimits = labelLimits{
+		labelLimits = &labelLimits{
 			labelLimit:            int(sp.config.LabelLimit),
 			labelNameLengthLimit:  int(sp.config.LabelNameLengthLimit),
 			labelValueLengthLimit: int(sp.config.LabelValueLengthLimit),
@@ -601,28 +571,35 @@ func (sp *scrapePool) refreshTargetLimitErr() error {
 	return err
 }
 
-func verifyLabelLimits(lset labels.Labels, limits labelLimits) error {
-	met := lset.Get(labels.MetricName)
+func verifyLabelLimits(lset labels.Labels, limits *labelLimits) error {
+	if limits == nil {
+		return nil
+	}
 
-	if limits.labelLimit != 0 {
+	met := lset.Get(labels.MetricName)
+	if limits.labelLimit > 0 {
 		nbLabels := len(lset)
 		if nbLabels > int(limits.labelLimit) {
 			return fmt.Errorf("label_limit exceeded (metric: %.50s, number of label: %d, limit: %d)", met, nbLabels, limits.labelLimit)
 		}
 	}
 
+	if limits.labelNameLengthLimit == 0 && limits.labelValueLengthLimit == 0 {
+		return nil
+	}
+
 	for _, l := range lset {
-		if limits.labelNameLengthLimit != 0 {
+		if limits.labelNameLengthLimit > 0 {
 			nameLength := len(l.Name)
 			if nameLength > int(limits.labelNameLengthLimit) {
 				return fmt.Errorf("label_name_length_limit exceeded (metric: %.50s, label: %.50v, name length: %d, limit: %d)", met, l, nameLength, limits.labelNameLengthLimit)
 			}
 		}
 
-		if limits.labelValueLengthLimit != 0 {
+		if limits.labelValueLengthLimit > 0 {
 			valueLength := len(l.Value)
 			if valueLength > int(limits.labelValueLengthLimit) {
-				return fmt.Errorf("label_name_length_limit exceeded (metric: %.50s, label: %.50v, value length: %d, limit: %d)", met, l, valueLength, limits.labelValueLengthLimit)
+				return fmt.Errorf("label_value_length_limit exceeded (metric: %.50s, label: %.50v, value length: %d, limit: %d)", met, l, valueLength, limits.labelValueLengthLimit)
 			}
 		}
 	}
@@ -792,7 +769,7 @@ type scrapeLoop struct {
 	honorTimestamps bool
 	forcedErr       error
 	forcedErrMtx    sync.Mutex
-	labelLimits     labelLimits
+	labelLimits     *labelLimits
 
 	appender            func(ctx context.Context) storage.Appender
 	sampleMutator       labelsMutator
@@ -1060,7 +1037,7 @@ func newScrapeLoop(ctx context.Context,
 	cache *scrapeCache,
 	jitterSeed uint64,
 	honorTimestamps bool,
-	labelLimits labelLimits,
+	labelLimits *labelLimits,
 ) *scrapeLoop {
 	if l == nil {
 		l = log.NewNopLogger()
