@@ -16,6 +16,7 @@ package tsdb
 import (
 	"reflect"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -76,6 +77,19 @@ func TestAddExemplar(t *testing.T) {
 	e3.Value = 0.3
 	err = es.AddExemplar(l, e3)
 	require.Equal(t, err, storage.ErrOutOfOrderExemplar)
+
+	e4 := exemplar.Exemplar{
+		Labels: labels.Labels{
+			labels.Label{
+				Name:  "a",
+				Value: strings.Repeat("b", ExemplarMaxLabelSetLength),
+			},
+		},
+		Value: 0.1,
+		Ts:    2,
+	}
+	err = es.AddExemplar(l, e4)
+	require.Equal(t, err, storage.ErrExemplarLabelLength)
 }
 
 func TestStorageOverflow(t *testing.T) {

@@ -30,6 +30,7 @@ var (
 	ErrDuplicateSampleForTimestamp = errors.New("duplicate sample for timestamp")
 	ErrOutOfBounds                 = errors.New("out of bounds")
 	ErrOutOfOrderExemplar          = errors.New("out of order exemplar")
+	ErrExemplarLabelLength         = errors.New("label length for exemplar exceeds maximum")
 )
 
 // Appendable allows creating appenders.

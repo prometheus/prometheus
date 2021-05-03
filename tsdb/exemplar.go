@@ -24,6 +24,12 @@ import (
 	"github.com/prometheus/prometheus/storage"
 )
 
+const (
+	// The combined length of the label names and values of an Exemplar's LabelSet MUST NOT exceed 128 UTF-8 characters
+	// https://github.com/OpenObservability/OpenMetrics/blob/main/specification/OpenMetrics.md#exemplars
+	ExemplarMaxLabelSetLength = 128
+)
+
 type CircularExemplarStorage struct {
 	exemplarsAppended            prometheus.Counter
 	exemplarsInStorage           prometheus.Gauge
@@ -168,6 +174,18 @@ func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemp
 	// Optimize by moving the lock to be per series (& benchmark it).
 	ce.lock.Lock()
 	defer ce.lock.Unlock()
+
+	// Exemplar label length does not include chars involved in text rendering such as quotes
+	// equals sign, or commas. See definiton of const ExemplarMaxLabelLength.
+	labelSetLen := 0
+	for _, l := range e.Labels {
+		labelSetLen += len(l.Name)
+		labelSetLen += len(l.Value)
+	}
+
+	if labelSetLen > ExemplarMaxLabelSetLength {
+		return storage.ErrExemplarLabelLength
+	}
 
 	idx, ok := ce.index[seriesLabels]
 	if !ok {
