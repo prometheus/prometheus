@@ -199,7 +199,9 @@ func (m *MetricMetadata) GetUnit() string {
 }
 
 type Sample struct {
-	Value                float64  `protobuf:"fixed64,1,opt,name=value,proto3" json:"value,omitempty"`
+	Value float64 `protobuf:"fixed64,1,opt,name=value,proto3" json:"value,omitempty"`
+	// timestamp is in ms format, see pkg/timestamp/timestamp.go for
+	// conversion from time.Time to Prometheus timestamp.
 	Timestamp            int64    `protobuf:"varint,2,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
 	XXX_unrecognized     []byte   `json:"-"`
@@ -254,8 +256,11 @@ func (m *Sample) GetTimestamp() int64 {
 }
 
 type Exemplar struct {
-	Labels               []Label  `protobuf:"bytes,1,rep,name=labels,proto3" json:"labels"`
-	Value                float64  `protobuf:"fixed64,2,opt,name=value,proto3" json:"value,omitempty"`
+	// Optional, can be empty.
+	Labels []Label `protobuf:"bytes,1,rep,name=labels,proto3" json:"labels"`
+	Value  float64 `protobuf:"fixed64,2,opt,name=value,proto3" json:"value,omitempty"`
+	// timestamp is in ms format, see pkg/timestamp/timestamp.go for
+	// conversion from time.Time to Prometheus timestamp.
 	Timestamp            int64    `protobuf:"varint,3,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
 	XXX_unrecognized     []byte   `json:"-"`
@@ -318,6 +323,8 @@ func (m *Exemplar) GetTimestamp() int64 {
 
 // TimeSeries represents samples and labels for a single time series.
 type TimeSeries struct {
+	// For a timeseries to be valid, and for the samples and exemplars
+	// to be ingested by the remote system properly, the labels field is required.
 	Labels               []Label    `protobuf:"bytes,1,rep,name=labels,proto3" json:"labels"`
 	Samples              []Sample   `protobuf:"bytes,2,rep,name=samples,proto3" json:"samples"`
 	Exemplars            []Exemplar `protobuf:"bytes,3,rep,name=exemplars,proto3" json:"exemplars"`
