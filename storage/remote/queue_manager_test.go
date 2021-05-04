@@ -81,7 +81,7 @@ func TestSampleDelivery(t *testing.T) {
 		require.NoError(t, os.RemoveAll(dir))
 	}()
 
-	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, true)
+	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil)
 	defer s.Close()
 
 	queueConfig := config.DefaultQueueConfig

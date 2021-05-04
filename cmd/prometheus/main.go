@@ -121,7 +121,6 @@ type flagConfig struct {
 	enablePromQLAtModifier     bool
 	enablePromQLNegativeOffset bool
 	enableExpandExternalLabels bool
-	enableExemplarRemoteWrite  bool
 
 	prometheusURL   string
 	corsRegexString string
@@ -153,9 +152,6 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 			case "exemplar-storage":
 				c.tsdb.MaxExemplars = maxExemplars
 				level.Info(logger).Log("msg", "Experimental in-memory exemplar storage enabled", "maxExemplars", maxExemplars)
-			case "exemplar-remote-write":
-				c.enableExemplarRemoteWrite = true
-				level.Info(logger).Log("msg", "Experimental exemplar remote-write enabled, note that exemplar storage must also be enabled for this to work properly.")
 			case "":
 				continue
 			default:
@@ -440,7 +436,7 @@ func main() {
 	var (
 		localStorage  = &readyStorage{}
 		scraper       = &readyScrapeManager{}
-		remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, cfg.localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper, cfg.enableExemplarRemoteWrite)
+		remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, cfg.localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper)
 		fanoutStorage = storage.NewFanout(logger, localStorage, remoteStorage)
 	)
 
