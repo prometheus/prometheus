@@ -109,7 +109,6 @@ scrape_configs:
           - second.dns.address.domain.com
       - names:
           - first.dns.address.domain.com
-        # refresh_interval defaults to 30s.
 
     relabel_configs:
       - source_labels: [job]
@@ -192,6 +191,11 @@ scrape_configs:
     basic_auth:
       username: "myusername"
       password_file: valid_password_file
+
+  - job_name: service-kuma
+
+    kuma_sd_configs:
+      - server: http://kuma-control-plane.kuma-system.svc:5676
 
   - job_name: service-marathon
     marathon_sd_configs:
