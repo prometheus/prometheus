@@ -386,6 +386,7 @@ func NewQueueManager(
 	interner *pool,
 	highestRecvTimestamp *maxTimestamp,
 	sm ReadyScrapeManager,
+	enableExemplarRemoteWrite bool,
 ) *QueueManager {
 	if logger == nil {
 		logger = log.NewNopLogger()
@@ -419,7 +420,7 @@ func NewQueueManager(
 		highestRecvTimestamp: highestRecvTimestamp,
 	}
 
-	t.watcher = wal.NewWatcher(watcherMetrics, readerMetrics, logger, client.Name(), t, walDir)
+	t.watcher = wal.NewWatcher(watcherMetrics, readerMetrics, logger, client.Name(), t, walDir, enableExemplarRemoteWrite)
 	if t.mcfg.Send {
 		t.metadataWatcher = NewMetadataWatcher(logger, sm, client.Name(), t, t.mcfg.SendInterval, flushDeadline)
 	}
@@ -884,9 +885,6 @@ type writeSample struct {
 type writeExemplar struct {
 	seriesLabels labels.Labels
 	exemplar     prompb.Exemplar
-	// labels       labels.Labels
-	// t            int64
-	// v            float64
 }
 
 type shards struct {

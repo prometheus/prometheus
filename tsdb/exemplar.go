@@ -82,7 +82,7 @@ func NewCircularExemplarStorage(len int, reg prometheus.Registerer) (ExemplarSto
 				"for all exemplars for a typical setup. This is not true though if one of the series timestamp is in future compared to rest series.",
 		}),
 		outOfOrderExemplars: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "prometheus_tsdb_exemplar_out_of_order_exemplars_total.",
+			Name: "prometheus_tsdb_exemplar_out_of_order_exemplars_total",
 			Help: "Total number of out of order exemplar ingestion failed attempts.",
 		}),
 	}

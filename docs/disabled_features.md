@@ -54,3 +54,8 @@ The remote write receiver allows Prometheus to accept remote write requests from
 
 Exemplar storage is implemented as a fixed size circular buffer that stores exemplars in memory for all series. Enabling this feature will enable the storage of exemplars scraped by Prometheus. The flag `storage.exemplars.exemplars-limit` can be used to control the size of circular buffer by # of exemplars. An exemplar with just a `traceID=<jaeger-trace-id>` uses roughly 100 bytes of memory via the in-memory exemplar storage.
 
+## Exemplars Over Remote Write
+
+`--enable-feature=exemplar-remote-write`
+
+Enabling this feature will allow passing of Exemplar WAL record data to remote write to be sent to remote storage as part of write requests. Note that exemplar storage itself must be enabled for exemplars to be scraped and written to the WAL in the first place.

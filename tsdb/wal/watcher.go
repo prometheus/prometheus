@@ -67,6 +67,7 @@ type Watcher struct {
 	logger         log.Logger
 	walDir         string
 	lastCheckpoint string
+	sendExemplars  bool
 	metrics        *WatcherMetrics
 	readerMetrics  *LiveReaderMetrics
 
@@ -137,7 +138,7 @@ func NewWatcherMetrics(reg prometheus.Registerer) *WatcherMetrics {
 }
 
 // NewWatcher creates a new WAL watcher for a given WriteTo.
-func NewWatcher(metrics *WatcherMetrics, readerMetrics *LiveReaderMetrics, logger log.Logger, name string, writer WriteTo, walDir string) *Watcher {
+func NewWatcher(metrics *WatcherMetrics, readerMetrics *LiveReaderMetrics, logger log.Logger, name string, writer WriteTo, walDir string, sendExemplars bool) *Watcher {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -148,8 +149,10 @@ func NewWatcher(metrics *WatcherMetrics, readerMetrics *LiveReaderMetrics, logge
 		readerMetrics: readerMetrics,
 		walDir:        path.Join(walDir, "wal"),
 		name:          name,
-		quit:          make(chan struct{}),
-		done:          make(chan struct{}),
+		sendExemplars: sendExemplars,
+
+		quit: make(chan struct{}),
+		done: make(chan struct{}),
 
 		MaxSegment: -1,
 	}
@@ -510,6 +513,10 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 			}
 
 		case record.Exemplars:
+			// Skip if experimental "exemplars over remote write" is not enabled.
+			if !w.sendExemplars {
+				break
+			}
 			// If we're not tailing a segment we can ignore any exemplars records we see.
 			// This speeds up replay of the WAL by > 10x.
 			if !tail {

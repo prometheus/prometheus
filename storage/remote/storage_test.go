@@ -30,7 +30,7 @@ func TestStorageLifecycle(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(dir)
 
-	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil)
+	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, false)
 	conf := &config.Config{
 		GlobalConfig: config.DefaultGlobalConfig,
 		RemoteWriteConfigs: []*config.RemoteWriteConfig{
@@ -69,7 +69,7 @@ func TestUpdateRemoteReadConfigs(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(dir)
 
-	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil)
+	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil, false)
 
 	conf := &config.Config{
 		GlobalConfig: config.GlobalConfig{},
