@@ -129,104 +129,113 @@ func readTestWAL(t testing.TB, dir string) (recs []interface{}) {
 func BenchmarkLoadWAL(b *testing.B) {
 	cases := []struct {
 		// Total series is (batches*seriesPerBatch).
-		batches            int
-		seriesPerBatch     int
-		samplesPerSeries   int
-		exemplarsPerSeries int
+		batches          int
+		seriesPerBatch   int
+		samplesPerSeries int
 	}{
 		{ // Less series and more samples. 2 hour WAL with 1 second scrape interval.
-			batches:            10,
-			seriesPerBatch:     100,
-			samplesPerSeries:   7200,
-			exemplarsPerSeries: 200,
+			batches:          10,
+			seriesPerBatch:   100,
+			samplesPerSeries: 7200,
 		},
 		{ // More series and less samples.
-			batches:            10,
-			seriesPerBatch:     10000,
-			samplesPerSeries:   50,
-			exemplarsPerSeries: 2,
+			batches:          10,
+			seriesPerBatch:   10000,
+			samplesPerSeries: 50,
 		},
 		{ // In between.
-			batches:            10,
-			seriesPerBatch:     1000,
-			samplesPerSeries:   480,
-			exemplarsPerSeries: 20,
+			batches:          10,
+			seriesPerBatch:   1000,
+			samplesPerSeries: 480,
 		},
 	}
 
 	labelsPerSeries := 5
+	// Rough estimates of most common % of samples that have an exemplar for each scrape.
+	exemplarsPercentages := []float64{0, 0.5, 1, 5}
+	lastExemplarsPerSeries := -1
 	for _, c := range cases {
-		b.Run(fmt.Sprintf("batches=%d,seriesPerBatch=%d,samplesPerSeries=%d,exemplarsPerSeries=%d", c.batches, c.seriesPerBatch, c.samplesPerSeries, c.exemplarsPerSeries),
-			func(b *testing.B) {
-				dir, err := ioutil.TempDir("", "test_load_wal")
-				require.NoError(b, err)
-				defer func() {
-					require.NoError(b, os.RemoveAll(dir))
-				}()
-
-				w, err := wal.New(nil, nil, dir, false)
-				require.NoError(b, err)
-
-				// Write series.
-				refSeries := make([]record.RefSeries, 0, c.seriesPerBatch)
-				for k := 0; k < c.batches; k++ {
-					refSeries = refSeries[:0]
-					for i := k * c.seriesPerBatch; i < (k+1)*c.seriesPerBatch; i++ {
-						lbls := make(map[string]string, labelsPerSeries)
-						lbls[defaultLabelName] = strconv.Itoa(i)
-						for j := 1; len(lbls) < labelsPerSeries; j++ {
-							lbls[defaultLabelName+strconv.Itoa(j)] = defaultLabelValue + strconv.Itoa(j)
-						}
-						refSeries = append(refSeries, record.RefSeries{Ref: uint64(i) * 100, Labels: labels.FromMap(lbls)})
-					}
-					populateTestWAL(b, w, []interface{}{refSeries})
-				}
-
-				// Write samples.
-				refSamples := make([]record.RefSample, 0, c.seriesPerBatch)
-				for i := 0; i < c.samplesPerSeries; i++ {
-					for j := 0; j < c.batches; j++ {
-						refSamples = refSamples[:0]
-						for k := j * c.seriesPerBatch; k < (j+1)*c.seriesPerBatch; k++ {
-							refSamples = append(refSamples, record.RefSample{
-								Ref: uint64(k) * 100,
-								T:   int64(i) * 10,
-								V:   float64(i) * 100,
-							})
-						}
-						populateTestWAL(b, w, []interface{}{refSamples})
-					}
-				}
-
-				// Write samples.
-				refExemplars := make([]record.RefExemplar, 0, c.seriesPerBatch)
-				for i := 0; i < c.exemplarsPerSeries; i++ {
-					for j := 0; j < c.batches; j++ {
-						refExemplars = refExemplars[:0]
-						for k := j * c.seriesPerBatch; k < (j+1)*c.seriesPerBatch; k++ {
-							refExemplars = append(refExemplars, record.RefExemplar{
-								Ref:    uint64(k) * 100,
-								T:      int64(i) * 10,
-								V:      float64(i) * 100,
-								Labels: labels.FromStrings("traceID", fmt.Sprintf("trace-%d", i)),
-							})
-						}
-						populateTestWAL(b, w, []interface{}{refExemplars})
-					}
-				}
-
-				b.ResetTimer()
-
-				// Load the WAL.
-				for i := 0; i < b.N; i++ {
-					opts := DefaultHeadOptions()
-					opts.ChunkRange = 1000
-					opts.ChunkDirRoot = w.Dir()
-					h, err := NewHead(nil, nil, w, opts)
+		for _, p := range exemplarsPercentages {
+			exemplarsPerSeries := int(math.RoundToEven(float64(c.samplesPerSeries) * p / 100))
+			// For tests with low samplesPerSeries we could end up testing with 0 exemplarsPerSeries
+			// multiple times without this check.
+			if exemplarsPerSeries == lastExemplarsPerSeries {
+				continue
+			}
+			lastExemplarsPerSeries = exemplarsPerSeries
+			// fmt.Println("exemplars per series: ", exemplarsPerSeries)
+			b.Run(fmt.Sprintf("batches=%d,seriesPerBatch=%d,samplesPerSeries=%d,exemplarsPerSeries=%d", c.batches, c.seriesPerBatch, c.samplesPerSeries, exemplarsPerSeries),
+				func(b *testing.B) {
+					dir, err := ioutil.TempDir("", "test_load_wal")
 					require.NoError(b, err)
-					h.Init(0)
-				}
-			})
+					defer func() {
+						require.NoError(b, os.RemoveAll(dir))
+					}()
+
+					w, err := wal.New(nil, nil, dir, false)
+					require.NoError(b, err)
+
+					// Write series.
+					refSeries := make([]record.RefSeries, 0, c.seriesPerBatch)
+					for k := 0; k < c.batches; k++ {
+						refSeries = refSeries[:0]
+						for i := k * c.seriesPerBatch; i < (k+1)*c.seriesPerBatch; i++ {
+							lbls := make(map[string]string, labelsPerSeries)
+							lbls[defaultLabelName] = strconv.Itoa(i)
+							for j := 1; len(lbls) < labelsPerSeries; j++ {
+								lbls[defaultLabelName+strconv.Itoa(j)] = defaultLabelValue + strconv.Itoa(j)
+							}
+							refSeries = append(refSeries, record.RefSeries{Ref: uint64(i) * 100, Labels: labels.FromMap(lbls)})
+						}
+						populateTestWAL(b, w, []interface{}{refSeries})
+					}
+
+					// Write samples.
+					refSamples := make([]record.RefSample, 0, c.seriesPerBatch)
+					for i := 0; i < c.samplesPerSeries; i++ {
+						for j := 0; j < c.batches; j++ {
+							refSamples = refSamples[:0]
+							for k := j * c.seriesPerBatch; k < (j+1)*c.seriesPerBatch; k++ {
+								refSamples = append(refSamples, record.RefSample{
+									Ref: uint64(k) * 100,
+									T:   int64(i) * 10,
+									V:   float64(i) * 100,
+								})
+							}
+							populateTestWAL(b, w, []interface{}{refSamples})
+						}
+					}
+
+					// Write samples.
+					refExemplars := make([]record.RefExemplar, 0, c.seriesPerBatch)
+					for i := 0; i < exemplarsPerSeries; i++ {
+						for j := 0; j < c.batches; j++ {
+							refExemplars = refExemplars[:0]
+							for k := j * c.seriesPerBatch; k < (j+1)*c.seriesPerBatch; k++ {
+								refExemplars = append(refExemplars, record.RefExemplar{
+									Ref:    uint64(k) * 100,
+									T:      int64(i) * 10,
+									V:      float64(i) * 100,
+									Labels: labels.FromStrings("traceID", fmt.Sprintf("trace-%d", i)),
+								})
+							}
+							populateTestWAL(b, w, []interface{}{refExemplars})
+						}
+					}
+
+					b.ResetTimer()
+
+					// Load the WAL.
+					for i := 0; i < b.N; i++ {
+						opts := DefaultHeadOptions()
+						opts.ChunkRange = 1000
+						opts.ChunkDirRoot = w.Dir()
+						h, err := NewHead(nil, nil, w, opts)
+						require.NoError(b, err)
+						h.Init(0)
+					}
+				})
+		}
 	}
 }
 

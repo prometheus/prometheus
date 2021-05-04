@@ -218,13 +218,13 @@ func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemp
 	ce.seriesWithExemplarsInStorage.Set(float64(len(ce.index)))
 	if next := ce.exemplars[ce.nextIndex]; next != nil {
 		ce.exemplarsInStorage.Set(float64(len(ce.exemplars)))
-		ce.lastExemplarsTs.Set(float64(next.exemplar.Ts / 1000))
+		ce.lastExemplarsTs.Set(float64(next.exemplar.Ts) / 1000)
 		return nil
 	}
 
 	// We did not yet fill the buffer.
 	ce.exemplarsInStorage.Set(float64(ce.nextIndex))
-	ce.lastExemplarsTs.Set(float64(ce.exemplars[0].exemplar.Ts / 1000))
+	ce.lastExemplarsTs.Set(float64(ce.exemplars[0].exemplar.Ts) / 1000)
 	return nil
 }
 

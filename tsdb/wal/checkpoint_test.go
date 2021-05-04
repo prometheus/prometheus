@@ -177,6 +177,11 @@ func TestCheckpoint(t *testing.T) {
 				}, nil)
 				require.NoError(t, w.Log(b))
 
+				b = enc.Exemplars([]record.RefExemplar{
+					{Ref: 1, T: last, V: float64(i), Labels: labels.FromStrings("traceID", fmt.Sprintf("trace-%d", i))},
+				}, nil)
+				require.NoError(t, w.Log(b))
+
 				last += 100
 			}
 			require.NoError(t, w.Close())
@@ -214,6 +219,12 @@ func TestCheckpoint(t *testing.T) {
 					require.NoError(t, err)
 					for _, s := range samples {
 						require.GreaterOrEqual(t, s.T, last/2, "sample with wrong timestamp")
+					}
+				case record.Exemplars:
+					exemplars, err := dec.Exemplars(rec, nil)
+					require.NoError(t, err)
+					for _, e := range exemplars {
+						require.GreaterOrEqual(t, e.T, last/2, "exemplar with wrong timestamp")
 					}
 				}
 			}

@@ -38,7 +38,7 @@ const (
 	// Tombstones is used to match WAL records of type Tombstones.
 	Tombstones Type = 3
 	// Exemplars is used to match WAL records of type Exemplars.
-	Exemplars Type = 5
+	Exemplars Type = 4
 )
 
 var (
@@ -202,7 +202,7 @@ func (d *Decoder) Exemplars(rec []byte, exemplars []RefExemplar) ([]RefExemplar,
 		sort.Sort(lset)
 
 		exemplars = append(exemplars, RefExemplar{
-			Ref:    uint64(int64(baseRef) + dref),
+			Ref:    baseRef + uint64(dref),
 			T:      baseTime + dtime,
 			V:      math.Float64frombits(val),
 			Labels: lset,
