@@ -165,6 +165,38 @@ Outer:
 	return false
 }
 
+func (ce *CircularExemplarStorage) ValidateExemplar(l labels.Labels, e exemplar.Exemplar) error {
+	seriesLabels := l.String()
+
+	// TODO(bwplotka): This lock can lock all scrapers, there might high contention on this on scale.
+	// Optimize by moving the lock to be per series (& benchmark it).
+	ce.lock.RLock()
+	defer ce.lock.RUnlock()
+	return ce.validateExemplar(seriesLabels, e, false)
+}
+
+// Not thread safe. The append parameters tells us whether this is an external validation, or interal
+// as a reuslt of an AddExemplar call, in which case we should update any relevant metrics.
+func (ce *CircularExemplarStorage) validateExemplar(l string, e exemplar.Exemplar, append bool) error {
+	idx, ok := ce.index[l]
+	if !ok {
+		return nil
+	}
+	// Check for duplicate vs last stored exemplar for this series.
+	// NB these are expected, add appending them is a no-op.
+	if ce.exemplars[idx.newest].exemplar.Equals(e) {
+		return storage.ErrDuplicateExemplar
+	}
+
+	if e.Ts <= ce.exemplars[idx.newest].exemplar.Ts {
+		if append {
+			ce.outOfOrderExemplars.Inc()
+		}
+		return storage.ErrOutOfOrderExemplar
+	}
+	return nil
+}
+
 func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemplar) error {
 	seriesLabels := l.String()
 
@@ -173,21 +205,19 @@ func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemp
 	ce.lock.Lock()
 	defer ce.lock.Unlock()
 
-	idx, ok := ce.index[seriesLabels]
+	err := ce.validateExemplar(seriesLabels, e, true)
+	if err != nil {
+		if err == storage.ErrOutOfOrderExemplar || err != storage.ErrDuplicateExemplar {
+			return err
+		}
+		// Duplicate exemplar, noop
+		return nil
+	}
+
+	_, ok := ce.index[seriesLabels]
 	if !ok {
 		ce.index[seriesLabels] = &indexEntry{oldest: ce.nextIndex, seriesLabels: l}
 	} else {
-		// Check for duplicate vs last stored exemplar for this series.
-		// NB these are expected, add appending them is a no-op.
-		if ce.exemplars[idx.newest].exemplar.Equals(e) {
-			return nil
-		}
-
-		if e.Ts <= ce.exemplars[idx.newest].exemplar.Ts {
-			ce.outOfOrderExemplars.Inc()
-			return storage.ErrOutOfOrderExemplar
-		}
-
 		ce.exemplars[ce.index[seriesLabels].newest].next = ce.nextIndex
 	}
 
@@ -231,6 +261,10 @@ func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemp
 type noopExemplarStorage struct{}
 
 func (noopExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemplar) error {
+	return nil
+}
+
+func (noopExemplarStorage) ValidateExemplar(l labels.Labels, e exemplar.Exemplar) error {
 	return nil
 }
 

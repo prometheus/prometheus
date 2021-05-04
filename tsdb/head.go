@@ -58,6 +58,7 @@ var (
 type ExemplarStorage interface {
 	storage.ExemplarQueryable
 	AddExemplar(labels.Labels, exemplar.Exemplar) error
+	ValidateExemplar(labels.Labels, exemplar.Exemplar) error
 }
 
 // Head handles reads and writes of time series data within a time window.
@@ -1388,6 +1389,15 @@ func (a *headAppender) AppendExemplar(ref uint64, _ labels.Labels, e exemplar.Ex
 	// Ensure no empty labels have gotten through.
 	e.Labels = e.Labels.WithoutEmpty()
 
+	err := a.exemplarAppender.ValidateExemplar(s.lset, e)
+	if err != nil {
+		if err == storage.ErrOutOfOrderExemplar {
+			return 0, err
+		}
+		// Duplicate, don't return an error but don't accept the exemplar.
+		return 0, nil
+	}
+
 	a.exemplars = append(a.exemplars, exemplarWithSeriesRef{ref, e})
 
 	return s.ref, nil
@@ -1461,29 +1471,21 @@ func (a *headAppender) Commit() (err error) {
 	}
 	defer func() { a.closed = true }()
 
-	// We need to know if an exemplar is going to be accepted into the exemplar storage before we write it to the WAL.
-	// This duplicating of (most) exemplars might not be as memory efficient as we'd like, but it's more time efficient
-	// than deleting from a slice in place.
-	commitExemplars := make([]exemplarWithSeriesRef, 0, len(a.exemplars))
-	for _, e := range a.exemplars {
-		s := a.head.series.getByID(e.ref)
-		err := a.exemplarAppender.AddExemplar(s.lset, e.exemplar)
-		if err == nil {
-			commitExemplars = append(commitExemplars, e)
-			continue
-		}
-
-		if err == storage.ErrOutOfOrderExemplar {
-			continue
-		}
-		level.Warn(a.head.logger).Log("msg", "Unknown error while adding exemplar", "err", err)
-	}
-	a.head.putExemplarBuffer(a.exemplars)
-	a.exemplars = commitExemplars
-
 	if err := a.log(); err != nil {
 		_ = a.Rollback() // Most likely the same error will happen again.
 		return errors.Wrap(err, "write to WAL")
+	}
+
+	// No errors logging to WAL, so pass the exemplars along to the in memory storage.
+	for _, e := range a.exemplars {
+		s := a.head.series.getByID(e.ref)
+		// We don't instrument exemplar appends here, all is instrumented by storage.
+		if err := a.exemplarAppender.AddExemplar(s.lset, e.exemplar); err != nil {
+			if err == storage.ErrOutOfOrderExemplar {
+				continue
+			}
+			level.Debug(a.head.logger).Log("msg", "Unknown error while adding exemplar", "err", err)
+		}
 	}
 
 	defer a.head.metrics.activeAppenders.Dec()

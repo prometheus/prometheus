@@ -25,6 +25,54 @@ import (
 	"github.com/prometheus/prometheus/storage"
 )
 
+// Tests the same exemplar cases as AddExemplar, but specfically the ValidateExemplar function so it can be relied on externally.
+func TestValidateExemplar(t *testing.T) {
+	exs, err := NewCircularExemplarStorage(2, nil)
+	require.NoError(t, err)
+	es := exs.(*CircularExemplarStorage)
+
+	l := labels.Labels{
+		{Name: "service", Value: "asdf"},
+	}
+	e := exemplar.Exemplar{
+		Labels: labels.Labels{
+			labels.Label{
+				Name:  "traceID",
+				Value: "qwerty",
+			},
+		},
+		Value: 0.1,
+		Ts:    1,
+	}
+
+	require.NoError(t, es.ValidateExemplar(l, e))
+	require.NoError(t, es.AddExemplar(l, e))
+
+	e2 := exemplar.Exemplar{
+		Labels: labels.Labels{
+			labels.Label{
+				Name:  "traceID",
+				Value: "zxcvb",
+			},
+		},
+		Value: 0.1,
+		Ts:    2,
+	}
+
+	require.NoError(t, es.ValidateExemplar(l, e2))
+	require.NoError(t, es.AddExemplar(l, e2))
+
+	require.Equal(t, es.ValidateExemplar(l, e2), storage.ErrDuplicateExemplar, "error is expected attempting to validate duplicate exemplar")
+
+	e3 := e2
+	e3.Ts = 3
+	require.Equal(t, es.ValidateExemplar(l, e3), storage.ErrDuplicateExemplar, "error is expected when attempting to add duplicate exemplar, even with different timestamp")
+
+	e3.Ts = 1
+	e3.Value = 0.3
+	require.Equal(t, es.ValidateExemplar(l, e3), storage.ErrOutOfOrderExemplar)
+}
+
 func TestAddExemplar(t *testing.T) {
 	exs, err := NewCircularExemplarStorage(2, nil)
 	require.NoError(t, err)
