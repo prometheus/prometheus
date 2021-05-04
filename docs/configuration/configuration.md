@@ -248,6 +248,10 @@ http_sd_configs:
 kubernetes_sd_configs:
   [ - <kubernetes_sd_config> ... ]
 
+# List of Kuma service discovery configurations.
+kuma_sd_configs:
+  [ - <kuma_sd_config> ... ]
+
 # List of Lightsail service discovery configurations.
 lightsail_sd_configs:
   [ - <lightsail_sd_config> ... ]
@@ -1545,6 +1549,74 @@ for a detailed example of configuring Prometheus for Kubernetes.
 
 You may wish to check out the 3rd party [Prometheus Operator](https://github.com/coreos/prometheus-operator),
 which automates the Prometheus setup on top of Kubernetes.
+
+### `<kuma_sd_config>`
+
+Kuma SD configurations allow retrieving scrape target from the [Kuma](https://kuma.io) control plane.
+
+This SD discovers "monitoring assignments" based on Kuma [Dataplane Proxies](https://kuma.io/docs/latest/documentation/dps-and-data-model),
+via the MADS v1 (Monitoring Assignment Discovery Service) xDS API, and will create a target for each proxy
+inside a Prometheus-enabled mesh.
+
+The following meta labels are available for each target:
+
+* `__meta_kuma_mesh`: the name of the proxy's Mesh 
+* `__meta_kuma_dataplane`: the name of the proxy
+* `__meta_kuma_service`: the name of the proxy's associated Service
+* `__meta_kuma_label_<tagname>`: each tag of the proxy
+
+See below for the configuration options for Kuma MonitoringAssignment discovery:
+
+```yaml
+# Address of the Kuma Control Plane's MADS xDS server.
+server: <string>
+
+# The time to wait between polling update requests.
+[ refresh_interval: <duration> | default = 30s ]
+
+# The time after which the monitoring assignments are refreshed.
+[ fetch_timeout: <duration> | default = 2m ]
+
+# Optional proxy URL.
+[ proxy_url: <string> ]
+
+# TLS configuration.
+tls_config:
+  [ <tls_config> ]
+
+# Authentication information used to authenticate to the Docker daemon.
+# Note that `basic_auth` and `authorization` options are
+# mutually exclusive.
+# password and password_file are mutually exclusive.
+
+# Optional HTTP basic authentication information.
+basic_auth:
+  [ username: <string> ]
+  [ password: <secret> ]
+  [ password_file: <string> ]
+
+# Optional the `Authorization` header configuration.
+authorization:
+  # Sets the authentication type.
+  [ type: <string> | default: Bearer ]
+  # Sets the credentials. It is mutually exclusive with
+  # `credentials_file`.
+  [ credentials: <secret> ]
+  # Sets the credentials with the credentials read from the configured file.
+  # It is mutually exclusive with `credentials`.
+  [ credentials_file: <filename> ]
+
+# Optional OAuth 2.0 configuration.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2:
+  [ <oauth2> ]
+
+# Configure whether HTTP requests follow HTTP 3xx redirects.
+[ follow_redirects: <bool> | default = true ]
+```
+
+The [relabeling phase](#relabel_config) is the preferred and more powerful way
+to filter proxies and user-defined tags.
 
 ### `<lightsail_sd_config>`
 
