@@ -41,14 +41,15 @@ type CircularExemplarStorage struct {
 }
 
 type indexEntry struct {
-	oldest int
-	newest int
+	oldest       int
+	newest       int
+	seriesLabels labels.Labels
 }
 
 type circularBufferEntry struct {
-	exemplar     exemplar.Exemplar
-	seriesLabels labels.Labels
-	next         int
+	exemplar exemplar.Exemplar
+	next     int
+	ref      *indexEntry
 }
 
 // NewCircularExemplarStorage creates an circular in memory exemplar storage.
@@ -124,10 +125,10 @@ func (ce *CircularExemplarStorage) Select(start, end int64, matchers ...[]*label
 		if e.exemplar.Ts > end || ce.exemplars[idx.newest].exemplar.Ts < start {
 			continue
 		}
-		if !matchesSomeMatcherSet(e.seriesLabels, matchers) {
+		if !matchesSomeMatcherSet(idx.seriesLabels, matchers) {
 			continue
 		}
-		se.SeriesLabels = e.seriesLabels
+		se.SeriesLabels = idx.seriesLabels
 
 		// Loop through all exemplars in the circular buffer for the current series.
 		for e.exemplar.Ts <= end {
@@ -174,7 +175,7 @@ func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemp
 
 	idx, ok := ce.index[seriesLabels]
 	if !ok {
-		ce.index[seriesLabels] = &indexEntry{oldest: ce.nextIndex}
+		ce.index[seriesLabels] = &indexEntry{oldest: ce.nextIndex, seriesLabels: l}
 	} else {
 		// Check for duplicate vs last stored exemplar for this series.
 		// NB these are expected, add appending them is a no-op.
@@ -195,7 +196,7 @@ func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemp
 	} else {
 		// There exists exemplar already on this ce.nextIndex entry, drop it, to make place
 		// for others.
-		prevLabels := prev.seriesLabels.String()
+		prevLabels := prev.ref.seriesLabels.String()
 		if prev.next == -1 {
 			// Last item for this series, remove index entry.
 			delete(ce.index, prevLabels)
@@ -208,7 +209,7 @@ func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemp
 	// since this is the first exemplar stored for this series.
 	ce.exemplars[ce.nextIndex].exemplar = e
 	ce.exemplars[ce.nextIndex].next = -1
-	ce.exemplars[ce.nextIndex].seriesLabels = l
+	ce.exemplars[ce.nextIndex].ref = ce.index[seriesLabels]
 	ce.index[seriesLabels].newest = ce.nextIndex
 
 	ce.nextIndex = (ce.nextIndex + 1) % len(ce.exemplars)
