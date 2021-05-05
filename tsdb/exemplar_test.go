@@ -304,11 +304,11 @@ func TestIndexOverwrite(t *testing.T) {
 	// index entry for series l1 since we just wrote two exemplars for series l2.
 	_, ok := es.index[l1.String()]
 	require.False(t, ok)
-	require.Equal(t, &indexEntry{1, 0}, es.index[l2.String()])
+	require.Equal(t, &indexEntry{1, 0, l2}, es.index[l2.String()])
 
 	err = es.AddExemplar(l1, exemplar.Exemplar{Value: 4, Ts: 4})
 	require.NoError(t, err)
 
 	i := es.index[l2.String()]
-	require.Equal(t, &indexEntry{0, 0}, i)
+	require.Equal(t, &indexEntry{0, 0, l2}, i)
 }
