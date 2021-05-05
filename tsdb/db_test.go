@@ -25,7 +25,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -3235,7 +3234,6 @@ func testQuerierShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChunks(t 
 			buf = nil
 		}
 	}
-	runtime.GC()
 
 	// Iterate samples. Here we're summing it just to make sure no golang compiler
 	// optimization triggers in case we discard the result of it.At().
@@ -3366,7 +3364,6 @@ func testChunkQuerierShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChun
 			buf = nil
 		}
 	}
-	runtime.GC()
 
 	// Iterate chunks and read their bytes slice. Here we're computing the CRC32
 	// just to iterate through the bytes slice. We don't really care the reason why
