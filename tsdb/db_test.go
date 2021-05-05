@@ -3127,8 +3127,16 @@ func TestNoPanicOnTSDBOpenError(t *testing.T) {
 }
 
 func TestQuerier_ShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChunks(t *testing.T) {
-	t.Skip("TODO: investigate why the process crashes with no output when running in CI")
+	const numRuns = 5
 
+	for i := 1; i <= numRuns; i++ {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			testQuerierShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChunks(t)
+		})
+	}
+}
+
+func testQuerierShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChunks(t *testing.T) {
 	const (
 		numSeries                = 1000
 		numStressIterations      = 10000
@@ -3225,7 +3233,6 @@ func TestQuerier_ShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChunks(t
 		buf = append(buf, make([]byte, minStressAllocationBytes+rand.Int31n(maxStressAllocationBytes-minStressAllocationBytes))...)
 		if i%1000 == 0 {
 			buf = nil
-			runtime.GC()
 		}
 	}
 	runtime.GC()
@@ -3255,6 +3262,16 @@ func TestQuerier_ShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChunks(t
 }
 
 func TestChunkQuerier_ShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChunks(t *testing.T) {
+	const numRuns = 5
+
+	for i := 1; i <= numRuns; i++ {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			testChunkQuerierShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChunks(t)
+		})
+	}
+}
+
+func testChunkQuerierShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChunks(t *testing.T) {
 	const (
 		numSeries                = 1000
 		numStressIterations      = 10000
@@ -3347,10 +3364,9 @@ func TestChunkQuerier_ShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChu
 		buf = append(buf, make([]byte, minStressAllocationBytes+rand.Int31n(maxStressAllocationBytes-minStressAllocationBytes))...)
 		if i%1000 == 0 {
 			buf = nil
-			//runtime.GC()
 		}
 	}
-	//runtime.GC()
+	runtime.GC()
 
 	// Iterate chunks and read their bytes slice. Here we're computing the CRC32
 	// just to iterate through the bytes slice. We don't really care the reason why
