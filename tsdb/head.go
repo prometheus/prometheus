@@ -540,7 +540,7 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64, mmappedChunks 
 			// replaying the WAL, so lets just log the error if it's not that type.
 			err = h.exemplars.AddExemplar(ms.lset, exemplar.Exemplar{Ts: e.T, Value: e.V, Labels: e.Labels})
 			if err != nil && err == storage.ErrOutOfOrderExemplar {
-				level.Warn(h.logger).Log("msg", "unexpected error when replaying WAL on exemplar record", "err", err)
+				level.Warn(h.logger).Log("msg", "Unexpected error when replaying WAL on exemplar record", "err", err)
 			}
 		}
 		wg.Done()
@@ -1476,7 +1476,7 @@ func (a *headAppender) Commit() (err error) {
 		if err == storage.ErrOutOfOrderExemplar {
 			continue
 		}
-		level.Debug(a.head.logger).Log("msg", "Unknown error while adding exemplar", "err", err)
+		level.Warn(a.head.logger).Log("msg", "Unknown error while adding exemplar", "err", err)
 	}
 	a.head.putExemplarBuffer(a.exemplars)
 	a.exemplars = commitExemplars

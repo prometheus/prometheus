@@ -518,7 +518,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 				break
 			}
 			// If we're not tailing a segment we can ignore any exemplars records we see.
-			// This speeds up replay of the WAL by > 10x.
+			// This speeds up replay of the WAL significantly.
 			if !tail {
 				break
 			}

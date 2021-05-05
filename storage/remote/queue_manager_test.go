@@ -75,7 +75,7 @@ func TestSampleDelivery(t *testing.T) {
 	// batch timeout case.
 	n := 3
 
-	dir, err := ioutil.TempDir("", "TestSampleDeliver")
+	dir, err := ioutil.TempDir("", "TestSampleDelivery")
 	require.NoError(t, err)
 	defer func() {
 		require.NoError(t, os.RemoveAll(dir))
@@ -96,6 +96,7 @@ func TestSampleDelivery(t *testing.T) {
 		},
 	}
 	writeConfig.QueueConfig = queueConfig
+	writeConfig.SendExemplars = true
 
 	conf := &config.Config{
 		GlobalConfig: config.DefaultGlobalConfig,

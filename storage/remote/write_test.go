@@ -139,7 +139,7 @@ func TestRestartOnNameChange(t *testing.T) {
 	hash, err := toHash(cfg)
 	require.NoError(t, err)
 
-	s := NewWriteStorage(nil, nil, dir, time.Millisecond, nil, false)
+	s := NewWriteStorage(nil, nil, dir, time.Millisecond, nil)
 	conf := &config.Config{
 		GlobalConfig: config.DefaultGlobalConfig,
 		RemoteWriteConfigs: []*config.RemoteWriteConfig{
@@ -167,7 +167,7 @@ func TestUpdateWithRegisterer(t *testing.T) {
 		require.NoError(t, os.RemoveAll(dir))
 	}()
 
-	s := NewWriteStorage(nil, prometheus.NewRegistry(), dir, time.Millisecond, nil, false)
+	s := NewWriteStorage(nil, prometheus.NewRegistry(), dir, time.Millisecond, nil)
 	c1 := &config.RemoteWriteConfig{
 		Name: "named",
 		URL: &common_config.URL{
@@ -211,7 +211,7 @@ func TestWriteStorageLifecycle(t *testing.T) {
 		require.NoError(t, os.RemoveAll(dir))
 	}()
 
-	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil, false)
+	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil)
 	conf := &config.Config{
 		GlobalConfig: config.DefaultGlobalConfig,
 		RemoteWriteConfigs: []*config.RemoteWriteConfig{

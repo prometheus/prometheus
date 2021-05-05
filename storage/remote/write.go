@@ -41,7 +41,7 @@ var (
 		Namespace: namespace,
 		Subsystem: subsystem,
 		Name:      "exemplars_in_total",
-		Help:      "Exemplars in to remote storage", //, compare to samples out for queue managers.",
+		Help:      "Exemplars in to remote storage, compare to exemplars out for queue managers.",
 	})
 )
 

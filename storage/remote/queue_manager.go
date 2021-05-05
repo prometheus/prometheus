@@ -563,7 +563,7 @@ outer:
 			appendExemplar.Labels = labelsToLabelsProto(e.Labels, nil)
 			appendExemplar.Timestamp = e.T
 			appendExemplar.Value = e.V
-			if t.shards.enqueue(e.Ref, writeExemplar{seriesLabels: lbls, exemplar: appendExemplar}) {
+			if t.shards.enqueue(e.Ref, writeExemplar{lbls, appendExemplar}) {
 				continue outer
 			}
 
@@ -973,7 +973,7 @@ func (s *shards) stop() {
 	}
 }
 
-// enqueue an object (sample or exemplar).  If we are currently in the process of shutting down or resharding,
+// enqueue data (sample or exemplar).  If we are currently in the process of shutting down or resharding,
 // will return false; in this case, you should back off and retry.
 func (s *shards) enqueue(ref uint64, data interface{}) bool {
 	s.mtx.RLock()
@@ -998,7 +998,7 @@ func (s *shards) enqueue(ref uint64, data interface{}) bool {
 			s.qm.metrics.pendingExemplars.Inc()
 			s.enqueuedExemplars.Inc()
 		default:
-			level.Warn(s.qm.logger).Log("msg", "invalid object type in shards enqueue")
+			level.Warn(s.qm.logger).Log("msg", "Invalid object type in shards enqueue")
 		}
 		return true
 	}
@@ -1019,10 +1019,10 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue chan interface
 	var (
 		max = s.qm.cfg.MaxSamplesPerSend
 		// Rough estimate, 1% of active series will contain an exemplar on each scrape.
-		// todo: casting this many times smells, also we could get index out of bounds issues here.
+		// TODO(cstyan): Casting this many times smells, also we could get index out of bounds issues here.
 		maxExemplars                                 = int(math.Max(1, float64(max/10)))
 		nPending, nPendingSamples, nPendingExemplars = 0, 0, 0
-		pendingSamples                               = make([]prompb.TimeSeries, max+maxExemplars)
+		pendingData                                  = make([]prompb.TimeSeries, max+maxExemplars)
 		sampleBuffer                                 = allocateSampleBuffer(max)
 		exemplarBuffer                               = allocateExemplarBuffer(maxExemplars)
 		buf                                          []byte
@@ -1058,7 +1058,7 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue chan interface
 			if !ok {
 				if nPendingSamples > 0 || nPendingExemplars > 0 {
 					level.Debug(s.qm.logger).Log("msg", "Flushing data to remote storage...", "samples", nPendingSamples, "exemplars", nPendingExemplars)
-					s.sendSamples(ctx, pendingSamples[:nPending], nPendingSamples, nPendingExemplars, &buf)
+					s.sendSamples(ctx, pendingData[:nPending], nPendingSamples, nPendingExemplars, &buf)
 					s.qm.metrics.pendingSamples.Sub(float64(nPendingSamples))
 					s.qm.metrics.pendingExemplars.Sub(float64(nPendingExemplars))
 					level.Debug(s.qm.logger).Log("msg", "Done flushing.")
@@ -1072,23 +1072,23 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue chan interface
 			switch d := sample.(type) {
 			case writeSample:
 				sampleBuffer[nPendingSamples][0] = d.sample
-				pendingSamples[nPending].Labels = labelsToLabelsProto(d.seriesLabels, pendingSamples[nPending].Labels)
-				pendingSamples[nPending].Samples = sampleBuffer[nPendingSamples]
-				pendingSamples[nPending].Exemplars = nil
+				pendingData[nPending].Labels = labelsToLabelsProto(d.seriesLabels, pendingData[nPending].Labels)
+				pendingData[nPending].Samples = sampleBuffer[nPendingSamples]
+				pendingData[nPending].Exemplars = nil
 				nPendingSamples++
 				nPending++
 
 			case writeExemplar:
 				exemplarBuffer[nPendingExemplars][0] = d.exemplar
-				pendingSamples[nPending].Labels = labelsToLabelsProto(d.seriesLabels, pendingSamples[nPending].Labels)
-				pendingSamples[nPending].Samples = nil
-				pendingSamples[nPending].Exemplars = exemplarBuffer[nPendingExemplars]
+				pendingData[nPending].Labels = labelsToLabelsProto(d.seriesLabels, pendingData[nPending].Labels)
+				pendingData[nPending].Samples = nil
+				pendingData[nPending].Exemplars = exemplarBuffer[nPendingExemplars]
 				nPendingExemplars++
 				nPending++
 			}
 
 			if nPendingSamples >= max || nPendingExemplars >= maxExemplars {
-				s.sendSamples(ctx, pendingSamples[:nPending], nPendingSamples, nPendingExemplars, &buf)
+				s.sendSamples(ctx, pendingData[:nPending], nPendingSamples, nPendingExemplars, &buf)
 				s.qm.metrics.pendingSamples.Sub(float64(nPendingSamples))
 				s.qm.metrics.pendingExemplars.Sub(float64(nPendingExemplars))
 				nPendingSamples = 0
@@ -1102,7 +1102,7 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue chan interface
 		case <-timer.C:
 			if nPendingSamples > 0 || nPendingExemplars > 0 {
 				level.Debug(s.qm.logger).Log("msg", "runShard timer ticked, sending buffered data", "samples", nPendingSamples, "exemplars", nPendingExemplars, "shard", shardNum)
-				s.sendSamples(ctx, pendingSamples[:nPending], nPendingSamples, nPendingExemplars, &buf)
+				s.sendSamples(ctx, pendingData[:nPending], nPendingSamples, nPendingExemplars, &buf)
 				s.qm.metrics.pendingSamples.Sub(float64(nPendingSamples))
 				s.qm.metrics.pendingExemplars.Sub(float64(nPendingExemplars))
 				nPendingSamples = 0
