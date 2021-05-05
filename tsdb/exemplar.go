@@ -121,6 +121,9 @@ func (ce *CircularExemplarStorage) Select(start, end int64, matchers ...[]*label
 	for _, idx := range ce.index {
 		var se exemplar.QueryResult
 		e := ce.exemplars[idx.oldest]
+		if e.exemplar.Ts > end || ce.exemplars[idx.newest].exemplar.Ts < start {
+			continue
+		}
 		if !matchesSomeMatcherSet(e.seriesLabels, matchers) {
 			continue
 		}
