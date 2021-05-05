@@ -3347,10 +3347,10 @@ func TestChunkQuerier_ShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChu
 		buf = append(buf, make([]byte, minStressAllocationBytes+rand.Int31n(maxStressAllocationBytes-minStressAllocationBytes))...)
 		if i%1000 == 0 {
 			buf = nil
-			runtime.GC()
+			//runtime.GC()
 		}
 	}
-	runtime.GC()
+	//runtime.GC()
 
 	// Iterate chunks and read their bytes slice. Here we're computing the CRC32
 	// just to iterate through the bytes slice. We don't really care the reason why
