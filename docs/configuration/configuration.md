@@ -2141,6 +2141,9 @@ write_relabel_configs:
 # remote write configs.
 [ name: <string> ]
 
+# Enables sending of exemplars over remote write. Note that exemplar storage itself must be enabled for exemplars to be scraped in the first place.
+[ send_exemplars: <boolean> | default = false ]
+
 # Sets the `Authorization` header on every remote write request with the
 # configured username and password.
 # password and password_file are mutually exclusive.

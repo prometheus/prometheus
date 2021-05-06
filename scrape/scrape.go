@@ -1497,7 +1497,6 @@ func yoloString(b []byte) string {
 
 // Adds samples to the appender, checking the error, and then returns the # of samples added,
 // whether the caller should continue to process more samples, and any sample limit errors.
-
 func (sl *scrapeLoop) checkAddError(ce *cacheEntry, met []byte, tp *int64, err error, sampleLimitErr *error, appErrs *appendErrors) (bool, error) {
 	switch errors.Cause(err) {
 	case nil:

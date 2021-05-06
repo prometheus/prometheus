@@ -15,12 +15,16 @@ package exemplar
 
 import "github.com/prometheus/prometheus/pkg/labels"
 
+// The combined length of the label names and values of an Exemplar's LabelSet MUST NOT exceed 128 UTF-8 characters
+// https://github.com/OpenObservability/OpenMetrics/blob/main/specification/OpenMetrics.md#exemplars
+const ExemplarMaxLabelSetLength = 128
+
 // Exemplar is additional information associated with a time series.
 type Exemplar struct {
-	Labels labels.Labels
-	Value  float64
+	Labels labels.Labels `json:"labels"`
+	Value  float64       `json:"value"`
+	Ts     int64         `json:"timestamp"`
 	HasTs  bool
-	Ts     int64
 }
 
 type QueryResult struct {
