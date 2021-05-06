@@ -17,6 +17,7 @@ import (
 	"context"
 	"sort"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/pkg/exemplar"
@@ -182,6 +183,19 @@ func (ce *CircularExemplarStorage) validateExemplar(l string, e exemplar.Exempla
 	if !ok {
 		return nil
 	}
+
+	// Exemplar label length does not include chars involved in text rendering such as quotes
+	// equals sign, or commas. See definiton of const ExemplarMaxLabelLength.
+	labelSetLen := 0
+	for _, l := range e.Labels {
+		labelSetLen += utf8.RuneCountInString(l.Name)
+		labelSetLen += utf8.RuneCountInString(l.Value)
+
+		if labelSetLen > exemplar.ExemplarMaxLabelSetLength {
+			return storage.ErrExemplarLabelLength
+		}
+	}
+
 	// Check for duplicate vs last stored exemplar for this series.
 	// NB these are expected, add appending them is a no-op.
 	if ce.exemplars[idx.newest].exemplar.Equals(e) {
