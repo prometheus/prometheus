@@ -901,6 +901,67 @@ way to filter targets based on arbitrary labels. For users with thousands of
 instances it can be more efficient to use the EC2 API directly which has
 support for filtering instances.
 
+### `<cvm_sd_config>`
+
+CVM SD configurations allow retrieving scrape targets from TencentCloud CVM
+instances. The private IP address is used by default, but may be changed to
+the public IP address with relabeling.
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+
+* `__meta_cvm_project_id`: the project id of the CVM instance
+* `__meta_cvm_region`: the region of the CVM instance
+* `__meta_cvm_host_id`: the host id of the CVM instance's host machine, if available
+* `__meta_cvm_zone`: the availability zone in which the CVM instance is running
+* `__meta_cvm_instance_id`: the CVM instance ID
+* `__meta_cvm_instance_state`: the state of the CVM instance
+* `__meta_cvm_instance_type`: the type of the CVM instance
+* `__meta_cvm_private_ip`: the private IP address of the CVM instance
+* `__meta_cvm_public_ip`: the public IP address of the CVM instance, if available
+* `__meta_cvm_vpc_id`: the ID of the VPC in which the CVM instance is running, if available
+* `__meta_cvm_subnet_id`: the subnet ID of the network interface
+* `__meta_cvm_os_name`: the Operating System of the CVM instance
+* `__meta_cvm_tag_<tagkey>`: each tag value of the CVM instance
+
+
+See below for the configuration options for CVM discovery:
+
+```yaml
+# The information to access the CVM API.
+# The TencentCloud region. 
+region: <string>
+# Custom endpoint to be used.
+[ endpoint: <string> ]
+# The TencentCloud API keys. Token is optional with temporary secret_id/secret_key
+# Refer: https://cloud.tencent.com/document/product/598/33416
+[ secret_id: <string> ]
+[ secret_key: <secret> ]
+[ token: <secret> ]
+# With role_arn cvm sd will try with TencentCloud RoleARN to get API access. 
+# Also set secret_id, secret_key which can play this role  
+# Refer: https://cloud.tencent.com/document/product/598/33164
+[ role_arn: <string> ]
+# Refresh interval to re-read the instance list.
+[ refresh_interval: <duration> | default = 60s ]
+# The port to scrape metrics from. If using the public IP address, this must
+# instead be specified in the relabeling rule.
+[ port: <int> | default = 80 ]
+# Filters can be used optionally to filter the instance list by other criteria.
+# Available filter criteria can be found here:
+# https://cloud.tencent.com/document/product/213/15728
+# Filter API documentation: https://cloud.tencent.com/document/api/213/15753#Filter
+filters:
+  [ - name: <string>
+      values: 
+      [ - <string> ... ] ]
+```
+
+The [relabeling phase](#relabel_config) is the preferred and more powerful
+way to filter targets based on arbitrary labels. For users with thousands of
+instances it can be more efficient to use the CVM API directly which has
+support for filtering instances.
+
 ### `<openstack_sd_config>`
 
 OpenStack SD configurations allow retrieving scrape targets from OpenStack Nova
