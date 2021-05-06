@@ -288,6 +288,21 @@ metric_relabel_configs:
 # the entire scrape will be treated as failed. 0 means no limit.
 [ sample_limit: <int> | default = 0 ]
 
+# Per-scrape limit on number of labels that will be accepted for a sample. If
+# more than this number of labels are present post metric-relabeling, the
+# entire scrape will be treated as failed. 0 means no limit.
+[ label_limit: <int> | default = 0 ]
+
+# Per-scrape limit on length of labels name that will be accepted for a sample.
+# If a label name is longer than this number post metric-relabeling, the entire
+# scrape will be treated as failed. 0 means no limit.
+[ label_name_length_limit: <int> | default = 0 ]
+
+# Per-scrape limit on length of labels value that will be accepted for a sample.
+# If a label value is longer than this number post metric-relabeling, the
+# entire scrape will be treated as failed. 0 means no limit.
+[ label_value_length_limit: <int> | default = 0 ]
+
 # Per-scrape config limit on number of unique targets that will be
 # accepted. If more than this number of targets are present after target
 # relabeling, Prometheus will mark the targets as failed without scraping them.
