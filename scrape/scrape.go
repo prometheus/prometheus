@@ -456,7 +456,7 @@ func (sp *scrapePool) Sync(tgs []*targetgroup.Group) {
 	for _, tg := range tgs {
 		targets, failures := targetsFromGroup(tg, sp.config)
 		for _, err := range failures {
-			level.Error(sp.logger).Log("msg", "creating targets failed", "err", err)
+			level.Error(sp.logger).Log("msg", "Creating target failed", "err", err)
 		}
 		targetSyncFailed.WithLabelValues(sp.config.JobName).Add(float64(len(failures)))
 		for _, t := range targets {
