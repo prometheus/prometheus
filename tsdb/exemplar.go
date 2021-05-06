@@ -17,17 +17,12 @@ import (
 	"context"
 	"sort"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
-)
-
-const (
-	// The combined length of the label names and values of an Exemplar's LabelSet MUST NOT exceed 128 UTF-8 characters
-	// https://github.com/OpenObservability/OpenMetrics/blob/main/specification/OpenMetrics.md#exemplars
-	ExemplarMaxLabelSetLength = 128
 )
 
 type CircularExemplarStorage struct {
@@ -179,11 +174,11 @@ func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemp
 	// equals sign, or commas. See definiton of const ExemplarMaxLabelLength.
 	labelSetLen := 0
 	for _, l := range e.Labels {
-		labelSetLen += len(l.Name)
-		labelSetLen += len(l.Value)
+		labelSetLen += utf8.RuneCountInString(l.Name)
+		labelSetLen += utf8.RuneCountInString(l.Value)
 	}
 
-	if labelSetLen > ExemplarMaxLabelSetLength {
+	if labelSetLen > exemplar.ExemplarMaxLabelSetLength {
 		return storage.ErrExemplarLabelLength
 	}
 

@@ -60,36 +60,31 @@ func TestAddExemplar(t *testing.T) {
 		Ts:    2,
 	}
 
-	err = es.AddExemplar(l, e2)
-	require.NoError(t, err)
+	require.NoError(t, es.AddExemplar(l, e2))
 	require.Equal(t, es.index[l.String()].newest, 1, "exemplar was not stored correctly, location of newest exemplar for series in index did not update")
 	require.True(t, es.exemplars[es.index[l.String()].newest].exemplar.Equals(e2), "exemplar was not stored correctly, expected %+v got: %+v", e2, es.exemplars[es.index[l.String()].newest].exemplar)
 
-	err = es.AddExemplar(l, e2)
-	require.NoError(t, err, "no error is expected attempting to add duplicate exemplar")
+	require.NoError(t, es.AddExemplar(l, e2), "no error is expected attempting to add duplicate exemplar")
 
 	e3 := e2
 	e3.Ts = 3
-	err = es.AddExemplar(l, e3)
-	require.NoError(t, err, "no error is expected when attempting to add duplicate exemplar, even with different timestamp")
+	require.NoError(t, es.AddExemplar(l, e3), "no error is expected when attempting to add duplicate exemplar, even with different timestamp")
 
 	e3.Ts = 1
 	e3.Value = 0.3
-	err = es.AddExemplar(l, e3)
-	require.Equal(t, err, storage.ErrOutOfOrderExemplar)
+	require.Equal(t, storage.ErrOutOfOrderExemplar, es.AddExemplar(l, e3))
 
 	e4 := exemplar.Exemplar{
 		Labels: labels.Labels{
 			labels.Label{
 				Name:  "a",
-				Value: strings.Repeat("b", ExemplarMaxLabelSetLength),
+				Value: strings.Repeat("b", exemplar.ExemplarMaxLabelSetLength),
 			},
 		},
 		Value: 0.1,
 		Ts:    2,
 	}
-	err = es.AddExemplar(l, e4)
-	require.Equal(t, err, storage.ErrExemplarLabelLength)
+	require.Equal(t, storage.ErrExemplarLabelLength, es.AddExemplar(l, e4))
 }
 
 func TestStorageOverflow(t *testing.T) {
