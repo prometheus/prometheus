@@ -197,7 +197,7 @@ func (ce *CircularExemplarStorage) validateExemplar(l string, e exemplar.Exempla
 	}
 
 	// Check for duplicate vs last stored exemplar for this series.
-	// NB these are expected, add appending them is a no-op.
+	// NB these are expected, and appending them is a no-op.
 	if ce.exemplars[idx.newest].exemplar.Equals(e) {
 		return storage.ErrDuplicateExemplar
 	}
