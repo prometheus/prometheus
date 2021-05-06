@@ -345,6 +345,7 @@ type QueueManager struct {
 	mcfg            config.MetadataConfig
 	externalLabels  labels.Labels
 	relabelConfigs  []*relabel.Config
+	sendExemplars   bool
 	watcher         *wal.Watcher
 	metadataWatcher *MetadataWatcher
 
@@ -401,6 +402,7 @@ func NewQueueManager(
 		externalLabels: externalLabels,
 		relabelConfigs: relabelConfigs,
 		storeClient:    client,
+		sendExemplars:  enableExemplarRemoteWrite,
 
 		seriesLabels:         make(map[uint64]labels.Labels),
 		seriesSegmentIndexes: make(map[uint64]int),
@@ -536,6 +538,10 @@ outer:
 }
 
 func (t *QueueManager) AppendExemplars(exemplars []record.RefExemplar) bool {
+	if !t.sendExemplars {
+		return true
+	}
+
 	var appendExemplar prompb.Exemplar
 outer:
 	for _, e := range exemplars {
@@ -1014,19 +1020,26 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue chan interface
 	shardNum := strconv.Itoa(shardID)
 
 	// Send batches of at most MaxSamplesPerSend samples to the remote storage.
-	// If we have fewer samples than that, flush them out after a deadline
-	// anyways.
+	// If we have fewer samples than that, flush them out after a deadline anyways.
 	var (
 		max = s.qm.cfg.MaxSamplesPerSend
 		// Rough estimate, 1% of active series will contain an exemplar on each scrape.
 		// TODO(cstyan): Casting this many times smells, also we could get index out of bounds issues here.
 		maxExemplars                                 = int(math.Max(1, float64(max/10)))
 		nPending, nPendingSamples, nPendingExemplars = 0, 0, 0
-		pendingData                                  = make([]prompb.TimeSeries, max+maxExemplars)
 		sampleBuffer                                 = allocateSampleBuffer(max)
-		exemplarBuffer                               = allocateExemplarBuffer(maxExemplars)
-		buf                                          []byte
+
+		buf            []byte
+		pendingData    []prompb.TimeSeries
+		exemplarBuffer [][]prompb.Exemplar
 	)
+	totalPending := max
+	if s.qm.sendExemplars {
+		exemplarBuffer = allocateExemplarBuffer(maxExemplars)
+		totalPending += maxExemplars
+	}
+
+	pendingData = make([]prompb.TimeSeries, totalPending)
 
 	timer := time.NewTimer(time.Duration(s.qm.cfg.BatchSendDeadline))
 	stop := func() {
