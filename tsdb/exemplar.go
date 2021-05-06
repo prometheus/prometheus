@@ -207,11 +207,11 @@ func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemp
 
 	err := ce.validateExemplar(seriesLabels, e, true)
 	if err != nil {
-		if err == storage.ErrOutOfOrderExemplar || err != storage.ErrDuplicateExemplar {
-			return err
+		if err == storage.ErrDuplicateExemplar {
+			// Duplicate exemplar, noop.
+			return nil
 		}
-		// Duplicate exemplar, noop
-		return nil
+		return err
 	}
 
 	_, ok := ce.index[seriesLabels]

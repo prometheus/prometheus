@@ -460,6 +460,7 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64, mmappedChunks 
 	// Track number of samples that referenced a series we don't know about
 	// for error reporting.
 	var unknownRefs atomic.Uint64
+	var unknownExemplarRefs atomic.Uint64
 
 	// Start workers that each process samples for a partition of the series ID space.
 	// They are connected through a ring of channels which ensures that all sample batches
@@ -527,10 +528,11 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64, mmappedChunks 
 	wg.Add(1)
 	exemplarsInput = make(chan record.RefExemplar, 300)
 	go func(input <-chan record.RefExemplar) {
+		defer wg.Done()
 		for e := range input {
 			ms := h.series.getByID(e.Ref)
 			if ms == nil {
-				unknownRefs.Inc()
+				unknownExemplarRefs.Inc()
 				continue
 			}
 
@@ -544,7 +546,6 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64, mmappedChunks 
 				level.Warn(h.logger).Log("msg", "Unexpected error when replaying WAL on exemplar record", "err", err)
 			}
 		}
-		wg.Done()
 	}(exemplarsInput)
 
 	go func() {
@@ -723,8 +724,8 @@ Outer:
 		return errors.Wrap(r.Err(), "read records")
 	}
 
-	if unknownRefs.Load() > 0 {
-		level.Warn(h.logger).Log("msg", "Unknown series references", "count", unknownRefs.Load())
+	if unknownRefs.Load() > 0 || unknownExemplarRefs.Load() > 0 {
+		level.Warn(h.logger).Log("msg", "Unknown series references", "samples", unknownRefs.Load(), "exemplars", unknownExemplarRefs.Load())
 	}
 	return nil
 }
@@ -1391,11 +1392,11 @@ func (a *headAppender) AppendExemplar(ref uint64, _ labels.Labels, e exemplar.Ex
 
 	err := a.exemplarAppender.ValidateExemplar(s.lset, e)
 	if err != nil {
-		if err == storage.ErrOutOfOrderExemplar {
-			return 0, err
+		if err == storage.ErrDuplicateExemplar {
+			// Duplicate, don't return an error but don't accept the exemplar.
+			return 0, nil
 		}
-		// Duplicate, don't return an error but don't accept the exemplar.
-		return 0, nil
+		return 0, err
 	}
 
 	a.exemplars = append(a.exemplars, exemplarWithSeriesRef{ref, e})
