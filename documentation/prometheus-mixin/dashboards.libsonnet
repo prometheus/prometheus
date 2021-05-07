@@ -151,6 +151,17 @@ local template = grafana.template;
           legendFormat='{{cluster}}:{{instance}} {{remote_name}}:{{url}}'
         ));
 
+      local maxSamplesPerSend =
+        graphPanel.new(
+          'Max samples sent per request',
+          datasource='$datasource',
+          span=4,
+        )
+        .addTarget(prometheus.target(
+          'prometheus_remote_storage_max_samples_per_send{cluster=~"$cluster", instance=~"$instance"}',
+          legendFormat='{{cluster}}:{{instance}} {{remote_name}}:{{url}}'
+        ));
+
       local currentShards =
         graphPanel.new(
           'Current Shards',
@@ -200,7 +211,7 @@ local template = grafana.template;
         graphPanel.new(
           'Shard Capacity',
           datasource='$datasource',
-          span=6,
+          span=4,
         )
         .addTarget(prometheus.target(
           'prometheus_remote_storage_shard_capacity{cluster=~"$cluster", instance=~"$instance"}',
@@ -212,7 +223,7 @@ local template = grafana.template;
         graphPanel.new(
           'Pending Samples',
           datasource='$datasource',
-          span=6,
+          span=4,
         )
         .addTarget(prometheus.target(
           'prometheus_remote_storage_pending_samples{cluster=~"$cluster", instance=~"$instance"}',
@@ -360,6 +371,7 @@ local template = grafana.template;
         row.new('Shard Details')
         .addPanel(shardsCapacity)
         .addPanel(pendingSamples)
+        .addPanel(maxSamplesPerSend)
       )
       .addRow(
         row.new('Segments')
