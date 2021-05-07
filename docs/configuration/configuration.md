@@ -1336,9 +1336,13 @@ See below for the configuration options for Kubernetes discovery:
 role: <string>
 
 # Optional authentication information used to authenticate to the API server.
-# Note that `basic_auth` and `authorization` options are
-# mutually exclusive.
+# Note that if `kube_config` is used, the prometheus will used kube_config to connect to kubernetes api_server
+# Note that `basic_auth` and `authorization` options are mutually exclusive.
 # password and password_file are mutually exclusive.
+
+# Optional kubeConfig
+# `kube_config` the filepath of kubeconfig, default located in '~/.kube/config'
+kube_config: <string>
 
 # Optional HTTP basic authentication information.
 basic_auth:
