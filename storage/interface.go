@@ -124,7 +124,7 @@ type ExemplarQueryable interface {
 	ExemplarQuerier(ctx context.Context) (ExemplarQuerier, error)
 }
 
-// Querier provides reading access to time series data.
+// ExemplarQuerier provides reading access to time series data.
 type ExemplarQuerier interface {
 	// Select all the exemplars that match the matchers.
 	// Within a single slice of matchers, it is an intersection. Between the slices, it is a union.
