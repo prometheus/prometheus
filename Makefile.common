@@ -118,7 +118,7 @@ endif
 %: common-% ;
 
 .PHONY: common-all
-common-all: precheck style check_license lint unused build test
+common-all: precheck style check_license lint yamllint unused build test
 
 .PHONY: common-style
 common-style:
@@ -197,6 +197,11 @@ else
 	$(GOLANGCI_LINT) run $(pkgs)
 endif
 endif
+
+.PHONY: common-yamllint
+common-yamllint:
+	@echo ">> running yamllint on all YAML files in the repository"
+	yamllint .
 
 # For backward-compatibility.
 .PHONY: common-staticcheck
