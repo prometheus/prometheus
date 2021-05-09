@@ -1,3 +1,24 @@
+## 2.27.0-rc.0 / 2021-05-09
+
+* [FEATURE] Promtool: Retroactive rule evaluation functionality. #7675
+* [FEATURE] Configuration: Environment variable expansion for external labels. Behind `--enable-feature=expand-external-labels` flag. #8649
+* [FEATURE] TSDB: Add a flag(`-storage.tsdb.max-chunk-size`) to control chunk allocation size for small Prometheus instances. #8478
+* [FEATURE] UI: Add a dark theme. #8604
+* [FEATURE] AWS Lightsail Discovery: Add AWS Lightsail Discovery. #8693
+* [FEATURE] Docker Discovery: Add Docker Service Discovery. #8629
+* [FEATURE] OAuth: Allow OAuth 2.0 to be used anywhere an HTTP client is used. #8761
+* [FEATURE] Remote Write: Send exemplars via remote write. Experimental and disabled by default. #8296
+* [ENHANCEMENT] Digital Ocean Discovery: Add `__meta_digitalocean_vpc` label. #8642
+* [ENHANCEMENT] Scaleway Discovery: Read Scaleway secret from a file. #8643
+* [ENHANCEMENT] Scrape: Add configurable limits for label size and count. #8777
+* [ENHANCEMENT] UI: Add 16w and 26w time range steps. #8656
+* [ENHANCEMENT] Templating: Enable parsing strings in `humanize` functions. #8682
+* [BUGFIX] UI: Provide errors instead of blank page on TSDB Status Page. #8654 #8659
+* [BUGFIX] TSDB: Do not panic when writing very large records to the WAL. #8790
+* [BUGFIX] TSDB: Avoid panic when mmaped memory is referenced after the file is closed. #8723
+* [BUGFIX] Scaleway Discovery: Fix nil pointer dereference. #8737
+* [BUGFIX] Consul Discovery: Restart no longer required after config update with no targets. #8766
+
 ## 2.26.0 / 2021-03-31
 
 Prometheus is now built and supporting Go 1.16 (#8544). This reverts the memory release pattern added in Go 1.12. This makes common RSS usage metrics showing more accurate number for actual memory used by Prometheus. You can read more details [here](https://www.bwplotka.dev/2019/golang-memory-monitoring/).
