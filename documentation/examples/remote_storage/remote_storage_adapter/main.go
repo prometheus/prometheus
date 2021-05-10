@@ -22,6 +22,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"remote_storage_adapter/clickhouse"
 	"sync"
 	"time"
 
@@ -42,7 +43,6 @@ import (
 	"github.com/prometheus/prometheus/documentation/examples/remote_storage/remote_storage_adapter/influxdb"
 	"github.com/prometheus/prometheus/documentation/examples/remote_storage/remote_storage_adapter/opentsdb"
 	"github.com/prometheus/prometheus/prompb"
-	"github.com/prometheus/prometheus/storage/remote"
 )
 
 type config struct {
@@ -55,6 +55,14 @@ type config struct {
 	influxdbUsername        string
 	influxdbDatabase        string
 	influxdbPassword        string
+	clickhouseURL           string
+	clickhouseUsername      string
+	clickhousePassword      string
+	clickhouseDatabase      string
+	clickhouseTable         string
+	clickhouseReadTimeout   time.Duration
+	clickhouseWriteTimeout  time.Duration
+	clickhouseAltHosts      string
 	remoteTimeout           time.Duration
 	listenAddr              string
 	telemetryPath           string
@@ -117,8 +125,9 @@ func parseFlags() *config {
 	a.HelpFlag.Short('h')
 
 	cfg := &config{
-		influxdbPassword: os.Getenv("INFLUXDB_PW"),
-		promlogConfig:    promlog.Config{},
+		influxdbPassword:   os.Getenv("INFLUXDB_PW"),
+		clickhousePassword: os.Getenv("CLICKHOUSE_PW"),
+		promlogConfig:      promlog.Config{},
 	}
 
 	a.Flag("graphite-address", "The host:port of the Graphite server to send samples to. None, if empty.").
@@ -137,6 +146,20 @@ func parseFlags() *config {
 		Default("").StringVar(&cfg.influxdbUsername)
 	a.Flag("influxdb.database", "The name of the database to use for storing samples in InfluxDB.").
 		Default("prometheus").StringVar(&cfg.influxdbDatabase)
+	a.Flag("clickhouse.url", "The URL of the remote Clickhouse server to send samples to. None, if empty.").
+		Default("").StringVar(&cfg.clickhouseURL)
+	a.Flag("clickhouse.username", "The username to use when sending samples to Clickhouse. The corresponding password must be provided via the CLICKHOUSE_PW environment variable.").
+		Default("").StringVar(&cfg.clickhouseUsername)
+	a.Flag("clickhouse.database", "The name of the database to use for storing samples in Clickhouse.").
+		Default("prometheus").StringVar(&cfg.clickhouseDatabase)
+	a.Flag("clickhouse.table", "The name of the table to use for storing samples in Clickhouse.").
+		Default("metrics").StringVar(&cfg.clickhouseTable)
+	a.Flag("clickhouse.read-timeout", "The timeout to use when read metrics from the Clickhouse.").
+		Default("10s").DurationVar(&cfg.clickhouseReadTimeout)
+	a.Flag("clickhouse.write-timeout", "The timeout to use when write metrics to the Clickhouse.").
+		Default("10s").DurationVar(&cfg.clickhouseWriteTimeout)
+	a.Flag("clickhouse.althosts", "The CLuster URL of the remote Clickhouse server to send samples to. None, if empty.").
+		Default("").StringVar(&cfg.clickhouseAltHosts)
 	a.Flag("send-timeout", "The timeout to use when sending samples to the remote storage.").
 		Default("30s").DurationVar(&cfg.remoteTimeout)
 	a.Flag("web.listen-address", "Address to listen on for web endpoints.").
@@ -206,20 +229,60 @@ func buildClients(logger log.Logger, cfg *config) ([]writer, []reader) {
 		writers = append(writers, c)
 		readers = append(readers, c)
 	}
+	if cfg.clickhouseURL != "" {
+
+		q := make(url.Values)
+		q.Set("database", cfg.clickhouseDatabase)
+		q.Set("username", cfg.clickhouseUsername)
+		q.Set("password", cfg.clickhousePassword)
+		q.Set("read_timeout", cfg.clickhouseReadTimeout.String())
+		q.Set("write_timeout", cfg.clickhouseWriteTimeout.String())
+		q.Set("alt_hosts", cfg.clickhouseAltHosts)
+
+		dsn := (&url.URL{
+			Scheme:   "tcp",
+			Host:     cfg.clickhouseURL,
+			RawQuery: q.Encode(),
+		}).String()
+
+		c := clickhouse.NewClient(
+			log.With(logger, "storage", "Clickhouse"),
+			dsn,
+			cfg.clickhouseDatabase,
+			cfg.clickhouseTable,
+		)
+		prometheus.MustRegister(c)
+		writers = append(writers, c)
+		readers = append(readers, c)
+	}
 	level.Info(logger).Log("msg", "Starting up...")
 	return writers, readers
 }
 
 func serve(logger log.Logger, addr string, writers []writer, readers []reader) error {
 	http.HandleFunc("/write", func(w http.ResponseWriter, r *http.Request) {
-		req, err := remote.DecodeWriteRequest(r.Body)
+		compressed, err := ioutil.ReadAll(r.Body)
 		if err != nil {
 			level.Error(logger).Log("msg", "Read error", "err", err.Error())
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 
-		samples := protoToSamples(req)
+		reqBuf, err := snappy.Decode(nil, compressed)
+		if err != nil {
+			level.Error(logger).Log("msg", "Decode error", "err", err.Error())
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		var req prompb.WriteRequest
+		if err := proto.Unmarshal(reqBuf, &req); err != nil {
+			level.Error(logger).Log("msg", "Unmarshal error", "err", err.Error())
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		samples := protoToSamples(&req)
 		receivedSamples.Add(float64(len(samples)))
 
 		var wg sync.WaitGroup
