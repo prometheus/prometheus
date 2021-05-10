@@ -285,7 +285,7 @@
               severity: 'critical',
             },
             annotations: {
-              summary: 'A target failed to sync.',
+              summary: 'Prometheus has failed to sync targets.',
               description: '{{ printf "%%.of" $value }} targets in Prometheus %(prometheusName)s have failed to sync because invalid configuration was supplied.' % $._config,
             },
           },
