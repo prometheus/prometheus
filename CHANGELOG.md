@@ -1,8 +1,8 @@
-## 2.27.0-rc.0 / 2021-05-09
+## 2.27.0 / 2021-05-12
 
 * [FEATURE] Promtool: Retroactive rule evaluation functionality. #7675
 * [FEATURE] Configuration: Environment variable expansion for external labels. Behind `--enable-feature=expand-external-labels` flag. #8649
-* [FEATURE] TSDB: Add a flag(`-storage.tsdb.max-chunk-size`) to control chunk allocation size for small Prometheus instances. #8478
+* [FEATURE] TSDB: Add a flag(`--storage.tsdb.max-block-chunk-segment-size`) to control the max chunks file size of the blocks for small Prometheus instances. #8478
 * [FEATURE] UI: Add a dark theme. #8604
 * [FEATURE] AWS Lightsail Discovery: Add AWS Lightsail Discovery. #8693
 * [FEATURE] Docker Discovery: Add Docker Service Discovery. #8629
