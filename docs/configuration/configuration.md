@@ -1476,9 +1476,12 @@ See below for the configuration options for Kubernetes discovery:
 # One of endpoints, service, pod, node, or ingress.
 role: <string>
 
+# Optional path to a kubeconfig file. 
+# Note that api_server and kube_config are mutually exclusive.
+[ kubeconfig_file: <filename> ]
+
 # Optional authentication information used to authenticate to the API server.
-# Note that `basic_auth` and `authorization` options are
-# mutually exclusive.
+# Note that `basic_auth` and `authorization` options are mutually exclusive.
 # password and password_file are mutually exclusive.
 
 # Optional HTTP basic authentication information.

@@ -984,6 +984,11 @@ func TestKubernetesEmptyAPIServer(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestKubernetesWithKubeConfig(t *testing.T) {
+	_, err := LoadFile("testdata/kubernetes_kubeconfig_without_apiserver.good.yml", false, log.NewNopLogger())
+	require.NoError(t, err)
+}
+
 func TestKubernetesSelectors(t *testing.T) {
 	_, err := LoadFile("testdata/kubernetes_selectors_endpoints.good.yml", false, log.NewNopLogger())
 	require.NoError(t, err)
@@ -1074,6 +1079,13 @@ var expectedErrors = []struct {
 		filename: "kubernetes_http_config_without_api_server.bad.yml",
 		errMsg:   "to use custom HTTP client configuration please provide the 'api_server' URL explicitly",
 	}, {
+		filename: "kubernetes_kubeconfig_with_apiserver.bad.yml",
+		errMsg:   "cannot use 'kubeconfig_file' and 'api_server' simultaneously",
+	}, {
+		filename: "kubernetes_kubeconfig_with_http_config.bad.yml",
+		errMsg:   "cannot use a custom HTTP client configuration together with 'kubeconfig_file'",
+	},
+	{
 		filename: "kubernetes_bearertoken.bad.yml",
 		errMsg:   "at most one of bearer_token & bearer_token_file must be configured",
 	}, {
