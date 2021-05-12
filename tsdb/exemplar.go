@@ -176,16 +176,11 @@ func (ce *CircularExemplarStorage) ValidateExemplar(l labels.Labels, e exemplar.
 	return ce.validateExemplar(seriesLabels, e, false)
 }
 
-// Not thread safe. The append parameters tells us whether this is an external validation, or interal
-// as a reuslt of an AddExemplar call, in which case we should update any relevant metrics.
+// Not thread safe. The append parameters tells us whether this is an external validation, or internal
+// as a result of an AddExemplar call, in which case we should update any relevant metrics.
 func (ce *CircularExemplarStorage) validateExemplar(l string, e exemplar.Exemplar, append bool) error {
-	idx, ok := ce.index[l]
-	if !ok {
-		return nil
-	}
-
 	// Exemplar label length does not include chars involved in text rendering such as quotes
-	// equals sign, or commas. See definiton of const ExemplarMaxLabelLength.
+	// equals sign, or commas. See definition of const ExemplarMaxLabelLength.
 	labelSetLen := 0
 	for _, l := range e.Labels {
 		labelSetLen += utf8.RuneCountInString(l.Name)
@@ -194,6 +189,11 @@ func (ce *CircularExemplarStorage) validateExemplar(l string, e exemplar.Exempla
 		if labelSetLen > exemplar.ExemplarMaxLabelSetLength {
 			return storage.ErrExemplarLabelLength
 		}
+	}
+
+	idx, ok := ce.index[l]
+	if !ok {
+		return nil
 	}
 
 	// Check for duplicate vs last stored exemplar for this series.
