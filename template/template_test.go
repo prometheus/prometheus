@@ -449,6 +449,11 @@ func TestTemplateExpansion(t *testing.T) {
 			text:   "{{ externalURL }}",
 			output: "http://testhost:9090/path/prefix",
 		},
+		{
+			// parseDuration.
+			text:   "{{ parseDuration \"1h2m10ms\" }}",
+			output: "3720",
+		},
 	}
 
 	extURL, err := url.Parse("http://testhost:9090/path/prefix")

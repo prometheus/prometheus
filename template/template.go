@@ -304,6 +304,14 @@ func NewTemplateExpander(
 			"externalURL": func() string {
 				return externalURL.String()
 			},
+			"parseDuration": func(d string) (string, error) {
+				v, err := model.ParseDuration(d)
+				if err != nil {
+					return "", err
+				}
+				dur := int64(time.Duration(v) / time.Second)
+				return fmt.Sprintf("%d", dur), nil
+			},
 		},
 		options: options,
 	}
