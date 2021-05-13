@@ -374,7 +374,7 @@
             expr: |||
               (
                 count by (%(prometheusHAGroupLabels)s) (
-                  changes(process_start_time_seconds{%(prometheusSelector)s}[30m]) > 4
+                  changes(process_start_time_seconds{%(prometheusSelector)s}[30m]) > %(prometheusCrashLoopCountThreshold)s
                 )
               /
                 count by (%(prometheusHAGroupLabels)s) (
@@ -389,7 +389,7 @@
             },
             annotations: {
               summary: 'More than half of the Prometheus instances within the same HA group are crashlooping.',
-              description: '{{ $value | humanizePercentage }} of Prometheus instances within the %(prometheusHAGroupName)s HA group have restarted at least 5 times in the last 30m.' % $._config,
+              description: '{{ $value | humanizePercentage }} of Prometheus instances within the %(prometheusHAGroupName)s HA group have restarted at least %(startCount)s times in the last 30m.' % $._config { startCount: self.prometheusCrashLoopCountThreshold + 1 },
             },
           },
         ],

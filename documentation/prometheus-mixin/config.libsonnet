@@ -15,6 +15,10 @@
     // If this is set to an empty string, no HA-related alerts are applied.
     prometheusHAGroupLabels: '',
 
+    // prometheusCrashLoopThreshold defines the number of restarts to
+    // happen within 30 minutes before raising an alert
+    prometheusCrashLoopCountThreshold: 4,
+
     // prometheusName is inserted into annotations to name the Prometheus
     // instance affected by the alert.
     prometheusName: '{{$labels.instance}}',
