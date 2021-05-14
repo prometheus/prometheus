@@ -2042,7 +2042,7 @@ func TestHeadMintAfterTruncation(t *testing.T) {
 	require.Equal(t, int64(4000), head.MinTime())
 	require.Equal(t, int64(4000), head.minValidTime.Load())
 
-	// After truncation outside the appendable windown if the actual min time
+	// After truncation outside the appendable window if the actual min time
 	// is in the appendable window then we should leave mint at the start of appendable window.
 	require.NoError(t, head.Truncate(5000))
 	require.Equal(t, head.appendableMinValidTime(), head.MinTime())
