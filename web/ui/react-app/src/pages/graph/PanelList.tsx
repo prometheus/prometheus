@@ -26,6 +26,7 @@ interface PanelListContentProps extends RouteComponentProps {
   enableAutocomplete: boolean;
   enableHighlighting: boolean;
   enableLinter: boolean;
+  showExemplars: boolean;
 }
 
 export const PanelListContent: FC<PanelListContentProps> = ({
@@ -36,6 +37,7 @@ export const PanelListContent: FC<PanelListContentProps> = ({
   enableAutocomplete,
   enableHighlighting,
   enableLinter,
+  showExemplars,
   ...rest
 }) => {
   const [panels, setPanels] = useState(rest.panels);
@@ -112,6 +114,7 @@ export const PanelListContent: FC<PanelListContentProps> = ({
           enableAutocomplete={enableAutocomplete}
           enableHighlighting={enableHighlighting}
           enableLinter={enableLinter}
+          showExemplars={showExemplars}
         />
       ))}
       <Button className="d-block mb-3" color="primary" onClick={addPanel}>
@@ -129,6 +132,7 @@ const PanelList: FC<RouteComponentProps> = () => {
   const [enableAutocomplete, setEnableAutocomplete] = useLocalStorage('enable-metric-autocomplete', true);
   const [enableHighlighting, setEnableHighlighting] = useLocalStorage('enable-syntax-highlighting', true);
   const [enableLinter, setEnableLinter] = useLocalStorage('enable-linter', true);
+  const [showExemplars, setShowExemplars] = useLocalStorage('show-exemplars', false);
 
   const pathPrefix = usePathPrefix();
   const { response: metricsRes, error: metricsErr } = useFetch<string[]>(`${pathPrefix}/${API_PATH}/label/__name__/values`);
@@ -162,6 +166,14 @@ const PanelList: FC<RouteComponentProps> = () => {
             defaultChecked={useLocalTime}
           >
             Use local time
+          </Checkbox>
+          <Checkbox
+            wrapperStyles={{ marginLeft: 20, display: 'inline-block' }}
+            id="show-exemplars-checkbox"
+            onChange={({ target }) => setShowExemplars(target.checked)}
+            defaultChecked={showExemplars}
+          >
+            Show exemplars
           </Checkbox>
           <Checkbox
             wrapperStyles={{ marginLeft: 20, display: 'inline-block' }}
@@ -232,6 +244,7 @@ const PanelList: FC<RouteComponentProps> = () => {
         enableAutocomplete={enableAutocomplete}
         enableHighlighting={enableHighlighting}
         enableLinter={enableLinter}
+        showExemplars={showExemplars}
       />
     </>
   );

@@ -2,7 +2,7 @@ import $ from 'jquery';
 
 import { escapeHTML } from '../../utils';
 import { Metric } from '../../types/types';
-import { GraphProps, GraphSeries } from './Graph';
+import { GraphProps, GraphData, GraphSeries } from './Graph';
 import moment from 'moment-timezone';
 
 export const formatValue = (y: number | null): string => {
@@ -125,7 +125,7 @@ export const getOptions = (stacked: boolean, useLocalTime: boolean): jquery.flot
       lines: true,
     },
     series: {
-      stack: stacked,
+      stack: false, // Stacking is set on a per-series basis because exemplar symbols don't support it.
       lines: {
         lineWidth: stacked ? 1 : 2,
         steps: false,
@@ -161,32 +161,53 @@ export const getColors = (data: { resultType: string; result: Array<{ metric: Me
   });
 };
 
-export const normalizeData = ({ queryParams, data }: GraphProps): GraphSeries[] => {
+export const normalizeData = ({ queryParams, data, stacked }: GraphProps): GraphData => {
   const colors = getColors(data);
   const { startTime, endTime, resolution } = queryParams!;
-  return data.result.map(({ values, metric }, index) => {
-    // Insert nulls for all missing steps.
-    const data = [];
-    let pos = 0;
+  return {
+    series: data.result.map(({ values, metric }, index) => {
+      // Insert nulls for all missing steps.
+      const data = [];
+      let pos = 0;
 
-    for (let t = startTime; t <= endTime; t += resolution) {
-      // Allow for floating point inaccuracy.
-      const currentValue = values[pos];
-      if (values.length > pos && currentValue[0] < t + resolution / 100) {
-        data.push([currentValue[0] * 1000, parseValue(currentValue[1])]);
-        pos++;
-      } else {
-        data.push([t * 1000, null]);
+      for (let t = startTime; t <= endTime; t += resolution) {
+        // Allow for floating point inaccuracy.
+        const currentValue = values[pos];
+        if (values.length > pos && currentValue[0] < t + resolution / 100) {
+          data.push([currentValue[0] * 1000, parseValue(currentValue[1])]);
+          pos++;
+        } else {
+          data.push([t * 1000, null]);
+        }
       }
-    }
 
-    return {
-      labels: metric !== null ? metric : {},
-      color: colors[index].toString(),
-      data,
-      index,
-    };
-  });
+      return {
+        labels: metric !== null ? metric : {},
+        color: colors[index].toString(),
+        stack: stacked,
+        data,
+        index,
+      };
+    }),
+    exemplars: data.exemplars
+      ? data.exemplars
+          .map(({ seriesLabels, exemplars }) => {
+            let newLabels: { [key: string]: string } = {};
+            for (let label in seriesLabels) {
+              newLabels[`Series: ${label}`] = seriesLabels[label];
+            }
+            return exemplars.map(({ labels, value, timestamp }) => {
+              return {
+                labels: Object.assign(labels, newLabels),
+                data: [[timestamp * 1000, parseValue(value)]],
+                points: { symbol: exemplarSymbol },
+                color: '#0275d8',
+              };
+            });
+          })
+          .flat()
+      : [],
+  };
 };
 
 export const parseValue = (value: string) => {
@@ -194,4 +215,20 @@ export const parseValue = (value: string) => {
   // "+Inf", "-Inf", "+Inf" will be parsed into NaN by parseFloat(). They
   // can't be graphed, so show them as gaps (null).
   return isNaN(val) ? null : val;
+};
+
+const exemplarSymbol = (ctx: CanvasRenderingContext2D, x: number, y: number) => {
+  // Center the symbol on the point.
+  y = y - 3.5;
+
+  // Correct if the symbol is overflowing off the grid.
+  if (x > ctx.canvas.clientWidth - 59) {
+    x = ctx.canvas.clientWidth - 59;
+  }
+  if (y > ctx.canvas.clientHeight - 37) {
+    y = ctx.canvas.clientHeight - 37;
+  }
+
+  ctx.fillStyle = '#0275d8';
+  ctx.fillRect(x, y, 7, 7);
 };

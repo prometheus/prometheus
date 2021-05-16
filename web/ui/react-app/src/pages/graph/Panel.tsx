@@ -27,6 +27,7 @@ interface PanelProps {
   enableAutocomplete: boolean;
   enableHighlighting: boolean;
   enableLinter: boolean;
+  showExemplars: boolean;
 }
 
 interface PanelState {
@@ -79,13 +80,14 @@ class Panel extends Component<PanelProps, PanelState> {
     };
   }
 
-  componentDidUpdate({ options: prevOpts }: PanelProps) {
+  componentDidUpdate({ options: prevOpts, showExemplars }: PanelProps) {
     const { endTime, range, resolution, type } = this.props.options;
     if (
       prevOpts.endTime !== endTime ||
       prevOpts.range !== range ||
       prevOpts.resolution !== resolution ||
-      prevOpts.type !== type
+      prevOpts.type !== type ||
+      (showExemplars !== this.props.showExemplars && this.props.showExemplars)
     ) {
       this.executeQuery();
     }
@@ -95,7 +97,7 @@ class Panel extends Component<PanelProps, PanelState> {
     this.executeQuery();
   }
 
-  executeQuery = (): void => {
+  executeQuery = async (): Promise<any> => {
     const { exprInputValue: expr } = this.state;
     const queryStart = Date.now();
     this.props.onExecuteQuery(expr);
@@ -123,12 +125,16 @@ class Panel extends Component<PanelProps, PanelState> {
     });
 
     let path: string;
+    let showExemplars: boolean = false;
     switch (this.props.options.type) {
       case 'graph':
         path = 'query_range';
         params.append('start', startTime.toString());
         params.append('end', endTime.toString());
         params.append('step', resolution.toString());
+        if (this.props.showExemplars) {
+          showExemplars = true;
+        }
         break;
       case 'table':
         path = 'query';
@@ -138,55 +144,72 @@ class Panel extends Component<PanelProps, PanelState> {
         throw new Error('Invalid panel type "' + this.props.options.type + '"');
     }
 
-    fetch(`${this.props.pathPrefix}/${API_PATH}/${path}?${params}`, {
-      cache: 'no-store',
-      credentials: 'same-origin',
-      signal: abortController.signal,
-    })
-      .then(resp => resp.json())
-      .then(json => {
-        if (json.status !== 'success') {
-          throw new Error(json.error || 'invalid response JSON');
-        }
+    let query;
+    let exemplars;
+    try {
+      query = await fetch(`${this.props.pathPrefix}/${API_PATH}/${path}?${params}`, {
+        cache: 'no-store',
+        credentials: 'same-origin',
+        signal: abortController.signal,
+      }).then(resp => resp.json());
 
-        let resultSeries = 0;
-        if (json.data) {
-          const { resultType, result } = json.data;
-          if (resultType === 'scalar') {
-            resultSeries = 1;
-          } else if (result && result.length > 0) {
-            resultSeries = result.length;
-          }
-        }
+      if (query.status !== 'success') {
+        throw new Error(query.error || 'invalid response JSON');
+      }
 
-        this.setState({
-          error: null,
-          data: json.data,
-          warnings: json.warnings,
-          lastQueryParams: {
-            startTime,
-            endTime,
-            resolution,
-          },
-          stats: {
-            loadTime: Date.now() - queryStart,
-            resolution,
-            resultSeries,
-          },
-          loading: false,
-        });
-        this.abortInFlightFetch = null;
-      })
-      .catch(error => {
-        if (error.name === 'AbortError') {
-          // Aborts are expected, don't show an error for them.
-          return;
+      if (showExemplars) {
+        exemplars = await fetch(`${this.props.pathPrefix}/${API_PATH}/query_exemplars?${params}`, {
+          cache: 'no-store',
+          credentials: 'same-origin',
+          signal: abortController.signal,
+        }).then(resp => resp.json());
+
+        if (exemplars.status !== 'success') {
+          throw new Error(exemplars.error || 'invalid response JSON');
         }
-        this.setState({
-          error: 'Error executing query: ' + error.message,
-          loading: false,
-        });
+      }
+
+      let resultSeries = 0;
+      if (query.data) {
+        const { resultType, result } = query.data;
+        if (resultType === 'scalar') {
+          resultSeries = 1;
+        } else if (result && result.length > 0) {
+          resultSeries = result.length;
+        }
+      }
+
+      if (exemplars && exemplars.data) {
+        query.data.exemplars = exemplars.data;
+      }
+
+      this.setState({
+        error: null,
+        data: query.data,
+        warnings: query.warnings,
+        lastQueryParams: {
+          startTime,
+          endTime,
+          resolution,
+        },
+        stats: {
+          loadTime: Date.now() - queryStart,
+          resolution,
+          resultSeries,
+        },
+        loading: false,
       });
+      this.abortInFlightFetch = null;
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        // Aborts are expected, don't show an error for them.
+        return;
+      }
+      this.setState({
+        error: 'Error executing query: ' + error.message,
+        loading: false,
+      });
+    }
   };
 
   setOptions(opts: object): void {
@@ -325,6 +348,7 @@ class Panel extends Component<PanelProps, PanelState> {
                       data={this.state.data}
                       stacked={options.stacked}
                       useLocalTime={this.props.useLocalTime}
+                      showExemplars={this.props.showExemplars}
                       lastQueryParams={this.state.lastQueryParams}
                     />
                   </>

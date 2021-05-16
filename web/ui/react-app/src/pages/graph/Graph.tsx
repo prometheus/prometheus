@@ -3,7 +3,7 @@ import React, { PureComponent } from 'react';
 import ReactResizeDetector from 'react-resize-detector';
 
 import { Legend } from './Legend';
-import { Metric, QueryParams } from '../../types/types';
+import { Metric, Exemplar, QueryParams, SeriesLabels } from '../../types/types';
 import { isPresent } from '../../utils';
 import { normalizeData, getOptions, toHoverColor } from './GraphHelpers';
 
@@ -17,9 +17,11 @@ export interface GraphProps {
   data: {
     resultType: string;
     result: Array<{ metric: Metric; values: [number, string][] }>;
+    exemplars: Array<{ seriesLabels: SeriesLabels; exemplars: Exemplar[] }> | undefined;
   };
   stacked: boolean;
   useLocalTime: boolean;
+  showExemplars: boolean;
   queryParams: QueryParams | null;
 }
 
@@ -30,8 +32,18 @@ export interface GraphSeries {
   index: number;
 }
 
+export interface GraphExemplar {
+  labels: { [key: string]: string };
+  data: (number | null)[][];
+}
+
+export interface GraphData {
+  series: GraphSeries[];
+  exemplars: GraphExemplar[];
+}
+
 interface GraphState {
-  chartData: GraphSeries[];
+  chartData: GraphData;
 }
 
 class Graph extends PureComponent<GraphProps, GraphState> {
@@ -45,7 +57,7 @@ class Graph extends PureComponent<GraphProps, GraphState> {
   };
 
   componentDidUpdate(prevProps: GraphProps) {
-    const { data, stacked, useLocalTime } = this.props;
+    const { data, stacked, useLocalTime, showExemplars } = this.props;
     if (prevProps.data !== data) {
       this.selectedSeriesIndexes = [];
       this.setState({ chartData: normalizeData(this.props) }, this.plot);
@@ -54,13 +66,27 @@ class Graph extends PureComponent<GraphProps, GraphState> {
         if (this.selectedSeriesIndexes.length === 0) {
           this.plot();
         } else {
-          this.plot(this.state.chartData.filter((_, i) => this.selectedSeriesIndexes.includes(i)));
+          this.plot([
+            ...this.state.chartData.series.filter((_, i) => this.selectedSeriesIndexes.includes(i)),
+            ...this.state.chartData.exemplars,
+          ]);
         }
       });
     }
 
     if (prevProps.useLocalTime !== useLocalTime) {
       this.plot();
+    }
+
+    if (prevProps.showExemplars !== showExemplars && !showExemplars) {
+      this.setState(
+        {
+          chartData: { series: this.state.chartData.series, exemplars: [] },
+        },
+        () => {
+          this.plot();
+        }
+      );
     }
   }
 
@@ -72,7 +98,7 @@ class Graph extends PureComponent<GraphProps, GraphState> {
     this.destroyPlot();
   }
 
-  plot = (data: GraphSeries[] = this.state.chartData) => {
+  plot = (data: (GraphSeries | GraphExemplar)[] = [...this.state.chartData.series, ...this.state.chartData.exemplars]) => {
     if (!this.chartRef.current) {
       return;
     }
@@ -87,7 +113,9 @@ class Graph extends PureComponent<GraphProps, GraphState> {
     }
   };
 
-  plotSetAndDraw(data: GraphSeries[] = this.state.chartData) {
+  plotSetAndDraw(
+    data: (GraphSeries | GraphExemplar)[] = [...this.state.chartData.series, ...this.state.chartData.exemplars]
+  ) {
     if (isPresent(this.$chart)) {
       this.$chart.setData(data);
       this.$chart.draw();
@@ -98,8 +126,21 @@ class Graph extends PureComponent<GraphProps, GraphState> {
     const { chartData } = this.state;
     this.plot(
       this.selectedSeriesIndexes.length === 1 && this.selectedSeriesIndexes.includes(selectedIndex)
-        ? chartData.map(toHoverColor(selectedIndex, this.props.stacked))
-        : chartData.filter((_, i) => selected.includes(i)) // draw only selected
+        ? [...chartData.series.map(toHoverColor(selectedIndex, this.props.stacked)), ...chartData.exemplars]
+        : [
+            ...chartData.series.filter((_, i) => selected.includes(i)),
+            ...chartData.exemplars.filter(exemplar => {
+              series: for (let i in selected) {
+                for (let name in chartData.series[selected[i]].labels) {
+                  if (exemplar.labels[`Series: ${name}`] !== chartData.series[selected[i]].labels[name]) {
+                    continue series;
+                  }
+                }
+                return true;
+              }
+              return false;
+            }),
+          ] // draw only selected
     );
     this.selectedSeriesIndexes = selected;
   };
@@ -109,7 +150,10 @@ class Graph extends PureComponent<GraphProps, GraphState> {
       cancelAnimationFrame(this.rafID);
     }
     this.rafID = requestAnimationFrame(() => {
-      this.plotSetAndDraw(this.state.chartData.map(toHoverColor(index, this.props.stacked)));
+      this.plotSetAndDraw([
+        ...this.state.chartData.series.map(toHoverColor(index, this.props.stacked)),
+        ...this.state.chartData.exemplars,
+      ]);
     });
   };
 
@@ -120,7 +164,7 @@ class Graph extends PureComponent<GraphProps, GraphState> {
 
   handleResize = () => {
     if (isPresent(this.$chart)) {
-      this.plot(this.$chart.getData() as GraphSeries[]);
+      this.plot(this.$chart.getData() as (GraphSeries | GraphExemplar)[]);
     }
   };
 
@@ -132,7 +176,7 @@ class Graph extends PureComponent<GraphProps, GraphState> {
         <div className="graph-chart" ref={this.chartRef} />
         <Legend
           shouldReset={this.selectedSeriesIndexes.length === 0}
-          chartData={chartData}
+          chartData={chartData.series}
           onHover={this.handleSeriesHover}
           onLegendMouseOut={this.handleLegendMouseOut}
           onSeriesToggle={this.handleSeriesSelect}
