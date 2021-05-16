@@ -23,6 +23,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/alecthomas/units"
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/pkg/errors"
@@ -382,6 +383,9 @@ type ScrapeConfig struct {
 	MetricsPath string `yaml:"metrics_path,omitempty"`
 	// The URL scheme with which to fetch metrics from targets.
 	Scheme string `yaml:"scheme,omitempty"`
+	// An uncompressed response body larger than this many bytes will cause the
+	// scrape to fail. 0 means no limit.
+	BodySizeLimit units.Base2Bytes `yaml:"body_size_limit,omitempty"`
 	// More than this many samples post metric-relabeling will cause the scrape to
 	// fail.
 	SampleLimit uint `yaml:"sample_limit,omitempty"`

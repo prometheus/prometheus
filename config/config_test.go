@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/alecthomas/units"
 	"github.com/go-kit/kit/log"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -223,6 +224,7 @@ var expectedConf = &Config{
 			HonorTimestamps: true,
 			ScrapeInterval:  model.Duration(50 * time.Second),
 			ScrapeTimeout:   model.Duration(5 * time.Second),
+			BodySizeLimit:   10 * units.MiB,
 			SampleLimit:     1000,
 
 			HTTPClientConfig: config.HTTPClientConfig{
@@ -1199,6 +1201,10 @@ var expectedErrors = []struct {
 	{
 		filename: "scaleway_two_secrets.bad.yml",
 		errMsg:   "at most one of secret_key & secret_key_file must be configured",
+	},
+	{
+		filename: "scrape_body_size_limit.bad.yml",
+		errMsg:   "units: unknown unit  in 100",
 	},
 }
 

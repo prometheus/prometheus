@@ -283,6 +283,9 @@ relabel_configs:
 metric_relabel_configs:
   [ - <relabel_config> ... ]
 
+# An uncompressed response body larger than this many bytes will cause the
+# scrape to fail. 0 means no limit. Example: 100MB.
+[ body_size_limit: <string> | default = 0 ]
 # Per-scrape limit on number of scraped samples that will be accepted.
 # If more than this number of samples are present after metric relabeling
 # the entire scrape will be treated as failed. 0 means no limit.
