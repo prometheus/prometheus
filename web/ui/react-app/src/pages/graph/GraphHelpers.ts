@@ -192,8 +192,8 @@ export const normalizeData = ({ queryParams, data, stacked }: GraphProps): Graph
     exemplars: data.exemplars
       ? data.exemplars
           .map(({ seriesLabels, exemplars }) => {
-            let newLabels: { [key: string]: string } = {};
-            for (let label in seriesLabels) {
+            const newLabels: { [key: string]: string } = {};
+            for (const label in seriesLabels) {
               newLabels[`Series: ${label}`] = seriesLabels[label];
             }
             return exemplars.map(({ labels, value, timestamp }) => {

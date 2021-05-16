@@ -3,7 +3,7 @@ import React, { PureComponent } from 'react';
 import ReactResizeDetector from 'react-resize-detector';
 
 import { Legend } from './Legend';
-import { Metric, Exemplar, QueryParams, SeriesLabels } from '../../types/types';
+import { Metric, Exemplar, QueryParams } from '../../types/types';
 import { isPresent } from '../../utils';
 import { normalizeData, getOptions, toHoverColor } from './GraphHelpers';
 
@@ -17,7 +17,7 @@ export interface GraphProps {
   data: {
     resultType: string;
     result: Array<{ metric: Metric; values: [number, string][] }>;
-    exemplars: Array<{ seriesLabels: SeriesLabels; exemplars: Exemplar[] }> | undefined;
+    exemplars: Array<{ seriesLabels: Metric; exemplars: Exemplar[] }> | undefined;
   };
   stacked: boolean;
   useLocalTime: boolean;
@@ -130,8 +130,8 @@ class Graph extends PureComponent<GraphProps, GraphState> {
         : [
             ...chartData.series.filter((_, i) => selected.includes(i)),
             ...chartData.exemplars.filter(exemplar => {
-              series: for (let i in selected) {
-                for (let name in chartData.series[selected[i]].labels) {
+              series: for (const i in selected) {
+                for (const name in chartData.series[selected[i]].labels) {
                   if (exemplar.labels[`Series: ${name}`] !== chartData.series[selected[i]].labels[name]) {
                     continue series;
                   }

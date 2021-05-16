@@ -4,8 +4,6 @@ export interface Metric {
   [key: string]: string;
 }
 
-export interface SeriesLabels extends Metric {}
-
 export interface Exemplar {
   labels: { [key: string]: string };
   value: string;

@@ -125,7 +125,7 @@ class Panel extends Component<PanelProps, PanelState> {
     });
 
     let path: string;
-    let showExemplars: boolean = false;
+    let showExemplars = false;
     switch (this.props.options.type) {
       case 'graph':
         path = 'query_range';
