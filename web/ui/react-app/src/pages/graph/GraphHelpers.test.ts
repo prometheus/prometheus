@@ -102,7 +102,7 @@ describe('GraphHelpers', () => {
     it('should configure options properly if stacked prop is true', () => {
       expect(getOptions(true, false)).toMatchObject({
         series: {
-          stack: true,
+          stack: false,
           lines: { lineWidth: 1, steps: false, fill: true },
           shadowSize: 0,
         },
@@ -196,7 +196,7 @@ describe('GraphHelpers', () => {
           lines: true,
         },
         series: {
-          stack: true,
+          stack: false,
           lines: { lineWidth: 1, steps: false, fill: true },
           shadowSize: 0,
         },

@@ -54,6 +54,25 @@ describe('Graph', () => {
             ],
           },
         ],
+        exemplars: [
+          {
+            seriesLabels: {
+              code: '200',
+              handler: '/graph',
+              instance: 'localhost:9090',
+              job: 'prometheus',
+            },
+            exemplars: [
+              {
+                labels: {
+                  traceID: '12345',
+                },
+                timestamp: 1572130580,
+                value: '9',
+              },
+            ],
+          },
+        ],
       },
     };
     it('renders a graph with props', () => {
@@ -101,14 +120,18 @@ describe('Graph', () => {
       graph.setProps({ data: { result: [{ values: [{}], metric: {} }] } });
       expect(spyState).toHaveBeenCalledWith(
         {
-          chartData: [
-            {
-              color: 'rgb(237,194,64)',
-              data: [[1572128592000, null]],
-              index: 0,
-              labels: {},
-            },
-          ],
+          chartData: {
+            exemplars: [],
+            series: [
+              {
+                color: 'rgb(237,194,64)',
+                data: [[1572128592000, null]],
+                index: 0,
+                labels: {},
+                stack: true,
+              },
+            ],
+          },
         },
         expect.anything()
       );
@@ -117,14 +140,18 @@ describe('Graph', () => {
       graph.setProps({ stacked: false });
       expect(spyState).toHaveBeenCalledWith(
         {
-          chartData: [
-            {
-              color: 'rgb(237,194,64)',
-              data: [[1572128592000, null]],
-              index: 0,
-              labels: {},
-            },
-          ],
+          chartData: {
+            exemplars: [],
+            series: [
+              {
+                color: 'rgb(237,194,64)',
+                data: [[1572128592000, null]],
+                index: 0,
+                labels: {},
+                stack: false,
+              },
+            ],
+          },
         },
         expect.anything()
       );
@@ -267,7 +294,7 @@ describe('Graph', () => {
       );
       (graph.instance() as any).plot(); // create chart
       graph.find('.graph-legend').simulate('mouseout');
-      expect(mockSetData).toHaveBeenCalledWith(graph.state().chartData);
+      expect(mockSetData).toHaveBeenCalledWith(graph.state().chartData.series);
       spyPlot.mockReset();
     });
   });
