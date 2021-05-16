@@ -2076,7 +2076,7 @@ kubernetes_sd_configs:
 
 # List of Lightsail service discovery configurations.
 lightsail_sd_configs:
-        [ - <lightsail_sd_config> ... ]
+  [ - <lightsail_sd_config> ... ]
 
 # List of Marathon service discovery configurations.
 marathon_sd_configs:
