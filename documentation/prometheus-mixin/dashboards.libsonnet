@@ -156,6 +156,17 @@ local template = grafana.template;
           legendFormat='{{cluster}}:{{instance}} {{remote_name}}:{{url}}'
         ));
 
+      local maxSamplesPerSend =
+        graphPanel.new(
+          'Max samples sent per request',
+          datasource='$datasource',
+          span=4,
+        )
+        .addTarget(prometheus.target(
+          'prometheus_remote_storage_max_samples_per_send{cluster=~"$cluster", instance=~"$instance"}',
+          legendFormat='{{cluster}}:{{instance}} {{remote_name}}:{{url}}'
+        ));
+
       local currentShards =
         singlestat.new(
           'Current Shards',
