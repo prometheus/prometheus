@@ -240,6 +240,10 @@ gce_sd_configs:
 hetzner_sd_configs:
   [ - <hetzner_sd_config> ... ]
 
+# List of HTTP service discovery configurations.
+http_sd_configs:
+  [ - <http_sd_config> ... ]
+
 # List of Kubernetes service discovery configurations.
 kubernetes_sd_configs:
   [ - <kubernetes_sd_config> ... ]
@@ -343,7 +347,7 @@ A `tls_config` allows configuring TLS connections.
 [ insecure_skip_verify: <boolean> ]
 ```
 
-### `oauth2`
+### `<oauth2>`
 
 OAuth 2.0 authentication using the client credentials grant type.
 Prometheus fetches an access token from the specified endpoint with
@@ -524,14 +528,14 @@ basic_auth:
   [ password: <secret> ]
   [ password_file: <string> ]
 
-# Optional the `Authorization` header configuration.
+# Optional `Authorization` header configuration.
 authorization:
   # Sets the authentication type.
   [ type: <string> | default: Bearer ]
   # Sets the credentials. It is mutually exclusive with
   # `credentials_file`.
   [ credentials: <secret> ]
-  # Sets the credentials with the credentials read from the configured file.
+  # Sets the credentials to the credentials read from the configured file.
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
@@ -621,14 +625,14 @@ basic_auth:
   [ password: <secret> ]
   [ password_file: <string> ]
 
-# Optional the `Authorization` header configuration.
+# Optional `Authorization` header configuration.
 authorization:
   # Sets the authentication type.
   [ type: <string> | default: Bearer ]
   # Sets the credentials. It is mutually exclusive with
   # `credentials_file`.
   [ credentials: <secret> ]
-  # Sets the credentials with the credentials read from the configured file.
+  # Sets the credentials to the credentials read from the configured file.
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
@@ -784,14 +788,14 @@ basic_auth:
   [ password: <secret> ]
   [ password_file: <string> ]
 
-# Optional the `Authorization` header configuration.
+# Optional `Authorization` header configuration.
 authorization:
   # Sets the authentication type.
   [ type: <string> | default: Bearer ]
   # Sets the credentials. It is mutually exclusive with
   # `credentials_file`.
   [ credentials: <secret> ]
-  # Sets the credentials with the credentials read from the configured file.
+  # Sets the credentials to the credentials read from the configured file.
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
@@ -1196,7 +1200,7 @@ basic_auth:
   [ password: <secret> ]
   [ password_file: <string> ]
 
-# Optional the `Authorization` header configuration. required when role is
+# Optional `Authorization` header configuration, required when role is
 # hcloud. Role robot does not support bearer token authentication.
 authorization:
   # Sets the authentication type.
@@ -1204,7 +1208,7 @@ authorization:
   # Sets the credentials. It is mutually exclusive with
   # `credentials_file`.
   [ credentials: <secret> ]
-  # Sets the credentials with the credentials read from the configured file.
+  # Sets the credentials to the credentials read from the configured file.
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
@@ -1228,6 +1232,81 @@ tls_config:
 
 # The time after which the servers are refreshed.
 [ refresh_interval: <duration> | default = 60s ]
+```
+
+### `<http_sd_config>`
+
+HTTP-based service discovery provides a more generic way to configure static targets
+and serves as an interface to plug in custom service discovery mechanisms.
+
+It fetches targets from an HTTP endpoint containing a list of zero or more
+`<static_config>`s. The target must reply with an HTTP 200 response.
+The HTTP header `Content-Type` must be `application/json`, and the body must be
+valid JSON.
+
+Example response body:
+
+```json
+[
+  {
+    "targets": [ "<host>", ... ],
+    "labels": {
+      "<labelname>": "<labelvalue>", ...
+    }
+  },
+  ...
+]
+```
+
+The endpoint is queried periodically at the specified
+refresh interval.
+
+Each target has a meta label `__meta_url` during the
+[relabeling phase](#relabel_config). Its value is set to the
+URL from which the target was extracted.
+
+```yaml
+# URL from wich the targets are fetched.
+url: <string>
+
+# Refresh interval to re-query the endpoint.
+[ refresh_interval: <duration> | default = 60s ]
+
+# Authentication information used to authenticate to the API server.
+# Note that `basic_auth`, `authorization` and `oauth2` options are
+# mutually exclusive.
+# `password` and `password_file` are mutually exclusive.
+
+# Optional HTTP basic authentication information.
+basic_auth:
+  [ username: <string> ]
+  [ password: <secret> ]
+  [ password_file: <string> ]
+
+# Optional `Authorization` header configuration.
+authorization:
+  # Sets the authentication type.
+  [ type: <string> | default: Bearer ]
+  # Sets the credentials. It is mutually exclusive with
+  # `credentials_file`.
+  [ credentials: <secret> ]
+  # Sets the credentials to the credentials read from the configured file.
+  # It is mutually exclusive with `credentials`.
+  [ credentials_file: <filename> ]
+
+# Optional OAuth 2.0 configuration.
+oauth2:
+  [ <oauth2> ]
+
+# Optional proxy URL.
+[ proxy_url: <string> ]
+
+# Configure whether HTTP requests follow HTTP 3xx redirects.
+[ follow_redirects: <bool> | default = true ]
+
+# TLS configuration.
+tls_config:
+  [ <tls_config> ]
 ```
 
 ### `<kubernetes_sd_config>`
@@ -1373,14 +1452,14 @@ basic_auth:
   [ password: <secret> ]
   [ password_file: <string> ]
 
-# Optional the `Authorization` header configuration.
+# Optional `Authorization` header configuration.
 authorization:
   # Sets the authentication type.
   [ type: <string> | default: Bearer ]
   # Sets the credentials. It is mutually exclusive with
   # `credentials_file`.
   [ credentials: <secret> ]
-  # Sets the credentials with the credentials read from the configured file.
+  # Sets the credentials to the credentials read from the configured file.
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
@@ -1601,7 +1680,7 @@ basic_auth:
   [ password: <secret> ]
   [ password_file: <string> ]
 
-# Optional the `Authorization` header configuration.
+# Optional `Authorization` header configuration.
 # NOTE: The current version of DC/OS marathon (v1.11.0) does not support
 # standard `Authentication` header, use `auth_token` or `auth_token_file`
 # instead.
@@ -1611,7 +1690,7 @@ authorization:
   # Sets the credentials. It is mutually exclusive with
   # `credentials_file`.
   [ credentials: <secret> ]
-  # Sets the credentials with the credentials read from the configured file.
+  # Sets the credentials to the credentials read from the configured file.
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
@@ -1807,14 +1886,14 @@ basic_auth:
   [ password: <secret> ]
   [ password_file: <string> ]
 
-# Optional the `Authorization` header configuration.
+# Optional `Authorization` header configuration.
 authorization:
   # Sets the authentication type.
   [ type: <string> | default: Bearer ]
   # Sets the credentials. It is mutually exclusive with
   # `credentials_file`.
   [ credentials: <secret> ]
-  # Sets the credentials with the credentials read from the configured file.
+  # Sets the credentials to the credentials read from the configured file.
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
@@ -2090,14 +2169,14 @@ basic_auth:
   [ password: <secret> ]
   [ password_file: <string> ]
 
-# Optional the `Authorization` header configuration.
+# Optional `Authorization` header configuration.
 authorization:
   # Sets the authentication type.
   [ type: <string> | default: Bearer ]
   # Sets the credentials. It is mutually exclusive with
   # `credentials_file`.
   [ credentials: <secret> ]
-  # Sets the credentials with the credentials read from the configured file.
+  # Sets the credentials to the credentials read from the configured file.
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
@@ -2159,6 +2238,10 @@ gce_sd_configs:
 # List of Hetzner service discovery configurations.
 hetzner_sd_configs:
   [ - <hetzner_sd_config> ... ]
+
+# List of HTTP service discovery configurations.
+http_sd_configs:
+  [ - <http_sd_config> ... ]
 
 # List of Kubernetes service discovery configurations.
 kubernetes_sd_configs:
@@ -2246,14 +2329,14 @@ basic_auth:
   [ password: <secret> ]
   [ password_file: <string> ]
 
-# Optional the `Authorization` header configuration.
+# Optional `Authorization` header configuration.
 authorization:
   # Sets the authentication type.
   [ type: <string> | default: Bearer ]
   # Sets the credentials. It is mutually exclusive with
   # `credentials_file`.
   [ credentials: <secret> ]
-  # Sets the credentials with the credentials read from the configured file.
+  # Sets the credentials to the credentials read from the configured file.
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
@@ -2364,14 +2447,14 @@ basic_auth:
   [ password: <secret> ]
   [ password_file: <string> ]
 
-# Optional the `Authorization` header configuration.
+# Optional `Authorization` header configuration.
 authorization:
   # Sets the authentication type.
   [ type: <string> | default: Bearer ]
   # Sets the credentials. It is mutually exclusive with
   # `credentials_file`.
   [ credentials: <secret> ]
-  # Sets the credentials with the credentials read from the configured file.
+  # Sets the credentials to the credentials read from the configured file.
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
