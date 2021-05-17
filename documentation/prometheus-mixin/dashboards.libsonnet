@@ -113,8 +113,8 @@ local template = grafana.template;
         .addTarget(prometheus.target(
           |||
             (
-              prometheus_remote_storage_highest_timestamp_in_seconds{cluster=~"$cluster", instance=~"$instance"} 
-            -  
+              prometheus_remote_storage_highest_timestamp_in_seconds{cluster=~"$cluster", instance=~"$instance"}
+            -
               ignoring(remote_name, url) group_right(instance) (prometheus_remote_storage_queue_highest_sent_timestamp_seconds{cluster=~"$cluster", instance=~"$instance"} != 0)
             )
           |||,
@@ -130,8 +130,8 @@ local template = grafana.template;
         .addTarget(prometheus.target(
           |||
             clamp_min(
-              rate(prometheus_remote_storage_highest_timestamp_in_seconds{cluster=~"$cluster", instance=~"$instance"}[5m])  
-            - 
+              rate(prometheus_remote_storage_highest_timestamp_in_seconds{cluster=~"$cluster", instance=~"$instance"}[5m])
+            -
               ignoring (remote_name, url) group_right(instance) rate(prometheus_remote_storage_queue_highest_sent_timestamp_seconds{cluster=~"$cluster", instance=~"$instance"}[5m])
             , 0)
           |||,
@@ -148,87 +148,91 @@ local template = grafana.template;
           |||
             rate(
               prometheus_remote_storage_samples_in_total{cluster=~"$cluster", instance=~"$instance"}[5m])
-            - 
+            -
               ignoring(remote_name, url) group_right(instance) (rate(prometheus_remote_storage_succeeded_samples_total{cluster=~"$cluster", instance=~"$instance"}[5m]) or rate(prometheus_remote_storage_samples_total{cluster=~"$cluster", instance=~"$instance"}[5m]))
-            - 
+            -
               (rate(prometheus_remote_storage_dropped_samples_total{cluster=~"$cluster", instance=~"$instance"}[5m]) or rate(prometheus_remote_storage_samples_dropped_total{cluster=~"$cluster", instance=~"$instance"}[5m]))
           |||,
           legendFormat='{{cluster}}:{{instance}} {{remote_name}}:{{url}}'
         ));
 
-      local maxSamplesPerSend =
-        graphPanel.new(
-          'Max samples sent per request',
-          datasource='$datasource',
-          span=4,
-        )
-        .addTarget(prometheus.target(
-          'prometheus_remote_storage_max_samples_per_send{cluster=~"$cluster", instance=~"$instance"}',
-          legendFormat='{{cluster}}:{{instance}} {{remote_name}}:{{url}}'
-        ));
-
       local currentShards =
-        graphPanel.new(
+        singlestat.new(
           'Current Shards',
           datasource='$datasource',
-          span=12,
-          min_span=6,
+          span=2,
+          sparklineShow=true,
+          height=150,
         )
         .addTarget(prometheus.target(
-          'prometheus_remote_storage_shards{cluster=~"$cluster", instance=~"$instance"}',
-          legendFormat='{{cluster}}:{{instance}} {{remote_name}}:{{url}}'
+          'prometheus_remote_storage_shards{cluster=~"$cluster", instance=~"$instance", url=~"$url"}',
         ));
 
       local maxShards =
-        graphPanel.new(
+        singlestat.new(
           'Max Shards',
           datasource='$datasource',
-          span=4,
+          span=2,
+          sparklineShow=true,
+          height=150,
         )
         .addTarget(prometheus.target(
-          'prometheus_remote_storage_shards_max{cluster=~"$cluster", instance=~"$instance"}',
-          legendFormat='{{cluster}}:{{instance}} {{remote_name}}:{{url}}'
+          'prometheus_remote_storage_shards_max{cluster=~"$cluster", instance=~"$instance", url=~"$url"}',
         ));
 
       local minShards =
-        graphPanel.new(
+        singlestat.new(
           'Min Shards',
           datasource='$datasource',
-          span=4,
+          span=2,
+          sparklineShow=true,
+          height=150,
         )
         .addTarget(prometheus.target(
-          'prometheus_remote_storage_shards_min{cluster=~"$cluster", instance=~"$instance"}',
-          legendFormat='{{cluster}}:{{instance}} {{remote_name}}:{{url}}'
+          'prometheus_remote_storage_shards_min{cluster=~"$cluster", instance=~"$instance", url=~"$url"}',
         ));
 
       local desiredShards =
-        graphPanel.new(
+        singlestat.new(
           'Desired Shards',
           datasource='$datasource',
-          span=4,
+          span=2,
+          sparklineShow=true,
+          height=150,
         )
         .addTarget(prometheus.target(
-          'prometheus_remote_storage_shards_desired{cluster=~"$cluster", instance=~"$instance"}',
-          legendFormat='{{cluster}}:{{instance}} {{remote_name}}:{{url}}'
+          'prometheus_remote_storage_shards_desired{cluster=~"$cluster", instance=~"$instance", url=~"$url"}',
         ));
 
       local shardsCapacity =
-        graphPanel.new(
+        singlestat.new(
           'Shard Capacity',
           datasource='$datasource',
-          span=4,
+          span=2,
+          sparklineShow=true,
+          height=150,
         )
         .addTarget(prometheus.target(
-          'prometheus_remote_storage_shard_capacity{cluster=~"$cluster", instance=~"$instance"}',
-          legendFormat='{{cluster}}:{{instance}} {{remote_name}}:{{url}}'
+          'prometheus_remote_storage_shard_capacity{cluster=~"$cluster", instance=~"$instance", url=~"$url"}',
         ));
 
+      local maxSamplesPerSend =
+        singlestat.new(
+          'Max samples sent per request',
+          datasource='$datasource',
+          span=2,
+          sparklineShow=true,
+          height=150,
+        )
+        .addTarget(prometheus.target(
+          'prometheus_remote_storage_max_samples_per_send{cluster=~"$cluster", instance=~"$instance", url=~"$url"}',
+        ));
 
       local pendingSamples =
         graphPanel.new(
           'Pending Samples',
           datasource='$datasource',
-          span=4,
+          span=12,
         )
         .addTarget(prometheus.target(
           'prometheus_remote_storage_pending_samples{cluster=~"$cluster", instance=~"$instance"} or prometheus_remote_storage_samples_pending{cluster=~"$cluster", instance=~"$instance"}',
@@ -364,20 +368,18 @@ local template = grafana.template;
       .addRow(
         row.new('Samples')
         .addPanel(samplesRate)
+        .addPanel(pendingSamples)
       )
       .addRow(
         row.new(
-          'Shards'
+          'Queue [$url]',
+          repeat='url'
         )
         .addPanel(currentShards)
         .addPanel(maxShards)
         .addPanel(minShards)
         .addPanel(desiredShards)
-      )
-      .addRow(
-        row.new('Shard Details')
         .addPanel(shardsCapacity)
-        .addPanel(pendingSamples)
         .addPanel(maxSamplesPerSend)
       )
       .addRow(
