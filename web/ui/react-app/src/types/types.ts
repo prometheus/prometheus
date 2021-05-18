@@ -40,3 +40,5 @@ export interface WALReplayData {
 export interface WALReplayStatus {
   data?: WALReplayData;
 }
+
+export type ExemplarData = Array<{ seriesLabels: Metric; exemplars: Exemplar[] }> | undefined;

@@ -161,7 +161,7 @@ export const getColors = (data: { resultType: string; result: Array<{ metric: Me
   });
 };
 
-export const normalizeData = ({ queryParams, data, stacked }: GraphProps): GraphData => {
+export const normalizeData = ({ queryParams, data, exemplars, stacked }: GraphProps): GraphData => {
   const colors = getColors(data);
   const { startTime, endTime, resolution } = queryParams!;
   return {
@@ -189,8 +189,8 @@ export const normalizeData = ({ queryParams, data, stacked }: GraphProps): Graph
         index,
       };
     }),
-    exemplars: data.exemplars
-      ? data.exemplars
+    exemplars: exemplars
+      ? exemplars
           .map(({ seriesLabels, exemplars }) => {
             const newLabels: { [key: string]: string } = {};
             for (const label in seriesLabels) {
@@ -198,6 +198,7 @@ export const normalizeData = ({ queryParams, data, stacked }: GraphProps): Graph
             }
             return exemplars.map(({ labels, value, timestamp }) => {
               return {
+                seriesLabels: seriesLabels,
                 labels: Object.assign(labels, newLabels),
                 data: [[timestamp * 1000, parseValue(value)]],
                 points: { symbol: exemplarSymbol },

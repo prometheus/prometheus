@@ -11,7 +11,7 @@ import { GraphTabContent } from './GraphTabContent';
 import DataTable from './DataTable';
 import TimeInput from './TimeInput';
 import QueryStatsView, { QueryStats } from './QueryStatsView';
-import { QueryParams } from '../../types/types';
+import { QueryParams, ExemplarData } from '../../types/types';
 import { API_PATH } from '../../constants/constants';
 
 interface PanelProps {
@@ -32,6 +32,7 @@ interface PanelProps {
 
 interface PanelState {
   data: any; // TODO: Type data.
+  exemplars: ExemplarData;
   lastQueryParams: QueryParams | null;
   loading: boolean;
   warnings: string[] | null;
@@ -71,6 +72,7 @@ class Panel extends Component<PanelProps, PanelState> {
 
     this.state = {
       data: null,
+      exemplars: [],
       lastQueryParams: null,
       loading: false,
       warnings: null,
@@ -125,16 +127,12 @@ class Panel extends Component<PanelProps, PanelState> {
     });
 
     let path: string;
-    let showExemplars = false;
     switch (this.props.options.type) {
       case 'graph':
         path = 'query_range';
         params.append('start', startTime.toString());
         params.append('end', endTime.toString());
         params.append('step', resolution.toString());
-        if (this.props.showExemplars) {
-          showExemplars = true;
-        }
         break;
       case 'table':
         path = 'query';
@@ -157,7 +155,8 @@ class Panel extends Component<PanelProps, PanelState> {
         throw new Error(query.error || 'invalid response JSON');
       }
 
-      if (showExemplars) {
+      if (this.props.options.type === 'graph' && this.props.showExemplars) {
+        params.delete('step'); // Not needed for this request.
         exemplars = await fetch(`${this.props.pathPrefix}/${API_PATH}/query_exemplars?${params}`, {
           cache: 'no-store',
           credentials: 'same-origin',
@@ -179,13 +178,10 @@ class Panel extends Component<PanelProps, PanelState> {
         }
       }
 
-      if (exemplars && exemplars.data) {
-        query.data.exemplars = exemplars.data;
-      }
-
       this.setState({
         error: null,
         data: query.data,
+        exemplars: exemplars.data,
         warnings: query.warnings,
         lastQueryParams: {
           startTime,
@@ -346,6 +342,7 @@ class Panel extends Component<PanelProps, PanelState> {
                     />
                     <GraphTabContent
                       data={this.state.data}
+                      exemplars={this.state.exemplars}
                       stacked={options.stacked}
                       useLocalTime={this.props.useLocalTime}
                       showExemplars={this.props.showExemplars}

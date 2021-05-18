@@ -1,11 +1,12 @@
 import React, { FC } from 'react';
 import { Alert } from 'reactstrap';
 import Graph from './Graph';
-import { QueryParams } from '../../types/types';
+import { QueryParams, ExemplarData } from '../../types/types';
 import { isPresent } from '../../utils';
 
 interface GraphTabContentProps {
   data: any;
+  exemplars: ExemplarData;
   stacked: boolean;
   useLocalTime: boolean;
   showExemplars: boolean;
@@ -14,6 +15,7 @@ interface GraphTabContentProps {
 
 export const GraphTabContent: FC<GraphTabContentProps> = ({
   data,
+  exemplars,
   stacked,
   useLocalTime,
   lastQueryParams,
@@ -33,6 +35,7 @@ export const GraphTabContent: FC<GraphTabContentProps> = ({
   return (
     <Graph
       data={data}
+      exemplars={exemplars}
       stacked={stacked}
       useLocalTime={useLocalTime}
       showExemplars={showExemplars}
