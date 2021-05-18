@@ -204,9 +204,7 @@ func (c *seriesSetToChunkSet) Next() bool {
 }
 
 func (c *seriesSetToChunkSet) At() ChunkSeries {
-	return &seriesToChunkEncoder{
-		Series: c.SeriesSet.At(),
-	}
+	return NewSeriesToChunkEncoder(c.SeriesSet.At())
 }
 
 func (c *seriesSetToChunkSet) Err() error {
@@ -218,6 +216,11 @@ type seriesToChunkEncoder struct {
 }
 
 const seriesToChunkEncoderSplit = 120
+
+// NewSeriesToChunkEncoder encodes samples to chunks with 120 samples limit.
+func NewSeriesToChunkEncoder(series Series) ChunkSeries {
+	return &seriesToChunkEncoder{series}
+}
 
 func (s *seriesToChunkEncoder) Iterator() chunks.Iterator {
 	chk := chunkenc.NewXORChunk()
