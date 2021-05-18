@@ -354,7 +354,7 @@ func New(logger log.Logger, o *Options) *Handler {
 	// Redirect the original React UI's path (under "/new") to its new path at the root.
 	router.Get("/new/*path", func(w http.ResponseWriter, r *http.Request) {
 		p := route.Param(r.Context(), "path")
-		http.Redirect(w, r, path.Join(o.ExternalURL.Path, strings.TrimPrefix(p, "/new"))+"?"+r.URL.RawQuery, http.StatusFound)
+		http.Redirect(w, r, path.Join(o.ExternalURL.Path, p)+"?"+r.URL.RawQuery, http.StatusFound)
 	})
 
 	router.Get("/classic/alerts", readyf(h.alerts))
