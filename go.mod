@@ -34,6 +34,7 @@ require (
 	github.com/hetznercloud/hcloud-go v1.25.0
 	github.com/influxdata/influxdb v1.8.5
 	github.com/json-iterator/go v1.1.11
+	github.com/linode/linodego v1.0.0
 	github.com/miekg/dns v1.1.41
 	github.com/moby/term v0.0.0-20201216013528-df9cb8a40635 // indirect
 	github.com/morikuni/aec v1.0.0 // indirect
