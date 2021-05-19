@@ -2,7 +2,7 @@ import $ from 'jquery';
 
 import { escapeHTML } from '../../utils';
 import { Metric } from '../../types/types';
-import { GraphProps, GraphData, GraphSeries } from './Graph';
+import { GraphProps, GraphData, GraphSeries, GraphExemplar } from './Graph';
 import moment from 'moment-timezone';
 
 export const formatValue = (y: number | null): string => {
@@ -101,7 +101,8 @@ export const getOptions = (stacked: boolean, useLocalTime: boolean): jquery.flot
       show: true,
       cssClass: 'graph-tooltip',
       content: (_, xval, yval, { series }): string => {
-        const { labels, color } = series;
+        const both = series as GraphExemplar | GraphSeries;
+        const { labels, color } = both;
         let dateTime = moment(xval);
         if (!useLocalTime) {
           dateTime = dateTime.utc();
@@ -119,6 +120,22 @@ export const getOptions = (stacked: boolean, useLocalTime: boolean): jquery.flot
                 )
                 .join('')}
             </div>
+						${
+              'seriesLabels' in both
+                ? `
+						<span>Series Labels:</span>
+						<div class="labels mt-1">
+              ${Object.keys(both.seriesLabels)
+                .map(k =>
+                  k !== '__name__'
+                    ? `<div class="mb-1"><strong>${k}</strong>: ${escapeHTML(both.seriesLabels[k])}</div>`
+                    : ''
+                )
+                .join('')}
+            </div>
+						`
+                : ''
+            }
           `;
       },
       defaultTheme: false,
@@ -192,14 +209,10 @@ export const normalizeData = ({ queryParams, data, exemplars, stacked }: GraphPr
     exemplars: exemplars
       ? exemplars
           .map(({ seriesLabels, exemplars }) => {
-            const newLabels: { [key: string]: string } = {};
-            for (const label in seriesLabels) {
-              newLabels[`Series: ${label}`] = seriesLabels[label];
-            }
             return exemplars.map(({ labels, value, timestamp }) => {
               return {
                 seriesLabels: seriesLabels,
-                labels: Object.assign(labels, newLabels),
+                labels: labels,
                 data: [[timestamp * 1000, parseValue(value)]],
                 points: { symbol: exemplarSymbol },
                 color: '#0275d8',

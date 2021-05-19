@@ -36,6 +36,7 @@ export interface GraphExemplar {
   seriesLabels: { [key: string]: string };
   labels: { [key: string]: string };
   data: (number | null)[][];
+  color: string;
 }
 
 export interface GraphData {
