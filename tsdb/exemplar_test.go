@@ -26,7 +26,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 )
 
-// Tests the same exemplar cases as AddExemplar, but specfically the ValidateExemplar function so it can be relied on externally.
+// Tests the same exemplar cases as AddExemplar, but specifically the ValidateExemplar function so it can be relied on externally.
 func TestValidateExemplar(t *testing.T) {
 	exs, err := NewCircularExemplarStorage(2, nil)
 	require.NoError(t, err)
