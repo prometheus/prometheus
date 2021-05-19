@@ -75,7 +75,7 @@ func TestLinodeSDRefresh(t *testing.T) {
 			"__meta_linode_region":         model.LabelValue("us-east"),
 			"__meta_linode_type":           model.LabelValue("g6-standard-2"),
 			"__meta_linode_status":         model.LabelValue("running"),
-			"__meta_linode_tags":		model.LabelValue(",monitoring,"),
+			"__meta_linode_tags":           model.LabelValue(",monitoring,"),
 		},
 		{
 			"__address__":                  model.LabelValue("139.162.196.43:80"),
@@ -88,7 +88,7 @@ func TestLinodeSDRefresh(t *testing.T) {
 			"__meta_linode_region":         model.LabelValue("eu-west"),
 			"__meta_linode_type":           model.LabelValue("g6-standard-2"),
 			"__meta_linode_status":         model.LabelValue("running"),
-			"__meta_linode_tags":		model.LabelValue(",monitoring,"),
+			"__meta_linode_tags":           model.LabelValue(",monitoring,"),
 		},
 		{
 			"__address__":                  model.LabelValue("192.53.120.25:80"),
@@ -101,7 +101,7 @@ func TestLinodeSDRefresh(t *testing.T) {
 			"__meta_linode_region":         model.LabelValue("ca-central"),
 			"__meta_linode_type":           model.LabelValue("g6-standard-1"),
 			"__meta_linode_status":         model.LabelValue("running"),
-			"__meta_linode_tags":		model.LabelValue(",monitoring,"),
+			"__meta_linode_tags":           model.LabelValue(",monitoring,"),
 		},
 		{
 			"__address__":                  model.LabelValue("66.228.47.103:80"),
@@ -114,7 +114,7 @@ func TestLinodeSDRefresh(t *testing.T) {
 			"__meta_linode_region":         model.LabelValue("us-east"),
 			"__meta_linode_type":           model.LabelValue("g6-nanode-1"),
 			"__meta_linode_status":         model.LabelValue("running"),
-			"__meta_linode_tags":		model.LabelValue(",monitoring,"),
+			"__meta_linode_tags":           model.LabelValue(",monitoring,"),
 		},
 	} {
 		t.Run(fmt.Sprintf("item %d", i), func(t *testing.T) {
