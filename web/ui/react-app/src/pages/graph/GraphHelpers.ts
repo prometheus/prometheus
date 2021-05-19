@@ -120,11 +120,11 @@ export const getOptions = (stacked: boolean, useLocalTime: boolean): jquery.flot
                 )
                 .join('')}
             </div>
-						${
+            ${
               'seriesLabels' in both
-                ? `
-						<span>Series Labels:</span>
-						<div class="labels mt-1">
+            ? `
+            <span>Series Labels:</span>
+            <div class="labels mt-1">
               ${Object.keys(both.seriesLabels)
                 .map(k =>
                   k !== '__name__'
@@ -133,7 +133,7 @@ export const getOptions = (stacked: boolean, useLocalTime: boolean): jquery.flot
                 )
                 .join('')}
             </div>
-						`
+            `
                 : ''
             }
           `;
