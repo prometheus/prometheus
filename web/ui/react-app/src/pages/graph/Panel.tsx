@@ -181,7 +181,7 @@ class Panel extends Component<PanelProps, PanelState> {
       this.setState({
         error: null,
         data: query.data,
-        exemplars: exemplars.data,
+        exemplars: exemplars?.data,
         warnings: query.warnings,
         lastQueryParams: {
           startTime,
