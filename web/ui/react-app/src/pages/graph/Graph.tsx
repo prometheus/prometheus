@@ -46,6 +46,7 @@ export interface GraphData {
 
 interface GraphState {
   chartData: GraphData;
+  selectedExemplarLabels: { [key: string]: string };
 }
 
 class Graph extends PureComponent<GraphProps, GraphState> {
@@ -56,6 +57,7 @@ class Graph extends PureComponent<GraphProps, GraphState> {
 
   state = {
     chartData: normalizeData(this.props),
+    selectedExemplarLabels: {},
   };
 
   componentDidUpdate(prevProps: GraphProps) {
@@ -84,6 +86,7 @@ class Graph extends PureComponent<GraphProps, GraphState> {
       this.setState(
         {
           chartData: { series: this.state.chartData.series, exemplars: [] },
+          ...this.state.selectedExemplarLabels,
         },
         () => {
           this.plot();
@@ -94,6 +97,21 @@ class Graph extends PureComponent<GraphProps, GraphState> {
 
   componentDidMount() {
     this.plot();
+
+    $('.graph').bind('plotclick', (event, pos, item) => {
+      // If an item has the series label property that means it's an exemplar.
+      if (item && 'seriesLabels' in item.series) {
+        this.setState({
+          selectedExemplarLabels: item.series.labels,
+          chartData: this.state.chartData,
+        });
+      } else {
+        this.setState({
+          chartData: this.state.chartData,
+          selectedExemplarLabels: {},
+        });
+      }
+    });
   }
 
   componentWillUnmount() {
@@ -171,11 +189,24 @@ class Graph extends PureComponent<GraphProps, GraphState> {
   };
 
   render() {
-    const { chartData } = this.state;
+    const { chartData, selectedExemplarLabels } = this.state;
+    const selectedLabels = selectedExemplarLabels as { [key: string]: string };
     return (
       <div className="graph">
         <ReactResizeDetector handleWidth onResize={this.handleResize} skipOnMount />
         <div className="graph-chart" ref={this.chartRef} />
+        {Object.keys(selectedLabels).length > 0 ? (
+          <div className="float-right">
+            <span style={{ fontSize: '17px' }}>Selected exemplar:</span>
+            <div className="labels mt-1">
+              {Object.keys(selectedLabels).map((k, i) => (
+                <div key={i} style={{ fontSize: '15px' }}>
+                  <strong>{k}</strong>: {selectedLabels[k]}
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
         <Legend
           shouldReset={this.selectedSeriesIndexes.length === 0}
           chartData={chartData.series}
