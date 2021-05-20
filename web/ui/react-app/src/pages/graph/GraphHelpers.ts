@@ -122,8 +122,8 @@ export const getOptions = (stacked: boolean, useLocalTime: boolean): jquery.flot
             </div>
             ${
               'seriesLabels' in both
-            ? `
-            <span>Series Labels:</span>
+                ? `
+            <span>Series labels:</span>
             <div class="labels mt-1">
               ${Object.keys(both.seriesLabels)
                 .map(k =>
@@ -136,7 +136,7 @@ export const getOptions = (stacked: boolean, useLocalTime: boolean): jquery.flot
             `
                 : ''
             }
-          `;
+          `.trimEnd();
       },
       defaultTheme: false,
       lines: true,
