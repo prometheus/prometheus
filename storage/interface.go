@@ -18,10 +18,10 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/prometheus/prometheus/pkg/exemplar"
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
-	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/v2/pkg/exemplar"
+	"github.com/prometheus/prometheus/v2/pkg/labels"
+	"github.com/prometheus/prometheus/v2/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/v2/tsdb/chunks"
 )
 
 // The errors exposed.

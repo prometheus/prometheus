@@ -23,7 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/v2/pkg/labels"
 )
 
 func BenchmarkHeadStripeSeriesCreate(b *testing.B) {

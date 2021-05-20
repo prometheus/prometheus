@@ -23,7 +23,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/v2/pkg/labels"
 )
 
 // Make entries ~50B in size, to emulate real-world high cardinality.

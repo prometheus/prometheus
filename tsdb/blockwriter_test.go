@@ -24,8 +24,8 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/tsdb/tsdbutil"
+	"github.com/prometheus/prometheus/v2/pkg/labels"
+	"github.com/prometheus/prometheus/v2/tsdb/tsdbutil"
 )
 
 func TestBlockWriter(t *testing.T) {

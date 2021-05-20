@@ -20,8 +20,8 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/pkg/textparse"
-	"github.com/prometheus/prometheus/scrape"
+	"github.com/prometheus/prometheus/v2/pkg/textparse"
+	"github.com/prometheus/prometheus/v2/scrape"
 	"github.com/stretchr/testify/require"
 )
 

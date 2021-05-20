@@ -26,10 +26,10 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/timestamp"
-	"github.com/prometheus/prometheus/promql/parser"
-	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/v2/pkg/labels"
+	"github.com/prometheus/prometheus/v2/pkg/timestamp"
+	"github.com/prometheus/prometheus/v2/promql/parser"
+	"github.com/prometheus/prometheus/v2/storage"
 )
 
 func TestMain(m *testing.M) {

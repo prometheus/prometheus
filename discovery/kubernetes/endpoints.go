@@ -15,9 +15,10 @@ package kubernetes
 
 import (
 	"context"
-	"github.com/prometheus/prometheus/util/strutil"
 	"net"
 	"strconv"
+
+	"github.com/prometheus/prometheus/v2/util/strutil"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
@@ -27,7 +28,7 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
 
-	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/v2/discovery/targetgroup"
 )
 
 var (
