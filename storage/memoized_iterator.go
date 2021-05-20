@@ -16,7 +16,7 @@ package storage
 import (
 	"math"
 
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/v2/tsdb/chunkenc"
 )
 
 // MemoizedSeriesIterator wraps an iterator with a buffer to look back the previous element.

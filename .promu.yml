@@ -3,7 +3,7 @@ go:
     # .circle/config.yml should also be updated.
     version: 1.16
 repository:
-    path: github.com/prometheus/prometheus
+    path: github.com/prometheus/prometheus/v2
 build:
     binaries:
         - name: prometheus

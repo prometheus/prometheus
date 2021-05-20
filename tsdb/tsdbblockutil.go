@@ -20,7 +20,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 
-	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/v2/storage"
 )
 
 var ErrInvalidTimes = fmt.Errorf("max time is lesser than min time")
