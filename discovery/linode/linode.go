@@ -133,13 +133,13 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		Source: "Linode",
 	}
 
-	// gather all linode instances
+	// Gather all linode instances.
 	instances, err := d.client.ListInstances(ctx, &linodego.ListOptions{})
 	if err != nil {
 		return nil, err
 	}
 
-	// gather detailed IP address info for all IPs on all linode instances
+	// Gather detailed IP address info for all IPs on all linode instances.
 	detailedIPs, err := d.client.ListIPAddresses(ctx, &linodego.ListOptions{})
 	if err != nil {
 		return nil, err
