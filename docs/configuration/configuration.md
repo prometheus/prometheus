@@ -2148,6 +2148,10 @@ kubernetes_sd_configs:
 lightsail_sd_configs:
   [ - <lightsail_sd_config> ... ]
 
+# List of Linode service discovery configurations.
+linode_sd_configs:
+  [ - <linode_sd_config> ... ]
+
 # List of Marathon service discovery configurations.
 marathon_sd_configs:
   [ - <marathon_sd_config> ... ]
