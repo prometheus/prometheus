@@ -186,4 +186,4 @@ The output of `promtool tsdb create-blocks-from rules` command is a directory th
 - All rules in the recording rule files will be evaluated.
 - If the `interval` is set in the recording rule file that will take priority over the `eval-interval` flag in the rule backfill command.
 - Alerts are currently ignored if they are in the recording rule file.
-- Rules in the same group cannot see the results of previous rules. Meaning that rules that refer to other rules being backfilled is not supported. A workaround is to backfill mulitple times and create the dependent data first (and move dependent data to the Prometheus server data dir so that it is accessible from the Prometheus API).
+- Rules in the same group cannot see the results of previous rules. Meaning that rules that refer to other rules being backfilled is not supported. A workaround is to backfill multiple times and create the dependent data first (and move dependent data to the Prometheus server data dir so that it is accessible from the Prometheus API).
