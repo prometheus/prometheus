@@ -20,6 +20,7 @@ import (
 	"testing"
 
 	"github.com/go-kit/kit/log"
+	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 )
@@ -46,7 +47,10 @@ func TestLinodeSDRefresh(t *testing.T) {
 	t.Cleanup(sdmock.TearDownSuite)
 
 	cfg := DefaultSDConfig
-	cfg.HTTPClientConfig.BearerToken = tokenID
+	cfg.HTTPClientConfig.Authorization = &config.Authorization{
+		Credentials: tokenID,
+		Type:        "Bearer",
+	}
 	d, err := NewDiscovery(&cfg, log.NewNopLogger())
 	require.NoError(t, err)
 	endpoint, err := url.Parse(sdmock.Mock.Endpoint())
