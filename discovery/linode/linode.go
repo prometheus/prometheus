@@ -45,11 +45,11 @@ const (
 	linodeLabelType        = linodeLabel + "type"
 	linodeLabelStatus      = linodeLabel + "status"
 	linodeLabelTags        = linodeLabel + "tags"
-	separator              = ","
 )
 
 // DefaultSDConfig is the default Linode SD configuration.
 var DefaultSDConfig = SDConfig{
+	TagSeparator:     ",",
 	Port:             80,
 	RefreshInterval:  model.Duration(60 * time.Second),
 	HTTPClientConfig: config.DefaultHTTPClientConfig,
@@ -65,6 +65,7 @@ type SDConfig struct {
 
 	RefreshInterval model.Duration `yaml:"refresh_interval"`
 	Port            int            `yaml:"port"`
+	TagSeparator    string         `yaml:"tag_separator,omitempty"`
 }
 
 // Name returns the name of the Config.
@@ -95,14 +96,16 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 // the Discoverer interface.
 type Discovery struct {
 	*refresh.Discovery
-	client *linodego.Client
-	port   int
+	client       *linodego.Client
+	port         int
+	tagSeparator string
 }
 
 // NewDiscovery returns a new Discovery which periodically refreshes its targets.
 func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 	d := &Discovery{
-		port: conf.Port,
+		port:         conf.Port,
+		tagSeparator: conf.TagSeparator,
 	}
 
 	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "linode_sd", config.WithHTTP2Disabled())
@@ -185,7 +188,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		if len(instance.Tags) > 0 {
 			// We surround the separated list with the separator as well. This way regular expressions
 			// in relabeling rules don't have to consider tag positions.
-			tags := separator + strings.Join(instance.Tags, separator) + separator
+			tags := d.tagSeparator + strings.Join(instance.Tags, d.tagSeparator) + d.tagSeparator
 			labels[linodeLabelTags] = model.LabelValue(tags)
 		}
 

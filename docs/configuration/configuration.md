@@ -1531,6 +1531,9 @@ tls_config:
 # The port to scrape metrics from.
 [ port: <int> | default = 80 ]
 
+# The string by which Linode Instance tags are joined into the tag label.
+[ tag_separator: <string> | default = , ]
+
 # The time after which the linode instances are refreshed.
 [ refresh_interval: <duration> | default = 60s ]
 ```
