@@ -239,10 +239,18 @@ const exemplarSymbol = (ctx: CanvasRenderingContext2D, x: number, y: number) => 
   if (x > ctx.canvas.clientWidth - 59) {
     x = ctx.canvas.clientWidth - 59;
   }
-  if (y > ctx.canvas.clientHeight - 37) {
-    y = ctx.canvas.clientHeight - 37;
+  if (y > ctx.canvas.clientHeight - 40) {
+    y = ctx.canvas.clientHeight - 40;
   }
 
-  ctx.fillStyle = '#0275d8';
+  ctx.translate(x, y);
+  ctx.rotate(Math.PI / 4);
+  ctx.translate(-x, -y);
+
+  ctx.fillStyle = '#92bce1';
   ctx.fillRect(x, y, 7, 7);
+
+  ctx.strokeStyle = '#0275d8';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x, y, 7, 7);
 };
