@@ -556,7 +556,14 @@ func (cdm *ChunkDiskMapper) Chunk(ref uint64) (chunkenc.Chunk, error) {
 
 	// The chunk data itself.
 	chkData := mmapFile.byteSlice.Range(chkDataEnd-int(chkDataLen), chkDataEnd)
-	chk, err := cdm.pool.Get(chunkenc.Encoding(chkEnc), chkData)
+
+	// Make a copy of the chunk data to prevent a panic occurring because the returned
+	// chunk data slice references an mmap-ed file which could be closed after the
+	// function returns but while the chunk is still in use.
+	chkDataCopy := make([]byte, len(chkData))
+	copy(chkDataCopy, chkData)
+
+	chk, err := cdm.pool.Get(chunkenc.Encoding(chkEnc), chkDataCopy)
 	if err != nil {
 		return nil, &CorruptionErr{
 			Dir:       cdm.dir.Name(),

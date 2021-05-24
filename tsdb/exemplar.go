@@ -17,6 +17,7 @@ import (
 	"context"
 	"sort"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/pkg/exemplar"
@@ -41,14 +42,15 @@ type CircularExemplarStorage struct {
 }
 
 type indexEntry struct {
-	oldest int
-	newest int
+	oldest       int
+	newest       int
+	seriesLabels labels.Labels
 }
 
 type circularBufferEntry struct {
-	exemplar     exemplar.Exemplar
-	seriesLabels labels.Labels
-	next         int
+	exemplar exemplar.Exemplar
+	next     int
+	ref      *indexEntry
 }
 
 // NewCircularExemplarStorage creates an circular in memory exemplar storage.
@@ -82,7 +84,7 @@ func NewCircularExemplarStorage(len int, reg prometheus.Registerer) (ExemplarSto
 		}),
 		outOfOrderExemplars: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_exemplar_out_of_order_exemplars_total",
-			Help: "Total number of out of order exemplar ingestion failed attempts",
+			Help: "Total number of out of order exemplar ingestion failed attempts.",
 		}),
 	}
 	if reg != nil {
@@ -121,10 +123,13 @@ func (ce *CircularExemplarStorage) Select(start, end int64, matchers ...[]*label
 	for _, idx := range ce.index {
 		var se exemplar.QueryResult
 		e := ce.exemplars[idx.oldest]
-		if !matchesSomeMatcherSet(e.seriesLabels, matchers) {
+		if e.exemplar.Ts > end || ce.exemplars[idx.newest].exemplar.Ts < start {
 			continue
 		}
-		se.SeriesLabels = e.seriesLabels
+		if !matchesSomeMatcherSet(idx.seriesLabels, matchers) {
+			continue
+		}
+		se.SeriesLabels = idx.seriesLabels
 
 		// Loop through all exemplars in the circular buffer for the current series.
 		for e.exemplar.Ts <= end {
@@ -161,6 +166,51 @@ Outer:
 	return false
 }
 
+func (ce *CircularExemplarStorage) ValidateExemplar(l labels.Labels, e exemplar.Exemplar) error {
+	seriesLabels := l.String()
+
+	// TODO(bwplotka): This lock can lock all scrapers, there might high contention on this on scale.
+	// Optimize by moving the lock to be per series (& benchmark it).
+	ce.lock.RLock()
+	defer ce.lock.RUnlock()
+	return ce.validateExemplar(seriesLabels, e, false)
+}
+
+// Not thread safe. The append parameters tells us whether this is an external validation, or internal
+// as a result of an AddExemplar call, in which case we should update any relevant metrics.
+func (ce *CircularExemplarStorage) validateExemplar(l string, e exemplar.Exemplar, append bool) error {
+	// Exemplar label length does not include chars involved in text rendering such as quotes
+	// equals sign, or commas. See definition of const ExemplarMaxLabelLength.
+	labelSetLen := 0
+	for _, l := range e.Labels {
+		labelSetLen += utf8.RuneCountInString(l.Name)
+		labelSetLen += utf8.RuneCountInString(l.Value)
+
+		if labelSetLen > exemplar.ExemplarMaxLabelSetLength {
+			return storage.ErrExemplarLabelLength
+		}
+	}
+
+	idx, ok := ce.index[l]
+	if !ok {
+		return nil
+	}
+
+	// Check for duplicate vs last stored exemplar for this series.
+	// NB these are expected, and appending them is a no-op.
+	if ce.exemplars[idx.newest].exemplar.Equals(e) {
+		return storage.ErrDuplicateExemplar
+	}
+
+	if e.Ts <= ce.exemplars[idx.newest].exemplar.Ts {
+		if append {
+			ce.outOfOrderExemplars.Inc()
+		}
+		return storage.ErrOutOfOrderExemplar
+	}
+	return nil
+}
+
 func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemplar) error {
 	seriesLabels := l.String()
 
@@ -169,21 +219,19 @@ func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemp
 	ce.lock.Lock()
 	defer ce.lock.Unlock()
 
-	idx, ok := ce.index[seriesLabels]
-	if !ok {
-		ce.index[seriesLabels] = &indexEntry{oldest: ce.nextIndex}
-	} else {
-		// Check for duplicate vs last stored exemplar for this series.
-		// NB these are expected, add appending them is a no-op.
-		if ce.exemplars[idx.newest].exemplar.Equals(e) {
+	err := ce.validateExemplar(seriesLabels, e, true)
+	if err != nil {
+		if err == storage.ErrDuplicateExemplar {
+			// Duplicate exemplar, noop.
 			return nil
 		}
+		return err
+	}
 
-		if e.Ts <= ce.exemplars[idx.newest].exemplar.Ts {
-			ce.outOfOrderExemplars.Inc()
-			return storage.ErrOutOfOrderExemplar
-		}
-
+	_, ok := ce.index[seriesLabels]
+	if !ok {
+		ce.index[seriesLabels] = &indexEntry{oldest: ce.nextIndex, seriesLabels: l}
+	} else {
 		ce.exemplars[ce.index[seriesLabels].newest].next = ce.nextIndex
 	}
 
@@ -192,7 +240,7 @@ func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemp
 	} else {
 		// There exists exemplar already on this ce.nextIndex entry, drop it, to make place
 		// for others.
-		prevLabels := prev.seriesLabels.String()
+		prevLabels := prev.ref.seriesLabels.String()
 		if prev.next == -1 {
 			// Last item for this series, remove index entry.
 			delete(ce.index, prevLabels)
@@ -205,7 +253,7 @@ func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemp
 	// since this is the first exemplar stored for this series.
 	ce.exemplars[ce.nextIndex].exemplar = e
 	ce.exemplars[ce.nextIndex].next = -1
-	ce.exemplars[ce.nextIndex].seriesLabels = l
+	ce.exemplars[ce.nextIndex].ref = ce.index[seriesLabels]
 	ce.index[seriesLabels].newest = ce.nextIndex
 
 	ce.nextIndex = (ce.nextIndex + 1) % len(ce.exemplars)
@@ -214,19 +262,23 @@ func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemp
 	ce.seriesWithExemplarsInStorage.Set(float64(len(ce.index)))
 	if next := ce.exemplars[ce.nextIndex]; next != nil {
 		ce.exemplarsInStorage.Set(float64(len(ce.exemplars)))
-		ce.lastExemplarsTs.Set(float64(next.exemplar.Ts))
+		ce.lastExemplarsTs.Set(float64(next.exemplar.Ts) / 1000)
 		return nil
 	}
 
 	// We did not yet fill the buffer.
 	ce.exemplarsInStorage.Set(float64(ce.nextIndex))
-	ce.lastExemplarsTs.Set(float64(ce.exemplars[0].exemplar.Ts))
+	ce.lastExemplarsTs.Set(float64(ce.exemplars[0].exemplar.Ts) / 1000)
 	return nil
 }
 
 type noopExemplarStorage struct{}
 
 func (noopExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemplar) error {
+	return nil
+}
+
+func (noopExemplarStorage) ValidateExemplar(l labels.Labels, e exemplar.Exemplar) error {
 	return nil
 }
 

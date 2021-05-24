@@ -51,6 +51,7 @@ func newTestHead(t testing.TB, chunkRange int64, compressWAL bool) (*Head, *wal.
 	opts := DefaultHeadOptions()
 	opts.ChunkRange = chunkRange
 	opts.ChunkDirRoot = dir
+	opts.NumExemplars = 10
 	h, err := NewHead(nil, nil, wlog, opts)
 	require.NoError(t, err)
 
@@ -87,6 +88,8 @@ func populateTestWAL(t testing.TB, w *wal.WAL, recs []interface{}) {
 			require.NoError(t, w.Log(enc.Samples(v, nil)))
 		case []tombstones.Stone:
 			require.NoError(t, w.Log(enc.Tombstones(v, nil)))
+		case []record.RefExemplar:
+			require.NoError(t, w.Log(enc.Exemplars(v, nil)))
 		}
 	}
 }
@@ -148,61 +151,91 @@ func BenchmarkLoadWAL(b *testing.B) {
 	}
 
 	labelsPerSeries := 5
+	// Rough estimates of most common % of samples that have an exemplar for each scrape.
+	exemplarsPercentages := []float64{0, 0.5, 1, 5}
+	lastExemplarsPerSeries := -1
 	for _, c := range cases {
-		b.Run(fmt.Sprintf("batches=%d,seriesPerBatch=%d,samplesPerSeries=%d", c.batches, c.seriesPerBatch, c.samplesPerSeries),
-			func(b *testing.B) {
-				dir, err := ioutil.TempDir("", "test_load_wal")
-				require.NoError(b, err)
-				defer func() {
-					require.NoError(b, os.RemoveAll(dir))
-				}()
-
-				w, err := wal.New(nil, nil, dir, false)
-				require.NoError(b, err)
-
-				// Write series.
-				refSeries := make([]record.RefSeries, 0, c.seriesPerBatch)
-				for k := 0; k < c.batches; k++ {
-					refSeries = refSeries[:0]
-					for i := k * c.seriesPerBatch; i < (k+1)*c.seriesPerBatch; i++ {
-						lbls := make(map[string]string, labelsPerSeries)
-						lbls[defaultLabelName] = strconv.Itoa(i)
-						for j := 1; len(lbls) < labelsPerSeries; j++ {
-							lbls[defaultLabelName+strconv.Itoa(j)] = defaultLabelValue + strconv.Itoa(j)
-						}
-						refSeries = append(refSeries, record.RefSeries{Ref: uint64(i) * 100, Labels: labels.FromMap(lbls)})
-					}
-					populateTestWAL(b, w, []interface{}{refSeries})
-				}
-
-				// Write samples.
-				refSamples := make([]record.RefSample, 0, c.seriesPerBatch)
-				for i := 0; i < c.samplesPerSeries; i++ {
-					for j := 0; j < c.batches; j++ {
-						refSamples = refSamples[:0]
-						for k := j * c.seriesPerBatch; k < (j+1)*c.seriesPerBatch; k++ {
-							refSamples = append(refSamples, record.RefSample{
-								Ref: uint64(k) * 100,
-								T:   int64(i) * 10,
-								V:   float64(i) * 100,
-							})
-						}
-						populateTestWAL(b, w, []interface{}{refSamples})
-					}
-				}
-
-				b.ResetTimer()
-
-				// Load the WAL.
-				for i := 0; i < b.N; i++ {
-					opts := DefaultHeadOptions()
-					opts.ChunkRange = 1000
-					opts.ChunkDirRoot = w.Dir()
-					h, err := NewHead(nil, nil, w, opts)
+		for _, p := range exemplarsPercentages {
+			exemplarsPerSeries := int(math.RoundToEven(float64(c.samplesPerSeries) * p / 100))
+			// For tests with low samplesPerSeries we could end up testing with 0 exemplarsPerSeries
+			// multiple times without this check.
+			if exemplarsPerSeries == lastExemplarsPerSeries {
+				continue
+			}
+			lastExemplarsPerSeries = exemplarsPerSeries
+			// fmt.Println("exemplars per series: ", exemplarsPerSeries)
+			b.Run(fmt.Sprintf("batches=%d,seriesPerBatch=%d,samplesPerSeries=%d,exemplarsPerSeries=%d", c.batches, c.seriesPerBatch, c.samplesPerSeries, exemplarsPerSeries),
+				func(b *testing.B) {
+					dir, err := ioutil.TempDir("", "test_load_wal")
 					require.NoError(b, err)
-					h.Init(0)
-				}
-			})
+					defer func() {
+						require.NoError(b, os.RemoveAll(dir))
+					}()
+
+					w, err := wal.New(nil, nil, dir, false)
+					require.NoError(b, err)
+
+					// Write series.
+					refSeries := make([]record.RefSeries, 0, c.seriesPerBatch)
+					for k := 0; k < c.batches; k++ {
+						refSeries = refSeries[:0]
+						for i := k * c.seriesPerBatch; i < (k+1)*c.seriesPerBatch; i++ {
+							lbls := make(map[string]string, labelsPerSeries)
+							lbls[defaultLabelName] = strconv.Itoa(i)
+							for j := 1; len(lbls) < labelsPerSeries; j++ {
+								lbls[defaultLabelName+strconv.Itoa(j)] = defaultLabelValue + strconv.Itoa(j)
+							}
+							refSeries = append(refSeries, record.RefSeries{Ref: uint64(i) * 100, Labels: labels.FromMap(lbls)})
+						}
+						populateTestWAL(b, w, []interface{}{refSeries})
+					}
+
+					// Write samples.
+					refSamples := make([]record.RefSample, 0, c.seriesPerBatch)
+					for i := 0; i < c.samplesPerSeries; i++ {
+						for j := 0; j < c.batches; j++ {
+							refSamples = refSamples[:0]
+							for k := j * c.seriesPerBatch; k < (j+1)*c.seriesPerBatch; k++ {
+								refSamples = append(refSamples, record.RefSample{
+									Ref: uint64(k) * 100,
+									T:   int64(i) * 10,
+									V:   float64(i) * 100,
+								})
+							}
+							populateTestWAL(b, w, []interface{}{refSamples})
+						}
+					}
+
+					// Write samples.
+					refExemplars := make([]record.RefExemplar, 0, c.seriesPerBatch)
+					for i := 0; i < exemplarsPerSeries; i++ {
+						for j := 0; j < c.batches; j++ {
+							refExemplars = refExemplars[:0]
+							for k := j * c.seriesPerBatch; k < (j+1)*c.seriesPerBatch; k++ {
+								refExemplars = append(refExemplars, record.RefExemplar{
+									Ref:    uint64(k) * 100,
+									T:      int64(i) * 10,
+									V:      float64(i) * 100,
+									Labels: labels.FromStrings("traceID", fmt.Sprintf("trace-%d", i)),
+								})
+							}
+							populateTestWAL(b, w, []interface{}{refExemplars})
+						}
+					}
+
+					b.ResetTimer()
+
+					// Load the WAL.
+					for i := 0; i < b.N; i++ {
+						opts := DefaultHeadOptions()
+						opts.ChunkRange = 1000
+						opts.ChunkDirRoot = w.Dir()
+						h, err := NewHead(nil, nil, w, opts)
+						require.NoError(b, err)
+						h.Init(0)
+					}
+				})
+		}
 	}
 }
 
@@ -232,6 +265,9 @@ func TestHead_ReadWAL(t *testing.T) {
 				},
 				[]tombstones.Stone{
 					{Ref: 0, Intervals: []tombstones.Interval{{Mint: 99, Maxt: 101}}},
+				},
+				[]record.RefExemplar{
+					{Ref: 10, T: 100, V: 1, Labels: labels.FromStrings("traceID", "asdf")},
 				},
 			}
 
@@ -266,6 +302,12 @@ func TestHead_ReadWAL(t *testing.T) {
 			require.Equal(t, []sample{{100, 2}, {101, 5}}, expandChunk(s10.iterator(0, nil, head.chunkDiskMapper, nil)))
 			require.Equal(t, []sample{{101, 6}}, expandChunk(s50.iterator(0, nil, head.chunkDiskMapper, nil)))
 			require.Equal(t, []sample{{100, 3}, {101, 7}}, expandChunk(s100.iterator(0, nil, head.chunkDiskMapper, nil)))
+
+			q, err := head.ExemplarQuerier(context.Background())
+			require.NoError(t, err)
+			e, err := q.Select(0, 1000, []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "a", "1")})
+			require.NoError(t, err)
+			require.Equal(t, e[0].Exemplars[0], exemplar.Exemplar{Ts: 100, Value: 1, Labels: labels.FromStrings("traceID", "asdf")})
 		})
 	}
 }
@@ -2000,7 +2042,7 @@ func TestHeadMintAfterTruncation(t *testing.T) {
 	require.Equal(t, int64(4000), head.MinTime())
 	require.Equal(t, int64(4000), head.minValidTime.Load())
 
-	// After truncation outside the appendable windown if the actual min time
+	// After truncation outside the appendable window if the actual min time
 	// is in the appendable window then we should leave mint at the start of appendable window.
 	require.NoError(t, head.Truncate(5000))
 	require.Equal(t, head.appendableMinValidTime(), head.MinTime())
@@ -2066,4 +2108,72 @@ func BenchmarkHeadLabelValuesWithMatchers(b *testing.B) {
 		require.NoError(b, err)
 		require.Equal(b, 9, len(actualValues))
 	}
+}
+
+func TestMemSafeIteratorSeekIntoBuffer(t *testing.T) {
+	dir, err := ioutil.TempDir("", "iterator_seek")
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, os.RemoveAll(dir))
+	}()
+	// This is usually taken from the Head, but passing manually here.
+	chunkDiskMapper, err := chunks.NewChunkDiskMapper(dir, chunkenc.NewPool(), chunks.DefaultWriteBufferSize)
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, chunkDiskMapper.Close())
+	}()
+
+	s := newMemSeries(labels.Labels{}, 1, 500, nil)
+
+	for i := 0; i < 7; i++ {
+		ok, _ := s.append(int64(i), float64(i), 0, chunkDiskMapper)
+		require.True(t, ok, "sample append failed")
+	}
+
+	it := s.iterator(s.chunkID(len(s.mmappedChunks)), nil, chunkDiskMapper, nil)
+	_, ok := it.(*memSafeIterator)
+	require.True(t, ok)
+
+	// First point.
+	ok = it.Seek(0)
+	require.True(t, ok)
+	ts, val := it.At()
+	require.Equal(t, int64(0), ts)
+	require.Equal(t, float64(0), val)
+
+	// Advance one point.
+	ok = it.Next()
+	require.True(t, ok)
+	ts, val = it.At()
+	require.Equal(t, int64(1), ts)
+	require.Equal(t, float64(1), val)
+
+	// Seeking an older timestamp shouldn't cause the iterator to go backwards.
+	ok = it.Seek(0)
+	require.True(t, ok)
+	ts, val = it.At()
+	require.Equal(t, int64(1), ts)
+	require.Equal(t, float64(1), val)
+
+	// Seek into the buffer.
+	ok = it.Seek(3)
+	require.True(t, ok)
+	ts, val = it.At()
+	require.Equal(t, int64(3), ts)
+	require.Equal(t, float64(3), val)
+
+	// Iterate through the rest of the buffer.
+	for i := 4; i < 7; i++ {
+		ok = it.Next()
+		require.True(t, ok)
+		ts, val = it.At()
+		require.Equal(t, int64(i), ts)
+		require.Equal(t, float64(i), val)
+	}
+
+	// Run out of elements in the iterator.
+	ok = it.Next()
+	require.False(t, ok)
+	ok = it.Seek(7)
+	require.False(t, ok)
 }

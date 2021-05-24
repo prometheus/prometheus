@@ -464,8 +464,8 @@ func TestScrapePoolAppender(t *testing.T) {
 	require.True(t, ok, "Expected base appender but got %T", tl.Appender)
 
 	loop = sp.newLoop(scrapeLoopOptions{
-		target: &Target{},
-		limit:  100,
+		target:      &Target{},
+		sampleLimit: 100,
 	})
 	appl, ok = loop.(*scrapeLoop)
 	require.True(t, ok, "Expected scrapeLoop but got %T", loop)
@@ -577,6 +577,7 @@ func TestScrapeLoopStopBeforeRun(t *testing.T) {
 		nopMutator,
 		nil, nil, 0,
 		true,
+		nil,
 	)
 
 	// The scrape pool synchronizes on stopping scrape loops. However, new scrape
@@ -641,6 +642,7 @@ func TestScrapeLoopStop(t *testing.T) {
 		nil,
 		0,
 		true,
+		nil,
 	)
 
 	// Terminate loop after 2 scrapes.
@@ -708,6 +710,7 @@ func TestScrapeLoopRun(t *testing.T) {
 		nil,
 		0,
 		true,
+		nil,
 	)
 
 	// The loop must terminate during the initial offset if the context
@@ -755,6 +758,7 @@ func TestScrapeLoopRun(t *testing.T) {
 		nil,
 		0,
 		true,
+		nil,
 	)
 
 	go func() {
@@ -806,6 +810,7 @@ func TestScrapeLoopForcedErr(t *testing.T) {
 		nil,
 		0,
 		true,
+		nil,
 	)
 
 	forcedErr := fmt.Errorf("forced err")
@@ -856,6 +861,7 @@ func TestScrapeLoopMetadata(t *testing.T) {
 		cache,
 		0,
 		true,
+		nil,
 	)
 	defer cancel()
 
@@ -905,6 +911,7 @@ func TestScrapeLoopSeriesAdded(t *testing.T) {
 		nil,
 		0,
 		true,
+		nil,
 	)
 	defer cancel()
 
@@ -943,6 +950,7 @@ func TestScrapeLoopRunCreatesStaleMarkersOnFailedScrape(t *testing.T) {
 		nil,
 		0,
 		true,
+		nil,
 	)
 	// Succeed once, several failures, then stop.
 	numScrapes := 0
@@ -997,6 +1005,7 @@ func TestScrapeLoopRunCreatesStaleMarkersOnParseFailure(t *testing.T) {
 		nil,
 		0,
 		true,
+		nil,
 	)
 
 	// Succeed once, several failures, then stop.
@@ -1055,6 +1064,7 @@ func TestScrapeLoopCache(t *testing.T) {
 		nil,
 		0,
 		true,
+		nil,
 	)
 
 	numScrapes := 0
@@ -1129,6 +1139,7 @@ func TestScrapeLoopCacheMemoryExhaustionProtection(t *testing.T) {
 		nil,
 		0,
 		true,
+		nil,
 	)
 
 	numScrapes := 0
@@ -1235,6 +1246,7 @@ func TestScrapeLoopAppend(t *testing.T) {
 			nil,
 			0,
 			true,
+			nil,
 		)
 
 		now := time.Now()
@@ -1276,6 +1288,7 @@ func TestScrapeLoopAppendCacheEntryButErrNotFound(t *testing.T) {
 		nil,
 		0,
 		true,
+		nil,
 	)
 
 	fakeRef := uint64(1)
@@ -1325,6 +1338,7 @@ func TestScrapeLoopAppendSampleLimit(t *testing.T) {
 		nil,
 		0,
 		true,
+		nil,
 	)
 
 	// Get the value of the Counter before performing the append.
@@ -1394,6 +1408,7 @@ func TestScrapeLoop_ChangingMetricString(t *testing.T) {
 		nil,
 		0,
 		true,
+		nil,
 	)
 
 	now := time.Now()
@@ -1434,6 +1449,7 @@ func TestScrapeLoopAppendStaleness(t *testing.T) {
 		nil,
 		0,
 		true,
+		nil,
 	)
 
 	now := time.Now()
@@ -1477,6 +1493,7 @@ func TestScrapeLoopAppendNoStalenessIfTimestamp(t *testing.T) {
 		nil,
 		0,
 		true,
+		nil,
 	)
 
 	now := time.Now()
@@ -1578,6 +1595,7 @@ metric_total{n="2"} 2 # {t="2"} 2.0 20000
 				nil,
 				0,
 				true,
+				nil,
 			)
 
 			now := time.Now()
@@ -1635,6 +1653,7 @@ func TestScrapeLoopAppendExemplarSeries(t *testing.T) {
 		nil,
 		0,
 		true,
+		nil,
 	)
 
 	now := time.Now()
@@ -1679,6 +1698,7 @@ func TestScrapeLoopRunReportsTargetDownOnScrapeError(t *testing.T) {
 		nil,
 		0,
 		true,
+		nil,
 	)
 
 	scraper.scrapeFunc = func(ctx context.Context, w io.Writer) error {
@@ -1707,6 +1727,7 @@ func TestScrapeLoopRunReportsTargetDownOnInvalidUTF8(t *testing.T) {
 		nil,
 		0,
 		true,
+		nil,
 	)
 
 	scraper.scrapeFunc = func(ctx context.Context, w io.Writer) error {
@@ -1748,6 +1769,7 @@ func TestScrapeLoopAppendGracefullyIfAmendOrOutOfOrderOrOutOfBounds(t *testing.T
 		nil,
 		0,
 		true,
+		nil,
 	)
 
 	now := time.Unix(1, 0)
@@ -1785,6 +1807,7 @@ func TestScrapeLoopOutOfBoundsTimeError(t *testing.T) {
 		nil,
 		0,
 		true,
+		nil,
 	)
 
 	now := time.Now().Add(20 * time.Minute)
@@ -1972,6 +1995,7 @@ func TestScrapeLoop_RespectTimestamps(t *testing.T) {
 		func(ctx context.Context) storage.Appender { return capp },
 		nil, 0,
 		true,
+		nil,
 	)
 
 	now := time.Now()
@@ -2005,6 +2029,7 @@ func TestScrapeLoop_DiscardTimestamps(t *testing.T) {
 		func(ctx context.Context) storage.Appender { return capp },
 		nil, 0,
 		false,
+		nil,
 	)
 
 	now := time.Now()
@@ -2037,6 +2062,7 @@ func TestScrapeLoopDiscardDuplicateLabels(t *testing.T) {
 		nil,
 		0,
 		true,
+		nil,
 	)
 	defer cancel()
 
@@ -2087,6 +2113,7 @@ func TestScrapeLoopDiscardUnnamedMetrics(t *testing.T) {
 		nil,
 		0,
 		true,
+		nil,
 	)
 	defer cancel()
 
@@ -2304,6 +2331,7 @@ func TestScrapeAddFast(t *testing.T) {
 		nil,
 		0,
 		true,
+		nil,
 	)
 	defer cancel()
 
@@ -2387,6 +2415,7 @@ func TestScrapeReportSingleAppender(t *testing.T) {
 		nil,
 		0,
 		true,
+		nil,
 	)
 
 	numScrapes := 0
@@ -2428,5 +2457,105 @@ func TestScrapeReportSingleAppender(t *testing.T) {
 	case <-signal:
 	case <-time.After(5 * time.Second):
 		t.Fatalf("Scrape wasn't stopped.")
+	}
+}
+
+func TestScrapeLoopLabelLimit(t *testing.T) {
+	tests := []struct {
+		title           string
+		scrapeLabels    string
+		discoveryLabels []string
+		labelLimits     labelLimits
+		expectErr       bool
+	}{
+		{
+			title:           "Valid number of labels",
+			scrapeLabels:    `metric{l1="1", l2="2"} 0`,
+			discoveryLabels: nil,
+			labelLimits:     labelLimits{labelLimit: 5},
+			expectErr:       false,
+		}, {
+			title:           "Too many labels",
+			scrapeLabels:    `metric{l1="1", l2="2", l3="3", l4="4", l5="5", l6="6"} 0`,
+			discoveryLabels: nil,
+			labelLimits:     labelLimits{labelLimit: 5},
+			expectErr:       true,
+		}, {
+			title:           "Too many labels including discovery labels",
+			scrapeLabels:    `metric{l1="1", l2="2", l3="3", l4="4"} 0`,
+			discoveryLabels: []string{"l5", "5", "l6", "6"},
+			labelLimits:     labelLimits{labelLimit: 5},
+			expectErr:       true,
+		}, {
+			title:           "Valid labels name length",
+			scrapeLabels:    `metric{l1="1", l2="2"} 0`,
+			discoveryLabels: nil,
+			labelLimits:     labelLimits{labelNameLengthLimit: 10},
+			expectErr:       false,
+		}, {
+			title:           "Label name too long",
+			scrapeLabels:    `metric{label_name_too_long="0"} 0`,
+			discoveryLabels: nil,
+			labelLimits:     labelLimits{labelNameLengthLimit: 10},
+			expectErr:       true,
+		}, {
+			title:           "Discovery label name too long",
+			scrapeLabels:    `metric{l1="1", l2="2"} 0`,
+			discoveryLabels: []string{"label_name_too_long", "0"},
+			labelLimits:     labelLimits{labelNameLengthLimit: 10},
+			expectErr:       true,
+		}, {
+			title:           "Valid labels value length",
+			scrapeLabels:    `metric{l1="1", l2="2"} 0`,
+			discoveryLabels: nil,
+			labelLimits:     labelLimits{labelValueLengthLimit: 10},
+			expectErr:       false,
+		}, {
+			title:           "Label value too long",
+			scrapeLabels:    `metric{l1="label_value_too_long"} 0`,
+			discoveryLabels: nil,
+			labelLimits:     labelLimits{labelValueLengthLimit: 10},
+			expectErr:       true,
+		}, {
+			title:           "Discovery label value too long",
+			scrapeLabels:    `metric{l1="1", l2="2"} 0`,
+			discoveryLabels: []string{"l1", "label_value_too_long"},
+			labelLimits:     labelLimits{labelValueLengthLimit: 10},
+			expectErr:       true,
+		},
+	}
+
+	for _, test := range tests {
+		app := &collectResultAppender{}
+
+		discoveryLabels := &Target{
+			labels: labels.FromStrings(test.discoveryLabels...),
+		}
+
+		sl := newScrapeLoop(context.Background(),
+			nil, nil, nil,
+			func(l labels.Labels) labels.Labels {
+				return mutateSampleLabels(l, discoveryLabels, false, nil)
+			},
+			func(l labels.Labels) labels.Labels {
+				return mutateReportSampleLabels(l, discoveryLabels)
+			},
+			func(ctx context.Context) storage.Appender { return app },
+			nil,
+			0,
+			true,
+			&test.labelLimits,
+		)
+
+		slApp := sl.appender(context.Background())
+		_, _, _, err := sl.append(slApp, []byte(test.scrapeLabels), "", time.Now())
+
+		t.Logf("Test:%s", test.title)
+		if test.expectErr {
+			require.Error(t, err)
+		} else {
+			require.NoError(t, err)
+			require.NoError(t, slApp.Commit())
+		}
 	}
 }

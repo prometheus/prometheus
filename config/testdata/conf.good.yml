@@ -19,6 +19,11 @@ remote_write:
     - source_labels: [__name__]
       regex:         expensive.*
       action:        drop
+    oauth2:
+      client_id: "123"
+      client_secret: "456"
+      token_url: "http://remote1/auth"
+
   - url: http://remote2/push
     name: rw_tls
     tls_config:
@@ -214,6 +219,13 @@ scrape_configs:
           values:
             - web
             - db
+
+- job_name: service-lightsail
+  lightsail_sd_configs:
+    - region: us-east-1
+      access_key: access
+      secret_key: mysecret
+      profile: profile
 
 - job_name: service-azure
   azure_sd_configs:

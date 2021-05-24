@@ -40,13 +40,27 @@ message MetricMetadata {
 
 message Sample {
   double value    = 1;
+  // timestamp is in ms format, see pkg/timestamp/timestamp.go for
+  // conversion from time.Time to Prometheus timestamp.
   int64 timestamp = 2;
+}
+
+message Exemplar {
+  // Optional, can be empty.
+  repeated Label labels = 1 [(gogoproto.nullable) = false];
+  double value = 2;
+  // timestamp is in ms format, see pkg/timestamp/timestamp.go for
+  // conversion from time.Time to Prometheus timestamp.
+  int64 timestamp = 3;
 }
 
 // TimeSeries represents samples and labels for a single time series.
 message TimeSeries {
+  // For a timeseries to be valid, and for the samples and exemplars
+  // to be ingested by the remote system properly, the labels field is required.
   repeated Label labels   = 1 [(gogoproto.nullable) = false];
   repeated Sample samples = 2 [(gogoproto.nullable) = false];
+  repeated Exemplar exemplars = 3 [(gogoproto.nullable) = false];
 }
 
 message Label {

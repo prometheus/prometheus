@@ -180,6 +180,11 @@ authorization:
   # configured file. It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
+# Optional OAuth 2.0 configuration.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2:
+  [ <oauth2> ]
+
 # Configure whether scrape requests follow HTTP 3xx redirects.
 [ follow_redirects: <bool> | default = true ]
 
@@ -238,6 +243,10 @@ hetzner_sd_configs:
 kubernetes_sd_configs:
   [ - <kubernetes_sd_config> ... ]
 
+# List of Lightsail service discovery configurations.
+lightsail_sd_configs:
+  [ - <lightsail_sd_config> ... ]
+
 # List of Marathon service discovery configurations.
 marathon_sd_configs:
   [ - <marathon_sd_config> ... ]
@@ -279,6 +288,21 @@ metric_relabel_configs:
 # the entire scrape will be treated as failed. 0 means no limit.
 [ sample_limit: <int> | default = 0 ]
 
+# Per-scrape limit on number of labels that will be accepted for a sample. If
+# more than this number of labels are present post metric-relabeling, the
+# entire scrape will be treated as failed. 0 means no limit.
+[ label_limit: <int> | default = 0 ]
+
+# Per-scrape limit on length of labels name that will be accepted for a sample.
+# If a label name is longer than this number post metric-relabeling, the entire
+# scrape will be treated as failed. 0 means no limit.
+[ label_name_length_limit: <int> | default = 0 ]
+
+# Per-scrape limit on length of labels value that will be accepted for a sample.
+# If a label value is longer than this number post metric-relabeling, the
+# entire scrape will be treated as failed. 0 means no limit.
+[ label_value_length_limit: <int> | default = 0 ]
+
 # Per-scrape config limit on number of unique targets that will be
 # accepted. If more than this number of targets are present after target
 # relabeling, Prometheus will mark the targets as failed without scraping them.
@@ -307,6 +331,32 @@ A `tls_config` allows configuring TLS connections.
 
 # Disable validation of the server certificate.
 [ insecure_skip_verify: <boolean> ]
+```
+
+### `oauth2`
+
+OAuth 2.0 authentication using the client credentials grant type.
+Prometheus fetches an access token from the specified endpoint with
+the given client access and secret keys.
+
+```yaml
+client_id: <string>
+[ client_secret: <secret> ]
+
+# Read the client secret from a file.
+# It is mutually exclusive with `client_secret`.
+[ client_secret_file: <filename> ]
+
+# Scopes for the token request.
+scopes:
+  [ - <string> ... ]
+
+# The URL to fetch the token from.
+token_url: <string>
+
+# Optional parameters to append to the token URL.
+endpoint_params:
+  [ <string>: <string> ... ]
 ```
 
 ### `<azure_sd_config>`
@@ -473,6 +523,11 @@ authorization:
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
+# Optional OAuth 2.0 configuration.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2:
+  [ <oauth2> ]
+
 # Optional proxy URL.
 [ proxy_url: <string> ]
 
@@ -564,6 +619,11 @@ authorization:
   # Sets the credentials with the credentials read from the configured file.
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
+
+# Optional OAuth 2.0 configuration.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2:
+  [ <oauth2> ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <bool> | default = true ]
@@ -722,6 +782,11 @@ authorization:
   # Sets the credentials with the credentials read from the configured file.
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
+
+# Optional OAuth 2.0 configuration.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2:
+  [ <oauth2> ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <bool> | default = true ]
@@ -1131,6 +1196,11 @@ authorization:
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
+# Optional OAuth 2.0 configuration.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2:
+  [ <oauth2> ]
+
 # Optional proxy URL.
 [ proxy_url: <string> ]
 
@@ -1302,6 +1372,11 @@ authorization:
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
+# Optional OAuth 2.0 configuration.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2:
+  [ <oauth2> ]
+
 # Optional proxy URL.
 [ proxy_url: <string> ]
 
@@ -1340,6 +1415,54 @@ for a detailed example of configuring Prometheus for Kubernetes.
 
 You may wish to check out the 3rd party [Prometheus Operator](https://github.com/coreos/prometheus-operator),
 which automates the Prometheus setup on top of Kubernetes.
+
+### `<lightsail_sd_config>`
+
+Lightsail SD configurations allow retrieving scrape targets from [AWS Lightsail](https://aws.amazon.com/lightsail/)
+instances. The private IP address is used by default, but may be changed to
+the public IP address with relabeling.
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_lightsail_availability_zone`: the availability zone in which the instance is running
+* `__meta_lightsail_blueprint_id`: the Lightsail blueprint ID
+* `__meta_lightsail_bundle_id`: the Lightsail bundle ID
+* `__meta_lightsail_instance_name`: the name of the Lightsail instance
+* `__meta_lightsail_instance_state`: the state of the Lightsail instance
+* `__meta_lightsail_instance_support_code`: the support code of the Lightsail instance
+* `__meta_lightsail_ipv6_addresses`: comma separated list of IPv6 addresses assigned to the instance's network interfaces, if present
+* `__meta_lightsail_private_ip`: the private IP address of the instance
+* `__meta_lightsail_public_ip`: the public IP address of the instance, if available
+* `__meta_lightsail_tag_<tagkey>`: each tag value of the instance
+
+See below for the configuration options for Lightsail discovery:
+
+```yaml
+# The information to access the Lightsail API.
+
+# The AWS region. If blank, the region from the instance metadata is used.
+[ region: <string> ]
+
+# Custom endpoint to be used.
+[ endpoint: <string> ]
+
+# The AWS API keys. If blank, the environment variables `AWS_ACCESS_KEY_ID`
+# and `AWS_SECRET_ACCESS_KEY` are used.
+[ access_key: <string> ]
+[ secret_key: <secret> ]
+# Named AWS profile used to connect to the API.
+[ profile: <string> ]
+
+# AWS Role ARN, an alternative to using AWS API keys.
+[ role_arn: <string> ]
+
+# Refresh interval to re-read the instance list.
+[ refresh_interval: <duration> | default = 60s ]
+
+# The port to scrape metrics from. If using the public IP address, this must
+# instead be specified in the relabeling rule.
+[ port: <int> | default = 80 ]
+```
 
 ### `<marathon_sd_config>`
 
@@ -1401,6 +1524,11 @@ authorization:
   # Sets the credentials with the credentials read from the configured file.
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
+
+# Optional OAuth 2.0 configuration.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2:
+  [ <oauth2> ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <bool> | default = true ]
@@ -1599,6 +1727,11 @@ authorization:
   # Sets the credentials with the credentials read from the configured file.
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
+
+# Optional OAuth 2.0 configuration.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2:
+  [ <oauth2> ]
 
 # Configures the scrape request's TLS settings.
 tls_config:
@@ -1878,6 +2011,11 @@ authorization:
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
+# Optional OAuth 2.0 configuration.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2:
+  [ <oauth2> ]
+
 # Configures the scrape request's TLS settings.
 tls_config:
   [ <tls_config> ]
@@ -1935,6 +2073,10 @@ hetzner_sd_configs:
 # List of Kubernetes service discovery configurations.
 kubernetes_sd_configs:
   [ - <kubernetes_sd_config> ... ]
+
+# List of Lightsail service discovery configurations.
+lightsail_sd_configs:
+  [ - <lightsail_sd_config> ... ]
 
 # List of Marathon service discovery configurations.
 marathon_sd_configs:
@@ -1999,6 +2141,9 @@ write_relabel_configs:
 # remote write configs.
 [ name: <string> ]
 
+# Enables sending of exemplars over remote write. Note that exemplar storage itself must be enabled for exemplars to be scraped in the first place.
+[ send_exemplars: <boolean> | default = false ]
+
 # Sets the `Authorization` header on every remote write request with the
 # configured username and password.
 # password and password_file are mutually exclusive.
@@ -2019,7 +2164,7 @@ authorization:
   [ credentials_file: <filename> ]
 
 # Optionally configures AWS's Signature Verification 4 signing process to
-# sign requests. Cannot be set at the same time as basic_auth or authorization.
+# sign requests. Cannot be set at the same time as basic_auth, authorization, or oauth2.
 # To use the default credentials from the AWS SDK, use `sigv4: {}`.
 sigv4:
   # The AWS region. If blank, the region from the default credentials chain
@@ -2036,6 +2181,11 @@ sigv4:
 
   # AWS Role ARN, an alternative to using AWS API keys.
   [ role_arn: <string> ]
+
+# Optional OAuth 2.0 configuration.
+# Cannot be used at the same time as basic_auth, authorization, or sigv4.
+oauth2:
+  [ <oauth2> ]
 
 # Configures the remote write request's TLS settings.
 tls_config:
@@ -2130,6 +2280,11 @@ authorization:
   # Sets the credentials with the credentials read from the configured file.
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
+
+# Optional OAuth 2.0 configuration.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2:
+  [ <oauth2> ]
 
 # Configures the remote read request's TLS settings.
 tls_config:

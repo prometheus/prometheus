@@ -279,15 +279,17 @@ func (m *Manager) allGroups() map[string][]*targetgroup.Group {
 	defer m.mtx.RUnlock()
 
 	tSets := map[string][]*targetgroup.Group{}
+	n := map[string]int{}
 	for pkey, tsets := range m.targets {
-		var n int
 		for _, tg := range tsets {
 			// Even if the target group 'tg' is empty we still need to send it to the 'Scrape manager'
 			// to signal that it needs to stop all scrape loops for this target set.
 			tSets[pkey.setName] = append(tSets[pkey.setName], tg)
-			n += len(tg.Targets)
+			n[pkey.setName] += len(tg.Targets)
 		}
-		discoveredTargets.WithLabelValues(m.name, pkey.setName).Set(float64(n))
+	}
+	for setName, v := range n {
+		discoveredTargets.WithLabelValues(m.name, setName).Set(float64(v))
 	}
 	return tSets
 }

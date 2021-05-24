@@ -426,6 +426,15 @@ func (d *Discovery) watchServices(ctx context.Context, ch chan<- []*targetgroup.
 			}
 		}
 	}
+
+	// Send targetgroup with no targets if nothing was discovered.
+	if len(services) == 0 {
+		select {
+		case <-ctx.Done():
+			return
+		case ch <- []*targetgroup.Group{{}}:
+		}
+	}
 }
 
 // consulService contains data belonging to the same service.
