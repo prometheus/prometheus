@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/huaweicloud/golangsdk/openstack/identity/v3/tokens"
@@ -153,7 +154,14 @@ func (m *SDMock) HandleListServer() {
 		request *http.Request) {
 		w.Header().Add("content-type", "application/json; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
-
+		if !strings.Contains(request.RequestURI, "offset=1") {
+			fmt.Fprint(w, `
+{
+"count": 2,
+"servers":[]
+}`)
+			return
+		}
 		fmt.Fprint(w, `
 {
 "count": 2,

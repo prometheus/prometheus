@@ -35,6 +35,7 @@ import (
 )
 
 const (
+	serverListLimit      = 1000
 	addressTypeFixed     = "fixed"
 	addressTypeFloating  = "floating"
 	ecsLabel             = model.MetaLabelPrefix + "ecs_"
@@ -126,19 +127,50 @@ func validateAuthParam(param string) bool {
 
 type Discovery struct {
 	*refresh.Discovery
-	cfg     *SDConfig
-	logger  log.Logger
-	hwCloud *golangsdk.ProviderClient
+	cfg        *SDConfig
+	logger     log.Logger
+	hwCloud    *golangsdk.ProviderClient
+	listServer func(int, []cloudservers.CloudServer, *golangsdk.ServiceClient) ([]cloudservers.CloudServer, error)
 }
 
 func NewDiscovery(conf *SDConfig, logger log.Logger) *Discovery {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
-	d := &Discovery{
-		cfg:    conf,
-		logger: logger,
+
+	var listServerFunc func(int, []cloudservers.CloudServer, *golangsdk.ServiceClient) ([]cloudservers.CloudServer, error)
+	listServerFunc = func(offset int, allServers []cloudservers.CloudServer, client *golangsdk.ServiceClient) ([]cloudservers.CloudServer, error) {
+		allPages, err := cloudservers.List(client, cloudservers.ListOpts{
+			Offset: offset,
+			Limit:  serverListLimit,
+		}).AllPages()
+		if err != nil {
+			level.Error(logger).Log("msg", "Discovery Fail", "List Servers error", err.Error())
+			return nil, err
+		}
+		servers, err := cloudservers.ExtractServers(allPages)
+		if err != nil {
+			level.Error(logger).Log("msg", "Discovery Fail", "Extract servers all pages error", err.Error())
+			return nil, err
+		}
+		allServers = append(allServers, servers...)
+		isEmpty, err := allPages.IsEmpty()
+		if err != nil {
+			level.Error(logger).Log("msg", "Discovery Fail", "Get is empty error", err.Error())
+			return nil, err
+		}
+		if isEmpty {
+			return allServers, err
+		}
+		return listServerFunc(offset+1, allServers, client)
 	}
+
+	d := &Discovery{
+		cfg:        conf,
+		logger:     logger,
+		listServer: listServerFunc,
+	}
+
 	d.Discovery = refresh.NewDiscovery(
 		logger,
 		"huaweicloud_ecs",
@@ -237,20 +269,15 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	if err != nil {
 		return nil, err
 	}
-	allPages, err := cloudservers.List(client, cloudservers.ListOpts{}).AllPages()
+	var allServers []cloudservers.CloudServer
+	servers, err := d.listServer(1, allServers, client)
 	if err != nil {
-		level.Error(d.logger).Log("List Servers error: %s", err.Error())
+		level.Error(d.logger).Log("msg", "Discovery Fail", "List All servers error", err.Error())
 		return nil, err
 	}
-	servers, err := cloudservers.ExtractServers(allPages)
-	if err != nil {
-		level.Error(d.logger).Log("Extract servers all pages error: %s", err.Error())
-		return nil, err
-	}
-
 	targets := make([]model.LabelSet, len(servers))
 	for sid, server := range servers {
-		level.Info(d.logger).Log("msg", "Discovery Server", "Server Name", server.Name)
+		//level.Info(d.logger).Log("msg", "Discovery Server", "Server Name", server.Name)
 		labels := model.LabelSet{
 			ecsLabelID:           model.LabelValue(server.ID),
 			ecsLabelName:         model.LabelValue(server.Name),
