@@ -100,7 +100,7 @@ func (w *BlockWriter) Flush(ctx context.Context) (ulid.ULID, error) {
 		nil,
 		w.logger,
 		[]int64{w.blockSize},
-		chunkenc.NewPool())
+		chunkenc.NewPool(), nil)
 	if err != nil {
 		return ulid.ULID{}, errors.Wrap(err, "create leveled compactor")
 	}

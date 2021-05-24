@@ -16,6 +16,7 @@ package storage
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -30,6 +31,8 @@ var (
 	ErrDuplicateSampleForTimestamp = errors.New("duplicate sample for timestamp")
 	ErrOutOfBounds                 = errors.New("out of bounds")
 	ErrOutOfOrderExemplar          = errors.New("out of order exemplar")
+	ErrDuplicateExemplar           = errors.New("duplicate exemplar")
+	ErrExemplarLabelLength         = fmt.Errorf("label length for exemplar exceeds maximum of %d UTF-8 characters", exemplar.ExemplarMaxLabelSetLength)
 )
 
 // Appendable allows creating appenders.
@@ -121,7 +124,7 @@ type ExemplarQueryable interface {
 	ExemplarQuerier(ctx context.Context) (ExemplarQuerier, error)
 }
 
-// Querier provides reading access to time series data.
+// ExemplarQuerier provides reading access to time series data.
 type ExemplarQuerier interface {
 	// Select all the exemplars that match the matchers.
 	// Within a single slice of matchers, it is an intersection. Between the slices, it is a union.

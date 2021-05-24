@@ -16,6 +16,7 @@ package tsdb
 import (
 	"reflect"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -24,6 +25,66 @@ import (
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
 )
+
+// Tests the same exemplar cases as AddExemplar, but specifically the ValidateExemplar function so it can be relied on externally.
+func TestValidateExemplar(t *testing.T) {
+	exs, err := NewCircularExemplarStorage(2, nil)
+	require.NoError(t, err)
+	es := exs.(*CircularExemplarStorage)
+
+	l := labels.Labels{
+		{Name: "service", Value: "asdf"},
+	}
+	e := exemplar.Exemplar{
+		Labels: labels.Labels{
+			labels.Label{
+				Name:  "traceID",
+				Value: "qwerty",
+			},
+		},
+		Value: 0.1,
+		Ts:    1,
+	}
+
+	require.NoError(t, es.ValidateExemplar(l, e))
+	require.NoError(t, es.AddExemplar(l, e))
+
+	e2 := exemplar.Exemplar{
+		Labels: labels.Labels{
+			labels.Label{
+				Name:  "traceID",
+				Value: "zxcvb",
+			},
+		},
+		Value: 0.1,
+		Ts:    2,
+	}
+
+	require.NoError(t, es.ValidateExemplar(l, e2))
+	require.NoError(t, es.AddExemplar(l, e2))
+
+	require.Equal(t, es.ValidateExemplar(l, e2), storage.ErrDuplicateExemplar, "error is expected attempting to validate duplicate exemplar")
+
+	e3 := e2
+	e3.Ts = 3
+	require.Equal(t, es.ValidateExemplar(l, e3), storage.ErrDuplicateExemplar, "error is expected when attempting to add duplicate exemplar, even with different timestamp")
+
+	e3.Ts = 1
+	e3.Value = 0.3
+	require.Equal(t, es.ValidateExemplar(l, e3), storage.ErrOutOfOrderExemplar)
+
+	e4 := exemplar.Exemplar{
+		Labels: labels.Labels{
+			labels.Label{
+				Name:  "a",
+				Value: strings.Repeat("b", exemplar.ExemplarMaxLabelSetLength),
+			},
+		},
+		Value: 0.1,
+		Ts:    2,
+	}
+	require.Equal(t, storage.ErrExemplarLabelLength, es.ValidateExemplar(l, e4))
+}
 
 func TestAddExemplar(t *testing.T) {
 	exs, err := NewCircularExemplarStorage(2, nil)
@@ -44,8 +105,7 @@ func TestAddExemplar(t *testing.T) {
 		Ts:    1,
 	}
 
-	err = es.AddExemplar(l, e)
-	require.NoError(t, err)
+	require.NoError(t, es.AddExemplar(l, e))
 	require.Equal(t, es.index[l.String()].newest, 0, "exemplar was not stored correctly")
 
 	e2 := exemplar.Exemplar{
@@ -59,23 +119,31 @@ func TestAddExemplar(t *testing.T) {
 		Ts:    2,
 	}
 
-	err = es.AddExemplar(l, e2)
-	require.NoError(t, err)
+	require.NoError(t, es.AddExemplar(l, e2))
 	require.Equal(t, es.index[l.String()].newest, 1, "exemplar was not stored correctly, location of newest exemplar for series in index did not update")
 	require.True(t, es.exemplars[es.index[l.String()].newest].exemplar.Equals(e2), "exemplar was not stored correctly, expected %+v got: %+v", e2, es.exemplars[es.index[l.String()].newest].exemplar)
 
-	err = es.AddExemplar(l, e2)
-	require.NoError(t, err, "no error is expected attempting to add duplicate exemplar")
+	require.NoError(t, es.AddExemplar(l, e2), "no error is expected attempting to add duplicate exemplar")
 
 	e3 := e2
 	e3.Ts = 3
-	err = es.AddExemplar(l, e3)
-	require.NoError(t, err, "no error is expected when attempting to add duplicate exemplar, even with different timestamp")
+	require.NoError(t, es.AddExemplar(l, e3), "no error is expected when attempting to add duplicate exemplar, even with different timestamp")
 
 	e3.Ts = 1
 	e3.Value = 0.3
-	err = es.AddExemplar(l, e3)
-	require.Equal(t, err, storage.ErrOutOfOrderExemplar)
+	require.Equal(t, storage.ErrOutOfOrderExemplar, es.AddExemplar(l, e3))
+
+	e4 := exemplar.Exemplar{
+		Labels: labels.Labels{
+			labels.Label{
+				Name:  "a",
+				Value: strings.Repeat("b", exemplar.ExemplarMaxLabelSetLength),
+			},
+		},
+		Value: 0.1,
+		Ts:    2,
+	}
+	require.Equal(t, storage.ErrExemplarLabelLength, es.AddExemplar(l, e4))
 }
 
 func TestStorageOverflow(t *testing.T) {
@@ -304,11 +372,11 @@ func TestIndexOverwrite(t *testing.T) {
 	// index entry for series l1 since we just wrote two exemplars for series l2.
 	_, ok := es.index[l1.String()]
 	require.False(t, ok)
-	require.Equal(t, &indexEntry{1, 0}, es.index[l2.String()])
+	require.Equal(t, &indexEntry{1, 0, l2}, es.index[l2.String()])
 
 	err = es.AddExemplar(l1, exemplar.Exemplar{Value: 4, Ts: 4})
 	require.NoError(t, err)
 
 	i := es.index[l2.String()]
-	require.Equal(t, &indexEntry{0, 0}, i)
+	require.Equal(t, &indexEntry{0, 0, l2}, i)
 }

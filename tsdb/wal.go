@@ -64,7 +64,7 @@ type walMetrics struct {
 	corruptions   prometheus.Counter
 }
 
-func newWalMetrics(wal *SegmentWAL, r prometheus.Registerer) *walMetrics {
+func newWalMetrics(r prometheus.Registerer) *walMetrics {
 	m := &walMetrics{}
 
 	m.fsyncDuration = prometheus.NewSummary(prometheus.SummaryOpts{
@@ -192,7 +192,7 @@ func OpenSegmentWAL(dir string, logger log.Logger, flushInterval time.Duration, 
 		segmentSize:   walSegmentSizeBytes,
 		crc32:         newCRC32(),
 	}
-	w.metrics = newWalMetrics(w, r)
+	w.metrics = newWalMetrics(r)
 
 	fns, err := sequenceFiles(w.dirFile.Name())
 	if err != nil {

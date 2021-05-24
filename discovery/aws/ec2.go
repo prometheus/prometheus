@@ -1,4 +1,4 @@
-// Copyright 2015 The Prometheus Authors
+// Copyright 2021 The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package ec2
+package aws
 
 import (
 	"context"
@@ -61,24 +61,26 @@ const (
 	ec2LabelSeparator         = ","
 )
 
-// DefaultSDConfig is the default EC2 SD configuration.
-var DefaultSDConfig = SDConfig{
-	Port:            80,
-	RefreshInterval: model.Duration(60 * time.Second),
-}
+var (
+	// DefaultEC2SDConfig is the default EC2 SD configuration.
+	DefaultEC2SDConfig = EC2SDConfig{
+		Port:            80,
+		RefreshInterval: model.Duration(60 * time.Second),
+	}
+)
 
 func init() {
-	discovery.RegisterConfig(&SDConfig{})
+	discovery.RegisterConfig(&EC2SDConfig{})
 }
 
-// Filter is the configuration for filtering EC2 instances.
-type Filter struct {
+// EC2Filter is the configuration for filtering EC2 instances.
+type EC2Filter struct {
 	Name   string   `yaml:"name"`
 	Values []string `yaml:"values"`
 }
 
-// SDConfig is the configuration for EC2 based service discovery.
-type SDConfig struct {
+// EC2SDConfig is the configuration for EC2 based service discovery.
+type EC2SDConfig struct {
 	Endpoint        string         `yaml:"endpoint"`
 	Region          string         `yaml:"region"`
 	AccessKey       string         `yaml:"access_key,omitempty"`
@@ -87,21 +89,21 @@ type SDConfig struct {
 	RoleARN         string         `yaml:"role_arn,omitempty"`
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
 	Port            int            `yaml:"port"`
-	Filters         []*Filter      `yaml:"filters"`
+	Filters         []*EC2Filter   `yaml:"filters"`
 }
 
-// Name returns the name of the Config.
-func (*SDConfig) Name() string { return "ec2" }
+// Name returns the name of the EC2 Config.
+func (*EC2SDConfig) Name() string { return "ec2" }
 
-// NewDiscoverer returns a Discoverer for the Config.
-func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewDiscovery(c, opts.Logger), nil
+// NewDiscoverer returns a Discoverer for the EC2 Config.
+func (c *EC2SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
+	return NewEC2Discovery(c, opts.Logger), nil
 }
 
-// UnmarshalYAML implements the yaml.Unmarshaler interface.
-func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	*c = DefaultSDConfig
-	type plain SDConfig
+// UnmarshalYAML implements the yaml.Unmarshaler interface for the EC2 Config.
+func (c *EC2SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = DefaultEC2SDConfig
+	type plain EC2SDConfig
 	err := unmarshal((*plain)(c))
 	if err != nil {
 		return err
@@ -126,20 +128,20 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	return nil
 }
 
-// Discovery periodically performs EC2-SD requests. It implements
+// EC2Discovery periodically performs EC2-SD requests. It implements
 // the Discoverer interface.
-type Discovery struct {
+type EC2Discovery struct {
 	*refresh.Discovery
-	cfg *SDConfig
+	cfg *EC2SDConfig
 	ec2 *ec2.EC2
 }
 
-// NewDiscovery returns a new EC2Discovery which periodically refreshes its targets.
-func NewDiscovery(conf *SDConfig, logger log.Logger) *Discovery {
+// NewEC2Discovery returns a new EC2Discovery which periodically refreshes its targets.
+func NewEC2Discovery(conf *EC2SDConfig, logger log.Logger) *EC2Discovery {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
-	d := &Discovery{
+	d := &EC2Discovery{
 		cfg: conf,
 	}
 	d.Discovery = refresh.NewDiscovery(
@@ -151,7 +153,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) *Discovery {
 	return d
 }
 
-func (d *Discovery) ec2Client() (*ec2.EC2, error) {
+func (d *EC2Discovery) ec2Client() (*ec2.EC2, error) {
 	if d.ec2 != nil {
 		return d.ec2, nil
 	}
@@ -183,7 +185,7 @@ func (d *Discovery) ec2Client() (*ec2.EC2, error) {
 	return d.ec2, nil
 }
 
-func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
+func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	ec2Client, err := d.ec2Client()
 	if err != nil {
 		return nil, err

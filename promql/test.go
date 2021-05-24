@@ -26,6 +26,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 
+	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -274,16 +275,18 @@ func (*evalCmd) testCmd()  {}
 // loadCmd is a command that loads sequences of sample values for specific
 // metrics into the storage.
 type loadCmd struct {
-	gap     time.Duration
-	metrics map[uint64]labels.Labels
-	defs    map[uint64][]Point
+	gap       time.Duration
+	metrics   map[uint64]labels.Labels
+	defs      map[uint64][]Point
+	exemplars map[uint64][]exemplar.Exemplar
 }
 
 func newLoadCmd(gap time.Duration) *loadCmd {
 	return &loadCmd{
-		gap:     gap,
-		metrics: map[uint64]labels.Labels{},
-		defs:    map[uint64][]Point{},
+		gap:       gap,
+		metrics:   map[uint64]labels.Labels{},
+		defs:      map[uint64][]Point{},
+		exemplars: map[uint64][]exemplar.Exemplar{},
 	}
 }
 

@@ -616,7 +616,10 @@ func (w *WAL) log(rec []byte, final bool) error {
 
 	// Compress the record before calculating if a new segment is needed.
 	compressed := false
-	if w.compress && len(rec) > 0 {
+	if w.compress &&
+		len(rec) > 0 &&
+		// If MaxEncodedLen is less than 0 the record is too large to be compressed.
+		snappy.MaxEncodedLen(len(rec)) >= 0 {
 		// The snappy library uses `len` to calculate if we need a new buffer.
 		// In order to allocate as few buffers as possible make the length
 		// equal to the capacity.
