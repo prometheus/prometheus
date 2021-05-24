@@ -15,6 +15,7 @@ package linode
 
 import (
 	"context"
+	"bytes"
 	"fmt"
 	"net"
 	"net/http"
@@ -34,17 +35,25 @@ import (
 )
 
 const (
-	linodeLabel            = model.MetaLabelPrefix + "linode_"
-	linodeLabelID          = linodeLabel + "instance_id"
-	linodeLabelName        = linodeLabel + "instance_label"
-	linodeLabelImage       = linodeLabel + "image"
-	linodeLabelPrivateIPv4 = linodeLabel + "private_ipv4"
-	linodeLabelPublicIPv4  = linodeLabel + "public_ipv4"
-	linodeLabelPublicIPv6  = linodeLabel + "public_ipv6"
-	linodeLabelRegion      = linodeLabel + "region"
-	linodeLabelType        = linodeLabel + "type"
-	linodeLabelStatus      = linodeLabel + "status"
-	linodeLabelTags        = linodeLabel + "tags"
+	linodeLabel              = model.MetaLabelPrefix + "linode_"
+	linodeLabelID            = linodeLabel + "instance_id"
+	linodeLabelName          = linodeLabel + "instance_label"
+	linodeLabelImage         = linodeLabel + "image"
+	linodeLabelPrivateIPv4   = linodeLabel + "private_ipv4"
+	linodeLabelPublicIPv4    = linodeLabel + "public_ipv4"
+	linodeLabelPublicIPv6    = linodeLabel + "public_ipv6"
+	linodeLabelRegion        = linodeLabel + "region"
+	linodeLabelType          = linodeLabel + "type"
+	linodeLabelStatus        = linodeLabel + "status"
+	linodeLabelTags          = linodeLabel + "tags"
+	linodeLabelGroup         = linodeLabel + "group"
+	linodeLabelHypervisor    = linodeLabel + "hypervisor"
+	linodeLabelBackups       = linodeLabel + "backups"
+	linodeLabelSpecsDisk     = linodeLabel + "specs_disk"
+	linodeLabelSpecsMemory   = linodeLabel + "specs_memory"
+	linodeLabelSpecsVCPUs    = linodeLabel + "specs_vcpus"
+	linodeLabelSpecsTransfer = linodeLabel + "specs_transfer"
+	linodeLabelExtraIPs      = linodeLabel + "extra_ips"
 )
 
 // DefaultSDConfig is the default Linode SD configuration.
@@ -153,7 +162,11 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 			continue
 		}
 
-		var privateIPv4, publicIPv4, publicIPv6 string
+		var (
+			privateIPv4, publicIPv4, publicIPv6, backupsStatus string
+			extraIPs                                           []string
+		)
+
 		for _, detailedIP := range detailedIPs {
 			if detailedIP.LinodeID != instance.ID {
 				continue
@@ -162,24 +175,60 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 			if detailedIP.Type == "ipv6" {
 				publicIPv6 = detailedIP.Address
 			} else if detailedIP.Type == "ipv4" {
+				// Linode's /networking/ips endpoint does not return the IPs sorted. To ensure we
+				// have a consistent target IP on each Discover refresh, we always get the byte-wise
+				// numerically first public/private IPv4 address as the primary. Extra public/private
+				// IPv4s are store in a separate label for use with relabeling.
+
 				if detailedIP.Public {
-					publicIPv4 = detailedIP.Address
+					if publicIPv4 == "" {
+						publicIPv4 = detailedIP.Address
+					} else if publicIPv4 != "" && bytes.Compare([]byte(publicIPv4), []byte(detailedIP.Address)) > 0 {
+						// If extra public IPs are found on this instance, ensure we use the byte-wise numerical
+						// first IP for consistent target labeling.
+						extraIPs = append(extraIPs, publicIPv4)
+						publicIPv4 = detailedIP.Address
+					} else {
+						extraIPs = append(extraIPs, detailedIP.Address)
+					}
 				} else {
-					privateIPv4 = detailedIP.Address
+					if privateIPv4 == "" {
+						privateIPv4 = detailedIP.Address
+					} else if privateIPv4 != "" && bytes.Compare([]byte(privateIPv4), []byte(detailedIP.Address)) > 0 {
+						// If extra private IPs are found on this instance, ensure we use the byte-wise numerical
+						// first IP for consistent target labeling.
+						extraIPs = append(extraIPs, privateIPv4)
+						privateIPv4 = detailedIP.Address
+					} else {
+						extraIPs = append(extraIPs, detailedIP.Address)
+					}
 				}
 			}
 		}
 
+		if instance.Backups.Enabled {
+			backupsStatus = "enabled"
+		} else {
+			backupsStatus = "disabled"
+		}
+
 		labels := model.LabelSet{
-			linodeLabelID:          model.LabelValue(fmt.Sprintf("%d", instance.ID)),
-			linodeLabelName:        model.LabelValue(instance.Label),
-			linodeLabelImage:       model.LabelValue(instance.Image),
-			linodeLabelPrivateIPv4: model.LabelValue(privateIPv4),
-			linodeLabelPublicIPv4:  model.LabelValue(publicIPv4),
-			linodeLabelPublicIPv6:  model.LabelValue(publicIPv6),
-			linodeLabelRegion:      model.LabelValue(instance.Region),
-			linodeLabelType:        model.LabelValue(instance.Type),
-			linodeLabelStatus:      model.LabelValue(instance.Status),
+			linodeLabelID:            model.LabelValue(fmt.Sprintf("%d", instance.ID)),
+			linodeLabelName:          model.LabelValue(instance.Label),
+			linodeLabelImage:         model.LabelValue(instance.Image),
+			linodeLabelPrivateIPv4:   model.LabelValue(privateIPv4),
+			linodeLabelPublicIPv4:    model.LabelValue(publicIPv4),
+			linodeLabelPublicIPv6:    model.LabelValue(publicIPv6),
+			linodeLabelRegion:        model.LabelValue(instance.Region),
+			linodeLabelType:          model.LabelValue(instance.Type),
+			linodeLabelStatus:        model.LabelValue(instance.Status),
+			linodeLabelGroup:         model.LabelValue(instance.Group),
+			linodeLabelHypervisor:    model.LabelValue(instance.Hypervisor),
+			linodeLabelBackups:       model.LabelValue(backupsStatus),
+			linodeLabelSpecsDisk:     model.LabelValue(strconv.Itoa(instance.Specs.Disk)),
+			linodeLabelSpecsMemory:   model.LabelValue(strconv.Itoa(instance.Specs.Memory)),
+			linodeLabelSpecsVCPUs:    model.LabelValue(strconv.Itoa(instance.Specs.VCPUs)),
+			linodeLabelSpecsTransfer: model.LabelValue(strconv.Itoa(instance.Specs.Transfer)),
 		}
 
 		addr := net.JoinHostPort(publicIPv4, strconv.FormatUint(uint64(d.port), 10))
@@ -190,6 +239,14 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 			// in relabeling rules don't have to consider tag positions.
 			tags := d.tagSeparator + strings.Join(instance.Tags, d.tagSeparator) + d.tagSeparator
 			labels[linodeLabelTags] = model.LabelValue(tags)
+		}
+
+		if len(extraIPs) > 0 {
+			// This instance has more than one of at least one type of IP address (public, private,
+			// IPv4, IPv6, etc. We provide those extra IPs found here just like we do for instance
+			// tags, we surround a separated list with the tagSeparator config.
+			ips := d.tagSeparator + strings.Join(extraIPs, d.tagSeparator) + d.tagSeparator
+			labels[linodeLabelExtraIPs] = model.LabelValue(ips)
 		}
 
 		tg.Targets = append(tg.Targets, labels)

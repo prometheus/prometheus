@@ -76,7 +76,9 @@ func (m *SDMock) HandleLinodeInstancesList() {
       "type": "g6-standard-2",
       "ipv4": [
         "45.33.82.151",
-        "192.168.170.51"
+        "96.126.108.16",
+        "192.168.170.51",
+        "192.168.201.25"
       ],
       "ipv6": "2600:3c03::f03c:92ff:fe1a:1382/128",
       "image": "linode/arch",
@@ -203,6 +205,7 @@ func (m *SDMock) HandleLinodeInstancesList() {
       "type": "g6-nanode-1",
       "ipv4": [
         "66.228.47.103",
+        "172.104.18.104",
         "192.168.148.94"
       ],
       "ipv6": "2600:3c03::f03c:92ff:fe1a:fb4c/128",
@@ -260,7 +263,7 @@ func (m *SDMock) HandleLinodeNeworkingIPs() {
 {
   "page": 1,
   "pages": 1,
-  "results": 10,
+  "results": 13,
   "data": [
     {
       "address": "192.53.120.25",
@@ -281,6 +284,17 @@ func (m *SDMock) HandleLinodeNeworkingIPs() {
       "type": "ipv4",
       "public": true,
       "rdns": "li328-103.members.linode.com",
+      "linode_id": 26837992,
+      "region": "us-east"
+    },
+    {
+      "address": "172.104.18.104",
+      "gateway": "172.104.18.1",
+      "subnet_mask": "255.255.255.0",
+      "prefix": 24,
+      "type": "ipv4",
+      "public": true,
+      "rdns": "li1832-104.members.linode.com",
       "linode_id": 26837992,
       "region": "us-east"
     },
@@ -307,6 +321,17 @@ func (m *SDMock) HandleLinodeNeworkingIPs() {
       "region": "us-east"
     },
     {
+      "address": "96.126.108.16",
+      "gateway": "96.126.108.1",
+      "subnet_mask": "255.255.255.0",
+      "prefix": 24,
+      "type": "ipv4",
+      "public": true,
+      "rdns": "li365-16.members.linode.com",
+      "linode_id": 26838044,
+      "region": "us-east"
+    },
+    {
       "address": "45.33.82.151",
       "gateway": "45.33.82.1",
       "subnet_mask": "255.255.255.0",
@@ -314,6 +339,17 @@ func (m *SDMock) HandleLinodeNeworkingIPs() {
       "type": "ipv4",
       "public": true,
       "rdns": "li1028-151.members.linode.com",
+      "linode_id": 26838044,
+      "region": "us-east"
+    },
+    {
+      "address": "192.168.201.25",
+      "gateway": null,
+      "subnet_mask": "255.255.128.0",
+      "prefix": 17,
+      "type": "ipv4",
+      "public": false,
+      "rdns": null,
       "linode_id": 26838044,
       "region": "us-east"
     },
