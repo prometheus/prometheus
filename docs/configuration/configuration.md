@@ -2502,27 +2502,21 @@ queue_config:
   [ max_samples_per_send: <int> | default = 500]
   # Maximum time a sample will wait in buffer.
   [ batch_send_deadline: <duration> | default = 5s ]
+  # Initial retry delay. Gets doubled for every retry.
+  [ min_backoff: <duration> | default = 30ms ]
+  # Maximum retry delay.
+  [ max_backoff: <duration> | default = 100ms ]
+  # Retry upon receiving a 429 status code from the remote-write storage.
+  # This is experimental and might change in the future.
+  [ retry_on_http_429: <boolean> | default = false ]
   # Configures retrying behaviour of remote-write component.
-  # Please note that retries can lead to increased remote-write fall behind issues.
-  retry:
-    # Initial retry delay. Gets doubled for every retry.
-    [ min_backoff: <duration> | default = 30ms ]
-    # Maximum retry delay.
-    [ max_backoff: <duration> | default = 100ms ]
-    # Retry upon receiving a 429 status code from the remote-write storage.
-    # This is experimental and might change in the future.
-    [ on_http_429: <boolean> | default = false ]
-    # Policy defines configuration for handling retry in a specific manner.
-    # By default it is disabled and hence retries forever.
-    policy:
-      # If set, any sample batch that has the minimum timestamp before the given
-      # duration will not be sent to the remote storage. This means that if
-      # the batch contains some samples greater than the min_samples_age, they would
-      # be rejected as well.
-      [ min_samples_age: <duration> | default = 0s ]
-      # If set, the maximum number of retries for a particular batch of samples
-      # after which they will be rejected.
-      [ max_retries: <int> | default = 0 ]
+  # Note that retries can lead to increased remote-write fall behind issues.
+  retry_policy:
+    # If set, any sample that has the minimum timestamp earlier than
+    # min_samples_age given will not be sent to the remote storage.
+    [ min_samples_age: <duration> | default = 0s ]
+    # If set, samples batch will be rejected after retrying for max_retries.
+    [ max_retries: <int> | default = 0 ]
 
 # Configures the sending of series metadata to remote storage.
 # Metadata configuration is subject to change at any point

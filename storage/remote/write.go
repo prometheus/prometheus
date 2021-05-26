@@ -143,7 +143,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			HTTPClientConfig: rwConf.HTTPClientConfig,
 			SigV4Config:      rwConf.SigV4Config,
 			Headers:          rwConf.Headers,
-			RetryOnRateLimit: rwConf.QueueConfig.Retry.OnRateLimit,
+			RetryOnRateLimit: rwConf.QueueConfig.RetryOnRateLimit,
 		})
 		if err != nil {
 			return err

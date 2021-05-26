@@ -494,9 +494,7 @@ func (t *QueueManager) sendMetadataWithBackoff(ctx context.Context, metadata []p
 	retry := func() {
 		t.metrics.retriedMetadataTotal.Add(float64(len(metadata)))
 	}
-	// Write requests can bear either samples or metadata. Sending -1 as samplesCount indicates that the write request
-	// has no samples, which means it is a metadata request.
-	err = sendWriteRequestWithBackoff(ctx, t.cfg, t.logger, attemptStore, retry, -1, true)
+	err = sendWriteRequestWithBackoff(ctx, t.cfg, t.logger, attemptStore, nil, retry, -1, true)
 	if err != nil {
 		return err
 	}
@@ -524,7 +522,7 @@ outer:
 		}
 		t.seriesMtx.Unlock()
 		// This will only loop if the queues are being resharded.
-		backoff := t.cfg.Retry.MinBackoff
+		backoff := t.cfg.MinBackoff
 		for {
 			select {
 			case <-t.quit:
@@ -587,8 +585,8 @@ outer:
 			t.metrics.enqueueRetriesTotal.Inc()
 			time.Sleep(time.Duration(backoff))
 			backoff = backoff * 2
-			if backoff > t.cfg.Retry.MaxBackoff {
-				backoff = t.cfg.Retry.MaxBackoff
+			if backoff > t.cfg.MaxBackoff {
+				backoff = t.cfg.MaxBackoff
 			}
 		}
 	}
@@ -1103,8 +1101,9 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue chan interface
 			// stop reading from the queue. This makes it safe to reference pendingSamples by index.
 			switch d := sample.(type) {
 			case writeSample:
-				if minSampleTs > d.sample.Timestamp {
-					minSampleTs = d.sample.Timestamp
+				if !acceptable(s.qm.cfg.RetryPolicy, d.sample.Timestamp) {
+					level.Debug(s.qm.logger).Log("msg", "Discarding sample due to retry-policy violation", "sample timestamp", d.sample.Timestamp)
+					continue
 				}
 				sampleBuffer[nPendingSamples][0] = d.sample
 				pendingData[nPending].Labels = labelsToLabelsProto(d.seriesLabels, pendingData[nPending].Labels)
@@ -1151,6 +1150,16 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue chan interface
 	}
 }
 
+func acceptable(policy *config.RetryPolicy, ts int64) bool {
+	if policy == nil || policy.MinSampleAge == 0 {
+		// If policy is unset or if policy does not involve MinSampleAge, then its always acceptable.
+		return true
+	}
+	allowedTime := time.Now().Add(-time.Duration(policy.MinSampleAge))
+	receivedTime := timestamp.Time(ts)
+	return receivedTime.After(allowedTime)
+}
+
 func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, sampleCount int, exemplarCount int, buf *[]byte, minTs int64) {
 	begin := time.Now()
 	err := s.sendSamplesWithBackoff(ctx, samples, sampleCount, exemplarCount, buf, minTs)
@@ -1167,10 +1176,26 @@ func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, s
 	s.qm.lastSendTimestamp.Store(time.Now().Unix())
 }
 
+// extractExemplars returns only exemplars from the given prompb.timeseries slice.
+// removes the timeseries from the slice and returns the slice containing exemplars only.
+func extractExemplars(ts []prompb.TimeSeries) (s []prompb.TimeSeries) {
+	s = make([]prompb.TimeSeries, 0, len(ts))
+	for i := range ts {
+		if ts[i].Exemplars != nil {
+			s = append(s, prompb.TimeSeries{
+				Labels:    ts[i].Labels,
+				Samples:   nil,
+				Exemplars: ts[i].Exemplars,
+			})
+		}
+	}
+	return
+}
+
 // sendSamples to the remote storage with backoff for recoverable errors.
-func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.TimeSeries, sampleCount int, exemplarCount int, buf *[]byte, minTs int64) error {
+func (s *shards) sendSamplesWithBackoff(ctx context.Context, timeseries []prompb.TimeSeries, sampleCount int, exemplarCount int, buf *[]byte, minTs int64) error {
 	// Build the WriteRequest with no metadata.
-	req, highest, err := buildWriteRequest(samples, nil, *buf)
+	req, highest, err := buildWriteRequest(timeseries, nil, *buf)
 	if err != nil {
 		// Failing to build the write request is non-recoverable, since it will
 		// only error if marshaling the proto to bytes fails.
@@ -1180,10 +1205,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 	reqSize := len(*buf)
 	*buf = req
 
-	// An anonymous function allows us to defer the completion of our per-try spans
-	// without causing a memory leak, and it has the nice effect of not propagating any
-	// parameters for sendSamplesWithBackoff/3.
-	attemptStore := func(try int) error {
+	sendReq := func(req *[]byte, size, try int) error {
 		span, ctx := opentracing.StartSpanFromContext(ctx, "Remote Send Batch")
 		defer span.Finish()
 
@@ -1191,7 +1213,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 		if exemplarCount > 0 {
 			span.SetTag("exemplars", exemplarCount)
 		}
-		span.SetTag("request_size", reqSize)
+		span.SetTag("request_size", size)
 		span.SetTag("try", try)
 		span.SetTag("remote_name", s.qm.storeClient.Name())
 		span.SetTag("remote_url", s.qm.storeClient.Endpoint())
@@ -1199,7 +1221,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 		begin := time.Now()
 		s.qm.metrics.samplesTotal.Add(float64(sampleCount))
 		s.qm.metrics.exemplarsTotal.Add(float64(exemplarCount))
-		err := s.qm.client().Store(ctx, *buf)
+		err := s.qm.client().Store(ctx, *req)
 		s.qm.metrics.sentBatchDuration.Observe(time.Since(begin).Seconds())
 
 		if err != nil {
@@ -1211,12 +1233,42 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 		return nil
 	}
 
+	// An anonymous function allows us to defer the completion of our per-try spans
+	// without causing a memory leak, and it has the nice effect of not propagating any
+	// parameters for sendSamplesWithBackoff/3.
+	attemptStore := func(try int) error {
+		return sendReq(buf, reqSize, try)
+	}
+
+	onPolicyViolation := func(try int) error {
+		// When samples retry policy is violated, we do not send that samples batch.
+		// However, we should not prevent from sending exemplars since retry policy
+		// do not to apply to exemplars.
+		exemplars := extractExemplars(timeseries)
+		if len(exemplars) == 0 {
+			return nil
+		}
+		exemplarsReq, highestTs, err := buildWriteRequest(exemplars, nil, *buf)
+		if err != nil {
+			// Failing to build the write request is non-recoverable, since it will
+			// only error if marshalling the proto to bytes fails.
+			return err
+		}
+		// Update stats if we are sending exemplar only request. These will be applicable to the metrics below.
+		reqSize = len(*buf)
+		highest = highestTs
+		sampleCount = 0
+
+		*buf = exemplarsReq
+		return sendReq(buf, reqSize, try)
+	}
+
 	onRetry := func() {
 		s.qm.metrics.retriedSamplesTotal.Add(float64(sampleCount))
 		s.qm.metrics.retriedExemplarsTotal.Add(float64(exemplarCount))
 	}
 
-	err = sendWriteRequestWithBackoff(ctx, s.qm.cfg, s.qm.logger, attemptStore, onRetry, minTs, false)
+	err = sendWriteRequestWithBackoff(ctx, s.qm.cfg, s.qm.logger, attemptStore, onPolicyViolation, onRetry, minTs, false)
 	if err != nil {
 		return err
 	}
@@ -1225,9 +1277,10 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 	return nil
 }
 
-func sendWriteRequestWithBackoff(ctx context.Context, cfg config.QueueConfig, l log.Logger, attempt func(int) error, onRetry func(), minTs int64, isMetadata bool) error {
+func sendWriteRequestWithBackoff(ctx context.Context, cfg config.QueueConfig, l log.Logger, attempt, onPolicyViolation func(int) error, onRetry func(), minTs int64, isMetadata bool) error {
 	backoff := cfg.MinBackoff
 	sleepDuration := model.Duration(0)
+	attemptUpdated := false
 	try := 0
 
 	for {
@@ -1237,10 +1290,11 @@ func sendWriteRequestWithBackoff(ctx context.Context, cfg config.QueueConfig, l 
 		default:
 		}
 
-		if policy := cfg.RetryPolicy; !isMetadata && !shouldAttempt(policy, minTs, try) {
+		if policy := cfg.RetryPolicy; !isMetadata && !attemptUpdated && !shouldAttempt(policy, minTs, try) {
 			// We do not want to stop retry for metadata requests. Hence, retry policies does not apply to them.
-			level.Warn(l).Log("msg", "Retry policy expired. Dropping the samples batch", "retry_policy.min_sample_age", policy.MinSampleAge, "retry_policy.max_retries", policy.MaxRetries)
-			return nil
+			level.Warn(l).Log("msg", "Retry-policy for samples expired. Dropping the samples batch and continuing with exemplars (if any)", "min_sample_age", timestamp.Time(minTs), "num-retries", try)
+			attempt = onPolicyViolation // Update attempt so that we retry only for exemplars if retry-policy fails.
+			attemptUpdated = true
 		}
 
 		err := attempt(try)
@@ -1273,8 +1327,8 @@ func sendWriteRequestWithBackoff(ctx context.Context, cfg config.QueueConfig, l 
 
 		backoff = sleepDuration * 2
 
-		if backoff > cfg.Retry.MaxBackoff {
-			backoff = cfg.Retry.MaxBackoff
+		if backoff > cfg.MaxBackoff {
+			backoff = cfg.MaxBackoff
 		}
 
 		try++
@@ -1282,18 +1336,13 @@ func sendWriteRequestWithBackoff(ctx context.Context, cfg config.QueueConfig, l 
 	}
 }
 
-func shouldAttempt(policy *config.RetryPolicy, minTs int64, retries int) bool {
+func shouldAttempt(policy *config.RetryPolicy, minTs int64, currentRetry int) bool {
 	if policy == nil {
 		// Policy is not set, hence we follow the default behaviour of retry with backoff.
 		return true
 	}
 
-	minSampleAgeAllowed := timestamp.FromTime(time.Now().Add(-time.Duration(policy.MinSampleAge)))
-	if (policy.MinSampleAge != 0 && minTs < minSampleAgeAllowed) ||
-		(policy.MaxRetries != 0 && retries > policy.MaxRetries) {
-		return false
-	}
-	return true
+	return ((policy.MaxRetries == 0 || currentRetry <= policy.MaxRetries) && acceptable(policy, minTs))
 }
 
 func buildWriteRequest(samples []prompb.TimeSeries, metadata []prompb.MetricMetadata, buf []byte) ([]byte, int64, error) {
