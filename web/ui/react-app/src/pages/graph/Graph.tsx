@@ -46,7 +46,7 @@ export interface GraphData {
 
 interface GraphState {
   chartData: GraphData;
-  selectedExemplarLabels: { [key: string]: string };
+  selectedExemplarLabels: { exemplar: { [key: string]: string }; series: { [key: string]: string } };
 }
 
 class Graph extends PureComponent<GraphProps, GraphState> {
@@ -57,7 +57,7 @@ class Graph extends PureComponent<GraphProps, GraphState> {
 
   state = {
     chartData: normalizeData(this.props),
-    selectedExemplarLabels: {},
+    selectedExemplarLabels: { exemplar: {}, series: {} },
   };
 
   componentDidUpdate(prevProps: GraphProps) {
@@ -86,7 +86,7 @@ class Graph extends PureComponent<GraphProps, GraphState> {
       this.setState(
         {
           chartData: { series: this.state.chartData.series, exemplars: [] },
-          selectedExemplarLabels: {},
+          selectedExemplarLabels: { exemplar: {}, series: {} },
           ...this.state.selectedExemplarLabels,
         },
         () => {
@@ -103,13 +103,13 @@ class Graph extends PureComponent<GraphProps, GraphState> {
       // If an item has the series label property that means it's an exemplar.
       if (item && 'seriesLabels' in item.series) {
         this.setState({
-          selectedExemplarLabels: item.series.labels,
+          selectedExemplarLabels: { exemplar: item.series.labels, series: item.series.seriesLabels },
           chartData: this.state.chartData,
         });
       } else {
         this.setState({
           chartData: this.state.chartData,
-          selectedExemplarLabels: {},
+          selectedExemplarLabels: { exemplar: {}, series: {} },
         });
       }
     });
@@ -191,18 +191,29 @@ class Graph extends PureComponent<GraphProps, GraphState> {
 
   render() {
     const { chartData, selectedExemplarLabels } = this.state;
-    const selectedLabels = selectedExemplarLabels as { [key: string]: string };
+    const selectedLabels = selectedExemplarLabels as {
+      exemplar: { [key: string]: string };
+      series: { [key: string]: string };
+    };
     return (
       <div className="graph">
         <ReactResizeDetector handleWidth onResize={this.handleResize} skipOnMount />
         <div className="graph-chart" ref={this.chartRef} />
-        {Object.keys(selectedLabels).length > 0 ? (
+        {Object.keys(selectedLabels.exemplar).length > 0 ? (
           <div className="float-right">
             <span style={{ fontSize: '17px' }}>Selected exemplar:</span>
             <div className="labels mt-1">
-              {Object.keys(selectedLabels).map((k, i) => (
+              {Object.keys(selectedLabels.exemplar).map((k, i) => (
                 <div key={i} style={{ fontSize: '15px' }}>
-                  <strong>{k}</strong>: {selectedLabels[k]}
+                  <strong>{k}</strong>: {selectedLabels.exemplar[k]}
+                </div>
+              ))}
+            </div>
+            <span style={{ fontSize: '16px' }}>Series labels:</span>
+            <div className="labels mt-1">
+              {Object.keys(selectedLabels.series).map((k, i) => (
+                <div key={i} style={{ fontSize: '15px' }}>
+                  <strong>{k}</strong>: {selectedLabels.series[k]}
                 </div>
               ))}
             </div>
@@ -215,6 +226,8 @@ class Graph extends PureComponent<GraphProps, GraphState> {
           onLegendMouseOut={this.handleLegendMouseOut}
           onSeriesToggle={this.handleSeriesSelect}
         />
+        {/* This is to make sure the graph box expands when the selected exemplar info pops up. */}
+        <br style={{ clear: 'both' }} />
       </div>
     );
   }
