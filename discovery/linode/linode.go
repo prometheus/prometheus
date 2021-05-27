@@ -15,7 +15,6 @@ package linode
 
 import (
 	"context"
-	"bytes"
 	"fmt"
 	"net"
 	"net/http"
@@ -35,25 +34,28 @@ import (
 )
 
 const (
-	linodeLabel              = model.MetaLabelPrefix + "linode_"
-	linodeLabelID            = linodeLabel + "instance_id"
-	linodeLabelName          = linodeLabel + "instance_label"
-	linodeLabelImage         = linodeLabel + "image"
-	linodeLabelPrivateIPv4   = linodeLabel + "private_ipv4"
-	linodeLabelPublicIPv4    = linodeLabel + "public_ipv4"
-	linodeLabelPublicIPv6    = linodeLabel + "public_ipv6"
-	linodeLabelRegion        = linodeLabel + "region"
-	linodeLabelType          = linodeLabel + "type"
-	linodeLabelStatus        = linodeLabel + "status"
-	linodeLabelTags          = linodeLabel + "tags"
-	linodeLabelGroup         = linodeLabel + "group"
-	linodeLabelHypervisor    = linodeLabel + "hypervisor"
-	linodeLabelBackups       = linodeLabel + "backups"
-	linodeLabelSpecsDisk     = linodeLabel + "specs_disk"
-	linodeLabelSpecsMemory   = linodeLabel + "specs_memory"
-	linodeLabelSpecsVCPUs    = linodeLabel + "specs_vcpus"
-	linodeLabelSpecsTransfer = linodeLabel + "specs_transfer"
-	linodeLabelExtraIPs      = linodeLabel + "extra_ips"
+	linodeLabel                   = model.MetaLabelPrefix + "linode_"
+	linodeLabelID                 = linodeLabel + "instance_id"
+	linodeLabelName               = linodeLabel + "instance_label"
+	linodeLabelImage              = linodeLabel + "image"
+	linodeLabelPrivateIPv4        = linodeLabel + "private_ipv4"
+	linodeLabelPublicIPv4         = linodeLabel + "public_ipv4"
+	linodeLabelPublicIPv6         = linodeLabel + "public_ipv6"
+	linodeLabelPrivateIPv4RDNS    = linodeLabel + "private_ipv4_rdns"
+	linodeLabelPublicIPv4RDNS     = linodeLabel + "public_ipv4_rdns"
+	linodeLabelPublicIPv6RDNS     = linodeLabel + "public_ipv6_rdns"
+	linodeLabelRegion             = linodeLabel + "region"
+	linodeLabelType               = linodeLabel + "type"
+	linodeLabelStatus             = linodeLabel + "status"
+	linodeLabelTags               = linodeLabel + "tags"
+	linodeLabelGroup              = linodeLabel + "group"
+	linodeLabelHypervisor         = linodeLabel + "hypervisor"
+	linodeLabelBackups            = linodeLabel + "backups"
+	linodeLabelSpecsDiskBytes     = linodeLabel + "specs_disk_bytes"
+	linodeLabelSpecsMemoryBytes   = linodeLabel + "specs_memory_bytes"
+	linodeLabelSpecsVCPUs         = linodeLabel + "specs_vcpus"
+	linodeLabelSpecsTransferBytes = linodeLabel + "specs_transfer_bytes"
+	linodeLabelExtraIPs           = linodeLabel + "extra_ips"
 )
 
 // DefaultSDConfig is the default Linode SD configuration.
@@ -163,45 +165,52 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		}
 
 		var (
-			privateIPv4, publicIPv4, publicIPv6, backupsStatus string
-			extraIPs                                           []string
+			privateIPv4, publicIPv4, publicIPv6             string
+			privateIPv4RDNS, publicIPv4RDNS, publicIPv6RDNS string
+			backupsStatus                                   string
+			extraIPs                                        []string
 		)
 
-		for _, detailedIP := range detailedIPs {
-			if detailedIP.LinodeID != instance.ID {
-				continue
-			}
-
-			if detailedIP.Type == "ipv6" {
-				publicIPv6 = detailedIP.Address
-			} else if detailedIP.Type == "ipv4" {
-				// Linode's /networking/ips endpoint does not return the IPs sorted. To ensure we
-				// have a consistent target IP on each Discover refresh, we always get the byte-wise
-				// numerically first public/private IPv4 address as the primary. Extra public/private
-				// IPv4s are store in a separate label for use with relabeling.
+		for _, ip := range instance.IPv4 {
+			for _, detailedIP := range detailedIPs {
+				if detailedIP.Address != ip.String() {
+					continue
+				}
 
 				if detailedIP.Public {
 					if publicIPv4 == "" {
 						publicIPv4 = detailedIP.Address
-					} else if publicIPv4 != "" && bytes.Compare([]byte(publicIPv4), []byte(detailedIP.Address)) > 0 {
-						// If extra public IPs are found on this instance, ensure we use the byte-wise numerical
-						// first IP for consistent target labeling.
-						extraIPs = append(extraIPs, publicIPv4)
-						publicIPv4 = detailedIP.Address
+
+						if detailedIP.RDNS != "" && detailedIP.RDNS != "null" {
+							publicIPv4RDNS = detailedIP.RDNS
+						}
 					} else {
 						extraIPs = append(extraIPs, detailedIP.Address)
 					}
 				} else {
 					if privateIPv4 == "" {
 						privateIPv4 = detailedIP.Address
-					} else if privateIPv4 != "" && bytes.Compare([]byte(privateIPv4), []byte(detailedIP.Address)) > 0 {
-						// If extra private IPs are found on this instance, ensure we use the byte-wise numerical
-						// first IP for consistent target labeling.
-						extraIPs = append(extraIPs, privateIPv4)
-						privateIPv4 = detailedIP.Address
+
+						if detailedIP.RDNS != "" && detailedIP.RDNS != "null" {
+							privateIPv4RDNS = detailedIP.RDNS
+						}
 					} else {
 						extraIPs = append(extraIPs, detailedIP.Address)
 					}
+				}
+			}
+		}
+
+		if instance.IPv6 != "" {
+			for _, detailedIP := range detailedIPs {
+				if detailedIP.Address != strings.TrimSuffix(instance.IPv6, "/128") {
+					continue
+				}
+
+				publicIPv6 = detailedIP.Address
+
+				if detailedIP.RDNS != "" && detailedIP.RDNS != "null" {
+					publicIPv6RDNS = detailedIP.RDNS
 				}
 			}
 		}
@@ -213,22 +222,25 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		}
 
 		labels := model.LabelSet{
-			linodeLabelID:            model.LabelValue(fmt.Sprintf("%d", instance.ID)),
-			linodeLabelName:          model.LabelValue(instance.Label),
-			linodeLabelImage:         model.LabelValue(instance.Image),
-			linodeLabelPrivateIPv4:   model.LabelValue(privateIPv4),
-			linodeLabelPublicIPv4:    model.LabelValue(publicIPv4),
-			linodeLabelPublicIPv6:    model.LabelValue(publicIPv6),
-			linodeLabelRegion:        model.LabelValue(instance.Region),
-			linodeLabelType:          model.LabelValue(instance.Type),
-			linodeLabelStatus:        model.LabelValue(instance.Status),
-			linodeLabelGroup:         model.LabelValue(instance.Group),
-			linodeLabelHypervisor:    model.LabelValue(instance.Hypervisor),
-			linodeLabelBackups:       model.LabelValue(backupsStatus),
-			linodeLabelSpecsDisk:     model.LabelValue(strconv.Itoa(instance.Specs.Disk)),
-			linodeLabelSpecsMemory:   model.LabelValue(strconv.Itoa(instance.Specs.Memory)),
-			linodeLabelSpecsVCPUs:    model.LabelValue(strconv.Itoa(instance.Specs.VCPUs)),
-			linodeLabelSpecsTransfer: model.LabelValue(strconv.Itoa(instance.Specs.Transfer)),
+			linodeLabelID:                 model.LabelValue(fmt.Sprintf("%d", instance.ID)),
+			linodeLabelName:               model.LabelValue(instance.Label),
+			linodeLabelImage:              model.LabelValue(instance.Image),
+			linodeLabelPrivateIPv4:        model.LabelValue(privateIPv4),
+			linodeLabelPublicIPv4:         model.LabelValue(publicIPv4),
+			linodeLabelPublicIPv6:         model.LabelValue(publicIPv6),
+			linodeLabelPrivateIPv4RDNS:    model.LabelValue(privateIPv4RDNS),
+			linodeLabelPublicIPv4RDNS:     model.LabelValue(publicIPv4RDNS),
+			linodeLabelPublicIPv6RDNS:     model.LabelValue(publicIPv6RDNS),
+			linodeLabelRegion:             model.LabelValue(instance.Region),
+			linodeLabelType:               model.LabelValue(instance.Type),
+			linodeLabelStatus:             model.LabelValue(instance.Status),
+			linodeLabelGroup:              model.LabelValue(instance.Group),
+			linodeLabelHypervisor:         model.LabelValue(instance.Hypervisor),
+			linodeLabelBackups:            model.LabelValue(backupsStatus),
+			linodeLabelSpecsDiskBytes:     model.LabelValue(fmt.Sprintf("%d", instance.Specs.Disk<<20)),
+			linodeLabelSpecsMemoryBytes:   model.LabelValue(fmt.Sprintf("%d", instance.Specs.Memory<<20)),
+			linodeLabelSpecsVCPUs:         model.LabelValue(fmt.Sprintf("%d", instance.Specs.VCPUs)),
+			linodeLabelSpecsTransferBytes: model.LabelValue(fmt.Sprintf("%d", instance.Specs.Transfer<<20)),
 		}
 
 		addr := net.JoinHostPort(publicIPv4, strconv.FormatUint(uint64(d.port), 10))
