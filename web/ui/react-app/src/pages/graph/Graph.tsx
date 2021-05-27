@@ -86,6 +86,7 @@ class Graph extends PureComponent<GraphProps, GraphState> {
       this.setState(
         {
           chartData: { series: this.state.chartData.series, exemplars: [] },
+          selectedExemplarLabels: {},
           ...this.state.selectedExemplarLabels,
         },
         () => {
