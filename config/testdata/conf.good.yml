@@ -325,6 +325,11 @@ scrape_configs:
       access_key: SCWXXXXXXXXXXXXXXXXX
       secret_key: 11111111-1111-1111-1111-111111111111
 
+- job_name: linode-instances
+  linode_sd_configs:
+    - authorization:
+        credentials: abcdef
+
 alerting:
   alertmanagers:
   - scheme: https
