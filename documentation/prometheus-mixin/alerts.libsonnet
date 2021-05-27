@@ -278,7 +278,7 @@
           {
             alert: 'PrometheusTargetSyncFailure',
             expr: |||
-              increase(prometheus_target_sync_failed_total{%(prometheusSelector)s}[15m]) > 0
+              increase(prometheus_target_sync_failed_total{%(prometheusSelector)s}[30m]) > 0
             ||| % $._config,
             'for': '5m',
             labels: {
