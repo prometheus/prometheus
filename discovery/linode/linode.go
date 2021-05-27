@@ -177,26 +177,20 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 					continue
 				}
 
-				if detailedIP.Public {
-					if publicIPv4 == "" {
-						publicIPv4 = detailedIP.Address
+				if detailedIP.Public && publicIPv4 == "" {
+					publicIPv4 = detailedIP.Address
 
-						if detailedIP.RDNS != "" && detailedIP.RDNS != "null" {
-							publicIPv4RDNS = detailedIP.RDNS
-						}
-					} else {
-						extraIPs = append(extraIPs, detailedIP.Address)
+					if detailedIP.RDNS != "" && detailedIP.RDNS != "null" {
+						publicIPv4RDNS = detailedIP.RDNS
+					}
+				} else if !detailedIP.Public && privateIPv4 == "" {
+					privateIPv4 = detailedIP.Address
+
+					if detailedIP.RDNS != "" && detailedIP.RDNS != "null" {
+						privateIPv4RDNS = detailedIP.RDNS
 					}
 				} else {
-					if privateIPv4 == "" {
-						privateIPv4 = detailedIP.Address
-
-						if detailedIP.RDNS != "" && detailedIP.RDNS != "null" {
-							privateIPv4RDNS = detailedIP.RDNS
-						}
-					} else {
-						extraIPs = append(extraIPs, detailedIP.Address)
-					}
+					extraIPs = append(extraIPs, detailedIP.Address)
 				}
 			}
 		}
