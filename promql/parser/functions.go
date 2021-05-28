@@ -272,6 +272,11 @@ var Functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeVector},
 		ReturnType: ValueTypeVector,
 	},
+	"timezone_offset": {
+		Name:       "timezone_offset",
+		ArgTypes:   []ValueType{ValueTypeString},
+		ReturnType: ValueTypeScalar,
+	},
 	"vector": {
 		Name:       "vector",
 		ArgTypes:   []ValueType{ValueTypeScalar},

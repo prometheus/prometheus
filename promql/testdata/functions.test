@@ -747,6 +747,17 @@ eval instant at 0m days_in_month(vector(1454284800))
 eval instant at 0m days_in_month(vector(1485907200))
   {} 28
 
+eval instant at 0m timezone_offset("UTC")
+  0
+
+# With DST
+eval instant at 1622213973s timezone_offset("Europe/Berlin")
+  7200
+
+# Without DST
+eval instant at 0s timezone_offset("Europe/Berlin")
+  3600
+
 clear
 
 # Test duplicate labelset in promql output.

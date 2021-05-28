@@ -33,6 +33,7 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	_ "time/tzdata"
 
 	"github.com/alecthomas/units"
 	"github.com/go-kit/kit/log"

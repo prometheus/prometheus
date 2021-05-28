@@ -409,6 +409,17 @@ the given vector as the number of seconds since January 1, 1970 UTC.
 
 *This function was added in Prometheus 2.0*
 
+## `timezone_offset()`
+
+`timezone_offset(v string)` returns the offset to the given timezone.
+A list of all supported Timezones is available at en.wikipedia.org/wiki/List_of_tz_database_time_zones .
+ 
+```
+hour(timestamp(up{job="api-server"}) + timezone_offset("Europe/Berlin"))
+```
+
+*This function was added in Prometheus 2.28*
+
 ## `vector()`
 
 `vector(s scalar)` returns the scalar `s` as a vector with no labels.

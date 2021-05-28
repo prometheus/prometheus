@@ -14,6 +14,7 @@
 package promql
 
 import (
+	"fmt"
 	"math"
 	"regexp"
 	"sort"
@@ -587,6 +588,21 @@ func funcTimestamp(vals []parser.Value, args parser.Expressions, enh *EvalNodeHe
 	return enh.Out
 }
 
+// === timezone_offset(Vector parser.ValueTypeString) Vector ===
+func funcTimezoneOffset(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	tz := stringFromArg(args[0])
+
+	loc, err := time.LoadLocation(tz)
+	if err != nil {
+		panic(fmt.Errorf("invalid timezone in timezone_offset(%q): %v", tz, err))
+	}
+	_, offset := time.Unix(enh.Ts/1000, 0).In(loc).Zone()
+
+	return Vector{Sample{Point: Point{
+		V: float64(offset),
+	}}}
+}
+
 // linearRegression performs a least-square linear regression analysis on the
 // provided SamplePairs. It returns the slope, and the intercept value at the
 // provided time.
@@ -973,6 +989,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"sum_over_time":      funcSumOverTime,
 	"time":               funcTime,
 	"timestamp":          funcTimestamp,
+	"timezone_offset":    funcTimezoneOffset,
 	"vector":             funcVector,
 	"year":               funcYear,
 }
@@ -986,7 +1003,7 @@ var AtModifierUnsafeFunctions = map[string]struct{}{
 	// Step invariant functions.
 	"days_in_month": {}, "day_of_month": {}, "day_of_week": {},
 	"hour": {}, "minute": {}, "month": {}, "year": {},
-	"predict_linear": {}, "time": {},
+	"predict_linear": {}, "time": {}, "timezone_offset": {},
 	// Uses timestamp of the argument for the result,
 	// hence unsafe to use with @ modifier.
 	"timestamp": {},
