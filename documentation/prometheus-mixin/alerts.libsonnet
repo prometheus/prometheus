@@ -286,7 +286,7 @@
             },
             annotations: {
               summary: 'Prometheus has failed to sync targets.',
-              description: '{{ printf "%%.of" $value }} targets in Prometheus %(prometheusName)s have failed to sync because invalid configuration was supplied.' % $._config,
+              description: '{{ printf "%%.0f" $value }} targets in Prometheus %(prometheusName)s have failed to sync because invalid configuration was supplied.' % $._config,
             },
           },
         ] + if $._config.prometheusHAGroupLabels == '' then self.rulesWithoutHA else self.rulesWithHA,
