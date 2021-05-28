@@ -275,6 +275,20 @@
               description: 'Prometheus %(prometheusName)s has dropped {{ printf "%%.0f" $value }} targets because some samples exceeded the configured label_limit, label_name_length_limit or label_value_length_limit.' % $._config,
             },
           },
+          {
+            alert: 'PrometheusTargetSyncFailure',
+            expr: |||
+              increase(prometheus_target_sync_failed_total{%(prometheusSelector)s}[30m]) > 0
+            ||| % $._config,
+            'for': '5m',
+            labels: {
+              severity: 'critical',
+            },
+            annotations: {
+              summary: 'Prometheus has failed to sync targets.',
+              description: '{{ printf "%%.0f" $value }} targets in Prometheus %(prometheusName)s have failed to sync because invalid configuration was supplied.' % $._config,
+            },
+          },
         ] + if $._config.prometheusHAGroupLabels == '' then self.rulesWithoutHA else self.rulesWithHA,
         rulesWithoutHA:: [
           {

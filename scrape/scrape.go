@@ -176,6 +176,13 @@ var (
 			Help: "Total number of times scrape pools hit the label limits, during sync or config reload.",
 		},
 	)
+	targetSyncFailed = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "prometheus_target_sync_failed_total",
+			Help: "Total number of target sync failures.",
+		},
+		[]string{"scrape_job"},
+	)
 )
 
 func init() {
@@ -199,6 +206,7 @@ func init() {
 		targetMetadataCache,
 		targetScrapeExemplarOutOfOrder,
 		targetScrapePoolExceededLabelLimits,
+		targetSyncFailed,
 	)
 }
 
@@ -346,6 +354,7 @@ func (sp *scrapePool) stop() {
 		targetScrapePoolTargetLimit.DeleteLabelValues(sp.config.JobName)
 		targetScrapePoolTargetsAdded.DeleteLabelValues(sp.config.JobName)
 		targetSyncIntervalLength.DeleteLabelValues(sp.config.JobName)
+		targetSyncFailed.DeleteLabelValues(sp.config.JobName)
 	}
 }
 
@@ -445,11 +454,11 @@ func (sp *scrapePool) Sync(tgs []*targetgroup.Group) {
 	var all []*Target
 	sp.droppedTargets = []*Target{}
 	for _, tg := range tgs {
-		targets, err := targetsFromGroup(tg, sp.config)
-		if err != nil {
-			level.Error(sp.logger).Log("msg", "creating targets failed", "err", err)
-			continue
+		targets, failures := targetsFromGroup(tg, sp.config)
+		for _, err := range failures {
+			level.Error(sp.logger).Log("msg", "Creating target failed", "err", err)
 		}
+		targetSyncFailed.WithLabelValues(sp.config.JobName).Add(float64(len(failures)))
 		for _, t := range targets {
 			if t.Labels().Len() > 0 {
 				all = append(all, t)
