@@ -181,6 +181,34 @@ export const getColors = (data: { resultType: string; result: Array<{ metric: Me
 export const normalizeData = ({ queryParams, data, exemplars, stacked }: GraphProps): GraphData => {
   const colors = getColors(data);
   const { startTime, endTime, resolution } = queryParams!;
+
+  let sum: number = 0;
+  const values: number[] = [];
+  // Exemplars are grouped into buckets by time to use for de-densifying.
+  const buckets: { [time: number]: GraphExemplar[] } = {};
+  for (const exemplar of exemplars ? exemplars : []) {
+    for (const { labels, value, timestamp } of exemplar.exemplars) {
+      let parsed = parseValue(value);
+      parsed = parsed ? parsed : 0;
+      sum += parsed;
+      values.push(parsed);
+
+      const bucketTime = Math.floor((timestamp / ((endTime - startTime) / 60)) * 0.8) * 1000;
+      if (!buckets[bucketTime]) {
+        buckets[bucketTime] = [];
+      }
+
+      buckets[bucketTime].push({
+        seriesLabels: exemplar.seriesLabels,
+        labels: labels,
+        data: [[timestamp * 1000, parsed]],
+        points: { symbol: exemplarSymbol },
+        color: '#0275d8',
+      });
+    }
+  }
+  const deviation = stdDeviation(sum, values);
+
   return {
     series: data.result.map(({ values, metric }, index) => {
       // Insert nulls for all missing steps.
@@ -206,21 +234,26 @@ export const normalizeData = ({ queryParams, data, exemplars, stacked }: GraphPr
         index,
       };
     }),
-    exemplars: exemplars
-      ? exemplars
-          .map(({ seriesLabels, exemplars }) => {
-            return exemplars.map(({ labels, value, timestamp }) => {
-              return {
-                seriesLabels: seriesLabels,
-                labels: labels,
-                data: [[timestamp * 1000, parseValue(value)]],
-                points: { symbol: exemplarSymbol },
-                color: '#0275d8',
-              };
-            });
-          })
-          .flat()
-      : [],
+    exemplars: Object.values(buckets).flatMap(bucket => {
+      if (bucket.length === 1) {
+        return bucket[0];
+      }
+      return bucket
+        .sort((a, b) => exValue(b) - exValue(a)) // Sort exemplars by value in descending order.
+        .reduce((exemplars: GraphExemplar[], exemplar) => {
+          if (exemplars.length === 0) {
+            exemplars.push(exemplar);
+          } else {
+            const prev = exemplars[exemplars.length - 1];
+            // Don't plot this exemplar if it's less the two times the standard
+            // deviation spaced from the last.
+            if (exValue(prev) - exValue(exemplar) >= 2 * deviation) {
+              exemplars.push(exemplar);
+            }
+          }
+          return exemplars;
+        }, []);
+    }),
   };
 };
 
@@ -254,3 +287,13 @@ const exemplarSymbol = (ctx: CanvasRenderingContext2D, x: number, y: number) => 
   ctx.lineWidth = 1;
   ctx.strokeRect(x, y, 7, 7);
 };
+
+const stdDeviation = (sum: number, values: number[]): number => {
+  let avg = sum / values.length;
+  let squaredAvg = 0;
+  values.map(value => (squaredAvg += (value - avg) ** 2));
+  squaredAvg = squaredAvg / values.length;
+  return Math.sqrt(squaredAvg);
+};
+
+const exValue = (exemplar: GraphExemplar): number => exemplar.data[0][1];

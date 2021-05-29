@@ -35,7 +35,8 @@ export interface GraphSeries {
 export interface GraphExemplar {
   seriesLabels: { [key: string]: string };
   labels: { [key: string]: string };
-  data: (number | null)[][];
+  data: number[][];
+  points: any; // This is used to specify the symbol.
   color: string;
 }
 
