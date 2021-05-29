@@ -9,7 +9,6 @@ describe('PanelList', () => {
   it('renders configuration checkboxes', () => {
     [
       { id: 'use-local-time-checkbox', label: 'Use local time', default: false },
-      { id: 'show-exemplars-checkbox', label: 'Show exemplars', default: false },
       { id: 'query-history-checkbox', label: 'Enable query history', default: false },
       { id: 'autocomplete-checkbox', label: 'Enable autocomplete', default: true },
       { id: 'use-experimental-editor-checkbox', label: 'Use experimental editor', default: false },
