@@ -182,7 +182,7 @@ export const normalizeData = ({ queryParams, data, exemplars, stacked }: GraphPr
   const colors = getColors(data);
   const { startTime, endTime, resolution } = queryParams!;
 
-  let sum: number = 0;
+  let sum = 0;
   const values: number[] = [];
   // Exemplars are grouped into buckets by time to use for de-densifying.
   const buckets: { [time: number]: GraphExemplar[] } = {};
@@ -289,7 +289,7 @@ const exemplarSymbol = (ctx: CanvasRenderingContext2D, x: number, y: number) => 
 };
 
 const stdDeviation = (sum: number, values: number[]): number => {
-  let avg = sum / values.length;
+  const avg = sum / values.length;
   let squaredAvg = 0;
   values.map(value => (squaredAvg += (value - avg) ** 2));
   squaredAvg = squaredAvg / values.length;
