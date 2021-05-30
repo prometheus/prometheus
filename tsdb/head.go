@@ -324,38 +324,9 @@ func NewHeadStats() *HeadStats {
 // WALReplayStatus contains status information about the WAL replay.
 type WALReplayStatus struct {
 	sync.RWMutex
-	Read  int
-	Total int
-	// Progess is a progress bar, 0 - 100%.
-	Progress int
-	State    WALReplayState
-}
-
-// WALReplayState is the state of the WAL replay.
-type WALReplayState int
-
-const (
-	// WALReplayWaiting is the state before the WAL replay has started.
-	WALReplayWaiting WALReplayState = iota
-	// WALReplayInProgress is the state while the WAL replay is in progress.
-	WALReplayInProgress
-	// WALReplayDone is the state after the the WAL replay has finished.
-	WALReplayDone
-)
-
-var walReplayStates = []string{
-	"waiting",
-	"in progress",
-	"done",
-}
-
-// String returns the string format of a WALReplayState
-func (state WALReplayState) String() string {
-	if state < WALReplayWaiting || state > WALReplayDone {
-		return "unknown"
-	}
-
-	return walReplayStates[state]
+	Min     int
+	Max     int
+	Current int
 }
 
 // GetWALReplayStatus returns the WAL replay status information.
@@ -878,7 +849,7 @@ func (h *Head) Init(minValidTime int64) error {
 			return err
 		}
 		level.Info(h.logger).Log("msg", "WAL segment loaded", "segment", i, "maxSegment", last)
-		h.updateWALReplayStatusRead()
+		h.updateWALReplayStatusRead(i)
 	}
 
 	walReplayDuration := time.Since(start)
@@ -889,7 +860,6 @@ func (h *Head) Init(minValidTime int64) error {
 		"wal_replay_duration", time.Since(walReplayStart).String(),
 		"total_replay_duration", walReplayDuration.String(),
 	)
-	h.endWALReplayStatus()
 
 	return nil
 }
@@ -2775,23 +2745,14 @@ func (h *Head) startWALReplayStatus(startFrom, last int) {
 	h.stats.WALReplayStatus.Lock()
 	defer h.stats.WALReplayStatus.Unlock()
 
-	h.stats.WALReplayStatus.State = WALReplayInProgress
-	h.stats.WALReplayStatus.Total = last - startFrom + 1
+	h.stats.WALReplayStatus.Min = startFrom
+	h.stats.WALReplayStatus.Max = last
+	h.stats.WALReplayStatus.Current = startFrom
 }
 
-func (h *Head) updateWALReplayStatusRead() {
+func (h *Head) updateWALReplayStatusRead(current int) {
 	h.stats.WALReplayStatus.Lock()
 	defer h.stats.WALReplayStatus.Unlock()
 
-	h.stats.WALReplayStatus.Read++
-	h.stats.WALReplayStatus.Progress =
-		int((float64((h.stats.WALReplayStatus.Read)) /
-			(float64(h.stats.WALReplayStatus.Total))) * 100)
-}
-
-func (h *Head) endWALReplayStatus() {
-	h.stats.WALReplayStatus.Lock()
-	defer h.stats.WALReplayStatus.Unlock()
-
-	h.stats.WALReplayStatus.State = WALReplayDone
+	h.stats.WALReplayStatus.Current = current
 }

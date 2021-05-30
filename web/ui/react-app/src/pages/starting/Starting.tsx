@@ -3,12 +3,12 @@ import { RouteComponentProps, navigate } from '@reach/router';
 import { Progress, Alert } from 'reactstrap';
 
 import { useFetchReadyInterval } from '../../hooks/useFetch';
-import { WALReplayData } from '../../types/types';
+import { WALReplayStatus } from '../../types/types';
 import { usePathPrefix } from '../../contexts/PathPrefixContext';
 
 interface StartingContentProps {
   isUnexpected: boolean;
-  status?: WALReplayData;
+  status?: WALReplayStatus;
 }
 
 export const StartingContent: FC<StartingContentProps> = ({ status, isUnexpected }) => {
@@ -24,15 +24,17 @@ export const StartingContent: FC<StartingContentProps> = ({ status, isUnexpected
     <div className="text-center m-3">
       <div className="m-4">
         <h2>Starting up...</h2>
-        {status?.state === 'in progress' || status?.state === 'done' ? (
+        {status?.current! > status?.min! ? (
           <div>
             <p>
-              Replaying WAL ({status?.read}/{status?.total})
+              Replaying WAL ({status?.current}/{status?.max})
             </p>
             <Progress
               animated
-              value={status?.progress}
-              color={status?.state === 'done' ? 'success' : undefined}
+              value={status?.current}
+              min={status?.min}
+              max={status?.max}
+              color={status?.max == status?.current ? 'success' : undefined}
               style={{ width: '10%', margin: 'auto' }}
             />
           </div>
@@ -52,7 +54,7 @@ const Starting: FC<RouteComponentProps> = () => {
     }
   }, [ready]);
 
-  return <StartingContent isUnexpected={isUnexpected} status={walReplayStatus.data} />;
+  return <StartingContent isUnexpected={isUnexpected} status={walReplayStatus} />;
 };
 
 export default Starting;

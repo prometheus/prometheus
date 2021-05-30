@@ -1054,9 +1054,9 @@ $ curl http://localhost:9090/api/v1/status/walreplay
 {
   "status": "success",
   "data": {
-    "read": 2,
-    "total": 5,
-    "progress": 40,
+    "min": 2,
+    "max": 5,
+    "current": 40,
     "state": "in progress"
   }
 }

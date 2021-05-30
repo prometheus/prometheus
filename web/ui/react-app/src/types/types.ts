@@ -25,15 +25,8 @@ export interface Rule {
   type: string;
 }
 
-type WALReplayState = 'waiting' | 'in progress' | 'done';
-
-export interface WALReplayData {
-  read: number;
-  total: number;
-  progress: number;
-  state: WALReplayState;
-}
-
 export interface WALReplayStatus {
-  data?: WALReplayData;
+  min: number;
+  max: number;
+  current: number;
 }

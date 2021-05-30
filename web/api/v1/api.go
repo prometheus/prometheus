@@ -1354,10 +1354,9 @@ func (api *API) serveTSDBStatus(*http.Request) apiFuncResult {
 }
 
 type walReplayStatus struct {
-	Read    int    `json:"read"`
-	Total   int    `json:"total"`
-	Progess int    `json:"progress"`
-	State   string `json:"state"`
+	Min     int `json:"min"`
+	Max     int `json:"max"`
+	Current int `json:"current"`
 }
 
 func (api *API) serveWALReplayStatus(w http.ResponseWriter, r *http.Request) {
@@ -1367,10 +1366,9 @@ func (api *API) serveWALReplayStatus(w http.ResponseWriter, r *http.Request) {
 		api.respondError(w, &apiError{errorInternal, err}, nil)
 	}
 	api.respond(w, walReplayStatus{
-		Read:    status.Read,
-		Total:   status.Total,
-		Progess: status.Progress,
-		State:   status.State.String(),
+		Min:     status.Min,
+		Max:     status.Max,
+		Current: status.Current,
 	}, nil)
 }
 
