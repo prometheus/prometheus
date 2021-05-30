@@ -140,11 +140,6 @@ describe('GraphControls', () => {
         icon: faChartArea,
         active: false,
       },
-      {
-        title: 'Show exemplars',
-        icon: faSquare,
-        active: false,
-      },
     ].forEach(testCase => {
       const controls = shallow(<GraphControls {...defaultGraphControlProps} />);
       const group = controls.find(ButtonGroup);
