@@ -2,7 +2,7 @@ import React, { Component } from 'react';
 import { Button, ButtonGroup, Form, InputGroup, InputGroupAddon, Input } from 'reactstrap';
 
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faPlus, faMinus, faChartArea, faChartLine, faSquare } from '@fortawesome/free-solid-svg-icons';
+import { faPlus, faMinus, faChartArea, faChartLine } from '@fortawesome/free-solid-svg-icons';
 import TimeInput from './TimeInput';
 import { parseDuration, formatDuration } from '../../utils';
 
@@ -152,11 +152,11 @@ class GraphControls extends Component<GraphControlsProps> {
         <ButtonGroup className="show-exemplars" size="sm">
           {this.props.showExemplars ? (
             <Button title="Hide exemplars" onClick={() => this.props.onChangeShowExemplars(false)} active={true}>
-              <FontAwesomeIcon icon={faSquare} fixedWidth />
+              Hide Exemplars
             </Button>
           ) : (
             <Button title="Show exemplars" onClick={() => this.props.onChangeShowExemplars(true)} active={false}>
-              <FontAwesomeIcon icon={faSquare} fixedWidth />
+              Show Exemplars
             </Button>
           )}
         </ButtonGroup>

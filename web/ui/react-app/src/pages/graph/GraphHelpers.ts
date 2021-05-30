@@ -186,10 +186,9 @@ export const normalizeData = ({ queryParams, data, exemplars, stacked }: GraphPr
   const values: number[] = [];
   // Exemplars are grouped into buckets by time to use for de-densifying.
   const buckets: { [time: number]: GraphExemplar[] } = {};
-  for (const exemplar of exemplars ? exemplars : []) {
+  for (const exemplar of exemplars || []) {
     for (const { labels, value, timestamp } of exemplar.exemplars) {
-      let parsed = parseValue(value);
-      parsed = parsed ? parsed : 0;
+      let parsed = parseValue(value) || 0;
       sum += parsed;
       values.push(parsed);
 
@@ -245,7 +244,7 @@ export const normalizeData = ({ queryParams, data, exemplars, stacked }: GraphPr
             exemplars.push(exemplar);
           } else {
             const prev = exemplars[exemplars.length - 1];
-            // Don't plot this exemplar if it's less the two times the standard
+            // Don't plot this exemplar if it's less than two times the standard
             // deviation spaced from the last.
             if (exValue(prev) - exValue(exemplar) >= 2 * deviation) {
               exemplars.push(exemplar);
