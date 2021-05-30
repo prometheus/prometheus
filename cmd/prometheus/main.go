@@ -434,7 +434,7 @@ func main() {
 	level.Info(logger).Log("vm_limits", prom_runtime.VMLimits())
 
 	var (
-		localStorage  = &readyStorage{}
+		localStorage  = &readyStorage{stats: tsdb.NewDBStats()}
 		scraper       = &readyScrapeManager{}
 		remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, cfg.localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper)
 		fanoutStorage = storage.NewFanout(logger, localStorage, remoteStorage)
@@ -812,15 +812,12 @@ func main() {
 					}
 				}
 
-				stats := tsdb.NewDBStats()
-				localStorage.SetStats(stats)
-
 				db, err := openDBWithMetrics(
 					cfg.localStoragePath,
 					logger,
 					prometheus.DefaultRegisterer,
 					&opts,
-					stats,
+					localStorage.getStats(),
 				)
 				if err != nil {
 					return errors.Wrapf(err, "opening storage failed")
@@ -1088,15 +1085,6 @@ func (s *readyStorage) Set(db *tsdb.DB, startTimeMargin int64) {
 
 	s.db = db
 	s.startTimeMargin = startTimeMargin
-}
-
-// SetStats sets the stats object,
-// which should be available before the DB is finished opening.
-func (s *readyStorage) SetStats(stats *tsdb.DBStats) {
-	s.mtx.Lock()
-	defer s.mtx.Unlock()
-
-	s.stats = stats
 }
 
 func (s *readyStorage) get() *tsdb.DB {
