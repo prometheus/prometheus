@@ -373,7 +373,7 @@
             alert: 'PrometheusHAGroupCrashlooping',
             expr: |||
               (
-                  min_over_time(prometheus_tsdb_lock_file_created_cleanly{%(prometheusSelector)s}[30m]) == 0
+                  min_over_time(prometheus_tsdb_clean_start{%(prometheusSelector)s}[30m]) == 0
                 and
                   ( 
                     count by (%(prometheusHAGroupLabels)s) (

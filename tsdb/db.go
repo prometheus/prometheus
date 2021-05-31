@@ -59,9 +59,9 @@ const (
 	// Pre-2.21 tmp dir suffix, used in clean-up functions.
 	tmpLegacy = ".tmp"
 
+	lockfileDisabled       = -1
 	lockfileReplaced       = 0
 	lockfileCreatedCleanly = 1
-	lockfileDisabled       = 2
 )
 
 var (
@@ -283,7 +283,7 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 		Help: "The number of times that blocks were deleted because the maximum number of bytes was exceeded.",
 	})
 	m.lockfileCreatedCleanly = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "prometheus_tsdb_lock_file_created_cleanly",
+		Name: "prometheus_tsdb_clean_start",
 		Help: "0: a lockfile from a previous execution was replaced. 1: lockfile creation was clean. 2: lockfile is disabled",
 	})
 
