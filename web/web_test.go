@@ -104,8 +104,8 @@ func (a *dbAdapter) Stats(statsByLabelName string) (*tsdb.Stats, error) {
 	return a.Head().Stats(statsByLabelName), nil
 }
 
-func (a *dbAdapter) WALReplayStatus() (*tsdb.WALReplayStatus, error) {
-	return &tsdb.WALReplayStatus{}, nil
+func (a *dbAdapter) WALReplayStatus() (tsdb.WALReplayStatus, error) {
+	return tsdb.WALReplayStatus{}, nil
 }
 
 func TestReadyAndHealthy(t *testing.T) {

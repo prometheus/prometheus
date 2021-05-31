@@ -2116,8 +2116,8 @@ func (f *fakeDB) Stats(statsByLabelName string) (_ *tsdb.Stats, retErr error) {
 	h, _ := tsdb.NewHead(nil, nil, nil, opts, nil)
 	return h.Stats(statsByLabelName), nil
 }
-func (f *fakeDB) WALReplayStatus() (*tsdb.WALReplayStatus, error) {
-	return &tsdb.WALReplayStatus{}, nil
+func (f *fakeDB) WALReplayStatus() (tsdb.WALReplayStatus, error) {
+	return tsdb.WALReplayStatus{}, nil
 }
 
 func TestAdminEndpoints(t *testing.T) {
