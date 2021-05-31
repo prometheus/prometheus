@@ -25,8 +25,12 @@ export interface Rule {
   type: string;
 }
 
-export interface WALReplayStatus {
+export interface WALReplayData {
   min: number;
   max: number;
   current: number;
+}
+
+export interface WALReplayStatus {
+  data?: WALReplayData;
 }

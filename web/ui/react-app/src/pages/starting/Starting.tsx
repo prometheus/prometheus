@@ -3,12 +3,12 @@ import { RouteComponentProps, navigate } from '@reach/router';
 import { Progress, Alert } from 'reactstrap';
 
 import { useFetchReadyInterval } from '../../hooks/useFetch';
-import { WALReplayStatus } from '../../types/types';
+import { WALReplayData } from '../../types/types';
 import { usePathPrefix } from '../../contexts/PathPrefixContext';
 
 interface StartingContentProps {
   isUnexpected: boolean;
-  status?: WALReplayStatus;
+  status?: WALReplayData;
 }
 
 export const StartingContent: FC<StartingContentProps> = ({ status, isUnexpected }) => {
@@ -54,7 +54,7 @@ const Starting: FC<RouteComponentProps> = () => {
     }
   }, [ready]);
 
-  return <StartingContent isUnexpected={isUnexpected} status={walReplayStatus} />;
+  return <StartingContent isUnexpected={isUnexpected} status={walReplayStatus.data} />;
 };
 
 export default Starting;
