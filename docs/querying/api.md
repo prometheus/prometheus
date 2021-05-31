@@ -1064,7 +1064,7 @@ $ curl http://localhost:9090/api/v1/status/walreplay
 
 NOTE: This endpoint is available before the server has been marked ready and is updated in real time to facilitate monitoring the progress of the WAL replay.
 
-*New in v2.27*
+*New in v2.28*
 
 ## TSDB Admin APIs
 These are APIs that expose database functionalities for the advanced user. These APIs are not enabled unless the `--web.enable-admin-api` is set.
