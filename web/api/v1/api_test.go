@@ -211,6 +211,7 @@ func (m rulesRetrieverMock) AlertingRules() []*rules.AlertingRule {
 		labels.Labels{},
 		labels.Labels{},
 		labels.Labels{},
+		"",
 		true,
 		log.NewNopLogger(),
 	)
@@ -221,6 +222,7 @@ func (m rulesRetrieverMock) AlertingRules() []*rules.AlertingRule {
 		labels.Labels{},
 		labels.Labels{},
 		labels.Labels{},
+		"",
 		true,
 		log.NewNopLogger(),
 	)
