@@ -110,8 +110,8 @@ func (d k8sDiscoveryTest) Run(t *testing.T) {
 	}
 }
 
-// readResultWithTimeout reads all targegroups from channel with timeout.
-// It merges targegroups by source and sends the result to result channel.
+// readResultWithTimeout reads all targetgroups from channel with timeout.
+// It merges targetgroups by source and sends the result to result channel.
 func readResultWithTimeout(t *testing.T, ch <-chan []*targetgroup.Group, max int, timeout time.Duration, resChan chan<- map[string]*targetgroup.Group) {
 	res := make(map[string]*targetgroup.Group)
 Loop:

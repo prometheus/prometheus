@@ -221,7 +221,7 @@ func (e *Endpoints) buildEndpoints(eps *apiv1.Endpoints) *targetgroup.Group {
 		endpointsNameLabel: lv(eps.Name),
 	}
 	e.addServiceLabels(eps.Namespace, eps.Name, tg)
-	//add endponits labels metadata
+	// Add endpoints labels metadata.
 	for k, v := range eps.Labels {
 		ln := strutil.SanitizeLabelName(k)
 		tg.Labels[model.LabelName(endpointsLabelPrefix+ln)] = lv(v)
