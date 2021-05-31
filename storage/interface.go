@@ -106,7 +106,7 @@ type ChunkQuerier interface {
 // LabelQuerier provides querying access over labels.
 type LabelQuerier interface {
 	// LabelValues returns all potential values for a label name.
-	// It is not safe to use the strings beyond the lifefime of the querier.
+	// It is not safe to use the strings beyond the lifetime of the querier.
 	// If matchers are specified the returned result set is reduced
 	// to label values of metrics matching the matchers.
 	LabelValues(name string, matchers ...*labels.Matcher) ([]string, Warnings, error)

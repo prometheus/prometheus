@@ -1112,7 +1112,7 @@ func (h *RangeHead) Meta() BlockMeta {
 }
 
 // String returns an human readable representation of the range head. It's important to
-// keep this function in order to avoid the struct dump when the head is stringified in
+// keep this function in order to avoid the struct dump when the head is stringfield in
 // errors or logs.
 func (h *RangeHead) String() string {
 	return fmt.Sprintf("range head (mint: %d, maxt: %d)", h.MinTime(), h.MaxTime())
@@ -1733,7 +1733,7 @@ func (h *Head) Close() error {
 }
 
 // String returns an human readable representation of the TSDB head. It's important to
-// keep this function in order to avoid the struct dump when the head is stringified in
+// keep this function in order to avoid the struct dump when the head is stringfield in
 // errors or logs.
 func (h *Head) String() string {
 	return "head"
