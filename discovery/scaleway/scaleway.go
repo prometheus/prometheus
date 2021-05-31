@@ -106,7 +106,7 @@ func (c SDConfig) Name() string {
 }
 
 // secretKeyForConfig returns a secret key that looks like a UUID, even if we
-// take the actuel secret from a file.
+// take the actual secret from a file.
 func (c SDConfig) secretKeyForConfig() string {
 	if c.SecretKeyFile != "" {
 		return "00000000-0000-0000-0000-000000000000"
