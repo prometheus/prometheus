@@ -154,7 +154,7 @@ type TSDBAdminStats interface {
 	Snapshot(dir string, withHead bool) error
 
 	Stats(statsByLabelName string) (*tsdb.Stats, error)
-	WALReplayStatus() (*tsdb.WALReplayStatus, error)
+	WALReplayStatus() (tsdb.WALReplayStatus, error)
 }
 
 // API can register a set of endpoints in a router and handle

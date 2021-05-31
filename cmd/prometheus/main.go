@@ -1204,11 +1204,11 @@ func (s *readyStorage) Stats(statsByLabelName string) (*tsdb.Stats, error) {
 }
 
 // WALReplayStatus implements the api_v1.TSDBStats interface.
-func (s *readyStorage) WALReplayStatus() (*tsdb.WALReplayStatus, error) {
+func (s *readyStorage) WALReplayStatus() (tsdb.WALReplayStatus, error) {
 	if x := s.getStats(); x != nil {
 		return x.Head.WALReplayStatus.GetWALReplayStatus(), nil
 	}
-	return &tsdb.WALReplayStatus{}, tsdb.ErrNotReady
+	return tsdb.WALReplayStatus{}, tsdb.ErrNotReady
 }
 
 // ErrNotReady is returned if the underlying scrape manager is not ready yet.
