@@ -68,7 +68,7 @@ func newRuleImporter(logger log.Logger, config ruleImporterConfig, apiClient que
 
 // loadGroups parses groups from a list of recording rule files.
 func (importer *ruleImporter) loadGroups(ctx context.Context, filenames []string) (errs []error) {
-	groups, errs := importer.ruleManager.LoadGroups(importer.config.evalInterval, labels.Labels{}, filenames...)
+	groups, errs := importer.ruleManager.LoadGroups(importer.config.evalInterval, labels.Labels{}, "", filenames...)
 	if errs != nil {
 		return errs
 	}

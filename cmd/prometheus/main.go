@@ -527,6 +527,9 @@ func main() {
 		conntrack.DialWithTracing(),
 	)
 
+	// This is passed to ruleManager.Update().
+	var externalURL = cfg.web.ExternalURL.String()
+
 	reloaders := []reloader{
 		{
 			name:     "remote_storage",
@@ -592,6 +595,7 @@ func main() {
 					time.Duration(cfg.GlobalConfig.EvaluationInterval),
 					files,
 					cfg.GlobalConfig.ExternalLabels,
+					externalURL,
 				)
 			},
 		},

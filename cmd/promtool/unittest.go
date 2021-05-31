@@ -146,6 +146,7 @@ type testGroup struct {
 	AlertRuleTests  []alertTestCase  `yaml:"alert_rule_test,omitempty"`
 	PromqlExprTests []promqlTestCase `yaml:"promql_expr_test,omitempty"`
 	ExternalLabels  labels.Labels    `yaml:"external_labels,omitempty"`
+	ExternalURL     string           `yaml:"external_url,omitempty"`
 	TestGroupName   string           `yaml:"name,omitempty"`
 }
 
@@ -168,7 +169,7 @@ func (tg *testGroup) test(evalInterval time.Duration, groupOrderMap map[string]i
 		Logger:     log.NewNopLogger(),
 	}
 	m := rules.NewManager(opts)
-	groupsMap, ers := m.LoadGroups(time.Duration(tg.Interval), tg.ExternalLabels, ruleFiles...)
+	groupsMap, ers := m.LoadGroups(time.Duration(tg.Interval), tg.ExternalLabels, tg.ExternalURL, ruleFiles...)
 	if ers != nil {
 		return ers
 	}
