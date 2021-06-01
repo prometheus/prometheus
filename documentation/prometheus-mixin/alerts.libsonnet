@@ -373,7 +373,7 @@
             alert: 'PrometheusHAGroupCrashlooping',
             expr: |||
               (
-                  min_over_time(prometheus_tsdb_clean_start{%(prometheusSelector)s}[30m]) == 0
+                  prometheus_tsdb_clean_start{%(prometheusSelector)s} == 0
                 and
                   ( 
                     count by (%(prometheusHAGroupLabels)s) (
@@ -404,7 +404,7 @@
             },
             annotations: {
               summary: 'More than half of the Prometheus instances within the same HA group are crashlooping.',
-              description: '{{ $value | humanizePercentage }} of Prometheus instances within the %(prometheusHAGroupName)s HA group have restarted at least 5 times or their lockfile have been recreated 2 times (signaling an unclean exit) in the last 30m. ' % $._config,
+              description: '{{ $value | humanizePercentage }} of Prometheus instances within the %(prometheusHAGroupName)s HA group have had at least 5 total restarts or 2 unclean restarts in the last 30m.' % $._config,
             },
           },
         ],

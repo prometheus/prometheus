@@ -284,7 +284,7 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 	})
 	m.lockfileCreatedCleanly = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "prometheus_tsdb_clean_start",
-		Help: "0: a lockfile from a previous execution was replaced. 1: lockfile creation was clean. 2: lockfile is disabled",
+		Help: "-1: lockfile is disabled. 0: a lockfile from a previous execution was replaced. 1: lockfile creation was clean",
 	})
 
 	if r != nil {
