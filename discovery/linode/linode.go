@@ -197,7 +197,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 
 		if instance.IPv6 != "" {
 			for _, detailedIP := range detailedIPs {
-				if detailedIP.Address != strings.TrimSuffix(instance.IPv6, "/128") {
+				if detailedIP.Address != strings.Split(instance.IPv6, "/")[0] {
 					continue
 				}
 
