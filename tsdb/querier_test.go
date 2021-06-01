@@ -1513,6 +1513,13 @@ func TestFindSetMatches(t *testing.T) {
 		pattern string
 		exp     []string
 	}{
+		// Single value, coming from a `bar=~"foo"` selector.
+		{
+			pattern: "^(?:foo)$",
+			exp: []string{
+				"foo",
+			},
+		},
 		// Simple sets.
 		{
 			pattern: "^(?:foo|bar|baz)$",
