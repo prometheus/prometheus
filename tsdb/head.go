@@ -332,10 +332,10 @@ type WALReplayStatus struct {
 // GetWALReplayStatus returns the WAL replay status information.
 func (s *WALReplayStatus) GetWALReplayStatus() WALReplayStatus {
 	s.RLock()
-	x := s
+	x := *s
 	s.RUnlock()
 
-	return *x
+	return x
 }
 
 const cardinalityCacheExpirationTime = time.Duration(30) * time.Second
