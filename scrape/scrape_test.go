@@ -15,6 +15,7 @@ package scrape
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"fmt"
 	"io"
@@ -1948,6 +1949,69 @@ func TestTargetScrapeScrapeNotFound(t *testing.T) {
 
 	_, err = ts.scrape(context.Background(), ioutil.Discard)
 	require.Contains(t, err.Error(), "404", "Expected \"404 NotFound\" error but got: %s", err)
+}
+
+func TestTargetScraperBodySizeLimit(t *testing.T) {
+	const (
+		bodySizeLimit = 15
+		responseBody  = "metric_a 1\nmetric_b 2\n"
+	)
+	var gzipResponse bool
+	server := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", `text/plain; version=0.0.4`)
+			if gzipResponse {
+				w.Header().Set("Content-Encoding", "gzip")
+				gw := gzip.NewWriter(w)
+				defer gw.Close()
+				gw.Write([]byte(responseBody))
+				return
+			}
+			w.Write([]byte(responseBody))
+		}),
+	)
+	defer server.Close()
+
+	serverURL, err := url.Parse(server.URL)
+	if err != nil {
+		panic(err)
+	}
+
+	ts := &targetScraper{
+		Target: &Target{
+			labels: labels.FromStrings(
+				model.SchemeLabel, serverURL.Scheme,
+				model.AddressLabel, serverURL.Host,
+			),
+		},
+		client:        http.DefaultClient,
+		bodySizeLimit: bodySizeLimit,
+	}
+	var buf bytes.Buffer
+
+	// Target response uncompressed body, scrape with body size limit.
+	_, err = ts.scrape(context.Background(), &buf)
+	require.ErrorIs(t, err, errBodySizeLimit)
+	require.Equal(t, bodySizeLimit, buf.Len())
+	// Target response gzip compressed body, scrape with body size limit.
+	gzipResponse = true
+	buf.Reset()
+	_, err = ts.scrape(context.Background(), &buf)
+	require.ErrorIs(t, err, errBodySizeLimit)
+	require.Equal(t, bodySizeLimit, buf.Len())
+	// Target response uncompressed body, scrape without body size limit.
+	gzipResponse = false
+	buf.Reset()
+	ts.bodySizeLimit = 0
+	_, err = ts.scrape(context.Background(), &buf)
+	require.NoError(t, err)
+	require.Equal(t, len(responseBody), buf.Len())
+	// Target response gzip compressed body, scrape without body size limit.
+	gzipResponse = true
+	buf.Reset()
+	_, err = ts.scrape(context.Background(), &buf)
+	require.NoError(t, err)
+	require.Equal(t, len(responseBody), buf.Len())
 }
 
 // testScraper implements the scraper interface and allows setting values
