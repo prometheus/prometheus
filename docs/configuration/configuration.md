@@ -42,6 +42,7 @@ Generic placeholders are defined as follows:
 * `<scheme>`: a string that can take the values `http` or `https`
 * `<secret>`: a regular string that is a secret, such as a password
 * `<string>`: a regular string
+* `<size>`: a size in bytes, e.g. `512MB`. A unit is required. Supported units: B, KB, MB, GB, TB, PB, EB.
 * `<tmpl_string>`: a string which is template-expanded before usage
 
 The other placeholders are specified separately.
@@ -289,7 +290,9 @@ metric_relabel_configs:
 
 # An uncompressed response body larger than this many bytes will cause the
 # scrape to fail. 0 means no limit. Example: 100MB.
-[ body_size_limit: <string> | default = 0 ]
+# This is an experimental feature, this behaviour could
+# change or be removed in the future.
+[ body_size_limit: <size> | default = 0 ]
 # Per-scrape limit on number of scraped samples that will be accepted.
 # If more than this number of samples are present after metric relabeling
 # the entire scrape will be treated as failed. 0 means no limit.
