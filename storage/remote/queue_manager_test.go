@@ -407,7 +407,7 @@ func TestReleaseNoninternedString(t *testing.T) {
 				Labels: labels.Labels{
 					labels.Label{
 						Name:  "asdf",
-						Value: fmt.Sprintf("%d", i),
+						Value: strconv.Itoa(i),
 					},
 				},
 			},

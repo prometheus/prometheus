@@ -15,12 +15,12 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"io/ioutil"
 	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"syscall"
 	"testing"
 	"time"
@@ -184,7 +184,7 @@ func TestSendAlerts(t *testing.T) {
 
 	for i, tc := range testCases {
 		tc := tc
-		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			senderFunc := senderFunc(func(alerts ...*notifier.Alert) {
 				if len(tc.in) == 0 {
 					t.Fatalf("sender called with 0 alert")

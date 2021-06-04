@@ -17,6 +17,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"strconv"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
@@ -185,7 +186,7 @@ func (i *InstanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 					if val, ok := floatingIPList[floatingIPKey{id: s.ID, fixed: addr}]; ok {
 						lbls[openstackLabelPublicIP] = model.LabelValue(val)
 					}
-					addr = net.JoinHostPort(addr, fmt.Sprintf("%d", i.port))
+					addr = net.JoinHostPort(addr, strconv.Itoa(i.port))
 					lbls[model.AddressLabel] = model.LabelValue(addr)
 
 					tg.Targets = append(tg.Targets, lbls)

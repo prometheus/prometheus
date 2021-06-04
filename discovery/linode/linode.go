@@ -216,7 +216,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		}
 
 		labels := model.LabelSet{
-			linodeLabelID:                 model.LabelValue(fmt.Sprintf("%d", instance.ID)),
+			linodeLabelID:                 model.LabelValue(strconv.Itoa(instance.ID)),
 			linodeLabelName:               model.LabelValue(instance.Label),
 			linodeLabelImage:              model.LabelValue(instance.Image),
 			linodeLabelPrivateIPv4:        model.LabelValue(privateIPv4),
@@ -231,10 +231,10 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 			linodeLabelGroup:              model.LabelValue(instance.Group),
 			linodeLabelHypervisor:         model.LabelValue(instance.Hypervisor),
 			linodeLabelBackups:            model.LabelValue(backupsStatus),
-			linodeLabelSpecsDiskBytes:     model.LabelValue(fmt.Sprintf("%d", instance.Specs.Disk<<20)),
-			linodeLabelSpecsMemoryBytes:   model.LabelValue(fmt.Sprintf("%d", instance.Specs.Memory<<20)),
-			linodeLabelSpecsVCPUs:         model.LabelValue(fmt.Sprintf("%d", instance.Specs.VCPUs)),
-			linodeLabelSpecsTransferBytes: model.LabelValue(fmt.Sprintf("%d", instance.Specs.Transfer<<20)),
+			linodeLabelSpecsDiskBytes:     model.LabelValue(strconv.Itoa(instance.Specs.Disk << 20)),
+			linodeLabelSpecsMemoryBytes:   model.LabelValue(strconv.Itoa(instance.Specs.Memory << 20)),
+			linodeLabelSpecsVCPUs:         model.LabelValue(strconv.Itoa(instance.Specs.VCPUs)),
+			linodeLabelSpecsTransferBytes: model.LabelValue(strconv.Itoa(instance.Specs.Transfer << 20)),
 		}
 
 		addr := net.JoinHostPort(publicIPv4, strconv.FormatUint(uint64(d.port), 10))

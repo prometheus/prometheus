@@ -15,8 +15,8 @@ package aws
 
 import (
 	"context"
-	"fmt"
 	"net"
+	"strconv"
 	"strings"
 	"time"
 
@@ -223,7 +223,7 @@ func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 				if inst.PrivateDnsName != nil {
 					labels[ec2LabelPrivateDNS] = model.LabelValue(*inst.PrivateDnsName)
 				}
-				addr := net.JoinHostPort(*inst.PrivateIpAddress, fmt.Sprintf("%d", d.cfg.Port))
+				addr := net.JoinHostPort(*inst.PrivateIpAddress, strconv.Itoa(d.cfg.Port))
 				labels[model.AddressLabel] = model.LabelValue(addr)
 
 				if inst.Platform != nil {
