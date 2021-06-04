@@ -68,8 +68,7 @@ var (
 
 func init() {
 	discovery.RegisterConfig(&SDConfig{})
-	prometheus.MustRegister(dnsSDLookupFailuresCount)
-	prometheus.MustRegister(dnsSDLookupsCount)
+	prometheus.MustRegister(dnsSDLookupFailuresCount, dnsSDLookupsCount)
 }
 
 // SDConfig is the configuration for DNS based service discovery.

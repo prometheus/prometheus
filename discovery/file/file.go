@@ -62,9 +62,7 @@ var (
 
 func init() {
 	discovery.RegisterConfig(&SDConfig{})
-	prometheus.MustRegister(fileSDScanDuration)
-	prometheus.MustRegister(fileSDReadErrorsCount)
-	prometheus.MustRegister(fileSDTimeStamp)
+	prometheus.MustRegister(fileSDScanDuration, fileSDReadErrorsCount, fileSDTimeStamp)
 }
 
 // SDConfig is the configuration for file based discovery.
