@@ -434,7 +434,7 @@ func main() {
 	level.Info(logger).Log("vm_limits", prom_runtime.VMLimits())
 
 	var (
-		localStorage  = &readyStorage{}
+		localStorage  = &readyStorage{stats: tsdb.NewDBStats()}
 		scraper       = &readyScrapeManager{}
 		remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, cfg.localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper)
 		fanoutStorage = storage.NewFanout(logger, localStorage, remoteStorage)
@@ -815,11 +815,13 @@ func main() {
 						return errors.New("flag 'storage.tsdb.max-block-chunk-segment-size' must be set over 1MB")
 					}
 				}
+
 				db, err := openDBWithMetrics(
 					cfg.localStoragePath,
 					logger,
 					prometheus.DefaultRegisterer,
 					&opts,
+					localStorage.getStats(),
 				)
 				if err != nil {
 					return errors.Wrapf(err, "opening storage failed")
@@ -901,12 +903,13 @@ func main() {
 	level.Info(logger).Log("msg", "See you next time!")
 }
 
-func openDBWithMetrics(dir string, logger log.Logger, reg prometheus.Registerer, opts *tsdb.Options) (*tsdb.DB, error) {
+func openDBWithMetrics(dir string, logger log.Logger, reg prometheus.Registerer, opts *tsdb.Options, stats *tsdb.DBStats) (*tsdb.DB, error) {
 	db, err := tsdb.Open(
 		dir,
 		log.With(logger, "component", "tsdb"),
 		reg,
 		opts,
+		stats,
 	)
 	if err != nil {
 		return nil, err
@@ -1076,6 +1079,7 @@ type readyStorage struct {
 	mtx             sync.RWMutex
 	db              *tsdb.DB
 	startTimeMargin int64
+	stats           *tsdb.DBStats
 }
 
 // Set the storage.
@@ -1087,10 +1091,16 @@ func (s *readyStorage) Set(db *tsdb.DB, startTimeMargin int64) {
 	s.startTimeMargin = startTimeMargin
 }
 
-// get is internal, you should use readyStorage as the front implementation layer.
 func (s *readyStorage) get() *tsdb.DB {
 	s.mtx.RLock()
 	x := s.db
+	s.mtx.RUnlock()
+	return x
+}
+
+func (s *readyStorage) getStats() *tsdb.DBStats {
+	s.mtx.RLock()
+	x := s.stats
 	s.mtx.RUnlock()
 	return x
 }
@@ -1195,6 +1205,14 @@ func (s *readyStorage) Stats(statsByLabelName string) (*tsdb.Stats, error) {
 		return x.Head().Stats(statsByLabelName), nil
 	}
 	return nil, tsdb.ErrNotReady
+}
+
+// WALReplayStatus implements the api_v1.TSDBStats interface.
+func (s *readyStorage) WALReplayStatus() (tsdb.WALReplayStatus, error) {
+	if x := s.getStats(); x != nil {
+		return x.Head.WALReplayStatus.GetWALReplayStatus(), nil
+	}
+	return tsdb.WALReplayStatus{}, tsdb.ErrNotReady
 }
 
 // ErrNotReady is returned if the underlying scrape manager is not ready yet.

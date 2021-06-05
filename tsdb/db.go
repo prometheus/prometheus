@@ -297,6 +297,20 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 	return m
 }
 
+// DBStats contains statistics about the DB seperated by component (eg. head).
+// They are available before the DB has finished initializing.
+type DBStats struct {
+	Head *HeadStats
+}
+
+// NewDBStats returns a new DBStats object initialized using the
+// the new function from each component.
+func NewDBStats() *DBStats {
+	return &DBStats{
+		Head: NewHeadStats(),
+	}
+}
+
 // ErrClosed is returned when the db is closed.
 var ErrClosed = errors.New("db already closed")
 
@@ -346,7 +360,7 @@ func (db *DBReadOnly) FlushWAL(dir string) (returnErr error) {
 	}
 	opts := DefaultHeadOptions()
 	opts.ChunkDirRoot = db.dir
-	head, err := NewHead(nil, db.logger, w, opts)
+	head, err := NewHead(nil, db.logger, w, opts, NewHeadStats())
 	if err != nil {
 		return err
 	}
@@ -402,7 +416,7 @@ func (db *DBReadOnly) loadDataAsQueryable(maxt int64) (storage.SampleAndChunkQue
 
 	opts := DefaultHeadOptions()
 	opts.ChunkDirRoot = db.dir
-	head, err := NewHead(nil, db.logger, nil, opts)
+	head, err := NewHead(nil, db.logger, nil, opts, NewHeadStats())
 	if err != nil {
 		return nil, err
 	}
@@ -422,7 +436,7 @@ func (db *DBReadOnly) loadDataAsQueryable(maxt int64) (storage.SampleAndChunkQue
 		}
 		opts := DefaultHeadOptions()
 		opts.ChunkDirRoot = db.dir
-		head, err = NewHead(nil, db.logger, w, opts)
+		head, err = NewHead(nil, db.logger, w, opts, NewHeadStats())
 		if err != nil {
 			return nil, err
 		}
@@ -541,10 +555,11 @@ func (db *DBReadOnly) Close() error {
 }
 
 // Open returns a new DB in the given directory. If options are empty, DefaultOptions will be used.
-func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options) (db *DB, err error) {
+func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, stats *DBStats) (db *DB, err error) {
 	var rngs []int64
 	opts, rngs = validateOpts(opts, nil)
-	return open(dir, l, r, opts, rngs)
+
+	return open(dir, l, r, opts, rngs, stats)
 }
 
 func validateOpts(opts *Options, rngs []int64) (*Options, []int64) {
@@ -575,12 +590,15 @@ func validateOpts(opts *Options, rngs []int64) (*Options, []int64) {
 	return opts, rngs
 }
 
-func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs []int64) (_ *DB, returnedErr error) {
+func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs []int64, stats *DBStats) (_ *DB, returnedErr error) {
 	if err := os.MkdirAll(dir, 0777); err != nil {
 		return nil, err
 	}
 	if l == nil {
 		l = log.NewNopLogger()
+	}
+	if stats == nil {
+		stats = NewDBStats()
 	}
 
 	for i, v := range rngs {
@@ -678,7 +696,7 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	headOpts.StripeSize = opts.StripeSize
 	headOpts.SeriesCallback = opts.SeriesLifecycleCallback
 	headOpts.NumExemplars = opts.MaxExemplars
-	db.head, err = NewHead(r, l, wlog, headOpts)
+	db.head, err = NewHead(r, l, wlog, headOpts, stats.Head)
 	if err != nil {
 		return nil, err
 	}

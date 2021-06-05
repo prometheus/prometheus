@@ -7,5 +7,6 @@ import Status from './status/Status';
 import Targets from './targets/Targets';
 import PanelList from './graph/PanelList';
 import TSDBStatus from './tsdbStatus/TSDBStatus';
+import Starting from './starting/Starting';
 
-export { Alerts, Config, Flags, Rules, ServiceDiscovery, Status, Targets, TSDBStatus, PanelList };
+export { Alerts, Config, Flags, Rules, ServiceDiscovery, Status, Targets, TSDBStatus, PanelList, Starting };

@@ -105,6 +105,8 @@ type Head struct {
 
 	closedMtx sync.Mutex
 	closed    bool
+
+	stats *HeadStats
 }
 
 // HeadOptions are parameters for the Head block.
@@ -307,6 +309,38 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 	return m
 }
 
+// HeadStats are the statistics for the head component of the DB.
+type HeadStats struct {
+	WALReplayStatus *WALReplayStatus
+}
+
+// NewHeadStats returns a new HeadStats object.
+func NewHeadStats() *HeadStats {
+	return &HeadStats{
+		WALReplayStatus: &WALReplayStatus{},
+	}
+}
+
+// WALReplayStatus contains status information about the WAL replay.
+type WALReplayStatus struct {
+	sync.RWMutex
+	Min     int
+	Max     int
+	Current int
+}
+
+// GetWALReplayStatus returns the WAL replay status information.
+func (s *WALReplayStatus) GetWALReplayStatus() WALReplayStatus {
+	s.RLock()
+	defer s.RUnlock()
+
+	return WALReplayStatus{
+		Min:     s.Min,
+		Max:     s.Max,
+		Current: s.Current,
+	}
+}
+
 const cardinalityCacheExpirationTime = time.Duration(30) * time.Second
 
 // PostingsCardinalityStats returns top 10 highest cardinality stats By label and value names.
@@ -328,7 +362,7 @@ func (h *Head) PostingsCardinalityStats(statsByLabelName string) *index.Postings
 }
 
 // NewHead opens the head block in dir.
-func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, opts *HeadOptions) (*Head, error) {
+func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, opts *HeadOptions, stats *HeadStats) (*Head, error) {
 	if l == nil {
 		l = log.NewNopLogger()
 	}
@@ -342,6 +376,10 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, opts *HeadOpti
 	es, err := NewCircularExemplarStorage(opts.NumExemplars, r)
 	if err != nil {
 		return nil, err
+	}
+
+	if stats == nil {
+		stats = NewHeadStats()
 	}
 
 	h := &Head{
@@ -360,6 +398,7 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, opts *HeadOpti
 				return &memChunk{}
 			},
 		},
+		stats: stats,
 	}
 	h.chunkRange.Store(opts.ChunkRange)
 	h.minTime.Store(math.MaxInt64)
@@ -795,6 +834,8 @@ func (h *Head) Init(minValidTime int64) error {
 		return errors.Wrap(err, "finding WAL segments")
 	}
 
+	h.startWALReplayStatus(startFrom, last)
+
 	// Backfill segments from the most recent checkpoint onwards.
 	for i := startFrom; i <= last; i++ {
 		s, err := wal.OpenReadSegment(wal.SegmentName(h.wal.Dir(), i))
@@ -811,6 +852,7 @@ func (h *Head) Init(minValidTime int64) error {
 			return err
 		}
 		level.Info(h.logger).Log("msg", "WAL segment loaded", "segment", i, "maxSegment", last)
+		h.updateWALReplayStatusRead(i)
 	}
 
 	walReplayDuration := time.Since(start)
@@ -2700,4 +2742,20 @@ func (h *Head) Size() int64 {
 
 func (h *RangeHead) Size() int64 {
 	return h.head.Size()
+}
+
+func (h *Head) startWALReplayStatus(startFrom, last int) {
+	h.stats.WALReplayStatus.Lock()
+	defer h.stats.WALReplayStatus.Unlock()
+
+	h.stats.WALReplayStatus.Min = startFrom
+	h.stats.WALReplayStatus.Max = last
+	h.stats.WALReplayStatus.Current = startFrom
+}
+
+func (h *Head) updateWALReplayStatusRead(current int) {
+	h.stats.WALReplayStatus.Lock()
+	defer h.stats.WALReplayStatus.Unlock()
+
+	h.stats.WALReplayStatus.Current = current
 }

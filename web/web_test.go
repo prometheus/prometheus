@@ -104,6 +104,10 @@ func (a *dbAdapter) Stats(statsByLabelName string) (*tsdb.Stats, error) {
 	return a.Head().Stats(statsByLabelName), nil
 }
 
+func (a *dbAdapter) WALReplayStatus() (tsdb.WALReplayStatus, error) {
+	return tsdb.WALReplayStatus{}, nil
+}
+
 func TestReadyAndHealthy(t *testing.T) {
 	t.Parallel()
 
@@ -111,7 +115,7 @@ func TestReadyAndHealthy(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { require.NoError(t, os.RemoveAll(dbDir)) }()
 
-	db, err := tsdb.Open(dbDir, nil, nil, nil)
+	db, err := tsdb.Open(dbDir, nil, nil, nil, nil)
 	require.NoError(t, err)
 
 	opts := &Options{
@@ -230,7 +234,7 @@ func TestRoutePrefix(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { require.NoError(t, os.RemoveAll(dbDir)) }()
 
-	db, err := tsdb.Open(dbDir, nil, nil, nil)
+	db, err := tsdb.Open(dbDir, nil, nil, nil, nil)
 	require.NoError(t, err)
 
 	opts := &Options{
@@ -395,7 +399,7 @@ func TestShutdownWithStaleConnection(t *testing.T) {
 	require.NoError(t, err)
 	defer func() { require.NoError(t, os.RemoveAll(dbDir)) }()
 
-	db, err := tsdb.Open(dbDir, nil, nil, nil)
+	db, err := tsdb.Open(dbDir, nil, nil, nil, nil)
 	require.NoError(t, err)
 
 	timeout := 10 * time.Second

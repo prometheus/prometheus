@@ -24,3 +24,13 @@ export interface Rule {
   state: RuleState;
   type: string;
 }
+
+export interface WALReplayData {
+  min: number;
+  max: number;
+  current: number;
+}
+
+export interface WALReplayStatus {
+  data?: WALReplayData;
+}

@@ -409,7 +409,7 @@ func TestBlockQuerier_AgainstHeadWithOpenChunks(t *testing.T) {
 		t.Run("", func(t *testing.T) {
 			opts := DefaultHeadOptions()
 			opts.ChunkRange = 2 * time.Hour.Milliseconds()
-			h, err := NewHead(nil, nil, nil, opts)
+			h, err := NewHead(nil, nil, nil, opts, nil)
 			require.NoError(t, err)
 			defer h.Close()
 
@@ -1579,7 +1579,7 @@ func TestPostingsForMatchers(t *testing.T) {
 	opts := DefaultHeadOptions()
 	opts.ChunkRange = 1000
 	opts.ChunkDirRoot = chunkDir
-	h, err := NewHead(nil, nil, nil, opts)
+	h, err := NewHead(nil, nil, nil, opts, nil)
 	require.NoError(t, err)
 	defer func() {
 		require.NoError(t, h.Close())
@@ -1844,7 +1844,7 @@ func TestClose(t *testing.T) {
 	createBlock(t, dir, genSeries(1, 1, 0, 10))
 	createBlock(t, dir, genSeries(1, 1, 10, 20))
 
-	db, err := Open(dir, nil, nil, DefaultOptions())
+	db, err := Open(dir, nil, nil, DefaultOptions(), nil)
 	if err != nil {
 		t.Fatalf("Opening test storage failed: %s", err)
 	}

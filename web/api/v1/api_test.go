@@ -2115,8 +2115,11 @@ func (f *fakeDB) Stats(statsByLabelName string) (_ *tsdb.Stats, retErr error) {
 	}()
 	opts := tsdb.DefaultHeadOptions()
 	opts.ChunkRange = 1000
-	h, _ := tsdb.NewHead(nil, nil, nil, opts)
+	h, _ := tsdb.NewHead(nil, nil, nil, opts, nil)
 	return h.Stats(statsByLabelName), nil
+}
+func (f *fakeDB) WALReplayStatus() (tsdb.WALReplayStatus, error) {
+	return tsdb.WALReplayStatus{}, nil
 }
 
 func TestAdminEndpoints(t *testing.T) {

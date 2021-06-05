@@ -2,13 +2,15 @@ import React, { FC } from 'react';
 import Navigation from './Navbar';
 import { Container } from 'reactstrap';
 
-import { Router, Redirect } from '@reach/router';
+import { Router, Redirect, navigate } from '@reach/router';
 import useMedia from 'use-media';
-import { Alerts, Config, Flags, Rules, ServiceDiscovery, Status, Targets, TSDBStatus, PanelList } from './pages';
+import { Alerts, Config, Flags, Rules, ServiceDiscovery, Status, Targets, TSDBStatus, PanelList, Starting } from './pages';
 import { PathPrefixContext } from './contexts/PathPrefixContext';
 import { ThemeContext, themeName, themeSetting } from './contexts/ThemeContext';
 import { Theme, themeLocalStorageKey } from './Theme';
 import { useLocalStorage } from './hooks/useLocalStorage';
+import { useFetchReady } from './hooks/useFetch';
+import { usePathPrefix } from './contexts/PathPrefixContext';
 
 interface AppProps {
   consolesLink: string | null;
@@ -29,6 +31,7 @@ const App: FC<AppProps> = ({ consolesLink }) => {
     '/rules',
     '/targets',
     '/service-discovery',
+    '/starting',
   ];
   if (basePath.endsWith('/')) {
     basePath = basePath.slice(0, -1);
@@ -39,6 +42,14 @@ const App: FC<AppProps> = ({ consolesLink }) => {
         basePath = basePath.slice(0, basePath.length - paths[i].length);
         break;
       }
+    }
+  }
+
+  const pathPrefix = usePathPrefix();
+  const { ready, isLoading, isUnexpected } = useFetchReady(pathPrefix);
+  if (basePath !== '/starting') {
+    if (!ready && !isLoading && !isUnexpected) {
+      navigate('/starting');
     }
   }
 
@@ -76,6 +87,7 @@ const App: FC<AppProps> = ({ consolesLink }) => {
             <Status path="/status" />
             <TSDBStatus path="/tsdb-status" />
             <Targets path="/targets" />
+            <Starting path="/starting" />
           </Router>
         </Container>
       </PathPrefixContext.Provider>
