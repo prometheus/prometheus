@@ -158,7 +158,7 @@ func NewEC2Discovery(conf *EC2SDConfig, logger log.Logger) *EC2Discovery {
 	return d
 }
 
-func (d *EC2Discovery) ec2Client() (*ec2.EC2, error) {
+func (d *EC2Discovery) ec2Client(ctx context.Context) (*ec2.EC2, error) {
 	if d.ec2 != nil {
 		return d.ec2, nil
 	}
@@ -188,7 +188,7 @@ func (d *EC2Discovery) ec2Client() (*ec2.EC2, error) {
 	}
 
 	// Region is fixed when client is created, so this is safe to do once.
-	azs, err := d.ec2.DescribeAvailabilityZones(&ec2.DescribeAvailabilityZonesInput{})
+	azs, err := d.ec2.DescribeAvailabilityZonesWithContext(ctx, &ec2.DescribeAvailabilityZonesInput{})
 	if err != nil {
 		return nil, errors.Wrap(err, "could not describe availability zones")
 	}
@@ -201,7 +201,7 @@ func (d *EC2Discovery) ec2Client() (*ec2.EC2, error) {
 }
 
 func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
-	ec2Client, err := d.ec2Client()
+	ec2Client, err := d.ec2Client(ctx)
 	if err != nil {
 		return nil, err
 	}
