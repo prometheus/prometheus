@@ -42,6 +42,7 @@ const (
 	ec2Label                  = model.MetaLabelPrefix + "ec2_"
 	ec2LabelAMI               = ec2Label + "ami"
 	ec2LabelAZ                = ec2Label + "availability_zone"
+	ec2LabelAZID              = ec2Label + "availability_zone_id"
 	ec2LabelArch              = ec2Label + "architecture"
 	ec2LabelIPv6Addresses     = ec2Label + "ipv6_addresses"
 	ec2LabelInstanceID        = ec2Label + "instance_id"
@@ -134,6 +135,10 @@ type EC2Discovery struct {
 	*refresh.Discovery
 	cfg *EC2SDConfig
 	ec2 *ec2.EC2
+
+	// azToID maps this account's availability zones to their underlying AZ ID,
+	// e.g. eu-west-2a -> euw2-az2.
+	azToID map[string]string
 }
 
 // NewEC2Discovery returns a new EC2Discovery which periodically refreshes its targets.
@@ -182,6 +187,16 @@ func (d *EC2Discovery) ec2Client() (*ec2.EC2, error) {
 		d.ec2 = ec2.New(sess)
 	}
 
+	// Region is fixed when client is created, so this is safe to do once.
+	azs, err := d.ec2.DescribeAvailabilityZones(&ec2.DescribeAvailabilityZonesInput{})
+	if err != nil {
+		return nil, errors.Wrap(err, "could not describe availability zones")
+	}
+	d.azToID = make(map[string]string, len(azs.AvailabilityZones))
+	for _, az := range azs.AvailabilityZones {
+		d.azToID[*az.ZoneName] = *az.ZoneId
+	}
+
 	return d.ec2, nil
 }
 
@@ -211,6 +226,11 @@ func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 				if inst.PrivateIpAddress == nil {
 					continue
 				}
+				azID, ok := d.azToID[*inst.Placement.AvailabilityZone]
+				if !ok {
+					continue
+				}
+
 				labels := model.LabelSet{
 					ec2LabelInstanceID: model.LabelValue(*inst.InstanceId),
 				}
@@ -237,6 +257,7 @@ func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 
 				labels[ec2LabelAMI] = model.LabelValue(*inst.ImageId)
 				labels[ec2LabelAZ] = model.LabelValue(*inst.Placement.AvailabilityZone)
+				labels[ec2LabelAZID] = model.LabelValue(azID)
 				labels[ec2LabelInstanceState] = model.LabelValue(*inst.State.Name)
 				labels[ec2LabelInstanceType] = model.LabelValue(*inst.InstanceType)
 
