@@ -440,6 +440,8 @@ The following meta labels are available on targets during [relabeling](#relabel_
 [ server: <host> | default = "localhost:8500" ]
 [ token: <secret> ]
 [ datacenter: <string> ]
+# Namespaces are only supported in Consul Enterprise.
+[ namespace: <string> ]
 [ scheme: <string> | default = "http" ]
 [ username: <string> ]
 [ password: <secret> ]
