@@ -1181,6 +1181,10 @@ namespaces:
   [ - role: <string>
     [ label: <string> ]
     [ field: <string> ] ]]
+
+# Optional this determines which field of "Node.Status.Addresses" that discovery will get the address from first
+# default: NodeInternalIP,NodeInternalDNS,NodeExternalIP,NodeExternalDNS,NodeLegacyHostIP,NodeHostName
+[preferred_node_address_types: <string>]
 ```
 
 See [this example Prometheus configuration file](/documentation/examples/prometheus-kubernetes.yml)

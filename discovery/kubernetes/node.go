@@ -224,6 +224,7 @@ func (n *Node) buildNode(node *apiv1.Node) *targetgroup.Group {
 // 4. NodeExternalDNS
 // 5. NodeLegacyHostIP
 // 6. NodeHostName
+// you can redefine the priority using "preferred_node_address_types" in configuration
 //
 // Derived from k8s.io/kubernetes/pkg/util/node/node.go
 func (n *Node) nodeAddress(node *apiv1.Node) (string, map[apiv1.NodeAddressType][]string, error) {
