@@ -89,6 +89,49 @@ func TestNodeDiscoveryBeforeStart(t *testing.T) {
 	}.Run(t)
 }
 
+func TestNodeDiscoveryPreferNodeAddress(t *testing.T) {
+	n, c := makeDiscovery(RoleNode, NamespaceDiscovery{})
+	n.preferNodeTypes = fmt.Sprintf("%s,%s", v1.NodeHostName, v1.NodeInternalIP)
+
+	k8sDiscoveryTest{
+		discovery: n,
+		beforeRun: func() {
+			obj := makeNode(
+				"test",
+				"1.2.3.4",
+				map[string]string{"test-label": "testvalue"},
+				map[string]string{"test-annotation": "testannotationvalue"},
+			)
+			obj.Status.Addresses = append(obj.Status.Addresses, v1.NodeAddress{
+				Type:    v1.NodeHostName,
+				Address: "test.domain",
+			})
+			c.CoreV1().Nodes().Create(context.Background(), obj, metav1.CreateOptions{})
+		},
+		expectedMaxItems: 1,
+		expectedRes: map[string]*targetgroup.Group{
+			"node/test": {
+				Targets: []model.LabelSet{
+					{
+						"__address__": "test.domain:10250",
+						"instance":    "test",
+						"__meta_kubernetes_node_address_InternalIP": "1.2.3.4",
+						"__meta_kubernetes_node_address_Hostname":   "test.domain",
+					},
+				},
+				Labels: model.LabelSet{
+					"__meta_kubernetes_node_name":                              "test",
+					"__meta_kubernetes_node_label_test_label":                  "testvalue",
+					"__meta_kubernetes_node_labelpresent_test_label":           "true",
+					"__meta_kubernetes_node_annotation_test_annotation":        "testannotationvalue",
+					"__meta_kubernetes_node_annotationpresent_test_annotation": "true",
+				},
+				Source: "node/test",
+			},
+		},
+	}.Run(t)
+}
+
 func TestNodeDiscoveryAdd(t *testing.T) {
 	n, c := makeDiscovery(RoleNode, NamespaceDiscovery{})
 

@@ -109,11 +109,12 @@ func (c *Role) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 // SDConfig is the configuration for Kubernetes service discovery.
 type SDConfig struct {
-	APIServer          config.URL              `yaml:"api_server,omitempty"`
-	Role               Role                    `yaml:"role"`
-	HTTPClientConfig   config.HTTPClientConfig `yaml:",inline"`
-	NamespaceDiscovery NamespaceDiscovery      `yaml:"namespaces,omitempty"`
-	Selectors          []SelectorConfig        `yaml:"selectors,omitempty"`
+	APIServer                 config.URL              `yaml:"api_server,omitempty"`
+	Role                      Role                    `yaml:"role"`
+	HTTPClientConfig          config.HTTPClientConfig `yaml:",inline"`
+	NamespaceDiscovery        NamespaceDiscovery      `yaml:"namespaces,omitempty"`
+	Selectors                 []SelectorConfig        `yaml:"selectors,omitempty"`
+	PreferredNodeAddressTypes string                  `yaml:"preferred_node_address_types,omitempty"`
 }
 
 // Name returns the name of the Config.
@@ -234,6 +235,7 @@ type Discovery struct {
 	namespaceDiscovery *NamespaceDiscovery
 	discoverers        []discovery.Discoverer
 	selectors          roleSelector
+	preferNodeTypes    string
 }
 
 func (d *Discovery) getNamespaces() []string {
@@ -278,6 +280,7 @@ func New(l log.Logger, conf *SDConfig) (*Discovery, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	return &Discovery{
 		client:             c,
 		logger:             l,
@@ -285,6 +288,7 @@ func New(l log.Logger, conf *SDConfig) (*Discovery, error) {
 		namespaceDiscovery: &conf.NamespaceDiscovery,
 		discoverers:        make([]discovery.Discoverer, 0),
 		selectors:          mapSelector(conf.Selectors),
+		preferNodeTypes:    conf.PreferredNodeAddressTypes,
 	}, nil
 }
 
@@ -509,7 +513,9 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 		node := NewNode(
 			log.With(d.logger, "role", "node"),
 			cache.NewSharedInformer(nlw, &apiv1.Node{}, resyncPeriod),
+			d.preferNodeTypes,
 		)
+
 		d.discoverers = append(d.discoverers, node)
 		go node.informer.Run(ctx.Done())
 	default:
