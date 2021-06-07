@@ -805,6 +805,15 @@ func (h *Head) Init(minValidTime int64) error {
 	if err != nil && err != record.ErrNotFound {
 		return errors.Wrap(err, "find last checkpoint")
 	}
+
+	// Find the last segment.
+	_, last, err := wal.Segments(h.wal.Dir())
+	if err != nil {
+		return errors.Wrap(err, "finding WAL segments")
+	}
+
+	h.startWALReplayStatus(startFrom, last)
+
 	multiRef := map[uint64]uint64{}
 	if err == nil {
 		sr, err := wal.NewSegmentsReader(dir)
@@ -823,18 +832,12 @@ func (h *Head) Init(minValidTime int64) error {
 			return errors.Wrap(err, "backfill checkpoint")
 		}
 		startFrom++
+		h.updateWALReplayStatusRead(startFrom)
 		level.Info(h.logger).Log("msg", "WAL checkpoint loaded")
 	}
 	checkpointReplayDuration := time.Since(checkpointReplayStart)
 
 	walReplayStart := time.Now()
-	// Find the last segment.
-	_, last, err := wal.Segments(h.wal.Dir())
-	if err != nil {
-		return errors.Wrap(err, "finding WAL segments")
-	}
-
-	h.startWALReplayStatus(startFrom, last)
 
 	// Backfill segments from the most recent checkpoint onwards.
 	for i := startFrom; i <= last; i++ {
