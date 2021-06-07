@@ -64,7 +64,21 @@ react-app-test: | $(REACT_APP_NODE_MODULES_PATH) react-app-lint
 	cd $(REACT_APP_PATH) && yarn test --no-watch --coverage
 
 .PHONY: test
+test:
+
+# If we only want to only test go code we have to change the test target
+# which is called by all.
+ifeq ($(MAKECMDGOALS),go-ci)
+test: common-test
+else
 test: common-test react-app-test
+endif
+
+.PHONY: go-ci
+go-ci: all
+
+.PHONY: react-ci
+react-ci: react-app-test
 
 .PHONY: npm_licenses
 npm_licenses: $(REACT_APP_NODE_MODULES_PATH)
