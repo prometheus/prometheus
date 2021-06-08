@@ -433,7 +433,7 @@ var expectedConf = &Config{
 						},
 					},
 					PreferredNodeAddressTypes: kubernetes.DefaultSDConfig.PreferredNodeAddressTypes,
-					HTTPClientConfig: config.DefaultHTTPClientConfig,
+					HTTPClientConfig:          config.DefaultHTTPClientConfig,
 				},
 			},
 		},
