@@ -23,17 +23,19 @@ describe('AlertsContent', () => {
     { selector: '#firing-toggler', propName: 'firing' },
   ].forEach(testCase => {
     it(`toggles the ${testCase.propName} checkbox from true to false when clicked and back to true when clicked again`, () => {
-      wrapper.find(testCase.selector).invoke('onClick')(testCase.propName);
+      expect(wrapper.find(testCase.selector).prop('checked')).toBe(true);
+      wrapper.find(testCase.selector).simulate('change', { target: { checked: false } });
       expect(wrapper.find(testCase.selector).prop('checked')).toBe(false);
-      wrapper.find(testCase.selector).invoke('onClick')(testCase.propName);
+      wrapper.find(testCase.selector).simulate('change', { target: { checked: true } });
       expect(wrapper.find(testCase.selector).prop('checked')).toBe(true);
     });
   });
 
   it('toggles the "annotations" checkbox from false to true when clicked and back to false when clicked again', () => {
-    wrapper.find('#show-annotations-toggler').invoke('onClick')();
+    expect(wrapper.find('#show-annotations-toggler').prop('checked')).toBe(false);
+    wrapper.find('#show-annotations-toggler').simulate('change', { target: { checked: true } });
     expect(wrapper.find('#show-annotations-toggler').prop('checked')).toBe(true);
-    wrapper.find('#show-annotations-toggler').invoke('onClick')();
+    wrapper.find('#show-annotations-toggler').simulate('change', { target: { checked: false } });
     expect(wrapper.find('#show-annotations-toggler').prop('checked')).toBe(false);
   });
 });

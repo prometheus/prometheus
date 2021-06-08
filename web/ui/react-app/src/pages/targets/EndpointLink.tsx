@@ -27,7 +27,7 @@ const EndpointLink: FC<EndpointLinkProps> = ({ endpoint, globalUrl }) => {
       {params.length > 0 ? <br /> : null}
       {params.map(([labelName, labelValue]: [string, string]) => {
         return (
-          <Badge color="primary" className={`mr-1 ${labelName}`} key={labelName}>
+          <Badge color="primary" className="mr-1" key={`${labelName}/${labelValue}`}>
             {`${labelName}="${labelValue}"`}
           </Badge>
         );

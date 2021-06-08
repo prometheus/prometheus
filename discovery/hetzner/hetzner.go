@@ -41,8 +41,9 @@ const (
 
 // DefaultSDConfig is the default Hetzner SD configuration.
 var DefaultSDConfig = SDConfig{
-	Port:            80,
-	RefreshInterval: model.Duration(60 * time.Second),
+	Port:             80,
+	RefreshInterval:  model.Duration(60 * time.Second),
+	HTTPClientConfig: config.DefaultHTTPClientConfig,
 }
 
 func init() {
@@ -110,7 +111,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if c.Role == "" {
 		return errors.New("role missing (one of: robot, hcloud)")
 	}
-	return nil
+	return c.HTTPClientConfig.Validate()
 }
 
 // Discovery periodically performs Hetzner requests. It implements

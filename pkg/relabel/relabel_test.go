@@ -235,6 +235,24 @@ func TestRelabel(t *testing.T) {
 		},
 		{
 			input: labels.FromMap(map[string]string{
+				"a": "foo\nbar",
+			}),
+			relabel: []*Config{
+				{
+					SourceLabels: model.LabelNames{"a"},
+					TargetLabel:  "b",
+					Separator:    ";",
+					Action:       HashMod,
+					Modulus:      1000,
+				},
+			},
+			output: labels.FromMap(map[string]string{
+				"a": "foo\nbar",
+				"b": "734",
+			}),
+		},
+		{
+			input: labels.FromMap(map[string]string{
 				"a":  "foo",
 				"b1": "bar",
 				"b2": "baz",
@@ -413,6 +431,22 @@ func TestRelabel(t *testing.T) {
 	}
 
 	for _, test := range tests {
+		// Setting default fields, mimicking the behaviour in Prometheus.
+		for _, cfg := range test.relabel {
+			if cfg.Action == "" {
+				cfg.Action = DefaultRelabelConfig.Action
+			}
+			if cfg.Separator == "" {
+				cfg.Separator = DefaultRelabelConfig.Separator
+			}
+			if cfg.Regex.original == "" {
+				cfg.Regex = DefaultRelabelConfig.Regex
+			}
+			if cfg.Replacement == "" {
+				cfg.Replacement = DefaultRelabelConfig.Replacement
+			}
+		}
+
 		res := Process(test.input, test.relabel...)
 		require.Equal(t, test.output, res)
 	}

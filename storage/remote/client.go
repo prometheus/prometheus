@@ -35,10 +35,11 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
 
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/prompb"
 )
 
-const maxErrMsgLen = 512
+const maxErrMsgLen = 1024
 
 var UserAgent = fmt.Sprintf("Prometheus/%s", version.Version)
 
@@ -84,6 +85,8 @@ type Client struct {
 	Client     *http.Client
 	timeout    time.Duration
 
+	retryOnRateLimit bool
+
 	readQueries         prometheus.Gauge
 	readQueriesTotal    *prometheus.CounterVec
 	readQueriesDuration prometheus.Observer
@@ -94,6 +97,9 @@ type ClientConfig struct {
 	URL              *config_util.URL
 	Timeout          model.Duration
 	HTTPClientConfig config_util.HTTPClientConfig
+	SigV4Config      *config.SigV4Config
+	Headers          map[string]string
+	RetryOnRateLimit bool
 }
 
 // ReadClient uses the SAMPLES method of remote read to read series samples from remote server.
@@ -104,12 +110,15 @@ type ReadClient interface {
 
 // NewReadClient creates a new client for remote read.
 func NewReadClient(name string, conf *ClientConfig) (ReadClient, error) {
-	httpClient, err := config_util.NewClientFromConfig(conf.HTTPClientConfig, "remote_storage_read_client", false, false)
+	httpClient, err := config_util.NewClientFromConfig(conf.HTTPClientConfig, "remote_storage_read_client", config_util.WithHTTP2Disabled())
 	if err != nil {
 		return nil, err
 	}
 
 	t := httpClient.Transport
+	if len(conf.Headers) > 0 {
+		t = newInjectHeadersRoundTripper(conf.Headers, t)
+	}
 	httpClient.Transport = &nethttp.Transport{
 		RoundTripper: t,
 	}
@@ -127,26 +136,57 @@ func NewReadClient(name string, conf *ClientConfig) (ReadClient, error) {
 
 // NewWriteClient creates a new client for remote write.
 func NewWriteClient(name string, conf *ClientConfig) (WriteClient, error) {
-	httpClient, err := config_util.NewClientFromConfig(conf.HTTPClientConfig, "remote_storage_write_client", false, false)
+	httpClient, err := config_util.NewClientFromConfig(conf.HTTPClientConfig, "remote_storage_write_client", config_util.WithHTTP2Disabled())
 	if err != nil {
 		return nil, err
 	}
-
 	t := httpClient.Transport
+
+	if conf.SigV4Config != nil {
+		t, err = newSigV4RoundTripper(conf.SigV4Config, httpClient.Transport)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if len(conf.Headers) > 0 {
+		t = newInjectHeadersRoundTripper(conf.Headers, t)
+	}
+
 	httpClient.Transport = &nethttp.Transport{
 		RoundTripper: t,
 	}
 
 	return &Client{
-		remoteName: name,
-		url:        conf.URL,
-		Client:     httpClient,
-		timeout:    time.Duration(conf.Timeout),
+		remoteName:       name,
+		url:              conf.URL,
+		Client:           httpClient,
+		retryOnRateLimit: conf.RetryOnRateLimit,
+		timeout:          time.Duration(conf.Timeout),
 	}, nil
 }
 
+func newInjectHeadersRoundTripper(h map[string]string, underlyingRT http.RoundTripper) *injectHeadersRoundTripper {
+	return &injectHeadersRoundTripper{headers: h, RoundTripper: underlyingRT}
+}
+
+type injectHeadersRoundTripper struct {
+	headers map[string]string
+	http.RoundTripper
+}
+
+func (t *injectHeadersRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	for key, value := range t.headers {
+		req.Header.Set(key, value)
+	}
+	return t.RoundTripper.RoundTrip(req)
+}
+
+const defaultBackoff = 0
+
 type RecoverableError struct {
 	error
+	retryAfter model.Duration
 }
 
 // Store sends a batch of samples to the HTTP endpoint, the request is the proto marshalled
@@ -158,6 +198,7 @@ func (c *Client) Store(ctx context.Context, req []byte) error {
 		// recoverable.
 		return err
 	}
+
 	httpReq.Header.Add("Content-Encoding", "snappy")
 	httpReq.Header.Set("Content-Type", "application/x-protobuf")
 	httpReq.Header.Set("User-Agent", UserAgent)
@@ -182,7 +223,7 @@ func (c *Client) Store(ctx context.Context, req []byte) error {
 	if err != nil {
 		// Errors from Client.Do are from (for example) network errors, so are
 		// recoverable.
-		return RecoverableError{err}
+		return RecoverableError{err, defaultBackoff}
 	}
 	defer func() {
 		io.Copy(ioutil.Discard, httpResp.Body)
@@ -198,9 +239,28 @@ func (c *Client) Store(ctx context.Context, req []byte) error {
 		err = errors.Errorf("server returned HTTP status %s: %s", httpResp.Status, line)
 	}
 	if httpResp.StatusCode/100 == 5 {
-		return RecoverableError{err}
+		return RecoverableError{err, defaultBackoff}
+	}
+	if c.retryOnRateLimit && httpResp.StatusCode == http.StatusTooManyRequests {
+		return RecoverableError{err, retryAfterDuration(httpResp.Header.Get("Retry-After"))}
 	}
 	return err
+}
+
+// retryAfterDuration returns the duration for the Retry-After header. In case of any errors, it
+// returns the defaultBackoff as if the header was never supplied.
+func retryAfterDuration(t string) model.Duration {
+	parsedDuration, err := time.Parse(http.TimeFormat, t)
+	if err == nil {
+		s := time.Until(parsedDuration).Seconds()
+		return model.Duration(s) * model.Duration(time.Second)
+	}
+	// The duration can be in seconds.
+	d, err := strconv.Atoi(t)
+	if err != nil {
+		return defaultBackoff
+	}
+	return model.Duration(d) * model.Duration(time.Second)
 }
 
 // Name uniquely identifies the client.

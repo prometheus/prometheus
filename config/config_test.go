@@ -17,29 +17,34 @@ import (
 	"encoding/json"
 	"io/ioutil"
 	"net/url"
+	"os"
 	"path/filepath"
 	"regexp"
 	"testing"
 	"time"
 
+	"github.com/alecthomas/units"
+	"github.com/go-kit/kit/log"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/discovery"
+	"github.com/prometheus/prometheus/discovery/aws"
 	"github.com/prometheus/prometheus/discovery/azure"
 	"github.com/prometheus/prometheus/discovery/consul"
 	"github.com/prometheus/prometheus/discovery/digitalocean"
 	"github.com/prometheus/prometheus/discovery/dns"
-	"github.com/prometheus/prometheus/discovery/dockerswarm"
-	"github.com/prometheus/prometheus/discovery/ec2"
 	"github.com/prometheus/prometheus/discovery/eureka"
 	"github.com/prometheus/prometheus/discovery/file"
 	"github.com/prometheus/prometheus/discovery/hetzner"
 	"github.com/prometheus/prometheus/discovery/kubernetes"
+	"github.com/prometheus/prometheus/discovery/linode"
 	"github.com/prometheus/prometheus/discovery/marathon"
+	"github.com/prometheus/prometheus/discovery/moby"
 	"github.com/prometheus/prometheus/discovery/openstack"
+	"github.com/prometheus/prometheus/discovery/scaleway"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/discovery/triton"
 	"github.com/prometheus/prometheus/discovery/zookeeper"
@@ -87,28 +92,41 @@ var expectedConf = &Config{
 					Action:       relabel.Drop,
 				},
 			},
-			QueueConfig: DefaultQueueConfig,
+			QueueConfig:    DefaultQueueConfig,
+			MetadataConfig: DefaultMetadataConfig,
+			HTTPClientConfig: config.HTTPClientConfig{
+				OAuth2: &config.OAuth2{
+					ClientID:     "123",
+					ClientSecret: "456",
+					TokenURL:     "http://remote1/auth",
+				},
+				FollowRedirects: true,
+			},
 		},
 		{
-			URL:           mustParseURL("http://remote2/push"),
-			RemoteTimeout: model.Duration(30 * time.Second),
-			QueueConfig:   DefaultQueueConfig,
-			Name:          "rw_tls",
+			URL:            mustParseURL("http://remote2/push"),
+			RemoteTimeout:  model.Duration(30 * time.Second),
+			QueueConfig:    DefaultQueueConfig,
+			MetadataConfig: DefaultMetadataConfig,
+			Name:           "rw_tls",
 			HTTPClientConfig: config.HTTPClientConfig{
 				TLSConfig: config.TLSConfig{
 					CertFile: filepath.FromSlash("testdata/valid_cert_file"),
 					KeyFile:  filepath.FromSlash("testdata/valid_key_file"),
 				},
+				FollowRedirects: true,
 			},
+			Headers: map[string]string{"name": "value"},
 		},
 	},
 
 	RemoteReadConfigs: []*RemoteReadConfig{
 		{
-			URL:           mustParseURL("http://remote1/read"),
-			RemoteTimeout: model.Duration(1 * time.Minute),
-			ReadRecent:    true,
-			Name:          "default",
+			URL:              mustParseURL("http://remote1/read"),
+			RemoteTimeout:    model.Duration(1 * time.Minute),
+			ReadRecent:       true,
+			Name:             "default",
+			HTTPClientConfig: config.DefaultHTTPClientConfig,
 		},
 		{
 			URL:              mustParseURL("http://remote3/read"),
@@ -121,6 +139,7 @@ var expectedConf = &Config{
 					CertFile: filepath.FromSlash("testdata/valid_cert_file"),
 					KeyFile:  filepath.FromSlash("testdata/valid_key_file"),
 				},
+				FollowRedirects: true,
 			},
 		},
 	},
@@ -138,7 +157,11 @@ var expectedConf = &Config{
 			Scheme:      DefaultScrapeConfig.Scheme,
 
 			HTTPClientConfig: config.HTTPClientConfig{
-				BearerTokenFile: filepath.FromSlash("testdata/valid_token_file"),
+				Authorization: &config.Authorization{
+					Type:            "Bearer",
+					CredentialsFile: filepath.FromSlash("testdata/valid_token_file"),
+				},
+				FollowRedirects: true,
 			},
 
 			ServiceDiscoveryConfigs: discovery.Configs{
@@ -202,6 +225,7 @@ var expectedConf = &Config{
 			HonorTimestamps: true,
 			ScrapeInterval:  model.Duration(50 * time.Second),
 			ScrapeTimeout:   model.Duration(5 * time.Second),
+			BodySizeLimit:   10 * units.MiB,
 			SampleLimit:     1000,
 
 			HTTPClientConfig: config.HTTPClientConfig{
@@ -209,6 +233,7 @@ var expectedConf = &Config{
 					Username: "admin_name",
 					Password: "multiline\nmysecret\ntest",
 				},
+				FollowRedirects: true,
 			},
 			MetricsPath: "/my_path",
 			Scheme:      "https",
@@ -291,8 +316,9 @@ var expectedConf = &Config{
 			ScrapeInterval:  model.Duration(15 * time.Second),
 			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
 
-			MetricsPath: DefaultScrapeConfig.MetricsPath,
-			Scheme:      DefaultScrapeConfig.Scheme,
+			MetricsPath:      DefaultScrapeConfig.MetricsPath,
+			Scheme:           DefaultScrapeConfig.Scheme,
+			HTTPClientConfig: config.DefaultHTTPClientConfig,
 
 			ServiceDiscoveryConfigs: discovery.Configs{
 				&consul.SDConfig{
@@ -341,7 +367,12 @@ var expectedConf = &Config{
 					KeyFile:  filepath.FromSlash("testdata/valid_key_file"),
 				},
 
-				BearerToken: "mysecret",
+				Authorization: &config.Authorization{
+					Type:        "Bearer",
+					Credentials: "mysecret",
+				},
+
+				FollowRedirects: true,
 			},
 		},
 		{
@@ -351,8 +382,9 @@ var expectedConf = &Config{
 			ScrapeInterval:  model.Duration(15 * time.Second),
 			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
 
-			MetricsPath: DefaultScrapeConfig.MetricsPath,
-			Scheme:      DefaultScrapeConfig.Scheme,
+			MetricsPath:      DefaultScrapeConfig.MetricsPath,
+			Scheme:           DefaultScrapeConfig.Scheme,
+			HTTPClientConfig: config.DefaultHTTPClientConfig,
 
 			ServiceDiscoveryConfigs: discovery.Configs{
 				&kubernetes.SDConfig{
@@ -367,6 +399,7 @@ var expectedConf = &Config{
 							CertFile: filepath.FromSlash("testdata/valid_cert_file"),
 							KeyFile:  filepath.FromSlash("testdata/valid_key_file"),
 						},
+						FollowRedirects: true,
 					},
 					NamespaceDiscovery:        kubernetes.NamespaceDiscovery{},
 					PreferredNodeAddressTypes: kubernetes.DefaultSDConfig.PreferredNodeAddressTypes,
@@ -387,6 +420,7 @@ var expectedConf = &Config{
 					Username:     "myusername",
 					PasswordFile: filepath.FromSlash("testdata/valid_password_file"),
 				},
+				FollowRedirects: true,
 			},
 
 			ServiceDiscoveryConfigs: discovery.Configs{
@@ -399,6 +433,7 @@ var expectedConf = &Config{
 						},
 					},
 					PreferredNodeAddressTypes: kubernetes.DefaultSDConfig.PreferredNodeAddressTypes,
+					HTTPClientConfig: config.DefaultHTTPClientConfig,
 				},
 			},
 		},
@@ -409,8 +444,9 @@ var expectedConf = &Config{
 			ScrapeInterval:  model.Duration(15 * time.Second),
 			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
 
-			MetricsPath: DefaultScrapeConfig.MetricsPath,
-			Scheme:      DefaultScrapeConfig.Scheme,
+			MetricsPath:      DefaultScrapeConfig.MetricsPath,
+			Scheme:           DefaultScrapeConfig.Scheme,
+			HTTPClientConfig: config.DefaultHTTPClientConfig,
 
 			ServiceDiscoveryConfigs: discovery.Configs{
 				&marathon.SDConfig{
@@ -424,6 +460,7 @@ var expectedConf = &Config{
 							CertFile: filepath.FromSlash("testdata/valid_cert_file"),
 							KeyFile:  filepath.FromSlash("testdata/valid_key_file"),
 						},
+						FollowRedirects: true,
 					},
 				},
 			},
@@ -435,18 +472,19 @@ var expectedConf = &Config{
 			ScrapeInterval:  model.Duration(15 * time.Second),
 			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
 
-			MetricsPath: DefaultScrapeConfig.MetricsPath,
-			Scheme:      DefaultScrapeConfig.Scheme,
+			MetricsPath:      DefaultScrapeConfig.MetricsPath,
+			Scheme:           DefaultScrapeConfig.Scheme,
+			HTTPClientConfig: config.DefaultHTTPClientConfig,
 
 			ServiceDiscoveryConfigs: discovery.Configs{
-				&ec2.SDConfig{
+				&aws.EC2SDConfig{
 					Region:          "us-east-1",
 					AccessKey:       "access",
 					SecretKey:       "mysecret",
 					Profile:         "profile",
 					RefreshInterval: model.Duration(60 * time.Second),
 					Port:            80,
-					Filters: []*ec2.Filter{
+					Filters: []*aws.EC2Filter{
 						{
 							Name:   "tag:environment",
 							Values: []string{"prod"},
@@ -460,14 +498,37 @@ var expectedConf = &Config{
 			},
 		},
 		{
+			JobName: "service-lightsail",
+
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
+
+			MetricsPath:      DefaultScrapeConfig.MetricsPath,
+			Scheme:           DefaultScrapeConfig.Scheme,
+			HTTPClientConfig: config.DefaultHTTPClientConfig,
+
+			ServiceDiscoveryConfigs: discovery.Configs{
+				&aws.LightsailSDConfig{
+					Region:          "us-east-1",
+					AccessKey:       "access",
+					SecretKey:       "mysecret",
+					Profile:         "profile",
+					RefreshInterval: model.Duration(60 * time.Second),
+					Port:            80,
+				},
+			},
+		},
+		{
 			JobName: "service-azure",
 
 			HonorTimestamps: true,
 			ScrapeInterval:  model.Duration(15 * time.Second),
 			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
 
-			MetricsPath: DefaultScrapeConfig.MetricsPath,
-			Scheme:      DefaultScrapeConfig.Scheme,
+			MetricsPath:      DefaultScrapeConfig.MetricsPath,
+			Scheme:           DefaultScrapeConfig.Scheme,
+			HTTPClientConfig: config.DefaultHTTPClientConfig,
 
 			ServiceDiscoveryConfigs: discovery.Configs{
 				&azure.SDConfig{
@@ -489,8 +550,9 @@ var expectedConf = &Config{
 			ScrapeInterval:  model.Duration(15 * time.Second),
 			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
 
-			MetricsPath: DefaultScrapeConfig.MetricsPath,
-			Scheme:      DefaultScrapeConfig.Scheme,
+			MetricsPath:      DefaultScrapeConfig.MetricsPath,
+			Scheme:           DefaultScrapeConfig.Scheme,
+			HTTPClientConfig: config.DefaultHTTPClientConfig,
 
 			ServiceDiscoveryConfigs: discovery.Configs{
 				&zookeeper.NerveSDConfig{
@@ -507,8 +569,9 @@ var expectedConf = &Config{
 			ScrapeInterval:  model.Duration(15 * time.Second),
 			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
 
-			MetricsPath: DefaultScrapeConfig.MetricsPath,
-			Scheme:      DefaultScrapeConfig.Scheme,
+			MetricsPath:      DefaultScrapeConfig.MetricsPath,
+			Scheme:           DefaultScrapeConfig.Scheme,
+			HTTPClientConfig: config.DefaultHTTPClientConfig,
 
 			ServiceDiscoveryConfigs: discovery.Configs{
 				discovery.StaticConfig{
@@ -528,8 +591,9 @@ var expectedConf = &Config{
 			ScrapeInterval:  model.Duration(15 * time.Second),
 			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
 
-			MetricsPath: "/federate",
-			Scheme:      DefaultScrapeConfig.Scheme,
+			MetricsPath:      "/federate",
+			Scheme:           DefaultScrapeConfig.Scheme,
+			HTTPClientConfig: config.DefaultHTTPClientConfig,
 
 			ServiceDiscoveryConfigs: discovery.Configs{
 				discovery.StaticConfig{
@@ -549,8 +613,9 @@ var expectedConf = &Config{
 			ScrapeInterval:  model.Duration(15 * time.Second),
 			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
 
-			MetricsPath: DefaultScrapeConfig.MetricsPath,
-			Scheme:      DefaultScrapeConfig.Scheme,
+			MetricsPath:      DefaultScrapeConfig.MetricsPath,
+			Scheme:           DefaultScrapeConfig.Scheme,
+			HTTPClientConfig: config.DefaultHTTPClientConfig,
 
 			ServiceDiscoveryConfigs: discovery.Configs{
 				discovery.StaticConfig{
@@ -570,8 +635,9 @@ var expectedConf = &Config{
 			ScrapeInterval:  model.Duration(15 * time.Second),
 			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
 
-			MetricsPath: DefaultScrapeConfig.MetricsPath,
-			Scheme:      DefaultScrapeConfig.Scheme,
+			MetricsPath:      DefaultScrapeConfig.MetricsPath,
+			Scheme:           DefaultScrapeConfig.Scheme,
+			HTTPClientConfig: config.DefaultHTTPClientConfig,
 
 			ServiceDiscoveryConfigs: discovery.Configs{
 				&triton.SDConfig{
@@ -596,16 +662,42 @@ var expectedConf = &Config{
 			ScrapeInterval:  model.Duration(15 * time.Second),
 			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
 
-			MetricsPath: DefaultScrapeConfig.MetricsPath,
-			Scheme:      DefaultScrapeConfig.Scheme,
+			MetricsPath:      DefaultScrapeConfig.MetricsPath,
+			Scheme:           DefaultScrapeConfig.Scheme,
+			HTTPClientConfig: config.DefaultHTTPClientConfig,
 
 			ServiceDiscoveryConfigs: discovery.Configs{
 				&digitalocean.SDConfig{
 					HTTPClientConfig: config.HTTPClientConfig{
-						BearerToken: "abcdef",
+						Authorization: &config.Authorization{
+							Type:        "Bearer",
+							Credentials: "abcdef",
+						},
+						FollowRedirects: true,
 					},
 					Port:            80,
 					RefreshInterval: model.Duration(60 * time.Second),
+				},
+			},
+		},
+		{
+			JobName: "docker",
+
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
+
+			MetricsPath:      DefaultScrapeConfig.MetricsPath,
+			Scheme:           DefaultScrapeConfig.Scheme,
+			HTTPClientConfig: config.DefaultHTTPClientConfig,
+
+			ServiceDiscoveryConfigs: discovery.Configs{
+				&moby.DockerSDConfig{
+					Filters:          []moby.Filter{},
+					Host:             "unix:///var/run/docker.sock",
+					Port:             80,
+					RefreshInterval:  model.Duration(60 * time.Second),
+					HTTPClientConfig: config.DefaultHTTPClientConfig,
 				},
 			},
 		},
@@ -616,15 +708,18 @@ var expectedConf = &Config{
 			ScrapeInterval:  model.Duration(15 * time.Second),
 			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
 
-			MetricsPath: DefaultScrapeConfig.MetricsPath,
-			Scheme:      DefaultScrapeConfig.Scheme,
+			MetricsPath:      DefaultScrapeConfig.MetricsPath,
+			Scheme:           DefaultScrapeConfig.Scheme,
+			HTTPClientConfig: config.DefaultHTTPClientConfig,
 
 			ServiceDiscoveryConfigs: discovery.Configs{
-				&dockerswarm.SDConfig{
-					Host:            "http://127.0.0.1:2375",
-					Role:            "nodes",
-					Port:            80,
-					RefreshInterval: model.Duration(60 * time.Second),
+				&moby.DockerSwarmSDConfig{
+					Filters:          []moby.Filter{},
+					Host:             "http://127.0.0.1:2375",
+					Role:             "nodes",
+					Port:             80,
+					RefreshInterval:  model.Duration(60 * time.Second),
+					HTTPClientConfig: config.DefaultHTTPClientConfig,
 				},
 			},
 		},
@@ -635,8 +730,9 @@ var expectedConf = &Config{
 			ScrapeInterval:  model.Duration(15 * time.Second),
 			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
 
-			MetricsPath: DefaultScrapeConfig.MetricsPath,
-			Scheme:      DefaultScrapeConfig.Scheme,
+			MetricsPath:      DefaultScrapeConfig.MetricsPath,
+			Scheme:           DefaultScrapeConfig.Scheme,
+			HTTPClientConfig: config.DefaultHTTPClientConfig,
 
 			ServiceDiscoveryConfigs: discovery.Configs{&openstack.SDConfig{
 				Role:            "instance",
@@ -657,13 +753,18 @@ var expectedConf = &Config{
 			ScrapeInterval:  model.Duration(15 * time.Second),
 			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
 
-			MetricsPath: DefaultScrapeConfig.MetricsPath,
-			Scheme:      DefaultScrapeConfig.Scheme,
+			MetricsPath:      DefaultScrapeConfig.MetricsPath,
+			Scheme:           DefaultScrapeConfig.Scheme,
+			HTTPClientConfig: config.DefaultHTTPClientConfig,
 
 			ServiceDiscoveryConfigs: discovery.Configs{
 				&hetzner.SDConfig{
 					HTTPClientConfig: config.HTTPClientConfig{
-						BearerToken: "abcdef",
+						Authorization: &config.Authorization{
+							Type:        "Bearer",
+							Credentials: "abcdef",
+						},
+						FollowRedirects: true,
 					},
 					Port:            80,
 					RefreshInterval: model.Duration(60 * time.Second),
@@ -671,7 +772,8 @@ var expectedConf = &Config{
 				},
 				&hetzner.SDConfig{
 					HTTPClientConfig: config.HTTPClientConfig{
-						BasicAuth: &config.BasicAuth{Username: "abcdef", Password: "abcdef"},
+						BasicAuth:       &config.BasicAuth{Username: "abcdef", Password: "abcdef"},
+						FollowRedirects: true,
 					},
 					Port:            80,
 					RefreshInterval: model.Duration(60 * time.Second),
@@ -686,22 +788,88 @@ var expectedConf = &Config{
 			ScrapeInterval:  model.Duration(15 * time.Second),
 			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
 
+			MetricsPath:      DefaultScrapeConfig.MetricsPath,
+			Scheme:           DefaultScrapeConfig.Scheme,
+			HTTPClientConfig: config.DefaultHTTPClientConfig,
+
+			ServiceDiscoveryConfigs: discovery.Configs{
+				&eureka.SDConfig{
+					Server:           "http://eureka.example.com:8761/eureka",
+					RefreshInterval:  model.Duration(30 * time.Second),
+					HTTPClientConfig: config.DefaultHTTPClientConfig,
+				},
+			},
+		},
+		{
+			JobName: "scaleway",
+
+			HonorTimestamps:  true,
+			ScrapeInterval:   model.Duration(15 * time.Second),
+			ScrapeTimeout:    DefaultGlobalConfig.ScrapeTimeout,
+			HTTPClientConfig: config.HTTPClientConfig{FollowRedirects: true},
+
 			MetricsPath: DefaultScrapeConfig.MetricsPath,
 			Scheme:      DefaultScrapeConfig.Scheme,
 
-			ServiceDiscoveryConfigs: discovery.Configs{&eureka.SDConfig{
-				Server:          "http://eureka.example.com:8761/eureka",
-				RefreshInterval: model.Duration(30 * time.Second),
+			ServiceDiscoveryConfigs: discovery.Configs{
+				&scaleway.SDConfig{
+					APIURL:           "https://api.scaleway.com",
+					AccessKey:        "SCWXXXXXXXXXXXXXXXXX",
+					HTTPClientConfig: config.HTTPClientConfig{FollowRedirects: true},
+					Port:             80,
+					Project:          "11111111-1111-1111-1111-111111111112",
+					RefreshInterval:  model.Duration(60 * time.Second),
+					Role:             "instance",
+					SecretKey:        "11111111-1111-1111-1111-111111111111",
+					Zone:             "fr-par-1",
+				},
+				&scaleway.SDConfig{
+					APIURL:           "https://api.scaleway.com",
+					AccessKey:        "SCWXXXXXXXXXXXXXXXXX",
+					HTTPClientConfig: config.HTTPClientConfig{FollowRedirects: true},
+					Port:             80,
+					Project:          "11111111-1111-1111-1111-111111111112",
+					RefreshInterval:  model.Duration(60 * time.Second),
+					Role:             "baremetal",
+					SecretKey:        "11111111-1111-1111-1111-111111111111",
+					Zone:             "fr-par-1",
+				},
 			},
+		},
+		{
+			JobName: "linode-instances",
+
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
+
+			MetricsPath:      DefaultScrapeConfig.MetricsPath,
+			Scheme:           DefaultScrapeConfig.Scheme,
+			HTTPClientConfig: config.DefaultHTTPClientConfig,
+
+			ServiceDiscoveryConfigs: discovery.Configs{
+				&linode.SDConfig{
+					HTTPClientConfig: config.HTTPClientConfig{
+						Authorization: &config.Authorization{
+							Type:        "Bearer",
+							Credentials: "abcdef",
+						},
+						FollowRedirects: true,
+					},
+					Port:            80,
+					TagSeparator:    linode.DefaultSDConfig.TagSeparator,
+					RefreshInterval: model.Duration(60 * time.Second),
+				},
 			},
 		},
 	},
 	AlertingConfig: AlertingConfig{
 		AlertmanagerConfigs: []*AlertmanagerConfig{
 			{
-				Scheme:     "https",
-				Timeout:    model.Duration(10 * time.Second),
-				APIVersion: AlertmanagerAPIVersionV1,
+				Scheme:           "https",
+				Timeout:          model.Duration(10 * time.Second),
+				APIVersion:       AlertmanagerAPIVersionV2,
+				HTTPClientConfig: config.DefaultHTTPClientConfig,
 				ServiceDiscoveryConfigs: discovery.Configs{
 					discovery.StaticConfig{
 						{
@@ -720,7 +888,7 @@ var expectedConf = &Config{
 }
 
 func TestYAMLRoundtrip(t *testing.T) {
-	want, err := LoadFile("testdata/roundtrip.good.yml")
+	want, err := LoadFile("testdata/roundtrip.good.yml", false, log.NewNopLogger())
 	require.NoError(t, err)
 
 	out, err := yaml.Marshal(want)
@@ -732,19 +900,33 @@ func TestYAMLRoundtrip(t *testing.T) {
 	require.Equal(t, want, got)
 }
 
+func TestRemoteWriteRetryOnRateLimit(t *testing.T) {
+	want, err := LoadFile("testdata/remote_write_retry_on_rate_limit.good.yml", false, log.NewNopLogger())
+	require.NoError(t, err)
+
+	out, err := yaml.Marshal(want)
+
+	require.NoError(t, err)
+	got := &Config{}
+	require.NoError(t, yaml.UnmarshalStrict(out, got))
+
+	require.Equal(t, true, got.RemoteWriteConfigs[0].QueueConfig.RetryOnRateLimit)
+	require.Equal(t, false, got.RemoteWriteConfigs[1].QueueConfig.RetryOnRateLimit)
+}
+
 func TestLoadConfig(t *testing.T) {
 	// Parse a valid file that sets a global scrape timeout. This tests whether parsing
 	// an overwritten default field in the global config permanently changes the default.
-	_, err := LoadFile("testdata/global_timeout.good.yml")
+	_, err := LoadFile("testdata/global_timeout.good.yml", false, log.NewNopLogger())
 	require.NoError(t, err)
 
-	c, err := LoadFile("testdata/conf.good.yml")
+	c, err := LoadFile("testdata/conf.good.yml", false, log.NewNopLogger())
 	require.NoError(t, err)
 	require.Equal(t, expectedConf, c)
 }
 
 func TestScrapeIntervalLarger(t *testing.T) {
-	c, err := LoadFile("testdata/scrape_interval_larger.good.yml")
+	c, err := LoadFile("testdata/scrape_interval_larger.good.yml", false, log.NewNopLogger())
 	require.NoError(t, err)
 	require.Equal(t, 1, len(c.ScrapeConfigs))
 	for _, sc := range c.ScrapeConfigs {
@@ -754,7 +936,7 @@ func TestScrapeIntervalLarger(t *testing.T) {
 
 // YAML marshaling must not reveal authentication credentials.
 func TestElideSecrets(t *testing.T) {
-	c, err := LoadFile("testdata/conf.good.yml")
+	c, err := LoadFile("testdata/conf.good.yml", false, log.NewNopLogger())
 	require.NoError(t, err)
 
 	secretRe := regexp.MustCompile(`\\u003csecret\\u003e|<secret>`)
@@ -764,33 +946,33 @@ func TestElideSecrets(t *testing.T) {
 	yamlConfig := string(config)
 
 	matches := secretRe.FindAllStringIndex(yamlConfig, -1)
-	require.Equal(t, 10, len(matches), "wrong number of secret matches found")
+	require.Equal(t, 15, len(matches), "wrong number of secret matches found")
 	require.NotContains(t, yamlConfig, "mysecret",
 		"yaml marshal reveals authentication credentials.")
 }
 
 func TestLoadConfigRuleFilesAbsolutePath(t *testing.T) {
 	// Parse a valid file that sets a rule files with an absolute path
-	c, err := LoadFile(ruleFilesConfigFile)
+	c, err := LoadFile(ruleFilesConfigFile, false, log.NewNopLogger())
 	require.NoError(t, err)
 	require.Equal(t, ruleFilesExpectedConf, c)
 }
 
 func TestKubernetesEmptyAPIServer(t *testing.T) {
-	_, err := LoadFile("testdata/kubernetes_empty_apiserver.good.yml")
+	_, err := LoadFile("testdata/kubernetes_empty_apiserver.good.yml", false, log.NewNopLogger())
 	require.NoError(t, err)
 }
 
 func TestKubernetesSelectors(t *testing.T) {
-	_, err := LoadFile("testdata/kubernetes_selectors_endpoints.good.yml")
+	_, err := LoadFile("testdata/kubernetes_selectors_endpoints.good.yml", false, log.NewNopLogger())
 	require.NoError(t, err)
-	_, err = LoadFile("testdata/kubernetes_selectors_node.good.yml")
+	_, err = LoadFile("testdata/kubernetes_selectors_node.good.yml", false, log.NewNopLogger())
 	require.NoError(t, err)
-	_, err = LoadFile("testdata/kubernetes_selectors_ingress.good.yml")
+	_, err = LoadFile("testdata/kubernetes_selectors_ingress.good.yml", false, log.NewNopLogger())
 	require.NoError(t, err)
-	_, err = LoadFile("testdata/kubernetes_selectors_pod.good.yml")
+	_, err = LoadFile("testdata/kubernetes_selectors_pod.good.yml", false, log.NewNopLogger())
 	require.NoError(t, err)
-	_, err = LoadFile("testdata/kubernetes_selectors_service.good.yml")
+	_, err = LoadFile("testdata/kubernetes_selectors_service.good.yml", false, log.NewNopLogger())
 	require.NoError(t, err)
 }
 
@@ -866,7 +1048,7 @@ var expectedErrors = []struct {
 		errMsg:   "at most one of bearer_token & bearer_token_file must be configured",
 	}, {
 		filename: "bearertoken_basicauth.bad.yml",
-		errMsg:   "at most one of basic_auth, bearer_token & bearer_token_file must be configured",
+		errMsg:   "at most one of basic_auth, oauth2, bearer_token & bearer_token_file must be configured",
 	}, {
 		filename: "kubernetes_http_config_without_api_server.bad.yml",
 		errMsg:   "to use custom HTTP client configuration please provide the 'api_server' URL explicitly",
@@ -902,7 +1084,10 @@ var expectedErrors = []struct {
 		errMsg:   "invalid selector: 'metadata.status-Running'; can't understand 'metadata.status-Running'",
 	}, {
 		filename: "kubernetes_bearertoken_basicauth.bad.yml",
-		errMsg:   "at most one of basic_auth, bearer_token & bearer_token_file must be configured",
+		errMsg:   "at most one of basic_auth, oauth2, bearer_token & bearer_token_file must be configured",
+	}, {
+		filename: "kubernetes_authorization_basicauth.bad.yml",
+		errMsg:   "at most one of basic_auth, oauth2 & authorization must be configured",
 	}, {
 		filename: "marathon_no_servers.bad.yml",
 		errMsg:   "marathon_sd: must contain at least one Marathon server",
@@ -915,6 +1100,9 @@ var expectedErrors = []struct {
 	}, {
 		filename: "marathon_authtoken_bearertoken.bad.yml",
 		errMsg:   "marathon_sd: at most one of bearer_token, bearer_token_file, auth_token & auth_token_file must be configured",
+	}, {
+		filename: "marathon_authtoken_authorization.bad.yml",
+		errMsg:   "marathon_sd: at most one of auth_token, auth_token_file & authorization must be configured",
 	}, {
 		filename: "openstack_role.bad.yml",
 		errMsg:   "unknown OpenStack SD role",
@@ -936,6 +1124,15 @@ var expectedErrors = []struct {
 	}, {
 		filename: "remote_read_url_missing.bad.yml",
 		errMsg:   `url for remote_read is empty`,
+	}, {
+		filename: "remote_write_header.bad.yml",
+		errMsg:   `x-prometheus-remote-write-version is a reserved header. It must not be changed`,
+	}, {
+		filename: "remote_read_header.bad.yml",
+		errMsg:   `x-prometheus-remote-write-version is a reserved header. It must not be changed`,
+	}, {
+		filename: "remote_write_authorization_header.bad.yml",
+		errMsg:   `authorization header must be changed via the basic_auth, authorization, oauth2, or sigv4 parameter`,
 	}, {
 		filename: "remote_write_url_missing.bad.yml",
 		errMsg:   `url for remote_write is empty`,
@@ -1022,11 +1219,27 @@ var expectedErrors = []struct {
 		filename: "eureka_invalid_server.bad.yml",
 		errMsg:   "invalid eureka server URL",
 	},
+	{
+		filename: "scaleway_role.bad.yml",
+		errMsg:   `unknown role "invalid"`,
+	},
+	{
+		filename: "scaleway_no_secret.bad.yml",
+		errMsg:   "one of secret_key & secret_key_file must be configured",
+	},
+	{
+		filename: "scaleway_two_secrets.bad.yml",
+		errMsg:   "at most one of secret_key & secret_key_file must be configured",
+	},
+	{
+		filename: "scrape_body_size_limit.bad.yml",
+		errMsg:   "units: unknown unit  in 100",
+	},
 }
 
 func TestBadConfigs(t *testing.T) {
 	for _, ee := range expectedErrors {
-		_, err := LoadFile("testdata/" + ee.filename)
+		_, err := LoadFile("testdata/"+ee.filename, false, log.NewNopLogger())
 		require.Error(t, err, "%s", ee.filename)
 		require.Contains(t, err.Error(), ee.errMsg,
 			"Expected error for %s to contain %q but got: %s", ee.filename, ee.errMsg, err)
@@ -1050,14 +1263,38 @@ func TestBadStaticConfigsYML(t *testing.T) {
 }
 
 func TestEmptyConfig(t *testing.T) {
-	c, err := Load("")
+	c, err := Load("", false, log.NewNopLogger())
 	require.NoError(t, err)
 	exp := DefaultConfig
 	require.Equal(t, exp, *c)
 }
 
+func TestExpandExternalLabels(t *testing.T) {
+	// Cleanup ant TEST env variable that could exist on the system.
+	os.Setenv("TEST", "")
+
+	c, err := LoadFile("testdata/external_labels.good.yml", false, log.NewNopLogger())
+	require.NoError(t, err)
+	require.Equal(t, labels.Label{Name: "bar", Value: "foo"}, c.GlobalConfig.ExternalLabels[0])
+	require.Equal(t, labels.Label{Name: "baz", Value: "foo${TEST}bar"}, c.GlobalConfig.ExternalLabels[1])
+	require.Equal(t, labels.Label{Name: "foo", Value: "${TEST}"}, c.GlobalConfig.ExternalLabels[2])
+
+	c, err = LoadFile("testdata/external_labels.good.yml", true, log.NewNopLogger())
+	require.NoError(t, err)
+	require.Equal(t, labels.Label{Name: "bar", Value: "foo"}, c.GlobalConfig.ExternalLabels[0])
+	require.Equal(t, labels.Label{Name: "baz", Value: "foobar"}, c.GlobalConfig.ExternalLabels[1])
+	require.Equal(t, labels.Label{Name: "foo", Value: ""}, c.GlobalConfig.ExternalLabels[2])
+
+	os.Setenv("TEST", "TestValue")
+	c, err = LoadFile("testdata/external_labels.good.yml", true, log.NewNopLogger())
+	require.NoError(t, err)
+	require.Equal(t, labels.Label{Name: "bar", Value: "foo"}, c.GlobalConfig.ExternalLabels[0])
+	require.Equal(t, labels.Label{Name: "baz", Value: "fooTestValuebar"}, c.GlobalConfig.ExternalLabels[1])
+	require.Equal(t, labels.Label{Name: "foo", Value: "TestValue"}, c.GlobalConfig.ExternalLabels[2])
+}
+
 func TestEmptyGlobalBlock(t *testing.T) {
-	c, err := Load("global:\n")
+	c, err := Load("global:\n", false, log.NewNopLogger())
 	require.NoError(t, err)
 	exp := DefaultConfig
 	require.Equal(t, exp, *c)

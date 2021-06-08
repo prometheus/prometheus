@@ -41,6 +41,8 @@ class GraphControls extends Component<GraphControlsProps> {
     14 * 24 * 60 * 60,
     28 * 24 * 60 * 60,
     56 * 24 * 60 * 60,
+    112 * 24 * 60 * 60,
+    182 * 24 * 60 * 60,
     365 * 24 * 60 * 60,
     730 * 24 * 60 * 60,
   ].map(s => s * 1000);
@@ -101,6 +103,9 @@ class GraphControls extends Component<GraphControlsProps> {
             defaultValue={formatDuration(this.props.range)}
             innerRef={this.rangeRef}
             onBlur={() => this.onChangeRangeInput(this.rangeRef.current!.value)}
+            onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) =>
+              e.key === 'Enter' && this.onChangeRangeInput(this.rangeRef.current!.value)
+            }
           />
 
           <InputGroupAddon addonType="append">

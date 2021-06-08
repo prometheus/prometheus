@@ -181,9 +181,11 @@ type errQuerier struct {
 func (q *errQuerier) Select(bool, *storage.SelectHints, ...*labels.Matcher) storage.SeriesSet {
 	return errSeriesSet{err: q.err}
 }
-func (*errQuerier) LabelValues(string) ([]string, storage.Warnings, error) { return nil, nil, nil }
-func (*errQuerier) LabelNames() ([]string, storage.Warnings, error)        { return nil, nil, nil }
-func (*errQuerier) Close() error                                           { return nil }
+func (*errQuerier) LabelValues(string, ...*labels.Matcher) ([]string, storage.Warnings, error) {
+	return nil, nil, nil
+}
+func (*errQuerier) LabelNames() ([]string, storage.Warnings, error) { return nil, nil, nil }
+func (*errQuerier) Close() error                                    { return nil }
 
 // errSeriesSet implements storage.SeriesSet which always returns error.
 type errSeriesSet struct {
@@ -246,11 +248,12 @@ func (h *hintRecordingQuerier) Select(sortSeries bool, hints *storage.SelectHint
 
 func TestSelectHintsSetCorrectly(t *testing.T) {
 	opts := EngineOpts{
-		Logger:        nil,
-		Reg:           nil,
-		MaxSamples:    10,
-		Timeout:       10 * time.Second,
-		LookbackDelta: 5 * time.Second,
+		Logger:           nil,
+		Reg:              nil,
+		MaxSamples:       10,
+		Timeout:          10 * time.Second,
+		LookbackDelta:    5 * time.Second,
+		EnableAtModifier: true,
 	}
 
 	for _, tc := range []struct {
@@ -268,14 +271,44 @@ func TestSelectHintsSetCorrectly(t *testing.T) {
 			{Start: 5000, End: 10000},
 		},
 	}, {
+		query: "foo @ 15", start: 10000,
+		expected: []*storage.SelectHints{
+			{Start: 10000, End: 15000},
+		},
+	}, {
+		query: "foo @ 1", start: 10000,
+		expected: []*storage.SelectHints{
+			{Start: -4000, End: 1000},
+		},
+	}, {
 		query: "foo[2m]", start: 200000,
 		expected: []*storage.SelectHints{
 			{Start: 80000, End: 200000, Range: 120000},
 		},
 	}, {
+		query: "foo[2m] @ 180", start: 200000,
+		expected: []*storage.SelectHints{
+			{Start: 60000, End: 180000, Range: 120000},
+		},
+	}, {
+		query: "foo[2m] @ 300", start: 200000,
+		expected: []*storage.SelectHints{
+			{Start: 180000, End: 300000, Range: 120000},
+		},
+	}, {
+		query: "foo[2m] @ 60", start: 200000,
+		expected: []*storage.SelectHints{
+			{Start: -60000, End: 60000, Range: 120000},
+		},
+	}, {
 		query: "foo[2m] offset 2m", start: 300000,
 		expected: []*storage.SelectHints{
 			{Start: 60000, End: 180000, Range: 120000},
+		},
+	}, {
+		query: "foo[2m] @ 200 offset 2m", start: 300000,
+		expected: []*storage.SelectHints{
+			{Start: -40000, End: 80000, Range: 120000},
 		},
 	}, {
 		query: "foo[2m:1s]", start: 300000,
@@ -288,6 +321,21 @@ func TestSelectHintsSetCorrectly(t *testing.T) {
 			{Start: 175000, End: 300000, Func: "count_over_time"},
 		},
 	}, {
+		query: "count_over_time(foo[2m:1s] @ 300)", start: 200000,
+		expected: []*storage.SelectHints{
+			{Start: 175000, End: 300000, Func: "count_over_time"},
+		},
+	}, {
+		query: "count_over_time(foo[2m:1s] @ 200)", start: 200000,
+		expected: []*storage.SelectHints{
+			{Start: 75000, End: 200000, Func: "count_over_time"},
+		},
+	}, {
+		query: "count_over_time(foo[2m:1s] @ 100)", start: 200000,
+		expected: []*storage.SelectHints{
+			{Start: -25000, End: 100000, Func: "count_over_time"},
+		},
+	}, {
 		query: "count_over_time(foo[2m:1s] offset 10s)", start: 300000,
 		expected: []*storage.SelectHints{
 			{Start: 165000, End: 290000, Func: "count_over_time"},
@@ -298,10 +346,54 @@ func TestSelectHintsSetCorrectly(t *testing.T) {
 			{Start: 155000, End: 280000, Func: "count_over_time"},
 		},
 	}, {
+		// When the @ is on the vector selector, the enclosing subquery parameters
+		// don't affect the hint ranges.
+		query: "count_over_time((foo @ 200 offset 10s)[2m:1s] offset 10s)", start: 300000,
+		expected: []*storage.SelectHints{
+			{Start: 185000, End: 190000, Func: "count_over_time"},
+		},
+	}, {
+		// When the @ is on the vector selector, the enclosing subquery parameters
+		// don't affect the hint ranges.
+		query: "count_over_time((foo @ 200 offset 10s)[2m:1s] @ 100 offset 10s)", start: 300000,
+		expected: []*storage.SelectHints{
+			{Start: 185000, End: 190000, Func: "count_over_time"},
+		},
+	}, {
+		query: "count_over_time((foo offset 10s)[2m:1s] @ 100 offset 10s)", start: 300000,
+		expected: []*storage.SelectHints{
+			{Start: -45000, End: 80000, Func: "count_over_time"},
+		},
+	}, {
 
 		query: "foo", start: 10000, end: 20000,
 		expected: []*storage.SelectHints{
 			{Start: 5000, End: 20000, Step: 1000},
+		},
+	}, {
+		query: "foo @ 15", start: 10000, end: 20000,
+		expected: []*storage.SelectHints{
+			{Start: 10000, End: 15000, Step: 1000},
+		},
+	}, {
+		query: "foo @ 1", start: 10000, end: 20000,
+		expected: []*storage.SelectHints{
+			{Start: -4000, End: 1000, Step: 1000},
+		},
+	}, {
+		query: "rate(foo[2m] @ 180)", start: 200000, end: 500000,
+		expected: []*storage.SelectHints{
+			{Start: 60000, End: 180000, Range: 120000, Func: "rate", Step: 1000},
+		},
+	}, {
+		query: "rate(foo[2m] @ 300)", start: 200000, end: 500000,
+		expected: []*storage.SelectHints{
+			{Start: 180000, End: 300000, Range: 120000, Func: "rate", Step: 1000},
+		},
+	}, {
+		query: "rate(foo[2m] @ 60)", start: 200000, end: 500000,
+		expected: []*storage.SelectHints{
+			{Start: -60000, End: 60000, Range: 120000, Func: "rate", Step: 1000},
 		},
 	}, {
 		query: "rate(foo[2m])", start: 200000, end: 500000,
@@ -329,9 +421,43 @@ func TestSelectHintsSetCorrectly(t *testing.T) {
 			{Start: 165000, End: 490000, Func: "count_over_time", Step: 1000},
 		},
 	}, {
+		query: "count_over_time(foo[2m:1s] @ 300)", start: 200000, end: 500000,
+		expected: []*storage.SelectHints{
+			{Start: 175000, End: 300000, Func: "count_over_time", Step: 1000},
+		},
+	}, {
+		query: "count_over_time(foo[2m:1s] @ 200)", start: 200000, end: 500000,
+		expected: []*storage.SelectHints{
+			{Start: 75000, End: 200000, Func: "count_over_time", Step: 1000},
+		},
+	}, {
+		query: "count_over_time(foo[2m:1s] @ 100)", start: 200000, end: 500000,
+		expected: []*storage.SelectHints{
+			{Start: -25000, End: 100000, Func: "count_over_time", Step: 1000},
+		},
+	}, {
 		query: "count_over_time((foo offset 10s)[2m:1s] offset 10s)", start: 300000, end: 500000,
 		expected: []*storage.SelectHints{
 			{Start: 155000, End: 480000, Func: "count_over_time", Step: 1000},
+		},
+	}, {
+		// When the @ is on the vector selector, the enclosing subquery parameters
+		// don't affect the hint ranges.
+		query: "count_over_time((foo @ 200 offset 10s)[2m:1s] offset 10s)", start: 300000, end: 500000,
+		expected: []*storage.SelectHints{
+			{Start: 185000, End: 190000, Func: "count_over_time", Step: 1000},
+		},
+	}, {
+		// When the @ is on the vector selector, the enclosing subquery parameters
+		// don't affect the hint ranges.
+		query: "count_over_time((foo @ 200 offset 10s)[2m:1s] @ 100 offset 10s)", start: 300000, end: 500000,
+		expected: []*storage.SelectHints{
+			{Start: 185000, End: 190000, Func: "count_over_time", Step: 1000},
+		},
+	}, {
+		query: "count_over_time((foo offset 10s)[2m:1s] @ 100 offset 10s)", start: 300000, end: 500000,
+		expected: []*storage.SelectHints{
+			{Start: -45000, End: 80000, Func: "count_over_time", Step: 1000},
 		},
 	}, {
 		query: "sum by (dim1) (foo)", start: 10000,
@@ -364,7 +490,53 @@ func TestSelectHintsSetCorrectly(t *testing.T) {
 			{Start: 95000, End: 120000, Func: "sum", By: true},
 			{Start: 95000, End: 120000, Func: "max", By: true},
 		},
-	}} {
+	}, {
+		query: "foo @ 50 + bar @ 250 + baz @ 900", start: 100000, end: 500000,
+		expected: []*storage.SelectHints{
+			{Start: 45000, End: 50000, Step: 1000},
+			{Start: 245000, End: 250000, Step: 1000},
+			{Start: 895000, End: 900000, Step: 1000},
+		},
+	}, {
+		query: "foo @ 50 + bar + baz @ 900", start: 100000, end: 500000,
+		expected: []*storage.SelectHints{
+			{Start: 45000, End: 50000, Step: 1000},
+			{Start: 95000, End: 500000, Step: 1000},
+			{Start: 895000, End: 900000, Step: 1000},
+		},
+	}, {
+		query: "rate(foo[2s] @ 50) + bar @ 250 + baz @ 900", start: 100000, end: 500000,
+		expected: []*storage.SelectHints{
+			{Start: 48000, End: 50000, Step: 1000, Func: "rate", Range: 2000},
+			{Start: 245000, End: 250000, Step: 1000},
+			{Start: 895000, End: 900000, Step: 1000},
+		},
+	}, {
+		query: "rate(foo[2s:1s] @ 50) + bar + baz", start: 100000, end: 500000,
+		expected: []*storage.SelectHints{
+			{Start: 43000, End: 50000, Step: 1000, Func: "rate"},
+			{Start: 95000, End: 500000, Step: 1000},
+			{Start: 95000, End: 500000, Step: 1000},
+		},
+	}, {
+		query: "rate(foo[2s:1s] @ 50) + bar + rate(baz[2m:1s] @ 900 offset 2m) ", start: 100000, end: 500000,
+		expected: []*storage.SelectHints{
+			{Start: 43000, End: 50000, Step: 1000, Func: "rate"},
+			{Start: 95000, End: 500000, Step: 1000},
+			{Start: 655000, End: 780000, Step: 1000, Func: "rate"},
+		},
+	}, { // Hints are based on the inner most subquery timestamp.
+		query: `sum_over_time(sum_over_time(metric{job="1"}[100s])[100s:25s] @ 50)[3s:1s] @ 3000`, start: 100000,
+		expected: []*storage.SelectHints{
+			{Start: -150000, End: 50000, Range: 100000, Func: "sum_over_time"},
+		},
+	}, { // Hints are based on the inner most subquery timestamp.
+		query: `sum_over_time(sum_over_time(metric{job="1"}[100s])[100s:25s] @ 3000)[3s:1s] @ 50`,
+		expected: []*storage.SelectHints{
+			{Start: 2800000, End: 3000000, Range: 100000, Func: "sum_over_time"},
+		},
+	},
+	} {
 		t.Run(tc.query, func(t *testing.T) {
 			engine := NewEngine(opts)
 			hintsRecorder := &noopHintRecordingQueryable{}
@@ -545,9 +717,9 @@ load 10s
 func TestMaxQuerySamples(t *testing.T) {
 	test, err := NewTest(t, `
 load 10s
-  metric 1 2
-  bigmetric{a="1"} 1 2
-  bigmetric{a="2"} 1 2
+  metric 1+1x100
+  bigmetric{a="1"} 1+1x100
+  bigmetric{a="2"} 1+1x100
 `)
 	require.NoError(t, err)
 	defer test.Close()
@@ -555,10 +727,11 @@ load 10s
 	err = test.Run()
 	require.NoError(t, err)
 
+	// These test cases should be touching the limit exactly (hence no exceeding).
+	// Exceeding the limit will be tested by doing -1 to the MaxSamples.
 	cases := []struct {
 		Query      string
 		MaxSamples int
-		Result     Result
 		Start      time.Time
 		End        time.Time
 		Interval   time.Duration
@@ -567,209 +740,371 @@ load 10s
 		{
 			Query:      "1",
 			MaxSamples: 1,
-			Result: Result{
-				nil,
-				Scalar{V: 1, T: 1000},
-				nil},
-			Start: time.Unix(1, 0),
-		},
-		{
-			Query:      "1",
-			MaxSamples: 0,
-			Result: Result{
-				ErrTooManySamples(env),
-				nil,
-				nil,
-			},
-			Start: time.Unix(1, 0),
-		},
-		{
-			Query:      "metric",
-			MaxSamples: 0,
-			Result: Result{
-				ErrTooManySamples(env),
-				nil,
-				nil,
-			},
-			Start: time.Unix(1, 0),
-		},
-		{
+			Start:      time.Unix(1, 0),
+		}, {
 			Query:      "metric",
 			MaxSamples: 1,
-			Result: Result{
-				nil,
-				Vector{
-					Sample{Point: Point{V: 1, T: 1000},
-						Metric: labels.FromStrings("__name__", "metric")},
-				},
-				nil,
-			},
-			Start: time.Unix(1, 0),
-		},
-		{
+			Start:      time.Unix(1, 0),
+		}, {
 			Query:      "metric[20s]",
 			MaxSamples: 2,
-			Result: Result{
-				nil,
-				Matrix{Series{
-					Points: []Point{{V: 1, T: 0}, {V: 2, T: 10000}},
-					Metric: labels.FromStrings("__name__", "metric")},
-				},
-				nil,
-			},
-			Start: time.Unix(10, 0),
-		},
-		{
+			Start:      time.Unix(10, 0),
+		}, {
 			Query:      "rate(metric[20s])",
 			MaxSamples: 3,
-			Result: Result{
-				nil,
-				Vector{
-					Sample{
-						Point:  Point{V: 0.1, T: 10000},
-						Metric: labels.Labels{},
-					},
-				},
-				nil,
-			},
-			Start: time.Unix(10, 0),
-		},
-		{
+			Start:      time.Unix(10, 0),
+		}, {
 			Query:      "metric[20s:5s]",
 			MaxSamples: 3,
-			Result: Result{
-				nil,
-				Matrix{Series{
-					Points: []Point{{V: 1, T: 0}, {V: 1, T: 5000}, {V: 2, T: 10000}},
-					Metric: labels.FromStrings("__name__", "metric")},
-				},
-				nil,
-			},
-			Start: time.Unix(10, 0),
-		},
-		{
-			Query:      "metric[20s]",
-			MaxSamples: 0,
-			Result: Result{
-				ErrTooManySamples(env),
-				nil,
-				nil,
-			},
-			Start: time.Unix(10, 0),
+			Start:      time.Unix(10, 0),
+		}, {
+			Query:      "metric[20s] @ 10",
+			MaxSamples: 2,
+			Start:      time.Unix(0, 0),
 		},
 		// Range queries.
 		{
 			Query:      "1",
 			MaxSamples: 3,
-			Result: Result{
-				nil,
-				Matrix{Series{
-					Points: []Point{{V: 1, T: 0}, {V: 1, T: 1000}, {V: 1, T: 2000}},
-					Metric: labels.FromStrings()},
-				},
-				nil,
-			},
-			Start:    time.Unix(0, 0),
-			End:      time.Unix(2, 0),
-			Interval: time.Second,
-		},
-		{
+			Start:      time.Unix(0, 0),
+			End:        time.Unix(2, 0),
+			Interval:   time.Second,
+		}, {
 			Query:      "1",
-			MaxSamples: 0,
-			Result: Result{
-				ErrTooManySamples(env),
-				nil,
-				nil,
-			},
-			Start:    time.Unix(0, 0),
-			End:      time.Unix(2, 0),
-			Interval: time.Second,
-		},
-		{
+			MaxSamples: 3,
+			Start:      time.Unix(0, 0),
+			End:        time.Unix(2, 0),
+			Interval:   time.Second,
+		}, {
 			Query:      "metric",
 			MaxSamples: 3,
-			Result: Result{
-				nil,
-				Matrix{Series{
-					Points: []Point{{V: 1, T: 0}, {V: 1, T: 1000}, {V: 1, T: 2000}},
-					Metric: labels.FromStrings("__name__", "metric")},
-				},
-				nil,
-			},
-			Start:    time.Unix(0, 0),
-			End:      time.Unix(2, 0),
-			Interval: time.Second,
-		},
-		{
-			Query:      "metric",
-			MaxSamples: 2,
-			Result: Result{
-				ErrTooManySamples(env),
-				nil,
-				nil,
-			},
-			Start:    time.Unix(0, 0),
-			End:      time.Unix(2, 0),
-			Interval: time.Second,
-		},
-		{
+			Start:      time.Unix(0, 0),
+			End:        time.Unix(2, 0),
+			Interval:   time.Second,
+		}, {
 			Query:      "metric",
 			MaxSamples: 3,
-			Result: Result{
-				nil,
-				Matrix{Series{
-					Points: []Point{{V: 1, T: 0}, {V: 1, T: 5000}, {V: 2, T: 10000}},
-					Metric: labels.FromStrings("__name__", "metric")},
-				},
-				nil,
-			},
-			Start:    time.Unix(0, 0),
-			End:      time.Unix(10, 0),
-			Interval: 5 * time.Second,
-		},
-		{
-			Query:      "metric",
-			MaxSamples: 2,
-			Result: Result{
-				ErrTooManySamples(env),
-				nil,
-				nil,
-			},
-			Start:    time.Unix(0, 0),
-			End:      time.Unix(10, 0),
-			Interval: 5 * time.Second,
-		},
-		{
+			Start:      time.Unix(0, 0),
+			End:        time.Unix(10, 0),
+			Interval:   5 * time.Second,
+		}, {
 			Query:      "rate(bigmetric[1s])",
 			MaxSamples: 1,
-			Result: Result{
-				nil,
-				Matrix{},
-				nil,
-			},
-			Start:    time.Unix(0, 0),
-			End:      time.Unix(10, 0),
-			Interval: 5 * time.Second,
+			Start:      time.Unix(0, 0),
+			End:        time.Unix(10, 0),
+			Interval:   5 * time.Second,
+		}, {
+			// Result is duplicated, so @ also produces 3 samples.
+			Query:      "metric @ 10",
+			MaxSamples: 3,
+			Start:      time.Unix(0, 0),
+			End:        time.Unix(10, 0),
+			Interval:   5 * time.Second,
+		}, {
+			// The peak samples in memory is during the first evaluation:
+			//   - Subquery takes 22 samples, 11 for each bigmetric,
+			//   - Result is calculated per series where the series samples is buffered, hence 11 more here.
+			//   - The result of two series is added before the last series buffer is discarded, so 2 more here.
+			//   Hence at peak it is 22 (subquery) + 11 (buffer of a series) + 2 (result from 2 series).
+			// The subquery samples and the buffer is discarded before duplicating.
+			Query:      `rate(bigmetric[10s:1s] @ 10)`,
+			MaxSamples: 35,
+			Start:      time.Unix(0, 0),
+			End:        time.Unix(10, 0),
+			Interval:   5 * time.Second,
+		}, {
+			// Here the reasoning is same as above. But LHS and RHS are done one after another.
+			// So while one of them takes 35 samples at peak, we need to hold the 2 sample
+			// result of the other till then.
+			Query:      `rate(bigmetric[10s:1s] @ 10) + rate(bigmetric[10s:1s] @ 30)`,
+			MaxSamples: 37,
+			Start:      time.Unix(0, 0),
+			End:        time.Unix(10, 0),
+			Interval:   5 * time.Second,
+		}, {
+			// Sample as above but with only 1 part as step invariant.
+			// Here the peak is caused by the non-step invariant part as it touches more time range.
+			// Hence at peak it is 2*21 (subquery from 0s to 20s)
+			//                     + 11 (buffer of a series per evaluation)
+			//                     + 6 (result from 2 series at 3 eval times).
+			Query:      `rate(bigmetric[10s:1s]) + rate(bigmetric[10s:1s] @ 30)`,
+			MaxSamples: 59,
+			Start:      time.Unix(10, 0),
+			End:        time.Unix(20, 0),
+			Interval:   5 * time.Second,
+		}, {
+			// Nested subquery.
+			// We saw that innermost rate takes 35 samples which is still the peak
+			// since the other two subqueries just duplicate the result.
+			Query:      `rate(rate(bigmetric[10s:1s] @ 10)[100s:25s] @ 1000)[100s:20s] @ 2000`,
+			MaxSamples: 35,
+			Start:      time.Unix(10, 0),
+		}, {
+			// Nested subquery.
+			// Now the outmost subquery produces more samples than inner most rate.
+			Query:      `rate(rate(bigmetric[10s:1s] @ 10)[100s:25s] @ 1000)[17s:1s] @ 2000`,
+			MaxSamples: 36,
+			Start:      time.Unix(10, 0),
 		},
 	}
 
 	engine := test.QueryEngine()
 	for _, c := range cases {
-		var err error
-		var qry Query
+		t.Run(c.Query, func(t *testing.T) {
+			testFunc := func(expError error) {
+				var err error
+				var qry Query
+				if c.Interval == 0 {
+					qry, err = engine.NewInstantQuery(test.Queryable(), c.Query, c.Start)
+				} else {
+					qry, err = engine.NewRangeQuery(test.Queryable(), c.Query, c.Start, c.End, c.Interval)
+				}
+				require.NoError(t, err)
 
-		engine.maxSamplesPerQuery = c.MaxSamples
+				res := qry.Exec(test.Context())
+				require.Equal(t, expError, res.Err)
+			}
 
-		if c.Interval == 0 {
-			qry, err = engine.NewInstantQuery(test.Queryable(), c.Query, c.Start)
-		} else {
-			qry, err = engine.NewRangeQuery(test.Queryable(), c.Query, c.Start, c.End, c.Interval)
-		}
+			// Within limit.
+			engine.maxSamplesPerQuery = c.MaxSamples
+			testFunc(nil)
+
+			// Exceeding limit.
+			engine.maxSamplesPerQuery = c.MaxSamples - 1
+			testFunc(ErrTooManySamples(env))
+		})
+	}
+}
+
+func TestAtModifier(t *testing.T) {
+	test, err := NewTest(t, `
+load 10s
+  metric{job="1"} 0+1x1000
+  metric{job="2"} 0+2x1000
+  metric_topk{instance="1"} 0+1x1000
+  metric_topk{instance="2"} 0+2x1000
+  metric_topk{instance="3"} 1000-1x1000
+
+load 1ms
+  metric_ms 0+1x10000
+`)
+	require.NoError(t, err)
+	defer test.Close()
+
+	err = test.Run()
+	require.NoError(t, err)
+
+	lbls1 := labels.FromStrings("__name__", "metric", "job", "1")
+	lbls2 := labels.FromStrings("__name__", "metric", "job", "2")
+	lblstopk2 := labels.FromStrings("__name__", "metric_topk", "instance", "2")
+	lblstopk3 := labels.FromStrings("__name__", "metric_topk", "instance", "3")
+	lblsms := labels.FromStrings("__name__", "metric_ms")
+	lblsneg := labels.FromStrings("__name__", "metric_neg")
+
+	// Add some samples with negative timestamp.
+	db := test.TSDB()
+	app := db.Appender(context.Background())
+	ref, err := app.Append(0, lblsneg, -1000000, 1000)
+	require.NoError(t, err)
+	for ts := int64(-1000000 + 1000); ts <= 0; ts += 1000 {
+		_, err := app.Append(ref, nil, ts, -float64(ts/1000)+1)
 		require.NoError(t, err)
+	}
 
-		res := qry.Exec(test.Context())
-		require.Equal(t, c.Result.Err, res.Err)
-		require.Equal(t, c.Result.Value, res.Value, "query %q failed", c.Query)
+	// To test the fix for https://github.com/prometheus/prometheus/issues/8433.
+	_, err = app.Append(0, labels.FromStrings("__name__", "metric_timestamp"), 3600*1000, 1000)
+	require.NoError(t, err)
+
+	require.NoError(t, app.Commit())
+
+	cases := []struct {
+		query                string
+		start, end, interval int64 // Time in seconds.
+		result               parser.Value
+	}{
+		{ // Time of the result is the evaluation time.
+			query: `metric_neg @ 0`,
+			start: 100,
+			result: Vector{
+				Sample{Point: Point{V: 1, T: 100000}, Metric: lblsneg},
+			},
+		}, {
+			query: `metric_neg @ -200`,
+			start: 100,
+			result: Vector{
+				Sample{Point: Point{V: 201, T: 100000}, Metric: lblsneg},
+			},
+		}, {
+			query: `metric{job="2"} @ 50`,
+			start: -2, end: 2, interval: 1,
+			result: Matrix{
+				Series{
+					Points: []Point{{V: 10, T: -2000}, {V: 10, T: -1000}, {V: 10, T: 0}, {V: 10, T: 1000}, {V: 10, T: 2000}},
+					Metric: lbls2,
+				},
+			},
+		}, { // Timestamps for matrix selector does not depend on the evaluation time.
+			query: "metric[20s] @ 300",
+			start: 10,
+			result: Matrix{
+				Series{
+					Points: []Point{{V: 28, T: 280000}, {V: 29, T: 290000}, {V: 30, T: 300000}},
+					Metric: lbls1,
+				},
+				Series{
+					Points: []Point{{V: 56, T: 280000}, {V: 58, T: 290000}, {V: 60, T: 300000}},
+					Metric: lbls2,
+				},
+			},
+		}, {
+			query: `metric_neg[2s] @ 0`,
+			start: 100,
+			result: Matrix{
+				Series{
+					Points: []Point{{V: 3, T: -2000}, {V: 2, T: -1000}, {V: 1, T: 0}},
+					Metric: lblsneg,
+				},
+			},
+		}, {
+			query: `metric_neg[3s] @ -500`,
+			start: 100,
+			result: Matrix{
+				Series{
+					Points: []Point{{V: 504, T: -503000}, {V: 503, T: -502000}, {V: 502, T: -501000}, {V: 501, T: -500000}},
+					Metric: lblsneg,
+				},
+			},
+		}, {
+			query: `metric_ms[3ms] @ 2.345`,
+			start: 100,
+			result: Matrix{
+				Series{
+					Points: []Point{{V: 2342, T: 2342}, {V: 2343, T: 2343}, {V: 2344, T: 2344}, {V: 2345, T: 2345}},
+					Metric: lblsms,
+				},
+			},
+		}, {
+			query: "metric[100s:25s] @ 300",
+			start: 100,
+			result: Matrix{
+				Series{
+					Points: []Point{{V: 20, T: 200000}, {V: 22, T: 225000}, {V: 25, T: 250000}, {V: 27, T: 275000}, {V: 30, T: 300000}},
+					Metric: lbls1,
+				},
+				Series{
+					Points: []Point{{V: 40, T: 200000}, {V: 44, T: 225000}, {V: 50, T: 250000}, {V: 54, T: 275000}, {V: 60, T: 300000}},
+					Metric: lbls2,
+				},
+			},
+		}, {
+			query: "metric_neg[50s:25s] @ 0",
+			start: 100,
+			result: Matrix{
+				Series{
+					Points: []Point{{V: 51, T: -50000}, {V: 26, T: -25000}, {V: 1, T: 0}},
+					Metric: lblsneg,
+				},
+			},
+		}, {
+			query: "metric_neg[50s:25s] @ -100",
+			start: 100,
+			result: Matrix{
+				Series{
+					Points: []Point{{V: 151, T: -150000}, {V: 126, T: -125000}, {V: 101, T: -100000}},
+					Metric: lblsneg,
+				},
+			},
+		}, {
+			query: `metric_ms[100ms:25ms] @ 2.345`,
+			start: 100,
+			result: Matrix{
+				Series{
+					Points: []Point{{V: 2250, T: 2250}, {V: 2275, T: 2275}, {V: 2300, T: 2300}, {V: 2325, T: 2325}},
+					Metric: lblsms,
+				},
+			},
+		}, {
+			query: `metric_topk and topk(1, sum_over_time(metric_topk[50s] @ 100))`,
+			start: 50, end: 80, interval: 10,
+			result: Matrix{
+				Series{
+					Points: []Point{{V: 995, T: 50000}, {V: 994, T: 60000}, {V: 993, T: 70000}, {V: 992, T: 80000}},
+					Metric: lblstopk3,
+				},
+			},
+		}, {
+			query: `metric_topk and topk(1, sum_over_time(metric_topk[50s] @ 5000))`,
+			start: 50, end: 80, interval: 10,
+			result: Matrix{
+				Series{
+					Points: []Point{{V: 10, T: 50000}, {V: 12, T: 60000}, {V: 14, T: 70000}, {V: 16, T: 80000}},
+					Metric: lblstopk2,
+				},
+			},
+		}, {
+			query: `metric_topk and topk(1, sum_over_time(metric_topk[50s] @ end()))`,
+			start: 70, end: 100, interval: 10,
+			result: Matrix{
+				Series{
+					Points: []Point{{V: 993, T: 70000}, {V: 992, T: 80000}, {V: 991, T: 90000}, {V: 990, T: 100000}},
+					Metric: lblstopk3,
+				},
+			},
+		}, {
+			query: `metric_topk and topk(1, sum_over_time(metric_topk[50s] @ start()))`,
+			start: 100, end: 130, interval: 10,
+			result: Matrix{
+				Series{
+					Points: []Point{{V: 990, T: 100000}, {V: 989, T: 110000}, {V: 988, T: 120000}, {V: 987, T: 130000}},
+					Metric: lblstopk3,
+				},
+			},
+		}, {
+			// Tests for https://github.com/prometheus/prometheus/issues/8433.
+			// The trick here is that the query range should be > lookback delta.
+			query: `timestamp(metric_timestamp @ 3600)`,
+			start: 0, end: 7 * 60, interval: 60,
+			result: Matrix{
+				Series{
+					Points: []Point{
+						{V: 3600, T: 0},
+						{V: 3600, T: 60 * 1000},
+						{V: 3600, T: 2 * 60 * 1000},
+						{V: 3600, T: 3 * 60 * 1000},
+						{V: 3600, T: 4 * 60 * 1000},
+						{V: 3600, T: 5 * 60 * 1000},
+						{V: 3600, T: 6 * 60 * 1000},
+						{V: 3600, T: 7 * 60 * 1000},
+					},
+					Metric: labels.Labels{},
+				},
+			},
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.query, func(t *testing.T) {
+			if c.interval == 0 {
+				c.interval = 1
+			}
+			start, end, interval := time.Unix(c.start, 0), time.Unix(c.end, 0), time.Duration(c.interval)*time.Second
+			var err error
+			var qry Query
+			if c.end == 0 {
+				qry, err = test.QueryEngine().NewInstantQuery(test.Queryable(), c.query, start)
+			} else {
+				qry, err = test.QueryEngine().NewRangeQuery(test.Queryable(), c.query, start, end, interval)
+			}
+			require.NoError(t, err)
+
+			res := qry.Exec(test.Context())
+			require.NoError(t, res.Err)
+			if expMat, ok := c.result.(Matrix); ok {
+				sort.Sort(expMat)
+				sort.Sort(res.Value.(Matrix))
+			}
+			require.Equal(t, c.result, res.Value, "query %q failed", c.query)
+		})
 	}
 }
 
@@ -1200,5 +1535,903 @@ func TestQueryLogger_error(t *testing.T) {
 
 	for i, field := range []interface{}{"params", map[string]interface{}{"query": "test statement"}, "error", testErr} {
 		require.Equal(t, f1.logs[i], field)
+	}
+}
+
+func TestPreprocessAndWrapWithStepInvariantExpr(t *testing.T) {
+	startTime := time.Unix(1000, 0)
+	endTime := time.Unix(9999, 0)
+	var testCases = []struct {
+		input    string      // The input to be parsed.
+		expected parser.Expr // The expected expression AST.
+	}{
+		{
+			input: "123.4567",
+			expected: &parser.StepInvariantExpr{
+				Expr: &parser.NumberLiteral{
+					Val:      123.4567,
+					PosRange: parser.PositionRange{Start: 0, End: 8},
+				},
+			},
+		}, {
+			input: `"foo"`,
+			expected: &parser.StepInvariantExpr{
+				Expr: &parser.StringLiteral{
+					Val:      "foo",
+					PosRange: parser.PositionRange{Start: 0, End: 5},
+				},
+			},
+		}, {
+			input: "foo * bar",
+			expected: &parser.BinaryExpr{
+				Op: parser.MUL,
+				LHS: &parser.VectorSelector{
+					Name: "foo",
+					LabelMatchers: []*labels.Matcher{
+						parser.MustLabelMatcher(labels.MatchEqual, "__name__", "foo"),
+					},
+					PosRange: parser.PositionRange{
+						Start: 0,
+						End:   3,
+					},
+				},
+				RHS: &parser.VectorSelector{
+					Name: "bar",
+					LabelMatchers: []*labels.Matcher{
+						parser.MustLabelMatcher(labels.MatchEqual, "__name__", "bar"),
+					},
+					PosRange: parser.PositionRange{
+						Start: 6,
+						End:   9,
+					},
+				},
+				VectorMatching: &parser.VectorMatching{Card: parser.CardOneToOne},
+			},
+		}, {
+			input: "foo * bar @ 10",
+			expected: &parser.BinaryExpr{
+				Op: parser.MUL,
+				LHS: &parser.VectorSelector{
+					Name: "foo",
+					LabelMatchers: []*labels.Matcher{
+						parser.MustLabelMatcher(labels.MatchEqual, "__name__", "foo"),
+					},
+					PosRange: parser.PositionRange{
+						Start: 0,
+						End:   3,
+					},
+				},
+				RHS: &parser.StepInvariantExpr{
+					Expr: &parser.VectorSelector{
+						Name: "bar",
+						LabelMatchers: []*labels.Matcher{
+							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "bar"),
+						},
+						PosRange: parser.PositionRange{
+							Start: 6,
+							End:   14,
+						},
+						Timestamp: makeInt64Pointer(10000),
+					},
+				},
+				VectorMatching: &parser.VectorMatching{Card: parser.CardOneToOne},
+			},
+		}, {
+			input: "foo @ 20 * bar @ 10",
+			expected: &parser.StepInvariantExpr{
+				Expr: &parser.BinaryExpr{
+					Op: parser.MUL,
+					LHS: &parser.VectorSelector{
+						Name: "foo",
+						LabelMatchers: []*labels.Matcher{
+							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "foo"),
+						},
+						PosRange: parser.PositionRange{
+							Start: 0,
+							End:   8,
+						},
+						Timestamp: makeInt64Pointer(20000),
+					},
+					RHS: &parser.VectorSelector{
+						Name: "bar",
+						LabelMatchers: []*labels.Matcher{
+							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "bar"),
+						},
+						PosRange: parser.PositionRange{
+							Start: 11,
+							End:   19,
+						},
+						Timestamp: makeInt64Pointer(10000),
+					},
+					VectorMatching: &parser.VectorMatching{Card: parser.CardOneToOne},
+				},
+			},
+		}, {
+			input: "test[5s]",
+			expected: &parser.MatrixSelector{
+				VectorSelector: &parser.VectorSelector{
+					Name: "test",
+					LabelMatchers: []*labels.Matcher{
+						parser.MustLabelMatcher(labels.MatchEqual, "__name__", "test"),
+					},
+					PosRange: parser.PositionRange{
+						Start: 0,
+						End:   4,
+					},
+				},
+				Range:  5 * time.Second,
+				EndPos: 8,
+			},
+		}, {
+			input: `test{a="b"}[5y] @ 1603774699`,
+			expected: &parser.StepInvariantExpr{
+				Expr: &parser.MatrixSelector{
+					VectorSelector: &parser.VectorSelector{
+						Name:      "test",
+						Timestamp: makeInt64Pointer(1603774699000),
+						LabelMatchers: []*labels.Matcher{
+							parser.MustLabelMatcher(labels.MatchEqual, "a", "b"),
+							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "test"),
+						},
+						PosRange: parser.PositionRange{
+							Start: 0,
+							End:   11,
+						},
+					},
+					Range:  5 * 365 * 24 * time.Hour,
+					EndPos: 28,
+				},
+			},
+		}, {
+			input: "sum by (foo)(some_metric)",
+			expected: &parser.AggregateExpr{
+				Op: parser.SUM,
+				Expr: &parser.VectorSelector{
+					Name: "some_metric",
+					LabelMatchers: []*labels.Matcher{
+						parser.MustLabelMatcher(labels.MatchEqual, "__name__", "some_metric"),
+					},
+					PosRange: parser.PositionRange{
+						Start: 13,
+						End:   24,
+					},
+				},
+				Grouping: []string{"foo"},
+				PosRange: parser.PositionRange{
+					Start: 0,
+					End:   25,
+				},
+			},
+		}, {
+			input: "sum by (foo)(some_metric @ 10)",
+			expected: &parser.StepInvariantExpr{
+				Expr: &parser.AggregateExpr{
+					Op: parser.SUM,
+					Expr: &parser.VectorSelector{
+						Name: "some_metric",
+						LabelMatchers: []*labels.Matcher{
+							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "some_metric"),
+						},
+						PosRange: parser.PositionRange{
+							Start: 13,
+							End:   29,
+						},
+						Timestamp: makeInt64Pointer(10000),
+					},
+					Grouping: []string{"foo"},
+					PosRange: parser.PositionRange{
+						Start: 0,
+						End:   30,
+					},
+				},
+			},
+		}, {
+			input: "sum(some_metric1 @ 10) + sum(some_metric2 @ 20)",
+			expected: &parser.StepInvariantExpr{
+				Expr: &parser.BinaryExpr{
+					Op:             parser.ADD,
+					VectorMatching: &parser.VectorMatching{},
+					LHS: &parser.AggregateExpr{
+						Op: parser.SUM,
+						Expr: &parser.VectorSelector{
+							Name: "some_metric1",
+							LabelMatchers: []*labels.Matcher{
+								parser.MustLabelMatcher(labels.MatchEqual, "__name__", "some_metric1"),
+							},
+							PosRange: parser.PositionRange{
+								Start: 4,
+								End:   21,
+							},
+							Timestamp: makeInt64Pointer(10000),
+						},
+						PosRange: parser.PositionRange{
+							Start: 0,
+							End:   22,
+						},
+					},
+					RHS: &parser.AggregateExpr{
+						Op: parser.SUM,
+						Expr: &parser.VectorSelector{
+							Name: "some_metric2",
+							LabelMatchers: []*labels.Matcher{
+								parser.MustLabelMatcher(labels.MatchEqual, "__name__", "some_metric2"),
+							},
+							PosRange: parser.PositionRange{
+								Start: 29,
+								End:   46,
+							},
+							Timestamp: makeInt64Pointer(20000),
+						},
+						PosRange: parser.PositionRange{
+							Start: 25,
+							End:   47,
+						},
+					},
+				},
+			},
+		}, {
+			input: "some_metric and topk(5, rate(some_metric[1m] @ 20))",
+			expected: &parser.BinaryExpr{
+				Op: parser.LAND,
+				VectorMatching: &parser.VectorMatching{
+					Card: parser.CardManyToMany,
+				},
+				LHS: &parser.VectorSelector{
+					Name: "some_metric",
+					LabelMatchers: []*labels.Matcher{
+						parser.MustLabelMatcher(labels.MatchEqual, "__name__", "some_metric"),
+					},
+					PosRange: parser.PositionRange{
+						Start: 0,
+						End:   11,
+					},
+				},
+				RHS: &parser.StepInvariantExpr{
+					Expr: &parser.AggregateExpr{
+						Op: parser.TOPK,
+						Expr: &parser.Call{
+							Func: parser.MustGetFunction("rate"),
+							Args: parser.Expressions{
+								&parser.MatrixSelector{
+									VectorSelector: &parser.VectorSelector{
+										Name: "some_metric",
+										LabelMatchers: []*labels.Matcher{
+											parser.MustLabelMatcher(labels.MatchEqual, "__name__", "some_metric"),
+										},
+										PosRange: parser.PositionRange{
+											Start: 29,
+											End:   40,
+										},
+										Timestamp: makeInt64Pointer(20000),
+									},
+									Range:  1 * time.Minute,
+									EndPos: 49,
+								},
+							},
+							PosRange: parser.PositionRange{
+								Start: 24,
+								End:   50,
+							},
+						},
+						Param: &parser.NumberLiteral{
+							Val: 5,
+							PosRange: parser.PositionRange{
+								Start: 21,
+								End:   22,
+							},
+						},
+						PosRange: parser.PositionRange{
+							Start: 16,
+							End:   51,
+						},
+					},
+				},
+			},
+		}, {
+			input: "time()",
+			expected: &parser.Call{
+				Func: parser.MustGetFunction("time"),
+				Args: parser.Expressions{},
+				PosRange: parser.PositionRange{
+					Start: 0,
+					End:   6,
+				},
+			},
+		}, {
+			input: `foo{bar="baz"}[10m:6s]`,
+			expected: &parser.SubqueryExpr{
+				Expr: &parser.VectorSelector{
+					Name: "foo",
+					LabelMatchers: []*labels.Matcher{
+						parser.MustLabelMatcher(labels.MatchEqual, "bar", "baz"),
+						parser.MustLabelMatcher(labels.MatchEqual, "__name__", "foo"),
+					},
+					PosRange: parser.PositionRange{
+						Start: 0,
+						End:   14,
+					},
+				},
+				Range:  10 * time.Minute,
+				Step:   6 * time.Second,
+				EndPos: 22,
+			},
+		}, {
+			input: `foo{bar="baz"}[10m:6s] @ 10`,
+			expected: &parser.StepInvariantExpr{
+				Expr: &parser.SubqueryExpr{
+					Expr: &parser.VectorSelector{
+						Name: "foo",
+						LabelMatchers: []*labels.Matcher{
+							parser.MustLabelMatcher(labels.MatchEqual, "bar", "baz"),
+							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "foo"),
+						},
+						PosRange: parser.PositionRange{
+							Start: 0,
+							End:   14,
+						},
+					},
+					Range:     10 * time.Minute,
+					Step:      6 * time.Second,
+					Timestamp: makeInt64Pointer(10000),
+					EndPos:    27,
+				},
+			},
+		}, { // Even though the subquery is step invariant, the inside is also wrapped separately.
+			input: `sum(foo{bar="baz"} @ 20)[10m:6s] @ 10`,
+			expected: &parser.StepInvariantExpr{
+				Expr: &parser.SubqueryExpr{
+					Expr: &parser.StepInvariantExpr{
+						Expr: &parser.AggregateExpr{
+							Op: parser.SUM,
+							Expr: &parser.VectorSelector{
+								Name: "foo",
+								LabelMatchers: []*labels.Matcher{
+									parser.MustLabelMatcher(labels.MatchEqual, "bar", "baz"),
+									parser.MustLabelMatcher(labels.MatchEqual, "__name__", "foo"),
+								},
+								PosRange: parser.PositionRange{
+									Start: 4,
+									End:   23,
+								},
+								Timestamp: makeInt64Pointer(20000),
+							},
+							PosRange: parser.PositionRange{
+								Start: 0,
+								End:   24,
+							},
+						},
+					},
+					Range:     10 * time.Minute,
+					Step:      6 * time.Second,
+					Timestamp: makeInt64Pointer(10000),
+					EndPos:    37,
+				},
+			},
+		}, {
+			input: `min_over_time(rate(foo{bar="baz"}[2s])[5m:] @ 1603775091)[4m:3s]`,
+			expected: &parser.SubqueryExpr{
+				Expr: &parser.StepInvariantExpr{
+					Expr: &parser.Call{
+						Func: parser.MustGetFunction("min_over_time"),
+						Args: parser.Expressions{
+							&parser.SubqueryExpr{
+								Expr: &parser.Call{
+									Func: parser.MustGetFunction("rate"),
+									Args: parser.Expressions{
+										&parser.MatrixSelector{
+											VectorSelector: &parser.VectorSelector{
+												Name: "foo",
+												LabelMatchers: []*labels.Matcher{
+													parser.MustLabelMatcher(labels.MatchEqual, "bar", "baz"),
+													parser.MustLabelMatcher(labels.MatchEqual, "__name__", "foo"),
+												},
+												PosRange: parser.PositionRange{
+													Start: 19,
+													End:   33,
+												},
+											},
+											Range:  2 * time.Second,
+											EndPos: 37,
+										},
+									},
+									PosRange: parser.PositionRange{
+										Start: 14,
+										End:   38,
+									},
+								},
+								Range:     5 * time.Minute,
+								Timestamp: makeInt64Pointer(1603775091000),
+								EndPos:    56,
+							},
+						},
+						PosRange: parser.PositionRange{
+							Start: 0,
+							End:   57,
+						},
+					},
+				},
+				Range:  4 * time.Minute,
+				Step:   3 * time.Second,
+				EndPos: 64,
+			},
+		}, {
+			input: `some_metric @ 123 offset 1m [10m:5s]`,
+			expected: &parser.SubqueryExpr{
+				Expr: &parser.StepInvariantExpr{
+					Expr: &parser.VectorSelector{
+						Name: "some_metric",
+						LabelMatchers: []*labels.Matcher{
+							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "some_metric"),
+						},
+						PosRange: parser.PositionRange{
+							Start: 0,
+							End:   27,
+						},
+						Timestamp:      makeInt64Pointer(123000),
+						OriginalOffset: 1 * time.Minute,
+					},
+				},
+				Range:  10 * time.Minute,
+				Step:   5 * time.Second,
+				EndPos: 36,
+			},
+		}, {
+			input: `some_metric[10m:5s] offset 1m @ 123`,
+			expected: &parser.StepInvariantExpr{
+				Expr: &parser.SubqueryExpr{
+					Expr: &parser.VectorSelector{
+						Name: "some_metric",
+						LabelMatchers: []*labels.Matcher{
+							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "some_metric"),
+						},
+						PosRange: parser.PositionRange{
+							Start: 0,
+							End:   11,
+						},
+					},
+					Timestamp:      makeInt64Pointer(123000),
+					OriginalOffset: 1 * time.Minute,
+					Range:          10 * time.Minute,
+					Step:           5 * time.Second,
+					EndPos:         35,
+				},
+			},
+		}, {
+			input: `(foo + bar{nm="val"} @ 1234)[5m:] @ 1603775019`,
+			expected: &parser.StepInvariantExpr{
+				Expr: &parser.SubqueryExpr{
+					Expr: &parser.ParenExpr{
+						Expr: &parser.BinaryExpr{
+							Op: parser.ADD,
+							VectorMatching: &parser.VectorMatching{
+								Card: parser.CardOneToOne,
+							},
+							LHS: &parser.VectorSelector{
+								Name: "foo",
+								LabelMatchers: []*labels.Matcher{
+									parser.MustLabelMatcher(labels.MatchEqual, "__name__", "foo"),
+								},
+								PosRange: parser.PositionRange{
+									Start: 1,
+									End:   4,
+								},
+							},
+							RHS: &parser.StepInvariantExpr{
+								Expr: &parser.VectorSelector{
+									Name: "bar",
+									LabelMatchers: []*labels.Matcher{
+										parser.MustLabelMatcher(labels.MatchEqual, "nm", "val"),
+										parser.MustLabelMatcher(labels.MatchEqual, "__name__", "bar"),
+									},
+									Timestamp: makeInt64Pointer(1234000),
+									PosRange: parser.PositionRange{
+										Start: 7,
+										End:   27,
+									},
+								},
+							},
+						},
+						PosRange: parser.PositionRange{
+							Start: 0,
+							End:   28,
+						},
+					},
+					Range:     5 * time.Minute,
+					Timestamp: makeInt64Pointer(1603775019000),
+					EndPos:    46,
+				},
+			},
+		}, {
+			input: "abs(abs(metric @ 10))",
+			expected: &parser.StepInvariantExpr{
+				Expr: &parser.Call{
+					Func: &parser.Function{
+						Name:       "abs",
+						ArgTypes:   []parser.ValueType{parser.ValueTypeVector},
+						ReturnType: parser.ValueTypeVector,
+					},
+					Args: parser.Expressions{&parser.Call{
+						Func: &parser.Function{
+							Name:       "abs",
+							ArgTypes:   []parser.ValueType{parser.ValueTypeVector},
+							ReturnType: parser.ValueTypeVector,
+						},
+						Args: parser.Expressions{&parser.VectorSelector{
+							Name: "metric",
+							LabelMatchers: []*labels.Matcher{
+								parser.MustLabelMatcher(labels.MatchEqual, "__name__", "metric"),
+							},
+							PosRange: parser.PositionRange{
+								Start: 8,
+								End:   19,
+							},
+							Timestamp: makeInt64Pointer(10000),
+						}},
+						PosRange: parser.PositionRange{
+							Start: 4,
+							End:   20,
+						},
+					}},
+					PosRange: parser.PositionRange{
+						Start: 0,
+						End:   21,
+					},
+				},
+			},
+		}, {
+			input: "sum(sum(some_metric1 @ 10) + sum(some_metric2 @ 20))",
+			expected: &parser.StepInvariantExpr{
+				Expr: &parser.AggregateExpr{
+					Op: parser.SUM,
+					Expr: &parser.BinaryExpr{
+						Op:             parser.ADD,
+						VectorMatching: &parser.VectorMatching{},
+						LHS: &parser.AggregateExpr{
+							Op: parser.SUM,
+							Expr: &parser.VectorSelector{
+								Name: "some_metric1",
+								LabelMatchers: []*labels.Matcher{
+									parser.MustLabelMatcher(labels.MatchEqual, "__name__", "some_metric1"),
+								},
+								PosRange: parser.PositionRange{
+									Start: 8,
+									End:   25,
+								},
+								Timestamp: makeInt64Pointer(10000),
+							},
+							PosRange: parser.PositionRange{
+								Start: 4,
+								End:   26,
+							},
+						},
+						RHS: &parser.AggregateExpr{
+							Op: parser.SUM,
+							Expr: &parser.VectorSelector{
+								Name: "some_metric2",
+								LabelMatchers: []*labels.Matcher{
+									parser.MustLabelMatcher(labels.MatchEqual, "__name__", "some_metric2"),
+								},
+								PosRange: parser.PositionRange{
+									Start: 33,
+									End:   50,
+								},
+								Timestamp: makeInt64Pointer(20000),
+							},
+							PosRange: parser.PositionRange{
+								Start: 29,
+								End:   52,
+							},
+						},
+					},
+					PosRange: parser.PositionRange{
+						Start: 0,
+						End:   52,
+					},
+				},
+			},
+		}, {
+			input: `foo @ start()`,
+			expected: &parser.StepInvariantExpr{
+				Expr: &parser.VectorSelector{
+					Name: "foo",
+					LabelMatchers: []*labels.Matcher{
+						parser.MustLabelMatcher(labels.MatchEqual, "__name__", "foo"),
+					},
+					PosRange: parser.PositionRange{
+						Start: 0,
+						End:   13,
+					},
+					Timestamp:  makeInt64Pointer(timestamp.FromTime(startTime)),
+					StartOrEnd: parser.START,
+				},
+			},
+		}, {
+			input: `foo @ end()`,
+			expected: &parser.StepInvariantExpr{
+				Expr: &parser.VectorSelector{
+					Name: "foo",
+					LabelMatchers: []*labels.Matcher{
+						parser.MustLabelMatcher(labels.MatchEqual, "__name__", "foo"),
+					},
+					PosRange: parser.PositionRange{
+						Start: 0,
+						End:   11,
+					},
+					Timestamp:  makeInt64Pointer(timestamp.FromTime(endTime)),
+					StartOrEnd: parser.END,
+				},
+			},
+		}, {
+			input: `test[5y] @ start()`,
+			expected: &parser.StepInvariantExpr{
+				Expr: &parser.MatrixSelector{
+					VectorSelector: &parser.VectorSelector{
+						Name:       "test",
+						Timestamp:  makeInt64Pointer(timestamp.FromTime(startTime)),
+						StartOrEnd: parser.START,
+						LabelMatchers: []*labels.Matcher{
+							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "test"),
+						},
+						PosRange: parser.PositionRange{
+							Start: 0,
+							End:   4,
+						},
+					},
+					Range:  5 * 365 * 24 * time.Hour,
+					EndPos: 18,
+				},
+			},
+		}, {
+			input: `test[5y] @ end()`,
+			expected: &parser.StepInvariantExpr{
+				Expr: &parser.MatrixSelector{
+					VectorSelector: &parser.VectorSelector{
+						Name:       "test",
+						Timestamp:  makeInt64Pointer(timestamp.FromTime(endTime)),
+						StartOrEnd: parser.END,
+						LabelMatchers: []*labels.Matcher{
+							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "test"),
+						},
+						PosRange: parser.PositionRange{
+							Start: 0,
+							End:   4,
+						},
+					},
+					Range:  5 * 365 * 24 * time.Hour,
+					EndPos: 16,
+				},
+			},
+		}, {
+			input: `some_metric[10m:5s] @ start()`,
+			expected: &parser.StepInvariantExpr{
+				Expr: &parser.SubqueryExpr{
+					Expr: &parser.VectorSelector{
+						Name: "some_metric",
+						LabelMatchers: []*labels.Matcher{
+							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "some_metric"),
+						},
+						PosRange: parser.PositionRange{
+							Start: 0,
+							End:   11,
+						},
+					},
+					Timestamp:  makeInt64Pointer(timestamp.FromTime(startTime)),
+					StartOrEnd: parser.START,
+					Range:      10 * time.Minute,
+					Step:       5 * time.Second,
+					EndPos:     29,
+				},
+			},
+		}, {
+			input: `some_metric[10m:5s] @ end()`,
+			expected: &parser.StepInvariantExpr{
+				Expr: &parser.SubqueryExpr{
+					Expr: &parser.VectorSelector{
+						Name: "some_metric",
+						LabelMatchers: []*labels.Matcher{
+							parser.MustLabelMatcher(labels.MatchEqual, "__name__", "some_metric"),
+						},
+						PosRange: parser.PositionRange{
+							Start: 0,
+							End:   11,
+						},
+					},
+					Timestamp:  makeInt64Pointer(timestamp.FromTime(endTime)),
+					StartOrEnd: parser.END,
+					Range:      10 * time.Minute,
+					Step:       5 * time.Second,
+					EndPos:     27,
+				},
+			},
+		},
+	}
+
+	for _, test := range testCases {
+		t.Run(test.input, func(t *testing.T) {
+			expr, err := parser.ParseExpr(test.input)
+			require.NoError(t, err)
+			expr = PreprocessExpr(expr, startTime, endTime)
+			require.Equal(t, test.expected, expr, "error on input '%s'", test.input)
+		})
+	}
+}
+
+func TestEngineOptsValidation(t *testing.T) {
+	cases := []struct {
+		opts     EngineOpts
+		query    string
+		fail     bool
+		expError error
+	}{
+		{
+			opts:  EngineOpts{EnableAtModifier: false},
+			query: "metric @ 100", fail: true, expError: ErrValidationAtModifierDisabled,
+		}, {
+			opts:  EngineOpts{EnableAtModifier: false},
+			query: "rate(metric[1m] @ 100)", fail: true, expError: ErrValidationAtModifierDisabled,
+		}, {
+			opts:  EngineOpts{EnableAtModifier: false},
+			query: "rate(metric[1h:1m] @ 100)", fail: true, expError: ErrValidationAtModifierDisabled,
+		}, {
+			opts:  EngineOpts{EnableAtModifier: false},
+			query: "metric @ start()", fail: true, expError: ErrValidationAtModifierDisabled,
+		}, {
+			opts:  EngineOpts{EnableAtModifier: false},
+			query: "rate(metric[1m] @ start())", fail: true, expError: ErrValidationAtModifierDisabled,
+		}, {
+			opts:  EngineOpts{EnableAtModifier: false},
+			query: "rate(metric[1h:1m] @ start())", fail: true, expError: ErrValidationAtModifierDisabled,
+		}, {
+			opts:  EngineOpts{EnableAtModifier: false},
+			query: "metric @ end()", fail: true, expError: ErrValidationAtModifierDisabled,
+		}, {
+			opts:  EngineOpts{EnableAtModifier: false},
+			query: "rate(metric[1m] @ end())", fail: true, expError: ErrValidationAtModifierDisabled,
+		}, {
+			opts:  EngineOpts{EnableAtModifier: false},
+			query: "rate(metric[1h:1m] @ end())", fail: true, expError: ErrValidationAtModifierDisabled,
+		}, {
+			opts:  EngineOpts{EnableAtModifier: true},
+			query: "metric @ 100",
+		}, {
+			opts:  EngineOpts{EnableAtModifier: true},
+			query: "rate(metric[1m] @ start())",
+		}, {
+			opts:  EngineOpts{EnableAtModifier: true},
+			query: "rate(metric[1h:1m] @ end())",
+		}, {
+			opts:  EngineOpts{EnableNegativeOffset: false},
+			query: "metric offset -1s", fail: true, expError: ErrValidationNegativeOffsetDisabled,
+		}, {
+			opts:  EngineOpts{EnableNegativeOffset: true},
+			query: "metric offset -1s",
+		}, {
+			opts:  EngineOpts{EnableAtModifier: true, EnableNegativeOffset: true},
+			query: "metric @ 100 offset -2m",
+		}, {
+			opts:  EngineOpts{EnableAtModifier: true, EnableNegativeOffset: true},
+			query: "metric offset -2m @ 100",
+		},
+	}
+
+	for _, c := range cases {
+		eng := NewEngine(c.opts)
+		_, err1 := eng.NewInstantQuery(nil, c.query, time.Unix(10, 0))
+		_, err2 := eng.NewRangeQuery(nil, c.query, time.Unix(0, 0), time.Unix(10, 0), time.Second)
+		if c.fail {
+			require.Equal(t, c.expError, err1)
+			require.Equal(t, c.expError, err2)
+		} else {
+			require.Nil(t, err1)
+			require.Nil(t, err2)
+		}
+	}
+}
+
+func TestRangeQuery(t *testing.T) {
+	cases := []struct {
+		Name     string
+		Load     string
+		Query    string
+		Result   parser.Value
+		Start    time.Time
+		End      time.Time
+		Interval time.Duration
+	}{
+		{
+			Name: "sum_over_time with all values",
+			Load: `load 30s
+              bar 0 1 10 100 1000`,
+			Query: "sum_over_time(bar[30s])",
+			Result: Matrix{Series{
+				Points: []Point{{V: 0, T: 0}, {V: 11, T: 60000}, {V: 1100, T: 120000}},
+				Metric: labels.Labels{}},
+			},
+			Start:    time.Unix(0, 0),
+			End:      time.Unix(120, 0),
+			Interval: 60 * time.Second,
+		},
+		{
+			Name: "sum_over_time with trailing values",
+			Load: `load 30s
+              bar 0 1 10 100 1000 0 0 0 0`,
+			Query: "sum_over_time(bar[30s])",
+			Result: Matrix{Series{
+				Points: []Point{{V: 0, T: 0}, {V: 11, T: 60000}, {V: 1100, T: 120000}},
+				Metric: labels.Labels{}},
+			},
+			Start:    time.Unix(0, 0),
+			End:      time.Unix(120, 0),
+			Interval: 60 * time.Second,
+		},
+		{
+			Name: "sum_over_time with all values long",
+			Load: `load 30s
+              bar 0 1 10 100 1000 10000 100000 1000000 10000000`,
+			Query: "sum_over_time(bar[30s])",
+			Result: Matrix{Series{
+				Points: []Point{{V: 0, T: 0}, {V: 11, T: 60000}, {V: 1100, T: 120000}, {V: 110000, T: 180000}, {V: 11000000, T: 240000}},
+				Metric: labels.Labels{}},
+			},
+			Start:    time.Unix(0, 0),
+			End:      time.Unix(240, 0),
+			Interval: 60 * time.Second,
+		},
+		{
+			Name: "sum_over_time with all values random",
+			Load: `load 30s
+              bar 5 17 42 2 7 905 51`,
+			Query: "sum_over_time(bar[30s])",
+			Result: Matrix{Series{
+				Points: []Point{{V: 5, T: 0}, {V: 59, T: 60000}, {V: 9, T: 120000}, {V: 956, T: 180000}},
+				Metric: labels.Labels{}},
+			},
+			Start:    time.Unix(0, 0),
+			End:      time.Unix(180, 0),
+			Interval: 60 * time.Second,
+		},
+		{
+			Name: "metric query",
+			Load: `load 30s
+              metric 1+1x4`,
+			Query: "metric",
+			Result: Matrix{Series{
+				Points: []Point{{V: 1, T: 0}, {V: 3, T: 60000}, {V: 5, T: 120000}},
+				Metric: labels.Labels{labels.Label{Name: "__name__", Value: "metric"}}},
+			},
+			Start:    time.Unix(0, 0),
+			End:      time.Unix(120, 0),
+			Interval: 1 * time.Minute,
+		},
+		{
+			Name: "metric query with trailing values",
+			Load: `load 30s
+              metric 1+1x8`,
+			Query: "metric",
+			Result: Matrix{Series{
+				Points: []Point{{V: 1, T: 0}, {V: 3, T: 60000}, {V: 5, T: 120000}},
+				Metric: labels.Labels{labels.Label{Name: "__name__", Value: "metric"}}},
+			},
+			Start:    time.Unix(0, 0),
+			End:      time.Unix(120, 0),
+			Interval: 1 * time.Minute,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.Name, func(t *testing.T) {
+			test, err := NewTest(t, c.Load)
+			require.NoError(t, err)
+			defer test.Close()
+
+			err = test.Run()
+			require.NoError(t, err)
+
+			qry, err := test.QueryEngine().NewRangeQuery(test.Queryable(), c.Query, c.Start, c.End, c.Interval)
+			require.NoError(t, err)
+
+			res := qry.Exec(test.Context())
+			require.NoError(t, res.Err)
+			require.Equal(t, c.Result, res.Value)
+		})
 	}
 }

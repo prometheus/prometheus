@@ -2,10 +2,15 @@ import React, { FC } from 'react';
 import Navigation from './Navbar';
 import { Container } from 'reactstrap';
 
-import './App.css';
-import { Router, Redirect } from '@reach/router';
-import { Alerts, Config, Flags, Rules, ServiceDiscovery, Status, Targets, TSDBStatus, PanelList } from './pages';
+import { Router, Redirect, navigate } from '@reach/router';
+import useMedia from 'use-media';
+import { Alerts, Config, Flags, Rules, ServiceDiscovery, Status, Targets, TSDBStatus, PanelList, Starting } from './pages';
 import { PathPrefixContext } from './contexts/PathPrefixContext';
+import { ThemeContext, themeName, themeSetting } from './contexts/ThemeContext';
+import { Theme, themeLocalStorageKey } from './Theme';
+import { useLocalStorage } from './hooks/useLocalStorage';
+import { useFetchReady } from './hooks/useFetch';
+import { usePathPrefix } from './contexts/PathPrefixContext';
 
 interface AppProps {
   consolesLink: string | null;
@@ -26,6 +31,7 @@ const App: FC<AppProps> = ({ consolesLink }) => {
     '/rules',
     '/targets',
     '/service-discovery',
+    '/starting',
   ];
   if (basePath.endsWith('/')) {
     basePath = basePath.slice(0, -1);
@@ -39,28 +45,53 @@ const App: FC<AppProps> = ({ consolesLink }) => {
     }
   }
 
+  const pathPrefix = usePathPrefix();
+  const { ready, isLoading, isUnexpected } = useFetchReady(pathPrefix);
+  if (basePath !== '/starting') {
+    if (!ready && !isLoading && !isUnexpected) {
+      navigate('/starting');
+    }
+  }
+
+  const [userTheme, setUserTheme] = useLocalStorage<themeSetting>(themeLocalStorageKey, 'auto');
+  const browserHasThemes = useMedia('(prefers-color-scheme)');
+  const browserWantsDarkTheme = useMedia('(prefers-color-scheme: dark)');
+
+  let theme: themeName;
+  if (userTheme !== 'auto') {
+    theme = userTheme;
+  } else {
+    theme = browserHasThemes ? (browserWantsDarkTheme ? 'dark' : 'light') : 'light';
+  }
+
   return (
-    <PathPrefixContext.Provider value={basePath}>
-      <Navigation consolesLink={consolesLink} />
-      <Container fluid style={{ paddingTop: 70 }}>
-        <Router basepath={`${basePath}`}>
-          <Redirect from="/" to={`graph`} noThrow />
-          {/*
+    <ThemeContext.Provider
+      value={{ theme: theme, userPreference: userTheme, setTheme: (t: themeSetting) => setUserTheme(t) }}
+    >
+      <Theme />
+      <PathPrefixContext.Provider value={basePath}>
+        <Navigation consolesLink={consolesLink} />
+        <Container fluid style={{ paddingTop: 70 }}>
+          <Router basepath={`${basePath}`}>
+            <Redirect from="/" to={`graph`} noThrow />
+            {/*
               NOTE: Any route added here needs to also be added to the list of
               React-handled router paths ("reactRouterPaths") in /web/web.go.
             */}
-          <PanelList path="/graph" />
-          <Alerts path="/alerts" />
-          <Config path="/config" />
-          <Flags path="/flags" />
-          <Rules path="/rules" />
-          <ServiceDiscovery path="/service-discovery" />
-          <Status path="/status" />
-          <TSDBStatus path="/tsdb-status" />
-          <Targets path="/targets" />
-        </Router>
-      </Container>
-    </PathPrefixContext.Provider>
+            <PanelList path="/graph" />
+            <Alerts path="/alerts" />
+            <Config path="/config" />
+            <Flags path="/flags" />
+            <Rules path="/rules" />
+            <ServiceDiscovery path="/service-discovery" />
+            <Status path="/status" />
+            <TSDBStatus path="/tsdb-status" />
+            <Targets path="/targets" />
+            <Starting path="/starting" />
+          </Router>
+        </Container>
+      </PathPrefixContext.Provider>
+    </ThemeContext.Provider>
   );
 };
 

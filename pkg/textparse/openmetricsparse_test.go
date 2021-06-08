@@ -230,9 +230,10 @@ foo_total 17.0 1520879607.789 # {xx="yy"} 5`
 			var e exemplar.Exemplar
 			p.Metric(&res)
 			found := p.Exemplar(&e)
-
 			require.Equal(t, exp[i].m, string(m))
-			require.Equal(t, exp[i].t, ts)
+			if e.HasTs {
+				require.Equal(t, exp[i].t, ts)
+			}
 			require.Equal(t, exp[i].v, v)
 			require.Equal(t, exp[i].lset, res)
 			if exp[i].e == nil {

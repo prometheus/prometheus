@@ -61,26 +61,6 @@
             },
           },
           {
-            alert: 'PrometheusErrorSendingAlertsToAnyAlertmanager',
-            expr: |||
-              min without(alertmanager) (
-                rate(prometheus_notifications_errors_total{%(prometheusSelector)s}[5m])
-              /
-                rate(prometheus_notifications_sent_total{%(prometheusSelector)s}[5m])
-              )
-              * 100
-              > 3
-            ||| % $._config,
-            'for': '15m',
-            labels: {
-              severity: 'critical',
-            },
-            annotations: {
-              summary: 'Prometheus encounters more than 3% errors sending alerts to any Alertmanager.',
-              description: '{{ printf "%%.1f" $value }}%% minimum errors while sending alerts from Prometheus %(prometheusName)s to any Alertmanager.' % $._config,
-            },
-          },
-          {
             alert: 'PrometheusNotConnectedToAlertmanagers',
             expr: |||
               # Without max_over_time, failed scrapes could create false negatives, see
@@ -178,12 +158,12 @@
             alert: 'PrometheusRemoteStorageFailures',
             expr: |||
               (
-                rate(prometheus_remote_storage_failed_samples_total{%(prometheusSelector)s}[5m])
+                (rate(prometheus_remote_storage_failed_samples_total{%(prometheusSelector)s}[5m]) or rate(prometheus_remote_storage_samples_failed_total{%(prometheusSelector)s}[5m]))
               /
                 (
-                  rate(prometheus_remote_storage_failed_samples_total{%(prometheusSelector)s}[5m])
+                  (rate(prometheus_remote_storage_failed_samples_total{%(prometheusSelector)s}[5m]) or rate(prometheus_remote_storage_samples_failed_total{%(prometheusSelector)s}[5m]))
                 +
-                  rate(prometheus_remote_storage_succeeded_samples_total{%(prometheusSelector)s}[5m])
+                  (rate(prometheus_remote_storage_succeeded_samples_total{%(prometheusSelector)s}[5m]) or rate(prometheus_remote_storage_samples_total{%(prometheusSelector)s}[5m]))
                 )
               )
               * 100
@@ -205,7 +185,7 @@
               # https://www.robustperception.io/alerting-on-gauges-in-prometheus-2-0 for details.
               (
                 max_over_time(prometheus_remote_storage_highest_timestamp_in_seconds{%(prometheusSelector)s}[5m])
-              - on(job, instance) group_right
+              - ignoring(remote_name, url) group_right
                 max_over_time(prometheus_remote_storage_queue_highest_sent_timestamp_seconds{%(prometheusSelector)s}[5m])
               )
               > 120
@@ -279,6 +259,151 @@
             annotations: {
               summary: 'Prometheus has dropped targets because some scrape configs have exceeded the targets limit.',
               description: 'Prometheus %(prometheusName)s has dropped {{ printf "%%.0f" $value }} targets because the number of targets exceeded the configured target_limit.' % $._config,
+            },
+          },
+          {
+            alert: 'PrometheusLabelLimitHit',
+            expr: |||
+              increase(prometheus_target_scrape_pool_exceeded_label_limits_total{%(prometheusSelector)s}[5m]) > 0
+            ||| % $._config,
+            'for': '15m',
+            labels: {
+              severity: 'warning',
+            },
+            annotations: {
+              summary: 'Prometheus has dropped targets because some scrape configs have exceeded the labels limit.',
+              description: 'Prometheus %(prometheusName)s has dropped {{ printf "%%.0f" $value }} targets because some samples exceeded the configured label_limit, label_name_length_limit or label_value_length_limit.' % $._config,
+            },
+          },
+          {
+            alert: 'PrometheusTargetSyncFailure',
+            expr: |||
+              increase(prometheus_target_sync_failed_total{%(prometheusSelector)s}[30m]) > 0
+            ||| % $._config,
+            'for': '5m',
+            labels: {
+              severity: 'critical',
+            },
+            annotations: {
+              summary: 'Prometheus has failed to sync targets.',
+              description: '{{ printf "%%.0f" $value }} targets in Prometheus %(prometheusName)s have failed to sync because invalid configuration was supplied.' % $._config,
+            },
+          },
+        ] + if $._config.prometheusHAGroupLabels == '' then self.rulesWithoutHA else self.rulesWithHA,
+        rulesWithoutHA:: [
+          {
+            alert: 'PrometheusErrorSendingAlertsToAnyAlertmanager',
+            expr: |||
+              min without (alertmanager) (
+                rate(prometheus_notifications_errors_total{%(prometheusSelector)s,alertmanager!~`%(nonNotifyingAlertmanagerRegEx)s`}[5m])
+              /
+                rate(prometheus_notifications_sent_total{%(prometheusSelector)s,alertmanager!~`%(nonNotifyingAlertmanagerRegEx)s`}[5m])
+              )
+              * 100
+              > 3
+            ||| % $._config,
+            'for': '15m',
+            labels: {
+              severity: 'critical',
+            },
+            annotations: {
+              summary: 'Prometheus encounters more than 3% errors sending alerts to any Alertmanager.',
+              description: '{{ printf "%%.1f" $value }}%% minimum errors while sending alerts from Prometheus %(prometheusName)s to any Alertmanager.' % $._config,
+            },
+          },
+        ],
+        rulesWithHA:: [
+          {
+            alert: 'PrometheusErrorSendingAlertsToAnyAlertmanager',
+            expr: |||
+              min by (%(prometheusHAGroupLabels)s) (
+                rate(prometheus_notifications_errors_total{%(prometheusSelector)s,alertmanager!~`%(nonNotifyingAlertmanagerRegEx)s`}[5m])
+              /
+                rate(prometheus_notifications_sent_total{%(prometheusSelector)s,alertmanager!~`%(nonNotifyingAlertmanagerRegEx)s`}[5m])
+              )
+              * 100
+              > 3
+            ||| % $._config,
+            'for': '15m',
+            labels: {
+              severity: 'critical',
+            },
+            annotations: {
+              summary: 'Each Prometheus server in an HA group encounters more than 3% errors sending alerts to any Alertmanager.',
+              description: '{{ printf "%%.1f" $value }}%% minimum errors while sending alerts from any Prometheus server in HA group %(prometheusHAGroupName)s to any Alertmanager.' % $._config,
+            },
+          },
+          {
+            alert: 'PrometheusHAGroupNotIngestingSamples',
+            expr: |||
+              max by (%(prometheusHAGroupLabels)s) (
+                rate(prometheus_tsdb_head_samples_appended_total{%(prometheusSelector)s}[5m])
+              and
+                (
+                  sum without(scrape_job) (prometheus_target_metadata_cache_entries{%(prometheusSelector)s}) > 0
+                or
+                  sum without(rule_group) (prometheus_rule_group_rules{%(prometheusSelector)s}) > 0
+                )
+              )
+              <= 0
+            ||| % $._config,
+            'for': '10m',
+            labels: {
+              severity: 'critical',
+            },
+            annotations: {
+              summary: 'A whole Prometheus HA group is not ingesting samples.',
+              description: 'None of the Prometheus instances in HA group %(prometheusHAGroupName)s is ingesting any samples.' % $._config,
+            },
+          },
+          // Both the following critical alerts, PrometheusHAGroupDown and
+          // PrometheusHAGroupCrashlooping, fire if a whole HA group is
+          // unhealthy. It is implied that a generic warning alert is in place
+          // for individual instances being down or crashlooping.
+          {
+            alert: 'PrometheusHAGroupDown',
+            expr: |||
+              (
+                count by (%(prometheusHAGroupLabels)s) (
+                  avg_over_time(up{%(prometheusSelector)s}[5m]) < 0.5
+                )
+              /
+                count by (%(prometheusHAGroupLabels)s) (
+                  up{%(prometheusSelector)s}
+                )
+              )
+              > 0.5
+            ||| % $._config,
+            'for': '5m',
+            labels: {
+              severity: 'critical',
+            },
+            annotations: {
+              summary: 'More than half of the Prometheus instances within the same HA group are down.',
+              description: '{{ $value | humanizePercentage }} of Prometheus instances within the %(prometheusHAGroupName)s HA group have been up for less than half of the last 5m.' % $._config,
+            },
+          },
+          {
+            alert: 'PrometheusHAGroupCrashlooping',
+            expr: |||
+              (
+                count by (%(prometheusHAGroupLabels)s) (
+                  changes(process_start_time_seconds{%(prometheusSelector)s}[30m]) > 4
+                )
+              /
+                count by (%(prometheusHAGroupLabels)s) (
+                  up{%(prometheusSelector)s}
+                )
+              )
+              > 0.5
+            ||| % $._config,
+            'for': '5m',
+            labels: {
+              severity: 'critical',
+            },
+            annotations: {
+              summary: 'More than half of the Prometheus instances within the same HA group are crashlooping.',
+              description: '{{ $value | humanizePercentage }} of Prometheus instances within the %(prometheusHAGroupName)s HA group have restarted at least 5 times in the last 30m.' % $._config,
             },
           },
         ],

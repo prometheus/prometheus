@@ -15,7 +15,9 @@ package scrape
 
 import (
 	"context"
+	"math/rand"
 
+	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
 )
@@ -28,10 +30,12 @@ func (a nopAppendable) Appender(_ context.Context) storage.Appender {
 
 type nopAppender struct{}
 
-func (a nopAppender) Add(labels.Labels, int64, float64) (uint64, error) { return 0, nil }
-func (a nopAppender) AddFast(uint64, int64, float64) error              { return nil }
-func (a nopAppender) Commit() error                                     { return nil }
-func (a nopAppender) Rollback() error                                   { return nil }
+func (a nopAppender) Append(uint64, labels.Labels, int64, float64) (uint64, error) { return 0, nil }
+func (a nopAppender) AppendExemplar(uint64, labels.Labels, exemplar.Exemplar) (uint64, error) {
+	return 0, nil
+}
+func (a nopAppender) Commit() error   { return nil }
+func (a nopAppender) Rollback() error { return nil }
 
 type sample struct {
 	metric labels.Labels
@@ -46,52 +50,45 @@ type collectResultAppender struct {
 	result           []sample
 	pendingResult    []sample
 	rolledbackResult []sample
-
-	mapper map[uint64]labels.Labels
+	pendingExemplars []exemplar.Exemplar
+	resultExemplars  []exemplar.Exemplar
 }
 
-func (a *collectResultAppender) AddFast(ref uint64, t int64, v float64) error {
+func (a *collectResultAppender) Append(ref uint64, lset labels.Labels, t int64, v float64) (uint64, error) {
+	a.pendingResult = append(a.pendingResult, sample{
+		metric: lset,
+		t:      t,
+		v:      v,
+	})
+
+	if ref == 0 {
+		ref = rand.Uint64()
+	}
 	if a.next == nil {
-		return storage.ErrNotFound
+		return ref, nil
 	}
 
-	err := a.next.AddFast(ref, t, v)
+	ref, err := a.next.Append(ref, lset, t, v)
 	if err != nil {
-		return err
+		return 0, err
 	}
-	a.pendingResult = append(a.pendingResult, sample{
-		metric: a.mapper[ref],
-		t:      t,
-		v:      v,
-	})
-	return err
+	return ref, err
 }
 
-func (a *collectResultAppender) Add(m labels.Labels, t int64, v float64) (uint64, error) {
-	a.pendingResult = append(a.pendingResult, sample{
-		metric: m,
-		t:      t,
-		v:      v,
-	})
+func (a *collectResultAppender) AppendExemplar(ref uint64, l labels.Labels, e exemplar.Exemplar) (uint64, error) {
+	a.pendingExemplars = append(a.pendingExemplars, e)
 	if a.next == nil {
 		return 0, nil
 	}
 
-	if a.mapper == nil {
-		a.mapper = map[uint64]labels.Labels{}
-	}
-
-	ref, err := a.next.Add(m, t, v)
-	if err != nil {
-		return 0, err
-	}
-	a.mapper[ref] = m
-	return ref, nil
+	return a.next.AppendExemplar(ref, l, e)
 }
 
 func (a *collectResultAppender) Commit() error {
 	a.result = append(a.result, a.pendingResult...)
+	a.resultExemplars = append(a.resultExemplars, a.pendingExemplars...)
 	a.pendingResult = nil
+	a.pendingExemplars = nil
 	if a.next == nil {
 		return nil
 	}

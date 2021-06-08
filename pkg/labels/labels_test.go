@@ -387,7 +387,7 @@ func TestLabels_FromStrings(t *testing.T) {
 
 	require.Equal(t, expected, labels, "unexpected labelset")
 
-	require.Panics(t, func() { FromStrings("aaa", "111", "bbb") })
+	require.Panics(t, func() { FromStrings("aaa", "111", "bbb") }) //nolint:staticcheck // Ignore SA5012, error is intentional test.
 }
 
 func TestLabels_Compare(t *testing.T) {

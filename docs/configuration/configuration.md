@@ -42,6 +42,7 @@ Generic placeholders are defined as follows:
 * `<scheme>`: a string that can take the values `http` or `https`
 * `<secret>`: a regular string that is a secret, such as a password
 * `<string>`: a regular string
+* `<size>`: a size in bytes, e.g. `512MB`. A unit is required. Supported units: B, KB, MB, GB, TB, PB, EB.
 * `<tmpl_string>`: a string which is template-expanded before usage
 
 The other placeholders are specified separately.
@@ -169,12 +170,24 @@ basic_auth:
   [ password_file: <string> ]
 
 # Sets the `Authorization` header on every scrape request with
-# the configured bearer token. It is mutually exclusive with `bearer_token_file`.
-[ bearer_token: <secret> ]
+# the configured credentials.
+authorization:
+  # Sets the authentication type of the request.
+  [ type: <string> | default: Bearer ]
+  # Sets the credentials of the request. It is mutually exclusive with
+  # `credentials_file`.
+  [ credentials: <secret> ]
+  # Sets the credentials of the request with the credentials read from the
+  # configured file. It is mutually exclusive with `credentials`.
+  [ credentials_file: <filename> ]
 
-# Sets the `Authorization` header on every scrape request with the bearer token
-# read from the configured file. It is mutually exclusive with `bearer_token`.
-[ bearer_token_file: <filename> ]
+# Optional OAuth 2.0 configuration.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2:
+  [ <oauth2> ]
+
+# Configure whether scrape requests follow HTTP 3xx redirects.
+[ follow_redirects: <bool> | default = true ]
 
 # Configures the scrape request's TLS settings.
 tls_config:
@@ -194,6 +207,10 @@ consul_sd_configs:
 # List of DigitalOcean service discovery configurations.
 digitalocean_sd_configs:
   [ - <digitalocean_sd_config> ... ]
+
+# List of Docker service discovery configurations.
+docker_sd_configs:
+  [ - <docker_sd_config> ... ]
 
 # List of Docker Swarm service discovery configurations.
 dockerswarm_sd_configs:
@@ -227,6 +244,14 @@ hetzner_sd_configs:
 kubernetes_sd_configs:
   [ - <kubernetes_sd_config> ... ]
 
+# List of Lightsail service discovery configurations.
+lightsail_sd_configs:
+  [ - <lightsail_sd_config> ... ]
+
+# List of Linode service discovery configurations.
+linode_sd_configs:
+  [ - <linode_sd_config> ... ]
+
 # List of Marathon service discovery configurations.
 marathon_sd_configs:
   [ - <marathon_sd_config> ... ]
@@ -238,6 +263,10 @@ nerve_sd_configs:
 # List of OpenStack service discovery configurations.
 openstack_sd_configs:
   [ - <openstack_sd_config> ... ]
+
+# List of Scaleway service discovery configurations.
+scaleway_sd_configs:
+  [ - <scaleway_sd_config> ... ]
 
 # List of Zookeeper Serverset service discovery configurations.
 serverset_sd_configs:
@@ -259,10 +288,30 @@ relabel_configs:
 metric_relabel_configs:
   [ - <relabel_config> ... ]
 
+# An uncompressed response body larger than this many bytes will cause the
+# scrape to fail. 0 means no limit. Example: 100MB.
+# This is an experimental feature, this behaviour could
+# change or be removed in the future.
+[ body_size_limit: <size> | default = 0 ]
 # Per-scrape limit on number of scraped samples that will be accepted.
 # If more than this number of samples are present after metric relabeling
 # the entire scrape will be treated as failed. 0 means no limit.
 [ sample_limit: <int> | default = 0 ]
+
+# Per-scrape limit on number of labels that will be accepted for a sample. If
+# more than this number of labels are present post metric-relabeling, the
+# entire scrape will be treated as failed. 0 means no limit.
+[ label_limit: <int> | default = 0 ]
+
+# Per-scrape limit on length of labels name that will be accepted for a sample.
+# If a label name is longer than this number post metric-relabeling, the entire
+# scrape will be treated as failed. 0 means no limit.
+[ label_name_length_limit: <int> | default = 0 ]
+
+# Per-scrape limit on length of labels value that will be accepted for a sample.
+# If a label value is longer than this number post metric-relabeling, the
+# entire scrape will be treated as failed. 0 means no limit.
+[ label_value_length_limit: <int> | default = 0 ]
 
 # Per-scrape config limit on number of unique targets that will be
 # accepted. If more than this number of targets are present after target
@@ -292,6 +341,32 @@ A `tls_config` allows configuring TLS connections.
 
 # Disable validation of the server certificate.
 [ insecure_skip_verify: <boolean> ]
+```
+
+### `oauth2`
+
+OAuth 2.0 authentication using the client credentials grant type.
+Prometheus fetches an access token from the specified endpoint with
+the given client access and secret keys.
+
+```yaml
+client_id: <string>
+[ client_secret: <secret> ]
+
+# Read the client secret from a file.
+# It is mutually exclusive with `client_secret`.
+[ client_secret_file: <filename> ]
+
+# Scopes for the token request.
+scopes:
+  [ - <string> ... ]
+
+# The URL to fetch the token from.
+token_url: <string>
+
+# Optional parameters to append to the token URL.
+endpoint_params:
+  [ <string>: <string> ... ]
 ```
 
 ### `<azure_sd_config>`
@@ -423,7 +498,8 @@ The following meta labels are available on targets during [relabeling](#relabel_
 
 * `__meta_digitalocean_droplet_id`: the id of the droplet
 * `__meta_digitalocean_droplet_name`: the name of the droplet
-* `__meta_digitalocean_image`: the image name of the droplet
+* `__meta_digitalocean_image`: the slug of the droplet's image
+* `__meta_digitalocean_image_name`: the display name of the droplet's image
 * `__meta_digitalocean_private_ipv4`: the private IPv4 of the droplet
 * `__meta_digitalocean_public_ipv4`: the public IPv4 of the droplet
 * `__meta_digitalocean_public_ipv6`: the public IPv6 of the droplet
@@ -432,10 +508,11 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_digitalocean_status`: the status of the droplet
 * `__meta_digitalocean_features`: the comma-separated list of features of the droplet
 * `__meta_digitalocean_tags`: the comma-separated list of tags of the droplet
+* `__meta_digitalocean_vpc`: the id of the droplet's VPC
 
 ```yaml
 # Authentication information used to authenticate to the API server.
-# Note that `basic_auth`, `bearer_token` and `bearer_token_file` options are
+# Note that `basic_auth` and `authorization` options are
 # mutually exclusive.
 # password and password_file are mutually exclusive.
 
@@ -445,14 +522,27 @@ basic_auth:
   [ password: <secret> ]
   [ password_file: <string> ]
 
-# Optional bearer token authentication information.
-[ bearer_token: <secret> ]
+# Optional the `Authorization` header configuration.
+authorization:
+  # Sets the authentication type.
+  [ type: <string> | default: Bearer ]
+  # Sets the credentials. It is mutually exclusive with
+  # `credentials_file`.
+  [ credentials: <secret> ]
+  # Sets the credentials with the credentials read from the configured file.
+  # It is mutually exclusive with `credentials`.
+  [ credentials_file: <filename> ]
 
-# Optional bearer token file authentication information.
-[ bearer_token_file: <filename> ]
+# Optional OAuth 2.0 configuration.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2:
+  [ <oauth2> ]
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+
+# Configure whether HTTP requests follow HTTP 3xx redirects.
+[ follow_redirects: <bool> | default = true ]
 
 # TLS configuration.
 tls_config:
@@ -464,6 +554,99 @@ tls_config:
 # The time after which the droplets are refreshed.
 [ refresh_interval: <duration> | default = 60s ]
 ```
+
+### `<docker_sd_config>`
+
+Docker SD configurations allow retrieving scrape targets from [Docker Engine](https://docs.docker.com/engine/) hosts.
+
+This SD discovers "containers" and will create a target for each network IP and port the container is configured to expose.
+
+Available meta labels:
+
+* `__meta_docker_container_id`: the id of the container
+* `__meta_docker_container_name`: the name of the container
+* `__meta_docker_container_network_mode`: the network mode of the container
+* `__meta_docker_container_label_<labelname>`: each label of the container
+* `__meta_docker_network_id`: the ID of the network
+* `__meta_docker_network_name`: the name of the network
+* `__meta_docker_network_ingress`: whether the network is ingress
+* `__meta_docker_network_internal`: whether the network is internal
+* `__meta_docker_network_label_<labelname>`: each label of the network
+* `__meta_docker_network_scope`: the scope of the network
+* `__meta_docker_network_ip`: the IP of the container in this network
+* `__meta_docker_port_private`: the port on the container
+* `__meta_docker_port_public`: the external port if a port-mapping exists
+* `__meta_docker_port_public_ip`: the public IP if a port-mapping exists
+
+See below for the configuration options for Docker discovery:
+
+```yaml
+# Address of the Docker daemon.
+host: <string>
+
+# Optional proxy URL.
+[ proxy_url: <string> ]
+
+# TLS configuration.
+tls_config:
+  [ <tls_config> ]
+
+# The port to scrape metrics from, when `role` is nodes, and for discovered
+# tasks and services that don't have published ports.
+[ port: <int> | default = 80 ]
+
+# Optional filters to limit the discovery process to a subset of available
+# resources.
+# The available filters are listed in the upstream documentation:
+# Services: https://docs.docker.com/engine/api/v1.40/#operation/ServiceList
+# Tasks: https://docs.docker.com/engine/api/v1.40/#operation/TaskList
+# Nodes: https://docs.docker.com/engine/api/v1.40/#operation/NodeList
+[ filters:
+  [ - name: <string>
+      values: <string>, [...] ]
+
+# The time after which the containers are refreshed.
+[ refresh_interval: <duration> | default = 60s ]
+
+# Authentication information used to authenticate to the Docker daemon.
+# Note that `basic_auth` and `authorization` options are
+# mutually exclusive.
+# password and password_file are mutually exclusive.
+
+# Optional HTTP basic authentication information.
+basic_auth:
+  [ username: <string> ]
+  [ password: <secret> ]
+  [ password_file: <string> ]
+
+# Optional the `Authorization` header configuration.
+authorization:
+  # Sets the authentication type.
+  [ type: <string> | default: Bearer ]
+  # Sets the credentials. It is mutually exclusive with
+  # `credentials_file`.
+  [ credentials: <secret> ]
+  # Sets the credentials with the credentials read from the configured file.
+  # It is mutually exclusive with `credentials`.
+  [ credentials_file: <filename> ]
+
+# Optional OAuth 2.0 configuration.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2:
+  [ <oauth2> ]
+
+# Configure whether HTTP requests follow HTTP 3xx redirects.
+[ follow_redirects: <bool> | default = true ]
+
+```
+
+The [relabeling phase](#relabel_config) is the preferred and more powerful
+way to filter containers. For users with thousands of containers it
+can be more efficient to use the Docker API directly which has basic support for
+filtering containers (using `filters`).
+
+See [this example Prometheus configuration file](/documentation/examples/prometheus-docker.yml)
+for a detailed example of configuring Prometheus for Docker Engine.
 
 ### `<dockerswarm_sd_config>`
 
@@ -577,11 +760,19 @@ role: <string>
 # tasks and services that don't have published ports.
 [ port: <int> | default = 80 ]
 
-# The time after which the droplets are refreshed.
+# Optional filters to limit the discovery process to a subset of available
+# resources.
+# The available filters are listed in the upstream documentation:
+# https://docs.docker.com/engine/api/v1.40/#operation/ContainerList
+[ filters:
+  [ - name: <string>
+      values: <string>, [...] ]
+
+# The time after which the service discovery data is refreshed.
 [ refresh_interval: <duration> | default = 60s ]
 
 # Authentication information used to authenticate to the Docker daemon.
-# Note that `basic_auth`, `bearer_token` and `bearer_token_file` options are
+# Note that `basic_auth` and `authorization` options are
 # mutually exclusive.
 # password and password_file are mutually exclusive.
 
@@ -591,12 +782,31 @@ basic_auth:
   [ password: <secret> ]
   [ password_file: <string> ]
 
-# Optional bearer token authentication information.
-[ bearer_token: <secret> ]
+# Optional the `Authorization` header configuration.
+authorization:
+  # Sets the authentication type.
+  [ type: <string> | default: Bearer ]
+  # Sets the credentials. It is mutually exclusive with
+  # `credentials_file`.
+  [ credentials: <secret> ]
+  # Sets the credentials with the credentials read from the configured file.
+  # It is mutually exclusive with `credentials`.
+  [ credentials_file: <filename> ]
 
-# Optional bearer token file authentication information.
-[ bearer_token_file: <filename> ]
+# Optional OAuth 2.0 configuration.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2:
+  [ <oauth2> ]
+
+# Configure whether HTTP requests follow HTTP 3xx redirects.
+[ follow_redirects: <bool> | default = true ]
+
 ```
+
+The [relabeling phase](#relabel_config) is the preferred and more powerful
+way to filter tasks, services or nodes. For users with thousands of tasks it
+can be more efficient to use the Swarm API directly which has basic support for
+filtering nodes (using `filters`).
 
 See [this example Prometheus configuration file](/documentation/examples/prometheus-dockerswarm.yml)
 for a detailed example of configuring Prometheus for Docker Swarm.
@@ -647,6 +857,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_ec2_instance_lifecycle`: the lifecycle of the EC2 instance, set only for 'spot' or 'scheduled' instances, absent otherwise
 * `__meta_ec2_instance_state`: the state of the EC2 instance
 * `__meta_ec2_instance_type`: the type of the EC2 instance
+* `__meta_ec2_ipv6_addresses`: comma separated list of IPv6 addresses assigned to the instance's network interfaces, if present
 * `__meta_ec2_owner_id`: the ID of the AWS account that owns the EC2 instance
 * `__meta_ec2_platform`: the Operating System platform, set to 'windows' on Windows servers, absent otherwise
 * `__meta_ec2_primary_subnet_id`: the subnet ID of the primary network interface, if available
@@ -972,7 +1183,7 @@ The labels below are only available for targets with `role` set to `robot`:
 role: <string>
 
 # Authentication information used to authenticate to the API server.
-# Note that `basic_auth`, `bearer_token` and `bearer_token_file` options are
+# Note that `basic_auth` and `authorization` options are
 # mutually exclusive.
 # password and password_file are mutually exclusive.
 
@@ -983,15 +1194,28 @@ basic_auth:
   [ password: <secret> ]
   [ password_file: <string> ]
 
-# Optional bearer token authentication information, required when role is hcloud
-# Role robot does not support bearer token authentication.
-[ bearer_token: <secret> ]
+# Optional the `Authorization` header configuration. required when role is
+# hcloud. Role robot does not support bearer token authentication.
+authorization:
+  # Sets the authentication type.
+  [ type: <string> | default: Bearer ]
+  # Sets the credentials. It is mutually exclusive with
+  # `credentials_file`.
+  [ credentials: <secret> ]
+  # Sets the credentials with the credentials read from the configured file.
+  # It is mutually exclusive with `credentials`.
+  [ credentials_file: <filename> ]
 
-# Optional bearer token file authentication information.
-[ bearer_token_file: <filename> ]
+# Optional OAuth 2.0 configuration.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2:
+  [ <oauth2> ]
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+
+# Configure whether HTTP requests follow HTTP 3xx redirects.
+[ follow_redirects: <bool> | default = true ]
 
 # TLS configuration.
 tls_config:
@@ -1137,7 +1361,7 @@ See below for the configuration options for Kubernetes discovery:
 role: <string>
 
 # Optional authentication information used to authenticate to the API server.
-# Note that `basic_auth`, `bearer_token` and `bearer_token_file` options are
+# Note that `basic_auth` and `authorization` options are
 # mutually exclusive.
 # password and password_file are mutually exclusive.
 
@@ -1147,14 +1371,27 @@ basic_auth:
   [ password: <secret> ]
   [ password_file: <string> ]
 
-# Optional bearer token authentication information.
-[ bearer_token: <secret> ]
+# Optional the `Authorization` header configuration.
+authorization:
+  # Sets the authentication type.
+  [ type: <string> | default: Bearer ]
+  # Sets the credentials. It is mutually exclusive with
+  # `credentials_file`.
+  [ credentials: <secret> ]
+  # Sets the credentials with the credentials read from the configured file.
+  # It is mutually exclusive with `credentials`.
+  [ credentials_file: <filename> ]
 
-# Optional bearer token file authentication information.
-[ bearer_token_file: <filename> ]
+# Optional OAuth 2.0 configuration.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2:
+  [ <oauth2> ]
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+
+# Configure whether HTTP requests follow HTTP 3xx redirects.
+[ follow_redirects: <bool> | default = true ]
 
 # TLS configuration.
 tls_config:
@@ -1165,13 +1402,13 @@ namespaces:
   names:
     [ - <string> ]
 
-# Optional label and field selectors to limit the discovery process to a subset of available resources. 
+# Optional label and field selectors to limit the discovery process to a subset of available resources.
 # See https://kubernetes.io/docs/concepts/overview/working-with-objects/field-selectors/
-# and https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/ to learn more about the possible 
+# and https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/ to learn more about the possible
 # filters that can be used. Endpoints role supports pod, service and endpoints selectors, other roles
 # only support selectors matching the role itself (e.g. node role can only contain node selectors).
 
-# Note: When making decision about using field/label selector make sure that this 
+# Note: When making decision about using field/label selector make sure that this
 # is the best approach - it will prevent Prometheus from reusing single list/watch
 # for all scrape configs. This might result in a bigger load on the Kubernetes API,
 # because per each selector combination there will be additional LIST/WATCH. On the other hand,
@@ -1199,6 +1436,132 @@ for a detailed example of configuring Prometheus for Kubernetes.
 
 You may wish to check out the 3rd party [Prometheus Operator](https://github.com/coreos/prometheus-operator),
 which automates the Prometheus setup on top of Kubernetes.
+
+### `<lightsail_sd_config>`
+
+Lightsail SD configurations allow retrieving scrape targets from [AWS Lightsail](https://aws.amazon.com/lightsail/)
+instances. The private IP address is used by default, but may be changed to
+the public IP address with relabeling.
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_lightsail_availability_zone`: the availability zone in which the instance is running
+* `__meta_lightsail_blueprint_id`: the Lightsail blueprint ID
+* `__meta_lightsail_bundle_id`: the Lightsail bundle ID
+* `__meta_lightsail_instance_name`: the name of the Lightsail instance
+* `__meta_lightsail_instance_state`: the state of the Lightsail instance
+* `__meta_lightsail_instance_support_code`: the support code of the Lightsail instance
+* `__meta_lightsail_ipv6_addresses`: comma separated list of IPv6 addresses assigned to the instance's network interfaces, if present
+* `__meta_lightsail_private_ip`: the private IP address of the instance
+* `__meta_lightsail_public_ip`: the public IP address of the instance, if available
+* `__meta_lightsail_tag_<tagkey>`: each tag value of the instance
+
+See below for the configuration options for Lightsail discovery:
+
+```yaml
+# The information to access the Lightsail API.
+
+# The AWS region. If blank, the region from the instance metadata is used.
+[ region: <string> ]
+
+# Custom endpoint to be used.
+[ endpoint: <string> ]
+
+# The AWS API keys. If blank, the environment variables `AWS_ACCESS_KEY_ID`
+# and `AWS_SECRET_ACCESS_KEY` are used.
+[ access_key: <string> ]
+[ secret_key: <secret> ]
+# Named AWS profile used to connect to the API.
+[ profile: <string> ]
+
+# AWS Role ARN, an alternative to using AWS API keys.
+[ role_arn: <string> ]
+
+# Refresh interval to re-read the instance list.
+[ refresh_interval: <duration> | default = 60s ]
+
+# The port to scrape metrics from. If using the public IP address, this must
+# instead be specified in the relabeling rule.
+[ port: <int> | default = 80 ]
+```
+
+### `<linode_sd_config>`
+
+Linode SD configurations allow retrieving scrape targets from [Linode's](https://www.linode.com/)
+Linode APIv4.
+This service discovery uses the public IPv4 address by default, by that can be
+changed with relabelling, as demonstrated in [the Prometheus linode-sd
+configuration file](/documentation/examples/prometheus-linode.yml).
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_linode_instance_id`: the id of the linode instance
+* `__meta_linode_instance_label`: the label of the linode instance
+* `__meta_linode_image`: the slug of the linode instance's image
+* `__meta_linode_private_ipv4`: the private IPv4 of the linode instance
+* `__meta_linode_public_ipv4`: the public IPv4 of the linode instance
+* `__meta_linode_public_ipv6`: the public IPv6 of the linode instance
+* `__meta_linode_region`: the region of the linode instance
+* `__meta_linode_type`: the type of the linode instance
+* `__meta_linode_status`: the status of the linode instance
+* `__meta_linode_tags`: a list of tags of the linode instance joined by the tag separator
+* `__meta_linode_group`: the display group a linode instance is a member of
+* `__meta_linode_hypervisor`: the virtualization software powering the linode instance
+* `__meta_linode_backups`: the backup service status of the linode instance
+* `__meta_linode_specs_disk_bytes`: the amount of storage space the linode instance has access to
+* `__meta_linode_specs_memory_bytes`: the amount of RAM the linode instance has access to
+* `__meta_linode_specs_vcpus`: the number of VCPUS this linode has access to
+* `__meta_linode_specs_transfer_bytes`: the amount of network transfer the linode instance is allotted each month
+* `__meta_linode_extra_ips`: a list of all extra IPv4 addresses assigned to the linode instance joined by the tag separator
+
+```yaml
+# Authentication information used to authenticate to the API server.
+# Note that `basic_auth` and `authorization` options are
+# mutually exclusive.
+# password and password_file are mutually exclusive.
+# Note: Linode APIv4 Token must be created with scopes: 'linodes:read_only' and 'ips:read_only'
+
+# Optional HTTP basic authentication information, not currently supported by Linode APIv4.
+basic_auth:
+  [ username: <string> ]
+  [ password: <secret> ]
+  [ password_file: <string> ]
+
+# Optional the `Authorization` header configuration.
+authorization:
+  # Sets the authentication type.
+  [ type: <string> | default: Bearer ]
+  # Sets the credentials. It is mutually exclusive with
+  # `credentials_file`.
+  [ credentials: <secret> ]
+  # Sets the credentials with the credentials read from the configured file.
+  # It is mutually exclusive with `credentials`.
+  [ credentials_file: <filename> ]
+
+# Optional OAuth 2.0 configuration.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2:
+  [ <oauth2> ]
+
+# Optional proxy URL.
+[ proxy_url: <string> ]
+
+# Configure whether HTTP requests follow HTTP 3xx redirects.
+[ follow_redirects: <bool> | default = true ]
+
+# TLS configuration.
+tls_config:
+  [ <tls_config> ]
+
+# The port to scrape metrics from.
+[ port: <int> | default = 80 ]
+
+# The string by which Linode Instance tags are joined into the tag label.
+[ tag_separator: <string> | default = , ]
+
+# The time after which the linode instances are refreshed.
+[ refresh_interval: <duration> | default = 60s ]
+```
 
 ### `<marathon_sd_config>`
 
@@ -1247,15 +1610,27 @@ basic_auth:
   [ password: <secret> ]
   [ password_file: <string> ]
 
-# Sets the `Authorization` header on every request with
-# the configured bearer token. It is mutually exclusive with `bearer_token_file` and other authentication mechanisms.
-# NOTE: The current version of DC/OS marathon (v1.11.0) does not support standard Bearer token authentication. Use `auth_token` instead.
-[ bearer_token: <string> ]
+# Optional the `Authorization` header configuration.
+# NOTE: The current version of DC/OS marathon (v1.11.0) does not support
+# standard `Authentication` header, use `auth_token` or `auth_token_file`
+# instead.
+authorization:
+  # Sets the authentication type.
+  [ type: <string> | default: Bearer ]
+  # Sets the credentials. It is mutually exclusive with
+  # `credentials_file`.
+  [ credentials: <secret> ]
+  # Sets the credentials with the credentials read from the configured file.
+  # It is mutually exclusive with `credentials`.
+  [ credentials_file: <filename> ]
 
-# Sets the `Authorization` header on every request with the bearer token
-# read from the configured file. It is mutually exclusive with `bearer_token` and other authentication mechanisms.
-# NOTE: The current version of DC/OS marathon (v1.11.0) does not support standard Bearer token authentication. Use `auth_token_file` instead.
-[ bearer_token_file: <filename> ]
+# Optional OAuth 2.0 configuration.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2:
+  [ <oauth2> ]
+
+# Configure whether HTTP requests follow HTTP 3xx redirects.
+[ follow_redirects: <bool> | default = true ]
 
 # TLS configuration for connecting to marathon servers
 tls_config:
@@ -1441,13 +1816,21 @@ basic_auth:
   [ password: <secret> ]
   [ password_file: <string> ]
 
-# Sets the `Authorization` header on every request with
-# the configured bearer token. It is mutually exclusive with `bearer_token_file`.
-[ bearer_token: <string> ]
+# Optional the `Authorization` header configuration.
+authorization:
+  # Sets the authentication type.
+  [ type: <string> | default: Bearer ]
+  # Sets the credentials. It is mutually exclusive with
+  # `credentials_file`.
+  [ credentials: <secret> ]
+  # Sets the credentials with the credentials read from the configured file.
+  # It is mutually exclusive with `credentials`.
+  [ credentials_file: <filename> ]
 
-# Sets the `Authorization` header on every request with the bearer token
-# read from the configured file. It is mutually exclusive with `bearer_token`.
-[ bearer_token_file: <filename> ]
+# Optional OAuth 2.0 configuration.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2:
+  [ <oauth2> ]
 
 # Configures the scrape request's TLS settings.
 tls_config:
@@ -1455,6 +1838,9 @@ tls_config:
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+
+# Configure whether HTTP requests follow HTTP 3xx redirects.
+[ follow_redirects: <bool> | default = true ]
 
 # Refresh interval to re-read the app instance list.
 [ refresh_interval: <duration> | default = 30s ]
@@ -1464,6 +1850,109 @@ See [the Prometheus eureka-sd configuration file](/documentation/examples/promet
 for a practical example on how to set up your Eureka app and your Prometheus
 configuration.
 
+### `<scaleway_sd_config>`
+
+Scaleway SD configurations allow retrieving scrape targets from [Scaleway instances](https://www.scaleway.com/en/virtual-instances/) and [baremetal services](https://www.scaleway.com/en/bare-metal-servers/).
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+#### Instance role
+
+
+* `__meta_scaleway_instance_boot_type`: the boot type of the server
+* `__meta_scaleway_instance_hostname`: the hostname of the server
+* `__meta_scaleway_instance_id`: the ID of the server
+* `__meta_scaleway_instance_image_arch`: the arch of the server image
+* `__meta_scaleway_instance_image_id`: the ID of the server image
+* `__meta_scaleway_instance_image_name`: the name of the server image
+* `__meta_scaleway_instance_location_cluster_id`: the cluster ID of the server location
+* `__meta_scaleway_instance_location_hypervisor_id`: the hypervisor ID of the server location
+* `__meta_scaleway_instance_location_node_id`: the node ID of the server location
+* `__meta_scaleway_instance_name`: name of the server
+* `__meta_scaleway_instance_organization_id`: the organization of the server
+* `__meta_scaleway_instance_private_ipv4`: the private IPv4 address of the server
+* `__meta_scaleway_instance_project_id`: project id of the server
+* `__meta_scaleway_instance_public_ipv4`: the public IPv4 address of the server
+* `__meta_scaleway_instance_public_ipv6`: the public IPv6 address of the server
+* `__meta_scaleway_instance_region`: the region of the server
+* `__meta_scaleway_instance_security_group_id`: the ID of the security group of the server
+* `__meta_scaleway_instance_security_group_name`: the name of the security group of the server
+* `__meta_scaleway_instance_status`: status of the server
+* `__meta_scaleway_instance_tags`: the list of tags of the server joined by the tag separator
+* `__meta_scaleway_instance_type`: commercial type of the server
+* `__meta_scaleway_instance_zone`: the zone of the server (ex: `fr-par-1`, complete list [here](https://developers.scaleway.com/en/products/instance/api/#introduction))
+
+This role uses the private IPv4 address by default. This can be
+changed with relabelling, as demonstrated in [the Prometheus scaleway-sd
+configuration file](/documentation/examples/prometheus-scaleway.yml).
+
+#### Baremetal role
+
+* `__meta_scaleway_baremetal_id`: the ID of the server
+* `__meta_scaleway_baremetal_public_ipv4`: the public IPv4 address of the server
+* `__meta_scaleway_baremetal_public_ipv6`: the public IPv6 address of the server
+* `__meta_scaleway_baremetal_name`: the name of the server
+* `__meta_scaleway_baremetal_os_name`: the name of the operating system of the server
+* `__meta_scaleway_baremetal_os_version`: the version of the operating system of the server
+* `__meta_scaleway_baremetal_project_id`: the project ID of the server
+* `__meta_scaleway_baremetal_status`: the status of the server
+* `__meta_scaleway_baremetal_tags`: the list of tags of the server joined by the tag separator
+* `__meta_scaleway_baremetal_type`: the commercial type of the server
+* `__meta_scaleway_baremetal_zone`: the zone of the server (ex: `fr-par-1`, complete list [here](https://developers.scaleway.com/en/products/instance/api/#introduction))
+
+This role uses the public IPv4 address by default. This can be
+changed with relabelling, as demonstrated in [the Prometheus scaleway-sd
+configuration file](/documentation/examples/prometheus-scaleway.yml).
+
+See below for the configuration options for Scaleway discovery:
+
+```yaml
+# Access key to use. https://console.scaleway.com/project/credentials
+access_key: <string>
+
+# Secret key to use when listing targets. https://console.scaleway.com/project/credentials
+# It is mutually exclusive with `secret_key_file`.
+[ secret_key: <secret> ]
+
+# Sets the secret key with the credentials read from the configured file.
+# It is mutually exclusive with `secret_key`.
+[ secret_key_file: <filename> ]
+
+# Project ID of the targets.
+project_id: <string>
+
+# Role of the targets to retrieve. Must be `instance` or `baremetal`.
+role: <string>
+
+# The port to scrape metrics from.
+[ port: <int> | default = 80 ]
+
+# API URL to use when doing the server listing requests.
+[ api_url: <string> | default = "https://api.scaleway.com" ]
+
+# Zone is the availability zone of your targets (e.g. fr-par-1).
+[ zone: <string> | default = fr-par-1 ]
+
+# NameFilter specify a name filter (works as a LIKE) to apply on the server listing request.
+[ name_filter: <string> ]
+
+# TagsFilter specify a tag filter (a server needs to have all defined tags to be listed) to apply on the server listing request.
+tags_filter:
+[ - <string> ]
+
+# Refresh interval to re-read the targets list.
+[ refresh_interval: <duration> | default = 60s ]
+
+# Configure whether HTTP requests follow HTTP 3xx redirects.
+[ follow_redirects: <bool> | default = true ]
+
+# Optional proxy URL.
+[ proxy_url: <string> ]
+
+# TLS configuration.
+tls_config:
+  [ <tls_config> ]
+```
 
 ### `<static_config>`
 
@@ -1594,7 +2083,7 @@ through the `__alerts_path__` label.
 [ timeout: <duration> | default = 10s ]
 
 # The api version of Alertmanager.
-[ api_version: <string> | default = v1 ]
+[ api_version: <string> | default = v2 ]
 
 # Prefix for the HTTP path alerts are pushed to.
 [ path_prefix: <path> | default = / ]
@@ -1610,13 +2099,21 @@ basic_auth:
   [ password: <secret> ]
   [ password_file: <string> ]
 
-# Sets the `Authorization` header on every request with
-# the configured bearer token. It is mutually exclusive with `bearer_token_file`.
-[ bearer_token: <string> ]
+# Optional the `Authorization` header configuration.
+authorization:
+  # Sets the authentication type.
+  [ type: <string> | default: Bearer ]
+  # Sets the credentials. It is mutually exclusive with
+  # `credentials_file`.
+  [ credentials: <secret> ]
+  # Sets the credentials with the credentials read from the configured file.
+  # It is mutually exclusive with `credentials`.
+  [ credentials_file: <filename> ]
 
-# Sets the `Authorization` header on every request with the bearer token
-# read from the configured file. It is mutually exclusive with `bearer_token`.
-[ bearer_token_file: <filename> ]
+# Optional OAuth 2.0 configuration.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2:
+  [ <oauth2> ]
 
 # Configures the scrape request's TLS settings.
 tls_config:
@@ -1624,6 +2121,9 @@ tls_config:
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+
+# Configure whether HTTP requests follow HTTP 3xx redirects.
+[ follow_redirects: <bool> | default = true ]
 
 # List of Azure service discovery configurations.
 azure_sd_configs:
@@ -1653,6 +2153,10 @@ file_sd_configs:
 digitalocean_sd_configs:
   [ - <digitalocean_sd_config> ... ]
 
+# List of Docker service discovery configurations.
+docker_sd_configs:
+  [ - <docker_sd_config> ... ]
+
 # List of Docker Swarm service discovery configurations.
 dockerswarm_sd_configs:
   [ - <dockerswarm_sd_config> ... ]
@@ -1669,6 +2173,14 @@ hetzner_sd_configs:
 kubernetes_sd_configs:
   [ - <kubernetes_sd_config> ... ]
 
+# List of Lightsail service discovery configurations.
+lightsail_sd_configs:
+  [ - <lightsail_sd_config> ... ]
+
+# List of Linode service discovery configurations.
+linode_sd_configs:
+  [ - <linode_sd_config> ... ]
+
 # List of Marathon service discovery configurations.
 marathon_sd_configs:
   [ - <marathon_sd_config> ... ]
@@ -1680,6 +2192,10 @@ nerve_sd_configs:
 # List of OpenStack service discovery configurations.
 openstack_sd_configs:
   [ - <openstack_sd_config> ... ]
+
+# List of Scaleway service discovery configurations.
+scaleway_sd_configs:
+  [ - <scaleway_sd_config> ... ]
 
 # List of Zookeeper Serverset service discovery configurations.
 serverset_sd_configs:
@@ -1714,14 +2230,22 @@ url: <string>
 # Timeout for requests to the remote write endpoint.
 [ remote_timeout: <duration> | default = 30s ]
 
+# Custom HTTP headers to be sent along with each remote write request.
+# Be aware that headers that are set by Prometheus itself can't be overwritten.
+headers:
+  [ <string>: <string> ... ]
+
 # List of remote write relabel configurations.
 write_relabel_configs:
   [ - <relabel_config> ... ]
 
-# Name of the remote write config, which if specified must be unique among remote write configs. 
+# Name of the remote write config, which if specified must be unique among remote write configs.
 # The name will be used in metrics and logging in place of a generated value to help users distinguish between
 # remote write configs.
 [ name: <string> ]
+
+# Enables sending of exemplars over remote write. Note that exemplar storage itself must be enabled for exemplars to be scraped in the first place.
+[ send_exemplars: <boolean> | default = false ]
 
 # Sets the `Authorization` header on every remote write request with the
 # configured username and password.
@@ -1731,13 +2255,40 @@ basic_auth:
   [ password: <secret> ]
   [ password_file: <string> ]
 
-# Sets the `Authorization` header on every remote write request with
-# the configured bearer token. It is mutually exclusive with `bearer_token_file`.
-[ bearer_token: <string> ]
+# Optional the `Authorization` header configuration.
+authorization:
+  # Sets the authentication type.
+  [ type: <string> | default: Bearer ]
+  # Sets the credentials. It is mutually exclusive with
+  # `credentials_file`.
+  [ credentials: <secret> ]
+  # Sets the credentials with the credentials read from the configured file.
+  # It is mutually exclusive with `credentials`.
+  [ credentials_file: <filename> ]
 
-# Sets the `Authorization` header on every remote write request with the bearer token
-# read from the configured file. It is mutually exclusive with `bearer_token`.
-[ bearer_token_file: <filename> ]
+# Optionally configures AWS's Signature Verification 4 signing process to
+# sign requests. Cannot be set at the same time as basic_auth, authorization, or oauth2.
+# To use the default credentials from the AWS SDK, use `sigv4: {}`.
+sigv4:
+  # The AWS region. If blank, the region from the default credentials chain
+  # is used.
+  [ region: <string> ]
+
+  # The AWS API keys. If blank, the environment variables `AWS_ACCESS_KEY_ID`
+  # and `AWS_SECRET_ACCESS_KEY` are used.
+  [ access_key: <string> ]
+  [ secret_key: <secret> ]
+
+  # Named AWS profile used to authenticate.
+  [ profile: <string> ]
+
+  # AWS Role ARN, an alternative to using AWS API keys.
+  [ role_arn: <string> ]
+
+# Optional OAuth 2.0 configuration.
+# Cannot be used at the same time as basic_auth, authorization, or sigv4.
+oauth2:
+  [ <oauth2> ]
 
 # Configures the remote write request's TLS settings.
 tls_config:
@@ -1745,6 +2296,9 @@ tls_config:
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+
+# Configure whether HTTP requests follow HTTP 3xx redirects.
+[ follow_redirects: <bool> | default = true ]
 
 # Configures the queue used to write to remote storage.
 queue_config:
@@ -1765,7 +2319,18 @@ queue_config:
   [ min_backoff: <duration> | default = 30ms ]
   # Maximum retry delay.
   [ max_backoff: <duration> | default = 100ms ]
+  # Retry upon receiving a 429 status code from the remote-write storage.
+  # This is experimental and might change in the future.
+  [ retry_on_http_429: <boolean> | default = false ]
 
+# Configures the sending of series metadata to remote storage.
+# Metadata configuration is subject to change at any point
+# or be removed in future releases.
+metadata_config:
+  # Whether metric metadata is sent to remote storage or not.
+  [ send: <boolean> | default = true ]
+  # How frequently metric metadata is sent to remote storage.
+  [ send_interval: <duration> | default = 1m ]
 ```
 
 There is a list of
@@ -1778,7 +2343,7 @@ with this feature.
 # The URL of the endpoint to query from.
 url: <string>
 
-# Name of the remote read config, which if specified must be unique among remote read configs. 
+# Name of the remote read config, which if specified must be unique among remote read configs.
 # The name will be used in metrics and logging in place of a generated value to help users distinguish between
 # remote read configs.
 [ name: <string> ]
@@ -1790,6 +2355,11 @@ required_matchers:
 
 # Timeout for requests to the remote read endpoint.
 [ remote_timeout: <duration> | default = 1m ]
+
+# Custom HTTP headers to be sent along with each remote read request.
+# Be aware that headers that are set by Prometheus itself can't be overwritten.
+headers:
+  [ <string>: <string> ... ]
 
 # Whether reads should be made for queries for time ranges that
 # the local storage should have complete data for.
@@ -1803,13 +2373,21 @@ basic_auth:
   [ password: <secret> ]
   [ password_file: <string> ]
 
-# Sets the `Authorization` header on every remote read request with
-# the configured bearer token. It is mutually exclusive with `bearer_token_file`.
-[ bearer_token: <string> ]
+# Optional the `Authorization` header configuration.
+authorization:
+  # Sets the authentication type.
+  [ type: <string> | default: Bearer ]
+  # Sets the credentials. It is mutually exclusive with
+  # `credentials_file`.
+  [ credentials: <secret> ]
+  # Sets the credentials with the credentials read from the configured file.
+  # It is mutually exclusive with `credentials`.
+  [ credentials_file: <filename> ]
 
-# Sets the `Authorization` header on every remote read request with the bearer token
-# read from the configured file. It is mutually exclusive with `bearer_token`.
-[ bearer_token_file: <filename> ]
+# Optional OAuth 2.0 configuration.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2:
+  [ <oauth2> ]
 
 # Configures the remote read request's TLS settings.
 tls_config:
@@ -1817,6 +2395,9 @@ tls_config:
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+
+# Configure whether HTTP requests follow HTTP 3xx redirects.
+[ follow_redirects: <bool> | default = true ]
 ```
 
 There is a list of

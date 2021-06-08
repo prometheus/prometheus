@@ -9,7 +9,7 @@ exports[`AlertsContent matches a snapshot 1`] = `
       checked={true}
       id="inactive-toggler"
       key="inactive"
-      onClick={[Function]}
+      onChange={[Function]}
       wrapperStyles={
         Object {
           "marginRight": 10,
@@ -32,7 +32,7 @@ exports[`AlertsContent matches a snapshot 1`] = `
       checked={true}
       id="pending-toggler"
       key="pending"
-      onClick={[Function]}
+      onChange={[Function]}
       wrapperStyles={
         Object {
           "marginRight": 10,
@@ -55,7 +55,7 @@ exports[`AlertsContent matches a snapshot 1`] = `
       checked={true}
       id="firing-toggler"
       key="firing"
-      onClick={[Function]}
+      onChange={[Function]}
       wrapperStyles={
         Object {
           "marginRight": 10,
@@ -77,7 +77,7 @@ exports[`AlertsContent matches a snapshot 1`] = `
     <Memo(Checkbox)
       checked={false}
       id="show-annotations-toggler"
-      onClick={[Function]}
+      onChange={[Function]}
       wrapperStyles={
         Object {
           "marginLeft": "auto",

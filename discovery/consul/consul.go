@@ -102,8 +102,7 @@ var (
 
 func init() {
 	discovery.RegisterConfig(&SDConfig{})
-	prometheus.MustRegister(rpcFailuresCount)
-	prometheus.MustRegister(rpcDuration)
+	prometheus.MustRegister(rpcFailuresCount, rpcDuration)
 }
 
 // SDConfig is the configuration for Consul service discovery.
@@ -424,6 +423,15 @@ func (d *Discovery) watchServices(ctx context.Context, ch chan<- []*targetgroup.
 				return
 			case ch <- []*targetgroup.Group{{Source: name}}:
 			}
+		}
+	}
+
+	// Send targetgroup with no targets if nothing was discovered.
+	if len(services) == 0 {
+		select {
+		case <-ctx.Done():
+			return
+		case ch <- []*targetgroup.Group{{}}:
 		}
 	}
 }

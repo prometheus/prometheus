@@ -5,6 +5,7 @@ import { Alert, Button, Col, Nav, NavItem, NavLink, Row, TabContent, TabPane } f
 import moment from 'moment-timezone';
 
 import ExpressionInput from './ExpressionInput';
+import CMExpressionInput from './CMExpressionInput';
 import GraphControls from './GraphControls';
 import { GraphTabContent } from './GraphTabContent';
 import DataTable from './DataTable';
@@ -22,13 +23,17 @@ interface PanelProps {
   removePanel: () => void;
   onExecuteQuery: (query: string) => void;
   pathPrefix: string;
-  enableMetricAutocomplete: boolean;
+  useExperimentalEditor: boolean;
+  enableAutocomplete: boolean;
+  enableHighlighting: boolean;
+  enableLinter: boolean;
 }
 
 interface PanelState {
   data: any; // TODO: Type data.
   lastQueryParams: QueryParams | null;
   loading: boolean;
+  warnings: string[] | null;
   error: string | null;
   stats: QueryStats | null;
   exprInputValue: string;
@@ -67,6 +72,7 @@ class Panel extends Component<PanelProps, PanelState> {
       data: null,
       lastQueryParams: null,
       loading: false,
+      warnings: null,
       error: null,
       stats: null,
       exprInputValue: props.options.expr,
@@ -156,6 +162,7 @@ class Panel extends Component<PanelProps, PanelState> {
         this.setState({
           error: null,
           data: json.data,
+          warnings: json.warnings,
           lastQueryParams: {
             startTime,
             endTime,
@@ -229,22 +236,39 @@ class Panel extends Component<PanelProps, PanelState> {
       <div className="panel">
         <Row>
           <Col>
-            <ExpressionInput
-              value={this.state.exprInputValue}
-              onExpressionChange={this.handleExpressionChange}
-              executeQuery={this.executeQuery}
-              loading={this.state.loading}
-              enableMetricAutocomplete={this.props.enableMetricAutocomplete}
-              autocompleteSections={{
-                'Query History': pastQueries,
-                'Metric Names': metricNames,
-              }}
-            />
+            {this.props.useExperimentalEditor ? (
+              <CMExpressionInput
+                value={this.state.exprInputValue}
+                onExpressionChange={this.handleExpressionChange}
+                executeQuery={this.executeQuery}
+                loading={this.state.loading}
+                enableAutocomplete={this.props.enableAutocomplete}
+                enableHighlighting={this.props.enableHighlighting}
+                enableLinter={this.props.enableLinter}
+                queryHistory={pastQueries}
+                metricNames={metricNames}
+              />
+            ) : (
+              <ExpressionInput
+                value={this.state.exprInputValue}
+                onExpressionChange={this.handleExpressionChange}
+                executeQuery={this.executeQuery}
+                loading={this.state.loading}
+                enableAutocomplete={this.props.enableAutocomplete}
+                queryHistory={pastQueries}
+                metricNames={metricNames}
+              />
+            )}
           </Col>
         </Row>
         <Row>
           <Col>{this.state.error && <Alert color="danger">{this.state.error}</Alert>}</Col>
         </Row>
+        {this.state.warnings?.map((warning, index) => (
+          <Row key={index}>
+            <Col>{warning && <Alert color="warning">{warning}</Alert>}</Col>
+          </Row>
+        ))}
         <Row>
           <Col>
             <Nav tabs>

@@ -10,7 +10,9 @@ local template = grafana.template;
 {
   grafanaDashboards+:: {
     'prometheus.json':
-      g.dashboard('Prometheus Overview')
+      g.dashboard(
+        '%(prefix)sOverview' % $._config.grafanaPrometheus
+      )
       .addMultiTemplate('job', 'prometheus_build_info', 'job')
       .addMultiTemplate('instance', 'prometheus_build_info', 'instance')
       .addRow(
@@ -52,11 +54,13 @@ local template = grafana.template;
         .addPanel(
           g.panel('Scrape failures') +
           g.queryPanel([
+            'sum by (job) (rate(prometheus_target_scrapes_exceeded_body_size_limit_total[1m]))',
             'sum by (job) (rate(prometheus_target_scrapes_exceeded_sample_limit_total[1m]))',
             'sum by (job) (rate(prometheus_target_scrapes_sample_duplicate_timestamp_total[1m]))',
             'sum by (job) (rate(prometheus_target_scrapes_sample_out_of_bounds_total[1m]))',
             'sum by (job) (rate(prometheus_target_scrapes_sample_out_of_order_total[1m]))',
           ], [
+            'exceeded body size limit: {{job}}',
             'exceeded sample limit: {{job}}',
             'duplicate timestamp: {{job}}',
             'out of bounds: {{job}}',
@@ -96,7 +100,10 @@ local template = grafana.template;
           { yaxes: g.yaxes('ms') } +
           g.stack,
         )
-      ),
+      ) + {
+        tags: $._config.grafanaPrometheus.tags,
+        refresh: $._config.grafanaPrometheus.refresh,
+      },
     // Remote write specific dashboard.
     'prometheus-remote-write.json':
       local timestampComparison =
@@ -144,9 +151,9 @@ local template = grafana.template;
             rate(
               prometheus_remote_storage_samples_in_total{cluster=~"$cluster", instance=~"$instance"}[5m])
             - 
-              ignoring(remote_name, url) group_right(instance) rate(prometheus_remote_storage_succeeded_samples_total{cluster=~"$cluster", instance=~"$instance"}[5m])
+              ignoring(remote_name, url) group_right(instance) (rate(prometheus_remote_storage_succeeded_samples_total{cluster=~"$cluster", instance=~"$instance"}[5m]) or rate(prometheus_remote_storage_samples_total{cluster=~"$cluster", instance=~"$instance"}[5m]))
             - 
-              rate(prometheus_remote_storage_dropped_samples_total{cluster=~"$cluster", instance=~"$instance"}[5m])
+              (rate(prometheus_remote_storage_dropped_samples_total{cluster=~"$cluster", instance=~"$instance"}[5m]) or rate(prometheus_remote_storage_samples_dropped_total{cluster=~"$cluster", instance=~"$instance"}[5m]))
           |||,
           legendFormat='{{cluster}}:{{instance}} {{remote_name}}:{{url}}'
         ));
@@ -215,7 +222,7 @@ local template = grafana.template;
           span=6,
         )
         .addTarget(prometheus.target(
-          'prometheus_remote_storage_pending_samples{cluster=~"$cluster", instance=~"$instance"}',
+          'prometheus_remote_storage_pending_samples{cluster=~"$cluster", instance=~"$instance"} or prometheus_remote_storage_samples_pending{cluster=~"$cluster", instance=~"$instance"}',
           legendFormat='{{cluster}}:{{instance}} {{remote_name}}:{{url}}'
         ));
 
@@ -250,7 +257,7 @@ local template = grafana.template;
           span=3,
         )
         .addTarget(prometheus.target(
-          'rate(prometheus_remote_storage_dropped_samples_total{cluster=~"$cluster", instance=~"$instance"}[5m])',
+          'rate(prometheus_remote_storage_dropped_samples_total{cluster=~"$cluster", instance=~"$instance"}[5m]) or rate(prometheus_remote_storage_samples_dropped_total{cluster=~"$cluster", instance=~"$instance"}[5m])',
           legendFormat='{{cluster}}:{{instance}} {{remote_name}}:{{url}}'
         ));
 
@@ -261,7 +268,7 @@ local template = grafana.template;
           span=3,
         )
         .addTarget(prometheus.target(
-          'rate(prometheus_remote_storage_failed_samples_total{cluster=~"$cluster", instance=~"$instance"}[5m])',
+          'rate(prometheus_remote_storage_failed_samples_total{cluster=~"$cluster", instance=~"$instance"}[5m]) or rate(prometheus_remote_storage_samples_failed_total{cluster=~"$cluster", instance=~"$instance"}[5m])',
           legendFormat='{{cluster}}:{{instance}} {{remote_name}}:{{url}}'
         ));
 
@@ -272,7 +279,7 @@ local template = grafana.template;
           span=3,
         )
         .addTarget(prometheus.target(
-          'rate(prometheus_remote_storage_retried_samples_total{cluster=~"$cluster", instance=~"$instance"}[5m])',
+          'rate(prometheus_remote_storage_retried_samples_total{cluster=~"$cluster", instance=~"$instance"}[5m]) or rate(prometheus_remote_storage_samples_retried_total{cluster=~"$cluster", instance=~"$instance"}[5m])',
           legendFormat='{{cluster}}:{{instance}} {{remote_name}}:{{url}}'
         ));
 
@@ -287,8 +294,10 @@ local template = grafana.template;
           legendFormat='{{cluster}}:{{instance}} {{remote_name}}:{{url}}'
         ));
 
-      dashboard.new('Prometheus Remote Write',
-                    editable=true)
+      dashboard.new(
+        title='%(prefix)sRemote Write' % $._config.grafanaPrometheus,
+        editable=true
+      )
       .addTemplate(
         {
           hide: 0,
@@ -372,6 +381,9 @@ local template = grafana.template;
         .addPanel(failedSamples)
         .addPanel(retriedSamples)
         .addPanel(enqueueRetries)
-      ),
+      ) + {
+        tags: $._config.grafanaPrometheus.tags,
+        refresh: $._config.grafanaPrometheus.refresh,
+      },
   },
 }

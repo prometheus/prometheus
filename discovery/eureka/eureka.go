@@ -60,7 +60,8 @@ const (
 
 // DefaultSDConfig is the default Eureka SD configuration.
 var DefaultSDConfig = SDConfig{
-	RefreshInterval: model.Duration(30 * time.Second),
+	RefreshInterval:  model.Duration(30 * time.Second),
+	HTTPClientConfig: config.DefaultHTTPClientConfig,
 }
 
 func init() {
@@ -115,9 +116,9 @@ type Discovery struct {
 	server string
 }
 
-// New creates a new Eureka discovery for the given role.
+// NewDiscovery creates a new Eureka discovery for the given role.
 func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
-	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "eureka_sd", false, false)
+	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "eureka_sd", config.WithHTTP2Disabled())
 	if err != nil {
 		return nil, err
 	}

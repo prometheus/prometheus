@@ -27,7 +27,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-// liveReaderMetrics holds all metrics exposed by the LiveReader.
+// LiveReaderMetrics holds all metrics exposed by the LiveReader.
 type LiveReaderMetrics struct {
 	readerCorruptionErrors *prometheus.CounterVec
 }

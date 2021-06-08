@@ -61,7 +61,8 @@ const (
 
 // DefaultSDConfig is the default Marathon SD configuration.
 var DefaultSDConfig = SDConfig{
-	RefreshInterval: model.Duration(30 * time.Second),
+	RefreshInterval:  model.Duration(30 * time.Second),
+	HTTPClientConfig: config.DefaultHTTPClientConfig,
 }
 
 func init() {
@@ -111,6 +112,9 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if (len(c.HTTPClientConfig.BearerToken) > 0 || len(c.HTTPClientConfig.BearerTokenFile) > 0) && (len(c.AuthToken) > 0 || len(c.AuthTokenFile) > 0) {
 		return errors.New("marathon_sd: at most one of bearer_token, bearer_token_file, auth_token & auth_token_file must be configured")
 	}
+	if c.HTTPClientConfig.Authorization != nil && (len(c.AuthToken) > 0 || len(c.AuthTokenFile) > 0) {
+		return errors.New("marathon_sd: at most one of auth_token, auth_token_file & authorization must be configured")
+	}
 	return c.HTTPClientConfig.Validate()
 }
 
@@ -127,7 +131,7 @@ type Discovery struct {
 
 // NewDiscovery returns a new Marathon Discovery.
 func NewDiscovery(conf SDConfig, logger log.Logger) (*Discovery, error) {
-	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "marathon_sd", false, false)
+	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "marathon_sd", config.WithHTTP2Disabled())
 	if err != nil {
 		return nil, err
 	}

@@ -146,7 +146,7 @@ func TestHandlerSendAll(t *testing.T) {
 				Username: "prometheus",
 				Password: "testing_password",
 			},
-		}, "auth_alertmanager", false, false)
+		}, "auth_alertmanager", config_util.WithHTTP2Disabled())
 
 	h.alertmanagers = make(map[string]*alertmanagerSet)
 
@@ -454,7 +454,7 @@ func TestReload(t *testing.T) {
 					},
 				},
 			},
-			out: "http://alertmanager:9093/api/v1/alerts",
+			out: "http://alertmanager:9093/api/v2/alerts",
 		},
 	}
 
@@ -504,7 +504,7 @@ func TestDroppedAlertmanagers(t *testing.T) {
 					},
 				},
 			},
-			out: "http://alertmanager:9093/api/v1/alerts",
+			out: "http://alertmanager:9093/api/v2/alerts",
 		},
 	}
 

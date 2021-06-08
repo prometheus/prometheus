@@ -33,6 +33,7 @@ import (
 	"k8s.io/api/networking/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
@@ -74,6 +75,7 @@ var (
 			NodeLegacyHostIP,
 			string(apiv1.NodeHostName),
 		},
+		HTTPClientConfig: config.DefaultHTTPClientConfig,
 	}
 )
 
@@ -174,7 +176,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err != nil {
 		return err
 	}
-	if c.APIServer.URL == nil && !reflect.DeepEqual(c.HTTPClientConfig, config.HTTPClientConfig{}) {
+	if c.APIServer.URL == nil && !reflect.DeepEqual(c.HTTPClientConfig, config.DefaultHTTPClientConfig) {
 		return errors.Errorf("to use custom HTTP client configuration please provide the 'api_server' URL explicitly")
 	}
 
@@ -213,7 +215,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		if err != nil {
 			return err
 		}
-		_, err = fields.ParseSelector(selector.Label)
+		_, err = labels.Parse(selector.Label)
 		if err != nil {
 			return err
 		}
@@ -273,7 +275,7 @@ func New(l log.Logger, conf *SDConfig) (*Discovery, error) {
 		}
 		level.Info(l).Log("msg", "Using pod service account via in-cluster config")
 	} else {
-		rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "kubernetes_sd", false, false)
+		rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "kubernetes_sd", config.WithHTTP2Disabled())
 		if err != nil {
 			return nil, err
 		}

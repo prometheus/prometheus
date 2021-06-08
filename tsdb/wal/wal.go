@@ -613,6 +613,24 @@ func (w *WAL) log(rec []byte, final bool) error {
 			return err
 		}
 	}
+
+	// Compress the record before calculating if a new segment is needed.
+	compressed := false
+	if w.compress &&
+		len(rec) > 0 &&
+		// If MaxEncodedLen is less than 0 the record is too large to be compressed.
+		snappy.MaxEncodedLen(len(rec)) >= 0 {
+		// The snappy library uses `len` to calculate if we need a new buffer.
+		// In order to allocate as few buffers as possible make the length
+		// equal to the capacity.
+		w.snappyBuf = w.snappyBuf[:cap(w.snappyBuf)]
+		w.snappyBuf = snappy.Encode(w.snappyBuf, rec)
+		if len(w.snappyBuf) < len(rec) {
+			rec = w.snappyBuf
+			compressed = true
+		}
+	}
+
 	// If the record is too big to fit within the active page in the current
 	// segment, terminate the active segment and advance to the next one.
 	// This ensures that records do not cross segment boundaries.
@@ -622,19 +640,6 @@ func (w *WAL) log(rec []byte, final bool) error {
 	if len(rec) > left {
 		if err := w.nextSegment(); err != nil {
 			return err
-		}
-	}
-
-	compressed := false
-	if w.compress && len(rec) > 0 {
-		// The snappy library uses `len` to calculate if we need a new buffer.
-		// In order to allocate as few buffers as possible make the length
-		// equal to the capacity.
-		w.snappyBuf = w.snappyBuf[:cap(w.snappyBuf)]
-		w.snappyBuf = snappy.Encode(w.snappyBuf, rec)
-		if len(w.snappyBuf) < len(rec) {
-			rec = w.snappyBuf
-			compressed = true
 		}
 	}
 

@@ -14,15 +14,42 @@
 package remote
 
 import (
+	"bytes"
 	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/textparse"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
 )
+
+var writeRequestFixture = &prompb.WriteRequest{
+	Timeseries: []prompb.TimeSeries{
+		{
+			Labels: []prompb.Label{
+				{Name: "__name__", Value: "test_metric1"},
+				{Name: "b", Value: "c"},
+				{Name: "baz", Value: "qux"},
+				{Name: "d", Value: "e"},
+				{Name: "foo", Value: "bar"},
+			},
+			Samples: []prompb.Sample{{Value: 1, Timestamp: 0}},
+		},
+		{
+			Labels: []prompb.Label{
+				{Name: "__name__", Value: "test_metric1"},
+				{Name: "b", Value: "c"},
+				{Name: "baz", Value: "qux"},
+				{Name: "d", Value: "e"},
+				{Name: "foo", Value: "bar"},
+			},
+			Samples: []prompb.Sample{{Value: 2, Timestamp: 1}},
+		},
+	},
+}
 
 func TestValidateLabelsAndMetricName(t *testing.T) {
 	tests := []struct {
@@ -229,4 +256,44 @@ func TestMergeLabels(t *testing.T) {
 	} {
 		require.Equal(t, tc.expected, MergeLabels(tc.primary, tc.secondary))
 	}
+}
+
+func TestMetricTypeToMetricTypeProto(t *testing.T) {
+	tc := []struct {
+		desc     string
+		input    textparse.MetricType
+		expected prompb.MetricMetadata_MetricType
+	}{
+		{
+			desc:     "with a single-word metric",
+			input:    textparse.MetricTypeCounter,
+			expected: prompb.MetricMetadata_COUNTER,
+		},
+		{
+			desc:     "with a two-word metric",
+			input:    textparse.MetricTypeStateset,
+			expected: prompb.MetricMetadata_STATESET,
+		},
+		{
+			desc:     "with an unknown metric",
+			input:    "not-known",
+			expected: prompb.MetricMetadata_UNKNOWN,
+		},
+	}
+
+	for _, tt := range tc {
+		t.Run(tt.desc, func(t *testing.T) {
+			m := metricTypeToMetricTypeProto(tt.input)
+			require.Equal(t, tt.expected, m)
+		})
+	}
+}
+
+func TestDecodeWriteRequest(t *testing.T) {
+	buf, _, err := buildWriteRequest(writeRequestFixture.Timeseries, nil, nil)
+	require.NoError(t, err)
+
+	actual, err := DecodeWriteRequest(bytes.NewReader(buf))
+	require.NoError(t, err)
+	require.Equal(t, writeRequestFixture, actual)
 }

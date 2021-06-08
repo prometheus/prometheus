@@ -1,5 +1,3 @@
-## master / unreleased
-
 ## 0.10.0
 
  - [FEATURE] Added `DBReadOnly` to allow opening a database in read only mode.

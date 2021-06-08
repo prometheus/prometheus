@@ -3,27 +3,30 @@
   "version": "0.1.0",
   "private": true,
   "dependencies": {
+    "@codemirror/autocomplete": "^0.18.3",
+    "@codemirror/closebrackets": "^0.18.0",
+    "@codemirror/commands": "^0.18.0",
+    "@codemirror/comment": "^0.18.0",
+    "@codemirror/highlight": "^0.18.3",
+    "@codemirror/history": "^0.18.0",
+    "@codemirror/language": "^0.18.0",
+    "@codemirror/lint": "^0.18.1",
+    "@codemirror/matchbrackets": "^0.18.0",
+    "@codemirror/search": "^0.18.2",
+    "@codemirror/state": "^0.18.2",
+    "@codemirror/view": "^0.18.3",
+    "@forevolve/bootstrap-dark": "^1.0.0",
     "@fortawesome/fontawesome-svg-core": "^1.2.14",
     "@fortawesome/free-solid-svg-icons": "^5.7.1",
     "@fortawesome/react-fontawesome": "^0.1.4",
     "@reach/router": "^1.2.1",
-    "@testing-library/react-hooks": "^3.1.1",
-    "@types/jest": "^26.0.10",
-    "@types/jquery": "^3.5.1",
-    "@types/node": "^12.11.1",
-    "@types/reach__router": "^1.2.6",
-    "@types/react": "^16.8.2",
-    "@types/react-copy-to-clipboard": "^4.3.0",
-    "@types/react-dom": "^16.8.0",
-    "@types/react-resize-detector": "^4.2.0",
-    "@types/sanitize-html": "^1.20.2",
-    "bootstrap": "^4.2.1",
+    "bootstrap": "^4.6.0",
+    "codemirror-promql": "^0.16.0",
     "css.escape": "^1.5.1",
     "downshift": "^3.4.8",
     "enzyme-to-json": "^3.4.3",
     "fuzzy": "^0.1.3",
     "i": "^0.3.6",
-    "jest-fetch-mock": "^3.0.3",
     "jquery": "^3.5.1",
     "jquery.flot.tooltip": "^0.9.0",
     "jsdom": "^16.4.0",
@@ -34,13 +37,15 @@
     "react-copy-to-clipboard": "^5.0.1",
     "react-dom": "^16.7.0",
     "react-resize-detector": "^5.0.7",
-    "react-scripts": "3.4.3",
+    "react-scripts": "3.4.4",
     "react-test-renderer": "^16.9.0",
-    "reactstrap": "^8.0.1",
-    "sanitize-html": "^1.20.1",
+    "reactstrap": "^8.9.0",
+    "sanitize-html": "^2.3.3",
+    "sass": "1.32.10",
     "tempusdominus-bootstrap-4": "^5.1.2",
     "tempusdominus-core": "^5.0.3",
-    "typescript": "^3.3.3"
+    "typescript": "^3.3.3",
+    "use-media": "^1.4.0"
   },
   "scripts": {
     "start": "react-scripts start",
@@ -63,11 +68,21 @@
     "not op_mini all"
   ],
   "devDependencies": {
+    "@testing-library/react-hooks": "^3.1.1",
     "@types/enzyme": "^3.10.3",
     "@types/enzyme-adapter-react-16": "^1.0.5",
     "@types/flot": "0.0.31",
+    "@types/jest": "^26.0.10",
+    "@types/jquery": "^3.5.1",
     "@types/moment-timezone": "^0.5.10",
-    "@types/reactstrap": "^8.0.5",
+    "@types/node": "^12.11.1",
+    "@types/reach__router": "^1.2.6",
+    "@types/react": "^16.8.2",
+    "@types/react-copy-to-clipboard": "^5.0.0",
+    "@types/react-dom": "^16.8.0",
+    "@types/react-resize-detector": "^5.0.0",
+    "@types/reactstrap": "^8.7.2",
+    "@types/sanitize-html": "^1.20.2",
     "@types/sinon": "^9.0.4",
     "@typescript-eslint/eslint-plugin": "2.x",
     "@typescript-eslint/parser": "2.x",
@@ -83,6 +98,7 @@
     "eslint-plugin-react": "7.x",
     "eslint-plugin-react-hooks": "2.x",
     "jest-fetch-mock": "^3.0.3",
+    "mutationobserver-shim": "^0.3.7",
     "prettier": "^1.18.2",
     "sinon": "^9.0.3"
   },
@@ -90,6 +106,9 @@
   "jest": {
     "snapshotSerializers": [
       "enzyme-to-json/serializer"
+    ],
+    "transformIgnorePatterns": [
+      "/node_modules/(?!codemirror-promql).+(js|jsx)$"
     ]
   }
 }

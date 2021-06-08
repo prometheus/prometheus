@@ -83,6 +83,7 @@ NEQ
 NEQ_REGEX
 POW
 SUB
+AT
 %token	operatorsEnd
 
 // Aggregators.
@@ -115,6 +116,13 @@ ON
 WITHOUT
 %token keywordsEnd
 
+// Preprocessors.
+%token preprocessorStart
+%token <item>
+START
+END
+%token preprocessorEnd
+
 
 // Start symbols for the generated parser.
 %token	startSymbolsStart
@@ -130,15 +138,15 @@ START_METRIC_SELECTOR
 %type <matchers> label_match_list
 %type <matcher> label_matcher
 
-%type <item> aggregate_op grouping_label match_op maybe_label metric_identifier unary_op
+%type <item> aggregate_op grouping_label match_op maybe_label metric_identifier unary_op at_modifier_preprocessors
 
 %type <labels> label_set label_set_list metric
 %type <label> label_set_item
 %type <strings> grouping_label_list grouping_labels maybe_grouping_labels
 %type <series> series_item series_values
 %type <uint> uint
-%type <float> number series_value signed_number
-%type <node> aggregate_expr aggregate_modifier bin_modifier binary_expr bool_modifier expr function_call function_call_args function_call_body group_modifiers label_matchers matrix_selector number_literal offset_expr on_or_ignoring paren_expr string_literal subquery_expr unary_expr vector_selector
+%type <float> number series_value signed_number signed_or_unsigned_number
+%type <node> step_invariant_expr aggregate_expr aggregate_modifier bin_modifier binary_expr bool_modifier expr function_call function_call_args function_call_body group_modifiers label_matchers matrix_selector number_literal offset_expr on_or_ignoring paren_expr string_literal subquery_expr unary_expr vector_selector
 %type <duration> duration maybe_duration
 
 %start start
@@ -187,6 +195,7 @@ expr            :
                 | subquery_expr
                 | unary_expr
                 | vector_selector
+                | step_invariant_expr
                 ;
 
 /*
@@ -200,8 +209,8 @@ aggregate_expr  : aggregate_op aggregate_modifier function_call_body
                 | aggregate_op function_call_body
                         { $$ = yylex.(*parser).newAggregateExpr($1, &AggregateExpr{}, $2) }
                 | aggregate_op error
-                        { 
-                        yylex.(*parser).unexpected("aggregation",""); 
+                        {
+                        yylex.(*parser).unexpected("aggregation","");
                         $$ = yylex.(*parser).newAggregateExpr($1, &AggregateExpr{}, Expressions{})
                         }
                 ;
@@ -377,9 +386,33 @@ offset_expr: expr OFFSET duration
                         yylex.(*parser).addOffset($1, $3)
                         $$ = $1
                         }
+                | expr OFFSET SUB duration
+                        {
+                        yylex.(*parser).addOffset($1, -$4)
+                        $$ = $1
+                        }
                 | expr OFFSET error
                         { yylex.(*parser).unexpected("offset", "duration"); $$ = $1 }
                 ;
+/*
+ * @ modifiers.
+ */
+
+step_invariant_expr: expr AT signed_or_unsigned_number
+                        {
+                        yylex.(*parser).setTimestamp($1, $3)
+                        $$ = $1
+                        }
+                | expr AT at_modifier_preprocessors LEFT_PAREN RIGHT_PAREN
+                        {
+                        yylex.(*parser).setAtModifierPreprocessor($1, $3)
+                        $$ = $1
+                        }
+                | expr AT error
+                        { yylex.(*parser).unexpected("@", "timestamp"); $$ = $1 }
+                ;
+
+at_modifier_preprocessors: START | END;
 
 /*
  * Subquery and range selectors.
@@ -391,8 +424,10 @@ matrix_selector : expr LEFT_BRACKET duration RIGHT_BRACKET
                         vs, ok := $1.(*VectorSelector)
                         if !ok{
                                 errMsg = "ranges only allowed for vector selectors"
-                        } else if vs.Offset != 0{
+                        } else if vs.OriginalOffset != 0{
                                 errMsg = "no offset modifiers allowed before range"
+                        } else if vs.Timestamp != nil {
+                                errMsg = "no @ modifiers allowed before range"
                         }
 
                         if errMsg != ""{
@@ -663,6 +698,8 @@ number          : NUMBER { $$ = yylex.(*parser).number($1.Val) } ;
 signed_number   : ADD number { $$ = $2 }
                 | SUB number { $$ = -$2 }
                 ;
+
+signed_or_unsigned_number: number | signed_number ;
 
 uint            : NUMBER
                         {

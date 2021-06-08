@@ -46,6 +46,7 @@ const (
 // and it is left to the implementer to make sure they are safe.
 type WriteTo interface {
 	Append([]record.RefSample) bool
+	AppendExemplars([]record.RefExemplar) bool
 	StoreSeries([]record.RefSeries, int)
 	// SeriesReset is called after reading a checkpoint to allow the deletion
 	// of all series created in a segment lower than the argument.
@@ -66,6 +67,7 @@ type Watcher struct {
 	logger         log.Logger
 	walDir         string
 	lastCheckpoint string
+	sendExemplars  bool
 	metrics        *WatcherMetrics
 	readerMetrics  *LiveReaderMetrics
 
@@ -136,7 +138,7 @@ func NewWatcherMetrics(reg prometheus.Registerer) *WatcherMetrics {
 }
 
 // NewWatcher creates a new WAL watcher for a given WriteTo.
-func NewWatcher(metrics *WatcherMetrics, readerMetrics *LiveReaderMetrics, logger log.Logger, name string, writer WriteTo, walDir string) *Watcher {
+func NewWatcher(metrics *WatcherMetrics, readerMetrics *LiveReaderMetrics, logger log.Logger, name string, writer WriteTo, walDir string, sendExemplars bool) *Watcher {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -147,8 +149,10 @@ func NewWatcher(metrics *WatcherMetrics, readerMetrics *LiveReaderMetrics, logge
 		readerMetrics: readerMetrics,
 		walDir:        path.Join(walDir, "wal"),
 		name:          name,
-		quit:          make(chan struct{}),
-		done:          make(chan struct{}),
+		sendExemplars: sendExemplars,
+
+		quit: make(chan struct{}),
+		done: make(chan struct{}),
 
 		MaxSegment: -1,
 	}
@@ -300,20 +304,19 @@ func (w *Watcher) segments(dir string) ([]int, error) {
 	}
 
 	var refs []int
-	var last int
 	for _, f := range files {
 		k, err := strconv.Atoi(f.Name())
 		if err != nil {
 			continue
 		}
-		if len(refs) > 0 && k > last+1 {
-			return nil, errors.New("segments are not sequential")
-		}
 		refs = append(refs, k)
-		last = k
 	}
 	sort.Ints(refs)
-
+	for i := 0; i < len(refs)-1; i++ {
+		if refs[i]+1 != refs[i+1] {
+			return nil, errors.New("segments are not sequential")
+		}
+	}
 	return refs, nil
 }
 
@@ -462,10 +465,11 @@ func (w *Watcher) garbageCollectSeries(segmentNum int) error {
 
 func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 	var (
-		dec     record.Decoder
-		series  []record.RefSeries
-		samples []record.RefSample
-		send    []record.RefSample
+		dec       record.Decoder
+		series    []record.RefSeries
+		samples   []record.RefSample
+		send      []record.RefSample
+		exemplars []record.RefExemplar
 	)
 	for r.Next() && !isClosed(w.quit) {
 		rec := r.Record()
@@ -506,6 +510,23 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 				w.writer.Append(send)
 				send = send[:0]
 			}
+
+		case record.Exemplars:
+			// Skip if experimental "exemplars over remote write" is not enabled.
+			if !w.sendExemplars {
+				break
+			}
+			// If we're not tailing a segment we can ignore any exemplars records we see.
+			// This speeds up replay of the WAL significantly.
+			if !tail {
+				break
+			}
+			exemplars, err := dec.Exemplars(rec, exemplars[:0])
+			if err != nil {
+				w.recordDecodeFailsMetric.Inc()
+				return err
+			}
+			w.writer.AppendExemplars(exemplars)
 
 		case record.Tombstones:
 

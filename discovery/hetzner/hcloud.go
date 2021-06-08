@@ -63,7 +63,7 @@ func newHcloudDiscovery(conf *SDConfig, logger log.Logger) (*hcloudDiscovery, er
 		port: conf.Port,
 	}
 
-	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "hetzner_sd", false, false)
+	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "hetzner_sd", config.WithHTTP2Disabled())
 	if err != nil {
 		return nil, err
 	}

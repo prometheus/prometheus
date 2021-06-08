@@ -73,6 +73,15 @@ For each input time series, `changes(v range-vector)` returns the number of
 times its value has changed within the provided time range as an instant
 vector.
 
+## `clamp()`
+
+`clamp(v instant-vector, min scalar, max scalar)`
+clamps the sample values of all elements in `v` to have a lower limit of `min` and an upper limit of `max`.
+
+Special cases:
+- Return an empty vector if `min > max`
+- Return `NaN` if `min` or `max` is `NaN`
+
 ## `clamp_max()`
 
 `clamp_max(v instant-vector, max scalar)` clamps the sample values of all
@@ -370,6 +379,10 @@ Given a single-element input vector, `scalar(v instant-vector)` returns the
 sample value of that single element as a scalar. If the input vector does not
 have exactly one element, `scalar` will return `NaN`.
 
+## `sgn()`
+
+`sgn(v instant-vector)` returns a vector with all sample values converted to their sign, defined as this: 1 if v is positive, -1 if v is negative and 0 if v is equal to zero.
+
 ## `sort()`
 
 `sort(v instant-vector)` returns vector elements sorted by their sample values,
@@ -418,6 +431,7 @@ over time and return an instant vector with per-series aggregation results:
 * `quantile_over_time(scalar, range-vector)`: the φ-quantile (0 ≤ φ ≤ 1) of the values in the specified interval.
 * `stddev_over_time(range-vector)`: the population standard deviation of the values in the specified interval.
 * `stdvar_over_time(range-vector)`: the population standard variance of the values in the specified interval.
+* `last_over_time(range-vector)`: the most recent point value in specified interval.
 
 Note that all values in the specified interval have the same weight in the
 aggregation even if the values are not equally spaced throughout the interval.

@@ -76,11 +76,13 @@ type Compactor interface {
 
 // LeveledCompactor implements the Compactor interface.
 type LeveledCompactor struct {
-	metrics   *compactorMetrics
-	logger    log.Logger
-	ranges    []int64
-	chunkPool chunkenc.Pool
-	ctx       context.Context
+	metrics                  *compactorMetrics
+	logger                   log.Logger
+	ranges                   []int64
+	chunkPool                chunkenc.Pool
+	ctx                      context.Context
+	maxBlockChunkSegmentSize int64
+	mergeFunc                storage.VerticalChunkSeriesMergeFunc
 }
 
 type compactorMetrics struct {
@@ -111,7 +113,7 @@ func newCompactorMetrics(r prometheus.Registerer) *compactorMetrics {
 	m.duration = prometheus.NewHistogram(prometheus.HistogramOpts{
 		Name:    "prometheus_tsdb_compaction_duration_seconds",
 		Help:    "Duration of compaction runs",
-		Buckets: prometheus.ExponentialBuckets(1, 2, 10),
+		Buckets: prometheus.ExponentialBuckets(1, 2, 14),
 	})
 	m.chunkSize = prometheus.NewHistogram(prometheus.HistogramOpts{
 		Name:    "prometheus_tsdb_compaction_chunk_size_bytes",
@@ -144,7 +146,11 @@ func newCompactorMetrics(r prometheus.Registerer) *compactorMetrics {
 }
 
 // NewLeveledCompactor returns a LeveledCompactor.
-func NewLeveledCompactor(ctx context.Context, r prometheus.Registerer, l log.Logger, ranges []int64, pool chunkenc.Pool) (*LeveledCompactor, error) {
+func NewLeveledCompactor(ctx context.Context, r prometheus.Registerer, l log.Logger, ranges []int64, pool chunkenc.Pool, mergeFunc storage.VerticalChunkSeriesMergeFunc) (*LeveledCompactor, error) {
+	return NewLeveledCompactorWithChunkSize(ctx, r, l, ranges, pool, chunks.DefaultChunkSegmentSize, mergeFunc)
+}
+
+func NewLeveledCompactorWithChunkSize(ctx context.Context, r prometheus.Registerer, l log.Logger, ranges []int64, pool chunkenc.Pool, maxBlockChunkSegmentSize int64, mergeFunc storage.VerticalChunkSeriesMergeFunc) (*LeveledCompactor, error) {
 	if len(ranges) == 0 {
 		return nil, errors.Errorf("at least one range must be provided")
 	}
@@ -154,12 +160,17 @@ func NewLeveledCompactor(ctx context.Context, r prometheus.Registerer, l log.Log
 	if l == nil {
 		l = log.NewNopLogger()
 	}
+	if mergeFunc == nil {
+		mergeFunc = storage.NewCompactingChunkSeriesMerger(storage.ChainedSeriesMerge)
+	}
 	return &LeveledCompactor{
-		ranges:    ranges,
-		chunkPool: pool,
-		logger:    l,
-		metrics:   newCompactorMetrics(r),
-		ctx:       ctx,
+		ranges:                   ranges,
+		chunkPool:                pool,
+		logger:                   l,
+		metrics:                  newCompactorMetrics(r),
+		ctx:                      ctx,
+		maxBlockChunkSegmentSize: maxBlockChunkSegmentSize,
+		mergeFunc:                mergeFunc,
 	}, nil
 }
 
@@ -214,6 +225,11 @@ func (c *LeveledCompactor) plan(dms []dirMeta) ([]string, error) {
 	for i := len(dms) - 1; i >= 0; i-- {
 		meta := dms[i].meta
 		if meta.MaxTime-meta.MinTime < c.ranges[len(c.ranges)/2] {
+			// If the block is entirely deleted, then we don't care about the block being big enough.
+			// TODO: This is assuming single tombstone is for distinct series, which might be no true.
+			if meta.Stats.NumTombstones > 0 && meta.Stats.NumTombstones >= meta.Stats.NumSeries {
+				return []string{dms[i].dir}, nil
+			}
 			break
 		}
 		if float64(meta.Stats.NumTombstones)/float64(meta.Stats.NumSeries+1) > 0.05 {
@@ -330,7 +346,9 @@ func splitByRange(ds []dirMeta, tr int64) [][]dirMeta {
 	return splitDirs
 }
 
-func compactBlockMetas(uid ulid.ULID, blocks ...*BlockMeta) *BlockMeta {
+// CompactBlockMetas merges many block metas into one, combining it's source blocks together
+// and adjusting compaction level.
+func CompactBlockMetas(uid ulid.ULID, blocks ...*BlockMeta) *BlockMeta {
 	res := &BlockMeta{
 		ULID:    uid,
 		MinTime: blocks[0].MinTime,
@@ -415,7 +433,7 @@ func (c *LeveledCompactor) Compact(dest string, dirs []string, open []*Block) (u
 
 	uid = ulid.MustNew(ulid.Now(), rand.Reader)
 
-	meta := compactBlockMetas(uid, metas...)
+	meta := CompactBlockMetas(uid, metas...)
 	err = c.write(dest, meta, blocks...)
 	if err == nil {
 		if meta.Stats.NumSamples == 0 {
@@ -527,7 +545,6 @@ func (w *instrumentedChunkWriter) WriteChunks(chunks ...chunks.Meta) error {
 }
 
 // write creates a new block that is the union of the provided blocks into dir.
-// It cleans up all files of the old blocks after completing successfully.
 func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockReader) (err error) {
 	dir := filepath.Join(dest, meta.ULID.String())
 	tmp := dir + tmpForCreationBlockDirSuffix
@@ -555,7 +572,7 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 	// data of all blocks.
 	var chunkw ChunkWriter
 
-	chunkw, err = chunks.NewWriter(chunkDir(tmp))
+	chunkw, err = chunks.NewWriterWithSegSize(chunkDir(tmp), c.maxBlockChunkSegmentSize)
 	if err != nil {
 		return errors.Wrap(err, "open chunk writer")
 	}
@@ -633,7 +650,7 @@ func (c *LeveledCompactor) write(dest string, meta *BlockMeta, blocks ...BlockRe
 	}
 	df = nil
 
-	// Block successfully written, make visible and remove old ones.
+	// Block successfully written, make it visible in destination dir by moving it from tmp one.
 	if err := fileutil.Replace(tmp, dir); err != nil {
 		return errors.Wrap(err, "rename block dir")
 	}
@@ -677,7 +694,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 			if i > 0 && b.Meta().MinTime < globalMaxt {
 				c.metrics.overlappingBlocks.Inc()
 				overlapping = true
-				level.Warn(c.logger).Log("msg", "Found overlapping blocks during compaction", "ulid", meta.ULID)
+				level.Info(c.logger).Log("msg", "Found overlapping blocks during compaction", "ulid", meta.ULID)
 			}
 			if b.Meta().MaxTime > globalMaxt {
 				globalMaxt = b.Meta().MaxTime
@@ -715,7 +732,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 			symbols = syms
 			continue
 		}
-		symbols = newMergedStringIter(symbols, syms)
+		symbols = NewMergedStringIter(symbols, syms)
 	}
 
 	for symbols.Next() {
@@ -734,8 +751,9 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 
 	set := sets[0]
 	if len(sets) > 1 {
-		// Merge series using compacting chunk series merger.
-		set = storage.NewMergeChunkSeriesSet(sets, storage.NewCompactingChunkSeriesMerger(storage.ChainedSeriesMerge))
+		// Merge series using specified chunk series merger.
+		// The default one is the compacting series merger.
+		set = storage.NewMergeChunkSeriesSet(sets, c.mergeFunc)
 	}
 
 	// Iterate over all sorted chunk series.
