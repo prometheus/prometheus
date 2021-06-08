@@ -1419,7 +1419,7 @@ namespaces:
     [ label: <string> ]
     [ field: <string> ] ]]
 
-# Optional this determines which field of "Node.Status.Addresses" that discovery will get the address from first
+# Determines which field of "Node.Status.Addresses" that discovery will get the address from first.
 # default priority:
 #   - NodeInternalIP
 #   - NodeInternalDNS

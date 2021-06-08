@@ -46,7 +46,7 @@ type Node struct {
 	informer       cache.SharedInformer
 	store          cache.Store
 	queue          *workqueue.Type
-	preferNodeType []string
+	preferredAddressTypes []string
 }
 
 // NewNode returns a new node discovery.
