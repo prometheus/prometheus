@@ -15,6 +15,9 @@ package kubernetes
 
 import (
 	"context"
+	"net"
+	"strconv"
+
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/pkg/errors"
@@ -22,8 +25,6 @@ import (
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
-	"net"
-	"strconv"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/strutil"
@@ -53,7 +54,13 @@ func NewNode(l log.Logger, inf cache.SharedInformer, preferNodeTypes []string) *
 	if l == nil {
 		l = log.NewNopLogger()
 	}
-	n := &Node{logger: l, informer: inf, store: inf.GetStore(), queue: workqueue.NewNamed("node")}
+	n := &Node{
+		logger:         l,
+		informer:       inf,
+		store:          inf.GetStore(),
+		queue:          workqueue.NewNamed("node"),
+		preferNodeType: preferNodeTypes,
+	}
 	n.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o interface{}) {
 			nodeAddCount.Inc()
@@ -68,7 +75,6 @@ func NewNode(l log.Logger, inf cache.SharedInformer, preferNodeTypes []string) *
 			n.enqueue(o)
 		},
 	})
-	n.preferNodeType = preferNodeTypes
 	return n
 }
 
@@ -204,16 +210,7 @@ func (n *Node) buildNode(node *apiv1.Node) *targetgroup.Group {
 	return tg
 }
 
-// nodeAddresses returns the provided node's address, based on the priority:
-// 1. NodeInternalIP
-// 2. NodeInternalDNS
-// 3. NodeExternalIP
-// 4. NodeExternalDNS
-// 5. NodeLegacyHostIP
-// 6. NodeHostName
-// you can redefine the priority using "preferred_node_address_types" in configuration
-//
-// Derived from k8s.io/kubernetes/pkg/util/node/node.go
+// nodeAddresses returns the provided node's address, based on the node.preferredAddressTypes
 func (n *Node) nodeAddress(node *apiv1.Node) (string, map[apiv1.NodeAddressType][]string, error) {
 	m := map[apiv1.NodeAddressType][]string{}
 	for _, a := range node.Status.Addresses {
