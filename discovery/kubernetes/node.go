@@ -42,24 +42,24 @@ var (
 
 // Node discovers Kubernetes nodes.
 type Node struct {
-	logger         log.Logger
-	informer       cache.SharedInformer
-	store          cache.Store
-	queue          *workqueue.Type
+	logger                log.Logger
+	informer              cache.SharedInformer
+	store                 cache.Store
+	queue                 *workqueue.Type
 	preferredAddressTypes []string
 }
 
 // NewNode returns a new node discovery.
-func NewNode(l log.Logger, inf cache.SharedInformer, preferNodeTypes []string) *Node {
+func NewNode(l log.Logger, inf cache.SharedInformer, preferredAddressTypes []string) *Node {
 	if l == nil {
 		l = log.NewNopLogger()
 	}
 	n := &Node{
-		logger:         l,
-		informer:       inf,
-		store:          inf.GetStore(),
-		queue:          workqueue.NewNamed("node"),
-		preferNodeType: preferNodeTypes,
+		logger:                l,
+		informer:              inf,
+		store:                 inf.GetStore(),
+		queue:                 workqueue.NewNamed("node"),
+		preferredAddressTypes: preferredAddressTypes,
 	}
 	n.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o interface{}) {
@@ -217,7 +217,7 @@ func (n *Node) nodeAddress(node *apiv1.Node) (string, map[apiv1.NodeAddressType]
 		m[a.Type] = append(m[a.Type], a.Address)
 	}
 
-	for _, t := range n.preferNodeType {
+	for _, t := range n.preferredAddressTypes {
 		if addresses, ok := m[apiv1.NodeAddressType(t)]; ok {
 			return addresses[0], m, nil
 		}
