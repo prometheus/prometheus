@@ -65,7 +65,16 @@ var (
 		[]string{"role", "event"},
 	)
 	// DefaultSDConfig is the default Kubernetes SD configuration
-	DefaultSDConfig = SDConfig{}
+	DefaultSDConfig = SDConfig{
+		PreferredNodeAddressTypes: []string{
+			string(apiv1.NodeInternalIP),
+			string(apiv1.NodeInternalDNS),
+			string(apiv1.NodeExternalIP),
+			string(apiv1.NodeExternalDNS),
+			NodeLegacyHostIP,
+			string(apiv1.NodeHostName),
+		},
+	}
 )
 
 func init() {
@@ -114,7 +123,7 @@ type SDConfig struct {
 	HTTPClientConfig          config.HTTPClientConfig `yaml:",inline"`
 	NamespaceDiscovery        NamespaceDiscovery      `yaml:"namespaces,omitempty"`
 	Selectors                 []SelectorConfig        `yaml:"selectors,omitempty"`
-	PreferredNodeAddressTypes string                  `yaml:"preferred_node_address_types,omitempty"`
+	PreferredNodeAddressTypes []string                `yaml:"preferred_node_address_types,omitempty"`
 }
 
 // Name returns the name of the Config.
@@ -152,7 +161,7 @@ type resourceSelector struct {
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
 func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	*c = SDConfig{}
+	*c = DefaultSDConfig
 	type plain SDConfig
 	err := unmarshal((*plain)(c))
 	if err != nil {
@@ -235,7 +244,7 @@ type Discovery struct {
 	namespaceDiscovery *NamespaceDiscovery
 	discoverers        []discovery.Discoverer
 	selectors          roleSelector
-	preferNodeTypes    string
+	preferNodeTypes    []string
 }
 
 func (d *Discovery) getNamespaces() []string {

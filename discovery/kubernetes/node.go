@@ -15,10 +15,6 @@ package kubernetes
 
 import (
 	"context"
-	"net"
-	"strconv"
-	"strings"
-
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	"github.com/pkg/errors"
@@ -26,6 +22,8 @@ import (
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
+	"net"
+	"strconv"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/strutil"
@@ -51,7 +49,7 @@ type Node struct {
 }
 
 // NewNode returns a new node discovery.
-func NewNode(l log.Logger, inf cache.SharedInformer, preferNodeTypes string) *Node {
+func NewNode(l log.Logger, inf cache.SharedInformer, preferNodeTypes []string) *Node {
 	if l == nil {
 		l = log.NewNopLogger()
 	}
@@ -70,18 +68,7 @@ func NewNode(l log.Logger, inf cache.SharedInformer, preferNodeTypes string) *No
 			n.enqueue(o)
 		},
 	})
-	if preferNodeTypes != "" {
-		n.preferNodeType = strings.Split(preferNodeTypes, ",")
-	} else {
-		n.preferNodeType = []string{
-			string(apiv1.NodeInternalIP),
-			string(apiv1.NodeInternalDNS),
-			string(apiv1.NodeExternalIP),
-			string(apiv1.NodeExternalDNS),
-			NodeLegacyHostIP,
-			string(apiv1.NodeHostName),
-		}
-	}
+	n.preferNodeType = preferNodeTypes
 	return n
 }
 

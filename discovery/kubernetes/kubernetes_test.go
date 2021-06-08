@@ -44,6 +44,7 @@ func makeDiscovery(role Role, nsDiscovery NamespaceDiscovery, objects ...runtime
 		logger:             log.NewNopLogger(),
 		role:               role,
 		namespaceDiscovery: &nsDiscovery,
+		preferNodeTypes:    DefaultSDConfig.PreferredNodeAddressTypes,
 	}, clientset
 }
 

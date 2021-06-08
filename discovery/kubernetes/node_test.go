@@ -91,7 +91,7 @@ func TestNodeDiscoveryBeforeStart(t *testing.T) {
 
 func TestNodeDiscoveryPreferNodeAddress(t *testing.T) {
 	n, c := makeDiscovery(RoleNode, NamespaceDiscovery{})
-	n.preferNodeTypes = fmt.Sprintf("%s,%s", v1.NodeHostName, v1.NodeInternalIP)
+	n.preferNodeTypes = []string{string(v1.NodeHostName), string(v1.NodeInternalIP)}
 
 	k8sDiscoveryTest{
 		discovery: n,
