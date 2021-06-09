@@ -4,11 +4,18 @@ import { Alert, Button } from 'reactstrap';
 
 import Panel, { PanelOptions, PanelDefaultOptions } from './Panel';
 import Checkbox from '../../components/Checkbox';
-import { generateID, decodePanelOptionsFromQueryString, encodePanelOptionsToQueryString, callAll } from '../../utils';
-import { useFetch } from '../../hooks/useFetch';
+import {
+  generateID,
+  decodePanelOptionsFromQueryString,
+  encodePanelOptionsToQueryString,
+  callAll,
+  checkReady,
+} from '../../utils';
+import { useFetch, useFetchReady } from '../../hooks/useFetch';
 import { useLocalStorage } from '../../hooks/useLocalStorage';
 import { usePathPrefix } from '../../contexts/PathPrefixContext';
 import { API_PATH } from '../../constants/constants';
+import Starting from '../starting/Starting';
 
 export type PanelMeta = { key: string; options: PanelOptions; id: string };
 
@@ -150,6 +157,10 @@ const PanelList: FC<RouteComponentProps> = () => {
      **/
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timeRes.data]);
+
+  if (!checkReady(useFetchReady(pathPrefix))) {
+    return <Starting />;
+  }
 
   return (
     <>

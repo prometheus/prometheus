@@ -1,5 +1,5 @@
 import React, { FC, useEffect } from 'react';
-import { RouteComponentProps, navigate } from '@reach/router';
+import { RouteComponentProps } from '@reach/router';
 import { Progress, Alert } from 'reactstrap';
 
 import { useFetchReadyInterval } from '../../hooks/useFetch';
@@ -50,7 +50,7 @@ const Starting: FC<RouteComponentProps> = () => {
 
   useEffect(() => {
     if (ready) {
-      navigate('/');
+      window.location.reload();
     }
   }, [ready]);
 

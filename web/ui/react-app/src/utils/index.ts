@@ -2,6 +2,7 @@ import moment from 'moment-timezone';
 
 import { PanelOptions, PanelType, PanelDefaultOptions } from '../pages/graph/Panel';
 import { PanelMeta } from '../pages/graph/PanelList';
+import { FetchStateReady } from '../hooks/useFetch';
 
 export const generateID = () => {
   return `_${Math.random()
@@ -258,4 +259,12 @@ export const parsePrometheusFloat = (value: string) => {
   } else {
     return Number(value);
   }
+};
+
+export const checkReady = (res: FetchStateReady): boolean => {
+  const { ready, isLoading, isUnexpected } = res;
+  if (!ready && !isLoading && !isUnexpected) {
+    return false;
+  }
+  return true;
 };

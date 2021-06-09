@@ -2,9 +2,11 @@ import React, { FC } from 'react';
 import { RouteComponentProps } from '@reach/router';
 import { Table } from 'reactstrap';
 import { withStatusIndicator } from '../../components/withStatusIndicator';
-import { useFetch } from '../../hooks/useFetch';
+import { useFetch, useFetchReady } from '../../hooks/useFetch';
 import { usePathPrefix } from '../../contexts/PathPrefixContext';
 import { API_PATH } from '../../constants/constants';
+import { checkReady } from '../../utils';
+import Starting from '../starting/Starting';
 
 interface FlagMap {
   [key: string]: string;
@@ -38,6 +40,11 @@ FlagsContent.displayName = 'Flags';
 const Flags: FC<RouteComponentProps> = () => {
   const pathPrefix = usePathPrefix();
   const { response, error, isLoading } = useFetch<FlagMap>(`${pathPrefix}/${API_PATH}/status/flags`);
+
+  if (!checkReady(useFetchReady(pathPrefix))) {
+    return <Starting />;
+  }
+
   return <FlagsWithStatusIndicator data={response.data} error={error} isLoading={isLoading} />;
 };
 

@@ -4,9 +4,11 @@ import { Button } from 'reactstrap';
 import CopyToClipboard from 'react-copy-to-clipboard';
 
 import { withStatusIndicator } from '../../components/withStatusIndicator';
-import { useFetch } from '../../hooks/useFetch';
+import { useFetch, useFetchReady } from '../../hooks/useFetch';
 import { usePathPrefix } from '../../contexts/PathPrefixContext';
 import { API_PATH } from '../../constants/constants';
+import { checkReady } from '../../utils';
+import Starting from '../starting/Starting';
 
 type YamlConfig = { yaml?: string };
 
@@ -47,6 +49,11 @@ export const ConfigContent: FC<ConfigContentProps> = ({ error, data }) => {
 const Config: FC<RouteComponentProps> = () => {
   const pathPrefix = usePathPrefix();
   const { response, error } = useFetch<YamlConfig>(`${pathPrefix}/${API_PATH}/status/config`);
+
+  if (!checkReady(useFetchReady(pathPrefix))) {
+    return <Starting />;
+  }
+
   return <ConfigContent error={error} data={response.data} />;
 };
 
