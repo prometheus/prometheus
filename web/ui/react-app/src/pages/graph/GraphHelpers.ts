@@ -188,7 +188,7 @@ export const normalizeData = ({ queryParams, data, exemplars, stacked }: GraphPr
   const buckets: { [time: number]: GraphExemplar[] } = {};
   for (const exemplar of exemplars || []) {
     for (const { labels, value, timestamp } of exemplar.exemplars) {
-      let parsed = parseValue(value) || 0;
+      const parsed = parseValue(value) || 0;
       sum += parsed;
       values.push(parsed);
 
