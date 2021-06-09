@@ -329,6 +329,8 @@ func populateLabels(lset labels.Labels, cfg *config.ScrapeConfig) (res, orig lab
 	// Copy labels into the labelset for the target if they are not set already.
 	scrapeLabels := []labels.Label{
 		{Name: model.JobLabel, Value: cfg.JobName},
+		{Name: model.ScrapeIntervalLabel, Value: cfg.ScrapeInterval.String()},
+		{Name: model.ScrapeTimeoutLabel, Value: cfg.ScrapeTimeout.String()},
 		{Name: model.MetricsPathLabel, Value: cfg.MetricsPath},
 		{Name: model.SchemeLabel, Value: cfg.Scheme},
 	}
@@ -388,6 +390,20 @@ func populateLabels(lset labels.Labels, cfg *config.ScrapeConfig) (res, orig lab
 
 	if err := config.CheckTargetAddress(model.LabelValue(addr)); err != nil {
 		return nil, nil, err
+	}
+
+	if interval := lset.Get(model.ScrapeIntervalLabel); interval != "" {
+		_, err := model.ParseDuration(interval)
+		if err != nil {
+			return nil, nil, errors.Errorf("error parsing interval: %v", err)
+		}
+	}
+
+	if timeout := lset.Get(model.ScrapeTimeoutLabel); timeout != "" {
+		_, err := model.ParseDuration(timeout)
+		if err != nil {
+			return nil, nil, errors.Errorf("error parsing timeout: %v", err)
+		}
 	}
 
 	// Meta labels are deleted after relabelling. Other internal labels propagate to
