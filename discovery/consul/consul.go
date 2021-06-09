@@ -17,7 +17,6 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"net/http"
 	"strconv"
 	"strings"
 	"time"
@@ -25,7 +24,6 @@ import (
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
 	consul "github.com/hashicorp/consul/api"
-	conntrack "github.com/mwitkow/go-conntrack"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
@@ -188,22 +186,17 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 		logger = log.NewNopLogger()
 	}
 
-	tls, err := config.NewTLSConfig(&conf.TLSConfig)
+	httpConfig := config.HTTPClientConfig{
+		TLSConfig:       conf.TLSConfig,
+		FollowRedirects: true,
+	}
+
+	wrapper, err := config.NewClientFromConfig(httpConfig, "consul_sd", config.WithHTTP2Disabled(), config.WithIdleConnTimeout(2*time.Duration(watchTimeout)))
+
 	if err != nil {
 		return nil, err
 	}
-	transport := &http.Transport{
-		IdleConnTimeout: 2 * time.Duration(watchTimeout),
-		TLSClientConfig: tls,
-		DialContext: conntrack.NewDialContextFunc(
-			conntrack.DialWithTracing(),
-			conntrack.DialWithName("consul_sd"),
-		),
-	}
-	wrapper := &http.Client{
-		Transport: transport,
-		Timeout:   time.Duration(watchTimeout) + 15*time.Second,
-	}
+	wrapper.Timeout = watchTimeout + 15*time.Second
 
 	clientConf := &consul.Config{
 		Address:    conf.Server,
@@ -231,7 +224,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 		refreshInterval:  time.Duration(conf.RefreshInterval),
 		clientDatacenter: conf.Datacenter,
 		clientNamespace:  conf.Namespace,
-		finalizer:        transport.CloseIdleConnections,
+		finalizer:        wrapper.CloseIdleConnections,
 		logger:           logger,
 	}
 	return cd, nil
