@@ -26,6 +26,7 @@ describe('Starting', () => {
       const starting = shallow(<StartingContent status={status} isUnexpected={false} />);
       const progress = starting.find(Progress);
       expect(progress.prop('value')).toBe(2);
+      expect(progress.prop('min')).toBe(0);
       expect(progress.prop('max')).toBe(21);
     });
 
