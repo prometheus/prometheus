@@ -31,9 +31,8 @@ export const StartingContent: FC<StartingContentProps> = ({ status, isUnexpected
             </p>
             <Progress
               animated
-              value={status?.current}
-              min={status?.min}
-              max={status?.max}
+              value={status?.current! - status?.min! + 1}
+              max={status?.max! - status?.min! + 1}
               color={status?.max === status?.current ? 'success' : undefined}
               style={{ width: '10%', margin: 'auto' }}
             />
