@@ -11,6 +11,7 @@ interface GraphTabContentProps {
   useLocalTime: boolean;
   showExemplars: boolean;
   lastQueryParams: QueryParams | null;
+  id: string;
 }
 
 export const GraphTabContent: FC<GraphTabContentProps> = ({
@@ -20,6 +21,7 @@ export const GraphTabContent: FC<GraphTabContentProps> = ({
   useLocalTime,
   lastQueryParams,
   showExemplars,
+  id,
 }) => {
   if (!isPresent(data)) {
     return <Alert color="light">No data queried yet</Alert>;
@@ -40,6 +42,7 @@ export const GraphTabContent: FC<GraphTabContentProps> = ({
       useLocalTime={useLocalTime}
       showExemplars={showExemplars}
       queryParams={lastQueryParams}
+      id={id}
     />
   );
 };

@@ -23,6 +23,7 @@ export interface GraphProps {
   useLocalTime: boolean;
   showExemplars: boolean;
   queryParams: QueryParams | null;
+  id: string;
 }
 
 export interface GraphSeries {
@@ -100,7 +101,7 @@ class Graph extends PureComponent<GraphProps, GraphState> {
   componentDidMount() {
     this.plot();
 
-    $('.graph').bind('plotclick', (event, pos, item) => {
+    $(`.graph-${this.props.id}`).bind('plotclick', (event, pos, item) => {
       // If an item has the series label property that means it's an exemplar.
       if (item && 'seriesLabels' in item.series) {
         this.setState({
@@ -197,7 +198,7 @@ class Graph extends PureComponent<GraphProps, GraphState> {
       series: { [key: string]: string };
     };
     return (
-      <div className="graph">
+      <div className={`graph-${this.props.id}`}>
         <ReactResizeDetector handleWidth onResize={this.handleResize} skipOnMount />
         <div className="graph-chart" ref={this.chartRef} />
         {Object.keys(selectedLabels.exemplar).length > 0 ? (

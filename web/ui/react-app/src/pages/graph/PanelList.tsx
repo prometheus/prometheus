@@ -90,6 +90,7 @@ export const PanelListContent: FC<PanelListContentProps> = ({
           pathPrefix={pathPrefix}
           onExecuteQuery={handleExecuteQuery}
           key={id}
+          id={id}
           options={options}
           onOptionsChanged={opts =>
             callAll(setPanels, updateURL)(panels.map(p => (id === p.id ? { ...p, options: opts } : p)))

@@ -74,10 +74,11 @@ describe('Graph', () => {
           },
         ],
       },
+      id: 'test',
     };
     it('renders a graph with props', () => {
       const graph = shallow(<Graph {...props} />);
-      const div = graph.find('div').filterWhere(elem => elem.prop('className') === 'graph');
+      const div = graph.find('div').filterWhere(elem => elem.prop('className') === 'graph-test');
       const resize = div.find(ReactResizeDetector);
       const innerdiv = div.find('div').filterWhere(elem => elem.prop('className') === 'graph-chart');
       expect(resize.prop('handleWidth')).toBe(true);

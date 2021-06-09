@@ -27,6 +27,7 @@ interface PanelProps {
   enableAutocomplete: boolean;
   enableHighlighting: boolean;
   enableLinter: boolean;
+  id: string;
 }
 
 interface PanelState {
@@ -354,6 +355,7 @@ class Panel extends Component<PanelProps, PanelState> {
                       useLocalTime={this.props.useLocalTime}
                       showExemplars={options.showExemplars}
                       lastQueryParams={this.state.lastQueryParams}
+                      id={this.props.id}
                     />
                   </>
                 )}
