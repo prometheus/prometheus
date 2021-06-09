@@ -201,6 +201,9 @@ export const parseOption = (param: string): Partial<PanelOptions> => {
     case 'stacked':
       return { stacked: decodedValue === '1' };
 
+    case 'show_exemplars':
+      return { showExemplars: decodedValue === '1' };
+
     case 'range_input':
       const range = parseDuration(decodedValue);
       return isPresent(range) ? { range } : {};
@@ -222,12 +225,13 @@ export const formatParam = (key: string) => (paramName: string, value: number | 
 
 export const toQueryString = ({ key, options }: PanelMeta) => {
   const formatWithKey = formatParam(key);
-  const { expr, type, stacked, range, endTime, resolution } = options;
+  const { expr, type, stacked, range, endTime, resolution, showExemplars } = options;
   const time = isPresent(endTime) ? formatTime(endTime) : false;
   const urlParams = [
     formatWithKey('expr', expr),
     formatWithKey('tab', type === PanelType.Graph ? 0 : 1),
     formatWithKey('stacked', stacked ? 1 : 0),
+    formatWithKey('show_exemplars', showExemplars ? 1 : 0),
     formatWithKey('range_input', formatDuration(range)),
     time ? `${formatWithKey('end_input', time)}&${formatWithKey('moment_input', time)}` : '',
     isPresent(resolution) ? formatWithKey('step_input', resolution) : '',
@@ -240,7 +244,7 @@ export const encodePanelOptionsToQueryString = (panels: PanelMeta[]) => {
 };
 
 export const createExpressionLink = (expr: string) => {
-  return `../graph?g0.expr=${encodeURIComponent(expr)}&g0.tab=1&g0.stacked=0&g0.range_input=1h`;
+  return `../graph?g0.expr=${encodeURIComponent(expr)}&g0.tab=1&g0.stacked=0&g0.show_exemplars=0.g0.range_input=1h.`;
 };
 export const mapObjEntries = <T, key extends keyof T, Z>(
   o: T,
