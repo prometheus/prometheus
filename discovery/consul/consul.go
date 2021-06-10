@@ -60,6 +60,8 @@ const (
 	servicePortLabel = model.MetaLabelPrefix + "consul_service_port"
 	// datacenterLabel is the name of the label containing the datacenter ID.
 	datacenterLabel = model.MetaLabelPrefix + "consul_dc"
+	// namespaceLabel is the name of the label containing the namespace (Consul Enterprise only).
+	namespaceLabel = model.MetaLabelPrefix + "consul_namespace"
 	// taggedAddressesLabel is the prefix for the labels mapping to a target's tagged addresses.
 	taggedAddressesLabel = model.MetaLabelPrefix + "consul_tagged_address_"
 	// serviceIDLabel is the name of the label containing the service ID.
@@ -110,6 +112,7 @@ type SDConfig struct {
 	Server       string        `yaml:"server,omitempty"`
 	Token        config.Secret `yaml:"token,omitempty"`
 	Datacenter   string        `yaml:"datacenter,omitempty"`
+	Namespace    string        `yaml:"namespace,omitempty"`
 	TagSeparator string        `yaml:"tag_separator,omitempty"`
 	Scheme       string        `yaml:"scheme,omitempty"`
 	Username     string        `yaml:"username,omitempty"`
@@ -168,6 +171,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 type Discovery struct {
 	client           *consul.Client
 	clientDatacenter string
+	clientNamespace  string
 	tagSeparator     string
 	watchedServices  []string // Set of services which will be discovered.
 	watchedTags      []string // Tags used to filter instances of a service.
@@ -205,6 +209,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 		Address:    conf.Server,
 		Scheme:     conf.Scheme,
 		Datacenter: conf.Datacenter,
+		Namespace:  conf.Namespace,
 		Token:      string(conf.Token),
 		HttpAuth: &consul.HttpBasicAuth{
 			Username: conf.Username,
@@ -225,6 +230,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 		allowStale:       conf.AllowStale,
 		refreshInterval:  time.Duration(conf.RefreshInterval),
 		clientDatacenter: conf.Datacenter,
+		clientNamespace:  conf.Namespace,
 		finalizer:        transport.CloseIdleConnections,
 		logger:           logger,
 	}
@@ -543,6 +549,7 @@ func (srv *consulService) watch(ctx context.Context, ch chan<- []*targetgroup.Gr
 			model.AddressLabel:  model.LabelValue(addr),
 			addressLabel:        model.LabelValue(serviceNode.Node.Address),
 			nodeLabel:           model.LabelValue(serviceNode.Node.Node),
+			namespaceLabel:      model.LabelValue(serviceNode.Service.Namespace),
 			tagsLabel:           model.LabelValue(tags),
 			serviceAddressLabel: model.LabelValue(serviceNode.Service.Address),
 			servicePortLabel:    model.LabelValue(strconv.Itoa(serviceNode.Service.Port)),
