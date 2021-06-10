@@ -47,9 +47,9 @@ export const useFetch = <T extends {}>(url: string, options?: RequestInit): Fetc
   return { response, error, isLoading };
 };
 
-var checked = false;
-var wasReady = false;
-var wasUnexpected = false;
+let checked = false;
+let wasReady = false;
+let wasUnexpected = false;
 
 export const useFetchReady = (pathPrefix: string, options?: RequestInit): FetchStateReady => {
   const [ready, setReady] = useState<boolean>(false);
