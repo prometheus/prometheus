@@ -1342,6 +1342,7 @@ Available meta labels:
 * `__meta_kubernetes_ingress_labelpresent_<labelname>`: `true` for each label from the ingress object.
 * `__meta_kubernetes_ingress_annotation_<annotationname>`: Each annotation from the ingress object.
 * `__meta_kubernetes_ingress_annotationpresent_<annotationname>`: `true` for each annotation from the ingress object.
+* `__meta_kubernetes_ingress_class`: Class from the ingress spec, if present. Default to `""`.
 * `__meta_kubernetes_ingress_scheme`: Protocol scheme of ingress, `https` if TLS
   config is set. Defaults to `http`.
 * `__meta_kubernetes_ingress_path`: Path from ingress spec. Defaults to `/`.

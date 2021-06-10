@@ -147,6 +147,7 @@ const (
 	ingressSchemeLabel             = metaLabelPrefix + "ingress_scheme"
 	ingressHostLabel               = metaLabelPrefix + "ingress_host"
 	ingressPathLabel               = metaLabelPrefix + "ingress_path"
+	ingressClassLabel              = metaLabelPrefix + "ingress_class"
 )
 
 func ingressLabels(ingress *v1beta1.Ingress) model.LabelSet {
@@ -154,6 +155,11 @@ func ingressLabels(ingress *v1beta1.Ingress) model.LabelSet {
 	ls := make(model.LabelSet, 2*(len(ingress.Labels)+len(ingress.Annotations))+2)
 	ls[ingressNameLabel] = lv(ingress.Name)
 	ls[namespaceLabel] = lv(ingress.Namespace)
+	if ingress.Spec.IngressClassName == nil {
+		ls[ingressClassLabel] = lv("")
+	} else {
+		ls[ingressClassLabel] = lv(*ingress.Spec.IngressClassName)
+	}
 
 	for k, v := range ingress.Labels {
 		ln := strutil.SanitizeLabelName(k)
