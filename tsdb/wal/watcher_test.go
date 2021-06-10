@@ -106,7 +106,7 @@ func TestTailSamples(t *testing.T) {
 		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
 			now := time.Now()
 
-			dir, err := ioutil.TempDir("", "readCheckpoint")
+			dir, err := ioutil.TempDir("", "tailSamples")
 			require.NoError(t, err)
 			defer func() {
 				require.NoError(t, os.RemoveAll(dir))

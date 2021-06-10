@@ -15,10 +15,9 @@ package remote
 
 import (
 	"context"
-	"encoding/json"
-	"io/ioutil"
 	"math"
 	"os"
+	"path/filepath"
 	"strconv"
 	"sync"
 	"time"
@@ -38,6 +37,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/relabel"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/scrape"
+	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/wal"
 )
@@ -349,8 +349,13 @@ type QueueManager struct {
 	externalLabels  labels.Labels
 	relabelConfigs  []*relabel.Config
 	sendExemplars   bool
+	tsdbDir         string
+	prevSegment     int
 	watcher         *wal.Watcher
 	metadataWatcher *MetadataWatcher
+
+	samplesAppended int
+	samplesSent     int
 
 	clientMtx   sync.RWMutex
 	storeClient WriteClient
@@ -373,25 +378,13 @@ type QueueManager struct {
 	highestRecvTimestamp *maxTimestamp
 }
 
-// EndpointRecord Structure holds the segment the endpoint url
-type EndpointRecord struct {
-	Segment  string
-	Endpoint string
-}
-
-// CheckpointRecord structure holds the list of endpoint records and the time of recording
-type CheckpointRecord struct {
-	TimeRecorded time.Time
-	Checkpoints  []EndpointRecord
-}
-
 // NewQueueManager builds a new QueueManager.
 func NewQueueManager(
 	metrics *queueManagerMetrics,
 	watcherMetrics *wal.WatcherMetrics,
 	readerMetrics *wal.LiveReaderMetrics,
 	logger log.Logger,
-	walDir string,
+	tsdbDir string,
 	samplesIn *ewmaRate,
 	cfg config.QueueConfig,
 	mCfg config.MetadataConfig,
@@ -418,6 +411,7 @@ func NewQueueManager(
 		relabelConfigs: relabelConfigs,
 		storeClient:    client,
 		sendExemplars:  enableExemplarRemoteWrite,
+		tsdbDir:        tsdbDir,
 
 		seriesLabels:         make(map[uint64]labels.Labels),
 		seriesSegmentIndexes: make(map[uint64]int),
@@ -437,13 +431,11 @@ func NewQueueManager(
 		highestRecvTimestamp: highestRecvTimestamp,
 	}
 
-	t.watcher = wal.NewWatcher(watcherMetrics, readerMetrics, logger, client.Name(), t, walDir, enableExemplarRemoteWrite)
+	t.watcher = wal.NewWatcher(watcherMetrics, readerMetrics, logger, client.Name(), t, tsdbDir, enableExemplarRemoteWrite)
 	if t.mcfg.Send {
 		t.metadataWatcher = NewMetadataWatcher(logger, sm, client.Name(), t, t.mcfg.SendInterval, flushDeadline)
 	}
 	t.shards = t.newShards()
-	t.endpointRecord.Endpoint = t.storeClient.Name()
-
 	return t
 }
 
@@ -550,6 +542,8 @@ outer:
 			}
 		}
 	}
+	t.samplesAppended += len(samples)
+
 	return true
 }
 
@@ -600,6 +594,15 @@ outer:
 	return true
 }
 
+func isClosed(c chan struct{}) bool {
+	select {
+	case <-c:
+		return true
+	default:
+		return false
+	}
+}
+
 // Start the queue manager sending samples to the remote storage.
 // Does not block.
 func (t *QueueManager) Start() {
@@ -611,9 +614,8 @@ func (t *QueueManager) Start() {
 	t.metrics.desiredNumShards.Set(float64(t.cfg.MinShards))
 	t.metrics.maxSamplesPerSend.Set(float64(t.cfg.MaxSamplesPerSend))
 
-	// Checks if the SegmentRecord.json file is valid then sets the segment file to the watcher
-	if t.loadCheck() {
-		// function that sets the watchers segment file
+	if isClosed(t.quit) {
+		t.quit = make(chan struct{})
 	}
 
 	t.shards.start(t.numShards)
@@ -622,41 +624,10 @@ func (t *QueueManager) Start() {
 		t.metadataWatcher.Start()
 	}
 
-	t.wg.Add(2)
+	t.wg.Add(3)
 	go t.updateShardsLoop()
 	go t.reshardLoop()
-}
-
-// loadCheck will check if the SegmentRecord.json contents and segment is valid.
-func (t *QueueManager) loadCheck() bool {
-	var check CheckpointRecord
-
-	jsonFile, err := os.Open("data/CheckpointRecord.json")
-	defer jsonFile.Close()
-
-	byteValue, _ := ioutil.ReadAll(jsonFile)
-	err = json.Unmarshal(byteValue, &check)
-
-	if err != nil {
-		level.Error(t.logger).Log("err", err)
-		return false
-	}
-
-	for _, record := range check.Checkpoints {
-		segmentNumber, err := strconv.Atoi(record.Segment)
-
-		if err != nil {
-			level.Error(t.logger).Log("err", err)
-			return false
-		}
-
-		// Segmentnumber out of bounds
-		if segmentNumber < wal.MinSegmentNumber || segmentNumber > wal.MaxSegmentNumber {
-			return false
-		}
-
-	}
-	return true
+	go t.checkpointLoop()
 }
 
 // Stop stops sending samples to the remote storage and waits for pending
@@ -665,7 +636,8 @@ func (t *QueueManager) Stop() {
 	level.Info(t.logger).Log("msg", "Stopping remote storage...")
 	defer level.Info(t.logger).Log("msg", "Remote storage stopped.")
 
-	defer t.UpdateEndpointRecord()
+	// Update the checkpoint record one last time.
+	defer t.updateCheckpoint()
 
 	close(t.quit)
 	t.wg.Wait()
@@ -687,9 +659,32 @@ func (t *QueueManager) Stop() {
 	t.metrics.unregister()
 }
 
-// UpdateEndpointRecord gets the current segment number read from the watcher and stores it to
-func (t *QueueManager) UpdateEndpointRecord() {
-	t.endpointRecord.Segment = t.watcher.CurrSegmentFile
+// updateCheckpoint gets the current segment number read from the watcher and stores it to a file.
+func (t *QueueManager) updateCheckpoint() {
+	// Skip updating the file if the segment hasn't changed.
+	currentSegement := t.watcher.CurrentSegment()
+	if currentSegement == t.prevSegment {
+		return
+	}
+
+	segment := strconv.Itoa(currentSegement)
+	checkpointDir := filepath.Join(t.tsdbDir, "remote", t.client().Name())
+	err := os.MkdirAll(checkpointDir, 0777)
+	if err != nil {
+		level.Warn(t.logger).Log("msg", "error creating temporary remote write checkpoint directory", "error", err)
+	}
+
+	fName := filepath.Join(checkpointDir, "checkpoint")
+	if err := os.WriteFile(fName+".tmp", []byte(segment), 0666); err != nil {
+		level.Warn(t.logger).Log("msg", "error writing temporary remote write checkpoint file", "error", err)
+
+	}
+
+	err = fileutil.Replace(fName+".tmp", fName)
+	if err != nil {
+		level.Warn(t.logger).Log("msg", "error replacing remote write checkpoint file", "error", err)
+	}
+	t.prevSegment = currentSegement
 }
 
 // StoreSeries keeps track of which series we know about for lookups when sending samples to remote.
@@ -923,6 +918,22 @@ func (t *QueueManager) reshardLoop() {
 			// order.
 			t.shards.stop()
 			t.shards.start(numShards)
+		case <-t.quit:
+			return
+		}
+	}
+}
+
+func (t *QueueManager) checkpointLoop() {
+	defer t.wg.Done()
+
+	ticker := time.NewTicker(time.Second * 5)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			t.updateCheckpoint()
 		case <-t.quit:
 			return
 		}
@@ -1189,6 +1200,7 @@ func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, s
 		s.qm.metrics.failedSamplesTotal.Add(float64(sampleCount))
 		s.qm.metrics.failedExemplarsTotal.Add(float64(exemplarCount))
 	}
+	s.qm.samplesSent += sampleCount
 
 	// These counters are used to calculate the dynamic sharding, and as such
 	// should be maintained irrespective of success or failure.

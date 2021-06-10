@@ -20,6 +20,8 @@ import (
 	"math"
 	"net/url"
 	"os"
+	"path"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -43,7 +45,9 @@ import (
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/scrape"
+	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/record"
+	"github.com/prometheus/prometheus/tsdb/wal"
 )
 
 const defaultFlushDeadline = 1 * time.Minute
@@ -517,15 +521,16 @@ func getSeriesNameFromRef(r record.RefSeries) string {
 }
 
 type TestWriteClient struct {
-	receivedSamples   map[string][]prompb.Sample
-	expectedSamples   map[string][]prompb.Sample
-	receivedExemplars map[string][]prompb.Exemplar
-	expectedExemplars map[string][]prompb.Exemplar
-	receivedMetadata  map[string][]prompb.MetricMetadata
-	withWaitGroup     bool
-	wg                sync.WaitGroup
-	mtx               sync.Mutex
-	buf               []byte
+	totalReceivedSamples int
+	receivedSamples      map[string][]prompb.Sample
+	expectedSamples      map[string][]prompb.Sample
+	receivedExemplars    map[string][]prompb.Exemplar
+	expectedExemplars    map[string][]prompb.Exemplar
+	receivedMetadata     map[string][]prompb.MetricMetadata
+	withWaitGroup        bool
+	wg                   sync.WaitGroup
+	mtx                  sync.Mutex
+	buf                  []byte
 }
 
 func NewTestWriteClient() *TestWriteClient {
@@ -627,7 +632,6 @@ func (c *TestWriteClient) Store(_ context.Context, req []byte) error {
 	if err := proto.Unmarshal(reqBuf, &reqProto); err != nil {
 		return err
 	}
-
 	count := 0
 	for _, ts := range reqProto.Timeseries {
 		var seriesName string
@@ -647,6 +651,8 @@ func (c *TestWriteClient) Store(_ context.Context, req []byte) error {
 			c.receivedExemplars[seriesName] = append(c.receivedExemplars[seriesName], ex)
 		}
 	}
+
+	c.totalReceivedSamples += count
 	if c.withWaitGroup {
 		c.wg.Add(-count)
 	}
@@ -763,7 +769,7 @@ func BenchmarkStartup(b *testing.B) {
 			cfg, mcfg, nil, nil, c, 1*time.Minute, newPool(), newHighestTimestampMetric(), nil, false)
 		m.watcher.SetStartTime(timestamp.Time(math.MaxInt64))
 		m.watcher.MaxSegment = segments[len(segments)-2]
-		err := m.watcher.Run()
+		err := m.watcher.Run(-1)
 		require.NoError(b, err)
 	}
 }
@@ -922,4 +928,113 @@ func TestQueueManagerMetrics(t *testing.T) {
 	metrics.unregister()
 	err = client_testutil.GatherAndCompare(reg, strings.NewReader(""))
 	require.NoError(t, err)
+}
+
+func TestRemoteWriteCheckpoint(t *testing.T) {
+
+	pageSize := 32 * 1024
+	const seriesCount = 1000
+	const samplesCount = 250
+	const exemplarsCount = 25
+	for _, compress := range []bool{false, true} {
+		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
+			now := time.Now()
+
+			dir, err := ioutil.TempDir("", "remoteWriteCheckpoint")
+			require.NoError(t, err)
+			defer func() {
+				require.NoError(t, os.RemoveAll(dir))
+			}()
+
+			wdir := path.Join(dir, "wal")
+			err = os.Mkdir(wdir, 0777)
+			require.NoError(t, err)
+
+			enc := record.Encoder{}
+			w, err := wal.NewSize(nil, nil, wdir, 128*pageSize, compress)
+			require.NoError(t, err)
+			defer func() {
+				require.NoError(t, w.Close())
+			}()
+
+			count := 0
+
+			// Write to the initial segment then checkpoint.
+			for i := 0; i < seriesCount; i++ {
+				ref := i + 100
+				series := enc.Series([]record.RefSeries{
+					{
+						Ref:    uint64(ref),
+						Labels: labels.Labels{labels.Label{Name: "__name__", Value: fmt.Sprintf("metric_%d", i)}},
+					},
+				}, nil)
+				require.NoError(t, w.Log(series))
+
+				for j := 0; j < samplesCount; j++ {
+					sample := enc.Samples([]record.RefSample{
+						{
+							Ref: uint64(ref),
+							T:   now.UnixNano() + 1,
+							V:   float64(i),
+						},
+					}, nil)
+					require.NoError(t, w.Log(sample))
+					count++
+				}
+			}
+
+			s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil)
+			defer s.Close()
+
+			queueConfig := config.DefaultQueueConfig
+			queueConfig.BatchSendDeadline = model.Duration(100 * time.Millisecond)
+			queueConfig.MaxShards = 1
+
+			writeConfig := config.DefaultRemoteWriteConfig
+			// We need to set URL's so that metric creation doesn't panic.
+			writeConfig.URL = &common_config.URL{
+				URL: &url.URL{
+					Host: "http://test-storage.com",
+				},
+			}
+			writeConfig.QueueConfig = queueConfig
+			writeConfig.SendExemplars = true
+
+			conf := &config.Config{
+				GlobalConfig: config.DefaultGlobalConfig,
+				RemoteWriteConfigs: []*config.RemoteWriteConfig{
+					&writeConfig,
+				},
+			}
+
+			require.NoError(t, s.ApplyConfig(conf))
+			hash, err := toHash(writeConfig)
+			require.NoError(t, err)
+			qm := s.rws.queues[hash]
+			qm.Stop()
+
+			c := NewTestWriteClient()
+			c.withWaitGroup = false
+
+			// should have written at least two segments
+			checkpointDir := filepath.Join(dir, "remote", qm.client().Name())
+			require.NoError(t, os.MkdirAll(checkpointDir, 0777))
+
+			fName := filepath.Join(checkpointDir, "checkpoint")
+			require.NoError(t, os.WriteFile(fName+".tmp", []byte("0"), 0666))
+			require.NoError(t, fileutil.Replace(fName+".tmp", fName))
+
+			// we need to set the test write client after setting the checkpoint file
+			// since the watchers client (and therefore client.Name()) is set when the
+			// queue manager is created
+			qm.SetClient(c)
+
+			qm.Start()
+			// being lazy, have a select loop
+			time.Sleep(5 * time.Second)
+			// Since we're starting sending samples from the beginning of the WAL
+			// we should receive all the ones we wrote to the WAL.
+			require.Equal(t, count, c.totalReceivedSamples)
+		})
+	}
 }
