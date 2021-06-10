@@ -47,6 +47,10 @@ export const useFetch = <T extends {}>(url: string, options?: RequestInit): Fetc
   return { response, error, isLoading };
 };
 
+var checked = false;
+var wasReady = false;
+var wasUnexpected = false;
+
 export const useFetchReady = (pathPrefix: string, options?: RequestInit): FetchStateReady => {
   const [ready, setReady] = useState<boolean>(false);
   const [isUnexpected, setIsUnexpected] = useState<boolean>(false);
@@ -73,9 +77,16 @@ export const useFetchReady = (pathPrefix: string, options?: RequestInit): FetchS
         setIsUnexpected(true);
       }
     };
-    fetchData();
+    if (!checked) {
+      fetchData();
+    }
   }, [pathPrefix, options]);
-  return { ready, isUnexpected, isLoading };
+  if (!checked && !isLoading) {
+    checked = true;
+    wasReady = ready;
+    wasUnexpected = isUnexpected;
+  }
+  return { ready: wasReady, isUnexpected: wasUnexpected, isLoading };
 };
 
 // This is used on the starting page to periodically check if the server is ready yet,
@@ -91,6 +102,7 @@ export const useFetchReadyInterval = (pathPrefix: string, options?: RequestInit)
         let res = await fetch(`${pathPrefix}/-/ready`, { cache: 'no-store', credentials: 'same-origin', ...options });
         if (res.status === 200) {
           setReady(true);
+          wasReady = true;
           clearInterval(interval);
           return;
         }
