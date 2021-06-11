@@ -33,7 +33,7 @@ const (
 	TLSMixed
 )
 
-func makeIngress(tls TLSMode, excludeClass bool) *v1beta1.Ingress {
+func makeIngress(tls TLSMode, excludeClassName bool) *v1beta1.Ingress {
 	ret := &v1beta1.Ingress{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        "testingress",
@@ -82,7 +82,7 @@ func makeIngress(tls TLSMode, excludeClass bool) *v1beta1.Ingress {
 		ret.Spec.TLS = []v1beta1.IngressTLS{{Hosts: []string{"example.com"}}}
 	}
 
-	if excludeClass {
+	if excludeClassName {
 		ret.Spec.IngressClassName = nil
 	}
 
@@ -93,7 +93,7 @@ func classString(v string) *string {
 	return &v
 }
 
-func expectedTargetGroups(ns string, tls TLSMode, excludeClass bool) map[string]*targetgroup.Group {
+func expectedTargetGroups(ns string, tls TLSMode, excludeClassName bool) map[string]*targetgroup.Group {
 	scheme1 := "http"
 	scheme2 := "http"
 
@@ -107,7 +107,7 @@ func expectedTargetGroups(ns string, tls TLSMode, excludeClass bool) map[string]
 		scheme1 = "https"
 	}
 
-	if excludeClass {
+	if excludeClassName {
 		ingressClassName = ""
 	}
 
@@ -141,7 +141,7 @@ func expectedTargetGroups(ns string, tls TLSMode, excludeClass bool) map[string]
 				"__meta_kubernetes_ingress_labelpresent_test_label":           "true",
 				"__meta_kubernetes_ingress_annotation_test_annotation":        "testannotationvalue",
 				"__meta_kubernetes_ingress_annotationpresent_test_annotation": "true",
-				"__meta_kubernetes_ingress_class":                             lv(ingressClassName),
+				"__meta_kubernetes_ingress_class_name":                        lv(ingressClassName),
 			},
 			Source: key,
 		},
