@@ -453,7 +453,7 @@ token: 1234567
 authorization:
   credentials: 12345678
 `,
-			errMessage: "at most one of consul SD configuration token, authorization or oauth2 can be configured",
+			errMessage: "at most one of consul SD token, authorization, or oauth2 can be configured",
 		},
 		{
 			name: "token and oauth2 configured",
@@ -465,7 +465,7 @@ oauth2:
   client_secret: 11
   token_url: http://example.com
 `,
-			errMessage: "at most one of consul SD configuration token, authorization or oauth2 can be configured",
+			errMessage: "at most one of consul SD token, authorization, or oauth2 can be configured",
 		},
 	}
 
@@ -474,7 +474,7 @@ oauth2:
 			var config SDConfig
 			err := config.UnmarshalYAML(unmarshal([]byte(test.config)))
 			if err != nil {
-				require.Equalf(t, err.Error(), test.errMessage, "Expected error %s, got %v", test.errMessage, err)
+				require.Equalf(t, err.Error(), test.errMessage, "Expected error '%s', got '%v'", test.errMessage, err)
 				return
 			}
 			if test.errMessage != "" {

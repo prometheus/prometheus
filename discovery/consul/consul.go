@@ -172,7 +172,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		}
 	}
 	if c.Token != "" && (c.HTTPClientConfig.Authorization != nil || c.HTTPClientConfig.OAuth2 != nil) {
-		return errors.New("at most one of consul SD configuration token, authorization or oauth2 can be configured")
+		return errors.New("at most one of consul SD token, authorization, or oauth2 can be configured")
 	}
 	return c.HTTPClientConfig.Validate()
 }
