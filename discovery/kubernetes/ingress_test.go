@@ -33,7 +33,7 @@ const (
 	TLSMixed
 )
 
-func makeIngress(tls TLSMode, excludeClassName bool) *v1beta1.Ingress {
+func makeIngress(tls TLSMode) *v1beta1.Ingress {
 	ret := &v1beta1.Ingress{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        "testingress",
@@ -82,10 +82,6 @@ func makeIngress(tls TLSMode, excludeClassName bool) *v1beta1.Ingress {
 		ret.Spec.TLS = []v1beta1.IngressTLS{{Hosts: []string{"example.com"}}}
 	}
 
-	if excludeClassName {
-		ret.Spec.IngressClassName = nil
-	}
-
 	return ret
 }
 
@@ -93,11 +89,9 @@ func classString(v string) *string {
 	return &v
 }
 
-func expectedTargetGroups(ns string, tls TLSMode, excludeClassName bool) map[string]*targetgroup.Group {
+func expectedTargetGroups(ns string, tls TLSMode) map[string]*targetgroup.Group {
 	scheme1 := "http"
 	scheme2 := "http"
-
-	ingressClassName := "testclass"
 
 	switch tls {
 	case TLSYes:
@@ -105,10 +99,6 @@ func expectedTargetGroups(ns string, tls TLSMode, excludeClassName bool) map[str
 		scheme2 = "https"
 	case TLSMixed:
 		scheme1 = "https"
-	}
-
-	if excludeClassName {
-		ingressClassName = ""
 	}
 
 	key := fmt.Sprintf("ingress/%s/testingress", ns)
@@ -141,7 +131,7 @@ func expectedTargetGroups(ns string, tls TLSMode, excludeClassName bool) map[str
 				"__meta_kubernetes_ingress_labelpresent_test_label":           "true",
 				"__meta_kubernetes_ingress_annotation_test_annotation":        "testannotationvalue",
 				"__meta_kubernetes_ingress_annotationpresent_test_annotation": "true",
-				"__meta_kubernetes_ingress_class_name":                        lv(ingressClassName),
+				"__meta_kubernetes_ingress_class_name":                        "testclass",
 			},
 			Source: key,
 		},
@@ -154,11 +144,11 @@ func TestIngressDiscoveryAdd(t *testing.T) {
 	k8sDiscoveryTest{
 		discovery: n,
 		afterStart: func() {
-			obj := makeIngress(TLSNo, false)
+			obj := makeIngress(TLSNo)
 			c.NetworkingV1beta1().Ingresses("default").Create(context.Background(), obj, metav1.CreateOptions{})
 		},
 		expectedMaxItems: 1,
-		expectedRes:      expectedTargetGroups("default", TLSNo, false),
+		expectedRes:      expectedTargetGroups("default", TLSNo),
 	}.Run(t)
 }
 
@@ -168,11 +158,11 @@ func TestIngressDiscoveryAddTLS(t *testing.T) {
 	k8sDiscoveryTest{
 		discovery: n,
 		afterStart: func() {
-			obj := makeIngress(TLSYes, false)
+			obj := makeIngress(TLSYes)
 			c.NetworkingV1beta1().Ingresses("default").Create(context.Background(), obj, metav1.CreateOptions{})
 		},
 		expectedMaxItems: 1,
-		expectedRes:      expectedTargetGroups("default", TLSYes, false),
+		expectedRes:      expectedTargetGroups("default", TLSYes),
 	}.Run(t)
 }
 
@@ -182,40 +172,26 @@ func TestIngressDiscoveryAddMixed(t *testing.T) {
 	k8sDiscoveryTest{
 		discovery: n,
 		afterStart: func() {
-			obj := makeIngress(TLSMixed, false)
+			obj := makeIngress(TLSMixed)
 			c.NetworkingV1beta1().Ingresses("default").Create(context.Background(), obj, metav1.CreateOptions{})
 		},
 		expectedMaxItems: 1,
-		expectedRes:      expectedTargetGroups("default", TLSMixed, false),
-	}.Run(t)
-}
-
-func TestIngressDiscoveryAddNoClass(t *testing.T) {
-	n, c := makeDiscovery(RoleIngress, NamespaceDiscovery{Names: []string{"default"}})
-
-	k8sDiscoveryTest{
-		discovery: n,
-		afterStart: func() {
-			obj := makeIngress(TLSMixed, true)
-			c.NetworkingV1beta1().Ingresses("default").Create(context.Background(), obj, metav1.CreateOptions{})
-		},
-		expectedMaxItems: 1,
-		expectedRes:      expectedTargetGroups("default", TLSMixed, true),
+		expectedRes:      expectedTargetGroups("default", TLSMixed),
 	}.Run(t)
 }
 
 func TestIngressDiscoveryNamespaces(t *testing.T) {
 	n, c := makeDiscovery(RoleIngress, NamespaceDiscovery{Names: []string{"ns1", "ns2"}})
 
-	expected := expectedTargetGroups("ns1", TLSNo, false)
-	for k, v := range expectedTargetGroups("ns2", TLSNo, false) {
+	expected := expectedTargetGroups("ns1", TLSNo)
+	for k, v := range expectedTargetGroups("ns2", TLSNo) {
 		expected[k] = v
 	}
 	k8sDiscoveryTest{
 		discovery: n,
 		afterStart: func() {
 			for _, ns := range []string{"ns1", "ns2"} {
-				obj := makeIngress(TLSNo, false)
+				obj := makeIngress(TLSNo)
 				obj.Namespace = ns
 				c.NetworkingV1beta1().Ingresses(obj.Namespace).Create(context.Background(), obj, metav1.CreateOptions{})
 			}
