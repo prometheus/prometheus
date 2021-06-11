@@ -22,9 +22,11 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
+	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
@@ -395,5 +397,75 @@ func TestGetDatacenterShouldReturnError(t *testing.T) {
 		require.Equal(t, tc.errMessage, err.Error())
 		// Should still be empty.
 		require.Equal(t, "", d.clientDatacenter)
+	}
+}
+
+func TestUnmarshalConfig(t *testing.T) {
+	unmarshal := func(d []byte) func(interface{}) error {
+		return func(o interface{}) error {
+			return yaml.Unmarshal(d, o)
+		}
+	}
+
+	cases := []struct {
+		name       string
+		config     string
+		expected   SDConfig
+		errMessage string
+	}{
+		{
+			name: "good",
+			config: `
+server: localhost:8500
+username: 123
+password: 1234
+`,
+			expected: SDConfig{
+				Server: "hi",
+				HTTPClientConfig: config.HTTPClientConfig{
+					BasicAuth: &config.BasicAuth{
+						Username: "hello",
+						Password: "goodbye",
+					},
+				},
+			},
+		},
+		{
+			name:       "no server",
+			config:     ``,
+			errMessage: "consul SD configuration requires a server address",
+		},
+		{
+			name: "username and password and basic auth configured",
+			config: `
+server: localhost:8500
+username: 123
+password: 1234
+basic_auth:
+  username: 12345
+  password: 123456
+`,
+			errMessage: "at most one of consul SD configuration username and password and basic auth can be configured",
+		},
+		{
+			name: "token and authorization configured",
+			config: `
+server: localhost:8500
+token: 1234567
+authorization:
+  credentials: 12345678
+`,
+			errMessage: "at most one of consul SD configuration token and authorization can be configured",
+		},
+	}
+
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			var config SDConfig
+			err := config.UnmarshalYAML(unmarshal([]byte(test.config)))
+			if err != nil {
+				require.Equal(t, err.Error(), test.errMessage, "Expected error %s, got %v", test.errMessage, err)
+			}
+		})
 	}
 }
