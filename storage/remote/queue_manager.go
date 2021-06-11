@@ -1027,19 +1027,15 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue chan interface
 		// TODO(cstyan): Casting this many times smells, also we could get index out of bounds issues here.
 		maxExemplars                                 = int(math.Max(1, float64(max/10)))
 		nPending, nPendingSamples, nPendingExemplars = 0, 0, 0
-		sampleBuffer                                 = allocateSampleBuffer(max)
 
-		buf            []byte
-		pendingData    []prompb.TimeSeries
-		exemplarBuffer [][]prompb.Exemplar
+		buf         []byte
+		pendingData []prompb.TimeSeries
 	)
-	totalPending := max
 	if s.qm.sendExemplars {
-		exemplarBuffer = allocateExemplarBuffer(maxExemplars)
-		totalPending += maxExemplars
+		max += maxExemplars
 	}
 
-	pendingData = make([]prompb.TimeSeries, totalPending)
+	pendingData = make([]prompb.TimeSeries, max)
 
 	timer := time.NewTimer(time.Duration(s.qm.cfg.BatchSendDeadline))
 	stop := func() {
@@ -1084,23 +1080,21 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue chan interface
 			// stop reading from the queue. This makes it safe to reference pendingSamples by index.
 			switch d := sample.(type) {
 			case writeSample:
-				sampleBuffer[nPendingSamples][0] = d.sample
 				pendingData[nPending].Labels = labelsToLabelsProto(d.seriesLabels, pendingData[nPending].Labels)
-				pendingData[nPending].Samples = sampleBuffer[nPendingSamples]
+				pendingData[nPending].Samples = []prompb.Sample{d.sample}
 				pendingData[nPending].Exemplars = nil
 				nPendingSamples++
 				nPending++
 
 			case writeExemplar:
-				exemplarBuffer[nPendingExemplars][0] = d.exemplar
 				pendingData[nPending].Labels = labelsToLabelsProto(d.seriesLabels, pendingData[nPending].Labels)
 				pendingData[nPending].Samples = nil
-				pendingData[nPending].Exemplars = exemplarBuffer[nPendingExemplars]
+				pendingData[nPending].Exemplars = []prompb.Exemplar{d.exemplar}
 				nPendingExemplars++
 				nPending++
 			}
 
-			if nPendingSamples >= max || nPendingExemplars >= maxExemplars {
+			if nPending >= max {
 				s.sendSamples(ctx, pendingData[:nPending], nPendingSamples, nPendingExemplars, &buf)
 				s.qm.metrics.pendingSamples.Sub(float64(nPendingSamples))
 				s.qm.metrics.pendingExemplars.Sub(float64(nPendingExemplars))
@@ -1282,20 +1276,4 @@ func buildWriteRequest(samples []prompb.TimeSeries, metadata []prompb.MetricMeta
 	}
 	compressed := snappy.Encode(buf, data)
 	return compressed, highest, nil
-}
-
-func allocateSampleBuffer(capacity int) [][]prompb.Sample {
-	buf := make([][]prompb.Sample, capacity)
-	for i := range buf {
-		buf[i] = []prompb.Sample{{}}
-	}
-	return buf
-}
-
-func allocateExemplarBuffer(capacity int) [][]prompb.Exemplar {
-	buf := make([][]prompb.Exemplar, capacity)
-	for i := range buf {
-		buf[i] = []prompb.Exemplar{{}}
-	}
-	return buf
 }
