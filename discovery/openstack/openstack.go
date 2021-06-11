@@ -19,7 +19,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
 	"github.com/gophercloud/gophercloud"
 	"github.com/gophercloud/gophercloud/openstack"
 	conntrack "github.com/mwitkow/go-conntrack"
