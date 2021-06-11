@@ -123,7 +123,7 @@ export const PanelListContent: FC<PanelListContentProps> = ({
 
 const PanelList: FC<RouteComponentProps> = () => {
   const [delta, setDelta] = useState(0);
-  const [useExperimentalEditor, setUseExperimentalEditor] = useLocalStorage('use-new-editor', false);
+  const [useExperimentalEditor, setUseExperimentalEditor] = useLocalStorage('use-new-editor', true);
   const [useLocalTime, setUseLocalTime] = useLocalStorage('use-local-time', false);
   const [enableQueryHistory, setEnableQueryHistory] = useLocalStorage('enable-query-history', false);
   const [enableAutocomplete, setEnableAutocomplete] = useLocalStorage('enable-metric-autocomplete', true);
