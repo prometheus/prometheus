@@ -25,6 +25,9 @@ describe('ScrapePoolList', () => {
           const div = document.createElement('div');
           div.id = `series-labels-${pool}-${idx}`;
           document.body.appendChild(div);
+          const div2 = document.createElement('div');
+          div2.id = `scrape-duration-${pool}-${idx}`;
+          document.body.appendChild(div2);
         });
       });
       mock = fetchMock.mockResponse(JSON.stringify(sampleApiResponse));
