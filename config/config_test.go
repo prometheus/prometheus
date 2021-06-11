@@ -39,6 +39,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/eureka"
 	"github.com/prometheus/prometheus/discovery/file"
 	"github.com/prometheus/prometheus/discovery/hetzner"
+	"github.com/prometheus/prometheus/discovery/http"
 	"github.com/prometheus/prometheus/discovery/kubernetes"
 	"github.com/prometheus/prometheus/discovery/linode"
 	"github.com/prometheus/prometheus/discovery/marathon"
@@ -623,6 +624,25 @@ var expectedConf = &Config{
 						},
 						Source: "0",
 					},
+				},
+			},
+		},
+		{
+			JobName: "httpsd",
+
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
+
+			MetricsPath:      DefaultScrapeConfig.MetricsPath,
+			Scheme:           DefaultScrapeConfig.Scheme,
+			HTTPClientConfig: config.DefaultHTTPClientConfig,
+
+			ServiceDiscoveryConfigs: discovery.Configs{
+				&http.SDConfig{
+					HTTPClientConfig: config.DefaultHTTPClientConfig,
+					URL:              "http://example.com/prometheus",
+					RefreshInterval:  model.Duration(60 * time.Second),
 				},
 			},
 		},
@@ -1232,6 +1252,18 @@ var expectedErrors = []struct {
 	{
 		filename: "scrape_body_size_limit.bad.yml",
 		errMsg:   "units: unknown unit  in 100",
+	},
+	{
+		filename: "http_url_no_scheme.bad.yml",
+		errMsg:   "URL scheme must be 'http' or 'https'",
+	},
+	{
+		filename: "http_url_no_host.bad.yml",
+		errMsg:   "host is missing in URL",
+	},
+	{
+		filename: "http_url_bad_scheme.bad.yml",
+		errMsg:   "URL scheme must be 'http' or 'https'",
 	},
 }
 
