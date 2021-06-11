@@ -407,6 +407,17 @@ func TestUnmarshalConfig(t *testing.T) {
 		}
 	}
 
+	goodConfig := DefaultSDConfig
+	goodConfig.Username = "123"
+	goodConfig.Password = "1234"
+	goodConfig.HTTPClientConfig = config.HTTPClientConfig{
+		BasicAuth: &config.BasicAuth{
+			Username: "123",
+			Password: "1234",
+		},
+		FollowRedirects: true,
+	}
+
 	cases := []struct {
 		name       string
 		config     string
@@ -420,20 +431,7 @@ server: localhost:8500
 username: 123
 password: 1234
 `,
-			expected: SDConfig{
-				Server: "hi",
-				HTTPClientConfig: config.HTTPClientConfig{
-					BasicAuth: &config.BasicAuth{
-						Username: "hello",
-						Password: "goodbye",
-					},
-				},
-			},
-		},
-		{
-			name:       "no server",
-			config:     ``,
-			errMessage: "consul SD configuration requires a server address",
+			expected: goodConfig,
 		},
 		{
 			name: "username and password and basic auth configured",
@@ -455,7 +453,19 @@ token: 1234567
 authorization:
   credentials: 12345678
 `,
-			errMessage: "at most one of consul SD configuration token and authorization can be configured",
+			errMessage: "at most one of consul SD configuration token, authorization or oauth2 can be configured",
+		},
+		{
+			name: "token and oauth2 configured",
+			config: `
+server: localhost:8500
+token: 1234567
+oauth2:
+  client_id: 10
+  client_secret: 11
+  token_url: http://example.com
+`,
+			errMessage: "at most one of consul SD configuration token, authorization or oauth2 can be configured",
 		},
 	}
 
@@ -464,8 +474,15 @@ authorization:
 			var config SDConfig
 			err := config.UnmarshalYAML(unmarshal([]byte(test.config)))
 			if err != nil {
-				require.Equal(t, err.Error(), test.errMessage, "Expected error %s, got %v", test.errMessage, err)
+				require.Equalf(t, err.Error(), test.errMessage, "Expected error %s, got %v", test.errMessage, err)
+				return
 			}
+			if test.errMessage != "" {
+				t.Errorf("Expected error %s, got none", test.errMessage)
+				return
+			}
+
+			require.Equal(t, config, test.expected)
 		})
 	}
 }

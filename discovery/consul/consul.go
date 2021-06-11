@@ -148,7 +148,7 @@ func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Di
 
 // SetDirectory joins any relative file paths with dir.
 func (c *SDConfig) SetDirectory(dir string) {
-	c.HTTPClientConfig.TLSConfig.SetDirectory(dir)
+	c.HTTPClientConfig.SetDirectory(dir)
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -171,10 +171,10 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 			Password: c.Password,
 		}
 	}
-	if c.Token != "" && c.HTTPClientConfig.Authorization != nil {
-		return errors.New("at most one of consul SD configuration token and authorization can be configured")
+	if c.Token != "" && (c.HTTPClientConfig.Authorization != nil || c.HTTPClientConfig.OAuth2 != nil) {
+		return errors.New("at most one of consul SD configuration token, authorization or oauth2 can be configured")
 	}
-	return nil
+	return c.HTTPClientConfig.Validate()
 }
 
 // Discovery retrieves target information from a Consul server

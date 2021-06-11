@@ -447,6 +447,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 # Namespaces are only supported in Consul Enterprise.
 [ namespace: <string> ]
 [ scheme: <string> | default = "http" ]
+# The username and password fields are deprecated in favor of the basic_auth configuration.
 [ username: <string> ]
 [ password: <secret> ]
 
@@ -476,7 +477,7 @@ tags:
 # On large setup it might be a good idea to increase this value because the catalog will change all the time.
 [ refresh_interval: <duration> | default = 30s ]
 
-# Authentication information used to authenticate to the API server.
+# Authentication information used to authenticate to the consul server.
 # Note that `basic_auth`, `authorization` and `oauth2` options are
 # mutually exclusive.
 # `password` and `password_file` are mutually exclusive.
