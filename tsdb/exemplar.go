@@ -211,6 +211,77 @@ func (ce *CircularExemplarStorage) validateExemplar(l string, e exemplar.Exempla
 	return nil
 }
 
+func (ce *CircularExemplarStorage) Resize(l int) error {
+	if l <= 0 || l == len(ce.exemplars) {
+		return nil
+	}
+
+	ce.lock.Lock()
+	defer ce.lock.Unlock()
+
+	oldBuffer := ce.exemplars
+	oldNextIndex := ce.nextIndex
+
+	ce.exemplars = make([]*circularBufferEntry, l)
+	ce.index = make(map[string]*indexEntry)
+	ce.nextIndex = 0
+
+	// Replay all entries into the new storage, starting with oldest first
+	if oldBuffer[oldNextIndex] != nil {
+		// buffer was full. replay older half
+		for i := oldNextIndex; i < len(oldBuffer); i++ {
+			entry := oldBuffer[i]
+			ce.migrate(entry)
+		}
+	}
+	for i := 0; i < oldNextIndex; i++ {
+		entry := oldBuffer[i]
+		ce.migrate(entry)
+	}
+
+	ce.computeMetrics()
+
+	return nil
+}
+
+// migrate Expects lock externally
+func (ce *CircularExemplarStorage) migrate(entry *circularBufferEntry) {
+	seriesLabels := entry.ref.seriesLabels.String()
+
+	_, ok := ce.index[seriesLabels]
+	if !ok {
+		// Reuse index entry
+		ce.index[seriesLabels] = entry.ref
+		entry.ref.oldest = ce.nextIndex
+	} else {
+		ce.exemplars[ce.index[seriesLabels].newest].next = ce.nextIndex
+	}
+
+	if prev := ce.exemplars[ce.nextIndex]; prev == nil {
+		// Reuse entry
+		ce.exemplars[ce.nextIndex] = entry
+	} else {
+		// There exists exemplar already on this ce.nextIndex entry, drop it, to make place
+		// for others.
+		prevLabels := prev.ref.seriesLabels.String()
+		if prev.next == -1 {
+			// Last item for this series, remove index entry.
+			delete(ce.index, prevLabels)
+		} else {
+			ce.index[prevLabels].oldest = prev.next
+		}
+	}
+
+	// Default the next value to -1 (which we use to detect that we've iterated through all exemplars for a series in Select)
+	// since this is the first exemplar stored for this series.
+	ce.exemplars[ce.nextIndex].exemplar = entry.exemplar
+	ce.exemplars[ce.nextIndex].next = -1
+	ce.exemplars[ce.nextIndex].ref = ce.index[seriesLabels]
+	ce.index[seriesLabels].newest = ce.nextIndex
+
+	ce.nextIndex = (ce.nextIndex + 1) % len(ce.exemplars)
+}
+
 func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemplar) error {
 	seriesLabels := l.String()
 
@@ -259,17 +330,20 @@ func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemp
 	ce.nextIndex = (ce.nextIndex + 1) % len(ce.exemplars)
 
 	ce.exemplarsAppended.Inc()
+	ce.computeMetrics()
+	return nil
+}
+
+func (ce *CircularExemplarStorage) computeMetrics() {
 	ce.seriesWithExemplarsInStorage.Set(float64(len(ce.index)))
 	if next := ce.exemplars[ce.nextIndex]; next != nil {
 		ce.exemplarsInStorage.Set(float64(len(ce.exemplars)))
 		ce.lastExemplarsTs.Set(float64(next.exemplar.Ts) / 1000)
-		return nil
 	}
 
 	// We did not yet fill the buffer.
 	ce.exemplarsInStorage.Set(float64(ce.nextIndex))
 	ce.lastExemplarsTs.Set(float64(ce.exemplars[0].exemplar.Ts) / 1000)
-	return nil
 }
 
 type noopExemplarStorage struct{}
