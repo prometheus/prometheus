@@ -29,7 +29,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
 	"github.com/stretchr/testify/require"
 
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
