@@ -447,11 +447,9 @@ The following meta labels are available on targets during [relabeling](#relabel_
 # Namespaces are only supported in Consul Enterprise.
 [ namespace: <string> ]
 [ scheme: <string> | default = "http" ]
+# The username and password fields are deprecated in favor of the basic_auth configuration.
 [ username: <string> ]
 [ password: <secret> ]
-
-tls_config:
-  [ <tls_config> ]
 
 # A list of services for which targets are retrieved. If omitted, all services
 # are scraped.
@@ -478,6 +476,42 @@ tags:
 # The time after which the provided names are refreshed.
 # On large setup it might be a good idea to increase this value because the catalog will change all the time.
 [ refresh_interval: <duration> | default = 30s ]
+
+# Authentication information used to authenticate to the consul server.
+# Note that `basic_auth`, `authorization` and `oauth2` options are
+# mutually exclusive.
+# `password` and `password_file` are mutually exclusive.
+
+# Optional HTTP basic authentication information.
+basic_auth:
+  [ username: <string> ]
+  [ password: <secret> ]
+  [ password_file: <string> ]
+
+# Optional `Authorization` header configuration.
+authorization:
+  # Sets the authentication type.
+  [ type: <string> | default: Bearer ]
+  # Sets the credentials. It is mutually exclusive with
+  # `credentials_file`.
+  [ credentials: <secret> ]
+  # Sets the credentials to the credentials read from the configured file.
+  # It is mutually exclusive with `credentials`.
+  [ credentials_file: <filename> ]
+
+# Optional OAuth 2.0 configuration.
+oauth2:
+  [ <oauth2> ]
+
+# Optional proxy URL.
+[ proxy_url: <string> ]
+
+# Configure whether HTTP requests follow HTTP 3xx redirects.
+[ follow_redirects: <bool> | default = true ]
+
+# TLS configuration.
+tls_config:
+  [ <tls_config> ]
 ```
 
 Note that the IP number and port used to scrape the targets is assembled as

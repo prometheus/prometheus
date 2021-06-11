@@ -332,11 +332,14 @@ var expectedConf = &Config{
 					Scheme:          "https",
 					RefreshInterval: consul.DefaultSDConfig.RefreshInterval,
 					AllowStale:      true,
-					TLSConfig: config.TLSConfig{
-						CertFile:           filepath.FromSlash("testdata/valid_cert_file"),
-						KeyFile:            filepath.FromSlash("testdata/valid_key_file"),
-						CAFile:             filepath.FromSlash("testdata/valid_ca_file"),
-						InsecureSkipVerify: false,
+					HTTPClientConfig: config.HTTPClientConfig{
+						TLSConfig: config.TLSConfig{
+							CertFile:           filepath.FromSlash("testdata/valid_cert_file"),
+							KeyFile:            filepath.FromSlash("testdata/valid_key_file"),
+							CAFile:             filepath.FromSlash("testdata/valid_ca_file"),
+							InsecureSkipVerify: false,
+						},
+						FollowRedirects: true,
 					},
 				},
 			},
