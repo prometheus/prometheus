@@ -155,9 +155,7 @@ func ingressLabels(ingress *v1beta1.Ingress) model.LabelSet {
 	ls := make(model.LabelSet, 2*(len(ingress.Labels)+len(ingress.Annotations))+2)
 	ls[ingressNameLabel] = lv(ingress.Name)
 	ls[namespaceLabel] = lv(ingress.Namespace)
-	if ingress.Spec.IngressClassName == nil {
-		ls[ingressClassNameLabel] = lv("")
-	} else {
+	if ingress.Spec.IngressClassName != nil {
 		ls[ingressClassNameLabel] = lv(*ingress.Spec.IngressClassName)
 	}
 
