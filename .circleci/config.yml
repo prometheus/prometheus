@@ -29,6 +29,8 @@ jobs:
         - v3-npm-deps-{{ checksum "web/ui/react-app/yarn.lock" }}
         - v3-npm-deps-
     - run:
+        command: sudo apt-get install -y yamllint
+    - run:
         command: make
         environment:
           # Run garbage collection more aggressively to avoid getting OOMed during the lint phase.
@@ -99,6 +101,8 @@ jobs:
     - run:
         command: jb install
         working_directory: ~/project/documentation/prometheus-mixin
+    - run:
+        command: sudo apt-get install -y yamllint
     - run:
         command: make
         working_directory: ~/project/documentation/prometheus-mixin
