@@ -113,7 +113,7 @@ export const getOptions = (stacked: boolean, useLocalTime: boolean): jquery.flot
               <span class="detail-swatch" style="background-color: ${color}"></span>
               <span>${labels.__name__ || 'value'}: <strong>${yval}</strong></span>
             </div>
-            <div class="mt-2 mb-1 font-weight-bold">${'seriesLabels' in both ? 'Trace Exemplar:' : 'Series:'}</div>
+            <div class="mt-2 mb-1 font-weight-bold">${'seriesLabels' in both ? 'Trace exemplar:' : 'Series:'}</div>
             <div class="labels">
               ${labels['__name__'] ? `<div class="mb-1"><strong>${labels['__name__']}</strong></div>` : ''}
               ${Object.keys(labels)
