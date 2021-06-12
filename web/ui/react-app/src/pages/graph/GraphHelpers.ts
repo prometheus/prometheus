@@ -107,35 +107,30 @@ export const getOptions = (stacked: boolean, useLocalTime: boolean): jquery.flot
         if (!useLocalTime) {
           dateTime = dateTime.utc();
         }
+
+        const formatLabels = (labels: { [key: string]: string }): string =>
+          `<div class="labels">
+            ${Object.keys(labels).length === 0 ? '<div class="mb-1 font-italic">no labels</div>' : ''}
+            ${labels['__name__'] ? `<div class="mb-1"><strong>${labels['__name__']}</strong></div>` : ''}
+            ${Object.keys(labels)
+              .filter(k => k !== '__name__')
+              .map(k => `<div class="mb-1"><strong>${k}</strong>: ${escapeHTML(labels[k])}</div>`)
+              .join('')}
+          </div>`;
+
         return `
             <div class="date">${dateTime.format('YYYY-MM-DD HH:mm:ss Z')}</div>
             <div>
-              <span class="detail-swatch" style="background-color: ${color}"></span>
+              ${'seriesLabels' in both ? `<span class="detail-swatch" style="background-color: ${color}"></span>` : ''}
               <span>${labels.__name__ || 'value'}: <strong>${yval}</strong></span>
             </div>
             <div class="mt-2 mb-1 font-weight-bold">${'seriesLabels' in both ? 'Trace exemplar:' : 'Series:'}</div>
-            <div class="labels">
-              ${labels['__name__'] ? `<div class="mb-1"><strong>${labels['__name__']}</strong></div>` : ''}
-              ${Object.keys(labels)
-                .filter(k => k !== '__name__')
-                .map(k => `<div class="mb-1"><strong>${k}</strong>: ${escapeHTML(labels[k])}</div>`)
-                .join('')}
-            </div>
+            ${formatLabels(labels)}
             ${
               'seriesLabels' in both
                 ? `
             <div class="mt-2 mb-1 font-weight-bold">Associated series:</div>
-            <div class="labels">
-              ${
-                both.seriesLabels['__name__']
-                  ? `<div class="mb-1"><strong>${both.seriesLabels['__name__']}</strong></div>`
-                  : ''
-              }
-              ${Object.keys(both.seriesLabels)
-                .filter(k => k !== '__name__')
-                .map(k => `<div class="mb-1"><strong>${k}</strong>: ${escapeHTML(both.seriesLabels[k])}</div>`)
-                .join('')}
-            </div>
+            ${formatLabels(both.seriesLabels)}
             `
                 : ''
             }
