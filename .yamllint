@@ -11,6 +11,7 @@ rules:
   commas: disable
   comments: disable
   comments-indentation: disable
+  document-start: disable
   indentation:
     spaces: consistent
   line-length: disable
