@@ -47,47 +47,7 @@ export const useFetch = <T extends {}>(url: string, options?: RequestInit): Fetc
   return { response, error, isLoading };
 };
 
-let checked = false;
 let wasReady = false;
-let wasUnexpected = false;
-
-export const useFetchReady = (pathPrefix: string, options?: RequestInit): FetchStateReady => {
-  const [ready, setReady] = useState<boolean>(false);
-  const [isUnexpected, setIsUnexpected] = useState<boolean>(false);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-
-  useEffect(() => {
-    const fetchData = async () => {
-      setIsLoading(true);
-      try {
-        const res = await fetch(`${pathPrefix}/-/ready`, { cache: 'no-store', credentials: 'same-origin', ...options });
-        if (res.status === 200) {
-          setReady(true);
-        }
-        // The server sends back a 503 if it isn't ready,
-        // if we get back anything else that means something has gone wrong.
-        if (res.status !== 503) {
-          setIsUnexpected(true);
-        } else {
-          setIsUnexpected(false);
-        }
-
-        setIsLoading(false);
-      } catch (error) {
-        setIsUnexpected(true);
-      }
-    };
-    if (!checked) {
-      fetchData();
-    }
-  }, [pathPrefix, options]);
-  if (!checked && !isLoading) {
-    checked = true;
-    wasReady = ready;
-    wasUnexpected = isUnexpected;
-  }
-  return { ready: wasReady, isUnexpected: wasUnexpected, isLoading };
-};
 
 // This is used on the starting page to periodically check if the server is ready yet,
 // and check the status of the WAL replay.
@@ -97,34 +57,61 @@ export const useFetchReadyInterval = (pathPrefix: string, options?: RequestInit)
   const [walReplayStatus, setWALReplayStatus] = useState<WALReplayStatus>({} as any);
 
   useEffect(() => {
-    const interval = setInterval(async () => {
-      try {
-        let res = await fetch(`${pathPrefix}/-/ready`, { cache: 'no-store', credentials: 'same-origin', ...options });
-        if (res.status === 200) {
-          setReady(true);
-          wasReady = true;
+    if (wasReady) {
+      setReady(true);
+    } else {
+      // This helps avoid a memory leak.
+      let mounted = true;
+
+      const fetchStatus = async () => {
+        try {
+          let res = await fetch(`${pathPrefix}/-/ready`, { cache: 'no-store', credentials: 'same-origin', ...options });
+          if (res.status === 200) {
+            if (mounted) {
+              setReady(true);
+            }
+            wasReady = true;
+            clearInterval(interval);
+          }
+          if (res.status !== 503) {
+            if (mounted) {
+              setIsUnexpected(true);
+            }
+            clearInterval(interval);
+            return;
+          } else {
+            if (mounted) {
+              setIsUnexpected(false);
+            }
+
+            res = await fetch(`${pathPrefix}/${API_PATH}/status/walreplay`, {
+              cache: 'no-store',
+              credentials: 'same-origin',
+            });
+            if (res.ok) {
+              const data = (await res.json()) as WALReplayStatus;
+              if (mounted) {
+                setWALReplayStatus(data);
+              }
+            }
+          }
+        } catch (error) {
+          if (mounted) {
+            setIsUnexpected(true);
+          }
           clearInterval(interval);
           return;
         }
-        if (res.status !== 503) {
-          setIsUnexpected(true);
-          setWALReplayStatus({ data: { last: 0, first: 0 } } as any);
-        } else {
-          setIsUnexpected(false);
+      };
 
-          res = await fetch(`${pathPrefix}/${API_PATH}/status/walreplay`, { cache: 'no-store', credentials: 'same-origin' });
-          if (res.ok) {
-            const data = (await res.json()) as WALReplayStatus;
-            setWALReplayStatus(data);
-          }
-        }
-      } catch (error) {
-        setIsUnexpected(true);
-        setWALReplayStatus({ data: { last: 0, first: 0 } } as any);
-      }
-    }, 1000);
-
-    return () => clearInterval(interval);
+      fetchStatus();
+      const interval = setInterval(fetchStatus, 1000);
+      return () => {
+        clearInterval(interval);
+        mounted = false;
+      };
+    }
   }, [pathPrefix, options]);
+
   return { ready, isUnexpected, walReplayStatus };
 };

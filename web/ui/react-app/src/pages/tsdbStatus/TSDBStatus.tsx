@@ -2,12 +2,10 @@ import React, { FC } from 'react';
 import { RouteComponentProps } from '@reach/router';
 import { Table } from 'reactstrap';
 
-import { useFetch, useFetchReady } from '../../hooks/useFetch';
+import { useFetch } from '../../hooks/useFetch';
 import { withStatusIndicator } from '../../components/withStatusIndicator';
 import { usePathPrefix } from '../../contexts/PathPrefixContext';
 import { API_PATH } from '../../constants/constants';
-import { checkReady } from '../../utils';
-import Starting from '../starting/Starting';
 
 interface Stats {
   name: string;
@@ -118,10 +116,6 @@ const TSDBStatusContentWithStatusIndicator = withStatusIndicator(TSDBStatusConte
 const TSDBStatus: FC<RouteComponentProps> = () => {
   const pathPrefix = usePathPrefix();
   const { response, error, isLoading } = useFetch<TSDBMap>(`${pathPrefix}/${API_PATH}/status/tsdb`);
-
-  if (!checkReady(useFetchReady(pathPrefix))) {
-    return <Starting />;
-  }
 
   return (
     <TSDBStatusContentWithStatusIndicator

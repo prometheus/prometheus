@@ -2,11 +2,9 @@ import React, { Fragment, FC } from 'react';
 import { RouteComponentProps } from '@reach/router';
 import { Table } from 'reactstrap';
 import { withStatusIndicator } from '../../components/withStatusIndicator';
-import { useFetch, useFetchReady } from '../../hooks/useFetch';
+import { useFetch } from '../../hooks/useFetch';
 import { usePathPrefix } from '../../contexts/PathPrefixContext';
 import { API_PATH } from '../../constants/constants';
-import { checkReady } from '../../utils';
-import Starting from '../starting/Starting';
 
 interface StatusPageProps {
   data: Record<string, string>;
@@ -89,21 +87,13 @@ const Status: FC<RouteComponentProps> = () => {
   const pathPrefix = usePathPrefix();
   const path = `${pathPrefix}/${API_PATH}`;
 
-  const data = [
-    { fetchResult: useFetch<Record<string, string>>(`${path}/status/runtimeinfo`), title: 'Runtime Information' },
-    { fetchResult: useFetch<Record<string, string>>(`${path}/status/buildinfo`), title: 'Build Information' },
-    { fetchResult: useFetch<Record<string, string>>(`${path}/alertmanagers`), title: 'Alertmanagers' },
-  ].map(({ fetchResult, title }) => {
-    return { fetchResult: fetchResult, title: title };
-  });
-
-  if (!checkReady(useFetchReady(pathPrefix))) {
-    return <Starting />;
-  }
-
   return (
     <>
-      {data.map(({ fetchResult, title }) => {
+      {[
+        { fetchResult: useFetch<Record<string, string>>(`${path}/status/runtimeinfo`), title: 'Runtime Information' },
+        { fetchResult: useFetch<Record<string, string>>(`${path}/status/buildinfo`), title: 'Build Information' },
+        { fetchResult: useFetch<Record<string, string>>(`${path}/alertmanagers`), title: 'Alertmanagers' },
+      ].map(({ fetchResult, title }) => {
         const { response, isLoading, error } = fetchResult;
         return (
           <StatusWithStatusIndicator
