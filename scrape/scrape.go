@@ -418,6 +418,7 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 		} else {
 			cache = newScrapeCache()
 		}
+
 		var (
 			t       = sp.activeTargets[fp]
 			s       = &targetScraper{Target: t, client: sp.client, timeout: timeout, bodySizeLimit: bodySizeLimit}
@@ -496,8 +497,6 @@ func (sp *scrapePool) Sync(tgs []*targetgroup.Group) {
 func (sp *scrapePool) sync(targets []*Target) {
 	var (
 		uniqueLoops   = make(map[uint64]loop)
-		interval      = time.Duration(sp.config.ScrapeInterval)
-		timeout       = time.Duration(sp.config.ScrapeTimeout)
 		bodySizeLimit = int64(sp.config.BodySizeLimit)
 		sampleLimit   = int(sp.config.SampleLimit)
 		labelLimits   = &labelLimits{
@@ -515,6 +514,21 @@ func (sp *scrapePool) sync(targets []*Target) {
 		hash := t.hash()
 
 		if _, ok := sp.activeTargets[hash]; !ok {
+			// The scrape interval and timeout labels are set to the config's values initially,
+			// so whether changed via relabeling or not, they'll exist and hold the correct values
+			// for every target.
+			intervalLabel := t.Labels().Get(model.ScrapeIntervalLabel)
+			interval, err := time.ParseDuration(intervalLabel)
+			if err != nil {
+				level.Error(sp.logger).Log("msg", "Error parsing interval label", "err", err, "value", intervalLabel)
+				continue
+			}
+			timeoutLabel := t.Labels().Get(model.ScrapeTimeoutLabel)
+			timeout, err := time.ParseDuration(timeoutLabel)
+			if err != nil {
+				level.Error(sp.logger).Log("msg", "Error parsing timeout label", "err", err, "value", timeoutLabel)
+			}
+
 			s := &targetScraper{Target: t, client: sp.client, timeout: timeout, bodySizeLimit: bodySizeLimit}
 			l := sp.newLoop(scrapeLoopOptions{
 				target:          t,
@@ -1120,7 +1134,6 @@ func (sl *scrapeLoop) run(errc chan<- error) {
 	var last time.Time
 
 	alignedScrapeTime := time.Now().Round(0)
-	currentInterval := sl.interval
 	ticker := time.NewTicker(sl.interval)
 	defer ticker.Stop()
 
@@ -1154,12 +1167,6 @@ mainLoop:
 		}
 
 		last = sl.scrapeAndReport(sl.interval, sl.timeout, last, scrapeTime, errc)
-
-		if sl.interval != currentInterval {
-			ticker.Stop()
-			currentInterval = sl.interval
-			ticker = time.NewTicker(sl.interval)
-		}
 
 		select {
 		case <-sl.parentCtx.Done():
@@ -1465,24 +1472,6 @@ loop:
 				targetScrapePoolExceededLabelLimits.Inc()
 				break loop
 			}
-		}
-
-		// Update the scrape loop's interval and timeout from their respective labels.
-		if intervalLabelValue := lset.Get(model.ScrapeIntervalLabel); intervalLabelValue != "" {
-			interval, err := model.ParseDuration(intervalLabelValue)
-			if err != nil {
-				level.Debug(sl.l).Log("msg", "Error parsing scrape interval from label", model.ScrapeIntervalLabel, "value", intervalLabelValue)
-				break loop
-			}
-			sl.interval = time.Duration(interval)
-		}
-		if timeoutLabelValue := lset.Get(model.ScrapeTimeoutLabel); timeoutLabelValue != "" {
-			timeout, err := model.ParseDuration(timeoutLabelValue)
-			if err != nil {
-				level.Debug(sl.l).Log("msg", "Error parsing scrape timeout from label", model.ScrapeTimeoutLabel, "value", timeoutLabelValue)
-				break loop
-			}
-			sl.timeout = time.Duration(timeout)
 		}
 
 		ref, err = app.Append(ref, lset, t, v)

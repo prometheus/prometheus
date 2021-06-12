@@ -393,16 +393,22 @@ func populateLabels(lset labels.Labels, cfg *config.ScrapeConfig) (res, orig lab
 	}
 
 	if interval := lset.Get(model.ScrapeIntervalLabel); interval != "" {
-		_, err := model.ParseDuration(interval)
+		duration, err := model.ParseDuration(interval)
 		if err != nil {
 			return nil, nil, errors.Errorf("error parsing interval: %v", err)
+		}
+		if time.Duration(duration) == 0 {
+			return nil, nil, errors.New("interval cannot be 0")
 		}
 	}
 
 	if timeout := lset.Get(model.ScrapeTimeoutLabel); timeout != "" {
-		_, err := model.ParseDuration(timeout)
+		duration, err := model.ParseDuration(timeout)
 		if err != nil {
 			return nil, nil, errors.Errorf("error parsing timeout: %v", err)
+		}
+		if time.Duration(duration) == 0 {
+			return nil, nil, errors.New("timeout cannot be 0")
 		}
 	}
 

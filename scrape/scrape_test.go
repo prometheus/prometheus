@@ -344,7 +344,7 @@ func TestScrapePoolTargetLimit(t *testing.T) {
 		activeTargets: map[uint64]*Target{},
 		loops:         map[uint64]loop{},
 		newLoop:       newLoop,
-		logger:        nil,
+		logger:        log.NewNopLogger(),
 		client:        http.DefaultClient,
 	}
 
@@ -2548,21 +2548,15 @@ func TestScrapeReportSingleAppender(t *testing.T) {
 
 	numScrapes := 0
 
-	var last time.Time
-	var sub time.Duration
 	scraper.scrapeFunc = func(ctx context.Context, w io.Writer) error {
-		t := time.Now()
-		sub = t.Sub(last)
-		last = t
 		numScrapes++
 		if numScrapes%4 == 0 {
 			return fmt.Errorf("scrape failed")
 		}
-		w.Write([]byte("metric_a{__scrape_timeout__=\"59m\"} 44\nmetric_b{__scrape_interval__=\"50ms\"} 44\nmetric_c 44\nmetric_d 44\n"))
+		w.Write([]byte("metric_a 44\nmetric_b 44\nmetric_c 44\nmetric_d 44\n"))
 		return nil
 	}
 
-	last = time.Now()
 	go func() {
 		sl.run(nil)
 		signal <- struct{}{}
@@ -2586,11 +2580,6 @@ func TestScrapeReportSingleAppender(t *testing.T) {
 		q.Close()
 	}
 	cancel()
-
-	require.Equal(t, sl.interval, 50*time.Millisecond, "Expected interval to be set by label value 11ms.")
-	require.Equal(t, sl.timeout, 59*time.Minute, "Expected timeout to be set by label value 59m.")
-
-	require.Greater(t, sub, 45*time.Millisecond, "Expected timer to be changed by interval set by label value.")
 
 	select {
 	case <-signal:
