@@ -26,7 +26,7 @@ TSDB_BENCHMARK_NUM_METRICS ?= 1000
 TSDB_BENCHMARK_DATASET ?= ./tsdb/testdata/20kseries.json
 TSDB_BENCHMARK_OUTPUT_DIR ?= ./benchout
 
-GOLANGCI_LINT_OPTS ?= --timeout 2m
+GOLANGCI_LINT_OPTS ?= --timeout 4m
 
 include Makefile.common
 
