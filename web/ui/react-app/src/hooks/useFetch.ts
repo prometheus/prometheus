@@ -72,8 +72,7 @@ export const useFetchReadyInterval = (pathPrefix: string, options?: RequestInit)
             }
             wasReady = true;
             clearInterval(interval);
-          }
-          if (res.status !== 503) {
+          } else if (res.status !== 503) {
             if (mounted) {
               setIsUnexpected(true);
             }
