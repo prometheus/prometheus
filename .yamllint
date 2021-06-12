@@ -14,4 +14,7 @@ rules:
   document-start: disable
   indentation:
     spaces: consistent
+  key-duplicates:
+    ignore: |
+      *section_key_dup.bad.yml
   line-length: disable
