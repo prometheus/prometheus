@@ -255,12 +255,17 @@ func (w *Watcher) Run() error {
 		if err := w.watch(currentSegment, currentSegment >= lastSegment); err != nil {
 			return err
 		}
-
+		if !isClosed(w.quit) {
+			if WALNotify != nil {
+				level.Info(w.logger).Log("msg", "Notifying a segment marked for truncating: ",
+					" : Segment #: ", currentSegment)
+				WALNotify <- currentSegment
+			}
+		}
 		// For testing: stop when you hit a specific segment.
 		if currentSegment == w.MaxSegment {
 			return nil
 		}
-
 		currentSegment++
 	}
 
@@ -436,28 +441,23 @@ func (w *Watcher) garbageCollectSeries(segmentNum int) error {
 	if err != nil && err != record.ErrNotFound {
 		return errors.Wrap(err, "tsdb.LastCheckpoint")
 	}
-
 	if dir == "" || dir == w.lastCheckpoint {
 		return nil
 	}
 	w.lastCheckpoint = dir
-
 	index, err := checkpointNum(dir)
 	if err != nil {
 		return errors.Wrap(err, "error parsing checkpoint filename")
 	}
-
 	if index >= segmentNum {
 		level.Debug(w.logger).Log("msg", "Current segment is behind the checkpoint, skipping reading of checkpoint", "current", fmt.Sprintf("%08d", segmentNum), "checkpoint", dir)
 		return nil
 	}
-
 	level.Debug(w.logger).Log("msg", "New checkpoint detected", "new", dir, "currentSegment", segmentNum)
 
 	if err = w.readCheckpoint(dir); err != nil {
 		return errors.Wrap(err, "readCheckpoint")
 	}
-
 	// Clear series with a checkpoint or segment index # lower than the checkpoint we just read.
 	w.writer.SeriesReset(index)
 	return nil

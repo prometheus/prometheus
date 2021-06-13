@@ -48,6 +48,8 @@ const (
 // before.
 var castagnoliTable = crc32.MakeTable(crc32.Castagnoli)
 
+var WALNotify chan int
+
 // page is an in memory buffer used to batch disk writes.
 // Records bigger than the page size are split and flushed separately.
 // A flush is triggered when a single records doesn't fit the page size or
@@ -301,6 +303,15 @@ func NewSize(logger log.Logger, reg prometheus.Registerer, dir string, segmentSi
 	go w.run()
 
 	return w, nil
+}
+
+// NewSize returns a new WAL over the given directory.
+// New segments are created with the specified size.
+func NewNotify(logger log.Logger, reg prometheus.Registerer, dir string, segmentSize int, compress bool, walNotify chan int) (*WAL, error) {
+	if walNotify != nil {
+		WALNotify = walNotify
+	}
+	return NewSize(logger, reg, dir, segmentSize, compress)
 }
 
 // Open an existing WAL.

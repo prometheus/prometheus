@@ -181,6 +181,7 @@ type API struct {
 	buildInfo   *PrometheusVersion
 	runtimeInfo func() (RuntimeInfo, error)
 	gatherer    prometheus.Gatherer
+	isAgent     bool
 
 	remoteWriteHandler http.Handler
 	remoteReadHandler  http.Handler
@@ -211,6 +212,7 @@ func NewAPI(
 	remoteReadSampleLimit int,
 	remoteReadConcurrencyLimit int,
 	remoteReadMaxBytesInFrame int,
+	isAgent bool,
 	CORSOrigin *regexp.Regexp,
 	runtimeInfo func() (RuntimeInfo, error),
 	buildInfo *PrometheusVersion,
@@ -239,6 +241,7 @@ func NewAPI(
 		runtimeInfo:      runtimeInfo,
 		buildInfo:        buildInfo,
 		gatherer:         gatherer,
+		isAgent:          isAgent,
 
 		remoteReadHandler: remote.NewReadHandler(logger, registerer, q, configFunc, remoteReadSampleLimit, remoteReadConcurrencyLimit, remoteReadMaxBytesInFrame),
 	}
@@ -282,26 +285,35 @@ func (api *API) Register(r *route.Router) {
 		}.ServeHTTP)
 	}
 
+	wrapAgent := func(f apiFunc) http.HandlerFunc {
+		return wrap(func(r *http.Request) apiFuncResult {
+			if api.isAgent {
+				return apiFuncResult{nil, &apiError{errorExec, errors.New("unavailable with Prometheus Agent")}, nil, nil}
+			}
+			return f(r)
+		})
+	}
+
 	r.Options("/*path", wrap(api.options))
 
-	r.Get("/query", wrap(api.query))
-	r.Post("/query", wrap(api.query))
-	r.Get("/query_range", wrap(api.queryRange))
-	r.Post("/query_range", wrap(api.queryRange))
-	r.Get("/query_exemplars", wrap(api.queryExemplars))
-	r.Post("/query_exemplars", wrap(api.queryExemplars))
+	r.Get("/query", wrapAgent(api.query))
+	r.Post("/query", wrapAgent(api.query))
+	r.Get("/query_range", wrapAgent(api.queryRange))
+	r.Post("/query_range", wrapAgent(api.queryRange))
+	r.Get("/query_exemplars", wrapAgent(api.queryExemplars))
+	r.Post("/query_exemplars", wrapAgent(api.queryExemplars))
 
-	r.Get("/labels", wrap(api.labelNames))
-	r.Post("/labels", wrap(api.labelNames))
-	r.Get("/label/:name/values", wrap(api.labelValues))
+	r.Get("/labels", wrapAgent(api.labelNames))
+	r.Post("/labels", wrapAgent(api.labelNames))
+	r.Get("/label/:name/values", wrapAgent(api.labelValues))
 
-	r.Get("/series", wrap(api.series))
-	r.Post("/series", wrap(api.series))
-	r.Del("/series", wrap(api.dropSeries))
+	r.Get("/series", wrapAgent(api.series))
+	r.Post("/series", wrapAgent(api.series))
+	r.Del("/series", wrapAgent(api.dropSeries))
 
 	r.Get("/targets", wrap(api.targets))
 	r.Get("/targets/metadata", wrap(api.targetMetadata))
-	r.Get("/alertmanagers", wrap(api.alertmanagers))
+	r.Get("/alertmanagers", wrapAgent(api.alertmanagers))
 
 	r.Get("/metadata", wrap(api.metricMetadata))
 
@@ -309,22 +321,22 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/status/runtimeinfo", wrap(api.serveRuntimeInfo))
 	r.Get("/status/buildinfo", wrap(api.serveBuildInfo))
 	r.Get("/status/flags", wrap(api.serveFlags))
-	r.Get("/status/tsdb", wrap(api.serveTSDBStatus))
+	r.Get("/status/tsdb", wrapAgent(api.serveTSDBStatus))
 	r.Get("/status/walreplay", api.serveWALReplayStatus)
 	r.Post("/read", api.ready(http.HandlerFunc(api.remoteRead)))
 	r.Post("/write", api.ready(http.HandlerFunc(api.remoteWrite)))
 
-	r.Get("/alerts", wrap(api.alerts))
-	r.Get("/rules", wrap(api.rules))
+	r.Get("/alerts", wrapAgent(api.alerts))
+	r.Get("/rules", wrapAgent(api.rules))
 
 	// Admin APIs
-	r.Post("/admin/tsdb/delete_series", wrap(api.deleteSeries))
-	r.Post("/admin/tsdb/clean_tombstones", wrap(api.cleanTombstones))
-	r.Post("/admin/tsdb/snapshot", wrap(api.snapshot))
+	r.Post("/admin/tsdb/delete_series", wrapAgent(api.deleteSeries))
+	r.Post("/admin/tsdb/clean_tombstones", wrapAgent(api.cleanTombstones))
+	r.Post("/admin/tsdb/snapshot", wrapAgent(api.snapshot))
 
-	r.Put("/admin/tsdb/delete_series", wrap(api.deleteSeries))
-	r.Put("/admin/tsdb/clean_tombstones", wrap(api.cleanTombstones))
-	r.Put("/admin/tsdb/snapshot", wrap(api.snapshot))
+	r.Put("/admin/tsdb/delete_series", wrapAgent(api.deleteSeries))
+	r.Put("/admin/tsdb/clean_tombstones", wrapAgent(api.cleanTombstones))
+	r.Put("/admin/tsdb/snapshot", wrapAgent(api.snapshot))
 }
 
 type queryData struct {

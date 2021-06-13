@@ -248,6 +248,7 @@ type Options struct {
 	RemoteReadConcurrencyLimit int
 	RemoteReadBytesInFrame     int
 	RemoteWriteReceiver        bool
+	IsAgent                    bool
 
 	Gatherer   prometheus.Gatherer
 	Registerer prometheus.Registerer
@@ -328,6 +329,7 @@ func New(logger log.Logger, o *Options) *Handler {
 		h.options.RemoteReadSampleLimit,
 		h.options.RemoteReadConcurrencyLimit,
 		h.options.RemoteReadBytesInFrame,
+		h.options.IsAgent,
 		h.options.CORSOrigin,
 		h.runtimeInfo,
 		h.versionInfo,
