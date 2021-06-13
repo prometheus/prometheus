@@ -517,13 +517,13 @@ func (sp *scrapePool) sync(targets []*Target) {
 			// The scrape interval and timeout labels are set to the config's values initially,
 			// so whether changed via relabeling or not, they'll exist and hold the correct values
 			// for every target.
-			intervalLabel := t.Labels().Get(model.ScrapeIntervalLabel)
+			intervalLabel := t.labels.Get(model.ScrapeIntervalLabel)
 			interval, err := time.ParseDuration(intervalLabel)
 			if err != nil {
 				level.Error(sp.logger).Log("msg", "Error parsing interval label", "err", err, "value", intervalLabel)
 				continue
 			}
-			timeoutLabel := t.Labels().Get(model.ScrapeTimeoutLabel)
+			timeoutLabel := t.labels.Get(model.ScrapeTimeoutLabel)
 			timeout, err := time.ParseDuration(timeoutLabel)
 			if err != nil {
 				level.Error(sp.logger).Log("msg", "Error parsing timeout label", "err", err, "value", timeoutLabel)
