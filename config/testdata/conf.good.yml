@@ -264,6 +264,10 @@ scrape_configs:
     - targets:
       - localhost:9090
 
+- job_name: httpsd
+  http_sd_configs:
+    - url: 'http://example.com/prometheus'
+
 - job_name: service-triton
   triton_sd_configs:
   - account: 'testAccount'

@@ -15,12 +15,13 @@ package kubernetes
 
 import (
 	"context"
-	"github.com/prometheus/prometheus/util/strutil"
 	"net"
 	"strconv"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/prometheus/prometheus/util/strutil"
+
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	apiv1 "k8s.io/api/core/v1"

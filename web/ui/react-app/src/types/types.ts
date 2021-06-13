@@ -4,6 +4,12 @@ export interface Metric {
   [key: string]: string;
 }
 
+export interface Exemplar {
+  labels: { [key: string]: string };
+  value: string;
+  timestamp: number;
+}
+
 export interface QueryParams {
   startTime: number;
   endTime: number;
@@ -34,3 +40,5 @@ export interface WALReplayData {
 export interface WALReplayStatus {
   data?: WALReplayData;
 }
+
+export type ExemplarData = Array<{ seriesLabels: Metric; exemplars: Exemplar[] }> | undefined;

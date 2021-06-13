@@ -17,15 +17,13 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	consul "github.com/hashicorp/consul/api"
-	conntrack "github.com/mwitkow/go-conntrack"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
@@ -94,11 +92,12 @@ var (
 
 	// DefaultSDConfig is the default Consul SD configuration.
 	DefaultSDConfig = SDConfig{
-		TagSeparator:    ",",
-		Scheme:          "http",
-		Server:          "localhost:8500",
-		AllowStale:      true,
-		RefreshInterval: model.Duration(30 * time.Second),
+		TagSeparator:     ",",
+		Scheme:           "http",
+		Server:           "localhost:8500",
+		AllowStale:       true,
+		RefreshInterval:  model.Duration(30 * time.Second),
+		HTTPClientConfig: config.DefaultHTTPClientConfig,
 	}
 )
 
@@ -136,7 +135,7 @@ type SDConfig struct {
 	// Desired node metadata.
 	NodeMeta map[string]string `yaml:"node_meta,omitempty"`
 
-	TLSConfig config.TLSConfig `yaml:"tls_config,omitempty"`
+	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
 }
 
 // Name returns the name of the Config.
@@ -149,7 +148,7 @@ func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Di
 
 // SetDirectory joins any relative file paths with dir.
 func (c *SDConfig) SetDirectory(dir string) {
-	c.TLSConfig.SetDirectory(dir)
+	c.HTTPClientConfig.SetDirectory(dir)
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -163,7 +162,19 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if strings.TrimSpace(c.Server) == "" {
 		return errors.New("consul SD configuration requires a server address")
 	}
-	return nil
+	if c.Username != "" || c.Password != "" {
+		if c.HTTPClientConfig.BasicAuth != nil {
+			return errors.New("at most one of consul SD configuration username and password and basic auth can be configured")
+		}
+		c.HTTPClientConfig.BasicAuth = &config.BasicAuth{
+			Username: c.Username,
+			Password: c.Password,
+		}
+	}
+	if c.Token != "" && (c.HTTPClientConfig.Authorization != nil || c.HTTPClientConfig.OAuth2 != nil) {
+		return errors.New("at most one of consul SD token, authorization, or oauth2 can be configured")
+	}
+	return c.HTTPClientConfig.Validate()
 }
 
 // Discovery retrieves target information from a Consul server
@@ -188,22 +199,11 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 		logger = log.NewNopLogger()
 	}
 
-	tls, err := config.NewTLSConfig(&conf.TLSConfig)
+	wrapper, err := config.NewClientFromConfig(conf.HTTPClientConfig, "consul_sd", config.WithHTTP2Disabled(), config.WithIdleConnTimeout(2*time.Duration(watchTimeout)))
 	if err != nil {
 		return nil, err
 	}
-	transport := &http.Transport{
-		IdleConnTimeout: 2 * time.Duration(watchTimeout),
-		TLSClientConfig: tls,
-		DialContext: conntrack.NewDialContextFunc(
-			conntrack.DialWithTracing(),
-			conntrack.DialWithName("consul_sd"),
-		),
-	}
-	wrapper := &http.Client{
-		Transport: transport,
-		Timeout:   time.Duration(watchTimeout) + 15*time.Second,
-	}
+	wrapper.Timeout = watchTimeout + 15*time.Second
 
 	clientConf := &consul.Config{
 		Address:    conf.Server,
@@ -211,10 +211,6 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 		Datacenter: conf.Datacenter,
 		Namespace:  conf.Namespace,
 		Token:      string(conf.Token),
-		HttpAuth: &consul.HttpBasicAuth{
-			Username: conf.Username,
-			Password: string(conf.Password),
-		},
 		HttpClient: wrapper,
 	}
 	client, err := consul.NewClient(clientConf)
@@ -231,7 +227,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 		refreshInterval:  time.Duration(conf.RefreshInterval),
 		clientDatacenter: conf.Datacenter,
 		clientNamespace:  conf.Namespace,
-		finalizer:        transport.CloseIdleConnections,
+		finalizer:        wrapper.CloseIdleConnections,
 		logger:           logger,
 	}
 	return cd, nil
