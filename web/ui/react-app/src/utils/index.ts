@@ -2,7 +2,6 @@ import moment from 'moment-timezone';
 
 import { PanelOptions, PanelType, PanelDefaultOptions } from '../pages/graph/Panel';
 import { PanelMeta } from '../pages/graph/PanelList';
-import { FetchStateReady } from '../hooks/useFetch';
 
 export const generateID = () => {
   return `_${Math.random()
