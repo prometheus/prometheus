@@ -4,7 +4,17 @@ import { Container } from 'reactstrap';
 
 import { Router, Redirect } from '@reach/router';
 import useMedia from 'use-media';
-import { AlertsPage, ConfigPage, FlagsPage, RulesPage, ServiceDiscoveryPage, StatusPage, TargetsPage, TSDBStatusPage, PanelListPage } from './pages';
+import {
+  AlertsPage,
+  ConfigPage,
+  FlagsPage,
+  RulesPage,
+  ServiceDiscoveryPage,
+  StatusPage,
+  TargetsPage,
+  TSDBStatusPage,
+  PanelListPage,
+} from './pages';
 import { PathPrefixContext } from './contexts/PathPrefixContext';
 import { ThemeContext, themeName, themeSetting } from './contexts/ThemeContext';
 import { Theme, themeLocalStorageKey } from './Theme';
