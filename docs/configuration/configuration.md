@@ -1300,7 +1300,7 @@ Each target has a meta label `__meta_url` during the
 URL from which the target was extracted.
 
 ```yaml
-# URL from wich the targets are fetched.
+# URL from which the targets are fetched.
 url: <string>
 
 # Refresh interval to re-query the endpoint.
