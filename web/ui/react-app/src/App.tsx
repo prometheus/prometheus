@@ -4,12 +4,11 @@ import { Container } from 'reactstrap';
 
 import { Router, Redirect } from '@reach/router';
 import useMedia from 'use-media';
-import { Alerts, Config, Flags, Rules, ServiceDiscovery, Status, Targets, TSDBStatus, PanelList } from './pages';
+import { AlertsPage, ConfigPage, FlagsPage, RulesPage, ServiceDiscoveryPage, StatusPage, TargetsPage, TSDBStatusPage, PanelListPage } from './pages';
 import { PathPrefixContext } from './contexts/PathPrefixContext';
 import { ThemeContext, themeName, themeSetting } from './contexts/ThemeContext';
 import { Theme, themeLocalStorageKey } from './Theme';
 import { useLocalStorage } from './hooks/useLocalStorage';
-import { withStartingIndicator } from './components/withStartingIndicator';
 
 interface AppProps {
   consolesLink: string | null;
@@ -53,16 +52,6 @@ const App: FC<AppProps> = ({ consolesLink }) => {
   } else {
     theme = browserHasThemes ? (browserWantsDarkTheme ? 'dark' : 'light') : 'light';
   }
-
-  const PanelListPage = withStartingIndicator(PanelList);
-  const AlertsPage = withStartingIndicator(Alerts);
-  const ConfigPage = withStartingIndicator(Config);
-  const FlagsPage = withStartingIndicator(Flags);
-  const RulesPage = withStartingIndicator(Rules);
-  const ServiceDiscoveryPage = withStartingIndicator(ServiceDiscovery);
-  const StatusPage = withStartingIndicator(Status);
-  const TSDBStatusPage = withStartingIndicator(TSDBStatus);
-  const TargetsPage = withStartingIndicator(Targets);
 
   return (
     <ThemeContext.Provider
