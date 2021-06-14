@@ -19,6 +19,7 @@ const TSDBStatusPage = withStartingIndicator(TSDBStatus);
 const TargetsPage = withStartingIndicator(Targets);
 const PanelListPage = withStartingIndicator(PanelList);
 
+// prettier-ignore
 export {
   AlertsPage,
   ConfigPage,
@@ -28,5 +29,5 @@ export {
   StatusPage,
   TSDBStatusPage,
   TargetsPage,
-  PanelListPage,
+  PanelListPage
 };
