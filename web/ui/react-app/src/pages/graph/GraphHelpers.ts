@@ -108,20 +108,20 @@ export const getOptions = (stacked: boolean, useLocalTime: boolean): jquery.flot
           dateTime = dateTime.utc();
         }
 
-        const formatLabels = (labels: { [key: string]: string }): string =>
-          `<div class="labels">
-            ${Object.keys(labels).length === 0 ? '<div class="mb-1 font-italic">no labels</div>' : ''}
-            ${labels['__name__'] ? `<div class="mb-1"><strong>${labels['__name__']}</strong></div>` : ''}
-            ${Object.keys(labels)
-              .filter(k => k !== '__name__')
-              .map(k => `<div class="mb-1"><strong>${k}</strong>: ${escapeHTML(labels[k])}</div>`)
-              .join('')}
-          </div>`;
+        const formatLabels = (labels: { [key: string]: string }): string => `
+            <div class="labels">
+              ${Object.keys(labels).length === 0 ? '<div class="mb-1 font-italic">no labels</div>' : ''}
+              ${labels['__name__'] ? `<div class="mb-1"><strong>${labels['__name__']}</strong></div>` : ''}
+              ${Object.keys(labels)
+                .filter(k => k !== '__name__')
+                .map(k => `<div class="mb-1"><strong>${k}</strong>: ${escapeHTML(labels[k])}</div>`)
+                .join('')}
+            </div>`;
 
         return `
             <div class="date">${dateTime.format('YYYY-MM-DD HH:mm:ss Z')}</div>
             <div>
-              ${'seriesLabels' in both ? `<span class="detail-swatch" style="background-color: ${color}"></span>` : ''}
+              <span class="detail-swatch" style="background-color: ${color}"></span>
               <span>${labels.__name__ || 'value'}: <strong>${yval}</strong></span>
             </div>
             <div class="mt-2 mb-1 font-weight-bold">${'seriesLabels' in both ? 'Trace exemplar:' : 'Series:'}</div>
@@ -129,9 +129,8 @@ export const getOptions = (stacked: boolean, useLocalTime: boolean): jquery.flot
             ${
               'seriesLabels' in both
                 ? `
-            <div class="mt-2 mb-1 font-weight-bold">Associated series:</div>
-            ${formatLabels(both.seriesLabels)}
-            `
+            <div class="mt-2 mb-1 font-weight-bold">Associated series:</div>${formatLabels(both.seriesLabels)}
+`
                 : ''
             }
           `.trimEnd();
