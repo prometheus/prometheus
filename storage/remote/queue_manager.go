@@ -672,17 +672,19 @@ func (t *QueueManager) updateCheckpoint() {
 	err := os.MkdirAll(checkpointDir, 0777)
 	if err != nil {
 		level.Warn(t.logger).Log("msg", "error creating temporary remote write checkpoint directory", "error", err)
+		return
 	}
 
 	fName := filepath.Join(checkpointDir, "checkpoint")
 	if err := os.WriteFile(fName+".tmp", []byte(segment), 0666); err != nil {
 		level.Warn(t.logger).Log("msg", "error writing temporary remote write checkpoint file", "error", err)
-
+		return
 	}
 
 	err = fileutil.Replace(fName+".tmp", fName)
 	if err != nil {
 		level.Warn(t.logger).Log("msg", "error replacing remote write checkpoint file", "error", err)
+		return
 	}
 	t.prevSegment = currentSegement
 }

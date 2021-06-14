@@ -48,9 +48,6 @@ const (
 // before.
 var (
 	castagnoliTable = crc32.MakeTable(crc32.Castagnoli)
-
-	MaxSegmentNumber = 99999999
-	MinSegmentNumber = 0
 )
 
 // page is an in memory buffer used to batch disk writes.

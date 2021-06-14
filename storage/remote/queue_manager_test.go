@@ -1034,6 +1034,8 @@ func TestRemoteWriteCheckpoint(t *testing.T) {
 			time.Sleep(5 * time.Second)
 			// Since we're starting sending samples from the beginning of the WAL
 			// we should receive all the ones we wrote to the WAL.
+			c.mtx.Lock()
+			defer c.mtx.Unlock()
 			require.Equal(t, count, c.totalReceivedSamples)
 		})
 	}

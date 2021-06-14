@@ -28,7 +28,6 @@ import (
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/wal"
-	"go.uber.org/atomic"
 )
 
 var (
@@ -44,8 +43,6 @@ var (
 		Name:      "exemplars_in_total",
 		Help:      "Exemplars in to remote storage, compare to exemplars out for queue managers.",
 	})
-
-	saveTime = 5000 // time in ms to save the Checkpoint Record
 )
 
 // WriteStorage represents all the remote write storage.
@@ -66,17 +63,6 @@ type WriteStorage struct {
 
 	// For timestampTracker.
 	highestTimestamp *maxTimestamp
-
-	// checkpoint CheckpointRecord
-
-	done chan struct{}
-	// Soft shutdown context will prevent new enqueues and deadlocks.
-	softShutdown chan struct{}
-
-	// Hard shutdown context is used to terminate outgoing HTTP connections
-	// after giving them a chance to terminate.
-	hardShutdown          context.CancelFunc
-	droppedOnHardShutdown atomic.Uint32
 }
 
 // NewWriteStorage creates and runs a WriteStorage.
@@ -113,7 +99,6 @@ func NewWriteStorage(logger log.Logger, reg prometheus.Registerer, walDir string
 
 func (rws *WriteStorage) run() {
 	ticker := time.NewTicker(shardUpdateDuration)
-
 	defer ticker.Stop()
 	for range ticker.C {
 		rws.samplesIn.tick()
@@ -226,7 +211,6 @@ func (rws *WriteStorage) Close() error {
 	for _, q := range rws.queues {
 		q.Stop()
 	}
-
 	return nil
 }
 
