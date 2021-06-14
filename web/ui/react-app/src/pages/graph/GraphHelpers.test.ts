@@ -143,15 +143,21 @@ describe('GraphHelpers', () => {
         getOptions(true, false).tooltip.content('', 1572128592, 1572128592, {
           series: { labels: { foo: '1', bar: '2' }, color: '' },
         } as any)
-      ).toEqual(`
+      ).toEqual(
+        `
             <div class="date">1970-01-19 04:42:08 +00:00</div>
             <div>
               <span class="detail-swatch" style="background-color: "></span>
               <span>value: <strong>1572128592</strong></span>
-            <div>
-            <div class="labels mt-1">
+            </div>
+            <div class="mt-2 mb-1 font-weight-bold">Series:</div>
+            
+            <div class="labels">
+              
+              
               <div class="mb-1"><strong>foo</strong>: 1</div><div class="mb-1"><strong>bar</strong>: 2</div>
-            </div>`);
+            </div>`
+      );
     });
     it('should return proper tooltip html from options with local time', () => {
       moment.tz.setDefault('America/New_York');
@@ -164,8 +170,12 @@ describe('GraphHelpers', () => {
             <div>
               <span class="detail-swatch" style="background-color: "></span>
               <span>value: <strong>1572128592</strong></span>
-            <div>
-            <div class="labels mt-1">
+            </div>
+            <div class="mt-2 mb-1 font-weight-bold">Series:</div>
+            
+            <div class="labels">
+              
+              
               <div class="mb-1"><strong>foo</strong>: 1</div><div class="mb-1"><strong>bar</strong>: 2</div>
             </div>`);
     });
@@ -179,13 +189,19 @@ describe('GraphHelpers', () => {
             <div>
               <span class="detail-swatch" style="background-color: "></span>
               <span>value: <strong>1572128592</strong></span>
-            <div>
-            <div class="labels mt-1">
+            </div>
+            <div class="mt-2 mb-1 font-weight-bold">Trace exemplar:</div>
+            
+            <div class="labels">
+              
+              
               <div class="mb-1"><strong>foo</strong>: 1</div><div class="mb-1"><strong>bar</strong>: 2</div>
             </div>
             
-            <span>Series labels:</span>
-            <div class="labels mt-1">
+            <div class="mt-2 mb-1 font-weight-bold">Associated series:</div>
+            <div class="labels">
+              
+              
               <div class="mb-1"><strong>foo</strong>: 2</div><div class="mb-1"><strong>bar</strong>: 3</div>
             </div>`);
     });
