@@ -19,4 +19,14 @@ const TSDBStatusPage = withStartingIndicator(TSDBStatus);
 const TargetsPage = withStartingIndicator(Targets);
 const PanelListPage = withStartingIndicator(PanelList);
 
-export { AlertsPage, ConfigPage, FlagsPage, RulesPage, ServiceDiscoveryPage, StatusPage, TSDBStatusPage, TargetsPage, PanelListPage };
+export {
+  AlertsPage,
+  ConfigPage,
+  FlagsPage,
+  RulesPage,
+  ServiceDiscoveryPage,
+  StatusPage,
+  TSDBStatusPage,
+  TargetsPage,
+  PanelListPage
+};
