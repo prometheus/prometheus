@@ -211,9 +211,9 @@ func (ce *CircularExemplarStorage) validateExemplar(l string, e exemplar.Exempla
 	return nil
 }
 
-func (ce *CircularExemplarStorage) Resize(l int) error {
+func (ce *CircularExemplarStorage) Resize(l int) int {
 	if l <= 0 || l == len(ce.exemplars) {
-		return nil
+		return 0
 	}
 
 	ce.lock.Lock()
@@ -226,22 +226,30 @@ func (ce *CircularExemplarStorage) Resize(l int) error {
 	ce.index = make(map[string]*indexEntry)
 	ce.nextIndex = 0
 
-	// Replay all entries into the new storage, starting with oldest first
-	if oldBuffer[oldNextIndex] != nil {
-		// buffer was full. replay older half
-		for i := oldNextIndex; i < len(oldBuffer); i++ {
-			entry := oldBuffer[i]
-			ce.migrate(entry)
-		}
+	// Replay as many entries as needed, starting with oldest first.
+	count := len(oldBuffer)
+	if l < len(oldBuffer) {
+		count = l
 	}
-	for i := 0; i < oldNextIndex; i++ {
-		entry := oldBuffer[i]
-		ce.migrate(entry)
+
+	startIndex := oldNextIndex - count
+	if startIndex < 0 {
+		startIndex += len(oldBuffer)
+	}
+
+	migrated := 0
+
+	for i := 0; i < count; i++ {
+		idx := (startIndex + i) % len(oldBuffer)
+		if entry := oldBuffer[idx]; entry != nil {
+			ce.migrate(entry)
+			migrated++
+		}
 	}
 
 	ce.computeMetrics()
 
-	return nil
+	return migrated
 }
 
 // migrate Expects lock externally
@@ -339,11 +347,14 @@ func (ce *CircularExemplarStorage) computeMetrics() {
 	if next := ce.exemplars[ce.nextIndex]; next != nil {
 		ce.exemplarsInStorage.Set(float64(len(ce.exemplars)))
 		ce.lastExemplarsTs.Set(float64(next.exemplar.Ts) / 1000)
+		return
 	}
 
 	// We did not yet fill the buffer.
 	ce.exemplarsInStorage.Set(float64(ce.nextIndex))
-	ce.lastExemplarsTs.Set(float64(ce.exemplars[0].exemplar.Ts) / 1000)
+	if ce.exemplars[0] != nil {
+		ce.lastExemplarsTs.Set(float64(ce.exemplars[0].exemplar.Ts) / 1000)
+	}
 }
 
 type noopExemplarStorage struct{}
