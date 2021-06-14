@@ -28,5 +28,5 @@ export {
   StatusPage,
   TSDBStatusPage,
   TargetsPage,
-  PanelListPage
+  PanelListPage,
 };
