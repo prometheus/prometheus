@@ -59,11 +59,8 @@ var (
 
 // Create a new WAL delegate for writing metrics to WAL.
 func NewWALDelegate(logger log.Logger, wOptions WALOptions) (storage.Storage, error) {
-
-	// Channel to get notifications for checkpointing, truncating segments of WAL.
-	WALNotify := make(chan int)
 	walDir := wOptions.BaseDir + string(os.PathSeparator) + "wal"
-	walLog, err := wal.NewNotify(logger, prometheus.DefaultRegisterer, walDir, int(wOptions.SegmentSize), wOptions.Compression, WALNotify)
+	walLog, err := wal.NewNotify(logger, prometheus.DefaultRegisterer, walDir, true, int(wOptions.SegmentSize), wOptions.Compression)
 	if err != nil {
 		return nil, err
 	}
@@ -77,9 +74,10 @@ func NewWALDelegate(logger log.Logger, wOptions WALOptions) (storage.Storage, er
 
 // Handles WAL notifications for checkpoint and truncate WAL segements.
 func truncateWALSegment(logger log.Logger, walLog *wal.WAL) {
+	// TODO: better condition
 	for true {
 		select {
-		case walSegmentNum := <-wal.WALNotify:
+		case walSegmentNum := <-wal.CWalNotify:
 			if walSegmentNum >= 0 {
 				keep := func(id uint64) bool {
 					return false
@@ -99,13 +97,9 @@ func truncateWALSegment(logger log.Logger, walLog *wal.WAL) {
 				}
 			}
 		default:
-
+			//TODO.
 		}
 	}
-}
-
-func (w *WALDelegate) WAL(ctx context.Context) *wal.WAL {
-	return w.wal
 }
 
 func (w *WALDelegate) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
@@ -123,7 +117,6 @@ func (w *WALDelegate) Appender(ctx context.Context) storage.Appender {
 	}
 }
 
-// StartTime implements the Storage interface.
 func (w *WALDelegate) StartTime() (int64, error) {
 	startTime := time.Now().Unix() * 1000
 	return startTime, nil
@@ -134,6 +127,7 @@ func (w *WALDelegate) Close() error {
 	return nil
 }
 
+// Appends series, samples.
 func (a *WALAppender) Append(ref uint64, l labels.Labels, t int64, v float64) (uint64, error) {
 	a.series = append(a.series, record.RefSeries{
 		Ref:    uint64(l.Hash()),
@@ -157,7 +151,8 @@ func (a *WALAppender) Commit() (err error) {
 		rec = enc.Series(a.series, buf)
 
 		if err := a.delegate.wal.Log(rec); err != nil {
-			//TODO
+			level.Error(a.logger).Log("msg", "Agent WAL Commiting series is failed with error : ", err.Error())
+			return err
 		}
 	}
 
@@ -165,18 +160,19 @@ func (a *WALAppender) Commit() (err error) {
 		rec = enc.Samples(a.samples, buf)
 
 		if err := a.delegate.wal.Log(rec); err != nil {
-			// TODO
+			level.Error(a.logger).Log("msg", "Agent WAL Commiting samples is failed with error : ", err.Error())
+			return err
 		}
 	}
 	return
 }
 
 func (a *WALAppender) Rollback() (err error) {
-	// TODO
+	// NA
 	return nil
 }
 
 func (a *WALAppender) AppendExemplar(ref uint64, l labels.Labels, e exemplar.Exemplar) (uint64, error) {
-	//TODO
+	// NA
 	return 0, nil
 }
