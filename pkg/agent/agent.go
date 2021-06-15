@@ -21,8 +21,8 @@ import (
 	"time"
 
 	"github.com/alecthomas/units"
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -81,29 +81,29 @@ func NewWALDelegate(logger log.Logger, wOptions WALOptions) (storage.Storage, er
 // Handles WAL lifecycle notifications like creation, deletion of WAL segments.
 func handleWALEvents(logger log.Logger, walLog *wal.WAL) {
 	// TODO: better condition
-	for true {
+	for {
 		select {
-		case walSegmentNum := <-wal.CWALNewSegment:
-			if walSegmentNum >= 0 {
+		case segNum := <-wal.NewSegc:
+			if segNum >= 0 {
 				mSeriesCounter = 0
 			}
-		case walSegmentNum := <-wal.CWALDelSegment:
-			if walSegmentNum >= 0 {
+		case segNum := <-wal.DelSegc:
+			if segNum >= 0 {
 				keep := func(id uint64) bool {
 					return false
 				}
 				// Checkpoint a WAL segment.
-				_, err := wal.Checkpoint(logger, walLog, walSegmentNum, walSegmentNum, keep, 0)
+				_, err := wal.Checkpoint(logger, walLog, segNum, segNum, keep, 0)
 				if err != nil {
 					level.Error(logger).Log("msg", "Checkpointing a segment is failed. ",
-						" : Segment #: ", walSegmentNum, " error: ", err.Error())
-				} else {
-					// Truncate a WAL segment.
-					err = walLog.Truncate(walSegmentNum)
-					if err != nil {
-						level.Error(logger).Log("msg", "Truncating a segment is failed. ",
-							" : Segment #: ", walSegmentNum, " error: ", err.Error())
-					}
+						" : Segment #: ", segNum, " err", err)
+					continue
+				}
+				// Truncate a WAL segment.
+				err = walLog.Truncate(segNum)
+				if err != nil {
+					level.Error(logger).Log("msg", "Truncating a segment is failed. ",
+						" : Segment #: ", segNum, "err", err)
 				}
 			}
 		default:
@@ -164,7 +164,7 @@ func (a *WALAppender) Commit() (err error) {
 		rec = enc.Series(a.series, buf)
 
 		if err := a.delegate.wal.Log(rec); err != nil {
-			level.Error(a.logger).Log("msg", "Agent WAL Commiting series is failed with error : ", err.Error())
+			level.Error(a.logger).Log("msg", "Agent WAL Commiting series is failed with error : ", "err", err)
 			return err
 		}
 	}
@@ -173,7 +173,7 @@ func (a *WALAppender) Commit() (err error) {
 		rec = enc.Samples(a.samples, buf)
 
 		if err := a.delegate.wal.Log(rec); err != nil {
-			level.Error(a.logger).Log("msg", "Agent WAL Commiting samples is failed with error : ", err.Error())
+			level.Error(a.logger).Log("msg", "Agent WAL Commiting samples is failed with error : ", "err", err)
 			return err
 		}
 	}

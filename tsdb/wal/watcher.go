@@ -258,12 +258,12 @@ func (w *Watcher) Run() error {
 		if !isClosed(w.quit) {
 
 			// Check if a channel is available for sending out WAL events.
-			if CWALDelSegment != nil {
+			if DelSegc != nil {
 				level.Info(w.logger).Log("msg", "Notifying a segment marked for truncating: ",
 					" : Segment #: ", currentSegment)
 
 				// Send the index of the WAL Segment file that can be deleted.
-				CWALDelSegment <- currentSegment
+				DelSegc <- currentSegment
 			}
 		}
 		// For testing: stop when you hit a specific segment.
