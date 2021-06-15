@@ -655,7 +655,7 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 		db.lockfPath = filepath.Join(absdir, "lock")
 
 		if _, err := os.Stat(db.lockfPath); err == nil {
-			level.Warn(db.logger).Log("msg", "a TSDB lockfile from a previous execution already existed. It was replaced", "file", db.lockfPath)
+			level.Warn(db.logger).Log("msg", "A TSDB lockfile from a previous execution already existed. It was replaced", "file", db.lockfPath)
 			lockfileCreationStatus = lockfileReplaced
 		} else {
 			lockfileCreationStatus = lockfileCreatedCleanly

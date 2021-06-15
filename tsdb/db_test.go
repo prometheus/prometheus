@@ -3178,8 +3178,7 @@ func TestLockfileMetric(t *testing.T) {
 			require.Equal(t, float64(c.expectedValue), prom_testutil.ToFloat64(db.metrics.lockfileCreatedCleanly))
 
 			// Close the DB, this should delete the lockfile
-			db.Close()
-			require.NoError(t, err)
+			require.NoError(t, db.Close())
 
 			// Check that the lockfile is always deleted
 			if !c.lockFileDisabled {
