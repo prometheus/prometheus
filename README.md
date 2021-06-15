@@ -100,6 +100,7 @@ You can build a docker image locally with the following commands:
 
     $ make promu
     $ promu crossbuild -p linux/amd64
+    $ make npm_licenses
     $ make common-docker-amd64
 
 *NB* if you are on a Mac, you will need [gnu-tar](https://formulae.brew.sh/formula/gnu-tar).
