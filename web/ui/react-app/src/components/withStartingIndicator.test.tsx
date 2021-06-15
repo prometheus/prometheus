@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { shallow } from 'enzyme';
-import { WALReplayData } from '../../types/types';
-import { StartingContent } from './Starting';
+import { WALReplayData } from '../types/types';
+import { StartingContent } from './withStartingIndicator';
 import { Progress } from 'reactstrap';
 
 describe('Starting', () => {

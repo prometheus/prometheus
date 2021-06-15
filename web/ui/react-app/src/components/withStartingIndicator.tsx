@@ -1,10 +1,9 @@
-import React, { FC, useEffect } from 'react';
-import { RouteComponentProps, navigate } from '@reach/router';
+import React, { FC, ComponentType } from 'react';
 import { Progress, Alert } from 'reactstrap';
 
-import { useFetchReadyInterval } from '../../hooks/useFetch';
-import { WALReplayData } from '../../types/types';
-import { usePathPrefix } from '../../contexts/PathPrefixContext';
+import { useFetchReadyInterval } from '../hooks/useFetch';
+import { WALReplayData } from '../types/types';
+import { usePathPrefix } from '../contexts/PathPrefixContext';
 
 interface StartingContentProps {
   isUnexpected: boolean;
@@ -44,17 +43,13 @@ export const StartingContent: FC<StartingContentProps> = ({ status, isUnexpected
   );
 };
 
-const Starting: FC<RouteComponentProps> = () => {
+export const withStartingIndicator = <T extends {}>(Page: ComponentType<T>): FC<T> => ({ ...rest }) => {
   const pathPrefix = usePathPrefix();
   const { ready, walReplayStatus, isUnexpected } = useFetchReadyInterval(pathPrefix);
 
-  useEffect(() => {
-    if (ready) {
-      navigate('/');
-    }
-  }, [ready]);
+  if (ready || isUnexpected) {
+    return <Page {...(rest as T)} />;
+  }
 
   return <StartingContent isUnexpected={isUnexpected} status={walReplayStatus.data} />;
 };
-
-export default Starting;

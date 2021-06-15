@@ -2,15 +2,23 @@ import React, { FC } from 'react';
 import Navigation from './Navbar';
 import { Container } from 'reactstrap';
 
-import { Router, Redirect, navigate } from '@reach/router';
+import { Router, Redirect } from '@reach/router';
 import useMedia from 'use-media';
-import { Alerts, Config, Flags, Rules, ServiceDiscovery, Status, Targets, TSDBStatus, PanelList, Starting } from './pages';
+import {
+  AlertsPage,
+  ConfigPage,
+  FlagsPage,
+  RulesPage,
+  ServiceDiscoveryPage,
+  StatusPage,
+  TargetsPage,
+  TSDBStatusPage,
+  PanelListPage,
+} from './pages';
 import { PathPrefixContext } from './contexts/PathPrefixContext';
 import { ThemeContext, themeName, themeSetting } from './contexts/ThemeContext';
 import { Theme, themeLocalStorageKey } from './Theme';
 import { useLocalStorage } from './hooks/useLocalStorage';
-import { useFetchReady } from './hooks/useFetch';
-import { usePathPrefix } from './contexts/PathPrefixContext';
 
 interface AppProps {
   consolesLink: string | null;
@@ -31,7 +39,6 @@ const App: FC<AppProps> = ({ consolesLink }) => {
     '/rules',
     '/targets',
     '/service-discovery',
-    '/starting',
   ];
   if (basePath.endsWith('/')) {
     basePath = basePath.slice(0, -1);
@@ -42,14 +49,6 @@ const App: FC<AppProps> = ({ consolesLink }) => {
         basePath = basePath.slice(0, basePath.length - paths[i].length);
         break;
       }
-    }
-  }
-
-  const pathPrefix = usePathPrefix();
-  const { ready, isLoading, isUnexpected } = useFetchReady(pathPrefix);
-  if (basePath !== '/starting') {
-    if (!ready && !isLoading && !isUnexpected) {
-      navigate('/starting');
     }
   }
 
@@ -78,16 +77,15 @@ const App: FC<AppProps> = ({ consolesLink }) => {
               NOTE: Any route added here needs to also be added to the list of
               React-handled router paths ("reactRouterPaths") in /web/web.go.
             */}
-            <PanelList path="/graph" />
-            <Alerts path="/alerts" />
-            <Config path="/config" />
-            <Flags path="/flags" />
-            <Rules path="/rules" />
-            <ServiceDiscovery path="/service-discovery" />
-            <Status path="/status" />
-            <TSDBStatus path="/tsdb-status" />
-            <Targets path="/targets" />
-            <Starting path="/starting" />
+            <PanelListPage path="/graph" />
+            <AlertsPage path="/alerts" />
+            <ConfigPage path="/config" />
+            <FlagsPage path="/flags" />
+            <RulesPage path="/rules" />
+            <ServiceDiscoveryPage path="/service-discovery" />
+            <StatusPage path="/status" />
+            <TSDBStatusPage path="/tsdb-status" />
+            <TargetsPage path="/targets" />
           </Router>
         </Container>
       </PathPrefixContext.Provider>

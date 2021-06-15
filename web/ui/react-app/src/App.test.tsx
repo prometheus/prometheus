@@ -4,7 +4,17 @@ import App from './App';
 import Navigation from './Navbar';
 import { Container } from 'reactstrap';
 import { Router } from '@reach/router';
-import { Alerts, Config, Flags, Rules, ServiceDiscovery, Status, Targets, TSDBStatus, PanelList } from './pages';
+import {
+  AlertsPage,
+  ConfigPage,
+  FlagsPage,
+  RulesPage,
+  ServiceDiscoveryPage,
+  StatusPage,
+  TargetsPage,
+  TSDBStatusPage,
+  PanelListPage,
+} from './pages';
 
 describe('App', () => {
   const app = shallow(<App />);
@@ -13,7 +23,17 @@ describe('App', () => {
     expect(app.find(Navigation)).toHaveLength(1);
   });
   it('routes', () => {
-    [Alerts, Config, Flags, Rules, ServiceDiscovery, Status, Targets, TSDBStatus, PanelList].forEach(component => {
+    [
+      AlertsPage,
+      ConfigPage,
+      FlagsPage,
+      RulesPage,
+      ServiceDiscoveryPage,
+      StatusPage,
+      TargetsPage,
+      TSDBStatusPage,
+      PanelListPage,
+    ].forEach(component => {
       const c = app.find(component);
       expect(c).toHaveLength(1);
     });
