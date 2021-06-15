@@ -33,7 +33,7 @@ require (
 	github.com/hetznercloud/hcloud-go v1.26.2
 	github.com/influxdata/influxdb v1.9.2
 	github.com/json-iterator/go v1.1.11
-	github.com/linode/linodego v1.0.0
+	github.com/linode/linodego v0.28.5
 	github.com/miekg/dns v1.1.42
 	github.com/moby/term v0.0.0-20201216013528-df9cb8a40635 // indirect
 	github.com/morikuni/aec v1.0.0 // indirect
@@ -82,13 +82,18 @@ replace (
 	k8s.io/klog/v2 => github.com/simonpasquier/klog-gokit/v2 v2.1.0
 )
 
+// Exclude linodego v1.0.0 as it is no longer published on github.
+exclude github.com/linode/linodego v1.0.0
+
+// Exclude grpc v1.30.0 because of breaking changes. See #7621.
 exclude (
-	// Exclude grpc v1.30.0 because of breaking changes. See #7621.
 	github.com/grpc-ecosystem/grpc-gateway v1.14.7
 	google.golang.org/api v0.30.0
+)
 
-	// Exclude pre-go-mod kubernetes tags, as they are older
-	// than v0.x releases but are picked when we update the dependencies.
+// Exclude pre-go-mod kubernetes tags, as they are older
+// than v0.x releases but are picked when we update the dependencies.
+exclude (
 	k8s.io/client-go v1.4.0
 	k8s.io/client-go v1.4.0+incompatible
 	k8s.io/client-go v1.5.0
