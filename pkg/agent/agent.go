@@ -106,8 +106,7 @@ func handleWALEvents(logger log.Logger, walLog *wal.WAL) {
 						" : Segment #: ", segNum, "err", err)
 				}
 			}
-		default:
-			//TODO.
+			// TODO. Implement 'default' logic
 		}
 	}
 }
