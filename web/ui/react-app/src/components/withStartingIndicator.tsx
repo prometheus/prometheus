@@ -23,7 +23,7 @@ export const StartingContent: FC<StartingContentProps> = ({ status, isUnexpected
     <div className="text-center m-3">
       <div className="m-4">
         <h2>Starting up...</h2>
-        {status?.current! > status?.min! ? (
+        {status?.max! > 0 ? (
           <div>
             <p>
               Replaying WAL ({status?.current}/{status?.max})
