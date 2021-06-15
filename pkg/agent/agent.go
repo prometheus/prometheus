@@ -39,13 +39,13 @@ type WALOptions struct {
 	Compression bool
 }
 
-// Implements the Storage interface for agent to write metrics to WAL.
+// Implements the Storage interface to delegate writes to WAL.
 type WALDelegate struct {
 	logger log.Logger
 	wal    *wal.WAL
 }
 
-//
+// Implements the Appender interface to write metrics to WAL.
 type WALAppender struct {
 	logger   log.Logger
 	delegate *WALDelegate
@@ -53,6 +53,12 @@ type WALAppender struct {
 	samples  []record.RefSample
 }
 
+// Unique series ID per each WAL segement. Gets resets to zero whenever a new Segment is created.
+var (
+	mSeriesCounter uint64
+)
+
+// Error code to refer to the operations that are not supported by Agent.
 var (
 	ErrUnsupported = errors.New("unsupported operation with WAL-only storage")
 )
@@ -68,16 +74,20 @@ func NewWALDelegate(logger log.Logger, wOptions WALOptions) (storage.Storage, er
 		logger: logger,
 		wal:    walLog,
 	}
-	go truncateWALSegment(logger, walLog)
+	go handleWALEvents(logger, walLog)
 	return walDelegate, nil
 }
 
-// Handles WAL notifications for checkpoint and truncate WAL segements.
-func truncateWALSegment(logger log.Logger, walLog *wal.WAL) {
+// Handles WAL lifecycle notifications like creation, deletion of WAL segments.
+func handleWALEvents(logger log.Logger, walLog *wal.WAL) {
 	// TODO: better condition
 	for true {
 		select {
-		case walSegmentNum := <-wal.CWalNotify:
+		case walSegmentNum := <-wal.CWALNewSegment:
+			if walSegmentNum >= 0 {
+				mSeriesCounter = 0
+			}
+		case walSegmentNum := <-wal.CWALDelSegment:
 			if walSegmentNum >= 0 {
 				keep := func(id uint64) bool {
 					return false
@@ -102,19 +112,21 @@ func truncateWALSegment(logger log.Logger, walLog *wal.WAL) {
 	}
 }
 
-func (w *WALDelegate) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
-	return nil, nil
-}
-
-func (w *WALDelegate) ChunkQuerier(ctx context.Context, mint, maxt int64) (storage.ChunkQuerier, error) {
-	return nil, nil
-}
-
 func (w *WALDelegate) Appender(ctx context.Context) storage.Appender {
 	return &WALAppender{
 		delegate: w,
 		logger:   w.logger,
 	}
+}
+
+func (w *WALDelegate) Querier(ctx context.Context, mint, maxt int64) (storage.Querier, error) {
+	// Queries are not suuported in the Prometheus agent mode.
+	return nil, ErrUnsupported
+}
+
+func (w *WALDelegate) ChunkQuerier(ctx context.Context, mint, maxt int64) (storage.ChunkQuerier, error) {
+	// Queries are not suuported in the Prometheus agent mode.
+	return nil, ErrUnsupported
 }
 
 func (w *WALDelegate) StartTime() (int64, error) {
@@ -130,15 +142,16 @@ func (w *WALDelegate) Close() error {
 // Appends series, samples.
 func (a *WALAppender) Append(ref uint64, l labels.Labels, t int64, v float64) (uint64, error) {
 	a.series = append(a.series, record.RefSeries{
-		Ref:    uint64(l.Hash()),
+		Ref:    mSeriesCounter,
 		Labels: l,
 	})
 
 	a.samples = append(a.samples, record.RefSample{
-		Ref: uint64(l.Hash()),
+		Ref: mSeriesCounter,
 		T:   t,
 		V:   v,
 	})
+	mSeriesCounter++
 	return ref, nil
 }
 
@@ -168,11 +181,11 @@ func (a *WALAppender) Commit() (err error) {
 }
 
 func (a *WALAppender) Rollback() (err error) {
-	// NA
-	return nil
+	// With no buffering of the metrics, not applicable for Agent writes to WAL.
+	return ErrUnsupported
 }
 
 func (a *WALAppender) AppendExemplar(ref uint64, l labels.Labels, e exemplar.Exemplar) (uint64, error) {
-	// NA
-	return 0, nil
+	// Agent does not support Exemplars, so not applicable for Agent.
+	return 0, ErrUnsupported
 }

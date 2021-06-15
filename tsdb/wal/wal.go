@@ -48,8 +48,11 @@ const (
 // before.
 var castagnoliTable = crc32.MakeTable(crc32.Castagnoli)
 
-// Channel to notify WAL events if a Segment file can be deleted.
-var CWalNotify chan int
+// Channel to notify WAL Segment deletion events.
+var CWALDelSegment chan int
+
+// Channel to notify WAL Segment creation events.
+var CWALNewSegment chan int
 
 // page is an in memory buffer used to batch disk writes.
 // Records bigger than the page size are split and flushed separately.
@@ -309,7 +312,9 @@ func NewSize(logger log.Logger, reg prometheus.Registerer, dir string, segmentSi
 // NewNotify returns a new WAL over the given directory and notify WAL events on a Channel.
 func NewNotify(logger log.Logger, reg prometheus.Registerer, dir string, walNotify bool, segmentSize int, compress bool) (*WAL, error) {
 	if walNotify {
-		CWalNotify = make(chan int)
+		// Create non blocking channels for sending WAL lifecycle notficiations.
+		CWALNewSegment = make(chan int, 5)
+		CWALDelSegment = make(chan int, 5)
 	}
 	return NewSize(logger, reg, dir, segmentSize, compress)
 }
@@ -493,6 +498,11 @@ func (w *WAL) nextSegment() error {
 	if err != nil {
 		return errors.Wrap(err, "create new segment file")
 	}
+
+	if CWALNewSegment != nil {
+		CWALNewSegment <- next.i
+	}
+
 	prev := w.segment
 	if err := w.setSegment(next); err != nil {
 		return err
