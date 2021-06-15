@@ -22,7 +22,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -115,7 +115,7 @@ func TestBackfillRuleIntegration(t *testing.T) {
 
 				opts := tsdb.DefaultOptions()
 				opts.AllowOverlappingBlocks = true
-				db, err := tsdb.Open(tmpDir, nil, nil, opts)
+				db, err := tsdb.Open(tmpDir, nil, nil, opts, nil)
 				require.NoError(t, err)
 
 				blocks := db.Blocks()

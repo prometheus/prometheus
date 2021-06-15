@@ -18,8 +18,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
@@ -68,7 +68,7 @@ func newRuleImporter(logger log.Logger, config ruleImporterConfig, apiClient que
 
 // loadGroups parses groups from a list of recording rule files.
 func (importer *ruleImporter) loadGroups(ctx context.Context, filenames []string) (errs []error) {
-	groups, errs := importer.ruleManager.LoadGroups(importer.config.evalInterval, labels.Labels{}, filenames...)
+	groups, errs := importer.ruleManager.LoadGroups(importer.config.evalInterval, labels.Labels{}, "", filenames...)
 	if errs != nil {
 		return errs
 	}

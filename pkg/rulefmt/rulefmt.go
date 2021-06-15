@@ -223,10 +223,11 @@ func testTemplateParsing(rl *RuleNode) (errs []error) {
 	}
 
 	// Trying to parse templates.
-	tmplData := template.AlertTemplateData(map[string]string{}, map[string]string{}, 0)
+	tmplData := template.AlertTemplateData(map[string]string{}, map[string]string{}, "", 0)
 	defs := []string{
 		"{{$labels := .Labels}}",
 		"{{$externalLabels := .ExternalLabels}}",
+		"{{$externalURL := .ExternalURL}}",
 		"{{$value := .Value}}",
 	}
 	parseTest := func(text string) error {

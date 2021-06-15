@@ -540,7 +540,7 @@ after_eof 1 2
 			require.NoError(t, os.RemoveAll(outputDir))
 		}()
 
-		err = backfill(test.MaxSamplesInAppender, []byte(test.ToParse), outputDir, false)
+		err = backfill(test.MaxSamplesInAppender, []byte(test.ToParse), outputDir, false, false)
 
 		if !test.IsOk {
 			require.Error(t, err, test.Description)
@@ -548,7 +548,7 @@ after_eof 1 2
 		}
 
 		require.NoError(t, err)
-		db, err := tsdb.Open(outputDir, nil, nil, tsdb.DefaultOptions())
+		db, err := tsdb.Open(outputDir, nil, nil, tsdb.DefaultOptions(), nil)
 		require.NoError(t, err)
 		defer func() {
 			require.NoError(t, db.Close())

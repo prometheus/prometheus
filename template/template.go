@@ -295,14 +295,16 @@ func NewTemplateExpander(
 }
 
 // AlertTemplateData returns the interface to be used in expanding the template.
-func AlertTemplateData(labels map[string]string, externalLabels map[string]string, value float64) interface{} {
+func AlertTemplateData(labels map[string]string, externalLabels map[string]string, externalURL string, value float64) interface{} {
 	return struct {
 		Labels         map[string]string
 		ExternalLabels map[string]string
+		ExternalURL    string
 		Value          float64
 	}{
 		Labels:         labels,
 		ExternalLabels: externalLabels,
+		ExternalURL:    externalURL,
 		Value:          value,
 	}
 }

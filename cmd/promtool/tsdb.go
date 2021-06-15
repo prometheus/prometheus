@@ -31,7 +31,7 @@ import (
 	"time"
 
 	"github.com/alecthomas/units"
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
 	"github.com/pkg/errors"
 
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -87,7 +87,7 @@ func benchmarkWrite(outPath, samplesFile string, numMetrics, numScrapes int) err
 	st, err := tsdb.Open(dir, l, nil, &tsdb.Options{
 		RetentionDuration: int64(15 * 24 * time.Hour / time.Millisecond),
 		MinBlockDuration:  int64(2 * time.Hour / time.Millisecond),
-	})
+	}, tsdb.NewDBStats())
 	if err != nil {
 		return err
 	}
@@ -611,7 +611,7 @@ func checkErr(err error) int {
 	return 0
 }
 
-func backfillOpenMetrics(path string, outputDir string, humanReadable bool) int {
+func backfillOpenMetrics(path string, outputDir string, humanReadable, quiet bool) int {
 	inputFile, err := fileutil.OpenMmapFile(path)
 	if err != nil {
 		return checkErr(err)
@@ -622,5 +622,5 @@ func backfillOpenMetrics(path string, outputDir string, humanReadable bool) int 
 		return checkErr(errors.Wrap(err, "create output dir"))
 	}
 
-	return checkErr(backfill(5000, inputFile.Bytes(), outputDir, humanReadable))
+	return checkErr(backfill(5000, inputFile.Bytes(), outputDir, humanReadable, quiet))
 }

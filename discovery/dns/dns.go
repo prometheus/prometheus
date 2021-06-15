@@ -21,8 +21,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/miekg/dns"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -68,8 +68,7 @@ var (
 
 func init() {
 	discovery.RegisterConfig(&SDConfig{})
-	prometheus.MustRegister(dnsSDLookupFailuresCount)
-	prometheus.MustRegister(dnsSDLookupsCount)
+	prometheus.MustRegister(dnsSDLookupFailuresCount, dnsSDLookupsCount)
 }
 
 // SDConfig is the configuration for DNS based service discovery.

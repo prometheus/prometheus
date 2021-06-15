@@ -59,6 +59,10 @@ promql_expr_test:
 # External labels accessible to the alert template.
 external_labels:
   [ <labelname>: <string> ... ]
+
+# External URL accessible to the alert template.
+# Usually set using --web.external-url.
+  [ external_url: <string> ]
 ```
 
 ### `<series>`

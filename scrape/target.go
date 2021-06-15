@@ -414,8 +414,9 @@ func populateLabels(lset labels.Labels, cfg *config.ScrapeConfig) (res, orig lab
 }
 
 // targetsFromGroup builds targets based on the given TargetGroup and config.
-func targetsFromGroup(tg *targetgroup.Group, cfg *config.ScrapeConfig) ([]*Target, error) {
+func targetsFromGroup(tg *targetgroup.Group, cfg *config.ScrapeConfig) ([]*Target, []error) {
 	targets := make([]*Target, 0, len(tg.Targets))
+	failures := []error{}
 
 	for i, tlset := range tg.Targets {
 		lbls := make([]labels.Label, 0, len(tlset)+len(tg.Labels))
@@ -433,11 +434,11 @@ func targetsFromGroup(tg *targetgroup.Group, cfg *config.ScrapeConfig) ([]*Targe
 
 		lbls, origLabels, err := populateLabels(lset, cfg)
 		if err != nil {
-			return nil, errors.Wrapf(err, "instance %d in group %s", i, tg)
+			failures = append(failures, errors.Wrapf(err, "instance %d in group %s", i, tg))
 		}
 		if lbls != nil || origLabels != nil {
 			targets = append(targets, NewTarget(lbls, origLabels, cfg.Params))
 		}
 	}
-	return targets, nil
+	return targets, failures
 }

@@ -97,6 +97,7 @@ scrape_configs:
   scrape_interval: 50s
   scrape_timeout:  5s
 
+  body_size_limit: 10MB
   sample_limit: 1000
 
   metrics_path: /my_path
@@ -263,6 +264,10 @@ scrape_configs:
     - targets:
       - localhost:9090
 
+- job_name: httpsd
+  http_sd_configs:
+    - url: 'http://example.com/prometheus'
+
 - job_name: service-triton
   triton_sd_configs:
   - account: 'testAccount'
@@ -324,6 +329,11 @@ scrape_configs:
       project_id: 11111111-1111-1111-1111-111111111112
       access_key: SCWXXXXXXXXXXXXXXXXX
       secret_key: 11111111-1111-1111-1111-111111111111
+
+- job_name: linode-instances
+  linode_sd_configs:
+    - authorization:
+        credentials: abcdef
 
 alerting:
   alertmanagers:

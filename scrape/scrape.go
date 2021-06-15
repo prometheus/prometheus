@@ -28,8 +28,8 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
@@ -134,6 +134,12 @@ var (
 		},
 		[]string{"scrape_job"},
 	)
+	targetScrapeExceededBodySizeLimit = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "prometheus_target_scrapes_exceeded_body_size_limit_total",
+			Help: "Total number of scrapes that hit the body size limit",
+		},
+	)
 	targetScrapeSampleLimit = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "prometheus_target_scrapes_exceeded_sample_limit_total",
@@ -176,6 +182,13 @@ var (
 			Help: "Total number of times scrape pools hit the label limits, during sync or config reload.",
 		},
 	)
+	targetSyncFailed = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "prometheus_target_sync_failed_total",
+			Help: "Total number of target sync failures.",
+		},
+		[]string{"scrape_job"},
+	)
 )
 
 func init() {
@@ -188,6 +201,7 @@ func init() {
 		targetScrapePoolReloadsFailed,
 		targetSyncIntervalLength,
 		targetScrapePoolSyncsCounter,
+		targetScrapeExceededBodySizeLimit,
 		targetScrapeSampleLimit,
 		targetScrapeSampleDuplicate,
 		targetScrapeSampleOutOfOrder,
@@ -199,6 +213,7 @@ func init() {
 		targetMetadataCache,
 		targetScrapeExemplarOutOfOrder,
 		targetScrapePoolExceededLabelLimits,
+		targetSyncFailed,
 	)
 }
 
@@ -346,6 +361,7 @@ func (sp *scrapePool) stop() {
 		targetScrapePoolTargetLimit.DeleteLabelValues(sp.config.JobName)
 		targetScrapePoolTargetsAdded.DeleteLabelValues(sp.config.JobName)
 		targetSyncIntervalLength.DeleteLabelValues(sp.config.JobName)
+		targetSyncFailed.DeleteLabelValues(sp.config.JobName)
 	}
 }
 
@@ -372,11 +388,12 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 	targetScrapePoolTargetLimit.WithLabelValues(sp.config.JobName).Set(float64(sp.config.TargetLimit))
 
 	var (
-		wg          sync.WaitGroup
-		interval    = time.Duration(sp.config.ScrapeInterval)
-		timeout     = time.Duration(sp.config.ScrapeTimeout)
-		sampleLimit = int(sp.config.SampleLimit)
-		labelLimits = &labelLimits{
+		wg            sync.WaitGroup
+		interval      = time.Duration(sp.config.ScrapeInterval)
+		timeout       = time.Duration(sp.config.ScrapeTimeout)
+		bodySizeLimit = int64(sp.config.BodySizeLimit)
+		sampleLimit   = int(sp.config.SampleLimit)
+		labelLimits   = &labelLimits{
 			labelLimit:            int(sp.config.LabelLimit),
 			labelNameLengthLimit:  int(sp.config.LabelNameLengthLimit),
 			labelValueLengthLimit: int(sp.config.LabelValueLengthLimit),
@@ -399,7 +416,7 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 		}
 		var (
 			t       = sp.activeTargets[fp]
-			s       = &targetScraper{Target: t, client: sp.client, timeout: timeout}
+			s       = &targetScraper{Target: t, client: sp.client, timeout: timeout, bodySizeLimit: bodySizeLimit}
 			newLoop = sp.newLoop(scrapeLoopOptions{
 				target:          t,
 				scraper:         s,
@@ -445,11 +462,11 @@ func (sp *scrapePool) Sync(tgs []*targetgroup.Group) {
 	var all []*Target
 	sp.droppedTargets = []*Target{}
 	for _, tg := range tgs {
-		targets, err := targetsFromGroup(tg, sp.config)
-		if err != nil {
-			level.Error(sp.logger).Log("msg", "creating targets failed", "err", err)
-			continue
+		targets, failures := targetsFromGroup(tg, sp.config)
+		for _, err := range failures {
+			level.Error(sp.logger).Log("msg", "Creating target failed", "err", err)
 		}
+		targetSyncFailed.WithLabelValues(sp.config.JobName).Add(float64(len(failures)))
 		for _, t := range targets {
 			if t.Labels().Len() > 0 {
 				all = append(all, t)
@@ -472,11 +489,12 @@ func (sp *scrapePool) Sync(tgs []*targetgroup.Group) {
 // It returns after all stopped scrape loops terminated.
 func (sp *scrapePool) sync(targets []*Target) {
 	var (
-		uniqueLoops = make(map[uint64]loop)
-		interval    = time.Duration(sp.config.ScrapeInterval)
-		timeout     = time.Duration(sp.config.ScrapeTimeout)
-		sampleLimit = int(sp.config.SampleLimit)
-		labelLimits = &labelLimits{
+		uniqueLoops   = make(map[uint64]loop)
+		interval      = time.Duration(sp.config.ScrapeInterval)
+		timeout       = time.Duration(sp.config.ScrapeTimeout)
+		bodySizeLimit = int64(sp.config.BodySizeLimit)
+		sampleLimit   = int(sp.config.SampleLimit)
+		labelLimits   = &labelLimits{
 			labelLimit:            int(sp.config.LabelLimit),
 			labelNameLengthLimit:  int(sp.config.LabelNameLengthLimit),
 			labelValueLengthLimit: int(sp.config.LabelValueLengthLimit),
@@ -491,7 +509,7 @@ func (sp *scrapePool) sync(targets []*Target) {
 		hash := t.hash()
 
 		if _, ok := sp.activeTargets[hash]; !ok {
-			s := &targetScraper{Target: t, client: sp.client, timeout: timeout}
+			s := &targetScraper{Target: t, client: sp.client, timeout: timeout, bodySizeLimit: bodySizeLimit}
 			l := sp.newLoop(scrapeLoopOptions{
 				target:          t,
 				scraper:         s,
@@ -681,7 +699,11 @@ type targetScraper struct {
 
 	gzipr *gzip.Reader
 	buf   *bufio.Reader
+
+	bodySizeLimit int64
 }
+
+var errBodySizeLimit = errors.New("body size limit exceeded")
 
 const acceptHeader = `application/openmetrics-text; version=0.0.1,text/plain;version=0.0.4;q=0.5,*/*;q=0.1`
 
@@ -714,10 +736,17 @@ func (s *targetScraper) scrape(ctx context.Context, w io.Writer) (string, error)
 		return "", errors.Errorf("server returned HTTP status %s", resp.Status)
 	}
 
+	if s.bodySizeLimit <= 0 {
+		s.bodySizeLimit = math.MaxInt64
+	}
 	if resp.Header.Get("Content-Encoding") != "gzip" {
-		_, err = io.Copy(w, resp.Body)
+		n, err := io.Copy(w, io.LimitReader(resp.Body, s.bodySizeLimit))
 		if err != nil {
 			return "", err
+		}
+		if n >= s.bodySizeLimit {
+			targetScrapeExceededBodySizeLimit.Inc()
+			return "", errBodySizeLimit
 		}
 		return resp.Header.Get("Content-Type"), nil
 	}
@@ -735,10 +764,14 @@ func (s *targetScraper) scrape(ctx context.Context, w io.Writer) (string, error)
 		}
 	}
 
-	_, err = io.Copy(w, s.gzipr)
+	n, err := io.Copy(w, io.LimitReader(s.gzipr, s.bodySizeLimit))
 	s.gzipr.Close()
 	if err != nil {
 		return "", err
+	}
+	if n >= s.bodySizeLimit {
+		targetScrapeExceededBodySizeLimit.Inc()
+		return "", errBodySizeLimit
 	}
 	return resp.Header.Get("Content-Type"), nil
 }

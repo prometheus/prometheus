@@ -27,7 +27,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
 	"github.com/prometheus/client_golang/prometheus"
@@ -793,6 +793,34 @@ func TestProcessExternalLabels(t *testing.T) {
 			labels:         labels.Labels{{Name: "a", Value: "b"}},
 			externalLabels: labels.Labels{{Name: "a", Value: "c"}},
 			expected:       labels.Labels{{Name: "a", Value: "b"}},
+		},
+
+		// Test empty externalLabels.
+		{
+			labels:         labels.Labels{{Name: "a", Value: "b"}},
+			externalLabels: labels.Labels{},
+			expected:       labels.Labels{{Name: "a", Value: "b"}},
+		},
+
+		// Test empty labels.
+		{
+			labels:         labels.Labels{},
+			externalLabels: labels.Labels{{Name: "a", Value: "b"}},
+			expected:       labels.Labels{{Name: "a", Value: "b"}},
+		},
+
+		// Test labels is longer than externalLabels.
+		{
+			labels:         labels.Labels{{Name: "a", Value: "b"}, {Name: "c", Value: "d"}},
+			externalLabels: labels.Labels{{Name: "e", Value: "f"}},
+			expected:       labels.Labels{{Name: "a", Value: "b"}, {Name: "c", Value: "d"}, {Name: "e", Value: "f"}},
+		},
+
+		// Test externalLabels is longer than labels.
+		{
+			labels:         labels.Labels{{Name: "c", Value: "d"}},
+			externalLabels: labels.Labels{{Name: "a", Value: "b"}, {Name: "e", Value: "f"}},
+			expected:       labels.Labels{{Name: "a", Value: "b"}, {Name: "c", Value: "d"}, {Name: "e", Value: "f"}},
 		},
 	} {
 		require.Equal(t, tc.expected, processExternalLabels(tc.labels, tc.externalLabels))

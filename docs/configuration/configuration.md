@@ -42,6 +42,7 @@ Generic placeholders are defined as follows:
 * `<scheme>`: a string that can take the values `http` or `https`
 * `<secret>`: a regular string that is a secret, such as a password
 * `<string>`: a regular string
+* `<size>`: a size in bytes, e.g. `512MB`. A unit is required. Supported units: B, KB, MB, GB, TB, PB, EB.
 * `<tmpl_string>`: a string which is template-expanded before usage
 
 The other placeholders are specified separately.
@@ -239,6 +240,10 @@ gce_sd_configs:
 hetzner_sd_configs:
   [ - <hetzner_sd_config> ... ]
 
+# List of HTTP service discovery configurations.
+http_sd_configs:
+  [ - <http_sd_config> ... ]
+
 # List of Kubernetes service discovery configurations.
 kubernetes_sd_configs:
   [ - <kubernetes_sd_config> ... ]
@@ -246,6 +251,10 @@ kubernetes_sd_configs:
 # List of Lightsail service discovery configurations.
 lightsail_sd_configs:
   [ - <lightsail_sd_config> ... ]
+
+# List of Linode service discovery configurations.
+linode_sd_configs:
+  [ - <linode_sd_config> ... ]
 
 # List of Marathon service discovery configurations.
 marathon_sd_configs:
@@ -283,6 +292,11 @@ relabel_configs:
 metric_relabel_configs:
   [ - <relabel_config> ... ]
 
+# An uncompressed response body larger than this many bytes will cause the
+# scrape to fail. 0 means no limit. Example: 100MB.
+# This is an experimental feature, this behaviour could
+# change or be removed in the future.
+[ body_size_limit: <size> | default = 0 ]
 # Per-scrape limit on number of scraped samples that will be accepted.
 # If more than this number of samples are present after metric relabeling
 # the entire scrape will be treated as failed. 0 means no limit.
@@ -333,7 +347,7 @@ A `tls_config` allows configuring TLS connections.
 [ insecure_skip_verify: <boolean> ]
 ```
 
-### `oauth2`
+### `<oauth2>`
 
 OAuth 2.0 authentication using the client credentials grant type.
 Prometheus fetches an access token from the specified endpoint with
@@ -430,12 +444,12 @@ The following meta labels are available on targets during [relabeling](#relabel_
 [ server: <host> | default = "localhost:8500" ]
 [ token: <secret> ]
 [ datacenter: <string> ]
+# Namespaces are only supported in Consul Enterprise.
+[ namespace: <string> ]
 [ scheme: <string> | default = "http" ]
+# The username and password fields are deprecated in favor of the basic_auth configuration.
 [ username: <string> ]
 [ password: <secret> ]
-
-tls_config:
-  [ <tls_config> ]
 
 # A list of services for which targets are retrieved. If omitted, all services
 # are scraped.
@@ -462,6 +476,42 @@ tags:
 # The time after which the provided names are refreshed.
 # On large setup it might be a good idea to increase this value because the catalog will change all the time.
 [ refresh_interval: <duration> | default = 30s ]
+
+# Authentication information used to authenticate to the consul server.
+# Note that `basic_auth`, `authorization` and `oauth2` options are
+# mutually exclusive.
+# `password` and `password_file` are mutually exclusive.
+
+# Optional HTTP basic authentication information.
+basic_auth:
+  [ username: <string> ]
+  [ password: <secret> ]
+  [ password_file: <string> ]
+
+# Optional `Authorization` header configuration.
+authorization:
+  # Sets the authentication type.
+  [ type: <string> | default: Bearer ]
+  # Sets the credentials. It is mutually exclusive with
+  # `credentials_file`.
+  [ credentials: <secret> ]
+  # Sets the credentials to the credentials read from the configured file.
+  # It is mutually exclusive with `credentials`.
+  [ credentials_file: <filename> ]
+
+# Optional OAuth 2.0 configuration.
+oauth2:
+  [ <oauth2> ]
+
+# Optional proxy URL.
+[ proxy_url: <string> ]
+
+# Configure whether HTTP requests follow HTTP 3xx redirects.
+[ follow_redirects: <bool> | default = true ]
+
+# TLS configuration.
+tls_config:
+  [ <tls_config> ]
 ```
 
 Note that the IP number and port used to scrape the targets is assembled as
@@ -512,14 +562,14 @@ basic_auth:
   [ password: <secret> ]
   [ password_file: <string> ]
 
-# Optional the `Authorization` header configuration.
+# Optional `Authorization` header configuration.
 authorization:
   # Sets the authentication type.
   [ type: <string> | default: Bearer ]
   # Sets the credentials. It is mutually exclusive with
   # `credentials_file`.
   [ credentials: <secret> ]
-  # Sets the credentials with the credentials read from the configured file.
+  # Sets the credentials to the credentials read from the configured file.
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
@@ -609,14 +659,14 @@ basic_auth:
   [ password: <secret> ]
   [ password_file: <string> ]
 
-# Optional the `Authorization` header configuration.
+# Optional `Authorization` header configuration.
 authorization:
   # Sets the authentication type.
   [ type: <string> | default: Bearer ]
   # Sets the credentials. It is mutually exclusive with
   # `credentials_file`.
   [ credentials: <secret> ]
-  # Sets the credentials with the credentials read from the configured file.
+  # Sets the credentials to the credentials read from the configured file.
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
@@ -772,14 +822,14 @@ basic_auth:
   [ password: <secret> ]
   [ password_file: <string> ]
 
-# Optional the `Authorization` header configuration.
+# Optional `Authorization` header configuration.
 authorization:
   # Sets the authentication type.
   [ type: <string> | default: Bearer ]
   # Sets the credentials. It is mutually exclusive with
   # `credentials_file`.
   [ credentials: <secret> ]
-  # Sets the credentials with the credentials read from the configured file.
+  # Sets the credentials to the credentials read from the configured file.
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
@@ -1184,7 +1234,7 @@ basic_auth:
   [ password: <secret> ]
   [ password_file: <string> ]
 
-# Optional the `Authorization` header configuration. required when role is
+# Optional `Authorization` header configuration, required when role is
 # hcloud. Role robot does not support bearer token authentication.
 authorization:
   # Sets the authentication type.
@@ -1192,7 +1242,7 @@ authorization:
   # Sets the credentials. It is mutually exclusive with
   # `credentials_file`.
   [ credentials: <secret> ]
-  # Sets the credentials with the credentials read from the configured file.
+  # Sets the credentials to the credentials read from the configured file.
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
@@ -1216,6 +1266,81 @@ tls_config:
 
 # The time after which the servers are refreshed.
 [ refresh_interval: <duration> | default = 60s ]
+```
+
+### `<http_sd_config>`
+
+HTTP-based service discovery provides a more generic way to configure static targets
+and serves as an interface to plug in custom service discovery mechanisms.
+
+It fetches targets from an HTTP endpoint containing a list of zero or more
+`<static_config>`s. The target must reply with an HTTP 200 response.
+The HTTP header `Content-Type` must be `application/json`, and the body must be
+valid JSON.
+
+Example response body:
+
+```json
+[
+  {
+    "targets": [ "<host>", ... ],
+    "labels": {
+      "<labelname>": "<labelvalue>", ...
+    }
+  },
+  ...
+]
+```
+
+The endpoint is queried periodically at the specified
+refresh interval.
+
+Each target has a meta label `__meta_url` during the
+[relabeling phase](#relabel_config). Its value is set to the
+URL from which the target was extracted.
+
+```yaml
+# URL from which the targets are fetched.
+url: <string>
+
+# Refresh interval to re-query the endpoint.
+[ refresh_interval: <duration> | default = 60s ]
+
+# Authentication information used to authenticate to the API server.
+# Note that `basic_auth`, `authorization` and `oauth2` options are
+# mutually exclusive.
+# `password` and `password_file` are mutually exclusive.
+
+# Optional HTTP basic authentication information.
+basic_auth:
+  [ username: <string> ]
+  [ password: <secret> ]
+  [ password_file: <string> ]
+
+# Optional `Authorization` header configuration.
+authorization:
+  # Sets the authentication type.
+  [ type: <string> | default: Bearer ]
+  # Sets the credentials. It is mutually exclusive with
+  # `credentials_file`.
+  [ credentials: <secret> ]
+  # Sets the credentials to the credentials read from the configured file.
+  # It is mutually exclusive with `credentials`.
+  [ credentials_file: <filename> ]
+
+# Optional OAuth 2.0 configuration.
+oauth2:
+  [ <oauth2> ]
+
+# Optional proxy URL.
+[ proxy_url: <string> ]
+
+# Configure whether HTTP requests follow HTTP 3xx redirects.
+[ follow_redirects: <bool> | default = true ]
+
+# TLS configuration.
+tls_config:
+  [ <tls_config> ]
 ```
 
 ### `<kubernetes_sd_config>`
@@ -1332,6 +1457,7 @@ Available meta labels:
 * `__meta_kubernetes_ingress_labelpresent_<labelname>`: `true` for each label from the ingress object.
 * `__meta_kubernetes_ingress_annotation_<annotationname>`: Each annotation from the ingress object.
 * `__meta_kubernetes_ingress_annotationpresent_<annotationname>`: `true` for each annotation from the ingress object.
+* `__meta_kubernetes_ingress_class_name`: Class name from ingress spec, if present.
 * `__meta_kubernetes_ingress_scheme`: Protocol scheme of ingress, `https` if TLS
   config is set. Defaults to `http`.
 * `__meta_kubernetes_ingress_path`: Path from ingress spec. Defaults to `/`.
@@ -1361,14 +1487,14 @@ basic_auth:
   [ password: <secret> ]
   [ password_file: <string> ]
 
-# Optional the `Authorization` header configuration.
+# Optional `Authorization` header configuration.
 authorization:
   # Sets the authentication type.
   [ type: <string> | default: Bearer ]
   # Sets the credentials. It is mutually exclusive with
   # `credentials_file`.
   [ credentials: <secret> ]
-  # Sets the credentials with the credentials read from the configured file.
+  # Sets the credentials to the credentials read from the configured file.
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
@@ -1464,6 +1590,84 @@ See below for the configuration options for Lightsail discovery:
 [ port: <int> | default = 80 ]
 ```
 
+### `<linode_sd_config>`
+
+Linode SD configurations allow retrieving scrape targets from [Linode's](https://www.linode.com/)
+Linode APIv4.
+This service discovery uses the public IPv4 address by default, by that can be
+changed with relabelling, as demonstrated in [the Prometheus linode-sd
+configuration file](/documentation/examples/prometheus-linode.yml).
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_linode_instance_id`: the id of the linode instance
+* `__meta_linode_instance_label`: the label of the linode instance
+* `__meta_linode_image`: the slug of the linode instance's image
+* `__meta_linode_private_ipv4`: the private IPv4 of the linode instance
+* `__meta_linode_public_ipv4`: the public IPv4 of the linode instance
+* `__meta_linode_public_ipv6`: the public IPv6 of the linode instance
+* `__meta_linode_region`: the region of the linode instance
+* `__meta_linode_type`: the type of the linode instance
+* `__meta_linode_status`: the status of the linode instance
+* `__meta_linode_tags`: a list of tags of the linode instance joined by the tag separator
+* `__meta_linode_group`: the display group a linode instance is a member of
+* `__meta_linode_hypervisor`: the virtualization software powering the linode instance
+* `__meta_linode_backups`: the backup service status of the linode instance
+* `__meta_linode_specs_disk_bytes`: the amount of storage space the linode instance has access to
+* `__meta_linode_specs_memory_bytes`: the amount of RAM the linode instance has access to
+* `__meta_linode_specs_vcpus`: the number of VCPUS this linode has access to
+* `__meta_linode_specs_transfer_bytes`: the amount of network transfer the linode instance is allotted each month
+* `__meta_linode_extra_ips`: a list of all extra IPv4 addresses assigned to the linode instance joined by the tag separator
+
+```yaml
+# Authentication information used to authenticate to the API server.
+# Note that `basic_auth` and `authorization` options are
+# mutually exclusive.
+# password and password_file are mutually exclusive.
+# Note: Linode APIv4 Token must be created with scopes: 'linodes:read_only' and 'ips:read_only'
+
+# Optional HTTP basic authentication information, not currently supported by Linode APIv4.
+basic_auth:
+  [ username: <string> ]
+  [ password: <secret> ]
+  [ password_file: <string> ]
+
+# Optional the `Authorization` header configuration.
+authorization:
+  # Sets the authentication type.
+  [ type: <string> | default: Bearer ]
+  # Sets the credentials. It is mutually exclusive with
+  # `credentials_file`.
+  [ credentials: <secret> ]
+  # Sets the credentials with the credentials read from the configured file.
+  # It is mutually exclusive with `credentials`.
+  [ credentials_file: <filename> ]
+
+# Optional OAuth 2.0 configuration.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2:
+  [ <oauth2> ]
+
+# Optional proxy URL.
+[ proxy_url: <string> ]
+
+# Configure whether HTTP requests follow HTTP 3xx redirects.
+[ follow_redirects: <bool> | default = true ]
+
+# TLS configuration.
+tls_config:
+  [ <tls_config> ]
+
+# The port to scrape metrics from.
+[ port: <int> | default = 80 ]
+
+# The string by which Linode Instance tags are joined into the tag label.
+[ tag_separator: <string> | default = , ]
+
+# The time after which the linode instances are refreshed.
+[ refresh_interval: <duration> | default = 60s ]
+```
+
 ### `<marathon_sd_config>`
 
 Marathon SD configurations allow retrieving scrape targets using the
@@ -1511,7 +1715,7 @@ basic_auth:
   [ password: <secret> ]
   [ password_file: <string> ]
 
-# Optional the `Authorization` header configuration.
+# Optional `Authorization` header configuration.
 # NOTE: The current version of DC/OS marathon (v1.11.0) does not support
 # standard `Authentication` header, use `auth_token` or `auth_token_file`
 # instead.
@@ -1521,7 +1725,7 @@ authorization:
   # Sets the credentials. It is mutually exclusive with
   # `credentials_file`.
   [ credentials: <secret> ]
-  # Sets the credentials with the credentials read from the configured file.
+  # Sets the credentials to the credentials read from the configured file.
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
@@ -1717,14 +1921,14 @@ basic_auth:
   [ password: <secret> ]
   [ password_file: <string> ]
 
-# Optional the `Authorization` header configuration.
+# Optional `Authorization` header configuration.
 authorization:
   # Sets the authentication type.
   [ type: <string> | default: Bearer ]
   # Sets the credentials. It is mutually exclusive with
   # `credentials_file`.
   [ credentials: <secret> ]
-  # Sets the credentials with the credentials read from the configured file.
+  # Sets the credentials to the credentials read from the configured file.
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
@@ -2000,14 +2204,14 @@ basic_auth:
   [ password: <secret> ]
   [ password_file: <string> ]
 
-# Optional the `Authorization` header configuration.
+# Optional `Authorization` header configuration.
 authorization:
   # Sets the authentication type.
   [ type: <string> | default: Bearer ]
   # Sets the credentials. It is mutually exclusive with
   # `credentials_file`.
   [ credentials: <secret> ]
-  # Sets the credentials with the credentials read from the configured file.
+  # Sets the credentials to the credentials read from the configured file.
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
@@ -2070,6 +2274,10 @@ gce_sd_configs:
 hetzner_sd_configs:
   [ - <hetzner_sd_config> ... ]
 
+# List of HTTP service discovery configurations.
+http_sd_configs:
+  [ - <http_sd_config> ... ]
+
 # List of Kubernetes service discovery configurations.
 kubernetes_sd_configs:
   [ - <kubernetes_sd_config> ... ]
@@ -2077,6 +2285,10 @@ kubernetes_sd_configs:
 # List of Lightsail service discovery configurations.
 lightsail_sd_configs:
   [ - <lightsail_sd_config> ... ]
+
+# List of Linode service discovery configurations.
+linode_sd_configs:
+  [ - <linode_sd_config> ... ]
 
 # List of Marathon service discovery configurations.
 marathon_sd_configs:
@@ -2152,14 +2364,14 @@ basic_auth:
   [ password: <secret> ]
   [ password_file: <string> ]
 
-# Optional the `Authorization` header configuration.
+# Optional `Authorization` header configuration.
 authorization:
   # Sets the authentication type.
   [ type: <string> | default: Bearer ]
   # Sets the credentials. It is mutually exclusive with
   # `credentials_file`.
   [ credentials: <secret> ]
-  # Sets the credentials with the credentials read from the configured file.
+  # Sets the credentials to the credentials read from the configured file.
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 
@@ -2270,14 +2482,14 @@ basic_auth:
   [ password: <secret> ]
   [ password_file: <string> ]
 
-# Optional the `Authorization` header configuration.
+# Optional `Authorization` header configuration.
 authorization:
   # Sets the authentication type.
   [ type: <string> | default: Bearer ]
   # Sets the credentials. It is mutually exclusive with
   # `credentials_file`.
   [ credentials: <secret> ]
-  # Sets the credentials with the credentials read from the configured file.
+  # Sets the credentials to the credentials read from the configured file.
   # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
 

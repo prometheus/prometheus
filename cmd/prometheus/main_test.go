@@ -25,7 +25,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
@@ -289,7 +289,7 @@ func TestTimeMetrics(t *testing.T) {
 	}()
 
 	reg := prometheus.NewRegistry()
-	db, err := openDBWithMetrics(tmpDir, log.NewNopLogger(), reg, nil)
+	db, err := openDBWithMetrics(tmpDir, log.NewNopLogger(), reg, nil, nil)
 	require.NoError(t, err)
 	defer func() {
 		require.NoError(t, db.Close())

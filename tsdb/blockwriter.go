@@ -19,8 +19,8 @@ import (
 	"math"
 	"os"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 
@@ -72,7 +72,7 @@ func (w *BlockWriter) initHead() error {
 	opts := DefaultHeadOptions()
 	opts.ChunkRange = w.blockSize
 	opts.ChunkDirRoot = w.chunkDir
-	h, err := NewHead(nil, w.logger, nil, opts)
+	h, err := NewHead(nil, w.logger, nil, opts, NewHeadStats())
 	if err != nil {
 		return errors.Wrap(err, "tsdb.NewHead")
 	}

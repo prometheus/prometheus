@@ -42,7 +42,8 @@ func makeIngress(tls TLSMode) *v1beta1.Ingress {
 			Annotations: map[string]string{"test/annotation": "testannotationvalue"},
 		},
 		Spec: v1beta1.IngressSpec{
-			TLS: nil,
+			IngressClassName: classString("testclass"),
+			TLS:              nil,
 			Rules: []v1beta1.IngressRule{
 				{
 					Host: "example.com",
@@ -82,6 +83,10 @@ func makeIngress(tls TLSMode) *v1beta1.Ingress {
 	}
 
 	return ret
+}
+
+func classString(v string) *string {
+	return &v
 }
 
 func expectedTargetGroups(ns string, tls TLSMode) map[string]*targetgroup.Group {
@@ -126,6 +131,7 @@ func expectedTargetGroups(ns string, tls TLSMode) map[string]*targetgroup.Group 
 				"__meta_kubernetes_ingress_labelpresent_test_label":           "true",
 				"__meta_kubernetes_ingress_annotation_test_annotation":        "testannotationvalue",
 				"__meta_kubernetes_ingress_annotationpresent_test_annotation": "true",
+				"__meta_kubernetes_ingress_class_name":                        "testclass",
 			},
 			Source: key,
 		},

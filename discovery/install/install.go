@@ -25,7 +25,9 @@ import (
 	_ "github.com/prometheus/prometheus/discovery/file"         // register file
 	_ "github.com/prometheus/prometheus/discovery/gce"          // register gce
 	_ "github.com/prometheus/prometheus/discovery/hetzner"      // register hetzner
+	_ "github.com/prometheus/prometheus/discovery/http"         // register http
 	_ "github.com/prometheus/prometheus/discovery/kubernetes"   // register kubernetes
+	_ "github.com/prometheus/prometheus/discovery/linode"       // register linode
 	_ "github.com/prometheus/prometheus/discovery/marathon"     // register marathon
 	_ "github.com/prometheus/prometheus/discovery/moby"         // register moby
 	_ "github.com/prometheus/prometheus/discovery/openstack"    // register openstack

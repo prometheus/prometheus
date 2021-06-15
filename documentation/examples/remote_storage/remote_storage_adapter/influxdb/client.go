@@ -20,8 +20,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	influx "github.com/influxdata/influxdb/client/v2"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"

@@ -25,8 +25,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -304,20 +304,19 @@ func (w *Watcher) segments(dir string) ([]int, error) {
 	}
 
 	var refs []int
-	var last int
 	for _, f := range files {
 		k, err := strconv.Atoi(f.Name())
 		if err != nil {
 			continue
 		}
-		if len(refs) > 0 && k > last+1 {
-			return nil, errors.New("segments are not sequential")
-		}
 		refs = append(refs, k)
-		last = k
 	}
 	sort.Ints(refs)
-
+	for i := 0; i < len(refs)-1; i++ {
+		if refs[i]+1 != refs[i+1] {
+			return nil, errors.New("segments are not sequential")
+		}
+	}
 	return refs, nil
 }
 

@@ -90,6 +90,7 @@ export const PanelListContent: FC<PanelListContentProps> = ({
           pathPrefix={pathPrefix}
           onExecuteQuery={handleExecuteQuery}
           key={id}
+          id={id}
           options={options}
           onOptionsChanged={opts =>
             callAll(setPanels, updateURL)(panels.map(p => (id === p.id ? { ...p, options: opts } : p)))
@@ -123,7 +124,7 @@ export const PanelListContent: FC<PanelListContentProps> = ({
 
 const PanelList: FC<RouteComponentProps> = () => {
   const [delta, setDelta] = useState(0);
-  const [useExperimentalEditor, setUseExperimentalEditor] = useLocalStorage('use-new-editor', false);
+  const [useExperimentalEditor, setUseExperimentalEditor] = useLocalStorage('use-new-editor', true);
   const [useLocalTime, setUseLocalTime] = useLocalStorage('use-local-time', false);
   const [enableQueryHistory, setEnableQueryHistory] = useLocalStorage('enable-query-history', false);
   const [enableAutocomplete, setEnableAutocomplete] = useLocalStorage('enable-metric-autocomplete', true);

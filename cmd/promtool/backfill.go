@@ -18,7 +18,7 @@ import (
 	"io"
 	"math"
 
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/textparse"
@@ -65,7 +65,7 @@ func getMinAndMaxTimestamps(p textparse.Parser) (int64, int64, error) {
 	return maxt, mint, nil
 }
 
-func createBlocks(input []byte, mint, maxt int64, maxSamplesInAppender int, outputDir string, humanReadable bool) (returnErr error) {
+func createBlocks(input []byte, mint, maxt int64, maxSamplesInAppender int, outputDir string, humanReadable, quiet bool) (returnErr error) {
 	blockDuration := tsdb.DefaultBlockDuration
 	mint = blockDuration * (mint / blockDuration)
 
@@ -169,6 +169,9 @@ func createBlocks(input []byte, mint, maxt int64, maxSamplesInAppender int, outp
 			block, err := w.Flush(ctx)
 			switch err {
 			case nil:
+				if quiet {
+					break
+				}
 				blocks, err := db.Blocks()
 				if err != nil {
 					return errors.Wrap(err, "get blocks")
@@ -196,11 +199,11 @@ func createBlocks(input []byte, mint, maxt int64, maxSamplesInAppender int, outp
 
 }
 
-func backfill(maxSamplesInAppender int, input []byte, outputDir string, humanReadable bool) (err error) {
+func backfill(maxSamplesInAppender int, input []byte, outputDir string, humanReadable, quiet bool) (err error) {
 	p := textparse.NewOpenMetricsParser(input)
 	maxt, mint, err := getMinAndMaxTimestamps(p)
 	if err != nil {
 		return errors.Wrap(err, "getting min and max timestamp")
 	}
-	return errors.Wrap(createBlocks(input, mint, maxt, maxSamplesInAppender, outputDir, humanReadable), "block creation")
+	return errors.Wrap(createBlocks(input, mint, maxt, maxSamplesInAppender, outputDir, humanReadable, quiet), "block creation")
 }
