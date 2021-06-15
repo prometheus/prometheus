@@ -211,6 +211,8 @@ func (ce *CircularExemplarStorage) validateExemplar(l string, e exemplar.Exempla
 	return nil
 }
 
+// Resize changes the size of exemplar buffer by allocating a new buffer and migrating data to it. Exemplars are
+// kept when possible. Shrinking will discard oldest data as needed.
 func (ce *CircularExemplarStorage) Resize(l int) int {
 	if l <= 0 || l == len(ce.exemplars) {
 		return 0
@@ -232,10 +234,8 @@ func (ce *CircularExemplarStorage) Resize(l int) int {
 		count = l
 	}
 
-	startIndex := oldNextIndex - count
-	if startIndex < 0 {
-		startIndex += len(oldBuffer)
-	}
+	// Rewind previous next index by count with wrap-around
+	startIndex := (oldNextIndex - count + len(oldBuffer)) % len(oldBuffer)
 
 	migrated := 0
 
@@ -252,7 +252,8 @@ func (ce *CircularExemplarStorage) Resize(l int) int {
 	return migrated
 }
 
-// migrate Expects lock externally
+// migrate is like AddExemplar but reuses existing structs. Expected to be called in batch and requires
+// external lock and does not compute metrics.
 func (ce *CircularExemplarStorage) migrate(entry *circularBufferEntry) {
 	seriesLabels := entry.ref.seriesLabels.String()
 

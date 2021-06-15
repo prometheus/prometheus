@@ -15,7 +15,6 @@ package tsdb
 
 import (
 	"context"
-	"fmt"
 	"math"
 	"reflect"
 	"strconv"
@@ -450,7 +449,21 @@ func TestResize(t *testing.T) {
 	}
 }
 
-func BenchmarkResize(t *testing.B) {
+func BenchmarkAddExemplar(t *testing.B) {
+
+	exs, err := NewCircularExemplarStorage(t.N, nil)
+	require.NoError(t, err)
+	es := exs.(*CircularExemplarStorage)
+
+	for i := 0; i < t.N; i++ {
+		l := labels.FromStrings("service", strconv.Itoa(i))
+
+		err = es.AddExemplar(l, exemplar.Exemplar{Value: float64(i), Ts: int64(i)})
+		require.NoError(t, err)
+	}
+}
+
+func BenchmarkResizeExemplars(t *testing.B) {
 	var startCount int
 	var endCount int
 
@@ -479,8 +492,6 @@ func BenchmarkResize(t *testing.B) {
 
 			tc.setupfn(t)
 
-			fmt.Println("Creating", startCount)
-
 			exs, err := NewCircularExemplarStorage(startCount, nil)
 			require.NoError(t, err)
 			es := exs.(*CircularExemplarStorage)
@@ -493,7 +504,6 @@ func BenchmarkResize(t *testing.B) {
 			}
 
 			t.ResetTimer()
-			fmt.Println("resizing", endCount)
 			es.Resize(endCount)
 		})
 	}
