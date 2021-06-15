@@ -222,8 +222,16 @@ input[type='checkbox']:checked + label {
   margin-left: 20px;
 }
 
+.graph-selected-exemplar {
+  position: relative;
+  border: 1px solid $nav-tabs-border-color;
+  margin: 15px 55px;
+  font-size: 0.75em;
+  padding: 10px 10px;
+}
+
 .graph-legend {
-  margin: 15px 0 15px 55px;
+  margin: 15px 55px;
   font-size: 0.75em;
   padding: 10px 5px;
   display: inline-block;

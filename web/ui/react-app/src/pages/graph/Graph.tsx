@@ -6,6 +6,9 @@ import { Legend } from './Legend';
 import { Metric, ExemplarData, QueryParams } from '../../types/types';
 import { isPresent } from '../../utils';
 import { normalizeData, getOptions, toHoverColor } from './GraphHelpers';
+import { Button } from 'reactstrap';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faTimes } from '@fortawesome/free-solid-svg-icons';
 
 require('../../vendor/flot/jquery.flot');
 require('../../vendor/flot/jquery.flot.stack');
@@ -201,23 +204,37 @@ class Graph extends PureComponent<GraphProps, GraphState> {
         <ReactResizeDetector handleWidth onResize={this.handleResize} skipOnMount />
         <div className="graph-chart" ref={this.chartRef} />
         {Object.keys(selectedLabels.exemplar).length > 0 ? (
-          <div className="float-right">
-            <span style={{ fontSize: '17px' }}>Selected exemplar:</span>
-            <div className="labels mt-1">
+          <div className="graph-selected-exemplar">
+            <div className="font-weight-bold">Selected exemplar labels:</div>
+            <div className="labels mt-1 ml-3">
               {Object.keys(selectedLabels.exemplar).map((k, i) => (
-                <div key={i} style={{ fontSize: '15px' }}>
+                <div key={i}>
                   <strong>{k}</strong>: {selectedLabels.exemplar[k]}
                 </div>
               ))}
             </div>
-            <span style={{ fontSize: '16px' }}>Series labels:</span>
-            <div className="labels mt-1">
+            <div className="font-weight-bold mt-3">Associated series labels:</div>
+            <div className="labels mt-1 ml-3">
               {Object.keys(selectedLabels.series).map((k, i) => (
-                <div key={i} style={{ fontSize: '15px' }}>
+                <div key={i}>
                   <strong>{k}</strong>: {selectedLabels.series[k]}
                 </div>
               ))}
             </div>
+            <Button
+              size="small"
+              color="light"
+              style={{ position: 'absolute', top: 5, right: 5 }}
+              title="Hide selected exemplar details"
+              onClick={() =>
+                this.setState({
+                  chartData: this.state.chartData,
+                  selectedExemplarLabels: { exemplar: {}, series: {} },
+                })
+              }
+            >
+              <FontAwesomeIcon icon={faTimes} />
+            </Button>
           </div>
         ) : null}
         <Legend
