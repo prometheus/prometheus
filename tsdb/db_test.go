@@ -3173,7 +3173,7 @@ func TestLockfileMetric(t *testing.T) {
 			opts.NoLockfile = c.lockFileDisabled
 
 			// Create the DB, this should create a lockfile and the metrics
-			db, err := Open(tmpdir, nil, nil, opts)
+			db, err := Open(tmpdir, nil, nil, opts, nil)
 			require.NoError(t, err)
 			require.Equal(t, float64(c.expectedValue), prom_testutil.ToFloat64(db.metrics.lockfileCreatedCleanly))
 
