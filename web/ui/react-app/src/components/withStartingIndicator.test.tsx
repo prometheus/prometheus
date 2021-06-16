@@ -26,7 +26,7 @@ describe('Starting', () => {
       const starting = shallow(<StartingContent status={status} isUnexpected={false} />);
       const progress = starting.find(Progress);
       expect(progress).toHaveLength(1);
-    })
+    });
 
     it('renders progress correctly', () => {
       const status: WALReplayData = {
