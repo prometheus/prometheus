@@ -1,0 +1,7 @@
+# This is the rules file for at-modifier-test.yml.
+
+groups:
+  - name: at-modifier
+    rules:
+      - record: x
+        expr: "requests @ 1000"
