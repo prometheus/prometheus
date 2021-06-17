@@ -39,6 +39,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
 	"github.com/prometheus/exporter-toolkit/web"
+	"github.com/prometheus/prometheus/promql"
 	"gopkg.in/alecthomas/kingpin.v2"
 
 	"github.com/prometheus/prometheus/config"
@@ -162,6 +163,8 @@ func main() {
 		"A list of one or more files containing recording rules to be backfilled. All recording rules listed in the files will be backfilled. Alerting rules are not evaluated.",
 	).Required().ExistingFiles()
 
+	featureList := app.Flag("enable-feature", "Comma separated feature names to enable (only PromQL related). Valid options: promql-at-modifier, promql-negative-offset. See https://prometheus.io/docs/prometheus/latest/disabled_features/ for more details.").Default("").Strings()
+
 	parsedCmd := kingpin.MustParse(app.Parse(os.Args[1:]))
 
 	var p printer
@@ -170,6 +173,24 @@ func main() {
 		p = &jsonPrinter{}
 	case "promql":
 		p = &promqlPrinter{}
+	}
+
+	var queryOpts promql.LazyLoaderOpts
+	for _, f := range *featureList {
+		opts := strings.Split(f, ",")
+		for _, o := range opts {
+			switch o {
+			case "promql-at-modifier":
+				queryOpts.EnableAtModifier = true
+			case "promql-negative-offset":
+				queryOpts.EnableNegativeOffset = true
+			case "":
+				continue
+			default:
+				fmt.Fprintf(os.Stderr, "Unknown option for --enable-feature: %q\n", o)
+				os.Exit(1)
+			}
+		}
 	}
 
 	switch parsedCmd {
@@ -207,7 +228,7 @@ func main() {
 		os.Exit(QueryLabels(*queryLabelsServer, *queryLabelsName, *queryLabelsBegin, *queryLabelsEnd, p))
 
 	case testRulesCmd.FullCommand():
-		os.Exit(RulesUnitTest(*testRulesFiles...))
+		os.Exit(RulesUnitTest(queryOpts, *testRulesFiles...))
 
 	case tsdbBenchWriteCmd.FullCommand():
 		os.Exit(checkErr(benchmarkWrite(*benchWriteOutPath, *benchSamplesFile, *benchWriteNumMetrics, *benchWriteNumScrapes)))
