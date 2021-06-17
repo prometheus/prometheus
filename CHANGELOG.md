@@ -3,7 +3,7 @@
 
 [CHANGE]: UI: Make the new experimental PromQL editor the default. #8925
 [FEATURE]: Linode Discovery: Add Linode service discovery. #8846
-[FEATURE]: HTTP Discovery: Add generic HTTP-based service discovery. #8839
+[FEATURE]: HTTP SD: Add generic HTTP-based service discovery. #8839
 [FEATURE]: Kubernetes Discovery: Allow configuring API Server access via a kubeconfig file. #8811
 [FEATURE]: UI: Add exemplar display support to the graphing interface. #8832 #8945
 [FEATURE]: Scrape: Add experimental `body_size_limit` scrape configuration setting to limit the allowed response body size for target scrapes. #8833 #8886
