@@ -17,6 +17,17 @@ describe('Starting', () => {
       expect(progress).toHaveLength(0);
     });
 
+    it('shows progress bar when max is not 0', () => {
+      const status: WALReplayData = {
+        min: 0,
+        max: 1,
+        current: 0,
+      };
+      const starting = shallow(<StartingContent status={status} isUnexpected={false} />);
+      const progress = starting.find(Progress);
+      expect(progress).toHaveLength(1);
+    });
+
     it('renders progress correctly', () => {
       const status: WALReplayData = {
         min: 0,
