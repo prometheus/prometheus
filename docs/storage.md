@@ -168,6 +168,7 @@ When a new recording rule is created, there is no historical data for it. Record
 To see all options, use: `$ promtool tsdb create-blocks-from rules --help`.
 
 Example usage:
+
 ```
 $ promtool tsdb create-blocks-from rules \
     --start 1617079873 \
