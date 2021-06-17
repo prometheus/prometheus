@@ -98,8 +98,8 @@ func TestCheckSDFile(t *testing.T) {
 		},
 		{
 			name: "bad file extension",
-			file: "./testdata/bad-sd-file-extension.",
-			err:  "invalid file extension: \".\"",
+			file: "./testdata/bad-sd-file-extension.nonexistant",
+			err:  "invalid file extension: \".nonexistant\"",
 		},
 		{
 			name: "bad format",
