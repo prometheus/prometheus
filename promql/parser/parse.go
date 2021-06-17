@@ -290,7 +290,7 @@ func (p *parser) recover(errp *error) {
 // the generated and non-generated parts to work together with regards to lookahead
 // and error handling.
 //
-// For more information, see https://godoc.org/golang.org/x/tools/cmd/goyacc.
+// For more information, see https://pkg.go.dev/golang.org/x/tools/cmd/goyacc.
 func (p *parser) Lex(lval *yySymType) int {
 	var typ ItemType
 
@@ -331,7 +331,7 @@ func (p *parser) Lex(lval *yySymType) int {
 //
 // It is a no-op since the parsers error routines are triggered
 // by mechanisms that allow more fine-grained control
-// For more information, see https://godoc.org/golang.org/x/tools/cmd/goyacc.
+// For more information, see https://pkg.go.dev/golang.org/x/tools/cmd/goyacc.
 func (p *parser) Error(e string) {
 }
 

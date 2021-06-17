@@ -1,6 +1,6 @@
 # TSDB 
 
-[![GoDoc](https://godoc.org/github.com/prometheus/prometheus/tsdb?status.svg)](https://godoc.org/github.com/prometheus/prometheus/tsdb)
+[![GoPkg](https://pkg.go.dev/badge/github.com/prometheus/prometheus/tsdb.svg)](https://pkg.go.dev/github.com/prometheus/prometheus/tsdb)
 
 This directory contains the Prometheus storage layer that is used in its 2.x releases.
 
