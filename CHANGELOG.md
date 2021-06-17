@@ -1,26 +1,23 @@
-
 ## 2.28.0-rc.0 / 2021-06-17
 
-[CHANGE]: UI: Make the new experimental PromQL editor the default. #8925
-[FEATURE]: Linode Discovery: Add Linode service discovery. #8846
-[FEATURE]: HTTP SD: Add generic HTTP-based service discovery. #8839
-[FEATURE]: Kubernetes Discovery: Allow configuring API Server access via a kubeconfig file. #8811
-[FEATURE]: UI: Add exemplar display support to the graphing interface. #8832 #8945
-[FEATURE]: Scrape: Add experimental `body_size_limit` scrape configuration setting to limit the allowed response body size for target scrapes. #8833 #8886
-[FEATURE]: Rules: Add a new `.ExternalURL` alert field templating variable, containing the external URL of the Prometheus server. #8878
-[FEATURE]: Consul Discovery: Add namespace support for Consul Enterprise. #8900
-[FEATURE]: Kubernetes Discovery: Add ingress class name label for ingress discovery. #8916
-[FEATURE]: Consul Discovery: Support all common HTTP authentication methods by adopting Prometheus's standard HTTP client. #8926
-[FEATURE]: Promtool: Allow silencing output when importing / backfilling data. #8917
-[ENHANCEMENT]: UI: Show a startup screen with progress bar when the TSDB is not ready yet. #8662 #8908 #8909 #8946
-[ENHANCEMENT]: SD: Add a target creation failure counter `prometheus_target_sync_failed_total` and improve target creation failure handling. #8786
-[ENHANCEMENT]: TSDB: Improve validation of exemplar label set length. #8816
-[ENHANCEMENT]: TSDB: Add a `prometheus_tsdb_clean_start` metric that indicates whether a TSDB lockfile from a previous run still existed upon startup. #8824
-[ENHANCEMENT]: TSDB: Add stricter validation for WAL segments being sequential. #8859
-[ENHANCEMENT]: UI: Improve graph info tooltip for series and exemplars. #8929
-[BUGFIX]: UI: In the experimental PromQL editor, fix autocompletion and parsing for special float values and improve series metadata fetching. #8856
-[BUGFIX]: TSDB: When merging chunks, split resulting chunks if they would contain more than the maximum of 120 samples. #8582
-[BUGFIX]: SD: Fix the computation of the `prometheus_sd_discovered_targets` metric when using multiple service discoveries. #8828
+* [CHANGE] UI: Make the new experimental PromQL editor the default. #8925
+* [FEATURE] Linode SD: Add Linode service discovery. #8846
+* [FEATURE] HTTP SD: Add generic HTTP-based service discovery. #8839
+* [FEATURE] Kubernetes SD: Allow configuring API Server access via a kubeconfig file. #8811
+* [FEATURE] UI: Add exemplar display support to the graphing interface. #8832 #8945 #8929
+* [FEATURE] Scrape: Add experimental `body_size_limit` scrape configuration setting to limit the allowed response body size for target scrapes. #8833 #8886
+* [FEATURE] Rules: Add a new `.ExternalURL` alert field templating variable, containing the external URL of the Prometheus server. #8878
+* [FEATURE] Consul SD: Add namespace support for Consul Enterprise. #8900
+* [FEATURE] Kubernetes SD: Add ingress class name label for ingress discovery. #8916
+* [FEATURE] Consul SD: Support reading tokens from file. #8926
+* [FEATURE] Promtool: Allow silencing output when importing / backfilling data. #8917
+* [ENHANCEMENT] UI: Show a startup screen with progress bar when the TSDB is not ready yet. #8662 #8908 #8909 #8946
+* [ENHANCEMENT] SD: Add a target creation failure counter `prometheus_target_sync_failed_total` and improve target creation failure handling. #8786
+* [ENHANCEMENT] TSDB: Improve validation of exemplar label set length. #8816
+* [ENHANCEMENT] TSDB: Add a `prometheus_tsdb_clean_start` metric that indicates whether a TSDB lockfile from a previous run still existed upon startup. #8824
+* [BUGFIX] UI: In the experimental PromQL editor, fix autocompletion and parsing for special float values and improve series metadata fetching. #8856
+* [BUGFIX] TSDB: When merging chunks, split resulting chunks if they would contain more than the maximum of 120 samples. #8582
+* [BUGFIX] SD: Fix the computation of the `prometheus_sd_discovered_targets` metric when using multiple service discoveries. #8828
 
 ## 2.27.1 / 2021-05-18
 
