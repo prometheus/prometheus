@@ -409,8 +409,7 @@ func checkSDFile(filename string) error {
 func checkSDOutput(targetGroups []*targetgroup.Group) ([]*targetgroup.Group, error) {
 	for i, tg := range targetGroups {
 		if tg == nil {
-			err := errors.Errorf("nil target group item found (index %v)", i)
-			return nil, err
+			return nil, errors.Errorf("nil target group item found (index %v)", i)
 		}
 
 		if tg.Labels == nil {
