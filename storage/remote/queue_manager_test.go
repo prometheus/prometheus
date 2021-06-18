@@ -180,7 +180,7 @@ func TestMetadataDelivery(t *testing.T) {
 
 	m.AppendMetadata(context.Background(), metadata)
 
-	require.Equal(t, len(c.receivedMetadata), numMetadata)
+	require.Equal(t, numMetadata, len(c.receivedMetadata))
 	// One more write than the rounded qoutient should be performed in order to get samples that didn't
 	// fit into MaxSamplesPerSend.
 	require.Equal(t, numMetadata/mcfg.MaxSamplesPerSend+1, c.writes)
