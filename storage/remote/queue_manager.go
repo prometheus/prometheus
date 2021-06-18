@@ -443,11 +443,21 @@ func (t *QueueManager) AppendMetadata(ctx context.Context, metadata []scrape.Met
 		})
 	}
 
-	err := t.sendMetadataWithBackoff(ctx, mm)
-
-	if err != nil {
-		t.metrics.failedMetadataTotal.Add(float64(len(metadata)))
-		level.Error(t.logger).Log("msg", "non-recoverable error while sending metadata", "count", len(metadata), "err", err)
+	var i int
+	for i = 0; i < len(metadata)/t.mcfg.MaxSamplesPerSend; i++ {
+		err := t.sendMetadataWithBackoff(ctx, mm[i*t.mcfg.MaxSamplesPerSend:(i+1)*t.mcfg.MaxSamplesPerSend])
+		if err != nil {
+			t.metrics.failedMetadataTotal.Add(float64(t.mcfg.MaxSamplesPerSend))
+			level.Error(t.logger).Log("msg", "non-recoverable error while sending metadata", "count", t.mcfg.MaxSamplesPerSend, "err", err)
+		}
+	}
+	if len(metadata)%t.mcfg.MaxSamplesPerSend != 0 {
+		// If the metadata samples don't fit evenly into MaxSamplesPerSend, there will be some left over.
+		err := t.sendMetadataWithBackoff(ctx, mm[i*t.mcfg.MaxSamplesPerSend:])
+		if err != nil {
+			t.metrics.failedMetadataTotal.Add(float64(len(metadata) % t.mcfg.MaxSamplesPerSend))
+			level.Error(t.logger).Log("msg", "non-recoverable error while sending metadata", "count", len(metadata)%t.mcfg.MaxSamplesPerSend, "err", err)
+		}
 	}
 }
 
