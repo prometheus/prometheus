@@ -402,22 +402,13 @@ func checkSDFile(filename string) error {
 		return errors.Errorf("invalid file extension: %q", ext)
 	}
 
-	_, err = checkSDOutput(targetGroups)
-	return err
-}
-
-func checkSDOutput(targetGroups []*targetgroup.Group) ([]*targetgroup.Group, error) {
 	for i, tg := range targetGroups {
 		if tg == nil {
-			return nil, errors.Errorf("nil target group item found (index %v)", i)
+			return errors.Errorf("nil target group item found (index %v)", i)
 		}
-
-		if tg.Labels == nil {
-			tg.Labels = model.LabelSet{}
-		}
-		tg.Labels["__<filepath or url>"] = "<path or URL of your targets>"
 	}
-	return targetGroups, nil
+
+	return nil
 }
 
 // CheckRules validates rule files.
