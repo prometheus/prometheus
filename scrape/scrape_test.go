@@ -1825,7 +1825,7 @@ func TestScrapeLoopOutOfBoundsTimeError(t *testing.T) {
 func TestTargetScraperScrapeOK(t *testing.T) {
 	const (
 		configTimeout   = 1500 * time.Millisecond
-		expectedTimeout = "1.500000"
+		expectedTimeout = "1.5"
 	)
 
 	server := httptest.NewServer(
