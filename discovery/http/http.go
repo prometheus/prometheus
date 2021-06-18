@@ -21,6 +21,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"strconv"
 	"time"
 
 	"github.com/go-kit/log"
@@ -136,7 +137,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	}
 	req.Header.Set("User-Agent", userAgent)
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("X-Prometheus-Refresh-Interval-Seconds", fmt.Sprintf("%f", d.refreshInterval.Seconds()))
+	req.Header.Set("X-Prometheus-Refresh-Interval-Seconds", strconv.FormatFloat(d.refreshInterval.Seconds(), 'f', -1, 64))
 
 	resp, err := d.client.Do(req.WithContext(ctx))
 	if err != nil {
