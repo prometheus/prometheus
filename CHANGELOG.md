@@ -1,3 +1,24 @@
+## 2.28.0-rc.0 / 2021-06-18
+
+* [CHANGE] UI: Make the new experimental PromQL editor the default. #8925
+* [FEATURE] Linode SD: Add Linode service discovery. #8846
+* [FEATURE] HTTP SD: Add generic HTTP-based service discovery. #8839
+* [FEATURE] Kubernetes SD: Allow configuring API Server access via a kubeconfig file. #8811
+* [FEATURE] UI: Add exemplar display support to the graphing interface. #8832 #8945 #8929
+* [FEATURE] Consul SD: Add namespace support for Consul Enterprise. #8900
+* [ENHANCEMENT] Promtool: Allow silencing output when importing / backfilling data. #8917
+* [ENHANCEMENT] Consul SD: Support reading tokens from file. #8926
+* [ENHANCEMENT] Rules: Add a new `.ExternalURL` alert field templating variable, containing the external URL of the Prometheus server. #8878
+* [ENHANCEMENT] Scrape: Add experimental `body_size_limit` scrape configuration setting to limit the allowed response body size for target scrapes. #8833 #8886
+* [ENHANCEMENT] Kubernetes SD: Add ingress class name label for ingress discovery. #8916
+* [ENHANCEMENT] UI: Show a startup screen with progress bar when the TSDB is not ready yet. #8662 #8908 #8909 #8946
+* [ENHANCEMENT] SD: Add a target creation failure counter `prometheus_target_sync_failed_total` and improve target creation failure handling. #8786
+* [ENHANCEMENT] TSDB: Improve validation of exemplar label set length. #8816
+* [ENHANCEMENT] TSDB: Add a `prometheus_tsdb_clean_start` metric that indicates whether a TSDB lockfile from a previous run still existed upon startup. #8824
+* [BUGFIX] UI: In the experimental PromQL editor, fix autocompletion and parsing for special float values and improve series metadata fetching. #8856
+* [BUGFIX] TSDB: When merging chunks, split resulting chunks if they would contain more than the maximum of 120 samples. #8582
+* [BUGFIX] SD: Fix the computation of the `prometheus_sd_discovered_targets` metric when using multiple service discoveries. #8828
+
 ## 2.27.1 / 2021-05-18
 
 This release contains a bug fix for a security issue in the API endpoint. An
@@ -114,7 +135,7 @@ Alertmanager API v2 was released in Alertmanager v0.16.0 (released in January
 * [ENHANCEMENT] SD: Expose IPv6 as a label in EC2 SD. #7086
 * [ENHANCEMENT] SD: Reuse EC2 client, reducing frequency of requesting credentials. #8311
 * [ENHANCEMENT] TSDB: Add logging when compaction takes more than the block time range. #8151
-* [ENHANCEMENT] TSDB: Avoid unnecessary GC runs after compaction. #8276 
+* [ENHANCEMENT] TSDB: Avoid unnecessary GC runs after compaction. #8276
 * [BUGFIX] HTTP API: Avoid double-closing of channel when quitting multiple times via HTTP. #8242
 * [BUGFIX] SD: Ignore CNAME records in DNS SD to avoid spurious `Invalid SRV record` warnings. #8216
 * [BUGFIX] SD: Avoid config error triggered by valid label selectors in Kubernetes SD. #8285
@@ -134,7 +155,7 @@ Alertmanager API v2 was released in Alertmanager v0.16.0 (released in January
 * [ENHANCEMENT] Remote write: Added a metric `prometheus_remote_storage_max_samples_per_send` for remote write. #8102
 * [ENHANCEMENT] TSDB: Make the snapshot directory name always the same length. #8138
 * [ENHANCEMENT] TSDB: Create a checkpoint only once at the end of all head compactions. #8067
-* [ENHANCEMENT] TSDB: Avoid Series API from hitting the chunks. #8050 
+* [ENHANCEMENT] TSDB: Avoid Series API from hitting the chunks. #8050
 * [ENHANCEMENT] TSDB: Cache label name and last value when adding series during compactions making compactions faster. #8192
 * [ENHANCEMENT] PromQL: Improved performance of Hash method making queries a bit faster. #8025
 * [ENHANCEMENT] promtool: `tsdb list` now prints block sizes. #7993
@@ -246,7 +267,7 @@ This release changes WAL compression from opt-in to default. WAL compression wil
 * [ENHANCEMENT] UI: Display dates as well as timestamps in status page. #7544
 * [ENHANCEMENT] UI: Improved scrolling when following hash-fragment links. #7456
 * [ENHANCEMENT] UI: React UI renders numbers in alerts in a more human-readable way. #7426
-* [BUGFIX] API: Fixed error status code in the query API. #7435 
+* [BUGFIX] API: Fixed error status code in the query API. #7435
 * [BUGFIX] PromQL: Fixed `avg` and `avg_over_time` for NaN, Inf, and float64 overflows. #7346
 * [BUGFIX] PromQL: Fixed off-by-one error in `histogram_quantile`. #7393
 * [BUGFIX] promtool: Support extended durations in rules unit tests. #6297
@@ -278,8 +299,8 @@ This release changes WAL compression from opt-in to default. WAL compression wil
 * [ENHANCEMENT] Increased alert resend delay to be more tolerant towards failures. #7228
 * [ENHANCEMENT] Remote Read: Added `prometheus_remote_storage_remote_read_queries_total` counter to count total number of remote read queries. #7328
 * [ENHANCEMEMT] Added time range parameters for label names and label values API. #7288
-* [ENHANCEMENT] TSDB: Reduced contention in isolation for high load. #7332 
-* [BUGFIX] PromQL: Eliminated collision while checking for duplicate labels. #7058 
+* [ENHANCEMENT] TSDB: Reduced contention in isolation for high load. #7332
+* [BUGFIX] PromQL: Eliminated collision while checking for duplicate labels. #7058
 * [BUGFIX] React UI: Don't null out data when clicking on the current tab. #7243
 * [BUGFIX] PromQL: Correctly track number of samples for a query. #7307
 * [BUGFIX] PromQL: Return NaN when histogram buckets have 0 observations. #7318
