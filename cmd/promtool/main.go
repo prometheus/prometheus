@@ -14,10 +14,12 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"math"
 	"net/http"
@@ -53,6 +55,7 @@ import (
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/scrape"
 )
 
@@ -86,6 +89,7 @@ func main() {
 		"The rule files to check.",
 	).Required().ExistingFiles()
 
+	checkExpressionsCmd := checkCmd.Command("expressions", checkExpressionsUsage)
 	checkMetricsCmd := checkCmd.Command("metrics", checkMetricsUsage)
 	agentMode := checkConfigCmd.Flag("agent", "Check config file for Prometheus in Agent mode.").Bool()
 
@@ -221,6 +225,9 @@ func main() {
 
 	case checkMetricsCmd.FullCommand():
 		os.Exit(CheckMetrics())
+
+	case checkExpressionsCmd.FullCommand():
+		os.Exit(CheckExpressions(os.Stdin, os.Stderr))
 
 	case queryInstantCmd.FullCommand():
 		os.Exit(QueryInstant(*queryInstantServer, *queryInstantExpr, *queryInstantTime, p))
@@ -603,6 +610,16 @@ $ cat metrics.prom | promtool check metrics
 $ curl -s http://localhost:9090/metrics | promtool check metrics
 `)
 
+var checkExpressionsUsage = strings.TrimSpace(`
+Pass Prometheus expressions over stdin to check if they are valid.
+
+Each line is considered a separate expression.
+
+examples:
+
+$ cat expressions.prom | promtool check expressions
+`)
+
 // CheckMetrics performs a linting pass on input metrics.
 func CheckMetrics() int {
 	l := promlint.New(os.Stdin)
@@ -614,6 +631,36 @@ func CheckMetrics() int {
 
 	for _, p := range problems {
 		fmt.Fprintln(os.Stderr, p.Metric, p.Text)
+	}
+
+	if len(problems) > 0 {
+		return 3
+	}
+
+	return 0
+}
+
+// CheckExpressions checks if input expressions are valid.
+func CheckExpressions(r io.Reader, w io.Writer) int {
+	scanner := bufio.NewScanner(r)
+	var expr string
+	var problems []error
+
+	for scanner.Scan() {
+		expr = scanner.Text()
+		if expr == "" {
+			problems = append(problems, errors.Errorf("invalid 'expr': cannot be empty"))
+		} else if _, err := parser.ParseExpr(expr); err != nil {
+			problems = append(problems, errors.Errorf("invalid 'expr', cannot be parsed: %s", expr))
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		problems = append(problems, errors.Errorf("could not read input stream: %s", err))
+	}
+
+	for _, p := range problems {
+		fmt.Fprintln(w, p)
 	}
 
 	if len(problems) > 0 {

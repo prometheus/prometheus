@@ -14,10 +14,12 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
@@ -64,6 +66,37 @@ func TestQueryInstant(t *testing.T) {
 	require.Equal(t, "up", form.Get("query"))
 	require.Equal(t, "300", form.Get("time"))
 	require.Equal(t, 0, exitCode)
+}
+
+func TestCheckExpressions(t *testing.T) {
+	emptyError := "invalid 'expr': cannot be empty\n"
+	invalidExprError := "invalid 'expr', cannot be parsed: rate()\n"
+
+	tests := []struct {
+		in               string
+		expectedProblems string
+		returnCode       int
+	}{
+		{"\n", emptyError, 3},
+		{"rate()", invalidExprError, 3},
+		{"my_counter", "", 0},
+		{"rate(my_counter[5m])", "", 0},
+		{"my_counter1\nmy_counter2", "", 0},
+		{"\nmy_counter\nrate()", emptyError + invalidExprError, 3},
+	}
+
+	for i, tc := range tests {
+		var b bytes.Buffer
+		gotReturnCode := CheckExpressions(strings.NewReader(tc.in), &b)
+		if gotReturnCode != tc.returnCode {
+			t.Errorf("Test %d: Expected return code: %d but got: %d", i, tc.returnCode, gotReturnCode)
+		}
+
+		gotOutput := b.String()
+		if gotOutput != tc.expectedProblems {
+			t.Errorf("Test %d: Expected output: %s but got: %s", i, tc.expectedProblems, gotOutput)
+		}
+	}
 }
 
 func mockServer(code int, body string) (*httptest.Server, func() *http.Request) {
