@@ -114,7 +114,7 @@ func TestCheckSDFile(t *testing.T) {
 				require.Equalf(t, test.err, err.Error(), "Expected error %q, got %q", test.err, err.Error())
 				return
 			}
-			require.NoErrorf(t, err, "Got error %q, expected none", err)
+			require.NoError(t, err)
 		})
 	}
 }

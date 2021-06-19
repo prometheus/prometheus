@@ -404,7 +404,7 @@ func checkSDFile(filename string) error {
 
 	for i, tg := range targetGroups {
 		if tg == nil {
-			return errors.Errorf("nil target group item found (index %v)", i)
+			return errors.Errorf("nil target group item found (index %d)", i)
 		}
 	}
 
