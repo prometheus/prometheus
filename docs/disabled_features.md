@@ -1,6 +1,6 @@
 ---
 title: Disabled Features
-sort_rank: 10
+sort_rank: 11
 ---
 
 # Disabled Features
