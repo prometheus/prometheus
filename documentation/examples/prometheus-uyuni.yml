@@ -10,7 +10,7 @@ scrape_configs:
   # Discover Uyuni managed targets to scrape.
   - job_name: 'uyuni'
 
-    # Scrape Eureka itself to discover new services.
+    # Scrape Uyuni itself to discover new services.
     uyuni_sd_configs:
       - server: http://uyuni-project.org
         user: gopher

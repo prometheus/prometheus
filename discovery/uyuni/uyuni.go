@@ -48,7 +48,7 @@ const (
 // DefaultSDConfig is the default Uyuni SD configuration.
 var DefaultSDConfig = SDConfig{
 	Entitlement:     "monitoring_entitled",
-	GroupsSeparator: ",",
+	Separator:       ",",
 	RefreshInterval: model.Duration(1 * time.Minute),
 }
 
@@ -58,12 +58,13 @@ func init() {
 
 // SDConfig is the configuration for Uyuni based service discovery.
 type SDConfig struct {
-	Host            string         `yaml:"host"`
-	Username        string         `yaml:"username"`
-	Password        config.Secret  `yaml:"password"`
-	Entitlement     string         `yaml:"entitlement,omitempty"`
-	GroupsSeparator string         `yaml:"groups_separator,omitempty"`
-	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
+	Host             config.URL              `yaml:"host"`
+	Username         string                  `yaml:"username"`
+	Password         config.Secret           `yaml:"password"`
+	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
+	Entitlement      string                  `yaml:"entitlement,omitempty"`
+	Separator        string                  `yaml:"separator,omitempty"`
+	RefreshInterval  model.Duration          `yaml:"refresh_interval,omitempty"`
 }
 
 // Uyuni API Response structures
@@ -113,10 +114,10 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err != nil {
 		return err
 	}
-	if c.Host == "" {
+	if c.Host.URL == nil {
 		return errors.New("Uyuni SD configuration requires a host")
 	}
-	_, err = url.ParseRequestURI(c.Host + uyuniXMLRPCAPIPath)
+	_, err = url.ParseRequestURI(c.Host.String())
 	if err != nil {
 		return errors.Wrap(err, "Uyuni Server URL is not valid")
 	}
@@ -210,17 +211,16 @@ func (d *Discovery) getEndpointLabels(
 	networkInfo networkInfo,
 ) model.LabelSet {
 
-	var hostname string
 	var addr string
 	managedGroupNames := getSystemGroupNames(systemGroupIDs)
-	addr = fmt.Sprintf("%s:%d", hostname, endpoint.Port)
+	addr = fmt.Sprintf("%s:%d", networkInfo.Hostname, endpoint.Port)
 
 	result := model.LabelSet{
 		model.AddressLabel:       model.LabelValue(addr),
 		uyuniLabelMinionHostname: model.LabelValue(networkInfo.Hostname),
 		uyuniLabelPrimaryFQDN:    model.LabelValue(networkInfo.PrimaryFQDN),
 		uyuniLablelSystemID:      model.LabelValue(fmt.Sprintf("%d", endpoint.SystemID)),
-		uyuniLablelGroups:        model.LabelValue(strings.Join(managedGroupNames, d.sdConfig.GroupsSeparator)),
+		uyuniLablelGroups:        model.LabelValue(strings.Join(managedGroupNames, d.sdConfig.Separator)),
 		uyuniLablelEndpointName:  model.LabelValue(endpoint.EndpointName),
 		uyuniLablelExporter:      model.LabelValue(endpoint.ExporterName),
 		uyuniLabelProxyModule:    model.LabelValue(endpoint.Module),
@@ -276,12 +276,6 @@ func (d *Discovery) getTargetsForSystems(
 			systemGroupIDsBySystemID[systemID],
 			networkInfoBySystemID[systemID])
 		result = append(result, labels)
-
-		if networkInfoBySystemID[systemID].Hostname != "" {
-			level.Debug(d.logger).Log("msg", "Found endpoint",
-				"Host", networkInfoBySystemID[systemID].Hostname,
-				"PrimaryFQDN", networkInfoBySystemID[systemID].PrimaryFQDN)
-		}
 	}
 
 	return result, nil
@@ -289,9 +283,15 @@ func (d *Discovery) getTargetsForSystems(
 
 func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	cfg := d.sdConfig
-	apiURL := cfg.Host + uyuniXMLRPCAPIPath
+	apiURL := cfg.Host
+	apiURL.Path += uyuniXMLRPCAPIPath
 
-	rpcClient, err := xmlrpc.NewClient(apiURL, nil)
+	rt, err := config.NewRoundTripperFromConfig(cfg.HTTPClientConfig, "uyuni_sd", config.WithHTTP2Disabled())
+	if err != nil {
+		return nil, err
+	}
+
+	rpcClient, err := xmlrpc.NewClient(apiURL.String(), rt)
 	if err != nil {
 		return nil, err
 	}
@@ -315,5 +315,5 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	targets := make([]model.LabelSet, 0)
 	targets = append(targets, targetsForSystems...)
 
-	return []*targetgroup.Group{{Targets: targets, Source: cfg.Host}}, nil
+	return []*targetgroup.Group{{Targets: targets, Source: apiURL.String()}}, nil
 }
