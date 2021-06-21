@@ -2267,8 +2267,8 @@ password: <secret>
 # The entitlement string to filter eligible systems.
 [ entitlement: <string> | default = monitoring_entitled ]
 
-#The string by which Uyuni group names are joined into the groups label.
-[ groups_separator: <string> | default = ,]
+# The string by which Uyuni group names are joined into the groups label.
+[ separator: <string> | default = ,]
 
 # Refresh interval to re-read the managed targets list.
 [ refresh_interval: <duration> | default = 60s ]
