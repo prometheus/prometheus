@@ -234,7 +234,7 @@ func (ce *CircularExemplarStorage) Resize(l int) int {
 		count = l
 	}
 
-	// Rewind previous next index by count with wrap-around
+	// Rewind previous next index by count with wrap-around.
 	startIndex := (oldNextIndex - count + len(oldBuffer)) % len(oldBuffer)
 
 	migrated := 0
