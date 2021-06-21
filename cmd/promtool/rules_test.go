@@ -27,6 +27,7 @@ import (
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
+	p_value "github.com/prometheus/prometheus/pkg/value"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/require"
 )
@@ -210,47 +211,40 @@ func createMultiRuleTestFiles(path string) error {
 
 const evalInterval = 60 * time.Second
 
-func createMockStaleMetrics(ts time.Time) []*model.SampleStream {
+func createMockStaleMetricsSingleSeries(ts time.Time) []*model.SampleStream {
 	return []*model.SampleStream{
 		{
 			Metric: model.Metric{"metric1": "metric1val1"},
 			Values: []model.SamplePair{
 				{
-					Timestamp: model.Time(ts.Unix()),
+					Timestamp: model.TimeFromUnixNano(ts.UnixNano()),
 					Value:     1,
 				},
 				{
-					// not stale
-					Timestamp: model.Time(ts.Add(1 * evalInterval).Unix()),
+					Timestamp: model.TimeFromUnixNano(ts.Add(1 * evalInterval).UnixNano()),
 					Value:     2,
 				},
+				// there stale marker should be inserted between these 2 because the next sample is more than 1 step after
 				{
-					// stale within 1 sample and 1 block
-					Timestamp: model.Time(ts.Add(5 * evalInterval).Unix()),
+					Timestamp: model.TimeFromUnixNano(ts.Add(5 * evalInterval).UnixNano()),
 					Value:     3,
 				},
 				{
-					// This end time is before ruleimporter end time and a stale nan should get inserted after
-					Timestamp: model.Time(ts.Add(6 * evalInterval).Unix()),
+					Timestamp: model.TimeFromUnixNano(ts.Add(6 * evalInterval).UnixNano()),
 					Value:     4,
+				},
+				{
+					Timestamp: model.TimeFromUnixNano(ts.Add(7 * evalInterval).UnixNano()),
+					Value:     5,
+				},
+				{
+					// There should be a stale marker inserted before and after this sample because its in a new block more than 1 step away
+					// and because it is the last sample and it occurs before the backfilling end time.
+					Timestamp: model.TimeFromUnixNano(ts.Add(time.Duration(tsdb.DefaultBlockDuration)*time.Millisecond + 8*evalInterval).UnixNano()),
+					Value:     6,
 				},
 			},
 		},
-		// {
-		// 	Metric: model.Metric{"metric2": "metric2value1"},
-		// 	Values: []model.SamplePair{
-		// 		{
-		// 			// stale between different series in the same block
-		// 			Timestamp: model.Time(ts.Add(8 * evalInterval).Unix()),
-		// 			Value:     1,
-		// 		},
-		// 		{
-		// 			// not stale
-		// 			Timestamp: model.Time(ts.Add(9 * evalInterval).Unix()),
-		// 			Value:     1,
-		// 		},
-		// 	},
-		// },
 	}
 }
 
@@ -258,7 +252,7 @@ func TestRuleImporterStale(t *testing.T) {
 	var (
 		start    = time.Date(2009, time.November, 6, 1, 34, 0, 0, time.UTC)
 		end      = start.Add(4 * time.Hour)
-		testTime = start.Add(2 * time.Hour)
+		testTime = start.Add(1 * time.Hour)
 	)
 
 	var testCases = []struct {
@@ -266,14 +260,14 @@ func TestRuleImporterStale(t *testing.T) {
 		expectedBlockCount  int
 		expectedSeriesCount int
 		expectedSampleCount int
+		expectedStaleCount  int
+		expectedStaleOrder  []int
 		samples             []*model.SampleStream
 	}{
-		{"stale within block", 3, 1, 5, createMockStaleMetrics(testTime)},
-		//{"stale between blocks", 8, 4, 4, []*model.SampleStream{{Metric: model.Metric{"name1": "val1"}, Values: []model.SamplePair{{Timestamp: testTime, Value: testValue}}}}},
+		{"stale within 1 series", 2, 1, 9, 3, []int{0, 0, 1, 0, 0, 0, 1, 0, 1}, createMockStaleMetricsSingleSeries(testTime)},
 	}
 
-	for i, tt := range testCases {
-		fmt.Println("test:", i)
+	for _, tt := range testCases {
 		t.Run(tt.name, func(t *testing.T) {
 			// setup test
 			tmpDir, err := ioutil.TempDir("", "backfilldata")
@@ -305,29 +299,44 @@ func TestRuleImporterStale(t *testing.T) {
 			require.NoError(t, err)
 
 			blocks := db.Blocks()
-			require.Equal(t, tt.expectedBlockCount, len(blocks))
+			require.GreaterOrEqual(t, len(blocks), tt.expectedBlockCount)
 
 			q, err := db.Querier(context.Background(), math.MinInt64, math.MaxInt64)
 			require.NoError(t, err)
 
 			// Check that the correct staleNaNs are present
 			selectedSeries := q.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "", ".*"))
-			var seriesCount, samplesCount int
+			var seriesCount, samplesCount, staleCount int
 			for selectedSeries.Next() {
 				seriesCount++
 				series := selectedSeries.At()
-				fmt.Println("series:", series)
 
 				it := series.Iterator()
+				actualStaleOrder := []int{}
 				for it.Next() {
 					samplesCount++
 					ts, v := it.At()
-					fmt.Println("sample:", ts, v)
+					fmt.Println("ts:", ts, "v:", v)
+					if p_value.IsStaleNaN(v) {
+						staleCount++
+						actualStaleOrder = append(actualStaleOrder, 1)
+					} else {
+						actualStaleOrder = append(actualStaleOrder, 0)
+					}
 				}
 				require.NoError(t, it.Err())
 				require.NoError(t, selectedSeries.Err())
 				require.Equal(t, tt.expectedSeriesCount, seriesCount)
 				require.Equal(t, tt.expectedSampleCount, samplesCount)
+				require.Equal(t, tt.expectedStaleCount, staleCount)
+				if len(tt.expectedStaleOrder) != len(actualStaleOrder) {
+					t.Fatalf("expected %d, actual %d", len(tt.expectedStaleOrder), len(actualStaleOrder))
+				}
+				for i, expected := range tt.expectedStaleOrder {
+					if actualStaleOrder[i] != expected {
+						t.Fatalf("expected %d, actual %d at position %d", expected, actualStaleOrder[i], i)
+					}
+				}
 				require.NoError(t, q.Close())
 				require.NoError(t, db.Close())
 			}

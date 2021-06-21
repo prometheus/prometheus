@@ -126,10 +126,10 @@ func (c *stalenessCache) isStale(lset labels.Labels, currTs time.Time) bool {
 		c.trackStaleness(currTs, lset)
 		return false
 	}
-	if previous.ts.Before(currTs.Add(-c.step)) {
-		return true
-	}
-	return false
+	return previous.ts.Add(c.step).Before(currTs)
+}
+func (c *stalenessCache) remove(lset labels.Labels) {
+	delete(c.seriesPrev, lset.Hash())
 }
 
 // importRule queries a prometheus API to evaluate rules at times in the past.
@@ -141,12 +141,18 @@ func (importer *ruleImporter) importRule(ctx context.Context, ruleExpr, ruleName
 	// use cache for track staleness of series between blocks
 	c := newStalenessCache(grp.Interval())
 
+	var currTs, blockEndWithAlignment time.Time
+	var app *multipleAppender
+	var currentLabels labels.Labels
+	var closed bool
+	var w *tsdb.BlockWriter
+	stale := math.Float64frombits(p_value.StaleNaN)
 	for startOfBlock := blockDuration * (ruleBackfillStartMs / blockDuration); startOfBlock <= ruleBackfillEndMs; startOfBlock = startOfBlock + blockDuration {
 		endOfBlock := startOfBlock + blockDuration - 1
 
 		currStart := max(startOfBlock/int64(time.Second/time.Millisecond), ruleBackfillStart.Unix())
 		blockStartWithAlignment := grp.EvalTimestamp(time.Unix(currStart, 0).UTC().UnixNano())
-		blockEndWithAlignment := time.Unix(min(endOfBlock/int64(time.Second/time.Millisecond), ruleBackfillEnd.Unix()), 0).UTC()
+		blockEndWithAlignment = time.Unix(min(endOfBlock/int64(time.Second/time.Millisecond), ruleBackfillEnd.Unix()), 0).UTC()
 		val, warnings, err := importer.apiClient.QueryRange(ctx,
 			ruleExpr,
 			v1.Range{
@@ -168,25 +174,24 @@ func (importer *ruleImporter) importRule(ctx context.Context, ruleExpr, ruleName
 		// also need to append samples throughout the whole block range. To allow that, we
 		// pretend that the block is twice as large here, but only really add sample in the
 		// original interval later.
-		w, err := tsdb.NewBlockWriter(log.NewNopLogger(), importer.config.outputDir, 2*tsdb.DefaultBlockDuration)
+		w, err = tsdb.NewBlockWriter(log.NewNopLogger(), importer.config.outputDir, 2*tsdb.DefaultBlockDuration)
 		if err != nil {
 			return errors.Wrap(err, "new block writer")
 		}
-		var closed bool
 		defer func() {
 			if !closed {
 				err = tsdb_errors.NewMulti(err, w.Close()).Err()
 			}
 		}()
 
-		app := newMultipleAppender(ctx, w)
+		app = newMultipleAppender(ctx, w)
 		var matrix model.Matrix
 		switch val.Type() {
 		case model.ValMatrix:
 			matrix = val.(model.Matrix)
 
 			for _, sample := range matrix {
-				currentLabels := make(labels.Labels, 0, len(sample.Metric)+len(ruleLabels)+1)
+				currentLabels = make(labels.Labels, 0, len(sample.Metric)+len(ruleLabels)+1)
 				currentLabels = append(currentLabels, labels.Label{
 					Name:  labels.MetricName,
 					Value: ruleName,
@@ -203,10 +208,9 @@ func (importer *ruleImporter) importRule(ctx context.Context, ruleExpr, ruleName
 
 				// track timestamps between samples in a block to check for staleness
 				var previousTs time.Time
-				for i, value := range sample.Values {
-					currTs := value.Timestamp.Time()
+				for _, value := range sample.Values {
+					currTs = value.Timestamp.Time()
 					v := float64(value.Value)
-					stale := math.Float64frombits(p_value.StaleNaN)
 
 					// Add a stale markers when:
 					// 1) thers is a gap in data greater than the eval interval
@@ -219,6 +223,8 @@ func (importer *ruleImporter) importRule(ctx context.Context, ruleExpr, ruleName
 							if err := app.add(ctx, currentLabels, timestamp.FromTime(previousTs.Add(grp.Interval())), stale); err != nil {
 								return errors.Wrap(err, "add")
 							}
+							// remove from the stale marker cache once a sample is created for it
+							c.remove(currentLabels)
 						}
 					}
 
@@ -231,14 +237,6 @@ func (importer *ruleImporter) importRule(ctx context.Context, ruleExpr, ruleName
 
 					if err := app.add(ctx, currentLabels, timestamp.FromTime(currTs), v); err != nil {
 						return errors.Wrap(err, "add")
-					}
-
-					// insert staleNan if the last series is before the backfill end time and if this block isn't a full 2 hrs
-					nextTs := currTs.Add(grp.Interval())
-					if len(sample.Values)-1 == i && nextTs.Before(ruleBackfillEnd) && currTs.Before(blockEndWithAlignment) {
-						if err := app.add(ctx, currentLabels, timestamp.FromTime(nextTs), stale); err != nil {
-							return errors.Wrap(err, "add")
-						}
 					}
 
 					previousTs = currTs
@@ -254,9 +252,22 @@ func (importer *ruleImporter) importRule(ctx context.Context, ruleExpr, ruleName
 		if err := app.flushAndCommit(ctx); err != nil {
 			return errors.Wrap(err, "flush and commit")
 		}
-		err = tsdb_errors.NewMulti(err, w.Close()).Err()
-		closed = true
 	}
+
+	// insert staleNan at the end of all the blocks if its before the backfill end time
+	nextTs := currTs.Add(grp.Interval())
+	fmt.Println("nextTs:", nextTs.UTC())
+	fmt.Println("ruleBackfillEnd:", ruleBackfillEnd)
+	if nextTs.Before(ruleBackfillEnd) {
+		if err := app.add(ctx, currentLabels, timestamp.FromTime(nextTs), stale); err != nil {
+			return errors.Wrap(err, "add")
+		}
+	}
+	if err := app.flushAndCommit(ctx); err != nil {
+		return errors.Wrap(err, "flush and commit")
+	}
+	err = tsdb_errors.NewMulti(err, w.Close()).Err()
+	closed = true
 
 	return err
 }
