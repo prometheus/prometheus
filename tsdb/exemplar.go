@@ -257,36 +257,19 @@ func (ce *CircularExemplarStorage) Resize(l int) int {
 func (ce *CircularExemplarStorage) migrate(entry *circularBufferEntry) {
 	seriesLabels := entry.ref.seriesLabels.String()
 
-	_, ok := ce.index[seriesLabels]
+	idx, ok := ce.index[seriesLabels]
 	if !ok {
-		// Reuse index entry
-		ce.index[seriesLabels] = entry.ref
-		entry.ref.oldest = ce.nextIndex
+		idx = entry.ref
+		idx.oldest = ce.nextIndex
+		ce.index[seriesLabels] = idx
 	} else {
-		ce.exemplars[ce.index[seriesLabels].newest].next = ce.nextIndex
+		entry.ref = idx
+		ce.exemplars[idx.newest].next = ce.nextIndex
 	}
+	idx.newest = ce.nextIndex
 
-	if prev := ce.exemplars[ce.nextIndex]; prev == nil {
-		// Reuse entry
-		ce.exemplars[ce.nextIndex] = entry
-	} else {
-		// There exists exemplar already on this ce.nextIndex entry, drop it, to make place
-		// for others.
-		prevLabels := prev.ref.seriesLabels.String()
-		if prev.next == -1 {
-			// Last item for this series, remove index entry.
-			delete(ce.index, prevLabels)
-		} else {
-			ce.index[prevLabels].oldest = prev.next
-		}
-	}
-
-	// Default the next value to -1 (which we use to detect that we've iterated through all exemplars for a series in Select)
-	// since this is the first exemplar stored for this series.
-	ce.exemplars[ce.nextIndex].exemplar = entry.exemplar
-	ce.exemplars[ce.nextIndex].next = -1
-	ce.exemplars[ce.nextIndex].ref = ce.index[seriesLabels]
-	ce.index[seriesLabels].newest = ce.nextIndex
+	entry.next = -1
+	ce.exemplars[ce.nextIndex] = entry
 
 	ce.nextIndex = (ce.nextIndex + 1) % len(ce.exemplars)
 }
