@@ -16,6 +16,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"math"
 	"time"
 
 	"github.com/go-kit/log"
@@ -25,6 +26,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/timestamp"
+	p_value "github.com/prometheus/prometheus/pkg/value"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
@@ -92,22 +94,64 @@ func (importer *ruleImporter) importAll(ctx context.Context) (errs []error) {
 	return errs
 }
 
-// importRule queries a prometheus API to evaluate rules at times in the past.
-func (importer *ruleImporter) importRule(ctx context.Context, ruleExpr, ruleName string, ruleLabels labels.Labels, start, end time.Time, grp *rules.Group) (err error) {
-	blockDuration := tsdb.DefaultBlockDuration
-	startInMs := start.Unix() * int64(time.Second/time.Millisecond)
-	endInMs := end.Unix() * int64(time.Second/time.Millisecond)
+type cacheEntry struct {
+	ts   time.Time
+	lset labels.Labels
+}
 
-	for startOfBlock := blockDuration * (startInMs / blockDuration); startOfBlock <= endInMs; startOfBlock = startOfBlock + blockDuration {
+// stalenessCache tracks staleness of series between blocks of data.
+type stalenessCache struct {
+	step time.Duration
+	// seriesCur store the labels of series that were seen previous block.
+	seriesPrev map[uint64]*cacheEntry
+}
+
+func newStalenessCache(step time.Duration) *stalenessCache {
+	return &stalenessCache{
+		step:       step,
+		seriesPrev: map[uint64]*cacheEntry{},
+	}
+}
+
+func (c *stalenessCache) trackStaleness(ts time.Time, lset labels.Labels) {
+	c.seriesPrev[lset.Hash()] = &cacheEntry{
+		ts:   ts,
+		lset: lset,
+	}
+}
+
+func (c *stalenessCache) isStale(lset labels.Labels, currTs time.Time) bool {
+	previous, ok := c.seriesPrev[lset.Hash()]
+	if !ok {
+		c.trackStaleness(currTs, lset)
+		return false
+	}
+	if previous.ts.Before(currTs.Add(-c.step)) {
+		return true
+	}
+	return false
+}
+
+// importRule queries a prometheus API to evaluate rules at times in the past.
+func (importer *ruleImporter) importRule(ctx context.Context, ruleExpr, ruleName string, ruleLabels labels.Labels, ruleBackfillStart, ruleBackfillEnd time.Time, grp *rules.Group) (err error) {
+	blockDuration := tsdb.DefaultBlockDuration
+	ruleBackfillStartMs := ruleBackfillStart.Unix() * int64(time.Second/time.Millisecond)
+	ruleBackfillEndMs := ruleBackfillEnd.Unix() * int64(time.Second/time.Millisecond)
+
+	// use cache for track staleness of series between blocks
+	c := newStalenessCache(grp.Interval())
+
+	for startOfBlock := blockDuration * (ruleBackfillStartMs / blockDuration); startOfBlock <= ruleBackfillEndMs; startOfBlock = startOfBlock + blockDuration {
 		endOfBlock := startOfBlock + blockDuration - 1
 
-		currStart := max(startOfBlock/int64(time.Second/time.Millisecond), start.Unix())
-		startWithAlignment := grp.EvalTimestamp(time.Unix(currStart, 0).UTC().UnixNano())
+		currStart := max(startOfBlock/int64(time.Second/time.Millisecond), ruleBackfillStart.Unix())
+		blockStartWithAlignment := grp.EvalTimestamp(time.Unix(currStart, 0).UTC().UnixNano())
+		blockEndWithAlignment := time.Unix(min(endOfBlock/int64(time.Second/time.Millisecond), ruleBackfillEnd.Unix()), 0).UTC()
 		val, warnings, err := importer.apiClient.QueryRange(ctx,
 			ruleExpr,
 			v1.Range{
-				Start: startWithAlignment,
-				End:   time.Unix(min(endOfBlock/int64(time.Second/time.Millisecond), end.Unix()), 0).UTC(),
+				Start: blockStartWithAlignment,
+				End:   blockEndWithAlignment,
 				Step:  grp.Interval(),
 			},
 		)
@@ -134,6 +178,7 @@ func (importer *ruleImporter) importRule(ctx context.Context, ruleExpr, ruleName
 				err = tsdb_errors.NewMulti(err, w.Close()).Err()
 			}
 		}()
+
 		app := newMultipleAppender(ctx, w)
 		var matrix model.Matrix
 		switch val.Type() {
@@ -155,11 +200,52 @@ func (importer *ruleImporter) importRule(ctx context.Context, ruleExpr, ruleName
 						Value: string(value),
 					})
 				}
-				for _, value := range sample.Values {
-					if err := app.add(ctx, currentLabels, timestamp.FromTime(value.Timestamp.Time()), float64(value.Value)); err != nil {
+
+				// track timestamps between samples in a block to check for staleness
+				var previousTs time.Time
+				for i, value := range sample.Values {
+					currTs := value.Timestamp.Time()
+					v := float64(value.Value)
+					stale := math.Float64frombits(p_value.StaleNaN)
+
+					// Add a stale markers when:
+					// 1) thers is a gap in data greater than the eval interval
+					// 2) the last sample occurs before the "end"
+
+					// when previousTs is zero it means we are at the beginning of a block
+					if previousTs.IsZero() {
+						// check the staleness cache to confirm the current sample is not stale from the previous block
+						if c.isStale(currentLabels, currTs) {
+							if err := app.add(ctx, currentLabels, timestamp.FromTime(previousTs.Add(grp.Interval())), stale); err != nil {
+								return errors.Wrap(err, "add")
+							}
+						}
+					}
+
+					// insert staleNaN if there is a gap in the data greater than the eval interval
+					if previousTs.Add(grp.Interval()).Before(currTs) && !previousTs.IsZero() {
+						if err := app.add(ctx, currentLabels, timestamp.FromTime(previousTs.Add(grp.Interval())), stale); err != nil {
+							return errors.Wrap(err, "add")
+						}
+					}
+
+					if err := app.add(ctx, currentLabels, timestamp.FromTime(currTs), v); err != nil {
 						return errors.Wrap(err, "add")
 					}
+
+					// insert staleNan if the last series is before the backfill end time and if this block isn't a full 2 hrs
+					nextTs := currTs.Add(grp.Interval())
+					if len(sample.Values)-1 == i && nextTs.Before(ruleBackfillEnd) && currTs.Before(blockEndWithAlignment) {
+						if err := app.add(ctx, currentLabels, timestamp.FromTime(nextTs), stale); err != nil {
+							return errors.Wrap(err, "add")
+						}
+					}
+
+					previousTs = currTs
 				}
+
+				// add each sample to stale cache to track staleness between blocks
+				c.trackStaleness(previousTs, currentLabels)
 			}
 		default:
 			return errors.New(fmt.Sprintf("rule result is wrong type %s", val.Type().String()))

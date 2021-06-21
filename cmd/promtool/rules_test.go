@@ -15,6 +15,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"io/ioutil"
 	"math"
 	"os"
@@ -75,7 +76,7 @@ func TestBackfillRuleIntegration(t *testing.T) {
 			// Execute the test more than once to simulate running the rule importer twice with the same data.
 			// We expect duplicate blocks with the same series are created when run more than once.
 			for i := 0; i < tt.runcount; i++ {
-				ruleImporter, err := newTestRuleImporter(ctx, start, tmpDir, tt.samples)
+				ruleImporter, err := newTestRuleImporter(ctx, start.Add(-10*time.Hour), start.Add(-7*time.Hour), tmpDir, tt.samples)
 				require.NoError(t, err)
 				path1 := filepath.Join(tmpDir, "test.file")
 				require.NoError(t, createSingleRuleTestFiles(path1))
@@ -161,12 +162,12 @@ func TestBackfillRuleIntegration(t *testing.T) {
 	}
 }
 
-func newTestRuleImporter(ctx context.Context, start time.Time, tmpDir string, testSamples model.Matrix) (*ruleImporter, error) {
+func newTestRuleImporter(ctx context.Context, start, end time.Time, tmpDir string, testSamples model.Matrix) (*ruleImporter, error) {
 	logger := log.NewNopLogger()
 	cfg := ruleImporterConfig{
 		outputDir:    tmpDir,
-		start:        start.Add(-10 * time.Hour),
-		end:          start.Add(-7 * time.Hour),
+		start:        start,
+		end:          end,
 		evalInterval: 60 * time.Second,
 	}
 
@@ -205,4 +206,131 @@ func createMultiRuleTestFiles(path string) error {
         testlabel11: testlabelvalue11
 `
 	return ioutil.WriteFile(path, []byte(recordingRules), 0777)
+}
+
+const evalInterval = 60 * time.Second
+
+func createMockStaleMetrics(ts time.Time) []*model.SampleStream {
+	return []*model.SampleStream{
+		{
+			Metric: model.Metric{"metric1": "metric1val1"},
+			Values: []model.SamplePair{
+				{
+					Timestamp: model.Time(ts.Unix()),
+					Value:     1,
+				},
+				{
+					// not stale
+					Timestamp: model.Time(ts.Add(1 * evalInterval).Unix()),
+					Value:     2,
+				},
+				{
+					// stale within 1 sample and 1 block
+					Timestamp: model.Time(ts.Add(5 * evalInterval).Unix()),
+					Value:     3,
+				},
+				{
+					// This end time is before ruleimporter end time and a stale nan should get inserted after
+					Timestamp: model.Time(ts.Add(6 * evalInterval).Unix()),
+					Value:     4,
+				},
+			},
+		},
+		// {
+		// 	Metric: model.Metric{"metric2": "metric2value1"},
+		// 	Values: []model.SamplePair{
+		// 		{
+		// 			// stale between different series in the same block
+		// 			Timestamp: model.Time(ts.Add(8 * evalInterval).Unix()),
+		// 			Value:     1,
+		// 		},
+		// 		{
+		// 			// not stale
+		// 			Timestamp: model.Time(ts.Add(9 * evalInterval).Unix()),
+		// 			Value:     1,
+		// 		},
+		// 	},
+		// },
+	}
+}
+
+func TestRuleImporterStale(t *testing.T) {
+	var (
+		start    = time.Date(2009, time.November, 6, 1, 34, 0, 0, time.UTC)
+		end      = start.Add(4 * time.Hour)
+		testTime = start.Add(2 * time.Hour)
+	)
+
+	var testCases = []struct {
+		name                string
+		expectedBlockCount  int
+		expectedSeriesCount int
+		expectedSampleCount int
+		samples             []*model.SampleStream
+	}{
+		{"stale within block", 3, 1, 5, createMockStaleMetrics(testTime)},
+		//{"stale between blocks", 8, 4, 4, []*model.SampleStream{{Metric: model.Metric{"name1": "val1"}, Values: []model.SamplePair{{Timestamp: testTime, Value: testValue}}}}},
+	}
+
+	for i, tt := range testCases {
+		fmt.Println("test:", i)
+		t.Run(tt.name, func(t *testing.T) {
+			// setup test
+			tmpDir, err := ioutil.TempDir("", "backfilldata")
+			require.NoError(t, err)
+			defer func() {
+				require.NoError(t, os.RemoveAll(tmpDir))
+			}()
+			ctx := context.Background()
+
+			ruleImporter, err := newTestRuleImporter(ctx, start, end, tmpDir, tt.samples)
+			require.NoError(t, err)
+			path1 := filepath.Join(tmpDir, "test.file")
+			require.NoError(t, createSingleRuleTestFiles(path1))
+
+			errs := ruleImporter.loadGroups(ctx, []string{path1})
+			for _, err := range errs {
+				require.NoError(t, err)
+			}
+
+			// Backfill recording rules then check the blocks to confirm the correct stale markers were created.
+			errs = ruleImporter.importAll(ctx)
+			for _, err := range errs {
+				require.NoError(t, err)
+			}
+
+			opts := tsdb.DefaultOptions()
+			opts.AllowOverlappingBlocks = true
+			db, err := tsdb.Open(tmpDir, nil, nil, opts, nil)
+			require.NoError(t, err)
+
+			blocks := db.Blocks()
+			require.Equal(t, tt.expectedBlockCount, len(blocks))
+
+			q, err := db.Querier(context.Background(), math.MinInt64, math.MaxInt64)
+			require.NoError(t, err)
+
+			// Check that the correct staleNaNs are present
+			selectedSeries := q.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "", ".*"))
+			var seriesCount, samplesCount int
+			for selectedSeries.Next() {
+				seriesCount++
+				series := selectedSeries.At()
+				fmt.Println("series:", series)
+
+				it := series.Iterator()
+				for it.Next() {
+					samplesCount++
+					ts, v := it.At()
+					fmt.Println("sample:", ts, v)
+				}
+				require.NoError(t, it.Err())
+				require.NoError(t, selectedSeries.Err())
+				require.Equal(t, tt.expectedSeriesCount, seriesCount)
+				require.Equal(t, tt.expectedSampleCount, samplesCount)
+				require.NoError(t, q.Close())
+				require.NoError(t, db.Close())
+			}
+		})
+	}
 }
