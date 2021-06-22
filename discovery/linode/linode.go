@@ -56,6 +56,45 @@ const (
 	linodeLabelSpecsVCPUs         = linodeLabel + "specs_vcpus"
 	linodeLabelSpecsTransferBytes = linodeLabel + "specs_transfer_bytes"
 	linodeLabelExtraIPs           = linodeLabel + "extra_ips"
+
+	// This is our events filter; when polling for changes, we care only about
+	// events 1) since our last refresh 2) with an action that matches our list of
+	// filters. The actions listed below are all actions that will invalidate
+	// our existing data from previous refreshes. Docs:
+	// https://www.linode.com/docs/api/account/#events-list
+	filterTemplate = `{"+and": [{"created": {"+gte": "%s"}},{"+or": [` +
+		`{"action": "backups_enable"},` +
+		`{"action": "backups_cancel"},` +
+		`{"action": "backups_restore"},` +
+		`{"action": "entity_transfer_accept"},` +
+		`{"action": "entity_transfer_cancel"},` +
+		`{"action": "entity_transfer_create"},` +
+		`{"action": "entity_transfer_fail"},` +
+		`{"action": "entity_transfer_stale"},` +
+		`{"action": "host_reboot"},` +
+		`{"action": "ipaddress_update"},` +
+		`{"action": "lassie_reboot"},` +
+		`{"action": "lish_boot"},` +
+		`{"action": "linode_addip"},` +
+		`{"action": "linode_boot"},` +
+		`{"action": "linode_clone"},` +
+		`{"action": "linode_create"},` +
+		`{"action": "linode_delete"},` +
+		`{"action": "linode_update"},` +
+		`{"action": "linode_deleteip"},` +
+		`{"action": "linode_migrate_datacenter"},` +
+		`{"action": "linode_migrate_datacenter_create"},` +
+		`{"action": "linode_mutate"},` +
+		`{"action": "linode_mutate_create"},` +
+		`{"action": "linode_reboot"},` +
+		`{"action": "linode_rebuild"},` +
+		`{"action": "linode_resize"},` +
+		`{"action": "linode_resize_create"},` +
+		`{"action": "linode_shutdown"},` +
+		`{"action": "tag_create"},` +
+		`{"action": "tag_update"},` +
+		`{"action": "tag_delete"}` +
+		`]}]}`
 )
 
 // DefaultSDConfig is the default Linode SD configuration.
@@ -107,16 +146,19 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 // the Discoverer interface.
 type Discovery struct {
 	*refresh.Discovery
-	client       *linodego.Client
-	port         int
-	tagSeparator string
+	client               *linodego.Client
+	port                 int
+	tagSeparator         string
+	lastRefreshTimestamp time.Time
+	lastResults          []*targetgroup.Group
 }
 
 // NewDiscovery returns a new Discovery which periodically refreshes its targets.
 func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 	d := &Discovery{
-		port:         conf.Port,
-		tagSeparator: conf.TagSeparator,
+		port:                 conf.Port,
+		tagSeparator:         conf.TagSeparator,
+		lastRefreshTimestamp: time.Now().UTC(),
 	}
 
 	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "linode_sd", config.WithHTTP2Disabled())
@@ -143,6 +185,28 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 }
 
 func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
+	// Check to see if there have been any events that require us to refresh our data.
+	opts := linodego.NewListOptions(1, fmt.Sprintf(filterTemplate, d.lastRefreshTimestamp.Format("2006-01-02T15:04:05")))
+	events, err := d.client.ListEvents(ctx, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	// If we don't have any previous results or if any events happened that we care about, refresh data.
+	if d.lastResults == nil || len(events) > 0 {
+		newData, err := d.refreshData(ctx)
+		if err != nil {
+			return nil, err
+		}
+		d.lastResults = newData
+	}
+
+	d.lastRefreshTimestamp = time.Now().UTC()
+
+	return d.lastResults, nil
+}
+
+func (d *Discovery) refreshData(ctx context.Context) ([]*targetgroup.Group, error) {
 	tg := &targetgroup.Group{
 		Source: "Linode",
 	}

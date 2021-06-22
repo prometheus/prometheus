@@ -39,6 +39,7 @@ func (s *LinodeSDTestSuite) SetupTest(t *testing.T) {
 
 	s.Mock.HandleLinodeInstancesList()
 	s.Mock.HandleLinodeNeworkingIPs()
+	s.Mock.HandleLinodeAccountEvents()
 }
 
 func TestLinodeSDRefresh(t *testing.T) {
