@@ -58,43 +58,9 @@ const (
 	linodeLabelExtraIPs           = linodeLabel + "extra_ips"
 
 	// This is our events filter; when polling for changes, we care only about
-	// events 1) since our last refresh 2) with an action that matches our list of
-	// filters. The actions listed below are all actions that will invalidate
-	// our existing data from previous refreshes. Docs:
-	// https://www.linode.com/docs/api/account/#events-list
-	filterTemplate = `{"+and": [{"created": {"+gte": "%s"}},{"+or": [` +
-		`{"action": "backups_enable"},` +
-		`{"action": "backups_cancel"},` +
-		`{"action": "backups_restore"},` +
-		`{"action": "entity_transfer_accept"},` +
-		`{"action": "entity_transfer_cancel"},` +
-		`{"action": "entity_transfer_create"},` +
-		`{"action": "entity_transfer_fail"},` +
-		`{"action": "entity_transfer_stale"},` +
-		`{"action": "host_reboot"},` +
-		`{"action": "ipaddress_update"},` +
-		`{"action": "lassie_reboot"},` +
-		`{"action": "lish_boot"},` +
-		`{"action": "linode_addip"},` +
-		`{"action": "linode_boot"},` +
-		`{"action": "linode_clone"},` +
-		`{"action": "linode_create"},` +
-		`{"action": "linode_delete"},` +
-		`{"action": "linode_update"},` +
-		`{"action": "linode_deleteip"},` +
-		`{"action": "linode_migrate_datacenter"},` +
-		`{"action": "linode_migrate_datacenter_create"},` +
-		`{"action": "linode_mutate"},` +
-		`{"action": "linode_mutate_create"},` +
-		`{"action": "linode_reboot"},` +
-		`{"action": "linode_rebuild"},` +
-		`{"action": "linode_resize"},` +
-		`{"action": "linode_resize_create"},` +
-		`{"action": "linode_shutdown"},` +
-		`{"action": "tag_create"},` +
-		`{"action": "tag_update"},` +
-		`{"action": "tag_delete"}` +
-		`]}]}`
+	// events since our last refresh.
+	// Docs: https://www.linode.com/docs/api/account/#events-list
+	filterTemplate = `{"created": {"+gte": "%s"}}`
 )
 
 // DefaultSDConfig is the default Linode SD configuration.
@@ -185,6 +151,9 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 }
 
 func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
+	// Update the last refresh timestamp - better to have some overlap than miss something.
+	d.lastRefreshTimestamp = time.Now().UTC()
+
 	// Check to see if there have been any events that require us to refresh our data.
 	opts := linodego.NewListOptions(1, fmt.Sprintf(filterTemplate, d.lastRefreshTimestamp.Format("2006-01-02T15:04:05")))
 	events, err := d.client.ListEvents(ctx, opts)
@@ -200,8 +169,6 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		}
 		d.lastResults = newData
 	}
-
-	d.lastRefreshTimestamp = time.Now().UTC()
 
 	return d.lastResults, nil
 }
