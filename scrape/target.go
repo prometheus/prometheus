@@ -392,23 +392,28 @@ func populateLabels(lset labels.Labels, cfg *config.ScrapeConfig) (res, orig lab
 		return nil, nil, err
 	}
 
-	if interval := lset.Get(model.ScrapeIntervalLabel); interval != "" {
-		duration, err := model.ParseDuration(interval)
+	var interval string
+	var intervalDuration model.Duration
+	if interval = lset.Get(model.ScrapeIntervalLabel); interval != cfg.ScrapeInterval.String() {
+		intervalDuration, err = model.ParseDuration(interval)
 		if err != nil {
-			return nil, nil, errors.Errorf("error parsing interval: %v", err)
+			return nil, nil, errors.Errorf("error parsing scrape interval: %v", err)
 		}
-		if time.Duration(duration) == 0 {
-			return nil, nil, errors.New("interval cannot be 0")
+		if time.Duration(intervalDuration) == 0 {
+			return nil, nil, errors.New("scrape interval cannot be 0")
 		}
 	}
 
-	if timeout := lset.Get(model.ScrapeTimeoutLabel); timeout != "" {
-		duration, err := model.ParseDuration(timeout)
+	if timeout := lset.Get(model.ScrapeTimeoutLabel); timeout != cfg.ScrapeInterval.String() {
+		timeoutDuration, err := model.ParseDuration(timeout)
 		if err != nil {
-			return nil, nil, errors.Errorf("error parsing timeout: %v", err)
+			return nil, nil, errors.Errorf("error parsing scrape timeout: %v", err)
 		}
-		if time.Duration(duration) == 0 {
-			return nil, nil, errors.New("timeout cannot be 0")
+		if time.Duration(timeoutDuration) == 0 {
+			return nil, nil, errors.New("scrape timeout cannot be 0")
+		}
+		if time.Duration(timeoutDuration) > time.Duration(intervalDuration) {
+			return nil, nil, errors.Errorf("scrape timeout cannot be greater than scrape interval (%q > %q)", timeout, interval)
 		}
 	}
 

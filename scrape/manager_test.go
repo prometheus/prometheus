@@ -260,7 +260,7 @@ func TestPopulateLabels(t *testing.T) {
 			},
 			res:     nil,
 			resOrig: nil,
-			err:     "error parsing interval: not a valid duration string: \"2notseconds\"",
+			err:     "error parsing scrape interval: not a valid duration string: \"2notseconds\"",
 		},
 		// Invalid duration in timeout label.
 		{
@@ -277,7 +277,59 @@ func TestPopulateLabels(t *testing.T) {
 			},
 			res:     nil,
 			resOrig: nil,
-			err:     "error parsing timeout: not a valid duration string: \"2notseconds\"",
+			err:     "error parsing scrape timeout: not a valid duration string: \"2notseconds\"",
+		},
+		// 0 interval in timeout label.
+		{
+			in: labels.FromMap(map[string]string{
+				model.AddressLabel:        "1.2.3.4:1000",
+				model.ScrapeIntervalLabel: "0s",
+			}),
+			cfg: &config.ScrapeConfig{
+				Scheme:         "https",
+				MetricsPath:    "/metrics",
+				JobName:        "job",
+				ScrapeInterval: model.Duration(time.Second),
+				ScrapeTimeout:  model.Duration(time.Second),
+			},
+			res:     nil,
+			resOrig: nil,
+			err:     "scrape interval cannot be 0",
+		},
+		// 0 duration in timeout label.
+		{
+			in: labels.FromMap(map[string]string{
+				model.AddressLabel:       "1.2.3.4:1000",
+				model.ScrapeTimeoutLabel: "0s",
+			}),
+			cfg: &config.ScrapeConfig{
+				Scheme:         "https",
+				MetricsPath:    "/metrics",
+				JobName:        "job",
+				ScrapeInterval: model.Duration(time.Second),
+				ScrapeTimeout:  model.Duration(time.Second),
+			},
+			res:     nil,
+			resOrig: nil,
+			err:     "scrape timeout cannot be 0",
+		},
+		// Timeout less or equal to interval.
+		{
+			in: labels.FromMap(map[string]string{
+				model.AddressLabel:        "1.2.3.4:1000",
+				model.ScrapeIntervalLabel: "1s",
+				model.ScrapeTimeoutLabel:  "2s",
+			}),
+			cfg: &config.ScrapeConfig{
+				Scheme:         "https",
+				MetricsPath:    "/metrics",
+				JobName:        "job",
+				ScrapeInterval: model.Duration(time.Second),
+				ScrapeTimeout:  model.Duration(time.Second),
+			},
+			res:     nil,
+			resOrig: nil,
+			err:     "scrape timeout cannot be greater than scrape interval (\"2s\" > \"1s\")",
 		},
 	}
 	for _, c := range cases {
