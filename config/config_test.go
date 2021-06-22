@@ -946,7 +946,7 @@ var expectedConf = &Config{
 			Scheme:           DefaultScrapeConfig.Scheme,
 			ServiceDiscoveryConfigs: discovery.Configs{
 				&uyuni.SDConfig{
-					Host:            "http://example.uyuni-project.org",
+					Host:            kubernetesSDHostURL(),
 					Username:        "gopher",
 					Password:        "hole",
 					Entitlement:     "monitoring_entitled",
@@ -1039,7 +1039,7 @@ func TestElideSecrets(t *testing.T) {
 	yamlConfig := string(config)
 
 	matches := secretRe.FindAllStringIndex(yamlConfig, -1)
-	require.Equal(t, 15, len(matches), "wrong number of secret matches found")
+	require.Equal(t, 16, len(matches), "wrong number of secret matches found")
 	require.NotContains(t, yamlConfig, "mysecret",
 		"yaml marshal reveals authentication credentials.")
 }
