@@ -16,12 +16,13 @@ package uyuni
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"net/url"
 	"strings"
 	"time"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/kolo/xmlrpc"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/config"
@@ -92,9 +93,14 @@ type endpointInfo struct {
 // Discovery periodically performs Uyuni API requests. It implements the Discoverer interface.
 type Discovery struct {
 	*refresh.Discovery
-	interval time.Duration
-	sdConfig *SDConfig
-	logger   log.Logger
+	apiURL       *url.URL
+	roundTripper http.RoundTripper
+	username     string
+	password     string
+	entitlement  string
+	separator    string
+	interval     time.Duration
+	logger       log.Logger
 }
 
 // Name returns the name of the Config.
@@ -102,7 +108,7 @@ func (*SDConfig) Name() string { return "uyuni" }
 
 // NewDiscoverer returns a Discoverer for the Config.
 func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewDiscovery(c, opts.Logger), nil
+	return NewDiscovery(c, opts.Logger)
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -190,11 +196,27 @@ func getEndpointInfoForSystems(
 }
 
 // NewDiscovery returns a uyuni discovery for the given configuration.
-func NewDiscovery(conf *SDConfig, logger log.Logger) *Discovery {
+func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
+	apiURL := &url.URL{
+		Scheme: conf.Host.Scheme,
+		Host:   conf.Host.Host,
+		Path:   uyuniXMLRPCAPIPath,
+	}
+
+	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "uyuni_sd", config.WithHTTP2Disabled())
+	if err != nil {
+		return nil, err
+	}
+
 	d := &Discovery{
-		interval: time.Duration(conf.RefreshInterval),
-		sdConfig: conf,
-		logger:   logger,
+		apiURL:       apiURL,
+		roundTripper: rt,
+		username:     conf.Username,
+		password:     string(conf.Password),
+		entitlement:  conf.Entitlement,
+		separator:    conf.Separator,
+		interval:     time.Duration(conf.RefreshInterval),
+		logger:       logger,
 	}
 	d.Discovery = refresh.NewDiscovery(
 		logger,
@@ -202,7 +224,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) *Discovery {
 		time.Duration(conf.RefreshInterval),
 		d.refresh,
 	)
-	return d
+	return d, nil
 }
 
 func (d *Discovery) getEndpointLabels(
@@ -220,14 +242,12 @@ func (d *Discovery) getEndpointLabels(
 		uyuniLabelMinionHostname: model.LabelValue(networkInfo.Hostname),
 		uyuniLabelPrimaryFQDN:    model.LabelValue(networkInfo.PrimaryFQDN),
 		uyuniLablelSystemID:      model.LabelValue(fmt.Sprintf("%d", endpoint.SystemID)),
-		uyuniLablelGroups:        model.LabelValue(strings.Join(managedGroupNames, d.sdConfig.Separator)),
+		uyuniLablelGroups:        model.LabelValue(strings.Join(managedGroupNames, d.separator)),
 		uyuniLablelEndpointName:  model.LabelValue(endpoint.EndpointName),
 		uyuniLablelExporter:      model.LabelValue(endpoint.ExporterName),
 		uyuniLabelProxyModule:    model.LabelValue(endpoint.Module),
 		uyuniLabelMetricsPath:    model.LabelValue(endpoint.Path),
 	}
-
-	level.Debug(d.logger).Log("msg", "Configured target", "Labels", fmt.Sprintf("%+v", result))
 
 	return result
 }
@@ -282,22 +302,13 @@ func (d *Discovery) getTargetsForSystems(
 }
 
 func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
-	cfg := d.sdConfig
-	apiURL := cfg.Host
-	apiURL.Path += uyuniXMLRPCAPIPath
-
-	rt, err := config.NewRoundTripperFromConfig(cfg.HTTPClientConfig, "uyuni_sd", config.WithHTTP2Disabled())
-	if err != nil {
-		return nil, err
-	}
-
-	rpcClient, err := xmlrpc.NewClient(apiURL.String(), rt)
+	rpcClient, err := xmlrpc.NewClient(d.apiURL.String(), d.roundTripper)
 	if err != nil {
 		return nil, err
 	}
 	defer rpcClient.Close()
 
-	token, err := login(rpcClient, cfg.Username, string(cfg.Password))
+	token, err := login(rpcClient, d.username, d.password)
 	if err != nil {
 		return nil, errors.Wrap(err, "unable to login to Uyuni API")
 	}
@@ -307,13 +318,10 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		}
 	}()
 
-	targetsForSystems, err := d.getTargetsForSystems(rpcClient, token, cfg.Entitlement)
+	targetsForSystems, err := d.getTargetsForSystems(rpcClient, token, d.entitlement)
 	if err != nil {
 		return nil, err
 	}
 
-	targets := make([]model.LabelSet, 0)
-	targets = append(targets, targetsForSystems...)
-
-	return []*targetgroup.Group{{Targets: targets, Source: apiURL.String()}}, nil
+	return []*targetgroup.Group{{Targets: targetsForSystems, Source: d.apiURL.String()}}, nil
 }
