@@ -518,18 +518,19 @@ func (sp *scrapePool) sync(targets []*Target) {
 			// so whether changed via relabeling or not, they'll exist and hold the correct values
 			// for every target.
 			intervalLabel := t.labels.Get(model.ScrapeIntervalLabel)
-			interval, err := time.ParseDuration(intervalLabel)
+			interval, err := model.ParseDuration(intervalLabel)
 			if err != nil {
 				level.Error(sp.logger).Log("msg", "Error parsing interval label", "err", err, "value", intervalLabel)
 				continue
 			}
 			timeoutLabel := t.labels.Get(model.ScrapeTimeoutLabel)
-			timeout, err := time.ParseDuration(timeoutLabel)
+			timeout, err := model.ParseDuration(timeoutLabel)
 			if err != nil {
 				level.Error(sp.logger).Log("msg", "Error parsing timeout label", "err", err, "value", timeoutLabel)
+				continue
 			}
 
-			s := &targetScraper{Target: t, client: sp.client, timeout: timeout, bodySizeLimit: bodySizeLimit}
+			s := &targetScraper{Target: t, client: sp.client, timeout: time.Duration(timeout), bodySizeLimit: bodySizeLimit}
 			l := sp.newLoop(scrapeLoopOptions{
 				target:          t,
 				scraper:         s,
@@ -538,8 +539,8 @@ func (sp *scrapePool) sync(targets []*Target) {
 				honorLabels:     honorLabels,
 				honorTimestamps: honorTimestamps,
 				mrc:             mrc,
-				interval:        interval,
-				timeout:         timeout,
+				interval:        time.Duration(interval),
+				timeout:         time.Duration(timeout),
 			})
 
 			sp.activeTargets[hash] = t
