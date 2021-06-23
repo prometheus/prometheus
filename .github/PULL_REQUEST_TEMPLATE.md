@@ -1,7 +1,7 @@
 <!--
     Don't forget!
 
-    - Sign your commits and our DCO:  https://docs.github.com/en/github/authenticating-to-github/managing-commit-signature-verification/signing-commits
+    - Please sign CNCF's Developer Certificate of Origin and sign-off your commits by adding the -s / --sign-off flag to `git commit`. See https://github.com/apps/dco for more information.
 
     - If the PR adds or changes a behaviour or fixes a bug of an exported API it would need a unit/e2e test.
 
