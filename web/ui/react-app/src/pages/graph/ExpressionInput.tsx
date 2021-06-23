@@ -2,11 +2,11 @@ import React, { Component } from 'react';
 import { Button, InputGroup, InputGroupAddon, InputGroupText, Input } from 'reactstrap';
 
 import Downshift, { ControllerStateAndHelpers } from 'downshift';
-import fuzzy from 'fuzzy';
 import sanitizeHTML from 'sanitize-html';
 
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faSearch, faSpinner } from '@fortawesome/free-solid-svg-icons';
+import { Fuzzy, FuzzyResult } from '@nexucis/fuzzy';
 
 interface ExpressionInputProps {
   value: string;
@@ -20,6 +20,8 @@ interface ExpressionInputProps {
 interface ExpressionInputState {
   height: number | string;
 }
+
+const fuz = new Fuzzy({ pre: '<strong>', post: '</strong>', shouldSort: true });
 
 class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputState> {
   private exprInputRef = React.createRef<HTMLInputElement>();
@@ -67,10 +69,7 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
   };
 
   getSearchMatches = (input: string, expressions: string[]) => {
-    return fuzzy.filter(input.replace(/ /g, ''), expressions, {
-      pre: '<strong>',
-      post: '</strong>',
-    });
+    return fuz.filter(input.replace(/ /g, ''), expressions);
   };
 
   createAutocompleteSection = (downshift: ControllerStateAndHelpers<any>) => {
@@ -89,11 +88,11 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
                     <li className="autosuggest-dropdown-header">{title}</li>
                     {matches
                       .slice(0, 100) // Limit DOM rendering to 100 results, as DOM rendering is sloooow.
-                      .map(({ original, string: text }) => {
+                      .map((result: FuzzyResult) => {
                         const itemProps = downshift.getItemProps({
-                          key: original,
+                          key: result.original,
                           index,
-                          item: original,
+                          item: result.original,
                           style: {
                             backgroundColor: highlightedIndex === index++ ? 'lightgray' : 'white',
                           },
@@ -102,7 +101,7 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
                           <li
                             key={title}
                             {...itemProps}
-                            dangerouslySetInnerHTML={{ __html: sanitizeHTML(text, { allowedTags: ['strong'] }) }}
+                            dangerouslySetInnerHTML={{ __html: sanitizeHTML(result.rendered, { allowedTags: ['strong'] }) }}
                           />
                         );
                       })}
