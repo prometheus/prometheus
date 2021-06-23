@@ -23,6 +23,7 @@ import (
 	"net/url"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-kit/log"
@@ -154,7 +155,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		return nil, errors.Errorf("server returned HTTP status %s", resp.Status)
 	}
 
-	if !matchContentType.MatchString(resp.Header.Get("Content-Type")) {
+	if !matchContentType.MatchString(strings.TrimSpace(resp.Header.Get("Content-Type"))) {
 		return nil, errors.Errorf("unsupported content type %q", resp.Header.Get("Content-Type"))
 	}
 
