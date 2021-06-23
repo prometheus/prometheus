@@ -6,6 +6,7 @@
     "@fortawesome/fontawesome-svg-core": "^1.2.14",
     "@fortawesome/free-solid-svg-icons": "^5.7.1",
     "@fortawesome/react-fontawesome": "^0.1.4",
+    "@nexucis/fuzzy": "^0.2.2",
     "@reach/router": "^1.2.1",
     "@testing-library/react-hooks": "^3.1.1",
     "@types/jest": "^26.0.10",

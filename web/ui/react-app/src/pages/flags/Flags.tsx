@@ -9,7 +9,10 @@ import { faSort, faSortDown, faSortUp } from '@fortawesome/free-solid-svg-icons'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { IconDefinition } from '@fortawesome/fontawesome-common-types';
 import sanitizeHTML from 'sanitize-html';
-import fuzzy, { FilterResult } from 'fuzzy';
+import { Fuzzy, FuzzyResult } from '@nexucis/fuzzy';
+
+const fuz = new Fuzzy({ pre: '<strong>', post: '</strong>', shouldSort: true });
+const flagSeparator = '||';
 
 interface FlagMap {
   [key: string]: string;
@@ -29,11 +32,8 @@ const compareAlphaFn = (keys: boolean, reverse: boolean) => (
   return reverser * a.localeCompare(b);
 };
 
-const getSearchMatches = (input: string, expressions: string[]) => {
-  return fuzzy.filter(input.replace(/ /g, ''), expressions, {
-    pre: '<strong>',
-    post: '</strong>',
-  });
+const getSearchMatches = (input: string, flagList: string[]) => {
+  return fuz.filter(input.replace(new RegExp(`/${flagSeparator}/g`), ''), flagList);
 };
 
 const getSortIcon = (b: boolean | undefined): IconDefinition => {
@@ -63,8 +63,11 @@ export const FlagsContent: FC<FlagsProps> = ({ data = {} }) => {
   const [sortState, setSortState] = useState(initialSort);
   const searchable = Object.entries(data)
     .sort(compareAlphaFn(sortState.name === 'Flag', !sortState.alpha))
-    .map(([flag, value]) => `--${flag} ${value}`);
-  const filtered = getSearchMatches(searchState, searchable);
+    .map(([flag, value]) => `--${flag}${flagSeparator}${value}`);
+  let filtered = getSearchMatches(searchState, searchable).map((value: FuzzyResult) => value.rendered);
+  if (filtered.length === 0) {
+    filtered = searchable;
+  }
   return (
     <>
       <h2>Command-Line Flags</h2>
@@ -102,8 +105,8 @@ export const FlagsContent: FC<FlagsProps> = ({ data = {} }) => {
           </tr>
         </thead>
         <tbody>
-          {filtered.map((result: FilterResult<string>) => {
-            const [flagMatchStr, valueMatchStr] = result.string.split(' ');
+          {filtered.map((result: string) => {
+            const [flagMatchStr, valueMatchStr] = result.split(flagSeparator);
             const sanitizeOpts = { allowedTags: ['strong'] };
             return (
               <tr key={flagMatchStr}>
