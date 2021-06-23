@@ -73,7 +73,7 @@ func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesIn
 		idx := len(ranges) - 1 // Use largest range if user asked for something enormous.
 		for i, v := range ranges {
 			if v > maxBlockDuration {
-				idx = i -1
+				idx = i - 1
 				break
 			}
 		}
