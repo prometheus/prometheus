@@ -183,7 +183,7 @@ func TestMetadataDelivery(t *testing.T) {
 	require.Equal(t, numMetadata, len(c.receivedMetadata))
 	// One more write than the rounded qoutient should be performed in order to get samples that didn't
 	// fit into MaxSamplesPerSend.
-	require.Equal(t, numMetadata/mcfg.MaxSamplesPerSend+1, c.writes)
+	require.Equal(t, numMetadata/mcfg.MaxSamplesPerSend+1, c.writesReceived)
 	// Make sure the last samples were sent.
 	require.Equal(t, c.receivedMetadata[metadata[len(metadata)-1].Metric][0].MetricFamilyName, metadata[len(metadata)-1].Metric)
 }
@@ -531,7 +531,7 @@ type TestWriteClient struct {
 	receivedExemplars map[string][]prompb.Exemplar
 	expectedExemplars map[string][]prompb.Exemplar
 	receivedMetadata  map[string][]prompb.MetricMetadata
-	writes            int
+	writesReceived    int
 	withWaitGroup     bool
 	wg                sync.WaitGroup
 	mtx               sync.Mutex
@@ -665,7 +665,7 @@ func (c *TestWriteClient) Store(_ context.Context, req []byte) error {
 		c.receivedMetadata[m.MetricFamilyName] = append(c.receivedMetadata[m.MetricFamilyName], m)
 	}
 
-	c.writes++
+	c.writesReceived++
 
 	return nil
 }
