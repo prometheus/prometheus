@@ -60,11 +60,11 @@ func queryAllSeries(t testing.TB, q storage.Querier, expectedMinTime, expectedMa
 
 func testBlocks(t *testing.T, db *tsdb.DB, expectedMinTime, expectedMaxTime int64, expectedSamples []backfillSample, expectedNumBlocks int) {
 	blocks := db.Blocks()
-	require.Equal(t, expectedNumBlocks, len(blocks))
 
 	for _, block := range blocks {
 		require.Equal(t, true, block.MinTime()/tsdb.DefaultBlockDuration == (block.MaxTime()-1)/tsdb.DefaultBlockDuration)
 	}
+	require.Equal(t, expectedNumBlocks, len(blocks), "did create correct number of blocks")
 
 	q, err := db.Querier(context.Background(), math.MinInt64, math.MaxInt64)
 	require.NoError(t, err)
@@ -75,11 +75,11 @@ func testBlocks(t *testing.T, db *tsdb.DB, expectedMinTime, expectedMaxTime int6
 	allSamples := queryAllSeries(t, q, expectedMinTime, expectedMaxTime)
 	sortSamples(allSamples)
 	sortSamples(expectedSamples)
-	require.Equal(t, expectedSamples, allSamples)
+	require.Equal(t, expectedSamples, allSamples, "did not create correct samples")
 
 	if len(allSamples) > 0 {
-		require.Equal(t, expectedMinTime, allSamples[0].Timestamp)
-		require.Equal(t, expectedMaxTime, allSamples[len(allSamples)-1].Timestamp)
+		require.Equal(t, expectedMinTime, allSamples[0].Timestamp, "timestamp of first sample is not the expected minimum time")
+		require.Equal(t, expectedMaxTime, allSamples[len(allSamples)-1].Timestamp, "timestamp of last sample is not the expected maximum time")
 	}
 }
 
