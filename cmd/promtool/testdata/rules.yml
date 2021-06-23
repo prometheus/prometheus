@@ -11,6 +11,8 @@ groups:
         annotations:
           summary: "Instance {{ $labels.instance }} down"
           description: "{{ $labels.instance }} of job {{ $labels.job }} has been down for more than 5 minutes."
+      - alert: AlwaysFiring
+        expr: 1
 
   - name: rules
     rules:
@@ -20,3 +22,7 @@ groups:
       # A recording rule that doesn't depend on input series.
       - record: fixed_data
         expr: 1
+
+      # Subquery with default resolution test.
+      - record: suquery_interval_test
+        expr: count_over_time(up[5m:])

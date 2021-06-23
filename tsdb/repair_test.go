@@ -95,7 +95,7 @@ func TestRepairBadIndexVersion(t *testing.T) {
 	require.NoError(t, r.Close())
 
 	// On DB opening all blocks in the base dir should be repaired.
-	db, err := Open(tmpDir, nil, nil, nil)
+	db, err := Open(tmpDir, nil, nil, nil, nil)
 	require.NoError(t, err)
 	db.Close()
 

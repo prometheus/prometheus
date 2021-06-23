@@ -20,14 +20,14 @@ import (
 	"hash/crc32"
 	"io"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/golang/snappy"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-// liveReaderMetrics holds all metrics exposed by the LiveReader.
+// LiveReaderMetrics holds all metrics exposed by the LiveReader.
 type LiveReaderMetrics struct {
 	readerCorruptionErrors *prometheus.CounterVec
 }

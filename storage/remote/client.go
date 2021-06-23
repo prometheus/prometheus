@@ -35,10 +35,11 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
 
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/prompb"
 )
 
-const maxErrMsgLen = 512
+const maxErrMsgLen = 1024
 
 var UserAgent = fmt.Sprintf("Prometheus/%s", version.Version)
 
@@ -83,7 +84,8 @@ type Client struct {
 	url        *config_util.URL
 	Client     *http.Client
 	timeout    time.Duration
-	headers    map[string]string
+
+	retryOnRateLimit bool
 
 	readQueries         prometheus.Gauge
 	readQueriesTotal    *prometheus.CounterVec
@@ -95,7 +97,9 @@ type ClientConfig struct {
 	URL              *config_util.URL
 	Timeout          model.Duration
 	HTTPClientConfig config_util.HTTPClientConfig
+	SigV4Config      *config.SigV4Config
 	Headers          map[string]string
+	RetryOnRateLimit bool
 }
 
 // ReadClient uses the SAMPLES method of remote read to read series samples from remote server.
@@ -106,12 +110,15 @@ type ReadClient interface {
 
 // NewReadClient creates a new client for remote read.
 func NewReadClient(name string, conf *ClientConfig) (ReadClient, error) {
-	httpClient, err := config_util.NewClientFromConfig(conf.HTTPClientConfig, "remote_storage_read_client", false, false)
+	httpClient, err := config_util.NewClientFromConfig(conf.HTTPClientConfig, "remote_storage_read_client", config_util.WithHTTP2Disabled())
 	if err != nil {
 		return nil, err
 	}
 
 	t := httpClient.Transport
+	if len(conf.Headers) > 0 {
+		t = newInjectHeadersRoundTripper(conf.Headers, t)
+	}
 	httpClient.Transport = &nethttp.Transport{
 		RoundTripper: t,
 	}
@@ -129,23 +136,50 @@ func NewReadClient(name string, conf *ClientConfig) (ReadClient, error) {
 
 // NewWriteClient creates a new client for remote write.
 func NewWriteClient(name string, conf *ClientConfig) (WriteClient, error) {
-	httpClient, err := config_util.NewClientFromConfig(conf.HTTPClientConfig, "remote_storage_write_client", false, false)
+	httpClient, err := config_util.NewClientFromConfig(conf.HTTPClientConfig, "remote_storage_write_client", config_util.WithHTTP2Disabled())
 	if err != nil {
 		return nil, err
 	}
-
 	t := httpClient.Transport
+
+	if conf.SigV4Config != nil {
+		t, err = newSigV4RoundTripper(conf.SigV4Config, httpClient.Transport)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if len(conf.Headers) > 0 {
+		t = newInjectHeadersRoundTripper(conf.Headers, t)
+	}
+
 	httpClient.Transport = &nethttp.Transport{
 		RoundTripper: t,
 	}
 
 	return &Client{
-		remoteName: name,
-		url:        conf.URL,
-		Client:     httpClient,
-		timeout:    time.Duration(conf.Timeout),
-		headers:    conf.Headers,
+		remoteName:       name,
+		url:              conf.URL,
+		Client:           httpClient,
+		retryOnRateLimit: conf.RetryOnRateLimit,
+		timeout:          time.Duration(conf.Timeout),
 	}, nil
+}
+
+func newInjectHeadersRoundTripper(h map[string]string, underlyingRT http.RoundTripper) *injectHeadersRoundTripper {
+	return &injectHeadersRoundTripper{headers: h, RoundTripper: underlyingRT}
+}
+
+type injectHeadersRoundTripper struct {
+	headers map[string]string
+	http.RoundTripper
+}
+
+func (t *injectHeadersRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	for key, value := range t.headers {
+		req.Header.Set(key, value)
+	}
+	return t.RoundTripper.RoundTrip(req)
 }
 
 const defaultBackoff = 0
@@ -164,9 +198,7 @@ func (c *Client) Store(ctx context.Context, req []byte) error {
 		// recoverable.
 		return err
 	}
-	for k, v := range c.headers {
-		httpReq.Header.Set(k, v)
-	}
+
 	httpReq.Header.Add("Content-Encoding", "snappy")
 	httpReq.Header.Set("Content-Type", "application/x-protobuf")
 	httpReq.Header.Set("User-Agent", UserAgent)
@@ -209,7 +241,7 @@ func (c *Client) Store(ctx context.Context, req []byte) error {
 	if httpResp.StatusCode/100 == 5 {
 		return RecoverableError{err, defaultBackoff}
 	}
-	if httpResp.StatusCode == http.StatusTooManyRequests {
+	if c.retryOnRateLimit && httpResp.StatusCode == http.StatusTooManyRequests {
 		return RecoverableError{err, retryAfterDuration(httpResp.Header.Get("Retry-After"))}
 	}
 	return err

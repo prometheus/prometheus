@@ -12,7 +12,8 @@ scrape_configs:
   - job_name: 'node'
 
     hetzner_sd_configs:
-      - bearer_token: "<replace with a Hetzner Cloud API Token>"
+      - authorization:
+          credentials: "<replace with a Hetzner Cloud API Token>"
         platform: "hcloud"
     relabel_configs:
       # Use the public IPv4 and port 9100 to scrape the target.
@@ -24,7 +25,8 @@ scrape_configs:
   - job_name: 'node_private'
 
     hetzner_sd_configs:
-      - bearer_token: "<replace with a Hetzner Cloud API Token>"
+      - authorization:
+          credentials: "<replace with a Hetzner Cloud API Token>"
         platform: "hcloud"
     relabel_configs:
       # Use the private IPv4 within the Hetzner Cloud Network and port 9100 to scrape the target.

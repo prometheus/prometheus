@@ -16,8 +16,8 @@ package kubernetes
 import (
 	"context"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"k8s.io/api/networking/v1beta1"
@@ -147,6 +147,7 @@ const (
 	ingressSchemeLabel             = metaLabelPrefix + "ingress_scheme"
 	ingressHostLabel               = metaLabelPrefix + "ingress_host"
 	ingressPathLabel               = metaLabelPrefix + "ingress_path"
+	ingressClassNameLabel          = metaLabelPrefix + "ingress_class_name"
 )
 
 func ingressLabels(ingress *v1beta1.Ingress) model.LabelSet {
@@ -154,6 +155,9 @@ func ingressLabels(ingress *v1beta1.Ingress) model.LabelSet {
 	ls := make(model.LabelSet, 2*(len(ingress.Labels)+len(ingress.Annotations))+2)
 	ls[ingressNameLabel] = lv(ingress.Name)
 	ls[namespaceLabel] = lv(ingress.Namespace)
+	if ingress.Spec.IngressClassName != nil {
+		ls[ingressClassNameLabel] = lv(*ingress.Spec.IngressClassName)
+	}
 
 	for k, v := range ingress.Labels {
 		ln := strutil.SanitizeLabelName(k)

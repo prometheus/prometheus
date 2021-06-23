@@ -23,13 +23,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/atomic"
 
+	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -46,10 +47,19 @@ var (
 	// ErrInvalidSample is returned if an appended sample is not valid and can't
 	// be ingested.
 	ErrInvalidSample = errors.New("invalid sample")
+	// ErrInvalidExemplar is returned if an appended exemplar is not valid and can't
+	// be ingested.
+	ErrInvalidExemplar = errors.New("invalid exemplar")
 	// ErrAppenderClosed is returned if an appender has already be successfully
 	// rolled back or committed.
 	ErrAppenderClosed = errors.New("appender closed")
 )
+
+type ExemplarStorage interface {
+	storage.ExemplarQueryable
+	AddExemplar(labels.Labels, exemplar.Exemplar) error
+	ValidateExemplar(labels.Labels, exemplar.Exemplar) error
+}
 
 // Head handles reads and writes of time series data within a time window.
 type Head struct {
@@ -60,14 +70,16 @@ type Head struct {
 	lastWALTruncationTime atomic.Int64
 	lastSeriesID          atomic.Uint64
 
-	metrics      *headMetrics
-	opts         *HeadOptions
-	wal          *wal.WAL
-	logger       log.Logger
-	appendPool   sync.Pool
-	seriesPool   sync.Pool
-	bytesPool    sync.Pool
-	memChunkPool sync.Pool
+	metrics       *headMetrics
+	opts          *HeadOptions
+	wal           *wal.WAL
+	exemplars     ExemplarStorage
+	logger        log.Logger
+	appendPool    sync.Pool
+	exemplarsPool sync.Pool
+	seriesPool    sync.Pool
+	bytesPool     sync.Pool
+	memChunkPool  sync.Pool
 
 	// All series addressable by their ID or hash.
 	series *stripeSeries
@@ -93,6 +105,8 @@ type Head struct {
 
 	closedMtx sync.Mutex
 	closed    bool
+
+	stats *HeadStats
 }
 
 // HeadOptions are parameters for the Head block.
@@ -107,6 +121,7 @@ type HeadOptions struct {
 	// A smaller StripeSize reduces the memory allocated, but can decrease performance with large number of series.
 	StripeSize     int
 	SeriesCallback SeriesLifecycleCallback
+	NumExemplars   int
 }
 
 func DefaultHeadOptions() *HeadOptions {
@@ -294,6 +309,38 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 	return m
 }
 
+// HeadStats are the statistics for the head component of the DB.
+type HeadStats struct {
+	WALReplayStatus *WALReplayStatus
+}
+
+// NewHeadStats returns a new HeadStats object.
+func NewHeadStats() *HeadStats {
+	return &HeadStats{
+		WALReplayStatus: &WALReplayStatus{},
+	}
+}
+
+// WALReplayStatus contains status information about the WAL replay.
+type WALReplayStatus struct {
+	sync.RWMutex
+	Min     int
+	Max     int
+	Current int
+}
+
+// GetWALReplayStatus returns the WAL replay status information.
+func (s *WALReplayStatus) GetWALReplayStatus() WALReplayStatus {
+	s.RLock()
+	defer s.RUnlock()
+
+	return WALReplayStatus{
+		Min:     s.Min,
+		Max:     s.Max,
+		Current: s.Current,
+	}
+}
+
 const cardinalityCacheExpirationTime = time.Duration(30) * time.Second
 
 // PostingsCardinalityStats returns top 10 highest cardinality stats By label and value names.
@@ -315,7 +362,7 @@ func (h *Head) PostingsCardinalityStats(statsByLabelName string) *index.Postings
 }
 
 // NewHead opens the head block in dir.
-func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, opts *HeadOptions) (*Head, error) {
+func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, opts *HeadOptions, stats *HeadStats) (*Head, error) {
 	if l == nil {
 		l = log.NewNopLogger()
 	}
@@ -325,10 +372,21 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, opts *HeadOpti
 	if opts.SeriesCallback == nil {
 		opts.SeriesCallback = &noopSeriesLifecycleCallback{}
 	}
+
+	es, err := NewCircularExemplarStorage(opts.NumExemplars, r)
+	if err != nil {
+		return nil, err
+	}
+
+	if stats == nil {
+		stats = NewHeadStats()
+	}
+
 	h := &Head{
 		wal:        wal,
 		logger:     l,
 		opts:       opts,
+		exemplars:  es,
 		series:     newStripeSeries(opts.StripeSize, opts.SeriesCallback),
 		symbols:    map[string]struct{}{},
 		postings:   index.NewUnorderedMemPostings(),
@@ -340,6 +398,7 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, opts *HeadOpti
 				return &memChunk{}
 			},
 		},
+		stats: stats,
 	}
 	h.chunkRange.Store(opts.ChunkRange)
 	h.minTime.Store(math.MaxInt64)
@@ -351,7 +410,6 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, opts *HeadOpti
 		opts.ChunkPool = chunkenc.NewPool()
 	}
 
-	var err error
 	h.chunkDiskMapper, err = chunks.NewChunkDiskMapper(
 		mmappedChunksDir(opts.ChunkDirRoot),
 		opts.ChunkPool,
@@ -365,6 +423,10 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, opts *HeadOpti
 }
 
 func mmappedChunksDir(dir string) string { return filepath.Join(dir, "chunks_head") }
+
+func (h *Head) ExemplarQuerier(ctx context.Context) (storage.ExemplarQuerier, error) {
+	return h.exemplars.ExemplarQuerier(ctx)
+}
 
 // processWALSamples adds a partition of samples it receives to the head and passes
 // them on to other workers.
@@ -437,15 +499,17 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64, mmappedChunks 
 	// Track number of samples that referenced a series we don't know about
 	// for error reporting.
 	var unknownRefs atomic.Uint64
+	var unknownExemplarRefs atomic.Uint64
 
 	// Start workers that each process samples for a partition of the series ID space.
 	// They are connected through a ring of channels which ensures that all sample batches
 	// read from the WAL are processed in order.
 	var (
-		wg      sync.WaitGroup
-		n       = runtime.GOMAXPROCS(0)
-		inputs  = make([]chan []record.RefSample, n)
-		outputs = make([]chan []record.RefSample, n)
+		wg             sync.WaitGroup
+		n              = runtime.GOMAXPROCS(0)
+		inputs         = make([]chan []record.RefSample, n)
+		outputs        = make([]chan []record.RefSample, n)
+		exemplarsInput chan record.RefExemplar
 
 		dec    record.Decoder
 		shards = make([][]record.RefSample, n)
@@ -467,6 +531,11 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64, mmappedChunks 
 				return []tombstones.Stone{}
 			},
 		}
+		exemplarsPool = sync.Pool{
+			New: func() interface{} {
+				return []record.RefExemplar{}
+			},
+		}
 	)
 
 	defer func() {
@@ -478,6 +547,7 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64, mmappedChunks 
 				for range outputs[i] {
 				}
 			}
+			close(exemplarsInput)
 			wg.Wait()
 		}
 	}()
@@ -493,6 +563,29 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64, mmappedChunks 
 			wg.Done()
 		}(inputs[i], outputs[i])
 	}
+
+	wg.Add(1)
+	exemplarsInput = make(chan record.RefExemplar, 300)
+	go func(input <-chan record.RefExemplar) {
+		defer wg.Done()
+		for e := range input {
+			ms := h.series.getByID(e.Ref)
+			if ms == nil {
+				unknownExemplarRefs.Inc()
+				continue
+			}
+
+			if e.T < h.minValidTime.Load() {
+				continue
+			}
+			// At the moment the only possible error here is out of order exemplars, which we shouldn't see when
+			// replaying the WAL, so lets just log the error if it's not that type.
+			err = h.exemplars.AddExemplar(ms.lset, exemplar.Exemplar{Ts: e.T, Value: e.V, Labels: e.Labels})
+			if err != nil && err == storage.ErrOutOfOrderExemplar {
+				level.Warn(h.logger).Log("msg", "Unexpected error when replaying WAL on exemplar record", "err", err)
+			}
+		}
+	}(exemplarsInput)
 
 	go func() {
 		defer close(decoded)
@@ -535,6 +628,18 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64, mmappedChunks 
 					return
 				}
 				decoded <- tstones
+			case record.Exemplars:
+				exemplars := exemplarsPool.Get().([]record.RefExemplar)[:0]
+				exemplars, err = dec.Exemplars(rec, exemplars)
+				if err != nil {
+					decodeErr = &wal.CorruptionErr{
+						Err:     errors.Wrap(err, "decode exemplars"),
+						Segment: r.Segment(),
+						Offset:  r.Offset(),
+					}
+					return
+				}
+				decoded <- exemplars
 			default:
 				// Noop.
 			}
@@ -624,6 +729,12 @@ Outer:
 			}
 			//nolint:staticcheck // Ignore SA6002 relax staticcheck verification.
 			tstonesPool.Put(v)
+		case []record.RefExemplar:
+			for _, e := range v {
+				exemplarsInput <- e
+			}
+			//nolint:staticcheck // Ignore SA6002 relax staticcheck verification.
+			exemplarsPool.Put(v)
 		default:
 			panic(fmt.Errorf("unexpected decoded type: %T", d))
 		}
@@ -645,14 +756,15 @@ Outer:
 		for range outputs[i] {
 		}
 	}
+	close(exemplarsInput)
 	wg.Wait()
 
 	if r.Err() != nil {
 		return errors.Wrap(r.Err(), "read records")
 	}
 
-	if unknownRefs.Load() > 0 {
-		level.Warn(h.logger).Log("msg", "Unknown series references", "count", unknownRefs.Load())
+	if unknownRefs.Load() > 0 || unknownExemplarRefs.Load() > 0 {
+		level.Warn(h.logger).Log("msg", "Unknown series references", "samples", unknownRefs.Load(), "exemplars", unknownExemplarRefs.Load())
 	}
 	return nil
 }
@@ -722,6 +834,8 @@ func (h *Head) Init(minValidTime int64) error {
 		return errors.Wrap(err, "finding WAL segments")
 	}
 
+	h.startWALReplayStatus(startFrom, last)
+
 	// Backfill segments from the most recent checkpoint onwards.
 	for i := startFrom; i <= last; i++ {
 		s, err := wal.OpenReadSegment(wal.SegmentName(h.wal.Dir(), i))
@@ -738,6 +852,7 @@ func (h *Head) Init(minValidTime int64) error {
 			return err
 		}
 		level.Info(h.logger).Log("msg", "WAL segment loaded", "segment", i, "maxSegment", last)
+		h.updateWALReplayStatusRead(i)
 	}
 
 	walReplayDuration := time.Since(start)
@@ -750,6 +865,11 @@ func (h *Head) Init(minValidTime int64) error {
 	)
 
 	return nil
+}
+
+// SetMinValidTime sets the minimum timestamp the head can ingest.
+func (h *Head) SetMinValidTime(minValidTime int64) {
+	h.minValidTime.Store(minValidTime)
 }
 
 func (h *Head) loadMmappedChunks() (map[uint64][]*mmappedChunk, error) {
@@ -1047,21 +1167,40 @@ type initAppender struct {
 	head *Head
 }
 
-func (a *initAppender) Add(lset labels.Labels, t int64, v float64) (uint64, error) {
+func (a *initAppender) Append(ref uint64, lset labels.Labels, t int64, v float64) (uint64, error) {
 	if a.app != nil {
-		return a.app.Add(lset, t, v)
+		return a.app.Append(ref, lset, t, v)
 	}
+
 	a.head.initTime(t)
 	a.app = a.head.appender()
-
-	return a.app.Add(lset, t, v)
+	return a.app.Append(ref, lset, t, v)
 }
 
-func (a *initAppender) AddFast(ref uint64, t int64, v float64) error {
-	if a.app == nil {
-		return storage.ErrNotFound
+func (a *initAppender) AppendExemplar(ref uint64, l labels.Labels, e exemplar.Exemplar) (uint64, error) {
+	// Check if exemplar storage is enabled.
+	if a.head.opts.NumExemplars <= 0 {
+		return 0, nil
 	}
-	return a.app.AddFast(ref, t, v)
+
+	if a.app != nil {
+		return a.app.AppendExemplar(ref, l, e)
+	}
+	// We should never reach here given we would call Append before AppendExemplar
+	// and we probably want to always base head/WAL min time on sample times.
+	a.head.initTime(e.Ts)
+	a.app = a.head.appender()
+
+	return a.app.AppendExemplar(ref, l, e)
+}
+
+var _ storage.GetRef = &initAppender{}
+
+func (a *initAppender) GetRef(lset labels.Labels) (uint64, labels.Labels) {
+	if g, ok := a.app.(storage.GetRef); ok {
+		return g.GetRef(lset)
+	}
+	return 0, nil
 }
 
 func (a *initAppender) Commit() error {
@@ -1096,6 +1235,12 @@ func (h *Head) appender() *headAppender {
 	appendID := h.iso.newAppendID()
 	cleanupAppendIDsBelow := h.iso.lowWatermark()
 
+	// Allocate the exemplars buffer only if exemplars are enabled.
+	var exemplarsBuf []exemplarWithSeriesRef
+	if h.opts.NumExemplars > 0 {
+		exemplarsBuf = h.getExemplarBuffer()
+	}
+
 	return &headAppender{
 		head:                  h,
 		minValidTime:          h.appendableMinValidTime(),
@@ -1103,8 +1248,10 @@ func (h *Head) appender() *headAppender {
 		maxt:                  math.MinInt64,
 		samples:               h.getAppendBuffer(),
 		sampleSeries:          h.getSeriesBuffer(),
+		exemplars:             exemplarsBuf,
 		appendID:              appendID,
 		cleanupAppendIDsBelow: cleanupAppendIDsBelow,
+		exemplarAppender:      h.exemplars,
 	}
 }
 
@@ -1121,6 +1268,19 @@ func max(a, b int64) int64 {
 	return b
 }
 
+func (h *Head) ExemplarAppender() storage.ExemplarAppender {
+	h.metrics.activeAppenders.Inc()
+
+	// The head cache might not have a starting point yet. The init appender
+	// picks up the first appended timestamp as the base.
+	if h.MinTime() == math.MaxInt64 {
+		return &initAppender{
+			head: h,
+		}
+	}
+	return h.appender()
+}
+
 func (h *Head) getAppendBuffer() []record.RefSample {
 	b := h.appendPool.Get()
 	if b == nil {
@@ -1132,6 +1292,23 @@ func (h *Head) getAppendBuffer() []record.RefSample {
 func (h *Head) putAppendBuffer(b []record.RefSample) {
 	//nolint:staticcheck // Ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
 	h.appendPool.Put(b[:0])
+}
+
+func (h *Head) getExemplarBuffer() []exemplarWithSeriesRef {
+	b := h.exemplarsPool.Get()
+	if b == nil {
+		return make([]exemplarWithSeriesRef, 0, 512)
+	}
+	return b.([]exemplarWithSeriesRef)
+}
+
+func (h *Head) putExemplarBuffer(b []exemplarWithSeriesRef) {
+	if b == nil {
+		return
+	}
+
+	//nolint:staticcheck // Ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
+	h.exemplarsPool.Put(b[:0])
 }
 
 func (h *Head) getSeriesBuffer() []*memSeries {
@@ -1160,67 +1337,65 @@ func (h *Head) putBytesBuffer(b []byte) {
 	h.bytesPool.Put(b[:0])
 }
 
+type exemplarWithSeriesRef struct {
+	ref      uint64
+	exemplar exemplar.Exemplar
+}
+
 type headAppender struct {
-	head         *Head
-	minValidTime int64 // No samples below this timestamp are allowed.
-	mint, maxt   int64
+	head             *Head
+	minValidTime     int64 // No samples below this timestamp are allowed.
+	mint, maxt       int64
+	exemplarAppender ExemplarStorage
 
 	series       []record.RefSeries
 	samples      []record.RefSample
+	exemplars    []exemplarWithSeriesRef
 	sampleSeries []*memSeries
 
 	appendID, cleanupAppendIDsBelow uint64
 	closed                          bool
 }
 
-func (a *headAppender) Add(lset labels.Labels, t int64, v float64) (uint64, error) {
+func (a *headAppender) Append(ref uint64, lset labels.Labels, t int64, v float64) (uint64, error) {
 	if t < a.minValidTime {
 		a.head.metrics.outOfBoundSamples.Inc()
 		return 0, storage.ErrOutOfBounds
 	}
 
-	// Ensure no empty labels have gotten through.
-	lset = lset.WithoutEmpty()
-
-	if len(lset) == 0 {
-		return 0, errors.Wrap(ErrInvalidSample, "empty labelset")
-	}
-
-	if l, dup := lset.HasDuplicateLabelNames(); dup {
-		return 0, errors.Wrap(ErrInvalidSample, fmt.Sprintf(`label name "%s" is not unique`, l))
-	}
-
-	s, created, err := a.head.getOrCreate(lset.Hash(), lset)
-	if err != nil {
-		return 0, err
-	}
-
-	if created {
-		a.series = append(a.series, record.RefSeries{
-			Ref:    s.ref,
-			Labels: lset,
-		})
-	}
-	return s.ref, a.AddFast(s.ref, t, v)
-}
-
-func (a *headAppender) AddFast(ref uint64, t int64, v float64) error {
-	if t < a.minValidTime {
-		a.head.metrics.outOfBoundSamples.Inc()
-		return storage.ErrOutOfBounds
-	}
-
 	s := a.head.series.getByID(ref)
 	if s == nil {
-		return errors.Wrap(storage.ErrNotFound, "unknown series")
+		// Ensure no empty labels have gotten through.
+		lset = lset.WithoutEmpty()
+		if len(lset) == 0 {
+			return 0, errors.Wrap(ErrInvalidSample, "empty labelset")
+		}
+
+		if l, dup := lset.HasDuplicateLabelNames(); dup {
+			return 0, errors.Wrap(ErrInvalidSample, fmt.Sprintf(`label name "%s" is not unique`, l))
+		}
+
+		var created bool
+		var err error
+		s, created, err = a.head.getOrCreate(lset.Hash(), lset)
+		if err != nil {
+			return 0, err
+		}
+		if created {
+			a.series = append(a.series, record.RefSeries{
+				Ref:    s.ref,
+				Labels: lset,
+			})
+		}
 	}
+
 	s.Lock()
 	if err := s.appendable(t, v); err != nil {
 		s.Unlock()
 		if err == storage.ErrOutOfOrderSample {
 			a.head.metrics.outOfOrderSamples.Inc()
 		}
-		return err
+		return 0, err
 	}
 	s.pendingCommit = true
 	s.Unlock()
@@ -1233,12 +1408,53 @@ func (a *headAppender) AddFast(ref uint64, t int64, v float64) error {
 	}
 
 	a.samples = append(a.samples, record.RefSample{
-		Ref: ref,
+		Ref: s.ref,
 		T:   t,
 		V:   v,
 	})
 	a.sampleSeries = append(a.sampleSeries, s)
-	return nil
+	return s.ref, nil
+}
+
+// AppendExemplar for headAppender assumes the series ref already exists, and so it doesn't
+// use getOrCreate or make any of the lset sanity checks that Append does.
+func (a *headAppender) AppendExemplar(ref uint64, _ labels.Labels, e exemplar.Exemplar) (uint64, error) {
+	// Check if exemplar storage is enabled.
+	if a.head.opts.NumExemplars <= 0 {
+		return 0, nil
+	}
+
+	s := a.head.series.getByID(ref)
+	if s == nil {
+		return 0, fmt.Errorf("unknown series ref. when trying to add exemplar: %d", ref)
+	}
+
+	// Ensure no empty labels have gotten through.
+	e.Labels = e.Labels.WithoutEmpty()
+
+	err := a.exemplarAppender.ValidateExemplar(s.lset, e)
+	if err != nil {
+		if err == storage.ErrDuplicateExemplar {
+			// Duplicate, don't return an error but don't accept the exemplar.
+			return 0, nil
+		}
+		return 0, err
+	}
+
+	a.exemplars = append(a.exemplars, exemplarWithSeriesRef{ref, e})
+
+	return s.ref, nil
+}
+
+var _ storage.GetRef = &headAppender{}
+
+func (a *headAppender) GetRef(lset labels.Labels) (uint64, labels.Labels) {
+	s := a.head.series.getByHash(lset.Hash(), lset)
+	if s == nil {
+		return 0, nil
+	}
+	// returned labels must be suitable to pass to Append()
+	return s.ref, s.lset
 }
 
 func (a *headAppender) log() error {
@@ -1268,7 +1484,28 @@ func (a *headAppender) log() error {
 			return errors.Wrap(err, "log samples")
 		}
 	}
+	if len(a.exemplars) > 0 {
+		rec = enc.Exemplars(exemplarsForEncoding(a.exemplars), buf)
+		buf = rec[:0]
+
+		if err := a.head.wal.Log(rec); err != nil {
+			return errors.Wrap(err, "log exemplars")
+		}
+	}
 	return nil
+}
+
+func exemplarsForEncoding(es []exemplarWithSeriesRef) []record.RefExemplar {
+	ret := make([]record.RefExemplar, 0, len(es))
+	for _, e := range es {
+		ret = append(ret, record.RefExemplar{
+			Ref:    e.ref,
+			T:      e.exemplar.Ts,
+			V:      e.exemplar.Value,
+			Labels: e.exemplar.Labels,
+		})
+	}
+	return ret
 }
 
 func (a *headAppender) Commit() (err error) {
@@ -1276,15 +1513,28 @@ func (a *headAppender) Commit() (err error) {
 		return ErrAppenderClosed
 	}
 	defer func() { a.closed = true }()
+
 	if err := a.log(); err != nil {
-		//nolint: errcheck
-		a.Rollback() // Most likely the same error will happen again.
+		_ = a.Rollback() // Most likely the same error will happen again.
 		return errors.Wrap(err, "write to WAL")
+	}
+
+	// No errors logging to WAL, so pass the exemplars along to the in memory storage.
+	for _, e := range a.exemplars {
+		s := a.head.series.getByID(e.ref)
+		// We don't instrument exemplar appends here, all is instrumented by storage.
+		if err := a.exemplarAppender.AddExemplar(s.lset, e.exemplar); err != nil {
+			if err == storage.ErrOutOfOrderExemplar {
+				continue
+			}
+			level.Debug(a.head.logger).Log("msg", "Unknown error while adding exemplar", "err", err)
+		}
 	}
 
 	defer a.head.metrics.activeAppenders.Dec()
 	defer a.head.putAppendBuffer(a.samples)
 	defer a.head.putSeriesBuffer(a.sampleSeries)
+	defer a.head.putExemplarBuffer(a.exemplars)
 	defer a.head.iso.closeAppend(a.appendID)
 
 	total := len(a.samples)
@@ -1331,7 +1581,9 @@ func (a *headAppender) Rollback() (err error) {
 		series.Unlock()
 	}
 	a.head.putAppendBuffer(a.samples)
+	a.head.putExemplarBuffer(a.exemplars)
 	a.samples = nil
+	a.exemplars = nil
 
 	// Series are created in the head memory regardless of rollback. Thus we have
 	// to log them to the WAL in any case.
@@ -1769,7 +2021,7 @@ func (h *headIndexReader) LabelValueFor(id uint64, label string) (string, error)
 }
 
 func (h *Head) getOrCreate(hash uint64, lset labels.Labels) (*memSeries, bool, error) {
-	// Just using `getOrSet` below would be semantically sufficient, but we'd create
+	// Just using `getOrCreateWithID` below would be semantically sufficient, but we'd create
 	// a new series on every sample inserted via Add(), which causes allocations
 	// and makes our series IDs rather random and harder to compress in postings.
 	s := h.series.getByHash(hash, lset)
@@ -1784,9 +2036,9 @@ func (h *Head) getOrCreate(hash uint64, lset labels.Labels) (*memSeries, bool, e
 }
 
 func (h *Head) getOrCreateWithID(id, hash uint64, lset labels.Labels) (*memSeries, bool, error) {
-	s := newMemSeries(lset, id, h.chunkRange.Load(), &h.memChunkPool)
-
-	s, created, err := h.series.getOrSet(hash, s)
+	s, created, err := h.series.getOrSet(hash, lset, func() *memSeries {
+		return newMemSeries(lset, id, h.chunkRange.Load(), &h.memChunkPool)
+	})
 	if err != nil {
 		return nil, false, err
 	}
@@ -1975,27 +2227,34 @@ func (s *stripeSeries) getByHash(hash uint64, lset labels.Labels) *memSeries {
 	return series
 }
 
-func (s *stripeSeries) getOrSet(hash uint64, series *memSeries) (*memSeries, bool, error) {
+func (s *stripeSeries) getOrSet(hash uint64, lset labels.Labels, createSeries func() *memSeries) (*memSeries, bool, error) {
 	// PreCreation is called here to avoid calling it inside the lock.
 	// It is not necessary to call it just before creating a series,
 	// rather it gives a 'hint' whether to create a series or not.
-	createSeriesErr := s.seriesLifecycleCallback.PreCreation(series.lset)
+	preCreationErr := s.seriesLifecycleCallback.PreCreation(lset)
+
+	// Create the series, unless the PreCreation() callback as failed.
+	// If failed, we'll not allow to create a new series anyway.
+	var series *memSeries
+	if preCreationErr == nil {
+		series = createSeries()
+	}
 
 	i := hash & uint64(s.size-1)
 	s.locks[i].Lock()
 
-	if prev := s.hashes[i].get(hash, series.lset); prev != nil {
+	if prev := s.hashes[i].get(hash, lset); prev != nil {
 		s.locks[i].Unlock()
 		return prev, false, nil
 	}
-	if createSeriesErr == nil {
+	if preCreationErr == nil {
 		s.hashes[i].set(hash, series)
 	}
 	s.locks[i].Unlock()
 
-	if createSeriesErr != nil {
+	if preCreationErr != nil {
 		// The callback prevented creation of series.
-		return nil, false, createSeriesErr
+		return nil, false, preCreationErr
 	}
 	// Setting the series in the s.hashes marks the creation of series
 	// as any further calls to this methods would return that series.
@@ -2404,6 +2663,23 @@ type memSafeIterator struct {
 	buf   [4]sample
 }
 
+func (it *memSafeIterator) Seek(t int64) bool {
+	if it.Err() != nil {
+		return false
+	}
+
+	ts, _ := it.At()
+
+	for t > ts || it.i == -1 {
+		if !it.Next() {
+			return false
+		}
+		ts, _ = it.At()
+	}
+
+	return true
+}
+
 func (it *memSafeIterator) Next() bool {
 	if it.i+1 >= it.stopAfter {
 		return false
@@ -2466,4 +2742,20 @@ func (h *Head) Size() int64 {
 
 func (h *RangeHead) Size() int64 {
 	return h.head.Size()
+}
+
+func (h *Head) startWALReplayStatus(startFrom, last int) {
+	h.stats.WALReplayStatus.Lock()
+	defer h.stats.WALReplayStatus.Unlock()
+
+	h.stats.WALReplayStatus.Min = startFrom
+	h.stats.WALReplayStatus.Max = last
+	h.stats.WALReplayStatus.Current = startFrom
+}
+
+func (h *Head) updateWALReplayStatusRead(current int) {
+	h.stats.WALReplayStatus.Lock()
+	defer h.stats.WALReplayStatus.Unlock()
+
+	h.stats.WALReplayStatus.Current = current
 }

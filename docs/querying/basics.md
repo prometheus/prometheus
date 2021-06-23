@@ -204,6 +204,15 @@ The same works for range vectors. This returns the 5-minute rate that
 
     rate(http_requests_total[5m] offset 1w)
 
+For comparisons with temporal shifts forward in time, a negative offset
+can be specified:
+
+    rate(http_requests_total[5m] offset -1w)
+
+This feature is enabled by setting `--enable-feature=promql-negative-offset`
+flag. See [disabled features](../disabled_features.md) for more details about
+this flag.
+
 ### @ modifier
 
 The `@` modifier allows changing the evaluation time for individual instant

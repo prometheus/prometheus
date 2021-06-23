@@ -38,8 +38,8 @@ import (
 	"time"
 
 	"github.com/alecthomas/units"
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	conntrack "github.com/mwitkow/go-conntrack"
 	"github.com/opentracing-contrib/go-stdlib/nethttp"
 	opentracing "github.com/opentracing/opentracing-go"
@@ -79,6 +79,7 @@ var reactRouterPaths = []string{
 	"/status",
 	"/targets",
 	"/tsdb-status",
+	"/starting",
 }
 
 // withStackTrace logs the stack trace in case the request panics. The function
@@ -174,14 +175,15 @@ type Handler struct {
 	gatherer prometheus.Gatherer
 	metrics  *metrics
 
-	scrapeManager *scrape.Manager
-	ruleManager   *rules.Manager
-	queryEngine   *promql.Engine
-	lookbackDelta time.Duration
-	context       context.Context
-	storage       storage.Storage
-	localStorage  LocalStorage
-	notifier      *notifier.Manager
+	scrapeManager   *scrape.Manager
+	ruleManager     *rules.Manager
+	queryEngine     *promql.Engine
+	lookbackDelta   time.Duration
+	context         context.Context
+	storage         storage.Storage
+	localStorage    LocalStorage
+	exemplarStorage storage.ExemplarQueryable
+	notifier        *notifier.Manager
 
 	apiV1 *api_v1.API
 
@@ -220,6 +222,7 @@ type Options struct {
 	TSDBMaxBytes          units.Base2Bytes
 	LocalStorage          LocalStorage
 	Storage               storage.Storage
+	ExemplarStorage       storage.ExemplarQueryable
 	QueryEngine           *promql.Engine
 	LookbackDelta         time.Duration
 	ScrapeManager         *scrape.Manager
@@ -281,14 +284,15 @@ func New(logger log.Logger, o *Options) *Handler {
 		cwd:         cwd,
 		flagsMap:    o.Flags,
 
-		context:       o.Context,
-		scrapeManager: o.ScrapeManager,
-		ruleManager:   o.RuleManager,
-		queryEngine:   o.QueryEngine,
-		lookbackDelta: o.LookbackDelta,
-		storage:       o.Storage,
-		localStorage:  o.LocalStorage,
-		notifier:      o.Notifier,
+		context:         o.Context,
+		scrapeManager:   o.ScrapeManager,
+		ruleManager:     o.RuleManager,
+		queryEngine:     o.QueryEngine,
+		lookbackDelta:   o.LookbackDelta,
+		storage:         o.Storage,
+		localStorage:    o.LocalStorage,
+		exemplarStorage: o.ExemplarStorage,
+		notifier:        o.Notifier,
 
 		now: model.Now,
 	}
@@ -303,7 +307,7 @@ func New(logger log.Logger, o *Options) *Handler {
 		app = h.storage
 	}
 
-	h.apiV1 = api_v1.NewAPI(h.queryEngine, h.storage, app, factoryTr, factoryAr,
+	h.apiV1 = api_v1.NewAPI(h.queryEngine, h.storage, app, h.exemplarStorage, factoryTr, factoryAr,
 		func() config.Config {
 			h.mtx.RLock()
 			defer h.mtx.RUnlock()
@@ -328,6 +332,7 @@ func New(logger log.Logger, o *Options) *Handler {
 		h.runtimeInfo,
 		h.versionInfo,
 		o.Gatherer,
+		o.Registerer,
 	)
 
 	if o.RoutePrefix != "/" {
@@ -350,7 +355,7 @@ func New(logger log.Logger, o *Options) *Handler {
 	// Redirect the original React UI's path (under "/new") to its new path at the root.
 	router.Get("/new/*path", func(w http.ResponseWriter, r *http.Request) {
 		p := route.Param(r.Context(), "path")
-		http.Redirect(w, r, path.Join(o.ExternalURL.Path, strings.TrimPrefix(p, "/new"))+"?"+r.URL.RawQuery, http.StatusFound)
+		http.Redirect(w, r, path.Join(o.ExternalURL.Path, p)+"?"+r.URL.RawQuery, http.StatusFound)
 	})
 
 	router.Get("/classic/alerts", readyf(h.alerts))
@@ -368,7 +373,7 @@ func New(logger log.Logger, o *Options) *Handler {
 	})
 	// Make sure that "<path-prefix>/classic" is redirected to "<path-prefix>/classic/" and
 	// not just the naked "/classic/", which would be the default behavior of the router
-	// with the "RedirectTrailingSlash" option (https://godoc.org/github.com/julienschmidt/httprouter#Router.RedirectTrailingSlash),
+	// with the "RedirectTrailingSlash" option (https://pkg.go.dev/github.com/julienschmidt/httprouter#Router.RedirectTrailingSlash),
 	// and which breaks users with a --web.route-prefix that deviates from the path derived
 	// from the external URL.
 	// See https://github.com/prometheus/prometheus/issues/6163#issuecomment-553855129.

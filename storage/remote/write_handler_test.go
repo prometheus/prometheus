@@ -22,7 +22,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
+	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
@@ -115,7 +116,7 @@ func (m *mockAppendable) Appender(_ context.Context) storage.Appender {
 	return m
 }
 
-func (m *mockAppendable) Add(l labels.Labels, t int64, v float64) (uint64, error) {
+func (m *mockAppendable) Append(_ uint64, l labels.Labels, t int64, v float64) (uint64, error) {
 	if t < m.latest {
 		return 0, storage.ErrOutOfOrderSample
 	}
@@ -129,10 +130,11 @@ func (m *mockAppendable) Commit() error {
 	return m.commitErr
 }
 
-func (*mockAppendable) AddFast(uint64, int64, float64) error {
+func (*mockAppendable) Rollback() error {
 	return fmt.Errorf("not implemented")
 }
 
-func (*mockAppendable) Rollback() error {
-	return fmt.Errorf("not implemented")
+func (*mockAppendable) AppendExemplar(ref uint64, l labels.Labels, e exemplar.Exemplar) (uint64, error) {
+	// noop until we implement exemplars over remote write
+	return 0, nil
 }

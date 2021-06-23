@@ -19,7 +19,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -32,7 +32,7 @@ import (
 func TestAlertingRuleHTMLSnippet(t *testing.T) {
 	expr, err := parser.ParseExpr(`foo{html="<b>BOLD<b>"}`)
 	require.NoError(t, err)
-	rule := NewAlertingRule("testrule", expr, 0, labels.FromStrings("html", "<b>BOLD</b>"), labels.FromStrings("html", "<b>BOLD</b>"), nil, false, nil)
+	rule := NewAlertingRule("testrule", expr, 0, labels.FromStrings("html", "<b>BOLD</b>"), labels.FromStrings("html", "<b>BOLD</b>"), nil, "", false, nil)
 
 	const want = template.HTML(`alert: <a href="/test/prefix/graph?g0.expr=ALERTS%7Balertname%3D%22testrule%22%7D&g0.tab=1">testrule</a>
 expr: <a href="/test/prefix/graph?g0.expr=foo%7Bhtml%3D%22%3Cb%3EBOLD%3Cb%3E%22%7D&g0.tab=1">foo{html=&#34;&lt;b&gt;BOLD&lt;b&gt;&#34;}</a>
@@ -79,7 +79,7 @@ func TestAlertingRuleState(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		rule := NewAlertingRule(test.name, nil, 0, nil, nil, nil, true, nil)
+		rule := NewAlertingRule(test.name, nil, 0, nil, nil, nil, "", true, nil)
 		rule.active = test.active
 		got := rule.State()
 		require.Equal(t, test.want, got, "test case %d unexpected AlertState, want:%d got:%d", i, test.want, got)
@@ -107,7 +107,7 @@ func TestAlertingRuleLabelsUpdate(t *testing.T) {
 		// If an alert is going back and forth between two label values it will never fire.
 		// Instead, you should write two alerts with constant labels.
 		labels.FromStrings("severity", "{{ if lt $value 80.0 }}critical{{ else }}warning{{ end }}"),
-		nil, nil, true, nil,
+		nil, nil, "", true, nil,
 	)
 
 	results := []promql.Vector{
@@ -208,6 +208,7 @@ func TestAlertingRuleExternalLabelsInTemplate(t *testing.T) {
 		labels.FromStrings("templated_label", "There are {{ len $externalLabels }} external Labels, of which foo is {{ $externalLabels.foo }}."),
 		nil,
 		nil,
+		"",
 		true, log.NewNopLogger(),
 	)
 	ruleWithExternalLabels := NewAlertingRule(
@@ -217,6 +218,7 @@ func TestAlertingRuleExternalLabelsInTemplate(t *testing.T) {
 		labels.FromStrings("templated_label", "There are {{ len $externalLabels }} external Labels, of which foo is {{ $externalLabels.foo }}."),
 		nil,
 		labels.FromStrings("foo", "bar", "dings", "bums"),
+		"",
 		true, log.NewNopLogger(),
 	)
 	result := promql.Vector{
@@ -280,6 +282,100 @@ func TestAlertingRuleExternalLabelsInTemplate(t *testing.T) {
 	require.Equal(t, result, filteredRes)
 }
 
+func TestAlertingRuleExternalURLInTemplate(t *testing.T) {
+	suite, err := promql.NewTest(t, `
+		load 1m
+			http_requests{job="app-server", instance="0"}	75 85 70 70
+	`)
+	require.NoError(t, err)
+	defer suite.Close()
+
+	require.NoError(t, suite.Run())
+
+	expr, err := parser.ParseExpr(`http_requests < 100`)
+	require.NoError(t, err)
+
+	ruleWithoutExternalURL := NewAlertingRule(
+		"ExternalURLDoesNotExist",
+		expr,
+		time.Minute,
+		labels.FromStrings("templated_label", "The external URL is {{ $externalURL }}."),
+		nil,
+		nil,
+		"",
+		true, log.NewNopLogger(),
+	)
+	ruleWithExternalURL := NewAlertingRule(
+		"ExternalURLExists",
+		expr,
+		time.Minute,
+		labels.FromStrings("templated_label", "The external URL is {{ $externalURL }}."),
+		nil,
+		nil,
+		"http://localhost:1234",
+		true, log.NewNopLogger(),
+	)
+	result := promql.Vector{
+		{
+			Metric: labels.FromStrings(
+				"__name__", "ALERTS",
+				"alertname", "ExternalURLDoesNotExist",
+				"alertstate", "pending",
+				"instance", "0",
+				"job", "app-server",
+				"templated_label", "The external URL is .",
+			),
+			Point: promql.Point{V: 1},
+		},
+		{
+			Metric: labels.FromStrings(
+				"__name__", "ALERTS",
+				"alertname", "ExternalURLExists",
+				"alertstate", "pending",
+				"instance", "0",
+				"job", "app-server",
+				"templated_label", "The external URL is http://localhost:1234.",
+			),
+			Point: promql.Point{V: 1},
+		},
+	}
+
+	evalTime := time.Unix(0, 0)
+	result[0].Point.T = timestamp.FromTime(evalTime)
+	result[1].Point.T = timestamp.FromTime(evalTime)
+
+	var filteredRes promql.Vector // After removing 'ALERTS_FOR_STATE' samples.
+	res, err := ruleWithoutExternalURL.Eval(
+		suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil,
+	)
+	require.NoError(t, err)
+	for _, smpl := range res {
+		smplName := smpl.Metric.Get("__name__")
+		if smplName == "ALERTS" {
+			filteredRes = append(filteredRes, smpl)
+		} else {
+			// If not 'ALERTS', it has to be 'ALERTS_FOR_STATE'.
+			require.Equal(t, "ALERTS_FOR_STATE", smplName)
+		}
+	}
+
+	res, err = ruleWithExternalURL.Eval(
+		suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil,
+	)
+	require.NoError(t, err)
+	for _, smpl := range res {
+		smplName := smpl.Metric.Get("__name__")
+		if smplName == "ALERTS" {
+			filteredRes = append(filteredRes, smpl)
+		} else {
+			// If not 'ALERTS', it has to be 'ALERTS_FOR_STATE'.
+			require.Equal(t, "ALERTS_FOR_STATE", smplName)
+		}
+	}
+
+	require.Equal(t, result, filteredRes)
+}
+
 func TestAlertingRuleEmptyLabelFromTemplate(t *testing.T) {
 	suite, err := promql.NewTest(t, `
 		load 1m
@@ -300,6 +396,7 @@ func TestAlertingRuleEmptyLabelFromTemplate(t *testing.T) {
 		labels.FromStrings("empty_label", ""),
 		nil,
 		nil,
+		"",
 		true, log.NewNopLogger(),
 	)
 	result := promql.Vector{
@@ -360,6 +457,7 @@ func TestAlertingRuleDuplicate(t *testing.T) {
 		labels.FromStrings("test", "test"),
 		nil,
 		nil,
+		"",
 		true, log.NewNopLogger(),
 	)
 	_, err := rule.Eval(ctx, now, EngineQueryFunc(engine, storage), nil)

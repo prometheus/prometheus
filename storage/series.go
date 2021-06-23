@@ -204,9 +204,7 @@ func (c *seriesSetToChunkSet) Next() bool {
 }
 
 func (c *seriesSetToChunkSet) At() ChunkSeries {
-	return &seriesToChunkEncoder{
-		Series: c.SeriesSet.At(),
-	}
+	return NewSeriesToChunkEncoder(c.SeriesSet.At())
 }
 
 func (c *seriesSetToChunkSet) Err() error {
@@ -217,7 +215,13 @@ type seriesToChunkEncoder struct {
 	Series
 }
 
-// TODO(bwplotka): Currently encoder will just naively build one chunk, without limit. Split it: https://github.com/prometheus/tsdb/issues/670
+const seriesToChunkEncoderSplit = 120
+
+// NewSeriesToChunkEncoder encodes samples to chunks with 120 samples limit.
+func NewSeriesToChunkEncoder(series Series) ChunkSeries {
+	return &seriesToChunkEncoder{series}
+}
+
 func (s *seriesToChunkEncoder) Iterator() chunks.Iterator {
 	chk := chunkenc.NewXORChunk()
 	app, err := chk.Appender()
@@ -227,8 +231,28 @@ func (s *seriesToChunkEncoder) Iterator() chunks.Iterator {
 	mint := int64(math.MaxInt64)
 	maxt := int64(math.MinInt64)
 
+	chks := []chunks.Meta{}
+
+	i := 0
 	seriesIter := s.Series.Iterator()
 	for seriesIter.Next() {
+		// Create a new chunk if too many samples in the current one.
+		if i >= seriesToChunkEncoderSplit {
+			chks = append(chks, chunks.Meta{
+				MinTime: mint,
+				MaxTime: maxt,
+				Chunk:   chk,
+			})
+			chk = chunkenc.NewXORChunk()
+			app, err = chk.Appender()
+			if err != nil {
+				return errChunksIterator{err: err}
+			}
+			mint = int64(math.MaxInt64)
+			// maxt is immediately overwritten below which is why setting it here won't make a difference.
+			i = 0
+		}
+
 		t, v := seriesIter.At()
 		app.Append(t, v)
 
@@ -236,16 +260,19 @@ func (s *seriesToChunkEncoder) Iterator() chunks.Iterator {
 		if mint == math.MaxInt64 {
 			mint = t
 		}
+		i++
 	}
 	if err := seriesIter.Err(); err != nil {
 		return errChunksIterator{err: err}
 	}
 
-	return NewListChunkSeriesIterator(chunks.Meta{
+	chks = append(chks, chunks.Meta{
 		MinTime: mint,
 		MaxTime: maxt,
 		Chunk:   chk,
 	})
+
+	return NewListChunkSeriesIterator(chks...)
 }
 
 type errChunksIterator struct {

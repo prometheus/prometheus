@@ -365,6 +365,51 @@ http_requests_total{code="400"} 1 1565166113.989
 				},
 			},
 		},
+		{ // For https://github.com/prometheus/prometheus/issues/8476.
+			ToParse: `# HELP http_requests_total The total number of HTTP requests.
+# TYPE http_requests_total counter
+http_requests_total{code="200"} 1021 0
+http_requests_total{code="200"} 1022 7199
+http_requests_total{code="400"} 1023 0
+http_requests_total{code="400"} 1024 7199
+# EOF
+`,
+			IsOk:                 true,
+			Description:          "One series spanning 2h in same block should not cause problems to other series.",
+			MaxSamplesInAppender: 1,
+			Expected: struct {
+				MinTime   int64
+				MaxTime   int64
+				NumBlocks int
+				Samples   []backfillSample
+			}{
+				MinTime:   0,
+				MaxTime:   7199000,
+				NumBlocks: 1,
+				Samples: []backfillSample{
+					{
+						Timestamp: 0,
+						Value:     1021,
+						Labels:    labels.FromStrings("__name__", "http_requests_total", "code", "200"),
+					},
+					{
+						Timestamp: 7199000,
+						Value:     1022,
+						Labels:    labels.FromStrings("__name__", "http_requests_total", "code", "200"),
+					},
+					{
+						Timestamp: 0,
+						Value:     1023,
+						Labels:    labels.FromStrings("__name__", "http_requests_total", "code", "400"),
+					},
+					{
+						Timestamp: 7199000,
+						Value:     1024,
+						Labels:    labels.FromStrings("__name__", "http_requests_total", "code", "400"),
+					},
+				},
+			},
+		},
 		{
 			ToParse: `no_help_no_type{foo="bar"} 42 6900
 # EOF
@@ -495,7 +540,7 @@ after_eof 1 2
 			require.NoError(t, os.RemoveAll(outputDir))
 		}()
 
-		err = backfill(test.MaxSamplesInAppender, []byte(test.ToParse), outputDir, false)
+		err = backfill(test.MaxSamplesInAppender, []byte(test.ToParse), outputDir, false, false)
 
 		if !test.IsOk {
 			require.Error(t, err, test.Description)
@@ -503,7 +548,7 @@ after_eof 1 2
 		}
 
 		require.NoError(t, err)
-		db, err := tsdb.Open(outputDir, nil, nil, tsdb.DefaultOptions())
+		db, err := tsdb.Open(outputDir, nil, nil, tsdb.DefaultOptions(), nil)
 		require.NoError(t, err)
 		defer func() {
 			require.NoError(t, db.Close())

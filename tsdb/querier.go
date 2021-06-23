@@ -453,7 +453,7 @@ func (b *blockBaseSeriesSet) Next() bool {
 
 		var trimFront, trimBack bool
 
-		// Copy chunks as iteratables are reusable.
+		// Copy chunks as iterables are reusable.
 		chks := make([]chunks.Meta, 0, len(b.bufChks))
 
 		// Prefilter chunks and pick those which are not entirely deleted or totally outside of the requested range.

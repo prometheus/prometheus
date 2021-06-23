@@ -467,6 +467,7 @@ func (c *chainSampleIterator) Seek(t int64) bool {
 	}
 	if len(c.h) > 0 {
 		c.curr = heap.Pop(&c.h).(chunkenc.Iterator)
+		c.lastt, _ = c.curr.At()
 		return true
 	}
 	c.curr = nil
@@ -666,7 +667,7 @@ func (c *compactChunkIterator) Next() bool {
 	}
 
 	// Add last as it's not yet included in overlap. We operate on same series, so labels does not matter here.
-	iter = (&seriesToChunkEncoder{Series: c.mergeFunc(append(overlapping, newChunkToSeriesDecoder(nil, c.curr))...)}).Iterator()
+	iter = NewSeriesToChunkEncoder(c.mergeFunc(append(overlapping, newChunkToSeriesDecoder(nil, c.curr))...)).Iterator()
 	if !iter.Next() {
 		if c.err = iter.Err(); c.err != nil {
 			return false

@@ -13,7 +13,13 @@ Prometheus's local time series database stores data in a custom, highly efficien
 
 ### On-disk layout
 
-Ingested samples are grouped into blocks of two hours. Each two-hour block consists of a directory containing one or more chunk files that contain all time series samples for that window of time, as well as a metadata file and index file (which indexes metric names and labels to time series in the chunk files). When series are deleted via the API, deletion records are stored in separate tombstone files (instead of deleting the data immediately from the chunk files).
+Ingested samples are grouped into blocks of two hours. Each two-hour block consists
+of a directory containing a chunks subdirectory containing all the time series samples
+for that window of time, a metadata file, and an index file (which indexes metric names
+and labels to time series in the chunks directory). The samples in the chunks directory
+are grouped together into one or more segment files of up to 512MB each by default. When series are
+deleted via the API, deletion records are stored in separate tombstone files (instead
+of deleting the data immediately from the chunk segments).
 
 The current block for incoming samples is kept in memory and is not fully
 persisted. It is secured against crashes by a write-ahead log (WAL) that can be
@@ -125,7 +131,7 @@ For details on configuring remote storage integrations in Prometheus, see the [r
 
 The built-in remote write receiver can be enabled by setting the `--enable-feature=remote-write-receiver` command line flag. When enabled, the remote write receiver endpoint is `/api/v1/write`.
 
-For details on the request and response messages, see the [remote storage protocol buffer definitions](https://github.com/prometheus/prometheus/blob/master/prompb/remote.proto).
+For details on the request and response messages, see the [remote storage protocol buffer definitions](https://github.com/prometheus/prometheus/blob/main/prompb/remote.proto).
 
 Note that on the read path, Prometheus only fetches raw series data for a set of label selectors and time ranges from the remote end. All PromQL evaluation on the raw data still happens in Prometheus itself. This means that remote read queries have some scalability limit, since all necessary data needs to be loaded into the querying Prometheus server first and then processed there. However, supporting fully distributed evaluation of PromQL was deemed infeasible for the time being.
 
@@ -150,3 +156,35 @@ promtool tsdb create-blocks-from openmetrics <input file> [<output directory>]
 ```
 
 After the creation of the blocks, move it to the data directory of Prometheus. If there is an overlap with the existing blocks in Prometheus, the flag `--storage.tsdb.allow-overlapping-blocks` needs to be set. Note that any backfilled data is subject to the retention configured for your Prometheus server (by time or size).
+
+## Backfilling for Recording Rules
+
+### Overview
+
+When a new recording rule is created, there is no historical data for it. Recording rule data only exists from the creation time on. `promtool` makes it possible to create historical recording rule data.
+
+### Usage
+
+To see all options, use: `$ promtool tsdb create-blocks-from rules --help`.
+
+Example usage:
+
+```
+$ promtool tsdb create-blocks-from rules \
+    --start 1617079873 \
+    --end 1617097873 \
+    --url http://mypromserver.com:9090 \
+    rules.yaml rules2.yaml
+```
+
+The recording rule files provided should be a normal [Prometheus rules file](https://prometheus.io/docs/prometheus/latest/configuration/recording_rules/).
+
+The output of `promtool tsdb create-blocks-from rules` command is a directory that contains blocks with the historical rule data for all rules in the recording rule files. By default the output directory is `data/`. In order to make use of this new block data, the blocks must be moved to a running Prometheus instance data dir `storage.tsdb.path` that has the flag `--storage.tsdb.allow-overlapping-blocks` enabled. Once moved, the new blocks will merge with existing blocks when the next compaction runs.
+
+### Limitations
+
+- If you run the rule backfiller multiple times with the overlapping start/end times, blocks containing the same data will be created each time the rule backfiller is run.
+- All rules in the recording rule files will be evaluated.
+- If the `interval` is set in the recording rule file that will take priority over the `eval-interval` flag in the rule backfill command.
+- Alerts are currently ignored if they are in the recording rule file.
+- Rules in the same group cannot see the results of previous rules. Meaning that rules that refer to other rules being backfilled is not supported. A workaround is to backfill multiple times and create the dependent data first (and move dependent data to the Prometheus server data dir so that it is accessible from the Prometheus API).

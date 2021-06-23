@@ -18,7 +18,7 @@ import (
 	"io"
 	"math"
 
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/textparse"
@@ -65,7 +65,7 @@ func getMinAndMaxTimestamps(p textparse.Parser) (int64, int64, error) {
 	return maxt, mint, nil
 }
 
-func createBlocks(input []byte, mint, maxt int64, maxSamplesInAppender int, outputDir string, humanReadable bool) (returnErr error) {
+func createBlocks(input []byte, mint, maxt int64, maxSamplesInAppender int, outputDir string, humanReadable, quiet bool) (returnErr error) {
 	blockDuration := tsdb.DefaultBlockDuration
 	mint = blockDuration * (mint / blockDuration)
 
@@ -93,7 +93,13 @@ func createBlocks(input []byte, mint, maxt int64, maxSamplesInAppender int, outp
 		nextSampleTs = math.MaxInt64
 
 		err := func() error {
-			w, err := tsdb.NewBlockWriter(log.NewNopLogger(), outputDir, blockDuration)
+			// To prevent races with compaction, a block writer only allows appending samples
+			// that are at most half a block size older than the most recent sample appended so far.
+			// However, in the way we use the block writer here, compaction doesn't happen, while we
+			// also need to append samples throughout the whole block range. To allow that, we
+			// pretend that the block is twice as large here, but only really add sample in the
+			// original interval later.
+			w, err := tsdb.NewBlockWriter(log.NewNopLogger(), outputDir, 2*blockDuration)
 			if err != nil {
 				return errors.Wrap(err, "block writer")
 			}
@@ -136,7 +142,7 @@ func createBlocks(input []byte, mint, maxt int64, maxSamplesInAppender int, outp
 				l := labels.Labels{}
 				p.Metric(&l)
 
-				if _, err := app.Add(l, *ts, v); err != nil {
+				if _, err := app.Append(0, l, *ts, v); err != nil {
 					return errors.Wrap(err, "add sample")
 				}
 
@@ -163,6 +169,9 @@ func createBlocks(input []byte, mint, maxt int64, maxSamplesInAppender int, outp
 			block, err := w.Flush(ctx)
 			switch err {
 			case nil:
+				if quiet {
+					break
+				}
 				blocks, err := db.Blocks()
 				if err != nil {
 					return errors.Wrap(err, "get blocks")
@@ -190,11 +199,11 @@ func createBlocks(input []byte, mint, maxt int64, maxSamplesInAppender int, outp
 
 }
 
-func backfill(maxSamplesInAppender int, input []byte, outputDir string, humanReadable bool) (err error) {
+func backfill(maxSamplesInAppender int, input []byte, outputDir string, humanReadable, quiet bool) (err error) {
 	p := textparse.NewOpenMetricsParser(input)
 	maxt, mint, err := getMinAndMaxTimestamps(p)
 	if err != nil {
 		return errors.Wrap(err, "getting min and max timestamp")
 	}
-	return errors.Wrap(createBlocks(input, mint, maxt, maxSamplesInAppender, outputDir, humanReadable), "block creation")
+	return errors.Wrap(createBlocks(input, mint, maxt, maxSamplesInAppender, outputDir, humanReadable, quiet), "block creation")
 }

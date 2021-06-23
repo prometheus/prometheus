@@ -179,43 +179,107 @@ func TestTemplateExpansion(t *testing.T) {
 			output: "xa",
 		},
 		{
-			// Humanize.
+			// Humanize - float64.
 			text:   "{{ range . }}{{ humanize . }}:{{ end }}",
 			input:  []float64{0.0, 1.0, 1234567.0, .12},
 			output: "0:1:1.235M:120m:",
 		},
 		{
-			// Humanize1024.
+			// Humanize - string.
+			text:   "{{ range . }}{{ humanize . }}:{{ end }}",
+			input:  []string{"0.0", "1.0", "1234567.0", ".12"},
+			output: "0:1:1.235M:120m:",
+		},
+		{
+			// Humanize - string with error.
+			text:       `{{ humanize "one" }}`,
+			shouldFail: true,
+			errorMsg:   `strconv.ParseFloat: parsing "one": invalid syntax`,
+		},
+		{
+			// Humanize1024 - float64.
 			text:   "{{ range . }}{{ humanize1024 . }}:{{ end }}",
 			input:  []float64{0.0, 1.0, 1048576.0, .12},
 			output: "0:1:1Mi:0.12:",
 		},
 		{
-			// HumanizeDuration - seconds.
+			// Humanize1024 - string.
+			text:   "{{ range . }}{{ humanize1024 . }}:{{ end }}",
+			input:  []string{"0.0", "1.0", "1048576.0", ".12"},
+			output: "0:1:1Mi:0.12:",
+		},
+		{
+			// Humanize1024 - string with error.
+			text:       `{{ humanize1024 "one" }}`,
+			shouldFail: true,
+			errorMsg:   `strconv.ParseFloat: parsing "one": invalid syntax`,
+		},
+		{
+			// HumanizeDuration - seconds - float64.
 			text:   "{{ range . }}{{ humanizeDuration . }}:{{ end }}",
 			input:  []float64{0, 1, 60, 3600, 86400, 86400 + 3600, -(86400*2 + 3600*3 + 60*4 + 5), 899.99},
 			output: "0s:1s:1m 0s:1h 0m 0s:1d 0h 0m 0s:1d 1h 0m 0s:-2d 3h 4m 5s:14m 59s:",
 		},
 		{
-			// HumanizeDuration - subsecond and fractional seconds.
+			// HumanizeDuration - seconds - string.
+			text:   "{{ range . }}{{ humanizeDuration . }}:{{ end }}",
+			input:  []string{"0", "1", "60", "3600", "86400"},
+			output: "0s:1s:1m 0s:1h 0m 0s:1d 0h 0m 0s:",
+		},
+		{
+			// HumanizeDuration - subsecond and fractional seconds - float64.
 			text:   "{{ range . }}{{ humanizeDuration . }}:{{ end }}",
 			input:  []float64{.1, .0001, .12345, 60.1, 60.5, 1.2345, 12.345},
 			output: "100ms:100us:123.5ms:1m 0s:1m 0s:1.234s:12.35s:",
 		},
 		{
-			// Humanize* Inf and NaN.
+			// HumanizeDuration - subsecond and fractional seconds - string.
+			text:   "{{ range . }}{{ humanizeDuration . }}:{{ end }}",
+			input:  []string{".1", ".0001", ".12345", "60.1", "60.5", "1.2345", "12.345"},
+			output: "100ms:100us:123.5ms:1m 0s:1m 0s:1.234s:12.35s:",
+		},
+		{
+			// HumanizeDuration - string with error.
+			text:       `{{ humanizeDuration "one" }}`,
+			shouldFail: true,
+			errorMsg:   `strconv.ParseFloat: parsing "one": invalid syntax`,
+		},
+		{
+			// Humanize* Inf and NaN - float64.
 			text:   "{{ range . }}{{ humanize . }}:{{ humanize1024 . }}:{{ humanizeDuration . }}:{{humanizeTimestamp .}}:{{ end }}",
 			input:  []float64{math.Inf(1), math.Inf(-1), math.NaN()},
 			output: "+Inf:+Inf:+Inf:+Inf:-Inf:-Inf:-Inf:-Inf:NaN:NaN:NaN:NaN:",
 		},
 		{
-			// HumanizePercentage - model.SampleValue input.
+			// Humanize* Inf and NaN - string.
+			text:   "{{ range . }}{{ humanize . }}:{{ humanize1024 . }}:{{ humanizeDuration . }}:{{humanizeTimestamp .}}:{{ end }}",
+			input:  []string{"+Inf", "-Inf", "NaN"},
+			output: "+Inf:+Inf:+Inf:+Inf:-Inf:-Inf:-Inf:-Inf:NaN:NaN:NaN:NaN:",
+		},
+		{
+			// HumanizePercentage - model.SampleValue input - float64.
 			text:   "{{ -0.22222 | humanizePercentage }}:{{ 0.0 | humanizePercentage }}:{{ 0.1234567 | humanizePercentage }}:{{ 1.23456 | humanizePercentage }}",
 			output: "-22.22%:0%:12.35%:123.5%",
 		},
 		{
-			// HumanizeTimestamp - model.SampleValue input.
+			// HumanizePercentage - model.SampleValue input - string.
+			text:   `{{ "-0.22222" | humanizePercentage }}:{{ "0.0" | humanizePercentage }}:{{ "0.1234567" | humanizePercentage }}:{{ "1.23456" | humanizePercentage }}`,
+			output: "-22.22%:0%:12.35%:123.5%",
+		},
+		{
+			// HumanizePercentage - model.SampleValue input - string with error.
+			text:       `{{ "one" | humanizePercentage }}`,
+			shouldFail: true,
+			errorMsg:   `strconv.ParseFloat: parsing "one": invalid syntax`,
+		},
+		{
+			// HumanizeTimestamp - model.SampleValue input - float64.
 			text:   "{{ 1435065584.128 | humanizeTimestamp }}",
+			output: "2015-06-23 13:19:44.128 +0000 UTC",
+		},
+		{
+			// HumanizeTimestamp - model.SampleValue input - string.
+			text:   `{{ "1435065584.128" | humanizeTimestamp }}`,
 			output: "2015-06-23 13:19:44.128 +0000 UTC",
 		},
 		{

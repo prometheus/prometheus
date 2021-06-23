@@ -28,6 +28,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-kit/log"
 	"github.com/google/pprof/profile"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/api"
@@ -48,7 +49,7 @@ import (
 )
 
 func main() {
-	app := kingpin.New(filepath.Base(os.Args[0]), "Tooling for the Prometheus monitoring system.")
+	app := kingpin.New(filepath.Base(os.Args[0]), "Tooling for the Prometheus monitoring system.").UsageWriter(os.Stdout)
 	app.Version(version.Print("promtool"))
 	app.HelpFlag.Short('h')
 
@@ -124,6 +125,7 @@ func main() {
 	tsdbBenchWriteCmd := tsdbBenchCmd.Command("write", "Run a write performance benchmark.")
 	benchWriteOutPath := tsdbBenchWriteCmd.Flag("out", "Set the output path.").Default("benchout").String()
 	benchWriteNumMetrics := tsdbBenchWriteCmd.Flag("metrics", "Number of metrics to read.").Default("10000").Int()
+	benchWriteNumScrapes := tsdbBenchWriteCmd.Flag("scrapes", "Number of scrapes to simulate.").Default("3000").Int()
 	benchSamplesFile := tsdbBenchWriteCmd.Arg("file", "Input file with samples data, default is ("+filepath.Join("..", "..", "tsdb", "testdata", "20kseries.json")+").").Default(filepath.Join("..", "..", "tsdb", "testdata", "20kseries.json")).String()
 
 	tsdbAnalyzeCmd := tsdbCmd.Command("analyze", "Analyze churn, label pair cardinality.")
@@ -142,10 +144,23 @@ func main() {
 
 	importCmd := tsdbCmd.Command("create-blocks-from", "[Experimental] Import samples from input and produce TSDB blocks. Please refer to the storage docs for more details.")
 	importHumanReadable := importCmd.Flag("human-readable", "Print human readable values.").Short('r').Bool()
+	importQuiet := importCmd.Flag("quiet", "Do not print created blocks.").Short('q').Bool()
 	openMetricsImportCmd := importCmd.Command("openmetrics", "Import samples from OpenMetrics input and produce TSDB blocks. Please refer to the storage docs for more details.")
 	// TODO(aSquare14): add flag to set default block duration
 	importFilePath := openMetricsImportCmd.Arg("input file", "OpenMetrics file to read samples from.").Required().String()
 	importDBPath := openMetricsImportCmd.Arg("output directory", "Output directory for generated blocks.").Default(defaultDBPath).String()
+	importRulesCmd := importCmd.Command("rules", "Create blocks of data for new recording rules.")
+	importRulesURL := importRulesCmd.Flag("url", "The URL for the Prometheus API with the data where the rule will be backfilled from.").Default("http://localhost:9090").URL()
+	importRulesStart := importRulesCmd.Flag("start", "The time to start backfilling the new rule from. Must be a RFC3339 formatted date or Unix timestamp. Required.").
+		Required().String()
+	importRulesEnd := importRulesCmd.Flag("end", "If an end time is provided, all recording rules in the rule files provided will be backfilled to the end time. Default will backfill up to 3 hours ago. Must be a RFC3339 formatted date or Unix timestamp.").String()
+	importRulesOutputDir := importRulesCmd.Flag("output-dir", "Output directory for generated blocks.").Default("data/").String()
+	importRulesEvalInterval := importRulesCmd.Flag("eval-interval", "How frequently to evaluate rules when backfilling if a value is not set in the recording rule files.").
+		Default("60s").Duration()
+	importRulesFiles := importRulesCmd.Arg(
+		"rule-files",
+		"A list of one or more files containing recording rules to be backfilled. All recording rules listed in the files will be backfilled. Alerting rules are not evaluated.",
+	).Required().ExistingFiles()
 
 	parsedCmd := kingpin.MustParse(app.Parse(os.Args[1:]))
 
@@ -195,7 +210,7 @@ func main() {
 		os.Exit(RulesUnitTest(*testRulesFiles...))
 
 	case tsdbBenchWriteCmd.FullCommand():
-		os.Exit(checkErr(benchmarkWrite(*benchWriteOutPath, *benchSamplesFile, *benchWriteNumMetrics)))
+		os.Exit(checkErr(benchmarkWrite(*benchWriteOutPath, *benchSamplesFile, *benchWriteNumMetrics, *benchWriteNumScrapes)))
 
 	case tsdbAnalyzeCmd.FullCommand():
 		os.Exit(checkErr(analyzeBlock(*analyzePath, *analyzeBlockID, *analyzeLimit)))
@@ -207,7 +222,10 @@ func main() {
 		os.Exit(checkErr(dumpSamples(*dumpPath, *dumpMinTime, *dumpMaxTime)))
 	//TODO(aSquare14): Work on adding support for custom block size.
 	case openMetricsImportCmd.FullCommand():
-		os.Exit(backfillOpenMetrics(*importFilePath, *importDBPath, *importHumanReadable))
+		os.Exit(backfillOpenMetrics(*importFilePath, *importDBPath, *importHumanReadable, *importQuiet))
+
+	case importRulesCmd.FullCommand():
+		os.Exit(checkErr(importRules(*importRulesURL, *importRulesStart, *importRulesEnd, *importRulesOutputDir, *importRulesEvalInterval, *importRulesFiles...)))
 	}
 }
 
@@ -274,7 +292,7 @@ func checkFileExists(fn string) error {
 func checkConfig(filename string) ([]string, error) {
 	fmt.Println("Checking", filename)
 
-	cfg, err := config.LoadFile(filename)
+	cfg, err := config.LoadFile(filename, false, log.NewNopLogger())
 	if err != nil {
 		return nil, err
 	}
@@ -497,8 +515,7 @@ func QueryInstant(url *url.URL, query, evalTime string, p printer) int {
 	val, _, err := api.Query(ctx, query, eTime) // Ignoring warnings for now.
 	cancel()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "query error:", err)
-		return 1
+		return handleAPIError(err)
 	}
 
 	p.printValue(val)
@@ -572,8 +589,7 @@ func QueryRange(url *url.URL, headers map[string]string, query, start, end strin
 	cancel()
 
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "query error:", err)
-		return 1
+		return handleAPIError(err)
 	}
 
 	p.printValue(val)
@@ -609,8 +625,7 @@ func QuerySeries(url *url.URL, matchers []string, start, end string, p printer) 
 	cancel()
 
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "query error:", err)
-		return 1
+		return handleAPIError(err)
 	}
 
 	p.printSeries(val)
@@ -642,20 +657,29 @@ func QueryLabels(url *url.URL, name string, start, end string, p printer) int {
 	// Run query against client.
 	api := v1.NewAPI(c)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	val, warn, err := api.LabelValues(ctx, name, stime, etime)
+	val, warn, err := api.LabelValues(ctx, name, []string{}, stime, etime)
 	cancel()
 
 	for _, v := range warn {
 		fmt.Fprintln(os.Stderr, "query warning:", v)
 	}
-
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "query error:", err)
-		return 1
+		return handleAPIError(err)
 	}
 
 	p.printLabelValues(val)
 	return 0
+}
+
+func handleAPIError(err error) int {
+	var apiErr *v1.Error
+	if errors.As(err, &apiErr) && apiErr.Detail != "" {
+		fmt.Fprintf(os.Stderr, "query error: %v (detail: %s)\n", apiErr, strings.TrimSpace(apiErr.Detail))
+	} else {
+		fmt.Fprintln(os.Stderr, "query error:", err)
+	}
+
+	return 1
 }
 
 func parseStartTimeAndEndTime(start, end string) (time.Time, time.Time, error) {
@@ -811,4 +835,64 @@ func (j *jsonPrinter) printSeries(v []model.LabelSet) {
 func (j *jsonPrinter) printLabelValues(v model.LabelValues) {
 	//nolint:errcheck
 	json.NewEncoder(os.Stdout).Encode(v)
+}
+
+// importRules backfills recording rules from the files provided. The output are blocks of data
+// at the outputDir location.
+func importRules(url *url.URL, start, end, outputDir string, evalInterval time.Duration, files ...string) error {
+	ctx := context.Background()
+	var stime, etime time.Time
+	var err error
+	if end == "" {
+		etime = time.Now().UTC().Add(-3 * time.Hour)
+	} else {
+		etime, err = parseTime(end)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error parsing end time:", err)
+			return err
+		}
+	}
+
+	stime, err = parseTime(start)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "error parsing start time:", err)
+		return err
+	}
+
+	if !stime.Before(etime) {
+		fmt.Fprintln(os.Stderr, "start time is not before end time")
+		return nil
+	}
+
+	cfg := ruleImporterConfig{
+		outputDir:    outputDir,
+		start:        stime,
+		end:          etime,
+		evalInterval: evalInterval,
+	}
+	client, err := api.NewClient(api.Config{
+		Address: url.String(),
+	})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "new api client error", err)
+		return err
+	}
+
+	ruleImporter := newRuleImporter(log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr)), cfg, v1.NewAPI(client))
+	errs := ruleImporter.loadGroups(ctx, files)
+	for _, err := range errs {
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "rule importer parse error", err)
+			return err
+		}
+	}
+
+	errs = ruleImporter.importAll(ctx)
+	for _, err := range errs {
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "rule importer error", err)
+		}
+	}
+
+	return err
 }

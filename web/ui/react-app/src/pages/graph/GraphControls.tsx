@@ -3,7 +3,6 @@ import { Button, ButtonGroup, Form, InputGroup, InputGroupAddon, Input } from 'r
 
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faPlus, faMinus, faChartArea, faChartLine } from '@fortawesome/free-solid-svg-icons';
-
 import TimeInput from './TimeInput';
 import { parseDuration, formatDuration } from '../../utils';
 
@@ -13,11 +12,13 @@ interface GraphControlsProps {
   useLocalTime: boolean;
   resolution: number | null;
   stacked: boolean;
+  showExemplars: boolean;
 
   onChangeRange: (range: number) => void;
   onChangeEndTime: (endTime: number | null) => void;
   onChangeResolution: (resolution: number | null) => void;
   onChangeStacking: (stacked: boolean) => void;
+  onChangeShowExemplars: (show: boolean) => void;
 }
 
 class GraphControls extends Component<GraphControlsProps> {
@@ -41,6 +42,8 @@ class GraphControls extends Component<GraphControlsProps> {
     14 * 24 * 60 * 60,
     28 * 24 * 60 * 60,
     56 * 24 * 60 * 60,
+    112 * 24 * 60 * 60,
+    182 * 24 * 60 * 60,
     365 * 24 * 60 * 60,
     730 * 24 * 60 * 60,
   ].map(s => s * 1000);
@@ -101,6 +104,9 @@ class GraphControls extends Component<GraphControlsProps> {
             defaultValue={formatDuration(this.props.range)}
             innerRef={this.rangeRef}
             onBlur={() => this.onChangeRangeInput(this.rangeRef.current!.value)}
+            onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) =>
+              e.key === 'Enter' && this.onChangeRangeInput(this.rangeRef.current!.value)
+            }
           />
 
           <InputGroupAddon addonType="append">
@@ -141,6 +147,18 @@ class GraphControls extends Component<GraphControlsProps> {
           <Button title="Show stacked graph" onClick={() => this.props.onChangeStacking(true)} active={this.props.stacked}>
             <FontAwesomeIcon icon={faChartArea} fixedWidth />
           </Button>
+        </ButtonGroup>
+
+        <ButtonGroup className="show-exemplars" size="sm">
+          {this.props.showExemplars ? (
+            <Button title="Hide exemplars" onClick={() => this.props.onChangeShowExemplars(false)} active={true}>
+              Hide Exemplars
+            </Button>
+          ) : (
+            <Button title="Show exemplars" onClick={() => this.props.onChangeShowExemplars(true)} active={false}>
+              Show Exemplars
+            </Button>
+          )}
         </ButtonGroup>
       </Form>
     );

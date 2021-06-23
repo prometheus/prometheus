@@ -25,7 +25,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	yaml "gopkg.in/yaml.v2"
@@ -146,6 +146,7 @@ type testGroup struct {
 	AlertRuleTests  []alertTestCase  `yaml:"alert_rule_test,omitempty"`
 	PromqlExprTests []promqlTestCase `yaml:"promql_expr_test,omitempty"`
 	ExternalLabels  labels.Labels    `yaml:"external_labels,omitempty"`
+	ExternalURL     string           `yaml:"external_url,omitempty"`
 	TestGroupName   string           `yaml:"name,omitempty"`
 }
 
@@ -157,6 +158,7 @@ func (tg *testGroup) test(evalInterval time.Duration, groupOrderMap map[string]i
 		return []error{err}
 	}
 	defer suite.Close()
+	suite.SubqueryInterval = evalInterval
 
 	// Load the rule files.
 	opts := &rules.ManagerOptions{
@@ -167,7 +169,7 @@ func (tg *testGroup) test(evalInterval time.Duration, groupOrderMap map[string]i
 		Logger:     log.NewNopLogger(),
 	}
 	m := rules.NewManager(opts)
-	groupsMap, ers := m.LoadGroups(time.Duration(tg.Interval), tg.ExternalLabels, ruleFiles...)
+	groupsMap, ers := m.LoadGroups(time.Duration(tg.Interval), tg.ExternalLabels, tg.ExternalURL, ruleFiles...)
 	if ers != nil {
 		return ers
 	}
@@ -188,6 +190,13 @@ func (tg *testGroup) test(evalInterval time.Duration, groupOrderMap map[string]i
 	// Map of all the unit tests for given eval_time.
 	alertTests := make(map[model.Duration][]alertTestCase)
 	for _, alert := range tg.AlertRuleTests {
+		if alert.Alertname == "" {
+			var testGroupLog string
+			if tg.TestGroupName != "" {
+				testGroupLog = fmt.Sprintf(" (in TestGroup %s)", tg.TestGroupName)
+			}
+			return []error{errors.Errorf("an item under alert_rule_test misses required attribute alertname at eval_time %v%s", alert.EvalTime, testGroupLog)}
+		}
 		alertEvalTimesMap[alert.EvalTime] = struct{}{}
 
 		if _, ok := alertsInTest[alert.EvalTime]; !ok {
@@ -221,6 +230,7 @@ func (tg *testGroup) test(evalInterval time.Duration, groupOrderMap map[string]i
 	var errs []error
 	for ts := mint; ts.Before(maxt) || ts.Equal(maxt); ts = ts.Add(evalInterval) {
 		// Collects the alerts asked for unit testing.
+		var evalErrs []error
 		suite.WithSamplesTill(ts, func(err error) {
 			if err != nil {
 				errs = append(errs, err)
@@ -230,13 +240,16 @@ func (tg *testGroup) test(evalInterval time.Duration, groupOrderMap map[string]i
 				g.Eval(suite.Context(), ts)
 				for _, r := range g.Rules() {
 					if r.LastError() != nil {
-						errs = append(errs, errors.Errorf("    rule: %s, time: %s, err: %v",
+						evalErrs = append(evalErrs, errors.Errorf("    rule: %s, time: %s, err: %v",
 							r.Name(), ts.Sub(time.Unix(0, 0).UTC()), r.LastError()))
 					}
 				}
 			}
 		})
-		if len(errs) > 0 {
+		errs = append(errs, evalErrs...)
+		// Only end testing at this point if errors occurred evaluating above,
+		// rather than any test failures already collected in errs.
+		if len(evalErrs) > 0 {
 			return errs
 		}
 

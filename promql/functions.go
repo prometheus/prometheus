@@ -70,17 +70,17 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 	if len(samples.Points) < 2 {
 		return enh.Out
 	}
-	var (
-		counterCorrection float64
-		lastValue         float64
-	)
-	for _, sample := range samples.Points {
-		if isCounter && sample.V < lastValue {
-			counterCorrection += lastValue
+
+	resultValue := samples.Points[len(samples.Points)-1].V - samples.Points[0].V
+	if isCounter {
+		var lastValue float64
+		for _, sample := range samples.Points {
+			if sample.V < lastValue {
+				resultValue += lastValue
+			}
+			lastValue = sample.V
 		}
-		lastValue = sample.V
 	}
-	resultValue := lastValue - samples.Points[0].V + counterCorrection
 
 	// Duration between first/last samples and boundary of range.
 	durationToStart := float64(samples.Points[0].T-rangeStart) / 1000
@@ -278,6 +278,23 @@ func funcSortDesc(vals []parser.Value, args parser.Expressions, enh *EvalNodeHel
 	return Vector(byValueSorter)
 }
 
+// === clamp(Vector parser.ValueTypeVector, min, max Scalar) Vector ===
+func funcClamp(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	vec := vals[0].(Vector)
+	min := vals[1].(Vector)[0].Point.V
+	max := vals[2].(Vector)[0].Point.V
+	if max < min {
+		return enh.Out
+	}
+	for _, el := range vec {
+		enh.Out = append(enh.Out, Sample{
+			Metric: enh.DropMetricName(el.Metric),
+			Point:  Point{V: math.Max(min, math.Min(max, el.V))},
+		})
+	}
+	return enh.Out
+}
+
 // === clamp_max(Vector parser.ValueTypeVector, max Scalar) Vector ===
 func funcClampMax(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	vec := vals[0].(Vector)
@@ -383,7 +400,16 @@ func funcCountOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNo
 	})
 }
 
-// === floor(Vector parser.ValueTypeVector) Vector ===
+// === last_over_time(Matrix parser.ValueTypeMatrix) Vector ===
+func funcLastOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	el := vals[0].(Matrix)[0]
+
+	return append(enh.Out, Sample{
+		Metric: el.Metric,
+		Point:  Point{V: el.Points[len(el.Points)-1].V},
+	})
+}
+
 // === max_over_time(Matrix parser.ValueTypeMatrix) Vector ===
 func funcMaxOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return aggrOverTime(vals, enh, func(values []Point) float64 {
@@ -535,6 +561,18 @@ func funcLog2(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper)
 // === log10(Vector parser.ValueTypeVector) Vector ===
 func funcLog10(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return simpleFunc(vals, enh, math.Log10)
+}
+
+// === sgn(Vector parser.ValueTypeVector) Vector ===
+func funcSgn(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	return simpleFunc(vals, enh, func(v float64) float64 {
+		if v < 0 {
+			return -1
+		} else if v > 0 {
+			return 1
+		}
+		return v
+	})
 }
 
 // === timestamp(Vector parser.ValueTypeVector) Vector ===
@@ -893,6 +931,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"avg_over_time":      funcAvgOverTime,
 	"ceil":               funcCeil,
 	"changes":            funcChanges,
+	"clamp":              funcClamp,
 	"clamp_max":          funcClampMax,
 	"clamp_min":          funcClampMin,
 	"count_over_time":    funcCountOverTime,
@@ -914,6 +953,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"ln":                 funcLn,
 	"log10":              funcLog10,
 	"log2":               funcLog2,
+	"last_over_time":     funcLastOverTime,
 	"max_over_time":      funcMaxOverTime,
 	"min_over_time":      funcMinOverTime,
 	"minute":             funcMinute,
@@ -924,6 +964,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"resets":             funcResets,
 	"round":              funcRound,
 	"scalar":             funcScalar,
+	"sgn":                funcSgn,
 	"sort":               funcSort,
 	"sort_desc":          funcSortDesc,
 	"sqrt":               funcSqrt,

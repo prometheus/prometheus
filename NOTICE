@@ -91,8 +91,13 @@ https://github.com/dgryski/go-tsz
 Copyright (c) 2015,2016 Damian Gryski <damian@gryski.com>
 See https://github.com/dgryski/go-tsz/blob/master/LICENSE for license details.
 
+The Codicon icon font from Microsoft
+https://github.com/microsoft/vscode-codicons
+Copyright (c) Microsoft Corporation and other contributors
+See https://github.com/microsoft/vscode-codicons/blob/main/LICENSE for license details.
+
 We also use code from a large number of npm packages. For details, see:
-- https://github.com/prometheus/prometheus/blob/master/web/ui/react-app/package.json
-- https://github.com/prometheus/prometheus/blob/master/web/ui/react-app/package-lock.json
+- https://github.com/prometheus/prometheus/blob/main/web/ui/react-app/package.json
+- https://github.com/prometheus/prometheus/blob/main/web/ui/react-app/package-lock.json
 - The individual package licenses as copied from the node_modules directory can be found in
   the npm_licenses.tar.bz2 archive in release tarballs and Docker images.

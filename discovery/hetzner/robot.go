@@ -25,7 +25,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -59,7 +59,7 @@ func newRobotDiscovery(conf *SDConfig, logger log.Logger) (*robotDiscovery, erro
 		endpoint: conf.robotEndpoint,
 	}
 
-	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "hetzner_sd", false, false)
+	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "hetzner_sd", config.WithHTTP2Disabled())
 	if err != nil {
 		return nil, err
 	}

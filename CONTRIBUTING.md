@@ -48,11 +48,11 @@ All our issues are regularly tagged so that you can also filter down the issues 
 
 ## Pull Request Checklist
 
-* Branch from the master branch and, if needed, rebase to the current master branch before submitting your pull request. If it doesn't merge cleanly with master you may be asked to rebase your changes.
+* Branch from the main branch and, if needed, rebase to the current main branch before submitting your pull request. If it doesn't merge cleanly with main you may be asked to rebase your changes.
 
 * Commits should be as small as possible, while ensuring that each commit is correct independently (i.e., each commit should compile and pass tests).
 
-* If your patch is not getting reviewed or you need a specific person to review it, you can @-reply a reviewer asking for a review in the pull request or a comment, or you can ask for a review on IRC channel [#prometheus](https://webchat.freenode.net/?channels=#prometheus) on irc.freenode.net (for the easiest start, [join via Riot](https://riot.im/app/#/room/#prometheus:matrix.org)).
+* If your patch is not getting reviewed or you need a specific person to review it, you can @-reply a reviewer asking for a review in the pull request or a comment, or you can ask for a review on IRC channel [#prometheus](https://web.libera.chat/?channels=#prometheus) on irc.libera.chat (for the easiest start, [join via Riot](https://riot.im/app/#/room/#prometheus:matrix.org)).
 
 * Add tests relevant to the fixed bug or new feature.
 

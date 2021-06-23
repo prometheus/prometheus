@@ -316,6 +316,18 @@ func Walk(v Visitor, node Node, path []Node) error {
 	return err
 }
 
+func ExtractSelectors(expr Expr) [][]*labels.Matcher {
+	var selectors [][]*labels.Matcher
+	Inspect(expr, func(node Node, _ []Node) error {
+		vs, ok := node.(*VectorSelector)
+		if ok {
+			selectors = append(selectors, vs.LabelMatchers)
+		}
+		return nil
+	})
+	return selectors
+}
+
 type inspector func(Node, []Node) error
 
 func (f inspector) Visit(node Node, path []Node) (Visitor, error) {

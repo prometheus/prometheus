@@ -29,6 +29,8 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/pkg/labels"
 )
 
@@ -147,7 +149,7 @@ func TestNewHTTPBearerToken(t *testing.T) {
 	cfg := config_util.HTTPClientConfig{
 		BearerToken: "1234",
 	}
-	c, err := config_util.NewClientFromConfig(cfg, "test", false, false)
+	c, err := config_util.NewClientFromConfig(cfg, "test", config_util.WithHTTP2Disabled())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,7 +176,7 @@ func TestNewHTTPBearerTokenFile(t *testing.T) {
 	cfg := config_util.HTTPClientConfig{
 		BearerTokenFile: "testdata/bearertoken.txt",
 	}
-	c, err := config_util.NewClientFromConfig(cfg, "test", false, false)
+	c, err := config_util.NewClientFromConfig(cfg, "test", config_util.WithHTTP2Disabled())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -203,7 +205,7 @@ func TestNewHTTPBasicAuth(t *testing.T) {
 			Password: "password123",
 		},
 	}
-	c, err := config_util.NewClientFromConfig(cfg, "test", false, false)
+	c, err := config_util.NewClientFromConfig(cfg, "test", config_util.WithHTTP2Disabled())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,7 +233,7 @@ func TestNewHTTPCACert(t *testing.T) {
 			CAFile: caCertPath,
 		},
 	}
-	c, err := config_util.NewClientFromConfig(cfg, "test", false, false)
+	c, err := config_util.NewClientFromConfig(cfg, "test", config_util.WithHTTP2Disabled())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -264,7 +266,7 @@ func TestNewHTTPClientCert(t *testing.T) {
 			KeyFile:  "testdata/client.key",
 		},
 	}
-	c, err := config_util.NewClientFromConfig(cfg, "test", false, false)
+	c, err := config_util.NewClientFromConfig(cfg, "test", config_util.WithHTTP2Disabled())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -293,7 +295,7 @@ func TestNewHTTPWithServerName(t *testing.T) {
 			ServerName: "prometheus.rocks",
 		},
 	}
-	c, err := config_util.NewClientFromConfig(cfg, "test", false, false)
+	c, err := config_util.NewClientFromConfig(cfg, "test", config_util.WithHTTP2Disabled())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -322,7 +324,7 @@ func TestNewHTTPWithBadServerName(t *testing.T) {
 			ServerName: "badname",
 		},
 	}
-	c, err := config_util.NewClientFromConfig(cfg, "test", false, false)
+	c, err := config_util.NewClientFromConfig(cfg, "test", config_util.WithHTTP2Disabled())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -360,8 +362,23 @@ func TestNewClientWithBadTLSConfig(t *testing.T) {
 			KeyFile:  "testdata/nonexistent_client.key",
 		},
 	}
-	_, err := config_util.NewClientFromConfig(cfg, "test", false, false)
+	_, err := config_util.NewClientFromConfig(cfg, "test", config_util.WithHTTP2Disabled())
 	if err == nil {
 		t.Fatalf("Expected error, got nil.")
+	}
+}
+
+func TestTargetsFromGroup(t *testing.T) {
+	expectedError := "instance 0 in group : no address"
+
+	targets, failures := targetsFromGroup(&targetgroup.Group{Targets: []model.LabelSet{{}, {model.AddressLabel: "localhost:9090"}}}, &config.ScrapeConfig{})
+	if len(targets) != 1 {
+		t.Fatalf("Expected 1 target, got %v", len(targets))
+	}
+	if len(failures) != 1 {
+		t.Fatalf("Expected 1 failure, got %v", len(failures))
+	}
+	if failures[0].Error() != expectedError {
+		t.Fatalf("Expected error %s, got %s", expectedError, failures[0])
 	}
 }
