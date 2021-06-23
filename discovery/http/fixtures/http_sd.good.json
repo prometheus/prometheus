@@ -1,0 +1,10 @@
+[
+   {
+      "labels": {
+         "__meta_datacenter": "bru1"
+      },
+      "targets": [
+         "127.0.0.1:9090"
+      ]
+   }
+]
