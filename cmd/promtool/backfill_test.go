@@ -532,28 +532,30 @@ after_eof 1 2
 		},
 	}
 	for _, test := range tests {
-		t.Logf("Test:%s", test.Description)
+		t.Run(test.Description, func(t *testing.T) {
+			t.Logf("Test:%s", test.Description)
 
-		outputDir, err := ioutil.TempDir("", "myDir")
-		require.NoError(t, err)
-		defer func() {
-			require.NoError(t, os.RemoveAll(outputDir))
-		}()
+			outputDir, err := ioutil.TempDir("", "myDir")
+			require.NoError(t, err)
+			defer func() {
+				require.NoError(t, os.RemoveAll(outputDir))
+			}()
 
-		err = backfill(test.MaxSamplesInAppender, []byte(test.ToParse), outputDir, false, false, 0)
+			err = backfill(test.MaxSamplesInAppender, []byte(test.ToParse), outputDir, false, false, test.MaxBlockDuration)
 
-		if !test.IsOk {
-			require.Error(t, err, test.Description)
-			continue
-		}
+			if !test.IsOk {
+				require.Error(t, err, test.Description)
+				return
+			}
 
-		require.NoError(t, err)
-		db, err := tsdb.Open(outputDir, nil, nil, tsdb.DefaultOptions(), nil)
-		require.NoError(t, err)
-		defer func() {
-			require.NoError(t, db.Close())
-		}()
+			require.NoError(t, err)
+			db, err := tsdb.Open(outputDir, nil, nil, tsdb.DefaultOptions(), nil)
+			require.NoError(t, err)
+			defer func() {
+				require.NoError(t, db.Close())
+			}()
 
-		testBlocks(t, db, test.Expected.MinTime, test.Expected.MaxTime, test.Expected.Samples, test.Expected.NumBlocks)
+			testBlocks(t, db, test.Expected.MinTime, test.Expected.MaxTime, test.Expected.Samples, test.Expected.NumBlocks)
+		})
 	}
 }
