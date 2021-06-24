@@ -46,7 +46,9 @@ const (
 // The table gets initialized with sync.Once but may still cause a race
 // with any other use of the crc32 package anywhere. Thus we initialize it
 // before.
-var castagnoliTable = crc32.MakeTable(crc32.Castagnoli)
+var (
+	castagnoliTable = crc32.MakeTable(crc32.Castagnoli)
+)
 
 // page is an in memory buffer used to batch disk writes.
 // Records bigger than the page size are split and flushed separately.

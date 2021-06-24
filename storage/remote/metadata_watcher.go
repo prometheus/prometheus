@@ -89,6 +89,9 @@ func (mw *MetadataWatcher) Start() {
 	level.Info(mw.logger).Log("msg", "Starting scraped metadata watcher")
 	mw.hardShutdownCtx, mw.hardShutdownCancel = context.WithCancel(context.Background())
 	mw.softShutdownCtx, mw.softShutdownCancel = context.WithCancel(mw.hardShutdownCtx)
+	if isClosed(mw.done) {
+		mw.done = make(chan struct{})
+	}
 	go mw.loop()
 }
 
