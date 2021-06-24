@@ -1,6 +1,6 @@
 module github.com/prometheus/prometheus
 
-go 1.14
+go 1.16
 
 require (
 	github.com/Azure/azure-sdk-for-go v55.2.0+incompatible
