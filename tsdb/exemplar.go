@@ -20,16 +20,20 @@ import (
 	"unicode/utf8"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
 )
+
+const defaultMaxExemplars = 100000
 
 type CircularExemplarStorage struct {
 	exemplarsAppended            prometheus.Counter
 	exemplarsInStorage           prometheus.Gauge
 	seriesWithExemplarsInStorage prometheus.Gauge
 	lastExemplarsTs              prometheus.Gauge
+	maxExemplars                 prometheus.Gauge
 	outOfOrderExemplars          prometheus.Counter
 
 	lock      sync.RWMutex
@@ -58,6 +62,7 @@ type circularBufferEntry struct {
 // 1GB of extra memory, accounting for the fact that this is heap allocated space.
 // If len < 1, then the exemplar storage is disabled.
 func NewCircularExemplarStorage(len int, reg prometheus.Registerer) (ExemplarStorage, error) {
+	// TODO (callum): nicer way to default to noop storage OR pass length from config in at the start
 	if len < 1 {
 		return &noopExemplarStorage{}, nil
 	}
@@ -86,6 +91,10 @@ func NewCircularExemplarStorage(len int, reg prometheus.Registerer) (ExemplarSto
 			Name: "prometheus_tsdb_exemplar_out_of_order_exemplars_total",
 			Help: "Total number of out of order exemplar ingestion failed attempts.",
 		}),
+		maxExemplars: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "prometheus_tsdb_exemplar_max_exemplars",
+			Help: "Total number of exemplars the exemplar storage can store, resizeable.",
+		}),
 	}
 	if reg != nil {
 		reg.MustRegister(
@@ -94,10 +103,18 @@ func NewCircularExemplarStorage(len int, reg prometheus.Registerer) (ExemplarSto
 			c.seriesWithExemplarsInStorage,
 			c.lastExemplarsTs,
 			c.outOfOrderExemplars,
+			c.maxExemplars,
 		)
 	}
 
+	c.maxExemplars.Set(float64(len))
+
 	return c, nil
+}
+
+func (ce *CircularExemplarStorage) ApplyConfig(cfg *config.Config) error {
+	ce.Resize(cfg.StorageConfig.MaxExemplars)
+	return nil
 }
 
 func (ce *CircularExemplarStorage) Appender() *CircularExemplarStorage {
@@ -248,6 +265,7 @@ func (ce *CircularExemplarStorage) Resize(l int) int {
 	}
 
 	ce.computeMetrics()
+	ce.maxExemplars.Set(float64(l))
 
 	return migrated
 }
@@ -353,6 +371,10 @@ func (noopExemplarStorage) ValidateExemplar(l labels.Labels, e exemplar.Exemplar
 
 func (noopExemplarStorage) ExemplarQuerier(context.Context) (storage.ExemplarQuerier, error) {
 	return &noopExemplarQuerier{}, nil
+}
+
+func (noopExemplarStorage) ApplyConfig(cfg *config.Config) error {
+	return nil
 }
 
 type noopExemplarQuerier struct{}

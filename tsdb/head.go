@@ -30,6 +30,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/atomic"
 
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -59,6 +60,7 @@ type ExemplarStorage interface {
 	storage.ExemplarQueryable
 	AddExemplar(labels.Labels, exemplar.Exemplar) error
 	ValidateExemplar(labels.Labels, exemplar.Exemplar) error
+	ApplyConfig(*config.Config) error
 }
 
 // Head handles reads and writes of time series data within a time window.
@@ -107,6 +109,7 @@ type Head struct {
 	closed    bool
 
 	stats *HeadStats
+	reg   prometheus.Registerer
 }
 
 // HeadOptions are parameters for the Head block.
@@ -119,9 +122,9 @@ type HeadOptions struct {
 	// StripeSize sets the number of entries in the hash map, it must be a power of 2.
 	// A larger StripeSize will allocate more memory up-front, but will increase performance when handling a large number of series.
 	// A smaller StripeSize reduces the memory allocated, but can decrease performance with large number of series.
-	StripeSize     int
-	SeriesCallback SeriesLifecycleCallback
-	NumExemplars   int
+	StripeSize            int
+	SeriesCallback        SeriesLifecycleCallback
+	EnableExemplarStorage bool
 }
 
 func DefaultHeadOptions() *HeadOptions {
@@ -363,6 +366,7 @@ func (h *Head) PostingsCardinalityStats(statsByLabelName string) *index.Postings
 
 // NewHead opens the head block in dir.
 func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, opts *HeadOptions, stats *HeadStats) (*Head, error) {
+	var err error
 	if l == nil {
 		l = log.NewNopLogger()
 	}
@@ -373,10 +377,8 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, opts *HeadOpti
 		opts.SeriesCallback = &noopSeriesLifecycleCallback{}
 	}
 
-	es, err := NewCircularExemplarStorage(opts.NumExemplars, r)
-	if err != nil {
-		return nil, err
-	}
+	// Always start with a noopExemplarStorage now since ApplyConfig is run right after TSDB starts up.
+	es := noopExemplarStorage{}
 
 	if stats == nil {
 		stats = NewHeadStats()
@@ -399,6 +401,7 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, opts *HeadOpti
 			},
 		},
 		stats: stats,
+		reg:   r,
 	}
 	h.chunkRange.Store(opts.ChunkRange)
 	h.minTime.Store(math.MaxInt64)
@@ -423,6 +426,27 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, opts *HeadOpti
 }
 
 func mmappedChunksDir(dir string) string { return filepath.Join(dir, "chunks_head") }
+
+func (h *Head) ApplyConfig(cfg *config.Config) error {
+	if h.opts.EnableExemplarStorage && cfg.StorageConfig.MaxExemplars > -1 {
+		// ugly hack to get the previous default size
+		if cfg.StorageConfig.MaxExemplars == 0 {
+			cfg.StorageConfig.MaxExemplars = 100000
+		}
+		switch h.exemplars.(type) {
+		case noopExemplarStorage:
+			e, err := NewCircularExemplarStorage(cfg.StorageConfig.MaxExemplars, h.reg)
+			if err != nil {
+				return err
+			}
+			h.exemplars = e
+			return nil
+		case *CircularExemplarStorage:
+			return h.exemplars.ApplyConfig(cfg)
+		}
+	}
+	return nil
+}
 
 func (h *Head) ExemplarQuerier(ctx context.Context) (storage.ExemplarQuerier, error) {
 	return h.exemplars.ExemplarQuerier(ctx)
@@ -1179,7 +1203,7 @@ func (a *initAppender) Append(ref uint64, lset labels.Labels, t int64, v float64
 
 func (a *initAppender) AppendExemplar(ref uint64, l labels.Labels, e exemplar.Exemplar) (uint64, error) {
 	// Check if exemplar storage is enabled.
-	if a.head.opts.NumExemplars <= 0 {
+	if !a.head.opts.EnableExemplarStorage {
 		return 0, nil
 	}
 
@@ -1237,7 +1261,7 @@ func (h *Head) appender() *headAppender {
 
 	// Allocate the exemplars buffer only if exemplars are enabled.
 	var exemplarsBuf []exemplarWithSeriesRef
-	if h.opts.NumExemplars > 0 {
+	if !h.opts.EnableExemplarStorage {
 		exemplarsBuf = h.getExemplarBuffer()
 	}
 
@@ -1251,7 +1275,6 @@ func (h *Head) appender() *headAppender {
 		exemplars:             exemplarsBuf,
 		appendID:              appendID,
 		cleanupAppendIDsBelow: cleanupAppendIDsBelow,
-		exemplarAppender:      h.exemplars,
 	}
 }
 
@@ -1266,19 +1289,6 @@ func max(a, b int64) int64 {
 		return a
 	}
 	return b
-}
-
-func (h *Head) ExemplarAppender() storage.ExemplarAppender {
-	h.metrics.activeAppenders.Inc()
-
-	// The head cache might not have a starting point yet. The init appender
-	// picks up the first appended timestamp as the base.
-	if h.MinTime() == math.MaxInt64 {
-		return &initAppender{
-			head: h,
-		}
-	}
-	return h.appender()
 }
 
 func (h *Head) getAppendBuffer() []record.RefSample {
@@ -1419,11 +1429,10 @@ func (a *headAppender) Append(ref uint64, lset labels.Labels, t int64, v float64
 // AppendExemplar for headAppender assumes the series ref already exists, and so it doesn't
 // use getOrCreate or make any of the lset sanity checks that Append does.
 func (a *headAppender) AppendExemplar(ref uint64, _ labels.Labels, e exemplar.Exemplar) (uint64, error) {
-	// Check if exemplar storage is enabled.
-	if a.head.opts.NumExemplars <= 0 {
+	switch a.head.exemplars.(type) {
+	case noopExemplarStorage:
 		return 0, nil
 	}
-
 	s := a.head.series.getByID(ref)
 	if s == nil {
 		return 0, fmt.Errorf("unknown series ref. when trying to add exemplar: %d", ref)
@@ -1432,7 +1441,7 @@ func (a *headAppender) AppendExemplar(ref uint64, _ labels.Labels, e exemplar.Ex
 	// Ensure no empty labels have gotten through.
 	e.Labels = e.Labels.WithoutEmpty()
 
-	err := a.exemplarAppender.ValidateExemplar(s.lset, e)
+	err := a.head.exemplars.ValidateExemplar(s.lset, e)
 	if err != nil {
 		if err == storage.ErrDuplicateExemplar {
 			// Duplicate, don't return an error but don't accept the exemplar.
@@ -1523,7 +1532,7 @@ func (a *headAppender) Commit() (err error) {
 	for _, e := range a.exemplars {
 		s := a.head.series.getByID(e.ref)
 		// We don't instrument exemplar appends here, all is instrumented by storage.
-		if err := a.exemplarAppender.AddExemplar(s.lset, e.exemplar); err != nil {
+		if err := a.head.exemplars.AddExemplar(s.lset, e.exemplar); err != nil {
 			if err == storage.ErrOutOfOrderExemplar {
 				continue
 			}

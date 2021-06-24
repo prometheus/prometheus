@@ -182,6 +182,11 @@ var (
 		RemoteTimeout:    model.Duration(1 * time.Minute),
 		HTTPClientConfig: config.DefaultHTTPClientConfig,
 	}
+
+	// DefaultStorageConfig is the default TSDB/Exemplar storage configuration.
+	DefaultStorageConfig = StorageConfig{
+		MaxExemplars: 100000,
+	}
 )
 
 // Config is the top-level configuration for Prometheus's config files.
@@ -190,6 +195,7 @@ type Config struct {
 	AlertingConfig AlertingConfig  `yaml:"alerting,omitempty"`
 	RuleFiles      []string        `yaml:"rule_files,omitempty"`
 	ScrapeConfigs  []*ScrapeConfig `yaml:"scrape_configs,omitempty"`
+	StorageConfig  StorageConfig   `yaml:"storage_config,omitempty"`
 
 	RemoteWriteConfigs []*RemoteWriteConfig `yaml:"remote_write,omitempty"`
 	RemoteReadConfigs  []*RemoteReadConfig  `yaml:"remote_read,omitempty"`
@@ -461,6 +467,12 @@ func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 // MarshalYAML implements the yaml.Marshaler interface.
 func (c *ScrapeConfig) MarshalYAML() (interface{}, error) {
 	return discovery.MarshalYAMLWithInlineConfigs(c)
+}
+
+// StorageConfig configures runtime reloadable configuration options.
+type StorageConfig struct {
+	// Explicitly use -1, if the value is 0 we interpret it as the default max exemplars in the tsdb/exemplar.go code.
+	MaxExemplars int `yaml:"max_exemplars,omitempty"`
 }
 
 // AlertingConfig configures alerting and alertmanager related configs.

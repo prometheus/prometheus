@@ -51,7 +51,7 @@ func newTestHead(t testing.TB, chunkRange int64, compressWAL bool) (*Head, *wal.
 	opts := DefaultHeadOptions()
 	opts.ChunkRange = chunkRange
 	opts.ChunkDirRoot = dir
-	opts.NumExemplars = 10
+	opts.EnableExemplarStorage = true
 	h, err := NewHead(nil, nil, wlog, opts, nil)
 	require.NoError(t, err)
 

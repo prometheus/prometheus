@@ -15,6 +15,7 @@ package tsdb
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"reflect"
 	"strconv"
@@ -386,7 +387,7 @@ func TestIndexOverwrite(t *testing.T) {
 func TestResize(t *testing.T) {
 	testCases := []struct {
 		name              string
-		startCount        int
+		startSize         int
 		newCount          int
 		expectedSeries    []int
 		notExpectedSeries []int
@@ -394,7 +395,7 @@ func TestResize(t *testing.T) {
 	}{
 		{
 			name:              "Grow",
-			startCount:        100,
+			startSize:         100,
 			newCount:          200,
 			expectedSeries:    []int{99, 98, 1, 0},
 			notExpectedSeries: []int{100},
@@ -402,7 +403,7 @@ func TestResize(t *testing.T) {
 		},
 		{
 			name:              "Shrink",
-			startCount:        100,
+			startSize:         100,
 			newCount:          50,
 			expectedSeries:    []int{99, 98, 50},
 			notExpectedSeries: []int{49, 1, 0},
@@ -413,11 +414,11 @@ func TestResize(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 
-			exs, err := NewCircularExemplarStorage(tc.startCount, nil)
+			exs, err := NewCircularExemplarStorage(tc.startSize, nil)
 			require.NoError(t, err)
 			es := exs.(*CircularExemplarStorage)
 
-			for i := 0; i < tc.startCount; i++ {
+			for i := 0; i < tc.startSize; i++ {
 				err = es.AddExemplar(labels.FromStrings("service", strconv.Itoa(i)), exemplar.Exemplar{
 					Value: float64(i),
 					Ts:    int64(i)})
@@ -450,7 +451,6 @@ func TestResize(t *testing.T) {
 }
 
 func BenchmarkAddExemplar(t *testing.B) {
-
 	exs, err := NewCircularExemplarStorage(t.N, nil)
 	require.NoError(t, err)
 	es := exs.(*CircularExemplarStorage)
@@ -463,48 +463,58 @@ func BenchmarkAddExemplar(t *testing.B) {
 	}
 }
 
-func BenchmarkResizeExemplars(t *testing.B) {
-	var startCount int
-	var endCount int
-
+func BenchmarkResizeExemplars(b *testing.B) {
 	testCases := []struct {
-		name    string
-		setupfn func(t *testing.B)
+		name         string
+		startSize    int
+		endSize      int
+		numExemplars int
 	}{
 		{
-			name: "grow",
-			setupfn: func(t *testing.B) {
-				startCount = t.N
-				endCount = t.N + 1
-			},
+			name:         "grow",
+			startSize:    100000,
+			endSize:      200000,
+			numExemplars: 150000,
 		},
 		{
-			name: "shrink",
-			setupfn: func(t *testing.B) {
-				startCount = t.N
-				endCount = t.N/2 + 1
-			},
+			name:         "shrink",
+			startSize:    100000,
+			endSize:      50000,
+			numExemplars: 100000,
+		},
+		{
+			name:         "grow",
+			startSize:    1000000,
+			endSize:      2000000,
+			numExemplars: 1500000,
+		},
+		{
+			name:         "shrink",
+			startSize:    1000000,
+			endSize:      500000,
+			numExemplars: 1000000,
 		},
 	}
 
 	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.B) {
+		exs, err := NewCircularExemplarStorage(tc.startSize, nil)
+		require.NoError(b, err)
+		es := exs.(*CircularExemplarStorage)
 
-			tc.setupfn(t)
+		for i := 0; i < int(float64(tc.startSize)*float64(1.5)); i++ {
+			l := labels.FromStrings("service", strconv.Itoa(i))
 
-			exs, err := NewCircularExemplarStorage(startCount, nil)
-			require.NoError(t, err)
-			es := exs.(*CircularExemplarStorage)
+			err = es.AddExemplar(l, exemplar.Exemplar{Value: float64(i), Ts: int64(i)})
+			require.NoError(b, err)
+		}
+		saveIndex := es.index
+		saveExemplars := es.exemplars
 
-			for i := 0; i < startCount; i++ {
-				l := labels.FromStrings("service", strconv.Itoa(i))
-
-				err = es.AddExemplar(l, exemplar.Exemplar{Value: float64(i), Ts: int64(i)})
-				require.NoError(t, err)
-			}
-
-			t.ResetTimer()
-			es.Resize(endCount)
+		b.Run(fmt.Sprintf("%s-%d-to-%d", tc.name, tc.startSize, tc.endSize), func(t *testing.B) {
+			es.index = saveIndex
+			es.exemplars = saveExemplars
+			b.ResetTimer()
+			es.Resize(tc.endSize)
 		})
 	}
 }
