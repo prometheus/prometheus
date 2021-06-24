@@ -1307,7 +1307,7 @@ exports[`Flags should match snapshot 1`] = `
             <span
               dangerouslySetInnerHTML={
                 Object {
-                  "__html": "Prometheus",
+                  "__html": "Prometheus Time Series Collection and Processing Server",
                 }
               }
             />
