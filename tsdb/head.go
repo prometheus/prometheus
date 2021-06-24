@@ -125,6 +125,7 @@ type HeadOptions struct {
 	StripeSize            int
 	SeriesCallback        SeriesLifecycleCallback
 	EnableExemplarStorage bool
+	MaxExemplars          int
 }
 
 func DefaultHeadOptions() *HeadOptions {
@@ -377,8 +378,18 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, opts *HeadOpti
 		opts.SeriesCallback = &noopSeriesLifecycleCallback{}
 	}
 
+	// ugly hack to get the previous default size
+	if opts.MaxExemplars == 0 {
+		opts.MaxExemplars = 100000
+	}
 	// Always start with a noopExemplarStorage now since ApplyConfig is run right after TSDB starts up.
-	es := noopExemplarStorage{}
+	var es ExemplarStorage = noopExemplarStorage{}
+	if opts.EnableExemplarStorage && opts.MaxExemplars > -1 {
+		es, err = NewCircularExemplarStorage(opts.MaxExemplars, r)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	if stats == nil {
 		stats = NewHeadStats()
@@ -428,18 +439,22 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, opts *HeadOpti
 func mmappedChunksDir(dir string) string { return filepath.Join(dir, "chunks_head") }
 
 func (h *Head) ApplyConfig(cfg *config.Config) error {
-	if h.opts.EnableExemplarStorage && cfg.StorageConfig.MaxExemplars > -1 {
+	if h.opts.EnableExemplarStorage && cfg.StorageConfig.ExemplarsConfig.MaxExemplars > -1 {
 		// ugly hack to get the previous default size
-		if cfg.StorageConfig.MaxExemplars == 0 {
-			cfg.StorageConfig.MaxExemplars = 100000
+		if cfg.StorageConfig.ExemplarsConfig.MaxExemplars == 0 {
+			cfg.StorageConfig.ExemplarsConfig.MaxExemplars = 100000
 		}
 		switch h.exemplars.(type) {
 		case noopExemplarStorage:
-			e, err := NewCircularExemplarStorage(cfg.StorageConfig.MaxExemplars, h.reg)
+			e, err := NewCircularExemplarStorage(cfg.StorageConfig.ExemplarsConfig.MaxExemplars, h.reg)
 			if err != nil {
 				return err
 			}
 			h.exemplars = e
+			// Head uses opts.MaxExemplars in combination with opts.EnableExemplarStorage
+			// to decide if it should pass exemplars along to it's exemplar storage, so we
+			// need to update opts.MaxExemplars here.
+			h.opts.MaxExemplars = cfg.StorageConfig.ExemplarsConfig.MaxExemplars
 			return nil
 		case *CircularExemplarStorage:
 			return h.exemplars.ApplyConfig(cfg)
@@ -1203,7 +1218,7 @@ func (a *initAppender) Append(ref uint64, lset labels.Labels, t int64, v float64
 
 func (a *initAppender) AppendExemplar(ref uint64, l labels.Labels, e exemplar.Exemplar) (uint64, error) {
 	// Check if exemplar storage is enabled.
-	if !a.head.opts.EnableExemplarStorage {
+	if !a.head.opts.EnableExemplarStorage && a.head.opts.MaxExemplars > -1 {
 		return 0, nil
 	}
 
@@ -1353,10 +1368,9 @@ type exemplarWithSeriesRef struct {
 }
 
 type headAppender struct {
-	head             *Head
-	minValidTime     int64 // No samples below this timestamp are allowed.
-	mint, maxt       int64
-	exemplarAppender ExemplarStorage
+	head         *Head
+	minValidTime int64 // No samples below this timestamp are allowed.
+	mint, maxt   int64
 
 	series       []record.RefSeries
 	samples      []record.RefSample
@@ -1431,6 +1445,10 @@ func (a *headAppender) Append(ref uint64, lset labels.Labels, t int64, v float64
 func (a *headAppender) AppendExemplar(ref uint64, _ labels.Labels, e exemplar.Exemplar) (uint64, error) {
 	switch a.head.exemplars.(type) {
 	case noopExemplarStorage:
+		return 0, nil
+	}
+	// Check if exemplar storage is enabled.
+	if !a.head.opts.EnableExemplarStorage && a.head.opts.MaxExemplars > -1 {
 		return 0, nil
 	}
 	s := a.head.series.getByID(ref)

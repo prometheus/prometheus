@@ -345,9 +345,13 @@ func main() {
 	}
 
 	// Throw error for invalid config before starting other components.
-	if _, err := config.LoadFile(cfg.configFile, false, log.NewNopLogger()); err != nil {
+	var cfgFile *config.Config
+	if cfgFile, err = config.LoadFile(cfg.configFile, false, log.NewNopLogger()); err != nil {
 		level.Error(logger).Log("msg", fmt.Sprintf("Error loading config (--config.file=%s)", cfg.configFile), "err", err)
 		os.Exit(2)
+	}
+	if cfgFile.StorageConfig.ExemplarsConfig.MaxExemplars > 0 {
+		cfg.tsdb.MaxExemplars = cfgFile.StorageConfig.ExemplarsConfig.MaxExemplars
 	}
 	// Now that the validity of the config is established, set the config
 	// success metrics accordingly, although the config isn't really loaded
@@ -1260,6 +1264,7 @@ type tsdbOptions struct {
 	MinBlockDuration         model.Duration
 	MaxBlockDuration         model.Duration
 	EnableExemplarStorage    bool
+	MaxExemplars             int
 }
 
 func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
@@ -1275,6 +1280,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		MinBlockDuration:         int64(time.Duration(opts.MinBlockDuration) / time.Millisecond),
 		MaxBlockDuration:         int64(time.Duration(opts.MaxBlockDuration) / time.Millisecond),
 		EnableExemplarStorage:    opts.EnableExemplarStorage,
+		MaxExemplars:             opts.MaxExemplars,
 	}
 }
 

@@ -26,8 +26,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 )
 
-const defaultMaxExemplars = 100000
-
 type CircularExemplarStorage struct {
 	exemplarsAppended            prometheus.Counter
 	exemplarsInStorage           prometheus.Gauge
@@ -113,7 +111,7 @@ func NewCircularExemplarStorage(len int, reg prometheus.Registerer) (ExemplarSto
 }
 
 func (ce *CircularExemplarStorage) ApplyConfig(cfg *config.Config) error {
-	ce.Resize(cfg.StorageConfig.MaxExemplars)
+	ce.Resize(cfg.StorageConfig.ExemplarsConfig.MaxExemplars)
 	return nil
 }
 
