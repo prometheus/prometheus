@@ -8,13 +8,13 @@ tests:
   - interval: 1m
     input_series:
       - series: test_full
-        values: '0 0'
+        values: "0 0"
 
       - series: test_stale
-        values: '0 stale'
+        values: "0 stale"
 
       - series: test_missing
-        values: '0 _ _ _ _ _ _ 0'
+        values: "0 _ _ _ _ _ _ 0"
 
     promql_expr_test:
       # Ensure the sample is evaluated at the time we expect it to be.
@@ -36,7 +36,7 @@ tests:
         eval_time: 59s
         exp_samples:
           - value: 0
-            labels: 'test_stale'
+            labels: "test_stale"
       - expr: test_stale
         eval_time: 1m
         exp_samples: []
@@ -83,10 +83,10 @@ tests:
       - expr: count(ALERTS) by (alertname, alertstate)
         eval_time: 4m
         exp_samples:
-        - labels: '{alertname="AlwaysFiring",alertstate="firing"}'
-          value: 1
-        - labels: '{alertname="InstanceDown",alertstate="pending"}'
-          value: 1
+          - labels: '{alertname="AlwaysFiring",alertstate="firing"}'
+            value: 1
+          - labels: '{alertname="InstanceDown",alertstate="pending"}'
+            value: 1
 
     alert_rule_test:
       - eval_time: 1d
@@ -120,7 +120,7 @@ tests:
       - series: 'test{job="test", instance="x:0"}'
         # 2 minutes + 1 second of input data, recording rules should only run
         # once a minute.
-        values: '0+1x120'
+        values: "0+1x120"
 
     promql_expr_test:
       - expr: job:test:count_over_time1m

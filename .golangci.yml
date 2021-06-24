@@ -3,14 +3,14 @@ run:
 
 linters:
   enable:
-  - depguard
-  - golint
+    - depguard
+    - golint
 
 issues:
   exclude-rules:
-  - path: _test.go
-    linters:
-    - errcheck
+    - path: _test.go
+      linters:
+        - errcheck
 
 linters-settings:
   depguard:
