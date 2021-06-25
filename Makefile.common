@@ -201,7 +201,11 @@ endif
 .PHONY: common-yamllint
 common-yamllint:
 	@echo ">> running yamllint on all YAML files in the repository"
+ifeq (, $(shell which yamllint))
+	@echo "yamllint not installed so skipping"
+else
 	yamllint .
+endif
 
 # For backward-compatibility.
 .PHONY: common-staticcheck
