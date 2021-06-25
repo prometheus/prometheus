@@ -117,6 +117,7 @@ type Discovery struct {
 	tagSeparator         string
 	lastRefreshTimestamp time.Time
 	lastResults          []*targetgroup.Group
+	eventPollingEnabled  bool
 }
 
 // NewDiscovery returns a new Discovery which periodically refreshes its targets.
@@ -125,6 +126,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 		port:                 conf.Port,
 		tagSeparator:         conf.TagSeparator,
 		lastRefreshTimestamp: time.Now().UTC(),
+		eventPollingEnabled:  true,
 	}
 
 	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "linode_sd", config.WithHTTP2Disabled())
@@ -151,26 +153,42 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 }
 
 func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
-	// Update the last refresh timestamp - better to have some overlap than miss something.
-	d.lastRefreshTimestamp = time.Now().UTC()
+	if d.eventPollingEnabled {
+		// Update the last refresh timestamp - better to have some overlap than miss something.
+		d.lastRefreshTimestamp = time.Now().UTC()
 
-	// Check to see if there have been any events that require us to refresh our data.
-	opts := linodego.NewListOptions(1, fmt.Sprintf(filterTemplate, d.lastRefreshTimestamp.Format("2006-01-02T15:04:05")))
-	events, err := d.client.ListEvents(ctx, opts)
-	if err != nil {
-		return nil, err
-	}
+		// Check to see if there have been any events. If so, refresh our data.
+		opts := linodego.NewListOptions(1, fmt.Sprintf(filterTemplate, d.lastRefreshTimestamp.Format("2006-01-02T15:04:05")))
+		events, err := d.client.ListEvents(ctx, opts)
+		if err != nil {
+			if strings.Contains(err.Error(), fmt.Sprintf("%d", http.StatusUnauthorized)) {
+				// If we get a 401, the token doesn't have `account:read_only` scope.
+				// Disable event polling and fallback to doing a full refresh every interval.
+				d.eventPollingEnabled = false
+			} else {
+				return nil, err
+			}
+		}
 
-	// If we don't have any previous results or if any events happened that we care about, refresh data.
-	if d.lastResults == nil || len(events) > 0 {
+		// If we don't have any previous results or if any events happened, refresh data.
+		if d.lastResults == nil || len(events) > 0 {
+			newData, err := d.refreshData(ctx)
+			if err != nil {
+				return nil, err
+			}
+			d.lastResults = newData
+		}
+
+		return d.lastResults, nil
+	} else {
+		// If polling is disabled, do a full refresh every interval.
 		newData, err := d.refreshData(ctx)
 		if err != nil {
 			return nil, err
 		}
-		d.lastResults = newData
-	}
 
-	return d.lastResults, nil
+		return newData, nil
+	}
 }
 
 func (d *Discovery) refreshData(ctx context.Context) ([]*targetgroup.Group, error) {
