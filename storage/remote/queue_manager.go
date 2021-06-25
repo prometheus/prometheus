@@ -443,11 +443,17 @@ func (t *QueueManager) AppendMetadata(ctx context.Context, metadata []scrape.Met
 		})
 	}
 
-	err := t.sendMetadataWithBackoff(ctx, mm)
-
-	if err != nil {
-		t.metrics.failedMetadataTotal.Add(float64(len(metadata)))
-		level.Error(t.logger).Log("msg", "non-recoverable error while sending metadata", "count", len(metadata), "err", err)
+	numSends := int(math.Ceil(float64(len(metadata)) / float64(t.mcfg.MaxSamplesPerSend)))
+	for i := 0; i < numSends; i++ {
+		last := (i + 1) * t.mcfg.MaxSamplesPerSend
+		if last > len(metadata) {
+			last = len(metadata)
+		}
+		err := t.sendMetadataWithBackoff(ctx, mm[i*t.mcfg.MaxSamplesPerSend:last])
+		if err != nil {
+			t.metrics.failedMetadataTotal.Add(float64(last - (i * t.mcfg.MaxSamplesPerSend)))
+			level.Error(t.logger).Log("msg", "non-recoverable error while sending metadata", "count", last-(i*t.mcfg.MaxSamplesPerSend), "err", err)
+		}
 	}
 }
 

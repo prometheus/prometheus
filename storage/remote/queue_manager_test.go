@@ -167,16 +167,25 @@ func TestMetadataDelivery(t *testing.T) {
 	m.Start()
 	defer m.Stop()
 
-	m.AppendMetadata(context.Background(), []scrape.MetricMetadata{
-		{
-			Metric: "prometheus_remote_storage_sent_metadata_bytes_total",
+	metadata := []scrape.MetricMetadata{}
+	numMetadata := 1532
+	for i := 0; i < numMetadata; i++ {
+		metadata = append(metadata, scrape.MetricMetadata{
+			Metric: "prometheus_remote_storage_sent_metadata_bytes_total_" + strconv.Itoa(i),
 			Type:   textparse.MetricTypeCounter,
 			Help:   "a nice help text",
 			Unit:   "",
-		},
-	})
+		})
+	}
 
-	require.Equal(t, len(c.receivedMetadata), 1)
+	m.AppendMetadata(context.Background(), metadata)
+
+	require.Equal(t, numMetadata, len(c.receivedMetadata))
+	// One more write than the rounded qoutient should be performed in order to get samples that didn't
+	// fit into MaxSamplesPerSend.
+	require.Equal(t, numMetadata/mcfg.MaxSamplesPerSend+1, c.writesReceived)
+	// Make sure the last samples were sent.
+	require.Equal(t, c.receivedMetadata[metadata[len(metadata)-1].Metric][0].MetricFamilyName, metadata[len(metadata)-1].Metric)
 }
 
 func TestSampleDeliveryTimeout(t *testing.T) {
@@ -522,6 +531,7 @@ type TestWriteClient struct {
 	receivedExemplars map[string][]prompb.Exemplar
 	expectedExemplars map[string][]prompb.Exemplar
 	receivedMetadata  map[string][]prompb.MetricMetadata
+	writesReceived    int
 	withWaitGroup     bool
 	wg                sync.WaitGroup
 	mtx               sync.Mutex
@@ -654,6 +664,8 @@ func (c *TestWriteClient) Store(_ context.Context, req []byte) error {
 	for _, m := range reqProto.Metadata {
 		c.receivedMetadata[m.MetricFamilyName] = append(c.receivedMetadata[m.MetricFamilyName], m)
 	}
+
+	c.writesReceived++
 
 	return nil
 }
