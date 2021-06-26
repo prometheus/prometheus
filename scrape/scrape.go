@@ -422,23 +422,31 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 		var (
 			t       = sp.activeTargets[fp]
 			dropped bool
+			err     error
 		)
 
 		if t != nil {
-			lblsMap := t.labels.Map()
-			lblsMap[model.ScrapeIntervalLabel] = cfg.ScrapeInterval.String()
-			lblsMap[model.ScrapeTimeoutLabel] = cfg.ScrapeTimeout.String()
-			t.labels = labels.FromMap(lblsMap)
-			t.SetDiscoveredLabels(t.labels)
+			discoverdLblsMap := t.DiscoveredLabels().Map()
+			discoverdLblsMap[model.ScrapeIntervalLabel] = cfg.ScrapeInterval.String()
+			discoverdLblsMap[model.ScrapeTimeoutLabel] = cfg.ScrapeTimeout.String()
+			discoveredLbls := labels.FromMap(discoverdLblsMap)
+			t.SetDiscoveredLabels(discoveredLbls)
 
 			// processLabels re-runs relabeling, which needs to be done because the new config
 			// changes the scrape interval and timeout labels.
-			lbls, _, err := processLabels(t.labels, cfg)
+			var lbls labels.Labels
+			lbls, _, err = processLabels(discoveredLbls, cfg)
 			t.SetLabels(lbls)
 
 			// If the output labels are nil and there's no error
 			// that means that target has been dropped.
 			dropped = lbls == nil && err == nil
+
+			var getErr error
+			interval, timeout, getErr = t.GetIntervalAndTimeout(interval, timeout)
+			if err == nil {
+				err = getErr
+			}
 		}
 
 		var (
@@ -536,6 +544,8 @@ func (sp *scrapePool) sync(targets []*Target) {
 		honorLabels     = sp.config.HonorLabels
 		honorTimestamps = sp.config.HonorTimestamps
 		mrc             = sp.config.MetricRelabelConfigs
+		interval        = time.Duration(sp.config.ScrapeInterval)
+		timeout         = time.Duration(sp.config.ScrapeTimeout)
 	)
 
 	sp.targetMtx.Lock()
@@ -546,20 +556,10 @@ func (sp *scrapePool) sync(targets []*Target) {
 			// The scrape interval and timeout labels are set to the config's values initially,
 			// so whether changed via relabeling or not, they'll exist and hold the correct values
 			// for every target.
-			intervalLabel := t.labels.Get(model.ScrapeIntervalLabel)
-			interval, err := model.ParseDuration(intervalLabel)
-			if err != nil {
-				level.Error(sp.logger).Log("msg", "Error parsing interval label", "err", err, "value", intervalLabel)
-				continue
-			}
-			timeoutLabel := t.labels.Get(model.ScrapeTimeoutLabel)
-			timeout, err := model.ParseDuration(timeoutLabel)
-			if err != nil {
-				level.Error(sp.logger).Log("msg", "Error parsing timeout label", "err", err, "value", timeoutLabel)
-				continue
-			}
+			var err error
+			interval, timeout, err = t.GetIntervalAndTimeout(interval, timeout)
 
-			s := &targetScraper{Target: t, client: sp.client, timeout: time.Duration(timeout), bodySizeLimit: bodySizeLimit}
+			s := &targetScraper{Target: t, client: sp.client, timeout: timeout, bodySizeLimit: bodySizeLimit}
 			l := sp.newLoop(scrapeLoopOptions{
 				target:          t,
 				scraper:         s,
@@ -568,9 +568,12 @@ func (sp *scrapePool) sync(targets []*Target) {
 				honorLabels:     honorLabels,
 				honorTimestamps: honorTimestamps,
 				mrc:             mrc,
-				interval:        time.Duration(interval),
-				timeout:         time.Duration(timeout),
+				interval:        interval,
+				timeout:         timeout,
 			})
+			if err != nil {
+				l.setForcedError(err)
+			}
 
 			sp.activeTargets[hash] = t
 			sp.loops[hash] = l

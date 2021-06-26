@@ -278,8 +278,10 @@ func TestScrapePoolReload(t *testing.T) {
 	// one terminated.
 
 	for i := 0; i < numTargets; i++ {
+		labels := labels.FromStrings(model.AddressLabel, fmt.Sprintf("example.com:%d", i))
 		t := &Target{
-			labels: labels.FromStrings(model.AddressLabel, fmt.Sprintf("example.com:%d", i)),
+			labels:           labels,
+			discoveredLabels: labels,
 		}
 		l := &testLoop{}
 		l.stopFunc = func() {
