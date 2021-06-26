@@ -116,10 +116,8 @@ check_circleci_orb() {
 
 process_repo() {
   local org_repo
-  local pr_link
   local default_branch
   org_repo="$1"
-  pr_link="$2"
   echo_green "Analyzing '${org_repo}'"
 
   default_branch="$(get_default_branch "${org_repo}")"
@@ -188,10 +186,6 @@ process_repo() {
     git add .
     git commit -s -m "${commit_msg}"
     if push_branch "${org_repo}"; then
-      if [[ "${pr_link}" != "null" ]]; then
-        echo_yellow "Pull request already opened for branch '${branch}': ${pr_link}"
-        return 0
-      fi
       if ! post_pull_request "${org_repo}" "${default_branch}"; then
         return 1
       fi
@@ -211,8 +205,14 @@ for org in ${orgs}; do
   fetch_repos "${org}" | while read -r repo; do
     # Check if a PR is already opened for the branch.
     fetch_uri="repos/${org}/${repo}/pulls?state=open&head=${org}:${branch}"
-    pr_link="$(github_api "${fetch_uri}" --show-error | jq -r '.[0].html_url')"
-    if ! process_repo "${org}/${repo}" "${pr_link}"; then
+    prLink="$(github_api "${fetch_uri}" --show-error | jq -r '.[0].html_url')"
+    if [[ "${prLink}" != "null" ]]; then
+      echo_green "Pull request already opened for branch '${branch}': ${prLink}"
+      echo "Either close it or merge it before running this script again!"
+      continue
+    fi
+
+    if ! process_repo "${org}/${repo}"; then
       echo_red "Failed to process '${org}/${repo}'"
       exit 1
     fi
