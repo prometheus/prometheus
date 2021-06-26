@@ -421,6 +421,27 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 
 		var (
 			t       = sp.activeTargets[fp]
+			dropped bool
+		)
+
+		if t != nil {
+			lblsMap := t.labels.Map()
+			lblsMap[model.ScrapeIntervalLabel] = cfg.ScrapeInterval.String()
+			lblsMap[model.ScrapeTimeoutLabel] = cfg.ScrapeTimeout.String()
+			t.labels = labels.FromMap(lblsMap)
+			t.SetDiscoveredLabels(t.labels)
+
+			// processLabels re-runs relabeling, which needs to be done because the new config
+			// changes the scrape interval and timeout labels.
+			lbls, _, err := processLabels(t.labels, cfg)
+			t.SetLabels(lbls)
+
+			// If the output labels are nil and there's no error
+			// that means that target has been dropped.
+			dropped = lbls == nil && err == nil
+		}
+
+		var (
 			s       = &targetScraper{Target: t, client: sp.client, timeout: timeout, bodySizeLimit: bodySizeLimit}
 			newLoop = sp.newLoop(scrapeLoopOptions{
 				target:          t,
@@ -435,17 +456,25 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 				timeout:         timeout,
 			})
 		)
+		if err != nil {
+			newLoop.setForcedError(err)
+		}
+
 		wg.Add(1)
 
 		go func(oldLoop, newLoop loop) {
 			oldLoop.stop()
 			wg.Done()
 
-			newLoop.setForcedError(forcedErr)
-			newLoop.run(nil)
+			if !dropped {
+				newLoop.setForcedError(forcedErr)
+				newLoop.run(nil)
+			}
 		}(oldLoop, newLoop)
 
-		sp.loops[fp] = newLoop
+		if !dropped {
+			sp.loops[fp] = newLoop
+		}
 	}
 
 	sp.targetMtx.Unlock()

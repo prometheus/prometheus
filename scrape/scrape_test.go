@@ -490,8 +490,8 @@ func TestScrapePoolAppender(t *testing.T) {
 }
 
 func TestScrapePoolRaces(t *testing.T) {
-	interval, _ := model.ParseDuration("500ms")
-	timeout, _ := model.ParseDuration("1s")
+	interval, _ := model.ParseDuration("1s")
+	timeout, _ := model.ParseDuration("500ms")
 	newConfig := func() *config.ScrapeConfig {
 		return &config.ScrapeConfig{ScrapeInterval: interval, ScrapeTimeout: timeout}
 	}
@@ -2688,4 +2688,47 @@ func TestScrapeLoopLabelLimit(t *testing.T) {
 			require.NoError(t, slApp.Commit())
 		}
 	}
+}
+
+func TestTargetReloadRelabel(t *testing.T) {
+	// This simulates a scenerio where a different relabel
+	// replacement should occur on reload.
+
+	interval, _ := model.ParseDuration("2s")
+	timeout, _ := model.ParseDuration("500ms")
+	config := &config.ScrapeConfig{
+		ScrapeInterval: interval,
+		ScrapeTimeout:  timeout,
+		RelabelConfigs: []*relabel.Config{
+			{
+				SourceLabels: model.LabelNames{model.ScrapeIntervalLabel},
+				Regex:        relabel.MustNewRegexp("2s"),
+				Replacement:  "2s",
+				TargetLabel:  model.ScrapeIntervalLabel,
+				Action:       relabel.Replace,
+			},
+			{
+				SourceLabels: model.LabelNames{model.ScrapeIntervalLabel},
+				Regex:        relabel.MustNewRegexp("3s"),
+				Replacement:  "4s",
+				TargetLabel:  model.ScrapeIntervalLabel,
+				Action:       relabel.Replace,
+			},
+		},
+	}
+	sp, _ := newScrapePool(config, &nopAppendable{}, 0, nil)
+	tgts := []*targetgroup.Group{
+		{
+			Targets: []model.LabelSet{{model.AddressLabel: "127.0.0.1:9090"}},
+		},
+	}
+
+	sp.Sync(tgts)
+	defer sp.stop()
+
+	interval, _ = model.ParseDuration("3s")
+	config.ScrapeInterval = interval
+	sp.reload(config)
+
+	require.Equal(t, "4s", sp.ActiveTargets()[0].labels.Get(model.ScrapeIntervalLabel), "Scrape interval label has not been relabeled on reload.")
 }

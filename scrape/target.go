@@ -196,6 +196,13 @@ func (t *Target) SetDiscoveredLabels(l labels.Labels) {
 	t.discoveredLabels = l
 }
 
+// SetLabels set new labels.
+func (t *Target) SetLabels(l labels.Labels) {
+	t.mtx.Lock()
+	defer t.mtx.Unlock()
+	t.labels = l
+}
+
 // URL returns a copy of the target's URL.
 func (t *Target) URL() *url.URL {
 	params := url.Values{}
@@ -348,8 +355,12 @@ func populateLabels(lset labels.Labels, cfg *config.ScrapeConfig) (res, orig lab
 		}
 	}
 
-	preRelabelLabels := lb.Labels()
-	lset = relabel.Process(preRelabelLabels, cfg.RelabelConfigs...)
+	return processLabels(lb.Labels(), cfg)
+}
+
+// processLabels runs relabeling and checks the output.
+func processLabels(preRelabelLabels labels.Labels, cfg *config.ScrapeConfig) (res, orig labels.Labels, err error) {
+	lset := relabel.Process(preRelabelLabels, cfg.RelabelConfigs...)
 
 	// Check if the target was dropped.
 	if lset == nil {
@@ -359,7 +370,7 @@ func populateLabels(lset labels.Labels, cfg *config.ScrapeConfig) (res, orig lab
 		return nil, nil, errors.New("no address")
 	}
 
-	lb = labels.NewBuilder(lset)
+	lb := labels.NewBuilder(lset)
 
 	// addPort checks whether we should add a default port to the address.
 	// If the address is not valid, we don't append a port either.
@@ -404,17 +415,20 @@ func populateLabels(lset labels.Labels, cfg *config.ScrapeConfig) (res, orig lab
 		}
 	}
 
-	if timeout := lset.Get(model.ScrapeTimeoutLabel); timeout != cfg.ScrapeInterval.String() {
-		timeoutDuration, err := model.ParseDuration(timeout)
+	var timeout string
+	var timeoutDuration model.Duration
+	if timeout = lset.Get(model.ScrapeTimeoutLabel); timeout != cfg.ScrapeTimeout.String() {
+		timeoutDuration, err = model.ParseDuration(timeout)
 		if err != nil {
 			return nil, nil, errors.Errorf("error parsing scrape timeout: %v", err)
 		}
 		if time.Duration(timeoutDuration) == 0 {
 			return nil, nil, errors.New("scrape timeout cannot be 0")
 		}
-		if time.Duration(timeoutDuration) > time.Duration(intervalDuration) {
-			return nil, nil, errors.Errorf("scrape timeout cannot be greater than scrape interval (%q > %q)", timeout, interval)
-		}
+	}
+
+	if timeoutDuration > intervalDuration {
+		return nil, nil, errors.Errorf("scrape timeout cannot be greater than scrape interval (%q > %q)", timeout, interval)
 	}
 
 	// Meta labels are deleted after relabelling. Other internal labels propagate to
