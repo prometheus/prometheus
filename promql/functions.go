@@ -75,7 +75,7 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 	if isCounter {
 		var lastValue float64
 		for _, sample := range samples.Points {
-			if sample.V < lastValue {
+			if sample.V < lastValue && sample.V >= 0 {
 				resultValue += lastValue
 			}
 			lastValue = sample.V
