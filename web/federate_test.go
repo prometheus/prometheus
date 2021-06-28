@@ -115,6 +115,14 @@ test_metric1{foo="boo",instance="i"} 1 6000000
 test_metric2{foo="boo",instance="i"} 1 6000000
 `,
 	},
+	"two matchers with overlap": {
+		params: "match[]={__name__=~'test_metric1'}&match[]={foo='bar'}",
+		code:   200,
+		body: `# TYPE test_metric1 untyped
+test_metric1{foo="bar",instance="i"} 10000 6000000
+test_metric1{foo="boo",instance="i"} 1 6000000
+`,
+	},
 	"everything": {
 		params: "match[]={__name__=~'.%2b'}", // '%2b' is an URL-encoded '+'.
 		code:   200,
