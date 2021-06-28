@@ -278,7 +278,7 @@ func funcTimeSeriesTransformation(vals []parser.Value) []float64{
 	return timeSeries
 }
 
-
+// calculate statistics value including mean value and standare deviation value of time series.
 func funcNSigmaCalculation(timeSeries []float64) (float64,float64) {
 
 	// 计算mean，std
@@ -297,7 +297,6 @@ func funcNSigmaCalculation(timeSeries []float64) (float64,float64) {
 	return meanValue,stdValue
 
 }
-
 
 // N-sigma detect(68–95–99.7 rule), usually N takes 3.
 // Assuming a normal distribution of the data, under the 3∂ principle, if an outlier exceeds mean plus 3 times of the standard deviation,
@@ -362,7 +361,6 @@ func funcNSigmaDetectUpperBound(vals []parser.Value, args parser.Expressions, en
 		Point: Point{V: meanValue + stf * stdValue},
 	})
 
-
 }
 
 // N-sigma detect(68–95–99.7 rule), usually N takes 3.
@@ -389,9 +387,7 @@ func funcNSigmaDetectLowerBound(vals []parser.Value, args parser.Expressions, en
 		Point: Point{V: meanValue - stf * stdValue},
 	})
 
-
 }
-
 
 //box line detect(or called as 25%,75% percentile detect)
 //Overall, the median, 25/% quantile, 75/% quantile, upper boundary, lower boundary and other statistics may be used to describe the overall distribution of the data .
@@ -432,154 +428,6 @@ func funcBoxLineDetect(vals []parser.Value, args parser.Expressions, enh *EvalNo
 		})
 	}
 }
-
-
-//极大值匹配功能 备注：
-//在一定的时间窗口内，识别当前点，是否在当前窗口的极大值。
-//This function takes a 1-D array and finds all local maxima by simple comparison of neighboring values. Optionally, a subset of these peaks can be selected by specifying conditions for a peak’s properties.//test by durden for prometheus-iad functions
-func funcTSLocalMaxPeaksTest(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
-	samples := vals[0].(Matrix)[0]
-
-	// windows sizes to cal local-max value
-	windows := int(vals[1].(Vector)[0].V)
-
-	// Sanity check the input.
-	if windows <= 1 {
-		panic(errors.Errorf("invalid sigma times factor. Expected: 1 < stf  got: %f", windows))
-	}
-
-	l := len(samples.Points)
-	// 利用samples，生成float型的timeSeries
-	timeSeries := []float64{}
-	for i := 0; i < l; i++ {
-		timeSeries = append(timeSeries,samples.Points[i].V)
-	}
-
-	var length int
-	if windows % 2 == 0{
-		length = windows / 2
-	} else{
-		length = (windows - 1) / 2
-	}
-
-	var maxValue float64
-	if length > l{
-		maxValue,_ = stats.Max(timeSeries)
-	} else{
-		maxValue,_ = stats.Max(timeSeries[l-1-length : ])
-	}
-
-
-	// 检测判定
-	if samples.Points[l - 1].V == maxValue{
-		return append(enh.Out, Sample{
-			Point: Point{V: 1},
-		})
-	} else{
-		return append(enh.Out, Sample{
-			Point: Point{V: 0},
-		})
-	}
-}
-
-
-/极大值匹配功能 备注：
-//在一定的时间窗口内，识别当前点，是否在当前窗口的极大值。
-//This function takes a 1-D array and finds all local maxima by simple comparison of neighboring values. Optionally, a subset of these peaks can be selected by specifying conditions for a peak’s properties.//test by durden for prometheus-iad functions
-func funcTSLocalMaxPeaksTest(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
-	samples := vals[0].(Matrix)[0]
-
-	// windows sizes to cal local-max value
-	windows := int(vals[1].(Vector)[0].V)
-
-	// Sanity check the input.
-	if windows <= 1 {
-		panic(errors.Errorf("invalid sigma times factor. Expected: 1 < stf  got: %f", windows))
-	}
-
-	l := len(samples.Points)
-	// 利用samples，生成float型的timeSeries
-	timeSeries := []float64{}
-	for i := 0; i < l; i++ {
-		timeSeries = append(timeSeries,samples.Points[i].V)
-	}
-
-	var length int
-	if windows % 2 == 0{
-		length = windows / 2
-	} else{
-		length = (windows - 1) / 2
-	}
-
-	var maxValue float64
-	if length > l{
-		maxValue,_ = stats.Max(timeSeries)
-	} else{
-		maxValue,_ = stats.Max(timeSeries[l-1-length : ])
-	}
-
-
-	// 检测判定
-	if samples.Points[l - 1].V == maxValue{
-		return append(enh.Out, Sample{
-			Point: Point{V: 1},
-		})
-	} else{
-		return append(enh.Out, Sample{
-			Point: Point{V: 0},
-		})
-	}
-}
-
-
-// 极大值匹配功能 备注：
-//在一定的时间窗口内，识别当前点，是否在当前窗口的极大值。
-//This function takes a 1-D array and finds all local maxima by simple comparison of neighboring values. Optionally, a subset of these peaks can be selected by specifying conditions for a peak’s properties.//test by durden for prometheus-iad functions
-func funcTSLocalMaxPeaksTest(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
-	samples := vals[0].(Matrix)[0]
-
-	// windows sizes to cal local-max value
-	windows := int(vals[1].(Vector)[0].V)
-
-	// Sanity check the input.
-	if windows <= 1 {
-		panic(errors.Errorf("invalid sigma times factor. Expected: 1 < stf  got: %f", windows))
-	}
-
-	l := len(samples.Points)
-	// 利用samples，生成float型的timeSeries
-	timeSeries := []float64{}
-	for i := 0; i < l; i++ {
-		timeSeries = append(timeSeries,samples.Points[i].V)
-	}
-
-	var length int
-	if windows % 2 == 0{
-		length = windows / 2
-	} else{
-		length = (windows - 1) / 2
-	}
-
-	var maxValue float64
-	if length > l{
-		maxValue,_ = stats.Max(timeSeries)
-	} else{
-		maxValue,_ = stats.Max(timeSeries[l-1-length : ])
-	}
-
-
-	// 检测判定
-	if samples.Points[l - 1].V == maxValue{
-		return append(enh.Out, Sample{
-			Point: Point{V: 1},
-		})
-	} else{
-		return append(enh.Out, Sample{
-			Point: Point{V: 0},
-		})
-	}
-}
-
 
 // === sort(node parser.ValueTypeVector) Vector ===
 func funcSort(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
