@@ -178,13 +178,10 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 			addr := fmt.Sprintf("%s:%d", priIface.NetworkIP, d.port)
 			labels[model.AddressLabel] = model.LabelValue(addr)
 
-			// Append additional interface private IP address metadata if multiple interfaces exist.
-			if len(inst.NetworkInterfaces) > 1 {
-				gceLabelEthAddressPrefix := gceLabel + "private_ip_eth"
-				for idx, iface := range inst.NetworkInterfaces {
-					gceLabelEthAddressPrivate := model.LabelName(fmt.Sprintf("%s%d", gceLabelEthAddressPrefix, idx))
-					labels[gceLabelEthAddressPrivate] = model.LabelValue(iface.NetworkIP)
-				}
+			// Append named interface metadata for all interfaces
+			for _, iface := range inst.NetworkInterfaces {
+				gceLabelNetAddress := model.LabelName(fmt.Sprintf("%sinterface_ipv4_%s", gceLabel, iface.Name))
+				labels[gceLabelNetAddress] = model.LabelValue(iface.NetworkIP)
 			}
 
 			// Tags in GCE are usually only used for networking rules.
