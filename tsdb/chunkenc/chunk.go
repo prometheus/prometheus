@@ -18,6 +18,7 @@ import (
 	"sync"
 
 	"github.com/pkg/errors"
+	"github.com/prometheus/prometheus/pkg/histogram"
 )
 
 // Encoding is the identifier for a chunk encoding.
@@ -29,6 +30,8 @@ func (e Encoding) String() string {
 		return "none"
 	case EncXOR:
 		return "XOR"
+	case EncSHS:
+		return "SHS"
 	}
 	return "<unknown>"
 }
@@ -37,6 +40,7 @@ func (e Encoding) String() string {
 const (
 	EncNone Encoding = iota
 	EncXOR
+	EncSHS
 )
 
 // Chunk holds a sequence of sample pairs that can be iterated over and appended to.
@@ -69,6 +73,7 @@ type Chunk interface {
 // Appender adds sample pairs to a chunk.
 type Appender interface {
 	Append(int64, float64)
+	AppendHistogram(h histogram.SparseHistogram)
 }
 
 // Iterator is a simple iterator that can only get the next value.
