@@ -24,7 +24,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/go-kit/kit/log"
@@ -69,14 +68,12 @@ type Watcher struct {
 	logger         log.Logger
 	tsdbDir        string
 	walDir         string
+	checkpointFile string
 	lastCheckpoint string
 	sendExemplars  bool
 	currentSegment int
 	metrics        *WatcherMetrics
 	readerMetrics  *LiveReaderMetrics
-
-	samplesSent int
-	samplesRead int
 
 	startTime      time.Time
 	startTimestamp int64 // the start time as a Prometheus timestamp
@@ -92,8 +89,6 @@ type Watcher struct {
 
 	// For testing, stop when we hit this segment.
 	MaxSegment int
-
-	mutex sync.RWMutex
 }
 
 func NewWatcherMetrics(reg prometheus.Registerer) *WatcherMetrics {
@@ -146,21 +141,30 @@ func NewWatcherMetrics(reg prometheus.Registerer) *WatcherMetrics {
 	return m
 }
 
+type WatcherOpts struct {
+	Name          string
+	TSDBDir       string
+	CheckpointDir string
+	Writer        WriteTo
+	SendExemplars bool
+}
+
 // NewWatcher creates a new WAL watcher for a given WriteTo.
-func NewWatcher(metrics *WatcherMetrics, readerMetrics *LiveReaderMetrics, logger log.Logger, name string, writer WriteTo, tsdbDir string, sendExemplars bool) *Watcher {
+func NewWatcher(metrics *WatcherMetrics, readerMetrics *LiveReaderMetrics, logger log.Logger, opts WatcherOpts) *Watcher {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
 
 	return &Watcher{
-		logger:        logger,
-		writer:        writer,
-		metrics:       metrics,
-		readerMetrics: readerMetrics,
-		tsdbDir:       tsdbDir,
-		walDir:        path.Join(tsdbDir, "wal"),
-		name:          name,
-		sendExemplars: sendExemplars,
+		logger:         logger,
+		writer:         opts.Writer,
+		metrics:        metrics,
+		readerMetrics:  readerMetrics,
+		tsdbDir:        opts.TSDBDir,
+		walDir:         path.Join(opts.TSDBDir, "wal"),
+		checkpointFile: filepath.Join(opts.TSDBDir, "remote", opts.Name, "checkpoint"),
+		name:           opts.Name,
+		sendExemplars:  opts.SendExemplars,
 
 		quit: make(chan struct{}),
 		done: make(chan struct{}),
@@ -216,10 +220,9 @@ func (w *Watcher) loop() {
 	startSegment := -1
 
 	// look for a checkpoint file
-	fname := filepath.Join(w.tsdbDir, "remote", w.name, "checkpoint")
-	if _, err := os.Stat(fname); err == nil {
+	if _, err := os.Stat(w.checkpointFile); err == nil {
 		//check error
-		data, _ := os.ReadFile(fname)
+		data, _ := os.ReadFile(w.checkpointFile)
 		// check error
 		i, _ := strconv.Atoi(string(data))
 		startSegment = i
@@ -532,7 +535,6 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 				return err
 			}
 			for _, s := range samples {
-				w.samplesRead++
 				if s.T > w.startTimestamp {
 					// what to do with this log line?
 					// duration := time.Since(w.startTime)
@@ -546,7 +548,6 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 			if len(send) > 0 {
 				// Blocks  until the sample is sent to all remote write endpoints or closed (because enqueue blocks).
 				w.writer.Append(send)
-				w.samplesSent += len(send)
 				send = send[:0]
 			}
 

@@ -431,7 +431,14 @@ func NewQueueManager(
 		highestRecvTimestamp: highestRecvTimestamp,
 	}
 
-	t.watcher = wal.NewWatcher(watcherMetrics, readerMetrics, logger, client.Name(), t, tsdbDir, enableExemplarRemoteWrite)
+	opts := wal.WatcherOpts{
+		Name:          client.Name(),
+		TSDBDir:       tsdbDir,
+		CheckpointDir: "remote",
+		Writer:        t,
+		SendExemplars: enableExemplarRemoteWrite,
+	}
+	t.watcher = wal.NewWatcher(watcherMetrics, readerMetrics, logger, opts)
 	if t.mcfg.Send {
 		t.metadataWatcher = NewMetadataWatcher(logger, sm, client.Name(), t, t.mcfg.SendInterval, flushDeadline)
 	}
