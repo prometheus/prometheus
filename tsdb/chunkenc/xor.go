@@ -47,6 +47,8 @@ import (
 	"encoding/binary"
 	"math"
 	"math/bits"
+
+	"github.com/prometheus/prometheus/pkg/histogram"
 )
 
 const (
@@ -145,6 +147,10 @@ type xorAppender struct {
 
 	leading  uint8
 	trailing uint8
+}
+
+func (a *xorAppender) AppendHistogram(h histogram.SparseHistogram) {
+	panic("cannot call xorAppender.AppendHistogram().")
 }
 
 func (a *xorAppender) Append(t int64, v float64) {
