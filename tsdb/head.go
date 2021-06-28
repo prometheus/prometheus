@@ -16,6 +16,7 @@ package tsdb
 import (
 	"context"
 	"fmt"
+	"github.com/prometheus/prometheus/pkg/histogram"
 	"math"
 	"path/filepath"
 	"runtime"
@@ -1194,6 +1195,16 @@ func (a *initAppender) AppendExemplar(ref uint64, l labels.Labels, e exemplar.Ex
 	return a.app.AppendExemplar(ref, l, e)
 }
 
+func (a *initAppender) AppendHistogram(ref uint64, l labels.Labels, sh histogram.SparseHistogram) (uint64, error) {
+	if a.app != nil {
+		return a.app.AppendHistogram(ref, l, sh)
+	}
+	a.head.initTime(sh.Ts)
+	a.app = a.head.appender()
+
+	return a.app.AppendHistogram(ref, l, sh)
+}
+
 var _ storage.GetRef = &initAppender{}
 
 func (a *initAppender) GetRef(lset labels.Labels) (uint64, labels.Labels) {
@@ -1444,6 +1455,11 @@ func (a *headAppender) AppendExemplar(ref uint64, _ labels.Labels, e exemplar.Ex
 	a.exemplars = append(a.exemplars, exemplarWithSeriesRef{ref, e})
 
 	return s.ref, nil
+}
+
+func (a *headAppender) AppendHistogram(ref uint64, _ labels.Labels, sh histogram.SparseHistogram) (uint64, error) {
+	// TODO.
+	return 0, nil
 }
 
 var _ storage.GetRef = &headAppender{}

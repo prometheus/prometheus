@@ -15,6 +15,7 @@ package remote
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -25,6 +26,7 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/exemplar"
+	"github.com/prometheus/prometheus/pkg/histogram"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/wal"
@@ -234,6 +236,10 @@ func (t *timestampTracker) Append(_ uint64, _ labels.Labels, ts int64, _ float64
 func (t *timestampTracker) AppendExemplar(_ uint64, _ labels.Labels, _ exemplar.Exemplar) (uint64, error) {
 	t.exemplars++
 	return 0, nil
+}
+
+func (t *timestampTracker) AppendHistogram(_ uint64, _ labels.Labels, _ histogram.SparseHistogram) (uint64, error) {
+	return 0, errors.New("not implemented")
 }
 
 // Commit implements storage.Appender.
