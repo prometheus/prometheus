@@ -24,6 +24,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/prometheus/pkg/exemplar"
+	"github.com/prometheus/prometheus/pkg/histogram"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
@@ -136,5 +137,10 @@ func (*mockAppendable) Rollback() error {
 
 func (*mockAppendable) AppendExemplar(ref uint64, l labels.Labels, e exemplar.Exemplar) (uint64, error) {
 	// noop until we implement exemplars over remote write
+	return 0, nil
+}
+
+func (*mockAppendable) AppendHistogram(ref uint64, l labels.Labels, sh histogram.SparseHistogram) (uint64, error) {
+	// noop until we implement sparse histograms over remote write
 	return 0, nil
 }

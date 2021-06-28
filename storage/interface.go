@@ -19,6 +19,7 @@ import (
 	"fmt"
 
 	"github.com/prometheus/prometheus/pkg/exemplar"
+	"github.com/prometheus/prometheus/pkg/histogram"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -181,6 +182,7 @@ type Appender interface {
 	Rollback() error
 
 	ExemplarAppender
+	HistogramAppender
 }
 
 // GetRef is an extra interface on Appenders used by downstream projects
@@ -207,6 +209,19 @@ type ExemplarAppender interface {
 	// calls to Append should generate the reference numbers, AppendExemplar
 	// generating a new reference number should be considered possible erroneous behaviour and be logged.
 	AppendExemplar(ref uint64, l labels.Labels, e exemplar.Exemplar) (uint64, error)
+}
+
+// HistogramAppender provides an interface for adding sparse histogram to the Prometheus.
+type HistogramAppender interface {
+	// AppendHistogram adds a sparse histogram for the given series labels.
+	// An optional reference number can be provided to accelerate calls.
+	// A reference number is returned which can be used to add further
+	// histograms in the same or later transactions.
+	// Returned reference numbers are ephemeral and may be rejected in calls
+	// to Append() at any point. Adding the sample via Append() returns a new
+	// reference number.
+	// If the reference is 0 it must not be used for caching.
+	AppendHistogram(ref uint64, l labels.Labels, sh histogram.SparseHistogram) (uint64, error)
 }
 
 // SeriesSet contains a set of series.

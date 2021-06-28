@@ -18,6 +18,7 @@ import (
 	"math/rand"
 
 	"github.com/prometheus/prometheus/pkg/exemplar"
+	"github.com/prometheus/prometheus/pkg/histogram"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
 )
@@ -34,6 +35,9 @@ func (a nopAppender) Append(uint64, labels.Labels, int64, float64) (uint64, erro
 func (a nopAppender) AppendExemplar(uint64, labels.Labels, exemplar.Exemplar) (uint64, error) {
 	return 0, nil
 }
+func (a nopAppender) AppendHistogram(uint64, labels.Labels, histogram.SparseHistogram) (uint64, error) {
+	return 0, nil
+}
 func (a nopAppender) Commit() error   { return nil }
 func (a nopAppender) Rollback() error { return nil }
 
@@ -46,12 +50,15 @@ type sample struct {
 // collectResultAppender records all samples that were added through the appender.
 // It can be used as its zero value or be backed by another appender it writes samples through.
 type collectResultAppender struct {
-	next             storage.Appender
-	result           []sample
-	pendingResult    []sample
-	rolledbackResult []sample
-	pendingExemplars []exemplar.Exemplar
-	resultExemplars  []exemplar.Exemplar
+	next                 storage.Appender
+	result               []sample
+	pendingResult        []sample
+	rolledbackResult     []sample
+	pendingExemplars     []exemplar.Exemplar
+	resultExemplars      []exemplar.Exemplar
+	resultHistograms     []histogram.SparseHistogram
+	pendingHistograms    []histogram.SparseHistogram
+	rolledbackHistograms []histogram.SparseHistogram
 }
 
 func (a *collectResultAppender) Append(ref uint64, lset labels.Labels, t int64, v float64) (uint64, error) {
@@ -84,11 +91,22 @@ func (a *collectResultAppender) AppendExemplar(ref uint64, l labels.Labels, e ex
 	return a.next.AppendExemplar(ref, l, e)
 }
 
+func (a *collectResultAppender) AppendHistogram(ref uint64, l labels.Labels, sh histogram.SparseHistogram) (uint64, error) {
+	a.pendingHistograms = append(a.pendingHistograms, sh)
+	if a.next == nil {
+		return 0, nil
+	}
+
+	return a.next.AppendHistogram(ref, l, sh)
+}
+
 func (a *collectResultAppender) Commit() error {
 	a.result = append(a.result, a.pendingResult...)
 	a.resultExemplars = append(a.resultExemplars, a.pendingExemplars...)
+	a.resultHistograms = append(a.resultHistograms, a.pendingHistograms...)
 	a.pendingResult = nil
 	a.pendingExemplars = nil
+	a.pendingHistograms = nil
 	if a.next == nil {
 		return nil
 	}
@@ -97,7 +115,9 @@ func (a *collectResultAppender) Commit() error {
 
 func (a *collectResultAppender) Rollback() error {
 	a.rolledbackResult = a.pendingResult
+	a.rolledbackHistograms = a.pendingHistograms
 	a.pendingResult = nil
+	a.pendingHistograms = nil
 	if a.next == nil {
 		return nil
 	}
