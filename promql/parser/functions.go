@@ -117,9 +117,24 @@ var Functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeScalar, ValueTypeVector},
 		ReturnType: ValueTypeVector,
 	},
-	"holt_winters": {
-		Name:       "holt_winters",
-		ArgTypes:   []ValueType{ValueTypeMatrix, ValueTypeScalar, ValueTypeScalar},
+	"iad_n_sigma": {
+		Name:       "iad_n_sigma",
+		ArgTypes:   []ValueType{ValueTypeMatrix, ValueTypeScalar},
+		ReturnType: ValueTypeVector,
+	},
+	"iad_n_sigma_upper_bound": {
+		Name:       "iad_n_sigma_upper_bound",
+		ArgTypes:   []ValueType{ValueTypeMatrix, ValueTypeScalar},
+		ReturnType: ValueTypeVector,
+	},
+	"iad_n_sigma_lower_bound": {
+		Name:       "iad_n_sigma_lower_bound",
+		ArgTypes:   []ValueType{ValueTypeMatrix, ValueTypeScalar},
+		ReturnType: ValueTypeVector,
+	},
+	"iad_box_line": {
+		Name:       "iad_box_line",
+		ArgTypes:   []ValueType{ValueTypeMatrix, ValueTypeScalar},
 		ReturnType: ValueTypeVector,
 	},
 	"hour": {

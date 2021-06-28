@@ -14,6 +14,7 @@
 package promql
 
 import (
+	"github.com/montanaflynn/stats"
 	"math"
 	"regexp"
 	"sort"
@@ -259,6 +260,326 @@ func funcHoltWinters(vals []parser.Value, args parser.Expressions, enh *EvalNode
 		Point: Point{V: s1},
 	})
 }
+
+// transform input range vector, to float64 array
+func funcTimeSeriesTransformation(vals []parser.Value) []float64{
+
+	samples := vals[0].(Matrix)[0]
+
+	l := len(samples.Points)
+
+	// use samples(type range vector)，to timeSeries(float64 array)
+	timeSeries := []float64{}
+	for i := 0; i < l; i++ {
+		timeSeries = append(timeSeries, samples.Points[i].V)
+	}
+
+
+	return timeSeries
+}
+
+
+func funcNSigmaCalculation(timeSeries []float64) (float64,float64) {
+
+	// 计算mean，std
+	meanValue, err := stats.Mean(timeSeries)
+	if err != nil {
+		panic(errors.Errorf("inner error, error type is calculation error."))
+
+	}
+	varianceValue, err := stats.Variance(timeSeries)
+	if err != nil {
+		panic(errors.Errorf("inner error, error type is calculation error."))
+
+	}
+	stdValue := math.Sqrt(varianceValue)
+
+	return meanValue,stdValue
+
+}
+
+
+// N-sigma detect(68–95–99.7 rule), usually N takes 3.
+// Assuming a normal distribution of the data, under the 3∂ principle, if an outlier exceeds mean plus 3 times of the standard deviation,
+//it can be regarded as an outlier. The probability of plus or minus 3∂ is 99.7%, so the probability of occurrence of a value
+//other than 3∂ from the average value is P(|x-u| 3∂) = 0.003, which is a very small probability event.
+//If the value is not within the 3sigma range of this range, it can be considered as an outlier.
+//If the data does not follow a normal distribution, it can also be described by how many standard deviations away from the average. But the detect accuracy may not be that high.
+func funcNSigmaDetect(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	// ----------1. input data and parameters check
+	l := len(vals[0].(Matrix)[0].Points)
+	// Can't do the detection with less than two points.
+	if l < 2 {
+		return enh.Out
+	}
+
+	stf := vals[1].(Vector)[0].V
+	// Sanity check the input.
+	if stf <= 0 || stf >= 6 {
+		panic(errors.Errorf("invalid sigma times factor. Expected: 0 < stf < 6, got: %f", stf))
+	}
+
+	// ----------2. data format transformation and parameters calculation
+	timeSeries:= funcTimeSeriesTransformation(vals)
+	meanValue,stdValue := funcNSigmaCalculation(timeSeries)
+
+	// ----------3. anomaly detect key part
+	// detect: normal result = 0, abnormal result = 1
+	if timeSeries[l-1] >= (meanValue + stf * stdValue) || timeSeries[l-1] <= (meanValue - stf * stdValue){
+		return append(enh.Out, Sample{
+			Point: Point{V: 1},
+		})
+	} else{
+		return append(enh.Out, Sample{
+			Point: Point{V: 0},
+		})
+	}
+
+}
+
+// N-sigma detect(68–95–99.7 rule), usually N takes 3.
+// to achieve the upper bound of N-sigma detection
+func funcNSigmaDetectUpperBound(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	l := len(vals[0].(Matrix)[0].Points)
+	// Can't do the smoothing operation with less than two points.
+	if l < 2 {
+		return enh.Out
+	}
+
+	// The sigma times factor argument.
+	stf := vals[1].(Vector)[0].V
+	// Sanity check the input.
+	if stf <= 0 || stf >= 6 {
+		panic(errors.Errorf("invalid sigma times factor. Expected: 0 < stf < 6, got: %f", stf))
+	}
+
+	timeSeries:= funcTimeSeriesTransformation(vals)
+
+	meanValue,stdValue := funcNSigmaCalculation(timeSeries)
+
+
+	return append(enh.Out, Sample{
+		Point: Point{V: meanValue + stf * stdValue},
+	})
+
+
+}
+
+// N-sigma detect(68–95–99.7 rule), usually N takes 3.
+// to achieve the lower bound of N-sigma detection
+func funcNSigmaDetectLowerBound(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	l := len(vals[0].(Matrix)[0].Points)
+	// Can't do the smoothing operation with less than two points.
+	if l < 2 {
+		return enh.Out
+	}
+
+	// The sigma times factor argument.
+	stf := vals[1].(Vector)[0].V
+	// Sanity check the input.
+	if stf <= 0 || stf >= 6 {
+		panic(errors.Errorf("invalid sigma times factor. Expected: 0 < stf < 6, got: %f", stf))
+	}
+
+	timeSeries:= funcTimeSeriesTransformation(vals)
+
+	meanValue,stdValue := funcNSigmaCalculation(timeSeries)
+
+	return append(enh.Out, Sample{
+		Point: Point{V: meanValue - stf * stdValue},
+	})
+
+
+}
+
+
+//box line detect(or called as 25%,75% percentile detect)
+//Overall, the median, 25/% quantile, 75/% quantile, upper boundary, lower boundary and other statistics may be used to describe the overall distribution of the data .
+//in box line detection, by calculating these statistics, a box chart is generated. The box contains most of the normal data, and the abnormal data is outside the upper and lower boundaries of the box.
+func funcBoxLineDetect(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	// ----------1. input data and parameters check
+	l := len(vals[0].(Matrix)[0].Points)
+	// Can't do the detection with less than two points.
+	if l < 2 {
+		return enh.Out
+	}
+
+	// The sigma times factor argument.
+	stf := vals[1].(Vector)[0].V
+	// Sanity check the input.
+	if stf <= 1 || stf >= 6{
+		panic(errors.Errorf("invalid sigma times factor. Expected: 1 < stf < 6, got: %f", stf))
+	}
+
+	// ----------2. data format transformation and parameters calculation
+	timeSeries:= funcTimeSeriesTransformation(vals)
+
+	// sort array, and get Q1 / Q3 percentile value
+	sort.Float64s(timeSeries)
+	q1 := timeSeries[int(l/4)]
+	q3 := timeSeries[int(l*3/4)]
+	IQR := q3 - q1
+
+	// ----------3. anomaly detect key part
+	// detect: normal result = 0, abnormal result = 1
+	if timeSeries[l - 1] >= (q3 + stf * IQR) || timeSeries[l - 1] <= (q1 - stf * IQR){
+		return append(enh.Out, Sample{
+			Point: Point{V: 1},
+		})
+	} else{
+		return append(enh.Out, Sample{
+			Point: Point{V: 0},
+		})
+	}
+}
+
+
+//极大值匹配功能 备注：
+//在一定的时间窗口内，识别当前点，是否在当前窗口的极大值。
+//This function takes a 1-D array and finds all local maxima by simple comparison of neighboring values. Optionally, a subset of these peaks can be selected by specifying conditions for a peak’s properties.//test by durden for prometheus-iad functions
+func funcTSLocalMaxPeaksTest(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	samples := vals[0].(Matrix)[0]
+
+	// windows sizes to cal local-max value
+	windows := int(vals[1].(Vector)[0].V)
+
+	// Sanity check the input.
+	if windows <= 1 {
+		panic(errors.Errorf("invalid sigma times factor. Expected: 1 < stf  got: %f", windows))
+	}
+
+	l := len(samples.Points)
+	// 利用samples，生成float型的timeSeries
+	timeSeries := []float64{}
+	for i := 0; i < l; i++ {
+		timeSeries = append(timeSeries,samples.Points[i].V)
+	}
+
+	var length int
+	if windows % 2 == 0{
+		length = windows / 2
+	} else{
+		length = (windows - 1) / 2
+	}
+
+	var maxValue float64
+	if length > l{
+		maxValue,_ = stats.Max(timeSeries)
+	} else{
+		maxValue,_ = stats.Max(timeSeries[l-1-length : ])
+	}
+
+
+	// 检测判定
+	if samples.Points[l - 1].V == maxValue{
+		return append(enh.Out, Sample{
+			Point: Point{V: 1},
+		})
+	} else{
+		return append(enh.Out, Sample{
+			Point: Point{V: 0},
+		})
+	}
+}
+
+
+/极大值匹配功能 备注：
+//在一定的时间窗口内，识别当前点，是否在当前窗口的极大值。
+//This function takes a 1-D array and finds all local maxima by simple comparison of neighboring values. Optionally, a subset of these peaks can be selected by specifying conditions for a peak’s properties.//test by durden for prometheus-iad functions
+func funcTSLocalMaxPeaksTest(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	samples := vals[0].(Matrix)[0]
+
+	// windows sizes to cal local-max value
+	windows := int(vals[1].(Vector)[0].V)
+
+	// Sanity check the input.
+	if windows <= 1 {
+		panic(errors.Errorf("invalid sigma times factor. Expected: 1 < stf  got: %f", windows))
+	}
+
+	l := len(samples.Points)
+	// 利用samples，生成float型的timeSeries
+	timeSeries := []float64{}
+	for i := 0; i < l; i++ {
+		timeSeries = append(timeSeries,samples.Points[i].V)
+	}
+
+	var length int
+	if windows % 2 == 0{
+		length = windows / 2
+	} else{
+		length = (windows - 1) / 2
+	}
+
+	var maxValue float64
+	if length > l{
+		maxValue,_ = stats.Max(timeSeries)
+	} else{
+		maxValue,_ = stats.Max(timeSeries[l-1-length : ])
+	}
+
+
+	// 检测判定
+	if samples.Points[l - 1].V == maxValue{
+		return append(enh.Out, Sample{
+			Point: Point{V: 1},
+		})
+	} else{
+		return append(enh.Out, Sample{
+			Point: Point{V: 0},
+		})
+	}
+}
+
+
+// 极大值匹配功能 备注：
+//在一定的时间窗口内，识别当前点，是否在当前窗口的极大值。
+//This function takes a 1-D array and finds all local maxima by simple comparison of neighboring values. Optionally, a subset of these peaks can be selected by specifying conditions for a peak’s properties.//test by durden for prometheus-iad functions
+func funcTSLocalMaxPeaksTest(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	samples := vals[0].(Matrix)[0]
+
+	// windows sizes to cal local-max value
+	windows := int(vals[1].(Vector)[0].V)
+
+	// Sanity check the input.
+	if windows <= 1 {
+		panic(errors.Errorf("invalid sigma times factor. Expected: 1 < stf  got: %f", windows))
+	}
+
+	l := len(samples.Points)
+	// 利用samples，生成float型的timeSeries
+	timeSeries := []float64{}
+	for i := 0; i < l; i++ {
+		timeSeries = append(timeSeries,samples.Points[i].V)
+	}
+
+	var length int
+	if windows % 2 == 0{
+		length = windows / 2
+	} else{
+		length = (windows - 1) / 2
+	}
+
+	var maxValue float64
+	if length > l{
+		maxValue,_ = stats.Max(timeSeries)
+	} else{
+		maxValue,_ = stats.Max(timeSeries[l-1-length : ])
+	}
+
+
+	// 检测判定
+	if samples.Points[l - 1].V == maxValue{
+		return append(enh.Out, Sample{
+			Point: Point{V: 1},
+		})
+	} else{
+		return append(enh.Out, Sample{
+			Point: Point{V: 0},
+		})
+	}
+}
+
 
 // === sort(node parser.ValueTypeVector) Vector ===
 func funcSort(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
@@ -944,6 +1265,10 @@ var FunctionCalls = map[string]FunctionCall{
 	"floor":              funcFloor,
 	"histogram_quantile": funcHistogramQuantile,
 	"holt_winters":       funcHoltWinters,
+	"iad_n_sigma":       funcNSigmaDetect,
+	"iad_n_sigma_upper_bound":       funcNSigmaDetectUpperBound,
+	"iad_n_sigma_lower_bound":       funcNSigmaDetectLowerBound,
+	"iad_box_line":       funcBoxLineDetect,
 	"hour":               funcHour,
 	"idelta":             funcIdelta,
 	"increase":           funcIncrease,
