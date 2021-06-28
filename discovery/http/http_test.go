@@ -104,3 +104,61 @@ func TestHTTPInvalidFormat(t *testing.T) {
 	_, err = d.refresh(ctx)
 	require.EqualError(t, err, `unsupported content type "text/plain; charset=utf-8"`)
 }
+
+func TestContentTypeRegex(t *testing.T) {
+	cases := []struct {
+		header string
+		match  bool
+	}{
+		{
+			header: "application/json;charset=utf-8",
+			match:  true,
+		},
+		{
+			header: "application/json;charset=UTF-8",
+			match:  true,
+		},
+		{
+			header: "Application/JSON;Charset=\"utf-8\"",
+			match:  true,
+		},
+		{
+			header: "application/json; charset=\"utf-8\"",
+			match:  true,
+		},
+		{
+			header: "application/json",
+			match:  true,
+		},
+		{
+			header: "application/jsonl; charset=\"utf-8\"",
+			match:  false,
+		},
+		{
+			header: "application/json;charset=UTF-9",
+			match:  false,
+		},
+		{
+			header: "application /json;charset=UTF-8",
+			match:  false,
+		},
+		{
+			header: "application/ json;charset=UTF-8",
+			match:  false,
+		},
+		{
+			header: "application/json;",
+			match:  false,
+		},
+		{
+			header: "charset=UTF-8",
+			match:  false,
+		},
+	}
+
+	for _, test := range cases {
+		t.Run(test.header, func(t *testing.T) {
+			require.Equal(t, test.match, matchContentType.MatchString(test.header))
+		})
+	}
+}
