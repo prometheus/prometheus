@@ -76,7 +76,7 @@ func TestHistoChunkSameBuckets(t *testing.T) {
 	require.NoError(t, it1.Err())
 	var res1 []res
 	for it1.Next() {
-		ts, h := it1.At()
+		ts, h := it1.AtHistogram()
 		res1 = append(res1, res{t: ts, h: h})
 	}
 	require.NoError(t, it1.Err())

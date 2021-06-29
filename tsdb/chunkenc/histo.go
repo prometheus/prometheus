@@ -191,10 +191,9 @@ func (c *HistoChunk) iterator(it Iterator) *histoIterator {
 }
 
 // Iterator implements the Chunk interface.
-// TODO return interface type?
-//func (c *HistoChunk) Iterator(it Iterator) *histoIterator {
-//	return c.iterator(it)
-//}
+func (c *HistoChunk) Iterator(it Iterator) Iterator {
+	return c.iterator(it)
+}
 
 type histoAppender struct {
 	c *HistoChunk // this is such that during the first append we can set the metadata on the chunk. not sure if that's how it should work
@@ -422,7 +421,12 @@ func (it *histoIterator) Seek(t int64) bool {
 	}
 	return true
 }
-func (it *histoIterator) At() (t int64, h histogram.SparseHistogram) {
+
+func (it *histoIterator) At() (int64, float64) {
+	panic("cannot call histoIterator.At().")
+}
+
+func (it *histoIterator) AtHistogram() (int64, histogram.SparseHistogram) {
 	return it.t, histogram.SparseHistogram{
 		Count:           it.cnt,
 		ZeroCount:       it.zcnt,

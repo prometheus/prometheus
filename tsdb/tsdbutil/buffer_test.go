@@ -18,6 +18,7 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/prometheus/prometheus/pkg/histogram"
 	"github.com/stretchr/testify/require"
 )
 
@@ -148,6 +149,10 @@ func newListSeriesIterator(list []sample) *listSeriesIterator {
 func (it *listSeriesIterator) At() (int64, float64) {
 	s := it.list[it.idx]
 	return s.t, s.v
+}
+
+func (it *listSeriesIterator) AtHistogram() (int64, histogram.SparseHistogram) {
+	return 0, histogram.SparseHistogram{}
 }
 
 func (it *listSeriesIterator) Next() bool {

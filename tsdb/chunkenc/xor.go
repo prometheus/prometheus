@@ -277,6 +277,10 @@ func (it *xorIterator) At() (int64, float64) {
 	return it.t, it.val
 }
 
+func (it *xorIterator) AtHistogram() (int64, histogram.SparseHistogram) {
+	panic("cannot call xorIterator.AtHistogram().")
+}
+
 func (it *xorIterator) Err() error {
 	return it.err
 }

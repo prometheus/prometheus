@@ -23,6 +23,7 @@ import (
 
 	"github.com/pkg/errors"
 
+	"github.com/prometheus/prometheus/pkg/histogram"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -479,6 +480,13 @@ func (c *chainSampleIterator) At() (t int64, v float64) {
 		panic("chainSampleIterator.At() called before first .Next() or after .Next() returned false.")
 	}
 	return c.curr.At()
+}
+
+func (c *chainSampleIterator) AtHistogram() (int64, histogram.SparseHistogram) {
+	if c.curr == nil {
+		panic("chainSampleIterator.AtHistogram() called before first .Next() or after .Next() returned false.")
+	}
+	return c.curr.AtHistogram()
 }
 
 func (c *chainSampleIterator) Next() bool {

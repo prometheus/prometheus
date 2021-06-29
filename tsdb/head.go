@@ -1199,7 +1199,7 @@ func (a *initAppender) AppendHistogram(ref uint64, l labels.Labels, t int64, sh 
 	if a.app != nil {
 		return a.app.AppendHistogram(ref, l, t, sh)
 	}
-	//a.head.initTime(sh.Ts) FIXME(ganesh)
+	a.head.initTime(t)
 	a.app = a.head.appender()
 
 	return a.app.AppendHistogram(ref, l, t, sh)
@@ -2384,8 +2384,7 @@ type memSeries struct {
 	sampleBuf     [4]sample
 	pendingCommit bool // Whether there are samples waiting to be committed to this series.
 
-	app           chunkenc.Appender // Current appender for the chunk.
-	chunkEncoding chunkenc.Encoding
+	app chunkenc.Appender // Current appender for the chunk.
 
 	memChunkPool *sync.Pool
 
@@ -2610,7 +2609,7 @@ func (s *memSeries) appendHistogram(t int64, sh histogram.SparseHistogram, appen
 		return sampleInOrder, chunkCreated
 	}
 
-	s.app.AppendHistogram(sh)
+	s.app.AppendHistogram(t, sh)
 
 	c.maxTime = t
 
