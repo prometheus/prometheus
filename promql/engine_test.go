@@ -57,7 +57,7 @@ func TestQueryConcurrency(t *testing.T) {
 	defer cancelCtx()
 
 	block := make(chan struct{})
-	processing := make(chan struct{})
+	processing := make(chan struct{}, 1)
 
 	f := func(context.Context) error {
 		processing <- struct{}{}
