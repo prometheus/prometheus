@@ -24,12 +24,20 @@ func TestHistoChunkSameBuckets(t *testing.T) {
 
 	c := NewHistoChunk()
 
+	type res struct {
+		t int64
+		h histogram.SparseHistogram
+	}
+
+	// create fresh appender and add the first histogram
+
 	app, err := c.Appender()
 	require.NoError(t, err)
 	require.Equal(t, c.NumSamples(), 0)
 
+	ts := int64(1234567890)
+
 	h := histogram.SparseHistogram{
-		Ts:        1234567890,
 		Count:     5,
 		ZeroCount: 2,
 		Sum:       18.4,
@@ -44,11 +52,11 @@ func TestHistoChunkSameBuckets(t *testing.T) {
 		NegativeBuckets: []int64{},
 	}
 
-	app.AppendHistogram(h)
+	app.AppendHistogram(ts, h)
 	require.Equal(t, c.NumSamples(), 1)
 
-	exp := []histogram.SparseHistogram{
-		h,
+	exp := []res{
+		{t: ts, h: h},
 	}
 
 	// TODO add an update
@@ -66,9 +74,10 @@ func TestHistoChunkSameBuckets(t *testing.T) {
 	// 1. Expand iterator in simple case.
 	it1 := c.iterator(nil)
 	require.NoError(t, it1.Err())
-	var res1 []histogram.SparseHistogram
+	var res1 []res
 	for it1.Next() {
-		res1 = append(res1, it1.At())
+		ts, h := it1.At()
+		res1 = append(res1, res{t: ts, h: h})
 	}
 	require.NoError(t, it1.Err())
 	require.Equal(t, exp, res1)

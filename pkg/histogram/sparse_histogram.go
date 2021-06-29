@@ -14,7 +14,6 @@
 package histogram
 
 type SparseHistogram struct {
-	Ts                               int64
 	Count, ZeroCount                 uint64
 	Sum, ZeroThreshold               float64
 	Schema                           int32
