@@ -17,6 +17,7 @@ import (
 	"math"
 	"sort"
 
+	"github.com/prometheus/prometheus/pkg/histogram"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -88,6 +89,10 @@ func NewListSeriesIterator(samples Samples) chunkenc.Iterator {
 func (it *listSeriesIterator) At() (int64, float64) {
 	s := it.samples.Get(it.idx)
 	return s.T(), s.V()
+}
+
+func (it *listSeriesIterator) AtHistogram() (int64, histogram.SparseHistogram) {
+	return 0, histogram.SparseHistogram{}
 }
 
 func (it *listSeriesIterator) Next() bool {

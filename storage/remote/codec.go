@@ -26,6 +26,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 
+	"github.com/prometheus/prometheus/pkg/histogram"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/textparse"
 	"github.com/prometheus/prometheus/prompb"
@@ -366,6 +367,10 @@ func (c *concreteSeriesIterator) Seek(t int64) bool {
 func (c *concreteSeriesIterator) At() (t int64, v float64) {
 	s := c.series.samples[c.cur]
 	return s.Timestamp, s.Value
+}
+
+func (c *concreteSeriesIterator) AtHistogram() (int64, histogram.SparseHistogram) {
+	return 0, histogram.SparseHistogram{}
 }
 
 // Next implements storage.SeriesIterator.

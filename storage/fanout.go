@@ -173,14 +173,14 @@ func (f *fanoutAppender) AppendExemplar(ref uint64, l labels.Labels, e exemplar.
 	return ref, nil
 }
 
-func (f *fanoutAppender) AppendHistogram(ref uint64, l labels.Labels, sh histogram.SparseHistogram) (uint64, error) {
-	ref, err := f.primary.AppendHistogram(ref, l, sh)
+func (f *fanoutAppender) AppendHistogram(ref uint64, l labels.Labels, t int64, sh histogram.SparseHistogram) (uint64, error) {
+	ref, err := f.primary.AppendHistogram(ref, l, t, sh)
 	if err != nil {
 		return ref, err
 	}
 
 	for _, appender := range f.secondaries {
-		if _, err := appender.AppendHistogram(ref, l, sh); err != nil {
+		if _, err := appender.AppendHistogram(ref, l, t, sh); err != nil {
 			return 0, err
 		}
 	}

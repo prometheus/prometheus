@@ -16,6 +16,7 @@ package tsdbutil
 import (
 	"math"
 
+	"github.com/prometheus/prometheus/pkg/histogram"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
@@ -157,6 +158,10 @@ func (it *sampleRingIterator) Err() error {
 
 func (it *sampleRingIterator) At() (int64, float64) {
 	return it.r.at(it.i)
+}
+
+func (it *sampleRingIterator) AtHistogram() (int64, histogram.SparseHistogram) {
+	return 0, histogram.SparseHistogram{}
 }
 
 func (r *sampleRing) at(i int) (int64, float64) {

@@ -221,7 +221,7 @@ type HistogramAppender interface {
 	// to Append() at any point. Adding the sample via Append() returns a new
 	// reference number.
 	// If the reference is 0 it must not be used for caching.
-	AppendHistogram(ref uint64, l labels.Labels, sh histogram.SparseHistogram) (uint64, error)
+	AppendHistogram(ref uint64, l labels.Labels, t int64, sh histogram.SparseHistogram) (uint64, error)
 }
 
 // SeriesSet contains a set of series.

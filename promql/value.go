@@ -21,6 +21,7 @@ import (
 
 	"github.com/pkg/errors"
 
+	"github.com/prometheus/prometheus/pkg/histogram"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
@@ -293,6 +294,10 @@ func (ssi *storageSeriesIterator) Seek(t int64) bool {
 func (ssi *storageSeriesIterator) At() (t int64, v float64) {
 	p := ssi.points[ssi.curr]
 	return p.T, p.V
+}
+
+func (ssi *storageSeriesIterator) AtHistogram() (int64, histogram.SparseHistogram) {
+	return 0, histogram.SparseHistogram{}
 }
 
 func (ssi *storageSeriesIterator) Next() bool {
