@@ -140,7 +140,7 @@ func (*mockAppendable) AppendExemplar(ref uint64, l labels.Labels, e exemplar.Ex
 	return 0, nil
 }
 
-func (*mockAppendable) AppendHistogram(ref uint64, l labels.Labels, sh histogram.SparseHistogram) (uint64, error) {
+func (*mockAppendable) AppendHistogram(ref uint64, l labels.Labels, t int64, sh histogram.SparseHistogram) (uint64, error) {
 	// noop until we implement sparse histograms over remote write
 	return 0, nil
 }

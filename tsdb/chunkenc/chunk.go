@@ -36,6 +36,14 @@ func (e Encoding) String() string {
 	return "<unknown>"
 }
 
+func IsValidEncoding(e Encoding) bool {
+	switch e {
+	case EncXOR, EncSHS:
+		return true
+	}
+	return false
+}
+
 // The different available chunk encodings.
 const (
 	EncNone Encoding = iota
@@ -115,6 +123,7 @@ type Pool interface {
 // pool is a memory pool of chunk objects.
 type pool struct {
 	xor sync.Pool
+	shs sync.Pool
 }
 
 // NewPool returns a new pool.
@@ -123,6 +132,11 @@ func NewPool() Pool {
 		xor: sync.Pool{
 			New: func() interface{} {
 				return &XORChunk{b: bstream{}}
+			},
+		},
+		shs: sync.Pool{
+			New: func() interface{} {
+				return &HistoChunk{b: bstream{}}
 			},
 		},
 	}
@@ -135,6 +149,12 @@ func (p *pool) Get(e Encoding, b []byte) (Chunk, error) {
 		c.b.stream = b
 		c.b.count = 0
 		return c, nil
+		//case EncSHS:
+		//	// TODO: update metadata
+		//	c := p.shs.Get().(*HistoChunk)
+		//	c.b.stream = b
+		//	c.b.count = 0
+		//	return c, nil
 	}
 	return nil, errors.Errorf("invalid chunk encoding %q", e)
 }
@@ -152,6 +172,18 @@ func (p *pool) Put(c Chunk) error {
 		xc.b.stream = nil
 		xc.b.count = 0
 		p.xor.Put(c)
+	//case EncSHS:
+	//	// TODO: update metadata
+	//	sh, ok := c.(*HistoChunk)
+	//	// This may happen often with wrapped chunks. Nothing we can really do about
+	//	// it but returning an error would cause a lot of allocations again. Thus,
+	//	// we just skip it.
+	//	if !ok {
+	//		return nil
+	//	}
+	//	sh.b.stream = nil
+	//	sh.b.count = 0
+	//	p.shs.Put(c)
 	default:
 		return errors.Errorf("invalid chunk encoding %q", c.Encoding())
 	}
@@ -165,6 +197,22 @@ func FromData(e Encoding, d []byte) (Chunk, error) {
 	switch e {
 	case EncXOR:
 		return &XORChunk{b: bstream{count: 0, stream: d}}, nil
+		//case EncSHS:
+		//	// TODO: update metadata
+		//	return &HistoChunk{b: bstream{count: 0, stream: d}}, nil
+	}
+	return nil, errors.Errorf("invalid chunk encoding %q", e)
+}
+
+// NewEmptyChunk returns an empty chunk for the given encoding.
+func NewEmptyChunk(e Encoding) (Chunk, error) {
+	switch e {
+	case EncXOR:
+		return NewXORChunk(), nil
+	case EncSHS:
+		// TODO: temporary, until interface is fixed for the iterator
+		return NewXORChunk(), nil
+		//return NewHistoChunk(), nil
 	}
 	return nil, errors.Errorf("invalid chunk encoding %q", e)
 }

@@ -238,7 +238,7 @@ func (t *timestampTracker) AppendExemplar(_ uint64, _ labels.Labels, _ exemplar.
 	return 0, nil
 }
 
-func (t *timestampTracker) AppendHistogram(_ uint64, _ labels.Labels, _ histogram.SparseHistogram) (uint64, error) {
+func (t *timestampTracker) AppendHistogram(_ uint64, _ labels.Labels, _ int64, _ histogram.SparseHistogram) (uint64, error) {
 	return 0, errors.New("not implemented")
 }
 

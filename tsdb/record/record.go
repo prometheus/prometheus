@@ -20,6 +20,7 @@ import (
 
 	"github.com/pkg/errors"
 
+	"github.com/prometheus/prometheus/pkg/histogram"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
@@ -65,6 +66,13 @@ type RefExemplar struct {
 	T      int64
 	V      float64
 	Labels labels.Labels
+}
+
+// RefHistogram is a histogram.
+type RefHistogram struct {
+	Ref uint64
+	T   int64
+	H   histogram.SparseHistogram
 }
 
 // Decoder decodes series, sample, and tombstone records.
