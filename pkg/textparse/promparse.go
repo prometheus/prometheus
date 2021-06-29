@@ -29,6 +29,7 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/prometheus/prometheus/pkg/exemplar"
+	"github.com/prometheus/prometheus/pkg/histogram"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/value"
 )
@@ -166,6 +167,12 @@ func (p *PromParser) Series() ([]byte, *int64, float64) {
 		return p.series, &p.ts, p.val
 	}
 	return p.series, nil, p.val
+}
+
+// Histogram always returns (nil, nil, SparseHistogram{}) because the Prometheus
+// text format does not support sparse histograms.
+func (p *PromParser) Histogram() ([]byte, *int64, histogram.SparseHistogram) {
+	return nil, nil, histogram.SparseHistogram{}
 }
 
 // Help returns the metric name and help text in the current entry.
