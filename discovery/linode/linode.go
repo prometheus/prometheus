@@ -180,15 +180,15 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		}
 
 		return d.lastResults, nil
-	} else {
-		// If polling is disabled, do a full refresh every interval.
-		newData, err := d.refreshData(ctx)
-		if err != nil {
-			return nil, err
-		}
-
-		return newData, nil
 	}
+
+	// If polling is disabled, do a full refresh every interval.
+	newData, err := d.refreshData(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return newData, nil
 }
 
 func (d *Discovery) refreshData(ctx context.Context) ([]*targetgroup.Group, error) {
