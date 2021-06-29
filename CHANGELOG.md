@@ -1,6 +1,5 @@
 ## 2.28.0 / 2021-06-21
 
-* [CHANGE] Move storage.tsdb.retention.size out of experimental #8728
 * [CHANGE] UI: Make the new experimental PromQL editor the default. #8925
 * [FEATURE] Linode SD: Add Linode service discovery. #8846
 * [FEATURE] HTTP SD: Add generic HTTP-based service discovery. #8839
