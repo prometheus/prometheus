@@ -292,22 +292,22 @@ func (a *histoAppender) AppendHistogram(t int64, h histogram.SparseHistogram) {
 		cntDod := cntDelta - a.cntDelta
 		zcntDod := zcntDelta - a.zcntDelta
 
-		putInt64PromVBXor(a.b, tDod)
-		putInt64PromVBXor(a.b, cntDod)
-		putInt64PromVBXor(a.b, zcntDod)
+		putInt64VBBucket(a.b, tDod)
+		putInt64VBBucket(a.b, cntDod)
+		putInt64VBBucket(a.b, zcntDod)
 
 		a.writeSumDelta(h.Sum)
 
 		for i, buck := range h.PositiveBuckets {
 			delta := buck - a.posbuckets[i]
 			dod := delta - a.posbucketsDelta[i]
-			putInt64PromVBXor(a.b, dod)
+			putInt64VBBucket(a.b, dod)
 			a.posbucketsDelta[i] = delta
 		}
 		for i, buck := range h.NegativeBuckets {
 			delta := buck - a.negbuckets[i]
 			dod := delta - a.negbucketsDelta[i]
-			putInt64PromVBXor(a.b, dod)
+			putInt64VBBucket(a.b, dod)
 			a.negbucketsDelta[i] = delta
 		}
 	}
@@ -556,7 +556,7 @@ func (it *histoIterator) Next() bool {
 		return true
 	}
 
-	tDod, err := readInt64PromVBXor(it.br)
+	tDod, err := readInt64VBBucket(it.br)
 	if err != nil {
 		it.err = err
 		return false
@@ -564,7 +564,7 @@ func (it *histoIterator) Next() bool {
 	it.tDelta = it.tDelta + tDod
 	it.t += it.tDelta
 
-	cntDod, err := readInt64PromVBXor(it.br)
+	cntDod, err := readInt64VBBucket(it.br)
 	if err != nil {
 		it.err = err
 		return false
@@ -572,7 +572,7 @@ func (it *histoIterator) Next() bool {
 	it.cntDelta = it.cntDelta + cntDod
 	it.cnt = uint64(int64(it.cnt) + it.cntDelta)
 
-	zcntDod, err := readInt64PromVBXor(it.br)
+	zcntDod, err := readInt64VBBucket(it.br)
 	if err != nil {
 		it.err = err
 		return false
@@ -586,7 +586,7 @@ func (it *histoIterator) Next() bool {
 	}
 
 	for i := range it.posbuckets {
-		dod, err := readInt64PromVBXor(it.br)
+		dod, err := readInt64VBBucket(it.br)
 		if err != nil {
 			it.err = err
 			return false
@@ -596,7 +596,7 @@ func (it *histoIterator) Next() bool {
 	}
 
 	for i := range it.negbuckets {
-		dod, err := readInt64PromVBXor(it.br)
+		dod, err := readInt64VBBucket(it.br)
 		if err != nil {
 			it.err = err
 			return false
