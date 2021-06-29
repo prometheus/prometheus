@@ -47,7 +47,7 @@ func TestHistoChunkSameBuckets(t *testing.T) {
 			{Offset: 0, Length: 2},
 			{Offset: 1, Length: 2},
 		},
-		NegativeSpans:   []histogram.Span{},
+		NegativeSpans:   nil,
 		PositiveBuckets: []int64{1, 1, -1, 0},
 		NegativeBuckets: []int64{},
 	}

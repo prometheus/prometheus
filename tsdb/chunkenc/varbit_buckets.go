@@ -25,7 +25,7 @@ func putInt64VBBucket(b *bstream, val int64) {
 }
 
 // readInt64VBBucket reads an int64 using varbit optimized for SHS buckets
-func readInt64VBBucket(b bstreamReader) (int64, error) {
+func readInt64VBBucket(b *bstreamReader) (int64, error) {
 	var d byte
 	for i := 0; i < 5; i++ {
 		d <<= 1
