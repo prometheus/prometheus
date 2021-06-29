@@ -1199,7 +1199,7 @@ func (a *initAppender) AppendHistogram(ref uint64, l labels.Labels, sh histogram
 	if a.app != nil {
 		return a.app.AppendHistogram(ref, l, sh)
 	}
-	a.head.initTime(sh.Ts)
+	//a.head.initTime(sh.Ts) FIXME(ganesh)
 	a.app = a.head.appender()
 
 	return a.app.AppendHistogram(ref, l, sh)
