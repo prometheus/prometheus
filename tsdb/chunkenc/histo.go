@@ -207,9 +207,8 @@ type histoAppender struct {
 
 	// for the fields that are tracked as dod's
 	// note that we expect to handle negative deltas (e.g. resets) by creating new chunks, we still want to support it in general hence signed integer types
-	// t, cnt, and zcnt should never be <0, but we keep them signed to avoid casting
 	t                           int64
-	cnt, zcnt                   int64
+	cnt, zcnt                   uint64
 	tDelta, cntDelta, zcntDelta int64
 
 	posbuckets, negbuckets           []int64
@@ -276,8 +275,8 @@ func (a *histoAppender) AppendHistogram(t int64, h histogram.SparseHistogram) {
 		a.posSpans, a.negSpans = h.PositiveSpans, h.NegativeSpans
 
 		putVarint(a.b, a.buf64, t)
-		putVarint(a.b, a.buf64, h.Count)
-		putVarint(a.b, a.buf64, h.ZeroCount)
+		putUvarint(a.b, a.buf64, h.Count)
+		putUvarint(a.b, a.buf64, h.ZeroCount)
 		a.b.writeBits(math.Float64bits(h.Sum), 64)
 		for _, buck := range h.PositiveBuckets {
 			putVarint(a.b, a.buf64, buck)
@@ -287,8 +286,8 @@ func (a *histoAppender) AppendHistogram(t int64, h histogram.SparseHistogram) {
 		}
 	} else if num == 1 {
 		tDelta = t - a.t
-		cntDelta = h.Count - a.cnt
-		zcntDelta = h.ZeroCount - a.zcnt
+		cntDelta = int64(h.Count) - int64(a.cnt)
+		zcntDelta = int64(h.ZeroCount) - int64(a.zcnt)
 
 		putVarint(a.b, a.buf64, tDelta)
 		putVarint(a.b, a.buf64, cntDelta)
@@ -308,8 +307,8 @@ func (a *histoAppender) AppendHistogram(t int64, h histogram.SparseHistogram) {
 		}
 	} else {
 		tDelta = t - a.t
-		cntDelta = h.Count - a.cnt
-		zcntDelta = h.ZeroCount - a.zcnt
+		cntDelta = int64(h.Count) - int64(a.cnt)
+		zcntDelta = int64(h.ZeroCount) - int64(a.zcnt)
 
 		tDod := tDelta - a.tDelta
 		cntDod := cntDelta - a.cntDelta
@@ -397,7 +396,7 @@ type histoIterator struct {
 
 	// for the fields that are tracked as dod's
 	t                           int64
-	cnt, zcnt                   int64
+	cnt, zcnt                   uint64
 	tDelta, cntDelta, zcntDelta int64
 
 	posbuckets, negbuckets           []int64
@@ -479,14 +478,14 @@ func (it *histoIterator) Next() bool {
 		}
 		it.t = t
 
-		cnt, err := binary.ReadVarint(&it.br)
+		cnt, err := binary.ReadUvarint(&it.br)
 		if err != nil {
 			it.err = err
 			return false
 		}
 		it.cnt = cnt
 
-		zcnt, err := binary.ReadVarint(&it.br)
+		zcnt, err := binary.ReadUvarint(&it.br)
 		if err != nil {
 			it.err = err
 			return false
@@ -536,7 +535,7 @@ func (it *histoIterator) Next() bool {
 			return false
 		}
 		it.cntDelta = cntDelta
-		it.cnt += it.cntDelta
+		it.cnt = uint64(int64(it.cnt) + it.cntDelta)
 
 		zcntDelta, err := binary.ReadVarint(&it.br)
 		if err != nil {
@@ -544,7 +543,7 @@ func (it *histoIterator) Next() bool {
 			return false
 		}
 		it.zcntDelta = zcntDelta
-		it.zcnt += it.zcntDelta
+		it.zcnt = uint64(int64(it.zcnt) + it.zcntDelta)
 
 		ok := it.readSum()
 		if !ok {
@@ -586,14 +585,14 @@ func (it *histoIterator) Next() bool {
 		return ok
 	}
 	it.cntDelta = it.cntDelta + cntDod
-	it.cnt += it.cntDelta
+	it.cnt = uint64(int64(it.cnt) + it.cntDelta)
 
 	zcntDod, ok := it.readDod()
 	if !ok {
 		return ok
 	}
 	it.zcntDelta = it.zcntDelta + zcntDod
-	it.zcnt += it.zcntDelta
+	it.zcnt = uint64(int64(it.zcnt) + it.zcntDelta)
 
 	ok = it.readSum()
 	if !ok {

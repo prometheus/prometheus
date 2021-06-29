@@ -14,7 +14,7 @@
 package histogram
 
 type SparseHistogram struct {
-	Count, ZeroCount                 int64 // will never be <0, but as overflow is unlikely, saves casting in formulas involving deltas
+	Count, ZeroCount                 uint64
 	Sum, ZeroThreshold               float64
 	Schema                           int32
 	PositiveSpans, NegativeSpans     []Span
