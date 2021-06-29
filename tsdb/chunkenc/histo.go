@@ -233,27 +233,6 @@ func putUvarint(b *bstream, buf []byte, x uint64) {
 	}
 }
 
-// we use this for millisec timestamps and all counts
-// for now this is copied from xor.go - we will probably want to be more conservative (use fewer bits for small values) - can be tweaked later
-func putDod(b *bstream, dod int64) {
-	switch {
-	case dod == 0:
-		b.writeBit(zero)
-	case bitRange(dod, 14):
-		b.writeBits(0x02, 2) // '10'
-		b.writeBits(uint64(dod), 14)
-	case bitRange(dod, 17):
-		b.writeBits(0x06, 3) // '110'
-		b.writeBits(uint64(dod), 17)
-	case bitRange(dod, 20):
-		b.writeBits(0x0e, 4) // '1110'
-		b.writeBits(uint64(dod), 20)
-	default:
-		b.writeBits(0x0f, 4) // '1111'
-		b.writeBits(uint64(dod), 64)
-	}
-}
-
 func (a *histoAppender) Append(int64, float64) {
 	panic("cannot call histoAppender.Append().")
 }
@@ -313,22 +292,22 @@ func (a *histoAppender) AppendHistogram(t int64, h histogram.SparseHistogram) {
 		cntDod := cntDelta - a.cntDelta
 		zcntDod := zcntDelta - a.zcntDelta
 
-		putDod(a.b, tDod)
-		putDod(a.b, cntDod)
-		putDod(a.b, zcntDod)
+		putInt64PromVBXor(a.b, tDod)
+		putInt64PromVBXor(a.b, cntDod)
+		putInt64PromVBXor(a.b, zcntDod)
 
 		a.writeSumDelta(h.Sum)
 
 		for i, buck := range h.PositiveBuckets {
 			delta := buck - a.posbuckets[i]
 			dod := delta - a.posbucketsDelta[i]
-			putDod(a.b, dod)
+			putInt64PromVBXor(a.b, dod)
 			a.posbucketsDelta[i] = delta
 		}
 		for i, buck := range h.NegativeBuckets {
 			delta := buck - a.negbuckets[i]
 			dod := delta - a.negbucketsDelta[i]
-			putDod(a.b, dod)
+			putInt64PromVBXor(a.b, dod)
 			a.negbucketsDelta[i] = delta
 		}
 	}
@@ -577,111 +556,56 @@ func (it *histoIterator) Next() bool {
 		return true
 	}
 
-	tDod, ok := it.readDod()
-	if !ok {
-		return ok
+	tDod, err := readInt64PromVBXor(it.br)
+	if err != nil {
+		it.err = err
+		return false
 	}
 	it.tDelta = it.tDelta + tDod
 	it.t += it.tDelta
 
-	cntDod, ok := it.readDod()
-	if !ok {
-		return ok
+	cntDod, err := readInt64PromVBXor(it.br)
+	if err != nil {
+		it.err = err
+		return false
 	}
 	it.cntDelta = it.cntDelta + cntDod
 	it.cnt = uint64(int64(it.cnt) + it.cntDelta)
 
-	zcntDod, ok := it.readDod()
-	if !ok {
-		return ok
+	zcntDod, err := readInt64PromVBXor(it.br)
+	if err != nil {
+		it.err = err
+		return false
 	}
 	it.zcntDelta = it.zcntDelta + zcntDod
 	it.zcnt = uint64(int64(it.zcnt) + it.zcntDelta)
 
-	ok = it.readSum()
+	ok := it.readSum()
 	if !ok {
 		return false
 	}
 
 	for i := range it.posbuckets {
-		dod, ok := it.readDod()
-		if !ok {
-			return ok
+		dod, err := readInt64PromVBXor(it.br)
+		if err != nil {
+			it.err = err
+			return false
 		}
 		it.posbucketsDelta[i] = it.posbucketsDelta[i] + dod
 		it.posbuckets[i] = it.posbuckets[i] + it.posbucketsDelta[i]
 	}
 
 	for i := range it.negbuckets {
-		dod, ok := it.readDod()
-		if !ok {
-			return ok
+		dod, err := readInt64PromVBXor(it.br)
+		if err != nil {
+			it.err = err
+			return false
 		}
 		it.negbucketsDelta[i] = it.negbucketsDelta[i] + dod
 		it.negbuckets[i] = it.negbuckets[i] + it.negbucketsDelta[i]
 	}
 
 	return true
-}
-
-func (it *histoIterator) readDod() (int64, bool) {
-	var d byte
-	// read delta-of-delta
-	for i := 0; i < 4; i++ {
-		d <<= 1
-		bit, err := it.br.readBitFast()
-		if err != nil {
-			bit, err = it.br.readBit()
-		}
-		if err != nil {
-			it.err = err
-			return 0, false
-		}
-		if bit == zero {
-			break
-		}
-		d |= 1
-	}
-
-	var sz uint8
-	var dod int64
-	switch d {
-	case 0x00:
-		// dod == 0
-	case 0x02:
-		sz = 14
-	case 0x06:
-		sz = 17
-	case 0x0e:
-		sz = 20
-	case 0x0f:
-		// Do not use fast because it's very unlikely it will succeed.
-		bits, err := it.br.readBits(64)
-		if err != nil {
-			it.err = err
-			return 0, false
-		}
-
-		dod = int64(bits)
-	}
-
-	if sz != 0 {
-		bits, err := it.br.readBitsFast(sz)
-		if err != nil {
-			bits, err = it.br.readBits(sz)
-		}
-		if err != nil {
-			it.err = err
-			return 0, false
-		}
-		if bits > (1 << (sz - 1)) {
-			// or something
-			bits = bits - (1 << sz)
-		}
-		dod = int64(bits)
-	}
-
-	return dod, true
 }
 
 func (it *histoIterator) readSum() bool {
