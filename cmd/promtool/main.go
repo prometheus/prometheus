@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"math"
 	"net/http"
 	"net/url"
@@ -40,11 +41,13 @@ import (
 	"github.com/prometheus/common/version"
 	"github.com/prometheus/exporter-toolkit/web"
 	"gopkg.in/alecthomas/kingpin.v2"
+	yaml "gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/file"
 	_ "github.com/prometheus/prometheus/discovery/install" // Register service discovery implementations.
 	"github.com/prometheus/prometheus/discovery/kubernetes"
+	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/pkg/rulefmt"
 )
 
@@ -337,8 +340,12 @@ func checkConfig(filename string) ([]string, error) {
 						return nil, err
 					}
 					if len(files) != 0 {
-						// There was at least one match for the glob and we can assume checkFileExists
-						// for all matches would pass, we can continue the loop.
+						for _, f := range files {
+							err = checkSDFile(f)
+							if err != nil {
+								return nil, errors.Errorf("checking SD file %q: %v", file, err)
+							}
+						}
 						continue
 					}
 					fmt.Printf("  WARNING: file %q for file_sd in scrape job %q does not exist\n", file, scfg.JobName)
@@ -363,6 +370,42 @@ func checkTLSConfig(tlsConfig config_util.TLSConfig) error {
 	}
 	if len(tlsConfig.KeyFile) > 0 && len(tlsConfig.CertFile) == 0 {
 		return errors.Errorf("client key file %q specified without client cert file", tlsConfig.KeyFile)
+	}
+
+	return nil
+}
+
+func checkSDFile(filename string) error {
+	fd, err := os.Open(filename)
+	if err != nil {
+		return err
+	}
+	defer fd.Close()
+
+	content, err := ioutil.ReadAll(fd)
+	if err != nil {
+		return err
+	}
+
+	var targetGroups []*targetgroup.Group
+
+	switch ext := filepath.Ext(filename); strings.ToLower(ext) {
+	case ".json":
+		if err := json.Unmarshal(content, &targetGroups); err != nil {
+			return err
+		}
+	case ".yml", ".yaml":
+		if err := yaml.UnmarshalStrict(content, &targetGroups); err != nil {
+			return err
+		}
+	default:
+		return errors.Errorf("invalid file extension: %q", ext)
+	}
+
+	for i, tg := range targetGroups {
+		if tg == nil {
+			return errors.Errorf("nil target group item found (index %d)", i)
+		}
 	}
 
 	return nil
