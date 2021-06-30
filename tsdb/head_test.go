@@ -31,6 +31,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/pkg/exemplar"
+	"github.com/prometheus/prometheus/pkg/histogram"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -2176,4 +2177,68 @@ func TestMemSafeIteratorSeekIntoBuffer(t *testing.T) {
 	require.False(t, ok)
 	ok = it.Seek(7)
 	require.False(t, ok)
+}
+
+func TestAppendHistogram(t *testing.T) {
+	l := labels.Labels{{Name: "a", Value: "b"}}
+	for _, numHistograms := range []int{1, 10, 150, 200, 250, 300} {
+		t.Run(fmt.Sprintf("%d", numHistograms), func(t *testing.T) {
+			head, _ := newTestHead(t, 1000, false)
+			t.Cleanup(func() {
+				require.NoError(t, head.Close())
+			})
+
+			require.NoError(t, head.Init(0))
+			app := head.Appender(context.Background())
+
+			type timedHist struct {
+				t int64
+				h histogram.SparseHistogram
+			}
+			expHists := make([]timedHist, 0, numHistograms)
+			for i, h := range generateHistograms(numHistograms) {
+				_, err := app.AppendHistogram(0, l, int64(i), h)
+				require.NoError(t, err)
+				expHists = append(expHists, timedHist{int64(i), h})
+			}
+			require.NoError(t, app.Commit())
+
+			q, err := NewBlockQuerier(head, head.MinTime(), head.MaxTime())
+			require.NoError(t, err)
+
+			ss := q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
+
+			require.True(t, ss.Next())
+			s := ss.At()
+			require.False(t, ss.Next())
+
+			it := s.Iterator()
+			actHists := make([]timedHist, 0, len(expHists))
+			for it.Next() {
+				t, h := it.AtHistogram()
+				actHists = append(actHists, timedHist{t, h.Copy()})
+			}
+
+			require.Equal(t, expHists, actHists)
+		})
+	}
+}
+
+func generateHistograms(n int) (r []histogram.SparseHistogram) {
+	for i := 0; i < n; i++ {
+		r = append(r, histogram.SparseHistogram{
+			Count:     5 + uint64(i*4),
+			ZeroCount: 2 + uint64(i),
+			Sum:       18.4 * float64(i+1),
+			Schema:    1,
+			PositiveSpans: []histogram.Span{
+				{Offset: 0, Length: 2},
+				{Offset: 1, Length: 2},
+			},
+			PositiveBuckets: []int64{int64(i + 1), 1, -1, 0},
+			NegativeBuckets: []int64{},
+		})
+	}
+
+	return r
 }

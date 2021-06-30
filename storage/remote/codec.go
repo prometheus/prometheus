@@ -373,6 +373,10 @@ func (c *concreteSeriesIterator) AtHistogram() (int64, histogram.SparseHistogram
 	return 0, histogram.SparseHistogram{}
 }
 
+func (c *concreteSeriesIterator) ChunkEncoding() chunkenc.Encoding {
+	return chunkenc.EncXOR
+}
+
 // Next implements storage.SeriesIterator.
 func (c *concreteSeriesIterator) Next() bool {
 	c.cur++

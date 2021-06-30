@@ -103,6 +103,8 @@ type Iterator interface {
 	// Err returns the current error. It should be used only after iterator is
 	// exhausted, that is `Next` or `Seek` returns false.
 	Err() error
+	// ChunkEncoding returns the encoding of the chunk that it is iterating.
+	ChunkEncoding() Encoding
 }
 
 // NewNopIterator returns a new chunk iterator that does not hold any data.
@@ -117,8 +119,9 @@ func (nopIterator) At() (int64, float64) { return math.MinInt64, 0 }
 func (nopIterator) AtHistogram() (int64, histogram.SparseHistogram) {
 	return math.MinInt64, histogram.SparseHistogram{}
 }
-func (nopIterator) Next() bool { return false }
-func (nopIterator) Err() error { return nil }
+func (nopIterator) Next() bool              { return false }
+func (nopIterator) Err() error              { return nil }
+func (nopIterator) ChunkEncoding() Encoding { return EncNone }
 
 // Pool is used to create and reuse chunk references to avoid allocations.
 type Pool interface {

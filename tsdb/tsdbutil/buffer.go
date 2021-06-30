@@ -164,6 +164,10 @@ func (it *sampleRingIterator) AtHistogram() (int64, histogram.SparseHistogram) {
 	return 0, histogram.SparseHistogram{}
 }
 
+func (it *sampleRingIterator) ChunkEncoding() chunkenc.Encoding {
+	return chunkenc.EncXOR
+}
+
 func (r *sampleRing) at(i int) (int64, float64) {
 	j := (r.f + i) % len(r.buf)
 	s := r.buf[j]

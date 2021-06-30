@@ -281,6 +281,10 @@ func (it *xorIterator) AtHistogram() (int64, histogram.SparseHistogram) {
 	panic("cannot call xorIterator.AtHistogram().")
 }
 
+func (it *xorIterator) ChunkEncoding() Encoding {
+	return EncXOR
+}
+
 func (it *xorIterator) Err() error {
 	return it.err
 }
