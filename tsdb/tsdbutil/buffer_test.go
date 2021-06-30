@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"github.com/prometheus/prometheus/pkg/histogram"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/require"
 )
 
@@ -153,6 +154,10 @@ func (it *listSeriesIterator) At() (int64, float64) {
 
 func (it *listSeriesIterator) AtHistogram() (int64, histogram.SparseHistogram) {
 	return 0, histogram.SparseHistogram{}
+}
+
+func (it *listSeriesIterator) ChunkEncoding() chunkenc.Encoding {
+	return chunkenc.EncXOR
 }
 
 func (it *listSeriesIterator) Next() bool {

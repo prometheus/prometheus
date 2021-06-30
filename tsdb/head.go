@@ -2678,7 +2678,7 @@ func computeChunkEndTime(start, cur, max int64) int64 {
 
 // iterator returns a chunk iterator.
 // It is unsafe to call this concurrently with s.append(...) without holding the series lock.
-func (s *memSeries) iterator(id int, isoState *isolationState, chunkDiskMapper *chunks.ChunkDiskMapper, it chunkenc.Iterator) chunkenc.Iterator {
+func (s *memSeries) iterator(id int, isoState *isolationState, chunkDiskMapper *chunks.ChunkDiskMapper, it chunkenc.Iterator) (ttt chunkenc.Iterator) {
 	c, garbageCollect, err := s.chunk(id, chunkDiskMapper)
 	// TODO(fabxc): Work around! An error will be returns when a querier have retrieved a pointer to a
 	// series's chunk, which got then garbage collected before it got
@@ -2837,7 +2837,7 @@ func (it *memSafeIterator) Next() bool {
 		return false
 	}
 	it.i++
-	if it.total-it.i > 4 {
+	if it.Iterator.ChunkEncoding() == chunkenc.EncSHS || it.total-it.i > 4 {
 		return it.Iterator.Next()
 	}
 	return true

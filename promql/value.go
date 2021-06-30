@@ -300,6 +300,10 @@ func (ssi *storageSeriesIterator) AtHistogram() (int64, histogram.SparseHistogra
 	return 0, histogram.SparseHistogram{}
 }
 
+func (ssi *storageSeriesIterator) ChunkEncoding() chunkenc.Encoding {
+	return chunkenc.EncXOR
+}
+
 func (ssi *storageSeriesIterator) Next() bool {
 	ssi.curr++
 	return ssi.curr < len(ssi.points)

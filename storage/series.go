@@ -95,6 +95,10 @@ func (it *listSeriesIterator) AtHistogram() (int64, histogram.SparseHistogram) {
 	return 0, histogram.SparseHistogram{}
 }
 
+func (it *listSeriesIterator) ChunkEncoding() chunkenc.Encoding {
+	return chunkenc.EncXOR
+}
+
 func (it *listSeriesIterator) Next() bool {
 	it.idx++
 	return it.idx < it.samples.Len()

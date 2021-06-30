@@ -633,7 +633,10 @@ func (p *populateWithDelSeriesIterator) Seek(t int64) bool {
 
 func (p *populateWithDelSeriesIterator) At() (int64, float64) { return p.curr.At() }
 func (p *populateWithDelSeriesIterator) AtHistogram() (int64, histogram.SparseHistogram) {
-	return 0, histogram.SparseHistogram{}
+	return p.curr.AtHistogram()
+}
+func (p *populateWithDelSeriesIterator) ChunkEncoding() chunkenc.Encoding {
+	return p.curr.ChunkEncoding()
 }
 
 func (p *populateWithDelSeriesIterator) Err() error {
@@ -823,7 +826,12 @@ func (it *DeletedIterator) At() (int64, float64) {
 }
 
 func (it *DeletedIterator) AtHistogram() (int64, histogram.SparseHistogram) {
-	return 0, histogram.SparseHistogram{}
+	t, h := it.Iter.AtHistogram()
+	return t, h
+}
+
+func (it *DeletedIterator) ChunkEncoding() chunkenc.Encoding {
+	return it.Iter.ChunkEncoding()
 }
 
 func (it *DeletedIterator) Seek(t int64) bool {
@@ -835,7 +843,12 @@ func (it *DeletedIterator) Seek(t int64) bool {
 	}
 
 	// Now double check if the entry falls into a deleted interval.
-	ts, _ := it.At()
+	var ts int64
+	if it.ChunkEncoding() == chunkenc.EncSHS {
+		ts, _ = it.AtHistogram()
+	} else {
+		ts, _ = it.At()
+	}
 	for _, itv := range it.Intervals {
 		if ts < itv.Mint {
 			return true
@@ -857,7 +870,12 @@ func (it *DeletedIterator) Seek(t int64) bool {
 func (it *DeletedIterator) Next() bool {
 Outer:
 	for it.Iter.Next() {
-		ts, _ := it.Iter.At()
+		var ts int64
+		if it.ChunkEncoding() == chunkenc.EncSHS {
+			ts, _ = it.AtHistogram()
+		} else {
+			ts, _ = it.At()
+		}
 
 		for _, tr := range it.Intervals {
 			if tr.InBounds(ts) {

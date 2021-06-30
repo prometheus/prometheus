@@ -489,6 +489,13 @@ func (c *chainSampleIterator) AtHistogram() (int64, histogram.SparseHistogram) {
 	return c.curr.AtHistogram()
 }
 
+func (c *chainSampleIterator) ChunkEncoding() chunkenc.Encoding {
+	if c.curr == nil {
+		panic("chainSampleIterator.ChunkEncoding() called before first .Next() or after .Next() returned false.")
+	}
+	return c.curr.ChunkEncoding()
+}
+
 func (c *chainSampleIterator) Next() bool {
 	if c.h == nil {
 		c.h = samplesIteratorHeap{}

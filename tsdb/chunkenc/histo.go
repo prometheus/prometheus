@@ -403,6 +403,10 @@ func (it *histoIterator) At() (int64, float64) {
 	panic("cannot call histoIterator.At().")
 }
 
+func (it *histoIterator) ChunkEncoding() Encoding {
+	return EncSHS
+}
+
 func (it *histoIterator) AtHistogram() (int64, histogram.SparseHistogram) {
 	return it.t, histogram.SparseHistogram{
 		Count:           it.cnt,
