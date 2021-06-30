@@ -10,6 +10,7 @@ interface GraphTabContentProps {
   stacked: boolean;
   useLocalTime: boolean;
   showExemplars: boolean;
+  handleTimeRangeSelection: (startTime: number, endTime: number) => void;
   lastQueryParams: QueryParams | null;
   id: string;
 }
@@ -21,6 +22,7 @@ export const GraphTabContent: FC<GraphTabContentProps> = ({
   useLocalTime,
   lastQueryParams,
   showExemplars,
+  handleTimeRangeSelection,
   id,
 }) => {
   if (!isPresent(data)) {
@@ -41,6 +43,7 @@ export const GraphTabContent: FC<GraphTabContentProps> = ({
       stacked={stacked}
       useLocalTime={useLocalTime}
       showExemplars={showExemplars}
+      handleTimeRangeSelection={handleTimeRangeSelection}
       queryParams={lastQueryParams}
       id={id}
     />
