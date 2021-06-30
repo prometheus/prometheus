@@ -47,8 +47,8 @@ func TestHistoChunkSameBuckets(t *testing.T) {
 			{Offset: 0, Length: 2},
 			{Offset: 1, Length: 2},
 		},
-		NegativeSpans:   []histogram.Span{},
-		PositiveBuckets: []int64{1, 1, -1, 0},
+		PositiveBuckets: []int64{1, 1, -1, 0}, // counts: 1, 2, 1, 1 (total 5)
+		NegativeSpans:   nil,
 		NegativeBuckets: []int64{},
 	}
 
@@ -59,17 +59,35 @@ func TestHistoChunkSameBuckets(t *testing.T) {
 		{t: ts, h: h},
 	}
 
-	// TODO add an update
-	//	h.Count = 9
-	//	h.Sum = 61
+	// add an updated histogram
 
-	// TODO add update with new appender
-	// Start with a new appender every 10th sample. This emulates starting
-	// appending to a partially filled chunk.
-	//			app, err = c.Appender()
-	//			require.NoError(t, err)
+	ts += 16
+	h.Count += 9
+	h.ZeroCount++
+	h.Sum = 24.4
+	h.PositiveBuckets = []int64{5, -2, 1, -2} // counts: 5, 3, 4, 2 (total 14)
 
-	//		app.Append(ts, v)
+	app.AppendHistogram(ts, h)
+	exp = append(exp, res{t: ts, h: h})
+
+	require.Equal(t, c.NumSamples(), 2)
+
+	// add update with new appender
+
+	app, err = c.Appender()
+	require.NoError(t, err)
+	require.Equal(t, c.NumSamples(), 2)
+
+	ts += 14
+	h.Count += 13
+	h.ZeroCount += 2
+	h.Sum = 24.4
+	h.PositiveBuckets = []int64{6, 1, -3, 6} // counts: 6, 7, 4, 10 (total 27)
+
+	app.AppendHistogram(ts, h)
+	exp = append(exp, res{t: ts, h: h})
+
+	require.Equal(t, c.NumSamples(), 3)
 
 	// 1. Expand iterator in simple case.
 	it1 := c.iterator(nil)
@@ -77,7 +95,7 @@ func TestHistoChunkSameBuckets(t *testing.T) {
 	var res1 []res
 	for it1.Next() {
 		ts, h := it1.AtHistogram()
-		res1 = append(res1, res{t: ts, h: h})
+		res1 = append(res1, res{t: ts, h: h.Copy()})
 	}
 	require.NoError(t, it1.Err())
 	require.Equal(t, exp, res1)

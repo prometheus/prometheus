@@ -33,3 +33,17 @@ in-file offset (lower 4 bytes) and segment sequence number (upper 4 bytes).
 │ len <uvarint> │ encoding <1 byte> │ data <bytes> │ CRC32 <4 byte> │
 └───────────────┴───────────────────┴──────────────┴────────────────┘
 ```
+
+## Histogram chunk
+
+```
+┌──────────────┬─────────────────┬──────────────────────────┬──────────────────────────┬──────────────┐
+│ len <uint16> │ schema <varint> │ pos-spans <span-section> │ neg-spans <span-section> │ data <bytes> │
+└──────────────┴─────────────────┴──────────────────────────┴──────────────────────────┴──────────────┘
+
+span-section:
+
+┌──────────────┬──────────────────┬──────────────────┬────────────┐
+│ len <varint> │ length1 <varint> │ offset1 <varint> │ length2... │
+└──────────────┴──────────────────┴──────────────────┴────────────┘
+```

@@ -25,3 +25,26 @@ type Span struct {
 	Offset int32
 	Length uint32
 }
+
+func (s SparseHistogram) Copy() SparseHistogram {
+	c := s
+
+	if s.PositiveSpans != nil {
+		c.PositiveSpans = make([]Span, len(s.PositiveSpans))
+		copy(c.PositiveSpans, s.PositiveSpans)
+	}
+	if s.NegativeSpans != nil {
+		c.NegativeSpans = make([]Span, len(s.NegativeSpans))
+		copy(c.NegativeSpans, s.NegativeSpans)
+	}
+	if s.PositiveBuckets != nil {
+		c.PositiveBuckets = make([]int64, len(s.PositiveBuckets))
+		copy(c.PositiveBuckets, s.PositiveBuckets)
+	}
+	if s.NegativeBuckets != nil {
+		c.NegativeBuckets = make([]int64, len(s.NegativeBuckets))
+		copy(c.NegativeBuckets, s.NegativeBuckets)
+	}
+
+	return c
+}

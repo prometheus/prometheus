@@ -75,10 +75,6 @@ const ()
 
 type HistoChunk struct {
 	b bstream
-
-	// "metadata" describing all the data within this chunk
-	schema             int32
-	posSpans, negSpans []histogram.Span
 }
 
 // NewHistoChunk returns a new chunk with Histo encoding of the given size.
@@ -100,6 +96,16 @@ func (c *HistoChunk) Bytes() []byte {
 // NumSamples returns the number of samples in the chunk.
 func (c *HistoChunk) NumSamples() int {
 	return int(binary.BigEndian.Uint16(c.Bytes()))
+}
+
+// Meta returns the histogram metadata.
+// callers may only call this on chunks that have at least one sample
+func (c *HistoChunk) Meta() (int32, []histogram.Span, []histogram.Span, error) {
+	if c.NumSamples() == 0 {
+		panic("HistoChunk.Meta() called on an empty chunk")
+	}
+	b := newBReader(c.Bytes()[2:])
+	return readHistoChunkMeta(&b)
 }
 
 func (c *HistoChunk) Compact() {
@@ -124,13 +130,11 @@ func (c *HistoChunk) Appender() (Appender, error) {
 	}
 
 	a := &histoAppender{
-		c: c,
 		b: &c.b,
 
-		schema:   c.schema,
-		posSpans: c.posSpans,
-		negSpans: c.negSpans,
-
+		schema:          it.schema,
+		posSpans:        it.posSpans,
+		negSpans:        it.negSpans,
 		t:               it.t,
 		cnt:             it.cnt,
 		zcnt:            it.zcnt,
@@ -154,8 +158,16 @@ func (c *HistoChunk) Appender() (Appender, error) {
 	return a, nil
 }
 
-// TODO fix this
+func countSpans(spans []histogram.Span) int {
+	var cnt int
+	for _, s := range spans {
+		cnt += int(s.Length)
+	}
+	return cnt
+}
+
 func (c *HistoChunk) iterator(it Iterator) *histoIterator {
+	// TODO fix this. this is taken from xor.go
 	// Should iterators guarantee to act on a copy of the data so it doesn't lock append?
 	// When using striped locks to guard access to chunks, probably yes.
 	// Could only copy data if the chunk is not completed yet.
@@ -164,29 +176,12 @@ func (c *HistoChunk) iterator(it Iterator) *histoIterator {
 	//	return histoIter
 	//}
 
-	var numPosBuckets, numNegBuckets int
-	for _, s := range c.posSpans {
-		numPosBuckets += int(s.Length)
-	}
-	for _, s := range c.negSpans {
-		numNegBuckets += int(s.Length)
-	}
-
 	return &histoIterator{
 		// The first 2 bytes contain chunk headers.
 		// We skip that for actual samples.
 		br:       newBReader(c.b.bytes()[2:]),
 		numTotal: binary.BigEndian.Uint16(c.b.bytes()),
 		t:        math.MinInt64,
-
-		schema:   c.schema,
-		posSpans: c.posSpans,
-		negSpans: c.negSpans,
-
-		posbuckets:      make([]int64, numPosBuckets),
-		negbuckets:      make([]int64, numNegBuckets),
-		posbucketsDelta: make([]int64, numPosBuckets),
-		negbucketsDelta: make([]int64, numNegBuckets),
 	}
 }
 
@@ -196,8 +191,6 @@ func (c *HistoChunk) Iterator(it Iterator) Iterator {
 }
 
 type histoAppender struct {
-	c *HistoChunk // this is such that during the first append we can set the metadata on the chunk. not sure if that's how it should work
-
 	b *bstream
 
 	// Meta
@@ -233,27 +226,6 @@ func putUvarint(b *bstream, buf []byte, x uint64) {
 	}
 }
 
-// we use this for millisec timestamps and all counts
-// for now this is copied from xor.go - we will probably want to be more conservative (use fewer bits for small values) - can be tweaked later
-func putDod(b *bstream, dod int64) {
-	switch {
-	case dod == 0:
-		b.writeBit(zero)
-	case bitRange(dod, 14):
-		b.writeBits(0x02, 2) // '10'
-		b.writeBits(uint64(dod), 14)
-	case bitRange(dod, 17):
-		b.writeBits(0x06, 3) // '110'
-		b.writeBits(uint64(dod), 17)
-	case bitRange(dod, 20):
-		b.writeBits(0x0e, 4) // '1110'
-		b.writeBits(uint64(dod), 20)
-	default:
-		b.writeBits(0x0f, 4) // '1111'
-		b.writeBits(uint64(dod), 64)
-	}
-}
-
 func (a *histoAppender) Append(int64, float64) {
 	panic("cannot call histoAppender.Append().")
 }
@@ -265,14 +237,19 @@ func (a *histoAppender) AppendHistogram(t int64, h histogram.SparseHistogram) {
 	num := binary.BigEndian.Uint16(a.b.bytes())
 
 	if num == 0 {
-		// the first append gets the privilege to dictate the metadata, on both the appender and the chunk
-		// TODO we should probably not reach back into the chunk here. should metadata be set when we create the chunk?
-		a.c.schema = h.Schema
-		a.c.posSpans, a.c.negSpans = h.PositiveSpans, h.NegativeSpans
+		// the first append gets the privilege to dictate the metadata
+		// but it's also responsible for encoding it into the chunk!
 
+		writeHistoChunkMeta(a.b, h.Schema, h.PositiveSpans, h.NegativeSpans)
 		a.schema = h.Schema
 		a.posSpans, a.negSpans = h.PositiveSpans, h.NegativeSpans
+		numPosBuckets, numNegBuckets := countSpans(h.PositiveSpans), countSpans(h.NegativeSpans)
+		a.posbuckets = make([]int64, numPosBuckets)
+		a.negbuckets = make([]int64, numNegBuckets)
+		a.posbucketsDelta = make([]int64, numPosBuckets)
+		a.negbucketsDelta = make([]int64, numNegBuckets)
 
+		// now store actual data
 		putVarint(a.b, a.buf64, t)
 		putUvarint(a.b, a.buf64, h.Count)
 		putUvarint(a.b, a.buf64, h.ZeroCount)
@@ -313,22 +290,22 @@ func (a *histoAppender) AppendHistogram(t int64, h histogram.SparseHistogram) {
 		cntDod := cntDelta - a.cntDelta
 		zcntDod := zcntDelta - a.zcntDelta
 
-		putDod(a.b, tDod)
-		putDod(a.b, cntDod)
-		putDod(a.b, zcntDod)
+		putInt64VBBucket(a.b, tDod)
+		putInt64VBBucket(a.b, cntDod)
+		putInt64VBBucket(a.b, zcntDod)
 
 		a.writeSumDelta(h.Sum)
 
 		for i, buck := range h.PositiveBuckets {
 			delta := buck - a.posbuckets[i]
 			dod := delta - a.posbucketsDelta[i]
-			putDod(a.b, dod)
+			putInt64VBBucket(a.b, dod)
 			a.posbucketsDelta[i] = delta
 		}
 		for i, buck := range h.NegativeBuckets {
 			delta := buck - a.negbuckets[i]
 			dod := delta - a.negbucketsDelta[i]
-			putDod(a.b, dod)
+			putInt64VBBucket(a.b, dod)
 			a.negbucketsDelta[i] = delta
 		}
 	}
@@ -475,6 +452,23 @@ func (it *histoIterator) Next() bool {
 	}
 
 	if it.numRead == 0 {
+
+		// first read is responsible for reading chunk metadata and initializing fields that depend on it
+		schema, posSpans, negSpans, err := readHistoChunkMeta(&it.br)
+		if err != nil {
+			it.err = err
+			return false
+		}
+		it.schema = schema
+		it.posSpans, it.negSpans = posSpans, negSpans
+		numPosBuckets, numNegBuckets := countSpans(posSpans), countSpans(negSpans)
+		it.posbuckets = make([]int64, numPosBuckets)
+		it.negbuckets = make([]int64, numNegBuckets)
+		it.posbucketsDelta = make([]int64, numPosBuckets)
+		it.negbucketsDelta = make([]int64, numNegBuckets)
+
+		// now read actual data
+
 		t, err := binary.ReadVarint(&it.br)
 		if err != nil {
 			it.err = err
@@ -577,111 +571,56 @@ func (it *histoIterator) Next() bool {
 		return true
 	}
 
-	tDod, ok := it.readDod()
-	if !ok {
-		return ok
+	tDod, err := readInt64VBBucket(&it.br)
+	if err != nil {
+		it.err = err
+		return false
 	}
 	it.tDelta = it.tDelta + tDod
 	it.t += it.tDelta
 
-	cntDod, ok := it.readDod()
-	if !ok {
-		return ok
+	cntDod, err := readInt64VBBucket(&it.br)
+	if err != nil {
+		it.err = err
+		return false
 	}
 	it.cntDelta = it.cntDelta + cntDod
 	it.cnt = uint64(int64(it.cnt) + it.cntDelta)
 
-	zcntDod, ok := it.readDod()
-	if !ok {
-		return ok
+	zcntDod, err := readInt64VBBucket(&it.br)
+	if err != nil {
+		it.err = err
+		return false
 	}
 	it.zcntDelta = it.zcntDelta + zcntDod
 	it.zcnt = uint64(int64(it.zcnt) + it.zcntDelta)
 
-	ok = it.readSum()
+	ok := it.readSum()
 	if !ok {
 		return false
 	}
 
 	for i := range it.posbuckets {
-		dod, ok := it.readDod()
-		if !ok {
-			return ok
+		dod, err := readInt64VBBucket(&it.br)
+		if err != nil {
+			it.err = err
+			return false
 		}
 		it.posbucketsDelta[i] = it.posbucketsDelta[i] + dod
 		it.posbuckets[i] = it.posbuckets[i] + it.posbucketsDelta[i]
 	}
 
 	for i := range it.negbuckets {
-		dod, ok := it.readDod()
-		if !ok {
-			return ok
+		dod, err := readInt64VBBucket(&it.br)
+		if err != nil {
+			it.err = err
+			return false
 		}
 		it.negbucketsDelta[i] = it.negbucketsDelta[i] + dod
 		it.negbuckets[i] = it.negbuckets[i] + it.negbucketsDelta[i]
 	}
 
 	return true
-}
-
-func (it *histoIterator) readDod() (int64, bool) {
-	var d byte
-	// read delta-of-delta
-	for i := 0; i < 4; i++ {
-		d <<= 1
-		bit, err := it.br.readBitFast()
-		if err != nil {
-			bit, err = it.br.readBit()
-		}
-		if err != nil {
-			it.err = err
-			return 0, false
-		}
-		if bit == zero {
-			break
-		}
-		d |= 1
-	}
-
-	var sz uint8
-	var dod int64
-	switch d {
-	case 0x00:
-		// dod == 0
-	case 0x02:
-		sz = 14
-	case 0x06:
-		sz = 17
-	case 0x0e:
-		sz = 20
-	case 0x0f:
-		// Do not use fast because it's very unlikely it will succeed.
-		bits, err := it.br.readBits(64)
-		if err != nil {
-			it.err = err
-			return 0, false
-		}
-
-		dod = int64(bits)
-	}
-
-	if sz != 0 {
-		bits, err := it.br.readBitsFast(sz)
-		if err != nil {
-			bits, err = it.br.readBits(sz)
-		}
-		if err != nil {
-			it.err = err
-			return 0, false
-		}
-		if bits > (1 << (sz - 1)) {
-			// or something
-			bits = bits - (1 << sz)
-		}
-		dod = int64(bits)
-	}
-
-	return dod, true
 }
 
 func (it *histoIterator) readSum() bool {
