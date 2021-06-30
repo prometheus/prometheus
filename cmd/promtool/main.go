@@ -39,7 +39,6 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
 	"github.com/prometheus/exporter-toolkit/web"
-	"github.com/prometheus/prometheus/promql"
 	"gopkg.in/alecthomas/kingpin.v2"
 
 	"github.com/prometheus/prometheus/config"
@@ -47,6 +46,7 @@ import (
 	_ "github.com/prometheus/prometheus/discovery/install" // Register service discovery implementations.
 	"github.com/prometheus/prometheus/discovery/kubernetes"
 	"github.com/prometheus/prometheus/pkg/rulefmt"
+	"github.com/prometheus/prometheus/promql"
 )
 
 func main() {
@@ -163,7 +163,7 @@ func main() {
 		"A list of one or more files containing recording rules to be backfilled. All recording rules listed in the files will be backfilled. Alerting rules are not evaluated.",
 	).Required().ExistingFiles()
 
-	featureList := app.Flag("enable-feature", "Comma separated feature names to enable (only PromQL related). Valid options: promql-at-modifier, promql-negative-offset. See https://prometheus.io/docs/prometheus/latest/disabled_features/ for more details.").Default("").Strings()
+	featureList := app.Flag("enable-feature", "Comma separated feature names to enable (only PromQL related). See https://prometheus.io/docs/prometheus/latest/disabled_features/ for the options and more details.").Default("").Strings()
 
 	parsedCmd := kingpin.MustParse(app.Parse(os.Args[1:]))
 
@@ -187,8 +187,7 @@ func main() {
 			case "":
 				continue
 			default:
-				fmt.Fprintf(os.Stderr, "Unknown option for --enable-feature: %q\n", o)
-				os.Exit(1)
+				fmt.Printf("  WARNING: Unknown option for --enable-feature: %q\n", o)
 			}
 		}
 	}
