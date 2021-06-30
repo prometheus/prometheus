@@ -80,3 +80,46 @@ func readHistoChunkMetaSpans(b *bstreamReader) ([]histogram.Span, error) {
 	}
 	return spans, nil
 }
+
+type bucketIterator struct {
+	spans  []histogram.Span
+	span   int // span position of last yielded bucket
+	bucket int // bucket position within span of last yielded bucket
+	idx    int // bucket index (globally across all spans) of last yielded bucket
+}
+
+func newBucketIterator(spans []histogram.Span) *bucketIterator {
+	b := bucketIterator{
+		spans:  spans,
+		span:   0,
+		bucket: -1,
+		idx:    -1,
+	}
+	if len(spans) > 0 {
+		b.idx += int(spans[0].Offset)
+	}
+	return &b
+}
+
+func (b *bucketIterator) Next() (int, bool) {
+	// we're already out of bounds
+	if b.span >= len(b.spans) {
+		return 0, false
+	}
+
+	if b.bucket < int(b.spans[b.span].Length-1) { // try to move within same span.
+		b.bucket++
+		b.idx++
+		return b.idx, true
+	} else if b.span < len(b.spans)-1 { // try to move from one span to the next
+		b.span++
+		if b.spans[b.span].Length == 0 {
+			panic("span is invalid because it has length 0")
+		}
+		b.idx += int(b.spans[b.span].Offset + 1)
+		b.bucket = 0
+		return b.idx, true
+	}
+	// we're out of options
+	return 0, false
+}
