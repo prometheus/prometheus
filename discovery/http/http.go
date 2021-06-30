@@ -104,6 +104,7 @@ type Discovery struct {
 	url             string
 	client          *http.Client
 	refreshInterval time.Duration
+	tgLastLength    int
 }
 
 // NewDiscovery returns a new HTTP discovery for the given config.
@@ -182,6 +183,15 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		}
 		tg.Labels[httpSDURLLabel] = model.LabelValue(d.url)
 	}
+
+	// Generate empty updates for sources that disappeared.
+	l := len(targetGroups)
+	if d.tgLastLength > l {
+		for i := l; i < d.tgLastLength; i++ {
+			targetGroups = append(targetGroups, &targetgroup.Group{Source: urlSource(d.url, i)})
+		}
+	}
+	d.tgLastLength = l
 
 	return targetGroups, nil
 }
