@@ -197,9 +197,9 @@ func TestSourceDisappeared(t *testing.T) {
 						},
 						Labels: model.LabelSet{
 							model.LabelName("k"):          model.LabelValue("1"),
-							model.LabelName("__meta_url"): model.LabelValue(ts.URL + "/http_disappeared.json"),
+							model.LabelName("__meta_url"): model.LabelValue(ts.URL),
 						},
-						Source: urlSource(ts.URL+"/http_disappeared.json", 0),
+						Source: urlSource(ts.URL, 0),
 					},
 				},
 				{
@@ -211,9 +211,9 @@ func TestSourceDisappeared(t *testing.T) {
 						},
 						Labels: model.LabelSet{
 							model.LabelName("k"):          model.LabelValue("1"),
-							model.LabelName("__meta_url"): model.LabelValue(ts.URL + "/http_disappeared.json"),
+							model.LabelName("__meta_url"): model.LabelValue(ts.URL),
 						},
-						Source: urlSource(ts.URL+"/http_disappeared.json", 0),
+						Source: urlSource(ts.URL, 0),
 					},
 					{
 						Targets: []model.LabelSet{
@@ -223,9 +223,9 @@ func TestSourceDisappeared(t *testing.T) {
 						},
 						Labels: model.LabelSet{
 							model.LabelName("k"):          model.LabelValue("2"),
-							model.LabelName("__meta_url"): model.LabelValue(ts.URL + "/http_disappeared.json"),
+							model.LabelName("__meta_url"): model.LabelValue(ts.URL),
 						},
-						Source: urlSource(ts.URL+"/http_disappeared.json", 1),
+						Source: urlSource(ts.URL, 1),
 					},
 				},
 			},
@@ -245,9 +245,9 @@ func TestSourceDisappeared(t *testing.T) {
 						},
 						Labels: model.LabelSet{
 							model.LabelName("k"):          model.LabelValue("1"),
-							model.LabelName("__meta_url"): model.LabelValue(ts.URL + "/http_disappeared.json"),
+							model.LabelName("__meta_url"): model.LabelValue(ts.URL),
 						},
-						Source: urlSource(ts.URL+"/http_disappeared.json", 0),
+						Source: urlSource(ts.URL, 0),
 					},
 					{
 						Targets: []model.LabelSet{
@@ -257,9 +257,9 @@ func TestSourceDisappeared(t *testing.T) {
 						},
 						Labels: model.LabelSet{
 							model.LabelName("k"):          model.LabelValue("2"),
-							model.LabelName("__meta_url"): model.LabelValue(ts.URL + "/http_disappeared.json"),
+							model.LabelName("__meta_url"): model.LabelValue(ts.URL),
 						},
-						Source: urlSource(ts.URL+"/http_disappeared.json", 1),
+						Source: urlSource(ts.URL, 1),
 					},
 				},
 				{
@@ -271,14 +271,14 @@ func TestSourceDisappeared(t *testing.T) {
 						},
 						Labels: model.LabelSet{
 							model.LabelName("k"):          model.LabelValue("1"),
-							model.LabelName("__meta_url"): model.LabelValue(ts.URL + "/http_disappeared.json"),
+							model.LabelName("__meta_url"): model.LabelValue(ts.URL),
 						},
-						Source: urlSource(ts.URL+"/http_disappeared.json", 0),
+						Source: urlSource(ts.URL, 0),
 					},
 					{
 						Targets: nil,
 						Labels:  nil,
-						Source:  urlSource(ts.URL+"/http_disappeared.json", 1),
+						Source:  urlSource(ts.URL, 1),
 					},
 				},
 			},
@@ -299,9 +299,9 @@ func TestSourceDisappeared(t *testing.T) {
 						},
 						Labels: model.LabelSet{
 							model.LabelName("k"):          model.LabelValue("1"),
-							model.LabelName("__meta_url"): model.LabelValue(ts.URL + "/http_disappeared.json"),
+							model.LabelName("__meta_url"): model.LabelValue(ts.URL),
 						},
-						Source: urlSource(ts.URL+"/http_disappeared.json", 0),
+						Source: urlSource(ts.URL, 0),
 					},
 					{
 						Targets: []model.LabelSet{
@@ -311,9 +311,9 @@ func TestSourceDisappeared(t *testing.T) {
 						},
 						Labels: model.LabelSet{
 							model.LabelName("k"):          model.LabelValue("2"),
-							model.LabelName("__meta_url"): model.LabelValue(ts.URL + "/http_disappeared.json"),
+							model.LabelName("__meta_url"): model.LabelValue(ts.URL),
 						},
-						Source: urlSource(ts.URL+"/http_disappeared.json", 1),
+						Source: urlSource(ts.URL, 1),
 					},
 					{
 						Targets: []model.LabelSet{
@@ -323,9 +323,9 @@ func TestSourceDisappeared(t *testing.T) {
 						},
 						Labels: model.LabelSet{
 							model.LabelName("k"):          model.LabelValue("3"),
-							model.LabelName("__meta_url"): model.LabelValue(ts.URL + "/http_disappeared.json"),
+							model.LabelName("__meta_url"): model.LabelValue(ts.URL),
 						},
-						Source: urlSource(ts.URL+"/http_disappeared.json", 2),
+						Source: urlSource(ts.URL, 2),
 					},
 				},
 				{
@@ -337,19 +337,19 @@ func TestSourceDisappeared(t *testing.T) {
 						},
 						Labels: model.LabelSet{
 							model.LabelName("k"):          model.LabelValue("1"),
-							model.LabelName("__meta_url"): model.LabelValue(ts.URL + "/http_disappeared.json"),
+							model.LabelName("__meta_url"): model.LabelValue(ts.URL),
 						},
-						Source: urlSource(ts.URL+"/http_disappeared.json", 0),
+						Source: urlSource(ts.URL, 0),
 					},
 					{
 						Targets: nil,
 						Labels:  nil,
-						Source:  urlSource(ts.URL+"/http_disappeared.json", 1),
+						Source:  urlSource(ts.URL, 1),
 					},
 					{
 						Targets: nil,
 						Labels:  nil,
-						Source:  urlSource(ts.URL+"/http_disappeared.json", 2),
+						Source:  urlSource(ts.URL, 2),
 					},
 				},
 				{
@@ -361,9 +361,9 @@ func TestSourceDisappeared(t *testing.T) {
 						},
 						Labels: model.LabelSet{
 							model.LabelName("k"):          model.LabelValue("v"),
-							model.LabelName("__meta_url"): model.LabelValue(ts.URL + "/http_disappeared.json"),
+							model.LabelName("__meta_url"): model.LabelValue(ts.URL),
 						},
-						Source: urlSource(ts.URL+"/http_disappeared.json", 0),
+						Source: urlSource(ts.URL, 0),
 					},
 					{
 						Targets: []model.LabelSet{
@@ -373,9 +373,9 @@ func TestSourceDisappeared(t *testing.T) {
 						},
 						Labels: model.LabelSet{
 							model.LabelName("k"):          model.LabelValue("vv"),
-							model.LabelName("__meta_url"): model.LabelValue(ts.URL + "/http_disappeared.json"),
+							model.LabelName("__meta_url"): model.LabelValue(ts.URL),
 						},
-						Source: urlSource(ts.URL+"/http_disappeared.json", 1),
+						Source: urlSource(ts.URL, 1),
 					},
 				},
 			},
@@ -384,7 +384,7 @@ func TestSourceDisappeared(t *testing.T) {
 
 	cfg := SDConfig{
 		HTTPClientConfig: config.DefaultHTTPClientConfig,
-		URL:              ts.URL + "/http_disappeared.json",
+		URL:              ts.URL,
 		RefreshInterval:  model.Duration(1 * time.Second),
 	}
 	d, err := NewDiscovery(&cfg, log.NewNopLogger())
