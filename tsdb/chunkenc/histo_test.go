@@ -33,7 +33,7 @@ func TestHistoChunkSameBuckets(t *testing.T) {
 
 	app, err := c.Appender()
 	require.NoError(t, err)
-	require.Equal(t, c.NumSamples(), 0)
+	require.Equal(t, 0, c.NumSamples())
 
 	ts := int64(1234567890)
 
@@ -53,7 +53,7 @@ func TestHistoChunkSameBuckets(t *testing.T) {
 	}
 
 	app.AppendHistogram(ts, h)
-	require.Equal(t, c.NumSamples(), 1)
+	require.Equal(t, 1, c.NumSamples())
 
 	exp := []res{
 		{t: ts, h: h},
@@ -70,13 +70,13 @@ func TestHistoChunkSameBuckets(t *testing.T) {
 	app.AppendHistogram(ts, h)
 	exp = append(exp, res{t: ts, h: h})
 
-	require.Equal(t, c.NumSamples(), 2)
+	require.Equal(t, 2, c.NumSamples())
 
 	// add update with new appender
 
 	app, err = c.Appender()
 	require.NoError(t, err)
-	require.Equal(t, c.NumSamples(), 2)
+	require.Equal(t, 2, c.NumSamples())
 
 	ts += 14
 	h.Count += 13
@@ -87,7 +87,7 @@ func TestHistoChunkSameBuckets(t *testing.T) {
 	app.AppendHistogram(ts, h)
 	exp = append(exp, res{t: ts, h: h})
 
-	require.Equal(t, c.NumSamples(), 3)
+	require.Equal(t, 3, c.NumSamples())
 
 	// 1. Expand iterator in simple case.
 	it1 := c.iterator(nil)
