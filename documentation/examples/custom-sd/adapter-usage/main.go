@@ -100,13 +100,17 @@ func (d *discovery) parseServiceNodes(resp *http.Response, name string) (*target
 		Labels: make(model.LabelSet),
 	}
 
-	dec := json.NewDecoder(resp.Body)
 	defer func() {
 		io.Copy(ioutil.Discard, resp.Body)
 		resp.Body.Close()
 	}()
-	err := dec.Decode(&nodes)
 
+	b, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	err = json.Unmarshal(b, &nodes)
 	if err != nil {
 		return &tgroup, err
 	}
@@ -165,11 +169,19 @@ func (d *discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			continue
 		}
 
-		dec := json.NewDecoder(resp.Body)
-		err = dec.Decode(&srvs)
+		b, err := ioutil.ReadAll(resp.Body)
+		io.Copy(ioutil.Discard, resp.Body)
 		resp.Body.Close()
 		if err != nil {
 			level.Error(d.logger).Log("msg", "Error reading services list", "err", err)
+			time.Sleep(time.Duration(d.refreshInterval) * time.Second)
+			continue
+		}
+
+		err = json.Unmarshal(b, &srvs)
+		resp.Body.Close()
+		if err != nil {
+			level.Error(d.logger).Log("msg", "Error parsing services list", "err", err)
 			time.Sleep(time.Duration(d.refreshInterval) * time.Second)
 			continue
 		}
@@ -191,6 +203,7 @@ func (d *discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 				level.Error(d.logger).Log("msg", "Error getting services nodes", "service", name, "err", err)
 				break
 			}
+
 			tg, err := d.parseServiceNodes(resp, name)
 			if err != nil {
 				level.Error(d.logger).Log("msg", "Error parsing services nodes", "service", name, "err", err)
