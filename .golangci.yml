@@ -22,6 +22,7 @@ linters-settings:
     packages-with-error-message:
       - sync/atomic: "Use go.uber.org/atomic instead of sync/atomic"
       - github.com/stretchr/testify/assert: "Use github.com/stretchr/testify/require instead of github.com/stretchr/testify/assert"
-      - github.com/go-kit/kit/log: "Use github.com/go-kit/log instead of github.com/go-kit/kit/log"
+      # Temporarily commenting until a solution for removing it from klog is found.
+      # - github.com/go-kit/kit/log: "Use github.com/go-kit/log instead of github.com/go-kit/kit/log"
   errcheck:
     exclude: scripts/errcheck_excludes.txt
