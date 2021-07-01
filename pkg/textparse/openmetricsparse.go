@@ -336,6 +336,9 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 			if ts, err = parseFloat(yoloString(p.l.buf()[1:])); err != nil {
 				return EntryInvalid, err
 			}
+			if math.IsNaN(ts) || math.IsInf(ts, 0) {
+				return EntryInvalid, errors.New("invalid timestamp")
+			}
 			p.ts = int64(ts * 1000)
 			switch t3 := p.nextToken(); t3 {
 			case tLinebreak:
@@ -391,6 +394,9 @@ func (p *OpenMetricsParser) parseComment() error {
 		// A float is enough to hold what we need for millisecond resolution.
 		if ts, err = parseFloat(yoloString(p.l.buf()[1:])); err != nil {
 			return err
+		}
+		if math.IsNaN(ts) || math.IsInf(ts, 0) {
+			return errors.New("invalid exemplar timestamp")
 		}
 		p.exemplarTs = int64(ts * 1000)
 		switch t3 := p.nextToken(); t3 {

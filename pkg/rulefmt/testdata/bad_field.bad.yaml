@@ -7,4 +7,3 @@ groups:
           instance: localhost
         annotation:
           summary: annonations is written without s above
-

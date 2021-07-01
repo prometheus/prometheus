@@ -504,6 +504,30 @@ func TestOpenMetricsParseErrors(t *testing.T) {
 			input: `{b="c",} 1`,
 			err:   `"INVALID" "{" is not a valid start token`,
 		},
+		{
+			input: `a 1 NaN`,
+			err:   `invalid timestamp`,
+		},
+		{
+			input: `a 1 -Inf`,
+			err:   `invalid timestamp`,
+		},
+		{
+			input: `a 1 Inf`,
+			err:   `invalid timestamp`,
+		},
+		{
+			input: "# TYPE hhh histogram\nhhh_bucket{le=\"+Inf\"} 1 # {aa=\"bb\"} 4 NaN",
+			err:   `invalid exemplar timestamp`,
+		},
+		{
+			input: "# TYPE hhh histogram\nhhh_bucket{le=\"+Inf\"} 1 # {aa=\"bb\"} 4 -Inf",
+			err:   `invalid exemplar timestamp`,
+		},
+		{
+			input: "# TYPE hhh histogram\nhhh_bucket{le=\"+Inf\"} 1 # {aa=\"bb\"} 4 Inf",
+			err:   `invalid exemplar timestamp`,
+		},
 	}
 
 	for i, c := range cases {

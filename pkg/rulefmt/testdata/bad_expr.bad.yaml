@@ -1,5 +1,5 @@
 groups:
-- name: yolo
-  rules:
-    - record: yolo
-      expr: rate(hi)
+  - name: yolo
+    rules:
+      - record: yolo
+        expr: rate(hi)
