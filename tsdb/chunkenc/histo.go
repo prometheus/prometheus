@@ -70,7 +70,6 @@ const ()
 // observation 2   delta delta delta     xor []delta      []delta
 // observation >2  dod   dod   dod       xor []dod        []dod
 // TODO zerothreshold
-// TODO: encode schema and spans metadata in the chunk
 // TODO: decode-recode chunk when new spans appear
 type HistoChunk struct {
 	b bstream
