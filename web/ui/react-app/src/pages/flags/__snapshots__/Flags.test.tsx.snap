@@ -128,1292 +128,988 @@ exports[`Flags should match snapshot 1`] = `
         key="--alertmanager.notification-queue-capacity"
       >
         <td
-          className="px-4"
+          className="flag-item"
         >
-          <code
-            className="text-dark flag-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "--alertmanager.notification-queue-capacity",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--alertmanager.notification-queue-capacity",
               }
-            />
-          </code>
+            }
+          />
         </td>
         <td
-          className="px-4"
+          className="flag-value"
         >
-          <code
-            className="text-dark value-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "10000",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "10000",
               }
-            />
-          </code>
+            }
+          />
         </td>
       </tr>
       <tr
         key="--alertmanager.timeout"
       >
         <td
-          className="px-4"
+          className="flag-item"
         >
-          <code
-            className="text-dark flag-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "--alertmanager.timeout",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--alertmanager.timeout",
               }
-            />
-          </code>
+            }
+          />
         </td>
         <td
-          className="px-4"
+          className="flag-value"
         >
-          <code
-            className="text-dark value-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "10s",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "10s",
               }
-            />
-          </code>
+            }
+          />
         </td>
       </tr>
       <tr
         key="--config.file"
       >
         <td
-          className="px-4"
+          className="flag-item"
         >
-          <code
-            className="text-dark flag-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "--config.file",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--config.file",
               }
-            />
-          </code>
+            }
+          />
         </td>
         <td
-          className="px-4"
+          className="flag-value"
         >
-          <code
-            className="text-dark value-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "./documentation/examples/prometheus.yml",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "./documentation/examples/prometheus.yml",
               }
-            />
-          </code>
+            }
+          />
         </td>
       </tr>
       <tr
         key="--log.format"
       >
         <td
-          className="px-4"
+          className="flag-item"
         >
-          <code
-            className="text-dark flag-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "--log.format",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--log.format",
               }
-            />
-          </code>
+            }
+          />
         </td>
         <td
-          className="px-4"
+          className="flag-value"
         >
-          <code
-            className="text-dark value-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "logfmt",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "logfmt",
               }
-            />
-          </code>
+            }
+          />
         </td>
       </tr>
       <tr
         key="--log.level"
       >
         <td
-          className="px-4"
+          className="flag-item"
         >
-          <code
-            className="text-dark flag-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "--log.level",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--log.level",
               }
-            />
-          </code>
+            }
+          />
         </td>
         <td
-          className="px-4"
+          className="flag-value"
         >
-          <code
-            className="text-dark value-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "info",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "info",
               }
-            />
-          </code>
+            }
+          />
         </td>
       </tr>
       <tr
         key="--query.lookback-delta"
       >
         <td
-          className="px-4"
+          className="flag-item"
         >
-          <code
-            className="text-dark flag-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "--query.lookback-delta",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--query.lookback-delta",
               }
-            />
-          </code>
+            }
+          />
         </td>
         <td
-          className="px-4"
+          className="flag-value"
         >
-          <code
-            className="text-dark value-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "5m",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "5m",
               }
-            />
-          </code>
+            }
+          />
         </td>
       </tr>
       <tr
         key="--query.max-concurrency"
       >
         <td
-          className="px-4"
+          className="flag-item"
         >
-          <code
-            className="text-dark flag-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "--query.max-concurrency",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--query.max-concurrency",
               }
-            />
-          </code>
+            }
+          />
         </td>
         <td
-          className="px-4"
+          className="flag-value"
         >
-          <code
-            className="text-dark value-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "20",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "20",
               }
-            />
-          </code>
+            }
+          />
         </td>
       </tr>
       <tr
         key="--query.max-samples"
       >
         <td
-          className="px-4"
+          className="flag-item"
         >
-          <code
-            className="text-dark flag-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "--query.max-samples",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--query.max-samples",
               }
-            />
-          </code>
+            }
+          />
         </td>
         <td
-          className="px-4"
+          className="flag-value"
         >
-          <code
-            className="text-dark value-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "50000000",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "50000000",
               }
-            />
-          </code>
+            }
+          />
         </td>
       </tr>
       <tr
         key="--query.timeout"
       >
         <td
-          className="px-4"
+          className="flag-item"
         >
-          <code
-            className="text-dark flag-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "--query.timeout",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--query.timeout",
               }
-            />
-          </code>
+            }
+          />
         </td>
         <td
-          className="px-4"
+          className="flag-value"
         >
-          <code
-            className="text-dark value-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "2m",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "2m",
               }
-            />
-          </code>
+            }
+          />
         </td>
       </tr>
       <tr
         key="--rules.alert.for-grace-period"
       >
         <td
-          className="px-4"
+          className="flag-item"
         >
-          <code
-            className="text-dark flag-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "--rules.alert.for-grace-period",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--rules.alert.for-grace-period",
               }
-            />
-          </code>
+            }
+          />
         </td>
         <td
-          className="px-4"
+          className="flag-value"
         >
-          <code
-            className="text-dark value-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "10m",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "10m",
               }
-            />
-          </code>
+            }
+          />
         </td>
       </tr>
       <tr
         key="--rules.alert.for-outage-tolerance"
       >
         <td
-          className="px-4"
+          className="flag-item"
         >
-          <code
-            className="text-dark flag-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "--rules.alert.for-outage-tolerance",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--rules.alert.for-outage-tolerance",
               }
-            />
-          </code>
+            }
+          />
         </td>
         <td
-          className="px-4"
+          className="flag-value"
         >
-          <code
-            className="text-dark value-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "1h",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "1h",
               }
-            />
-          </code>
+            }
+          />
         </td>
       </tr>
       <tr
         key="--rules.alert.resend-delay"
       >
         <td
-          className="px-4"
+          className="flag-item"
         >
-          <code
-            className="text-dark flag-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "--rules.alert.resend-delay",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--rules.alert.resend-delay",
               }
-            />
-          </code>
+            }
+          />
         </td>
         <td
-          className="px-4"
+          className="flag-value"
         >
-          <code
-            className="text-dark value-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "1m",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "1m",
               }
-            />
-          </code>
+            }
+          />
         </td>
       </tr>
       <tr
         key="--storage.remote.flush-deadline"
       >
         <td
-          className="px-4"
+          className="flag-item"
         >
-          <code
-            className="text-dark flag-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "--storage.remote.flush-deadline",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--storage.remote.flush-deadline",
               }
-            />
-          </code>
+            }
+          />
         </td>
         <td
-          className="px-4"
+          className="flag-value"
         >
-          <code
-            className="text-dark value-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "1m",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "1m",
               }
-            />
-          </code>
+            }
+          />
         </td>
       </tr>
       <tr
         key="--storage.remote.read-concurrent-limit"
       >
         <td
-          className="px-4"
+          className="flag-item"
         >
-          <code
-            className="text-dark flag-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "--storage.remote.read-concurrent-limit",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--storage.remote.read-concurrent-limit",
               }
-            />
-          </code>
+            }
+          />
         </td>
         <td
-          className="px-4"
+          className="flag-value"
         >
-          <code
-            className="text-dark value-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "10",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "10",
               }
-            />
-          </code>
+            }
+          />
         </td>
       </tr>
       <tr
         key="--storage.remote.read-max-bytes-in-frame"
       >
         <td
-          className="px-4"
+          className="flag-item"
         >
-          <code
-            className="text-dark flag-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "--storage.remote.read-max-bytes-in-frame",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--storage.remote.read-max-bytes-in-frame",
               }
-            />
-          </code>
+            }
+          />
         </td>
         <td
-          className="px-4"
+          className="flag-value"
         >
-          <code
-            className="text-dark value-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "1048576",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "1048576",
               }
-            />
-          </code>
+            }
+          />
         </td>
       </tr>
       <tr
         key="--storage.remote.read-sample-limit"
       >
         <td
-          className="px-4"
+          className="flag-item"
         >
-          <code
-            className="text-dark flag-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "--storage.remote.read-sample-limit",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--storage.remote.read-sample-limit",
               }
-            />
-          </code>
+            }
+          />
         </td>
         <td
-          className="px-4"
+          className="flag-value"
         >
-          <code
-            className="text-dark value-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "50000000",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "50000000",
               }
-            />
-          </code>
+            }
+          />
         </td>
       </tr>
       <tr
         key="--storage.tsdb.allow-overlapping-blocks"
       >
         <td
-          className="px-4"
+          className="flag-item"
         >
-          <code
-            className="text-dark flag-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "--storage.tsdb.allow-overlapping-blocks",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--storage.tsdb.allow-overlapping-blocks",
               }
-            />
-          </code>
+            }
+          />
         </td>
         <td
-          className="px-4"
+          className="flag-value"
         >
-          <code
-            className="text-dark value-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "false",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "false",
               }
-            />
-          </code>
+            }
+          />
         </td>
       </tr>
       <tr
         key="--storage.tsdb.max-block-duration"
       >
         <td
-          className="px-4"
+          className="flag-item"
         >
-          <code
-            className="text-dark flag-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "--storage.tsdb.max-block-duration",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--storage.tsdb.max-block-duration",
               }
-            />
-          </code>
+            }
+          />
         </td>
         <td
-          className="px-4"
+          className="flag-value"
         >
-          <code
-            className="text-dark value-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "36h",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "36h",
               }
-            />
-          </code>
+            }
+          />
         </td>
       </tr>
       <tr
         key="--storage.tsdb.min-block-duration"
       >
         <td
-          className="px-4"
+          className="flag-item"
         >
-          <code
-            className="text-dark flag-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "--storage.tsdb.min-block-duration",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--storage.tsdb.min-block-duration",
               }
-            />
-          </code>
+            }
+          />
         </td>
         <td
-          className="px-4"
+          className="flag-value"
         >
-          <code
-            className="text-dark value-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "2h",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "2h",
               }
-            />
-          </code>
+            }
+          />
         </td>
       </tr>
       <tr
         key="--storage.tsdb.no-lockfile"
       >
         <td
-          className="px-4"
+          className="flag-item"
         >
-          <code
-            className="text-dark flag-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "--storage.tsdb.no-lockfile",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--storage.tsdb.no-lockfile",
               }
-            />
-          </code>
+            }
+          />
         </td>
         <td
-          className="px-4"
+          className="flag-value"
         >
-          <code
-            className="text-dark value-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "false",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "false",
               }
-            />
-          </code>
+            }
+          />
         </td>
       </tr>
       <tr
         key="--storage.tsdb.path"
       >
         <td
-          className="px-4"
+          className="flag-item"
         >
-          <code
-            className="text-dark flag-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "--storage.tsdb.path",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--storage.tsdb.path",
               }
-            />
-          </code>
+            }
+          />
         </td>
         <td
-          className="px-4"
+          className="flag-value"
         >
-          <code
-            className="text-dark value-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "data/",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "data/",
               }
-            />
-          </code>
+            }
+          />
         </td>
       </tr>
       <tr
         key="--storage.tsdb.retention"
       >
         <td
-          className="px-4"
+          className="flag-item"
         >
-          <code
-            className="text-dark flag-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "--storage.tsdb.retention",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--storage.tsdb.retention",
               }
-            />
-          </code>
+            }
+          />
         </td>
         <td
-          className="px-4"
+          className="flag-value"
         >
-          <code
-            className="text-dark value-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "0s",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "0s",
               }
-            />
-          </code>
+            }
+          />
         </td>
       </tr>
       <tr
         key="--storage.tsdb.retention.size"
       >
         <td
-          className="px-4"
+          className="flag-item"
         >
-          <code
-            className="text-dark flag-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "--storage.tsdb.retention.size",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--storage.tsdb.retention.size",
               }
-            />
-          </code>
+            }
+          />
         </td>
         <td
-          className="px-4"
+          className="flag-value"
         >
-          <code
-            className="text-dark value-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "0B",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "0B",
               }
-            />
-          </code>
+            }
+          />
         </td>
       </tr>
       <tr
         key="--storage.tsdb.retention.time"
       >
         <td
-          className="px-4"
+          className="flag-item"
         >
-          <code
-            className="text-dark flag-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "--storage.tsdb.retention.time",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--storage.tsdb.retention.time",
               }
-            />
-          </code>
+            }
+          />
         </td>
         <td
-          className="px-4"
+          className="flag-value"
         >
-          <code
-            className="text-dark value-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "0s",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "0s",
               }
-            />
-          </code>
+            }
+          />
         </td>
       </tr>
       <tr
         key="--storage.tsdb.wal-compression"
       >
         <td
-          className="px-4"
+          className="flag-item"
         >
-          <code
-            className="text-dark flag-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "--storage.tsdb.wal-compression",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--storage.tsdb.wal-compression",
               }
-            />
-          </code>
+            }
+          />
         </td>
         <td
-          className="px-4"
+          className="flag-value"
         >
-          <code
-            className="text-dark value-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "false",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "false",
               }
-            />
-          </code>
+            }
+          />
         </td>
       </tr>
       <tr
         key="--storage.tsdb.wal-segment-size"
       >
         <td
-          className="px-4"
+          className="flag-item"
         >
-          <code
-            className="text-dark flag-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "--storage.tsdb.wal-segment-size",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--storage.tsdb.wal-segment-size",
               }
-            />
-          </code>
+            }
+          />
         </td>
         <td
-          className="px-4"
+          className="flag-value"
         >
-          <code
-            className="text-dark value-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "0B",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "0B",
               }
-            />
-          </code>
+            }
+          />
         </td>
       </tr>
       <tr
         key="--web.console.libraries"
       >
         <td
-          className="px-4"
+          className="flag-item"
         >
-          <code
-            className="text-dark flag-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "--web.console.libraries",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--web.console.libraries",
               }
-            />
-          </code>
+            }
+          />
         </td>
         <td
-          className="px-4"
+          className="flag-value"
         >
-          <code
-            className="text-dark value-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "console_libraries",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "console_libraries",
               }
-            />
-          </code>
+            }
+          />
         </td>
       </tr>
       <tr
         key="--web.console.templates"
       >
         <td
-          className="px-4"
+          className="flag-item"
         >
-          <code
-            className="text-dark flag-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "--web.console.templates",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--web.console.templates",
               }
-            />
-          </code>
+            }
+          />
         </td>
         <td
-          className="px-4"
+          className="flag-value"
         >
-          <code
-            className="text-dark value-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "consoles",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "consoles",
               }
-            />
-          </code>
+            }
+          />
         </td>
       </tr>
       <tr
         key="--web.cors.origin"
       >
         <td
-          className="px-4"
+          className="flag-item"
         >
-          <code
-            className="text-dark flag-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "--web.cors.origin",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--web.cors.origin",
               }
-            />
-          </code>
+            }
+          />
         </td>
         <td
-          className="px-4"
+          className="flag-value"
         >
-          <code
-            className="text-dark value-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": ".*",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": ".*",
               }
-            />
-          </code>
+            }
+          />
         </td>
       </tr>
       <tr
         key="--web.enable-admin-api"
       >
         <td
-          className="px-4"
+          className="flag-item"
         >
-          <code
-            className="text-dark flag-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "--web.enable-admin-api",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--web.enable-admin-api",
               }
-            />
-          </code>
+            }
+          />
         </td>
         <td
-          className="px-4"
+          className="flag-value"
         >
-          <code
-            className="text-dark value-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "false",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "false",
               }
-            />
-          </code>
+            }
+          />
         </td>
       </tr>
       <tr
         key="--web.enable-lifecycle"
       >
         <td
-          className="px-4"
+          className="flag-item"
         >
-          <code
-            className="text-dark flag-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "--web.enable-lifecycle",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--web.enable-lifecycle",
               }
-            />
-          </code>
+            }
+          />
         </td>
         <td
-          className="px-4"
+          className="flag-value"
         >
-          <code
-            className="text-dark value-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "false",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "false",
               }
-            />
-          </code>
+            }
+          />
         </td>
       </tr>
       <tr
         key="--web.external-url"
       >
         <td
-          className="px-4"
+          className="flag-item"
         >
-          <code
-            className="text-dark flag-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "--web.external-url",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--web.external-url",
               }
-            />
-          </code>
+            }
+          />
         </td>
         <td
-          className="px-4"
+          className="flag-value"
         >
-          <code
-            className="text-dark value-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "",
               }
-            />
-          </code>
+            }
+          />
         </td>
       </tr>
       <tr
         key="--web.listen-address"
       >
         <td
-          className="px-4"
+          className="flag-item"
         >
-          <code
-            className="text-dark flag-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "--web.listen-address",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--web.listen-address",
               }
-            />
-          </code>
+            }
+          />
         </td>
         <td
-          className="px-4"
+          className="flag-value"
         >
-          <code
-            className="text-dark value-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "0.0.0.0:9090",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "0.0.0.0:9090",
               }
-            />
-          </code>
+            }
+          />
         </td>
       </tr>
       <tr
         key="--web.max-connections"
       >
         <td
-          className="px-4"
+          className="flag-item"
         >
-          <code
-            className="text-dark flag-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "--web.max-connections",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--web.max-connections",
               }
-            />
-          </code>
+            }
+          />
         </td>
         <td
-          className="px-4"
+          className="flag-value"
         >
-          <code
-            className="text-dark value-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "512",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "512",
               }
-            />
-          </code>
+            }
+          />
         </td>
       </tr>
       <tr
         key="--web.page-title"
       >
         <td
-          className="px-4"
+          className="flag-item"
         >
-          <code
-            className="text-dark flag-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "--web.page-title",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--web.page-title",
               }
-            />
-          </code>
+            }
+          />
         </td>
         <td
-          className="px-4"
+          className="flag-value"
         >
-          <code
-            className="text-dark value-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "Prometheus Time Series Collection and Processing Server",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "Prometheus Time Series Collection and Processing Server",
               }
-            />
-          </code>
+            }
+          />
         </td>
       </tr>
       <tr
         key="--web.read-timeout"
       >
         <td
-          className="px-4"
+          className="flag-item"
         >
-          <code
-            className="text-dark flag-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "--web.read-timeout",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--web.read-timeout",
               }
-            />
-          </code>
+            }
+          />
         </td>
         <td
-          className="px-4"
+          className="flag-value"
         >
-          <code
-            className="text-dark value-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "5m",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "5m",
               }
-            />
-          </code>
+            }
+          />
         </td>
       </tr>
       <tr
         key="--web.route-prefix"
       >
         <td
-          className="px-4"
+          className="flag-item"
         >
-          <code
-            className="text-dark flag-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "--web.route-prefix",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--web.route-prefix",
               }
-            />
-          </code>
+            }
+          />
         </td>
         <td
-          className="px-4"
+          className="flag-value"
         >
-          <code
-            className="text-dark value-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "/",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "/",
               }
-            />
-          </code>
+            }
+          />
         </td>
       </tr>
       <tr
         key="--web.user-assets"
       >
         <td
-          className="px-4"
+          className="flag-item"
         >
-          <code
-            className="text-dark flag-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "--web.user-assets",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "--web.user-assets",
               }
-            />
-          </code>
+            }
+          />
         </td>
         <td
-          className="px-4"
+          className="flag-value"
         >
-          <code
-            className="text-dark value-item"
-          >
-            <span
-              dangerouslySetInnerHTML={
-                Object {
-                  "__html": "",
-                }
+          <span
+            dangerouslySetInnerHTML={
+              Object {
+                "__html": "",
               }
-            />
-          </code>
+            }
+          />
         </td>
       </tr>
     </tbody>

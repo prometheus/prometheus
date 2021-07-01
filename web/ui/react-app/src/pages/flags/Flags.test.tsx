@@ -70,7 +70,6 @@ describe('Flags', () => {
     const td = w
       .find('tbody')
       .find('td')
-      .find('code')
       .find('span')
       .first();
     expect(td.html()).toBe('<span>--alertmanager.notification-queue-capacity</span>');
@@ -86,7 +85,6 @@ describe('Flags', () => {
     const td = w
       .find('tbody')
       .find('td')
-      .find('code')
       .find('span')
       .first();
     expect(td.html()).toBe('<span>--web.user-assets</span>');
@@ -99,7 +97,6 @@ describe('Flags', () => {
     const tds = w
       .find('tbody')
       .find('td')
-      .find('code')
       .filterWhere(code => code.hasClass('flag-item'));
     expect(tds.length).toEqual(3);
   });
@@ -111,8 +108,7 @@ describe('Flags', () => {
     const tds = w
       .find('tbody')
       .find('td')
-      .find('code')
-      .filterWhere(code => code.hasClass('value-item'));
+      .filterWhere(code => code.hasClass('flag-value'));
     expect(tds.length).toEqual(1);
   });
 });
