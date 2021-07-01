@@ -1,3 +1,9 @@
+## 2.28.1 / 2021-07-01
+
+* [BUGFIX]: HTTP SD: Allow `charset` specification in `Content-Type` header. #8981
+* [BUGFIX]: HTTP SD: Fix handling of disappeared target groups. #9019
+* [BUGFIX]: Fix incorrect log-level handling after moving to go-kit/log. #9021
+
 ## 2.28.0 / 2021-06-21
 
 * [CHANGE] UI: Make the new experimental PromQL editor the default. #8925
