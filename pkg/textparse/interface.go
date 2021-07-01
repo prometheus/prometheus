@@ -17,15 +17,21 @@ import (
 	"mime"
 
 	"github.com/prometheus/prometheus/pkg/exemplar"
+	"github.com/prometheus/prometheus/pkg/histogram"
 	"github.com/prometheus/prometheus/pkg/labels"
 )
 
 // Parser parses samples from a byte slice of samples in the official
 // Prometheus and OpenMetrics text exposition formats.
 type Parser interface {
-	// Series returns the bytes of the series, the timestamp if set, and the value
-	// of the current sample.
+	// Series returns the bytes of a series with a simple float64 as a
+	// value, the timestamp if set, and the value of the current sample.
 	Series() ([]byte, *int64, float64)
+
+	// Histogram returns the bytes of a series with a sparse histogram as a
+	// value, the timestamp if set, and the sparse histogram in the current
+	// sample.
+	Histogram() ([]byte, *int64, histogram.SparseHistogram)
 
 	// Help returns the metric name and help text in the current entry.
 	// Must only be called after Next returned a help entry.
@@ -63,22 +69,30 @@ type Parser interface {
 // New returns a new parser of the byte slice.
 func New(b []byte, contentType string) Parser {
 	mediaType, _, err := mime.ParseMediaType(contentType)
-	if err == nil && mediaType == "application/openmetrics-text" {
-		return NewOpenMetricsParser(b)
+	if err != nil {
+		return NewPromParser(b)
 	}
-	return NewPromParser(b)
+	switch mediaType {
+	case "application/openmetrics-text":
+		return NewOpenMetricsParser(b)
+	case "application/vnd.google.protobuf":
+		return NewProtobufParser(b)
+	default:
+		return NewPromParser(b)
+	}
 }
 
 // Entry represents the type of a parsed entry.
 type Entry int
 
 const (
-	EntryInvalid Entry = -1
-	EntryType    Entry = 0
-	EntryHelp    Entry = 1
-	EntrySeries  Entry = 2
-	EntryComment Entry = 3
-	EntryUnit    Entry = 4
+	EntryInvalid   Entry = -1
+	EntryType      Entry = 0
+	EntryHelp      Entry = 1
+	EntrySeries    Entry = 2 // A series with a simple float64 as value.
+	EntryComment   Entry = 3
+	EntryUnit      Entry = 4
+	EntryHistogram Entry = 5 // A series with a sparse histogram as a value.
 )
 
 // MetricType represents metric type values.
