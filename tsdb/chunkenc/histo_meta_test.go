@@ -56,6 +56,26 @@ func TestBucketIterator(t *testing.T) {
 			},
 			idxs: []int{100, 101, 102, 103, 112, 113, 114, 115, 116, 117, 118, 119},
 		},
+		// the below 2 sets ore the ones described in compareSpans's comments
+		{
+			spans: []histogram.Span{
+				{Offset: 0, Length: 2},
+				{Offset: 2, Length: 1},
+				{Offset: 3, Length: 2},
+				{Offset: 3, Length: 1},
+				{Offset: 1, Length: 1},
+			},
+			idxs: []int{0, 1, 4, 8, 9, 13, 15},
+		},
+		{
+			spans: []histogram.Span{
+				{Offset: 0, Length: 3},
+				{Offset: 1, Length: 1},
+				{Offset: 1, Length: 4},
+				{Offset: 3, Length: 3},
+			},
+			idxs: []int{0, 1, 2, 4, 6, 7, 8, 9, 13, 14, 15},
+		},
 	}
 	for _, test := range tests {
 		b := newBucketIterator(test.spans)
@@ -67,4 +87,39 @@ func TestBucketIterator(t *testing.T) {
 		}
 		require.Equal(t, test.idxs, got)
 	}
+}
+
+func TestCompareSpans(t *testing.T) {
+	// this tests the scenario as described in compareSpans's comments
+	a := []histogram.Span{
+		{Offset: 0, Length: 2},
+		{Offset: 2, Length: 1},
+		{Offset: 3, Length: 2},
+		{Offset: 3, Length: 1},
+		{Offset: 1, Length: 1},
+	}
+	b := []histogram.Span{
+		{Offset: 0, Length: 3},
+		{Offset: 1, Length: 1},
+		{Offset: 1, Length: 4},
+		{Offset: 3, Length: 3},
+	}
+	exp := []interjection{
+		{
+			pos: 2,
+			num: 1,
+		},
+		{
+			pos: 3,
+			num: 2,
+		},
+		{
+			pos: 6,
+			num: 1,
+		},
+	}
+
+	got, ok := compareSpans(a, b)
+	require.Equal(t, true, ok)
+	require.Equal(t, exp, got)
 }

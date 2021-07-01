@@ -123,3 +123,82 @@ func (b *bucketIterator) Next() (int, bool) {
 	// we're out of options
 	return 0, false
 }
+
+// interjection describes that num new buckets are introduced before processing the pos'th delta from the original slice
+type interjection struct {
+	pos int
+	num int
+}
+
+// compareSpans returns the interjections to convert a slice of deltas to a new slice representing an expanded set of buckets, or false if incompatible (e.g. if buckets were removed)
+// For example:
+// Let's say the old buckets look like this:
+// span syntax: [offset, length]
+// spans      : [ 0 , 2 ]               [2,1]                   [ 3 , 2 ]                     [3,1]       [1,1]
+// bucket idx : [0]   [1]    2     3    [4]    5     6     7    [8]   [9]    10    11    12   [13]   14   [15]
+// raw values    6     3                 3                       2     4                       5           1
+// deltas        6    -3                 0                      -1     2                       1          -4
+
+// But now we introduce a new bucket layout. (carefully chosen example where we have a span appended, one unchanged[*], one prepended, and two merge - in that order)
+// [*] unchanged in terms of which bucket indices they represent. but to achieve that, their offset needs to change if "disrupted" by spans changing ahead of them
+//                                       \/ this one is "unchanged"
+// spans      : [  0  ,  3    ]         [1,1]       [    1    ,   4     ]                     [  3  ,   3    ]
+// bucket idx : [0]   [1]   [2]    3    [4]    5    [6]   [7]   [8]   [9]    10    11    12   [13]  [14]  [15]
+// raw values    6     3     0           3           0     0     2     4                       5     0     1
+// deltas        6    -3    -3           3          -3     0     2     2                       1    -5     1
+// delta mods:                          / \                     / \                                       / \
+// note that whenever any new buckets are introduced, the subsequent "old" bucket needs to readjust its delta to the new base of 0
+// thus, for the caller, who wants to transform the set of original deltas to a new set of deltas to match a new span layout that adds buckets, we simply
+// need to generate a list of interjections
+// note: within compareSpans we don't have to worry about the changes to the spans themselves,
+// thanks to the iterators, we get to work with the more useful bucket indices (which of course directly correspond to the buckets we have to adjust)
+func compareSpans(a, b []histogram.Span) ([]interjection, bool) {
+	ai := newBucketIterator(a)
+	bi := newBucketIterator(b)
+
+	var interjections []interjection
+
+	// when inter.num becomes > 0, this becomes a valid interjection that should be yielded when we finish a streak of new buckets
+	var inter interjection
+
+	av, aok := ai.Next()
+	bv, bok := bi.Next()
+	for {
+		if aok && bok {
+			if av == bv { // both have an identical value. move on!
+				// finish WIP interjection and reset
+				if inter.num > 0 {
+					interjections = append(interjections, inter)
+				}
+				inter.num = 0
+				av, aok = ai.Next()
+				bv, bok = bi.Next()
+				if aok {
+					inter.pos++
+				}
+				continue
+			}
+			if av < bv { // b misses a value that is in a.
+				return interjections, false
+			}
+			if av > bv { // a misses a value that is in b. forward b and recompare
+				inter.num++
+				bv, bok = bi.Next()
+				continue
+			}
+		} else if aok && !bok { // b misses a value that is in a.
+			return interjections, false
+		} else if !aok && bok { // a misses a value that is in b. forward b and recompare
+			inter.num++
+			bv, bok = bi.Next()
+			continue
+		} else { // both iterators ran out. we're done
+			if inter.num > 0 {
+				interjections = append(interjections, inter)
+			}
+			break
+		}
+	}
+
+	return interjections, true
+}
