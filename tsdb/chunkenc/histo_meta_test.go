@@ -107,7 +107,7 @@ func TestBucketIterator(t *testing.T) {
 	}
 }
 
-func TestCompareSpans(t *testing.T) {
+func TestInterjection(t *testing.T) {
 	// this tests the scenario as described in compareSpans's comments
 	a := []histogram.Span{
 		{Offset: 0, Length: 2},
@@ -122,7 +122,7 @@ func TestCompareSpans(t *testing.T) {
 		{Offset: 1, Length: 4},
 		{Offset: 3, Length: 3},
 	}
-	exp := []interjection{
+	interj := []interjection{
 		{
 			pos: 2,
 			num: 1,
@@ -136,8 +136,24 @@ func TestCompareSpans(t *testing.T) {
 			num: 1,
 		},
 	}
+	testCompareSpans(a, b, interj, t)
+	testInterject(interj, t)
+}
 
+func testCompareSpans(a, b []histogram.Span, exp []interjection, t *testing.T) {
 	got, ok := compareSpans(a, b)
 	require.Equal(t, true, ok)
 	require.Equal(t, exp, got)
+}
+
+func testInterject(interjections []interjection, t *testing.T) {
+	// this tests the scenario as described in compareSpans's comments
+	// original deltas that represent these counts        : 6, 3, 3, 2, 4, 5, 1
+	a := []int64{6, -3, 0, -1, 2, 1, -4}
+	// modified deltas to represent the interjected counts: 6, 3, 0, 3, 0, 0, 2, 4, 5, 0, 1
+	exp := []int64{6, -3, -3, 3, -3, 0, 2, 2, 1, -5, 1}
+	b := make([]int64, len(a)+4)
+	interject(a, b, interjections)
+	require.Equal(t, exp, b)
+
 }

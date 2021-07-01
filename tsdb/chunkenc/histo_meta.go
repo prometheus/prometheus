@@ -203,3 +203,38 @@ func compareSpans(a, b []histogram.Span) ([]interjection, bool) {
 
 	return interjections, true
 }
+
+// caller is responsible for making sure len(in) and len(out) are appropriate for the provided interjections!
+func interject(in, out []int64, interjections []interjection) []int64 {
+	var j int      // position in out
+	var v int64    // the last value seen
+	var interj int // the next interjection to process
+	for i, d := range in {
+		if interj < len(interjections) && i == interjections[interj].pos {
+
+			// we have an interjection!
+			// add interjection.num new delta values such as their bucket values equate 0
+			out[j] = int64(-v)
+			j++
+			for x := 1; x < interjections[interj].num; x++ {
+				out[j] = 0
+				j++
+			}
+			interj++
+
+			// now save the value from the input. the delta value we should save is
+			// the original delta value + the last value of the point before the interjection (to undo the delta that was introduced by the interjection)
+			out[j] = d + v
+			j++
+			v = d + v
+			continue
+		}
+
+		// if there was no interjection, the original delta is still valid
+		out[j] = d
+		j++
+		v += d
+	}
+
+	return out
+}
