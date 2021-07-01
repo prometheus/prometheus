@@ -171,7 +171,7 @@ func newHistoIterator(b []byte) *histoIterator {
 	}
 	// The first 2 bytes contain chunk headers.
 	// We skip that for actual samples.
-	it.br.readBits(16)
+	_, _ = it.br.readBits(16)
 	return it
 }
 
@@ -268,14 +268,14 @@ func (a *histoAppender) AppendHistogram(t int64, h histogram.SparseHistogram) {
 		}
 	case 1:
 		// TODO if zerobucket thresh or schema is different, we should create a new chunk
-		posInterjections, ok := compareSpans(a.posSpans, h.PositiveSpans)
-		if !ok {
-			// TODO Ganesh this is when we know buckets have dis-appeared and we should create a new chunk instead
-		}
-		negInterjections, ok := compareSpans(a.negSpans, h.NegativeSpans)
-		if !ok {
-			// TODO Ganesh this is when we know buckets have dis-appeared and we should create a new chunk instead
-		}
+		posInterjections, _ := compareSpans(a.posSpans, h.PositiveSpans)
+		//if !ok {
+		// TODO Ganesh this is when we know buckets have dis-appeared and we should create a new chunk instead
+		//}
+		negInterjections, _ := compareSpans(a.negSpans, h.NegativeSpans)
+		//if !ok {
+		// TODO Ganesh this is when we know buckets have dis-appeared and we should create a new chunk instead
+		//}
 		if len(posInterjections) > 0 || len(negInterjections) > 0 {
 			// new buckets have appeared. we need to recode all prior histograms within the chunk before we can process this one.
 			a.recode(posInterjections, negInterjections, h.PositiveSpans, h.NegativeSpans)
@@ -303,14 +303,14 @@ func (a *histoAppender) AppendHistogram(t int64, h histogram.SparseHistogram) {
 		}
 	default:
 		// TODO if zerobucket thresh or schema is different, we should create a new chunk
-		posInterjections, ok := compareSpans(a.posSpans, h.PositiveSpans)
-		if !ok {
-			// TODO Ganesh this is when we know buckets have dis-appeared and we should create a new chunk instead
-		}
-		negInterjections, ok := compareSpans(a.negSpans, h.NegativeSpans)
-		if !ok {
-			// TODO Ganesh this is when we know buckets have dis-appeared and we should create a new chunk instead
-		}
+		posInterjections, _ := compareSpans(a.posSpans, h.PositiveSpans)
+		//if !ok {
+		// TODO Ganesh this is when we know buckets have dis-appeared and we should create a new chunk instead
+		//}
+		negInterjections, _ := compareSpans(a.negSpans, h.NegativeSpans)
+		//if !ok {
+		// TODO Ganesh this is when we know buckets have dis-appeared and we should create a new chunk instead
+		//}
 		if len(posInterjections) > 0 || len(negInterjections) > 0 {
 			// new buckets have appeared. we need to recode all prior histograms within the chunk before we can process this one.
 			a.recode(posInterjections, negInterjections, h.PositiveSpans, h.NegativeSpans)
