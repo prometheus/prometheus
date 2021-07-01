@@ -110,15 +110,11 @@ export const FlagsContent: FC<FlagsProps> = ({ data = {} }) => {
             const sanitizeOpts = { allowedTags: ['strong'] };
             return (
               <tr key={flagMatchStr}>
-                <td className="px-4">
-                  <code className="text-dark flag-item">
-                    <span dangerouslySetInnerHTML={{ __html: sanitizeHTML(flagMatchStr, sanitizeOpts) }} />
-                  </code>
+                <td>
+                  <span dangerouslySetInnerHTML={{ __html: sanitizeHTML(flagMatchStr, sanitizeOpts) }} />
                 </td>
-                <td className="px-4">
-                  <code className="text-dark value-item">
-                    <span dangerouslySetInnerHTML={{ __html: sanitizeHTML(valueMatchStr, sanitizeOpts) }} />
-                  </code>
+                <td>
+                  <span dangerouslySetInnerHTML={{ __html: sanitizeHTML(valueMatchStr, sanitizeOpts) }} />
                 </td>
               </tr>
             );
