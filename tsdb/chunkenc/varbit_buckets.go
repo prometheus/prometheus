@@ -43,8 +43,13 @@
 
 package chunkenc
 
-// putInt64VBBucket writes an int64 using varbit optimized for SHS buckets
-// note: we could improve this further: each branch doesn't need to support any values of any of the prior branches, so we can expand the range of each branch. do more with fewer bits
+// putInt64VBBucket writes an int64 using varbit optimized for SHS buckets.
+//
+// TODO(Dieterbe): We could improve this further: Each branch doesn't need to
+// support any values of any of the prior branches. So we can expand the range
+// of each branch. Do more with fewer bits. It comes at the price of more
+// expensive encoding and decoding (cutting out and later adding back that
+// center-piece we skip).
 func putInt64VBBucket(b *bstream, val int64) {
 	switch {
 	case val == 0:
