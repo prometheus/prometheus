@@ -77,6 +77,7 @@ func TestHCloudSDRefresh(t *testing.T) {
 			"__meta_hetzner_hcloud_disk_size_gb":                     model.LabelValue("25"),
 			"__meta_hetzner_hcloud_server_type":                      model.LabelValue("cx11"),
 			"__meta_hetzner_hcloud_private_ipv4_mynet":               model.LabelValue("10.0.0.2"),
+			"__meta_hetzner_hcloud_labelpresent_my_key":              model.LabelValue("true"),
 			"__meta_hetzner_hcloud_label_my_key":                     model.LabelValue("my-value"),
 		},
 		{
