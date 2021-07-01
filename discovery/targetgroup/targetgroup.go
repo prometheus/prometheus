@@ -14,6 +14,7 @@
 package targetgroup
 
 import (
+	"bytes"
 	"encoding/json"
 
 	"github.com/prometheus/common/model"
@@ -76,7 +77,9 @@ func (tg *Group) UnmarshalJSON(b []byte) error {
 		Labels  model.LabelSet `json:"labels"`
 	}{}
 
-	if err := json.Unmarshal(b, &g); err != nil {
+	dec := json.NewDecoder(bytes.NewReader(b))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&g); err != nil {
 		return err
 	}
 	tg.Targets = make([]model.LabelSet, 0, len(g.Targets))

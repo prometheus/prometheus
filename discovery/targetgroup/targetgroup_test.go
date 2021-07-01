@@ -14,6 +14,7 @@
 package targetgroup
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/prometheus/common/model"
@@ -21,7 +22,7 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-func TestTargetGroupJSONUnmarshal(t *testing.T) {
+func TestTargetGroupStrictJsonUnmarshal(t *testing.T) {
 	tests := []struct {
 		json          string
 		expectedReply error
@@ -39,6 +40,14 @@ func TestTargetGroupJSONUnmarshal(t *testing.T) {
 				{"__address__": "localhost:9090"},
 				{"__address__": "localhost:9091"}}, Labels: model.LabelSet{"my": "label"}},
 		},
+		{
+			json: `	{"label": {},"targets": []}`,
+			expectedReply: errors.New("json: unknown field \"label\""),
+		},
+		{
+			json: `	{"labels": {},"target": []}`,
+			expectedReply: errors.New("json: unknown field \"target\""),
+		},
 	}
 
 	for _, test := range tests {
@@ -50,7 +59,7 @@ func TestTargetGroupJSONUnmarshal(t *testing.T) {
 
 }
 
-func TestTargetGroupYAMLMarshal(t *testing.T) {
+func TestTargetGroupYamlMarshal(t *testing.T) {
 	marshal := func(g interface{}) []byte {
 		d, err := yaml.Marshal(g)
 		if err != nil {
@@ -88,7 +97,7 @@ func TestTargetGroupYAMLMarshal(t *testing.T) {
 	}
 }
 
-func TestTargetGroupYAMLUnmarshal(t *testing.T) {
+func TestTargetGroupYamlUnmarshal(t *testing.T) {
 	unmarshal := func(d []byte) func(interface{}) error {
 		return func(o interface{}) error {
 			return yaml.Unmarshal(d, o)
