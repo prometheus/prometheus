@@ -125,6 +125,9 @@ func (d *hcloudDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 		}
 		for labelKey, labelValue := range server.Labels {
 			label := model.LabelName(hetznerLabelHcloudLabel + strutil.SanitizeLabelName(labelKey))
+			if labelValue == "" {
+				labelValue = "true"
+			}
 			labels[label] = model.LabelValue(labelValue)
 		}
 		targets[i] = labels
