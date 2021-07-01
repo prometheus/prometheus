@@ -106,18 +106,19 @@ func (b *bucketIterator) Next() (int, bool) {
 	if b.span >= len(b.spans) {
 		return 0, false
 	}
-
+try:
 	if b.bucket < int(b.spans[b.span].Length-1) { // try to move within same span.
 		b.bucket++
 		b.idx++
 		return b.idx, true
 	} else if b.span < len(b.spans)-1 { // try to move from one span to the next
 		b.span++
-		if b.spans[b.span].Length == 0 {
-			panic("span is invalid because it has length 0")
-		}
 		b.idx += int(b.spans[b.span].Offset + 1)
 		b.bucket = 0
+		if b.spans[b.span].Length == 0 {
+			// pathological case that should never happen.  We can't use this span, let's try again.
+			goto try
+		}
 		return b.idx, true
 	}
 	// we're out of options
