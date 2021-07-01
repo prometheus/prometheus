@@ -33,7 +33,7 @@ const compareAlphaFn = (keys: boolean, reverse: boolean) => (
 };
 
 const getSearchMatches = (input: string, flagList: string[]) => {
-  return fuz.filter(input.replace(new RegExp(`/${flagSeparator}/g`), ''), flagList);
+  return fuz.filter(input, flagList);
 };
 
 const getSortIcon = (b: boolean | undefined): IconDefinition => {
