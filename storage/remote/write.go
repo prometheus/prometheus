@@ -15,7 +15,6 @@ package remote
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -220,6 +219,7 @@ type timestampTracker struct {
 	writeStorage         *WriteStorage
 	samples              int64
 	exemplars            int64
+	histograms           int64
 	highestTimestamp     int64
 	highestRecvTimestamp *maxTimestamp
 }
@@ -238,8 +238,12 @@ func (t *timestampTracker) AppendExemplar(_ uint64, _ labels.Labels, _ exemplar.
 	return 0, nil
 }
 
-func (t *timestampTracker) AppendHistogram(_ uint64, _ labels.Labels, _ int64, _ histogram.SparseHistogram) (uint64, error) {
-	return 0, errors.New("not implemented")
+func (t *timestampTracker) AppendHistogram(_ uint64, _ labels.Labels, ts int64, _ histogram.SparseHistogram) (uint64, error) {
+	t.histograms++
+	if ts > t.highestTimestamp {
+		t.highestTimestamp = ts
+	}
+	return 0, nil
 }
 
 // Commit implements storage.Appender.
