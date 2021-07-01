@@ -32,10 +32,6 @@ const compareAlphaFn = (keys: boolean, reverse: boolean) => (
   return reverser * a.localeCompare(b);
 };
 
-const getSearchMatches = (input: string, flagList: string[]) => {
-  return fuz.filter(input, flagList);
-};
-
 const getSortIcon = (b: boolean | undefined): IconDefinition => {
   if (b === undefined) {
     return faSort;
@@ -64,9 +60,9 @@ export const FlagsContent: FC<FlagsProps> = ({ data = {} }) => {
   const searchable = Object.entries(data)
     .sort(compareAlphaFn(sortState.name === 'Flag', !sortState.alpha))
     .map(([flag, value]) => `--${flag}${flagSeparator}${value}`);
-  let filtered = getSearchMatches(searchState, searchable).map((value: FuzzyResult) => value.rendered);
-  if (filtered.length === 0) {
-    filtered = searchable;
+  let filtered = searchable;
+  if (searchState.length > 0) {
+    filtered = fuz.filter(searchState, searchable).map((value: FuzzyResult) => value.rendered);
   }
   return (
     <>
