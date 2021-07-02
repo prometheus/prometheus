@@ -17,6 +17,18 @@ import (
 	"math"
 )
 
+// SparseHistogram encodes a sparse histogram
+// full details: https://docs.google.com/document/d/1cLNv3aufPZb3fNfaJgdaRBZsInZKKIHo9E6HinJVbpM/edit#
+// the most tricky bit is how bucket indices represent real bucket boundaries
+//
+// an example for schema 0 (which doubles the size of consecutive buckets):
+//
+// buckets syntax (LE,GE)              (-2,-1)  (-1,-0.5) (-0.5,-0.25) ... (-0.001-0.001) ... (0.25-0.5)(0.5-1)  (1-2) ....
+//                                                                                ^
+// zero bucket (here width a width of 0.001)                                      ZB
+// pos bucket idx                                                                         ...      -1       0       1    2    3
+// neg bucket idx             3    2    1         0          -1        ...
+// actively used bucket indices themselves are represented by the spans
 type SparseHistogram struct {
 	Count, ZeroCount                 uint64
 	Sum, ZeroThreshold               float64
