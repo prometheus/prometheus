@@ -426,11 +426,11 @@ type histoIterator struct {
 	numTotal uint16
 	numRead  uint16
 
-	// Meta
+	// Metadata:
 	schema             int32
 	posSpans, negSpans []histogram.Span
 
-	// for the fields that are tracked as dod's
+	// For the fields that are tracked as dod's.
 	t                           int64
 	cnt, zcnt                   uint64
 	tDelta, cntDelta, zcntDelta int64
@@ -438,7 +438,7 @@ type histoIterator struct {
 	posbuckets, negbuckets           []int64
 	posbucketsDelta, negbucketsDelta []int64
 
-	// for the fields that are gorilla xor coded
+	// The sum is Gorilla xor encoded.
 	sum      float64
 	leading  uint8
 	trailing uint8
