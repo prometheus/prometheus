@@ -510,14 +510,13 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 			buckets := histogram.CumulativeExpandSparseHistogram(h)
 			for buckets.Next() {
 				// Every bucket is a different series with different "le".
-
 				b := buckets.At()
 				rs, ok := resSeries[b.Le]
 				if !ok {
 					rs = promql.Series{
 						Metric: append(
 							s.Labels(),
-							labels.Label{Name: "le", Value: fmt.Sprintf("%f", b.Le)}, // TODO: Set some precision for 'le'?
+							labels.Label{Name: "le", Value: fmt.Sprintf("%.16f", b.Le)}, // TODO: Set some precision for 'le'?
 						),
 					}
 					sort.Sort(rs.Metric)
@@ -528,6 +527,7 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 					T: t,
 					V: float64(b.Count),
 				})
+				resSeries[b.Le] = rs
 			}
 			if buckets.Err() != nil {
 				return apiFuncResult{nil, &apiError{errorExec, buckets.Err()}, nil, nil}

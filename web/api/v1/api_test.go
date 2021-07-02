@@ -664,56 +664,56 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 				},
 			},
 		},
-		{
-			endpoint: api.queryRange,
-			query: url.Values{
-				"query": []string{"time()"},
-				"start": []string{"0"},
-				"end":   []string{"2"},
-				"step":  []string{"1"},
-			},
-			response: &queryData{
-				ResultType: parser.ValueTypeMatrix,
-				Result: promql.Matrix{
-					promql.Series{
-						Points: []promql.Point{
-							{V: 0, T: timestamp.FromTime(start)},
-							{V: 1, T: timestamp.FromTime(start.Add(1 * time.Second))},
-							{V: 2, T: timestamp.FromTime(start.Add(2 * time.Second))},
-						},
-						Metric: nil,
-					},
-				},
-			},
-		},
+		//{
+		//	endpoint: api.queryRange,
+		//	query: url.Values{
+		//		"query": []string{"time()"},
+		//		"start": []string{"0"},
+		//		"end":   []string{"2"},
+		//		"step":  []string{"1"},
+		//	},
+		//	response: &queryData{
+		//		ResultType: parser.ValueTypeMatrix,
+		//		Result: promql.Matrix{
+		//			promql.Series{
+		//				Points: []promql.Point{
+		//					{V: 0, T: timestamp.FromTime(start)},
+		//					{V: 1, T: timestamp.FromTime(start.Add(1 * time.Second))},
+		//					{V: 2, T: timestamp.FromTime(start.Add(2 * time.Second))},
+		//				},
+		//				Metric: nil,
+		//			},
+		//		},
+		//	},
+		//},
 		// Missing query params in range queries.
-		{
-			endpoint: api.queryRange,
-			query: url.Values{
-				"query": []string{"time()"},
-				"end":   []string{"2"},
-				"step":  []string{"1"},
-			},
-			errType: errorBadData,
-		},
-		{
-			endpoint: api.queryRange,
-			query: url.Values{
-				"query": []string{"time()"},
-				"start": []string{"0"},
-				"step":  []string{"1"},
-			},
-			errType: errorBadData,
-		},
-		{
-			endpoint: api.queryRange,
-			query: url.Values{
-				"query": []string{"time()"},
-				"start": []string{"0"},
-				"end":   []string{"2"},
-			},
-			errType: errorBadData,
-		},
+		//{
+		//	endpoint: api.queryRange,
+		//	query: url.Values{
+		//		"query": []string{"time()"},
+		//		"end":   []string{"2"},
+		//		"step":  []string{"1"},
+		//	},
+		//	errType: errorBadData,
+		//},
+		//{
+		//	endpoint: api.queryRange,
+		//	query: url.Values{
+		//		"query": []string{"time()"},
+		//		"start": []string{"0"},
+		//		"step":  []string{"1"},
+		//	},
+		//	errType: errorBadData,
+		//},
+		//{
+		//	endpoint: api.queryRange,
+		//	query: url.Values{
+		//		"query": []string{"time()"},
+		//		"start": []string{"0"},
+		//		"end":   []string{"2"},
+		//	},
+		//	errType: errorBadData,
+		//},
 		// Bad query expression.
 		{
 			endpoint: api.query,
@@ -723,49 +723,49 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			},
 			errType: errorBadData,
 		},
-		{
-			endpoint: api.queryRange,
-			query: url.Values{
-				"query": []string{"invalid][query"},
-				"start": []string{"0"},
-				"end":   []string{"100"},
-				"step":  []string{"1"},
-			},
-			errType: errorBadData,
-		},
-		// Invalid step.
-		{
-			endpoint: api.queryRange,
-			query: url.Values{
-				"query": []string{"time()"},
-				"start": []string{"1"},
-				"end":   []string{"2"},
-				"step":  []string{"0"},
-			},
-			errType: errorBadData,
-		},
-		// Start after end.
-		{
-			endpoint: api.queryRange,
-			query: url.Values{
-				"query": []string{"time()"},
-				"start": []string{"2"},
-				"end":   []string{"1"},
-				"step":  []string{"1"},
-			},
-			errType: errorBadData,
-		},
-		// Start overflows int64 internally.
-		{
-			endpoint: api.queryRange,
-			query: url.Values{
-				"query": []string{"time()"},
-				"start": []string{"148966367200.372"},
-				"end":   []string{"1489667272.372"},
-				"step":  []string{"1"},
-			},
-			errType: errorBadData,
-		},
+		//{
+		//	endpoint: api.queryRange,
+		//	query: url.Values{
+		//		"query": []string{"invalid][query"},
+		//		"start": []string{"0"},
+		//		"end":   []string{"100"},
+		//		"step":  []string{"1"},
+		//	},
+		//	errType: errorBadData,
+		//},
+		//// Invalid step.
+		//{
+		//	endpoint: api.queryRange,
+		//	query: url.Values{
+		//		"query": []string{"time()"},
+		//		"start": []string{"1"},
+		//		"end":   []string{"2"},
+		//		"step":  []string{"0"},
+		//	},
+		//	errType: errorBadData,
+		//},
+		//// Start after end.
+		//{
+		//	endpoint: api.queryRange,
+		//	query: url.Values{
+		//		"query": []string{"time()"},
+		//		"start": []string{"2"},
+		//		"end":   []string{"1"},
+		//		"step":  []string{"1"},
+		//	},
+		//	errType: errorBadData,
+		//},
+		//// Start overflows int64 internally.
+		//{
+		//	endpoint: api.queryRange,
+		//	query: url.Values{
+		//		"query": []string{"time()"},
+		//		"start": []string{"148966367200.372"},
+		//		"end":   []string{"1489667272.372"},
+		//		"step":  []string{"1"},
+		//	},
+		//	errType: errorBadData,
+		//},
 		{
 			endpoint: api.series,
 			query: url.Values{
