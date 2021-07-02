@@ -80,7 +80,10 @@ func (p *MemPostings) SortedKeys() []labels.Label {
 }
 
 // LabelNames returns all the unique label names.
-func (p *MemPostings) LabelNames() []string {
+func (p *MemPostings) LabelNames(matchers ...*labels.Matcher) []string {
+
+	// TODO implement this
+
 	p.mtx.RLock()
 	defer p.mtx.RUnlock()
 	n := len(p.m)

@@ -85,7 +85,7 @@ type IndexReader interface {
 	Series(ref uint64, lset *labels.Labels, chks *[]chunks.Meta) error
 
 	// LabelNames returns all the unique label names present in the index in sorted order.
-	LabelNames() ([]string, error)
+	LabelNames(matchers ...*labels.Matcher) ([]string, error)
 
 	// LabelValueFor returns label value for the given label name in the series referred to by ID.
 	// If the series couldn't be found or the series doesn't have the requested label a
@@ -465,8 +465,8 @@ func (r blockIndexReader) Series(ref uint64, lset *labels.Labels, chks *[]chunks
 	return nil
 }
 
-func (r blockIndexReader) LabelNames() ([]string, error) {
-	return r.b.LabelNames()
+func (r blockIndexReader) LabelNames(matchers ...*labels.Matcher) ([]string, error) {
+	return r.b.LabelNames(matchers...)
 }
 
 func (r blockIndexReader) Close() error {
@@ -642,8 +642,8 @@ func (pb *Block) OverlapsClosedInterval(mint, maxt int64) bool {
 }
 
 // LabelNames returns all the unique label names present in the Block in sorted order.
-func (pb *Block) LabelNames() ([]string, error) {
-	return pb.indexr.LabelNames()
+func (pb *Block) LabelNames(matchers ...*labels.Matcher) ([]string, error) {
+	return pb.indexr.LabelNames(matchers...)
 }
 
 func clampInterval(a, b, mint, maxt int64) (int64, int64) {

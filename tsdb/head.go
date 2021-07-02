@@ -1919,14 +1919,14 @@ func (h *headIndexReader) LabelValues(name string, matchers ...*labels.Matcher) 
 
 // LabelNames returns all the unique label names present in the head
 // that are within the time range mint to maxt.
-func (h *headIndexReader) LabelNames() ([]string, error) {
+func (h *headIndexReader) LabelNames(matchers ...*labels.Matcher) ([]string, error) {
 	h.head.symMtx.RLock()
 	if h.maxt < h.head.MinTime() || h.mint > h.head.MaxTime() {
 		h.head.symMtx.RUnlock()
 		return []string{}, nil
 	}
 
-	labelNames := h.head.postings.LabelNames()
+	labelNames := h.head.postings.LabelNames(matchers...)
 	h.head.symMtx.RUnlock()
 
 	sort.Strings(labelNames)

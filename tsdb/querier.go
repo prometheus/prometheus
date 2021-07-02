@@ -88,8 +88,8 @@ func (q *blockBaseQuerier) LabelValues(name string, matchers ...*labels.Matcher)
 	return res, nil, err
 }
 
-func (q *blockBaseQuerier) LabelNames() ([]string, storage.Warnings, error) {
-	res, err := q.index.LabelNames()
+func (q *blockBaseQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
+	res, err := q.index.LabelNames(matchers...)
 	return res, nil, err
 }
 

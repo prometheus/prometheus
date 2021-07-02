@@ -1212,7 +1212,10 @@ func (m mockIndex) Series(ref uint64, lset *labels.Labels, chks *[]chunks.Meta) 
 	return nil
 }
 
-func (m mockIndex) LabelNames() ([]string, error) {
+func (m mockIndex) LabelNames(matchers ...*labels.Matcher) ([]string, error) {
+
+	// TODO implement matchers?
+
 	names := map[string]struct{}{}
 	for l := range m.postings {
 		names[l.Name] = struct{}{}
@@ -2019,7 +2022,9 @@ func (m mockMatcherIndex) Series(ref uint64, lset *labels.Labels, chks *[]chunks
 	return nil
 }
 
-func (m mockMatcherIndex) LabelNames() ([]string, error) { return []string{}, nil }
+func (m mockMatcherIndex) LabelNames(...*labels.Matcher) ([]string, error) {
+	return []string{}, nil
+}
 
 func TestPostingsForMatcher(t *testing.T) {
 	cases := []struct {
