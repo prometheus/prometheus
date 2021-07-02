@@ -63,8 +63,13 @@ react-app-test: | $(REACT_APP_NODE_MODULES_PATH) react-app-lint
 	@echo ">> running React app tests"
 	cd $(REACT_APP_PATH) && yarn test --no-watch --coverage
 
+.PHONY: react-unused-deps-check
+react-unused-deps-check: |
+	@echo ">> running React app unused deps check "
+	cd $(REACT_APP_PATH) && yarn add depcheck --no-save && node_modules/.bin/depcheck --skip-missing .
+
 .PHONY: test
-test: common-test react-app-test
+test: common-test react-app-test react-unused-deps-check
 
 .PHONY: npm_licenses
 npm_licenses: $(REACT_APP_NODE_MODULES_PATH)
