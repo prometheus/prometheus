@@ -339,8 +339,13 @@ func fetchApps(ctx context.Context, client *http.Client, url string) (*appList, 
 		return nil, errors.Errorf("non 2xx status '%v' response during marathon service discovery", resp.StatusCode)
 	}
 
+	b, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
 	var apps appList
-	err = json.NewDecoder(resp.Body).Decode(&apps)
+	err = json.Unmarshal(b, &apps)
 	if err != nil {
 		return nil, errors.Wrapf(err, "%q", url)
 	}
