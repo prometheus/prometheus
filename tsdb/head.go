@@ -2624,6 +2624,24 @@ func (s *memSeries) appendHistogram(t int64, sh histogram.SparseHistogram, appen
 		return sampleInOrder, chunkCreated
 	}
 
+	if !chunkCreated {
+		// Head controls the execution of recoding, so that we own the proper chunk reference afterwards
+		app, _ := s.app.(*chunkenc.HistoAppender)
+		posInterjections, negInterjections, ok := app.Appendable(sh)
+		// we have 3 cases here
+		// !ok -> we need to cut a new chunk
+		// ok but we have interjections -> existing chunk needs recoding before we can append our histogram
+		// ok and no interjections -> chunk is ready to support our histogram
+		if !ok {
+			c = s.cutNewHeadChunk(t, chunkenc.EncSHS, chunkDiskMapper)
+			chunkCreated = true
+
+		} else if len(posInterjections) > 0 || len(negInterjections) > 0 {
+			// new buckets have appeared. we need to recode all prior histograms within the chunk before we can process this one.
+			s.headChunk.chunk, s.app = app.Recode(posInterjections, negInterjections, sh.PositiveSpans, sh.NegativeSpans)
+		}
+	}
+
 	s.app.AppendHistogram(t, sh)
 
 	c.maxTime = t

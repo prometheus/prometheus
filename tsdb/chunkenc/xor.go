@@ -150,7 +150,7 @@ type xorAppender struct {
 }
 
 func (a *xorAppender) AppendHistogram(t int64, h histogram.SparseHistogram) {
-	panic("cannot call xorAppender.AppendHistogram().")
+	//panic("cannot call xorAppender.AppendHistogram().")
 }
 
 func (a *xorAppender) Append(t int64, v float64) {
