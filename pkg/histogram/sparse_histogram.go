@@ -13,6 +13,8 @@
 
 package histogram
 
+import "math"
+
 type SparseHistogram struct {
 	Count, ZeroCount                 uint64
 	Sum, ZeroThreshold               float64
@@ -61,48 +63,100 @@ type BucketIterator interface {
 
 type Bucket struct {
 	Le    float64
-	Count int64
+	Count uint64
 }
 
 // CumulativeExpandSparseHistogram expands the given histogram to produce cumulative buckets.
 // It assumes that the total length of spans matches the number of buckets for pos and neg respectively.
 // TODO: supports only positive buckets, also do for negative.
 func CumulativeExpandSparseHistogram(h SparseHistogram) BucketIterator {
-	return &cumulativeBucketIterator{h: h}
+	return &cumulativeBucketIterator{h: h, posSpansIdx: -1}
 }
 
 type cumulativeBucketIterator struct {
-	h      SparseHistogram
-	currLe float64
+	h SparseHistogram
+
+	posSpansIdx   int    // Index in h.PositiveSpans we are in. -1 means 0 bucket.
+	posBucketsIdx int    // Index in h.PositiveBuckets
+	idxInSpan     uint32 // Index in the current span. 0 <= idxInSpan < span.Length.
+
+	currIdx             int32   // The actual bucket index after decoding from spans.
+	currLe              float64 // The upper boundary of the current bucket.
+	currCount           int64   // Current non-cumulative count for the current bucket. Does not apply for empty bucket.
+	currCumulativeCount uint64  // Current "cumulative" count for the current bucket.
+
+	// Between 2 spans there could be some empty buckets which
+	// still needs to be counted for cumulative buckets.
+	// When we hit the end of a span, we use this to iterate
+	// through the empty buckets.
+	emptyBucketCount int32
 }
 
 func (c *cumulativeBucketIterator) Next() bool {
-	// TODO:
-	// First give out zero bucket
-	// Next iterate through spans, using the index format (-x ... -2, -1, 0, 1, 2 ... y)
-	// Use getLe() to get the "le" for the span/bucket and give that in the bucket
-	// Decode the bucket deltas and give the cumulative value like in current prometheus
-	return false
+	if c.posSpansIdx == -1 {
+		// Zero bucket.
+		c.posSpansIdx++
+		if c.h.ZeroCount == 0 {
+			return c.Next()
+		}
+
+		c.currLe = c.h.ZeroThreshold
+		c.currCount = int64(c.h.ZeroCount)
+		c.currCumulativeCount = uint64(c.currCount)
+		return true
+	}
+
+	if c.posSpansIdx >= len(c.h.PositiveSpans) {
+		return false
+	}
+
+	if c.emptyBucketCount > 0 {
+		// We are traversing through empty buckets at the moment.
+		c.currLe = getLe(c.currIdx, c.h.Schema)
+		c.currIdx++
+		c.emptyBucketCount--
+		return true
+	}
+
+	span := c.h.PositiveSpans[c.posSpansIdx]
+	if c.posSpansIdx == 0 && c.currIdx == 0 {
+		// Initialising.
+		c.currIdx = span.Offset
+		// The first bucket is absolute value and not a delta with Zero bucket.
+		c.currCount = 0
+	}
+
+	c.currCount += c.h.PositiveBuckets[c.posBucketsIdx]
+	c.currCumulativeCount += uint64(c.currCount)
+	c.currLe = getLe(c.currIdx, c.h.Schema)
+
+	c.posBucketsIdx++
+	c.idxInSpan++
+	c.currIdx++
+	if c.idxInSpan >= span.Length {
+		// Move to the next span. This one is done.
+		c.posSpansIdx++
+		c.idxInSpan = 0
+		if c.posSpansIdx < len(c.h.PositiveSpans) {
+			c.emptyBucketCount = c.h.PositiveSpans[c.posSpansIdx].Offset
+		}
+	}
+
+	return true
 }
-func (c *cumulativeBucketIterator) At() Bucket { return Bucket{} }
+func (c *cumulativeBucketIterator) At() Bucket {
+	return Bucket{
+		Le:    c.currLe,
+		Count: c.currCumulativeCount,
+	}
+}
 func (c *cumulativeBucketIterator) Err() error { return nil }
 
-func getLe(spanIndex, schema int32) float64 {
-	if spanIndex == 0 {
-		return 1
-	}
-
-	totalWithinSpanZeroBucket := int32(1 << schema) // 2^schema.
-
-	if spanIndex > 0 {
-		spanZeroIndex := int32((spanIndex-1)>>schema) + 1
-		indexWithinZeroBucket := (spanIndex - 1) % totalWithinSpanZeroBucket
-		return sparseBounds[schema][indexWithinZeroBucket] * float64(int32(1)<<spanZeroIndex)
-	}
-
-	spanZeroIndex := -((-spanIndex) >> schema)
-	indexWithinZeroBucket := totalWithinSpanZeroBucket - ((-spanIndex) % totalWithinSpanZeroBucket) - 1
-	return sparseBounds[schema][indexWithinZeroBucket] / float64(int32(1)<<(-spanZeroIndex))
+func getLe(idx, schema int32) float64 {
+	fracIdx := idx & ((1 << schema) - 1)
+	frac := sparseBounds[schema][fracIdx]
+	exp := (int(idx) >> schema) + 1
+	return math.Ldexp(frac, exp)
 }
 
 var sparseBounds = [][]float64{
