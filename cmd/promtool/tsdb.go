@@ -606,7 +606,7 @@ func analyzeCompaction(block tsdb.BlockReader, indexr tsdb.IndexReader) (err err
 	}
 
 	fmt.Printf("\nCompaction analysis:\n")
-	fmt.Println("Fullness: Amount of chunks")
+	fmt.Println("Fullness: Amount of samples in chunks (100% is 120 samples)")
 	// Normalize absolute counts to percentages and print them out.
 	for bucket, count := range histogram {
 		percentage := 100.0 * count / totalChunks
