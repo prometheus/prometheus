@@ -3172,11 +3172,11 @@ var testExpr = []struct {
 	}, {
 		input:  `start()`,
 		fail:   true,
-		errMsg: `1:1: parse error: unexpected "start"`,
+		errMsg: `1:6: parse error: unexpected "("`,
 	}, {
 		input:  `end()`,
 		fail:   true,
-		errMsg: `1:1: parse error: unexpected "end"`,
+		errMsg: `1:4: parse error: unexpected "("`,
 	},
 }
 
