@@ -70,8 +70,6 @@ const ()
 // observation 2   delta delta delta     xor []delta      []delta
 // observation >2  dod   dod   dod       xor []dod        []dod
 // TODO zerothreshold
-// TODO: encode schema and spans metadata in the chunk
-// TODO: decode-recode chunk when new spans appear
 type HistoChunk struct {
 	b bstream
 }
@@ -165,8 +163,20 @@ func countSpans(spans []histogram.Span) int {
 	return cnt
 }
 
+func newHistoIterator(b []byte) *histoIterator {
+	it := &histoIterator{
+		br:       newBReader(b),
+		numTotal: binary.BigEndian.Uint16(b),
+		t:        math.MinInt64,
+	}
+	// The first 2 bytes contain chunk headers.
+	// We skip that for actual samples.
+	_, _ = it.br.readBits(16)
+	return it
+}
+
 func (c *HistoChunk) iterator(it Iterator) *histoIterator {
-	// TODO fix this. this is taken from xor.go
+	// TODO fix this. this is taken from xor.go // dieter not sure what the purpose of this is
 	// Should iterators guarantee to act on a copy of the data so it doesn't lock append?
 	// When using striped locks to guard access to chunks, probably yes.
 	// Could only copy data if the chunk is not completed yet.
@@ -174,14 +184,7 @@ func (c *HistoChunk) iterator(it Iterator) *histoIterator {
 	//	histoIter.Reset(c.b.bytes())
 	//	return histoIter
 	//}
-
-	return &histoIterator{
-		// The first 2 bytes contain chunk headers.
-		// We skip that for actual samples.
-		br:       newBReader(c.b.bytes()[2:]),
-		numTotal: binary.BigEndian.Uint16(c.b.bytes()),
-		t:        math.MinInt64,
-	}
+	return newHistoIterator(c.b.bytes())
 }
 
 // Iterator implements the Chunk interface.
@@ -264,6 +267,20 @@ func (a *histoAppender) AppendHistogram(t int64, h histogram.SparseHistogram) {
 			putVarint(a.b, a.buf64, buck)
 		}
 	case 1:
+		// TODO if zerobucket thresh or schema is different, we should create a new chunk
+		posInterjections, _ := compareSpans(a.posSpans, h.PositiveSpans)
+		//if !ok {
+		// TODO Ganesh this is when we know buckets have dis-appeared and we should create a new chunk instead
+		//}
+		negInterjections, _ := compareSpans(a.negSpans, h.NegativeSpans)
+		//if !ok {
+		// TODO Ganesh this is when we know buckets have dis-appeared and we should create a new chunk instead
+		//}
+		if len(posInterjections) > 0 || len(negInterjections) > 0 {
+			// new buckets have appeared. we need to recode all prior histograms within the chunk before we can process this one.
+			a.recode(posInterjections, negInterjections, h.PositiveSpans, h.NegativeSpans)
+		}
+
 		tDelta = t - a.t
 		cntDelta = int64(h.Count) - int64(a.cnt)
 		zcntDelta = int64(h.ZeroCount) - int64(a.zcnt)
@@ -285,6 +302,19 @@ func (a *histoAppender) AppendHistogram(t int64, h histogram.SparseHistogram) {
 			a.negbucketsDelta[i] = delta
 		}
 	default:
+		// TODO if zerobucket thresh or schema is different, we should create a new chunk
+		posInterjections, _ := compareSpans(a.posSpans, h.PositiveSpans)
+		//if !ok {
+		// TODO Ganesh this is when we know buckets have dis-appeared and we should create a new chunk instead
+		//}
+		negInterjections, _ := compareSpans(a.negSpans, h.NegativeSpans)
+		//if !ok {
+		// TODO Ganesh this is when we know buckets have dis-appeared and we should create a new chunk instead
+		//}
+		if len(posInterjections) > 0 || len(negInterjections) > 0 {
+			// new buckets have appeared. we need to recode all prior histograms within the chunk before we can process this one.
+			a.recode(posInterjections, negInterjections, h.PositiveSpans, h.NegativeSpans)
+		}
 		tDelta = t - a.t
 		cntDelta = int64(h.Count) - int64(a.cnt)
 		zcntDelta = int64(h.ZeroCount) - int64(a.zcnt)
@@ -327,6 +357,43 @@ func (a *histoAppender) AppendHistogram(t int64, h histogram.SparseHistogram) {
 
 	a.sum = h.Sum
 
+}
+
+// recode converts the current chunk to accommodate an expansion of the set of
+// (positive and/or negative) buckets used, according to the provided interjections, resulting in
+// the honoring of the provided new posSpans and negSpans
+// note: the decode-recode can probably be done more efficiently, but that's for a future optimization
+func (a *histoAppender) recode(posInterjections, negInterjections []interjection, posSpans, negSpans []histogram.Span) {
+	it := newHistoIterator(a.b.bytes())
+	app, err := NewHistoChunk().Appender()
+	if err != nil {
+		panic(err)
+	}
+	numPosBuckets, numNegBuckets := countSpans(posSpans), countSpans(negSpans)
+	posbuckets := make([]int64, numPosBuckets) // new (modified) histogram buckets
+	negbuckets := make([]int64, numNegBuckets) // new (modified) histogram buckets
+
+	for it.Next() {
+		tOld, hOld := it.AtHistogram()
+		// save the modified histogram to the new chunk
+		hOld.PositiveSpans, hOld.NegativeSpans = posSpans, negSpans
+		if len(posInterjections) > 0 {
+			hOld.PositiveBuckets = interject(hOld.PositiveBuckets, posbuckets, posInterjections)
+		}
+		if len(negInterjections) > 0 {
+			hOld.NegativeBuckets = interject(hOld.NegativeBuckets, negbuckets, negInterjections)
+		}
+		// there is no risk of infinite recursion here as all histograms get appended with the same schema (number of buckets)
+		app.AppendHistogram(tOld, hOld)
+	}
+
+	// adopt the new appender into ourselves
+	// we skip porting some fields like schema, t, cnt and zcnt, sum because they didn't change between our old chunk and the recoded one
+	app2 := app.(*histoAppender)
+	a.b = app2.b
+	a.posSpans, a.negSpans = posSpans, negSpans
+	a.posbuckets, a.negbuckets = app2.posbuckets, app2.negbuckets
+	a.posbucketsDelta, a.negbucketsDelta = app2.posbucketsDelta, app2.negbucketsDelta
 }
 
 func (a *histoAppender) writeSumDelta(v float64) {
