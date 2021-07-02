@@ -47,6 +47,7 @@ const (
 	hetznerLabelHcloudDiskGB                        = hetznerHcloudLabelPrefix + "disk_size_gb"
 	hetznerLabelHcloudType                          = hetznerHcloudLabelPrefix + "server_type"
 	hetznerLabelHcloudLabel                         = hetznerHcloudLabelPrefix + "label_"
+	hetznerLabelHcloudLabelPresent                  = hetznerHcloudLabelPrefix + "labelpresent_"
 )
 
 // Discovery periodically performs Hetzner Cloud requests. It implements
@@ -124,6 +125,9 @@ func (d *hcloudDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 			}
 		}
 		for labelKey, labelValue := range server.Labels {
+			presentLabel := model.LabelName(hetznerLabelHcloudLabelPresent + strutil.SanitizeLabelName(labelKey))
+			labels[presentLabel] = model.LabelValue("true")
+
 			label := model.LabelName(hetznerLabelHcloudLabel + strutil.SanitizeLabelName(labelKey))
 			labels[label] = model.LabelValue(labelValue)
 		}

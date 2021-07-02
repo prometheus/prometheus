@@ -1211,6 +1211,7 @@ The labels below are only available for targets with `role` set to `hcloud`:
 * `__meta_hetzner_hcloud_disk_size_gb`: the disk size of the server (in GB)
 * `__meta_hetzner_hcloud_private_ipv4_<networkname>`: the private ipv4 address of the server within a given network
 * `__meta_hetzner_hcloud_label_<labelname>`: each label of the server
+* `__meta_hetzner_hcloud_labelpresent_<labelname>`: `true` for each label of the server
 
 The labels below are only available for targets with `role` set to `robot`:
 
