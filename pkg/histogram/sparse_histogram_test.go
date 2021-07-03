@@ -15,8 +15,9 @@ package histogram
 
 import (
 	"fmt"
-	"github.com/stretchr/testify/require"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestCumulativeExpandSparseHistogram(t *testing.T) {
@@ -110,28 +111,44 @@ func TestCumulativeExpandSparseHistogram(t *testing.T) {
 				{Le: 1.5422108254079407, Count: 13}, // 4
 			},
 		},
-		//{
-		//	hist: SparseHistogram{
-		//		Schema: -2,
-		//		PositiveSpans: []Span{
-		//			{Offset: -2, Length: 4}, // -2 -1 0 1
-		//			{Offset: 2, Length: 2},  // 4 5
-		//		},
-		//		PositiveBuckets: []int64{1, 2, -2, 1, -1, 0},
-		//	},
-		//	expBuckets: []Bucket{
-		//		{Le: 0.00390625, Count: 1}, // -2
-		//		{Le: 0.0625, Count: 4},     // -1
-		//		{Le: 1, Count: 5},          // 0
-		//		{Le: 16, Count: 7},         // 1
-		//
-		//		{Le: 256, Count: 7},  // 2
-		//		{Le: 4096, Count: 7}, // 3
-		//
-		//		{Le: 65539, Count: 8},   // 4
-		//		{Le: 1048576, Count: 9}, // 5
-		//	},
-		//},
+		{
+			hist: SparseHistogram{
+				Schema: -2,
+				PositiveSpans: []Span{
+					{Offset: -2, Length: 4}, // -2 -1 0 1
+					{Offset: 2, Length: 2},  // 4 5
+				},
+				PositiveBuckets: []int64{1, 2, -2, 1, -1, 0},
+			},
+			expBuckets: []Bucket{
+				{Le: 0.00390625, Count: 1}, // -2
+				{Le: 0.0625, Count: 4},     // -1
+				{Le: 1, Count: 5},          // 0
+				{Le: 16, Count: 7},         // 1
+
+				{Le: 256, Count: 7},  // 2
+				{Le: 4096, Count: 7}, // 3
+
+				{Le: 65536, Count: 8},   // 4
+				{Le: 1048576, Count: 9}, // 5
+			},
+		},
+		{
+			hist: SparseHistogram{
+				Schema: -1,
+				PositiveSpans: []Span{
+					{Offset: -2, Length: 5}, // -2 -1 0 1 2
+				},
+				PositiveBuckets: []int64{1, 2, -2, 1, -1},
+			},
+			expBuckets: []Bucket{
+				{Le: 0.0625, Count: 1}, // -2
+				{Le: 0.25, Count: 4},   // -1
+				{Le: 1, Count: 5},      // 0
+				{Le: 4, Count: 7},      // 1
+				{Le: 16, Count: 8},     // 2
+			},
+		},
 	}
 
 	for i, c := range cases {

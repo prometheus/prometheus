@@ -70,6 +70,9 @@ type Head struct {
 	minValidTime          atomic.Int64 // Mint allowed to be added to the head. It shouldn't be lower than the maxt of the last persisted block.
 	lastWALTruncationTime atomic.Int64
 	lastSeriesID          atomic.Uint64
+	// hasHistograms this is used to m-map all chunks in case there are histograms.
+	// A hack to avoid updating all the failing tests.
+	hasHistograms atomic.Bool
 
 	metrics       *headMetrics
 	opts          *HeadOptions
@@ -1632,6 +1635,7 @@ func (a *headAppender) Commit() (err error) {
 	for i, s := range a.histograms {
 		series = a.histogramSeries[i]
 		series.Lock()
+		a.head.hasHistograms.Store(true)
 		ok, chunkCreated := series.appendHistogram(s.T, s.H, a.appendID, a.head.chunkDiskMapper)
 		series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
 		series.pendingCommit = false
@@ -1857,6 +1861,17 @@ func (h *Head) Close() error {
 	h.closedMtx.Lock()
 	defer h.closedMtx.Unlock()
 	h.closed = true
+
+	// M-map all in-memory chunks.
+	// A hack for the histogram till it is stored in WAL and replayed.
+	if h.hasHistograms.Load() {
+		for _, m := range h.series.series {
+			for _, s := range m {
+				s.mmapCurrentHeadChunk(h.chunkDiskMapper)
+			}
+		}
+	}
+
 	errs := tsdb_errors.NewMulti(h.chunkDiskMapper.Close())
 	if h.wal != nil {
 		errs.Add(h.wal.Close())
@@ -2452,7 +2467,7 @@ func (s *memSeries) cutNewHeadChunk(mint int64, e chunkenc.Encoding, chunkDiskMa
 }
 
 func (s *memSeries) mmapCurrentHeadChunk(chunkDiskMapper *chunks.ChunkDiskMapper) {
-	if s.headChunk == nil {
+	if s.headChunk == nil || s.headChunk.chunk.NumSamples() == 0 {
 		// There is no head chunk, so nothing to m-map here.
 		return
 	}

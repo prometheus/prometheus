@@ -13,7 +13,9 @@
 
 package histogram
 
-import "math"
+import (
+	"math"
+)
 
 type SparseHistogram struct {
 	Count, ZeroCount                 uint64
@@ -80,6 +82,7 @@ type cumulativeBucketIterator struct {
 	posBucketsIdx int    // Index in h.PositiveBuckets
 	idxInSpan     uint32 // Index in the current span. 0 <= idxInSpan < span.Length.
 
+	initialised         bool
 	currIdx             int32   // The actual bucket index after decoding from spans.
 	currLe              float64 // The upper boundary of the current bucket.
 	currCount           int64   // Current non-cumulative count for the current bucket. Does not apply for empty bucket.
@@ -119,11 +122,12 @@ func (c *cumulativeBucketIterator) Next() bool {
 	}
 
 	span := c.h.PositiveSpans[c.posSpansIdx]
-	if c.posSpansIdx == 0 && c.currIdx == 0 {
+	if c.posSpansIdx == 0 && !c.initialised {
 		// Initialising.
 		c.currIdx = span.Offset
 		// The first bucket is absolute value and not a delta with Zero bucket.
 		c.currCount = 0
+		c.initialised = true
 	}
 
 	c.currCount += c.h.PositiveBuckets[c.posBucketsIdx]
@@ -153,6 +157,10 @@ func (c *cumulativeBucketIterator) At() Bucket {
 func (c *cumulativeBucketIterator) Err() error { return nil }
 
 func getLe(idx, schema int32) float64 {
+	if schema < 0 {
+		return math.Ldexp(1, int(idx)<<(-schema))
+	}
+
 	fracIdx := idx & ((1 << schema) - 1)
 	frac := sparseBounds[schema][fracIdx]
 	exp := (int(idx) >> schema) + 1

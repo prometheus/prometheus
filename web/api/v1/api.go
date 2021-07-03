@@ -345,59 +345,64 @@ func (api *API) options(r *http.Request) apiFuncResult {
 }
 
 func (api *API) query(r *http.Request) (result apiFuncResult) {
-	ts, err := parseTimeParam(r, "time", api.now())
-	if err != nil {
-		return invalidParamError(err, "time")
-	}
-	ctx := r.Context()
-	if to := r.FormValue("timeout"); to != "" {
-		var cancel context.CancelFunc
-		timeout, err := parseDuration(to)
-		if err != nil {
-			return invalidParamError(err, "timeout")
-		}
-
-		ctx, cancel = context.WithTimeout(ctx, timeout)
-		defer cancel()
-	}
-
-	qry, err := api.QueryEngine.NewInstantQuery(api.Queryable, r.FormValue("query"), ts)
-	if err == promql.ErrValidationAtModifierDisabled {
-		err = errors.New("@ modifier is disabled, use --enable-feature=promql-at-modifier to enable it")
-	} else if err == promql.ErrValidationNegativeOffsetDisabled {
-		err = errors.New("negative offset is disabled, use --enable-feature=promql-negative-offset to enable it")
-	}
-	if err != nil {
-		return invalidParamError(err, "query")
-	}
-
-	// From now on, we must only return with a finalizer in the result (to
-	// be called by the caller) or call qry.Close ourselves (which is
-	// required in the case of a panic).
-	defer func() {
-		if result.finalizer == nil {
-			qry.Close()
-		}
-	}()
-
-	ctx = httputil.ContextFromRequest(ctx, r)
-
-	res := qry.Exec(ctx)
-	if res.Err != nil {
-		return apiFuncResult{nil, returnAPIError(res.Err), res.Warnings, qry.Close}
-	}
-
-	// Optional stats field in response if parameter "stats" is not empty.
-	var qs *stats.QueryStats
-	if r.FormValue("stats") != "" {
-		qs = stats.NewQueryStats(qry.Stats())
-	}
+	//ts, err := parseTimeParam(r, "time", api.now())
+	//if err != nil {
+	//	return invalidParamError(err, "time")
+	//}
+	//ctx := r.Context()
+	//if to := r.FormValue("timeout"); to != "" {
+	//	var cancel context.CancelFunc
+	//	timeout, err := parseDuration(to)
+	//	if err != nil {
+	//		return invalidParamError(err, "timeout")
+	//	}
+	//
+	//	ctx, cancel = context.WithTimeout(ctx, timeout)
+	//	defer cancel()
+	//}
+	//
+	////qry, err := api.QueryEngine.NewInstantQuery(api.Queryable, r.FormValue("query"), ts)
+	////if err == promql.ErrValidationAtModifierDisabled {
+	////	err = errors.New("@ modifier is disabled, use --enable-feature=promql-at-modifier to enable it")
+	////} else if err == promql.ErrValidationNegativeOffsetDisabled {
+	////	err = errors.New("negative offset is disabled, use --enable-feature=promql-negative-offset to enable it")
+	////}
+	////if err != nil {
+	////	return invalidParamError(err, "query")
+	////}
+	////
+	////// From now on, we must only return with a finalizer in the result (to
+	////// be called by the caller) or call qry.Close ourselves (which is
+	////// required in the case of a panic).
+	////defer func() {
+	////	if result.finalizer == nil {
+	////		qry.Close()
+	////	}
+	////}()
+	////
+	////ctx = httputil.ContextFromRequest(ctx, r)
+	////
+	////res := qry.Exec(ctx)
+	////if res.Err != nil {
+	////	return apiFuncResult{nil, returnAPIError(res.Err), res.Warnings, qry.Close}
+	////}
+	////
+	////// Optional stats field in response if parameter "stats" is not empty.
+	////var qs *stats.QueryStats
+	////if r.FormValue("stats") != "" {
+	////	qs = stats.NewQueryStats(qry.Stats())
+	////}
+	////
+	////return apiFuncResult{&queryData{
+	////	ResultType: res.Value.Type(),
+	////	Result:     res.Value,
+	////	Stats:      qs,
+	////}, nil, res.Warnings, qry.Close}
 
 	return apiFuncResult{&queryData{
-		ResultType: res.Value.Type(),
-		Result:     res.Value,
-		Stats:      qs,
-	}, nil, res.Warnings, qry.Close}
+		ResultType: parser.ValueTypeVector,
+		Result:     promql.Vector{},
+	}, nil, nil, nil}
 }
 
 func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
