@@ -40,6 +40,7 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/exemplar"
+	"github.com/prometheus/prometheus/pkg/histogram"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/textparse"
 	"github.com/prometheus/prometheus/pkg/timestamp"
@@ -440,42 +441,110 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 		defer cancel()
 	}
 
-	qry, err := api.QueryEngine.NewRangeQuery(api.Queryable, r.FormValue("query"), start, end, step)
-	if err == promql.ErrValidationAtModifierDisabled {
-		err = errors.New("@ modifier is disabled, use --enable-feature=promql-at-modifier to enable it")
-	} else if err == promql.ErrValidationNegativeOffsetDisabled {
-		err = errors.New("negative offset is disabled, use --enable-feature=promql-negative-offset to enable it")
-	}
+	//qry, err := api.QueryEngine.NewRangeQuery(api.Queryable, r.FormValue("query"), start, end, step)
+	//if err == promql.ErrValidationAtModifierDisabled {
+	//	err = errors.New("@ modifier is disabled, use --enable-feature=promql-at-modifier to enable it")
+	//} else if err == promql.ErrValidationNegativeOffsetDisabled {
+	//	err = errors.New("negative offset is disabled, use --enable-feature=promql-negative-offset to enable it")
+	//}
+	//if err != nil {
+	//	return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
+	//}
+	//// From now on, we must only return with a finalizer in the result (to
+	//// be called by the caller) or call qry.Close ourselves (which is
+	//// required in the case of a panic).
+	//defer func() {
+	//	if result.finalizer == nil {
+	//		qry.Close()
+	//	}
+	//}()
+	//
+	//ctx = httputil.ContextFromRequest(ctx, r)
+	//
+	//res := qry.Exec(ctx)
+	//if res.Err != nil {
+	//	return apiFuncResult{nil, returnAPIError(res.Err), res.Warnings, qry.Close}
+	//}
+	//
+	//// Optional stats field in response if parameter "stats" is not empty.
+	//var qs *stats.QueryStats
+	//if r.FormValue("stats") != "" {
+	//	qs = stats.NewQueryStats(qry.Stats())
+	//}
+	//
+	//return apiFuncResult{&queryData{
+	//	ResultType: res.Value.Type(),
+	//	Result:     res.Value,
+	//	Stats:      qs,
+	//}, nil, res.Warnings, qry.Close}
+
+	expr, err := parser.ParseExpr(r.FormValue("query"))
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
-	// From now on, we must only return with a finalizer in the result (to
-	// be called by the caller) or call qry.Close ourselves (which is
-	// required in the case of a panic).
-	defer func() {
-		if result.finalizer == nil {
-			qry.Close()
+
+	selectors := parser.ExtractSelectors(expr)
+	if len(selectors) < 1 {
+		return apiFuncResult{nil, nil, nil, nil}
+	}
+
+	if len(selectors) > 1 {
+		return apiFuncResult{nil, &apiError{errorBadData, errors.New("need exactly 1 selector")}, nil, nil}
+	}
+
+	q, err := api.Queryable.Querier(ctx, timestamp.FromTime(start), timestamp.FromTime(end))
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorExec, err}, nil, nil}
+	}
+
+	res := promql.Matrix{}
+	ss := q.Select(true, nil, selectors[0]...)
+
+	for ss.Next() {
+		resSeries := make(map[float64]promql.Series) // le -> series.
+
+		s := ss.At()
+		it := s.Iterator()
+		for it.Next() { // Per histogram.
+			t, h := it.AtHistogram()
+			buckets := histogram.CumulativeExpandSparseHistogram(h)
+			for buckets.Next() {
+				// Every bucket is a different series with different "le".
+				b := buckets.At()
+				rs, ok := resSeries[b.Le]
+				if !ok {
+					rs = promql.Series{
+						Metric: append(
+							s.Labels(),
+							labels.Label{Name: "le", Value: fmt.Sprintf("%.16f", b.Le)}, // TODO: Set some precision for 'le'?
+						),
+					}
+					sort.Sort(rs.Metric)
+					resSeries[b.Le] = rs
+				}
+
+				rs.Points = append(rs.Points, promql.Point{
+					T: t,
+					V: float64(b.Count),
+				})
+				resSeries[b.Le] = rs
+			}
+			if buckets.Err() != nil {
+				return apiFuncResult{nil, &apiError{errorExec, buckets.Err()}, nil, nil}
+			}
 		}
-	}()
 
-	ctx = httputil.ContextFromRequest(ctx, r)
-
-	res := qry.Exec(ctx)
-	if res.Err != nil {
-		return apiFuncResult{nil, returnAPIError(res.Err), res.Warnings, qry.Close}
+		for _, rs := range resSeries {
+			res = append(res, rs)
+		}
 	}
 
-	// Optional stats field in response if parameter "stats" is not empty.
-	var qs *stats.QueryStats
-	if r.FormValue("stats") != "" {
-		qs = stats.NewQueryStats(qry.Stats())
-	}
+	sort.Sort(res)
 
 	return apiFuncResult{&queryData{
-		ResultType: res.Value.Type(),
-		Result:     res.Value,
-		Stats:      qs,
-	}, nil, res.Warnings, qry.Close}
+		ResultType: res.Type(),
+		Result:     res,
+	}, nil, nil, nil}
 }
 
 func (api *API) queryExemplars(r *http.Request) apiFuncResult {
