@@ -230,9 +230,7 @@ func putUvarint(b *bstream, buf []byte, x uint64) {
 	}
 }
 
-func (a *histoAppender) Append(int64, float64) {
-	panic("cannot call histoAppender.Append()")
-}
+func (a *histoAppender) Append(int64, float64) {}
 
 // AppendHistogram appends a SparseHistogram to the chunk. We assume the
 // histogram is properly structured. E.g. that the number of pos/neg buckets
