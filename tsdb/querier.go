@@ -712,7 +712,7 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 		p.curr.MinTime = t
 		app.Append(t, v)
 		for p.currDelIter.Next() {
-			t, v := p.currDelIter.At()
+			t, v = p.currDelIter.At()
 			app.Append(t, v)
 		}
 	}
