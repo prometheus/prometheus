@@ -25,10 +25,12 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/pkg/histogram"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -1310,4 +1312,68 @@ func TestDeleteCompactionBlockAfterFailedReload(t *testing.T) {
 			require.Equal(t, expBlocks, len(actBlocks)-1, "block count should be the same as before the compaction") // -1 to exclude the corrupted block.
 		})
 	}
+}
+
+func TestHeadCompactionWithHistograms(t *testing.T) {
+	head, _ := newTestHead(t, DefaultBlockDuration, false)
+	t.Cleanup(func() {
+		require.NoError(t, head.Close())
+	})
+
+	require.NoError(t, head.Init(0))
+	app := head.Appender(context.Background())
+
+	type timedHist struct {
+		t int64
+		h histogram.SparseHistogram
+	}
+
+	// Ingest samples.
+	numHistograms := 120 * 4
+	timeStep := DefaultBlockDuration / int64(numHistograms)
+	expHists := make([]timedHist, 0, numHistograms)
+	l := labels.Labels{{Name: "a", Value: "b"}}
+	for i, h := range generateHistograms(numHistograms) {
+		_, err := app.AppendHistogram(0, l, int64(i)*timeStep, h)
+		require.NoError(t, err)
+		expHists = append(expHists, timedHist{int64(i) * timeStep, h})
+	}
+	require.NoError(t, app.Commit())
+
+	// Compaction.
+	mint := head.MinTime()
+	maxt := head.MaxTime() + 1 // Block intervals are half-open: [b.MinTime, b.MaxTime).
+	compactor, err := NewLeveledCompactor(context.Background(), nil, nil, []int64{DefaultBlockDuration}, chunkenc.NewPool(), nil)
+	require.NoError(t, err)
+	id, err := compactor.Write(head.opts.ChunkDirRoot, head, mint, maxt, nil)
+	require.NoError(t, err)
+	require.NotEqual(t, ulid.ULID{}, id)
+
+	// Open the block and query it and check the histograms.
+	block, err := OpenBlock(nil, path.Join(head.opts.ChunkDirRoot, id.String()), nil)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, block.Close())
+	})
+
+	q, err := NewBlockQuerier(block, block.MinTime(), block.MaxTime())
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, q.Close())
+	})
+
+	ss := q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
+
+	require.True(t, ss.Next())
+	s := ss.At()
+	require.False(t, ss.Next())
+
+	it := s.Iterator()
+	actHists := make([]timedHist, 0, len(expHists))
+	for it.Next() {
+		t, h := it.AtHistogram()
+		actHists = append(actHists, timedHist{t, h.Copy()})
+	}
+
+	require.Equal(t, expHists, actHists)
 }

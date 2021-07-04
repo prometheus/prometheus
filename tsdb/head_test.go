@@ -2205,6 +2205,9 @@ func TestAppendHistogram(t *testing.T) {
 
 			q, err := NewBlockQuerier(head, head.MinTime(), head.MaxTime())
 			require.NoError(t, err)
+			t.Cleanup(func() {
+				require.NoError(t, q.Close())
+			})
 
 			ss := q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 
