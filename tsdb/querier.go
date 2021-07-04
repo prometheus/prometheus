@@ -666,8 +666,18 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 	}
 
 	// Re-encode the chunk if iterator is provider. This means that it has some samples to be deleted or chunk is opened.
-	newChunk := chunkenc.NewXORChunk()
-	app, err := newChunk.Appender()
+	var (
+		newChunk chunkenc.Chunk
+		app      chunkenc.Appender
+		err      error
+	)
+	if p.currDelIter.ChunkEncoding() == chunkenc.EncSHS {
+		newChunk = chunkenc.NewHistoChunk()
+		app, err = newChunk.Appender()
+	} else {
+		newChunk = chunkenc.NewXORChunk()
+		app, err = newChunk.Appender()
+	}
 	if err != nil {
 		p.err = err
 		return false
@@ -684,14 +694,29 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 		return false
 	}
 
-	t, v := p.currDelIter.At()
-	p.curr.MinTime = t
-	app.Append(t, v)
-
-	for p.currDelIter.Next() {
+	var (
+		t int64
+		v float64
+		h histogram.SparseHistogram
+	)
+	if p.currDelIter.ChunkEncoding() == chunkenc.EncSHS {
+		t, h = p.currDelIter.AtHistogram()
+		p.curr.MinTime = t
+		app.AppendHistogram(t, h.Copy())
+		for p.currDelIter.Next() {
+			t, h = p.currDelIter.AtHistogram()
+			app.AppendHistogram(t, h.Copy())
+		}
+	} else {
 		t, v = p.currDelIter.At()
+		p.curr.MinTime = t
 		app.Append(t, v)
+		for p.currDelIter.Next() {
+			t, v = p.currDelIter.At()
+			app.Append(t, v)
+		}
 	}
+
 	if err := p.currDelIter.Err(); err != nil {
 		p.err = errors.Wrap(err, "iterate chunk while re-encoding")
 		return false
