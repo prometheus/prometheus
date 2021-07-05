@@ -158,7 +158,8 @@ workflows:
       - prometheus/publish_main:
           context: org-context
           requires:
-            - test
+            - test_go
+            - test_react
             - build
           filters:
             branches:
