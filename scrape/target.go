@@ -143,8 +143,12 @@ func (t *Target) SetMetadataStore(s MetricMetadataStore) {
 // hash returns an identifying hash for the target.
 func (t *Target) hash() uint64 {
 	h := fnv.New64a()
+
+	t.mtx.RLock()
 	//nolint: errcheck
 	h.Write([]byte(fmt.Sprintf("%016d", t.labels.Hash())))
+	t.mtx.RUnlock()
+
 	//nolint: errcheck
 	h.Write([]byte(t.URL().String()))
 
@@ -171,6 +175,9 @@ func (t *Target) offset(interval time.Duration, jitterSeed uint64) time.Duration
 
 // Labels returns a copy of the set of all public labels of the target.
 func (t *Target) Labels() labels.Labels {
+	t.mtx.RLock()
+	defer t.mtx.RUnlock()
+
 	lset := make(labels.Labels, 0, len(t.labels))
 	for _, l := range t.labels {
 		if !strings.HasPrefix(l.Name, model.ReservedLabelPrefix) {
@@ -205,6 +212,9 @@ func (t *Target) SetLabels(l labels.Labels) {
 
 // URL returns a copy of the target's URL.
 func (t *Target) URL() *url.URL {
+	t.mtx.RLock()
+	defer t.mtx.RUnlock()
+
 	params := url.Values{}
 
 	for k, v := range t.params {
@@ -283,6 +293,9 @@ func (t *Target) Health() TargetHealth {
 // GetIntervalAndTimeout returns the interval and timeout derived from
 // the targets labels.
 func (t *Target) GetIntervalAndTimeout(prevInterval, prevDuration time.Duration) (time.Duration, time.Duration, error) {
+	t.mtx.RLock()
+	defer t.mtx.RUnlock()
+
 	intervalLabel := t.labels.Get(model.ScrapeIntervalLabel)
 	interval, err := model.ParseDuration(intervalLabel)
 	if err != nil {

@@ -435,7 +435,9 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 			// processLabels re-runs relabeling, which needs to be done because the new config
 			// changes the scrape interval and timeout labels.
 			var lbls labels.Labels
+			t.mtx.RLock()
 			lbls, _, err = processLabels(discoveredLbls, cfg)
+			t.mtx.RUnlock()
 			t.SetLabels(lbls)
 
 			// If the output labels are nil and there's no error
