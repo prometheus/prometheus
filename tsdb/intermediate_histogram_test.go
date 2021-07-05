@@ -37,16 +37,17 @@ func newIntermediateHistogram(posSpans, negSpans []histogram.Span) intermediateH
 
 // Bump mimics changes caused by a future observation. Bucket counts increase by a random amount (possibly 0)
 // ts must be > than previous ts!
-// we reuse the existing slices, so you should use the returned value such that all properties reflect their update
 func (h intermediateHistogram) Bump(ts int64) intermediateHistogram {
-	bumpCounts := func(in []int64) {
+	bumpCounts := func(in []int64) []int64 {
+		out := make([]int64, len(in))
 		for i := range in {
-			in[i] = in[i] + int64(rand.Int31()/1e6)
+			out[i] = in[i] + int64(rand.Int31()/1e6)
 		}
+		return out
 	}
 	h.ts = ts
-	bumpCounts(h.posCounts)
-	bumpCounts(h.negCounts)
+	h.posCounts = bumpCounts(h.posCounts)
+	h.negCounts = bumpCounts(h.negCounts)
 	h.count += uint64(rand.Int31() / 1e3)
 	h.zeroCount += uint64(rand.Int31() / 1e5)
 	return h
@@ -136,23 +137,3 @@ func expandCounts(countsA []int64, a, b []histogram.Span) []int64 {
 
 	return countsB
 }
-
-/*
-// bumpHistogram generates a histogram that "resumes" from a previous counts.
-// it accommodates buckets expansion (by starting new counts) but cannot handle contraction of the amount of buckets.
-func bumpHistogram(i int, prevPosCounts, prevNegCounts counts, posSpans, negSpans []histogram.Span) histogram.SparseHistogram {
-	if histogram.CountSpans(posSpans) != len(prevPosCounts) || histogram.CountSpans(negSpans) != len(prevNegCounts) {
-		panic("can only generate new histogram with prev counts matching spans")
-	}
-	return histogram.SparseHistogram{
-		Count:           5 + uint64(i*4),
-		ZeroCount:       2 + uint64(i),
-		Sum:             18.4 * float64(i+1),
-		Schema:          1,
-		PositiveSpans:   posSpans,
-		NegativeSpans:   negSpans,
-		PositiveBuckets: countsToDeltas(bumpCounts(prevCounts)),
-		NegativeBuckets: []int64{},
-	}
-}
-*/
