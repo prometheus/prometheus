@@ -27,7 +27,7 @@ jobs:
       - run:
           command: sudo apt-get install -y yamllint
       - run:
-          command: make go-only
+          command: make GO_ONLY=1
           environment:
             # Run garbage collection more aggressively to avoid getting OOMed during the lint phase.
             GOGC: "20"
