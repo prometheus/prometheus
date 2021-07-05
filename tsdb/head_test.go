@@ -2242,7 +2242,6 @@ func TestAppendHistogramWithRecodeAndReset(t *testing.T) {
 			app := head.Appender(context.Background())
 
 			interHists := make([]intermediateHistogram, 0, numHistograms)
-			expHists := make([]timedHist, 0, numHistograms)
 
 			// phase 1: keep consistent span layout (buckets usage)
 
@@ -2307,6 +2306,11 @@ func TestAppendHistogramWithRecodeAndReset(t *testing.T) {
 			// accommodate span expansions
 
 			require.NoError(t, app.Commit())
+
+			expHists := make([]timedHist, 0, numHistograms)
+			for _, ih := range interHists {
+				expHists = append(expHists, ih.ToSparse())
+			}
 
 			q, err := NewBlockQuerier(head, head.MinTime(), head.MaxTime())
 			require.NoError(t, err)

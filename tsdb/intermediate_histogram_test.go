@@ -41,14 +41,14 @@ func newIntermediateHistogram(posSpans, negSpans []histogram.Span) intermediateH
 func (h intermediateHistogram) Bump(ts int64) intermediateHistogram {
 	bumpCounts := func(in []int64) {
 		for i := range in {
-			in[i] = in[i] + int64(rand.Int31()/10^6)
+			in[i] = in[i] + int64(rand.Int31()/1e6)
 		}
 	}
 	h.ts = ts
 	bumpCounts(h.posCounts)
 	bumpCounts(h.negCounts)
-	h.count += uint64(rand.Int31()/10 ^ 5)
-	h.zeroCount += uint64(rand.Int31()/10 ^ 5)
+	h.count += uint64(rand.Int31() / 1e3)
+	h.zeroCount += uint64(rand.Int31() / 1e5)
 	return h
 }
 
