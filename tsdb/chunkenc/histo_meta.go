@@ -186,6 +186,7 @@ func compareSpans(a, b []histogram.Span) ([]Interjection, bool) {
 			return interjections, false
 		} else if !aok && bok { // a misses a value that is in b. forward b and recompare
 			inter.num++
+			inter.pos++
 			bv, bok = bi.Next()
 			continue
 		} else { // both iterators ran out. we're done
@@ -199,16 +200,18 @@ func compareSpans(a, b []histogram.Span) ([]Interjection, bool) {
 	return interjections, true
 }
 
-// caller is responsible for making sure len(in) and len(out) are appropriate for the provided interjections!
+// interject merges 'in' with the provided interjections and writes them into
+// 'out', which must already have the appropriate length.
 func interject(in, out []int64, interjections []Interjection) []int64 {
-	var j int      // position in out
-	var v int64    // the last value seen
-	var interj int // the next interjection to process
+	var j int      // Position in out.
+	var v int64    // The last value seen.
+	var interj int // The next interjection to process.
 	for i, d := range in {
 		if interj < len(interjections) && i == interjections[interj].pos {
 
-			// we have an interjection!
-			// add interjection.num new delta values such as their bucket values equate 0
+			// We have an interjection!
+			// Add interjection.num new delta values such that their
+			// bucket values equate 0.
 			out[j] = int64(-v)
 			j++
 			for x := 1; x < interjections[interj].num; x++ {
@@ -217,19 +220,35 @@ func interject(in, out []int64, interjections []Interjection) []int64 {
 			}
 			interj++
 
-			// now save the value from the input. the delta value we should save is
-			// the original delta value + the last value of the point before the interjection (to undo the delta that was introduced by the interjection)
+			// Now save the value from the input. The delta value we
+			// should save is the original delta value + the last
+			// value of the point before the interjection (to undo
+			// the delta that was introduced by the interjection).
 			out[j] = d + v
 			j++
 			v = d + v
 			continue
 		}
 
-		// if there was no interjection, the original delta is still valid
+		// If there was no interjection, the original delta is still
+		// valid.
 		out[j] = d
 		j++
 		v += d
 	}
-
+	switch interj {
+	case len(interjections):
+		// All interjections processed. Nothing more to do.
+	case len(interjections) - 1:
+		// One more interjection to process at the end.
+		out[j] = int64(-v)
+		j++
+		for x := 1; x < interjections[interj].num; x++ {
+			out[j] = 0
+			j++
+		}
+	default:
+		panic("unprocessed interjections left")
+	}
 	return out
 }
