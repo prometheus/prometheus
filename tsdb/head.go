@@ -2889,7 +2889,7 @@ func (it *memSafeIterator) Next() bool {
 		return false
 	}
 	it.i++
-	if it.Iterator.ChunkEncoding() == chunkenc.EncSHS || it.total-it.i > 4 {
+	if it.total-it.i > 4 {
 		return it.Iterator.Next()
 	}
 	return true
