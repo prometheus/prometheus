@@ -361,10 +361,14 @@ func (a *HistoAppender) AppendHistogram(t int64, h histogram.SparseHistogram) {
 }
 
 // Recode converts the current chunk to accommodate an expansion of the set of
-// (positive and/or negative) buckets used, according to the provided interjections, resulting in
-// the honoring of the provided new posSpans and negSpans
-// note: the decode-recode can probably be done more efficiently, but that's for a future optimization
+// (positive and/or negative) buckets used, according to the provided
+// interjections, resulting in the honoring of the provided new posSpans and
+// negSpans.
 func (a *HistoAppender) Recode(posInterjections, negInterjections []Interjection, posSpans, negSpans []histogram.Span) (Chunk, Appender) {
+	// TODO(beorn7): This currently just decodes everything and then encodes
+	// it again with the new span layout. This can probably be done in-place
+	// by editing the chunk. But let's first see how expensive it is in the
+	// big picture.
 	it := newHistoIterator(a.b.bytes())
 	hc := NewHistoChunk()
 	app, err := hc.Appender()
@@ -372,18 +376,24 @@ func (a *HistoAppender) Recode(posInterjections, negInterjections []Interjection
 		panic(err)
 	}
 	numPosBuckets, numNegBuckets := countSpans(posSpans), countSpans(negSpans)
-	posbuckets := make([]int64, numPosBuckets) // new (modified) histogram buckets
-	negbuckets := make([]int64, numNegBuckets) // new (modified) histogram buckets
 
 	for it.Next() {
 		tOld, hOld := it.AtHistogram()
-		// save the modified histogram to the new chunk
+
+		// We have to newly allocate slices for the modified buckets
+		// here because they are kept by the appender until the next
+		// append.
+		// TODO(beorn7): We might be able to optimize this.
+		posBuckets := make([]int64, numPosBuckets)
+		negBuckets := make([]int64, numNegBuckets)
+
+		// Save the modified histogram to the new chunk.
 		hOld.PositiveSpans, hOld.NegativeSpans = posSpans, negSpans
 		if len(posInterjections) > 0 {
-			hOld.PositiveBuckets = interject(hOld.PositiveBuckets, posbuckets, posInterjections)
+			hOld.PositiveBuckets = interject(hOld.PositiveBuckets, posBuckets, posInterjections)
 		}
 		if len(negInterjections) > 0 {
-			hOld.NegativeBuckets = interject(hOld.NegativeBuckets, negbuckets, negInterjections)
+			hOld.NegativeBuckets = interject(hOld.NegativeBuckets, negBuckets, negInterjections)
 		}
 		app.AppendHistogram(tOld, hOld)
 	}
