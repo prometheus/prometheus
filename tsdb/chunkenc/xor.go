@@ -178,16 +178,16 @@ func (a *xorAppender) Append(t int64, v float64) {
 		case dod == 0:
 			a.b.writeBit(zero)
 		case bitRange(dod, 14):
-			a.b.writeBits(0x02, 2) // '10'
+			a.b.writeBits(0b10, 2)
 			a.b.writeBits(uint64(dod), 14)
 		case bitRange(dod, 17):
-			a.b.writeBits(0x06, 3) // '110'
+			a.b.writeBits(0b110, 3)
 			a.b.writeBits(uint64(dod), 17)
 		case bitRange(dod, 20):
-			a.b.writeBits(0x0e, 4) // '1110'
+			a.b.writeBits(0b1110, 4)
 			a.b.writeBits(uint64(dod), 20)
 		default:
-			a.b.writeBits(0x0f, 4) // '1111'
+			a.b.writeBits(0b1111, 4)
 			a.b.writeBits(uint64(dod), 64)
 		}
 
@@ -344,15 +344,15 @@ func (it *xorIterator) Next() bool {
 	var sz uint8
 	var dod int64
 	switch d {
-	case 0x00:
+	case 0b0:
 		// dod == 0
-	case 0x02:
+	case 0b10:
 		sz = 14
-	case 0x06:
+	case 0b110:
 		sz = 17
-	case 0x0e:
+	case 0b1110:
 		sz = 20
-	case 0x0f:
+	case 0b1111:
 		// Do not use fast because it's very unlikely it will succeed.
 		bits, err := it.br.readBits(64)
 		if err != nil {
