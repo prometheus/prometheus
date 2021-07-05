@@ -771,7 +771,7 @@ func (ng *Engine) populateSeries(querier storage.Querier, s *parser.EvalStmt) {
 			}
 			evalRange = 0
 			hints.By, hints.Grouping = extractGroupsFromPath(path)
-			n.UnexpandedSeriesSet = querier.Select(false, hints, n.LabelMatchers...)
+			n.Series = querier.Select(false, hints, n.LabelMatchers...)
 
 		case *parser.MatrixSelector:
 			evalRange = n.Range
@@ -811,32 +811,20 @@ func extractGroupsFromPath(p []parser.Node) (bool, []string) {
 	return false, nil
 }
 
-func checkAndExpandSeriesSet(ctx context.Context, expr parser.Expr) (storage.Warnings, error) {
-	switch e := expr.(type) {
-	case *parser.MatrixSelector:
-		return checkAndExpandSeriesSet(ctx, e.VectorSelector)
-	case *parser.VectorSelector:
-		if e.Series != nil {
-			return nil, nil
-		}
-		series, ws, err := expandSeriesSet(ctx, e.UnexpandedSeriesSet)
-		e.Series = series
-		return ws, err
-	}
-	return nil, nil
-}
-
-func expandSeriesSet(ctx context.Context, it storage.SeriesSet) (res []storage.Series, ws storage.Warnings, err error) {
-	for it.Next() {
-		select {
-		case <-ctx.Done():
-			return nil, nil, ctx.Err()
-		default:
-		}
-		res = append(res, it.At())
-	}
-	return res, it.Warnings(), it.Err()
-}
+//func checkAndExpandSeriesSet(ctx context.Context, expr parser.Expr) (storage.Warnings, error) {
+//	switch e := expr.(type) {
+//	case *parser.MatrixSelector:
+//		return checkAndExpandSeriesSet(ctx, e.VectorSelector)
+//	case *parser.VectorSelector:
+//		if e.Series != nil {
+//			return nil, nil
+//		}
+//		series, ws, err := expandSeriesSet(ctx, e.SeriesSet)
+//		e.Series = series
+//		return ws, err
+//	}
+//	return nil, nil
+//}
 
 type errWithWarnings struct {
 	err      error
@@ -1280,7 +1268,8 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 		if err != nil {
 			ev.error(errWithWarnings{errors.Wrap(err, "expanding series"), warnings})
 		}
-		mat := make(Matrix, 0, len(selVS.Series)) // Output matrix.
+
+		mat := make(Matrix, 0, 1024)
 		offset := durationMilliseconds(selVS.Offset)
 		selRange := durationMilliseconds(sel.Range)
 		stepRange := selRange
@@ -1294,11 +1283,13 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 		enh := &EvalNodeHelper{Out: make(Vector, 0, 1)}
 		// Process all the calls for one time series at a time.
 		it := storage.NewBuffer(selRange)
-		for i, s := range selVS.Series {
+		for selVS.Series.Next() {
+			at := selVS.Series.At()
+
 			ev.currentSamples -= len(points)
 			points = points[:0]
-			it.Reset(s.Iterator())
-			metric := selVS.Series[i].Labels()
+			it.Reset(at.Iterator())
+			metric := at.Labels()
 			// The last_over_time function acts like offset; thus, it
 			// should keep the metric name.  For all the other range
 			// vector functions, the only change needed is to drop the
@@ -1310,7 +1301,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 				Metric: metric,
 				Points: getPointSlice(numSteps),
 			}
-			inMatrix[0].Metric = selVS.Series[i].Labels()
+			inMatrix[0].Metric = at.Labels()
 			for ts, step := ev.startTimestamp, -1; ts <= ev.endTimestamp; ts += ev.interval {
 				step++
 				// Set the non-matrix arguments.

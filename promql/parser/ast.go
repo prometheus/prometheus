@@ -195,9 +195,8 @@ type VectorSelector struct {
 	StartOrEnd    ItemType // Set when @ is used with start() or end()
 	LabelMatchers []*labels.Matcher
 
-	// The unexpanded seriesSet populated at query preparation time.
-	UnexpandedSeriesSet storage.SeriesSet
-	Series              []storage.Series
+	Series     storage.SeriesSet
+	currSeries storage.Series
 
 	PosRange PositionRange
 }
