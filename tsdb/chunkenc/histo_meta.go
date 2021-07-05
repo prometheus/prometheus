@@ -15,6 +15,7 @@ package chunkenc
 
 import "github.com/prometheus/prometheus/pkg/histogram"
 
+// TODO(dieter) span lengths, and span offsets (except for the first span) are always >=0, can improve encoding slightly for them
 func writeHistoChunkMeta(b *bstream, schema int32, posSpans, negSpans []histogram.Span) {
 	putInt64VBBucket(b, int64(schema))
 	putHistoChunkMetaSpans(b, posSpans)
