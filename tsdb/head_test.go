@@ -2241,6 +2241,11 @@ func TestAppendHistogramWithRecodeAndReset(t *testing.T) {
 			require.NoError(t, head.Init(0))
 			app := head.Appender(context.Background())
 
+			// All intermediate histograms corresponding to sparse histograms that we append to head.
+			// Upon appending a histogram to head that has expanded spans (added buckets),
+			// we expect head to recode its existing chunk to apply the new spans to the full chunk
+			// We can then also expand all these intermediate chunks so that we can elegantly compare
+			// them against the histograms that the query will return.
 			interHists := make([]intermediateHistogram, 0, numHistograms)
 
 			// phase 1: keep consistent span layout (buckets usage)
@@ -2253,7 +2258,7 @@ func TestAppendHistogramWithRecodeAndReset(t *testing.T) {
 			ih := newIntermediateHistogram(posSpans, nil)
 
 			for i := 0; i < numHistograms/2; i++ {
-				ih = ih.Bump(int64(i))
+				ih = ih.Bump()
 				interHists = append(interHists, ih)
 				sp := ih.ToSparse()
 				_, err := app.AppendHistogram(0, l, sp.t, sp.h)
@@ -2271,7 +2276,7 @@ func TestAppendHistogramWithRecodeAndReset(t *testing.T) {
 			}
 			ih = interHists[len(interHists)-1]
 			for i := 0; i < numHistograms/2; i++ {
-				ih = ih.Bump(int64(i))
+				ih = ih.Bump()
 				interHists = append(interHists, ih)
 				sp := ih.ToSparse()
 				_, err := app.AppendHistogram(0, l, sp.t, sp.h)
@@ -2285,6 +2290,7 @@ func TestAppendHistogramWithRecodeAndReset(t *testing.T) {
 					appendedHists = append(appendedHists, timedHist{int64(i), h})
 				}
 
+				// Later - post hackathon:
 				// phase 4: reset. TODO how to make sure it started a new chunk?
 				for i, h := range generateHistograms(numHistograms/5, posSpans, negSpans) {
 					_, err := app.AppendHistogram(0, l, int64(i), h)
@@ -2307,7 +2313,7 @@ func TestAppendHistogramWithRecodeAndReset(t *testing.T) {
 
 			require.NoError(t, app.Commit())
 
-			expHists := make([]timedHist, 0, numHistograms)
+			expHists := make([]timedHist, 0, len(interHists))
 			for _, ih := range interHists {
 				expHists = append(expHists, ih.ToSparse())
 			}

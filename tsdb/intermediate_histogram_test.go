@@ -36,8 +36,7 @@ func newIntermediateHistogram(posSpans, negSpans []histogram.Span) intermediateH
 }
 
 // Bump mimics changes caused by a future observation. Bucket counts increase by a random amount (possibly 0)
-// ts must be > than previous ts!
-func (h intermediateHistogram) Bump(ts int64) intermediateHistogram {
+func (h intermediateHistogram) Bump() intermediateHistogram {
 	bumpCounts := func(in []int64) []int64 {
 		out := make([]int64, len(in))
 		for i := range in {
@@ -45,7 +44,7 @@ func (h intermediateHistogram) Bump(ts int64) intermediateHistogram {
 		}
 		return out
 	}
-	h.ts = ts
+	h.ts++
 	h.posCounts = bumpCounts(h.posCounts)
 	h.negCounts = bumpCounts(h.negCounts)
 	h.count += uint64(rand.Int31() / 1e3)
@@ -110,7 +109,7 @@ func expandCounts(countsA []int64, a, b []histogram.Span) []int64 {
 	for {
 		if aok && bok {
 			if av == bv { // both contain the same bucket index.
-				countsB[bi] = countsB[ai]
+				countsB[bi] = countsA[ai]
 				av, aok = ait.Next()
 				bv, bok = bit.Next()
 				ai++
