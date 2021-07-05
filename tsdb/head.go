@@ -2650,10 +2650,6 @@ func (s *memSeries) appendHistogram(t int64, sh histogram.SparseHistogram, appen
 				chunk:   chunk,
 			}
 			s.app = app
-			for i := 0; i < 4; i++ {
-				s.histBuf[i].h.PositiveSpans = sh.PositiveSpans
-				s.histBuf[i].h.NegativeSpans = sh.NegativeSpans
-			}
 		}
 	}
 
