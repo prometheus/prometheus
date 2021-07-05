@@ -122,7 +122,7 @@ func TestInterjection(t *testing.T) {
 		{Offset: 1, Length: 4},
 		{Offset: 3, Length: 3},
 	}
-	interj := []interjection{
+	interj := []Interjection{
 		{
 			pos: 2,
 			num: 1,
@@ -140,13 +140,13 @@ func TestInterjection(t *testing.T) {
 	testInterject(interj, t)
 }
 
-func testCompareSpans(a, b []histogram.Span, exp []interjection, t *testing.T) {
+func testCompareSpans(a, b []histogram.Span, exp []Interjection, t *testing.T) {
 	got, ok := compareSpans(a, b)
 	require.Equal(t, true, ok)
 	require.Equal(t, exp, got)
 }
 
-func testInterject(interjections []interjection, t *testing.T) {
+func testInterject(interjections []Interjection, t *testing.T) {
 	// this tests the scenario as described in compareSpans's comments
 	// original deltas that represent these counts        : 6, 3, 3, 2, 4, 5, 1
 	a := []int64{6, -3, 0, -1, 2, 1, -4}
