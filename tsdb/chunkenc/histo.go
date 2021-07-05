@@ -632,6 +632,7 @@ func (it *histoIterator) Next() bool {
 			it.negbuckets[i] = it.negbuckets[i] + delta
 		}
 
+		it.numRead++
 		return true
 	}
 
@@ -684,6 +685,7 @@ func (it *histoIterator) Next() bool {
 		it.negbuckets[i] = it.negbuckets[i] + it.negbucketsDelta[i]
 	}
 
+	it.numRead++
 	return true
 }
 
@@ -752,6 +754,5 @@ func (it *histoIterator) readSum() bool {
 		it.sum = math.Float64frombits(vbits)
 	}
 
-	it.numRead++
 	return true
 }
