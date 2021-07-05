@@ -68,17 +68,14 @@ test:
 
 # If we only want to only test go code we have to change the test target
 # which is called by all.
-ifeq ($(MAKECMDGOALS),go-ci)
+ifeq ($(MAKECMDGOALS),go-only)
 test: common-test
 else
 test: common-test react-app-test
 endif
 
-.PHONY: go-ci
-go-ci: all
-
-.PHONY: react-ci
-react-ci: react-app-test
+.PHONY: go-only
+go-only: all
 
 .PHONY: npm_licenses
 npm_licenses: $(REACT_APP_NODE_MODULES_PATH)

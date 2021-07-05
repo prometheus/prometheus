@@ -15,9 +15,6 @@ executors:
   golang_115:
     docker:
       - image: circleci/golang:1.15-node
-  node:
-    docker:
-      - image: circleci/node:14.17
 
 jobs:
   test_go:
@@ -30,7 +27,7 @@ jobs:
       - run:
           command: sudo apt-get install -y yamllint
       - run:
-          command: make go-ci
+          command: make go-only
           environment:
             # Run garbage collection more aggressively to avoid getting OOMed during the lint phase.
             GOGC: "20"
@@ -53,7 +50,7 @@ jobs:
           path: test-results
 
   test_react:
-    executor: node
+    executor: golang
 
     steps:
       - checkout
@@ -62,7 +59,7 @@ jobs:
             - v3-npm-deps-{{ checksum "web/ui/react-app/yarn.lock" }}
             - v3-npm-deps-
       - run:
-          command: make react-ci
+          command: make react-app-test
       - save_cache:
           key: v3-npm-deps-{{ checksum "web/ui/react-app/yarn.lock" }}
           paths:
