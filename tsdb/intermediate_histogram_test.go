@@ -114,11 +114,9 @@ func expandCounts(countsA []int64, a, b []histogram.Span) []int64 {
 				bv, bok = bit.Next()
 				ai++
 				bi++
-			}
-			if av < bv {
+			} else if av < bv {
 				panic(fmt.Sprintf("b misses a value that is in a (%d). invalid call", av))
-			}
-			if av > bv { // a misses a value that is in b.
+			} else { // av > bv -> a misses a value that is in b.
 				countsB[bi] = 0
 				bv, bok = bit.Next()
 				bi++
