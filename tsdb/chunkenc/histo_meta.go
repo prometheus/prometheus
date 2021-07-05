@@ -13,7 +13,9 @@
 
 package chunkenc
 
-import "github.com/prometheus/prometheus/pkg/histogram"
+import (
+	"github.com/prometheus/prometheus/pkg/histogram"
+)
 
 // TODO(dieter) span lengths, and span offsets (except for the first span) are always >=0, can improve encoding slightly for them
 func writeHistoChunkMeta(b *bstream, schema int32, posSpans, negSpans []histogram.Span) {
@@ -77,15 +79,15 @@ func readHistoChunkMetaSpans(b *bstreamReader) ([]histogram.Span, error) {
 	return spans, nil
 }
 
-type bucketIterator struct {
+type BucketIterator struct {
 	spans  []histogram.Span
 	span   int // span position of last yielded bucket
 	bucket int // bucket position within span of last yielded bucket
 	idx    int // bucket index (globally across all spans) of last yielded bucket
 }
 
-func newBucketIterator(spans []histogram.Span) *bucketIterator {
-	b := bucketIterator{
+func NewBucketIterator(spans []histogram.Span) *BucketIterator {
+	b := BucketIterator{
 		spans:  spans,
 		span:   0,
 		bucket: -1,
@@ -97,7 +99,7 @@ func newBucketIterator(spans []histogram.Span) *bucketIterator {
 	return &b
 }
 
-func (b *bucketIterator) Next() (int, bool) {
+func (b *BucketIterator) Next() (int, bool) {
 	// we're already out of bounds
 	if b.span >= len(b.spans) {
 		return 0, false
@@ -150,8 +152,8 @@ type Interjection struct {
 // note: within compareSpans we don't have to worry about the changes to the spans themselves,
 // thanks to the iterators, we get to work with the more useful bucket indices (which of course directly correspond to the buckets we have to adjust)
 func compareSpans(a, b []histogram.Span) ([]Interjection, bool) {
-	ai := newBucketIterator(a)
-	bi := newBucketIterator(b)
+	ai := NewBucketIterator(a)
+	bi := NewBucketIterator(b)
 
 	var interjections []Interjection
 

@@ -2191,16 +2191,121 @@ func TestAppendHistogram(t *testing.T) {
 			require.NoError(t, head.Init(0))
 			app := head.Appender(context.Background())
 
-			type timedHist struct {
-				t int64
-				h histogram.SparseHistogram
-			}
 			expHists := make([]timedHist, 0, numHistograms)
 			for i, h := range generateHistograms(numHistograms) {
 				_, err := app.AppendHistogram(0, l, int64(i), h)
 				require.NoError(t, err)
 				expHists = append(expHists, timedHist{int64(i), h})
 			}
+			require.NoError(t, app.Commit())
+
+			q, err := NewBlockQuerier(head, head.MinTime(), head.MaxTime())
+			require.NoError(t, err)
+			t.Cleanup(func() {
+				require.NoError(t, q.Close())
+			})
+
+			ss := q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
+
+			require.True(t, ss.Next())
+			s := ss.At()
+			require.False(t, ss.Next())
+
+			it := s.Iterator()
+			actHists := make([]timedHist, 0, len(expHists))
+			for it.Next() {
+				t, h := it.AtHistogram()
+				actHists = append(actHists, timedHist{t, h.Copy()})
+			}
+
+			require.Equal(t, expHists, actHists)
+		})
+	}
+}
+
+type timedHist struct {
+	t int64
+	h histogram.SparseHistogram
+}
+
+// for simplicity we only deal with positive buckets (which, may have negative indices)
+func TestAppendHistogramWithRecodeAndReset(t *testing.T) {
+	l := labels.Labels{{Name: "a", Value: "b"}}
+	for _, numHistograms := range []int{10, 150, 200, 250, 300} { // must be multiples of 5
+		t.Run(fmt.Sprintf("%d", numHistograms), func(t *testing.T) {
+			head, _ := newTestHead(t, 1000, false)
+			t.Cleanup(func() {
+				require.NoError(t, head.Close())
+			})
+
+			require.NoError(t, head.Init(0))
+			app := head.Appender(context.Background())
+
+			interHists := make([]intermediateHistogram, 0, numHistograms)
+			expHists := make([]timedHist, 0, numHistograms)
+
+			// phase 1: keep consistent span layout (buckets usage)
+
+			// pos bucket idx -4,-3, -1,0,1,2
+			posSpans := []histogram.Span{
+				{Offset: -4, Length: 2},
+				{Offset: 1, Length: 4},
+			}
+			ih := newIntermediateHistogram(posSpans, nil)
+
+			for i := 0; i < numHistograms/2; i++ {
+				ih = ih.Bump(int64(i))
+				interHists = append(interHists, ih)
+				sp := ih.ToSparse()
+				_, err := app.AppendHistogram(0, l, sp.t, sp.h)
+				require.NoError(t, err)
+			}
+
+			// phase 2: add more buckets -> recode
+			// pos bucket idx -4,-3,-2,-1,0,1,2  5,6
+			posSpans = []histogram.Span{
+				{Offset: -4, Length: 7},
+				{Offset: 2, Length: 2},
+			}
+			for i := 0; i < len(interHists); i++ {
+				interHists[i] = ih.expand(posSpans, nil)
+			}
+			ih = interHists[len(interHists)-1]
+			for i := 0; i < numHistograms/2; i++ {
+				ih = ih.Bump(int64(i))
+				interHists = append(interHists, ih)
+				sp := ih.ToSparse()
+				_, err := app.AppendHistogram(0, l, sp.t, sp.h)
+				require.NoError(t, err)
+			}
+			/*
+				// phase 3: again, add more buckets -> again, recode
+				for i, h := range generateHistograms(numHistograms/5, posSpans, negSpans) {
+					_, err := app.AppendHistogram(0, l, int64(i), h)
+					require.NoError(t, err)
+					appendedHists = append(appendedHists, timedHist{int64(i), h})
+				}
+
+				// phase 4: reset. TODO how to make sure it started a new chunk?
+				for i, h := range generateHistograms(numHistograms/5, posSpans, negSpans) {
+					_, err := app.AppendHistogram(0, l, int64(i), h)
+					require.NoError(t, err)
+					appendedHists = append(appendedHists, timedHist{int64(i), h})
+				}
+
+				// phase 5: add more buckets -> recode
+				for i, h := range generateHistograms(numHistograms/5, posSpans, negSpans) {
+					_, err := app.AppendHistogram(0, l, int64(i), h)
+					require.NoError(t, err)
+					appendedHists = append(appendedHists, timedHist{int64(i), h})
+				}
+			*/
+
+			// now we convert the used histograms into expected things
+			// 2 important things:
+			// convert absolute counts into deltas
+			// accommodate span expansions
+
 			require.NoError(t, app.Commit())
 
 			q, err := NewBlockQuerier(head, head.MinTime(), head.MaxTime())
@@ -2242,6 +2347,5 @@ func generateHistograms(n int) (r []histogram.SparseHistogram) {
 			NegativeBuckets: []int64{},
 		})
 	}
-
 	return r
 }

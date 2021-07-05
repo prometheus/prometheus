@@ -1333,6 +1333,7 @@ func TestHeadCompactionWithHistograms(t *testing.T) {
 	timeStep := DefaultBlockDuration / int64(numHistograms)
 	expHists := make([]timedHist, 0, numHistograms)
 	l := labels.Labels{{Name: "a", Value: "b"}}
+
 	for i, h := range generateHistograms(numHistograms) {
 		_, err := app.AppendHistogram(0, l, int64(i)*timeStep, h)
 		require.NoError(t, err)

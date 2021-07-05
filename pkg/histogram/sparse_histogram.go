@@ -65,6 +65,14 @@ func (s SparseHistogram) Copy() SparseHistogram {
 	return c
 }
 
+func CountSpans(spans []Span) int {
+	var cnt int
+	for _, s := range spans {
+		cnt += int(s.Length)
+	}
+	return cnt
+}
+
 type BucketIterator interface {
 	// Next advances the iterator by one.
 	Next() bool

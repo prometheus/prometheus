@@ -156,14 +156,6 @@ func (c *HistoChunk) Appender() (Appender, error) {
 	return a, nil
 }
 
-func countSpans(spans []histogram.Span) int {
-	var cnt int
-	for _, s := range spans {
-		cnt += int(s.Length)
-	}
-	return cnt
-}
-
 func newHistoIterator(b []byte) *histoIterator {
 	it := &histoIterator{
 		br:       newBReader(b),
@@ -276,7 +268,7 @@ func (a *HistoAppender) AppendHistogram(t int64, h histogram.SparseHistogram) {
 		writeHistoChunkMeta(a.b, h.Schema, h.PositiveSpans, h.NegativeSpans)
 		a.schema = h.Schema
 		a.posSpans, a.negSpans = h.PositiveSpans, h.NegativeSpans
-		numPosBuckets, numNegBuckets := countSpans(h.PositiveSpans), countSpans(h.NegativeSpans)
+		numPosBuckets, numNegBuckets := histogram.CountSpans(h.PositiveSpans), histogram.CountSpans(h.NegativeSpans)
 		a.posbuckets = make([]int64, numPosBuckets)
 		a.negbuckets = make([]int64, numNegBuckets)
 		a.posbucketsDelta = make([]int64, numPosBuckets)
@@ -375,7 +367,7 @@ func (a *HistoAppender) Recode(posInterjections, negInterjections []Interjection
 	if err != nil {
 		panic(err)
 	}
-	numPosBuckets, numNegBuckets := countSpans(posSpans), countSpans(negSpans)
+	numPosBuckets, numNegBuckets := histogram.CountSpans(posSpans), histogram.CountSpans(negSpans)
 
 	for it.Next() {
 		tOld, hOld := it.AtHistogram()
@@ -539,7 +531,7 @@ func (it *histoIterator) Next() bool {
 		}
 		it.schema = schema
 		it.posSpans, it.negSpans = posSpans, negSpans
-		numPosBuckets, numNegBuckets := countSpans(posSpans), countSpans(negSpans)
+		numPosBuckets, numNegBuckets := histogram.CountSpans(posSpans), histogram.CountSpans(negSpans)
 		it.posbuckets = make([]int64, numPosBuckets)
 		it.negbuckets = make([]int64, numNegBuckets)
 		it.posbucketsDelta = make([]int64, numPosBuckets)

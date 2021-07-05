@@ -96,7 +96,7 @@ func TestBucketIterator(t *testing.T) {
 		},
 	}
 	for _, test := range tests {
-		b := newBucketIterator(test.spans)
+		b := NewBucketIterator(test.spans)
 		var got []int
 		v, ok := b.Next()
 		for ok {
