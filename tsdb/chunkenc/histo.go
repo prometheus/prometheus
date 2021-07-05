@@ -105,6 +105,7 @@ func (c *HistoChunk) Meta() (int32, []histogram.Span, []histogram.Span, error) {
 	return readHistoChunkMeta(&b)
 }
 
+// Compact implements the Chunk interface.
 func (c *HistoChunk) Compact() {
 	if l := len(c.b.stream); cap(c.b.stream) > l+chunkCompactCapacityThreshold {
 		buf := make([]byte, l)
@@ -192,6 +193,7 @@ func (c *HistoChunk) Iterator(it Iterator) Iterator {
 	return c.iterator(it)
 }
 
+// HistoAppender is an Appender implementation for sparse histograms.
 type HistoAppender struct {
 	b *bstream
 
@@ -199,10 +201,9 @@ type HistoAppender struct {
 	schema             int32
 	posSpans, negSpans []histogram.Span
 
-	// For the fields that are tracked as dod's.
-	// Note that we expect to handle negative deltas (e.g. resets) by
-	// creating new chunks, we still want to support it in general hence
-	// signed integer types.
+	// For the fields that are tracked as dod's. Note that we expect to
+	// handle negative deltas (e.g. resets) by creating new chunks, we still
+	// want to support it in general hence signed integer types.
 	t                           int64
 	cnt, zcnt                   uint64
 	tDelta, cntDelta, zcntDelta int64
@@ -230,6 +231,10 @@ func putUvarint(b *bstream, buf []byte, x uint64) {
 	}
 }
 
+// Append implements Appender. This implementation does nothing for now.
+// TODO(beorn7): Implement in a meaningful way, i.e. we need to support
+// appending of stale markers, but this should never be used for "real"
+// samples.
 func (a *HistoAppender) Append(int64, float64) {}
 
 // Appendable returns whether the chunk can be appended to, and if so
@@ -239,7 +244,7 @@ func (a *HistoAppender) Append(int64, float64) {}
 // * the schema has changed
 // * the zerobucket threshold has changed
 // * any buckets disappeared
-func (a *HistoAppender) Appendable(h histogram.SparseHistogram) ([]interjection, []interjection, bool) {
+func (a *HistoAppender) Appendable(h histogram.SparseHistogram) ([]Interjection, []Interjection, bool) {
 	// TODO zerothreshold
 	if h.Schema != a.schema {
 		return nil, nil, false
@@ -359,7 +364,7 @@ func (a *HistoAppender) AppendHistogram(t int64, h histogram.SparseHistogram) {
 // (positive and/or negative) buckets used, according to the provided interjections, resulting in
 // the honoring of the provided new posSpans and negSpans
 // note: the decode-recode can probably be done more efficiently, but that's for a future optimization
-func (a *HistoAppender) Recode(posInterjections, negInterjections []interjection, posSpans, negSpans []histogram.Span) (Chunk, Appender) {
+func (a *HistoAppender) Recode(posInterjections, negInterjections []Interjection, posSpans, negSpans []histogram.Span) (Chunk, Appender) {
 	it := newHistoIterator(a.b.bytes())
 	hc := NewHistoChunk()
 	app, err := hc.Appender()

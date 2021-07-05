@@ -11,11 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// The code in this file was largely written by Damian Gryski as part of
-// https://github.com/dgryski/go-tsz and published under the license below.
-// It was modified to accommodate reading from byte slices without modifying
-// the underlying bytes, which would panic when reading from mmap'd
-// read-only byte slices.
 package chunkenc
 
 import "github.com/prometheus/prometheus/pkg/histogram"
@@ -125,8 +120,8 @@ try:
 	return 0, false
 }
 
-// interjection describes that num new buckets are introduced before processing the pos'th delta from the original slice
-type interjection struct {
+// Interjection describes that num new buckets are introduced before processing the pos'th delta from the original slice
+type Interjection struct {
 	pos int
 	num int
 }
@@ -153,14 +148,14 @@ type interjection struct {
 // need to generate a list of interjections
 // note: within compareSpans we don't have to worry about the changes to the spans themselves,
 // thanks to the iterators, we get to work with the more useful bucket indices (which of course directly correspond to the buckets we have to adjust)
-func compareSpans(a, b []histogram.Span) ([]interjection, bool) {
+func compareSpans(a, b []histogram.Span) ([]Interjection, bool) {
 	ai := newBucketIterator(a)
 	bi := newBucketIterator(b)
 
-	var interjections []interjection
+	var interjections []Interjection
 
 	// when inter.num becomes > 0, this becomes a valid interjection that should be yielded when we finish a streak of new buckets
-	var inter interjection
+	var inter Interjection
 
 	av, aok := ai.Next()
 	bv, bok := bi.Next()
@@ -205,7 +200,7 @@ func compareSpans(a, b []histogram.Span) ([]interjection, bool) {
 }
 
 // caller is responsible for making sure len(in) and len(out) are appropriate for the provided interjections!
-func interject(in, out []int64, interjections []interjection) []int64 {
+func interject(in, out []int64, interjections []Interjection) []int64 {
 	var j int      // position in out
 	var v int64    // the last value seen
 	var interj int // the next interjection to process
