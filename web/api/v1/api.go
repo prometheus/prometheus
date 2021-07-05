@@ -497,6 +497,27 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 		return apiFuncResult{nil, &apiError{errorBadData, errors.New("need exactly 1 selector")}, nil, nil}
 	}
 
+	hasRate, rateDuration := false, time.Duration(0)
+	parser.Inspect(expr, func(node parser.Node, path []parser.Node) error {
+		switch n := node.(type) {
+		case *parser.Call:
+			if n.Func.Name == "rate" {
+				hasRate = true
+				rateDuration = n.Args[0].(*parser.MatrixSelector).Range
+				return errors.New("stop it here")
+			}
+		}
+		return nil
+	})
+	var numRateSamples int
+	if hasRate {
+		numRateSamples = int(end.Sub(start)/step + 1)
+		if start.Add(time.Duration(numRateSamples-1) * step).After(end) {
+			numRateSamples--
+		}
+		start = start.Add(-rateDuration) // Adjusting for the first point lookback.
+	}
+
 	q, err := api.Queryable.Querier(ctx, timestamp.FromTime(start), timestamp.FromTime(end))
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorExec, err}, nil, nil}
@@ -542,6 +563,55 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 		for _, rs := range resSeries {
 			res = append(res, rs)
 		}
+	}
+
+	if hasRate {
+		newRes := make(promql.Matrix, len(res))
+		for i := range newRes {
+			newRes[i].Metric = res[i].Metric
+			points := make([]promql.Point, numRateSamples)
+
+			rawPoints := res[i].Points
+
+			startIdx, endIdx := 0, 0
+			for idx := range points {
+				pointTime := start.Add(time.Duration(idx) * step)
+				lookbackTime := pointTime.Add(-rateDuration)
+				points[idx].T = timestamp.FromTime(pointTime)
+				if len(rawPoints) == 0 {
+					continue
+				}
+
+				for startIdx < len(rawPoints) && timestamp.Time(rawPoints[startIdx].T).Before(lookbackTime) {
+					startIdx++
+				}
+				if startIdx >= len(rawPoints) {
+					startIdx = len(rawPoints) - 1
+				}
+
+				for endIdx < len(rawPoints) && timestamp.Time(rawPoints[endIdx].T).Before(pointTime) {
+					endIdx++
+				}
+				if endIdx >= len(rawPoints) {
+					endIdx = len(rawPoints) - 1
+				} else if timestamp.Time(rawPoints[endIdx].T).After(pointTime) && (len(rawPoints) == 1 || endIdx == 0) {
+					continue
+				} else {
+					endIdx--
+				}
+
+				valDiff := rawPoints[endIdx].V - rawPoints[startIdx].V
+				timeDiffSeconds := float64(timestamp.Time(rawPoints[endIdx].T).Sub(timestamp.Time(rawPoints[startIdx].T))) / float64(time.Second)
+
+				if timeDiffSeconds != 0 {
+					points[idx].V = valDiff / timeDiffSeconds
+				}
+			}
+
+			newRes[i].Points = points
+		}
+
+		res = newRes
 	}
 
 	sort.Sort(res)
