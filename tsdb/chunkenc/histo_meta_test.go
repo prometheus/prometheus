@@ -108,52 +108,187 @@ func TestBucketIterator(t *testing.T) {
 }
 
 func TestInterjection(t *testing.T) {
-	// this tests the scenario as described in compareSpans's comments
-	a := []histogram.Span{
-		{Offset: 0, Length: 2},
-		{Offset: 2, Length: 1},
-		{Offset: 3, Length: 2},
-		{Offset: 3, Length: 1},
-		{Offset: 1, Length: 1},
-	}
-	b := []histogram.Span{
-		{Offset: 0, Length: 3},
-		{Offset: 1, Length: 1},
-		{Offset: 1, Length: 4},
-		{Offset: 3, Length: 3},
-	}
-	interj := []Interjection{
+	scenarios := []struct {
+		description           string
+		spansA, spansB        []histogram.Span
+		valid                 bool
+		interjections         []Interjection
+		bucketsIn, bucketsOut []int64
+	}{
 		{
-			pos: 2,
-			num: 1,
+			description: "single prepend at the beginning",
+			spansA: []histogram.Span{
+				{Offset: -10, Length: 3},
+			},
+			spansB: []histogram.Span{
+				{Offset: -11, Length: 4},
+			},
+			valid: true,
+			interjections: []Interjection{
+				{
+					pos: 0,
+					num: 1,
+				},
+			},
+			bucketsIn:  []int64{6, -3, 0},
+			bucketsOut: []int64{0, 6, -3, 0},
 		},
 		{
-			pos: 3,
-			num: 2,
+			description: "single append at the end",
+			spansA: []histogram.Span{
+				{Offset: -10, Length: 3},
+			},
+			spansB: []histogram.Span{
+				{Offset: -10, Length: 4},
+			},
+			valid: true,
+			interjections: []Interjection{
+				{
+					pos: 3,
+					num: 1,
+				},
+			},
+			bucketsIn:  []int64{6, -3, 0},
+			bucketsOut: []int64{6, -3, 0, -3},
 		},
 		{
-			pos: 6,
-			num: 1,
+			description: "double prepend at the beginning",
+			spansA: []histogram.Span{
+				{Offset: -10, Length: 3},
+			},
+			spansB: []histogram.Span{
+				{Offset: -12, Length: 5},
+			},
+			valid: true,
+			interjections: []Interjection{
+				{
+					pos: 0,
+					num: 2,
+				},
+			},
+			bucketsIn:  []int64{6, -3, 0},
+			bucketsOut: []int64{0, 0, 6, -3, 0},
+		},
+		{
+			description: "double append at the end",
+			spansA: []histogram.Span{
+				{Offset: -10, Length: 3},
+			},
+			spansB: []histogram.Span{
+				{Offset: -10, Length: 5},
+			},
+			valid: true,
+			interjections: []Interjection{
+				{
+					pos: 3,
+					num: 2,
+				},
+			},
+			bucketsIn:  []int64{6, -3, 0},
+			bucketsOut: []int64{6, -3, 0, -3, 0},
+		},
+		{
+			description: "double prepond at the beginning and double append at the end",
+			spansA: []histogram.Span{
+				{Offset: -10, Length: 3},
+			},
+			spansB: []histogram.Span{
+				{Offset: -12, Length: 7},
+			},
+			valid: true,
+			interjections: []Interjection{
+				{
+					pos: 0,
+					num: 2,
+				},
+				{
+					pos: 3,
+					num: 2,
+				},
+			},
+			bucketsIn:  []int64{6, -3, 0},
+			bucketsOut: []int64{0, 0, 6, -3, 0, -3, 0},
+		},
+		{
+			description: "single removal of bucket at the start",
+			spansA: []histogram.Span{
+				{Offset: -10, Length: 4},
+			},
+			spansB: []histogram.Span{
+				{Offset: -9, Length: 3},
+			},
+			valid: false,
+		},
+		{
+			description: "single removal of bucket in the middle",
+			spansA: []histogram.Span{
+				{Offset: -10, Length: 4},
+			},
+			spansB: []histogram.Span{
+				{Offset: -10, Length: 2},
+				{Offset: 1, Length: 1},
+			},
+			valid: false,
+		},
+		{
+			description: "single removal of bucket at the end",
+			spansA: []histogram.Span{
+				{Offset: -10, Length: 4},
+			},
+			spansB: []histogram.Span{
+				{Offset: -10, Length: 3},
+			},
+			valid: false,
+		},
+		{
+			description: "as described in doc comment",
+			spansA: []histogram.Span{
+				{Offset: 0, Length: 2},
+				{Offset: 2, Length: 1},
+				{Offset: 3, Length: 2},
+				{Offset: 3, Length: 1},
+				{Offset: 1, Length: 1},
+			},
+			spansB: []histogram.Span{
+				{Offset: 0, Length: 3},
+				{Offset: 1, Length: 1},
+				{Offset: 1, Length: 4},
+				{Offset: 3, Length: 3},
+			},
+			valid: true,
+			interjections: []Interjection{
+				{
+					pos: 2,
+					num: 1,
+				},
+				{
+					pos: 3,
+					num: 2,
+				},
+				{
+					pos: 6,
+					num: 1,
+				},
+			},
+			bucketsIn:  []int64{6, -3, 0, -1, 2, 1, -4},
+			bucketsOut: []int64{6, -3, -3, 3, -3, 0, 2, 2, 1, -5, 1},
 		},
 	}
-	testCompareSpans(a, b, interj, t)
-	testInterject(interj, t)
-}
 
-func testCompareSpans(a, b []histogram.Span, exp []Interjection, t *testing.T) {
-	got, ok := compareSpans(a, b)
-	require.Equal(t, true, ok)
-	require.Equal(t, exp, got)
-}
+	for _, s := range scenarios {
+		t.Run(s.description, func(t *testing.T) {
+			interjections, valid := compareSpans(s.spansA, s.spansB)
+			if !s.valid {
+				require.False(t, valid, "compareScan unexpectedly returned true")
+				return
+			}
+			require.True(t, valid, "compareScan unexpectedly returned false")
+			require.Equal(t, s.interjections, interjections)
 
-func testInterject(interjections []Interjection, t *testing.T) {
-	// this tests the scenario as described in compareSpans's comments
-	// original deltas that represent these counts        : 6, 3, 3, 2, 4, 5, 1
-	a := []int64{6, -3, 0, -1, 2, 1, -4}
-	// modified deltas to represent the interjected counts: 6, 3, 0, 3, 0, 0, 2, 4, 5, 0, 1
-	exp := []int64{6, -3, -3, 3, -3, 0, 2, 2, 1, -5, 1}
-	b := make([]int64, len(a)+4)
-	interject(a, b, interjections)
-	require.Equal(t, exp, b)
+			gotBuckets := make([]int64, len(s.bucketsOut))
+			interject(s.bucketsIn, gotBuckets, interjections)
+			require.Equal(t, s.bucketsOut, gotBuckets)
 
+		})
+	}
 }
