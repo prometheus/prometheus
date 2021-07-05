@@ -387,7 +387,6 @@ func (a *HistoAppender) Recode(posInterjections, negInterjections []Interjection
 		}
 		app.AppendHistogram(tOld, hOld)
 	}
-
 	return hc, app
 }
 

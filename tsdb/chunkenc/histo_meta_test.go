@@ -188,6 +188,28 @@ func TestInterjection(t *testing.T) {
 			bucketsOut: []int64{6, -3, 0, -3, 0},
 		},
 		{
+			description: "double prepond at the beginning and double append at the end",
+			spansA: []histogram.Span{
+				{Offset: -10, Length: 3},
+			},
+			spansB: []histogram.Span{
+				{Offset: -12, Length: 7},
+			},
+			valid: true,
+			interjections: []Interjection{
+				{
+					pos: 0,
+					num: 2,
+				},
+				{
+					pos: 3,
+					num: 2,
+				},
+			},
+			bucketsIn:  []int64{6, -3, 0},
+			bucketsOut: []int64{0, 0, 6, -3, 0, -3, 0},
+		},
+		{
 			description: "single removal of bucket at the start",
 			spansA: []histogram.Span{
 				{Offset: -10, Length: 4},
@@ -218,7 +240,6 @@ func TestInterjection(t *testing.T) {
 			},
 			valid: false,
 		},
-		// TODO(beorn7): Add more scenarios.
 		{
 			description: "as described in doc comment",
 			spansA: []histogram.Span{

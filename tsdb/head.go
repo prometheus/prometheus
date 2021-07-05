@@ -16,7 +16,6 @@ package tsdb
 import (
 	"context"
 	"fmt"
-	"github.com/prometheus/prometheus/pkg/histogram"
 	"math"
 	"path/filepath"
 	"runtime"
@@ -32,6 +31,7 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/pkg/exemplar"
+	"github.com/prometheus/prometheus/pkg/histogram"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"

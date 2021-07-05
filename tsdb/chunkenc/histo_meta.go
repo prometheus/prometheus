@@ -159,41 +159,36 @@ func compareSpans(a, b []histogram.Span) ([]Interjection, bool) {
 
 	av, aok := ai.Next()
 	bv, bok := bi.Next()
+loop:
 	for {
-		if aok && bok {
-			if av == bv { // both have an identical value. move on!
-				// finish WIP interjection and reset
+		switch {
+		case aok && bok:
+			switch {
+			case av == bv: // Both have an identical value. move on!
+				// Finish WIP interjection and reset.
 				if inter.num > 0 {
 					interjections = append(interjections, inter)
 				}
 				inter.num = 0
 				av, aok = ai.Next()
 				bv, bok = bi.Next()
-				if aok {
-					inter.pos++
-				}
-				continue
-			}
-			if av < bv { // b misses a value that is in a.
+				inter.pos++
+			case av < bv: // b misses a value that is in a.
 				return interjections, false
-			}
-			if av > bv { // a misses a value that is in b. forward b and recompare
+			case av > bv: // a misses a value that is in b. Forward b and recompare.
 				inter.num++
 				bv, bok = bi.Next()
-				continue
 			}
-		} else if aok && !bok { // b misses a value that is in a.
+		case aok && !bok: // b misses a value that is in a.
 			return interjections, false
-		} else if !aok && bok { // a misses a value that is in b. forward b and recompare
+		case !aok && bok: // a misses a value that is in b. Forward b and recompare.
 			inter.num++
-			inter.pos++
 			bv, bok = bi.Next()
-			continue
-		} else { // both iterators ran out. we're done
+		default: // Both iterators ran out. We're done.
 			if inter.num > 0 {
 				interjections = append(interjections, inter)
 			}
-			break
+			break loop
 		}
 	}
 
