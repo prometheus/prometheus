@@ -191,7 +191,7 @@ func TestHistoChunkBucketChanges(t *testing.T) {
 
 	// TODO is this okay?
 	// the appender can rewrite its own bytes slice but it is not able to update the HistoChunk, so our histochunk is outdated until we update it manually
-	c.b = *(app.(*histoAppender).b)
+	c.b = *(app.(*HistoAppender).b)
 	require.Equal(t, 2, c.NumSamples())
 
 	// because the 2nd histogram has expanded buckets, we should expect all histograms (in particular the first)
