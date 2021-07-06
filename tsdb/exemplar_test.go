@@ -24,14 +24,17 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
 )
 
+var eMetrics = NewExemplarMetrics(prometheus.DefaultRegisterer)
+
 // Tests the same exemplar cases as AddExemplar, but specifically the ValidateExemplar function so it can be relied on externally.
 func TestValidateExemplar(t *testing.T) {
-	exs, err := NewCircularExemplarStorage(2, nil)
+	exs, err := NewCircularExemplarStorage(2, eMetrics)
 	require.NoError(t, err)
 	es := exs.(*CircularExemplarStorage)
 
@@ -90,7 +93,7 @@ func TestValidateExemplar(t *testing.T) {
 }
 
 func TestAddExemplar(t *testing.T) {
-	exs, err := NewCircularExemplarStorage(2, nil)
+	exs, err := NewCircularExemplarStorage(2, eMetrics)
 	require.NoError(t, err)
 	es := exs.(*CircularExemplarStorage)
 
@@ -153,7 +156,7 @@ func TestStorageOverflow(t *testing.T) {
 	// Test that circular buffer index and assignment
 	// works properly, adding more exemplars than can
 	// be stored and then querying for them.
-	exs, err := NewCircularExemplarStorage(5, nil)
+	exs, err := NewCircularExemplarStorage(5, eMetrics)
 	require.NoError(t, err)
 	es := exs.(*CircularExemplarStorage)
 
@@ -188,7 +191,7 @@ func TestStorageOverflow(t *testing.T) {
 }
 
 func TestSelectExemplar(t *testing.T) {
-	exs, err := NewCircularExemplarStorage(5, nil)
+	exs, err := NewCircularExemplarStorage(5, eMetrics)
 	require.NoError(t, err)
 	es := exs.(*CircularExemplarStorage)
 
@@ -219,7 +222,7 @@ func TestSelectExemplar(t *testing.T) {
 }
 
 func TestSelectExemplar_MultiSeries(t *testing.T) {
-	exs, err := NewCircularExemplarStorage(5, nil)
+	exs, err := NewCircularExemplarStorage(5, eMetrics)
 	require.NoError(t, err)
 	es := exs.(*CircularExemplarStorage)
 
@@ -277,7 +280,7 @@ func TestSelectExemplar_MultiSeries(t *testing.T) {
 
 func TestSelectExemplar_TimeRange(t *testing.T) {
 	lenEs := 5
-	exs, err := NewCircularExemplarStorage(lenEs, nil)
+	exs, err := NewCircularExemplarStorage(lenEs, eMetrics)
 	require.NoError(t, err)
 	es := exs.(*CircularExemplarStorage)
 
@@ -311,7 +314,7 @@ func TestSelectExemplar_TimeRange(t *testing.T) {
 // Test to ensure that even though a series matches more than one matcher from the
 // query that it's exemplars are only included in the result a single time.
 func TestSelectExemplar_DuplicateSeries(t *testing.T) {
-	exs, err := NewCircularExemplarStorage(4, nil)
+	exs, err := NewCircularExemplarStorage(4, eMetrics)
 	require.NoError(t, err)
 	es := exs.(*CircularExemplarStorage)
 
@@ -352,7 +355,7 @@ func TestSelectExemplar_DuplicateSeries(t *testing.T) {
 }
 
 func TestIndexOverwrite(t *testing.T) {
-	exs, err := NewCircularExemplarStorage(2, nil)
+	exs, err := NewCircularExemplarStorage(2, eMetrics)
 	require.NoError(t, err)
 	es := exs.(*CircularExemplarStorage)
 
@@ -414,7 +417,7 @@ func TestResize(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 
-			exs, err := NewCircularExemplarStorage(tc.startSize, nil)
+			exs, err := NewCircularExemplarStorage(tc.startSize, eMetrics)
 			require.NoError(t, err)
 			es := exs.(*CircularExemplarStorage)
 
@@ -451,7 +454,7 @@ func TestResize(t *testing.T) {
 }
 
 func BenchmarkAddExemplar(t *testing.B) {
-	exs, err := NewCircularExemplarStorage(t.N, nil)
+	exs, err := NewCircularExemplarStorage(t.N, eMetrics)
 	require.NoError(t, err)
 	es := exs.(*CircularExemplarStorage)
 
@@ -497,7 +500,7 @@ func BenchmarkResizeExemplars(b *testing.B) {
 	}
 
 	for _, tc := range testCases {
-		exs, err := NewCircularExemplarStorage(tc.startSize, nil)
+		exs, err := NewCircularExemplarStorage(tc.startSize, eMetrics)
 		require.NoError(b, err)
 		es := exs.(*CircularExemplarStorage)
 

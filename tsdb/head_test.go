@@ -30,6 +30,7 @@ import (
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -52,6 +53,7 @@ func newTestHead(t testing.TB, chunkRange int64, compressWAL bool) (*Head, *wal.
 	opts.ChunkRange = chunkRange
 	opts.ChunkDirRoot = dir
 	opts.EnableExemplarStorage = true
+	opts.MaxExemplars = config.DefaultExemplarsConfig.MaxExemplars
 	h, err := NewHead(nil, nil, wlog, opts, nil)
 	require.NoError(t, err)
 

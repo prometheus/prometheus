@@ -350,9 +350,8 @@ func main() {
 		level.Error(logger).Log("msg", fmt.Sprintf("Error loading config (--config.file=%s)", cfg.configFile), "err", err)
 		os.Exit(2)
 	}
-	if cfgFile.StorageConfig.ExemplarsConfig.MaxExemplars > 0 {
-		cfg.tsdb.MaxExemplars = cfgFile.StorageConfig.ExemplarsConfig.MaxExemplars
-	}
+	cfg.tsdb.MaxExemplars = cfgFile.StorageConfig.ExemplarsConfig.MaxExemplars
+
 	// Now that the validity of the config is established, set the config
 	// success metrics accordingly, although the config isn't really loaded
 	// yet. This will happen later (including setting these metrics again),
@@ -1268,6 +1267,10 @@ type tsdbOptions struct {
 }
 
 func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
+	// Ugly hack to get the previous default size.
+	if opts.MaxExemplars == 0 {
+		opts.MaxExemplars = config.DefaultExemplarsConfig.MaxExemplars
+	}
 	return tsdb.Options{
 		WALSegmentSize:           int(opts.WALSegmentSize),
 		MaxBlockChunkSegmentSize: int64(opts.MaxBlockChunkSegmentSize),

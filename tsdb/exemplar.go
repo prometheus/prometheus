@@ -27,16 +27,10 @@ import (
 )
 
 type CircularExemplarStorage struct {
-	exemplarsAppended            prometheus.Counter
-	exemplarsInStorage           prometheus.Gauge
-	seriesWithExemplarsInStorage prometheus.Gauge
-	lastExemplarsTs              prometheus.Gauge
-	maxExemplars                 prometheus.Gauge
-	outOfOrderExemplars          prometheus.Counter
-
 	lock      sync.RWMutex
 	exemplars []*circularBufferEntry
 	nextIndex int
+	metrics   *ExemplarMetrics
 
 	// Map of series labels as a string to index entry, which points to the first
 	// and last exemplar for the series in the exemplars circular buffer.
@@ -55,18 +49,17 @@ type circularBufferEntry struct {
 	ref      *indexEntry
 }
 
-// NewCircularExemplarStorage creates an circular in memory exemplar storage.
-// If we assume the average case 95 bytes per exemplar we can fit 5651272 exemplars in
-// 1GB of extra memory, accounting for the fact that this is heap allocated space.
-// If len < 1, then the exemplar storage is disabled.
-func NewCircularExemplarStorage(len int, reg prometheus.Registerer) (ExemplarStorage, error) {
-	// TODO (callum): nicer way to default to noop storage OR pass length from config in at the start
-	if len < 1 {
-		return &noopExemplarStorage{}, nil
-	}
-	c := &CircularExemplarStorage{
-		exemplars: make([]*circularBufferEntry, len),
-		index:     make(map[string]*indexEntry),
+type ExemplarMetrics struct {
+	exemplarsAppended            prometheus.Counter
+	exemplarsInStorage           prometheus.Gauge
+	seriesWithExemplarsInStorage prometheus.Gauge
+	lastExemplarsTs              prometheus.Gauge
+	maxExemplars                 prometheus.Gauge
+	outOfOrderExemplars          prometheus.Counter
+}
+
+func NewExemplarMetrics(reg prometheus.Registerer) *ExemplarMetrics {
+	m := ExemplarMetrics{
 		exemplarsAppended: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_exemplar_exemplars_appended_total",
 			Help: "Total number of appended exemplars.",
@@ -94,18 +87,37 @@ func NewCircularExemplarStorage(len int, reg prometheus.Registerer) (ExemplarSto
 			Help: "Total number of exemplars the exemplar storage can store, resizeable.",
 		}),
 	}
+
 	if reg != nil {
 		reg.MustRegister(
-			c.exemplarsAppended,
-			c.exemplarsInStorage,
-			c.seriesWithExemplarsInStorage,
-			c.lastExemplarsTs,
-			c.outOfOrderExemplars,
-			c.maxExemplars,
+			m.exemplarsAppended,
+			m.exemplarsInStorage,
+			m.seriesWithExemplarsInStorage,
+			m.lastExemplarsTs,
+			m.outOfOrderExemplars,
+			m.maxExemplars,
 		)
 	}
 
-	c.maxExemplars.Set(float64(len))
+	return &m
+}
+
+// NewCircularExemplarStorage creates an circular in memory exemplar storage.
+// If we assume the average case 95 bytes per exemplar we can fit 5651272 exemplars in
+// 1GB of extra memory, accounting for the fact that this is heap allocated space.
+// If len < 1, then the exemplar storage is disabled.
+func NewCircularExemplarStorage(len int, m *ExemplarMetrics) (ExemplarStorage, error) {
+	// TODO (callum): nicer way to default to noop storage OR pass length from config in at the start
+	if len < 0 {
+		return &noopExemplarStorage{}, nil
+	}
+	c := &CircularExemplarStorage{
+		exemplars: make([]*circularBufferEntry, len),
+		index:     make(map[string]*indexEntry),
+		metrics:   m,
+	}
+
+	c.metrics.maxExemplars.Set(float64(len))
 
 	return c, nil
 }
@@ -219,7 +231,7 @@ func (ce *CircularExemplarStorage) validateExemplar(l string, e exemplar.Exempla
 
 	if e.Ts <= ce.exemplars[idx.newest].exemplar.Ts {
 		if append {
-			ce.outOfOrderExemplars.Inc()
+			ce.metrics.outOfOrderExemplars.Inc()
 		}
 		return storage.ErrOutOfOrderExemplar
 	}
@@ -263,7 +275,7 @@ func (ce *CircularExemplarStorage) Resize(l int) int {
 	}
 
 	ce.computeMetrics()
-	ce.maxExemplars.Set(float64(l))
+	ce.metrics.maxExemplars.Set(float64(l))
 
 	return migrated
 }
@@ -337,23 +349,23 @@ func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemp
 
 	ce.nextIndex = (ce.nextIndex + 1) % len(ce.exemplars)
 
-	ce.exemplarsAppended.Inc()
+	ce.metrics.exemplarsAppended.Inc()
 	ce.computeMetrics()
 	return nil
 }
 
 func (ce *CircularExemplarStorage) computeMetrics() {
-	ce.seriesWithExemplarsInStorage.Set(float64(len(ce.index)))
+	ce.metrics.seriesWithExemplarsInStorage.Set(float64(len(ce.index)))
 	if next := ce.exemplars[ce.nextIndex]; next != nil {
-		ce.exemplarsInStorage.Set(float64(len(ce.exemplars)))
-		ce.lastExemplarsTs.Set(float64(next.exemplar.Ts) / 1000)
+		ce.metrics.exemplarsInStorage.Set(float64(len(ce.exemplars)))
+		ce.metrics.lastExemplarsTs.Set(float64(next.exemplar.Ts) / 1000)
 		return
 	}
 
 	// We did not yet fill the buffer.
-	ce.exemplarsInStorage.Set(float64(ce.nextIndex))
+	ce.metrics.exemplarsInStorage.Set(float64(ce.nextIndex))
 	if ce.exemplars[0] != nil {
-		ce.lastExemplarsTs.Set(float64(ce.exemplars[0].exemplar.Ts) / 1000)
+		ce.metrics.lastExemplarsTs.Set(float64(ce.exemplars[0].exemplar.Ts) / 1000)
 	}
 }
 
@@ -369,10 +381,6 @@ func (noopExemplarStorage) ValidateExemplar(l labels.Labels, e exemplar.Exemplar
 
 func (noopExemplarStorage) ExemplarQuerier(context.Context) (storage.ExemplarQuerier, error) {
 	return &noopExemplarQuerier{}, nil
-}
-
-func (noopExemplarStorage) ApplyConfig(cfg *config.Config) error {
-	return nil
 }
 
 type noopExemplarQuerier struct{}

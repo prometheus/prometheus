@@ -60,7 +60,6 @@ type ExemplarStorage interface {
 	storage.ExemplarQueryable
 	AddExemplar(labels.Labels, exemplar.Exemplar) error
 	ValidateExemplar(labels.Labels, exemplar.Exemplar) error
-	ApplyConfig(*config.Config) error
 }
 
 // Head handles reads and writes of time series data within a time window.
@@ -72,16 +71,17 @@ type Head struct {
 	lastWALTruncationTime atomic.Int64
 	lastSeriesID          atomic.Uint64
 
-	metrics       *headMetrics
-	opts          *HeadOptions
-	wal           *wal.WAL
-	exemplars     ExemplarStorage
-	logger        log.Logger
-	appendPool    sync.Pool
-	exemplarsPool sync.Pool
-	seriesPool    sync.Pool
-	bytesPool     sync.Pool
-	memChunkPool  sync.Pool
+	metrics         *headMetrics
+	opts            *HeadOptions
+	wal             *wal.WAL
+	exemplarMetrics *ExemplarMetrics
+	exemplars       ExemplarStorage
+	logger          log.Logger
+	appendPool      sync.Pool
+	exemplarsPool   sync.Pool
+	seriesPool      sync.Pool
+	bytesPool       sync.Pool
+	memChunkPool    sync.Pool
 
 	// All series addressable by their ID or hash.
 	series *stripeSeries
@@ -125,7 +125,9 @@ type HeadOptions struct {
 	StripeSize            int
 	SeriesCallback        SeriesLifecycleCallback
 	EnableExemplarStorage bool
-	MaxExemplars          int
+
+	// Runtime reloadable options.
+	MaxExemplars int
 }
 
 func DefaultHeadOptions() *HeadOptions {
@@ -378,14 +380,12 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, opts *HeadOpti
 		opts.SeriesCallback = &noopSeriesLifecycleCallback{}
 	}
 
-	// ugly hack to get the previous default size
-	if opts.MaxExemplars == 0 {
-		opts.MaxExemplars = 100000
-	}
+	var em *ExemplarMetrics
 	// Always start with a noopExemplarStorage now since ApplyConfig is run right after TSDB starts up.
 	var es ExemplarStorage = noopExemplarStorage{}
 	if opts.EnableExemplarStorage && opts.MaxExemplars > -1 {
-		es, err = NewCircularExemplarStorage(opts.MaxExemplars, r)
+		em = NewExemplarMetrics(r)
+		es, err = NewCircularExemplarStorage(opts.MaxExemplars, em)
 		if err != nil {
 			return nil, err
 		}
@@ -396,16 +396,17 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, opts *HeadOpti
 	}
 
 	h := &Head{
-		wal:        wal,
-		logger:     l,
-		opts:       opts,
-		exemplars:  es,
-		series:     newStripeSeries(opts.StripeSize, opts.SeriesCallback),
-		symbols:    map[string]struct{}{},
-		postings:   index.NewUnorderedMemPostings(),
-		tombstones: tombstones.NewMemTombstones(),
-		iso:        newIsolation(),
-		deleted:    map[uint64]int{},
+		wal:             wal,
+		logger:          l,
+		opts:            opts,
+		exemplarMetrics: em,
+		exemplars:       es,
+		series:          newStripeSeries(opts.StripeSize, opts.SeriesCallback),
+		symbols:         map[string]struct{}{},
+		postings:        index.NewUnorderedMemPostings(),
+		tombstones:      tombstones.NewMemTombstones(),
+		iso:             newIsolation(),
+		deleted:         map[uint64]int{},
 		memChunkPool: sync.Pool{
 			New: func() interface{} {
 				return &memChunk{}
@@ -439,26 +440,47 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, opts *HeadOpti
 func mmappedChunksDir(dir string) string { return filepath.Join(dir, "chunks_head") }
 
 func (h *Head) ApplyConfig(cfg *config.Config) error {
-	if h.opts.EnableExemplarStorage && cfg.StorageConfig.ExemplarsConfig.MaxExemplars > -1 {
-		// ugly hack to get the previous default size
-		if cfg.StorageConfig.ExemplarsConfig.MaxExemplars == 0 {
-			cfg.StorageConfig.ExemplarsConfig.MaxExemplars = 100000
+	if !h.opts.EnableExemplarStorage {
+		return nil
+	}
+
+	// User wants to 'disable' exemplar storage without restarting Prometheus.
+	if cfg.StorageConfig.ExemplarsConfig.MaxExemplars < 0 {
+		h.exemplars = noopExemplarStorage{}
+		// Reset some metrics.
+		h.exemplarMetrics.exemplarsInStorage.Set(0)
+		h.exemplarMetrics.seriesWithExemplarsInStorage.Set(0)
+		h.exemplarMetrics.maxExemplars.Set(-1)
+		return nil
+	}
+
+	// Ugly hack to get the previous default size.
+	if cfg.StorageConfig.ExemplarsConfig.MaxExemplars == 0 {
+		cfg.StorageConfig.ExemplarsConfig.MaxExemplars = config.DefaultExemplarsConfig.MaxExemplars
+	}
+
+	prevSize := h.opts.MaxExemplars
+	h.opts.MaxExemplars = cfg.StorageConfig.ExemplarsConfig.MaxExemplars
+
+	if prevSize == h.opts.MaxExemplars {
+		return nil
+	}
+
+	switch h.exemplars.(type) {
+	case noopExemplarStorage:
+		e, err := NewCircularExemplarStorage(h.opts.MaxExemplars, h.exemplarMetrics)
+		if err != nil {
+			return err
 		}
-		switch h.exemplars.(type) {
-		case noopExemplarStorage:
-			e, err := NewCircularExemplarStorage(cfg.StorageConfig.ExemplarsConfig.MaxExemplars, h.reg)
-			if err != nil {
-				return err
-			}
-			h.exemplars = e
-			// Head uses opts.MaxExemplars in combination with opts.EnableExemplarStorage
-			// to decide if it should pass exemplars along to it's exemplar storage, so we
-			// need to update opts.MaxExemplars here.
-			h.opts.MaxExemplars = cfg.StorageConfig.ExemplarsConfig.MaxExemplars
-			return nil
-		case *CircularExemplarStorage:
-			return h.exemplars.ApplyConfig(cfg)
-		}
+		h.exemplars = e
+		// Head uses opts.MaxExemplars in combination with opts.EnableExemplarStorage
+		// to decide if it should pass exemplars along to it's exemplar storage, so we
+		// need to update opts.MaxExemplars here.
+		return nil
+	case *CircularExemplarStorage:
+		migrated := h.exemplars.(*CircularExemplarStorage).Resize(h.opts.MaxExemplars)
+		level.Info(h.logger).Log("msg", "Exemplar storage resized", "from", prevSize, "to", h.opts.MaxExemplars, "migrated", migrated)
+		return nil
 	}
 	return nil
 }
@@ -1448,7 +1470,7 @@ func (a *headAppender) AppendExemplar(ref uint64, _ labels.Labels, e exemplar.Ex
 		return 0, nil
 	}
 	// Check if exemplar storage is enabled.
-	if !a.head.opts.EnableExemplarStorage && a.head.opts.MaxExemplars > -1 {
+	if !a.head.opts.EnableExemplarStorage { //&& a.head.opts.MaxExemplars > -1 {
 		return 0, nil
 	}
 	s := a.head.series.getByID(ref)

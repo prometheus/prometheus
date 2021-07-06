@@ -18,12 +18,15 @@ import (
 	"os"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/util/testutil"
 )
+
+var eMetrics = tsdb.NewExemplarMetrics(prometheus.DefaultRegisterer)
 
 // New returns a new TestStorage for testing purposes
 // that removes all associated files on closing.
@@ -42,7 +45,7 @@ func New(t testutil.T) *TestStorage {
 	if err != nil {
 		t.Fatalf("Opening test storage failed: %s", err)
 	}
-	es, err := tsdb.NewCircularExemplarStorage(10, nil)
+	es, err := tsdb.NewCircularExemplarStorage(10, eMetrics)
 	if err != nil {
 		t.Fatalf("Opening test exemplar storage failed: %s", err)
 	}

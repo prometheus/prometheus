@@ -147,6 +147,8 @@ type Options struct {
 	// Enables the in memory exemplar storage,.
 	EnableExemplarStorage bool
 
+	// MaxExemplars sets the size, in # of exemplars stored, of the single circular buffer used to store exemplars in memory.
+	// See tsdb/exemplar.go, specifically the CircularExemplarStorage struct and it's constructor NewCircularExemplarStorage.
 	MaxExemplars int
 }
 
