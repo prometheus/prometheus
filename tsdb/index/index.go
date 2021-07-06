@@ -272,6 +272,7 @@ func (w *Writer) addPadding(size int) error {
 type FileWriter struct {
 	f    *os.File
 	fbuf *bufio.Writer
+	mw   *fileutil.MmapWriter
 	pos  uint64
 	name string
 }
@@ -281,12 +282,18 @@ func NewFileWriter(name string) (*FileWriter, error) {
 	if err != nil {
 		return nil, err
 	}
+	mw := fileutil.NewMmapWriter(f)
 	return &FileWriter{
 		f:    f,
-		fbuf: bufio.NewWriterSize(f, 1<<22),
+		fbuf: bufio.NewWriterSize(mw, 1<<22),
+		mw:   mw,
 		pos:  0,
 		name: name,
 	}, nil
+}
+
+func (fw *FileWriter) Bytes() []byte {
+	return fw.mw.Bytes()
 }
 
 func (fw *FileWriter) Pos() uint64 {
@@ -319,7 +326,7 @@ func (fw *FileWriter) WriteAt(buf []byte, pos uint64) error {
 	if err := fw.Flush(); err != nil {
 		return err
 	}
-	_, err := fw.f.WriteAt(buf, int64(pos))
+	_, err := fw.mw.WriteAt(buf, int64(pos))
 	return err
 }
 
@@ -341,7 +348,7 @@ func (fw *FileWriter) Close() error {
 	if err := fw.Flush(); err != nil {
 		return err
 	}
-	if err := fw.f.Sync(); err != nil {
+	if err := fw.mw.Close(); err != nil {
 		return err
 	}
 	return fw.f.Close()
@@ -1026,11 +1033,11 @@ func (w *Writer) writePostings() error {
 	if err := w.fP.Flush(); err != nil {
 		return err
 	}
-	if _, err := w.fP.f.Seek(0, 0); err != nil {
+	if _, err := w.fP.mw.Seek(0, 0); err != nil {
 		return err
 	}
 	// Don't need to calculate a checksum, so can copy directly.
-	n, err := io.CopyBuffer(w.f.fbuf, w.fP.f, make([]byte, 1<<20))
+	n, err := io.CopyBuffer(w.f.fbuf, w.fP.mw, make([]byte, 1<<20))
 	if err != nil {
 		return err
 	}
