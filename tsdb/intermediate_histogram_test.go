@@ -30,8 +30,8 @@ func newIntermediateHistogram(posSpans, negSpans []histogram.Span) intermediateH
 	return intermediateHistogram{
 		posSpans:  posSpans,
 		negSpans:  negSpans,
-		posCounts: make([]int64, histogram.CountSpans(posSpans)),
-		negCounts: make([]int64, histogram.CountSpans(negSpans)),
+		posCounts: make([]int64, histogram.Spans(posSpans).Len()),
+		negCounts: make([]int64, histogram.Spans(negSpans).Len()),
 	}
 }
 
@@ -80,11 +80,11 @@ func (h intermediateHistogram) ToSparse() timedHist {
 }
 
 func (h intermediateHistogram) expand(posSpans, negSpans []histogram.Span) intermediateHistogram {
-	if histogram.CountSpans(posSpans) > histogram.CountSpans(h.posSpans) {
+	if histogram.Spans(posSpans).Len() > histogram.Spans(h.posSpans).Len() {
 		h.posCounts = expandCounts(h.posCounts, h.posSpans, posSpans)
 		h.posSpans = posSpans
 	}
-	if histogram.CountSpans(negSpans) > histogram.CountSpans(h.negSpans) {
+	if histogram.Spans(negSpans).Len() > histogram.Spans(h.negSpans).Len() {
 		h.negCounts = expandCounts(h.negCounts, h.negSpans, negSpans)
 		h.negSpans = negSpans
 	}
@@ -97,7 +97,7 @@ func (h intermediateHistogram) expand(posSpans, negSpans []histogram.Span) inter
 // but we test compareSpans separately
 // we may want a test for this function too. maybe later :?
 func expandCounts(countsA []int64, a, b []histogram.Span) []int64 {
-	countsB := make([]int64, histogram.CountSpans(b))
+	countsB := make([]int64, histogram.Spans(b).Len())
 
 	ait := chunkenc.NewBucketIterator(a)
 	bit := chunkenc.NewBucketIterator(b)

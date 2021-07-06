@@ -42,6 +42,17 @@ type Span struct {
 	Length uint32
 }
 
+type Spans []Span
+
+// Length returns the number of buckets represented.
+func (spans Spans) Len() int {
+	var cnt int
+	for _, s := range spans {
+		cnt += int(s.Length)
+	}
+	return cnt
+}
+
 func (s SparseHistogram) Copy() SparseHistogram {
 	c := s
 
@@ -63,14 +74,6 @@ func (s SparseHistogram) Copy() SparseHistogram {
 	}
 
 	return c
-}
-
-func CountSpans(spans []Span) int {
-	var cnt int
-	for _, s := range spans {
-		cnt += int(s.Length)
-	}
-	return cnt
 }
 
 type BucketIterator interface {
