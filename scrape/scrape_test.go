@@ -2692,10 +2692,7 @@ func TestScrapeLoopLabelLimit(t *testing.T) {
 	}
 }
 
-func TestTargetReloadRelabel(t *testing.T) {
-	// This simulates a scenerio where a different relabel
-	// replacement should occur on reload.
-
+func TestTargetScrapeIntervalAndTimeoutRelabel(t *testing.T) {
 	interval, _ := model.ParseDuration("2s")
 	timeout, _ := model.ParseDuration("500ms")
 	config := &config.ScrapeConfig{
@@ -2705,15 +2702,15 @@ func TestTargetReloadRelabel(t *testing.T) {
 			{
 				SourceLabels: model.LabelNames{model.ScrapeIntervalLabel},
 				Regex:        relabel.MustNewRegexp("2s"),
-				Replacement:  "2s",
+				Replacement:  "3s",
 				TargetLabel:  model.ScrapeIntervalLabel,
 				Action:       relabel.Replace,
 			},
 			{
-				SourceLabels: model.LabelNames{model.ScrapeIntervalLabel},
-				Regex:        relabel.MustNewRegexp("3s"),
-				Replacement:  "4s",
-				TargetLabel:  model.ScrapeIntervalLabel,
+				SourceLabels: model.LabelNames{model.ScrapeTimeoutLabel},
+				Regex:        relabel.MustNewRegexp("500ms"),
+				Replacement:  "750ms",
+				TargetLabel:  model.ScrapeTimeoutLabel,
 				Action:       relabel.Replace,
 			},
 		},
@@ -2728,9 +2725,6 @@ func TestTargetReloadRelabel(t *testing.T) {
 	sp.Sync(tgts)
 	defer sp.stop()
 
-	interval, _ = model.ParseDuration("3s")
-	config.ScrapeInterval = interval
-	sp.reload(config)
-
-	require.Equal(t, "4s", sp.ActiveTargets()[0].labels.Get(model.ScrapeIntervalLabel), "Scrape interval label has not been relabeled on reload.")
+	require.Equal(t, "3s", sp.ActiveTargets()[0].labels.Get(model.ScrapeIntervalLabel))
+	require.Equal(t, "750ms", sp.ActiveTargets()[0].labels.Get(model.ScrapeTimeoutLabel))
 }

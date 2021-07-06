@@ -421,37 +421,6 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 
 		var (
 			t       = sp.activeTargets[fp]
-			dropped bool
-			err     error
-		)
-
-		if t != nil {
-			discoverdLblsMap := t.DiscoveredLabels().Map()
-			discoverdLblsMap[model.ScrapeIntervalLabel] = cfg.ScrapeInterval.String()
-			discoverdLblsMap[model.ScrapeTimeoutLabel] = cfg.ScrapeTimeout.String()
-			discoveredLbls := labels.FromMap(discoverdLblsMap)
-			t.SetDiscoveredLabels(discoveredLbls)
-
-			// processLabels re-runs relabeling, which needs to be done because the new config
-			// changes the scrape interval and timeout labels.
-			var lbls labels.Labels
-			t.mtx.RLock()
-			lbls, _, err = processLabels(discoveredLbls, cfg)
-			t.mtx.RUnlock()
-			t.SetLabels(lbls)
-
-			// If the output labels are nil and there's no error
-			// that means that target has been dropped.
-			dropped = lbls == nil && err == nil
-
-			var getErr error
-			interval, timeout, getErr = t.GetIntervalAndTimeout(interval, timeout)
-			if err == nil {
-				err = getErr
-			}
-		}
-
-		var (
 			s       = &targetScraper{Target: t, client: sp.client, timeout: timeout, bodySizeLimit: bodySizeLimit}
 			newLoop = sp.newLoop(scrapeLoopOptions{
 				target:          t,
@@ -466,25 +435,17 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 				timeout:         timeout,
 			})
 		)
-		if err != nil {
-			newLoop.setForcedError(err)
-		}
-
 		wg.Add(1)
 
 		go func(oldLoop, newLoop loop) {
 			oldLoop.stop()
 			wg.Done()
 
-			if !dropped {
-				newLoop.setForcedError(forcedErr)
-				newLoop.run(nil)
-			}
+			newLoop.setForcedError(forcedErr)
+			newLoop.run(nil)
 		}(oldLoop, newLoop)
 
-		if !dropped {
-			sp.loops[fp] = newLoop
-		}
+		sp.loops[fp] = newLoop
 	}
 
 	sp.targetMtx.Unlock()
@@ -536,6 +497,8 @@ func (sp *scrapePool) Sync(tgs []*targetgroup.Group) {
 func (sp *scrapePool) sync(targets []*Target) {
 	var (
 		uniqueLoops   = make(map[uint64]loop)
+		interval      = time.Duration(sp.config.ScrapeInterval)
+		timeout       = time.Duration(sp.config.ScrapeTimeout)
 		bodySizeLimit = int64(sp.config.BodySizeLimit)
 		sampleLimit   = int(sp.config.SampleLimit)
 		labelLimits   = &labelLimits{
@@ -546,8 +509,6 @@ func (sp *scrapePool) sync(targets []*Target) {
 		honorLabels     = sp.config.HonorLabels
 		honorTimestamps = sp.config.HonorTimestamps
 		mrc             = sp.config.MetricRelabelConfigs
-		interval        = time.Duration(sp.config.ScrapeInterval)
-		timeout         = time.Duration(sp.config.ScrapeTimeout)
 	)
 
 	sp.targetMtx.Lock()

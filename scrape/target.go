@@ -143,12 +143,8 @@ func (t *Target) SetMetadataStore(s MetricMetadataStore) {
 // hash returns an identifying hash for the target.
 func (t *Target) hash() uint64 {
 	h := fnv.New64a()
-
-	t.mtx.RLock()
 	//nolint: errcheck
 	h.Write([]byte(fmt.Sprintf("%016d", t.labels.Hash())))
-	t.mtx.RUnlock()
-
 	//nolint: errcheck
 	h.Write([]byte(t.URL().String()))
 
@@ -175,9 +171,6 @@ func (t *Target) offset(interval time.Duration, jitterSeed uint64) time.Duration
 
 // Labels returns a copy of the set of all public labels of the target.
 func (t *Target) Labels() labels.Labels {
-	t.mtx.RLock()
-	defer t.mtx.RUnlock()
-
 	lset := make(labels.Labels, 0, len(t.labels))
 	for _, l := range t.labels {
 		if !strings.HasPrefix(l.Name, model.ReservedLabelPrefix) {
@@ -203,18 +196,8 @@ func (t *Target) SetDiscoveredLabels(l labels.Labels) {
 	t.discoveredLabels = l
 }
 
-// SetLabels set new labels.
-func (t *Target) SetLabels(l labels.Labels) {
-	t.mtx.Lock()
-	defer t.mtx.Unlock()
-	t.labels = l
-}
-
 // URL returns a copy of the target's URL.
 func (t *Target) URL() *url.URL {
-	t.mtx.RLock()
-	defer t.mtx.RUnlock()
-
 	params := url.Values{}
 
 	for k, v := range t.params {
@@ -385,12 +368,8 @@ func populateLabels(lset labels.Labels, cfg *config.ScrapeConfig) (res, orig lab
 		}
 	}
 
-	return processLabels(lb.Labels(), cfg)
-}
-
-// processLabels runs relabeling and checks the output.
-func processLabels(preRelabelLabels labels.Labels, cfg *config.ScrapeConfig) (res, orig labels.Labels, err error) {
-	lset := relabel.Process(preRelabelLabels, cfg.RelabelConfigs...)
+	preRelabelLabels := lb.Labels()
+	lset = relabel.Process(preRelabelLabels, cfg.RelabelConfigs...)
 
 	// Check if the target was dropped.
 	if lset == nil {
@@ -400,7 +379,7 @@ func processLabels(preRelabelLabels labels.Labels, cfg *config.ScrapeConfig) (re
 		return nil, nil, errors.New("no address")
 	}
 
-	lb := labels.NewBuilder(lset)
+	lb = labels.NewBuilder(lset)
 
 	// addPort checks whether we should add a default port to the address.
 	// If the address is not valid, we don't append a port either.
