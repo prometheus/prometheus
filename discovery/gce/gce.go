@@ -180,7 +180,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 
 			// Append named interface metadata for all interfaces
 			for _, iface := range inst.NetworkInterfaces {
-				gceLabelNetAddress := model.LabelName(fmt.Sprintf("%sinterface_ipv4_%s", gceLabel, iface.Name))
+				gceLabelNetAddress := model.LabelName(fmt.Sprintf("%sinterface_ipv4_%s", gceLabel, strutil.SanitizeLabelName(iface.Name)))
 				labels[gceLabelNetAddress] = model.LabelValue(iface.NetworkIP)
 			}
 
