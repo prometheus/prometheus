@@ -510,7 +510,7 @@ func (sp *scrapePool) sync(targets []*Target) {
 		hash := t.hash()
 
 		if _, ok := sp.activeTargets[hash]; !ok {
-			s := &targetScraper{Target: t, client: sp.client, timeout: timeout, bodySizeLimit: bodySizeLimit}
+			s := &targetScraper{Target: t, client: sp.client, timeout: timeout, bodySizeLimit: bodySizeLimit, additional_headers: sp.config.CustomHeaders}
 			l := sp.newLoop(scrapeLoopOptions{
 				target:          t,
 				scraper:         s,
@@ -702,6 +702,8 @@ type targetScraper struct {
 	buf   *bufio.Reader
 
 	bodySizeLimit int64
+
+	additional_headers map[string]string
 }
 
 var errBodySizeLimit = errors.New("body size limit exceeded")
@@ -720,6 +722,10 @@ func (s *targetScraper) scrape(ctx context.Context, w io.Writer) (string, error)
 		req.Header.Add("Accept-Encoding", "gzip")
 		req.Header.Set("User-Agent", userAgentHeader)
 		req.Header.Set("X-Prometheus-Scrape-Timeout-Seconds", strconv.FormatFloat(s.timeout.Seconds(), 'f', -1, 64))
+
+		for header, value := range s.additional_headers {
+			req.Header.Set(header, value)
+		}
 
 		s.req = req
 	}
