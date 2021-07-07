@@ -143,8 +143,18 @@ func (t *Target) SetMetadataStore(s MetricMetadataStore) {
 // hash returns an identifying hash for the target.
 func (t *Target) hash() uint64 {
 	h := fnv.New64a()
+
+	// We must build a label set without the scrape interval and timeout
+	// labels because those aren't defining attributes of a target
+	// and can be changed without qualifying its parent as a new target,
+	// therefore they should not effect its unique hash.
+	l := t.labels.Map()
+	delete(l, model.ScrapeIntervalLabel)
+	delete(l, model.ScrapeTimeoutLabel)
+	lset := labels.FromMap(l)
+
 	//nolint: errcheck
-	h.Write([]byte(fmt.Sprintf("%016d", t.labels.Hash())))
+	h.Write([]byte(fmt.Sprintf("%016d", lset.Hash())))
 	//nolint: errcheck
 	h.Write([]byte(t.URL().String()))
 
