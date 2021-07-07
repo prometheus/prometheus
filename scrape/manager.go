@@ -14,11 +14,8 @@
 package scrape
 
 import (
-	"encoding"
 	"fmt"
 	"hash/fnv"
-	"net"
-	"os"
 	"reflect"
 	"sync"
 	"time"
@@ -32,6 +29,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/osutil"
 )
 
 var targetMetadataCache = newMetadataMetricsCollector()
@@ -206,7 +204,7 @@ func (m *Manager) reload() {
 // setJitterSeed calculates a global jitterSeed per server relying on extra label set.
 func (m *Manager) setJitterSeed(labels labels.Labels) error {
 	h := fnv.New64a()
-	hostname, err := getFqdn()
+	hostname, err := osutil.GetFQDN()
 	if err != nil {
 		return err
 	}
@@ -318,47 +316,4 @@ func (m *Manager) TargetsDropped() map[string][]*Target {
 		targets[tset] = sp.DroppedTargets()
 	}
 	return targets
-}
-
-// getFqdn returns a FQDN if it's possible, otherwise falls back to hostname.
-func getFqdn() (string, error) {
-	hostname, err := os.Hostname()
-	if err != nil {
-		return "", err
-	}
-
-	ips, err := net.LookupIP(hostname)
-	if err != nil {
-		// Return the system hostname if we can't look up the IP address.
-		return hostname, nil
-	}
-
-	lookup := func(ipStr encoding.TextMarshaler) (string, error) {
-		ip, err := ipStr.MarshalText()
-		if err != nil {
-			return "", err
-		}
-		hosts, err := net.LookupAddr(string(ip))
-		if err != nil || len(hosts) == 0 {
-			return "", err
-		}
-		return hosts[0], nil
-	}
-
-	for _, addr := range ips {
-		if ip := addr.To4(); ip != nil {
-			if fqdn, err := lookup(ip); err == nil {
-				return fqdn, nil
-			}
-
-		}
-
-		if ip := addr.To16(); ip != nil {
-			if fqdn, err := lookup(ip); err == nil {
-				return fqdn, nil
-			}
-
-		}
-	}
-	return hostname, nil
 }
