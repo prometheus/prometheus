@@ -86,6 +86,10 @@ func newIsolation() *isolation {
 func (i *isolation) lowWatermark() uint64 {
 	i.appendMtx.RLock() // Take appendMtx first.
 	defer i.appendMtx.RUnlock()
+	return i.lowWatermarkLocked()
+}
+
+func (i *isolation) lowWatermarkLocked() uint64 {
 	i.readMtx.RLock()
 	defer i.readMtx.RUnlock()
 	if i.readsOpen.prev != i.readsOpen {
@@ -122,7 +126,8 @@ func (i *isolation) State() *isolationState {
 
 // newAppendID increments the transaction counter and returns a new transaction
 // ID. The first ID returned is 1.
-func (i *isolation) newAppendID() uint64 {
+// Also returns the low watermark, to keep lock/unlock operations down
+func (i *isolation) newAppendID() (uint64, uint64) {
 	i.appendMtx.Lock()
 	defer i.appendMtx.Unlock()
 
@@ -138,7 +143,7 @@ func (i *isolation) newAppendID() uint64 {
 	i.appendsOpenList.prev = app
 
 	i.appendsOpen[app.appendID] = app
-	return app.appendID
+	return app.appendID, i.lowWatermarkLocked()
 }
 
 func (i *isolation) lastAppendID() uint64 {
