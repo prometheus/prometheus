@@ -55,6 +55,8 @@ const ScrapePoolPanel: FC<PanelProps> = ({ scrapePool, targetGroup, expanded, to
                 lastScrape,
                 lastScrapeDuration,
                 health,
+                interval,
+                timeout,
               } = target;
               const color = getColor(health);
 
@@ -73,9 +75,10 @@ const ScrapePoolPanel: FC<PanelProps> = ({ scrapePool, targetGroup, expanded, to
                   <td className={styles['scrape-duration']}>
                     <TargetScrapeDuration
                       duration={lastScrapeDuration}
-                      labels={discoveredLabels}
                       scrapePool={scrapePool}
                       idx={idx}
+                      interval={interval}
+                      timeout={timeout}
                     />
                   </td>
                   <td className={styles.errors}>{lastError ? <span className="text-danger">{lastError}</span> : null}</td>

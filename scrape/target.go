@@ -303,6 +303,11 @@ func (t *Target) IntervalAndTimeout(prevInterval, prevDuration time.Duration) (t
 	return time.Duration(interval), time.Duration(timeout), nil
 }
 
+// GetValue gets a label value from the entire label set.
+func (t *Target) GetValue(name string) string {
+	return t.labels.Get(name)
+}
+
 // Targets is a sortable list of targets.
 type Targets []*Target
 
