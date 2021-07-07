@@ -520,7 +520,7 @@ func (sp *scrapePool) sync(targets []*Target) {
 			// so whether changed via relabeling or not, they'll exist and hold the correct values
 			// for every target.
 			var err error
-			interval, timeout, err = t.GetIntervalAndTimeout(interval, timeout)
+			interval, timeout, err = t.IntervalAndTimeout(interval, timeout)
 
 			s := &targetScraper{Target: t, client: sp.client, timeout: timeout, bodySizeLimit: bodySizeLimit}
 			l := sp.newLoop(scrapeLoopOptions{

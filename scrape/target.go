@@ -283,9 +283,9 @@ func (t *Target) Health() TargetHealth {
 	return t.health
 }
 
-// GetIntervalAndTimeout returns the interval and timeout derived from
+// IntervalAndTimeout returns the interval and timeout derived from
 // the targets labels.
-func (t *Target) GetIntervalAndTimeout(prevInterval, prevDuration time.Duration) (time.Duration, time.Duration, error) {
+func (t *Target) IntervalAndTimeout(prevInterval, prevDuration time.Duration) (time.Duration, time.Duration, error) {
 	t.mtx.RLock()
 	defer t.mtx.RUnlock()
 
