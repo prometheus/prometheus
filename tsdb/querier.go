@@ -407,6 +407,37 @@ func labelValuesWithMatchers(r IndexReader, name string, matchers ...*labels.Mat
 	return values, nil
 }
 
+func labelNamesWithMatchers(r IndexReader, matchers ...*labels.Matcher) ([]string, error) {
+	p, err := PostingsForMatchers(r, matchers...)
+	if err != nil {
+		return nil, err
+	}
+
+	dedupe := map[string]interface{}{}
+	for p.Next() {
+		v, err := r.LabelValueFor(p.At(), name)
+		if err != nil {
+			if err == storage.ErrNotFound {
+				continue
+			}
+
+			return nil, err
+		}
+		dedupe[v] = nil
+	}
+
+	if err = p.Err(); err != nil {
+		return nil, err
+	}
+
+	values := make([]string, 0, len(dedupe))
+	for value := range dedupe {
+		values = append(values, value)
+	}
+
+	return values, nil
+}
+
 // blockBaseSeriesSet allows to iterate over all series in the single block.
 // Iterated series are trimmed with given min and max time as well as tombstones.
 // See newBlockSeriesSet and newBlockChunkSeriesSet to use it for either sample or chunk iterating.

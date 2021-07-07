@@ -92,6 +92,8 @@ type IndexReader interface {
 	// storage.ErrNotFound is returned as error.
 	LabelValueFor(id uint64, label string) (string, error)
 
+	LabelNamesFor(id uint64) ([]string, error)
+
 	// Close releases the underlying resources of the reader.
 	Close() error
 }
@@ -443,7 +445,15 @@ func (r blockIndexReader) LabelValues(name string, matchers ...*labels.Matcher) 
 		return st, errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
 	}
 
-	return labelValuesWithMatchers(r, name, matchers...)
+	return labelValuesWithMatchers(r.ir, name, matchers...)
+}
+
+func (r blockIndexReader) LabelNames(matchers ...*labels.Matcher) ([]string, error) {
+	if len(matchers) == 0 {
+		return r.b.LabelNames()
+	}
+
+	return labelNamesWithMatchers(r.ir, matchers...)
 }
 
 func (r blockIndexReader) Postings(name string, values ...string) (index.Postings, error) {
@@ -465,18 +475,9 @@ func (r blockIndexReader) Series(ref uint64, lset *labels.Labels, chks *[]chunks
 	return nil
 }
 
-func (r blockIndexReader) LabelNames(matchers ...*labels.Matcher) ([]string, error) {
-	return r.b.LabelNames(matchers...)
-}
-
 func (r blockIndexReader) Close() error {
 	r.b.pendingReaders.Done()
 	return nil
-}
-
-// LabelValueFor returns label value for the given label name in the series referred to by ID.
-func (r blockIndexReader) LabelValueFor(id uint64, label string) (string, error) {
-	return r.ir.LabelValueFor(id, label)
 }
 
 type blockTombstoneReader struct {
@@ -642,8 +643,8 @@ func (pb *Block) OverlapsClosedInterval(mint, maxt int64) bool {
 }
 
 // LabelNames returns all the unique label names present in the Block in sorted order.
-func (pb *Block) LabelNames(matchers ...*labels.Matcher) ([]string, error) {
-	return pb.indexr.LabelNames(matchers...)
+func (pb *Block) LabelNames() ([]string, error) {
+	return pb.indexr.LabelNames()
 }
 
 func clampInterval(a, b, mint, maxt int64) (int64, int64) {
