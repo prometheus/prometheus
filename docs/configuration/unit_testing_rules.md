@@ -78,9 +78,13 @@ series: <string>
 # Expanding notation:
 #     'a+bxc' becomes 'a a+b a+(2*b) a+(3*b) … a+(c*b)'
 #     'a-bxc' becomes 'a a-b a-(2*b) a-(3*b) … a-(c*b)'
+# There are special values to indicate missing and stale samples:
+#    '_' represents a missing sample from scrape
+#    'stale' indicates a stale sample
 # Examples:
 #     1. '-2+4x3' becomes '-2 2 6 10'
 #     2. ' 1-2x4' becomes '1 -1 -3 -5 -7'
+#     3. ' 1 _x3 stale' becomes '1 _ _ _ stale'
 values: <string>
 ```
 
