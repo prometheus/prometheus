@@ -279,7 +279,7 @@ func TestSelectExemplar_MultiSeries(t *testing.T) {
 }
 
 func TestSelectExemplar_TimeRange(t *testing.T) {
-	lenEs := 5
+	var lenEs int64 = 5
 	exs, err := NewCircularExemplarStorage(lenEs, eMetrics)
 	require.NoError(t, err)
 	es := exs.(*CircularExemplarStorage)
@@ -288,7 +288,7 @@ func TestSelectExemplar_TimeRange(t *testing.T) {
 		{Name: "service", Value: "asdf"},
 	}
 
-	for i := 0; i < lenEs; i++ {
+	for i := 0; int64(i) < lenEs; i++ {
 		err := es.AddExemplar(l, exemplar.Exemplar{
 			Labels: labels.Labels{
 				labels.Label{
@@ -390,8 +390,8 @@ func TestIndexOverwrite(t *testing.T) {
 func TestResize(t *testing.T) {
 	testCases := []struct {
 		name              string
-		startSize         int
-		newCount          int
+		startSize         int64
+		newCount          int64
 		expectedSeries    []int
 		notExpectedSeries []int
 		expectedMigrated  int
@@ -421,7 +421,7 @@ func TestResize(t *testing.T) {
 			require.NoError(t, err)
 			es := exs.(*CircularExemplarStorage)
 
-			for i := 0; i < tc.startSize; i++ {
+			for i := 0; int64(i) < tc.startSize; i++ {
 				err = es.AddExemplar(labels.FromStrings("service", strconv.Itoa(i)), exemplar.Exemplar{
 					Value: float64(i),
 					Ts:    int64(i)})
@@ -454,7 +454,7 @@ func TestResize(t *testing.T) {
 }
 
 func BenchmarkAddExemplar(t *testing.B) {
-	exs, err := NewCircularExemplarStorage(t.N, eMetrics)
+	exs, err := NewCircularExemplarStorage(int64(t.N), eMetrics)
 	require.NoError(t, err)
 	es := exs.(*CircularExemplarStorage)
 
@@ -469,8 +469,8 @@ func BenchmarkAddExemplar(t *testing.B) {
 func BenchmarkResizeExemplars(b *testing.B) {
 	testCases := []struct {
 		name         string
-		startSize    int
-		endSize      int
+		startSize    int64
+		endSize      int64
 		numExemplars int
 	}{
 		{

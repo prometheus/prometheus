@@ -26,6 +26,9 @@ import (
 	"github.com/prometheus/prometheus/storage"
 )
 
+// Indicates that there is no index entry for an exmplar.
+const noExemplar = -1
+
 type CircularExemplarStorage struct {
 	lock      sync.RWMutex
 	exemplars []*circularBufferEntry
@@ -106,9 +109,8 @@ func NewExemplarMetrics(reg prometheus.Registerer) *ExemplarMetrics {
 // If we assume the average case 95 bytes per exemplar we can fit 5651272 exemplars in
 // 1GB of extra memory, accounting for the fact that this is heap allocated space.
 // If len < 1, then the exemplar storage is disabled.
-func NewCircularExemplarStorage(len int, m *ExemplarMetrics) (ExemplarStorage, error) {
-	// TODO (callum): nicer way to default to noop storage OR pass length from config in at the start
-	if len < 0 {
+func NewCircularExemplarStorage(len int64, m *ExemplarMetrics) (ExemplarStorage, error) {
+	if len <= 0 {
 		return &noopExemplarStorage{}, nil
 	}
 	c := &CircularExemplarStorage{
@@ -163,7 +165,7 @@ func (ce *CircularExemplarStorage) Select(start, end int64, matchers ...[]*label
 			if e.exemplar.Ts >= start {
 				se.Exemplars = append(se.Exemplars, e.exemplar)
 			}
-			if e.next == -1 {
+			if e.next == noExemplar {
 				break
 			}
 			e = ce.exemplars[e.next]
@@ -240,8 +242,8 @@ func (ce *CircularExemplarStorage) validateExemplar(l string, e exemplar.Exempla
 
 // Resize changes the size of exemplar buffer by allocating a new buffer and migrating data to it. Exemplars are
 // kept when possible. Shrinking will discard oldest data as needed.
-func (ce *CircularExemplarStorage) Resize(l int) int {
-	if l <= 0 || l == len(ce.exemplars) {
+func (ce *CircularExemplarStorage) Resize(l int64) int {
+	if l <= 0 || l == int64(len(ce.exemplars)) {
 		return 0
 	}
 
@@ -249,25 +251,25 @@ func (ce *CircularExemplarStorage) Resize(l int) int {
 	defer ce.lock.Unlock()
 
 	oldBuffer := ce.exemplars
-	oldNextIndex := ce.nextIndex
+	oldNextIndex := int64(ce.nextIndex)
 
 	ce.exemplars = make([]*circularBufferEntry, l)
 	ce.index = make(map[string]*indexEntry)
 	ce.nextIndex = 0
 
 	// Replay as many entries as needed, starting with oldest first.
-	count := len(oldBuffer)
-	if l < len(oldBuffer) {
+	count := int64(len(oldBuffer))
+	if l < count {
 		count = l
 	}
 
 	// Rewind previous next index by count with wrap-around.
-	startIndex := (oldNextIndex - count + len(oldBuffer)) % len(oldBuffer)
+	var startIndex int64 = (oldNextIndex - count + int64(len(oldBuffer))) % int64(len(oldBuffer))
 
 	migrated := 0
 
-	for i := 0; i < count; i++ {
-		idx := (startIndex + i) % len(oldBuffer)
+	for i := int64(0); i < count; i++ {
+		idx := (startIndex + i) % int64(len(oldBuffer))
 		if entry := oldBuffer[idx]; entry != nil {
 			ce.migrate(entry)
 			migrated++
@@ -332,7 +334,7 @@ func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemp
 		// There exists exemplar already on this ce.nextIndex entry, drop it, to make place
 		// for others.
 		prevLabels := prev.ref.seriesLabels.String()
-		if prev.next == -1 {
+		if prev.next == noExemplar {
 			// Last item for this series, remove index entry.
 			delete(ce.index, prevLabels)
 		} else {
@@ -340,10 +342,10 @@ func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemp
 		}
 	}
 
+	ce.exemplars[ce.nextIndex].exemplar = e
 	// Default the next value to -1 (which we use to detect that we've iterated through all exemplars for a series in Select)
 	// since this is the first exemplar stored for this series.
-	ce.exemplars[ce.nextIndex].exemplar = e
-	ce.exemplars[ce.nextIndex].next = -1
+	ce.exemplars[ce.nextIndex].next = noExemplar
 	ce.exemplars[ce.nextIndex].ref = ce.index[seriesLabels]
 	ce.index[seriesLabels].newest = ce.nextIndex
 

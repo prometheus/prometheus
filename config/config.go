@@ -185,7 +185,7 @@ var (
 
 	// DefaultStorageConfig is the default TSDB/Exemplar storage configuration.
 	DefaultStorageConfig = StorageConfig{
-		ExemplarsConfig: DefaultExemplarsConfig,
+		ExemplarsConfig: &DefaultExemplarsConfig,
 	}
 
 	DefaultExemplarsConfig = ExemplarsConfig{
@@ -475,14 +475,14 @@ func (c *ScrapeConfig) MarshalYAML() (interface{}, error) {
 
 // StorageConfig configures runtime reloadable configuration options.
 type StorageConfig struct {
-	ExemplarsConfig ExemplarsConfig `yaml:"exemplars,omitempty"`
+	ExemplarsConfig *ExemplarsConfig `yaml:"exemplars,omitempty"`
 }
 
 // ExemplarsConfig configures runtime reloadable configuration options.
 type ExemplarsConfig struct {
 	// MaxExemplars sets the size, in # of exemplars stored, of the single circular buffer used to store exemplars in memory.
 	// Explicitly use -1, if the value is 0 we interpret it as the default max exemplars in the tsdb/exemplar.go code.
-	MaxExemplars int `yaml:"max_exemplars,omitempty"`
+	MaxExemplars int64 `yaml:"max_exemplars,omitempty"`
 }
 
 // AlertingConfig configures alerting and alertmanager related configs.

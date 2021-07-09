@@ -350,7 +350,14 @@ func main() {
 		level.Error(logger).Log("msg", fmt.Sprintf("Error loading config (--config.file=%s)", cfg.configFile), "err", err)
 		os.Exit(2)
 	}
-	cfg.tsdb.MaxExemplars = cfgFile.StorageConfig.ExemplarsConfig.MaxExemplars
+	if cfg.tsdb.EnableExemplarStorage {
+		if cfgFile.StorageConfig.ExemplarsConfig == nil {
+			fmt.Println("exemplars config was empty, assigning default")
+			cfgFile.StorageConfig.ExemplarsConfig = &config.DefaultExemplarsConfig
+			fmt.Printf("main.go storage config %+v\n", cfgFile.StorageConfig)
+		}
+		cfg.tsdb.MaxExemplars = int64(cfgFile.StorageConfig.ExemplarsConfig.MaxExemplars)
+	}
 
 	// Now that the validity of the config is established, set the config
 	// success metrics accordingly, although the config isn't really loaded
@@ -733,11 +740,11 @@ func main() {
 				for {
 					select {
 					case <-hup:
-						if err := reloadConfig(cfg.configFile, cfg.enableExpandExternalLabels, logger, noStepSubqueryInterval, reloaders...); err != nil {
+						if err := reloadConfig(cfg.configFile, cfg.enableExpandExternalLabels, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, reloaders...); err != nil {
 							level.Error(logger).Log("msg", "Error reloading config", "err", err)
 						}
 					case rc := <-webHandler.Reload():
-						if err := reloadConfig(cfg.configFile, cfg.enableExpandExternalLabels, logger, noStepSubqueryInterval, reloaders...); err != nil {
+						if err := reloadConfig(cfg.configFile, cfg.enableExpandExternalLabels, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, reloaders...); err != nil {
 							level.Error(logger).Log("msg", "Error reloading config", "err", err)
 							rc <- err
 						} else {
@@ -769,7 +776,7 @@ func main() {
 					return nil
 				}
 
-				if err := reloadConfig(cfg.configFile, cfg.enableExpandExternalLabels, logger, noStepSubqueryInterval, reloaders...); err != nil {
+				if err := reloadConfig(cfg.configFile, cfg.enableExpandExternalLabels, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, reloaders...); err != nil {
 					return errors.Wrapf(err, "error loading config from %q", cfg.configFile)
 				}
 
@@ -958,7 +965,7 @@ type reloader struct {
 	reloader func(*config.Config) error
 }
 
-func reloadConfig(filename string, expandExternalLabels bool, logger log.Logger, noStepSuqueryInterval *safePromQLNoStepSubqueryInterval, rls ...reloader) (err error) {
+func reloadConfig(filename string, expandExternalLabels bool, enableExemplarStorage bool, logger log.Logger, noStepSuqueryInterval *safePromQLNoStepSubqueryInterval, rls ...reloader) (err error) {
 	start := time.Now()
 	timings := []interface{}{}
 	level.Info(logger).Log("msg", "Loading configuration file", "filename", filename)
@@ -975,6 +982,14 @@ func reloadConfig(filename string, expandExternalLabels bool, logger log.Logger,
 	conf, err := config.LoadFile(filename, expandExternalLabels, logger)
 	if err != nil {
 		return errors.Wrapf(err, "couldn't load configuration (--config.file=%q)", filename)
+	}
+
+	if enableExemplarStorage {
+		if conf.StorageConfig.ExemplarsConfig == nil {
+			// fmt.Println("exemplars config was empty, assigning default")
+			conf.StorageConfig.ExemplarsConfig = &config.DefaultExemplarsConfig
+			// fmt.Printf("main.go storage config %+v\n", conf.StorageConfig)
+		}
 	}
 
 	failed := false
@@ -1263,14 +1278,10 @@ type tsdbOptions struct {
 	MinBlockDuration         model.Duration
 	MaxBlockDuration         model.Duration
 	EnableExemplarStorage    bool
-	MaxExemplars             int
+	MaxExemplars             int64
 }
 
 func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
-	// Ugly hack to get the previous default size.
-	if opts.MaxExemplars == 0 {
-		opts.MaxExemplars = config.DefaultExemplarsConfig.MaxExemplars
-	}
 	return tsdb.Options{
 		WALSegmentSize:           int(opts.WALSegmentSize),
 		MaxBlockChunkSegmentSize: int64(opts.MaxBlockChunkSegmentSize),
