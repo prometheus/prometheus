@@ -380,14 +380,10 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, opts *HeadOpti
 		opts.SeriesCallback = &noopSeriesLifecycleCallback{}
 	}
 
-	// Always start with a noopExemplarStorage now since ApplyConfig is run right after TSDB starts up.
-	var es ExemplarStorage = noopExemplarStorage{}
 	em := NewExemplarMetrics(r)
-	if opts.EnableExemplarStorage {
-		es, err = NewCircularExemplarStorage(opts.MaxExemplars.Load(), em)
-		if err != nil {
-			return nil, err
-		}
+	es, err := NewCircularExemplarStorage(opts.MaxExemplars.Load(), em)
+	if err != nil {
+		return nil, err
 	}
 
 	if stats == nil {
@@ -443,17 +439,6 @@ func (h *Head) ApplyConfig(cfg *config.Config) error {
 		return nil
 	}
 
-	// User wants to 'disable' exemplar storage without restarting Prometheus.
-	fmt.Printf("storage config: %+v\n", cfg.StorageConfig)
-	if cfg.StorageConfig.ExemplarsConfig.MaxExemplars <= 0 {
-		h.exemplars = noopExemplarStorage{}
-		// Reset some metrics.
-		h.exemplarMetrics.exemplarsInStorage.Set(0)
-		h.exemplarMetrics.seriesWithExemplarsInStorage.Set(0)
-		h.exemplarMetrics.maxExemplars.Set(-1)
-		return nil
-	}
-
 	// Head uses opts.MaxExemplars in combination with opts.EnableExemplarStorage
 	// to decide if it should pass exemplars along to it's exemplar storage, so we
 	// need to update opts.MaxExemplars here.
@@ -464,19 +449,8 @@ func (h *Head) ApplyConfig(cfg *config.Config) error {
 		return nil
 	}
 
-	switch h.exemplars.(type) {
-	case noopExemplarStorage:
-		e, err := NewCircularExemplarStorage(h.opts.MaxExemplars.Load(), h.exemplarMetrics)
-		if err != nil {
-			return err
-		}
-		h.exemplars = e
-		return nil
-	case *CircularExemplarStorage:
-		migrated := h.exemplars.(*CircularExemplarStorage).Resize(h.opts.MaxExemplars.Load())
-		level.Info(h.logger).Log("msg", "Exemplar storage resized", "from", prevSize, "to", h.opts.MaxExemplars, "migrated", migrated)
-		return nil
-	}
+	migrated := h.exemplars.(*CircularExemplarStorage).Resize(h.opts.MaxExemplars.Load())
+	level.Info(h.logger).Log("msg", "Exemplar storage resized", "from", prevSize, "to", h.opts.MaxExemplars, "migrated", migrated)
 	return nil
 }
 
@@ -1474,7 +1448,7 @@ func (a *headAppender) AppendExemplar(ref uint64, _ labels.Labels, e exemplar.Ex
 
 	err := a.head.exemplars.ValidateExemplar(s.lset, e)
 	if err != nil {
-		if err == storage.ErrDuplicateExemplar {
+		if err == storage.ErrDuplicateExemplar || err == storage.ErrExemplarsDisabled {
 			// Duplicate, don't return an error but don't accept the exemplar.
 			return 0, nil
 		}

@@ -110,9 +110,6 @@ func NewExemplarMetrics(reg prometheus.Registerer) *ExemplarMetrics {
 // 1GB of extra memory, accounting for the fact that this is heap allocated space.
 // If len < 1, then the exemplar storage is disabled.
 func NewCircularExemplarStorage(len int64, m *ExemplarMetrics) (ExemplarStorage, error) {
-	if len <= 0 {
-		return &noopExemplarStorage{}, nil
-	}
 	c := &CircularExemplarStorage{
 		exemplars: make([]*circularBufferEntry, len),
 		index:     make(map[string]*indexEntry),
@@ -144,6 +141,10 @@ func (ce *CircularExemplarStorage) Querier(_ context.Context) (storage.ExemplarQ
 // Select returns exemplars for a given set of label matchers.
 func (ce *CircularExemplarStorage) Select(start, end int64, matchers ...[]*labels.Matcher) ([]exemplar.QueryResult, error) {
 	ret := make([]exemplar.QueryResult, 0)
+
+	if len(ce.exemplars) <= 0 {
+		return ret, nil
+	}
 
 	ce.lock.RLock()
 	defer ce.lock.RUnlock()
@@ -208,6 +209,10 @@ func (ce *CircularExemplarStorage) ValidateExemplar(l labels.Labels, e exemplar.
 // Not thread safe. The append parameters tells us whether this is an external validation, or internal
 // as a result of an AddExemplar call, in which case we should update any relevant metrics.
 func (ce *CircularExemplarStorage) validateExemplar(l string, e exemplar.Exemplar, append bool) error {
+	if len(ce.exemplars) <= 0 {
+		return storage.ErrExemplarsDisabled
+	}
+
 	// Exemplar label length does not include chars involved in text rendering such as quotes
 	// equals sign, or commas. See definition of const ExemplarMaxLabelLength.
 	labelSetLen := 0
@@ -243,12 +248,18 @@ func (ce *CircularExemplarStorage) validateExemplar(l string, e exemplar.Exempla
 // Resize changes the size of exemplar buffer by allocating a new buffer and migrating data to it. Exemplars are
 // kept when possible. Shrinking will discard oldest data as needed.
 func (ce *CircularExemplarStorage) Resize(l int64) int {
-	if l <= 0 || l == int64(len(ce.exemplars)) {
+	if l == int64(len(ce.exemplars)) {
 		return 0
 	}
 
 	ce.lock.Lock()
 	defer ce.lock.Unlock()
+
+	if l <= 0 {
+		ce.metrics.exemplarsInStorage.Set(0)
+		ce.metrics.seriesWithExemplarsInStorage.Set(0)
+		ce.metrics.maxExemplars.Set(float64(l))
+	}
 
 	oldBuffer := ce.exemplars
 	oldNextIndex := int64(ce.nextIndex)
@@ -305,6 +316,10 @@ func (ce *CircularExemplarStorage) migrate(entry *circularBufferEntry) {
 }
 
 func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemplar) error {
+	if len(ce.exemplars) <= 0 {
+		return storage.ErrExemplarsDisabled
+	}
+
 	seriesLabels := l.String()
 
 	// TODO(bwplotka): This lock can lock all scrapers, there might high contention on this on scale.
@@ -369,24 +384,4 @@ func (ce *CircularExemplarStorage) computeMetrics() {
 	if ce.exemplars[0] != nil {
 		ce.metrics.lastExemplarsTs.Set(float64(ce.exemplars[0].exemplar.Ts) / 1000)
 	}
-}
-
-type noopExemplarStorage struct{}
-
-func (noopExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemplar) error {
-	return nil
-}
-
-func (noopExemplarStorage) ValidateExemplar(l labels.Labels, e exemplar.Exemplar) error {
-	return nil
-}
-
-func (noopExemplarStorage) ExemplarQuerier(context.Context) (storage.ExemplarQuerier, error) {
-	return &noopExemplarQuerier{}, nil
-}
-
-type noopExemplarQuerier struct{}
-
-func (noopExemplarQuerier) Select(_, _ int64, _ ...[]*labels.Matcher) ([]exemplar.QueryResult, error) {
-	return nil, nil
 }

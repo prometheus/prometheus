@@ -352,9 +352,7 @@ func main() {
 	}
 	if cfg.tsdb.EnableExemplarStorage {
 		if cfgFile.StorageConfig.ExemplarsConfig == nil {
-			fmt.Println("exemplars config was empty, assigning default")
 			cfgFile.StorageConfig.ExemplarsConfig = &config.DefaultExemplarsConfig
-			fmt.Printf("main.go storage config %+v\n", cfgFile.StorageConfig)
 		}
 		cfg.tsdb.MaxExemplars = int64(cfgFile.StorageConfig.ExemplarsConfig.MaxExemplars)
 	}
@@ -986,9 +984,7 @@ func reloadConfig(filename string, expandExternalLabels bool, enableExemplarStor
 
 	if enableExemplarStorage {
 		if conf.StorageConfig.ExemplarsConfig == nil {
-			// fmt.Println("exemplars config was empty, assigning default")
 			conf.StorageConfig.ExemplarsConfig = &config.DefaultExemplarsConfig
-			// fmt.Printf("main.go storage config %+v\n", conf.StorageConfig)
 		}
 	}
 
