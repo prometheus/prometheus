@@ -15,6 +15,7 @@ package linode
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -116,6 +117,7 @@ type Discovery struct {
 	port                 int
 	tagSeparator         string
 	lastRefreshTimestamp time.Time
+	pollCount            int
 	lastResults          []*targetgroup.Group
 	eventPollingEnabled  bool
 }
@@ -125,6 +127,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 	d := &Discovery{
 		port:                 conf.Port,
 		tagSeparator:         conf.TagSeparator,
+		pollCount:            0,
 		lastRefreshTimestamp: time.Now().UTC(),
 		eventPollingEnabled:  true,
 	}
@@ -153,7 +156,9 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 }
 
 func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
-	if d.eventPollingEnabled {
+	needsRefresh := true
+
+	if d.lastResults != nil && d.eventPollingEnabled {
 		// Update the last refresh timestamp - better to have some overlap than miss something.
 		d.lastRefreshTimestamp = time.Now().UTC()
 
@@ -161,34 +166,37 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		opts := linodego.NewListOptions(1, fmt.Sprintf(filterTemplate, d.lastRefreshTimestamp.Format("2006-01-02T15:04:05")))
 		events, err := d.client.ListEvents(ctx, opts)
 		if err != nil {
-			if strings.Contains(err.Error(), fmt.Sprintf("%d", http.StatusUnauthorized)) {
+			var e *linodego.Error
+			if errors.As(err, &e) && e.Code == http.StatusUnauthorized {
 				// If we get a 401, the token doesn't have `account:read_only` scope.
 				// Disable event polling and fallback to doing a full refresh every interval.
 				d.eventPollingEnabled = false
 			} else {
 				return nil, err
 			}
-		}
+		} else {
+			// Event polling tells us changes the Linode API is aware of. Actions issued outside of the Linode API,
+			// such as issuing a `shutdown` at the VM's console instead of using the API to power off an instance,
+			// can potentially cause us to return stale data. Just in case, trigger a full refresh after ~10 polling
+			// intervals of no events.
+			d.pollCount++
 
-		// If we don't have any previous results or if any events happened, refresh data.
-		if d.lastResults == nil || len(events) > 0 {
-			newData, err := d.refreshData(ctx)
-			if err != nil {
-				return nil, err
+			if len(events) == 0 && d.pollCount < 10 {
+				needsRefresh = false
 			}
-			d.lastResults = newData
 		}
-
-		return d.lastResults, nil
 	}
 
-	// If polling is disabled, do a full refresh every interval.
-	newData, err := d.refreshData(ctx)
-	if err != nil {
-		return nil, err
+	if needsRefresh {
+		newData, err := d.refreshData(ctx)
+		if err != nil {
+			return nil, err
+		}
+		d.pollCount = 0
+		d.lastResults = newData
 	}
 
-	return newData, nil
+	return d.lastResults, nil
 }
 
 func (d *Discovery) refreshData(ctx context.Context) ([]*targetgroup.Group, error) {
