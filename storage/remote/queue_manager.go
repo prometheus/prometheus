@@ -1034,6 +1034,11 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue chan interface
 		exemplarBuffer [][]prompb.Exemplar
 	)
 	totalPending := max
+	// seriesPositionCache caches stringified labels of the samples or exemplars that
+	// are present in the queue. This forms a relation between labelsString and position index
+	// in pendingData. For better performance, we allocate size equal to totalPending
+	// since that will be the worst-case scenario.
+	seriesPositionCache := newSeriesCache(totalPending)
 	if s.qm.sendExemplars {
 		exemplarBuffer = allocateExemplarBuffer(maxExemplars)
 		totalPending += maxExemplars
@@ -1051,6 +1056,13 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue chan interface
 		}
 	}
 	defer stop()
+
+	samplesExists := func(index int) bool {
+		return pendingData[index].Samples != nil
+	}
+	exemplarsExists := func(index int) bool {
+		return pendingData[index].Exemplars != nil
+	}
 
 	for {
 		select {
@@ -1085,17 +1097,44 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue chan interface
 			switch d := sample.(type) {
 			case writeSample:
 				sampleBuffer[nPendingSamples][0] = d.sample
+				if index, present := seriesPositionCache.getSeriesPosition(d.seriesLabels); present {
+					if samplesExists(index) {
+						// Samples with same labels were seen earlier. Let's buffer the incoming samples
+						// in the same allocation.
+						pendingData[index].Samples = append(pendingData[index].Samples, sampleBuffer[nPendingSamples]...)
+					} else {
+						// If exemplars belonging to this series were seen earlier, then it could contain
+						// an entry with samples being nil.
+						pendingData[index].Samples = sampleBuffer[nPendingSamples]
+					}
+					continue
+				}
 				pendingData[nPending].Labels = labelsToLabelsProto(d.seriesLabels, pendingData[nPending].Labels)
 				pendingData[nPending].Samples = sampleBuffer[nPendingSamples]
 				pendingData[nPending].Exemplars = nil
+				seriesPositionCache.ackSeriesPosition(d.seriesLabels, nPending)
 				nPendingSamples++
 				nPending++
 
 			case writeExemplar:
 				exemplarBuffer[nPendingExemplars][0] = d.exemplar
+				if index, present := seriesPositionCache.getSeriesPosition(d.seriesLabels); present {
+					if exemplarsExists(index) {
+						// Exemplars with same series labels were seen earlier. Let's buffer the incoming exemplar
+						// in the same allocation.
+						pendingData[index].Exemplars = append(pendingData[index].Exemplars, exemplarBuffer[nPendingExemplars]...)
+					} else {
+						// If samples belonging to this series were seen earlier, then it could contain
+						// an entry with exemplars being nil.
+						pendingData[index].Exemplars = exemplarBuffer[nPendingExemplars]
+					}
+					nPendingExemplars++
+					continue
+				}
 				pendingData[nPending].Labels = labelsToLabelsProto(d.seriesLabels, pendingData[nPending].Labels)
 				pendingData[nPending].Samples = nil
 				pendingData[nPending].Exemplars = exemplarBuffer[nPendingExemplars]
+				seriesPositionCache.ackSeriesPosition(d.seriesLabels, nPending)
 				nPendingExemplars++
 				nPending++
 			}
@@ -1104,6 +1143,7 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue chan interface
 				s.sendSamples(ctx, pendingData[:nPending], nPendingSamples, nPendingExemplars, &buf)
 				s.qm.metrics.pendingSamples.Sub(float64(nPendingSamples))
 				s.qm.metrics.pendingExemplars.Sub(float64(nPendingExemplars))
+				seriesPositionCache.refresh()
 				nPendingSamples = 0
 				nPendingExemplars = 0
 				nPending = 0
@@ -1118,6 +1158,7 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue chan interface
 				s.sendSamples(ctx, pendingData[:nPending], nPendingSamples, nPendingExemplars, &buf)
 				s.qm.metrics.pendingSamples.Sub(float64(nPendingSamples))
 				s.qm.metrics.pendingExemplars.Sub(float64(nPendingExemplars))
+				seriesPositionCache.refresh()
 				nPendingSamples = 0
 				nPendingExemplars = 0
 				nPending = 0
