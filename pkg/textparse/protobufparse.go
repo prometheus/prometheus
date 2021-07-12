@@ -78,11 +78,11 @@ func (p *ProtobufParser) Series() ([]byte, *int64, float64) {
 	)
 	switch p.mf.GetType() {
 	case dto.MetricType_COUNTER:
-		v = m.GetCounter().Value
+		v = m.GetCounter().GetValue()
 	case dto.MetricType_GAUGE:
-		v = m.GetGauge().Value
+		v = m.GetGauge().GetValue()
 	case dto.MetricType_UNTYPED:
-		v = m.GetUntyped().Value
+		v = m.GetUntyped().GetValue()
 	default:
 		panic("encountered unexpected metric type, this is a bug")
 	}
@@ -150,7 +150,7 @@ func (p *ProtobufParser) Type() ([]byte, MetricType) {
 	case dto.MetricType_GAUGE:
 		return n, MetricTypeGauge
 	case dto.MetricType_HISTOGRAM:
-		return n, MetricTypeGaugeHistogram
+		return n, MetricTypeHistogram
 	}
 	return n, MetricTypeUnknown
 }
