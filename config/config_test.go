@@ -903,6 +903,7 @@ var expectedConf = &Config{
 						},
 					},
 				},
+				Headers: map[string]string{"name": "value"},
 			},
 		},
 	},
@@ -1279,6 +1280,10 @@ var expectedErrors = []struct {
 	{
 		filename: "http_url_bad_scheme.bad.yml",
 		errMsg:   "URL scheme must be 'http' or 'https'",
+	},
+	{
+		filename: "alertmanager_header.bad.yml",
+		errMsg:   `x-prometheus-remote-write-version is a reserved header. It must not be changed`,
 	},
 }
 

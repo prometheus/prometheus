@@ -561,6 +561,8 @@ type AlertmanagerConfig struct {
 
 	// List of Alertmanager relabel configurations.
 	RelabelConfigs []*relabel.Config `yaml:"relabel_configs,omitempty"`
+
+	Headers map[string]string `yaml:"headers,omitempty"`
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -588,6 +590,10 @@ func (c *AlertmanagerConfig) UnmarshalYAML(unmarshal func(interface{}) error) er
 		if err := checkStaticTargets(c.ServiceDiscoveryConfigs); err != nil {
 			return err
 		}
+	}
+
+	if err := validateHeaders(c.Headers); err != nil {
+		return err
 	}
 
 	for _, rlcfg := range c.RelabelConfigs {

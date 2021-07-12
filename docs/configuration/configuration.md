@@ -2194,6 +2194,11 @@ through the `__alerts_path__` label.
 # The api version of Alertmanager.
 [ api_version: <string> | default = v2 ]
 
+# Custom HTTP headers to be sent along with each remote read request.
+# Be aware that headers that are set by Prometheus itself can't be overwritten.
+headers:
+  [ <string>: <string> ... ]
+
 # Prefix for the HTTP path alerts are pushed to.
 [ path_prefix: <path> | default = / ]
 

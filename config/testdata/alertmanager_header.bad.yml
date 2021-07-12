@@ -1,0 +1,4 @@
+alerting:
+  alertmanagers:
+    - headers:
+        "x-prometheus-remote-write-version": "somehack"

@@ -235,7 +235,7 @@ func TestCustomDo(t *testing.T) {
 		},
 	}, nil)
 
-	h.sendOne(context.Background(), nil, testURL, []byte(testBody))
+	h.sendOne(context.Background(), nil, testURL, []byte(testBody), nil)
 
 	require.True(t, received, "Expected to receive an alert, but didn't")
 }
