@@ -2027,21 +2027,21 @@ func (h *headIndexReader) LabelValueFor(id uint64, label string) (string, error)
 // LabelNamesFor returns all the label names for the series referred to by IDs.
 // The names returned are sorted.
 func (h *headIndexReader) LabelNamesFor(ids ...uint64) ([]string, error) {
-	// FIXME(colega): very quick implementation, check if there's something to optimze
-	namesMap := make(map[string]bool)
+	namesMap := make(map[string]struct{})
 	for _, id := range ids {
 		memSeries := h.head.series.getByID(id)
 		if memSeries == nil {
 			return nil, storage.ErrNotFound
 		}
 		for _, lbl := range memSeries.lset {
-			namesMap[lbl.Name] = true
+			namesMap[lbl.Name] = struct{}{}
 		}
 	}
 	names := make([]string, 0, len(namesMap))
 	for name := range namesMap {
 		names = append(names, name)
 	}
+	sort.Strings(names)
 	return names, nil
 }
 
