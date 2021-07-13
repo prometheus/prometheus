@@ -652,15 +652,13 @@ func (t *QueueManager) StoreSeries(series []record.RefSeries, index int) {
 			t.droppedSeries[s.Ref] = struct{}{}
 			continue
 		}
-		t.internLabels(lbls)
 
-		// We should not ever be replacing a series labels in the map, but just
-		// in case we do we need to ensure we do not leak the replaced interned
-		// strings.
-		if orig, ok := t.seriesLabels[s.Ref]; ok {
-			t.releaseLabels(orig)
+		// Check if we already have labels before interning - active series
+		// will be re-added periodically by garbageCollectSeries().
+		if _, ok := t.seriesLabels[s.Ref]; !ok {
+			t.internLabels(lbls)
+			t.seriesLabels[s.Ref] = lbls
 		}
-		t.seriesLabels[s.Ref] = lbls
 	}
 }
 
