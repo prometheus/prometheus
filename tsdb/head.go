@@ -1930,6 +1930,7 @@ func (h *headIndexReader) LabelNames(matchers ...*labels.Matcher) ([]string, err
 		sort.Strings(labelNames)
 		return labelNames, nil
 	}
+	h.head.symMtx.RUnlock()
 
 	return labelNamesWithMatchers(h, matchers...)
 }
