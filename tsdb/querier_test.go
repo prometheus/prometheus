@@ -1154,7 +1154,7 @@ func (m mockIndex) SortedLabelValues(name string, matchers ...*labels.Matcher) (
 }
 
 func (m mockIndex) LabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
-	values := []string{}
+	var values []string
 
 	if len(matchers) == 0 {
 		for l := range m.postings {
