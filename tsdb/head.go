@@ -1904,16 +1904,12 @@ func (h *headIndexReader) SortedLabelValues(name string, matchers ...*labels.Mat
 // If matchers are specified the returned result set is reduced
 // to label values of metrics matching the matchers.
 func (h *headIndexReader) LabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
-	h.head.symMtx.RLock()
 	if h.maxt < h.head.MinTime() || h.mint > h.head.MaxTime() {
-		h.head.symMtx.RUnlock()
 		return []string{}, nil
 	}
 
 	if len(matchers) == 0 {
-		labelValues := h.head.postings.LabelValues(name)
-		h.head.symMtx.RUnlock()
-		return labelValues, nil
+		return h.head.postings.LabelValues(name), nil
 	}
 
 	return labelValuesWithMatchers(h, name, matchers...)
