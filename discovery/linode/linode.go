@@ -159,8 +159,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	needsRefresh := true
 
 	if d.lastResults != nil && d.eventPollingEnabled {
-		// Update the last refresh timestamp - better to have some overlap than miss something.
-		d.lastRefreshTimestamp = time.Now().UTC()
+		ts := time.Now().UTC()
 
 		// Check to see if there have been any events. If so, refresh our data.
 		opts := linodego.NewListOptions(1, fmt.Sprintf(filterTemplate, d.lastRefreshTimestamp.Format("2006-01-02T15:04:05")))
@@ -185,6 +184,8 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 				needsRefresh = false
 			}
 		}
+
+		d.lastRefreshTimestamp = ts
 	}
 
 	if needsRefresh {
