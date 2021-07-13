@@ -418,6 +418,84 @@ func BenchmarkLabelValuesWithMatchers(b *testing.B) {
 	}
 }
 
+func TestLabelNamesWithMatchers(t *testing.T) {
+	tmpdir, err := ioutil.TempDir("", "test_block_label_names_with_matchers")
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, os.RemoveAll(tmpdir))
+	}()
+
+	var seriesEntries []storage.Series
+	for i := 0; i < 100; i++ {
+		seriesEntries = append(seriesEntries, storage.NewListSeries(labels.Labels{
+			{Name: "unique", Value: fmt.Sprintf("value%d", i)},
+		}, []tsdbutil.Sample{sample{100, 0}}))
+
+		if i%10 == 0 {
+			seriesEntries = append(seriesEntries, storage.NewListSeries(labels.Labels{
+				{Name: "unique", Value: fmt.Sprintf("value%d", i)},
+				{Name: "tens", Value: fmt.Sprintf("value%d", i/10)},
+			}, []tsdbutil.Sample{sample{100, 0}}))
+		}
+
+		if i%20 == 0 {
+			seriesEntries = append(seriesEntries, storage.NewListSeries(labels.Labels{
+				{Name: "unique", Value: fmt.Sprintf("value%d", i)},
+				{Name: "tens", Value: fmt.Sprintf("value%d", i/10)},
+				{Name: "twenties", Value: fmt.Sprintf("value%d", i/20)},
+			}, []tsdbutil.Sample{sample{100, 0}}))
+		}
+
+	}
+
+	blockDir := createBlock(t, tmpdir, seriesEntries)
+	files, err := sequenceFiles(chunkDir(blockDir))
+	require.NoError(t, err)
+	require.Greater(t, len(files), 0, "No chunk created.")
+
+	// Check open err.
+	block, err := OpenBlock(nil, blockDir, nil)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, block.Close()) }()
+
+	indexReader, err := block.Index()
+	require.NoError(t, err)
+	defer func() { require.NoError(t, indexReader.Close()) }()
+
+	testCases := []struct {
+		name          string
+		labelName     string
+		matchers      []*labels.Matcher
+		expectedNames []string
+	}{
+		{
+			name:          "get with non-empty unique: all",
+			matchers:      []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotEqual, "unique", "")},
+			expectedNames: []string{"tens", "twenties", "unique"},
+		}, {
+			name:          "get with unique ending in 1: only unique",
+			matchers:      []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "unique", "value.*1")},
+			expectedNames: []string{"unique"},
+		}, {
+			name:          "get with unique = value20: all",
+			matchers:      []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "unique", "value20")},
+			expectedNames: []string{"tens", "twenties", "unique"},
+		}, {
+			name:          "get tens = 1: unique & tens",
+			matchers:      []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "tens", "value1")},
+			expectedNames: []string{"tens", "unique"},
+		},
+	}
+
+	for _, tt := range testCases {
+		t.Run(tt.name, func(t *testing.T) {
+			actualNames, err := indexReader.LabelNames(tt.matchers...)
+			require.NoError(t, err)
+			require.Equal(t, tt.expectedNames, actualNames)
+		})
+	}
+}
+
 // createBlock creates a block with given set of series and returns its dir.
 func createBlock(tb testing.TB, dir string, series []storage.Series) string {
 	blockDir, err := CreateBlock(series, dir, 0, log.NewNopLogger())

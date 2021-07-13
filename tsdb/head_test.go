@@ -1988,6 +1988,74 @@ func TestHeadLabelValuesWithMatchers(t *testing.T) {
 	}
 }
 
+func TestHeadLabelNamesWithMatchers(t *testing.T) {
+	head, _ := newTestHead(t, 1000, false)
+	defer func() {
+		require.NoError(t, head.Close())
+	}()
+
+	app := head.Appender(context.Background())
+	for i := 0; i < 100; i++ {
+		_, err := app.Append(0, labels.Labels{
+			{Name: "unique", Value: fmt.Sprintf("value%d", i)},
+		}, 100, 0)
+		require.NoError(t, err)
+
+		if i%10 == 0 {
+			_, err := app.Append(0, labels.Labels{
+				{Name: "unique", Value: fmt.Sprintf("value%d", i)},
+				{Name: "tens", Value: fmt.Sprintf("value%d", i/10)},
+			}, 100, 0)
+			require.NoError(t, err)
+		}
+
+		if i%20 == 0 {
+			_, err := app.Append(0, labels.Labels{
+				{Name: "unique", Value: fmt.Sprintf("value%d", i)},
+				{Name: "tens", Value: fmt.Sprintf("value%d", i/10)},
+				{Name: "twenties", Value: fmt.Sprintf("value%d", i/20)},
+			}, 100, 0)
+			require.NoError(t, err)
+		}
+	}
+	require.NoError(t, app.Commit())
+
+	testCases := []struct {
+		name          string
+		labelName     string
+		matchers      []*labels.Matcher
+		expectedNames []string
+	}{
+		{
+			name:          "get with non-empty unique: all",
+			matchers:      []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotEqual, "unique", "")},
+			expectedNames: []string{"tens", "twenties", "unique"},
+		}, {
+			name:          "get with unique ending in 1: only unique",
+			matchers:      []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "unique", "value.*1")},
+			expectedNames: []string{"unique"},
+		}, {
+			name:          "get with unique = value20: all",
+			matchers:      []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "unique", "value20")},
+			expectedNames: []string{"tens", "twenties", "unique"},
+		}, {
+			name:          "get tens = 1: unique & tens",
+			matchers:      []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "tens", "value1")},
+			expectedNames: []string{"tens", "unique"},
+		},
+	}
+
+	for _, tt := range testCases {
+		t.Run(tt.name, func(t *testing.T) {
+			headIdxReader := head.indexRange(0, 200)
+
+			actualNames, err := headIdxReader.LabelNames(tt.matchers...)
+			require.NoError(t, err)
+			require.Equal(t, tt.expectedNames, actualNames)
+		})
+	}
+}
+
 func TestErrReuseAppender(t *testing.T) {
 	head, _ := newTestHead(t, 1000, false)
 	defer func() {
