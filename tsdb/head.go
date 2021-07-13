@@ -2023,6 +2023,27 @@ func (h *headIndexReader) LabelValueFor(id uint64, label string) (string, error)
 	return value, nil
 }
 
+// LabelNamesFor returns all the label names for the series referred to by IDs.
+// The names returned are sorted.
+func (h *headIndexReader) LabelNamesFor(ids ...uint64) ([]string, error) {
+	// FIXME(colega): very quick implementation, check if there's something to optimze
+	namesMap := make(map[string]bool)
+	for _, id := range ids {
+		memSeries := h.head.series.getByID(id)
+		if memSeries == nil {
+			return nil, storage.ErrNotFound
+		}
+		for _, lbl := range memSeries.lset {
+			namesMap[lbl.Name] = true
+		}
+	}
+	names := make([]string, 0, len(namesMap))
+	for name := range namesMap {
+		names = append(names, name)
+	}
+	return names, nil
+}
+
 func (h *Head) getOrCreate(hash uint64, lset labels.Labels) (*memSeries, bool, error) {
 	// Just using `getOrCreateWithID` below would be semantically sufficient, but we'd create
 	// a new series on every sample inserted via Add(), which causes allocations

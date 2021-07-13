@@ -92,6 +92,10 @@ type IndexReader interface {
 	// storage.ErrNotFound is returned as error.
 	LabelValueFor(id uint64, label string) (string, error)
 
+	// LabelNamesFor returns all the label names for the series referred to by IDs.
+	// The names returned are sorted.
+	LabelNamesFor(ids ...uint64) ([]string, error)
+
 	// Close releases the underlying resources of the reader.
 	Close() error
 }
@@ -481,6 +485,12 @@ func (r blockIndexReader) Close() error {
 // LabelValueFor returns label value for the given label name in the series referred to by ID.
 func (r blockIndexReader) LabelValueFor(id uint64, label string) (string, error) {
 	return r.ir.LabelValueFor(id, label)
+}
+
+// LabelNamesFor returns all the label names for the series referred to by IDs.
+// The names returned are sorted.
+func (r blockIndexReader) LabelNamesFor(ids ...uint64) ([]string, error) {
+	return r.ir.LabelNamesFor(ids...)
 }
 
 type blockTombstoneReader struct {

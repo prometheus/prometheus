@@ -413,29 +413,12 @@ func labelNamesWithMatchers(r IndexReader, matchers ...*labels.Matcher) ([]strin
 		return nil, err
 	}
 
-	dedupe := map[string]interface{}{}
+	var postings []uint64
 	for p.Next() {
-		v, err := r.LabelValueFor(p.At(), name)
-		if err != nil {
-			if err == storage.ErrNotFound {
-				continue
-			}
-
-			return nil, err
-		}
-		dedupe[v] = nil
+		postings = append(postings, p.At())
 	}
 
-	if err = p.Err(); err != nil {
-		return nil, err
-	}
-
-	values := make([]string, 0, len(dedupe))
-	for value := range dedupe {
-		values = append(values, value)
-	}
-
-	return values, nil
+	return r.LabelNamesFor(postings...)
 }
 
 // blockBaseSeriesSet allows to iterate over all series in the single block.

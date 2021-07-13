@@ -1180,6 +1180,20 @@ func (m mockIndex) LabelValueFor(id uint64, label string) (string, error) {
 	return m.series[id].l.Get(label), nil
 }
 
+func (m mockIndex) LabelNamesFor(ids ...uint64) ([]string, error) {
+	namesMap := make(map[string]bool)
+	for _, id := range ids {
+		for _, lbl := range m.series[id].l {
+			namesMap[lbl.Name] = true
+		}
+	}
+	names := make([]string, 0, len(namesMap))
+	for name := range namesMap {
+		names = append(names, name)
+	}
+	return names, nil
+}
+
 func (m mockIndex) Postings(name string, values ...string) (index.Postings, error) {
 	res := make([]index.Postings, 0, len(values))
 	for _, value := range values {
@@ -2008,6 +2022,10 @@ func (m mockMatcherIndex) LabelValues(name string, matchers ...*labels.Matcher) 
 
 func (m mockMatcherIndex) LabelValueFor(id uint64, label string) (string, error) {
 	return "", errors.New("label value for called")
+}
+
+func (m mockMatcherIndex) LabelNamesFor(ids ...uint64) ([]string, error) {
+	return nil, errors.New("label names for for called")
 }
 
 func (m mockMatcherIndex) Postings(name string, values ...string) (index.Postings, error) {

@@ -1511,6 +1511,51 @@ func (r *Reader) LabelValues(name string, matchers ...*labels.Matcher) ([]string
 	return values, nil
 }
 
+// LabelNamesFor returns all the label names for the series referred to by IDs.
+// The names returned are sorted.
+func (r *Reader) LabelNamesFor(ids ...uint64) ([]string, error) {
+	// Gather offsetsMap the name offsetsMap in the symbol table first
+	offsetsMap := make(map[uint32]struct{})
+	for _, id := range ids {
+		offset := id
+		// In version 2 series IDs are no longer exact references but series are 16-byte padded
+		// and the ID is the multiple of 16 of the actual position.
+		if r.version == FormatV2 {
+			offset = id * 16
+		}
+
+		d := encoding.NewDecbufUvarintAt(r.b, int(offset), castagnoliTable)
+		buf := d.Get()
+		if d.Err() != nil {
+			return nil, errors.Wrap(d.Err(), "label names for")
+		}
+
+		offsets, err := r.dec.LabelNamesOffsetsFor(buf)
+		if err != nil {
+			return nil, storage.ErrNotFound
+		}
+		for _, off := range offsets {
+			offsetsMap[off] = struct{}{}
+		}
+	}
+
+	// lookup the unique symbols
+	names := make([]string, 0, len(offsetsMap))
+	for off := range offsetsMap {
+		name, err := r.lookupSymbol(off)
+		if err != nil {
+			return nil, errors.Wrap(err, "lookup symbol in label names for")
+		}
+		names = append(names, name)
+	}
+
+	// maybe it's more efficient to built the list of offsets first, then sort the uint32 offsets and then map to names?
+	// that could be an optimization if we measure it and makes any difference
+	sort.Strings(names)
+
+	return names, nil
+}
+
 // LabelValueFor returns label value for the given label name in the series referred to by ID.
 func (r *Reader) LabelValueFor(id uint64, label string) (string, error) {
 	offset := id
@@ -1718,6 +1763,25 @@ func (dec *Decoder) Postings(b []byte) (int, Postings, error) {
 	n := d.Be32int()
 	l := d.Get()
 	return n, newBigEndianPostings(l), d.Err()
+}
+
+// LabelNamesOffsetsFor decodes the offsets of the name symbols for a given series.
+// They are returned in the same order they're stored, which should be sorted lexicographically.
+func (dec *Decoder) LabelNamesOffsetsFor(b []byte) ([]uint32, error) {
+	d := encoding.Decbuf{B: b}
+	k := d.Uvarint()
+
+	offsets := make([]uint32, k)
+	for i := 0; i < k; i++ {
+		offsets[i] = uint32(d.Uvarint())
+		_ = d.Uvarint() // skip the label value
+
+		if d.Err() != nil {
+			return nil, errors.Wrap(d.Err(), "read series label offsets")
+		}
+	}
+
+	return offsets, d.Err()
 }
 
 // LabelValueFor decodes a label for a given series.
