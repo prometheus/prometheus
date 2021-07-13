@@ -807,21 +807,9 @@ func (h *Head) Init(minValidTime int64) error {
 	}
 
 	// Find the last segment.
-	// the new scope to avoid this err override wal.LastCheckpoint err.
-	var endAt int
-	{
-		var err error
-		_, endAt, err = wal.Segments(h.wal.Dir())
-		if err != nil {
-			return errors.Wrap(err, "finding WAL segments")
-		}
-	}
-
-	// Not likely endAt will smaller then startFrom,
-	// because before head create a new checkpoint,
-	// the head will also cut up a new wal segment file.
-	if endAt < startFrom {
-		endAt = startFrom
+	_, endAt, e := wal.Segments(h.wal.Dir())
+	if e != nil {
+		return errors.Wrap(e, "finding WAL segments")
 	}
 
 	h.startWALReplayStatus(startFrom, endAt)
@@ -843,8 +831,8 @@ func (h *Head) Init(minValidTime int64) error {
 		if err := h.loadWAL(wal.NewReader(sr), multiRef, mmappedChunks); err != nil {
 			return errors.Wrap(err, "backfill checkpoint")
 		}
-		startFrom++
 		h.updateWALReplayStatusRead(startFrom)
+		startFrom++
 		level.Info(h.logger).Log("msg", "WAL checkpoint loaded")
 	}
 	checkpointReplayDuration := time.Since(checkpointReplayStart)
