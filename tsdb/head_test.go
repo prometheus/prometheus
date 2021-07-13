@@ -2177,3 +2177,47 @@ func TestMemSafeIteratorSeekIntoBuffer(t *testing.T) {
 	ok = it.Seek(7)
 	require.False(t, ok)
 }
+
+// Tests https://github.com/prometheus/prometheus/issues/9079.
+func TestDataMissingOnQueryDuringCompaction(t *testing.T) {
+	dir, err := ioutil.TempDir("", "test")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, os.RemoveAll(dir))
+	})
+
+	db, err := Open(dir, nil, nil, DefaultOptions(), nil)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, db.Close())
+	})
+	db.DisableCompactions()
+
+	// Appends samples to span over 1.5 block ranges.
+	lbls := labels.FromStrings("a", "b")
+	app := db.Appender(context.Background())
+	ref := uint64(0)
+	mint, maxt := int64(0), int64(0)
+	expSamples := make([]tsdbutil.Sample, 0)
+	// 7 chunks with 15s scrape interval.
+	for i := int64(0); i <= 120*7; i++ {
+		ts := i * DefaultBlockDuration / (4 * 120)
+		ref, err = app.Append(ref, lbls, ts, float64(i))
+		require.NoError(t, err)
+		maxt = ts
+		expSamples = append(expSamples, sample{ts, float64(i)})
+	}
+	require.NoError(t, app.Commit())
+
+	// Get a querier before compaction (or when compaction is about to begin).
+	q, err := db.Querier(context.Background(), mint, maxt)
+	require.NoError(t, err)
+
+	// Compacting head while the querier spans the compaction time.
+	require.NoError(t, db.Compact())
+	require.Greater(t, len(db.Blocks()), 0)
+
+	// Querying the querier that was got before compaction.
+	series := query(t, q, labels.MustNewMatcher(labels.MatchEqual, lbls[0].Name, lbls[0].Value))
+	require.Equal(t, map[string][]tsdbutil.Sample{`{a="b"}`: expSamples}, series)
+}
