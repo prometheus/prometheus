@@ -1168,6 +1168,7 @@ func (m mockIndex) LabelValues(name string, matchers ...*labels.Matcher) ([]stri
 	for _, series := range m.series {
 		for _, matcher := range matchers {
 			if matcher.Matches(series.l.Get(matcher.Name)) {
+				// TODO(colega): shouldn't we check all the matchers before adding this to the values?
 				values = append(values, series.l.Get(name))
 			}
 		}
@@ -1227,12 +1228,26 @@ func (m mockIndex) Series(ref uint64, lset *labels.Labels, chks *[]chunks.Meta) 
 }
 
 func (m mockIndex) LabelNames(matchers ...*labels.Matcher) ([]string, error) {
-
-	// TODO implement matchers?
-
 	names := map[string]struct{}{}
-	for l := range m.postings {
-		names[l.Name] = struct{}{}
+	if len(matchers) == 0 {
+		for l := range m.postings {
+			names[l.Name] = struct{}{}
+		}
+	} else {
+		for _, series := range m.series {
+			matches := true
+			for _, matcher := range matchers {
+				matches = matches || matcher.Matches(series.l.Get(matcher.Name))
+				if !matches {
+					break
+				}
+			}
+			if matches {
+				for _, lbl := range series.l {
+					names[lbl.Name] = struct{}{}
+				}
+			}
+		}
 	}
 	l := make([]string, 0, len(names))
 	for name := range names {
