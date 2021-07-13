@@ -299,6 +299,7 @@ metric: <
 			lset: labels.FromStrings(
 				"__name__", "go_memstats_alloc_bytes_total",
 			),
+			e: &exemplar.Exemplar{Labels: labels.FromStrings("dummyID", "42"), Value: 12, HasTs: true, Ts: 1625851151233},
 		},
 		{
 			m:    "something_untyped",

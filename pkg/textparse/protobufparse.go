@@ -188,10 +188,35 @@ func (p *ProtobufParser) Metric(l *labels.Labels) string {
 	return p.metricBytes.String()
 }
 
-// Exemplar always returns false because exemplars aren't supported yet by the
-// protobuf format.
-func (p *ProtobufParser) Exemplar(l *exemplar.Exemplar) bool {
-	return false
+// Exemplar writes the exemplar of the current sample into the passed
+// exemplar. It returns if an exemplar exists or not.
+func (p *ProtobufParser) Exemplar(ex *exemplar.Exemplar) bool {
+	m := p.mf.GetMetric()[p.metricPos]
+	var exProto *dto.Exemplar
+	switch p.mf.GetType() {
+	case dto.MetricType_COUNTER:
+		exProto = m.GetCounter().GetExemplar()
+	case dto.MetricType_HISTOGRAM:
+		// TODO(beorn7): Have to pick bucket. Forward iterator in case of sparse histogram.
+		return false
+	default:
+		return false
+	}
+	if exProto == nil {
+		return false
+	}
+	ex.Value = exProto.GetValue()
+	if ts := exProto.GetTimestamp(); ts != nil {
+		ex.HasTs = true
+		ex.Ts = ts.GetSeconds()*1000 + int64(ts.GetNanos()/1_000_000)
+	}
+	for _, lp := range exProto.GetLabel() {
+		ex.Labels = append(ex.Labels, labels.Label{
+			Name:  lp.GetName(),
+			Value: lp.GetValue(),
+		})
+	}
+	return true
 }
 
 // Next advances the parser to the next "sample" (emulating the behavior of a
