@@ -417,6 +417,9 @@ func labelNamesWithMatchers(r IndexReader, matchers ...*labels.Matcher) ([]strin
 	for p.Next() {
 		postings = append(postings, p.At())
 	}
+	if p.Err() != nil {
+		return nil, errors.Wrapf(err, "postings for label names with matchers")
+	}
 
 	return r.LabelNamesFor(postings...)
 }
