@@ -104,7 +104,7 @@ metric: <
           name: "dummyID"
           value: "59727"
         >
-        value: -0.0003919818421972943
+        value: -0.00039
         timestamp: <
           seconds: 1625851155
           nanos: 146848499
@@ -119,11 +119,7 @@ metric: <
           name: "dummyID"
           value: "5617"
         >
-        value: -0.0002956962622126468
-        timestamp: <
-          seconds: 1625851150
-          nanos: 233181498
-        >
+        value: -0.00029
       >
     >
     sb_schema: 3
@@ -164,44 +160,40 @@ metric: <
 
 `,
 		`name: "test_histogram2"
-help: "Same histogram as before but now without sparse buckets."
+help: "Similar histogram as before but now without sparse buckets."
 type: HISTOGRAM
 metric: <
   histogram: <
     sample_count: 175
-    sample_sum: 0.0008280461746287094
+    sample_sum: 0.000828
     bucket: <
       cumulative_count: 2
-      upper_bound: -0.0004899999999999998
+      upper_bound: -0.00048
     >
     bucket: <
       cumulative_count: 4
-      upper_bound: -0.0003899999999999998
+      upper_bound: -0.00038
       exemplar: <
         label: <
           name: "dummyID"
           value: "59727"
         >
-        value: -0.0003919818421972943
+        value: -0.00038
         timestamp: <
-          seconds: 1625851155
+          seconds: 1625851153
           nanos: 146848499
         >
       >
     >
     bucket: <
       cumulative_count: 16
-      upper_bound: -0.0002899999999999998
+      upper_bound: 1
       exemplar: <
         label: <
           name: "dummyID"
           value: "5617"
         >
-        value: -0.0002956962622126468
-        timestamp: <
-          seconds: 1625851150
-          nanos: 233181498
-        >
+        value: -0.000295
       >
     >
     sb_schema: 0
@@ -265,7 +257,7 @@ metric: <
 		unit    string
 		comment string
 		shs     histogram.SparseHistogram
-		e       *exemplar.Exemplar
+		e       []exemplar.Exemplar
 	}{
 		{
 			m:    "go_build_info",
@@ -299,6 +291,9 @@ metric: <
 			lset: labels.FromStrings(
 				"__name__", "go_memstats_alloc_bytes_total",
 			),
+			e: []exemplar.Exemplar{
+				{Labels: labels.FromStrings("dummyID", "42"), Value: 12, HasTs: true, Ts: 1625851151233},
+			},
 		},
 		{
 			m:    "something_untyped",
@@ -347,6 +342,121 @@ metric: <
 			lset: labels.FromStrings(
 				"__name__", "test_histogram",
 			),
+			e: []exemplar.Exemplar{
+				{Labels: labels.FromStrings("dummyID", "59727"), Value: -0.00039, HasTs: true, Ts: 1625851155146},
+				{Labels: labels.FromStrings("dummyID", "5617"), Value: -0.00029, HasTs: false},
+			},
+		},
+		{
+			m:    "test_histogram2",
+			help: "Similar histogram as before but now without sparse buckets.",
+		},
+		{
+			m:   "test_histogram2",
+			typ: MetricTypeHistogram,
+		},
+		{
+			m: "test_histogram2_count",
+			v: 175,
+			lset: labels.FromStrings(
+				"__name__", "test_histogram2_count",
+			),
+		},
+		{
+			m: "test_histogram2_sum",
+			v: 0.000828,
+			lset: labels.FromStrings(
+				"__name__", "test_histogram2_sum",
+			),
+		},
+		{
+			m: "test_histogram2_bucket\xffle\xff-0.00048",
+			v: 2,
+			lset: labels.FromStrings(
+				"__name__", "test_histogram2_bucket",
+				"le", "-0.00048",
+			),
+		},
+		{
+			m: "test_histogram2_bucket\xffle\xff-0.00038",
+			v: 4,
+			lset: labels.FromStrings(
+				"__name__", "test_histogram2_bucket",
+				"le", "-0.00038",
+			),
+			e: []exemplar.Exemplar{
+				{Labels: labels.FromStrings("dummyID", "59727"), Value: -0.00038, HasTs: true, Ts: 1625851153146},
+			},
+		},
+		{
+			m: "test_histogram2_bucket\xffle\xff1.0",
+			v: 16,
+			lset: labels.FromStrings(
+				"__name__", "test_histogram2_bucket",
+				"le", "1.0",
+			),
+			e: []exemplar.Exemplar{
+				{Labels: labels.FromStrings("dummyID", "5617"), Value: -0.000295, HasTs: false},
+			},
+		},
+		{
+			m: "test_histogram2_bucket\xffle\xff+Inf",
+			v: 175,
+			lset: labels.FromStrings(
+				"__name__", "test_histogram2_bucket",
+				"le", "+Inf",
+			),
+		},
+		{
+			m:    "rpc_durations_seconds",
+			help: "RPC latency distributions.",
+		},
+		{
+			m:   "rpc_durations_seconds",
+			typ: MetricTypeSummary,
+		},
+		{
+			m: "rpc_durations_seconds_count\xffservice\xffexponential",
+			v: 262,
+			lset: labels.FromStrings(
+				"__name__", "rpc_durations_seconds_count",
+				"service", "exponential",
+			),
+		},
+		{
+			m: "rpc_durations_seconds_sum\xffservice\xffexponential",
+			v: 0.00025551262820703587,
+			lset: labels.FromStrings(
+				"__name__", "rpc_durations_seconds_sum",
+				"service", "exponential",
+			),
+		},
+		{
+			m: "rpc_durations_seconds\xffservice\xffexponential\xffquantile\xff0.5",
+			v: 6.442786329648548e-07,
+			lset: labels.FromStrings(
+				"__name__", "rpc_durations_seconds",
+				"quantile", "0.5",
+				"service", "exponential",
+			),
+		},
+		{
+			m: "rpc_durations_seconds\xffservice\xffexponential\xffquantile\xff0.9",
+			v: 1.9435742936658396e-06,
+			lset: labels.FromStrings(
+				"__name__", "rpc_durations_seconds",
+				"quantile", "0.9",
+				"service", "exponential",
+			),
+		},
+		{
+			m: "rpc_durations_seconds\xffservice\xffexponential\xffquantile\xff0.99",
+			v: 4.0471608667037015e-06,
+			lset: labels.FromStrings(
+				"__name__", "rpc_durations_seconds",
+				"quantile", "0.99",
+				"service", "exponential",
+			),
 		},
 	}
 
@@ -377,11 +487,11 @@ metric: <
 			}
 			require.Equal(t, exp[i].v, v)
 			require.Equal(t, exp[i].lset, res)
-			if exp[i].e == nil {
+			if len(exp[i].e) == 0 {
 				require.Equal(t, false, found)
 			} else {
 				require.Equal(t, true, found)
-				require.Equal(t, *exp[i].e, e)
+				require.Equal(t, exp[i].e[0], e)
 			}
 			res = res[:0]
 
@@ -399,6 +509,12 @@ metric: <
 			res = res[:0]
 			require.Equal(t, exp[i].m, string(m))
 			require.Equal(t, exp[i].shs, shs)
+			j := 0
+			for e := (exemplar.Exemplar{}); p.Exemplar(&e); j++ {
+				require.Equal(t, exp[i].e[j], e)
+				e = exemplar.Exemplar{}
+			}
+			require.Equal(t, len(exp[i].e), j, "not enough exemplars found")
 
 		case EntryType:
 			m, typ := p.Type()
