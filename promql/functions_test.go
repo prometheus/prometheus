@@ -43,8 +43,8 @@ func TestDeriv(t *testing.T) {
 	a := storage.Appender(context.Background())
 
 	metric := labels.FromStrings("__name__", "foo")
-	a.Add(metric, 1493712816939, 1.0)
-	a.Add(metric, 1493712846939, 1.0)
+	a.Append(0, metric, 1493712816939, 1.0)
+	a.Append(0, metric, 1493712846939, 1.0)
 
 	require.NoError(t, a.Commit())
 

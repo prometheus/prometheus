@@ -131,7 +131,7 @@ the Prometheus server will be able to see them.
 
 ### The SD interface
 
-A Service Discovery (SD) mechanism has to discover targets and provide them to Prometheus. We expect similar targets to be grouped together, in the form of a [target group](https://godoc.org/github.com/prometheus/prometheus/discovery/targetgroup#Group). The SD mechanism sends the targets down to prometheus as list of target groups.
+A Service Discovery (SD) mechanism has to discover targets and provide them to Prometheus. We expect similar targets to be grouped together, in the form of a [target group](https://pkg.go.dev/github.com/prometheus/prometheus/discovery/targetgroup#Group). The SD mechanism sends the targets down to prometheus as list of target groups.
 
 An SD mechanism has to implement the `Discoverer` Interface:
 ```go
@@ -259,3 +259,9 @@ Here are some non-obvious parts of adding service discoveries that need to be ve
   `<alertmanager_config>` in `docs/configuration/configuration.md`.
 
 <!-- TODO: Add best-practices -->
+
+### Examples of Service Discovery pull requests
+
+The examples given might become out of date but should give a good impression about the areas touched by a new service discovery.
+
+- [Eureka](https://github.com/prometheus/prometheus/pull/3369)

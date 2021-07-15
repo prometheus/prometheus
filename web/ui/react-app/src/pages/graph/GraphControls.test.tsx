@@ -3,7 +3,7 @@ import { shallow } from 'enzyme';
 import GraphControls from './GraphControls';
 import { Button, ButtonGroup, Form, InputGroup, InputGroupAddon, Input } from 'reactstrap';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faPlus, faMinus, faChartArea, faChartLine } from '@fortawesome/free-solid-svg-icons';
+import { faSquare, faPlus, faMinus, faChartArea, faChartLine } from '@fortawesome/free-solid-svg-icons';
 import TimeInput from './TimeInput';
 
 const defaultGraphControlProps = {
@@ -11,6 +11,7 @@ const defaultGraphControlProps = {
   endTime: 1572100217898,
   resolution: 10,
   stacked: false,
+  showExemplars: false,
 
   onChangeRange: (): void => {
     // Do nothing.
@@ -22,6 +23,9 @@ const defaultGraphControlProps = {
     // Do nothing.
   },
   onChangeStacking: (): void => {
+    // Do nothing.
+  },
+  onChangeShowExemplars: (): void => {
     // Do nothing.
   },
 };
@@ -112,11 +116,16 @@ describe('GraphControls', () => {
     expect(input.prop('bsSize')).toEqual('sm');
   });
 
-  it('renders a button group', () => {
-    const controls = shallow(<GraphControls {...defaultGraphControlProps} />);
-    const group = controls.find(ButtonGroup);
-    expect(group.prop('className')).toEqual('stacked-input');
-    expect(group.prop('size')).toEqual('sm');
+  it('renders button groups', () => {
+    [
+      { className: 'stacked-input', size: 'sm' },
+      { className: 'show-exemplars', size: 'sm' },
+    ].forEach((testCase, i) => {
+      const controls = shallow(<GraphControls {...defaultGraphControlProps} />);
+      const groups = controls.find(ButtonGroup);
+      expect(groups.get(i).props['className']).toEqual(testCase.className);
+      expect(groups.get(i).props['size']).toEqual(testCase.size);
+    });
   });
 
   it('renders buttons inside the button group', () => {

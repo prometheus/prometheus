@@ -49,7 +49,7 @@ func TestStoreHTTPErrorHandling(t *testing.T) {
 		},
 		{
 			code: 500,
-			err:  RecoverableError{errors.New("server returned HTTP status 500 Internal Server Error: " + longErrMessage[:maxErrMsgLen])},
+			err:  RecoverableError{errors.New("server returned HTTP status 500 Internal Server Error: " + longErrMessage[:maxErrMsgLen]), defaultBackoff},
 		},
 	}
 
@@ -81,5 +81,76 @@ func TestStoreHTTPErrorHandling(t *testing.T) {
 		}
 
 		server.Close()
+	}
+}
+
+func TestClientRetryAfter(t *testing.T) {
+	server := httptest.NewServer(
+		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, longErrMessage, 429)
+		}),
+	)
+	defer server.Close()
+
+	getClient := func(conf *ClientConfig) WriteClient {
+		hash, err := toHash(conf)
+		require.NoError(t, err)
+		c, err := NewWriteClient(hash, conf)
+		require.NoError(t, err)
+		return c
+	}
+
+	serverURL, err := url.Parse(server.URL)
+	require.NoError(t, err)
+
+	conf := &ClientConfig{
+		URL:              &config_util.URL{URL: serverURL},
+		Timeout:          model.Duration(time.Second),
+		RetryOnRateLimit: false,
+	}
+
+	c := getClient(conf)
+	err = c.Store(context.Background(), []byte{})
+	if _, ok := err.(RecoverableError); ok {
+		t.Fatal("recoverable error not expected")
+	}
+
+	conf = &ClientConfig{
+		URL:              &config_util.URL{URL: serverURL},
+		Timeout:          model.Duration(time.Second),
+		RetryOnRateLimit: true,
+	}
+
+	c = getClient(conf)
+	err = c.Store(context.Background(), []byte{})
+	if _, ok := err.(RecoverableError); !ok {
+		t.Fatal("recoverable error was expected")
+	}
+}
+
+func TestRetryAfterDuration(t *testing.T) {
+	tc := []struct {
+		name     string
+		tInput   string
+		expected model.Duration
+	}{
+		{
+			name:     "seconds",
+			tInput:   "120",
+			expected: model.Duration(time.Second * 120),
+		},
+		{
+			name:     "date-time default",
+			tInput:   time.RFC1123, // Expected layout is http.TimeFormat, hence an error.
+			expected: defaultBackoff,
+		},
+		{
+			name:     "retry-after not provided",
+			tInput:   "", // Expected layout is http.TimeFormat, hence an error.
+			expected: defaultBackoff,
+		},
+	}
+	for _, c := range tc {
+		require.Equal(t, c.expected, retryAfterDuration(c.tInput), c.name)
 	}
 }

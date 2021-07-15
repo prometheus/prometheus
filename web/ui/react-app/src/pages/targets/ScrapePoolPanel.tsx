@@ -6,19 +6,19 @@ import { Target } from './target';
 import EndpointLink from './EndpointLink';
 import TargetLabels from './TargetLabels';
 import { now } from 'moment';
-import { useLocalStorage } from '../../hooks/useLocalStorage';
 import { ToggleMoreLess } from '../../components/ToggleMoreLess';
 import { formatRelative, humanizeDuration } from '../../utils';
 
 interface PanelProps {
   scrapePool: string;
   targetGroup: ScrapePool;
+  expanded: boolean;
+  toggleExpanded: () => void;
 }
 
 export const columns = ['Endpoint', 'State', 'Labels', 'Last Scrape', 'Scrape Duration', 'Error'];
 
-const ScrapePoolPanel: FC<PanelProps> = ({ scrapePool, targetGroup }) => {
-  const [{ expanded }, setOptions] = useLocalStorage(`targets-${scrapePool}-expanded`, { expanded: true });
+const ScrapePoolPanel: FC<PanelProps> = ({ scrapePool, targetGroup, expanded, toggleExpanded }) => {
   const modifier = targetGroup.upCount < targetGroup.targets.length ? 'danger' : 'normal';
   const id = `pool-${scrapePool}`;
   const anchorProps = {
@@ -28,7 +28,7 @@ const ScrapePoolPanel: FC<PanelProps> = ({ scrapePool, targetGroup }) => {
 
   return (
     <div className={styles.container}>
-      <ToggleMoreLess event={(): void => setOptions({ expanded: !expanded })} showMore={expanded}>
+      <ToggleMoreLess event={toggleExpanded} showMore={expanded}>
         <a className={styles[modifier]} {...anchorProps}>
           {`${scrapePool} (${targetGroup.upCount}/${targetGroup.targets.length} up)`}
         </a>
@@ -70,7 +70,7 @@ const ScrapePoolPanel: FC<PanelProps> = ({ scrapePool, targetGroup }) => {
                   </td>
                   <td className={styles['last-scrape']}>{formatRelative(lastScrape, now())}</td>
                   <td className={styles['scrape-duration']}>{humanizeDuration(lastScrapeDuration * 1000)}</td>
-                  <td className={styles.errors}>{lastError ? <Badge color={color}>{lastError}</Badge> : null}</td>
+                  <td className={styles.errors}>{lastError ? <span className="text-danger">{lastError}</span> : null}</td>
                 </tr>
               );
             })}

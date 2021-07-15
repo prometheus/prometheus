@@ -35,8 +35,9 @@ import (
 	"time"
 
 	"github.com/alecthomas/units"
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	kitloglevel "github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	conntrack "github.com/mwitkow/go-conntrack"
 	"github.com/oklog/run"
 	"github.com/opentracing/opentracing-go"
@@ -59,6 +60,7 @@ import (
 	"github.com/prometheus/prometheus/discovery"
 	_ "github.com/prometheus/prometheus/discovery/install" // Register service discovery implementations.
 	"github.com/prometheus/prometheus/notifier"
+	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/logging"
 	"github.com/prometheus/prometheus/pkg/relabel"
@@ -97,6 +99,70 @@ func init() {
 	}
 }
 
+type flagConfig struct {
+	configFile string
+
+	localStoragePath    string
+	notifier            notifier.Options
+	forGracePeriod      model.Duration
+	outageTolerance     model.Duration
+	resendDelay         model.Duration
+	web                 web.Options
+	tsdb                tsdbOptions
+	lookbackDelta       model.Duration
+	webTimeout          model.Duration
+	queryTimeout        model.Duration
+	queryConcurrency    int
+	queryMaxSamples     int
+	RemoteFlushDeadline model.Duration
+
+	featureList []string
+	// These options are extracted from featureList
+	// for ease of use.
+	enablePromQLAtModifier     bool
+	enablePromQLNegativeOffset bool
+	enableExpandExternalLabels bool
+
+	prometheusURL   string
+	corsRegexString string
+
+	promlogConfig promlog.Config
+}
+
+// setFeatureListOptions sets the corresponding options from the featureList.
+func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
+	maxExemplars := c.tsdb.MaxExemplars
+	// Disabled at first. Value from the flag is used if exemplar-storage is set.
+	c.tsdb.MaxExemplars = 0
+	for _, f := range c.featureList {
+		opts := strings.Split(f, ",")
+		for _, o := range opts {
+			switch o {
+			case "promql-at-modifier":
+				c.enablePromQLAtModifier = true
+				level.Info(logger).Log("msg", "Experimental promql-at-modifier enabled")
+			case "promql-negative-offset":
+				c.enablePromQLNegativeOffset = true
+				level.Info(logger).Log("msg", "Experimental promql-negative-offset enabled")
+			case "remote-write-receiver":
+				c.web.RemoteWriteReceiver = true
+				level.Info(logger).Log("msg", "Experimental remote-write-receiver enabled")
+			case "expand-external-labels":
+				c.enableExpandExternalLabels = true
+				level.Info(logger).Log("msg", "Experimental expand-external-labels enabled")
+			case "exemplar-storage":
+				c.tsdb.MaxExemplars = maxExemplars
+				level.Info(logger).Log("msg", "Experimental in-memory exemplar storage enabled", "maxExemplars", maxExemplars)
+			case "":
+				continue
+			default:
+				level.Warn(logger).Log("msg", "Unknown option for --enable-feature", "option", o)
+			}
+		}
+	}
+	return nil
+}
+
 func main() {
 	if os.Getenv("DEBUG") != "" {
 		runtime.SetBlockProfileRate(20)
@@ -108,29 +174,7 @@ func main() {
 		newFlagRetentionDuration model.Duration
 	)
 
-	cfg := struct {
-		configFile string
-
-		localStoragePath    string
-		notifier            notifier.Options
-		notifierTimeout     model.Duration
-		forGracePeriod      model.Duration
-		outageTolerance     model.Duration
-		resendDelay         model.Duration
-		web                 web.Options
-		tsdb                tsdbOptions
-		lookbackDelta       model.Duration
-		webTimeout          model.Duration
-		queryTimeout        model.Duration
-		queryConcurrency    int
-		queryMaxSamples     int
-		RemoteFlushDeadline model.Duration
-
-		prometheusURL   string
-		corsRegexString string
-
-		promlogConfig promlog.Config
-	}{
+	cfg := flagConfig{
 		notifier: notifier.Options{
 			Registerer: prometheus.DefaultRegisterer,
 		},
@@ -141,7 +185,7 @@ func main() {
 		promlogConfig: promlog.Config{},
 	}
 
-	a := kingpin.New(filepath.Base(os.Args[0]), "The Prometheus monitoring server")
+	a := kingpin.New(filepath.Base(os.Args[0]), "The Prometheus monitoring server").UsageWriter(os.Stdout)
 
 	a.Version(version.Print("prometheus"))
 
@@ -201,6 +245,10 @@ func main() {
 		"Maximum duration compacted blocks may span. For use in testing. (Defaults to 10% of the retention period.)").
 		Hidden().PlaceHolder("<duration>").SetValue(&cfg.tsdb.MaxBlockDuration)
 
+	a.Flag("storage.tsdb.max-block-chunk-segment-size",
+		"The maximum size for a single chunk segment in a block. Example: 512MB").
+		Hidden().PlaceHolder("<bytes>").BytesVar(&cfg.tsdb.MaxBlockChunkSegmentSize)
+
 	a.Flag("storage.tsdb.wal-segment-size",
 		"Size at which to split the tsdb WAL segment files. Example: 100MB").
 		Hidden().PlaceHolder("<bytes>").BytesVar(&cfg.tsdb.WALSegmentSize)
@@ -211,7 +259,7 @@ func main() {
 	a.Flag("storage.tsdb.retention.time", "How long to retain samples in storage. When this flag is set it overrides \"storage.tsdb.retention\". If neither this flag nor \"storage.tsdb.retention\" nor \"storage.tsdb.retention.size\" is set, the retention time defaults to "+defaultRetentionString+". Units Supported: y, w, d, h, m, s, ms.").
 		SetValue(&newFlagRetentionDuration)
 
-	a.Flag("storage.tsdb.retention.size", "[EXPERIMENTAL] Maximum number of bytes that can be stored for blocks. A unit is required, supported units: B, KB, MB, GB, TB, PB, EB. Ex: \"512MB\". This flag is experimental and can be changed in future releases.").
+	a.Flag("storage.tsdb.retention.size", "Maximum number of bytes that can be stored for blocks. A unit is required, supported units: B, KB, MB, GB, TB, PB, EB. Ex: \"512MB\". This flag is experimental and can be changed in future releases.").
 		BytesVar(&cfg.tsdb.MaxBytes)
 
 	a.Flag("storage.tsdb.no-lockfile", "Do not create lockfile in data directory.").
@@ -235,6 +283,9 @@ func main() {
 	a.Flag("storage.remote.read-max-bytes-in-frame", "Maximum number of bytes in a single frame for streaming remote read response types before marshalling. Note that client might have limit on frame size as well. 1MB as recommended by protobuf by default.").
 		Default("1048576").IntVar(&cfg.web.RemoteReadBytesInFrame)
 
+	a.Flag("storage.exemplars.exemplars-limit", "[EXPERIMENTAL] Maximum number of exemplars to store in in-memory exemplar storage total. 0 disables the exemplar storage. This flag is effective only with --enable-feature=exemplar-storage.").
+		Default("100000").IntVar(&cfg.tsdb.MaxExemplars)
+
 	a.Flag("rules.alert.for-outage-tolerance", "Max time to tolerate prometheus outage for restoring \"for\" state of alert.").
 		Default("1h").SetValue(&cfg.outageTolerance)
 
@@ -250,8 +301,8 @@ func main() {
 	a.Flag("alertmanager.notification-queue-capacity", "The capacity of the queue for pending Alertmanager notifications.").
 		Default("10000").IntVar(&cfg.notifier.QueueCapacity)
 
-	a.Flag("alertmanager.timeout", "Timeout for sending alerts to Alertmanager.").
-		Default("10s").SetValue(&cfg.notifierTimeout)
+	// TODO: Remove in Prometheus 3.0.
+	alertmanagerTimeout := a.Flag("alertmanager.timeout", "[DEPRECATED] This flag has no effect.").Hidden().String()
 
 	a.Flag("query.lookback-delta", "The maximum lookback duration for retrieving metrics during expression evaluations and federation.").
 		Default("5m").SetValue(&cfg.lookbackDelta)
@@ -265,6 +316,9 @@ func main() {
 	a.Flag("query.max-samples", "Maximum number of samples a single query can load into memory. Note that queries will fail if they try to load more samples than this into memory, so this also limits the number of samples a query can return.").
 		Default("50000000").IntVar(&cfg.queryMaxSamples)
 
+	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: promql-at-modifier, promql-negative-offset, remote-write-receiver, exemplar-storage, expand-external-labels. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
+		Default("").StringsVar(&cfg.featureList)
+
 	promlogflag.AddFlags(a, &cfg.promlogConfig)
 
 	_, err := a.Parse(os.Args[1:])
@@ -275,6 +329,11 @@ func main() {
 	}
 
 	logger := promlog.New(&cfg.promlogConfig)
+
+	if err := cfg.setFeatureListOptions(logger); err != nil {
+		fmt.Fprintln(os.Stderr, errors.Wrapf(err, "Error parsing feature list"))
+		os.Exit(1)
+	}
 
 	cfg.web.ExternalURL, err = computeExternalURL(cfg.prometheusURL, cfg.web.ListenAddress)
 	if err != nil {
@@ -288,8 +347,12 @@ func main() {
 		os.Exit(2)
 	}
 
+	if *alertmanagerTimeout != "" {
+		level.Warn(logger).Log("msg", "The flag --alertmanager.timeout has no effect and will be removed in the future.")
+	}
+
 	// Throw error for invalid config before starting other components.
-	if _, err := config.LoadFile(cfg.configFile); err != nil {
+	if _, err := config.LoadFile(cfg.configFile, false, log.NewNopLogger()); err != nil {
 		level.Error(logger).Log("msg", fmt.Sprintf("Error loading config (--config.file=%s)", cfg.configFile), "err", err)
 		os.Exit(2)
 	}
@@ -355,11 +418,27 @@ func main() {
 	noStepSubqueryInterval := &safePromQLNoStepSubqueryInterval{}
 	noStepSubqueryInterval.Set(config.DefaultGlobalConfig.EvaluationInterval)
 
+	// FIXME: Temporary workaround until a proper solution is found. go-kit's
+	// level packages use private types to determine the level so we have to use
+	// the same level package as the underlying library.
+	var lvl kitloglevel.Option
+	switch cfg.promlogConfig.Level.String() {
+	case "debug":
+		lvl = kitloglevel.AllowDebug()
+	case "info":
+		lvl = kitloglevel.AllowInfo()
+	case "warn":
+		lvl = kitloglevel.AllowWarn()
+	case "error":
+		lvl = kitloglevel.AllowError()
+	}
+	kloglogger := kitloglevel.NewFilter(logger, lvl)
+
 	// Above level 6, the k8s client would log bearer tokens in clear-text.
 	klog.ClampLevel(6)
-	klog.SetLogger(log.With(logger, "component", "k8s_client_runtime"))
+	klog.SetLogger(log.With(kloglogger, "component", "k8s_client_runtime"))
 	klogv2.ClampLevel(6)
-	klogv2.SetLogger(log.With(logger, "component", "k8s_client_runtime"))
+	klogv2.SetLogger(log.With(kloglogger, "component", "k8s_client_runtime"))
 
 	level.Info(logger).Log("msg", "Starting Prometheus", "version", version.Info())
 	if bits.UintSize < 64 {
@@ -372,7 +451,7 @@ func main() {
 	level.Info(logger).Log("vm_limits", prom_runtime.VMLimits())
 
 	var (
-		localStorage  = &readyStorage{}
+		localStorage  = &readyStorage{stats: tsdb.NewDBStats()}
 		scraper       = &readyScrapeManager{}
 		remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, cfg.localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper)
 		fanoutStorage = storage.NewFanout(logger, localStorage, remoteStorage)
@@ -400,6 +479,8 @@ func main() {
 			ActiveQueryTracker:       promql.NewActiveQueryTracker(cfg.localStoragePath, cfg.queryConcurrency, log.With(logger, "component", "activeQueryTracker")),
 			LookbackDelta:            time.Duration(cfg.lookbackDelta),
 			NoStepSubqueryIntervalFn: noStepSubqueryInterval.Get,
+			EnableAtModifier:         cfg.enablePromQLAtModifier,
+			EnableNegativeOffset:     cfg.enablePromQLNegativeOffset,
 		}
 
 		queryEngine = promql.NewEngine(opts)
@@ -427,6 +508,7 @@ func main() {
 	cfg.web.TSDBDir = cfg.localStoragePath
 	cfg.web.LocalStorage = localStorage
 	cfg.web.Storage = fanoutStorage
+	cfg.web.ExemplarStorage = localStorage
 	cfg.web.QueryEngine = queryEngine
 	cfg.web.ScrapeManager = scrapeManager
 	cfg.web.RuleManager = ruleManager
@@ -461,6 +543,9 @@ func main() {
 	http.DefaultTransport.(*http.Transport).DialContext = conntrack.NewDialContextFunc(
 		conntrack.DialWithTracing(),
 	)
+
+	// This is passed to ruleManager.Update().
+	var externalURL = cfg.web.ExternalURL.String()
 
 	reloaders := []reloader{
 		{
@@ -527,6 +612,7 @@ func main() {
 					time.Duration(cfg.GlobalConfig.EvaluationInterval),
 					files,
 					cfg.GlobalConfig.ExternalLabels,
+					externalURL,
 				)
 			},
 		},
@@ -664,11 +750,11 @@ func main() {
 				for {
 					select {
 					case <-hup:
-						if err := reloadConfig(cfg.configFile, logger, noStepSubqueryInterval, reloaders...); err != nil {
+						if err := reloadConfig(cfg.configFile, cfg.enableExpandExternalLabels, logger, noStepSubqueryInterval, reloaders...); err != nil {
 							level.Error(logger).Log("msg", "Error reloading config", "err", err)
 						}
 					case rc := <-webHandler.Reload():
-						if err := reloadConfig(cfg.configFile, logger, noStepSubqueryInterval, reloaders...); err != nil {
+						if err := reloadConfig(cfg.configFile, cfg.enableExpandExternalLabels, logger, noStepSubqueryInterval, reloaders...); err != nil {
 							level.Error(logger).Log("msg", "Error reloading config", "err", err)
 							rc <- err
 						} else {
@@ -700,7 +786,7 @@ func main() {
 					return nil
 				}
 
-				if err := reloadConfig(cfg.configFile, logger, noStepSubqueryInterval, reloaders...); err != nil {
+				if err := reloadConfig(cfg.configFile, cfg.enableExpandExternalLabels, logger, noStepSubqueryInterval, reloaders...); err != nil {
 					return errors.Wrapf(err, "error loading config from %q", cfg.configFile)
 				}
 
@@ -741,11 +827,18 @@ func main() {
 						return errors.New("flag 'storage.tsdb.wal-segment-size' must be set between 10MB and 256MB")
 					}
 				}
+				if cfg.tsdb.MaxBlockChunkSegmentSize != 0 {
+					if cfg.tsdb.MaxBlockChunkSegmentSize < 1024*1024 {
+						return errors.New("flag 'storage.tsdb.max-block-chunk-segment-size' must be set over 1MB")
+					}
+				}
+
 				db, err := openDBWithMetrics(
 					cfg.localStoragePath,
 					logger,
 					prometheus.DefaultRegisterer,
 					&opts,
+					localStorage.getStats(),
 				)
 				if err != nil {
 					return errors.Wrapf(err, "opening storage failed")
@@ -827,12 +920,13 @@ func main() {
 	level.Info(logger).Log("msg", "See you next time!")
 }
 
-func openDBWithMetrics(dir string, logger log.Logger, reg prometheus.Registerer, opts *tsdb.Options) (*tsdb.DB, error) {
+func openDBWithMetrics(dir string, logger log.Logger, reg prometheus.Registerer, opts *tsdb.Options, stats *tsdb.DBStats) (*tsdb.DB, error) {
 	db, err := tsdb.Open(
 		dir,
 		log.With(logger, "component", "tsdb"),
 		reg,
 		opts,
+		stats,
 	)
 	if err != nil {
 		return nil, err
@@ -881,7 +975,7 @@ type reloader struct {
 	reloader func(*config.Config) error
 }
 
-func reloadConfig(filename string, logger log.Logger, noStepSuqueryInterval *safePromQLNoStepSubqueryInterval, rls ...reloader) (err error) {
+func reloadConfig(filename string, expandExternalLabels bool, logger log.Logger, noStepSuqueryInterval *safePromQLNoStepSubqueryInterval, rls ...reloader) (err error) {
 	start := time.Now()
 	timings := []interface{}{}
 	level.Info(logger).Log("msg", "Loading configuration file", "filename", filename)
@@ -895,7 +989,7 @@ func reloadConfig(filename string, logger log.Logger, noStepSuqueryInterval *saf
 		}
 	}()
 
-	conf, err := config.LoadFile(filename)
+	conf, err := config.LoadFile(filename, expandExternalLabels, logger)
 	if err != nil {
 		return errors.Wrapf(err, "couldn't load configuration (--config.file=%q)", filename)
 	}
@@ -1002,6 +1096,7 @@ type readyStorage struct {
 	mtx             sync.RWMutex
 	db              *tsdb.DB
 	startTimeMargin int64
+	stats           *tsdb.DBStats
 }
 
 // Set the storage.
@@ -1013,10 +1108,16 @@ func (s *readyStorage) Set(db *tsdb.DB, startTimeMargin int64) {
 	s.startTimeMargin = startTimeMargin
 }
 
-// get is internal, you should use readyStorage as the front implementation layer.
 func (s *readyStorage) get() *tsdb.DB {
 	s.mtx.RLock()
 	x := s.db
+	s.mtx.RUnlock()
+	return x
+}
+
+func (s *readyStorage) getStats() *tsdb.DBStats {
+	s.mtx.RLock()
+	x := s.stats
 	s.mtx.RUnlock()
 	return x
 }
@@ -1054,6 +1155,13 @@ func (s *readyStorage) ChunkQuerier(ctx context.Context, mint, maxt int64) (stor
 	return nil, tsdb.ErrNotReady
 }
 
+func (s *readyStorage) ExemplarQuerier(ctx context.Context) (storage.ExemplarQuerier, error) {
+	if x := s.get(); x != nil {
+		return x.ExemplarQuerier(ctx)
+	}
+	return nil, tsdb.ErrNotReady
+}
+
 // Appender implements the Storage interface.
 func (s *readyStorage) Appender(ctx context.Context) storage.Appender {
 	if x := s.get(); x != nil {
@@ -1064,11 +1172,13 @@ func (s *readyStorage) Appender(ctx context.Context) storage.Appender {
 
 type notReadyAppender struct{}
 
-func (n notReadyAppender) Add(l labels.Labels, t int64, v float64) (uint64, error) {
+func (n notReadyAppender) Append(ref uint64, l labels.Labels, t int64, v float64) (uint64, error) {
 	return 0, tsdb.ErrNotReady
 }
 
-func (n notReadyAppender) AddFast(ref uint64, t int64, v float64) error { return tsdb.ErrNotReady }
+func (n notReadyAppender) AppendExemplar(ref uint64, l labels.Labels, e exemplar.Exemplar) (uint64, error) {
+	return 0, tsdb.ErrNotReady
+}
 
 func (n notReadyAppender) Commit() error { return tsdb.ErrNotReady }
 
@@ -1114,6 +1224,14 @@ func (s *readyStorage) Stats(statsByLabelName string) (*tsdb.Stats, error) {
 	return nil, tsdb.ErrNotReady
 }
 
+// WALReplayStatus implements the api_v1.TSDBStats interface.
+func (s *readyStorage) WALReplayStatus() (tsdb.WALReplayStatus, error) {
+	if x := s.getStats(); x != nil {
+		return x.Head.WALReplayStatus.GetWALReplayStatus(), nil
+	}
+	return tsdb.WALReplayStatus{}, tsdb.ErrNotReady
+}
+
 // ErrNotReady is returned if the underlying scrape manager is not ready yet.
 var ErrNotReady = errors.New("Scrape manager not ready")
 
@@ -1146,28 +1264,32 @@ func (rm *readyScrapeManager) Get() (*scrape.Manager, error) {
 // tsdbOptions is tsdb.Option version with defined units.
 // This is required as tsdb.Option fields are unit agnostic (time).
 type tsdbOptions struct {
-	WALSegmentSize         units.Base2Bytes
-	RetentionDuration      model.Duration
-	MaxBytes               units.Base2Bytes
-	NoLockfile             bool
-	AllowOverlappingBlocks bool
-	WALCompression         bool
-	StripeSize             int
-	MinBlockDuration       model.Duration
-	MaxBlockDuration       model.Duration
+	WALSegmentSize           units.Base2Bytes
+	MaxBlockChunkSegmentSize units.Base2Bytes
+	RetentionDuration        model.Duration
+	MaxBytes                 units.Base2Bytes
+	NoLockfile               bool
+	AllowOverlappingBlocks   bool
+	WALCompression           bool
+	StripeSize               int
+	MinBlockDuration         model.Duration
+	MaxBlockDuration         model.Duration
+	MaxExemplars             int
 }
 
 func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 	return tsdb.Options{
-		WALSegmentSize:         int(opts.WALSegmentSize),
-		RetentionDuration:      int64(time.Duration(opts.RetentionDuration) / time.Millisecond),
-		MaxBytes:               int64(opts.MaxBytes),
-		NoLockfile:             opts.NoLockfile,
-		AllowOverlappingBlocks: opts.AllowOverlappingBlocks,
-		WALCompression:         opts.WALCompression,
-		StripeSize:             opts.StripeSize,
-		MinBlockDuration:       int64(time.Duration(opts.MinBlockDuration) / time.Millisecond),
-		MaxBlockDuration:       int64(time.Duration(opts.MaxBlockDuration) / time.Millisecond),
+		WALSegmentSize:           int(opts.WALSegmentSize),
+		MaxBlockChunkSegmentSize: int64(opts.MaxBlockChunkSegmentSize),
+		RetentionDuration:        int64(time.Duration(opts.RetentionDuration) / time.Millisecond),
+		MaxBytes:                 int64(opts.MaxBytes),
+		NoLockfile:               opts.NoLockfile,
+		AllowOverlappingBlocks:   opts.AllowOverlappingBlocks,
+		WALCompression:           opts.WALCompression,
+		StripeSize:               opts.StripeSize,
+		MinBlockDuration:         int64(time.Duration(opts.MinBlockDuration) / time.Millisecond),
+		MaxBlockDuration:         int64(time.Duration(opts.MaxBlockDuration) / time.Millisecond),
+		MaxExemplars:             opts.MaxExemplars,
 	}
 }
 

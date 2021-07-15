@@ -86,3 +86,35 @@ and specify an interval for which samples of a series got deleted.
 │                        . . .                        │
 └─────────────────────────────────────────────────────┘
 ```
+
+### Exemplar records
+
+Exemplar records encode exemplars as a list of triples `(series_id, timestamp, value)` 
+plus the length of the labels list, and all the labels.
+The first row stores the starting id and the starting timestamp.
+Series reference and timestamp are encoded as deltas w.r.t the first exemplar.
+The first exemplar record begins at the second row.
+
+See: https://github.com/OpenObservability/OpenMetrics/blob/main/specification/OpenMetrics.md#exemplars
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│ type = 5 <1b>                                                    │
+├──────────────────────────────────────────────────────────────────┤
+│ ┌────────────────────┬───────────────────────────┐               │
+│ │ id <8b>            │ timestamp <8b>            │               │
+│ └────────────────────┴───────────────────────────┘               │
+│ ┌────────────────────┬───────────────────────────┬─────────────┐ │
+│ │ id_delta <uvarint> │ timestamp_delta <uvarint> │ value <8b>  │ │
+│ ├────────────────────┴───────────────────────────┴─────────────┤ │
+│ │  n = len(labels) <uvarint>                                   │ │
+│ ├──────────────────────┬───────────────────────────────────────┤ │
+│ │ len(str_1) <uvarint> │ str_1 <bytes>                         │ │
+│ ├──────────────────────┴───────────────────────────────────────┤ │
+│ │  ...                                                         │ │
+│ ├───────────────────────┬──────────────────────────────────────┤ │
+│ │ len(str_2n) <uvarint> │ str_2n <bytes> │                     │ │
+│ └───────────────────────┴────────────────┴─────────────────────┘ │
+│                              . . .                               │
+└──────────────────────────────────────────────────────────────────┘
+```

@@ -1,6 +1,6 @@
 # TSDB 
 
-[![GoDoc](https://godoc.org/github.com/prometheus/prometheus/tsdb?status.svg)](https://godoc.org/github.com/prometheus/prometheus/tsdb)
+[![GoPkg](https://pkg.go.dev/badge/github.com/prometheus/prometheus/tsdb.svg)](https://pkg.go.dev/github.com/prometheus/prometheus/tsdb)
 
 This directory contains the Prometheus storage layer that is used in its 2.x releases.
 
@@ -17,3 +17,4 @@ A series of blog posts explaining different components of TSDB:
 * [WAL and Checkpoint](https://ganeshvernekar.com/blog/prometheus-tsdb-wal-and-checkpoint/)
 * [Memory Mapping of Head Chunks from Disk](https://ganeshvernekar.com/blog/prometheus-tsdb-mmapping-head-chunks-from-disk/)
 * [Persistent Block and its Index](https://ganeshvernekar.com/blog/prometheus-tsdb-persistent-block-and-its-index/)
+* [Queries](https://ganeshvernekar.com/blog/prometheus-tsdb-queries/)

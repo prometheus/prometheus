@@ -36,11 +36,11 @@ func TestFanout_SelectSorted(t *testing.T) {
 	priStorage := teststorage.New(t)
 	defer priStorage.Close()
 	app1 := priStorage.Appender(ctx)
-	app1.Add(inputLabel, 0, 0)
+	app1.Append(0, inputLabel, 0, 0)
 	inputTotalSize++
-	app1.Add(inputLabel, 1000, 1)
+	app1.Append(0, inputLabel, 1000, 1)
 	inputTotalSize++
-	app1.Add(inputLabel, 2000, 2)
+	app1.Append(0, inputLabel, 2000, 2)
 	inputTotalSize++
 	err := app1.Commit()
 	require.NoError(t, err)
@@ -48,11 +48,11 @@ func TestFanout_SelectSorted(t *testing.T) {
 	remoteStorage1 := teststorage.New(t)
 	defer remoteStorage1.Close()
 	app2 := remoteStorage1.Appender(ctx)
-	app2.Add(inputLabel, 3000, 3)
+	app2.Append(0, inputLabel, 3000, 3)
 	inputTotalSize++
-	app2.Add(inputLabel, 4000, 4)
+	app2.Append(0, inputLabel, 4000, 4)
 	inputTotalSize++
-	app2.Add(inputLabel, 5000, 5)
+	app2.Append(0, inputLabel, 5000, 5)
 	inputTotalSize++
 	err = app2.Commit()
 	require.NoError(t, err)
@@ -61,11 +61,11 @@ func TestFanout_SelectSorted(t *testing.T) {
 	defer remoteStorage2.Close()
 
 	app3 := remoteStorage2.Appender(ctx)
-	app3.Add(inputLabel, 6000, 6)
+	app3.Append(0, inputLabel, 6000, 6)
 	inputTotalSize++
-	app3.Add(inputLabel, 7000, 7)
+	app3.Append(0, inputLabel, 7000, 7)
 	inputTotalSize++
-	app3.Add(inputLabel, 8000, 8)
+	app3.Append(0, inputLabel, 8000, 8)
 	inputTotalSize++
 
 	err = app3.Commit()
@@ -230,7 +230,7 @@ func (errQuerier) Select(bool, *storage.SelectHints, ...*labels.Matcher) storage
 	return storage.ErrSeriesSet(errSelect)
 }
 
-func (errQuerier) LabelValues(name string) ([]string, storage.Warnings, error) {
+func (errQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
 	return nil, nil, errors.New("label values error")
 }
 

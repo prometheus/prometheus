@@ -556,7 +556,14 @@ func (cdm *ChunkDiskMapper) Chunk(ref uint64) (chunkenc.Chunk, error) {
 
 	// The chunk data itself.
 	chkData := mmapFile.byteSlice.Range(chkDataEnd-int(chkDataLen), chkDataEnd)
-	chk, err := cdm.pool.Get(chunkenc.Encoding(chkEnc), chkData)
+
+	// Make a copy of the chunk data to prevent a panic occurring because the returned
+	// chunk data slice references an mmap-ed file which could be closed after the
+	// function returns but while the chunk is still in use.
+	chkDataCopy := make([]byte, len(chkData))
+	copy(chkDataCopy, chkData)
+
+	chk, err := cdm.pool.Get(chunkenc.Encoding(chkEnc), chkDataCopy)
 	if err != nil {
 		return nil, &CorruptionErr{
 			Dir:       cdm.dir.Name(),
@@ -605,12 +612,14 @@ func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef, chunkRef uint64, 
 					}
 				}
 				if allZeros {
+					// End of segment chunk file content.
 					break
 				}
 				return &CorruptionErr{
 					Dir:       cdm.dir.Name(),
 					FileIndex: segID,
-					Err:       errors.Errorf("head chunk file doesn't include enough bytes to read the chunk header - required:%v, available:%v, file:%d", idx+MaxHeadChunkMetaSize, fileEnd, segID),
+					Err: errors.Errorf("head chunk file has some unread data, but doesn't include enough bytes to read the chunk header"+
+						" - required:%v, available:%v, file:%d", idx+MaxHeadChunkMetaSize, fileEnd, segID),
 				}
 			}
 			chkCRC32.Reset()

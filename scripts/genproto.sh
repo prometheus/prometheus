@@ -10,17 +10,18 @@ if ! [[ "$0" =~ "scripts/genproto.sh" ]]; then
 	exit 255
 fi
 
-if ! [[ $(protoc --version) =~ "3.12.3" ]]; then
-	echo "could not find protoc 3.12.3, is it installed + in PATH?"
+if ! [[ $(protoc --version) =~ "3.15.8" ]]; then
+	echo "could not find protoc 3.15.8, is it installed + in PATH?"
 	exit 255
 fi
 
-echo "installing plugins"
-GO111MODULE=on go mod download
+# Since we run go get, go mod download, the go.sum will change.
+# Make a backup.
+cp go.sum go.sum.bak
 
 INSTALL_PKGS="golang.org/x/tools/cmd/goimports github.com/gogo/protobuf/protoc-gen-gogofast github.com/grpc-ecosystem/grpc-gateway/protoc-gen-grpc-gateway github.com/grpc-ecosystem/grpc-gateway/protoc-gen-swagger"
 for pkg in ${INSTALL_PKGS}; do
-    GO111MODULE=on go install -mod=vendor "$pkg"
+    GO111MODULE=on go install "$pkg"
 done
 
 PROM_ROOT="${PWD}"
@@ -49,3 +50,5 @@ for dir in ${DIRS}; do
 		goimports -w ./*.go
 	popd
 done
+
+mv go.sum.bak go.sum

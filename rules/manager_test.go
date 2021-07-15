@@ -23,7 +23,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
@@ -64,7 +64,7 @@ func TestAlertingRule(t *testing.T) {
 		expr,
 		time.Minute,
 		labels.FromStrings("severity", "{{\"c\"}}ritical"),
-		nil, nil, true, nil,
+		nil, nil, "", true, nil,
 	)
 	result := promql.Vector{
 		{
@@ -205,7 +205,7 @@ func TestForStateAddSamples(t *testing.T) {
 		expr,
 		time.Minute,
 		labels.FromStrings("severity", "{{\"c\"}}ritical"),
-		nil, nil, true, nil,
+		nil, nil, "", true, nil,
 	)
 	result := promql.Vector{
 		{
@@ -379,7 +379,7 @@ func TestForStateRestore(t *testing.T) {
 		expr,
 		alertForDuration,
 		labels.FromStrings("severity", "critical"),
-		nil, nil, true, nil,
+		nil, nil, "", true, nil,
 	)
 
 	group := NewGroup(GroupOptions{
@@ -445,7 +445,7 @@ func TestForStateRestore(t *testing.T) {
 			expr,
 			alertForDuration,
 			labels.FromStrings("severity", "critical"),
-			nil, nil, false, nil,
+			nil, nil, "", false, nil,
 		)
 		newGroup := NewGroup(GroupOptions{
 			Name:          "default",
@@ -547,9 +547,9 @@ func TestStaleness(t *testing.T) {
 
 	// A time series that has two samples and then goes stale.
 	app := st.Appender(context.Background())
-	app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 0, 1)
-	app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 1000, 2)
-	app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 2000, math.Float64frombits(value.StaleNaN))
+	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 1)
+	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 1000, 2)
+	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 2000, math.Float64frombits(value.StaleNaN))
 
 	err = app.Commit()
 	require.NoError(t, err)
@@ -609,13 +609,13 @@ func readSeriesSet(ss storage.SeriesSet) (map[string][]promql.Point, error) {
 func TestCopyState(t *testing.T) {
 	oldGroup := &Group{
 		rules: []Rule{
-			NewAlertingRule("alert", nil, 0, nil, nil, nil, true, nil),
+			NewAlertingRule("alert", nil, 0, nil, nil, nil, "", true, nil),
 			NewRecordingRule("rule1", nil, nil),
 			NewRecordingRule("rule2", nil, nil),
 			NewRecordingRule("rule3", nil, labels.Labels{{Name: "l1", Value: "v1"}}),
 			NewRecordingRule("rule3", nil, labels.Labels{{Name: "l1", Value: "v2"}}),
 			NewRecordingRule("rule3", nil, labels.Labels{{Name: "l1", Value: "v3"}}),
-			NewAlertingRule("alert2", nil, 0, labels.Labels{{Name: "l2", Value: "v1"}}, nil, nil, true, nil),
+			NewAlertingRule("alert2", nil, 0, labels.Labels{{Name: "l2", Value: "v1"}}, nil, nil, "", true, nil),
 		},
 		seriesInPreviousEval: []map[string]labels.Labels{
 			{},
@@ -634,10 +634,10 @@ func TestCopyState(t *testing.T) {
 			NewRecordingRule("rule3", nil, labels.Labels{{Name: "l1", Value: "v0"}}),
 			NewRecordingRule("rule3", nil, labels.Labels{{Name: "l1", Value: "v1"}}),
 			NewRecordingRule("rule3", nil, labels.Labels{{Name: "l1", Value: "v2"}}),
-			NewAlertingRule("alert", nil, 0, nil, nil, nil, true, nil),
+			NewAlertingRule("alert", nil, 0, nil, nil, nil, "", true, nil),
 			NewRecordingRule("rule1", nil, nil),
-			NewAlertingRule("alert2", nil, 0, labels.Labels{{Name: "l2", Value: "v0"}}, nil, nil, true, nil),
-			NewAlertingRule("alert2", nil, 0, labels.Labels{{Name: "l2", Value: "v1"}}, nil, nil, true, nil),
+			NewAlertingRule("alert2", nil, 0, labels.Labels{{Name: "l2", Value: "v0"}}, nil, nil, "", true, nil),
+			NewAlertingRule("alert2", nil, 0, labels.Labels{{Name: "l2", Value: "v1"}}, nil, nil, "", true, nil),
 			NewRecordingRule("rule4", nil, nil),
 		},
 		seriesInPreviousEval: make([]map[string]labels.Labels, 8),
@@ -725,7 +725,7 @@ func TestUpdate(t *testing.T) {
 	ruleManager.start()
 	defer ruleManager.Stop()
 
-	err := ruleManager.Update(10*time.Second, files, nil)
+	err := ruleManager.Update(10*time.Second, files, nil, "")
 	require.NoError(t, err)
 	require.Greater(t, len(ruleManager.groups), 0, "expected non-empty rule groups")
 	ogs := map[string]*Group{}
@@ -736,7 +736,7 @@ func TestUpdate(t *testing.T) {
 		ogs[h] = g
 	}
 
-	err = ruleManager.Update(10*time.Second, files, nil)
+	err = ruleManager.Update(10*time.Second, files, nil, "")
 	require.NoError(t, err)
 	for h, g := range ruleManager.groups {
 		for _, actual := range g.seriesInPreviousEval {
@@ -755,7 +755,7 @@ func TestUpdate(t *testing.T) {
 	defer os.Remove(tmpFile.Name())
 	defer tmpFile.Close()
 
-	err = ruleManager.Update(10*time.Second, []string{tmpFile.Name()}, nil)
+	err = ruleManager.Update(10*time.Second, []string{tmpFile.Name()}, nil, "")
 	require.NoError(t, err)
 
 	for h, g := range ruleManager.groups {
@@ -826,7 +826,7 @@ func reloadAndValidate(rgs *rulefmt.RuleGroups, t *testing.T, tmpFile *os.File, 
 	tmpFile.Seek(0, 0)
 	_, err = tmpFile.Write(bs)
 	require.NoError(t, err)
-	err = ruleManager.Update(10*time.Second, []string{tmpFile.Name()}, nil)
+	err = ruleManager.Update(10*time.Second, []string{tmpFile.Name()}, nil, "")
 	require.NoError(t, err)
 	for h, g := range ruleManager.groups {
 		if ogs[h] == g {
@@ -862,7 +862,7 @@ func TestNotify(t *testing.T) {
 
 	expr, err := parser.ParseExpr("a > 1")
 	require.NoError(t, err)
-	rule := NewAlertingRule("aTooHigh", expr, 0, labels.Labels{}, labels.Labels{}, nil, true, log.NewNopLogger())
+	rule := NewAlertingRule("aTooHigh", expr, 0, labels.Labels{}, labels.Labels{}, nil, "", true, log.NewNopLogger())
 	group := NewGroup(GroupOptions{
 		Name:          "alert",
 		Interval:      time.Second,
@@ -872,10 +872,10 @@ func TestNotify(t *testing.T) {
 	})
 
 	app := storage.Appender(context.Background())
-	app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 1000, 2)
-	app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 2000, 3)
-	app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 5000, 3)
-	app.Add(labels.FromStrings(model.MetricNameLabel, "a"), 6000, 0)
+	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 1000, 2)
+	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 2000, 3)
+	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 5000, 3)
+	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 6000, 0)
 
 	err = app.Commit()
 	require.NoError(t, err)
@@ -971,7 +971,7 @@ func TestMetricsUpdate(t *testing.T) {
 	}
 
 	for i, c := range cases {
-		err := ruleManager.Update(time.Second, c.files, nil)
+		err := ruleManager.Update(time.Second, c.files, nil, "")
 		require.NoError(t, err)
 		time.Sleep(2 * time.Second)
 		require.Equal(t, c.metrics, countMetrics(), "test %d: invalid count of metrics", i)
@@ -1045,7 +1045,7 @@ func TestGroupStalenessOnRemoval(t *testing.T) {
 
 	var totalStaleNaN int
 	for i, c := range cases {
-		err := ruleManager.Update(time.Second, c.files, nil)
+		err := ruleManager.Update(time.Second, c.files, nil, "")
 		require.NoError(t, err)
 		time.Sleep(3 * time.Second)
 		totalStaleNaN += c.staleNaN
@@ -1087,11 +1087,11 @@ func TestMetricsStalenessOnManagerShutdown(t *testing.T) {
 		}
 	}()
 
-	err := ruleManager.Update(2*time.Second, files, nil)
+	err := ruleManager.Update(2*time.Second, files, nil, "")
 	time.Sleep(4 * time.Second)
 	require.NoError(t, err)
 	start := time.Now()
-	err = ruleManager.Update(3*time.Second, files[:0], nil)
+	err = ruleManager.Update(3*time.Second, files[:0], nil, "")
 	require.NoError(t, err)
 	ruleManager.Stop()
 	stopped = true
@@ -1134,7 +1134,7 @@ func TestGroupHasAlertingRules(t *testing.T) {
 			group: &Group{
 				name: "HasAlertingRule",
 				rules: []Rule{
-					NewAlertingRule("alert", nil, 0, nil, nil, nil, true, nil),
+					NewAlertingRule("alert", nil, 0, nil, nil, nil, "", true, nil),
 					NewRecordingRule("record", nil, nil),
 				},
 			},
@@ -1162,4 +1162,61 @@ func TestGroupHasAlertingRules(t *testing.T) {
 		got := test.group.HasAlertingRules()
 		require.Equal(t, test.want, got, "test case %d failed, expected:%t got:%t", i, test.want, got)
 	}
+}
+
+func TestRuleHealthUpdates(t *testing.T) {
+	st := teststorage.New(t)
+	defer st.Close()
+	engineOpts := promql.EngineOpts{
+		Logger:     nil,
+		Reg:        nil,
+		MaxSamples: 10,
+		Timeout:    10 * time.Second,
+	}
+	engine := promql.NewEngine(engineOpts)
+	opts := &ManagerOptions{
+		QueryFunc:  EngineQueryFunc(engine, st),
+		Appendable: st,
+		Queryable:  st,
+		Context:    context.Background(),
+		Logger:     log.NewNopLogger(),
+	}
+
+	expr, err := parser.ParseExpr("a + 1")
+	require.NoError(t, err)
+	rule := NewRecordingRule("a_plus_one", expr, labels.Labels{})
+	group := NewGroup(GroupOptions{
+		Name:          "default",
+		Interval:      time.Second,
+		Rules:         []Rule{rule},
+		ShouldRestore: true,
+		Opts:          opts,
+	})
+
+	// A time series that has two samples.
+	app := st.Appender(context.Background())
+	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 1)
+	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 1000, 2)
+	err = app.Commit()
+	require.NoError(t, err)
+
+	ctx := context.Background()
+
+	rules := group.Rules()[0]
+	require.NoError(t, rules.LastError())
+	require.Equal(t, HealthUnknown, rules.Health())
+
+	// Execute 2 times, it should be all green.
+	group.Eval(ctx, time.Unix(0, 0))
+	group.Eval(ctx, time.Unix(1, 0))
+
+	rules = group.Rules()[0]
+	require.NoError(t, rules.LastError())
+	require.Equal(t, HealthGood, rules.Health())
+
+	// Now execute the rule in the past again, this should cause append failures.
+	group.Eval(ctx, time.Unix(0, 0))
+	rules = group.Rules()[0]
+	require.EqualError(t, rules.LastError(), storage.ErrOutOfOrderSample.Error())
+	require.Equal(t, HealthBad, rules.Health())
 }

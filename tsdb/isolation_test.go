@@ -35,8 +35,7 @@ func BenchmarkIsolation(b *testing.B) {
 					<-start
 
 					for i := 0; i < b.N; i++ {
-						appendID := iso.newAppendID()
-						_ = iso.lowWatermark()
+						appendID, _ := iso.newAppendID()
 
 						iso.closeAppend(appendID)
 					}
@@ -66,8 +65,7 @@ func BenchmarkIsolationWithState(b *testing.B) {
 					<-start
 
 					for i := 0; i < b.N; i++ {
-						appendID := iso.newAppendID()
-						_ = iso.lowWatermark()
+						appendID, _ := iso.newAppendID()
 
 						iso.closeAppend(appendID)
 					}

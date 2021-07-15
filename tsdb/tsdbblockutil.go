@@ -18,7 +18,7 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
 
 	"github.com/prometheus/prometheus/storage"
 )
@@ -50,14 +50,10 @@ func CreateBlock(series []storage.Series, dir string, chunkRange int64, logger l
 	for _, s := range series {
 		ref := uint64(0)
 		it := s.Iterator()
+		lset := s.Labels()
 		for it.Next() {
 			t, v := it.At()
-			if ref != 0 {
-				if err := app.AddFast(ref, t, v); err == nil {
-					continue
-				}
-			}
-			ref, err = app.Add(s.Labels(), t, v)
+			ref, err = app.Append(ref, lset, t, v)
 			if err != nil {
 				return "", err
 			}

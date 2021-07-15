@@ -290,29 +290,18 @@ type limitAppender struct {
 	i     int
 }
 
-func (app *limitAppender) Add(lset labels.Labels, t int64, v float64) (uint64, error) {
+func (app *limitAppender) Append(ref uint64, lset labels.Labels, t int64, v float64) (uint64, error) {
 	if !value.IsStaleNaN(v) {
 		app.i++
 		if app.i > app.limit {
 			return 0, errSampleLimit
 		}
 	}
-	ref, err := app.Appender.Add(lset, t, v)
+	ref, err := app.Appender.Append(ref, lset, t, v)
 	if err != nil {
 		return 0, err
 	}
 	return ref, nil
-}
-
-func (app *limitAppender) AddFast(ref uint64, t int64, v float64) error {
-	if !value.IsStaleNaN(v) {
-		app.i++
-		if app.i > app.limit {
-			return errSampleLimit
-		}
-	}
-	err := app.Appender.AddFast(ref, t, v)
-	return err
 }
 
 type timeLimitAppender struct {
@@ -321,24 +310,16 @@ type timeLimitAppender struct {
 	maxTime int64
 }
 
-func (app *timeLimitAppender) Add(lset labels.Labels, t int64, v float64) (uint64, error) {
+func (app *timeLimitAppender) Append(ref uint64, lset labels.Labels, t int64, v float64) (uint64, error) {
 	if t > app.maxTime {
 		return 0, storage.ErrOutOfBounds
 	}
 
-	ref, err := app.Appender.Add(lset, t, v)
+	ref, err := app.Appender.Append(ref, lset, t, v)
 	if err != nil {
 		return 0, err
 	}
 	return ref, nil
-}
-
-func (app *timeLimitAppender) AddFast(ref uint64, t int64, v float64) error {
-	if t > app.maxTime {
-		return storage.ErrOutOfBounds
-	}
-	err := app.Appender.AddFast(ref, t, v)
-	return err
 }
 
 // populateLabels builds a label set from the given label set and scrape configuration.
@@ -433,8 +414,9 @@ func populateLabels(lset labels.Labels, cfg *config.ScrapeConfig) (res, orig lab
 }
 
 // targetsFromGroup builds targets based on the given TargetGroup and config.
-func targetsFromGroup(tg *targetgroup.Group, cfg *config.ScrapeConfig) ([]*Target, error) {
+func targetsFromGroup(tg *targetgroup.Group, cfg *config.ScrapeConfig) ([]*Target, []error) {
 	targets := make([]*Target, 0, len(tg.Targets))
+	failures := []error{}
 
 	for i, tlset := range tg.Targets {
 		lbls := make([]labels.Label, 0, len(tlset)+len(tg.Labels))
@@ -452,11 +434,11 @@ func targetsFromGroup(tg *targetgroup.Group, cfg *config.ScrapeConfig) ([]*Targe
 
 		lbls, origLabels, err := populateLabels(lset, cfg)
 		if err != nil {
-			return nil, errors.Wrapf(err, "instance %d in group %s", i, tg)
+			failures = append(failures, errors.Wrapf(err, "instance %d in group %s", i, tg))
 		}
 		if lbls != nil || origLabels != nil {
 			targets = append(targets, NewTarget(lbls, origLabels, cfg.Params))
 		}
 	}
-	return targets, nil
+	return targets, failures
 }

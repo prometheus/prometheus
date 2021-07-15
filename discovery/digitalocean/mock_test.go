@@ -445,7 +445,8 @@ func (m *SDMock) HandleDropletsList() {
           "m6-24vcpu-192gb"
         ]
       },
-      "tags": []
+      "tags": [],
+      "vpc_uuid": "953d698c-dc84-11e8-80bc-3cfdfea9fba1"
     },
     {
       "id": 176011507,
@@ -624,7 +625,8 @@ func (m *SDMock) HandleDropletsList() {
           "m6-24vcpu-192gb"
         ]
       },
-      "tags": []
+      "tags": [],
+      "vpc_uuid": "953d698c-dc84-11e8-80bc-3cfdfea9fba1"
     }
   ],
   "links": {

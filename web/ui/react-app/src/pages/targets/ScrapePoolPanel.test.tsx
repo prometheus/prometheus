@@ -6,11 +6,14 @@ import { Button, Collapse, Table, Badge } from 'reactstrap';
 import { Target, getColor } from './target';
 import EndpointLink from './EndpointLink';
 import TargetLabels from './TargetLabels';
+import sinon from 'sinon';
 
 describe('ScrapePoolPanel', () => {
   const defaultProps = {
     scrapePool: 'blackbox',
     targetGroup: targetGroups.blackbox,
+    expanded: true,
+    toggleExpanded: sinon.spy(),
   };
   const scrapePoolPanel = shallow(<ScrapePoolPanel {...defaultProps} />);
 
@@ -31,6 +34,7 @@ describe('ScrapePoolPanel', () => {
 
     it('renders an anchor with up count and normal color if upCount == targetsCount', () => {
       const props = {
+        ...defaultProps,
         scrapePool: 'prometheus',
         targetGroup: targetGroups.prometheus,
       };
@@ -45,8 +49,10 @@ describe('ScrapePoolPanel', () => {
 
     it('renders a show more btn if collapsed', () => {
       const props = {
+        ...defaultProps,
         scrapePool: 'prometheus',
         targetGroup: targetGroups.prometheus,
+        toggleExpanded: sinon.spy(),
       };
       const div = document.createElement('div');
       div.id = `series-labels-prometheus-0`;
@@ -55,8 +61,7 @@ describe('ScrapePoolPanel', () => {
 
       const btn = scrapePoolPanel.find(Button);
       btn.simulate('click');
-      const collapse = scrapePoolPanel.find(Collapse);
-      expect(collapse.prop('isOpen')).toBe(false);
+      expect(props.toggleExpanded.calledOnce).toBe(true);
     });
   });
 

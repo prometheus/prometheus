@@ -208,6 +208,10 @@ $ curl 'http://localhost:9090/api/v1/query_range?query=up&start=2015-07-01T20:10
 
 ## Querying metadata
 
+Prometheus offers a set of API endpoints to query metadata about series and their labels.
+
+NOTE: These API endpoints may return metadata for series for which there is no sample within the selected time range, and/or for series whose samples have been marked as deleted via the deletion API endpoint. The exact extent of additionally returned series metadata is an implementation detail that may change in the future.
+
 ### Finding series by label matchers
 
 The following endpoint returns the list of time series that match a certain label set.
@@ -340,6 +344,72 @@ $ curl http://localhost:9090/api/v1/label/job/values
 }
 ```
 
+## Querying exemplars
+
+This is **experimental** and might change in the future.
+The following endpoint returns a list of exemplars for a valid PromQL query for a specific time range:
+
+```
+GET /api/v1/query_exemplars
+POST /api/v1/query_exemplars
+```
+
+URL query parameters:
+
+- `query=<string>`: Prometheus expression query string.
+- `start=<rfc3339 | unix_timestamp>`: Start timestamp.
+- `end=<rfc3339 | unix_timestamp>`: End timestamp.
+
+```json
+$ curl -g 'http://localhost:9090/api/v1/query_exemplars?query=test_exemplar_metric_total&start=2020-09-14T15:22:25.479Z&end=020-09-14T15:23:25.479Z'
+{
+    "status": "success",
+    "data": [
+        {
+            "seriesLabels": {
+                "__name__": "test_exemplar_metric_total",
+                "instance": "localhost:8090",
+                "job": "prometheus",
+                "service": "bar"
+            },
+            "exemplars": [
+                {
+                    "labels": {
+                        "traceID": "EpTxMJ40fUus7aGY"
+                    },
+                    "value": "6",
+                    "timestamp": 1600096945.479,
+                }
+            ]
+        },
+        {
+            "seriesLabels": {
+                "__name__": "test_exemplar_metric_total",
+                "instance": "localhost:8090",
+                "job": "prometheus",
+                "service": "foo"
+            },
+            "exemplars": [
+                {
+                    "labels": {
+                        "traceID": "Olp9XHlq763ccsfa"
+                    },
+                    "value": "19",
+                    "timestamp": 1600096955.479,
+                },
+                {
+                    "labels": {
+                        "traceID": "hCtjygkIHwAN9vs4"
+                    },
+                    "value": "20",
+                    "timestamp": 1600096965.489,
+                },
+            ]
+        }
+    ]
+}
+```
+
 ## Expression query result formats
 
 Expression queries may return the following response values in the `result`
@@ -428,6 +498,7 @@ $ curl http://localhost:9090/api/v1/targets
         },
         "scrapePool": "prometheus",
         "scrapeUrl": "http://127.0.0.1:9090/metrics",
+        "globalUrl": "http://example-prometheus:9090/metrics",
         "lastError": "",
         "lastScrape": "2017-01-17T15:07:44.723715405+01:00",
         "lastScrapeDuration": 0.050688943,
@@ -472,6 +543,7 @@ $ curl 'http://localhost:9090/api/v1/targets?state=active'
         },
         "scrapePool": "prometheus",
         "scrapeUrl": "http://127.0.0.1:9090/metrics",
+        "globalUrl": "http://example-prometheus:9090/metrics",
         "lastError": "",
         "lastScrape": "2017-01-17T15:07:44.723715405+01:00",
         "lastScrapeDuration": 50688943,
@@ -854,7 +926,7 @@ $ curl http://localhost:9090/api/v1/status/runtimeinfo
 }
 ```
 
-**NOTE**: The exact returned runtime properties may change without notice between Prometheus versions.
+NOTE: The exact returned runtime properties may change without notice between Prometheus versions.
 
 *New in v2.14*
 
@@ -883,7 +955,7 @@ $ curl http://localhost:9090/api/v1/status/buildinfo
 }
 ```
 
-**NOTE**: The exact returned build properties may change without notice between Prometheus versions.
+NOTE: The exact returned build properties may change without notice between Prometheus versions.
 
 *New in v2.14*
 
@@ -961,6 +1033,39 @@ $ curl http://localhost:9090/api/v1/status/tsdb
 
 *New in v2.15*
 
+### WAL Replay Stats
+
+The following endpoint returns information about the WAL replay:
+
+```
+GET /api/v1/status/walreplay
+```
+
+**read**: The number of segments replayed so far.
+**total**: The total number segments needed to be replayed.
+**progress**: The progress of the replay (0 - 100%).
+**state**: The state of the replay. Possible states:
+- **waiting**: Waiting for the replay to start.
+- **in progress**: The replay is in progress.
+- **done**: The replay has finished.
+
+```json
+$ curl http://localhost:9090/api/v1/status/walreplay
+{
+  "status": "success",
+  "data": {
+    "min": 2,
+    "max": 5,
+    "current": 40,
+    "state": "in progress"
+  }
+}
+```
+
+NOTE: This endpoint is available before the server has been marked ready and is updated in real time to facilitate monitoring the progress of the WAL replay.
+
+*New in v2.28*
+
 ## TSDB Admin APIs
 These are APIs that expose database functionalities for the advanced user. These APIs are not enabled unless the `--web.enable-admin-api` is set.
 
@@ -1014,6 +1119,9 @@ Example:
 $ curl -X POST \
   -g 'http://localhost:9090/api/v1/admin/tsdb/delete_series?match[]=up&match[]=process_start_time_seconds{job="prometheus"}'
 ```
+
+NOTE: This endpoint marks samples from series as deleted, but will not necessarily prevent associated series metadata from still being returned in metadata queries for the affected time range (even after cleaning tombstones). The exact extent of metadata deletion is an implementation detail that may change in the future.
+
 *New in v2.1 and supports PUT from v2.9*
 
 ### Clean Tombstones

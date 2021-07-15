@@ -61,14 +61,16 @@ export const RulesContent: FC<RouteComponentProps & RulesContentProps> = ({ resp
                 <tr>
                   <td colSpan={3}>
                     <a href={'#' + g.name}>
-                      <h2 id={g.name}>{g.name}</h2>
+                      <h4 id={g.name} className="text-break">
+                        {g.name}
+                      </h4>
                     </a>
                   </td>
                   <td>
-                    <h2>{formatRelative(g.lastEvaluation, now())} ago</h2>
+                    <h4>{formatRelative(g.lastEvaluation, now())}</h4>
                   </td>
                   <td>
-                    <h2>{humanizeDuration(parseFloat(g.evaluationTime) * 1000)}</h2>
+                    <h4>{humanizeDuration(parseFloat(g.evaluationTime) * 1000)}</h4>
                   </td>
                 </tr>
               </thead>
@@ -83,7 +85,7 @@ export const RulesContent: FC<RouteComponentProps & RulesContentProps> = ({ resp
                 {g.rules.map((r, i) => {
                   return (
                     <tr key={i}>
-                      <td style={{ backgroundColor: '#F5F5F5' }} className="rule_cell">
+                      <td className="rule-cell">
                         {r.alerts ? (
                           <GraphExpressionLink title="alert" text={r.name} expr={`ALERTS{alertname="${r.name}"}`} />
                         ) : (
@@ -120,7 +122,7 @@ export const RulesContent: FC<RouteComponentProps & RulesContentProps> = ({ resp
                         <Badge color={getBadgeColor(r.health)}>{r.health.toUpperCase()}</Badge>
                       </td>
                       <td>{r.lastError ? <Alert color="danger">{r.lastError}</Alert> : null}</td>
-                      <td>{formatRelative(r.lastEvaluation, now())} ago</td>
+                      <td>{formatRelative(r.lastEvaluation, now())}</td>
                       <td>{humanizeDuration(parseFloat(r.evaluationTime) * 1000)}</td>
                     </tr>
                   );

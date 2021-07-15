@@ -21,10 +21,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
+	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
+	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
@@ -298,6 +300,23 @@ func TestAllServices(t *testing.T) {
 	<-ch
 }
 
+// targetgroup with no targets is emitted if no services were discovered.
+func TestNoTargets(t *testing.T) {
+	stub, config := newServer(t)
+	defer stub.Close()
+	config.ServiceTags = []string{"missing"}
+
+	d := newDiscovery(t, config)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	ch := make(chan []*targetgroup.Group)
+	go d.Run(ctx, ch)
+
+	targets := (<-ch)[0].Targets
+	require.Equal(t, 0, len(targets))
+	cancel()
+}
+
 // Watch only the test service.
 func TestOneService(t *testing.T) {
 	stub, config := newServer(t)
@@ -378,5 +397,92 @@ func TestGetDatacenterShouldReturnError(t *testing.T) {
 		require.Equal(t, tc.errMessage, err.Error())
 		// Should still be empty.
 		require.Equal(t, "", d.clientDatacenter)
+	}
+}
+
+func TestUnmarshalConfig(t *testing.T) {
+	unmarshal := func(d []byte) func(interface{}) error {
+		return func(o interface{}) error {
+			return yaml.Unmarshal(d, o)
+		}
+	}
+
+	goodConfig := DefaultSDConfig
+	goodConfig.Username = "123"
+	goodConfig.Password = "1234"
+	goodConfig.HTTPClientConfig = config.HTTPClientConfig{
+		BasicAuth: &config.BasicAuth{
+			Username: "123",
+			Password: "1234",
+		},
+		FollowRedirects: true,
+	}
+
+	cases := []struct {
+		name       string
+		config     string
+		expected   SDConfig
+		errMessage string
+	}{
+		{
+			name: "good",
+			config: `
+server: localhost:8500
+username: 123
+password: 1234
+`,
+			expected: goodConfig,
+		},
+		{
+			name: "username and password and basic auth configured",
+			config: `
+server: localhost:8500
+username: 123
+password: 1234
+basic_auth:
+  username: 12345
+  password: 123456
+`,
+			errMessage: "at most one of consul SD configuration username and password and basic auth can be configured",
+		},
+		{
+			name: "token and authorization configured",
+			config: `
+server: localhost:8500
+token: 1234567
+authorization:
+  credentials: 12345678
+`,
+			errMessage: "at most one of consul SD token, authorization, or oauth2 can be configured",
+		},
+		{
+			name: "token and oauth2 configured",
+			config: `
+server: localhost:8500
+token: 1234567
+oauth2:
+  client_id: 10
+  client_secret: 11
+  token_url: http://example.com
+`,
+			errMessage: "at most one of consul SD token, authorization, or oauth2 can be configured",
+		},
+	}
+
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			var config SDConfig
+			err := config.UnmarshalYAML(unmarshal([]byte(test.config)))
+			if err != nil {
+				require.Equalf(t, err.Error(), test.errMessage, "Expected error '%s', got '%v'", test.errMessage, err)
+				return
+			}
+			if test.errMessage != "" {
+				t.Errorf("Expected error %s, got none", test.errMessage)
+				return
+			}
+
+			require.Equal(t, config, test.expected)
+		})
 	}
 }

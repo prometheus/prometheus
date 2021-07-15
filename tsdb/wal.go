@@ -27,8 +27,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -64,7 +64,7 @@ type walMetrics struct {
 	corruptions   prometheus.Counter
 }
 
-func newWalMetrics(wal *SegmentWAL, r prometheus.Registerer) *walMetrics {
+func newWalMetrics(r prometheus.Registerer) *walMetrics {
 	m := &walMetrics{}
 
 	m.fsyncDuration = prometheus.NewSummary(prometheus.SummaryOpts{
@@ -192,7 +192,7 @@ func OpenSegmentWAL(dir string, logger log.Logger, flushInterval time.Duration, 
 		segmentSize:   walSegmentSizeBytes,
 		crc32:         newCRC32(),
 	}
-	w.metrics = newWalMetrics(w, r)
+	w.metrics = newWalMetrics(r)
 
 	fns, err := sequenceFiles(w.dirFile.Name())
 	if err != nil {
@@ -890,19 +890,19 @@ func (r *walReader) Read(
 				if seriesf != nil {
 					seriesf(v)
 				}
-				//lint:ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
+				//nolint:staticcheck // Ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
 				seriesPool.Put(v[:0])
 			case []record.RefSample:
 				if samplesf != nil {
 					samplesf(v)
 				}
-				//lint:ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
+				//nolint:staticcheck // Ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
 				samplePool.Put(v[:0])
 			case []tombstones.Stone:
 				if deletesf != nil {
 					deletesf(v)
 				}
-				//lint:ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
+				//nolint:staticcheck // Ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
 				deletePool.Put(v[:0])
 			default:
 				level.Error(r.logger).Log("msg", "unexpected data type")

@@ -19,8 +19,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	apiv1 "k8s.io/api/core/v1"
@@ -124,12 +124,12 @@ func (p *Pod) process(ctx context.Context, ch chan<- []*targetgroup.Group) bool 
 		send(ctx, ch, &targetgroup.Group{Source: podSourceFromNamespaceAndName(namespace, name)})
 		return true
 	}
-	eps, err := convertToPod(o)
+	pod, err := convertToPod(o)
 	if err != nil {
 		level.Error(p.logger).Log("msg", "converting to Pod object failed", "err", err)
 		return true
 	}
-	send(ctx, ch, p.buildPod(eps))
+	send(ctx, ch, p.buildPod(pod))
 	return true
 }
 

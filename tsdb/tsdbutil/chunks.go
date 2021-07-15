@@ -65,3 +65,15 @@ func PopulatedChunk(numSamples int, minTime int64) chunks.Meta {
 	}
 	return ChunkFromSamples(samples)
 }
+
+// GenerateSamples starting at start and counting up numSamples.
+func GenerateSamples(start int, numSamples int) []Sample {
+	samples := make([]Sample, 0, numSamples)
+	for i := start; i < start+numSamples; i++ {
+		samples = append(samples, sample{
+			t: int64(i),
+			v: float64(i),
+		})
+	}
+	return samples
+}

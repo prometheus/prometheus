@@ -2,23 +2,21 @@
 # (or DC/OS) cluster.
 
 scrape_configs:
-  
   # Make Prometheus scrape itself for metrics.
-  - job_name: 'prometheus'
+  - job_name: "prometheus"
     static_configs:
-    - targets: ['localhost:9090']
+      - targets: ["localhost:9090"]
 
   # Discover Marathon services to scrape.
-  - job_name: 'marathon'
+  - job_name: "marathon"
 
     # Scrape Marathon itself to discover new services every minute.
     marathon_sd_configs:
       - servers:
-        - http://marathon.mesos:8080
+          - http://marathon.mesos:8080
         refresh_interval: 60s
 
     relabel_configs:
-
       # Only scrape targets that have a port label called 'metrics' specified on a port
       # in their app definitions. Example using a port mapping (container or bridge networking):
       #
@@ -45,7 +43,11 @@ scrape_configs:
       #  ]
 
       # Match a slash-prefixed string either in a portMapping or a portDefinition label.
-      - source_labels: [__meta_marathon_port_mapping_label_metrics,__meta_marathon_port_definition_label_metrics]
+      - source_labels:
+          [
+            __meta_marathon_port_mapping_label_metrics,
+            __meta_marathon_port_definition_label_metrics,
+          ]
         regex: (\/.+;|;\/.+)
         action: keep
 
@@ -53,7 +55,7 @@ scrape_configs:
       - source_labels: [__meta_marathon_port_mapping_label_metrics]
         regex: (\/.+)
         target_label: __metrics_path__
-      
+
       # If a portDefinition 'metrics' label is set, use the label value as the URI to scrape.
       - source_labels: [__meta_marathon_port_definition_label_metrics]
         regex: (\/.+)

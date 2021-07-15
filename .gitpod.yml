@@ -1,5 +1,6 @@
+---
 tasks:
-  - init: 
+  - init:
       make build
     command: |
       gp sync-done build

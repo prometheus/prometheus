@@ -28,8 +28,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/go-openapi/strfmt"
 	"github.com/pkg/errors"
 	"github.com/prometheus/alertmanager/api/v2/models"
@@ -634,7 +634,7 @@ type alertmanagerSet struct {
 }
 
 func newAlertmanagerSet(cfg *config.AlertmanagerConfig, logger log.Logger, metrics *alertMetrics) (*alertmanagerSet, error) {
-	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, "alertmanager", false, false)
+	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, "alertmanager", config_util.WithHTTP2Disabled())
 	if err != nil {
 		return nil, err
 	}

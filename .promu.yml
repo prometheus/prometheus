@@ -1,7 +1,7 @@
 go:
     # Whenever the Go version is updated here,
     # .circle/config.yml should also be updated.
-    version: 1.15
+    version: 1.16
 repository:
     path: github.com/prometheus/prometheus
 build:
@@ -10,7 +10,7 @@ build:
           path: ./cmd/prometheus
         - name: promtool
           path: ./cmd/promtool
-    flags: -mod=vendor -a -tags netgo,builtinassets
+    flags: -a -tags netgo,builtinassets
     ldflags: |
         -X github.com/prometheus/common/version.Version={{.Version}}
         -X github.com/prometheus/common/version.Revision={{.Revision}}
@@ -27,25 +27,11 @@ tarball:
         - npm_licenses.tar.bz2
 crossbuild:
     platforms:
-        - linux/amd64
-        - linux/386
-        - darwin/amd64
-        - windows/amd64
-        - windows/386
-        - freebsd/amd64
-        - freebsd/386
-        - openbsd/amd64
-        - openbsd/386
-        - netbsd/amd64
-        - netbsd/386
-        - dragonfly/amd64
-        - linux/arm
-        - linux/arm64
-        - freebsd/arm
-        - openbsd/arm
-        - linux/mips64
-        - linux/mips64le
-        - netbsd/arm
-        - linux/ppc64
-        - linux/ppc64le
-        - linux/s390x
+        - darwin
+        - dragonfly
+        - freebsd
+        - illumos
+        - linux
+        - netbsd
+        - openbsd
+        - windows

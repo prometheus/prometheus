@@ -17,15 +17,13 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	consul "github.com/hashicorp/consul/api"
-	conntrack "github.com/mwitkow/go-conntrack"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
@@ -60,6 +58,8 @@ const (
 	servicePortLabel = model.MetaLabelPrefix + "consul_service_port"
 	// datacenterLabel is the name of the label containing the datacenter ID.
 	datacenterLabel = model.MetaLabelPrefix + "consul_dc"
+	// namespaceLabel is the name of the label containing the namespace (Consul Enterprise only).
+	namespaceLabel = model.MetaLabelPrefix + "consul_namespace"
 	// taggedAddressesLabel is the prefix for the labels mapping to a target's tagged addresses.
 	taggedAddressesLabel = model.MetaLabelPrefix + "consul_tagged_address_"
 	// serviceIDLabel is the name of the label containing the service ID.
@@ -92,18 +92,18 @@ var (
 
 	// DefaultSDConfig is the default Consul SD configuration.
 	DefaultSDConfig = SDConfig{
-		TagSeparator:    ",",
-		Scheme:          "http",
-		Server:          "localhost:8500",
-		AllowStale:      true,
-		RefreshInterval: model.Duration(30 * time.Second),
+		TagSeparator:     ",",
+		Scheme:           "http",
+		Server:           "localhost:8500",
+		AllowStale:       true,
+		RefreshInterval:  model.Duration(30 * time.Second),
+		HTTPClientConfig: config.DefaultHTTPClientConfig,
 	}
 )
 
 func init() {
 	discovery.RegisterConfig(&SDConfig{})
-	prometheus.MustRegister(rpcFailuresCount)
-	prometheus.MustRegister(rpcDuration)
+	prometheus.MustRegister(rpcFailuresCount, rpcDuration)
 }
 
 // SDConfig is the configuration for Consul service discovery.
@@ -111,6 +111,7 @@ type SDConfig struct {
 	Server       string        `yaml:"server,omitempty"`
 	Token        config.Secret `yaml:"token,omitempty"`
 	Datacenter   string        `yaml:"datacenter,omitempty"`
+	Namespace    string        `yaml:"namespace,omitempty"`
 	TagSeparator string        `yaml:"tag_separator,omitempty"`
 	Scheme       string        `yaml:"scheme,omitempty"`
 	Username     string        `yaml:"username,omitempty"`
@@ -134,7 +135,7 @@ type SDConfig struct {
 	// Desired node metadata.
 	NodeMeta map[string]string `yaml:"node_meta,omitempty"`
 
-	TLSConfig config.TLSConfig `yaml:"tls_config,omitempty"`
+	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
 }
 
 // Name returns the name of the Config.
@@ -147,7 +148,7 @@ func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Di
 
 // SetDirectory joins any relative file paths with dir.
 func (c *SDConfig) SetDirectory(dir string) {
-	c.TLSConfig.SetDirectory(dir)
+	c.HTTPClientConfig.SetDirectory(dir)
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -161,7 +162,19 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if strings.TrimSpace(c.Server) == "" {
 		return errors.New("consul SD configuration requires a server address")
 	}
-	return nil
+	if c.Username != "" || c.Password != "" {
+		if c.HTTPClientConfig.BasicAuth != nil {
+			return errors.New("at most one of consul SD configuration username and password and basic auth can be configured")
+		}
+		c.HTTPClientConfig.BasicAuth = &config.BasicAuth{
+			Username: c.Username,
+			Password: c.Password,
+		}
+	}
+	if c.Token != "" && (c.HTTPClientConfig.Authorization != nil || c.HTTPClientConfig.OAuth2 != nil) {
+		return errors.New("at most one of consul SD token, authorization, or oauth2 can be configured")
+	}
+	return c.HTTPClientConfig.Validate()
 }
 
 // Discovery retrieves target information from a Consul server
@@ -169,6 +182,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 type Discovery struct {
 	client           *consul.Client
 	clientDatacenter string
+	clientNamespace  string
 	tagSeparator     string
 	watchedServices  []string // Set of services which will be discovered.
 	watchedTags      []string // Tags used to filter instances of a service.
@@ -185,32 +199,18 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 		logger = log.NewNopLogger()
 	}
 
-	tls, err := config.NewTLSConfig(&conf.TLSConfig)
+	wrapper, err := config.NewClientFromConfig(conf.HTTPClientConfig, "consul_sd", config.WithHTTP2Disabled(), config.WithIdleConnTimeout(2*time.Duration(watchTimeout)))
 	if err != nil {
 		return nil, err
 	}
-	transport := &http.Transport{
-		IdleConnTimeout: 2 * time.Duration(watchTimeout),
-		TLSClientConfig: tls,
-		DialContext: conntrack.NewDialContextFunc(
-			conntrack.DialWithTracing(),
-			conntrack.DialWithName("consul_sd"),
-		),
-	}
-	wrapper := &http.Client{
-		Transport: transport,
-		Timeout:   time.Duration(watchTimeout) + 15*time.Second,
-	}
+	wrapper.Timeout = watchTimeout + 15*time.Second
 
 	clientConf := &consul.Config{
 		Address:    conf.Server,
 		Scheme:     conf.Scheme,
 		Datacenter: conf.Datacenter,
+		Namespace:  conf.Namespace,
 		Token:      string(conf.Token),
-		HttpAuth: &consul.HttpBasicAuth{
-			Username: conf.Username,
-			Password: string(conf.Password),
-		},
 		HttpClient: wrapper,
 	}
 	client, err := consul.NewClient(clientConf)
@@ -226,7 +226,8 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 		allowStale:       conf.AllowStale,
 		refreshInterval:  time.Duration(conf.RefreshInterval),
 		clientDatacenter: conf.Datacenter,
-		finalizer:        transport.CloseIdleConnections,
+		clientNamespace:  conf.Namespace,
+		finalizer:        wrapper.CloseIdleConnections,
 		logger:           logger,
 	}
 	return cd, nil
@@ -426,6 +427,15 @@ func (d *Discovery) watchServices(ctx context.Context, ch chan<- []*targetgroup.
 			}
 		}
 	}
+
+	// Send targetgroup with no targets if nothing was discovered.
+	if len(services) == 0 {
+		select {
+		case <-ctx.Done():
+			return
+		case ch <- []*targetgroup.Group{{}}:
+		}
+	}
 }
 
 // consulService contains data belonging to the same service.
@@ -535,6 +545,7 @@ func (srv *consulService) watch(ctx context.Context, ch chan<- []*targetgroup.Gr
 			model.AddressLabel:  model.LabelValue(addr),
 			addressLabel:        model.LabelValue(serviceNode.Node.Address),
 			nodeLabel:           model.LabelValue(serviceNode.Node.Node),
+			namespaceLabel:      model.LabelValue(serviceNode.Service.Namespace),
 			tagsLabel:           model.LabelValue(tags),
 			serviceAddressLabel: model.LabelValue(serviceNode.Service.Address),
 			servicePortLabel:    model.LabelValue(strconv.Itoa(serviceNode.Service.Port)),
