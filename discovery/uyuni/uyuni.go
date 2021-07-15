@@ -44,6 +44,7 @@ const (
 	uyuniLablelExporter      = uyuniMetaLabelPrefix + "exporter"
 	uyuniLabelProxyModule    = uyuniMetaLabelPrefix + "proxy_module"
 	uyuniLabelMetricsPath    = uyuniMetaLabelPrefix + "metrics_path"
+	uyuniLabelScheme         = uyuniMetaLabelPrefix + "scheme"
 )
 
 // DefaultSDConfig is the default Uyuni SD configuration.
@@ -88,6 +89,7 @@ type endpointInfo struct {
 	Path         string `xmlrpc:"path"`
 	Module       string `xmlrpc:"module"`
 	ExporterName string `xmlrpc:"exporter_name"`
+	TlsEnabled   bool   `xmlrpc:"tls_enabled"`
 }
 
 // Discovery periodically performs Uyuni API requests. It implements the Discoverer interface.
@@ -233,9 +235,14 @@ func (d *Discovery) getEndpointLabels(
 	networkInfo networkInfo,
 ) model.LabelSet {
 
-	var addr string
+	var addr, scheme string
 	managedGroupNames := getSystemGroupNames(systemGroupIDs)
 	addr = fmt.Sprintf("%s:%d", networkInfo.Hostname, endpoint.Port)
+	if endpoint.TlsEnabled {
+		scheme = "https"
+	} else {
+		scheme = "http"
+	}
 
 	result := model.LabelSet{
 		model.AddressLabel:       model.LabelValue(addr),
@@ -247,6 +254,7 @@ func (d *Discovery) getEndpointLabels(
 		uyuniLablelExporter:      model.LabelValue(endpoint.ExporterName),
 		uyuniLabelProxyModule:    model.LabelValue(endpoint.Module),
 		uyuniLabelMetricsPath:    model.LabelValue(endpoint.Path),
+		uyuniLabelScheme:         model.LabelValue(scheme),
 	}
 
 	return result

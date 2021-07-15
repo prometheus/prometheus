@@ -2252,6 +2252,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_uyuni_primary_fqdn`: primary FQDN of the Uyuni client
 * `__meta_uyuni_proxy_module`: the module name if _Exporter Exporter_ proxy is
   configured for the target
+* `__meta_uyuni_scheme`:  the protocol scheme used for requests
 * `__meta_uyuni_system_id`: the system ID of the client
 
 See below for the configuration options for Uyuni discovery:
