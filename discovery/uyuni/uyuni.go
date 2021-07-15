@@ -89,7 +89,7 @@ type endpointInfo struct {
 	Path         string `xmlrpc:"path"`
 	Module       string `xmlrpc:"module"`
 	ExporterName string `xmlrpc:"exporter_name"`
-	TlsEnabled   bool   `xmlrpc:"tls_enabled"`
+	TLSEnabled   bool   `xmlrpc:"tls_enabled"`
 }
 
 // Discovery periodically performs Uyuni API requests. It implements the Discoverer interface.
@@ -238,7 +238,7 @@ func (d *Discovery) getEndpointLabels(
 	var addr, scheme string
 	managedGroupNames := getSystemGroupNames(systemGroupIDs)
 	addr = fmt.Sprintf("%s:%d", networkInfo.Hostname, endpoint.Port)
-	if endpoint.TlsEnabled {
+	if endpoint.TLSEnabled {
 		scheme = "https"
 	} else {
 		scheme = "http"
