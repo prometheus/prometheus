@@ -450,9 +450,9 @@ func TestTemplateExpansion(t *testing.T) {
 			output: "http://testhost:9090/path/prefix",
 		},
 		{
-			// parseDuration.
-			text:   "{{ parseDuration \"1h2m10ms\" }}",
-			output: "3720",
+			// parseDuration (using printf to ensure the return is a string).
+			text:   "{{ printf \"%0.2f\" (parseDuration \"1h2m10ms\") }}",
+			output: "3720.01",
 		},
 	}
 
