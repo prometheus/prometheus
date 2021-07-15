@@ -1,8 +1,8 @@
 blank_issues_enabled: false
 contact_links:
-  - name: Users mailing list
-    url: https://groups.google.com/forum/#!forum/prometheus-users
-    about: Please ask and answer usage questions here.
-  - name: Prometheus community
+  - name: Prometheus Community Support
     url: https://prometheus.io/community/
-    about: List of communication channels for the Prometheus community.
+    about: If you need help or support, please request help here.
+  - name: Commercial Support & Training
+    url: https://prometheus.io/support-training/
+    about: If you want commercial support or training, vendors are listed here.

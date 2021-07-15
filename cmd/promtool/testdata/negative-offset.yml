@@ -1,0 +1,7 @@
+# This is the rules file for negative-offset-test.yml.
+
+groups:
+  - name: negative-offset
+    rules:
+      - record: x
+        expr: "requests offset -5m"

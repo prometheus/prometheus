@@ -17,8 +17,10 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"github.com/prometheus/prometheus/tsdb/index"
 	"io"
 	"io/ioutil"
+	"math"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -31,7 +33,7 @@ import (
 	"time"
 
 	"github.com/alecthomas/units"
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
 	"github.com/pkg/errors"
 
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -87,7 +89,7 @@ func benchmarkWrite(outPath, samplesFile string, numMetrics, numScrapes int) err
 	st, err := tsdb.Open(dir, l, nil, &tsdb.Options{
 		RetentionDuration: int64(15 * 24 * time.Hour / time.Millisecond),
 		MinBlockDuration:  int64(2 * time.Hour / time.Millisecond),
-	})
+	}, tsdb.NewDBStats())
 	if err != nil {
 		return err
 	}
@@ -561,6 +563,60 @@ func analyzeBlock(path, blockID string, limit int) error {
 	}
 	fmt.Printf("\nHighest cardinality metric names:\n")
 	printInfo(postingInfos)
+
+	return analyzeCompaction(block, ir)
+}
+
+func analyzeCompaction(block tsdb.BlockReader, indexr tsdb.IndexReader) (err error) {
+	postingsr, err := indexr.Postings(index.AllPostingsKey())
+	if err != nil {
+		return err
+	}
+	chunkr, err := block.Chunks()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		err = tsdb_errors.NewMulti(err, chunkr.Close()).Err()
+	}()
+
+	const maxSamplesPerChunk = 120
+	nBuckets := 10
+	histogram := make([]int, nBuckets)
+	totalChunks := 0
+	for postingsr.Next() {
+		var lbsl = labels.Labels{}
+		var chks []chunks.Meta
+		if err := indexr.Series(postingsr.At(), &lbsl, &chks); err != nil {
+			return err
+		}
+
+		for _, chk := range chks {
+			// Load the actual data of the chunk.
+			chk, err := chunkr.Chunk(chk.Ref)
+			if err != nil {
+				return err
+			}
+			chunkSize := math.Min(float64(chk.NumSamples()), maxSamplesPerChunk)
+			// Calculate the bucket for the chunk and increment it in the histogram.
+			bucket := int(math.Ceil(float64(nBuckets)*chunkSize/maxSamplesPerChunk)) - 1
+			histogram[bucket]++
+			totalChunks++
+		}
+	}
+
+	fmt.Printf("\nCompaction analysis:\n")
+	fmt.Println("Fullness: Amount of samples in chunks (100% is 120 samples)")
+	// Normalize absolute counts to percentages and print them out.
+	for bucket, count := range histogram {
+		percentage := 100.0 * count / totalChunks
+		fmt.Printf("%7d%%: ", (bucket+1)*10)
+		for j := 0; j < percentage; j++ {
+			fmt.Printf("#")
+		}
+		fmt.Println()
+	}
+
 	return nil
 }
 
@@ -611,7 +667,7 @@ func checkErr(err error) int {
 	return 0
 }
 
-func backfillOpenMetrics(path string, outputDir string, humanReadable bool) int {
+func backfillOpenMetrics(path string, outputDir string, humanReadable, quiet bool, maxBlockDuration time.Duration) int {
 	inputFile, err := fileutil.OpenMmapFile(path)
 	if err != nil {
 		return checkErr(err)
@@ -622,5 +678,5 @@ func backfillOpenMetrics(path string, outputDir string, humanReadable bool) int 
 		return checkErr(errors.Wrap(err, "create output dir"))
 	}
 
-	return checkErr(backfill(5000, inputFile.Bytes(), outputDir, humanReadable))
+	return checkErr(backfill(5000, inputFile.Bytes(), outputDir, humanReadable, quiet, maxBlockDuration))
 }

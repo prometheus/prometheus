@@ -79,7 +79,9 @@ class TimeInput extends Component<TimeInputProps> {
     });
 
     this.$time.on('change.datetimepicker', (e: any) => {
-      if (e.date) {
+      // The end time can also be set by dragging a section on the graph,
+      // and that value will have decimal places.
+      if (e.date && e.date.valueOf() !== Math.trunc(this.props.time?.valueOf()!)) {
         this.props.onChangeTime(e.date.valueOf());
       }
     });
@@ -120,7 +122,7 @@ class TimeInput extends Component<TimeInputProps> {
             that functionality is broken, so we create an external solution instead. */}
         {this.props.time && (
           <InputGroupAddon addonType="append">
-            <Button className="clear-time-btn" title="Clear time" onClick={this.clearTime}>
+            <Button outline className="clear-time-btn" title="Clear time" onClick={this.clearTime}>
               <FontAwesomeIcon icon={faTimes} fixedWidth />
             </Button>
           </InputGroupAddon>

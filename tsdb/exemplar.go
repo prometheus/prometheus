@@ -17,6 +17,7 @@ import (
 	"context"
 	"sort"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/pkg/exemplar"
@@ -25,7 +26,11 @@ import (
 )
 
 type CircularExemplarStorage struct {
-	outOfOrderExemplars prometheus.Counter
+	exemplarsAppended            prometheus.Counter
+	exemplarsInStorage           prometheus.Gauge
+	seriesWithExemplarsInStorage prometheus.Gauge
+	lastExemplarsTs              prometheus.Gauge
+	outOfOrderExemplars          prometheus.Counter
 
 	lock      sync.RWMutex
 	exemplars []*circularBufferEntry
@@ -37,16 +42,18 @@ type CircularExemplarStorage struct {
 }
 
 type indexEntry struct {
-	first int
-	last  int
+	oldest       int
+	newest       int
+	seriesLabels labels.Labels
 }
 
 type circularBufferEntry struct {
-	exemplar     exemplar.Exemplar
-	seriesLabels labels.Labels
-	next         int
+	exemplar exemplar.Exemplar
+	next     int
+	ref      *indexEntry
 }
 
+// NewCircularExemplarStorage creates an circular in memory exemplar storage.
 // If we assume the average case 95 bytes per exemplar we can fit 5651272 exemplars in
 // 1GB of extra memory, accounting for the fact that this is heap allocated space.
 // If len < 1, then the exemplar storage is disabled.
@@ -57,14 +64,37 @@ func NewCircularExemplarStorage(len int, reg prometheus.Registerer) (ExemplarSto
 	c := &CircularExemplarStorage{
 		exemplars: make([]*circularBufferEntry, len),
 		index:     make(map[string]*indexEntry),
+		exemplarsAppended: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_exemplar_exemplars_appended_total",
+			Help: "Total number of appended exemplars.",
+		}),
+		exemplarsInStorage: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "prometheus_tsdb_exemplar_exemplars_in_storage",
+			Help: "Number of exemplars currently in circular storage.",
+		}),
+		seriesWithExemplarsInStorage: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "prometheus_tsdb_exemplar_series_with_exemplars_in_storage",
+			Help: "Number of series with exemplars currently in circular storage.",
+		}),
+		lastExemplarsTs: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "prometheus_tsdb_exemplar_last_exemplars_timestamp_seconds",
+			Help: "The timestamp of the oldest exemplar stored in circular storage. Useful to check for what time" +
+				"range the current exemplar buffer limit allows. This usually means the last timestamp" +
+				"for all exemplars for a typical setup. This is not true though if one of the series timestamp is in future compared to rest series.",
+		}),
 		outOfOrderExemplars: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_exemplar_out_of_order_exemplars_total",
-			Help: "Total number of out of order exemplar ingestion failed attempts",
+			Help: "Total number of out of order exemplar ingestion failed attempts.",
 		}),
 	}
-
 	if reg != nil {
-		reg.MustRegister(c.outOfOrderExemplars)
+		reg.MustRegister(
+			c.exemplarsAppended,
+			c.exemplarsInStorage,
+			c.seriesWithExemplarsInStorage,
+			c.lastExemplarsTs,
+			c.outOfOrderExemplars,
+		)
 	}
 
 	return c, nil
@@ -78,7 +108,7 @@ func (ce *CircularExemplarStorage) ExemplarQuerier(_ context.Context) (storage.E
 	return ce, nil
 }
 
-func (ce *CircularExemplarStorage) Querier(ctx context.Context) (storage.ExemplarQuerier, error) {
+func (ce *CircularExemplarStorage) Querier(_ context.Context) (storage.ExemplarQuerier, error) {
 	return ce, nil
 }
 
@@ -92,11 +122,14 @@ func (ce *CircularExemplarStorage) Select(start, end int64, matchers ...[]*label
 	// Loop through each index entry, which will point us to first/last exemplar for each series.
 	for _, idx := range ce.index {
 		var se exemplar.QueryResult
-		e := ce.exemplars[idx.first]
-		if !matchesSomeMatcherSet(e.seriesLabels, matchers) {
+		e := ce.exemplars[idx.oldest]
+		if e.exemplar.Ts > end || ce.exemplars[idx.newest].exemplar.Ts < start {
 			continue
 		}
-		se.SeriesLabels = e.seriesLabels
+		if !matchesSomeMatcherSet(idx.seriesLabels, matchers) {
+			continue
+		}
+		se.SeriesLabels = idx.seriesLabels
 
 		// Loop through all exemplars in the circular buffer for the current series.
 		for e.exemplar.Ts <= end {
@@ -133,68 +166,119 @@ Outer:
 	return false
 }
 
-// indexGc takes the circularBufferEntry that will be overwritten and updates the
-// storages index for that entries labelset if necessary.
-func (ce *CircularExemplarStorage) indexGc(cbe *circularBufferEntry) {
-	if cbe == nil {
-		return
-	}
+func (ce *CircularExemplarStorage) ValidateExemplar(l labels.Labels, e exemplar.Exemplar) error {
+	seriesLabels := l.String()
 
-	l := cbe.seriesLabels.String()
-	i := cbe.next
-	if i == -1 {
-		delete(ce.index, l)
-		return
-	}
-
-	ce.index[l] = &indexEntry{i, ce.index[l].last}
+	// TODO(bwplotka): This lock can lock all scrapers, there might high contention on this on scale.
+	// Optimize by moving the lock to be per series (& benchmark it).
+	ce.lock.RLock()
+	defer ce.lock.RUnlock()
+	return ce.validateExemplar(seriesLabels, e, false)
 }
 
-func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemplar) error {
-	seriesLabels := l.String()
-	ce.lock.Lock()
-	defer ce.lock.Unlock()
+// Not thread safe. The append parameters tells us whether this is an external validation, or internal
+// as a result of an AddExemplar call, in which case we should update any relevant metrics.
+func (ce *CircularExemplarStorage) validateExemplar(l string, e exemplar.Exemplar, append bool) error {
+	// Exemplar label length does not include chars involved in text rendering such as quotes
+	// equals sign, or commas. See definition of const ExemplarMaxLabelLength.
+	labelSetLen := 0
+	for _, l := range e.Labels {
+		labelSetLen += utf8.RuneCountInString(l.Name)
+		labelSetLen += utf8.RuneCountInString(l.Value)
 
-	idx, ok := ce.index[seriesLabels]
+		if labelSetLen > exemplar.ExemplarMaxLabelSetLength {
+			return storage.ErrExemplarLabelLength
+		}
+	}
+
+	idx, ok := ce.index[l]
 	if !ok {
-		ce.indexGc(ce.exemplars[ce.nextIndex])
-		// Default the next value to -1 (which we use to detect that we've iterated through all exemplars for a series in Select)
-		// since this is the first exemplar stored for this series.
-		ce.exemplars[ce.nextIndex] = &circularBufferEntry{
-			exemplar:     e,
-			seriesLabels: l,
-			next:         -1}
-		ce.index[seriesLabels] = &indexEntry{ce.nextIndex, ce.nextIndex}
-		ce.nextIndex = (ce.nextIndex + 1) % len(ce.exemplars)
 		return nil
 	}
 
 	// Check for duplicate vs last stored exemplar for this series.
-	// NB these are expected, add appending them is a no-op.
-	if ce.exemplars[idx.last].exemplar.Equals(e) {
+	// NB these are expected, and appending them is a no-op.
+	if ce.exemplars[idx.newest].exemplar.Equals(e) {
+		return storage.ErrDuplicateExemplar
+	}
+
+	if e.Ts <= ce.exemplars[idx.newest].exemplar.Ts {
+		if append {
+			ce.outOfOrderExemplars.Inc()
+		}
+		return storage.ErrOutOfOrderExemplar
+	}
+	return nil
+}
+
+func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemplar) error {
+	seriesLabels := l.String()
+
+	// TODO(bwplotka): This lock can lock all scrapers, there might high contention on this on scale.
+	// Optimize by moving the lock to be per series (& benchmark it).
+	ce.lock.Lock()
+	defer ce.lock.Unlock()
+
+	err := ce.validateExemplar(seriesLabels, e, true)
+	if err != nil {
+		if err == storage.ErrDuplicateExemplar {
+			// Duplicate exemplar, noop.
+			return nil
+		}
+		return err
+	}
+
+	_, ok := ce.index[seriesLabels]
+	if !ok {
+		ce.index[seriesLabels] = &indexEntry{oldest: ce.nextIndex, seriesLabels: l}
+	} else {
+		ce.exemplars[ce.index[seriesLabels].newest].next = ce.nextIndex
+	}
+
+	if prev := ce.exemplars[ce.nextIndex]; prev == nil {
+		ce.exemplars[ce.nextIndex] = &circularBufferEntry{}
+	} else {
+		// There exists exemplar already on this ce.nextIndex entry, drop it, to make place
+		// for others.
+		prevLabels := prev.ref.seriesLabels.String()
+		if prev.next == -1 {
+			// Last item for this series, remove index entry.
+			delete(ce.index, prevLabels)
+		} else {
+			ce.index[prevLabels].oldest = prev.next
+		}
+	}
+
+	// Default the next value to -1 (which we use to detect that we've iterated through all exemplars for a series in Select)
+	// since this is the first exemplar stored for this series.
+	ce.exemplars[ce.nextIndex].exemplar = e
+	ce.exemplars[ce.nextIndex].next = -1
+	ce.exemplars[ce.nextIndex].ref = ce.index[seriesLabels]
+	ce.index[seriesLabels].newest = ce.nextIndex
+
+	ce.nextIndex = (ce.nextIndex + 1) % len(ce.exemplars)
+
+	ce.exemplarsAppended.Inc()
+	ce.seriesWithExemplarsInStorage.Set(float64(len(ce.index)))
+	if next := ce.exemplars[ce.nextIndex]; next != nil {
+		ce.exemplarsInStorage.Set(float64(len(ce.exemplars)))
+		ce.lastExemplarsTs.Set(float64(next.exemplar.Ts) / 1000)
 		return nil
 	}
 
-	if e.Ts <= ce.exemplars[idx.last].exemplar.Ts {
-		ce.outOfOrderExemplars.Inc()
-		return storage.ErrOutOfOrderExemplar
-	}
-	ce.indexGc(ce.exemplars[ce.nextIndex])
-	ce.exemplars[ce.nextIndex] = &circularBufferEntry{
-		exemplar:     e,
-		seriesLabels: l,
-		next:         -1,
-	}
-
-	ce.exemplars[ce.index[seriesLabels].last].next = ce.nextIndex
-	ce.index[seriesLabels].last = ce.nextIndex
-	ce.nextIndex = (ce.nextIndex + 1) % len(ce.exemplars)
+	// We did not yet fill the buffer.
+	ce.exemplarsInStorage.Set(float64(ce.nextIndex))
+	ce.lastExemplarsTs.Set(float64(ce.exemplars[0].exemplar.Ts) / 1000)
 	return nil
 }
 
 type noopExemplarStorage struct{}
 
 func (noopExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemplar) error {
+	return nil
+}
+
+func (noopExemplarStorage) ValidateExemplar(l labels.Labels, e exemplar.Exemplar) error {
 	return nil
 }
 

@@ -498,6 +498,7 @@ $ curl http://localhost:9090/api/v1/targets
         },
         "scrapePool": "prometheus",
         "scrapeUrl": "http://127.0.0.1:9090/metrics",
+        "globalUrl": "http://example-prometheus:9090/metrics",
         "lastError": "",
         "lastScrape": "2017-01-17T15:07:44.723715405+01:00",
         "lastScrapeDuration": 0.050688943,
@@ -542,6 +543,7 @@ $ curl 'http://localhost:9090/api/v1/targets?state=active'
         },
         "scrapePool": "prometheus",
         "scrapeUrl": "http://127.0.0.1:9090/metrics",
+        "globalUrl": "http://example-prometheus:9090/metrics",
         "lastError": "",
         "lastScrape": "2017-01-17T15:07:44.723715405+01:00",
         "lastScrapeDuration": 50688943,
@@ -1030,6 +1032,39 @@ $ curl http://localhost:9090/api/v1/status/tsdb
 ```
 
 *New in v2.15*
+
+### WAL Replay Stats
+
+The following endpoint returns information about the WAL replay:
+
+```
+GET /api/v1/status/walreplay
+```
+
+**read**: The number of segments replayed so far.
+**total**: The total number segments needed to be replayed.
+**progress**: The progress of the replay (0 - 100%).
+**state**: The state of the replay. Possible states:
+- **waiting**: Waiting for the replay to start.
+- **in progress**: The replay is in progress.
+- **done**: The replay has finished.
+
+```json
+$ curl http://localhost:9090/api/v1/status/walreplay
+{
+  "status": "success",
+  "data": {
+    "min": 2,
+    "max": 5,
+    "current": 40,
+    "state": "in progress"
+  }
+}
+```
+
+NOTE: This endpoint is available before the server has been marked ready and is updated in real time to facilitate monitoring the progress of the WAL replay.
+
+*New in v2.28*
 
 ## TSDB Admin APIs
 These are APIs that expose database functionalities for the advanced user. These APIs are not enabled unless the `--web.enable-admin-api` is set.

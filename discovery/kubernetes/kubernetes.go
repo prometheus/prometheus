@@ -21,8 +21,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
@@ -39,6 +39,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/cache"
+	"k8s.io/client-go/tools/clientcmd"
 
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -114,6 +115,7 @@ func (c *Role) UnmarshalYAML(unmarshal func(interface{}) error) error {
 type SDConfig struct {
 	APIServer          config.URL              `yaml:"api_server,omitempty"`
 	Role               Role                    `yaml:"role"`
+	KubeConfig         string                  `yaml:"kubeconfig_file"`
 	HTTPClientConfig   config.HTTPClientConfig `yaml:",inline"`
 	NamespaceDiscovery NamespaceDiscovery      `yaml:"namespaces,omitempty"`
 	Selectors          []SelectorConfig        `yaml:"selectors,omitempty"`
@@ -130,6 +132,7 @@ func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Di
 // SetDirectory joins any relative file paths with dir.
 func (c *SDConfig) SetDirectory(dir string) {
 	c.HTTPClientConfig.SetDirectory(dir)
+	c.KubeConfig = config.JoinDir(dir, c.KubeConfig)
 }
 
 type roleSelector struct {
@@ -166,6 +169,14 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	err = c.HTTPClientConfig.Validate()
 	if err != nil {
 		return err
+	}
+	if c.APIServer.URL != nil && c.KubeConfig != "" {
+		// Api-server and kubeconfig_file are mutually exclusive
+		return errors.Errorf("cannot use 'kubeconfig_file' and 'api_server' simultaneously")
+	}
+	if c.KubeConfig != "" && !reflect.DeepEqual(c.HTTPClientConfig, config.DefaultHTTPClientConfig) {
+		// Kubeconfig_file and custom http config are mutually exclusive
+		return errors.Errorf("cannot use a custom HTTP client configuration together with 'kubeconfig_file'")
 	}
 	if c.APIServer.URL == nil && !reflect.DeepEqual(c.HTTPClientConfig, config.DefaultHTTPClientConfig) {
 		return errors.Errorf("to use custom HTTP client configuration please provide the 'api_server' URL explicitly")
@@ -256,7 +267,12 @@ func New(l log.Logger, conf *SDConfig) (*Discovery, error) {
 		kcfg *rest.Config
 		err  error
 	)
-	if conf.APIServer.URL == nil {
+	if conf.KubeConfig != "" {
+		kcfg, err = clientcmd.BuildConfigFromFlags("", conf.KubeConfig)
+		if err != nil {
+			return nil, err
+		}
+	} else if conf.APIServer.URL == nil {
 		// Use the Kubernetes provided pod service account
 		// as described in https://kubernetes.io/docs/admin/service-accounts-admin/
 		kcfg, err = rest.InClusterConfig()
@@ -265,7 +281,7 @@ func New(l log.Logger, conf *SDConfig) (*Discovery, error) {
 		}
 		level.Info(l).Log("msg", "Using pod service account via in-cluster config")
 	} else {
-		rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "kubernetes_sd", false, false)
+		rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "kubernetes_sd", config.WithHTTP2Disabled())
 		if err != nil {
 			return nil, err
 		}

@@ -100,6 +100,7 @@ You can build a docker image locally with the following commands:
 
     $ make promu
     $ promu crossbuild -p linux/amd64
+    $ make npm_licenses
     $ make common-docker-amd64
 
 *NB* if you are on a Mac, you will need [gnu-tar](https://formulae.brew.sh/formula/gnu-tar).
@@ -110,7 +111,7 @@ For more information on building, running, and developing on the new React-based
 
 ## More information
 
-  * The source code is periodically indexed: [Prometheus Core](https://godoc.org/github.com/prometheus/prometheus).
+  * The source code is periodically indexed: [Prometheus Core](https://pkg.go.dev/github.com/prometheus/prometheus).
   * You will find a CircleCI configuration in [`.circleci/config.yml`](.circleci/config.yml).
   * See the [Community page](https://prometheus.io/community) for how to reach the Prometheus developers and users on various communication channels.
 

@@ -23,8 +23,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/edsrzf/mmap-go"
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 )
 
 type ActiveQueryTracker struct {

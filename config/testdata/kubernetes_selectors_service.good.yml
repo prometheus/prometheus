@@ -3,6 +3,6 @@ scrape_configs:
     kubernetes_sd_configs:
       - role: service
         selectors:
-          - role:  "service"
+          - role: "service"
             label: "foo=bar"
             field: "metadata.status=Running"

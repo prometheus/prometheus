@@ -3,14 +3,14 @@ run:
 
 linters:
   enable:
-  - depguard
-  - golint
+    - depguard
+    - golint
 
 issues:
   exclude-rules:
-  - path: _test.go
-    linters:
-    - errcheck
+    - path: _test.go
+      linters:
+        - errcheck
 
 linters-settings:
   depguard:
@@ -22,5 +22,7 @@ linters-settings:
     packages-with-error-message:
       - sync/atomic: "Use go.uber.org/atomic instead of sync/atomic"
       - github.com/stretchr/testify/assert: "Use github.com/stretchr/testify/require instead of github.com/stretchr/testify/assert"
+      # Temporarily commenting until a solution for removing it from klog is found.
+      # - github.com/go-kit/kit/log: "Use github.com/go-kit/log instead of github.com/go-kit/kit/log"
   errcheck:
     exclude: scripts/errcheck_excludes.txt

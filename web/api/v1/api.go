@@ -30,8 +30,8 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -154,6 +154,7 @@ type TSDBAdminStats interface {
 	Snapshot(dir string, withHead bool) error
 
 	Stats(statsByLabelName string) (*tsdb.Stats, error)
+	WALReplayStatus() (tsdb.WALReplayStatus, error)
 }
 
 // API can register a set of endpoints in a router and handle
@@ -309,6 +310,7 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/status/buildinfo", wrap(api.serveBuildInfo))
 	r.Get("/status/flags", wrap(api.serveFlags))
 	r.Get("/status/tsdb", wrap(api.serveTSDBStatus))
+	r.Get("/status/walreplay", api.serveWALReplayStatus)
 	r.Post("/read", api.ready(http.HandlerFunc(api.remoteRead)))
 	r.Post("/write", api.ready(http.HandlerFunc(api.remoteWrite)))
 
@@ -1349,6 +1351,25 @@ func (api *API) serveTSDBStatus(*http.Request) apiFuncResult {
 		MemoryInBytesByLabelName:    convertStats(s.IndexPostingStats.LabelValueStats),
 		SeriesCountByLabelValuePair: convertStats(s.IndexPostingStats.LabelValuePairsStats),
 	}, nil, nil, nil}
+}
+
+type walReplayStatus struct {
+	Min     int `json:"min"`
+	Max     int `json:"max"`
+	Current int `json:"current"`
+}
+
+func (api *API) serveWALReplayStatus(w http.ResponseWriter, r *http.Request) {
+	httputil.SetCORS(w, api.CORSOrigin, r)
+	status, err := api.db.WALReplayStatus()
+	if err != nil {
+		api.respondError(w, &apiError{errorInternal, err}, nil)
+	}
+	api.respond(w, walReplayStatus{
+		Min:     status.Min,
+		Max:     status.Max,
+		Current: status.Current,
+	}, nil)
 }
 
 func (api *API) remoteRead(w http.ResponseWriter, r *http.Request) {

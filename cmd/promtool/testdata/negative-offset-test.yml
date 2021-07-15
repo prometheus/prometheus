@@ -1,0 +1,7 @@
+rule_files:
+  - negative-offset.yml
+
+tests:
+  - input_series:
+      - series: "requests{}"
+        values: 1

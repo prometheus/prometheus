@@ -17,28 +17,33 @@ import (
 	"encoding/json"
 	"io/ioutil"
 	"net/url"
+	"os"
 	"path/filepath"
 	"regexp"
 	"testing"
 	"time"
 
+	"github.com/alecthomas/units"
+	"github.com/go-kit/log"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/discovery"
+	"github.com/prometheus/prometheus/discovery/aws"
 	"github.com/prometheus/prometheus/discovery/azure"
 	"github.com/prometheus/prometheus/discovery/consul"
 	"github.com/prometheus/prometheus/discovery/digitalocean"
 	"github.com/prometheus/prometheus/discovery/dns"
-	"github.com/prometheus/prometheus/discovery/dockerswarm"
-	"github.com/prometheus/prometheus/discovery/ec2"
 	"github.com/prometheus/prometheus/discovery/eureka"
 	"github.com/prometheus/prometheus/discovery/file"
 	"github.com/prometheus/prometheus/discovery/hetzner"
+	"github.com/prometheus/prometheus/discovery/http"
 	"github.com/prometheus/prometheus/discovery/kubernetes"
+	"github.com/prometheus/prometheus/discovery/linode"
 	"github.com/prometheus/prometheus/discovery/marathon"
+	"github.com/prometheus/prometheus/discovery/moby"
 	"github.com/prometheus/prometheus/discovery/openstack"
 	"github.com/prometheus/prometheus/discovery/scaleway"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -88,9 +93,16 @@ var expectedConf = &Config{
 					Action:       relabel.Drop,
 				},
 			},
-			QueueConfig:      DefaultQueueConfig,
-			MetadataConfig:   DefaultMetadataConfig,
-			HTTPClientConfig: config.DefaultHTTPClientConfig,
+			QueueConfig:    DefaultQueueConfig,
+			MetadataConfig: DefaultMetadataConfig,
+			HTTPClientConfig: config.HTTPClientConfig{
+				OAuth2: &config.OAuth2{
+					ClientID:     "123",
+					ClientSecret: "456",
+					TokenURL:     "http://remote1/auth",
+				},
+				FollowRedirects: true,
+			},
 		},
 		{
 			URL:            mustParseURL("http://remote2/push"),
@@ -214,6 +226,7 @@ var expectedConf = &Config{
 			HonorTimestamps: true,
 			ScrapeInterval:  model.Duration(50 * time.Second),
 			ScrapeTimeout:   model.Duration(5 * time.Second),
+			BodySizeLimit:   10 * units.MiB,
 			SampleLimit:     1000,
 
 			HTTPClientConfig: config.HTTPClientConfig{
@@ -319,11 +332,14 @@ var expectedConf = &Config{
 					Scheme:          "https",
 					RefreshInterval: consul.DefaultSDConfig.RefreshInterval,
 					AllowStale:      true,
-					TLSConfig: config.TLSConfig{
-						CertFile:           filepath.FromSlash("testdata/valid_cert_file"),
-						KeyFile:            filepath.FromSlash("testdata/valid_key_file"),
-						CAFile:             filepath.FromSlash("testdata/valid_ca_file"),
-						InsecureSkipVerify: false,
+					HTTPClientConfig: config.HTTPClientConfig{
+						TLSConfig: config.TLSConfig{
+							CertFile:           filepath.FromSlash("testdata/valid_cert_file"),
+							KeyFile:            filepath.FromSlash("testdata/valid_key_file"),
+							CAFile:             filepath.FromSlash("testdata/valid_ca_file"),
+							InsecureSkipVerify: false,
+						},
+						FollowRedirects: true,
 					},
 				},
 			},
@@ -463,14 +479,14 @@ var expectedConf = &Config{
 			HTTPClientConfig: config.DefaultHTTPClientConfig,
 
 			ServiceDiscoveryConfigs: discovery.Configs{
-				&ec2.SDConfig{
+				&aws.EC2SDConfig{
 					Region:          "us-east-1",
 					AccessKey:       "access",
 					SecretKey:       "mysecret",
 					Profile:         "profile",
 					RefreshInterval: model.Duration(60 * time.Second),
 					Port:            80,
-					Filters: []*ec2.Filter{
+					Filters: []*aws.EC2Filter{
 						{
 							Name:   "tag:environment",
 							Values: []string{"prod"},
@@ -480,6 +496,28 @@ var expectedConf = &Config{
 							Values: []string{"web", "db"},
 						},
 					},
+				},
+			},
+		},
+		{
+			JobName: "service-lightsail",
+
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
+
+			MetricsPath:      DefaultScrapeConfig.MetricsPath,
+			Scheme:           DefaultScrapeConfig.Scheme,
+			HTTPClientConfig: config.DefaultHTTPClientConfig,
+
+			ServiceDiscoveryConfigs: discovery.Configs{
+				&aws.LightsailSDConfig{
+					Region:          "us-east-1",
+					AccessKey:       "access",
+					SecretKey:       "mysecret",
+					Profile:         "profile",
+					RefreshInterval: model.Duration(60 * time.Second),
+					Port:            80,
 				},
 			},
 		},
@@ -593,6 +631,25 @@ var expectedConf = &Config{
 			},
 		},
 		{
+			JobName: "httpsd",
+
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
+
+			MetricsPath:      DefaultScrapeConfig.MetricsPath,
+			Scheme:           DefaultScrapeConfig.Scheme,
+			HTTPClientConfig: config.DefaultHTTPClientConfig,
+
+			ServiceDiscoveryConfigs: discovery.Configs{
+				&http.SDConfig{
+					HTTPClientConfig: config.DefaultHTTPClientConfig,
+					URL:              "http://example.com/prometheus",
+					RefreshInterval:  model.Duration(60 * time.Second),
+				},
+			},
+		},
+		{
 			JobName: "service-triton",
 
 			HonorTimestamps: true,
@@ -645,6 +702,27 @@ var expectedConf = &Config{
 			},
 		},
 		{
+			JobName: "docker",
+
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
+
+			MetricsPath:      DefaultScrapeConfig.MetricsPath,
+			Scheme:           DefaultScrapeConfig.Scheme,
+			HTTPClientConfig: config.DefaultHTTPClientConfig,
+
+			ServiceDiscoveryConfigs: discovery.Configs{
+				&moby.DockerSDConfig{
+					Filters:          []moby.Filter{},
+					Host:             "unix:///var/run/docker.sock",
+					Port:             80,
+					RefreshInterval:  model.Duration(60 * time.Second),
+					HTTPClientConfig: config.DefaultHTTPClientConfig,
+				},
+			},
+		},
+		{
 			JobName: "dockerswarm",
 
 			HonorTimestamps: true,
@@ -656,8 +734,8 @@ var expectedConf = &Config{
 			HTTPClientConfig: config.DefaultHTTPClientConfig,
 
 			ServiceDiscoveryConfigs: discovery.Configs{
-				&dockerswarm.SDConfig{
-					Filters:          []dockerswarm.Filter{},
+				&moby.DockerSwarmSDConfig{
+					Filters:          []moby.Filter{},
 					Host:             "http://127.0.0.1:2375",
 					Role:             "nodes",
 					Port:             80,
@@ -779,6 +857,32 @@ var expectedConf = &Config{
 				},
 			},
 		},
+		{
+			JobName: "linode-instances",
+
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
+
+			MetricsPath:      DefaultScrapeConfig.MetricsPath,
+			Scheme:           DefaultScrapeConfig.Scheme,
+			HTTPClientConfig: config.DefaultHTTPClientConfig,
+
+			ServiceDiscoveryConfigs: discovery.Configs{
+				&linode.SDConfig{
+					HTTPClientConfig: config.HTTPClientConfig{
+						Authorization: &config.Authorization{
+							Type:        "Bearer",
+							Credentials: "abcdef",
+						},
+						FollowRedirects: true,
+					},
+					Port:            80,
+					TagSeparator:    linode.DefaultSDConfig.TagSeparator,
+					RefreshInterval: model.Duration(60 * time.Second),
+				},
+			},
+		},
 	},
 	AlertingConfig: AlertingConfig{
 		AlertmanagerConfigs: []*AlertmanagerConfig{
@@ -805,7 +909,7 @@ var expectedConf = &Config{
 }
 
 func TestYAMLRoundtrip(t *testing.T) {
-	want, err := LoadFile("testdata/roundtrip.good.yml")
+	want, err := LoadFile("testdata/roundtrip.good.yml", false, log.NewNopLogger())
 	require.NoError(t, err)
 
 	out, err := yaml.Marshal(want)
@@ -818,7 +922,7 @@ func TestYAMLRoundtrip(t *testing.T) {
 }
 
 func TestRemoteWriteRetryOnRateLimit(t *testing.T) {
-	want, err := LoadFile("testdata/remote_write_retry_on_rate_limit.good.yml")
+	want, err := LoadFile("testdata/remote_write_retry_on_rate_limit.good.yml", false, log.NewNopLogger())
 	require.NoError(t, err)
 
 	out, err := yaml.Marshal(want)
@@ -834,16 +938,16 @@ func TestRemoteWriteRetryOnRateLimit(t *testing.T) {
 func TestLoadConfig(t *testing.T) {
 	// Parse a valid file that sets a global scrape timeout. This tests whether parsing
 	// an overwritten default field in the global config permanently changes the default.
-	_, err := LoadFile("testdata/global_timeout.good.yml")
+	_, err := LoadFile("testdata/global_timeout.good.yml", false, log.NewNopLogger())
 	require.NoError(t, err)
 
-	c, err := LoadFile("testdata/conf.good.yml")
+	c, err := LoadFile("testdata/conf.good.yml", false, log.NewNopLogger())
 	require.NoError(t, err)
 	require.Equal(t, expectedConf, c)
 }
 
 func TestScrapeIntervalLarger(t *testing.T) {
-	c, err := LoadFile("testdata/scrape_interval_larger.good.yml")
+	c, err := LoadFile("testdata/scrape_interval_larger.good.yml", false, log.NewNopLogger())
 	require.NoError(t, err)
 	require.Equal(t, 1, len(c.ScrapeConfigs))
 	for _, sc := range c.ScrapeConfigs {
@@ -853,7 +957,7 @@ func TestScrapeIntervalLarger(t *testing.T) {
 
 // YAML marshaling must not reveal authentication credentials.
 func TestElideSecrets(t *testing.T) {
-	c, err := LoadFile("testdata/conf.good.yml")
+	c, err := LoadFile("testdata/conf.good.yml", false, log.NewNopLogger())
 	require.NoError(t, err)
 
 	secretRe := regexp.MustCompile(`\\u003csecret\\u003e|<secret>`)
@@ -863,33 +967,38 @@ func TestElideSecrets(t *testing.T) {
 	yamlConfig := string(config)
 
 	matches := secretRe.FindAllStringIndex(yamlConfig, -1)
-	require.Equal(t, 12, len(matches), "wrong number of secret matches found")
+	require.Equal(t, 15, len(matches), "wrong number of secret matches found")
 	require.NotContains(t, yamlConfig, "mysecret",
 		"yaml marshal reveals authentication credentials.")
 }
 
 func TestLoadConfigRuleFilesAbsolutePath(t *testing.T) {
 	// Parse a valid file that sets a rule files with an absolute path
-	c, err := LoadFile(ruleFilesConfigFile)
+	c, err := LoadFile(ruleFilesConfigFile, false, log.NewNopLogger())
 	require.NoError(t, err)
 	require.Equal(t, ruleFilesExpectedConf, c)
 }
 
 func TestKubernetesEmptyAPIServer(t *testing.T) {
-	_, err := LoadFile("testdata/kubernetes_empty_apiserver.good.yml")
+	_, err := LoadFile("testdata/kubernetes_empty_apiserver.good.yml", false, log.NewNopLogger())
+	require.NoError(t, err)
+}
+
+func TestKubernetesWithKubeConfig(t *testing.T) {
+	_, err := LoadFile("testdata/kubernetes_kubeconfig_without_apiserver.good.yml", false, log.NewNopLogger())
 	require.NoError(t, err)
 }
 
 func TestKubernetesSelectors(t *testing.T) {
-	_, err := LoadFile("testdata/kubernetes_selectors_endpoints.good.yml")
+	_, err := LoadFile("testdata/kubernetes_selectors_endpoints.good.yml", false, log.NewNopLogger())
 	require.NoError(t, err)
-	_, err = LoadFile("testdata/kubernetes_selectors_node.good.yml")
+	_, err = LoadFile("testdata/kubernetes_selectors_node.good.yml", false, log.NewNopLogger())
 	require.NoError(t, err)
-	_, err = LoadFile("testdata/kubernetes_selectors_ingress.good.yml")
+	_, err = LoadFile("testdata/kubernetes_selectors_ingress.good.yml", false, log.NewNopLogger())
 	require.NoError(t, err)
-	_, err = LoadFile("testdata/kubernetes_selectors_pod.good.yml")
+	_, err = LoadFile("testdata/kubernetes_selectors_pod.good.yml", false, log.NewNopLogger())
 	require.NoError(t, err)
-	_, err = LoadFile("testdata/kubernetes_selectors_service.good.yml")
+	_, err = LoadFile("testdata/kubernetes_selectors_service.good.yml", false, log.NewNopLogger())
 	require.NoError(t, err)
 }
 
@@ -965,11 +1074,18 @@ var expectedErrors = []struct {
 		errMsg:   "at most one of bearer_token & bearer_token_file must be configured",
 	}, {
 		filename: "bearertoken_basicauth.bad.yml",
-		errMsg:   "at most one of basic_auth, bearer_token & bearer_token_file must be configured",
+		errMsg:   "at most one of basic_auth, oauth2, bearer_token & bearer_token_file must be configured",
 	}, {
 		filename: "kubernetes_http_config_without_api_server.bad.yml",
 		errMsg:   "to use custom HTTP client configuration please provide the 'api_server' URL explicitly",
 	}, {
+		filename: "kubernetes_kubeconfig_with_apiserver.bad.yml",
+		errMsg:   "cannot use 'kubeconfig_file' and 'api_server' simultaneously",
+	}, {
+		filename: "kubernetes_kubeconfig_with_http_config.bad.yml",
+		errMsg:   "cannot use a custom HTTP client configuration together with 'kubeconfig_file'",
+	},
+	{
 		filename: "kubernetes_bearertoken.bad.yml",
 		errMsg:   "at most one of bearer_token & bearer_token_file must be configured",
 	}, {
@@ -1001,10 +1117,10 @@ var expectedErrors = []struct {
 		errMsg:   "invalid selector: 'metadata.status-Running'; can't understand 'metadata.status-Running'",
 	}, {
 		filename: "kubernetes_bearertoken_basicauth.bad.yml",
-		errMsg:   "at most one of basic_auth, bearer_token & bearer_token_file must be configured",
+		errMsg:   "at most one of basic_auth, oauth2, bearer_token & bearer_token_file must be configured",
 	}, {
 		filename: "kubernetes_authorization_basicauth.bad.yml",
-		errMsg:   "at most one of basic_auth & authorization must be configured",
+		errMsg:   "at most one of basic_auth, oauth2 & authorization must be configured",
 	}, {
 		filename: "marathon_no_servers.bad.yml",
 		errMsg:   "marathon_sd: must contain at least one Marathon server",
@@ -1049,7 +1165,7 @@ var expectedErrors = []struct {
 		errMsg:   `x-prometheus-remote-write-version is a reserved header. It must not be changed`,
 	}, {
 		filename: "remote_write_authorization_header.bad.yml",
-		errMsg:   `authorization header must be changed via the basic_auth or authorization parameter`,
+		errMsg:   `authorization header must be changed via the basic_auth, authorization, oauth2, or sigv4 parameter`,
 	}, {
 		filename: "remote_write_url_missing.bad.yml",
 		errMsg:   `url for remote_write is empty`,
@@ -1136,11 +1252,39 @@ var expectedErrors = []struct {
 		filename: "eureka_invalid_server.bad.yml",
 		errMsg:   "invalid eureka server URL",
 	},
+	{
+		filename: "scaleway_role.bad.yml",
+		errMsg:   `unknown role "invalid"`,
+	},
+	{
+		filename: "scaleway_no_secret.bad.yml",
+		errMsg:   "one of secret_key & secret_key_file must be configured",
+	},
+	{
+		filename: "scaleway_two_secrets.bad.yml",
+		errMsg:   "at most one of secret_key & secret_key_file must be configured",
+	},
+	{
+		filename: "scrape_body_size_limit.bad.yml",
+		errMsg:   "units: unknown unit  in 100",
+	},
+	{
+		filename: "http_url_no_scheme.bad.yml",
+		errMsg:   "URL scheme must be 'http' or 'https'",
+	},
+	{
+		filename: "http_url_no_host.bad.yml",
+		errMsg:   "host is missing in URL",
+	},
+	{
+		filename: "http_url_bad_scheme.bad.yml",
+		errMsg:   "URL scheme must be 'http' or 'https'",
+	},
 }
 
 func TestBadConfigs(t *testing.T) {
 	for _, ee := range expectedErrors {
-		_, err := LoadFile("testdata/" + ee.filename)
+		_, err := LoadFile("testdata/"+ee.filename, false, log.NewNopLogger())
 		require.Error(t, err, "%s", ee.filename)
 		require.Contains(t, err.Error(), ee.errMsg,
 			"Expected error for %s to contain %q but got: %s", ee.filename, ee.errMsg, err)
@@ -1164,14 +1308,38 @@ func TestBadStaticConfigsYML(t *testing.T) {
 }
 
 func TestEmptyConfig(t *testing.T) {
-	c, err := Load("")
+	c, err := Load("", false, log.NewNopLogger())
 	require.NoError(t, err)
 	exp := DefaultConfig
 	require.Equal(t, exp, *c)
 }
 
+func TestExpandExternalLabels(t *testing.T) {
+	// Cleanup ant TEST env variable that could exist on the system.
+	os.Setenv("TEST", "")
+
+	c, err := LoadFile("testdata/external_labels.good.yml", false, log.NewNopLogger())
+	require.NoError(t, err)
+	require.Equal(t, labels.Label{Name: "bar", Value: "foo"}, c.GlobalConfig.ExternalLabels[0])
+	require.Equal(t, labels.Label{Name: "baz", Value: "foo${TEST}bar"}, c.GlobalConfig.ExternalLabels[1])
+	require.Equal(t, labels.Label{Name: "foo", Value: "${TEST}"}, c.GlobalConfig.ExternalLabels[2])
+
+	c, err = LoadFile("testdata/external_labels.good.yml", true, log.NewNopLogger())
+	require.NoError(t, err)
+	require.Equal(t, labels.Label{Name: "bar", Value: "foo"}, c.GlobalConfig.ExternalLabels[0])
+	require.Equal(t, labels.Label{Name: "baz", Value: "foobar"}, c.GlobalConfig.ExternalLabels[1])
+	require.Equal(t, labels.Label{Name: "foo", Value: ""}, c.GlobalConfig.ExternalLabels[2])
+
+	os.Setenv("TEST", "TestValue")
+	c, err = LoadFile("testdata/external_labels.good.yml", true, log.NewNopLogger())
+	require.NoError(t, err)
+	require.Equal(t, labels.Label{Name: "bar", Value: "foo"}, c.GlobalConfig.ExternalLabels[0])
+	require.Equal(t, labels.Label{Name: "baz", Value: "fooTestValuebar"}, c.GlobalConfig.ExternalLabels[1])
+	require.Equal(t, labels.Label{Name: "foo", Value: "TestValue"}, c.GlobalConfig.ExternalLabels[2])
+}
+
 func TestEmptyGlobalBlock(t *testing.T) {
-	c, err := Load("global:\n")
+	c, err := Load("global:\n", false, log.NewNopLogger())
 	require.NoError(t, err)
 	exp := DefaultConfig
 	require.Equal(t, exp, *c)

@@ -25,7 +25,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
@@ -238,6 +238,48 @@ func TestWALSegmentSizeBounds(t *testing.T) {
 	}
 }
 
+func TestMaxBlockChunkSegmentSizeBounds(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode.")
+	}
+
+	for size, expectedExitStatus := range map[string]int{"512KB": 1, "1MB": 0} {
+		prom := exec.Command(promPath, "-test.main", "--storage.tsdb.max-block-chunk-segment-size="+size, "--config.file="+promConfig)
+
+		// Log stderr in case of failure.
+		stderr, err := prom.StderrPipe()
+		require.NoError(t, err)
+		go func() {
+			slurp, _ := ioutil.ReadAll(stderr)
+			t.Log(string(slurp))
+		}()
+
+		err = prom.Start()
+		require.NoError(t, err)
+
+		if expectedExitStatus == 0 {
+			done := make(chan error, 1)
+			go func() { done <- prom.Wait() }()
+			select {
+			case err := <-done:
+				t.Errorf("prometheus should be still running: %v", err)
+			case <-time.After(5 * time.Second):
+				prom.Process.Kill()
+			}
+			continue
+		}
+
+		err = prom.Wait()
+		require.Error(t, err)
+		if exitError, ok := err.(*exec.ExitError); ok {
+			status := exitError.Sys().(syscall.WaitStatus)
+			require.Equal(t, expectedExitStatus, status.ExitStatus())
+		} else {
+			t.Errorf("unable to retrieve the exit status for prometheus: %v", err)
+		}
+	}
+}
+
 func TestTimeMetrics(t *testing.T) {
 	tmpDir, err := ioutil.TempDir("", "time_metrics_e2e")
 	require.NoError(t, err)
@@ -247,7 +289,7 @@ func TestTimeMetrics(t *testing.T) {
 	}()
 
 	reg := prometheus.NewRegistry()
-	db, err := openDBWithMetrics(tmpDir, log.NewNopLogger(), reg, nil)
+	db, err := openDBWithMetrics(tmpDir, log.NewNopLogger(), reg, nil, nil)
 	require.NoError(t, err)
 	defer func() {
 		require.NoError(t, db.Close())

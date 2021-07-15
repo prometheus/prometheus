@@ -38,8 +38,8 @@ import (
 	"time"
 
 	"github.com/alecthomas/units"
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	conntrack "github.com/mwitkow/go-conntrack"
 	"github.com/opentracing-contrib/go-stdlib/nethttp"
 	opentracing "github.com/opentracing/opentracing-go"
@@ -79,6 +79,7 @@ var reactRouterPaths = []string{
 	"/status",
 	"/targets",
 	"/tsdb-status",
+	"/starting",
 }
 
 // withStackTrace logs the stack trace in case the request panics. The function
@@ -354,7 +355,7 @@ func New(logger log.Logger, o *Options) *Handler {
 	// Redirect the original React UI's path (under "/new") to its new path at the root.
 	router.Get("/new/*path", func(w http.ResponseWriter, r *http.Request) {
 		p := route.Param(r.Context(), "path")
-		http.Redirect(w, r, path.Join(o.ExternalURL.Path, strings.TrimPrefix(p, "/new"))+"?"+r.URL.RawQuery, http.StatusFound)
+		http.Redirect(w, r, path.Join(o.ExternalURL.Path, p)+"?"+r.URL.RawQuery, http.StatusFound)
 	})
 
 	router.Get("/classic/alerts", readyf(h.alerts))
@@ -372,7 +373,7 @@ func New(logger log.Logger, o *Options) *Handler {
 	})
 	// Make sure that "<path-prefix>/classic" is redirected to "<path-prefix>/classic/" and
 	// not just the naked "/classic/", which would be the default behavior of the router
-	// with the "RedirectTrailingSlash" option (https://godoc.org/github.com/julienschmidt/httprouter#Router.RedirectTrailingSlash),
+	// with the "RedirectTrailingSlash" option (https://pkg.go.dev/github.com/julienschmidt/httprouter#Router.RedirectTrailingSlash),
 	// and which breaks users with a --web.route-prefix that deviates from the path derived
 	// from the external URL.
 	// See https://github.com/prometheus/prometheus/issues/6163#issuecomment-553855129.

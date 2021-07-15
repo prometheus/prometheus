@@ -18,7 +18,7 @@ import (
 	"net/http"
 	"sort"
 
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -95,7 +95,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 
 	var sets []storage.SeriesSet
 	for _, mset := range matcherSets {
-		s := q.Select(false, hints, mset...)
+		s := q.Select(true, hints, mset...)
 		sets = append(sets, s)
 	}
 

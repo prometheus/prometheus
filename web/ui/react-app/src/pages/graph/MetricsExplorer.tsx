@@ -1,6 +1,5 @@
 import React, { Component } from 'react';
 import { Modal, ModalBody, ModalHeader } from 'reactstrap';
-import './MetricsExplorer.css';
 
 interface Props {
   show: boolean;

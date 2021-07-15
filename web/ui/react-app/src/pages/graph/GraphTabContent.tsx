@@ -1,17 +1,30 @@
 import React, { FC } from 'react';
 import { Alert } from 'reactstrap';
 import Graph from './Graph';
-import { QueryParams } from '../../types/types';
+import { QueryParams, ExemplarData } from '../../types/types';
 import { isPresent } from '../../utils';
 
 interface GraphTabContentProps {
   data: any;
+  exemplars: ExemplarData;
   stacked: boolean;
   useLocalTime: boolean;
+  showExemplars: boolean;
+  handleTimeRangeSelection: (startTime: number, endTime: number) => void;
   lastQueryParams: QueryParams | null;
+  id: string;
 }
 
-export const GraphTabContent: FC<GraphTabContentProps> = ({ data, stacked, useLocalTime, lastQueryParams }) => {
+export const GraphTabContent: FC<GraphTabContentProps> = ({
+  data,
+  exemplars,
+  stacked,
+  useLocalTime,
+  lastQueryParams,
+  showExemplars,
+  handleTimeRangeSelection,
+  id,
+}) => {
   if (!isPresent(data)) {
     return <Alert color="light">No data queried yet</Alert>;
   }
@@ -23,5 +36,16 @@ export const GraphTabContent: FC<GraphTabContentProps> = ({ data, stacked, useLo
       <Alert color="danger">Query result is of wrong type '{data.resultType}', should be 'matrix' (range vector).</Alert>
     );
   }
-  return <Graph data={data} stacked={stacked} useLocalTime={useLocalTime} queryParams={lastQueryParams} />;
+  return (
+    <Graph
+      data={data}
+      exemplars={exemplars}
+      stacked={stacked}
+      useLocalTime={useLocalTime}
+      showExemplars={showExemplars}
+      handleTimeRangeSelection={handleTimeRangeSelection}
+      queryParams={lastQueryParams}
+      id={id}
+    />
+  );
 };

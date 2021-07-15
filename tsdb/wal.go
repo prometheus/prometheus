@@ -27,8 +27,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -64,7 +64,7 @@ type walMetrics struct {
 	corruptions   prometheus.Counter
 }
 
-func newWalMetrics(wal *SegmentWAL, r prometheus.Registerer) *walMetrics {
+func newWalMetrics(r prometheus.Registerer) *walMetrics {
 	m := &walMetrics{}
 
 	m.fsyncDuration = prometheus.NewSummary(prometheus.SummaryOpts{
@@ -192,7 +192,7 @@ func OpenSegmentWAL(dir string, logger log.Logger, flushInterval time.Duration, 
 		segmentSize:   walSegmentSizeBytes,
 		crc32:         newCRC32(),
 	}
-	w.metrics = newWalMetrics(w, r)
+	w.metrics = newWalMetrics(r)
 
 	fns, err := sequenceFiles(w.dirFile.Name())
 	if err != nil {

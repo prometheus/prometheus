@@ -27,11 +27,12 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -41,6 +42,7 @@ import (
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/index"
@@ -52,7 +54,7 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	goleak.VerifyTestMain(m)
+	goleak.VerifyTestMain(m, goleak.IgnoreTopFunction("github.com/prometheus/prometheus/tsdb.(*SegmentWAL).cut.func2"))
 }
 
 func openTestDB(t testing.TB, opts *Options, rngs []int64) (db *DB) {
@@ -60,10 +62,10 @@ func openTestDB(t testing.TB, opts *Options, rngs []int64) (db *DB) {
 	require.NoError(t, err)
 
 	if len(rngs) == 0 {
-		db, err = Open(tmpdir, nil, nil, opts)
+		db, err = Open(tmpdir, nil, nil, opts, nil)
 	} else {
 		opts, rngs = validateOpts(opts, rngs)
-		db, err = open(tmpdir, nil, nil, opts, rngs)
+		db, err = open(tmpdir, nil, nil, opts, rngs, nil)
 	}
 	require.NoError(t, err)
 
@@ -239,7 +241,7 @@ func TestNoPanicAfterWALCorruption(t *testing.T) {
 
 	// Query the data.
 	{
-		db, err := Open(db.Dir(), nil, nil, nil)
+		db, err := Open(db.Dir(), nil, nil, nil, nil)
 		require.NoError(t, err)
 		defer func() {
 			require.NoError(t, db.Close())
@@ -579,7 +581,7 @@ func TestDB_Snapshot(t *testing.T) {
 	require.NoError(t, db.Close())
 
 	// reopen DB from snapshot
-	db, err = Open(snap, nil, nil, nil)
+	db, err = Open(snap, nil, nil, nil, nil)
 	require.NoError(t, err)
 	defer func() { require.NoError(t, db.Close()) }()
 
@@ -631,7 +633,7 @@ func TestDB_Snapshot_ChunksOutsideOfCompactedRange(t *testing.T) {
 	require.NoError(t, db.Close())
 
 	// Reopen DB from snapshot.
-	db, err = Open(snap, nil, nil, nil)
+	db, err = Open(snap, nil, nil, nil, nil)
 	require.NoError(t, err)
 	defer func() { require.NoError(t, db.Close()) }()
 
@@ -701,7 +703,7 @@ Outer:
 		require.NoError(t, db.Close())
 
 		// reopen DB from snapshot
-		db, err = Open(snap, nil, nil, nil)
+		db, err = Open(snap, nil, nil, nil, nil)
 		require.NoError(t, err)
 		defer func() { require.NoError(t, db.Close()) }()
 
@@ -921,7 +923,7 @@ func TestWALFlushedOnDBClose(t *testing.T) {
 
 	require.NoError(t, db.Close())
 
-	db, err = Open(dirDb, nil, nil, nil)
+	db, err = Open(dirDb, nil, nil, nil, nil)
 	require.NoError(t, err)
 	defer func() { require.NoError(t, db.Close()) }()
 
@@ -1044,7 +1046,7 @@ func TestTombstoneClean(t *testing.T) {
 		require.NoError(t, db.Close())
 
 		// Reopen DB from snapshot.
-		db, err = Open(snap, nil, nil, nil)
+		db, err = Open(snap, nil, nil, nil, nil)
 		require.NoError(t, err)
 		defer db.Close()
 
@@ -1133,7 +1135,7 @@ func TestTombstoneCleanResultEmptyBlock(t *testing.T) {
 	require.NoError(t, db.Close())
 
 	// Reopen DB from snapshot.
-	db, err = Open(snap, nil, nil, nil)
+	db, err = Open(snap, nil, nil, nil, nil)
 	require.NoError(t, err)
 	defer db.Close()
 
@@ -1755,7 +1757,7 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 			require.NoError(t, os.RemoveAll(dir))
 		}()
 
-		db, err := Open(dir, nil, nil, nil)
+		db, err := Open(dir, nil, nil, nil, nil)
 		require.NoError(t, err)
 		defer db.Close()
 
@@ -1797,7 +1799,7 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, w.Close())
 
-		db, err := Open(dir, nil, nil, nil)
+		db, err := Open(dir, nil, nil, nil, nil)
 		require.NoError(t, err)
 		defer db.Close()
 
@@ -1813,7 +1815,7 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 
 		createBlock(t, dir, genSeries(1, 1, 1000, 2000))
 
-		db, err := Open(dir, nil, nil, nil)
+		db, err := Open(dir, nil, nil, nil, nil)
 		require.NoError(t, err)
 		defer db.Close()
 
@@ -1849,7 +1851,7 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 
 		r := prometheus.NewRegistry()
 
-		db, err := Open(dir, nil, r, nil)
+		db, err := Open(dir, nil, r, nil, nil)
 		require.NoError(t, err)
 		defer db.Close()
 
@@ -2123,7 +2125,7 @@ func TestBlockRanges(t *testing.T) {
 	// when a non standard block already exists.
 	firstBlockMaxT := int64(3)
 	createBlock(t, dir, genSeries(1, 1, 0, firstBlockMaxT))
-	db, err := open(dir, logger, nil, DefaultOptions(), []int64{10000})
+	db, err := open(dir, logger, nil, DefaultOptions(), []int64{10000}, nil)
 	require.NoError(t, err)
 
 	rangeToTriggerCompaction := db.compactor.(*LeveledCompactor).ranges[0]/2*3 + 1
@@ -2175,7 +2177,7 @@ func TestBlockRanges(t *testing.T) {
 	thirdBlockMaxt := secondBlockMaxt + 2
 	createBlock(t, dir, genSeries(1, 1, secondBlockMaxt+1, thirdBlockMaxt))
 
-	db, err = open(dir, logger, nil, DefaultOptions(), []int64{10000})
+	db, err = open(dir, logger, nil, DefaultOptions(), []int64{10000}, nil)
 	require.NoError(t, err)
 
 	defer db.Close()
@@ -2243,7 +2245,7 @@ func TestDBReadOnly(t *testing.T) {
 
 	// Open a normal db to use for a comparison.
 	{
-		dbWritable, err := Open(dbDir, logger, nil, nil)
+		dbWritable, err := Open(dbDir, logger, nil, nil, nil)
 		require.NoError(t, err)
 		dbWritable.DisableCompactions()
 
@@ -2345,7 +2347,7 @@ func TestDBReadOnly_FlushWAL(t *testing.T) {
 		}()
 
 		// Append data to the WAL.
-		db, err := Open(dbDir, logger, nil, nil)
+		db, err := Open(dbDir, logger, nil, nil, nil)
 		require.NoError(t, err)
 		db.DisableCompactions()
 		app := db.Appender(ctx)
@@ -2406,7 +2408,7 @@ func TestDBCannotSeePartialCommits(t *testing.T) {
 		require.NoError(t, os.RemoveAll(tmpdir))
 	}()
 
-	db, err := Open(tmpdir, nil, nil, nil)
+	db, err := Open(tmpdir, nil, nil, nil, nil)
 	require.NoError(t, err)
 	defer db.Close()
 
@@ -2476,7 +2478,7 @@ func TestDBQueryDoesntSeeAppendsAfterCreation(t *testing.T) {
 		require.NoError(t, os.RemoveAll(tmpdir))
 	}()
 
-	db, err := Open(tmpdir, nil, nil, nil)
+	db, err := Open(tmpdir, nil, nil, nil, nil)
 	require.NoError(t, err)
 	defer db.Close()
 
@@ -2803,7 +2805,7 @@ func TestCompactHead(t *testing.T) {
 		WALCompression:    true,
 	}
 
-	db, err := Open(dbDir, log.NewNopLogger(), prometheus.NewRegistry(), tsdbCfg)
+	db, err := Open(dbDir, log.NewNopLogger(), prometheus.NewRegistry(), tsdbCfg, nil)
 	require.NoError(t, err)
 	ctx := context.Background()
 	app := db.Appender(ctx)
@@ -2824,7 +2826,7 @@ func TestCompactHead(t *testing.T) {
 	// Delete everything but the new block and
 	// reopen the db to query it to ensure it includes the head data.
 	require.NoError(t, deleteNonBlocks(db.Dir()))
-	db, err = Open(dbDir, log.NewNopLogger(), prometheus.NewRegistry(), tsdbCfg)
+	db, err = Open(dbDir, log.NewNopLogger(), prometheus.NewRegistry(), tsdbCfg, nil)
 	require.NoError(t, err)
 	require.Equal(t, 1, len(db.Blocks()))
 	require.Equal(t, int64(maxt), db.Head().MinTime())
@@ -2953,7 +2955,7 @@ func TestOpen_VariousBlockStates(t *testing.T) {
 
 	opts := DefaultOptions()
 	opts.RetentionDuration = 0
-	db, err := Open(tmpDir, log.NewLogfmtLogger(os.Stderr), nil, opts)
+	db, err := Open(tmpDir, log.NewLogfmtLogger(os.Stderr), nil, opts, nil)
 	require.NoError(t, err)
 
 	loadedBlocks := db.Blocks()
@@ -2998,7 +3000,7 @@ func TestOneCheckpointPerCompactCall(t *testing.T) {
 		require.NoError(t, os.RemoveAll(tmpDir))
 	})
 
-	db, err := Open(tmpDir, log.NewNopLogger(), prometheus.NewRegistry(), tsdbCfg)
+	db, err := Open(tmpDir, log.NewNopLogger(), prometheus.NewRegistry(), tsdbCfg, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		require.NoError(t, db.Close())
@@ -3059,7 +3061,7 @@ func TestOneCheckpointPerCompactCall(t *testing.T) {
 
 	createBlock(t, db.dir, genSeries(1, 1, newBlockMint, newBlockMaxt))
 
-	db, err = Open(db.dir, log.NewNopLogger(), prometheus.NewRegistry(), tsdbCfg)
+	db, err = Open(db.dir, log.NewNopLogger(), prometheus.NewRegistry(), tsdbCfg, nil)
 	require.NoError(t, err)
 	db.DisableCompactions()
 
@@ -3117,8 +3119,328 @@ func TestNoPanicOnTSDBOpenError(t *testing.T) {
 	lockf, _, err := fileutil.Flock(filepath.Join(absdir, "lock"))
 	require.NoError(t, err)
 
-	_, err = Open(tmpdir, nil, nil, DefaultOptions())
+	_, err = Open(tmpdir, nil, nil, DefaultOptions(), nil)
 	require.Error(t, err)
 
 	require.NoError(t, lockf.Release())
+}
+
+func TestLockfileMetric(t *testing.T) {
+	cases := []struct {
+		fileAlreadyExists bool
+		lockFileDisabled  bool
+		expectedValue     int
+	}{
+		{
+			fileAlreadyExists: false,
+			lockFileDisabled:  false,
+			expectedValue:     lockfileCreatedCleanly,
+		},
+		{
+			fileAlreadyExists: true,
+			lockFileDisabled:  false,
+			expectedValue:     lockfileReplaced,
+		},
+		{
+			fileAlreadyExists: true,
+			lockFileDisabled:  true,
+			expectedValue:     lockfileDisabled,
+		},
+		{
+			fileAlreadyExists: false,
+			lockFileDisabled:  true,
+			expectedValue:     lockfileDisabled,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(fmt.Sprintf("%+v", c), func(t *testing.T) {
+			tmpdir, err := ioutil.TempDir("", "test")
+			require.NoError(t, err)
+			t.Cleanup(func() {
+				require.NoError(t, os.RemoveAll(tmpdir))
+			})
+			absdir, err := filepath.Abs(tmpdir)
+			require.NoError(t, err)
+
+			// Test preconditions (file already exists + lockfile option)
+			lockfilePath := filepath.Join(absdir, "lock")
+			if c.fileAlreadyExists {
+				err = ioutil.WriteFile(lockfilePath, []byte{}, 0644)
+				require.NoError(t, err)
+			}
+			opts := DefaultOptions()
+			opts.NoLockfile = c.lockFileDisabled
+
+			// Create the DB, this should create a lockfile and the metrics
+			db, err := Open(tmpdir, nil, nil, opts, nil)
+			require.NoError(t, err)
+			require.Equal(t, float64(c.expectedValue), prom_testutil.ToFloat64(db.metrics.lockfileCreatedCleanly))
+
+			// Close the DB, this should delete the lockfile
+			require.NoError(t, db.Close())
+
+			// Check that the lockfile is always deleted
+			if !c.lockFileDisabled {
+				_, err = os.Stat(lockfilePath)
+				require.Error(t, err, "lockfile was not deleted")
+			}
+		})
+	}
+}
+
+func TestQuerier_ShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChunks(t *testing.T) {
+	t.Skip("TODO: investigate why process crash in CI")
+
+	const numRuns = 5
+
+	for i := 1; i <= numRuns; i++ {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			testQuerierShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChunks(t)
+		})
+	}
+}
+
+func testQuerierShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChunks(t *testing.T) {
+	const (
+		numSeries                = 1000
+		numStressIterations      = 10000
+		minStressAllocationBytes = 128 * 1024
+		maxStressAllocationBytes = 512 * 1024
+	)
+
+	db := openTestDB(t, nil, nil)
+	defer func() {
+		require.NoError(t, db.Close())
+	}()
+
+	// Disable compactions so we can control it.
+	db.DisableCompactions()
+
+	// Generate the metrics we're going to append.
+	metrics := make([]labels.Labels, 0, numSeries)
+	for i := 0; i < numSeries; i++ {
+		metrics = append(metrics, labels.Labels{{Name: labels.MetricName, Value: fmt.Sprintf("test_%d", i)}})
+	}
+
+	// Push 1 sample every 15s for 2x the block duration period.
+	ctx := context.Background()
+	interval := int64(15 * time.Second / time.Millisecond)
+	ts := int64(0)
+
+	for ; ts < 2*DefaultBlockDuration; ts += interval {
+		app := db.Appender(ctx)
+
+		for _, metric := range metrics {
+			_, err := app.Append(0, metric, ts, float64(ts))
+			require.NoError(t, err)
+		}
+
+		require.NoError(t, app.Commit())
+	}
+
+	// Compact the TSDB head for the first time. We expect the head chunks file has been cut.
+	require.NoError(t, db.Compact())
+	require.Equal(t, float64(1), prom_testutil.ToFloat64(db.Head().metrics.headTruncateTotal))
+
+	// Push more samples for another 1x block duration period.
+	for ; ts < 3*DefaultBlockDuration; ts += interval {
+		app := db.Appender(ctx)
+
+		for _, metric := range metrics {
+			_, err := app.Append(0, metric, ts, float64(ts))
+			require.NoError(t, err)
+		}
+
+		require.NoError(t, app.Commit())
+	}
+
+	// At this point we expect 2 mmap-ed head chunks.
+
+	// Get a querier and make sure it's closed only once the test is over.
+	querier, err := db.Querier(ctx, 0, math.MaxInt64)
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, querier.Close())
+	}()
+
+	// Query back all series.
+	hints := &storage.SelectHints{Start: 0, End: math.MaxInt64, Step: interval}
+	seriesSet := querier.Select(true, hints, labels.MustNewMatcher(labels.MatchRegexp, labels.MetricName, ".+"))
+
+	// Fetch samples iterators from all series.
+	var iterators []chunkenc.Iterator
+	actualSeries := 0
+	for seriesSet.Next() {
+		actualSeries++
+
+		// Get the iterator and call Next() so that we're sure the chunk is loaded.
+		it := seriesSet.At().Iterator()
+		it.Next()
+		it.At()
+
+		iterators = append(iterators, it)
+	}
+	require.NoError(t, seriesSet.Err())
+	require.Equal(t, actualSeries, numSeries)
+
+	// Compact the TSDB head again.
+	require.NoError(t, db.Compact())
+	require.Equal(t, float64(2), prom_testutil.ToFloat64(db.Head().metrics.headTruncateTotal))
+
+	// At this point we expect 1 head chunk has been deleted.
+
+	// Stress the memory and call GC. This is required to increase the chances
+	// the chunk memory area is released to the kernel.
+	var buf []byte
+	for i := 0; i < numStressIterations; i++ {
+		//nolint:staticcheck
+		buf = append(buf, make([]byte, minStressAllocationBytes+rand.Int31n(maxStressAllocationBytes-minStressAllocationBytes))...)
+		if i%1000 == 0 {
+			buf = nil
+		}
+	}
+
+	// Iterate samples. Here we're summing it just to make sure no golang compiler
+	// optimization triggers in case we discard the result of it.At().
+	var sum float64
+	var firstErr error
+	for _, it := range iterators {
+		for it.Next() {
+			_, v := it.At()
+			sum += v
+		}
+
+		if err := it.Err(); err != nil {
+			firstErr = err
+		}
+	}
+
+	// After having iterated all samples we also want to be sure no error occurred or
+	// the "cannot populate chunk XXX: not found" error occurred. This error can occur
+	// when the iterator tries to fetch an head chunk which has been offloaded because
+	// of the head compaction in the meanwhile.
+	if firstErr != nil && !strings.Contains(firstErr.Error(), "cannot populate chunk") {
+		t.Fatalf("unexpected error: %s", firstErr.Error())
+	}
+}
+
+func TestChunkQuerier_ShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChunks(t *testing.T) {
+	t.Skip("TODO: investigate why process crash in CI")
+
+	const numRuns = 5
+
+	for i := 1; i <= numRuns; i++ {
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			testChunkQuerierShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChunks(t)
+		})
+	}
+}
+
+func testChunkQuerierShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChunks(t *testing.T) {
+	const (
+		numSeries                = 1000
+		numStressIterations      = 10000
+		minStressAllocationBytes = 128 * 1024
+		maxStressAllocationBytes = 512 * 1024
+	)
+
+	db := openTestDB(t, nil, nil)
+	defer func() {
+		require.NoError(t, db.Close())
+	}()
+
+	// Disable compactions so we can control it.
+	db.DisableCompactions()
+
+	// Generate the metrics we're going to append.
+	metrics := make([]labels.Labels, 0, numSeries)
+	for i := 0; i < numSeries; i++ {
+		metrics = append(metrics, labels.Labels{{Name: labels.MetricName, Value: fmt.Sprintf("test_%d", i)}})
+	}
+
+	// Push 1 sample every 15s for 2x the block duration period.
+	ctx := context.Background()
+	interval := int64(15 * time.Second / time.Millisecond)
+	ts := int64(0)
+
+	for ; ts < 2*DefaultBlockDuration; ts += interval {
+		app := db.Appender(ctx)
+
+		for _, metric := range metrics {
+			_, err := app.Append(0, metric, ts, float64(ts))
+			require.NoError(t, err)
+		}
+
+		require.NoError(t, app.Commit())
+	}
+
+	// Compact the TSDB head for the first time. We expect the head chunks file has been cut.
+	require.NoError(t, db.Compact())
+	require.Equal(t, float64(1), prom_testutil.ToFloat64(db.Head().metrics.headTruncateTotal))
+
+	// Push more samples for another 1x block duration period.
+	for ; ts < 3*DefaultBlockDuration; ts += interval {
+		app := db.Appender(ctx)
+
+		for _, metric := range metrics {
+			_, err := app.Append(0, metric, ts, float64(ts))
+			require.NoError(t, err)
+		}
+
+		require.NoError(t, app.Commit())
+	}
+
+	// At this point we expect 2 mmap-ed head chunks.
+
+	// Get a querier and make sure it's closed only once the test is over.
+	querier, err := db.ChunkQuerier(ctx, 0, math.MaxInt64)
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, querier.Close())
+	}()
+
+	// Query back all series.
+	hints := &storage.SelectHints{Start: 0, End: math.MaxInt64, Step: interval}
+	seriesSet := querier.Select(true, hints, labels.MustNewMatcher(labels.MatchRegexp, labels.MetricName, ".+"))
+
+	// Iterate all series and get their chunks.
+	var chunks []chunkenc.Chunk
+	actualSeries := 0
+	for seriesSet.Next() {
+		actualSeries++
+		for it := seriesSet.At().Iterator(); it.Next(); {
+			chunks = append(chunks, it.At().Chunk)
+		}
+	}
+	require.NoError(t, seriesSet.Err())
+	require.Equal(t, actualSeries, numSeries)
+
+	// Compact the TSDB head again.
+	require.NoError(t, db.Compact())
+	require.Equal(t, float64(2), prom_testutil.ToFloat64(db.Head().metrics.headTruncateTotal))
+
+	// At this point we expect 1 head chunk has been deleted.
+
+	// Stress the memory and call GC. This is required to increase the chances
+	// the chunk memory area is released to the kernel.
+	var buf []byte
+	for i := 0; i < numStressIterations; i++ {
+		//nolint:staticcheck
+		buf = append(buf, make([]byte, minStressAllocationBytes+rand.Int31n(maxStressAllocationBytes-minStressAllocationBytes))...)
+		if i%1000 == 0 {
+			buf = nil
+		}
+	}
+
+	// Iterate chunks and read their bytes slice. Here we're computing the CRC32
+	// just to iterate through the bytes slice. We don't really care the reason why
+	// we read this data, we just need to read it to make sure the memory address
+	// of the []byte is still valid.
+	chkCRC32 := newCRC32()
+	for _, chunk := range chunks {
+		chkCRC32.Reset()
+		_, err := chkCRC32.Write(chunk.Bytes())
+		require.NoError(t, err)
+	}
 }

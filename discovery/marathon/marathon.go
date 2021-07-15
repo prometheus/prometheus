@@ -26,7 +26,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -131,7 +131,7 @@ type Discovery struct {
 
 // NewDiscovery returns a new Marathon Discovery.
 func NewDiscovery(conf SDConfig, logger log.Logger) (*Discovery, error) {
-	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "marathon_sd", false, false)
+	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "marathon_sd", config.WithHTTP2Disabled())
 	if err != nil {
 		return nil, err
 	}
@@ -339,8 +339,13 @@ func fetchApps(ctx context.Context, client *http.Client, url string) (*appList, 
 		return nil, errors.Errorf("non 2xx status '%v' response during marathon service discovery", resp.StatusCode)
 	}
 
+	b, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
 	var apps appList
-	err = json.NewDecoder(resp.Body).Decode(&apps)
+	err = json.Unmarshal(b, &apps)
 	if err != nil {
 		return nil, errors.Wrapf(err, "%q", url)
 	}

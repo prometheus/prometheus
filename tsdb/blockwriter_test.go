@@ -21,7 +21,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -35,10 +35,6 @@ func TestBlockWriter(t *testing.T) {
 	defer func() { require.NoError(t, os.RemoveAll(outputDir)) }()
 	w, err := NewBlockWriter(log.NewNopLogger(), outputDir, DefaultBlockDuration)
 	require.NoError(t, err)
-
-	// Flush with no series results in error.
-	_, err = w.Flush(ctx)
-	require.EqualError(t, err, "no series appended, aborting")
 
 	// Add some series.
 	app := w.Appender(ctx)

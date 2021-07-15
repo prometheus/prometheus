@@ -16,6 +16,7 @@ package storage
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -30,6 +31,8 @@ var (
 	ErrDuplicateSampleForTimestamp = errors.New("duplicate sample for timestamp")
 	ErrOutOfBounds                 = errors.New("out of bounds")
 	ErrOutOfOrderExemplar          = errors.New("out of order exemplar")
+	ErrDuplicateExemplar           = errors.New("duplicate exemplar")
+	ErrExemplarLabelLength         = fmt.Errorf("label length for exemplar exceeds maximum of %d UTF-8 characters", exemplar.ExemplarMaxLabelSetLength)
 )
 
 // Appendable allows creating appenders.
@@ -103,7 +106,7 @@ type ChunkQuerier interface {
 // LabelQuerier provides querying access over labels.
 type LabelQuerier interface {
 	// LabelValues returns all potential values for a label name.
-	// It is not safe to use the strings beyond the lifefime of the querier.
+	// It is not safe to use the strings beyond the lifetime of the querier.
 	// If matchers are specified the returned result set is reduced
 	// to label values of metrics matching the matchers.
 	LabelValues(name string, matchers ...*labels.Matcher) ([]string, Warnings, error)
@@ -121,7 +124,7 @@ type ExemplarQueryable interface {
 	ExemplarQuerier(ctx context.Context) (ExemplarQuerier, error)
 }
 
-// Querier provides reading access to time series data.
+// ExemplarQuerier provides reading access to time series data.
 type ExemplarQuerier interface {
 	// Select all the exemplars that match the matchers.
 	// Within a single slice of matchers, it is an intersection. Between the slices, it is a union.
@@ -183,9 +186,10 @@ type Appender interface {
 // GetRef is an extra interface on Appenders used by downstream projects
 // (e.g. Cortex) to avoid maintaining a parallel set of references.
 type GetRef interface {
-	// Returns reference number that can be used to pass to Appender.Append().
+	// Returns reference number that can be used to pass to Appender.Append(),
+	// and a set of labels that will not cause another copy when passed to Appender.Append().
 	// 0 means the appender does not have a reference to this series.
-	GetRef(lset labels.Labels) uint64
+	GetRef(lset labels.Labels) (uint64, labels.Labels)
 }
 
 // ExemplarAppender provides an interface for adding samples to exemplar storage, which
@@ -208,7 +212,7 @@ type ExemplarAppender interface {
 // SeriesSet contains a set of series.
 type SeriesSet interface {
 	Next() bool
-	// At returns full series. Returned series should be iteratable even after Next is called.
+	// At returns full series. Returned series should be iterable even after Next is called.
 	At() Series
 	// The error that iteration as failed with.
 	// When an error occurs, set cannot continue to iterate.
@@ -263,13 +267,13 @@ func ErrChunkSeriesSet(err error) ChunkSeriesSet {
 // Series exposes a single time series and allows iterating over samples.
 type Series interface {
 	Labels
-	SampleIteratable
+	SampleIterable
 }
 
 // ChunkSeriesSet contains a set of chunked series.
 type ChunkSeriesSet interface {
 	Next() bool
-	// At returns full chunk series. Returned series should be iteratable even after Next is called.
+	// At returns full chunk series. Returned series should be iterable even after Next is called.
 	At() ChunkSeries
 	// The error that iteration has failed with.
 	// When an error occurs, set cannot continue to iterate.
@@ -282,7 +286,7 @@ type ChunkSeriesSet interface {
 // ChunkSeries exposes a single time series and allows iterating over chunks.
 type ChunkSeries interface {
 	Labels
-	ChunkIteratable
+	ChunkIterable
 }
 
 // Labels represents an item that has labels e.g. time series.
@@ -291,12 +295,12 @@ type Labels interface {
 	Labels() labels.Labels
 }
 
-type SampleIteratable interface {
+type SampleIterable interface {
 	// Iterator returns a new, independent iterator of the data of the series.
 	Iterator() chunkenc.Iterator
 }
 
-type ChunkIteratable interface {
+type ChunkIterable interface {
 	// Iterator returns a new, independent iterator that iterates over potentially overlapping
 	// chunks of the series, sorted by min time.
 	Iterator() chunks.Iterator

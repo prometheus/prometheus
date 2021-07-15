@@ -27,8 +27,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -117,6 +117,8 @@ type Query interface {
 	Stats() *stats.QueryTimers
 	// Cancel signals that a running query execution should be aborted.
 	Cancel()
+	// String returns the original query string.
+	String() string
 }
 
 // query implements the Query interface.
@@ -141,8 +143,15 @@ type query struct {
 type QueryOrigin struct{}
 
 // Statement implements the Query interface.
+// Calling this after Exec may result in panic,
+// see https://github.com/prometheus/prometheus/issues/8949.
 func (q *query) Statement() parser.Statement {
 	return q.stmt
+}
+
+// String implements the Query interface.
+func (q *query) String() string {
+	return q.q
 }
 
 // Stats implements the Query interface.
@@ -2191,16 +2200,7 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 				lb.Del(labels.MetricName)
 				m = lb.Labels()
 			} else {
-				m = make(labels.Labels, 0, len(grouping))
-				for _, l := range metric {
-					for _, n := range grouping {
-						if l.Name == n {
-							m = append(m, l)
-							break
-						}
-					}
-				}
-				sort.Sort(m)
+				m = metric.WithLabels(grouping...)
 			}
 			result[groupingKey] = &groupedAggregation{
 				labels:     m,
@@ -2339,7 +2339,7 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 			continue // Bypass default append.
 
 		case parser.BOTTOMK:
-			// The heap keeps the lowest value on top, so reverse it.
+			// The heap keeps the highest value on top, so reverse it.
 			sort.Sort(sort.Reverse(aggr.reverseHeap))
 			for _, v := range aggr.reverseHeap {
 				enh.Out = append(enh.Out, Sample{

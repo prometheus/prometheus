@@ -21,7 +21,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -116,9 +116,9 @@ type Discovery struct {
 	server string
 }
 
-// New creates a new Eureka discovery for the given role.
+// NewDiscovery creates a new Eureka discovery for the given role.
 func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
-	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "eureka_sd", false, false)
+	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "eureka_sd", config.WithHTTP2Disabled())
 	if err != nil {
 		return nil, err
 	}

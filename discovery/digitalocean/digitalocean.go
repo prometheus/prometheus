@@ -23,7 +23,7 @@ import (
 	"time"
 
 	"github.com/digitalocean/godo"
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
@@ -47,6 +47,7 @@ const (
 	doLabelStatus      = doLabel + "status"
 	doLabelFeatures    = doLabel + "features"
 	doLabelTags        = doLabel + "tags"
+	doLabelVPC         = doLabel + "vpc"
 	separator          = ","
 )
 
@@ -107,7 +108,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 		port: conf.Port,
 	}
 
-	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "digitalocean_sd", false, false)
+	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "digitalocean_sd", config.WithHTTP2Disabled())
 	if err != nil {
 		return nil, err
 	}
@@ -170,6 +171,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 			doLabelRegion:      model.LabelValue(droplet.Region.Slug),
 			doLabelSize:        model.LabelValue(droplet.SizeSlug),
 			doLabelStatus:      model.LabelValue(droplet.Status),
+			doLabelVPC:         model.LabelValue(droplet.VPCUUID),
 		}
 
 		addr := net.JoinHostPort(publicIPv4, strconv.FormatUint(uint64(d.port), 10))

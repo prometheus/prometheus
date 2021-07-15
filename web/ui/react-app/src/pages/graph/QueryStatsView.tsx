@@ -1,5 +1,4 @@
 import React, { FC } from 'react';
-import './QueryStatsView.css';
 
 export interface QueryStats {
   loadTime: number;

@@ -125,8 +125,16 @@ func TestHandlerSendAll(t *testing.T) {
 				w.WriteHeader(http.StatusInternalServerError)
 				return
 			}
+
+			b, err := ioutil.ReadAll(r.Body)
+			if err != nil {
+				err = errors.Errorf("error reading body: %v", err)
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+
 			var alerts []*Alert
-			err = json.NewDecoder(r.Body).Decode(&alerts)
+			err = json.Unmarshal(b, &alerts)
 			if err == nil {
 				err = alertsEqual(expected, alerts)
 			}
@@ -146,7 +154,7 @@ func TestHandlerSendAll(t *testing.T) {
 				Username: "prometheus",
 				Password: "testing_password",
 			},
-		}, "auth_alertmanager", false, false)
+		}, "auth_alertmanager", config_util.WithHTTP2Disabled())
 
 	h.alertmanagers = make(map[string]*alertmanagerSet)
 
@@ -322,7 +330,13 @@ func TestHandlerQueuing(t *testing.T) {
 		select {
 		case expected := <-expectedc:
 			var alerts []*Alert
-			err := json.NewDecoder(r.Body).Decode(&alerts)
+
+			b, err := ioutil.ReadAll(r.Body)
+			if err != nil {
+				panic(err)
+			}
+
+			err = json.Unmarshal(b, &alerts)
 			if err == nil {
 				err = alertsEqual(expected, alerts)
 			}

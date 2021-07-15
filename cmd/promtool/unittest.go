@@ -25,7 +25,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	yaml "gopkg.in/yaml.v2"
@@ -39,11 +39,11 @@ import (
 
 // RulesUnitTest does unit testing of rules based on the unit testing files provided.
 // More info about the file format can be found in the docs.
-func RulesUnitTest(files ...string) int {
+func RulesUnitTest(queryOpts promql.LazyLoaderOpts, files ...string) int {
 	failed := false
 
 	for _, f := range files {
-		if errs := ruleUnitTest(f); errs != nil {
+		if errs := ruleUnitTest(f, queryOpts); errs != nil {
 			fmt.Fprintln(os.Stderr, "  FAILED:")
 			for _, e := range errs {
 				fmt.Fprintln(os.Stderr, e.Error())
@@ -61,7 +61,7 @@ func RulesUnitTest(files ...string) int {
 	return 0
 }
 
-func ruleUnitTest(filename string) []error {
+func ruleUnitTest(filename string, queryOpts promql.LazyLoaderOpts) []error {
 	fmt.Println("Unit Testing: ", filename)
 
 	b, err := ioutil.ReadFile(filename)
@@ -96,7 +96,7 @@ func ruleUnitTest(filename string) []error {
 	// Testing.
 	var errs []error
 	for _, t := range unitTestInp.Tests {
-		ers := t.test(evalInterval, groupOrderMap, unitTestInp.RuleFiles...)
+		ers := t.test(evalInterval, groupOrderMap, queryOpts, unitTestInp.RuleFiles...)
 		if ers != nil {
 			errs = append(errs, ers...)
 		}
@@ -147,13 +147,14 @@ type testGroup struct {
 	AlertRuleTests  []alertTestCase  `yaml:"alert_rule_test,omitempty"`
 	PromqlExprTests []promqlTestCase `yaml:"promql_expr_test,omitempty"`
 	ExternalLabels  labels.Labels    `yaml:"external_labels,omitempty"`
+	ExternalURL     string           `yaml:"external_url,omitempty"`
 	TestGroupName   string           `yaml:"name,omitempty"`
 }
 
 // test performs the unit tests.
-func (tg *testGroup) test(evalInterval time.Duration, groupOrderMap map[string]int, ruleFiles ...string) []error {
+func (tg *testGroup) test(evalInterval time.Duration, groupOrderMap map[string]int, queryOpts promql.LazyLoaderOpts, ruleFiles ...string) []error {
 	// Setup testing suite.
-	suite, err := promql.NewLazyLoader(nil, tg.seriesLoadingString())
+	suite, err := promql.NewLazyLoader(nil, tg.seriesLoadingString(), queryOpts)
 	if err != nil {
 		return []error{err}
 	}
@@ -169,7 +170,7 @@ func (tg *testGroup) test(evalInterval time.Duration, groupOrderMap map[string]i
 		Logger:     log.NewNopLogger(),
 	}
 	m := rules.NewManager(opts)
-	groupsMap, ers := m.LoadGroups(time.Duration(tg.Interval), tg.ExternalLabels, ruleFiles...)
+	groupsMap, ers := m.LoadGroups(time.Duration(tg.Interval), tg.ExternalLabels, tg.ExternalURL, ruleFiles...)
 	if ers != nil {
 		return ers
 	}
