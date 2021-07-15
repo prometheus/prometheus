@@ -6,17 +6,12 @@ require (
 	github.com/Azure/azure-sdk-for-go v55.2.0+incompatible
 	github.com/Azure/go-autorest/autorest v0.11.19
 	github.com/Azure/go-autorest/autorest/adal v0.9.14
-	github.com/Azure/go-autorest/autorest/to v0.4.0 // indirect
-	github.com/Azure/go-autorest/autorest/validation v0.3.1 // indirect
-	github.com/HdrHistogram/hdrhistogram-go v1.1.0 // indirect
 	github.com/alecthomas/units v0.0.0-20210208195552-ff826a37aa15
 	github.com/aws/aws-sdk-go v1.38.60
 	github.com/cespare/xxhash/v2 v2.1.1
-	github.com/containerd/containerd v1.5.3 // indirect
 	github.com/dgryski/go-sip13 v0.0.0-20200911182023-62edffca9245
 	github.com/digitalocean/godo v1.62.0
 	github.com/docker/docker v20.10.7+incompatible
-	github.com/docker/go-connections v0.4.0 // indirect
 	github.com/edsrzf/mmap-go v1.0.0
 	github.com/go-kit/kit v0.10.0
 	github.com/go-kit/log v0.1.0
@@ -34,8 +29,6 @@ require (
 	github.com/json-iterator/go v1.1.11
 	github.com/linode/linodego v0.28.5
 	github.com/miekg/dns v1.1.42
-	github.com/moby/term v0.0.0-20201216013528-df9cb8a40635 // indirect
-	github.com/morikuni/aec v1.0.0 // indirect
 	github.com/mwitkow/go-conntrack v0.0.0-20190716064945-2f068394615f
 	github.com/oklog/run v1.1.0
 	github.com/oklog/ulid v1.3.1
