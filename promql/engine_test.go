@@ -58,10 +58,20 @@ func TestQueryConcurrency(t *testing.T) {
 
 	block := make(chan struct{})
 	processing := make(chan struct{}, 1)
+	done := make(chan int)
+	defer close(done)
 
 	f := func(context.Context) error {
-		processing <- struct{}{}
-		<-block
+
+		select {
+		case processing <- struct{}{}:
+		case <-done:
+		}
+
+		select {
+		case <-block:
+		case <-done:
+		}
 		return nil
 	}
 
