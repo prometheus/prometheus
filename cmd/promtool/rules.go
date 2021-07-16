@@ -255,12 +255,12 @@ func (importer *ruleImporter) importRule(ctx context.Context, ruleExpr, ruleName
 	}
 
 	// insert staleNan at the end of all the blocks if its before the backfill end time
-	nextTs := currTs.Add(grp.Interval())
-	fmt.Println("nextTs:", nextTs.UTC())
-	fmt.Println("ruleBackfillEnd:", ruleBackfillEnd)
-	if nextTs.Before(ruleBackfillEnd) {
-		if err := app.add(ctx, currentLabels, timestamp.FromTime(nextTs), stale); err != nil {
-			return errors.Wrap(err, "add")
+	if !currTs.IsZero() {
+		nextTs := currTs.Add(grp.Interval())
+		if nextTs.Before(ruleBackfillEnd) {
+			if err := app.add(ctx, currentLabels, timestamp.FromTime(nextTs), stale); err != nil {
+				return errors.Wrap(err, "add")
+			}
 		}
 	}
 	if err := app.flushAndCommit(ctx); err != nil {

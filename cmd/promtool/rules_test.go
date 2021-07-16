@@ -15,7 +15,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"io/ioutil"
 	"math"
 	"os"
@@ -40,17 +39,31 @@ func (mockAPI mockQueryRangeAPI) QueryRange(ctx context.Context, query string, r
 	return mockAPI.samples, v1.Warnings{}, nil
 }
 
+func createMockMetricsSingleSeries(ts time.Time) []*model.SampleStream {
+	return []*model.SampleStream{
+		{
+			Metric: model.Metric{"metric1": "metric1val1"},
+			Values: []model.SamplePair{
+				{
+					Timestamp: model.TimeFromUnixNano(ts.UnixNano()),
+					Value:     1,
+				},
+				{
+					Timestamp: model.TimeFromUnixNano(ts.Add(1 * evalInterval).UnixNano()),
+					Value:     2,
+				},
+			},
+		},
+	}
+}
+
 // TestBackfillRuleIntegration is an integration test that runs all the rule importer code to confirm the parts work together.
 func TestBackfillRuleIntegration(t *testing.T) {
-	const (
-		testMaxSampleCount = 50
-		testValue          = 123
-		testValue2         = 98
-	)
 	var (
-		start     = time.Date(2009, time.November, 10, 6, 34, 0, 0, time.UTC)
-		testTime  = model.Time(start.Add(-9 * time.Hour).Unix())
-		testTime2 = model.Time(start.Add(-8 * time.Hour).Unix())
+		start     = time.Date(2009, time.November, 6, 1, 34, 0, 0, time.UTC)
+		end       = start.Add(4 * time.Hour)
+		testTime  = start.Add(1 * time.Hour)
+		testTime2 = start.Add(2 * time.Hour)
 	)
 
 	var testCases = []struct {
@@ -62,8 +75,8 @@ func TestBackfillRuleIntegration(t *testing.T) {
 		samples             []*model.SampleStream
 	}{
 		{"no samples", 1, 0, 0, 0, []*model.SampleStream{}},
-		{"run importer once", 1, 8, 4, 4, []*model.SampleStream{{Metric: model.Metric{"name1": "val1"}, Values: []model.SamplePair{{Timestamp: testTime, Value: testValue}}}}},
-		{"one importer twice", 2, 8, 4, 8, []*model.SampleStream{{Metric: model.Metric{"name1": "val1"}, Values: []model.SamplePair{{Timestamp: testTime, Value: testValue}, {Timestamp: testTime2, Value: testValue2}}}}},
+		{"run importer once", 1, 16, 4, 12, createMockMetricsSingleSeries(testTime)},
+		{"run importer twice", 2, 16, 4, 12, createMockMetricsSingleSeries(testTime2)},
 	}
 	for _, tt := range testCases {
 		t.Run(tt.name, func(t *testing.T) {
@@ -77,7 +90,7 @@ func TestBackfillRuleIntegration(t *testing.T) {
 			// Execute the test more than once to simulate running the rule importer twice with the same data.
 			// We expect duplicate blocks with the same series are created when run more than once.
 			for i := 0; i < tt.runcount; i++ {
-				ruleImporter, err := newTestRuleImporter(ctx, start.Add(-10*time.Hour), start.Add(-7*time.Hour), tmpDir, tt.samples)
+				ruleImporter, err := newTestRuleImporter(ctx, start, end, tmpDir, tt.samples)
 				require.NoError(t, err)
 				path1 := filepath.Join(tmpDir, "test.file")
 				require.NoError(t, createSingleRuleTestFiles(path1))
@@ -96,7 +109,7 @@ func TestBackfillRuleIntegration(t *testing.T) {
 				require.Equal(t, time.Duration(defaultInterval*time.Second), group1.Interval())
 				gRules := group1.Rules()
 				require.Equal(t, 1, len(gRules))
-				require.Equal(t, "rule1", gRules[0].Name())
+				require.Equal(t, "grp0_rule1", gRules[0].Name())
 				require.Equal(t, "ruleExpr", gRules[0].Query().String())
 				require.Equal(t, 1, len(gRules[0].Labels()))
 
@@ -133,23 +146,17 @@ func TestBackfillRuleIntegration(t *testing.T) {
 					series := selectedSeries.At()
 					if len(series.Labels()) != 3 {
 						require.Equal(t, 2, len(series.Labels()))
-						x := labels.Labels{
+						expectedLabels := labels.Labels{
 							labels.Label{Name: "__name__", Value: "grp2_rule1"},
-							labels.Label{Name: "name1", Value: "val1"},
+							labels.Label{Name: "metric1", Value: "metric1val1"},
 						}
-						require.Equal(t, x, series.Labels())
+						require.Equal(t, expectedLabels, series.Labels())
 					} else {
 						require.Equal(t, 3, len(series.Labels()))
 					}
 					it := series.Iterator()
 					for it.Next() {
 						samplesCount++
-						ts, v := it.At()
-						if v == testValue {
-							require.Equal(t, int64(testTime), ts)
-						} else {
-							require.Equal(t, int64(testTime2), ts)
-						}
 					}
 					require.NoError(t, it.Err())
 				}
@@ -181,7 +188,7 @@ func createSingleRuleTestFiles(path string) error {
 	recordingRules := `groups:
 - name: group0
   rules:
-  - record: rule1
+  - record: grp0_rule1
     expr:  ruleExpr
     labels:
         testlabel11: testlabelvalue11
@@ -315,8 +322,7 @@ func TestRuleImporterStale(t *testing.T) {
 				actualStaleOrder := []int{}
 				for it.Next() {
 					samplesCount++
-					ts, v := it.At()
-					fmt.Println("ts:", ts, "v:", v)
+					_, v := it.At()
 					if p_value.IsStaleNaN(v) {
 						staleCount++
 						actualStaleOrder = append(actualStaleOrder, 1)
