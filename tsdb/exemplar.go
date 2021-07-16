@@ -108,7 +108,8 @@ func NewExemplarMetrics(reg prometheus.Registerer) *ExemplarMetrics {
 // NewCircularExemplarStorage creates an circular in memory exemplar storage.
 // If we assume the average case 95 bytes per exemplar we can fit 5651272 exemplars in
 // 1GB of extra memory, accounting for the fact that this is heap allocated space.
-// If len < 1, then the exemplar storage is disabled.
+// If len <= 0, then the exemplar storage is essentially a noop storage but can later be
+// resized to store exemplars.
 func NewCircularExemplarStorage(len int64, m *ExemplarMetrics) (ExemplarStorage, error) {
 	c := &CircularExemplarStorage{
 		exemplars: make([]*circularBufferEntry, len),
@@ -245,8 +246,8 @@ func (ce *CircularExemplarStorage) validateExemplar(l string, e exemplar.Exempla
 	return nil
 }
 
-// Resize changes the size of exemplar buffer by allocating a new buffer and migrating data to it. Exemplars are
-// kept when possible. Shrinking will discard oldest data as needed.
+// Resize changes the size of exemplar buffer by allocating a new buffer and migrating data to it.
+// Exemplars are kept when possible. Shrinking will discard oldest data (in order of ingest) as needed.
 func (ce *CircularExemplarStorage) Resize(l int64) int {
 	if l == int64(len(ce.exemplars)) {
 		return 0
@@ -275,6 +276,9 @@ func (ce *CircularExemplarStorage) Resize(l int64) int {
 	}
 
 	// Rewind previous next index by count with wrap-around.
+	// This math is essentially looking at nextIndex, where we would write the next exemplar to,
+	// and find the index in the old exemplar buffer that we should start migrating exemplars from.
+	// This way we don't migrate exemplars that would just be overwritten when migrating later exemplars.
 	var startIndex int64 = (oldNextIndex - count + int64(len(oldBuffer))) % int64(len(oldBuffer))
 
 	migrated := 0
@@ -309,7 +313,7 @@ func (ce *CircularExemplarStorage) migrate(entry *circularBufferEntry) {
 	}
 	idx.newest = ce.nextIndex
 
-	entry.next = -1
+	entry.next = noExemplar
 	ce.exemplars[ce.nextIndex] = entry
 
 	ce.nextIndex = (ce.nextIndex + 1) % len(ce.exemplars)
@@ -357,10 +361,10 @@ func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemp
 		}
 	}
 
-	ce.exemplars[ce.nextIndex].exemplar = e
 	// Default the next value to -1 (which we use to detect that we've iterated through all exemplars for a series in Select)
 	// since this is the first exemplar stored for this series.
 	ce.exemplars[ce.nextIndex].next = noExemplar
+	ce.exemplars[ce.nextIndex].exemplar = e
 	ce.exemplars[ce.nextIndex].ref = ce.index[seriesLabels]
 	ce.index[seriesLabels].newest = ce.nextIndex
 
