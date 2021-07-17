@@ -1022,17 +1022,14 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue chan interface
 	// Send batches of at most MaxSamplesPerSend samples to the remote storage.
 	// If we have fewer samples than that, flush them out after a deadline anyways.
 	var (
-		max = s.qm.cfg.MaxSamplesPerSend
-		// Rough estimate, 1% of active series will contain an exemplar on each scrape.
-		// TODO(cstyan): Casting this many times smells, also we could get index out of bounds issues here.
-		maxExemplars                                 = int(math.Max(1, float64(max/10)))
+		max                                          = s.qm.cfg.MaxSamplesPerSend
 		nPending, nPendingSamples, nPendingExemplars = 0, 0, 0
 
 		buf         []byte
 		pendingData []prompb.TimeSeries
 	)
 	if s.qm.sendExemplars {
-		max += maxExemplars
+		max += int(float64(max) * 0.1)
 	}
 
 	pendingData = make([]prompb.TimeSeries, max)
