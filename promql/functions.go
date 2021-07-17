@@ -928,6 +928,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"abs":                funcAbs,
 	"absent":             funcAbsent,
 	"absent_over_time":   funcAbsentOverTime,
+	"present_over_time":  funcAbsentOverTime,
 	"avg_over_time":      funcAvgOverTime,
 	"ceil":               funcCeil,
 	"changes":            funcChanges,

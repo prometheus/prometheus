@@ -126,7 +126,7 @@ func (i *isolation) State() *isolationState {
 
 // newAppendID increments the transaction counter and returns a new transaction
 // ID. The first ID returned is 1.
-// Also returns the low watermark, to keep lock/unlock operations down
+// Also returns the low watermark, to keep lock/unlock operations down.
 func (i *isolation) newAppendID() (uint64, uint64) {
 	i.appendMtx.Lock()
 	defer i.appendMtx.Unlock()

@@ -530,8 +530,6 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v parser.Value, ws storag
 	// Cancel when execution is done or an error was raised.
 	defer q.cancel()
 
-	const env = "query execution"
-
 	evalSpanTimer, ctx := q.stats.GetSpanTimer(ctx, stats.EvalTotalTime)
 	defer evalSpanTimer.Finish()
 
@@ -1362,6 +1360,18 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 
 		ev.currentSamples -= len(points)
 		putPointSlice(points)
+
+		if e.Func.Name == "present_over_time" {
+			news := make([]Series, 0, len(mat))
+			for _, s := range mat {
+				for _, p := range s.Points {
+					news = append(news, Series{Metric: s.Metric, Points: []Point{{T: p.T, V: 1}}})
+					break
+				}
+			}
+
+			return Matrix(news), warnings
+		}
 
 		// The absent_over_time function returns 0 or 1 series. So far, the matrix
 		// contains multiple series. The following code will create a new series
