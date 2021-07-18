@@ -90,6 +90,8 @@ func main() {
 	).Required().ExistingFiles()
 
 	checkExpressionsCmd := checkCmd.Command("expressions", checkExpressionsUsage)
+	checkExpressionsExpr := checkExpressionsCmd.Arg("expression", "The expression to check.").String()
+
 	checkMetricsCmd := checkCmd.Command("metrics", checkMetricsUsage)
 	agentMode := checkConfigCmd.Flag("agent", "Check config file for Prometheus in Agent mode.").Bool()
 
@@ -227,7 +229,7 @@ func main() {
 		os.Exit(CheckMetrics())
 
 	case checkExpressionsCmd.FullCommand():
-		os.Exit(CheckExpressions(os.Stdin, os.Stderr))
+		os.Exit(CheckExpressions(os.Stdin, os.Stderr, *checkExpressionsExpr))
 
 	case queryInstantCmd.FullCommand():
 		os.Exit(QueryInstant(*queryInstantServer, *queryInstantExpr, *queryInstantTime, p))
@@ -611,12 +613,12 @@ $ curl -s http://localhost:9090/metrics | promtool check metrics
 `)
 
 var checkExpressionsUsage = strings.TrimSpace(`
-Pass Prometheus expressions over stdin to check if they are valid.
-
-Each line is considered a separate expression.
+Pass Prometheus expressions over stdin or as an optional argument to check if they are valid.
+If passed over stdin, command assumes each line is a single expression.
 
 examples:
 
+$ promtool check expressions "rate(my_counter[5m])"
 $ cat expressions.prom | promtool check expressions
 `)
 
@@ -640,23 +642,14 @@ func CheckMetrics() int {
 	return 0
 }
 
-// CheckExpressions checks if input expressions are valid.
-func CheckExpressions(r io.Reader, w io.Writer) int {
-	scanner := bufio.NewScanner(r)
-	var expr string
+func checkExpressions(exprs []string, w io.Writer) int {
 	var problems []error
-
-	for scanner.Scan() {
-		expr = scanner.Text()
+	for _, expr := range exprs {
 		if expr == "" {
 			problems = append(problems, errors.Errorf("invalid 'expr': cannot be empty"))
 		} else if _, err := parser.ParseExpr(expr); err != nil {
 			problems = append(problems, errors.Errorf("invalid 'expr', cannot be parsed: %s", expr))
 		}
-	}
-
-	if err := scanner.Err(); err != nil {
-		problems = append(problems, errors.Errorf("could not read input stream: %s", err))
 	}
 
 	for _, p := range problems {
@@ -668,6 +661,26 @@ func CheckExpressions(r io.Reader, w io.Writer) int {
 	}
 
 	return 0
+}
+
+// CheckExpressions checks if input expressions are valid.
+func CheckExpressions(r io.Reader, w io.Writer, expr string) int {
+	if expr != "" {
+		return checkExpressions([]string{expr}, w)
+	}
+
+	exprs := []string{}
+
+	scanner := bufio.NewScanner(r)
+	for scanner.Scan() {
+		exprs = append(exprs, scanner.Text())
+	}
+
+	if err := scanner.Err(); err != nil {
+		fmt.Fprintln(w, errors.Errorf("could not read input stream: %s", err))
+		return 3
+	}
+	return checkExpressions(exprs, w)
 }
 
 // QueryInstant performs an instant query against a Prometheus server.

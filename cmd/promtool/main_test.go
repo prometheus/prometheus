@@ -75,19 +75,20 @@ func TestCheckExpressions(t *testing.T) {
 	tests := []struct {
 		in               string
 		expectedProblems string
+		exprString       string
 		returnCode       int
 	}{
-		{"\n", emptyError, 3},
-		{"rate()", invalidExprError, 3},
-		{"my_counter", "", 0},
-		{"rate(my_counter[5m])", "", 0},
-		{"my_counter1\nmy_counter2", "", 0},
-		{"\nmy_counter\nrate()", emptyError + invalidExprError, 3},
+		{"\n", emptyError, "", 3},
+		{"rate()", invalidExprError, "", 3},
+		{"my_counter", "", "", 0},
+		{"rate(my_counter[5m])", "", "", 0},
+		{"my_counter1\nmy_counter2", "", "", 0},
+		{"\nmy_counter\nrate()", emptyError + invalidExprError, "", 3},
 	}
 
 	for i, tc := range tests {
 		var b bytes.Buffer
-		gotReturnCode := CheckExpressions(strings.NewReader(tc.in), &b)
+		gotReturnCode := CheckExpressions(strings.NewReader(tc.in), &b, tc.exprString)
 		if gotReturnCode != tc.returnCode {
 			t.Errorf("Test %d: Expected return code: %d but got: %d", i, tc.returnCode, gotReturnCode)
 		}
