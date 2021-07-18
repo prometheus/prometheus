@@ -1366,10 +1366,8 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 			for _, s := range mat {
 				for _, p := range s.Points {
 					news = append(news, Series{Metric: s.Metric, Points: []Point{{T: p.T, V: 1}}})
-					break
 				}
 			}
-
 			return Matrix(news), warnings
 		}
 
