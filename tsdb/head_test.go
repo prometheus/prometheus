@@ -234,6 +234,8 @@ func BenchmarkLoadWAL(b *testing.B) {
 						require.NoError(b, err)
 						h.Init(0)
 					}
+					b.StopTimer()
+					w.Close()
 				})
 		}
 	}
