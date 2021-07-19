@@ -309,7 +309,7 @@ func (p *ProtobufParser) Next() (Entry, error) {
 		p.state = EntryType
 	case EntryType:
 		if p.mf.GetType() == dto.MetricType_HISTOGRAM &&
-			p.mf.GetMetric()[0].GetHistogram().GetSbZeroThreshold() != 0 {
+			isSparseHistogram(p.mf.GetMetric()[0].GetHistogram()) {
 			p.state = EntryHistogram
 		} else {
 			p.state = EntrySeries
@@ -458,4 +458,20 @@ func formatOpenMetricsFloat(f float64) string {
 		return s
 	}
 	return s + ".0"
+}
+
+// isSparseHistogram returns false iff the provided histograms has no
+// SparseBuckets and a zero threshold of 0 and a zero count of 0. In principle,
+// this could still be meant to be a sparse histgram (with a zero threshold of 0
+// and no observations yet), but for now, we'll treat this case as a conventional
+// histogram.
+//
+// TODO(beorn7): In the final format, there should be an unambiguous way of
+// deciding if a histogram should be ingested as a conventional one or a sparse
+// one.
+func isSparseHistogram(h *dto.Histogram) bool {
+	return len(h.GetSbNegative().GetDelta()) > 0 ||
+		len(h.GetSbPositive().GetDelta()) > 0 ||
+		h.GetSbZeroCount() > 0 ||
+		h.GetSbZeroThreshold() > 0
 }
