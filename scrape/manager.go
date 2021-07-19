@@ -119,7 +119,7 @@ func NewManager(logger log.Logger, app storage.Appendable) *Manager {
 }
 
 // Manager maintains a set of scrape pools and manages start/stop cycles
-// when receiving new target groups form the discovery manager.
+// when receiving new target groups from the discovery manager.
 type Manager struct {
 	logger    log.Logger
 	append    storage.Appendable
