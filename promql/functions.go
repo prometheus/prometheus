@@ -513,6 +513,15 @@ func funcAbsentOverTime(vals []parser.Value, args parser.Expressions, enh *EvalN
 		})
 }
 
+// === present_over_time(Vector parser.ValueTypeMatrix) Vector ===
+// This function will return 1 if the matrix has at least one element.
+// Due to engine optimization, this function is only called when this condition is true.
+func funcPresentOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	return aggrOverTime(vals, enh, func(values []Point) float64 {
+		return 1
+	})
+}
+
 func simpleFunc(vals []parser.Value, enh *EvalNodeHelper, f func(float64) float64) Vector {
 	for _, el := range vals[0].(Vector) {
 		enh.Out = append(enh.Out, Sample{
@@ -928,7 +937,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"abs":                funcAbs,
 	"absent":             funcAbsent,
 	"absent_over_time":   funcAbsentOverTime,
-	"present_over_time":  funcAbsentOverTime,
+	"present_over_time":  funcPresentOverTime,
 	"avg_over_time":      funcAvgOverTime,
 	"ceil":               funcCeil,
 	"changes":            funcChanges,

@@ -583,7 +583,7 @@ func (t *Test) exec(tc testCommand) error {
 				err = cmd.compareResult(vec)
 			}
 			if err != nil {
-				return errors.Wrapf(err, "error in %s %s (line %d) rande mode", cmd, iq.expr, cmd.line)
+				return errors.Wrapf(err, "error in %s %s (line %d) range mode", cmd, iq.expr, cmd.line)
 			}
 
 		}

@@ -950,11 +950,6 @@ eval instant at 16m present_over_time(httpd_handshake_failures_total[1m])
 eval instant at 16m present_over_time({instance="127.0.0.1"}[5m])
     {instance="127.0.0.1",job="node"} 1
 
-eval instant at 21m present_over_time({instance="127.0.0.1"}[20m])
-    {instance="127.0.0.1",job="node"} 1
-    {instance="127.0.0.1", job="httpd", path="/bar"} 1
-    {instance="127.0.0.1", job="httpd", path="/foo"} 1
-
 eval instant at 21m present_over_time({job="grok"}[20m])
 
 eval instant at 30m present_over_time({instance="127.0.0.1"}[5m:5s])

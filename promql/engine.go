@@ -1361,16 +1361,6 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 		ev.currentSamples -= len(points)
 		putPointSlice(points)
 
-		if e.Func.Name == "present_over_time" {
-			news := make([]Series, 0, len(mat))
-			for _, s := range mat {
-				for _, p := range s.Points {
-					news = append(news, Series{Metric: s.Metric, Points: []Point{{T: p.T, V: 1}}})
-				}
-			}
-			return Matrix(news), warnings
-		}
-
 		// The absent_over_time function returns 0 or 1 series. So far, the matrix
 		// contains multiple series. The following code will create a new series
 		// with values of 1 for the timestamps where no series has value.
