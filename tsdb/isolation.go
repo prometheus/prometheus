@@ -128,7 +128,7 @@ func (i *isolation) State(mint, maxt int64) *isolationState {
 }
 
 // TraverseOpenReads iterates through the open reads and runs the given
-// function on those states. The given function SHOULD NOT mutate the isolationState.
+// function on those states. The given function MUST NOT mutate the isolationState.
 // The iteration is stopped when the function returns false or once all reads have been iterated.
 func (i *isolation) TraverseOpenReads(f func(s *isolationState) bool) {
 	i.readMtx.RLock()

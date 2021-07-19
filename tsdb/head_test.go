@@ -2331,7 +2331,7 @@ func TestIsQuerierValid(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(fmt.Sprintf("mint=%d,maxt=%d", c.mint, c.maxt), func(t *testing.T) {
-			shouldClose, getNew, newMint := db.head.IsQuerierValid(c.mint, c.maxt)
+			shouldClose, getNew, newMint := db.head.IsQuerierCollidingWithTruncation(c.mint, c.maxt)
 			require.Equal(t, c.expShouldClose, shouldClose)
 			require.Equal(t, c.expGetNew, getNew)
 			if getNew {

@@ -1534,7 +1534,10 @@ func (db *DB) Querier(_ context.Context, mint, maxt int64) (storage.Querier, err
 			return nil, errors.Wrapf(err, "open querier for head %s", rh)
 		}
 
-		shouldClose, getNew, newMint := db.head.IsQuerierValid(mint, maxt)
+		// Getting the querier above registers itself in the queue that the truncation waits on.
+		// So, if we should not close or get new one, we wont have race with truncation since
+		// any truncation that comes after will wait on this querier if it overlaps.
+		shouldClose, getNew, newMint := db.head.IsQuerierCollidingWithTruncation(mint, maxt)
 		if shouldClose {
 			if err := headQuerier.Close(); err != nil {
 				return nil, errors.Wrapf(err, "closing head querier %s", rh)
@@ -1591,7 +1594,10 @@ func (db *DB) ChunkQuerier(_ context.Context, mint, maxt int64) (storage.ChunkQu
 			return nil, errors.Wrapf(err, "open querier for head %s", rh)
 		}
 
-		shouldClose, getNew, newMint := db.head.IsQuerierValid(mint, maxt)
+		// Getting the querier above registers itself in the queue that the truncation waits on.
+		// So, if we should not close or get new one, we wont have race with truncation since
+		// any truncation that comes after will wait on this querier if it overlaps.
+		shouldClose, getNew, newMint := db.head.IsQuerierCollidingWithTruncation(mint, maxt)
 		if shouldClose {
 			if err := headQuerier.Close(); err != nil {
 				return nil, errors.Wrapf(err, "closing head querier %s", rh)

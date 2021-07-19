@@ -1056,24 +1056,22 @@ func (h *Head) WaitForPendingReadersInTimeRange(mint, maxt int64) {
 	}
 }
 
-// IsQuerierValid tells if the current querier should be closed and if
+// IsQuerierCollidingWithTruncation tells if the current querier should be closed and if
 // have to get a new querier. If should get a new querier, it also tells
 // what is the new mint of the Head to be considered.
-// headMintObserved argument is the head mint that was considered while
-// taking the querier.
 // This function helps in preventing race with truncation of in-memory data.
 // NOTE: The querier should already be taken before calling this.
-func (h *Head) IsQuerierValid(querierMint, querierMaxt int64) (shouldClose bool, getNew bool, newMint int64) {
+func (h *Head) IsQuerierCollidingWithTruncation(querierMint, querierMaxt int64) (shouldClose bool, getNew bool, newMint int64) {
 	if !h.memTruncationInProcess.Load() {
 		return false, false, 0
 	}
 	// Head truncation is in process. It also means that the block that was
 	// created for this truncation range is also available.
-	// Check if we took a querier which overlaps with this truncation.
+	// Check if we took a querier that overlaps with this truncation.
 	memTruncTime := h.lastMemoryTruncationTime.Load()
 	if querierMaxt < memTruncTime {
 		// Head compaction has happened and this time range is being truncated.
-		// This query not longer overlaps with the Head.
+		// This query doesn't overlap with the Head any longer.
 		// We should close this querier to avoid races and the data would be
 		// available with the blocks below.
 		// Cases:
@@ -1081,8 +1079,9 @@ func (h *Head) IsQuerierValid(querierMint, querierMaxt int64) (shouldClose bool,
 		//   |---query---|
 		// 2.     |------truncation------|
 		//              |---query---|
-		shouldClose = true
-	} else if querierMint < memTruncTime {
+		return true, false, 0
+	}
+	if querierMint < memTruncTime {
 		// The truncation time is not same as head mint that we saw above but the
 		// query still overlaps with the Head.
 		// The truncation started after we got the querier. So it is not safe
@@ -1095,16 +1094,13 @@ func (h *Head) IsQuerierValid(querierMint, querierMaxt int64) (shouldClose bool,
 		// Turns into
 		//      |------truncation------|
 		//                             |---qu---|
-
-		shouldClose = true
-		getNew = true
-		newMint = memTruncTime
+		return true, true, memTruncTime
 	}
+
 	// Other case is this, which is a no-op
 	//      |------truncation------|
 	//                              |---query---|
-
-	return shouldClose, getNew, newMint
+	return false, false, 0
 }
 
 // truncateWAL removes old data before mint from the WAL.
