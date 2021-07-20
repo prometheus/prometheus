@@ -1038,7 +1038,8 @@ func (h *Head) truncateMemory(mint int64) (err error) {
 }
 
 func (h *Head) WaitForPendingReadersInTimeRange(mint, maxt int64) {
-	// TODO: should we have some limit on how long we wait in total? If so, how long?
+	// Since this waits for the overlapping queries that came in before the truncation,
+	// the query timeout limits the max wait time here implicitly.
 	overlaps := func() bool {
 		o := false
 		h.iso.TraverseOpenReads(func(s *isolationState) bool {
@@ -1056,10 +1057,10 @@ func (h *Head) WaitForPendingReadersInTimeRange(mint, maxt int64) {
 	}
 }
 
-// IsQuerierCollidingWithTruncation tells if the current querier should be closed and if
-// have to get a new querier. If should get a new querier, it also tells
-// what is the new mint of the Head to be considered.
-// This function helps in preventing race with truncation of in-memory data.
+// IsQuerierCollidingWithTruncation returns if the current querier needs to be closed and if a new querier
+// has to be created. In the latter case, the method also returns the new mint to be used for creating the
+// new range head and the new querier. This methods helps preventing races with the truncation of in-memory data.
+//
 // NOTE: The querier should already be taken before calling this.
 func (h *Head) IsQuerierCollidingWithTruncation(querierMint, querierMaxt int64) (shouldClose bool, getNew bool, newMint int64) {
 	if !h.memTruncationInProcess.Load() {
