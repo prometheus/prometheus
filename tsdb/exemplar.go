@@ -111,6 +111,9 @@ func NewExemplarMetrics(reg prometheus.Registerer) *ExemplarMetrics {
 // If len <= 0, then the exemplar storage is essentially a noop storage but can later be
 // resized to store exemplars.
 func NewCircularExemplarStorage(len int64, m *ExemplarMetrics) (ExemplarStorage, error) {
+	if len < 0 {
+		len = 0
+	}
 	c := &CircularExemplarStorage{
 		exemplars: make([]*circularBufferEntry, len),
 		index:     make(map[string]*indexEntry),
@@ -249,18 +252,17 @@ func (ce *CircularExemplarStorage) validateExemplar(l string, e exemplar.Exempla
 // Resize changes the size of exemplar buffer by allocating a new buffer and migrating data to it.
 // Exemplars are kept when possible. Shrinking will discard oldest data (in order of ingest) as needed.
 func (ce *CircularExemplarStorage) Resize(l int64) int {
+	// Accept negative values as just 0 size.
+	if l <= 0 {
+		l = 0
+	}
+
 	if l == int64(len(ce.exemplars)) {
 		return 0
 	}
 
 	ce.lock.Lock()
 	defer ce.lock.Unlock()
-
-	if l <= 0 {
-		ce.metrics.exemplarsInStorage.Set(0)
-		ce.metrics.seriesWithExemplarsInStorage.Set(0)
-		ce.metrics.maxExemplars.Set(float64(l))
-	}
 
 	oldBuffer := ce.exemplars
 	oldNextIndex := int64(ce.nextIndex)
@@ -275,19 +277,21 @@ func (ce *CircularExemplarStorage) Resize(l int64) int {
 		count = l
 	}
 
-	// Rewind previous next index by count with wrap-around.
-	// This math is essentially looking at nextIndex, where we would write the next exemplar to,
-	// and find the index in the old exemplar buffer that we should start migrating exemplars from.
-	// This way we don't migrate exemplars that would just be overwritten when migrating later exemplars.
-	var startIndex int64 = (oldNextIndex - count + int64(len(oldBuffer))) % int64(len(oldBuffer))
-
 	migrated := 0
 
-	for i := int64(0); i < count; i++ {
-		idx := (startIndex + i) % int64(len(oldBuffer))
-		if entry := oldBuffer[idx]; entry != nil {
-			ce.migrate(entry)
-			migrated++
+	if l > 0 {
+		// Rewind previous next index by count with wrap-around.
+		// This math is essentially looking at nextIndex, where we would write the next exemplar to,
+		// and find the index in the old exemplar buffer that we should start migrating exemplars from.
+		// This way we don't migrate exemplars that would just be overwritten when migrating later exemplars.
+		var startIndex int64 = (oldNextIndex - count + int64(len(oldBuffer))) % int64(len(oldBuffer))
+
+		for i := int64(0); i < count; i++ {
+			idx := (startIndex + i) % int64(len(oldBuffer))
+			if entry := oldBuffer[idx]; entry != nil {
+				ce.migrate(entry)
+				migrated++
+			}
 		}
 	}
 
@@ -377,6 +381,13 @@ func (ce *CircularExemplarStorage) AddExemplar(l labels.Labels, e exemplar.Exemp
 
 func (ce *CircularExemplarStorage) computeMetrics() {
 	ce.metrics.seriesWithExemplarsInStorage.Set(float64(len(ce.index)))
+
+	if len(ce.exemplars) == 0 {
+		ce.metrics.exemplarsInStorage.Set(float64(0))
+		ce.metrics.lastExemplarsTs.Set(float64(0))
+		return
+	}
+
 	if next := ce.exemplars[ce.nextIndex]; next != nil {
 		ce.metrics.exemplarsInStorage.Set(float64(len(ce.exemplars)))
 		ce.metrics.lastExemplarsTs.Set(float64(next.exemplar.Ts) / 1000)

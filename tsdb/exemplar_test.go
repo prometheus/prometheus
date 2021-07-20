@@ -412,6 +412,30 @@ func TestResize(t *testing.T) {
 			notExpectedSeries: []int{49, 1, 0},
 			expectedMigrated:  50,
 		},
+		{
+			name:              "Zero",
+			startSize:         100,
+			newCount:          0,
+			expectedSeries:    []int{},
+			notExpectedSeries: []int{},
+			expectedMigrated:  0,
+		},
+		{
+			name:              "Negative",
+			startSize:         100,
+			newCount:          -1,
+			expectedSeries:    []int{},
+			notExpectedSeries: []int{},
+			expectedMigrated:  0,
+		},
+		{
+			name:              "NegativeToNegative",
+			startSize:         -1,
+			newCount:          -2,
+			expectedSeries:    []int{},
+			notExpectedSeries: []int{},
+			expectedMigrated:  0,
+		},
 	}
 
 	for _, tc := range testCases {
