@@ -113,7 +113,7 @@ type LabelQuerier interface {
 
 	// LabelNames returns all the unique label names present in the block in sorted order.
 	// If matchers are specified the returned result set is reduced
-	// to label values of metrics matching the matchers.
+	// to label names of metrics matching the matchers.
 	LabelNames(matchers ...*labels.Matcher) ([]string, Warnings, error)
 
 	// Close releases the resources of the Querier.
