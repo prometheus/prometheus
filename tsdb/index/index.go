@@ -1549,8 +1549,6 @@ func (r *Reader) LabelNamesFor(ids ...uint64) ([]string, error) {
 		names = append(names, name)
 	}
 
-	// maybe it's more efficient to built the list of offsets first, then sort the uint32 offsets and then map to names?
-	// that could be an optimization if we measure it and makes any difference
 	sort.Strings(names)
 
 	return names, nil
