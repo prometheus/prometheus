@@ -226,7 +226,7 @@ func BenchmarkLoadWAL(b *testing.B) {
 						require.NoError(b, chunkDiskMapper.Close())
 					}
 
-					// Write samples.
+					// Write exemplars.
 					refExemplars := make([]record.RefExemplar, 0, c.seriesPerBatch)
 					for i := 0; i < exemplarsPerSeries; i++ {
 						for j := 0; j < c.batches; j++ {
