@@ -1544,7 +1544,7 @@ func (r *Reader) LabelNamesFor(ids ...uint64) ([]string, error) {
 	for off := range offsetsMap {
 		name, err := r.lookupSymbol(off)
 		if err != nil {
-			return nil, errors.Wrap(err, "lookup symbol in label names for")
+			return nil, errors.Wrap(err, "lookup symbol in LabelNamesFor")
 		}
 		names = append(names, name)
 	}
