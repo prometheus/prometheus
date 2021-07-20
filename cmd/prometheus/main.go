@@ -131,9 +131,6 @@ type flagConfig struct {
 
 // setFeatureListOptions sets the corresponding options from the featureList.
 func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
-	maxExemplars := c.tsdb.MaxExemplars
-	// Disabled at first. Value from the flag is used if exemplar-storage is set.
-	c.tsdb.MaxExemplars = 0
 	for _, f := range c.featureList {
 		opts := strings.Split(f, ",")
 		for _, o := range opts {
@@ -151,8 +148,8 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 				c.enableExpandExternalLabels = true
 				level.Info(logger).Log("msg", "Experimental expand-external-labels enabled")
 			case "exemplar-storage":
-				c.tsdb.MaxExemplars = maxExemplars
-				level.Info(logger).Log("msg", "Experimental in-memory exemplar storage enabled", "maxExemplars", maxExemplars)
+				c.tsdb.EnableExemplarStorage = true
+				level.Info(logger).Log("msg", "Experimental in-memory exemplar storage enabled")
 			case "":
 				continue
 			default:
@@ -283,9 +280,6 @@ func main() {
 	a.Flag("storage.remote.read-max-bytes-in-frame", "Maximum number of bytes in a single frame for streaming remote read response types before marshalling. Note that client might have limit on frame size as well. 1MB as recommended by protobuf by default.").
 		Default("1048576").IntVar(&cfg.web.RemoteReadBytesInFrame)
 
-	a.Flag("storage.exemplars.exemplars-limit", "[EXPERIMENTAL] Maximum number of exemplars to store in in-memory exemplar storage total. 0 disables the exemplar storage. This flag is effective only with --enable-feature=exemplar-storage.").
-		Default("100000").IntVar(&cfg.tsdb.MaxExemplars)
-
 	a.Flag("rules.alert.for-outage-tolerance", "Max time to tolerate prometheus outage for restoring \"for\" state of alert.").
 		Default("1h").SetValue(&cfg.outageTolerance)
 
@@ -352,10 +346,18 @@ func main() {
 	}
 
 	// Throw error for invalid config before starting other components.
-	if _, err := config.LoadFile(cfg.configFile, false, log.NewNopLogger()); err != nil {
+	var cfgFile *config.Config
+	if cfgFile, err = config.LoadFile(cfg.configFile, false, log.NewNopLogger()); err != nil {
 		level.Error(logger).Log("msg", fmt.Sprintf("Error loading config (--config.file=%s)", cfg.configFile), "err", err)
 		os.Exit(2)
 	}
+	if cfg.tsdb.EnableExemplarStorage {
+		if cfgFile.StorageConfig.ExemplarsConfig == nil {
+			cfgFile.StorageConfig.ExemplarsConfig = &config.DefaultExemplarsConfig
+		}
+		cfg.tsdb.MaxExemplars = int64(cfgFile.StorageConfig.ExemplarsConfig.MaxExemplars)
+	}
+
 	// Now that the validity of the config is established, set the config
 	// success metrics accordingly, although the config isn't really loaded
 	// yet. This will happen later (including setting these metrics again),
@@ -549,6 +551,9 @@ func main() {
 
 	reloaders := []reloader{
 		{
+			name:     "db_storage",
+			reloader: localStorage.ApplyConfig,
+		}, {
 			name:     "remote_storage",
 			reloader: remoteStorage.ApplyConfig,
 		}, {
@@ -750,11 +755,11 @@ func main() {
 				for {
 					select {
 					case <-hup:
-						if err := reloadConfig(cfg.configFile, cfg.enableExpandExternalLabels, logger, noStepSubqueryInterval, reloaders...); err != nil {
+						if err := reloadConfig(cfg.configFile, cfg.enableExpandExternalLabels, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, reloaders...); err != nil {
 							level.Error(logger).Log("msg", "Error reloading config", "err", err)
 						}
 					case rc := <-webHandler.Reload():
-						if err := reloadConfig(cfg.configFile, cfg.enableExpandExternalLabels, logger, noStepSubqueryInterval, reloaders...); err != nil {
+						if err := reloadConfig(cfg.configFile, cfg.enableExpandExternalLabels, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, reloaders...); err != nil {
 							level.Error(logger).Log("msg", "Error reloading config", "err", err)
 							rc <- err
 						} else {
@@ -786,7 +791,7 @@ func main() {
 					return nil
 				}
 
-				if err := reloadConfig(cfg.configFile, cfg.enableExpandExternalLabels, logger, noStepSubqueryInterval, reloaders...); err != nil {
+				if err := reloadConfig(cfg.configFile, cfg.enableExpandExternalLabels, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, reloaders...); err != nil {
 					return errors.Wrapf(err, "error loading config from %q", cfg.configFile)
 				}
 
@@ -975,7 +980,7 @@ type reloader struct {
 	reloader func(*config.Config) error
 }
 
-func reloadConfig(filename string, expandExternalLabels bool, logger log.Logger, noStepSuqueryInterval *safePromQLNoStepSubqueryInterval, rls ...reloader) (err error) {
+func reloadConfig(filename string, expandExternalLabels bool, enableExemplarStorage bool, logger log.Logger, noStepSuqueryInterval *safePromQLNoStepSubqueryInterval, rls ...reloader) (err error) {
 	start := time.Now()
 	timings := []interface{}{}
 	level.Info(logger).Log("msg", "Loading configuration file", "filename", filename)
@@ -992,6 +997,12 @@ func reloadConfig(filename string, expandExternalLabels bool, logger log.Logger,
 	conf, err := config.LoadFile(filename, expandExternalLabels, logger)
 	if err != nil {
 		return errors.Wrapf(err, "couldn't load configuration (--config.file=%q)", filename)
+	}
+
+	if enableExemplarStorage {
+		if conf.StorageConfig.ExemplarsConfig == nil {
+			conf.StorageConfig.ExemplarsConfig = &config.DefaultExemplarsConfig
+		}
 	}
 
 	failed := false
@@ -1097,6 +1108,11 @@ type readyStorage struct {
 	db              *tsdb.DB
 	startTimeMargin int64
 	stats           *tsdb.DBStats
+}
+
+func (s *readyStorage) ApplyConfig(conf *config.Config) error {
+	db := s.get()
+	return db.ApplyConfig(conf)
 }
 
 // Set the storage.
@@ -1274,7 +1290,8 @@ type tsdbOptions struct {
 	StripeSize               int
 	MinBlockDuration         model.Duration
 	MaxBlockDuration         model.Duration
-	MaxExemplars             int
+	EnableExemplarStorage    bool
+	MaxExemplars             int64
 }
 
 func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
@@ -1289,6 +1306,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		StripeSize:               opts.StripeSize,
 		MinBlockDuration:         int64(time.Duration(opts.MinBlockDuration) / time.Millisecond),
 		MaxBlockDuration:         int64(time.Duration(opts.MaxBlockDuration) / time.Millisecond),
+		EnableExemplarStorage:    opts.EnableExemplarStorage,
 		MaxExemplars:             opts.MaxExemplars,
 	}
 }

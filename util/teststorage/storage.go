@@ -18,6 +18,7 @@ import (
 	"os"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -38,12 +39,14 @@ func New(t testutil.T) *TestStorage {
 	opts := tsdb.DefaultOptions()
 	opts.MinBlockDuration = int64(24 * time.Hour / time.Millisecond)
 	opts.MaxBlockDuration = int64(24 * time.Hour / time.Millisecond)
-	opts.MaxExemplars = 10
 	db, err := tsdb.Open(dir, nil, nil, opts, tsdb.NewDBStats())
 	if err != nil {
 		t.Fatalf("Opening test storage failed: %s", err)
 	}
-	es, err := tsdb.NewCircularExemplarStorage(10, nil)
+	reg := prometheus.NewRegistry()
+	eMetrics := tsdb.NewExemplarMetrics(reg)
+
+	es, err := tsdb.NewCircularExemplarStorage(10, eMetrics)
 	if err != nil {
 		t.Fatalf("Opening test exemplar storage failed: %s", err)
 	}
