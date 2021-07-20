@@ -1527,7 +1527,7 @@ func (r *Reader) LabelNamesFor(ids ...uint64) ([]string, error) {
 		d := encoding.NewDecbufUvarintAt(r.b, int(offset), castagnoliTable)
 		buf := d.Get()
 		if d.Err() != nil {
-			return nil, errors.Wrap(d.Err(), "label names for")
+			return nil, errors.Wrap(d.Err(), "get buffer for series")
 		}
 
 		offsets, err := r.dec.LabelNamesOffsetsFor(buf)
