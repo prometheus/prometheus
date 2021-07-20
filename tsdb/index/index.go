@@ -523,9 +523,15 @@ func (w *Writer) AddSymbol(sym string) error {
 }
 
 func (w *Writer) finishSymbols() error {
+	symbolTableSize := w.f.pos - w.toc.Symbols - 4
+	// The symbol table's <len> part is 4 bytes. So the total symbol table size must be less than or equal to 2^32-1
+	if symbolTableSize > 4294967295 {
+		return errors.Errorf("symbol table size exceeds 4 bytes: %d", symbolTableSize)
+	}
+
 	// Write out the length and symbol count.
 	w.buf1.Reset()
-	w.buf1.PutBE32int(int(w.f.pos - w.toc.Symbols - 4))
+	w.buf1.PutBE32int(int(symbolTableSize))
 	w.buf1.PutBE32int(int(w.numSymbols))
 	if err := w.writeAt(w.buf1.Get(), w.toc.Symbols); err != nil {
 		return err
