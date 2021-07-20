@@ -421,9 +421,7 @@ func BenchmarkLabelValuesWithMatchers(b *testing.B) {
 func TestLabelNamesWithMatchers(t *testing.T) {
 	tmpdir, err := ioutil.TempDir("", "test_block_label_names_with_matchers")
 	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(tmpdir))
-	}()
+	t.Cleanup(func() { require.NoError(t, os.RemoveAll(tmpdir)) })
 
 	var seriesEntries []storage.Series
 	for i := 0; i < 100; i++ {
@@ -456,11 +454,11 @@ func TestLabelNamesWithMatchers(t *testing.T) {
 	// Check open err.
 	block, err := OpenBlock(nil, blockDir, nil)
 	require.NoError(t, err)
-	defer func() { require.NoError(t, block.Close()) }()
+	t.Cleanup(func() { require.NoError(t, block.Close()) })
 
 	indexReader, err := block.Index()
 	require.NoError(t, err)
-	defer func() { require.NoError(t, indexReader.Close()) }()
+	t.Cleanup(func() { require.NoError(t, indexReader.Close()) })
 
 	testCases := []struct {
 		name          string

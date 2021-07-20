@@ -1929,9 +1929,7 @@ func TestHeadLabelNamesValuesWithMinMaxRange(t *testing.T) {
 
 func TestHeadLabelValuesWithMatchers(t *testing.T) {
 	head, _ := newTestHead(t, 1000, false)
-	defer func() {
-		require.NoError(t, head.Close())
-	}()
+	t.Cleanup(func() { require.NoError(t, head.Close()) })
 
 	app := head.Appender(context.Background())
 	for i := 0; i < 100; i++ {
