@@ -14,6 +14,7 @@
 package tsdb
 
 import (
+	"math"
 	"strconv"
 	"sync"
 	"testing"
@@ -85,7 +86,7 @@ func BenchmarkIsolationWithState(b *testing.B) {
 					<-start
 
 					for i := 0; i < b.N; i++ {
-						s := iso.State()
+						s := iso.State(math.MinInt64, math.MaxInt64)
 						s.Close()
 					}
 				}()

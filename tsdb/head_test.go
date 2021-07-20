@@ -16,6 +16,7 @@ package tsdb
 import (
 	"context"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"math"
 	"math/rand"
@@ -25,10 +26,12 @@ import (
 	"strconv"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/pkg/errors"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/exemplar"
@@ -1230,11 +1233,11 @@ func TestRemoveSeriesAfterRollbackAndTruncate(t *testing.T) {
 
 	q, err := NewBlockQuerier(h, 1500, 2500)
 	require.NoError(t, err)
-	defer q.Close()
 
 	ss := q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "1"))
 	require.Equal(t, false, ss.Next())
 	require.Equal(t, 0, len(ss.Warnings()))
+	require.NoError(t, q.Close())
 
 	// Truncate again, this time the series should be deleted
 	require.NoError(t, h.Truncate(2050))
@@ -1490,7 +1493,7 @@ func TestMemSeriesIsolation(t *testing.T) {
 
 		require.NoError(t, err)
 
-		iso := h.iso.State()
+		iso := h.iso.State(math.MinInt64, math.MaxInt64)
 		iso.maxAppendID = maxAppendID
 
 		chunks, err := h.chunksRange(math.MinInt64, math.MaxInt64, iso)
@@ -1705,7 +1708,7 @@ func TestIsolationLowWatermarkMonotonous(t *testing.T) {
 	require.NoError(t, app2.Commit())
 	require.Equal(t, uint64(2), hb.iso.lowWatermark(), "Low watermark should stay two because app1 is not committed yet.")
 
-	is := hb.iso.State()
+	is := hb.iso.State(math.MinInt64, math.MaxInt64)
 	require.Equal(t, uint64(2), hb.iso.lowWatermark(), "After simulated read (iso state retrieved), low watermark should stay at 2.")
 
 	require.NoError(t, app1.Commit())
@@ -2178,4 +2181,219 @@ func TestMemSafeIteratorSeekIntoBuffer(t *testing.T) {
 	require.False(t, ok)
 	ok = it.Seek(7)
 	require.False(t, ok)
+}
+
+// Tests https://github.com/prometheus/prometheus/issues/8221.
+func TestChunkNotFoundHeadGCRace(t *testing.T) {
+	db := newTestDB(t)
+	db.DisableCompactions()
+
+	var (
+		app        = db.Appender(context.Background())
+		ref        = uint64(0)
+		mint, maxt = int64(0), int64(0)
+		err        error
+	)
+
+	// Appends samples to span over 1.5 block ranges.
+	// 7 chunks with 15s scrape interval.
+	for i := int64(0); i <= 120*7; i++ {
+		ts := i * DefaultBlockDuration / (4 * 120)
+		ref, err = app.Append(ref, labels.FromStrings("a", "b"), ts, float64(i))
+		require.NoError(t, err)
+		maxt = ts
+	}
+	require.NoError(t, app.Commit())
+
+	// Get a querier before compaction (or when compaction is about to begin).
+	q, err := db.Querier(context.Background(), mint, maxt)
+	require.NoError(t, err)
+
+	// Query the compacted range and get the first series before compaction.
+	ss := q.Select(true, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
+	require.True(t, ss.Next())
+	s := ss.At()
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		// Compacting head while the querier spans the compaction time.
+		require.NoError(t, db.Compact())
+		require.Greater(t, len(db.Blocks()), 0)
+	}()
+
+	// Give enough time for compaction to finish.
+	// We expect it to be blocked until querier is closed.
+	<-time.After(3 * time.Second)
+
+	// Now consume after compaction when it's gone.
+	it := s.Iterator()
+	for it.Next() {
+		_, _ = it.At()
+	}
+	// It should error here without any fix for the mentioned issue.
+	require.NoError(t, it.Err())
+	for ss.Next() {
+		s = ss.At()
+		it := s.Iterator()
+		for it.Next() {
+			_, _ = it.At()
+		}
+		require.NoError(t, it.Err())
+	}
+	require.NoError(t, ss.Err())
+
+	require.NoError(t, q.Close())
+	wg.Wait()
+}
+
+// Tests https://github.com/prometheus/prometheus/issues/9079.
+func TestDataMissingOnQueryDuringCompaction(t *testing.T) {
+	db := newTestDB(t)
+	db.DisableCompactions()
+
+	var (
+		app        = db.Appender(context.Background())
+		ref        = uint64(0)
+		mint, maxt = int64(0), int64(0)
+		err        error
+	)
+
+	// Appends samples to span over 1.5 block ranges.
+	expSamples := make([]tsdbutil.Sample, 0)
+	// 7 chunks with 15s scrape interval.
+	for i := int64(0); i <= 120*7; i++ {
+		ts := i * DefaultBlockDuration / (4 * 120)
+		ref, err = app.Append(ref, labels.FromStrings("a", "b"), ts, float64(i))
+		require.NoError(t, err)
+		maxt = ts
+		expSamples = append(expSamples, sample{ts, float64(i)})
+	}
+	require.NoError(t, app.Commit())
+
+	// Get a querier before compaction (or when compaction is about to begin).
+	q, err := db.Querier(context.Background(), mint, maxt)
+	require.NoError(t, err)
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		// Compacting head while the querier spans the compaction time.
+		require.NoError(t, db.Compact())
+		require.Greater(t, len(db.Blocks()), 0)
+	}()
+
+	// Give enough time for compaction to finish.
+	// We expect it to be blocked until querier is closed.
+	<-time.After(3 * time.Second)
+
+	// Querying the querier that was got before compaction.
+	series := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
+	require.Equal(t, map[string][]tsdbutil.Sample{`{a="b"}`: expSamples}, series)
+
+	wg.Wait()
+}
+
+func TestIsQuerierCollidingWithTruncation(t *testing.T) {
+	db := newTestDB(t)
+	db.DisableCompactions()
+
+	var (
+		app = db.Appender(context.Background())
+		ref = uint64(0)
+		err error
+	)
+
+	for i := int64(0); i <= 3000; i++ {
+		ref, err = app.Append(ref, labels.FromStrings("a", "b"), i, float64(i))
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+
+	// This mocks truncation.
+	db.head.memTruncationInProcess.Store(true)
+	db.head.lastMemoryTruncationTime.Store(2000)
+
+	// Test that IsQuerierValid suggests correct querier ranges.
+	cases := []struct {
+		mint, maxt                int64 // For the querier.
+		expShouldClose, expGetNew bool
+		expNewMint                int64
+	}{
+		{-200, -100, true, false, 0},
+		{-200, 300, true, false, 0},
+		{100, 1900, true, false, 0},
+		{1900, 2200, true, true, 2000},
+		{2000, 2500, false, false, 0},
+	}
+
+	for _, c := range cases {
+		t.Run(fmt.Sprintf("mint=%d,maxt=%d", c.mint, c.maxt), func(t *testing.T) {
+			shouldClose, getNew, newMint := db.head.IsQuerierCollidingWithTruncation(c.mint, c.maxt)
+			require.Equal(t, c.expShouldClose, shouldClose)
+			require.Equal(t, c.expGetNew, getNew)
+			if getNew {
+				require.Equal(t, c.expNewMint, newMint)
+			}
+		})
+	}
+}
+
+func TestWaitForPendingReadersInTimeRange(t *testing.T) {
+	db := newTestDB(t)
+	db.DisableCompactions()
+
+	sampleTs := func(i int64) int64 { return i * DefaultBlockDuration / (4 * 120) }
+
+	var (
+		app = db.Appender(context.Background())
+		ref = uint64(0)
+		err error
+	)
+
+	for i := int64(0); i <= 3000; i++ {
+		ts := sampleTs(i)
+		ref, err = app.Append(ref, labels.FromStrings("a", "b"), ts, float64(i))
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+
+	truncMint, truncMaxt := int64(1000), int64(2000)
+	cases := []struct {
+		mint, maxt int64
+		shouldWait bool
+	}{
+		{0, 500, false},     // Before truncation range.
+		{500, 1500, true},   // Overlaps with truncation at the start.
+		{1200, 1700, true},  // Within truncation range.
+		{1800, 2500, true},  // Overlaps with truncation at the end.
+		{2000, 2500, false}, // After truncation range.
+		{2100, 2500, false}, // After truncation range.
+	}
+	for _, c := range cases {
+		t.Run(fmt.Sprintf("mint=%d,maxt=%d,shouldWait=%t", c.mint, c.maxt, c.shouldWait), func(t *testing.T) {
+			checkWaiting := func(cl io.Closer) {
+				var waitOver atomic.Bool
+				go func() {
+					db.head.WaitForPendingReadersInTimeRange(truncMint, truncMaxt)
+					waitOver.Store(true)
+				}()
+				<-time.After(550 * time.Millisecond)
+				require.Equal(t, !c.shouldWait, waitOver.Load())
+				require.NoError(t, cl.Close())
+				<-time.After(550 * time.Millisecond)
+				require.True(t, waitOver.Load())
+			}
+
+			q, err := db.Querier(context.Background(), c.mint, c.maxt)
+			require.NoError(t, err)
+			checkWaiting(q)
+
+			cq, err := db.ChunkQuerier(context.Background(), c.mint, c.maxt)
+			require.NoError(t, err)
+			checkWaiting(cq)
+		})
+	}
 }

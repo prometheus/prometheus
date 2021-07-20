@@ -24,6 +24,7 @@ type isolationState struct {
 	incompleteAppends map[uint64]struct{}
 	lowWatermark      uint64 // Lowest of incompleteAppends/maxAppendID.
 	isolation         *isolation
+	mint, maxt        int64 // Time ranges of the read.
 
 	// Doubly linked list of active reads.
 	next *isolationState
@@ -102,7 +103,7 @@ func (i *isolation) lowWatermarkLocked() uint64 {
 
 // State returns an object used to control isolation
 // between a query and appends. Must be closed when complete.
-func (i *isolation) State() *isolationState {
+func (i *isolation) State(mint, maxt int64) *isolationState {
 	i.appendMtx.RLock() // Take append mutex before read mutex.
 	defer i.appendMtx.RUnlock()
 	isoState := &isolationState{
@@ -110,6 +111,8 @@ func (i *isolation) State() *isolationState {
 		lowWatermark:      i.appendsOpenList.next.appendID, // Lowest appendID from appenders, or lastAppendId.
 		incompleteAppends: make(map[uint64]struct{}, len(i.appendsOpen)),
 		isolation:         i,
+		mint:              mint,
+		maxt:              maxt,
 	}
 	for k := range i.appendsOpen {
 		isoState.incompleteAppends[k] = struct{}{}
@@ -122,6 +125,21 @@ func (i *isolation) State() *isolationState {
 	i.readsOpen.next.prev = isoState
 	i.readsOpen.next = isoState
 	return isoState
+}
+
+// TraverseOpenReads iterates through the open reads and runs the given
+// function on those states. The given function MUST NOT mutate the isolationState.
+// The iteration is stopped when the function returns false or once all reads have been iterated.
+func (i *isolation) TraverseOpenReads(f func(s *isolationState) bool) {
+	i.readMtx.RLock()
+	defer i.readMtx.RUnlock()
+	s := i.readsOpen.next
+	for s != i.readsOpen {
+		if !f(s) {
+			return
+		}
+		s = s.next
+	}
 }
 
 // newAppendID increments the transaction counter and returns a new transaction

@@ -64,12 +64,13 @@ type ExemplarStorage interface {
 
 // Head handles reads and writes of time series data within a time window.
 type Head struct {
-	chunkRange            atomic.Int64
-	numSeries             atomic.Uint64
-	minTime, maxTime      atomic.Int64 // Current min and max of the samples included in the head.
-	minValidTime          atomic.Int64 // Mint allowed to be added to the head. It shouldn't be lower than the maxt of the last persisted block.
-	lastWALTruncationTime atomic.Int64
-	lastSeriesID          atomic.Uint64
+	chunkRange               atomic.Int64
+	numSeries                atomic.Uint64
+	minTime, maxTime         atomic.Int64 // Current min and max of the samples included in the head.
+	minValidTime             atomic.Int64 // Mint allowed to be added to the head. It shouldn't be lower than the maxt of the last persisted block.
+	lastWALTruncationTime    atomic.Int64
+	lastMemoryTruncationTime atomic.Int64
+	lastSeriesID             atomic.Uint64
 
 	metrics         *headMetrics
 	opts            *HeadOptions
@@ -110,6 +111,8 @@ type Head struct {
 
 	stats *HeadStats
 	reg   prometheus.Registerer
+
+	memTruncationInProcess atomic.Bool
 }
 
 // HeadOptions are parameters for the Head block.
@@ -414,6 +417,7 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, opts *HeadOpti
 	h.minTime.Store(math.MaxInt64)
 	h.maxTime.Store(math.MinInt64)
 	h.lastWALTruncationTime.Store(math.MinInt64)
+	h.lastMemoryTruncationTime.Store(math.MinInt64)
 	h.metrics = newHeadMetrics(h, r)
 
 	if opts.ChunkPool == nil {
@@ -974,11 +978,24 @@ func (h *Head) truncateMemory(mint int64) (err error) {
 			h.metrics.headTruncateFail.Inc()
 		}
 	}()
+
 	initialize := h.MinTime() == math.MaxInt64
 
 	if h.MinTime() >= mint && !initialize {
 		return nil
 	}
+
+	// The order of these two Store() should not be changed,
+	// i.e. truncation time is set before in-process boolean.
+	h.lastMemoryTruncationTime.Store(mint)
+	h.memTruncationInProcess.Store(true)
+	defer h.memTruncationInProcess.Store(false)
+
+	// We wait for pending queries to end that overlap with this truncation.
+	if !initialize {
+		h.WaitForPendingReadersInTimeRange(h.MinTime(), mint)
+	}
+
 	h.minTime.Store(mint)
 	h.minValidTime.Store(mint)
 
@@ -1018,6 +1035,75 @@ func (h *Head) truncateMemory(mint int64) (err error) {
 		return errors.Wrap(err, "truncate chunks.HeadReadWriter")
 	}
 	return nil
+}
+
+// WaitForPendingReadersInTimeRange waits for queries overlapping with given range to finish querying.
+// The query timeout limits the max wait time of this function implicitly.
+// The mint is inclusive and maxt is the truncation time hence exclusive.
+func (h *Head) WaitForPendingReadersInTimeRange(mint, maxt int64) {
+	maxt-- // Making it inclusive before checking overlaps.
+	overlaps := func() bool {
+		o := false
+		h.iso.TraverseOpenReads(func(s *isolationState) bool {
+			if s.mint <= maxt && mint <= s.maxt {
+				// Overlaps with the truncation range.
+				o = true
+				return false
+			}
+			return true
+		})
+		return o
+	}
+	for overlaps() {
+		time.Sleep(500 * time.Millisecond)
+	}
+}
+
+// IsQuerierCollidingWithTruncation returns if the current querier needs to be closed and if a new querier
+// has to be created. In the latter case, the method also returns the new mint to be used for creating the
+// new range head and the new querier. This methods helps preventing races with the truncation of in-memory data.
+//
+// NOTE: The querier should already be taken before calling this.
+func (h *Head) IsQuerierCollidingWithTruncation(querierMint, querierMaxt int64) (shouldClose bool, getNew bool, newMint int64) {
+	if !h.memTruncationInProcess.Load() {
+		return false, false, 0
+	}
+	// Head truncation is in process. It also means that the block that was
+	// created for this truncation range is also available.
+	// Check if we took a querier that overlaps with this truncation.
+	memTruncTime := h.lastMemoryTruncationTime.Load()
+	if querierMaxt < memTruncTime {
+		// Head compaction has happened and this time range is being truncated.
+		// This query doesn't overlap with the Head any longer.
+		// We should close this querier to avoid races and the data would be
+		// available with the blocks below.
+		// Cases:
+		// 1.     |------truncation------|
+		//   |---query---|
+		// 2.     |------truncation------|
+		//              |---query---|
+		return true, false, 0
+	}
+	if querierMint < memTruncTime {
+		// The truncation time is not same as head mint that we saw above but the
+		// query still overlaps with the Head.
+		// The truncation started after we got the querier. So it is not safe
+		// to use this querier and/or might block truncation. We should get
+		// a new querier for the new Head range while remaining will be available
+		// in the blocks below.
+		// Case:
+		//      |------truncation------|
+		//                        |----query----|
+		// Turns into
+		//      |------truncation------|
+		//                             |---qu---|
+		return true, true, memTruncTime
+	}
+
+	// Other case is this, which is a no-op
+	//      |------truncation------|
+	//                              |---query---|
+	return false, false, 0
 }
 
 // truncateWAL removes old data before mint from the WAL.
@@ -1147,7 +1233,7 @@ func (h *RangeHead) Index() (IndexReader, error) {
 }
 
 func (h *RangeHead) Chunks() (ChunkReader, error) {
-	return h.head.chunksRange(h.mint, h.maxt, h.head.iso.State())
+	return h.head.chunksRange(h.mint, h.maxt, h.head.iso.State(h.mint, h.maxt))
 }
 
 func (h *RangeHead) Tombstones() (tombstones.Reader, error) {
@@ -1721,7 +1807,7 @@ func (h *Head) indexRange(mint, maxt int64) *headIndexReader {
 
 // Chunks returns a ChunkReader against the block.
 func (h *Head) Chunks() (ChunkReader, error) {
-	return h.chunksRange(math.MinInt64, math.MaxInt64, h.iso.State())
+	return h.chunksRange(math.MinInt64, math.MaxInt64, h.iso.State(math.MinInt64, math.MaxInt64))
 }
 
 func (h *Head) chunksRange(mint, maxt int64, is *isolationState) (*headChunkReader, error) {
