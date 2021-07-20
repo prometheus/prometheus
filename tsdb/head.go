@@ -2019,18 +2019,21 @@ func (h *headIndexReader) LabelValues(name string, matchers ...*labels.Matcher) 
 
 // LabelNames returns all the unique label names present in the head
 // that are within the time range mint to maxt.
-func (h *headIndexReader) LabelNames() ([]string, error) {
-	h.head.symMtx.RLock()
+func (h *headIndexReader) LabelNames(matchers ...*labels.Matcher) ([]string, error) {
 	if h.maxt < h.head.MinTime() || h.mint > h.head.MaxTime() {
-		h.head.symMtx.RUnlock()
 		return []string{}, nil
 	}
 
-	labelNames := h.head.postings.LabelNames()
-	h.head.symMtx.RUnlock()
+	if len(matchers) == 0 {
+		h.head.symMtx.RLock()
+		labelNames := h.head.postings.LabelNames()
+		h.head.symMtx.RUnlock()
 
-	sort.Strings(labelNames)
-	return labelNames, nil
+		sort.Strings(labelNames)
+		return labelNames, nil
+	}
+
+	return labelNamesWithMatchers(h, matchers...)
 }
 
 // Postings returns the postings list iterator for the label pairs.
@@ -2120,6 +2123,27 @@ func (h *headIndexReader) LabelValueFor(id uint64, label string) (string, error)
 	}
 
 	return value, nil
+}
+
+// LabelNamesFor returns all the label names for the series referred to by IDs.
+// The names returned are sorted.
+func (h *headIndexReader) LabelNamesFor(ids ...uint64) ([]string, error) {
+	namesMap := make(map[string]struct{})
+	for _, id := range ids {
+		memSeries := h.head.series.getByID(id)
+		if memSeries == nil {
+			return nil, storage.ErrNotFound
+		}
+		for _, lbl := range memSeries.lset {
+			namesMap[lbl.Name] = struct{}{}
+		}
+	}
+	names := make([]string, 0, len(namesMap))
+	for name := range namesMap {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names, nil
 }
 
 func (h *Head) getOrCreate(hash uint64, lset labels.Labels) (*memSeries, bool, error) {

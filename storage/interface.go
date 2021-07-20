@@ -113,8 +113,9 @@ type LabelQuerier interface {
 	LabelValues(name string, matchers ...*labels.Matcher) ([]string, Warnings, error)
 
 	// LabelNames returns all the unique label names present in the block in sorted order.
-	// TODO(yeya24): support matchers or hints.
-	LabelNames() ([]string, Warnings, error)
+	// If matchers are specified the returned result set is reduced
+	// to label names of metrics matching the matchers.
+	LabelNames(matchers ...*labels.Matcher) ([]string, Warnings, error)
 
 	// Close releases the resources of the Querier.
 	Close() error

@@ -1154,7 +1154,7 @@ func (m mockIndex) SortedLabelValues(name string, matchers ...*labels.Matcher) (
 }
 
 func (m mockIndex) LabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
-	values := []string{}
+	var values []string
 
 	if len(matchers) == 0 {
 		for l := range m.postings {
@@ -1168,6 +1168,7 @@ func (m mockIndex) LabelValues(name string, matchers ...*labels.Matcher) ([]stri
 	for _, series := range m.series {
 		for _, matcher := range matchers {
 			if matcher.Matches(series.l.Get(matcher.Name)) {
+				// TODO(colega): shouldn't we check all the matchers before adding this to the values?
 				values = append(values, series.l.Get(name))
 			}
 		}
@@ -1178,6 +1179,20 @@ func (m mockIndex) LabelValues(name string, matchers ...*labels.Matcher) ([]stri
 
 func (m mockIndex) LabelValueFor(id uint64, label string) (string, error) {
 	return m.series[id].l.Get(label), nil
+}
+
+func (m mockIndex) LabelNamesFor(ids ...uint64) ([]string, error) {
+	namesMap := make(map[string]bool)
+	for _, id := range ids {
+		for _, lbl := range m.series[id].l {
+			namesMap[lbl.Name] = true
+		}
+	}
+	names := make([]string, 0, len(namesMap))
+	for name := range namesMap {
+		names = append(names, name)
+	}
+	return names, nil
 }
 
 func (m mockIndex) Postings(name string, values ...string) (index.Postings, error) {
@@ -1212,10 +1227,27 @@ func (m mockIndex) Series(ref uint64, lset *labels.Labels, chks *[]chunks.Meta) 
 	return nil
 }
 
-func (m mockIndex) LabelNames() ([]string, error) {
+func (m mockIndex) LabelNames(matchers ...*labels.Matcher) ([]string, error) {
 	names := map[string]struct{}{}
-	for l := range m.postings {
-		names[l.Name] = struct{}{}
+	if len(matchers) == 0 {
+		for l := range m.postings {
+			names[l.Name] = struct{}{}
+		}
+	} else {
+		for _, series := range m.series {
+			matches := true
+			for _, matcher := range matchers {
+				matches = matches || matcher.Matches(series.l.Get(matcher.Name))
+				if !matches {
+					break
+				}
+			}
+			if matches {
+				for _, lbl := range series.l {
+					names[lbl.Name] = struct{}{}
+				}
+			}
+		}
 	}
 	l := make([]string, 0, len(names))
 	for name := range names {
@@ -2007,6 +2039,10 @@ func (m mockMatcherIndex) LabelValueFor(id uint64, label string) (string, error)
 	return "", errors.New("label value for called")
 }
 
+func (m mockMatcherIndex) LabelNamesFor(ids ...uint64) ([]string, error) {
+	return nil, errors.New("label names for for called")
+}
+
 func (m mockMatcherIndex) Postings(name string, values ...string) (index.Postings, error) {
 	return index.EmptyPostings(), nil
 }
@@ -2019,7 +2055,9 @@ func (m mockMatcherIndex) Series(ref uint64, lset *labels.Labels, chks *[]chunks
 	return nil
 }
 
-func (m mockMatcherIndex) LabelNames() ([]string, error) { return []string{}, nil }
+func (m mockMatcherIndex) LabelNames(...*labels.Matcher) ([]string, error) {
+	return []string{}, nil
+}
 
 func TestPostingsForMatcher(t *testing.T) {
 	cases := []struct {

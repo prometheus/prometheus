@@ -212,7 +212,7 @@ func (q *querier) LabelValues(string, ...*labels.Matcher) ([]string, storage.War
 }
 
 // LabelNames implements storage.Querier and is a noop.
-func (q *querier) LabelNames() ([]string, storage.Warnings, error) {
+func (q *querier) LabelNames(...*labels.Matcher) ([]string, storage.Warnings, error) {
 	// TODO: Implement: https://github.com/prometheus/prometheus/issues/3351
 	return nil, nil, errors.New("not implemented")
 }

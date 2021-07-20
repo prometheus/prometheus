@@ -559,25 +559,17 @@ func (api *API) labelNames(r *http.Request) apiFuncResult {
 		warnings storage.Warnings
 	)
 	if len(matcherSets) > 0 {
-		hints := &storage.SelectHints{
-			Start: timestamp.FromTime(start),
-			End:   timestamp.FromTime(end),
-			Func:  "series", // There is no series function, this token is used for lookups that don't need samples.
-		}
-
 		labelNamesSet := make(map[string]struct{})
-		// Get all series which match matchers.
-		for _, mset := range matcherSets {
-			s := q.Select(false, hints, mset...)
-			for s.Next() {
-				series := s.At()
-				for _, lb := range series.Labels() {
-					labelNamesSet[lb.Name] = struct{}{}
-				}
-			}
-			warnings = append(warnings, s.Warnings()...)
-			if err := s.Err(); err != nil {
+
+		for _, matchers := range matcherSets {
+			vals, callWarnings, err := q.LabelNames(matchers...)
+			if err != nil {
 				return apiFuncResult{nil, &apiError{errorExec, err}, warnings, nil}
+			}
+
+			warnings = append(warnings, callWarnings...)
+			for _, val := range vals {
+				labelNamesSet[val] = struct{}{}
 			}
 		}
 

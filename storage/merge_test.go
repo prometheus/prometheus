@@ -778,7 +778,7 @@ func (m *mockGenericQuerier) LabelValues(name string, matchers ...*labels.Matche
 	return m.resp, m.warnings, m.err
 }
 
-func (m *mockGenericQuerier) LabelNames() ([]string, Warnings, error) {
+func (m *mockGenericQuerier) LabelNames(...*labels.Matcher) ([]string, Warnings, error) {
 	m.mtx.Lock()
 	m.labelNamesCalls++
 	m.mtx.Unlock()

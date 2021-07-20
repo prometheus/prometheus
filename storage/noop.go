@@ -32,7 +32,7 @@ func (noopQuerier) LabelValues(string, ...*labels.Matcher) ([]string, Warnings, 
 	return nil, nil, nil
 }
 
-func (noopQuerier) LabelNames() ([]string, Warnings, error) {
+func (noopQuerier) LabelNames(...*labels.Matcher) ([]string, Warnings, error) {
 	return nil, nil, nil
 }
 
@@ -55,7 +55,7 @@ func (noopChunkQuerier) LabelValues(string, ...*labels.Matcher) ([]string, Warni
 	return nil, nil, nil
 }
 
-func (noopChunkQuerier) LabelNames() ([]string, Warnings, error) {
+func (noopChunkQuerier) LabelNames(...*labels.Matcher) ([]string, Warnings, error) {
 	return nil, nil, nil
 }
 
