@@ -35,6 +35,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -147,9 +148,12 @@ type Options struct {
 	// mainly meant for external users who import TSDB.
 	BlocksToDelete BlocksToDeleteFunc
 
+	// Enables the in memory exemplar storage,.
+	EnableExemplarStorage bool
+
 	// MaxExemplars sets the size, in # of exemplars stored, of the single circular buffer used to store exemplars in memory.
 	// See tsdb/exemplar.go, specifically the CircularExemplarStorage struct and it's constructor NewCircularExemplarStorage.
-	MaxExemplars int
+	MaxExemplars int64
 }
 
 type BlocksToDeleteFunc func(blocks []*Block) map[ulid.ULID]struct{}
@@ -716,7 +720,8 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	headOpts.ChunkWriteBufferSize = opts.HeadChunksWriteBufferSize
 	headOpts.StripeSize = opts.StripeSize
 	headOpts.SeriesCallback = opts.SeriesLifecycleCallback
-	headOpts.NumExemplars = opts.MaxExemplars
+	headOpts.EnableExemplarStorage = opts.EnableExemplarStorage
+	headOpts.MaxExemplars.Store(opts.MaxExemplars)
 	db.head, err = NewHead(r, l, wlog, headOpts, stats.Head)
 	if err != nil {
 		return nil, err
@@ -836,6 +841,10 @@ func (db *DB) run() {
 // Appender opens a new appender against the database.
 func (db *DB) Appender(ctx context.Context) storage.Appender {
 	return dbAppender{db: db, Appender: db.head.Appender(ctx)}
+}
+
+func (db *DB) ApplyConfig(conf *config.Config) error {
+	return db.head.ApplyConfig(conf)
 }
 
 // dbAppender wraps the DB's head appender and triggers compactions on commit
