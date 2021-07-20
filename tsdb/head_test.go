@@ -2296,7 +2296,7 @@ func TestDataMissingOnQueryDuringCompaction(t *testing.T) {
 	wg.Wait()
 }
 
-func TestIsQuerierValid(t *testing.T) {
+func TestIsQuerierCollidingWithTruncation(t *testing.T) {
 	db := newTestDB(t)
 	db.DisableCompactions()
 
@@ -2369,6 +2369,7 @@ func TestWaitForPendingReadersInTimeRange(t *testing.T) {
 		{500, 1500, true},   // Overlaps with truncation at the start.
 		{1200, 1700, true},  // Within truncation range.
 		{1800, 2500, true},  // Overlaps with truncation at the end.
+		{2000, 2500, false}, // After truncation range.
 		{2100, 2500, false}, // After truncation range.
 	}
 	for _, c := range cases {

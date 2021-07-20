@@ -1037,9 +1037,11 @@ func (h *Head) truncateMemory(mint int64) (err error) {
 	return nil
 }
 
+// WaitForPendingReadersInTimeRange waits for queries overlapping with given range to finish querying.
+// The query timeout limits the max wait time of this function implicitly.
+// The mint is inclusive and maxt is the truncation time hence exclusive.
 func (h *Head) WaitForPendingReadersInTimeRange(mint, maxt int64) {
-	// Since this waits for the overlapping queries that came in before the truncation,
-	// the query timeout limits the max wait time here implicitly.
+	maxt-- // Making it inclusive before checking overlaps.
 	overlaps := func() bool {
 		o := false
 		h.iso.TraverseOpenReads(func(s *isolationState) bool {
