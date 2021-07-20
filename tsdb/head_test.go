@@ -137,6 +137,7 @@ func BenchmarkLoadWAL(b *testing.B) {
 		batches          int
 		seriesPerBatch   int
 		samplesPerSeries int
+		mmappedChunkT    int64
 	}{
 		{ // Less series and more samples. 2 hour WAL with 1 second scrape interval.
 			batches:          10,
@@ -152,6 +153,12 @@ func BenchmarkLoadWAL(b *testing.B) {
 			batches:          10,
 			seriesPerBatch:   1000,
 			samplesPerSeries: 480,
+		},
+		{ // 2 hour WAL with 15 second scrape interval, and mmapped chunks up to last 100 samples.
+			batches:          100,
+			seriesPerBatch:   1000,
+			samplesPerSeries: 480,
+			mmappedChunkT:    3800,
 		},
 	}
 
@@ -169,7 +176,7 @@ func BenchmarkLoadWAL(b *testing.B) {
 			}
 			lastExemplarsPerSeries = exemplarsPerSeries
 			// fmt.Println("exemplars per series: ", exemplarsPerSeries)
-			b.Run(fmt.Sprintf("batches=%d,seriesPerBatch=%d,samplesPerSeries=%d,exemplarsPerSeries=%d", c.batches, c.seriesPerBatch, c.samplesPerSeries, exemplarsPerSeries),
+			b.Run(fmt.Sprintf("batches=%d,seriesPerBatch=%d,samplesPerSeries=%d,exemplarsPerSeries=%d,mmappedChunkT=%d", c.batches, c.seriesPerBatch, c.samplesPerSeries, exemplarsPerSeries, c.mmappedChunkT),
 				func(b *testing.B) {
 					dir, err := ioutil.TempDir("", "test_load_wal")
 					require.NoError(b, err)
@@ -209,6 +216,19 @@ func BenchmarkLoadWAL(b *testing.B) {
 							}
 							populateTestWAL(b, w, []interface{}{refSamples})
 						}
+					}
+
+					// Write mmapped chunks
+					if c.mmappedChunkT != 0 {
+						chunkDiskMapper, err := chunks.NewChunkDiskMapper(mmappedChunksDir(dir), chunkenc.NewPool(), chunks.DefaultWriteBufferSize)
+						require.NoError(b, err)
+						for k := 0; k < c.batches*c.seriesPerBatch; k++ {
+							// Create one mmapped chunk per series, with one sample at the given time
+							s := newMemSeries(labels.Labels{}, uint64(k)*101, c.mmappedChunkT, nil)
+							s.append(c.mmappedChunkT, 42, 0, chunkDiskMapper)
+							s.mmapCurrentHeadChunk(chunkDiskMapper)
+						}
+						require.NoError(b, chunkDiskMapper.Close())
 					}
 
 					// Write samples.
