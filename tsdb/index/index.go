@@ -1539,7 +1539,7 @@ func (r *Reader) LabelNamesFor(ids ...uint64) ([]string, error) {
 		}
 	}
 
-	// lookup the unique symbols
+	// Lookup the unique symbols.
 	names := make([]string, 0, len(offsetsMap))
 	for off := range offsetsMap {
 		name, err := r.lookupSymbol(off)
