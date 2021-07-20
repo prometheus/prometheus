@@ -1532,7 +1532,7 @@ func (r *Reader) LabelNamesFor(ids ...uint64) ([]string, error) {
 
 		offsets, err := r.dec.LabelNamesOffsetsFor(buf)
 		if err != nil {
-			return nil, storage.ErrNotFound
+			return nil, errors.Wrap(err, "get label name offsets")
 		}
 		for _, off := range offsets {
 			offsetsMap[off] = struct{}{}
