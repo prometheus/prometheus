@@ -28,6 +28,7 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -133,11 +134,13 @@ func (c *EC2SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 // the Discoverer interface.
 type EC2Discovery struct {
 	*refresh.Discovery
-	cfg *EC2SDConfig
-	ec2 *ec2.EC2
+	logger log.Logger
+	cfg    *EC2SDConfig
+	ec2    *ec2.EC2
 
 	// azToAZID maps this account's availability zones to their underlying AZ
-	// ID, e.g. eu-west-2a -> euw2-az2.
+	// ID, e.g. eu-west-2a -> euw2-az2. Refreshes are performed sequentially, so
+	// no locking is required.
 	azToAZID map[string]string
 }
 
@@ -147,7 +150,8 @@ func NewEC2Discovery(conf *EC2SDConfig, logger log.Logger) *EC2Discovery {
 		logger = log.NewNopLogger()
 	}
 	d := &EC2Discovery{
-		cfg: conf,
+		logger: logger,
+		cfg:    conf,
 	}
 	d.Discovery = refresh.NewDiscovery(
 		logger,
@@ -187,17 +191,27 @@ func (d *EC2Discovery) ec2Client(ctx context.Context) (*ec2.EC2, error) {
 		d.ec2 = ec2.New(sess)
 	}
 
-	// Region is fixed when client is created, so this is safe to do once.
+	return d.ec2, nil
+}
+
+func (d *EC2Discovery) azID(ctx context.Context, az string) (string, error) {
+	if azID, ok := d.azToAZID[az]; ok {
+		return azID, nil
+	}
+
 	azs, err := d.ec2.DescribeAvailabilityZonesWithContext(ctx, &ec2.DescribeAvailabilityZonesInput{})
 	if err != nil {
-		return nil, errors.Wrap(err, "could not describe availability zones")
+		return "", errors.Wrap(err, "could not describe availability zones")
 	}
 	d.azToAZID = make(map[string]string, len(azs.AvailabilityZones))
 	for _, az := range azs.AvailabilityZones {
 		d.azToAZID[*az.ZoneName] = *az.ZoneId
 	}
 
-	return d.ec2, nil
+	if azID, ok := d.azToAZID[az]; ok {
+		return azID, nil
+	}
+	return "", fmt.Errorf("no availability zone ID mapping found for %v", az)
 }
 
 func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
@@ -226,9 +240,9 @@ func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 				if inst.PrivateIpAddress == nil {
 					continue
 				}
-				azID, ok := d.azToAZID[*inst.Placement.AvailabilityZone]
-				if !ok {
-					continue
+				azID, err := d.azID(ctx, *inst.Placement.AvailabilityZone)
+				if err != nil {
+					level.Warn(d.logger).Log("msg", "Unable to retrieve availability zone ID", "err", err.Error())
 				}
 
 				labels := model.LabelSet{
