@@ -136,9 +136,9 @@ type EC2Discovery struct {
 	cfg *EC2SDConfig
 	ec2 *ec2.EC2
 
-	// azToID maps this account's availability zones to their underlying AZ ID,
-	// e.g. eu-west-2a -> euw2-az2.
-	azToID map[string]string
+	// azToAZID maps this account's availability zones to their underlying AZ
+	// ID, e.g. eu-west-2a -> euw2-az2.
+	azToAZID map[string]string
 }
 
 // NewEC2Discovery returns a new EC2Discovery which periodically refreshes its targets.
@@ -192,9 +192,9 @@ func (d *EC2Discovery) ec2Client(ctx context.Context) (*ec2.EC2, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "could not describe availability zones")
 	}
-	d.azToID = make(map[string]string, len(azs.AvailabilityZones))
+	d.azToAZID = make(map[string]string, len(azs.AvailabilityZones))
 	for _, az := range azs.AvailabilityZones {
-		d.azToID[*az.ZoneName] = *az.ZoneId
+		d.azToAZID[*az.ZoneName] = *az.ZoneId
 	}
 
 	return d.ec2, nil
@@ -226,7 +226,7 @@ func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 				if inst.PrivateIpAddress == nil {
 					continue
 				}
-				azID, ok := d.azToID[*inst.Placement.AvailabilityZone]
+				azID, ok := d.azToAZID[*inst.Placement.AvailabilityZone]
 				if !ok {
 					continue
 				}
