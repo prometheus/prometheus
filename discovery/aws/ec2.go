@@ -242,7 +242,10 @@ func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 				}
 				azID, err := d.azID(ctx, *inst.Placement.AvailabilityZone)
 				if err != nil {
-					level.Warn(d.logger).Log("msg", "Unable to retrieve availability zone ID", "err", err.Error())
+					level.Warn(d.logger).Log(
+						"msg", "Unable to determine availability zone ID",
+						"az", *inst.Placement.AvailabilityZone,
+						"err", err.Error())
 				}
 
 				labels := model.LabelSet{
