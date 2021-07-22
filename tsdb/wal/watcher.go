@@ -48,7 +48,10 @@ type WriteTo interface {
 	Append([]record.RefSample) bool
 	AppendExemplars([]record.RefExemplar) bool
 	StoreSeries([]record.RefSeries, int)
-	// SeriesReset is called after reading a checkpoint to allow the deletion
+	// Next two methods are intended for garbage-collection: first we call
+	// UpdateSeriesSegment on all current series
+	UpdateSeriesSegment([]record.RefSeries, int)
+	// Then SeriesReset is called to allow the deletion
 	// of all series created in a segment lower than the argument.
 	SeriesReset(int)
 }
@@ -454,7 +457,7 @@ func (w *Watcher) garbageCollectSeries(segmentNum int) error {
 
 	level.Debug(w.logger).Log("msg", "New checkpoint detected", "new", dir, "currentSegment", segmentNum)
 
-	if err = w.readCheckpoint(dir, (*Watcher).readSegment); err != nil {
+	if err = w.readCheckpoint(dir, (*Watcher).readSegmentForGC); err != nil {
 		return errors.Wrap(err, "readCheckpoint")
 	}
 
@@ -528,6 +531,38 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 			}
 			w.writer.AppendExemplars(exemplars)
 
+		case record.Tombstones:
+
+		default:
+			// Could be corruption, or reading from a WAL from a newer Prometheus.
+			w.recordDecodeFailsMetric.Inc()
+		}
+	}
+	return errors.Wrapf(r.Err(), "segment %d: %v", segmentNum, r.Err())
+}
+
+// Go through all series in a segment updating the segmentNum, so we can delete older series.
+func (w *Watcher) readSegmentForGC(r *LiveReader, segmentNum int, _ bool) error {
+	var (
+		dec    record.Decoder
+		series []record.RefSeries
+	)
+	for r.Next() && !isClosed(w.quit) {
+		rec := r.Record()
+		w.recordsReadMetric.WithLabelValues(recordType(dec.Type(rec))).Inc()
+
+		switch dec.Type(rec) {
+		case record.Series:
+			series, err := dec.Series(rec, series[:0])
+			if err != nil {
+				w.recordDecodeFailsMetric.Inc()
+				return err
+			}
+			w.writer.UpdateSeriesSegment(series, segmentNum)
+
+			// Ignore these; we're only interested in series.
+		case record.Samples:
+		case record.Exemplars:
 		case record.Tombstones:
 
 		default:
