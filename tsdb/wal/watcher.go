@@ -234,7 +234,7 @@ func (w *Watcher) Run() error {
 	}
 
 	if err == nil {
-		if err = w.readCheckpoint(lastCheckpoint); err != nil {
+		if err = w.readCheckpoint(lastCheckpoint, (*Watcher).readSegment); err != nil {
 			return errors.Wrap(err, "readCheckpoint")
 		}
 	}
@@ -454,7 +454,7 @@ func (w *Watcher) garbageCollectSeries(segmentNum int) error {
 
 	level.Debug(w.logger).Log("msg", "New checkpoint detected", "new", dir, "currentSegment", segmentNum)
 
-	if err = w.readCheckpoint(dir); err != nil {
+	if err = w.readCheckpoint(dir, (*Watcher).readSegment); err != nil {
 		return errors.Wrap(err, "readCheckpoint")
 	}
 
@@ -556,8 +556,10 @@ func recordType(rt record.Type) string {
 	}
 }
 
+type segmentReadFn func(w *Watcher, r *LiveReader, segmentNum int, tail bool) error
+
 // Read all the series records from a Checkpoint directory.
-func (w *Watcher) readCheckpoint(checkpointDir string) error {
+func (w *Watcher) readCheckpoint(checkpointDir string, readFn segmentReadFn) error {
 	level.Debug(w.logger).Log("msg", "Reading checkpoint", "dir", checkpointDir)
 	index, err := checkpointNum(checkpointDir)
 	if err != nil {
@@ -582,7 +584,7 @@ func (w *Watcher) readCheckpoint(checkpointDir string) error {
 		defer sr.Close()
 
 		r := NewLiveReader(w.logger, w.readerMetrics, sr)
-		if err := w.readSegment(r, index, false); errors.Cause(err) != io.EOF && err != nil {
+		if err := readFn(w, r, index, false); errors.Cause(err) != io.EOF && err != nil {
 			return errors.Wrap(err, "readSegment")
 		}
 

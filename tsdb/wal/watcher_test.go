@@ -496,7 +496,7 @@ func TestReadCheckpointMultipleSegments(t *testing.T) {
 			lastCheckpoint, _, err := LastCheckpoint(watcher.walDir)
 			require.NoError(t, err)
 
-			err = watcher.readCheckpoint(lastCheckpoint)
+			err = watcher.readCheckpoint(lastCheckpoint, (*Watcher).readSegment)
 			require.NoError(t, err)
 		})
 	}
