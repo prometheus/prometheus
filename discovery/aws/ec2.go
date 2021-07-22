@@ -211,7 +211,7 @@ func (d *EC2Discovery) azID(ctx context.Context, az string) (string, error) {
 	if azID, ok := d.azToAZID[az]; ok {
 		return azID, nil
 	}
-	return "", fmt.Errorf("no availability zone ID mapping found for %v", az)
+	return "", fmt.Errorf("no availability zone ID mapping found for %s", az)
 }
 
 func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
@@ -245,7 +245,7 @@ func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 					level.Warn(d.logger).Log(
 						"msg", "Unable to determine availability zone ID",
 						"az", *inst.Placement.AvailabilityZone,
-						"err", err.Error())
+						"err", err)
 				}
 
 				labels := model.LabelSet{
