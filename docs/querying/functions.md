@@ -332,24 +332,6 @@ regression](https://en.wikipedia.org/wiki/Simple_linear_regression).
 
 `predict_linear` should only be used with gauges.
 
-## `present_over_time()`
-
-`present_over_time(v range-vector)` returns an empty vector if the range vector
-passed to it has no elements and a 1-element vector with the value 1 if the
-range vector passed to it has any elements. The returned vector has the same label combination
-as the input series.
-
-This is useful for alerting when a time series has not received samples (stopped existing) for a
-given metric name and label combination.
-
-```
-present_over_time(my_counter_which_exists{job="myjob"}[1h])
-# => {job="myjob"} 1
-
-present_over_time(nonexistent{job="myjob",instance=~".*"}[1h])
-# =>
-```
-
 ## `rate()`
 
 `rate(v range-vector)` calculates the per-second average rate of increase of the
@@ -448,6 +430,7 @@ over time and return an instant vector with per-series aggregation results:
 * `stddev_over_time(range-vector)`: the population standard deviation of the values in the specified interval.
 * `stdvar_over_time(range-vector)`: the population standard variance of the values in the specified interval.
 * `last_over_time(range-vector)`: the most recent point value in specified interval.
+* `present_over_time(range-vector)`: the value 1 if there are any points in the specified interval, else empty result.
 
 Note that all values in the specified interval have the same weight in the
 aggregation even if the values are not equally spaced throughout the interval.
