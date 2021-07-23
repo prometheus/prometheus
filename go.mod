@@ -18,6 +18,8 @@ require (
 	github.com/docker/docker v20.10.7+incompatible
 	github.com/docker/go-connections v0.4.0 // indirect
 	github.com/edsrzf/mmap-go v1.0.0
+	github.com/envoyproxy/go-control-plane v0.9.9-0.20210217033140-668b12f5399d
+	github.com/envoyproxy/protoc-gen-validate v0.1.0
 	github.com/go-kit/kit v0.10.0
 	github.com/go-kit/log v0.1.0
 	github.com/go-logfmt/logfmt v0.5.0
@@ -62,6 +64,8 @@ require (
 	golang.org/x/time v0.0.0-20210611083556-38a9dc6acbc6
 	golang.org/x/tools v0.1.3
 	google.golang.org/api v0.48.0
+	google.golang.org/genproto v0.0.0-20210604141403-392c879c8b08
+	google.golang.org/protobuf v1.26.0
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 	gopkg.in/fsnotify/fsnotify.v1 v1.4.7
 	gopkg.in/yaml.v2 v2.4.0
