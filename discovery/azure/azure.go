@@ -46,6 +46,7 @@ const (
 	azureLabelMachineID            = azureLabel + "machine_id"
 	azureLabelMachineResourceGroup = azureLabel + "machine_resource_group"
 	azureLabelMachineName          = azureLabel + "machine_name"
+	azureLabelMachineComputerName  = azureLabel + "machine_computer_name"
 	azureLabelMachineOSType        = azureLabel + "machine_os_type"
 	azureLabelMachineLocation      = azureLabel + "machine_location"
 	azureLabelMachinePrivateIP     = azureLabel + "machine_private_ip"
@@ -226,6 +227,7 @@ type azureResource struct {
 type virtualMachine struct {
 	ID                string
 	Name              string
+	ComputerName      string
 	Type              string
 	Location          string
 	OsType            string
@@ -306,6 +308,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 				azureLabelTenantID:             model.LabelValue(d.cfg.TenantID),
 				azureLabelMachineID:            model.LabelValue(vm.ID),
 				azureLabelMachineName:          model.LabelValue(vm.Name),
+				azureLabelMachineComputerName:  model.LabelValue(vm.ComputerName),
 				azureLabelMachineOSType:        model.LabelValue(vm.OsType),
 				azureLabelMachineLocation:      model.LabelValue(vm.Location),
 				azureLabelMachineResourceGroup: model.LabelValue(r.ResourceGroup),
@@ -463,6 +466,7 @@ func mapFromVM(vm compute.VirtualMachine) virtualMachine {
 	return virtualMachine{
 		ID:                *(vm.ID),
 		Name:              *(vm.Name),
+		ComputerName:      *(vm.VirtualMachineProperties.OsProfile.ComputerName),
 		Type:              *(vm.Type),
 		Location:          *(vm.Location),
 		OsType:            osType,
@@ -490,6 +494,7 @@ func mapFromVMScaleSetVM(vm compute.VirtualMachineScaleSetVM, scaleSetName strin
 	return virtualMachine{
 		ID:                *(vm.ID),
 		Name:              *(vm.Name),
+		ComputerName:      *(vm.VirtualMachineScaleSetVMProperties.OsProfile.ComputerName),
 		Type:              *(vm.Type),
 		Location:          *(vm.Location),
 		OsType:            osType,
