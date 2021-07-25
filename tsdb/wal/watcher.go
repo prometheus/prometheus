@@ -466,6 +466,8 @@ func (w *Watcher) garbageCollectSeries(segmentNum int) error {
 	return nil
 }
 
+// Read from a segment and pass the details to w.writer.
+// Also used with readCheckpoint - implements segmentReadFn.
 func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 	var (
 		dec       record.Decoder
@@ -542,6 +544,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 }
 
 // Go through all series in a segment updating the segmentNum, so we can delete older series.
+// Used with readCheckpoint - implements segmentReadFn.
 func (w *Watcher) readSegmentForGC(r *LiveReader, segmentNum int, _ bool) error {
 	var (
 		dec    record.Decoder
@@ -560,7 +563,7 @@ func (w *Watcher) readSegmentForGC(r *LiveReader, segmentNum int, _ bool) error 
 			}
 			w.writer.UpdateSeriesSegment(series, segmentNum)
 
-			// Ignore these; we're only interested in series.
+		// Ignore these; we're only interested in series.
 		case record.Samples:
 		case record.Exemplars:
 		case record.Tombstones:

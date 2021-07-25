@@ -352,11 +352,11 @@ type QueueManager struct {
 	clientMtx   sync.RWMutex
 	storeClient WriteClient
 
-	seriesMtx     sync.Mutex // covers seriesLabels and droppedSeries
+	seriesMtx     sync.Mutex // Covers seriesLabels and droppedSeries.
 	seriesLabels  map[uint64]labels.Labels
 	droppedSeries map[uint64]struct{}
 
-	seriesSegmentMtx     sync.Mutex // covers seriesSegmentIndexes - if you also lock seriesMtx, take seriesMtx first
+	seriesSegmentMtx     sync.Mutex // Covers seriesSegmentIndexes - if you also lock seriesMtx, take seriesMtx first.
 	seriesSegmentIndexes map[uint64]int
 
 	shards      *shards
@@ -668,7 +668,7 @@ func (t *QueueManager) StoreSeries(series []record.RefSeries, index int) {
 	}
 }
 
-// Update the segment number held against the series, so we can trim older ones in SeriesReset
+// Update the segment number held against the series, so we can trim older ones in SeriesReset.
 func (t *QueueManager) UpdateSeriesSegment(series []record.RefSeries, index int) {
 	t.seriesSegmentMtx.Lock()
 	defer t.seriesSegmentMtx.Unlock()
