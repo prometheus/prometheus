@@ -756,7 +756,7 @@ func BenchmarkSampleDelivery(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		c.expectDataCount(len(samples))
 		go m.Append(samples)
-		m.StoreSeries(series, i+1) // simulate what wal.Watcher.garbageCollectSeries does
+		m.UpdateSeriesSegment(series, i+1) // simulate what wal.Watcher.garbageCollectSeries does
 		m.SeriesReset(i + 1)
 		c.waitForExpectedDataCount()
 	}
