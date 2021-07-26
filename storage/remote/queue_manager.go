@@ -1025,14 +1025,17 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue chan interface
 		max                                          = s.qm.cfg.MaxSamplesPerSend
 		nPending, nPendingSamples, nPendingExemplars = 0, 0, 0
 
-		buf         []byte
-		pendingData []prompb.TimeSeries
+		buf []byte
 	)
 	if s.qm.sendExemplars {
 		max += int(float64(max) * 0.1)
 	}
 
-	pendingData = make([]prompb.TimeSeries, max)
+	var pendingData = make([]prompb.TimeSeries, max)
+	for i := range pendingData {
+		pendingData[i].Samples = []prompb.Sample{{}}
+		pendingData[i].Exemplars = []prompb.Exemplar{{}}
+	}
 
 	timer := time.NewTimer(time.Duration(s.qm.cfg.BatchSendDeadline))
 	stop := func() {
@@ -1072,21 +1075,22 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue chan interface
 				return
 			}
 
+			pendingData[nPending].Samples = pendingData[nPending].Samples[:0]
+			pendingData[nPending].Exemplars = pendingData[nPending].Exemplars[:0]
+
 			// Number of pending samples is limited by the fact that sendSamples (via sendSamplesWithBackoff)
 			// retries endlessly, so once we reach max samples, if we can never send to the endpoint we'll
 			// stop reading from the queue. This makes it safe to reference pendingSamples by index.
 			switch d := sample.(type) {
 			case writeSample:
 				pendingData[nPending].Labels = labelsToLabelsProto(d.seriesLabels, pendingData[nPending].Labels)
-				pendingData[nPending].Samples = []prompb.Sample{d.sample}
-				pendingData[nPending].Exemplars = nil
+				pendingData[nPending].Samples = append(pendingData[nPending].Samples, d.sample)
 				nPendingSamples++
 				nPending++
 
 			case writeExemplar:
 				pendingData[nPending].Labels = labelsToLabelsProto(d.seriesLabels, pendingData[nPending].Labels)
-				pendingData[nPending].Samples = nil
-				pendingData[nPending].Exemplars = []prompb.Exemplar{d.exemplar}
+				pendingData[nPending].Exemplars = append(pendingData[nPending].Exemplars, d.exemplar)
 				nPendingExemplars++
 				nPending++
 			}
