@@ -208,11 +208,13 @@ func (d *Decbuf) Varint64() int64 {
 	if d.E != nil {
 		return 0
 	}
+	// Decode as unsigned first, since that's what the varint library implements.
 	ux, n := varint.Uvarint(d.B)
 	if n < 1 {
 		d.E = ErrInvalidSize
 		return 0
 	}
+	// Now decode "ZigZag encoding" https://developers.google.com/protocol-buffers/docs/encoding#signed_integers.
 	x := int64(ux >> 1)
 	if ux&1 != 0 {
 		x = ^x
