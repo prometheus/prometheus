@@ -1136,6 +1136,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_gce_metadata_<name>`: each metadata item of the instance
 * `__meta_gce_network`: the network URL of the instance
 * `__meta_gce_private_ip`: the private IP address of the instance
+* `__meta_gce_interface_ipv4_<name>`: IPv4 address of each named interface
 * `__meta_gce_project`: the GCP project in which the instance is running
 * `__meta_gce_public_ip`: the public IP address of the instance, if present
 * `__meta_gce_subnetwork`: the subnetwork URL of the instance
