@@ -3178,6 +3178,118 @@ var testExpr = []struct {
 		fail:   true,
 		errMsg: `1:4: parse error: unexpected "("`,
 	},
+	// Check that start and end functions do not mask metrics.
+	{
+		input: `start`,
+		expected: &VectorSelector{
+			Name: "start",
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "start"),
+			},
+			PosRange: PositionRange{
+				Start: 0,
+				End:   5,
+			},
+		},
+	}, {
+		input: `end`,
+		expected: &VectorSelector{
+			Name: "end",
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "end"),
+			},
+			PosRange: PositionRange{
+				Start: 0,
+				End:   3,
+			},
+		},
+	}, {
+		input: `start{end="foo"}`,
+		expected: &VectorSelector{
+			Name: "start",
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, "end", "foo"),
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "start"),
+			},
+			PosRange: PositionRange{
+				Start: 0,
+				End:   16,
+			},
+		},
+	}, {
+		input: `end{start="foo"}`,
+		expected: &VectorSelector{
+			Name: "end",
+			LabelMatchers: []*labels.Matcher{
+				MustLabelMatcher(labels.MatchEqual, "start", "foo"),
+				MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "end"),
+			},
+			PosRange: PositionRange{
+				Start: 0,
+				End:   16,
+			},
+		},
+	}, {
+		input: `foo unless on(start) bar`,
+		expected: &BinaryExpr{
+			Op: LUNLESS,
+			LHS: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				},
+				PosRange: PositionRange{
+					Start: 0,
+					End:   3,
+				},
+			},
+			RHS: &VectorSelector{
+				Name: "bar",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "bar"),
+				},
+				PosRange: PositionRange{
+					Start: 21,
+					End:   24,
+				},
+			},
+			VectorMatching: &VectorMatching{
+				Card:           CardManyToMany,
+				MatchingLabels: []string{"start"},
+				On:             true,
+			},
+		},
+	}, {
+		input: `foo unless on(end) bar`,
+		expected: &BinaryExpr{
+			Op: LUNLESS,
+			LHS: &VectorSelector{
+				Name: "foo",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "foo"),
+				},
+				PosRange: PositionRange{
+					Start: 0,
+					End:   3,
+				},
+			},
+			RHS: &VectorSelector{
+				Name: "bar",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "bar"),
+				},
+				PosRange: PositionRange{
+					Start: 19,
+					End:   22,
+				},
+			},
+			VectorMatching: &VectorMatching{
+				Card:           CardManyToMany,
+				MatchingLabels: []string{"end"},
+				On:             true,
+			},
+		},
+	},
 }
 
 func makeInt64Pointer(val int64) *int64 {
