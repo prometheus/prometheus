@@ -21,7 +21,6 @@ require (
 	github.com/edsrzf/mmap-go v1.0.0
 	github.com/envoyproxy/go-control-plane v0.9.9-0.20210217033140-668b12f5399d
 	github.com/envoyproxy/protoc-gen-validate v0.1.0
-	github.com/go-kit/kit v0.10.0
 	github.com/go-kit/log v0.1.0
 	github.com/go-logfmt/logfmt v0.5.0
 	github.com/go-openapi/strfmt v0.20.1
@@ -80,7 +79,7 @@ require (
 
 replace (
 	k8s.io/klog => github.com/simonpasquier/klog-gokit v0.3.0
-	k8s.io/klog/v2 => github.com/simonpasquier/klog-gokit/v2 v2.1.0
+	k8s.io/klog/v2 => github.com/simonpasquier/klog-gokit/v3 v3.0.0
 )
 
 // Exclude linodego v1.0.0 as it is no longer published on github.

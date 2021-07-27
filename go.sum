@@ -1145,8 +1145,8 @@ github.com/shurcooL/vfsgen v0.0.0-20200824052919-0d455de96546 h1:pXY9qYc/MP5zdvq
 github.com/shurcooL/vfsgen v0.0.0-20200824052919-0d455de96546/go.mod h1:TrYk7fJVaAttu97ZZKrO9UbRa8izdowaMIZcxYMbVaw=
 github.com/simonpasquier/klog-gokit v0.3.0 h1:TkFK21cbwDRS+CiystjqbAiq5ubJcVTk9hLUck5Ntcs=
 github.com/simonpasquier/klog-gokit v0.3.0/go.mod h1:+SUlDQNrhVtGt2FieaqNftzzk8P72zpWlACateWxA9k=
-github.com/simonpasquier/klog-gokit/v2 v2.1.0 h1:EaXk8kgWawwPbRZwaEiijU/lE2s6eD3MCwy5usW3Jgw=
-github.com/simonpasquier/klog-gokit/v2 v2.1.0/go.mod h1:VgeTFrwzYYcMH8edEfh3/ai2j/Yg8c/qIm1bkGkhuJg=
+github.com/simonpasquier/klog-gokit/v3 v3.0.0 h1:J0QrVhAULISHWN05PeXX/xMqJBjnpl2fAuO8uHdQGsA=
+github.com/simonpasquier/klog-gokit/v3 v3.0.0/go.mod h1:+WRhGy707Lp2Q4r727m9Oc7FxazOHgW76FIyCr23nus=
 github.com/sirupsen/logrus v1.0.4-0.20170822132746-89742aefa4b2/go.mod h1:pMByvHTf9Beacp5x1UXfOR9xyW/9antXMhjMPG0dEzc=
 github.com/sirupsen/logrus v1.0.6/go.mod h1:pMByvHTf9Beacp5x1UXfOR9xyW/9antXMhjMPG0dEzc=
 github.com/sirupsen/logrus v1.2.0/go.mod h1:LxeOpSwHxABJmUn/MG1IvRgCAasNZTLOkJPxbbu5VWo=

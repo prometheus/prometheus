@@ -35,7 +35,6 @@ import (
 	"time"
 
 	"github.com/alecthomas/units"
-	kitloglevel "github.com/go-kit/kit/log/level"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	conntrack "github.com/mwitkow/go-conntrack"
@@ -420,27 +419,11 @@ func main() {
 	noStepSubqueryInterval := &safePromQLNoStepSubqueryInterval{}
 	noStepSubqueryInterval.Set(config.DefaultGlobalConfig.EvaluationInterval)
 
-	// FIXME: Temporary workaround until a proper solution is found. go-kit's
-	// level packages use private types to determine the level so we have to use
-	// the same level package as the underlying library.
-	var lvl kitloglevel.Option
-	switch cfg.promlogConfig.Level.String() {
-	case "debug":
-		lvl = kitloglevel.AllowDebug()
-	case "info":
-		lvl = kitloglevel.AllowInfo()
-	case "warn":
-		lvl = kitloglevel.AllowWarn()
-	case "error":
-		lvl = kitloglevel.AllowError()
-	}
-	kloglogger := kitloglevel.NewFilter(logger, lvl)
-
 	// Above level 6, the k8s client would log bearer tokens in clear-text.
 	klog.ClampLevel(6)
-	klog.SetLogger(log.With(kloglogger, "component", "k8s_client_runtime"))
+	klog.SetLogger(log.With(logger, "component", "k8s_client_runtime"))
 	klogv2.ClampLevel(6)
-	klogv2.SetLogger(log.With(kloglogger, "component", "k8s_client_runtime"))
+	klogv2.SetLogger(log.With(logger, "component", "k8s_client_runtime"))
 
 	level.Info(logger).Log("msg", "Starting Prometheus", "version", version.Info())
 	if bits.UintSize < 64 {
