@@ -1034,7 +1034,9 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue chan interface
 	var pendingData = make([]prompb.TimeSeries, max)
 	for i := range pendingData {
 		pendingData[i].Samples = []prompb.Sample{{}}
-		pendingData[i].Exemplars = []prompb.Exemplar{{}}
+		if s.qm.sendExemplars {
+			pendingData[i].Exemplars = []prompb.Exemplar{{}}
+		}
 	}
 
 	timer := time.NewTimer(time.Duration(s.qm.cfg.BatchSendDeadline))
@@ -1076,8 +1078,9 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue chan interface
 			}
 
 			pendingData[nPending].Samples = pendingData[nPending].Samples[:0]
-			pendingData[nPending].Exemplars = pendingData[nPending].Exemplars[:0]
-
+			if s.qm.sendExemplars {
+				pendingData[nPending].Exemplars = pendingData[nPending].Exemplars[:0]
+			}
 			// Number of pending samples is limited by the fact that sendSamples (via sendSamplesWithBackoff)
 			// retries endlessly, so once we reach max samples, if we can never send to the endpoint we'll
 			// stop reading from the queue. This makes it safe to reference pendingSamples by index.
