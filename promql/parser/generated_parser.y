@@ -455,6 +455,16 @@ subquery_expr   : expr LEFT_BRACKET duration COLON maybe_duration RIGHT_BRACKET
                                 EndPos: $6.Pos + 1,
                         }
                         }
+                | expr LEFT_BRACKET duration COLON COLON maybe_duration RIGHT_BRACKET
+                        {
+                        $$ = &SubqueryExpr{
+                                Expr: $1.(Expr),
+                                Range: $3,
+                                Step: $6,
+                                AlignEvalTime: true,
+                                EndPos: $7.Pos + 1,
+                        }
+                        }
                 | expr LEFT_BRACKET duration COLON duration error
                         { yylex.(*parser).unexpected("subquery selector", "\"]\""); $$ = $1 }
                 | expr LEFT_BRACKET duration COLON error

@@ -1530,18 +1530,22 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 			newEv.interval = ev.noStepSubqueryIntervalFn(rangeMillis)
 		}
 
-		// Start with the first timestamp after (ev.startTimestamp - offset - range)
-		// that is aligned with the step (multiple of 'newEv.interval').
-		newEv.startTimestamp = newEv.interval * ((ev.startTimestamp - offsetMillis - rangeMillis) / newEv.interval)
-		if newEv.startTimestamp < (ev.startTimestamp - offsetMillis - rangeMillis) {
-			newEv.startTimestamp += newEv.interval
-		}
+		if !e.AlignEvalTime {
+			// Start with the first timestamp after (ev.startTimestamp - offset - range)
+			// that is aligned with the step (multiple of 'newEv.interval').
+			newEv.startTimestamp = newEv.interval * ((ev.startTimestamp - offsetMillis - rangeMillis) / newEv.interval)
+			if newEv.startTimestamp < (ev.startTimestamp - offsetMillis - rangeMillis) {
+				newEv.startTimestamp += newEv.interval
+			}
 
-		if newEv.startTimestamp != ev.startTimestamp {
-			// Adjust the offset of selectors based on the new
-			// start time of the evaluator since the calculation
-			// of the offset with @ happens w.r.t. the start time.
-			setOffsetForAtModifier(newEv.startTimestamp, e.Expr)
+			if newEv.startTimestamp != ev.startTimestamp {
+				// Adjust the offset of selectors based on the new
+				// start time of the evaluator since the calculation
+				// of the offset with @ happens w.r.t. the start time.
+				setOffsetForAtModifier(newEv.startTimestamp, e.Expr)
+			}
+		} else {
+			newEv.startTimestamp = ev.startTimestamp - offsetMillis - rangeMillis + newEv.interval
 		}
 
 		res, ws := newEv.eval(e.Expr)
