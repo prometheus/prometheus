@@ -225,11 +225,10 @@ type scrapePool struct {
 	cancel     context.CancelFunc
 
 	// mtx must not be taken after targetMtx.
-	mtx            sync.Mutex
-	config         *config.ScrapeConfig
-	client         *http.Client
-	loops          map[uint64]loop
-	targetLimitHit bool // Internal state to speed up the target_limit checks.
+	mtx    sync.Mutex
+	config *config.ScrapeConfig
+	client *http.Client
+	loops  map[uint64]loop
 
 	targetMtx sync.Mutex
 	// activeTargets and loops must always be synchronized to have the same
@@ -574,20 +573,14 @@ func (sp *scrapePool) sync(targets []*Target) {
 // refreshTargetLimitErr returns an error that can be passed to the scrape loops
 // if the number of targets exceeds the configured limit.
 func (sp *scrapePool) refreshTargetLimitErr() error {
-	if sp.config == nil || sp.config.TargetLimit == 0 && !sp.targetLimitHit {
+	if sp.config == nil || sp.config.TargetLimit == 0 {
 		return nil
 	}
-	l := len(sp.activeTargets)
-	if l <= int(sp.config.TargetLimit) && !sp.targetLimitHit {
-		return nil
-	}
-	var err error
-	sp.targetLimitHit = l > int(sp.config.TargetLimit)
-	if sp.targetLimitHit {
+	if l := len(sp.activeTargets); l > int(sp.config.TargetLimit) {
 		targetScrapePoolExceededTargetLimit.Inc()
-		err = fmt.Errorf("target_limit exceeded (number of targets: %d, limit: %d)", l, sp.config.TargetLimit)
+		return fmt.Errorf("target_limit exceeded (number of targets: %d, limit: %d)", l, sp.config.TargetLimit)
 	}
-	return err
+	return nil
 }
 
 func verifyLabelLimits(lset labels.Labels, limits *labelLimits) error {
