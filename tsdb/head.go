@@ -2607,8 +2607,9 @@ func (s *memSeries) append(t int64, v float64, appendID uint64, chunkDiskMapper 
 	if c.maxTime >= t {
 		return false, chunkCreated
 	}
-	// If we reach 25% of a chunk's desired sample count, set a definitive time
-	// at which to start the next chunk.
+	// If we reach 25% of a chunk's desired sample count, predict an end time
+	// for this chunk that will try to make samples equally distributed within
+	// the remaining chunks in the current chunk range.
 	// At latest it must happen at the timestamp set when the chunk was cut.
 	if numSamples == samplesPerChunk/4 {
 		s.nextAt = computeChunkEndTime(c.minTime, c.maxTime, s.nextAt)
@@ -2642,12 +2643,14 @@ func (s *memSeries) cleanupAppendIDsBelow(bound uint64) {
 // computeChunkEndTime estimates the end timestamp based the beginning of a
 // chunk, its current timestamp and the upper bound up to which we insert data.
 // It assumes that the time range is 1/4 full.
+// Assuming that the samples will keep arriving at the same rate, it will make the
+// remaining n chunks within this chunk range (before max) equally sized.
 func computeChunkEndTime(start, cur, max int64) int64 {
-	a := (max - start) / ((cur - start + 1) * 4)
-	if a == 0 {
+	n := (max - start) / ((cur - start + 1) * 4)
+	if n <= 1 {
 		return max
 	}
-	return start + (max-start)/a
+	return start + (max-start)/n
 }
 
 // iterator returns a chunk iterator.
