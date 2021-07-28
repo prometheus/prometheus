@@ -49,7 +49,7 @@ host: %s
 	tg := tgs[0]
 	require.NotNil(t, tg)
 	require.NotNil(t, tg.Targets)
-	require.Equal(t, 2, len(tg.Targets))
+	require.Equal(t, 3, len(tg.Targets))
 
 	for i, lbls := range []model.LabelSet{
 		{
@@ -92,6 +92,16 @@ host: %s
 			"__meta_docker_network_label_com_docker_compose_version":   "1.25.0",
 			"__meta_docker_network_name":                               "dockersd_default",
 			"__meta_docker_network_scope":                              "local",
+		},
+		{
+			"__address__":                "localhost",
+			"__meta_docker_container_id": "54ed6cc5c0988260436cb0e739b7b6c9cad6c439a93b4c4fdbe9753e1c94b189",
+			"__meta_docker_container_label_com_docker_compose_project": "dockersd",
+			"__meta_docker_container_label_com_docker_compose_service": "host_networking",
+			"__meta_docker_container_label_com_docker_compose_version": "1.25.0",
+			"__meta_docker_container_name":                             "/dockersd_host_networking_1",
+			"__meta_docker_container_network_mode":                     "host",
+			"__meta_docker_network_ip":                                 "",
 		},
 	} {
 		t.Run(fmt.Sprintf("item %d", i), func(t *testing.T) {

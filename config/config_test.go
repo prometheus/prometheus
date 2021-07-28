@@ -738,6 +738,7 @@ var expectedConf = &Config{
 					Filters:          []moby.Filter{},
 					Host:             "unix:///var/run/docker.sock",
 					Port:             80,
+					HostNetworkHost:  "localhost",
 					RefreshInterval:  model.Duration(60 * time.Second),
 					HTTPClientConfig: config.DefaultHTTPClientConfig,
 				},
