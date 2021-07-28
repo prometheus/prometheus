@@ -295,10 +295,10 @@ func TestShutdown(t *testing.T) {
 	// be at least equal to deadline, otherwise the flush deadline
 	// was not respected.
 	duration := time.Since(start)
-	if duration > time.Duration(deadline+(deadline/10)) {
+	if duration > deadline+(deadline/10) {
 		t.Errorf("Took too long to shutdown: %s > %s", duration, deadline)
 	}
-	if duration < time.Duration(deadline) {
+	if duration < deadline {
 		t.Errorf("Shutdown occurred before flush deadline: %s < %s", duration, deadline)
 	}
 }
