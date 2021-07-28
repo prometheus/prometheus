@@ -452,6 +452,7 @@ func mapFromVM(vm compute.VirtualMachine) virtualMachine {
 	osType := string(vm.StorageProfile.OsDisk.OsType)
 	tags := map[string]*string{}
 	networkInterfaces := []string{}
+	var computerName string
 
 	if vm.Tags != nil {
 		tags = vm.Tags
@@ -463,10 +464,14 @@ func mapFromVM(vm compute.VirtualMachine) virtualMachine {
 		}
 	}
 
+	if vm.VirtualMachineProperties != nil && vm.VirtualMachineProperties.OsProfile != nil {
+		computerName = *(vm.VirtualMachineProperties.OsProfile.ComputerName)
+	}
+
 	return virtualMachine{
 		ID:                *(vm.ID),
 		Name:              *(vm.Name),
-		ComputerName:      *(vm.VirtualMachineProperties.OsProfile.ComputerName),
+		ComputerName:      computerName,
 		Type:              *(vm.Type),
 		Location:          *(vm.Location),
 		OsType:            osType,
@@ -480,6 +485,7 @@ func mapFromVMScaleSetVM(vm compute.VirtualMachineScaleSetVM, scaleSetName strin
 	osType := string(vm.StorageProfile.OsDisk.OsType)
 	tags := map[string]*string{}
 	networkInterfaces := []string{}
+	var computerName string
 
 	if vm.Tags != nil {
 		tags = vm.Tags
@@ -491,10 +497,14 @@ func mapFromVMScaleSetVM(vm compute.VirtualMachineScaleSetVM, scaleSetName strin
 		}
 	}
 
+	if vm.VirtualMachineScaleSetVMProperties != nil && vm.VirtualMachineScaleSetVMProperties.OsProfile != nil {
+		computerName = *(vm.VirtualMachineScaleSetVMProperties.OsProfile.ComputerName)
+	}
+
 	return virtualMachine{
 		ID:                *(vm.ID),
 		Name:              *(vm.Name),
-		ComputerName:      *(vm.VirtualMachineScaleSetVMProperties.OsProfile.ComputerName),
+		ComputerName:      computerName,
 		Type:              *(vm.Type),
 		Location:          *(vm.Location),
 		OsType:            osType,
