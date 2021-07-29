@@ -31,7 +31,6 @@
     <td>{{ template "prom_query_drilldown" (args (printf "irate(node_network_transmit_bytes_total{job='node',instance='%s',device='%s'}[5m])" .Labels.instance .Labels.device) "B/s" "humanize") }}</td>
   </tr>
 {{ end }}
-</tr>
 <tr>
   <th colspan="2">Disks</th>
 </tr>

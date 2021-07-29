@@ -1,6 +1,7 @@
 {{ template "head" . }}
 
 {{ template "prom_right_table_head" }}
+<tr>
   <th colspan="2">Disks</th>
 </tr>
 {{ range printf "node_disk_io_time_seconds_total{job='node',instance='%s'}" .Params.instance | query | sortByLabel "device" }}
@@ -22,6 +23,7 @@
     <td>{{ template "prom_query_drilldown" (args (printf "irate(node_disk_write_time_seconds_total{job='node',instance='%s',device='%s'}[5m]) / irate(node_disk_writes_completed_total{job='node',instance='%s',device='%s'}[5m])" .Labels.instance .Labels.device .Labels.instance .Labels.device) "s" "humanize") }}</td>
   </tr>
 {{ end }}
+<tr>
   <th colspan="2">Filesystem Fullness</th>
 </tr>
 {{ define "roughlyNearZero" }}
