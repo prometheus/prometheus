@@ -627,6 +627,7 @@ Available meta labels:
 * `__meta_docker_network_label_<labelname>`: each label of the network
 * `__meta_docker_network_scope`: the scope of the network
 * `__meta_docker_network_ip`: the IP of the container in this network
+* `__meta_docker_network_other_networks`: comma separated list of other `networkName:ipAddr` the container is attached to, only set if `deduplicate_containers` is `true`
 * `__meta_docker_port_private`: the port on the container
 * `__meta_docker_port_public`: the external port if a port-mapping exists
 * `__meta_docker_port_public_ip`: the public IP if a port-mapping exists
@@ -639,6 +640,9 @@ host: <string>
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+
+# Optional deduplicate containers.
+[ deduplicate_containers: <bool> | default = false ]
 
 # TLS configuration.
 tls_config:

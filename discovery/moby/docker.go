@@ -19,6 +19,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -289,9 +290,16 @@ func (d *DockerDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 	if d.deduplicateContainers {
 		dedupedTargets := []model.LabelSet{}
 		var firstTg model.LabelSet
+		var otherNetworksString string
+
 		for _, otherNetworks := range idPortMap {
-			otherNetworksString := ""
+			sort.Slice(otherNetworks, func(i, j int) bool {
+				return otherNetworks[i].ipAddr < otherNetworks[j].ipAddr
+			})
+
+			otherNetworksString = ""
 			firstTg = otherNetworks[0].target
+
 			for _, otherNetwork := range otherNetworks {
 				if firstTg[dockerLabelNetworkIP] != model.LabelValue(otherNetwork.ipAddr) {
 					otherNetworksString += fmt.Sprintf("%s:%s,", otherNetwork.name, otherNetwork.ipAddr)
