@@ -290,6 +290,7 @@ scrape_configs:
   - job_name: docker
     docker_sd_configs:
       - host: unix:///var/run/docker.sock
+        deduplicate_containers: true
 
   - job_name: dockerswarm
     dockerswarm_sd_configs:
