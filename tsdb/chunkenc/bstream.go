@@ -95,7 +95,7 @@ func (b *bstream) writeByte(byt byte) {
 }
 
 func (b *bstream) writeBits(u uint64, nbits int) {
-	u <<= (64 - uint(nbits))
+	u <<= 64 - uint(nbits)
 	for nbits >= 8 {
 		byt := byte(u >> 56)
 		b.writeByte(byt)

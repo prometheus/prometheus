@@ -386,7 +386,7 @@ func (cdm *ChunkDiskMapper) cut() (returnErr error) {
 		cdm.readPathMtx.Unlock()
 	}
 
-	mmapFile, err := fileutil.OpenMmapFileWithSize(newFile.Name(), int(MaxHeadChunkFileSize))
+	mmapFile, err := fileutil.OpenMmapFileWithSize(newFile.Name(), MaxHeadChunkFileSize)
 	if err != nil {
 		return err
 	}
