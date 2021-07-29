@@ -530,8 +530,6 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v parser.Value, ws storag
 	// Cancel when execution is done or an error was raised.
 	defer q.cancel()
 
-	const env = "query execution"
-
 	evalSpanTimer, ctx := q.stats.GetSpanTimer(ctx, stats.EvalTotalTime)
 	defer evalSpanTimer.Finish()
 

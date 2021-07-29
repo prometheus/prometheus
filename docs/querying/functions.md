@@ -430,6 +430,7 @@ over time and return an instant vector with per-series aggregation results:
 * `stddev_over_time(range-vector)`: the population standard deviation of the values in the specified interval.
 * `stdvar_over_time(range-vector)`: the population standard variance of the values in the specified interval.
 * `last_over_time(range-vector)`: the most recent point value in specified interval.
+* `present_over_time(range-vector)`: the value 1 for any series in the specified interval.
 
 Note that all values in the specified interval have the same weight in the
 aggregation even if the values are not equally spaced throughout the interval.
