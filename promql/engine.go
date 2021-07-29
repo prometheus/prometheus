@@ -1537,15 +1537,15 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 			if newEv.startTimestamp < (ev.startTimestamp - offsetMillis - rangeMillis) {
 				newEv.startTimestamp += newEv.interval
 			}
-
-			if newEv.startTimestamp != ev.startTimestamp {
-				// Adjust the offset of selectors based on the new
-				// start time of the evaluator since the calculation
-				// of the offset with @ happens w.r.t. the start time.
-				setOffsetForAtModifier(newEv.startTimestamp, e.Expr)
-			}
 		} else {
 			newEv.startTimestamp = ev.startTimestamp - offsetMillis - rangeMillis + newEv.interval
+		}
+
+		if newEv.startTimestamp != ev.startTimestamp {
+			// Adjust the offset of selectors based on the new
+			// start time of the evaluator since the calculation
+			// of the offset with @ happens w.r.t. the start time.
+			setOffsetForAtModifier(newEv.startTimestamp, e.Expr)
 		}
 
 		res, ws := newEv.eval(e.Expr)
