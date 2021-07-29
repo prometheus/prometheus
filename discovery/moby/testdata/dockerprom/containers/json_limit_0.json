@@ -42,6 +42,21 @@
           "GlobalIPv6PrefixLen": 0,
           "MacAddress": "02:42:ac:13:00:02",
           "DriverOpts": null
+        },
+        "dockersd_bridge": {
+          "IPAMConfig": null,
+          "Links": null,
+          "Aliases": null,
+          "NetworkID": "7189986ab399e144e52a71b7451b4e04e2158c044b4cd2f3ae26fc3a285d3798",
+          "EndpointID": "423198ed568efa36699c5f13289c46230580a0ad6453d9e726f5e3cf1a911f77",
+          "Gateway": "172.19.0.1",
+          "IPAddress": "172.19.0.4",
+          "IPPrefixLen": 16,
+          "IPv6Gateway": "",
+          "GlobalIPv6Address": "",
+          "GlobalIPv6PrefixLen": 0,
+          "MacAddress": "02:42:ac:13:00:03",
+          "DriverOpts": null
         }
       }
     },

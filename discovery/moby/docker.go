@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/docker/docker/api/types"
@@ -43,6 +44,7 @@ const (
 	dockerLabelContainerLabelPrefix = dockerLabelContainerPrefix + "label_"
 	dockerLabelNetworkPrefix        = dockerLabel + "network_"
 	dockerLabelNetworkIP            = dockerLabelNetworkPrefix + "ip"
+	dockerLabelOtherNetworkPrefix   = dockerLabelNetworkPrefix + "other_networks"
 	dockerLabelPortPrefix           = dockerLabel + "port_"
 	dockerLabelPortPrivate          = dockerLabelPortPrefix + "private"
 	dockerLabelPortPublic           = dockerLabelPortPrefix + "public"
@@ -64,14 +66,13 @@ func init() {
 
 // DockerSDConfig is the configuration for Docker (non-swarm) based service discovery.
 type DockerSDConfig struct {
-	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
-
-	Host               string   `yaml:"host"`
-	Port               int      `yaml:"port"`
-	Filters            []Filter `yaml:"filters"`
-	HostNetworkingHost string   `yaml:"host_networking_host"`
-
-	RefreshInterval model.Duration `yaml:"refresh_interval"`
+	HTTPClientConfig      config.HTTPClientConfig `yaml:",inline"`
+	Host                  string                  `yaml:"host"`
+	Port                  int                     `yaml:"port"`
+	Filters               []Filter                `yaml:"filters"`
+	HostNetworkingHost    string                  `yaml:"host_networking_host"`
+	DeduplicateContainers bool                    `yaml:"deduplicate_containers"`
+	RefreshInterval       model.Duration          `yaml:"refresh_interval"`
 }
 
 // Name returns the name of the Config.
@@ -106,10 +107,22 @@ func (c *DockerSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error 
 
 type DockerDiscovery struct {
 	*refresh.Discovery
-	client             *client.Client
-	port               int
-	hostNetworkingHost string
-	filters            filters.Args
+	client                *client.Client
+	port                  int
+	filters               filters.Args
+	hostNetworkingHost    string
+	deduplicateContainers bool
+}
+
+type idPort struct {
+	id   string
+	port types.Port
+}
+
+type otherNetworkInfo struct {
+	name   string
+	ipAddr string
+	target model.LabelSet
 }
 
 // NewDockerDiscovery returns a new DockerDiscovery which periodically refreshes its targets.
@@ -117,8 +130,9 @@ func NewDockerDiscovery(conf *DockerSDConfig, logger log.Logger) (*DockerDiscove
 	var err error
 
 	d := &DockerDiscovery{
-		port:               conf.Port,
-		hostNetworkingHost: conf.HostNetworkingHost,
+		port:                  conf.Port,
+		hostNetworkingHost:    conf.HostNetworkingHost,
+		deduplicateContainers: conf.DeduplicateContainers,
 	}
 
 	hostURL, err := url.Parse(conf.Host)
@@ -182,6 +196,8 @@ func (d *DockerDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 		return nil, fmt.Errorf("error while listing containers: %w", err)
 	}
 
+	idPortMap := make(map[idPort][]otherNetworkInfo, len(containers))
+
 	networkLabels, err := getNetworksLabels(ctx, d.client, dockerLabel)
 	if err != nil {
 		return nil, fmt.Errorf("error while computing network labels: %w", err)
@@ -203,7 +219,7 @@ func (d *DockerDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 			commonLabels[dockerLabelContainerLabelPrefix+ln] = v
 		}
 
-		for _, n := range c.NetworkSettings.Networks {
+		for name, n := range c.NetworkSettings.Networks {
 			var added bool
 
 			for _, p := range c.Ports {
@@ -232,6 +248,9 @@ func (d *DockerDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 				addr := net.JoinHostPort(n.IPAddress, strconv.FormatUint(uint64(p.PrivatePort), 10))
 				labels[model.AddressLabel] = model.LabelValue(addr)
 				tg.Targets = append(tg.Targets, labels)
+
+				idPort := idPort{id: c.ID, port: p}
+				idPortMap[idPort] = append(idPortMap[idPort], otherNetworkInfo{name: name, ipAddr: n.IPAddress, target: labels})
 				added = true
 			}
 
@@ -260,8 +279,28 @@ func (d *DockerDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 
 				labels[model.AddressLabel] = model.LabelValue(addr)
 				tg.Targets = append(tg.Targets, labels)
+
+				idPort := idPort{id: c.ID, port: types.Port{}}
+				idPortMap[idPort] = append(idPortMap[idPort], otherNetworkInfo{name: name, ipAddr: n.IPAddress, target: labels})
 			}
 		}
+	}
+
+	if d.deduplicateContainers {
+		dedupedTargets := []model.LabelSet{}
+		var firstTg model.LabelSet
+		for _, otherNetworks := range idPortMap {
+			otherNetworksString := ""
+			firstTg = otherNetworks[0].target
+			for _, otherNetwork := range otherNetworks {
+				if firstTg[dockerLabelNetworkIP] != model.LabelValue(otherNetwork.ipAddr) {
+					otherNetworksString += fmt.Sprintf("%s:%s,", otherNetwork.name, otherNetwork.ipAddr)
+				}
+			}
+			firstTg[dockerLabelOtherNetworkPrefix] = model.LabelValue(strings.TrimSuffix(otherNetworksString, ","))
+			dedupedTargets = append(dedupedTargets, firstTg)
+		}
+		tg.Targets = dedupedTargets
 	}
 
 	return []*targetgroup.Group{tg}, nil

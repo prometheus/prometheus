@@ -36,9 +36,11 @@ host: %s
 `, url)
 	var cfg DockerSDConfig
 	require.NoError(t, yaml.Unmarshal([]byte(cfgString), &cfg))
+	cfg.DeduplicateContainers = true
 
 	d, err := NewDockerDiscovery(&cfg, log.NewNopLogger())
 	require.NoError(t, err)
+	require.True(t, d.deduplicateContainers)
 
 	ctx := context.Background()
 	tgs, err := d.refresh(ctx)
@@ -70,6 +72,7 @@ host: %s
 			"__meta_docker_network_label_com_docker_compose_project":   "dockersd",
 			"__meta_docker_network_label_com_docker_compose_version":   "1.25.0",
 			"__meta_docker_network_name":                               "dockersd_default",
+			"__meta_docker_network_other_networks":                     "dockersd_bridge:172.19.0.4",
 			"__meta_docker_network_scope":                              "local",
 			"__meta_docker_port_private":                               "9100",
 		},
@@ -92,6 +95,7 @@ host: %s
 			"__meta_docker_network_label_com_docker_compose_version":   "1.25.0",
 			"__meta_docker_network_name":                               "dockersd_default",
 			"__meta_docker_network_scope":                              "local",
+			"__meta_docker_network_other_networks":                     "",
 		},
 		{
 			"__address__":                "localhost",
