@@ -386,6 +386,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_azure_machine_id`: the machine ID
 * `__meta_azure_machine_location`: the location the machine runs in
 * `__meta_azure_machine_name`: the machine name
+* `__meta_azure_machine_computer_name`: the machine computer name
 * `__meta_azure_machine_os_type`: the machine operating system
 * `__meta_azure_machine_private_ip`: the machine's private IP
 * `__meta_azure_machine_public_ip`: the machine's public IP if it exists
