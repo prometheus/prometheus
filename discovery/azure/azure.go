@@ -78,6 +78,7 @@ type SDConfig struct {
 	TenantID             string             `yaml:"tenant_id,omitempty"`
 	ClientID             string             `yaml:"client_id,omitempty"`
 	ClientSecret         config_util.Secret `yaml:"client_secret,omitempty"`
+	ClientSecretFile     string             `yaml:"client_secret_file,omitempty"`
 	RefreshInterval      model.Duration     `yaml:"refresh_interval,omitempty"`
 	AuthenticationMethod string             `yaml:"authentication_method,omitempty"`
 }
@@ -117,7 +118,13 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		if err = validateAuthParam(c.ClientID, "client_id"); err != nil {
 			return err
 		}
-		if err = validateAuthParam(string(c.ClientSecret), "client_secret"); err != nil {
+		if len(c.ClientSecret) == 0 && len(c.ClientSecretFile) != 0 {
+			err = c.ClientSecret.LoadFromFile(c.ClientSecretFile)
+			if err != nil {
+				return fmt.Errorf("cannot read client secret from file: %w", err)
+			}
+		}
+		if err := validateAuthParam(string(c.ClientSecret), "client_secret or client_secret_file"); err != nil {
 			return err
 		}
 	}

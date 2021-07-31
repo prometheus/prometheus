@@ -759,6 +759,33 @@ type MetadataConfig struct {
 	MaxSamplesPerSend int `yaml:"max_samples_per_send,omitempty"`
 }
 
+// SigV4Config is the configuration for signing remote write requests with
+// AWS's SigV4 verification process. Empty values will be retrieved using the
+// AWS default credentials chain.
+type SigV4Config struct {
+	Region        string        `yaml:"region,omitempty"`
+	AccessKey     string        `yaml:"access_key,omitempty"`
+	SecretKey     config.Secret `yaml:"secret_key,omitempty"`
+	SecretKeyFile string        `yaml:"secret_key_file,omitempty"`
+	Profile       string        `yaml:"profile,omitempty"`
+	RoleARN       string        `yaml:"role_arn,omitempty"`
+}
+
+func (c *SigV4Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	type plain SigV4Config
+	if err := unmarshal((*plain)(c)); err != nil {
+		return err
+	}
+
+	if len(c.SecretKey) == 0 && len(c.SecretKeyFile) != 0 {
+		if err := c.SecretKey.LoadFromFile(c.SecretKeyFile); err != nil {
+			return fmt.Errorf("cannot read sigv4 secret key: %w", err)
+		}
+	}
+
+	return nil
+}
+
 // RemoteReadConfig is the configuration for reading from remote storage.
 type RemoteReadConfig struct {
 	URL           *config.URL       `yaml:"url"`

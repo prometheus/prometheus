@@ -87,6 +87,7 @@ type EC2SDConfig struct {
 	Region          string         `yaml:"region"`
 	AccessKey       string         `yaml:"access_key,omitempty"`
 	SecretKey       config.Secret  `yaml:"secret_key,omitempty"`
+	SecretKeyFile   string         `yaml:"secret_key_file,omitempty"`
 	Profile         string         `yaml:"profile,omitempty"`
 	RoleARN         string         `yaml:"role_arn,omitempty"`
 	RefreshInterval model.Duration `yaml:"refresh_interval,omitempty"`
@@ -109,6 +110,12 @@ func (c *EC2SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	err := unmarshal((*plain)(c))
 	if err != nil {
 		return err
+	}
+	if len(c.SecretKey) == 0 && len(c.SecretKeyFile) != 0 {
+		err = c.SecretKey.LoadFromFile(c.SecretKeyFile)
+		if err != nil {
+			return fmt.Errorf("cannot read secret key: %w", err)
+		}
 	}
 	if c.Region == "" {
 		sess, err := session.NewSession()

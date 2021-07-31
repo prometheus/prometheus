@@ -110,12 +110,14 @@ func init() {
 type SDConfig struct {
 	Server       string        `yaml:"server,omitempty"`
 	Token        config.Secret `yaml:"token,omitempty"`
+	TokenFile    string        `yaml:"token_file,omitempty"`
 	Datacenter   string        `yaml:"datacenter,omitempty"`
 	Namespace    string        `yaml:"namespace,omitempty"`
 	TagSeparator string        `yaml:"tag_separator,omitempty"`
 	Scheme       string        `yaml:"scheme,omitempty"`
 	Username     string        `yaml:"username,omitempty"`
 	Password     config.Secret `yaml:"password,omitempty"`
+	PasswordFile string        `yaml:"password_file,omitempty"`
 
 	// See https://www.consul.io/docs/internals/consensus.html#consistency-modes,
 	// stale reads are a lot cheaper and are a necessity if you have >5k targets.
@@ -162,6 +164,12 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if strings.TrimSpace(c.Server) == "" {
 		return errors.New("consul SD configuration requires a server address")
 	}
+	if len(c.Password) == 0 && len(c.PasswordFile) != 0 {
+		err = c.Password.LoadFromFile(c.PasswordFile)
+		if err != nil {
+			return fmt.Errorf("cannot read password: %w", err)
+		}
+	}
 	if c.Username != "" || c.Password != "" {
 		if c.HTTPClientConfig.BasicAuth != nil {
 			return errors.New("at most one of consul SD configuration username and password and basic auth can be configured")
@@ -171,7 +179,13 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 			Password: c.Password,
 		}
 	}
-	if c.Token != "" && (c.HTTPClientConfig.Authorization != nil || c.HTTPClientConfig.OAuth2 != nil) {
+	tokenSet := false
+	if len(c.Token) != 0 && len(c.TokenFile) != 0 {
+		return errors.New("at most one of SD token or token_file can be configured")
+	} else if len(c.Token) != 0 || len(c.TokenFile) != 0 {
+		tokenSet = true
+	}
+	if tokenSet && (c.HTTPClientConfig.Authorization != nil || c.HTTPClientConfig.OAuth2 != nil) {
 		return errors.New("at most one of consul SD token, authorization, or oauth2 can be configured")
 	}
 	return c.HTTPClientConfig.Validate()
@@ -211,6 +225,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 		Datacenter: conf.Datacenter,
 		Namespace:  conf.Namespace,
 		Token:      string(conf.Token),
+		TokenFile:  conf.TokenFile,
 		HttpClient: wrapper,
 	}
 	client, err := consul.NewClient(clientConf)

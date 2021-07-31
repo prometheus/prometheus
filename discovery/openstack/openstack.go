@@ -45,24 +45,26 @@ func init() {
 
 // SDConfig is the configuration for OpenStack based service discovery.
 type SDConfig struct {
-	IdentityEndpoint            string           `yaml:"identity_endpoint"`
-	Username                    string           `yaml:"username"`
-	UserID                      string           `yaml:"userid"`
-	Password                    config.Secret    `yaml:"password"`
-	ProjectName                 string           `yaml:"project_name"`
-	ProjectID                   string           `yaml:"project_id"`
-	DomainName                  string           `yaml:"domain_name"`
-	DomainID                    string           `yaml:"domain_id"`
-	ApplicationCredentialName   string           `yaml:"application_credential_name"`
-	ApplicationCredentialID     string           `yaml:"application_credential_id"`
-	ApplicationCredentialSecret config.Secret    `yaml:"application_credential_secret"`
-	Role                        Role             `yaml:"role"`
-	Region                      string           `yaml:"region"`
-	RefreshInterval             model.Duration   `yaml:"refresh_interval"`
-	Port                        int              `yaml:"port"`
-	AllTenants                  bool             `yaml:"all_tenants,omitempty"`
-	TLSConfig                   config.TLSConfig `yaml:"tls_config,omitempty"`
-	Availability                string           `yaml:"availability,omitempty"`
+	IdentityEndpoint                string           `yaml:"identity_endpoint"`
+	Username                        string           `yaml:"username"`
+	UserID                          string           `yaml:"userid"`
+	Password                        config.Secret    `yaml:"password"`
+	PasswordFile                    string           `yaml:"password_file"`
+	ProjectName                     string           `yaml:"project_name"`
+	ProjectID                       string           `yaml:"project_id"`
+	DomainName                      string           `yaml:"domain_name"`
+	DomainID                        string           `yaml:"domain_id"`
+	ApplicationCredentialName       string           `yaml:"application_credential_name"`
+	ApplicationCredentialID         string           `yaml:"application_credential_id"`
+	ApplicationCredentialSecret     config.Secret    `yaml:"application_credential_secret"`
+	ApplicationCredentialSecretFile string           `yaml:"application_credential_secret_file"`
+	Role                            Role             `yaml:"role"`
+	Region                          string           `yaml:"region"`
+	RefreshInterval                 model.Duration   `yaml:"refresh_interval"`
+	Port                            int              `yaml:"port"`
+	AllTenants                      bool             `yaml:"all_tenants,omitempty"`
+	TLSConfig                       config.TLSConfig `yaml:"tls_config,omitempty"`
+	Availability                    string           `yaml:"availability,omitempty"`
 }
 
 // Name returns the name of the Config.
@@ -111,6 +113,20 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	err := unmarshal((*plain)(c))
 	if err != nil {
 		return err
+	}
+
+	if len(c.Password) == 0 && len(c.PasswordFile) != 0 {
+		err = c.Password.LoadFromFile(c.PasswordFile)
+		if err != nil {
+			return fmt.Errorf("cannot read password: %w", err)
+		}
+	}
+
+	if len(c.ApplicationCredentialSecret) == 0 && len(c.ApplicationCredentialSecretFile) != 0 {
+		err = c.ApplicationCredentialSecret.LoadFromFile(c.ApplicationCredentialSecretFile)
+		if err != nil {
+			return fmt.Errorf("cannot read application credential secret: %w", err)
+		}
 	}
 
 	switch c.Availability {
