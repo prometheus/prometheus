@@ -194,29 +194,10 @@ func (d *EC2Discovery) ec2Client(ctx context.Context) (*ec2.EC2, error) {
 	return d.ec2, nil
 }
 
-func (d *EC2Discovery) azID(ctx context.Context, az string, azIDsRefreshAttempted *bool) (string, error) {
-	if azID, ok := d.azToAZID[az]; ok {
-		return azID, nil
-	}
-
-	if !*azIDsRefreshAttempted {
-		*azIDsRefreshAttempted = true
-		if err := d.refreshAZIDs(ctx); err != nil {
-			return "", err
-		}
-		if azID, ok := d.azToAZID[az]; ok {
-			return azID, nil
-		}
-	}
-
-	return "", fmt.Errorf("no availability zone ID mapping found for %s", az)
-}
-
 func (d *EC2Discovery) refreshAZIDs(ctx context.Context) error {
 	azs, err := d.ec2.DescribeAvailabilityZonesWithContext(ctx, &ec2.DescribeAvailabilityZonesInput{})
 	if err != nil {
-		// Likely due to missing ec2:DescribeAvailabilityZones.
-		return errors.Wrap(err, "could not describe availability zones")
+		return err
 	}
 	d.azToAZID = make(map[string]string, len(azs.AvailabilityZones))
 	for _, az := range azs.AvailabilityZones {
@@ -243,20 +224,22 @@ func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 		})
 	}
 
+	// Only refresh the AZ ID map if we have never been able to build one.
+	// Prometheus requires a reload if AWS adds a new AZ to the region.
+	if d.azToAZID == nil {
+		if err := d.refreshAZIDs(ctx); err != nil {
+			level.Warn(d.logger).Log(
+				"msg", "Unable to describe availability zones, ensure Prometheus has ec2:DescribeAvailabilityZones",
+				"err", err)
+		}
+	}
+
 	input := &ec2.DescribeInstancesInput{Filters: filters}
-	azIDsRefreshAttempted := false
 	if err := ec2Client.DescribeInstancesPagesWithContext(ctx, input, func(p *ec2.DescribeInstancesOutput, lastPage bool) bool {
 		for _, r := range p.Reservations {
 			for _, inst := range r.Instances {
 				if inst.PrivateIpAddress == nil {
 					continue
-				}
-				azID, err := d.azID(ctx, *inst.Placement.AvailabilityZone, &azIDsRefreshAttempted)
-				if err != nil {
-					level.Warn(d.logger).Log(
-						"msg", "Unable to determine availability zone ID",
-						"az", *inst.Placement.AvailabilityZone,
-						"err", err)
 				}
 
 				labels := model.LabelSet{
@@ -282,9 +265,14 @@ func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 					labels[ec2LabelPublicIP] = model.LabelValue(*inst.PublicIpAddress)
 					labels[ec2LabelPublicDNS] = model.LabelValue(*inst.PublicDnsName)
 				}
-
 				labels[ec2LabelAMI] = model.LabelValue(*inst.ImageId)
 				labels[ec2LabelAZ] = model.LabelValue(*inst.Placement.AvailabilityZone)
+				azID, ok := d.azToAZID[*inst.Placement.AvailabilityZone]
+				if !ok && d.azToAZID != nil {
+					level.Debug(d.logger).Log(
+						"msg", "Availability zone not found, try reloading Prometheus",
+						"az", *inst.Placement.AvailabilityZone)
+				}
 				labels[ec2LabelAZID] = model.LabelValue(azID)
 				labels[ec2LabelInstanceState] = model.LabelValue(*inst.State.Name)
 				labels[ec2LabelInstanceType] = model.LabelValue(*inst.InstanceType)
