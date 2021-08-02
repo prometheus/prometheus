@@ -194,24 +194,35 @@ func (d *EC2Discovery) ec2Client(ctx context.Context) (*ec2.EC2, error) {
 	return d.ec2, nil
 }
 
-func (d *EC2Discovery) azID(ctx context.Context, az string) (string, error) {
+func (d *EC2Discovery) azID(ctx context.Context, az string, azIDsRefreshAttempted *bool) (string, error) {
 	if azID, ok := d.azToAZID[az]; ok {
 		return azID, nil
 	}
 
+	if !*azIDsRefreshAttempted {
+		*azIDsRefreshAttempted = true
+		if err := d.refreshAZIDs(ctx); err != nil {
+			return "", err
+		}
+		if azID, ok := d.azToAZID[az]; ok {
+			return azID, nil
+		}
+	}
+
+	return "", fmt.Errorf("no availability zone ID mapping found for %s", az)
+}
+
+func (d *EC2Discovery) refreshAZIDs(ctx context.Context) error {
 	azs, err := d.ec2.DescribeAvailabilityZonesWithContext(ctx, &ec2.DescribeAvailabilityZonesInput{})
 	if err != nil {
-		return "", errors.Wrap(err, "could not describe availability zones")
+		// Likely due to missing ec2:DescribeAvailabilityZones.
+		return errors.Wrap(err, "could not describe availability zones")
 	}
 	d.azToAZID = make(map[string]string, len(azs.AvailabilityZones))
 	for _, az := range azs.AvailabilityZones {
 		d.azToAZID[*az.ZoneName] = *az.ZoneId
 	}
-
-	if azID, ok := d.azToAZID[az]; ok {
-		return azID, nil
-	}
-	return "", fmt.Errorf("no availability zone ID mapping found for %s", az)
+	return nil
 }
 
 func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
@@ -233,14 +244,14 @@ func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 	}
 
 	input := &ec2.DescribeInstancesInput{Filters: filters}
-
+	azIDsRefreshAttempted := false
 	if err := ec2Client.DescribeInstancesPagesWithContext(ctx, input, func(p *ec2.DescribeInstancesOutput, lastPage bool) bool {
 		for _, r := range p.Reservations {
 			for _, inst := range r.Instances {
 				if inst.PrivateIpAddress == nil {
 					continue
 				}
-				azID, err := d.azID(ctx, *inst.Placement.AvailabilityZone)
+				azID, err := d.azID(ctx, *inst.Placement.AvailabilityZone, &azIDsRefreshAttempted)
 				if err != nil {
 					level.Warn(d.logger).Log(
 						"msg", "Unable to determine availability zone ID",
