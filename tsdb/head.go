@@ -1466,7 +1466,11 @@ type memChunk struct {
 
 // OverlapsClosedInterval returns true if the chunk overlaps [mint, maxt].
 func (mc *memChunk) OverlapsClosedInterval(mint, maxt int64) bool {
-	return mc.minTime <= maxt && mint <= mc.maxTime
+	return overlapsClosedInterval(mc.minTime, mc.maxTime, mint, maxt)
+}
+
+func overlapsClosedInterval(mint1, maxt1, mint2, maxt2 int64) bool {
+	return mint1 <= maxt2 && mint2 <= maxt1
 }
 
 type mmappedChunk struct {
@@ -1477,7 +1481,7 @@ type mmappedChunk struct {
 
 // Returns true if the chunk overlaps [mint, maxt].
 func (mc *mmappedChunk) OverlapsClosedInterval(mint, maxt int64) bool {
-	return mc.minTime <= maxt && mint <= mc.maxTime
+	return overlapsClosedInterval(mc.minTime, mc.maxTime, mint, maxt)
 }
 
 type noopSeriesLifecycleCallback struct{}

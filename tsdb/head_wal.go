@@ -18,6 +18,7 @@ import (
 	"math"
 	"runtime"
 	"sync"
+	"time"
 
 	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
@@ -181,38 +182,74 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64, mmappedChunks 
 		}
 	}()
 
+	// The records are always replayed from the oldest to the newest.
 Outer:
 	for d := range decoded {
 		switch v := d.(type) {
 		case []record.RefSeries:
-			for _, s := range v {
-				series, created, err := h.getOrCreateWithID(s.Ref, s.Labels.Hash(), s.Labels)
+			for _, walSeries := range v {
+				mSeries, created, err := h.getOrCreateWithID(walSeries.Ref, walSeries.Labels.Hash(), walSeries.Labels)
 				if err != nil {
 					seriesCreationErr = err
 					break Outer
 				}
 
+				if h.lastSeriesID.Load() < walSeries.Ref {
+					h.lastSeriesID.Store(walSeries.Ref)
+				}
+
+				mmc := mmappedChunks[walSeries.Ref]
+
 				if created {
-					// If this series gets a duplicate record, we don't restore its mmapped chunks,
-					// and instead restore everything from WAL records.
-					series.mmappedChunks = mmappedChunks[series.ref]
+					// This is the first WAL series record for this series.
+					h.metrics.chunksCreated.Add(float64(len(mmc)))
+					h.metrics.chunks.Add(float64(len(mmc)))
+					mSeries.mmappedChunks = mmc
+					continue
+				}
 
-					h.metrics.chunks.Add(float64(len(series.mmappedChunks)))
-					h.metrics.chunksCreated.Add(float64(len(series.mmappedChunks)))
+				// There's already a different ref for this series.
+				// A duplicate series record is only possible when the old samples were already compacted into a block.
+				// Hence we can discard all the samples and m-mapped chunks replayed till now for this series.
 
-					if len(series.mmappedChunks) > 0 {
-						h.updateMinMaxTime(series.minTime(), series.maxTime())
+				multiRef[walSeries.Ref] = mSeries.ref
+
+				idx := mSeries.ref % uint64(n)
+				// It is possible that some old sample is being processed in processWALSamples that
+				// could cause race below. So we wait for the goroutine to empty input the buffer and finish
+				// processing all old samples after emptying the buffer.
+				inputs[idx] <- []record.RefSample{}
+				for len(inputs[idx]) != 0 {
+					time.Sleep(1 * time.Millisecond)
+				}
+
+				// Checking if the new m-mapped chunks overlap with the already existing ones.
+				// This should never happen, but we have a check anyway to detect any
+				// edge cases that we might have missed.
+				if len(mSeries.mmappedChunks) > 0 && len(mmc) > 0 {
+					if overlapsClosedInterval(
+						mSeries.mmappedChunks[0].minTime,
+						mSeries.mmappedChunks[len(mSeries.mmappedChunks)-1].maxTime,
+						mmc[0].minTime,
+						mmc[len(mmc)-1].maxTime,
+					) {
+						// The m-map chunks for the new series ref overlaps with old m-map chunks.
+						seriesCreationErr = errors.Errorf("overlapping m-mapped chunks for series %s", mSeries.lset.String())
+						break Outer
 					}
-				} else {
-					// TODO(codesome) Discard old samples and mmapped chunks and use mmap chunks for the new series ID.
-
-					// There's already a different ref for this series.
-					multiRef[s.Ref] = series.ref
 				}
 
-				if h.lastSeriesID.Load() < s.Ref {
-					h.lastSeriesID.Store(s.Ref)
-				}
+				// Replacing m-mapped chunks with the new ones (could be empty).
+				h.metrics.chunksCreated.Add(float64(len(mmc)))
+				h.metrics.chunksRemoved.Add(float64(len(mSeries.mmappedChunks)))
+				h.metrics.chunks.Add(float64(len(mmc) - len(mSeries.mmappedChunks)))
+				mSeries.mmappedChunks = mmc
+
+				// Any samples replayed till now would already be compacted. Resetting the head chunk.
+				mSeries.nextAt = 0
+				mSeries.headChunk = nil
+				mSeries.app = nil
+				h.updateMinMaxTime(mSeries.minTime(), mSeries.maxTime())
 			}
 			//nolint:staticcheck // Ignore SA6002 relax staticcheck verification.
 			seriesPool.Put(v)
