@@ -368,9 +368,6 @@ func (h *Head) processWALSamples(
 ) (unknownRefs uint64) {
 	defer close(output)
 
-	// Mitigate lock contention in getByID.
-	refSeries := map[uint64]*memSeries{}
-
 	mint, maxt := int64(math.MaxInt64), int64(math.MinInt64)
 
 	for samples := range input {
@@ -378,14 +375,10 @@ func (h *Head) processWALSamples(
 			if s.T < minValidTime {
 				continue
 			}
-			ms := refSeries[s.Ref]
+			ms := h.series.getByID(s.Ref)
 			if ms == nil {
-				ms = h.series.getByID(s.Ref)
-				if ms == nil {
-					unknownRefs++
-					continue
-				}
-				refSeries[s.Ref] = ms
+				unknownRefs++
+				continue
 			}
 			if _, chunkCreated := ms.append(s.T, s.V, 0, h.chunkDiskMapper); chunkCreated {
 				h.metrics.chunksCreated.Inc()
