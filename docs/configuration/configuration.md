@@ -640,7 +640,7 @@ tls_config:
 [ port: <int> | default = 80 ]
 
 # The host to use if the container is in host networking mode.
-[ host_network_host: <string> | default = "localhost" ]
+[ host_networking_host: <string> | default = "localhost" ]
 
 # Optional filters to limit the discovery process to a subset of available
 # resources.
