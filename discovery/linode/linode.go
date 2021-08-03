@@ -157,10 +157,9 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 
 func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	needsRefresh := true
+	ts := time.Now().UTC()
 
 	if d.lastResults != nil && d.eventPollingEnabled {
-		ts := time.Now().UTC()
-
 		// Check to see if there have been any events. If so, refresh our data.
 		opts := linodego.NewListOptions(1, fmt.Sprintf(filterTemplate, d.lastRefreshTimestamp.Format("2006-01-02T15:04:05")))
 		events, err := d.client.ListEvents(ctx, opts)
@@ -184,8 +183,6 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 				needsRefresh = false
 			}
 		}
-
-		d.lastRefreshTimestamp = ts
 	}
 
 	if needsRefresh {
@@ -196,6 +193,8 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		d.pollCount = 0
 		d.lastResults = newData
 	}
+
+	d.lastRefreshTimestamp = ts
 
 	return d.lastResults, nil
 }
