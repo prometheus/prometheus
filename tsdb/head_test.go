@@ -306,7 +306,9 @@ func TestHead_ReadWAL(t *testing.T) {
 			}
 			require.Equal(t, []sample{{100, 2}, {101, 5}}, expandChunk(s10.iterator(0, nil, head.chunkDiskMapper, nil)))
 			require.Equal(t, []sample{{101, 6}}, expandChunk(s50.iterator(0, nil, head.chunkDiskMapper, nil)))
-			require.Equal(t, []sample{{100, 3}, {101, 7}}, expandChunk(s100.iterator(0, nil, head.chunkDiskMapper, nil)))
+			// The samples before the new series record should be discarded since a duplicate record
+			// is only possible when old samples were compacted.
+			require.Equal(t, []sample{{101, 7}}, expandChunk(s100.iterator(0, nil, head.chunkDiskMapper, nil)))
 
 			q, err := head.ExemplarQuerier(context.Background())
 			require.NoError(t, err)
@@ -369,9 +371,9 @@ func TestHead_WALMultiRef(t *testing.T) {
 	q, err := NewBlockQuerier(head, 0, 2100)
 	require.NoError(t, err)
 	series := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+	// The samples before the new ref should be discarded since Head truncation
+	// happens only after compacting the Head.
 	require.Equal(t, map[string][]tsdbutil.Sample{`{foo="bar"}`: {
-		sample{100, 1},
-		sample{1500, 2},
 		sample{1700, 3},
 		sample{2000, 4},
 	}}, series)
