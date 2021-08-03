@@ -215,6 +215,12 @@ Outer:
 					h.metrics.chunksCreated.Add(float64(len(mmc)))
 					h.metrics.chunks.Add(float64(len(mmc)))
 					mSeries.mmappedChunks = mmc
+					if len(mmc) > 0 {
+						// Cache the last mmapped chunk time, so we can skip calling append() for samples it will reject
+						mSeries.mmMaxTime = mmc[len(mmc)-1].maxTime
+					} else {
+						mSeries.mmMaxTime = math.MinInt64
+					}
 					continue
 				}
 
@@ -378,6 +384,9 @@ func (h *Head) processWALSamples(
 			ms := h.series.getByID(s.Ref)
 			if ms == nil {
 				unknownRefs++
+				continue
+			}
+			if s.T < ms.mmMaxTime {
 				continue
 			}
 			if _, chunkCreated := ms.append(s.T, s.V, 0, h.chunkDiskMapper); chunkCreated {

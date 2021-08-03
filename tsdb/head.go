@@ -1437,6 +1437,7 @@ type memSeries struct {
 	ref           uint64
 	lset          labels.Labels
 	mmappedChunks []*mmappedChunk
+	mmMaxTime     int64
 	headChunk     *memChunk
 	chunkRange    int64
 	firstChunkID  int
