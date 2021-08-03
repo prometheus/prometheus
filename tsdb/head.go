@@ -736,6 +736,11 @@ func (h *Head) Truncate(mint int64) (err error) {
 	return h.truncateWAL(mint)
 }
 
+// OverlapsClosedInterval returns true if the head overlaps [mint, maxt].
+func (h *Head) OverlapsClosedInterval(mint, maxt int64) bool {
+	return h.MinTime() <= maxt && mint <= h.MaxTime()
+}
+
 // truncateMemory removes old data before mint from the head.
 func (h *Head) truncateMemory(mint int64) (err error) {
 	h.chunkSnapshotMtx.Lock()
