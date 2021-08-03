@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"os"
 	"path/filepath"
 	"sync"
 	"time"
@@ -25,9 +26,9 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
-	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/atomic"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -52,6 +53,9 @@ var (
 	// ErrAppenderClosed is returned if an appender has already be successfully
 	// rolled back or committed.
 	ErrAppenderClosed = errors.New("appender closed")
+	// ErrCheckpointCorrupted is returned if an error is encountered while replaying
+	// checkpoint.
+	ErrCheckpointCorrupted = errors.New("checkpoint corrupted")
 )
 
 // Head handles reads and writes of time series data within a time window.
@@ -548,7 +552,7 @@ func (h *Head) Init(minValidTime int64) error {
 		// A corrupted checkpoint is a hard error for now and requires user
 		// intervention. There's likely little data that can be recovered anyway.
 		if err := h.loadWAL(wal.NewReader(sr), multiRef, mmappedChunks); err != nil {
-			return errors.Wrap(err, "backfill checkpoint")
+			return errors.Wrap(err, ErrCheckpointCorrupted.Error())
 		}
 		h.updateWALReplayStatusRead(startFrom)
 		startFrom++
@@ -600,6 +604,54 @@ func (h *Head) Init(minValidTime int64) error {
 		"total_replay_duration", walReplayDuration.String(),
 	)
 
+	return nil
+}
+
+// CleanRestart cleans up the WAL and Head chunks dir and restarts the Head.
+// It must not be called after calling head.Init()
+func (h *Head) CleanRestart() error {
+	level.Warn(h.logger).Log("msg", "Restarting Head clean...")
+
+	oldWAL := h.wal
+	oldHeadChunks := h.chunkDiskMapper
+
+	// Clean up on disk data (WAL + head chunks).
+	level.Debug(h.logger).Log("msg", "Cleaning up WAL...")
+	err := oldWAL.Close()
+	if err != nil {
+		return errors.Wrap(err, "close WAL")
+	}
+	if err = os.RemoveAll(oldWAL.Dir()); err != nil {
+		return errors.Wrap(err, "remove WAL")
+	}
+	level.Debug(h.logger).Log("msg", "Cleaning up head chunks...")
+	if err = oldHeadChunks.Close(); err != nil {
+		return errors.Wrap(err, "close head chunks")
+	}
+	oldHeadChunksDir, err := oldHeadChunks.Dir()
+	if err != nil {
+		return errors.Wrap(err, "head chunks dir")
+	}
+	if err = os.RemoveAll(oldHeadChunksDir); err != nil {
+		return errors.Wrap(err, "remove head chunks")
+	}
+
+	// Reset head and start fresh.
+	if err := h.resetInMemoryState(); err != nil {
+		return errors.Wrap(err, "reset in-memory state")
+	}
+
+	// Create new WAL & head chunks.
+	newWAL, err := wal.NewSize(h.logger, h.reg, oldWAL.Dir(), oldWAL.SegmentSize(), oldWAL.CompressionEnabled())
+	if err != nil {
+		return errors.Wrap(err, "new WAL")
+	}
+	newHeadChunks, err := chunks.NewChunkDiskMapper(oldHeadChunksDir, oldHeadChunks.Pool(), oldHeadChunks.WriteBufferSize())
+	if err != nil {
+		return errors.Wrap(err, "new chunk disk mapper")
+	}
+	h.wal = newWAL
+	h.chunkDiskMapper = newHeadChunks
 	return nil
 }
 
