@@ -735,11 +735,12 @@ var expectedConf = &Config{
 
 			ServiceDiscoveryConfigs: discovery.Configs{
 				&moby.DockerSDConfig{
-					Filters:          []moby.Filter{},
-					Host:             "unix:///var/run/docker.sock",
-					Port:             80,
-					RefreshInterval:  model.Duration(60 * time.Second),
-					HTTPClientConfig: config.DefaultHTTPClientConfig,
+					Filters:            []moby.Filter{},
+					Host:               "unix:///var/run/docker.sock",
+					Port:               80,
+					HostNetworkingHost: "localhost",
+					RefreshInterval:    model.Duration(60 * time.Second),
+					HTTPClientConfig:   config.DefaultHTTPClientConfig,
 				},
 			},
 		},

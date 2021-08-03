@@ -640,6 +640,9 @@ tls_config:
 # tasks and services that don't have published ports.
 [ port: <int> | default = 80 ]
 
+# The host to use if the container is in host networking mode.
+[ host_networking_host: <string> | default = "localhost" ]
+
 # Optional filters to limit the discovery process to a subset of available
 # resources.
 # The available filters are listed in the upstream documentation:
