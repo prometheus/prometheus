@@ -228,8 +228,8 @@ func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 	// Prometheus requires a reload if AWS adds a new AZ to the region.
 	if d.azToAZID == nil {
 		if err := d.refreshAZIDs(ctx); err != nil {
-			level.Warn(d.logger).Log(
-				"msg", "Unable to describe availability zones, ensure Prometheus has ec2:DescribeAvailabilityZones",
+			level.Debug(d.logger).Log(
+				"msg", "Unable to describe availability zones",
 				"err", err)
 		}
 	}
@@ -270,7 +270,7 @@ func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 				azID, ok := d.azToAZID[*inst.Placement.AvailabilityZone]
 				if !ok && d.azToAZID != nil {
 					level.Debug(d.logger).Log(
-						"msg", "Availability zone not found, try reloading Prometheus",
+						"msg", "Availability zone not found",
 						"az", *inst.Placement.AvailabilityZone)
 				}
 				labels[ec2LabelAZID] = model.LabelValue(azID)
