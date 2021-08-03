@@ -139,7 +139,7 @@ process_repo() {
     if [[ -z "${target_file}" ]]; then
       echo "${source_file} doesn't exist in ${org_repo}"
       case "${source_file}" in
-        CODE_OF_CONDUCT.md | SECURITY.md)
+        CODE_OF_CONDUCT.md | SECURITY.md | .yamllint)
           echo "${source_file} missing in ${org_repo}, force updating."
           needs_update+=("${source_file}")
           ;;
