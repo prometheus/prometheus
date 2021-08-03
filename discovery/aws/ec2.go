@@ -270,7 +270,7 @@ func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 				azID, ok := d.azToAZID[*inst.Placement.AvailabilityZone]
 				if !ok && d.azToAZID != nil {
 					level.Debug(d.logger).Log(
-						"msg", "Availability zone not found",
+						"msg", "Availability zone ID not found",
 						"az", *inst.Placement.AvailabilityZone)
 				}
 				labels[ec2LabelAZID] = model.LabelValue(azID)
