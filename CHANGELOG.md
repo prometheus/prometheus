@@ -1,5 +1,8 @@
 ## 2.29.0-rc.0 / 2021-07-29
 
+Note for macOS users: Due to [changes in the upcoming Go 1.17](https://tip.golang.org/doc/go1.17#darwin),
+this is the last Prometheus release that supports macOS 10.12 Sierra.
+
 * [CHANGE] Promote `--storage.tsdb.allow-overlapping-blocks` flag to stable. #9117
 * [CHANGE] Promote `--storage.tsdb.retention.size` flag to stable. #9004
 * [FEATURE] Add Kuma service discovery. #8844
