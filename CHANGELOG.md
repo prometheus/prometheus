@@ -1,4 +1,4 @@
-## 2.29.0-rc.0 / 2021-07-29
+## 2.29.0-rc.1 / 2021-08-04
 
 Note for macOS users: Due to [changes in the upcoming Go 1.17](https://tip.golang.org/doc/go1.17#darwin),
 this is the last Prometheus release that supports macOS 10.12 Sierra.
@@ -29,6 +29,7 @@ this is the last Prometheus release that supports macOS 10.12 Sierra.
 * [BUGFIX] Fix timestamp handling in OpenMetrics parser. #9008
 * [BUGFIX] Fix potential duplicate metrics in `/federate` endpoint when specifying multiple matchers. #8885
 * [BUGFIX] Fix server configuration and validation for authentication via client cert. #9123
+* [BUGFIX] Allow `start` and `end` again as label names in PromQL queries. They were disallowed since the introduction of @ timestamp feature. #9119
 
 ## 2.28.1 / 2021-07-01
 
