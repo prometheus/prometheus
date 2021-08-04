@@ -15,6 +15,7 @@ package linode
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -56,6 +57,11 @@ const (
 	linodeLabelSpecsVCPUs         = linodeLabel + "specs_vcpus"
 	linodeLabelSpecsTransferBytes = linodeLabel + "specs_transfer_bytes"
 	linodeLabelExtraIPs           = linodeLabel + "extra_ips"
+
+	// This is our events filter; when polling for changes, we care only about
+	// events since our last refresh.
+	// Docs: https://www.linode.com/docs/api/account/#events-list
+	filterTemplate = `{"created": {"+gte": "%s"}}`
 )
 
 // DefaultSDConfig is the default Linode SD configuration.
@@ -107,16 +113,23 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 // the Discoverer interface.
 type Discovery struct {
 	*refresh.Discovery
-	client       *linodego.Client
-	port         int
-	tagSeparator string
+	client               *linodego.Client
+	port                 int
+	tagSeparator         string
+	lastRefreshTimestamp time.Time
+	pollCount            int
+	lastResults          []*targetgroup.Group
+	eventPollingEnabled  bool
 }
 
 // NewDiscovery returns a new Discovery which periodically refreshes its targets.
 func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 	d := &Discovery{
-		port:         conf.Port,
-		tagSeparator: conf.TagSeparator,
+		port:                 conf.Port,
+		tagSeparator:         conf.TagSeparator,
+		pollCount:            0,
+		lastRefreshTimestamp: time.Now().UTC(),
+		eventPollingEnabled:  true,
 	}
 
 	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "linode_sd", config.WithHTTP2Disabled())
@@ -143,6 +156,50 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 }
 
 func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
+	needsRefresh := true
+	ts := time.Now().UTC()
+
+	if d.lastResults != nil && d.eventPollingEnabled {
+		// Check to see if there have been any events. If so, refresh our data.
+		opts := linodego.NewListOptions(1, fmt.Sprintf(filterTemplate, d.lastRefreshTimestamp.Format("2006-01-02T15:04:05")))
+		events, err := d.client.ListEvents(ctx, opts)
+		if err != nil {
+			var e *linodego.Error
+			if errors.As(err, &e) && e.Code == http.StatusUnauthorized {
+				// If we get a 401, the token doesn't have `events:read_only` scope.
+				// Disable event polling and fallback to doing a full refresh every interval.
+				d.eventPollingEnabled = false
+			} else {
+				return nil, err
+			}
+		} else {
+			// Event polling tells us changes the Linode API is aware of. Actions issued outside of the Linode API,
+			// such as issuing a `shutdown` at the VM's console instead of using the API to power off an instance,
+			// can potentially cause us to return stale data. Just in case, trigger a full refresh after ~10 polling
+			// intervals of no events.
+			d.pollCount++
+
+			if len(events) == 0 && d.pollCount < 10 {
+				needsRefresh = false
+			}
+		}
+	}
+
+	if needsRefresh {
+		newData, err := d.refreshData(ctx)
+		if err != nil {
+			return nil, err
+		}
+		d.pollCount = 0
+		d.lastResults = newData
+	}
+
+	d.lastRefreshTimestamp = ts
+
+	return d.lastResults, nil
+}
+
+func (d *Discovery) refreshData(ctx context.Context) ([]*targetgroup.Group, error) {
 	tg := &targetgroup.Group{
 		Source: "Linode",
 	}

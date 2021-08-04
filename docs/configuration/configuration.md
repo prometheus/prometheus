@@ -1706,7 +1706,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 # Note that `basic_auth` and `authorization` options are
 # mutually exclusive.
 # password and password_file are mutually exclusive.
-# Note: Linode APIv4 Token must be created with scopes: 'linodes:read_only' and 'ips:read_only'
+# Note: Linode APIv4 Token must be created with scopes: 'linodes:read_only', 'ips:read_only', and 'events:read_only'
 
 # Optional HTTP basic authentication information, not currently supported by Linode APIv4.
 basic_auth:
