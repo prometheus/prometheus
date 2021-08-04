@@ -13,7 +13,7 @@
 * [ENHANCEMENT] Improve append performance in TSDB by reducing mutexes usage. #9061
 * [ENHANCEMENT] Allow configuring `max_samples_per_send` for remote write metadata. #8959
 * [ENHANCEMENT] Add `__meta_gce_interface_ipv4_<name>` meta label to GCE discovery. #8978
-* [ENHANCEMENT] Add `__meta_ec2_availability_zone_id` meta label to EC2 discovery. #8978
+* [ENHANCEMENT] Add `__meta_ec2_availability_zone_id` meta label to EC2 discovery. #8896
 * [ENHANCEMENT] Add `__meta_azure_machine_computer_name` meta label to Azure discovery. #9112
 * [ENHANCEMENT] Add `__meta_hetzner_hcloud_labelpresent_<labelname>` meta label to Hetzner discovery. #9028
 * [ENHANCEMENT] promtool: Add compaction efficiency to `promtool tsdb analyze` reports. #8940
