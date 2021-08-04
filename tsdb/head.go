@@ -97,6 +97,8 @@ type Head struct {
 	// chunkDiskMapper is used to write and read Head chunks to/from disk.
 	chunkDiskMapper *chunks.ChunkDiskMapper
 
+	chunkSnapshotMtx sync.Mutex
+
 	closedMtx sync.Mutex
 	closed    bool
 
@@ -122,9 +124,10 @@ type HeadOptions struct {
 	// StripeSize sets the number of entries in the hash map, it must be a power of 2.
 	// A larger StripeSize will allocate more memory up-front, but will increase performance when handling a large number of series.
 	// A smaller StripeSize reduces the memory allocated, but can decrease performance with large number of series.
-	StripeSize            int
-	SeriesCallback        SeriesLifecycleCallback
-	EnableExemplarStorage bool
+	StripeSize                     int
+	SeriesCallback                 SeriesLifecycleCallback
+	EnableExemplarStorage          bool
+	EnableMemorySnapshotOnShutdown bool
 
 	// Runtime reloadable options.
 	MaxExemplars atomic.Int64
@@ -439,11 +442,25 @@ func (h *Head) Init(minValidTime int64) error {
 	h.minValidTime.Store(minValidTime)
 	defer h.postings.EnsureOrder()
 	defer h.gc() // After loading the wal remove the obsolete data from the head.
+	defer func() {
+		// Loading of m-mapped chunks and snapshot can make the mint of the Head
+		// to go below minValidTime.
+		if h.MinTime() < h.minValidTime.Load() {
+			h.minTime.Store(h.minValidTime.Load())
+		}
+	}()
 
 	level.Info(h.logger).Log("msg", "Replaying on-disk memory mappable chunks if any")
 	start := time.Now()
 
-	mmappedChunks, err := h.loadMmappedChunks()
+	snapIdx, snapOffset, refSeries, err := h.loadChunkSnapshot()
+	if err != nil {
+		return err
+	}
+	level.Info(h.logger).Log("msg", "Chunk snapshot loading time", "duration", time.Since(start).String())
+
+	mmapChunkReplayStart := time.Now()
+	mmappedChunks, err := h.loadMmappedChunks(refSeries)
 	if err != nil {
 		level.Error(h.logger).Log("msg", "Loading on-disk chunks failed", "err", err)
 		if _, ok := errors.Cause(err).(*chunks.CorruptionErr); ok {
@@ -451,10 +468,10 @@ func (h *Head) Init(minValidTime int64) error {
 		}
 		// If this fails, data will be recovered from WAL.
 		// Hence we wont lose any data (given WAL is not corrupt).
-		mmappedChunks = h.removeCorruptedMmappedChunks(err)
+		mmappedChunks = h.removeCorruptedMmappedChunks(err, refSeries)
 	}
 
-	level.Info(h.logger).Log("msg", "On-disk memory mappable chunks replay completed", "duration", time.Since(start).String())
+	level.Info(h.logger).Log("msg", "On-disk memory mappable chunks replay completed", "duration", time.Since(mmapChunkReplayStart).String())
 	if h.wal == nil {
 		level.Info(h.logger).Log("msg", "WAL not found")
 		return nil
@@ -502,6 +519,9 @@ func (h *Head) Init(minValidTime int64) error {
 
 	walReplayStart := time.Now()
 
+	if snapIdx > startFrom {
+		startFrom = snapIdx
+	}
 	// Backfill segments from the most recent checkpoint onwards.
 	for i := startFrom; i <= endAt; i++ {
 		s, err := wal.OpenReadSegment(wal.SegmentName(h.wal.Dir(), i))
@@ -509,7 +529,14 @@ func (h *Head) Init(minValidTime int64) error {
 			return errors.Wrap(err, fmt.Sprintf("open WAL segment: %d", i))
 		}
 
-		sr := wal.NewSegmentBufReader(s)
+		offset := 0
+		if i == snapIdx {
+			offset = snapOffset
+		}
+		sr, err := wal.NewSegmentBufReaderWithOffset(offset, s)
+		if err != nil {
+			return errors.Wrapf(err, "segment reader (offset=%d)", offset)
+		}
 		err = h.loadWAL(wal.NewReader(sr), multiRef, mmappedChunks)
 		if err := sr.Close(); err != nil {
 			level.Warn(h.logger).Log("msg", "Error while closing the wal segments reader", "err", err)
@@ -533,29 +560,49 @@ func (h *Head) Init(minValidTime int64) error {
 	return nil
 }
 
-func (h *Head) loadMmappedChunks() (map[uint64][]*mmappedChunk, error) {
+func (h *Head) loadMmappedChunks(refSeries map[uint64]*memSeries) (map[uint64][]*mmappedChunk, error) {
 	mmappedChunks := map[uint64][]*mmappedChunk{}
 	if err := h.chunkDiskMapper.IterateAllChunks(func(seriesRef, chunkRef uint64, mint, maxt int64, numSamples uint16) error {
 		if maxt < h.minValidTime.Load() {
 			return nil
 		}
-
-		slice := mmappedChunks[seriesRef]
-		if len(slice) > 0 {
-			if slice[len(slice)-1].maxTime >= mint {
-				return &chunks.CorruptionErr{
-					Err: errors.Errorf("out of sequence m-mapped chunk for series ref %d", seriesRef),
-				}
+		ms, ok := refSeries[seriesRef]
+		if !ok {
+			slice := mmappedChunks[seriesRef]
+			if len(slice) > 0 && slice[len(slice)-1].maxTime >= mint {
+				return errors.Errorf("out of sequence m-mapped chunk for series ref %d", seriesRef)
 			}
+
+			slice = append(slice, &mmappedChunk{
+				ref:        chunkRef,
+				minTime:    mint,
+				maxTime:    maxt,
+				numSamples: numSamples,
+			})
+			mmappedChunks[seriesRef] = slice
+			return nil
 		}
 
-		slice = append(slice, &mmappedChunk{
+		if len(ms.mmappedChunks) > 0 && ms.mmappedChunks[len(ms.mmappedChunks)-1].maxTime >= mint {
+			return errors.Errorf("out of sequence m-mapped chunk for series ref %d", seriesRef)
+		}
+
+		h.metrics.chunks.Inc()
+		h.metrics.chunksCreated.Inc()
+		ms.mmappedChunks = append(ms.mmappedChunks, &mmappedChunk{
 			ref:        chunkRef,
 			minTime:    mint,
 			maxTime:    maxt,
 			numSamples: numSamples,
 		})
-		mmappedChunks[seriesRef] = slice
+		h.updateMinMaxTime(mint, maxt)
+		if ms.headChunk != nil && maxt >= ms.headChunk.minTime {
+			// The head chunk was completed and was m-mapped after taking the snapshot.
+			// Hence remove this chunk.
+			ms.nextAt = 0
+			ms.headChunk = nil
+			ms.app = nil
+		}
 		return nil
 	}); err != nil {
 		return nil, errors.Wrap(err, "iterate on on-disk chunks")
@@ -565,7 +612,7 @@ func (h *Head) loadMmappedChunks() (map[uint64][]*mmappedChunk, error) {
 
 // removeCorruptedMmappedChunks attempts to delete the corrupted mmapped chunks and if it fails, it clears all the previously
 // loaded mmapped chunks.
-func (h *Head) removeCorruptedMmappedChunks(err error) map[uint64][]*mmappedChunk {
+func (h *Head) removeCorruptedMmappedChunks(err error, refSeries map[uint64]*memSeries) map[uint64][]*mmappedChunk {
 	level.Info(h.logger).Log("msg", "Deleting mmapped chunk files")
 
 	if err := h.chunkDiskMapper.DeleteCorrupted(err); err != nil {
@@ -574,7 +621,7 @@ func (h *Head) removeCorruptedMmappedChunks(err error) map[uint64][]*mmappedChun
 	}
 
 	level.Info(h.logger).Log("msg", "Deletion of mmap chunk files successful, reattempting m-mapping the on-disk chunks")
-	mmappedChunks, err := h.loadMmappedChunks()
+	mmappedChunks, err := h.loadMmappedChunks(refSeries)
 	if err != nil {
 		level.Error(h.logger).Log("msg", "Loading on-disk chunks failed, discarding chunk files completely", "err", err)
 		mmappedChunks = map[uint64][]*mmappedChunk{}
@@ -661,6 +708,9 @@ func (h *Head) Truncate(mint int64) (err error) {
 
 // truncateMemory removes old data before mint from the head.
 func (h *Head) truncateMemory(mint int64) (err error) {
+	h.chunkSnapshotMtx.Lock()
+	defer h.chunkSnapshotMtx.Unlock()
+
 	defer func() {
 		if err != nil {
 			h.metrics.headTruncateFail.Inc()
@@ -796,6 +846,9 @@ func (h *Head) IsQuerierCollidingWithTruncation(querierMint, querierMaxt int64) 
 
 // truncateWAL removes old data before mint from the WAL.
 func (h *Head) truncateWAL(mint int64) error {
+	h.chunkSnapshotMtx.Lock()
+	defer h.chunkSnapshotMtx.Unlock()
+
 	if h.wal == nil || mint <= h.lastWALTruncationTime.Load() {
 		return nil
 	}
@@ -1095,15 +1148,20 @@ func (h *Head) compactable() bool {
 }
 
 // Close flushes the WAL and closes the head.
+// It also takes a snapshot of in-memory chunks if enabled.
 func (h *Head) Close() error {
 	h.closedMtx.Lock()
 	defer h.closedMtx.Unlock()
 	h.closed = true
 	errs := tsdb_errors.NewMulti(h.chunkDiskMapper.Close())
+	if errs.Err() == nil && h.opts.EnableMemorySnapshotOnShutdown {
+		errs.Add(h.performChunkSnapshot())
+	}
 	if h.wal != nil {
 		errs.Add(h.wal.Close())
 	}
 	return errs.Err()
+
 }
 
 // String returns an human readable representation of the TSDB head. It's important to

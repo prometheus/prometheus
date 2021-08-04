@@ -149,6 +149,9 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 			case "exemplar-storage":
 				c.tsdb.EnableExemplarStorage = true
 				level.Info(logger).Log("msg", "Experimental in-memory exemplar storage enabled")
+			case "memory-snapshot-on-shutdown":
+				c.tsdb.EnableMemorySnapshotOnShutdown = true
+				level.Info(logger).Log("msg", "Experimental memory snapshot on shutdown enabled")
 			case "":
 				continue
 			default:
@@ -309,7 +312,7 @@ func main() {
 	a.Flag("query.max-samples", "Maximum number of samples a single query can load into memory. Note that queries will fail if they try to load more samples than this into memory, so this also limits the number of samples a query can return.").
 		Default("50000000").IntVar(&cfg.queryMaxSamples)
 
-	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: promql-at-modifier, promql-negative-offset, remote-write-receiver, exemplar-storage, expand-external-labels. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
+	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-at-modifier, promql-negative-offset, remote-write-receiver. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
 		Default("").StringsVar(&cfg.featureList)
 
 	promlogflag.AddFlags(a, &cfg.promlogConfig)
@@ -1263,34 +1266,36 @@ func (rm *readyScrapeManager) Get() (*scrape.Manager, error) {
 // tsdbOptions is tsdb.Option version with defined units.
 // This is required as tsdb.Option fields are unit agnostic (time).
 type tsdbOptions struct {
-	WALSegmentSize           units.Base2Bytes
-	MaxBlockChunkSegmentSize units.Base2Bytes
-	RetentionDuration        model.Duration
-	MaxBytes                 units.Base2Bytes
-	NoLockfile               bool
-	AllowOverlappingBlocks   bool
-	WALCompression           bool
-	StripeSize               int
-	MinBlockDuration         model.Duration
-	MaxBlockDuration         model.Duration
-	EnableExemplarStorage    bool
-	MaxExemplars             int64
+	WALSegmentSize                 units.Base2Bytes
+	MaxBlockChunkSegmentSize       units.Base2Bytes
+	RetentionDuration              model.Duration
+	MaxBytes                       units.Base2Bytes
+	NoLockfile                     bool
+	AllowOverlappingBlocks         bool
+	WALCompression                 bool
+	StripeSize                     int
+	MinBlockDuration               model.Duration
+	MaxBlockDuration               model.Duration
+	EnableExemplarStorage          bool
+	MaxExemplars                   int64
+	EnableMemorySnapshotOnShutdown bool
 }
 
 func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 	return tsdb.Options{
-		WALSegmentSize:           int(opts.WALSegmentSize),
-		MaxBlockChunkSegmentSize: int64(opts.MaxBlockChunkSegmentSize),
-		RetentionDuration:        int64(time.Duration(opts.RetentionDuration) / time.Millisecond),
-		MaxBytes:                 int64(opts.MaxBytes),
-		NoLockfile:               opts.NoLockfile,
-		AllowOverlappingBlocks:   opts.AllowOverlappingBlocks,
-		WALCompression:           opts.WALCompression,
-		StripeSize:               opts.StripeSize,
-		MinBlockDuration:         int64(time.Duration(opts.MinBlockDuration) / time.Millisecond),
-		MaxBlockDuration:         int64(time.Duration(opts.MaxBlockDuration) / time.Millisecond),
-		EnableExemplarStorage:    opts.EnableExemplarStorage,
-		MaxExemplars:             opts.MaxExemplars,
+		WALSegmentSize:                 int(opts.WALSegmentSize),
+		MaxBlockChunkSegmentSize:       int64(opts.MaxBlockChunkSegmentSize),
+		RetentionDuration:              int64(time.Duration(opts.RetentionDuration) / time.Millisecond),
+		MaxBytes:                       int64(opts.MaxBytes),
+		NoLockfile:                     opts.NoLockfile,
+		AllowOverlappingBlocks:         opts.AllowOverlappingBlocks,
+		WALCompression:                 opts.WALCompression,
+		StripeSize:                     opts.StripeSize,
+		MinBlockDuration:               int64(time.Duration(opts.MinBlockDuration) / time.Millisecond),
+		MaxBlockDuration:               int64(time.Duration(opts.MaxBlockDuration) / time.Millisecond),
+		EnableExemplarStorage:          opts.EnableExemplarStorage,
+		MaxExemplars:                   opts.MaxExemplars,
+		EnableMemorySnapshotOnShutdown: opts.EnableMemorySnapshotOnShutdown,
 	}
 }
 
