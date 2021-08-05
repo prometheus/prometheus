@@ -255,6 +255,10 @@ class Panel extends Component<PanelProps, PanelState> {
     this.setOptions({ showExemplars: show });
   };
 
+  handleTimeRangeSelection = (startTime: number, endTime: number) => {
+    this.setOptions({ range: endTime - startTime, endTime: endTime });
+  };
+
   render() {
     const { pastQueries, metricNames, options } = this.props;
     return (
@@ -356,6 +360,7 @@ class Panel extends Component<PanelProps, PanelState> {
                       showExemplars={options.showExemplars}
                       lastQueryParams={this.state.lastQueryParams}
                       id={this.props.id}
+                      handleTimeRangeSelection={this.handleTimeRangeSelection}
                     />
                   </>
                 )}

@@ -48,6 +48,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/scaleway"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/discovery/triton"
+	"github.com/prometheus/prometheus/discovery/xds"
 	"github.com/prometheus/prometheus/discovery/zookeeper"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/relabel"
@@ -440,6 +441,26 @@ var expectedConf = &Config{
 			},
 		},
 		{
+			JobName: "service-kuma",
+
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
+
+			MetricsPath:      DefaultScrapeConfig.MetricsPath,
+			Scheme:           DefaultScrapeConfig.Scheme,
+			HTTPClientConfig: config.DefaultHTTPClientConfig,
+
+			ServiceDiscoveryConfigs: discovery.Configs{
+				&xds.KumaSDConfig{
+					Server:           "http://kuma-control-plane.kuma-system.svc:5676",
+					HTTPClientConfig: config.DefaultHTTPClientConfig,
+					RefreshInterval:  model.Duration(15 * time.Second),
+					FetchTimeout:     model.Duration(2 * time.Minute),
+				},
+			},
+		},
+		{
 			JobName: "service-marathon",
 
 			HonorTimestamps: true,
@@ -714,11 +735,12 @@ var expectedConf = &Config{
 
 			ServiceDiscoveryConfigs: discovery.Configs{
 				&moby.DockerSDConfig{
-					Filters:          []moby.Filter{},
-					Host:             "unix:///var/run/docker.sock",
-					Port:             80,
-					RefreshInterval:  model.Duration(60 * time.Second),
-					HTTPClientConfig: config.DefaultHTTPClientConfig,
+					Filters:            []moby.Filter{},
+					Host:               "unix:///var/run/docker.sock",
+					Port:               80,
+					HostNetworkingHost: "localhost",
+					RefreshInterval:    model.Duration(60 * time.Second),
+					HTTPClientConfig:   config.DefaultHTTPClientConfig,
 				},
 			},
 		},

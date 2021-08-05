@@ -95,7 +95,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 
 	var sets []storage.SeriesSet
 	for _, mset := range matcherSets {
-		s := q.Select(false, hints, mset...)
+		s := q.Select(true, hints, mset...)
 		sets = append(sets, s)
 	}
 

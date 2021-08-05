@@ -145,8 +145,8 @@ POST /api/v1/query_range
 URL query parameters:
 
 - `query=<string>`: Prometheus expression query string.
-- `start=<rfc3339 | unix_timestamp>`: Start timestamp.
-- `end=<rfc3339 | unix_timestamp>`: End timestamp.
+- `start=<rfc3339 | unix_timestamp>`: Start timestamp, inclusive.
+- `end=<rfc3339 | unix_timestamp>`: End timestamp, inclusive.
 - `step=<duration | float>`: Query resolution step width in `duration` format or float number of seconds.
 - `timeout=<duration>`: Evaluation timeout. Optional. Defaults to and
    is capped by the value of the `-query.timeout` flag.

@@ -43,6 +43,9 @@ declare namespace jquery.flot {
     series: { [K in keyof jquery.flot.seriesOptions]: jq.flot.seriesOptions[K] } & {
       stack: boolean;
     };
+    selection: {
+      mode: string;
+    };
   }
 }
 

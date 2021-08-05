@@ -413,3 +413,42 @@ func (m *SDMock) HandleLinodeNeworkingIPs() {
 		)
 	})
 }
+
+// HandleLinodeAccountEvents mocks linode the account/events endpoint.
+func (m *SDMock) HandleLinodeAccountEvents() {
+	m.Mux.HandleFunc("/v4/account/events", func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != fmt.Sprintf("Bearer %s", tokenID) {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+
+		if r.Header.Get("X-Filter") == "" {
+			// This should never happen; if the client sends an events request without
+			// a filter, cause it to fail. The error below is not a real response from
+			// the API, but should aid in debugging failed tests.
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprint(w, `
+{
+	"errors": [
+		{
+			"reason": "Request missing expected X-Filter headers"
+		}
+	]
+}`,
+			)
+			return
+		}
+
+		w.Header().Set("content-type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusOK)
+
+		fmt.Fprint(w, `
+{
+	"data": [],
+	"results": 0,
+	"pages": 1,
+	"page": 1
+}`,
+		)
+	})
+}

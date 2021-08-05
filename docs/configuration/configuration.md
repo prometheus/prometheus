@@ -248,6 +248,10 @@ http_sd_configs:
 kubernetes_sd_configs:
   [ - <kubernetes_sd_config> ... ]
 
+# List of Kuma service discovery configurations.
+kuma_sd_configs:
+  [ - <kuma_sd_config> ... ]
+
 # List of Lightsail service discovery configurations.
 lightsail_sd_configs:
   [ - <lightsail_sd_config> ... ]
@@ -382,6 +386,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_azure_machine_id`: the machine ID
 * `__meta_azure_machine_location`: the location the machine runs in
 * `__meta_azure_machine_name`: the machine name
+* `__meta_azure_machine_computer_name`: the machine computer name
 * `__meta_azure_machine_os_type`: the machine operating system
 * `__meta_azure_machine_private_ip`: the machine's private IP
 * `__meta_azure_machine_public_ip`: the machine's public IP if it exists
@@ -634,6 +639,9 @@ tls_config:
 # The port to scrape metrics from, when `role` is nodes, and for discovered
 # tasks and services that don't have published ports.
 [ port: <int> | default = 80 ]
+
+# The host to use if the container is in host networking mode.
+[ host_networking_host: <string> | default = "localhost" ]
 
 # Optional filters to limit the discovery process to a subset of available
 # resources.
@@ -893,6 +901,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_ec2_ami`: the EC2 Amazon Machine Image
 * `__meta_ec2_architecture`: the architecture of the instance
 * `__meta_ec2_availability_zone`: the availability zone in which the instance is running
+* `__meta_ec2_availability_zone_id`: the [availability zone ID](https://docs.aws.amazon.com/ram/latest/userguide/working-with-az-ids.html) in which the instance is running
 * `__meta_ec2_instance_id`: the EC2 instance ID
 * `__meta_ec2_instance_lifecycle`: the lifecycle of the EC2 instance, set only for 'spot' or 'scheduled' instances, absent otherwise
 * `__meta_ec2_instance_state`: the state of the EC2 instance
@@ -1131,6 +1140,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_gce_metadata_<name>`: each metadata item of the instance
 * `__meta_gce_network`: the network URL of the instance
 * `__meta_gce_private_ip`: the private IP address of the instance
+* `__meta_gce_interface_ipv4_<name>`: IPv4 address of each named interface
 * `__meta_gce_project`: the GCP project in which the instance is running
 * `__meta_gce_public_ip`: the public IP address of the instance, if present
 * `__meta_gce_subnetwork`: the subnetwork URL of the instance
@@ -1211,6 +1221,7 @@ The labels below are only available for targets with `role` set to `hcloud`:
 * `__meta_hetzner_hcloud_disk_size_gb`: the disk size of the server (in GB)
 * `__meta_hetzner_hcloud_private_ipv4_<networkname>`: the private ipv4 address of the server within a given network
 * `__meta_hetzner_hcloud_label_<labelname>`: each label of the server
+* `__meta_hetzner_hcloud_labelpresent_<labelname>`: `true` for each label of the server
 
 The labels below are only available for targets with `role` set to `robot`:
 
@@ -1545,6 +1556,74 @@ for a detailed example of configuring Prometheus for Kubernetes.
 You may wish to check out the 3rd party [Prometheus Operator](https://github.com/coreos/prometheus-operator),
 which automates the Prometheus setup on top of Kubernetes.
 
+### `<kuma_sd_config>`
+
+Kuma SD configurations allow retrieving scrape target from the [Kuma](https://kuma.io) control plane.
+
+This SD discovers "monitoring assignments" based on Kuma [Dataplane Proxies](https://kuma.io/docs/latest/documentation/dps-and-data-model),
+via the MADS v1 (Monitoring Assignment Discovery Service) xDS API, and will create a target for each proxy
+inside a Prometheus-enabled mesh.
+
+The following meta labels are available for each target:
+
+* `__meta_kuma_mesh`: the name of the proxy's Mesh 
+* `__meta_kuma_dataplane`: the name of the proxy
+* `__meta_kuma_service`: the name of the proxy's associated Service
+* `__meta_kuma_label_<tagname>`: each tag of the proxy
+
+See below for the configuration options for Kuma MonitoringAssignment discovery:
+
+```yaml
+# Address of the Kuma Control Plane's MADS xDS server.
+server: <string>
+
+# The time to wait between polling update requests.
+[ refresh_interval: <duration> | default = 30s ]
+
+# The time after which the monitoring assignments are refreshed.
+[ fetch_timeout: <duration> | default = 2m ]
+
+# Optional proxy URL.
+[ proxy_url: <string> ]
+
+# TLS configuration.
+tls_config:
+  [ <tls_config> ]
+
+# Authentication information used to authenticate to the Docker daemon.
+# Note that `basic_auth` and `authorization` options are
+# mutually exclusive.
+# password and password_file are mutually exclusive.
+
+# Optional HTTP basic authentication information.
+basic_auth:
+  [ username: <string> ]
+  [ password: <secret> ]
+  [ password_file: <string> ]
+
+# Optional the `Authorization` header configuration.
+authorization:
+  # Sets the authentication type.
+  [ type: <string> | default: Bearer ]
+  # Sets the credentials. It is mutually exclusive with
+  # `credentials_file`.
+  [ credentials: <secret> ]
+  # Sets the credentials with the credentials read from the configured file.
+  # It is mutually exclusive with `credentials`.
+  [ credentials_file: <filename> ]
+
+# Optional OAuth 2.0 configuration.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2:
+  [ <oauth2> ]
+
+# Configure whether HTTP requests follow HTTP 3xx redirects.
+[ follow_redirects: <bool> | default = true ]
+```
+
+The [relabeling phase](#relabel_config) is the preferred and more powerful way
+to filter proxies and user-defined tags.
+
 ### `<lightsail_sd_config>`
 
 Lightsail SD configurations allow retrieving scrape targets from [AWS Lightsail](https://aws.amazon.com/lightsail/)
@@ -1627,7 +1706,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 # Note that `basic_auth` and `authorization` options are
 # mutually exclusive.
 # password and password_file are mutually exclusive.
-# Note: Linode APIv4 Token must be created with scopes: 'linodes:read_only' and 'ips:read_only'
+# Note: Linode APIv4 Token must be created with scopes: 'linodes:read_only', 'ips:read_only', and 'events:read_only'
 
 # Optional HTTP basic authentication information, not currently supported by Linode APIv4.
 basic_auth:

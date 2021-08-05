@@ -234,6 +234,9 @@ describe('GraphHelpers', () => {
           lines: { lineWidth: 1, steps: false, fill: true },
           shadowSize: 0,
         },
+        selection: {
+          mode: 'x',
+        },
       });
     });
   });

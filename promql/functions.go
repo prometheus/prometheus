@@ -513,6 +513,13 @@ func funcAbsentOverTime(vals []parser.Value, args parser.Expressions, enh *EvalN
 		})
 }
 
+// === present_over_time(Vector parser.ValueTypeMatrix) Vector ===
+func funcPresentOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	return aggrOverTime(vals, enh, func(values []Point) float64 {
+		return 1
+	})
+}
+
 func simpleFunc(vals []parser.Value, enh *EvalNodeHelper, f func(float64) float64) Vector {
 	for _, el := range vals[0].(Vector) {
 		enh.Out = append(enh.Out, Sample{
@@ -959,6 +966,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"minute":             funcMinute,
 	"month":              funcMonth,
 	"predict_linear":     funcPredictLinear,
+	"present_over_time":  funcPresentOverTime,
 	"quantile_over_time": funcQuantileOverTime,
 	"rate":               funcRate,
 	"resets":             funcResets,

@@ -14,6 +14,9 @@
 package tsdb
 
 import (
+	"context"
+	"fmt"
+	"math"
 	"reflect"
 	"strconv"
 	"strings"
@@ -21,14 +24,17 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
 )
 
+var eMetrics = NewExemplarMetrics(prometheus.DefaultRegisterer)
+
 // Tests the same exemplar cases as AddExemplar, but specifically the ValidateExemplar function so it can be relied on externally.
 func TestValidateExemplar(t *testing.T) {
-	exs, err := NewCircularExemplarStorage(2, nil)
+	exs, err := NewCircularExemplarStorage(2, eMetrics)
 	require.NoError(t, err)
 	es := exs.(*CircularExemplarStorage)
 
@@ -87,7 +93,7 @@ func TestValidateExemplar(t *testing.T) {
 }
 
 func TestAddExemplar(t *testing.T) {
-	exs, err := NewCircularExemplarStorage(2, nil)
+	exs, err := NewCircularExemplarStorage(2, eMetrics)
 	require.NoError(t, err)
 	es := exs.(*CircularExemplarStorage)
 
@@ -150,7 +156,7 @@ func TestStorageOverflow(t *testing.T) {
 	// Test that circular buffer index and assignment
 	// works properly, adding more exemplars than can
 	// be stored and then querying for them.
-	exs, err := NewCircularExemplarStorage(5, nil)
+	exs, err := NewCircularExemplarStorage(5, eMetrics)
 	require.NoError(t, err)
 	es := exs.(*CircularExemplarStorage)
 
@@ -185,7 +191,7 @@ func TestStorageOverflow(t *testing.T) {
 }
 
 func TestSelectExemplar(t *testing.T) {
-	exs, err := NewCircularExemplarStorage(5, nil)
+	exs, err := NewCircularExemplarStorage(5, eMetrics)
 	require.NoError(t, err)
 	es := exs.(*CircularExemplarStorage)
 
@@ -216,7 +222,7 @@ func TestSelectExemplar(t *testing.T) {
 }
 
 func TestSelectExemplar_MultiSeries(t *testing.T) {
-	exs, err := NewCircularExemplarStorage(5, nil)
+	exs, err := NewCircularExemplarStorage(5, eMetrics)
 	require.NoError(t, err)
 	es := exs.(*CircularExemplarStorage)
 
@@ -273,8 +279,8 @@ func TestSelectExemplar_MultiSeries(t *testing.T) {
 }
 
 func TestSelectExemplar_TimeRange(t *testing.T) {
-	lenEs := 5
-	exs, err := NewCircularExemplarStorage(lenEs, nil)
+	var lenEs int64 = 5
+	exs, err := NewCircularExemplarStorage(lenEs, eMetrics)
 	require.NoError(t, err)
 	es := exs.(*CircularExemplarStorage)
 
@@ -282,7 +288,7 @@ func TestSelectExemplar_TimeRange(t *testing.T) {
 		{Name: "service", Value: "asdf"},
 	}
 
-	for i := 0; i < lenEs; i++ {
+	for i := 0; int64(i) < lenEs; i++ {
 		err := es.AddExemplar(l, exemplar.Exemplar{
 			Labels: labels.Labels{
 				labels.Label{
@@ -308,7 +314,7 @@ func TestSelectExemplar_TimeRange(t *testing.T) {
 // Test to ensure that even though a series matches more than one matcher from the
 // query that it's exemplars are only included in the result a single time.
 func TestSelectExemplar_DuplicateSeries(t *testing.T) {
-	exs, err := NewCircularExemplarStorage(4, nil)
+	exs, err := NewCircularExemplarStorage(4, eMetrics)
 	require.NoError(t, err)
 	es := exs.(*CircularExemplarStorage)
 
@@ -349,7 +355,7 @@ func TestSelectExemplar_DuplicateSeries(t *testing.T) {
 }
 
 func TestIndexOverwrite(t *testing.T) {
-	exs, err := NewCircularExemplarStorage(2, nil)
+	exs, err := NewCircularExemplarStorage(2, eMetrics)
 	require.NoError(t, err)
 	es := exs.(*CircularExemplarStorage)
 
@@ -379,4 +385,163 @@ func TestIndexOverwrite(t *testing.T) {
 
 	i := es.index[l2.String()]
 	require.Equal(t, &indexEntry{0, 0, l2}, i)
+}
+
+func TestResize(t *testing.T) {
+	testCases := []struct {
+		name              string
+		startSize         int64
+		newCount          int64
+		expectedSeries    []int
+		notExpectedSeries []int
+		expectedMigrated  int
+	}{
+		{
+			name:              "Grow",
+			startSize:         100,
+			newCount:          200,
+			expectedSeries:    []int{99, 98, 1, 0},
+			notExpectedSeries: []int{100},
+			expectedMigrated:  100,
+		},
+		{
+			name:              "Shrink",
+			startSize:         100,
+			newCount:          50,
+			expectedSeries:    []int{99, 98, 50},
+			notExpectedSeries: []int{49, 1, 0},
+			expectedMigrated:  50,
+		},
+		{
+			name:              "Zero",
+			startSize:         100,
+			newCount:          0,
+			expectedSeries:    []int{},
+			notExpectedSeries: []int{},
+			expectedMigrated:  0,
+		},
+		{
+			name:              "Negative",
+			startSize:         100,
+			newCount:          -1,
+			expectedSeries:    []int{},
+			notExpectedSeries: []int{},
+			expectedMigrated:  0,
+		},
+		{
+			name:              "NegativeToNegative",
+			startSize:         -1,
+			newCount:          -2,
+			expectedSeries:    []int{},
+			notExpectedSeries: []int{},
+			expectedMigrated:  0,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+
+			exs, err := NewCircularExemplarStorage(tc.startSize, eMetrics)
+			require.NoError(t, err)
+			es := exs.(*CircularExemplarStorage)
+
+			for i := 0; int64(i) < tc.startSize; i++ {
+				err = es.AddExemplar(labels.FromStrings("service", strconv.Itoa(i)), exemplar.Exemplar{
+					Value: float64(i),
+					Ts:    int64(i)})
+				require.NoError(t, err)
+			}
+
+			resized := es.Resize(tc.newCount)
+			require.Equal(t, tc.expectedMigrated, resized)
+
+			q, err := es.Querier(context.TODO())
+			require.NoError(t, err)
+
+			matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "service", "")}
+
+			for _, expected := range tc.expectedSeries {
+				matchers[0].Value = strconv.Itoa(expected)
+				ex, err := q.Select(0, math.MaxInt64, matchers)
+				require.NoError(t, err)
+				require.NotEmpty(t, ex)
+			}
+
+			for _, notExpected := range tc.notExpectedSeries {
+				matchers[0].Value = strconv.Itoa(notExpected)
+				ex, err := q.Select(0, math.MaxInt64, matchers)
+				require.NoError(t, err)
+				require.Empty(t, ex)
+			}
+		})
+	}
+}
+
+func BenchmarkAddExemplar(t *testing.B) {
+	exs, err := NewCircularExemplarStorage(int64(t.N), eMetrics)
+	require.NoError(t, err)
+	es := exs.(*CircularExemplarStorage)
+
+	for i := 0; i < t.N; i++ {
+		l := labels.FromStrings("service", strconv.Itoa(i))
+
+		err = es.AddExemplar(l, exemplar.Exemplar{Value: float64(i), Ts: int64(i)})
+		require.NoError(t, err)
+	}
+}
+
+func BenchmarkResizeExemplars(b *testing.B) {
+	testCases := []struct {
+		name         string
+		startSize    int64
+		endSize      int64
+		numExemplars int
+	}{
+		{
+			name:         "grow",
+			startSize:    100000,
+			endSize:      200000,
+			numExemplars: 150000,
+		},
+		{
+			name:         "shrink",
+			startSize:    100000,
+			endSize:      50000,
+			numExemplars: 100000,
+		},
+		{
+			name:         "grow",
+			startSize:    1000000,
+			endSize:      2000000,
+			numExemplars: 1500000,
+		},
+		{
+			name:         "shrink",
+			startSize:    1000000,
+			endSize:      500000,
+			numExemplars: 1000000,
+		},
+	}
+
+	for _, tc := range testCases {
+		exs, err := NewCircularExemplarStorage(tc.startSize, eMetrics)
+		require.NoError(b, err)
+		es := exs.(*CircularExemplarStorage)
+
+		for i := 0; i < int(float64(tc.startSize)*float64(1.5)); i++ {
+			l := labels.FromStrings("service", strconv.Itoa(i))
+
+			err = es.AddExemplar(l, exemplar.Exemplar{Value: float64(i), Ts: int64(i)})
+			require.NoError(b, err)
+		}
+		saveIndex := es.index
+		saveExemplars := es.exemplars
+
+		b.Run(fmt.Sprintf("%s-%d-to-%d", tc.name, tc.startSize, tc.endSize), func(t *testing.B) {
+			es.index = saveIndex
+			es.exemplars = saveExemplars
+			b.ResetTimer()
+			es.Resize(tc.endSize)
+		})
+	}
 }

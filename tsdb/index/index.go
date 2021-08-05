@@ -523,9 +523,15 @@ func (w *Writer) AddSymbol(sym string) error {
 }
 
 func (w *Writer) finishSymbols() error {
+	symbolTableSize := w.f.pos - w.toc.Symbols - 4
+	// The symbol table's <len> part is 4 bytes. So the total symbol table size must be less than or equal to 2^32-1
+	if symbolTableSize > 4294967295 {
+		return errors.Errorf("symbol table size exceeds 4 bytes: %d", symbolTableSize)
+	}
+
 	// Write out the length and symbol count.
 	w.buf1.Reset()
-	w.buf1.PutBE32int(int(w.f.pos - w.toc.Symbols - 4))
+	w.buf1.PutBE32int(int(symbolTableSize))
 	w.buf1.PutBE32int(int(w.numSymbols))
 	if err := w.writeAt(w.buf1.Get(), w.toc.Symbols); err != nil {
 		return err
@@ -1511,6 +1517,49 @@ func (r *Reader) LabelValues(name string, matchers ...*labels.Matcher) ([]string
 	return values, nil
 }
 
+// LabelNamesFor returns all the label names for the series referred to by IDs.
+// The names returned are sorted.
+func (r *Reader) LabelNamesFor(ids ...uint64) ([]string, error) {
+	// Gather offsetsMap the name offsetsMap in the symbol table first
+	offsetsMap := make(map[uint32]struct{})
+	for _, id := range ids {
+		offset := id
+		// In version 2 series IDs are no longer exact references but series are 16-byte padded
+		// and the ID is the multiple of 16 of the actual position.
+		if r.version == FormatV2 {
+			offset = id * 16
+		}
+
+		d := encoding.NewDecbufUvarintAt(r.b, int(offset), castagnoliTable)
+		buf := d.Get()
+		if d.Err() != nil {
+			return nil, errors.Wrap(d.Err(), "get buffer for series")
+		}
+
+		offsets, err := r.dec.LabelNamesOffsetsFor(buf)
+		if err != nil {
+			return nil, errors.Wrap(err, "get label name offsets")
+		}
+		for _, off := range offsets {
+			offsetsMap[off] = struct{}{}
+		}
+	}
+
+	// Lookup the unique symbols.
+	names := make([]string, 0, len(offsetsMap))
+	for off := range offsetsMap {
+		name, err := r.lookupSymbol(off)
+		if err != nil {
+			return nil, errors.Wrap(err, "lookup symbol in LabelNamesFor")
+		}
+		names = append(names, name)
+	}
+
+	sort.Strings(names)
+
+	return names, nil
+}
+
 // LabelValueFor returns label value for the given label name in the series referred to by ID.
 func (r *Reader) LabelValueFor(id uint64, label string) (string, error) {
 	offset := id
@@ -1664,7 +1713,12 @@ func (r *Reader) Size() int64 {
 }
 
 // LabelNames returns all the unique label names present in the index.
-func (r *Reader) LabelNames() ([]string, error) {
+// TODO(twilkie) implement support for matchers
+func (r *Reader) LabelNames(matchers ...*labels.Matcher) ([]string, error) {
+	if len(matchers) > 0 {
+		return nil, errors.Errorf("matchers parameter is not implemented: %+v", matchers)
+	}
+
 	labelNames := make([]string, 0, len(r.postings))
 	for name := range r.postings {
 		if name == allPostingsKey.Name {
@@ -1713,6 +1767,25 @@ func (dec *Decoder) Postings(b []byte) (int, Postings, error) {
 	n := d.Be32int()
 	l := d.Get()
 	return n, newBigEndianPostings(l), d.Err()
+}
+
+// LabelNamesOffsetsFor decodes the offsets of the name symbols for a given series.
+// They are returned in the same order they're stored, which should be sorted lexicographically.
+func (dec *Decoder) LabelNamesOffsetsFor(b []byte) ([]uint32, error) {
+	d := encoding.Decbuf{B: b}
+	k := d.Uvarint()
+
+	offsets := make([]uint32, k)
+	for i := 0; i < k; i++ {
+		offsets[i] = uint32(d.Uvarint())
+		_ = d.Uvarint() // skip the label value
+
+		if d.Err() != nil {
+			return nil, errors.Wrap(d.Err(), "read series label offsets")
+		}
+	}
+
+	return offsets, d.Err()
 }
 
 // LabelValueFor decodes a label for a given series.

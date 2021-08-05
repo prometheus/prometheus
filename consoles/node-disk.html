@@ -1,5 +1,44 @@
 {{ template "head" . }}
 
+{{ template "prom_right_table_head" }}
+<tr>
+  <th colspan="2">Disks</th>
+</tr>
+{{ range printf "node_disk_io_time_seconds_total{job='node',instance='%s'}" .Params.instance | query | sortByLabel "device" }}
+  <th colspan="2">{{ .Labels.device }}</th>
+  <tr>
+    <td>Utilization</td>
+    <td>{{ template "prom_query_drilldown" (args (printf "irate(node_disk_io_time_seconds_total{job='node',instance='%s',device='%s'}[5m]) * 100" .Labels.instance .Labels.device) "%" "printf.1f") }}</td>
+  </tr>
+  <tr>
+    <td>Throughput</td>
+    <td>{{ template "prom_query_drilldown" (args (printf "irate(node_disk_read_bytes_total{job='node',instance='%s',device='%s'}[5m]) + irate(node_disk_written_bytes_total{job='node',instance='%s',device='%s'}[5m])" .Labels.instance .Labels.device .Labels.instance .Labels.device) "B/s" "humanize") }}</td>
+  </tr>
+  <tr>
+    <td>Avg Read Time</td>
+    <td>{{ template "prom_query_drilldown" (args (printf "irate(node_disk_read_time_seconds_total{job='node',instance='%s',device='%s'}[5m]) / irate(node_disk_reads_completed_total{job='node',instance='%s',device='%s'}[5m])" .Labels.instance .Labels.device .Labels.instance .Labels.device) "s" "humanize") }}</td>
+  </tr>
+  <tr>
+    <td>Avg Write Time</td>
+    <td>{{ template "prom_query_drilldown" (args (printf "irate(node_disk_write_time_seconds_total{job='node',instance='%s',device='%s'}[5m]) / irate(node_disk_writes_completed_total{job='node',instance='%s',device='%s'}[5m])" .Labels.instance .Labels.device .Labels.instance .Labels.device) "s" "humanize") }}</td>
+  </tr>
+{{ end }}
+<tr>
+  <th colspan="2">Filesystem Fullness</th>
+</tr>
+{{ define "roughlyNearZero" }}
+{{ if gt .1 . }}~0{{ else }}{{ printf "%.1f" . }}{{ end }}
+{{ end }}
+{{ range printf "node_filesystem_size_bytes{job='node',instance='%s'}" .Params.instance | query | sortByLabel "mountpoint" }}
+  <tr>
+    <td>{{ .Labels.mountpoint }}</td>
+    <td>{{ template "prom_query_drilldown" (args (printf "100 - node_filesystem_avail_bytes{job='node',instance='%s',mountpoint='%s'} / node_filesystem_size_bytes{job='node'} * 100" .Labels.instance .Labels.mountpoint) "%" "roughlyNearZero") }}</td>
+  </tr>
+{{ end }}
+<tr>
+</tr>
+{{ template "prom_right_table_tail" }}
+
 {{ template "prom_content_head" . }}
   <h1>Node Disk - {{ reReplaceAll "(.*?://)([^:/]+?)(:\\d+)?/.*" "$2" .Params.instance }}</h1>
 
@@ -34,44 +73,6 @@
     yTitle: 'Filesystem Fullness'
   })
   </script>
-
-{{ template "prom_right_table_head" }}
-  <th colspan="2">Disks</th>
-</tr>
-{{ range printf "node_disk_io_time_seconds_total{job='node',instance='%s'}" .Params.instance | query | sortByLabel "device" }}
-  <th colspan="2">{{ .Labels.device }}</th>
-  <tr>
-    <td>Utilization</td>
-    <td>{{ template "prom_query_drilldown" (args (printf "irate(node_disk_io_time_seconds_total{job='node',instance='%s',device='%s'}[5m]) * 100" .Labels.instance .Labels.device) "%" "printf.1f") }}</td>
-  </tr>
-  <tr>
-    <td>Throughput</td>
-    <td>{{ template "prom_query_drilldown" (args (printf "irate(node_disk_read_bytes_total{job='node',instance='%s',device='%s'}[5m]) + irate(node_disk_written_bytes_total{job='node',instance='%s',device='%s'}[5m])" .Labels.instance .Labels.device .Labels.instance .Labels.device) "B/s" "humanize") }}</td>
-  </tr>
-  <tr>
-    <td>Avg Read Time</td>
-    <td>{{ template "prom_query_drilldown" (args (printf "irate(node_disk_read_time_seconds_total{job='node',instance='%s',device='%s'}[5m]) / irate(node_disk_reads_completed_total{job='node',instance='%s',device='%s'}[5m])" .Labels.instance .Labels.device .Labels.instance .Labels.device) "s" "humanize") }}</td>
-  </tr>
-  <tr>
-    <td>Avg Write Time</td>
-    <td>{{ template "prom_query_drilldown" (args (printf "irate(node_disk_write_time_seconds_total{job='node',instance='%s',device='%s'}[5m]) / irate(node_disk_writes_completed_total{job='node',instance='%s',device='%s'}[5m])" .Labels.instance .Labels.device .Labels.instance .Labels.device) "s" "humanize") }}</td>
-  </tr>
-{{ end }}
-  <th colspan="2">Filesystem Fullness</th>
-</tr>
-{{ define "roughlyNearZero" }}
-{{ if gt .1 . }}~0{{ else }}{{ printf "%.1f" . }}{{ end }}
-{{ end }}
-{{ range printf "node_filesystem_size_bytes{job='node',instance='%s'}" .Params.instance | query | sortByLabel "mountpoint" }}
-  <tr>
-    <td>{{ .Labels.mountpoint }}</td>
-    <td>{{ template "prom_query_drilldown" (args (printf "100 - node_filesystem_avail_bytes{job='node',instance='%s',mountpoint='%s'} / node_filesystem_size_bytes{job='node'} * 100" .Labels.instance .Labels.mountpoint) "%" "roughlyNearZero") }}</td>
-  </tr>
-{{ end }}
-<tr>
-</tr>
-{{ template "prom_right_table_tail" }}
-
 {{ template "prom_content_tail" . }}
 
 {{ template "tail" }}

@@ -36,6 +36,9 @@ tls_server_config:
   # Server policy for client authentication. Maps to ClientAuth Policies.
   # For more detail on clientAuth options:
   # https://golang.org/pkg/crypto/tls/#ClientAuthType
+  #
+  # NOTE: If you want to enable client authentication, you need to use
+  # RequireAndVerifyClientCert. Other values are insecure.
   [ client_auth_type: <string> | default = "NoClientCert" ]
 
   # CA certificate for client certificate authentication to the server.

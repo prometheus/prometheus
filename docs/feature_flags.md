@@ -1,9 +1,9 @@
 ---
-title: Disabled Features
+title: Feature Flags
 sort_rank: 11
 ---
 
-# Disabled Features
+# Feature Flags
 
 Here is a list of features that are disabled by default since they are breaking changes or are considered experimental.
 Their behaviour can change in future releases which will be communicated via the [release changelog](https://github.com/prometheus/prometheus/blob/main/CHANGELOG.md).
