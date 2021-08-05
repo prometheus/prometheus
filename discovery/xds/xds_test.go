@@ -93,9 +93,9 @@ func createTestHTTPServer(t *testing.T, responder discoveryResponder) *httptest.
 	}))
 }
 
-func constantResourceParser(groups []*targetgroup.Group, err error) resourceParser {
-	return func(resources []*anypb.Any, typeUrl string) ([]*targetgroup.Group, error) {
-		return groups, err
+func constantResourceParser(targets []model.LabelSet, err error) resourceParser {
+	return func(resources []*anypb.Any, typeUrl string) ([]model.LabelSet, error) {
+		return targets, err
 	}
 }
 
@@ -174,13 +174,16 @@ func TestPollingRefreshAttachesGroupMetadata(t *testing.T) {
 		fetchDuration:        testFetchDuration,
 		fetchFailuresCount:   testFetchFailuresCount,
 		fetchSkipUpdateCount: testFetchSkipUpdateCount,
-		parseResources: constantResourceParser([]*targetgroup.Group{
-			{},
+		parseResources: constantResourceParser([]model.LabelSet{
 			{
-				Source: "a-custom-source",
-				Labels: model.LabelSet{
-					"__meta_custom_xds_label": "a-value",
-				},
+				"__meta_custom_xds_label": "a-value",
+				"__address__":             "10.1.4.32:9090",
+				"instance":                "prometheus-01",
+			},
+			{
+				"__meta_custom_xds_label": "a-value",
+				"__address__":             "10.1.5.32:9090",
+				"instance":                "prometheus-02",
 			},
 		}, nil),
 	}
@@ -189,13 +192,83 @@ func TestPollingRefreshAttachesGroupMetadata(t *testing.T) {
 	groups := <-ch
 	require.NotNil(t, groups)
 
-	require.Len(t, groups, 2)
+	require.Len(t, groups, 1)
 
-	for _, group := range groups {
-		require.Equal(t, source, group.Source)
+	group := groups[0]
+	require.Equal(t, source, group.Source)
+
+	require.Len(t, group.Targets, 2)
+
+	target2 := group.Targets[1]
+	require.Contains(t, target2, model.LabelName("__meta_custom_xds_label"))
+	require.Equal(t, model.LabelValue("a-value"), target2["__meta_custom_xds_label"])
+}
+
+func TestPollingDisappearingTargets(t *testing.T) {
+	server := "http://198.161.2.0"
+	source := "test"
+	rc := &testResourceClient{
+		server:          server,
+		protocolVersion: ProtocolV3,
+		fetch: func(ctx context.Context) (*v3.DiscoveryResponse, error) {
+			return &v3.DiscoveryResponse{}, nil
+		},
 	}
 
-	group2 := groups[1]
-	require.Contains(t, group2.Labels, model.LabelName("__meta_custom_xds_label"))
-	require.Equal(t, model.LabelValue("a-value"), group2.Labels["__meta_custom_xds_label"])
+	// On the first poll, send back two targets. On the next, send just one.
+	counter := 0
+	parser := func(resources []*anypb.Any, typeUrl string) ([]model.LabelSet, error) {
+		counter++
+		if counter == 1 {
+			return []model.LabelSet{
+				{
+					"__meta_custom_xds_label": "a-value",
+					"__address__":             "10.1.4.32:9090",
+					"instance":                "prometheus-01",
+				},
+				{
+					"__meta_custom_xds_label": "a-value",
+					"__address__":             "10.1.5.32:9090",
+					"instance":                "prometheus-02",
+				},
+			}, nil
+		}
+
+		return []model.LabelSet{
+			{
+				"__meta_custom_xds_label": "a-value",
+				"__address__":             "10.1.4.32:9090",
+				"instance":                "prometheus-01",
+			},
+		}, nil
+	}
+
+	pd := &fetchDiscovery{
+		source:               source,
+		client:               rc,
+		logger:               nopLogger,
+		fetchDuration:        testFetchDuration,
+		fetchFailuresCount:   testFetchFailuresCount,
+		fetchSkipUpdateCount: testFetchSkipUpdateCount,
+		parseResources:       parser,
+	}
+
+	ch := make(chan []*targetgroup.Group, 1)
+	pd.poll(context.Background(), ch)
+	groups := <-ch
+	require.NotNil(t, groups)
+
+	require.Len(t, groups, 1)
+
+	require.Equal(t, source, groups[0].Source)
+	require.Len(t, groups[0].Targets, 2)
+
+	pd.poll(context.Background(), ch)
+	groups = <-ch
+	require.NotNil(t, groups)
+
+	require.Len(t, groups, 1)
+
+	require.Equal(t, source, groups[0].Source)
+	require.Len(t, groups[0].Targets, 1)
 }
