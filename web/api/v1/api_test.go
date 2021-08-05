@@ -465,6 +465,7 @@ func TestLabelNames(t *testing.T) {
 			test_metric1{foo2="boo"} 1+0x100
 			test_metric2{foo="boo"} 1+0x100
 			test_metric2{foo="boo", xyz="qwerty"} 1+0x100
+			test_metric2{foo="baz", abc="qwerty"} 1+0x100
 	`)
 	require.NoError(t, err)
 	defer suite.Close()
@@ -473,21 +474,57 @@ func TestLabelNames(t *testing.T) {
 	api := &API{
 		Queryable: suite.Storage(),
 	}
-	request := func(m string) (*http.Request, error) {
-		if m == http.MethodPost {
-			r, err := http.NewRequest(m, "http://example.com", nil)
-			r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-			return r, err
-		}
-		return http.NewRequest(m, "http://example.com", nil)
-	}
-	for _, method := range []string{http.MethodGet, http.MethodPost} {
-		ctx := context.Background()
-		req, err := request(method)
+	request := func(method string, matchers ...string) (*http.Request, error) {
+		u, err := url.Parse("http://example.com")
 		require.NoError(t, err)
-		res := api.labelNames(req.WithContext(ctx))
-		assertAPIError(t, res.err, "")
-		assertAPIResponse(t, res.data, []string{"__name__", "baz", "foo", "foo1", "foo2", "xyz"})
+		q := u.Query()
+		for _, matcher := range matchers {
+			q.Add("match[]", matcher)
+		}
+		u.RawQuery = q.Encode()
+
+		r, err := http.NewRequest(method, u.String(), nil)
+		if method == http.MethodPost {
+			r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		}
+		return r, err
+	}
+
+	for _, tc := range []struct {
+		name     string
+		matchers []string
+		expected []string
+	}{
+		{
+			name:     "no matchers",
+			expected: []string{"__name__", "abc", "baz", "foo", "foo1", "foo2", "xyz"},
+		},
+		{
+			name:     "non empty label matcher",
+			matchers: []string{`{foo=~".+"}`},
+			expected: []string{"__name__", "abc", "foo", "xyz"},
+		},
+		{
+			name:     "exact label matcher",
+			matchers: []string{`{foo="boo"}`},
+			expected: []string{"__name__", "foo", "xyz"},
+		},
+		{
+			name:     "two matchers",
+			matchers: []string{`{foo="boo"}`, `{foo="baz"}`},
+			expected: []string{"__name__", "abc", "foo", "xyz"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, method := range []string{http.MethodGet, http.MethodPost} {
+				ctx := context.Background()
+				req, err := request(method, tc.matchers...)
+				require.NoError(t, err)
+				res := api.labelNames(req.WithContext(ctx))
+				assertAPIError(t, res.err, "")
+				assertAPIResponse(t, res.data, tc.expected)
+			}
+		})
 	}
 }
 

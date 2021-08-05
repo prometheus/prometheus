@@ -66,6 +66,10 @@ func (wtm *writeToMock) AppendExemplars(e []record.RefExemplar) bool {
 }
 
 func (wtm *writeToMock) StoreSeries(series []record.RefSeries, index int) {
+	wtm.UpdateSeriesSegment(series, index)
+}
+
+func (wtm *writeToMock) UpdateSeriesSegment(series []record.RefSeries, index int) {
 	wtm.seriesLock.Lock()
 	defer wtm.seriesLock.Unlock()
 	for _, s := range series {
@@ -496,7 +500,7 @@ func TestReadCheckpointMultipleSegments(t *testing.T) {
 			lastCheckpoint, _, err := LastCheckpoint(watcher.walDir)
 			require.NoError(t, err)
 
-			err = watcher.readCheckpoint(lastCheckpoint)
+			err = watcher.readCheckpoint(lastCheckpoint, (*Watcher).readSegment)
 			require.NoError(t, err)
 		})
 	}

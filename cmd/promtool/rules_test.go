@@ -91,7 +91,7 @@ func TestBackfillRuleIntegration(t *testing.T) {
 				group1 := ruleImporter.groups[path1+";group0"]
 				require.NotNil(t, group1)
 				const defaultInterval = 60
-				require.Equal(t, time.Duration(defaultInterval*time.Second), group1.Interval())
+				require.Equal(t, defaultInterval*time.Second, group1.Interval())
 				gRules := group1.Rules()
 				require.Equal(t, 1, len(gRules))
 				require.Equal(t, "rule1", gRules[0].Name())
@@ -100,7 +100,7 @@ func TestBackfillRuleIntegration(t *testing.T) {
 
 				group2 := ruleImporter.groups[path2+";group2"]
 				require.NotNil(t, group2)
-				require.Equal(t, time.Duration(defaultInterval*time.Second), group2.Interval())
+				require.Equal(t, defaultInterval*time.Second, group2.Interval())
 				g2Rules := group2.Rules()
 				require.Equal(t, 2, len(g2Rules))
 				require.Equal(t, "grp2_rule1", g2Rules[0].Name())

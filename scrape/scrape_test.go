@@ -423,6 +423,10 @@ func TestScrapePoolTargetLimit(t *testing.T) {
 	validateIsRunning()
 	validateErrorMessage(true)
 
+	reloadWithLimit(0)
+	validateIsRunning()
+	validateErrorMessage(false)
+
 	reloadWithLimit(51)
 	validateIsRunning()
 	validateErrorMessage(false)

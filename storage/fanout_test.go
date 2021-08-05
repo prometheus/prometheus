@@ -234,7 +234,7 @@ func (errQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]strin
 	return nil, nil, errors.New("label values error")
 }
 
-func (errQuerier) LabelNames() ([]string, storage.Warnings, error) {
+func (errQuerier) LabelNames(...*labels.Matcher) ([]string, storage.Warnings, error) {
 	return nil, nil, errors.New("label names error")
 }
 

@@ -19,6 +19,7 @@ import (
 	"hash/crc32"
 	"unsafe"
 
+	"github.com/dennwc/varint"
 	"github.com/pkg/errors"
 )
 
@@ -139,7 +140,7 @@ func NewDecbufUvarintAt(bs ByteSlice, off int, castagnoliTable *crc32.Table) Dec
 	}
 	b := bs.Range(off, off+binary.MaxVarintLen32)
 
-	l, n := binary.Uvarint(b)
+	l, n := varint.Uvarint(b)
 	if n <= 0 || n > binary.MaxVarintLen32 {
 		return Decbuf{E: errors.Errorf("invalid uvarint %d", n)}
 	}
@@ -207,10 +208,16 @@ func (d *Decbuf) Varint64() int64 {
 	if d.E != nil {
 		return 0
 	}
-	x, n := binary.Varint(d.B)
+	// Decode as unsigned first, since that's what the varint library implements.
+	ux, n := varint.Uvarint(d.B)
 	if n < 1 {
 		d.E = ErrInvalidSize
 		return 0
+	}
+	// Now decode "ZigZag encoding" https://developers.google.com/protocol-buffers/docs/encoding#signed_integers.
+	x := int64(ux >> 1)
+	if ux&1 != 0 {
+		x = ^x
 	}
 	d.B = d.B[n:]
 	return x
@@ -220,7 +227,7 @@ func (d *Decbuf) Uvarint64() uint64 {
 	if d.E != nil {
 		return 0
 	}
-	x, n := binary.Uvarint(d.B)
+	x, n := varint.Uvarint(d.B)
 	if n < 1 {
 		d.E = ErrInvalidSize
 		return 0

@@ -117,6 +117,8 @@ type Query interface {
 	Stats() *stats.QueryTimers
 	// Cancel signals that a running query execution should be aborted.
 	Cancel()
+	// String returns the original query string.
+	String() string
 }
 
 // query implements the Query interface.
@@ -141,8 +143,15 @@ type query struct {
 type QueryOrigin struct{}
 
 // Statement implements the Query interface.
+// Calling this after Exec may result in panic,
+// see https://github.com/prometheus/prometheus/issues/8949.
 func (q *query) Statement() parser.Statement {
 	return q.stmt
+}
+
+// String implements the Query interface.
+func (q *query) String() string {
+	return q.q
 }
 
 // Stats implements the Query interface.
@@ -520,8 +529,6 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v parser.Value, ws storag
 
 	// Cancel when execution is done or an error was raised.
 	defer q.cancel()
-
-	const env = "query execution"
 
 	evalSpanTimer, ctx := q.stats.GetSpanTimer(ctx, stats.EvalTotalTime)
 	defer evalSpanTimer.Finish()

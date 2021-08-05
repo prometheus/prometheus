@@ -14,6 +14,7 @@
 package tsdb
 
 import (
+	"math"
 	"strconv"
 	"sync"
 	"testing"
@@ -35,8 +36,7 @@ func BenchmarkIsolation(b *testing.B) {
 					<-start
 
 					for i := 0; i < b.N; i++ {
-						appendID := iso.newAppendID()
-						_ = iso.lowWatermark()
+						appendID, _ := iso.newAppendID()
 
 						iso.closeAppend(appendID)
 					}
@@ -66,8 +66,7 @@ func BenchmarkIsolationWithState(b *testing.B) {
 					<-start
 
 					for i := 0; i < b.N; i++ {
-						appendID := iso.newAppendID()
-						_ = iso.lowWatermark()
+						appendID, _ := iso.newAppendID()
 
 						iso.closeAppend(appendID)
 					}
@@ -87,7 +86,7 @@ func BenchmarkIsolationWithState(b *testing.B) {
 					<-start
 
 					for i := 0; i < b.N; i++ {
-						s := iso.State()
+						s := iso.State(math.MinInt64, math.MaxInt64)
 						s.Close()
 					}
 				}()

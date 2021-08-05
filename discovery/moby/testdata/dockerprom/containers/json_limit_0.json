@@ -89,5 +89,44 @@
       }
     },
     "Mounts": []
+  },
+  {
+    "Id": "54ed6cc5c0988260436cb0e739b7b6c9cad6c439a93b4c4fdbe9753e1c94b189",
+    "Names": [
+      "/dockersd_host_networking_1"
+    ],
+    "Image": "httpd",
+    "ImageID": "sha256:73b8cfec11558fe86f565b4357f6d6c8560f4c49a5f15ae970a24da86c9adc93",
+    "Command": "httpd-foreground",
+    "Created": 1627440494,
+    "Ports": [],
+    "Labels": {
+      "com.docker.compose.project": "dockersd",
+      "com.docker.compose.service": "host_networking",
+      "com.docker.compose.version": "1.25.0"
+    },
+    "State": "running",
+    "Status": "Up 3 minutes",
+    "HostConfig": { "NetworkMode": "host" },
+    "NetworkSettings": {
+      "Networks": {
+        "host": {
+          "IPAMConfig": null,
+          "Links": null,
+          "Aliases": null,
+          "NetworkID": "80c4459fa193c5c8b57e90e117d2f899d1a86708e548738149d62e03df0ec35c",
+          "EndpointID": "e9bea4c499c34bd41609b0e1e9b38f9964c69180c1a22130f28b6af802c156d8",
+          "Gateway": "",
+          "IPAddress": "",
+          "IPPrefixLen": 0,
+          "IPv6Gateway": "",
+          "GlobalIPv6Address": "",
+          "GlobalIPv6PrefixLen": 0,
+          "MacAddress": "",
+          "DriverOpts": null
+        }
+      }
+    },
+    "Mounts": []
   }
 ]

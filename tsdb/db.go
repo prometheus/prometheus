@@ -35,6 +35,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -147,9 +148,12 @@ type Options struct {
 	// mainly meant for external users who import TSDB.
 	BlocksToDelete BlocksToDeleteFunc
 
+	// Enables the in memory exemplar storage,.
+	EnableExemplarStorage bool
+
 	// MaxExemplars sets the size, in # of exemplars stored, of the single circular buffer used to store exemplars in memory.
 	// See tsdb/exemplar.go, specifically the CircularExemplarStorage struct and it's constructor NewCircularExemplarStorage.
-	MaxExemplars int
+	MaxExemplars int64
 }
 
 type BlocksToDeleteFunc func(blocks []*Block) map[ulid.ULID]struct{}
@@ -716,7 +720,8 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	headOpts.ChunkWriteBufferSize = opts.HeadChunksWriteBufferSize
 	headOpts.StripeSize = opts.StripeSize
 	headOpts.SeriesCallback = opts.SeriesLifecycleCallback
-	headOpts.NumExemplars = opts.MaxExemplars
+	headOpts.EnableExemplarStorage = opts.EnableExemplarStorage
+	headOpts.MaxExemplars.Store(opts.MaxExemplars)
 	db.head, err = NewHead(r, l, wlog, headOpts, stats.Head)
 	if err != nil {
 		return nil, err
@@ -836,6 +841,10 @@ func (db *DB) run() {
 // Appender opens a new appender against the database.
 func (db *DB) Appender(ctx context.Context) storage.Appender {
 	return dbAppender{db: db, Appender: db.head.Appender(ctx)}
+}
+
+func (db *DB) ApplyConfig(conf *config.Config) error {
+	return db.head.ApplyConfig(conf)
 }
 
 // dbAppender wraps the DB's head appender and triggers compactions on commit
@@ -1516,8 +1525,32 @@ func (db *DB) Querier(_ context.Context, mint, maxt int64) (storage.Querier, err
 			blocks = append(blocks, b)
 		}
 	}
+	var headQuerier storage.Querier
 	if maxt >= db.head.MinTime() {
-		blocks = append(blocks, NewRangeHead(db.head, mint, maxt))
+		rh := NewRangeHead(db.head, mint, maxt)
+		var err error
+		headQuerier, err = NewBlockQuerier(rh, mint, maxt)
+		if err != nil {
+			return nil, errors.Wrapf(err, "open querier for head %s", rh)
+		}
+
+		// Getting the querier above registers itself in the queue that the truncation waits on.
+		// So if the querier is currently not colliding with any truncation, we can continue to use it and still
+		// won't run into a race later since any truncation that comes after will wait on this querier if it overlaps.
+		shouldClose, getNew, newMint := db.head.IsQuerierCollidingWithTruncation(mint, maxt)
+		if shouldClose {
+			if err := headQuerier.Close(); err != nil {
+				return nil, errors.Wrapf(err, "closing head querier %s", rh)
+			}
+			headQuerier = nil
+		}
+		if getNew {
+			rh := NewRangeHead(db.head, newMint, maxt)
+			headQuerier, err = NewBlockQuerier(rh, newMint, maxt)
+			if err != nil {
+				return nil, errors.Wrapf(err, "open querier for head while getting new querier %s", rh)
+			}
+		}
 	}
 
 	blockQueriers := make([]storage.Querier, 0, len(blocks))
@@ -1534,6 +1567,9 @@ func (db *DB) Querier(_ context.Context, mint, maxt int64) (storage.Querier, err
 		}
 		return nil, errors.Wrapf(err, "open querier for block %s", b)
 	}
+	if headQuerier != nil {
+		blockQueriers = append(blockQueriers, headQuerier)
+	}
 	return storage.NewMergeQuerier(blockQueriers, nil, storage.ChainedSeriesMerge), nil
 }
 
@@ -1549,8 +1585,32 @@ func (db *DB) ChunkQuerier(_ context.Context, mint, maxt int64) (storage.ChunkQu
 			blocks = append(blocks, b)
 		}
 	}
+	var headQuerier storage.ChunkQuerier
 	if maxt >= db.head.MinTime() {
-		blocks = append(blocks, NewRangeHead(db.head, mint, maxt))
+		rh := NewRangeHead(db.head, mint, maxt)
+		var err error
+		headQuerier, err = NewBlockChunkQuerier(rh, mint, maxt)
+		if err != nil {
+			return nil, errors.Wrapf(err, "open querier for head %s", rh)
+		}
+
+		// Getting the querier above registers itself in the queue that the truncation waits on.
+		// So if the querier is currently not colliding with any truncation, we can continue to use it and still
+		// won't run into a race later since any truncation that comes after will wait on this querier if it overlaps.
+		shouldClose, getNew, newMint := db.head.IsQuerierCollidingWithTruncation(mint, maxt)
+		if shouldClose {
+			if err := headQuerier.Close(); err != nil {
+				return nil, errors.Wrapf(err, "closing head querier %s", rh)
+			}
+			headQuerier = nil
+		}
+		if getNew {
+			rh := NewRangeHead(db.head, newMint, maxt)
+			headQuerier, err = NewBlockChunkQuerier(rh, newMint, maxt)
+			if err != nil {
+				return nil, errors.Wrapf(err, "open querier for head while getting new querier %s", rh)
+			}
+		}
 	}
 
 	blockQueriers := make([]storage.ChunkQuerier, 0, len(blocks))
@@ -1566,6 +1626,9 @@ func (db *DB) ChunkQuerier(_ context.Context, mint, maxt int64) (storage.ChunkQu
 			_ = q.Close()
 		}
 		return nil, errors.Wrapf(err, "open querier for block %s", b)
+	}
+	if headQuerier != nil {
+		blockQueriers = append(blockQueriers, headQuerier)
 	}
 
 	return storage.NewMergeChunkQuerier(blockQueriers, nil, storage.NewCompactingChunkSeriesMerger(storage.ChainedSeriesMerge)), nil

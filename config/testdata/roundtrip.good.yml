@@ -106,6 +106,9 @@ scrape_configs:
           username: username
           password_file: valid_password_file
 
+    kuma_sd_configs:
+      - server: http://kuma-control-plane.kuma-system.svc:5676
+
     marathon_sd_configs:
       - servers:
           - https://marathon.example.com:443

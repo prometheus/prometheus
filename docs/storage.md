@@ -82,7 +82,7 @@ Prometheus has several flags that configure local storage. The most important ar
 
 * `--storage.tsdb.path`: Where Prometheus writes its database. Defaults to `data/`.
 * `--storage.tsdb.retention.time`: When to remove old data. Defaults to `15d`. Overrides `storage.tsdb.retention` if this flag is set to anything other than default.
-* `--storage.tsdb.retention.size`: [EXPERIMENTAL] The maximum number of bytes of storage blocks to retain. The oldest data will be removed first. Defaults to `0` or disabled. This flag is experimental and may change in future releases. Units supported: B, KB, MB, GB, TB, PB, EB. Ex: "512MB"
+* `--storage.tsdb.retention.size`: The maximum number of bytes of storage blocks to retain. The oldest data will be removed first. Defaults to `0` or disabled. Units supported: B, KB, MB, GB, TB, PB, EB. Ex: "512MB"
 * `--storage.tsdb.retention`: Deprecated in favor of `storage.tsdb.retention.time`.
 * `--storage.tsdb.wal-compression`: Enables compression of the write-ahead log (WAL). Depending on your data, you can expect the WAL size to be halved with little extra cpu load. This flag was introduced in 2.11.0 and enabled by default in 2.20.0. Note that once enabled, downgrading Prometheus to a version below 2.11.0 will require deleting the WAL.
 
@@ -156,6 +156,16 @@ promtool tsdb create-blocks-from openmetrics <input file> [<output directory>]
 ```
 
 After the creation of the blocks, move it to the data directory of Prometheus. If there is an overlap with the existing blocks in Prometheus, the flag `--storage.tsdb.allow-overlapping-blocks` needs to be set. Note that any backfilled data is subject to the retention configured for your Prometheus server (by time or size).
+
+#### Longer Block Durations
+
+By default, the promtool will use the default block duration (2h) for the blocks; this behavior is the most generally applicable and correct. However, when backfilling data over a long range of times, it may be advantageous to use a larger value for the block duration to backfill faster and prevent additional compactions by TSDB later.
+
+The `--max-block-duration` flag allows the user to configure a maximum duration of blocks. The backfilling tool will pick a suitable block duration no larger than this.
+
+While larger blocks may improve the performance of backfilling large datasets, drawbacks exist as well. Time-based retention policies must keep the entire block around if even one sample of the (potentially large) block is still within the retention policy. Conversely, size-based retention policies will remove the entire block even if the TSDB only goes over the size limit in a minor way.
+
+Therefore, backfilling with few blocks, thereby choosing a larger block duration, must be done with care and is not recommended for any production instances.
 
 ## Backfilling for Recording Rules
 

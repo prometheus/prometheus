@@ -583,7 +583,7 @@ func (t *Test) exec(tc testCommand) error {
 				err = cmd.compareResult(vec)
 			}
 			if err != nil {
-				return errors.Wrapf(err, "error in %s %s (line %d) rande mode", cmd, iq.expr, cmd.line)
+				return errors.Wrapf(err, "error in %s %s (line %d) range mode", cmd, iq.expr, cmd.line)
 			}
 
 		}
@@ -675,12 +675,21 @@ type LazyLoader struct {
 	queryEngine *Engine
 	context     context.Context
 	cancelCtx   context.CancelFunc
+
+	opts LazyLoaderOpts
+}
+
+// LazyLoaderOpts are options for the lazy loader.
+type LazyLoaderOpts struct {
+	// Disabled PromQL engine features.
+	EnableAtModifier, EnableNegativeOffset bool
 }
 
 // NewLazyLoader returns an initialized empty LazyLoader.
-func NewLazyLoader(t testutil.T, input string) (*LazyLoader, error) {
+func NewLazyLoader(t testutil.T, input string, opts LazyLoaderOpts) (*LazyLoader, error) {
 	ll := &LazyLoader{
-		T: t,
+		T:    t,
+		opts: opts,
 	}
 	err := ll.parse(input)
 	ll.clear()
@@ -728,7 +737,8 @@ func (ll *LazyLoader) clear() {
 		MaxSamples:               10000,
 		Timeout:                  100 * time.Second,
 		NoStepSubqueryIntervalFn: func(int64) int64 { return durationMilliseconds(ll.SubqueryInterval) },
-		EnableAtModifier:         true,
+		EnableAtModifier:         ll.opts.EnableAtModifier,
+		EnableNegativeOffset:     ll.opts.EnableNegativeOffset,
 	}
 
 	ll.queryEngine = NewEngine(opts)

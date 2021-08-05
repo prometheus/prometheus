@@ -21,7 +21,9 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-kit/log"
@@ -41,7 +43,8 @@ var (
 		RefreshInterval:  model.Duration(60 * time.Second),
 		HTTPClientConfig: config.DefaultHTTPClientConfig,
 	}
-	userAgent = fmt.Sprintf("Prometheus/%s", version.Version)
+	userAgent        = fmt.Sprintf("Prometheus/%s", version.Version)
+	matchContentType = regexp.MustCompile(`^(?i:application\/json(;\s*charset=("utf-8"|utf-8))?)$`)
 )
 
 func init() {
@@ -101,6 +104,7 @@ type Discovery struct {
 	url             string
 	client          *http.Client
 	refreshInterval time.Duration
+	tgLastLength    int
 }
 
 // NewDiscovery returns a new HTTP discovery for the given config.
@@ -152,7 +156,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		return nil, errors.Errorf("server returned HTTP status %s", resp.Status)
 	}
 
-	if resp.Header.Get("Content-Type") != "application/json" {
+	if !matchContentType.MatchString(strings.TrimSpace(resp.Header.Get("Content-Type"))) {
 		return nil, errors.Errorf("unsupported content type %q", resp.Header.Get("Content-Type"))
 	}
 
@@ -179,6 +183,13 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		}
 		tg.Labels[httpSDURLLabel] = model.LabelValue(d.url)
 	}
+
+	// Generate empty updates for sources that disappeared.
+	l := len(targetGroups)
+	for i := l; i < d.tgLastLength; i++ {
+		targetGroups = append(targetGroups, &targetgroup.Group{Source: urlSource(d.url, i)})
+	}
+	d.tgLastLength = l
 
 	return targetGroups, nil
 }

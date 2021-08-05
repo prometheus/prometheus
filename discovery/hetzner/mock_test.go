@@ -310,7 +310,10 @@ func (m *SDMock) HandleHcloudServers() {
         "delete": false,
         "rebuild": false
       },
-      "labels": {},
+      "labels": {
+        "key": "",
+        "other-key": "value"
+      },
       "volumes": [],
       "load_balancers": []
     },

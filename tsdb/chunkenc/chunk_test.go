@@ -110,12 +110,13 @@ func testChunk(t *testing.T, c Chunk) {
 }
 
 func benchmarkIterator(b *testing.B, newChunk func() Chunk) {
+	const samplesPerChunk = 250
 	var (
 		t   = int64(1234123324)
 		v   = 1243535.123
 		exp []pair
 	)
-	for i := 0; i < b.N; i++ {
+	for i := 0; i < samplesPerChunk; i++ {
 		// t += int64(rand.Intn(10000) + 1)
 		t += int64(1000)
 		// v = rand.Float64()
@@ -123,11 +124,9 @@ func benchmarkIterator(b *testing.B, newChunk func() Chunk) {
 		exp = append(exp, pair{t: t, v: v})
 	}
 
-	var chunks []Chunk
-	for i := 0; i < b.N; {
-		c := newChunk()
-
-		a, err := c.Appender()
+	chunk := newChunk()
+	{
+		a, err := chunk.Appender()
 		if err != nil {
 			b.Fatalf("get appender: %s", err)
 		}
@@ -137,32 +136,27 @@ func benchmarkIterator(b *testing.B, newChunk func() Chunk) {
 				break
 			}
 			a.Append(p.t, p.v)
-			i++
 			j++
 		}
-		chunks = append(chunks, c)
 	}
 
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	b.Log("num", b.N, "created chunks", len(chunks))
-
-	res := make([]float64, 0, 1024)
-
+	var res float64
 	var it Iterator
-	for i := 0; i < len(chunks); i++ {
-		c := chunks[i]
-		it := c.Iterator(it)
+	for i := 0; i < b.N; {
+		it := chunk.Iterator(it)
 
 		for it.Next() {
 			_, v := it.At()
-			res = append(res, v)
+			res = v
+			i++
 		}
 		if it.Err() != io.EOF {
 			require.NoError(b, it.Err())
 		}
-		res = res[:0]
+		_ = res
 	}
 }
 

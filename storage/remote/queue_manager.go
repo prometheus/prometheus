@@ -352,10 +352,12 @@ type QueueManager struct {
 	clientMtx   sync.RWMutex
 	storeClient WriteClient
 
-	seriesMtx            sync.Mutex
-	seriesLabels         map[uint64]labels.Labels
+	seriesMtx     sync.Mutex // Covers seriesLabels and droppedSeries.
+	seriesLabels  map[uint64]labels.Labels
+	droppedSeries map[uint64]struct{}
+
+	seriesSegmentMtx     sync.Mutex // Covers seriesSegmentIndexes - if you also lock seriesMtx, take seriesMtx first.
 	seriesSegmentIndexes map[uint64]int
-	droppedSeries        map[uint64]struct{}
 
 	shards      *shards
 	numShards   int
@@ -642,6 +644,8 @@ func (t *QueueManager) Stop() {
 func (t *QueueManager) StoreSeries(series []record.RefSeries, index int) {
 	t.seriesMtx.Lock()
 	defer t.seriesMtx.Unlock()
+	t.seriesSegmentMtx.Lock()
+	defer t.seriesSegmentMtx.Unlock()
 	for _, s := range series {
 		// Just make sure all the Refs of Series will insert into seriesSegmentIndexes map for tracking.
 		t.seriesSegmentIndexes[s.Ref] = index
@@ -664,12 +668,23 @@ func (t *QueueManager) StoreSeries(series []record.RefSeries, index int) {
 	}
 }
 
+// Update the segment number held against the series, so we can trim older ones in SeriesReset.
+func (t *QueueManager) UpdateSeriesSegment(series []record.RefSeries, index int) {
+	t.seriesSegmentMtx.Lock()
+	defer t.seriesSegmentMtx.Unlock()
+	for _, s := range series {
+		t.seriesSegmentIndexes[s.Ref] = index
+	}
+}
+
 // SeriesReset is used when reading a checkpoint. WAL Watcher should have
 // stored series records with the checkpoints index number, so we can now
 // delete any ref ID's lower than that # from the two maps.
 func (t *QueueManager) SeriesReset(index int) {
 	t.seriesMtx.Lock()
 	defer t.seriesMtx.Unlock()
+	t.seriesSegmentMtx.Lock()
+	defer t.seriesSegmentMtx.Unlock()
 	// Check for series that are in segments older than the checkpoint
 	// that were not also present in the checkpoint.
 	for k, v := range t.seriesSegmentIndexes {

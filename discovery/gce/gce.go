@@ -178,6 +178,12 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 			addr := fmt.Sprintf("%s:%d", priIface.NetworkIP, d.port)
 			labels[model.AddressLabel] = model.LabelValue(addr)
 
+			// Append named interface metadata for all interfaces
+			for _, iface := range inst.NetworkInterfaces {
+				gceLabelNetAddress := model.LabelName(fmt.Sprintf("%sinterface_ipv4_%s", gceLabel, strutil.SanitizeLabelName(iface.Name)))
+				labels[gceLabelNetAddress] = model.LabelValue(iface.NetworkIP)
+			}
+
 			// Tags in GCE are usually only used for networking rules.
 			if inst.Tags != nil && len(inst.Tags.Items) > 0 {
 				// We surround the separated list with the separator as well. This way regular expressions
