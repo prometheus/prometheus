@@ -14,12 +14,14 @@ require (
 	github.com/aws/aws-sdk-go v1.38.60
 	github.com/cespare/xxhash/v2 v2.1.1
 	github.com/containerd/containerd v1.4.3 // indirect
+	github.com/ctdk/goiardi v0.11.10
 	github.com/dgryski/go-sip13 v0.0.0-20200911182023-62edffca9245
 	github.com/digitalocean/godo v1.62.0
 	github.com/docker/distribution v2.7.1+incompatible // indirect
 	github.com/docker/docker v20.10.7+incompatible
 	github.com/docker/go-connections v0.4.0 // indirect
 	github.com/edsrzf/mmap-go v1.0.0
+	github.com/go-chef/chef v0.23.2
 	github.com/go-kit/kit v0.10.0
 	github.com/go-kit/log v0.1.0
 	github.com/go-logfmt/logfmt v0.5.0

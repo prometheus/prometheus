@@ -34,4 +34,5 @@ import (
 	_ "github.com/prometheus/prometheus/discovery/scaleway"     // register scaleway
 	_ "github.com/prometheus/prometheus/discovery/triton"       // register triton
 	_ "github.com/prometheus/prometheus/discovery/zookeeper"    // register zookeeper
+	_ "github.com/reasland/prometheus/discovery/chef"           // register zookeeper
 )
