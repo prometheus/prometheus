@@ -386,7 +386,7 @@ func (h *Head) processWALSamples(
 				unknownRefs++
 				continue
 			}
-			if s.T < ms.mmMaxTime {
+			if s.T <= ms.mmMaxTime {
 				continue
 			}
 			if _, chunkCreated := ms.append(s.T, s.V, 0, h.chunkDiskMapper); chunkCreated {
