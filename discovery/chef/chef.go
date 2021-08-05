@@ -29,8 +29,7 @@ const (
 	chefLabelNodeName        = chefLabel + "node_name"
 	chefLabelNodeOSType      = chefLabel + "node_os_type"
 	chefLabelNodeEnvironment = chefLabel + "node_environment"
-	chefLabelNodePrivateIP   = chefLabel + "node_private_ip"
-	chefLabelNodePublicIP    = chefLabel + "node_public_ip"
+	chefLabelNodeIP          = chefLabel + "node_ip"
 	chefLabelNodeAttribute   = chefLabel + "node_attribute_"
 	chefLabelNodeTag         = chefLabel + "node_tag"
 	chefLabelNodeRole        = chefLabel + "node_role"
@@ -186,6 +185,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 				chefLabelNodeName:        model.LabelValue(node.Attribute["hostname"].(string)),
 				chefLabelNodeOSType:      model.LabelValue(node.Attribute["os"].(string)),
 				chefLabelNodeEnvironment: model.LabelValue(node.Attribute["chef_environment"].(string)),
+				chefLabelNodeIP:          model.LabelValue(node.Attribute["ipaddress"].(string)),
 				chefLabelNodeTag:         model.LabelValue(strings.Join(unwrapArray(node.Attribute["tags"]), ",")),
 				chefLabelNodeRole:        model.LabelValue(strings.Join(unwrapArray(node.Attribute["roles"]), ",")),
 			}
