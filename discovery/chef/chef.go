@@ -1,10 +1,11 @@
-package main
+package chef
 
 import (
 	"context"
 	"fmt"
 	"net"
 	"reflect"
+	"regexp"
 	"strings"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
@@ -21,21 +23,35 @@ import (
 )
 
 const (
-	chefLabel                   = model.MetaLabelPrefix + "chef_"
-	chefLabelNodeID             = chefLabel + "node_id"
-	chefLabelNodeURL            = chefLabel + "node_url"
-	chefLabelMachineName        = chefLabel + "machine_name"
-	chefLabelMachineOSType      = chefLabel + "machine_os_type"
-	chefLabelMachineEnvironment = chefLabel + "machine_environment"
-	chefLabelMachinePrivateIP   = chefLabel + "machine_private_ip"
-	chefLabelMachinePublicIP    = chefLabel + "machine_public_ip"
-	chefLabelMachineAttribute   = chefLabel + "machine_attribute_"
-	chefLabelMachineTag         = chefLabel + "machine_tag"
-	chefLabelMachineRole        = chefLabel + "machine_role"
+	chefLabel                = model.MetaLabelPrefix + "chef_"
+	chefLabelNodeID          = chefLabel + "node_id"
+	chefLabelNodeURL         = chefLabel + "node_url"
+	chefLabelNodeName        = chefLabel + "node_name"
+	chefLabelNodeOSType      = chefLabel + "node_os_type"
+	chefLabelNodeEnvironment = chefLabel + "node_environment"
+	chefLabelNodePrivateIP   = chefLabel + "node_private_ip"
+	chefLabelNodePublicIP    = chefLabel + "node_public_ip"
+	chefLabelNodeAttribute   = chefLabel + "node_attribute_"
+	chefLabelNodeTag         = chefLabel + "node_tag"
+	chefLabelNodeRole        = chefLabel + "node_role"
+
+	namespace = "prometheus"
+)
+
+var (
+	bootstrapFail = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Namespace: namespace,
+			Name:      "sd_chef_bootstrap_fail",
+			Help:      "Outputs a 1 if a node is detected that appears to not be correctly bootstrapped",
+		},
+		[]string{"node"},
+	)
 )
 
 func init() {
 	discovery.RegisterConfig(&SDConfig{})
+	prometheus.Register(bootstrapFail)
 }
 
 // DefaultSDConfig is the default Azure SD configuration.
@@ -43,16 +59,18 @@ var DefaultSDConfig = SDConfig{
 	Port:            9090,
 	RefreshInterval: model.Duration(5 * time.Minute),
 	IgnoreSSL:       false,
+	MetaAttribute:   []map[string]interface{}{},
 }
 
 // SDConfig is the configuration for Azure based service discovery.
 type SDConfig struct {
-	Port            int                `yaml:"port"`
-	ChefServer      string             `yaml:"chef_server"`
-	UserID          string             `yaml:"user_id,omitempty"`
-	UserKey         config_util.Secret `yaml:"user_key,omitempty"`
-	RefreshInterval model.Duration     `yaml:"refresh_interval,omitempty"`
-	IgnoreSSL       bool               `yaml:"ignore_ssl,omitempty"`
+	Port            int                      `yaml:"port"`
+	ChefServer      string                   `yaml:"chef_server"`
+	UserID          string                   `yaml:"user_id,omitempty"`
+	UserKey         config_util.Secret       `yaml:"user_key,omitempty"`
+	RefreshInterval model.Duration           `yaml:"refresh_interval,omitempty"`
+	IgnoreSSL       bool                     `yaml:"ignore_ssl,omitempty"`
+	MetaAttribute   []map[string]interface{} `yaml:"meta_attribute"`
 }
 
 type ChefClient struct {
@@ -133,7 +151,6 @@ func createChefClient(cfg SDConfig) (*ChefClient, error) {
 	if err != nil {
 		return &ChefClient{}, err
 	}
-
 	return &ChefClient{client}, nil
 }
 
@@ -161,16 +178,35 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 
 	tg := &targetgroup.Group{}
 	for _, node := range nodes {
-		tg.Targets = append(tg.Targets, model.LabelSet{
-			model.AddressLabel:          model.LabelValue(net.JoinHostPort(node.Attribute["ipaddress"].(string), fmt.Sprintf("%d", d.port))),
-			chefLabelNodeID:             model.LabelValue(node.ID),
-			chefLabelNodeURL:            model.LabelValue(node.URL),
-			chefLabelMachineName:        model.LabelValue(node.Attribute["hostname"].(string)),
-			chefLabelMachineOSType:      model.LabelValue(node.Attribute["os"].(string)),
-			chefLabelMachineEnvironment: model.LabelValue(node.Attribute["chef_environment"].(string)),
-			chefLabelMachineTag:         model.LabelValue(strings.Join(unwrapArray(node.Attribute["tags"]), ",")),
-			chefLabelMachineRole:        model.LabelValue(strings.Join(unwrapArray(node.Attribute["roles"]), ",")),
-		})
+		if node.Attribute["ipaddress"] != nil {
+			label := model.LabelSet{
+				model.AddressLabel:       model.LabelValue(net.JoinHostPort(node.Attribute["ipaddress"].(string), fmt.Sprintf("%d", d.port))),
+				chefLabelNodeID:          model.LabelValue(node.ID),
+				chefLabelNodeURL:         model.LabelValue(node.URL),
+				chefLabelNodeName:        model.LabelValue(node.Attribute["hostname"].(string)),
+				chefLabelNodeOSType:      model.LabelValue(node.Attribute["os"].(string)),
+				chefLabelNodeEnvironment: model.LabelValue(node.Attribute["chef_environment"].(string)),
+				chefLabelNodeTag:         model.LabelValue(strings.Join(unwrapArray(node.Attribute["tags"]), ",")),
+				chefLabelNodeRole:        model.LabelValue(strings.Join(unwrapArray(node.Attribute["roles"]), ",")),
+			}
+
+			for _, attr := range d.cfg.MetaAttribute {
+				res := metaAttr(attr, node)
+				if res != nil {
+					for k, v := range attr {
+						if v != nil {
+							label[chefLabelNodeAttribute+model.LabelName(v.(string))] = model.LabelValue(fmt.Sprintf("%v", res))
+						} else {
+							label[chefLabelNodeAttribute+model.LabelName(k)] = model.LabelValue(fmt.Sprintf("%v", res))
+						}
+					}
+				}
+			}
+
+			tg.Targets = append(tg.Targets, label)
+		} else {
+			bootstrapFail.WithLabelValues(node.ID).Inc()
+		}
 	}
 
 	return []*targetgroup.Group{tg}, nil
@@ -196,7 +232,7 @@ func (client *ChefClient) getNodes(ctx context.Context) ([]virtualMachine, error
 }
 
 func (client *ChefClient) mapFromNode(node string, url string) (virtualMachine, error) {
-	nodeCheck, err := client.Nodes.Get("azl-prd-hyb-03")
+	nodeCheck, err := client.Nodes.Get(node)
 	if err != nil {
 		return virtualMachine{}, errors.Wrap(err, "could not get node attributes")
 	}
@@ -225,9 +261,37 @@ func unwrapArray(t interface{}) []string {
 		s := reflect.ValueOf(t)
 
 		for i := 0; i < s.Len(); i++ {
-			fmt.Println(s.Index(i))
 			arr = append(arr, s.Index(i).Interface().(string))
 		}
 	}
 	return arr
+}
+
+func metaAttr(h map[string]interface{}, n virtualMachine) interface{} {
+	var res interface{}
+	for k, _ := range h {
+		escape := regexp.MustCompile(`\\_`)
+		escaped := escape.ReplaceAllString(k, `\\`)
+		re := regexp.MustCompile(`_`)
+		a := re.Split(escaped, -1)
+		attr := n.Attribute
+
+		for i, y := range a {
+			a[i] = strings.ReplaceAll(y, `\\`, `_`)
+		}
+
+		for _, z := range a {
+			if attr[z] != nil {
+				b := reflect.TypeOf(attr[z]).Kind()
+				switch b {
+				case reflect.Map:
+					attr = attr[z].(map[string]interface{})
+				default:
+					res = attr[z]
+					attr = map[string]interface{}{}
+				}
+			}
+		}
+	}
+	return res
 }
