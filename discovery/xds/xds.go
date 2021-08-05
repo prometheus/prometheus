@@ -15,7 +15,6 @@ package xds
 
 import (
 	"context"
-	"github.com/prometheus/common/model"
 	"time"
 
 	v3 "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v3"
@@ -23,6 +22,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
+	"github.com/prometheus/common/model"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
@@ -95,7 +95,9 @@ var (
 	}
 )
 
-type resourceParser func(resources []*anypb.Any, typeUrl string) ([]*targetgroup.Group, error)
+// resourceParser is a function that takes raw discovered objects and translates them into
+// targetgroup.Group Targets. On error, no updates are sent to the scrape manager and the failure count is incremented.
+type resourceParser func(resources []*anypb.Any, typeUrl string) ([]model.LabelSet, error)
 
 // fetchDiscovery implements long-polling via xDS Fetch REST-JSON.
 type fetchDiscovery struct {
@@ -154,23 +156,18 @@ func (d *fetchDiscovery) poll(ctx context.Context, ch chan<- []*targetgroup.Grou
 		return
 	}
 
-	parsedGroups, err := d.parseResources(response.Resources, response.TypeUrl)
+	parsedTargets, err := d.parseResources(response.Resources, response.TypeUrl)
 	if err != nil {
 		level.Error(d.logger).Log("msg", "error parsing resources", "err", err)
 		d.fetchFailuresCount.Inc()
 		return
 	}
 
-	for _, group := range parsedGroups {
-		group.Source = d.source
-	}
+	level.Debug(d.logger).Log("msg", "Updated to version", "version", response.VersionInfo, "targets", len(parsedTargets))
 
-	level.Debug(d.logger).Log("msg", "updated to version", "version", response.VersionInfo, "groups", len(parsedGroups))
-
-	// Check the context before sending an update on the channel.
 	select {
 	case <-ctx.Done():
 		return
-	case ch <- parsedGroups:
+	case ch <- []*targetgroup.Group{{Source: d.source, Targets: parsedTargets}}:
 	}
 }
