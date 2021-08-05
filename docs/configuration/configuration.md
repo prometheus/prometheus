@@ -418,6 +418,54 @@ subscription_id: <string>
 [ port: <int> | default = 80 ]
 ```
 
+### `<chef_sd_config>`
+
+Chef SD configurations allow retrieving scrape targets from Chef Infra Server.
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_chef_node_id`: the node ID as reported by Chef Server
+* `__meta_chef_node_url`: the Chef Server URL for the node
+* `__meta_chef_node_name`: the nodes hostname
+* `__meta_chef_node_environment`: the nodes chef_environment
+* `__meta_chef_node_os_type`: the machine operating system
+* `__meta_chef_node_ip`: the machine's private IP if it exists
+* `__meta_chef_node_attribute_<attribute>`: selected attributes of the node to display
+
+See below for the configuration options for Azure discovery:
+
+```yaml
+# The information to access the Chef API.
+# The Chef Server. If you use Chef organizations append your organization (organizations/$org/) to the URL
+[ chef_server: <string> ]
+
+# The Chef User to be used for the Server Connection
+[ user_id: <string> ]
+
+# The Chef User Private Key used for Server Connection
+# Either pass the file location for the key to be read or pass the entire key (example: https://en.wikipedia.org/wiki/String_literal#Whitespace_delimiters)
+[ user_key: <secret> ]
+
+# Refresh interval to re-read the node list.
+[ refresh_interval: <duration> | default = 300s ]
+
+# Whether to ignore Chef SSL cert
+[ ignore_ssl: <bool> | default = false ]
+
+# An array of Chef Attributes to apply to meta labels for relabeling
+# Due to the amount of attributes chef stores per node
+# Escape _ in attribute names with \_
+# Apply a value to key for custom naming, otherwise a nil value will default to original name
+# Example:
+# meta_attribute:
+# - key1_key\_2: key1_key2  ## [key1][key_2] == __meta_chef_node_attribute_key1_key2
+# - key\_3_key4:            ## [key_3][key4] == __meta_chef_node_attribute_key\_3_key4
+[ meta_attribute: <[]string> ]
+
+# The port to scrape metrics from
+[ port: <int> | default = 80 ]
+```
+
 ### `<consul_sd_config>`
 
 Consul SD configurations allow retrieving scrape targets from [Consul's](https://www.consul.io)

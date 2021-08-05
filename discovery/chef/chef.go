@@ -53,7 +53,7 @@ func init() {
 	prometheus.Register(bootstrapFail)
 }
 
-// DefaultSDConfig is the default Azure SD configuration.
+// DefaultSDConfig is the default Chef SD configuration.
 var DefaultSDConfig = SDConfig{
 	Port:            9090,
 	RefreshInterval: model.Duration(5 * time.Minute),
@@ -61,7 +61,7 @@ var DefaultSDConfig = SDConfig{
 	MetaAttribute:   []map[string]interface{}{},
 }
 
-// SDConfig is the configuration for Azure based service discovery.
+// SDConfig is the configuration for Chef based service discovery.
 type SDConfig struct {
 	Port            int                      `yaml:"port"`
 	ChefServer      string                   `yaml:"chef_server"`
@@ -120,7 +120,7 @@ type Discovery struct {
 	port   int
 }
 
-// NewDiscovery returns a new AzureDiscovery which periodically refreshes its targets.
+// NewDiscovery returns a new ChefDiscovery which periodically refreshes its targets.
 func NewDiscovery(cfg *SDConfig, logger log.Logger) *Discovery {
 	if logger == nil {
 		logger = log.NewNopLogger()
@@ -139,7 +139,7 @@ func NewDiscovery(cfg *SDConfig, logger log.Logger) *Discovery {
 	return d
 }
 
-// createAzureClient is a helper function for creating an Azure compute client to ARM.
+// createChefClient is a helper function for creating an Chef server connection.
 func createChefClient(cfg SDConfig) (*ChefClient, error) {
 	client, err := chef.NewClient(&chef.Config{
 		Name:    cfg.UserID,
@@ -153,7 +153,7 @@ func createChefClient(cfg SDConfig) (*ChefClient, error) {
 	return &ChefClient{client}, nil
 }
 
-// virtualMachine represents an Azure virtual machine (which can also be created by a VMSS)
+// virtualMachine represents an Chef node
 type virtualMachine struct {
 	ID        string
 	URL       string
@@ -161,19 +161,19 @@ type virtualMachine struct {
 }
 
 func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
-	defer level.Debug(d.logger).Log("msg", "Azure discovery completed")
+	defer level.Debug(d.logger).Log("msg", "Chef discovery completed")
 
 	client, err := createChefClient(*d.cfg)
 	if err != nil {
-		return nil, errors.Wrap(err, "could not create Azure client")
+		return nil, errors.Wrap(err, "could not create Chef client")
 	}
 
 	nodes, err := client.getNodes(ctx)
 	if err != nil {
-		return nil, errors.Wrap(err, "could not get virtual machines")
+		return nil, errors.Wrap(err, "could not get nodes")
 	}
 
-	level.Debug(d.logger).Log("msg", "Found virtual machines during Azure discovery.", "count", len(nodes))
+	level.Debug(d.logger).Log("msg", "Found nodes during Chef discovery.", "count", len(nodes))
 
 	tg := &targetgroup.Group{}
 	for _, node := range nodes {
@@ -212,6 +212,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	return []*targetgroup.Group{tg}, nil
 }
 
+// getNodes connects to Chef Client and returns an array of virtualMachines
 func (client *ChefClient) getNodes(ctx context.Context) ([]virtualMachine, error) {
 	var nodes []virtualMachine
 
@@ -231,6 +232,7 @@ func (client *ChefClient) getNodes(ctx context.Context) ([]virtualMachine, error
 	return nodes, nil
 }
 
+// mapFromNode gets passed Chef NodeID and returns captured Chef Server attributes
 func (client *ChefClient) mapFromNode(node string, url string) (virtualMachine, error) {
 	nodeCheck, err := client.Nodes.Get(node)
 	if err != nil {
@@ -254,6 +256,7 @@ func (client *ChefClient) mapFromNode(node string, url string) (virtualMachine, 
 	}, nil
 }
 
+// function for unwrapping arrays into a string for label values
 func unwrapArray(t interface{}) []string {
 	arr := []string{}
 	switch reflect.TypeOf(t).Kind() {
@@ -267,6 +270,7 @@ func unwrapArray(t interface{}) []string {
 	return arr
 }
 
+// function for getting passed a list of chef attributes to be collected for relabelling
 func metaAttr(h map[string]interface{}, n virtualMachine) interface{} {
 	var res interface{}
 	for k, _ := range h {
