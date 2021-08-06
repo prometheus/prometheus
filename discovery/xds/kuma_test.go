@@ -138,65 +138,47 @@ func TestKumaMadsV1ResourceParserValidResources(t *testing.T) {
 	res, err := getKumaMadsV1DiscoveryResponse(testKumaMadsV1Resources...)
 	require.NoError(t, err)
 
-	groups, err := kumaMadsV1ResourceParser(res.Resources, KumaMadsV1ResourceTypeURL)
+	targets, err := kumaMadsV1ResourceParser(res.Resources, KumaMadsV1ResourceTypeURL)
 	require.NoError(t, err)
-	require.Len(t, groups, 3)
+	require.Len(t, targets, 3)
 
-	expectedGroup1 := &targetgroup.Group{
-		Targets: []model.LabelSet{
-			{
-				"__address__":                   "10.1.4.32:9090",
-				"__meta_kuma_label_commit_hash": "620506a88",
-				"__meta_kuma_dataplane":         "prometheus-01",
-				"__metrics_path__":              "/custom-metrics",
-				"__scheme__":                    "http",
-				"instance":                      "prometheus-01",
-			},
-			{
-				"__address__":                   "10.1.4.33:9090",
-				"__meta_kuma_label_commit_hash": "3513bba00",
-				"__meta_kuma_dataplane":         "prometheus-02",
-				"__metrics_path__":              "",
-				"__scheme__":                    "http",
-				"instance":                      "prometheus-02",
-			},
-		},
-		Labels: model.LabelSet{
+	expectedTargets := []model.LabelSet{
+		{
+			"__address__":                    "10.1.4.32:9090",
+			"__metrics_path__":               "/custom-metrics",
+			"__scheme__":                     "http",
+			"instance":                       "prometheus-01",
 			"__meta_kuma_mesh":               "metrics",
 			"__meta_kuma_service":            "prometheus",
 			"__meta_kuma_label_team":         "infra",
 			"__meta_kuma_label_kuma_io_zone": "us-east-1",
+			"__meta_kuma_label_commit_hash":  "620506a88",
+			"__meta_kuma_dataplane":          "prometheus-01",
 		},
-	}
-	require.Equal(t, expectedGroup1, groups[0])
-
-	expectedGroup2 := &targetgroup.Group{
-		Labels: model.LabelSet{
+		{
+			"__address__":                    "10.1.4.33:9090",
+			"__metrics_path__":               "",
+			"__scheme__":                     "http",
+			"instance":                       "prometheus-02",
 			"__meta_kuma_mesh":               "metrics",
-			"__meta_kuma_service":            "grafana",
+			"__meta_kuma_service":            "prometheus",
 			"__meta_kuma_label_team":         "infra",
 			"__meta_kuma_label_kuma_io_zone": "us-east-1",
+			"__meta_kuma_label_commit_hash":  "3513bba00",
+			"__meta_kuma_dataplane":          "prometheus-02",
+		},
+		{
+			"__address__":            "10.1.1.1",
+			"__metrics_path__":       "",
+			"__scheme__":             "http",
+			"instance":               "elasticsearch-01",
+			"__meta_kuma_mesh":       "data",
+			"__meta_kuma_service":    "elasticsearch",
+			"__meta_kuma_label_role": "ml",
+			"__meta_kuma_dataplane":  "elasticsearch-01",
 		},
 	}
-	require.Equal(t, expectedGroup2, groups[1])
-
-	expectedGroup3 := &targetgroup.Group{
-		Targets: []model.LabelSet{
-			{
-				"__address__":            "10.1.1.1",
-				"__meta_kuma_label_role": "ml",
-				"__meta_kuma_dataplane":  "elasticsearch-01",
-				"__metrics_path__":       "",
-				"__scheme__":             "http",
-				"instance":               "elasticsearch-01",
-			},
-		},
-		Labels: model.LabelSet{
-			"__meta_kuma_mesh":    "data",
-			"__meta_kuma_service": "elasticsearch",
-		},
-	}
-	require.Equal(t, expectedGroup3, groups[2])
+	require.Equal(t, expectedTargets, targets)
 }
 
 func TestKumaMadsV1ResourceParserInvalidResources(t *testing.T) {
@@ -262,66 +244,48 @@ tls_config:
 	kd.poll(context.Background(), ch)
 
 	groups := <-ch
-	require.Len(t, groups, 3)
+	require.Len(t, groups, 1)
 
-	expectedGroup1 := &targetgroup.Group{
-		Source: "kuma",
-		Targets: []model.LabelSet{
-			{
-				"__address__":                   "10.1.4.32:9090",
-				"__meta_kuma_label_commit_hash": "620506a88",
-				"__meta_kuma_dataplane":         "prometheus-01",
-				"__metrics_path__":              "/custom-metrics",
-				"__scheme__":                    "http",
-				"instance":                      "prometheus-01",
-			},
-			{
-				"__address__":                   "10.1.4.33:9090",
-				"__meta_kuma_label_commit_hash": "3513bba00",
-				"__meta_kuma_dataplane":         "prometheus-02",
-				"__metrics_path__":              "",
-				"__scheme__":                    "http",
-				"instance":                      "prometheus-02",
-			},
-		},
-		Labels: model.LabelSet{
+	targets := groups[0].Targets
+	require.Len(t, targets, 3)
+
+	expectedTargets := []model.LabelSet{
+		{
+			"__address__":                    "10.1.4.32:9090",
+			"__metrics_path__":               "/custom-metrics",
+			"__scheme__":                     "http",
+			"instance":                       "prometheus-01",
 			"__meta_kuma_mesh":               "metrics",
 			"__meta_kuma_service":            "prometheus",
 			"__meta_kuma_label_team":         "infra",
 			"__meta_kuma_label_kuma_io_zone": "us-east-1",
+			"__meta_kuma_label_commit_hash":  "620506a88",
+			"__meta_kuma_dataplane":          "prometheus-01",
 		},
-	}
-	require.Equal(t, expectedGroup1, groups[0])
-
-	expectedGroup2 := &targetgroup.Group{
-		Source: "kuma",
-		Labels: model.LabelSet{
+		{
+			"__address__":                    "10.1.4.33:9090",
+			"__metrics_path__":               "",
+			"__scheme__":                     "http",
+			"instance":                       "prometheus-02",
 			"__meta_kuma_mesh":               "metrics",
-			"__meta_kuma_service":            "grafana",
+			"__meta_kuma_service":            "prometheus",
 			"__meta_kuma_label_team":         "infra",
 			"__meta_kuma_label_kuma_io_zone": "us-east-1",
+			"__meta_kuma_label_commit_hash":  "3513bba00",
+			"__meta_kuma_dataplane":          "prometheus-02",
+		},
+		{
+			"__address__":            "10.1.1.1",
+			"__metrics_path__":       "",
+			"__scheme__":             "http",
+			"instance":               "elasticsearch-01",
+			"__meta_kuma_mesh":       "data",
+			"__meta_kuma_service":    "elasticsearch",
+			"__meta_kuma_label_role": "ml",
+			"__meta_kuma_dataplane":  "elasticsearch-01",
 		},
 	}
-	require.Equal(t, expectedGroup2, groups[1])
-
-	expectedGroup3 := &targetgroup.Group{
-		Source: "kuma",
-		Targets: []model.LabelSet{
-			{
-				"__address__":            "10.1.1.1",
-				"__meta_kuma_label_role": "ml",
-				"__meta_kuma_dataplane":  "elasticsearch-01",
-				"__metrics_path__":       "",
-				"__scheme__":             "http",
-				"instance":               "elasticsearch-01",
-			},
-		},
-		Labels: model.LabelSet{
-			"__meta_kuma_mesh":    "data",
-			"__meta_kuma_service": "elasticsearch",
-		},
-	}
-	require.Equal(t, expectedGroup3, groups[2])
+	require.Equal(t, expectedTargets, targets)
 
 	// Should skip the next update.
 	ctx, cancel := context.WithCancel(context.Background())
