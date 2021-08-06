@@ -86,6 +86,9 @@ var (
 
 	defaultRetentionString   = "15d"
 	defaultRetentionDuration model.Duration
+
+	agentMode                       bool
+	agentOnlyFlags, serverOnlyFlags []string
 )
 
 func init() {
@@ -95,6 +98,19 @@ func init() {
 	defaultRetentionDuration, err = model.ParseDuration(defaultRetentionString)
 	if err != nil {
 		panic(err)
+	}
+}
+
+func agentOnlySettingUsed(name string) func(*kingpin.ParseContext) error {
+	return func(c *kingpin.ParseContext) error {
+		agentOnlyFlags = append(agentOnlyFlags, name)
+		return nil
+	}
+}
+func serverOnlySettingUsed(name string) func(*kingpin.ParseContext) error {
+	return func(c *kingpin.ParseContext) error {
+		serverOnlyFlags = append(agentOnlyFlags, name)
+		return nil
 	}
 }
 
@@ -187,6 +203,8 @@ func main() {
 
 	a.HelpFlag.Short('h')
 
+	a.Flag("agent", "Agent mode.").BoolVar(&agentMode)
+
 	a.Flag("config.file", "Prometheus configuration file path.").
 		Default("prometheus.yml").StringVar(&cfg.configFile)
 
@@ -243,6 +261,7 @@ func main() {
 
 	a.Flag("storage.tsdb.max-block-chunk-segment-size",
 		"The maximum size for a single chunk segment in a block. Example: 512MB").
+		PreAction(agentOnlySettingUsed("storage.tsdb.max-block-chunk-segment-size")).
 		Hidden().PlaceHolder("<bytes>").BytesVar(&cfg.tsdb.MaxBlockChunkSegmentSize)
 
 	a.Flag("storage.tsdb.wal-segment-size",
@@ -318,6 +337,16 @@ func main() {
 	if err != nil {
 		fmt.Fprintln(os.Stderr, errors.Wrapf(err, "Error parsing commandline arguments"))
 		a.Usage(os.Args[1:])
+		os.Exit(2)
+	}
+
+	if agentMode && len(serverOnlyFlags) > 0 {
+		fmt.Fprintf(os.Stderr, "The following flags are not compatible with agent mode: %q", serverOnlyFlags)
+		os.Exit(2)
+	}
+
+	if !agentMode && len(agentOnlyFlags) > 0 {
+		fmt.Fprintf(os.Stderr, "The following flags are not compatible with server mode: %q", agentOnlyFlags)
 		os.Exit(2)
 	}
 
