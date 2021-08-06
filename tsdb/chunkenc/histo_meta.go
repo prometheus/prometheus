@@ -13,10 +13,13 @@
 
 package chunkenc
 
-import "github.com/prometheus/prometheus/pkg/histogram"
+import (
+	"github.com/prometheus/prometheus/pkg/histogram"
+)
 
-func writeHistoChunkMeta(b *bstream, schema int32, posSpans, negSpans []histogram.Span) {
+func writeHistoChunkMeta(b *bstream, schema int32, zeroThreshold float64, posSpans, negSpans []histogram.Span) {
 	putInt64VBBucket(b, int64(schema))
+	putFloat64VBBucket(b, zeroThreshold)
 	putHistoChunkMetaSpans(b, posSpans)
 	putHistoChunkMetaSpans(b, negSpans)
 }
@@ -29,25 +32,29 @@ func putHistoChunkMetaSpans(b *bstream, spans []histogram.Span) {
 	}
 }
 
-func readHistoChunkMeta(b *bstreamReader) (int32, []histogram.Span, []histogram.Span, error) {
-
+func readHistoChunkMeta(b *bstreamReader) (int32, float64, []histogram.Span, []histogram.Span, error) {
 	v, err := readInt64VBBucket(b)
 	if err != nil {
-		return 0, nil, nil, err
+		return 0, 0, nil, nil, err
 	}
 	schema := int32(v)
 
+	zeroThreshold, err := readFloat64VBBucket(b)
+	if err != nil {
+		return 0, 0, nil, nil, err
+	}
+
 	posSpans, err := readHistoChunkMetaSpans(b)
 	if err != nil {
-		return 0, nil, nil, err
+		return 0, 0, nil, nil, err
 	}
 
 	negSpans, err := readHistoChunkMetaSpans(b)
 	if err != nil {
-		return 0, nil, nil, err
+		return 0, 0, nil, nil, err
 	}
 
-	return schema, posSpans, negSpans, nil
+	return schema, zeroThreshold, posSpans, negSpans, nil
 }
 
 func readHistoChunkMetaSpans(b *bstreamReader) ([]histogram.Span, error) {

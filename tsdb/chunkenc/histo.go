@@ -97,7 +97,7 @@ func (c *HistoChunk) NumSamples() int {
 
 // Meta returns the histogram metadata.
 // callers may only call this on chunks that have at least one sample
-func (c *HistoChunk) Meta() (int32, []histogram.Span, []histogram.Span, error) {
+func (c *HistoChunk) Meta() (int32, float64, []histogram.Span, []histogram.Span, error) {
 	if c.NumSamples() == 0 {
 		panic("HistoChunk.Meta() called on an empty chunk")
 	}
@@ -131,6 +131,7 @@ func (c *HistoChunk) Appender() (Appender, error) {
 		b: &c.b,
 
 		schema:          it.schema,
+		zeroThreshold:   it.zeroThreshold,
 		posSpans:        it.posSpans,
 		negSpans:        it.negSpans,
 		t:               it.t,
@@ -199,6 +200,7 @@ type HistoAppender struct {
 
 	// Metadata:
 	schema             int32
+	zeroThreshold      float64
 	posSpans, negSpans []histogram.Span
 
 	// For the fields that are tracked as dod's. Note that we expect to
@@ -245,8 +247,7 @@ func (a *HistoAppender) Append(int64, float64) {}
 // * the zerobucket threshold has changed
 // * any buckets disappeared
 func (a *HistoAppender) Appendable(h histogram.SparseHistogram) ([]Interjection, []Interjection, bool) {
-	// TODO zerothreshold
-	if h.Schema != a.schema {
+	if h.Schema != a.schema || h.ZeroThreshold != a.zeroThreshold {
 		return nil, nil, false
 	}
 	posInterjections, ok := compareSpans(a.posSpans, h.PositiveSpans)
@@ -273,8 +274,9 @@ func (a *HistoAppender) AppendHistogram(t int64, h histogram.SparseHistogram) {
 		// the first append gets the privilege to dictate the metadata
 		// but it's also responsible for encoding it into the chunk!
 
-		writeHistoChunkMeta(a.b, h.Schema, h.PositiveSpans, h.NegativeSpans)
+		writeHistoChunkMeta(a.b, h.Schema, h.ZeroThreshold, h.PositiveSpans, h.NegativeSpans)
 		a.schema = h.Schema
+		a.zeroThreshold = h.ZeroThreshold
 		a.posSpans, a.negSpans = h.PositiveSpans, h.NegativeSpans
 		numPosBuckets, numNegBuckets := countSpans(h.PositiveSpans), countSpans(h.NegativeSpans)
 		a.posbuckets = make([]int64, numPosBuckets)
@@ -442,6 +444,7 @@ type histoIterator struct {
 
 	// Metadata:
 	schema             int32
+	zeroThreshold      float64
 	posSpans, negSpans []histogram.Span
 
 	// For the fields that are tracked as dod's.
@@ -486,7 +489,7 @@ func (it *histoIterator) AtHistogram() (int64, histogram.SparseHistogram) {
 		Count:           it.cnt,
 		ZeroCount:       it.zcnt,
 		Sum:             it.sum,
-		ZeroThreshold:   0, // TODO
+		ZeroThreshold:   it.zeroThreshold,
 		Schema:          it.schema,
 		PositiveSpans:   it.posSpans,
 		NegativeSpans:   it.negSpans,
@@ -532,12 +535,13 @@ func (it *histoIterator) Next() bool {
 	if it.numRead == 0 {
 
 		// first read is responsible for reading chunk metadata and initializing fields that depend on it
-		schema, posSpans, negSpans, err := readHistoChunkMeta(&it.br)
+		schema, zeroThreshold, posSpans, negSpans, err := readHistoChunkMeta(&it.br)
 		if err != nil {
 			it.err = err
 			return false
 		}
 		it.schema = schema
+		it.zeroThreshold = zeroThreshold
 		it.posSpans, it.negSpans = posSpans, negSpans
 		numPosBuckets, numNegBuckets := countSpans(posSpans), countSpans(negSpans)
 		it.posbuckets = make([]int64, numPosBuckets)
