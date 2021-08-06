@@ -43,6 +43,28 @@
 
 package chunkenc
 
+import (
+	"math"
+)
+
+// putFloat64VBBucket writes a float64 using varbit optimized for SHS buckets.
+// It does so by converting the underlying bits into an int64.
+func putFloat64VBBucket(b *bstream, val float64) {
+	// TODO: Since this is used for the zero threshold, this almost always goes into the default
+	// bit range (i.e. using 5+64 bits). So we can consider skipping `putInt64VBBucket` and directly
+	// write the float and save 5 bits here.
+	putInt64VBBucket(b, int64(math.Float64bits(val)))
+}
+
+// readFloat64VBBucket reads a float64 using varbit optimized for SHS buckets
+func readFloat64VBBucket(b *bstreamReader) (float64, error) {
+	val, err := readInt64VBBucket(b)
+	if err != nil {
+		return 0, err
+	}
+	return math.Float64frombits(uint64(val)), nil
+}
+
 // putInt64VBBucket writes an int64 using varbit optimized for SHS buckets.
 //
 // TODO(Dieterbe): We could improve this further: Each branch doesn't need to
@@ -55,19 +77,19 @@ func putInt64VBBucket(b *bstream, val int64) {
 	case val == 0:
 		b.writeBit(zero)
 	case bitRange(val, 3): // -3 <= val <= 4
-		b.writeBits(0x02, 2) // '10'
+		b.writeBits(0b10, 2)
 		b.writeBits(uint64(val), 3)
 	case bitRange(val, 6): // -31 <= val <= 32
-		b.writeBits(0x06, 3) // '110'
+		b.writeBits(0b110, 3)
 		b.writeBits(uint64(val), 6)
 	case bitRange(val, 9): // -255 <= val <= 256
-		b.writeBits(0x0e, 4) // '1110'
+		b.writeBits(0b1110, 4)
 		b.writeBits(uint64(val), 9)
 	case bitRange(val, 12): // -2047 <= val <= 2048
-		b.writeBits(0x1e, 5) // '11110'
+		b.writeBits(0b11110, 5)
 		b.writeBits(uint64(val), 12)
 	default:
-		b.writeBits(0x3e, 5) // '11111'
+		b.writeBits(0b11111, 5)
 		b.writeBits(uint64(val), 64)
 	}
 }
@@ -94,17 +116,17 @@ func readInt64VBBucket(b *bstreamReader) (int64, error) {
 	var sz uint8
 
 	switch d {
-	case 0x00:
+	case 0b0:
 		// val == 0
-	case 0x02: // '10'
+	case 0b10:
 		sz = 3
-	case 0x06: // '110'
+	case 0b110:
 		sz = 6
-	case 0x0e: // '1110'
+	case 0b1110:
 		sz = 9
-	case 0x1e: // '11110'
+	case 0b11110:
 		sz = 12
-	case 0x3e: // '11111'
+	case 0b11111:
 		// Do not use fast because it's very unlikely it will succeed.
 		bits, err := b.readBits(64)
 		if err != nil {
