@@ -162,7 +162,11 @@ func (node *SubqueryExpr) String() string {
 	} else if node.StartOrEnd == END {
 		at = " @ end()"
 	}
-	return fmt.Sprintf("%s[%s:%s]%s%s", node.Expr.String(), model.Duration(node.Range), step, at, offset)
+	separator := ":"
+	if node.AlignEvalTime {
+		separator = "::"
+	}
+	return fmt.Sprintf("%s[%s%s%s]%s%s", node.Expr.String(), model.Duration(node.Range), separator, step, at, offset)
 }
 
 func (node *NumberLiteral) String() string {

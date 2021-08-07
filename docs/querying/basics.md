@@ -264,11 +264,20 @@ For an instant query, `start()` and `end()` both resolve to the evaluation time.
 
 ## Subquery
 
-Subquery allows you to run an instant query for a given range and resolution. The result of a subquery is a range vector.
+Subqueries allow you to run an instant query for a given range and resolution. The result of a subquery is a range vector.
 
 Syntax: `<instant_query> '[' <range> ':' [<resolution>] ']' [ @ <float_literal> ] [ offset <duration> ]`
 
 * `<resolution>` is optional. Default is the global evaluation interval.
+
+Subqueries are aligned to multiples of the subquery's interval, which is a 
+[performance optimization](https://www.robustperception.io/promql-subqueries-and-alignment). If you wish to
+have your subquery aligned to the evaluation time, you can use the expiremental syntax:
+
+`<instant_query> '[' <range> '::' [<resolution>] ']' [ @ <float_literal> ] [ offset <duration> ]`
+
+It can be enabled by setting `--enable-feature=promql-eval-aligned-subqueries`. See
+[feature flags](../feature_flags.md) for more details about this flag.
 
 ## Operators
 

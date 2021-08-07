@@ -199,6 +199,8 @@ func main() {
 				queryOpts.EnableAtModifier = true
 			case "promql-negative-offset":
 				queryOpts.EnableNegativeOffset = true
+			case "promql-eval-aligned-subqueries":
+				queryOpts.EnableEvalAlignedSubqueries = true
 			case "":
 				continue
 			default:
