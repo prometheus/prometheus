@@ -228,9 +228,17 @@ Outer:
 				// It is possible that some old sample is being processed in processWALSamples that
 				// could cause race below. So we wait for the goroutine to empty input the buffer and finish
 				// processing all old samples after emptying the buffer.
+				select {
+				case <-outputs[idx]: // allow output side to drain to avoid deadlock
+				default:
+				}
 				inputs[idx] <- []record.RefSample{}
 				for len(inputs[idx]) != 0 {
 					time.Sleep(1 * time.Millisecond)
+					select {
+					case <-outputs[idx]: // allow output side to drain to avoid deadlock
+					default:
+					}
 				}
 
 				// Checking if the new m-mapped chunks overlap with the already existing ones.
