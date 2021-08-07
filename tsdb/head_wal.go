@@ -212,15 +212,7 @@ Outer:
 
 				if created {
 					// This is the first WAL series record for this series.
-					h.metrics.chunksCreated.Add(float64(len(mmc)))
-					h.metrics.chunks.Add(float64(len(mmc)))
-					mSeries.mmappedChunks = mmc
-					if len(mmc) > 0 {
-						// Cache the last mmapped chunk time, so we can skip calling append() for samples it will reject
-						mSeries.mmMaxTime = mmc[len(mmc)-1].maxTime
-					} else {
-						mSeries.mmMaxTime = math.MinInt64
-					}
+					h.setMMappedChunks(mSeries, mmc)
 					continue
 				}
 
@@ -264,10 +256,7 @@ Outer:
 				}
 
 				// Replacing m-mapped chunks with the new ones (could be empty).
-				h.metrics.chunksCreated.Add(float64(len(mmc)))
-				h.metrics.chunksRemoved.Add(float64(len(mSeries.mmappedChunks)))
-				h.metrics.chunks.Add(float64(len(mmc) - len(mSeries.mmappedChunks)))
-				mSeries.mmappedChunks = mmc
+				h.setMMappedChunks(mSeries, mmc)
 
 				// Any samples replayed till now would already be compacted. Resetting the head chunk.
 				mSeries.nextAt = 0
@@ -363,6 +352,19 @@ Outer:
 		level.Warn(h.logger).Log("msg", "Unknown series references", "samples", unknownRefs.Load(), "exemplars", unknownExemplarRefs.Load())
 	}
 	return nil
+}
+
+func (h *Head) setMMappedChunks(mSeries *memSeries, mmc []*mmappedChunk) {
+	h.metrics.chunksCreated.Add(float64(len(mmc)))
+	h.metrics.chunksRemoved.Add(float64(len(mSeries.mmappedChunks)))
+	h.metrics.chunks.Add(float64(len(mmc) - len(mSeries.mmappedChunks)))
+	mSeries.mmappedChunks = mmc
+	// Cache the last mmapped chunk time, so we can skip calling append() for samples it will reject.
+	if len(mmc) == 0 {
+		mSeries.mmMaxTime = math.MinInt64
+	} else {
+		mSeries.mmMaxTime = mmc[len(mmc)-1].maxTime
+	}
 }
 
 // processWALSamples adds the samples it receives to the head and passes
