@@ -44,6 +44,7 @@ func RulesUnitTest(queryOpts promql.LazyLoaderOpts, files ...string) int {
 	return RulesUnitTestTap(io.Discard, queryOpts, files...)
 }
 
+// RulesUnitTestTap does the same as RulesUnitTest and writes results to a TAP file.
 func RulesUnitTestTap(tapout io.Writer, queryOpts promql.LazyLoaderOpts, files ...string) int {
 	failed := false
 
