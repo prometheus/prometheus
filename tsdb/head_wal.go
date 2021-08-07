@@ -262,7 +262,6 @@ Outer:
 				mSeries.nextAt = 0
 				mSeries.headChunk = nil
 				mSeries.app = nil
-				h.updateMinMaxTime(mSeries.minTime(), mSeries.maxTime())
 			}
 			//nolint:staticcheck // Ignore SA6002 relax staticcheck verification.
 			seriesPool.Put(v)
@@ -364,6 +363,7 @@ func (h *Head) setMMappedChunks(mSeries *memSeries, mmc []*mmappedChunk) {
 		mSeries.mmMaxTime = math.MinInt64
 	} else {
 		mSeries.mmMaxTime = mmc[len(mmc)-1].maxTime
+		h.updateMinMaxTime(mmc[0].minTime, mSeries.mmMaxTime)
 	}
 }
 
