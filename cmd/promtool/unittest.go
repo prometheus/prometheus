@@ -16,6 +16,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -40,19 +41,26 @@ import (
 // RulesUnitTest does unit testing of rules based on the unit testing files provided.
 // More info about the file format can be found in the docs.
 func RulesUnitTest(queryOpts promql.LazyLoaderOpts, files ...string) int {
+	return RulesUnitTestTap(io.Discard, queryOpts, files...)
+}
+
+func RulesUnitTestTap(tapout io.Writer, queryOpts promql.LazyLoaderOpts, files ...string) int {
 	failed := false
 
-	for _, f := range files {
+	fmt.Fprintf(tapout, "1..%d\n", len(files))
+	for i, f := range files {
 		if errs := ruleUnitTest(f, queryOpts); errs != nil {
 			fmt.Fprintln(os.Stderr, "  FAILED:")
 			for _, e := range errs {
 				fmt.Fprintln(os.Stderr, e.Error())
 			}
 			failed = true
+			fmt.Fprintf(tapout, "not ")
 		} else {
 			fmt.Println("  SUCCESS")
 		}
 		fmt.Println()
+		fmt.Fprintf(tapout, "ok %d - %s\n", 1+i, f)
 	}
 	if failed {
 		return 1

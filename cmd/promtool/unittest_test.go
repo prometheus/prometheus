@@ -14,9 +14,11 @@
 package main
 
 import (
-	"testing"
-
+	"bytes"
+	"fmt"
 	"github.com/prometheus/prometheus/promql"
+	"regexp"
+	"testing"
 )
 
 func TestRulesUnitTest(t *testing.T) {
@@ -106,11 +108,43 @@ func TestRulesUnitTest(t *testing.T) {
 			want: 0,
 		},
 	}
+
+	tap_files := []string{}
+	tap_count := [2]int{}
 	for _, tt := range tests {
+		// Reuse these tests for the tap output testing, but only ones with default opts.
+		if (tt.queryOpts == promql.LazyLoaderOpts{}) {
+			tap_files = append(tap_files, tt.args.files...)
+			tap_count[tt.want] += len(tt.args.files)
+		}
 		t.Run(tt.name, func(t *testing.T) {
 			if got := RulesUnitTest(tt.queryOpts, tt.args.files...); got != tt.want {
 				t.Errorf("RulesUnitTest() = %v, want %v", got, tt.want)
 			}
 		})
 	}
+
+	re_plan := regexp.MustCompile(fmt.Sprintf("^1..%d", len(tap_files)))
+	re_pass := regexp.MustCompile(`(?m)^ok \d+ -`)
+	re_fail := regexp.MustCompile(`(?m)^not ok \d+ -`)
+
+	t.Run("TAP output", func(t *testing.T) {
+		var tapout bytes.Buffer
+		if got := RulesUnitTestTap(&tapout, promql.LazyLoaderOpts{}, tap_files...); got != 1 {
+			t.Errorf("RulesUnitTestTap() = %v, want 1", got)
+		}
+
+		text := tapout.Bytes()
+		if !re_plan.Match(text) {
+			t.Errorf("TAP output has no plan\n")
+		}
+		passes := re_pass.FindAll(text, -1)
+		if len(passes) != tap_count[0] {
+			t.Errorf("TAP output had %d ok; expected %d\n", len(passes), tap_count[0])
+		}
+		fails := re_fail.FindAll(text, -1)
+		if len(fails) != tap_count[1] {
+			t.Errorf("TAP output had %d not ok; expected %d\n", len(fails), tap_count[1])
+		}
+	})
 }

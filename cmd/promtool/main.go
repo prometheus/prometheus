@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"math"
 	"net/http"
@@ -116,6 +117,7 @@ func main() {
 	queryLabelsEnd := queryLabelsCmd.Flag("end", "End time (RFC3339 or Unix timestamp).").String()
 
 	testCmd := app.Command("test", "Unit testing.")
+	tapOutFile := testCmd.Flag("tap", "The TAP output file.").OpenFile(os.O_CREATE|os.O_WRONLY, 0644)
 	testRulesCmd := testCmd.Command("rules", "Unit tests for rules.")
 	testRulesFiles := testRulesCmd.Arg(
 		"test-rule-file",
@@ -230,7 +232,11 @@ func main() {
 		os.Exit(QueryLabels(*queryLabelsServer, *queryLabelsName, *queryLabelsBegin, *queryLabelsEnd, p))
 
 	case testRulesCmd.FullCommand():
-		os.Exit(RulesUnitTest(queryOpts, *testRulesFiles...))
+		var tapout io.Writer = io.Discard
+		if tapOutFile != nil {
+			tapout = *tapOutFile
+		}
+		os.Exit(RulesUnitTestTap(tapout, queryOpts, *testRulesFiles...))
 
 	case tsdbBenchWriteCmd.FullCommand():
 		os.Exit(checkErr(benchmarkWrite(*benchWriteOutPath, *benchSamplesFile, *benchWriteNumMetrics, *benchWriteNumScrapes)))
