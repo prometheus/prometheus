@@ -218,12 +218,12 @@ func BenchmarkLoadWAL(b *testing.B) {
 						}
 					}
 
-					// Write mmapped chunks
+					// Write mmapped chunks.
 					if c.mmappedChunkT != 0 {
 						chunkDiskMapper, err := chunks.NewChunkDiskMapper(mmappedChunksDir(dir), chunkenc.NewPool(), chunks.DefaultWriteBufferSize)
 						require.NoError(b, err)
 						for k := 0; k < c.batches*c.seriesPerBatch; k++ {
-							// Create one mmapped chunk per series, with one sample at the given time
+							// Create one mmapped chunk per series, with one sample at the given time.
 							s := newMemSeries(labels.Labels{}, uint64(k)*101, c.mmappedChunkT, nil)
 							s.append(c.mmappedChunkT, 42, 0, chunkDiskMapper)
 							s.mmapCurrentHeadChunk(chunkDiskMapper)
