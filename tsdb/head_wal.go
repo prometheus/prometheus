@@ -212,9 +212,7 @@ Outer:
 
 				if created {
 					// This is the first WAL series record for this series.
-					h.metrics.chunksCreated.Add(float64(len(mmc)))
-					h.metrics.chunks.Add(float64(len(mmc)))
-					mSeries.mmappedChunks = mmc
+					h.setMMappedChunks(mSeries, mmc)
 					continue
 				}
 
@@ -258,16 +256,12 @@ Outer:
 				}
 
 				// Replacing m-mapped chunks with the new ones (could be empty).
-				h.metrics.chunksCreated.Add(float64(len(mmc)))
-				h.metrics.chunksRemoved.Add(float64(len(mSeries.mmappedChunks)))
-				h.metrics.chunks.Add(float64(len(mmc) - len(mSeries.mmappedChunks)))
-				mSeries.mmappedChunks = mmc
+				h.setMMappedChunks(mSeries, mmc)
 
 				// Any samples replayed till now would already be compacted. Resetting the head chunk.
 				mSeries.nextAt = 0
 				mSeries.headChunk = nil
 				mSeries.app = nil
-				h.updateMinMaxTime(mSeries.minTime(), mSeries.maxTime())
 			}
 			//nolint:staticcheck // Ignore SA6002 relax staticcheck verification.
 			seriesPool.Put(v)
@@ -359,6 +353,20 @@ Outer:
 	return nil
 }
 
+func (h *Head) setMMappedChunks(mSeries *memSeries, mmc []*mmappedChunk) {
+	h.metrics.chunksCreated.Add(float64(len(mmc)))
+	h.metrics.chunksRemoved.Add(float64(len(mSeries.mmappedChunks)))
+	h.metrics.chunks.Add(float64(len(mmc) - len(mSeries.mmappedChunks)))
+	mSeries.mmappedChunks = mmc
+	// Cache the last mmapped chunk time, so we can skip calling append() for samples it will reject.
+	if len(mmc) == 0 {
+		mSeries.mmMaxTime = math.MinInt64
+	} else {
+		mSeries.mmMaxTime = mmc[len(mmc)-1].maxTime
+		h.updateMinMaxTime(mmc[0].minTime, mSeries.mmMaxTime)
+	}
+}
+
 // processWALSamples adds the samples it receives to the head and passes
 // the buffer received to an output channel for reuse.
 // Samples before the minValidTime timestamp are discarded.
@@ -368,9 +376,6 @@ func (h *Head) processWALSamples(
 ) (unknownRefs uint64) {
 	defer close(output)
 
-	// Mitigate lock contention in getByID.
-	refSeries := map[uint64]*memSeries{}
-
 	mint, maxt := int64(math.MaxInt64), int64(math.MinInt64)
 
 	for samples := range input {
@@ -378,14 +383,13 @@ func (h *Head) processWALSamples(
 			if s.T < minValidTime {
 				continue
 			}
-			ms := refSeries[s.Ref]
+			ms := h.series.getByID(s.Ref)
 			if ms == nil {
-				ms = h.series.getByID(s.Ref)
-				if ms == nil {
-					unknownRefs++
-					continue
-				}
-				refSeries[s.Ref] = ms
+				unknownRefs++
+				continue
+			}
+			if s.T <= ms.mmMaxTime {
+				continue
 			}
 			if _, chunkCreated := ms.append(s.T, s.V, 0, h.chunkDiskMapper); chunkCreated {
 				h.metrics.chunksCreated.Inc()

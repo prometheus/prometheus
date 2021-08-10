@@ -137,6 +137,7 @@ func BenchmarkLoadWAL(b *testing.B) {
 		batches          int
 		seriesPerBatch   int
 		samplesPerSeries int
+		mmappedChunkT    int64
 	}{
 		{ // Less series and more samples. 2 hour WAL with 1 second scrape interval.
 			batches:          10,
@@ -152,6 +153,12 @@ func BenchmarkLoadWAL(b *testing.B) {
 			batches:          10,
 			seriesPerBatch:   1000,
 			samplesPerSeries: 480,
+		},
+		{ // 2 hour WAL with 15 second scrape interval, and mmapped chunks up to last 100 samples.
+			batches:          100,
+			seriesPerBatch:   1000,
+			samplesPerSeries: 480,
+			mmappedChunkT:    3800,
 		},
 	}
 
@@ -169,7 +176,7 @@ func BenchmarkLoadWAL(b *testing.B) {
 			}
 			lastExemplarsPerSeries = exemplarsPerSeries
 			// fmt.Println("exemplars per series: ", exemplarsPerSeries)
-			b.Run(fmt.Sprintf("batches=%d,seriesPerBatch=%d,samplesPerSeries=%d,exemplarsPerSeries=%d", c.batches, c.seriesPerBatch, c.samplesPerSeries, exemplarsPerSeries),
+			b.Run(fmt.Sprintf("batches=%d,seriesPerBatch=%d,samplesPerSeries=%d,exemplarsPerSeries=%d,mmappedChunkT=%d", c.batches, c.seriesPerBatch, c.samplesPerSeries, exemplarsPerSeries, c.mmappedChunkT),
 				func(b *testing.B) {
 					dir, err := ioutil.TempDir("", "test_load_wal")
 					require.NoError(b, err)
@@ -190,7 +197,7 @@ func BenchmarkLoadWAL(b *testing.B) {
 							for j := 1; len(lbls) < labelsPerSeries; j++ {
 								lbls[defaultLabelName+strconv.Itoa(j)] = defaultLabelValue + strconv.Itoa(j)
 							}
-							refSeries = append(refSeries, record.RefSeries{Ref: uint64(i) * 100, Labels: labels.FromMap(lbls)})
+							refSeries = append(refSeries, record.RefSeries{Ref: uint64(i) * 101, Labels: labels.FromMap(lbls)})
 						}
 						populateTestWAL(b, w, []interface{}{refSeries})
 					}
@@ -202,7 +209,7 @@ func BenchmarkLoadWAL(b *testing.B) {
 							refSamples = refSamples[:0]
 							for k := j * c.seriesPerBatch; k < (j+1)*c.seriesPerBatch; k++ {
 								refSamples = append(refSamples, record.RefSample{
-									Ref: uint64(k) * 100,
+									Ref: uint64(k) * 101,
 									T:   int64(i) * 10,
 									V:   float64(i) * 100,
 								})
@@ -211,14 +218,27 @@ func BenchmarkLoadWAL(b *testing.B) {
 						}
 					}
 
-					// Write samples.
+					// Write mmapped chunks.
+					if c.mmappedChunkT != 0 {
+						chunkDiskMapper, err := chunks.NewChunkDiskMapper(mmappedChunksDir(dir), chunkenc.NewPool(), chunks.DefaultWriteBufferSize)
+						require.NoError(b, err)
+						for k := 0; k < c.batches*c.seriesPerBatch; k++ {
+							// Create one mmapped chunk per series, with one sample at the given time.
+							s := newMemSeries(labels.Labels{}, uint64(k)*101, c.mmappedChunkT, nil)
+							s.append(c.mmappedChunkT, 42, 0, chunkDiskMapper)
+							s.mmapCurrentHeadChunk(chunkDiskMapper)
+						}
+						require.NoError(b, chunkDiskMapper.Close())
+					}
+
+					// Write exemplars.
 					refExemplars := make([]record.RefExemplar, 0, c.seriesPerBatch)
 					for i := 0; i < exemplarsPerSeries; i++ {
 						for j := 0; j < c.batches; j++ {
 							refExemplars = refExemplars[:0]
 							for k := j * c.seriesPerBatch; k < (j+1)*c.seriesPerBatch; k++ {
 								refExemplars = append(refExemplars, record.RefExemplar{
-									Ref:    uint64(k) * 100,
+									Ref:    uint64(k) * 101,
 									T:      int64(i) * 10,
 									V:      float64(i) * 100,
 									Labels: labels.FromStrings("traceID", fmt.Sprintf("trace-%d", i)),
@@ -239,6 +259,8 @@ func BenchmarkLoadWAL(b *testing.B) {
 						require.NoError(b, err)
 						h.Init(0)
 					}
+					b.StopTimer()
+					w.Close()
 				})
 		}
 	}
