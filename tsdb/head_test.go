@@ -21,6 +21,7 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -2504,12 +2505,18 @@ func TestChunkSnapshot(t *testing.T) {
 		for i := 1; i <= numSeries; i++ {
 			lbls := labels.Labels{labels.Label{Name: "foo", Value: fmt.Sprintf("bar%d", i)}}
 			lblStr := lbls.String()
-			// 240 samples should m-map at least 1 chunk.
-			for ts := int64(1); ts <= 240; ts++ {
+			// Should m-map at least 1 chunk.
+			for ts := int64(1); ts <= 200; ts++ {
 				val := rand.Float64()
 				expSeries[lblStr] = append(expSeries[lblStr], sample{ts, val})
 				_, err := app.Append(0, lbls, ts, val)
 				require.NoError(t, err)
+
+				// To create multiple WAL records.
+				if ts%10 == 0 {
+					require.NoError(t, app.Commit())
+					app = head.Appender(context.Background())
+				}
 			}
 		}
 		require.NoError(t, app.Commit())
@@ -2581,12 +2588,18 @@ func TestChunkSnapshot(t *testing.T) {
 		for i := 1; i <= numSeries; i++ {
 			lbls := labels.Labels{labels.Label{Name: "foo", Value: fmt.Sprintf("bar%d", i)}}
 			lblStr := lbls.String()
-			// 240 samples should m-map at least 1 chunk.
-			for ts := int64(241); ts <= 480; ts++ {
+			// Should m-map at least 1 chunk.
+			for ts := int64(201); ts <= 400; ts++ {
 				val := rand.Float64()
 				expSeries[lblStr] = append(expSeries[lblStr], sample{ts, val})
 				_, err := app.Append(0, lbls, ts, val)
 				require.NoError(t, err)
+
+				// To create multiple WAL records.
+				if ts%10 == 0 {
+					require.NoError(t, app.Commit())
+					app = head.Appender(context.Background())
+				}
 			}
 		}
 		require.NoError(t, app.Commit())
@@ -2624,6 +2637,7 @@ func TestChunkSnapshot(t *testing.T) {
 		// Create new Head to replay snapshot, m-map chunks, and WAL.
 		w, err := wal.NewSize(nil, nil, head.wal.Dir(), 32768, false)
 		require.NoError(t, err)
+		head.opts.EnableMemorySnapshotOnShutdown = true // Enabled to read from snapshot.
 		head, err = NewHead(nil, nil, w, head.opts, nil)
 		require.NoError(t, err)
 		require.NoError(t, head.Init(math.MinInt64))
@@ -2646,4 +2660,63 @@ func TestChunkSnapshot(t *testing.T) {
 		}))
 		require.Equal(t, expTombstones, actTombstones)
 	}
+}
+
+func TestSnapshotError(t *testing.T) {
+	head, _ := newTestHead(t, 120*4, false)
+	defer func() {
+		head.opts.EnableMemorySnapshotOnShutdown = false
+		require.NoError(t, head.Close())
+	}()
+
+	// Add a sample.
+	app := head.Appender(context.Background())
+	lbls := labels.Labels{labels.Label{Name: "foo", Value: "bar"}}
+	_, err := app.Append(0, lbls, 99, 99)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// Add some tombstones.
+	itvs := tombstones.Intervals{
+		{Mint: 1234, Maxt: 2345},
+		{Mint: 3456, Maxt: 4567},
+	}
+	head.tombstones.AddInterval(1, itvs...)
+
+	// Check existance of data.
+	require.NotNil(t, head.series.getByHash(lbls.Hash(), lbls))
+	tm, err := head.tombstones.Get(1)
+	require.NoError(t, err)
+	require.NotEqual(t, 0, len(tm))
+
+	head.opts.EnableMemorySnapshotOnShutdown = true
+	require.NoError(t, head.Close()) // This will create a snapshot.
+
+	// Remove the WAL so that we don't load from it.
+	require.NoError(t, os.RemoveAll(head.wal.Dir()))
+
+	// Corrupt the snapshot.
+	snapDir, _, _, err := LastChunkSnapshot(head.opts.ChunkDirRoot)
+	require.NoError(t, err)
+	files, err := ioutil.ReadDir(snapDir)
+	require.NoError(t, err)
+	f, err := os.OpenFile(path.Join(snapDir, files[0].Name()), os.O_RDWR, 0)
+	require.NoError(t, err)
+	_, err = f.WriteAt([]byte{0b11111111}, 18)
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+
+	// Create new Head which should replay this snapshot.
+	w, err := wal.NewSize(nil, nil, head.wal.Dir(), 32768, false)
+	require.NoError(t, err)
+	head, err = NewHead(nil, nil, w, head.opts, nil)
+	require.NoError(t, err)
+	require.NoError(t, head.Init(math.MinInt64))
+
+	// There should be no series in the memory after snapshot error since WAL was removed.
+	require.Equal(t, 1.0, prom_testutil.ToFloat64(head.metrics.snapshotReplayErrorTotal))
+	require.Nil(t, head.series.getByHash(lbls.Hash(), lbls))
+	tm, err = head.tombstones.Get(1)
+	require.NoError(t, err)
+	require.Equal(t, 0, len(tm))
 }

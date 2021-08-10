@@ -735,6 +735,8 @@ func DeleteChunkSnapshots(dir string, maxIndex, maxOffset int) error {
 	return errs.Err()
 }
 
+// loadChunkSnapshot replays the chunk snapshot and restores the Head state from it. If there was any error returned,
+// it is the responsibility of the caller to clear the contents of the Head.
 func (h *Head) loadChunkSnapshot() (int, int, map[uint64]*memSeries, error) {
 	dir, snapIdx, snapOffset, err := LastChunkSnapshot(h.opts.ChunkDirRoot)
 	if err != nil {
@@ -849,6 +851,10 @@ Outer:
 				loopErr = errors.Wrap(err, "iterate tombstones")
 				break Outer
 			}
+		default:
+			// This is a record type we don't understand. It is either and old format from earlier versions,
+			// or a new format and the code was rolled back to old version.
+			loopErr = errors.Errorf("unsuported snapshot record type 0b%b", rec[0])
 		}
 
 	}
@@ -862,6 +868,10 @@ Outer:
 	}
 	if err := merr.Err(); err != nil {
 		return -1, -1, nil, err
+	}
+
+	if r.Err() != nil {
+		return -1, -1, nil, errors.Wrap(r.Err(), "read records")
 	}
 
 	refSeries := make(map[uint64]*memSeries, numSeries)
