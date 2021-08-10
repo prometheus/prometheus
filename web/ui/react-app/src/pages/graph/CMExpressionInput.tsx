@@ -8,7 +8,7 @@ import { history, historyKeymap } from '@codemirror/history';
 import { defaultKeymap, insertNewlineAndIndent } from '@codemirror/commands';
 import { bracketMatching } from '@codemirror/matchbrackets';
 import { closeBrackets, closeBracketsKeymap } from '@codemirror/closebrackets';
-import { searchKeymap, highlightSelectionMatches } from '@codemirror/search';
+import { highlightSelectionMatches } from '@codemirror/search';
 import { commentKeymap } from '@codemirror/comment';
 import { lintKeymap } from '@codemirror/lint';
 import { PromQLExtension, CompleteStrategy } from 'codemirror-promql';
@@ -139,7 +139,6 @@ const CMExpressionInput: FC<CMExpressionInputProps> = ({
           keymap.of([
             ...closeBracketsKeymap,
             ...defaultKeymap,
-            ...searchKeymap,
             ...historyKeymap,
             ...commentKeymap,
             ...completionKeymap,
