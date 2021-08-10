@@ -1,4 +1,4 @@
-## 2.29.0-rc.2 / 2021-08-09
+## 2.29.0 / 2021-08-11
 
 Note for macOS users: Due to [changes in the upcoming Go 1.17](https://tip.golang.org/doc/go1.17#darwin),
 this is the last Prometheus release that supports macOS 10.12 Sierra.
