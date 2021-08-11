@@ -12,8 +12,8 @@ export interface Target {
   lastScrape: string;
   lastScrapeDuration: number;
   health: string;
-  interval: string;
-  timeout: string;
+  scrapeInterval: string;
+  scrapeTimeout: string;
 }
 
 export interface DroppedTarget {

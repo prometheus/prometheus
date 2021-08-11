@@ -761,8 +761,8 @@ type Target struct {
 	LastScrapeDuration float64             `json:"lastScrapeDuration"`
 	Health             scrape.TargetHealth `json:"health"`
 
-	Interval string `json:"interval"`
-	Timeout  string `json:"timeout"`
+	ScrapeInterval string `json:"scrapeInterval"`
+	ScrapeTimeout  string `json:"scrapeTimeout"`
 }
 
 // DroppedTarget has the information for one target that was dropped during relabelling.
@@ -902,8 +902,8 @@ func (api *API) targets(r *http.Request) apiFuncResult {
 					LastScrape:         target.LastScrape(),
 					LastScrapeDuration: target.LastScrapeDuration().Seconds(),
 					Health:             target.Health(),
-					Interval:           target.GetValue(model.ScrapeIntervalLabel),
-					Timeout:            target.GetValue(model.ScrapeTimeoutLabel),
+					ScrapeInterval:     target.GetValue(model.ScrapeIntervalLabel),
+					ScrapeTimeout:      target.GetValue(model.ScrapeTimeoutLabel),
 				})
 			}
 		}
