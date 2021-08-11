@@ -27,7 +27,6 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 
 	"github.com/prometheus/prometheus/discovery"
-	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/osutil"
 	"github.com/prometheus/prometheus/util/strutil"
 )
@@ -129,30 +128,27 @@ func (c *KumaSDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discover
 	return NewKumaHTTPDiscovery(c, logger)
 }
 
-func convertKumaV1MonitoringAssignment(assignment *MonitoringAssignment) *targetgroup.Group {
+func convertKumaV1MonitoringAssignment(assignment *MonitoringAssignment) []model.LabelSet {
 	commonLabels := convertKumaUserLabels(assignment.Labels)
 
 	commonLabels[kumaMeshLabel] = model.LabelValue(assignment.Mesh)
 	commonLabels[kumaServiceLabel] = model.LabelValue(assignment.Service)
 
-	var targetLabelSets []model.LabelSet
+	var targets []model.LabelSet
 
-	for _, target := range assignment.Targets {
-		targetLabels := convertKumaUserLabels(target.Labels)
+	for _, madsTarget := range assignment.Targets {
+		targetLabels := convertKumaUserLabels(madsTarget.Labels).Merge(commonLabels)
 
-		targetLabels[kumaDataplaneLabel] = model.LabelValue(target.Name)
-		targetLabels[model.InstanceLabel] = model.LabelValue(target.Name)
-		targetLabels[model.AddressLabel] = model.LabelValue(target.Address)
-		targetLabels[model.SchemeLabel] = model.LabelValue(target.Scheme)
-		targetLabels[model.MetricsPathLabel] = model.LabelValue(target.MetricsPath)
+		targetLabels[kumaDataplaneLabel] = model.LabelValue(madsTarget.Name)
+		targetLabels[model.AddressLabel] = model.LabelValue(madsTarget.Address)
+		targetLabels[model.InstanceLabel] = model.LabelValue(madsTarget.Name)
+		targetLabels[model.SchemeLabel] = model.LabelValue(madsTarget.Scheme)
+		targetLabels[model.MetricsPathLabel] = model.LabelValue(madsTarget.MetricsPath)
 
-		targetLabelSets = append(targetLabelSets, targetLabels)
+		targets = append(targets, targetLabels)
 	}
 
-	return &targetgroup.Group{
-		Labels:  commonLabels,
-		Targets: targetLabelSets,
-	}
+	return targets
 }
 
 func convertKumaUserLabels(labels map[string]string) model.LabelSet {
@@ -165,12 +161,12 @@ func convertKumaUserLabels(labels map[string]string) model.LabelSet {
 }
 
 // kumaMadsV1ResourceParser is an xds.resourceParser.
-func kumaMadsV1ResourceParser(resources []*anypb.Any, typeURL string) ([]*targetgroup.Group, error) {
+func kumaMadsV1ResourceParser(resources []*anypb.Any, typeURL string) ([]model.LabelSet, error) {
 	if typeURL != KumaMadsV1ResourceTypeURL {
 		return nil, errors.Errorf("recieved invalid typeURL for Kuma MADS v1 Resource: %s", typeURL)
 	}
 
-	var groups []*targetgroup.Group
+	var targets []model.LabelSet
 
 	for _, resource := range resources {
 		assignment := &MonitoringAssignment{}
@@ -179,10 +175,10 @@ func kumaMadsV1ResourceParser(resources []*anypb.Any, typeURL string) ([]*target
 			return nil, err
 		}
 
-		groups = append(groups, convertKumaV1MonitoringAssignment(assignment))
+		targets = append(targets, convertKumaV1MonitoringAssignment(assignment)...)
 	}
 
-	return groups, nil
+	return targets, nil
 }
 
 func NewKumaHTTPDiscovery(conf *KumaSDConfig, logger log.Logger) (discovery.Discoverer, error) {

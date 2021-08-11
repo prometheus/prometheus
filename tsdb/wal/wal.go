@@ -699,6 +699,22 @@ func (w *WAL) log(rec []byte, final bool) error {
 	return nil
 }
 
+// LastSegmentAndOffset returns the last segment number of the WAL
+// and the offset in that file upto which the segment has been filled.
+func (w *WAL) LastSegmentAndOffset() (seg, offset int, err error) {
+	w.mtx.Lock()
+	defer w.mtx.Unlock()
+
+	_, seg, err = Segments(w.Dir())
+	if err != nil {
+		return
+	}
+
+	offset = (w.donePages * pageSize) + w.page.alloc
+
+	return
+}
+
 // Truncate drops all segments before i.
 func (w *WAL) Truncate(i int) (err error) {
 	w.metrics.truncateTotal.Inc()
@@ -865,6 +881,21 @@ func NewSegmentBufReader(segs ...*Segment) *segmentBufReader {
 		buf:  bufio.NewReaderSize(segs[0], 16*pageSize),
 		segs: segs,
 	}
+}
+
+// nolint:golint
+func NewSegmentBufReaderWithOffset(offset int, segs ...*Segment) (sbr *segmentBufReader, err error) {
+	if offset == 0 {
+		return NewSegmentBufReader(segs...), nil
+	}
+	sbr = &segmentBufReader{
+		buf:  bufio.NewReaderSize(segs[0], 16*pageSize),
+		segs: segs,
+	}
+	if offset > 0 {
+		_, err = sbr.buf.Discard(offset)
+	}
+	return sbr, err
 }
 
 func (r *segmentBufReader) Close() (err error) {

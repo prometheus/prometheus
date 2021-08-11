@@ -17,21 +17,17 @@ executors:
       - image: circleci/golang:1.15-node
 
 jobs:
-  test:
+  test_go:
     executor: golang
 
     steps:
       - prometheus/setup_environment
       - go/load-cache:
           key: v1
-      - restore_cache:
-          keys:
-            - v3-npm-deps-{{ checksum "web/ui/react-app/yarn.lock" }}
-            - v3-npm-deps-
       - run:
           command: sudo apt-get install -y yamllint
       - run:
-          command: make
+          command: make GO_ONLY=1
           environment:
             # Run garbage collection more aggressively to avoid getting OOMed during the lint phase.
             GOGC: "20"
@@ -50,12 +46,24 @@ jobs:
           file: promtool
       - go/save-cache:
           key: v1
+      - store_test_results:
+          path: test-results
+
+  test_react:
+    executor: golang
+
+    steps:
+      - checkout
+      - restore_cache:
+          keys:
+            - v3-npm-deps-{{ checksum "web/ui/react-app/yarn.lock" }}
+            - v3-npm-deps-
+      - run:
+          command: make react-app-test
       - save_cache:
           key: v3-npm-deps-{{ checksum "web/ui/react-app/yarn.lock" }}
           paths:
             - /home/circleci/.cache/yarn
-      - store_test_results:
-          path: test-results
 
   test_windows:
     executor:
@@ -121,7 +129,11 @@ workflows:
   version: 2
   prometheus:
     jobs:
-      - test:
+      - test_go:
+          filters:
+            tags:
+              only: /.*/
+      - test_react:
           filters:
             tags:
               only: /.*/
@@ -146,7 +158,8 @@ workflows:
       - prometheus/publish_main:
           context: org-context
           requires:
-            - test
+            - test_go
+            - test_react
             - build
           filters:
             branches:
@@ -155,7 +168,8 @@ workflows:
       - prometheus/publish_release:
           context: org-context
           requires:
-            - test
+            - test_go
+            - test_react
             - build
           filters:
             tags:
