@@ -1,3 +1,8 @@
+## 2.29.1 / 2021-08-11
+
+* [BUGFIX] tsdb: align atomically accessed int64 to prevent panic in 32-bit
+  archs. #9192
+
 ## 2.29.0 / 2021-08-11
 
 Note for macOS users: Due to [changes in the upcoming Go 1.17](https://tip.golang.org/doc/go1.17#darwin),
