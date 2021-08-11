@@ -470,6 +470,13 @@ func (a *headAppender) log() error {
 			return errors.Wrap(err, "log exemplars")
 		}
 	}
+	if len(a.histograms) > 0 {
+		rec = enc.Histograms(a.histograms, buf)
+		buf = rec[:0]
+		if err := a.head.wal.Log(rec); err != nil {
+			return errors.Wrap(err, "log histograms")
+		}
+	}
 	return nil
 }
 
@@ -539,7 +546,6 @@ func (a *headAppender) Commit() (err error) {
 	for i, s := range a.histograms {
 		series = a.histogramSeries[i]
 		series.Lock()
-		a.head.hasHistograms.Store(true)
 		ok, chunkCreated := series.appendHistogram(s.T, s.H, a.appendID, a.head.chunkDiskMapper)
 		series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
 		series.pendingCommit = false

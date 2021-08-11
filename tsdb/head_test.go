@@ -2537,13 +2537,69 @@ func TestAppendHistogram(t *testing.T) {
 	}
 }
 
+func TestHistogramInWAL(t *testing.T) {
+	l := labels.Labels{{Name: "a", Value: "b"}}
+	numHistograms := 10
+	head, _ := newTestHead(t, 1000, false)
+	t.Cleanup(func() {
+		require.NoError(t, head.Close())
+	})
+
+	require.NoError(t, head.Init(0))
+	app := head.Appender(context.Background())
+
+	type timedHist struct {
+		t int64
+		h histogram.SparseHistogram
+	}
+	expHists := make([]timedHist, 0, numHistograms)
+	for i, h := range generateHistograms(numHistograms) {
+		h.NegativeSpans = h.PositiveSpans
+		h.NegativeBuckets = h.PositiveBuckets
+		_, err := app.AppendHistogram(0, l, int64(i), h)
+		require.NoError(t, err)
+		expHists = append(expHists, timedHist{int64(i), h})
+	}
+	require.NoError(t, app.Commit())
+
+	// Restart head.
+	require.NoError(t, head.Close())
+	w, err := wal.NewSize(nil, nil, head.wal.Dir(), 32768, false)
+	require.NoError(t, err)
+	head, err = NewHead(nil, nil, w, head.opts, nil)
+	require.NoError(t, err)
+	require.NoError(t, head.Init(0))
+
+	q, err := NewBlockQuerier(head, head.MinTime(), head.MaxTime())
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, q.Close())
+	})
+
+	ss := q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
+
+	require.True(t, ss.Next())
+	s := ss.At()
+	require.False(t, ss.Next())
+
+	it := s.Iterator()
+	actHists := make([]timedHist, 0, len(expHists))
+	for it.Next() {
+		t, h := it.AtHistogram()
+		actHists = append(actHists, timedHist{t, h.Copy()})
+	}
+
+	require.Equal(t, expHists, actHists)
+}
+
 func generateHistograms(n int) (r []histogram.SparseHistogram) {
 	for i := 0; i < n; i++ {
 		r = append(r, histogram.SparseHistogram{
-			Count:     5 + uint64(i*4),
-			ZeroCount: 2 + uint64(i),
-			Sum:       18.4 * float64(i+1),
-			Schema:    1,
+			Count:         5 + uint64(i*4),
+			ZeroCount:     2 + uint64(i),
+			ZeroThreshold: 0.001,
+			Sum:           18.4 * float64(i+1),
+			Schema:        1,
 			PositiveSpans: []histogram.Span{
 				{Offset: 0, Length: 2},
 				{Offset: 1, Length: 2},

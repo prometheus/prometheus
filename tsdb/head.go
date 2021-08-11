@@ -63,9 +63,6 @@ type Head struct {
 	lastWALTruncationTime    atomic.Int64
 	lastMemoryTruncationTime atomic.Int64
 	lastSeriesID             atomic.Uint64
-	// hasHistograms this is used to m-map all chunks in case there are histograms.
-	// A hack to avoid updating all the failing tests.
-	hasHistograms atomic.Bool
 
 	metrics         *headMetrics
 	opts            *HeadOptions
@@ -1157,16 +1154,6 @@ func (h *Head) Close() error {
 	h.closedMtx.Lock()
 	defer h.closedMtx.Unlock()
 	h.closed = true
-
-	// M-map all in-memory chunks.
-	// A hack for the histogram till it is stored in WAL and replayed.
-	if h.hasHistograms.Load() {
-		for _, m := range h.series.series {
-			for _, s := range m {
-				s.mmapCurrentHeadChunk(h.chunkDiskMapper)
-			}
-		}
-	}
 
 	errs := tsdb_errors.NewMulti(h.chunkDiskMapper.Close())
 	if errs.Err() == nil && h.opts.EnableMemorySnapshotOnShutdown {

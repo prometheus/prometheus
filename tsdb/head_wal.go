@@ -46,16 +46,18 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64, mmappedChunks 
 	// for error reporting.
 	var unknownRefs atomic.Uint64
 	var unknownExemplarRefs atomic.Uint64
+	var unknownHistogramRefs atomic.Uint64
 
 	// Start workers that each process samples for a partition of the series ID space.
 	// They are connected through a ring of channels which ensures that all sample batches
 	// read from the WAL are processed in order.
 	var (
-		wg             sync.WaitGroup
-		n              = runtime.GOMAXPROCS(0)
-		inputs         = make([]chan []record.RefSample, n)
-		outputs        = make([]chan []record.RefSample, n)
-		exemplarsInput chan record.RefExemplar
+		wg              sync.WaitGroup
+		n               = runtime.GOMAXPROCS(0)
+		inputs          = make([]chan []record.RefSample, n)
+		outputs         = make([]chan []record.RefSample, n)
+		exemplarsInput  chan record.RefExemplar
+		histogramsInput chan record.RefHistogram
 
 		dec    record.Decoder
 		shards = make([][]record.RefSample, n)
@@ -82,6 +84,11 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64, mmappedChunks 
 				return []record.RefExemplar{}
 			},
 		}
+		histogramsPool = sync.Pool{
+			New: func() interface{} {
+				return []record.RefHistogram{}
+			},
+		}
 	)
 
 	defer func() {
@@ -94,6 +101,7 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64, mmappedChunks 
 				}
 			}
 			close(exemplarsInput)
+			close(histogramsInput)
 			wg.Wait()
 		}
 	}()
@@ -132,6 +140,42 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64, mmappedChunks 
 			}
 		}
 	}(exemplarsInput)
+
+	wg.Add(1)
+	histogramsInput = make(chan record.RefHistogram, 300)
+	go func(input <-chan record.RefHistogram) {
+		defer wg.Done()
+
+		mint, maxt := int64(math.MaxInt64), int64(math.MinInt64)
+		for rh := range input {
+			ms := h.series.getByID(rh.Ref)
+			if ms == nil {
+				unknownHistogramRefs.Inc()
+				continue
+			}
+
+			if rh.T < h.minValidTime.Load() {
+				continue
+			}
+
+			// At the moment the only possible error here is out of order exemplars, which we shouldn't see when
+			// replaying the WAL, so lets just log the error if it's not that type.
+			_, chunkCreated := ms.appendHistogram(rh.T, rh.H, 0, h.chunkDiskMapper)
+			if chunkCreated {
+				h.metrics.chunksCreated.Inc()
+				h.metrics.chunks.Inc()
+			}
+
+			if rh.T > maxt {
+				maxt = rh.T
+			}
+			if rh.T < mint {
+				mint = rh.T
+			}
+		}
+
+		h.updateMinMaxTime(mint, maxt)
+	}(histogramsInput)
 
 	go func() {
 		defer close(decoded)
@@ -186,6 +230,18 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64, mmappedChunks 
 					return
 				}
 				decoded <- exemplars
+			case record.Histograms:
+				hists := histogramsPool.Get().([]record.RefHistogram)[:0]
+				hists, err = dec.Histograms(rec, hists)
+				if err != nil {
+					decodeErr = &wal.CorruptionErr{
+						Err:     errors.Wrap(err, "decode histograms"),
+						Segment: r.Segment(),
+						Offset:  r.Offset(),
+					}
+					return
+				}
+				decoded <- hists
 			default:
 				// Noop.
 			}
@@ -319,6 +375,13 @@ Outer:
 			}
 			//nolint:staticcheck // Ignore SA6002 relax staticcheck verification.
 			exemplarsPool.Put(v)
+		case []record.RefHistogram:
+			// TODO: split into multiple slices and have multiple workers processing the histograms like we do for samples.
+			for _, rh := range v {
+				histogramsInput <- rh
+			}
+			//nolint:staticcheck // Ignore SA6002 relax staticcheck verification.
+			histogramsPool.Put(v)
 		default:
 			panic(fmt.Errorf("unexpected decoded type: %T", d))
 		}
@@ -341,14 +404,15 @@ Outer:
 		}
 	}
 	close(exemplarsInput)
+	close(histogramsInput)
 	wg.Wait()
 
 	if r.Err() != nil {
 		return errors.Wrap(r.Err(), "read records")
 	}
 
-	if unknownRefs.Load() > 0 || unknownExemplarRefs.Load() > 0 {
-		level.Warn(h.logger).Log("msg", "Unknown series references", "samples", unknownRefs.Load(), "exemplars", unknownExemplarRefs.Load())
+	if unknownRefs.Load() > 0 || unknownExemplarRefs.Load() > 0 || unknownHistogramRefs.Load() > 0 {
+		level.Warn(h.logger).Log("msg", "Unknown series references", "samples", unknownRefs.Load(), "exemplars", unknownExemplarRefs.Load(), "histograms", unknownHistogramRefs.Load())
 	}
 	return nil
 }

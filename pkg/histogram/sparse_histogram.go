@@ -30,9 +30,10 @@ import (
 // neg bucket idx             3    2    1         0          -1        ...
 // actively used bucket indices themselves are represented by the spans
 type SparseHistogram struct {
-	Count, ZeroCount                 uint64
-	Sum, ZeroThreshold               float64
 	Schema                           int32
+	ZeroThreshold                    float64
+	ZeroCount, Count                 uint64
+	Sum                              float64
 	PositiveSpans, NegativeSpans     []Span
 	PositiveBuckets, NegativeBuckets []int64
 }
