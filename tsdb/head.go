@@ -117,6 +117,10 @@ type Head struct {
 
 // HeadOptions are parameters for the Head block.
 type HeadOptions struct {
+	// Runtime reloadable option. At the top of the struct for 32 bit OS:
+	// https://pkg.go.dev/sync/atomic#pkg-note-BUG
+	MaxExemplars atomic.Int64
+
 	ChunkRange int64
 	// ChunkDirRoot is the parent directory of the chunks directory.
 	ChunkDirRoot         string
@@ -128,9 +132,6 @@ type HeadOptions struct {
 	StripeSize            int
 	SeriesCallback        SeriesLifecycleCallback
 	EnableExemplarStorage bool
-
-	// Runtime reloadable options.
-	MaxExemplars atomic.Int64
 }
 
 func DefaultHeadOptions() *HeadOptions {
