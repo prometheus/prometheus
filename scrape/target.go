@@ -283,21 +283,21 @@ func (t *Target) Health() TargetHealth {
 	return t.health
 }
 
-// IntervalAndTimeout returns the interval and timeout derived from
+// intervalAndTimeout returns the interval and timeout derived from
 // the targets labels.
-func (t *Target) IntervalAndTimeout(prevInterval, prevDuration time.Duration) (time.Duration, time.Duration, error) {
+func (t *Target) intervalAndTimeout(defaultInterval, defaultDuration time.Duration) (time.Duration, time.Duration, error) {
 	t.mtx.RLock()
 	defer t.mtx.RUnlock()
 
 	intervalLabel := t.labels.Get(model.ScrapeIntervalLabel)
 	interval, err := model.ParseDuration(intervalLabel)
 	if err != nil {
-		return prevInterval, prevDuration, errors.Errorf("Error parsing interval label %q: %v", intervalLabel, err)
+		return defaultInterval, defaultDuration, errors.Errorf("Error parsing interval label %q: %v", intervalLabel, err)
 	}
 	timeoutLabel := t.labels.Get(model.ScrapeTimeoutLabel)
 	timeout, err := model.ParseDuration(timeoutLabel)
 	if err != nil {
-		return prevInterval, prevDuration, errors.Errorf("Error parsing timeout label %q: %v", timeoutLabel, err)
+		return defaultInterval, defaultDuration, errors.Errorf("Error parsing timeout label %q: %v", timeoutLabel, err)
 	}
 
 	return time.Duration(interval), time.Duration(timeout), nil
