@@ -210,7 +210,7 @@ can be specified:
     rate(http_requests_total[5m] offset -1w)
 
 This feature is enabled by setting `--enable-feature=promql-negative-offset`
-flag. See [disabled features](../disabled_features.md) for more details about
+flag. See [feature flags](../feature_flags.md) for more details about
 this flag.
 
 ### @ modifier
@@ -251,7 +251,7 @@ These 2 queries will produce the same result.
 
 This modifier is disabled by default since it breaks the invariant that PromQL
 does not look ahead of the evaluation time for samples. It can be enabled by setting
-`--enable-feature=promql-at-modifier` flag. See [disabled features](../disabled_features.md) for more details about this flag.
+`--enable-feature=promql-at-modifier` flag. See [feature flags](../feature_flags.md) for more details about this flag.
 
 Additionally, `start()` and `end()` can also be used as values for the `@` modifier as special values.
 

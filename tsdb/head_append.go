@@ -654,14 +654,23 @@ func (s *memSeries) appendPreprocessor(t int64, e chunkenc.Encoding, chunkDiskMa
 		c = s.cutNewHeadChunk(t, e, chunkDiskMapper)
 		chunkCreated = true
 	}
-	numSamples := c.chunk.NumSamples()
 
 	// Out of order sample.
 	if c.maxTime >= t {
 		return c, false, chunkCreated
 	}
-	// If we reach 25% of a chunk's desired sample count, set a definitive time
-	// at which to start the next chunk.
+
+	numSamples := c.chunk.NumSamples()
+	if numSamples == 0 {
+		// It could be the new chunk created after reading the chunk snapshot,
+		// hence we fix the minTime of the chunk here.
+		c.minTime = t
+		s.nextAt = rangeForTimestamp(c.minTime, s.chunkRange)
+	}
+
+	// If we reach 25% of a chunk's desired sample count, predict an end time
+	// for this chunk that will try to make samples equally distributed within
+	// the remaining chunks in the current chunk range.
 	// At latest it must happen at the timestamp set when the chunk was cut.
 	if numSamples == samplesPerChunk/4 {
 		s.nextAt = computeChunkEndTime(c.minTime, c.maxTime, s.nextAt)
