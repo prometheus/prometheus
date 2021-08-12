@@ -3479,12 +3479,12 @@ coa@^2.0.2:
     chalk "^2.4.1"
     q "^1.1.2"
 
-codemirror-promql@^0.16.0:
-  version "0.16.0"
-  resolved "https://registry.yarnpkg.com/codemirror-promql/-/codemirror-promql-0.16.0.tgz#c51ca8ce1772a228ebfdbc8431550b2385670d46"
-  integrity sha512-/npytsj103ccWSMWffxibDuS+0p8DFneB7eRdUQULNVOsF+QSif2fqohjz6C9OmM+r58hA5qmdBUdhtogqsvEQ==
+codemirror-promql@^0.17.0:
+  version "0.17.0"
+  resolved "https://registry.yarnpkg.com/codemirror-promql/-/codemirror-promql-0.17.0.tgz#ece2e6323040907993812bfa3bb00402b17ff8e7"
+  integrity sha512-etlSQ8t9FvNfnNXZSGDOsLDFIgFaUaYUWQVPEs/YLdG41VMFdhnFoC4zb4iHyx1DJjxBW/dHk7ZHLJDa9aNNzg==
   dependencies:
-    lezer-promql "^0.19.0"
+    lezer-promql "^0.20.0"
     lru-cache "^6.0.0"
 
 collection-visit@^1.0.0:
@@ -7488,10 +7488,10 @@ levn@^0.3.0, levn@~0.3.0:
     prelude-ls "~1.1.2"
     type-check "~0.3.2"
 
-lezer-promql@^0.19.0:
-  version "0.19.0"
-  resolved "https://registry.yarnpkg.com/lezer-promql/-/lezer-promql-0.19.0.tgz#0cedaead2d7b3700a25c09e5ae85568979806710"
-  integrity sha512-divgYjuKw4ESDWVCXg7FipH2dF4vq0aWTb0QCyIGz5NHTLx6H+tVC7IlMkQSqsK8t/6qhgxh6A9s6XrE4ZFFJQ==
+lezer-promql@^0.20.0:
+  version "0.20.0"
+  resolved "https://registry.yarnpkg.com/lezer-promql/-/lezer-promql-0.20.0.tgz#d5d233fa5dfc5fb7fcd3efe0022fd31dd2f2d539"
+  integrity sha512-1CHG77fFghl032FfHT33buGyAHiTaMy2fqicEhcp2wWnbxZxS+Jt6gMzEUaf/TmRTIUJofj9uLar7iL22Jazug==
 
 lezer-tree@^0.13.0, lezer-tree@^0.13.2:
   version "0.13.2"

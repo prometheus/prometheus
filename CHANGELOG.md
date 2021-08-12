@@ -1,3 +1,41 @@
+## 2.29.1 / 2021-08-11
+
+* [BUGFIX] tsdb: align atomically accessed int64 to prevent panic in 32-bit
+  archs. #9192
+
+## 2.29.0 / 2021-08-11
+
+Note for macOS users: Due to [changes in the upcoming Go 1.17](https://tip.golang.org/doc/go1.17#darwin),
+this is the last Prometheus release that supports macOS 10.12 Sierra.
+
+* [CHANGE] Promote `--storage.tsdb.allow-overlapping-blocks` flag to stable. #9117
+* [CHANGE] Promote `--storage.tsdb.retention.size` flag to stable. #9004
+* [FEATURE] Add Kuma service discovery. #8844
+* [FEATURE] Add `present_over_time` PromQL function. #9097
+* [FEATURE] Allow configuring exemplar storage via file and make it reloadable. #8974
+* [FEATURE] UI: Allow selecting time range with mouse drag. #8977
+* [FEATURE] promtool: Add feature flags flag `--enable-feature`. #8958
+* [FEATURE] promtool: Add file_sd file validation. #8950
+* [ENHANCEMENT] Reduce blocking of outgoing remote write requests from series garbage collection. #9109
+* [ENHANCEMENT] Improve write-ahead-log decoding performance. #9106
+* [ENHANCEMENT] Improve append performance in TSDB by reducing mutexes usage. #9061
+* [ENHANCEMENT] Allow configuring `max_samples_per_send` for remote write metadata. #8959
+* [ENHANCEMENT] Add `__meta_gce_interface_ipv4_<name>` meta label to GCE discovery. #8978
+* [ENHANCEMENT] Add `__meta_ec2_availability_zone_id` meta label to EC2 discovery. #8896
+* [ENHANCEMENT] Add `__meta_azure_machine_computer_name` meta label to Azure discovery. #9112
+* [ENHANCEMENT] Add `__meta_hetzner_hcloud_labelpresent_<labelname>` meta label to Hetzner discovery. #9028
+* [ENHANCEMENT] promtool: Add compaction efficiency to `promtool tsdb analyze` reports. #8940
+* [ENHANCEMENT] promtool: Allow configuring max block duration for backfilling via `--max-block-duration` flag. #8919
+* [ENHANCEMENT] UI: Add sorting and filtering to flags page. #8988
+* [ENHANCEMENT] UI: Improve alerts page rendering performance. #9005
+* [BUGFIX] Log when total symbol size exceeds 2^32 bytes, causing compaction to fail, and skip compaction. #9104
+* [BUGFIX] Fix incorrect `target_limit` reloading of zero value. #9120
+* [BUGFIX] Fix head GC and pending readers race condition. #9081
+* [BUGFIX] Fix timestamp handling in OpenMetrics parser. #9008
+* [BUGFIX] Fix potential duplicate metrics in `/federate` endpoint when specifying multiple matchers. #8885
+* [BUGFIX] Fix server configuration and validation for authentication via client cert. #9123
+* [BUGFIX] Allow `start` and `end` again as label names in PromQL queries. They were disallowed since the introduction of @ timestamp feature. #9119
+
 ## 2.28.1 / 2021-07-01
 
 * [BUGFIX]: HTTP SD: Allow `charset` specification in `Content-Type` header. #8981
