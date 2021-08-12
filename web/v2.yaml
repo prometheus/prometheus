@@ -1,0 +1,2068 @@
+openapi: 3.0.1
+info:
+  title: Prometheus HTTP API
+  description: |
+    The current stable HTTP API is reachable under /api/v1 on a Prometheus server. Any non-breaking additions will be added under that endpoint.
+
+    # Format overview
+    The API response format is JSON. Every successful API request returns a ```2xx``` status code.
+
+    Invalid requests that reach the API handlers return a JSON error object and one of the following HTTP response codes:
+
+    ```400 Bad Request``` when parameters are missing or incorrect.
+    ```422 Unprocessable Entity``` when an expression can't be executed ([RFC4918](https://datatracker.ietf.org/doc/html/rfc4918#page-78)).
+    ```503 Service Unavailable``` when queries time out or abort.
+
+    Other non-```2xx``` codes may be returned for errors occurring before the API endpoint is reached.
+
+    An array of warnings may be returned if there are errors that do not inhibit the request execution. All of the data that was successfully collected will be returned in the data field.
+
+    The JSON response envelope format is as follows:
+
+    ```
+    {
+      "status": "success" | "error",
+      "data": <data>,
+
+      // Only set if status is "error". The data field may still hold
+      // additional data.
+      "errorType": "<string>",
+      "error": "<string>",
+
+      // Only if there were warnings while executing the request.
+      // There will still be data in the data field.
+      "warnings": ["<string>"]
+    }
+    ```
+    # Generic placeholders:
+
+    ```<rfc3339 | unix_timestamp>```: Input timestamps may be provided either in [RFC3339](https://www.ietf.org/rfc/rfc3339.txt) format or as a Unix timestamp in seconds, with optional decimal places for sub-second precision. Output timestamps are always represented as Unix timestamps in seconds.
+
+    ```<series_selector>```: Prometheus [time series selectors](https://prometheus.io/docs/prometheus/latest/querying/basics/#time-series-selectors) like ```http_requests_total``` or ```http_requests_total{method=~"(GET|POST)"}``` and need to be URL-encoded.
+
+    ```<duration>```: [Prometheus duration strings](https://prometheus.io/docs/prometheus/latest/querying/basics/#time_durations). For example, ```5m``` refers to a duration of 5 minutes.
+
+    ```<bool>```: boolean values (strings ```true``` and ```false```).
+
+    **Note**: Names of query parameters that may be repeated end with ```[]```.
+  version: v2
+servers:
+- url: /api/v1
+tags:
+- name: Expression query
+  description: |
+    Query language expressions may be evaluated at a single instant or over a range of time.
+  x-displayName: Expression queries
+- name: Querying metadata
+  description: |
+    Query metadata about series and their labels.
+  x-displayName: Querying metadata
+- name: Default
+  x-displayName: Default
+- name: Status
+  description: |
+    Expose current Prometheus configuration.
+  x-displayName: Status
+- name: TSDB Admin API
+  description: "Expose database functionalities for the advanced user. \n\nThese APIs\
+    \ are not enabled unless the ```--web.enable-admin-api``` is set.\n"
+  x-displayName: TSDB Admin APIs
+paths:
+  /admin/tsdb/clean_tombstones:
+    put:
+      tags:
+      - TSDB Admin API
+      summary: Removes deleted data
+      description: |
+        CleanTombstones removes the deleted data from disk and cleans up the existing tombstones. This can be used after deleting series to free up space.
+
+        <i>New in v2.1 and supports PUT from v2.9</i>
+      operationId: cleanTombstonesPUT
+      responses:
+        204:
+          description: Successful
+          content: {}
+    post:
+      tags:
+      - TSDB Admin API
+      summary: Removes deleted data
+      description: |
+        CleanTombstones removes the deleted data from disk and cleans up the existing tombstones. This can be used after deleting series to free up space.
+
+        <i>New in v2.1 and supports PUT from v2.9</i>
+      operationId: cleanTombstonesPOST
+      responses:
+        204:
+          description: Successful
+          content: {}
+  /admin/tsdb/delete_series:
+    put:
+      tags:
+      - TSDB Admin API
+      summary: Deletes selected data
+      description: |
+        DeleteSeries deletes data for a selection of series in a time range. The actual data still exists on disk and is cleaned up in future compactions or can be explicitly cleaned up by hitting the [Clean Tombstones](https://prometheus.io/docs/prometheus/latest/querying/api/#clean-tombstones) endpoint.
+
+        New in v2.1 and supports PUT from v2.9
+      operationId: deleteSeriesPUT
+      parameters:
+      - name: match[]
+        in: query
+        description: |
+          Repeated label matcher argument that selects the series to delete. At least one match[] argument must be provided.
+
+          Example: ```?match[]=up&match[]=process_start_time_seconds{job="prometheus"}'```
+        required: true
+        schema:
+          type: string
+          format: series_selector
+      - name: start
+        in: query
+        description: Start timestamp. Optional and defaults to minimum possible time.
+        schema:
+          type: string
+          format: rfc3339 | unix_timestamp
+      - name: end
+        in: query
+        description: |
+          End timestamp. Optional and defaults to maximum possible time.
+
+          Not mentioning both start and end times would clear all the data for the matched series in the database.
+        schema:
+          type: string
+          format: rfc3339 | unix_timestamp
+      responses:
+        204:
+          description: Successful
+          content: {}
+    post:
+      tags:
+      - TSDB Admin API
+      summary: Deletes selected data
+      description: |
+        DeleteSeries deletes data for a selection of series in a time range. The actual data still exists on disk and is cleaned up in future compactions or can be explicitly cleaned up by hitting the [Clean Tombstones](https://prometheus.io/docs/prometheus/latest/querying/api/#clean-tombstones) endpoint.
+
+        ---
+        **NOTE:** This endpoint marks samples from series as deleted, but will not necessarily prevent associated series metadata from still being returned in metadata queries for the affected time range (even after cleaning tombstones). The exact extent of metadata deletion is an implementation detail that may change in the future.
+
+        ---
+
+        New in v2.1 and supports PUT from v2.9
+      operationId: deleteSeriesPOST
+      parameters:
+      - name: match[]
+        in: query
+        description: |
+          Repeated label matcher argument that selects the series to delete. At least one match[] argument must be provided.
+
+          Example: ```?match[]=up&match[]=process_start_time_seconds{job="prometheus"}'```
+        required: true
+        schema:
+          type: string
+          format: series_selector
+      - name: start
+        in: query
+        description: Start timestamp. Optional and defaults to minimum possible time.
+        schema:
+          type: string
+          format: rfc3339 | unix_timestamp
+      - name: end
+        in: query
+        description: |
+          End timestamp. Optional and defaults to maximum possible time.
+
+          Not mentioning both start and end times would clear all the data for the matched series in the database.
+        schema:
+          type: string
+          format: rfc3339 | unix_timestamp
+      responses:
+        204:
+          description: Successful
+          content: {}
+  /admin/tsdb/snapshot:
+    put:
+      tags:
+      - TSDB Admin API
+      summary: Creates Snapshot of current data
+      description: |
+        Snapshot creates a snapshot of all current data into ```snapshots/<datetime>-<rand>``` under the TSDB's data directory and returns the directory as response. It will optionally skip snapshotting data that is only present in the head block, and which has not yet been compacted to disk.
+
+        New in v2.1 and supports PUT from v2.9
+      operationId: snapshotPUT
+      parameters:
+      - name: skip_head
+        in: query
+        description: |
+          Skip data present in the head block. Optional.
+        schema:
+          type: boolean
+      responses:
+        200:
+          description: The snapshot now exists at ```<data-dir>/snapshots/20171210T211224Z-2be650b6d019eb54```
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/responseSnapshot'
+              example:
+                status: success
+                data:
+                  name: 20171210T211224Z-2be650b6d019eb54
+    post:
+      tags:
+      - TSDB Admin API
+      summary: Creates Snapshot of current data
+      description: |
+        Snapshot creates a snapshot of all current data into ```snapshots/<datetime>-<rand>``` under the TSDB's data directory and returns the directory as response. It will optionally skip snapshotting data that is only present in the head block, and which has not yet been compacted to disk.
+
+        New in v2.1 and supports PUT from v2.9
+      operationId: snapshotPOST
+      parameters:
+      - name: skip_head
+        in: query
+        description: |
+          Skip data present in the head block. Optional.
+        schema:
+          type: boolean
+      responses:
+        200:
+          description: The snapshot now exists at ```<data-dir>/snapshots/20171210T211224Z-2be650b6d019eb54```
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/responseSnapshot'
+              example:
+                status: success
+                data:
+                  name: 20171210T211224Z-2be650b6d019eb54
+  /alertmanagers:
+    get:
+      tags:
+      - Default
+      summary: Returns current alertmanager discovery
+      description: |
+        Returns an overview of the current state of the Prometheus alertmanager discovery
+
+        Both the active and dropped Alertmanagers are part of the response.
+      operationId: alertManagersGET
+      responses:
+        200:
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlertmanagerDiscovery'
+              example:
+                status: success
+                data:
+                  activeAlertmanagers:
+                  - url: http://127.0.0.1:9090/api/v1/alerts
+                  droppedAlertmanagers:
+                  - url: http://127.0.0.1:9093/api/v1/alerts
+  /alerts:
+    get:
+      tags:
+      - Default
+      summary: Returns active alerts
+      description: |
+        The /alerts endpoint returns a list of all active alerts.
+
+        As the /alerts endpoint is fairly new, it does not have the same stability guarantees as the overarching API v1.
+      operationId: AlertsGET
+      responses:
+        200:
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Alert'
+              example:
+                data:
+                  alerts:
+                  - activeAt: 2018-07-04T20:27:12.60602144+02:00
+                    annotations: {}
+                    labels:
+                      alertname: my-alert
+                    state: firing
+                    value: 1e+00
+                status: success
+  /label/{label_name}/values:
+    get:
+      tags:
+      - Querying metadata
+      summary: Returns label values
+      description: |
+        The following endpoint returns a list of label values for a provided label name
+
+        The ```data``` section of the JSON response is a list of string label values.
+
+        ---
+        **NOTE:** These API endpoints may return metadata for series for which there is no sample within the selected time range, and/or for series whose samples have been marked as deleted via the deletion API endpoint. The exact extent of additionally returned series metadata is an implementation detail that may change in the future.
+
+        ---
+      operationId: labelValuesGET
+      parameters:
+      - name: label_name
+        in: path
+        description: |
+          Label name
+
+          Example: ```/label/job/values```
+        required: true
+        schema:
+          type: string
+      - name: start
+        in: query
+        description: |
+          Start timestamp. Optional.
+        schema:
+          type: string
+          format: rfc3339 | unix_timestamp
+      - name: end
+        in: query
+        description: |
+          End timestamp. Optional.
+        schema:
+          type: string
+          format: rfc3339 | unix_timestamp
+      - name: match[]
+        in: query
+        description: |
+          Repeated series selector argument that selects the series from which to read the label values. Optional.
+        schema:
+          type: string
+          format: series_selector
+      responses:
+        200:
+          description: |
+            Success
+
+            This example queries for all label values for the job label
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/responseLabelValues'
+              example:
+                status: success
+                data:
+                - node
+                - prometheus
+  /labels:
+    get:
+      tags:
+      - Querying metadata
+      summary: Returns label names
+      description: |
+        The following endpoint returns a list of label names
+
+        The ```data``` section of the JSON response is a list of string label names.
+
+        ---
+        **NOTE:** These API endpoints may return metadata for series for which there is no sample within the selected time range, and/or for series whose samples have been marked as deleted via the deletion API endpoint. The exact extent of additionally returned series metadata is an implementation detail that may change in the future.
+
+        ---
+      operationId: labelNamesGET
+      parameters:
+      - name: start
+        in: query
+        description: |
+          Start timestamp. Optional.
+        schema:
+          type: string
+          format: rfc3339 | unix_timestamp
+      - name: end
+        in: query
+        description: |
+          End timestamp. Optional.
+        schema:
+          type: string
+          format: rfc3339 | unix_timestamp
+      - name: match[]
+        in: query
+        description: |
+          Repeated series selector argument that selects the series from which to read the label values. Optional.
+        schema:
+          type: string
+          format: series_selector
+      responses:
+        200:
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/responseLabelNames'
+              example:
+                status: success
+                data:
+                - __name__
+                - call
+                - code
+                - config
+                - dialer_name
+                - endpoint
+                - event
+                - goversion
+                - handler
+                - instance
+                - interval
+                - job
+                - le
+                - listener_name
+                - name
+                - quantile
+                - reason
+                - role
+                - scrape_job
+                - slice
+                - version
+    post:
+      tags:
+      - Querying metadata
+      summary: Returns label names
+      description: |
+        The following endpoint returns a list of label names
+
+        The ```data``` section of the JSON response is a list of string label names.
+      operationId: labelNamesPOST
+      parameters:
+      - name: start
+        in: query
+        description: |
+          Start timestamp. Optional.
+        schema:
+          type: string
+          format: rfc3339 | unix_timestamp
+      - name: end
+        in: query
+        description: |
+          End timestamp. Optional.
+        schema:
+          type: string
+          format: rfc3339 | unix_timestamp
+      - name: match[]
+        in: query
+        description: |
+          Repeated series selector argument that selects the series from which to read the label values. Optional.
+        schema:
+          type: string
+          format: series_selector
+      responses:
+        200:
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/responseLabelNames'
+              example:
+                status: success
+                data:
+                - __name__
+                - call
+                - code
+                - config
+                - dialer_name
+                - endpoint
+                - event
+                - goversion
+                - handler
+                - instance
+                - interval
+                - job
+                - le
+                - listener_name
+                - name
+                - quantile
+                - reason
+                - role
+                - scrape_job
+                - slice
+                - version
+  /metadata:
+    get:
+      tags:
+      - Default
+      summary: Returns metric metadata
+      description: |
+        It returns metadata about metrics currently scrapped from targets. However, it does not provide any target information. This is considered experimental and might change in the future.
+
+        The data section of the query result consists of an object where each key is a metric name and each value is a list of unique metadata objects, as exposed for that metric name across all targets.
+      operationId: metricMetadataGET
+      parameters:
+      - name: limit
+        in: query
+        description: |
+          Maximum number of metrics to return.
+
+          Example: ```?limit=2```
+        required: true
+        schema:
+          type: number
+      - name: metric
+        in: query
+        description: |
+          A metric name to filter metadata for. All metric metadata is retrieved if left empty.
+
+          Example: ```?metric=http_requests_total```
+        schema:
+          type: string
+      responses:
+        200:
+          description: |
+            Success
+
+            The following example returns two metrics. Note that the metric ```http_requests_total``` has more than one object in the list. At least one target has a value for ```HELP``` that do not match with the rest.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/responseMetadata'
+              example:
+                status: success
+                data:
+                  cortex_ring_tokens:
+                  - type: gauge
+                    help: Number of tokens in the ring
+                    unit: ""
+                  http_requests_total:
+                  - type: counter
+                    help: Number of HTTP requests
+                    unit: ""
+                  - type: counter
+                    help: Amount of HTTP requests
+                    unit: ""
+        201:
+          description: |
+            Success
+
+            The following example returns metadata only for the metric ```http_requests_total```.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/responseMetadata'
+              example:
+                status: success
+                data:
+                  http_requests_total:
+                  - type: counter
+                    help: Number of HTTP requests
+                    unit: ""
+                  - type: counter
+                    help: Amount of HTTP requests
+                    unit: ""
+  /query:
+    get:
+      tags:
+      - Expression query
+      summary: Evaluates instant query
+      description: |
+        The following endpoint evaluates an instant query at a single point in time
+
+        You can URL-encode these parameters directly in the request body by using the ```POST``` method and ```Content-Type: application/x-www-form-urlencoded``` header. This is useful when specifying a large query that may breach server-side URL character limits.
+
+        The data section of the query result has the following format
+        ```
+        {
+          "resultType": "matrix" | "vector" | "scalar" | "string",
+          "result": <value>
+        }
+        ```
+        ```<value>``` refers to the query result data, which has varying formats depending on the ```resultType```. See the [expression query result formats](https://prometheus.io/docs/prometheus/latest/querying/api/#expression-query-result-formats).
+      operationId: queryGET
+      parameters:
+      - name: query
+        in: query
+        description: |
+          Prometheus expression query string.
+
+          Example: ```?query=up```
+        required: true
+        schema:
+          type: string
+      - name: time
+        in: query
+        description: |
+          Evaluation timestamp. Optional.
+
+          The current server time is used if the ```time``` parameter is omitted.
+
+          Example: ```?metric=http_requests_total```
+        schema:
+          type: string
+          format: rfc3339 | unix_timestamp
+      - name: timeout
+        in: query
+        description: |
+          Evaluation timeout. Optional. Defaults to and is capped by the value of the ```-query.timeout``` flag.
+
+          Example: ```?metric=http_requests_total```
+        schema:
+          type: string
+          format: duration
+      responses:
+        200:
+          description: |
+            Success
+
+            The following example evaluates the expression ```up``` at the time ```2015-07-01T20:10:51.781Z```
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/queryData'
+              example:
+                status: success
+                data:
+                  resultType: vector
+                  result:
+                  - metric:
+                      __name__: up
+                      job: prometheus
+                      instance: localhost:9090
+                    value:
+                    - 1.435781451781E9
+                    - "1"
+                  - metric:
+                      __name__: up
+                      job: node
+                      instance: localhost:9100
+                    value:
+                    - 1.435781451781E9
+                    - "0"
+    post:
+      tags:
+      - Expression query
+      summary: Evaluates instant query
+      description: |
+        The following endpoint evaluates an instant query at a single point in time
+
+        You can URL-encode these parameters directly in the request body by using the ```POST``` method and ```Content-Type: application/x-www-form-urlencoded``` header. This is useful when specifying a large query that may breach server-side URL character limits.
+
+        The data section of the query result has the following format
+        ```
+        {
+          "resultType": "matrix" | "vector" | "scalar" | "string",
+          "result": <value>
+        }
+        ```
+        ```<value>``` refers to the query result data, which has varying formats depending on the ```resultType```. See the [expression query result formats](https://prometheus.io/docs/prometheus/latest/querying/api/#expression-query-result-formats).
+      operationId: queryPOST
+      parameters:
+      - name: query
+        in: query
+        description: |
+          Prometheus expression query string.
+
+          Example: ```?query=up```
+        required: true
+        schema:
+          type: string
+      - name: time
+        in: query
+        description: |
+          Evaluation timestamp. Optional.
+
+          The current server time is used if the ```time``` parameter is omitted.
+
+          Example: ```?metric=http_requests_total```
+        schema:
+          type: string
+          format: rfc3339 | unix_timestamp
+      - name: timeout
+        in: query
+        description: |
+          Evaluation timeout. Optional. Defaults to and is capped by the value of the ```-query.timeout``` flag.
+
+          Example: ```?metric=http_requests_total```
+        schema:
+          type: string
+          format: duration
+      responses:
+        200:
+          description: |
+            Success
+
+            The following example evaluates the expression ```up``` at the time ```2015-07-01T20:10:51.781Z```
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/queryData'
+              example:
+                status: success
+                data:
+                  resultType: vector
+                  result:
+                  - metric:
+                      __name__: up
+                      job: prometheus
+                      instance: localhost:9090
+                    value:
+                    - 1.435781451781E9
+                    - "1"
+                  - metric:
+                      __name__: up
+                      job: node
+                      instance: localhost:9100
+                    value:
+                    - 1.435781451781E9
+                    - "0"
+  /query_exemplars:
+    get:
+      tags:
+      - Expression query
+      summary: Returns list of Exemplars
+      description: |
+        This is <b>experimental</b> and might change in the future. The following endpoint returns a list of exemplars for a valid PromQL query for a specific time range
+      operationId: queryExemplarsGET
+      parameters:
+      - name: query
+        in: query
+        description: |
+          Prometheus expression query string.
+
+          Example: ```?query=test_exemplar_metric_total```
+        required: true
+        schema:
+          type: string
+      - name: start
+        in: query
+        description: |
+          Start timestamp.
+
+          Example: ```&start=2020-09-14T15:22:25.479Z```
+        schema:
+          type: string
+          format: rfc3339 | unix_timestamp
+      - name: end
+        in: query
+        description: |
+          End timestamp.
+
+          Example: ```&end=020-09-14T15:23:25.479Z```
+        schema:
+          type: string
+          format: rfc3339 | unix_timestamp
+      responses:
+        200:
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/responseQuery_exemplars"
+              example:
+                status: success
+                data:
+                - seriesLabels:
+                    __name__: test_exemplar_metric_total
+                    instance: localhost:8090
+                    job: prometheus
+                    service: bar
+                  exemplars:
+                  - labels:
+                      traceID: EpTxMJ40fUus7aGY
+                    value: "6"
+                    timestamp: 1.600096945479E9
+                - seriesLabels:
+                    __name__: test_exemplar_metric_total
+                    instance: localhost:8090
+                    job: prometheus
+                    service: foo
+                  exemplars:
+                  - labels:
+                      traceID: Olp9XHlq763ccsfa
+                    value: "19"
+                    timestamp: 1.600096955479E9
+                  - labels:
+                      traceID: hCtjygkIHwAN9vs4
+                    value: "20"
+                    timestamp: 1.600096965489E9
+    post:
+      tags:
+      - Expression query
+      summary: Returns list of Exemplars
+      description: |
+        This is <b>experimental</b> and might change in the future. The following endpoint returns a list of exemplars for a valid PromQL query for a specific time range
+      operationId: queryExemplarsPOST
+      parameters:
+      - name: query
+        in: query
+        description: |
+          Prometheus expression query string.
+
+          Example: ```?query=test_exemplar_metric_total```
+        required: true
+        schema:
+          type: string
+      - name: start
+        in: query
+        description: |
+          Start timestamp.
+
+          Example: ```&start=2020-09-14T15:22:25.479Z```
+        schema:
+          type: string
+          format: rfc3339 | unix_timestamp
+      - name: end
+        in: query
+        description: |
+          End timestamp.
+
+          Example: ```&end=020-09-14T15:23:25.479Z```
+        schema:
+          type: string
+          format: rfc3339 | unix_timestamp
+      responses:
+        200:
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/responseQuery_exemplars"
+              example:
+                status: success
+                data:
+                - seriesLabels:
+                    __name__: test_exemplar_metric_total
+                    instance: localhost:8090
+                    job: prometheus
+                    service: bar
+                  exemplars:
+                  - labels:
+                      traceID: EpTxMJ40fUus7aGY
+                    value: "6"
+                    timestamp: 1.600096945479E9
+                - seriesLabels:
+                    __name__: test_exemplar_metric_total
+                    instance: localhost:8090
+                    job: prometheus
+                    service: foo
+                  exemplars:
+                  - labels:
+                      traceID: Olp9XHlq763ccsfa
+                    value: "19"
+                    timestamp: 1.600096955479E9
+                  - labels:
+                      traceID: hCtjygkIHwAN9vs4
+                    value: "20"
+                    timestamp: 1.600096965489E9
+  /query_range:
+    get:
+      tags:
+      - Expression query
+      summary: Evaluates query over range of time.
+      description: |
+        The following endpoint evaluates an expression query over a range of time
+
+        You can URL-encode these parameters directly in the request body by using the ```POST``` method and ```Content-Type: application/x-www-form-urlencoded``` header. This is useful when specifying a large query that may breach server-side URL character limits.
+
+        The data section of the query result has the following format
+        ```
+        {
+          "resultType": "matrix",
+          "result": <value>
+        }
+        ```
+        For the format of the ```<value>``` placeholder, see the [range-vector result format](https://prometheus.io/docs/prometheus/latest/querying/api/#range-vectors).
+      operationId: queryRangeGET
+      parameters:
+      - name: query
+        in: query
+        description: |
+          Prometheus expression query string.
+
+          Example: ```?query=up```
+        required: true
+        schema:
+          type: string
+      - name: start
+        in: query
+        description: |
+          Start timestamp.
+
+          Example: ```&start=2015-07-01T20:10:30.781Z```
+        schema:
+          type: string
+          format: rfc3339 | unix_timestamp
+      - name: end
+        in: query
+        description: |
+          End timestamp.
+
+          Example: ```&end=2015-07-01T20:11:00.781Z```
+        schema:
+          type: string
+          format: rfc3339 | unix_timestamp
+      - name: step
+        in: query
+        description: |
+          Query resolution step width in ```duration``` format or float number of seconds.
+
+          Example: ```&step=15s```
+        schema:
+          type: string
+          format: duration | float
+      - name: timeout
+        in: query
+        description: |
+          Evaluation timeout. Optional. Defaults to and is capped by the value of the ```-query.timeout``` flag.
+
+          Example: ```?metric=http_requests_total```
+        schema:
+          type: string
+          format: duration
+      responses:
+        200:
+          description: |
+            Success
+
+            The following example evaluates the expression ```up``` over a 30-second range with a query resolution of 15 seconds.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/responseQuery_range"
+              example:
+                status: success
+                data:
+                  resultType: matrix
+                  result:
+                  - metric:
+                      __name__: up
+                      job: prometheus
+                      instance: localhost:9090
+                    values:
+                    - - 1.435781430781E9
+                      - "1"
+                    - - 1.435781445781E9
+                      - "1"
+                    - - 1.435781460781E9
+                      - "1"
+                  - metric:
+                      __name__: up
+                      job: node
+                      instance: localhost:9091
+                    values:
+                    - - 1.435781430781E9
+                      - "0"
+                    - - 1.435781445781E9
+                      - "0"
+                    - - 1.435781460781E9
+                      - "1"
+    post:
+      tags:
+      - Expression query
+      summary: Evaluates query over range of time.
+      description: |
+        The following endpoint evaluates an expression query over a range of time
+
+        You can URL-encode these parameters directly in the request body by using the ```POST``` method and ```Content-Type: application/x-www-form-urlencoded``` header. This is useful when specifying a large query that may breach server-side URL character limits.
+
+        The data section of the query result has the following format
+        ```
+        {
+          "resultType": "matrix",
+          "result": <value>
+        }
+        ```
+        For the format of the ```<value>``` placeholder, see the [range-vector result format](https://prometheus.io/docs/prometheus/latest/querying/api/#range-vectors).
+      operationId: queryRangePOST
+      parameters:
+      - name: query
+        in: query
+        description: |
+          Prometheus expression query string.
+
+          Example: ```?query=up```
+        required: true
+        schema:
+          type: string
+      - name: start
+        in: query
+        description: |
+          Start timestamp.
+
+          Example: ```&start=2015-07-01T20:10:30.781Z```
+        schema:
+          type: string
+          format: rfc3339 | unix_timestamp
+      - name: end
+        in: query
+        description: |
+          End timestamp.
+
+          Example: ```&end=2015-07-01T20:11:00.781Z```
+        schema:
+          type: string
+          format: rfc3339 | unix_timestamp
+      - name: step
+        in: query
+        description: |
+          Query resolution step width in ```duration``` format or float number of seconds.
+
+          Example: ```&step=15s```
+        schema:
+          type: string
+          format: duration | float
+      - name: timeout
+        in: query
+        description: |
+          Evaluation timeout. Optional. Defaults to and is capped by the value of the ```-query.timeout``` flag.
+
+          Example: ```?metric=http_requests_total```
+        schema:
+          type: string
+          format: duration
+      responses:
+        200:
+          description: |
+            Success
+
+            The following example evaluates the expression ```up``` over a 30-second range with a query resolution of 15 seconds.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/responseQuery_range"
+              example:
+                status: success
+                data:
+                  resultType: matrix
+                  result:
+                  - metric:
+                      __name__: up
+                      job: prometheus
+                      instance: localhost:9090
+                    values:
+                    - - 1.435781430781E9
+                      - "1"
+                    - - 1.435781445781E9
+                      - "1"
+                    - - 1.435781460781E9
+                      - "1"
+                  - metric:
+                      __name__: up
+                      job: node
+                      instance: localhost:9091
+                    values:
+                    - - 1.435781430781E9
+                      - "0"
+                    - - 1.435781445781E9
+                      - "0"
+                    - - 1.435781460781E9
+                      - "1"
+  /rules:
+    get:
+      tags:
+      - Default
+      summary: Returns currently loaded rules
+      description: |-
+        The ```/rules``` API endpoint returns a list of alerting and recording rules that are currently loaded. In addition it returns the currently active alerts fired by the Prometheus instance of each alerting rule.
+
+        As the ```/rules``` endpoint is fairly new, it does not have the same stability guarantees as the overarching API v1.
+      operationId: rulesGET
+      parameters:
+      - name: type
+        in: query
+        description: |
+          Return only the alerting rules (e.g. ```type=alert```) or the recording rules (e.g. ```type=record```). When the parameter is absent or empty, no filtering is done.
+        schema:
+          type: string
+          enum:
+          - alert
+          - record
+      responses:
+        200:
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuleDiscovery'
+              example:
+                data:
+                  groups:
+                  - rules:
+                    - alerts:
+                      - activeAt: 2018-07-04T20:27:12.60602144+02:00
+                        annotations:
+                          summary: High request latency
+                        labels:
+                          alertname: HighRequestLatency
+                          severity: page
+                        state: firing
+                        value: 1e+00
+                      annotations:
+                        summary: High request latency
+                      duration: 600
+                      health: ok
+                      labels:
+                        severity: page
+                      name: HighRequestLatency
+                      query: job:request_latency_seconds:mean5m{job="myjob"} > 0.5
+                      type: alerting
+                    - health: ok
+                      name: job:http_inprogress_requests:sum
+                      query: sum by (job) (http_inprogress_requests)
+                      type: recording
+                    file: /rules.yaml
+                    interval: 60
+                    name: example
+                status: success
+  /series:
+    get:
+      tags:
+      - Querying metadata
+      summary: Returns time series
+      description: |
+        The following endpoint returns the list of time series that match a certain label set.
+
+        You can URL-encode these parameters directly in the request body by using the ```POST``` method and ```Content-Type: application/x-www-form-urlencoded``` header. This is useful when specifying a large or dynamic number of series selectors that may breach server-side URL character limits.
+
+        The ```data``` section of the query result consists of a list of objects that contain the label name/value pairs which identify each series.
+      operationId: seriesGET
+      parameters:
+      - name: start
+        in: query
+        description: |
+          Start timestamp. Optional.
+        schema:
+          type: string
+          format: rfc3339 | unix_timestamp
+      - name: end
+        in: query
+        description: |
+          End timestamp. Optional.
+        schema:
+          type: string
+          format: rfc3339 | unix_timestamp
+      - name: match[]
+        in: query
+        description: |
+          Repeated series selector argument that selects the series to return. At least one ```match[]``` argument must be provided.
+
+          Example: ```?' --data-urlencode 'match[]=up'```
+        required: true
+        schema:
+          type: string
+          format: series_selector
+      responses:
+        200:
+          description: |
+            Success
+
+            The following example returns all series that match either of the selectors ```up``` or ```process_start_time_seconds{job="prometheus"}```
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/responseSeries'
+              example:
+                status: success
+                data:
+                - __name__: up
+                  job: prometheus
+                  instance: localhost:9090
+                - __name__: up
+                  job: node
+                  instance: localhost:9091
+                - __name__: process_start_time_seconds
+                  job: prometheus
+                  instance: localhost:9090
+    post:
+      tags:
+      - Querying metadata
+      summary: Returns time series
+      description: |
+        The following endpoint returns the list of time series that match a certain label set.
+
+        You can URL-encode these parameters directly in the request body by using the ```POST``` method and ```Content-Type: application/x-www-form-urlencoded``` header. This is useful when specifying a large or dynamic number of series selectors that may breach server-side URL character limits.
+
+        The ```data``` section of the query result consists of a list of objects that contain the label name/value pairs which identify each series.
+      operationId: seriesPOST
+      parameters:
+      - name: start
+        in: query
+        description: |
+          Start timestamp. Optional.
+        schema:
+          type: string
+          format: rfc3339 | unix_timestamp
+      - name: end
+        in: query
+        description: |
+          End timestamp. Optional.
+        schema:
+          type: string
+          format: rfc3339 | unix_timestamp
+      - name: match[]
+        in: query
+        description: |
+          Repeated series selector argument that selects the series to return. At least one ```match[]``` argument must be provided.
+
+          Example: ```?' --data-urlencode 'match[]=up'```
+        required: true
+        schema:
+          type: string
+          format: series_selector
+      responses:
+        200:
+          description: |
+            Success
+
+            The following example returns all series that match either of the selectors ```up``` or ```process_start_time_seconds{job="prometheus"}```
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/responseSeries'
+              example:
+                status: success
+                data:
+                - __name__: up
+                  job: prometheus
+                  instance: localhost:9090
+                - __name__: up
+                  job: node
+                  instance: localhost:9091
+                - __name__: process_start_time_seconds
+                  job: prometheus
+                  instance: localhost:9090
+    delete:
+      tags:
+      - Querying metadata
+      summary: Returns time series
+      description: |
+        The following endpoint returns the list of time series that match a certain label set.
+
+        You can URL-encode these parameters directly in the request body by using the ```POST``` method and ```Content-Type: application/x-www-form-urlencoded``` header. This is useful when specifying a large or dynamic number of series selectors that may breach server-side URL character limits.
+
+        The ```data``` section of the query result consists of a list of objects that contain the label name/value pairs which identify each series.
+
+        ---
+        **NOTE:** These API endpoints may return metadata for series for which there is no sample within the selected time range, and/or for series whose samples have been marked as deleted via the deletion API endpoint. The exact extent of additionally returned series metadata is an implementation detail that may change in the future.
+
+        ---
+      operationId: seriesDELETE
+      parameters:
+      - name: start
+        in: query
+        description: |
+          Start timestamp. Optional.
+        schema:
+          type: string
+          format: rfc3339 | unix_timestamp
+      - name: end
+        in: query
+        description: |
+          End timestamp. Optional.
+        schema:
+          type: string
+          format: rfc3339 | unix_timestamp
+      - name: match[]
+        in: query
+        description: |
+          Repeated series selector argument that selects the series to return. At least one ```match[]``` argument must be provided.
+
+          Example: ```?' --data-urlencode 'match[]=up'```
+        required: true
+        schema:
+          type: string
+          format: series_selector
+      responses:
+        200:
+          description: |
+            Success
+
+            The following example returns all series that match either of the selectors ```up``` or ```process_start_time_seconds{job="prometheus"}```
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/responseSeries'
+              example:
+                status: success
+                data:
+                - __name__: up
+                  job: prometheus
+                  instance: localhost:9090
+                - __name__: up
+                  job: node
+                  instance: localhost:9091
+                - __name__: process_start_time_seconds
+                  job: prometheus
+                  instance: localhost:9090
+  /status/buildinfo:
+    get:
+      tags:
+      - Status
+      summary: Returns build information
+      description: |
+        The following endpoint returns various build information properties about the Prometheus server
+
+        All values are of the result type ```string```.
+
+        ---
+        **NOTE:** The exact returned build properties may change without notice between Prometheus versions.
+
+        ---
+
+        New in v2.14
+      operationId: serveBuildInfo
+      responses:
+        200:
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrometheusVersion'
+              example:
+                status: success
+                data:
+                  version: 2.13.1
+                  revision: cb7cbad5f9a2823a622aaa668833ca04f50a0ea7
+                  branch: master
+                  buildUser: julius@desktop
+                  buildDate: 20191102-16:19:59
+                  goVersion: go1.13.1
+  /status/config:
+    get:
+      tags:
+      - Status
+      summary: Returns configuration file
+      description: |
+        The following endpoint returns currently loaded configuration file
+
+        The config is returned as dumped YAML file. Due to limitation of
+        the YAML library, YAML comments are not included.
+      operationId: serveConfig
+      responses:
+        200:
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/prometheusConfig'
+              example:
+                status: success
+                data:
+                  yaml: <content of the loaded config file in YAML>
+  /status/flags:
+    get:
+      tags:
+      - Status
+      summary: Returns flag values
+      description: |
+        The following endpoint returns flag values that Prometheus was configured with
+
+        All values are of the result type ```string```.
+
+        New in v2.2
+      operationId: serveFlags
+      responses:
+        200:
+          description: ""
+          content:
+            application/json:
+              example:
+                status: success
+                data:
+                  alertmanager.notification-queue-capacity: "10000"
+                  alertmanager.timeout: 10s
+                  log.level: info
+                  query.lookback-delta: 5m
+                  query.max-concurrency: "20"
+  /status/runtimeinfo:
+    get:
+      tags:
+      - Status
+      summary: Returns runtime info
+      description: |
+        The following endpoint returns various runtime information properties about the Prometheus server
+
+        The returned values are of different types, depending on the nature
+        of the runtime property
+
+        ---
+        **NOTE:** The exact returned runtime properties may change without notice between Prometheus versions.
+
+        ---
+
+        New in v2.14
+      operationId: serveRuntimeInfo
+      responses:
+        200:
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeInfo'
+              example:
+                status: success
+                data:
+                  startTime: 2019-11-02T17:23:59.301361365+01:00
+                  CWD: /
+                  reloadConfigSuccess: true
+                  lastConfigTime: 2019-11-02T17:23:59+01:00
+                  timeSeriesCount: 873
+                  corruptionCount: 0
+                  goroutineCount: 48
+                  GOMAXPROCS: 4
+                  GOGC: ""
+                  GODEBUG: ""
+                  storageRetention: 15d
+  /status/tsdb:
+    get:
+      tags:
+      - Status
+      summary: Returns statistics about TSBD
+      description: |
+        The following endpoint returns various cardinality statistics about the Prometheus TSDB
+
+        Response Data
+        ---
+
+        **headStats:** This provides the following data about the head block of the TSDB:
+        >**numSeries:** The number of series.
+        **chunkCount:** The number of chunks.
+        **minTime:** The current minimum timestamp in milliseconds.
+        **maxTime:** The current maximum timestamp in milliseconds.
+
+        **seriesCountByMetricName:** This will provide a list of metrics names and their series count.
+        **labelValueCountByLabelName:** This will provide a list of the label names and their value count.
+        **memoryInBytesByLabelName:** This will provide a list of the label names and memory used in bytes. Memory usage is calculated by adding the length of all values for a given label name.
+        **seriesCountByLabelPair:** This will provide a list of label value pairs and their series count.
+      operationId: serveTSDBStatus
+      responses:
+        200:
+          description: |
+            Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/tsdbStatus'
+              example:
+                status: success
+                data:
+                  headStats:
+                    numSeries: 508
+                    chunkCount: 937
+                    minTime: 1591516800000
+                    maxTime: 1598896800143
+                  seriesCountByMetricName:
+                  - name: net_conntrack_dialer_conn_failed_total
+                    value: 20
+                  - name: prometheus_http_request_duration_seconds_bucket
+                    value: 20
+                  labelValueCountByLabelName:
+                  - name: __name__
+                    value: 211
+                  - name: event
+                    value: 3
+                  memoryInBytesByLabelName:
+                  - name: __name__
+                    value: 8266
+                  - name: instance
+                    value: 28
+                  seriesCountByLabelValuePair:
+                  - name: job=prometheus
+                    value: 425
+                  - name: instance=localhost:9090
+                    value: 425
+  /status/walreplay:
+    get:
+      tags:
+      - Status
+      summary: Returns info about WAL replay.
+      description: "The following endpoint returns information about the WAL replay\n\
+        \nResponse Data\n---\n\n**read:** The number of segments replayed so far.\
+        \ \n**total:** The total number segments needed to be replayed. \n**progress:**\
+        \ The progress of the replay (0 - 100%). \n**state:** The state of the replay.\
+        \ \n**Possible states:** \n  - **waiting:** Waiting for the replay to start.\
+        \ \n  - **in progress:** The replay is in progress. \n  - **done:** The replay\
+        \ has finished.\n  \n---\n**NOTE:** This endpoint is available before the\
+        \ server has been marked ready and is updated in real time to facilitate monitoring\
+        \ the progress of the WAL replay.\n\n---\n\nNew in v2.28\n"
+      operationId: serveWALReplayStatus
+      responses:
+        200:
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/walReplayStatus'
+              example:
+                status: success
+                data:
+                  min: 2
+                  max: 5
+                  current: 40
+                  state: in progress
+  /targets:
+    get:
+      tags:
+      - Default
+      summary: Returns current target discovery.
+      description: |
+        Both the active and dropped targets are part of the response by default. ```labels``` represents the label set after relabelling has occurred. ```discoveredLabels``` represent the unmodified labels retrieved during service discovery before relabelling has occurred.
+      operationId: targetsGET
+      parameters:
+      - name: state
+        in: query
+        description: |
+          The ```state``` query parameter allows the caller to filter by active or dropped targets, (e.g., ```state=active```, ```state=dropped```, ```state=any```).
+        schema:
+          type: string
+          enum:
+          - active
+          - dropped
+          - any
+      responses:
+        200:
+          description: Success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TargetDiscovery'
+              example:
+                status: success
+                data:
+                  activeTargets:
+                  - discoveredLabels:
+                      __address__: 127.0.0.1:9090
+                      __metrics_path__: /metrics
+                      __scheme__: http
+                      job: prometheus
+                    labels:
+                      instance: 127.0.0.1:9090
+                      job: prometheus
+                    scrapePool: prometheus
+                    scrapeUrl: http://127.0.0.1:9090/metrics
+                    globalUrl: http://example-prometheus:9090/metrics
+                    lastError: ""
+                    lastScrape: 2017-01-17T15:07:44.723715405+01:00
+                    lastScrapeDuration: 0.050688943
+                    health: up
+                  droppedTargets:
+                  - discoveredLabels:
+                      __address__: 127.0.0.1:9100
+                      __metrics_path__: /metrics
+                      __scheme__: http
+                      job: node
+        201:
+          description: |
+            Success
+
+            Note that an empty array is still returned for targets that are filtered out. Other values are ignored.
+
+            Example: ?state=active
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TargetDiscovery'
+              example:
+                status: success
+                data:
+                  activeTargets:
+                  - discoveredLabels:
+                      __address__: 127.0.0.1:9090
+                      __metrics_path__: /metrics
+                      __scheme__: http
+                      job: prometheus
+                    labels:
+                      instance: 127.0.0.1:9090
+                      job: prometheus
+                    scrapePool: prometheus
+                    scrapeUrl: http://127.0.0.1:9090/metrics
+                    globalUrl: http://example-prometheus:9090/metrics
+                    lastError: ""
+                    lastScrape: 2017-01-17T15:07:44.723715405+01:00
+                    lastScrapeDuration: 50688943
+                    health: up
+                  droppedTargets: []
+  /targets/metadata:
+    get:
+      tags:
+      - Default
+      summary: Returns target metadata
+      description: |-
+        The following endpoint returns metadata about metrics currently scraped from targets. This is experimental and might change in the future.
+
+        The ```data``` section of the query result consists of a list of objects that contain metric metadata and the target label set.
+      operationId: TargetMetadataGET
+      parameters:
+      - name: match_target
+        in: query
+        description: |
+          Label selectors that match targets by their label sets. All targets are selected if left empty.
+
+          Example: ```match_target={job="prometheus"}```
+        schema:
+          type: string
+          format: label_selectors
+      - name: metric
+        in: query
+        description: |
+          A metric name to retrieve metadata for. All metric metadata is retrieved if left empty.
+
+          Example: ```metric=go_goroutines```
+        schema:
+          type: string
+      - name: limit
+        in: query
+        description: |
+          Maximum number of targets to match.
+
+          Example: ```limit=2```
+        schema:
+          type: number
+      responses:
+        200:
+          description: |
+            Success
+
+            The following example returns all metadata entries for the ```go_goroutines``` metric from the first two targets with label ```job="prometheus"```.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/responseTargetMetadata'
+              example:
+                status: success
+                data:
+                - target:
+                    instance: 127.0.0.1:9090
+                    job: prometheus
+                  type: gauge
+                  help: Number of goroutines that currently exist.
+                  unit: ""
+                - target:
+                    instance: 127.0.0.1:9091
+                    job: prometheus
+                  type: gauge
+                  help: Number of goroutines that currently exist.
+                  unit: ""
+        201:
+          description: |
+            Success
+
+            The following example returns metadata for all metrics for all targets with label ```instance="127.0.0.1:9090```.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/responseTargetMetadata'
+              example:
+                status: success
+                data:
+                - target:
+                    instance: 127.0.0.1:9090
+                    job: prometheus
+                  type: gauge
+                  help: Number of goroutines that currently exist.
+                  unit: ""
+                - target:
+                    instance: 127.0.0.1:9091
+                    job: prometheus
+                  type: gauge
+                  help: Number of goroutines that currently exist.
+                  unit: ""
+components:
+  schemas:
+    Alert:
+      type: object
+      properties:
+        Labels:
+          $ref: '#/components/schemas/Labels'
+        Annotations:
+          $ref: '#/components/schemas/Labels'
+        State:
+          type: string
+        ActiveAt:
+          type: string
+          format: unix_timestamp
+        Value:
+          type: string
+      description: Alert has info for an alert.
+    AlertmanagerDiscovery:
+      type: object
+      properties:
+        ActiveAlertmanagers:
+          type: array
+          items:
+            $ref: '#/components/schemas/AlertmanagerTarget'
+        DroppedAlertmanagers:
+          type: array
+          items:
+            $ref: '#/components/schemas/AlertmanagerTarget'
+      description: AlertmanagerDiscovery has all the active Alertmanagers.
+    AlertmanagerTarget:
+      type: object
+      properties:
+        url:
+          type: string
+      description: AlertmanagerTarget has info on one AM.
+    DiscoveredLabels:
+      type: object
+      additionalProperties:
+        type: array
+        items:
+          type: string
+      description: Labels before any processing.
+    DroppedTarget:
+      type: object
+      properties:
+        DiscoveredLabels:
+          $ref: '#/components/schemas/DiscoveredLabels'
+      description: DroppedTarget has the information for one target that was dropped
+        during relabelling.
+    HeadStats:
+      type: object
+      properties:
+        chunkCount:
+          type: integer
+          format: int64
+        maxTime:
+          type: integer
+          format: int64
+        minTime:
+          type: integer
+          format: int64
+        numLabelPairs:
+          type: integer
+          format: int64
+        numSeries:
+          type: integer
+          format: uint64
+      description: HeadStats has information about the TSDB head.
+    Label:
+      type: object
+      properties:
+        Name:
+          type: string
+        Value:
+          type: string
+      description: Label is a key/value pair of strings.
+    Labels:
+      type: array
+      description: |-
+        Labels is a sorted set of labels. Order has to be guaranteed upon
+        instantiation.
+      items:
+        $ref: '#/components/schemas/Label'
+    MetricType:
+      type: string
+      description: MetricType represents metric type values.
+    PrometheusVersion:
+      type: object
+      properties:
+        branch:
+          type: string
+        buildDate:
+          type: string
+        buildUser:
+          type: string
+        goVersion:
+          type: string
+        revision:
+          type: string
+        version:
+          type: string
+      description: PrometheusVersion contains build information about Prometheus.
+    RuleDiscovery:
+      type: object
+      properties:
+        RuleGroups:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuleGroup'
+      description: RuleDiscovery has info for all rules
+    RuleGroup:
+      type: object
+      properties:
+        EvaluationTime:
+          type: number
+          format: float64
+        File:
+          type: string
+        Interval:
+          type: number
+          format: float64
+        LastEvaluation:
+          type: string
+          format: "rfc3339 | unix_timestamp"
+        Name:
+          type: string
+        Rules:
+          type: array
+          description: |-
+            In order to preserve rule ordering, while exposing type (alerting or recording)
+            specific properties, both alerting and recording rules are exposed in the
+            same array.
+          items:
+            $ref: '#/components/schemas/rule'
+      description: RuleGroup has info for rules which are part of a group
+    RuntimeInfo:
+      type: object
+      properties:
+        CWD:
+          type: string
+        GODEBUG:
+          type: string
+        GOGC:
+          type: string
+        GOMAXPROCS:
+          type: integer
+          format: int
+        corruptionCount:
+          type: integer
+          format: int64
+        goroutineCount:
+          type: integer
+          format: int
+        lastConfigTime:
+          type: string
+          format: "rfc3339 | unix_timestamp"
+        reloadConfigSuccess:
+          type: boolean
+        startTime:
+          type: string
+          format: "rfc3339 | unix_timestamp"
+        storageRetention:
+          type: string
+      description: RuntimeInfo contains runtime information about Prometheus.
+    Target:
+      type: object
+      properties:
+        DiscoveredLabels:
+          $ref: '#/components/schemas/DiscoveredLabels'
+        Labels:
+          $ref: '#/components/schemas/Labels'
+        ScrapePool:
+          type: string
+        ScrapeURL:
+          type: string
+        GlobalURL:
+          type: string
+        LastError:
+          type: string
+        LastScrape:
+          type: string
+          format: "rfc3339 | unix_timestamp"
+        LastScrapeDuration:
+          type: number
+          format: float64
+        Health:
+          $ref: '#/components/schemas/TargetHealth'
+      description: Target has the information for one target.
+    TargetDiscovery:
+      type: object
+      properties:
+        ActiveTargets:
+          type: array
+          items:
+            $ref: '#/components/schemas/Target'
+        DroppedTargets:
+          type: array
+          items:
+            $ref: '#/components/schemas/DroppedTarget'
+      description: TargetDiscovery has all the active targets.
+    TargetHealth:
+      type: string
+      description: TargetHealth describes the health state of a target.
+    metadata:
+      type: object
+      properties:
+        Help:
+          type: string
+        Type:
+          $ref: '#/components/schemas/MetricType'
+        Unit:
+          type: string
+    metricMetadata:
+      type: object
+      properties:
+        Help:
+          type: string
+        Metric:
+          type: string
+        Target:
+          $ref: '#/components/schemas/Labels'
+        Type:
+          $ref: '#/components/schemas/MetricType'
+        Unit:
+          type: string
+    prometheusConfig:
+      type: object
+      properties:
+        YAML:
+          type: string
+      description: a dumped YAML file
+    queryData:
+      type: object
+      properties:
+        Result:
+          type: object
+          properties:
+            metric:
+              type: object
+              properties:
+                __name__:
+                  type: string
+                job:
+                  type: string
+                instance:
+                  type: string
+            value:
+              type: array
+              items:
+                oneOf:
+                - type: string
+                  format: "unix_timestamp"
+                - type: string
+                  format: "sample_value"
+        ResultType:
+          type: string
+          enum:
+          - matrix
+          - vector
+          - scalar
+          - string
+    responseSeries:
+      type: array
+      description: a list of objects that contain the label name/value pairs which
+        identify each series
+      items:
+        type: object
+        properties:
+          __name__:
+            type: string
+          job:
+            type: string
+          instance:
+            type: string
+    responseSnapshot:
+      type: object
+      properties:
+        name:
+          type: string
+    responseQuery_exemplars:
+      type: object
+      properties:
+        seriesLabels:
+          type: object
+          properties:
+            __name__:
+              type: string
+            job:
+              type: string
+            instance:
+              type: string
+            service:
+              type: string
+        exemplars:
+          type: object
+          properties:
+            labels:
+              type: object
+              properties:
+                traceID:
+                  type: string
+            values:
+              type: string
+            timestamp:
+              type: string
+              format: "unix_timestamp"
+    responseQuery_range:
+      type: object
+      properties:
+        resultType:
+          type: string
+        result:
+          type: object
+          properties:
+            metric:
+              type: object
+              properties:
+                __name__:
+                  type: string
+                job:
+                  type: string
+                instance:
+                  type: string
+            values:
+              type: array
+              items:
+                oneOf:
+                - type: string
+                  format: "unix_timestamp"
+                - type: string
+                  format: "sample_value"
+    responseMetadata:
+      type: object
+      properties:
+        metric name:
+          type: string
+      additionalProperties:
+        $ref: '#/components/schemas/metadata'
+      description: a (key, object) map. `metric name`is an example key
+    responseLabelValues:
+      type: array
+      description: a list of string label values
+      items:
+        type: string
+    responseLabelNames:
+      type: array
+      description: a list of string label names
+      items:
+        type: string
+    responseTargetMetadata:
+      type: array
+      description: A list of objects
+      items:
+        $ref: '#/components/schemas/metricMetadata'
+    rule:
+      type: object
+    stat:
+      type: object
+      properties:
+        Name:
+          type: string
+        Value:
+          type: integer
+          format: uint64
+      description: stat holds the information about individual cardinality.
+    tsdbStatus:
+      type: object
+      properties:
+        HeadStats:
+          $ref: '#/components/schemas/HeadStats'
+        LabelValueCountByLabelName:
+          type: array
+          description: This will provide a list of the label names and their value
+            count.
+          items:
+            $ref: '#/components/schemas/stat'
+        MemoryInBytesByLabelName:
+          type: array
+          description: This will provide a list of the label names and memory used
+            in bytes. Memory usage is calculated by adding the length of all values
+            for a given label name.
+          items:
+            $ref: '#/components/schemas/stat'
+        SeriesCountByLabelValuePair:
+          type: array
+          description: This will provide a list of label value pairs and their series
+            count.
+          items:
+            $ref: '#/components/schemas/stat'
+        SeriesCountByMetricName:
+          type: array
+          description: This will provide a list of metrics names and their series
+            count.
+          items:
+            $ref: '#/components/schemas/stat'
+      description: tsdbStatus has information of cardinality statistics from postings.
+    walReplayStatus:
+      type: object
+      properties:
+        Current:
+          type: integer
+          format: int
+        Max:
+          type: integer
+          format: int
+        Min:
+          type: integer
+          format: int
+  securitySchemes:
+    Basic:
+      type: http
+      scheme: basic
