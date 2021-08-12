@@ -103,7 +103,14 @@ You can build a docker image locally with the following commands:
     $ make npm_licenses
     $ make common-docker-amd64
 
-*NB* if you are on a Mac, you will need [gnu-tar](https://formulae.brew.sh/formula/gnu-tar).
+*NB* if you are on a Mac, you will need [gnu-tar](https://formulae.brew.sh/formula/gnu-tar) and update to use `gtar` instead of `tar` in your Makefile's `npm_licenses` target like so:
+```
+.PHONY: npm_licenses
+npm_licenses: $(REACT_APP_NODE_MODULES_PATH)
+	@echo ">> bundling npm licenses"
+	rm -f $(REACT_APP_NPM_LICENSES_TARBALL)
+	find $(REACT_APP_NODE_MODULES_PATH) -iname "license*" | gtar cfj $(REACT_APP_NPM_LICENSES_TARBALL) --transform 's/^/npm_licenses\//' --files-from=-
+```
 
 ## React UI Development
 
