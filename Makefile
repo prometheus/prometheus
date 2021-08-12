@@ -32,8 +32,8 @@ include Makefile.common
 
 DOCKER_IMAGE_NAME       ?= prometheus
 
-$(REACT_APP_NODE_MODULES_PATH): $(REACT_APP_PATH)/package.json $(REACT_APP_PATH)/yarn.lock
-	cd $(REACT_APP_PATH) && yarn --frozen-lockfile
+$(REACT_APP_NODE_MODULES_PATH): $(REACT_APP_PATH)/package.json $(REACT_APP_PATH)/package-lock.json
+	cd $(REACT_APP_PATH) && npm ci
 
 $(REACT_APP_OUTPUT_DIR): $(REACT_APP_NODE_MODULES_PATH) $(REACT_APP_SOURCE_FILES) $(REACT_APP_BUILD_SCRIPT)
 	@echo ">> building React app"
@@ -51,17 +51,17 @@ assets: $(REACT_APP_OUTPUT_DIR)
 .PHONY: react-app-lint
 react-app-lint:
 	@echo ">> running React app linting"
-	cd $(REACT_APP_PATH) && yarn lint:ci
+	cd $(REACT_APP_PATH) && npm run lint:ci
 
 .PHONY: react-app-lint-fix
 react-app-lint-fix:
 	@echo ">> running React app linting and fixing errors where possible"
-	cd $(REACT_APP_PATH) && yarn lint
+	cd $(REACT_APP_PATH) && npm run lint
 
 .PHONY: react-app-test
 react-app-test: | $(REACT_APP_NODE_MODULES_PATH) react-app-lint
 	@echo ">> running React app tests"
-	cd $(REACT_APP_PATH) && yarn test --no-watch --coverage
+	cd $(REACT_APP_PATH) && npm run test --no-watch --coverage
 
 .PHONY: test
 # If we only want to only test go code we have to change the test target

@@ -10,7 +10,7 @@ tasks:
       gp sync-await build
       unset BROWSER
       export DANGEROUSLY_DISABLE_HOST_CHECK=true
-      yarn start
+      npm start
     openMode: split-right
 ports:
   - port: 3000

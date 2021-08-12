@@ -97,17 +97,20 @@ Either upgrade the dependencies within their existing version constraints as spe
 
 ```
 cd web/ui/react-app
-yarn upgrade
-git add yarn.lock
+npm update
+git add package.json package-lock.json
 ```
 
 Or alternatively, update all dependencies to their latest major versions. This is potentially more disruptive and will require more follow-up fixes, but should be done from time to time (use your best judgement):
 
 ```
 cd web/ui/react-app
-yarn upgrade --latest
-git add package.json yarn.lock
+npx npm-check-updates -u
+npm install
+git add package.json package-lock.json
 ```
+
+You can find more details on managing npm dependencies and updates [in this blog post](https://www.carlrippon.com/upgrading-npm-dependencies/).
 
 ### 1. Prepare your release
 

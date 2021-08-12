@@ -56,14 +56,14 @@ jobs:
       - checkout
       - restore_cache:
           keys:
-            - v3-npm-deps-{{ checksum "web/ui/react-app/yarn.lock" }}
+            - v3-npm-deps-{{ checksum "web/ui/react-app/package-lock.json" }}
             - v3-npm-deps-
       - run:
           command: make react-app-test
       - save_cache:
-          key: v3-npm-deps-{{ checksum "web/ui/react-app/yarn.lock" }}
+          key: v3-npm-deps-{{ checksum "web/ui/react-app/package-lock.json" }}
           paths:
-            - /home/circleci/.cache/yarn
+            - ~/.npm
 
   test_windows:
     executor:
