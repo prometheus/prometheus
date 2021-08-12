@@ -5,47 +5,16 @@ on:
   pull_request:
 
 jobs:
-#  lint:
-#    runs-on: ubuntu-20.04
-#    container:
-#      image: us.gcr.io/kubernetes-dev/mimir-build-image:jdb-lint-packaging-scripts-b6709b71a
-#      credentials:
-#        username: _json_key
-#        password: ${{ secrets.gcr_json_key }}
-#    steps:
-#      - name: Checkout Repo
-#        uses: actions/checkout@v2
-#        # Commands in the Makefile are hardcoded with an assumed file structure of the CI container
-#        # Symlink ensures paths specified in previous commands don’t break
-#      - name: Symlink Expected Path to Workspace
-#        run: |
-#          mkdir -p /go/src/github.com/grafana/mimir
-#          ln -s $GITHUB_WORKSPACE/* /go/src/github.com/grafana/mimir
-#      - name: Lint
-#        run: make BUILD_IN_CONTAINER=false lint
-#      - name: Check Vendor Directory
-#        run: |
-#          git config --global url."https://${GIT_USERNAME}:${GIT_PASSWORD}@github.com/grafana/prometheus-private".insteadOf "https://github.com/grafana/prometheus-private"
-#          make BUILD_IN_CONTAINER=false mod-check
-#        env:
-#          GIT_PASSWORD: ${{ secrets.GIT_PASSWORD }}
-#          GIT_USERNAME: ${{ secrets.GIT_USERNAME }}
-#      - name: Check Protos
-#        run: make BUILD_IN_CONTAINER=false check-protos
-#      - name: Check Generated Documentation
-#        run: make BUILD_IN_CONTAINER=false check-doc
-#      - name: Check White Noise.
-#        run: make BUILD_IN_CONTAINER=false check-white-noise
-#      - name: Check License Header
-#        run: make BUILD_IN_CONTAINER=false check-license
+  lint:
+    runs-on: ubuntu-20.04
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v2
+      - name: Lint
+        uses: golangci/golangci-lint-action@v2
 
   test:
     runs-on: ubuntu-20.04
-#    container:
-#      image: us.gcr.io/kubernetes-dev/mimir-build-image:jdb-lint-packaging-scripts-b6709b71a
-#      credentials:
-#        username: _json_key
-#        password: ${{ secrets.gcr_json_key }}
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v2
