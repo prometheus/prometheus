@@ -103,7 +103,7 @@ You can build a docker image locally with the following commands:
     $ make npm_licenses
     $ make common-docker-amd64
 
-*NB* if you are on a Mac, you will need [gnu-tar](https://formulae.brew.sh/formula/gnu-tar) and update to use `gtar` instead of `tar` in your Makefile's `npm_licenses` target like so:
+*NB* if you are on a Mac, you will first need to install [gnu-tar](https://formulae.brew.sh/formula/gnu-tar) and then update to use `gtar` instead of `tar` in your Makefile's `npm_licenses` target like so:
 ```
 .PHONY: npm_licenses
 npm_licenses: $(REACT_APP_NODE_MODULES_PATH)
