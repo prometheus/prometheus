@@ -13,6 +13,6 @@ fi
 cd web/ui/react-app
 
 echo "building React app"
-PUBLIC_URL=. yarn build
+PUBLIC_URL=. npm run build
 rm -rf ../static/react
 mv build ../static/react

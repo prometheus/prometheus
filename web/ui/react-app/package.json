@@ -110,5 +110,8 @@
     "transformIgnorePatterns": [
       "/node_modules/(?!codemirror-promql).+(js|jsx)$"
     ]
+  },
+  "optionalDependencies": {
+    "fsevents": "^2.3.2"
   }
 }
