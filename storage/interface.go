@@ -146,7 +146,7 @@ type SelectHints struct {
 	By       bool     // Indicate whether it is without or by.
 	Range    int64    // Range vector selector range in milliseconds.
 
-	ShardIndex uint64 // Current shard index (starts from 0).
+	ShardIndex uint64 // Current shard index (starts from 0 and up to ShardCount-1).
 	ShardCount uint64 // Total number of shards (0 means sharding is disabled).
 }
 

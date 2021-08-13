@@ -80,11 +80,12 @@ type IndexReader interface {
 	SortedPostings(index.Postings) index.Postings
 
 	// ShardedPostings returns a postings list filtered by the provided shardIndex
-	// out of shardCount.
+	// out of shardCount. For a given posting, its shard MUST be computed hashing
+	// the series labels mod shardCount (eg. `labels.Hash() % shardCount == shardIndex`).
 	ShardedPostings(p index.Postings, shardIndex, shardCount uint64) index.Postings
 
 	// Series populates the given labels and chunk metas for the series identified
-	// by the reference.
+	// by the reference. Chunks are skipped if chks is nil.
 	// Returns storage.ErrNotFound if the ref does not resolve to a known series.
 	Series(ref uint64, lset *labels.Labels, chks *[]chunks.Meta) error
 

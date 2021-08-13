@@ -174,6 +174,7 @@ func (h *headIndexReader) ShardedPostings(p index.Postings, shardIndex, shardCou
 }
 
 // Series returns the series for the given reference.
+// Chunks are skipped if chks is nil.
 func (h *headIndexReader) Series(ref uint64, lbls *labels.Labels, chks *[]chunks.Meta) error {
 	s := h.head.series.getByID(ref)
 
@@ -182,6 +183,10 @@ func (h *headIndexReader) Series(ref uint64, lbls *labels.Labels, chks *[]chunks
 		return storage.ErrNotFound
 	}
 	*lbls = append((*lbls)[:0], s.lset...)
+
+	if chks == nil {
+		return nil
+	}
 
 	s.Lock()
 	defer s.Unlock()

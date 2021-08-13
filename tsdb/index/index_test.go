@@ -258,22 +258,37 @@ func TestIndexRW_Postings(t *testing.T) {
 		require.NoError(t, p.Err())
 		require.Greater(t, len(expected), 0)
 
-		// Shard the same postings and merge of all them together. We expect the postings
-		// merged out of shards is the exact same of the non sharded ones.
+		// Query the same postings for each shard.
 		const shardCount = uint64(4)
-		var actual []uint64
+		actualShards := make(map[uint64][]uint64)
+		actualPostings := make([]uint64, 0, len(expected))
+
 		for shardIndex := uint64(0); shardIndex < shardCount; shardIndex++ {
 			p, err = ir.Postings("a", "1")
 			require.NoError(t, err)
 
 			p = ir.ShardedPostings(p, shardIndex, shardCount)
 			for p.Next() {
-				actual = append(actual, p.At())
+				ref := p.At()
+
+				actualShards[shardIndex] = append(actualShards[shardIndex], ref)
+				actualPostings = append(actualPostings, ref)
 			}
 			require.NoError(t, p.Err())
 		}
 
-		require.ElementsMatch(t, expected, actual)
+		// We expect the postings merged out of shards is the exact same of the non sharded ones.
+		require.ElementsMatch(t, expected, actualPostings)
+
+		// We expect the series in each shard are the expected ones.
+		for shardIndex, ids := range actualShards {
+			for _, id := range ids {
+				var lbls labels.Labels
+
+				require.NoError(t, ir.Series(id, &lbls, nil))
+				require.Equal(t, shardIndex, lbls.Hash()%shardCount)
+			}
+		}
 	}
 
 	require.NoError(t, ir.Close())
