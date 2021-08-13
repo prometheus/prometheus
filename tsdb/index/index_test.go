@@ -245,6 +245,37 @@ func TestIndexRW_Postings(t *testing.T) {
 		"b": {"1", "2", "3", "4"},
 	}, labelIndices)
 
+	{
+		// List all postings for a given label value. This is what we expect to get
+		// in output from all shards.
+		p, err = ir.Postings("a", "1")
+		require.NoError(t, err)
+
+		var expected []uint64
+		for p.Next() {
+			expected = append(expected, p.At())
+		}
+		require.NoError(t, p.Err())
+		require.Greater(t, len(expected), 0)
+
+		// Shard the same postings and merge of all them together. We expect the postings
+		// merged out of shards is the exact same of the non sharded ones.
+		const shardCount = uint64(4)
+		var actual []uint64
+		for shardIndex := uint64(0); shardIndex < shardCount; shardIndex++ {
+			p, err = ir.Postings("a", "1")
+			require.NoError(t, err)
+
+			p = ir.ShardedPostings(p, shardIndex, shardCount)
+			for p.Next() {
+				actual = append(actual, p.At())
+			}
+			require.NoError(t, p.Err())
+		}
+
+		require.ElementsMatch(t, expected, actual)
+	}
+
 	require.NoError(t, ir.Close())
 }
 

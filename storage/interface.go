@@ -145,6 +145,9 @@ type SelectHints struct {
 	Grouping []string // List of label names used in aggregation.
 	By       bool     // Indicate whether it is without or by.
 	Range    int64    // Range vector selector range in milliseconds.
+
+	ShardIndex uint64 // Current shard index (starts from 0).
+	ShardCount uint64 // Total number of shards (0 means sharding is disabled).
 }
 
 // TODO(bwplotka): Move to promql/engine_test.go?

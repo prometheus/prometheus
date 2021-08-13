@@ -1587,6 +1587,7 @@ func (r *Reader) LabelValueFor(id uint64, label string) (string, error) {
 }
 
 // Series reads the series with the given ID and writes its labels and chunks into lbls and chks.
+// Chunks will be skipped if chks is nil.
 func (r *Reader) Series(id uint64, lbls *labels.Labels, chks *[]chunks.Meta) error {
 	offset := id
 	// In version 2 series IDs are no longer exact references but series are 16-byte padded
@@ -1707,6 +1708,33 @@ func (r *Reader) SortedPostings(p Postings) Postings {
 	return p
 }
 
+// ShardedPostings returns a postings list filtered by the provided shardIndex out of shardCount.
+func (r *Reader) ShardedPostings(p Postings, shardIndex, shardCount uint64) Postings {
+	var (
+		out     = make([]uint64, 0, 128)
+		bufLbls = make(labels.Labels, 0, 10)
+	)
+
+	for p.Next() {
+		id := p.At()
+
+		// Get the series labels (no chunks).
+		err := r.Series(id, &bufLbls, nil)
+		if err != nil {
+			return ErrPostings(errors.Errorf("series %d not found", id))
+		}
+
+		// Check if the series belong to the shard.
+		if bufLbls.Hash()%shardCount != shardIndex {
+			continue
+		}
+
+		out = append(out, id)
+	}
+
+	return NewListPostings(out)
+}
+
 // Size returns the size of an index file.
 func (r *Reader) Size() int64 {
 	return int64(r.b.Len())
@@ -1820,9 +1848,12 @@ func (dec *Decoder) LabelValueFor(b []byte, label string) (string, error) {
 }
 
 // Series decodes a series entry from the given byte slice into lset and chks.
+// Skips reading chunks metadata if chks is nil.
 func (dec *Decoder) Series(b []byte, lbls *labels.Labels, chks *[]chunks.Meta) error {
 	*lbls = (*lbls)[:0]
-	*chks = (*chks)[:0]
+	if chks != nil {
+		*chks = (*chks)[:0]
+	}
 
 	d := encoding.Decbuf{B: b}
 
@@ -1848,11 +1879,16 @@ func (dec *Decoder) Series(b []byte, lbls *labels.Labels, chks *[]chunks.Meta) e
 		*lbls = append(*lbls, labels.Label{Name: ln, Value: lv})
 	}
 
+	// Skip reading chunks metadata if chks is nil.
+	if chks == nil {
+		return d.Err()
+	}
+
 	// Read the chunks meta data.
 	k = d.Uvarint()
 
 	if k == 0 {
-		return nil
+		return d.Err()
 	}
 
 	t0 := d.Varint64()

@@ -127,6 +127,9 @@ func (q *blockQuerier) Select(sortSeries bool, hints *storage.SelectHints, ms ..
 	if err != nil {
 		return storage.ErrSeriesSet(err)
 	}
+	if hints != nil && hints.ShardCount > 0 {
+		p = q.index.ShardedPostings(p, hints.ShardIndex, hints.ShardCount)
+	}
 	if sortSeries {
 		p = q.index.SortedPostings(p)
 	}
@@ -167,6 +170,9 @@ func (q *blockChunkQuerier) Select(sortSeries bool, hints *storage.SelectHints, 
 	p, err := PostingsForMatchers(q.index, ms...)
 	if err != nil {
 		return storage.ErrChunkSeriesSet(err)
+	}
+	if hints != nil && hints.ShardCount > 0 {
+		p = q.index.ShardedPostings(p, hints.ShardIndex, hints.ShardCount)
 	}
 	if sortSeries {
 		p = q.index.SortedPostings(p)

@@ -492,7 +492,8 @@ func TestMemSeries_truncateChunks(t *testing.T) {
 		},
 	}
 
-	s := newMemSeries(labels.FromStrings("a", "b"), 1, 2000, &memChunkPool)
+	lbls := labels.FromStrings("a", "b")
+	s := newMemSeries(lbls, 1, lbls.Hash(), 2000, &memChunkPool)
 
 	for i := 0; i < 4000; i += 5 {
 		ok, _ := s.append(int64(i), float64(i), 0, chunkDiskMapper)
@@ -1031,7 +1032,8 @@ func TestMemSeries_append(t *testing.T) {
 		require.NoError(t, chunkDiskMapper.Close())
 	}()
 
-	s := newMemSeries(labels.Labels{}, 1, 500, nil)
+	lbls := labels.Labels{}
+	s := newMemSeries(lbls, 1, lbls.Hash(), 500, nil)
 
 	// Add first two samples at the very end of a chunk range and the next two
 	// on and after it.
@@ -2061,6 +2063,55 @@ func TestHeadLabelNamesWithMatchers(t *testing.T) {
 	}
 }
 
+func TestHeadShardedPostings(t *testing.T) {
+	head, _ := newTestHead(t, 1000, false)
+	defer func() {
+		require.NoError(t, head.Close())
+	}()
+
+	// Append some series.
+	app := head.Appender(context.Background())
+	for i := 0; i < 100; i++ {
+		_, err := app.Append(0, labels.Labels{
+			{Name: "unique", Value: fmt.Sprintf("value%d", i)},
+			{Name: "const", Value: "1"},
+		}, 100, 0)
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+
+	ir := head.indexRange(0, 200)
+
+	// List all postings for a given label value. This is what we expect to get
+	// in output from all shards.
+	p, err := ir.Postings("const", "1")
+	require.NoError(t, err)
+
+	var expected []uint64
+	for p.Next() {
+		expected = append(expected, p.At())
+	}
+	require.NoError(t, p.Err())
+	require.Greater(t, len(expected), 0)
+
+	// Shard the same postings and merge of all them together. We expect the postings
+	// merged out of shards is the exact same of the non sharded ones.
+	const shardCount = uint64(4)
+	var actual []uint64
+	for shardIndex := uint64(0); shardIndex < shardCount; shardIndex++ {
+		p, err = ir.Postings("const", "1")
+		require.NoError(t, err)
+
+		p = ir.ShardedPostings(p, shardIndex, shardCount)
+		for p.Next() {
+			actual = append(actual, p.At())
+		}
+		require.NoError(t, p.Err())
+	}
+
+	require.ElementsMatch(t, expected, actual)
+}
+
 func TestErrReuseAppender(t *testing.T) {
 	head, _ := newTestHead(t, 1000, false)
 	defer func() {
@@ -2196,7 +2247,8 @@ func TestMemSafeIteratorSeekIntoBuffer(t *testing.T) {
 		require.NoError(t, chunkDiskMapper.Close())
 	}()
 
-	s := newMemSeries(labels.Labels{}, 1, 500, nil)
+	lbls := labels.Labels{}
+	s := newMemSeries(lbls, 1, lbls.Hash(), 500, nil)
 
 	for i := 0; i < 7; i++ {
 		ok, _ := s.append(int64(i), float64(i), 0, chunkDiskMapper)

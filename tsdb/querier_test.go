@@ -1216,6 +1216,27 @@ func (m mockIndex) SortedPostings(p index.Postings) index.Postings {
 	return index.NewListPostings(ep)
 }
 
+func (m mockIndex) ShardedPostings(p index.Postings, shardIndex, shardCount uint64) index.Postings {
+	out := make([]uint64, 0, 128)
+
+	for p.Next() {
+		ref := p.At()
+		s, ok := m.series[ref]
+		if !ok {
+			continue
+		}
+
+		// Check if the series belong to the shard.
+		if s.l.Hash()%shardCount != shardIndex {
+			continue
+		}
+
+		out = append(out, ref)
+	}
+
+	return index.NewListPostings(out)
+}
+
 func (m mockIndex) Series(ref uint64, lset *labels.Labels, chks *[]chunks.Meta) error {
 	s, ok := m.series[ref]
 	if !ok {
@@ -2049,6 +2070,10 @@ func (m mockMatcherIndex) Postings(name string, values ...string) (index.Posting
 
 func (m mockMatcherIndex) SortedPostings(p index.Postings) index.Postings {
 	return index.EmptyPostings()
+}
+
+func (m mockMatcherIndex) ShardedPostings(ps index.Postings, shardIndex, shardCount uint64) index.Postings {
+	return ps
 }
 
 func (m mockMatcherIndex) Series(ref uint64, lset *labels.Labels, chks *[]chunks.Meta) error {

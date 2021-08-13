@@ -1130,7 +1130,7 @@ func (h *Head) getOrCreate(hash uint64, lset labels.Labels) (*memSeries, bool, e
 
 func (h *Head) getOrCreateWithID(id, hash uint64, lset labels.Labels) (*memSeries, bool, error) {
 	s, created, err := h.series.getOrSet(hash, lset, func() *memSeries {
-		return newMemSeries(lset, id, h.chunkRange.Load(), &h.memChunkPool)
+		return newMemSeries(lset, id, hash, h.chunkRange.Load(), &h.memChunkPool)
 	})
 	if err != nil {
 		return nil, false, err
@@ -1378,6 +1378,7 @@ type memSeries struct {
 
 	ref           uint64
 	lset          labels.Labels
+	hash          uint64
 	mmappedChunks []*mmappedChunk
 	headChunk     *memChunk
 	chunkRange    int64
@@ -1394,9 +1395,10 @@ type memSeries struct {
 	txs *txRing
 }
 
-func newMemSeries(lset labels.Labels, id uint64, chunkRange int64, memChunkPool *sync.Pool) *memSeries {
+func newMemSeries(lset labels.Labels, id, hash uint64, chunkRange int64, memChunkPool *sync.Pool) *memSeries {
 	s := &memSeries{
 		lset:         lset,
+		hash:         hash,
 		ref:          id,
 		chunkRange:   chunkRange,
 		nextAt:       math.MinInt64,

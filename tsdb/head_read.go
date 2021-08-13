@@ -152,6 +152,27 @@ func (h *headIndexReader) SortedPostings(p index.Postings) index.Postings {
 	return index.NewListPostings(ep)
 }
 
+func (h *headIndexReader) ShardedPostings(p index.Postings, shardIndex, shardCount uint64) index.Postings {
+	out := make([]uint64, 0, 128)
+
+	for p.Next() {
+		s := h.head.series.getByID(p.At())
+		if s == nil {
+			level.Debug(h.head.logger).Log("msg", "Looked up series not found")
+			continue
+		}
+
+		// Check if the series belong to the shard.
+		if s.hash%shardCount != shardIndex {
+			continue
+		}
+
+		out = append(out, s.ref)
+	}
+
+	return index.NewListPostings(out)
+}
+
 // Series returns the series for the given reference.
 func (h *headIndexReader) Series(ref uint64, lbls *labels.Labels, chks *[]chunks.Meta) error {
 	s := h.head.series.getByID(ref)
