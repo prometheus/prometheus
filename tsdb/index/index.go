@@ -1852,7 +1852,7 @@ func (dec *Decoder) Series(b []byte, lbls *labels.Labels, chks *[]chunks.Meta) e
 	k = d.Uvarint()
 
 	if k == 0 {
-		return nil
+		return d.Err()
 	}
 
 	t0 := d.Varint64()
