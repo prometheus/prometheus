@@ -20,6 +20,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
+	v1 "k8s.io/api/networking/v1"
 	"k8s.io/api/networking/v1beta1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
@@ -112,25 +113,26 @@ func (i *Ingress) process(ctx context.Context, ch chan<- []*targetgroup.Group) b
 		send(ctx, ch, &targetgroup.Group{Source: ingressSourceFromNamespaceAndName(namespace, name)})
 		return true
 	}
-	eps, err := convertToIngress(o)
-	if err != nil {
-		level.Error(i.logger).Log("msg", "converting to Ingress object failed", "err", err)
+
+	switch ingress := o.(type) {
+	case *v1.Ingress:
+		send(ctx, ch, i.buildIngress(ingress))
+		return true
+	case *v1beta1.Ingress:
+		send(ctx, ch, i.buildIngressV1beta1(ingress))
 		return true
 	}
-	send(ctx, ch, i.buildIngress(eps))
+
+	level.Error(i.logger).Log("msg", "converting to Ingress object failed", "err",
+		errors.Errorf("received unexpected object: %v", o))
 	return true
 }
 
-func convertToIngress(o interface{}) (*v1beta1.Ingress, error) {
-	ingress, ok := o.(*v1beta1.Ingress)
-	if ok {
-		return ingress, nil
-	}
-
-	return nil, errors.Errorf("received unexpected object: %v", o)
+func ingressSource(s *v1.Ingress) string {
+	return ingressSourceFromNamespaceAndName(s.Namespace, s.Name)
 }
 
-func ingressSource(s *v1beta1.Ingress) string {
+func ingressSourceV1beta1(s *v1beta1.Ingress) string {
 	return ingressSourceFromNamespaceAndName(s.Namespace, s.Name)
 }
 
@@ -150,7 +152,7 @@ const (
 	ingressClassNameLabel          = metaLabelPrefix + "ingress_class_name"
 )
 
-func ingressLabels(ingress *v1beta1.Ingress) model.LabelSet {
+func ingressLabels(ingress *v1.Ingress) model.LabelSet {
 	// Each label and annotation will create two key-value pairs in the map.
 	ls := make(model.LabelSet, 2*(len(ingress.Labels)+len(ingress.Annotations))+2)
 	ls[ingressNameLabel] = lv(ingress.Name)
@@ -173,7 +175,30 @@ func ingressLabels(ingress *v1beta1.Ingress) model.LabelSet {
 	return ls
 }
 
-func pathsFromIngressRule(rv *v1beta1.IngressRuleValue) []string {
+func ingressLabelsV1beta1(ingress *v1beta1.Ingress) model.LabelSet {
+	// Each label and annotation will create two key-value pairs in the map.
+	ls := make(model.LabelSet, 2*(len(ingress.Labels)+len(ingress.Annotations))+2)
+	ls[ingressNameLabel] = lv(ingress.Name)
+	ls[namespaceLabel] = lv(ingress.Namespace)
+	if ingress.Spec.IngressClassName != nil {
+		ls[ingressClassNameLabel] = lv(*ingress.Spec.IngressClassName)
+	}
+
+	for k, v := range ingress.Labels {
+		ln := strutil.SanitizeLabelName(k)
+		ls[model.LabelName(ingressLabelPrefix+ln)] = lv(v)
+		ls[model.LabelName(ingressLabelPresentPrefix+ln)] = presentValue
+	}
+
+	for k, v := range ingress.Annotations {
+		ln := strutil.SanitizeLabelName(k)
+		ls[model.LabelName(ingressAnnotationPrefix+ln)] = lv(v)
+		ls[model.LabelName(ingressAnnotationPresentPrefix+ln)] = presentValue
+	}
+	return ls
+}
+
+func pathsFromIngressRule(rv *v1.IngressRuleValue) []string {
 	if rv.HTTP == nil {
 		return []string{"/"}
 	}
@@ -188,7 +213,22 @@ func pathsFromIngressRule(rv *v1beta1.IngressRuleValue) []string {
 	return paths
 }
 
-func (i *Ingress) buildIngress(ingress *v1beta1.Ingress) *targetgroup.Group {
+func pathsFromIngressRuleV1beta1(rv *v1beta1.IngressRuleValue) []string {
+	if rv.HTTP == nil {
+		return []string{"/"}
+	}
+	paths := make([]string, len(rv.HTTP.Paths))
+	for n, p := range rv.HTTP.Paths {
+		path := p.Path
+		if path == "" {
+			path = "/"
+		}
+		paths[n] = path
+	}
+	return paths
+}
+
+func (i *Ingress) buildIngress(ingress *v1.Ingress) *targetgroup.Group {
 	tg := &targetgroup.Group{
 		Source: ingressSource(ingress),
 	}
@@ -203,6 +243,41 @@ func (i *Ingress) buildIngress(ingress *v1beta1.Ingress) *targetgroup.Group {
 
 	for _, rule := range ingress.Spec.Rules {
 		paths := pathsFromIngressRule(&rule.IngressRuleValue)
+
+		scheme := "http"
+		_, isTLS := tlsHosts[rule.Host]
+		if isTLS {
+			scheme = "https"
+		}
+
+		for _, path := range paths {
+			tg.Targets = append(tg.Targets, model.LabelSet{
+				model.AddressLabel: lv(rule.Host),
+				ingressSchemeLabel: lv(scheme),
+				ingressHostLabel:   lv(rule.Host),
+				ingressPathLabel:   lv(path),
+			})
+		}
+	}
+
+	return tg
+}
+
+func (i *Ingress) buildIngressV1beta1(ingress *v1beta1.Ingress) *targetgroup.Group {
+	tg := &targetgroup.Group{
+		Source: ingressSourceV1beta1(ingress),
+	}
+	tg.Labels = ingressLabelsV1beta1(ingress)
+
+	tlsHosts := make(map[string]struct{})
+	for _, tls := range ingress.Spec.TLS {
+		for _, host := range tls.Hosts {
+			tlsHosts[host] = struct{}{}
+		}
+	}
+
+	for _, rule := range ingress.Spec.Rules {
+		paths := pathsFromIngressRuleV1beta1(&rule.IngressRuleValue)
 
 		scheme := "http"
 		_, isTLS := tlsHosts[rule.Host]
