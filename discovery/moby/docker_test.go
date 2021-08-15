@@ -106,6 +106,7 @@ host: %s
 			"__meta_docker_container_name":                             "/dockersd_host_networking_1",
 			"__meta_docker_container_network_mode":                     "host",
 			"__meta_docker_network_ip":                                 "",
+			"__meta_docker_network_other_networks":                     "",
 		},
 	} {
 		t.Run(fmt.Sprintf("item %d", i), func(t *testing.T) {
