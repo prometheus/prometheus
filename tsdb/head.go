@@ -1106,6 +1106,11 @@ func (h *Head) gc() int64 {
 	// Remove deleted series IDs from the postings lists.
 	h.postings.Delete(deleted)
 
+	// Remove tombstones referring to the deleted series.
+	for ref := range deleted {
+		h.tombstones.DeleteTombstones(ref)
+	}
+
 	if h.wal != nil {
 		_, last, _ := wal.Segments(h.wal.Dir())
 		h.deletedMtx.Lock()

@@ -63,6 +63,27 @@ func TestWriteAndReadbackTombstones(t *testing.T) {
 	require.Equal(t, stones, restr)
 }
 
+func TestDeletingTombstones(t *testing.T) {
+	stones := NewMemTombstones()
+
+	ref := uint64(42)
+	mint := rand.Int63n(time.Now().UnixNano())
+	dranges := make(Intervals, 0, 1)
+	dranges = dranges.Add(Interval{mint, mint + rand.Int63n(1000)})
+	stones.AddInterval(ref, dranges...)
+	stones.AddInterval(uint64(43), dranges...)
+
+	intervals, err := stones.Get(ref)
+	require.NoError(t, err)
+	require.Equal(t, intervals, dranges)
+
+	stones.DeleteTombstones(ref)
+
+	intervals, err = stones.Get(ref)
+	require.NoError(t, err)
+	require.Empty(t, intervals)
+}
+
 func TestAddingNewIntervals(t *testing.T) {
 	cases := []struct {
 		exist Intervals
