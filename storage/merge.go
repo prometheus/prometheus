@@ -468,7 +468,11 @@ func (c *chainSampleIterator) Seek(t int64) bool {
 	}
 	if len(c.h) > 0 {
 		c.curr = heap.Pop(&c.h).(chunkenc.Iterator)
-		c.lastt, _ = c.curr.At()
+		if c.curr.ChunkEncoding() == chunkenc.EncSHS {
+			c.lastt, _ = c.curr.AtHistogram()
+		} else {
+			c.lastt, _ = c.curr.At()
+		}
 		return true
 	}
 	c.curr = nil
@@ -516,7 +520,11 @@ func (c *chainSampleIterator) Next() bool {
 	var currt int64
 	for {
 		if c.curr.Next() {
-			currt, _ = c.curr.At()
+			if c.curr.ChunkEncoding() == chunkenc.EncSHS {
+				currt, _ = c.curr.AtHistogram()
+			} else {
+				currt, _ = c.curr.At()
+			}
 			if currt == c.lastt {
 				// Ignoring sample for the same timestamp.
 				continue
@@ -528,7 +536,13 @@ func (c *chainSampleIterator) Next() bool {
 			}
 
 			// Check current iterator with the top of the heap.
-			if nextt, _ := c.h[0].At(); currt < nextt {
+			var nextt int64
+			if c.h[0].ChunkEncoding() == chunkenc.EncSHS {
+				nextt, _ = c.h[0].AtHistogram()
+			} else {
+				nextt, _ = c.h[0].At()
+			}
+			if currt < nextt {
 				// Current iterator has smaller timestamp than the heap.
 				break
 			}
@@ -541,7 +555,11 @@ func (c *chainSampleIterator) Next() bool {
 		}
 
 		c.curr = heap.Pop(&c.h).(chunkenc.Iterator)
-		currt, _ = c.curr.At()
+		if c.curr.ChunkEncoding() == chunkenc.EncSHS {
+			currt, _ = c.curr.AtHistogram()
+		} else {
+			currt, _ = c.curr.At()
+		}
 		if currt != c.lastt {
 			break
 		}
@@ -565,8 +583,17 @@ func (h samplesIteratorHeap) Len() int      { return len(h) }
 func (h samplesIteratorHeap) Swap(i, j int) { h[i], h[j] = h[j], h[i] }
 
 func (h samplesIteratorHeap) Less(i, j int) bool {
-	at, _ := h[i].At()
-	bt, _ := h[j].At()
+	var at, bt int64
+	if h[i].ChunkEncoding() == chunkenc.EncSHS {
+		at, _ = h[i].AtHistogram()
+	} else {
+		at, _ = h[i].At()
+	}
+	if h[j].ChunkEncoding() == chunkenc.EncSHS {
+		bt, _ = h[j].AtHistogram()
+	} else {
+		bt, _ = h[j].At()
+	}
 	return at < bt
 }
 
