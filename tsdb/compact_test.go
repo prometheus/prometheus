@@ -34,6 +34,7 @@ import (
 
 	"github.com/prometheus/prometheus/pkg/histogram"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
@@ -1689,4 +1690,70 @@ func generateCustomHistograms(numHists, numBuckets, numSpans, gapBetweenSpans, s
 	}
 
 	return r
+}
+
+func TestSparseHistogramCompaction(t *testing.T) {
+	dir, err := ioutil.TempDir("", "test")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, os.RemoveAll(dir))
+	})
+	opts := DefaultOptions()
+	// Exactly 3 times so that level 2 of compaction happens and tombstone
+	// deletion and compaction considers the level 2 blocks to be big enough.
+	opts.MaxBlockDuration = 3 * opts.MinBlockDuration
+	db, err := Open(dir, nil, nil, opts, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, db.Close())
+	})
+	db.DisableCompactions()
+
+	series1Histograms := generateHistograms(20)
+	series2Histograms := generateHistograms(20)
+	idx1, idx2 := -1, -1
+	addNextHists := func(ts int64, app storage.Appender) {
+		lbls1 := labels.Labels{{Name: "a", Value: "b"}}
+		lbls2 := labels.Labels{{Name: "a", Value: "c"}}
+		idx1++
+		_, err := app.AppendHistogram(0, lbls1, ts, series1Histograms[idx1])
+		require.NoError(t, err)
+		idx2++
+		_, err = app.AppendHistogram(0, lbls2, ts, series2Histograms[idx2])
+		require.NoError(t, err)
+	}
+
+	// Add histograms to create 3 blocks via compaction.
+	app := db.Appender(context.Background())
+	for ts := int64(0); ts <= 4*DefaultBlockDuration; ts += DefaultBlockDuration / 2 {
+		addNextHists(ts, app)
+	}
+	require.NoError(t, app.Commit())
+	require.NoError(t, db.Compact())
+	require.Equal(t, 3, len(db.Blocks()))
+
+	// Another block triggers compaction of the first 3 blocks into 1 block.
+	app = db.Appender(context.Background())
+	for ts := 9 * DefaultBlockDuration / 2; ts <= 5*DefaultBlockDuration; ts += DefaultBlockDuration / 2 {
+		addNextHists(ts, app)
+	}
+	require.NoError(t, app.Commit())
+	require.NoError(t, db.Compact())
+	require.Equal(t, 2, len(db.Blocks()))
+
+	require.Equal(t, int64(0), db.blocks[0].MinTime())
+	require.Equal(t, 3*DefaultBlockDuration, db.blocks[0].MaxTime())
+	require.Equal(t, 3*DefaultBlockDuration, db.blocks[1].MinTime())
+	require.Equal(t, 4*DefaultBlockDuration, db.blocks[1].MaxTime())
+
+	// Add tombstones to the first block to make sure that the deletion works for histograms on compaction.
+	err = db.Delete(0, 2*DefaultBlockDuration, labels.MustNewMatcher(labels.MatchRegexp, "a", ".*"))
+	require.NoError(t, err)
+	require.Equal(t, uint64(2), db.blocks[0].Meta().Stats.NumTombstones)
+
+	oldULID := db.blocks[0].Meta().ULID
+	require.NoError(t, db.Compact())
+	newULID := db.blocks[0].Meta().ULID
+	require.NotEqual(t, oldULID, newULID)
+	require.Equal(t, uint64(0), db.blocks[0].Meta().Stats.NumTombstones)
 }
