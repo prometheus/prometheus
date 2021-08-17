@@ -32,6 +32,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/encoding"
+	"github.com/prometheus/prometheus/tsdb/hashcache"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -149,7 +150,7 @@ func TestIndexRW_Create_Open(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, iw.Close())
 
-	ir, err := NewFileReader(fn)
+	ir, err := NewFileReader(fn, nil)
 	require.NoError(t, err)
 	require.NoError(t, ir.Close())
 
@@ -160,7 +161,7 @@ func TestIndexRW_Create_Open(t *testing.T) {
 	require.NoError(t, err)
 	f.Close()
 
-	_, err = NewFileReader(dir)
+	_, err = NewFileReader(dir, nil)
 	require.Error(t, err)
 }
 
@@ -199,7 +200,7 @@ func TestIndexRW_Postings(t *testing.T) {
 
 	require.NoError(t, iw.Close())
 
-	ir, err := NewFileReader(fn)
+	ir, err := NewFileReader(fn, nil)
 	require.NoError(t, err)
 
 	p, err := ir.Postings("a", "1")
@@ -245,50 +246,61 @@ func TestIndexRW_Postings(t *testing.T) {
 		"b": {"1", "2", "3", "4"},
 	}, labelIndices)
 
-	{
-		// List all postings for a given label value. This is what we expect to get
-		// in output from all shards.
-		p, err = ir.Postings("a", "1")
-		require.NoError(t, err)
+	// Test ShardedPostings() with and without series hash cache.
+	for _, cacheEnabled := range []bool{false, true} {
+		t.Run(fmt.Sprintf("ShardedPostings() cache enabled: %v", cacheEnabled), func(t *testing.T) {
+			var cache ReaderCacheProvider
+			if cacheEnabled {
+				cache = hashcache.NewSeriesHashCache(1024 * 1024 * 1024).GetBlockCacheProvider("test")
+			}
 
-		var expected []uint64
-		for p.Next() {
-			expected = append(expected, p.At())
-		}
-		require.NoError(t, p.Err())
-		require.Greater(t, len(expected), 0)
+			ir, err := NewFileReader(fn, cache)
+			require.NoError(t, err)
 
-		// Query the same postings for each shard.
-		const shardCount = uint64(4)
-		actualShards := make(map[uint64][]uint64)
-		actualPostings := make([]uint64, 0, len(expected))
-
-		for shardIndex := uint64(0); shardIndex < shardCount; shardIndex++ {
+			// List all postings for a given label value. This is what we expect to get
+			// in output from all shards.
 			p, err = ir.Postings("a", "1")
 			require.NoError(t, err)
 
-			p = ir.ShardedPostings(p, shardIndex, shardCount)
+			var expected []uint64
 			for p.Next() {
-				ref := p.At()
-
-				actualShards[shardIndex] = append(actualShards[shardIndex], ref)
-				actualPostings = append(actualPostings, ref)
+				expected = append(expected, p.At())
 			}
 			require.NoError(t, p.Err())
-		}
+			require.Greater(t, len(expected), 0)
 
-		// We expect the postings merged out of shards is the exact same of the non sharded ones.
-		require.ElementsMatch(t, expected, actualPostings)
+			// Query the same postings for each shard.
+			const shardCount = uint64(4)
+			actualShards := make(map[uint64][]uint64)
+			actualPostings := make([]uint64, 0, len(expected))
 
-		// We expect the series in each shard are the expected ones.
-		for shardIndex, ids := range actualShards {
-			for _, id := range ids {
-				var lbls labels.Labels
+			for shardIndex := uint64(0); shardIndex < shardCount; shardIndex++ {
+				p, err = ir.Postings("a", "1")
+				require.NoError(t, err)
 
-				require.NoError(t, ir.Series(id, &lbls, nil))
-				require.Equal(t, shardIndex, lbls.Hash()%shardCount)
+				p = ir.ShardedPostings(p, shardIndex, shardCount)
+				for p.Next() {
+					ref := p.At()
+
+					actualShards[shardIndex] = append(actualShards[shardIndex], ref)
+					actualPostings = append(actualPostings, ref)
+				}
+				require.NoError(t, p.Err())
 			}
-		}
+
+			// We expect the postings merged out of shards is the exact same of the non sharded ones.
+			require.ElementsMatch(t, expected, actualPostings)
+
+			// We expect the series in each shard are the expected ones.
+			for shardIndex, ids := range actualShards {
+				for _, id := range ids {
+					var lbls labels.Labels
+
+					require.NoError(t, ir.Series(id, &lbls, nil))
+					require.Equal(t, shardIndex, lbls.Hash()%shardCount)
+				}
+			}
+		})
 	}
 
 	require.NoError(t, ir.Close())
@@ -331,7 +343,7 @@ func TestPostingsMany(t *testing.T) {
 	}
 	require.NoError(t, iw.Close())
 
-	ir, err := NewFileReader(fn)
+	ir, err := NewFileReader(fn, nil)
 	require.NoError(t, err)
 	defer func() { require.NoError(t, ir.Close()) }()
 
@@ -469,7 +481,7 @@ func TestPersistence_index_e2e(t *testing.T) {
 	err = iw.Close()
 	require.NoError(t, err)
 
-	ir, err := NewFileReader(filepath.Join(dir, indexFilename))
+	ir, err := NewFileReader(filepath.Join(dir, indexFilename), nil)
 	require.NoError(t, err)
 
 	for p := range mi.postings {
@@ -541,7 +553,7 @@ func TestDecbufUvarintWithInvalidBuffer(t *testing.T) {
 func TestReaderWithInvalidBuffer(t *testing.T) {
 	b := realByteSlice([]byte{0x81, 0x81, 0x81, 0x81, 0x81, 0x81})
 
-	_, err := NewReader(b)
+	_, err := NewReader(b, nil)
 	require.Error(t, err)
 }
 
@@ -553,7 +565,7 @@ func TestNewFileReaderErrorNoOpenFiles(t *testing.T) {
 	err := ioutil.WriteFile(idxName, []byte("corrupted contents"), 0666)
 	require.NoError(t, err)
 
-	_, err = NewFileReader(idxName)
+	_, err = NewFileReader(idxName, nil)
 	require.Error(t, err)
 
 	// dir.Close will fail on Win if idxName fd is not closed on error path.
@@ -605,4 +617,60 @@ func TestSymbols(t *testing.T) {
 		i++
 	}
 	require.NoError(t, iter.Err())
+}
+
+func BenchmarkReader_ShardedPostings(b *testing.B) {
+	const (
+		numSeries = 10000
+		numShards = 16
+	)
+
+	dir, err := ioutil.TempDir("", "benchmark_reader_sharded_postings")
+	require.NoError(b, err)
+	defer func() {
+		require.NoError(b, os.RemoveAll(dir))
+	}()
+
+	// Generate an index.
+	fn := filepath.Join(dir, indexFilename)
+
+	iw, err := NewWriter(context.Background(), fn)
+	require.NoError(b, err)
+
+	for i := 1; i <= numSeries; i++ {
+		require.NoError(b, iw.AddSymbol(fmt.Sprintf("%10d", i)))
+	}
+	require.NoError(b, iw.AddSymbol("const"))
+	require.NoError(b, iw.AddSymbol("unique"))
+
+	for i := 1; i <= numSeries; i++ {
+		require.NoError(b, iw.AddSeries(uint64(i), labels.Labels{
+			{Name: "const", Value: fmt.Sprintf("%10d", 1)},
+			{Name: "unique", Value: fmt.Sprintf("%10d", i)},
+		}))
+	}
+
+	require.NoError(b, iw.Close())
+
+	for _, cacheEnabled := range []bool{true, false} {
+		b.Run(fmt.Sprintf("cached enabled: %v", cacheEnabled), func(b *testing.B) {
+			var cache ReaderCacheProvider
+			if cacheEnabled {
+				cache = hashcache.NewSeriesHashCache(1024 * 1024 * 1024).GetBlockCacheProvider("test")
+			}
+
+			// Create a reader to read back all postings from the index.
+			ir, err := NewFileReader(fn, cache)
+			require.NoError(b, err)
+
+			b.ResetTimer()
+
+			for n := 0; n < b.N; n++ {
+				allPostings, err := ir.Postings("const", fmt.Sprintf("%10d", 1))
+				require.NoError(b, err)
+
+				ir.ShardedPostings(allPostings, uint64(n%numShards), numShards)
+			}
+		})
+	}
 }

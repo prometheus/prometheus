@@ -283,7 +283,7 @@ type Block struct {
 
 // OpenBlock opens the block in the directory. It can be passed a chunk pool, which is used
 // to instantiate chunk structs.
-func OpenBlock(logger log.Logger, dir string, pool chunkenc.Pool) (pb *Block, err error) {
+func OpenBlock(logger log.Logger, dir string, pool chunkenc.Pool, cache index.ReaderCacheProvider) (pb *Block, err error) {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -304,7 +304,7 @@ func OpenBlock(logger log.Logger, dir string, pool chunkenc.Pool) (pb *Block, er
 	}
 	closers = append(closers, cr)
 
-	ir, err := index.NewFileReader(filepath.Join(dir, indexFilename))
+	ir, err := index.NewFileReader(filepath.Join(dir, indexFilename), cache)
 	if err != nil {
 		return nil, err
 	}

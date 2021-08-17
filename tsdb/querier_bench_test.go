@@ -24,6 +24,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/hashcache"
 )
 
 // Make entries ~50B in size, to emulate real-world high cardinality.
@@ -76,7 +78,7 @@ func BenchmarkPostingsForMatchers(b *testing.B) {
 	}()
 
 	blockdir := createBlockFromHead(b, tmpdir, h)
-	block, err := OpenBlock(nil, blockdir, nil)
+	block, err := OpenBlock(nil, blockdir, nil, nil)
 	require.NoError(b, err)
 	defer func() {
 		require.NoError(b, block.Close())
@@ -162,16 +164,28 @@ func BenchmarkQuerierSelect(b *testing.B) {
 	}
 	require.NoError(b, app.Commit())
 
-	bench := func(b *testing.B, br BlockReader, sorted bool) {
+	bench := func(b *testing.B, br BlockReader, sorted bool, sharding bool) {
 		matcher := labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")
 		for s := 1; s <= numSeries; s *= 10 {
 			b.Run(fmt.Sprintf("%dof%d", s, numSeries), func(b *testing.B) {
-				q, err := NewBlockQuerier(br, 0, int64(s-1))
+				mint := int64(0)
+				maxt := int64(s - 1)
+				q, err := NewBlockQuerier(br, mint, maxt)
 				require.NoError(b, err)
 
 				b.ResetTimer()
 				for i := 0; i < b.N; i++ {
-					ss := q.Select(sorted, nil, matcher)
+					var hints *storage.SelectHints
+					if sharding {
+						hints = &storage.SelectHints{
+							Start:      mint,
+							End:        maxt,
+							ShardIndex: uint64(i % 16),
+							ShardCount: 16,
+						}
+					}
+
+					ss := q.Select(sorted, hints, matcher)
 					for ss.Next() {
 					}
 					require.NoError(b, ss.Err())
@@ -182,10 +196,20 @@ func BenchmarkQuerierSelect(b *testing.B) {
 	}
 
 	b.Run("Head", func(b *testing.B) {
-		bench(b, h, false)
+		b.Run("without sharding", func(b *testing.B) {
+			bench(b, h, false, false)
+		})
+		b.Run("with sharding", func(b *testing.B) {
+			bench(b, h, false, true)
+		})
 	})
 	b.Run("SortedHead", func(b *testing.B) {
-		bench(b, h, true)
+		b.Run("without sharding", func(b *testing.B) {
+			bench(b, h, true, false)
+		})
+		b.Run("with sharding", func(b *testing.B) {
+			bench(b, h, true, true)
+		})
 	})
 
 	tmpdir, err := ioutil.TempDir("", "test_benchquerierselect")
@@ -194,14 +218,20 @@ func BenchmarkQuerierSelect(b *testing.B) {
 		require.NoError(b, os.RemoveAll(tmpdir))
 	}()
 
+	seriesHashCache := hashcache.NewSeriesHashCache(1024 * 1024 * 1024)
 	blockdir := createBlockFromHead(b, tmpdir, h)
-	block, err := OpenBlock(nil, blockdir, nil)
+	block, err := OpenBlock(nil, blockdir, nil, seriesHashCache.GetBlockCacheProvider("test"))
 	require.NoError(b, err)
 	defer func() {
 		require.NoError(b, block.Close())
 	}()
 
 	b.Run("Block", func(b *testing.B) {
-		bench(b, block, false)
+		b.Run("without sharding", func(b *testing.B) {
+			bench(b, block, false, false)
+		})
+		b.Run("with sharding", func(b *testing.B) {
+			bench(b, block, false, true)
+		})
 	})
 }

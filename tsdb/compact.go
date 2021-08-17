@@ -418,7 +418,7 @@ func (c *LeveledCompactor) Compact(dest string, dirs []string, open []*Block) (u
 
 		if b == nil {
 			var err error
-			b, err = OpenBlock(c.logger, d, c.chunkPool)
+			b, err = OpenBlock(c.logger, d, c.chunkPool, nil)
 			if err != nil {
 				return uid, err
 			}
