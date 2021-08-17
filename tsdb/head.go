@@ -1201,13 +1201,14 @@ func (h *Head) getOrCreateWithID(id, hash uint64, lset labels.Labels) (*memSerie
 	h.metrics.seriesCreated.Inc()
 	h.numSeries.Inc()
 
+	// Symbol entry must be created before postings entry.
 	h.symMtx.Lock()
-	defer h.symMtx.Unlock()
-
 	for _, l := range lset {
 		h.symbols[l.Name] = struct{}{}
 		h.symbols[l.Value] = struct{}{}
 	}
+	// Postings has its own lock so we unlock symbols here.
+	h.symMtx.Unlock()
 
 	h.postings.Add(id, lset)
 	return s, true, nil
