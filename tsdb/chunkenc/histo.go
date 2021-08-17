@@ -246,6 +246,7 @@ func (a *HistoAppender) Append(int64, float64) {}
 // * the schema has changed
 // * the zerobucket threshold has changed
 // * any buckets disappeared
+// * there was a counter reset in the count of observations or in any bucket, including the zero bucket
 func (a *HistoAppender) Appendable(h histogram.SparseHistogram) ([]Interjection, []Interjection, bool) {
 	if h.Schema != a.schema || h.ZeroThreshold != a.zeroThreshold {
 		return nil, nil, false
@@ -258,7 +259,87 @@ func (a *HistoAppender) Appendable(h histogram.SparseHistogram) ([]Interjection,
 	if !ok {
 		return nil, nil, false
 	}
+
+	if h.Count < a.cnt || h.ZeroCount < a.zcnt {
+		// There has been a counter reset.
+		return nil, nil, false
+	}
+
+	if counterResetInAnyBucket(a.posbuckets, h.PositiveBuckets, a.posSpans, h.PositiveSpans) {
+		return nil, nil, false
+	}
+	if counterResetInAnyBucket(a.negbuckets, h.NegativeBuckets, a.negSpans, h.NegativeSpans) {
+		return nil, nil, false
+	}
+
 	return posInterjections, negInterjections, ok
+}
+
+// counterResetInAnyBucket returns true if there was a counter reset for any bucket.
+// This should be called only when buckets are same or new buckets were added,
+// and does not handle the case of buckets missing.
+func counterResetInAnyBucket(oldBuckets, newBuckets []int64, oldSpans, newSpans []histogram.Span) bool {
+	if len(oldSpans) == 0 || len(oldBuckets) == 0 {
+		return false
+	}
+
+	oldSpanSliceIdx, newSpanSliceIdx := 0, 0                   // Index for the span slices.
+	oldInsideSpanIdx, newInsideSpanIdx := uint32(0), uint32(0) // Index inside a span.
+	oldIdx, newIdx := oldSpans[0].Offset, newSpans[0].Offset
+
+	oldBucketSliceIdx, newBucketSliceIdx := 0, 0 // Index inside bucket slice.
+	oldVal, newVal := oldBuckets[0], newBuckets[0]
+
+	// Since we assume that new spans won't have missing buckets, there will never be a case
+	// where the old index will not find a matching new index.
+	for {
+		if oldIdx == newIdx {
+			if newVal < oldVal {
+				return true
+			}
+		}
+
+		if oldIdx <= newIdx {
+			// Moving ahead old bucket and span by 1 index.
+			if oldInsideSpanIdx == oldSpans[oldSpanSliceIdx].Length-1 {
+				// Current span is over.
+				oldSpanSliceIdx++
+				oldInsideSpanIdx = 0
+				if oldSpanSliceIdx >= len(oldSpans) {
+					// All old spans are over.
+					break
+				}
+				oldIdx += 1 + oldSpans[oldSpanSliceIdx].Offset
+			} else {
+				oldInsideSpanIdx++
+				oldIdx++
+			}
+			oldBucketSliceIdx++
+			oldVal += oldBuckets[oldBucketSliceIdx]
+		}
+
+		if oldIdx > newIdx {
+			// Moving ahead new bucket and span by 1 index.
+			if newInsideSpanIdx == newSpans[newSpanSliceIdx].Length-1 {
+				// Current span is over.
+				newSpanSliceIdx++
+				newInsideSpanIdx = 0
+				if newSpanSliceIdx >= len(newSpans) {
+					// All new spans are over.
+					// This should not happen, old spans above should catch this first.
+					panic("new spans over before old spans in counterReset")
+				}
+				newIdx += 1 + newSpans[newSpanSliceIdx].Offset
+			} else {
+				newInsideSpanIdx++
+				newIdx++
+			}
+			newBucketSliceIdx++
+			newVal += newBuckets[newBucketSliceIdx]
+		}
+	}
+
+	return false
 }
 
 // AppendHistogram appends a SparseHistogram to the chunk. We assume the
