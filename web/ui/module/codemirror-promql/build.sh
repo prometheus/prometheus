@@ -22,5 +22,8 @@ tsc --module commonjs --target es5 --outDir lib/cjs --downlevelIteration
 # Finally, copy some useful files into the distribution folder for documentation purposes.
 cp ./README.md ./lib/README.md
 cp ./CHANGELOG.md ./lib/CHANGELOG.md
-cp ./LICENSE ./lib/LICENSE
 cp ./package.json ./lib/package.json
+
+if [ -f "./LICENSE" ]; then
+  cp ./LICENSE ./lib/LICENSE
+fi
