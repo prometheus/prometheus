@@ -38,7 +38,13 @@ tests:
 ### `<test_group>`
 
 ``` yaml
-# Series data
+# Series data 
+# Input series simulates values between time intervals
+# Example:
+#      interval: 1m
+#      input_series: 
+#      - series: 'container_memory_usage_bytes{instance="localhost:9090"}'
+#        values: '2300000 2400000 2900000' # values between intervals 2300000@0m 2400000@1m 2500000@2m
 interval: <duration>
 input_series:
   [ - <series> ]
