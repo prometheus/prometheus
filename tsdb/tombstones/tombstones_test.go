@@ -77,11 +77,50 @@ func TestDeletingTombstones(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, intervals, dranges)
 
-	stones.DeleteTombstones(ref)
+	stones.DeleteTombstones([]uint64{ref})
 
 	intervals, err = stones.Get(ref)
 	require.NoError(t, err)
 	require.Empty(t, intervals)
+}
+
+func TestTruncateBefore(t *testing.T) {
+	cases := []struct {
+		before  Intervals
+		beforeT int64
+		after   Intervals
+	}{
+		{
+			before:  Intervals{{1, 2}, {4, 10}, {12, 100}},
+			beforeT: 3,
+			after:   Intervals{{4, 10}, {12, 100}},
+		},
+		{
+			before:  Intervals{{1, 2}, {4, 10}, {12, 100}, {200, 1000}},
+			beforeT: 900,
+			after:   Intervals{{200, 1000}},
+		},
+		{
+			before:  Intervals{{1, 2}, {4, 10}, {12, 100}, {200, 1000}},
+			beforeT: 2000,
+			after:   nil,
+		},
+		{
+			before:  Intervals{{1, 2}, {4, 10}, {12, 100}, {200, 1000}},
+			beforeT: 0,
+			after:   Intervals{{1, 2}, {4, 10}, {12, 100}, {200, 1000}},
+		},
+	}
+	for _, c := range cases {
+		ref := uint64(42)
+		stones := NewMemTombstones()
+		stones.AddInterval(ref, c.before...)
+
+		stones.TruncateBefore(c.beforeT)
+		ts, err := stones.Get(ref)
+		require.NoError(t, err)
+		require.Equal(t, c.after, ts)
+	}
 }
 
 func TestAddingNewIntervals(t *testing.T) {

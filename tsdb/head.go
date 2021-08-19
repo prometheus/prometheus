@@ -1111,6 +1111,8 @@ func (h *Head) gc() int64 {
 		h.tombstones.DeleteTombstones(ref)
 	}
 
+	h.tombstones.TruncateBefore(mint)
+
 	if h.wal != nil {
 		_, last, _ := wal.Segments(h.wal.Dir())
 		h.deletedMtx.Lock()

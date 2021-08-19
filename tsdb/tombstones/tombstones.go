@@ -258,6 +258,24 @@ func (t *MemTombstones) DeleteTombstones(ref uint64) {
 	delete(t.intvlGroups, ref)
 }
 
+func (t *MemTombstones) TruncateBefore(beforeT int64) {
+	t.mtx.Lock()
+	defer t.mtx.Unlock()
+	for ref, ivs := range t.intvlGroups {
+		i := len(ivs) - 1
+		for ; i >= 0; i-- {
+			if beforeT > ivs[i].Maxt {
+				break
+			}
+		}
+		if len(ivs[i+1:]) == 0 {
+			delete(t.intvlGroups, ref)
+		} else {
+			t.intvlGroups[ref] = ivs[i+1:]
+		}
+	}
+}
+
 func (t *MemTombstones) Iter(f func(uint64, Intervals) error) error {
 	t.mtx.RLock()
 	defer t.mtx.RUnlock()
