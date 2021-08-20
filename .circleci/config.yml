@@ -65,6 +65,14 @@ jobs:
           paths:
             - ~/.npm
 
+  test_web_module:
+    executor: golang
+    steps:
+      - checkout
+      - run: make web-module-install
+      - run: make web-module-test
+      - run: make web-module-lint
+
   test_windows:
     executor:
       name: win/default
@@ -134,6 +142,10 @@ workflows:
             tags:
               only: /.*/
       - test_react:
+          filters:
+            tags:
+              only: /.*/
+      - test_web_module:
           filters:
             tags:
               only: /.*/
