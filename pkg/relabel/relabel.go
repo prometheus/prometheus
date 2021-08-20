@@ -130,7 +130,7 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 }
 
 // Reset Default RelabelConfig
-func (c *Config) ResetDefaultRelabelConfigIfNecessary() error{
+func (c *Config) ResetDefaultRelabelConfigIfNecessary() error {
 	if c.Action == "" {
 		c.Action = DefaultRelabelConfig.Action
 	}
