@@ -114,26 +114,23 @@ func (i *Ingress) process(ctx context.Context, ch chan<- []*targetgroup.Group) b
 		return true
 	}
 
+	var ia ingressAdaptor
 	switch ingress := o.(type) {
 	case *v1.Ingress:
-		send(ctx, ch, i.buildIngress(ingress))
-		return true
+		ia = newIngressAdaptorFromV1(ingress)
 	case *v1beta1.Ingress:
-		send(ctx, ch, i.buildIngressV1beta1(ingress))
+		ia = newIngressAdaptorFromV1beta1(ingress)
+	default:
+		level.Error(i.logger).Log("msg", "converting to Ingress object failed", "err",
+			errors.Errorf("received unexpected object: %v", o))
 		return true
 	}
-
-	level.Error(i.logger).Log("msg", "converting to Ingress object failed", "err",
-		errors.Errorf("received unexpected object: %v", o))
+	send(ctx, ch, i.buildIngress(ia))
 	return true
 }
 
-func ingressSource(s *v1.Ingress) string {
-	return ingressSourceFromNamespaceAndName(s.Namespace, s.Name)
-}
-
-func ingressSourceV1beta1(s *v1beta1.Ingress) string {
-	return ingressSourceFromNamespaceAndName(s.Namespace, s.Name)
+func ingressSource(s ingressAdaptor) string {
+	return ingressSourceFromNamespaceAndName(s.namespace(), s.name())
 }
 
 func ingressSourceFromNamespaceAndName(namespace, name string) string {
@@ -152,22 +149,22 @@ const (
 	ingressClassNameLabel          = metaLabelPrefix + "ingress_class_name"
 )
 
-func ingressLabels(ingress *v1.Ingress) model.LabelSet {
+func ingressLabels(ingress ingressAdaptor) model.LabelSet {
 	// Each label and annotation will create two key-value pairs in the map.
-	ls := make(model.LabelSet, 2*(len(ingress.Labels)+len(ingress.Annotations))+2)
-	ls[ingressNameLabel] = lv(ingress.Name)
-	ls[namespaceLabel] = lv(ingress.Namespace)
-	if ingress.Spec.IngressClassName != nil {
-		ls[ingressClassNameLabel] = lv(*ingress.Spec.IngressClassName)
+	ls := make(model.LabelSet, 2*(len(ingress.labels())+len(ingress.annotations()))+2)
+	ls[ingressNameLabel] = lv(ingress.name())
+	ls[namespaceLabel] = lv(ingress.namespace())
+	if cls := ingress.ingressClassName(); cls != nil {
+		ls[ingressClassNameLabel] = lv(*cls)
 	}
 
-	for k, v := range ingress.Labels {
+	for k, v := range ingress.labels() {
 		ln := strutil.SanitizeLabelName(k)
 		ls[model.LabelName(ingressLabelPrefix+ln)] = lv(v)
 		ls[model.LabelName(ingressLabelPresentPrefix+ln)] = presentValue
 	}
 
-	for k, v := range ingress.Annotations {
+	for k, v := range ingress.annotations() {
 		ln := strutil.SanitizeLabelName(k)
 		ls[model.LabelName(ingressAnnotationPrefix+ln)] = lv(v)
 		ls[model.LabelName(ingressAnnotationPresentPrefix+ln)] = presentValue
@@ -175,37 +172,14 @@ func ingressLabels(ingress *v1.Ingress) model.LabelSet {
 	return ls
 }
 
-func ingressLabelsV1beta1(ingress *v1beta1.Ingress) model.LabelSet {
-	// Each label and annotation will create two key-value pairs in the map.
-	ls := make(model.LabelSet, 2*(len(ingress.Labels)+len(ingress.Annotations))+2)
-	ls[ingressNameLabel] = lv(ingress.Name)
-	ls[namespaceLabel] = lv(ingress.Namespace)
-	if ingress.Spec.IngressClassName != nil {
-		ls[ingressClassNameLabel] = lv(*ingress.Spec.IngressClassName)
-	}
-
-	for k, v := range ingress.Labels {
-		ln := strutil.SanitizeLabelName(k)
-		ls[model.LabelName(ingressLabelPrefix+ln)] = lv(v)
-		ls[model.LabelName(ingressLabelPresentPrefix+ln)] = presentValue
-	}
-
-	for k, v := range ingress.Annotations {
-		ln := strutil.SanitizeLabelName(k)
-		ls[model.LabelName(ingressAnnotationPrefix+ln)] = lv(v)
-		ls[model.LabelName(ingressAnnotationPresentPrefix+ln)] = presentValue
-	}
-	return ls
-}
-
-func pathsFromIngressRule(rv *v1.IngressRuleValue) []string {
-	if rv.HTTP == nil {
+func pathsFromIngressPaths(ingressPaths []string) []string {
+	if ingressPaths == nil {
 		return []string{"/"}
 	}
-	paths := make([]string, len(rv.HTTP.Paths))
-	for n, p := range rv.HTTP.Paths {
-		path := p.Path
-		if path == "" {
+	paths := make([]string, len(ingressPaths))
+	for n, p := range ingressPaths {
+		path := p
+		if p == "" {
 			path = "/"
 		}
 		paths[n] = path
@@ -213,83 +187,31 @@ func pathsFromIngressRule(rv *v1.IngressRuleValue) []string {
 	return paths
 }
 
-func pathsFromIngressRuleV1beta1(rv *v1beta1.IngressRuleValue) []string {
-	if rv.HTTP == nil {
-		return []string{"/"}
-	}
-	paths := make([]string, len(rv.HTTP.Paths))
-	for n, p := range rv.HTTP.Paths {
-		path := p.Path
-		if path == "" {
-			path = "/"
-		}
-		paths[n] = path
-	}
-	return paths
-}
-
-func (i *Ingress) buildIngress(ingress *v1.Ingress) *targetgroup.Group {
+func (i *Ingress) buildIngress(ingress ingressAdaptor) *targetgroup.Group {
 	tg := &targetgroup.Group{
 		Source: ingressSource(ingress),
 	}
 	tg.Labels = ingressLabels(ingress)
 
 	tlsHosts := make(map[string]struct{})
-	for _, tls := range ingress.Spec.TLS {
-		for _, host := range tls.Hosts {
-			tlsHosts[host] = struct{}{}
-		}
+	for _, host := range ingress.tlsHosts() {
+		tlsHosts[host] = struct{}{}
 	}
 
-	for _, rule := range ingress.Spec.Rules {
-		paths := pathsFromIngressRule(&rule.IngressRuleValue)
+	for _, rule := range ingress.rules() {
+		paths := pathsFromIngressPaths(rule.paths())
 
 		scheme := "http"
-		_, isTLS := tlsHosts[rule.Host]
+		_, isTLS := tlsHosts[rule.host()]
 		if isTLS {
 			scheme = "https"
 		}
 
 		for _, path := range paths {
 			tg.Targets = append(tg.Targets, model.LabelSet{
-				model.AddressLabel: lv(rule.Host),
+				model.AddressLabel: lv(rule.host()),
 				ingressSchemeLabel: lv(scheme),
-				ingressHostLabel:   lv(rule.Host),
-				ingressPathLabel:   lv(path),
-			})
-		}
-	}
-
-	return tg
-}
-
-func (i *Ingress) buildIngressV1beta1(ingress *v1beta1.Ingress) *targetgroup.Group {
-	tg := &targetgroup.Group{
-		Source: ingressSourceV1beta1(ingress),
-	}
-	tg.Labels = ingressLabelsV1beta1(ingress)
-
-	tlsHosts := make(map[string]struct{})
-	for _, tls := range ingress.Spec.TLS {
-		for _, host := range tls.Hosts {
-			tlsHosts[host] = struct{}{}
-		}
-	}
-
-	for _, rule := range ingress.Spec.Rules {
-		paths := pathsFromIngressRuleV1beta1(&rule.IngressRuleValue)
-
-		scheme := "http"
-		_, isTLS := tlsHosts[rule.Host]
-		if isTLS {
-			scheme = "https"
-		}
-
-		for _, path := range paths {
-			tg.Targets = append(tg.Targets, model.LabelSet{
-				model.AddressLabel: lv(rule.Host),
-				ingressSchemeLabel: lv(scheme),
-				ingressHostLabel:   lv(rule.Host),
+				ingressHostLabel:   lv(rule.host()),
 				ingressPathLabel:   lv(path),
 			})
 		}
