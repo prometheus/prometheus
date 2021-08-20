@@ -8,7 +8,7 @@
     "start": "webpack-dev-server --config webpack.config.cjs --open",
     "build": "npm run build-lib && npm run build-app",
     "build-lib": "bash ./build.sh",
-    "build-app": "webpack --config webpack.config.cjs",
+    "build-app": "webpack --config webpack.config.cjs && rm -rf ./lib/app && rm -rf ./lib/lang-promql",
     "test": "ts-mocha -p tsconfig.json src/**/*.test.ts",
     "test-coverage": "nyc ts-mocha -p ./tsconfig.json ./**/*.test.ts",
     "codecov": "nyc report --reporter=text-lcov > coverage.lcov && codecov",
@@ -36,13 +36,13 @@
     "lru-cache": "^6.0.0"
   },
   "devDependencies": {
-    "@codemirror/autocomplete": "^0.18.3",
-    "@codemirror/basic-setup": "^0.18.0",
-    "@codemirror/highlight": "^0.18.3",
-    "@codemirror/language": "^0.18.0",
-    "@codemirror/lint": "^0.18.1",
-    "@codemirror/state": "^0.18.2",
-    "@codemirror/view": "^0.18.1",
+    "@codemirror/autocomplete": "^0.18.8",
+    "@codemirror/basic-setup": "^0.18.2",
+    "@codemirror/highlight": "^0.18.4",
+    "@codemirror/language": "^0.18.2",
+    "@codemirror/lint": "^0.18.6",
+    "@codemirror/state": "^0.18.7",
+    "@codemirror/view": "^0.18.19",
     "@types/chai": "^4.2.12",
     "@types/lru-cache": "^5.1.0",
     "@types/mocha": "^8.0.3",
@@ -72,12 +72,12 @@
     "webpack-dev-server": "^3.11.0"
   },
   "peerDependencies": {
-    "@codemirror/autocomplete": "^0.18.3",
-    "@codemirror/highlight": "^0.18.3",
-    "@codemirror/language": "^0.18.0",
-    "@codemirror/lint": "^0.18.1",
-    "@codemirror/state": "^0.18.2",
-    "@codemirror/view": "^0.18.1"
+    "@codemirror/autocomplete": "^0.18.8",
+    "@codemirror/highlight": "^0.18.4",
+    "@codemirror/language": "^0.18.2",
+    "@codemirror/lint": "^0.18.6",
+    "@codemirror/state": "^0.18.7",
+    "@codemirror/view": "^0.18.19"
   },
   "prettier": {
     "singleQuote": true,

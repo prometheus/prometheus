@@ -60,7 +60,7 @@ react-app-lint-fix:
 	cd $(REACT_APP_PATH) && npm run lint
 
 .PHONY: react-app-test
-react-app-test: | $(REACT_APP_NODE_MODULES_PATH) react-app-lint
+react-app-test: | $(REACT_APP_NODE_MODULES_PATH) web-module-install web-module-build react-app-lint
 	@echo ">> running React app tests"
 	cd $(REACT_APP_PATH) && npm run test --no-watch --coverage
 
