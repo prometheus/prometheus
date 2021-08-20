@@ -1099,12 +1099,22 @@ func (b realByteSlice) Sub(start, end int) ByteSlice {
 
 // NewReader returns a new index reader on the given byte slice. It automatically
 // handles different format versions.
-func NewReader(b ByteSlice, cacheProvider ReaderCacheProvider) (*Reader, error) {
+func NewReader(b ByteSlice) (*Reader, error) {
+	return newReader(b, ioutil.NopCloser(nil), nil)
+}
+
+// NewReaderWithCache is like NewReader but allows to pass a cache provider.
+func NewReaderWithCache(b ByteSlice, cacheProvider ReaderCacheProvider) (*Reader, error) {
 	return newReader(b, ioutil.NopCloser(nil), cacheProvider)
 }
 
 // NewFileReader returns a new index reader against the given index file.
-func NewFileReader(path string, cacheProvider ReaderCacheProvider) (*Reader, error) {
+func NewFileReader(path string) (*Reader, error) {
+	return NewFileReaderWithCache(path, nil)
+}
+
+// NewFileReaderWithCache is like NewFileReader but allows to pass a cache provider.
+func NewFileReaderWithCache(path string, cacheProvider ReaderCacheProvider) (*Reader, error) {
 	f, err := fileutil.OpenMmapFile(path)
 	if err != nil {
 		return nil, err

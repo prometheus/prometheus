@@ -1323,7 +1323,7 @@ func BenchmarkQueryIterator(b *testing.B) {
 					} else {
 						generatedSeries = populateSeries(prefilledLabels, mint, maxt)
 					}
-					block, err := OpenBlock(nil, createBlock(b, dir, generatedSeries), nil, nil)
+					block, err := OpenBlock(nil, createBlock(b, dir, generatedSeries), nil)
 					require.NoError(b, err)
 					blocks = append(blocks, block)
 					defer block.Close()
@@ -1390,7 +1390,7 @@ func BenchmarkQuerySeek(b *testing.B) {
 					} else {
 						generatedSeries = populateSeries(prefilledLabels, mint, maxt)
 					}
-					block, err := OpenBlock(nil, createBlock(b, dir, generatedSeries), nil, nil)
+					block, err := OpenBlock(nil, createBlock(b, dir, generatedSeries), nil)
 					require.NoError(b, err)
 					blocks = append(blocks, block)
 					defer block.Close()
@@ -1529,7 +1529,7 @@ func BenchmarkSetMatcher(b *testing.B) {
 			} else {
 				generatedSeries = populateSeries(prefilledLabels, mint, maxt)
 			}
-			block, err := OpenBlock(nil, createBlock(b, dir, generatedSeries), nil, nil)
+			block, err := OpenBlock(nil, createBlock(b, dir, generatedSeries), nil)
 			require.NoError(b, err)
 			blocks = append(blocks, block)
 			defer block.Close()
@@ -1984,7 +1984,7 @@ func BenchmarkQueries(b *testing.B) {
 
 				qs := make([]storage.Querier, 0, 10)
 				for x := 0; x <= 10; x++ {
-					block, err := OpenBlock(nil, createBlock(b, dir, series), nil, nil)
+					block, err := OpenBlock(nil, createBlock(b, dir, series), nil)
 					require.NoError(b, err)
 					q, err := NewBlockQuerier(block, 1, int64(nSamples))
 					require.NoError(b, err)

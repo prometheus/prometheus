@@ -150,7 +150,7 @@ func TestIndexRW_Create_Open(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, iw.Close())
 
-	ir, err := NewFileReader(fn, nil)
+	ir, err := NewFileReader(fn)
 	require.NoError(t, err)
 	require.NoError(t, ir.Close())
 
@@ -161,7 +161,7 @@ func TestIndexRW_Create_Open(t *testing.T) {
 	require.NoError(t, err)
 	f.Close()
 
-	_, err = NewFileReader(dir, nil)
+	_, err = NewFileReader(dir)
 	require.Error(t, err)
 }
 
@@ -200,7 +200,7 @@ func TestIndexRW_Postings(t *testing.T) {
 
 	require.NoError(t, iw.Close())
 
-	ir, err := NewFileReader(fn, nil)
+	ir, err := NewFileReader(fn)
 	require.NoError(t, err)
 
 	p, err := ir.Postings("a", "1")
@@ -254,7 +254,7 @@ func TestIndexRW_Postings(t *testing.T) {
 				cache = hashcache.NewSeriesHashCache(1024 * 1024 * 1024).GetBlockCacheProvider("test")
 			}
 
-			ir, err := NewFileReader(fn, cache)
+			ir, err := NewFileReaderWithCache(fn, cache)
 			require.NoError(t, err)
 
 			// List all postings for a given label value. This is what we expect to get
@@ -343,7 +343,7 @@ func TestPostingsMany(t *testing.T) {
 	}
 	require.NoError(t, iw.Close())
 
-	ir, err := NewFileReader(fn, nil)
+	ir, err := NewFileReader(fn)
 	require.NoError(t, err)
 	defer func() { require.NoError(t, ir.Close()) }()
 
@@ -481,7 +481,7 @@ func TestPersistence_index_e2e(t *testing.T) {
 	err = iw.Close()
 	require.NoError(t, err)
 
-	ir, err := NewFileReader(filepath.Join(dir, indexFilename), nil)
+	ir, err := NewFileReader(filepath.Join(dir, indexFilename))
 	require.NoError(t, err)
 
 	for p := range mi.postings {
@@ -553,7 +553,7 @@ func TestDecbufUvarintWithInvalidBuffer(t *testing.T) {
 func TestReaderWithInvalidBuffer(t *testing.T) {
 	b := realByteSlice([]byte{0x81, 0x81, 0x81, 0x81, 0x81, 0x81})
 
-	_, err := NewReader(b, nil)
+	_, err := NewReader(b)
 	require.Error(t, err)
 }
 
@@ -565,7 +565,7 @@ func TestNewFileReaderErrorNoOpenFiles(t *testing.T) {
 	err := ioutil.WriteFile(idxName, []byte("corrupted contents"), 0666)
 	require.NoError(t, err)
 
-	_, err = NewFileReader(idxName, nil)
+	_, err = NewFileReader(idxName)
 	require.Error(t, err)
 
 	// dir.Close will fail on Win if idxName fd is not closed on error path.
@@ -660,7 +660,7 @@ func BenchmarkReader_ShardedPostings(b *testing.B) {
 			}
 
 			// Create a reader to read back all postings from the index.
-			ir, err := NewFileReader(fn, cache)
+			ir, err := NewFileReaderWithCache(fn, cache)
 			require.NoError(b, err)
 
 			b.ResetTimer()

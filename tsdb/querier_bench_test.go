@@ -78,7 +78,7 @@ func BenchmarkPostingsForMatchers(b *testing.B) {
 	}()
 
 	blockdir := createBlockFromHead(b, tmpdir, h)
-	block, err := OpenBlock(nil, blockdir, nil, nil)
+	block, err := OpenBlock(nil, blockdir, nil)
 	require.NoError(b, err)
 	defer func() {
 		require.NoError(b, block.Close())
@@ -220,7 +220,7 @@ func BenchmarkQuerierSelect(b *testing.B) {
 
 	seriesHashCache := hashcache.NewSeriesHashCache(1024 * 1024 * 1024)
 	blockdir := createBlockFromHead(b, tmpdir, h)
-	block, err := OpenBlock(nil, blockdir, nil, seriesHashCache.GetBlockCacheProvider("test"))
+	block, err := OpenBlockWithCache(nil, blockdir, nil, seriesHashCache.GetBlockCacheProvider("test"))
 	require.NoError(b, err)
 	defer func() {
 		require.NoError(b, block.Close())

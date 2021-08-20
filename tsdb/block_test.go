@@ -64,14 +64,14 @@ func TestSetCompactionFailed(t *testing.T) {
 	}()
 
 	blockDir := createBlock(t, tmpdir, genSeries(1, 1, 0, 1))
-	b, err := OpenBlock(nil, blockDir, nil, nil)
+	b, err := OpenBlock(nil, blockDir, nil)
 	require.NoError(t, err)
 	require.Equal(t, false, b.meta.Compaction.Failed)
 	require.NoError(t, b.setCompactionFailed())
 	require.Equal(t, true, b.meta.Compaction.Failed)
 	require.NoError(t, b.Close())
 
-	b, err = OpenBlock(nil, blockDir, nil, nil)
+	b, err = OpenBlock(nil, blockDir, nil)
 	require.NoError(t, err)
 	require.Equal(t, true, b.meta.Compaction.Failed)
 	require.NoError(t, b.Close())
@@ -83,7 +83,7 @@ func TestCreateBlock(t *testing.T) {
 	defer func() {
 		require.NoError(t, os.RemoveAll(tmpdir))
 	}()
-	b, err := OpenBlock(nil, createBlock(t, tmpdir, genSeries(1, 1, 0, 10)), nil, nil)
+	b, err := OpenBlock(nil, createBlock(t, tmpdir, genSeries(1, 1, 0, 10)), nil)
 	if err == nil {
 		require.NoError(t, b.Close())
 	}
@@ -193,7 +193,7 @@ func TestCorruptedChunk(t *testing.T) {
 			require.NoError(t, f.Close())
 
 			// Check open err.
-			b, err := OpenBlock(nil, blockDir, nil, nil)
+			b, err := OpenBlock(nil, blockDir, nil)
 			if tc.openErr != nil {
 				require.Equal(t, tc.openErr.Error(), err.Error())
 				return
@@ -235,7 +235,7 @@ func TestLabelValuesWithMatchers(t *testing.T) {
 	require.Greater(t, len(files), 0, "No chunk created.")
 
 	// Check open err.
-	block, err := OpenBlock(nil, blockDir, nil, nil)
+	block, err := OpenBlock(nil, blockDir, nil)
 	require.NoError(t, err)
 	defer func() { require.NoError(t, block.Close()) }()
 
@@ -303,7 +303,7 @@ func TestBlockSize(t *testing.T) {
 	// Create a block and compare the reported size vs actual disk size.
 	{
 		blockDirInit = createBlock(t, tmpdir, genSeries(10, 1, 1, 100))
-		blockInit, err = OpenBlock(nil, blockDirInit, nil, nil)
+		blockInit, err = OpenBlock(nil, blockDirInit, nil)
 		require.NoError(t, err)
 		defer func() {
 			require.NoError(t, blockInit.Close())
@@ -327,7 +327,7 @@ func TestBlockSize(t *testing.T) {
 		require.NoError(t, err)
 		blockDirAfterCompact, err := c.Compact(tmpdir, []string{blockInit.Dir()}, nil)
 		require.NoError(t, err)
-		blockAfterCompact, err := OpenBlock(nil, filepath.Join(tmpdir, blockDirAfterCompact.String()), nil, nil)
+		blockAfterCompact, err := OpenBlock(nil, filepath.Join(tmpdir, blockDirAfterCompact.String()), nil)
 		require.NoError(t, err)
 		defer func() {
 			require.NoError(t, blockAfterCompact.Close())
@@ -358,7 +358,7 @@ func TestReadIndexFormatV1(t *testing.T) {
 	*/
 
 	blockDir := filepath.Join("testdata", "index_format_v1")
-	block, err := OpenBlock(nil, blockDir, nil, nil)
+	block, err := OpenBlock(nil, blockDir, nil)
 	require.NoError(t, err)
 
 	q, err := NewBlockQuerier(block, 0, 1000)
@@ -398,7 +398,7 @@ func BenchmarkLabelValuesWithMatchers(b *testing.B) {
 	require.Greater(b, len(files), 0, "No chunk created.")
 
 	// Check open err.
-	block, err := OpenBlock(nil, blockDir, nil, nil)
+	block, err := OpenBlock(nil, blockDir, nil)
 	require.NoError(b, err)
 	defer func() { require.NoError(b, block.Close()) }()
 
@@ -452,7 +452,7 @@ func TestLabelNamesWithMatchers(t *testing.T) {
 	require.Greater(t, len(files), 0, "No chunk created.")
 
 	// Check open err.
-	block, err := OpenBlock(nil, blockDir, nil, nil)
+	block, err := OpenBlock(nil, blockDir, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, block.Close()) })
 
