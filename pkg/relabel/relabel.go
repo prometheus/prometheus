@@ -97,8 +97,8 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err := unmarshal((*plain)(c)); err != nil {
 		return err
 	}
-	if c.Regex.Regexp == nil {
-		c.Regex = MustNewRegexp("")
+	if err := c.ResetDefaultRelabelConfigIfNecessary(); err != nil {
+		return err
 	}
 	if c.Modulus == 0 && c.Action == HashMod {
 		return errors.Errorf("relabel configuration for hashmod requires non-zero modulus")
@@ -124,6 +124,27 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 			c.Replacement != DefaultRelabelConfig.Replacement {
 			return errors.Errorf("%s action requires only 'regex', and no other fields", c.Action)
 		}
+	}
+
+	return nil
+}
+
+// Reset Default RelabelConfig
+func (c *Config) ResetDefaultRelabelConfigIfNecessary() error{
+	if c.Action == "" {
+		c.Action = DefaultRelabelConfig.Action
+	}
+
+	if c.Regex.Regexp == nil {
+		c.Regex = DefaultRelabelConfig.Regex
+	}
+
+	if c.Replacement == "" {
+		c.Replacement = DefaultRelabelConfig.Replacement
+	}
+
+	if c.Separator == "" {
+		c.Separator = DefaultRelabelConfig.Separator
 	}
 
 	return nil
