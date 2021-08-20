@@ -136,7 +136,7 @@ func (c *Config) ResetDefaultRelabelConfigIfNecessary() error {
 	}
 
 	if c.Regex.Regexp == nil {
-		c.Regex = DefaultRelabelConfig.Regex
+		c.Regex = MustNewRegexp("")
 	}
 
 	if c.Replacement == "" {
