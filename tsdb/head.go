@@ -523,7 +523,7 @@ func (h *Head) Init(minValidTime int64) (err error) {
 	h.startWALReplayStatus(startFrom, endAt)
 
 	multiRef := map[uint64]uint64{}
-	if err == nil {
+	if err == nil && startFrom >= snapIdx {
 		sr, err := wal.NewSegmentsReader(dir)
 		if err != nil {
 			return errors.Wrap(err, "open checkpoint")
