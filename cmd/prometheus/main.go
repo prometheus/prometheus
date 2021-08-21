@@ -565,15 +565,16 @@ func main() {
 
 	if !agentMode {
 		opts := promql.EngineOpts{
-			Logger:                   log.With(logger, "component", "query engine"),
-			Reg:                      prometheus.DefaultRegisterer,
-			MaxSamples:               cfg.queryMaxSamples,
-			Timeout:                  time.Duration(cfg.queryTimeout),
-			ActiveQueryTracker:       promql.NewActiveQueryTracker(localStoragePath, cfg.queryConcurrency, log.With(logger, "component", "activeQueryTracker")),
-			LookbackDelta:            time.Duration(cfg.lookbackDelta),
-			NoStepSubqueryIntervalFn: noStepSubqueryInterval.Get,
-			EnableAtModifier:         cfg.enablePromQLAtModifier,
-			EnableNegativeOffset:     cfg.enablePromQLNegativeOffset,
+			Logger:                      log.With(logger, "component", "query engine"),
+			Reg:                         prometheus.DefaultRegisterer,
+			MaxSamples:                  cfg.queryMaxSamples,
+			Timeout:                     time.Duration(cfg.queryTimeout),
+			ActiveQueryTracker:          promql.NewActiveQueryTracker(localStoragePath, cfg.queryConcurrency, log.With(logger, "component", "activeQueryTracker")),
+			LookbackDelta:               time.Duration(cfg.lookbackDelta),
+			NoStepSubqueryIntervalFn:    noStepSubqueryInterval.Get,
+			EnableAtModifier:            cfg.enablePromQLAtModifier,
+			EnableNegativeOffset:        cfg.enablePromQLNegativeOffset,
+			EnableEvalAlignedSubqueries: cfg.enablePromQLEvalAlignedSubqueries,
 		}
 
 		queryEngine = promql.NewEngine(opts)
