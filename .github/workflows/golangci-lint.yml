@@ -1,12 +1,19 @@
 name: golangci-lint
 on:
   push:
+    paths:
+      - "go.sum"
+      - "go.mod"
+      - "**.go"
+      - "scripts/errcheck_excludes.txt"
+      - ".github/workflows/golangci-lint.yml"
   pull_request:
     paths:
       - "go.sum"
       - "go.mod"
       - "**.go"
       - "scripts/errcheck_excludes.txt"
+      - ".github/workflows/golangci-lint.yml"
 
 jobs:
   golangci:
