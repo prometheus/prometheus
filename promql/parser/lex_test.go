@@ -705,6 +705,23 @@ var tests = []struct {
 				},
 			},
 			{
+				input: `test:name{on!~"bar"}[4m::15s]`,
+				expected: []Item{
+					{METRIC_IDENTIFIER, 0, `test:name`},
+					{LEFT_BRACE, 9, `{`},
+					{IDENTIFIER, 10, `on`},
+					{NEQ_REGEX, 12, `!~`},
+					{STRING, 14, `"bar"`},
+					{RIGHT_BRACE, 19, `}`},
+					{LEFT_BRACKET, 20, `[`},
+					{DURATION, 21, `4m`},
+					{DOUBLECOLON, 23, `::`},
+					{DURATION, 25, `15s`},
+					{RIGHT_BRACKET, 28, `]`},
+				},
+			},
+
+			{
 				input: `test:name[ 5m]`,
 				expected: []Item{
 					{METRIC_IDENTIFIER, 0, `test:name`},
