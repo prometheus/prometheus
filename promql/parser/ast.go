@@ -135,7 +135,7 @@ type SubqueryExpr struct {
 	// eval time, and subquery offsets in the AST tree.
 	Offset        time.Duration
 	Timestamp     *int64
-	StartOrEnd    ItemType // Set when @ is used with start() or end()
+	StartOrEnd    ItemType // Set when @ is used with start() or end().
 	Step          time.Duration
 	AlignEvalTime bool
 

@@ -228,7 +228,7 @@ type EngineOpts struct {
 	// EnableNegativeOffset if true enables negative (-) offset values. Disabled otherwise.
 	EnableNegativeOffset bool
 
-	// EnableEvalAlignedSubqueries if true enabled the :: subquery. Disabled otherwise.
+	// EnableEvalAlignedSubqueries if true enables the :: subquery. Disabled otherwise.
 	EnableEvalAlignedSubqueries bool
 }
 

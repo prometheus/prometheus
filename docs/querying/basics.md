@@ -272,7 +272,7 @@ Syntax: `<instant_query> '[' <range> ':' [<resolution>] ']' [ @ <float_literal> 
 
 Subqueries are aligned to multiples of the subquery's interval, which is a 
 [performance optimization](https://www.robustperception.io/promql-subqueries-and-alignment). If you wish to
-have your subquery aligned to the evaluation time, you can use the expiremental syntax:
+have your subquery aligned to the evaluation time, you can use the experimental syntax:
 
 `<instant_query> '[' <range> '::' [<resolution>] ']' [ @ <float_literal> ] [ offset <duration> ]`
 
