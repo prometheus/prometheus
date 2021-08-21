@@ -1551,7 +1551,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 				newEv.startTimestamp += newEv.interval
 			}
 		} else {
-			newEv.startTimestamp = ev.startTimestamp - offsetMillis - rangeMillis + newEv.interval
+			newEv.startTimestamp = ev.startTimestamp - offsetMillis - rangeMillis
 		}
 
 		if newEv.startTimestamp != ev.startTimestamp {
