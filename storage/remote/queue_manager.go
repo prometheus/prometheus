@@ -812,13 +812,13 @@ func (t *QueueManager) calculateDesiredShards() int {
 	var (
 		dataInRate      = t.dataIn.rate()
 		dataOutRate     = t.dataOut.rate()
-		dataKeptRatio   = dataOutRate / (t.dataDropped.rate() + dataOutRate)
+		dataDroppedRate = t.dataDropped.rate()
+		dataKeptRatio   = 1 - (dataDroppedRate / dataInRate)
 		dataOutDuration = t.dataOutDuration.rate() / float64(time.Second)
-		dataPendingRate = dataInRate*dataKeptRatio - dataOutRate
 		highestSent     = t.metrics.highestSentTimestamp.Get()
 		highestRecv     = t.highestRecvTimestamp.Get()
+		dataPendingRate = dataInRate - dataOutRate - dataDroppedRate
 		delay           = highestRecv - highestSent
-		dataPending     = delay * dataInRate * dataKeptRatio
 	)
 
 	if dataOutRate <= 0 {
@@ -832,7 +832,7 @@ func (t *QueueManager) calculateDesiredShards() int {
 
 	var (
 		timePerSample = dataOutDuration / dataOutRate
-		desiredShards = timePerSample * (dataInRate*dataKeptRatio + integralGain*dataPending)
+		desiredShards = timePerSample * (dataInRate*dataKeptRatio + integralGain*dataPendingRate)
 	)
 	t.metrics.desiredNumShards.Set(desiredShards)
 	level.Debug(t.logger).Log("msg", "QueueManager.calculateDesiredShards",
@@ -840,7 +840,6 @@ func (t *QueueManager) calculateDesiredShards() int {
 		"dataOutRate", dataOutRate,
 		"dataKeptRatio", dataKeptRatio,
 		"dataPendingRate", dataPendingRate,
-		"dataPending", dataPending,
 		"dataOutDuration", dataOutDuration,
 		"timePerSample", timePerSample,
 		"desiredShards", desiredShards,
