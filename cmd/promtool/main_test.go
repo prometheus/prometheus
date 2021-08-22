@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/rulefmt"
 	"github.com/stretchr/testify/require"
 )
@@ -136,6 +137,7 @@ func TestCheckDuplicates(t *testing.T) {
 			expectedDups: []compareRuleType{
 				{
 					metric: "job:test:count_over_time1m",
+					label:  labels.New(),
 				},
 			},
 		},
