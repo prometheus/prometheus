@@ -828,7 +828,7 @@ func (t *QueueManager) calculateDesiredShards() int {
 	// When behind we will try to catch up on a proporation of samples per tick.
 	// This works similarly to an integral accumulator in that pending samples
 	// is the result of the error integral.
-	const integralGain = 0.1 / float64(shardUpdateDuration/time.Second)
+	const integralGain = 0.5 / float64(shardUpdateDuration/time.Second)
 
 	var (
 		timePerSample = dataOutDuration / dataOutRate
