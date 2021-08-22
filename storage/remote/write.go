@@ -93,16 +93,7 @@ func NewWriteStorage(logger log.Logger, reg prometheus.Registerer, walDir string
 	if reg != nil {
 		reg.MustRegister(rws.highestTimestamp)
 	}
-	go rws.run()
 	return rws
-}
-
-func (rws *WriteStorage) run() {
-	ticker := time.NewTicker(shardUpdateDuration)
-	defer ticker.Stop()
-	for range ticker.C {
-		rws.samplesIn.tick()
-	}
 }
 
 // ApplyConfig updates the state as the new config requires.

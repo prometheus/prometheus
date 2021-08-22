@@ -801,6 +801,7 @@ func (t *QueueManager) shouldReshard(desiredShards int) bool {
 // based on the return value.
 func (t *QueueManager) calculateDesiredShards() int {
 	t.dataOut.tick()
+	t.dataIn.tick()
 	t.dataDropped.tick()
 	t.dataOutDuration.tick()
 

@@ -891,7 +891,6 @@ func TestCalculateDesiredShards(t *testing.T) {
 	addSamples := func(s int64, ts time.Duration) {
 		pendingSamples += s
 		samplesIn.incr(s)
-		samplesIn.tick()
 
 		m.highestRecvTimestamp.Set(float64(startedAt.Add(ts).Unix()))
 	}
