@@ -14,6 +14,7 @@
 package remote
 
 import (
+	"math"
 	"sync"
 	"time"
 
@@ -23,6 +24,7 @@ import (
 // ewmaRate tracks an exponentially weighted moving average of a per-second rate.
 type ewmaRate struct {
 	newEvents atomic.Int64
+	t         atomic.Int64
 
 	alpha    float64
 	interval time.Duration
@@ -44,7 +46,9 @@ func newEWMARate(alpha float64, interval time.Duration) *ewmaRate {
 func (r *ewmaRate) rate() float64 {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
-	return r.lastRate
+	r.t.Add(1)
+	// for bias correction, lastRate = lastRate/(1-(1-alpha))^t
+	return r.lastRate / (1 - math.Pow(1-r.alpha, float64(r.t.Load())))
 }
 
 // tick assumes to be called every r.interval.
