@@ -120,6 +120,6 @@ func TestInverse(t *testing.T) {
 
 func BenchmarkMatchType_String(b *testing.B) {
 	for i := 0; i <= b.N; i++ {
-		_ = MatchType(i % int(MatchNotRegexp)).String()
+		_ = MatchType(i % int(MatchNotRegexp+1)).String()
 	}
 }
