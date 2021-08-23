@@ -252,10 +252,12 @@ func (t *MemTombstones) Get(ref uint64) (Intervals, error) {
 	return t.intvlGroups[ref], nil
 }
 
-func (t *MemTombstones) DeleteTombstones(ref uint64) {
+func (t *MemTombstones) DeleteTombstones(refs []uint64) {
 	t.mtx.Lock()
 	defer t.mtx.Unlock()
-	delete(t.intvlGroups, ref)
+	for _, ref := range refs {
+		delete(t.intvlGroups, ref)
+	}
 }
 
 func (t *MemTombstones) TruncateBefore(beforeT int64) {

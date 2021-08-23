@@ -1107,10 +1107,12 @@ func (h *Head) gc() int64 {
 	h.postings.Delete(deleted)
 
 	// Remove tombstones referring to the deleted series.
+	refs := make([]uint64, 0, len(deleted))
 	for ref := range deleted {
-		h.tombstones.DeleteTombstones(ref)
+		refs = append(refs, ref)
 	}
 
+	h.tombstones.DeleteTombstones(refs)
 	h.tombstones.TruncateBefore(mint)
 
 	if h.wal != nil {
