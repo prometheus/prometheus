@@ -28,7 +28,7 @@ const (
 	MatchNotRegexp
 )
 
-var matchTypeToStr = map[MatchType]string{
+var matchTypeToStr = [...]string{
 	MatchEqual:     "=",
 	MatchNotEqual:  "!=",
 	MatchRegexp:    "=~",
@@ -36,10 +36,10 @@ var matchTypeToStr = map[MatchType]string{
 }
 
 func (m MatchType) String() string {
-	if str, ok := matchTypeToStr[m]; ok {
-		return str
+	if m < 0 || int(m) > len(matchTypeToStr) {
+		panic("unknown match type")
 	}
-	panic("unknown match type")
+	return matchTypeToStr[m]
 }
 
 // Matcher models the matching of a label.
