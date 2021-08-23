@@ -36,7 +36,7 @@ var matchTypeToStr = [...]string{
 }
 
 func (m MatchType) String() string {
-	if m < 0 || int(m) > len(matchTypeToStr) {
+	if m < MatchEqual || m > MatchNotRegexp {
 		panic("unknown match type")
 	}
 	return matchTypeToStr[m]
