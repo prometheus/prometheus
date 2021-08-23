@@ -28,14 +28,15 @@ const (
 	MatchNotRegexp
 )
 
+var matchTypeToStr = map[MatchType]string{
+	MatchEqual:     "=",
+	MatchNotEqual:  "!=",
+	MatchRegexp:    "=~",
+	MatchNotRegexp: "!~",
+}
+
 func (m MatchType) String() string {
-	typeToStr := map[MatchType]string{
-		MatchEqual:     "=",
-		MatchNotEqual:  "!=",
-		MatchRegexp:    "=~",
-		MatchNotRegexp: "!~",
-	}
-	if str, ok := typeToStr[m]; ok {
+	if str, ok := matchTypeToStr[m]; ok {
 		return str
 	}
 	panic("unknown match type")
