@@ -600,19 +600,6 @@ func funcAtan(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper)
 	return simpleFunc(vals, enh, math.Atan)
 }
 
-// === atan2(Vector1, Vector2 parser.ValueTypeVector) Vector ===
-func funcAtan2(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
-	y := vals[0].(Vector)
-	x := vals[1].(Vector)
-
-	for i := 0; i < len(y); i++ {
-		enh.Out = append(enh.Out, Sample{
-			Point: Point{V: math.Atan2(y[i].V, x[i].V)},
-		})
-	}
-	return enh.Out
-}
-
 // === rad(Vector parser.ValueTypeVector) Vector ===
 func funcRad(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return simpleFunc(vals, enh, func(v float64) float64 {
@@ -1002,7 +989,6 @@ var FunctionCalls = map[string]FunctionCall{
 	"acos":               funcAcos,
 	"asin":               funcAsin,
 	"atan":               funcAtan,
-	"atan2":              funcAtan2,
 	"avg_over_time":      funcAvgOverTime,
 	"ceil":               funcCeil,
 	"changes":            funcChanges,
