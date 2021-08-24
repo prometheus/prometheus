@@ -961,173 +961,65 @@ eval instant at 10m present_over_time({job="ingress"}[4m])
 
 clear
 
-# Testing exp() sqrt() log2() log10() ln() sin() cos() tan() asin() acos() atan() atan2() deg() rad() pi()
+# Testing exp() sqrt() log2() log10() ln()
 load 5m
-	exp_root_log_trig{l="x"} 10
-	exp_root_log_trig{l="y"} 20
+	exp_root_log{l="x"} 10
+	exp_root_log{l="y"} 20
 
-eval instant at 5m exp(exp_root_log_trig)
+eval instant at 5m exp(exp_root_log)
 	{l="x"} 22026.465794806718
 	{l="y"} 485165195.4097903
 
-eval instant at 5m exp(exp_root_log_trig - 10)
+eval instant at 5m exp(exp_root_log - 10)
 	{l="y"} 22026.465794806718
 	{l="x"} 1
 
-eval instant at 5m exp(exp_root_log_trig - 20)
+eval instant at 5m exp(exp_root_log - 20)
 	{l="x"} 4.5399929762484854e-05
 	{l="y"} 1
 
-eval instant at 5m ln(exp_root_log_trig)
+eval instant at 5m ln(exp_root_log)
 	{l="x"} 2.302585092994046
 	{l="y"} 2.995732273553991
 
-eval instant at 5m ln(exp_root_log_trig - 10)
+eval instant at 5m ln(exp_root_log - 10)
 	{l="y"} 2.302585092994046
 	{l="x"} -Inf
 
-eval instant at 5m ln(exp_root_log_trig - 20)
+eval instant at 5m ln(exp_root_log - 20)
 	{l="y"} -Inf
 	{l="x"} NaN
 
-eval instant at 5m exp(ln(exp_root_log_trig))
+eval instant at 5m exp(ln(exp_root_log))
 	{l="y"} 20
 	{l="x"} 10
 
-eval instant at 5m sqrt(exp_root_log_trig)
+eval instant at 5m sqrt(exp_root_log)
 	{l="x"} 3.1622776601683795
 	{l="y"} 4.47213595499958
 
-eval instant at 5m log2(exp_root_log_trig)
+eval instant at 5m log2(exp_root_log)
 	{l="x"} 3.3219280948873626
 	{l="y"} 4.321928094887363
 
-eval instant at 5m log2(exp_root_log_trig - 10)
+eval instant at 5m log2(exp_root_log - 10)
 	{l="y"} 3.3219280948873626
 	{l="x"} -Inf
 
-eval instant at 5m log2(exp_root_log_trig - 20)
+eval instant at 5m log2(exp_root_log - 20)
 	{l="x"} NaN
 	{l="y"} -Inf
 
-eval instant at 5m log10(exp_root_log_trig)
+eval instant at 5m log10(exp_root_log)
 	{l="x"} 1
 	{l="y"} 1.301029995663981
 
-eval instant at 5m log10(exp_root_log_trig - 10)
+eval instant at 5m log10(exp_root_log - 10)
 	{l="y"} 1
 	{l="x"} -Inf
 
-eval instant at 5m log10(exp_root_log_trig - 20)
+eval instant at 5m log10(exp_root_log - 20)
 	{l="x"} NaN
 	{l="y"} -Inf
 
-eval instant at 5m sin(exp_root_log_trig)
-	{l="x"} -0.5440211108893699
-	{l="y"} 0.9129452507276277
-
-eval instant at 5m sin(exp_root_log_trig - 10)
-	{l="y"} -0.5440211108893699
-	{l="x"} 0
-
-eval instant at 5m sin(exp_root_log_trig - 20)
-	{l="x"} 0.5440211108893699
-	{l="y"} 0
-
-eval instant at 5m cos(exp_root_log_trig)
-	{l="x"} -0.8390715290764524
-	{l="y"} 0.40808206181339196
-
-eval instant at 5m cos(exp_root_log_trig - 10)
-	{l="y"} -0.8390715290764524
-	{l="x"} 1
-
-eval instant at 5m cos(exp_root_log_trig - 20)
-	{l="x"} -0.8390715290764524
-	{l="y"} 1
-
-eval instant at 5m tan(exp_root_log_trig)
-	{l="x"} 0.6483608274590867
-	{l="y"} 2.2371609442247427
-
-eval instant at 5m tan(exp_root_log_trig - 10)
-	{l="y"} 0.6483608274590867
-	{l="x"} 0
-
-eval instant at 5m tan(exp_root_log_trig - 20)
-	{l="x"} -0.6483608274590867
-	{l="y"} 0
-
-eval instant at 5m asin(exp_root_log_trig)
-  {l="x"} NaN
-  {l="y"} NaN
-
-eval instant at 5m asin(exp_root_log_trig - 10)
-  {l="x"} 0
-  {l="y"} NaN
-
-eval instant at 5m asin(exp_root_log_trig - 20)
-  {l="x"} NaN
-  {l="y"} 0
-
-eval instant at 5m acos(exp_root_log_trig)
-  {l="x"} NaN
-  {l="y"} NaN
-
-eval instant at 5m acos(exp_root_log_trig - 10)
-  {l="x"} 1.5707963267948966
-  {l="y"} NaN
-
-eval instant at 5m acos(exp_root_log_trig - 20)
-  {l="x"} NaN
-  {l="y"} 1.5707963267948966
-
-eval instant at 5m atan(exp_root_log_trig)
-  {l="x"} 1.4711276743037345
-  {l="y"} 1.5208379310729538
-
-eval instant at 5m atan(exp_root_log_trig - 10)
-  {l="x"} 0
-  {l="y"} 1.4711276743037345
-
-eval instant at 5m atan(exp_root_log_trig - 20)
-  {l="x"} -1.4711276743037345
-  {l="y"} 0
-
-eval instant at 5m atan2(exp_root_log_trig{l="y"}, exp_root_log_trig{l="x"})
-	{} 1.1071487177940904
-
-eval instant at 5m atan2(exp_root_log_trig{l="y"} - 10, exp_root_log_trig{l="x"} - 10)
-	{} 1.5707963267948966
-
-eval instant at 5m atan2(exp_root_log_trig{l="y"} - 20, exp_root_log_trig{l="x"} - 20)
-	{} 3.141592653589793
-
-eval instant at 5m rad(exp_root_log_trig)
-  {l="x"} 0.17453292519943295
-  {l="y"} 0.3490658503988659
-
-eval instant at 5m rad(exp_root_log_trig - 10)
-  {l="x"} 0
-  {l="y"} 0.17453292519943295
-
-eval instant at 5m rad(exp_root_log_trig - 20)
-  {l="x"} -0.17453292519943295
-  {l="y"} 0
-
-eval instant at 5m deg(exp_root_log_trig)
-  {l="x"} 572.9577951308232
-  {l="y"} 1145.9155902616465
-
-eval instant at 5m deg(exp_root_log_trig - 10)
-  {l="x"} 0
-  {l="y"} 572.9577951308232
-
-eval instant at 5m deg(exp_root_log_trig - 20)
-  {l="x"} -572.9577951308232
-  {l="y"} 0
-
 clear
-
-eval instant at 0s pi()
-	{} 3.141592653589793
