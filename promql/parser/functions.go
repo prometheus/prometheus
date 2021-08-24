@@ -224,7 +224,7 @@ var Functions = map[string]*Function{
 	"pi": {
 		Name:       "pi",
 		ArgTypes:   []ValueType{},
-		ReturnType: ValueTypeVector,
+		ReturnType: ValueTypeScalar,
 	},
 	"predict_linear": {
 		Name:       "predict_linear",
