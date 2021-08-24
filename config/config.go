@@ -667,6 +667,7 @@ type RemoteWriteConfig struct {
 	QueueConfig      QueueConfig             `yaml:"queue_config,omitempty"`
 	MetadataConfig   MetadataConfig          `yaml:"metadata_config,omitempty"`
 	SigV4Config      *SigV4Config            `yaml:"sigv4,omitempty"`
+	IAPConfig        *IAPConfig              `yaml:"iap,omitempty"`
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -767,6 +768,14 @@ type SigV4Config struct {
 	SecretKey config.Secret `yaml:"secret_key,omitempty"`
 	Profile   string        `yaml:"profile,omitempty"`
 	RoleARN   string        `yaml:"role_arn,omitempty"`
+}
+
+// IAPConfig is the configuration for signing remote write requests with
+// Google's Identity Aware Proxy. Empty values will be retrieved using
+// GCP's default application credentials chain.
+type IAPConfig struct {
+	Audience       string `yaml:"audience,omitempty"`
+	ServiceAccount string `yaml:"service_account,omitempty"`
 }
 
 // RemoteReadConfig is the configuration for reading from remote storage.

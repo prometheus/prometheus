@@ -98,6 +98,7 @@ type ClientConfig struct {
 	Timeout          model.Duration
 	HTTPClientConfig config_util.HTTPClientConfig
 	SigV4Config      *config.SigV4Config
+	IAPConfig        *config.IAPConfig
 	Headers          map[string]string
 	RetryOnRateLimit bool
 }
