@@ -437,12 +437,17 @@ aggregation even if the values are not equally spaced throughout the interval.
 
 ## Trigonometric Functions
 
-- `acos(v instant-vector)`: calculates the arccosine, in radians, of all elements in `v` ([special cases](https://pkg.go.dev/math#Acos)).
-- `asin(v instant-vector)`: calculates the arcsine, in radians, of all elements in `v` ([special cases](https://pkg.go.dev/math#Asin)).
-- `atan(v instant-vector)`: calculates the arctangent, in radians, of all elements in `v` ([special cases](https://pkg.go.dev/math#Atan)).
-- `cos(v instant-vector)`: calculates the cosine, in radians, of all elements in `v` ([special cases](https://pkg.go.dev/math#Cos)).
+The trigonometric functions work in radians:
+
+- `acos(v instant-vector)`: calculates the arccosine of all elements in `v` ([special cases](https://pkg.go.dev/math#Acos)).
+- `asin(v instant-vector)`: calculates the arcsine of all elements in `v` ([special cases](https://pkg.go.dev/math#Asin)).
+- `atan(v instant-vector)`: calculates the arctangent of all elements in `v` ([special cases](https://pkg.go.dev/math#Atan)).
+- `cos(v instant-vector)`: calculates the cosine of all elements in `v` ([special cases](https://pkg.go.dev/math#Cos)).
+- `sin(v instant-vector)`: calculates the sine of all elements in `v` ([special cases](https://pkg.go.dev/math#Sin)).
+- `tan(v instant-vector)`: calculates the tangent of all elements in `v` ([special cases](https://pkg.go.dev/math#Tan)).
+
+The following are useful for converting between degrees and radians:
+
 - `deg(v instant-vector)`: converts radians to degrees for all elements in `v`.
 - `pi()`: returns the first 16 digits of Pi.
 - `rad(v instant-vector)`: converts degrees to radians for all elements in `v`.
-- `sin(v instant-vector)`: calculates the sine, in radians, of all elements in `v` ([special cases](https://pkg.go.dev/math#Sin)).
-- `tan(v instant-vector)`: calculates the tangent, in radians, of all elements in `v` ([special cases](https://pkg.go.dev/math#Tan)).
