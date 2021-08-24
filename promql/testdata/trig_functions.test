@@ -1,4 +1,4 @@
-# Testing sin() cos() tan() asin() acos() atan() rad() deg() pi().
+# Testing sin() cos() tan() asin() acos() atan() sinh() cosh() tanh() rad() deg() pi().
 
 load 5m
 	trig{l="x"} 10
@@ -35,6 +35,21 @@ eval instant at 5m atan(trig)
 	{l="y"} 1.5208379310729538
 	{l="NaN"} NaN
 
+eval instant at 5m sinh(trig)
+	{l="x"} 11013.232920103324
+	{l="y"} 2.4258259770489514e+08
+	{l="NaN"} NaN
+
+eval instant at 5m cosh(trig)
+	{l="x"} 11013.232920103324
+	{l="y"} 2.4258259770489514e+08
+	{l="NaN"} NaN
+
+eval instant at 5m tanh(trig)
+	{l="x"} 0.9999999958776927
+	{l="y"} 1
+	{l="NaN"} NaN
+
 eval instant at 5m rad(trig)
 	{l="x"} 0.17453292519943295
 	{l="y"} 0.3490658503988659
@@ -68,4 +83,4 @@ eval instant at 5m deg(trig - 20)
 clear
 
 eval instant at 0s pi()
-	{} 3.141592653589793
+	3.141592653589793

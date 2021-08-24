@@ -600,6 +600,21 @@ func funcAtan(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper)
 	return simpleFunc(vals, enh, math.Atan)
 }
 
+// == sinh(Vector parser.ValueTypeVector) Vector ===
+func funcSinh(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	return simpleFunc(vals, enh, math.Sinh)
+}
+
+// == cosh(Vector parser.ValueTypeVector) Vector ===
+func funcCosh(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	return simpleFunc(vals, enh, math.Cosh)
+}
+
+// == tanh(Vector parser.ValueTypeVector) Vector ===
+func funcTanh(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	return simpleFunc(vals, enh, math.Tanh)
+}
+
 // === rad(Vector parser.ValueTypeVector) Vector ===
 func funcRad(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return simpleFunc(vals, enh, func(v float64) float64 {
@@ -996,6 +1011,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"clamp_max":          funcClampMax,
 	"clamp_min":          funcClampMin,
 	"cos":                funcCos,
+	"cosh":               funcCosh,
 	"count_over_time":    funcCountOverTime,
 	"days_in_month":      funcDaysInMonth,
 	"day_of_month":       funcDayOfMonth,
@@ -1032,6 +1048,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"scalar":             funcScalar,
 	"sgn":                funcSgn,
 	"sin":                funcSin,
+	"sinh":               funcSinh,
 	"sort":               funcSort,
 	"sort_desc":          funcSortDesc,
 	"sqrt":               funcSqrt,
@@ -1039,6 +1056,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"stdvar_over_time":   funcStdvarOverTime,
 	"sum_over_time":      funcSumOverTime,
 	"tan":                funcTan,
+	"tanh":               funcTanh,
 	"time":               funcTime,
 	"timestamp":          funcTimestamp,
 	"vector":             funcVector,

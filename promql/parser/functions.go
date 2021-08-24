@@ -89,6 +89,11 @@ var Functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeVector},
 		ReturnType: ValueTypeVector,
 	},
+	"cosh": {
+		Name:       "cosh",
+		ArgTypes:   []ValueType{ValueTypeVector},
+		ReturnType: ValueTypeVector,
+	},
 	"count_over_time": {
 		Name:       "count_over_time",
 		ArgTypes:   []ValueType{ValueTypeMatrix},
@@ -277,6 +282,11 @@ var Functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeVector},
 		ReturnType: ValueTypeVector,
 	},
+	"sinh": {
+		Name:       "sinh",
+		ArgTypes:   []ValueType{ValueTypeVector},
+		ReturnType: ValueTypeVector,
+	},
 	"sort": {
 		Name:       "sort",
 		ArgTypes:   []ValueType{ValueTypeVector},
@@ -309,6 +319,11 @@ var Functions = map[string]*Function{
 	},
 	"tan": {
 		Name:       "tan",
+		ArgTypes:   []ValueType{ValueTypeVector},
+		ReturnType: ValueTypeVector,
+	},
+	"tanh": {
+		Name:       "tanh",
 		ArgTypes:   []ValueType{ValueTypeVector},
 		ReturnType: ValueTypeVector,
 	},
