@@ -437,42 +437,12 @@ aggregation even if the values are not equally spaced throughout the interval.
 
 ## Trigonometric Functions
 
-- `acos(v instant-vector)`: calculates the arccosine, in radians, of all elements in `v`. Special cases are:
-    - `acos(x) = NaN if x < -1 or x > 1`
-- `asin(v instant-vector)`: calculates the arcsine, in radians, of all elements in `v`. Special cases are:
-    - `asin(±0) = ±0`
-- `atan(v instant-vector)`: calculates the arctangent, in radians, of all elements in `v`. Special cases are:
-    - `atan(±0) = ±0`
-    - `atan(±Inf) = ±Pi/2`
-- `atan2(y, x instant-vector)`: calculates the arctangent of `y`/`x` for all elements, in radians, using the signs of the two to determine the quadrant of the result ([from the package](https://pkg.go.dev/math#Atan2)). Special cases are:
-    - `atan2(y, NaN) = NaN`
-    - `atan2(NaN, x) = NaN`
-    - `atan2(+0, x>=0) = +0`
-    - `atan2(-0, x>=0) = -0`
-    - `atan2(+0, x<=-0) = +Pi`
-    - `atan2(-0, x<=-0) = -Pi`
-    - `atan2(y>0, 0) = +Pi/2`
-    - `atan2(y<0, 0) = -Pi/2`
-    - `atan2(+Inf, +Inf) = +Pi/4`
-    - `atan2(-Inf, +Inf) = -Pi/4`
-    - `atan2(+Inf, -Inf) = 3Pi/4`
-    - `atan2(-Inf, -Inf) = -3Pi/4`
-    - `atan2(y, +Inf) = 0`
-    - `atan2(y>0, -Inf) = +Pi`
-    - `atan2(y<0, -Inf) = -Pi`
-    - `atan2(+Inf, x) = +Pi/2`
-    - `atan2(-Inf, x) = -Pi/2`
-- `cos(v instant-vector)`: calculates the cosine, in radians, of all elements in `v`. Special cases are:
-    - `cos(±Inf) = NaN`
-    - `cos(NaN) = NaN`
+- `acos(v instant-vector)`: calculates the arccosine, in radians, of all elements in `v` ([special cases](https://pkg.go.dev/math#Acos)).
+- `asin(v instant-vector)`: calculates the arcsine, in radians, of all elements in `v` ([special cases](https://pkg.go.dev/math#Asin)).
+- `atan(v instant-vector)`: calculates the arctangent, in radians, of all elements in `v` ([special cases](https://pkg.go.dev/math#Atan)).
+- `cos(v instant-vector)`: calculates the cosine, in radians, of all elements in `v` ([special cases](https://pkg.go.dev/math#Cos)).
 - `deg(v instant-vector)`: converts radians to degrees for all elements in `v`.
 - `pi()`: returns the first 16 digits of Pi.
 - `rad(v instant-vector)`: converts degrees to radians for all elements in `v`.
-- `sin(v instant-vector)`: calculates the sine, in radians, of all elements in `v`. Special cases are:
-    - `sin(±0) = ±0`
-    - `sin(±Inf) = NaN`
-    - `Sin(NaN) = NaN`
-- `tan(v instant-vector)`: calculates the tangent, in radians, of all elements in `v`. Special cases are:
-    - `tan(±0) = ±0`
-    - `tan(±Inf) = NaN`
-    - `tan(NaN) = NaN`
+- `sin(v instant-vector)`: calculates the sine, in radians, of all elements in `v` ([special cases](https://pkg.go.dev/math#Sin)).
+- `tan(v instant-vector)`: calculates the tangent, in radians, of all elements in `v` ([special cases](https://pkg.go.dev/math#Tan)).
