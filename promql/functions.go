@@ -629,7 +629,7 @@ func funcDeg(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) 
 	})
 }
 
-// === pi(Vector parser.ValueTypeVector) Vector ===
+// === pi() Scalar ===
 func funcPi(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return Vector{Sample{Point: Point{
 		V: math.Pi,
