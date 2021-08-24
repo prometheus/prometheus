@@ -452,5 +452,5 @@ The trigonometric functions work in radians:
 The following are useful for converting between degrees and radians:
 
 - `deg(v instant-vector)`: converts radians to degrees for all elements in `v`.
-- `pi()`: returns the first 16 digits of Pi.
+- `pi()`: returns pi.
 - `rad(v instant-vector)`: converts degrees to radians for all elements in `v`.
