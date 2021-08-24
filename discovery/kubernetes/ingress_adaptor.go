@@ -52,9 +52,7 @@ func (i *ingressAdaptorV1) ingressClassName() *string      { return i.ingress.Sp
 func (i *ingressAdaptorV1) tlsHosts() []string {
 	var hosts []string
 	for _, tls := range i.ingress.Spec.TLS {
-		for _, host := range tls.Hosts {
-			hosts = append(hosts, host)
-		}
+		hosts = append(hosts, tls.Hosts...)
 	}
 	return hosts
 }
@@ -107,9 +105,7 @@ func (i *ingressAdaptorV1Beta1) ingressClassName() *string      { return i.ingre
 func (i *ingressAdaptorV1Beta1) tlsHosts() []string {
 	var hosts []string
 	for _, tls := range i.ingress.Spec.TLS {
-		for _, host := range tls.Hosts {
-			hosts = append(hosts, host)
-		}
+		hosts = append(hosts, tls.Hosts...)
 	}
 	return hosts
 }
