@@ -263,7 +263,7 @@ const maxAheadTime = 10 * time.Minute
 
 type labelsMutator func(labels.Labels) labels.Labels
 
-func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed uint64, logger log.Logger) (*scrapePool, error) {
+func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed uint64, logger log.Logger, reportScrapeTimeout bool) (*scrapePool, error) {
 	targetScrapePools.Inc()
 	if logger == nil {
 		logger = log.NewNopLogger()
@@ -311,6 +311,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed 
 			opts.labelLimits,
 			opts.interval,
 			opts.timeout,
+			reportScrapeTimeout,
 		)
 	}
 
@@ -828,6 +829,8 @@ type scrapeLoop struct {
 	stopped   chan struct{}
 
 	disabledEndOfRunStalenessMarkers bool
+
+	reportScrapeTimeout bool
 }
 
 // scrapeCache tracks mappings of exposed metric strings to label sets and
@@ -1087,6 +1090,7 @@ func newScrapeLoop(ctx context.Context,
 	labelLimits *labelLimits,
 	interval time.Duration,
 	timeout time.Duration,
+	reportScrapeTimeout bool,
 ) *scrapeLoop {
 	if l == nil {
 		l = log.NewNopLogger()
@@ -1112,6 +1116,7 @@ func newScrapeLoop(ctx context.Context,
 		labelLimits:         labelLimits,
 		interval:            interval,
 		timeout:             timeout,
+		reportScrapeTimeout: reportScrapeTimeout,
 	}
 	sl.ctx, sl.cancel = context.WithCancel(ctx)
 
@@ -1216,7 +1221,7 @@ func (sl *scrapeLoop) scrapeAndReport(interval, timeout time.Duration, last, app
 	}()
 
 	defer func() {
-		if err = sl.report(app, appendTime, time.Since(start), total, added, seriesAdded, scrapeErr); err != nil {
+		if err = sl.report(app, appendTime, timeout, time.Since(start), total, added, seriesAdded, scrapeErr); err != nil {
 			level.Warn(sl.l).Log("msg", "Appending scrape report failed", "err", err)
 		}
 	}()
@@ -1604,9 +1609,10 @@ const (
 	scrapeSamplesMetricName      = "scrape_samples_scraped" + "\xff"
 	samplesPostRelabelMetricName = "scrape_samples_post_metric_relabeling" + "\xff"
 	scrapeSeriesAddedMetricName  = "scrape_series_added" + "\xff"
+	scrapeTimeoutMetricName      = "scrape_timeout_seconds" + "\xff"
 )
 
-func (sl *scrapeLoop) report(app storage.Appender, start time.Time, duration time.Duration, scraped, added, seriesAdded int, scrapeErr error) (err error) {
+func (sl *scrapeLoop) report(app storage.Appender, start time.Time, timeout, duration time.Duration, scraped, added, seriesAdded int, scrapeErr error) (err error) {
 	sl.scraper.Report(start, duration, scrapeErr)
 
 	ts := timestamp.FromTime(start)
@@ -1631,6 +1637,11 @@ func (sl *scrapeLoop) report(app storage.Appender, start time.Time, duration tim
 	if err = sl.addReportSample(app, scrapeSeriesAddedMetricName, ts, float64(seriesAdded)); err != nil {
 		return
 	}
+	if sl.reportScrapeTimeout {
+		if err = sl.addReportSample(app, scrapeTimeoutMetricName, ts, timeout.Seconds()); err != nil {
+			return
+		}
+	}
 	return
 }
 
@@ -1653,6 +1664,11 @@ func (sl *scrapeLoop) reportStale(app storage.Appender, start time.Time) (err er
 	}
 	if err = sl.addReportSample(app, scrapeSeriesAddedMetricName, ts, stale); err != nil {
 		return
+	}
+	if sl.reportScrapeTimeout {
+		if err = sl.addReportSample(app, scrapeTimeoutMetricName, ts, stale); err != nil {
+			return
+		}
 	}
 	return
 }

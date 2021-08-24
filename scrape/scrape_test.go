@@ -57,7 +57,7 @@ func TestNewScrapePool(t *testing.T) {
 	var (
 		app   = &nopAppendable{}
 		cfg   = &config.ScrapeConfig{}
-		sp, _ = newScrapePool(cfg, app, 0, nil)
+		sp, _ = newScrapePool(cfg, app, 0, nil, false)
 	)
 
 	if a, ok := sp.appendable.(*nopAppendable); !ok || a != app {
@@ -92,7 +92,7 @@ func TestDroppedTargetsList(t *testing.T) {
 				},
 			},
 		}
-		sp, _                  = newScrapePool(cfg, app, 0, nil)
+		sp, _                  = newScrapePool(cfg, app, 0, nil, false)
 		expectedLabelSetString = "{__address__=\"127.0.0.1:9090\", __scrape_interval__=\"0s\", __scrape_timeout__=\"0s\", job=\"dropMe\"}"
 		expectedLength         = 1
 	)
@@ -456,7 +456,7 @@ func TestScrapePoolTargetLimit(t *testing.T) {
 func TestScrapePoolAppender(t *testing.T) {
 	cfg := &config.ScrapeConfig{}
 	app := &nopAppendable{}
-	sp, _ := newScrapePool(cfg, app, 0, nil)
+	sp, _ := newScrapePool(cfg, app, 0, nil, false)
 
 	loop := sp.newLoop(scrapeLoopOptions{
 		target: &Target{},
@@ -497,7 +497,7 @@ func TestScrapePoolRaces(t *testing.T) {
 	newConfig := func() *config.ScrapeConfig {
 		return &config.ScrapeConfig{ScrapeInterval: interval, ScrapeTimeout: timeout}
 	}
-	sp, _ := newScrapePool(newConfig(), &nopAppendable{}, 0, nil)
+	sp, _ := newScrapePool(newConfig(), &nopAppendable{}, 0, nil, false)
 	tgts := []*targetgroup.Group{
 		{
 			Targets: []model.LabelSet{
@@ -589,6 +589,7 @@ func TestScrapeLoopStopBeforeRun(t *testing.T) {
 		nil,
 		1,
 		0,
+		false,
 	)
 
 	// The scrape pool synchronizes on stopping scrape loops. However, new scrape
@@ -656,6 +657,7 @@ func TestScrapeLoopStop(t *testing.T) {
 		nil,
 		10*time.Millisecond,
 		time.Hour,
+		false,
 	)
 
 	// Terminate loop after 2 scrapes.
@@ -726,6 +728,7 @@ func TestScrapeLoopRun(t *testing.T) {
 		nil,
 		time.Second,
 		time.Hour,
+		false,
 	)
 
 	// The loop must terminate during the initial offset if the context
@@ -776,6 +779,7 @@ func TestScrapeLoopRun(t *testing.T) {
 		nil,
 		time.Second,
 		100*time.Millisecond,
+		false,
 	)
 
 	go func() {
@@ -830,6 +834,7 @@ func TestScrapeLoopForcedErr(t *testing.T) {
 		nil,
 		time.Second,
 		time.Hour,
+		false,
 	)
 
 	forcedErr := fmt.Errorf("forced err")
@@ -883,6 +888,7 @@ func TestScrapeLoopMetadata(t *testing.T) {
 		nil,
 		0,
 		0,
+		false,
 	)
 	defer cancel()
 
@@ -935,6 +941,7 @@ func TestScrapeLoopSeriesAdded(t *testing.T) {
 		nil,
 		0,
 		0,
+		false,
 	)
 	defer cancel()
 
@@ -976,6 +983,7 @@ func TestScrapeLoopRunCreatesStaleMarkersOnFailedScrape(t *testing.T) {
 		nil,
 		10*time.Millisecond,
 		time.Hour,
+		false,
 	)
 	// Succeed once, several failures, then stop.
 	numScrapes := 0
@@ -1033,6 +1041,7 @@ func TestScrapeLoopRunCreatesStaleMarkersOnParseFailure(t *testing.T) {
 		nil,
 		10*time.Millisecond,
 		time.Hour,
+		false,
 	)
 
 	// Succeed once, several failures, then stop.
@@ -1094,6 +1103,7 @@ func TestScrapeLoopCache(t *testing.T) {
 		nil,
 		10*time.Millisecond,
 		time.Hour,
+		false,
 	)
 
 	numScrapes := 0
@@ -1171,6 +1181,7 @@ func TestScrapeLoopCacheMemoryExhaustionProtection(t *testing.T) {
 		nil,
 		10*time.Millisecond,
 		time.Hour,
+		false,
 	)
 
 	numScrapes := 0
@@ -1280,6 +1291,7 @@ func TestScrapeLoopAppend(t *testing.T) {
 			nil,
 			0,
 			0,
+			false,
 		)
 
 		now := time.Now()
@@ -1324,6 +1336,7 @@ func TestScrapeLoopAppendCacheEntryButErrNotFound(t *testing.T) {
 		nil,
 		0,
 		0,
+		false,
 	)
 
 	fakeRef := uint64(1)
@@ -1376,6 +1389,7 @@ func TestScrapeLoopAppendSampleLimit(t *testing.T) {
 		nil,
 		0,
 		0,
+		false,
 	)
 
 	// Get the value of the Counter before performing the append.
@@ -1448,6 +1462,7 @@ func TestScrapeLoop_ChangingMetricString(t *testing.T) {
 		nil,
 		0,
 		0,
+		false,
 	)
 
 	now := time.Now()
@@ -1491,6 +1506,7 @@ func TestScrapeLoopAppendStaleness(t *testing.T) {
 		nil,
 		0,
 		0,
+		false,
 	)
 
 	now := time.Now()
@@ -1537,6 +1553,7 @@ func TestScrapeLoopAppendNoStalenessIfTimestamp(t *testing.T) {
 		nil,
 		0,
 		0,
+		false,
 	)
 
 	now := time.Now()
@@ -1641,6 +1658,7 @@ metric_total{n="2"} 2 # {t="2"} 2.0 20000
 				nil,
 				0,
 				0,
+				false,
 			)
 
 			now := time.Now()
@@ -1701,6 +1719,7 @@ func TestScrapeLoopAppendExemplarSeries(t *testing.T) {
 		nil,
 		0,
 		0,
+		false,
 	)
 
 	now := time.Now()
@@ -1748,6 +1767,7 @@ func TestScrapeLoopRunReportsTargetDownOnScrapeError(t *testing.T) {
 		nil,
 		10*time.Millisecond,
 		time.Hour,
+		false,
 	)
 
 	scraper.scrapeFunc = func(ctx context.Context, w io.Writer) error {
@@ -1779,6 +1799,7 @@ func TestScrapeLoopRunReportsTargetDownOnInvalidUTF8(t *testing.T) {
 		nil,
 		10*time.Millisecond,
 		time.Hour,
+		false,
 	)
 
 	scraper.scrapeFunc = func(ctx context.Context, w io.Writer) error {
@@ -1823,6 +1844,7 @@ func TestScrapeLoopAppendGracefullyIfAmendOrOutOfOrderOrOutOfBounds(t *testing.T
 		nil,
 		0,
 		0,
+		false,
 	)
 
 	now := time.Unix(1, 0)
@@ -1863,6 +1885,7 @@ func TestScrapeLoopOutOfBoundsTimeError(t *testing.T) {
 		nil,
 		0,
 		0,
+		false,
 	)
 
 	now := time.Now().Add(20 * time.Minute)
@@ -2116,6 +2139,7 @@ func TestScrapeLoop_RespectTimestamps(t *testing.T) {
 		nil,
 		0,
 		0,
+		false,
 	)
 
 	now := time.Now()
@@ -2152,6 +2176,7 @@ func TestScrapeLoop_DiscardTimestamps(t *testing.T) {
 		nil,
 		0,
 		0,
+		false,
 	)
 
 	now := time.Now()
@@ -2187,6 +2212,7 @@ func TestScrapeLoopDiscardDuplicateLabels(t *testing.T) {
 		nil,
 		0,
 		0,
+		false,
 	)
 	defer cancel()
 
@@ -2240,6 +2266,7 @@ func TestScrapeLoopDiscardUnnamedMetrics(t *testing.T) {
 		nil,
 		0,
 		0,
+		false,
 	)
 	defer cancel()
 
@@ -2332,7 +2359,7 @@ func TestReuseScrapeCache(t *testing.T) {
 			ScrapeInterval: model.Duration(5 * time.Second),
 			MetricsPath:    "/metrics",
 		}
-		sp, _ = newScrapePool(cfg, app, 0, nil)
+		sp, _ = newScrapePool(cfg, app, 0, nil, false)
 		t1    = &Target{
 			discoveredLabels: labels.Labels{
 				labels.Label{
@@ -2460,6 +2487,7 @@ func TestScrapeAddFast(t *testing.T) {
 		nil,
 		0,
 		0,
+		false,
 	)
 	defer cancel()
 
@@ -2489,7 +2517,7 @@ func TestReuseCacheRace(t *testing.T) {
 			ScrapeInterval: model.Duration(5 * time.Second),
 			MetricsPath:    "/metrics",
 		}
-		sp, _ = newScrapePool(cfg, app, 0, nil)
+		sp, _ = newScrapePool(cfg, app, 0, nil, false)
 		t1    = &Target{
 			discoveredLabels: labels.Labels{
 				labels.Label{
@@ -2546,6 +2574,7 @@ func TestScrapeReportSingleAppender(t *testing.T) {
 		nil,
 		10*time.Millisecond,
 		time.Hour,
+		false,
 	)
 
 	numScrapes := 0
@@ -2677,6 +2706,7 @@ func TestScrapeLoopLabelLimit(t *testing.T) {
 			&test.labelLimits,
 			0,
 			0,
+			false,
 		)
 
 		slApp := sl.appender(context.Background())
@@ -2715,7 +2745,7 @@ func TestTargetScrapeIntervalAndTimeoutRelabel(t *testing.T) {
 			},
 		},
 	}
-	sp, _ := newScrapePool(config, &nopAppendable{}, 0, nil)
+	sp, _ := newScrapePool(config, &nopAppendable{}, 0, nil, false)
 	tgts := []*targetgroup.Group{
 		{
 			Targets: []model.LabelSet{{model.AddressLabel: "127.0.0.1:9090"}},
