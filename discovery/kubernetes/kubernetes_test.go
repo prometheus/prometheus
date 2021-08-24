@@ -20,8 +20,11 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/version"
+	fakediscovery "k8s.io/client-go/discovery/fake"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/client-go/tools/cache"
@@ -37,7 +40,14 @@ func TestMain(m *testing.M) {
 
 // makeDiscovery creates a kubernetes.Discovery instance for testing.
 func makeDiscovery(role Role, nsDiscovery NamespaceDiscovery, objects ...runtime.Object) (*Discovery, kubernetes.Interface) {
+	return makeDiscoveryWithVersion(role, nsDiscovery, "v1.22.0", objects...)
+}
+
+// makeDiscoveryWithVersion creates a kubernetes.Discovery instance with the specified kubernetes version for testing.
+func makeDiscoveryWithVersion(role Role, nsDiscovery NamespaceDiscovery, k8sVer string, objects ...runtime.Object) (*Discovery, kubernetes.Interface) {
 	clientset := fake.NewSimpleClientset(objects...)
+	fakeDiscovery, _ := clientset.Discovery().(*fakediscovery.FakeDiscovery)
+	fakeDiscovery.FakedServerVersion = &version.Info{GitVersion: k8sVer}
 
 	return &Discovery{
 		client:             clientset,
@@ -204,4 +214,53 @@ func (p *Pod) hasSynced() bool {
 
 func (s *Service) hasSynced() bool {
 	return s.informer.HasSynced()
+}
+
+func TestRetryOnError(t *testing.T) {
+	for _, successAt := range []int{1, 2, 3} {
+		var called int
+		f := func() error {
+			called++
+			if called >= successAt {
+				return nil
+			}
+			return errors.New("dummy")
+		}
+		retryOnError(context.TODO(), 0, f)
+		require.Equal(t, successAt, called)
+	}
+}
+
+func TestCheckNetworkingV1Supported(t *testing.T) {
+	tests := []struct {
+		version       string
+		wantSupported bool
+		wantErr       bool
+	}{
+		{version: "v1.18.0", wantSupported: false, wantErr: false},
+		{version: "v1.18.1", wantSupported: false, wantErr: false},
+		// networking v1 is supported since Kubernetes v1.19
+		{version: "v1.19.0", wantSupported: true, wantErr: false},
+		{version: "v1.20.0-beta.2", wantSupported: true, wantErr: false},
+		// error patterns
+		{version: "", wantSupported: false, wantErr: true},
+		{version: "<>", wantSupported: false, wantErr: true},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.version, func(t *testing.T) {
+			clientset := fake.NewSimpleClientset()
+			fakeDiscovery, _ := clientset.Discovery().(*fakediscovery.FakeDiscovery)
+			fakeDiscovery.FakedServerVersion = &version.Info{GitVersion: tc.version}
+			supported, err := checkNetworkingV1Supported(clientset)
+
+			if tc.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+			require.Equal(t, tc.wantSupported, supported)
+		})
+	}
 }
