@@ -21,48 +21,48 @@ eval instant at 5m tan(trig)
 	{l="NaN"} NaN
 
 eval instant at 5m asin(trig - 10.1)
-  {l="x"} -0.10016742116155944
-  {l="y"} NaN
+	{l="x"} -0.10016742116155944
+	{l="y"} NaN
 	{l="NaN"} NaN
 
 eval instant at 5m acos(trig - 10.1)
-  {l="x"} 1.670963747956456
-  {l="y"} NaN
+	{l="x"} 1.670963747956456
+	{l="y"} NaN
 	{l="NaN"} NaN
 
 eval instant at 5m atan(trig)
-  {l="x"} 1.4711276743037345
-  {l="y"} 1.5208379310729538
+	{l="x"} 1.4711276743037345
+	{l="y"} 1.5208379310729538
 	{l="NaN"} NaN
 
 eval instant at 5m rad(trig)
-  {l="x"} 0.17453292519943295
-  {l="y"} 0.3490658503988659
+	{l="x"} 0.17453292519943295
+	{l="y"} 0.3490658503988659
 	{l="NaN"} NaN
 
 eval instant at 5m rad(trig - 10)
-  {l="x"} 0
-  {l="y"} 0.17453292519943295
+	{l="x"} 0
+	{l="y"} 0.17453292519943295
 	{l="NaN"} NaN
 
 eval instant at 5m rad(trig - 20)
-  {l="x"} -0.17453292519943295
-  {l="y"} 0
+	{l="x"} -0.17453292519943295
+	{l="y"} 0
 	{l="NaN"} NaN
 
 eval instant at 5m deg(trig)
-  {l="x"} 572.9577951308232
-  {l="y"} 1145.9155902616465
+	{l="x"} 572.9577951308232
+	{l="y"} 1145.9155902616465
 	{l="NaN"} NaN
 
 eval instant at 5m deg(trig - 10)
-  {l="x"} 0
-  {l="y"} 572.9577951308232
+	{l="x"} 0
+	{l="y"} 572.9577951308232
 	{l="NaN"} NaN
 
 eval instant at 5m deg(trig - 20)
-  {l="x"} -572.9577951308232
-  {l="y"} 0
+	{l="x"} -572.9577951308232
+	{l="y"} 0
 	{l="NaN"} NaN
 
 clear
