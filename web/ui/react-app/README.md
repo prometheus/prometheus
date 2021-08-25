@@ -13,18 +13,18 @@ Instead of plain JavaScript, we use [TypeScript](https://www.typescriptlang.org/
 To work with the React UI code, you will need to have the following tools installed:
 
 * The [Node.js](https://nodejs.org/) JavaScript runtime.
-* The [Yarn](https://yarnpkg.com/) package manager.
+* The [npm](https://www.npmjs.com/) package manager. Once you installed Node, npm should already be available.
 * *Recommended:* An editor with TypeScript, React, and [ESLint](https://eslint.org/) linting support. See e.g. [Create React App's editor setup instructions](https://create-react-app.dev/docs/setting-up-your-editor/). If you are not sure which editor to use, we recommend using [Visual Studio Code](https://code.visualstudio.com/docs/languages/typescript). Make sure that [the editor uses the project's TypeScript version rather than its own](https://code.visualstudio.com/docs/typescript/typescript-compiling#_using-the-workspace-version-of-typescript).
 
 **NOTE**: When using Visual Studio Code, be sure to open the `web/ui/react-app` directory in the editor instead of the root of the repository. This way, the right ESLint and TypeScript configuration will be picked up from the React workspace.
 
 ## Installing npm dependencies
 
-The React UI depends on a large number of [npm](https://www.npmjs.com/) packages. These are not checked in, so you will need to download and install them locally via the Yarn package manager:
+The React UI depends on a large number of [npm](https://www.npmjs.com/) packages. These are not checked in, so you will need to download and install them locally via the npm package manager:
 
-    yarn
+    npm install
 
-Yarn consults the `package.json` and `yarn.lock` files for dependencies to install. It creates a `node_modules` directory with all installed dependencies.
+npm consults the `package.json` and `package-lock.json` files for dependencies to install. It creates a `node_modules` directory with all installed dependencies.
 
 **NOTE**: Remember to change directory to `web/ui/react-app` before running this command and the following commands.
 
@@ -32,7 +32,7 @@ Yarn consults the `package.json` and `yarn.lock` files for dependencies to insta
 
 You can start a development server for the React UI outside of a running Prometheus server by running:
 
-    yarn start
+    npm start
 
 This will open a browser window with the React app running on http://localhost:3000/. The page will reload if you make edits to the source code. You will also see any lint errors in the console.
 
@@ -44,11 +44,11 @@ Due to a `"proxy": "http://localhost:9090"` setting in the `package.json` file, 
 
 Create React App uses the [Jest](https://jestjs.io/) framework for running tests. To run tests in interactive watch mode:
 
-    yarn test
+    npm test
 
 To generate an HTML-based test coverage report, run:
 
-    CI=true yarn test --coverage
+    CI=true npm test --coverage
 
 This creates a `coverage` subdirectory with the generated report. Open `coverage/lcov-report/index.html` in the browser to view it.
 
@@ -62,7 +62,7 @@ We define linting rules for the [ESLint](https://eslint.org/) linter. We recomme
 
 To detect and automatically fix lint errors, run:
 
-    yarn lint
+    npm run lint
 
 This is also available via the `react-app-lint-fix` target in the main Prometheus `Makefile`.
 
@@ -70,7 +70,7 @@ This is also available via the `react-app-lint-fix` target in the main Prometheu
 
 To build a production-optimized version of the React app to a `build` subdirectory, run:
 
-    yarn build
+    npm run build
 
 **NOTE:** You will likely not need to do this directly. Instead, this is taken care of by the `build` target in the main Prometheus `Makefile` when building the full binary.
 
@@ -80,4 +80,4 @@ To build a Prometheus binary that includes a compiled-in version of the producti
 
     make build
 
-This installs npm dependencies via Yarn, builds a production build of the React app, and then finally compiles in all web assets into the Prometheus binary.
+This installs dependencies via npm, builds a production build of the React app, and then finally compiles in all web assets into the Prometheus binary.

@@ -117,3 +117,9 @@ func TestInverse(t *testing.T) {
 		require.Equal(t, test.expected.Type, result.Type)
 	}
 }
+
+func BenchmarkMatchType_String(b *testing.B) {
+	for i := 0; i <= b.N; i++ {
+		_ = MatchType(i % int(MatchNotRegexp+1)).String()
+	}
+}

@@ -604,6 +604,8 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 				}
 				return
 			}
+			rule.SetHealth(HealthGood)
+			rule.SetLastError(nil)
 			samplesTotal += float64(len(vector))
 
 			if ar, ok := rule.(*AlertingRule); ok {

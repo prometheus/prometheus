@@ -1,0 +1,8 @@
+.idea/
+
+node_modules/
+dist/
+lib/
+src/**/codemirror_grammar.js
+
+/.nyc_output

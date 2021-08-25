@@ -14,6 +14,7 @@
 # Needs to be defined before including Makefile.common to auto-generate targets
 DOCKER_ARCHS ?= amd64 armv7 arm64 ppc64le s390x
 
+WEB_MODULE_PATH = web/ui/module
 REACT_APP_PATH = web/ui/react-app
 REACT_APP_SOURCE_FILES = $(shell find $(REACT_APP_PATH)/public/ $(REACT_APP_PATH)/src/ $(REACT_APP_PATH)/tsconfig.json)
 REACT_APP_OUTPUT_DIR = web/ui/static/react
@@ -32,15 +33,15 @@ include Makefile.common
 
 DOCKER_IMAGE_NAME       ?= prometheus
 
-$(REACT_APP_NODE_MODULES_PATH): $(REACT_APP_PATH)/package.json $(REACT_APP_PATH)/yarn.lock
-	cd $(REACT_APP_PATH) && yarn --frozen-lockfile
+$(REACT_APP_NODE_MODULES_PATH): $(REACT_APP_PATH)/package.json $(REACT_APP_PATH)/package-lock.json
+	cd $(REACT_APP_PATH) && npm ci
 
 $(REACT_APP_OUTPUT_DIR): $(REACT_APP_NODE_MODULES_PATH) $(REACT_APP_SOURCE_FILES) $(REACT_APP_BUILD_SCRIPT)
 	@echo ">> building React app"
 	@$(REACT_APP_BUILD_SCRIPT)
 
 .PHONY: assets
-assets: $(REACT_APP_OUTPUT_DIR)
+assets: web-module-install web-module-build $(REACT_APP_OUTPUT_DIR)
 	@echo ">> writing assets"
 	# Un-setting GOOS and GOARCH here because the generated Go code is always the same,
 	# but the cached object code is incompatible between architectures and OSes (which
@@ -51,20 +52,43 @@ assets: $(REACT_APP_OUTPUT_DIR)
 .PHONY: react-app-lint
 react-app-lint:
 	@echo ">> running React app linting"
-	cd $(REACT_APP_PATH) && yarn lint:ci
+	cd $(REACT_APP_PATH) && npm run lint:ci
 
 .PHONY: react-app-lint-fix
 react-app-lint-fix:
 	@echo ">> running React app linting and fixing errors where possible"
-	cd $(REACT_APP_PATH) && yarn lint
+	cd $(REACT_APP_PATH) && npm run lint
 
 .PHONY: react-app-test
 react-app-test: | $(REACT_APP_NODE_MODULES_PATH) react-app-lint
 	@echo ">> running React app tests"
-	cd $(REACT_APP_PATH) && yarn test --no-watch --coverage
+	cd $(REACT_APP_PATH) && npm run test --no-watch --coverage
+
+.PHONY: web-module-build
+web-module-build:
+	@cd ${WEB_MODULE_PATH} && ./build.sh --build
+
+.PHONY: web-module-lint
+web-module-lint:
+	@cd ${WEB_MODULE_PATH} && ./build.sh --lint
+
+.PHONY: web-module-test
+web-module-test:
+	@cd ${WEB_MODULE_PATH} && ./build.sh --test
+
+.PHONY: web-module-install
+web-module-install:
+	@cd ${WEB_MODULE_PATH} && ./build.sh --install
 
 .PHONY: test
-test: common-test react-app-test
+# If we only want to only test go code we have to change the test target
+# which is called by all.
+ifeq ($(GO_ONLY),1)
+test: common-test
+else
+test: common-test react-app-test web-module-test web-module-lint
+endif
+
 
 .PHONY: npm_licenses
 npm_licenses: $(REACT_APP_NODE_MODULES_PATH)
