@@ -42,7 +42,7 @@ the result.
 
 ### Trigonometric binary operators
 
-The following trigonometric binary operators exist in Prometheus:
+The following trigonometric binary operators, which work in radians, exist in Prometheus:
 
 * `atan2` (https://pkg.go.dev/math#Atan2, _This is experimental_)
 
