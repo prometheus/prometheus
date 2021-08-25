@@ -3,7 +3,7 @@ version: 2.1
 
 orbs:
   prometheus: prometheus/prometheus@0.11.0
-  go: circleci/go@0.2.0
+  go: circleci/go@1.7.0
   win: circleci/windows@2.3.0
 
 executors:
@@ -11,10 +11,10 @@ executors:
   # should also be updated.
   golang:
     docker:
-      - image: circleci/golang:1.16-node
+      - image: quay.io/prometheus/golang-builder:1.17-base
   golang_115:
     docker:
-      - image: circleci/golang:1.15-node
+      - image: quay.io/prometheus/golang-builder:1.15-base
 
 jobs:
   test_go:
@@ -24,8 +24,6 @@ jobs:
       - prometheus/setup_environment
       - go/load-cache:
           key: v1
-      - run:
-          command: sudo apt-get install -y yamllint
       - run:
           command: make GO_ONLY=1
           environment:
@@ -110,14 +108,12 @@ jobs:
       - run:
           command: go install -mod=readonly github.com/google/go-jsonnet/cmd/jsonnet github.com/google/go-jsonnet/cmd/jsonnetfmt github.com/jsonnet-bundler/jsonnet-bundler/cmd/jb
           working_directory: ~/project/documentation/prometheus-mixin
-      - run:
+      -8716766cb49ab9dd7df5622d80bb217b94a21d0f3d3dc3d074c3ec7a0c7f67ea run:
           command: make clean
           working_directory: ~/project/documentation/prometheus-mixin
       - run:
           command: jb install
           working_directory: ~/project/documentation/prometheus-mixin
-      - run:
-          command: sudo apt-get install -y yamllint
       - run:
           command: make
           working_directory: ~/project/documentation/prometheus-mixin
@@ -129,8 +125,6 @@ jobs:
     executor: golang
     steps:
       - checkout
-      - run: mkdir -v -p "${PATH%%:*}" && curl -sL --fail https://github.com/mikefarah/yq/releases/download/v4.6.3/yq_linux_amd64 -o "${PATH%%:*}/yq" && chmod -v +x "${PATH%%:*}/yq"
-      - run: sha256sum -c <(echo "c4343783c3361495c0d6d1eb742bba7432aa65e13e9fb8d7e201d544bcf14246 ${PATH%%:*}/yq")
       - run: ./scripts/sync_repo_files.sh
 
 workflows:

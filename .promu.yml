@@ -1,7 +1,7 @@
 go:
     # Whenever the Go version is updated here,
     # .circle/config.yml should also be updated.
-    version: 1.16
+    version: 1.17
 repository:
     path: github.com/prometheus/prometheus
 build:
