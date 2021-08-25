@@ -818,10 +818,13 @@ func TestWithoutPostings(t *testing.T) {
 func BenchmarkPostings_Stats(b *testing.B) {
 	p := NewMemPostings()
 
+	var seriesID uint64
+
 	createPostingsLabelValues := func(name, valuePrefix string, count int) {
 		for n := 1; n < count; n++ {
 			value := fmt.Sprintf("%s-%d", valuePrefix, n)
-			p.Add(uint64(n), labels.FromStrings(name, value))
+			p.Add(seriesID, labels.FromStrings(name, value))
+			seriesID++
 		}
 
 	}

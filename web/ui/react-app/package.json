@@ -22,7 +22,7 @@
     "@nexucis/fuzzy": "^0.2.2",
     "@reach/router": "^1.2.1",
     "bootstrap": "^4.6.0",
-    "codemirror-promql": "^0.16.0",
+    "codemirror-promql": "^0.17.0",
     "css.escape": "^1.5.1",
     "downshift": "^3.4.8",
     "enzyme-to-json": "^3.4.3",
@@ -110,5 +110,8 @@
     "transformIgnorePatterns": [
       "/node_modules/(?!codemirror-promql).+(js|jsx)$"
     ]
+  },
+  "optionalDependencies": {
+    "fsevents": "^2.3.2"
   }
 }

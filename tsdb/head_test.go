@@ -21,6 +21,7 @@ import (
 	"math"
 	"math/rand"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -137,6 +138,7 @@ func BenchmarkLoadWAL(b *testing.B) {
 		batches          int
 		seriesPerBatch   int
 		samplesPerSeries int
+		mmappedChunkT    int64
 	}{
 		{ // Less series and more samples. 2 hour WAL with 1 second scrape interval.
 			batches:          10,
@@ -152,6 +154,12 @@ func BenchmarkLoadWAL(b *testing.B) {
 			batches:          10,
 			seriesPerBatch:   1000,
 			samplesPerSeries: 480,
+		},
+		{ // 2 hour WAL with 15 second scrape interval, and mmapped chunks up to last 100 samples.
+			batches:          100,
+			seriesPerBatch:   1000,
+			samplesPerSeries: 480,
+			mmappedChunkT:    3800,
 		},
 	}
 
@@ -169,7 +177,7 @@ func BenchmarkLoadWAL(b *testing.B) {
 			}
 			lastExemplarsPerSeries = exemplarsPerSeries
 			// fmt.Println("exemplars per series: ", exemplarsPerSeries)
-			b.Run(fmt.Sprintf("batches=%d,seriesPerBatch=%d,samplesPerSeries=%d,exemplarsPerSeries=%d", c.batches, c.seriesPerBatch, c.samplesPerSeries, exemplarsPerSeries),
+			b.Run(fmt.Sprintf("batches=%d,seriesPerBatch=%d,samplesPerSeries=%d,exemplarsPerSeries=%d,mmappedChunkT=%d", c.batches, c.seriesPerBatch, c.samplesPerSeries, exemplarsPerSeries, c.mmappedChunkT),
 				func(b *testing.B) {
 					dir, err := ioutil.TempDir("", "test_load_wal")
 					require.NoError(b, err)
@@ -190,7 +198,7 @@ func BenchmarkLoadWAL(b *testing.B) {
 							for j := 1; len(lbls) < labelsPerSeries; j++ {
 								lbls[defaultLabelName+strconv.Itoa(j)] = defaultLabelValue + strconv.Itoa(j)
 							}
-							refSeries = append(refSeries, record.RefSeries{Ref: uint64(i) * 100, Labels: labels.FromMap(lbls)})
+							refSeries = append(refSeries, record.RefSeries{Ref: uint64(i) * 101, Labels: labels.FromMap(lbls)})
 						}
 						populateTestWAL(b, w, []interface{}{refSeries})
 					}
@@ -202,7 +210,7 @@ func BenchmarkLoadWAL(b *testing.B) {
 							refSamples = refSamples[:0]
 							for k := j * c.seriesPerBatch; k < (j+1)*c.seriesPerBatch; k++ {
 								refSamples = append(refSamples, record.RefSample{
-									Ref: uint64(k) * 100,
+									Ref: uint64(k) * 101,
 									T:   int64(i) * 10,
 									V:   float64(i) * 100,
 								})
@@ -211,14 +219,28 @@ func BenchmarkLoadWAL(b *testing.B) {
 						}
 					}
 
-					// Write samples.
+					// Write mmapped chunks.
+					if c.mmappedChunkT != 0 {
+						chunkDiskMapper, err := chunks.NewChunkDiskMapper(mmappedChunksDir(dir), chunkenc.NewPool(), chunks.DefaultWriteBufferSize)
+						require.NoError(b, err)
+						for k := 0; k < c.batches*c.seriesPerBatch; k++ {
+							// Create one mmapped chunk per series, with one sample at the given time.
+							lbls := labels.Labels{}
+							s := newMemSeries(lbls, uint64(k)*101, lbls.Hash(), c.mmappedChunkT, nil)
+							s.append(c.mmappedChunkT, 42, 0, chunkDiskMapper)
+							s.mmapCurrentHeadChunk(chunkDiskMapper)
+						}
+						require.NoError(b, chunkDiskMapper.Close())
+					}
+
+					// Write exemplars.
 					refExemplars := make([]record.RefExemplar, 0, c.seriesPerBatch)
 					for i := 0; i < exemplarsPerSeries; i++ {
 						for j := 0; j < c.batches; j++ {
 							refExemplars = refExemplars[:0]
 							for k := j * c.seriesPerBatch; k < (j+1)*c.seriesPerBatch; k++ {
 								refExemplars = append(refExemplars, record.RefExemplar{
-									Ref:    uint64(k) * 100,
+									Ref:    uint64(k) * 101,
 									T:      int64(i) * 10,
 									V:      float64(i) * 100,
 									Labels: labels.FromStrings("traceID", fmt.Sprintf("trace-%d", i)),
@@ -239,6 +261,8 @@ func BenchmarkLoadWAL(b *testing.B) {
 						require.NoError(b, err)
 						h.Init(0)
 					}
+					b.StopTimer()
+					w.Close()
 				})
 		}
 	}
@@ -2531,4 +2555,236 @@ func TestWaitForPendingReadersInTimeRange(t *testing.T) {
 			checkWaiting(cq)
 		})
 	}
+}
+
+func TestChunkSnapshot(t *testing.T) {
+	head, _ := newTestHead(t, 120*4, false)
+	defer func() {
+		head.opts.EnableMemorySnapshotOnShutdown = false
+		require.NoError(t, head.Close())
+	}()
+
+	numSeries := 10
+	expSeries := make(map[string][]tsdbutil.Sample)
+	expTombstones := make(map[uint64]tombstones.Intervals)
+	{ // Initial data that goes into snapshot.
+		// Add some initial samples with >=1 m-map chunk.
+		app := head.Appender(context.Background())
+		for i := 1; i <= numSeries; i++ {
+			lbls := labels.Labels{labels.Label{Name: "foo", Value: fmt.Sprintf("bar%d", i)}}
+			lblStr := lbls.String()
+			// Should m-map at least 1 chunk.
+			for ts := int64(1); ts <= 200; ts++ {
+				val := rand.Float64()
+				expSeries[lblStr] = append(expSeries[lblStr], sample{ts, val})
+				_, err := app.Append(0, lbls, ts, val)
+				require.NoError(t, err)
+
+				// To create multiple WAL records.
+				if ts%10 == 0 {
+					require.NoError(t, app.Commit())
+					app = head.Appender(context.Background())
+				}
+			}
+		}
+		require.NoError(t, app.Commit())
+
+		// Add some tombstones.
+		var enc record.Encoder
+		for i := 1; i <= numSeries; i++ {
+			ref := uint64(i)
+			itvs := tombstones.Intervals{
+				{Mint: 1234, Maxt: 2345},
+				{Mint: 3456, Maxt: 4567},
+			}
+			for _, itv := range itvs {
+				expTombstones[ref].Add(itv)
+			}
+			head.tombstones.AddInterval(ref, itvs...)
+			err := head.wal.Log(enc.Tombstones([]tombstones.Stone{
+				{Ref: ref, Intervals: itvs},
+			}, nil))
+			require.NoError(t, err)
+		}
+	}
+
+	// These references should be the ones used for the snapshot.
+	wlast, woffset, err := head.wal.LastSegmentAndOffset()
+	require.NoError(t, err)
+
+	{ // Creating snapshot and verifying it.
+		head.opts.EnableMemorySnapshotOnShutdown = true
+		require.NoError(t, head.Close()) // This will create a snapshot.
+
+		_, sidx, soffset, err := LastChunkSnapshot(head.opts.ChunkDirRoot)
+		require.NoError(t, err)
+		require.Equal(t, wlast, sidx)
+		require.Equal(t, woffset, soffset)
+	}
+
+	{ // Test the replay of snapshot.
+		// Create new Head which should replay this snapshot.
+		w, err := wal.NewSize(nil, nil, head.wal.Dir(), 32768, false)
+		require.NoError(t, err)
+		head, err = NewHead(nil, nil, w, head.opts, nil)
+		require.NoError(t, err)
+		require.NoError(t, head.Init(math.MinInt64))
+
+		// Test query for snapshot replay.
+		q, err := NewBlockQuerier(head, math.MinInt64, math.MaxInt64)
+		require.NoError(t, err)
+		series := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"))
+		require.Equal(t, expSeries, series)
+
+		// Check the tombstones.
+		tr, err := head.Tombstones()
+		require.NoError(t, err)
+		actTombstones := make(map[uint64]tombstones.Intervals)
+		require.NoError(t, tr.Iter(func(ref uint64, itvs tombstones.Intervals) error {
+			for _, itv := range itvs {
+				actTombstones[ref].Add(itv)
+			}
+			return nil
+		}))
+		require.Equal(t, expTombstones, actTombstones)
+	}
+
+	{ // Additional data to only include in WAL and m-mapped chunks and not snapshot. This mimics having an old snapshot on disk.
+
+		// Add more samples.
+		app := head.Appender(context.Background())
+		for i := 1; i <= numSeries; i++ {
+			lbls := labels.Labels{labels.Label{Name: "foo", Value: fmt.Sprintf("bar%d", i)}}
+			lblStr := lbls.String()
+			// Should m-map at least 1 chunk.
+			for ts := int64(201); ts <= 400; ts++ {
+				val := rand.Float64()
+				expSeries[lblStr] = append(expSeries[lblStr], sample{ts, val})
+				_, err := app.Append(0, lbls, ts, val)
+				require.NoError(t, err)
+
+				// To create multiple WAL records.
+				if ts%10 == 0 {
+					require.NoError(t, app.Commit())
+					app = head.Appender(context.Background())
+				}
+			}
+		}
+		require.NoError(t, app.Commit())
+
+		// Add more tombstones.
+		var enc record.Encoder
+		for i := 1; i <= numSeries; i++ {
+			ref := uint64(i)
+			itvs := tombstones.Intervals{
+				{Mint: 12345, Maxt: 23456},
+				{Mint: 34567, Maxt: 45678},
+			}
+			for _, itv := range itvs {
+				expTombstones[ref].Add(itv)
+			}
+			head.tombstones.AddInterval(ref, itvs...)
+			err := head.wal.Log(enc.Tombstones([]tombstones.Stone{
+				{Ref: ref, Intervals: itvs},
+			}, nil))
+			require.NoError(t, err)
+		}
+	}
+
+	{ // Close Head and verify that new snapshot was not created.
+		head.opts.EnableMemorySnapshotOnShutdown = false
+		require.NoError(t, head.Close()) // This should not create a snapshot.
+
+		_, sidx, soffset, err := LastChunkSnapshot(head.opts.ChunkDirRoot)
+		require.NoError(t, err)
+		require.Equal(t, wlast, sidx)
+		require.Equal(t, woffset, soffset)
+	}
+
+	{ // Test the replay of snapshot, m-map chunks, and WAL.
+		// Create new Head to replay snapshot, m-map chunks, and WAL.
+		w, err := wal.NewSize(nil, nil, head.wal.Dir(), 32768, false)
+		require.NoError(t, err)
+		head.opts.EnableMemorySnapshotOnShutdown = true // Enabled to read from snapshot.
+		head, err = NewHead(nil, nil, w, head.opts, nil)
+		require.NoError(t, err)
+		require.NoError(t, head.Init(math.MinInt64))
+
+		// Test query when data is replayed from snapshot, m-map chunks, and WAL.
+		q, err := NewBlockQuerier(head, math.MinInt64, math.MaxInt64)
+		require.NoError(t, err)
+		series := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"))
+		require.Equal(t, expSeries, series)
+
+		// Check the tombstones.
+		tr, err := head.Tombstones()
+		require.NoError(t, err)
+		actTombstones := make(map[uint64]tombstones.Intervals)
+		require.NoError(t, tr.Iter(func(ref uint64, itvs tombstones.Intervals) error {
+			for _, itv := range itvs {
+				actTombstones[ref].Add(itv)
+			}
+			return nil
+		}))
+		require.Equal(t, expTombstones, actTombstones)
+	}
+}
+
+func TestSnapshotError(t *testing.T) {
+	head, _ := newTestHead(t, 120*4, false)
+	defer func() {
+		head.opts.EnableMemorySnapshotOnShutdown = false
+		require.NoError(t, head.Close())
+	}()
+
+	// Add a sample.
+	app := head.Appender(context.Background())
+	lbls := labels.Labels{labels.Label{Name: "foo", Value: "bar"}}
+	_, err := app.Append(0, lbls, 99, 99)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	// Add some tombstones.
+	itvs := tombstones.Intervals{
+		{Mint: 1234, Maxt: 2345},
+		{Mint: 3456, Maxt: 4567},
+	}
+	head.tombstones.AddInterval(1, itvs...)
+
+	// Check existance of data.
+	require.NotNil(t, head.series.getByHash(lbls.Hash(), lbls))
+	tm, err := head.tombstones.Get(1)
+	require.NoError(t, err)
+	require.NotEqual(t, 0, len(tm))
+
+	head.opts.EnableMemorySnapshotOnShutdown = true
+	require.NoError(t, head.Close()) // This will create a snapshot.
+
+	// Remove the WAL so that we don't load from it.
+	require.NoError(t, os.RemoveAll(head.wal.Dir()))
+
+	// Corrupt the snapshot.
+	snapDir, _, _, err := LastChunkSnapshot(head.opts.ChunkDirRoot)
+	require.NoError(t, err)
+	files, err := ioutil.ReadDir(snapDir)
+	require.NoError(t, err)
+	f, err := os.OpenFile(path.Join(snapDir, files[0].Name()), os.O_RDWR, 0)
+	require.NoError(t, err)
+	_, err = f.WriteAt([]byte{0b11111111}, 18)
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+
+	// Create new Head which should replay this snapshot.
+	w, err := wal.NewSize(nil, nil, head.wal.Dir(), 32768, false)
+	require.NoError(t, err)
+	head, err = NewHead(nil, nil, w, head.opts, nil)
+	require.NoError(t, err)
+	require.NoError(t, head.Init(math.MinInt64))
+
+	// There should be no series in the memory after snapshot error since WAL was removed.
+	require.Equal(t, 1.0, prom_testutil.ToFloat64(head.metrics.snapshotReplayErrorTotal))
+	require.Nil(t, head.series.getByHash(lbls.Hash(), lbls))
+	tm, err = head.tombstones.Get(1)
+	require.NoError(t, err)
+	require.Equal(t, 0, len(tm))
 }

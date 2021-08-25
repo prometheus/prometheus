@@ -468,12 +468,20 @@ func (s *memSeries) append(t int64, v float64, appendID uint64, chunkDiskMapper 
 		c = s.cutNewHeadChunk(t, chunkDiskMapper)
 		chunkCreated = true
 	}
-	numSamples := c.chunk.NumSamples()
 
 	// Out of order sample.
 	if c.maxTime >= t {
 		return false, chunkCreated
 	}
+
+	numSamples := c.chunk.NumSamples()
+	if numSamples == 0 {
+		// It could be the new chunk created after reading the chunk snapshot,
+		// hence we fix the minTime of the chunk here.
+		c.minTime = t
+		s.nextAt = rangeForTimestamp(c.minTime, s.chunkRange)
+	}
+
 	// If we reach 25% of a chunk's desired sample count, predict an end time
 	// for this chunk that will try to make samples equally distributed within
 	// the remaining chunks in the current chunk range.
