@@ -633,7 +633,7 @@ func funcAtanh(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper
 // === rad(Vector parser.ValueTypeVector) Vector ===
 func funcRad(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return simpleFunc(vals, enh, func(v float64) float64 {
-		return v * (math.Pi / 180)
+		return v * math.Pi / 180
 	})
 }
 
