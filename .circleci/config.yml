@@ -108,7 +108,7 @@ jobs:
       - run:
           command: go install -mod=readonly github.com/google/go-jsonnet/cmd/jsonnet github.com/google/go-jsonnet/cmd/jsonnetfmt github.com/jsonnet-bundler/jsonnet-bundler/cmd/jb
           working_directory: ~/project/documentation/prometheus-mixin
-      -8716766cb49ab9dd7df5622d80bb217b94a21d0f3d3dc3d074c3ec7a0c7f67ea run:
+      - run:
           command: make clean
           working_directory: ~/project/documentation/prometheus-mixin
       - run:
