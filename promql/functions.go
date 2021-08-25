@@ -615,6 +615,21 @@ func funcTanh(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper)
 	return simpleFunc(vals, enh, math.Tanh)
 }
 
+// == asinh(Vector parser.ValueTypeVector) Vector ===
+func funcAsinh(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	return simpleFunc(vals, enh, math.Asinh)
+}
+
+// == acosh(Vector parser.ValueTypeVector) Vector ===
+func funcAcosh(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	return simpleFunc(vals, enh, math.Acosh)
+}
+
+// == atanh(Vector parser.ValueTypeVector) Vector ===
+func funcAtanh(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	return simpleFunc(vals, enh, math.Atanh)
+}
+
 // === rad(Vector parser.ValueTypeVector) Vector ===
 func funcRad(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return simpleFunc(vals, enh, func(v float64) float64 {
@@ -1002,8 +1017,11 @@ var FunctionCalls = map[string]FunctionCall{
 	"absent":             funcAbsent,
 	"absent_over_time":   funcAbsentOverTime,
 	"acos":               funcAcos,
+	"acosh":              funcAcosh,
 	"asin":               funcAsin,
+	"asinh":              funcAsinh,
 	"atan":               funcAtan,
+	"atanh":              funcAtanh,
 	"avg_over_time":      funcAvgOverTime,
 	"ceil":               funcCeil,
 	"changes":            funcChanges,
