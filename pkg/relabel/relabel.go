@@ -139,14 +139,6 @@ func (c *Config) ResetDefaultRelabelConfigIfNecessary() error {
 		c.Regex = MustNewRegexp("")
 	}
 
-	if c.Replacement == "" {
-		c.Replacement = DefaultRelabelConfig.Replacement
-	}
-
-	if c.Separator == "" {
-		c.Separator = DefaultRelabelConfig.Separator
-	}
-
 	return nil
 }
 
