@@ -225,7 +225,8 @@ func BenchmarkLoadWAL(b *testing.B) {
 						require.NoError(b, err)
 						for k := 0; k < c.batches*c.seriesPerBatch; k++ {
 							// Create one mmapped chunk per series, with one sample at the given time.
-							s := newMemSeries(labels.Labels{}, uint64(k)*101, c.mmappedChunkT, nil)
+							lbls := labels.Labels{}
+							s := newMemSeries(lbls, uint64(k)*101, lbls.Hash(), c.mmappedChunkT, nil)
 							s.append(c.mmappedChunkT, 42, 0, chunkDiskMapper)
 							s.mmapCurrentHeadChunk(chunkDiskMapper)
 						}
