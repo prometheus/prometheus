@@ -29,6 +29,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/sigv4"
 	yaml "gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/discovery"
@@ -666,7 +667,7 @@ type RemoteWriteConfig struct {
 	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
 	QueueConfig      QueueConfig             `yaml:"queue_config,omitempty"`
 	MetadataConfig   MetadataConfig          `yaml:"metadata_config,omitempty"`
-	SigV4Config      *SigV4Config            `yaml:"sigv4,omitempty"`
+	SigV4Config      *sigv4.SigV4Config      `yaml:"sigv4,omitempty"`
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -756,17 +757,6 @@ type MetadataConfig struct {
 	SendInterval model.Duration `yaml:"send_interval"`
 	// Maximum number of samples per send.
 	MaxSamplesPerSend int `yaml:"max_samples_per_send,omitempty"`
-}
-
-// SigV4Config is the configuration for signing remote write requests with
-// AWS's SigV4 verification process. Empty values will be retrieved using the
-// AWS default credentials chain.
-type SigV4Config struct {
-	Region    string        `yaml:"region,omitempty"`
-	AccessKey string        `yaml:"access_key,omitempty"`
-	SecretKey config.Secret `yaml:"secret_key,omitempty"`
-	Profile   string        `yaml:"profile,omitempty"`
-	RoleARN   string        `yaml:"role_arn,omitempty"`
 }
 
 // RemoteReadConfig is the configuration for reading from remote storage.

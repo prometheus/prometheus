@@ -33,9 +33,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/sigv4"
 	"github.com/prometheus/common/version"
 
-	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/prompb"
 )
 
@@ -97,7 +97,7 @@ type ClientConfig struct {
 	URL              *config_util.URL
 	Timeout          model.Duration
 	HTTPClientConfig config_util.HTTPClientConfig
-	SigV4Config      *config.SigV4Config
+	SigV4Config      *sigv4.SigV4Config
 	Headers          map[string]string
 	RetryOnRateLimit bool
 }
@@ -143,7 +143,7 @@ func NewWriteClient(name string, conf *ClientConfig) (WriteClient, error) {
 	t := httpClient.Transport
 
 	if conf.SigV4Config != nil {
-		t, err = newSigV4RoundTripper(conf.SigV4Config, httpClient.Transport)
+		t, err = sigv4.NewSigV4RoundTripper(conf.SigV4Config, httpClient.Transport)
 		if err != nil {
 			return nil, err
 		}
