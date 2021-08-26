@@ -297,7 +297,7 @@ const resolvedRetention = 15 * time.Minute
 
 // Eval evaluates the rule expression and then creates pending alerts and fires
 // or removes previously pending alerts accordingly.
-func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, externalURL *url.URL) (promql.Vector, error) {
+func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, externalURL *url.URL, limit int) (promql.Vector, error) {
 	res, err := query(ctx, r.vector.String(), ts)
 	if err != nil {
 		return nil, err
@@ -414,6 +414,16 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 		}
 	}
 
+	numActive := len(r.active)
+	if limit != 0 && numActive > limit {
+		r.active = map[uint64]*Alert{}
+		return nil, errors.Errorf("exceeded limit of %v with %v alerts", limit, numActive)
+	}
+
+	// We have already acquired the lock above hence using SetHealth and
+	// SetLastError will deadlock.
+	r.health = HealthGood
+	r.lastError = err
 	return vec, nil
 }
 
