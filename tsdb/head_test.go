@@ -2510,7 +2510,7 @@ func TestChunkSnapshot(t *testing.T) {
 		e := ex{
 			seriesLabels: lbls,
 			e: exemplar.Exemplar{
-				Labels: labels.Labels{{"traceID", fmt.Sprintf("%d", rand.Int())}},
+				Labels: labels.Labels{{Name: "traceID", Value: fmt.Sprintf("%d", rand.Int())}},
 				Value:  rand.Float64(),
 				Ts:     ts,
 			},
