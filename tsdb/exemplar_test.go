@@ -480,7 +480,7 @@ func TestResize(t *testing.T) {
 func BenchmarkAddExemplar(b *testing.B) {
 	// We need to include these labels since we do length calculation
 	// before adding.
-	exLabels := labels.Labels{{"traceID", "89620921"}}
+	exLabels := labels.Labels{{Name: "traceID", Value: "89620921"}}
 
 	for _, n := range []int{10000, 100000, 1000000} {
 		b.Run(fmt.Sprintf("%d", n), func(b *testing.B) {
@@ -489,10 +489,10 @@ func BenchmarkAddExemplar(b *testing.B) {
 			es := exs.(*CircularExemplarStorage)
 
 			b.ResetTimer()
-			l := labels.Labels{{"service", strconv.Itoa(0)}}
+			l := labels.Labels{{Name: "service", Value: strconv.Itoa(0)}}
 			for i := 0; i < n; i++ {
 				if i%100 == 0 {
-					l = labels.Labels{{"service", strconv.Itoa(i)}}
+					l = labels.Labels{{Name: "service", Value: strconv.Itoa(i)}}
 				}
 				err = es.AddExemplar(l, exemplar.Exemplar{Value: float64(i), Ts: int64(i), Labels: exLabels})
 				require.NoError(b, err)

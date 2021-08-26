@@ -632,7 +632,7 @@ func (h *Head) ChunkSnapshot() (*ChunkSnapshotStats, error) {
 	if err := cp.Log(recs...); err != nil {
 		return stats, errors.Wrap(err, "flush records")
 	}
-	buf, recs = buf[:0], recs[:0]
+	buf = buf[:0]
 
 	// Add exemplars in the snapshot.
 	// We log in batches, with each record having upto 10000 exemplars.
