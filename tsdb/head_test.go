@@ -2720,3 +2720,40 @@ func TestSnapshotError(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 0, len(tm))
 }
+
+func TestExemplarReplayRace(t *testing.T) {
+	head, _ := newTestHead(t, 120*4, false)
+	defer func() {
+		require.NoError(t, head.Close())
+	}()
+
+	numSeries := 10
+	app := head.Appender(context.Background())
+	for i := 1; i <= numSeries; i++ {
+		lbls := labels.Labels{labels.Label{Name: "foo", Value: fmt.Sprintf("bar%d", i)}}
+		for ts := int64(1); ts <= 200; ts++ {
+			ref, err := app.Append(0, lbls, ts, rand.Float64())
+			require.NoError(t, err)
+			// Add an exemplar and to create multiple WAL records.
+			if ts%10 == 0 {
+				_, err := app.AppendExemplar(ref, lbls, exemplar.Exemplar{
+					Labels: labels.Labels{{Name: "traceID", Value: fmt.Sprintf("%d", rand.Int())}},
+					Value:  rand.Float64(),
+					Ts:     ts,
+				})
+				require.NoError(t, err)
+				require.NoError(t, app.Commit())
+				app = head.Appender(context.Background())
+			}
+		}
+	}
+	require.NoError(t, app.Commit())
+
+	// Restart head to initiate WAL replay.
+	require.NoError(t, head.Close())
+	w, err := wal.NewSize(nil, nil, head.wal.Dir(), 32768, false)
+	require.NoError(t, err)
+	head, err = NewHead(nil, nil, w, head.opts, nil)
+	require.NoError(t, err)
+	require.NoError(t, head.Init(math.MinInt64))
+}
