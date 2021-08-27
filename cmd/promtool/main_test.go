@@ -151,3 +151,13 @@ func TestCheckDuplicates(t *testing.T) {
 		})
 	}
 }
+
+func BenchmarkCheckDuplicates(b *testing.B) {
+	rgs, err := rulefmt.ParseFile("./testdata/rules_large.yml")
+	require.Empty(b, err)
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		checkDuplicates(rgs.Groups)
+	}
+}
