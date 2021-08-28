@@ -1,8 +1,0 @@
-/node_modules/
-/src/parser.*
-.tern-*
-/dist/
-
-# IntelliJ
-
-.idea/

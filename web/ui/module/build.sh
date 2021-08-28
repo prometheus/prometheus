@@ -2,7 +2,7 @@
 
 set -e
 
-MODULE_LIST=(lezer-promql codemirror-promql)
+MODULE_LIST=(codemirror-promql)
 
 build-module() {
   for module in "${MODULE_LIST[@]}"; do

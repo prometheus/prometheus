@@ -12,33 +12,33 @@
 // limitations under the License.
 
 import {
-    And,
-    Avg,
-    Bool,
-    Bottomk,
-    By,
-    Count,
-    CountValues,
-    End,
-    Group,
-    GroupLeft,
-    GroupRight,
-    Ignoring,
-    inf,
-    Max,
-    Min,
-    nan,
-    Offset,
-    On,
-    Or,
-    Quantile,
-    Start,
-    Stddev,
-    Stdvar,
-    Sum,
-    Topk,
-    Unless,
-    Without,
+  And,
+  Avg,
+  Bool,
+  Bottomk,
+  By,
+  Count,
+  CountValues,
+  End,
+  Group,
+  GroupLeft,
+  GroupRight,
+  Ignoring,
+  inf,
+  Max,
+  Min,
+  nan,
+  Offset,
+  On,
+  Or,
+  Quantile,
+  Start,
+  Stddev,
+  Stdvar,
+  Sum,
+  Topk,
+  Unless,
+  Without,
 } from './parser.terms.js';
 
 const keywordTokens = {
@@ -50,11 +50,11 @@ const keywordTokens = {
   group_left: GroupLeft,
   group_right: GroupRight,
   offset: Offset,
-}
+};
 
 export const specializeIdentifier = (value, stack) => {
   return keywordTokens[value.toLowerCase()] || -1;
-}
+};
 
 const contextualKeywordTokens = {
   avg: Avg,
@@ -76,8 +76,8 @@ const contextualKeywordTokens = {
   unless: Unless,
   start: Start,
   end: End,
-}
+};
 
 export const extendIdentifier = (value, stack) => {
   return contextualKeywordTokens[value.toLowerCase()] || -1;
-}
+};
