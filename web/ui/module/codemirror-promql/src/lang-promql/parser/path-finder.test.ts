@@ -32,7 +32,7 @@ import {
   NumberLiteral,
   Sub,
   VectorSelector,
-} from 'lezer-promql';
+} from '../grammar/parser.terms';
 import { createEditorState } from '../../test/utils';
 import { containsAtLeastOneChild, containsChild, retrieveAllRecursiveNodes, walkBackward, walkThrough } from './path-finder';
 import { SyntaxNode } from 'lezer-tree';
