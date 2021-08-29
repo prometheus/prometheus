@@ -30,6 +30,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
+	"github.com/prometheus/common/config"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
@@ -80,6 +81,8 @@ type SDConfig struct {
 	ClientSecret         config_util.Secret `yaml:"client_secret,omitempty"`
 	RefreshInterval      model.Duration     `yaml:"refresh_interval,omitempty"`
 	AuthenticationMethod string             `yaml:"authentication_method,omitempty"`
+
+	ProxyURL config.URL `yaml:"proxy_url,omitempty"`
 }
 
 // Name returns the name of the Config.
@@ -202,17 +205,27 @@ func createAzureClient(cfg SDConfig) (azureClient, error) {
 
 	bearerAuthorizer := autorest.NewBearerAuthorizer(spt)
 
+	sender := autorest.DecorateSender(&http.Client{
+		Transport: &http.Transport{
+			Proxy: http.ProxyURL(cfg.ProxyURL.URL),
+		},
+	})
+
 	c.vm = compute.NewVirtualMachinesClientWithBaseURI(resourceManagerEndpoint, cfg.SubscriptionID)
 	c.vm.Authorizer = bearerAuthorizer
+	c.vm.Sender = sender
 
 	c.nic = network.NewInterfacesClientWithBaseURI(resourceManagerEndpoint, cfg.SubscriptionID)
 	c.nic.Authorizer = bearerAuthorizer
+	c.nic.Sender = sender
 
 	c.vmss = compute.NewVirtualMachineScaleSetsClientWithBaseURI(resourceManagerEndpoint, cfg.SubscriptionID)
 	c.vmss.Authorizer = bearerAuthorizer
+	c.vm.Sender = sender
 
 	c.vmssvm = compute.NewVirtualMachineScaleSetVMsClientWithBaseURI(resourceManagerEndpoint, cfg.SubscriptionID)
 	c.vmssvm.Authorizer = bearerAuthorizer
+	c.vmssvm.Sender = sender
 
 	return c, nil
 }
