@@ -990,25 +990,25 @@ func TestCalculateDesiredShardsDetail(t *testing.T) {
 			dataOut:         10,
 			dataOutDuration: 2,
 			backlog:         20,
-			expectedShards:  2, // ? should be trying to catch up
+			expectedShards:  4,
 		},
 		{
 			name:            "backlogged 90s",
-			prevShards:      2,
+			prevShards:      4,
 			dataIn:          10,
 			dataOut:         10,
-			dataOutDuration: 2,
+			dataOutDuration: 4,
 			backlog:         90,
-			expectedShards:  4, // ?! should be trying to go much faster
+			expectedShards:  22,
 		},
 		{
 			name:            "backlog reduced",
-			prevShards:      4,
+			prevShards:      22,
 			dataIn:          10,
 			dataOut:         20,
 			dataOutDuration: 4,
 			backlog:         10,
-			expectedShards:  3, // ?! shouldn't downshard from 4 to 3: less than 30% change
+			expectedShards:  3,
 		},
 		{
 			name:            "backlog eliminated",
