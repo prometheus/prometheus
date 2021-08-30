@@ -250,9 +250,10 @@ type headMetrics struct {
 	checkpointCreationTotal  prometheus.Counter
 	mmapChunkCorruptionTotal prometheus.Counter
 
-	// Sparse histogram metrics.
-	sparseHistogramsAddedTotal prometheus.Counter
-	sparseHistogramSeries      prometheus.Gauge
+	// Sparse histogram metrics for experiments.
+	// TODO: remove these in the final version.
+	sparseHistogramSamplesTotal prometheus.Counter
+	sparseHistogramSeries       prometheus.Gauge
 }
 
 func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
@@ -347,13 +348,13 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			Name: "prometheus_tsdb_mmap_chunk_corruptions_total",
 			Help: "Total number of memory-mapped chunk corruptions.",
 		}),
-		sparseHistogramsAddedTotal: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "prometheus_tsdb_sparse_histogram_added_total",
-			Help: "Total number of sparse histograms added.",
+		sparseHistogramSamplesTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_sparse_histogram_samples_total",
+			Help: "Total number of sparse histograms samples added.",
 		}),
 		sparseHistogramSeries: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "prometheus_tsdb_sparse_histogram_series",
-			Help: "Number of sparse histogram series currently present in the memory.",
+			Help: "Number of sparse histogram series currently present in the head block.",
 		}),
 	}
 
@@ -381,7 +382,7 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			m.checkpointCreationFail,
 			m.checkpointCreationTotal,
 			m.mmapChunkCorruptionTotal,
-			m.sparseHistogramsAddedTotal,
+			m.sparseHistogramSamplesTotal,
 			m.sparseHistogramSeries,
 			// Metrics bound to functions and not needed in tests
 			// can be created and registered on the spot.
@@ -1081,7 +1082,7 @@ func (h *Head) gc() int64 {
 	h.metrics.seriesRemoved.Add(float64(seriesRemoved))
 	h.metrics.chunksRemoved.Add(float64(chunksRemoved))
 	h.metrics.chunks.Sub(float64(chunksRemoved))
-	h.metrics.sparseHistogramSeries.Add(float64(-sparseHistogramSeriesDeleted))
+	h.metrics.sparseHistogramSeries.Sub(float64(sparseHistogramSeriesDeleted))
 	h.numSeries.Sub(uint64(seriesRemoved))
 
 	// Remove deleted series IDs from the postings lists.

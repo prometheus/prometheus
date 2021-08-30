@@ -554,7 +554,7 @@ func (a *headAppender) Commit() (err error) {
 		series.Unlock()
 
 		if ok {
-			a.head.metrics.sparseHistogramsAddedTotal.Inc()
+			a.head.metrics.sparseHistogramSamplesTotal.Inc()
 		} else {
 			total--
 			a.head.metrics.outOfOrderSamples.Inc()
