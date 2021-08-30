@@ -25,6 +25,8 @@
       }
     ]
   },
-  "plugins": ["prettier"],
+  "plugins": [
+    "prettier"
+  ],
   "ignorePatterns": ["src/vendor/**"]
 }

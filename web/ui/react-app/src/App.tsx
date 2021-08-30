@@ -3,7 +3,6 @@ import Navigation from './Navbar';
 import { Container } from 'reactstrap';
 
 import { BrowserRouter as Router, Redirect, Switch, Route } from 'react-router-dom';
-import useMedia from 'use-media';
 import {
   AlertsPage,
   ConfigPage,
@@ -19,6 +18,7 @@ import { PathPrefixContext } from './contexts/PathPrefixContext';
 import { ThemeContext, themeName, themeSetting } from './contexts/ThemeContext';
 import { Theme, themeLocalStorageKey } from './Theme';
 import { useLocalStorage } from './hooks/useLocalStorage';
+import useMedia from './hooks/useMedia';
 
 interface AppProps {
   consolesLink: string | null;
