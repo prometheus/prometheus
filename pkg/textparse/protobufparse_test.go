@@ -228,6 +228,16 @@ metric: <
   >
 >
 `,
+		`name: "without_quantiles"
+help: "A summary without quantiles."
+type: SUMMARY
+metric: <
+  summary: <
+    sample_count: 42
+    sample_sum: 1.234
+  >
+>
+`,
 	}
 
 	varintBuf := make([]byte, binary.MaxVarintLen32)
@@ -456,6 +466,28 @@ metric: <
 				"__name__", "rpc_durations_seconds",
 				"quantile", "0.99",
 				"service", "exponential",
+			),
+		},
+		{
+			m:    "without_quantiles",
+			help: "A summary without quantiles.",
+		},
+		{
+			m:   "without_quantiles",
+			typ: MetricTypeSummary,
+		},
+		{
+			m: "without_quantiles_count",
+			v: 42,
+			lset: labels.FromStrings(
+				"__name__", "without_quantiles_count",
+			),
+		},
+		{
+			m: "without_quantiles_sum",
+			v: 1.234,
+			lset: labels.FromStrings(
+				"__name__", "without_quantiles_sum",
 			),
 		},
 	}

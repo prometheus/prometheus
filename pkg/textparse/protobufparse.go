@@ -96,6 +96,10 @@ func (p *ProtobufParser) Series() ([]byte, *int64, float64) {
 			v = float64(s.GetSampleCount())
 		case -1:
 			v = s.GetSampleSum()
+			// Need to detect a summaries without quantile here.
+			if len(s.GetQuantile()) == 0 {
+				p.fieldsDone = true
+			}
 		default:
 			v = s.GetQuantile()[p.fieldPos].GetValue()
 		}
