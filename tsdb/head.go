@@ -249,6 +249,11 @@ type headMetrics struct {
 	checkpointCreationFail   prometheus.Counter
 	checkpointCreationTotal  prometheus.Counter
 	mmapChunkCorruptionTotal prometheus.Counter
+
+	// Sparse histogram metrics for experiments.
+	// TODO: remove these in the final version.
+	sparseHistogramSamplesTotal prometheus.Counter
+	sparseHistogramSeries       prometheus.Gauge
 }
 
 func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
@@ -343,6 +348,14 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			Name: "prometheus_tsdb_mmap_chunk_corruptions_total",
 			Help: "Total number of memory-mapped chunk corruptions.",
 		}),
+		sparseHistogramSamplesTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_sparse_histogram_samples_total",
+			Help: "Total number of sparse histograms samples added.",
+		}),
+		sparseHistogramSeries: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "prometheus_tsdb_sparse_histogram_series",
+			Help: "Number of sparse histogram series currently present in the head block.",
+		}),
 	}
 
 	if r != nil {
@@ -369,6 +382,8 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			m.checkpointCreationFail,
 			m.checkpointCreationTotal,
 			m.mmapChunkCorruptionTotal,
+			m.sparseHistogramSamplesTotal,
+			m.sparseHistogramSeries,
 			// Metrics bound to functions and not needed in tests
 			// can be created and registered on the spot.
 			prometheus.NewGaugeFunc(prometheus.GaugeOpts{
@@ -1061,12 +1076,13 @@ func (h *Head) gc() int64 {
 
 	// Drop old chunks and remember series IDs and hashes if they can be
 	// deleted entirely.
-	deleted, chunksRemoved, actualMint := h.series.gc(mint)
+	deleted, chunksRemoved, actualMint, sparseHistogramSeriesDeleted := h.series.gc(mint)
 	seriesRemoved := len(deleted)
 
 	h.metrics.seriesRemoved.Add(float64(seriesRemoved))
 	h.metrics.chunksRemoved.Add(float64(chunksRemoved))
 	h.metrics.chunks.Sub(float64(chunksRemoved))
+	h.metrics.sparseHistogramSeries.Sub(float64(sparseHistogramSeriesDeleted))
 	h.numSeries.Sub(uint64(seriesRemoved))
 
 	// Remove deleted series IDs from the postings lists.
@@ -1297,12 +1313,13 @@ func newStripeSeries(stripeSize int, seriesCallback SeriesLifecycleCallback) *st
 
 // gc garbage collects old chunks that are strictly before mint and removes
 // series entirely that have no chunks left.
-func (s *stripeSeries) gc(mint int64) (map[uint64]struct{}, int, int64) {
+func (s *stripeSeries) gc(mint int64) (map[uint64]struct{}, int, int64, int) {
 	var (
-		deleted                  = map[uint64]struct{}{}
-		deletedForCallback       = []labels.Labels{}
-		rmChunks                 = 0
-		actualMint         int64 = math.MaxInt64
+		deleted                            = map[uint64]struct{}{}
+		deletedForCallback                 = []labels.Labels{}
+		rmChunks                           = 0
+		actualMint                   int64 = math.MaxInt64
+		sparseHistogramSeriesDeleted       = 0
 	)
 	// Run through all series and truncate old chunks. Mark those with no
 	// chunks left as deleted and store their ID.
@@ -1334,6 +1351,9 @@ func (s *stripeSeries) gc(mint int64) (map[uint64]struct{}, int, int64) {
 					s.locks[j].Lock()
 				}
 
+				if series.sparseHistogramSeries {
+					sparseHistogramSeriesDeleted++
+				}
 				deleted[series.ref] = struct{}{}
 				s.hashes[i].del(hash, series.lset)
 				delete(s.series[j], series.ref)
@@ -1357,7 +1377,7 @@ func (s *stripeSeries) gc(mint int64) (map[uint64]struct{}, int, int64) {
 		actualMint = mint
 	}
 
-	return deleted, rmChunks, actualMint
+	return deleted, rmChunks, actualMint, sparseHistogramSeriesDeleted
 }
 
 func (s *stripeSeries) getByID(id uint64) *memSeries {
@@ -1459,6 +1479,9 @@ type memSeries struct {
 	memChunkPool *sync.Pool
 
 	txs *txRing
+
+	// Temporary variable for sparsehistogram experiment.
+	sparseHistogramSeries bool
 }
 
 func newMemSeries(lset labels.Labels, id uint64, chunkRange int64, memChunkPool *sync.Pool) *memSeries {

@@ -390,6 +390,8 @@ func (a *headAppender) AppendHistogram(ref uint64, lset labels.Labels, t int64, 
 			return 0, err
 		}
 		if created {
+			a.head.metrics.sparseHistogramSeries.Inc()
+			s.sparseHistogramSeries = true
 			a.series = append(a.series, record.RefSeries{
 				Ref:    s.ref,
 				Labels: lset,
@@ -551,7 +553,9 @@ func (a *headAppender) Commit() (err error) {
 		series.pendingCommit = false
 		series.Unlock()
 
-		if !ok {
+		if ok {
+			a.head.metrics.sparseHistogramSamplesTotal.Inc()
+		} else {
 			total--
 			a.head.metrics.outOfOrderSamples.Inc()
 		}
