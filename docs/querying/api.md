@@ -513,8 +513,8 @@ $ curl http://localhost:9090/api/v1/targets
           "__address__": "127.0.0.1:9100",
           "__metrics_path__": "/metrics",
           "__scheme__": "http",
-          "__scrape_interval": "1m",
-          "__scrape_timeout": "10s",
+          "__scrape_interval__": "1m",
+          "__scrape_timeout__": "10s",
           "job": "node"
         },
       }
