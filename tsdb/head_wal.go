@@ -541,7 +541,7 @@ const chunkSnapshotPrefix = "chunk_snapshot."
 //
 // The snapshot first contains all series (each in individual records and not sorted), followed by
 // tombstones (a single record), and finally exemplars (>= 1 record). Exemplars are in the order they
-// appear in the circular buffer.
+// were written to the circular buffer.
 func (h *Head) ChunkSnapshot() (*ChunkSnapshotStats, error) {
 	if h.wal == nil {
 		// If we are not storing any WAL, does not make sense to take a snapshot too.

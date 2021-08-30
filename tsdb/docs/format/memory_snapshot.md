@@ -6,7 +6,7 @@ Below are the formats of the individual records.
 The order of records in the snapshot is always:
 1. Starts with series records, one per series, in an unsorted fashion.
 2. After all series are done, we write a tombstone record containing all the tombstones.
-3. At the end, we write one or more exemplar records while batching up the exemplars in each record. The order of exemplars is same as it appears in the circular buffer in the memory.
+3. At the end, we write one or more exemplar records while batching up the exemplars in each record. Exemplars are in the order they were written to the circular buffer.
 
 ### Series records
 
