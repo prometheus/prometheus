@@ -1,5 +1,4 @@
 import React, { FC, useState, useEffect } from 'react';
-import { RouteComponentProps } from '@reach/router';
 import { Alert, Button } from 'reactstrap';
 
 import Panel, { PanelOptions, PanelDefaultOptions } from './Panel';
@@ -17,7 +16,7 @@ export const updateURL = (nextPanels: PanelMeta[]) => {
   window.history.pushState({}, '', query);
 };
 
-interface PanelListContentProps extends RouteComponentProps {
+interface PanelListContentProps {
   panels: PanelMeta[];
   metrics: string[];
   useLocalTime: boolean;
@@ -122,7 +121,7 @@ export const PanelListContent: FC<PanelListContentProps> = ({
   );
 };
 
-const PanelList: FC<RouteComponentProps> = () => {
+const PanelList: FC = () => {
   const [delta, setDelta] = useState(0);
   const [useExperimentalEditor, setUseExperimentalEditor] = useLocalStorage('use-new-editor', true);
   const [useLocalTime, setUseLocalTime] = useLocalStorage('use-local-time', false);
