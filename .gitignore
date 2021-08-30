@@ -4,6 +4,8 @@
 /*.yml
 *.exe
 
+/**/node_modules
+
 /prometheus
 /promtool
 benchmark.txt

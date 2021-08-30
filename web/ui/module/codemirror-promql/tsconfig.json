@@ -1,25 +1,18 @@
 {
-  "compileOnSave": false,
+  "extends": "../../tsconfig.base.json",
+  "include": [
+    "src"
+  ],
+  "exclude": [
+    "**/*.test.ts"
+  ],
   "compilerOptions": {
-    "target": "ES2015",
+    "declaration": true,
+    "outDir": "dist",
     "module": "commonjs",
     "lib": [
       "es6",
       "dom"
-    ],
-    "declaration": true,
-    "outDir": "lib",
-    "strict": true,
-    "sourceMap": true,
-    "moduleResolution": "node",
-    "esModuleInterop": true,
-    "allowSyntheticDefaultImports": true
-  },
-  "include": [
-    "src/lang-promql"
-  ],
-  "exclude": [
-    "node_modules",
-    "src/**/*.test.ts"
-  ]
+    ]
+  }
 }

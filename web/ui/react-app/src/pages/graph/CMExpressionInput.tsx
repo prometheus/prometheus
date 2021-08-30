@@ -20,7 +20,7 @@ import MetricsExplorer from './MetricsExplorer';
 import { usePathPrefix } from '../../contexts/PathPrefixContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { CompleteStrategy, PromQLExtension } from 'codemirror-promql';
-import { newCompleteStrategy } from 'codemirror-promql/cjs/complete';
+import { newCompleteStrategy } from 'codemirror-promql/complete';
 
 const promqlExtension = new PromQLExtension();
 

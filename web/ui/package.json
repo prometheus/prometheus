@@ -1,0 +1,8 @@
+{
+  "name": "prometheus",
+  "private": true,
+  "workspaces": [
+    "react-app",
+    "module/codemirror-promql"
+  ]
+}

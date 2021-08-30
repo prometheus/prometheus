@@ -33,7 +33,7 @@ import {
   Sub,
   VectorSelector,
 } from 'lezer-promql';
-import { createEditorState } from '../../test/utils';
+import { createEditorState } from '../test/utils';
 import { containsAtLeastOneChild, containsChild, retrieveAllRecursiveNodes, walkBackward, walkThrough } from './path-finder';
 import { SyntaxNode } from 'lezer-tree';
 import { syntaxTree } from '@codemirror/language';

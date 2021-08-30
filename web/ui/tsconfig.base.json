@@ -1,0 +1,13 @@
+// Base config useful for all typescript projects
+{
+  "compilerOptions": {
+    "skipLibCheck": true,
+    "target": "ES2015",
+    "declaration": true,
+    "strict": true,
+    "sourceMap": true,
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true
+  }
+}

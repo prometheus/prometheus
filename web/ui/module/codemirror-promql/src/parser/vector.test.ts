@@ -12,7 +12,7 @@
 // limitations under the License.
 
 import { buildVectorMatching } from './vector';
-import { createEditorState } from '../../test/utils';
+import { createEditorState } from '../test/utils';
 import { walkThrough } from './path-finder';
 import { BinaryExpr, Expr } from 'lezer-promql';
 import chai from 'chai';
