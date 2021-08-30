@@ -13,13 +13,14 @@
     "sourceMap": true,
     "moduleResolution": "node",
     "esModuleInterop": true,
-    "allowSyntheticDefaultImports": true
+    "allowSyntheticDefaultImports": true,
+    "allowJs": true,
+    "skipLibCheck": true
   },
   "include": [
-    "src/lang-promql"
+    "src"
   ],
   "exclude": [
-    "node_modules",
     "src/**/*.test.ts"
   ]
 }

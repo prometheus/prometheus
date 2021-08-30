@@ -32,8 +32,8 @@ import {
   NumberLiteral,
   Sub,
   VectorSelector,
-} from 'lezer-promql';
-import { createEditorState } from '../test/utils';
+} from '../grammar/parser.terms';
+import { createEditorState } from '../test/utils.test';
 import { containsAtLeastOneChild, containsChild, retrieveAllRecursiveNodes, walkBackward, walkThrough } from './path-finder';
 import { SyntaxNode } from 'lezer-tree';
 import { syntaxTree } from '@codemirror/language';

@@ -7,8 +7,6 @@
       "dom.iterable",
       "esnext"
     ],
-    "allowJs": true,
-    "allowSyntheticDefaultImports": true,
     "forceConsistentCasingInFileNames": true,
     "module": "esnext",
     "resolveJsonModule": true,

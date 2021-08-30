@@ -13,7 +13,7 @@
 
 import chai from 'chai';
 import { analyzeCompletion, computeStartCompletePosition, ContextKind } from './hybrid';
-import { createEditorState, mockedMetricsTerms, mockPrometheusServer } from '../test/utils';
+import { createEditorState, mockedMetricsTerms, mockPrometheusServer } from '../test/utils.test';
 import { Completion, CompletionContext } from '@codemirror/autocomplete';
 import {
   aggregateOpModifierTerms,
@@ -27,7 +27,7 @@ import {
   numberTerms,
   snippets,
 } from './promql.terms';
-import { EqlSingle, Neq } from 'lezer-promql';
+import { EqlSingle, Neq } from '../grammar/parser.terms';
 import { syntaxTree } from '@codemirror/language';
 import { newCompleteStrategy } from './index';
 

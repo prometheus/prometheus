@@ -16,14 +16,14 @@
 set -ex
 
 # build the lib (both ES2015 and CommonJS)
-tsc --module ES2015 --target ES2015 --outDir lib/esm
-tsc --module commonjs --target es5 --outDir lib/cjs --downlevelIteration
+tsc -p tsconfig.package.json --module ES2015 --target ES2015 --outDir dist/esm
+tsc -p tsconfig.package.json --module commonjs --target es5 --outDir dist/cjs --downlevelIteration
 
 # Finally, copy some useful files into the distribution folder for documentation purposes.
-cp ./README.md ./lib/README.md
-cp ./CHANGELOG.md ./lib/CHANGELOG.md
-cp ./package.json ./lib/package.json
+cp ./README.md ./dist/README.md
+cp ./CHANGELOG.md ./dist/CHANGELOG.md
+cp ./package.json ./dist/package.json
 
 if [ -f "./LICENSE" ]; then
-  cp ./LICENSE ./lib/LICENSE
+  cp ./LICENSE ./dist/LICENSE
 fi
