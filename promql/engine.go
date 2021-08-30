@@ -819,13 +819,14 @@ func extractGroupsFromPath(p []parser.Node) (bool, []string) {
 }
 
 type concreteSeriesSet struct {
+	len               int
 	cur               int
 	expandedSeriesSet []storage.Series
 }
 
 func (c *concreteSeriesSet) Next() bool {
 	c.cur++
-	return c.cur-1 < len(c.expandedSeriesSet)
+	return c.cur-1 < c.len
 }
 
 func (c *concreteSeriesSet) At() storage.Series {
@@ -844,6 +845,7 @@ func lazilyExpandSeriesSet(expr *parser.VectorSelector) storage.SeriesSet {
 	if expr.Series != nil {
 		return &concreteSeriesSet{
 			expandedSeriesSet: expr.Series,
+			len:               len(expr.Series),
 		}
 	}
 	return expr.UnexpandedSeriesSet
@@ -1316,7 +1318,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 		selVS := sel.VectorSelector.(*parser.VectorSelector)
 
 		if hadSubquery {
-			ws, err := checkAndExpandSeriesSet(ev.ctx, sel)
+			ws, err := checkAndExpandSeriesSet(ev.ctx, selVS)
 			warnings = append(warnings, ws...)
 			if err != nil {
 				ev.error(errWithWarnings{errors.Wrap(err, "expanding series"), warnings})
