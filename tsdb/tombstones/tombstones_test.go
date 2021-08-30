@@ -77,7 +77,7 @@ func TestDeletingTombstones(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, intervals, dranges)
 
-	stones.DeleteTombstones([]uint64{ref})
+	stones.DeleteTombstones(map[uint64]struct{}{ref: struct{}{}})
 
 	intervals, err = stones.Get(ref)
 	require.NoError(t, err)
