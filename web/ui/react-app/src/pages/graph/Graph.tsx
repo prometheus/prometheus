@@ -165,7 +165,7 @@ class Graph extends PureComponent<GraphProps, GraphState> {
         ? [...chartData.series.map(toHoverColor(selectedIndex, this.props.stacked)), ...chartData.exemplars]
         : [
             ...chartData.series.filter((_, i) => selected.includes(i)),
-            ...chartData.exemplars.filter(exemplar => {
+            ...chartData.exemplars.filter((exemplar) => {
               series: for (const i in selected) {
                 for (const name in chartData.series[selected[i]].labels) {
                   if (exemplar.seriesLabels[name] !== chartData.series[selected[i]].labels[name]) {

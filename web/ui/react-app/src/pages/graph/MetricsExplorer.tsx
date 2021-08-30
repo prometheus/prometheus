@@ -8,7 +8,7 @@ interface Props {
   insertAtCursor(value: string): void;
 }
 
-class MetricsExplorer extends Component<Props, {}> {
+class MetricsExplorer extends Component<Props> {
   handleMetricClick = (query: string) => {
     this.props.insertAtCursor(query);
     this.props.updateShow(false);
@@ -23,7 +23,7 @@ class MetricsExplorer extends Component<Props, {}> {
       <Modal isOpen={this.props.show} toggle={this.toggle} className="metrics-explorer">
         <ModalHeader toggle={this.toggle}>Metrics Explorer</ModalHeader>
         <ModalBody>
-          {this.props.metrics.map(metric => (
+          {this.props.metrics.map((metric) => (
             <p key={metric} className="metric" onClick={this.handleMetricClick.bind(this, metric)}>
               {metric}
             </p>

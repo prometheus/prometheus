@@ -136,7 +136,7 @@ describe('Utils', () => {
           },
         ];
 
-        tests.forEach(t => {
+        tests.forEach((t) => {
           it(t.input, () => {
             const d = parseDuration(t.input);
             expect(d).toEqual(t.output);
@@ -148,7 +148,7 @@ describe('Utils', () => {
       describe('should fail to parse invalid durations', () => {
         const tests = ['1', '1y1m1d', '-1w', '1.5d', 'd', ''];
 
-        tests.forEach(t => {
+        tests.forEach((t) => {
           it(t, () => {
             expect(parseDuration(t)).toBe(null);
           });

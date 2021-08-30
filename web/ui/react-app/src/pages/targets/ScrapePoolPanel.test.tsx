@@ -18,7 +18,7 @@ describe('ScrapePoolPanel', () => {
   const scrapePoolPanel = shallow(<ScrapePoolPanel {...defaultProps} />);
 
   it('renders a container', () => {
-    const div = scrapePoolPanel.find('div').filterWhere(elem => elem.hasClass('container'));
+    const div = scrapePoolPanel.find('div').filterWhere((elem) => elem.hasClass('container'));
     expect(div).toHaveLength(1);
   });
 
@@ -76,7 +76,7 @@ describe('ScrapePoolPanel', () => {
       const headers = table.find('th');
       expect(table).toHaveLength(1);
       expect(headers).toHaveLength(6);
-      columns.forEach(col => {
+      columns.forEach((col) => {
         expect(headers.contains(col));
       });
     });
@@ -94,7 +94,7 @@ describe('ScrapePoolPanel', () => {
           });
 
           it('renders a badge for health', () => {
-            const td = row.find('td').filterWhere(elem => Boolean(elem.hasClass('state')));
+            const td = row.find('td').filterWhere((elem) => Boolean(elem.hasClass('state')));
             const badge = td.find(Badge);
             expect(badge).toHaveLength(1);
             expect(badge.prop('color')).toEqual(getColor(health));
@@ -109,17 +109,17 @@ describe('ScrapePoolPanel', () => {
           });
 
           it('renders last scrape time', () => {
-            const lastScrapeCell = row.find('td').filterWhere(elem => Boolean(elem.hasClass('last-scrape')));
+            const lastScrapeCell = row.find('td').filterWhere((elem) => Boolean(elem.hasClass('last-scrape')));
             expect(lastScrapeCell).toHaveLength(1);
           });
 
           it('renders last scrape duration', () => {
-            const lastScrapeCell = row.find('td').filterWhere(elem => Boolean(elem.hasClass('scrape-duration')));
+            const lastScrapeCell = row.find('td').filterWhere((elem) => Boolean(elem.hasClass('scrape-duration')));
             expect(lastScrapeCell).toHaveLength(1);
           });
 
           it('renders a badge for Errors', () => {
-            const td = row.find('td').filterWhere(elem => Boolean(elem.hasClass('errors')));
+            const td = row.find('td').filterWhere((elem) => Boolean(elem.hasClass('errors')));
             const badge = td.find(Badge);
             expect(badge).toHaveLength(lastError ? 1 : 0);
             if (lastError) {

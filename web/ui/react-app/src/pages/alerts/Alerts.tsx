@@ -18,7 +18,7 @@ const Alerts: FC = () => {
   };
 
   if (response.data && response.data.groups) {
-    response.data.groups.forEach(el => el.rules.forEach(r => ruleStatsCount[r.state]++));
+    response.data.groups.forEach((el) => el.rules.forEach((r) => ruleStatsCount[r.state]++));
   }
 
   return <AlertsWithStatusIndicator {...response.data} statsCount={ruleStatsCount} error={error} isLoading={isLoading} />;

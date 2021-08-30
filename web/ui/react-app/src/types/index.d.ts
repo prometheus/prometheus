@@ -1,9 +1,7 @@
 declare namespace jquery.flot {
-  // eslint-disable-next-line @typescript-eslint/class-name-casing
   interface plot extends jquery.flot.plot {
     destroy: () => void;
   }
-  // eslint-disable-next-line @typescript-eslint/class-name-casing
   interface plotOptions extends jquery.flot.plotOptions {
     tooltip: {
       show?: boolean;

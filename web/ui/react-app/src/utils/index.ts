@@ -4,9 +4,7 @@ import { PanelOptions, PanelType, PanelDefaultOptions } from '../pages/graph/Pan
 import { PanelMeta } from '../pages/graph/PanelList';
 
 export const generateID = () => {
-  return `_${Math.random()
-    .toString(36)
-    .substr(2, 9)}`;
+  return `_${Math.random().toString(36).substr(2, 9)}`;
 };
 
 export const byEmptyString = (p: string) => p.length > 0;
@@ -23,7 +21,7 @@ export const escapeHTML = (str: string): string => {
     '/': '&#x2F;',
   };
 
-  return String(str).replace(/[&<>"'/]/g, function(s) {
+  return String(str).replace(/[&<>"'/]/g, function (s) {
     return entityMap[s];
   });
 };
@@ -251,10 +249,12 @@ export const mapObjEntries = <T, key extends keyof T, Z>(
   cb: ([k, v]: [string, T[key]], i: number, arr: [string, T[key]][]) => Z
 ) => Object.entries(o).map(cb);
 
-export const callAll = (...fns: Array<(...args: any) => void>) => (...args: any) => {
-  // eslint-disable-next-line prefer-spread
-  fns.filter(Boolean).forEach(fn => fn.apply(null, args));
-};
+export const callAll =
+  (...fns: Array<(...args: any) => void>) =>
+  (...args: any) => {
+    // eslint-disable-next-line prefer-spread
+    fns.filter(Boolean).forEach((fn) => fn.apply(null, args));
+  };
 
 export const parsePrometheusFloat = (value: string) => {
   if (isNaN(Number(value))) {

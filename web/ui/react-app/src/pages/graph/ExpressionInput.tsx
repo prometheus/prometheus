@@ -167,7 +167,7 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
     return (
       <>
         <Downshift onSelect={this.setValue}>
-          {downshift => (
+          {(downshift) => (
             <div>
               <InputGroup className="expression-input">
                 <InputGroupAddon addonType="prepend">

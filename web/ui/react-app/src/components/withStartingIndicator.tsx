@@ -23,7 +23,7 @@ export const StartingContent: FC<StartingContentProps> = ({ status, isUnexpected
     <div className="text-center m-3">
       <div className="m-4">
         <h2>Starting up...</h2>
-        {status?.max! > 0 ? (
+        {/* {status?.max! > 0 ? (
           <div>
             <p>
               Replaying WAL ({status?.current}/{status?.max})
@@ -37,19 +37,21 @@ export const StartingContent: FC<StartingContentProps> = ({ status, isUnexpected
               style={{ width: '10%', margin: 'auto' }}
             />
           </div>
-        ) : null}
+        ) : null} */}
       </div>
     </div>
   );
 };
 
-export const withStartingIndicator = <T extends {}>(Page: ComponentType<T>): FC<T> => ({ ...rest }) => {
-  const pathPrefix = usePathPrefix();
-  const { ready, walReplayStatus, isUnexpected } = useFetchReadyInterval(pathPrefix);
+export const withStartingIndicator =
+  <T extends Record<string, unknown>>(Page: ComponentType<T>): FC<T> =>
+  ({ ...rest }) => {
+    const pathPrefix = usePathPrefix();
+    const { ready, walReplayStatus, isUnexpected } = useFetchReadyInterval(pathPrefix);
 
-  if (ready || isUnexpected) {
-    return <Page {...(rest as T)} />;
-  }
+    if (ready || isUnexpected) {
+      return <Page {...(rest as T)} />;
+    }
 
-  return <StartingContent isUnexpected={isUnexpected} status={walReplayStatus.data} />;
-};
+    return <StartingContent isUnexpected={isUnexpected} status={walReplayStatus.data} />;
+  };

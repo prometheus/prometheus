@@ -151,7 +151,7 @@ class Panel extends Component<PanelProps, PanelState> {
         cache: 'no-store',
         credentials: 'same-origin',
         signal: abortController.signal,
-      }).then(resp => resp.json());
+      }).then((resp) => resp.json());
 
       if (query.status !== 'success') {
         throw new Error(query.error || 'invalid response JSON');
@@ -163,7 +163,7 @@ class Panel extends Component<PanelProps, PanelState> {
           cache: 'no-store',
           credentials: 'same-origin',
           signal: abortController.signal,
-        }).then(resp => resp.json());
+        }).then((resp) => resp.json());
 
         if (exemplars.status !== 'success') {
           throw new Error(exemplars.error || 'invalid response JSON');
@@ -198,7 +198,7 @@ class Panel extends Component<PanelProps, PanelState> {
         loading: false,
       });
       this.abortInFlightFetch = null;
-    } catch (error) {
+    } catch (error: any) {
       if (error.name === 'AbortError') {
         // Aborts are expected, don't show an error for them.
         return;
@@ -210,7 +210,7 @@ class Panel extends Component<PanelProps, PanelState> {
     }
   };
 
-  setOptions(opts: object): void {
+  setOptions(opts: Partial<PanelOptions>): void {
     const newOpts = { ...this.props.options, ...opts };
     this.props.onOptionsChanged(newOpts);
   }

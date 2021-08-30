@@ -22,7 +22,7 @@ export interface FetchStateReadyInterval {
   walReplayStatus: WALReplayStatus;
 }
 
-export const useFetch = <T extends {}>(url: string, options?: RequestInit): FetchState<T> => {
+export const useFetch = <T extends Record<string, any>>(url: string, options?: RequestInit): FetchState<T> => {
   const [response, setResponse] = useState<APIResponse<T>>({ status: 'start fetching' } as any);
   const [error, setError] = useState<Error>();
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -39,7 +39,7 @@ export const useFetch = <T extends {}>(url: string, options?: RequestInit): Fetc
         setResponse(json);
         setIsLoading(false);
       } catch (error) {
-        setError(error);
+        setError(error as Error);
       }
     };
     fetchData();

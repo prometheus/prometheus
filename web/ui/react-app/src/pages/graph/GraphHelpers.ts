@@ -113,8 +113,8 @@ export const getOptions = (stacked: boolean, useLocalTime: boolean): jquery.flot
               ${Object.keys(labels).length === 0 ? '<div class="mb-1 font-italic">no labels</div>' : ''}
               ${labels['__name__'] ? `<div class="mb-1"><strong>${labels['__name__']}</strong></div>` : ''}
               ${Object.keys(labels)
-                .filter(k => k !== '__name__')
-                .map(k => `<div class="mb-1"><strong>${k}</strong>: ${escapeHTML(labels[k])}</div>`)
+                .filter((k) => k !== '__name__')
+                .map((k) => `<div class="mb-1"><strong>${k}</strong>: ${escapeHTML(labels[k])}</div>`)
                 .join('')}
             </div>`;
 
@@ -233,7 +233,7 @@ export const normalizeData = ({ queryParams, data, exemplars, stacked }: GraphPr
         index,
       };
     }),
-    exemplars: Object.values(buckets).flatMap(bucket => {
+    exemplars: Object.values(buckets).flatMap((bucket) => {
       if (bucket.length === 1) {
         return bucket[0];
       }
@@ -290,7 +290,7 @@ const exemplarSymbol = (ctx: CanvasRenderingContext2D, x: number, y: number) => 
 const stdDeviation = (sum: number, values: number[]): number => {
   const avg = sum / values.length;
   let squaredAvg = 0;
-  values.map(value => (squaredAvg += (value - avg) ** 2));
+  values.map((value) => (squaredAvg += (value - avg) ** 2));
   squaredAvg = squaredAvg / values.length;
   return Math.sqrt(squaredAvg);
 };

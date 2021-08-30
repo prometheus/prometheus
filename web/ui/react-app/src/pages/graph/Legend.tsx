@@ -31,7 +31,7 @@ export class Legend extends PureComponent<LegendProps, LegendState> {
     if (ev.ctrlKey || ev.metaKey) {
       const { chartData } = this.props;
       if (selectedIndexes.includes(index)) {
-        selected = selectedIndexes.filter(idx => idx !== index);
+        selected = selectedIndexes.filter((idx) => idx !== index);
       } else {
         selected =
           // Flip the logic - In case none is selected ctrl + click should deselect clicked series.

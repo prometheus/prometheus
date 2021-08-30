@@ -10,7 +10,7 @@ const EndpointLink: FC<EndpointLinkProps> = ({ endpoint, globalUrl }) => {
   let url: URL;
   try {
     url = new URL(endpoint);
-  } catch (e) {
+  } catch (e: any) {
     return (
       <Alert color="danger">
         <strong>Error:</strong> {e.message}
