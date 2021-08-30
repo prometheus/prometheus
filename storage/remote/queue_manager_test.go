@@ -1025,7 +1025,7 @@ func TestCalculateDesiredShardsDetail(t *testing.T) {
 			dataIn:          10,
 			dataOut:         10,
 			dataOutDuration: 1.2,
-			expectedShards:  1, // no reaction - less than 30% change
+			expectedShards:  2, // 1.2 is rounded up to 2.
 		},
 		{
 			name:            "bigger slowdown",
@@ -1033,7 +1033,7 @@ func TestCalculateDesiredShardsDetail(t *testing.T) {
 			dataIn:          10,
 			dataOut:         10,
 			dataOutDuration: 1.4,
-			expectedShards:  2, // now it shards up
+			expectedShards:  2,
 		},
 		{
 			name:            "speed up",
