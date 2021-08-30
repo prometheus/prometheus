@@ -1,5 +1,4 @@
 import React, { Fragment, FC } from 'react';
-import { RouteComponentProps } from '@reach/router';
 import { Table } from 'reactstrap';
 import { withStatusIndicator } from '../../components/withStatusIndicator';
 import { useFetch } from '../../hooks/useFetch';
@@ -83,7 +82,7 @@ const StatusWithStatusIndicator = withStatusIndicator(StatusContent);
 
 StatusContent.displayName = 'Status';
 
-const Status: FC<RouteComponentProps> = () => {
+const Status: FC = () => {
   const pathPrefix = usePathPrefix();
   const path = `${pathPrefix}/${API_PATH}`;
 

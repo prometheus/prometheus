@@ -1,5 +1,5 @@
 import React, { FC, useState } from 'react';
-import { Link } from '@reach/router';
+import { Link } from 'react-router-dom';
 import {
   Collapse,
   Navbar,
@@ -26,7 +26,7 @@ const Navigation: FC<NavbarProps> = ({ consolesLink }) => {
   return (
     <Navbar className="mb-3" dark color="dark" expand="md" fixed="top">
       <NavbarToggler onClick={toggle} className="mr-2" />
-      <Link className="pt-0 navbar-brand" to={`${pathPrefix}/graph`}>
+      <Link className="pt-0 navbar-brand" to="/graph">
         Prometheus
       </Link>
       <Collapse isOpen={isOpen} navbar style={{ justifyContent: 'space-between' }}>
@@ -37,12 +37,12 @@ const Navigation: FC<NavbarProps> = ({ consolesLink }) => {
             </NavItem>
           )}
           <NavItem>
-            <NavLink tag={Link} to={`${pathPrefix}/alerts`}>
+            <NavLink tag={Link} to="/alerts">
               Alerts
             </NavLink>
           </NavItem>
           <NavItem>
-            <NavLink tag={Link} to={`${pathPrefix}/graph`}>
+            <NavLink tag={Link} to="/graph">
               Graph
             </NavLink>
           </NavItem>
@@ -51,25 +51,25 @@ const Navigation: FC<NavbarProps> = ({ consolesLink }) => {
               Status
             </DropdownToggle>
             <DropdownMenu>
-              <DropdownItem tag={Link} to={`${pathPrefix}/status`}>
+              <DropdownItem tag={Link} to="/status">
                 Runtime & Build Information
               </DropdownItem>
-              <DropdownItem tag={Link} to={`${pathPrefix}/tsdb-status`}>
+              <DropdownItem tag={Link} to="/tsdb-status">
                 TSDB Status
               </DropdownItem>
-              <DropdownItem tag={Link} to={`${pathPrefix}/flags`}>
+              <DropdownItem tag={Link} to="/flags">
                 Command-Line Flags
               </DropdownItem>
-              <DropdownItem tag={Link} to={`${pathPrefix}/config`}>
+              <DropdownItem tag={Link} to="/config">
                 Configuration
               </DropdownItem>
-              <DropdownItem tag={Link} to={`${pathPrefix}/rules`}>
+              <DropdownItem tag={Link} to="/rules">
                 Rules
               </DropdownItem>
-              <DropdownItem tag={Link} to={`${pathPrefix}/targets`}>
+              <DropdownItem tag={Link} to="/targets">
                 Targets
               </DropdownItem>
-              <DropdownItem tag={Link} to={`${pathPrefix}/service-discovery`}>
+              <DropdownItem tag={Link} to="/service-discovery">
                 Service Discovery
               </DropdownItem>
             </DropdownMenu>

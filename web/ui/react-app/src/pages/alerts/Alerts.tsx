@@ -1,5 +1,4 @@
 import React, { FC } from 'react';
-import { RouteComponentProps } from '@reach/router';
 import { useFetch } from '../../hooks/useFetch';
 import { withStatusIndicator } from '../../components/withStatusIndicator';
 import AlertsContent, { RuleStatus, AlertsProps } from './AlertContents';
@@ -8,7 +7,7 @@ import { API_PATH } from '../../constants/constants';
 
 const AlertsWithStatusIndicator = withStatusIndicator(AlertsContent);
 
-const Alerts: FC<RouteComponentProps> = () => {
+const Alerts: FC = () => {
   const pathPrefix = usePathPrefix();
   const { response, error, isLoading } = useFetch<AlertsProps>(`${pathPrefix}/${API_PATH}/rules?type=alert`);
 

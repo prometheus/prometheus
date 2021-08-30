@@ -3,7 +3,7 @@ import { shallow } from 'enzyme';
 import App from './App';
 import Navigation from './Navbar';
 import { Container } from 'reactstrap';
-import { Router } from '@reach/router';
+import { Route } from 'react-router-dom';
 import {
   AlertsPage,
   ConfigPage,
@@ -37,7 +37,7 @@ describe('App', () => {
       const c = app.find(component);
       expect(c).toHaveLength(1);
     });
-    expect(app.find(Router)).toHaveLength(1);
+    expect(app.find(Route)).toHaveLength(9);
     expect(app.find(Container)).toHaveLength(1);
   });
 });

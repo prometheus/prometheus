@@ -1,5 +1,4 @@
 import React, { ChangeEvent, FC, useState } from 'react';
-import { RouteComponentProps } from '@reach/router';
 import { Input, InputGroup, Table } from 'reactstrap';
 import { withStatusIndicator } from '../../components/withStatusIndicator';
 import { useFetch } from '../../hooks/useFetch';
@@ -124,7 +123,7 @@ const FlagsWithStatusIndicator = withStatusIndicator(FlagsContent);
 
 FlagsContent.displayName = 'Flags';
 
-const Flags: FC<RouteComponentProps> = () => {
+const Flags: FC = () => {
   const pathPrefix = usePathPrefix();
   const { response, error, isLoading } = useFetch<FlagMap>(`${pathPrefix}/${API_PATH}/status/flags`);
   return <FlagsWithStatusIndicator data={response.data} error={error} isLoading={isLoading} />;
