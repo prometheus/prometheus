@@ -400,3 +400,23 @@ func (ce *CircularExemplarStorage) computeMetrics() {
 		ce.metrics.lastExemplarsTs.Set(float64(ce.exemplars[0].exemplar.Ts) / 1000)
 	}
 }
+
+// IterateExemplars iterates through all the exemplars from oldest to newest appended and calls
+// the given function on all of them till the end (or) till the first function call that returns an error.
+func (ce *CircularExemplarStorage) IterateExemplars(f func(seriesLabels labels.Labels, e exemplar.Exemplar) error) error {
+	ce.lock.RLock()
+	defer ce.lock.RUnlock()
+
+	idx := ce.nextIndex
+	l := len(ce.exemplars)
+	for i := 0; i < l; i, idx = i+1, (idx+1)%l {
+		if ce.exemplars[idx] == nil {
+			continue
+		}
+		err := f(ce.exemplars[idx].ref.seriesLabels, ce.exemplars[idx].exemplar)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}

@@ -2496,9 +2496,62 @@ func TestChunkSnapshot(t *testing.T) {
 		require.NoError(t, head.Close())
 	}()
 
+	type ex struct {
+		seriesLabels labels.Labels
+		e            exemplar.Exemplar
+	}
+
 	numSeries := 10
 	expSeries := make(map[string][]tsdbutil.Sample)
 	expTombstones := make(map[uint64]tombstones.Intervals)
+	expExemplars := make([]ex, 0)
+
+	addExemplar := func(app storage.Appender, ref uint64, lbls labels.Labels, ts int64) {
+		e := ex{
+			seriesLabels: lbls,
+			e: exemplar.Exemplar{
+				Labels: labels.Labels{{Name: "traceID", Value: fmt.Sprintf("%d", rand.Int())}},
+				Value:  rand.Float64(),
+				Ts:     ts,
+			},
+		}
+		expExemplars = append(expExemplars, e)
+		_, err := app.AppendExemplar(ref, e.seriesLabels, e.e)
+		require.NoError(t, err)
+	}
+
+	checkSamples := func() {
+		q, err := NewBlockQuerier(head, math.MinInt64, math.MaxInt64)
+		require.NoError(t, err)
+		series := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"))
+		require.Equal(t, expSeries, series)
+	}
+	checkTombstones := func() {
+		tr, err := head.Tombstones()
+		require.NoError(t, err)
+		actTombstones := make(map[uint64]tombstones.Intervals)
+		require.NoError(t, tr.Iter(func(ref uint64, itvs tombstones.Intervals) error {
+			for _, itv := range itvs {
+				actTombstones[ref].Add(itv)
+			}
+			return nil
+		}))
+		require.Equal(t, expTombstones, actTombstones)
+	}
+	checkExemplars := func() {
+		actExemplars := make([]ex, 0, len(expExemplars))
+		err := head.exemplars.IterateExemplars(func(seriesLabels labels.Labels, e exemplar.Exemplar) error {
+			actExemplars = append(actExemplars, ex{
+				seriesLabels: seriesLabels,
+				e:            e,
+			})
+			return nil
+		})
+		require.NoError(t, err)
+		// Verifies both existence of right exemplars and order of exemplars in the buffer.
+		require.Equal(t, expExemplars, actExemplars)
+	}
+
 	{ // Initial data that goes into snapshot.
 		// Add some initial samples with >=1 m-map chunk.
 		app := head.Appender(context.Background())
@@ -2509,11 +2562,12 @@ func TestChunkSnapshot(t *testing.T) {
 			for ts := int64(1); ts <= 200; ts++ {
 				val := rand.Float64()
 				expSeries[lblStr] = append(expSeries[lblStr], sample{ts, val})
-				_, err := app.Append(0, lbls, ts, val)
+				ref, err := app.Append(0, lbls, ts, val)
 				require.NoError(t, err)
 
-				// To create multiple WAL records.
+				// Add an exemplar and to create multiple WAL records.
 				if ts%10 == 0 {
+					addExemplar(app, ref, lbls, ts)
 					require.NoError(t, app.Commit())
 					app = head.Appender(context.Background())
 				}
@@ -2538,6 +2592,7 @@ func TestChunkSnapshot(t *testing.T) {
 			}, nil))
 			require.NoError(t, err)
 		}
+
 	}
 
 	// These references should be the ones used for the snapshot.
@@ -2563,22 +2618,9 @@ func TestChunkSnapshot(t *testing.T) {
 		require.NoError(t, head.Init(math.MinInt64))
 
 		// Test query for snapshot replay.
-		q, err := NewBlockQuerier(head, math.MinInt64, math.MaxInt64)
-		require.NoError(t, err)
-		series := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"))
-		require.Equal(t, expSeries, series)
-
-		// Check the tombstones.
-		tr, err := head.Tombstones()
-		require.NoError(t, err)
-		actTombstones := make(map[uint64]tombstones.Intervals)
-		require.NoError(t, tr.Iter(func(ref uint64, itvs tombstones.Intervals) error {
-			for _, itv := range itvs {
-				actTombstones[ref].Add(itv)
-			}
-			return nil
-		}))
-		require.Equal(t, expTombstones, actTombstones)
+		checkSamples()
+		checkTombstones()
+		checkExemplars()
 	}
 
 	{ // Additional data to only include in WAL and m-mapped chunks and not snapshot. This mimics having an old snapshot on disk.
@@ -2592,11 +2634,12 @@ func TestChunkSnapshot(t *testing.T) {
 			for ts := int64(201); ts <= 400; ts++ {
 				val := rand.Float64()
 				expSeries[lblStr] = append(expSeries[lblStr], sample{ts, val})
-				_, err := app.Append(0, lbls, ts, val)
+				ref, err := app.Append(0, lbls, ts, val)
 				require.NoError(t, err)
 
-				// To create multiple WAL records.
+				// Add an exemplar and to create multiple WAL records.
 				if ts%10 == 0 {
+					addExemplar(app, ref, lbls, ts)
 					require.NoError(t, app.Commit())
 					app = head.Appender(context.Background())
 				}
@@ -2643,22 +2686,9 @@ func TestChunkSnapshot(t *testing.T) {
 		require.NoError(t, head.Init(math.MinInt64))
 
 		// Test query when data is replayed from snapshot, m-map chunks, and WAL.
-		q, err := NewBlockQuerier(head, math.MinInt64, math.MaxInt64)
-		require.NoError(t, err)
-		series := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "foo", ".*"))
-		require.Equal(t, expSeries, series)
-
-		// Check the tombstones.
-		tr, err := head.Tombstones()
-		require.NoError(t, err)
-		actTombstones := make(map[uint64]tombstones.Intervals)
-		require.NoError(t, tr.Iter(func(ref uint64, itvs tombstones.Intervals) error {
-			for _, itv := range itvs {
-				actTombstones[ref].Add(itv)
-			}
-			return nil
-		}))
-		require.Equal(t, expTombstones, actTombstones)
+		checkSamples()
+		checkTombstones()
+		checkExemplars()
 	}
 }
 
