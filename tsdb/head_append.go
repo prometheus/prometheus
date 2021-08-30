@@ -629,6 +629,7 @@ func (s *memSeries) appendHistogram(t int64, sh histogram.SparseHistogram, appen
 	}
 
 	s.app.AppendHistogram(t, sh)
+	s.sparseHistogramSeries = true
 
 	c.maxTime = t
 
