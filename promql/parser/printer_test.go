@@ -16,6 +16,8 @@ package parser
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/stretchr/testify/require"
 )
 
@@ -137,4 +139,8 @@ func TestExprString(t *testing.T) {
 
 		require.Equal(t, exp, expr.String())
 	}
+}
+
+func TestVectorSelector_String_WithZeroMatchers(t *testing.T) {
+	assert.Equal(t, "foobar", (&VectorSelector{Name: "foobar"}).String())
 }
