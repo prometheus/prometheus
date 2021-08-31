@@ -161,6 +161,7 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64, mmappedChunks 
 			if ms.head() == nil {
 				// First histogram for the series. Count this in metrics.
 				h.metrics.sparseHistogramSeries.Inc()
+				ms.sparseHistogramSeries = true
 			}
 
 			// At the moment the only possible error here is out of order exemplars, which we shouldn't see when
