@@ -313,7 +313,7 @@ func TestPopulateLabels(t *testing.T) {
 			resOrig: nil,
 			err:     "scrape timeout cannot be 0",
 		},
-		// Timeout less or equal to interval.
+		// Timeout less than to interval.
 		{
 			in: labels.FromMap(map[string]string{
 				model.AddressLabel:        "1.2.3.4:1000",
