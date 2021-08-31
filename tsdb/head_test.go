@@ -2803,6 +2803,5 @@ func TestSparseHistogramMetrics(t *testing.T) {
 	require.NoError(t, head.Init(0))
 
 	require.Equal(t, float64(expHistSeries), prom_testutil.ToFloat64(head.metrics.sparseHistogramSeries))
-	require.Equal(t, float64(expHistSamples), prom_testutil.ToFloat64(head.metrics.sparseHistogramSamplesTotal))
-
+	require.Equal(t, float64(0), prom_testutil.ToFloat64(head.metrics.sparseHistogramSamplesTotal)) // Counter reset.
 }

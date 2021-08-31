@@ -154,26 +154,21 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64, mmappedChunks 
 				continue
 			}
 
+			if ms.head() == nil {
+				// First histogram for the series. Count this in metrics.
+				ms.sparseHistogramSeries = true
+			}
+
 			if rh.T < h.minValidTime.Load() {
 				continue
 			}
 
-			if ms.head() == nil {
-				// First histogram for the series. Count this in metrics.
-				h.metrics.sparseHistogramSeries.Inc()
-				ms.sparseHistogramSeries = true
-			}
-
 			// At the moment the only possible error here is out of order exemplars, which we shouldn't see when
 			// replaying the WAL, so lets just log the error if it's not that type.
-			ok, chunkCreated := ms.appendHistogram(rh.T, rh.H, 0, h.chunkDiskMapper)
+			_, chunkCreated := ms.appendHistogram(rh.T, rh.H, 0, h.chunkDiskMapper)
 			if chunkCreated {
 				h.metrics.chunksCreated.Inc()
 				h.metrics.chunks.Inc()
-			}
-
-			if ok {
-				h.metrics.sparseHistogramSamplesTotal.Inc()
 			}
 
 			if rh.T > maxt {

@@ -564,6 +564,21 @@ func (h *Head) Init(minValidTime int64) error {
 		h.updateWALReplayStatusRead(i)
 	}
 
+	{
+		// Set the sparseHistogramSeries metric once replay is done.
+		// This is a temporary hack.
+		// TODO: remove this hack and do it while replaying WAL if we keep this metric around.
+		sparseHistogramSeries := 0
+		for _, m := range h.series.series {
+			for _, ms := range m {
+				if ms.sparseHistogramSeries {
+					sparseHistogramSeries++
+				}
+			}
+		}
+		h.metrics.sparseHistogramSeries.Set(float64(sparseHistogramSeries))
+	}
+
 	walReplayDuration := time.Since(start)
 	h.metrics.walTotalReplayDuration.Set(walReplayDuration.Seconds())
 	level.Info(h.logger).Log(
