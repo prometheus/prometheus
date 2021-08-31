@@ -253,6 +253,8 @@ type scrapeLoopOptions struct {
 	labelLimits     *labelLimits
 	honorLabels     bool
 	honorTimestamps bool
+	interval        time.Duration
+	timeout         time.Duration
 	mrc             []*relabel.Config
 	cache           *scrapeCache
 }
@@ -307,6 +309,8 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed 
 			jitterSeed,
 			opts.honorTimestamps,
 			opts.labelLimits,
+			opts.interval,
+			opts.timeout,
 		)
 	}
 
@@ -414,6 +418,7 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 		} else {
 			cache = newScrapeCache()
 		}
+
 		var (
 			t       = sp.activeTargets[fp]
 			s       = &targetScraper{Target: t, client: sp.client, timeout: timeout, bodySizeLimit: bodySizeLimit}
@@ -426,6 +431,8 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 				honorTimestamps: honorTimestamps,
 				mrc:             mrc,
 				cache:           cache,
+				interval:        interval,
+				timeout:         timeout,
 			})
 		)
 		wg.Add(1)
@@ -435,7 +442,7 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 			wg.Done()
 
 			newLoop.setForcedError(forcedErr)
-			newLoop.run(interval, timeout, nil)
+			newLoop.run(nil)
 		}(oldLoop, newLoop)
 
 		sp.loops[fp] = newLoop
@@ -509,6 +516,12 @@ func (sp *scrapePool) sync(targets []*Target) {
 		hash := t.hash()
 
 		if _, ok := sp.activeTargets[hash]; !ok {
+			// The scrape interval and timeout labels are set to the config's values initially,
+			// so whether changed via relabeling or not, they'll exist and hold the correct values
+			// for every target.
+			var err error
+			interval, timeout, err = t.intervalAndTimeout(interval, timeout)
+
 			s := &targetScraper{Target: t, client: sp.client, timeout: timeout, bodySizeLimit: bodySizeLimit}
 			l := sp.newLoop(scrapeLoopOptions{
 				target:          t,
@@ -518,7 +531,12 @@ func (sp *scrapePool) sync(targets []*Target) {
 				honorLabels:     honorLabels,
 				honorTimestamps: honorTimestamps,
 				mrc:             mrc,
+				interval:        interval,
+				timeout:         timeout,
 			})
+			if err != nil {
+				l.setForcedError(err)
+			}
 
 			sp.activeTargets[hash] = t
 			sp.loops[hash] = l
@@ -560,7 +578,7 @@ func (sp *scrapePool) sync(targets []*Target) {
 	}
 	for _, l := range uniqueLoops {
 		if l != nil {
-			go l.run(interval, timeout, nil)
+			go l.run(nil)
 		}
 	}
 	// Wait for all potentially stopped scrapers to terminate.
@@ -772,7 +790,7 @@ func (s *targetScraper) scrape(ctx context.Context, w io.Writer) (string, error)
 
 // A loop can run and be stopped again. It must not be reused after it was stopped.
 type loop interface {
-	run(interval, timeout time.Duration, errc chan<- error)
+	run(errc chan<- error)
 	setForcedError(err error)
 	stop()
 	getCache() *scrapeCache
@@ -797,6 +815,8 @@ type scrapeLoop struct {
 	forcedErr       error
 	forcedErrMtx    sync.Mutex
 	labelLimits     *labelLimits
+	interval        time.Duration
+	timeout         time.Duration
 
 	appender            func(ctx context.Context) storage.Appender
 	sampleMutator       labelsMutator
@@ -1065,6 +1085,8 @@ func newScrapeLoop(ctx context.Context,
 	jitterSeed uint64,
 	honorTimestamps bool,
 	labelLimits *labelLimits,
+	interval time.Duration,
+	timeout time.Duration,
 ) *scrapeLoop {
 	if l == nil {
 		l = log.NewNopLogger()
@@ -1088,15 +1110,17 @@ func newScrapeLoop(ctx context.Context,
 		parentCtx:           ctx,
 		honorTimestamps:     honorTimestamps,
 		labelLimits:         labelLimits,
+		interval:            interval,
+		timeout:             timeout,
 	}
 	sl.ctx, sl.cancel = context.WithCancel(ctx)
 
 	return sl
 }
 
-func (sl *scrapeLoop) run(interval, timeout time.Duration, errc chan<- error) {
+func (sl *scrapeLoop) run(errc chan<- error) {
 	select {
-	case <-time.After(sl.scraper.offset(interval, sl.jitterSeed)):
+	case <-time.After(sl.scraper.offset(sl.interval, sl.jitterSeed)):
 		// Continue after a scraping offset.
 	case <-sl.ctx.Done():
 		close(sl.stopped)
@@ -1106,7 +1130,7 @@ func (sl *scrapeLoop) run(interval, timeout time.Duration, errc chan<- error) {
 	var last time.Time
 
 	alignedScrapeTime := time.Now().Round(0)
-	ticker := time.NewTicker(interval)
+	ticker := time.NewTicker(sl.interval)
 	defer ticker.Stop()
 
 mainLoop:
@@ -1126,11 +1150,11 @@ mainLoop:
 		// Calling Round ensures the time used is the wall clock, as otherwise .Sub
 		// and .Add on time.Time behave differently (see time package docs).
 		scrapeTime := time.Now().Round(0)
-		if AlignScrapeTimestamps && interval > 100*scrapeTimestampTolerance {
+		if AlignScrapeTimestamps && sl.interval > 100*scrapeTimestampTolerance {
 			// For some reason, a tick might have been skipped, in which case we
 			// would call alignedScrapeTime.Add(interval) multiple times.
-			for scrapeTime.Sub(alignedScrapeTime) >= interval {
-				alignedScrapeTime = alignedScrapeTime.Add(interval)
+			for scrapeTime.Sub(alignedScrapeTime) >= sl.interval {
+				alignedScrapeTime = alignedScrapeTime.Add(sl.interval)
 			}
 			// Align the scrape time if we are in the tolerance boundaries.
 			if scrapeTime.Sub(alignedScrapeTime) <= scrapeTimestampTolerance {
@@ -1138,7 +1162,7 @@ mainLoop:
 			}
 		}
 
-		last = sl.scrapeAndReport(interval, timeout, last, scrapeTime, errc)
+		last = sl.scrapeAndReport(sl.interval, sl.timeout, last, scrapeTime, errc)
 
 		select {
 		case <-sl.parentCtx.Done():
@@ -1153,7 +1177,7 @@ mainLoop:
 	close(sl.stopped)
 
 	if !sl.disabledEndOfRunStalenessMarkers {
-		sl.endOfRunStaleness(last, ticker, interval)
+		sl.endOfRunStaleness(last, ticker, sl.interval)
 	}
 }
 
