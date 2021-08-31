@@ -2770,3 +2770,38 @@ func TestChunkSnapshot(t *testing.T) {
 		require.Equal(t, expTombstones, actTombstones)
 	}
 }
+
+func TestSparseHistogramMetrics(t *testing.T) {
+	head, _ := newTestHead(t, 1000, false)
+	t.Cleanup(func() {
+		require.NoError(t, head.Close())
+	})
+	require.NoError(t, head.Init(0))
+
+	expHistSeries, expHistSamples := 0, 0
+
+	for x := 0; x < 5; x++ {
+		expHistSeries++
+		l := labels.Labels{{Name: "a", Value: fmt.Sprintf("b%d", x)}}
+		for i, h := range generateHistograms(10) {
+			app := head.Appender(context.Background())
+			_, err := app.AppendHistogram(0, l, int64(i), h)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+			expHistSamples++
+		}
+	}
+
+	require.Equal(t, float64(expHistSeries), prom_testutil.ToFloat64(head.metrics.sparseHistogramSeries))
+	require.Equal(t, float64(expHistSamples), prom_testutil.ToFloat64(head.metrics.sparseHistogramSamplesTotal))
+
+	require.NoError(t, head.Close())
+	w, err := wal.NewSize(nil, nil, head.wal.Dir(), 32768, false)
+	require.NoError(t, err)
+	head, err = NewHead(nil, nil, w, head.opts, nil)
+	require.NoError(t, err)
+	require.NoError(t, head.Init(0))
+
+	require.Equal(t, float64(expHistSeries), prom_testutil.ToFloat64(head.metrics.sparseHistogramSeries))
+	require.Equal(t, float64(0), prom_testutil.ToFloat64(head.metrics.sparseHistogramSamplesTotal)) // Counter reset.
+}
