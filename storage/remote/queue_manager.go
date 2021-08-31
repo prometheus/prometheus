@@ -415,9 +415,9 @@ func NewQueueManager(
 		quit:        make(chan struct{}),
 
 		dataIn:          samplesIn,
-		dataDropped:     newEWMARate(ewmaWeight, shardUpdateDuration),
-		dataOut:         newEWMARate(ewmaWeight, shardUpdateDuration),
-		dataOutDuration: newEWMARate(ewmaWeight, shardUpdateDuration),
+		dataDropped:     newEWMARate(ewmaWeight, time.Now()),
+		dataOut:         newEWMARate(ewmaWeight, time.Now()),
+		dataOutDuration: newEWMARate(ewmaWeight, time.Now()),
 
 		metrics:              metrics,
 		interner:             interner,
@@ -819,8 +819,8 @@ func (t *QueueManager) calculateDesiredShards() int {
 		dataInRate      = t.dataIn.rate()
 		dataOutRate     = t.dataOut.rate()
 		dataDroppedRate = t.dataDropped.rate()
+		dataOutDuration = t.dataOutDuration.rate()
 		dataKeptRatio   = 1 - (dataDroppedRate / dataInRate)
-		dataOutDuration = t.dataOutDuration.rate() / float64(time.Second)
 		highestSent     = t.metrics.highestSentTimestamp.Get()
 		highestRecv     = t.highestRecvTimestamp.Get()
 		dataPendingRate = dataInRate - dataOutRate - dataDroppedRate

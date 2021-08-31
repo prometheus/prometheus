@@ -24,10 +24,10 @@ import (
 // ewmaRate tracks an exponentially weighted moving average of a per-second rate.
 type ewmaRate struct {
 	newEvents atomic.Int64
-	t         atomic.Int64
+	i         atomic.Int64
 
 	alpha    float64
-	interval time.Duration
+	t        time.Time
 	lastRate float64
 	init     bool
 	mutex    sync.Mutex
@@ -35,10 +35,10 @@ type ewmaRate struct {
 
 // newEWMARate always allocates a new ewmaRate, as this guarantees the atomically
 // accessed int64 will be aligned on ARM.  See prometheus#2666.
-func newEWMARate(alpha float64, interval time.Duration) *ewmaRate {
+func newEWMARate(alpha float64, t time.Time) *ewmaRate {
 	return &ewmaRate{
-		alpha:    alpha,
-		interval: interval,
+		alpha: alpha,
+		t:     t,
 	}
 }
 
@@ -46,15 +46,15 @@ func newEWMARate(alpha float64, interval time.Duration) *ewmaRate {
 func (r *ewmaRate) rate() float64 {
 	r.mutex.Lock()
 	defer r.mutex.Unlock()
-	r.t.Add(1)
-	// for bias correction, lastRate = lastRate/(1-(1-alpha))^t
-	return r.lastRate / (1 - math.Pow(1-r.alpha, float64(r.t.Load())))
+	r.i.Add(1)
+	// for bias correction, lastRate = lastRate/1-(1-alpha)^i
+	return r.lastRate / (1 - math.Pow(1-r.alpha, float64(r.i.Load())))
 }
 
-// tick assumes to be called every r.interval.
 func (r *ewmaRate) tick() {
 	newEvents := r.newEvents.Swap(0)
-	instantRate := float64(newEvents) / r.interval.Seconds()
+	instantRate := float64(newEvents) / time.Since(r.t).Seconds()
+	r.t = time.Now()
 
 	r.mutex.Lock()
 	defer r.mutex.Unlock()

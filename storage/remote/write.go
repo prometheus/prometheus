@@ -77,7 +77,7 @@ func NewWriteStorage(logger log.Logger, reg prometheus.Registerer, walDir string
 		logger:            logger,
 		reg:               reg,
 		flushDeadline:     flushDeadline,
-		samplesIn:         newEWMARate(ewmaWeight, shardUpdateDuration),
+		samplesIn:         newEWMARate(ewmaWeight, time.Now()),
 		walDir:            walDir,
 		interner:          newPool(),
 		scraper:           sm,
