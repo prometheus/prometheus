@@ -420,10 +420,6 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 		return nil, errors.Errorf("exceeded limit of %v with %v alerts", limit, numActive)
 	}
 
-	// We have already acquired the lock above hence using SetHealth and
-	// SetLastError will deadlock.
-	r.health = HealthGood
-	r.lastError = err
 	return vec, nil
 }
 
