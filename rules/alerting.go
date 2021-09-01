@@ -417,7 +417,7 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 	numActive := len(r.active)
 	if limit != 0 && numActive > limit {
 		r.active = map[uint64]*Alert{}
-		return nil, errors.Errorf("exceeded limit of %v with %v alerts", limit, numActive)
+		return nil, errors.Errorf("exceeded limit of %d with %d alerts", limit, numActive)
 	}
 
 	return vec, nil

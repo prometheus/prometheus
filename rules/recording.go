@@ -101,7 +101,7 @@ func (rule *RecordingRule) Eval(ctx context.Context, ts time.Time, query QueryFu
 
 	numSamples := len(vector)
 	if limit != 0 && numSamples > limit {
-		return nil, fmt.Errorf("exceeded limit %v with %v samples", limit, numSamples)
+		return nil, fmt.Errorf("exceeded limit %d with %d samples", limit, numSamples)
 	}
 
 	rule.SetHealth(HealthGood)
