@@ -103,7 +103,9 @@ func TestRuleEval(t *testing.T) {
 	for _, test := range suite {
 		rule := NewRecordingRule(test.name, test.expr, test.labels)
 		result, err := rule.Eval(ctx, now, EngineQueryFunc(engine, storage), nil, test.limit)
-		if err != nil {
+		if test.err == "" {
+			require.NoError(t, err)
+		} else {
 			require.Equal(t, test.err, err.Error())
 		}
 		require.Equal(t, test.result, result)

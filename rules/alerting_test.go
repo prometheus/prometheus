@@ -511,8 +511,10 @@ func TestAlertingRuleLimit(t *testing.T) {
 			true, log.NewNopLogger(),
 		)
 		_, err := rule.Eval(ctx, now, EngineQueryFunc(engine, storage), nil, test.limit)
-		if test.err != "" {
-			require.EqualError(t, err, test.err)
+		if test.err == "" {
+			require.NoError(t, err)
+		} else {
+			require.Equal(t, test.err, err.Error())
 		}
 	}
 }
