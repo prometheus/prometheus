@@ -273,7 +273,9 @@ func (t *MemTombstones) TruncateBefore(beforeT int64) {
 		if len(ivs[i+1:]) == 0 {
 			delete(t.intvlGroups, ref)
 		} else {
-			t.intvlGroups[ref] = ivs[i+1:]
+			newIvs := make(Intervals, len(ivs[i+1:]))
+			copy(newIvs, ivs[i+1:])
+			t.intvlGroups[ref] = newIvs
 		}
 	}
 }
