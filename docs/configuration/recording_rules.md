@@ -78,8 +78,8 @@ name: <string>
 # How often rules in the group are evaluated.
 [ interval: <duration> | default = global.evaluation_interval ]
 
-# The limit of alerts an alerting rule can produce, or the limit of
-# series a recording rule can produce. 0 is no limit.
+# Limit the number of alerts and series individual rules can produce.
+# 0 is no limit.
 [ limit: <int> | default = 0 ]
 
 rules:
