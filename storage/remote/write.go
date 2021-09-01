@@ -229,7 +229,7 @@ func (t *timestampTracker) AppendExemplar(_ uint64, _ labels.Labels, _ exemplar.
 
 // Commit implements storage.Appender.
 func (t *timestampTracker) Commit() error {
-	t.writeStorage.samplesIn.incr(t.samples + t.exemplars)
+	t.writeStorage.samplesIn.incr(float64(t.samples + t.exemplars))
 
 	samplesIn.Add(float64(t.samples))
 	exemplarsIn.Add(float64(t.exemplars))

@@ -834,7 +834,7 @@ func (t *QueueManager) calculateDesiredShards() int {
 	// When behind we will try to catch up on a proporation of samples per tick.
 	// This works similarly to an integral accumulator in that pending samples
 	// is the result of the error integral.
-	const integralGain = 0.5 / float64(shardUpdateDuration/time.Second)
+	const integralGain = 5 / float64(shardUpdateDuration/time.Second)
 
 	var (
 		timePerSample = dataOutDuration / dataOutRate
@@ -1157,8 +1157,8 @@ func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, s
 
 	// These counters are used to calculate the dynamic sharding, and as such
 	// should be maintained irrespective of success or failure.
-	s.qm.dataOut.incr(int64(len(samples)))
-	s.qm.dataOutDuration.incr(int64(time.Since(begin)))
+	s.qm.dataOut.incr(float64(len(samples)))
+	s.qm.dataOutDuration.incr(float64(time.Since(begin).Seconds()))
 	s.qm.lastSendTimestamp.Store(time.Now().Unix())
 }
 

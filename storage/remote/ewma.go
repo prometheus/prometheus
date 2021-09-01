@@ -23,7 +23,7 @@ import (
 
 // ewmaRate tracks an exponentially weighted moving average of a per-second rate.
 type ewmaRate struct {
-	newEvents atomic.Int64
+	newEvents atomic.Float64
 	i         atomic.Int64
 
 	alpha    float64
@@ -68,6 +68,6 @@ func (r *ewmaRate) tick() {
 }
 
 // inc counts one event.
-func (r *ewmaRate) incr(incr int64) {
+func (r *ewmaRate) incr(incr float64) {
 	r.newEvents.Add(incr)
 }

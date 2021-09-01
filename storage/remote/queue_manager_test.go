@@ -459,8 +459,8 @@ func TestShouldReshard(t *testing.T) {
 		client := NewTestWriteClient()
 		m := NewQueueManager(metrics, nil, nil, nil, "", newEWMARate(ewmaWeight, time.Now()), cfg, mcfg, nil, nil, client, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false)
 		m.numShards = c.startingShards
-		m.dataIn.incr(c.samplesIn)
-		m.dataOut.incr(c.samplesOut)
+		m.dataIn.incr(float64(c.samplesIn))
+		m.dataOut.incr(float64(c.samplesOut))
 		m.lastSendTimestamp.Store(c.lastSendTimestamp)
 
 		m.Start()
@@ -890,7 +890,7 @@ func TestCalculateDesiredShards(t *testing.T) {
 	// helper function for adding samples.
 	addSamples := func(s int64, ts time.Duration) {
 		pendingSamples += s
-		samplesIn.incr(s)
+		samplesIn.incr(float64(s))
 
 		m.highestRecvTimestamp.Set(float64(startedAt.Add(ts).Unix()))
 	}
@@ -898,8 +898,8 @@ func TestCalculateDesiredShards(t *testing.T) {
 	// helper function for sending samples.
 	sendSamples := func(s int64, ts time.Duration) {
 		pendingSamples -= s
-		m.dataOut.incr(s)
-		m.dataOutDuration.incr(int64(m.numShards) * int64(shardUpdateDuration))
+		m.dataOut.incr(float64(s))
+		m.dataOutDuration.incr(float64(int64(m.numShards) * int64(shardUpdateDuration)))
 
 		// highest sent is how far back pending samples would be at our input rate.
 		highestSent := startedAt.Add(ts - time.Duration(pendingSamples/inputRate)*time.Second)
