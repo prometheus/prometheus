@@ -33,7 +33,7 @@ describe('EndpointLink', () => {
   it('renders an alert if url is invalid', () => {
     const endpointLink = shallow(<EndpointLink endpoint={'afdsacas'} globalUrl={'afdsacas'} />);
     const err = endpointLink.find(Alert);
-    expect(err.render().text()).toEqual('Error: Invalid URL');
+    expect(err.render().text()).toEqual('Error: Invalid URL: afdsacas');
   });
 
   it('handles params with multiple values correctly', () => {
