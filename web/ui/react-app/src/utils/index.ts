@@ -3,11 +3,11 @@ import moment from 'moment-timezone';
 import { PanelOptions, PanelType, PanelDefaultOptions } from '../pages/graph/Panel';
 import { PanelMeta } from '../pages/graph/PanelList';
 
-export const generateID = () => {
+export const generateID = (): string => {
   return `_${Math.random().toString(36).substr(2, 9)}`;
 };
 
-export const byEmptyString = (p: string) => p.length > 0;
+export const byEmptyString = (p: string): boolean => p.length > 0;
 
 export const isPresent = <T>(obj: T): obj is NonNullable<T> => obj !== null && obj !== undefined;
 
@@ -26,7 +26,7 @@ export const escapeHTML = (str: string): string => {
   });
 };
 
-export const metricToSeriesName = (labels: { [key: string]: string }) => {
+export const metricToSeriesName = (labels: { [key: string]: string }): string => {
   if (labels === null) {
     return 'scalar';
   }
@@ -237,11 +237,11 @@ export const toQueryString = ({ key, options }: PanelMeta) => {
   return urlParams.filter(byEmptyString).join('&');
 };
 
-export const encodePanelOptionsToQueryString = (panels: PanelMeta[]) => {
+export const encodePanelOptionsToQueryString = (panels: PanelMeta[]): string => {
   return `?${panels.map(toQueryString).join('&')}`;
 };
 
-export const createExpressionLink = (expr: string) => {
+export const createExpressionLink = (expr: string): string => {
   return `../graph?g0.expr=${encodeURIComponent(expr)}&g0.tab=1&g0.stacked=0&g0.show_exemplars=0.g0.range_input=1h.`;
 };
 export const mapObjEntries = <T, key extends keyof T, Z>(
@@ -256,7 +256,7 @@ export const callAll =
     fns.filter(Boolean).forEach((fn) => fn.apply(null, args));
   };
 
-export const parsePrometheusFloat = (value: string) => {
+export const parsePrometheusFloat = (value: string): number | string => {
   if (isNaN(Number(value))) {
     return value;
   } else {

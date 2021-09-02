@@ -48,7 +48,7 @@ export const processSummary = (activeTargets: Target[], droppedTargets: DroppedT
   return targets;
 };
 
-export const processTargets = (activeTargets: Target[], droppedTargets: DroppedTarget[]) => {
+export const processTargets = (activeTargets: Target[], droppedTargets: DroppedTarget[]): Record<string, TargetLabels[]> => {
   const labels: Record<string, TargetLabels[]> = {};
 
   for (const target of activeTargets) {

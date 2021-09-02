@@ -84,7 +84,7 @@ class Panel extends Component<PanelProps, PanelState> {
     };
   }
 
-  componentDidUpdate({ options: prevOpts }: PanelProps) {
+  componentDidUpdate({ options: prevOpts }: PanelProps): void {
     const { endTime, range, resolution, showExemplars, type } = this.props.options;
     if (
       prevOpts.endTime !== endTime ||
@@ -97,7 +97,7 @@ class Panel extends Component<PanelProps, PanelState> {
     }
   }
 
-  componentDidMount() {
+  componentDidMount(): void {
     this.executeQuery();
   }
 
@@ -230,15 +230,15 @@ class Panel extends Component<PanelProps, PanelState> {
     return this.props.options.endTime;
   };
 
-  handleChangeEndTime = (endTime: number | null) => {
+  handleChangeEndTime = (endTime: number | null): void => {
     this.setOptions({ endTime: endTime });
   };
 
-  handleChangeResolution = (resolution: number | null) => {
+  handleChangeResolution = (resolution: number | null): void => {
     this.setOptions({ resolution: resolution });
   };
 
-  handleChangeType = (type: PanelType) => {
+  handleChangeType = (type: PanelType): void => {
     if (this.props.options.type === type) {
       return;
     }
@@ -247,15 +247,15 @@ class Panel extends Component<PanelProps, PanelState> {
     this.setOptions({ type: type });
   };
 
-  handleChangeStacking = (stacked: boolean) => {
+  handleChangeStacking = (stacked: boolean): void => {
     this.setOptions({ stacked: stacked });
   };
 
-  handleChangeShowExemplars = (show: boolean) => {
+  handleChangeShowExemplars = (show: boolean): void => {
     this.setOptions({ showExemplars: show });
   };
 
-  handleTimeRangeSelection = (startTime: number, endTime: number) => {
+  handleTimeRangeSelection = (startTime: number, endTime: number): void => {
     this.setOptions({ range: endTime - startTime, endTime: endTime });
   };
 

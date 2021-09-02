@@ -39,7 +39,7 @@ class TimeInput extends Component<TimeInputProps> {
     return this.props.time || moment().valueOf();
   };
 
-  calcShiftRange = () => this.props.range / 2;
+  calcShiftRange = (): number => this.props.range / 2;
 
   increaseTime = (): void => {
     const time = this.getBaseTime() + this.calcShiftRange();
@@ -59,7 +59,7 @@ class TimeInput extends Component<TimeInputProps> {
     return this.props.useLocalTime ? moment.tz.guess() : 'UTC';
   };
 
-  componentDidMount() {
+  componentDidMount(): void {
     this.$time = $(this.timeInputRef.current!);
 
     this.$time.datetimepicker({
@@ -87,11 +87,11 @@ class TimeInput extends Component<TimeInputProps> {
     });
   }
 
-  componentWillUnmount() {
+  componentWillUnmount(): void {
     this.$time.datetimepicker('destroy');
   }
 
-  componentDidUpdate(prevProps: TimeInputProps) {
+  componentDidUpdate(prevProps: TimeInputProps): void {
     const { time, useLocalTime } = this.props;
     if (prevProps.time !== time) {
       this.$time.datetimepicker('date', time ? moment(time) : null);
