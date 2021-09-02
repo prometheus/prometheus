@@ -279,7 +279,7 @@ func (ce *CircularExemplarStorage) Resize(l int64) int {
 
 	migrated := 0
 
-	if l > 0 {
+	if l > 0 && len(oldBuffer) > 0 {
 		// Rewind previous next index by count with wrap-around.
 		// This math is essentially looking at nextIndex, where we would write the next exemplar to,
 		// and find the index in the old exemplar buffer that we should start migrating exemplars from.

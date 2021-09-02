@@ -413,7 +413,7 @@ func TestResize(t *testing.T) {
 			expectedMigrated:  50,
 		},
 		{
-			name:              "Zero",
+			name:              "ShrinkToZero",
 			startSize:         100,
 			newCount:          0,
 			expectedSeries:    []int{},
@@ -432,6 +432,14 @@ func TestResize(t *testing.T) {
 			name:              "NegativeToNegative",
 			startSize:         -1,
 			newCount:          -2,
+			expectedSeries:    []int{},
+			notExpectedSeries: []int{},
+			expectedMigrated:  0,
+		},
+		{
+			name:              "GrowFromZero",
+			startSize:         0,
+			newCount:          10,
 			expectedSeries:    []int{},
 			notExpectedSeries: []int{},
 			expectedMigrated:  0,
