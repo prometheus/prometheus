@@ -47,7 +47,7 @@
   <script>
   new PromConsole.Graph({
     node: document.querySelector("#cpuGraph"),
-    expr: "sum by (mode)(irate(node_cpu_seconds_total{job='node',instance='{{ .Params.instance }}',mode!='idle'}[5m]))",
+    expr: "sum by (mode)(irate(node_cpu_seconds_total{job='node',instance='{{ .Params.instance }}',mode!='idle',mode!='iowait',mode!='steal'}[5m]))",
     renderer: 'area',
     max: {{ with printf "count(count by (cpu)(node_cpu_seconds_total{job='node',instance='%s'}))" .Params.instance | query }}{{ . | first | value }}{{ else}}undefined{{end}},
     yAxisFormatter: PromConsole.NumberFormatter.humanizeNoSmallPrefix,
