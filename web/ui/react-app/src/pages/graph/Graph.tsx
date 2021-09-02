@@ -67,7 +67,7 @@ class Graph extends PureComponent<GraphProps, GraphState> {
     selectedExemplarLabels: { exemplar: {}, series: {} },
   };
 
-  componentDidUpdate(prevProps: GraphProps) {
+  componentDidUpdate(prevProps: GraphProps): void {
     const { data, stacked, useLocalTime, showExemplars } = this.props;
     if (prevProps.data !== data) {
       this.selectedSeriesIndexes = [];
@@ -134,7 +134,9 @@ class Graph extends PureComponent<GraphProps, GraphState> {
     this.destroyPlot();
   }
 
-  plot = (data: (GraphSeries | GraphExemplar)[] = [...this.state.chartData.series, ...this.state.chartData.exemplars]) => {
+  plot = (
+    data: (GraphSeries | GraphExemplar)[] = [...this.state.chartData.series, ...this.state.chartData.exemplars]
+  ): void => {
     if (!this.chartRef.current) {
       return;
     }
