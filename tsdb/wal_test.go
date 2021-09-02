@@ -528,7 +528,7 @@ func TestMigrateWAL_Fuzz(t *testing.T) {
 			require.NoError(t, err)
 			res = append(res, s)
 		default:
-			t.Fatalf("unknown record type %d", dec.Type(rec))
+			require.Fail(t, "unknown record type %d", dec.Type(rec))
 		}
 	}
 	require.NoError(t, r.Err())
