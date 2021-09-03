@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -27,19 +28,18 @@ import (
 func TestTimerGroupNewTimer(t *testing.T) {
 	tg := NewTimerGroup()
 	timer := tg.GetTimer(ExecTotalTime)
-	if duration := timer.Duration(); duration != 0 {
-		t.Fatalf("Expected duration of 0, but it was %f instead.", duration)
-	}
+	duration := timer.Duration()
+	require.NotEqual(t, 0, duration, "Expected duration of 0, but it was %f instead.", duration)
 	minimum := 2 * time.Millisecond
 	timer.Start()
 	time.Sleep(minimum)
 	timer.Stop()
-	if duration := timer.Duration(); duration == 0 {
-		t.Fatalf("Expected duration greater than 0, but it was %f instead.", duration)
-	}
-	if elapsed := timer.ElapsedTime(); elapsed < minimum {
-		t.Fatalf("Expected elapsed time to be greater than time slept, elapsed was %d, and time slept was %d.", elapsed.Nanoseconds(), minimum)
-	}
+	duration = timer.Duration()
+	require.Greater(t, duration, 0.0, "Expected duration greater than 0, but it was %f instead.", duration)
+	elapsed := timer.ElapsedTime()
+	require.Greater(t, elapsed, minimum,
+		"Expected elapsed time to be greater than time slept, elapsed was %d, and time slept was %d.",
+		elapsed.Nanoseconds(), minimum)
 }
 
 func TestQueryStatsWithTimers(t *testing.T) {
@@ -51,17 +51,11 @@ func TestQueryStatsWithTimers(t *testing.T) {
 
 	qs := NewQueryStats(qt)
 	actual, err := json.Marshal(qs)
-	if err != nil {
-		t.Fatalf("Unexpected error during serialization: %v", err)
-	}
+	require.NoError(t, err, "Unexpected error during serialization: %v", err)
 	// Timing value is one of multiple fields, unit is seconds (float).
 	match, err := regexp.MatchString(`[,{]"execTotalTime":\d+\.\d+[,}]`, string(actual))
-	if err != nil {
-		t.Fatalf("Unexpected error while matching string: %v", err)
-	}
-	if !match {
-		t.Fatalf("Expected timings with one non-zero entry, but got %s.", actual)
-	}
+	require.NoError(t, err, "Unexpected error while matching string: %v", err)
+	require.True(t, match, "Expected timings with one non-zero entry, but got %s.", actual)
 }
 
 func TestQueryStatsWithSpanTimers(t *testing.T) {
@@ -72,51 +66,34 @@ func TestQueryStatsWithSpanTimers(t *testing.T) {
 	qst.Finish()
 	qs := NewQueryStats(qt)
 	actual, err := json.Marshal(qs)
-	if err != nil {
-		t.Fatalf("Unexpected error during serialization: %v", err)
-	}
+	require.NoError(t, err, "Unexpected error during serialization: %v", err)
 	// Timing value is one of multiple fields, unit is seconds (float).
 	match, err := regexp.MatchString(`[,{]"execQueueTime":\d+\.\d+[,}]`, string(actual))
-	if err != nil {
-		t.Fatalf("Unexpected error while matching string: %v", err)
-	}
-	if !match {
-		t.Fatalf("Expected timings with one non-zero entry, but got %s.", actual)
-	}
+	require.NoError(t, err, "Unexpected error while matching string: %v", err)
+	require.True(t, match, "Expected timings with one non-zero entry, but got %s.", actual)
 }
 
 func TestTimerGroup(t *testing.T) {
 	tg := NewTimerGroup()
 	execTotalTimer := tg.GetTimer(ExecTotalTime)
-	if tg.GetTimer(ExecTotalTime).String() != "Exec total time: 0s" {
-		t.Fatalf("Expected string %s, but got %s", "", execTotalTimer.String())
-	}
+	require.Equal(t, "Exec total time: 0s", tg.GetTimer(ExecTotalTime).String(), "Expected string %s, but got %s", "", execTotalTimer.String())
+
 	execQueueTimer := tg.GetTimer(ExecQueueTime)
-	if tg.GetTimer(ExecQueueTime).String() != "Exec queue wait time: 0s" {
-		t.Fatalf("Expected string %s, but got %s", "", execQueueTimer.String())
-	}
+	require.Equal(t, "Exec queue wait time: 0s", tg.GetTimer(ExecQueueTime).String(), "Expected string %s, but got %s", "", execQueueTimer.String())
+
 	innerEvalTimer := tg.GetTimer(InnerEvalTime)
-	if tg.GetTimer(InnerEvalTime).String() != "Inner eval time: 0s" {
-		t.Fatalf("Expected string %s, but got %s", "", innerEvalTimer.String())
-	}
+	require.Equal(t, "Inner eval time: 0s", tg.GetTimer(InnerEvalTime).String(), "Expected string %s, but got %s", "", innerEvalTimer.String())
+
 	queryPreparationTimer := tg.GetTimer(QueryPreparationTime)
-	if tg.GetTimer(QueryPreparationTime).String() != "Query preparation time: 0s" {
-		t.Fatalf("Expected string %s, but got %s", "", queryPreparationTimer.String())
-	}
+	require.Equal(t, "Query preparation time: 0s", tg.GetTimer(QueryPreparationTime).String(), "Expected string %s, but got %s", "", queryPreparationTimer.String())
+
 	resultSortTimer := tg.GetTimer(ResultSortTime)
-	if tg.GetTimer(ResultSortTime).String() != "Result sorting time: 0s" {
-		t.Fatalf("Expected string %s, but got %s", "", resultSortTimer.String())
-	}
+	require.Equal(t, "Result sorting time: 0s", tg.GetTimer(ResultSortTime).String(), "Expected string %s, but got %s", "", resultSortTimer.String())
+
 	evalTotalTimer := tg.GetTimer(EvalTotalTime)
-	if tg.GetTimer(EvalTotalTime).String() != "Eval total time: 0s" {
-		t.Fatalf("Expected string %s, but got %s", "", evalTotalTimer.String())
-	}
+	require.Equal(t, "Eval total time: 0s", tg.GetTimer(EvalTotalTime).String(), "Expected string %s, but got %s", "", evalTotalTimer.String())
 
 	actual := tg.String()
 	expected := "Exec total time: 0s\nExec queue wait time: 0s\nInner eval time: 0s\nQuery preparation time: 0s\nResult sorting time: 0s\nEval total time: 0s\n"
-
-	if actual != expected {
-		t.Fatalf("Expected timerGroup string %s, but got %s.", expected, actual)
-	}
-
+	require.Equal(t, expected, actual, "Expected timerGroup string %s, but got %s.", expected, actual)
 }
