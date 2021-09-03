@@ -33,14 +33,14 @@ describe('CMExpressionInput', () => {
   });
 
   it('renders a search icon when it is not loading', () => {
-    const addon = expressionInput.find(InputGroupAddon).filterWhere(addon => addon.prop('addonType') === 'prepend');
+    const addon = expressionInput.find(InputGroupAddon).filterWhere((addon) => addon.prop('addonType') === 'prepend');
     const icon = addon.find(FontAwesomeIcon);
     expect(icon.prop('icon')).toEqual(faSearch);
   });
 
   it('renders a loading icon when it is loading', () => {
     const expressionInput = mount(<CMExpressionInput {...expressionInputProps} loading={true} />);
-    const addon = expressionInput.find(InputGroupAddon).filterWhere(addon => addon.prop('addonType') === 'prepend');
+    const addon = expressionInput.find(InputGroupAddon).filterWhere((addon) => addon.prop('addonType') === 'prepend');
     const icon = addon.find(FontAwesomeIcon);
     expect(icon.prop('icon')).toEqual(faSpinner);
     expect(icon.prop('spin')).toBe(true);
@@ -52,11 +52,8 @@ describe('CMExpressionInput', () => {
   });
 
   it('renders an execute button', () => {
-    const addon = expressionInput.find(InputGroupAddon).filterWhere(addon => addon.prop('addonType') === 'append');
-    const button = addon
-      .find(Button)
-      .find('.execute-btn')
-      .first();
+    const addon = expressionInput.find(InputGroupAddon).filterWhere((addon) => addon.prop('addonType') === 'append');
+    const button = addon.find(Button).find('.execute-btn').first();
     expect(button.prop('color')).toEqual('primary');
     expect(button.text()).toEqual('Execute');
   });
@@ -65,7 +62,7 @@ describe('CMExpressionInput', () => {
     const spyExecuteQuery = jest.fn();
     const props = { ...expressionInputProps, executeQuery: spyExecuteQuery };
     const wrapper = mount(<CMExpressionInput {...props} />);
-    const btn = wrapper.find(Button).filterWhere(btn => btn.hasClass('execute-btn'));
+    const btn = wrapper.find(Button).filterWhere((btn) => btn.hasClass('execute-btn'));
     btn.simulate('click');
     expect(spyExecuteQuery).toHaveBeenCalledTimes(1);
   });

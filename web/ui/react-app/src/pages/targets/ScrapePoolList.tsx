@@ -34,12 +34,12 @@ export const ScrapePoolContent: FC<ScrapePoolListProps> = ({ activeTargets }) =>
     <>
       <Filter filter={filter} setFilter={setFilter} expanded={expanded} setExpanded={setExpanded} />
       {Object.keys(targetGroups)
-        .filter(scrapePool => {
+        .filter((scrapePool) => {
           const targetGroup = targetGroups[scrapePool];
           const isHealthy = targetGroup.upCount === targetGroup.targets.length;
           return (isHealthy && showHealthy) || (!isHealthy && showUnhealthy);
         })
-        .map<JSX.Element>(scrapePool => (
+        .map<JSX.Element>((scrapePool) => (
           <ScrapePoolPanel
             key={scrapePool}
             scrapePool={scrapePool}

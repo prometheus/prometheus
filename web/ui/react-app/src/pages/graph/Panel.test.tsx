@@ -75,7 +75,7 @@ describe('Panel', () => {
   });
 
   it('renders a TabPane with a TimeInput and a DataTable when in table mode', () => {
-    const tab = panel.find(TabPane).filterWhere(tab => tab.prop('tabId') === 'table');
+    const tab = panel.find(TabPane).filterWhere((tab) => tab.prop('tabId') === 'table');
     const timeInput = tab.find(TimeInput);
     expect(timeInput.prop('time')).toEqual(defaultProps.options.endTime);
     expect(timeInput.prop('range')).toEqual(defaultProps.options.range);
