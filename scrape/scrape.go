@@ -308,6 +308,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed 
 			cache,
 			jitterSeed,
 			opts.honorTimestamps,
+			opts.sampleLimit,
 			opts.labelLimits,
 			opts.interval,
 			opts.timeout,
@@ -815,6 +816,7 @@ type scrapeLoop struct {
 	honorTimestamps bool
 	forcedErr       error
 	forcedErrMtx    sync.Mutex
+	sampleLimit     int
 	labelLimits     *labelLimits
 	interval        time.Duration
 	timeout         time.Duration
@@ -1087,6 +1089,7 @@ func newScrapeLoop(ctx context.Context,
 	cache *scrapeCache,
 	jitterSeed uint64,
 	honorTimestamps bool,
+	sampleLimit int,
 	labelLimits *labelLimits,
 	interval time.Duration,
 	timeout time.Duration,
@@ -1113,6 +1116,7 @@ func newScrapeLoop(ctx context.Context,
 		l:                   l,
 		parentCtx:           ctx,
 		honorTimestamps:     honorTimestamps,
+		sampleLimit:         sampleLimit,
 		labelLimits:         labelLimits,
 		interval:            interval,
 		timeout:             timeout,
@@ -1610,6 +1614,7 @@ const (
 	samplesPostRelabelMetricName = "scrape_samples_post_metric_relabeling" + "\xff"
 	scrapeSeriesAddedMetricName  = "scrape_series_added" + "\xff"
 	scrapeTimeoutMetricName      = "scrape_timeout_seconds" + "\xff"
+	scrapeSampleLimitMetricName  = "scrape_sample_limit" + "\xff"
 )
 
 func (sl *scrapeLoop) report(app storage.Appender, start time.Time, timeout, duration time.Duration, scraped, added, seriesAdded int, scrapeErr error) (err error) {
@@ -1641,6 +1646,9 @@ func (sl *scrapeLoop) report(app storage.Appender, start time.Time, timeout, dur
 		if err = sl.addReportSample(app, scrapeTimeoutMetricName, ts, timeout.Seconds()); err != nil {
 			return
 		}
+		if err = sl.addReportSample(app, scrapeSampleLimitMetricName, ts, float64(sl.sampleLimit)); err != nil {
+			return
+		}
 	}
 	return
 }
@@ -1667,6 +1675,9 @@ func (sl *scrapeLoop) reportStale(app storage.Appender, start time.Time) (err er
 	}
 	if sl.reportScrapeTimeout {
 		if err = sl.addReportSample(app, scrapeTimeoutMetricName, ts, stale); err != nil {
+			return
+		}
+		if err = sl.addReportSample(app, scrapeSampleLimitMetricName, ts, stale); err != nil {
 			return
 		}
 	}
