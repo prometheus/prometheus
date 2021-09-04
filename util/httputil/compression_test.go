@@ -89,8 +89,8 @@ func TestCompressionHandler_Gzip(t *testing.T) {
 	req.Header.Set(acceptEncodingHeader, gzipEncoding)
 
 	resp, err := client.Do(req)
-	defer resp.Body.Close()
 	require.NoError(t, err, "unexpected error while reading the response body: %v", err)
+	defer resp.Body.Close()
 
 	actualHeader := resp.Header.Get(contentEncodingHeader)
 	require.Equal(t, gzipEncoding, actualHeader, "expected response with encoding header %s, but got %s", gzipEncoding, actualHeader)
@@ -123,8 +123,8 @@ func TestCompressionHandler_Deflate(t *testing.T) {
 	req.Header.Set(acceptEncodingHeader, deflateEncoding)
 
 	resp, err := client.Do(req)
-	defer resp.Body.Close()
 	require.NoError(t, err, "unexpected error while reading the response body: %v")
+	defer resp.Body.Close()
 
 	actualHeader := resp.Header.Get(contentEncodingHeader)
 	require.Equal(t, deflateEncoding, actualHeader, "expected response with encoding header %s, but got %s", deflateEncoding, actualHeader)
