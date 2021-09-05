@@ -975,6 +975,46 @@ func TestScrapeLoopSeriesAdded(t *testing.T) {
 	require.Equal(t, 0, seriesAdded)
 }
 
+func makeTestMetrics(n int) []byte {
+	// Construct a metrics string to parse
+	sb := bytes.Buffer{}
+	for i := 0; i < n; i++ {
+		fmt.Fprintf(&sb, "# TYPE metric_a gauge\n")
+		fmt.Fprintf(&sb, "# HELP metric_a help text\n")
+		fmt.Fprintf(&sb, "metric_a{foo=\"%d\",bar=\"%d\"} 1\n", i, i*100)
+	}
+	return sb.Bytes()
+}
+
+func BenchmarkScrapeLoopAppend(b *testing.B) {
+	ctx, sl := simpleTestScrapeLoop(b)
+
+	slApp := sl.appender(ctx)
+	metrics := makeTestMetrics(100)
+	ts := time.Time{}
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		ts = ts.Add(time.Second)
+		_, _, _, _ = sl.append(slApp, metrics, "", ts)
+	}
+}
+func BenchmarkScrapeLoopAppendOM(b *testing.B) {
+	ctx, sl := simpleTestScrapeLoop(b)
+
+	slApp := sl.appender(ctx)
+	metrics := makeTestMetrics(100)
+	ts := time.Time{}
+
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		ts = ts.Add(time.Second)
+		_, _, _, _ = sl.append(slApp, metrics, "application/openmetrics-text", ts)
+	}
+}
+
 func TestScrapeLoopRunCreatesStaleMarkersOnFailedScrape(t *testing.T) {
 	appender := &collectResultAppender{}
 	var (
