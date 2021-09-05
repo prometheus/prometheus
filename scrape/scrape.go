@@ -1390,6 +1390,7 @@ func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string,
 		defTime        = timestamp.FromTime(ts)
 		appErrs        = appendErrors{}
 		sampleLimitErr error
+		e              exemplar.Exemplar // escapes to heap so hoisted out of loop
 	)
 
 	defer func() {
@@ -1406,7 +1407,6 @@ loop:
 		var (
 			et          textparse.Entry
 			sampleAdded bool
-			e           exemplar.Exemplar
 		)
 		if et, err = p.Next(); err != nil {
 			if err == io.EOF {
@@ -1513,6 +1513,7 @@ loop:
 				// Since exemplar storage is still experimental, we don't fail the scrape on ingestion errors.
 				level.Debug(sl.l).Log("msg", "Error while adding exemplar in AddExemplar", "exemplar", fmt.Sprintf("%+v", e), "err", exemplarErr)
 			}
+			e = exemplar.Exemplar{} // reset for next time round loop
 		}
 
 	}
