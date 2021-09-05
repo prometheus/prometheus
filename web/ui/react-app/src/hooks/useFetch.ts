@@ -34,7 +34,8 @@ export const useFetch = <T extends Record<string, any>>(url: string, options?: R
         const json = (await res.json()) as APIResponse<T>;
         setResponse(json);
         setIsLoading(false);
-      } catch (error) {
+      } catch (err: unknown) {
+        const error = err as Error;
         setError(error);
       }
     };
