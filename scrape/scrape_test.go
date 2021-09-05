@@ -929,10 +929,10 @@ test_metric 1
 	require.Equal(t, "", md.Unit)
 }
 
-func TestScrapeLoopSeriesAdded(t *testing.T) {
+func simpleTestScrapeLoop(t testing.TB) (context.Context, *scrapeLoop) {
 	// Need a full storage for correct Add/AddFast semantics.
 	s := teststorage.New(t)
-	defer s.Close()
+	t.Cleanup(func() { s.Close() })
 
 	ctx, cancel := context.WithCancel(context.Background())
 	sl := newScrapeLoop(ctx,
@@ -950,7 +950,13 @@ func TestScrapeLoopSeriesAdded(t *testing.T) {
 		0,
 		false,
 	)
-	defer cancel()
+	t.Cleanup(func() { cancel() })
+
+	return ctx, sl
+}
+
+func TestScrapeLoopSeriesAdded(t *testing.T) {
+	ctx, sl := simpleTestScrapeLoop(t)
 
 	slApp := sl.appender(ctx)
 	total, added, seriesAdded, err := sl.append(slApp, []byte("test_metric 1\n"), "", time.Time{})
