@@ -469,13 +469,14 @@ func TestHead_Truncate(t *testing.T) {
 	require.Nil(t, postingsB2)
 	require.Nil(t, postingsC1)
 
-	require.Equal(t, map[string]struct{}{
-		"":  {}, // from 'all' postings list
-		"a": {},
-		"b": {},
-		"1": {},
-		"2": {},
-	}, h.symbols)
+	iter := h.postings.Symbols()
+	symbols := []string{}
+	for iter.Next() {
+		symbols = append(symbols, iter.At())
+	}
+	require.Equal(t,
+		[]string{"" /* from 'all' postings list */, "1", "2", "a", "b"},
+		symbols)
 
 	values := map[string]map[string]struct{}{}
 	for _, name := range h.postings.LabelNames() {
