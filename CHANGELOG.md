@@ -1,3 +1,19 @@
+## 2.30.0-rc.0 / 2021-09-08
+
+* [FEATURE] **experimental** TSDB: Snapshot in-memory chunks on shutdown for faster restarts. Behind `--enable-feature=memory-snapshot-on-shutdown` flag. #7229
+* [FEATURE] **experimental** Scrape: Configure scrape interval and scrape timeout via relabeling using `__scrape_interval__` and `__scrape_timeout__` labels respectively. #8911
+* [FEATURE] Scrape: Add `scrape_timeout_seconds` and `scrape_sample_limit` metric. Behind `--enable-feature=extra-scrape-metrics` flag to avoid additional cardinality by default. #9247 #9295
+* [ENHANCEMENT] Scrape: Add `--scrape.timestamp-tolerance` flag to adjust scrape timestamp tolerance when enabled via `--scrape.adjust-timestamps`. #9283
+* [ENHANCEMENT] Remote Write: Improve throughput when sending exemplars. #8921
+* [ENHANCEMENT] TSDB: Optimise WAL loading by removing extra map and caching min-time #9160
+* [ENHANCEMENT] promtool: Speed up checking for duplicate rules. #9262/#9306
+* [ENHANCEMENT] Scrape: Reduce allocations when parsing the metrics. #9299
+* [ENHANCEMENT] docker_sd: Support host network mode #9125
+* [BUGFIX] Exemplars: Fix panic when resizing exemplar storage from 0 to a non-zero size. #9286
+* [BUGFIX] TSDB: Correctly decrement `prometheus_tsdb_head_active_appenders` when the append has no samples. #9230
+* [BUGFIX] promtool rules backfill: Return 1 if backfill was unsuccessful. #9303
+* [BUGFIX] config: Fix a panic when reloading configuration with a `null` relabel action. #9224
+
 ## 2.29.2 / 2021-08-27
 
 * [BUGFIX] Fix Kubernetes SD failing to discover Ingress in Kubernetes v1.22. #9205
