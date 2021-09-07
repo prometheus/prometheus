@@ -11,7 +11,7 @@ import { API_PATH } from '../../constants/constants';
 
 export type PanelMeta = { key: string; options: PanelOptions; id: string };
 
-export const updateURL = (nextPanels: PanelMeta[]) => {
+export const updateURL = (nextPanels: PanelMeta[]): void => {
   const query = encodePanelOptionsToQueryString(nextPanels);
   window.history.pushState({}, '', query);
 };

@@ -57,6 +57,9 @@ describe('ScrapePoolPanel', () => {
       const div = document.createElement('div');
       div.id = `series-labels-prometheus-0`;
       document.body.appendChild(div);
+      const div2 = document.createElement('div');
+      div2.id = `scrape-duration-prometheus-0`;
+      document.body.appendChild(div2);
       const scrapePoolPanel = mount(<ScrapePoolPanel {...props} />);
 
       const btn = scrapePoolPanel.find(Button);

@@ -50,7 +50,7 @@ func TestTemplateExpansion(t *testing.T) {
 			// Non-ASCII space (not allowed in text/template, see https://github.com/golang/go/blob/master/src/text/template/parse/lex.go#L98)
 			text:       "{{ }}",
 			shouldFail: true,
-			errorMsg:   "error parsing template test: template: test:1: unexpected unrecognized character in action: U+00A0 in command",
+			errorMsg:   "error parsing template test: template: test:1: unrecognized character in action: U+00A0",
 		},
 		{
 			// HTML escaping.
@@ -157,7 +157,7 @@ func TestTemplateExpansion(t *testing.T) {
 			// Unparsable template.
 			text:       "{{",
 			shouldFail: true,
-			errorMsg:   "error parsing template test: template: test:1: unexpected unclosed action in command",
+			errorMsg:   "error parsing template test: template: test:1: unclosed action",
 		},
 		{
 			// Error in function.
@@ -194,7 +194,7 @@ func TestTemplateExpansion(t *testing.T) {
 			// Humanize - string with error.
 			text:       `{{ humanize "one" }}`,
 			shouldFail: true,
-			errorMsg:   `strconv.ParseFloat: parsing "one": invalid syntax`,
+			errorMsg:   `error executing template test: template: test:1:3: executing "test" at <humanize "one">: error calling humanize: strconv.ParseFloat: parsing "one": invalid syntax`,
 		},
 		{
 			// Humanize1024 - float64.
@@ -212,7 +212,7 @@ func TestTemplateExpansion(t *testing.T) {
 			// Humanize1024 - string with error.
 			text:       `{{ humanize1024 "one" }}`,
 			shouldFail: true,
-			errorMsg:   `strconv.ParseFloat: parsing "one": invalid syntax`,
+			errorMsg:   `error executing template test: template: test:1:3: executing "test" at <humanize1024 "one">: error calling humanize1024: strconv.ParseFloat: parsing "one": invalid syntax`,
 		},
 		{
 			// HumanizeDuration - seconds - float64.
@@ -242,7 +242,7 @@ func TestTemplateExpansion(t *testing.T) {
 			// HumanizeDuration - string with error.
 			text:       `{{ humanizeDuration "one" }}`,
 			shouldFail: true,
-			errorMsg:   `strconv.ParseFloat: parsing "one": invalid syntax`,
+			errorMsg:   `error executing template test: template: test:1:3: executing "test" at <humanizeDuration "one">: error calling humanizeDuration: strconv.ParseFloat: parsing "one": invalid syntax`,
 		},
 		{
 			// Humanize* Inf and NaN - float64.
@@ -270,7 +270,7 @@ func TestTemplateExpansion(t *testing.T) {
 			// HumanizePercentage - model.SampleValue input - string with error.
 			text:       `{{ "one" | humanizePercentage }}`,
 			shouldFail: true,
-			errorMsg:   `strconv.ParseFloat: parsing "one": invalid syntax`,
+			errorMsg:   `error executing template test: template: test:1:11: executing "test" at <humanizePercentage>: error calling humanizePercentage: strconv.ParseFloat: parsing "one": invalid syntax`,
 		},
 		{
 			// HumanizeTimestamp - model.SampleValue input - float64.
@@ -349,6 +349,7 @@ func TestTemplateExpansion(t *testing.T) {
 		}
 		if s.shouldFail {
 			require.Error(t, err, "%v", s.text)
+			require.EqualError(t, err, s.errorMsg)
 			continue
 		}
 

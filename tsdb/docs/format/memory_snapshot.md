@@ -3,6 +3,11 @@
 Memory snapshot uses the WAL package and writes each series as a WAL record.
 Below are the formats of the individual records.
 
+The order of records in the snapshot is always:
+1. Starts with series records, one per series, in an unsorted fashion.
+2. After all series are done, we write a tombstone record containing all the tombstones.
+3. At the end, we write one or more exemplar records while batching up the exemplars in each record. Exemplars are in the order they were written to the circular buffer.
+
 ### Series records
 
 This record is a snapshot of a single series. Only one series exists per record.
@@ -59,4 +64,31 @@ as tombstone file in blocks.
 ├───────────────────────────────────┬─────────────────────────────┤
 │ len(Encoded Tombstones) <uvarint> │ Encoded Tombstones <bytes>  │
 └───────────────────────────────────┴─────────────────────────────┘
+```
+
+
+### Exemplar record
+
+A single exemplar record contains one or more exemplars, encoded in the same way as we do in WAL but with changed record type.
+
+```
+┌───────────────────────────────────────────────────────────────────┐
+│                      Record Type <byte>                           │
+├───────────────────────────────────────────────────────────────────┤
+│ ┌────────────────────┬───────────────────────────┐                │
+│ │ series ref <8b>    │ timestamp <8b>            │                │
+│ └────────────────────┴───────────────────────────┘                │
+│ ┌─────────────────────┬───────────────────────────┬─────────────┐ │
+│ │ ref_delta <uvarint> │ timestamp_delta <uvarint> │ value <8b>  │ │
+│ ├─────────────────────┴───────────────────────────┴─────────────┤ │
+│ │  n = len(labels) <uvarint>                                    │ │
+│ ├───────────────────────────────┬───────────────────────────────┤ │
+│ │     len(str_1) <uvarint>      │       str_1 <bytes>           │ │
+│ ├───────────────────────────────┴───────────────────────────────┤ │
+│ │                              ...                              │ │
+│ ├───────────────────────────────┬───────────────────────────────┤ │
+│ │     len(str_2n) <uvarint>     │       str_2n <bytes>          │ │
+│ ├───────────────────────────────┴───────────────────────────────┤ │
+│                               . . .                               │
+└───────────────────────────────────────────────────────────────────┘
 ```

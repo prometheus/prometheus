@@ -26,7 +26,7 @@ export const StartingContent: FC<StartingContentProps> = ({ status, isUnexpected
         {status && status.max > 0 ? (
           <div>
             <p>
-              Replaying WAL ({status?.current}/{status?.max})
+              Replaying WAL ({status.current}/{status.max})
             </p>
             <Progress
               animated

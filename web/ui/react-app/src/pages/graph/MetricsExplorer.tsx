@@ -9,16 +9,16 @@ interface Props {
 }
 
 class MetricsExplorer extends Component<Props> {
-  handleMetricClick = (query: string) => {
+  handleMetricClick = (query: string): void => {
     this.props.insertAtCursor(query);
     this.props.updateShow(false);
   };
 
-  toggle = () => {
+  toggle = (): void => {
     this.props.updateShow(!this.props.show);
   };
 
-  render() {
+  render(): JSX.Element {
     return (
       <Modal isOpen={this.props.show} toggle={this.toggle} className="metrics-explorer">
         <ModalHeader toggle={this.toggle}>Metrics Explorer</ModalHeader>

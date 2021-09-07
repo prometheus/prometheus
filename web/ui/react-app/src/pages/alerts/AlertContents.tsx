@@ -6,6 +6,7 @@ import { isPresent } from '../../utils';
 import { Rule } from '../../types/types';
 import { useLocalStorage } from '../../hooks/useLocalStorage';
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type RuleState = keyof RuleStatus<any>;
 
 export interface RuleStatus<T> {
@@ -108,6 +109,7 @@ interface GroupInfoProps {
 }
 
 export const GroupInfo: FC<GroupInfoProps> = ({ rules, children }) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const statesCounter = rules.reduce<any>(
     (acc, r) => {
       return {

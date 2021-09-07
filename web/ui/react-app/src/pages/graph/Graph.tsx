@@ -42,6 +42,7 @@ export interface GraphExemplar {
   seriesLabels: { [key: string]: string };
   labels: { [key: string]: string };
   data: number[][];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   points: any; // This is used to specify the symbol.
   color: string;
 }
@@ -206,7 +207,7 @@ class Graph extends PureComponent<GraphProps, GraphState> {
     }
   };
 
-  render() {
+  render(): JSX.Element {
     const { chartData, selectedExemplarLabels } = this.state;
     const selectedLabels = selectedExemplarLabels as {
       exemplar: { [key: string]: string };

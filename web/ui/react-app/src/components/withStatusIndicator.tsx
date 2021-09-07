@@ -11,7 +11,9 @@ interface StatusIndicatorProps {
 }
 
 export const withStatusIndicator =
-  <T extends Record<string, any>>(Component: ComponentType<T>): FC<StatusIndicatorProps & T> =>
+  <T extends Record<string, any>>( // eslint-disable-line @typescript-eslint/no-explicit-any
+    Component: ComponentType<T>
+  ): FC<StatusIndicatorProps & T> =>
   ({ error, isLoading, customErrorMsg, componentTitle, ...rest }) => {
     if (error) {
       return (

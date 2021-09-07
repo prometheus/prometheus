@@ -1,6 +1,6 @@
 import $ from 'jquery';
 import React, { Component } from 'react';
-import { Button, InputGroup, InputGroupAddon, Input } from 'reactstrap';
+import { Button, Input, InputGroup, InputGroupAddon } from 'reactstrap';
 
 import moment from 'moment-timezone';
 
@@ -11,11 +11,11 @@ import '../../../node_modules/tempusdominus-bootstrap-4/build/css/tempusdominus-
 import { dom, library } from '@fortawesome/fontawesome-svg-core';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
+  faArrowDown,
+  faArrowUp,
+  faCalendarCheck,
   faChevronLeft,
   faChevronRight,
-  faCalendarCheck,
-  faArrowUp,
-  faArrowDown,
   faTimes,
 } from '@fortawesome/free-solid-svg-icons';
 
@@ -33,6 +33,7 @@ interface TimeInputProps {
 
 class TimeInput extends Component<TimeInputProps> {
   private timeInputRef = React.createRef<HTMLInputElement>();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private $time: any = null;
 
   getBaseTime = (): number => {
@@ -60,7 +61,10 @@ class TimeInput extends Component<TimeInputProps> {
   };
 
   componentDidMount(): void {
-    this.$time = $(this.timeInputRef.current!);
+    if (!this.timeInputRef.current) {
+      return;
+    }
+    this.$time = $(this.timeInputRef.current);
 
     this.$time.datetimepicker({
       icons: {
@@ -78,6 +82,7 @@ class TimeInput extends Component<TimeInputProps> {
       defaultDate: this.props.time,
     });
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     this.$time.on('change.datetimepicker', (e: any) => {
       // The end time can also be set by dragging a section on the graph,
       // and that value will have decimal places.
@@ -101,7 +106,7 @@ class TimeInput extends Component<TimeInputProps> {
     }
   }
 
-  render() {
+  render(): JSX.Element {
     return (
       <InputGroup className="time-input" size="sm">
         <InputGroupAddon addonType="prepend">

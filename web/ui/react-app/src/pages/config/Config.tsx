@@ -27,7 +27,7 @@ export const ConfigContent: FC<ConfigContentProps> = ({ error, data }) => {
       <h2>
         Configuration&nbsp;
         <CopyToClipboard
-          text={config!}
+          text={config ? config : ''}
           onCopy={(_, result) => {
             setCopied(result);
             setTimeout(setCopied, 1500);

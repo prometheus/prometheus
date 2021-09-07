@@ -53,7 +53,7 @@ export const formatValue = (y: number | null): string => {
   throw Error("couldn't format a value, this is a bug");
 };
 
-export const getHoverColor = (color: string, opacity: number, stacked: boolean) => {
+export const getHoverColor = (color: string, opacity: number, stacked: boolean): string => {
   const { r, g, b } = $.color.parse(color);
   if (!stacked) {
     return `rgba(${r}, ${g}, ${b}, ${opacity})`;
@@ -67,10 +67,15 @@ export const getHoverColor = (color: string, opacity: number, stacked: boolean) 
   return `rgb(${Math.round(base + opacity * r)},${Math.round(base + opacity * g)},${Math.round(base + opacity * b)})`;
 };
 
-export const toHoverColor = (index: number, stacked: boolean) => (series: GraphSeries, i: number) => ({
-  ...series,
-  color: getHoverColor(series.color, i !== index ? 0.3 : 1, stacked),
-});
+export const toHoverColor =
+  (index: number, stacked: boolean) =>
+  (
+    series: GraphSeries,
+    i: number
+  ): { color: string; data: (number | null)[][]; index: number; labels: { [p: string]: string } } => ({
+    ...series,
+    color: getHoverColor(series.color, i !== index ? 0.3 : 1, stacked),
+  });
 
 export const getOptions = (stacked: boolean, useLocalTime: boolean): jquery.flot.plotOptions => {
   return {
@@ -154,7 +159,10 @@ export const getOptions = (stacked: boolean, useLocalTime: boolean): jquery.flot
 };
 
 // This was adapted from Flot's color generation code.
-export const getColors = (data: { resultType: string; result: Array<{ metric: Metric; values: [number, string][] }> }) => {
+export const getColors = (data: {
+  resultType: string;
+  result: Array<{ metric: Metric; values: [number, string][] }>;
+}): Color[] => {
   const colorPool = ['#edc240', '#afd8f8', '#cb4b4b', '#4da74d', '#9440ed'];
   const colorPoolSize = colorPool.length;
   let variation = 0;
@@ -180,6 +188,7 @@ export const getColors = (data: { resultType: string; result: Array<{ metric: Me
 
 export const normalizeData = ({ queryParams, data, exemplars, stacked }: GraphProps): GraphData => {
   const colors = getColors(data);
+  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
   const { startTime, endTime, resolution } = queryParams!;
 
   let sum = 0;
@@ -256,7 +265,7 @@ export const normalizeData = ({ queryParams, data, exemplars, stacked }: GraphPr
   };
 };
 
-export const parseValue = (value: string) => {
+export const parseValue = (value: string): null | number => {
   const val = parseFloat(value);
   // "+Inf", "-Inf", "+Inf" will be parsed into NaN by parseFloat(). They
   // can't be graphed, so show them as gaps (null).

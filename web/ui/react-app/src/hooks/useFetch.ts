@@ -10,19 +10,15 @@ export interface FetchState<T> {
   isLoading: boolean;
 }
 
-export interface FetchStateReady {
-  ready: boolean;
-  isUnexpected: boolean;
-  isLoading: boolean;
-}
-
 export interface FetchStateReadyInterval {
   ready: boolean;
   isUnexpected: boolean;
   walReplayStatus: WALReplayStatus;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const useFetch = <T extends Record<string, any>>(url: string, options?: RequestInit): FetchState<T> => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [response, setResponse] = useState<APIResponse<T>>({ status: 'start fetching' } as any);
   const [error, setError] = useState<Error>();
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -38,8 +34,9 @@ export const useFetch = <T extends Record<string, any>>(url: string, options?: R
         const json = (await res.json()) as APIResponse<T>;
         setResponse(json);
         setIsLoading(false);
-      } catch (error) {
-        setError(error as Error);
+      } catch (err: unknown) {
+        const error = err as Error;
+        setError(error);
       }
     };
     fetchData();
@@ -54,6 +51,7 @@ let wasReady = false;
 export const useFetchReadyInterval = (pathPrefix: string, options?: RequestInit): FetchStateReadyInterval => {
   const [ready, setReady] = useState<boolean>(false);
   const [isUnexpected, setIsUnexpected] = useState<boolean>(false);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [walReplayStatus, setWALReplayStatus] = useState<WALReplayStatus>({} as any);
 
   useEffect(() => {

@@ -220,9 +220,8 @@ func (i *Ingress) buildIngress(ingress ingressAdaptor) *targetgroup.Group {
 }
 
 // matchesHostnamePattern returns true if the host matches a wildcard DNS
-// pattern or pattern and host are equal
+// pattern or pattern and host are equal.
 func matchesHostnamePattern(pattern, host string) bool {
-	// check for exact match
 	if pattern == host {
 		return true
 	}
@@ -230,13 +229,13 @@ func matchesHostnamePattern(pattern, host string) bool {
 	patternParts := strings.Split(pattern, ".")
 	hostParts := strings.Split(host, ".")
 
-	// if they are not equal, we cna check if we need to match
-	// on a wildcard or else give up
+	// If the first element of the pattern is not a wildcard, give up.
 	if len(patternParts) == 0 || patternParts[0] != "*" {
 		return false
 	}
 
-	// to get a valid wildcard match the parts will need to be the same length
+	// A wildcard match require the pattern to have the same length as the host
+	// path.
 	if len(patternParts) != len(hostParts) {
 		return false
 	}

@@ -217,11 +217,13 @@ export const parseOption = (param: string): Partial<PanelOptions> => {
   return {};
 };
 
-export const formatParam = (key: string) => (paramName: string, value: number | string | boolean) => {
-  return `g${key}.${paramName}=${encodeURIComponent(value)}`;
-};
+export const formatParam =
+  (key: string) =>
+  (paramName: string, value: number | string | boolean): string => {
+    return `g${key}.${paramName}=${encodeURIComponent(value)}`;
+  };
 
-export const toQueryString = ({ key, options }: PanelMeta) => {
+export const toQueryString = ({ key, options }: PanelMeta): string => {
   const formatWithKey = formatParam(key);
   const { expr, type, stacked, range, endTime, resolution, showExemplars } = options;
   const time = isPresent(endTime) ? formatTime(endTime) : false;
@@ -247,16 +249,20 @@ export const createExpressionLink = (expr: string): string => {
 export const mapObjEntries = <T, key extends keyof T, Z>(
   o: T,
   cb: ([k, v]: [string, T[key]], i: number, arr: [string, T[key]][]) => Z
-) => Object.entries(o).map(cb);
+): Z[] => Object.entries(o).map(cb);
 
 export const callAll =
-  (...fns: Array<(...args: any) => void>) =>
-  (...args: any) => {
+  (
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ...fns: Array<(...args: any) => void>
+  ) =>
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/explicit-module-boundary-types
+  (...args: any): void => {
     // eslint-disable-next-line prefer-spread
     fns.filter(Boolean).forEach((fn) => fn.apply(null, args));
   };
 
-export const parsePrometheusFloat = (value: string): number | string => {
+export const parsePrometheusFloat = (value: string): string | number => {
   if (isNaN(Number(value))) {
     return value;
   } else {

@@ -31,6 +31,7 @@ interface PanelProps {
 }
 
 interface PanelState {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   data: any; // TODO: Type data.
   exemplars: ExemplarData;
   lastQueryParams: QueryParams | null;
@@ -101,6 +102,7 @@ class Panel extends Component<PanelProps, PanelState> {
     this.executeQuery();
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   executeQuery = async (): Promise<any> => {
     const { exprInputValue: expr } = this.state;
     const queryStart = Date.now();
@@ -198,7 +200,8 @@ class Panel extends Component<PanelProps, PanelState> {
         loading: false,
       });
       this.abortInFlightFetch = null;
-    } catch (error: any) {
+    } catch (err: unknown) {
+      const error = err as Error;
       if (error.name === 'AbortError') {
         // Aborts are expected, don't show an error for them.
         return;
@@ -259,7 +262,7 @@ class Panel extends Component<PanelProps, PanelState> {
     this.setOptions({ range: endTime - startTime, endTime: endTime });
   };
 
-  render() {
+  render(): JSX.Element {
     const { pastQueries, metricNames, options } = this.props;
     return (
       <div className="panel">

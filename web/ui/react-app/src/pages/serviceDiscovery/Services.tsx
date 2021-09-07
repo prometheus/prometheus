@@ -1,7 +1,7 @@
 import React, { FC } from 'react';
 import { useFetch } from '../../hooks/useFetch';
 import { LabelsTable } from './LabelsTable';
-import { Target, Labels, DroppedTarget } from '../targets/target';
+import { DroppedTarget, Labels, Target } from '../targets/target';
 
 import { withStatusIndicator } from '../../components/withStatusIndicator';
 import { mapObjEntries } from '../../utils';
@@ -19,7 +19,10 @@ export interface TargetLabels {
   isDropped: boolean;
 }
 
-export const processSummary = (activeTargets: Target[], droppedTargets: DroppedTarget[]) => {
+export const processSummary = (
+  activeTargets: Target[],
+  droppedTargets: DroppedTarget[]
+): Record<string, { active: number; total: number }> => {
   const targets: Record<string, { active: number; total: number }> = {};
 
   // Get targets of each type along with the total and active end points

@@ -182,6 +182,11 @@ func (d *Decoder) Exemplars(rec []byte, exemplars []RefExemplar) ([]RefExemplar,
 	if t != Exemplars {
 		return nil, errors.New("invalid record type")
 	}
+
+	return d.ExemplarsFromBuffer(&dec, exemplars)
+}
+
+func (d *Decoder) ExemplarsFromBuffer(dec *encoding.Decbuf, exemplars []RefExemplar) ([]RefExemplar, error) {
 	if dec.Len() == 0 {
 		return exemplars, nil
 	}
@@ -287,6 +292,12 @@ func (e *Encoder) Exemplars(exemplars []RefExemplar, b []byte) []byte {
 		return buf.Get()
 	}
 
+	e.EncodeExemplarsIntoBuffer(exemplars, &buf)
+
+	return buf.Get()
+}
+
+func (e *Encoder) EncodeExemplarsIntoBuffer(exemplars []RefExemplar, buf *encoding.Encbuf) {
 	// Store base timestamp and base reference number of first sample.
 	// All samples encode their timestamp and ref as delta to those.
 	first := exemplars[0]
@@ -305,6 +316,4 @@ func (e *Encoder) Exemplars(exemplars []RefExemplar, b []byte) []byte {
 			buf.PutUvarintStr(l.Value)
 		}
 	}
-
-	return buf.Get()
 }
