@@ -19,7 +19,7 @@
     "@fortawesome/fontawesome-svg-core": "^1.2.14",
     "@fortawesome/free-solid-svg-icons": "^5.7.1",
     "@fortawesome/react-fontawesome": "^0.1.4",
-    "@nexucis/fuzzy": "^0.2.2",
+    "@nexucis/fuzzy": "^0.3.0",
     "bootstrap": "^4.6.0",
     "codemirror-promql": "^0.17.0",
     "css.escape": "^1.5.1",
@@ -38,7 +38,7 @@
     "react-test-renderer": "^17.0.2",
     "reactstrap": "^8.9.0",
     "sanitize-html": "^2.3.3",
-    "sass": "1.32.10",
+    "sass": "1.39.0",
     "tempusdominus-bootstrap-4": "^5.1.2",
     "tempusdominus-core": "^5.0.3"
   },
@@ -65,7 +65,7 @@
   "devDependencies": {
     "@testing-library/react-hooks": "^7.0.1",
     "@types/enzyme": "^3.10.9",
-    "@types/flot": "0.0.31",
+    "@types/flot": "0.0.32",
     "@types/jest": "^27.0.1",
     "@types/jquery": "^3.5.1",
     "@types/node": "^16.7.6",
