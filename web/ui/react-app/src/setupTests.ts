@@ -3,6 +3,7 @@ import Adapter from '@wojtekmaj/enzyme-adapter-react-17';
 import { GlobalWithFetchMock } from 'jest-fetch-mock';
 import 'mutationobserver-shim'; // Needed for CodeMirror.
 import './globals';
+import 'jest-canvas-mock';
 
 configure({ adapter: new Adapter() });
 const customGlobal: GlobalWithFetchMock = global as GlobalWithFetchMock;
