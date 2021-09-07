@@ -200,7 +200,8 @@ class Panel extends Component<PanelProps, PanelState> {
         loading: false,
       });
       this.abortInFlightFetch = null;
-    } catch (error) {
+    } catch (err: unknown) {
+      const error = err as Error;
       if (error.name === 'AbortError') {
         // Aborts are expected, don't show an error for them.
         return;
