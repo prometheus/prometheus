@@ -50,7 +50,7 @@ describe('ScrapePoolList', () => {
       expect(panels).toHaveLength(3);
       const activeTargets: Target[] = sampleApiResponse.data.activeTargets as Target[];
       activeTargets.forEach(({ scrapePool }: Target) => {
-        const panel = scrapePoolList.find(ScrapePoolPanel).filterWhere(panel => panel.prop('scrapePool') === scrapePool);
+        const panel = scrapePoolList.find(ScrapePoolPanel).filterWhere((panel) => panel.prop('scrapePool') === scrapePool);
         expect(panel).toHaveLength(1);
       });
     });

@@ -29,7 +29,7 @@ const SeriesName: FC<SeriesNameProps> = ({ labels, format }) => {
 
     return (
       <div>
-        <span className="legend-metric-name">{labels!.__name__ || ''}</span>
+        <span className="legend-metric-name">{labels ? labels.__name__ : ''}</span>
         <span className="legend-label-brace">{'{'}</span>
         {labelNodes}
         <span className="legend-label-brace">{'}'}</span>
@@ -46,7 +46,7 @@ const SeriesName: FC<SeriesNameProps> = ({ labels, format }) => {
   }
   // Return a simple text node. This is much faster to scroll through
   // for longer lists (hundreds of items).
-  return <>{metricToSeriesName(labels!)}</>;
+  return <>{metricToSeriesName(labels)}</>;
 };
 
 export default SeriesName;

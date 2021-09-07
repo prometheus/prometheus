@@ -33,7 +33,7 @@ describe('App', () => {
       TargetsPage,
       TSDBStatusPage,
       PanelListPage,
-    ].forEach(component => {
+    ].forEach((component) => {
       const c = app.find(component);
       expect(c).toHaveLength(1);
     });
