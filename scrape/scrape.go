@@ -49,10 +49,10 @@ import (
 	"github.com/prometheus/prometheus/storage"
 )
 
-// Temporary tolerance for scrape appends timestamps alignment, to enable better
-// compression at the TSDB level.
+// ScrapeTimestampTolerance is the tolerance for scrape appends timestamps
+// alignment, to enable better compression at the TSDB level.
 // See https://github.com/prometheus/prometheus/issues/7846
-const scrapeTimestampTolerance = 2 * time.Millisecond
+var ScrapeTimestampTolerance = 2 * time.Millisecond
 
 // AlignScrapeTimestamps enables the tolerance for scrape appends timestamps described above.
 var AlignScrapeTimestamps = true
@@ -1159,14 +1159,14 @@ mainLoop:
 		// Calling Round ensures the time used is the wall clock, as otherwise .Sub
 		// and .Add on time.Time behave differently (see time package docs).
 		scrapeTime := time.Now().Round(0)
-		if AlignScrapeTimestamps && sl.interval > 100*scrapeTimestampTolerance {
+		if AlignScrapeTimestamps && sl.interval > 100*ScrapeTimestampTolerance {
 			// For some reason, a tick might have been skipped, in which case we
 			// would call alignedScrapeTime.Add(interval) multiple times.
 			for scrapeTime.Sub(alignedScrapeTime) >= sl.interval {
 				alignedScrapeTime = alignedScrapeTime.Add(sl.interval)
 			}
 			// Align the scrape time if we are in the tolerance boundaries.
-			if scrapeTime.Sub(alignedScrapeTime) <= scrapeTimestampTolerance {
+			if scrapeTime.Sub(alignedScrapeTime) <= ScrapeTimestampTolerance {
 				scrapeTime = alignedScrapeTime
 			}
 		}
