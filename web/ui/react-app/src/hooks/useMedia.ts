@@ -9,7 +9,7 @@ const useMedia = (query: string): boolean => {
     const handler = () => setMatches(mediaQuery.matches);
     mediaQuery.addEventListener('change', handler);
     return () => mediaQuery.removeEventListener('change', handler);
-  }, []);
+  }, [mediaQuery]);
 
   return matches;
 };
