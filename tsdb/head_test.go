@@ -427,7 +427,7 @@ func TestHead_ActiveAppenders(t *testing.T) {
 	require.NoError(t, app.Rollback())
 	require.Equal(t, 0.0, prom_testutil.ToFloat64(head.metrics.activeAppenders))
 
-	// Now rollback with one sample.
+	// Now commit with one sample.
 	app = head.Appender(context.Background())
 	_, err = app.Append(0, labels.FromStrings("foo", "bar"), 100, 1)
 	require.NoError(t, err)
