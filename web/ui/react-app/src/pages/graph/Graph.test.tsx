@@ -21,7 +21,6 @@ describe('Graph', () => {
 
   afterEach(() => {
     window.ResizeObserver = ResizeObserver;
-    jest.restoreAllMocks();
   });
   describe('data is returned', () => {
     const props: any = {
