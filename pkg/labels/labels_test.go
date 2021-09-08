@@ -546,6 +546,46 @@ func TestLabels_Get(t *testing.T) {
 	require.Equal(t, "111", Labels{{"aaa", "111"}, {"bbb", "222"}}.Get("aaa"))
 }
 
+// BenchmarkLabels_Get was written to check whether a binary search can improve the performance vs the linear search implementation
+// The results have shown that binary search would only be better when searching last labels in scenarios with more than 10 labels.
+// In the following list, `old` is the linear search while `new` is the binary search implementaiton (without calling sort.Search, which performs even worse here)
+// name                                        old time/op    new time/op    delta
+// Labels_Get/with_5_labels/get_first_label      5.12ns ± 0%   14.24ns ± 0%   ~     (p=1.000 n=1+1)
+// Labels_Get/with_5_labels/get_middle_label     13.5ns ± 0%    18.5ns ± 0%   ~     (p=1.000 n=1+1)
+// Labels_Get/with_5_labels/get_last_label       21.9ns ± 0%    18.9ns ± 0%   ~     (p=1.000 n=1+1)
+// Labels_Get/with_10_labels/get_first_label     5.11ns ± 0%   19.47ns ± 0%   ~     (p=1.000 n=1+1)
+// Labels_Get/with_10_labels/get_middle_label    26.2ns ± 0%    19.3ns ± 0%   ~     (p=1.000 n=1+1)
+// Labels_Get/with_10_labels/get_last_label      42.8ns ± 0%    23.4ns ± 0%   ~     (p=1.000 n=1+1)
+// Labels_Get/with_30_labels/get_first_label     5.10ns ± 0%   24.63ns ± 0%   ~     (p=1.000 n=1+1)
+// Labels_Get/with_30_labels/get_middle_label    75.8ns ± 0%    29.7ns ± 0%   ~     (p=1.000 n=1+1)
+// Labels_Get/with_30_labels/get_last_label       169ns ± 0%      29ns ± 0%   ~     (p=1.000 n=1+1)
+func BenchmarkLabels_Get(b *testing.B) {
+	maxLabels := 30
+	allLabels := make(Labels, maxLabels)
+	for i := 0; i < maxLabels; i++ {
+		allLabels[i] = Label{Name: strings.Repeat(string('a'+byte(i)), 5)}
+	}
+	for _, size := range []int{5, 10, maxLabels} {
+		b.Run(fmt.Sprintf("with %d labels", size), func(b *testing.B) {
+			labels := allLabels[:size]
+			for _, scenario := range []struct {
+				desc, label string
+			}{
+				{"get first label", labels[0].Name},
+				{"get middle label", labels[size/2].Name},
+				{"get last label", labels[size-1].Name},
+			} {
+				b.Run(scenario.desc, func(b *testing.B) {
+					b.ResetTimer()
+					for i := 0; i < b.N; i++ {
+						_ = labels.Get(scenario.label)
+					}
+				})
+			}
+		})
+	}
+}
+
 func TestLabels_Copy(t *testing.T) {
 	require.Equal(t, Labels{{"aaa", "111"}, {"bbb", "222"}}, Labels{{"aaa", "111"}, {"bbb", "222"}}.Copy())
 }

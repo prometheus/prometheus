@@ -1,5 +1,4 @@
 import React, { ChangeEvent, FC, useState } from 'react';
-import { RouteComponentProps } from '@reach/router';
 import { Input, InputGroup, Table } from 'reactstrap';
 import { withStatusIndicator } from '../../components/withStatusIndicator';
 import { useFetch } from '../../hooks/useFetch';
@@ -22,15 +21,14 @@ interface FlagsProps {
   data?: FlagMap;
 }
 
-const compareAlphaFn = (keys: boolean, reverse: boolean) => (
-  [k1, v1]: [string, string],
-  [k2, v2]: [string, string]
-): number => {
-  const a = keys ? k1 : v1;
-  const b = keys ? k2 : v2;
-  const reverser = reverse ? -1 : 1;
-  return reverser * a.localeCompare(b);
-};
+const compareAlphaFn =
+  (keys: boolean, reverse: boolean) =>
+  ([k1, v1]: [string, string], [k2, v2]: [string, string]): number => {
+    const a = keys ? k1 : v1;
+    const b = keys ? k2 : v2;
+    const reverser = reverse ? -1 : 1;
+    return reverser * a.localeCompare(b);
+  };
 
 const getSortIcon = (b: boolean | undefined): IconDefinition => {
   if (b === undefined) {
@@ -124,7 +122,7 @@ const FlagsWithStatusIndicator = withStatusIndicator(FlagsContent);
 
 FlagsContent.displayName = 'Flags';
 
-const Flags: FC<RouteComponentProps> = () => {
+const Flags: FC = () => {
   const pathPrefix = usePathPrefix();
   const { response, error, isLoading } = useFetch<FlagMap>(`${pathPrefix}/${API_PATH}/status/flags`);
   return <FlagsWithStatusIndicator data={response.data} error={error} isLoading={isLoading} />;

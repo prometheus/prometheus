@@ -11,12 +11,12 @@ customGlobal.fetchMock = customGlobal.fetch;
 
 // CodeMirror in the expression input requires this DOM API. When we upgrade react-scripts
 // and the associated Jest deps, hopefully this won't be needed anymore.
-document.getSelection = function() {
+document.getSelection = function () {
   return {
-    addRange: function() {
+    addRange: function () {
       return;
     },
-    removeAllRanges: function() {
+    removeAllRanges: function () {
       return;
     },
   };

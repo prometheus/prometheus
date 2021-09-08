@@ -1,5 +1,4 @@
 import React, { FC, useState, useEffect } from 'react';
-import { RouteComponentProps } from '@reach/router';
 import { Alert, Button } from 'reactstrap';
 
 import Panel, { PanelOptions, PanelDefaultOptions } from './Panel';
@@ -12,12 +11,12 @@ import { API_PATH } from '../../constants/constants';
 
 export type PanelMeta = { key: string; options: PanelOptions; id: string };
 
-export const updateURL = (nextPanels: PanelMeta[]) => {
+export const updateURL = (nextPanels: PanelMeta[]): void => {
   const query = encodePanelOptionsToQueryString(nextPanels);
   window.history.pushState({}, '', query);
 };
 
-interface PanelListContentProps extends RouteComponentProps {
+interface PanelListContentProps {
   panels: PanelMeta[];
   metrics: string[];
   useLocalTime: boolean;
@@ -92,8 +91,8 @@ export const PanelListContent: FC<PanelListContentProps> = ({
           key={id}
           id={id}
           options={options}
-          onOptionsChanged={opts =>
-            callAll(setPanels, updateURL)(panels.map(p => (id === p.id ? { ...p, options: opts } : p)))
+          onOptionsChanged={(opts) =>
+            callAll(setPanels, updateURL)(panels.map((p) => (id === p.id ? { ...p, options: opts } : p)))
           }
           removePanel={() =>
             callAll(
@@ -122,7 +121,7 @@ export const PanelListContent: FC<PanelListContentProps> = ({
   );
 };
 
-const PanelList: FC<RouteComponentProps> = () => {
+const PanelList: FC = () => {
   const [delta, setDelta] = useState(0);
   const [useExperimentalEditor, setUseExperimentalEditor] = useLocalStorage('use-new-editor', true);
   const [useLocalTime, setUseLocalTime] = useLocalStorage('use-local-time', false);

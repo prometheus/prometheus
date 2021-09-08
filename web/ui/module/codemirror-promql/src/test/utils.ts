@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { parser } from 'lezer-promql';
+import { parser } from '../lang-promql/grammar/parser';
 import { EditorState } from '@codemirror/state';
 import { LezerLanguage } from '@codemirror/language';
 import nock from 'nock';

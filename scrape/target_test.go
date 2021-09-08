@@ -382,3 +382,29 @@ func TestTargetsFromGroup(t *testing.T) {
 		t.Fatalf("Expected error %s, got %s", expectedError, failures[0])
 	}
 }
+
+func TestTargetHash(t *testing.T) {
+	target1 := &Target{
+		labels: labels.Labels{
+			{Name: model.AddressLabel, Value: "localhost"},
+			{Name: model.SchemeLabel, Value: "http"},
+			{Name: model.MetricsPathLabel, Value: "/metrics"},
+			{Name: model.ScrapeIntervalLabel, Value: "15s"},
+			{Name: model.ScrapeTimeoutLabel, Value: "500ms"},
+		},
+	}
+	hash1 := target1.hash()
+
+	target2 := &Target{
+		labels: labels.Labels{
+			{Name: model.AddressLabel, Value: "localhost"},
+			{Name: model.SchemeLabel, Value: "http"},
+			{Name: model.MetricsPathLabel, Value: "/metrics"},
+			{Name: model.ScrapeIntervalLabel, Value: "14s"},
+			{Name: model.ScrapeTimeoutLabel, Value: "600ms"},
+		},
+	}
+	hash2 := target2.hash()
+
+	require.Equal(t, hash1, hash2, "Scrape interval and duration labels should not effect hash.")
+}

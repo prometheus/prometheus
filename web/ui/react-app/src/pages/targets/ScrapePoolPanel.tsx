@@ -5,9 +5,10 @@ import styles from './ScrapePoolPanel.module.css';
 import { Target } from './target';
 import EndpointLink from './EndpointLink';
 import TargetLabels from './TargetLabels';
+import TargetScrapeDuration from './TargetScrapeDuration';
 import { now } from 'moment';
 import { ToggleMoreLess } from '../../components/ToggleMoreLess';
-import { formatRelative, humanizeDuration } from '../../utils';
+import { formatRelative } from '../../utils';
 
 interface PanelProps {
   scrapePool: string;
@@ -37,7 +38,7 @@ const ScrapePoolPanel: FC<PanelProps> = ({ scrapePool, targetGroup, expanded, to
         <Table className={styles.table} size="sm" bordered hover striped>
           <thead>
             <tr key="header">
-              {columns.map(column => (
+              {columns.map((column) => (
                 <th key={column}>{column}</th>
               ))}
             </tr>
@@ -54,6 +55,8 @@ const ScrapePoolPanel: FC<PanelProps> = ({ scrapePool, targetGroup, expanded, to
                 lastScrape,
                 lastScrapeDuration,
                 health,
+                scrapeInterval,
+                scrapeTimeout,
               } = target;
               const color = getColor(health);
 
@@ -69,7 +72,15 @@ const ScrapePoolPanel: FC<PanelProps> = ({ scrapePool, targetGroup, expanded, to
                     <TargetLabels discoveredLabels={discoveredLabels} labels={labels} scrapePool={scrapePool} idx={idx} />
                   </td>
                   <td className={styles['last-scrape']}>{formatRelative(lastScrape, now())}</td>
-                  <td className={styles['scrape-duration']}>{humanizeDuration(lastScrapeDuration * 1000)}</td>
+                  <td className={styles['scrape-duration']}>
+                    <TargetScrapeDuration
+                      duration={lastScrapeDuration}
+                      scrapePool={scrapePool}
+                      idx={idx}
+                      interval={scrapeInterval}
+                      timeout={scrapeTimeout}
+                    />
+                  </td>
                   <td className={styles.errors}>{lastError ? <span className="text-danger">{lastError}</span> : null}</td>
                 </tr>
               );
