@@ -568,7 +568,7 @@ func (h *Head) ChunkSnapshot() (*ChunkSnapshotStats, error) {
 		return stats, nil
 	}
 
-	snapshotName := fmt.Sprintf(chunkSnapshotPrefix+"%06d.%010d", wlast, woffset)
+	snapshotName := chunkSnapshotDir(wlast, woffset)
 
 	cpdir := filepath.Join(h.opts.ChunkDirRoot, snapshotName)
 	cpdirtmp := cpdir + ".tmp"
@@ -690,13 +690,17 @@ func (h *Head) ChunkSnapshot() (*ChunkSnapshotStats, error) {
 		return stats, errors.Wrap(err, "rename chunk snapshot directory")
 	}
 
-	if err := DeleteChunkSnapshots(h.opts.ChunkDirRoot, cslast, csoffset); err != nil {
+	if err := DeleteChunkSnapshots(h.opts.ChunkDirRoot, wlast, woffset); err != nil {
 		// Leftover old chunk snapshots do not cause problems down the line beyond
 		// occupying disk space.
 		// They will just be ignored since a higher chunk snapshot exists.
 		level.Error(h.logger).Log("msg", "delete old chunk snapshots", "err", err)
 	}
 	return stats, nil
+}
+
+func chunkSnapshotDir(wlast, woffset int) string {
+	return fmt.Sprintf(chunkSnapshotPrefix+"%06d.%010d", wlast, woffset)
 }
 
 func (h *Head) performChunkSnapshot() error {
@@ -723,8 +727,9 @@ func LastChunkSnapshot(dir string) (string, int, int, error) {
 	if err != nil {
 		return "", 0, 0, err
 	}
-	// Traverse list backwards since there may be multiple chunk snapshots left.
-	for i := len(files) - 1; i >= 0; i-- {
+	maxIdx, maxOffset := -1, -1
+	maxFileName := ""
+	for i := 0; i < len(files); i++ {
 		fi := files[i]
 
 		if !strings.HasPrefix(fi.Name(), chunkSnapshotPrefix) {
@@ -749,9 +754,15 @@ func LastChunkSnapshot(dir string) (string, int, int, error) {
 			continue
 		}
 
-		return filepath.Join(dir, fi.Name()), idx, offset, nil
+		if idx > maxIdx || (idx == maxIdx && offset > maxOffset) {
+			maxIdx, maxOffset = idx, offset
+			maxFileName = filepath.Join(dir, fi.Name())
+		}
 	}
-	return "", 0, 0, record.ErrNotFound
+	if maxFileName == "" {
+		return "", 0, 0, record.ErrNotFound
+	}
+	return maxFileName, maxIdx, maxOffset, nil
 }
 
 // DeleteChunkSnapshots deletes all chunk snapshots in a directory below a given index.
@@ -782,7 +793,7 @@ func DeleteChunkSnapshots(dir string, maxIndex, maxOffset int) error {
 			continue
 		}
 
-		if idx <= maxIndex && offset < maxOffset {
+		if idx < maxIndex || (idx == maxIndex && offset < maxOffset) {
 			if err := os.RemoveAll(filepath.Join(dir, fi.Name())); err != nil {
 				errs.Add(err)
 			}
