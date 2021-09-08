@@ -402,6 +402,39 @@ func TestHead_WALMultiRef(t *testing.T) {
 	}}, series)
 }
 
+func TestHead_ActiveAppenders(t *testing.T) {
+	head, _ := newTestHead(t, 1000, false)
+	defer head.Close()
+
+	require.NoError(t, head.Init(0))
+
+	// First rollback with no samples.
+	app := head.Appender(context.Background())
+	require.Equal(t, 1.0, prom_testutil.ToFloat64(head.metrics.activeAppenders))
+	require.NoError(t, app.Rollback())
+	require.Equal(t, 0.0, prom_testutil.ToFloat64(head.metrics.activeAppenders))
+
+	// Then commit with no samples.
+	app = head.Appender(context.Background())
+	require.NoError(t, app.Commit())
+	require.Equal(t, 0.0, prom_testutil.ToFloat64(head.metrics.activeAppenders))
+
+	// Now rollback with one sample.
+	app = head.Appender(context.Background())
+	_, err := app.Append(0, labels.FromStrings("foo", "bar"), 100, 1)
+	require.NoError(t, err)
+	require.Equal(t, 1.0, prom_testutil.ToFloat64(head.metrics.activeAppenders))
+	require.NoError(t, app.Rollback())
+	require.Equal(t, 0.0, prom_testutil.ToFloat64(head.metrics.activeAppenders))
+
+	// Now commit with one sample.
+	app = head.Appender(context.Background())
+	_, err = app.Append(0, labels.FromStrings("foo", "bar"), 100, 1)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+	require.Equal(t, 0.0, prom_testutil.ToFloat64(head.metrics.activeAppenders))
+}
+
 func TestHead_UnknownWALRecord(t *testing.T) {
 	head, w := newTestHead(t, 1000, false)
 	w.Log([]byte{255, 42})
