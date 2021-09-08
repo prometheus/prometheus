@@ -135,8 +135,9 @@ input[type='checkbox']:checked + label {
   flex-wrap: nowrap;
 }
 
-.alert.alert-danger {
-  margin-bottom: 10px;
+.alert {
+  padding: 10px;
+  margin-bottom: .2rem;
 }
 
 .nav-tabs .nav-link {
