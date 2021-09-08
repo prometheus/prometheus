@@ -63,15 +63,20 @@ func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err error) {
+	var (
+		outOfOrderExemplarErrs = 0
+	)
+
 	app := h.appendable.Appender(ctx)
 	defer func() {
 		if err != nil {
-			app.Rollback()
+			_ = app.Rollback()
 			return
 		}
 		err = app.Commit()
 	}()
 
+	var exemplarErr error
 	for _, ts := range req.Timeseries {
 		labels := labelProtosToLabels(ts.Labels)
 		for _, s := range ts.Samples {
@@ -79,7 +84,19 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 			if err != nil {
 				return err
 			}
+
 		}
+
+		for _, ep := range ts.Exemplars {
+			e := exemplarProtoToExemplar(ep)
+
+			_, exemplarErr = app.AppendExemplar(0, labels, e)
+			storage.CheckAppendExemplarError(h.logger, exemplarErr, e, nil, &outOfOrderExemplarErrs)
+		}
+	}
+
+	if outOfOrderExemplarErrs > 0 {
+		_ = level.Warn(h.logger).Log("msg", "Error on ingesting out-of-order exemplars", "num_dropped", outOfOrderExemplarErrs)
 	}
 
 	return nil
