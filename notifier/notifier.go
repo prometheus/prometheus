@@ -691,6 +691,12 @@ func postPath(pre string, v config.AlertmanagerAPIVersion) string {
 	return path.Join("/", pre, alertPushEndpoint)
 }
 
+// Delegate alertmanagerFromGroup, just return err, type []alertmanager will cause golint error
+func AlertmanagerFromGroup(tg *targetgroup.Group, cfg *config.AlertmanagerConfig) error {
+	_, _, err := alertmanagerFromGroup(tg, cfg)
+	return err
+}
+
 // alertmanagerFromGroup extracts a list of alertmanagers from a target group
 // and an associated AlertmanagerConfig.
 func alertmanagerFromGroup(tg *targetgroup.Group, cfg *config.AlertmanagerConfig) ([]alertmanager, []alertmanager, error) {

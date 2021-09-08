@@ -478,6 +478,11 @@ func populateLabels(lset labels.Labels, cfg *config.ScrapeConfig) (res, orig lab
 	return res, preRelabelLabels, nil
 }
 
+// Delegate targetsFromGroup
+func TargetsFromGroup(tg *targetgroup.Group, cfg *config.ScrapeConfig) ([]*Target, []error) {
+	return targetsFromGroup(tg, cfg)
+}
+
 // targetsFromGroup builds targets based on the given TargetGroup and config.
 func targetsFromGroup(tg *targetgroup.Group, cfg *config.ScrapeConfig) ([]*Target, []error) {
 	targets := make([]*Target, 0, len(tg.Targets))

@@ -18,6 +18,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/prometheus/prometheus/discovery"
+	"github.com/prometheus/prometheus/notifier"
+	"github.com/prometheus/prometheus/scrape"
 	"io/ioutil"
 	"math"
 	"net/http"
@@ -371,10 +374,31 @@ func checkConfig(filename string) ([]string, error) {
 					}
 					fmt.Printf("  WARNING: file %q for file_sd in scrape job %q does not exist\n", file, scfg.JobName)
 				}
+			case discovery.StaticConfig:
+				for _, tg := range c {
+					_, failures := scrape.TargetsFromGroup(tg, scfg)
+					if len(failures) > 0 {
+						first := failures[0]
+						return nil, first
+					}
+				}
 			}
 		}
 	}
 
+	alertConfig := cfg.AlertingConfig
+	for _, amcfg := range alertConfig.AlertmanagerConfigs {
+		for _, c := range amcfg.ServiceDiscoveryConfigs {
+			switch c := c.(type) {
+			case discovery.StaticConfig:
+				for _, tg := range c {
+					if err := notifier.AlertmanagerFromGroup(tg, amcfg); err != nil {
+						return nil, err
+					}
+				}
+			}
+		}
+	}
 	return ruleFiles, nil
 }
 
