@@ -49,8 +49,8 @@ import (
 	"github.com/prometheus/prometheus/storage"
 )
 
-// Temporary tolerance for scrape appends timestamps alignment, to enable better
-// compression at the TSDB level.
+// ScrapeTimestampTolerance is the tolerance for scrape appends timestamps
+// alignment, to enable better compression at the TSDB level.
 // See https://github.com/prometheus/prometheus/issues/7846
 var ScrapeTimestampTolerance = 2 * time.Millisecond
 
