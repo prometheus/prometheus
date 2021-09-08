@@ -54,16 +54,7 @@ func (h *headIndexReader) Close() error {
 }
 
 func (h *headIndexReader) Symbols() index.StringIter {
-	h.head.symMtx.RLock()
-	res := make([]string, 0, len(h.head.symbols))
-
-	for s := range h.head.symbols {
-		res = append(res, s)
-	}
-	h.head.symMtx.RUnlock()
-
-	sort.Strings(res)
-	return index.NewStringListIter(res)
+	return h.head.postings.Symbols()
 }
 
 // SortedLabelValues returns label values present in the head for the
@@ -88,8 +79,6 @@ func (h *headIndexReader) LabelValues(name string, matchers ...*labels.Matcher) 
 	}
 
 	if len(matchers) == 0 {
-		h.head.symMtx.RLock()
-		defer h.head.symMtx.RUnlock()
 		return h.head.postings.LabelValues(name), nil
 	}
 
@@ -104,10 +93,7 @@ func (h *headIndexReader) LabelNames(matchers ...*labels.Matcher) ([]string, err
 	}
 
 	if len(matchers) == 0 {
-		h.head.symMtx.RLock()
 		labelNames := h.head.postings.LabelNames()
-		h.head.symMtx.RUnlock()
-
 		sort.Strings(labelNames)
 		return labelNames, nil
 	}

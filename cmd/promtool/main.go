@@ -935,20 +935,17 @@ func importRules(url *url.URL, start, end, outputDir string, evalInterval time.D
 	} else {
 		etime, err = parseTime(end)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "error parsing end time:", err)
-			return err
+			return fmt.Errorf("error parsing end time: %v", err)
 		}
 	}
 
 	stime, err = parseTime(start)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "error parsing start time:", err)
-		return err
+		return fmt.Errorf("error parsing start time: %v", err)
 	}
 
 	if !stime.Before(etime) {
-		fmt.Fprintln(os.Stderr, "start time is not before end time")
-		return nil
+		return errors.New("start time is not before end time")
 	}
 
 	cfg := ruleImporterConfig{
@@ -961,25 +958,24 @@ func importRules(url *url.URL, start, end, outputDir string, evalInterval time.D
 		Address: url.String(),
 	})
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "new api client error", err)
-		return err
+		return fmt.Errorf("new api client error: %v", err)
 	}
 
 	ruleImporter := newRuleImporter(log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr)), cfg, v1.NewAPI(client))
 	errs := ruleImporter.loadGroups(ctx, files)
 	for _, err := range errs {
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "rule importer parse error", err)
-			return err
+			return fmt.Errorf("rule importer parse error: %v", err)
 		}
 	}
 
 	errs = ruleImporter.importAll(ctx)
 	for _, err := range errs {
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "rule importer error", err)
-		}
+		fmt.Fprintln(os.Stderr, "rule importer error:", err)
+	}
+	if len(errs) > 0 {
+		return errors.New("error importing rules")
 	}
 
-	return err
+	return nil
 }

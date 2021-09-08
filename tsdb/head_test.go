@@ -25,6 +25,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -402,6 +403,39 @@ func TestHead_WALMultiRef(t *testing.T) {
 	}}, series)
 }
 
+func TestHead_ActiveAppenders(t *testing.T) {
+	head, _ := newTestHead(t, 1000, false)
+	defer head.Close()
+
+	require.NoError(t, head.Init(0))
+
+	// First rollback with no samples.
+	app := head.Appender(context.Background())
+	require.Equal(t, 1.0, prom_testutil.ToFloat64(head.metrics.activeAppenders))
+	require.NoError(t, app.Rollback())
+	require.Equal(t, 0.0, prom_testutil.ToFloat64(head.metrics.activeAppenders))
+
+	// Then commit with no samples.
+	app = head.Appender(context.Background())
+	require.NoError(t, app.Commit())
+	require.Equal(t, 0.0, prom_testutil.ToFloat64(head.metrics.activeAppenders))
+
+	// Now rollback with one sample.
+	app = head.Appender(context.Background())
+	_, err := app.Append(0, labels.FromStrings("foo", "bar"), 100, 1)
+	require.NoError(t, err)
+	require.Equal(t, 1.0, prom_testutil.ToFloat64(head.metrics.activeAppenders))
+	require.NoError(t, app.Rollback())
+	require.Equal(t, 0.0, prom_testutil.ToFloat64(head.metrics.activeAppenders))
+
+	// Now commit with one sample.
+	app = head.Appender(context.Background())
+	_, err = app.Append(0, labels.FromStrings("foo", "bar"), 100, 1)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+	require.Equal(t, 0.0, prom_testutil.ToFloat64(head.metrics.activeAppenders))
+}
+
 func TestHead_UnknownWALRecord(t *testing.T) {
 	head, w := newTestHead(t, 1000, false)
 	w.Log([]byte{255, 42})
@@ -469,13 +503,14 @@ func TestHead_Truncate(t *testing.T) {
 	require.Nil(t, postingsB2)
 	require.Nil(t, postingsC1)
 
-	require.Equal(t, map[string]struct{}{
-		"":  {}, // from 'all' postings list
-		"a": {},
-		"b": {},
-		"1": {},
-		"2": {},
-	}, h.symbols)
+	iter := h.postings.Symbols()
+	symbols := []string{}
+	for iter.Next() {
+		symbols = append(symbols, iter.At())
+	}
+	require.Equal(t,
+		[]string{"" /* from 'all' postings list */, "1", "2", "a", "b"},
+		symbols)
 
 	values := map[string]map[string]struct{}{}
 	for _, name := range h.postings.LabelNames() {
@@ -2552,6 +2587,32 @@ func TestChunkSnapshot(t *testing.T) {
 		require.Equal(t, expExemplars, actExemplars)
 	}
 
+	var (
+		wlast, woffset int
+		err            error
+	)
+
+	closeHeadAndCheckSnapshot := func() {
+		require.NoError(t, head.Close())
+
+		_, sidx, soffset, err := LastChunkSnapshot(head.opts.ChunkDirRoot)
+		require.NoError(t, err)
+		require.Equal(t, wlast, sidx)
+		require.Equal(t, woffset, soffset)
+	}
+
+	openHeadAndCheckReplay := func() {
+		w, err := wal.NewSize(nil, nil, head.wal.Dir(), 32768, false)
+		require.NoError(t, err)
+		head, err = NewHead(nil, nil, w, head.opts, nil)
+		require.NoError(t, err)
+		require.NoError(t, head.Init(math.MinInt64))
+
+		checkSamples()
+		checkTombstones()
+		checkExemplars()
+	}
+
 	{ // Initial data that goes into snapshot.
 		// Add some initial samples with >=1 m-map chunk.
 		app := head.Appender(context.Background())
@@ -2596,31 +2657,16 @@ func TestChunkSnapshot(t *testing.T) {
 	}
 
 	// These references should be the ones used for the snapshot.
-	wlast, woffset, err := head.wal.LastSegmentAndOffset()
+	wlast, woffset, err = head.wal.LastSegmentAndOffset()
 	require.NoError(t, err)
 
-	{ // Creating snapshot and verifying it.
+	{
+		// Creating snapshot and verifying it.
 		head.opts.EnableMemorySnapshotOnShutdown = true
-		require.NoError(t, head.Close()) // This will create a snapshot.
+		closeHeadAndCheckSnapshot() // This will create a snapshot.
 
-		_, sidx, soffset, err := LastChunkSnapshot(head.opts.ChunkDirRoot)
-		require.NoError(t, err)
-		require.Equal(t, wlast, sidx)
-		require.Equal(t, woffset, soffset)
-	}
-
-	{ // Test the replay of snapshot.
-		// Create new Head which should replay this snapshot.
-		w, err := wal.NewSize(nil, nil, head.wal.Dir(), 32768, false)
-		require.NoError(t, err)
-		head, err = NewHead(nil, nil, w, head.opts, nil)
-		require.NoError(t, err)
-		require.NoError(t, head.Init(math.MinInt64))
-
-		// Test query for snapshot replay.
-		checkSamples()
-		checkTombstones()
-		checkExemplars()
+		// Test the replay of snapshot.
+		openHeadAndCheckReplay()
 	}
 
 	{ // Additional data to only include in WAL and m-mapped chunks and not snapshot. This mimics having an old snapshot on disk.
@@ -2666,30 +2712,42 @@ func TestChunkSnapshot(t *testing.T) {
 		}
 	}
 
-	{ // Close Head and verify that new snapshot was not created.
+	{
+		// Close Head and verify that new snapshot was not created.
 		head.opts.EnableMemorySnapshotOnShutdown = false
-		require.NoError(t, head.Close()) // This should not create a snapshot.
+		closeHeadAndCheckSnapshot() // This should not create a snapshot.
 
-		_, sidx, soffset, err := LastChunkSnapshot(head.opts.ChunkDirRoot)
-		require.NoError(t, err)
-		require.Equal(t, wlast, sidx)
-		require.Equal(t, woffset, soffset)
-	}
-
-	{ // Test the replay of snapshot, m-map chunks, and WAL.
-		// Create new Head to replay snapshot, m-map chunks, and WAL.
-		w, err := wal.NewSize(nil, nil, head.wal.Dir(), 32768, false)
-		require.NoError(t, err)
+		// Test the replay of snapshot, m-map chunks, and WAL.
 		head.opts.EnableMemorySnapshotOnShutdown = true // Enabled to read from snapshot.
-		head, err = NewHead(nil, nil, w, head.opts, nil)
-		require.NoError(t, err)
-		require.NoError(t, head.Init(math.MinInt64))
-
-		// Test query when data is replayed from snapshot, m-map chunks, and WAL.
-		checkSamples()
-		checkTombstones()
-		checkExemplars()
+		openHeadAndCheckReplay()
 	}
+
+	// Creating another snapshot should delete the older snapshot and replay still works fine.
+	wlast, woffset, err = head.wal.LastSegmentAndOffset()
+	require.NoError(t, err)
+
+	{
+		// Close Head and verify that new snapshot was created.
+		closeHeadAndCheckSnapshot()
+
+		// Verify that there is only 1 snapshot.
+		files, err := ioutil.ReadDir(head.opts.ChunkDirRoot)
+		require.NoError(t, err)
+		snapshots := 0
+		for i := len(files) - 1; i >= 0; i-- {
+			fi := files[i]
+			if strings.HasPrefix(fi.Name(), chunkSnapshotPrefix) {
+				snapshots++
+				require.Equal(t, chunkSnapshotDir(wlast, woffset), fi.Name())
+			}
+		}
+		require.Equal(t, 1, snapshots)
+
+		// Test the replay of snapshot.
+		head.opts.EnableMemorySnapshotOnShutdown = true // Enabled to read from snapshot.
+		openHeadAndCheckReplay()
+	}
+
 }
 
 func TestSnapshotError(t *testing.T) {
