@@ -79,9 +79,6 @@ type Head struct {
 	// All series addressable by their ID or hash.
 	series *stripeSeries
 
-	symMtx  sync.RWMutex
-	symbols map[string]struct{}
-
 	deletedMtx sync.Mutex
 	deleted    map[uint64]int // Deleted series, and what WAL segment they must be kept until.
 
@@ -223,7 +220,6 @@ func (h *Head) resetInMemoryState() error {
 	h.exemplarMetrics = em
 	h.exemplars = es
 	h.series = newStripeSeries(h.opts.StripeSize, h.opts.SeriesCallback)
-	h.symbols = map[string]struct{}{}
 	h.postings = index.NewUnorderedMemPostings()
 	h.tombstones = tombstones.NewMemTombstones()
 	h.iso = newIsolation()
@@ -1120,22 +1116,6 @@ func (h *Head) gc() int64 {
 		h.deletedMtx.Unlock()
 	}
 
-	// Rebuild symbols and label value indices from what is left in the postings terms.
-	// symMtx ensures that append of symbols and postings is disabled for rebuild time.
-	h.symMtx.Lock()
-	defer h.symMtx.Unlock()
-
-	symbols := make(map[string]struct{}, len(h.symbols))
-	if err := h.postings.Iter(func(l labels.Label, _ index.Postings) error {
-		symbols[l.Name] = struct{}{}
-		symbols[l.Value] = struct{}{}
-		return nil
-	}); err != nil {
-		// This should never happen, as the iteration function only returns nil.
-		panic(err)
-	}
-	h.symbols = symbols
-
 	return actualMint
 }
 
@@ -1233,14 +1213,6 @@ func (h *Head) getOrCreateWithID(id, hash uint64, lset labels.Labels) (*memSerie
 
 	h.metrics.seriesCreated.Inc()
 	h.numSeries.Inc()
-
-	h.symMtx.Lock()
-	defer h.symMtx.Unlock()
-
-	for _, l := range lset {
-		h.symbols[l.Name] = struct{}{}
-		h.symbols[l.Value] = struct{}{}
-	}
 
 	h.postings.Add(id, lset)
 	return s, true, nil
