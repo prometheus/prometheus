@@ -13,7 +13,7 @@
 
 import chai from 'chai';
 import { analyzeCompletion, computeStartCompletePosition, ContextKind } from './hybrid';
-import { createEditorState, mockedMetricsTerms, mockPrometheusServer } from '../../test/utils';
+import { createEditorState, mockedMetricsTerms, mockPrometheusServer } from '../test/utils.test';
 import { Completion, CompletionContext } from '@codemirror/autocomplete';
 import {
   aggregateOpModifierTerms,

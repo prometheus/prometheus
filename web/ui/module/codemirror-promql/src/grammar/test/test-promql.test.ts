@@ -4,7 +4,7 @@ import { fileTests } from 'lezer-generator/dist/test';
 import * as fs from 'fs';
 import * as path from 'path';
 
-const caseDir = './src/lang-promql/grammar/test';
+const caseDir = './src/grammar/test';
 for (const file of fs.readdirSync(caseDir)) {
   if (!/\.txt$/.test(file)) continue;
 
