@@ -52,7 +52,7 @@ All our issues are regularly tagged so that you can also filter down the issues 
 
 * Commits should be as small as possible, while ensuring that each commit is correct independently (i.e., each commit should compile and pass tests).
 
-* If your patch is not getting reviewed or you need a specific person to review it, you can @-reply a reviewer asking for a review in the pull request or a comment, or you can ask for a review on IRC channel [#prometheus](https://web.libera.chat/?channels=#prometheus) on irc.libera.chat (for the easiest start, [join via Element](https://app.element.io/#/room/#prometheus:matrix.org)).
+* If your patch is not getting reviewed or you need a specific person to review it, you can @-reply a reviewer asking for a review in the pull request or a comment, or you can ask for a review on the IRC channel [#prometheus-dev](https://web.libera.chat/?channels=#prometheus-dev) on irc.libera.chat (for the easiest start, [join via Element](https://app.element.io/#/room/#prometheus-dev:matrix.org)).
 
 * Add tests relevant to the fixed bug or new feature.
 
