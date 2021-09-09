@@ -17,7 +17,7 @@
     "allowJs": true
   },
   "include": [
-    "src/lang-promql"
+    "src/"
   ],
   "exclude": [
     "node_modules",
