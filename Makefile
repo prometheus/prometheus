@@ -15,7 +15,7 @@
 DOCKER_ARCHS ?= amd64 armv7 arm64 ppc64le s390x
 
 UI_PATH = web/ui
-REACT_APP_PATH = web/ui/react-app
+UI_NODE_MODULES_PATH = $(UI_PATH)/node_modules
 REACT_APP_NPM_LICENSES_TARBALL = "npm_licenses.tar.bz2"
 
 PROMTOOL = ./promtool
@@ -58,11 +58,6 @@ assets: ui-install ui-build
 	cd web/ui && GO111MODULE=$(GO111MODULE) GOOS= GOARCH= $(GO) generate -x -v $(GOOPTS)
 	@$(GOFMT) -w ./web/ui
 
-.PHONY: react-app-lint-fix
-react-app-lint-fix:
-	@echo ">> running React app linting and fixing errors where possible"
-	cd $(REACT_APP_PATH) && npm run lint
-
 .PHONY: test
 # If we only want to only test go code we have to change the test target
 # which is called by all.
@@ -76,7 +71,7 @@ endif
 npm_licenses: ui-install
 	@echo ">> bundling npm licenses"
 	rm -f $(REACT_APP_NPM_LICENSES_TARBALL)
-	find $(REACT_APP_NODE_MODULES_PATH) -iname "license*" | tar cfj $(REACT_APP_NPM_LICENSES_TARBALL) --transform 's/^/npm_licenses\//' --files-from=-
+	find $(UI_NODE_MODULES_PATH) -iname "license*" | tar cfj $(REACT_APP_NPM_LICENSES_TARBALL) --transform 's/^/npm_licenses\//' --files-from=-
 
 .PHONY: tarball
 tarball: npm_licenses common-tarball
