@@ -2,9 +2,12 @@
   "name": "prometheus",
   "private": true,
   "scripts": {
-    "lint": "npm run lint --workspaces",
+    "build": "bash build_ui.sh --all",
+    "build:module": "bash build_ui.sh --build-module",
     "start": "npm run start -w react-app",
-    "test": "npm run test --workspaces"
+    "test": "npm run test --workspaces",
+    "test:coverage": "npm run test:coverage --workspaces",
+    "lint": "npm run lint --workspaces"
   },
   "workspaces": [
     "react-app",

@@ -9,7 +9,7 @@
     "build:grammar": "lezer-generator src/grammar/promql.grammar -o src/grammar/parser",
     "build:lib": "bash ./build.sh",
     "test": "npm run build:grammar && ts-mocha -p tsconfig.json ./**/*.test.ts",
-    "test-coverage": "npm run build:grammar && nyc ts-mocha -p ./tsconfig.json ./**/*.test.ts",
+    "test:coverage": "npm run build:grammar && nyc ts-mocha -p ./tsconfig.json ./**/*.test.ts",
     "codecov": "nyc report --reporter=text-lcov > coverage.lcov && codecov",
     "lint": "eslint src/ --ext .ts",
     "lint:fix": "eslint --fix src/ --ext .ts"

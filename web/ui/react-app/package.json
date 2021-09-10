@@ -46,6 +46,7 @@
     "start": "craco start",
     "build": "craco build",
     "test": "craco test --runInBand --resetMocks=false",
+    "test:coverage": "craco test --runInBand --resetMocks=false --no-watch --coverage",
     "test:debug": "craco --inspect-brk test --runInBand --no-cache",
     "eject": "craco eject",
     "lint:ci": "eslint --quiet \"src/**/*.{ts,tsx}\"",
