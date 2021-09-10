@@ -6,14 +6,14 @@
    and https://github.com/ForEvolve/bootstrap-dark/issues/49
 */
 
-@import 'node_modules/bootstrap/scss/functions';
-@import 'node_modules/bootstrap/scss/variables';
+@import '~bootstrap/scss/functions';
+@import '~bootstrap/scss/variables';
 
-@import 'node_modules/bootstrap/scss/mixins';
-@import 'node_modules/@forevolve/bootstrap-dark/scss/mixins-overrides';
+@import '~bootstrap/scss/mixins';
+@import '~@forevolve/bootstrap-dark/scss/mixins-overrides';
 
 /* Add reboot styles using light theme variables */
-@import 'node_modules/bootstrap/scss/reboot';
+@import '~bootstrap/scss/reboot';
 
 body.bootstrap {
   margin: 0; // 1
@@ -27,41 +27,41 @@ body.bootstrap {
 }
 
 .bootstrap {
-  @import 'node_modules/bootstrap/scss/root';
-  @import 'node_modules/bootstrap/scss/type';
-  @import 'node_modules/bootstrap/scss/images';
-  @import 'node_modules/bootstrap/scss/code';
-  @import 'node_modules/bootstrap/scss/grid';
-  @import 'node_modules/bootstrap/scss/tables';
+  @import '~bootstrap/scss/root';
+  @import '~bootstrap/scss/type';
+  @import '~bootstrap/scss/images';
+  @import '~bootstrap/scss/code';
+  @import '~bootstrap/scss/grid';
+  @import '~bootstrap/scss/tables';
 
-  @import 'node_modules/bootstrap/scss/forms';
-  @import 'node_modules/@forevolve/bootstrap-dark/scss/form-overrides';
+  @import '~bootstrap/scss/forms';
+  @import '~@forevolve/bootstrap-dark/scss/form-overrides';
 
-  @import 'node_modules/bootstrap/scss/buttons';
-  @import 'node_modules/bootstrap/scss/transitions';
-  @import 'node_modules/bootstrap/scss/dropdown';
-  @import 'node_modules/bootstrap/scss/button-group';
-  @import 'node_modules/bootstrap/scss/input-group';
-  @import 'node_modules/bootstrap/scss/custom-forms';
-  @import 'node_modules/bootstrap/scss/nav';
-  @import 'node_modules/bootstrap/scss/navbar';
-  @import 'node_modules/bootstrap/scss/card';
-  @import 'node_modules/bootstrap/scss/breadcrumb';
-  @import 'node_modules/bootstrap/scss/pagination';
-  @import 'node_modules/bootstrap/scss/badge';
-  @import 'node_modules/bootstrap/scss/jumbotron';
-  @import 'node_modules/bootstrap/scss/alert';
-  @import 'node_modules/bootstrap/scss/progress';
-  @import 'node_modules/bootstrap/scss/media';
-  @import 'node_modules/bootstrap/scss/list-group';
-  @import 'node_modules/bootstrap/scss/close';
-  @import 'node_modules/bootstrap/scss/toasts';
-  @import 'node_modules/bootstrap/scss/modal';
-  @import 'node_modules/bootstrap/scss/tooltip';
-  @import 'node_modules/bootstrap/scss/popover';
-  @import 'node_modules/bootstrap/scss/carousel';
-  @import 'node_modules/bootstrap/scss/spinners';
-  @import 'node_modules/bootstrap/scss/utilities';
+  @import '~bootstrap/scss/buttons';
+  @import '~bootstrap/scss/transitions';
+  @import '~bootstrap/scss/dropdown';
+  @import '~bootstrap/scss/button-group';
+  @import '~bootstrap/scss/input-group';
+  @import '~bootstrap/scss/custom-forms';
+  @import '~bootstrap/scss/nav';
+  @import '~bootstrap/scss/navbar';
+  @import '~bootstrap/scss/card';
+  @import '~bootstrap/scss/breadcrumb';
+  @import '~bootstrap/scss/pagination';
+  @import '~bootstrap/scss/badge';
+  @import '~bootstrap/scss/jumbotron';
+  @import '~bootstrap/scss/alert';
+  @import '~bootstrap/scss/progress';
+  @import '~bootstrap/scss/media';
+  @import '~bootstrap/scss/list-group';
+  @import '~bootstrap/scss/close';
+  @import '~bootstrap/scss/toasts';
+  @import '~bootstrap/scss/modal';
+  @import '~bootstrap/scss/tooltip';
+  @import '~bootstrap/scss/popover';
+  @import '~bootstrap/scss/carousel';
+  @import '~bootstrap/scss/spinners';
+  @import '~bootstrap/scss/utilities';
 
   .navbar-themed {
     @extend .bg-light;

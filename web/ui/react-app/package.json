@@ -21,7 +21,7 @@
     "@fortawesome/react-fontawesome": "^0.1.4",
     "@nexucis/fuzzy": "^0.3.0",
     "bootstrap": "^4.6.0",
-    "codemirror-promql": "^0.17.0",
+    "codemirror-promql": "0.18.0",
     "css.escape": "^1.5.1",
     "downshift": "^3.4.8",
     "i": "^0.3.6",
@@ -43,11 +43,11 @@
     "tempusdominus-core": "^5.0.3"
   },
   "scripts": {
-    "start": "react-scripts start",
-    "build": "react-scripts build",
-    "test": "react-scripts test --runInBand --resetMocks=false",
-    "test:debug": "react-scripts --inspect-brk test --runInBand --no-cache",
-    "eject": "react-scripts eject",
+    "start": "craco start",
+    "build": "craco build",
+    "test": "craco test --runInBand --resetMocks=false",
+    "test:debug": "craco --inspect-brk test --runInBand --no-cache",
+    "eject": "craco eject",
     "lint:ci": "eslint --quiet \"src/**/*.{ts,tsx}\"",
     "lint": "eslint --fix \"src/**/*.{ts,tsx}\""
   },
@@ -63,6 +63,7 @@
     "not op_mini all"
   ],
   "devDependencies": {
+    "@craco/craco": "^6.2.0",
     "@testing-library/react-hooks": "^7.0.1",
     "@types/enzyme": "^3.10.9",
     "@types/flot": "0.0.32",

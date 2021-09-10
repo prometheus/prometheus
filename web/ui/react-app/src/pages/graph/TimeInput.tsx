@@ -6,7 +6,7 @@ import moment from 'moment-timezone';
 
 import 'tempusdominus-core';
 import 'tempusdominus-bootstrap-4';
-import '../../../node_modules/tempusdominus-bootstrap-4/build/css/tempusdominus-bootstrap-4.min.css';
+import 'tempusdominus-bootstrap-4/build/css/tempusdominus-bootstrap-4.min.css';
 
 import { dom, library } from '@fortawesome/fontawesome-svg-core';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';

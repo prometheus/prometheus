@@ -1,0 +1,13 @@
+{
+  "name": "prometheus",
+  "private": true,
+  "scripts": {
+    "lint": "npm run lint --workspaces",
+    "start": "npm run start -w react-app",
+    "test": "npm run test --workspaces"
+  },
+  "workspaces": [
+    "react-app",
+    "module/*"
+  ]
+}
