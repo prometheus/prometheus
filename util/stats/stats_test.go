@@ -37,9 +37,8 @@ func TestTimerGroupNewTimer(t *testing.T) {
 	duration = timer.Duration()
 	require.Greater(t, duration, 0.0, "Expected duration greater than 0, but it was %f instead.", duration)
 	elapsed := timer.ElapsedTime()
-	require.Greater(t, elapsed, minimum,
-		"Expected elapsed time to be greater than time slept, elapsed was %d, and time slept was %d.",
-		elapsed.Nanoseconds(), minimum)
+	require.GreaterOrEqual(t, elapsed, minimum,
+		"Expected elapsed time to be greater than time slept.")
 }
 
 func TestQueryStatsWithTimers(t *testing.T) {
@@ -51,11 +50,11 @@ func TestQueryStatsWithTimers(t *testing.T) {
 
 	qs := NewQueryStats(qt)
 	actual, err := json.Marshal(qs)
-	require.NoError(t, err, "Unexpected error during serialization: %v", err)
+	require.NoError(t, err, "unexpected error during serialization")
 	// Timing value is one of multiple fields, unit is seconds (float).
 	match, err := regexp.MatchString(`[,{]"execTotalTime":\d+\.\d+[,}]`, string(actual))
-	require.NoError(t, err, "Unexpected error while matching string: %v", err)
-	require.True(t, match, "Expected timings with one non-zero entry, but got %s.", actual)
+	require.NoError(t, err, "unexpected error while matching string")
+	require.True(t, match, "Expected timings with one non-zero entry.")
 }
 
 func TestQueryStatsWithSpanTimers(t *testing.T) {
@@ -66,11 +65,11 @@ func TestQueryStatsWithSpanTimers(t *testing.T) {
 	qst.Finish()
 	qs := NewQueryStats(qt)
 	actual, err := json.Marshal(qs)
-	require.NoError(t, err, "Unexpected error during serialization: %v", err)
+	require.NoError(t, err, "unexpected error during serialization")
 	// Timing value is one of multiple fields, unit is seconds (float).
 	match, err := regexp.MatchString(`[,{]"execQueueTime":\d+\.\d+[,}]`, string(actual))
-	require.NoError(t, err, "Unexpected error while matching string: %v", err)
-	require.True(t, match, "Expected timings with one non-zero entry, but got %s.", actual)
+	require.NoError(t, err, "unexpected error while matching string")
+	require.True(t, match, "Expected timings with one non-zero entry.")
 }
 
 func TestTimerGroup(t *testing.T) {

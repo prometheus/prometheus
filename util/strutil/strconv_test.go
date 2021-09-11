@@ -42,20 +42,20 @@ func TestLink(t *testing.T) {
 	for _, tt := range linkTests {
 		graphLink := GraphLinkForExpression(tt.expression)
 		require.Equal(t, tt.expectedGraphLink, graphLink,
-			"GraphLinkForExpression failed for expression (%#q), want %q got %q", tt.expression, tt.expectedGraphLink, graphLink)
+			"GraphLinkForExpression failed for expression (%#q)", tt.expression)
 
 		tableLink := TableLinkForExpression(tt.expression)
 		require.Equal(t, tt.expectedTableLink, tableLink,
-			"TableLinkForExpression failed for expression (%#q), want %q got %q", tt.expression, tt.expectedTableLink, tableLink)
+			"TableLinkForExpression failed for expression (%#q)", tt.expression)
 	}
 }
 
 func TestSanitizeLabelName(t *testing.T) {
 	actual := SanitizeLabelName("fooClientLABEL")
 	expected := "fooClientLABEL"
-	require.Equal(t, expected, actual, "SanitizeLabelName failed for label (%s), want %s got %s", "fooClientLABEL", expected, actual)
+	require.Equal(t, expected, actual, "SanitizeLabelName failed for label (%s)", expected)
 
 	actual = SanitizeLabelName("barClient.LABEL$$##")
 	expected = "barClient_LABEL____"
-	require.Equal(t, expected, actual, "SanitizeLabelName failed for label (%s), want %s got %s", "barClient.LABEL$$##", expected, actual)
+	require.Equal(t, expected, actual, "SanitizeLabelName failed for label (%s)", expected)
 }

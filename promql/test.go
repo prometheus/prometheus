@@ -599,7 +599,7 @@ func (t *Test) exec(tc testCommand) error {
 func (t *Test) clear() {
 	if t.storage != nil {
 		err := t.storage.Close()
-		require.NoError(t.T, err, "closing test storage: %s", err)
+		require.NoError(t.T, err, "Unexpected error while closing test storage.")
 	}
 	if t.cancelCtx != nil {
 		t.cancelCtx()
@@ -624,7 +624,7 @@ func (t *Test) Close() {
 	t.cancelCtx()
 
 	err := t.storage.Close()
-	require.NoError(t, err, "closing test storage: %s", err)
+	require.NoError(t.T, err, "Unexpected error while closing test storage.")
 }
 
 // samplesAlmostEqual returns true if the two sample lines only differ by a
@@ -722,7 +722,7 @@ func (ll *LazyLoader) parse(input string) error {
 func (ll *LazyLoader) clear() {
 	if ll.storage != nil {
 		err := ll.storage.Close()
-		require.NoError(ll.T, err, "closing test storage: %s", err)
+		require.NoError(ll.T, err, "Unexpected error while closing test storage.")
 	}
 	if ll.cancelCtx != nil {
 		ll.cancelCtx()
@@ -797,5 +797,5 @@ func (ll *LazyLoader) Storage() storage.Storage {
 func (ll *LazyLoader) Close() {
 	ll.cancelCtx()
 	err := ll.storage.Close()
-	require.NoError(ll.T, err, "closing test storage: %s", err)
+	require.NoError(ll.T, err, "Unexpected error while closing test storage.")
 }
