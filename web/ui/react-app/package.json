@@ -43,12 +43,12 @@
     "tempusdominus-core": "^5.0.3"
   },
   "scripts": {
-    "start": "craco start",
-    "build": "craco build",
-    "test": "craco test --runInBand --resetMocks=false",
-    "test:coverage": "craco test --runInBand --resetMocks=false --no-watch --coverage",
-    "test:debug": "craco --inspect-brk test --runInBand --no-cache",
-    "eject": "craco eject",
+    "start": "react-scripts start",
+    "build": "react-scripts build",
+    "test": "react-scripts test --runInBand --resetMocks=false",
+    "test:coverage": "react-scripts test --runInBand --resetMocks=false --no-watch --coverage",
+    "test:debug": "react-scripts --inspect-brk test --runInBand --no-cache",
+    "eject": "react-scripts eject",
     "lint:ci": "eslint --quiet \"src/**/*.{ts,tsx}\"",
     "lint": "eslint --fix \"src/**/*.{ts,tsx}\""
   },
@@ -64,7 +64,6 @@
     "not op_mini all"
   ],
   "devDependencies": {
-    "@craco/craco": "^6.2.0",
     "@testing-library/react-hooks": "^7.0.1",
     "@types/enzyme": "^3.10.9",
     "@types/flot": "0.0.32",
