@@ -103,6 +103,9 @@ func (importer *ruleImporter) importRule(ctx context.Context, ruleExpr, ruleName
 
 		currStart := max(startOfBlock/int64(time.Second/time.Millisecond), start.Unix())
 		startWithAlignment := grp.EvalTimestamp(time.Unix(currStart, 0).UTC().UnixNano())
+		for startWithAlignment.Unix() < currStart {
+			startWithAlignment = startWithAlignment.Add(grp.Interval())
+		}
 		val, warnings, err := importer.apiClient.QueryRange(ctx,
 			ruleExpr,
 			v1.Range{
@@ -141,22 +144,16 @@ func (importer *ruleImporter) importRule(ctx context.Context, ruleExpr, ruleName
 			matrix = val.(model.Matrix)
 
 			for _, sample := range matrix {
-				currentLabels := make(labels.Labels, 0, len(sample.Metric)+len(ruleLabels)+1)
-				currentLabels = append(currentLabels, labels.Label{
-					Name:  labels.MetricName,
-					Value: ruleName,
-				})
-
-				currentLabels = append(currentLabels, ruleLabels...)
+				lb := labels.NewBuilder(ruleLabels)
 
 				for name, value := range sample.Metric {
-					currentLabels = append(currentLabels, labels.Label{
-						Name:  string(name),
-						Value: string(value),
-					})
+					lb.Set(string(name), string(value))
 				}
+
+				lb.Set(labels.MetricName, ruleName)
+
 				for _, value := range sample.Values {
-					if err := app.add(ctx, currentLabels, timestamp.FromTime(value.Timestamp.Time()), float64(value.Value)); err != nil {
+					if err := app.add(ctx, lb.Labels(), timestamp.FromTime(value.Timestamp.Time()), float64(value.Value)); err != nil {
 						return errors.Wrap(err, "add")
 					}
 				}
