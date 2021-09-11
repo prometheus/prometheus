@@ -185,6 +185,9 @@ process_repo() {
   cd "${tmp_dir}/${org_repo}" || return 1
   git checkout -b "${branch}" || return 1
 
+  # If we need to add an Actions file this directory needs to be present.
+  mkdir -p "./.github/workflows"
+
   # Update the files in target repo by one from prometheus/prometheus.
   for source_file in "${needs_update[@]}"; do
     case "${source_file}" in
