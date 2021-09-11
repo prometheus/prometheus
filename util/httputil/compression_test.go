@@ -69,7 +69,7 @@ func TestCompressionHandler_PlainText(t *testing.T) {
 
 	expected := "Hello World!"
 	actual := string(contents)
-	require.Equal(t, expected, actual, "expected response with content %s, but got %s", expected, actual)
+	require.Equal(t, expected, actual, "expected response with content")
 }
 
 func TestCompressionHandler_Gzip(t *testing.T) {
@@ -128,7 +128,7 @@ func TestCompressionHandler_Deflate(t *testing.T) {
 	defer resp.Body.Close()
 
 	actualHeader := resp.Header.Get(contentEncodingHeader)
-	require.Equal(t, deflateEncoding, actualHeader, "expected response with encoding header %s, but got %s", deflateEncoding, actualHeader)
+	require.Equal(t, deflateEncoding, actualHeader, "expected response with encoding header")
 
 	var buf bytes.Buffer
 	dr, err := zlib.NewReader(resp.Body)
@@ -139,5 +139,5 @@ func TestCompressionHandler_Deflate(t *testing.T) {
 
 	actual := buf.String()
 	expected := "Hello World!"
-	require.Equal(t, expected, actual, "expected response with content %s, but got %s", expected, actual)
+	require.Equal(t, expected, actual, "expected response with content")
 }

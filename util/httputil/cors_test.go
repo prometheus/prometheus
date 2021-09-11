@@ -50,7 +50,7 @@ func TestCORSHandler(t *testing.T) {
 
 	AccessControlAllowOrigin := resp.Header.Get("Access-Control-Allow-Origin")
 
-	require.Equal(t, dummyOrigin, AccessControlAllowOrigin, "%q does not match %q", dummyOrigin, AccessControlAllowOrigin)
+	require.Equal(t, dummyOrigin, AccessControlAllowOrigin, "expected Access-Control-Allow-Origin header")
 
 	// OPTIONS with bad origin
 	req, err = http.NewRequest("OPTIONS", server.URL+"/any_path", nil)
@@ -61,5 +61,5 @@ func TestCORSHandler(t *testing.T) {
 	require.NoError(t, err, "client get failed with unexpected error")
 
 	AccessControlAllowOrigin = resp.Header.Get("Access-Control-Allow-Origin")
-	require.Empty(t, AccessControlAllowOrigin, "Access-Control-Allow-Origin should not exist but it was set to: %q", AccessControlAllowOrigin)
+	require.Empty(t, AccessControlAllowOrigin, "Access-Control-Allow-Origin header should not exist but it was set")
 }

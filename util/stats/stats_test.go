@@ -29,13 +29,13 @@ func TestTimerGroupNewTimer(t *testing.T) {
 	tg := NewTimerGroup()
 	timer := tg.GetTimer(ExecTotalTime)
 	duration := timer.Duration()
-	require.NotEqual(t, 0, duration, "Expected duration of 0, but it was %f instead.", duration)
+	require.Equal(t, 0.0, duration, "Expected duration equal 0")
 	minimum := 2 * time.Millisecond
 	timer.Start()
 	time.Sleep(minimum)
 	timer.Stop()
 	duration = timer.Duration()
-	require.Greater(t, duration, 0.0, "Expected duration greater than 0, but it was %f instead.", duration)
+	require.Greater(t, duration, 0.0, "Expected duration greater than 0")
 	elapsed := timer.ElapsedTime()
 	require.GreaterOrEqual(t, elapsed, minimum,
 		"Expected elapsed time to be greater than time slept.")
@@ -74,25 +74,19 @@ func TestQueryStatsWithSpanTimers(t *testing.T) {
 
 func TestTimerGroup(t *testing.T) {
 	tg := NewTimerGroup()
-	execTotalTimer := tg.GetTimer(ExecTotalTime)
-	require.Equal(t, "Exec total time: 0s", tg.GetTimer(ExecTotalTime).String(), "Expected string %s, but got %s", "", execTotalTimer.String())
+	require.Equal(t, "Exec total time: 0s", tg.GetTimer(ExecTotalTime).String())
 
-	execQueueTimer := tg.GetTimer(ExecQueueTime)
-	require.Equal(t, "Exec queue wait time: 0s", tg.GetTimer(ExecQueueTime).String(), "Expected string %s, but got %s", "", execQueueTimer.String())
+	require.Equal(t, "Exec queue wait time: 0s", tg.GetTimer(ExecQueueTime).String())
 
-	innerEvalTimer := tg.GetTimer(InnerEvalTime)
-	require.Equal(t, "Inner eval time: 0s", tg.GetTimer(InnerEvalTime).String(), "Expected string %s, but got %s", "", innerEvalTimer.String())
+	require.Equal(t, "Inner eval time: 0s", tg.GetTimer(InnerEvalTime).String())
 
-	queryPreparationTimer := tg.GetTimer(QueryPreparationTime)
-	require.Equal(t, "Query preparation time: 0s", tg.GetTimer(QueryPreparationTime).String(), "Expected string %s, but got %s", "", queryPreparationTimer.String())
+	require.Equal(t, "Query preparation time: 0s", tg.GetTimer(QueryPreparationTime).String())
 
-	resultSortTimer := tg.GetTimer(ResultSortTime)
-	require.Equal(t, "Result sorting time: 0s", tg.GetTimer(ResultSortTime).String(), "Expected string %s, but got %s", "", resultSortTimer.String())
+	require.Equal(t, "Result sorting time: 0s", tg.GetTimer(ResultSortTime).String())
 
-	evalTotalTimer := tg.GetTimer(EvalTotalTime)
-	require.Equal(t, "Eval total time: 0s", tg.GetTimer(EvalTotalTime).String(), "Expected string %s, but got %s", "", evalTotalTimer.String())
+	require.Equal(t, "Eval total time: 0s", tg.GetTimer(EvalTotalTime).String())
 
 	actual := tg.String()
 	expected := "Exec total time: 0s\nExec queue wait time: 0s\nInner eval time: 0s\nQuery preparation time: 0s\nResult sorting time: 0s\nEval total time: 0s\n"
-	require.Equal(t, expected, actual, "Expected timerGroup string %s, but got %s.", expected, actual)
+	require.Equal(t, expected, actual)
 }

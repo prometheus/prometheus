@@ -1121,7 +1121,7 @@ func TestRecoverEvaluatorRuntime(t *testing.T) {
 	//nolint:govet
 	a[123] = 1
 
-	require.EqualError(t, err, "unexpected error", "wrong error message: %q", err)
+	require.EqualError(t, err, "unexpected error")
 }
 
 func TestRecoverEvaluatorError(t *testing.T) {
@@ -1131,7 +1131,7 @@ func TestRecoverEvaluatorError(t *testing.T) {
 	e := errors.New("custom error")
 
 	defer func() {
-		require.EqualError(t, err, e.Error(), "wrong error message: %q", err)
+		require.EqualError(t, err, e.Error())
 	}()
 	defer ev.recover(nil, &err)
 

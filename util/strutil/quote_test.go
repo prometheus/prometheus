@@ -111,19 +111,20 @@ func TestUnquote(t *testing.T) {
 	for _, tt := range unquotetests {
 		out, err := Unquote(tt.in)
 		if err != nil {
-			require.Equal(t, tt.out, out, "Unquote(%#q) = %q, %v want %q, nil", tt.in, out, err, tt.out)
+			require.Equal(t, tt.out, out, "Unquote(%#q)", tt.in)
 		}
 	}
 
 	// Run the quote tests too, backward.
 	for _, tt := range quotetests {
 		in, err := Unquote(tt.out)
-		require.Equal(t, tt.in, in, "Unquote(%#q) = %q, %v, want %q, nil", tt.out, in, err, tt.in)
+		require.Equal(t, tt.in, in, "Unquote(%#q)", tt.out)
+		require.NoError(t, err)
 	}
 
 	for _, s := range misquoted {
 		out, err := Unquote(s)
-		require.Empty(t, out, "Unquote(%#q) = %q, %v want %q, %v", s, out, err, "", ErrSyntax)
-		require.EqualError(t, err, ErrSyntax.Error(), "Unquote(%#q) = %q, %v want %q, %v", s, out, err, "", ErrSyntax)
+		require.Empty(t, out, "Unquote(%#q)", s)
+		require.EqualError(t, err, ErrSyntax.Error(), "Unquote(%#q)", s)
 	}
 }

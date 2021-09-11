@@ -56,7 +56,7 @@ func TestQueryLogging(t *testing.T) {
 
 		have := string(fileAsBytes[start:end])
 		require.True(t, regexp.MustCompile(want[i]).MatchString(have),
-			"Query not written correctly: %s.\nHave %s\nWant %s", queries[i], have, want[i])
+			"Query not written correctly: %s", queries[i])
 	}
 
 	// Check if all queries have been deleted.
@@ -64,7 +64,7 @@ func TestQueryLogging(t *testing.T) {
 		queryLogger.Delete(1 + i*entrySize)
 	}
 	require.True(t, regexp.MustCompile(`^\x00+$`).Match(fileAsBytes[1:1+entrySize*4]),
-		"All queries not deleted properly. Have %s\nWant only null bytes \\x00", string(fileAsBytes[1:1+entrySize*4]))
+		"All queries not deleted properly. Want only null bytes \\x00")
 }
 
 func TestIndexReuse(t *testing.T) {
@@ -100,7 +100,7 @@ func TestIndexReuse(t *testing.T) {
 
 		have := queryBytes[start:end]
 		require.True(t, regexp.MustCompile(want[i]).Match(have),
-			"Index not reused properly:\nHave %s\nWant %s", string(queryBytes[start:end]), want[i])
+			"Index not reused properly.")
 	}
 }
 
@@ -156,9 +156,9 @@ func TestParseBrokenJSON(t *testing.T) {
 	} {
 		t.Run("", func(t *testing.T) {
 			out, ok := parseBrokenJSON(tc.b)
-			require.Equal(t, tc.ok, ok, "expected %t, got %t", tc.ok, ok)
+			require.Equal(t, tc.ok, ok)
 			if ok {
-				require.Equal(t, tc.out, out, "expected %s, got %s", tc.out, out)
+				require.Equal(t, tc.out, out)
 			}
 		})
 	}
