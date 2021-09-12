@@ -136,6 +136,8 @@ process_repo() {
   fi
   echo "Default branch: ${default_branch}"
 
+  local using_common_makefile
+  using_common_makefile=true
   local needs_update=()
   for source_file in ${SYNC_FILES}; do
     source_checksum="$(sha256sum "${source_dir}/${source_file}" | cut -d' ' -f1)"
@@ -145,8 +147,9 @@ process_repo() {
       echo "LICENSE in ${org_repo} is not apache, skipping."
       continue
     fi
-    if [[ "${source_file}" == '.github/workflows/golangci-lint.yml' ]] && ! check_go "${org_repo}" "${default_branch}" ; then
-      echo "${org_repo} is not Go, skipping .github/workflows/golangci-lint.yml."
+    if [[ "${source_file}" == '.github/workflows/golangci-lint.yml' ]] && ( ! using_common_makefile || ! check_go "${org_repo}" "${default_branch}" ); then
+      # If the repo doesn't use Makefile.common we shouldn't enforce additional testing systems.
+      echo "${org_repo} is not Go or doesn't use Makefile.common, skipping .github/workflows/golangci-lint.yml."
       continue
     fi
     if [[ -z "${target_file}" ]]; then
@@ -157,6 +160,9 @@ process_repo() {
           needs_update+=("${source_file}")
           ;;
       esac
+      if [[ "${source_file}" == 'Makefile.commmon' ]]; then
+        using_common_makefile=false
+      fi
       continue
     fi
     target_checksum="$(echo "${target_file}" | sha256sum | cut -d' ' -f1)"
