@@ -17,7 +17,6 @@ import (
 	"context"
 	"io/ioutil"
 	"os"
-	"reflect"
 	"testing"
 
 	"github.com/prometheus/common/model"
@@ -217,14 +216,7 @@ func TestGenerateTargetGroups(t *testing.T) {
 
 	for _, testCase := range testCases {
 		result := generateTargetGroups(testCase.targetGroup)
-
-		if !reflect.DeepEqual(result, testCase.expectedCustomSD) {
-			t.Errorf("%q failed\ngot: %#v\nexpected: %v",
-				testCase.title,
-				result,
-				testCase.expectedCustomSD)
-		}
-
+		require.Equal(t, testCase.expectedCustomSD, result)
 	}
 }
 

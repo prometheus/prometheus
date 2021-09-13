@@ -19,6 +19,8 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/stretchr/testify/require"
+
 	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -30,9 +32,7 @@ import (
 // that removes all associated files on closing.
 func New(t testutil.T) *TestStorage {
 	dir, err := ioutil.TempDir("", "test_storage")
-	if err != nil {
-		t.Fatalf("Opening test dir failed: %s", err)
-	}
+	require.NoError(t, err, "unexpected error while opening test directory")
 
 	// Tests just load data for a series sequentially. Thus we
 	// need a long appendable window.
@@ -40,16 +40,12 @@ func New(t testutil.T) *TestStorage {
 	opts.MinBlockDuration = int64(24 * time.Hour / time.Millisecond)
 	opts.MaxBlockDuration = int64(24 * time.Hour / time.Millisecond)
 	db, err := tsdb.Open(dir, nil, nil, opts, tsdb.NewDBStats())
-	if err != nil {
-		t.Fatalf("Opening test storage failed: %s", err)
-	}
+	require.NoError(t, err, "unexpected error while opening test storage")
 	reg := prometheus.NewRegistry()
 	eMetrics := tsdb.NewExemplarMetrics(reg)
 
 	es, err := tsdb.NewCircularExemplarStorage(10, eMetrics)
-	if err != nil {
-		t.Fatalf("Opening test exemplar storage failed: %s", err)
-	}
+	require.NoError(t, err, "unexpected error while opening test exemplar storage")
 	return &TestStorage{DB: db, exemplarStorage: es, dir: dir}
 }
 

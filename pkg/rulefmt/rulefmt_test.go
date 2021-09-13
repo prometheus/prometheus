@@ -15,19 +15,14 @@ package rulefmt
 
 import (
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
 func TestParseFileSuccess(t *testing.T) {
-	if _, errs := ParseFile("testdata/test.yaml"); len(errs) > 0 {
-		t.Errorf("unexpected errors parsing file")
-		for _, err := range errs {
-			t.Error(err)
-		}
-	}
+	_, errs := ParseFile("testdata/test.yaml")
+	require.Empty(t, errs, "unexpected errors parsing file")
 }
 
 func TestParseFileFailure(t *testing.T) {
@@ -79,15 +74,9 @@ func TestParseFileFailure(t *testing.T) {
 
 	for _, c := range table {
 		_, errs := ParseFile(filepath.Join("testdata", c.filename))
-		if errs == nil {
-			t.Errorf("Expected error parsing %s but got none", c.filename)
-			continue
-		}
-		if !strings.Contains(errs[0].Error(), c.errMsg) {
-			t.Errorf("Expected error for %s to contain %q but got: %s", c.filename, c.errMsg, errs)
-		}
+		require.NotNil(t, errs, "Expected error parsing %s but got none", c.filename)
+		require.Error(t, errs[0], c.errMsg, "Expected error for %s.", c.filename)
 	}
-
 }
 
 func TestTemplateParsing(t *testing.T) {
