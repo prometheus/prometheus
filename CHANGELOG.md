@@ -1,4 +1,4 @@
-## 2.30.0-rc.0 / 2021-09-08
+## 2.30.0 / 2021-09-14
 
 * [FEATURE] **experimental** TSDB: Snapshot in-memory chunks on shutdown for faster restarts. Behind `--enable-feature=memory-snapshot-on-shutdown` flag. #7229
 * [FEATURE] **experimental** Scrape: Configure scrape interval and scrape timeout via relabeling using `__scrape_interval__` and `__scrape_timeout__` labels respectively. #8911
@@ -12,6 +12,7 @@
 * [BUGFIX] Exemplars: Fix panic when resizing exemplar storage from 0 to a non-zero size. #9286
 * [BUGFIX] TSDB: Correctly decrement `prometheus_tsdb_head_active_appenders` when the append has no samples. #9230
 * [BUGFIX] promtool rules backfill: Return 1 if backfill was unsuccessful. #9303
+* [BUGFIX] promtool rules backfill: Avoid creation of overlapping blocks. #9324
 * [BUGFIX] config: Fix a panic when reloading configuration with a `null` relabel action. #9224
 
 ## 2.29.2 / 2021-08-27
