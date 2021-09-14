@@ -737,13 +737,13 @@ func TestLexer(t *testing.T) {
 					}
 					if !hasError {
 						t.Logf("%d: input %q", i, test.input)
-						t.Fatalf("expected lexing error but did not fail")
+						require.Fail(t, "expected lexing error but did not fail")
 					}
 					continue
 				}
 				if lastItem.Typ == ERROR {
 					t.Logf("%d: input %q", i, test.input)
-					t.Fatalf("unexpected lexing error at position %d: %s", lastItem.Pos, lastItem)
+					require.Fail(t, "unexpected lexing error at position %d: %s", lastItem.Pos, lastItem)
 				}
 
 				eofItem := Item{EOF, Pos(len(test.input)), ""}

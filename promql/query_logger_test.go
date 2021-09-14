@@ -55,18 +55,16 @@ func TestQueryLogging(t *testing.T) {
 		queryLogger.Insert(context.Background(), queries[i])
 
 		have := string(fileAsBytes[start:end])
-		if !regexp.MustCompile(want[i]).MatchString(have) {
-			t.Fatalf("Query not written correctly: %s.\nHave %s\nWant %s", queries[i], have, want[i])
-		}
+		require.True(t, regexp.MustCompile(want[i]).MatchString(have),
+			"Query not written correctly: %s", queries[i])
 	}
 
 	// Check if all queries have been deleted.
 	for i := 0; i < 4; i++ {
 		queryLogger.Delete(1 + i*entrySize)
 	}
-	if !regexp.MustCompile(`^\x00+$`).Match(fileAsBytes[1 : 1+entrySize*4]) {
-		t.Fatalf("All queries not deleted properly. Have %s\nWant only null bytes \\x00", string(fileAsBytes[1:1+entrySize*4]))
-	}
+	require.True(t, regexp.MustCompile(`^\x00+$`).Match(fileAsBytes[1:1+entrySize*4]),
+		"All queries not deleted properly. Want only null bytes \\x00")
 }
 
 func TestIndexReuse(t *testing.T) {
@@ -101,9 +99,8 @@ func TestIndexReuse(t *testing.T) {
 		end := start + entrySize
 
 		have := queryBytes[start:end]
-		if !regexp.MustCompile(want[i]).Match(have) {
-			t.Fatalf("Index not reused properly:\nHave %s\nWant %s", string(queryBytes[start:end]), want[i])
-		}
+		require.True(t, regexp.MustCompile(want[i]).Match(have),
+			"Index not reused properly.")
 	}
 }
 
@@ -124,14 +121,10 @@ func TestMMapFile(t *testing.T) {
 
 	bytes := make([]byte, 4)
 	n, err := f.Read(bytes)
+	require.Equal(t, n, 2)
+	require.NoError(t, err, "Unexpected error while reading file.")
 
-	if n != 2 || err != nil {
-		t.Fatalf("Error reading file")
-	}
-
-	if string(bytes[:2]) != string(fileAsBytes) {
-		t.Fatalf("Mmap failed")
-	}
+	require.Equal(t, fileAsBytes, bytes[:2], "Mmap failed")
 }
 
 func TestParseBrokenJSON(t *testing.T) {
@@ -163,12 +156,9 @@ func TestParseBrokenJSON(t *testing.T) {
 	} {
 		t.Run("", func(t *testing.T) {
 			out, ok := parseBrokenJSON(tc.b)
-			if tc.ok != ok {
-				t.Fatalf("expected %t, got %t", tc.ok, ok)
-				return
-			}
-			if ok && tc.out != out {
-				t.Fatalf("expected %s, got %s", tc.out, out)
+			require.Equal(t, tc.ok, ok)
+			if ok {
+				require.Equal(t, tc.out, out)
 			}
 		})
 	}

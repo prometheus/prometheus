@@ -1302,6 +1302,10 @@ var expectedErrors = []struct {
 		filename: "http_url_bad_scheme.bad.yml",
 		errMsg:   "URL scheme must be 'http' or 'https'",
 	},
+	{
+		filename: "empty_scrape_config_action.bad.yml",
+		errMsg:   "relabel action cannot be empty",
+	},
 }
 
 func TestBadConfigs(t *testing.T) {

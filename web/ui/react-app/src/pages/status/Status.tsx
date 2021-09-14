@@ -1,5 +1,4 @@
 import React, { Fragment, FC } from 'react';
-import { RouteComponentProps } from '@reach/router';
 import { Table } from 'reactstrap';
 import { withStatusIndicator } from '../../components/withStatusIndicator';
 import { useFetch } from '../../hooks/useFetch';
@@ -13,6 +12,7 @@ interface StatusPageProps {
 
 export const statusConfig: Record<
   string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   { title?: string; customizeValue?: (v: any, key: string) => any; customRow?: boolean; skip?: boolean }
 > = {
   startTime: { title: 'Start time', customizeValue: (v: string) => new Date(v).toUTCString() },
@@ -58,7 +58,7 @@ export const StatusContent: FC<StatusPageProps> = ({ data, title }) => {
       <Table className="h-auto" size="sm" bordered striped>
         <tbody>
           {Object.entries(data).map(([k, v]) => {
-            const { title = k, customizeValue = (val: any) => val, customRow, skip } = statusConfig[k] || {};
+            const { title = k, customizeValue = (val: string) => val, customRow, skip } = statusConfig[k] || {};
             if (skip) {
               return null;
             }
@@ -83,7 +83,7 @@ const StatusWithStatusIndicator = withStatusIndicator(StatusContent);
 
 StatusContent.displayName = 'Status';
 
-const Status: FC<RouteComponentProps> = () => {
+const Status: FC = () => {
   const pathPrefix = usePathPrefix();
   const path = `${pathPrefix}/${API_PATH}`;
 

@@ -15,6 +15,8 @@ package strutil
 
 import (
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 var quotetests = []struct {
@@ -107,21 +109,22 @@ var misquoted = []string{
 
 func TestUnquote(t *testing.T) {
 	for _, tt := range unquotetests {
-		if out, err := Unquote(tt.in); err != nil && out != tt.out {
-			t.Errorf("Unquote(%#q) = %q, %v want %q, nil", tt.in, out, err, tt.out)
+		out, err := Unquote(tt.in)
+		if err != nil {
+			require.Equal(t, tt.out, out, "Unquote(%#q)", tt.in)
 		}
 	}
 
 	// Run the quote tests too, backward.
 	for _, tt := range quotetests {
-		if in, err := Unquote(tt.out); in != tt.in {
-			t.Errorf("Unquote(%#q) = %q, %v, want %q, nil", tt.out, in, err, tt.in)
-		}
+		in, err := Unquote(tt.out)
+		require.Equal(t, tt.in, in, "Unquote(%#q)", tt.out)
+		require.NoError(t, err)
 	}
 
 	for _, s := range misquoted {
-		if out, err := Unquote(s); out != "" || err != ErrSyntax {
-			t.Errorf("Unquote(%#q) = %q, %v want %q, %v", s, out, err, "", ErrSyntax)
-		}
+		out, err := Unquote(s)
+		require.Empty(t, out, "Unquote(%#q)", s)
+		require.EqualError(t, err, ErrSyntax.Error(), "Unquote(%#q)", s)
 	}
 }

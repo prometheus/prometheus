@@ -25,6 +25,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
+	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -597,9 +598,8 @@ func (t *Test) exec(tc testCommand) error {
 // clear the current test storage of all inserted samples.
 func (t *Test) clear() {
 	if t.storage != nil {
-		if err := t.storage.Close(); err != nil {
-			t.T.Fatalf("closing test storage: %s", err)
-		}
+		err := t.storage.Close()
+		require.NoError(t.T, err, "Unexpected error while closing test storage.")
 	}
 	if t.cancelCtx != nil {
 		t.cancelCtx()
@@ -623,9 +623,8 @@ func (t *Test) clear() {
 func (t *Test) Close() {
 	t.cancelCtx()
 
-	if err := t.storage.Close(); err != nil {
-		t.T.Fatalf("closing test storage: %s", err)
-	}
+	err := t.storage.Close()
+	require.NoError(t.T, err, "Unexpected error while closing test storage.")
 }
 
 // samplesAlmostEqual returns true if the two sample lines only differ by a
@@ -722,9 +721,8 @@ func (ll *LazyLoader) parse(input string) error {
 // clear the current test storage of all inserted samples.
 func (ll *LazyLoader) clear() {
 	if ll.storage != nil {
-		if err := ll.storage.Close(); err != nil {
-			ll.T.Fatalf("closing test storage: %s", err)
-		}
+		err := ll.storage.Close()
+		require.NoError(ll.T, err, "Unexpected error while closing test storage.")
 	}
 	if ll.cancelCtx != nil {
 		ll.cancelCtx()
@@ -798,8 +796,6 @@ func (ll *LazyLoader) Storage() storage.Storage {
 // Close closes resources associated with the LazyLoader.
 func (ll *LazyLoader) Close() {
 	ll.cancelCtx()
-
-	if err := ll.storage.Close(); err != nil {
-		ll.T.Fatalf("closing test storage: %s", err)
-	}
+	err := ll.storage.Close()
+	require.NoError(ll.T, err, "Unexpected error while closing test storage.")
 }

@@ -21,7 +21,7 @@ describe('AlertsContent', () => {
     { selector: '#inactive-toggler', propName: 'inactive' },
     { selector: '#pending-toggler', propName: 'pending' },
     { selector: '#firing-toggler', propName: 'firing' },
-  ].forEach(testCase => {
+  ].forEach((testCase) => {
     it(`toggles the ${testCase.propName} checkbox from true to false when clicked and back to true when clicked again`, () => {
       expect(wrapper.find(testCase.selector).prop('checked')).toBe(true);
       wrapper.find(testCase.selector).simulate('change', { target: { checked: false } });

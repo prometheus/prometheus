@@ -1,0 +1,11 @@
+.idea/
+
+node_modules/
+dist/
+lib/
+
+src/lang-promql/grammar/**.ts
+src/lang-promql/grammar/parser.js
+src/lang-promql/grammar/parser.terms.js
+
+/.nyc_output

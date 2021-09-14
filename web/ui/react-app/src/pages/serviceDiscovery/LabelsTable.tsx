@@ -1,5 +1,4 @@
 import React, { FC, useState } from 'react';
-import { RouteComponentProps } from '@reach/router';
 import { Badge, Table } from 'reactstrap';
 import { TargetLabels } from './Services';
 import { ToggleMoreLess } from '../../components/ToggleMoreLess';
@@ -21,7 +20,7 @@ const formatLabels = (labels: Record<string, string> | string) => {
   });
 };
 
-export const LabelsTable: FC<RouteComponentProps & LabelProps> = ({ value, name }) => {
+export const LabelsTable: FC<LabelProps> = ({ value, name }) => {
   const [showMore, setShowMore] = useState(false);
 
   return (

@@ -27,7 +27,7 @@ replayed when the Prometheus server restarts. Write-ahead log files are stored
 in the `wal` directory in 128MB segments. These files contain raw data that
 has not yet been compacted; thus they are significantly larger than regular block
 files. Prometheus will retain a minimum of three write-ahead log files.
-High-traffic servers may retain more than three WAL files in order to to keep at
+High-traffic servers may retain more than three WAL files in order to keep at
 least two hours of raw data.
 
 A Prometheus server's data directory looks something like this:
@@ -82,7 +82,7 @@ Prometheus has several flags that configure local storage. The most important ar
 
 * `--storage.tsdb.path`: Where Prometheus writes its database. Defaults to `data/`.
 * `--storage.tsdb.retention.time`: When to remove old data. Defaults to `15d`. Overrides `storage.tsdb.retention` if this flag is set to anything other than default.
-* `--storage.tsdb.retention.size`: The maximum number of bytes of storage blocks to retain. The oldest data will be removed first. Defaults to `0` or disabled. Units supported: B, KB, MB, GB, TB, PB, EB. Ex: "512MB"
+* `--storage.tsdb.retention.size`: The maximum number of bytes of storage blocks to retain. The oldest data will be removed first. Defaults to `0` or disabled. Units supported: B, KB, MB, GB, TB, PB, EB. Ex: "512MB". Only the persistent blocks are deleted to honor this retention although WAL and m-mapped chunks are counted in the total size. So the minimum requirement for the disk is the peak space taken by the `wal` (the WAL and Checkpoint) and `chunks_head` (m-mapped Head chunks) directory combined (peaks every 2 hours).
 * `--storage.tsdb.retention`: Deprecated in favor of `storage.tsdb.retention.time`.
 * `--storage.tsdb.wal-compression`: Enables compression of the write-ahead log (WAL). Depending on your data, you can expect the WAL size to be halved with little extra cpu load. This flag was introduced in 2.11.0 and enabled by default in 2.20.0. Note that once enabled, downgrading Prometheus to a version below 2.11.0 will require deleting the WAL.
 

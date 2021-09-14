@@ -24,3 +24,4 @@ rules:
       .github/workflows/funcbench.yml
       .github/workflows/fuzzing.yml
       .github/workflows/prombench.yml
+      .github/workflows/golangci-lint.yml

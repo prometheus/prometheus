@@ -55,7 +55,7 @@ describe('SeriesName', () => {
         const child = seriesName.childAt(i);
         const text = child
           .children()
-          .map(ch => ch.text())
+          .map((ch) => ch.text())
           .join('');
         switch (child.children().length) {
           case 1:

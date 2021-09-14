@@ -42,6 +42,7 @@ export interface GraphExemplar {
   seriesLabels: { [key: string]: string };
   labels: { [key: string]: string };
   data: number[][];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   points: any; // This is used to specify the symbol.
   color: string;
 }
@@ -67,7 +68,7 @@ class Graph extends PureComponent<GraphProps, GraphState> {
     selectedExemplarLabels: { exemplar: {}, series: {} },
   };
 
-  componentDidUpdate(prevProps: GraphProps) {
+  componentDidUpdate(prevProps: GraphProps): void {
     const { data, stacked, useLocalTime, showExemplars } = this.props;
     if (prevProps.data !== data) {
       this.selectedSeriesIndexes = [];
@@ -102,7 +103,7 @@ class Graph extends PureComponent<GraphProps, GraphState> {
     }
   }
 
-  componentDidMount() {
+  componentDidMount(): void {
     this.plot();
 
     $(`.graph-${this.props.id}`).bind('plotclick', (event, pos, item) => {
@@ -130,11 +131,13 @@ class Graph extends PureComponent<GraphProps, GraphState> {
     });
   }
 
-  componentWillUnmount() {
+  componentWillUnmount(): void {
     this.destroyPlot();
   }
 
-  plot = (data: (GraphSeries | GraphExemplar)[] = [...this.state.chartData.series, ...this.state.chartData.exemplars]) => {
+  plot = (
+    data: (GraphSeries | GraphExemplar)[] = [...this.state.chartData.series, ...this.state.chartData.exemplars]
+  ): void => {
     if (!this.chartRef.current) {
       return;
     }
@@ -143,7 +146,7 @@ class Graph extends PureComponent<GraphProps, GraphState> {
     this.$chart = $.plot($(this.chartRef.current), data, getOptions(this.props.stacked, this.props.useLocalTime));
   };
 
-  destroyPlot = () => {
+  destroyPlot = (): void => {
     if (isPresent(this.$chart)) {
       this.$chart.destroy();
     }
@@ -151,21 +154,21 @@ class Graph extends PureComponent<GraphProps, GraphState> {
 
   plotSetAndDraw(
     data: (GraphSeries | GraphExemplar)[] = [...this.state.chartData.series, ...this.state.chartData.exemplars]
-  ) {
+  ): void {
     if (isPresent(this.$chart)) {
       this.$chart.setData(data);
       this.$chart.draw();
     }
   }
 
-  handleSeriesSelect = (selected: number[], selectedIndex: number) => {
+  handleSeriesSelect = (selected: number[], selectedIndex: number): void => {
     const { chartData } = this.state;
     this.plot(
       this.selectedSeriesIndexes.length === 1 && this.selectedSeriesIndexes.includes(selectedIndex)
         ? [...chartData.series.map(toHoverColor(selectedIndex, this.props.stacked)), ...chartData.exemplars]
         : [
             ...chartData.series.filter((_, i) => selected.includes(i)),
-            ...chartData.exemplars.filter(exemplar => {
+            ...chartData.exemplars.filter((exemplar) => {
               series: for (const i in selected) {
                 for (const name in chartData.series[selected[i]].labels) {
                   if (exemplar.seriesLabels[name] !== chartData.series[selected[i]].labels[name]) {
@@ -181,7 +184,7 @@ class Graph extends PureComponent<GraphProps, GraphState> {
     this.selectedSeriesIndexes = selected;
   };
 
-  handleSeriesHover = (index: number) => () => {
+  handleSeriesHover = (index: number) => (): void => {
     if (this.rafID) {
       cancelAnimationFrame(this.rafID);
     }
@@ -193,18 +196,18 @@ class Graph extends PureComponent<GraphProps, GraphState> {
     });
   };
 
-  handleLegendMouseOut = () => {
+  handleLegendMouseOut = (): void => {
     cancelAnimationFrame(this.rafID);
     this.plotSetAndDraw();
   };
 
-  handleResize = () => {
+  handleResize = (): void => {
     if (isPresent(this.$chart)) {
       this.plot(this.$chart.getData() as (GraphSeries | GraphExemplar)[]);
     }
   };
 
-  render() {
+  render(): JSX.Element {
     const { chartData, selectedExemplarLabels } = this.state;
     const selectedLabels = selectedExemplarLabels as {
       exemplar: { [key: string]: string };
