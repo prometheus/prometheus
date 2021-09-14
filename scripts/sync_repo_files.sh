@@ -37,7 +37,7 @@ if [ -z "${GITHUB_TOKEN}" ]; then
 fi
 
 # List of files that should be synced.
-SYNC_FILES="CODE_OF_CONDUCT.md LICENSE Makefile.common SECURITY.md .yamllint"
+SYNC_FILES="CODE_OF_CONDUCT.md LICENSE Makefile.common SECURITY.md .yamllint .github/workflows/golangci-lint.yml"
 
 # Go to the root of the repo
 cd "$(git rev-parse --show-cdup)" || exit 1
@@ -96,6 +96,15 @@ check_license() {
   echo "$1" | grep --quiet --no-messages --ignore-case 'Apache License'
 }
 
+check_go() {
+  local org_repo
+  local default_branch
+  org_repo="$1"
+  default_branch="$2"
+
+  curl -sLf -o /dev/null "https://raw.githubusercontent.com/${org_repo}/${default_branch}/go.mod"
+}
+
 check_circleci_orb() {
   local org_repo
   local default_branch
@@ -136,10 +145,14 @@ process_repo() {
       echo "LICENSE in ${org_repo} is not apache, skipping."
       continue
     fi
+    if [[ "${source_file}" == '.github/workflows/golangci-lint.yml' ]] && ! check_go "${org_repo}" "${default_branch}" ; then
+      echo "${org_repo} is not Go, skipping .github/workflows/golangci-lint.yml."
+      continue
+    fi
     if [[ -z "${target_file}" ]]; then
       echo "${source_file} doesn't exist in ${org_repo}"
       case "${source_file}" in
-        CODE_OF_CONDUCT.md | SECURITY.md)
+        CODE_OF_CONDUCT.md | SECURITY.md | .github/workflows/golangci-lint.yml)
           echo "${source_file} missing in ${org_repo}, force updating."
           needs_update+=("${source_file}")
           ;;
@@ -171,6 +184,9 @@ process_repo() {
   git clone --quiet "https://github.com/${org_repo}.git" "${tmp_dir}/${org_repo}"
   cd "${tmp_dir}/${org_repo}" || return 1
   git checkout -b "${branch}" || return 1
+
+  # If we need to add an Actions file this directory needs to be present.
+  mkdir -p "./.github/workflows"
 
   # Update the files in target repo by one from prometheus/prometheus.
   for source_file in "${needs_update[@]}"; do
