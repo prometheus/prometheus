@@ -418,7 +418,7 @@ func openBlock(path, blockID string) (*tsdb.DBReadOnly, tsdb.BlockReader, error)
 	return db, block, nil
 }
 
-func analyzeBlock(path, blockID string, limit int) error {
+func analyzeBlock(path, blockID string, limit int, runExtended bool) error {
 	db, block, err := openBlock(path, blockID)
 	if err != nil {
 		return err
@@ -564,7 +564,11 @@ func analyzeBlock(path, blockID string, limit int) error {
 	fmt.Printf("\nHighest cardinality metric names:\n")
 	printInfo(postingInfos)
 
-	return analyzeCompaction(block, ir)
+	if runExtended {
+		return analyzeCompaction(block, ir)
+	}
+
+	return nil
 }
 
 func analyzeCompaction(block tsdb.BlockReader, indexr tsdb.IndexReader) (err error) {

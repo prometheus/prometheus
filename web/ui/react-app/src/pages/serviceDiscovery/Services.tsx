@@ -1,8 +1,7 @@
 import React, { FC } from 'react';
-import { RouteComponentProps } from '@reach/router';
 import { useFetch } from '../../hooks/useFetch';
 import { LabelsTable } from './LabelsTable';
-import { Target, Labels, DroppedTarget } from '../targets/target';
+import { DroppedTarget, Labels, Target } from '../targets/target';
 
 import { withStatusIndicator } from '../../components/withStatusIndicator';
 import { mapObjEntries } from '../../utils';
@@ -20,7 +19,10 @@ export interface TargetLabels {
   isDropped: boolean;
 }
 
-export const processSummary = (activeTargets: Target[], droppedTargets: DroppedTarget[]) => {
+export const processSummary = (
+  activeTargets: Target[],
+  droppedTargets: DroppedTarget[]
+): Record<string, { active: number; total: number }> => {
   const targets: Record<string, { active: number; total: number }> = {};
 
   // Get targets of each type along with the total and active end points
@@ -49,7 +51,7 @@ export const processSummary = (activeTargets: Target[], droppedTargets: DroppedT
   return targets;
 };
 
-export const processTargets = (activeTargets: Target[], droppedTargets: DroppedTarget[]) => {
+export const processTargets = (activeTargets: Target[], droppedTargets: DroppedTarget[]): Record<string, TargetLabels[]> => {
   const labels: Record<string, TargetLabels[]> = {};
 
   for (const target of activeTargets) {
@@ -106,7 +108,7 @@ ServiceDiscoveryContent.displayName = 'ServiceDiscoveryContent';
 
 const ServicesWithStatusIndicator = withStatusIndicator(ServiceDiscoveryContent);
 
-const ServiceDiscovery: FC<RouteComponentProps> = () => {
+const ServiceDiscovery: FC = () => {
   const pathPrefix = usePathPrefix();
   const { response, error, isLoading } = useFetch<ServiceMap>(`${pathPrefix}/${API_PATH}/targets`);
   return (

@@ -85,6 +85,7 @@ func (a *initAppender) GetRef(lset labels.Labels) (uint64, labels.Labels) {
 
 func (a *initAppender) Commit() error {
 	if a.app == nil {
+		a.head.metrics.activeAppenders.Dec()
 		return nil
 	}
 	return a.app.Commit()
@@ -92,6 +93,7 @@ func (a *initAppender) Commit() error {
 
 func (a *initAppender) Rollback() error {
 	if a.app == nil {
+		a.head.metrics.activeAppenders.Dec()
 		return nil
 	}
 	return a.app.Rollback()

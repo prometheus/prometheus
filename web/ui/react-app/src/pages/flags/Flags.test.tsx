@@ -67,11 +67,7 @@ describe('Flags', () => {
 
   it('is sorted by flag by default', (): void => {
     const w = shallow(<FlagsContent data={sampleFlagsResponse} />);
-    const td = w
-      .find('tbody')
-      .find('td')
-      .find('span')
-      .first();
+    const td = w.find('tbody').find('td').find('span').first();
     expect(td.html()).toBe('<span>--alertmanager.notification-queue-capacity</span>');
   });
 
@@ -82,11 +78,7 @@ describe('Flags', () => {
       .find('td')
       .filterWhere((td): boolean => td.hasClass('Flag'));
     th.simulate('click');
-    const td = w
-      .find('tbody')
-      .find('td')
-      .find('span')
-      .first();
+    const td = w.find('tbody').find('td').find('span').first();
     expect(td.html()).toBe('<span>--web.user-assets</span>');
   });
 
@@ -97,7 +89,7 @@ describe('Flags', () => {
     const tds = w
       .find('tbody')
       .find('td')
-      .filterWhere(code => code.hasClass('flag-item'));
+      .filterWhere((code) => code.hasClass('flag-item'));
     expect(tds.length).toEqual(3);
   });
 
@@ -108,7 +100,7 @@ describe('Flags', () => {
     const tds = w
       .find('tbody')
       .find('td')
-      .filterWhere(code => code.hasClass('flag-value'));
+      .filterWhere((code) => code.hasClass('flag-value'));
     expect(tds.length).toEqual(1);
   });
 });

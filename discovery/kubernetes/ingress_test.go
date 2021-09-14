@@ -32,6 +32,7 @@ const (
 	TLSNo TLSMode = iota
 	TLSYes
 	TLSMixed
+	TLSWildcard
 )
 
 func makeIngress(tls TLSMode) *v1.Ingress {
@@ -81,6 +82,8 @@ func makeIngress(tls TLSMode) *v1.Ingress {
 		ret.Spec.TLS = []v1.IngressTLS{{Hosts: []string{"example.com", "test.example.com"}}}
 	case TLSMixed:
 		ret.Spec.TLS = []v1.IngressTLS{{Hosts: []string{"example.com"}}}
+	case TLSWildcard:
+		ret.Spec.TLS = []v1.IngressTLS{{Hosts: []string{"*.example.com"}}}
 	}
 
 	return ret
@@ -133,6 +136,8 @@ func makeIngressV1beta1(tls TLSMode) *v1beta1.Ingress {
 		ret.Spec.TLS = []v1beta1.IngressTLS{{Hosts: []string{"example.com", "test.example.com"}}}
 	case TLSMixed:
 		ret.Spec.TLS = []v1beta1.IngressTLS{{Hosts: []string{"example.com"}}}
+	case TLSWildcard:
+		ret.Spec.TLS = []v1beta1.IngressTLS{{Hosts: []string{"*.example.com"}}}
 	}
 
 	return ret
@@ -152,6 +157,8 @@ func expectedTargetGroups(ns string, tls TLSMode) map[string]*targetgroup.Group 
 		scheme2 = "https"
 	case TLSMixed:
 		scheme1 = "https"
+	case TLSWildcard:
+		scheme2 = "https"
 	}
 
 	key := fmt.Sprintf("ingress/%s/testingress", ns)

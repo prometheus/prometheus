@@ -13,7 +13,8 @@
     "sourceMap": true,
     "moduleResolution": "node",
     "esModuleInterop": true,
-    "allowSyntheticDefaultImports": true
+    "allowSyntheticDefaultImports": true,
+    "allowJs": true
   },
   "include": [
     "src/lang-promql"

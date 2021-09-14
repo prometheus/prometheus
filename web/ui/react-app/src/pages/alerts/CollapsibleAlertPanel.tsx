@@ -1,5 +1,5 @@
 import React, { FC, useState, Fragment } from 'react';
-import { Link } from '@reach/router';
+import { Link } from 'react-router-dom';
 import { Alert, Collapse, Table, Badge } from 'reactstrap';
 import { RuleStatus } from './AlertContents';
 import { Rule } from '../../types/types';

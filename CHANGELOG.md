@@ -1,3 +1,8 @@
+## 2.29.2 / 2021-08-27
+
+* [BUGFIX] Fix Kubernetes SD failing to discover Ingress in Kubernetes v1.22. #9205
+* [BUGFIX] Fix data race in loading write-ahead-log (WAL). #9259
+
 ## 2.29.1 / 2021-08-11
 
 * [BUGFIX] tsdb: align atomically accessed int64 to prevent panic in 32-bit

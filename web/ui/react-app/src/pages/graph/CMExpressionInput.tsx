@@ -49,7 +49,7 @@ export class HistoryCompleteStrategy implements CompleteStrategy {
   }
 
   promQL(context: CompletionContext): Promise<CompletionResult | null> | CompletionResult | null {
-    return Promise.resolve(this.complete.promQL(context)).then(res => {
+    return Promise.resolve(this.complete.promQL(context)).then((res) => {
       const { state, pos } = context;
       const tree = syntaxTree(state).resolve(pos, -1);
       const start = res != null ? res.from : tree.from;
@@ -61,7 +61,7 @@ export class HistoryCompleteStrategy implements CompleteStrategy {
       const historyItems: CompletionResult = {
         from: start,
         to: pos,
-        options: this.queryHistory.map(q => ({
+        options: this.queryHistory.map((q) => ({
           label: q.length < 80 ? q : q.slice(0, 76).concat('...'),
           detail: 'past query',
           apply: q,

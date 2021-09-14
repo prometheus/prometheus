@@ -62,24 +62,22 @@ const DataTable: FC<QueryResult> = ({ data }) => {
   const doFormat = data.result.length <= maxFormattableSize;
   switch (data.resultType) {
     case 'vector':
-      rows = (limitSeries(data.result) as InstantSample[]).map(
-        (s: InstantSample, index: number): ReactNode => {
-          return (
-            <tr key={index}>
-              <td>
-                <SeriesName labels={s.metric} format={doFormat} />
-              </td>
-              <td>{s.value[1]}</td>
-            </tr>
-          );
-        }
-      );
+      rows = (limitSeries(data.result) as InstantSample[]).map((s: InstantSample, index: number): ReactNode => {
+        return (
+          <tr key={index}>
+            <td>
+              <SeriesName labels={s.metric} format={doFormat} />
+            </td>
+            <td>{s.value[1]}</td>
+          </tr>
+        );
+      });
       limited = rows.length !== data.result.length;
       break;
     case 'matrix':
       rows = (limitSeries(data.result) as RangeSamples[]).map((s, index) => {
         const valueText = s.values
-          .map(v => {
+          .map((v) => {
             return v[1] + ' @' + v[0];
           })
           .join('\n');

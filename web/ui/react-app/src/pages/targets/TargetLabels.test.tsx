@@ -23,7 +23,7 @@ describe('targetLabels', () => {
   const targetLabels = shallow(<TargetLabels {...defaultProps} />);
 
   it('renders a div of series labels', () => {
-    const div = targetLabels.find('div').filterWhere(elem => elem.hasClass('series-labels-container'));
+    const div = targetLabels.find('div').filterWhere((elem) => elem.hasClass('series-labels-container'));
     expect(div).toHaveLength(1);
     expect(div.prop('id')).toEqual('series-labels-cortex/node-exporter_group/0-1');
   });
@@ -33,7 +33,7 @@ describe('targetLabels', () => {
     Object.keys(l).forEach((labelName: string): void => {
       const badge = targetLabels
         .find(Badge)
-        .filterWhere(badge => badge.children().text() === `${labelName}="${l[labelName]}"`);
+        .filterWhere((badge) => badge.children().text() === `${labelName}="${l[labelName]}"`);
       expect(badge).toHaveLength(1);
     });
     expect(targetLabels.find(Badge)).toHaveLength(3);

@@ -69,12 +69,7 @@ describe('DataTable', () => {
       const table = dataTable.find(Table);
       table.find('tr').forEach((row, idx) => {
         expect(row.find(SeriesName)).toHaveLength(1);
-        expect(
-          row
-            .find('td')
-            .at(1)
-            .text()
-        ).toEqual(`${idx}`);
+        expect(row.find('td').at(1).text()).toEqual(`${idx}`);
       });
     });
   });
@@ -83,7 +78,7 @@ describe('DataTable', () => {
     const dataTableProps: QueryResult = {
       data: {
         resultType: 'vector',
-        result: Array.from(Array(10001).keys()).map(i => {
+        result: Array.from(Array(10001).keys()).map((i) => {
           return {
             metric: {
               __name__: `metric_name_${i}`,
@@ -104,12 +99,7 @@ describe('DataTable', () => {
 
     it('renders a warning', () => {
       const alerts = dataTable.find(Alert);
-      expect(
-        alerts
-          .first()
-          .render()
-          .text()
-      ).toEqual('Warning: Fetched 10001 metrics, only displaying first 10000.');
+      expect(alerts.first().render().text()).toEqual('Warning: Fetched 10001 metrics, only displaying first 10000.');
     });
   });
 
@@ -117,7 +107,7 @@ describe('DataTable', () => {
     const dataTableProps: QueryResult = {
       data: {
         resultType: 'vector',
-        result: Array.from(Array(1001).keys()).map(i => {
+        result: Array.from(Array(1001).keys()).map((i) => {
           return {
             metric: {
               __name__: `metric_name_${i}`,
@@ -133,12 +123,9 @@ describe('DataTable', () => {
 
     it('renders a warning', () => {
       const alerts = dataTable.find(Alert);
-      expect(
-        alerts
-          .first()
-          .render()
-          .text()
-      ).toEqual('Notice: Showing more than 1000 series, turning off label formatting for performance reasons.');
+      expect(alerts.first().render().text()).toEqual(
+        'Notice: Showing more than 1000 series, turning off label formatting for performance reasons.'
+      );
     });
   });
 

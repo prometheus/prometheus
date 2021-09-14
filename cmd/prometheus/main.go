@@ -107,6 +107,7 @@ type flagConfig struct {
 	outageTolerance     model.Duration
 	resendDelay         model.Duration
 	web                 web.Options
+	scrape              scrape.Options
 	tsdb                tsdbOptions
 	lookbackDelta       model.Duration
 	webTimeout          model.Duration
@@ -152,6 +153,9 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 			case "memory-snapshot-on-shutdown":
 				c.tsdb.EnableMemorySnapshotOnShutdown = true
 				level.Info(logger).Log("msg", "Experimental memory snapshot on shutdown enabled")
+			case "extra-scrape-metrics":
+				c.scrape.ExtraMetrics = true
+				level.Info(logger).Log("msg", "Experimental additional scrape metrics")
 			case "":
 				continue
 			default:
@@ -291,8 +295,11 @@ func main() {
 	a.Flag("rules.alert.resend-delay", "Minimum amount of time to wait before resending an alert to Alertmanager.").
 		Default("1m").SetValue(&cfg.resendDelay)
 
-	a.Flag("scrape.adjust-timestamps", "Adjust scrape timestamps by up to 2ms to align them to the intended schedule. See https://github.com/prometheus/prometheus/issues/7846 for more context. Experimental. This flag will be removed in a future release.").
+	a.Flag("scrape.adjust-timestamps", "Adjust scrape timestamps by up to `scrape.timestamp-tolerance` to align them to the intended schedule. See https://github.com/prometheus/prometheus/issues/7846 for more context. Experimental. This flag will be removed in a future release.").
 		Hidden().Default("true").BoolVar(&scrape.AlignScrapeTimestamps)
+
+	a.Flag("scrape.timestamp-tolerance", "Timestamp tolerance. See https://github.com/prometheus/prometheus/issues/7846 for more context. Experimental. This flag will be removed in a future release.").
+		Hidden().Default("2ms").DurationVar(&scrape.ScrapeTimestampTolerance)
 
 	a.Flag("alertmanager.notification-queue-capacity", "The capacity of the queue for pending Alertmanager notifications.").
 		Default("10000").IntVar(&cfg.notifier.QueueCapacity)
@@ -312,7 +319,7 @@ func main() {
 	a.Flag("query.max-samples", "Maximum number of samples a single query can load into memory. Note that queries will fail if they try to load more samples than this into memory, so this also limits the number of samples a query can return.").
 		Default("50000000").IntVar(&cfg.queryMaxSamples)
 
-	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-at-modifier, promql-negative-offset, remote-write-receiver. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
+	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-at-modifier, promql-negative-offset, remote-write-receiver, extra-scrape-metrics. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
 		Default("").StringsVar(&cfg.featureList)
 
 	promlogflag.AddFlags(a, &cfg.promlogConfig)
@@ -457,7 +464,7 @@ func main() {
 		ctxNotify, cancelNotify = context.WithCancel(context.Background())
 		discoveryManagerNotify  = discovery.NewManager(ctxNotify, log.With(logger, "component", "discovery manager notify"), discovery.Name("notify"))
 
-		scrapeManager = scrape.NewManager(log.With(logger, "component", "scrape manager"), fanoutStorage)
+		scrapeManager = scrape.NewManager(&cfg.scrape, log.With(logger, "component", "scrape manager"), fanoutStorage)
 
 		opts = promql.EngineOpts{
 			Logger:                   log.With(logger, "component", "query engine"),

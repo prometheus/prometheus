@@ -24,16 +24,16 @@ describe('EndpointLink', () => {
     expect(anchor.children().text()).toEqual('http://100.99.128.71:9115/probe');
     expect(endpointLink.find('br')).toHaveLength(1);
     expect(badges).toHaveLength(2);
-    const moduleLabel = badges.filterWhere(badge => badge.children().text() === 'module="http_2xx"');
+    const moduleLabel = badges.filterWhere((badge) => badge.children().text() === 'module="http_2xx"');
     expect(moduleLabel.length).toEqual(1);
-    const targetLabel = badges.filterWhere(badge => badge.children().text() === 'target="http://some-service"');
+    const targetLabel = badges.filterWhere((badge) => badge.children().text() === 'target="http://some-service"');
     expect(targetLabel.length).toEqual(1);
   });
 
   it('renders an alert if url is invalid', () => {
     const endpointLink = shallow(<EndpointLink endpoint={'afdsacas'} globalUrl={'afdsacas'} />);
     const err = endpointLink.find(Alert);
-    expect(err.render().text()).toEqual('Error: Invalid URL');
+    expect(err.render().text()).toEqual('Error: Invalid URL: afdsacas');
   });
 
   it('handles params with multiple values correctly', () => {

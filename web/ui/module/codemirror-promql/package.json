@@ -6,11 +6,12 @@
   "module": "esm/index.js",
   "scripts": {
     "start": "webpack-dev-server --config webpack.config.cjs --open",
-    "build": "npm run build-lib && npm run build-app",
-    "build-lib": "bash ./build.sh",
-    "build-app": "webpack --config webpack.config.cjs",
-    "test": "ts-mocha -p tsconfig.json src/**/*.test.ts",
-    "test-coverage": "nyc ts-mocha -p ./tsconfig.json ./**/*.test.ts",
+    "build": "npm run build:grammar && npm run build:lib && npm run build:app",
+    "build:grammar": "lezer-generator src/lang-promql/grammar/promql.grammar -o src/lang-promql/grammar/parser",
+    "build:lib": "bash ./build.sh",
+    "build:app": "webpack --config webpack.config.cjs",
+    "test": "npm run build:grammar && ts-mocha -p tsconfig.json src/**/*.test.ts",
+    "test-coverage": "npm run build:grammar && nyc ts-mocha -p ./tsconfig.json ./**/*.test.ts",
     "codecov": "nyc report --reporter=text-lcov > coverage.lcov && codecov",
     "lint": "eslint src/ --ext .ts",
     "lint:fix": "eslint --fix src/ --ext .ts"
@@ -32,7 +33,6 @@
   },
   "homepage": "https://github.com/prometheus-community/codemirror-promql/blob/master/README.md",
   "dependencies": {
-    "lezer-promql": "^0.20.0",
     "lru-cache": "^6.0.0"
   },
   "devDependencies": {
@@ -59,6 +59,8 @@
     "eslint-plugin-prettier": "^3.1.4",
     "html-webpack-plugin": "^4.3.0",
     "isomorphic-fetch": "^3.0.0",
+    "lezer": "^0.13.1",
+    "lezer-generator": "^0.13.1",
     "mocha": "^8.1.2",
     "nock": "^13.0.11",
     "nyc": "^15.1.0",
@@ -77,7 +79,8 @@
     "@codemirror/language": "^0.18.0",
     "@codemirror/lint": "^0.18.1",
     "@codemirror/state": "^0.18.2",
-    "@codemirror/view": "^0.18.1"
+    "@codemirror/view": "^0.18.1",
+    "lezer": "^0.13.0"
   },
   "prettier": {
     "singleQuote": true,

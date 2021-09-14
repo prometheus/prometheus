@@ -6,7 +6,7 @@ export interface QueryStats {
   resultSeries: number;
 }
 
-const QueryStatsView: FC<QueryStats> = props => {
+const QueryStatsView: FC<QueryStats> = (props) => {
   const { loadTime, resolution, resultSeries } = props;
 
   return (

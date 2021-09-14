@@ -17,6 +17,6 @@ export const ThemeContext = React.createContext<ThemeCtx>({
   setTheme: (s: themeSetting) => {},
 });
 
-export const useTheme = () => {
+export const useTheme = (): ThemeCtx => {
   return React.useContext(ThemeContext);
 };

@@ -114,6 +114,7 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64, mmappedChunks 
 	wg.Add(1)
 	exemplarsInput = make(chan record.RefExemplar, 300)
 	go func(input <-chan record.RefExemplar) {
+		var err error
 		defer wg.Done()
 		for e := range input {
 			ms := h.series.getByID(e.Ref)
@@ -413,6 +414,7 @@ func (h *Head) processWALSamples(
 const (
 	chunkSnapshotRecordTypeSeries     uint8 = 1
 	chunkSnapshotRecordTypeTombstones uint8 = 2
+	chunkSnapshotRecordTypeExemplars  uint8 = 3
 )
 
 type chunkSnapshotRecord struct {
@@ -537,6 +539,10 @@ const chunkSnapshotPrefix = "chunk_snapshot."
 // The chunk snapshot is stored in a directory named chunk_snapshot.N.M and is written
 // using the WAL package. N is the last WAL segment present during snapshotting and
 // M is the offset in segment N upto which data was written.
+//
+// The snapshot first contains all series (each in individual records and not sorted), followed by
+// tombstones (a single record), and finally exemplars (>= 1 record). Exemplars are in the order they
+// were written to the circular buffer.
 func (h *Head) ChunkSnapshot() (*ChunkSnapshotStats, error) {
 	if h.wal == nil {
 		// If we are not storing any WAL, does not make sense to take a snapshot too.
@@ -563,7 +569,7 @@ func (h *Head) ChunkSnapshot() (*ChunkSnapshotStats, error) {
 		return stats, nil
 	}
 
-	snapshotName := fmt.Sprintf(chunkSnapshotPrefix+"%06d.%010d", wlast, woffset)
+	snapshotName := chunkSnapshotDir(wlast, woffset)
 
 	cpdir := filepath.Join(h.opts.ChunkDirRoot, snapshotName)
 	cpdirtmp := cpdir + ".tmp"
@@ -587,6 +593,7 @@ func (h *Head) ChunkSnapshot() (*ChunkSnapshotStats, error) {
 		buf  []byte
 		recs [][]byte
 	)
+	// Add all series to the snapshot.
 	stripeSize := h.series.size
 	for i := 0; i < stripeSize; i++ {
 		h.series.locks[i].RLock()
@@ -622,11 +629,61 @@ func (h *Head) ChunkSnapshot() (*ChunkSnapshotStats, error) {
 		return stats, errors.Wrap(err, "encode tombstones")
 	}
 	recs = append(recs, rec)
-
-	// Flush remaining records.
+	// Flush remaining series records and tombstones.
 	if err := cp.Log(recs...); err != nil {
 		return stats, errors.Wrap(err, "flush records")
 	}
+	buf = buf[:0]
+
+	// Add exemplars in the snapshot.
+	// We log in batches, with each record having upto 10000 exemplars.
+	// Assuming 100 bytes (overestimate) per exemplar, that's ~1MB.
+	maxExemplarsPerRecord := 10000
+	batch := make([]record.RefExemplar, 0, maxExemplarsPerRecord)
+	enc := record.Encoder{}
+	flushExemplars := func() error {
+		if len(batch) == 0 {
+			return nil
+		}
+		buf = buf[:0]
+		encbuf := encoding.Encbuf{B: buf}
+		encbuf.PutByte(chunkSnapshotRecordTypeExemplars)
+		enc.EncodeExemplarsIntoBuffer(batch, &encbuf)
+		if err := cp.Log(encbuf.Get()); err != nil {
+			return errors.Wrap(err, "log exemplars")
+		}
+		buf, batch = buf[:0], batch[:0]
+		return nil
+	}
+	err = h.exemplars.IterateExemplars(func(seriesLabels labels.Labels, e exemplar.Exemplar) error {
+		if len(batch) >= maxExemplarsPerRecord {
+			if err := flushExemplars(); err != nil {
+				return errors.Wrap(err, "flush exemplars")
+			}
+		}
+
+		ms := h.series.getByHash(seriesLabels.Hash(), seriesLabels)
+		if ms == nil {
+			// It is possible that exemplar refers to some old series. We discard such exemplars.
+			return nil
+		}
+		batch = append(batch, record.RefExemplar{
+			Ref:    ms.ref,
+			T:      e.Ts,
+			V:      e.Value,
+			Labels: e.Labels,
+		})
+		return nil
+	})
+	if err != nil {
+		return stats, errors.Wrap(err, "iterate exemplars")
+	}
+
+	// Flush remaining exemplars.
+	if err := flushExemplars(); err != nil {
+		return stats, errors.Wrap(err, "flush exemplars at the end")
+	}
+
 	if err := cp.Close(); err != nil {
 		return stats, errors.Wrap(err, "close chunk snapshot")
 	}
@@ -634,13 +691,17 @@ func (h *Head) ChunkSnapshot() (*ChunkSnapshotStats, error) {
 		return stats, errors.Wrap(err, "rename chunk snapshot directory")
 	}
 
-	if err := DeleteChunkSnapshots(h.opts.ChunkDirRoot, cslast, csoffset); err != nil {
+	if err := DeleteChunkSnapshots(h.opts.ChunkDirRoot, wlast, woffset); err != nil {
 		// Leftover old chunk snapshots do not cause problems down the line beyond
 		// occupying disk space.
 		// They will just be ignored since a higher chunk snapshot exists.
 		level.Error(h.logger).Log("msg", "delete old chunk snapshots", "err", err)
 	}
 	return stats, nil
+}
+
+func chunkSnapshotDir(wlast, woffset int) string {
+	return fmt.Sprintf(chunkSnapshotPrefix+"%06d.%010d", wlast, woffset)
 }
 
 func (h *Head) performChunkSnapshot() error {
@@ -667,8 +728,9 @@ func LastChunkSnapshot(dir string) (string, int, int, error) {
 	if err != nil {
 		return "", 0, 0, err
 	}
-	// Traverse list backwards since there may be multiple chunk snapshots left.
-	for i := len(files) - 1; i >= 0; i-- {
+	maxIdx, maxOffset := -1, -1
+	maxFileName := ""
+	for i := 0; i < len(files); i++ {
 		fi := files[i]
 
 		if !strings.HasPrefix(fi.Name(), chunkSnapshotPrefix) {
@@ -693,9 +755,15 @@ func LastChunkSnapshot(dir string) (string, int, int, error) {
 			continue
 		}
 
-		return filepath.Join(dir, fi.Name()), idx, offset, nil
+		if idx > maxIdx || (idx == maxIdx && offset > maxOffset) {
+			maxIdx, maxOffset = idx, offset
+			maxFileName = filepath.Join(dir, fi.Name())
+		}
 	}
-	return "", 0, 0, record.ErrNotFound
+	if maxFileName == "" {
+		return "", 0, 0, record.ErrNotFound
+	}
+	return maxFileName, maxIdx, maxOffset, nil
 }
 
 // DeleteChunkSnapshots deletes all chunk snapshots in a directory below a given index.
@@ -726,7 +794,7 @@ func DeleteChunkSnapshots(dir string, maxIndex, maxOffset int) error {
 			continue
 		}
 
-		if idx <= maxIndex && offset < maxOffset {
+		if idx < maxIndex || (idx == maxIndex && offset < maxOffset) {
 			if err := os.RemoveAll(filepath.Join(dir, fi.Name())); err != nil {
 				errs.Add(err)
 			}
@@ -766,6 +834,9 @@ func (h *Head) loadChunkSnapshot() (int, int, map[uint64]*memSeries, error) {
 		recordChan       = make(chan chunkSnapshotRecord, 5*n)
 		shardedRefSeries = make([]map[uint64]*memSeries, n)
 		errChan          = make(chan error, n)
+		refSeries        map[uint64]*memSeries
+		exemplarBuf      []record.RefExemplar
+		dec              record.Decoder
 	)
 
 	wg.Add(n)
@@ -852,15 +923,58 @@ Outer:
 				loopErr = errors.Wrap(err, "iterate tombstones")
 				break Outer
 			}
+
+		case chunkSnapshotRecordTypeExemplars:
+			// Exemplars are at the end of snapshot. So all series are loaded at this point.
+			if len(refSeries) == 0 {
+				close(recordChan)
+				wg.Wait()
+
+				refSeries = make(map[uint64]*memSeries, numSeries)
+				for _, shard := range shardedRefSeries {
+					for k, v := range shard {
+						refSeries[k] = v
+					}
+				}
+			}
+
+			decbuf := encoding.Decbuf{B: rec[1:]}
+
+			exemplarBuf = exemplarBuf[:0]
+			exemplarBuf, err = dec.ExemplarsFromBuffer(&decbuf, exemplarBuf)
+			if err != nil {
+				loopErr = errors.Wrap(err, "exemplars from buffer")
+				break Outer
+			}
+
+			for _, e := range exemplarBuf {
+				ms, ok := refSeries[e.Ref]
+				if !ok {
+					unknownRefs++
+					continue
+				}
+
+				if err := h.exemplars.AddExemplar(ms.lset, exemplar.Exemplar{
+					Labels: e.Labels,
+					Value:  e.V,
+					Ts:     e.T,
+				}); err != nil {
+					loopErr = errors.Wrap(err, "append exemplar")
+					break Outer
+				}
+			}
+
 		default:
 			// This is a record type we don't understand. It is either and old format from earlier versions,
 			// or a new format and the code was rolled back to old version.
 			loopErr = errors.Errorf("unsuported snapshot record type 0b%b", rec[0])
+			break Outer
 		}
-
 	}
-	close(recordChan)
-	wg.Wait()
+	if len(refSeries) == 0 {
+		close(recordChan)
+		wg.Wait()
+	}
 
 	close(errChan)
 	merr := tsdb_errors.NewMulti(errors.Wrap(loopErr, "decode loop"))
@@ -875,10 +989,13 @@ Outer:
 		return -1, -1, nil, errors.Wrap(r.Err(), "read records")
 	}
 
-	refSeries := make(map[uint64]*memSeries, numSeries)
-	for _, shard := range shardedRefSeries {
-		for k, v := range shard {
-			refSeries[k] = v
+	if len(refSeries) == 0 {
+		// We had no exemplar record, so we have to build the map here.
+		refSeries = make(map[uint64]*memSeries, numSeries)
+		for _, shard := range shardedRefSeries {
+			for k, v := range shard {
+				refSeries[k] = v
+			}
 		}
 	}
 
