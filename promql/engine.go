@@ -1643,7 +1643,7 @@ func (ev *evaluator) vectorSelectorSingle(it *storage.MemoizedSeriesIterator, no
 
 	if ok {
 		t, v = it.Values()
-		if t < refTime + ev.interval {
+			if t < refTime+ev.interval {
 			return t, v, true
 		}
 	}
