@@ -81,10 +81,9 @@ func (importer *ruleImporter) importAll(ctx context.Context) (errs []error) {
 	for name, group := range importer.groups {
 		level.Info(importer.logger).Log("backfiller", "processing group", "name", name)
 
-		stimeWithAlignment := group.EvalTimestamp(importer.config.start.UnixNano())
 		for i, r := range group.Rules() {
 			level.Info(importer.logger).Log("backfiller", "processing rule", "id", i, "name", r.Name())
-			if err := importer.importRule(ctx, r.Query().String(), r.Name(), r.Labels(), stimeWithAlignment, importer.config.end, group); err != nil {
+			if err := importer.importRule(ctx, r.Query().String(), r.Name(), r.Labels(), importer.config.start, importer.config.end, group); err != nil {
 				errs = append(errs, err)
 			}
 		}
