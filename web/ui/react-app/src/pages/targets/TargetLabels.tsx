@@ -14,7 +14,7 @@ export interface TargetLabelsProps {
   scrapePool: string;
 }
 
-const formatLabels = (labels: Labels): string[] => Object.keys(labels).map(key => `${key}="${labels[key]}"`);
+const formatLabels = (labels: Labels): string[] => Object.keys(labels).map((key) => `${key}="${labels[key]}"`);
 
 const TargetLabels: FC<TargetLabelsProps> = ({ discoveredLabels, labels, idx, scrapePool }) => {
   const [tooltipOpen, setTooltipOpen] = useState(false);
@@ -25,7 +25,7 @@ const TargetLabels: FC<TargetLabelsProps> = ({ discoveredLabels, labels, idx, sc
   return (
     <>
       <div id={id} className="series-labels-container">
-        {Object.keys(labels).map(labelName => {
+        {Object.keys(labels).map((labelName) => {
           return (
             <Badge color="primary" className="mr-1" key={labelName}>
               {`${labelName}="${labels[labelName]}"`}

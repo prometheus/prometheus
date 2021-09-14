@@ -15,6 +15,7 @@ package kubernetes
 
 import (
 	"context"
+	"strings"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -193,18 +194,16 @@ func (i *Ingress) buildIngress(ingress ingressAdaptor) *targetgroup.Group {
 	}
 	tg.Labels = ingressLabels(ingress)
 
-	tlsHosts := make(map[string]struct{})
-	for _, host := range ingress.tlsHosts() {
-		tlsHosts[host] = struct{}{}
-	}
-
 	for _, rule := range ingress.rules() {
+		scheme := "http"
 		paths := pathsFromIngressPaths(rule.paths())
 
-		scheme := "http"
-		_, isTLS := tlsHosts[rule.host()]
-		if isTLS {
-			scheme = "https"
+	out:
+		for _, pattern := range ingress.tlsHosts() {
+			if matchesHostnamePattern(pattern, rule.host()) {
+				scheme = "https"
+				break out
+			}
 		}
 
 		for _, path := range paths {
@@ -218,4 +217,34 @@ func (i *Ingress) buildIngress(ingress ingressAdaptor) *targetgroup.Group {
 	}
 
 	return tg
+}
+
+// matchesHostnamePattern returns true if the host matches a wildcard DNS
+// pattern or pattern and host are equal.
+func matchesHostnamePattern(pattern, host string) bool {
+	if pattern == host {
+		return true
+	}
+
+	patternParts := strings.Split(pattern, ".")
+	hostParts := strings.Split(host, ".")
+
+	// If the first element of the pattern is not a wildcard, give up.
+	if len(patternParts) == 0 || patternParts[0] != "*" {
+		return false
+	}
+
+	// A wildcard match require the pattern to have the same length as the host
+	// path.
+	if len(patternParts) != len(hostParts) {
+		return false
+	}
+
+	for i := 1; i < len(patternParts); i++ {
+		if patternParts[i] != hostParts[i] {
+			return false
+		}
+	}
+
+	return true
 }

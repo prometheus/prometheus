@@ -27,7 +27,7 @@ import {
   numberTerms,
   snippets,
 } from './promql.terms';
-import { EqlSingle, Neq } from 'lezer-promql';
+import { EqlSingle, Neq } from '../grammar/parser.terms';
 import { syntaxTree } from '@codemirror/language';
 import { newCompleteStrategy } from './index';
 

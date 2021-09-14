@@ -413,7 +413,7 @@ func TestResize(t *testing.T) {
 			expectedMigrated:  50,
 		},
 		{
-			name:              "Zero",
+			name:              "ShrinkToZero",
 			startSize:         100,
 			newCount:          0,
 			expectedSeries:    []int{},
@@ -432,6 +432,14 @@ func TestResize(t *testing.T) {
 			name:              "NegativeToNegative",
 			startSize:         -1,
 			newCount:          -2,
+			expectedSeries:    []int{},
+			notExpectedSeries: []int{},
+			expectedMigrated:  0,
+		},
+		{
+			name:              "GrowFromZero",
+			startSize:         0,
+			newCount:          10,
 			expectedSeries:    []int{},
 			notExpectedSeries: []int{},
 			expectedMigrated:  0,
@@ -477,16 +485,27 @@ func TestResize(t *testing.T) {
 	}
 }
 
-func BenchmarkAddExemplar(t *testing.B) {
-	exs, err := NewCircularExemplarStorage(int64(t.N), eMetrics)
-	require.NoError(t, err)
-	es := exs.(*CircularExemplarStorage)
+func BenchmarkAddExemplar(b *testing.B) {
+	// We need to include these labels since we do length calculation
+	// before adding.
+	exLabels := labels.Labels{{Name: "traceID", Value: "89620921"}}
 
-	for i := 0; i < t.N; i++ {
-		l := labels.FromStrings("service", strconv.Itoa(i))
+	for _, n := range []int{10000, 100000, 1000000} {
+		b.Run(fmt.Sprintf("%d", n), func(b *testing.B) {
+			exs, err := NewCircularExemplarStorage(int64(n), eMetrics)
+			require.NoError(b, err)
+			es := exs.(*CircularExemplarStorage)
 
-		err = es.AddExemplar(l, exemplar.Exemplar{Value: float64(i), Ts: int64(i)})
-		require.NoError(t, err)
+			b.ResetTimer()
+			l := labels.Labels{{Name: "service", Value: strconv.Itoa(0)}}
+			for i := 0; i < n; i++ {
+				if i%100 == 0 {
+					l = labels.Labels{{Name: "service", Value: strconv.Itoa(i)}}
+				}
+				err = es.AddExemplar(l, exemplar.Exemplar{Value: float64(i), Ts: int64(i), Labels: exLabels})
+				require.NoError(b, err)
+			}
+		})
 	}
 }
 

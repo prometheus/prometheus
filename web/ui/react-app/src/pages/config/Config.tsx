@@ -1,5 +1,4 @@
 import React, { useState, FC } from 'react';
-import { RouteComponentProps } from '@reach/router';
 import { Button } from 'reactstrap';
 import CopyToClipboard from 'react-copy-to-clipboard';
 
@@ -28,7 +27,7 @@ export const ConfigContent: FC<ConfigContentProps> = ({ error, data }) => {
       <h2>
         Configuration&nbsp;
         <CopyToClipboard
-          text={config!}
+          text={config ? config : ''}
           onCopy={(_, result) => {
             setCopied(result);
             setTimeout(setCopied, 1500);
@@ -44,7 +43,7 @@ export const ConfigContent: FC<ConfigContentProps> = ({ error, data }) => {
   );
 };
 
-const Config: FC<RouteComponentProps> = () => {
+const Config: FC = () => {
   const pathPrefix = usePathPrefix();
   const { response, error } = useFetch<YamlConfig>(`${pathPrefix}/${API_PATH}/status/config`);
   return <ConfigContent error={error} data={response.data} />;

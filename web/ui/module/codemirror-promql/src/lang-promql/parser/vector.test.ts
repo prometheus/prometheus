@@ -14,7 +14,7 @@
 import { buildVectorMatching } from './vector';
 import { createEditorState } from '../../test/utils';
 import { walkThrough } from './path-finder';
-import { BinaryExpr, Expr } from 'lezer-promql';
+import { BinaryExpr, Expr } from '../grammar/parser.terms';
 import chai from 'chai';
 import { syntaxTree } from '@codemirror/language';
 import { VectorMatchCardinality } from '../types';

@@ -11,8 +11,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// +build !windows,!openbsd,!netbsd,!solaris
-// +build !386
+//go:build !windows && !openbsd && !netbsd && !solaris && !386
+// +build !windows,!openbsd,!netbsd,!solaris,!386
 
 package runtime
 

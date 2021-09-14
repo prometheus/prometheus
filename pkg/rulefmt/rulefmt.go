@@ -239,6 +239,7 @@ func testTemplateParsing(rl *RuleNode) (errs []error) {
 			model.Time(timestamp.FromTime(time.Now())),
 			nil,
 			nil,
+			nil,
 		)
 		return tmpl.ParseTest()
 	}
