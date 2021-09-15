@@ -778,8 +778,7 @@ describe('autocomplete promQL test', () => {
     },
     {
       title: 'offline function/aggregation autocompletion in aggregation 4',
-      expr:
-        'sum by (instance, job) ( sum_over(scrape_series_added[1h])) / sum by (instance, job) (sum_over_time(scrape_samples_scraped[1h])) > 0.1 and sum by(instance, job) (scrape_samples_scraped{) > 100',
+      expr: 'sum by (instance, job) ( sum_over(scrape_series_added[1h])) / sum by (instance, job) (sum_over_time(scrape_samples_scraped[1h])) > 0.1 and sum by(instance, job) (scrape_samples_scraped{) > 100',
       pos: 33,
       expectedResult: {
         options: ([] as Completion[]).concat(functionIdentifierTerms, aggregateOpTerms, snippets),
