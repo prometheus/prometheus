@@ -28,7 +28,7 @@ export function createEditorState(expr: string): EditorState {
   });
 }
 
-export function mockPrometheusServer() {
+export function mockPrometheusServer(): void {
   nock('http://localhost:8080')
     .get('/api/v1/label/__name__/values')
     .query(true)

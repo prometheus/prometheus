@@ -14,6 +14,7 @@
 import { EditorView } from '@codemirror/view';
 import { Diagnostic, linter } from '@codemirror/lint';
 import { HybridLint } from './hybrid';
+import { Extension } from '@codemirror/state';
 
 type lintFunc = (view: EditorView) => readonly Diagnostic[] | Promise<readonly Diagnostic[]>;
 
@@ -27,6 +28,6 @@ export function newLintStrategy(): LintStrategy {
   return new HybridLint();
 }
 
-export function promQLLinter(callbackFunc: (this: LintStrategy) => lintFunc, thisArg: LintStrategy) {
+export function promQLLinter(callbackFunc: (this: LintStrategy) => lintFunc, thisArg: LintStrategy): Extension {
   return linter(callbackFunc.call(thisArg));
 }

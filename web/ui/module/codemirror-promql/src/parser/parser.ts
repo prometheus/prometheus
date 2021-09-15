@@ -73,7 +73,7 @@ export class Parser {
     });
   }
 
-  analyze() {
+  analyze(): void {
     // when you are at the root of the tree, the first node is not `Expr` but a node with no name.
     // So to be able to iterate other the node relative to the promql node, we have to get the first child at the beginning
     this.checkAST(this.tree.topNode.firstChild);

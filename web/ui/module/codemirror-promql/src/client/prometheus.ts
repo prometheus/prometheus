@@ -55,6 +55,7 @@ export interface CacheConfig {
 export interface PrometheusConfig {
   url: string;
   lookbackInterval?: number;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   httpErrorHandler?: (error: any) => void;
   fetchFn?: FetchFn;
   // cache will allow user to change the configuration of the cached Prometheus client (which is used by default)
@@ -79,6 +80,7 @@ const serviceUnavailable = 503;
 export class HTTPPrometheusClient implements PrometheusClient {
   private readonly lookbackInterval = 60 * 60 * 1000 * 12; //12 hours
   private readonly url: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private readonly errorHandler?: (error: any) => void;
   private readonly httpMethod: 'POST' | 'GET' = 'POST';
   // For some reason, just assigning via "= fetch" here does not end up executing fetch correctly
