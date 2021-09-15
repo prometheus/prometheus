@@ -272,10 +272,7 @@ class Cache {
         }
         const labelValues = currentAssociation.get(key);
         if (labelValues === undefined) {
-          currentAssociation.set(
-            key,
-            new Set<string>([value])
-          );
+          currentAssociation.set(key, new Set<string>([value]));
         } else {
           labelValues.add(value);
         }

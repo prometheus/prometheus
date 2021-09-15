@@ -11,3 +11,4 @@
 /.npmignore
 /.gitignore
 /.eslintrc.js
+/.nyc_output

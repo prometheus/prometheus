@@ -13,8 +13,39 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-set -ex
+set -e
+current=$(pwd)
 
-# build the lib (both ES2015 and CommonJS)
-tsc --module ES2015 --target ES2015 --outDir dist/esm
-tsc --module commonjs --target es5 --outDir dist/cjs --downlevelIteration
+buildOrder=(module/codemirror-promql)
+
+function buildModule() {
+  for module in "${buildOrder[@]}"; do
+    cd "${module}"
+    echo "build ${module}"
+    npm run build
+    cd "${current}"
+  done
+}
+
+function buildReactApp() {
+  cd react-app
+  echo "build react-app"
+  npm run build
+  cd "${current}"
+  rm -rf ./static/react
+  mv ./react-app/build ./static/react
+}
+
+for i in "$@"; do
+  case ${i} in
+  --all)
+    buildModule
+    buildReactApp
+    shift
+    ;;
+  --build-module)
+    buildModule
+    shift
+    ;;
+  esac
+done
