@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/mitchellh/hashstructure/v2"
 	client_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
@@ -746,7 +747,30 @@ func verifyPresence(t *testing.T, tSets map[poolKey]map[string]*targetgroup.Grou
 	}
 }
 
-func TestTargetSetRecreatesTargetGroupsEveryRun(t *testing.T) {
+func verifyAbsence(t *testing.T, tSets map[poolKey]map[string]*targetgroup.Group, poolKey poolKey) {
+	t.Helper()
+	if _, ok := tSets[poolKey]; ok {
+		t.Fatalf("'%s' should be absent from Pool keys: %v", poolKey, tSets)
+	}
+}
+
+func verifyLen(t *testing.T, tSets map[poolKey]map[string]*targetgroup.Group, exp int) {
+	t.Helper()
+	if len(tSets) != exp {
+		t.Fatalf("Invalid number of Pool keys: expected %d, got %d: %v", exp, len(tSets), tSets)
+	}
+}
+
+func pk(setName string, config Config) poolKey {
+	etag, _ := hashstructure.Hash(config, hashstructure.FormatV2, nil)
+	p := fmt.Sprintf("static/%d", etag)
+	return poolKey{
+		setName:  setName,
+		provider: p,
+	}
+}
+
+func TestTargetSetRecreatesTargetGroupsOnConfigChange(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	discoveryManager := NewManager(ctx, log.NewNopLogger())
@@ -759,10 +783,11 @@ func TestTargetSetRecreatesTargetGroupsEveryRun(t *testing.T) {
 		},
 	}
 	discoveryManager.ApplyConfig(c)
-
 	<-discoveryManager.SyncCh()
-	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "static/0"}, "{__address__=\"foo:9090\"}", true)
-	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "static/0"}, "{__address__=\"bar:9090\"}", true)
+	p := pk("prometheus", c["prometheus"][0])
+	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"foo:9090\"}", true)
+	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"bar:9090\"}", true)
+	verifyLen(t, discoveryManager.targets, 1)
 
 	c["prometheus"] = Configs{
 		staticConfig("foo:9090"),
@@ -770,8 +795,11 @@ func TestTargetSetRecreatesTargetGroupsEveryRun(t *testing.T) {
 	discoveryManager.ApplyConfig(c)
 
 	<-discoveryManager.SyncCh()
-	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "static/0"}, "{__address__=\"foo:9090\"}", true)
-	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "static/0"}, "{__address__=\"bar:9090\"}", false)
+	verifyAbsence(t, discoveryManager.targets, p)
+	p = pk("prometheus", c["prometheus"][0])
+	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"foo:9090\"}", true)
+	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"bar:9090\"}", false)
+	verifyLen(t, discoveryManager.targets, 1)
 }
 
 func TestDiscovererConfigs(t *testing.T) {
@@ -790,9 +818,12 @@ func TestDiscovererConfigs(t *testing.T) {
 	discoveryManager.ApplyConfig(c)
 
 	<-discoveryManager.SyncCh()
-	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "static/0"}, "{__address__=\"foo:9090\"}", true)
-	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "static/0"}, "{__address__=\"bar:9090\"}", true)
-	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "static/1"}, "{__address__=\"baz:9090\"}", true)
+	p := pk("prometheus", c["prometheus"][0])
+	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"foo:9090\"}", true)
+	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"bar:9090\"}", true)
+	p = pk("prometheus", c["prometheus"][1])
+	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"baz:9090\"}", true)
+	verifyLen(t, discoveryManager.targets, 2)
 }
 
 // TestTargetSetRecreatesEmptyStaticConfigs ensures that reloading a config file after
@@ -813,7 +844,8 @@ func TestTargetSetRecreatesEmptyStaticConfigs(t *testing.T) {
 	discoveryManager.ApplyConfig(c)
 
 	<-discoveryManager.SyncCh()
-	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "static/0"}, "{__address__=\"foo:9090\"}", true)
+	p := pk("prometheus", c["prometheus"][0])
+	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"foo:9090\"}", true)
 
 	c["prometheus"] = Configs{
 		StaticConfig{{}},
@@ -821,11 +853,10 @@ func TestTargetSetRecreatesEmptyStaticConfigs(t *testing.T) {
 	discoveryManager.ApplyConfig(c)
 
 	<-discoveryManager.SyncCh()
-
-	pkey := poolKey{setName: "prometheus", provider: "static/0"}
-	targetGroups, ok := discoveryManager.targets[pkey]
+	p = pk("prometheus", c["prometheus"][0])
+	targetGroups, ok := discoveryManager.targets[p]
 	if !ok {
-		t.Fatalf("'%v' should be present in target groups", pkey)
+		t.Fatalf("'%v' should be present in target groups", p)
 	}
 	group, ok := targetGroups[""]
 	if !ok {
@@ -855,8 +886,8 @@ func TestIdenticalConfigurationsAreCoalesced(t *testing.T) {
 	discoveryManager.ApplyConfig(c)
 
 	<-discoveryManager.SyncCh()
-	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus", provider: "static/0"}, "{__address__=\"foo:9090\"}", true)
-	verifyPresence(t, discoveryManager.targets, poolKey{setName: "prometheus2", provider: "static/0"}, "{__address__=\"foo:9090\"}", true)
+	verifyPresence(t, discoveryManager.targets, pk("prometheus", c["prometheus"][0]), "{__address__=\"foo:9090\"}", true)
+	verifyPresence(t, discoveryManager.targets, pk("prometheus2", c["prometheus"][0]), "{__address__=\"foo:9090\"}", true)
 	if len(discoveryManager.providers) != 1 {
 		t.Fatalf("Invalid number of providers: expected 1, got %d", len(discoveryManager.providers))
 	}
