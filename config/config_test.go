@@ -1297,7 +1297,7 @@ var expectedErrors = []struct {
 	},
 	{
 		filename: "puppetdb_no_url.bad.yml",
-		errMsg:   "url missing",
+		errMsg:   "URL is missing",
 	},
 	{
 		filename: "puppetdb_bad_url.bad.yml",
@@ -1305,7 +1305,7 @@ var expectedErrors = []struct {
 	},
 	{
 		filename: "puppetdb_no_scheme.bad.yml",
-		errMsg:   "url scheme must be http or https",
+		errMsg:   "URL scheme must be 'http' or 'https'",
 	},
 	{
 		filename: "hetzner_role.bad.yml",
