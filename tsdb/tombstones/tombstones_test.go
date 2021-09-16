@@ -63,6 +63,66 @@ func TestWriteAndReadbackTombstones(t *testing.T) {
 	require.Equal(t, stones, restr)
 }
 
+func TestDeletingTombstones(t *testing.T) {
+	stones := NewMemTombstones()
+
+	ref := uint64(42)
+	mint := rand.Int63n(time.Now().UnixNano())
+	dranges := make(Intervals, 0, 1)
+	dranges = dranges.Add(Interval{mint, mint + rand.Int63n(1000)})
+	stones.AddInterval(ref, dranges...)
+	stones.AddInterval(uint64(43), dranges...)
+
+	intervals, err := stones.Get(ref)
+	require.NoError(t, err)
+	require.Equal(t, intervals, dranges)
+
+	stones.DeleteTombstones(map[uint64]struct{}{ref: struct{}{}})
+
+	intervals, err = stones.Get(ref)
+	require.NoError(t, err)
+	require.Empty(t, intervals)
+}
+
+func TestTruncateBefore(t *testing.T) {
+	cases := []struct {
+		before  Intervals
+		beforeT int64
+		after   Intervals
+	}{
+		{
+			before:  Intervals{{1, 2}, {4, 10}, {12, 100}},
+			beforeT: 3,
+			after:   Intervals{{4, 10}, {12, 100}},
+		},
+		{
+			before:  Intervals{{1, 2}, {4, 10}, {12, 100}, {200, 1000}},
+			beforeT: 900,
+			after:   Intervals{{200, 1000}},
+		},
+		{
+			before:  Intervals{{1, 2}, {4, 10}, {12, 100}, {200, 1000}},
+			beforeT: 2000,
+			after:   nil,
+		},
+		{
+			before:  Intervals{{1, 2}, {4, 10}, {12, 100}, {200, 1000}},
+			beforeT: 0,
+			after:   Intervals{{1, 2}, {4, 10}, {12, 100}, {200, 1000}},
+		},
+	}
+	for _, c := range cases {
+		ref := uint64(42)
+		stones := NewMemTombstones()
+		stones.AddInterval(ref, c.before...)
+
+		stones.TruncateBefore(c.beforeT)
+		ts, err := stones.Get(ref)
+		require.NoError(t, err)
+		require.Equal(t, c.after, ts)
+	}
+}
+
 func TestAddingNewIntervals(t *testing.T) {
 	cases := []struct {
 		exist Intervals
