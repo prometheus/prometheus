@@ -24,7 +24,7 @@ export enum LanguageType {
   MetricName = 'MetricName',
 }
 
-export function promQLLanguage(top: LanguageType) {
+export function promQLLanguage(top: LanguageType): LezerLanguage {
   return LezerLanguage.define({
     parser: parser.configure({
       top: top,

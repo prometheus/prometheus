@@ -30,7 +30,7 @@ import {
 import { VectorMatchCardinality, VectorMatching } from '../types';
 import { containsAtLeastOneChild, retrieveAllRecursiveNodes } from './path-finder';
 
-export function buildVectorMatching(state: EditorState, binaryNode: SyntaxNode) {
+export function buildVectorMatching(state: EditorState, binaryNode: SyntaxNode): VectorMatching | null {
   if (!binaryNode || binaryNode.type.id !== BinaryExpr) {
     return null;
   }
