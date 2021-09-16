@@ -12,5 +12,8 @@
   "workspaces": [
     "react-app",
     "module/*"
-  ]
+  ],
+  "engines": {
+    "npm": ">=7.0.0"
+  }
 }
