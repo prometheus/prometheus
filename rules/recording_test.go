@@ -49,7 +49,9 @@ func TestRuleEval(t *testing.T) {
 		name   string
 		expr   parser.Expr
 		labels labels.Labels
+		limit  int
 		result promql.Vector
+		err    string
 	}{
 		{
 			name:   "nolabels",
@@ -69,12 +71,43 @@ func TestRuleEval(t *testing.T) {
 				Point:  promql.Point{V: 1, T: timestamp.FromTime(now)},
 			}},
 		},
+		{
+			name:   "underlimit",
+			expr:   &parser.NumberLiteral{Val: 1},
+			labels: labels.FromStrings("foo", "bar"),
+			limit:  2,
+			result: promql.Vector{promql.Sample{
+				Metric: labels.FromStrings("__name__", "underlimit", "foo", "bar"),
+				Point:  promql.Point{V: 1, T: timestamp.FromTime(now)},
+			}},
+		},
+		{
+			name:   "atlimit",
+			expr:   &parser.NumberLiteral{Val: 1},
+			labels: labels.FromStrings("foo", "bar"),
+			limit:  1,
+			result: promql.Vector{promql.Sample{
+				Metric: labels.FromStrings("__name__", "atlimit", "foo", "bar"),
+				Point:  promql.Point{V: 1, T: timestamp.FromTime(now)},
+			}},
+		},
+		{
+			name:   "overlimit",
+			expr:   &parser.NumberLiteral{Val: 1},
+			labels: labels.FromStrings("foo", "bar"),
+			limit:  -1,
+			err:    "exceeded limit -1 with 1 samples",
+		},
 	}
 
 	for _, test := range suite {
 		rule := NewRecordingRule(test.name, test.expr, test.labels)
-		result, err := rule.Eval(ctx, now, EngineQueryFunc(engine, storage), nil)
-		require.NoError(t, err)
+		result, err := rule.Eval(ctx, now, EngineQueryFunc(engine, storage), nil, test.limit)
+		if test.err == "" {
+			require.NoError(t, err)
+		} else {
+			require.Equal(t, test.err, err.Error())
+		}
 		require.Equal(t, test.result, result)
 	}
 }
@@ -114,7 +147,7 @@ func TestRuleEvalDuplicate(t *testing.T) {
 
 	expr, _ := parser.ParseExpr(`vector(0) or label_replace(vector(0),"test","x","","")`)
 	rule := NewRecordingRule("foo", expr, labels.FromStrings("test", "test"))
-	_, err := rule.Eval(ctx, now, EngineQueryFunc(engine, storage), nil)
+	_, err := rule.Eval(ctx, now, EngineQueryFunc(engine, storage), nil, 0)
 	require.Error(t, err)
 	require.EqualError(t, err, "vector contains metrics with the same labelset after applying rule labels")
 }

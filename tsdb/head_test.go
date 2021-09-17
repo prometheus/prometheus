@@ -2727,6 +2727,10 @@ func TestChunkSnapshot(t *testing.T) {
 	// These references should be the ones used for the snapshot.
 	wlast, woffset, err = head.wal.LastSegmentAndOffset()
 	require.NoError(t, err)
+	if woffset != 0 && woffset < 32*1024 {
+		// The page is always filled before taking the snapshot.
+		woffset = 32 * 1024
+	}
 
 	{
 		// Creating snapshot and verifying it.
@@ -2793,6 +2797,10 @@ func TestChunkSnapshot(t *testing.T) {
 	// Creating another snapshot should delete the older snapshot and replay still works fine.
 	wlast, woffset, err = head.wal.LastSegmentAndOffset()
 	require.NoError(t, err)
+	if woffset != 0 && woffset < 32*1024 {
+		// The page is always filled before taking the snapshot.
+		woffset = 32 * 1024
+	}
 
 	{
 		// Close Head and verify that new snapshot was created.

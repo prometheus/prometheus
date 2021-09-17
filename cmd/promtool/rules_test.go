@@ -61,6 +61,7 @@ func TestBackfillRuleIntegration(t *testing.T) {
 	}{
 		{"no samples", 1, 0, 0, 0, []*model.SampleStream{}},
 		{"run importer once", 1, 8, 4, 4, []*model.SampleStream{{Metric: model.Metric{"name1": "val1"}, Values: []model.SamplePair{{Timestamp: testTime, Value: testValue}}}}},
+		{"run importer with dup name label", 1, 8, 4, 4, []*model.SampleStream{{Metric: model.Metric{"__name__": "val1", "name1": "val1"}, Values: []model.SamplePair{{Timestamp: testTime, Value: testValue}}}}},
 		{"one importer twice", 2, 8, 4, 8, []*model.SampleStream{{Metric: model.Metric{"name1": "val1"}, Values: []model.SamplePair{{Timestamp: testTime, Value: testValue}, {Timestamp: testTime2, Value: testValue2}}}}},
 	}
 	for _, tt := range testCases {
@@ -194,7 +195,7 @@ func createMultiRuleTestFiles(path string) error {
   - record: grp1_rule1
     expr: grp1_rule1_expr
     labels:
-        testlabel11: testlabelvalue11
+        testlabel11: testlabelvalue12
 - name: group2
   rules:
   - record: grp2_rule1
@@ -202,7 +203,7 @@ func createMultiRuleTestFiles(path string) error {
   - record: grp2_rule2
     expr: grp2_rule2_expr
     labels:
-        testlabel11: testlabelvalue11
+        testlabel11: testlabelvalue13
 `
 	return ioutil.WriteFile(path, []byte(recordingRules), 0777)
 }

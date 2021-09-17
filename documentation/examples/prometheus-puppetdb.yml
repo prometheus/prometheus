@@ -1,0 +1,40 @@
+# Prometheus example configuration to be used with PuppetDB.
+
+scrape_configs:
+  - job_name: 'puppetdb-node-exporter'
+    puppetdb_sd_configs:
+    # This example discovers the nodes which have the class Prometheus::Node_exporter.
+      - url: https://puppetdb.example.com
+        query: 'resources { type = "Class" and title = "Prometheus::Node_exporter" }'
+        port: 9100
+        tls_config:
+          cert_file: prometheus-public.pem
+          key_file: prometheus-private.pem
+          ca_file: ca.pem
+
+  - job_name: 'puppetdb-scrape-jobs'
+    puppetdb_sd_configs:
+    # This example uses the Prometheus::Scrape_job
+    # exported resources.
+    # https://github.com/camptocamp/prometheus-puppetdb-sd
+    # This examples is compatible with Prometheus-puppetdb-sd,
+    # if the exported Prometheus::Scrape_job only have at most one target.
+      - url: https://puppetdb.example.com
+        query: 'resources { type = "Prometheus::Scrape_job" and exported = true }'
+        include_parameters: true
+        tls_config:
+          cert_file: prometheus-public.pem
+          key_file: prometheus-private.pem
+          ca_file: ca.pem
+    relabel_configs:
+      - source_labels: [__meta_puppetdb_certname]
+        target_label: certname
+      - source_labels: [__meta_puppetdb_parameter_targets]
+        regex: '(.+),?.*'
+        replacement: $1
+        target_label: __address__
+      - source_labels: [__meta_puppetdb_parameter_job_name]
+        target_label: job
+      - regex: '__meta_puppetdb_parameter_labels_(.+)'
+        replacement: '$1'
+        action: labelmap

@@ -307,6 +307,18 @@ scrape_configs:
           cert_file: valid_cert_file
           key_file: valid_key_file
 
+  - job_name: service-puppetdb
+    puppetdb_sd_configs:
+      - url: https://puppetserver/
+        query: 'resources { type = "Package" and title = "httpd" }'
+        include_parameters: true
+        port: 80
+        refresh_interval: 1m
+        tls_config:
+          ca_file: valid_ca_file
+          cert_file: valid_cert_file
+          key_file: valid_key_file
+
   - job_name: hetzner
     hetzner_sd_configs:
       - role: hcloud

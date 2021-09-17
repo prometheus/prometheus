@@ -213,7 +213,7 @@ class Panel extends Component<PanelProps, PanelState> {
     }
   };
 
-  setOptions(opts: Record<string, unknown>): void {
+  setOptions(opts: Partial<PanelOptions>): void {
     const newOpts = { ...this.props.options, ...opts };
     this.props.onOptionsChanged(newOpts);
   }
