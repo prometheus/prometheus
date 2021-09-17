@@ -967,7 +967,7 @@ func (ng *Engine) populateSeries(ctx context.Context, querier storage.Querier, s
 	var evalRange time.Duration
 	l := sync.Mutex{}
 
-	n, err := parser.Inspect(context.TODO(), s, func(node parser.Node, path []parser.Node) error {
+	n, err := parser.Inspect(ctx, s, func(node parser.Node, path []parser.Node) error {
 		l.Lock()
 		defer l.Unlock()
 		switch n := node.(type) {
