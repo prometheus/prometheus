@@ -41,8 +41,6 @@ func TestHistoChunkSameBuckets(t *testing.T) {
 			{Offset: 1, Length: 2},
 		},
 		PositiveBuckets: []int64{1, 1, -1, 0}, // counts: 1, 2, 1, 1 (total 5)
-		NegativeSpans:   nil,
-		NegativeBuckets: []int64{},
 	}
 	app.AppendHistogram(ts, h)
 	exp = append(exp, res{t: ts, h: h})
@@ -142,8 +140,6 @@ func TestHistoChunkBucketChanges(t *testing.T) {
 			{Offset: 1, Length: 1},
 		},
 		PositiveBuckets: []int64{6, -3, 0, -1, 2, 1, -4}, // counts: 6, 3, 3, 2, 4, 5, 1 (total 24)
-		NegativeSpans:   nil,
-		NegativeBuckets: []int64{},
 	}
 
 	app.AppendHistogram(ts1, h1)
@@ -217,8 +213,6 @@ func TestHistoChunkAppendable(t *testing.T) {
 			{Offset: 1, Length: 1},
 		},
 		PositiveBuckets: []int64{6, -3, 0, -1, 2, 1, -4}, // counts: 6, 3, 3, 2, 4, 5, 1 (total 24)
-		NegativeSpans:   nil,
-		NegativeBuckets: []int64{},
 	}
 
 	app.AppendHistogram(ts, h1)

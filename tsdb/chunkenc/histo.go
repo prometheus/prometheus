@@ -625,10 +625,14 @@ func (it *histoIterator) Next() bool {
 		it.zeroThreshold = zeroThreshold
 		it.posSpans, it.negSpans = posSpans, negSpans
 		numPosBuckets, numNegBuckets := countSpans(posSpans), countSpans(negSpans)
-		it.posbuckets = make([]int64, numPosBuckets)
-		it.negbuckets = make([]int64, numNegBuckets)
-		it.posbucketsDelta = make([]int64, numPosBuckets)
-		it.negbucketsDelta = make([]int64, numNegBuckets)
+		if numPosBuckets > 0 {
+			it.posbuckets = make([]int64, numPosBuckets)
+			it.posbucketsDelta = make([]int64, numPosBuckets)
+		}
+		if numNegBuckets > 0 {
+			it.negbuckets = make([]int64, numNegBuckets)
+			it.negbucketsDelta = make([]int64, numNegBuckets)
+		}
 
 		// now read actual data
 
