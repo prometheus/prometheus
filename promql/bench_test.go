@@ -172,6 +172,10 @@ func BenchmarkRangeQuery(b *testing.B) {
 		{
 			expr: "histogram_quantile(0.9, rate(h_X[5m]))",
 		},
+		// Many-to-one join.
+		{
+			expr: "a_X + on(l) group_right a_one",
+		},
 	}
 
 	// X in an expr will be replaced by different metric sizes.
