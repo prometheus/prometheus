@@ -151,9 +151,10 @@ describe('Panel', () => {
       //change query without executing
       panel.setProps({ options: { ...defaultProps.options, expr: newExpr } });
       expect(executeQuerySpy).toHaveBeenCalledTimes(0);
+      const debounceExecuteQuerySpy = jest.spyOn(instance, 'debounceExecuteQuery');
       //execute query implicitly with time change
       panel.setProps({ options: { ...defaultProps.options, expr: newExpr, endTime: 1575744840 } });
-      expect(executeQuerySpy).toHaveBeenCalledTimes(1);
+      expect(debounceExecuteQuerySpy).toHaveBeenCalledTimes(1);
     });
   });
 });
