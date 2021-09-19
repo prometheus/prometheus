@@ -1526,7 +1526,30 @@ func TestSubquerySelector(t *testing.T) {
 					},
 					Start: time.Unix(10, 0),
 				},
-
+				{
+					Query: "metric[20s::5s]",
+					Result: Result{
+						nil,
+						Matrix{Series{
+							Points: []Point{{V: 1, T: 0}, {V: 1, T: 5000}, {V: 2, T: 10000}, {V: 2, T: 15000}, {V: 2, T: 20000}},
+							Metric: labels.FromStrings("__name__", "metric")},
+						},
+						nil,
+					},
+					Start: time.Unix(20, 0),
+				},
+				{
+					Query: "metric[20s::5s]",
+					Result: Result{
+						nil,
+						Matrix{Series{
+							Points: []Point{{V: 1, T: 4000}, {V: 1, T: 9000}, {V: 2, T: 14000}, {V: 2, T: 19000}},
+							Metric: labels.FromStrings("__name__", "metric")},
+						},
+						nil,
+					},
+					Start: time.Unix(19, 0),
+				},
 				{
 					Query: "metric[20s:5s] offset 2s",
 					Result: Result{
@@ -1610,6 +1633,18 @@ func TestSubquerySelector(t *testing.T) {
 						nil,
 					},
 					Start: time.Unix(20, 0),
+				},
+				{
+					Query: "metric[20s::4s] offset 6s",
+					Result: Result{
+						nil,
+						Matrix{Series{
+							Points: []Point{{V: 1, T: 1000}, {V: 1, T: 5000}, {V: 1, T: 9000}, {V: 2, T: 13000}},
+							Metric: labels.FromStrings("__name__", "metric")},
+						},
+						nil,
+					},
+					Start: time.Unix(19, 0),
 				},
 				{
 					Query: "metric[20s:5s] offset 4s",
@@ -1895,6 +1930,32 @@ func TestSubquerySelector(t *testing.T) {
 					Start: time.Unix(8000, 0),
 				},
 				{
+					Query: `rate(http_requests[1m])[15s::6s]`,
+					Result: Result{
+						nil,
+						Matrix{
+							Series{
+								Points: []Point{{V: 3, T: 7984000}, {V: 3, T: 7990000}, {V: 3, T: 7996000}},
+								Metric: labels.FromStrings("job", "api-server", "instance", "0", "group", "canary"),
+							},
+							Series{
+								Points: []Point{{V: 4, T: 7984000}, {V: 4, T: 7990000}, {V: 4, T: 7996000}},
+								Metric: labels.FromStrings("job", "api-server", "instance", "1", "group", "canary"),
+							},
+							Series{
+								Points: []Point{{V: 1, T: 7984000}, {V: 1, T: 7990000}, {V: 1, T: 7996000}},
+								Metric: labels.FromStrings("job", "api-server", "instance", "0", "group", "production"),
+							},
+							Series{
+								Points: []Point{{V: 2, T: 7984000}, {V: 2, T: 7990000}, {V: 2, T: 7996000}},
+								Metric: labels.FromStrings("job", "api-server", "instance", "1", "group", "production"),
+							},
+						},
+						nil,
+					},
+					Start: time.Unix(7999, 0),
+				},
+				{
 					Query: `sum(http_requests{group=~"pro.*"})[30s:10s]`,
 					Result: Result{
 						nil,
@@ -1935,6 +1996,18 @@ func TestSubquerySelector(t *testing.T) {
 						nil,
 					},
 					Start: time.Unix(120, 0),
+				},
+				{
+					Query: `sum(http_requests{group=~"pro.*"})[30s::9s]`,
+					Result: Result{
+						nil,
+						Matrix{Series{
+							Points: []Point{{V: 240, T: 89000}, {V: 270, T: 98000}, {V: 300, T: 107000}, {V: 330, T: 116000}},
+							Metric: labels.Labels{}},
+						},
+						nil,
+					},
+					Start: time.Unix(119, 0),
 				},
 				{
 					Query: `sum(http_requests)[40s:10s]`,
@@ -2019,6 +2092,18 @@ func TestSubquerySelector(t *testing.T) {
 						nil,
 					},
 					Start: time.Unix(120, 0),
+				},
+				{
+					Query: `(sum(http_requests{group=~"p.*"})+sum(http_requests{group=~"c.*"}))[20s::6s]`,
+					Result: Result{
+						nil,
+						Matrix{Series{
+							Points: []Point{{V: 900, T: 99000}, {V: 1000, T: 105000}, {V: 1100, T: 111000}, {V: 1100, T: 117000}},
+							Metric: labels.Labels{}},
+						},
+						nil,
+					},
+					Start: time.Unix(119, 0),
 				},
 			},
 		},
