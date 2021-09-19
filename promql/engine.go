@@ -1767,6 +1767,9 @@ func (ev *evaluator) VectorAnd(lhs, rhs Vector, matching *parser.VectorMatching,
 	if matching.Card != parser.CardManyToMany {
 		panic("set operations must only use many-to-many matching")
 	}
+	if len(lhs) == 0 || len(rhs) == 0 {
+		return nil // Short-circuit: AND with nothing is nothing.
+	}
 
 	// The set of signatures for the right-hand side Vector.
 	rightSigs := map[string]struct{}{}
@@ -1788,6 +1791,11 @@ func (ev *evaluator) VectorOr(lhs, rhs Vector, matching *parser.VectorMatching, 
 	if matching.Card != parser.CardManyToMany {
 		panic("set operations must only use many-to-many matching")
 	}
+	if len(lhs) == 0 { // Short-circuit.
+		return rhs
+	} else if len(rhs) == 0 {
+		return lhs
+	}
 
 	leftSigs := map[string]struct{}{}
 	// Add everything from the left-hand-side Vector.
@@ -1808,6 +1816,11 @@ func (ev *evaluator) VectorUnless(lhs, rhs Vector, matching *parser.VectorMatchi
 	if matching.Card != parser.CardManyToMany {
 		panic("set operations must only use many-to-many matching")
 	}
+	// Short-circuit: empty rhs means we will return everything in lhs;
+	// empty lhs means we will return empty - don't need to build a map.
+	if len(lhs) == 0 || len(rhs) == 0 {
+		return lhs
+	}
 
 	rightSigs := map[string]struct{}{}
 	for _, sh := range rhsh {
@@ -1826,6 +1839,9 @@ func (ev *evaluator) VectorUnless(lhs, rhs Vector, matching *parser.VectorMatchi
 func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *parser.VectorMatching, returnBool bool, lhsh, rhsh []EvalSeriesHelper, enh *EvalNodeHelper) Vector {
 	if matching.Card == parser.CardManyToMany {
 		panic("many-to-many only allowed for set operators")
+	}
+	if len(lhs) == 0 || len(rhs) == 0 {
+		return nil // Short-circuit: nothing is going to match.
 	}
 
 	// The control flow below handles one-to-one or many-to-one matching.

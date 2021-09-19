@@ -130,6 +130,9 @@ func BenchmarkRangeQuery(b *testing.B) {
 		{
 			expr: "a_X unless b_X{l=~'.*[0-4]$'}",
 		},
+		{
+			expr: "a_X and b_X{l='notfound'}",
+		},
 		// Simple functions.
 		{
 			expr: "abs(a_X)",
