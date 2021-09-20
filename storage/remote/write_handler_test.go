@@ -23,11 +23,12 @@ import (
 	"testing"
 
 	"github.com/go-kit/log"
+	"github.com/stretchr/testify/require"
+
 	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/stretchr/testify/require"
 )
 
 func TestRemoteWriteHandler(t *testing.T) {
@@ -107,7 +108,7 @@ func TestOutOfOrderExemplar(t *testing.T) {
 	handler.ServeHTTP(recorder, req)
 
 	resp := recorder.Result()
-	// TODO: update to require.Equal(t, http.StatusNoContent, resp.StatusCode) once the exemplar storage is no more experimental.
+	// TODO: update to require.Equal(t, http.StatusConflict, resp.StatusCode) once exemplar storage is not experimental.
 	require.Equal(t, http.StatusNoContent, resp.StatusCode)
 }
 

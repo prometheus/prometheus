@@ -15,10 +15,14 @@ package remote
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/pkg/errors"
+
+	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
 )
@@ -62,6 +66,20 @@ func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// checkAppendExemplarError modifies the AppendExamplar's returned error based on the error cause.
+func (h *writeHandler) checkAppendExemplarError(err error, e exemplar.Exemplar, outOfOrderErrs *int) error {
+	switch errors.Cause(err) {
+	case storage.ErrNotFound:
+		return storage.ErrNotFound
+	case storage.ErrOutOfOrderExemplar:
+		*outOfOrderErrs++
+		level.Debug(h.logger).Log("msg", "Out of order exemplar", "exemplar", fmt.Sprintf("%+v", e))
+		return nil
+	default:
+		return err
+	}
+}
+
 func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err error) {
 	var (
 		outOfOrderExemplarErrs = 0
@@ -91,7 +109,11 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 			e := exemplarProtoToExemplar(ep)
 
 			_, exemplarErr = app.AppendExemplar(0, labels, e)
-			storage.CheckAppendExemplarError(h.logger, exemplarErr, e, nil, &outOfOrderExemplarErrs)
+			exemplarErr = h.checkAppendExemplarError(exemplarErr, e, &outOfOrderExemplarErrs)
+			if exemplarErr != nil {
+				// Since exemplar storage is still experimental, we don't fail the request on ingestion errors.
+				level.Debug(h.logger).Log("msg", "Error while adding exemplar in AddExemplar", "exemplar", fmt.Sprintf("%+v", e), "err", exemplarErr)
+			}
 		}
 	}
 
