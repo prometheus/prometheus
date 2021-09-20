@@ -148,14 +148,6 @@ describe('containsChild test', () => {
       child: [Expr, Expr],
     },
     {
-      title: 'Should find all expr in a subtree 2',
-      expr: 'http_requests_total{method="GET"} off',
-      pos: 0,
-      expectedResult: true,
-      walkThrough: [Expr, BinaryExpr],
-      child: [Expr, Expr],
-    },
-    {
       title: 'Should not find all child required',
       expr: 'sum(ra)',
       pos: 0,
