@@ -263,6 +263,13 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 		p.p.updateSubs(p.subs)
 		m.providers[etag] = p.p
 	}
+	// Currently downstream managers expect full target state upon config reload, so we must oblige.
+	if len(keepProviders) > 0 {
+		select {
+		case m.triggerSend <- struct{}{}:
+		default:
+		}
+	}
 	return nil
 }
 
