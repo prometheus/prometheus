@@ -71,7 +71,7 @@ func BenchmarkRangeQuery(b *testing.B) {
 		a := storage.Appender(context.Background())
 		ts := int64(s * 10000) // 10s interval.
 		for i, metric := range metrics {
-			ref, _ := a.Append(refs[i], metric, ts, float64(s))
+			ref, _ := a.Append(refs[i], metric, ts, float64(s)+float64(i)/float64(len(metrics)))
 			refs[i] = ref
 		}
 		if err := a.Commit(); err != nil {
@@ -158,6 +158,9 @@ func BenchmarkRangeQuery(b *testing.B) {
 		},
 		{
 			expr: "count_values('value', h_X)",
+		},
+		{
+			expr: "topk(1, a_X)",
 		},
 		// Combinations.
 		{
