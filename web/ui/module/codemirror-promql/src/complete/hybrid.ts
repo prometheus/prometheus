@@ -12,7 +12,7 @@
 // limitations under the License.
 
 import { CompleteStrategy } from './index';
-import { SyntaxNode } from 'lezer-tree';
+import { SyntaxNode } from '@lezer/common';
 import { PrometheusClient } from '../client';
 import {
   Add,

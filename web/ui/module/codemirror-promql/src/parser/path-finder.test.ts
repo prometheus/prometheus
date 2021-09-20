@@ -35,7 +35,7 @@ import {
 } from '../grammar/parser.terms';
 import { createEditorState } from '../test/utils.test';
 import { containsAtLeastOneChild, containsChild, retrieveAllRecursiveNodes, walkBackward, walkThrough } from './path-finder';
-import { SyntaxNode } from 'lezer-tree';
+import { SyntaxNode } from '@lezer/common';
 import { syntaxTree } from '@codemirror/language';
 
 describe('walkThrough test', () => {

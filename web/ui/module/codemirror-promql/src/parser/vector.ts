@@ -12,7 +12,7 @@
 // limitations under the License.
 
 import { EditorState } from '@codemirror/state';
-import { SyntaxNode } from 'lezer-tree';
+import { SyntaxNode } from '@lezer/common';
 import {
   And,
   BinaryExpr,

@@ -12,7 +12,7 @@
 // limitations under the License.
 
 import { Diagnostic } from '@codemirror/lint';
-import { SyntaxNode, Tree } from 'lezer-tree';
+import { SyntaxNode, Tree } from '@lezer/common';
 import {
   AggregateExpr,
   And,
