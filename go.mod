@@ -8,7 +8,7 @@ require (
 	github.com/Azure/go-autorest/autorest/adal v0.9.15
 	github.com/Azure/go-autorest/autorest/to v0.4.0 // indirect
 	github.com/Azure/go-autorest/autorest/validation v0.3.1 // indirect
-	github.com/alecthomas/units v0.0.0-20210208195552-ff826a37aa15
+	github.com/alecthomas/units v0.0.0-20210912230133-d1bdfacee922
 	github.com/aws/aws-sdk-go v1.40.37
 	github.com/cespare/xxhash/v2 v2.1.2
 	github.com/containerd/containerd v1.5.4 // indirect
