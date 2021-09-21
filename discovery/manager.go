@@ -16,6 +16,7 @@ package discovery
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"sync"
 	"time"
 
@@ -115,6 +116,7 @@ func NewManager(ctx context.Context, logger log.Logger, options ...func(*Manager
 		ctx:         ctx,
 		updatert:    5 * time.Second,
 		triggerSend: make(chan struct{}, 1),
+		rnd:         rand.New(rand.NewSource(time.Now().UnixNano())),
 	}
 	for _, option := range options {
 		option(mgr)
@@ -154,6 +156,9 @@ type Manager struct {
 
 	// The triggerSend channel signals to the manager that new updates have been received from providers.
 	triggerSend chan struct{}
+
+	// rnd stores a random number generator used for discovery provider naming.
+	rnd *rand.Rand
 }
 
 // Run starts the background processing
@@ -409,7 +414,8 @@ func (m *Manager) registerProvider(cfg Config, setName string, etag uint64) erro
 		return err
 	}
 	m.providers[etag] = &provider{
-		name:   fmt.Sprintf("%s/%d", typ, etag),
+		// Cryptographically secure random is an overkill here, those random values only serve informational purpose.
+		name:   fmt.Sprintf("%s/%d", typ, m.rnd.Int63()),
 		d:      d,
 		config: cfg,
 		subs:   []string{setName},

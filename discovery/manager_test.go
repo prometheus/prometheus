@@ -16,13 +16,13 @@ package discovery
 import (
 	"context"
 	"fmt"
+	"math/rand"
 	"sort"
 	"strconv"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/mitchellh/hashstructure/v2"
 	client_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
@@ -761,12 +761,10 @@ func verifyLen(t *testing.T, tSets map[poolKey]map[string]*targetgroup.Group, ex
 	}
 }
 
-func pk(setName string, config Config) poolKey {
-	etag, _ := hashstructure.Hash(config, hashstructure.FormatV2, nil)
-	p := fmt.Sprintf("static/%d", etag)
+func pk(setName string, rnd int64) poolKey {
 	return poolKey{
 		setName:  setName,
-		provider: p,
+		provider: fmt.Sprintf("static/%d", rnd),
 	}
 }
 
@@ -775,6 +773,8 @@ func TestTargetSetRecreatesTargetGroupsOnConfigChange(t *testing.T) {
 	defer cancel()
 	discoveryManager := NewManager(ctx, log.NewNopLogger())
 	discoveryManager.updatert = 100 * time.Millisecond
+	rs := newRecordSource(42)
+	discoveryManager.rnd = rand.New(rs)
 	go discoveryManager.Run()
 
 	c := map[string]Configs{
@@ -784,7 +784,7 @@ func TestTargetSetRecreatesTargetGroupsOnConfigChange(t *testing.T) {
 	}
 	discoveryManager.ApplyConfig(c)
 	<-discoveryManager.SyncCh()
-	p := pk("prometheus", c["prometheus"][0])
+	p := pk("prometheus", rs.record[0])
 	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"foo:9090\"}", true)
 	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"bar:9090\"}", true)
 	verifyLen(t, discoveryManager.targets, 1)
@@ -796,7 +796,7 @@ func TestTargetSetRecreatesTargetGroupsOnConfigChange(t *testing.T) {
 
 	<-discoveryManager.SyncCh()
 	verifyAbsence(t, discoveryManager.targets, p)
-	p = pk("prometheus", c["prometheus"][0])
+	p = pk("prometheus", rs.record[1])
 	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"foo:9090\"}", true)
 	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"bar:9090\"}", false)
 	verifyLen(t, discoveryManager.targets, 1)
@@ -807,6 +807,8 @@ func TestDiscovererConfigs(t *testing.T) {
 	defer cancel()
 	discoveryManager := NewManager(ctx, log.NewNopLogger())
 	discoveryManager.updatert = 100 * time.Millisecond
+	rs := newRecordSource(42)
+	discoveryManager.rnd = rand.New(rs)
 	go discoveryManager.Run()
 
 	c := map[string]Configs{
@@ -818,10 +820,10 @@ func TestDiscovererConfigs(t *testing.T) {
 	discoveryManager.ApplyConfig(c)
 
 	<-discoveryManager.SyncCh()
-	p := pk("prometheus", c["prometheus"][0])
+	p := pk("prometheus", rs.record[0])
 	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"foo:9090\"}", true)
 	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"bar:9090\"}", true)
-	p = pk("prometheus", c["prometheus"][1])
+	p = pk("prometheus", rs.record[1])
 	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"baz:9090\"}", true)
 	verifyLen(t, discoveryManager.targets, 2)
 }
@@ -834,6 +836,8 @@ func TestTargetSetRecreatesEmptyStaticConfigs(t *testing.T) {
 	defer cancel()
 	discoveryManager := NewManager(ctx, log.NewNopLogger())
 	discoveryManager.updatert = 100 * time.Millisecond
+	rs := newRecordSource(42)
+	discoveryManager.rnd = rand.New(rs)
 	go discoveryManager.Run()
 
 	c := map[string]Configs{
@@ -844,7 +848,7 @@ func TestTargetSetRecreatesEmptyStaticConfigs(t *testing.T) {
 	discoveryManager.ApplyConfig(c)
 
 	<-discoveryManager.SyncCh()
-	p := pk("prometheus", c["prometheus"][0])
+	p := pk("prometheus", rs.record[0])
 	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"foo:9090\"}", true)
 
 	c["prometheus"] = Configs{
@@ -853,7 +857,7 @@ func TestTargetSetRecreatesEmptyStaticConfigs(t *testing.T) {
 	discoveryManager.ApplyConfig(c)
 
 	<-discoveryManager.SyncCh()
-	p = pk("prometheus", c["prometheus"][0])
+	p = pk("prometheus", rs.record[1])
 	targetGroups, ok := discoveryManager.targets[p]
 	if !ok {
 		t.Fatalf("'%v' should be present in target groups", p)
@@ -873,6 +877,8 @@ func TestIdenticalConfigurationsAreCoalesced(t *testing.T) {
 	defer cancel()
 	discoveryManager := NewManager(ctx, nil)
 	discoveryManager.updatert = 100 * time.Millisecond
+	rs := newRecordSource(42)
+	discoveryManager.rnd = rand.New(rs)
 	go discoveryManager.Run()
 
 	c := map[string]Configs{
@@ -886,8 +892,8 @@ func TestIdenticalConfigurationsAreCoalesced(t *testing.T) {
 	discoveryManager.ApplyConfig(c)
 
 	<-discoveryManager.SyncCh()
-	verifyPresence(t, discoveryManager.targets, pk("prometheus", c["prometheus"][0]), "{__address__=\"foo:9090\"}", true)
-	verifyPresence(t, discoveryManager.targets, pk("prometheus2", c["prometheus"][0]), "{__address__=\"foo:9090\"}", true)
+	verifyPresence(t, discoveryManager.targets, pk("prometheus", rs.record[0]), "{__address__=\"foo:9090\"}", true)
+	verifyPresence(t, discoveryManager.targets, pk("prometheus2", rs.record[0]), "{__address__=\"foo:9090\"}", true)
 	if len(discoveryManager.providers) != 1 {
 		t.Fatalf("Invalid number of providers: expected 1, got %d", len(discoveryManager.providers))
 	}
@@ -1161,6 +1167,29 @@ func (a byGroupSource) Less(i, j int) bool { return a[i].Source < a[j].Source }
 // onceProvider sends updates once (if any) and closes the update channel.
 type onceProvider struct {
 	tgs []*targetgroup.Group
+}
+
+// recordSource is like a rand.Source, but saves produced values to a slice.
+type recordSource struct {
+	source rand.Source
+	record []int64
+}
+
+func (s *recordSource) Int63() int64 {
+	s.record = append(s.record, s.source.Int63())
+	return s.record[len(s.record)-1]
+}
+
+func (s *recordSource) Seed(seed int64) {
+	s.source.Seed(seed)
+}
+
+func newRecordSource(seed int64) *recordSource {
+	s := recordSource{
+		source: rand.NewSource(seed),
+		record: make([]int64, 0),
+	}
+	return &s
 }
 
 func (o onceProvider) Run(_ context.Context, ch chan<- []*targetgroup.Group) {
