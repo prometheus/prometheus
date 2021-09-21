@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
@@ -33,6 +34,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
+	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 )
 
@@ -440,7 +442,7 @@ func TestCompactionFailWillCleanUpTempDir(t *testing.T) {
 		require.NoError(t, os.RemoveAll(tmpdir))
 	}()
 
-	require.Error(t, compactor.write(tmpdir, &BlockMeta{}, erringBReader{}))
+	require.Error(t, compactor.write(tmpdir, []shardedBlock{{meta: &BlockMeta{}}}, erringBReader{}))
 	_, err = os.Stat(filepath.Join(tmpdir, BlockMeta{}.ULID.String()) + tmpForCreationBlockDirSuffix)
 	require.True(t, os.IsNotExist(err), "directory is not cleaned up")
 }
@@ -484,6 +486,91 @@ func samplesForRange(minTime, maxTime int64, maxSamplesPerChunk int) (ret [][]sa
 	return ret
 }
 
+func TestCompaction_CompactWithSplitting(t *testing.T) {
+	seriesCounts := []int{10, 1234}
+	shardCounts := []uint64{1, 13}
+
+	for _, series := range seriesCounts {
+		dir, err := ioutil.TempDir("", "compact")
+		require.NoError(t, err)
+		defer func() {
+			require.NoError(t, os.RemoveAll(dir))
+		}()
+
+		ranges := [][2]int64{{0, 5000}, {3000, 8000}, {6000, 11000}, {9000, 14000}}
+
+		// Generate blocks.
+		var blockDirs []string
+		var openBlocks []*Block
+
+		for _, r := range ranges {
+			block, err := OpenBlock(nil, createBlock(t, dir, genSeries(series, 10, r[0], r[1])), nil)
+			require.NoError(t, err)
+			defer func() {
+				require.NoError(t, block.Close())
+			}()
+
+			openBlocks = append(openBlocks, block)
+			blockDirs = append(blockDirs, block.Dir())
+		}
+
+		for _, shardCount := range shardCounts {
+			t.Run(fmt.Sprintf("series=%d, shards=%d", series, shardCount), func(t *testing.T) {
+				c, err := NewLeveledCompactor(context.Background(), nil, log.NewNopLogger(), []int64{0}, nil, nil)
+				require.NoError(t, err)
+
+				blockIDs, err := c.CompactWithSplitting(dir, blockDirs, openBlocks, shardCount)
+
+				require.NoError(t, err)
+				require.Equal(t, shardCount, uint64(len(blockIDs)))
+
+				// Verify resulting blocks. We will iterate over all series in all blocks, and check two things:
+				// 1) Make sure that each series in the block belongs to the block (based on sharding).
+				// 2) Verify that total number of series over all blocks is correct.
+				totalSeries := uint64(0)
+
+				for shardIndex, blockID := range blockIDs {
+					// Some blocks may be empty, they will have zero block ID.
+					if blockID == (ulid.ULID{}) {
+						continue
+					}
+
+					block, err := OpenBlock(log.NewNopLogger(), filepath.Join(dir, blockID.String()), nil)
+					require.NoError(t, err)
+
+					defer func() {
+						require.NoError(t, block.Close())
+					}()
+
+					totalSeries += block.Meta().Stats.NumSeries
+
+					idxr, err := block.Index()
+					require.NoError(t, err)
+
+					defer func() {
+						require.NoError(t, idxr.Close())
+					}()
+
+					k, v := index.AllPostingsKey()
+					p, err := idxr.Postings(k, v)
+					require.NoError(t, err)
+
+					var lbls labels.Labels
+					for p.Next() {
+						ref := p.At()
+						require.NoError(t, idxr.Series(ref, &lbls, nil))
+
+						require.Equal(t, uint64(shardIndex), lbls.Hash()%shardCount)
+					}
+					require.NoError(t, p.Err())
+				}
+
+				require.Equal(t, uint64(series), totalSeries)
+			})
+		}
+	}
+}
+
 func TestCompaction_populateBlock(t *testing.T) {
 	for _, tc := range []struct {
 		title              string
@@ -496,7 +583,7 @@ func TestCompaction_populateBlock(t *testing.T) {
 		{
 			title:              "Populate block from empty input should return error.",
 			inputSeriesSamples: [][]seriesSamples{},
-			expErr:             errors.New("cannot populate block from no readers"),
+			expErr:             errors.New("cannot populate block(s) from no readers"),
 		},
 		{
 			// Populate from single block without chunks. We expect these kind of series being ignored.
@@ -952,7 +1039,8 @@ func TestCompaction_populateBlock(t *testing.T) {
 			}
 
 			iw := &mockIndexWriter{}
-			err = c.populateBlock(blocks, meta, iw, nopChunkWriter{})
+			ob := shardedBlock{meta: meta, indexw: iw, chunkw: nopChunkWriter{}}
+			err = c.populateBlock(blocks, meta.MinTime, meta.MaxTime, []shardedBlock{ob})
 			if tc.expErr != nil {
 				require.Error(t, err)
 				require.Equal(t, tc.expErr.Error(), err.Error())
