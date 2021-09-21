@@ -2210,22 +2210,24 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 			resultSize := k
 			if k > inputVecLen {
 				resultSize = inputVecLen
+			} else if k == 0 {
+				resultSize = 1
 			}
 			switch op {
 			case parser.STDVAR, parser.STDDEV:
 				result[groupingKey].value = 0
 			case parser.TOPK, parser.QUANTILE:
-				result[groupingKey].heap = make(vectorByValueHeap, 0, resultSize)
-				heap.Push(&result[groupingKey].heap, &Sample{
+				result[groupingKey].heap = make(vectorByValueHeap, 1, resultSize)
+				result[groupingKey].heap[0] = Sample{
 					Point:  Point{V: s.V},
 					Metric: s.Metric,
-				})
+				}
 			case parser.BOTTOMK:
-				result[groupingKey].reverseHeap = make(vectorByReverseValueHeap, 0, resultSize)
-				heap.Push(&result[groupingKey].reverseHeap, &Sample{
+				result[groupingKey].reverseHeap = make(vectorByReverseValueHeap, 1, resultSize)
+				result[groupingKey].reverseHeap[0] = Sample{
 					Point:  Point{V: s.V},
 					Metric: s.Metric,
-				})
+				}
 			case parser.GROUP:
 				result[groupingKey].value = 1
 			}
@@ -2283,6 +2285,13 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 		case parser.TOPK:
 			if int64(len(group.heap)) < k || group.heap[0].V < s.V || math.IsNaN(group.heap[0].V) {
 				if int64(len(group.heap)) == k {
+					if k == 1 { // For k==1 we can replace in-situ.
+						group.heap[0] = Sample{
+							Point:  Point{V: s.V},
+							Metric: s.Metric,
+						}
+						break
+					}
 					heap.Pop(&group.heap)
 				}
 				heap.Push(&group.heap, &Sample{
@@ -2294,6 +2303,13 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 		case parser.BOTTOMK:
 			if int64(len(group.reverseHeap)) < k || group.reverseHeap[0].V > s.V || math.IsNaN(group.reverseHeap[0].V) {
 				if int64(len(group.reverseHeap)) == k {
+					if k == 1 { // For k==1 we can replace in-situ.
+						group.reverseHeap[0] = Sample{
+							Point:  Point{V: s.V},
+							Metric: s.Metric,
+						}
+						break
+					}
 					heap.Pop(&group.reverseHeap)
 				}
 				heap.Push(&group.reverseHeap, &Sample{
@@ -2327,7 +2343,9 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 
 		case parser.TOPK:
 			// The heap keeps the lowest value on top, so reverse it.
-			sort.Sort(sort.Reverse(aggr.heap))
+			if len(aggr.heap) > 1 {
+				sort.Sort(sort.Reverse(aggr.heap))
+			}
 			for _, v := range aggr.heap {
 				enh.Out = append(enh.Out, Sample{
 					Metric: v.Metric,
@@ -2338,7 +2356,9 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 
 		case parser.BOTTOMK:
 			// The heap keeps the highest value on top, so reverse it.
-			sort.Sort(sort.Reverse(aggr.reverseHeap))
+			if len(aggr.reverseHeap) > 1 {
+				sort.Sort(sort.Reverse(aggr.reverseHeap))
+			}
 			for _, v := range aggr.reverseHeap {
 				enh.Out = append(enh.Out, Sample{
 					Metric: v.Metric,
