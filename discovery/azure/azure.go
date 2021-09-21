@@ -65,6 +65,7 @@ var DefaultSDConfig = SDConfig{
 	RefreshInterval:      model.Duration(5 * time.Minute),
 	Environment:          azure.PublicCloud.Name,
 	AuthenticationMethod: authMethodOAuth,
+	HTTPClientConfig:     config.DefaultHTTPClientConfig,
 }
 
 func init() {
@@ -82,7 +83,7 @@ type SDConfig struct {
 	RefreshInterval      model.Duration     `yaml:"refresh_interval,omitempty"`
 	AuthenticationMethod string             `yaml:"authentication_method,omitempty"`
 
-	ProxyURL config.URL `yaml:"proxy_url,omitempty"`
+	HTTPClientConfig config.HTTPClientConfig `yaml:",omitempty"`
 }
 
 // Name returns the name of the Config.
@@ -127,6 +128,12 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 	if c.AuthenticationMethod != authMethodOAuth && c.AuthenticationMethod != authMethodManagedIdentity {
 		return errors.Errorf("unknown authentication_type %q. Supported types are %q or %q", c.AuthenticationMethod, authMethodOAuth, authMethodManagedIdentity)
+	}
+
+	// Because Azure's mandatory authentication methods use the authorization header, others can't be configured.
+	if c.HTTPClientConfig.BasicAuth != nil || c.HTTPClientConfig.Authorization != nil || c.HTTPClientConfig.OAuth2 != nil ||
+		len(c.HTTPClientConfig.BearerToken) > 0 || len(c.HTTPClientConfig.BearerTokenFile) > 0 {
+		return errors.New("standard authentication methods cannot be used, only azure OAuth or ManagedIdentity")
 	}
 
 	return nil
@@ -205,11 +212,11 @@ func createAzureClient(cfg SDConfig) (azureClient, error) {
 
 	bearerAuthorizer := autorest.NewBearerAuthorizer(spt)
 
-	sender := autorest.DecorateSender(&http.Client{
-		Transport: &http.Transport{
-			Proxy: http.ProxyURL(cfg.ProxyURL.URL),
-		},
-	})
+	client, err := config.NewClientFromConfig(cfg.HTTPClientConfig, "azure_sd", config.WithHTTP2Disabled())
+	if err != nil {
+		return azureClient{}, err
+	}
+	sender := autorest.DecorateSender(client)
 
 	c.vm = compute.NewVirtualMachinesClientWithBaseURI(resourceManagerEndpoint, cfg.SubscriptionID)
 	c.vm.Authorizer = bearerAuthorizer

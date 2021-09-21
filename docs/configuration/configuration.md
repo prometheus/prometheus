@@ -428,6 +428,13 @@ subscription_id: <string>
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
+
+# Configure whether HTTP requests follow HTTP 3xx redirects.
+[ follow_redirects: <bool> | default = true ]
+
+# TLS configuration.
+tls_config:
+  [ <tls_config> ]
 ```
 
 ### `<consul_sd_config>`
