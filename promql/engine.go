@@ -2210,6 +2210,8 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 			resultSize := k
 			if k > inputVecLen {
 				resultSize = inputVecLen
+			} else if k == 0 {
+				resultSize = 1
 			}
 			switch op {
 			case parser.STDVAR, parser.STDDEV:
