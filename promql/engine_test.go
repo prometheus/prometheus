@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -295,10 +296,13 @@ type hintRecordingQuerier struct {
 	storage.Querier
 
 	h *noopHintRecordingQueryable
+	l sync.Mutex
 }
 
 func (h *hintRecordingQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+	h.l.Lock()
 	h.h.hints = append(h.h.hints, hints)
+	h.l.Unlock()
 	return h.Querier.Select(ctx, sortSeries, hints, matchers...)
 }
 
@@ -613,7 +617,25 @@ func TestSelectHintsSetCorrectly(t *testing.T) {
 			res := query.Exec(context.Background())
 			require.NoError(t, res.Err)
 
-			require.Equal(t, tc.expected, hintsRecorder.hints)
+			require.Equal(t, len(tc.expected), len(hintsRecorder.hints))
+			for _, item := range tc.expected {
+				found := false
+				for _, other := range hintsRecorder.hints {
+					if reflect.DeepEqual(*item, *other) {
+						found = true
+						break
+					}
+				}
+				if !found {
+					for i, e := range tc.expected {
+						fmt.Println(i, *e)
+					}
+					for i, e := range hintsRecorder.hints {
+						fmt.Println(i, *e)
+					}
+				}
+				require.Equal(t, found, true)
+			}
 		})
 	}
 }
