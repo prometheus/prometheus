@@ -302,7 +302,7 @@ func funcHoltWinters(vals []parser.Value, args parser.Expressions, enh *EvalNode
 	// The trend factor argument.
 	tf := vals[2].(Vector)[0].V
 
-	// Check the input parameters are reasonable.
+	// Check that the input parameters are reasonable.
 	if sf <= 0 || sf >= 1 {
 		panic(fmt.Errorf("invalid smoothing factor. Expected: 0 < sf < 1, got: %f", sf))
 	}
