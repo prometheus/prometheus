@@ -2870,10 +2870,10 @@ func TestSparseHistogramStaleSample(t *testing.T) {
 	expHists = append(expHists, timedHist{int64(len(expHists)), histogram.SparseHistogram{Sum: math.Float64frombits(value.StaleNaN)}})
 	require.NoError(t, app.Commit())
 
-	// Total 2 chunks, 1 m-mapped.
+	// Only 1 chunk in the memory, no m-mapped chunk.
 	s := head.series.getByHash(l.Hash(), l)
 	require.NotNil(t, s)
-	require.Equal(t, 1, len(s.mmappedChunks))
+	require.Equal(t, 0, len(s.mmappedChunks))
 	testQuery(1)
 
 	// Adding stale in different appender and continuing series after a stale sample.
@@ -2891,9 +2891,9 @@ func TestSparseHistogramStaleSample(t *testing.T) {
 	expHists = append(expHists, timedHist{int64(len(expHists)), histogram.SparseHistogram{Sum: math.Float64frombits(value.StaleNaN)}})
 	require.NoError(t, app.Commit())
 
-	// Total 4 chunks, 3 m-mapped.
+	// Total 2 chunks, 1 m-mapped.
 	s = head.series.getByHash(l.Hash(), l)
 	require.NotNil(t, s)
-	require.Equal(t, 3, len(s.mmappedChunks))
+	require.Equal(t, 1, len(s.mmappedChunks))
 	testQuery(2)
 }

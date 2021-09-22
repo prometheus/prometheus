@@ -49,6 +49,7 @@ import (
 	"math/bits"
 
 	"github.com/prometheus/prometheus/pkg/histogram"
+	"github.com/prometheus/prometheus/pkg/value"
 )
 
 const ()
@@ -248,6 +249,15 @@ func (a *HistoAppender) Append(int64, float64) {}
 // * any buckets disappeared
 // * there was a counter reset in the count of observations or in any bucket, including the zero bucket
 func (a *HistoAppender) Appendable(h histogram.SparseHistogram) ([]Interjection, []Interjection, bool) {
+	if value.IsStaleNaN(h.Sum) {
+		// This is a stale sample whose buckets and spans don't matter.
+		return nil, nil, true
+	}
+	if value.IsStaleNaN(a.sum) {
+		// If the last sample was stale, then we can only accept stale samples in this chunk.
+		return nil, nil, false
+	}
+
 	if h.Schema != a.schema || h.ZeroThreshold != a.zeroThreshold {
 		return nil, nil, false
 	}
@@ -350,6 +360,12 @@ func (a *HistoAppender) AppendHistogram(t int64, h histogram.SparseHistogram) {
 	var tDelta, cntDelta, zcntDelta int64
 	num := binary.BigEndian.Uint16(a.b.bytes())
 
+	if value.IsStaleNaN(h.Sum) {
+		// Emptying out other fields to write empty meta in case of
+		// first histogram in the chunk.
+		h = histogram.SparseHistogram{Sum: h.Sum}
+	}
+
 	switch num {
 	case 0:
 		// the first append gets the privilege to dictate the metadata
@@ -377,10 +393,13 @@ func (a *HistoAppender) AppendHistogram(t int64, h histogram.SparseHistogram) {
 			putVarint(a.b, a.buf64, buck)
 		}
 	case 1:
-
 		tDelta = t - a.t
 		cntDelta = int64(h.Count) - int64(a.cnt)
 		zcntDelta = int64(h.ZeroCount) - int64(a.zcnt)
+
+		if value.IsStaleNaN(h.Sum) {
+			tDelta, cntDelta, zcntDelta = 0, 0, 0
+		}
 
 		putVarint(a.b, a.buf64, tDelta)
 		putVarint(a.b, a.buf64, cntDelta)
@@ -398,6 +417,7 @@ func (a *HistoAppender) AppendHistogram(t int64, h histogram.SparseHistogram) {
 			putVarint(a.b, a.buf64, delta)
 			a.negbucketsDelta[i] = delta
 		}
+
 	default:
 		tDelta = t - a.t
 		cntDelta = int64(h.Count) - int64(a.cnt)
@@ -406,6 +426,10 @@ func (a *HistoAppender) AppendHistogram(t int64, h histogram.SparseHistogram) {
 		tDod := tDelta - a.tDelta
 		cntDod := cntDelta - a.cntDelta
 		zcntDod := zcntDelta - a.zcntDelta
+
+		if value.IsStaleNaN(h.Sum) {
+			tDod, cntDod, zcntDod = 0, 0, 0
+		}
 
 		putInt64VBBucket(a.b, tDod)
 		putInt64VBBucket(a.b, cntDod)
@@ -438,9 +462,7 @@ func (a *HistoAppender) AppendHistogram(t int64, h histogram.SparseHistogram) {
 
 	a.posbuckets, a.negbuckets = h.PositiveBuckets, h.NegativeBuckets
 	// note that the bucket deltas were already updated above
-
 	a.sum = h.Sum
-
 }
 
 // Recode converts the current chunk to accommodate an expansion of the set of
@@ -566,6 +588,10 @@ func (it *histoIterator) ChunkEncoding() Encoding {
 }
 
 func (it *histoIterator) AtHistogram() (int64, histogram.SparseHistogram) {
+	if value.IsStaleNaN(it.sum) {
+		it.numRead++
+		return it.t, histogram.SparseHistogram{Sum: it.sum}
+	}
 	return it.t, histogram.SparseHistogram{
 		Count:           it.cnt,
 		ZeroCount:       it.zcnt,
@@ -715,6 +741,11 @@ func (it *histoIterator) Next() bool {
 			return false
 		}
 
+		if value.IsStaleNaN(it.sum) {
+			it.numRead++
+			return true
+		}
+
 		for i := range it.posbuckets {
 			delta, err := binary.ReadVarint(&it.br)
 			if err != nil {
@@ -766,6 +797,11 @@ func (it *histoIterator) Next() bool {
 	ok := it.readSum()
 	if !ok {
 		return false
+	}
+
+	if value.IsStaleNaN(it.sum) {
+		it.numRead++
+		return true
 	}
 
 	for i := range it.posbuckets {
