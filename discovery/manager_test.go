@@ -17,6 +17,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"reflect"
 	"sort"
 	"strconv"
 	"testing"
@@ -1197,4 +1198,136 @@ func (o onceProvider) Run(_ context.Context, ch chan<- []*targetgroup.Group) {
 		ch <- o.tgs
 	}
 	close(ch)
+}
+
+func TestPKeyDict(t *testing.T) {
+	type put struct {
+		item interface{}
+		etag uint64
+	}
+	tests := []struct {
+		name  string
+		items []put
+	}{
+		{
+			name: "Put items with different etags and Get them back",
+			items: []put{
+				{
+					item: staticConfig("0"),
+					etag: 0,
+				},
+				{
+					item: staticConfig("1"),
+					etag: 1,
+				},
+			},
+		},
+		{
+			name: "Put items with etag collision and Get them back",
+			items: []put{
+				{
+					item: staticConfig("0"),
+					etag: 42,
+				},
+				{
+					item: staticConfig("1"),
+					etag: 42,
+				},
+			},
+		},
+		{
+			name: "Put same items with different etags and Get them back",
+			items: []put{
+				{
+					item: staticConfig("0"),
+					etag: 0,
+				},
+				{
+					item: staticConfig("0"),
+					etag: 1,
+				},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			type visit struct {
+				it   interface{}
+				etag uint64
+			}
+			visited := make([]visit, 0)
+			f := func(it interface{}, etag uint64) {
+				visited = append(visited, visit{it, etag})
+			}
+			d := newDict()
+			d.extractCfg = func(it interface{}) Config {
+				return it.(Config)
+			}
+			for _, p := range tt.items {
+				d.Put(p.item, p.etag)
+			}
+			for i, g := range tt.items {
+				it, ok := d.Get(g.item.(Config), g.etag)
+				if !ok {
+					t.Fatalf("Step %d: got nil data, expected: %#v",
+						i, g.item.(Config))
+				}
+				if !reflect.DeepEqual(it, g.item) {
+					t.Fatalf("Step %d: got malformed item: %#v, expected %#v",
+						i, it, g.item)
+				}
+			}
+			d.ForEach(f)
+			// Ensure f was called exactly once for each item stored in d.
+			for i, it := range tt.items {
+				var got bool
+				for _, v := range visited {
+					if reflect.DeepEqual(it.item, v.it) && it.etag == v.etag {
+						got = true
+					}
+				}
+				if !got {
+					t.Fatalf("ForEach was not called for item: #%d item %#v etag %d; visits: %#v",
+						i, it.item, it.etag, visited)
+				}
+			}
+			if l := len(visited); l > len(tt.items) {
+				t.Fatalf("ForEach called function too many times: %d, expected %d; visits: %#v",
+					l, len(tt.items), visited)
+			}
+		})
+	}
+}
+
+func TestPKeyDictReplace(t *testing.T) {
+	d := newDict()
+	d.extractCfg = func(it interface{}) Config {
+		return it.(*provider).config.(Config)
+	}
+	p := &provider{
+		name:   "foo",
+		config: staticConfig("0"),
+	}
+	// Put item and replace it with different item with same Config and etag.
+	d.Put(p, 42)
+	p = &provider{
+		name:   "bar",
+		config: staticConfig("0"),
+	}
+	d.Put(p, 42)
+	got, ok := d.Get(staticConfig("0"), 42)
+	if !ok {
+		t.Fatalf("Failed to Get item from dict: expected was not called for item: expected #%v", p)
+	}
+	if !reflect.DeepEqual(got.(*provider), p) {
+		t.Fatalf("Get produced unexpected result: got #%v, expected #%v", got, p)
+	}
+	exp := map[uint64][]interface{}{
+		42: {
+			p,
+		},
+	}
+	if !reflect.DeepEqual(d.items, exp) {
+		t.Fatalf("Dict has unexpected items: got #%v, expected #%v", d.items, exp)
+	}
 }

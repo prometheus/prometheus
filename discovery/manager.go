@@ -17,6 +17,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"reflect"
 	"sync"
 	"time"
 
@@ -112,7 +113,7 @@ func NewManager(ctx context.Context, logger log.Logger, options ...func(*Manager
 		logger:      logger,
 		syncCh:      make(chan map[string][]*targetgroup.Group),
 		targets:     make(map[poolKey]map[string]*targetgroup.Group),
-		providers:   make(map[uint64]*provider),
+		providers:   newProviders(),
 		ctx:         ctx,
 		updatert:    5 * time.Second,
 		triggerSend: make(chan struct{}, 1),
@@ -145,8 +146,9 @@ type Manager struct {
 	// so we use map[tg.Source]*targetgroup.Group to know which group to update.
 	targets map[poolKey]map[string]*targetgroup.Group
 
-	// providers keeps track of SD providers. Provider's config hash is generally used as a map key.
-	providers map[uint64]*provider
+	// providers keeps track of SD providers.
+	providers *pKeyDict
+
 	// The sync channel sends the updates as a map where the key is the job value from the scrape config.
 	syncCh chan map[string][]*targetgroup.Group
 
@@ -189,23 +191,23 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 	}
 	var (
 		failedCount     int
-		keepProviders   = make(map[uint64]keepProvider)
+		keepProviders   = newKeepProviders()
 		keepTargetPools = make(map[poolKey]struct{})
 		oldProviders    = m.providers
 	)
-	m.providers = make(map[uint64]*provider)
+	m.providers = newProviders()
 	keep := func(p *provider, setName string, etag uint64) {
-		if _, ok := keepProviders[etag]; !ok {
-			keepProviders[etag] = keepProvider{
+		var newKeep keepProvider
+		if kept, ok := keepProviders.Get(p.config.(Config), etag); ok {
+			newKeep = kept.(keepProvider)
+		} else {
+			newKeep = keepProvider{
 				p,
 				[]string{},
 			}
 		}
-		s := append(keepProviders[etag].subs, setName)
-		keepProviders[etag] = keepProvider{
-			p:    p,
-			subs: s,
-		}
+		newKeep.subs = append(newKeep.subs, setName)
+		keepProviders.Put(newKeep, etag)
 		pk := poolKey{
 			setName:  setName,
 			provider: p.name,
@@ -219,7 +221,8 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 			if err != nil {
 				return err
 			}
-			if p, ok := oldProviders[etag]; ok {
+			if prov, ok := oldProviders.Get(c, etag); ok {
+				p := prov.(*provider)
 				keep(p, setName, etag)
 				added = true
 				continue
@@ -245,36 +248,47 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 	}
 	failedConfigs.WithLabelValues(m.name).Set(float64(failedCount))
 	// Providers gone from config should be canceled and their target pools wiped.
-	for etag, p := range oldProviders {
-		if _, ok := keepProviders[etag]; ok {
-			continue
+	f := func(it interface{}, etag uint64) {
+		p := it.(*provider)
+		if _, ok := keepProviders.Get(p.config.(Config), etag); ok {
+			return
 		}
 		p.cancel()
 		for _, s := range p.subs {
 			delete(m.targets, poolKey{setName: s, provider: p.name}) // protected by m.mtx, already held at this point.
 		}
 	}
+	oldProviders.ForEach(f)
 	// Delete those obsolete target pools still remaining.
 	for pk := range m.targets {
 		if _, ok := keepTargetPools[pk]; !ok {
 			delete(m.targets, pk)
 		}
 	}
-	// Start newly registered providers.
-	for _, prov := range m.providers {
-		m.startProvider(m.ctx, prov)
-	}
-	for etag, p := range keepProviders {
-		p.p.updateSubs(p.subs)
-		m.providers[etag] = p.p
-	}
+
 	// Currently downstream managers expect full target state upon config reload, so we must oblige.
-	if len(keepProviders) > 0 {
+	// While startProvider does pull the trigger, it may take some time to do so, therefore
+	// we pull the trigger as soon as possible so that downstream managers can populate their state.
+	// See https://github.com/prometheus/prometheus/pull/8639 for details.
+	if len(keepProviders.items) > 0 {
 		select {
 		case m.triggerSend <- struct{}{}:
 		default:
 		}
 	}
+	// Start newly registered providers.
+	f = func(it interface{}, _ uint64) {
+		m.startProvider(m.ctx, it.(*provider))
+	}
+	m.providers.ForEach(f)
+	// Don't forget old providers.
+	f = func(it interface{}, etag uint64) {
+		p := it.(keepProvider)
+		p.p.updateSubs(p.subs)
+		m.providers.Put(p.p, etag)
+	}
+	keepProviders.ForEach(f)
+
 	return nil
 }
 
@@ -288,7 +302,7 @@ func (m *Manager) StartCustomProvider(ctx context.Context, name string, worker D
 	// At worst etag will be zero, that does not really hurt. So we ignore the error here.
 	// Due to lack of config name is used to calculate etag.
 	etag, _ := hashstructure.Hash(name, hashstructure.FormatV2, nil)
-	m.providers[etag] = p
+	m.providers.Put(p, etag)
 	m.startProvider(ctx, p)
 }
 
@@ -358,9 +372,11 @@ func (m *Manager) sender() {
 }
 
 func (m *Manager) cancelDiscoverers() {
-	for _, p := range m.providers {
+	f := func(it interface{}, _ uint64) {
+		p := it.(*provider)
 		p.cancel()
 	}
+	m.providers.ForEach(f)
 }
 
 func (m *Manager) updateGroup(poolKey poolKey, tgs []*targetgroup.Group) {
@@ -400,10 +416,12 @@ func (m *Manager) allGroups() map[string][]*targetgroup.Group {
 func (m *Manager) registerProvider(cfg Config, setName string, etag uint64) error {
 	typ := cfg.Name()
 
-	if p, ok := m.providers[etag]; ok {
+	if prov, ok := m.providers.Get(cfg, etag); ok {
+		p := prov.(*provider)
 		p.mu.Lock()
 		p.subs = append(p.subs, setName)
 		p.mu.Unlock()
+		m.providers.Put(p, etag)
 		return nil
 	}
 	d, err := cfg.NewDiscoverer(DiscovererOptions{
@@ -413,13 +431,15 @@ func (m *Manager) registerProvider(cfg Config, setName string, etag uint64) erro
 		level.Error(m.logger).Log("msg", "Cannot create service discovery", "err", err, "type", typ)
 		return err
 	}
-	m.providers[etag] = &provider{
+	m.providers.Put(&provider{
 		// Cryptographically secure random is an overkill here, those random values only serve informational purpose.
 		name:   fmt.Sprintf("%s/%d", typ, m.rnd.Int63()),
 		d:      d,
 		config: cfg,
 		subs:   []string{setName},
-	}
+	},
+		etag,
+	)
 	return nil
 }
 
@@ -437,4 +457,78 @@ func (sd *StaticProvider) Run(ctx context.Context, ch chan<- []*targetgroup.Grou
 	case <-ctx.Done():
 	}
 	close(ch)
+}
+
+type pKeyDict struct {
+	items      map[uint64][]interface{}
+	extractCfg func(interface{}) Config
+}
+
+func newDict() *pKeyDict {
+	d := pKeyDict{
+		items: make(map[uint64][]interface{}),
+	}
+	return &d
+}
+
+// Put puts new item under etag key in d.items map, overwriting the equal item if it exists.
+// Equality is defined by pKeyDict.isEqual.
+func (d *pKeyDict) Put(new interface{}, etag uint64) {
+	if itemss, ok := d.items[etag]; ok {
+		for i, it := range itemss {
+			if d.isEqual(d.extractCfg(it), d.extractCfg(new)) {
+				d.items[etag][i] = new
+				return
+			}
+		}
+		itemss = append(itemss, new)
+		d.items[etag] = itemss
+		return
+	}
+	d.items[etag] = []interface{}{new}
+}
+
+func (d *pKeyDict) Get(cfg Config, etag uint64) (interface{}, bool) {
+	if itemss, ok := d.items[etag]; ok {
+		for _, it := range itemss {
+			c := d.extractCfg(it)
+			if d.isEqual(c, cfg) {
+				return it, true
+			}
+		}
+	}
+	return nil, false
+}
+
+func (d *pKeyDict) ForEach(f func(interface{}, uint64)) {
+	for etag, itemss := range d.items {
+		for _, it := range itemss {
+			f(it, etag)
+		}
+	}
+}
+
+func (d *pKeyDict) isEqual(a, b Config) bool {
+	if reflect.DeepEqual(a, b) {
+		return true
+	}
+	return false
+}
+
+// newKeepProviders returns *pKeyDict that stores keepProvider instances.
+func newKeepProviders() *pKeyDict {
+	d := newDict()
+	d.extractCfg = func(it interface{}) Config {
+		return it.(keepProvider).p.config.(Config)
+	}
+	return d
+}
+
+// newProviders returns *pKeyDict that stores *provider instances.
+func newProviders() *pKeyDict {
+	d := newDict()
+	d.extractCfg = func(it interface{}) Config {
+		return it.(*provider).config.(Config)
+	}
+	return d
 }
