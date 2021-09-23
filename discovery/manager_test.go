@@ -20,6 +20,7 @@ import (
 	"reflect"
 	"sort"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -720,6 +721,32 @@ func staticConfig(addrs ...string) StaticConfig {
 	return cfg
 }
 
+func verifySyncedPresence(t *testing.T, tGroups map[string][]*targetgroup.Group, key string, label string, present bool) {
+	t.Helper()
+	if _, ok := tGroups[key]; !ok {
+		t.Fatalf("'%s' should be present in Group map keys: %v", key, tGroups)
+		return
+	}
+	match := false
+	var mergedTargets string
+	for _, targetGroups := range tGroups[key] {
+		for _, l := range targetGroups.Targets {
+			mergedTargets = mergedTargets + " " + l.String()
+			if l.String() == label {
+				match = true
+			}
+		}
+
+	}
+	if match != present {
+		msg := ""
+		if !present {
+			msg = "not"
+		}
+		t.Fatalf("%q should %s be present in Group labels: %q", label, msg, mergedTargets)
+	}
+}
+
 func verifyPresence(t *testing.T, tSets map[poolKey]map[string]*targetgroup.Group, poolKey poolKey, label string, present bool) {
 	t.Helper()
 	if _, ok := tSets[poolKey]; !ok {
@@ -757,8 +784,23 @@ func verifyAbsence(t *testing.T, tSets map[poolKey]map[string]*targetgroup.Group
 
 func verifyLen(t *testing.T, tSets map[poolKey]map[string]*targetgroup.Group, exp int) {
 	t.Helper()
-	if len(tSets) != exp {
-		t.Fatalf("Invalid number of Pool keys: expected %d, got %d: %v", exp, len(tSets), tSets)
+	if got := len(tSets); got != exp {
+		t.Fatalf("Invalid number of Pool keys: expected %d, got %d: %v", exp, got, tSets)
+	}
+}
+
+func verifySyncedLen(t *testing.T, tGroups map[string][]*targetgroup.Group, exp int) {
+	t.Helper()
+	if got := len(tGroups); got != exp {
+		t.Fatalf("Invalid number of Group map keys: expected %d, got %d: %v", exp, got, tGroups)
+	}
+
+}
+
+func verifySyncedKeyLen(t *testing.T, tGroups map[string][]*targetgroup.Group, key string, exp int) {
+	t.Helper()
+	if got := len(tGroups[key]); got != exp {
+		t.Fatalf("Invalid number of Groups under %s key: expected %d, got %d: %v", key, exp, got, tGroups[key])
 	}
 }
 
@@ -767,6 +809,103 @@ func pk(setName string, rnd int64) poolKey {
 		setName:  setName,
 		provider: fmt.Sprintf("static/%d", rnd),
 	}
+}
+
+func TestTargetSetTargetGroupsPresentOnConfigReload(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	discoveryManager := NewManager(ctx, log.NewNopLogger())
+	discoveryManager.updatert = 100 * time.Millisecond
+	rs := newRecordSource(42)
+	discoveryManager.rnd = rand.New(rs)
+	go discoveryManager.Run()
+
+	c := map[string]Configs{
+		"prometheus": {
+			staticConfig("foo:9090"),
+		},
+	}
+	discoveryManager.ApplyConfig(c)
+
+	syncedTargets := <-discoveryManager.SyncCh()
+	verifySyncedLen(t, syncedTargets, 1)
+	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
+	verifySyncedKeyLen(t, syncedTargets, "prometheus", 1)
+	p := pk("prometheus", rs.record[0])
+	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"foo:9090\"}", true)
+	verifyLen(t, discoveryManager.targets, 1)
+
+	discoveryManager.ApplyConfig(c)
+
+	syncedTargets = <-discoveryManager.SyncCh()
+	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"foo:9090\"}", true)
+	verifyLen(t, discoveryManager.targets, 1)
+	verifySyncedLen(t, syncedTargets, 1)
+	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
+	verifySyncedKeyLen(t, syncedTargets, "prometheus", 1)
+}
+
+func TestTargetSetTargetGroupsPresentOnConfigChange(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	discoveryManager := NewManager(ctx, log.NewNopLogger())
+	discoveryManager.updatert = 100 * time.Millisecond
+	rs := newRecordSource(42)
+	discoveryManager.rnd = rand.New(rs)
+	go discoveryManager.Run()
+
+	c := map[string]Configs{
+		"prometheus": {
+			staticConfig("foo:9090"),
+		},
+	}
+	discoveryManager.ApplyConfig(c)
+
+	syncedTargets := <-discoveryManager.SyncCh()
+	verifySyncedLen(t, syncedTargets, 1)
+	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
+	verifySyncedKeyLen(t, syncedTargets, "prometheus", 1)
+
+	var mu sync.Mutex
+	c["prometheus2"] = Configs{
+		lockStaticConfig{
+			mu:     &mu,
+			config: staticConfig("bar:9090"),
+		},
+	}
+	mu.Lock()
+	discoveryManager.ApplyConfig(c)
+
+	// Original targets should be present as soon as possible.
+	syncedTargets = <-discoveryManager.SyncCh()
+	mu.Unlock()
+	verifySyncedLen(t, syncedTargets, 1)
+	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
+	verifySyncedKeyLen(t, syncedTargets, "prometheus", 1)
+
+	// prometheus2 configs should be ready on second sync.
+	syncedTargets = <-discoveryManager.SyncCh()
+	verifySyncedLen(t, syncedTargets, 2)
+	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
+	verifySyncedKeyLen(t, syncedTargets, "prometheus", 1)
+	verifySyncedPresence(t, syncedTargets, "prometheus2", "{__address__=\"bar:9090\"}", true)
+	verifySyncedKeyLen(t, syncedTargets, "prometheus2", 1)
+
+	p := pk("prometheus", rs.record[0])
+	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"foo:9090\"}", true)
+	p = poolKey{"prometheus2", fmt.Sprintf("lockstatic/%d", rs.record[1])}
+	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"bar:9090\"}", true)
+	verifyLen(t, discoveryManager.targets, 2)
+
+	// Delete part of config and ensure only original targets exist.
+	delete(c, "prometheus2")
+	discoveryManager.ApplyConfig(c)
+	syncedTargets = <-discoveryManager.SyncCh()
+	verifyAbsence(t, discoveryManager.targets, p)
+	verifyPresence(t, discoveryManager.targets, pk("prometheus", rs.record[0]), "{__address__=\"foo:9090\"}", true)
+	verifySyncedLen(t, syncedTargets, 1)
+	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
+	verifySyncedKeyLen(t, syncedTargets, "prometheus", 1)
 }
 
 func TestTargetSetRecreatesTargetGroupsOnConfigChange(t *testing.T) {
@@ -784,23 +923,30 @@ func TestTargetSetRecreatesTargetGroupsOnConfigChange(t *testing.T) {
 		},
 	}
 	discoveryManager.ApplyConfig(c)
-	<-discoveryManager.SyncCh()
+
+	syncedTargets := <-discoveryManager.SyncCh()
 	p := pk("prometheus", rs.record[0])
 	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"foo:9090\"}", true)
 	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"bar:9090\"}", true)
 	verifyLen(t, discoveryManager.targets, 1)
+	verifySyncedLen(t, syncedTargets, 1)
+	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
+	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"bar:9090\"}", true)
+	verifySyncedKeyLen(t, syncedTargets, "prometheus", 2)
 
 	c["prometheus"] = Configs{
 		staticConfig("foo:9090"),
 	}
 	discoveryManager.ApplyConfig(c)
-
-	<-discoveryManager.SyncCh()
+	syncedTargets = <-discoveryManager.SyncCh()
 	verifyAbsence(t, discoveryManager.targets, p)
 	p = pk("prometheus", rs.record[1])
 	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"foo:9090\"}", true)
 	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"bar:9090\"}", false)
 	verifyLen(t, discoveryManager.targets, 1)
+	verifySyncedLen(t, syncedTargets, 1)
+	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
+	verifySyncedKeyLen(t, syncedTargets, "prometheus", 1)
 }
 
 func TestDiscovererConfigs(t *testing.T) {
@@ -820,13 +966,18 @@ func TestDiscovererConfigs(t *testing.T) {
 	}
 	discoveryManager.ApplyConfig(c)
 
-	<-discoveryManager.SyncCh()
+	syncedTargets := <-discoveryManager.SyncCh()
 	p := pk("prometheus", rs.record[0])
 	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"foo:9090\"}", true)
 	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"bar:9090\"}", true)
 	p = pk("prometheus", rs.record[1])
 	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"baz:9090\"}", true)
 	verifyLen(t, discoveryManager.targets, 2)
+	verifySyncedLen(t, syncedTargets, 1)
+	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
+	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"bar:9090\"}", true)
+	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"baz:9090\"}", true)
+	verifySyncedKeyLen(t, syncedTargets, "prometheus", 3)
 }
 
 // TestTargetSetRecreatesEmptyStaticConfigs ensures that reloading a config file after
@@ -848,16 +999,19 @@ func TestTargetSetRecreatesEmptyStaticConfigs(t *testing.T) {
 	}
 	discoveryManager.ApplyConfig(c)
 
-	<-discoveryManager.SyncCh()
+	syncedTargets := <-discoveryManager.SyncCh()
 	p := pk("prometheus", rs.record[0])
 	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"foo:9090\"}", true)
+	verifySyncedLen(t, syncedTargets, 1)
+	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
+	verifySyncedKeyLen(t, syncedTargets, "prometheus", 1)
 
 	c["prometheus"] = Configs{
 		StaticConfig{{}},
 	}
 	discoveryManager.ApplyConfig(c)
 
-	<-discoveryManager.SyncCh()
+	syncedTargets = <-discoveryManager.SyncCh()
 	p = pk("prometheus", rs.record[1])
 	targetGroups, ok := discoveryManager.targets[p]
 	if !ok {
@@ -871,6 +1025,12 @@ func TestTargetSetRecreatesEmptyStaticConfigs(t *testing.T) {
 	if len(group.Targets) != 0 {
 		t.Fatalf("Invalid number of targets: expected 0, got %d", len(group.Targets))
 	}
+	verifySyncedLen(t, syncedTargets, 1)
+	verifySyncedKeyLen(t, syncedTargets, "prometheus", 1)
+	if lbls := syncedTargets["prometheus"][0].Labels; lbls != nil {
+		t.Fatalf("Unexpected Group: expected nil Labels, got %v", lbls)
+	}
+
 }
 
 func TestIdenticalConfigurationsAreCoalesced(t *testing.T) {
@@ -892,12 +1052,18 @@ func TestIdenticalConfigurationsAreCoalesced(t *testing.T) {
 	}
 	discoveryManager.ApplyConfig(c)
 
-	<-discoveryManager.SyncCh()
+	syncedTargets := <-discoveryManager.SyncCh()
 	verifyPresence(t, discoveryManager.targets, pk("prometheus", rs.record[0]), "{__address__=\"foo:9090\"}", true)
 	verifyPresence(t, discoveryManager.targets, pk("prometheus2", rs.record[0]), "{__address__=\"foo:9090\"}", true)
-	if len(discoveryManager.providers) != 1 {
-		t.Fatalf("Invalid number of providers: expected 1, got %d", len(discoveryManager.providers))
+	if len(discoveryManager.providers.items) != 1 {
+		t.Fatalf("Invalid number of providers: expected 1, got %d", len(discoveryManager.providers.items))
 	}
+	verifySyncedLen(t, syncedTargets, 2)
+	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
+	verifySyncedKeyLen(t, syncedTargets, "prometheus", 1)
+	verifySyncedPresence(t, syncedTargets, "prometheus2", "{__address__=\"foo:9090\"}", true)
+	verifySyncedKeyLen(t, syncedTargets, "prometheus2", 1)
+
 }
 
 func TestApplyConfigDoesNotModifyStaticTargets(t *testing.T) {
@@ -928,6 +1094,29 @@ type errorConfig struct{ err error }
 
 func (e errorConfig) Name() string                                        { return "error" }
 func (e errorConfig) NewDiscoverer(DiscovererOptions) (Discoverer, error) { return nil, e.err }
+
+type lockStaticConfig struct {
+	mu     *sync.Mutex
+	config StaticConfig
+}
+
+func (s lockStaticConfig) Name() string { return "lockstatic" }
+func (s lockStaticConfig) NewDiscoverer(options DiscovererOptions) (Discoverer, error) {
+	return lockStaticDiscoverer{s.mu, s.config}, nil
+}
+
+type lockStaticDiscoverer lockStaticConfig
+
+func (s lockStaticDiscoverer) Run(ctx context.Context, up chan<- []*targetgroup.Group) {
+	// TODO: existing implementation closes up chan, but documentation explicitly forbids it...?
+	defer close(up)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	select {
+	case <-ctx.Done():
+	case up <- s.config:
+	}
+}
 
 func TestGaugeFailedConfigs(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
