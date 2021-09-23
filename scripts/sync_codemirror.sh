@@ -12,6 +12,7 @@ commit_msg="Update codemirror"
 pr_title="Synchronize codemirror from prometheus/prometheus"
 pr_msg="Propagating changes from prometheus/prometheus default branch."
 target_repo="prometheus-community/codemirror-promql"
+source_path="web/ui/module/codemirror-promql"
 
 color_red='\e[31m'
 color_green='\e[32m'
@@ -43,7 +44,7 @@ excluded_dirs=".github .circleci"
 # Go to the root of the repo
 cd "$(git rev-parse --show-cdup)" || exit 1
 
-source_dir="$(pwd)/web/ui/module/codemirror-promql"
+source_dir="$(pwd)/${source_path}"
 
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "${tmp_dir}"' EXIT
