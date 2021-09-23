@@ -1,6 +1,6 @@
 module github.com/prometheus/prometheus
 
-go 1.14
+go 1.16
 
 require (
 	github.com/Azure/azure-sdk-for-go v58.2.0+incompatible
@@ -116,3 +116,5 @@ exclude (
 	k8s.io/client-go v9.0.0+incompatible
 	k8s.io/client-go v9.0.0-invalid+incompatible
 )
+
+replace github.com/prometheus/common => github.com/jan--f/common v0.29.1-0.20211111101731-be9b567f528b
