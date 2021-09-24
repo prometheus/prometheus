@@ -1,12 +1,17 @@
 CodeMirror-promql
 =================
-[![CircleCI](https://circleci.com/gh/prometheus-community/codemirror-promql.svg?style=shield)](https://circleci.com/gh/prometheus-community/codemirror-promql) [![GitHub license](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+[![CircleCI](https://circleci.com/gh/prometheus-community/codemirror-promql.svg?style=shield)](https://circleci.com/gh/prometheus-community/codemirror-promql) [![GitHub license](https://img.shields.io/badge/license-Apache-blue.svg)](./LICENSE)
 [![NPM version](https://img.shields.io/npm/v/codemirror-promql.svg)](https://www.npmjs.org/package/codemirror-promql) [![codecov](https://codecov.io/gh/prometheus-community/codemirror-promql/branch/master/graph/badge.svg?token=1OSVPBDKZC)](https://codecov.io/gh/prometheus-community/codemirror-promql)
 
 ## Overview
 
 This project provides a mode for [CodeMirror Next](https://codemirror.net/6) that handles syntax highlighting, linting
 and autocompletion for PromQL ([Prometheus Query Language](https://prometheus.io/docs/introduction/overview/)).
+
+## Where does it come from?
+
+This repo is synced from https://github.com/prometheus/prometheus/tree/main/web/ui/module/codemirror-promql. 
+Code changes are made in that location, merged into `prometheus/prometheus` and later synced here by a bot.
 
 ### Installation
 
@@ -245,12 +250,6 @@ Note: In case this parameter is provided, then the rest of the configuration is 
 * [ReactJS example](https://github.com/prometheus/prometheus/blob/431ea75a11ca165dad9dd5d629b3cf975f4c186b/web/ui/react-app/src/pages/graph/CMExpressionInput.tsx)
 * [Angular example](https://github.com/perses/perses/blob/28b3bdac88b0ed7a4602f9c91106442eafcb6c34/internal/api/front/perses/src/app/project/prometheusrule/promql-editor/promql-editor.component.ts)
 
-## Contributions
-
-Any contribution or suggestion would be really appreciated. Feel free
-to [file an issue](https://github.com/prometheus-community/codemirror-promql/issues)
-or [send a pull request](https://github.com/prometheus-community/codemirror-promql/pulls).
-
 ## License
 
-[MIT](./LICENSE)
+[Apache](./LICENSE)
