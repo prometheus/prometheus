@@ -278,8 +278,8 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode): Context
           //    Expr(),
           //    ⚠(Identifier)
           // )
-          // We don't really care about the parent, here we are more interesting if In the siblings of the error node, there is the node 'Expr'
-          // If it is the case, then likely we should autocomplete or the BinOp or the offset.
+          // We don't really care about the parent, here we are more interested if in the siblings of the error node, there is the node 'Expr'
+          // If it is the case, then likely we should autocomplete the BinOp or the offset.
           result.push({ kind: ContextKind.BinOp }, { kind: ContextKind.Offset });
           break;
         }
