@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { SyntaxNode } from 'lezer-tree';
+import { SyntaxNode } from '@lezer/common';
 import { EqlRegex, EqlSingle, LabelName, MatchOp, Neq, NeqRegex, StringLiteral } from '../grammar/parser.terms';
 import { EditorState } from '@codemirror/state';
 import { Matcher } from '../types';

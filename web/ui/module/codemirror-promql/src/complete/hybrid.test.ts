@@ -453,6 +453,12 @@ describe('analyzeCompletion test', () => {
       expectedContext: [{ kind: ContextKind.BinOp }, { kind: ContextKind.Offset }],
     },
     {
+      title: 'autocomplete offset or binop 5',
+      expr: 'sum(http_requests_total{method="GET"} off)',
+      pos: 41,
+      expectedContext: [{ kind: ContextKind.BinOp }, { kind: ContextKind.Offset }],
+    },
+    {
       title: 'not autocompleting duration for a matrixSelector',
       expr: 'go[]',
       pos: 3,
@@ -1048,6 +1054,17 @@ describe('autocomplete promQL test', () => {
         options: ([] as Completion[]).concat(binOpTerms, [{ label: 'offset' }]),
         from: 14,
         to: 16,
+        span: /^[a-zA-Z0-9_:]+$/,
+      },
+    },
+    {
+      title: 'autocomplete offset or binop 5',
+      expr: 'sum(http_requests_total{method="GET"} off)',
+      pos: 41,
+      expectedResult: {
+        options: ([] as Completion[]).concat(binOpTerms, [{ label: 'offset' }]),
+        from: 38,
+        to: 41,
         span: /^[a-zA-Z0-9_:]+$/,
       },
     },

@@ -35,7 +35,7 @@ import {
 } from '../grammar/parser.terms';
 import { createEditorState } from '../test/utils.test';
 import { containsAtLeastOneChild, containsChild, retrieveAllRecursiveNodes, walkBackward, walkThrough } from './path-finder';
-import { SyntaxNode } from 'lezer-tree';
+import { SyntaxNode } from '@lezer/common';
 import { syntaxTree } from '@codemirror/language';
 
 describe('walkThrough test', () => {
@@ -142,14 +142,6 @@ describe('containsChild test', () => {
     {
       title: 'Should find all expr in a subtree',
       expr: 'metric_name / ignor',
-      pos: 0,
-      expectedResult: true,
-      walkThrough: [Expr, BinaryExpr],
-      child: [Expr, Expr],
-    },
-    {
-      title: 'Should find all expr in a subtree 2',
-      expr: 'http_requests_total{method="GET"} off',
       pos: 0,
       expectedResult: true,
       walkThrough: [Expr, BinaryExpr],
