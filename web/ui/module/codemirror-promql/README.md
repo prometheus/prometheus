@@ -10,8 +10,9 @@ and autocompletion for PromQL ([Prometheus Query Language](https://prometheus.io
 
 ## Where does it come from?
 
-This repo is synced from https://github.com/prometheus/prometheus/tree/main/web/ui/module/codemirror-promql. 
-Code changes are made in that location, merged into `prometheus/prometheus` and later synced here by a bot.
+The authoritative copy of this code lives in `prometheus/prometheus` and is synced to 
+`prometheus-community/codemirror-promql` on a regular basis by a bot. Please contribute any code changes to the code 
+in https://github.com/prometheus/prometheus/tree/main/web/ui/module/codemirror-promql.
 
 ### Installation
 
@@ -252,4 +253,4 @@ Note: In case this parameter is provided, then the rest of the configuration is 
 
 ## License
 
-[Apache](./LICENSE)
+Apache License 2.0, see [LICENSE](https://github.com/prometheus-community/codemirror-promql/blob/master/LICENSE).
