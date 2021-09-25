@@ -107,13 +107,13 @@ process_repo() {
   git add .
 
   for excluded_dir in ${excluded_dirs}; do
-      git restore --staged "${excluded_dir}/*"
-      git restore "${excluded_dir}/*"
+      git reset -- "${excluded_dir}/*"
+      git checkout -- "${excluded_dir}/*"
   done
 
   for excluded_file in ${excluded_files}; do
-      git restore --staged "${excluded_file}"
-      git restore "${excluded_file}"
+      git reset -- "${excluded_file}"
+      git checkout -- "${excluded_file}"
   done
 
   if [[ -n "$(git status --porcelain)" ]]; then
