@@ -564,6 +564,7 @@ var expectedConf = &Config{
 					AuthenticationMethod: "OAuth",
 					RefreshInterval:      model.Duration(5 * time.Minute),
 					Port:                 9100,
+					HTTPClientConfig:     config.DefaultHTTPClientConfig,
 				},
 			},
 		},
@@ -1254,6 +1255,10 @@ var expectedErrors = []struct {
 	{
 		filename: "azure_authentication_method.bad.yml",
 		errMsg:   "unknown authentication_type \"invalid\". Supported types are \"OAuth\" or \"ManagedIdentity\"",
+	},
+	{
+		filename: "azure_two_authentication_method.bad.yml",
+		errMsg:   "standard authentication methods cannot be used, only azure OAuth or ManagedIdentity",
 	},
 	{
 		filename: "empty_scrape_config.bad.yml",

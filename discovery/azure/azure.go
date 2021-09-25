@@ -83,7 +83,7 @@ type SDConfig struct {
 	RefreshInterval      model.Duration     `yaml:"refresh_interval,omitempty"`
 	AuthenticationMethod string             `yaml:"authentication_method,omitempty"`
 
-	HTTPClientConfig config.HTTPClientConfig `yaml:",omitempty"`
+	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
 }
 
 // Name returns the name of the Config.
