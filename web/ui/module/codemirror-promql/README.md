@@ -8,6 +8,8 @@ CodeMirror-promql
 This project provides a mode for [CodeMirror Next](https://codemirror.net/6) that handles syntax highlighting, linting
 and autocompletion for PromQL ([Prometheus Query Language](https://prometheus.io/docs/introduction/overview/)).
 
+![preview](https://user-images.githubusercontent.com/4548045/95660829-d5e4b680-0b2a-11eb-9ecb-41dca6396273.gif)
+
 ## Where does it come from?
 
 The authoritative copy of this code lives in `prometheus/prometheus` and is synced to 
@@ -43,15 +45,6 @@ npm install --save @codemirror/autocomplete @codemirror/highlight @codemirror/la
 ```bash
 npm install --save @codemirror/basic-setup
 ```
-
-### Playground
-
-[Here](https://codemirror-promql.netlify.app/) you have a playground available that is deployed from the latest commit
-available on the `master` branch.
-
-Here is a short preview of it looks like currently:
-
-![preview](https://user-images.githubusercontent.com/4548045/95660829-d5e4b680-0b2a-11eb-9ecb-41dca6396273.gif)
 
 ## Usage
 
