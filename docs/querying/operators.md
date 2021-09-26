@@ -45,6 +45,36 @@ the result.
 The following trigonometric binary operators, which work in radians, exist in Prometheus:
 
 * `atan2` (based on https://pkg.go.dev/math#Atan2, _This is experimental_)
+    
+    A usecase of `atan2` is converting directional data between the [polar](https://en.wikipedia.org/wiki/Polar_coordinate_system) (r, theta)
+    and [cartesian](https://en.wikipedia.org/wiki/Cartesian_coordinate_system) (x, y) coordinate forms. 
+    
+    Example:
+
+    Take some wind speed and direction data in the polar form. To get a trend over a
+    longer period of time, it's not correct to just average out the direction data.
+    The polar data needs to be converted into the cartesian form:
+
+    ```
+    wind:northwards = windspeed * cos(rad(winddirection))
+    wind:westwards = windspeed * sin(rad(winddirection))
+    ```
+
+    Having done that, the longerterm averages over northwards and westwards now make sense:
+
+    ```
+    wind:northwards:avg1h = avg_over_time(wind:northwards[1h])
+    wind:westwards:avg1h = avg_over_time(wind:westwards[1h])
+    ```
+
+    The "average" direction can be extracted out of these again by using `atan2`:
+
+    ```
+    wind:direction:avg1h = deg(wind:northwards:avg1h atan2 wind:westwards:avg1h)
+    ```
+
+    The Wikipedia article on the circular mean has more about this calculation:
+    https://en.wikipedia.org/wiki/Circular_mean
 
 Trigonometric operators allow trigonometric functions to be executed on two vectors using
 vector matching, which isn't available with normal functions. They act in the same manner
