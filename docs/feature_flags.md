@@ -47,7 +47,7 @@ More details can be found [here](querying/basics.md#offset-modifier).
 As opposed to the normal `[x:y]` subquery syntax, which aligns with multiples of the subquery's
 interval as a [performance optimization](https://www.robustperception.io/promql-subqueries-and-alignment),
 the expiremental syntax `[x::y]` aligns with the evaluation time no matter what it is. This gives you
-the benifit of intervals aligned exactly where you'd expect them to be, but could also lead to the
+the benefit of intervals aligned exactly where you'd expect them to be, but could also lead to the
 number of samples needed for the query blowing up, which is why it's disabled by default.
 
 ## Remote Write Receiver
