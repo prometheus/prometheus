@@ -17,7 +17,6 @@
 @precedence {
   pow @right,
   mul @left
-  atan2 @left,
   add @left,
   eql @left,
   and @left,

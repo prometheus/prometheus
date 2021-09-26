@@ -44,7 +44,7 @@ the result.
 
 The following trigonometric binary operators, which work in radians, exist in Prometheus:
 
-* `atan2` (https://pkg.go.dev/math#Atan2, _This is experimental_)
+* `atan2` (based on https://pkg.go.dev/math#Atan2, _This is experimental_)
 
 Trigonometric operators allow trigonometric functions to be executed on two vectors using
 vector matching, which isn't available with normal functions. They act in the same manner
