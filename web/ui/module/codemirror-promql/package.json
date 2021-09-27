@@ -25,7 +25,7 @@
     "prometheus"
   ],
   "author": "Prometheus Authors <prometheus-developers@googlegroups.com>",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "bugs": {
     "url": "https://github.com/prometheus-community/codemirror-promql/issues"
   },
