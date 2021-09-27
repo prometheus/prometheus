@@ -26,6 +26,7 @@ import (
 
 	"github.com/go-kit/log"
 	client_testutil "github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
@@ -1518,5 +1519,89 @@ func TestPKeyDictReplace(t *testing.T) {
 	}
 	if !reflect.DeepEqual(d.items, exp) {
 		t.Fatalf("Dict has unexpected items: got #%v, expected #%v", d.items, exp)
+	}
+}
+
+// A StaticConfig is a Config that provides a static list of targets.
+type secretStaticConfig struct {
+	Tg     []*targetgroup.Group
+	Secret config.Secret
+}
+
+// Name returns the name of the service discovery mechanism.
+func (secretStaticConfig) Name() string { return "secretstatic" }
+
+// NewDiscoverer returns a Discoverer for the Config.
+func (c secretStaticConfig) NewDiscoverer(DiscovererOptions) (Discoverer, error) {
+	return staticDiscoverer(c.Tg), nil
+}
+
+func TestSecretHashing(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	discoveryManager := NewManager(ctx, log.NewNopLogger())
+	discoveryManager.updatert = 100 * time.Millisecond
+	rs := newRecordSource(42)
+	discoveryManager.rnd = rand.New(rs)
+	go discoveryManager.Run()
+
+	testCases := []struct {
+		title string
+		cfg   map[string]Configs
+		exp   int
+	}{
+		{
+			title: "Same providers with identical configs should be coalesced",
+			cfg: map[string]Configs{
+				"prometheus": {
+					secretStaticConfig{
+						staticConfig("foo:9090"),
+						"same secrets",
+					},
+				},
+				"prometheus2": {
+					secretStaticConfig{
+						staticConfig("foo:9090"),
+						"same secrets",
+					},
+				},
+			},
+			exp: 1,
+		},
+		{
+			title: "Same providers with identical configs yet different secrets should not be coalesced",
+			cfg: map[string]Configs{
+				"prometheus": {
+					secretStaticConfig{
+						staticConfig("foo:9090"),
+						"secret one",
+					},
+				},
+				"prometheus2": {
+					secretStaticConfig{
+						staticConfig("foo:9090"),
+						"secret two",
+					},
+				},
+			},
+			exp: 2,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.title, func(t *testing.T) {
+			discoveryManager.ApplyConfig(tc.cfg)
+			l := 0
+			for _, its := range discoveryManager.providers.items {
+				l += len(its)
+			}
+			if l != tc.exp {
+				t.Fatalf(
+					"Unexpected number of registered providers: got %d, expected %d; providers.items: %#v",
+					l,
+					tc.exp,
+					discoveryManager.providers.items,
+				)
+			}
+		})
 	}
 }
