@@ -443,9 +443,24 @@ func TestCompactionFailWillCleanUpTempDir(t *testing.T) {
 		require.NoError(t, os.RemoveAll(tmpdir))
 	}()
 
-	require.Error(t, compactor.write(tmpdir, []shardedBlock{{meta: &BlockMeta{}}}, erringBReader{}))
-	_, err = os.Stat(filepath.Join(tmpdir, BlockMeta{}.ULID.String()) + tmpForCreationBlockDirSuffix)
-	require.True(t, os.IsNotExist(err), "directory is not cleaned up")
+	shardedBlocks := []shardedBlock{
+		{meta: &BlockMeta{ULID: ulid.MustNew(ulid.Now(), rand.Reader)}},
+		{meta: &BlockMeta{ULID: ulid.MustNew(ulid.Now(), rand.Reader)}},
+		{meta: &BlockMeta{ULID: ulid.MustNew(ulid.Now(), rand.Reader)}},
+	}
+
+	require.Error(t, compactor.write(tmpdir, shardedBlocks, erringBReader{}))
+
+	// We rely on the fact that blockDir and tmpDir will be updated by compactor.write.
+	for _, b := range shardedBlocks {
+		require.NotEmpty(t, b.tmpDir)
+		_, err = os.Stat(b.tmpDir)
+		require.True(t, os.IsNotExist(err), "tmp directory is not cleaned up")
+
+		require.NotEmpty(t, b.blockDir)
+		_, err = os.Stat(b.blockDir)
+		require.True(t, os.IsNotExist(err), "block directory is not cleaned up")
+	}
 }
 
 func metaRange(name string, mint, maxt int64, stats *BlockStats) dirMeta {

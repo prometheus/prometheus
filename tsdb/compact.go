@@ -602,13 +602,21 @@ func (c *LeveledCompactor) write(dest string, outBlocks []shardedBlock, blocks .
 		err = tsdb_errors.NewMulti(err, tsdb_errors.CloseAll(closers)).Err()
 
 		for _, ob := range outBlocks {
-			if ob.tmpDir == "" {
-				continue
+			if ob.tmpDir != "" {
+				// RemoveAll returns no error when tmp doesn't exist so it is safe to always run it.
+				if removeErr := os.RemoveAll(ob.tmpDir); removeErr != nil {
+					level.Error(c.logger).Log("msg", "removed tmp folder after failed compaction", "dir", ob.tmpDir, "err", removeErr.Error())
+				}
 			}
 
-			// RemoveAll returns no error when tmp doesn't exist so it is safe to always run it.
-			if err := os.RemoveAll(ob.tmpDir); err != nil {
-				level.Error(c.logger).Log("msg", "removed tmp folder after failed compaction", "err", err.Error())
+			// If there was any error, and we have multiple output blocks, some blocks may have been generated, or at
+			// least have existing blockDir. In such case, we want to remove them.
+			// BlockDir may also not be set yet, if preparation for some previous blocks have failed.
+			if err != nil && ob.blockDir != "" {
+				// RemoveAll returns no error when tmp doesn't exist so it is safe to always run it.
+				if removeErr := os.RemoveAll(ob.blockDir); removeErr != nil {
+					level.Error(c.logger).Log("msg", "removed block folder after failed compaction", "dir", ob.blockDir, "err", removeErr.Error())
+				}
 			}
 		}
 		c.metrics.ran.Inc()
