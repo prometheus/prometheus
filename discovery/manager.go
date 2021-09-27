@@ -16,6 +16,7 @@ package discovery
 import (
 	"context"
 	"fmt"
+	"hash/maphash"
 	"math/rand"
 	"reflect"
 	"sync"
@@ -121,6 +122,9 @@ func NewManager(ctx context.Context, logger log.Logger, options ...func(*Manager
 		updatert:    5 * time.Second,
 		triggerSend: make(chan struct{}, 1),
 		rnd:         rand.New(rand.NewSource(time.Now().UnixNano())),
+		hashOpts: hashstructure.HashOptions{
+			Hasher: &maphash.Hash{},
+		},
 	}
 	for _, option := range options {
 		option(mgr)
@@ -165,6 +169,8 @@ type Manager struct {
 
 	// rnd stores a random number generator used for discovery provider naming.
 	rnd *rand.Rand
+
+	hashOpts hashstructure.HashOptions
 }
 
 // Run starts the background processing
