@@ -529,10 +529,18 @@ func TestCompaction_CompactWithSplitting(t *testing.T) {
 				// 2) Verify that total number of series over all blocks is correct.
 				totalSeries := uint64(0)
 
+				ts := uint64(0)
 				for shardIndex, blockID := range blockIDs {
 					// Some blocks may be empty, they will have zero block ID.
 					if blockID == (ulid.ULID{}) {
 						continue
+					}
+
+					// All blocks have the same timestamp.
+					if ts == 0 {
+						ts = blockID.Time()
+					} else {
+						require.Equal(t, ts, blockID.Time())
 					}
 
 					block, err := OpenBlock(log.NewNopLogger(), filepath.Join(dir, blockID.String()), nil)
