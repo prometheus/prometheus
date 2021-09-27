@@ -601,12 +601,12 @@ func (c *LeveledCompactor) write(dest string, outBlocks []shardedBlock, blocks .
 	defer func(t time.Time) {
 		err = tsdb_errors.NewMulti(err, tsdb_errors.CloseAll(closers)).Err()
 
-		// RemoveAll returns no error when tmp doesn't exist so it is safe to always run it.
 		for _, ob := range outBlocks {
 			if ob.tmpDir == "" {
 				continue
 			}
 
+			// RemoveAll returns no error when tmp doesn't exist so it is safe to always run it.
 			if err := os.RemoveAll(ob.tmpDir); err != nil {
 				level.Error(c.logger).Log("msg", "removed tmp folder after failed compaction", "err", err.Error())
 			}
@@ -661,12 +661,15 @@ func (c *LeveledCompactor) write(dest string, outBlocks []shardedBlock, blocks .
 		outBlocks[ix].indexw = indexw
 	}
 
+	// We use MinTime and MaxTime from first output block, because ALL output blocks have the same min/max times set.
 	if err := c.populateBlock(blocks, outBlocks[0].meta.MinTime, outBlocks[0].meta.MaxTime, outBlocks); err != nil {
 		return errors.Wrap(err, "populate block")
 	}
 
-	if err := c.ctx.Err(); err != nil {
-		return err
+	select {
+	case <-c.ctx.Done():
+		return c.ctx.Err()
+	default:
 	}
 
 	// We are explicitly closing them here to check for error even
@@ -703,7 +706,7 @@ func (c *LeveledCompactor) write(dest string, outBlocks []shardedBlock, blocks .
 		}
 		defer func() {
 			if df != nil {
-				_ = df.Close()
+				df.Close()
 			}
 		}()
 
