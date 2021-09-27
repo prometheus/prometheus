@@ -471,26 +471,12 @@ func (c *LeveledCompactor) compact(dest string, dirs []string, open []*Block, sh
 	err = c.write(dest, outBlocks, blocks...)
 	if err == nil {
 		ulids := make([]ulid.ULID, len(outBlocks))
+		allOutputBlocksAreEmpty := true
 
 		for ix := range outBlocks {
 			meta := outBlocks[ix].meta
 
-			ulids[ix] = outBlocks[ix].meta.ULID
-
 			if meta.Stats.NumSamples == 0 {
-				for _, b := range bs {
-					b.meta.Compaction.Deletable = true
-					n, err := writeMetaFile(c.logger, b.dir, &b.meta)
-					if err != nil {
-						level.Error(c.logger).Log(
-							"msg", "Failed to write 'Deletable' to meta file after compaction",
-							"ulid", b.meta.ULID,
-							"shard", fmt.Sprintf("%d_of_%d", ix, shardCount),
-						)
-					}
-					b.numBytesMeta = n
-				}
-				ulids[ix] = ulid.ULID{}
 				level.Info(c.logger).Log(
 					"msg", "compact blocks resulted in empty block",
 					"count", len(blocks),
@@ -499,6 +485,9 @@ func (c *LeveledCompactor) compact(dest string, dirs []string, open []*Block, sh
 					"shard", fmt.Sprintf("%d_of_%d", ix, shardCount),
 				)
 			} else {
+				allOutputBlocksAreEmpty = false
+				ulids[ix] = outBlocks[ix].meta.ULID
+
 				level.Info(c.logger).Log(
 					"msg", "compact blocks",
 					"count", len(blocks),
@@ -511,6 +500,22 @@ func (c *LeveledCompactor) compact(dest string, dirs []string, open []*Block, sh
 				)
 			}
 		}
+
+		if allOutputBlocksAreEmpty {
+			// Mark source blocks as deletable.
+			for _, b := range bs {
+				b.meta.Compaction.Deletable = true
+				n, err := writeMetaFile(c.logger, b.dir, &b.meta)
+				if err != nil {
+					level.Error(c.logger).Log(
+						"msg", "Failed to write 'Deletable' to meta file after compaction",
+						"ulid", b.meta.ULID,
+					)
+				}
+				b.numBytesMeta = n
+			}
+		}
+
 		return ulids, nil
 	}
 

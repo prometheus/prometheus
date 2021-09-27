@@ -15,6 +15,7 @@ package tsdb
 
 import (
 	"context"
+	"crypto/rand"
 	"fmt"
 	"io/ioutil"
 	"math"
@@ -574,8 +575,72 @@ func TestCompaction_CompactWithSplitting(t *testing.T) {
 				}
 
 				require.Equal(t, uint64(series), totalSeries)
+
+				// Source blocks are *not* deletable.
+				for _, b := range openBlocks {
+					require.False(t, b.meta.Compaction.Deletable)
+				}
 			})
 		}
+	}
+}
+
+func TestCompaction_CompactEmptyBlocks(t *testing.T) {
+	dir, err := ioutil.TempDir("", "compact")
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, os.RemoveAll(dir))
+	}()
+
+	ranges := [][2]int64{{0, 5000}, {3000, 8000}, {6000, 11000}, {9000, 14000}}
+
+	// Generate blocks.
+	var blockDirs []string
+
+	for _, r := range ranges {
+		// Generate blocks using index and chunk writer. CreateBlock would not return valid block for 0 series.
+		id := ulid.MustNew(ulid.Now(), rand.Reader)
+		m := &BlockMeta{
+			ULID:       id,
+			MinTime:    r[0],
+			MaxTime:    r[1],
+			Compaction: BlockMetaCompaction{Level: 1, Sources: []ulid.ULID{id}},
+			Version:    metaVersion1,
+		}
+
+		bdir := filepath.Join(dir, id.String())
+		require.NoError(t, os.Mkdir(bdir, 0777))
+		require.NoError(t, os.Mkdir(chunkDir(bdir), 0777))
+
+		_, err := writeMetaFile(log.NewNopLogger(), bdir, m)
+		require.NoError(t, err)
+
+		iw, err := index.NewWriter(context.Background(), filepath.Join(bdir, indexFilename))
+		require.NoError(t, err)
+
+		require.NoError(t, iw.AddSymbol("hello"))
+		require.NoError(t, iw.AddSymbol("world"))
+		require.NoError(t, iw.Close())
+
+		blockDirs = append(blockDirs, bdir)
+	}
+
+	c, err := NewLeveledCompactor(context.Background(), nil, log.NewNopLogger(), []int64{0}, nil, nil)
+	require.NoError(t, err)
+
+	blockIDs, err := c.CompactWithSplitting(dir, blockDirs, nil, 5)
+	require.NoError(t, err)
+
+	// There are no output blocks.
+	for _, b := range blockIDs {
+		require.Equal(t, ulid.ULID{}, b)
+	}
+
+	// All source blocks are now marked for deletion.
+	for _, b := range blockDirs {
+		meta, _, err := readMetaFile(b)
+		require.NoError(t, err)
+		require.True(t, meta.Compaction.Deletable)
 	}
 }
 
