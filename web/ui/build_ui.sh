@@ -14,6 +14,11 @@
 # limitations under the License.
 
 set -e
+
+npm version
+
+npm ci
+
 current=$(pwd)
 
 buildOrder=(module/codemirror-promql)
