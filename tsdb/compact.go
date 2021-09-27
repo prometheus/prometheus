@@ -462,7 +462,7 @@ func (c *LeveledCompactor) compact(dest string, dirs []string, open []*Block, sh
 		uids = append(uids, meta.ULID.String())
 	}
 
-	outBlocks := make([]shardedBlock, shardCount, shardCount)
+	outBlocks := make([]shardedBlock, shardCount)
 	for ix := range outBlocks {
 		uid := ulid.MustNew(ulid.Now(), rand.Reader)
 		outBlocks[ix] = shardedBlock{
@@ -472,7 +472,7 @@ func (c *LeveledCompactor) compact(dest string, dirs []string, open []*Block, sh
 
 	err = c.write(dest, outBlocks, blocks...)
 	if err == nil {
-		ulids := make([]ulid.ULID, len(outBlocks), len(outBlocks))
+		ulids := make([]ulid.ULID, len(outBlocks))
 
 		for ix := range outBlocks {
 			meta := outBlocks[ix].meta
