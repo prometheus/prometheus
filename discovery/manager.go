@@ -79,24 +79,27 @@ type poolKey struct {
 // provider holds a Discoverer instance, its configuration, cancel func and its subscribers.
 type provider struct {
 	name   string
-	c      context.CancelFunc
 	d      Discoverer
 	config interface{}
+
+	cancel context.CancelFunc
+	// done should be called by user after cleaning up resources associated with cancelled provider.
+	done func()
 
 	mu   sync.RWMutex
 	subs []string
 }
 
-func (p *provider) cancel() {
-	if p.c != nil {
-		p.c()
-	}
-}
-
-func (p *provider) updateSubs(subs []string) {
+func (p *provider) replaceSubs(subs []string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.subs = subs
+}
+
+func (p *provider) appendSubs(subs ...string) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.subs = append(p.subs, subs...)
 }
 
 type keepProvider struct {
@@ -144,7 +147,8 @@ type Manager struct {
 
 	// Some Discoverers(e.g. k8s) send only the updates for a given target group,
 	// so we use map[tg.Source]*targetgroup.Group to know which group to update.
-	targets map[poolKey]map[string]*targetgroup.Group
+	targets    map[poolKey]map[string]*targetgroup.Group
+	targetsMtx sync.RWMutex
 
 	// providers keeps track of SD providers.
 	providers *pKeyDict
@@ -183,12 +187,13 @@ func (m *Manager) SyncCh() <-chan map[string][]*targetgroup.Group {
 func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
-
+	m.targetsMtx.RLock()
 	for pk := range m.targets {
 		if _, ok := cfg[pk.setName]; !ok {
 			discoveredTargets.DeleteLabelValues(m.name, pk.setName)
 		}
 	}
+	m.targetsMtx.RUnlock()
 	var (
 		failedCount     int
 		keepProviders   = newKeepProviders()
@@ -247,24 +252,20 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 		}
 	}
 	failedConfigs.WithLabelValues(m.name).Set(float64(failedCount))
-	// Providers gone from config should be canceled and their target pools wiped.
+	// Providers gone from config should be canceled.
+	// Their target pools will be wiped by m.updater() upon receiving the cancellation signal.
+	wg := sync.WaitGroup{}
 	f := func(it interface{}, etag uint64) {
 		p := it.(*provider)
 		if _, ok := keepProviders.Get(p.config.(Config), etag); ok {
 			return
 		}
+		wg.Add(1)
+		p.done = wg.Done
 		p.cancel()
-		for _, s := range p.subs {
-			delete(m.targets, poolKey{setName: s, provider: p.name}) // protected by m.mtx, already held at this point.
-		}
 	}
 	oldProviders.ForEach(f)
-	// Delete those obsolete target pools still remaining.
-	for pk := range m.targets {
-		if _, ok := keepTargetPools[pk]; !ok {
-			delete(m.targets, pk)
-		}
-	}
+	wg.Wait()
 
 	// Currently downstream managers expect full target state upon config reload, so we must oblige.
 	// While startProvider does pull the trigger, it may take some time to do so, therefore
@@ -276,6 +277,16 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 		default:
 		}
 	}
+
+	// Delete those obsolete target pools still remaining - those from providers we keep,
+	m.targetsMtx.Lock()
+	for pk := range m.targets {
+		if _, ok := keepTargetPools[pk]; !ok {
+			delete(m.targets, pk)
+		}
+	}
+	m.targetsMtx.Unlock()
+
 	// Start newly registered providers.
 	f = func(it interface{}, _ uint64) {
 		m.startProvider(m.ctx, it.(*provider))
@@ -284,7 +295,7 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 	// Don't forget old providers.
 	f = func(it interface{}, etag uint64) {
 		p := it.(keepProvider)
-		p.p.updateSubs(p.subs)
+		p.p.replaceSubs(p.subs)
 		m.providers.Put(p.p, etag)
 	}
 	keepProviders.ForEach(f)
@@ -311,13 +322,27 @@ func (m *Manager) startProvider(ctx context.Context, p *provider) {
 	ctx, cancel := context.WithCancel(ctx)
 	updates := make(chan []*targetgroup.Group)
 
-	p.c = cancel
+	p.cancel = cancel
 
 	go p.d.Run(ctx, updates)
 	go m.updater(ctx, p, updates)
 }
 
+// cleaner cleans resources associated with provider.
+func (m *Manager) cleaner(p *provider) {
+	m.targetsMtx.Lock()
+	for _, s := range p.subs {
+		delete(m.targets, poolKey{setName: s, provider: p.name})
+	}
+	m.targetsMtx.Unlock()
+	if p.done != nil {
+		p.done()
+	}
+}
+
 func (m *Manager) updater(ctx context.Context, p *provider, updates chan []*targetgroup.Group) {
+	// Ensure targets from this provider are cleaned up.
+	defer m.cleaner(p)
 	for {
 		select {
 		case <-ctx.Done():
@@ -326,9 +351,10 @@ func (m *Manager) updater(ctx context.Context, p *provider, updates chan []*targ
 			receivedUpdates.WithLabelValues(m.name).Inc()
 			if !ok {
 				level.Debug(m.logger).Log("msg", "Discoverer channel closed", "provider", p.name)
+				// Wait for provider cancellation to ensure targets are cleaned up when expected.
+				<-ctx.Done()
 				return
 			}
-
 			p.mu.RLock()
 			for _, s := range p.subs {
 				m.updateGroup(poolKey{setName: s, provider: p.name}, tgs)
@@ -380,8 +406,8 @@ func (m *Manager) cancelDiscoverers() {
 }
 
 func (m *Manager) updateGroup(poolKey poolKey, tgs []*targetgroup.Group) {
-	m.mtx.Lock()
-	defer m.mtx.Unlock()
+	m.targetsMtx.Lock()
+	defer m.targetsMtx.Unlock()
 
 	if _, ok := m.targets[poolKey]; !ok {
 		m.targets[poolKey] = make(map[string]*targetgroup.Group)
@@ -394,11 +420,10 @@ func (m *Manager) updateGroup(poolKey poolKey, tgs []*targetgroup.Group) {
 }
 
 func (m *Manager) allGroups() map[string][]*targetgroup.Group {
-	m.mtx.RLock()
-	defer m.mtx.RUnlock()
-
 	tSets := map[string][]*targetgroup.Group{}
 	n := map[string]int{}
+	m.targetsMtx.RLock()
+	defer m.targetsMtx.RUnlock()
 	for pkey, tsets := range m.targets {
 		for _, tg := range tsets {
 			// Even if the target group 'tg' is empty we still need to send it to the 'Scrape manager'
@@ -418,9 +443,7 @@ func (m *Manager) registerProvider(cfg Config, setName string, etag uint64) erro
 
 	if prov, ok := m.providers.Get(cfg, etag); ok {
 		p := prov.(*provider)
-		p.mu.Lock()
-		p.subs = append(p.subs, setName)
-		p.mu.Unlock()
+		p.appendSubs(setName)
 		m.providers.Put(p, etag)
 		return nil
 	}
@@ -437,6 +460,9 @@ func (m *Manager) registerProvider(cfg Config, setName string, etag uint64) erro
 		d:      d,
 		config: cfg,
 		subs:   []string{setName},
+		done: func() {
+			// No-op. This function may be replaced at some point of provider's life.
+		},
 	},
 		etag,
 	)
