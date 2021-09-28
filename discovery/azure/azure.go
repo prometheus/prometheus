@@ -212,7 +212,7 @@ func createAzureClient(cfg SDConfig) (azureClient, error) {
 
 	bearerAuthorizer := autorest.NewBearerAuthorizer(spt)
 
-	client, err := config.NewClientFromConfig(cfg.HTTPClientConfig, "azure_sd", config.WithHTTP2Disabled())
+	client, err := config.NewClientFromConfig(cfg.HTTPClientConfig, "azure_sd")
 	if err != nil {
 		return azureClient{}, err
 	}
