@@ -130,12 +130,6 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return errors.Errorf("unknown authentication_type %q. Supported types are %q or %q", c.AuthenticationMethod, authMethodOAuth, authMethodManagedIdentity)
 	}
 
-	// Because Azure's mandatory authentication methods use the authorization header, others can't be configured.
-	if c.HTTPClientConfig.BasicAuth != nil || c.HTTPClientConfig.Authorization != nil || c.HTTPClientConfig.OAuth2 != nil ||
-		len(c.HTTPClientConfig.BearerToken) > 0 || len(c.HTTPClientConfig.BearerTokenFile) > 0 {
-		return errors.New("standard authentication methods cannot be used, only azure OAuth or ManagedIdentity")
-	}
-
 	return nil
 }
 

@@ -426,19 +426,29 @@ subscription_id: <string>
 # instead be specified in the relabeling rule.
 [ port: <int> | default = 80 ]
 
-# The following standard authentication methods are not permitted because
-# they conflict with Azure's authentication methods.
-# Unused.
+# Authentication information used to authenticate to the consul server.
+# Note that `basic_auth`, `authorization` and `oauth2` options are
+# mutually exclusive.
+# `password` and `password_file` are mutually exclusive.
+
+# Optional HTTP basic authentication information, currently not support by Azure.
 basic_auth:
   [ username: <string> ]
   [ password: <secret> ]
   [ password_file: <string> ]
-# Unused.
+
+# Optional `Authorization` header configuration, currently not supported by Azure.
 authorization:
+  # Sets the authentication type.
   [ type: <string> | default: Bearer ]
+  # Sets the credentials. It is mutually exclusive with
+  # `credentials_file`.
   [ credentials: <secret> ]
+  # Sets the credentials to the credentials read from the configured file.
+  # It is mutually exclusive with `credentials`.
   [ credentials_file: <filename> ]
-# Unused.
+
+# Optional OAuth 2.0 configuration, currently not supported by Azure.
 oauth2:
   [ <oauth2> ]
 
