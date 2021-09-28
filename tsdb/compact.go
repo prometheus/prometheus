@@ -482,7 +482,7 @@ func (c *LeveledCompactor) compact(dest string, dirs []string, open []*Block, sh
 					"count", len(blocks),
 					"sources", fmt.Sprintf("%v", uids),
 					"duration", time.Since(start),
-					"shard", fmt.Sprintf("%d_of_%d", ix, shardCount),
+					"shard", fmt.Sprintf("%d_of_%d", ix+1, shardCount),
 				)
 			} else {
 				allOutputBlocksAreEmpty = false
@@ -496,7 +496,7 @@ func (c *LeveledCompactor) compact(dest string, dirs []string, open []*Block, sh
 					"ulid", meta.ULID,
 					"sources", fmt.Sprintf("%v", uids),
 					"duration", time.Since(start),
-					"shard", fmt.Sprintf("%d_of_%d", ix, shardCount),
+					"shard", fmt.Sprintf("%d_of_%d", ix+1, shardCount),
 				)
 			}
 		}
