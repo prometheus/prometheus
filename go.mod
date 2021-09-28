@@ -46,7 +46,7 @@ require (
 	github.com/prometheus/alertmanager v0.23.0
 	github.com/prometheus/client_golang v1.11.0
 	github.com/prometheus/client_model v0.2.0
-	github.com/prometheus/common v0.31.0
+	github.com/prometheus/common v0.31.1
 	github.com/prometheus/common/sigv4 v0.1.0
 	github.com/prometheus/exporter-toolkit v0.6.1
 	github.com/scaleway/scaleway-sdk-go v1.0.0-beta.7.0.20210223165440-c65ae3540d44
