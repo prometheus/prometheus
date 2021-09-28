@@ -70,6 +70,7 @@ export const PanelDefaultOptions: PanelOptions = {
 
 class Panel extends Component<PanelProps, PanelState> {
   private abortInFlightFetch: (() => void) | null = null;
+  private debounceExecuteQuery: () => void;
 
   constructor(props: PanelProps) {
     super(props);
@@ -104,9 +105,6 @@ class Panel extends Component<PanelProps, PanelState> {
   componentDidMount(): void {
     this.executeQuery();
   }
-
-  // eslint-disable-next-line
-  debounceExecuteQuery() {}
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   executeQuery = async (): Promise<any> => {
