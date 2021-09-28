@@ -8,19 +8,19 @@
       "dom"
     ],
     "declaration": true,
-    "outDir": "lib",
+    "outDir": "dist",
     "strict": true,
     "sourceMap": true,
     "moduleResolution": "node",
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
-    "allowJs": true
+    "allowJs": true,
+    "skipLibCheck": true
   },
   "include": [
-    "src/lang-promql"
+    "src/"
   ],
   "exclude": [
-    "node_modules",
     "src/**/*.test.ts"
   ]
 }

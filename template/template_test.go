@@ -31,6 +31,7 @@ func TestTemplateExpansion(t *testing.T) {
 		text        string
 		output      string
 		input       interface{}
+		options     []string
 		queryResult promql.Vector
 		shouldFail  bool
 		html        bool
@@ -152,6 +153,45 @@ func TestTemplateExpansion(t *testing.T) {
 					Point:  promql.Point{T: 0, V: 11},
 				}},
 			output: "a:11: b:21: ",
+		},
+		{
+			// Missing value is no value for nil options.
+			text:   "{{ .Foo }}",
+			output: "<no value>",
+		},
+		{
+			// Missing value is no value for no options.
+			text:    "{{ .Foo }}",
+			options: make([]string, 0),
+			output:  "<no value>",
+		},
+		{
+			// Assert that missing value returns error with missingkey=error.
+			text:       "{{ .Foo }}",
+			options:    []string{"missingkey=error"},
+			shouldFail: true,
+			errorMsg:   `error executing template test: template: test:1:3: executing "test" at <.Foo>: nil data; no entry for key "Foo"`,
+		},
+		{
+			// Missing value is "" for nil options in ExpandHTML.
+			text:   "{{ .Foo }}",
+			output: "",
+			html:   true,
+		},
+		{
+			// Missing value is "" for no options in ExpandHTML.
+			text:    "{{ .Foo }}",
+			options: make([]string, 0),
+			output:  "",
+			html:    true,
+		},
+		{
+			// Assert that missing value returns error with missingkey=error in ExpandHTML.
+			text:       "{{ .Foo }}",
+			options:    []string{"missingkey=error"},
+			shouldFail: true,
+			errorMsg:   `error executing template test: template: test:1:3: executing "test" at <.Foo>: nil data; no entry for key "Foo"`,
+			html:       true,
 		},
 		{
 			// Unparsable template.
@@ -341,7 +381,7 @@ func TestTemplateExpansion(t *testing.T) {
 		}
 		var result string
 		var err error
-		expander := NewTemplateExpander(context.Background(), s.text, "test", s.input, 0, queryFunc, extURL)
+		expander := NewTemplateExpander(context.Background(), s.text, "test", s.input, 0, queryFunc, extURL, s.options)
 		if s.html {
 			result, err = expander.ExpandHTML(nil)
 		} else {
@@ -356,7 +396,7 @@ func TestTemplateExpansion(t *testing.T) {
 		require.NoError(t, err)
 
 		if err == nil {
-			require.Equal(t, result, s.output)
+			require.Equal(t, s.output, result)
 		}
 	}
 }

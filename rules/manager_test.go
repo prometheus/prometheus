@@ -156,7 +156,7 @@ func TestAlertingRule(t *testing.T) {
 
 		evalTime := baseTime.Add(test.time)
 
-		res, err := rule.Eval(suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil)
+		res, err := rule.Eval(suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil, 0)
 		require.NoError(t, err)
 
 		var filteredRes promql.Vector // After removing 'ALERTS_FOR_STATE' samples.
@@ -305,7 +305,7 @@ func TestForStateAddSamples(t *testing.T) {
 			forState = float64(value.StaleNaN)
 		}
 
-		res, err := rule.Eval(suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil)
+		res, err := rule.Eval(suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil, 0)
 		require.NoError(t, err)
 
 		var filteredRes promql.Vector // After removing 'ALERTS' samples.
@@ -773,6 +773,12 @@ func TestUpdate(t *testing.T) {
 	}
 	reloadAndValidate(rgs, t, tmpFile, ruleManager, expected, ogs)
 
+	// Update limit and reload.
+	for i := range rgs.Groups {
+		rgs.Groups[i].Limit = 1
+	}
+	reloadAndValidate(rgs, t, tmpFile, ruleManager, expected, ogs)
+
 	// Change group rules and reload.
 	for i, g := range rgs.Groups {
 		for j, r := range g.Rules {
@@ -791,6 +797,7 @@ type ruleGroupsTest struct {
 type ruleGroupTest struct {
 	Name     string         `yaml:"name"`
 	Interval model.Duration `yaml:"interval,omitempty"`
+	Limit    int            `yaml:"limit,omitempty"`
 	Rules    []rulefmt.Rule `yaml:"rules"`
 }
 
@@ -812,6 +819,7 @@ func formatRules(r *rulefmt.RuleGroups) ruleGroupsTest {
 		tmp = append(tmp, ruleGroupTest{
 			Name:     g.Name,
 			Interval: g.Interval,
+			Limit:    g.Limit,
 			Rules:    rtmp,
 		})
 	}

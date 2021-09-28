@@ -18,3 +18,5 @@ A series of blog posts explaining different components of TSDB:
 * [Memory Mapping of Head Chunks from Disk](https://ganeshvernekar.com/blog/prometheus-tsdb-mmapping-head-chunks-from-disk/)
 * [Persistent Block and its Index](https://ganeshvernekar.com/blog/prometheus-tsdb-persistent-block-and-its-index/)
 * [Queries](https://ganeshvernekar.com/blog/prometheus-tsdb-queries/)
+* [Compaction and Retention](https://ganeshvernekar.com/blog/prometheus-tsdb-compaction-and-retention/)
+* [Snapshot on Shutdown](https://ganeshvernekar.com/blog/prometheus-tsdb-snapshot-on-shutdown/)

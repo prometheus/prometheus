@@ -4,3 +4,4 @@
 /discovery/kubernetes @brancz
 /tsdb @codesome
 /promql @codesome @roidelapluie
+/cmd/promtool @jessicagreben @dgl

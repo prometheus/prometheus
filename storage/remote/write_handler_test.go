@@ -23,11 +23,12 @@ import (
 	"testing"
 
 	"github.com/go-kit/log"
+	"github.com/stretchr/testify/require"
+
 	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/stretchr/testify/require"
 )
 
 func TestRemoteWriteHandler(t *testing.T) {
@@ -47,16 +48,23 @@ func TestRemoteWriteHandler(t *testing.T) {
 	require.Equal(t, http.StatusNoContent, resp.StatusCode)
 
 	i := 0
+	j := 0
 	for _, ts := range writeRequestFixture.Timeseries {
 		labels := labelProtosToLabels(ts.Labels)
 		for _, s := range ts.Samples {
 			require.Equal(t, mockSample{labels, s.Timestamp, s.Value}, appendable.samples[i])
 			i++
 		}
+
+		for _, e := range ts.Exemplars {
+			exemplarLabels := labelProtosToLabels(e.Labels)
+			require.Equal(t, mockExemplar{labels, exemplarLabels, e.Timestamp, e.Value}, appendable.exemplars[j])
+			j++
+		}
 	}
 }
 
-func TestOutOfOrder(t *testing.T) {
+func TestOutOfOrderSample(t *testing.T) {
 	buf, _, err := buildWriteRequest([]prompb.TimeSeries{{
 		Labels:  []prompb.Label{{Name: "__name__", Value: "test_metric"}},
 		Samples: []prompb.Sample{{Value: 1, Timestamp: 0}},
@@ -67,7 +75,7 @@ func TestOutOfOrder(t *testing.T) {
 	require.NoError(t, err)
 
 	appendable := &mockAppendable{
-		latest: 100,
+		latestSample: 100,
 	}
 	handler := NewWriteHandler(log.NewNopLogger(), appendable)
 
@@ -76,6 +84,32 @@ func TestOutOfOrder(t *testing.T) {
 
 	resp := recorder.Result()
 	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+}
+
+// This test case currently aims to verify that the WriteHandler endpoint
+// don't fail on ingestion errors since the exemplar storage is
+// still experimental.
+func TestOutOfOrderExemplar(t *testing.T) {
+	buf, _, err := buildWriteRequest([]prompb.TimeSeries{{
+		Labels:    []prompb.Label{{Name: "__name__", Value: "test_metric"}},
+		Exemplars: []prompb.Exemplar{{Labels: []prompb.Label{{Name: "foo", Value: "bar"}}, Value: 1, Timestamp: 0}},
+	}}, nil, nil)
+	require.NoError(t, err)
+
+	req, err := http.NewRequest("", "", bytes.NewReader(buf))
+	require.NoError(t, err)
+
+	appendable := &mockAppendable{
+		latestExemplar: 100,
+	}
+	handler := NewWriteHandler(log.NewNopLogger(), appendable)
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+
+	resp := recorder.Result()
+	// TODO: update to require.Equal(t, http.StatusConflict, resp.StatusCode) once exemplar storage is not experimental.
+	require.Equal(t, http.StatusNoContent, resp.StatusCode)
 }
 
 func TestCommitErr(t *testing.T) {
@@ -101,9 +135,11 @@ func TestCommitErr(t *testing.T) {
 }
 
 type mockAppendable struct {
-	latest    int64
-	samples   []mockSample
-	commitErr error
+	latestSample   int64
+	samples        []mockSample
+	latestExemplar int64
+	exemplars      []mockExemplar
+	commitErr      error
 }
 
 type mockSample struct {
@@ -112,16 +148,23 @@ type mockSample struct {
 	v float64
 }
 
+type mockExemplar struct {
+	l  labels.Labels
+	el labels.Labels
+	t  int64
+	v  float64
+}
+
 func (m *mockAppendable) Appender(_ context.Context) storage.Appender {
 	return m
 }
 
 func (m *mockAppendable) Append(_ uint64, l labels.Labels, t int64, v float64) (uint64, error) {
-	if t < m.latest {
+	if t < m.latestSample {
 		return 0, storage.ErrOutOfOrderSample
 	}
 
-	m.latest = t
+	m.latestSample = t
 	m.samples = append(m.samples, mockSample{l, t, v})
 	return 0, nil
 }
@@ -134,7 +177,12 @@ func (*mockAppendable) Rollback() error {
 	return fmt.Errorf("not implemented")
 }
 
-func (*mockAppendable) AppendExemplar(ref uint64, l labels.Labels, e exemplar.Exemplar) (uint64, error) {
-	// noop until we implement exemplars over remote write
+func (m *mockAppendable) AppendExemplar(_ uint64, l labels.Labels, e exemplar.Exemplar) (uint64, error) {
+	if e.Ts < m.latestExemplar {
+		return 0, storage.ErrOutOfOrderExemplar
+	}
+
+	m.latestExemplar = e.Ts
+	m.exemplars = append(m.exemplars, mockExemplar{l, e.Labels, e.Ts, e.Value})
 	return 0, nil
 }

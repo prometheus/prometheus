@@ -154,7 +154,7 @@ func TestHandlerSendAll(t *testing.T) {
 				Username: "prometheus",
 				Password: "testing_password",
 			},
-		}, "auth_alertmanager", config_util.WithHTTP2Disabled())
+		}, "auth_alertmanager")
 
 	h.alertmanagers = make(map[string]*alertmanagerSet)
 
@@ -392,7 +392,7 @@ func TestHandlerQueuing(t *testing.T) {
 				require.NoError(t, err)
 				return
 			case <-time.After(5 * time.Second):
-				t.Fatalf("Alerts were not pushed")
+				require.FailNow(t, "Alerts were not pushed.")
 			}
 		}
 	}
@@ -424,7 +424,7 @@ func TestHandlerQueuing(t *testing.T) {
 	case err := <-errc:
 		require.NoError(t, err)
 	case <-time.After(5 * time.Second):
-		t.Fatalf("Alerts were not pushed")
+		require.FailNow(t, "Alerts were not pushed.")
 	}
 
 	// Verify that we receive the last 3 batches.
@@ -480,14 +480,12 @@ alerting:
   alertmanagers:
   - static_configs:
 `
-	if err := yaml.UnmarshalStrict([]byte(s), cfg); err != nil {
-		t.Fatalf("Unable to load YAML config: %s", err)
-	}
+	err := yaml.UnmarshalStrict([]byte(s), cfg)
+	require.NoError(t, err, "Unable to load YAML config.")
 	require.Equal(t, 1, len(cfg.AlertingConfig.AlertmanagerConfigs))
 
-	if err := n.ApplyConfig(cfg); err != nil {
-		t.Fatalf("Error Applying the config:%v", err)
-	}
+	err = n.ApplyConfig(cfg)
+	require.NoError(t, err, "Error applying the config.")
 
 	tgs := make(map[string][]*targetgroup.Group)
 	for _, tt := range tests {
@@ -534,14 +532,12 @@ alerting:
         regex: 'alertmanager:9093'
         action: drop
 `
-	if err := yaml.UnmarshalStrict([]byte(s), cfg); err != nil {
-		t.Fatalf("Unable to load YAML config: %s", err)
-	}
+	err := yaml.UnmarshalStrict([]byte(s), cfg)
+	require.NoError(t, err, "Unable to load YAML config.")
 	require.Equal(t, 1, len(cfg.AlertingConfig.AlertmanagerConfigs))
 
-	if err := n.ApplyConfig(cfg); err != nil {
-		t.Fatalf("Error Applying the config:%v", err)
-	}
+	err = n.ApplyConfig(cfg)
+	require.NoError(t, err, "Error applying the config.")
 
 	tgs := make(map[string][]*targetgroup.Group)
 	for _, tt := range tests {

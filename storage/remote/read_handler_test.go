@@ -78,9 +78,7 @@ func TestSampledReadEndpoint(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	h.ServeHTTP(recorder, request)
 
-	if recorder.Code/100 != 2 {
-		t.Fatal(recorder.Code)
-	}
+	require.Equal(t, 2, recorder.Code/100)
 
 	require.Equal(t, "application/x-protobuf", recorder.Result().Header.Get("Content-Type"))
 	require.Equal(t, "snappy", recorder.Result().Header.Get("Content-Encoding"))
@@ -96,9 +94,7 @@ func TestSampledReadEndpoint(t *testing.T) {
 	err = proto.Unmarshal(uncompressed, &resp)
 	require.NoError(t, err)
 
-	if len(resp.Results) != 1 {
-		t.Fatalf("Expected 1 result, got %d", len(resp.Results))
-	}
+	require.Equal(t, 1, len(resp.Results), "Expected 1 result.")
 
 	require.Equal(t, &prompb.QueryResult{
 		Timeseries: []*prompb.TimeSeries{
@@ -189,9 +185,7 @@ func TestStreamReadEndpoint(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	api.ServeHTTP(recorder, request)
 
-	if recorder.Code/100 != 2 {
-		t.Fatal(recorder.Code)
-	}
+	require.Equal(t, 2, recorder.Code/100)
 
 	require.Equal(t, "application/x-streamed-protobuf; proto=prometheus.ChunkedReadResponse", recorder.Result().Header.Get("Content-Type"))
 	require.Equal(t, "", recorder.Result().Header.Get("Content-Encoding"))
@@ -208,9 +202,7 @@ func TestStreamReadEndpoint(t *testing.T) {
 		results = append(results, res)
 	}
 
-	if len(results) != 5 {
-		t.Fatalf("Expected 5 result, got %d", len(results))
-	}
+	require.Equal(t, 5, len(results), "Expected 5 results.")
 
 	require.Equal(t, []*prompb.ChunkedReadResponse{
 		{

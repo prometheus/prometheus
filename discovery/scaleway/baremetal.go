@@ -70,7 +70,7 @@ func newBaremetalDiscovery(conf *SDConfig) (*baremetalDiscovery, error) {
 		tagsFilter: conf.TagsFilter,
 	}
 
-	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "scaleway_sd", config.WithHTTP2Disabled())
+	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "scaleway_sd")
 	if err != nil {
 		return nil, err
 	}
