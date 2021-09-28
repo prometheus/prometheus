@@ -248,6 +248,7 @@ func (a *HistoAppender) Append(int64, float64) {}
 // * the zerobucket threshold has changed
 // * any buckets disappeared
 // * there was a counter reset in the count of observations or in any bucket, including the zero bucket
+// * the last sample in the chunk was stale while the current sample is not stale
 func (a *HistoAppender) Appendable(h histogram.SparseHistogram) ([]Interjection, []Interjection, bool) {
 	if value.IsStaleNaN(h.Sum) {
 		// This is a stale sample whose buckets and spans don't matter.
