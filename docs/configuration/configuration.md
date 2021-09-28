@@ -426,6 +426,22 @@ subscription_id: <string>
 # instead be specified in the relabeling rule.
 [ port: <int> | default = 80 ]
 
+# The following standard authentication methods are not permitted because
+# they conflict with Azure's authentication methods.
+# Unused.
+basic_auth:
+  [ username: <string> ]
+  [ password: <secret> ]
+  [ password_file: <string> ]
+# Unused.
+authorization:
+  [ type: <string> | default: Bearer ]
+  [ credentials: <secret> ]
+  [ credentials_file: <filename> ]
+# Unused.
+oauth2:
+  [ <oauth2> ]
+
 # Optional proxy URL.
 [ proxy_url: <string> ]
 
