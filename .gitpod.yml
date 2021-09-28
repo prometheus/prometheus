@@ -1,4 +1,5 @@
----
+image:
+  file: .gitpod.Dockerfile
 tasks:
   - init:
       make build
@@ -6,7 +7,7 @@ tasks:
       gp sync-done build
       ./prometheus --config.file=documentation/examples/prometheus.yml
   - command: |
-      cd web/ui/react-app
+      cd web/ui/
       gp sync-await build
       unset BROWSER
       export DANGEROUSLY_DISABLE_HOST_CHECK=true
