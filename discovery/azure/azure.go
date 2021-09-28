@@ -464,7 +464,9 @@ func mapFromVM(vm compute.VirtualMachine) virtualMachine {
 		}
 	}
 
-	if vm.VirtualMachineProperties != nil && vm.VirtualMachineProperties.OsProfile != nil {
+	if vm.VirtualMachineProperties != nil &&
+		vm.VirtualMachineProperties.OsProfile != nil &&
+		vm.VirtualMachineProperties.OsProfile.ComputerName != nil {
 		computerName = *(vm.VirtualMachineProperties.OsProfile.ComputerName)
 	}
 
