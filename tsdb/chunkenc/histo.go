@@ -249,6 +249,7 @@ func (a *HistoAppender) Append(int64, float64) {}
 // * any buckets disappeared
 // * there was a counter reset in the count of observations or in any bucket, including the zero bucket
 // * the last sample in the chunk was stale while the current sample is not stale
+// If the given sample is stale, it will always return true.
 func (a *HistoAppender) Appendable(h histogram.SparseHistogram) ([]Interjection, []Interjection, bool) {
 	if value.IsStaleNaN(h.Sum) {
 		// This is a stale sample whose buckets and spans don't matter.
@@ -362,7 +363,7 @@ func (a *HistoAppender) AppendHistogram(t int64, h histogram.SparseHistogram) {
 	num := binary.BigEndian.Uint16(a.b.bytes())
 
 	if value.IsStaleNaN(h.Sum) {
-		// Emptying out other fields to write empty meta in case of
+		// Emptying out other fields to write no buckets, and an empty meta in case of
 		// first histogram in the chunk.
 		h = histogram.SparseHistogram{Sum: h.Sum}
 	}
@@ -399,7 +400,7 @@ func (a *HistoAppender) AppendHistogram(t int64, h histogram.SparseHistogram) {
 		zcntDelta = int64(h.ZeroCount) - int64(a.zcnt)
 
 		if value.IsStaleNaN(h.Sum) {
-			tDelta, cntDelta, zcntDelta = 0, 0, 0
+			cntDelta, zcntDelta = 0, 0
 		}
 
 		putVarint(a.b, a.buf64, tDelta)
@@ -429,7 +430,7 @@ func (a *HistoAppender) AppendHistogram(t int64, h histogram.SparseHistogram) {
 		zcntDod := zcntDelta - a.zcntDelta
 
 		if value.IsStaleNaN(h.Sum) {
-			tDod, cntDod, zcntDod = 0, 0, 0
+			cntDod, zcntDod = 0, 0
 		}
 
 		putInt64VBBucket(a.b, tDod)
@@ -590,7 +591,6 @@ func (it *histoIterator) ChunkEncoding() Encoding {
 
 func (it *histoIterator) AtHistogram() (int64, histogram.SparseHistogram) {
 	if value.IsStaleNaN(it.sum) {
-		it.numRead++
 		return it.t, histogram.SparseHistogram{Sum: it.sum}
 	}
 	return it.t, histogram.SparseHistogram{

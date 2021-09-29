@@ -2809,7 +2809,7 @@ func TestSparseHistogramMetrics(t *testing.T) {
 func TestSparseHistogramStaleSample(t *testing.T) {
 	l := labels.Labels{{Name: "a", Value: "b"}}
 	numHistograms := 20
-	head, _ := newTestHead(t, 1000, false)
+	head, _ := newTestHead(t, 100000, false)
 	t.Cleanup(func() {
 		require.NoError(t, head.Close())
 	})
@@ -2861,13 +2861,14 @@ func TestSparseHistogramStaleSample(t *testing.T) {
 	// Adding stale in the same appender.
 	app := head.Appender(context.Background())
 	for _, h := range generateHistograms(numHistograms) {
-		_, err := app.AppendHistogram(0, l, int64(len(expHists)), h)
+		_, err := app.AppendHistogram(0, l, 100*int64(len(expHists)), h)
 		require.NoError(t, err)
-		expHists = append(expHists, timedHist{int64(len(expHists)), h})
+		expHists = append(expHists, timedHist{100 * int64(len(expHists)), h})
 	}
-	_, err := app.Append(0, l, int64(len(expHists)), math.Float64frombits(value.StaleNaN))
+	// +1 so that delta-of-delta is not 0.
+	_, err := app.Append(0, l, 100*int64(len(expHists))+1, math.Float64frombits(value.StaleNaN))
 	require.NoError(t, err)
-	expHists = append(expHists, timedHist{int64(len(expHists)), histogram.SparseHistogram{Sum: math.Float64frombits(value.StaleNaN)}})
+	expHists = append(expHists, timedHist{100*int64(len(expHists)) + 1, histogram.SparseHistogram{Sum: math.Float64frombits(value.StaleNaN)}})
 	require.NoError(t, app.Commit())
 
 	// Only 1 chunk in the memory, no m-mapped chunk.
@@ -2879,16 +2880,17 @@ func TestSparseHistogramStaleSample(t *testing.T) {
 	// Adding stale in different appender and continuing series after a stale sample.
 	app = head.Appender(context.Background())
 	for _, h := range generateHistograms(2 * numHistograms)[numHistograms:] {
-		_, err := app.AppendHistogram(0, l, int64(len(expHists)), h)
+		_, err := app.AppendHistogram(0, l, 100*int64(len(expHists)), h)
 		require.NoError(t, err)
-		expHists = append(expHists, timedHist{int64(len(expHists)), h})
+		expHists = append(expHists, timedHist{100 * int64(len(expHists)), h})
 	}
 	require.NoError(t, app.Commit())
 
 	app = head.Appender(context.Background())
-	_, err = app.Append(0, l, int64(len(expHists)), math.Float64frombits(value.StaleNaN))
+	// +1 so that delta-of-delta is not 0.
+	_, err = app.Append(0, l, 100*int64(len(expHists))+1, math.Float64frombits(value.StaleNaN))
 	require.NoError(t, err)
-	expHists = append(expHists, timedHist{int64(len(expHists)), histogram.SparseHistogram{Sum: math.Float64frombits(value.StaleNaN)}})
+	expHists = append(expHists, timedHist{100*int64(len(expHists)) + 1, histogram.SparseHistogram{Sum: math.Float64frombits(value.StaleNaN)}})
 	require.NoError(t, app.Commit())
 
 	// Total 2 chunks, 1 m-mapped.

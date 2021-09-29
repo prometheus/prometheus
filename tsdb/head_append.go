@@ -610,11 +610,6 @@ func (s *memSeries) appendHistogram(t int64, sh histogram.SparseHistogram, appen
 		return sampleInOrder, chunkCreated
 	}
 
-	if value.IsStaleNaN(sh.Sum) {
-		// Deliberately empty other fields so that any future histogram will result in a new chunk.
-		sh = histogram.SparseHistogram{Sum: sh.Sum}
-	}
-
 	if !chunkCreated {
 		// Head controls the execution of recoding, so that we own the proper chunk reference afterwards
 		app, _ := s.app.(*chunkenc.HistoAppender)
