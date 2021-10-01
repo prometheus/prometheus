@@ -1,3 +1,7 @@
+## 2.30.2 / 2021-10-01
+
+* [BUGFIX] TSDB: Don't error on overlapping m-mapped chunks during WAL replay. #9381
+
 ## 2.30.1 / 2021-09-28
 
 * [ENHANCEMENT] Remote Write: Redact remote write URL when used for metric label. #9383
