@@ -1284,14 +1284,16 @@ const (
 	DefaultStripeSize = 1 << 14
 )
 
-// stripeSeries locks modulo ranges of IDs and hashes to reduce lock contention.
+// stripeSeries holds series by ID (aka 'ref') and also by hash of their labels.
+// id-based lookups via (getByID()) are preferred over getByHash() for performance reasons.
+// It locks modulo ranges of IDs and hashes to reduce lock contention.
 // The locks are padded to not be on the same cache line. Filling the padded space
 // with the maps was profiled to be slower – likely due to the additional pointer
 // dereferences.
 type stripeSeries struct {
 	size                    int
-	series                  []map[uint64]*memSeries
-	hashes                  []seriesHashmap
+	series                  []map[uint64]*memSeries // by ref. A series ref is the value of `size` when the series was being newly added.
+	hashes                  []seriesHashmap         // by label hash.
 	locks                   []stripeLock
 	seriesLifecycleCallback SeriesLifecycleCallback
 }
@@ -1463,15 +1465,15 @@ type memSeries struct {
 
 	ref           uint64
 	lset          labels.Labels
-	mmappedChunks []*mmappedChunk
-	mmMaxTime     int64 // Max time of any mmapped chunk, only used during WAL replay.
-	headChunk     *memChunk
+	mmappedChunks []*mmappedChunk // closed chunks that have not yet gone into a block
+	mmMaxTime     int64           // Max time of any mmapped chunk, only used during WAL replay.
+	headChunk     *memChunk       // most current chunk that's still buing built
 	chunkRange    int64
 	firstChunkID  int
 
-	nextAt        int64 // Timestamp at which to cut the next chunk.
-	sampleBuf     [4]sample
-	pendingCommit bool // Whether there are samples waiting to be committed to this series.
+	nextAt        int64     // Timestamp at which to cut the next chunk.
+	sampleBuf     [4]sample // TODO why do we need this? what do we use it for?
+	pendingCommit bool      // Whether there are samples waiting to be committed to this series.
 
 	app chunkenc.Appender // Current appender for the chunk.
 
