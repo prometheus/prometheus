@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/histogram"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/value"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -266,6 +267,10 @@ func (a *headAppender) Append(ref uint64, lset labels.Labels, t int64, v float64
 		}
 	}
 
+	if value.IsStaleNaN(v) && s.sparseHistogramSeries {
+		return a.AppendHistogram(ref, lset, t, histogram.SparseHistogram{Sum: v})
+	}
+
 	s.Lock()
 	if err := s.appendable(t, v); err != nil {
 		s.Unlock()
@@ -389,9 +394,9 @@ func (a *headAppender) AppendHistogram(ref uint64, lset labels.Labels, t int64, 
 		if err != nil {
 			return 0, err
 		}
+		s.sparseHistogramSeries = true
 		if created {
 			a.head.metrics.sparseHistogramSeries.Inc()
-			s.sparseHistogramSeries = true
 			a.series = append(a.series, record.RefSeries{
 				Ref:    s.ref,
 				Labels: lset,

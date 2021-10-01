@@ -37,6 +37,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/histogram"
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/value"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -2605,7 +2606,6 @@ func generateHistograms(n int) (r []histogram.SparseHistogram) {
 				{Offset: 1, Length: 2},
 			},
 			PositiveBuckets: []int64{int64(i + 1), 1, -1, 0},
-			NegativeBuckets: []int64{},
 		})
 	}
 
@@ -2804,4 +2804,98 @@ func TestSparseHistogramMetrics(t *testing.T) {
 
 	require.Equal(t, float64(expHistSeries), prom_testutil.ToFloat64(head.metrics.sparseHistogramSeries))
 	require.Equal(t, float64(0), prom_testutil.ToFloat64(head.metrics.sparseHistogramSamplesTotal)) // Counter reset.
+}
+
+func TestSparseHistogramStaleSample(t *testing.T) {
+	l := labels.Labels{{Name: "a", Value: "b"}}
+	numHistograms := 20
+	head, _ := newTestHead(t, 100000, false)
+	t.Cleanup(func() {
+		require.NoError(t, head.Close())
+	})
+	require.NoError(t, head.Init(0))
+
+	type timedHist struct {
+		t int64
+		h histogram.SparseHistogram
+	}
+	expHists := make([]timedHist, 0, numHistograms)
+
+	testQuery := func(numStale int) {
+		q, err := NewBlockQuerier(head, head.MinTime(), head.MaxTime())
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			require.NoError(t, q.Close())
+		})
+
+		ss := q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
+
+		require.True(t, ss.Next())
+		s := ss.At()
+		require.False(t, ss.Next())
+
+		it := s.Iterator()
+		actHists := make([]timedHist, 0, len(expHists))
+		for it.Next() {
+			t, h := it.AtHistogram()
+			actHists = append(actHists, timedHist{t, h.Copy()})
+		}
+
+		// We cannot compare StaleNAN with require.Equal, hence checking each histogram manually.
+		require.Equal(t, len(expHists), len(actHists))
+		actNumStale := 0
+		for i, eh := range expHists {
+			ah := actHists[i]
+			if value.IsStaleNaN(eh.h.Sum) {
+				actNumStale++
+				require.True(t, value.IsStaleNaN(ah.h.Sum))
+				// To make require.Equal work.
+				ah.h.Sum = 0
+				eh.h.Sum = 0
+			}
+			require.Equal(t, eh, ah)
+		}
+		require.Equal(t, numStale, actNumStale)
+	}
+
+	// Adding stale in the same appender.
+	app := head.Appender(context.Background())
+	for _, h := range generateHistograms(numHistograms) {
+		_, err := app.AppendHistogram(0, l, 100*int64(len(expHists)), h)
+		require.NoError(t, err)
+		expHists = append(expHists, timedHist{100 * int64(len(expHists)), h})
+	}
+	// +1 so that delta-of-delta is not 0.
+	_, err := app.Append(0, l, 100*int64(len(expHists))+1, math.Float64frombits(value.StaleNaN))
+	require.NoError(t, err)
+	expHists = append(expHists, timedHist{100*int64(len(expHists)) + 1, histogram.SparseHistogram{Sum: math.Float64frombits(value.StaleNaN)}})
+	require.NoError(t, app.Commit())
+
+	// Only 1 chunk in the memory, no m-mapped chunk.
+	s := head.series.getByHash(l.Hash(), l)
+	require.NotNil(t, s)
+	require.Equal(t, 0, len(s.mmappedChunks))
+	testQuery(1)
+
+	// Adding stale in different appender and continuing series after a stale sample.
+	app = head.Appender(context.Background())
+	for _, h := range generateHistograms(2 * numHistograms)[numHistograms:] {
+		_, err := app.AppendHistogram(0, l, 100*int64(len(expHists)), h)
+		require.NoError(t, err)
+		expHists = append(expHists, timedHist{100 * int64(len(expHists)), h})
+	}
+	require.NoError(t, app.Commit())
+
+	app = head.Appender(context.Background())
+	// +1 so that delta-of-delta is not 0.
+	_, err = app.Append(0, l, 100*int64(len(expHists))+1, math.Float64frombits(value.StaleNaN))
+	require.NoError(t, err)
+	expHists = append(expHists, timedHist{100*int64(len(expHists)) + 1, histogram.SparseHistogram{Sum: math.Float64frombits(value.StaleNaN)}})
+	require.NoError(t, app.Commit())
+
+	// Total 2 chunks, 1 m-mapped.
+	s = head.series.getByHash(l.Hash(), l)
+	require.NotNil(t, s)
+	require.Equal(t, 1, len(s.mmappedChunks))
+	testQuery(2)
 }
