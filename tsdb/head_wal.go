@@ -46,6 +46,8 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64, mmappedChunks 
 	// for error reporting.
 	var unknownRefs atomic.Uint64
 	var unknownExemplarRefs atomic.Uint64
+	// Track number of series records that had overlapping m-map chunks.
+	var mmapOverlappingChunks uint64
 
 	// Start workers that each process samples for a partition of the series ID space.
 	// They are connected through a ring of channels which ensures that all sample batches
@@ -248,7 +250,8 @@ Outer:
 						mmc[0].minTime,
 						mmc[len(mmc)-1].maxTime,
 					) {
-						level.Warn(h.logger).Log(
+						mmapOverlappingChunks++
+						level.Debug(h.logger).Log(
 							"msg", "M-mapped chunks overlap on a duplicate series record",
 							"series", mSeries.lset.String(),
 							"oldref", mSeries.ref,
@@ -355,6 +358,9 @@ Outer:
 
 	if unknownRefs.Load() > 0 || unknownExemplarRefs.Load() > 0 {
 		level.Warn(h.logger).Log("msg", "Unknown series references", "samples", unknownRefs.Load(), "exemplars", unknownExemplarRefs.Load())
+	}
+	if mmapOverlappingChunks > 0 {
+		level.Info(h.logger).Log("msg", "Overlapping m-map chunks on duplicate series records", "count", mmapOverlappingChunks)
 	}
 	return nil
 }
