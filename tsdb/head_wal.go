@@ -241,8 +241,6 @@ Outer:
 				}
 
 				// Checking if the new m-mapped chunks overlap with the already existing ones.
-				// This should never happen, but we have a check anyway to detect any
-				// edge cases that we might have missed.
 				if len(mSeries.mmappedChunks) > 0 && len(mmc) > 0 {
 					if overlapsClosedInterval(
 						mSeries.mmappedChunks[0].minTime,
@@ -250,9 +248,16 @@ Outer:
 						mmc[0].minTime,
 						mmc[len(mmc)-1].maxTime,
 					) {
-						// The m-map chunks for the new series ref overlaps with old m-map chunks.
-						seriesCreationErr = errors.Errorf("overlapping m-mapped chunks for series %s", mSeries.lset.String())
-						break Outer
+						level.Warn(h.logger).Log(
+							"msg", "M-mapped chunks overlap on a duplicate series record",
+							"series", mSeries.lset.String(),
+							"oldref", mSeries.ref,
+							"oldmint", mSeries.mmappedChunks[0].minTime,
+							"oldmaxt", mSeries.mmappedChunks[len(mSeries.mmappedChunks)-1].maxTime,
+							"newref", walSeries.Ref,
+							"newmint", mmc[0].minTime,
+							"newmaxt", mmc[len(mmc)-1].maxTime,
+						)
 					}
 				}
 
