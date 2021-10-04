@@ -150,7 +150,7 @@ type xorAppender struct {
 	trailing uint8
 }
 
-func (a *xorAppender) AppendHistogram(t int64, h histogram.SparseHistogram) {
+func (a *xorAppender) AppendHistogram(t int64, h histogram.SparseHistogram, counterReset bool) {
 	//panic("cannot call xorAppender.AppendHistogram().")
 }
 

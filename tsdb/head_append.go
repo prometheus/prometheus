@@ -605,15 +605,18 @@ func (s *memSeries) append(t int64, v float64, appendID uint64, chunkDiskMapper 
 // appendHistogram adds the sparse histogram.
 // It is unsafe to call this concurrently with s.iterator(...) without holding the series lock.
 func (s *memSeries) appendHistogram(t int64, sh histogram.SparseHistogram, appendID uint64, chunkDiskMapper *chunks.ChunkDiskMapper) (sampleInOrder, chunkCreated bool) {
+	// Head controls the execution of recoding, so that we own the proper chunk reference afterwards.
+	// We check for Appendable before appendPreprocessor because in case it ends up creating a new chunk,
+	// we need to know if there was also a counter reset or not to set the meta properly.
+	app, _ := s.app.(*chunkenc.HistoAppender)
+	posInterjections, negInterjections, ok, counterReset := app.Appendable(sh)
+
 	c, sampleInOrder, chunkCreated := s.appendPreprocessor(t, chunkenc.EncSHS, chunkDiskMapper)
 	if !sampleInOrder {
 		return sampleInOrder, chunkCreated
 	}
 
 	if !chunkCreated {
-		// Head controls the execution of recoding, so that we own the proper chunk reference afterwards
-		app, _ := s.app.(*chunkenc.HistoAppender)
-		posInterjections, negInterjections, ok := app.Appendable(sh)
 		// we have 3 cases here
 		// !ok -> we need to cut a new chunk
 		// ok but we have interjections -> existing chunk needs recoding before we can append our histogram
@@ -633,7 +636,7 @@ func (s *memSeries) appendHistogram(t int64, sh histogram.SparseHistogram, appen
 		}
 	}
 
-	s.app.AppendHistogram(t, sh)
+	s.app.AppendHistogram(t, sh, counterReset)
 	s.sparseHistogramSeries = true
 
 	c.maxTime = t
