@@ -415,7 +415,7 @@ func (ng *Engine) validateOpts(expr parser.Expr) error {
 	var validationErr error
 	parser.Inspect(expr, func(node parser.Node, path []parser.Node) error {
 		switch n := node.(type) {
-		case *parser.VectorSelector:
+		case *parser.SubqueryExpr, *parser.VectorSelector:
 			if n.Timestamp != nil || n.StartOrEnd == parser.START || n.StartOrEnd == parser.END {
 				atModifierUsed = true
 			}
@@ -429,14 +429,6 @@ func (ng *Engine) validateOpts(expr parser.Expr) error {
 				atModifierUsed = true
 			}
 			if vs.OriginalOffset < 0 {
-				negativeOffsetUsed = true
-			}
-
-		case *parser.SubqueryExpr:
-			if n.Timestamp != nil || n.StartOrEnd == parser.START || n.StartOrEnd == parser.END {
-				atModifierUsed = true
-			}
-			if n.OriginalOffset < 0 {
 				negativeOffsetUsed = true
 			}
 		}
