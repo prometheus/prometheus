@@ -989,6 +989,13 @@ func (c *LeveledCompactor) populateSymbols(sets []storage.ChunkSeriesSet, outBlo
 		// files now.
 		closeIt = nil
 		_ = it.Close()
+
+		// Delete symbol files from symbolsBatcher.
+		for _, fn := range batchers[ix].symbolFiles() {
+			if err := os.Remove(fn); err != nil {
+				return errors.Wrap(err, "deleting symbols file")
+			}
+		}
 	}
 
 	return nil
