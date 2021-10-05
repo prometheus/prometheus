@@ -80,9 +80,6 @@ func findSetMatches(re *syntax.Regexp, base string) []string {
 			return found
 		}
 	case syntax.OpCharClass:
-		if len(base) == 0 {
-			return nil
-		}
 		if len(re.Rune) == 1 {
 			return []string{base + string(re.Rune)}
 		}
@@ -99,13 +96,10 @@ func findSetMatches(re *syntax.Regexp, base string) []string {
 		}
 		for i := 0; i < len(re.Rune); i = i + 2 {
 			lo, hi := re.Rune[i], re.Rune[i+1]
-			if hi == lo {
-				matches = append(matches, base+string(hi))
-			} else {
-				for c := lo; c <= hi; c++ {
-					matches = append(matches, base+string(c))
-				}
+			for c := lo; c <= hi; c++ {
+				matches = append(matches, base+string(c))
 			}
+
 		}
 		return matches
 	default:
