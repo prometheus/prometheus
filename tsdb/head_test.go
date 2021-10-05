@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
@@ -2753,7 +2754,16 @@ func TestChunkSnapshot(t *testing.T) {
 
 		// Test the replay of snapshot.
 		head.opts.EnableMemorySnapshotOnShutdown = true // Enabled to read from snapshot.
+
+		// Disabling exemplars to check that it does not hard fail replay
+		// https://github.com/prometheus/prometheus/issues/9437#issuecomment-933285870.
+		head.opts.EnableExemplarStorage = false
+		head.opts.MaxExemplars.Store(0)
+		expExemplars = expExemplars[:0]
+
 		openHeadAndCheckReplay()
+
+		require.Equal(t, 0.0, prom_testutil.ToFloat64(head.metrics.snapshotReplayErrorTotal))
 	}
 
 }
@@ -2805,7 +2815,8 @@ func TestSnapshotError(t *testing.T) {
 	// Create new Head which should replay this snapshot.
 	w, err := wal.NewSize(nil, nil, head.wal.Dir(), 32768, false)
 	require.NoError(t, err)
-	head, err = NewHead(nil, nil, w, head.opts, nil)
+	// Testing https://github.com/prometheus/prometheus/issues/9437 with the registry.
+	head, err = NewHead(prometheus.NewRegistry(), nil, w, head.opts, nil)
 	require.NoError(t, err)
 	require.NoError(t, head.Init(math.MinInt64))
 
