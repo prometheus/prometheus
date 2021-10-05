@@ -19,6 +19,8 @@ import (
 	"strings"
 )
 
+const maxSetMatches = 256
+
 type FastRegexMatcher struct {
 	re *regexp.Regexp
 
@@ -86,12 +88,12 @@ func findSetMatches(re *syntax.Regexp, base string) []string {
 		var matches []string
 		var totalSet int
 		for i := 0; i < len(re.Rune); i = i + 2 {
-			totalSet += int(re.Rune[i+1] - re.Rune[i])
+			totalSet += int(re.Rune[i+1]-re.Rune[i]) + 1
 		}
 		// limits the total characters that can be used to create matches.
 		// In some case like negation [^0-9] a lot of possibilities exists and that
 		// can create thousands of possible matches at which points we're better off using regexp.
-		if totalSet > 100 {
+		if totalSet > maxSetMatches {
 			return nil
 		}
 		for i := 0; i < len(re.Rune); i = i + 2 {
@@ -128,6 +130,9 @@ func findSetMatchesFromConcat(re *syntax.Regexp, base string) []string {
 			if m == nil {
 				return nil
 			}
+			if tooManyMatches(newMatches, m...) {
+				return nil
+			}
 			newMatches = append(newMatches, m...)
 		}
 		matches = newMatches
@@ -141,6 +146,9 @@ func findSetMatchesFromAlternate(re *syntax.Regexp, base string) []string {
 	for _, sub := range re.Sub {
 		found := findSetMatches(sub, base)
 		if found == nil {
+			return nil
+		}
+		if tooManyMatches(setMatches, found...) {
 			return nil
 		}
 		setMatches = append(setMatches, found...)
@@ -161,6 +169,11 @@ func clearCapture(regs ...*syntax.Regexp) {
 // The flag should be check at each level of the syntax tree.
 func isCaseInsensitive(reg *syntax.Regexp) bool {
 	return (reg.Flags & syntax.FoldCase) != 0
+}
+
+// tooManyMatches guards against creating too many set matches
+func tooManyMatches(matches []string, new ...string) bool {
+	return len(matches)+len(new) > maxSetMatches
 }
 
 func (m *FastRegexMatcher) MatchString(s string) bool {

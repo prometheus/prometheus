@@ -137,6 +137,8 @@ func TestFindSetMatches(t *testing.T) {
 		{"(api|rpc)_(v1|prom)_((?i)push|query)", nil},
 		// too high charset combination
 		{"(api|rpc)_[^0-9]", nil},
+		// too many combinations
+		{"[a-z][a-z]", nil},
 	} {
 		c := c
 		t.Run(c.pattern, func(t *testing.T) {
