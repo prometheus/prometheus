@@ -8,7 +8,7 @@ require (
 	github.com/Azure/go-autorest/autorest/adal v0.9.15
 	github.com/Azure/go-autorest/autorest/to v0.4.0 // indirect
 	github.com/Azure/go-autorest/autorest/validation v0.3.1 // indirect
-	github.com/alecthomas/units v0.0.0-20210208195552-ff826a37aa15
+	github.com/alecthomas/units v0.0.0-20210912230133-d1bdfacee922
 	github.com/aws/aws-sdk-go v1.40.37
 	github.com/cespare/xxhash/v2 v2.1.2
 	github.com/containerd/containerd v1.5.4 // indirect
@@ -46,7 +46,7 @@ require (
 	github.com/prometheus/alertmanager v0.23.0
 	github.com/prometheus/client_golang v1.11.0
 	github.com/prometheus/client_model v0.2.0
-	github.com/prometheus/common v0.30.1
+	github.com/prometheus/common v0.31.1
 	github.com/prometheus/common/sigv4 v0.1.0
 	github.com/prometheus/exporter-toolkit v0.6.1
 	github.com/scaleway/scaleway-sdk-go v1.0.0-beta.7.0.20210223165440-c65ae3540d44

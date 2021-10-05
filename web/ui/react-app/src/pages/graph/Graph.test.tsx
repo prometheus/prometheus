@@ -9,6 +9,20 @@ describe('Graph', () => {
   beforeAll(() => {
     jest.spyOn(window, 'requestAnimationFrame').mockImplementation((cb: any) => cb());
   });
+
+  // Source: https://github.com/maslianok/react-resize-detector#testing-with-enzyme-and-jest
+  beforeEach(() => {
+    window.ResizeObserver = jest.fn().mockImplementation(() => ({
+      observe: jest.fn(),
+      unobserve: jest.fn(),
+      disconnect: jest.fn(),
+    }));
+  });
+
+  afterEach(() => {
+    window.ResizeObserver = ResizeObserver;
+  });
+
   describe('data is returned', () => {
     const props: any = {
       queryParams: {

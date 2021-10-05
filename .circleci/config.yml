@@ -47,29 +47,23 @@ jobs:
       - store_test_results:
           path: test-results
 
-  test_react:
+  test_ui:
     executor: golang
 
     steps:
       - checkout
       - restore_cache:
           keys:
-            - v3-npm-deps-{{ checksum "web/ui/react-app/package-lock.json" }}
+            - v3-npm-deps-{{ checksum "web/ui/package-lock.json" }}
             - v3-npm-deps-
-      - run:
-          command: make react-app-test
+      - run: make ui-install
+      - run: make ui-lint
+      - run: make ui-build-module
+      - run: make ui-test
       - save_cache:
-          key: v3-npm-deps-{{ checksum "web/ui/react-app/package-lock.json" }}
+          key: v3-npm-deps-{{ checksum "web/ui/package-lock.json" }}
           paths:
             - ~/.npm
-
-  test_web_module:
-    executor: golang
-    steps:
-      - checkout
-      - run: make web-module-install
-      - run: make web-module-test
-      - run: make web-module-lint
 
   test_windows:
     executor:
@@ -126,6 +120,7 @@ jobs:
     steps:
       - checkout
       - run: ./scripts/sync_repo_files.sh
+      - run: ./scripts/sync_codemirror.sh
 
 workflows:
   version: 2
@@ -135,11 +130,7 @@ workflows:
           filters:
             tags:
               only: /.*/
-      - test_react:
-          filters:
-            tags:
-              only: /.*/
-      - test_web_module:
+      - test_ui:
           filters:
             tags:
               only: /.*/
@@ -165,7 +156,7 @@ workflows:
           context: org-context
           requires:
             - test_go
-            - test_react
+            - test_ui
             - build
           filters:
             branches:
@@ -175,7 +166,7 @@ workflows:
           context: org-context
           requires:
             - test_go
-            - test_react
+            - test_ui
             - build
           filters:
             tags:

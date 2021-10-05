@@ -170,7 +170,7 @@ func TestAlertingRuleLabelsUpdate(t *testing.T) {
 		t.Logf("case %d", i)
 		evalTime := baseTime.Add(time.Duration(i) * time.Minute)
 		result[0].Point.T = timestamp.FromTime(evalTime)
-		res, err := rule.Eval(suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil)
+		res, err := rule.Eval(suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil, 0)
 		require.NoError(t, err)
 
 		var filteredRes promql.Vector // After removing 'ALERTS_FOR_STATE' samples.
@@ -252,7 +252,7 @@ func TestAlertingRuleExternalLabelsInTemplate(t *testing.T) {
 
 	var filteredRes promql.Vector // After removing 'ALERTS_FOR_STATE' samples.
 	res, err := ruleWithoutExternalLabels.Eval(
-		suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil,
+		suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil, 0,
 	)
 	require.NoError(t, err)
 	for _, smpl := range res {
@@ -266,7 +266,7 @@ func TestAlertingRuleExternalLabelsInTemplate(t *testing.T) {
 	}
 
 	res, err = ruleWithExternalLabels.Eval(
-		suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil,
+		suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil, 0,
 	)
 	require.NoError(t, err)
 	for _, smpl := range res {
@@ -346,7 +346,7 @@ func TestAlertingRuleExternalURLInTemplate(t *testing.T) {
 
 	var filteredRes promql.Vector // After removing 'ALERTS_FOR_STATE' samples.
 	res, err := ruleWithoutExternalURL.Eval(
-		suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil,
+		suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil, 0,
 	)
 	require.NoError(t, err)
 	for _, smpl := range res {
@@ -360,7 +360,7 @@ func TestAlertingRuleExternalURLInTemplate(t *testing.T) {
 	}
 
 	res, err = ruleWithExternalURL.Eval(
-		suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil,
+		suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil, 0,
 	)
 	require.NoError(t, err)
 	for _, smpl := range res {
@@ -417,7 +417,7 @@ func TestAlertingRuleEmptyLabelFromTemplate(t *testing.T) {
 
 	var filteredRes promql.Vector // After removing 'ALERTS_FOR_STATE' samples.
 	res, err := rule.Eval(
-		suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil,
+		suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil, 0,
 	)
 	require.NoError(t, err)
 	for _, smpl := range res {
@@ -460,7 +460,61 @@ func TestAlertingRuleDuplicate(t *testing.T) {
 		"",
 		true, log.NewNopLogger(),
 	)
-	_, err := rule.Eval(ctx, now, EngineQueryFunc(engine, storage), nil)
+	_, err := rule.Eval(ctx, now, EngineQueryFunc(engine, storage), nil, 0)
 	require.Error(t, err)
 	require.EqualError(t, err, "vector contains metrics with the same labelset after applying alert labels")
+}
+
+func TestAlertingRuleLimit(t *testing.T) {
+	storage := teststorage.New(t)
+	defer storage.Close()
+
+	opts := promql.EngineOpts{
+		Logger:     nil,
+		Reg:        nil,
+		MaxSamples: 10,
+		Timeout:    10 * time.Second,
+	}
+
+	engine := promql.NewEngine(opts)
+	ctx, cancelCtx := context.WithCancel(context.Background())
+	defer cancelCtx()
+
+	now := time.Now()
+
+	suite := []struct {
+		limit int
+		err   string
+	}{
+		{
+			limit: 0,
+		},
+		{
+			limit: 1,
+		},
+		{
+			limit: -1,
+			err:   "exceeded limit of -1 with 1 alerts",
+		},
+	}
+
+	for _, test := range suite {
+		expr, _ := parser.ParseExpr(`1`)
+		rule := NewAlertingRule(
+			"foo",
+			expr,
+			time.Minute,
+			labels.FromStrings("test", "test"),
+			nil,
+			nil,
+			"",
+			true, log.NewNopLogger(),
+		)
+		_, err := rule.Eval(ctx, now, EngineQueryFunc(engine, storage), nil, test.limit)
+		if test.err == "" {
+			require.NoError(t, err)
+		} else {
+			require.Equal(t, test.err, err.Error())
+		}
+	}
 }

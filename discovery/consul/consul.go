@@ -199,7 +199,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 		logger = log.NewNopLogger()
 	}
 
-	wrapper, err := config.NewClientFromConfig(conf.HTTPClientConfig, "consul_sd", config.WithHTTP2Disabled(), config.WithIdleConnTimeout(2*watchTimeout))
+	wrapper, err := config.NewClientFromConfig(conf.HTTPClientConfig, "consul_sd", config.WithIdleConnTimeout(2*watchTimeout))
 	if err != nil {
 		return nil, err
 	}

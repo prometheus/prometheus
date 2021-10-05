@@ -59,7 +59,7 @@ func newRobotDiscovery(conf *SDConfig, logger log.Logger) (*robotDiscovery, erro
 		endpoint: conf.robotEndpoint,
 	}
 
-	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "hetzner_sd", config.WithHTTP2Disabled())
+	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "hetzner_sd")
 	if err != nil {
 		return nil, err
 	}

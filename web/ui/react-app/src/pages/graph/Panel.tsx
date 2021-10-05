@@ -13,6 +13,7 @@ import TimeInput from './TimeInput';
 import QueryStatsView, { QueryStats } from './QueryStatsView';
 import { QueryParams, ExemplarData } from '../../types/types';
 import { API_PATH } from '../../constants/constants';
+import { debounce } from '../../utils';
 
 interface PanelProps {
   options: PanelOptions;
@@ -69,6 +70,7 @@ export const PanelDefaultOptions: PanelOptions = {
 
 class Panel extends Component<PanelProps, PanelState> {
   private abortInFlightFetch: (() => void) | null = null;
+  private debounceExecuteQuery: () => void;
 
   constructor(props: PanelProps) {
     super(props);
@@ -83,17 +85,19 @@ class Panel extends Component<PanelProps, PanelState> {
       stats: null,
       exprInputValue: props.options.expr,
     };
+
+    this.debounceExecuteQuery = debounce(this.executeQuery.bind(this), 250);
   }
 
   componentDidUpdate({ options: prevOpts }: PanelProps): void {
     const { endTime, range, resolution, showExemplars, type } = this.props.options;
-    if (
-      prevOpts.endTime !== endTime ||
-      prevOpts.range !== range ||
-      prevOpts.resolution !== resolution ||
-      prevOpts.type !== type ||
-      showExemplars !== prevOpts.showExemplars
-    ) {
+
+    if (prevOpts.endTime !== endTime || prevOpts.range !== range) {
+      this.debounceExecuteQuery();
+      return;
+    }
+
+    if (prevOpts.resolution !== resolution || prevOpts.type !== type || showExemplars !== prevOpts.showExemplars) {
       this.executeQuery();
     }
   }
@@ -213,7 +217,7 @@ class Panel extends Component<PanelProps, PanelState> {
     }
   };
 
-  setOptions(opts: Record<string, unknown>): void {
+  setOptions(opts: Partial<PanelOptions>): void {
     const newOpts = { ...this.props.options, ...opts };
     this.props.onOptionsChanged(newOpts);
   }

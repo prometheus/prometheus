@@ -36,7 +36,8 @@ var writeRequestFixture = &prompb.WriteRequest{
 				{Name: "d", Value: "e"},
 				{Name: "foo", Value: "bar"},
 			},
-			Samples: []prompb.Sample{{Value: 1, Timestamp: 0}},
+			Samples:   []prompb.Sample{{Value: 1, Timestamp: 0}},
+			Exemplars: []prompb.Exemplar{{Labels: []prompb.Label{{Name: "f", Value: "g"}}, Value: 1, Timestamp: 0}},
 		},
 		{
 			Labels: []prompb.Label{
@@ -46,7 +47,8 @@ var writeRequestFixture = &prompb.WriteRequest{
 				{Name: "d", Value: "e"},
 				{Name: "foo", Value: "bar"},
 			},
-			Samples: []prompb.Sample{{Value: 2, Timestamp: 1}},
+			Samples:   []prompb.Sample{{Value: 2, Timestamp: 1}},
+			Exemplars: []prompb.Exemplar{{Labels: []prompb.Label{{Name: "h", Value: "i"}}, Value: 2, Timestamp: 1}},
 		},
 	},
 }

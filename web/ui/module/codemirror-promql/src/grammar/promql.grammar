@@ -1,0 +1,428 @@
+// Copyright 2021 The Prometheus Authors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+@top PromQL { Expr }
+@top MetricName { MetricIdentifier }
+
+@precedence {
+  pow @right,
+  mul @left
+  add @left,
+  eql @left,
+  and @left,
+  or @left
+}
+
+Expr {
+  AggregateExpr |
+  BinaryExpr |
+  FunctionCall |
+  MatrixSelector |
+  NumberLiteral |
+  OffsetExpr |
+  ParenExpr |
+  StringLiteral |
+  SubqueryExpr |
+  UnaryExpr |
+  VectorSelector |
+  StepInvariantExpr
+}
+
+AggregateExpr {
+  AggregateOp AggregateModifier FunctionCallBody |
+  AggregateOp FunctionCallBody AggregateModifier |
+  AggregateOp FunctionCallBody
+}
+
+AggregateOp {
+  Avg |
+  Bottomk |
+  Count |
+  CountValues |
+  Group |
+  Max |
+  Min |
+  Quantile |
+  Stddev |
+  Stdvar |
+  Sum |
+  Topk
+}
+
+AggregateModifier {
+  By GroupingLabels |
+  Without GroupingLabels
+}
+
+BinaryExpr {
+  Expr !pow Pow    BinModifiers Expr |
+  Expr !mul Mul    BinModifiers Expr |
+  Expr !mul Div    BinModifiers Expr |
+  Expr !mul Mod    BinModifiers Expr |
+  Expr !mul Atan2  BinModifiers Expr |
+  Expr !add Add    BinModifiers Expr |
+  Expr !add Sub    BinModifiers Expr |
+  Expr !eql Eql    BinModifiers Expr |
+  Expr !eql Gte    BinModifiers Expr |
+  Expr !eql Gtr    BinModifiers Expr |
+  Expr !eql Lte    BinModifiers Expr |
+  Expr !eql Lss    BinModifiers Expr |
+  Expr !eql Neq    BinModifiers Expr |
+  Expr !and And    BinModifiers Expr |
+  Expr !and Unless BinModifiers Expr |
+  Expr !or  Or     BinModifiers Expr
+}
+
+OnOrIgnoring {
+  Ignoring GroupingLabels |
+  On GroupingLabels
+}
+
+BinModifiers {
+  Bool?
+  (
+    OnOrIgnoring
+    (
+      (GroupLeft | GroupRight)
+      (!mul GroupingLabels)? // TODO: Is the "!mul" here correct? Inserted it to resolve a shift/reduce conflict because we always want to count opening parenthesis after this to be counted toward this modifier, not toward a next sub-expression.
+    )?
+  )?
+}
+
+GroupingLabels {
+  "(" GroupingLabelList ")" |
+  "(" GroupingLabelList "," ")" |
+  "(" ")"
+}
+
+GroupingLabelList {
+  GroupingLabelList "," GroupingLabel |
+  GroupingLabel
+}
+
+GroupingLabel {
+  LabelName
+}
+
+FunctionCall {
+  FunctionIdentifier FunctionCallBody
+}
+
+FunctionIdentifier {
+  AbsentOverTime |
+  Absent |
+  Abs |
+  Acos |
+  Acosh |
+  Asin |
+  Asinh |
+  Atan |
+  Atanh |
+  AvgOverTime |
+  Ceil |
+  Changes |
+  Clamp |
+  ClampMax |
+  ClampMin |
+  Cos |
+  Cosh |
+  CountOverTime |
+  DaysInMonth |
+  DayOfMonth |
+  DayOfWeek |
+  Deg |
+  Delta |
+  Deriv |
+  Exp |
+  Floor |
+  HistogramQuantile |
+  HoltWinters |
+  Hour |
+  Idelta |
+  Increase |
+  Irate |
+  LabelReplace |
+  LabelJoin |
+  LastOverTime |
+  Ln |
+  Log10 |
+  Log2 |
+  MaxOverTime |
+  MinOverTime |
+  Minute |
+  Month |
+  Pi |
+  PredictLinear |
+  PresentOverTime |
+  QuantileOverTime |
+  Rad |
+  Rate |
+  Resets |
+  Round |
+  Scalar |
+  Sgn |
+  Sin |
+  Sinh |
+  Sort |
+  SortDesc |
+  Sqrt |
+  StddevOverTime |
+  StdvarOverTime |
+  SumOverTime |
+  Tan |
+  Tanh |
+  Timestamp |
+  Time |
+  Vector |
+  Year
+}
+
+FunctionCallBody {
+  "(" FunctionCallArgs ")" |
+  "(" ")"
+}
+
+FunctionCallArgs {
+  FunctionCallArgs "," Expr |
+  Expr
+}
+
+ParenExpr {
+  "(" Expr ")"
+}
+
+OffsetExpr {
+  Expr Offset Sub? Duration
+}
+
+MatrixSelector {
+  // TODO: Can this not be more specific than "Expr"?
+  Expr "[" Duration "]"
+}
+
+SubqueryExpr {
+  Expr "[" Duration ":" ("" | Duration) "]"
+}
+
+UnaryExpr {
+  !mul UnaryOp~signed Expr
+}
+
+UnaryOp {
+  "-" |
+  "+"
+}
+
+VectorSelector {
+  MetricIdentifier LabelMatchers |
+  MetricIdentifier |
+  LabelMatchers
+}
+
+LabelMatchers {
+  "{" LabelMatchList "}" |
+  "{" LabelMatchList "," "}" |
+  "{" "}"
+}
+
+LabelMatchList {
+  LabelMatchList "," LabelMatcher |
+  LabelMatcher
+}
+
+MatchOp {
+  EqlSingle |
+  Neq |
+  EqlRegex |
+  NeqRegex
+}
+
+LabelMatcher {
+  LabelName MatchOp StringLiteral
+}
+
+MetricIdentifier {
+  Identifier
+}
+
+StepInvariantExpr {
+  Expr At ( NumberLiteral | AtModifierPreprocessors "(" ")" )
+}
+
+AtModifierPreprocessors {
+  Start | End
+}
+
+NumberLiteral  {
+ ("-"|"+")?~signed (number | inf | nan)
+}
+
+@skip { whitespace | LineComment }
+
+@tokens {
+  whitespace { std.whitespace+ }
+  LineComment { "#" ![\n]* }
+
+  number {
+      (std.digit+ ("." std.digit*)? | "." std.digit+) (("e" | "E") ("+" | "-")? std.digit+)? |
+      "0x" (std.digit | $[a-fA-F])+
+  }
+  StringLiteral { // TODO: This is for JS, make this work for PromQL.
+    '"' (![\\\n"] | "\\" _)* '"'? |
+    "'" (![\\\n'] | "\\" _)* "'"? |
+    "`" ![`]* "`"
+  }
+
+  Duration {
+    // Each line below is just the same regex repeated over and over, but each time with one of the units made non-optional,
+    // to ensure that at least one <number>+<unit> pair is provided and an empty string is not recognized as a valid duration.
+    ( ( std.digit+ "y" ) ( std.digit+ "w" )? ( std.digit+ "d" )? ( std.digit+ "h" )? ( std.digit+ "m" )? ( std.digit+ "s" )? ( std.digit+ "ms" )? ) |
+    ( ( std.digit+ "y" )? ( std.digit+ "w" ) ( std.digit+ "d" )? ( std.digit+ "h" )? ( std.digit+ "m" )? ( std.digit+ "s" )? ( std.digit+ "ms" )? ) |
+    ( ( std.digit+ "y" )? ( std.digit+ "w" )? ( std.digit+ "d" ) ( std.digit+ "h" )? ( std.digit+ "m" )? ( std.digit+ "s" )? ( std.digit+ "ms" )? ) |
+    ( ( std.digit+ "y" )? ( std.digit+ "w" )? ( std.digit+ "d" )? ( std.digit+ "h" ) ( std.digit+ "m" )? ( std.digit+ "s" )? ( std.digit+ "ms" )? ) |
+    ( ( std.digit+ "y" )? ( std.digit+ "w" )? ( std.digit+ "d" )? ( std.digit+ "h" )? ( std.digit+ "m" ) ( std.digit+ "s" )? ( std.digit+ "ms" )? ) |
+    ( ( std.digit+ "y" )? ( std.digit+ "w" )? ( std.digit+ "d" )? ( std.digit+ "h" )? ( std.digit+ "m" )? ( std.digit+ "s" ) ( std.digit+ "ms" )? ) |
+    ( ( std.digit+ "y" )? ( std.digit+ "w" )? ( std.digit+ "d" )? ( std.digit+ "h" )? ( std.digit+ "m" )? ( std.digit+ "s" )? ( std.digit+ "ms" ) )
+  }
+  Identifier { (std.asciiLetter | "_" | ":") (std.asciiLetter | std.digit | "_" | ":" )*}
+  LabelName { (std.asciiLetter | "_") (std.asciiLetter | std.digit | "_")* }
+
+  // Operator
+  Sub { "-" }
+  Add { "+" }
+  Mul { "*" }
+  Mod { "%" }
+  Div { "/" }
+  Eql { "==" }
+  Neq { "!=" }
+  Lte { "<=" }
+  Lss { "<" }
+  Gte { ">=" }
+  Gtr { ">" }
+  EqlRegex { "=~" }
+  EqlSingle { "=" }
+  NeqRegex { "!~" }
+  Pow { "^" }
+
+  // Special Modifier
+  At { "@" }
+}
+
+// Keywords
+
+@external specialize {Identifier} specializeIdentifier from "./tokens" {
+  inf,
+  nan,
+  Bool,
+  Ignoring,
+  On,
+  GroupLeft,
+  GroupRight,
+  Offset
+}
+
+// Contextual keywords
+
+@external extend {Identifier} extendIdentifier from "./tokens" {
+  Atan2,
+  Avg,
+  Bottomk,
+  Count,
+  CountValues,
+  Group,
+  Max,
+  Min,
+  Quantile,
+  Stddev,
+  Stdvar,
+  Sum,
+  Topk,
+  By,
+  Without,
+  And,
+  Or,
+  Unless,
+  Start,
+  End
+}
+
+  // FunctionIdentifier definitions
+  Abs { condFn<"abs"> }
+  Absent { condFn<"absent"> }
+  AbsentOverTime { condFn<"absent_over_time"> }
+  Acos { condFn<"acos"> }
+  Acosh { condFn<"acosh"> }
+  Asin { condFn<"asin"> }
+  Asinh { condFn<"asinh">}
+  Atan { condFn<"atan"> }
+  Atanh { condFn<"atanh">}
+  AvgOverTime { condFn<"avg_over_time"> }
+  Ceil { condFn<"ceil"> }
+  Changes { condFn<"changes"> }
+  Clamp { condFn<"clamp"> }
+  ClampMax { condFn<"clamp_max"> }
+  ClampMin { condFn<"clamp_min"> }
+  Cos { condFn<"cos">}
+  Cosh { condFn<"cosh">}
+  CountOverTime { condFn<"count_over_time"> }
+  DaysInMonth { condFn<"days_in_month"> }
+  DayOfMonth { condFn<"day_of_month"> }
+  DayOfWeek { condFn<"day_of_week"> }
+  Deg { condFn<"deg"> }
+  Delta { condFn<"delta"> }
+  Deriv { condFn<"deriv"> }
+  Exp { condFn<"exp"> }
+  Floor { condFn<"floor"> }
+  HistogramQuantile { condFn<"histogram_quantile"> }
+  HoltWinters { condFn<"holt_winters"> }
+  Hour { condFn<"hour"> }
+  Idelta { condFn<"idelta"> }
+  Increase { condFn<"increase"> }
+  Irate { condFn<"irate"> }
+  LabelReplace { condFn<"label_replace"> }
+  LabelJoin { condFn<"label_join"> }
+  LastOverTime {condFn<"last_over_time">}
+  Ln { condFn<"ln"> }
+  Log10 { condFn<"log10"> }
+  Log2 { condFn<"log2"> }
+  MaxOverTime { condFn<"max_over_time"> }
+  MinOverTime { condFn<"min_over_time"> }
+  Minute { condFn<"minute"> }
+  Month { condFn<"month"> }
+  Pi { condFn<"pi">}
+  PredictLinear { condFn<"predict_linear"> }
+  PresentOverTime { condFn<"present_over_time"> }
+  QuantileOverTime { condFn<"quantile_over_time"> }
+  Rad { condFn<"rad"> }
+  Rate { condFn<"rate"> }
+  Resets { condFn<"resets"> }
+  Round { condFn<"round"> }
+  Scalar { condFn<"scalar"> }
+  Sgn { condFn<"sgn"> }
+  Sin { condFn<"sin">}
+  Sinh { condFn<"sinh"> }
+  Sort { condFn<"sort"> }
+  SortDesc { condFn<"sort_desc"> }
+  Sqrt { condFn<"sqrt"> }
+  StddevOverTime { condFn<"stddev_over_time"> }
+  StdvarOverTime { condFn<"stdvar_over_time"> }
+  SumOverTime { condFn<"sum_over_time"> }
+  Tan { condFn<"tan"> }
+  Tanh { condFn<"tanh">}
+  Time { condFn<"time"> }
+  Timestamp { condFn<"timestamp"> }
+  Vector { condFn<"vector"> }
+  Year { condFn<"year"> }
+
+// Conditional function names (only parsed as function names when used as such).
+condFn<term> { @extend<Identifier, term> }

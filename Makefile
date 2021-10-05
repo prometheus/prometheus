@@ -14,13 +14,9 @@
 # Needs to be defined before including Makefile.common to auto-generate targets
 DOCKER_ARCHS ?= amd64 armv7 arm64 ppc64le s390x
 
-WEB_MODULE_PATH = web/ui/module
-REACT_APP_PATH = web/ui/react-app
-REACT_APP_SOURCE_FILES = $(shell find $(REACT_APP_PATH)/public/ $(REACT_APP_PATH)/src/ $(REACT_APP_PATH)/tsconfig.json)
-REACT_APP_OUTPUT_DIR = web/ui/static/react
-REACT_APP_NODE_MODULES_PATH = $(REACT_APP_PATH)/node_modules
+UI_PATH = web/ui
+UI_NODE_MODULES_PATH = $(UI_PATH)/node_modules
 REACT_APP_NPM_LICENSES_TARBALL = "npm_licenses.tar.bz2"
-REACT_APP_BUILD_SCRIPT = ./scripts/build_react_app.sh
 
 PROMTOOL = ./promtool
 TSDB_BENCHMARK_NUM_METRICS ?= 1000
@@ -33,15 +29,28 @@ include Makefile.common
 
 DOCKER_IMAGE_NAME       ?= prometheus
 
-$(REACT_APP_NODE_MODULES_PATH): $(REACT_APP_PATH)/package.json $(REACT_APP_PATH)/package-lock.json
-	cd $(REACT_APP_PATH) && npm ci
+.PHONY: ui-install
+ui-install:
+	cd $(UI_PATH) && npm install
 
-$(REACT_APP_OUTPUT_DIR): $(REACT_APP_NODE_MODULES_PATH) $(REACT_APP_SOURCE_FILES) $(REACT_APP_BUILD_SCRIPT)
-	@echo ">> building React app"
-	@$(REACT_APP_BUILD_SCRIPT)
+.PHONY: ui-build
+ui-build:
+	cd $(UI_PATH) && npm run build
+
+.PHONY: ui-build-module
+ui-build-module:
+	cd $(UI_PATH) && npm run build:module
+
+.PHONY: ui-test
+ui-test:
+	cd $(UI_PATH) && npm run test:coverage
+
+.PHONY: ui-lint
+ui-lint:
+	cd $(UI_PATH) && npm run lint
 
 .PHONY: assets
-assets: web-module-install web-module-build $(REACT_APP_OUTPUT_DIR)
+assets: ui-install ui-build
 	@echo ">> writing assets"
 	# Un-setting GOOS and GOARCH here because the generated Go code is always the same,
 	# but the cached object code is incompatible between architectures and OSes (which
@@ -49,52 +58,20 @@ assets: web-module-install web-module-build $(REACT_APP_OUTPUT_DIR)
 	cd web/ui && GO111MODULE=$(GO111MODULE) GOOS= GOARCH= $(GO) generate -x -v $(GOOPTS)
 	@$(GOFMT) -w ./web/ui
 
-.PHONY: react-app-lint
-react-app-lint:
-	@echo ">> running React app linting"
-	cd $(REACT_APP_PATH) && npm run lint:ci
-
-.PHONY: react-app-lint-fix
-react-app-lint-fix:
-	@echo ">> running React app linting and fixing errors where possible"
-	cd $(REACT_APP_PATH) && npm run lint
-
-.PHONY: react-app-test
-react-app-test: | $(REACT_APP_NODE_MODULES_PATH) react-app-lint
-	@echo ">> running React app tests"
-	cd $(REACT_APP_PATH) && npm run test --no-watch --coverage
-
-.PHONY: web-module-build
-web-module-build:
-	@cd ${WEB_MODULE_PATH} && ./build.sh --build
-
-.PHONY: web-module-lint
-web-module-lint:
-	@cd ${WEB_MODULE_PATH} && ./build.sh --lint
-
-.PHONY: web-module-test
-web-module-test:
-	@cd ${WEB_MODULE_PATH} && ./build.sh --test
-
-.PHONY: web-module-install
-web-module-install:
-	@cd ${WEB_MODULE_PATH} && ./build.sh --install
-
 .PHONY: test
 # If we only want to only test go code we have to change the test target
 # which is called by all.
 ifeq ($(GO_ONLY),1)
 test: common-test
 else
-test: common-test react-app-test web-module-test web-module-lint
+test: common-test ui-build-module ui-test ui-lint
 endif
 
-
 .PHONY: npm_licenses
-npm_licenses: $(REACT_APP_NODE_MODULES_PATH)
+npm_licenses: ui-install
 	@echo ">> bundling npm licenses"
 	rm -f $(REACT_APP_NPM_LICENSES_TARBALL)
-	find $(REACT_APP_NODE_MODULES_PATH) -iname "license*" | tar cfj $(REACT_APP_NPM_LICENSES_TARBALL) --transform 's/^/npm_licenses\//' --files-from=-
+	find $(UI_NODE_MODULES_PATH) -iname "license*" | tar cfj $(REACT_APP_NPM_LICENSES_TARBALL) --transform 's/^/npm_licenses\//' --files-from=-
 
 .PHONY: tarball
 tarball: npm_licenses common-tarball

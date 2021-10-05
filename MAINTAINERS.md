@@ -1,7 +1,7 @@
 Julien Pivotto (<roidelapluie@prometheus.io> / @roidelapluie) is the main/default maintainer, some parts of the codebase have other maintainers:
 
 * `cmd`
-  * `promtool`: David Leadbeater (<dgl@dgl.cx> / @dgl)
+  * `promtool`: David Leadbeater (<dgl@dgl.cx> / @dgl), Jessica Grebenschikov (<jessica.greben1@gmail.com> / @jessicagreben)
 * `discovery`
   * `k8s`: Frederic Branczyk (<fbranczyk@gmail.com> / @brancz)
 * `documentation`

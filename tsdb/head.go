@@ -749,6 +749,11 @@ func (h *Head) Truncate(mint int64) (err error) {
 	return h.truncateWAL(mint)
 }
 
+// OverlapsClosedInterval returns true if the head overlaps [mint, maxt].
+func (h *Head) OverlapsClosedInterval(mint, maxt int64) bool {
+	return h.MinTime() <= maxt && mint <= h.MaxTime()
+}
+
 // truncateMemory removes old data before mint from the head.
 func (h *Head) truncateMemory(mint int64) (err error) {
 	h.chunkSnapshotMtx.Lock()
@@ -1113,6 +1118,10 @@ func (h *Head) gc() int64 {
 
 	// Remove deleted series IDs from the postings lists.
 	h.postings.Delete(deleted)
+
+	// Remove tombstones referring to the deleted series.
+	h.tombstones.DeleteTombstones(deleted)
+	h.tombstones.TruncateBefore(mint)
 
 	if h.wal != nil {
 		_, last, _ := wal.Segments(h.wal.Dir())

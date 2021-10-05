@@ -272,6 +272,10 @@ nerve_sd_configs:
 openstack_sd_configs:
   [ - <openstack_sd_config> ... ]
 
+# List of PuppetDB service discovery configurations.
+puppetdb_sd_configs:
+  [ - <puppetdb_sd_config> ... ]
+
 # List of Scaleway service discovery configurations.
 scaleway_sd_configs:
   [ - <scaleway_sd_config> ... ]
@@ -1069,6 +1073,94 @@ tls_config:
   [ <tls_config> ]
 ```
 
+### `<puppetdb_sd_config>`
+
+PuppetDB SD configurations allow retrieving scrape targets from
+[PuppetDB](https://puppet.com/docs/puppetdb/latest/index.html) resources.
+
+This SD discovers resources and will create a target for each resource returned
+by the API.
+
+The resource address is the `certname` of the resource and can be changed during
+[relabeling](#relabel_config).
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_puppetdb_certname`: the name of the node associated with the resource
+* `__meta_puppetdb_resource`: a SHA-1 hash of the resource’s type, title, and parameters, for identification
+* `__meta_puppetdb_type`: the resource type
+* `__meta_puppetdb_title`: the resource title
+* `__meta_puppetdb_exported`: whether the resource is exported (`"true"` or `"false"`)
+* `__meta_puppetdb_tags`: comma separated list of resource tags
+* `__meta_puppetdb_file`: the manifest file in which the resource was declared
+* `__meta_puppetdb_environment`: the environment of the node associated with the resource
+* `__meta_puppetdb_parameter_<parametername>`: the parameters of the resource
+
+
+See below for the configuration options for PuppetDB discovery:
+
+```yaml
+# The URL of the PuppetDB root query endpoint.
+url: <string>
+
+# Puppet Query Language (PQL) query. Only resources are supported.
+# https://puppet.com/docs/puppetdb/latest/api/query/v4/pql.html
+query: <string>
+
+# Whether to include the parameters as meta labels.
+# Due to the differences between parameter types and Prometheus labels,
+# some parameters might not be rendered. The format of the parameters might
+# also change in future releases.
+#
+# Note: Enabling this exposes parameters in the Prometheus UI and API. Make sure
+# that you don't have secrets exposed as parameters if you enable this.
+[ include_parameters: <boolean> | default = false ]
+
+# Refresh interval to re-read the resources list.
+[ refresh_interval: <duration> | default = 60s ]
+
+# The port to scrape metrics from.
+[ port: <int> | default = 80 ]
+
+# TLS configuration to connect to the PuppetDB.
+tls_config:
+  [ <tls_config> ]
+
+# basic_auth, authorization, and oauth2, are mutually exclusive.
+
+# Optional HTTP basic authentication information.
+basic_auth:
+  [ username: <string> ]
+  [ password: <secret> ]
+  [ password_file: <string> ]
+
+# `Authorization` HTTP header configuration.
+authorization:
+  # Sets the authentication type.
+  [ type: <string> | default: Bearer ]
+  # Sets the credentials. It is mutually exclusive with
+  # `credentials_file`.
+  [ credentials: <secret> ]
+  # Sets the credentials with the credentials read from the configured file.
+  # It is mutually exclusive with `credentials`.
+  [ credentials_file: <filename> ]
+
+# Optional OAuth 2.0 configuration.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2:
+  [ <oauth2> ]
+
+# Optional proxy URL.
+[ proxy_url: <string> ]
+
+# Configure whether HTTP requests follow HTTP 3xx redirects.
+[ follow_redirects: <bool> | default = true ]
+```
+
+See [this example Prometheus configuration file](/documentation/examples/prometheus-puppetdb.yml)
+for a detailed example of configuring Prometheus with PuppetDB.
+
+
 ### `<file_sd_config>`
 
 File-based service discovery provides a more generic way to configure static targets
@@ -1454,6 +1546,29 @@ Available meta labels:
 * If the endpoints belong to a service, all labels of the `role: service` discovery are attached.
 * For all targets backed by a pod, all labels of the `role: pod` discovery are attached.
 
+#### `endpointslice`
+
+The `endpointslice` role discovers targets from existing endpointslices. For each endpoint
+address referenced in the endpointslice object one target is discovered. If the endpoint is backed by a pod, all
+additional container ports of the pod, not bound to an endpoint port, are discovered as targets as well.
+
+Available meta labels:
+* `__meta_kubernetes_namespace`: The namespace of the endpoints object.
+* `__meta_kubernetes_endpointslice_name`: The name of endpointslice object.
+* For all targets discovered directly from the endpointslice list (those not additionally inferred
+  from underlying pods), the following labels are attached:
+* `__meta_kubernetes_endpointslice_address_target_kind`: Kind of the referenced object.
+* `__meta_kubernetes_endpointslice_address_target_name`: Name of referenced object.
+* `__meta_kubernetes_endpointslice_address_type`: The ip protocol family of the adress target.
+* `__meta_kubernetes_endpointslice_endpoint_conditions_ready`:  Set to `true` or `false` for the referenced endpoint's ready state.
+* `__meta_kubernetes_endpointslice_endpoint_topology_kubernetes_io_hostname`:  Name of the node hosting the referenced endpoint.
+* `__meta_kubernetes_endpointslice_endpoint_topology_present_kubernetes_io_hostname`: Flag that shows if the referenced object has a kubernetes.io/hostname annotation.
+* `__meta_kubernetes_endpointslice_port`: Port of the referenced endpoint.
+* `__meta_kubernetes_endpointslice_port_name`: Named port of the referenced endpoint.
+* `__meta_kubernetes_endpointslice_port_protocol`: Protocol of the referenced endpoint.
+* If the endpoints belong to a service, all labels of the `role: service` discovery are attached.
+* For all targets backed by a pod, all labels of the `role: pod` discovery are attached.
+
 #### `ingress`
 
 The `ingress` role discovers a target for each path of each ingress.
@@ -1487,7 +1602,7 @@ See below for the configuration options for Kubernetes discovery:
 # One of endpoints, service, pod, node, or ingress.
 role: <string>
 
-# Optional path to a kubeconfig file. 
+# Optional path to a kubeconfig file.
 # Note that api_server and kube_config are mutually exclusive.
 [ kubeconfig_file: <filename> ]
 
@@ -1566,7 +1681,7 @@ inside a Prometheus-enabled mesh.
 
 The following meta labels are available for each target:
 
-* `__meta_kuma_mesh`: the name of the proxy's Mesh 
+* `__meta_kuma_mesh`: the name of the proxy's Mesh
 * `__meta_kuma_dataplane`: the name of the proxy
 * `__meta_kuma_service`: the name of the proxy's associated Service
 * `__meta_kuma_label_<tagname>`: each tag of the proxy
@@ -2386,6 +2501,10 @@ nerve_sd_configs:
 # List of OpenStack service discovery configurations.
 openstack_sd_configs:
   [ - <openstack_sd_config> ... ]
+
+# List of PuppetDB service discovery configurations.
+puppetdb_sd_configs:
+  [ - <puppetdb_sd_config> ... ]
 
 # List of Scaleway service discovery configurations.
 scaleway_sd_configs:
