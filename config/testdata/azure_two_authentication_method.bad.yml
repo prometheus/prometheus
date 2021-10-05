@@ -1,6 +1,0 @@
-scrape_configs:
-  - azure_sd_configs:
-      - subscription_id: 11AAAA11-A11A-111A-A111-1111A1111A11
-        authentication_method: ManagedIdentity
-        oauth2:
-          token_url: http://localhost

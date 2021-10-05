@@ -1257,10 +1257,6 @@ var expectedErrors = []struct {
 		errMsg:   "unknown authentication_type \"invalid\". Supported types are \"OAuth\" or \"ManagedIdentity\"",
 	},
 	{
-		filename: "azure_two_authentication_method.bad.yml",
-		errMsg:   "standard authentication methods cannot be used, only azure OAuth or ManagedIdentity",
-	},
-	{
 		filename: "empty_scrape_config.bad.yml",
 		errMsg:   "empty or null scrape config section",
 	},
