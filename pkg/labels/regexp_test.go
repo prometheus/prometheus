@@ -116,6 +116,7 @@ func TestFindSetMatches(t *testing.T) {
 		{"bar|b|buzz", []string{"bar", "b", "buzz"}},
 		// Simple sets containing escaped characters.
 		{"fo\\.o|bar\\?|\\^baz", []string{"fo.o", "bar?", "^baz"}},
+		// using charclass
 		{"[abc]d", []string{"ad", "bd", "cd"}},
 		// high low charset different => A(B[CD]|EF)|BC[XY]
 		{"ABC|ABD|AEF|BCX|BCY", []string{"ABC", "ABD", "AEF", "BCX", "BCY"}},

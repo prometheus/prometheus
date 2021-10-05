@@ -115,9 +115,7 @@ func findSetMatchesFromConcat(re *syntax.Regexp, base string) []string {
 	if len(re.Sub) == 0 {
 		return nil
 	}
-	for _, sub := range re.Sub {
-		clearCapture(sub)
-	}
+	clearCapture(re.Sub...)
 	matches := findSetMatches(re.Sub[0], base)
 	if matches == nil {
 		return nil
