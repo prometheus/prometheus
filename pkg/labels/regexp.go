@@ -91,6 +91,9 @@ func findSetMatches(re *syntax.Regexp, base string) []string {
 		for i := 0; i < len(re.Rune); i = i + 2 {
 			totalSet += int(re.Rune[i+1] - re.Rune[i])
 		}
+		// limits the total characters that can be used to create matches.
+		// In some case like negation [^0-9] a lot of possibilities exists and that
+		// can create thousands of possible matches at which points we're better of using regexp.
 		if totalSet > 100 {
 			return nil
 		}
