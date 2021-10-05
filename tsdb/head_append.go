@@ -609,7 +609,13 @@ func (s *memSeries) appendHistogram(t int64, sh histogram.SparseHistogram, appen
 	// We check for Appendable before appendPreprocessor because in case it ends up creating a new chunk,
 	// we need to know if there was also a counter reset or not to set the meta properly.
 	app, _ := s.app.(*chunkenc.HistoAppender)
-	posInterjections, negInterjections, ok, counterReset := app.Appendable(sh)
+	var (
+		posInterjections, negInterjections []chunkenc.Interjection
+		ok, counterReset                   bool
+	)
+	if app != nil {
+		posInterjections, negInterjections, ok, counterReset = app.Appendable(sh)
+	}
 
 	c, sampleInOrder, chunkCreated := s.appendPreprocessor(t, chunkenc.EncSHS, chunkDiskMapper)
 	if !sampleInOrder {
