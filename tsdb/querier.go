@@ -16,7 +16,6 @@ package tsdb
 import (
 	"math"
 	"sort"
-	"unicode/utf8"
 
 	"github.com/pkg/errors"
 
@@ -28,20 +27,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 )
-
-// Bitmap used by func isRegexMetaCharacter to check whether a character needs to be escaped.
-var regexMetaCharacterBytes [16]byte
-
-// isRegexMetaCharacter reports whether byte b needs to be escaped.
-func isRegexMetaCharacter(b byte) bool {
-	return b < utf8.RuneSelf && regexMetaCharacterBytes[b%16]&(1<<(b/16)) != 0
-}
-
-func init() {
-	for _, b := range []byte(`.+*?()|[]{}^$`) {
-		regexMetaCharacterBytes[b%16] |= 1 << (b / 16)
-	}
-}
 
 type blockBaseQuerier struct {
 	index      IndexReader
