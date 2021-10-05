@@ -948,6 +948,11 @@ Outer:
 				}
 			}
 
+			if !h.opts.EnableExemplarStorage || h.opts.MaxExemplars.Load() <= 0 {
+				// Exemplar storage is disabled.
+				continue Outer
+			}
+
 			decbuf := encoding.Decbuf{B: rec[1:]}
 
 			exemplarBuf = exemplarBuf[:0]
@@ -969,7 +974,7 @@ Outer:
 					Value:  e.V,
 					Ts:     e.T,
 				}); err != nil {
-					loopErr = errors.Wrap(err, "append exemplar")
+					loopErr = errors.Wrap(err, "add exemplar")
 					break Outer
 				}
 			}
