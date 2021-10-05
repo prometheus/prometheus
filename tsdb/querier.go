@@ -16,7 +16,6 @@ package tsdb
 import (
 	"math"
 	"sort"
-	"strings"
 	"unicode/utf8"
 
 	"github.com/pkg/errors"
@@ -180,48 +179,6 @@ func (q *blockChunkQuerier) Select(sortSeries bool, hints *storage.SelectHints, 
 	return newBlockChunkSeriesSet(q.index, q.chunks, q.tombstones, p, mint, maxt)
 }
 
-func findSetMatches(pattern string) []string {
-	// Return empty matches if the wrapper from Prometheus is missing.
-	if len(pattern) < 6 || pattern[:4] != "^(?:" || pattern[len(pattern)-2:] != ")$" {
-		return nil
-	}
-	escaped := false
-	sets := []*strings.Builder{{}}
-	for i := 4; i < len(pattern)-2; i++ {
-		if escaped {
-			switch {
-			case isRegexMetaCharacter(pattern[i]):
-				sets[len(sets)-1].WriteByte(pattern[i])
-			case pattern[i] == '\\':
-				sets[len(sets)-1].WriteByte('\\')
-			default:
-				return nil
-			}
-			escaped = false
-		} else {
-			switch {
-			case isRegexMetaCharacter(pattern[i]):
-				if pattern[i] == '|' {
-					sets = append(sets, &strings.Builder{})
-				} else {
-					return nil
-				}
-			case pattern[i] == '\\':
-				escaped = true
-			default:
-				sets[len(sets)-1].WriteByte(pattern[i])
-			}
-		}
-	}
-	matches := make([]string, 0, len(sets))
-	for _, s := range sets {
-		if s.Len() > 0 {
-			matches = append(matches, s.String())
-		}
-	}
-	return matches
-}
-
 // PostingsForMatchers assembles a single postings iterator against the index reader
 // based on the given matchers. The resulting postings are not ordered by series.
 func PostingsForMatchers(ix IndexReader, ms ...*labels.Matcher) (index.Postings, error) {
@@ -316,7 +273,7 @@ func postingsForMatcher(ix IndexReader, m *labels.Matcher) (index.Postings, erro
 
 	// Fast-path for set matching.
 	if m.Type == labels.MatchRegexp {
-		setMatches := findSetMatches(m.GetRegexString())
+		setMatches := m.SetMatches()
 		if len(setMatches) > 0 {
 			sort.Strings(setMatches)
 			return ix.Postings(m.Name, setMatches...)
@@ -612,6 +569,7 @@ func (p *populateWithDelGenericSeriesIterator) Err() error { return p.err }
 func (p *populateWithDelGenericSeriesIterator) toSeriesIterator() chunkenc.Iterator {
 	return &populateWithDelSeriesIterator{populateWithDelGenericSeriesIterator: p}
 }
+
 func (p *populateWithDelGenericSeriesIterator) toChunkSeriesIterator() chunks.Iterator {
 	return &populateWithDelChunkSeriesIterator{populateWithDelGenericSeriesIterator: p}
 }
@@ -881,7 +839,6 @@ Outer:
 
 			if ts <= tr.Maxt {
 				return true
-
 			}
 			it.Intervals = it.Intervals[1:]
 		}

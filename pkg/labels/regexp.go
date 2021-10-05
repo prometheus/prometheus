@@ -20,25 +20,28 @@ import (
 )
 
 type FastRegexMatcher struct {
-	re       *regexp.Regexp
-	prefix   string
-	suffix   string
-	contains string
+	re *regexp.Regexp
+
+	setMatches []string
+	prefix     string
+	suffix     string
+	contains   string
 }
 
 func NewFastRegexMatcher(v string) (*FastRegexMatcher, error) {
-	re, err := regexp.Compile("^(?:" + v + ")$")
-	if err != nil {
-		return nil, err
-	}
-
 	parsed, err := syntax.Parse(v, syntax.Perl)
 	if err != nil {
 		return nil, err
 	}
-
+	// Simplify the syntax tree to run faster.
+	parsed = parsed.Simplify()
+	re, err := regexp.Compile("^(?:" + parsed.String() + ")$")
+	if err != nil {
+		return nil, err
+	}
 	m := &FastRegexMatcher{
-		re: re,
+		re:         re,
+		setMatches: findSetMatches(parsed, ""),
 	}
 
 	if parsed.Op == syntax.OpConcat {
@@ -48,7 +51,132 @@ func NewFastRegexMatcher(v string) (*FastRegexMatcher, error) {
 	return m, nil
 }
 
+// findSetMatches extract equality matches from a regexp.
+// Returns nil if we can't replace the regexp by only equality matchers.
+func findSetMatches(re *syntax.Regexp, base string) []string {
+	// Matches are not case sensitive, if we find a case insensitive regexp.
+	// We have to abort.
+	if isCaseInsensitive(re) {
+		return nil
+	}
+	switch re.Op {
+	case syntax.OpLiteral:
+		return []string{base + string(re.Rune)}
+	case syntax.OpEmptyMatch:
+		if base != "" {
+			return []string{base}
+		}
+	case syntax.OpAlternate:
+		found := findSetMatchesFromAlternate(re, base)
+		if found != nil {
+			return found
+		}
+	case syntax.OpCapture:
+		clearCapture(re)
+		return findSetMatches(re, base)
+	case syntax.OpConcat:
+		found := findSetMatchesFromConcat(re, base)
+		if found != nil {
+			return found
+		}
+	case syntax.OpCharClass:
+		if len(base) == 0 {
+			return nil
+		}
+		if len(re.Rune) == 1 {
+			return []string{base + string(re.Rune)}
+		}
+		var matches []string
+		var totalSet int
+		for i := 0; i < len(re.Rune); i = i + 2 {
+			totalSet += int(re.Rune[i+1] - re.Rune[i])
+		}
+		if totalSet > 100 {
+			return nil
+		}
+		for i := 0; i < len(re.Rune); i = i + 2 {
+			lo, hi := re.Rune[i], re.Rune[i+1]
+			if hi == lo {
+				matches = append(matches, base+string(hi))
+			} else {
+				for c := lo; c <= hi; c++ {
+					matches = append(matches, base+string(c))
+				}
+			}
+		}
+		return matches
+	default:
+		return nil
+	}
+	return nil
+}
+
+func findSetMatchesFromConcat(re *syntax.Regexp, base string) []string {
+	if isCaseInsensitive(re) {
+		return nil
+	}
+	if len(re.Sub) == 0 {
+		return nil
+	}
+	for _, sub := range re.Sub {
+		clearCapture(sub)
+	}
+	matches := findSetMatches(re.Sub[0], base)
+	if matches == nil {
+		return nil
+	}
+
+	for i := 1; i < len(re.Sub); i++ {
+		var newMatches []string
+		for _, b := range matches {
+			m := findSetMatches(re.Sub[i], b)
+			if m == nil {
+				return nil
+			}
+			newMatches = append(newMatches, m...)
+		}
+		matches = newMatches
+	}
+
+	return matches
+}
+
+func findSetMatchesFromAlternate(re *syntax.Regexp, base string) []string {
+	var setMatches []string
+	for _, sub := range re.Sub {
+		found := findSetMatches(sub, base)
+		if found == nil {
+			return nil
+		}
+		setMatches = append(setMatches, found...)
+	}
+	return setMatches
+}
+
+// clearCapture removes capture operation as they are not used for matching.
+func clearCapture(regs ...*syntax.Regexp) {
+	for _, r := range regs {
+		if r.Op == syntax.OpCapture {
+			*r = *r.Sub[0]
+		}
+	}
+}
+
+// isCaseInsensitive tells if a regexp is case insensitive.
+// The flag should be check at each level of the syntax tree.
+func isCaseInsensitive(reg *syntax.Regexp) bool {
+	return (reg.Flags & syntax.FoldCase) != 0
+}
+
 func (m *FastRegexMatcher) MatchString(s string) bool {
+	if len(m.setMatches) != 0 {
+		for _, match := range m.setMatches {
+			if match == s {
+				return true
+			}
+		}
+		return false
+	}
 	if m.prefix != "" && !strings.HasPrefix(s, m.prefix) {
 		return false
 	}
@@ -61,8 +189,8 @@ func (m *FastRegexMatcher) MatchString(s string) bool {
 	return m.re.MatchString(s)
 }
 
-func (m *FastRegexMatcher) GetRegexString() string {
-	return m.re.String()
+func (m *FastRegexMatcher) SetMatches() []string {
+	return m.setMatches
 }
 
 // optimizeConcatRegex returns literal prefix/suffix text that can be safely

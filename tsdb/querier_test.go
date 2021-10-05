@@ -918,7 +918,7 @@ func TestPopulateWithDelSeriesIterator_NextWithMinTime(t *testing.T) {
 // The subset are all equivalent so this does not capture merging of partial or non-overlapping sets well.
 // TODO(bwplotka): Merge with storage merged series set benchmark.
 func BenchmarkMergedSeriesSet(b *testing.B) {
-	var sel = func(sets []storage.SeriesSet) storage.SeriesSet {
+	sel := func(sets []storage.SeriesSet) storage.SeriesSet {
 		return storage.NewMergeSeriesSet(sets, storage.ChainedSeriesMerge)
 	}
 
@@ -1560,69 +1560,6 @@ func BenchmarkSetMatcher(b *testing.B) {
 	}
 }
 
-// Refer to https://github.com/prometheus/prometheus/issues/2651.
-func TestFindSetMatches(t *testing.T) {
-	cases := []struct {
-		pattern string
-		exp     []string
-	}{
-		// Single value, coming from a `bar=~"foo"` selector.
-		{
-			pattern: "^(?:foo)$",
-			exp: []string{
-				"foo",
-			},
-		},
-		// Simple sets.
-		{
-			pattern: "^(?:foo|bar|baz)$",
-			exp: []string{
-				"foo",
-				"bar",
-				"baz",
-			},
-		},
-		// Simple sets containing escaped characters.
-		{
-			pattern: "^(?:fo\\.o|bar\\?|\\^baz)$",
-			exp: []string{
-				"fo.o",
-				"bar?",
-				"^baz",
-			},
-		},
-		// Simple sets containing special characters without escaping.
-		{
-			pattern: "^(?:fo.o|bar?|^baz)$",
-			exp:     nil,
-		},
-		// Missing wrapper.
-		{
-			pattern: "foo|bar|baz",
-			exp:     nil,
-		},
-	}
-
-	for _, c := range cases {
-		matches := findSetMatches(c.pattern)
-		if len(c.exp) == 0 {
-			if len(matches) != 0 {
-				t.Errorf("Evaluating %s, unexpected result %v", c.pattern, matches)
-			}
-		} else {
-			if len(matches) != len(c.exp) {
-				t.Errorf("Evaluating %s, length of result not equal to exp", c.pattern)
-			} else {
-				for i := 0; i < len(c.exp); i++ {
-					if c.exp[i] != matches[i] {
-						t.Errorf("Evaluating %s, unexpected result %s", c.pattern, matches[i])
-					}
-				}
-			}
-		}
-	}
-}
-
 func TestPostingsForMatchers(t *testing.T) {
 	chunkDir, err := ioutil.TempDir("", "chunk_dir")
 	require.NoError(t, err)
@@ -1881,7 +1818,6 @@ func TestPostingsForMatchers(t *testing.T) {
 			t.Errorf("Evaluating %v, missing results %+v", c.matchers, exp)
 		}
 	}
-
 }
 
 // TestClose ensures that calling Close more than once doesn't block and doesn't panic.
@@ -2141,7 +2077,12 @@ func TestBlockBaseSeriesSet(t *testing.T) {
 				{
 					lset: labels.New([]labels.Label{{Name: "a", Value: "a"}}...),
 					chunks: []chunks.Meta{
-						{Ref: 29}, {Ref: 45}, {Ref: 245}, {Ref: 123}, {Ref: 4232}, {Ref: 5344},
+						{Ref: 29},
+						{Ref: 45},
+						{Ref: 245},
+						{Ref: 123},
+						{Ref: 4232},
+						{Ref: 5344},
 						{Ref: 121},
 					},
 					ref: 12,
