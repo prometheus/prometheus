@@ -559,6 +559,9 @@ func TestCompaction_CompactWithSplitting(t *testing.T) {
 						require.Equal(t, ts, blockID.Time())
 					}
 
+					// Symbols found in series.
+					seriesSymbols := map[string]struct{}{}
+
 					block, err := OpenBlock(log.NewNopLogger(), filepath.Join(dir, blockID.String()), nil)
 					require.NoError(t, err)
 
@@ -585,8 +588,34 @@ func TestCompaction_CompactWithSplitting(t *testing.T) {
 						require.NoError(t, idxr.Series(ref, &lbls, nil))
 
 						require.Equal(t, uint64(shardIndex), lbls.Hash()%shardCount)
+
+						// Collect all symbols used by series.
+						for _, l := range lbls {
+							seriesSymbols[l.Name] = struct{}{}
+							seriesSymbols[l.Value] = struct{}{}
+						}
 					}
 					require.NoError(t, p.Err())
+
+					// Check that all symbols in symbols table are actually used by series.
+					symIt := idxr.Symbols()
+					for symIt.Next() {
+						w := symIt.At()
+
+						// When shardCount == 1, we're not doing symbols splitting. Head-compacted blocks
+						// however do have empty string as a symbol in the table.
+						// Since label name or value cannot be empty string, we will never find it in seriesSymbols.
+						if w == "" && shardCount <= 1 {
+							continue
+						}
+
+						_, ok := seriesSymbols[w]
+						require.True(t, ok, "not found in series: '%s'", w)
+						delete(seriesSymbols, w)
+					}
+
+					// Check that symbols table covered all symbols found from series.
+					require.Equal(t, 0, len(seriesSymbols))
 				}
 
 				require.Equal(t, uint64(series), totalSeries)
