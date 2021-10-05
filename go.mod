@@ -35,7 +35,6 @@ require (
 	github.com/json-iterator/go v1.1.11
 	github.com/linode/linodego v0.32.0
 	github.com/miekg/dns v1.1.43
-	github.com/mitchellh/hashstructure/v2 v2.0.2
 	github.com/moby/term v0.0.0-20201216013528-df9cb8a40635 // indirect
 	github.com/morikuni/aec v1.0.0 // indirect
 	github.com/mwitkow/go-conntrack v0.0.0-20190716064945-2f068394615f

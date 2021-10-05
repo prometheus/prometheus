@@ -16,8 +16,6 @@ package discovery
 import (
 	"context"
 	"fmt"
-	"math/rand"
-	"reflect"
 	"sort"
 	"strconv"
 	"sync"
@@ -26,7 +24,6 @@ import (
 
 	"github.com/go-kit/log"
 	client_testutil "github.com/prometheus/client_golang/prometheus/testutil"
-	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
@@ -805,10 +802,10 @@ func verifySyncedKeyLen(t *testing.T, tGroups map[string][]*targetgroup.Group, k
 	}
 }
 
-func pk(setName string, rnd int64) poolKey {
+func pk(provider, setName string, n int) poolKey {
 	return poolKey{
 		setName:  setName,
-		provider: fmt.Sprintf("static/%d", rnd),
+		provider: fmt.Sprintf("%s/%d", provider, n),
 	}
 }
 
@@ -817,8 +814,6 @@ func TestTargetSetTargetGroupsPresentOnConfigReload(t *testing.T) {
 	defer cancel()
 	discoveryManager := NewManager(ctx, log.NewNopLogger())
 	discoveryManager.updatert = 100 * time.Millisecond
-	rs := newRecordSource(42)
-	discoveryManager.rnd = rand.New(rs)
 	go discoveryManager.Run()
 
 	c := map[string]Configs{
@@ -832,7 +827,7 @@ func TestTargetSetTargetGroupsPresentOnConfigReload(t *testing.T) {
 	verifySyncedLen(t, syncedTargets, 1)
 	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
 	verifySyncedKeyLen(t, syncedTargets, "prometheus", 1)
-	p := pk("prometheus", rs.record[0])
+	p := pk("static", "prometheus", 0)
 	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"foo:9090\"}", true)
 	verifyLen(t, discoveryManager.targets, 1)
 
@@ -851,8 +846,6 @@ func TestTargetSetTargetGroupsPresentOnConfigChange(t *testing.T) {
 	defer cancel()
 	discoveryManager := NewManager(ctx, log.NewNopLogger())
 	discoveryManager.updatert = 100 * time.Millisecond
-	rs := newRecordSource(42)
-	discoveryManager.rnd = rand.New(rs)
 	go discoveryManager.Run()
 
 	c := map[string]Configs{
@@ -892,9 +885,9 @@ func TestTargetSetTargetGroupsPresentOnConfigChange(t *testing.T) {
 	verifySyncedPresence(t, syncedTargets, "prometheus2", "{__address__=\"bar:9090\"}", true)
 	verifySyncedKeyLen(t, syncedTargets, "prometheus2", 1)
 
-	p := pk("prometheus", rs.record[0])
+	p := pk("static", "prometheus", 0)
 	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"foo:9090\"}", true)
-	p = poolKey{"prometheus2", fmt.Sprintf("lockstatic/%d", rs.record[1])}
+	p = pk("lockstatic", "prometheus2", 1)
 	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"bar:9090\"}", true)
 	verifyLen(t, discoveryManager.targets, 2)
 
@@ -903,7 +896,7 @@ func TestTargetSetTargetGroupsPresentOnConfigChange(t *testing.T) {
 	discoveryManager.ApplyConfig(c)
 	syncedTargets = <-discoveryManager.SyncCh()
 	verifyAbsence(t, discoveryManager.targets, p)
-	verifyPresence(t, discoveryManager.targets, pk("prometheus", rs.record[0]), "{__address__=\"foo:9090\"}", true)
+	verifyPresence(t, discoveryManager.targets, pk("static", "prometheus", 0), "{__address__=\"foo:9090\"}", true)
 	verifySyncedLen(t, syncedTargets, 1)
 	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
 	verifySyncedKeyLen(t, syncedTargets, "prometheus", 1)
@@ -914,8 +907,6 @@ func TestTargetSetRecreatesTargetGroupsOnConfigChange(t *testing.T) {
 	defer cancel()
 	discoveryManager := NewManager(ctx, log.NewNopLogger())
 	discoveryManager.updatert = 100 * time.Millisecond
-	rs := newRecordSource(42)
-	discoveryManager.rnd = rand.New(rs)
 	go discoveryManager.Run()
 
 	c := map[string]Configs{
@@ -926,7 +917,7 @@ func TestTargetSetRecreatesTargetGroupsOnConfigChange(t *testing.T) {
 	discoveryManager.ApplyConfig(c)
 
 	syncedTargets := <-discoveryManager.SyncCh()
-	p := pk("prometheus", rs.record[0])
+	p := pk("static", "prometheus", 0)
 	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"foo:9090\"}", true)
 	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"bar:9090\"}", true)
 	verifyLen(t, discoveryManager.targets, 1)
@@ -941,7 +932,7 @@ func TestTargetSetRecreatesTargetGroupsOnConfigChange(t *testing.T) {
 	discoveryManager.ApplyConfig(c)
 	syncedTargets = <-discoveryManager.SyncCh()
 	verifyAbsence(t, discoveryManager.targets, p)
-	p = pk("prometheus", rs.record[1])
+	p = pk("static", "prometheus", 1)
 	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"foo:9090\"}", true)
 	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"bar:9090\"}", false)
 	verifyLen(t, discoveryManager.targets, 1)
@@ -955,8 +946,6 @@ func TestDiscovererConfigs(t *testing.T) {
 	defer cancel()
 	discoveryManager := NewManager(ctx, log.NewNopLogger())
 	discoveryManager.updatert = 100 * time.Millisecond
-	rs := newRecordSource(42)
-	discoveryManager.rnd = rand.New(rs)
 	go discoveryManager.Run()
 
 	c := map[string]Configs{
@@ -968,10 +957,10 @@ func TestDiscovererConfigs(t *testing.T) {
 	discoveryManager.ApplyConfig(c)
 
 	syncedTargets := <-discoveryManager.SyncCh()
-	p := pk("prometheus", rs.record[0])
+	p := pk("static", "prometheus", 0)
 	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"foo:9090\"}", true)
 	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"bar:9090\"}", true)
-	p = pk("prometheus", rs.record[1])
+	p = pk("static", "prometheus", 1)
 	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"baz:9090\"}", true)
 	verifyLen(t, discoveryManager.targets, 2)
 	verifySyncedLen(t, syncedTargets, 1)
@@ -989,8 +978,6 @@ func TestTargetSetRecreatesEmptyStaticConfigs(t *testing.T) {
 	defer cancel()
 	discoveryManager := NewManager(ctx, log.NewNopLogger())
 	discoveryManager.updatert = 100 * time.Millisecond
-	rs := newRecordSource(42)
-	discoveryManager.rnd = rand.New(rs)
 	go discoveryManager.Run()
 
 	c := map[string]Configs{
@@ -1001,7 +988,7 @@ func TestTargetSetRecreatesEmptyStaticConfigs(t *testing.T) {
 	discoveryManager.ApplyConfig(c)
 
 	syncedTargets := <-discoveryManager.SyncCh()
-	p := pk("prometheus", rs.record[0])
+	p := pk("static", "prometheus", 0)
 	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"foo:9090\"}", true)
 	verifySyncedLen(t, syncedTargets, 1)
 	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
@@ -1013,7 +1000,7 @@ func TestTargetSetRecreatesEmptyStaticConfigs(t *testing.T) {
 	discoveryManager.ApplyConfig(c)
 
 	syncedTargets = <-discoveryManager.SyncCh()
-	p = pk("prometheus", rs.record[1])
+	p = pk("static", "prometheus", 1)
 	targetGroups, ok := discoveryManager.targets[p]
 	if !ok {
 		t.Fatalf("'%v' should be present in target groups", p)
@@ -1039,8 +1026,6 @@ func TestIdenticalConfigurationsAreCoalesced(t *testing.T) {
 	defer cancel()
 	discoveryManager := NewManager(ctx, nil)
 	discoveryManager.updatert = 100 * time.Millisecond
-	rs := newRecordSource(42)
-	discoveryManager.rnd = rand.New(rs)
 	go discoveryManager.Run()
 
 	c := map[string]Configs{
@@ -1054,10 +1039,10 @@ func TestIdenticalConfigurationsAreCoalesced(t *testing.T) {
 	discoveryManager.ApplyConfig(c)
 
 	syncedTargets := <-discoveryManager.SyncCh()
-	verifyPresence(t, discoveryManager.targets, pk("prometheus", rs.record[0]), "{__address__=\"foo:9090\"}", true)
-	verifyPresence(t, discoveryManager.targets, pk("prometheus2", rs.record[0]), "{__address__=\"foo:9090\"}", true)
-	if len(discoveryManager.providers.items) != 1 {
-		t.Fatalf("Invalid number of providers: expected 1, got %d", len(discoveryManager.providers.items))
+	verifyPresence(t, discoveryManager.targets, pk("static", "prometheus", 0), "{__address__=\"foo:9090\"}", true)
+	verifyPresence(t, discoveryManager.targets, pk("static", "prometheus2", 0), "{__address__=\"foo:9090\"}", true)
+	if len(discoveryManager.providers) != 1 {
+		t.Fatalf("Invalid number of providers: expected 1, got %d", len(discoveryManager.providers))
 	}
 	verifySyncedLen(t, syncedTargets, 2)
 	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
@@ -1360,248 +1345,9 @@ type onceProvider struct {
 	tgs []*targetgroup.Group
 }
 
-// recordSource is like a rand.Source, but saves produced values to a slice.
-type recordSource struct {
-	source rand.Source
-	record []int64
-}
-
-func (s *recordSource) Int63() int64 {
-	s.record = append(s.record, s.source.Int63())
-	return s.record[len(s.record)-1]
-}
-
-func (s *recordSource) Seed(seed int64) {
-	s.source.Seed(seed)
-}
-
-func newRecordSource(seed int64) *recordSource {
-	s := recordSource{
-		source: rand.NewSource(seed),
-		record: make([]int64, 0),
-	}
-	return &s
-}
-
 func (o onceProvider) Run(_ context.Context, ch chan<- []*targetgroup.Group) {
 	if len(o.tgs) > 0 {
 		ch <- o.tgs
 	}
 	close(ch)
-}
-
-func TestPKeyDict(t *testing.T) {
-	type put struct {
-		item interface{}
-		etag uint64
-	}
-	tests := []struct {
-		name  string
-		items []put
-	}{
-		{
-			name: "Put items with different etags and Get them back",
-			items: []put{
-				{
-					item: staticConfig("0"),
-					etag: 0,
-				},
-				{
-					item: staticConfig("1"),
-					etag: 1,
-				},
-			},
-		},
-		{
-			name: "Put items with etag collision and Get them back",
-			items: []put{
-				{
-					item: staticConfig("0"),
-					etag: 42,
-				},
-				{
-					item: staticConfig("1"),
-					etag: 42,
-				},
-			},
-		},
-		{
-			name: "Put same items with different etags and Get them back",
-			items: []put{
-				{
-					item: staticConfig("0"),
-					etag: 0,
-				},
-				{
-					item: staticConfig("0"),
-					etag: 1,
-				},
-			},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			type visit struct {
-				it   interface{}
-				etag uint64
-			}
-			visited := make([]visit, 0)
-			f := func(it interface{}, etag uint64) {
-				visited = append(visited, visit{it, etag})
-			}
-			d := newDict()
-			d.extractCfg = func(it interface{}) Config {
-				return it.(Config)
-			}
-			for _, p := range tt.items {
-				d.Put(p.item, p.etag)
-			}
-			for i, g := range tt.items {
-				it, ok := d.Get(g.item.(Config), g.etag)
-				if !ok {
-					t.Fatalf("Step %d: got nil data, expected: %#v",
-						i, g.item.(Config))
-				}
-				if !reflect.DeepEqual(it, g.item) {
-					t.Fatalf("Step %d: got malformed item: %#v, expected %#v",
-						i, it, g.item)
-				}
-			}
-			d.ForEach(f)
-			// Ensure f was called exactly once for each item stored in d.
-			for i, it := range tt.items {
-				var got bool
-				for _, v := range visited {
-					if reflect.DeepEqual(it.item, v.it) && it.etag == v.etag {
-						got = true
-					}
-				}
-				if !got {
-					t.Fatalf("ForEach was not called for item: #%d item %#v etag %d; visits: %#v",
-						i, it.item, it.etag, visited)
-				}
-			}
-			if l := len(visited); l > len(tt.items) {
-				t.Fatalf("ForEach called function too many times: %d, expected %d; visits: %#v",
-					l, len(tt.items), visited)
-			}
-		})
-	}
-}
-
-func TestPKeyDictReplace(t *testing.T) {
-	d := newDict()
-	d.extractCfg = func(it interface{}) Config {
-		return it.(*provider).config.(Config)
-	}
-	p := &provider{
-		name:   "foo",
-		config: staticConfig("0"),
-	}
-	// Put item and replace it with different item with same Config and etag.
-	d.Put(p, 42)
-	p = &provider{
-		name:   "bar",
-		config: staticConfig("0"),
-	}
-	d.Put(p, 42)
-	got, ok := d.Get(staticConfig("0"), 42)
-	if !ok {
-		t.Fatalf("Failed to Get item from dict: expected was not called for item: expected #%v", p)
-	}
-	if !reflect.DeepEqual(got.(*provider), p) {
-		t.Fatalf("Get produced unexpected result: got #%v, expected #%v", got, p)
-	}
-	exp := map[uint64][]interface{}{
-		42: {
-			p,
-		},
-	}
-	if !reflect.DeepEqual(d.items, exp) {
-		t.Fatalf("Dict has unexpected items: got #%v, expected #%v", d.items, exp)
-	}
-}
-
-// A StaticConfig is a Config that provides a static list of targets.
-type secretStaticConfig struct {
-	Tg     []*targetgroup.Group
-	Secret config.Secret
-}
-
-// Name returns the name of the service discovery mechanism.
-func (secretStaticConfig) Name() string { return "secretstatic" }
-
-// NewDiscoverer returns a Discoverer for the Config.
-func (c secretStaticConfig) NewDiscoverer(DiscovererOptions) (Discoverer, error) {
-	return staticDiscoverer(c.Tg), nil
-}
-
-func TestSecretHashing(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	discoveryManager := NewManager(ctx, log.NewNopLogger())
-	discoveryManager.updatert = 100 * time.Millisecond
-	rs := newRecordSource(42)
-	discoveryManager.rnd = rand.New(rs)
-	go discoveryManager.Run()
-
-	testCases := []struct {
-		title string
-		cfg   map[string]Configs
-		exp   int
-	}{
-		{
-			title: "Same providers with identical configs should be coalesced",
-			cfg: map[string]Configs{
-				"prometheus": {
-					secretStaticConfig{
-						staticConfig("foo:9090"),
-						"same secrets",
-					},
-				},
-				"prometheus2": {
-					secretStaticConfig{
-						staticConfig("foo:9090"),
-						"same secrets",
-					},
-				},
-			},
-			exp: 1,
-		},
-		{
-			title: "Same providers with identical configs yet different secrets should not be coalesced",
-			cfg: map[string]Configs{
-				"prometheus": {
-					secretStaticConfig{
-						staticConfig("foo:9090"),
-						"secret one",
-					},
-				},
-				"prometheus2": {
-					secretStaticConfig{
-						staticConfig("foo:9090"),
-						"secret two",
-					},
-				},
-			},
-			exp: 2,
-		},
-	}
-	for _, tc := range testCases {
-		t.Run(tc.title, func(t *testing.T) {
-			discoveryManager.ApplyConfig(tc.cfg)
-			l := 0
-			for _, its := range discoveryManager.providers.items {
-				l += len(its)
-			}
-			if l != tc.exp {
-				t.Fatalf(
-					"Unexpected number of registered providers: got %d, expected %d; providers.items: %#v",
-					l,
-					tc.exp,
-					discoveryManager.providers.items,
-				)
-			}
-		})
-	}
 }
