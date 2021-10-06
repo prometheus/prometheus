@@ -32,6 +32,9 @@ func TestSymbolsBatchAndIteration(t *testing.T) {
 
 	it, err := newSymbolsIterator(b.symbolFiles())
 	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, it.Close())
+	})
 
 	first := true
 	var w, prev string

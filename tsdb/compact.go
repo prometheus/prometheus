@@ -810,23 +810,25 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, minT, maxT int64,
 		// Blocks meta is half open: [min, max), so subtract 1 to ensure we don't hold samples with exact meta.MaxTime timestamp.
 		sets = append(sets, newBlockChunkSeriesSet(indexr, chunkr, tombsr, all, minT, maxT-1))
 
-		// To iterate series when populating symbols, we cannot reuse postings we just got, but need to get a new copy.
-		// Postings can only be iterated once.
-		k, v = index.AllPostingsKey()
-		all, err = indexr.Postings(k, v)
-		if err != nil {
-			return err
+		if len(outBlocks) > 1 {
+			// To iterate series when populating symbols, we cannot reuse postings we just got, but need to get a new copy.
+			// Postings can only be iterated once.
+			k, v = index.AllPostingsKey()
+			all, err = indexr.Postings(k, v)
+			if err != nil {
+				return err
+			}
+			all = indexr.SortedPostings(all)
+			// Blocks meta is half open: [min, max), so subtract 1 to ensure we don't hold samples with exact meta.MaxTime timestamp.
+			symbolsSets = append(symbolsSets, newBlockChunkSeriesSet(indexr, chunkr, tombsr, all, minT, maxT-1))
+		} else {
+			syms := indexr.Symbols()
+			if i == 0 {
+				symbols = syms
+				continue
+			}
+			symbols = NewMergedStringIter(symbols, syms)
 		}
-		all = indexr.SortedPostings(all)
-		// Blocks meta is half open: [min, max), so subtract 1 to ensure we don't hold samples with exact meta.MaxTime timestamp.
-		symbolsSets = append(symbolsSets, newBlockChunkSeriesSet(indexr, chunkr, tombsr, all, minT, maxT-1))
-
-		syms := indexr.Symbols()
-		if i == 0 {
-			symbols = syms
-			continue
-		}
-		symbols = NewMergedStringIter(symbols, syms)
 	}
 
 	if len(outBlocks) == 1 {
@@ -913,6 +915,9 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, minT, maxT int64,
 	return nil
 }
 
+// How many symbols we buffer in memory per output block.
+const inMemorySymbolsLimit = 1_000_000
+
 // populateSymbols writes symbols to output blocks. We need to iterate through all series to find
 // which series belongs to what block. We collect symbols per sharded block, and then add sorted symbols to
 // block's index.
@@ -923,7 +928,7 @@ func (c *LeveledCompactor) populateSymbols(sets []storage.ChunkSeriesSet, outBlo
 
 	batchers := make([]*symbolsBatcher, len(outBlocks))
 	for ix := range outBlocks {
-		batchers[ix] = newSymbolsBatcher(10000, outBlocks[ix].tmpDir)
+		batchers[ix] = newSymbolsBatcher(inMemorySymbolsLimit, outBlocks[ix].tmpDir)
 
 		// Always include empty symbol. Blocks created from Head always have it in the symbols table,
 		// and if we only include symbols from series, we would skip it.
@@ -997,7 +1002,8 @@ func (c *LeveledCompactor) populateSymbols(sets []storage.ChunkSeriesSet, outBlo
 		closeIt = nil
 		_ = it.Close()
 
-		// Delete symbol files from symbolsBatcher.
+		// Delete symbol files from symbolsBatcher. We don't need to perform the cleanup if populateSymbols
+		// or compaction fails, because in that case compactor already removes entire (temp) output block directory.
 		for _, fn := range batchers[ix].symbolFiles() {
 			if err := os.Remove(fn); err != nil {
 				return errors.Wrap(err, "deleting symbols file")

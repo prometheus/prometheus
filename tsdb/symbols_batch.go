@@ -70,7 +70,7 @@ func writeSymbolsToFile(filename string, symbols []string) error {
 		return err
 	}
 
-	// Snappy is used to for buffering and smaller files.
+	// Snappy is used for buffering and to create smaller files.
 	sn := snappy.NewBufferedWriter(f)
 	enc := gob.NewEncoder(sn)
 
@@ -89,16 +89,19 @@ func writeSymbolsToFile(filename string, symbols []string) error {
 	return errs.Err()
 }
 
+// Implements heap.Interface using symbols from files.
 type symbolsHeap []*symbolsFile
 
+// Len implements sort.Interface.
 func (s *symbolsHeap) Len() int {
 	return len(*s)
 }
 
+// Less implements sort.Interface.
 func (s *symbolsHeap) Less(i, j int) bool {
 	iw, ierr := (*s)[i].Peek()
 	if ierr != nil {
-		// empty string will be sorted first, so error will be returned before any other result.
+		// Empty string will be sorted first, so error will be returned before any other result.
 		iw = ""
 	}
 
@@ -110,16 +113,17 @@ func (s *symbolsHeap) Less(i, j int) bool {
 	return iw < jw
 }
 
+// Swap implements sort.Interface.
 func (s *symbolsHeap) Swap(i, j int) {
 	(*s)[i], (*s)[j] = (*s)[j], (*s)[i]
 }
 
+// Push implements heap.Interface. Push should add x as element Len().
 func (s *symbolsHeap) Push(x interface{}) {
-	if f, ok := x.(*symbolsFile); ok {
-		*s = append(*s, f)
-	}
+	*s = append(*s, x.(*symbolsFile))
 }
 
+// Pop implements heap.Interface. Pop should remove and return element Len() - 1.
 func (s *symbolsHeap) Pop() interface{} {
 	l := len(*s)
 	res := (*s)[l-1]
@@ -160,31 +164,30 @@ func newSymbolsIterator(filenames []string) (*symbolsIterator, error) {
 // NextSymbol advances iterator forward, and returns next symbol.
 // If there is no next element, returns err == io.EOF.
 func (sit *symbolsIterator) NextSymbol() (string, error) {
-again:
-	if len(sit.heap) == 0 {
-		return "", io.EOF
-	}
+	for len(sit.heap) > 0 {
+		result, err := sit.heap[0].Next()
+		if err == io.EOF {
+			// End of file, remove it from heap, and try next file.
+			heap.Remove(&sit.heap, 0)
+			continue
+		}
 
-	result, err := sit.heap[0].Next()
-	if err == io.EOF {
-		// End of file, remove it, and try next file.
-		heap.Remove(&sit.heap, 0)
-		goto again
-	}
+		if err != nil {
+			return "", err
+		}
 
-	if err != nil {
-		return "", err
-	}
+		heap.Fix(&sit.heap, 0)
 
-	heap.Fix(&sit.heap, 0)
+		if sit.lastReturned != nil && *sit.lastReturned == result {
+			// Duplicate symbol, try next one.
+			continue
+		}
 
-	if sit.lastReturned == nil || *sit.lastReturned != result {
 		sit.lastReturned = &result
 		return result, nil
 	}
 
-	// Duplicate symbol, try next one.
-	goto again
+	return "", io.EOF
 }
 
 // Close all files.
@@ -224,7 +227,7 @@ func (sf *symbolsFile) Peek() (string, error) {
 	return sf.nextSymbol, sf.nextErr
 }
 
-// Next advances iterator and returns next symbol or error.
+// Next advances iterator and returns the next symbol or error.
 func (sf *symbolsFile) Next() (string, error) {
 	if sf.nextValid {
 		defer func() {
@@ -256,7 +259,7 @@ func openFiles(filenames []string) ([]*os.File, error) {
 		f, err := os.Open(fn)
 
 		if err != nil {
-			// Close opened files so far.
+			// Close files opened so far.
 			for _, sf := range result {
 				_ = sf.Close()
 			}
