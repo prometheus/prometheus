@@ -51,6 +51,44 @@ Append may reject data due to these conditions:
 
 Commit() may also refuse data that is out of order with respect to samples that were added via a different appender.
 
+Example:
+
+```
+package main
+
+import (
+	"context"
+	"time"
+
+	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/tsdb"
+)
+
+func noErr(err error) {
+	if err != nil {
+		panic(err)
+	}
+}
+
+func main() {
+	var opts tsdb.Options
+	db, err := tsdb.Open("tsdb-test", nil, nil, &opts, nil)
+	noErr(err)
+
+	ctx := context.Background()
+	app := db.Appender(ctx)
+
+	series := labels.FromStrings("foo", "bar")
+	ref, err := app.Append(0, series, time.Now().Unix(), 123)
+	time.Sleep(time.Second)
+	_, err = app.Append(ref, series, time.Now().Unix(), 124)
+	err = app.Commit()
+	noErr(err)
+	app = db.Appender(ctx) // need a new one. See app.Commit() docs
+}
+```
+
+
 ## Querying data
 
 Use [`db.Querier()`](https://pkg.go.dev/github.com/prometheus/prometheus/tsdb#DB.Querier) to obtain a "querier".
@@ -65,25 +103,50 @@ Remember:
 Example:
 
 ```
-querier, err := db.Querier(context.TODO(), 0, math.MaxInt64)
-ss := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+package main
 
-for ss.Next() {
-	series := ss.At()
-	fmt.Println("series:", series.Labels().String())
+import (
+	"context"
+	"fmt"
+	"math"
 
-	it := series.Iterator()
-	for it.Next() {
-		t, v := it.At()
-		samples = fmt.Println("sample", t,v)
+	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/tsdb"
+)
+
+func noErr(err error) {
+	if err != nil {
+		panic(err)
 	}
+}
 
-	fmt.Println("it.Err():", it.Err())
+func main() {
+	var opts tsdb.Options
+	db, err := tsdb.Open("tsdb-test", nil, nil, &opts, nil)
+	noErr(err)
+
+	querier, err := db.Querier(context.TODO(), 0, math.MaxInt64)
+	noErr(err)
+	ss := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+
+	for ss.Next() {
+		series := ss.At()
+		fmt.Println("series:", series.Labels().String())
+
+		it := series.Iterator()
+		for it.Next() {
+			t, v := it.At()
+			fmt.Println("sample", t, v)
+		}
+
+		fmt.Println("it.Err():", it.Err())
+	}
+	fmt.Println("ss.Err():", ss.Err())
+	ws := ss.Warnings()
+	if len(ws) > 0 {
+		fmt.Println("warnings:", ws)
+	}
+	err = querier.Close()
+	noErr(err)
 }
-fmt.Println("ss.Err():", ss.Err())
-ws := ss.Warnings()
-if len(ws) > 0 {
-	fmt.Println("warnings:", ws)
-}
-err := querier.Close()
 ```
