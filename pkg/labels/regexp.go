@@ -243,7 +243,12 @@ func optimizeConcatRegex(r *syntax.Regexp) (prefix, suffix, contains string) {
 }
 
 // todo remove anchors ^foo$
-// .*POD.*
+// remove captures.
+// .+ | .* | .*POD.* | 5.. | test-.* | .*-test | test-.+ | .+-test
+
+// regexp prefix fn ???? can we use this ?
+
+// benchmark them
 
 func contains(s, substr string) bool {
 	pos := strings.Index(s, substr)
@@ -254,6 +259,7 @@ func contains(s, substr string) bool {
 }
 
 func matchesAnyZeroOrMoreNotNL(s string) bool {
+	// strings.Contains(s string, substr string) faster ??
 	for _, r := range s {
 		if r == '\n' {
 			return false
