@@ -322,6 +322,14 @@ func (e *EndpointSlice) buildEndpointSlice(eps *disv1beta1.EndpointSlice) *targe
 		}
 	}
 
+	v := eps.Labels[apiv1.EndpointsOverCapacity]
+	if v == "truncated" {
+		level.Warn(e.logger).Log("msg", "Number of endpoints in one Endpoints object truncated to 1000", "endpoint", eps.Name)
+	}
+	if v == "warning" {
+		level.Warn(e.logger).Log("msg", "Number of endpoints in one Endpoints object exceeds 1000", "endpoint", eps.Name)
+	}
+
 	// For all seen pods, check all container ports. If they were not covered
 	// by one of the service endpoints, generate targets for them.
 	for _, pe := range seenPods {
