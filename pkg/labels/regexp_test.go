@@ -109,7 +109,7 @@ func TestFindSetMatches(t *testing.T) {
 		{"^foo$", []string{"foo"}},
 		// Simple sets alternates.
 		{"foo|bar|zz", []string{"foo", "bar", "zz"}},
-		// Simple sets alternate and concat (bar|baz is parsed as ba(r|z)).
+		// Simple sets alternate and concat (bar|baz is parsed as "ba[rz]").
 		{"foo|bar|baz", []string{"foo", "bar", "baz"}},
 		// Simple sets alternate and concat and capture
 		{"foo|bar|baz|(zz)", []string{"foo", "bar", "baz", "zz"}},
