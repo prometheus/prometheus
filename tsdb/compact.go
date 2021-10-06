@@ -749,6 +749,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, minT, maxT int64,
 
 	var (
 		sets        []storage.ChunkSeriesSet
+		symbolsSets []storage.ChunkSeriesSet // series sets used for finding symbols. Only used when doing sharding.
 		symbols     index.StringIter
 		closers     []io.Closer
 		overlapping bool
@@ -808,23 +809,41 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, minT, maxT int64,
 		all = indexr.SortedPostings(all)
 		// Blocks meta is half open: [min, max), so subtract 1 to ensure we don't hold samples with exact meta.MaxTime timestamp.
 		sets = append(sets, newBlockChunkSeriesSet(indexr, chunkr, tombsr, all, minT, maxT-1))
-		syms := indexr.Symbols()
-		if i == 0 {
-			symbols = syms
-			continue
+
+		if len(outBlocks) > 1 {
+			// To iterate series when populating symbols, we cannot reuse postings we just got, but need to get a new copy.
+			// Postings can only be iterated once.
+			k, v = index.AllPostingsKey()
+			all, err = indexr.Postings(k, v)
+			if err != nil {
+				return err
+			}
+			all = indexr.SortedPostings(all)
+			// Blocks meta is half open: [min, max), so subtract 1 to ensure we don't hold samples with exact meta.MaxTime timestamp.
+			symbolsSets = append(symbolsSets, newBlockChunkSeriesSet(indexr, chunkr, tombsr, all, minT, maxT-1))
+		} else {
+			syms := indexr.Symbols()
+			if i == 0 {
+				symbols = syms
+				continue
+			}
+			symbols = NewMergedStringIter(symbols, syms)
 		}
-		symbols = NewMergedStringIter(symbols, syms)
 	}
 
-	for symbols.Next() {
-		for _, ob := range outBlocks {
-			if err := ob.indexw.AddSymbol(symbols.At()); err != nil {
+	if len(outBlocks) == 1 {
+		for symbols.Next() {
+			if err := outBlocks[0].indexw.AddSymbol(symbols.At()); err != nil {
 				return errors.Wrap(err, "add symbol")
 			}
 		}
-	}
-	if symbols.Err() != nil {
-		return errors.Wrap(symbols.Err(), "next symbol")
+		if symbols.Err() != nil {
+			return errors.Wrap(symbols.Err(), "next symbol")
+		}
+	} else {
+		if err := c.populateSymbols(symbolsSets, outBlocks); err != nil {
+			return err
+		}
 	}
 
 	var (
@@ -891,6 +910,105 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, minT, maxT int64,
 	}
 	if set.Err() != nil {
 		return errors.Wrap(set.Err(), "iterate compaction set")
+	}
+
+	return nil
+}
+
+// How many symbols we buffer in memory per output block.
+const inMemorySymbolsLimit = 1_000_000
+
+// populateSymbols writes symbols to output blocks. We need to iterate through all series to find
+// which series belongs to what block. We collect symbols per sharded block, and then add sorted symbols to
+// block's index.
+func (c *LeveledCompactor) populateSymbols(sets []storage.ChunkSeriesSet, outBlocks []shardedBlock) error {
+	if len(outBlocks) == 0 {
+		return errors.New("no output block")
+	}
+
+	batchers := make([]*symbolsBatcher, len(outBlocks))
+	for ix := range outBlocks {
+		batchers[ix] = newSymbolsBatcher(inMemorySymbolsLimit, outBlocks[ix].tmpDir)
+
+		// Always include empty symbol. Blocks created from Head always have it in the symbols table,
+		// and if we only include symbols from series, we would skip it.
+		// It may not be required, but it's small and better be safe than sorry.
+		if err := batchers[ix].addSymbol(""); err != nil {
+			return errors.Wrap(err, "addSymbol to batcher")
+		}
+	}
+
+	seriesSet := sets[0]
+	if len(sets) > 1 {
+		seriesSet = storage.NewMergeChunkSeriesSet(sets, c.mergeFunc)
+	}
+
+	for seriesSet.Next() {
+		if err := c.ctx.Err(); err != nil {
+			return err
+		}
+
+		s := seriesSet.At()
+
+		obIx := s.Labels().Hash() % uint64(len(outBlocks))
+
+		for _, l := range s.Labels() {
+			if err := batchers[obIx].addSymbol(l.Name); err != nil {
+				return errors.Wrap(err, "addSymbol to batcher")
+			}
+			if err := batchers[obIx].addSymbol(l.Value); err != nil {
+				return errors.Wrap(err, "addSymbol to batcher")
+			}
+		}
+	}
+
+	for ix := range outBlocks {
+		if err := c.ctx.Err(); err != nil {
+			return err
+		}
+
+		// Flush the batcher to write remaining symbols.
+		if err := batchers[ix].flushSymbols(true); err != nil {
+			return errors.Wrap(err, "flushing batcher")
+		}
+
+		it, err := newSymbolsIterator(batchers[ix].symbolFiles())
+		if err != nil {
+			return errors.Wrap(err, "opening symbols iterator")
+		}
+
+		// Each symbols iterator must be closed to close underlying files.
+		closeIt := it
+		defer func() {
+			if closeIt != nil {
+				_ = closeIt.Close()
+			}
+		}()
+
+		var sym string
+		for sym, err = it.NextSymbol(); err == nil; sym, err = it.NextSymbol() {
+			err = outBlocks[ix].indexw.AddSymbol(sym)
+			if err != nil {
+				return errors.Wrap(err, "AddSymbol")
+			}
+		}
+
+		if err != io.EOF {
+			return errors.Wrap(err, "iterating symbols")
+		}
+
+		// if err == io.EOF, we have iterated through all symbols. We can close underlying
+		// files now.
+		closeIt = nil
+		_ = it.Close()
+
+		// Delete symbol files from symbolsBatcher. We don't need to perform the cleanup if populateSymbols
+		// or compaction fails, because in that case compactor already removes entire (temp) output block directory.
+		for _, fn := range batchers[ix].symbolFiles() {
+			if err := os.Remove(fn); err != nil {
+				return errors.Wrap(err, "deleting symbols file")
+			}
+		}
 	}
 
 	return nil

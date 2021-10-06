@@ -559,6 +559,14 @@ func TestCompaction_CompactWithSplitting(t *testing.T) {
 						require.Equal(t, ts, blockID.Time())
 					}
 
+					// Symbols found in series.
+					seriesSymbols := map[string]struct{}{}
+
+					// We always expect to find "" symbol in the symbols table even if it's not in the series.
+					// Head compaction always includes it, and then it survives additional non-sharded compactions.
+					// Our splitting compaction preserves it too.
+					seriesSymbols[""] = struct{}{}
+
 					block, err := OpenBlock(log.NewNopLogger(), filepath.Join(dir, blockID.String()), nil)
 					require.NoError(t, err)
 
@@ -585,8 +593,26 @@ func TestCompaction_CompactWithSplitting(t *testing.T) {
 						require.NoError(t, idxr.Series(ref, &lbls, nil))
 
 						require.Equal(t, uint64(shardIndex), lbls.Hash()%shardCount)
+
+						// Collect all symbols used by series.
+						for _, l := range lbls {
+							seriesSymbols[l.Name] = struct{}{}
+							seriesSymbols[l.Value] = struct{}{}
+						}
 					}
 					require.NoError(t, p.Err())
+
+					// Check that all symbols in symbols table are actually used by series.
+					symIt := idxr.Symbols()
+					for symIt.Next() {
+						w := symIt.At()
+						_, ok := seriesSymbols[w]
+						require.True(t, ok, "not found in series: '%s'", w)
+						delete(seriesSymbols, w)
+					}
+
+					// Check that symbols table covered all symbols found from series.
+					require.Equal(t, 0, len(seriesSymbols))
 				}
 
 				require.Equal(t, uint64(series), totalSeries)
