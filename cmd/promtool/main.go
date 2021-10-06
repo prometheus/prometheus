@@ -250,7 +250,7 @@ func main() {
 		os.Exit(backfillOpenMetrics(*importFilePath, *importDBPath, *importHumanReadable, *importQuiet, *maxBlockDuration))
 
 	case importRulesCmd.FullCommand():
-		os.Exit(checkErr(importRules(*importRulesURL, *importRulesStart, *importRulesEnd, *importRulesOutputDir, *importRulesEvalInterval, *importRulesFiles...)))
+		os.Exit(checkErr(importRules(*importRulesURL, *importRulesStart, *importRulesEnd, *importRulesOutputDir, *importRulesEvalInterval, *maxBlockDuration, *importRulesFiles...)))
 	}
 }
 
@@ -927,7 +927,7 @@ func (j *jsonPrinter) printLabelValues(v model.LabelValues) {
 
 // importRules backfills recording rules from the files provided. The output are blocks of data
 // at the outputDir location.
-func importRules(url *url.URL, start, end, outputDir string, evalInterval time.Duration, files ...string) error {
+func importRules(url *url.URL, start, end, outputDir string, evalInterval time.Duration, maxBlockDuration time.Duration, files ...string) error {
 	ctx := context.Background()
 	var stime, etime time.Time
 	var err error
@@ -950,10 +950,11 @@ func importRules(url *url.URL, start, end, outputDir string, evalInterval time.D
 	}
 
 	cfg := ruleImporterConfig{
-		outputDir:    outputDir,
-		start:        stime,
-		end:          etime,
-		evalInterval: evalInterval,
+		outputDir:        outputDir,
+		start:            stime,
+		end:              etime,
+		evalInterval:     evalInterval,
+		maxBlockDuration: maxBlockDuration,
 	}
 	client, err := api.NewClient(api.Config{
 		Address: url.String(),
