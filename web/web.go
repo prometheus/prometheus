@@ -397,6 +397,7 @@ func New(logger log.Logger, o *Options) *Handler {
 			fmt.Fprintf(w, "Error opening React index.html: %v", err)
 			return
 		}
+		defer func() { _ = f.Close() }()
 		idx, err := ioutil.ReadAll(f)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
