@@ -113,6 +113,7 @@ func (m *Matcher) Inverse() (*Matcher, error) {
 
 // SetMatches returns a set of equality matchers for the current regex matchers if possible.
 // For examples the regexp `a(b|f)` will returns "ab" and "af".
+// Returns nil if we can't replace the regexp by only equality matchers.
 func (m *Matcher) SetMatches() []string {
 	if m.re == nil {
 		return nil
