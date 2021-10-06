@@ -197,10 +197,13 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 			continue
 		}
 		newProviders = append(newProviders, prov)
-		// Remove obsolete subs' targets.
+		// refTargets keeps reference targets used to populate new subs' targets
+		var refTargets map[string]*targetgroup.Group
 		prov.mu.Lock()
 		for s := range prov.subs {
 			keep = true
+			refTargets = m.targets[poolKey{s, prov.name}]
+			// Remove obsolete subs' targets.
 			if _, ok := prov.newSubs[s]; !ok {
 				m.targetsMtx.Lock()
 				delete(m.targets, poolKey{s, prov.name})
@@ -208,10 +211,16 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 				discoveredTargets.DeleteLabelValues(m.name, s)
 			}
 		}
-		// Set metrics for new subs.
+		// Set metrics and targets for new subs.
 		for s := range prov.newSubs {
 			if _, ok := prov.subs[s]; !ok {
 				discoveredTargets.WithLabelValues(m.name, s).Set(0)
+			}
+			if l := len(refTargets); l > 0 {
+				m.targets[poolKey{s, prov.name}] = make(map[string]*targetgroup.Group, l)
+				for k, v := range refTargets {
+					m.targets[poolKey{s, prov.name}][k] = v
+				}
 			}
 		}
 		prov.subs = prov.newSubs
@@ -290,6 +299,7 @@ func (m *Manager) updater(ctx context.Context, p *provider, updates chan []*targ
 				<-ctx.Done()
 				return
 			}
+
 			p.mu.RLock()
 			for s := range p.subs {
 				m.updateGroup(poolKey{setName: s, provider: p.name}, tgs)

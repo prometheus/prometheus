@@ -841,6 +841,80 @@ func TestTargetSetTargetGroupsPresentOnConfigReload(t *testing.T) {
 	verifySyncedKeyLen(t, syncedTargets, "prometheus", 1)
 }
 
+func TestTargetSetTargetGroupsPresentOnConfigRename(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	discoveryManager := NewManager(ctx, log.NewNopLogger())
+	discoveryManager.updatert = 100 * time.Millisecond
+	go discoveryManager.Run()
+
+	c := map[string]Configs{
+		"prometheus": {
+			staticConfig("foo:9090"),
+		},
+	}
+	discoveryManager.ApplyConfig(c)
+
+	syncedTargets := <-discoveryManager.SyncCh()
+	verifySyncedLen(t, syncedTargets, 1)
+	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
+	verifySyncedKeyLen(t, syncedTargets, "prometheus", 1)
+	p := pk("static", "prometheus", 0)
+	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"foo:9090\"}", true)
+	verifyLen(t, discoveryManager.targets, 1)
+
+	c["prometheus2"] = c["prometheus"]
+	delete(c, "prometheus")
+	discoveryManager.ApplyConfig(c)
+
+	syncedTargets = <-discoveryManager.SyncCh()
+	p = pk("static", "prometheus2", 0)
+	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"foo:9090\"}", true)
+	verifyLen(t, discoveryManager.targets, 1)
+	verifySyncedLen(t, syncedTargets, 1)
+	verifySyncedPresence(t, syncedTargets, "prometheus2", "{__address__=\"foo:9090\"}", true)
+	verifySyncedKeyLen(t, syncedTargets, "prometheus2", 1)
+}
+
+func TestTargetSetTargetGroupsPresentOnConfigDuplicateAndDeleteOriginal(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	discoveryManager := NewManager(ctx, log.NewNopLogger())
+	discoveryManager.updatert = 100 * time.Millisecond
+	go discoveryManager.Run()
+
+	c := map[string]Configs{
+		"prometheus": {
+			staticConfig("foo:9090"),
+		},
+	}
+	discoveryManager.ApplyConfig(c)
+	syncedTargets := <-discoveryManager.SyncCh()
+
+	c["prometheus2"] = c["prometheus"]
+	discoveryManager.ApplyConfig(c)
+	syncedTargets = <-discoveryManager.SyncCh()
+	verifySyncedLen(t, syncedTargets, 2)
+	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
+	verifySyncedKeyLen(t, syncedTargets, "prometheus", 1)
+	verifySyncedPresence(t, syncedTargets, "prometheus2", "{__address__=\"foo:9090\"}", true)
+	verifySyncedKeyLen(t, syncedTargets, "prometheus2", 1)
+	p := pk("static", "prometheus", 0)
+	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"foo:9090\"}", true)
+	p = pk("static", "prometheus2", 0)
+	verifyLen(t, discoveryManager.targets, 2)
+
+	delete(c, "prometheus")
+	discoveryManager.ApplyConfig(c)
+	syncedTargets = <-discoveryManager.SyncCh()
+	p = pk("static", "prometheus2", 0)
+	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"foo:9090\"}", true)
+	verifyLen(t, discoveryManager.targets, 1)
+	verifySyncedLen(t, syncedTargets, 1)
+	verifySyncedPresence(t, syncedTargets, "prometheus2", "{__address__=\"foo:9090\"}", true)
+	verifySyncedKeyLen(t, syncedTargets, "prometheus2", 1)
+}
+
 func TestTargetSetTargetGroupsPresentOnConfigChange(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
