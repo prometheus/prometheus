@@ -1,12 +1,20 @@
 CodeMirror-promql
 =================
-[![CircleCI](https://circleci.com/gh/prometheus-community/codemirror-promql.svg?style=shield)](https://circleci.com/gh/prometheus-community/codemirror-promql) [![GitHub license](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+[![CircleCI](https://circleci.com/gh/prometheus-community/codemirror-promql.svg?style=shield)](https://circleci.com/gh/prometheus-community/codemirror-promql) [![GitHub license](https://img.shields.io/badge/license-Apache-blue.svg)](./LICENSE)
 [![NPM version](https://img.shields.io/npm/v/codemirror-promql.svg)](https://www.npmjs.org/package/codemirror-promql) [![codecov](https://codecov.io/gh/prometheus-community/codemirror-promql/branch/master/graph/badge.svg?token=1OSVPBDKZC)](https://codecov.io/gh/prometheus-community/codemirror-promql)
 
 ## Overview
 
 This project provides a mode for [CodeMirror Next](https://codemirror.net/6) that handles syntax highlighting, linting
 and autocompletion for PromQL ([Prometheus Query Language](https://prometheus.io/docs/introduction/overview/)).
+
+![preview](https://user-images.githubusercontent.com/4548045/95660829-d5e4b680-0b2a-11eb-9ecb-41dca6396273.gif)
+
+## Where does it come from?
+
+The authoritative copy of this code lives in `prometheus/prometheus` and is synced to 
+`prometheus-community/codemirror-promql` on a regular basis by a bot. Please contribute any code changes to the code 
+in https://github.com/prometheus/prometheus/tree/main/web/ui/module/codemirror-promql.
 
 ### Installation
 
@@ -37,15 +45,6 @@ npm install --save @codemirror/autocomplete @codemirror/highlight @codemirror/la
 ```bash
 npm install --save @codemirror/basic-setup
 ```
-
-### Playground
-
-[Here](https://codemirror-promql.netlify.app/) you have a playground available that is deployed from the latest commit
-available on the `master` branch.
-
-Here is a short preview of it looks like currently:
-
-![preview](https://user-images.githubusercontent.com/4548045/95660829-d5e4b680-0b2a-11eb-9ecb-41dca6396273.gif)
 
 ## Usage
 
@@ -172,6 +171,16 @@ You can change it to use the HTTP method `GET` if you prefer.
 const promQL = new PromQLExtension().setComplete({ remote: { httpMethod: 'GET' } })
 ```
 
+###### Override the API Prefix
+
+The default Prometheus Client, when building the query to get data from Prometheus, is using an API prefix which is by default `/api/v1`.
+
+You can override this value like this:
+
+```typescript
+const promql = new PromQLExtension().setComplete({ remote: { apiPrefix: '/my/api/prefix' } })
+```
+
 ###### Cache
 
 The default client has an embedded cache that is used to store the different metrics and labels retrieved from a remote
@@ -232,34 +241,9 @@ Note: In case this parameter is provided, then the rest of the configuration is 
 
 ### Example
 
-* The development [app](./src/app) can give you an example of how to use it with no TS Framework.
 * [ReactJS example](https://github.com/prometheus/prometheus/blob/431ea75a11ca165dad9dd5d629b3cf975f4c186b/web/ui/react-app/src/pages/graph/CMExpressionInput.tsx)
 * [Angular example](https://github.com/perses/perses/blob/28b3bdac88b0ed7a4602f9c91106442eafcb6c34/internal/api/front/perses/src/app/project/prometheusrule/promql-editor/promql-editor.component.ts)
 
-## Contributions
-
-Any contribution or suggestion would be really appreciated. Feel free
-to [file an issue](https://github.com/prometheus-community/codemirror-promql/issues)
-or [send a pull request](https://github.com/prometheus-community/codemirror-promql/pulls).
-
-## Development
-
-In case you want to contribute and change the code by yourself, run the following commands:
-
-To install all dependencies:
-
-```
-npm install
-```
-
-To start the web server:
-
-```
-npm start
-```
-
-This should create a tab in your browser with the development app that contains CodeMirror Next with the PromQL plugin.
-
 ## License
 
-[MIT](./LICENSE)
+Apache License 2.0, see [LICENSE](https://github.com/prometheus-community/codemirror-promql/blob/master/LICENSE).

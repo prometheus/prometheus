@@ -1546,6 +1546,29 @@ Available meta labels:
 * If the endpoints belong to a service, all labels of the `role: service` discovery are attached.
 * For all targets backed by a pod, all labels of the `role: pod` discovery are attached.
 
+#### `endpointslice`
+
+The `endpointslice` role discovers targets from existing endpointslices. For each endpoint
+address referenced in the endpointslice object one target is discovered. If the endpoint is backed by a pod, all
+additional container ports of the pod, not bound to an endpoint port, are discovered as targets as well.
+
+Available meta labels:
+* `__meta_kubernetes_namespace`: The namespace of the endpoints object.
+* `__meta_kubernetes_endpointslice_name`: The name of endpointslice object.
+* For all targets discovered directly from the endpointslice list (those not additionally inferred
+  from underlying pods), the following labels are attached:
+* `__meta_kubernetes_endpointslice_address_target_kind`: Kind of the referenced object.
+* `__meta_kubernetes_endpointslice_address_target_name`: Name of referenced object.
+* `__meta_kubernetes_endpointslice_address_type`: The ip protocol family of the adress target.
+* `__meta_kubernetes_endpointslice_endpoint_conditions_ready`:  Set to `true` or `false` for the referenced endpoint's ready state.
+* `__meta_kubernetes_endpointslice_endpoint_topology_kubernetes_io_hostname`:  Name of the node hosting the referenced endpoint.
+* `__meta_kubernetes_endpointslice_endpoint_topology_present_kubernetes_io_hostname`: Flag that shows if the referenced object has a kubernetes.io/hostname annotation.
+* `__meta_kubernetes_endpointslice_port`: Port of the referenced endpoint.
+* `__meta_kubernetes_endpointslice_port_name`: Named port of the referenced endpoint.
+* `__meta_kubernetes_endpointslice_port_protocol`: Protocol of the referenced endpoint.
+* If the endpoints belong to a service, all labels of the `role: service` discovery are attached.
+* For all targets backed by a pod, all labels of the `role: pod` discovery are attached.
+
 #### `ingress`
 
 The `ingress` role discovers a target for each path of each ingress.
@@ -1579,7 +1602,7 @@ See below for the configuration options for Kubernetes discovery:
 # One of endpoints, service, pod, node, or ingress.
 role: <string>
 
-# Optional path to a kubeconfig file. 
+# Optional path to a kubeconfig file.
 # Note that api_server and kube_config are mutually exclusive.
 [ kubeconfig_file: <filename> ]
 
@@ -1658,7 +1681,7 @@ inside a Prometheus-enabled mesh.
 
 The following meta labels are available for each target:
 
-* `__meta_kuma_mesh`: the name of the proxy's Mesh 
+* `__meta_kuma_mesh`: the name of the proxy's Mesh
 * `__meta_kuma_dataplane`: the name of the proxy
 * `__meta_kuma_service`: the name of the proxy's associated Service
 * `__meta_kuma_label_<tagname>`: each tag of the proxy

@@ -47,6 +47,8 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64, mmappedChunks 
 	// for error reporting.
 	var unknownRefs atomic.Uint64
 	var unknownExemplarRefs atomic.Uint64
+	// Track number of series records that had overlapping m-map chunks.
+	var mmapOverlappingChunks uint64
 
 	// Start workers that each process samples for a partition of the series ID space.
 	// They are connected through a ring of channels which ensures that all sample batches
@@ -242,8 +244,6 @@ Outer:
 				}
 
 				// Checking if the new m-mapped chunks overlap with the already existing ones.
-				// This should never happen, but we have a check anyway to detect any
-				// edge cases that we might have missed.
 				if len(mSeries.mmappedChunks) > 0 && len(mmc) > 0 {
 					if overlapsClosedInterval(
 						mSeries.mmappedChunks[0].minTime,
@@ -251,9 +251,17 @@ Outer:
 						mmc[0].minTime,
 						mmc[len(mmc)-1].maxTime,
 					) {
-						// The m-map chunks for the new series ref overlaps with old m-map chunks.
-						seriesCreationErr = errors.Errorf("overlapping m-mapped chunks for series %s", mSeries.lset.String())
-						break Outer
+						mmapOverlappingChunks++
+						level.Debug(h.logger).Log(
+							"msg", "M-mapped chunks overlap on a duplicate series record",
+							"series", mSeries.lset.String(),
+							"oldref", mSeries.ref,
+							"oldmint", mSeries.mmappedChunks[0].minTime,
+							"oldmaxt", mSeries.mmappedChunks[len(mSeries.mmappedChunks)-1].maxTime,
+							"newref", walSeries.Ref,
+							"newmint", mmc[0].minTime,
+							"newmaxt", mmc[len(mmc)-1].maxTime,
+						)
 					}
 				}
 
@@ -351,6 +359,9 @@ Outer:
 
 	if unknownRefs.Load() > 0 || unknownExemplarRefs.Load() > 0 {
 		level.Warn(h.logger).Log("msg", "Unknown series references", "samples", unknownRefs.Load(), "exemplars", unknownExemplarRefs.Load())
+	}
+	if mmapOverlappingChunks > 0 {
+		level.Info(h.logger).Log("msg", "Overlapping m-map chunks on duplicate series records", "count", mmapOverlappingChunks)
 	}
 	return nil
 }
@@ -938,6 +949,11 @@ Outer:
 				}
 			}
 
+			if !h.opts.EnableExemplarStorage || h.opts.MaxExemplars.Load() <= 0 {
+				// Exemplar storage is disabled.
+				continue Outer
+			}
+
 			decbuf := encoding.Decbuf{B: rec[1:]}
 
 			exemplarBuf = exemplarBuf[:0]
@@ -959,7 +975,7 @@ Outer:
 					Value:  e.V,
 					Ts:     e.T,
 				}); err != nil {
-					loopErr = errors.Wrap(err, "append exemplar")
+					loopErr = errors.Wrap(err, "add exemplar")
 					break Outer
 				}
 			}

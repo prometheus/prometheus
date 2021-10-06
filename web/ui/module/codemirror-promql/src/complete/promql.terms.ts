@@ -28,6 +28,7 @@ export const binOpTerms = [
   { label: '<' },
   { label: '<=' },
   { label: '!=' },
+  { label: 'atan2' },
   { label: 'and' },
   { label: 'or' },
   { label: 'unless' },

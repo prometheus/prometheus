@@ -97,6 +97,7 @@ var key = map[string]ItemType{
 	"and":    LAND,
 	"or":     LOR,
 	"unless": LUNLESS,
+	"atan2":  ATAN2,
 
 	// Aggregators.
 	"sum":          SUM,

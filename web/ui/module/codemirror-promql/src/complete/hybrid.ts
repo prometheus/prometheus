@@ -12,7 +12,7 @@
 // limitations under the License.
 
 import { CompleteStrategy } from './index';
-import { SyntaxNode } from 'lezer-tree';
+import { SyntaxNode } from '@lezer/common';
 import { PrometheusClient } from '../client';
 import {
   Add,
@@ -230,22 +230,22 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode): Context
     case Identifier:
       // sometimes an Identifier has an error has parent. This should be treated in priority
       if (node.parent?.type.id === 0) {
-        const parent = node.parent;
-        if (parent.parent?.type.id === StepInvariantExpr) {
+        const errorNodeParent = node.parent.parent;
+        if (errorNodeParent?.type.id === StepInvariantExpr) {
           // we are likely in the given situation:
           //   `expr @ s`
           // we can autocomplete start / end
           result.push({ kind: ContextKind.AtModifiers });
           break;
         }
-        if (parent.parent?.type.id === AggregateExpr) {
+        if (errorNodeParent?.type.id === AggregateExpr) {
           // it matches 'sum() b'. So here we can autocomplete:
           // - the aggregate operation modifier
           // - the binary operation (since it's not mandatory to have an aggregate operation modifier)
           result.push({ kind: ContextKind.AggregateOpModifier }, { kind: ContextKind.BinOp });
           break;
         }
-        if (parent.parent?.type.id === VectorSelector) {
+        if (errorNodeParent?.type.id === VectorSelector) {
           // it matches 'sum b'. So here we also have to autocomplete the aggregate operation modifier only
           // if the associated metricIdentifier is matching an aggregation operation.
           // Note: here is the corresponding tree in order to understand the situation:
@@ -267,16 +267,29 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode): Context
           result.push({ kind: ContextKind.BinOp }, { kind: ContextKind.Offset });
           break;
         }
+
+        if (errorNodeParent && containsChild(errorNodeParent, Expr)) {
+          // this last case can appear with the following expression:
+          // 1. http_requests_total{method="GET"} off
+          // 2. rate(foo[5m]) un
+          // 3. sum(http_requests_total{method="GET"} off)
+          // For these different cases we have this kind of tree:
+          // Parent (
+          //    Expr(),
+          //    ⚠(Identifier)
+          // )
+          // We don't really care about the parent, here we are more interested if in the siblings of the error node, there is the node 'Expr'
+          // If it is the case, then likely we should autocomplete the BinOp or the offset.
+          result.push({ kind: ContextKind.BinOp }, { kind: ContextKind.Offset });
+          break;
+        }
       }
-      // As the leaf Identifier is coming for a lot of different case, we have to take a bit time to analyze the tree
+      // As the leaf Identifier is coming for different cases, we have to take a bit time to analyze the tree
       // in order to know what we have to autocomplete exactly.
       // Here is some cases:
       // 1. metric_name / ignor --> we should autocomplete the BinOpModifier + metric/function/aggregation
-      // 2. http_requests_total{method="GET"} off --> offset or binOp should be autocompleted here
-      // 3. rate(foo[5m]) un --> offset or binOp should be autocompleted
-      // 4. sum(http_requests_total{method="GET"} off) --> offset or binOp should be autocompleted
-      // 5. sum(http_requests_total{method="GET"} / o) --> BinOpModifier + metric/function/aggregation
-      // All examples above give a different tree each time but ends up to be treated in this case.
+      // 2. sum(http_requests_total{method="GET"} / o) --> BinOpModifier + metric/function/aggregation
+      // Examples above give a different tree each time and ends up to be treated in this case.
       // But they all have the following common tree pattern:
       // Parent( Expr(...),
       //         ... ,
@@ -314,8 +327,6 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode): Context
           if (containsAtLeastOneChild(parent, Eql, Gte, Gtr, Lte, Lss, Neq) && !walkThrough(parent, BinModifiers, Bool)) {
             result.push({ kind: ContextKind.Bool });
           }
-        } else if (parent.type.id !== BinaryExpr || (parent.type.id === BinaryExpr && containsAtLeastOneChild(parent, 0))) {
-          result.push({ kind: ContextKind.BinOp }, { kind: ContextKind.Offset });
         }
       } else {
         result.push(

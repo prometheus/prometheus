@@ -113,7 +113,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 		logger = log.NewNopLogger()
 	}
 
-	client, err := config.NewClientFromConfig(conf.HTTPClientConfig, "http", config.WithHTTP2Disabled())
+	client, err := config.NewClientFromConfig(conf.HTTPClientConfig, "http")
 	if err != nil {
 		return nil, err
 	}

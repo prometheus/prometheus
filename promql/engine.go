@@ -2116,6 +2116,8 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64) (float64, bool) {
 		return lhs, lhs >= rhs
 	case parser.LTE:
 		return lhs, lhs <= rhs
+	case parser.ATAN2:
+		return math.Atan2(lhs, rhs), true
 	}
 	panic(errors.Errorf("operator %q not allowed for operations between Vectors", op))
 }

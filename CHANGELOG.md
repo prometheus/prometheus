@@ -1,3 +1,20 @@
+## 2.30.3 / 2021-10-05
+
+* [BUGFIX] TSDB: Fix panic on failed snapshot replay. #9438
+* [BUGFIX] TSDB: Don't fail snapshot replay with exemplar storage disabled when the snapshot contains exemplars. #9438
+
+## 2.30.2 / 2021-10-01
+
+* [BUGFIX] TSDB: Don't error on overlapping m-mapped chunks during WAL replay. #9381
+
+## 2.30.1 / 2021-09-28
+
+* [ENHANCEMENT] Remote Write: Redact remote write URL when used for metric label. #9383
+* [ENHANCEMENT] UI: Redact remote write URL and proxy URL passwords in the `/config` page. #9408
+* [BUGFIX] promtool rules backfill: Prevent creation of data before the start time. #9339
+* [BUGFIX] promtool rules backfill: Do not query after the end time. #9340
+* [BUGFIX] Azure SD: Fix panic when no computername is set. #9387
+
 ## 2.30.0 / 2021-09-14
 
 * [FEATURE] **experimental** TSDB: Snapshot in-memory chunks on shutdown for faster restarts. Behind `--enable-feature=memory-snapshot-on-shutdown` flag. #7229

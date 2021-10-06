@@ -112,7 +112,7 @@ func NewHTTPResourceClient(conf *HTTPResourceClientConfig, protocolVersion Proto
 		endpointURL.RawQuery = conf.ExtraQueryParams.Encode()
 	}
 
-	client, err := config.NewClientFromConfig(conf.HTTPClientConfig, conf.Name, config.WithHTTP2Disabled(), config.WithIdleConnTimeout(conf.Timeout))
+	client, err := config.NewClientFromConfig(conf.HTTPClientConfig, conf.Name, config.WithIdleConnTimeout(conf.Timeout))
 	if err != nil {
 		return nil, err
 	}
