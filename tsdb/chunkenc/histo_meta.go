@@ -42,36 +42,37 @@ func putHistoChunkMetaSpans(b *bstream, spans []histogram.Span) {
 	}
 }
 
-func readHistoChunkMeta(b *bstreamReader) (bool, int32, float64, []histogram.Span, []histogram.Span, error) {
-	header, err := b.ReadByte()
+func readHistoChunkMeta(b *bstreamReader) (counterReset bool, schema int32, zeroThreshold float64, posSpans []histogram.Span, negSpans []histogram.Span, err error) {
+	var header byte
+	header, err = b.ReadByte()
 	if err != nil {
-		return false, 0, 0, nil, nil, err
+		return
 	}
 
-	counterReset := (header & counterResetMask) != 0
+	counterReset = (header & counterResetMask) != 0
 
 	v, err := readInt64VBBucket(b)
 	if err != nil {
-		return false, 0, 0, nil, nil, err
+		return
 	}
-	schema := int32(v)
+	schema = int32(v)
 
-	zeroThreshold, err := readFloat64VBBucket(b)
+	zeroThreshold, err = readFloat64VBBucket(b)
 	if err != nil {
-		return false, 0, 0, nil, nil, err
+		return
 	}
 
-	posSpans, err := readHistoChunkMetaSpans(b)
+	posSpans, err = readHistoChunkMetaSpans(b)
 	if err != nil {
-		return false, 0, 0, nil, nil, err
+		return
 	}
 
-	negSpans, err := readHistoChunkMetaSpans(b)
+	negSpans, err = readHistoChunkMetaSpans(b)
 	if err != nil {
-		return false, 0, 0, nil, nil, err
+		return
 	}
 
-	return counterReset, schema, zeroThreshold, posSpans, negSpans, nil
+	return
 }
 
 func readHistoChunkMetaSpans(b *bstreamReader) ([]histogram.Span, error) {

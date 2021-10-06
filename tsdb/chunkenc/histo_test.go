@@ -258,7 +258,7 @@ func TestHistoChunkAppendable(t *testing.T) {
 		require.Equal(t, 0, len(posInterjections))
 		require.Equal(t, 0, len(negInterjections))
 		require.False(t, ok) // Need to cut a new chunk.
-		require.False(t, cr)
+		require.True(t, cr)
 	}
 
 	{ // New histogram that has a counter reset while buckets are same.

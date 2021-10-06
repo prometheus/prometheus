@@ -260,41 +260,53 @@ func (a *HistoAppender) Append(int64, float64) {}
 // * the last sample in the chunk was stale while the current sample is not stale
 // It returns an additional boolean set to true if it is not appendable because of a counter reset.
 // If the given sample is stale, it will always return true.
-func (a *HistoAppender) Appendable(h histogram.SparseHistogram) ([]Interjection, []Interjection, bool, bool) {
+func (a *HistoAppender) Appendable(h histogram.SparseHistogram) (posInterjections []Interjection, negInterjections []Interjection, okToAppend bool, counterReset bool) {
 	if value.IsStaleNaN(h.Sum) {
 		// This is a stale sample whose buckets and spans don't matter.
-		return nil, nil, true, false
+		okToAppend = true
+		return
 	}
 	if value.IsStaleNaN(a.sum) {
 		// If the last sample was stale, then we can only accept stale samples in this chunk.
-		return nil, nil, false, false
+		return
+	}
+
+	if h.Count < a.cnt {
+		// There has been a counter reset.
+		counterReset = true
+		return
 	}
 
 	if h.Schema != a.schema || h.ZeroThreshold != a.zeroThreshold {
-		return nil, nil, false, false
+		return
 	}
-	posInterjections, ok := compareSpans(a.posSpans, h.PositiveSpans)
+
+	if h.ZeroCount < a.zcnt {
+		// There has been a counter reset since ZeroThreshold didn't change.
+		counterReset = true
+		return
+	}
+
+	var ok bool
+	posInterjections, ok = compareSpans(a.posSpans, h.PositiveSpans)
 	if !ok {
-		return nil, nil, false, false
+		counterReset = true
+		return
 	}
-	negInterjections, ok := compareSpans(a.negSpans, h.NegativeSpans)
+	negInterjections, ok = compareSpans(a.negSpans, h.NegativeSpans)
 	if !ok {
-		return nil, nil, false, false
+		counterReset = true
+		return
 	}
 
-	if h.Count < a.cnt || h.ZeroCount < a.zcnt {
-		// There has been a counter reset.
-		return nil, nil, false, false
+	if counterResetInAnyBucket(a.posbuckets, h.PositiveBuckets, a.posSpans, h.PositiveSpans) ||
+		counterResetInAnyBucket(a.negbuckets, h.NegativeBuckets, a.negSpans, h.NegativeSpans) {
+		counterReset, posInterjections, negInterjections = true, nil, nil
+		return
 	}
 
-	if counterResetInAnyBucket(a.posbuckets, h.PositiveBuckets, a.posSpans, h.PositiveSpans) {
-		return nil, nil, false, true
-	}
-	if counterResetInAnyBucket(a.negbuckets, h.NegativeBuckets, a.negSpans, h.NegativeSpans) {
-		return nil, nil, false, true
-	}
-
-	return posInterjections, negInterjections, true, false
+	okToAppend = true
+	return
 }
 
 // counterResetInAnyBucket returns true if there was a counter reset for any bucket.
