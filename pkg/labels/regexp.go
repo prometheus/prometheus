@@ -76,8 +76,8 @@ func findSetMatches(re *syntax.Regexp, base string) []string {
 	case syntax.OpConcat:
 		return findSetMatchesFromConcat(re, base)
 	case syntax.OpCharClass:
-		if len(re.Rune) == 1 {
-			return []string{base + string(re.Rune)}
+		if len(re.Rune)%2 != 0 {
+			return nil
 		}
 		var matches []string
 		var totalSet int
@@ -105,20 +105,14 @@ func findSetMatches(re *syntax.Regexp, base string) []string {
 }
 
 func findSetMatchesFromConcat(re *syntax.Regexp, base string) []string {
-	if isCaseInsensitive(re) {
-		return nil
-	}
 	if len(re.Sub) == 0 {
 		return nil
 	}
 	clearBeginEndText(re)
 	clearCapture(re.Sub...)
-	matches := findSetMatches(re.Sub[0], base)
-	if matches == nil {
-		return nil
-	}
+	matches := []string{base}
 
-	for i := 1; i < len(re.Sub); i++ {
+	for i := 0; i < len(re.Sub); i++ {
 		var newMatches []string
 		for _, b := range matches {
 			m := findSetMatches(re.Sub[i], b)
