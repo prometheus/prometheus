@@ -122,6 +122,8 @@ func TestFindSetMatches(t *testing.T) {
 	}{
 		// Single value, coming from a `bar=~"foo"` selector.
 		{"foo", []string{"foo"}},
+		{"^foo", []string{"foo"}},
+		{"^foo$", []string{"foo"}},
 		// Simple sets alternates.
 		{"foo|bar|zz", []string{"foo", "bar", "zz"}},
 		// Simple sets alternate and concat (bar|baz is parsed as ba(r|z)).
@@ -131,6 +133,8 @@ func TestFindSetMatches(t *testing.T) {
 		// Simple sets alternate and concat and alternates with empty matches
 		// parsed as  b(ar|(?:)|uzz) where b(?:) means literal b.
 		{"bar|b|buzz", []string{"bar", "b", "buzz"}},
+		// Skip anchors it's enforced anyway at the root.
+		{"(^bar$)|(b$)|(^buzz)", []string{"bar", "b", "buzz"}},
 		// Simple sets containing escaped characters.
 		{"fo\\.o|bar\\?|\\^baz", []string{"fo.o", "bar?", "^baz"}},
 		// using charclass
@@ -142,6 +146,9 @@ func TestFindSetMatches(t *testing.T) {
 		// triple concat with multiple alternates
 		{"(api|rpc)_(v1|prom)_push", []string{"api_v1_push", "api_prom_push", "rpc_v1_push", "rpc_prom_push"}},
 		{"(api|rpc)_(v1|prom)_(push|query)", []string{"api_v1_push", "api_v1_query", "api_prom_push", "api_prom_query", "rpc_v1_push", "rpc_v1_query", "rpc_prom_push", "rpc_prom_query"}},
+		// class starting with "-"
+		{"[-1-2][a-c]", []string{"-a", "-b", "-c", "1a", "1b", "1c", "2a", "2b", "2c"}},
+		{"[1^3]", []string{"1", "3", "^"}},
 		// OpPlus with concat
 		{"(.+)/(foo|bar)", nil},
 		// Simple sets containing special characters without escaping.

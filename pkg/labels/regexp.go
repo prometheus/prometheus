@@ -56,7 +56,7 @@ func NewFastRegexMatcher(v string) (*FastRegexMatcher, error) {
 // findSetMatches extract equality matches from a regexp.
 // Returns nil if we can't replace the regexp by only equality matchers.
 func findSetMatches(re *syntax.Regexp, base string) []string {
-	// Matches are not case sensitive, if we find a case insensitive regexp.
+	// Matches are case sensitive, if we find a case insensitive regexp.
 	// We have to abort.
 	if isCaseInsensitive(re) {
 		return nil
@@ -69,25 +69,19 @@ func findSetMatches(re *syntax.Regexp, base string) []string {
 			return []string{base}
 		}
 	case syntax.OpAlternate:
-		found := findSetMatchesFromAlternate(re, base)
-		if found != nil {
-			return found
-		}
+		return findSetMatchesFromAlternate(re, base)
 	case syntax.OpCapture:
 		clearCapture(re)
 		return findSetMatches(re, base)
 	case syntax.OpConcat:
-		found := findSetMatchesFromConcat(re, base)
-		if found != nil {
-			return found
-		}
+		return findSetMatchesFromConcat(re, base)
 	case syntax.OpCharClass:
-		if len(re.Rune) == 1 {
-			return []string{base + string(re.Rune)}
+		if len(re.Rune)%2 != 0 {
+			return nil
 		}
 		var matches []string
 		var totalSet int
-		for i := 0; i < len(re.Rune); i = i + 2 {
+		for i := 0; i+1 < len(re.Rune); i = i + 2 {
 			totalSet += int(re.Rune[i+1]-re.Rune[i]) + 1
 		}
 		// limits the total characters that can be used to create matches.
@@ -96,7 +90,7 @@ func findSetMatches(re *syntax.Regexp, base string) []string {
 		if totalSet > maxSetMatches {
 			return nil
 		}
-		for i := 0; i < len(re.Rune); i = i + 2 {
+		for i := 0; i+1 < len(re.Rune); i = i + 2 {
 			lo, hi := re.Rune[i], re.Rune[i+1]
 			for c := lo; c <= hi; c++ {
 				matches = append(matches, base+string(c))
@@ -111,19 +105,14 @@ func findSetMatches(re *syntax.Regexp, base string) []string {
 }
 
 func findSetMatchesFromConcat(re *syntax.Regexp, base string) []string {
-	if isCaseInsensitive(re) {
-		return nil
-	}
 	if len(re.Sub) == 0 {
 		return nil
 	}
+	clearBeginEndText(re)
 	clearCapture(re.Sub...)
-	matches := findSetMatches(re.Sub[0], base)
-	if matches == nil {
-		return nil
-	}
+	matches := []string{base}
 
-	for i := 1; i < len(re.Sub); i++ {
+	for i := 0; i < len(re.Sub); i++ {
 		var newMatches []string
 		for _, b := range matches {
 			m := findSetMatches(re.Sub[i], b)
@@ -162,6 +151,25 @@ func clearCapture(regs ...*syntax.Regexp) {
 		if r.Op == syntax.OpCapture {
 			*r = *r.Sub[0]
 		}
+	}
+}
+
+// clearBeginEndText removes the begin and end text from the regexp. Prometheus regexp are anchored to the beginning and end of the string.
+func clearBeginEndText(re *syntax.Regexp) {
+	if len(re.Sub) == 0 {
+		return
+	}
+	if len(re.Sub) == 1 {
+		if re.Sub[0].Op == syntax.OpBeginText || re.Sub[0].Op == syntax.OpEndText {
+			re.Sub = nil
+			return
+		}
+	}
+	if re.Sub[0].Op == syntax.OpBeginText {
+		re.Sub = re.Sub[1:]
+	}
+	if re.Sub[len(re.Sub)-1].Op == syntax.OpEndText {
+		re.Sub = re.Sub[:len(re.Sub)-1]
 	}
 }
 
