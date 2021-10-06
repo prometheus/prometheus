@@ -17,15 +17,15 @@ import { Extension } from '@codemirror/state';
 import { CompleteConfiguration, CompleteStrategy, newCompleteStrategy } from './complete';
 import { LintStrategy, newLintStrategy, promQLLinter } from './lint';
 import { CompletionContext } from '@codemirror/autocomplete';
-import { LezerLanguage } from '@codemirror/language';
+import { LRLanguage } from '@codemirror/language';
 
 export enum LanguageType {
   PromQL = 'PromQL',
   MetricName = 'MetricName',
 }
 
-export function promQLLanguage(top: LanguageType): LezerLanguage {
-  return LezerLanguage.define({
+export function promQLLanguage(top: LanguageType): LRLanguage {
+  return LRLanguage.define({
     parser: parser.configure({
       top: top,
       props: [
@@ -40,7 +40,7 @@ export function promQLLanguage(top: LanguageType): LezerLanguage {
           'Avg Bottomk Count Count_values Group Max Min Quantile Stddev Stdvar Sum Topk': tags.operatorKeyword,
           'By Without Bool On Ignoring GroupLeft GroupRight Offset Start End': tags.modifier,
           'And Unless Or': tags.logicOperator,
-          'Sub Add Mul Mod Div Eql Neq Lte Lss Gte Gtr EqlRegex EqlSingle NeqRegex Pow At': tags.operator,
+          'Sub Add Mul Mod Div Atan2 Eql Neq Lte Lss Gte Gtr EqlRegex EqlSingle NeqRegex Pow At': tags.operator,
           UnaryOp: tags.arithmeticOperator,
           '( )': tags.paren,
           '[ ]': tags.squareBracket,

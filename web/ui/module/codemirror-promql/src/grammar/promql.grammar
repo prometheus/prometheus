@@ -16,7 +16,7 @@
 
 @precedence {
   pow @right,
-  mul @left,
+  mul @left
   add @left,
   eql @left,
   and @left,
@@ -69,6 +69,7 @@ BinaryExpr {
   Expr !mul Mul    BinModifiers Expr |
   Expr !mul Div    BinModifiers Expr |
   Expr !mul Mod    BinModifiers Expr |
+  Expr !mul Atan2  BinModifiers Expr |
   Expr !add Add    BinModifiers Expr |
   Expr !add Sub    BinModifiers Expr |
   Expr !eql Eql    BinModifiers Expr |
@@ -333,6 +334,7 @@ NumberLiteral  {
 // Contextual keywords
 
 @external extend {Identifier} extendIdentifier from "./tokens" {
+  Atan2,
   Avg,
   Bottomk,
   Count,

@@ -14,6 +14,7 @@
 import {
   And,
   Avg,
+  Atan2,
   Bool,
   Bottomk,
   By,
@@ -58,6 +59,7 @@ export const specializeIdentifier = (value, stack) => {
 
 const contextualKeywordTokens = {
   avg: Avg,
+  atan2: Atan2,
   bottomk: Bottomk,
   count: Count,
   count_values: CountValues,

@@ -40,6 +40,16 @@ grouping labels becoming the output label set. The metric name is dropped. Entri
 for which no matching entry in the right-hand vector can be found are not part of
 the result.
 
+### Trigonometric binary operators
+
+The following trigonometric binary operators, which work in radians, exist in Prometheus:
+
+* `atan2` (based on https://pkg.go.dev/math#Atan2)
+
+Trigonometric operators allow trigonometric functions to be executed on two vectors using
+vector matching, which isn't available with normal functions. They act in the same manner
+as arithmetic operators.
+
 ### Comparison binary operators
 
 The following binary comparison operators exist in Prometheus:
@@ -264,7 +274,7 @@ The following list shows the precedence of binary operators in Prometheus, from
 highest to lowest.
 
 1. `^`
-2. `*`, `/`, `%`
+2. `*`, `/`, `%`, `atan2`
 3. `+`, `-`
 4. `==`, `!=`, `<=`, `<`, `>=`, `>`
 5. `and`, `unless`

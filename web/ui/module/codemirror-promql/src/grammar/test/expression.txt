@@ -840,3 +840,10 @@ sum:my_metric_name:rate5m
 
 ==>
 MetricName(MetricIdentifier(Identifier))
+
+# Testing Atan2 inherited precedence level
+
+1 + foo atan2 bar
+
+==>
+PromQL(Expr(BinaryExpr(Expr(NumberLiteral),Add,BinModifiers,Expr(BinaryExpr(Expr(VectorSelector(MetricIdentifier(Identifier))),Atan2,BinModifiers,Expr(VectorSelector(MetricIdentifier(Identifier))))))))

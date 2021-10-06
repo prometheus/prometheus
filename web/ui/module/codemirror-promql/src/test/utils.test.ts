@@ -13,13 +13,13 @@
 
 import { parser } from '../grammar/parser';
 import { EditorState } from '@codemirror/state';
-import { LezerLanguage } from '@codemirror/language';
+import { LRLanguage } from '@codemirror/language';
 import nock from 'nock';
 
 // used to inject an implementation of fetch in NodeJS
 require('isomorphic-fetch');
 
-const lightPromQLSyntax = LezerLanguage.define({ parser: parser });
+const lightPromQLSyntax = LRLanguage.define({ parser: parser });
 
 export function createEditorState(expr: string): EditorState {
   return EditorState.create({

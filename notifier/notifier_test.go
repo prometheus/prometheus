@@ -154,7 +154,7 @@ func TestHandlerSendAll(t *testing.T) {
 				Username: "prometheus",
 				Password: "testing_password",
 			},
-		}, "auth_alertmanager", config_util.WithHTTP2Disabled())
+		}, "auth_alertmanager")
 
 	h.alertmanagers = make(map[string]*alertmanagerSet)
 

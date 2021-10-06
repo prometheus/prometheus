@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { SyntaxNode } from 'lezer-tree';
+import { SyntaxNode } from '@lezer/common';
 
 // walkBackward will iterate other the tree from the leaf to the root until it founds the given `exit` node.
 // It returns null if the exit is not found.

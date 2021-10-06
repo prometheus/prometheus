@@ -176,6 +176,10 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, opts *HeadOpti
 		stats = NewHeadStats()
 	}
 
+	if !opts.EnableExemplarStorage {
+		opts.MaxExemplars.Store(0)
+	}
+
 	h := &Head{
 		wal:    wal,
 		logger: l,
@@ -211,7 +215,16 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, opts *HeadOpti
 
 func (h *Head) resetInMemoryState() error {
 	var err error
-	em := NewExemplarMetrics(h.reg)
+	var em *ExemplarMetrics
+	if h.exemplars != nil {
+		ce, ok := h.exemplars.(*CircularExemplarStorage)
+		if ok {
+			em = ce.metrics
+		}
+	}
+	if em == nil {
+		em = NewExemplarMetrics(h.reg)
+	}
 	es, err := NewCircularExemplarStorage(h.opts.MaxExemplars.Load(), em)
 	if err != nil {
 		return err
