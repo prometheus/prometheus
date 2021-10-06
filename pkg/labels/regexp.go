@@ -244,11 +244,15 @@ func optimizeConcatRegex(r *syntax.Regexp) (prefix, suffix, contains string) {
 
 // todo remove anchors ^foo$
 // remove captures.
-// .+ | .* | .*POD.* | 5.. | test-.* | .*-test | test-.+ | .+-test
+// .+ | .* | .*POD.*  | test-.* | .*-test | test-.+ | .+-test
 
 // regexp prefix fn ???? can we use this ?
 
 // benchmark them
+
+type StringMatcher interface {
+	Matches(s string) bool
+}
 
 func contains(s, substr string) bool {
 	pos := strings.Index(s, substr)

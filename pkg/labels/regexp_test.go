@@ -14,48 +14,65 @@
 package labels
 
 import (
+	"regexp"
 	"regexp/syntax"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
-func TestNewFastRegexMatcher(t *testing.T) {
-	cases := []struct {
-		regex    string
-		value    string
-		expected bool
-	}{
-		{regex: "(foo|bar)", value: "foo", expected: true},
-		{regex: "(foo|bar)", value: "foo bar", expected: false},
-		{regex: "(foo|bar)", value: "bar", expected: true},
-		{regex: "foo.*", value: "foo bar", expected: true},
-		{regex: "foo.*", value: "bar foo", expected: false},
-		{regex: ".*foo", value: "foo bar", expected: false},
-		{regex: ".*foo", value: "bar foo", expected: true},
-		{regex: ".*foo", value: "foo", expected: true},
-		{regex: "^.*foo$", value: "foo", expected: true},
-		{regex: "^.+foo$", value: "foo", expected: false},
-		{regex: "^.+foo$", value: "bfoo", expected: true},
-		{regex: ".*", value: "\n", expected: false},
-		{regex: ".*", value: "\nfoo", expected: false},
-		{regex: ".*foo", value: "\nfoo", expected: false},
-		{regex: "foo.*", value: "foo\n", expected: false},
-		{regex: "foo\n.*", value: "foo\n", expected: true},
-		{regex: ".*foo.*", value: "foo", expected: true},
-		{regex: ".*foo.*", value: "foo bar", expected: true},
-		{regex: ".*foo.*", value: "hello foo world", expected: true},
-		{regex: ".*foo.*", value: "hello foo\n world", expected: false},
-		{regex: ".*foo\n.*", value: "hello foo\n world", expected: true},
-		{regex: ".*", value: "foo", expected: true},
-		{regex: "", value: "foo", expected: false},
-		{regex: "", value: "", expected: true},
+var (
+	regexes = []string{
+		"(foo|bar)",
+		"foo.*",
+		".*foo",
+		"^.*foo$",
+		"^.+foo$",
+		".*",
+		".+",
+		"foo.+",
+		".+foo",
+		"foo\n.+",
+		"foo\n.*",
+		".*foo.*",
+		".+foo.+",
+		"",
 	}
+	values = []string{"foo", " foo bar", "bar", "buzz\nbar", "bar foo", "bfoo", "\n", "\nfoo", "foo\n", "hello foo world", "hello foo\n world", ""}
+)
 
-	for _, c := range cases {
-		m, err := NewFastRegexMatcher(c.regex)
-		require.NoError(t, err)
-		require.Equal(t, c.expected, m.MatchString(c.value))
+func TestNewFastRegexMatcher(t *testing.T) {
+	for _, r := range regexes {
+		r := r
+		for _, v := range values {
+			v := v
+			t.Run(r+` on "`+v+`"`, func(t *testing.T) {
+				t.Parallel()
+				m, err := NewFastRegexMatcher(r)
+				require.NoError(t, err)
+				re, err := regexp.Compile("^(?:" + r + ")$")
+				require.NoError(t, err)
+				require.Equal(t, re.MatchString(v), m.MatchString(v))
+			})
+		}
+
+	}
+}
+
+func BenchmarkNewFastRegexMatcher(b *testing.B) {
+	for _, r := range regexes {
+		r := r
+		for _, v := range values {
+			v := v
+			b.Run(r+` on "`+v+`"`, func(b *testing.B) {
+				m, err := NewFastRegexMatcher(r)
+				require.NoError(b, err)
+				b.ResetTimer()
+				for i := 0; i < b.N; i++ {
+					m.MatchString(v)
+				}
+			})
+		}
 	}
 }
 
