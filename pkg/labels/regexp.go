@@ -117,6 +117,7 @@ func findSetMatchesFromConcat(re *syntax.Regexp, base string) []string {
 	if len(re.Sub) == 0 {
 		return nil
 	}
+	clearBeginEndText(re)
 	clearCapture(re.Sub...)
 	matches := findSetMatches(re.Sub[0], base)
 	if matches == nil {
@@ -162,6 +163,25 @@ func clearCapture(regs ...*syntax.Regexp) {
 		if r.Op == syntax.OpCapture {
 			*r = *r.Sub[0]
 		}
+	}
+}
+
+// clearBeginEndText removes the begin and end text from the regexp. Prometheus regexp are anchored to the beginning and end of the string.
+func clearBeginEndText(re *syntax.Regexp) {
+	if len(re.Sub) == 0 {
+		return
+	}
+	if len(re.Sub) == 1 {
+		if re.Sub[0].Op == syntax.OpBeginText || re.Sub[0].Op == syntax.OpEndText {
+			re.Sub = nil
+			return
+		}
+	}
+	if re.Sub[0].Op == syntax.OpBeginText {
+		re.Sub = re.Sub[1:]
+	}
+	if re.Sub[len(re.Sub)-1].Op == syntax.OpEndText {
+		re.Sub = re.Sub[:len(re.Sub)-1]
 	}
 }
 
