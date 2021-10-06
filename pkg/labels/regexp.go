@@ -241,3 +241,32 @@ func optimizeConcatRegex(r *syntax.Regexp) (prefix, suffix, contains string) {
 
 	return
 }
+
+// todo remove anchors ^foo$
+// .*POD.*
+
+func contains(s, substr string) bool {
+	pos := strings.Index(s, substr)
+	if pos < 0 {
+		return false
+	}
+	return matchesAnyZeroOrMoreNotNL(s[:pos]) && matchesAnyZeroOrMoreNotNL(s[pos+len(substr):])
+}
+
+func matchesAnyZeroOrMoreNotNL(s string) bool {
+	for _, r := range s {
+		if r == '\n' {
+			return false
+		}
+	}
+	return true
+}
+
+func matchesOneZeroOrMoreNotNL(s string) bool {
+	for _, r := range s {
+		if r == '\n' {
+			return false
+		}
+	}
+	return len(s) > 0
+}
