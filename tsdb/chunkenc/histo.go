@@ -98,12 +98,24 @@ func (c *HistoChunk) NumSamples() int {
 
 // Meta returns the histogram metadata.
 // callers may only call this on chunks that have at least one sample
-func (c *HistoChunk) Meta() (bool, int32, float64, []histogram.Span, []histogram.Span, error) {
+func (c *HistoChunk) Meta() (int32, float64, []histogram.Span, []histogram.Span, error) {
 	if c.NumSamples() == 0 {
 		panic("HistoChunk.Meta() called on an empty chunk")
 	}
 	b := newBReader(c.Bytes()[2:])
 	return readHistoChunkMeta(&b)
+}
+
+// SetCounterReset sets the counter reset flag to 1 if the passed argument is true, 0 otherwise.
+func (c *HistoChunk) SetCounterReset(counterReset bool) {
+	bytes := c.Bytes()
+	header := bytes[2]
+	if counterReset {
+		header |= counterResetMask
+	} else if (header & counterResetMask) != 0 {
+		header ^= counterResetMask
+	}
+	bytes[2] = header
 }
 
 // CounterReset returns true if this new chunk was created because of a counter reset.
@@ -112,6 +124,27 @@ func (c *HistoChunk) CounterReset() bool {
 		panic("HistoChunk.CounterReset() called on an empty chunk")
 	}
 	return (c.Bytes()[2] & counterResetMask) != 0
+}
+
+// SetNotCounterReset sets the "not counter reset" flag to 1 if the passed argument is true, 0 otherwise.
+func (c *HistoChunk) SetNotCounterReset(notCounterReset bool) {
+	bytes := c.Bytes()
+	header := bytes[2]
+	if notCounterReset {
+		header |= notCounterResetMask
+	} else if (header & notCounterResetMask) != 0 {
+		header ^= notCounterResetMask
+	}
+	bytes[2] = header
+}
+
+// NotCounterReset returns true if this new chunk definitely did not have counter reset
+// from the earlier chunk.
+func (c *HistoChunk) NotCounterReset() bool {
+	if c.NumSamples() == 0 {
+		panic("HistoChunk.NotCounterReset() called on an empty chunk")
+	}
+	return (c.Bytes()[2] & notCounterResetMask) != 0
 }
 
 // Compact implements the Chunk interface.
@@ -208,7 +241,6 @@ type HistoAppender struct {
 	b *bstream
 
 	// Metadata:
-	counterReset       bool
 	schema             int32
 	zeroThreshold      float64
 	posSpans, negSpans []histogram.Span
@@ -260,6 +292,7 @@ func (a *HistoAppender) Append(int64, float64) {}
 // * the last sample in the chunk was stale while the current sample is not stale
 // It returns an additional boolean set to true if it is not appendable because of a counter reset.
 // If the given sample is stale, it will always return true.
+// If counterReset is true, okToAppend MUST be false.
 func (a *HistoAppender) Appendable(h histogram.SparseHistogram) (posInterjections []Interjection, negInterjections []Interjection, okToAppend bool, counterReset bool) {
 	if value.IsStaleNaN(h.Sum) {
 		// This is a stale sample whose buckets and spans don't matter.
@@ -380,7 +413,7 @@ func counterResetInAnyBucket(oldBuckets, newBuckets []int64, oldSpans, newSpans 
 // histogram is properly structured. E.g. that the number of pos/neg buckets
 // used corresponds to the number conveyed by the pos/neg span structures.
 // callers must call Appendable() first and act accordingly!
-func (a *HistoAppender) AppendHistogram(t int64, h histogram.SparseHistogram, counterReset bool) {
+func (a *HistoAppender) AppendHistogram(t int64, h histogram.SparseHistogram) {
 	var tDelta, cntDelta, zcntDelta int64
 	num := binary.BigEndian.Uint16(a.b.bytes())
 
@@ -390,17 +423,12 @@ func (a *HistoAppender) AppendHistogram(t int64, h histogram.SparseHistogram, co
 		h = histogram.SparseHistogram{Sum: h.Sum}
 	}
 
-	if num != 0 && counterReset {
-		panic("got counterReset=true for partially filled chunk in HistoAppender.AppendHistogram")
-	}
-
 	switch num {
 	case 0:
 		// the first append gets the privilege to dictate the metadata
 		// but it's also responsible for encoding it into the chunk!
 
-		writeHistoChunkMeta(a.b, counterReset, h.Schema, h.ZeroThreshold, h.PositiveSpans, h.NegativeSpans)
-		a.counterReset = true
+		writeHistoChunkMeta(a.b, h.Schema, h.ZeroThreshold, h.PositiveSpans, h.NegativeSpans)
 		a.schema = h.Schema
 		a.zeroThreshold = h.ZeroThreshold
 		a.posSpans, a.negSpans = h.PositiveSpans, h.NegativeSpans
@@ -503,7 +531,8 @@ func (a *HistoAppender) Recode(posInterjections, negInterjections []Interjection
 	// it again with the new span layout. This can probably be done in-place
 	// by editing the chunk. But let's first see how expensive it is in the
 	// big picture.
-	it := newHistoIterator(a.b.bytes())
+	byts := a.b.bytes()
+	it := newHistoIterator(byts)
 	hc := NewHistoChunk()
 	app, err := hc.Appender()
 	if err != nil {
@@ -511,7 +540,6 @@ func (a *HistoAppender) Recode(posInterjections, negInterjections []Interjection
 	}
 	numPosBuckets, numNegBuckets := countSpans(posSpans), countSpans(negSpans)
 
-	counterReset := a.counterReset
 	for it.Next() {
 		tOld, hOld := it.AtHistogram()
 
@@ -530,10 +558,12 @@ func (a *HistoAppender) Recode(posInterjections, negInterjections []Interjection
 		if len(negInterjections) > 0 {
 			hOld.NegativeBuckets = interject(hOld.NegativeBuckets, negBuckets, negInterjections)
 		}
-		app.AppendHistogram(tOld, hOld, counterReset)
-
-		counterReset = false // We need it only for the first sample.
+		app.AppendHistogram(tOld, hOld)
 	}
+
+	// Set the flags.
+	hc.SetCounterReset(byts[2]&counterResetMask != 0)
+	hc.SetNotCounterReset(byts[2]&notCounterResetMask != 0)
 	return hc, app
 }
 
@@ -674,7 +704,7 @@ func (it *histoIterator) Next() bool {
 
 		// first read is responsible for reading chunk metadata and initializing fields that depend on it
 		// We give counter reset info at chunk level, hence we discard it here.
-		_, schema, zeroThreshold, posSpans, negSpans, err := readHistoChunkMeta(&it.br)
+		schema, zeroThreshold, posSpans, negSpans, err := readHistoChunkMeta(&it.br)
 		if err != nil {
 			it.err = err
 			return false

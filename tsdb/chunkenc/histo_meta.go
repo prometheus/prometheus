@@ -18,16 +18,11 @@ import (
 )
 
 const (
-	counterResetMask = 0b10000000
+	counterResetMask    = 0b10000000
+	notCounterResetMask = 0b01000000
 )
 
-func writeHistoChunkMeta(b *bstream, counterReset bool, schema int32, zeroThreshold float64, posSpans, negSpans []histogram.Span) {
-	header := byte(0)
-	if counterReset {
-		header |= counterResetMask
-	}
-	b.bytes()[2] = header
-
+func writeHistoChunkMeta(b *bstream, schema int32, zeroThreshold float64, posSpans, negSpans []histogram.Span) {
 	putInt64VBBucket(b, int64(schema))
 	putFloat64VBBucket(b, zeroThreshold)
 	putHistoChunkMetaSpans(b, posSpans)
@@ -42,14 +37,11 @@ func putHistoChunkMetaSpans(b *bstream, spans []histogram.Span) {
 	}
 }
 
-func readHistoChunkMeta(b *bstreamReader) (counterReset bool, schema int32, zeroThreshold float64, posSpans []histogram.Span, negSpans []histogram.Span, err error) {
-	var header byte
-	header, err = b.ReadByte()
+func readHistoChunkMeta(b *bstreamReader) (schema int32, zeroThreshold float64, posSpans []histogram.Span, negSpans []histogram.Span, err error) {
+	_, err = b.ReadByte() // The header.
 	if err != nil {
 		return
 	}
-
-	counterReset = (header & counterResetMask) != 0
 
 	v, err := readInt64VBBucket(b)
 	if err != nil {

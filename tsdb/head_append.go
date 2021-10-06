@@ -611,10 +611,10 @@ func (s *memSeries) appendHistogram(t int64, sh histogram.SparseHistogram, appen
 	app, _ := s.app.(*chunkenc.HistoAppender)
 	var (
 		posInterjections, negInterjections []chunkenc.Interjection
-		ok, counterReset                   bool
+		okToAppend, counterReset           bool
 	)
 	if app != nil {
-		posInterjections, negInterjections, ok, counterReset = app.Appendable(sh)
+		posInterjections, negInterjections, okToAppend, counterReset = app.Appendable(sh)
 	}
 
 	c, sampleInOrder, chunkCreated := s.appendPreprocessor(t, chunkenc.EncSHS, chunkDiskMapper)
@@ -623,11 +623,11 @@ func (s *memSeries) appendHistogram(t int64, sh histogram.SparseHistogram, appen
 	}
 
 	if !chunkCreated {
-		// we have 3 cases here
-		// !ok -> we need to cut a new chunk
-		// ok but we have interjections -> existing chunk needs recoding before we can append our histogram
-		// ok and no interjections -> chunk is ready to support our histogram
-		if !ok {
+		// We have 3 cases here
+		// !okToAppend -> we need to cut a new chunk
+		// okToAppend but we have interjections -> existing chunk needs recoding before we can append our histogram
+		// okToAppend and no interjections -> chunk is ready to support our histogram
+		if !okToAppend || counterReset {
 			c = s.cutNewHeadChunk(t, chunkenc.EncSHS, chunkDiskMapper)
 			chunkCreated = true
 		} else if len(posInterjections) > 0 || len(negInterjections) > 0 {
@@ -642,7 +642,16 @@ func (s *memSeries) appendHistogram(t int64, sh histogram.SparseHistogram, appen
 		}
 	}
 
-	s.app.AppendHistogram(t, sh, counterReset)
+	if chunkCreated {
+		hc := s.headChunk.chunk.(*chunkenc.HistoChunk)
+		if counterReset {
+			hc.SetCounterReset(true)
+		} else if okToAppend {
+			hc.SetNotCounterReset(true)
+		}
+	}
+
+	s.app.AppendHistogram(t, sh)
 	s.sparseHistogramSeries = true
 
 	c.maxTime = t

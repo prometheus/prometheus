@@ -82,7 +82,7 @@ type Chunk interface {
 // Appender adds sample pairs to a chunk.
 type Appender interface {
 	Append(int64, float64)
-	AppendHistogram(t int64, h histogram.SparseHistogram, counterReset bool)
+	AppendHistogram(t int64, h histogram.SparseHistogram)
 }
 
 // Iterator is a simple iterator that can only get the next value.
