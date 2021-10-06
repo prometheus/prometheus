@@ -562,6 +562,11 @@ func TestCompaction_CompactWithSplitting(t *testing.T) {
 					// Symbols found in series.
 					seriesSymbols := map[string]struct{}{}
 
+					// We always expect to find "" symbol in the symbols table even if it's not in the series.
+					// Head compaction always includes it, and then it survives additional non-sharded compactions.
+					// Our splitting compaction preserves it too.
+					seriesSymbols[""] = struct{}{}
+
 					block, err := OpenBlock(log.NewNopLogger(), filepath.Join(dir, blockID.String()), nil)
 					require.NoError(t, err)
 
@@ -601,14 +606,6 @@ func TestCompaction_CompactWithSplitting(t *testing.T) {
 					symIt := idxr.Symbols()
 					for symIt.Next() {
 						w := symIt.At()
-
-						// When shardCount == 1, we're not doing symbols splitting. Head-compacted blocks
-						// however do have empty string as a symbol in the table.
-						// Since label name or value cannot be empty string, we will never find it in seriesSymbols.
-						if w == "" && shardCount <= 1 {
-							continue
-						}
-
 						_, ok := seriesSymbols[w]
 						require.True(t, ok, "not found in series: '%s'", w)
 						delete(seriesSymbols, w)

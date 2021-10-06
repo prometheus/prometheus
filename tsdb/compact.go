@@ -924,6 +924,13 @@ func (c *LeveledCompactor) populateSymbols(sets []storage.ChunkSeriesSet, outBlo
 	batchers := make([]*symbolsBatcher, len(outBlocks))
 	for ix := range outBlocks {
 		batchers[ix] = newSymbolsBatcher(10000, outBlocks[ix].tmpDir)
+
+		// Always include empty symbol. Blocks created from Head always have it in the symbols table,
+		// and if we only include symbols from series, we would skip it.
+		// It may not be required, but it's small and better be safe than sorry.
+		if err := batchers[ix].addSymbol(""); err != nil {
+			return errors.Wrap(err, "addSymbol to batcher")
+		}
 	}
 
 	seriesSet := sets[0]
