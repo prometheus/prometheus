@@ -718,8 +718,7 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 	)
 	if p.currDelIter.ChunkEncoding() == chunkenc.EncSHS {
 		if hc, ok := p.currChkMeta.Chunk.(*chunkenc.HistoChunk); ok {
-			newChunk.(*chunkenc.HistoChunk).SetCounterReset(hc.CounterReset())
-			newChunk.(*chunkenc.HistoChunk).SetNotCounterReset(hc.NotCounterReset())
+			newChunk.(*chunkenc.HistoChunk).SetCounterResetHeader(hc.GetCounterResetHeader())
 		}
 		t, h = p.currDelIter.AtHistogram()
 		p.curr.MinTime = t

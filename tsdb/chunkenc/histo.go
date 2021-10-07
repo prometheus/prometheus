@@ -106,45 +106,30 @@ func (c *HistoChunk) Meta() (int32, float64, []histogram.Span, []histogram.Span,
 	return readHistoChunkMeta(&b)
 }
 
-// SetCounterReset sets the counter reset flag to 1 if the passed argument is true, 0 otherwise.
-func (c *HistoChunk) SetCounterReset(counterReset bool) {
-	bytes := c.Bytes()
-	header := bytes[2]
-	if counterReset {
-		header |= counterResetMask
-	} else if (header & counterResetMask) != 0 {
-		header ^= counterResetMask
+// CounterResetHeader defines the first 2 bits of the chunk header.
+type CounterResetHeader byte
+
+const (
+	CounterReset        CounterResetHeader = 0b10000000
+	NotCounterReset     CounterResetHeader = 0b01000000
+	GaugeType           CounterResetHeader = 0b11000000
+	UnknownCounterReset CounterResetHeader = 0b00000000
+)
+
+// SetCounterResetHeader sets the counter reset header.
+func (c *HistoChunk) SetCounterResetHeader(h CounterResetHeader) {
+	switch h {
+	case CounterReset, NotCounterReset, GaugeType, UnknownCounterReset:
+		bytes := c.Bytes()
+		bytes[2] = (bytes[2] & 0b00111111) | byte(h)
+	default:
+		panic("invalid CounterResetHeader type")
 	}
-	bytes[2] = header
 }
 
-// CounterReset returns true if this new chunk was created because of a counter reset.
-func (c *HistoChunk) CounterReset() bool {
-	if c.NumSamples() == 0 {
-		panic("HistoChunk.CounterReset() called on an empty chunk")
-	}
-	return (c.Bytes()[2] & counterResetMask) != 0
-}
-
-// SetNotCounterReset sets the "not counter reset" flag to 1 if the passed argument is true, 0 otherwise.
-func (c *HistoChunk) SetNotCounterReset(notCounterReset bool) {
-	bytes := c.Bytes()
-	header := bytes[2]
-	if notCounterReset {
-		header |= notCounterResetMask
-	} else if (header & notCounterResetMask) != 0 {
-		header ^= notCounterResetMask
-	}
-	bytes[2] = header
-}
-
-// NotCounterReset returns true if this new chunk definitely did not have counter reset
-// from the earlier chunk.
-func (c *HistoChunk) NotCounterReset() bool {
-	if c.NumSamples() == 0 {
-		panic("HistoChunk.NotCounterReset() called on an empty chunk")
-	}
-	return (c.Bytes()[2] & notCounterResetMask) != 0
+// GetCounterResetHeader returns the info about the first 2 bits of the chunk header.
+func (c *HistoChunk) GetCounterResetHeader() CounterResetHeader {
+	return CounterResetHeader(c.Bytes()[2] & 0b11000000)
 }
 
 // Compact implements the Chunk interface.
@@ -562,8 +547,7 @@ func (a *HistoAppender) Recode(posInterjections, negInterjections []Interjection
 	}
 
 	// Set the flags.
-	hc.SetCounterReset(byts[2]&counterResetMask != 0)
-	hc.SetNotCounterReset(byts[2]&notCounterResetMask != 0)
+	hc.SetCounterResetHeader(CounterResetHeader(byts[2] & 0b11000000))
 	return hc, app
 }
 

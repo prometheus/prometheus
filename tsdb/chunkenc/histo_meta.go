@@ -17,11 +17,6 @@ import (
 	"github.com/prometheus/prometheus/pkg/histogram"
 )
 
-const (
-	counterResetMask    = 0b10000000
-	notCounterResetMask = 0b01000000
-)
-
 func writeHistoChunkMeta(b *bstream, schema int32, zeroThreshold float64, posSpans, negSpans []histogram.Span) {
 	putInt64VBBucket(b, int64(schema))
 	putFloat64VBBucket(b, zeroThreshold)

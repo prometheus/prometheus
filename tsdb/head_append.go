@@ -644,11 +644,13 @@ func (s *memSeries) appendHistogram(t int64, sh histogram.SparseHistogram, appen
 
 	if chunkCreated {
 		hc := s.headChunk.chunk.(*chunkenc.HistoChunk)
+		header := chunkenc.UnknownCounterReset
 		if counterReset {
-			hc.SetCounterReset(true)
+			header = chunkenc.CounterReset
 		} else if okToAppend {
-			hc.SetNotCounterReset(true)
+			header = chunkenc.NotCounterReset
 		}
+		hc.SetCounterResetHeader(header)
 	}
 
 	s.app.AppendHistogram(t, sh)
