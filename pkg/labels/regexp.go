@@ -24,10 +24,11 @@ const maxSetMatches = 256
 type FastRegexMatcher struct {
 	re *regexp.Regexp
 
-	setMatches []string
-	prefix     string
-	suffix     string
-	contains   string
+	setMatches    []string
+	stringMatcher StringMatcher
+	prefix        string
+	suffix        string
+	contains      string
 }
 
 func NewFastRegexMatcher(v string) (*FastRegexMatcher, error) {
@@ -42,8 +43,9 @@ func NewFastRegexMatcher(v string) (*FastRegexMatcher, error) {
 		return nil, err
 	}
 	m := &FastRegexMatcher{
-		re:         re,
-		setMatches: findSetMatches(parsed, ""),
+		re:            re,
+		setMatches:    findSetMatches(parsed, ""),
+		stringMatcher: stringMatcherFromRegexp(parsed),
 	}
 
 	if parsed.Op == syntax.OpConcat {
@@ -193,6 +195,9 @@ func (m *FastRegexMatcher) MatchString(s string) bool {
 		}
 		return false
 	}
+	if m.stringMatcher != nil {
+		return m.stringMatcher.Matches(s)
+	}
 	if m.prefix != "" && !strings.HasPrefix(s, m.prefix) {
 		return false
 	}
@@ -262,18 +267,17 @@ func stringMatcherFromRegexp(re *syntax.Regexp) StringMatcher {
 	clearCapture(re)
 	clearBeginEndText(re)
 	switch re.Op {
-	case syntax.OpStar:
+	case syntax.OpPlus, syntax.OpStar:
+		if re.Sub[0].Op != syntax.OpAnyChar && re.Sub[0].Op != syntax.OpAnyCharNotNL {
+			return nil
+		}
 		return anyStringMatcher{
-			allowEmpty: true,
-			matchNL:    re.Flags&syntax.DotNL != 0,
+			allowEmpty: re.Op == syntax.OpStar,
+			matchNL:    re.Sub[0].Op == syntax.OpAnyChar,
 		}
 	case syntax.OpEmptyMatch:
 		return emptyStringMatcher{}
-	case syntax.OpPlus:
-		return anyStringMatcher{
-			allowEmpty: false,
-			matchNL:    re.Flags&syntax.DotNL != 0,
-		}
+
 	case syntax.OpLiteral:
 		return equalStringMatcher{
 			s:             string(re.Rune),
@@ -328,9 +332,9 @@ func stringMatcherFromRegexp(re *syntax.Regexp) StringMatcher {
 		}
 		if len(matches) > 0 {
 			return containsStringMatcher{
-				substr: matches,
-				left:   left,
-				right:  right,
+				substrings: matches,
+				left:       left,
+				right:      right,
 			}
 		}
 	}
@@ -338,32 +342,32 @@ func stringMatcherFromRegexp(re *syntax.Regexp) StringMatcher {
 }
 
 type containsStringMatcher struct {
-	substr []string
-	left   StringMatcher
-	right  StringMatcher
+	substrings []string
+	left       StringMatcher
+	right      StringMatcher
 }
 
 func (m containsStringMatcher) Matches(s string) bool {
 	var pos int
-	for _, substr := range m.substr {
+	for _, substr := range m.substrings {
 		pos = strings.Index(s, substr)
 		if pos < 0 {
 			continue
 		}
 		if m.right != nil && m.left != nil {
-			if m.left.Matches(s[:pos]) && m.right.Matches(s[pos+len(m.substr):]) {
+			if m.left.Matches(s[:pos]) && m.right.Matches(s[pos+len(substr):]) {
 				return true
 			}
 			continue
 		}
 		if m.left != nil {
-			if m.left.Matches(s[:pos]) {
+			if pos+len(substr) == len(s) && m.left.Matches(s[:pos]) {
 				return true
 			}
 			continue
 		}
 		if m.right != nil {
-			if m.right.Matches(s[pos+len(m.substr):]) {
+			if pos == 0 && m.right.Matches(s[pos+len(substr):]) {
 				return true
 			}
 			continue
@@ -395,7 +399,7 @@ type equalStringMatcher struct {
 }
 
 func (m equalStringMatcher) Matches(s string) bool {
-	if !m.caseSensitive {
+	if m.caseSensitive {
 		return m.s == s
 	}
 	return strings.EqualFold(m.s, s)
