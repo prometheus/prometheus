@@ -250,41 +250,164 @@ func optimizeConcatRegex(r *syntax.Regexp) (prefix, suffix, contains string) {
 	return
 }
 
-// todo remove anchors ^foo$
-// remove captures.
-// .+ | .* | .*POD.*  | test-.* | .*-test | test-.+ | .+-test
-
-// regexp prefix fn ???? can we use this ?
-
-// benchmark them
-
 type StringMatcher interface {
 	Matches(s string) bool
 }
 
-func contains(s, substr string) bool {
-	pos := strings.Index(s, substr)
-	if pos < 0 {
+func stringMatcherFromRegexp(re *syntax.Regexp) StringMatcher {
+	clearCapture(re)
+	clearBeginEndText(re)
+	switch re.Op {
+	case syntax.OpStar:
+		return anyStringMatcher{
+			allowEmpty: true,
+			matchNL:    re.Flags&syntax.DotNL != 0,
+		}
+	case syntax.OpEmptyMatch:
+		return emptyStringMatcher{}
+	case syntax.OpPlus:
+		return anyStringMatcher{
+			allowEmpty: false,
+			matchNL:    re.Flags&syntax.DotNL != 0,
+		}
+	case syntax.OpLiteral:
+		return equalStringMatcher{
+			s:             string(re.Rune),
+			caseSensitive: !isCaseInsensitive(re),
+		}
+	case syntax.OpAlternate:
+		or := make([]StringMatcher, 0, len(re.Sub))
+		for _, sub := range re.Sub {
+			m := stringMatcherFromRegexp(sub)
+			if m == nil {
+				return nil
+			}
+			or = append(or, m)
+		}
+		return orStringMatcher(or)
+	case syntax.OpConcat:
+		clearCapture(re.Sub...)
+		if len(re.Sub) == 0 {
+			return emptyStringMatcher{}
+		}
+		if len(re.Sub) == 1 {
+			return stringMatcherFromRegexp(re.Sub[0])
+		}
+		var left, right StringMatcher
+
+		if re.Sub[0].Op == syntax.OpPlus || re.Sub[0].Op == syntax.OpStar {
+			left = stringMatcherFromRegexp(re.Sub[0])
+			if left == nil {
+				return nil
+			}
+			re.Sub = re.Sub[1:]
+		}
+		if re.Sub[len(re.Sub)-1].Op == syntax.OpPlus || re.Sub[len(re.Sub)-1].Op == syntax.OpStar {
+			right = stringMatcherFromRegexp(re.Sub[len(re.Sub)-1])
+			if right == nil {
+				return nil
+			}
+			re.Sub = re.Sub[:len(re.Sub)-1]
+		}
+		matches := findSetMatches(re, "")
+		if left == nil && right == nil {
+			if len(matches) > 0 {
+				var or []StringMatcher
+				for _, match := range matches {
+					or = append(or, equalStringMatcher{
+						s:             match,
+						caseSensitive: true,
+					})
+				}
+				return orStringMatcher(or)
+			}
+		}
+		if len(matches) > 0 {
+			return containsStringMatcher{
+				substr: matches,
+				left:   left,
+				right:  right,
+			}
+		}
+	}
+	return nil
+}
+
+type containsStringMatcher struct {
+	substr []string
+	left   StringMatcher
+	right  StringMatcher
+}
+
+func (m containsStringMatcher) Matches(s string) bool {
+	var pos int
+	for _, substr := range m.substr {
+		pos = strings.Index(s, substr)
+		if pos < 0 {
+			continue
+		}
+		if m.right != nil && m.left != nil {
+			if m.left.Matches(s[:pos]) && m.right.Matches(s[pos+len(m.substr):]) {
+				return true
+			}
+			continue
+		}
+		if m.left != nil {
+			if m.left.Matches(s[:pos]) {
+				return true
+			}
+			continue
+		}
+		if m.right != nil {
+			if m.right.Matches(s[pos+len(m.substr):]) {
+				return true
+			}
+			continue
+		}
+	}
+	return false
+}
+
+type emptyStringMatcher struct{}
+
+func (m emptyStringMatcher) Matches(s string) bool {
+	return len(s) == 0
+}
+
+type orStringMatcher []StringMatcher
+
+func (m orStringMatcher) Matches(s string) bool {
+	for _, matcher := range m {
+		if matcher.Matches(s) {
+			return true
+		}
+	}
+	return false
+}
+
+type equalStringMatcher struct {
+	s             string
+	caseSensitive bool
+}
+
+func (m equalStringMatcher) Matches(s string) bool {
+	if !m.caseSensitive {
+		return m.s == s
+	}
+	return strings.EqualFold(m.s, s)
+}
+
+type anyStringMatcher struct {
+	allowEmpty bool
+	matchNL    bool
+}
+
+func (m anyStringMatcher) Matches(s string) bool {
+	if !m.matchNL && strings.ContainsRune(s, '\n') {
 		return false
 	}
-	return matchesAnyZeroOrMoreNotNL(s[:pos]) && matchesAnyZeroOrMoreNotNL(s[pos+len(substr):])
-}
-
-func matchesAnyZeroOrMoreNotNL(s string) bool {
-	// strings.Contains(s string, substr string) faster ??
-	for _, r := range s {
-		if r == '\n' {
-			return false
-		}
+	if !m.allowEmpty && len(s) == 0 {
+		return false
 	}
 	return true
-}
-
-func matchesOneZeroOrMoreNotNL(s string) bool {
-	for _, r := range s {
-		if r == '\n' {
-			return false
-		}
-	}
-	return len(s) > 0
 }
