@@ -14,7 +14,9 @@
 package rulefmt
 
 import (
+	"fmt"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -157,4 +159,43 @@ groups:
 		require.True(t, passed, "Rule validation failed, rule=\n"+tst.ruleString)
 	}
 
+}
+
+func TestReferenceToLoopIteratorVariable(t *testing.T) {
+	tests := []struct {
+		ruleString string
+		shouldPass bool
+	}{
+		{
+			ruleString: `
+groups:
+- name: example
+  rules:
+  - alert: InstanceDown
+    expr: up ===== 0
+    for: 5m
+    labels:
+      severity: "page"
+    annotations:
+      summary: "Instance {{ $labels.instance }} down"
+  - alert: InstanceUp
+    expr: up ===== 1
+    for: 5m
+    labels:
+      severity: "page"
+    annotations:
+      summary: "Instance {{ $labels.instance }} up"
+
+`,
+			shouldPass: true,
+		},
+	}
+
+	for _, tst := range tests {
+		_, errs := Parse([]byte(tst.ruleString))
+		err0 := errs[0].(*Error).Err.node
+		err1 := errs[1].(*Error).Err.node
+		fmt.Println(err0, err1)
+		require.False(t, reflect.DeepEqual(err0, err1))
+	}
 }
