@@ -111,10 +111,19 @@ func (m *Matcher) Inverse() (*Matcher, error) {
 	panic("labels.Matcher.Matches: invalid match type")
 }
 
-// GetRegexString returns the regex string.
 func (m *Matcher) GetRegexString() string {
 	if m.re == nil {
 		return ""
 	}
 	return m.re.GetRegexString()
+}
+
+// SetMatches returns a set of equality matchers for the current regex matchers if possible.
+// For examples the regexp `a(b|f)` will returns "ab" and "af".
+// Returns nil if we can't replace the regexp by only equality matchers.
+func (m *Matcher) SetMatches() []string {
+	if m.re == nil {
+		return nil
+	}
+	return m.re.setMatches
 }

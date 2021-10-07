@@ -108,7 +108,9 @@ func benchmarkPostingsForMatchers(b *testing.B, ir IndexReader) {
 	iNot2 := labels.MustNewMatcher(labels.MatchNotEqual, "n", "2"+postingsBenchSuffix)
 	iNot2Star := labels.MustNewMatcher(labels.MatchNotRegexp, "i", "^2.*$")
 	iNotStar2Star := labels.MustNewMatcher(labels.MatchNotRegexp, "i", "^.*2.*$")
-
+	jFooBar := labels.MustNewMatcher(labels.MatchRegexp, "j", "foo|bar")
+	iCharSet := labels.MustNewMatcher(labels.MatchRegexp, "i", "1[0-9]")
+	iAlternate := labels.MustNewMatcher(labels.MatchRegexp, "i", "(1|2|3|4|5|6|20|55)")
 	cases := []struct {
 		name     string
 		matchers []*labels.Matcher
@@ -117,6 +119,9 @@ func benchmarkPostingsForMatchers(b *testing.B, ir IndexReader) {
 		{`n="1",j="foo"`, []*labels.Matcher{n1, jFoo}},
 		{`j="foo",n="1"`, []*labels.Matcher{jFoo, n1}},
 		{`n="1",j!="foo"`, []*labels.Matcher{n1, jNotFoo}},
+		{`i=~"1[0-9]",j=~"foo|bar"`, []*labels.Matcher{iCharSet, jFooBar}},
+		{`j=~"foo|bar"`, []*labels.Matcher{jFooBar}},
+		{`i=~"(1|2|3|4|5|6|20|55)"`, []*labels.Matcher{iAlternate}},
 		{`i=~".*"`, []*labels.Matcher{iStar}},
 		{`i=~"1.*"`, []*labels.Matcher{i1Star}},
 		{`i=~".*1"`, []*labels.Matcher{iStar1}},
