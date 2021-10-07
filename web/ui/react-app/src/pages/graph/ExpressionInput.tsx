@@ -1,11 +1,11 @@
 import React, { Component } from 'react';
-import { Button, InputGroup, InputGroupAddon, InputGroupText, Input } from 'reactstrap';
+import { Button, Input, InputGroup, InputGroupAddon, InputGroupText } from 'reactstrap';
 
 import Downshift, { ControllerStateAndHelpers } from 'downshift';
 import sanitizeHTML from 'sanitize-html';
 
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faSearch, faSpinner, faGlobeEurope } from '@fortawesome/free-solid-svg-icons';
+import { faGlobeEurope, faSearch, faSpinner } from '@fortawesome/free-solid-svg-icons';
 import MetricsExplorer from './MetricsExplorer';
 import { Fuzzy, FuzzyResult } from '@nexucis/fuzzy';
 
@@ -37,34 +37,38 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
     };
   }
 
-  componentDidMount() {
+  componentDidMount(): void {
     this.setHeight();
   }
 
-  setHeight = () => {
-    const { offsetHeight, clientHeight, scrollHeight } = this.exprInputRef.current!;
-    const offset = offsetHeight - clientHeight; // Needed in order for the height to be more accurate.
-    this.setState({ height: scrollHeight + offset });
+  setHeight = (): void => {
+    if (this.exprInputRef.current) {
+      const { offsetHeight, clientHeight, scrollHeight } = this.exprInputRef.current;
+      const offset = offsetHeight - clientHeight; // Needed in order for the height to be more accurate.
+      this.setState({ height: scrollHeight + offset });
+    }
   };
 
-  handleInput = () => {
-    this.setValue(this.exprInputRef.current!.value);
+  handleInput = (): void => {
+    if (this.exprInputRef.current) {
+      this.setValue(this.exprInputRef.current.value);
+    }
   };
 
-  setValue = (value: string) => {
+  setValue = (value: string): void => {
     const { onExpressionChange } = this.props;
     onExpressionChange(value);
     this.setState({ height: 'auto' }, this.setHeight);
   };
 
-  componentDidUpdate(prevProps: ExpressionInputProps) {
+  componentDidUpdate(prevProps: ExpressionInputProps): void {
     const { value } = this.props;
     if (value !== prevProps.value) {
       this.setValue(value);
     }
   }
 
-  handleKeyPress = (event: React.KeyboardEvent<HTMLInputElement>) => {
+  handleKeyPress = (event: React.KeyboardEvent<HTMLInputElement>): void => {
     const { executeQuery } = this.props;
     if (event.key === 'Enter' && !event.shiftKey) {
       executeQuery();
@@ -72,11 +76,12 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
     }
   };
 
-  getSearchMatches = (input: string, expressions: string[]) => {
+  getSearchMatches = (input: string, expressions: string[]): FuzzyResult[] => {
     return fuz.filter(input.replace(/ /g, ''), expressions);
   };
 
-  createAutocompleteSection = (downshift: ControllerStateAndHelpers<any>) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  createAutocompleteSection = (downshift: ControllerStateAndHelpers<any>): JSX.Element | null => {
     const { inputValue = '', closeMenu, highlightedIndex } = downshift;
     const autocompleteSections = {
       'Query History': this.props.queryHistory,
@@ -84,9 +89,9 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
     };
     let index = 0;
     const sections =
-      inputValue!.length && this.props.enableAutocomplete
+      inputValue?.length && this.props.enableAutocomplete
         ? Object.entries(autocompleteSections).reduce((acc, [title, items]) => {
-            const matches = this.getSearchMatches(inputValue!, items);
+            const matches = this.getSearchMatches(inputValue, items);
             return !matches.length
               ? acc
               : [
@@ -94,7 +99,7 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
                   <ul className="autosuggest-dropdown-list" key={title}>
                     <li className="autosuggest-dropdown-header">{title}</li>
                     {matches
-                      .slice(0, 100) // Limit DOM rendering to 100 results, as DOM rendering is sloooow.
+                      .slice(0, 100) // Limit DOM rendering to 100 results, as DOM rendering is slow.
                       .map((result: FuzzyResult) => {
                         const itemProps = downshift.getItemProps({
                           key: result.original,
@@ -131,19 +136,19 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
     );
   };
 
-  openMetricsExplorer = () => {
+  openMetricsExplorer = (): void => {
     this.setState({
       showMetricsExplorer: true,
     });
   };
 
-  updateShowMetricsExplorer = (show: boolean) => {
+  updateShowMetricsExplorer = (show: boolean): void => {
     this.setState({
       showMetricsExplorer: show,
     });
   };
 
-  insertAtCursor = (value: string) => {
+  insertAtCursor = (value: string): void => {
     if (!this.exprInputRef.current) return;
 
     const startPosition = this.exprInputRef.current.selectionStart;
@@ -161,13 +166,13 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
     this.setValue(newValue);
   };
 
-  render() {
+  render(): JSX.Element {
     const { executeQuery, value } = this.props;
     const { height } = this.state;
     return (
       <>
         <Downshift onSelect={this.setValue}>
-          {downshift => (
+          {(downshift) => (
             <div>
               <InputGroup className="expression-input">
                 <InputGroupAddon addonType="prepend">
@@ -191,11 +196,13 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
                         case 'End':
                           // We want to be able to jump to the beginning/end of the input field.
                           // By default, Downshift otherwise jumps to the first/last suggestion item instead.
+                          // eslint-disable-next-line @typescript-eslint/no-explicit-any
                           (event.nativeEvent as any).preventDownshiftDefault = true;
                           break;
                         case 'ArrowUp':
                         case 'ArrowDown':
                           if (!downshift.isOpen) {
+                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
                             (event.nativeEvent as any).preventDownshiftDefault = true;
                           }
                           break;
@@ -203,13 +210,14 @@ class ExpressionInput extends Component<ExpressionInputProps, ExpressionInputSta
                           downshift.closeMenu();
                           break;
                         case 'Escape':
-                          if (!downshift.isOpen) {
-                            this.exprInputRef.current!.blur();
+                          if (!downshift.isOpen && this.exprInputRef.current) {
+                            this.exprInputRef.current.blur();
                           }
                           break;
                         default:
                       }
                     },
+                    // eslint-disable-next-line @typescript-eslint/no-explicit-any
                   } as any)}
                   value={value}
                 />

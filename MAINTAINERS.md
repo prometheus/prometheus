@@ -1,7 +1,7 @@
 Julien Pivotto (<roidelapluie@prometheus.io> / @roidelapluie) is the main/default maintainer, some parts of the codebase have other maintainers:
 
 * `cmd`
-  * `promtool`: David Leadbeater (<dgl@dgl.cx> / @dgl)
+  * `promtool`: David Leadbeater (<dgl@dgl.cx> / @dgl), Jessica Grebenschikov (<jessica.greben1@gmail.com> / @jessicagreben)
 * `discovery`
   * `k8s`: Frederic Branczyk (<fbranczyk@gmail.com> / @brancz)
 * `documentation`
@@ -11,6 +11,7 @@ Julien Pivotto (<roidelapluie@prometheus.io> / @roidelapluie) is the main/defaul
 * `tsdb`: Ganesh Vernekar (<ganesh@grafana.com> / @codesome), Bartłomiej Płotka (<bwplotka@gmail.com> / @bwplotka)
 * `web`
   * `ui`: Julius Volz (<julius.volz@gmail.com> / @juliusv)
+    * `module`: Augustin Husson (<husson.augustin@gmail.com> @nexucis)
 * `Makefile` and related build configuration: Simon Pasquier (<pasquier.simon@gmail.com> / @simonpasquier), Ben Kochie (<superq@gmail.com> / @SuperQ)
 
 For the sake of brevity, not all subtrees are explicitly listed. Due to the

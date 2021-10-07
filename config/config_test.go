@@ -45,6 +45,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/marathon"
 	"github.com/prometheus/prometheus/discovery/moby"
 	"github.com/prometheus/prometheus/discovery/openstack"
+	"github.com/prometheus/prometheus/discovery/puppetdb"
 	"github.com/prometheus/prometheus/discovery/scaleway"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/discovery/triton"
@@ -791,6 +792,34 @@ var expectedConf = &Config{
 			},
 		},
 		{
+			JobName: "service-puppetdb",
+
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
+
+			MetricsPath:      DefaultScrapeConfig.MetricsPath,
+			Scheme:           DefaultScrapeConfig.Scheme,
+			HTTPClientConfig: config.DefaultHTTPClientConfig,
+
+			ServiceDiscoveryConfigs: discovery.Configs{&puppetdb.SDConfig{
+				URL:               "https://puppetserver/",
+				Query:             "resources { type = \"Package\" and title = \"httpd\" }",
+				IncludeParameters: true,
+				Port:              80,
+				RefreshInterval:   model.Duration(60 * time.Second),
+				HTTPClientConfig: config.HTTPClientConfig{
+					FollowRedirects: true,
+					TLSConfig: config.TLSConfig{
+						CAFile:   "testdata/valid_ca_file",
+						CertFile: "testdata/valid_cert_file",
+						KeyFile:  "testdata/valid_key_file",
+					},
+				},
+			},
+			},
+		},
+		{
 			JobName:         "hetzner",
 			HonorTimestamps: true,
 			ScrapeInterval:  model.Duration(15 * time.Second),
@@ -1263,6 +1292,22 @@ var expectedErrors = []struct {
 		errMsg:   "empty or null section in static_configs",
 	},
 	{
+		filename: "puppetdb_no_query.bad.yml",
+		errMsg:   "query missing",
+	},
+	{
+		filename: "puppetdb_no_url.bad.yml",
+		errMsg:   "URL is missing",
+	},
+	{
+		filename: "puppetdb_bad_url.bad.yml",
+		errMsg:   "host is missing in URL",
+	},
+	{
+		filename: "puppetdb_no_scheme.bad.yml",
+		errMsg:   "URL scheme must be 'http' or 'https'",
+	},
+	{
 		filename: "hetzner_role.bad.yml",
 		errMsg:   "unknown role",
 	},
@@ -1301,6 +1346,10 @@ var expectedErrors = []struct {
 	{
 		filename: "http_url_bad_scheme.bad.yml",
 		errMsg:   "URL scheme must be 'http' or 'https'",
+	},
+	{
+		filename: "empty_scrape_config_action.bad.yml",
+		errMsg:   "relabel action cannot be empty",
 	},
 }
 

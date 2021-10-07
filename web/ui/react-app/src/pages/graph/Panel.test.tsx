@@ -75,7 +75,7 @@ describe('Panel', () => {
   });
 
   it('renders a TabPane with a TimeInput and a DataTable when in table mode', () => {
-    const tab = panel.find(TabPane).filterWhere(tab => tab.prop('tabId') === 'table');
+    const tab = panel.find(TabPane).filterWhere((tab) => tab.prop('tabId') === 'table');
     const timeInput = tab.find(TimeInput);
     expect(timeInput.prop('time')).toEqual(defaultProps.options.endTime);
     expect(timeInput.prop('range')).toEqual(defaultProps.options.range);
@@ -151,9 +151,10 @@ describe('Panel', () => {
       //change query without executing
       panel.setProps({ options: { ...defaultProps.options, expr: newExpr } });
       expect(executeQuerySpy).toHaveBeenCalledTimes(0);
+      const debounceExecuteQuerySpy = jest.spyOn(instance, 'debounceExecuteQuery');
       //execute query implicitly with time change
       panel.setProps({ options: { ...defaultProps.options, expr: newExpr, endTime: 1575744840 } });
-      expect(executeQuerySpy).toHaveBeenCalledTimes(1);
+      expect(debounceExecuteQuerySpy).toHaveBeenCalledTimes(1);
     });
   });
 });

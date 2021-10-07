@@ -21,6 +21,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/rulefmt"
 	"github.com/stretchr/testify/require"
 )
 
@@ -116,5 +118,48 @@ func TestCheckSDFile(t *testing.T) {
 			}
 			require.NoError(t, err)
 		})
+	}
+}
+
+func TestCheckDuplicates(t *testing.T) {
+	cases := []struct {
+		name         string
+		ruleFile     string
+		expectedDups []compareRuleType
+	}{
+		{
+			name:     "no duplicates",
+			ruleFile: "./testdata/rules.yml",
+		},
+		{
+			name:     "duplicate in other group",
+			ruleFile: "./testdata/rules_duplicates.yml",
+			expectedDups: []compareRuleType{
+				{
+					metric: "job:test:count_over_time1m",
+					label:  labels.New(),
+				},
+			},
+		},
+	}
+
+	for _, test := range cases {
+		c := test
+		t.Run(c.name, func(t *testing.T) {
+			rgs, err := rulefmt.ParseFile(c.ruleFile)
+			require.Empty(t, err)
+			dups := checkDuplicates(rgs.Groups)
+			require.Equal(t, c.expectedDups, dups)
+		})
+	}
+}
+
+func BenchmarkCheckDuplicates(b *testing.B) {
+	rgs, err := rulefmt.ParseFile("./testdata/rules_large.yml")
+	require.Empty(b, err)
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		checkDuplicates(rgs.Groups)
 	}
 }

@@ -1,5 +1,3 @@
-/* eslint @typescript-eslint/camelcase: 0 */
-
 import { ScrapePools } from '../target';
 
 export const targetGroups: ScrapePools = Object.freeze({
@@ -25,6 +23,8 @@ export const targetGroups: ScrapePools = Object.freeze({
         lastScrape: '2019-11-04T11:52:14.759299-07:00',
         lastScrapeDuration: 36560147,
         health: 'up',
+        scrapeInterval: '15s',
+        scrapeTimeout: '500ms',
       },
       {
         discoveredLabels: {
@@ -45,6 +45,8 @@ export const targetGroups: ScrapePools = Object.freeze({
         lastScrape: '2019-11-04T11:52:24.731096-07:00',
         lastScrapeDuration: 49448763,
         health: 'up',
+        scrapeInterval: '15s',
+        scrapeTimeout: '500ms',
       },
       {
         discoveredLabels: {
@@ -65,6 +67,8 @@ export const targetGroups: ScrapePools = Object.freeze({
         lastScrape: '2019-11-04T11:52:13.516654-07:00',
         lastScrapeDuration: 120916592,
         health: 'down',
+        scrapeInterval: '15s',
+        scrapeTimeout: '500ms',
       },
     ],
   },
@@ -89,6 +93,8 @@ export const targetGroups: ScrapePools = Object.freeze({
         lastScrape: '2019-11-04T11:52:14.145703-07:00',
         lastScrapeDuration: 3842307,
         health: 'up',
+        scrapeInterval: '15s',
+        scrapeTimeout: '500ms',
       },
     ],
   },
@@ -113,6 +119,8 @@ export const targetGroups: ScrapePools = Object.freeze({
         lastScrape: '2019-11-04T11:52:18.479731-07:00',
         lastScrapeDuration: 4050976,
         health: 'up',
+        scrapeInterval: '15s',
+        scrapeTimeout: '500ms',
       },
     ],
   },

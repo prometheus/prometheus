@@ -297,11 +297,9 @@ const resolvedRetention = 15 * time.Minute
 
 // Eval evaluates the rule expression and then creates pending alerts and fires
 // or removes previously pending alerts accordingly.
-func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, externalURL *url.URL) (promql.Vector, error) {
+func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, externalURL *url.URL, limit int) (promql.Vector, error) {
 	res, err := query(ctx, r.vector.String(), ts)
 	if err != nil {
-		r.SetHealth(HealthBad)
-		r.SetLastError(err)
 		return nil, err
 	}
 
@@ -340,6 +338,7 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 				model.Time(timestamp.FromTime(ts)),
 				template.QueryFunc(query),
 				externalURL,
+				nil,
 			)
 			result, err := tmpl.Expand()
 			if err != nil {
@@ -366,12 +365,7 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 		resultFPs[h] = struct{}{}
 
 		if _, ok := alerts[h]; ok {
-			err = fmt.Errorf("vector contains metrics with the same labelset after applying alert labels")
-			// We have already acquired the lock above hence using SetHealth and
-			// SetLastError will deadlock.
-			r.health = HealthBad
-			r.lastError = err
-			return nil, err
+			return nil, fmt.Errorf("vector contains metrics with the same labelset after applying alert labels")
 		}
 
 		alerts[h] = &Alert{
@@ -421,10 +415,12 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 		}
 	}
 
-	// We have already acquired the lock above hence using SetHealth and
-	// SetLastError will deadlock.
-	r.health = HealthGood
-	r.lastError = err
+	numActive := len(r.active)
+	if limit != 0 && numActive > limit {
+		r.active = map[uint64]*Alert{}
+		return nil, errors.Errorf("exceeded limit of %d with %d alerts", limit, numActive)
+	}
+
 	return vec, nil
 }
 

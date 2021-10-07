@@ -1,3 +1,80 @@
+## 2.30.3 / 2021-10-05
+
+* [BUGFIX] TSDB: Fix panic on failed snapshot replay. #9438
+* [BUGFIX] TSDB: Don't fail snapshot replay with exemplar storage disabled when the snapshot contains exemplars. #9438
+
+## 2.30.2 / 2021-10-01
+
+* [BUGFIX] TSDB: Don't error on overlapping m-mapped chunks during WAL replay. #9381
+
+## 2.30.1 / 2021-09-28
+
+* [ENHANCEMENT] Remote Write: Redact remote write URL when used for metric label. #9383
+* [ENHANCEMENT] UI: Redact remote write URL and proxy URL passwords in the `/config` page. #9408
+* [BUGFIX] promtool rules backfill: Prevent creation of data before the start time. #9339
+* [BUGFIX] promtool rules backfill: Do not query after the end time. #9340
+* [BUGFIX] Azure SD: Fix panic when no computername is set. #9387
+
+## 2.30.0 / 2021-09-14
+
+* [FEATURE] **experimental** TSDB: Snapshot in-memory chunks on shutdown for faster restarts. Behind `--enable-feature=memory-snapshot-on-shutdown` flag. #7229
+* [FEATURE] **experimental** Scrape: Configure scrape interval and scrape timeout via relabeling using `__scrape_interval__` and `__scrape_timeout__` labels respectively. #8911
+* [FEATURE] Scrape: Add `scrape_timeout_seconds` and `scrape_sample_limit` metric. Behind `--enable-feature=extra-scrape-metrics` flag to avoid additional cardinality by default. #9247 #9295
+* [ENHANCEMENT] Scrape: Add `--scrape.timestamp-tolerance` flag to adjust scrape timestamp tolerance when enabled via `--scrape.adjust-timestamps`. #9283
+* [ENHANCEMENT] Remote Write: Improve throughput when sending exemplars. #8921
+* [ENHANCEMENT] TSDB: Optimise WAL loading by removing extra map and caching min-time #9160
+* [ENHANCEMENT] promtool: Speed up checking for duplicate rules. #9262/#9306
+* [ENHANCEMENT] Scrape: Reduce allocations when parsing the metrics. #9299
+* [ENHANCEMENT] docker_sd: Support host network mode #9125
+* [BUGFIX] Exemplars: Fix panic when resizing exemplar storage from 0 to a non-zero size. #9286
+* [BUGFIX] TSDB: Correctly decrement `prometheus_tsdb_head_active_appenders` when the append has no samples. #9230
+* [BUGFIX] promtool rules backfill: Return 1 if backfill was unsuccessful. #9303
+* [BUGFIX] promtool rules backfill: Avoid creation of overlapping blocks. #9324
+* [BUGFIX] config: Fix a panic when reloading configuration with a `null` relabel action. #9224
+
+## 2.29.2 / 2021-08-27
+
+* [BUGFIX] Fix Kubernetes SD failing to discover Ingress in Kubernetes v1.22. #9205
+* [BUGFIX] Fix data race in loading write-ahead-log (WAL). #9259
+
+## 2.29.1 / 2021-08-11
+
+* [BUGFIX] tsdb: align atomically accessed int64 to prevent panic in 32-bit
+  archs. #9192
+
+## 2.29.0 / 2021-08-11
+
+Note for macOS users: Due to [changes in the upcoming Go 1.17](https://tip.golang.org/doc/go1.17#darwin),
+this is the last Prometheus release that supports macOS 10.12 Sierra.
+
+* [CHANGE] Promote `--storage.tsdb.allow-overlapping-blocks` flag to stable. #9117
+* [CHANGE] Promote `--storage.tsdb.retention.size` flag to stable. #9004
+* [FEATURE] Add Kuma service discovery. #8844
+* [FEATURE] Add `present_over_time` PromQL function. #9097
+* [FEATURE] Allow configuring exemplar storage via file and make it reloadable. #8974
+* [FEATURE] UI: Allow selecting time range with mouse drag. #8977
+* [FEATURE] promtool: Add feature flags flag `--enable-feature`. #8958
+* [FEATURE] promtool: Add file_sd file validation. #8950
+* [ENHANCEMENT] Reduce blocking of outgoing remote write requests from series garbage collection. #9109
+* [ENHANCEMENT] Improve write-ahead-log decoding performance. #9106
+* [ENHANCEMENT] Improve append performance in TSDB by reducing mutexes usage. #9061
+* [ENHANCEMENT] Allow configuring `max_samples_per_send` for remote write metadata. #8959
+* [ENHANCEMENT] Add `__meta_gce_interface_ipv4_<name>` meta label to GCE discovery. #8978
+* [ENHANCEMENT] Add `__meta_ec2_availability_zone_id` meta label to EC2 discovery. #8896
+* [ENHANCEMENT] Add `__meta_azure_machine_computer_name` meta label to Azure discovery. #9112
+* [ENHANCEMENT] Add `__meta_hetzner_hcloud_labelpresent_<labelname>` meta label to Hetzner discovery. #9028
+* [ENHANCEMENT] promtool: Add compaction efficiency to `promtool tsdb analyze` reports. #8940
+* [ENHANCEMENT] promtool: Allow configuring max block duration for backfilling via `--max-block-duration` flag. #8919
+* [ENHANCEMENT] UI: Add sorting and filtering to flags page. #8988
+* [ENHANCEMENT] UI: Improve alerts page rendering performance. #9005
+* [BUGFIX] Log when total symbol size exceeds 2^32 bytes, causing compaction to fail, and skip compaction. #9104
+* [BUGFIX] Fix incorrect `target_limit` reloading of zero value. #9120
+* [BUGFIX] Fix head GC and pending readers race condition. #9081
+* [BUGFIX] Fix timestamp handling in OpenMetrics parser. #9008
+* [BUGFIX] Fix potential duplicate metrics in `/federate` endpoint when specifying multiple matchers. #8885
+* [BUGFIX] Fix server configuration and validation for authentication via client cert. #9123
+* [BUGFIX] Allow `start` and `end` again as label names in PromQL queries. They were disallowed since the introduction of @ timestamp feature. #9119
+
 ## 2.28.1 / 2021-07-01
 
 * [BUGFIX]: HTTP SD: Allow `charset` specification in `Content-Type` header. #8981

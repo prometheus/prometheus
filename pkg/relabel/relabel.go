@@ -100,6 +100,9 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if c.Regex.Regexp == nil {
 		c.Regex = MustNewRegexp("")
 	}
+	if c.Action == "" {
+		return errors.Errorf("relabel action cannot be empty")
+	}
 	if c.Modulus == 0 && c.Action == HashMod {
 		return errors.Errorf("relabel configuration for hashmod requires non-zero modulus")
 	}

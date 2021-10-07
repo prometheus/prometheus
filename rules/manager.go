@@ -213,7 +213,7 @@ type Rule interface {
 	// Labels of the rule.
 	Labels() labels.Labels
 	// eval evaluates the rule, including any associated recording or alerting actions.
-	Eval(context.Context, time.Time, QueryFunc, *url.URL) (promql.Vector, error)
+	Eval(context.Context, time.Time, QueryFunc, *url.URL, int) (promql.Vector, error)
 	// String returns a human-readable string representation of the rule.
 	String() string
 	// Query returns the rule query expression.
@@ -244,6 +244,7 @@ type Group struct {
 	name                 string
 	file                 string
 	interval             time.Duration
+	limit                int
 	rules                []Rule
 	seriesInPreviousEval []map[string]labels.Labels // One per Rule.
 	staleSeries          []labels.Labels
@@ -267,6 +268,7 @@ type Group struct {
 type GroupOptions struct {
 	Name, File    string
 	Interval      time.Duration
+	Limit         int
 	Rules         []Rule
 	ShouldRestore bool
 	Opts          *ManagerOptions
@@ -295,6 +297,7 @@ func NewGroup(o GroupOptions) *Group {
 		name:                 o.Name,
 		file:                 o.File,
 		interval:             o.Interval,
+		limit:                o.Limit,
 		rules:                o.Rules,
 		shouldRestore:        o.ShouldRestore,
 		opts:                 o.Opts,
@@ -318,6 +321,9 @@ func (g *Group) Rules() []Rule { return g.rules }
 
 // Interval returns the group's interval.
 func (g *Group) Interval() time.Duration { return g.interval }
+
+// Limit returns the group's limit.
+func (g *Group) Limit() int { return g.limit }
 
 func (g *Group) run(ctx context.Context) {
 	defer close(g.terminated)
@@ -591,7 +597,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 
 			g.metrics.EvalTotal.WithLabelValues(GroupKey(g.File(), g.Name())).Inc()
 
-			vector, err := rule.Eval(ctx, ts, g.opts.QueryFunc, g.opts.ExternalURL)
+			vector, err := rule.Eval(ctx, ts, g.opts.QueryFunc, g.opts.ExternalURL, g.Limit())
 			if err != nil {
 				rule.SetHealth(HealthBad)
 				rule.SetLastError(err)
@@ -604,6 +610,8 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 				}
 				return
 			}
+			rule.SetHealth(HealthGood)
+			rule.SetLastError(nil)
 			samplesTotal += float64(len(vector))
 
 			if ar, ok := rule.(*AlertingRule); ok {
@@ -848,6 +856,10 @@ func (g *Group) Equals(ng *Group) bool {
 		return false
 	}
 
+	if g.limit != ng.limit {
+		return false
+	}
+
 	if len(g.rules) != len(ng.rules) {
 		return false
 	}
@@ -1084,6 +1096,7 @@ func (m *Manager) LoadGroups(
 				Name:          rg.Name,
 				File:          fn,
 				Interval:      itv,
+				Limit:         rg.Limit,
 				Rules:         rules,
 				ShouldRestore: shouldRestore,
 				Opts:          m.opts,

@@ -149,7 +149,7 @@ func TestNewHTTPBearerToken(t *testing.T) {
 	cfg := config_util.HTTPClientConfig{
 		BearerToken: "1234",
 	}
-	c, err := config_util.NewClientFromConfig(cfg, "test", config_util.WithHTTP2Disabled())
+	c, err := config_util.NewClientFromConfig(cfg, "test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,7 +176,7 @@ func TestNewHTTPBearerTokenFile(t *testing.T) {
 	cfg := config_util.HTTPClientConfig{
 		BearerTokenFile: "testdata/bearertoken.txt",
 	}
-	c, err := config_util.NewClientFromConfig(cfg, "test", config_util.WithHTTP2Disabled())
+	c, err := config_util.NewClientFromConfig(cfg, "test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -205,7 +205,7 @@ func TestNewHTTPBasicAuth(t *testing.T) {
 			Password: "password123",
 		},
 	}
-	c, err := config_util.NewClientFromConfig(cfg, "test", config_util.WithHTTP2Disabled())
+	c, err := config_util.NewClientFromConfig(cfg, "test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -233,7 +233,7 @@ func TestNewHTTPCACert(t *testing.T) {
 			CAFile: caCertPath,
 		},
 	}
-	c, err := config_util.NewClientFromConfig(cfg, "test", config_util.WithHTTP2Disabled())
+	c, err := config_util.NewClientFromConfig(cfg, "test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -266,7 +266,7 @@ func TestNewHTTPClientCert(t *testing.T) {
 			KeyFile:  "testdata/client.key",
 		},
 	}
-	c, err := config_util.NewClientFromConfig(cfg, "test", config_util.WithHTTP2Disabled())
+	c, err := config_util.NewClientFromConfig(cfg, "test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -295,7 +295,7 @@ func TestNewHTTPWithServerName(t *testing.T) {
 			ServerName: "prometheus.rocks",
 		},
 	}
-	c, err := config_util.NewClientFromConfig(cfg, "test", config_util.WithHTTP2Disabled())
+	c, err := config_util.NewClientFromConfig(cfg, "test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -324,7 +324,7 @@ func TestNewHTTPWithBadServerName(t *testing.T) {
 			ServerName: "badname",
 		},
 	}
-	c, err := config_util.NewClientFromConfig(cfg, "test", config_util.WithHTTP2Disabled())
+	c, err := config_util.NewClientFromConfig(cfg, "test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -362,7 +362,7 @@ func TestNewClientWithBadTLSConfig(t *testing.T) {
 			KeyFile:  "testdata/nonexistent_client.key",
 		},
 	}
-	_, err := config_util.NewClientFromConfig(cfg, "test", config_util.WithHTTP2Disabled())
+	_, err := config_util.NewClientFromConfig(cfg, "test")
 	if err == nil {
 		t.Fatalf("Expected error, got nil.")
 	}
@@ -381,4 +381,30 @@ func TestTargetsFromGroup(t *testing.T) {
 	if failures[0].Error() != expectedError {
 		t.Fatalf("Expected error %s, got %s", expectedError, failures[0])
 	}
+}
+
+func TestTargetHash(t *testing.T) {
+	target1 := &Target{
+		labels: labels.Labels{
+			{Name: model.AddressLabel, Value: "localhost"},
+			{Name: model.SchemeLabel, Value: "http"},
+			{Name: model.MetricsPathLabel, Value: "/metrics"},
+			{Name: model.ScrapeIntervalLabel, Value: "15s"},
+			{Name: model.ScrapeTimeoutLabel, Value: "500ms"},
+		},
+	}
+	hash1 := target1.hash()
+
+	target2 := &Target{
+		labels: labels.Labels{
+			{Name: model.AddressLabel, Value: "localhost"},
+			{Name: model.SchemeLabel, Value: "http"},
+			{Name: model.MetricsPathLabel, Value: "/metrics"},
+			{Name: model.ScrapeIntervalLabel, Value: "14s"},
+			{Name: model.ScrapeTimeoutLabel, Value: "600ms"},
+		},
+	}
+	hash2 := target2.hash()
+
+	require.Equal(t, hash1, hash2, "Scrape interval and duration labels should not effect hash.")
 }

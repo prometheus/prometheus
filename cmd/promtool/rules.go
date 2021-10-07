@@ -57,7 +57,7 @@ type ruleImporterConfig struct {
 // newRuleImporter creates a new rule importer that can be used to parse and evaluate recording rule files and create new series
 // written to disk in blocks.
 func newRuleImporter(logger log.Logger, config ruleImporterConfig, apiClient queryRangeAPI) *ruleImporter {
-	level.Info(logger).Log("backfiller", "new rule importer from start", config.start.Format(time.RFC822), " to end", config.end.Format(time.RFC822))
+	level.Info(logger).Log("backfiller", "new rule importer", "start", config.start.Format(time.RFC822), "end", config.end.Format(time.RFC822))
 	return &ruleImporter{
 		logger:      logger,
 		config:      config,
@@ -81,10 +81,9 @@ func (importer *ruleImporter) importAll(ctx context.Context) (errs []error) {
 	for name, group := range importer.groups {
 		level.Info(importer.logger).Log("backfiller", "processing group", "name", name)
 
-		stimeWithAlignment := group.EvalTimestamp(importer.config.start.UnixNano())
 		for i, r := range group.Rules() {
 			level.Info(importer.logger).Log("backfiller", "processing rule", "id", i, "name", r.Name())
-			if err := importer.importRule(ctx, r.Query().String(), r.Name(), r.Labels(), stimeWithAlignment, importer.config.end, group); err != nil {
+			if err := importer.importRule(ctx, r.Query().String(), r.Name(), r.Labels(), importer.config.start, importer.config.end, group); err != nil {
 				errs = append(errs, err)
 			}
 		}
@@ -103,11 +102,18 @@ func (importer *ruleImporter) importRule(ctx context.Context, ruleExpr, ruleName
 
 		currStart := max(startOfBlock/int64(time.Second/time.Millisecond), start.Unix())
 		startWithAlignment := grp.EvalTimestamp(time.Unix(currStart, 0).UTC().UnixNano())
+		for startWithAlignment.Unix() < currStart {
+			startWithAlignment = startWithAlignment.Add(grp.Interval())
+		}
+		end := time.Unix(min(endOfBlock/int64(time.Second/time.Millisecond), end.Unix()), 0).UTC()
+		if end.Before(startWithAlignment) {
+			break
+		}
 		val, warnings, err := importer.apiClient.QueryRange(ctx,
 			ruleExpr,
 			v1.Range{
 				Start: startWithAlignment,
-				End:   time.Unix(min(endOfBlock/int64(time.Second/time.Millisecond), end.Unix()), 0).UTC(),
+				End:   end,
 				Step:  grp.Interval(),
 			},
 		)
@@ -141,22 +147,16 @@ func (importer *ruleImporter) importRule(ctx context.Context, ruleExpr, ruleName
 			matrix = val.(model.Matrix)
 
 			for _, sample := range matrix {
-				currentLabels := make(labels.Labels, 0, len(sample.Metric)+len(ruleLabels)+1)
-				currentLabels = append(currentLabels, labels.Label{
-					Name:  labels.MetricName,
-					Value: ruleName,
-				})
-
-				currentLabels = append(currentLabels, ruleLabels...)
+				lb := labels.NewBuilder(ruleLabels)
 
 				for name, value := range sample.Metric {
-					currentLabels = append(currentLabels, labels.Label{
-						Name:  string(name),
-						Value: string(value),
-					})
+					lb.Set(string(name), string(value))
 				}
+
+				lb.Set(labels.MetricName, ruleName)
+
 				for _, value := range sample.Values {
-					if err := app.add(ctx, currentLabels, timestamp.FromTime(value.Timestamp.Time()), float64(value.Value)); err != nil {
+					if err := app.add(ctx, lb.Labels(), timestamp.FromTime(value.Timestamp.Time()), float64(value.Value)); err != nil {
 						return errors.Wrap(err, "add")
 					}
 				}

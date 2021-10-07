@@ -16,6 +16,8 @@ package parser
 import (
 	"testing"
 
+	"github.com/prometheus/prometheus/pkg/labels"
+
 	"github.com/stretchr/testify/require"
 )
 
@@ -136,5 +138,78 @@ func TestExprString(t *testing.T) {
 		}
 
 		require.Equal(t, exp, expr.String())
+	}
+}
+
+func TestVectorSelector_String(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		vs       VectorSelector
+		expected string
+	}{
+		{
+			name:     "empty value",
+			vs:       VectorSelector{},
+			expected: ``,
+		},
+		{
+			name:     "no matchers with name",
+			vs:       VectorSelector{Name: "foobar"},
+			expected: `foobar`,
+		},
+		{
+			name: "one matcher with name",
+			vs: VectorSelector{
+				Name: "foobar",
+				LabelMatchers: []*labels.Matcher{
+					labels.MustNewMatcher(labels.MatchEqual, "a", "x"),
+				},
+			},
+			expected: `foobar{a="x"}`,
+		},
+		{
+			name: "two matchers with name",
+			vs: VectorSelector{
+				Name: "foobar",
+				LabelMatchers: []*labels.Matcher{
+					labels.MustNewMatcher(labels.MatchEqual, "a", "x"),
+					labels.MustNewMatcher(labels.MatchEqual, "b", "y"),
+				},
+			},
+			expected: `foobar{a="x",b="y"}`,
+		},
+		{
+			name: "two matchers without name",
+			vs: VectorSelector{
+				LabelMatchers: []*labels.Matcher{
+					labels.MustNewMatcher(labels.MatchEqual, "a", "x"),
+					labels.MustNewMatcher(labels.MatchEqual, "b", "y"),
+				},
+			},
+			expected: `{a="x",b="y"}`,
+		},
+		{
+			name: "name matcher and name",
+			vs: VectorSelector{
+				Name: "foobar",
+				LabelMatchers: []*labels.Matcher{
+					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "foobar"),
+				},
+			},
+			expected: `foobar`,
+		},
+		{
+			name: "name matcher only",
+			vs: VectorSelector{
+				LabelMatchers: []*labels.Matcher{
+					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "foobar"),
+				},
+			},
+			expected: `{__name__="foobar"}`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.expected, tc.vs.String())
+		})
 	}
 }

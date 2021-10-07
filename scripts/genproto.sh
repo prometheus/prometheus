@@ -15,7 +15,7 @@ if ! [[ $(protoc --version) =~ "3.15.8" ]]; then
 	exit 255
 fi
 
-# Since we run go get, go mod download, the go.sum will change.
+# Since we run go install, go mod download, the go.sum will change.
 # Make a backup.
 cp go.sum go.sum.bak
 

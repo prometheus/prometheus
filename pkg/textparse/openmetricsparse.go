@@ -313,11 +313,10 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 
 		t2 := p.nextToken()
 		if t2 == tBraceOpen {
-			offsets, err := p.parseLVals()
+			p.offsets, err = p.parseLVals(p.offsets)
 			if err != nil {
 				return EntryInvalid, err
 			}
-			p.offsets = append(p.offsets, offsets...)
 			p.series = p.l.b[p.start:p.l.i]
 			t2 = p.nextToken()
 		}
@@ -374,12 +373,12 @@ func (p *OpenMetricsParser) parseComment() error {
 		return err
 	}
 
+	var err error
 	// Parse the labels.
-	offsets, err := p.parseLVals()
+	p.eOffsets, err = p.parseLVals(p.eOffsets)
 	if err != nil {
 		return err
 	}
-	p.eOffsets = append(p.eOffsets, offsets...)
 	p.exemplar = p.l.b[p.start:p.l.i]
 
 	// Get the value.
@@ -417,8 +416,7 @@ func (p *OpenMetricsParser) parseComment() error {
 	return nil
 }
 
-func (p *OpenMetricsParser) parseLVals() ([]int, error) {
-	var offsets []int
+func (p *OpenMetricsParser) parseLVals(offsets []int) ([]int, error) {
 	first := true
 	for {
 		t := p.nextToken()

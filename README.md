@@ -55,18 +55,18 @@ Prometheus will now be reachable at http://localhost:9090/.
 
 ### Building from source
 
-To build Prometheus from source code, first ensure that have a working
+To build Prometheus from source code, first ensure that you have a working
 Go environment with [version 1.14 or greater installed](https://golang.org/doc/install).
-You also need [Node.js](https://nodejs.org/) and [Yarn](https://yarnpkg.com/)
+You also need [Node.js](https://nodejs.org/) and [npm](https://www.npmjs.com/)
 installed in order to build the frontend assets.
 
 You can directly use the `go` tool to download and install the `prometheus`
 and `promtool` binaries into your `GOPATH`:
 
-    $ GO111MODULE=on go get github.com/prometheus/prometheus/cmd/...
+    $ GO111MODULE=on go install github.com/prometheus/prometheus/cmd/...
     $ prometheus --config.file=your_config.yml
 
-*However*, when using `go get` to build Prometheus, Prometheus will expect to be able to
+*However*, when using `go install` to build Prometheus, Prometheus will expect to be able to
 read its web assets from local filesystem directories under `web/ui/static` and
 `web/ui/templates`. In order for these assets to be found, you will have to run Prometheus
 from the root of the cloned repository. Note also that these directories do not include the

@@ -361,7 +361,7 @@ URL query parameters:
 - `end=<rfc3339 | unix_timestamp>`: End timestamp.
 
 ```json
-$ curl -g 'http://localhost:9090/api/v1/query_exemplars?query=test_exemplar_metric_total&start=2020-09-14T15:22:25.479Z&end=020-09-14T15:23:25.479Z'
+$ curl -g 'http://localhost:9090/api/v1/query_exemplars?query=test_exemplar_metric_total&start=2020-09-14T15:22:25.479Z&end=2020-09-14T15:23:25.479Z'
 {
     "status": "success",
     "data": [
@@ -502,7 +502,9 @@ $ curl http://localhost:9090/api/v1/targets
         "lastError": "",
         "lastScrape": "2017-01-17T15:07:44.723715405+01:00",
         "lastScrapeDuration": 0.050688943,
-        "health": "up"
+        "health": "up",
+        "scrapeInterval": "1m",
+        "scrapeTimeout": "10s"
       }
     ],
     "droppedTargets": [
@@ -511,6 +513,8 @@ $ curl http://localhost:9090/api/v1/targets
           "__address__": "127.0.0.1:9100",
           "__metrics_path__": "/metrics",
           "__scheme__": "http",
+          "__scrape_interval__": "1m",
+          "__scrape_timeout__": "10s",
           "job": "node"
         },
       }

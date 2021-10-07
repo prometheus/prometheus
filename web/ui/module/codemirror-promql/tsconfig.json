@@ -1,0 +1,26 @@
+{
+  "compileOnSave": false,
+  "compilerOptions": {
+    "target": "ES2015",
+    "module": "commonjs",
+    "lib": [
+      "es6",
+      "dom"
+    ],
+    "declaration": true,
+    "outDir": "dist",
+    "strict": true,
+    "sourceMap": true,
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "allowJs": true,
+    "skipLibCheck": true
+  },
+  "include": [
+    "src/"
+  ],
+  "exclude": [
+    "src/**/*.test.ts"
+  ]
+}

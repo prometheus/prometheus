@@ -9,6 +9,20 @@ describe('Graph', () => {
   beforeAll(() => {
     jest.spyOn(window, 'requestAnimationFrame').mockImplementation((cb: any) => cb());
   });
+
+  // Source: https://github.com/maslianok/react-resize-detector#testing-with-enzyme-and-jest
+  beforeEach(() => {
+    window.ResizeObserver = jest.fn().mockImplementation(() => ({
+      observe: jest.fn(),
+      unobserve: jest.fn(),
+      disconnect: jest.fn(),
+    }));
+  });
+
+  afterEach(() => {
+    window.ResizeObserver = ResizeObserver;
+  });
+
   describe('data is returned', () => {
     const props: any = {
       queryParams: {
@@ -78,9 +92,9 @@ describe('Graph', () => {
     };
     it('renders a graph with props', () => {
       const graph = shallow(<Graph {...props} />);
-      const div = graph.find('div').filterWhere(elem => elem.prop('className') === 'graph-test');
+      const div = graph.find('div').filterWhere((elem) => elem.prop('className') === 'graph-test');
       const resize = div.find(ReactResizeDetector);
-      const innerdiv = div.find('div').filterWhere(elem => elem.prop('className') === 'graph-chart');
+      const innerdiv = div.find('div').filterWhere((elem) => elem.prop('className') === 'graph-chart');
       expect(resize.prop('handleWidth')).toBe(true);
       expect(div).toHaveLength(1);
       expect(innerdiv).toHaveLength(1);
@@ -264,10 +278,7 @@ describe('Graph', () => {
       );
       (graph.instance() as any).plot(); // create chart
       const spyPlotSetAndDraw = jest.spyOn(graph.instance() as any, 'plotSetAndDraw');
-      graph
-        .find('.legend-item')
-        .at(0)
-        .simulate('mouseover');
+      graph.find('.legend-item').at(0).simulate('mouseover');
       expect(spyPlotSetAndDraw).toHaveBeenCalledTimes(1);
     });
     it('should call spyPlotSetAndDraw with chartDate from state as default value', () => {

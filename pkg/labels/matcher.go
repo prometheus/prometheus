@@ -28,17 +28,18 @@ const (
 	MatchNotRegexp
 )
 
+var matchTypeToStr = [...]string{
+	MatchEqual:     "=",
+	MatchNotEqual:  "!=",
+	MatchRegexp:    "=~",
+	MatchNotRegexp: "!~",
+}
+
 func (m MatchType) String() string {
-	typeToStr := map[MatchType]string{
-		MatchEqual:     "=",
-		MatchNotEqual:  "!=",
-		MatchRegexp:    "=~",
-		MatchNotRegexp: "!~",
+	if m < MatchEqual || m > MatchNotRegexp {
+		panic("unknown match type")
 	}
-	if str, ok := typeToStr[m]; ok {
-		return str
-	}
-	panic("unknown match type")
+	return matchTypeToStr[m]
 }
 
 // Matcher models the matching of a label.

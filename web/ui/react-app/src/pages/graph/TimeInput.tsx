@@ -1,21 +1,21 @@
 import $ from 'jquery';
 import React, { Component } from 'react';
-import { Button, InputGroup, InputGroupAddon, Input } from 'reactstrap';
+import { Button, Input, InputGroup, InputGroupAddon } from 'reactstrap';
 
 import moment from 'moment-timezone';
 
 import 'tempusdominus-core';
 import 'tempusdominus-bootstrap-4';
-import '../../../node_modules/tempusdominus-bootstrap-4/build/css/tempusdominus-bootstrap-4.min.css';
+import 'tempusdominus-bootstrap-4/build/css/tempusdominus-bootstrap-4.min.css';
 
 import { dom, library } from '@fortawesome/fontawesome-svg-core';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
+  faArrowDown,
+  faArrowUp,
+  faCalendarCheck,
   faChevronLeft,
   faChevronRight,
-  faCalendarCheck,
-  faArrowUp,
-  faArrowDown,
   faTimes,
 } from '@fortawesome/free-solid-svg-icons';
 
@@ -33,13 +33,14 @@ interface TimeInputProps {
 
 class TimeInput extends Component<TimeInputProps> {
   private timeInputRef = React.createRef<HTMLInputElement>();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private $time: any = null;
 
   getBaseTime = (): number => {
     return this.props.time || moment().valueOf();
   };
 
-  calcShiftRange = () => this.props.range / 2;
+  calcShiftRange = (): number => this.props.range / 2;
 
   increaseTime = (): void => {
     const time = this.getBaseTime() + this.calcShiftRange();
@@ -59,8 +60,11 @@ class TimeInput extends Component<TimeInputProps> {
     return this.props.useLocalTime ? moment.tz.guess() : 'UTC';
   };
 
-  componentDidMount() {
-    this.$time = $(this.timeInputRef.current!);
+  componentDidMount(): void {
+    if (!this.timeInputRef.current) {
+      return;
+    }
+    this.$time = $(this.timeInputRef.current);
 
     this.$time.datetimepicker({
       icons: {
@@ -78,20 +82,21 @@ class TimeInput extends Component<TimeInputProps> {
       defaultDate: this.props.time,
     });
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     this.$time.on('change.datetimepicker', (e: any) => {
       // The end time can also be set by dragging a section on the graph,
       // and that value will have decimal places.
-      if (e.date && e.date.valueOf() !== Math.trunc(this.props.time?.valueOf()!)) {
+      if (e.date && e.date.valueOf() !== Math.trunc(this.props.time?.valueOf() || NaN)) {
         this.props.onChangeTime(e.date.valueOf());
       }
     });
   }
 
-  componentWillUnmount() {
+  componentWillUnmount(): void {
     this.$time.datetimepicker('destroy');
   }
 
-  componentDidUpdate(prevProps: TimeInputProps) {
+  componentDidUpdate(prevProps: TimeInputProps): void {
     const { time, useLocalTime } = this.props;
     if (prevProps.time !== time) {
       this.$time.datetimepicker('date', time ? moment(time) : null);
@@ -101,7 +106,7 @@ class TimeInput extends Component<TimeInputProps> {
     }
   }
 
-  render() {
+  render(): JSX.Element {
     return (
       <InputGroup className="time-input" size="sm">
         <InputGroupAddon addonType="prepend">
@@ -115,7 +120,7 @@ class TimeInput extends Component<TimeInputProps> {
           innerRef={this.timeInputRef}
           onFocus={() => this.$time.datetimepicker('show')}
           onBlur={() => this.$time.datetimepicker('hide')}
-          onKeyDown={e => ['Escape', 'Enter'].includes(e.key) && this.$time.datetimepicker('hide')}
+          onKeyDown={(e) => ['Escape', 'Enter'].includes(e.key) && this.$time.datetimepicker('hide')}
         />
 
         {/* CAUTION: While the datetimepicker also has an option to show a 'clear' button,

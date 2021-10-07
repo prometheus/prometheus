@@ -24,7 +24,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -48,6 +48,7 @@ import (
 	_ "github.com/prometheus/prometheus/discovery/install" // Register service discovery implementations.
 	"github.com/prometheus/prometheus/discovery/kubernetes"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/rulefmt"
 	"github.com/prometheus/prometheus/promql"
 )
@@ -136,6 +137,7 @@ func main() {
 	analyzePath := tsdbAnalyzeCmd.Arg("db path", "Database path (default is "+defaultDBPath+").").Default(defaultDBPath).String()
 	analyzeBlockID := tsdbAnalyzeCmd.Arg("block id", "Block to analyze (default is the last block).").String()
 	analyzeLimit := tsdbAnalyzeCmd.Flag("limit", "How many items to show in each list.").Default("20").Int()
+	analyzeRunExtended := tsdbAnalyzeCmd.Flag("extended", "Run extended analysis.").Bool()
 
 	tsdbListCmd := tsdbCmd.Command("list", "List tsdb blocks.")
 	listHumanReadable := tsdbListCmd.Flag("human-readable", "Print human readable values.").Short('r').Bool()
@@ -236,7 +238,7 @@ func main() {
 		os.Exit(checkErr(benchmarkWrite(*benchWriteOutPath, *benchSamplesFile, *benchWriteNumMetrics, *benchWriteNumScrapes)))
 
 	case tsdbAnalyzeCmd.FullCommand():
-		os.Exit(checkErr(analyzeBlock(*analyzePath, *analyzeBlockID, *analyzeLimit)))
+		os.Exit(checkErr(analyzeBlock(*analyzePath, *analyzeBlockID, *analyzeLimit, *analyzeRunExtended)))
 
 	case tsdbListCmd.FullCommand():
 		os.Exit(checkErr(listBlocks(*listPath, *listHumanReadable)))
@@ -471,8 +473,8 @@ func checkRules(filename string) (int, []error) {
 		fmt.Printf("%d duplicate rule(s) found.\n", len(dRules))
 		for _, n := range dRules {
 			fmt.Printf("Metric: %s\nLabel(s):\n", n.metric)
-			for i, l := range n.label {
-				fmt.Printf("\t%s: %s\n", i, l)
+			for _, l := range n.label {
+				fmt.Printf("\t%s: %s\n", l.Name, l.Value)
 			}
 		}
 		fmt.Println("Might cause inconsistency while recording expressions.")
@@ -483,29 +485,52 @@ func checkRules(filename string) (int, []error) {
 
 type compareRuleType struct {
 	metric string
-	label  map[string]string
+	label  labels.Labels
+}
+
+type compareRuleTypes []compareRuleType
+
+func (c compareRuleTypes) Len() int           { return len(c) }
+func (c compareRuleTypes) Swap(i, j int)      { c[i], c[j] = c[j], c[i] }
+func (c compareRuleTypes) Less(i, j int) bool { return compare(c[i], c[j]) < 0 }
+
+func compare(a, b compareRuleType) int {
+	if res := strings.Compare(a.metric, b.metric); res != 0 {
+		return res
+	}
+
+	return labels.Compare(a.label, b.label)
 }
 
 func checkDuplicates(groups []rulefmt.RuleGroup) []compareRuleType {
 	var duplicates []compareRuleType
+	var rules compareRuleTypes
 
 	for _, group := range groups {
-		for index, rule := range group.Rules {
-			inst := compareRuleType{
+
+		for _, rule := range group.Rules {
+			rules = append(rules, compareRuleType{
 				metric: ruleMetric(rule),
-				label:  rule.Labels,
-			}
-			for i := 0; i < index; i++ {
-				t := compareRuleType{
-					metric: ruleMetric(group.Rules[i]),
-					label:  group.Rules[i].Labels,
-				}
-				if reflect.DeepEqual(t, inst) {
-					duplicates = append(duplicates, t)
-				}
-			}
+				label:  labels.FromMap(rule.Labels),
+			})
 		}
 	}
+	if len(rules) < 2 {
+		return duplicates
+	}
+	sort.Sort(rules)
+
+	last := rules[0]
+	for i := 1; i < len(rules); i++ {
+		if compare(last, rules[i]) == 0 {
+			// Don't add a duplicated rule multiple times.
+			if len(duplicates) == 0 || compare(last, duplicates[len(duplicates)-1]) != 0 {
+				duplicates = append(duplicates, rules[i])
+			}
+		}
+		last = rules[i]
+	}
+
 	return duplicates
 }
 
@@ -911,20 +936,17 @@ func importRules(url *url.URL, start, end, outputDir string, evalInterval time.D
 	} else {
 		etime, err = parseTime(end)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "error parsing end time:", err)
-			return err
+			return fmt.Errorf("error parsing end time: %v", err)
 		}
 	}
 
 	stime, err = parseTime(start)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "error parsing start time:", err)
-		return err
+		return fmt.Errorf("error parsing start time: %v", err)
 	}
 
 	if !stime.Before(etime) {
-		fmt.Fprintln(os.Stderr, "start time is not before end time")
-		return nil
+		return errors.New("start time is not before end time")
 	}
 
 	cfg := ruleImporterConfig{
@@ -937,25 +959,24 @@ func importRules(url *url.URL, start, end, outputDir string, evalInterval time.D
 		Address: url.String(),
 	})
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "new api client error", err)
-		return err
+		return fmt.Errorf("new api client error: %v", err)
 	}
 
 	ruleImporter := newRuleImporter(log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr)), cfg, v1.NewAPI(client))
 	errs := ruleImporter.loadGroups(ctx, files)
 	for _, err := range errs {
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "rule importer parse error", err)
-			return err
+			return fmt.Errorf("rule importer parse error: %v", err)
 		}
 	}
 
 	errs = ruleImporter.importAll(ctx)
 	for _, err := range errs {
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "rule importer error", err)
-		}
+		fmt.Fprintln(os.Stderr, "rule importer error:", err)
+	}
+	if len(errs) > 0 {
+		return errors.New("error importing rules")
 	}
 
-	return err
+	return nil
 }

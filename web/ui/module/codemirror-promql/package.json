@@ -1,0 +1,86 @@
+{
+  "name": "codemirror-promql",
+  "version": "0.18.0",
+  "description": "a CodeMirror mode for the PromQL language",
+  "main": "dist/cjs/index.js",
+  "module": "dist/esm/index.js",
+  "scripts": {
+    "build": "npm run build:grammar && npm run build:lib",
+    "build:grammar": "lezer-generator src/grammar/promql.grammar -o src/grammar/parser",
+    "build:lib": "bash ./build.sh",
+    "test": "npm run build:grammar && ts-mocha -p tsconfig.json ./**/*.test.ts",
+    "test:coverage": "npm run build:grammar && nyc ts-mocha -p ./tsconfig.json ./**/*.test.ts",
+    "codecov": "nyc report --reporter=text-lcov > coverage.lcov && codecov",
+    "lint": "eslint src/ --ext .ts",
+    "lint:fix": "eslint --fix src/ --ext .ts"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/prometheus-community/codemirror-promql.git"
+  },
+  "keywords": [
+    "promql",
+    "codemirror",
+    "mode",
+    "prometheus"
+  ],
+  "author": "Prometheus Authors <prometheus-developers@googlegroups.com>",
+  "license": "Apache-2.0",
+  "bugs": {
+    "url": "https://github.com/prometheus-community/codemirror-promql/issues"
+  },
+  "homepage": "https://github.com/prometheus-community/codemirror-promql/blob/master/README.md",
+  "dependencies": {
+    "lru-cache": "^6.0.0"
+  },
+  "devDependencies": {
+    "@codemirror/autocomplete": "^0.19.3",
+    "@codemirror/basic-setup": "^0.19.0",
+    "@codemirror/highlight": "^0.19.5",
+    "@codemirror/language": "^0.19.3",
+    "@codemirror/lint": "^0.19.1",
+    "@codemirror/state": "^0.19.2",
+    "@codemirror/view": "^0.19.7",
+    "@lezer/common": "^0.15.5",
+    "@lezer/generator": "^0.15.1",
+    "@types/chai": "^4.2.12",
+    "@types/lru-cache": "^5.1.0",
+    "@types/mocha": "^8.0.3",
+    "@types/node": "^16.7.6",
+    "@typescript-eslint/eslint-plugin": "^4.31.0",
+    "@typescript-eslint/parser": "^4.31.0",
+    "chai": "^4.2.0",
+    "codecov": "^3.8.1",
+    "eslint": "^7.32.0",
+    "eslint-config-prettier": "^8.3.0",
+    "eslint-plugin-flowtype": "^5.9.2",
+    "eslint-plugin-import": "^2.24.2",
+    "eslint-plugin-prettier": "^4.0.0",
+    "isomorphic-fetch": "^3.0.0",
+    "mocha": "^8.1.2",
+    "nock": "^13.0.11",
+    "nyc": "^15.1.0",
+    "prettier": "^2.3.2",
+    "ts-loader": "^7.0.4",
+    "ts-mocha": "^8.0.0",
+    "ts-node": "^9.0.0",
+    "typescript": "^4.2.3"
+  },
+  "peerDependencies": {
+    "@codemirror/autocomplete": "^0.19.3",
+    "@codemirror/highlight": "^0.19.5",
+    "@codemirror/language": "^0.19.3",
+    "@codemirror/lint": "^0.19.1",
+    "@codemirror/state": "^0.19.2",
+    "@codemirror/view": "^0.19.7",
+    "@lezer/common": "^0.15.5"
+  },
+  "prettier": {
+    "singleQuote": true,
+    "trailingComma": "es5",
+    "printWidth": 150
+  },
+  "engines": {
+    "node": ">=12.0.0"
+  }
+}

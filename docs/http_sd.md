@@ -25,7 +25,7 @@ Here is a table comparing our two generic Service Discovery implementations.
 
 ## Requirements of HTTP SD endpoints
 
-If you implement an HTTP SD endpoint, here is a few requirements you should be
+If you implement an HTTP SD endpoint, here are a few requirements you should be
 aware of.
 
 The response is consumed as is, unmodified. On each refresh interval (default: 1
@@ -47,7 +47,7 @@ for incremental updates. A Prometheus instance does not send its hostname and it
 is not possible for a SD endpoint to know if the SD requests is the first one
 after a restart or not.
 
-The URL to the HTTP SD is not considered secret. The authentication, and any API
+The URL to the HTTP SD is not considered secret. The authentication and any API
 keys should be passed with the appropriate authentication mechanisms. Prometheus
 supports TLS authentication, basic authentication, OAuth2, and authorization
 headers.
