@@ -717,6 +717,9 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 		h histogram.SparseHistogram
 	)
 	if p.currDelIter.ChunkEncoding() == chunkenc.EncSHS {
+		if hc, ok := p.currChkMeta.Chunk.(*chunkenc.HistoChunk); ok {
+			newChunk.(*chunkenc.HistoChunk).SetCounterResetHeader(hc.GetCounterResetHeader())
+		}
 		t, h = p.currDelIter.AtHistogram()
 		p.curr.MinTime = t
 		app.AppendHistogram(t, h.Copy())

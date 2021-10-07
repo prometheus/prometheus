@@ -77,7 +77,7 @@ type HistoChunk struct {
 
 // NewHistoChunk returns a new chunk with Histo encoding of the given size.
 func NewHistoChunk() *HistoChunk {
-	b := make([]byte, 2, 128)
+	b := make([]byte, 3, 128)
 	return &HistoChunk{b: bstream{stream: b, count: 0}}
 }
 
@@ -104,6 +104,32 @@ func (c *HistoChunk) Meta() (int32, float64, []histogram.Span, []histogram.Span,
 	}
 	b := newBReader(c.Bytes()[2:])
 	return readHistoChunkMeta(&b)
+}
+
+// CounterResetHeader defines the first 2 bits of the chunk header.
+type CounterResetHeader byte
+
+const (
+	CounterReset        CounterResetHeader = 0b10000000
+	NotCounterReset     CounterResetHeader = 0b01000000
+	GaugeType           CounterResetHeader = 0b11000000
+	UnknownCounterReset CounterResetHeader = 0b00000000
+)
+
+// SetCounterResetHeader sets the counter reset header.
+func (c *HistoChunk) SetCounterResetHeader(h CounterResetHeader) {
+	switch h {
+	case CounterReset, NotCounterReset, GaugeType, UnknownCounterReset:
+		bytes := c.Bytes()
+		bytes[2] = (bytes[2] & 0b00111111) | byte(h)
+	default:
+		panic("invalid CounterResetHeader type")
+	}
+}
+
+// GetCounterResetHeader returns the info about the first 2 bits of the chunk header.
+func (c *HistoChunk) GetCounterResetHeader() CounterResetHeader {
+	return CounterResetHeader(c.Bytes()[2] & 0b11000000)
 }
 
 // Compact implements the Chunk interface.
@@ -249,42 +275,56 @@ func (a *HistoAppender) Append(int64, float64) {}
 // * any buckets disappeared
 // * there was a counter reset in the count of observations or in any bucket, including the zero bucket
 // * the last sample in the chunk was stale while the current sample is not stale
+// It returns an additional boolean set to true if it is not appendable because of a counter reset.
 // If the given sample is stale, it will always return true.
-func (a *HistoAppender) Appendable(h histogram.SparseHistogram) ([]Interjection, []Interjection, bool) {
+// If counterReset is true, okToAppend MUST be false.
+func (a *HistoAppender) Appendable(h histogram.SparseHistogram) (posInterjections []Interjection, negInterjections []Interjection, okToAppend bool, counterReset bool) {
 	if value.IsStaleNaN(h.Sum) {
 		// This is a stale sample whose buckets and spans don't matter.
-		return nil, nil, true
+		okToAppend = true
+		return
 	}
 	if value.IsStaleNaN(a.sum) {
 		// If the last sample was stale, then we can only accept stale samples in this chunk.
-		return nil, nil, false
+		return
+	}
+
+	if h.Count < a.cnt {
+		// There has been a counter reset.
+		counterReset = true
+		return
 	}
 
 	if h.Schema != a.schema || h.ZeroThreshold != a.zeroThreshold {
-		return nil, nil, false
+		return
 	}
-	posInterjections, ok := compareSpans(a.posSpans, h.PositiveSpans)
+
+	if h.ZeroCount < a.zcnt {
+		// There has been a counter reset since ZeroThreshold didn't change.
+		counterReset = true
+		return
+	}
+
+	var ok bool
+	posInterjections, ok = compareSpans(a.posSpans, h.PositiveSpans)
 	if !ok {
-		return nil, nil, false
+		counterReset = true
+		return
 	}
-	negInterjections, ok := compareSpans(a.negSpans, h.NegativeSpans)
+	negInterjections, ok = compareSpans(a.negSpans, h.NegativeSpans)
 	if !ok {
-		return nil, nil, false
+		counterReset = true
+		return
 	}
 
-	if h.Count < a.cnt || h.ZeroCount < a.zcnt {
-		// There has been a counter reset.
-		return nil, nil, false
+	if counterResetInAnyBucket(a.posbuckets, h.PositiveBuckets, a.posSpans, h.PositiveSpans) ||
+		counterResetInAnyBucket(a.negbuckets, h.NegativeBuckets, a.negSpans, h.NegativeSpans) {
+		counterReset, posInterjections, negInterjections = true, nil, nil
+		return
 	}
 
-	if counterResetInAnyBucket(a.posbuckets, h.PositiveBuckets, a.posSpans, h.PositiveSpans) {
-		return nil, nil, false
-	}
-	if counterResetInAnyBucket(a.negbuckets, h.NegativeBuckets, a.negSpans, h.NegativeSpans) {
-		return nil, nil, false
-	}
-
-	return posInterjections, negInterjections, ok
+	okToAppend = true
+	return
 }
 
 // counterResetInAnyBucket returns true if there was a counter reset for any bucket.
@@ -476,7 +516,8 @@ func (a *HistoAppender) Recode(posInterjections, negInterjections []Interjection
 	// it again with the new span layout. This can probably be done in-place
 	// by editing the chunk. But let's first see how expensive it is in the
 	// big picture.
-	it := newHistoIterator(a.b.bytes())
+	byts := a.b.bytes()
+	it := newHistoIterator(byts)
 	hc := NewHistoChunk()
 	app, err := hc.Appender()
 	if err != nil {
@@ -504,6 +545,9 @@ func (a *HistoAppender) Recode(posInterjections, negInterjections []Interjection
 		}
 		app.AppendHistogram(tOld, hOld)
 	}
+
+	// Set the flags.
+	hc.SetCounterResetHeader(CounterResetHeader(byts[2] & 0b11000000))
 	return hc, app
 }
 
@@ -643,6 +687,7 @@ func (it *histoIterator) Next() bool {
 	if it.numRead == 0 {
 
 		// first read is responsible for reading chunk metadata and initializing fields that depend on it
+		// We give counter reset info at chunk level, hence we discard it here.
 		schema, zeroThreshold, posSpans, negSpans, err := readHistoChunkMeta(&it.br)
 		if err != nil {
 			it.err = err
