@@ -1216,6 +1216,27 @@ func (m mockIndex) SortedPostings(p index.Postings) index.Postings {
 	return index.NewListPostings(ep)
 }
 
+func (m mockIndex) PostingsForMatchers(concurrent bool, ms ...*labels.Matcher) (index.Postings, error) {
+	var ps []uint64
+	for p, s := range m.series {
+		if matches(ms, s.l) {
+			ps = append(ps, p)
+		}
+	}
+	sort.Slice(ps, func(i, j int) bool { return ps[i] < ps[j] })
+	return index.NewListPostings(ps), nil
+}
+
+func matches(ms []*labels.Matcher, lbls labels.Labels) bool {
+	lm := lbls.Map()
+	for _, m := range ms {
+		if !m.Matches(lm[m.Name]) {
+			return false
+		}
+	}
+	return true
+}
+
 func (m mockIndex) ShardedPostings(p index.Postings, shardIndex, shardCount uint64) index.Postings {
 	out := make([]uint64, 0, 128)
 
@@ -2001,6 +2022,10 @@ func (m mockMatcherIndex) LabelNamesFor(ids ...uint64) ([]string, error) {
 }
 
 func (m mockMatcherIndex) Postings(name string, values ...string) (index.Postings, error) {
+	return index.EmptyPostings(), nil
+}
+
+func (m mockMatcherIndex) PostingsForMatchers(bool, ...*labels.Matcher) (index.Postings, error) {
 	return index.EmptyPostings(), nil
 }
 

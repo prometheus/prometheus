@@ -360,6 +360,9 @@ func TestReadIndexFormatV1(t *testing.T) {
 	blockDir := filepath.Join("testdata", "index_format_v1")
 	block, err := OpenBlock(nil, blockDir, nil)
 	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, block.Close())
+	})
 
 	q, err := NewBlockQuerier(block, 0, 1000)
 	require.NoError(t, err)

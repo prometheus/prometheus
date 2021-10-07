@@ -796,3 +796,28 @@ func (it *bigEndianPostings) Seek(x uint64) bool {
 func (it *bigEndianPostings) Err() error {
 	return nil
 }
+
+// PostingsCloner takes an existing Postings and allows independently clone them.
+type PostingsCloner struct {
+	ids []uint64
+	err error
+}
+
+// NewPostingsCloner takes an existing Postings and allows independently clone them.
+// The instance provided shouldn't have been used before (no Next() calls should have been done)
+// and it shouldn't be used once provided to the PostingsCloner.
+func NewPostingsCloner(p Postings) *PostingsCloner {
+	var ids []uint64
+	for p.Next() {
+		ids = append(ids, p.At())
+	}
+	return &PostingsCloner{ids: ids, err: p.Err()}
+}
+
+// Clone returns another independent Postings instance.
+func (c *PostingsCloner) Clone() Postings {
+	if c.err != nil {
+		return ErrPostings(c.err)
+	}
+	return newListPostings(c.ids...)
+}

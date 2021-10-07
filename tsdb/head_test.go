@@ -1400,7 +1400,7 @@ func TestWalRepair_DecodingError(t *testing.T) {
 					err = errors.Cause(initErr) // So that we can pick up errors even if wrapped.
 					_, corrErr := err.(*wal.CorruptionErr)
 					require.True(t, corrErr, "reading the wal didn't return corruption error")
-					require.NoError(t, w.Close())
+					require.NoError(t, h.Close())
 				}
 
 				// Open the db to trigger a repair.
