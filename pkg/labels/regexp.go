@@ -61,6 +61,7 @@ func findSetMatches(re *syntax.Regexp, base string) []string {
 	if isCaseInsensitive(re) {
 		return nil
 	}
+	clearBeginEndText(re)
 	switch re.Op {
 	case syntax.OpLiteral:
 		return []string{base + string(re.Rune)}
@@ -108,7 +109,6 @@ func findSetMatchesFromConcat(re *syntax.Regexp, base string) []string {
 	if len(re.Sub) == 0 {
 		return nil
 	}
-	clearBeginEndText(re)
 	clearCapture(re.Sub...)
 	matches := []string{base}
 
@@ -207,6 +207,10 @@ func (m *FastRegexMatcher) MatchString(s string) bool {
 
 func (m *FastRegexMatcher) SetMatches() []string {
 	return m.setMatches
+}
+
+func (m *FastRegexMatcher) GetRegexString() string {
+	return m.re.String()
 }
 
 // optimizeConcatRegex returns literal prefix/suffix text that can be safely
