@@ -14,15 +14,23 @@
 package labels
 
 import (
+	"math/rand"
 	"regexp"
 	"regexp/syntax"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
 
+func init() {
+	rand.Seed(time.Now().UnixNano())
+}
+
 var (
-	regexes = []string{
+	letterRunes = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+	regexes     = []string{
 		"(foo|bar)",
 		"foo.*",
 		".*foo",
@@ -37,8 +45,19 @@ var (
 		".*foo.*",
 		".+foo.+",
 		"",
+		"(?s:.*)",
+		"(?s:.+)",
+		"(?s:^.*foo$)",
+		"((.*)(bar|b|buzz)(.+)|foo)$",
+		"^$",
+		"(prometheus|api_prom)_api_v1_.+",
+		"10\\.0\\.(1|2)\\.+",
 	}
-	values = []string{"foo", " foo bar", "bar", "buzz\nbar", "bar foo", "bfoo", "\n", "\nfoo", "foo\n", "hello foo world", "hello foo\n world", ""}
+	values = []string{
+		"foo", " foo bar", "bar", "buzz\nbar", "bar foo", "bfoo", "\n", "\nfoo", "foo\n", "hello foo world", "hello foo\n world", "",
+		"\nfoo\n", strings.Repeat("f", 20), "prometheus", "prometheus_api_v1", "prometheus_api_v1_foo",
+		"10.0.1.20", "10.0.2.10", "10.0.3.30", "10.0.4.40",
+	}
 )
 
 func TestNewFastRegexMatcher(t *testing.T) {
@@ -60,19 +79,21 @@ func TestNewFastRegexMatcher(t *testing.T) {
 }
 
 func BenchmarkNewFastRegexMatcher(b *testing.B) {
+	benchValues := append(values,
+		RandStringRunes(128), RandStringRunes(256), RandStringRunes(1024))
 	for _, r := range regexes {
 		r := r
-		for _, v := range values {
-			v := v
-			b.Run(r+` on "`+v+`"`, func(b *testing.B) {
-				m, err := NewFastRegexMatcher(r)
-				require.NoError(b, err)
-				b.ResetTimer()
-				for i := 0; i < b.N; i++ {
-					m.MatchString(v)
+		b.Run(r, func(b *testing.B) {
+			m, err := NewFastRegexMatcher(r)
+			require.NoError(b, err)
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				for _, v := range benchValues {
+					_ = m.MatchString(v)
 				}
-			})
-		}
+			}
+		})
+
 	}
 }
 
@@ -210,6 +231,7 @@ func Test_OptimizeRegex(t *testing.T) {
 		{"(prometheus|api_prom)_api_v1_.+", containsStringMatcher{substr: []string{"prometheus_api_v1_", "api_prom_api_v1_"}, left: nil, right: anyStringMatcher{allowEmpty: false, matchNL: false}}},
 		{"^((.*)(bar|b|buzz)(.+)|foo)$", orStringMatcher([]StringMatcher{containsStringMatcher{substr: []string{"bar", "b", "buzz"}, left: anyStringMatcher{allowEmpty: true, matchNL: false}, right: anyStringMatcher{allowEmpty: false, matchNL: false}}, equalStringMatcher{s: "foo", caseSensitive: true}})},
 		{"((fo(bar))|.+foo)", orStringMatcher([]StringMatcher{orStringMatcher([]StringMatcher{equalStringMatcher{s: "fobar", caseSensitive: true}}), containsStringMatcher{substr: []string{"foo"}, left: anyStringMatcher{allowEmpty: false, matchNL: false}, right: nil}})},
+		{"(.+)/(gateway|cortex-gw|cortex-gw-internal)", containsStringMatcher{substr: []string{"/gateway", "/cortex-gw", "/cortex-gw-internal"}, left: anyStringMatcher{allowEmpty: false, matchNL: false}, right: nil}},
 		// we don't support case insensitive matching for contains.
 		// This is because there's no strings.IndexOfFold function.
 		// We can revisit later if this is really popular by using strings.ToUpper.
@@ -231,4 +253,12 @@ func Test_OptimizeRegex(t *testing.T) {
 			require.Equal(t, c.exp, matches)
 		})
 	}
+}
+
+func RandStringRunes(n int) string {
+	b := make([]rune, n)
+	for i := range b {
+		b[i] = letterRunes[rand.Intn(len(letterRunes))]
+	}
+	return string(b)
 }
