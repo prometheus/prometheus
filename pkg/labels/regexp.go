@@ -43,14 +43,13 @@ func NewFastRegexMatcher(v string) (*FastRegexMatcher, error) {
 		return nil, err
 	}
 	m := &FastRegexMatcher{
-		re:            re,
-		setMatches:    findSetMatches(parsed, ""),
-		stringMatcher: stringMatcherFromRegexp(parsed),
+		re: re,
 	}
-
 	if parsed.Op == syntax.OpConcat {
 		m.prefix, m.suffix, m.contains = optimizeConcatRegex(parsed)
 	}
+	m.setMatches = findSetMatches(parsed, "")
+	m.stringMatcher = stringMatcherFromRegexp(parsed)
 
 	return m, nil
 }
@@ -195,9 +194,6 @@ func (m *FastRegexMatcher) MatchString(s string) bool {
 		}
 		return false
 	}
-	if m.stringMatcher != nil {
-		return m.stringMatcher.Matches(s)
-	}
 	if m.prefix != "" && !strings.HasPrefix(s, m.prefix) {
 		return false
 	}
@@ -206,6 +202,9 @@ func (m *FastRegexMatcher) MatchString(s string) bool {
 	}
 	if m.contains != "" && !strings.Contains(s, m.contains) {
 		return false
+	}
+	if m.stringMatcher != nil {
+		return m.stringMatcher.Matches(s)
 	}
 	return m.re.MatchString(s)
 }
@@ -271,7 +270,7 @@ func stringMatcherFromRegexp(re *syntax.Regexp) StringMatcher {
 		if re.Sub[0].Op != syntax.OpAnyChar && re.Sub[0].Op != syntax.OpAnyCharNotNL {
 			return nil
 		}
-		return anyStringMatcher{
+		return &anyStringMatcher{
 			allowEmpty: re.Op == syntax.OpStar,
 			matchNL:    re.Sub[0].Op == syntax.OpAnyChar,
 		}
@@ -279,7 +278,7 @@ func stringMatcherFromRegexp(re *syntax.Regexp) StringMatcher {
 		return emptyStringMatcher{}
 
 	case syntax.OpLiteral:
-		return equalStringMatcher{
+		return &equalStringMatcher{
 			s:             string(re.Rune),
 			caseSensitive: !isCaseInsensitive(re),
 		}
@@ -322,7 +321,7 @@ func stringMatcherFromRegexp(re *syntax.Regexp) StringMatcher {
 			if len(matches) > 0 {
 				var or []StringMatcher
 				for _, match := range matches {
-					or = append(or, equalStringMatcher{
+					or = append(or, &equalStringMatcher{
 						s:             match,
 						caseSensitive: true,
 					})
@@ -331,7 +330,7 @@ func stringMatcherFromRegexp(re *syntax.Regexp) StringMatcher {
 			}
 		}
 		if len(matches) > 0 {
-			return containsStringMatcher{
+			return &containsStringMatcher{
 				substrings: matches,
 				left:       left,
 				right:      right,
@@ -347,27 +346,27 @@ type containsStringMatcher struct {
 	right      StringMatcher
 }
 
-func (m containsStringMatcher) Matches(s string) bool {
-	var pos int
+func (m *containsStringMatcher) Matches(s string) bool {
 	for _, substr := range m.substrings {
-		pos = strings.Index(s, substr)
-		if pos < 0 {
-			continue
-		}
 		if m.right != nil && m.left != nil {
+			pos := strings.Index(s, substr)
+			if pos < 0 {
+				continue
+			}
 			if m.left.Matches(s[:pos]) && m.right.Matches(s[pos+len(substr):]) {
 				return true
 			}
 			continue
 		}
+		// If we have to check for characters on the left then we need to match a suffix.
 		if m.left != nil {
-			if pos+len(substr) == len(s) && m.left.Matches(s[:pos]) {
+			if strings.HasSuffix(s, substr) && m.left.Matches(s[:len(s)-len(substr)]) {
 				return true
 			}
 			continue
 		}
 		if m.right != nil {
-			if pos == 0 && m.right.Matches(s[pos+len(substr):]) {
+			if strings.HasPrefix(s, substr) && m.right.Matches(s[len(substr):]) {
 				return true
 			}
 			continue
@@ -398,7 +397,7 @@ type equalStringMatcher struct {
 	caseSensitive bool
 }
 
-func (m equalStringMatcher) Matches(s string) bool {
+func (m *equalStringMatcher) Matches(s string) bool {
 	if m.caseSensitive {
 		return m.s == s
 	}
@@ -410,7 +409,7 @@ type anyStringMatcher struct {
 	matchNL    bool
 }
 
-func (m anyStringMatcher) Matches(s string) bool {
+func (m *anyStringMatcher) Matches(s string) bool {
 	if !m.matchNL && strings.ContainsRune(s, '\n') {
 		return false
 	}
