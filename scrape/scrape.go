@@ -24,6 +24,7 @@ import (
 	"math"
 	"net/http"
 	"reflect"
+	"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -648,13 +649,32 @@ func mutateSampleLabels(lset labels.Labels, target *Target, honor bool, rc []*re
 			}
 		}
 	} else {
+		conflictingExposedNames := make(map[string]struct{})
+		var conflictingExposedLabels labels.Labels
 		for _, l := range target.Labels() {
-			// existingValue will be empty if l.Name doesn't exist.
 			existingValue := lset.Get(l.Name)
 			if existingValue != "" {
-				lb.Set(model.ExportedLabelPrefix+l.Name, existingValue)
+				if _, ok := conflictingExposedNames[l.Name]; !ok {
+					conflictingExposedNames[l.Name] = struct{}{}
+					conflictingExposedLabels = append(conflictingExposedLabels, labels.Label{Name: l.Name, Value: existingValue})
+				}
 			}
 			// It is now safe to set the target label.
+			lb.Set(l.Name, l.Value)
+		}
+
+		sort.SliceStable(conflictingExposedLabels, func(i, j int) bool {
+			return len(conflictingExposedLabels[i].Name) < len(conflictingExposedLabels[j].Name)
+		})
+
+		allLabelNames := make(map[string]struct{})
+		for _, v := range lb.Labels() {
+			allLabelNames[v.Name] = struct{}{}
+		}
+
+		var resolved []labels.Label
+		resolved = resolveConflictingExposedLabels(allLabelNames, conflictingExposedLabels, resolved)
+		for _, l := range resolved {
 			lb.Set(l.Name, l.Value)
 		}
 	}
@@ -666,6 +686,22 @@ func mutateSampleLabels(lset labels.Labels, target *Target, honor bool, rc []*re
 	}
 
 	return res
+}
+
+func resolveConflictingExposedLabels(existingNames map[string]struct{}, conflictingLabels, resolvedLabels labels.Labels) labels.Labels {
+	for i := 0; i < len(conflictingLabels); i++ {
+		newName := model.ExportedLabelPrefix + conflictingLabels[i].Name
+		if _, ok := existingNames[newName]; !ok {
+			resolvedLabels = append(resolvedLabels, labels.Label{Name: newName, Value: conflictingLabels[i].Value})
+			conflictingLabels = append(conflictingLabels[:i], conflictingLabels[i+1:]...)
+			i -= 1
+			existingNames[newName] = struct{}{}
+		} else {
+			conflictingLabels[i] = labels.Label{Name: newName, Value: conflictingLabels[i].Value}
+			return resolveConflictingExposedLabels(existingNames, conflictingLabels, resolvedLabels)
+		}
+	}
+	return resolvedLabels
 }
 
 func mutateReportSampleLabels(lset labels.Labels, target *Target) labels.Labels {
