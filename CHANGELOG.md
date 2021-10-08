@@ -116,6 +116,8 @@ This vulnerability has been reported by Aaron Devaney from MDSec.
 
 ## 2.27.0 / 2021-05-12
 
+* [CHANGE] Remote write: The following metrics were removed/renamed in remote write. #8296
+  - `prometheus_remote_storage_samples_bytes_total` was replaced with `prometheus_remote_storage_bytes_total`.
 * [FEATURE] Promtool: Retroactive rule evaluation functionality. #7675
 * [FEATURE] Configuration: Environment variable expansion for external labels. Behind `--enable-feature=expand-external-labels` flag. #8649
 * [FEATURE] TSDB: Add a flag(`--storage.tsdb.max-block-chunk-segment-size`) to control the max chunks file size of the blocks for small Prometheus instances. #8478
