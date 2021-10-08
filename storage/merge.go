@@ -431,7 +431,7 @@ func ChainedSeriesMerge(series ...Series) Series {
 			for _, s := range series {
 				iterators = append(iterators, s.Iterator())
 			}
-			return newChainSampleIterator(iterators)
+			return NewChainSampleIterator(iterators)
 		},
 	}
 }
@@ -447,7 +447,7 @@ type chainSampleIterator struct {
 	lastt int64
 }
 
-func newChainSampleIterator(iterators []chunkenc.Iterator) chunkenc.Iterator {
+func NewChainSampleIterator(iterators []chunkenc.Iterator) chunkenc.Iterator {
 	return &chainSampleIterator{
 		iterators: iterators,
 		h:         nil,
