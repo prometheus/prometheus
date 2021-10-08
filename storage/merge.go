@@ -447,6 +447,9 @@ type chainSampleIterator struct {
 	lastt int64
 }
 
+// NewChainSampleIterator returns single chunkenc.Iterator from many same, potentially overlapping chunkenc.Iterator by
+// chaining samples together. If one or more samples overlap, one sample from random overlapped ones is kept and all
+// others with the same timestamp are dropped.
 func NewChainSampleIterator(iterators []chunkenc.Iterator) chunkenc.Iterator {
 	return &chainSampleIterator{
 		iterators: iterators,
