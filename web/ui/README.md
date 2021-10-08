@@ -24,21 +24,20 @@ react-app and also by others consumers (like Thanos)
 
 To be able to build the react application you need:
 
-* npm v7
+* npm >= v7
 * node >= v14
 
 ### Installing npm dependencies
 
 The React UI depends on a large number of [npm](https://www.npmjs.com/) packages. These are not checked in, so you will
-need to download and install them locally via the npm package manager:
+need to move to the directory `web/ui` and then download and install them locally via the npm package manager:
 
     npm install
 
 npm consults the `package.json` and `package-lock.json` files for dependencies to install. It creates a `node_modules`
 directory with all installed dependencies.
 
-**NOTE 1**: Remember to change directory to `web/ui` before running this command and the following commands.
-**NOTE 2**: Do not run `npm install` in the `react-app` folder or in any sub folder of the `module` directory.
+**NOTE**: Do not run `npm install` in the `react-app` folder or in any sub folder of the `module` directory.
 
 ### Upgrading npm dependencies
 
