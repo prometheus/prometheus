@@ -95,8 +95,9 @@ git commit -m "Update dependencies"
 
 #### Updating React dependencies
 
-The react application moved to a monorepo system. Upgrading dependencies are for the moment quite sensitive and should be done manually with caution.
-Solution to come back to an automatic way to upgrade the dependencies is searching.
+The React application recently moved to a monorepo system with multiple internal npm packages. Dependency upgrades are
+quite sensitive for the time being and should be done manually with caution. We are researching ways to automate and
+improve this.
 
 ### 1. Prepare your release
 
