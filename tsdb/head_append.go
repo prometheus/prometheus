@@ -21,8 +21,8 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/pkg/exemplar"
-	"github.com/prometheus/prometheus/pkg/histogram"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/value"
 	"github.com/prometheus/prometheus/storage"
@@ -67,14 +67,14 @@ func (a *initAppender) AppendExemplar(ref uint64, l labels.Labels, e exemplar.Ex
 	return a.app.AppendExemplar(ref, l, e)
 }
 
-func (a *initAppender) AppendHistogram(ref uint64, l labels.Labels, t int64, sh histogram.SparseHistogram) (uint64, error) {
+func (a *initAppender) AppendHistogram(ref uint64, l labels.Labels, t int64, h histogram.Histogram) (uint64, error) {
 	if a.app != nil {
-		return a.app.AppendHistogram(ref, l, t, sh)
+		return a.app.AppendHistogram(ref, l, t, h)
 	}
 	a.head.initTime(t)
 	a.app = a.head.appender()
 
-	return a.app.AppendHistogram(ref, l, t, sh)
+	return a.app.AppendHistogram(ref, l, t, h)
 }
 
 // initTime initializes a head with the first timestamp. This only needs to be called
@@ -269,8 +269,8 @@ func (a *headAppender) Append(ref uint64, lset labels.Labels, t int64, v float64
 		}
 	}
 
-	if value.IsStaleNaN(v) && s.sparseHistogramSeries {
-		return a.AppendHistogram(ref, lset, t, histogram.SparseHistogram{Sum: v})
+	if value.IsStaleNaN(v) && s.histogramSeries {
+		return a.AppendHistogram(ref, lset, t, histogram.Histogram{Sum: v})
 	}
 
 	s.Lock()
@@ -322,7 +322,7 @@ func (s *memSeries) appendable(t int64, v float64) error {
 }
 
 // appendableHistogram checks whether the given sample is valid for appending to the series.
-func (s *memSeries) appendableHistogram(t int64, sh histogram.SparseHistogram) error {
+func (s *memSeries) appendableHistogram(t int64, sh histogram.Histogram) error {
 	c := s.head()
 	if c == nil {
 		return nil
@@ -372,7 +372,7 @@ func (a *headAppender) AppendExemplar(ref uint64, _ labels.Labels, e exemplar.Ex
 	return s.ref, nil
 }
 
-func (a *headAppender) AppendHistogram(ref uint64, lset labels.Labels, t int64, sh histogram.SparseHistogram) (uint64, error) {
+func (a *headAppender) AppendHistogram(ref uint64, lset labels.Labels, t int64, h histogram.Histogram) (uint64, error) {
 	if t < a.minValidTime {
 		a.head.metrics.outOfBoundSamples.Inc()
 		return 0, storage.ErrOutOfBounds
@@ -396,7 +396,7 @@ func (a *headAppender) AppendHistogram(ref uint64, lset labels.Labels, t int64, 
 		if err != nil {
 			return 0, err
 		}
-		s.sparseHistogramSeries = true
+		s.histogramSeries = true
 		if created {
 			a.head.metrics.sparseHistogramSeries.Inc()
 			a.series = append(a.series, record.RefSeries{
@@ -407,7 +407,7 @@ func (a *headAppender) AppendHistogram(ref uint64, lset labels.Labels, t int64, 
 	}
 
 	s.Lock()
-	if err := s.appendableHistogram(t, sh); err != nil {
+	if err := s.appendableHistogram(t, h); err != nil {
 		s.Unlock()
 		if err == storage.ErrOutOfOrderSample {
 			a.head.metrics.outOfOrderSamples.Inc()
@@ -427,7 +427,7 @@ func (a *headAppender) AppendHistogram(ref uint64, lset labels.Labels, t int64, 
 	a.histograms = append(a.histograms, record.RefHistogram{
 		Ref: s.ref,
 		T:   t,
-		H:   sh,
+		H:   h,
 	})
 	a.histogramSeries = append(a.histogramSeries, s)
 	return s.ref, nil
@@ -604,37 +604,39 @@ func (s *memSeries) append(t int64, v float64, appendID uint64, chunkDiskMapper 
 	return true, chunkCreated
 }
 
-// appendHistogram adds the sparse histogram.
+// appendHistogram adds the histogram.
 // It is unsafe to call this concurrently with s.iterator(...) without holding the series lock.
-func (s *memSeries) appendHistogram(t int64, sh histogram.SparseHistogram, appendID uint64, chunkDiskMapper *chunks.ChunkDiskMapper) (sampleInOrder, chunkCreated bool) {
+func (s *memSeries) appendHistogram(t int64, sh histogram.Histogram, appendID uint64, chunkDiskMapper *chunks.ChunkDiskMapper) (sampleInOrder, chunkCreated bool) {
 	// Head controls the execution of recoding, so that we own the proper chunk reference afterwards.
 	// We check for Appendable before appendPreprocessor because in case it ends up creating a new chunk,
 	// we need to know if there was also a counter reset or not to set the meta properly.
-	app, _ := s.app.(*chunkenc.HistoAppender)
+	app, _ := s.app.(*chunkenc.HistogramAppender)
 	var (
-		posInterjections, negInterjections []chunkenc.Interjection
-		okToAppend, counterReset           bool
+		positiveInterjections, negativeInterjections []chunkenc.Interjection
+		okToAppend, counterReset                     bool
 	)
 	if app != nil {
-		posInterjections, negInterjections, okToAppend, counterReset = app.Appendable(sh)
+		positiveInterjections, negativeInterjections, okToAppend, counterReset = app.Appendable(sh)
 	}
 
-	c, sampleInOrder, chunkCreated := s.appendPreprocessor(t, chunkenc.EncSHS, chunkDiskMapper)
+	c, sampleInOrder, chunkCreated := s.appendPreprocessor(t, chunkenc.EncHistogram, chunkDiskMapper)
 	if !sampleInOrder {
 		return sampleInOrder, chunkCreated
 	}
 
 	if !chunkCreated {
 		// We have 3 cases here
-		// !okToAppend -> we need to cut a new chunk
-		// okToAppend but we have interjections -> existing chunk needs recoding before we can append our histogram
-		// okToAppend and no interjections -> chunk is ready to support our histogram
+		// - !okToAppend -> We need to cut a new chunk.
+		// - okToAppend but we have interjections -> Existing chunk needs recoding before we can append our histogram.
+		// - okToAppend and no interjections -> Chunk is ready to support our histogram.
 		if !okToAppend || counterReset {
-			c = s.cutNewHeadChunk(t, chunkenc.EncSHS, chunkDiskMapper)
+			c = s.cutNewHeadChunk(t, chunkenc.EncHistogram, chunkDiskMapper)
 			chunkCreated = true
-		} else if len(posInterjections) > 0 || len(negInterjections) > 0 {
-			// new buckets have appeared. we need to recode all prior histograms within the chunk before we can process this one.
-			chunk, app := app.Recode(posInterjections, negInterjections, sh.PositiveSpans, sh.NegativeSpans)
+		} else if len(positiveInterjections) > 0 || len(negativeInterjections) > 0 {
+			// New buckets have appeared. We need to recode all
+			// prior histogram samples within the chunk before we
+			// can process this one.
+			chunk, app := app.Recode(positiveInterjections, negativeInterjections, sh.PositiveSpans, sh.NegativeSpans)
 			s.headChunk = &memChunk{
 				minTime: s.headChunk.minTime,
 				maxTime: s.headChunk.maxTime,
@@ -645,7 +647,7 @@ func (s *memSeries) appendHistogram(t int64, sh histogram.SparseHistogram, appen
 	}
 
 	if chunkCreated {
-		hc := s.headChunk.chunk.(*chunkenc.HistoChunk)
+		hc := s.headChunk.chunk.(*chunkenc.HistogramChunk)
 		header := chunkenc.UnknownCounterReset
 		if counterReset {
 			header = chunkenc.CounterReset
@@ -656,14 +658,14 @@ func (s *memSeries) appendHistogram(t int64, sh histogram.SparseHistogram, appen
 	}
 
 	s.app.AppendHistogram(t, sh)
-	s.sparseHistogramSeries = true
+	s.histogramSeries = true
 
 	c.maxTime = t
 
-	s.histBuf[0] = s.histBuf[1]
-	s.histBuf[1] = s.histBuf[2]
-	s.histBuf[2] = s.histBuf[3]
-	s.histBuf[3] = hist{t: t, h: sh}
+	s.histogramBuf[0] = s.histogramBuf[1]
+	s.histogramBuf[1] = s.histogramBuf[2]
+	s.histogramBuf[2] = s.histogramBuf[3]
+	s.histogramBuf[3] = histogramSample{t: t, h: sh}
 
 	if appendID > 0 {
 		s.txs.add(appendID)

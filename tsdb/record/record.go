@@ -20,7 +20,7 @@ import (
 
 	"github.com/pkg/errors"
 
-	"github.com/prometheus/prometheus/pkg/histogram"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
@@ -74,7 +74,7 @@ type RefExemplar struct {
 type RefHistogram struct {
 	Ref uint64
 	T   int64
-	H   histogram.SparseHistogram
+	H   histogram.Histogram
 }
 
 // Decoder decodes series, sample, and tombstone records.
@@ -233,14 +233,14 @@ func (d *Decoder) ExemplarsFromBuffer(dec *encoding.Decbuf, exemplars []RefExemp
 	return exemplars, nil
 }
 
-func (d *Decoder) Histograms(rec []byte, hists []RefHistogram) ([]RefHistogram, error) {
+func (d *Decoder) Histograms(rec []byte, histograms []RefHistogram) ([]RefHistogram, error) {
 	dec := encoding.Decbuf{B: rec}
 	t := Type(dec.Byte())
 	if t != Histograms {
 		return nil, errors.New("invalid record type")
 	}
 	if dec.Len() == 0 {
-		return hists, nil
+		return histograms, nil
 	}
 	var (
 		baseRef  = dec.Be64()
@@ -253,7 +253,7 @@ func (d *Decoder) Histograms(rec []byte, hists []RefHistogram) ([]RefHistogram, 
 		rh := RefHistogram{
 			Ref: baseRef + uint64(dref),
 			T:   baseTime + dtime,
-			H: histogram.SparseHistogram{
+			H: histogram.Histogram{
 				Schema:        0,
 				ZeroThreshold: 0,
 				ZeroCount:     0,
@@ -303,16 +303,16 @@ func (d *Decoder) Histograms(rec []byte, hists []RefHistogram) ([]RefHistogram, 
 			rh.H.NegativeBuckets[i] = dec.Varint64()
 		}
 
-		hists = append(hists, rh)
+		histograms = append(histograms, rh)
 	}
 
 	if dec.Err() != nil {
-		return nil, errors.Wrapf(dec.Err(), "decode error after %d histograms", len(hists))
+		return nil, errors.Wrapf(dec.Err(), "decode error after %d histograms", len(histograms))
 	}
 	if len(dec.B) > 0 {
 		return nil, errors.Errorf("unexpected %d bytes left in entry", len(dec.B))
 	}
-	return hists, nil
+	return histograms, nil
 }
 
 // Encoder encodes series, sample, and tombstones records.
@@ -410,21 +410,21 @@ func (e *Encoder) EncodeExemplarsIntoBuffer(exemplars []RefExemplar, buf *encodi
 	}
 }
 
-func (e *Encoder) Histograms(hists []RefHistogram, b []byte) []byte {
+func (e *Encoder) Histograms(histograms []RefHistogram, b []byte) []byte {
 	buf := encoding.Encbuf{B: b}
 	buf.PutByte(byte(Histograms))
 
-	if len(hists) == 0 {
+	if len(histograms) == 0 {
 		return buf.Get()
 	}
 
 	// Store base timestamp and base reference number of first histogram.
 	// All histograms encode their timestamp and ref as delta to those.
-	first := hists[0]
+	first := histograms[0]
 	buf.PutBE64(first.Ref)
 	buf.PutBE64int64(first.T)
 
-	for _, h := range hists {
+	for _, h := range histograms {
 		buf.PutVarint64(int64(h.Ref) - int64(first.Ref))
 		buf.PutVarint64(h.T - first.T)
 

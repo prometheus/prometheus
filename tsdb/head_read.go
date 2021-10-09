@@ -21,7 +21,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
 
-	"github.com/prometheus/prometheus/pkg/histogram"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -443,7 +443,7 @@ func (s *memSeries) iterator(id int, isoState *isolationState, chunkDiskMapper *
 		msIter.total = numSamples
 		msIter.stopAfter = stopAfter
 		msIter.buf = s.sampleBuf
-		msIter.histBuf = s.histBuf
+		msIter.histogramBuf = s.histogramBuf
 		return msIter
 	}
 	return &memSafeIterator{
@@ -452,18 +452,18 @@ func (s *memSeries) iterator(id int, isoState *isolationState, chunkDiskMapper *
 			i:         -1,
 			stopAfter: stopAfter,
 		},
-		total:   numSamples,
-		buf:     s.sampleBuf,
-		histBuf: s.histBuf,
+		total:        numSamples,
+		buf:          s.sampleBuf,
+		histogramBuf: s.histogramBuf,
 	}
 }
 
 type memSafeIterator struct {
 	stopIterator
 
-	total   int
-	buf     [4]sample
-	histBuf [4]hist
+	total        int
+	buf          [4]sample
+	histogramBuf [4]histogramSample
 }
 
 func (it *memSafeIterator) Seek(t int64) bool {
@@ -502,11 +502,11 @@ func (it *memSafeIterator) At() (int64, float64) {
 	return s.t, s.v
 }
 
-func (it *memSafeIterator) AtHistogram() (int64, histogram.SparseHistogram) {
+func (it *memSafeIterator) AtHistogram() (int64, histogram.Histogram) {
 	if it.total-it.i > 4 {
 		return it.Iterator.AtHistogram()
 	}
-	s := it.histBuf[4-(it.total-it.i)]
+	s := it.histogramBuf[4-(it.total-it.i)]
 	return s.t, s.h
 }
 

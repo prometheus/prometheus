@@ -15,11 +15,6 @@ package tsdb
 
 import (
 	"fmt"
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
-	"github.com/prometheus/prometheus/tsdb/encoding"
-	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
-	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"io/ioutil"
 	"math"
 	"os"
@@ -29,6 +24,12 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/encoding"
+	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
+	"github.com/prometheus/prometheus/tsdb/fileutil"
 
 	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
@@ -159,7 +160,7 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64, mmappedChunks 
 
 			if ms.head() == nil {
 				// First histogram for the series. Count this in metrics.
-				ms.sparseHistogramSeries = true
+				ms.histogramSeries = true
 			}
 
 			if rh.T < h.minValidTime.Load() {

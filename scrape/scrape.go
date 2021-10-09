@@ -39,8 +39,8 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/pkg/exemplar"
-	"github.com/prometheus/prometheus/pkg/histogram"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/pool"
 	"github.com/prometheus/prometheus/pkg/relabel"
@@ -1411,7 +1411,7 @@ loop:
 			met                      []byte
 			parsedTimestamp          *int64
 			val                      float64
-			his                      histogram.SparseHistogram
+			h                        histogram.Histogram
 		)
 		if et, err = p.Next(); err != nil {
 			if err == io.EOF {
@@ -1439,7 +1439,7 @@ loop:
 
 		t := defTime
 		if isHistogram {
-			met, parsedTimestamp, his = p.Histogram()
+			met, parsedTimestamp, h = p.Histogram()
 		} else {
 			met, parsedTimestamp, val = p.Series()
 		}
@@ -1491,7 +1491,7 @@ loop:
 		}
 
 		if isHistogram {
-			ref, err = app.AppendHistogram(ref, lset, t, his)
+			ref, err = app.AppendHistogram(ref, lset, t, h)
 		} else {
 			ref, err = app.Append(ref, lset, t, val)
 		}
@@ -1554,7 +1554,6 @@ loop:
 	if err == nil {
 		sl.cache.forEachStale(func(lset labels.Labels) bool {
 			// Series no longer exposed, mark it stale.
-			// TODO(beorn7): Appending staleness markers breaks horribly for histograms.
 			_, err = app.Append(0, lset, defTime, math.Float64frombits(value.StaleNaN))
 			switch errors.Cause(err) {
 			case storage.ErrOutOfOrderSample, storage.ErrDuplicateSampleForTimestamp:

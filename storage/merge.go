@@ -22,7 +22,7 @@ import (
 
 	"github.com/pkg/errors"
 
-	"github.com/prometheus/prometheus/pkg/histogram"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -465,7 +465,7 @@ func (c *chainSampleIterator) Seek(t int64) bool {
 	}
 	if len(c.h) > 0 {
 		c.curr = heap.Pop(&c.h).(chunkenc.Iterator)
-		if c.curr.ChunkEncoding() == chunkenc.EncSHS {
+		if c.curr.ChunkEncoding() == chunkenc.EncHistogram {
 			c.lastt, _ = c.curr.AtHistogram()
 		} else {
 			c.lastt, _ = c.curr.At()
@@ -483,7 +483,7 @@ func (c *chainSampleIterator) At() (t int64, v float64) {
 	return c.curr.At()
 }
 
-func (c *chainSampleIterator) AtHistogram() (int64, histogram.SparseHistogram) {
+func (c *chainSampleIterator) AtHistogram() (int64, histogram.Histogram) {
 	if c.curr == nil {
 		panic("chainSampleIterator.AtHistogram() called before first .Next() or after .Next() returned false.")
 	}
@@ -517,7 +517,7 @@ func (c *chainSampleIterator) Next() bool {
 	var currt int64
 	for {
 		if c.curr.Next() {
-			if c.curr.ChunkEncoding() == chunkenc.EncSHS {
+			if c.curr.ChunkEncoding() == chunkenc.EncHistogram {
 				currt, _ = c.curr.AtHistogram()
 			} else {
 				currt, _ = c.curr.At()
@@ -534,7 +534,7 @@ func (c *chainSampleIterator) Next() bool {
 
 			// Check current iterator with the top of the heap.
 			var nextt int64
-			if c.h[0].ChunkEncoding() == chunkenc.EncSHS {
+			if c.h[0].ChunkEncoding() == chunkenc.EncHistogram {
 				nextt, _ = c.h[0].AtHistogram()
 			} else {
 				nextt, _ = c.h[0].At()
@@ -552,7 +552,7 @@ func (c *chainSampleIterator) Next() bool {
 		}
 
 		c.curr = heap.Pop(&c.h).(chunkenc.Iterator)
-		if c.curr.ChunkEncoding() == chunkenc.EncSHS {
+		if c.curr.ChunkEncoding() == chunkenc.EncHistogram {
 			currt, _ = c.curr.AtHistogram()
 		} else {
 			currt, _ = c.curr.At()
@@ -581,12 +581,12 @@ func (h samplesIteratorHeap) Swap(i, j int) { h[i], h[j] = h[j], h[i] }
 
 func (h samplesIteratorHeap) Less(i, j int) bool {
 	var at, bt int64
-	if h[i].ChunkEncoding() == chunkenc.EncSHS {
+	if h[i].ChunkEncoding() == chunkenc.EncHistogram {
 		at, _ = h[i].AtHistogram()
 	} else {
 		at, _ = h[i].At()
 	}
-	if h[j].ChunkEncoding() == chunkenc.EncSHS {
+	if h[j].ChunkEncoding() == chunkenc.EncHistogram {
 		bt, _ = h[j].AtHistogram()
 	} else {
 		bt, _ = h[j].At()

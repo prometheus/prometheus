@@ -20,8 +20,8 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/common/model"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/pkg/exemplar"
-	"github.com/prometheus/prometheus/pkg/histogram"
 	"github.com/prometheus/prometheus/pkg/labels"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 )
@@ -173,14 +173,14 @@ func (f *fanoutAppender) AppendExemplar(ref uint64, l labels.Labels, e exemplar.
 	return ref, nil
 }
 
-func (f *fanoutAppender) AppendHistogram(ref uint64, l labels.Labels, t int64, sh histogram.SparseHistogram) (uint64, error) {
-	ref, err := f.primary.AppendHistogram(ref, l, t, sh)
+func (f *fanoutAppender) AppendHistogram(ref uint64, l labels.Labels, t int64, h histogram.Histogram) (uint64, error) {
+	ref, err := f.primary.AppendHistogram(ref, l, t, h)
 	if err != nil {
 		return ref, err
 	}
 
 	for _, appender := range f.secondaries {
-		if _, err := appender.AppendHistogram(ref, l, t, sh); err != nil {
+		if _, err := appender.AppendHistogram(ref, l, t, h); err != nil {
 			return 0, err
 		}
 	}

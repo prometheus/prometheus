@@ -27,8 +27,8 @@ import (
 
 	"github.com/pkg/errors"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/pkg/exemplar"
-	"github.com/prometheus/prometheus/pkg/histogram"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/value"
 )
@@ -114,10 +114,10 @@ func (p *OpenMetricsParser) Series() ([]byte, *int64, float64) {
 	return p.series, nil, p.val
 }
 
-// Histogram always returns (nil, nil, SparseHistogram{}) because OpenMetrics
-// does not support sparse histograms.
-func (p *OpenMetricsParser) Histogram() ([]byte, *int64, histogram.SparseHistogram) {
-	return nil, nil, histogram.SparseHistogram{}
+// Histogram always returns (nil, nil, histogram.Histogram{}) because
+// OpenMetrics does not support sparse histograms.
+func (p *OpenMetricsParser) Histogram() ([]byte, *int64, histogram.Histogram) {
+	return nil, nil, histogram.Histogram{}
 }
 
 // Help returns the metric name and help text in the current entry.

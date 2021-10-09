@@ -48,7 +48,7 @@ import (
 	"math"
 	"math/bits"
 
-	"github.com/prometheus/prometheus/pkg/histogram"
+	"github.com/prometheus/prometheus/model/histogram"
 )
 
 const (
@@ -150,8 +150,8 @@ type xorAppender struct {
 	trailing uint8
 }
 
-func (a *xorAppender) AppendHistogram(t int64, h histogram.SparseHistogram) {
-	//panic("cannot call xorAppender.AppendHistogram().")
+func (a *xorAppender) AppendHistogram(t int64, h histogram.Histogram) {
+	panic("appended a histogram to an xor chunk")
 }
 
 func (a *xorAppender) Append(t int64, v float64) {
@@ -181,6 +181,12 @@ func (a *xorAppender) Append(t int64, v float64) {
 
 		// Gorilla has a max resolution of seconds, Prometheus milliseconds.
 		// Thus we use higher value range steps with larger bit size.
+		//
+		// TODO(beorn7): This seems to needlessly jump to large bit
+		// sizes even for very small deviations from zero. Timestamp
+		// compression can probably benefit from some smaller bit
+		// buckets. See also what was done for histogram encoding in
+		// varbit.go.
 		switch {
 		case dod == 0:
 			a.b.writeBit(zero)
@@ -278,7 +284,7 @@ func (it *xorIterator) At() (int64, float64) {
 	return it.t, it.val
 }
 
-func (it *xorIterator) AtHistogram() (int64, histogram.SparseHistogram) {
+func (it *xorIterator) AtHistogram() (int64, histogram.Histogram) {
 	panic("cannot call xorIterator.AtHistogram().")
 }
 

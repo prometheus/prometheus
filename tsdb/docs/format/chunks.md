@@ -34,7 +34,13 @@ in-file offset (lower 4 bytes) and segment sequence number (upper 4 bytes).
 └───────────────┴───────────────────┴──────────────┴────────────────┘
 ```
 
+## XOR chunk
+
+TODO(beorn7): Add.
+
 ## Histogram chunk
+
+TODO(beorn7): This is out of date. Update once settled on the (more or less) final format.
 
 ```
 ┌──────────────┬─────────────────┬──────────────────────────┬──────────────────────────┬──────────────┐

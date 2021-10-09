@@ -18,7 +18,7 @@ import (
 	"sync"
 
 	"github.com/pkg/errors"
-	"github.com/prometheus/prometheus/pkg/histogram"
+	"github.com/prometheus/prometheus/model/histogram"
 )
 
 // Encoding is the identifier for a chunk encoding.
@@ -30,8 +30,8 @@ func (e Encoding) String() string {
 		return "none"
 	case EncXOR:
 		return "XOR"
-	case EncSHS:
-		return "SHS"
+	case EncHistogram:
+		return "histogram"
 	}
 	return "<unknown>"
 }
@@ -39,7 +39,7 @@ func (e Encoding) String() string {
 // IsValidEncoding returns true for supported encodings.
 func IsValidEncoding(e Encoding) bool {
 	switch e {
-	case EncXOR, EncSHS:
+	case EncXOR, EncHistogram:
 		return true
 	}
 	return false
@@ -49,7 +49,7 @@ func IsValidEncoding(e Encoding) bool {
 const (
 	EncNone Encoding = iota
 	EncXOR
-	EncSHS
+	EncHistogram
 )
 
 // Chunk holds a sequence of sample pairs that can be iterated over and appended to.
@@ -82,7 +82,7 @@ type Chunk interface {
 // Appender adds sample pairs to a chunk.
 type Appender interface {
 	Append(int64, float64)
-	AppendHistogram(t int64, h histogram.SparseHistogram)
+	AppendHistogram(t int64, h histogram.Histogram)
 }
 
 // Iterator is a simple iterator that can only get the next value.
@@ -100,7 +100,7 @@ type Iterator interface {
 	At() (int64, float64)
 	// AtHistogram returns the current timestamp/histogram pair.
 	// Before the iterator has advanced AtHistogram behaviour is unspecified.
-	AtHistogram() (int64, histogram.SparseHistogram)
+	AtHistogram() (int64, histogram.Histogram)
 	// Err returns the current error. It should be used only after iterator is
 	// exhausted, that is `Next` or `Seek` returns false.
 	Err() error
@@ -117,8 +117,8 @@ type nopIterator struct{}
 
 func (nopIterator) Seek(int64) bool      { return false }
 func (nopIterator) At() (int64, float64) { return math.MinInt64, 0 }
-func (nopIterator) AtHistogram() (int64, histogram.SparseHistogram) {
-	return math.MinInt64, histogram.SparseHistogram{}
+func (nopIterator) AtHistogram() (int64, histogram.Histogram) {
+	return math.MinInt64, histogram.Histogram{}
 }
 func (nopIterator) Next() bool              { return false }
 func (nopIterator) Err() error              { return nil }
@@ -132,8 +132,8 @@ type Pool interface {
 
 // pool is a memory pool of chunk objects.
 type pool struct {
-	xor sync.Pool
-	shs sync.Pool
+	xor       sync.Pool
+	histogram sync.Pool
 }
 
 // NewPool returns a new pool.
@@ -144,9 +144,9 @@ func NewPool() Pool {
 				return &XORChunk{b: bstream{}}
 			},
 		},
-		shs: sync.Pool{
+		histogram: sync.Pool{
 			New: func() interface{} {
-				return &HistoChunk{b: bstream{}}
+				return &HistogramChunk{b: bstream{}}
 			},
 		},
 	}
@@ -159,9 +159,9 @@ func (p *pool) Get(e Encoding, b []byte) (Chunk, error) {
 		c.b.stream = b
 		c.b.count = 0
 		return c, nil
-	case EncSHS:
+	case EncHistogram:
 		// TODO: update metadata
-		c := p.shs.Get().(*HistoChunk)
+		c := p.histogram.Get().(*HistogramChunk)
 		c.b.stream = b
 		c.b.count = 0
 		return c, nil
@@ -182,9 +182,9 @@ func (p *pool) Put(c Chunk) error {
 		xc.b.stream = nil
 		xc.b.count = 0
 		p.xor.Put(c)
-	case EncSHS:
+	case EncHistogram:
 		// TODO: update metadata
-		sh, ok := c.(*HistoChunk)
+		sh, ok := c.(*HistogramChunk)
 		// This may happen often with wrapped chunks. Nothing we can really do about
 		// it but returning an error would cause a lot of allocations again. Thus,
 		// we just skip it.
@@ -193,7 +193,7 @@ func (p *pool) Put(c Chunk) error {
 		}
 		sh.b.stream = nil
 		sh.b.count = 0
-		p.shs.Put(c)
+		p.histogram.Put(c)
 	default:
 		return errors.Errorf("invalid chunk encoding %q", c.Encoding())
 	}
@@ -207,9 +207,9 @@ func FromData(e Encoding, d []byte) (Chunk, error) {
 	switch e {
 	case EncXOR:
 		return &XORChunk{b: bstream{count: 0, stream: d}}, nil
-	case EncSHS:
+	case EncHistogram:
 		// TODO: update metadata
-		return &HistoChunk{b: bstream{count: 0, stream: d}}, nil
+		return &HistogramChunk{b: bstream{count: 0, stream: d}}, nil
 	}
 	return nil, errors.Errorf("invalid chunk encoding %q", e)
 }
@@ -219,8 +219,8 @@ func NewEmptyChunk(e Encoding) (Chunk, error) {
 	switch e {
 	case EncXOR:
 		return NewXORChunk(), nil
-	case EncSHS:
-		return NewHistoChunk(), nil
+	case EncHistogram:
+		return NewHistogramChunk(), nil
 	}
 	return nil, errors.Errorf("invalid chunk encoding %q", e)
 }

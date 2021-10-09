@@ -27,8 +27,8 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/pkg/exemplar"
-	"github.com/prometheus/prometheus/pkg/histogram"
 	"github.com/prometheus/prometheus/pkg/labels"
 
 	dto "github.com/prometheus/prometheus/prompb/io/prometheus/client"
@@ -65,6 +65,7 @@ type ProtobufParser struct {
 	metricBytes *bytes.Buffer // A somewhat fluid representation of the current metric.
 }
 
+// NewProtobufParser returns a parser for the payload in the byte slice.
 func NewProtobufParser(b []byte) Parser {
 	return &ProtobufParser{
 		in:          b,
@@ -134,13 +135,13 @@ func (p *ProtobufParser) Series() ([]byte, *int64, float64) {
 // Histogram returns the bytes of a series with a sparse histogram as a
 // value, the timestamp if set, and the sparse histogram in the current
 // sample.
-func (p *ProtobufParser) Histogram() ([]byte, *int64, histogram.SparseHistogram) {
+func (p *ProtobufParser) Histogram() ([]byte, *int64, histogram.Histogram) {
 	var (
 		m  = p.mf.GetMetric()[p.metricPos]
 		ts = m.GetTimestampMs()
 		h  = m.GetHistogram()
 	)
-	sh := histogram.SparseHistogram{
+	sh := histogram.Histogram{
 		Count:           h.GetSampleCount(),
 		Sum:             h.GetSampleSum(),
 		ZeroThreshold:   h.GetSbZeroThreshold(),

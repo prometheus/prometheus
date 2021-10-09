@@ -58,9 +58,9 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
 	_ "github.com/prometheus/prometheus/discovery/install" // Register service discovery implementations.
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/pkg/exemplar"
-	"github.com/prometheus/prometheus/pkg/histogram"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/logging"
 	"github.com/prometheus/prometheus/pkg/relabel"
@@ -1190,7 +1190,7 @@ func (n notReadyAppender) AppendExemplar(ref uint64, l labels.Labels, e exemplar
 	return 0, tsdb.ErrNotReady
 }
 
-func (n notReadyAppender) AppendHistogram(ref uint64, l labels.Labels, t int64, sh histogram.SparseHistogram) (uint64, error) {
+func (n notReadyAppender) AppendHistogram(ref uint64, l labels.Labels, t int64, sh histogram.Histogram) (uint64, error) {
 	return 0, tsdb.ErrNotReady
 }
 

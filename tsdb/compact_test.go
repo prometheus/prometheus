@@ -32,7 +32,7 @@ import (
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/prometheus/pkg/histogram"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -1328,7 +1328,7 @@ func TestHeadCompactionWithHistograms(t *testing.T) {
 
 	type timedHist struct {
 		t int64
-		h histogram.SparseHistogram
+		h histogram.Histogram
 	}
 
 	// Ingest samples.
@@ -1384,7 +1384,7 @@ func TestHeadCompactionWithHistograms(t *testing.T) {
 // Depending on numSeriesPerSchema, it can take few gigs of memory;
 // the test adds all samples to appender before committing instead of
 // buffering the writes to make it run faster.
-func TestSparseHistoSpaceSavings(t *testing.T) {
+func TestSparseHistogramSpaceSavings(t *testing.T) {
 	t.Skip()
 
 	cases := []struct {
@@ -1455,7 +1455,7 @@ func TestSparseHistoSpaceSavings(t *testing.T) {
 
 				var allSparseSeries []struct {
 					baseLabels labels.Labels
-					hists      []histogram.SparseHistogram
+					hists      []histogram.Histogram
 				}
 
 				for sid, schema := range allSchemas {
@@ -1467,7 +1467,7 @@ func TestSparseHistoSpaceSavings(t *testing.T) {
 						}
 						allSparseSeries = append(allSparseSeries, struct {
 							baseLabels labels.Labels
-							hists      []histogram.SparseHistogram
+							hists      []histogram.Histogram
 						}{baseLabels: lbls, hists: generateCustomHistograms(numHistograms, c.numBuckets, c.numSpans, c.gapBetweenSpans, schema)})
 					}
 				}
@@ -1522,13 +1522,13 @@ func TestSparseHistoSpaceSavings(t *testing.T) {
 							h := ah.hists[i]
 
 							numOldSeriesPerHistogram = 0
-							it := histogram.CumulativeExpandSparseHistogram(h)
+							it := h.CumulativeBucketIterator()
 							itIdx := 0
 							var err error
 							for it.Next() {
 								numOldSeriesPerHistogram++
 								b := it.At()
-								lbls := append(ah.baseLabels, labels.Label{Name: "le", Value: fmt.Sprintf("%.16f", b.Le)})
+								lbls := append(ah.baseLabels, labels.Label{Name: "le", Value: fmt.Sprintf("%.16f", b.Upper)})
 								refs[itIdx], err = oldApp.Append(refs[itIdx], lbls, ts, float64(b.Count))
 								require.NoError(t, err)
 								itIdx++
@@ -1614,9 +1614,9 @@ Savings: Index=%.2f%%, Chunks=%.2f%%, Total=%.2f%%
 	}
 }
 
-func generateCustomHistograms(numHists, numBuckets, numSpans, gapBetweenSpans, schema int) (r []histogram.SparseHistogram) {
+func generateCustomHistograms(numHists, numBuckets, numSpans, gapBetweenSpans, schema int) (r []histogram.Histogram) {
 	// First histogram with all the settings.
-	h := histogram.SparseHistogram{
+	h := histogram.Histogram{
 		Sum:    1000 * rand.Float64(),
 		Schema: int32(schema),
 	}
@@ -1711,7 +1711,7 @@ func TestSparseHistogramCompactionAndQuery(t *testing.T) {
 
 	type timedHist struct {
 		t int64
-		h histogram.SparseHistogram
+		h histogram.Histogram
 	}
 	expHists := make(map[string][]timedHist)
 

@@ -21,7 +21,7 @@ import (
 
 	"github.com/pkg/errors"
 
-	"github.com/prometheus/prometheus/pkg/histogram"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
@@ -296,8 +296,11 @@ func (ssi *storageSeriesIterator) At() (t int64, v float64) {
 	return p.T, p.V
 }
 
-func (ssi *storageSeriesIterator) AtHistogram() (int64, histogram.SparseHistogram) {
-	return 0, histogram.SparseHistogram{}
+// AtHistogram always returns (0, histogram.Histogram{}) because there is no
+// support for histogram values yet.
+// TODO(beorn7): Fix that for histogram support in PromQL.
+func (ssi *storageSeriesIterator) AtHistogram() (int64, histogram.Histogram) {
+	return 0, histogram.Histogram{}
 }
 
 func (ssi *storageSeriesIterator) ChunkEncoding() chunkenc.Encoding {

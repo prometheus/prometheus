@@ -29,8 +29,8 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/pkg/exemplar"
-	"github.com/prometheus/prometheus/pkg/histogram"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -614,7 +614,7 @@ func (h *Head) Init(minValidTime int64) error {
 		sparseHistogramSeries := 0
 		for _, m := range h.series.series {
 			for _, ms := range m {
-				if ms.sparseHistogramSeries {
+				if ms.histogramSeries {
 					sparseHistogramSeries++
 				}
 			}
@@ -1397,7 +1397,7 @@ func (s *stripeSeries) gc(mint int64) (map[uint64]struct{}, int, int64, int) {
 					s.locks[j].Lock()
 				}
 
-				if series.sparseHistogramSeries {
+				if series.histogramSeries {
 					sparseHistogramSeriesDeleted++
 				}
 				deleted[series.ref] = struct{}{}
@@ -1488,9 +1488,9 @@ func (s *stripeSeries) getOrSet(hash uint64, lset labels.Labels, createSeries fu
 	return series, true, nil
 }
 
-type hist struct {
+type histogramSample struct {
 	t int64
-	h histogram.SparseHistogram
+	h histogram.Histogram
 }
 
 type sample struct {
@@ -1517,7 +1517,7 @@ type memSeries struct {
 
 	nextAt        int64 // Timestamp at which to cut the next chunk.
 	sampleBuf     [4]sample
-	histBuf       [4]hist
+	histogramBuf  [4]histogramSample
 	pendingCommit bool // Whether there are samples waiting to be committed to this series.
 
 	app chunkenc.Appender // Current appender for the chunk.
@@ -1527,7 +1527,7 @@ type memSeries struct {
 	txs *txRing
 
 	// Temporary variable for sparsehistogram experiment.
-	sparseHistogramSeries bool
+	histogramSeries bool
 }
 
 func newMemSeries(lset labels.Labels, id uint64, chunkRange int64, memChunkPool *sync.Pool) *memSeries {

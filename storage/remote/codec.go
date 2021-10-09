@@ -26,8 +26,8 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/pkg/exemplar"
-	"github.com/prometheus/prometheus/pkg/histogram"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/textparse"
 	"github.com/prometheus/prometheus/prompb"
@@ -370,8 +370,11 @@ func (c *concreteSeriesIterator) At() (t int64, v float64) {
 	return s.Timestamp, s.Value
 }
 
-func (c *concreteSeriesIterator) AtHistogram() (int64, histogram.SparseHistogram) {
-	return 0, histogram.SparseHistogram{}
+// AtHistogram always returns (0, histogram.Histogram{}) because there is no
+// support for histogram values yet.
+// TODO(beorn7): Fix that for histogram support in remote storage.
+func (c *concreteSeriesIterator) AtHistogram() (int64, histogram.Histogram) {
+	return 0, histogram.Histogram{}
 }
 
 func (c *concreteSeriesIterator) ChunkEncoding() chunkenc.Encoding {
