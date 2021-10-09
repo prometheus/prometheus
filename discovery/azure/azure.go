@@ -204,13 +204,13 @@ func createAzureClient(cfg SDConfig) (azureClient, error) {
 		}
 	}
 
-	bearerAuthorizer := autorest.NewBearerAuthorizer(spt)
-
 	client, err := config.NewClientFromConfig(cfg.HTTPClientConfig, "azure_sd")
 	if err != nil {
 		return azureClient{}, err
 	}
 	sender := autorest.DecorateSender(client)
+
+	bearerAuthorizer := autorest.NewBearerAuthorizer(spt)
 
 	c.vm = compute.NewVirtualMachinesClientWithBaseURI(resourceManagerEndpoint, cfg.SubscriptionID)
 	c.vm.Authorizer = bearerAuthorizer
