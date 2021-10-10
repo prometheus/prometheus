@@ -7,12 +7,8 @@ sort_rank: 2
 
 ## Configuring rules
 
-Prometheus supports two types of rules which may be configured and then
-evaluated at regular intervals: recording rules and [alerting
-rules](alerting_rules.md). To include rules in Prometheus, create a file
-containing the necessary rule statements and have Prometheus load the file via
-the `rule_files` field in the [Prometheus configuration](configuration.md).
-Rule files use YAML.
+Recording rules and [alerting rules](alerting rules.md) are two sorts of rules that can be specified and assessed at regular intervals in Prometheus. Create a file containing the relevant rule statements and have Prometheus load the file using the 'rule files' field in the [Prometheus configuration] field to incorporate rules in Prometheus (configuration.md). 
+YAML is used in rule files.
 
 The rule files can be reloaded at runtime by sending `SIGHUP` to the Prometheus
 process. The changes are only applied if all rule files are well-formatted.
@@ -39,12 +35,8 @@ message to standard error and exits with a `1` return status.
 
 ## Recording rules
 
-Recording rules allow you to precompute frequently needed or computationally
-expensive expressions and save their result as a new set of time series.
-Querying the precomputed result will then often be much faster than executing
-the original expression every time it is needed. This is especially useful for
-dashboards, which need to query the same expression repeatedly every time they
-refresh.
+Precompute frequently used or computationally expensive expressions and save the result as a new collection of time series using recording rules. 
+In many cases, querying the precomputed result will be substantially faster than performing the original expression each time it is required. This is particularly handy for dashboards, which must constantly query the same expression each time they refresh.
 
 Recording and alerting rules exist in a rule group. Rules within a group are
 run sequentially at a regular interval, with the same evaluation time.
