@@ -17,6 +17,8 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -2833,4 +2835,89 @@ func TestTargetScrapeIntervalAndTimeoutRelabel(t *testing.T) {
 
 	require.Equal(t, "3s", sp.ActiveTargets()[0].labels.Get(model.ScrapeIntervalLabel))
 	require.Equal(t, "750ms", sp.ActiveTargets()[0].labels.Get(model.ScrapeTimeoutLabel))
+}
+
+const (
+	TLSCAChainPath        = "testdata/relabel-tls-ca-chain.pem"
+	ServerCertificatePath = "testdata/relabel-server.crt"
+	ServerKeyPath         = "testdata/relabel-server.key"
+	ClientCertificatePath = "testdata/relabel-client.crt"
+	ClientKeyNoPassPath   = "testdata/relabel-client-no-pass.key"
+)
+
+func TestTargetTLSServerNameRelabeling(t *testing.T) {
+	server := httptest.NewUnstartedServer(
+		http.HandlerFunc(
+			func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", `text/plain; version=0.0.4`)
+				w.Write([]byte{})
+			},
+		),
+	)
+
+	tlsCAChain, err := ioutil.ReadFile(TLSCAChainPath)
+	if err != nil {
+		t.Errorf("Can't read %s", TLSCAChainPath)
+		return
+	}
+	serverCertificate, err := tls.LoadX509KeyPair(ServerCertificatePath, ServerKeyPath)
+	if err != nil {
+		t.Errorf("Can't load X509 key pair %s - %s", ServerCertificatePath, ServerKeyPath)
+		return
+	}
+
+	rootCAs := x509.NewCertPool()
+	rootCAs.AppendCertsFromPEM(tlsCAChain)
+
+	server.TLS = &tls.Config{
+		Certificates: make([]tls.Certificate, 1),
+		RootCAs:      rootCAs,
+		ClientAuth:   tls.RequireAndVerifyClientCert,
+		ClientCAs:    rootCAs,
+		ServerName:   "127.0.0.1",
+	}
+	server.TLS.Certificates[0] = serverCertificate
+
+	server.StartTLS()
+	defer server.Close()
+	url, _ := url.Parse(server.URL)
+
+	interval, _ := model.ParseDuration("20ms")
+	timeout, _ := model.ParseDuration("19ms")
+	config := &config.ScrapeConfig{
+		ScrapeInterval: interval,
+		ScrapeTimeout:  timeout,
+		RelabelConfigs: []*relabel.Config{
+			{
+				SourceLabels: model.LabelNames{model.ServerNameLabel},
+				Replacement:  "badname",
+				Regex:        relabel.MustNewRegexp("127.0.0.1"),
+				TargetLabel:  model.ServerNameLabel,
+				Action:       relabel.Replace,
+			},
+		},
+		HTTPClientConfig: config_util.HTTPClientConfig{
+			TLSConfig: config_util.TLSConfig{
+				CAFile:             TLSCAChainPath,
+				CertFile:           ClientCertificatePath,
+				KeyFile:            ClientKeyNoPassPath,
+				InsecureSkipVerify: false,
+				ServerName:         "127.0.0.1",
+			},
+		},
+	}
+	sp, _ := newScrapePool(config, &nopAppendable{}, 0, nil, false)
+	tgts := []*targetgroup.Group{
+		{
+			Targets: []model.LabelSet{
+				{model.AddressLabel: model.LabelValue(url.Host), model.SchemeLabel: "https"},
+			},
+		},
+	}
+
+	sp.Sync(tgts)
+	defer sp.stop()
+	time.Sleep(50 * time.Millisecond)
+
+	require.EqualError(t, sp.ActiveTargets()[0].LastError(), fmt.Sprintf("Get %q: x509: certificate is valid for localhost, not badname", url))
 }
