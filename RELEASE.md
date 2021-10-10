@@ -96,8 +96,12 @@ git commit -m "Update dependencies"
 #### Updating React dependencies
 
 The React application recently moved to a monorepo system with multiple internal npm packages. Dependency upgrades are
-quite sensitive for the time being and should be done manually with caution. We are researching ways to automate and
-improve this.
+quite sensitive for the time being and should be done manually with caution. 
+
+When you want to update a dependency, you have to go on every internal npm packages where the dependency is used to 
+change manually the version. Once you took care of that, you need to go back to `web/ui` and run `npm install`
+
+**NOTE**: We are researching ways to automate and improve this.
 
 ### 1. Prepare your release
 
