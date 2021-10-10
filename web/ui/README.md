@@ -25,7 +25,7 @@ react-app and also by others consumers (like Thanos)
 To be able to build the react application you need:
 
 * npm >= v7
-* node >= v14
+* node >= v16
 
 ### Installing npm dependencies
 
