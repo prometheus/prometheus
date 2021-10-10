@@ -78,6 +78,7 @@ require (
 )
 
 replace (
+	github.com/prometheus/common => github.com/LeviHarrison/common v0.30.1-0.20210912202627-d9fc5f48ec67
 	k8s.io/klog => github.com/simonpasquier/klog-gokit v0.3.0
 	k8s.io/klog/v2 => github.com/simonpasquier/klog-gokit/v3 v3.0.0
 )

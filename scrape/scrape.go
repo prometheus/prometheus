@@ -18,10 +18,12 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/tls"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"math"
+	"net"
 	"net/http"
 	"reflect"
 	"strconv"
@@ -269,7 +271,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed 
 		logger = log.NewNopLogger()
 	}
 
-	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, cfg.JobName)
+	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, cfg.JobName, config_util.WithDialTLSContextFunc(newDialTLSContextFunc(cfg)))
 	if err != nil {
 		targetScrapePoolsFailed.Inc()
 		return nil, errors.Wrap(err, "error creating HTTP client")
@@ -380,7 +382,7 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 	targetScrapePoolReloads.Inc()
 	start := time.Now()
 
-	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, cfg.JobName)
+	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, cfg.JobName, config_util.WithDialTLSContextFunc(newDialTLSContextFunc(cfg)))
 	if err != nil {
 		targetScrapePoolReloadsFailed.Inc()
 		return errors.Wrap(err, "error creating HTTP client")
@@ -737,7 +739,8 @@ func (s *targetScraper) scrape(ctx context.Context, w io.Writer) (string, error)
 		s.req = req
 	}
 
-	resp, err := s.client.Do(s.req.WithContext(ctx))
+	c := context.WithValue(ctx, model.ServerNameLabel, s.Target.labels.Get(model.ServerNameLabel))
+	resp, err := s.client.Do(s.req.WithContext(c))
 	if err != nil {
 		return "", err
 	}
@@ -1740,4 +1743,23 @@ func reusableCache(r, l *config.ScrapeConfig) bool {
 		return false
 	}
 	return reflect.DeepEqual(zeroConfig(r), zeroConfig(l))
+}
+
+func newDialTLSContextFunc(cfg *config.ScrapeConfig) config_util.DialTLSContextFunc {
+	tlsConfig, _ := config_util.NewTLSConfig(&cfg.HTTPClientConfig.TLSConfig)
+
+	return func(ctx context.Context, network, addr string) (net.Conn, error) {
+		t := tlsConfig
+
+		if v := ctx.Value(model.ServerNameLabel); v != nil {
+			if v, ok := v.(string); ok {
+				t.ServerName = v
+			}
+		}
+
+		dialer := &tls.Dialer{
+			Config: t,
+		}
+		return dialer.DialContext(ctx, network, addr)
+	}
 }

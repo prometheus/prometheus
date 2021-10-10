@@ -368,6 +368,7 @@ func populateLabels(lset labels.Labels, cfg *config.ScrapeConfig) (res, orig lab
 		{Name: model.ScrapeTimeoutLabel, Value: cfg.ScrapeTimeout.String()},
 		{Name: model.MetricsPathLabel, Value: cfg.MetricsPath},
 		{Name: model.SchemeLabel, Value: cfg.Scheme},
+		{Name: model.ServerNameLabel, Value: cfg.HTTPClientConfig.TLSConfig.ServerName},
 	}
 	lb := labels.NewBuilder(lset)
 
