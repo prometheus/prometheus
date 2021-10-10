@@ -5,11 +5,7 @@ sort_rank: 3
 
 # Alerting rules
 
-Alerting rules allow you to define alert conditions based on Prometheus
-expression language expressions and to send notifications about firing alerts
-to an external service. Whenever the alert expression results in one or more
-vector elements at a given point in time, the alert counts as active for these
-elements' label sets.
+You can use alerting rules to set alert conditions based on Prometheus expression language expressions and to send notifications to an external service when alerts are fired. When the alert expression produces one or more vector items at a given moment, the alert is considered active for the label sets of these elements.
 
 ### Defining alerting rules
 
@@ -81,15 +77,10 @@ groups:
 
 ### Inspecting alerts during runtime
 
-To manually inspect which alerts are active (pending or firing), navigate to
-the "Alerts" tab of your Prometheus instance. This will show you the exact
-label sets for which each defined alert is currently active.
+Navigate to the "Alerts" page of your Prometheus instance to manually verify which alerts are active (pending or firing). This will show you which label sets are currently active for each defined alert.
 
-For pending and firing alerts, Prometheus also stores synthetic time series of
-the form `ALERTS{alertname="<alert name>", alertstate="<pending or firing>", <additional alert labels>}`.
-The sample value is set to `1` as long as the alert is in the indicated active
-(pending or firing) state, and the series is marked stale when this is no
-longer the case.
+Prometheus also saves synthetic time series of the type 'ALERTSalertname="alert name>", alertstate="pending or firing>", additional alert labels>' for pending and firing alerts. 
+When the alert is in the designated active (pending or firing) state, the sample value is set to '1', and the series is tagged stale when this is no longer the case.
 
 ### Sending alert notifications
 
@@ -98,8 +89,6 @@ they are not a fully-fledged notification solution. Another layer is needed to
 add summarization, notification rate limiting, silencing and alert dependencies
 on top of the simple alert definitions. In Prometheus's ecosystem, the
 [Alertmanager](https://prometheus.io/docs/alerting/alertmanager/) takes on this
-role. Thus, Prometheus may be configured to periodically send information about
-alert states to an Alertmanager instance, which then takes care of dispatching
-the right notifications.  
+role. As a result, Prometheus can be set up to provide information about alert states to an Alertmanager instance, which will subsequently handle delivering the appropriate notifications. 
 Prometheus can be [configured](configuration.md) to automatically discover available
 Alertmanager instances through its service discovery integrations.
