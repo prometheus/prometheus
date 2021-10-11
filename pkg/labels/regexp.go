@@ -324,7 +324,7 @@ func stringMatcherFromRegexp(re *syntax.Regexp) StringMatcher {
 		if left == nil && right == nil {
 			// if there's no any matchers on both side it's a concat of literals
 			if len(matches) > 0 {
-				var or []StringMatcher
+			or := make([]StringMatcher, 0, len(matches))
 				for _, match := range matches {
 					or = append(or, &equalStringMatcher{
 						s:             match,
