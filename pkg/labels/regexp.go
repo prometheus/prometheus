@@ -410,10 +410,10 @@ type anyStringMatcher struct {
 }
 
 func (m *anyStringMatcher) Matches(s string) bool {
-	if !m.matchNL && strings.ContainsRune(s, '\n') {
+	if !m.allowEmpty && len(s) == 0 {
 		return false
 	}
-	if !m.allowEmpty && len(s) == 0 {
+	if !m.matchNL && strings.ContainsRune(s, '\n') {
 		return false
 	}
 	return true

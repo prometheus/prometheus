@@ -82,8 +82,14 @@ func TestNewFastRegexMatcher(t *testing.T) {
 }
 
 func BenchmarkNewFastRegexMatcher(b *testing.B) {
-	benchValues := append(values,
-		RandStringRunes(128), RandStringRunes(256), RandStringRunes(1024))
+	benchValues := values
+	for _, v := range values {
+		for i := 5; i < 50; i = i + 5 {
+			benchValues = append(benchValues, v+RandStringRunes(i))
+			benchValues = append(benchValues, RandStringRunes(i)+v+RandStringRunes(i))
+			benchValues = append(benchValues, RandStringRunes(i)+v)
+		}
+	}
 	for _, r := range regexes {
 		r := r
 		b.Run(r, func(b *testing.B) {
