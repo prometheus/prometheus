@@ -14,48 +14,95 @@
 package labels
 
 import (
+	"math/rand"
+	"regexp"
 	"regexp/syntax"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
 
-func TestNewFastRegexMatcher(t *testing.T) {
-	cases := []struct {
-		regex    string
-		value    string
-		expected bool
-	}{
-		{regex: "(foo|bar)", value: "foo", expected: true},
-		{regex: "(foo|bar)", value: "foo bar", expected: false},
-		{regex: "(foo|bar)", value: "bar", expected: true},
-		{regex: "foo.*", value: "foo bar", expected: true},
-		{regex: "foo.*", value: "bar foo", expected: false},
-		{regex: ".*foo", value: "foo bar", expected: false},
-		{regex: ".*foo", value: "bar foo", expected: true},
-		{regex: ".*foo", value: "foo", expected: true},
-		{regex: "^.*foo$", value: "foo", expected: true},
-		{regex: "^.+foo$", value: "foo", expected: false},
-		{regex: "^.+foo$", value: "bfoo", expected: true},
-		{regex: ".*", value: "\n", expected: false},
-		{regex: ".*", value: "\nfoo", expected: false},
-		{regex: ".*foo", value: "\nfoo", expected: false},
-		{regex: "foo.*", value: "foo\n", expected: false},
-		{regex: "foo\n.*", value: "foo\n", expected: true},
-		{regex: ".*foo.*", value: "foo", expected: true},
-		{regex: ".*foo.*", value: "foo bar", expected: true},
-		{regex: ".*foo.*", value: "hello foo world", expected: true},
-		{regex: ".*foo.*", value: "hello foo\n world", expected: false},
-		{regex: ".*foo\n.*", value: "hello foo\n world", expected: true},
-		{regex: ".*", value: "foo", expected: true},
-		{regex: "", value: "foo", expected: false},
-		{regex: "", value: "", expected: true},
-	}
+func init() {
+	rand.Seed(time.Now().UnixNano())
+}
 
-	for _, c := range cases {
-		m, err := NewFastRegexMatcher(c.regex)
-		require.NoError(t, err)
-		require.Equal(t, c.expected, m.MatchString(c.value))
+var (
+	letterRunes = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+	regexes     = []string{
+		"(foo|bar)",
+		"foo.*",
+		".*foo",
+		"^.*foo$",
+		"^.+foo$",
+		".*",
+		".+",
+		"foo.+",
+		".+foo",
+		"foo\n.+",
+		"foo\n.*",
+		".*foo.*",
+		".+foo.+",
+		"",
+		"(?s:.*)",
+		"(?s:.+)",
+		"(?s:^.*foo$)",
+		"^(?i:foo|oo)|(bar)$",
+		"((.*)(bar|b|buzz)(.+)|foo)$",
+		"^$",
+		"(prometheus|api_prom)_api_v1_.+",
+		"10\\.0\\.(1|2)\\.+",
+		"10\\.0\\.(1|2).+",
+		"((fo(bar))|.+foo)",
+	}
+	values = []string{
+		"foo", " foo bar", "bar", "buzz\nbar", "bar foo", "bfoo", "\n", "\nfoo", "foo\n", "hello foo world", "hello foo\n world", "",
+		"FOO", "Foo", "OO", "Oo", "\nfoo\n", strings.Repeat("f", 20), "prometheus", "prometheus_api_v1", "prometheus_api_v1_foo",
+		"10.0.1.20", "10.0.2.10", "10.0.3.30", "10.0.4.40",
+	}
+)
+
+func TestNewFastRegexMatcher(t *testing.T) {
+	for _, r := range regexes {
+		r := r
+		for _, v := range values {
+			v := v
+			t.Run(r+` on "`+v+`"`, func(t *testing.T) {
+				t.Parallel()
+				m, err := NewFastRegexMatcher(r)
+				require.NoError(t, err)
+				re, err := regexp.Compile("^(?:" + r + ")$")
+				require.NoError(t, err)
+				require.Equal(t, re.MatchString(v), m.MatchString(v))
+			})
+		}
+
+	}
+}
+
+func BenchmarkNewFastRegexMatcher(b *testing.B) {
+	benchValues := values
+	for _, v := range values {
+		for i := 5; i < 50; i = i + 5 {
+			benchValues = append(benchValues, v+RandStringRunes(i))
+			benchValues = append(benchValues, RandStringRunes(i)+v+RandStringRunes(i))
+			benchValues = append(benchValues, RandStringRunes(i)+v)
+		}
+	}
+	for _, r := range regexes {
+		r := r
+		b.Run(r, func(b *testing.B) {
+			m, err := NewFastRegexMatcher(r)
+			require.NoError(b, err)
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				for _, v := range benchValues {
+					_ = m.MatchString(v)
+				}
+			}
+		})
+
 	}
 }
 
@@ -157,4 +204,75 @@ func TestFindSetMatches(t *testing.T) {
 		})
 
 	}
+}
+
+func Test_OptimizeRegex(t *testing.T) {
+	for _, c := range []struct {
+		pattern string
+		exp     StringMatcher
+	}{
+		{".*", &anyStringMatcher{allowEmpty: true, matchNL: false}},
+		{".*?", &anyStringMatcher{allowEmpty: true, matchNL: false}},
+		{"(?s:.*)", &anyStringMatcher{allowEmpty: true, matchNL: true}},
+		{"(.*)", &anyStringMatcher{allowEmpty: true, matchNL: false}},
+		{"^.*$", &anyStringMatcher{allowEmpty: true, matchNL: false}},
+		{".+", &anyStringMatcher{allowEmpty: false, matchNL: false}},
+		{"(?s:.+)", &anyStringMatcher{allowEmpty: false, matchNL: true}},
+		{"^.+$", &anyStringMatcher{allowEmpty: false, matchNL: false}},
+		{"(.+)", &anyStringMatcher{allowEmpty: false, matchNL: false}},
+		{"", emptyStringMatcher{}},
+		{"^$", emptyStringMatcher{}},
+		{"^foo$", &equalStringMatcher{s: "foo", caseSensitive: true}},
+		{"^(?i:foo)$", &equalStringMatcher{s: "FOO", caseSensitive: false}},
+		{"^(?i:foo)|(bar)$", orStringMatcher([]StringMatcher{&equalStringMatcher{s: "FOO", caseSensitive: false}, &equalStringMatcher{s: "bar", caseSensitive: true}})},
+		{"^(?i:foo|oo)|(bar)$", orStringMatcher([]StringMatcher{orStringMatcher([]StringMatcher{&equalStringMatcher{s: "FOO", caseSensitive: false}, &equalStringMatcher{s: "OO", caseSensitive: false}}), &equalStringMatcher{s: "bar", caseSensitive: true}})},
+		{".*foo.*", &containsStringMatcher{substrings: []string{"foo"}, left: &anyStringMatcher{allowEmpty: true, matchNL: false}, right: &anyStringMatcher{allowEmpty: true, matchNL: false}}},
+		{"(.*)foo.*", &containsStringMatcher{substrings: []string{"foo"}, left: &anyStringMatcher{allowEmpty: true, matchNL: false}, right: &anyStringMatcher{allowEmpty: true, matchNL: false}}},
+		{"(.*)foo(.*)", &containsStringMatcher{substrings: []string{"foo"}, left: &anyStringMatcher{allowEmpty: true, matchNL: false}, right: &anyStringMatcher{allowEmpty: true, matchNL: false}}},
+		{"(.+)foo(.*)", &containsStringMatcher{substrings: []string{"foo"}, left: &anyStringMatcher{allowEmpty: false, matchNL: false}, right: &anyStringMatcher{allowEmpty: true, matchNL: false}}},
+		{"^.+foo.+", &containsStringMatcher{substrings: []string{"foo"}, left: &anyStringMatcher{allowEmpty: false, matchNL: false}, right: &anyStringMatcher{allowEmpty: false, matchNL: false}}},
+		{"^(.*)(foo)(.*)$", &containsStringMatcher{substrings: []string{"foo"}, left: &anyStringMatcher{allowEmpty: true, matchNL: false}, right: &anyStringMatcher{allowEmpty: true, matchNL: false}}},
+		{"^(.*)(foo|foobar)(.*)$", &containsStringMatcher{substrings: []string{"foo", "foobar"}, left: &anyStringMatcher{allowEmpty: true, matchNL: false}, right: &anyStringMatcher{allowEmpty: true, matchNL: false}}},
+		{"^(.*)(foo|foobar)(.+)$", &containsStringMatcher{substrings: []string{"foo", "foobar"}, left: &anyStringMatcher{allowEmpty: true, matchNL: false}, right: &anyStringMatcher{allowEmpty: false, matchNL: false}}},
+		{"^(.*)(bar|b|buzz)(.+)$", &containsStringMatcher{substrings: []string{"bar", "b", "buzz"}, left: &anyStringMatcher{allowEmpty: true, matchNL: false}, right: &anyStringMatcher{allowEmpty: false, matchNL: false}}},
+		{"10\\.0\\.(1|2)\\.+", nil},
+		{"10\\.0\\.(1|2).+", &containsStringMatcher{substrings: []string{"10.0.1", "10.0.2"}, left: nil, right: &anyStringMatcher{allowEmpty: false, matchNL: false}}},
+		{"^.+foo", &containsStringMatcher{substrings: []string{"foo"}, left: &anyStringMatcher{allowEmpty: false, matchNL: false}, right: nil}},
+		{"foo-.*$", &containsStringMatcher{substrings: []string{"foo-"}, left: nil, right: &anyStringMatcher{allowEmpty: true, matchNL: false}}},
+		{"(prometheus|api_prom)_api_v1_.+", &containsStringMatcher{substrings: []string{"prometheus_api_v1_", "api_prom_api_v1_"}, left: nil, right: &anyStringMatcher{allowEmpty: false, matchNL: false}}},
+		{"^((.*)(bar|b|buzz)(.+)|foo)$", orStringMatcher([]StringMatcher{&containsStringMatcher{substrings: []string{"bar", "b", "buzz"}, left: &anyStringMatcher{allowEmpty: true, matchNL: false}, right: &anyStringMatcher{allowEmpty: false, matchNL: false}}, &equalStringMatcher{s: "foo", caseSensitive: true}})},
+		{"((fo(bar))|.+foo)", orStringMatcher([]StringMatcher{orStringMatcher([]StringMatcher{&equalStringMatcher{s: "fobar", caseSensitive: true}}), &containsStringMatcher{substrings: []string{"foo"}, left: &anyStringMatcher{allowEmpty: false, matchNL: false}, right: nil}})},
+		{"(.+)/(gateway|cortex-gw|cortex-gw-internal)", &containsStringMatcher{substrings: []string{"/gateway", "/cortex-gw", "/cortex-gw-internal"}, left: &anyStringMatcher{allowEmpty: false, matchNL: false}, right: nil}},
+		// we don't support case insensitive matching for contains.
+		// This is because there's no strings.IndexOfFold function.
+		// We can revisit later if this is really popular by using strings.ToUpper.
+		{"^(.*)((?i)foo|foobar)(.*)$", nil},
+		{"(api|rpc)_(v1|prom)_((?i)push|query)", nil},
+		{"[a-z][a-z]", nil},
+		{"[1^3]", nil},
+		{".*foo.*bar.*", nil},
+		{`\d*`, nil},
+		{".", nil},
+		// This one is not supported because  `stringMatcherFromRegexp` is not reentrant for syntax.OpConcat.
+		// It would make the code too complex to handle it.
+		{"/|/bar.*", nil},
+		{"(.+)/(foo.*|bar$)", nil},
+	} {
+		c := c
+		t.Run(c.pattern, func(t *testing.T) {
+			t.Parallel()
+			parsed, err := syntax.Parse(c.pattern, syntax.Perl)
+			require.NoError(t, err)
+			matches := stringMatcherFromRegexp(parsed)
+			require.Equal(t, c.exp, matches)
+		})
+	}
+}
+
+func RandStringRunes(n int) string {
+	b := make([]rune, n)
+	for i := range b {
+		b[i] = letterRunes[rand.Intn(len(letterRunes))]
+	}
+	return string(b)
 }
