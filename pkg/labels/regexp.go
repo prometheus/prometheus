@@ -258,10 +258,14 @@ func optimizeConcatRegex(r *syntax.Regexp) (prefix, suffix, contains string) {
 	return
 }
 
+// StringMatcher is a matcher that matches a string in place of a regular expression.
 type StringMatcher interface {
 	Matches(s string) bool
 }
 
+// stringMatcherFromRegexp attempts to replace a common regexp with a string matcher.
+// It returns nil if the regexp is not supported.
+// For examples, it will replace `.*foo` with `foo.*` and `.*foo.*` with `(?i)foo`.
 func stringMatcherFromRegexp(re *syntax.Regexp) StringMatcher {
 	clearCapture(re)
 	clearBeginEndText(re)
@@ -301,7 +305,7 @@ func stringMatcherFromRegexp(re *syntax.Regexp) StringMatcher {
 			return stringMatcherFromRegexp(re.Sub[0])
 		}
 		var left, right StringMatcher
-
+		// Let's try to find if there's a first and last any matchers.
 		if re.Sub[0].Op == syntax.OpPlus || re.Sub[0].Op == syntax.OpStar {
 			left = stringMatcherFromRegexp(re.Sub[0])
 			if left == nil {
@@ -318,6 +322,7 @@ func stringMatcherFromRegexp(re *syntax.Regexp) StringMatcher {
 		}
 		matches := findSetMatches(re, "")
 		if left == nil && right == nil {
+			// if there's no any matchers on both side it's a concat of literals
 			if len(matches) > 0 {
 				var or []StringMatcher
 				for _, match := range matches {
@@ -329,6 +334,7 @@ func stringMatcherFromRegexp(re *syntax.Regexp) StringMatcher {
 				return orStringMatcher(or)
 			}
 		}
+		// others we found literals in the middle.
 		if len(matches) > 0 {
 			return &containsStringMatcher{
 				substrings: matches,
@@ -340,6 +346,10 @@ func stringMatcherFromRegexp(re *syntax.Regexp) StringMatcher {
 	return nil
 }
 
+// containsStringMatcher matches a string if it contains any of the substrings.
+// if left and right are not nil, it's a contains operation where left and right must match any strings.
+// if left is nil, it's a hasPrefix operation and right must match any strings.
+// Finally if right is nil it's a hasSuffix operation and left must match any strings.
 type containsStringMatcher struct {
 	substrings []string
 	left       StringMatcher
@@ -375,12 +385,14 @@ func (m *containsStringMatcher) Matches(s string) bool {
 	return false
 }
 
+// emptyStringMatcher matches an empty string.
 type emptyStringMatcher struct{}
 
 func (m emptyStringMatcher) Matches(s string) bool {
 	return len(s) == 0
 }
 
+// orStringMatcher matches any of the sub-matchers.
 type orStringMatcher []StringMatcher
 
 func (m orStringMatcher) Matches(s string) bool {
@@ -392,6 +404,7 @@ func (m orStringMatcher) Matches(s string) bool {
 	return false
 }
 
+// equalStringMatcher matches a string exactly and support case insensitive.
 type equalStringMatcher struct {
 	s             string
 	caseSensitive bool
@@ -404,6 +417,8 @@ func (m *equalStringMatcher) Matches(s string) bool {
 	return strings.EqualFold(m.s, s)
 }
 
+// anyStringMatcher is a matcher that matches any string.
+// It is used for the + and * operator. matchNL tells if it should matches newlines or not.
 type anyStringMatcher struct {
 	allowEmpty bool
 	matchNL    bool

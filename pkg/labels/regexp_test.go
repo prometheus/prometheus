@@ -250,6 +250,9 @@ func Test_OptimizeRegex(t *testing.T) {
 		{"(api|rpc)_(v1|prom)_((?i)push|query)", nil},
 		{"[a-z][a-z]", nil},
 		{"[1^3]", nil},
+		{".*foo.*bar.*", nil},
+		{`\d*`, nil},
+		{".", nil},
 		// This one is not supported because  `stringMatcherFromRegexp` is not reentrant for syntax.OpConcat.
 		// It would make the code too complex to handle it.
 		{"/|/bar.*", nil},
