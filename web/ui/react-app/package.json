@@ -21,7 +21,7 @@
     "@fortawesome/react-fontawesome": "^0.1.4",
     "@nexucis/fuzzy": "^0.3.0",
     "bootstrap": "^4.6.0",
-    "codemirror-promql": "0.18.0",
+    "codemirror-promql": "0.17.0",
     "css.escape": "^1.5.1",
     "downshift": "^3.4.8",
     "i": "^0.3.6",
