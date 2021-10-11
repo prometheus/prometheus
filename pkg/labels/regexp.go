@@ -322,18 +322,17 @@ func stringMatcherFromRegexp(re *syntax.Regexp) StringMatcher {
 		}
 		// findSetMatches will returns only literals that are case sensitive.
 		matches := findSetMatches(re, "")
-		if left == nil && right == nil {
+		if left == nil && right == nil && len(matches) > 0 {
 			// if there's no any matchers on both side it's a concat of literals
-			if len(matches) > 0 {
-				or := make([]StringMatcher, 0, len(matches))
-				for _, match := range matches {
-					or = append(or, &equalStringMatcher{
-						s:             match,
-						caseSensitive: true,
-					})
-				}
-				return orStringMatcher(or)
+
+			or := make([]StringMatcher, 0, len(matches))
+			for _, match := range matches {
+				or = append(or, &equalStringMatcher{
+					s:             match,
+					caseSensitive: true,
+				})
 			}
+			return orStringMatcher(or)
 		}
 		// others we found literals in the middle.
 		if len(matches) > 0 {
