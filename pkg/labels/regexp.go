@@ -347,9 +347,9 @@ func stringMatcherFromRegexp(re *syntax.Regexp) StringMatcher {
 }
 
 // containsStringMatcher matches a string if it contains any of the substrings.
-// if left and right are not nil, it's a contains operation where left and right must match any strings.
-// if left is nil, it's a hasPrefix operation and right must match any strings.
-// Finally if right is nil it's a hasSuffix operation and left must match any strings.
+// If left and right are not nil, it's a contains operation where left and right must match.
+// If left is nil, it's a hasPrefix operation and right must match.
+// Finally if right is nil it's a hasSuffix operation and left must match.
 type containsStringMatcher struct {
 	substrings []string
 	left       StringMatcher
