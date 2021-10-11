@@ -17,55 +17,90 @@ import (
 	"math"
 )
 
-// SparseHistogram encodes a sparse histogram
-// full details: https://docs.google.com/document/d/1cLNv3aufPZb3fNfaJgdaRBZsInZKKIHo9E6HinJVbpM/edit#
-// the most tricky bit is how bucket indices represent real bucket boundaries
+// Histogram encodes a sparse, high-resolution histogram. See the design
+// document for full details:
+// https://docs.google.com/document/d/1cLNv3aufPZb3fNfaJgdaRBZsInZKKIHo9E6HinJVbpM/edit#
 //
-// an example for schema 0 (which doubles the size of consecutive buckets):
+// The most tricky bit is how bucket indices represent real bucket boundaries.
+// An example for schema 0 (by which each bucket is twice as wide as the
+// previous bucket):
 //
-// buckets syntax (LE,GE)              (-2,-1)  (-1,-0.5) (-0.5,-0.25) ... (-0.001-0.001) ... (0.25-0.5)(0.5-1)  (1-2) ....
-//                                                                                ^
-// zero bucket (here width a width of 0.001)                                      ZB
-// pos bucket idx                                                                         ...      -1       0       1    2    3
-// neg bucket idx             3    2    1         0          -1        ...
-// actively used bucket indices themselves are represented by the spans
-type SparseHistogram struct {
-	Schema                           int32
-	ZeroThreshold                    float64
-	ZeroCount, Count                 uint64
-	Sum                              float64
-	PositiveSpans, NegativeSpans     []Span
+//   Bucket boundaries →              [-2,-1)  [-1,-0.5) [-0.5,-0.25) ... [-0.001,0.001] ... (0.25,0.5] (0.5,1]  (1,2] ....
+//                                       ↑        ↑           ↑                  ↑                ↑         ↑      ↑
+//   Zero bucket (width e.g. 0.001) →    |        |           |                  ZB               |         |      |
+//   Positive bucket indices →           |        |           |                          ...     -1         0      1    2    3
+//   Negative bucket indices →  3   2    1        0          -1       ...
+//
+// Wich bucket indices are actually used is determined by the spans.
+type Histogram struct {
+	// Currently valid schema numbers are -4 <= n <= 8.  They are all for
+	// base-2 bucket schemas, where 1 is a bucket boundary in each case, and
+	// then each power of two is divided into 2^n logarithmic buckets.  Or
+	// in other words, each bucket boundary is the previous boundary times
+	// 2^(2^-n).
+	Schema int32
+	// Width of the zero bucket.
+	ZeroThreshold float64
+	// Observations falling into the zero bucket.
+	ZeroCount uint64
+	// Total number of observations.
+	Count uint64
+	// Sum of observations.
+	Sum float64
+	// Spans for positive and negative buckets (see Span below).
+	PositiveSpans, NegativeSpans []Span
+	// Observation counts in buckets. The first element is an absolute
+	// count. All following ones are deltas relative to the previous
+	// element.
 	PositiveBuckets, NegativeBuckets []int64
 }
 
+// A Span defines a continuous sequence of buckets.
 type Span struct {
+	// Gap to previous span (always positive), or starting index for the 1st
+	// span (which can be negative).
 	Offset int32
+	// Length of the span.
 	Length uint32
 }
 
-func (s SparseHistogram) Copy() SparseHistogram {
-	c := s
+// Copy returns a deep copy of the Histogram.
+func (h Histogram) Copy() Histogram {
+	c := h
 
-	if s.PositiveSpans != nil {
-		c.PositiveSpans = make([]Span, len(s.PositiveSpans))
-		copy(c.PositiveSpans, s.PositiveSpans)
+	if h.PositiveSpans != nil {
+		c.PositiveSpans = make([]Span, len(h.PositiveSpans))
+		copy(c.PositiveSpans, h.PositiveSpans)
 	}
-	if s.NegativeSpans != nil {
-		c.NegativeSpans = make([]Span, len(s.NegativeSpans))
-		copy(c.NegativeSpans, s.NegativeSpans)
+	if h.NegativeSpans != nil {
+		c.NegativeSpans = make([]Span, len(h.NegativeSpans))
+		copy(c.NegativeSpans, h.NegativeSpans)
 	}
-	if s.PositiveBuckets != nil {
-		c.PositiveBuckets = make([]int64, len(s.PositiveBuckets))
-		copy(c.PositiveBuckets, s.PositiveBuckets)
+	if h.PositiveBuckets != nil {
+		c.PositiveBuckets = make([]int64, len(h.PositiveBuckets))
+		copy(c.PositiveBuckets, h.PositiveBuckets)
 	}
-	if s.NegativeBuckets != nil {
-		c.NegativeBuckets = make([]int64, len(s.NegativeBuckets))
-		copy(c.NegativeBuckets, s.NegativeBuckets)
+	if h.NegativeBuckets != nil {
+		c.NegativeBuckets = make([]int64, len(h.NegativeBuckets))
+		copy(c.NegativeBuckets, h.NegativeBuckets)
 	}
 
 	return c
 }
 
+// CumulativeBucketIterator returns a BucketIterator to iterate over a
+// cumulative view of the buckets. This method currently only supports
+// Histograms without negative buckets and panics if the Histogram has negative
+// buckets. It is currently only used for testing.
+func (h Histogram) CumulativeBucketIterator() BucketIterator {
+	if len(h.NegativeBuckets) > 0 {
+		panic("CumulativeIterator called on Histogram with negative buckets")
+	}
+	return &cumulativeBucketIterator{h: h, posSpansIdx: -1}
+}
+
+// BucketIterator iterates over the buckets of a Histogram, returning decoded
+// buckets.
 type BucketIterator interface {
 	// Next advances the iterator by one.
 	Next() bool
@@ -76,28 +111,23 @@ type BucketIterator interface {
 	Err() error
 }
 
+// Bucket represents a bucket (currently only a cumulative one with an upper
+// inclusive bound and a cumulative count).
 type Bucket struct {
-	Le    float64
+	Upper float64
 	Count uint64
 }
 
-// CumulativeExpandSparseHistogram expands the given histogram to produce cumulative buckets.
-// It assumes that the total length of spans matches the number of buckets for pos and neg respectively.
-// TODO: supports only positive buckets, also do for negative.
-func CumulativeExpandSparseHistogram(h SparseHistogram) BucketIterator {
-	return &cumulativeBucketIterator{h: h, posSpansIdx: -1}
-}
-
 type cumulativeBucketIterator struct {
-	h SparseHistogram
+	h Histogram
 
 	posSpansIdx   int    // Index in h.PositiveSpans we are in. -1 means 0 bucket.
-	posBucketsIdx int    // Index in h.PositiveBuckets
+	posBucketsIdx int    // Index in h.PositiveBuckets.
 	idxInSpan     uint32 // Index in the current span. 0 <= idxInSpan < span.Length.
 
 	initialised         bool
 	currIdx             int32   // The actual bucket index after decoding from spans.
-	currLe              float64 // The upper boundary of the current bucket.
+	currUpper           float64 // The upper boundary of the current bucket.
 	currCount           int64   // Current non-cumulative count for the current bucket. Does not apply for empty bucket.
 	currCumulativeCount uint64  // Current "cumulative" count for the current bucket.
 
@@ -116,7 +146,7 @@ func (c *cumulativeBucketIterator) Next() bool {
 			return c.Next()
 		}
 
-		c.currLe = c.h.ZeroThreshold
+		c.currUpper = c.h.ZeroThreshold
 		c.currCount = int64(c.h.ZeroCount)
 		c.currCumulativeCount = uint64(c.currCount)
 		return true
@@ -128,7 +158,7 @@ func (c *cumulativeBucketIterator) Next() bool {
 
 	if c.emptyBucketCount > 0 {
 		// We are traversing through empty buckets at the moment.
-		c.currLe = getLe(c.currIdx, c.h.Schema)
+		c.currUpper = getUpper(c.currIdx, c.h.Schema)
 		c.currIdx++
 		c.emptyBucketCount--
 		return true
@@ -145,7 +175,7 @@ func (c *cumulativeBucketIterator) Next() bool {
 
 	c.currCount += c.h.PositiveBuckets[c.posBucketsIdx]
 	c.currCumulativeCount += uint64(c.currCount)
-	c.currLe = getLe(c.currIdx, c.h.Schema)
+	c.currUpper = getUpper(c.currIdx, c.h.Schema)
 
 	c.posBucketsIdx++
 	c.idxInSpan++
@@ -163,24 +193,26 @@ func (c *cumulativeBucketIterator) Next() bool {
 }
 func (c *cumulativeBucketIterator) At() Bucket {
 	return Bucket{
-		Le:    c.currLe,
+		Upper: c.currUpper,
 		Count: c.currCumulativeCount,
 	}
 }
 func (c *cumulativeBucketIterator) Err() error { return nil }
 
-func getLe(idx, schema int32) float64 {
+func getUpper(idx, schema int32) float64 {
 	if schema < 0 {
 		return math.Ldexp(1, int(idx)<<(-schema))
 	}
 
 	fracIdx := idx & ((1 << schema) - 1)
-	frac := sparseBounds[schema][fracIdx]
+	frac := exponentialBounds[schema][fracIdx]
 	exp := (int(idx) >> schema) + 1
 	return math.Ldexp(frac, exp)
 }
 
-var sparseBounds = [][]float64{
+// exponentialBounds is a precalculated table of bucket bounds in the interval
+// [0.5,1) in schema 0 to 8.
+var exponentialBounds = [][]float64{
 	// Schema "0":
 	{0.5},
 	// Schema 1:

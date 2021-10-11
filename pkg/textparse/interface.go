@@ -16,8 +16,8 @@ package textparse
 import (
 	"mime"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/pkg/exemplar"
-	"github.com/prometheus/prometheus/pkg/histogram"
 	"github.com/prometheus/prometheus/pkg/labels"
 )
 
@@ -29,9 +29,8 @@ type Parser interface {
 	Series() ([]byte, *int64, float64)
 
 	// Histogram returns the bytes of a series with a sparse histogram as a
-	// value, the timestamp if set, and the sparse histogram in the current
-	// sample.
-	Histogram() ([]byte, *int64, histogram.SparseHistogram)
+	// value, the timestamp if set, and the histogram in the current sample.
+	Histogram() ([]byte, *int64, histogram.Histogram)
 
 	// Help returns the metric name and help text in the current entry.
 	// Must only be called after Next returned a help entry.

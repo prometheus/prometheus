@@ -22,8 +22,8 @@ import (
 	"github.com/gogo/protobuf/proto"
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/pkg/exemplar"
-	"github.com/prometheus/prometheus/pkg/histogram"
 	"github.com/prometheus/prometheus/pkg/labels"
 
 	dto "github.com/prometheus/prometheus/prompb/io/prometheus/client"
@@ -266,7 +266,7 @@ metric: <
 		help    string
 		unit    string
 		comment string
-		shs     histogram.SparseHistogram
+		shs     histogram.Histogram
 		e       []exemplar.Exemplar
 	}{
 		{
@@ -332,7 +332,7 @@ metric: <
 		{
 			m: "test_histogram",
 			t: 1234568,
-			shs: histogram.SparseHistogram{
+			shs: histogram.Histogram{
 				Count:         175,
 				ZeroCount:     2,
 				Sum:           0.0008280461746287094,

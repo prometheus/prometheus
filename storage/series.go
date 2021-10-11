@@ -17,7 +17,7 @@ import (
 	"math"
 	"sort"
 
-	"github.com/prometheus/prometheus/pkg/histogram"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -91,8 +91,10 @@ func (it *listSeriesIterator) At() (int64, float64) {
 	return s.T(), s.V()
 }
 
-func (it *listSeriesIterator) AtHistogram() (int64, histogram.SparseHistogram) {
-	return 0, histogram.SparseHistogram{}
+// AtHistogram always returns (0, histogram.Histogram{}) because there is no
+// support for histogram values yet.
+func (it *listSeriesIterator) AtHistogram() (int64, histogram.Histogram) {
+	return 0, histogram.Histogram{}
 }
 
 func (it *listSeriesIterator) ChunkEncoding() chunkenc.Encoding {

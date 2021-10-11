@@ -21,13 +21,15 @@ package chunkenc
 import (
 	"testing"
 
-	"github.com/prometheus/prometheus/pkg/histogram"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/stretchr/testify/require"
 )
 
-// example of a span layout and resulting bucket indices (_idx_ is used in this histogram, others are shown just for context)
-// spans      : [offset: 0, length: 2]                [offset 1, length 1]
-// bucket idx : _0_                _1_      2         [3]                  4 ...
+// Example of a span layout and resulting bucket indices (_idx_ is used in this
+// histogram, others are shown just for context):
+//
+//   spans      : [offset: 0, length: 2]                [offset 1, length 1]
+//   bucket idx : _0_                _1_      2         [3]                  4 ...
 
 func TestBucketIterator(t *testing.T) {
 	type test struct {
@@ -74,7 +76,7 @@ func TestBucketIterator(t *testing.T) {
 			},
 			idxs: []int{100, 101, 102, 103, 112, 113, 114, 115, 116, 117, 118, 119},
 		},
-		// the below 2 sets ore the ones described in compareSpans's comments
+		// The below 2 sets ore the ones described in compareSpans's comments.
 		{
 			spans: []histogram.Span{
 				{Offset: 0, Length: 2},

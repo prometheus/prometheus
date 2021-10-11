@@ -296,7 +296,6 @@ var sampleFlagMap = map[string]string{
 }
 
 func TestEndpoints(t *testing.T) {
-	t.Skip()
 	suite, err := promql.NewTest(t, `
 		load 1m
 			test_metric1{foo="bar"} 0+100x100

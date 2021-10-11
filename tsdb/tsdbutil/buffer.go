@@ -16,7 +16,7 @@ package tsdbutil
 import (
 	"math"
 
-	"github.com/prometheus/prometheus/pkg/histogram"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
@@ -160,8 +160,8 @@ func (it *sampleRingIterator) At() (int64, float64) {
 	return it.r.at(it.i)
 }
 
-func (it *sampleRingIterator) AtHistogram() (int64, histogram.SparseHistogram) {
-	return 0, histogram.SparseHistogram{}
+func (it *sampleRingIterator) AtHistogram() (int64, histogram.Histogram) {
+	return 0, histogram.Histogram{}
 }
 
 func (it *sampleRingIterator) ChunkEncoding() chunkenc.Encoding {

@@ -37,8 +37,8 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/pkg/exemplar"
-	"github.com/prometheus/prometheus/pkg/histogram"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/value"
 	"github.com/prometheus/prometheus/storage"
@@ -2539,15 +2539,15 @@ func TestAppendHistogram(t *testing.T) {
 			require.NoError(t, head.Init(0))
 			app := head.Appender(context.Background())
 
-			type timedHist struct {
+			type timedHistogram struct {
 				t int64
-				h histogram.SparseHistogram
+				h histogram.Histogram
 			}
-			expHists := make([]timedHist, 0, numHistograms)
+			expHistograms := make([]timedHistogram, 0, numHistograms)
 			for i, h := range generateHistograms(numHistograms) {
 				_, err := app.AppendHistogram(0, l, int64(i), h)
 				require.NoError(t, err)
-				expHists = append(expHists, timedHist{int64(i), h})
+				expHistograms = append(expHistograms, timedHistogram{int64(i), h})
 			}
 			require.NoError(t, app.Commit())
 
@@ -2564,13 +2564,13 @@ func TestAppendHistogram(t *testing.T) {
 			require.False(t, ss.Next())
 
 			it := s.Iterator()
-			actHists := make([]timedHist, 0, len(expHists))
+			actHistograms := make([]timedHistogram, 0, len(expHistograms))
 			for it.Next() {
 				t, h := it.AtHistogram()
-				actHists = append(actHists, timedHist{t, h.Copy()})
+				actHistograms = append(actHistograms, timedHistogram{t, h.Copy()})
 			}
 
-			require.Equal(t, expHists, actHists)
+			require.Equal(t, expHistograms, actHistograms)
 		})
 	}
 }
@@ -2586,17 +2586,17 @@ func TestHistogramInWAL(t *testing.T) {
 	require.NoError(t, head.Init(0))
 	app := head.Appender(context.Background())
 
-	type timedHist struct {
+	type timedHistogram struct {
 		t int64
-		h histogram.SparseHistogram
+		h histogram.Histogram
 	}
-	expHists := make([]timedHist, 0, numHistograms)
+	expHistograms := make([]timedHistogram, 0, numHistograms)
 	for i, h := range generateHistograms(numHistograms) {
 		h.NegativeSpans = h.PositiveSpans
 		h.NegativeBuckets = h.PositiveBuckets
 		_, err := app.AppendHistogram(0, l, int64(i), h)
 		require.NoError(t, err)
-		expHists = append(expHists, timedHist{int64(i), h})
+		expHistograms = append(expHistograms, timedHistogram{int64(i), h})
 	}
 	require.NoError(t, app.Commit())
 
@@ -2621,18 +2621,18 @@ func TestHistogramInWAL(t *testing.T) {
 	require.False(t, ss.Next())
 
 	it := s.Iterator()
-	actHists := make([]timedHist, 0, len(expHists))
+	actHistograms := make([]timedHistogram, 0, len(expHistograms))
 	for it.Next() {
 		t, h := it.AtHistogram()
-		actHists = append(actHists, timedHist{t, h.Copy()})
+		actHistograms = append(actHistograms, timedHistogram{t, h.Copy()})
 	}
 
-	require.Equal(t, expHists, actHists)
+	require.Equal(t, expHistograms, actHistograms)
 }
 
-func generateHistograms(n int) (r []histogram.SparseHistogram) {
+func generateHistograms(n int) (r []histogram.Histogram) {
 	for i := 0; i < n; i++ {
-		r = append(r, histogram.SparseHistogram{
+		r = append(r, histogram.Histogram{
 			Count:         5 + uint64(i*4),
 			ZeroCount:     2 + uint64(i),
 			ZeroThreshold: 0.001,
@@ -2957,22 +2957,22 @@ func TestSparseHistogramMetrics(t *testing.T) {
 	})
 	require.NoError(t, head.Init(0))
 
-	expHistSeries, expHistSamples := 0, 0
+	expHSeries, expHSamples := 0, 0
 
 	for x := 0; x < 5; x++ {
-		expHistSeries++
+		expHSeries++
 		l := labels.Labels{{Name: "a", Value: fmt.Sprintf("b%d", x)}}
 		for i, h := range generateHistograms(10) {
 			app := head.Appender(context.Background())
 			_, err := app.AppendHistogram(0, l, int64(i), h)
 			require.NoError(t, err)
 			require.NoError(t, app.Commit())
-			expHistSamples++
+			expHSamples++
 		}
 	}
 
-	require.Equal(t, float64(expHistSeries), prom_testutil.ToFloat64(head.metrics.sparseHistogramSeries))
-	require.Equal(t, float64(expHistSamples), prom_testutil.ToFloat64(head.metrics.sparseHistogramSamplesTotal))
+	require.Equal(t, float64(expHSeries), prom_testutil.ToFloat64(head.metrics.sparseHistogramSeries))
+	require.Equal(t, float64(expHSamples), prom_testutil.ToFloat64(head.metrics.sparseHistogramSamplesTotal))
 
 	require.NoError(t, head.Close())
 	w, err := wal.NewSize(nil, nil, head.wal.Dir(), 32768, false)
@@ -2981,7 +2981,7 @@ func TestSparseHistogramMetrics(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, head.Init(0))
 
-	require.Equal(t, float64(expHistSeries), prom_testutil.ToFloat64(head.metrics.sparseHistogramSeries))
+	require.Equal(t, float64(expHSeries), prom_testutil.ToFloat64(head.metrics.sparseHistogramSeries))
 	require.Equal(t, float64(0), prom_testutil.ToFloat64(head.metrics.sparseHistogramSamplesTotal)) // Counter reset.
 }
 
@@ -2994,11 +2994,11 @@ func TestSparseHistogramStaleSample(t *testing.T) {
 	})
 	require.NoError(t, head.Init(0))
 
-	type timedHist struct {
+	type timedHistogram struct {
 		t int64
-		h histogram.SparseHistogram
+		h histogram.Histogram
 	}
-	expHists := make([]timedHist, 0, numHistograms)
+	expHistograms := make([]timedHistogram, 0, numHistograms)
 
 	testQuery := func(numStale int) {
 		q, err := NewBlockQuerier(head, head.MinTime(), head.MaxTime())
@@ -3014,17 +3014,17 @@ func TestSparseHistogramStaleSample(t *testing.T) {
 		require.False(t, ss.Next())
 
 		it := s.Iterator()
-		actHists := make([]timedHist, 0, len(expHists))
+		actHistograms := make([]timedHistogram, 0, len(expHistograms))
 		for it.Next() {
 			t, h := it.AtHistogram()
-			actHists = append(actHists, timedHist{t, h.Copy()})
+			actHistograms = append(actHistograms, timedHistogram{t, h.Copy()})
 		}
 
 		// We cannot compare StaleNAN with require.Equal, hence checking each histogram manually.
-		require.Equal(t, len(expHists), len(actHists))
+		require.Equal(t, len(expHistograms), len(actHistograms))
 		actNumStale := 0
-		for i, eh := range expHists {
-			ah := actHists[i]
+		for i, eh := range expHistograms {
+			ah := actHistograms[i]
 			if value.IsStaleNaN(eh.h.Sum) {
 				actNumStale++
 				require.True(t, value.IsStaleNaN(ah.h.Sum))
@@ -3040,14 +3040,14 @@ func TestSparseHistogramStaleSample(t *testing.T) {
 	// Adding stale in the same appender.
 	app := head.Appender(context.Background())
 	for _, h := range generateHistograms(numHistograms) {
-		_, err := app.AppendHistogram(0, l, 100*int64(len(expHists)), h)
+		_, err := app.AppendHistogram(0, l, 100*int64(len(expHistograms)), h)
 		require.NoError(t, err)
-		expHists = append(expHists, timedHist{100 * int64(len(expHists)), h})
+		expHistograms = append(expHistograms, timedHistogram{100 * int64(len(expHistograms)), h})
 	}
 	// +1 so that delta-of-delta is not 0.
-	_, err := app.Append(0, l, 100*int64(len(expHists))+1, math.Float64frombits(value.StaleNaN))
+	_, err := app.Append(0, l, 100*int64(len(expHistograms))+1, math.Float64frombits(value.StaleNaN))
 	require.NoError(t, err)
-	expHists = append(expHists, timedHist{100*int64(len(expHists)) + 1, histogram.SparseHistogram{Sum: math.Float64frombits(value.StaleNaN)}})
+	expHistograms = append(expHistograms, timedHistogram{100*int64(len(expHistograms)) + 1, histogram.Histogram{Sum: math.Float64frombits(value.StaleNaN)}})
 	require.NoError(t, app.Commit())
 
 	// Only 1 chunk in the memory, no m-mapped chunk.
@@ -3059,17 +3059,17 @@ func TestSparseHistogramStaleSample(t *testing.T) {
 	// Adding stale in different appender and continuing series after a stale sample.
 	app = head.Appender(context.Background())
 	for _, h := range generateHistograms(2 * numHistograms)[numHistograms:] {
-		_, err := app.AppendHistogram(0, l, 100*int64(len(expHists)), h)
+		_, err := app.AppendHistogram(0, l, 100*int64(len(expHistograms)), h)
 		require.NoError(t, err)
-		expHists = append(expHists, timedHist{100 * int64(len(expHists)), h})
+		expHistograms = append(expHistograms, timedHistogram{100 * int64(len(expHistograms)), h})
 	}
 	require.NoError(t, app.Commit())
 
 	app = head.Appender(context.Background())
 	// +1 so that delta-of-delta is not 0.
-	_, err = app.Append(0, l, 100*int64(len(expHists))+1, math.Float64frombits(value.StaleNaN))
+	_, err = app.Append(0, l, 100*int64(len(expHistograms))+1, math.Float64frombits(value.StaleNaN))
 	require.NoError(t, err)
-	expHists = append(expHists, timedHist{100*int64(len(expHists)) + 1, histogram.SparseHistogram{Sum: math.Float64frombits(value.StaleNaN)}})
+	expHistograms = append(expHistograms, timedHistogram{100*int64(len(expHistograms)) + 1, histogram.Histogram{Sum: math.Float64frombits(value.StaleNaN)}})
 	require.NoError(t, app.Commit())
 
 	// Total 2 chunks, 1 m-mapped.

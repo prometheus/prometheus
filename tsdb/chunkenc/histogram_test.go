@@ -16,21 +16,21 @@ package chunkenc
 import (
 	"testing"
 
-	"github.com/prometheus/prometheus/pkg/histogram"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/stretchr/testify/require"
 )
 
-func TestHistoChunkSameBuckets(t *testing.T) {
-	c := NewHistoChunk()
+func TestHistogramChunkSameBuckets(t *testing.T) {
+	c := NewHistogramChunk()
 	var exp []res
 
-	// Create fresh appender and add the first histogram
+	// Create fresh appender and add the first histogram.
 	app, err := c.Appender()
 	require.NoError(t, err)
 	require.Equal(t, 0, c.NumSamples())
 
 	ts := int64(1234567890)
-	h := histogram.SparseHistogram{
+	h := histogram.Histogram{
 		Count:         5,
 		ZeroCount:     2,
 		Sum:           18.4,
@@ -56,7 +56,7 @@ func TestHistoChunkSameBuckets(t *testing.T) {
 	exp = append(exp, res{t: ts, h: h})
 	require.Equal(t, 2, c.NumSamples())
 
-	// Add update with new appender
+	// Add update with new appender.
 	app, err = c.Appender()
 	require.NoError(t, err)
 
@@ -113,12 +113,12 @@ func TestHistoChunkSameBuckets(t *testing.T) {
 
 type res struct {
 	t int64
-	h histogram.SparseHistogram
+	h histogram.Histogram
 }
 
-// mimics the scenario described for compareSpans()
-func TestHistoChunkBucketChanges(t *testing.T) {
-	c := Chunk(NewHistoChunk())
+// Mimics the scenario described for compareSpans().
+func TestHistogramChunkBucketChanges(t *testing.T) {
+	c := Chunk(NewHistogramChunk())
 
 	// Create fresh appender and add the first histogram.
 	app, err := c.Appender()
@@ -126,7 +126,7 @@ func TestHistoChunkBucketChanges(t *testing.T) {
 	require.Equal(t, 0, c.NumSamples())
 
 	ts1 := int64(1234567890)
-	h1 := histogram.SparseHistogram{
+	h1 := histogram.Histogram{
 		Count:         5,
 		ZeroCount:     2,
 		Sum:           18.4,
@@ -157,24 +157,26 @@ func TestHistoChunkBucketChanges(t *testing.T) {
 	h2.Count += 9
 	h2.ZeroCount++
 	h2.Sum = 30
-	// Existing histogram should get values converted from the above to: 6 3 0 3 0 0 2 4 5 0 1 (previous values with some new empty buckets in between)
+	// Existing histogram should get values converted from the above to:
+	//   6 3 0 3 0 0 2 4 5 0 1 (previous values with some new empty buckets in between)
 	// so the new histogram should have new counts >= these per-bucket counts, e.g.:
 	h2.PositiveBuckets = []int64{7, -2, -4, 2, -2, -1, 2, 3, 0, -5, 1} // 7 5 1 3 1 0 2 5 5 0 1 (total 30)
 
 	// This is how span changes will be handled.
-	histoApp, _ := app.(*HistoAppender)
-	posInterjections, negInterjections, ok, cr := histoApp.Appendable(h2)
+	hApp, _ := app.(*HistogramAppender)
+	posInterjections, negInterjections, ok, cr := hApp.Appendable(h2)
 	require.Greater(t, len(posInterjections), 0)
 	require.Equal(t, 0, len(negInterjections))
 	require.True(t, ok) // Only new buckets came in.
 	require.False(t, cr)
-	c, app = histoApp.Recode(posInterjections, negInterjections, h2.PositiveSpans, h2.NegativeSpans)
+	c, app = hApp.Recode(posInterjections, negInterjections, h2.PositiveSpans, h2.NegativeSpans)
 	app.AppendHistogram(ts2, h2)
 
 	require.Equal(t, 2, c.NumSamples())
 
-	// Because the 2nd histogram has expanded buckets, we should expect all histograms (in particular the first)
-	// to come back using the new spans metadata as well as the expanded buckets.
+	// Because the 2nd histogram has expanded buckets, we should expect all
+	// histograms (in particular the first) to come back using the new spans
+	// metadata as well as the expanded buckets.
 	h1.PositiveSpans = h2.PositiveSpans
 	h1.PositiveBuckets = []int64{6, -3, -3, 3, -3, 0, 2, 2, 1, -5, 1}
 	exp := []res{
@@ -192,7 +194,7 @@ func TestHistoChunkBucketChanges(t *testing.T) {
 }
 
 func TestHistoChunkAppendable(t *testing.T) {
-	c := Chunk(NewHistoChunk())
+	c := Chunk(NewHistogramChunk())
 
 	// Create fresh appender and add the first histogram.
 	app, err := c.Appender()
@@ -200,7 +202,7 @@ func TestHistoChunkAppendable(t *testing.T) {
 	require.Equal(t, 0, c.NumSamples())
 
 	ts := int64(1234567890)
-	h1 := histogram.SparseHistogram{
+	h1 := histogram.Histogram{
 		Count:         5,
 		ZeroCount:     2,
 		Sum:           18.4,
@@ -230,12 +232,13 @@ func TestHistoChunkAppendable(t *testing.T) {
 		h2.Count += 9
 		h2.ZeroCount++
 		h2.Sum = 30
-		// Existing histogram should get values converted from the above to:  6 3 0 3 0 0 2 4 5 0 1 (previous values with some new empty buckets in between)
+		// Existing histogram should get values converted from the above to:
+		//   6 3 0 3 0 0 2 4 5 0 1 (previous values with some new empty buckets in between)
 		// so the new histogram should have new counts >= these per-bucket counts, e.g.:
 		h2.PositiveBuckets = []int64{7, -2, -4, 2, -2, -1, 2, 3, 0, -5, 1} // 7 5 1 3 1 0 2 5 5 0 1 (total 30)
 
-		histoApp, _ := app.(*HistoAppender)
-		posInterjections, negInterjections, ok, cr := histoApp.Appendable(h2)
+		hApp, _ := app.(*HistogramAppender)
+		posInterjections, negInterjections, ok, cr := hApp.Appendable(h2)
 		require.Greater(t, len(posInterjections), 0)
 		require.Equal(t, 0, len(negInterjections))
 		require.True(t, ok) // Only new buckets came in.
@@ -253,8 +256,8 @@ func TestHistoChunkAppendable(t *testing.T) {
 		h2.Sum = 21
 		h2.PositiveBuckets = []int64{6, -3, -1, 2, 1, -4} // counts: 6, 3, 2, 4, 5, 1 (total 21)
 
-		histoApp, _ := app.(*HistoAppender)
-		posInterjections, negInterjections, ok, cr := histoApp.Appendable(h2)
+		hApp, _ := app.(*HistogramAppender)
+		posInterjections, negInterjections, ok, cr := hApp.Appendable(h2)
 		require.Equal(t, 0, len(posInterjections))
 		require.Equal(t, 0, len(negInterjections))
 		require.False(t, ok) // Need to cut a new chunk.
@@ -266,8 +269,8 @@ func TestHistoChunkAppendable(t *testing.T) {
 		h2.Sum = 23
 		h2.PositiveBuckets = []int64{6, -4, 1, -1, 2, 1, -4} // counts: 6, 2, 3, 2, 4, 5, 1 (total 23)
 
-		histoApp, _ := app.(*HistoAppender)
-		posInterjections, negInterjections, ok, cr := histoApp.Appendable(h2)
+		hApp, _ := app.(*HistogramAppender)
+		posInterjections, negInterjections, ok, cr := hApp.Appendable(h2)
 		require.Equal(t, 0, len(posInterjections))
 		require.Equal(t, 0, len(negInterjections))
 		require.False(t, ok) // Need to cut a new chunk.
@@ -283,20 +286,24 @@ func TestHistoChunkAppendable(t *testing.T) {
 			{Offset: 3, Length: 3},
 		}
 		h2.Sum = 29
-		// Existing histogram should get values converted from the above to:  6 3 0 3 0 0 2 4 5 0 1 (previous values with some new empty buckets in between)
+		// Existing histogram should get values converted from the above to:
+		//   6 3 0 3 0 0 2 4 5 0 1 (previous values with some new empty buckets in between)
 		// so the new histogram should have new counts >= these per-bucket counts, e.g.:
 		h2.PositiveBuckets = []int64{7, -2, -4, 2, -2, -1, 2, 3, 0, -5, 0} // 7 5 1 3 1 0 2 5 5 0 0 (total 29)
 
-		histoApp, _ := app.(*HistoAppender)
-		posInterjections, negInterjections, ok, cr := histoApp.Appendable(h2)
+		hApp, _ := app.(*HistogramAppender)
+		posInterjections, negInterjections, ok, cr := hApp.Appendable(h2)
 		require.Equal(t, 0, len(posInterjections))
 		require.Equal(t, 0, len(negInterjections))
 		require.False(t, ok) // Need to cut a new chunk.
 		require.True(t, cr)
 	}
 
-	{ // New histogram that has a counter reset while new buckets were added before the first bucket and reset on first bucket.
-		// (to catch the edge case where the new bucket should be forwarded ahead until first old bucket at start)
+	{
+		// New histogram that has a counter reset while new buckets were
+		// added before the first bucket and reset on first bucket.  (to
+		// catch the edge case where the new bucket should be forwarded
+		// ahead until first old bucket at start)
 		h2 := h1
 		h2.PositiveSpans = []histogram.Span{
 			{Offset: -3, Length: 2},
@@ -307,12 +314,13 @@ func TestHistoChunkAppendable(t *testing.T) {
 			{Offset: 1, Length: 1},
 		}
 		h2.Sum = 26
-		// Existing histogram should get values converted from the above to: 0, 0, 6, 3, 3, 2, 4, 5, 1
+		// Existing histogram should get values converted from the above to:
+		//   0, 0, 6, 3, 3, 2, 4, 5, 1
 		// so the new histogram should have new counts >= these per-bucket counts, e.g.:
 		h2.PositiveBuckets = []int64{1, 1, 3, -2, 0, -1, 2, 1, -4} // counts: 1, 2, 5, 3, 3, 2, 4, 5, 1 (total 26)
 
-		histoApp, _ := app.(*HistoAppender)
-		posInterjections, negInterjections, ok, cr := histoApp.Appendable(h2)
+		hApp, _ := app.(*HistogramAppender)
+		posInterjections, negInterjections, ok, cr := hApp.Appendable(h2)
 		require.Equal(t, 0, len(posInterjections))
 		require.Equal(t, 0, len(negInterjections))
 		require.False(t, ok) // Need to cut a new chunk.

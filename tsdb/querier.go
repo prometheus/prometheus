@@ -21,7 +21,7 @@ import (
 
 	"github.com/pkg/errors"
 
-	"github.com/prometheus/prometheus/pkg/histogram"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -649,7 +649,7 @@ func (p *populateWithDelSeriesIterator) Seek(t int64) bool {
 }
 
 func (p *populateWithDelSeriesIterator) At() (int64, float64) { return p.curr.At() }
-func (p *populateWithDelSeriesIterator) AtHistogram() (int64, histogram.SparseHistogram) {
+func (p *populateWithDelSeriesIterator) AtHistogram() (int64, histogram.Histogram) {
 	return p.curr.AtHistogram()
 }
 func (p *populateWithDelSeriesIterator) ChunkEncoding() chunkenc.Encoding {
@@ -688,8 +688,8 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 		app      chunkenc.Appender
 		err      error
 	)
-	if p.currDelIter.ChunkEncoding() == chunkenc.EncSHS {
-		newChunk = chunkenc.NewHistoChunk()
+	if p.currDelIter.ChunkEncoding() == chunkenc.EncHistogram {
+		newChunk = chunkenc.NewHistogramChunk()
 		app, err = newChunk.Appender()
 	} else {
 		newChunk = chunkenc.NewXORChunk()
@@ -714,11 +714,11 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 	var (
 		t int64
 		v float64
-		h histogram.SparseHistogram
+		h histogram.Histogram
 	)
-	if p.currDelIter.ChunkEncoding() == chunkenc.EncSHS {
-		if hc, ok := p.currChkMeta.Chunk.(*chunkenc.HistoChunk); ok {
-			newChunk.(*chunkenc.HistoChunk).SetCounterResetHeader(hc.GetCounterResetHeader())
+	if p.currDelIter.ChunkEncoding() == chunkenc.EncHistogram {
+		if hc, ok := p.currChkMeta.Chunk.(*chunkenc.HistogramChunk); ok {
+			newChunk.(*chunkenc.HistogramChunk).SetCounterResetHeader(hc.GetCounterResetHeader())
 		}
 		t, h = p.currDelIter.AtHistogram()
 		p.curr.MinTime = t
@@ -870,7 +870,7 @@ func (it *DeletedIterator) At() (int64, float64) {
 	return it.Iter.At()
 }
 
-func (it *DeletedIterator) AtHistogram() (int64, histogram.SparseHistogram) {
+func (it *DeletedIterator) AtHistogram() (int64, histogram.Histogram) {
 	t, h := it.Iter.AtHistogram()
 	return t, h
 }
@@ -889,7 +889,7 @@ func (it *DeletedIterator) Seek(t int64) bool {
 
 	// Now double check if the entry falls into a deleted interval.
 	var ts int64
-	if it.ChunkEncoding() == chunkenc.EncSHS {
+	if it.ChunkEncoding() == chunkenc.EncHistogram {
 		ts, _ = it.AtHistogram()
 	} else {
 		ts, _ = it.At()
@@ -916,7 +916,7 @@ func (it *DeletedIterator) Next() bool {
 Outer:
 	for it.Iter.Next() {
 		var ts int64
-		if it.ChunkEncoding() == chunkenc.EncSHS {
+		if it.ChunkEncoding() == chunkenc.EncHistogram {
 			ts, _ = it.AtHistogram()
 		} else {
 			ts, _ = it.At()

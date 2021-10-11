@@ -17,7 +17,7 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/prometheus/prometheus/pkg/histogram"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/require"
 )
@@ -196,8 +196,8 @@ type mockSeriesIterator struct {
 
 func (m *mockSeriesIterator) Seek(t int64) bool    { return m.seek(t) }
 func (m *mockSeriesIterator) At() (int64, float64) { return m.at() }
-func (m *mockSeriesIterator) AtHistogram() (int64, histogram.SparseHistogram) {
-	return 0, histogram.SparseHistogram{}
+func (m *mockSeriesIterator) AtHistogram() (int64, histogram.Histogram) {
+	return 0, histogram.Histogram{}
 }
 func (m *mockSeriesIterator) ChunkEncoding() chunkenc.Encoding {
 	return chunkenc.EncXOR
@@ -219,8 +219,8 @@ func (it *fakeSeriesIterator) At() (int64, float64) {
 	return it.idx * it.step, 123 // value doesn't matter
 }
 
-func (it *fakeSeriesIterator) AtHistogram() (int64, histogram.SparseHistogram) {
-	return it.idx * it.step, histogram.SparseHistogram{} // value doesn't matter
+func (it *fakeSeriesIterator) AtHistogram() (int64, histogram.Histogram) {
+	return it.idx * it.step, histogram.Histogram{} // value doesn't matter
 }
 
 func (it *fakeSeriesIterator) ChunkEncoding() chunkenc.Encoding {

@@ -25,8 +25,8 @@ import (
 	"github.com/go-kit/log"
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/pkg/exemplar"
-	"github.com/prometheus/prometheus/pkg/histogram"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
@@ -188,7 +188,7 @@ func (m *mockAppendable) AppendExemplar(_ uint64, l labels.Labels, e exemplar.Ex
 	return 0, nil
 }
 
-func (*mockAppendable) AppendHistogram(ref uint64, l labels.Labels, t int64, sh histogram.SparseHistogram) (uint64, error) {
-	// noop until we implement sparse histograms over remote write
+func (*mockAppendable) AppendHistogram(ref uint64, l labels.Labels, t int64, h histogram.Histogram) (uint64, error) {
+	// TODO(beorn7): Noop until we implement sparse histograms over remote write.
 	return 0, nil
 }
