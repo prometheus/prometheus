@@ -694,7 +694,7 @@ func resolveConflictingExposedLabels(existingNames map[string]struct{}, conflict
 		if _, ok := existingNames[newName]; !ok {
 			resolvedLabels = append(resolvedLabels, labels.Label{Name: newName, Value: conflictingLabels[i].Value})
 			conflictingLabels = append(conflictingLabels[:i], conflictingLabels[i+1:]...)
-			i -= 1
+			i--
 			existingNames[newName] = struct{}{}
 		} else {
 			conflictingLabels[i] = labels.Label{Name: newName, Value: conflictingLabels[i].Value}
