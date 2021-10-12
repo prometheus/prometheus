@@ -30,7 +30,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
-	"github.com/prometheus/common/config"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
@@ -65,7 +64,7 @@ var DefaultSDConfig = SDConfig{
 	RefreshInterval:      model.Duration(5 * time.Minute),
 	Environment:          azure.PublicCloud.Name,
 	AuthenticationMethod: authMethodOAuth,
-	HTTPClientConfig:     config.DefaultHTTPClientConfig,
+	HTTPClientConfig:     config_util.DefaultHTTPClientConfig,
 }
 
 func init() {
@@ -83,7 +82,7 @@ type SDConfig struct {
 	RefreshInterval      model.Duration     `yaml:"refresh_interval,omitempty"`
 	AuthenticationMethod string             `yaml:"authentication_method,omitempty"`
 
-	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
+	HTTPClientConfig config_util.HTTPClientConfig `yaml:",inline"`
 }
 
 // Name returns the name of the Config.
@@ -204,7 +203,7 @@ func createAzureClient(cfg SDConfig) (azureClient, error) {
 		}
 	}
 
-	client, err := config.NewClientFromConfig(cfg.HTTPClientConfig, "azure_sd")
+	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, "azure_sd")
 	if err != nil {
 		return azureClient{}, err
 	}
