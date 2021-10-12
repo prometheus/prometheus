@@ -160,7 +160,6 @@ func (p *pool) Get(e Encoding, b []byte) (Chunk, error) {
 		c.b.count = 0
 		return c, nil
 	case EncHistogram:
-		// TODO: update metadata
 		c := p.histogram.Get().(*HistogramChunk)
 		c.b.stream = b
 		c.b.count = 0
@@ -183,7 +182,6 @@ func (p *pool) Put(c Chunk) error {
 		xc.b.count = 0
 		p.xor.Put(c)
 	case EncHistogram:
-		// TODO: update metadata
 		sh, ok := c.(*HistogramChunk)
 		// This may happen often with wrapped chunks. Nothing we can really do about
 		// it but returning an error would cause a lot of allocations again. Thus,
@@ -208,7 +206,6 @@ func FromData(e Encoding, d []byte) (Chunk, error) {
 	case EncXOR:
 		return &XORChunk{b: bstream{count: 0, stream: d}}, nil
 	case EncHistogram:
-		// TODO: update metadata
 		return &HistogramChunk{b: bstream{count: 0, stream: d}}, nil
 	}
 	return nil, errors.Errorf("invalid chunk encoding %q", e)
