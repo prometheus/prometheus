@@ -273,8 +273,8 @@ type headMetrics struct {
 
 	// Sparse histogram metrics for experiments.
 	// TODO: remove these in the final version.
-	sparseHistogramSamplesTotal prometheus.Counter
-	sparseHistogramSeries       prometheus.Gauge
+	histogramSamplesTotal prometheus.Counter
+	histogramSeries       prometheus.Gauge
 }
 
 func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
@@ -373,13 +373,13 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			Name: "prometheus_tsdb_snapshot_replay_error_total",
 			Help: "Total number snapshot replays that failed.",
 		}),
-		sparseHistogramSamplesTotal: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "prometheus_tsdb_sparse_histogram_samples_total",
-			Help: "Total number of sparse histograms samples added.",
+		histogramSamplesTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "prometheus_tsdb_histogram_samples_total",
+			Help: "Total number of histograms samples added.",
 		}),
-		sparseHistogramSeries: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "prometheus_tsdb_sparse_histogram_series",
-			Help: "Number of sparse histogram series currently present in the head block.",
+		histogramSeries: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "prometheus_tsdb_histogram_series",
+			Help: "Number of histogram series currently present in the head block.",
 		}),
 	}
 
@@ -408,8 +408,8 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			m.checkpointCreationTotal,
 			m.mmapChunkCorruptionTotal,
 			m.snapshotReplayErrorTotal,
-			m.sparseHistogramSamplesTotal,
-			m.sparseHistogramSeries,
+			m.histogramSamplesTotal,
+			m.histogramSeries,
 			// Metrics bound to functions and not needed in tests
 			// can be created and registered on the spot.
 			prometheus.NewGaugeFunc(prometheus.GaugeOpts{
@@ -619,7 +619,7 @@ func (h *Head) Init(minValidTime int64) error {
 				}
 			}
 		}
-		h.metrics.sparseHistogramSeries.Set(float64(sparseHistogramSeries))
+		h.metrics.histogramSeries.Set(float64(sparseHistogramSeries))
 	}
 
 	walReplayDuration := time.Since(start)
@@ -1145,7 +1145,7 @@ func (h *Head) gc() int64 {
 	h.metrics.seriesRemoved.Add(float64(seriesRemoved))
 	h.metrics.chunksRemoved.Add(float64(chunksRemoved))
 	h.metrics.chunks.Sub(float64(chunksRemoved))
-	h.metrics.sparseHistogramSeries.Sub(float64(sparseHistogramSeriesDeleted))
+	h.metrics.histogramSeries.Sub(float64(sparseHistogramSeriesDeleted))
 	h.numSeries.Sub(uint64(seriesRemoved))
 
 	// Remove deleted series IDs from the postings lists.

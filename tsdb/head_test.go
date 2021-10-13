@@ -2950,7 +2950,7 @@ func TestSnapshotError(t *testing.T) {
 	require.Equal(t, 0, len(tm))
 }
 
-func TestSparseHistogramMetrics(t *testing.T) {
+func TestHistogramMetrics(t *testing.T) {
 	head, _ := newTestHead(t, 1000, false)
 	t.Cleanup(func() {
 		require.NoError(t, head.Close())
@@ -2971,8 +2971,8 @@ func TestSparseHistogramMetrics(t *testing.T) {
 		}
 	}
 
-	require.Equal(t, float64(expHSeries), prom_testutil.ToFloat64(head.metrics.sparseHistogramSeries))
-	require.Equal(t, float64(expHSamples), prom_testutil.ToFloat64(head.metrics.sparseHistogramSamplesTotal))
+	require.Equal(t, float64(expHSeries), prom_testutil.ToFloat64(head.metrics.histogramSeries))
+	require.Equal(t, float64(expHSamples), prom_testutil.ToFloat64(head.metrics.histogramSamplesTotal))
 
 	require.NoError(t, head.Close())
 	w, err := wal.NewSize(nil, nil, head.wal.Dir(), 32768, false)
@@ -2981,11 +2981,11 @@ func TestSparseHistogramMetrics(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, head.Init(0))
 
-	require.Equal(t, float64(expHSeries), prom_testutil.ToFloat64(head.metrics.sparseHistogramSeries))
-	require.Equal(t, float64(0), prom_testutil.ToFloat64(head.metrics.sparseHistogramSamplesTotal)) // Counter reset.
+	require.Equal(t, float64(expHSeries), prom_testutil.ToFloat64(head.metrics.histogramSeries))
+	require.Equal(t, float64(0), prom_testutil.ToFloat64(head.metrics.histogramSamplesTotal)) // Counter reset.
 }
 
-func TestSparseHistogramStaleSample(t *testing.T) {
+func TestHistogramStaleSample(t *testing.T) {
 	l := labels.Labels{{Name: "a", Value: "b"}}
 	numHistograms := 20
 	head, _ := newTestHead(t, 100000, false)
@@ -3077,4 +3077,104 @@ func TestSparseHistogramStaleSample(t *testing.T) {
 	require.NotNil(t, s)
 	require.Equal(t, 1, len(s.mmappedChunks))
 	testQuery(2)
+}
+
+func TestHistogramCounterResetHeader(t *testing.T) {
+	l := labels.Labels{{Name: "a", Value: "b"}}
+	head, _ := newTestHead(t, 1000, false)
+	t.Cleanup(func() {
+		require.NoError(t, head.Close())
+	})
+	require.NoError(t, head.Init(0))
+
+	ts := int64(0)
+	appendHistogram := func(h histogram.Histogram) {
+		ts++
+		app := head.Appender(context.Background())
+		_, err := app.AppendHistogram(0, l, ts, h)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+	}
+
+	var expHeaders []chunkenc.CounterResetHeader
+	checkExpCounterResetHeader := func(newHeaders ...chunkenc.CounterResetHeader) {
+		expHeaders = append(expHeaders, newHeaders...)
+
+		ms, _, err := head.getOrCreate(l.Hash(), l)
+		require.NoError(t, err)
+		require.Len(t, ms.mmappedChunks, len(expHeaders)-1) // One is the head chunk.
+
+		for i, mmapChunk := range ms.mmappedChunks {
+			chk, err := head.chunkDiskMapper.Chunk(mmapChunk.ref)
+			require.NoError(t, err)
+			require.Equal(t, expHeaders[i], chk.(*chunkenc.HistogramChunk).GetCounterResetHeader())
+		}
+		require.Equal(t, expHeaders[len(expHeaders)-1], ms.headChunk.chunk.(*chunkenc.HistogramChunk).GetCounterResetHeader())
+	}
+
+	h := generateHistograms(1)[0]
+	if len(h.NegativeBuckets) == 0 {
+		h.NegativeSpans = append([]histogram.Span{}, h.PositiveSpans...)
+		h.NegativeBuckets = append([]int64{}, h.PositiveBuckets...)
+	}
+	h.PositiveBuckets[0] = 100
+	h.NegativeBuckets[0] = 100
+
+	// First histogram is UnknownCounterReset.
+	appendHistogram(h)
+	checkExpCounterResetHeader(chunkenc.UnknownCounterReset)
+
+	// Another normal histogram.
+	h.Count++
+	appendHistogram(h)
+	checkExpCounterResetHeader()
+
+	// Counter reset via Count.
+	h.Count--
+	appendHistogram(h)
+	checkExpCounterResetHeader(chunkenc.CounterReset)
+
+	// Add 2 non-counter reset histograms.
+	for i := 0; i < 250; i++ {
+		appendHistogram(h)
+	}
+	checkExpCounterResetHeader(chunkenc.NotCounterReset, chunkenc.NotCounterReset)
+
+	// Changing schema will cut a new chunk with unknown counter reset.
+	h.Schema++
+	appendHistogram(h)
+	checkExpCounterResetHeader(chunkenc.UnknownCounterReset)
+
+	// Changing schema will zero threshold a new chunk with unknown counter reset.
+	h.ZeroThreshold += 0.01
+	appendHistogram(h)
+	checkExpCounterResetHeader(chunkenc.UnknownCounterReset)
+
+	// Counter reset by removing a positive bucket.
+	h.PositiveSpans[1].Length--
+	h.PositiveBuckets = h.PositiveBuckets[1:]
+	appendHistogram(h)
+	checkExpCounterResetHeader(chunkenc.CounterReset)
+
+	// Counter reset by removing a negative bucket.
+	h.NegativeSpans[1].Length--
+	h.NegativeBuckets = h.NegativeBuckets[1:]
+	appendHistogram(h)
+	checkExpCounterResetHeader(chunkenc.CounterReset)
+
+	// Add 2 non-counter reset histograms. Just to have some non-counter reset chunks in between.
+	for i := 0; i < 250; i++ {
+		appendHistogram(h)
+	}
+	checkExpCounterResetHeader(chunkenc.NotCounterReset, chunkenc.NotCounterReset)
+
+	// Counter reset with counter reset in a positive bucket.
+	h.PositiveBuckets[len(h.PositiveBuckets)-1]--
+	appendHistogram(h)
+	checkExpCounterResetHeader(chunkenc.CounterReset)
+
+	// Counter reset with counter reset in a negative bucket.
+	h.NegativeBuckets[len(h.NegativeBuckets)-1]--
+	appendHistogram(h)
+	checkExpCounterResetHeader(chunkenc.CounterReset)
 }

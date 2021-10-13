@@ -17,14 +17,14 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 )
 
-func writeHistogramChunkMeta(b *bstream, schema int32, zeroThreshold float64, positiveSpans, negativeSpans []histogram.Span) {
+func writeHistogramChunkLayout(b *bstream, schema int32, zeroThreshold float64, positiveSpans, negativeSpans []histogram.Span) {
 	putVarbitInt(b, int64(schema))
 	putVarbitFloat(b, zeroThreshold)
-	putHistogramChunkMetaSpans(b, positiveSpans)
-	putHistogramChunkMetaSpans(b, negativeSpans)
+	putHistogramChunkLayoutSpans(b, positiveSpans)
+	putHistogramChunkLayoutSpans(b, negativeSpans)
 }
 
-func putHistogramChunkMetaSpans(b *bstream, spans []histogram.Span) {
+func putHistogramChunkLayoutSpans(b *bstream, spans []histogram.Span) {
 	putVarbitInt(b, int64(len(spans)))
 	for _, s := range spans {
 		putVarbitInt(b, int64(s.Length))
@@ -32,16 +32,11 @@ func putHistogramChunkMetaSpans(b *bstream, spans []histogram.Span) {
 	}
 }
 
-func readHistogramChunkMeta(b *bstreamReader) (
+func readHistogramChunkLayout(b *bstreamReader) (
 	schema int32, zeroThreshold float64,
 	positiveSpans, negativeSpans []histogram.Span,
 	err error,
 ) {
-	_, err = b.ReadByte() // The header.
-	if err != nil {
-		return
-	}
-
 	v, err := readVarbitInt(b)
 	if err != nil {
 		return
@@ -53,12 +48,12 @@ func readHistogramChunkMeta(b *bstreamReader) (
 		return
 	}
 
-	positiveSpans, err = readHistogramChunkMetaSpans(b)
+	positiveSpans, err = readHistogramChunkLayoutSpans(b)
 	if err != nil {
 		return
 	}
 
-	negativeSpans, err = readHistogramChunkMetaSpans(b)
+	negativeSpans, err = readHistogramChunkLayoutSpans(b)
 	if err != nil {
 		return
 	}
@@ -66,7 +61,7 @@ func readHistogramChunkMeta(b *bstreamReader) (
 	return
 }
 
-func readHistogramChunkMetaSpans(b *bstreamReader) ([]histogram.Span, error) {
+func readHistogramChunkLayoutSpans(b *bstreamReader) ([]histogram.Span, error) {
 	var spans []histogram.Span
 	num, err := readVarbitInt(b)
 	if err != nil {

@@ -64,27 +64,32 @@ func (c *HistogramChunk) NumSamples() int {
 	return int(binary.BigEndian.Uint16(c.Bytes()))
 }
 
-// Meta returns the histogram metadata. Only call this on chunks that have at
+// Layout returns the histogram layout. Only call this on chunks that have at
 // least one sample.
-func (c *HistogramChunk) Meta() (
+func (c *HistogramChunk) Layout() (
 	schema int32, zeroThreshold float64,
 	negativeSpans, positiveSpans []histogram.Span,
 	err error,
 ) {
 	if c.NumSamples() == 0 {
-		panic("HistoChunk.Meta() called on an empty chunk")
+		panic("HistoChunk.Layout() called on an empty chunk")
 	}
 	b := newBReader(c.Bytes()[2:])
-	return readHistogramChunkMeta(&b)
+	return readHistogramChunkLayout(&b)
 }
 
 // CounterResetHeader defines the first 2 bits of the chunk header.
 type CounterResetHeader byte
 
 const (
-	CounterReset        CounterResetHeader = 0b10000000
-	NotCounterReset     CounterResetHeader = 0b01000000
-	GaugeType           CounterResetHeader = 0b11000000
+	// CounterReset means there was definitely a counter reset that resulted in this chunk.
+	CounterReset CounterResetHeader = 0b10000000
+	// NotCounterReset means there was definitely no counter reset when cutting this chunk.
+	NotCounterReset CounterResetHeader = 0b01000000
+	// GaugeType means this chunk contains a gauge histogram, where counter resets do not happen.
+	GaugeType CounterResetHeader = 0b11000000
+	// UnknownCounterReset means we cannot say if this chunk was created due to a counter reset or not.
+	// An explicit counter reset detection needs to happen during query time.
 	UnknownCounterReset CounterResetHeader = 0b00000000
 )
 
@@ -171,9 +176,9 @@ func newHistogramIterator(b []byte) *histogramIterator {
 		numTotal: binary.BigEndian.Uint16(b),
 		t:        math.MinInt64,
 	}
-	// The first 2 bytes contain chunk headers.
+	// The first 3 bytes contain chunk headers.
 	// We skip that for actual samples.
-	_, _ = it.br.readBits(16)
+	_, _ = it.br.readBits(24)
 	return it
 }
 
@@ -198,7 +203,7 @@ func (c *HistogramChunk) Iterator(it Iterator) Iterator {
 type HistogramAppender struct {
 	b *bstream
 
-	// Metadata:
+	// Layout:
 	schema         int32
 	zThreshold     float64
 	pSpans, nSpans []histogram.Span
@@ -389,18 +394,23 @@ func (a *HistogramAppender) AppendHistogram(t int64, h histogram.Histogram) {
 
 	if value.IsStaleNaN(h.Sum) {
 		// Emptying out other fields to write no buckets, and an empty
-		// meta in case of first histogram in the chunk.
+		// layout in case of first histogram in the chunk.
 		h = histogram.Histogram{Sum: h.Sum}
 	}
 
 	switch num {
 	case 0:
-		// The first append gets the privilege to dictate the metadata
+		// The first append gets the privilege to dictate the layout
 		// but it's also responsible for encoding it into the chunk!
-		writeHistogramChunkMeta(a.b, h.Schema, h.ZeroThreshold, h.PositiveSpans, h.NegativeSpans)
+		writeHistogramChunkLayout(a.b, h.Schema, h.ZeroThreshold, h.PositiveSpans, h.NegativeSpans)
 		a.schema = h.Schema
 		a.zThreshold = h.ZeroThreshold
-		a.pSpans, a.nSpans = h.PositiveSpans, h.NegativeSpans
+
+		a.pSpans = make([]histogram.Span, len(h.PositiveSpans))
+		copy(a.pSpans, h.PositiveSpans)
+		a.nSpans = make([]histogram.Span, len(h.NegativeSpans))
+		copy(a.nSpans, h.NegativeSpans)
+
 		numPBuckets, numNBuckets := countSpans(h.PositiveSpans), countSpans(h.NegativeSpans)
 		a.pBuckets = make([]int64, numPBuckets)
 		a.nBuckets = make([]int64, numNBuckets)
@@ -486,7 +496,8 @@ func (a *HistogramAppender) AppendHistogram(t int64, h histogram.Histogram) {
 	a.cntDelta = cntDelta
 	a.zCntDelta = zCntDelta
 
-	a.pBuckets, a.nBuckets = h.PositiveBuckets, h.NegativeBuckets
+	copy(a.pBuckets, h.PositiveBuckets)
+	copy(a.nBuckets, h.NegativeBuckets)
 	// Note that the bucket deltas were already updated above.
 	a.sum = h.Sum
 }
@@ -580,7 +591,7 @@ type histogramIterator struct {
 	numTotal uint16
 	numRead  uint16
 
-	// Metadata:
+	// Layout:
 	schema         int32
 	zThreshold     float64
 	pSpans, nSpans []histogram.Span
@@ -669,11 +680,10 @@ func (it *histogramIterator) Next() bool {
 	}
 
 	if it.numRead == 0 {
-
-		// The first read is responsible for reading the chunk metadata
+		// The first read is responsible for reading the chunk layout
 		// and for initializing fields that depend on it. We give
 		// counter reset info at chunk level, hence we discard it here.
-		schema, zeroThreshold, posSpans, negSpans, err := readHistogramChunkMeta(&it.br)
+		schema, zeroThreshold, posSpans, negSpans, err := readHistogramChunkLayout(&it.br)
 		if err != nil {
 			it.err = err
 			return false
