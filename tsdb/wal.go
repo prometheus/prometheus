@@ -33,6 +33,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/record"
@@ -113,8 +114,8 @@ type WALReader interface {
 // the truncation threshold can be compacted.
 type segmentFile struct {
 	*os.File
-	maxTime   int64  // highest tombstone or sample timestamp in segment
-	minSeries uint64 // lowerst series ID in segment
+	maxTime   int64                // highest tombstone or sample timestamp in segment
+	minSeries chunks.HeadSeriesRef // lowerst series ID in segment
 }
 
 func newSegmentFile(f *os.File) *segmentFile {
@@ -292,7 +293,7 @@ func (w *SegmentWAL) putBuffer(b *encoding.Encbuf) {
 
 // Truncate deletes the values prior to mint and the series which the keep function
 // does not indicate to preserve.
-func (w *SegmentWAL) Truncate(mint int64, keep func(uint64) bool) error {
+func (w *SegmentWAL) Truncate(mint int64, keep func(chunks.HeadSeriesRef) bool) error {
 	// The last segment is always active.
 	if len(w.files) < 2 {
 		return nil
@@ -787,7 +788,7 @@ const (
 
 func (w *SegmentWAL) encodeSeries(buf *encoding.Encbuf, series []record.RefSeries) uint8 {
 	for _, s := range series {
-		buf.PutBE64(s.Ref)
+		buf.PutBE64(uint64(s.Ref))
 		buf.PutUvarint(len(s.Labels))
 
 		for _, l := range s.Labels {
@@ -808,7 +809,7 @@ func (w *SegmentWAL) encodeSamples(buf *encoding.Encbuf, samples []record.RefSam
 	// TODO(fabxc): optimize for all samples having the same timestamp.
 	first := samples[0]
 
-	buf.PutBE64(first.Ref)
+	buf.PutBE64(uint64(first.Ref))
 	buf.PutBE64int64(first.T)
 
 	for _, s := range samples {
@@ -1120,7 +1121,7 @@ func (r *walReader) decodeSeries(flag byte, b []byte, res *[]record.RefSeries) e
 	dec := encoding.Decbuf{B: b}
 
 	for len(dec.B) > 0 && dec.Err() == nil {
-		ref := dec.Be64()
+		ref := chunks.HeadSeriesRef(dec.Be64())
 
 		lset := make(labels.Labels, dec.Uvarint())
 
@@ -1161,7 +1162,7 @@ func (r *walReader) decodeSamples(flag byte, b []byte, res *[]record.RefSample) 
 		val := dec.Be64()
 
 		*res = append(*res, record.RefSample{
-			Ref: uint64(int64(baseRef) + dref),
+			Ref: chunks.HeadSeriesRef(int64(baseRef) + dref),
 			T:   baseTime + dtime,
 			V:   math.Float64frombits(val),
 		})

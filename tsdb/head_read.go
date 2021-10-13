@@ -115,7 +115,7 @@ func (h *headIndexReader) SortedPostings(p index.Postings) index.Postings {
 
 	// Fetch all the series only once.
 	for p.Next() {
-		s := h.head.series.getByID(p.At())
+		s := h.head.series.getByID(chunks.HeadSeriesRef(p.At()))
 		if s == nil {
 			level.Debug(h.head.logger).Log("msg", "Looked up series not found")
 		} else {
@@ -131,16 +131,16 @@ func (h *headIndexReader) SortedPostings(p index.Postings) index.Postings {
 	})
 
 	// Convert back to list.
-	ep := make([]uint64, 0, len(series))
+	ep := make([]storage.SeriesRef, 0, len(series))
 	for _, p := range series {
-		ep = append(ep, p.ref)
+		ep = append(ep, storage.SeriesRef(p.ref))
 	}
 	return index.NewListPostings(ep)
 }
 
 // Series returns the series for the given reference.
-func (h *headIndexReader) Series(ref uint64, lbls *labels.Labels, chks *[]chunks.Meta) error {
-	s := h.head.series.getByID(ref)
+func (h *headIndexReader) Series(ref storage.SeriesRef, lbls *labels.Labels, chks *[]chunks.Meta) error {
+	s := h.head.series.getByID(chunks.HeadSeriesRef(ref))
 
 	if s == nil {
 		h.head.metrics.seriesNotFound.Inc()
@@ -161,14 +161,14 @@ func (h *headIndexReader) Series(ref uint64, lbls *labels.Labels, chks *[]chunks
 		*chks = append(*chks, chunks.Meta{
 			MinTime: c.minTime,
 			MaxTime: c.maxTime,
-			Ref:     packChunkID(s.ref, uint64(s.chunkID(i))),
+			Ref:     chunks.ChunkRef(chunks.NewHeadChunkRef(s.ref, uint64(s.chunkID(i)))),
 		})
 	}
 	if s.headChunk != nil && s.headChunk.OverlapsClosedInterval(h.mint, h.maxt) {
 		*chks = append(*chks, chunks.Meta{
 			MinTime: s.headChunk.minTime,
 			MaxTime: math.MaxInt64, // Set the head chunks as open (being appended to).
-			Ref:     packChunkID(s.ref, uint64(s.chunkID(len(s.mmappedChunks)))),
+			Ref:     chunks.ChunkRef(chunks.NewHeadChunkRef(s.ref, uint64(s.chunkID(len(s.mmappedChunks))))),
 		})
 	}
 
@@ -180,8 +180,8 @@ func (s *memSeries) chunkID(pos int) int {
 }
 
 // LabelValueFor returns label value for the given label name in the series referred to by ID.
-func (h *headIndexReader) LabelValueFor(id uint64, label string) (string, error) {
-	memSeries := h.head.series.getByID(id)
+func (h *headIndexReader) LabelValueFor(id storage.SeriesRef, label string) (string, error) {
+	memSeries := h.head.series.getByID(chunks.HeadSeriesRef(id))
 	if memSeries == nil {
 		return "", storage.ErrNotFound
 	}
@@ -196,10 +196,10 @@ func (h *headIndexReader) LabelValueFor(id uint64, label string) (string, error)
 
 // LabelNamesFor returns all the label names for the series referred to by IDs.
 // The names returned are sorted.
-func (h *headIndexReader) LabelNamesFor(ids ...uint64) ([]string, error) {
+func (h *headIndexReader) LabelNamesFor(ids ...storage.SeriesRef) ([]string, error) {
 	namesMap := make(map[string]struct{})
 	for _, id := range ids {
-		memSeries := h.head.series.getByID(id)
+		memSeries := h.head.series.getByID(chunks.HeadSeriesRef(id))
 		if memSeries == nil {
 			return nil, storage.ErrNotFound
 		}
@@ -248,25 +248,9 @@ func (h *headChunkReader) Close() error {
 	return nil
 }
 
-// packChunkID packs a seriesID and a chunkID within it into a global 8 byte ID.
-// It panicks if the seriesID exceeds 5 bytes or the chunk ID 3 bytes.
-func packChunkID(seriesID, chunkID uint64) uint64 {
-	if seriesID > (1<<40)-1 {
-		panic("series ID exceeds 5 bytes")
-	}
-	if chunkID > (1<<24)-1 {
-		panic("chunk ID exceeds 3 bytes")
-	}
-	return (seriesID << 24) | chunkID
-}
-
-func unpackChunkID(id uint64) (seriesID, chunkID uint64) {
-	return id >> 24, (id << 40) >> 40
-}
-
 // Chunk returns the chunk for the reference number.
-func (h *headChunkReader) Chunk(ref uint64) (chunkenc.Chunk, error) {
-	sid, cid := unpackChunkID(ref)
+func (h *headChunkReader) Chunk(ref chunks.ChunkRef) (chunkenc.Chunk, error) {
+	sid, cid := chunks.HeadChunkRef(ref).Unpack()
 
 	s := h.head.series.getByID(sid)
 	// This means that the series has been garbage collected.

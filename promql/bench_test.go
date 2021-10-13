@@ -23,6 +23,7 @@ import (
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/promql/parser"
+	stor "github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/teststorage"
 )
 
@@ -62,7 +63,7 @@ func BenchmarkRangeQuery(b *testing.B) {
 		}
 		metrics = append(metrics, labels.FromStrings("__name__", "h_hundred", "l", strconv.Itoa(i), "le", "+Inf"))
 	}
-	refs := make([]uint64, len(metrics))
+	refs := make([]stor.SeriesRef, len(metrics))
 
 	// A day of data plus 10k steps.
 	numIntervals := 8640 + 10000
