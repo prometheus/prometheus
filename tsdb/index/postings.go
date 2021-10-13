@@ -807,11 +807,8 @@ type PostingsCloner struct {
 // The instance provided shouldn't have been used before (no Next() calls should have been done)
 // and it shouldn't be used once provided to the PostingsCloner.
 func NewPostingsCloner(p Postings) *PostingsCloner {
-	var ids []uint64
-	for p.Next() {
-		ids = append(ids, p.At())
-	}
-	return &PostingsCloner{ids: ids, err: p.Err()}
+	ids, err := ExpandPostings(p)
+	return &PostingsCloner{ids: ids, err: err}
 }
 
 // Clone returns another independent Postings instance.
