@@ -652,17 +652,10 @@ func (it *histogramIterator) Reset(b []byte) {
 	it.t, it.cnt, it.zCnt = 0, 0, 0
 	it.tDelta, it.cntDelta, it.zCntDelta = 0, 0, 0
 
-	// TODO(beorn7): Those will be recreated anyway.
-	// Either delete them here entirely or recycle them
-	// below if big enough.
-	for i := range it.pBuckets {
-		it.pBuckets[i] = 0
-		it.pBucketsDelta[i] = 0
-	}
-	for i := range it.nBuckets {
-		it.nBuckets[i] = 0
-		it.nBucketsDelta[i] = 0
-	}
+	it.pBuckets = it.pBuckets[:0]
+	it.pBucketsDelta = it.pBucketsDelta[:0]
+	it.nBuckets = it.nBuckets[:0]
+	it.pBucketsDelta = it.pBucketsDelta[:0]
 
 	it.sum = 0
 	it.leading = 0
@@ -688,14 +681,33 @@ func (it *histogramIterator) Next() bool {
 		it.schema = schema
 		it.zThreshold = zeroThreshold
 		it.pSpans, it.nSpans = posSpans, negSpans
-		numPosBuckets, numNegBuckets := countSpans(posSpans), countSpans(negSpans)
-		if numPosBuckets > 0 {
-			it.pBuckets = make([]int64, numPosBuckets)
-			it.pBucketsDelta = make([]int64, numPosBuckets)
+		numPBuckets, numNBuckets := countSpans(posSpans), countSpans(negSpans)
+		// Allocate bucket slices as needed, recycling existing slices
+		// in case this iterator was reset and already has slices of a
+		// sufficient capacity..
+		if numPBuckets > 0 {
+			if cap(it.pBuckets) < numPBuckets {
+				it.pBuckets = make([]int64, numPBuckets)
+				// If cap(it.pBuckets) isn't sufficient, neither is cap(it.pBucketsDelta).
+				it.pBucketsDelta = make([]int64, numPBuckets)
+			} else {
+				for i := 0; i < numPBuckets; i++ {
+					it.pBuckets = append(it.pBuckets, 0)
+					it.pBucketsDelta = append(it.pBucketsDelta, 0)
+				}
+			}
 		}
-		if numNegBuckets > 0 {
-			it.nBuckets = make([]int64, numNegBuckets)
-			it.nBucketsDelta = make([]int64, numNegBuckets)
+		if numNBuckets > 0 {
+			if cap(it.nBuckets) < numNBuckets {
+				it.nBuckets = make([]int64, numNBuckets)
+				// If cap(it.nBuckets) isn't sufficient, neither is cap(it.nBucketsDelta).
+				it.nBucketsDelta = make([]int64, numNBuckets)
+			} else {
+				for i := 0; i < numNBuckets; i++ {
+					it.nBuckets = append(it.nBuckets, 0)
+					it.nBucketsDelta = append(it.nBucketsDelta, 0)
+				}
+			}
 		}
 
 		// Now read the actual data.
