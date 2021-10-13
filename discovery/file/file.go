@@ -329,7 +329,8 @@ func (d *Discovery) refresh(ctx context.Context, ch chan<- []*targetgroup.Group)
 		fileSDScanDuration.Observe(time.Since(t0).Seconds())
 	}()
 	ref := map[string]int{}
-	for _, p := range d.listFiles() {
+	paths := d.listFiles()
+	for _, p := range paths {
 		tgroups, err := d.readFile(p)
 		if err != nil {
 			fileSDReadErrorsCount.Inc()
@@ -346,6 +347,14 @@ func (d *Discovery) refresh(ctx context.Context, ch chan<- []*targetgroup.Group)
 		}
 
 		ref[p] = len(tgroups)
+	}
+	// Make sure target pool created when dir empty or file not exist
+	if len(paths) == 0 {
+		select {
+		case ch <- []*targetgroup.Group{{}}:
+		case <-ctx.Done():
+			return
+		}
 	}
 	// Send empty updates for sources that disappeared.
 	for f, n := range d.lastRefresh {

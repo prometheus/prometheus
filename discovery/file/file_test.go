@@ -472,11 +472,26 @@ func TestRemoveFile(t *testing.T) {
 	runner.requireUpdate(
 		ref,
 		[]*targetgroup.Group{
+			{},
 			{
 				Source: fileSource(sdFile, 0),
 			},
 			{
 				Source: fileSource(sdFile, 1),
 			}},
+	)
+}
+
+func TestEmptyDir(t *testing.T) {
+	t.Parallel()
+
+	runner := newTestRunner(t)
+	runner.run("*.yml")
+	defer runner.stop()
+
+	ref := runner.lastReceive()
+	runner.requireUpdate(
+		ref,
+		[]*targetgroup.Group{{}},
 	)
 }
