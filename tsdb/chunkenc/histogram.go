@@ -82,9 +82,15 @@ func (c *HistogramChunk) Meta() (
 type CounterResetHeader byte
 
 const (
-	CounterReset        CounterResetHeader = 0b10000000
-	NotCounterReset     CounterResetHeader = 0b01000000
-	GaugeType           CounterResetHeader = 0b11000000
+	// CounterReset means there was definitely a counter reset that resulted in this chunk.
+	CounterReset CounterResetHeader = 0b10000000
+	// NotCounterReset means there was definitely no counter reset when cutting this chunk.
+	NotCounterReset CounterResetHeader = 0b01000000
+	// GaugeType means the histograms represent a gauge instead of counters, hence we cannot make
+	// sense of counter reset in this case.
+	GaugeType CounterResetHeader = 0b11000000
+	// UnknownCounterReset means we cannot say if this was a counter reset or not and not sure
+	// if this is a gauge type histogram or not.
 	UnknownCounterReset CounterResetHeader = 0b00000000
 )
 
@@ -400,7 +406,12 @@ func (a *HistogramAppender) AppendHistogram(t int64, h histogram.Histogram) {
 		writeHistogramChunkMeta(a.b, h.Schema, h.ZeroThreshold, h.PositiveSpans, h.NegativeSpans)
 		a.schema = h.Schema
 		a.zThreshold = h.ZeroThreshold
-		a.pSpans, a.nSpans = h.PositiveSpans, h.NegativeSpans
+
+		a.pSpans = make([]histogram.Span, len(h.PositiveSpans))
+		copy(a.pSpans, h.PositiveSpans)
+		a.nSpans = make([]histogram.Span, len(h.NegativeSpans))
+		copy(a.nSpans, h.NegativeSpans)
+
 		numPBuckets, numNBuckets := countSpans(h.PositiveSpans), countSpans(h.NegativeSpans)
 		a.pBuckets = make([]int64, numPBuckets)
 		a.nBuckets = make([]int64, numNBuckets)
@@ -486,7 +497,8 @@ func (a *HistogramAppender) AppendHistogram(t int64, h histogram.Histogram) {
 	a.cntDelta = cntDelta
 	a.zCntDelta = zCntDelta
 
-	a.pBuckets, a.nBuckets = h.PositiveBuckets, h.NegativeBuckets
+	copy(a.pBuckets, h.PositiveBuckets)
+	copy(a.nBuckets, h.NegativeBuckets)
 	// Note that the bucket deltas were already updated above.
 	a.sum = h.Sum
 }
