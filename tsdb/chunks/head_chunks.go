@@ -474,12 +474,12 @@ func (cdm *ChunkDiskMapper) Chunk(ref Ref) (chunkenc.Chunk, error) {
 	// file will be closed.
 	defer cdm.readPathMtx.RUnlock()
 
-	sgmIndex, chkStart := ref.Unpack()
-	chkCRC32 := newCRC32()
-
 	if cdm.closed {
 		return nil, ErrChunkDiskMapperClosed
 	}
+
+	sgmIndex, chkStart := ref.Unpack()
+	chkCRC32 := newCRC32()
 
 	// If it is the current open file, then the chunks can be in the buffer too.
 	if sgmIndex == cdm.curFileSequence {
