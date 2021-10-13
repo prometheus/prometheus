@@ -86,11 +86,10 @@ const (
 	CounterReset CounterResetHeader = 0b10000000
 	// NotCounterReset means there was definitely no counter reset when cutting this chunk.
 	NotCounterReset CounterResetHeader = 0b01000000
-	// GaugeType means the histograms represent a gauge instead of counters, hence we cannot make
-	// sense of counter reset in this case.
+	// GaugeType means this chunk contains a gauge histogram, where counter resets do not happen.
 	GaugeType CounterResetHeader = 0b11000000
-	// UnknownCounterReset means we cannot say if this was a counter reset or not and not sure
-	// if this is a gauge type histogram or not.
+	// UnknownCounterReset means we cannot say if this chunk was created due to a counter reset or not.
+	// An explicit counter reset detection needs to happen during query time.
 	UnknownCounterReset CounterResetHeader = 0b00000000
 )
 
