@@ -81,8 +81,7 @@ func newChunkDiskMapperRef(seq, offset uint64) ChunkDiskMapperRef {
 
 func (ref ChunkDiskMapperRef) Unpack() (sgmIndex, chkStart int) {
 	sgmIndex = int(ref >> 32)
-	// We skip the series ref and the mint/maxt beforehand.
-	chkStart = int((ref<<32)>>32) + SeriesRefSize + (2 * MintMaxtSize)
+	chkStart = int((ref << 32) >> 32)
 	return sgmIndex, chkStart
 
 }
@@ -479,6 +478,8 @@ func (cdm *ChunkDiskMapper) Chunk(ref ChunkDiskMapperRef) (chunkenc.Chunk, error
 	}
 
 	sgmIndex, chkStart := ref.Unpack()
+	// We skip the series ref and the mint/maxt beforehand.
+	chkStart += SeriesRefSize + (2 * MintMaxtSize)
 	chkCRC32 := newCRC32()
 
 	// If it is the current open file, then the chunks can be in the buffer too.
