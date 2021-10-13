@@ -63,7 +63,7 @@ func newTestHead(t testing.TB, chunkRange int64, compressWAL bool) (*Head, *wal.
 	h, err := NewHead(nil, nil, wlog, opts, nil)
 	require.NoError(t, err)
 
-	require.NoError(t, h.chunkDiskMapper.IterateAllChunks(func(_, _ uint64, _, _ int64, _ uint16) error { return nil }))
+	require.NoError(t, h.chunkDiskMapper.IterateAllChunks(func(_ uint64, _ chunks.ChunkDiskMapperRef, _, _ int64, _ uint16) error { return nil }))
 
 	t.Cleanup(func() {
 		require.NoError(t, os.RemoveAll(dir))
