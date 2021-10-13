@@ -23,7 +23,6 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 
@@ -2434,7 +2433,7 @@ func TestRangeQuery(t *testing.T) {
 func TestVectorBinopReturnsVerboseErrorForManyToOneMatching(t *testing.T) {
 	ev := &evaluator{}
 
-	assert.PanicsWithError(t, `multiple matches for labels: grouping labels must ensure unique matches: duplicate output series found: {job="1"}`,
+	require.PanicsWithError(t, `multiple matches for labels: grouping labels must ensure unique matches: duplicate output series found: {job="1"}`,
 		func() {
 			ev.VectorBinop(
 				parser.ADD,
