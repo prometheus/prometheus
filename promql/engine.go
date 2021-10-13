@@ -1937,7 +1937,8 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 				insertedSigs = map[uint64]struct{}{}
 				matchedSigs[sig] = insertedSigs
 			} else if _, duplicate := insertedSigs[insertSig]; duplicate {
-				ev.errorf("multiple matches for labels: grouping labels must ensure unique matches")
+				ev.errorf(`multiple matches for labels: grouping labels must ensure unique matches: duplicate output series found: %s`,
+					metric.String())
 			}
 			insertedSigs[insertSig] = struct{}{}
 		}

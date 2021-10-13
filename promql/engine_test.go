@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 
@@ -2428,4 +2429,24 @@ func TestRangeQuery(t *testing.T) {
 			require.Equal(t, c.Result, res.Value)
 		})
 	}
+}
+
+func TestVectorBinopReturnsVerboseErrorForManyToOneMatching(t *testing.T) {
+	ev := &evaluator{}
+
+	assert.PanicsWithError(t, `multiple matches for labels: grouping labels must ensure unique matches: duplicate output series found: {job="1"}`,
+		func() {
+			ev.VectorBinop(
+				parser.ADD,
+				Vector{
+					Sample{Point: Point{V: 1, T: 100000}, Metric: labels.FromStrings("__name__", "metric", "job", "1")},
+					Sample{Point: Point{V: 1, T: 100000}, Metric: labels.FromStrings("__name__", "metric", "job", "1")},
+				},
+				Vector{Sample{Point: Point{V: 1, T: 100000}, Metric: labels.FromStrings("__name__", "metric", "job", "1")}},
+				&parser.VectorMatching{Card: parser.CardManyToOne},
+				false,
+				[]EvalSeriesHelper{{signature: "signature"}, {signature: "signature"}},
+				[]EvalSeriesHelper{{signature: "signature"}},
+				&EvalNodeHelper{rightSigs: map[string]Sample{"some signature": {}}})
+		})
 }
