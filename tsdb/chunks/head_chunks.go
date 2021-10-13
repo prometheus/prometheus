@@ -71,8 +71,8 @@ const (
 )
 
 // Ref represents the location of a head chunk on disk.
-// The upper 4 bytes hold the head chunk file index and
-// the lower 4 bytes hold the head chunk file offset where the chunk starts.
+// The upper 4 bytes hold the index of the head chunk file and
+// the lower 4 bytes hold the byte offset in the head chunk file where the chunk starts.
 type Ref uint64
 
 func newRef(seq, offset uint64) Ref {
