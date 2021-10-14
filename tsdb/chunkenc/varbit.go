@@ -14,46 +14,10 @@
 package chunkenc
 
 import (
-	"math"
 	"math/bits"
 
 	"github.com/pkg/errors"
 )
-
-// putVarbitFloat writes a float64 using varbit encoding.  It does so by
-// converting the underlying bits into an int64.
-func putVarbitFloat(b *bstream, val float64) {
-	// TODO(beorn7): The resulting int64 here will almost never be a small
-	// integer. Thus, the varbit encoding doesn't really make sense
-	// here. This function is only used to encode the zero threshold in
-	// histograms. Based on that, here is an idea to improve the encoding:
-	//
-	// It is recommended to use (usually negative) powers of two as
-	// threshoulds. The default value for the zero threshald is in fact
-	// 2^-128, or 0.5*2^-127, as it is represented by IEEE 754. It is
-	// therefore worth a try to test if the threshold is a power of 2 and
-	// then just store the exponent. 0 is also a commen threshold for those
-	// use cases where only observations of precisely zero should go to the
-	// zero bucket. This results in the following proposal:
-	// - First we store 1 byte.
-	// - Iff that byte is 255 (all bits set), it is followed by a direct
-	//   8byte representation of the float.
-	// - If the byte is 0, the threshold is 0.
-	// - In all other cases, take the number represented by the byte,
-	//   subtract 246, and that's the exponent (i.e. between -245 and
-	//   +8, covering thresholds that are powers of 2 between 2^-246
-	//   to 128).
-	putVarbitInt(b, int64(math.Float64bits(val)))
-}
-
-// readVarbitFloat reads a float64 encoded with putVarbitFloat
-func readVarbitFloat(b *bstreamReader) (float64, error) {
-	val, err := readVarbitInt(b)
-	if err != nil {
-		return 0, err
-	}
-	return math.Float64frombits(uint64(val)), nil
-}
 
 // putVarbitInt writes an int64 using varbit encoding with a bit bucketing
 // optimized for the dod's observed in histogram buckets, plus a few additional
