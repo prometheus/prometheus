@@ -431,7 +431,7 @@ func ChainedSeriesMerge(series ...Series) Series {
 			for _, s := range series {
 				iterators = append(iterators, s.Iterator())
 			}
-			return newChainSampleIterator(iterators)
+			return NewChainSampleIterator(iterators)
 		},
 	}
 }
@@ -447,7 +447,10 @@ type chainSampleIterator struct {
 	lastt int64
 }
 
-func newChainSampleIterator(iterators []chunkenc.Iterator) chunkenc.Iterator {
+// NewChainSampleIterator returns a single iterator that iterates over the samples from the given iterators in a sorted
+// fashion. If samples overlap, one sample from overlapped ones is kept (randomly) and all others with the same
+// timestamp are dropped.
+func NewChainSampleIterator(iterators []chunkenc.Iterator) chunkenc.Iterator {
 	return &chainSampleIterator{
 		iterators: iterators,
 		h:         nil,
