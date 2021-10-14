@@ -48,6 +48,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/puppetdb"
 	"github.com/prometheus/prometheus/discovery/scaleway"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/discovery/tencentcloud"
 	"github.com/prometheus/prometheus/discovery/triton"
 	"github.com/prometheus/prometheus/discovery/xds"
 	"github.com/prometheus/prometheus/discovery/zookeeper"
@@ -516,6 +517,38 @@ var expectedConf = &Config{
 						{
 							Name:   "tag:service",
 							Values: []string{"web", "db"},
+						},
+					},
+				},
+			},
+		},
+
+		{
+			JobName: "service-tencentcloud",
+
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
+
+			MetricsPath:      DefaultScrapeConfig.MetricsPath,
+			Scheme:           DefaultScrapeConfig.Scheme,
+			HTTPClientConfig: config.DefaultHTTPClientConfig,
+
+			ServiceDiscoveryConfigs: discovery.Configs{
+				&tencentcloud.SDConfig{
+					Region:          "ap-guangzhou",
+					AccessKey:       "access",
+					SecretKey:       "mysecret",
+					RefreshInterval: model.Duration(60 * time.Second),
+					Port:            80,
+					Filters: []*tencentcloud.Filter{
+						{
+							Name:   "env",
+							Values: []string{"prod"},
+						},
+						{
+							Name:   "zone",
+							Values: []string{"ap-guangzhou-3"},
 						},
 					},
 				},
@@ -1018,7 +1051,7 @@ func TestElideSecrets(t *testing.T) {
 	yamlConfig := string(config)
 
 	matches := secretRe.FindAllStringIndex(yamlConfig, -1)
-	require.Equal(t, 15, len(matches), "wrong number of secret matches found")
+	require.Equal(t, 16, len(matches), "wrong number of secret matches found")
 	require.NotContains(t, yamlConfig, "mysecret",
 		"yaml marshal reveals authentication credentials.")
 }

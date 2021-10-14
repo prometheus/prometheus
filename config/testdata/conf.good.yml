@@ -223,6 +223,20 @@ scrape_configs:
               - web
               - db
 
+  - job_name: service-tencentcloud
+    tencentcloud_sd_configs:
+      - region: ap-guangzhou
+        access_key: access
+        secret_key: mysecret
+        filters:
+          - name: env
+            values:
+              - prod
+
+          - name: zone
+            values:
+              - ap-guangzhou-3
+
   - job_name: service-lightsail
     lightsail_sd_configs:
       - region: us-east-1
