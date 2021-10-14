@@ -15,7 +15,6 @@ package rulefmt
 
 import (
 	"path/filepath"
-	"reflect"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -181,7 +180,5 @@ groups:
 `
 	_, errs := Parse([]byte(group))
 	require.Len(t, errs, 2, "Expected two errors")
-	err0 := errs[0].(*Error).Err.node
-	err1 := errs[1].(*Error).Err.node
-	require.False(t, reflect.DeepEqual(err0, err1), "Error nodes should not be the same")
+	require.NotEqual(t, errs[0], errs[1], "Error nodes should not be the same")
 }
