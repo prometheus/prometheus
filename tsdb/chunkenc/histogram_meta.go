@@ -20,8 +20,8 @@ import (
 )
 
 func writeHistogramChunkLayout(b *bstream, schema int32, zeroThreshold float64, positiveSpans, negativeSpans []histogram.Span) {
-	putVarbitInt(b, int64(schema))
 	putZeroThreshold(b, zeroThreshold)
+	putVarbitInt(b, int64(schema))
 	putHistogramChunkLayoutSpans(b, positiveSpans)
 	putHistogramChunkLayoutSpans(b, negativeSpans)
 }
@@ -31,16 +31,16 @@ func readHistogramChunkLayout(b *bstreamReader) (
 	positiveSpans, negativeSpans []histogram.Span,
 	err error,
 ) {
+	zeroThreshold, err = readZeroThreshold(b)
+	if err != nil {
+		return
+	}
+
 	v, err := readVarbitInt(b)
 	if err != nil {
 		return
 	}
 	schema = int32(v)
-
-	zeroThreshold, err = readZeroThreshold(b)
-	if err != nil {
-		return
-	}
 
 	positiveSpans, err = readHistogramChunkLayoutSpans(b)
 	if err != nil {
