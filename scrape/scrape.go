@@ -653,7 +653,7 @@ func mutateSampleLabels(lset labels.Labels, target *Target, honor bool, rc []*re
 		for _, l := range target.Labels() {
 			existingValue := lset.Get(l.Name)
 			if existingValue != "" {
-					conflictingExposedLabels = append(conflictingExposedLabels, labels.Label{Name: l.Name, Value: existingValue})
+				conflictingExposedLabels = append(conflictingExposedLabels, labels.Label{Name: l.Name, Value: existingValue})
 			}
 			// It is now safe to set the target label.
 			lb.Set(l.Name, l.Value)
