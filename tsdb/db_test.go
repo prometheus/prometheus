@@ -1202,6 +1202,10 @@ func TestTombstoneCleanFail(t *testing.T) {
 // and retention limit policies, when triggered at the same time,
 // won't race against each other.
 func TestTombstoneCleanRetentionLimitsRace(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode.")
+	}
+
 	opts := DefaultOptions()
 	var wg sync.WaitGroup
 
