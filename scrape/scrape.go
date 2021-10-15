@@ -663,19 +663,8 @@ func mutateSampleLabels(lset labels.Labels, target *Target, honor bool, rc []*re
 			lb.Set(l.Name, l.Value)
 		}
 
-		sort.SliceStable(conflictingExposedLabels, func(i, j int) bool {
-			return len(conflictingExposedLabels[i].Name) < len(conflictingExposedLabels[j].Name)
-		})
-
-		allLabelNames := map[string]struct{}{}
-		for _, v := range lb.Labels() {
-			allLabelNames[v.Name] = struct{}{}
-		}
-
-		var resolved []labels.Label
-		resolved = resolveConflictingExposedLabels(allLabelNames, conflictingExposedLabels, resolved)
-		for _, l := range resolved {
-			lb.Set(l.Name, l.Value)
+		if len(conflictingExposedLabels) > 0 {
+			resolveConflictingExposedLabels(lb, conflictingExposedLabels)
 		}
 	}
 
@@ -688,7 +677,24 @@ func mutateSampleLabels(lset labels.Labels, target *Target, honor bool, rc []*re
 	return res
 }
 
-func resolveConflictingExposedLabels(existingNames map[string]struct{}, conflictingLabels, resolvedLabels labels.Labels) labels.Labels {
+func resolveConflictingExposedLabels(lb *labels.Builder, conflictingExposedLabels labels.Labels) {
+	sort.SliceStable(conflictingExposedLabels, func(i, j int) bool {
+		return len(conflictingExposedLabels[i].Name) < len(conflictingExposedLabels[j].Name)
+	})
+
+	allLabelNames := map[string]struct{}{}
+	for _, v := range lb.Labels() {
+		allLabelNames[v.Name] = struct{}{}
+	}
+
+	var resolved []labels.Label
+	resolved = createNewLabels(allLabelNames, conflictingExposedLabels, resolved)
+	for _, l := range resolved {
+		lb.Set(l.Name, l.Value)
+	}
+}
+
+func createNewLabels(existingNames map[string]struct{}, conflictingLabels, resolvedLabels labels.Labels) labels.Labels {
 	for i := 0; i < len(conflictingLabels); i++ {
 		newName := model.ExportedLabelPrefix + conflictingLabels[i].Name
 		if _, ok := existingNames[newName]; !ok {
@@ -698,7 +704,7 @@ func resolveConflictingExposedLabels(existingNames map[string]struct{}, conflict
 			existingNames[newName] = struct{}{}
 		} else {
 			conflictingLabels[i] = labels.Label{Name: newName, Value: conflictingLabels[i].Value}
-			return resolveConflictingExposedLabels(existingNames, conflictingLabels, resolvedLabels)
+			return createNewLabels(existingNames, conflictingLabels, resolvedLabels)
 		}
 	}
 	return resolvedLabels
