@@ -156,5 +156,31 @@ groups:
 		passed := (tst.shouldPass && len(errs) == 0) || (!tst.shouldPass && len(errs) > 0)
 		require.True(t, passed, "Rule validation failed, rule=\n"+tst.ruleString)
 	}
+}
 
+func TestUniqueErrorNodes(t *testing.T) {
+	group := `
+groups:
+- name: example
+  rules:
+  - alert: InstanceDown
+    expr: up ===== 0
+    for: 5m
+    labels:
+      severity: "page"
+    annotations:
+      summary: "Instance {{ $labels.instance }} down"
+  - alert: InstanceUp
+    expr: up ===== 1
+    for: 5m
+    labels:
+      severity: "page"
+    annotations:
+      summary: "Instance {{ $labels.instance }} up"
+`
+	_, errs := Parse([]byte(group))
+	require.Len(t, errs, 2, "Expected two errors")
+	err0 := errs[0].(*Error).Err.node
+	err1 := errs[1].(*Error).Err.node
+	require.NotEqual(t, err0, err1, "Error nodes should not be the same")
 }
