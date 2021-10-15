@@ -683,8 +683,7 @@ func resolveConflictingExposedLabels(lb *labels.Builder, conflictingExposedLabel
 		allLabelNames[v.Name] = struct{}{}
 	}
 
-	var resolved []labels.Label
-	resolved = createNewLabels(allLabelNames, conflictingExposedLabels, resolved)
+	resolved := createNewLabels(allLabelNames, conflictingExposedLabels, nil)
 	for _, l := range resolved {
 		lb.Set(l.Name, l.Value)
 	}
