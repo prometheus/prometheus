@@ -641,16 +641,17 @@ func verifyLabelLimits(lset labels.Labels, limits *labelLimits) error {
 
 func mutateSampleLabels(lset labels.Labels, target *Target, honor bool, rc []*relabel.Config) labels.Labels {
 	lb := labels.NewBuilder(lset)
+	targetLabels := target.Labels()
 
 	if honor {
-		for _, l := range target.Labels() {
+		for _, l := range targetLabels {
 			if !lset.Has(l.Name) {
 				lb.Set(l.Name, l.Value)
 			}
 		}
 	} else {
 		var conflictingExposedLabels labels.Labels
-		for _, l := range target.Labels() {
+		for _, l := range targetLabels {
 			existingValue := lset.Get(l.Name)
 			if existingValue != "" {
 				conflictingExposedLabels = append(conflictingExposedLabels, labels.Label{Name: l.Name, Value: existingValue})
@@ -660,7 +661,7 @@ func mutateSampleLabels(lset labels.Labels, target *Target, honor bool, rc []*re
 		}
 
 		if len(conflictingExposedLabels) > 0 {
-			resolveConflictingExposedLabels(lb, conflictingExposedLabels)
+			resolveConflictingExposedLabels(lb, lset, targetLabels, conflictingExposedLabels)
 		}
 	}
 
@@ -673,36 +674,27 @@ func mutateSampleLabels(lset labels.Labels, target *Target, honor bool, rc []*re
 	return res
 }
 
-func resolveConflictingExposedLabels(lb *labels.Builder, conflictingExposedLabels labels.Labels) {
+func resolveConflictingExposedLabels(lb *labels.Builder, exposedLabels, targetLabels, conflictingExposedLabels labels.Labels) {
 	sort.SliceStable(conflictingExposedLabels, func(i, j int) bool {
 		return len(conflictingExposedLabels[i].Name) < len(conflictingExposedLabels[j].Name)
 	})
 
-	allLabelNames := map[string]struct{}{}
-	for _, v := range lb.Labels() {
-		allLabelNames[v.Name] = struct{}{}
-	}
-
-	resolved := createNewLabels(allLabelNames, conflictingExposedLabels, nil)
-	for _, l := range resolved {
-		lb.Set(l.Name, l.Value)
-	}
-}
-
-func createNewLabels(existingNames map[string]struct{}, conflictingLabels, resolvedLabels labels.Labels) labels.Labels {
-	for i := 0; i < len(conflictingLabels); i++ {
-		newName := model.ExportedLabelPrefix + conflictingLabels[i].Name
-		if _, ok := existingNames[newName]; !ok {
-			resolvedLabels = append(resolvedLabels, labels.Label{Name: newName, Value: conflictingLabels[i].Value})
-			conflictingLabels = append(conflictingLabels[:i], conflictingLabels[i+1:]...)
-			i--
-			existingNames[newName] = struct{}{}
-		} else {
-			conflictingLabels[i] = labels.Label{Name: newName, Value: conflictingLabels[i].Value}
-			return createNewLabels(existingNames, conflictingLabels, resolvedLabels)
+	for i, l := range conflictingExposedLabels {
+		newName := l.Name
+		for {
+			newName = model.ExportedLabelPrefix + newName
+			if !exposedLabels.Has(newName) &&
+				!targetLabels.Has(newName) &&
+				!conflictingExposedLabels[:i].Has(newName) {
+				conflictingExposedLabels[i].Name = newName
+				break
+			}
 		}
 	}
-	return resolvedLabels
+
+	for _, l := range conflictingExposedLabels {
+		lb.Set(l.Name, l.Value)
+	}
 }
 
 func mutateReportSampleLabels(lset labels.Labels, target *Target) labels.Labels {
