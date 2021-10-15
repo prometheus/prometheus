@@ -31,7 +31,7 @@ func TestStartupInterrupt(t *testing.T) {
 		t.Skip("skipping test in short mode.")
 	}
 
-	prom := exec.Command(promPath, "-test.main", "--config.file="+promConfig, "--storage.tsdb.path="+promData)
+	prom := exec.Command(promPath, "-test.main", "--config.file="+promConfig, "--storage.tsdb.path="+t.TempDir())
 	err := prom.Start()
 	if err != nil {
 		t.Errorf("execution error: %v", err)
