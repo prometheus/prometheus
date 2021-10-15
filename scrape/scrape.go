@@ -649,7 +649,7 @@ func mutateSampleLabels(lset labels.Labels, target *Target, honor bool, rc []*re
 			}
 		}
 	} else {
-		conflictingExposedNames := make(map[string]struct{})
+		conflictingExposedNames := map[string]struct{}{}
 		var conflictingExposedLabels labels.Labels
 		for _, l := range target.Labels() {
 			existingValue := lset.Get(l.Name)
@@ -667,7 +667,7 @@ func mutateSampleLabels(lset labels.Labels, target *Target, honor bool, rc []*re
 			return len(conflictingExposedLabels[i].Name) < len(conflictingExposedLabels[j].Name)
 		})
 
-		allLabelNames := make(map[string]struct{})
+		allLabelNames := map[string]struct{}{}
 		for _, v := range lb.Labels() {
 			allLabelNames[v.Name] = struct{}{}
 		}
