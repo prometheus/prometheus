@@ -111,7 +111,7 @@ func (c *XORChunk) Appender() (Appender, error) {
 		leading:  it.leading,
 		trailing: it.trailing,
 	}
-	if binary.BigEndian.Uint16(a.b.bytes()) == 0 {
+	if it.numTotal == 0 {
 		a.leading = 0xff
 	}
 	return a, nil
