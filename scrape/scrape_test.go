@@ -1425,11 +1425,6 @@ func TestScrapeLoopAppendForConflictingPrefixedLabels(t *testing.T) {
 				"foo", "0",
 			},
 		},
-		"Duplicate target labels preserves only one": {
-			targetLabels:  []string{"foo", "2", "foo", "3"},
-			exposedLabels: `metric{foo="1"} 0`,
-			expected:      []string{"__name__", "metric", "exported_foo", "1", "foo", "3"},
-		},
 	}
 
 	for name, tc := range testcases {
