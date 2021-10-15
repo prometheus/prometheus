@@ -56,7 +56,7 @@ func readHistogramChunkLayout(b *bstreamReader) (
 }
 
 func putHistogramChunkLayoutSpans(b *bstream, spans []histogram.Span) {
-	putVarbitInt(b, int64(len(spans)))
+	putVarbitUint(b, uint64(len(spans)))
 	for _, s := range spans {
 		putVarbitUint(b, uint64(s.Length))
 		putVarbitInt(b, int64(s.Offset))
@@ -65,7 +65,7 @@ func putHistogramChunkLayoutSpans(b *bstream, spans []histogram.Span) {
 
 func readHistogramChunkLayoutSpans(b *bstreamReader) ([]histogram.Span, error) {
 	var spans []histogram.Span
-	num, err := readVarbitInt(b)
+	num, err := readVarbitUint(b)
 	if err != nil {
 		return nil, err
 	}
