@@ -226,6 +226,7 @@ func TestWALSegmentSizeBounds(t *testing.T) {
 				t.Errorf("prometheus should be still running: %v", err)
 			case <-time.After(5 * time.Second):
 				prom.Process.Kill()
+				<-done
 			}
 			continue
 		}
@@ -268,6 +269,7 @@ func TestMaxBlockChunkSegmentSizeBounds(t *testing.T) {
 				t.Errorf("prometheus should be still running: %v", err)
 			case <-time.After(5 * time.Second):
 				prom.Process.Kill()
+				<-done
 			}
 			continue
 		}
@@ -438,6 +440,7 @@ func TestModeSpecificFlags(t *testing.T) {
 					t.Errorf("prometheus should be still running: %v", err)
 				case <-time.After(5 * time.Second):
 					prom.Process.Kill()
+					<-done
 				}
 				return
 			}
