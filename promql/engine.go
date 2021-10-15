@@ -2085,6 +2085,8 @@ func scalarBinop(op parser.ItemType, lhs, rhs float64) float64 {
 		return btos(lhs >= rhs)
 	case parser.LTE:
 		return btos(lhs <= rhs)
+	case parser.ATAN2:
+		return math.Atan2(lhs, rhs)
 	}
 	panic(errors.Errorf("operator %q not allowed for Scalar operations", op))
 }
