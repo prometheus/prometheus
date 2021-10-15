@@ -34,6 +34,7 @@ var eMetrics = NewExemplarMetrics(prometheus.DefaultRegisterer)
 
 // Tests the same exemplar cases as AddExemplar, but specifically the ValidateExemplar function so it can be relied on externally.
 func TestValidateExemplar(t *testing.T) {
+	t.Parallel()
 	exs, err := NewCircularExemplarStorage(2, eMetrics)
 	require.NoError(t, err)
 	es := exs.(*CircularExemplarStorage)
@@ -93,6 +94,8 @@ func TestValidateExemplar(t *testing.T) {
 }
 
 func TestAddExemplar(t *testing.T) {
+	t.Parallel()
+
 	exs, err := NewCircularExemplarStorage(2, eMetrics)
 	require.NoError(t, err)
 	es := exs.(*CircularExemplarStorage)
@@ -153,6 +156,8 @@ func TestAddExemplar(t *testing.T) {
 }
 
 func TestStorageOverflow(t *testing.T) {
+	t.Parallel()
+
 	// Test that circular buffer index and assignment
 	// works properly, adding more exemplars than can
 	// be stored and then querying for them.
@@ -191,6 +196,8 @@ func TestStorageOverflow(t *testing.T) {
 }
 
 func TestSelectExemplar(t *testing.T) {
+	t.Parallel()
+
 	exs, err := NewCircularExemplarStorage(5, eMetrics)
 	require.NoError(t, err)
 	es := exs.(*CircularExemplarStorage)
@@ -222,6 +229,8 @@ func TestSelectExemplar(t *testing.T) {
 }
 
 func TestSelectExemplar_MultiSeries(t *testing.T) {
+	t.Parallel()
+
 	exs, err := NewCircularExemplarStorage(5, eMetrics)
 	require.NoError(t, err)
 	es := exs.(*CircularExemplarStorage)
@@ -279,6 +288,8 @@ func TestSelectExemplar_MultiSeries(t *testing.T) {
 }
 
 func TestSelectExemplar_TimeRange(t *testing.T) {
+	t.Parallel()
+
 	var lenEs int64 = 5
 	exs, err := NewCircularExemplarStorage(lenEs, eMetrics)
 	require.NoError(t, err)
@@ -314,6 +325,8 @@ func TestSelectExemplar_TimeRange(t *testing.T) {
 // Test to ensure that even though a series matches more than one matcher from the
 // query that it's exemplars are only included in the result a single time.
 func TestSelectExemplar_DuplicateSeries(t *testing.T) {
+	t.Parallel()
+
 	exs, err := NewCircularExemplarStorage(4, eMetrics)
 	require.NoError(t, err)
 	es := exs.(*CircularExemplarStorage)
@@ -355,6 +368,8 @@ func TestSelectExemplar_DuplicateSeries(t *testing.T) {
 }
 
 func TestIndexOverwrite(t *testing.T) {
+	t.Parallel()
+
 	exs, err := NewCircularExemplarStorage(2, eMetrics)
 	require.NoError(t, err)
 	es := exs.(*CircularExemplarStorage)
@@ -388,6 +403,8 @@ func TestIndexOverwrite(t *testing.T) {
 }
 
 func TestResize(t *testing.T) {
+	t.Parallel()
+
 	testCases := []struct {
 		name              string
 		startSize         int64

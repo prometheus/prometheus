@@ -42,6 +42,8 @@ import (
 // to 2. We had a migration in place resetting it to 1 but we should move immediately to
 // version 3 next time to avoid confusion and issues.
 func TestBlockMetaMustNeverBeVersion2(t *testing.T) {
+	t.Parallel()
+
 	dir, err := ioutil.TempDir("", "metaversion")
 	require.NoError(t, err)
 	defer func() {
@@ -57,6 +59,8 @@ func TestBlockMetaMustNeverBeVersion2(t *testing.T) {
 }
 
 func TestSetCompactionFailed(t *testing.T) {
+	t.Parallel()
+
 	tmpdir, err := ioutil.TempDir("", "test")
 	require.NoError(t, err)
 	defer func() {
@@ -78,6 +82,8 @@ func TestSetCompactionFailed(t *testing.T) {
 }
 
 func TestCreateBlock(t *testing.T) {
+	t.Parallel()
+
 	tmpdir, err := ioutil.TempDir("", "test")
 	require.NoError(t, err)
 	defer func() {
@@ -91,6 +97,8 @@ func TestCreateBlock(t *testing.T) {
 }
 
 func TestCorruptedChunk(t *testing.T) {
+	t.Parallel()
+
 	for _, tc := range []struct {
 		name     string
 		corrFunc func(f *os.File) // Func that applies the corruption.
@@ -172,7 +180,11 @@ func TestCorruptedChunk(t *testing.T) {
 			iterErr: errors.New("cannot populate chunk 8: checksum mismatch expected:cfc0526c, actual:34815eae"),
 		},
 	} {
+		tc := tc
+
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			tmpdir, err := ioutil.TempDir("", "test_open_block_chunk_corrupted")
 			require.NoError(t, err)
 			defer func() {
@@ -215,6 +227,8 @@ func TestCorruptedChunk(t *testing.T) {
 }
 
 func TestLabelValuesWithMatchers(t *testing.T) {
+	t.Parallel()
+
 	tmpdir, err := ioutil.TempDir("", "test_block_label_values_with_matchers")
 	require.NoError(t, err)
 	defer func() {
@@ -288,6 +302,7 @@ func TestLabelValuesWithMatchers(t *testing.T) {
 
 // TestBlockSize ensures that the block size is calculated correctly.
 func TestBlockSize(t *testing.T) {
+	t.Parallel()
 	tmpdir, err := ioutil.TempDir("", "test_blockSize")
 	require.NoError(t, err)
 	defer func() {
@@ -341,6 +356,8 @@ func TestBlockSize(t *testing.T) {
 }
 
 func TestReadIndexFormatV1(t *testing.T) {
+	t.Parallel()
+
 	/* The block here was produced at the commit
 	    706602daed1487f7849990678b4ece4599745905 used in 2.0.0 with:
 	   db, _ := Open("v1db", nil, nil, nil)
@@ -419,6 +436,8 @@ func BenchmarkLabelValuesWithMatchers(b *testing.B) {
 }
 
 func TestLabelNamesWithMatchers(t *testing.T) {
+	t.Parallel()
+
 	tmpdir, err := ioutil.TempDir("", "test_block_label_names_with_matchers")
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, os.RemoveAll(tmpdir)) })
@@ -486,7 +505,11 @@ func TestLabelNamesWithMatchers(t *testing.T) {
 	}
 
 	for _, tt := range testCases {
+		tt := tt
+
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			actualNames, err := indexReader.LabelNames(tt.matchers...)
 			require.NoError(t, err)
 			require.Equal(t, tt.expectedNames, actualNames)

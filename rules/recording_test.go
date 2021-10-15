@@ -29,6 +29,8 @@ import (
 )
 
 func TestRuleEval(t *testing.T) {
+	t.Parallel()
+
 	storage := teststorage.New(t)
 	defer storage.Close()
 
@@ -85,6 +87,8 @@ func TestRuleEval(t *testing.T) {
 }
 
 func TestRecordingRuleHTMLSnippet(t *testing.T) {
+	t.Parallel()
+
 	expr, err := parser.ParseExpr(`foo{html="<b>BOLD<b>"}`)
 	require.NoError(t, err)
 	rule := NewRecordingRule("testrule", expr, labels.FromStrings("html", "<b>BOLD</b>"))
@@ -101,6 +105,8 @@ labels:
 
 // TestRuleEvalDuplicate tests for duplicate labels in recorded metrics, see #5529.
 func TestRuleEvalDuplicate(t *testing.T) {
+	t.Parallel()
+
 	storage := teststorage.New(t)
 	defer storage.Close()
 

@@ -28,6 +28,8 @@ import (
 )
 
 func TestRepairBadIndexVersion(t *testing.T) {
+	t.Parallel()
+
 	tmpDir, err := ioutil.TempDir("", "test")
 	require.NoError(t, err)
 	t.Cleanup(func() {

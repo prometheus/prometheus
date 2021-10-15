@@ -195,6 +195,8 @@ test_metric_without_labels{instance="baz"} 1001 6000000
 }
 
 func TestFederation(t *testing.T) {
+	t.Parallel()
+
 	suite, err := promql.NewTest(t, `
 		load 1m
 			test_metric1{foo="bar",instance="i"}    0+100x100
@@ -223,6 +225,8 @@ func TestFederation(t *testing.T) {
 	}
 
 	for name, scenario := range scenarios {
+		scenario := scenario
+
 		t.Run(name, func(t *testing.T) {
 			h.config.GlobalConfig.ExternalLabels = scenario.externalLabels
 			req := httptest.NewRequest("GET", "http://example.org/federate?"+scenario.params, nil)
@@ -253,8 +257,14 @@ func (notReadyReadStorage) Stats(string) (*tsdb.Stats, error) {
 
 // Regression test for https://github.com/prometheus/prometheus/issues/7181.
 func TestFederation_NotReady(t *testing.T) {
+	t.Parallel()
+
 	for name, scenario := range scenarios {
+		scenario := scenario
+
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
 			h := &Handler{
 				localStorage:  notReadyReadStorage{},
 				lookbackDelta: 5 * time.Minute,

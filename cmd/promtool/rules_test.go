@@ -43,6 +43,8 @@ const defaultBlockDuration = time.Duration(tsdb.DefaultBlockDuration) * time.Mil
 
 // TestBackfillRuleIntegration is an integration test that runs all the rule importer code to confirm the parts work together.
 func TestBackfillRuleIntegration(t *testing.T) {
+	t.Parallel()
+
 	const (
 		testMaxSampleCount = 50
 		testValue          = 123

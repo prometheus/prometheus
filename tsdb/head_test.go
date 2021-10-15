@@ -270,8 +270,14 @@ func BenchmarkLoadWAL(b *testing.B) {
 }
 
 func TestHead_ReadWAL(t *testing.T) {
+	t.Parallel()
+
 	for _, compress := range []bool{false, true} {
+		compress := compress
+
 		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
+			t.Parallel()
+
 			entries := []interface{}{
 				[]record.RefSeries{
 					{Ref: 10, Labels: labels.FromStrings("a", "1")},
@@ -345,6 +351,8 @@ func TestHead_ReadWAL(t *testing.T) {
 }
 
 func TestHead_WALMultiRef(t *testing.T) {
+	t.Parallel()
+
 	head, w := newTestHead(t, 1000, false)
 
 	require.NoError(t, head.Init(0))
@@ -405,6 +413,8 @@ func TestHead_WALMultiRef(t *testing.T) {
 }
 
 func TestHead_ActiveAppenders(t *testing.T) {
+	t.Parallel()
+
 	head, _ := newTestHead(t, 1000, false)
 	defer head.Close()
 
@@ -438,6 +448,8 @@ func TestHead_ActiveAppenders(t *testing.T) {
 }
 
 func TestHead_UnknownWALRecord(t *testing.T) {
+	t.Parallel()
+
 	head, w := newTestHead(t, 1000, false)
 	w.Log([]byte{255, 42})
 	require.NoError(t, head.Init(0))
@@ -445,6 +457,8 @@ func TestHead_UnknownWALRecord(t *testing.T) {
 }
 
 func TestHead_Truncate(t *testing.T) {
+	t.Parallel()
+
 	h, _ := newTestHead(t, 1000, false)
 	defer func() {
 		require.NoError(t, h.Close())
@@ -533,6 +547,8 @@ func TestHead_Truncate(t *testing.T) {
 // Validate various behaviors brought on by firstChunkID accounting for
 // garbage collected chunks.
 func TestMemSeries_truncateChunks(t *testing.T) {
+	t.Parallel()
+
 	dir, err := ioutil.TempDir("", "truncate_chunks")
 	require.NoError(t, err)
 	defer func() {
@@ -592,8 +608,14 @@ func TestMemSeries_truncateChunks(t *testing.T) {
 }
 
 func TestHeadDeleteSeriesWithoutSamples(t *testing.T) {
+	t.Parallel()
+
 	for _, compress := range []bool{false, true} {
+		compress := compress
+
 		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
+			t.Parallel()
+
 			entries := []interface{}{
 				[]record.RefSeries{
 					{Ref: 10, Labels: labels.FromStrings("a", "1")},
@@ -622,6 +644,8 @@ func TestHeadDeleteSeriesWithoutSamples(t *testing.T) {
 }
 
 func TestHeadDeleteSimple(t *testing.T) {
+	t.Parallel()
+
 	buildSmpls := func(s []int64) []sample {
 		ss := make([]sample, 0, len(s))
 		for _, t := range s {
@@ -754,6 +778,8 @@ func TestHeadDeleteSimple(t *testing.T) {
 }
 
 func TestDeleteUntilCurMax(t *testing.T) {
+	t.Parallel()
+
 	hb, _ := newTestHead(t, 1000000, false)
 	defer func() {
 		require.NoError(t, hb.Close())
@@ -804,6 +830,8 @@ func TestDeleteUntilCurMax(t *testing.T) {
 }
 
 func TestDeletedSamplesAndSeriesStillInWALAfterCheckpoint(t *testing.T) {
+	t.Parallel()
+
 	numSamples := 10000
 
 	// Enough samples to cause a checkpoint.
@@ -845,6 +873,8 @@ func TestDeletedSamplesAndSeriesStillInWALAfterCheckpoint(t *testing.T) {
 }
 
 func TestDelete_e2e(t *testing.T) {
+	t.Parallel()
+
 	numDatapoints := 1000
 	numRanges := 1000
 	timeInterval := int64(2)
@@ -1035,6 +1065,8 @@ Outer:
 }
 
 func TestComputeChunkEndTime(t *testing.T) {
+	t.Parallel()
+
 	cases := []struct {
 		start, cur, max int64
 		res             int64
@@ -1077,6 +1109,8 @@ func TestComputeChunkEndTime(t *testing.T) {
 }
 
 func TestMemSeries_append(t *testing.T) {
+	t.Parallel()
+
 	dir, err := ioutil.TempDir("", "append")
 	require.NoError(t, err)
 	defer func() {
@@ -1134,6 +1168,8 @@ func TestMemSeries_append(t *testing.T) {
 }
 
 func TestGCChunkAccess(t *testing.T) {
+	t.Parallel()
+
 	// Put a chunk, select it. GC it and then access it.
 	h, _ := newTestHead(t, 1000, false)
 	defer func() {
@@ -1188,6 +1224,8 @@ func TestGCChunkAccess(t *testing.T) {
 }
 
 func TestGCSeriesAccess(t *testing.T) {
+	t.Parallel()
+
 	// Put a series, select it. GC it and then access it.
 	h, _ := newTestHead(t, 1000, false)
 	defer func() {
@@ -1244,6 +1282,8 @@ func TestGCSeriesAccess(t *testing.T) {
 }
 
 func TestUncommittedSamplesNotLostOnTruncate(t *testing.T) {
+	t.Parallel()
+
 	h, _ := newTestHead(t, 1000, false)
 	defer func() {
 		require.NoError(t, h.Close())
@@ -1274,6 +1314,8 @@ func TestUncommittedSamplesNotLostOnTruncate(t *testing.T) {
 }
 
 func TestRemoveSeriesAfterRollbackAndTruncate(t *testing.T) {
+	t.Parallel()
+
 	h, _ := newTestHead(t, 1000, false)
 	defer func() {
 		require.NoError(t, h.Close())
@@ -1305,8 +1347,14 @@ func TestRemoveSeriesAfterRollbackAndTruncate(t *testing.T) {
 }
 
 func TestHead_LogRollback(t *testing.T) {
+	t.Parallel()
+
 	for _, compress := range []bool{false, true} {
+		compress := compress
+
 		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
+			t.Parallel()
+
 			h, w := newTestHead(t, 1000, compress)
 			defer func() {
 				require.NoError(t, h.Close())
@@ -1331,6 +1379,8 @@ func TestHead_LogRollback(t *testing.T) {
 // TestWalRepair_DecodingError ensures that a repair is run for an error
 // when decoding a record.
 func TestWalRepair_DecodingError(t *testing.T) {
+	t.Parallel()
+
 	var enc record.Encoder
 	for name, test := range map[string]struct {
 		corrFunc  func(rec []byte) []byte // Func that applies the corruption to a record.
@@ -1364,7 +1414,11 @@ func TestWalRepair_DecodingError(t *testing.T) {
 		},
 	} {
 		for _, compress := range []bool{false, true} {
+			compress := compress
+
 			t.Run(fmt.Sprintf("%s,compress=%t", name, compress), func(t *testing.T) {
+				t.Parallel()
+
 				dir, err := ioutil.TempDir("", "wal_repair")
 				require.NoError(t, err)
 				defer func() {
@@ -1429,6 +1483,8 @@ func TestWalRepair_DecodingError(t *testing.T) {
 }
 
 func TestHeadReadWriterRepair(t *testing.T) {
+	t.Parallel()
+
 	dir, err := ioutil.TempDir("", "head_read_writer_repair")
 	require.NoError(t, err)
 	defer func() {
@@ -1499,6 +1555,8 @@ func TestHeadReadWriterRepair(t *testing.T) {
 }
 
 func TestNewWalSegmentOnTruncate(t *testing.T) {
+	t.Parallel()
+
 	h, wlog := newTestHead(t, 1000, false)
 	defer func() {
 		require.NoError(t, h.Close())
@@ -1529,6 +1587,8 @@ func TestNewWalSegmentOnTruncate(t *testing.T) {
 }
 
 func TestAddDuplicateLabelName(t *testing.T) {
+	t.Parallel()
+
 	h, _ := newTestHead(t, 1000, false)
 	defer func() {
 		require.NoError(t, h.Close())
@@ -1547,6 +1607,8 @@ func TestAddDuplicateLabelName(t *testing.T) {
 }
 
 func TestMemSeriesIsolation(t *testing.T) {
+	t.Parallel()
+
 	// Put a series, select it. GC it and then access it.
 	lastValue := func(h *Head, maxAppendID uint64) int {
 		idx, err := h.Index()
@@ -1718,6 +1780,8 @@ func TestMemSeriesIsolation(t *testing.T) {
 }
 
 func TestIsolationRollback(t *testing.T) {
+	t.Parallel()
+
 	// Rollback after a failed append and test if the low watermark has progressed anyway.
 	hb, _ := newTestHead(t, 1000, false)
 	defer func() {
@@ -1746,6 +1810,8 @@ func TestIsolationRollback(t *testing.T) {
 }
 
 func TestIsolationLowWatermarkMonotonous(t *testing.T) {
+	t.Parallel()
+
 	hb, _ := newTestHead(t, 1000, false)
 	defer func() {
 		require.NoError(t, hb.Close())
@@ -1779,6 +1845,8 @@ func TestIsolationLowWatermarkMonotonous(t *testing.T) {
 }
 
 func TestIsolationAppendIDZeroIsNoop(t *testing.T) {
+	t.Parallel()
+
 	h, _ := newTestHead(t, 1000, false)
 	defer func() {
 		require.NoError(t, h.Close())
@@ -1794,12 +1862,16 @@ func TestIsolationAppendIDZeroIsNoop(t *testing.T) {
 }
 
 func TestHeadSeriesChunkRace(t *testing.T) {
+	t.Parallel()
+
 	for i := 0; i < 1000; i++ {
 		testHeadSeriesChunkRace(t)
 	}
 }
 
 func TestIsolationWithoutAdd(t *testing.T) {
+	t.Parallel()
+
 	hb, _ := newTestHead(t, 1000, false)
 	defer func() {
 		require.NoError(t, hb.Close())
@@ -1817,6 +1889,8 @@ func TestIsolationWithoutAdd(t *testing.T) {
 }
 
 func TestOutOfOrderSamplesMetric(t *testing.T) {
+	t.Parallel()
+
 	dir, err := ioutil.TempDir("", "test")
 	require.NoError(t, err)
 	defer func() {
@@ -1934,6 +2008,8 @@ func testHeadSeriesChunkRace(t *testing.T) {
 }
 
 func TestHeadLabelNamesValuesWithMinMaxRange(t *testing.T) {
+	t.Parallel()
+
 	head, _ := newTestHead(t, 1000, false)
 	defer func() {
 		require.NoError(t, head.Close())
@@ -1994,6 +2070,8 @@ func TestHeadLabelNamesValuesWithMinMaxRange(t *testing.T) {
 }
 
 func TestHeadLabelValuesWithMatchers(t *testing.T) {
+	t.Parallel()
+
 	head, _ := newTestHead(t, 1000, false)
 	t.Cleanup(func() { require.NoError(t, head.Close()) })
 
@@ -2037,7 +2115,11 @@ func TestHeadLabelValuesWithMatchers(t *testing.T) {
 	}
 
 	for _, tt := range testCases {
+		tt := tt
+
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			headIdxReader := head.indexRange(0, 200)
 
 			actualValues, err := headIdxReader.SortedLabelValues(tt.labelName, tt.matchers...)
@@ -2053,6 +2135,8 @@ func TestHeadLabelValuesWithMatchers(t *testing.T) {
 }
 
 func TestHeadLabelNamesWithMatchers(t *testing.T) {
+	t.Parallel()
+
 	head, _ := newTestHead(t, 1000, false)
 	defer func() {
 		require.NoError(t, head.Close())
@@ -2121,6 +2205,8 @@ func TestHeadLabelNamesWithMatchers(t *testing.T) {
 }
 
 func TestErrReuseAppender(t *testing.T) {
+	t.Parallel()
+
 	head, _ := newTestHead(t, 1000, false)
 	defer func() {
 		require.NoError(t, head.Close())
@@ -2156,6 +2242,8 @@ func TestErrReuseAppender(t *testing.T) {
 }
 
 func TestHeadMintAfterTruncation(t *testing.T) {
+	t.Parallel()
+
 	chunkRange := int64(2000)
 	head, _ := newTestHead(t, chunkRange, false)
 
@@ -2190,6 +2278,8 @@ func TestHeadMintAfterTruncation(t *testing.T) {
 }
 
 func TestHeadExemplars(t *testing.T) {
+	t.Parallel()
+
 	chunkRange := int64(2000)
 	head, _ := newTestHead(t, chunkRange, false)
 	app := head.Appender(context.Background())
@@ -2243,6 +2333,8 @@ func BenchmarkHeadLabelValuesWithMatchers(b *testing.B) {
 }
 
 func TestMemSafeIteratorSeekIntoBuffer(t *testing.T) {
+	t.Parallel()
+
 	dir, err := ioutil.TempDir("", "iterator_seek")
 	require.NoError(t, err)
 	defer func() {
@@ -2312,6 +2404,8 @@ func TestMemSafeIteratorSeekIntoBuffer(t *testing.T) {
 
 // Tests https://github.com/prometheus/prometheus/issues/8221.
 func TestChunkNotFoundHeadGCRace(t *testing.T) {
+	t.Parallel()
+
 	db := newTestDB(t)
 	db.DisableCompactions()
 
@@ -2377,6 +2471,8 @@ func TestChunkNotFoundHeadGCRace(t *testing.T) {
 
 // Tests https://github.com/prometheus/prometheus/issues/9079.
 func TestDataMissingOnQueryDuringCompaction(t *testing.T) {
+	t.Parallel()
+
 	db := newTestDB(t)
 	db.DisableCompactions()
 
@@ -2424,6 +2520,8 @@ func TestDataMissingOnQueryDuringCompaction(t *testing.T) {
 }
 
 func TestIsQuerierCollidingWithTruncation(t *testing.T) {
+	t.Parallel()
+
 	db := newTestDB(t)
 	db.DisableCompactions()
 
@@ -2469,6 +2567,8 @@ func TestIsQuerierCollidingWithTruncation(t *testing.T) {
 }
 
 func TestWaitForPendingReadersInTimeRange(t *testing.T) {
+	t.Parallel()
+
 	db := newTestDB(t)
 	db.DisableCompactions()
 
@@ -2526,6 +2626,8 @@ func TestWaitForPendingReadersInTimeRange(t *testing.T) {
 }
 
 func TestChunkSnapshot(t *testing.T) {
+	t.Parallel()
+
 	head, _ := newTestHead(t, 120*4, false)
 	defer func() {
 		head.opts.EnableMemorySnapshotOnShutdown = false
@@ -2768,6 +2870,8 @@ func TestChunkSnapshot(t *testing.T) {
 }
 
 func TestSnapshotError(t *testing.T) {
+	t.Parallel()
+
 	head, _ := newTestHead(t, 120*4, false)
 	defer func() {
 		head.opts.EnableMemorySnapshotOnShutdown = false

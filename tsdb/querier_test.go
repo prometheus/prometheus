@@ -243,6 +243,8 @@ func testBlockQuerier(t *testing.T, c blockQuerierTestCase, ir IndexReader, cr C
 }
 
 func TestBlockQuerier(t *testing.T) {
+	t.Parallel()
+
 	for _, c := range []blockQuerierTestCase{
 		{
 			mint:    0,
@@ -371,7 +373,10 @@ func TestBlockQuerier(t *testing.T) {
 			}),
 		},
 	} {
+		c := c
 		t.Run("", func(t *testing.T) {
+			t.Parallel()
+
 			ir, cr, _, _ := createIdxChkReaders(t, testData)
 			testBlockQuerier(t, c, ir, cr, tombstones.NewMemTombstones())
 		})
@@ -379,6 +384,8 @@ func TestBlockQuerier(t *testing.T) {
 }
 
 func TestBlockQuerier_AgainstHeadWithOpenChunks(t *testing.T) {
+	t.Parallel()
+
 	for _, c := range []blockQuerierTestCase{
 		{
 			mint:    0,
@@ -457,7 +464,10 @@ func TestBlockQuerier_AgainstHeadWithOpenChunks(t *testing.T) {
 			}),
 		},
 	} {
+		c := c
 		t.Run("", func(t *testing.T) {
+			t.Parallel()
+
 			opts := DefaultHeadOptions()
 			opts.ChunkRange = 2 * time.Hour.Milliseconds()
 			h, err := NewHead(nil, nil, nil, opts, nil)
@@ -514,6 +524,8 @@ var testData = []seriesSamples{
 }
 
 func TestBlockQuerierDelete(t *testing.T) {
+	t.Parallel()
+
 	stones := tombstones.NewTestMemTombstones([]tombstones.Intervals{
 		{{Mint: 1, Maxt: 3}},
 		{{Mint: 1, Maxt: 3}, {Mint: 6, Maxt: 10}},
@@ -598,7 +610,10 @@ func TestBlockQuerierDelete(t *testing.T) {
 			}),
 		},
 	} {
+		c := c
 		t.Run("", func(t *testing.T) {
+			t.Parallel()
+
 			ir, cr, _, _ := createIdxChkReaders(t, testData)
 			testBlockQuerier(t, c, ir, cr, stones)
 		})
@@ -638,6 +653,8 @@ func (r *fakeChunksReader) Chunk(ref chunks.ChunkRef) (chunkenc.Chunk, error) {
 }
 
 func TestPopulateWithTombSeriesIterators(t *testing.T) {
+	t.Parallel()
+
 	cases := []struct {
 		name string
 		chks [][]tsdbutil.Sample
@@ -857,8 +874,13 @@ func TestPopulateWithTombSeriesIterators(t *testing.T) {
 		},
 	}
 	for _, tc := range cases {
+		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			t.Run("sample", func(t *testing.T) {
+				t.Parallel()
+
 				f, chkMetas := createFakeReaderAndNotPopulatedChunks(tc.chks...)
 				it := newPopulateWithDelGenericSeriesIterator(f, chkMetas, tc.intervals).toSeriesIterator()
 
@@ -879,6 +901,8 @@ func TestPopulateWithTombSeriesIterators(t *testing.T) {
 				require.Equal(t, tc.expected, r)
 			})
 			t.Run("chunk", func(t *testing.T) {
+				t.Parallel()
+
 				f, chkMetas := createFakeReaderAndNotPopulatedChunks(tc.chks...)
 				it := newPopulateWithDelGenericSeriesIterator(f, chkMetas, tc.intervals).toChunkSeriesIterator()
 
@@ -906,6 +930,8 @@ func rmChunkRefs(chks []chunks.Meta) {
 
 // Regression for: https://github.com/prometheus/tsdb/pull/97
 func TestPopulateWithDelSeriesIterator_DoubleSeek(t *testing.T) {
+	t.Parallel()
+
 	f, chkMetas := createFakeReaderAndNotPopulatedChunks(
 		[]tsdbutil.Sample{},
 		[]tsdbutil.Sample{sample{1, 1}, sample{2, 2}, sample{3, 3}},
@@ -924,6 +950,8 @@ func TestPopulateWithDelSeriesIterator_DoubleSeek(t *testing.T) {
 // Regression when seeked chunks were still found via binary search and we always
 // skipped to the end when seeking a value in the current chunk.
 func TestPopulateWithDelSeriesIterator_SeekInCurrentChunk(t *testing.T) {
+	t.Parallel()
+
 	f, chkMetas := createFakeReaderAndNotPopulatedChunks(
 		[]tsdbutil.Sample{},
 		[]tsdbutil.Sample{sample{1, 2}, sample{3, 4}, sample{5, 6}, sample{7, 8}},
@@ -943,6 +971,8 @@ func TestPopulateWithDelSeriesIterator_SeekInCurrentChunk(t *testing.T) {
 }
 
 func TestPopulateWithDelSeriesIterator_SeekWithMinTime(t *testing.T) {
+	t.Parallel()
+
 	f, chkMetas := createFakeReaderAndNotPopulatedChunks(
 		[]tsdbutil.Sample{sample{1, 6}, sample{5, 6}, sample{6, 8}},
 	)
@@ -955,6 +985,8 @@ func TestPopulateWithDelSeriesIterator_SeekWithMinTime(t *testing.T) {
 // Regression when calling Next() with a time bounded to fit within two samples.
 // Seek gets called and advances beyond the max time, which was just accepted as a valid sample.
 func TestPopulateWithDelSeriesIterator_NextWithMinTime(t *testing.T) {
+	t.Parallel()
+
 	f, chkMetas := createFakeReaderAndNotPopulatedChunks(
 		[]tsdbutil.Sample{sample{1, 6}, sample{5, 6}, sample{7, 8}},
 	)
@@ -1032,6 +1064,8 @@ func (cr mockChunkReader) Close() error {
 }
 
 func TestDeletedIterator(t *testing.T) {
+	t.Parallel()
+
 	chk := chunkenc.NewXORChunk()
 	app, err := chk.Appender()
 	require.NoError(t, err)
@@ -1092,6 +1126,8 @@ func TestDeletedIterator(t *testing.T) {
 }
 
 func TestDeletedIterator_WithSeek(t *testing.T) {
+	t.Parallel()
+
 	chk := chunkenc.NewXORChunk()
 	app, err := chk.Appender()
 	require.NoError(t, err)
@@ -1592,6 +1628,8 @@ func BenchmarkSetMatcher(b *testing.B) {
 
 // Refer to https://github.com/prometheus/prometheus/issues/2651.
 func TestFindSetMatches(t *testing.T) {
+	t.Parallel()
+
 	cases := []struct {
 		pattern string
 		exp     []string
@@ -1654,6 +1692,8 @@ func TestFindSetMatches(t *testing.T) {
 }
 
 func TestPostingsForMatchers(t *testing.T) {
+	t.Parallel()
+
 	chunkDir, err := ioutil.TempDir("", "chunk_dir")
 	require.NoError(t, err)
 	defer func() {
@@ -1915,6 +1955,8 @@ func TestPostingsForMatchers(t *testing.T) {
 
 // TestClose ensures that calling Close more than once doesn't block and doesn't panic.
 func TestClose(t *testing.T) {
+	t.Parallel()
+
 	dir, err := ioutil.TempDir("", "test_storage")
 	if err != nil {
 		t.Fatalf("Opening test dir failed: %s", err)
@@ -2110,6 +2152,8 @@ func (m mockMatcherIndex) LabelNames(...*labels.Matcher) ([]string, error) {
 }
 
 func TestPostingsForMatcher(t *testing.T) {
+	t.Parallel()
+
 	cases := []struct {
 		matcher  *labels.Matcher
 		hasError bool
@@ -2147,6 +2191,8 @@ func TestPostingsForMatcher(t *testing.T) {
 }
 
 func TestBlockBaseSeriesSet(t *testing.T) {
+	t.Parallel()
+
 	type refdSeries struct {
 		lset   labels.Labels
 		chunks []chunks.Meta

@@ -50,6 +50,8 @@ func TestMain(m *testing.M) {
 }
 
 func TestGlobalURL(t *testing.T) {
+	t.Parallel()
+
 	opts := &Options{
 		ListenAddress: ":9090",
 		ExternalURL: &url.URL{
@@ -332,6 +334,8 @@ func TestRoutePrefix(t *testing.T) {
 }
 
 func TestDebugHandler(t *testing.T) {
+	t.Parallel()
+
 	for _, tc := range []struct {
 		prefix, url string
 		code        int
@@ -404,6 +408,8 @@ func TestHTTPMetrics(t *testing.T) {
 }
 
 func TestShutdownWithStaleConnection(t *testing.T) {
+	t.Parallel()
+
 	dbDir, err := ioutil.TempDir("", "tsdb-ready")
 	require.NoError(t, err)
 	defer func() { require.NoError(t, os.RemoveAll(dbDir)) }()
@@ -480,6 +486,8 @@ func TestShutdownWithStaleConnection(t *testing.T) {
 }
 
 func TestHandleMultipleQuitRequests(t *testing.T) {
+	t.Parallel()
+
 	port := fmt.Sprintf(":%d", testutil.RandomUnprivilegedPort(t))
 
 	opts := &Options{

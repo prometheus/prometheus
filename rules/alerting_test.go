@@ -30,6 +30,8 @@ import (
 )
 
 func TestAlertingRuleHTMLSnippet(t *testing.T) {
+	t.Parallel()
+
 	expr, err := parser.ParseExpr(`foo{html="<b>BOLD<b>"}`)
 	require.NoError(t, err)
 	rule := NewAlertingRule("testrule", expr, 0, labels.FromStrings("html", "<b>BOLD</b>"), labels.FromStrings("html", "<b>BOLD</b>"), nil, "", false, nil)
@@ -47,6 +49,8 @@ annotations:
 }
 
 func TestAlertingRuleState(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name   string
 		active map[uint64]*Alert
@@ -87,6 +91,8 @@ func TestAlertingRuleState(t *testing.T) {
 }
 
 func TestAlertingRuleLabelsUpdate(t *testing.T) {
+	t.Parallel()
+
 	suite, err := promql.NewTest(t, `
 		load 1m
 			http_requests{job="app-server", instance="0"}	75 85 70 70
@@ -189,6 +195,8 @@ func TestAlertingRuleLabelsUpdate(t *testing.T) {
 }
 
 func TestAlertingRuleExternalLabelsInTemplate(t *testing.T) {
+	t.Parallel()
+
 	suite, err := promql.NewTest(t, `
 		load 1m
 			http_requests{job="app-server", instance="0"}	75 85 70 70
@@ -283,6 +291,8 @@ func TestAlertingRuleExternalLabelsInTemplate(t *testing.T) {
 }
 
 func TestAlertingRuleExternalURLInTemplate(t *testing.T) {
+	t.Parallel()
+
 	suite, err := promql.NewTest(t, `
 		load 1m
 			http_requests{job="app-server", instance="0"}	75 85 70 70
@@ -377,6 +387,8 @@ func TestAlertingRuleExternalURLInTemplate(t *testing.T) {
 }
 
 func TestAlertingRuleEmptyLabelFromTemplate(t *testing.T) {
+	t.Parallel()
+
 	suite, err := promql.NewTest(t, `
 		load 1m
 			http_requests{job="app-server", instance="0"}	75 85 70 70
@@ -433,6 +445,8 @@ func TestAlertingRuleEmptyLabelFromTemplate(t *testing.T) {
 }
 
 func TestAlertingRuleDuplicate(t *testing.T) {
+	t.Parallel()
+
 	storage := teststorage.New(t)
 	defer storage.Close()
 
@@ -466,6 +480,8 @@ func TestAlertingRuleDuplicate(t *testing.T) {
 }
 
 func TestAlertingRuleLimit(t *testing.T) {
+	t.Parallel()
+
 	suite, err := promql.NewTest(t, `
 		load 1m
 			metric{label="1"} 1

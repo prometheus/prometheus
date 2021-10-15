@@ -39,6 +39,8 @@ import (
 )
 
 func TestSegmentWAL_cut(t *testing.T) {
+	t.Parallel()
+
 	tmpdir, err := ioutil.TempDir("", "test_wal_cut")
 	require.NoError(t, err)
 	defer func() {
@@ -82,6 +84,8 @@ func TestSegmentWAL_cut(t *testing.T) {
 }
 
 func TestSegmentWAL_Truncate(t *testing.T) {
+	t.Parallel()
+
 	const (
 		numMetrics = 20000
 		batch      = 100
@@ -162,6 +166,8 @@ func TestSegmentWAL_Truncate(t *testing.T) {
 
 // Symmetrical test of reading and writing to the WAL via its main interface.
 func TestSegmentWAL_Log_Restore(t *testing.T) {
+	t.Parallel()
+
 	const (
 		numMetrics = 50
 		iterations = 5
@@ -281,6 +287,8 @@ func TestSegmentWAL_Log_Restore(t *testing.T) {
 }
 
 func TestWALRestoreCorrupted_invalidSegment(t *testing.T) {
+	t.Parallel()
+
 	dir, err := ioutil.TempDir("", "test_wal_log_restore")
 	require.NoError(t, err)
 	defer func() {
@@ -321,6 +329,8 @@ func TestWALRestoreCorrupted_invalidSegment(t *testing.T) {
 
 // Test reading from a WAL that has been corrupted through various means.
 func TestWALRestoreCorrupted(t *testing.T) {
+	t.Parallel()
+
 	cases := []struct {
 		name string
 		f    func(*testing.T, *SegmentWAL)
@@ -464,6 +474,8 @@ func TestWALRestoreCorrupted(t *testing.T) {
 }
 
 func TestMigrateWAL_Empty(t *testing.T) {
+	t.Parallel()
+
 	// The migration procedure must properly deal with a zero-length segment,
 	// which is valid in the new format.
 	dir, err := ioutil.TempDir("", "walmigrate")
@@ -483,6 +495,8 @@ func TestMigrateWAL_Empty(t *testing.T) {
 }
 
 func TestMigrateWAL_Fuzz(t *testing.T) {
+	t.Parallel()
+
 	dir, err := ioutil.TempDir("", "walmigrate")
 	require.NoError(t, err)
 	defer func() {

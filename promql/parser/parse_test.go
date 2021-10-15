@@ -3556,8 +3556,14 @@ func makeInt64Pointer(val int64) *int64 {
 }
 
 func TestParseExpressions(t *testing.T) {
+	t.Parallel()
+
 	for _, test := range testExpr {
+		test := test
+
 		t.Run(test.input, func(t *testing.T) {
+			t.Parallel()
+
 			expr, err := ParseExpr(test.input)
 
 			// Unexpected errors are always caused by a bug.
@@ -3586,6 +3592,8 @@ func TestParseExpressions(t *testing.T) {
 
 // NaN has no equality. Thus, we need a separate test for it.
 func TestNaNExpression(t *testing.T) {
+	t.Parallel()
+
 	expr, err := ParseExpr("NaN")
 	require.NoError(t, err)
 
@@ -3696,6 +3704,8 @@ func newSeq(vals ...float64) (res []SequenceValue) {
 }
 
 func TestParseSeries(t *testing.T) {
+	t.Parallel()
+
 	for _, test := range testSeries {
 		metric, vals, err := ParseSeriesDesc(test.input)
 
@@ -3713,6 +3723,8 @@ func TestParseSeries(t *testing.T) {
 }
 
 func TestRecoverParserRuntime(t *testing.T) {
+	t.Parallel()
+
 	p := newParser("foo bar")
 	var err error
 
@@ -3727,6 +3739,8 @@ func TestRecoverParserRuntime(t *testing.T) {
 }
 
 func TestRecoverParserError(t *testing.T) {
+	t.Parallel()
+
 	p := newParser("foo bar")
 	var err error
 
@@ -3741,6 +3755,8 @@ func TestRecoverParserError(t *testing.T) {
 }
 
 func TestExtractSelectors(t *testing.T) {
+	t.Parallel()
+
 	for _, tc := range [...]struct {
 		input    string
 		expected []string

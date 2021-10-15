@@ -22,6 +22,8 @@ import (
 )
 
 func TestExprString(t *testing.T) {
+	t.Parallel()
+
 	// A list of valid expressions that are expected to be
 	// returned as out when calling String(). If out is empty the output
 	// is expected to equal the input.
@@ -142,6 +144,8 @@ func TestExprString(t *testing.T) {
 }
 
 func TestVectorSelector_String(t *testing.T) {
+	t.Parallel()
+
 	for _, tc := range []struct {
 		name     string
 		vs       VectorSelector

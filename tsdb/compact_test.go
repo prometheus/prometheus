@@ -375,6 +375,8 @@ func TestLeveledCompactor_plan(t *testing.T) {
 }
 
 func TestRangeWithFailedCompactionWontGetSelected(t *testing.T) {
+	t.Parallel()
+
 	compactor, err := NewLeveledCompactor(context.Background(), nil, nil, []int64{
 		20,
 		60,
@@ -425,6 +427,8 @@ func TestRangeWithFailedCompactionWontGetSelected(t *testing.T) {
 }
 
 func TestCompactionFailWillCleanUpTempDir(t *testing.T) {
+	t.Parallel()
+
 	compactor, err := NewLeveledCompactor(context.Background(), nil, log.NewNopLogger(), []int64{
 		20,
 		60,
@@ -485,6 +489,8 @@ func samplesForRange(minTime, maxTime int64, maxSamplesPerChunk int) (ret [][]sa
 }
 
 func TestCompaction_populateBlock(t *testing.T) {
+	t.Parallel()
+
 	for _, tc := range []struct {
 		title              string
 		inputSeriesSamples [][]seriesSamples
@@ -933,7 +939,11 @@ func TestCompaction_populateBlock(t *testing.T) {
 			},
 		},
 	} {
+		tc := tc
+
 		t.Run(tc.title, func(t *testing.T) {
+			t.Parallel()
+
 			blocks := make([]BlockReader, 0, len(tc.inputSeriesSamples))
 			for _, b := range tc.inputSeriesSamples {
 				ir, cr, mint, maxt := createIdxChkReaders(t, b)
@@ -1121,6 +1131,8 @@ func BenchmarkCompactionFromHead(b *testing.B) {
 // This is needed for unit tests that rely on
 // checking state before and after a compaction.
 func TestDisableAutoCompactions(t *testing.T) {
+	t.Parallel()
+
 	db := openTestDB(t, nil, nil)
 	defer func() {
 		require.NoError(t, db.Close())
@@ -1174,6 +1186,8 @@ func TestDisableAutoCompactions(t *testing.T) {
 // TestCancelCompactions ensures that when the db is closed
 // any running compaction is cancelled to unblock closing the db.
 func TestCancelCompactions(t *testing.T) {
+	t.Parallel()
+
 	tmpdir, err := ioutil.TempDir("", "testCancelCompaction")
 	require.NoError(t, err)
 	defer func() {
@@ -1242,6 +1256,8 @@ func TestCancelCompactions(t *testing.T) {
 // TestDeleteCompactionBlockAfterFailedReload ensures that a failed reloadBlocks immediately after a compaction
 // deletes the resulting block to avoid creatings blocks with the same time range.
 func TestDeleteCompactionBlockAfterFailedReload(t *testing.T) {
+	t.Parallel()
+
 	tests := map[string]func(*DB) int{
 		"Test Head Compaction": func(db *DB) int {
 			rangeToTriggerCompaction := db.compactor.(*LeveledCompactor).ranges[0]/2*3 - 1
@@ -1276,7 +1292,11 @@ func TestDeleteCompactionBlockAfterFailedReload(t *testing.T) {
 	}
 
 	for title, bootStrap := range tests {
+		bootStrap := bootStrap
+
 		t.Run(title, func(t *testing.T) {
+			t.Parallel()
+
 			db := openTestDB(t, nil, []int64{1, 100})
 			defer func() {
 				require.NoError(t, db.Close())

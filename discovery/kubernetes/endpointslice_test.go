@@ -80,6 +80,8 @@ func makeEndpointSlice() *disv1beta1.EndpointSlice {
 }
 
 func TestEndpointSliceDiscoveryBeforeRun(t *testing.T) {
+	t.Parallel()
+
 	n, c := makeDiscovery(RoleEndpointSlice, NamespaceDiscovery{})
 
 	k8sDiscoveryTest{
@@ -126,6 +128,8 @@ func TestEndpointSliceDiscoveryBeforeRun(t *testing.T) {
 }
 
 func TestEndpointSliceDiscoveryAdd(t *testing.T) {
+	t.Parallel()
+
 	obj := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "testpod",
@@ -247,6 +251,8 @@ func TestEndpointSliceDiscoveryAdd(t *testing.T) {
 }
 
 func TestEndpointSliceDiscoveryDelete(t *testing.T) {
+	t.Parallel()
+
 	n, c := makeDiscovery(RoleEndpointSlice, NamespaceDiscovery{}, makeEndpointSlice())
 
 	k8sDiscoveryTest{
@@ -265,6 +271,8 @@ func TestEndpointSliceDiscoveryDelete(t *testing.T) {
 }
 
 func TestEndpointSliceDiscoveryUpdate(t *testing.T) {
+	t.Parallel()
+
 	n, c := makeDiscovery(RoleEndpointSlice, NamespaceDiscovery{}, makeEndpointSlice())
 
 	k8sDiscoveryTest{
@@ -328,6 +336,8 @@ func TestEndpointSliceDiscoveryUpdate(t *testing.T) {
 }
 
 func TestEndpointSliceDiscoveryEmptyEndpoints(t *testing.T) {
+	t.Parallel()
+
 	n, c := makeDiscovery(RoleEndpointSlice, NamespaceDiscovery{}, makeEndpointSlice())
 
 	k8sDiscoveryTest{
@@ -365,6 +375,8 @@ func TestEndpointSliceDiscoveryEmptyEndpoints(t *testing.T) {
 }
 
 func TestEndpointSliceDiscoveryWithService(t *testing.T) {
+	t.Parallel()
+
 	n, c := makeDiscovery(RoleEndpointSlice, NamespaceDiscovery{}, makeEndpointSlice())
 
 	k8sDiscoveryTest{
@@ -422,6 +434,8 @@ func TestEndpointSliceDiscoveryWithService(t *testing.T) {
 }
 
 func TestEndpointSliceDiscoveryWithServiceUpdate(t *testing.T) {
+	t.Parallel()
+
 	n, c := makeDiscovery(RoleEndpointSlice, NamespaceDiscovery{}, makeEndpointSlice())
 
 	k8sDiscoveryTest{
@@ -494,6 +508,8 @@ func TestEndpointSliceDiscoveryWithServiceUpdate(t *testing.T) {
 }
 
 func TestEndpointSliceDiscoveryNamespaces(t *testing.T) {
+	t.Parallel()
+
 	epOne := makeEndpointSlice()
 	epOne.Namespace = "ns1"
 	objs := []runtime.Object{

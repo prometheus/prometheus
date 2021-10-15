@@ -407,6 +407,8 @@ func readQueryLog(t *testing.T, path string) []queryLogLine {
 }
 
 func TestQueryLog(t *testing.T) {
+	t.Parallel()
+
 	if testing.Short() {
 		t.Skip("skipping test in short mode.")
 	}
@@ -415,23 +417,40 @@ func TestQueryLog(t *testing.T) {
 	require.NoError(t, err)
 
 	for _, host := range []string{"127.0.0.1", "[::1]"} {
-		for _, prefix := range []string{"", "/foobar"} {
-			for _, enabledAtStart := range []bool{true, false} {
-				for _, origin := range []origin{apiOrigin, consoleOrigin, ruleOrigin} {
-					p := &queryLogTest{
-						origin:         origin,
-						host:           host,
-						enabledAtStart: enabledAtStart,
-						prefix:         prefix,
-						port:           testutil.RandomUnprivilegedPort(t),
-						cwd:            cwd,
-					}
+		host := host
+		t.Run("host", func(t *testing.T) {
+			t.Parallel()
 
-					t.Run(p.String(), func(t *testing.T) {
-						p.run(t)
-					})
-				}
+			for _, prefix := range []string{"", "/foobar"} {
+				prefix := prefix
+				t.Run(prefix, func(t *testing.T) {
+					t.Parallel()
+					for _, enabledAtStart := range []bool{true, false} {
+						enabledAtStart := enabledAtStart
+
+						t.Run(strconv.FormatBool(enabledAtStart), func(t *testing.T) {
+							t.Parallel()
+
+							for _, origin := range []origin{apiOrigin, consoleOrigin, ruleOrigin} {
+								p := &queryLogTest{
+									origin:         origin,
+									host:           host,
+									enabledAtStart: enabledAtStart,
+									prefix:         prefix,
+									port:           testutil.RandomUnprivilegedPort(t),
+									cwd:            cwd,
+								}
+
+								t.Run(p.String(), func(t *testing.T) {
+									t.Parallel()
+
+									p.run(t)
+								})
+							}
+						})
+					}
+				})
 			}
-		}
+		})
 	}
 }

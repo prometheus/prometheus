@@ -199,6 +199,8 @@ func expectedTargetGroups(ns string, tls TLSMode) map[string]*targetgroup.Group 
 }
 
 func TestIngressDiscoveryAdd(t *testing.T) {
+	t.Parallel()
+
 	n, c := makeDiscovery(RoleIngress, NamespaceDiscovery{Names: []string{"default"}})
 
 	k8sDiscoveryTest{
@@ -213,6 +215,8 @@ func TestIngressDiscoveryAdd(t *testing.T) {
 }
 
 func TestIngressDiscoveryAddV1beta1(t *testing.T) {
+	t.Parallel()
+
 	n, c := makeDiscoveryWithVersion(RoleIngress, NamespaceDiscovery{Names: []string{"default"}}, "v1.18.0")
 
 	k8sDiscoveryTest{
@@ -227,6 +231,8 @@ func TestIngressDiscoveryAddV1beta1(t *testing.T) {
 }
 
 func TestIngressDiscoveryAddTLS(t *testing.T) {
+	t.Parallel()
+
 	n, c := makeDiscovery(RoleIngress, NamespaceDiscovery{Names: []string{"default"}})
 
 	k8sDiscoveryTest{
@@ -241,6 +247,8 @@ func TestIngressDiscoveryAddTLS(t *testing.T) {
 }
 
 func TestIngressDiscoveryAddTLSV1beta1(t *testing.T) {
+	t.Parallel()
+
 	n, c := makeDiscoveryWithVersion(RoleIngress, NamespaceDiscovery{Names: []string{"default"}}, "v1.18.0")
 
 	k8sDiscoveryTest{
@@ -255,6 +263,8 @@ func TestIngressDiscoveryAddTLSV1beta1(t *testing.T) {
 }
 
 func TestIngressDiscoveryAddMixed(t *testing.T) {
+	t.Parallel()
+
 	n, c := makeDiscovery(RoleIngress, NamespaceDiscovery{Names: []string{"default"}})
 
 	k8sDiscoveryTest{
@@ -269,6 +279,8 @@ func TestIngressDiscoveryAddMixed(t *testing.T) {
 }
 
 func TestIngressDiscoveryAddMixedV1beta1(t *testing.T) {
+	t.Parallel()
+
 	n, c := makeDiscoveryWithVersion(RoleIngress, NamespaceDiscovery{Names: []string{"default"}}, "v1.18.0")
 
 	k8sDiscoveryTest{
@@ -283,6 +295,8 @@ func TestIngressDiscoveryAddMixedV1beta1(t *testing.T) {
 }
 
 func TestIngressDiscoveryNamespaces(t *testing.T) {
+	t.Parallel()
+
 	n, c := makeDiscovery(RoleIngress, NamespaceDiscovery{Names: []string{"ns1", "ns2"}})
 
 	expected := expectedTargetGroups("ns1", TLSNo)
@@ -304,6 +318,8 @@ func TestIngressDiscoveryNamespaces(t *testing.T) {
 }
 
 func TestIngressDiscoveryNamespacesV1beta1(t *testing.T) {
+	t.Parallel()
+
 	n, c := makeDiscoveryWithVersion(RoleIngress, NamespaceDiscovery{Names: []string{"ns1", "ns2"}}, "v1.18.0")
 
 	expected := expectedTargetGroups("ns1", TLSNo)

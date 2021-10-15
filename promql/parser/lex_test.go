@@ -725,8 +725,14 @@ var tests = []struct {
 // TestLexer tests basic functionality of the lexer. More elaborate tests are implemented
 // for the parser to avoid duplicated effort.
 func TestLexer(t *testing.T) {
+	t.Parallel()
+
 	for _, typ := range tests {
+		typ := typ
+
 		t.Run(typ.name, func(t *testing.T) {
+			t.Parallel()
+
 			for i, test := range typ.tests {
 				l := &Lexer{
 					input:      test.input,

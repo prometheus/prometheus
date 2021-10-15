@@ -30,6 +30,8 @@ import (
 // As soon as prometheus starts responding to http request it should be able to
 // accept Interrupt signals for a graceful shutdown.
 func TestStartupInterrupt(t *testing.T) {
+	t.Parallel()
+
 	if testing.Short() {
 		t.Skip("skipping test in short mode.")
 	}

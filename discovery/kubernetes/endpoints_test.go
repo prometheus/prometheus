@@ -74,6 +74,8 @@ func makeEndpoints() *v1.Endpoints {
 }
 
 func TestEndpointsDiscoveryBeforeRun(t *testing.T) {
+	t.Parallel()
+
 	n, c := makeDiscovery(RoleEndpoint, NamespaceDiscovery{})
 
 	k8sDiscoveryTest{
@@ -118,6 +120,8 @@ func TestEndpointsDiscoveryBeforeRun(t *testing.T) {
 }
 
 func TestEndpointsDiscoveryAdd(t *testing.T) {
+	t.Parallel()
+
 	obj := &v1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "testpod",
@@ -237,6 +241,8 @@ func TestEndpointsDiscoveryAdd(t *testing.T) {
 }
 
 func TestEndpointsDiscoveryDelete(t *testing.T) {
+	t.Parallel()
+
 	n, c := makeDiscovery(RoleEndpoint, NamespaceDiscovery{}, makeEndpoints())
 
 	k8sDiscoveryTest{
@@ -255,6 +261,8 @@ func TestEndpointsDiscoveryDelete(t *testing.T) {
 }
 
 func TestEndpointsDiscoveryUpdate(t *testing.T) {
+	t.Parallel()
+
 	n, c := makeDiscovery(RoleEndpoint, NamespaceDiscovery{}, makeEndpoints())
 
 	k8sDiscoveryTest{
@@ -326,6 +334,8 @@ func TestEndpointsDiscoveryUpdate(t *testing.T) {
 }
 
 func TestEndpointsDiscoveryEmptySubsets(t *testing.T) {
+	t.Parallel()
+
 	n, c := makeDiscovery(RoleEndpoint, NamespaceDiscovery{}, makeEndpoints())
 
 	k8sDiscoveryTest{
@@ -354,6 +364,8 @@ func TestEndpointsDiscoveryEmptySubsets(t *testing.T) {
 }
 
 func TestEndpointsDiscoveryWithService(t *testing.T) {
+	t.Parallel()
+
 	n, c := makeDiscovery(RoleEndpoint, NamespaceDiscovery{}, makeEndpoints())
 
 	k8sDiscoveryTest{
@@ -409,6 +421,8 @@ func TestEndpointsDiscoveryWithService(t *testing.T) {
 }
 
 func TestEndpointsDiscoveryWithServiceUpdate(t *testing.T) {
+	t.Parallel()
+
 	n, c := makeDiscovery(RoleEndpoint, NamespaceDiscovery{}, makeEndpoints())
 
 	k8sDiscoveryTest{
@@ -479,6 +493,8 @@ func TestEndpointsDiscoveryWithServiceUpdate(t *testing.T) {
 }
 
 func TestEndpointsDiscoveryNamespaces(t *testing.T) {
+	t.Parallel()
+
 	epOne := makeEndpoints()
 	epOne.Namespace = "ns1"
 	objs := []runtime.Object{

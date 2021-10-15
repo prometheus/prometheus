@@ -20,6 +20,8 @@ import (
 )
 
 func TestRulesUnitTest(t *testing.T) {
+	t.Parallel()
+
 	type args struct {
 		files []string
 	}
@@ -107,7 +109,11 @@ func TestRulesUnitTest(t *testing.T) {
 		},
 	}
 	for _, tt := range tests {
+		tt := tt
+
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			if got := RulesUnitTest(tt.queryOpts, tt.args.files...); got != tt.want {
 				t.Errorf("RulesUnitTest() = %v, want %v", got, tt.want)
 			}

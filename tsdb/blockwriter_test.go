@@ -29,6 +29,8 @@ import (
 )
 
 func TestBlockWriter(t *testing.T) {
+	t.Parallel()
+
 	ctx := context.Background()
 	outputDir, err := ioutil.TempDir(os.TempDir(), "output")
 	require.NoError(t, err)
