@@ -31,11 +31,12 @@ import (
 
 func TestPopulateLabels(t *testing.T) {
 	cases := []struct {
-		in      labels.Labels
-		cfg     *config.ScrapeConfig
-		res     labels.Labels
-		resOrig labels.Labels
-		err     string
+		in            labels.Labels
+		cfg           *config.ScrapeConfig
+		noDefaultPort bool
+		res           labels.Labels
+		resOrig       labels.Labels
+		err           string
 	}{
 		// Regular population of scrape config options.
 		{
@@ -331,11 +332,42 @@ func TestPopulateLabels(t *testing.T) {
 			resOrig: nil,
 			err:     "scrape timeout cannot be greater than scrape interval (\"2s\" > \"1s\")",
 		},
+		// No default port.
+		{
+			in: labels.FromMap(map[string]string{
+				model.AddressLabel: "1.2.3.4",
+			}),
+			cfg: &config.ScrapeConfig{
+				Scheme:         "https",
+				MetricsPath:    "/metrics",
+				JobName:        "job",
+				ScrapeInterval: model.Duration(time.Second),
+				ScrapeTimeout:  model.Duration(time.Second),
+			},
+			noDefaultPort: true,
+			res: labels.FromMap(map[string]string{
+				model.AddressLabel:        "1.2.3.4",
+				model.InstanceLabel:       "1.2.3.4",
+				model.SchemeLabel:         "https",
+				model.MetricsPathLabel:    "/metrics",
+				model.JobLabel:            "job",
+				model.ScrapeIntervalLabel: "1s",
+				model.ScrapeTimeoutLabel:  "1s",
+			}),
+			resOrig: labels.FromMap(map[string]string{
+				model.AddressLabel:        "1.2.3.4",
+				model.SchemeLabel:         "https",
+				model.MetricsPathLabel:    "/metrics",
+				model.JobLabel:            "job",
+				model.ScrapeIntervalLabel: "1s",
+				model.ScrapeTimeoutLabel:  "1s",
+			}),
+		},
 	}
 	for _, c := range cases {
 		in := c.in.Copy()
 
-		res, orig, err := PopulateLabels(c.in, c.cfg, false)
+		res, orig, err := PopulateLabels(c.in, c.cfg, c.noDefaultPort)
 		if c.err != "" {
 			require.EqualError(t, err, c.err)
 		} else {
