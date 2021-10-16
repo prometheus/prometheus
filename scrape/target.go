@@ -351,7 +351,7 @@ func (app *timeLimitAppender) Append(ref storage.SeriesRef, lset labels.Labels, 
 // PopulateLabels builds a label set from the given label set and scrape configuration.
 // It returns a label set before relabeling was applied as the second return value.
 // Returns the original discovered label set found before relabelling was applied if the target is dropped during relabeling.
-func PopulateLabels(lset labels.Labels, cfg *config.ScrapeConfig) (res, orig labels.Labels, err error) {
+func PopulateLabels(lset labels.Labels, cfg *config.ScrapeConfig, noDefaultPort bool) (res, orig labels.Labels, err error) {
 	// Copy labels into the labelset for the target if they are not set already.
 	scrapeLabels := []labels.Label{
 		{Name: model.JobLabel, Value: cfg.JobName},
@@ -399,9 +399,11 @@ func PopulateLabels(lset labels.Labels, cfg *config.ScrapeConfig) (res, orig lab
 		_, _, err := net.SplitHostPort(s + ":1234")
 		return err == nil
 	}
+
 	addr := lset.Get(model.AddressLabel)
-	// If it's an address with no trailing port, infer it based on the used scheme.
-	if addPort(addr) {
+	// If it's an address with no trailing port, infer it based on the used scheme
+	// unless the no-default-scrape-port feature flag is present.
+	if !noDefaultPort && addPort(addr) {
 		// Addresses reaching this point are already wrapped in [] if necessary.
 		switch lset.Get(model.SchemeLabel) {
 		case "http", "":
@@ -464,7 +466,7 @@ func PopulateLabels(lset labels.Labels, cfg *config.ScrapeConfig) (res, orig lab
 }
 
 // TargetsFromGroup builds targets based on the given TargetGroup and config.
-func TargetsFromGroup(tg *targetgroup.Group, cfg *config.ScrapeConfig) ([]*Target, []error) {
+func TargetsFromGroup(tg *targetgroup.Group, cfg *config.ScrapeConfig, noDefaultPort bool) ([]*Target, []error) {
 	targets := make([]*Target, 0, len(tg.Targets))
 	failures := []error{}
 
@@ -482,7 +484,7 @@ func TargetsFromGroup(tg *targetgroup.Group, cfg *config.ScrapeConfig) ([]*Targe
 
 		lset := labels.New(lbls...)
 
-		lbls, origLabels, err := PopulateLabels(lset, cfg)
+		lbls, origLabels, err := PopulateLabels(lset, cfg, noDefaultPort)
 		if err != nil {
 			failures = append(failures, errors.Wrapf(err, "instance %d in group %s", i, tg))
 		}
