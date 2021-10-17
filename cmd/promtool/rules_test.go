@@ -221,7 +221,7 @@ func TestBackfillLabels(t *testing.T) {
 	start := time.Date(2009, time.November, 10, 6, 34, 0, 0, time.UTC)
 	mockAPISamples := []*model.SampleStream{
 		{
-			Metric: model.Metric{"name1": "override", "__name__": "override"},
+			Metric: model.Metric{"name1": "override-me", "__name__": "override-me-too"},
 			Values: []model.SamplePair{{Timestamp: model.TimeFromUnixNano(start.UnixNano()), Value: 123}},
 		},
 	}
@@ -232,10 +232,10 @@ func TestBackfillLabels(t *testing.T) {
 	recordingRules := `groups:
 - name: group0
   rules:
-  - record: rule1
+  - record: rulename
     expr:  ruleExpr
     labels:
-        name1: val1
+        name1: value-from-rule
 `
 	require.NoError(t, ioutil.WriteFile(path, []byte(recordingRules), 0777))
 	errs := ruleImporter.loadGroups(ctx, []string{path})
@@ -261,8 +261,8 @@ func TestBackfillLabels(t *testing.T) {
 		for selectedSeries.Next() {
 			series := selectedSeries.At()
 			expectedLabels := labels.Labels{
-				labels.Label{Name: "__name__", Value: "rule1"},
-				labels.Label{Name: "name1", Value: "val1"},
+				labels.Label{Name: "__name__", Value: "rulename"},
+				labels.Label{Name: "name1", Value: "value-from-rule"},
 			}
 			require.Equal(t, expectedLabels, series.Labels())
 		}
