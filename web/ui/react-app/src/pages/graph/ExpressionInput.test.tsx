@@ -1,11 +1,11 @@
 import * as React from 'react';
 import { mount, ReactWrapper } from 'enzyme';
-import CMExpressionInput from './CMExpressionInput';
+import ExpressionInput from './ExpressionInput';
 import { Button, InputGroup, InputGroupAddon } from 'reactstrap';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faSearch, faSpinner } from '@fortawesome/free-solid-svg-icons';
 
-describe('CMExpressionInput', () => {
+describe('ExpressionInput', () => {
   const expressionInputProps = {
     value: 'node_cpu',
     queryHistory: [],
@@ -24,7 +24,7 @@ describe('CMExpressionInput', () => {
 
   let expressionInput: ReactWrapper;
   beforeEach(() => {
-    expressionInput = mount(<CMExpressionInput {...expressionInputProps} />);
+    expressionInput = mount(<ExpressionInput {...expressionInputProps} />);
   });
 
   it('renders an InputGroup', () => {
@@ -39,7 +39,7 @@ describe('CMExpressionInput', () => {
   });
 
   it('renders a loading icon when it is loading', () => {
-    const expressionInput = mount(<CMExpressionInput {...expressionInputProps} loading={true} />);
+    const expressionInput = mount(<ExpressionInput {...expressionInputProps} loading={true} />);
     const addon = expressionInput.find(InputGroupAddon).filterWhere((addon) => addon.prop('addonType') === 'prepend');
     const icon = addon.find(FontAwesomeIcon);
     expect(icon.prop('icon')).toEqual(faSpinner);
@@ -61,7 +61,7 @@ describe('CMExpressionInput', () => {
   it('executes the query when clicking the execute button', () => {
     const spyExecuteQuery = jest.fn();
     const props = { ...expressionInputProps, executeQuery: spyExecuteQuery };
-    const wrapper = mount(<CMExpressionInput {...props} />);
+    const wrapper = mount(<ExpressionInput {...props} />);
     const btn = wrapper.find(Button).filterWhere((btn) => btn.hasClass('execute-btn'));
     btn.simulate('click');
     expect(spyExecuteQuery).toHaveBeenCalledTimes(1);

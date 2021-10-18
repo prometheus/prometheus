@@ -78,7 +78,7 @@ export class HistoryCompleteStrategy implements CompleteStrategy {
   }
 }
 
-const CMExpressionInput: FC<CMExpressionInputProps> = ({
+const ExpressionInput: FC<CMExpressionInputProps> = ({
   value,
   onExpressionChange,
   queryHistory,
@@ -246,4 +246,4 @@ const CMExpressionInput: FC<CMExpressionInputProps> = ({
   );
 };
 
-export default CMExpressionInput;
+export default ExpressionInput;

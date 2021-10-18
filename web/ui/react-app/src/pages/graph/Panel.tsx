@@ -4,7 +4,7 @@ import { Alert, Button, Col, Nav, NavItem, NavLink, Row, TabContent, TabPane } f
 
 import moment from 'moment-timezone';
 
-import CMExpressionInput from './CMExpressionInput';
+import ExpressionInput from './ExpressionInput';
 import GraphControls from './GraphControls';
 import { GraphTabContent } from './GraphTabContent';
 import DataTable from './DataTable';
@@ -270,7 +270,7 @@ class Panel extends Component<PanelProps, PanelState> {
       <div className="panel">
         <Row>
           <Col>
-            <CMExpressionInput
+            <ExpressionInput
               value={this.state.exprInputValue}
               onExpressionChange={this.handleExpressionChange}
               executeQuery={this.executeQuery}
