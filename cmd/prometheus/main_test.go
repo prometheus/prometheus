@@ -347,3 +347,24 @@ func getCurrentGaugeValuesFor(t *testing.T, reg prometheus.Gatherer, metricNames
 	}
 	return res
 }
+
+// Test for successful startup.
+func TestAgentSuccessfulStartup(t *testing.T) {
+	prom := exec.Command(promPath, "-test.main", "--agent", "--config.file="+promConfig)
+	err := prom.Start()
+	require.NoError(t, err)
+
+	expectedExitStatus := 0
+	actualExitStatus := 0
+
+	done := make(chan error, 1)
+	go func() { done <- prom.Wait() }()
+	select {
+	case err := <-done:
+		t.Logf("prometheus agent should be still running: %v", err)
+		actualExitStatus = prom.ProcessState.ExitCode()
+	case <-time.After(5 * time.Second):
+		prom.Process.Kill()
+	}
+	require.Equal(t, expectedExitStatus, actualExitStatus)
+}
