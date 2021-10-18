@@ -2259,7 +2259,7 @@ See below for the configuration options for Uyuni discovery:
 
 ```yaml
 # The URL to connect to the Uyuni server.
-host: <string>
+server: <string>
 
 # Credentials are used to authenticate the requests to Uyuni API.
 username: <string>
@@ -2273,6 +2273,38 @@ password: <secret>
 
 # Refresh interval to re-read the managed targets list.
 [ refresh_interval: <duration> | default = 60s ]
+
+# Optional HTTP basic authentication information, currently not supported by Uyuni.
+basic_auth:
+  [ username: <string> ]
+    [ password: <secret> ]
+    [ password_file: <string> ]
+
+# Optional `Authorization` header configuration, currently not supported by Uyuni.
+authorization:
+  # Sets the authentication type.
+    [ type: <string> | default: Bearer ]
+    # Sets the credentials. It is mutually exclusive with
+    # `credentials_file`.
+    [ credentials: <secret> ]
+    # Sets the credentials to the credentials read from the configured file.
+    # It is mutually exclusive with `credentials`.
+    [ credentials_file: <filename> ]
+
+# Optional OAuth 2.0 configuration, currently not supported by Uyuni.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2:
+  [ <oauth2> ]
+
+# Optional proxy URL.
+  [ proxy_url: <string> ]
+
+# Configure whether HTTP requests follow HTTP 3xx redirects.
+  [ follow_redirects: <bool> | default = true ]
+
+# TLS configuration.
+tls_config:
+  [ <tls_config> ]
 ```
 
 See [the Prometheus uyuni-sd configuration file](/documentation/examples/prometheus-uyuni.yml)

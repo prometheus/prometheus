@@ -946,7 +946,7 @@ var expectedConf = &Config{
 			Scheme:           DefaultScrapeConfig.Scheme,
 			ServiceDiscoveryConfigs: discovery.Configs{
 				&uyuni.SDConfig{
-					Host:            kubernetesSDHostURL(),
+					Server:          kubernetesSDHostURL(),
 					Username:        "gopher",
 					Password:        "hole",
 					Entitlement:     "monitoring_entitled",

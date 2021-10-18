@@ -351,7 +351,7 @@ scrape_configs:
 
   - job_name: uyuni
     uyuni_sd_configs:
-      - host: https://localhost:1234
+      - server: https://localhost:1234
         username: gopher
         password: hole
 

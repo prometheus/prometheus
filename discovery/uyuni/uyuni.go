@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"path"
 	"strings"
 	"time"
 
@@ -34,7 +35,8 @@ import (
 )
 
 const (
-	uyuniXMLRPCAPIPath       = "/rpc/api"
+	uyuniXMLRPCAPIPath = "/rpc/api"
+
 	uyuniMetaLabelPrefix     = model.MetaLabelPrefix + "uyuni_"
 	uyuniLabelMinionHostname = uyuniMetaLabelPrefix + "minion_hostname"
 	uyuniLabelPrimaryFQDN    = uyuniMetaLabelPrefix + "primary_fqdn"
@@ -60,7 +62,7 @@ func init() {
 
 // SDConfig is the configuration for Uyuni based service discovery.
 type SDConfig struct {
-	Host             config.URL              `yaml:"host"`
+	Server           config.URL              `yaml:"server"`
 	Username         string                  `yaml:"username"`
 	Password         config.Secret           `yaml:"password"`
 	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
@@ -122,13 +124,15 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err != nil {
 		return err
 	}
-	if c.Host.URL == nil {
-		return errors.New("Uyuni SD configuration requires a host")
+	if c.Server.URL == nil {
+		return errors.New("Uyuni SD configuration requires server host")
 	}
-	_, err = url.ParseRequestURI(c.Host.String())
+
+	_, err = url.Parse(c.Server.String())
 	if err != nil {
 		return errors.Wrap(err, "Uyuni Server URL is not valid")
 	}
+
 	if c.Username == "" {
 		return errors.New("Uyuni SD configuration requires a username")
 	}
@@ -156,10 +160,12 @@ func getSystemGroupsInfoOfMonitoredClients(rpcclient *xmlrpc.Client, token strin
 		SystemID     int             `xmlrpc:"id"`
 		SystemGroups []systemGroupID `xmlrpc:"system_groups"`
 	}
+
 	err := rpcclient.Call("system.listSystemGroupsForSystemsWithEntitlement", []interface{}{token, entitlement}, &systemGroupsInfos)
 	if err != nil {
 		return nil, err
 	}
+
 	result := make(map[int][]systemGroupID)
 	for _, systemGroupsInfo := range systemGroupsInfos {
 		result[systemGroupsInfo.SystemID] = systemGroupsInfo.SystemGroups
@@ -174,6 +180,7 @@ func getNetworkInformationForSystems(rpcclient *xmlrpc.Client, token string, sys
 	if err != nil {
 		return nil, err
 	}
+
 	result := make(map[int]networkInfo)
 	for _, networkInfo := range networkInfos {
 		result[networkInfo.SystemID] = networkInfo
@@ -199,11 +206,9 @@ func getEndpointInfoForSystems(
 
 // NewDiscovery returns a uyuni discovery for the given configuration.
 func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
-	apiURL := &url.URL{
-		Scheme: conf.Host.Scheme,
-		Host:   conf.Host.Host,
-		Path:   uyuniXMLRPCAPIPath,
-	}
+	var apiURL *url.URL
+	*apiURL = *conf.Server.URL
+	apiURL.Path = path.Join(apiURL.Path, uyuniXMLRPCAPIPath)
 
 	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "uyuni_sd", config.WithHTTP2Disabled())
 	if err != nil {
@@ -220,6 +225,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 		interval:     time.Duration(conf.RefreshInterval),
 		logger:       logger,
 	}
+
 	d.Discovery = refresh.NewDiscovery(
 		logger,
 		"uyuni",

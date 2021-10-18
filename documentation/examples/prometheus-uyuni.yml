@@ -12,7 +12,7 @@ scrape_configs:
 
     # Scrape Uyuni itself to discover new services.
     uyuni_sd_configs:
-      - host: http://uyuni-project.org
+      - server: http://uyuni-project.org
         username: gopher
         password: hole
     relabel_configs:
