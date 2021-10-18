@@ -889,11 +889,11 @@ func TestTargetSetTargetGroupsPresentOnConfigDuplicateAndDeleteOriginal(t *testi
 		},
 	}
 	discoveryManager.ApplyConfig(c)
-	syncedTargets := <-discoveryManager.SyncCh()
+	<-discoveryManager.SyncCh()
 
 	c["prometheus2"] = c["prometheus"]
 	discoveryManager.ApplyConfig(c)
-	syncedTargets = <-discoveryManager.SyncCh()
+	syncedTargets := <-discoveryManager.SyncCh()
 	verifySyncedLen(t, syncedTargets, 2)
 	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
 	verifySyncedKeyLen(t, syncedTargets, "prometheus", 1)
@@ -901,7 +901,6 @@ func TestTargetSetTargetGroupsPresentOnConfigDuplicateAndDeleteOriginal(t *testi
 	verifySyncedKeyLen(t, syncedTargets, "prometheus2", 1)
 	p := pk("static", "prometheus", 0)
 	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"foo:9090\"}", true)
-	p = pk("static", "prometheus2", 0)
 	verifyLen(t, discoveryManager.targets, 2)
 
 	delete(c, "prometheus")
@@ -1162,7 +1161,7 @@ type lockStaticConfig struct {
 
 func (s lockStaticConfig) Name() string { return "lockstatic" }
 func (s lockStaticConfig) NewDiscoverer(options DiscovererOptions) (Discoverer, error) {
-	return lockStaticDiscoverer{s.mu, s.config}, nil
+	return (lockStaticDiscoverer)(s), nil
 }
 
 type lockStaticDiscoverer lockStaticConfig
