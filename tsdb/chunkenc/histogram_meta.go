@@ -100,7 +100,7 @@ func readHistogramChunkLayoutSpans(b *bstreamReader) ([]histogram.Span, error) {
 //   in IEEE 754 representation, and 2^10 is 0.5*2^11.) Add 243 to the exponent
 //   and store the result (which will be between 1 and 254) as a single
 //   byte. Note that small powers of two are preferred values for the zero
-//   threshould. The default value for the zero threshold is 2^-128 (or
+//   threshold. The default value for the zero threshold is 2^-128 (or
 //   0.5*2^-127 in IEEE 754 representation) and will therefore be encoded as a
 //   single byte (with value 116).
 //

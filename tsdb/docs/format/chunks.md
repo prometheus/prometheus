@@ -55,7 +55,7 @@ Notes:
 * `<varint>` and `<uvarint>` have 1 to 10 bytes each.
 * `ts_1_delta` is `ts_1` – `ts_0`.
 * `ts_n_dod` is the “delta of deltas” of timestamps, i.e. (`ts_n` – `ts_n-1`) – (`ts_n-1` – `ts_n-2`).
-* `v_n_xor>` is the result of `v_n` XOR `v_n-1`.
+* `<v_n_xor>` is the result of `v_n` XOR `v_n-1`.
 * `<varbit_xor>` is a specific variable bitwidth encoding of the result of XORing the current and the previous value. It has between 1 bit and 77 bits.
   See [code for details](https://github.com/prometheus/prometheus/blob/7309c20e7e5774e7838f183ec97c65baa4362edc/tsdb/chunkenc/xor.go#L220-L253).
 * `<varbit_ts>` is a specific variable bitwidth encoding for the “delta of deltas” of timestamps (signed integers that are ideally small).
