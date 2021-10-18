@@ -218,38 +218,46 @@ func bitRange(x int64, nbits uint8) bool {
 }
 
 func (a *xorAppender) writeVDelta(v float64) {
-	vDelta := math.Float64bits(v) ^ math.Float64bits(a.v)
+	a.leading, a.trailing = xorWrite(a.b, v, a.v, a.leading, a.trailing)
+}
 
-	if vDelta == 0 {
-		a.b.writeBit(zero)
+func xorWrite(
+	b *bstream,
+	current, previous float64,
+	currentLeading, currentTrailing uint8,
+) (newLeading, newTrailing uint8) {
+	delta := math.Float64bits(current) ^ math.Float64bits(previous)
+
+	if delta == 0 {
+		b.writeBit(zero)
 		return
 	}
-	a.b.writeBit(one)
+	b.writeBit(one)
 
-	leading := uint8(bits.LeadingZeros64(vDelta))
-	trailing := uint8(bits.TrailingZeros64(vDelta))
+	leading := uint8(bits.LeadingZeros64(delta))
+	trailing := uint8(bits.TrailingZeros64(delta))
 
 	// Clamp number of leading zeros to avoid overflow when encoding.
 	if leading >= 32 {
 		leading = 31
 	}
 
-	if a.leading != 0xff && leading >= a.leading && trailing >= a.trailing {
-		a.b.writeBit(zero)
-		a.b.writeBits(vDelta>>a.trailing, 64-int(a.leading)-int(a.trailing))
-	} else {
-		a.leading, a.trailing = leading, trailing
-
-		a.b.writeBit(one)
-		a.b.writeBits(uint64(leading), 5)
-
-		// Note that if leading == trailing == 0, then sigbits == 64.  But that value doesn't actually fit into the 6 bits we have.
-		// Luckily, we never need to encode 0 significant bits, since that would put us in the other case (vdelta == 0).
-		// So instead we write out a 0 and adjust it back to 64 on unpacking.
-		sigbits := 64 - leading - trailing
-		a.b.writeBits(uint64(sigbits), 6)
-		a.b.writeBits(vDelta>>trailing, int(sigbits))
+	if currentLeading != 0xff && leading >= currentLeading && trailing >= currentTrailing {
+		b.writeBit(zero)
+		b.writeBits(delta>>currentTrailing, 64-int(currentLeading)-int(currentTrailing))
+		return currentLeading, currentTrailing
 	}
+
+	b.writeBit(one)
+	b.writeBits(uint64(leading), 5)
+
+	// Note that if leading == trailing == 0, then sigbits == 64.  But that value doesn't actually fit into the 6 bits we have.
+	// Luckily, we never need to encode 0 significant bits, since that would put us in the other case (vdelta == 0).
+	// So instead we write out a 0 and adjust it back to 64 on unpacking.
+	sigbits := 64 - leading - trailing
+	b.writeBits(uint64(sigbits), 6)
+	b.writeBits(delta>>trailing, int(sigbits))
+	return leading, trailing
 }
 
 type xorIterator struct {

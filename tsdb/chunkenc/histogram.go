@@ -16,7 +16,6 @@ package chunkenc
 import (
 	"encoding/binary"
 	"math"
-	"math/bits"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/pkg/value"
@@ -534,41 +533,7 @@ func (a *HistogramAppender) Recode(
 }
 
 func (a *HistogramAppender) writeSumDelta(v float64) {
-	vDelta := math.Float64bits(v) ^ math.Float64bits(a.sum)
-
-	if vDelta == 0 {
-		a.b.writeBit(zero)
-		return
-	}
-	a.b.writeBit(one)
-
-	leading := uint8(bits.LeadingZeros64(vDelta))
-	trailing := uint8(bits.TrailingZeros64(vDelta))
-
-	// Clamp number of leading zeros to avoid overflow when encoding.
-	if leading >= 32 {
-		leading = 31
-	}
-
-	if a.leading != 0xff && leading >= a.leading && trailing >= a.trailing {
-		a.b.writeBit(zero)
-		a.b.writeBits(vDelta>>a.trailing, 64-int(a.leading)-int(a.trailing))
-	} else {
-		a.leading, a.trailing = leading, trailing
-
-		a.b.writeBit(one)
-		a.b.writeBits(uint64(leading), 5)
-
-		// Note that if leading == trailing == 0, then sigbits == 64.
-		// But that value doesn't actually fit into the 6 bits we have.
-		// Luckily, we never need to encode 0 significant bits, since
-		// that would put us in the other case (vdelta == 0).  So
-		// instead we write out a 0 and adjust it back to 64 on
-		// unpacking.
-		sigbits := 64 - leading - trailing
-		a.b.writeBits(uint64(sigbits), 6)
-		a.b.writeBits(vDelta>>trailing, int(sigbits))
-	}
+	a.leading, a.trailing = xorWrite(a.b, v, a.sum, a.leading, a.trailing)
 }
 
 type histogramIterator struct {
