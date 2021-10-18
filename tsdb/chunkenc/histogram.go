@@ -153,10 +153,8 @@ func (c *HistogramChunk) Appender() (Appender, error) {
 		sum:      it.sum,
 		leading:  it.leading,
 		trailing: it.trailing,
-
-		buf64: make([]byte, binary.MaxVarintLen64),
 	}
-	if binary.BigEndian.Uint16(a.b.bytes()) == 0 {
+	if it.numTotal == 0 {
 		a.leading = 0xff
 	}
 	return a, nil
@@ -222,20 +220,6 @@ type HistogramAppender struct {
 	sum      float64
 	leading  uint8
 	trailing uint8
-
-	buf64 []byte // For working on varint64's.
-}
-
-func putVarint(b *bstream, buf []byte, x int64) {
-	for _, byt := range buf[:binary.PutVarint(buf, x)] {
-		b.writeByte(byt)
-	}
-}
-
-func putUvarint(b *bstream, buf []byte, x uint64) {
-	for _, byt := range buf[:binary.PutUvarint(buf, x)] {
-		b.writeByte(byt)
-	}
 }
 
 // Append implements Appender. This implementation panics because normal float
@@ -418,18 +402,21 @@ func (a *HistogramAppender) AppendHistogram(t int64, h histogram.Histogram) {
 		a.nBucketsDelta = make([]int64, numNBuckets)
 
 		// Now store the actual data.
-		putVarint(a.b, a.buf64, t)
-		putUvarint(a.b, a.buf64, h.Count)     // TODO(beorn7): Use putVarbitInt?
-		putUvarint(a.b, a.buf64, h.ZeroCount) // TODO(beorn7): Use putVarbitInt?
+		putVarbitInt(a.b, t)
+		putVarbitUint(a.b, h.Count)
+		putVarbitUint(a.b, h.ZeroCount) //
 		a.b.writeBits(math.Float64bits(h.Sum), 64)
-		for _, buck := range h.PositiveBuckets {
-			putVarint(a.b, a.buf64, buck) // TODO(beorn7): Use putVarbitInt?
+		for _, b := range h.PositiveBuckets {
+			putVarbitInt(a.b, b)
 		}
-		for _, buck := range h.NegativeBuckets {
-			putVarint(a.b, a.buf64, buck) // TODO(beorn7): Use putVarbitInt?
+		for _, b := range h.NegativeBuckets {
+			putVarbitInt(a.b, b)
 		}
 	case 1:
 		tDelta = t - a.t
+		if tDelta < 0 {
+			panic("out of order timestamp")
+		}
 		cntDelta = int64(h.Count) - int64(a.cnt)
 		zCntDelta = int64(h.ZeroCount) - int64(a.zCnt)
 
@@ -437,20 +424,20 @@ func (a *HistogramAppender) AppendHistogram(t int64, h histogram.Histogram) {
 			cntDelta, zCntDelta = 0, 0
 		}
 
-		putVarint(a.b, a.buf64, tDelta)    // TODO(beorn7): This should probably be putUvarint.
-		putVarint(a.b, a.buf64, cntDelta)  // TODO(beorn7): Use putVarbitInt?
-		putVarint(a.b, a.buf64, zCntDelta) // TODO(beorn7): Use putVarbitInt?
+		putVarbitUint(a.b, uint64(tDelta))
+		putVarbitInt(a.b, cntDelta)
+		putVarbitInt(a.b, zCntDelta)
 
 		a.writeSumDelta(h.Sum)
 
-		for i, buck := range h.PositiveBuckets {
-			delta := buck - a.pBuckets[i]
-			putVarint(a.b, a.buf64, delta) // TODO(beorn7): Use putVarbitInt?
+		for i, b := range h.PositiveBuckets {
+			delta := b - a.pBuckets[i]
+			putVarbitInt(a.b, delta)
 			a.pBucketsDelta[i] = delta
 		}
-		for i, buck := range h.NegativeBuckets {
-			delta := buck - a.nBuckets[i]
-			putVarint(a.b, a.buf64, delta) // TODO(beorn7): Use putVarbitInt?
+		for i, b := range h.NegativeBuckets {
+			delta := b - a.nBuckets[i]
+			putVarbitInt(a.b, delta)
 			a.nBucketsDelta[i] = delta
 		}
 
@@ -721,21 +708,21 @@ func (it *histogramIterator) Next() bool {
 		}
 
 		// Now read the actual data.
-		t, err := binary.ReadVarint(&it.br)
+		t, err := readVarbitInt(&it.br)
 		if err != nil {
 			it.err = err
 			return false
 		}
 		it.t = t
 
-		cnt, err := binary.ReadUvarint(&it.br)
+		cnt, err := readVarbitUint(&it.br)
 		if err != nil {
 			it.err = err
 			return false
 		}
 		it.cnt = cnt
 
-		zcnt, err := binary.ReadUvarint(&it.br)
+		zcnt, err := readVarbitUint(&it.br)
 		if err != nil {
 			it.err = err
 			return false
@@ -750,7 +737,7 @@ func (it *histogramIterator) Next() bool {
 		it.sum = math.Float64frombits(sum)
 
 		for i := range it.pBuckets {
-			v, err := binary.ReadVarint(&it.br)
+			v, err := readVarbitInt(&it.br)
 			if err != nil {
 				it.err = err
 				return false
@@ -758,7 +745,7 @@ func (it *histogramIterator) Next() bool {
 			it.pBuckets[i] = v
 		}
 		for i := range it.nBuckets {
-			v, err := binary.ReadVarint(&it.br)
+			v, err := readVarbitInt(&it.br)
 			if err != nil {
 				it.err = err
 				return false
@@ -771,15 +758,15 @@ func (it *histogramIterator) Next() bool {
 	}
 
 	if it.numRead == 1 {
-		tDelta, err := binary.ReadVarint(&it.br)
+		tDelta, err := readVarbitUint(&it.br)
 		if err != nil {
 			it.err = err
 			return false
 		}
-		it.tDelta = tDelta
-		it.t += int64(it.tDelta)
+		it.tDelta = int64(tDelta)
+		it.t += it.tDelta
 
-		cntDelta, err := binary.ReadVarint(&it.br)
+		cntDelta, err := readVarbitInt(&it.br)
 		if err != nil {
 			it.err = err
 			return false
@@ -787,7 +774,7 @@ func (it *histogramIterator) Next() bool {
 		it.cntDelta = cntDelta
 		it.cnt = uint64(int64(it.cnt) + it.cntDelta)
 
-		zcntDelta, err := binary.ReadVarint(&it.br)
+		zcntDelta, err := readVarbitInt(&it.br)
 		if err != nil {
 			it.err = err
 			return false
@@ -806,7 +793,7 @@ func (it *histogramIterator) Next() bool {
 		}
 
 		for i := range it.pBuckets {
-			delta, err := binary.ReadVarint(&it.br)
+			delta, err := readVarbitInt(&it.br)
 			if err != nil {
 				it.err = err
 				return false
@@ -816,7 +803,7 @@ func (it *histogramIterator) Next() bool {
 		}
 
 		for i := range it.nBuckets {
-			delta, err := binary.ReadVarint(&it.br)
+			delta, err := readVarbitInt(&it.br)
 			if err != nil {
 				it.err = err
 				return false

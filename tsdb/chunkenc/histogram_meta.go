@@ -14,22 +14,16 @@
 package chunkenc
 
 import (
+	"math"
+
 	"github.com/prometheus/prometheus/model/histogram"
 )
 
 func writeHistogramChunkLayout(b *bstream, schema int32, zeroThreshold float64, positiveSpans, negativeSpans []histogram.Span) {
+	putZeroThreshold(b, zeroThreshold)
 	putVarbitInt(b, int64(schema))
-	putVarbitFloat(b, zeroThreshold)
 	putHistogramChunkLayoutSpans(b, positiveSpans)
 	putHistogramChunkLayoutSpans(b, negativeSpans)
-}
-
-func putHistogramChunkLayoutSpans(b *bstream, spans []histogram.Span) {
-	putVarbitInt(b, int64(len(spans)))
-	for _, s := range spans {
-		putVarbitInt(b, int64(s.Length))
-		putVarbitInt(b, int64(s.Offset))
-	}
 }
 
 func readHistogramChunkLayout(b *bstreamReader) (
@@ -37,16 +31,16 @@ func readHistogramChunkLayout(b *bstreamReader) (
 	positiveSpans, negativeSpans []histogram.Span,
 	err error,
 ) {
+	zeroThreshold, err = readZeroThreshold(b)
+	if err != nil {
+		return
+	}
+
 	v, err := readVarbitInt(b)
 	if err != nil {
 		return
 	}
 	schema = int32(v)
-
-	zeroThreshold, err = readVarbitFloat(b)
-	if err != nil {
-		return
-	}
 
 	positiveSpans, err = readHistogramChunkLayoutSpans(b)
 	if err != nil {
@@ -61,15 +55,23 @@ func readHistogramChunkLayout(b *bstreamReader) (
 	return
 }
 
+func putHistogramChunkLayoutSpans(b *bstream, spans []histogram.Span) {
+	putVarbitUint(b, uint64(len(spans)))
+	for _, s := range spans {
+		putVarbitUint(b, uint64(s.Length))
+		putVarbitInt(b, int64(s.Offset))
+	}
+}
+
 func readHistogramChunkLayoutSpans(b *bstreamReader) ([]histogram.Span, error) {
 	var spans []histogram.Span
-	num, err := readVarbitInt(b)
+	num, err := readVarbitUint(b)
 	if err != nil {
 		return nil, err
 	}
 	for i := 0; i < int(num); i++ {
 
-		length, err := readVarbitInt(b)
+		length, err := readVarbitUint(b)
 		if err != nil {
 			return nil, err
 		}
@@ -85,6 +87,57 @@ func readHistogramChunkLayoutSpans(b *bstreamReader) ([]histogram.Span, error) {
 		})
 	}
 	return spans, nil
+}
+
+// putZeroThreshold writes the zero threshold to the bstream. It stores typical
+// values in just one byte, but needs 9 bytes for other values. In detail:
+//
+// * If the threshold is 0, store a single zero byte.
+//
+// * If the threshold is a power of 2 between (and including) 2^-243 and 2^10,
+//   take the exponent from the IEEE 754 representation of the threshold, which
+//   covers a range between (and including) -242 and 11. (2^-243 is 0.5*2^-242
+//   in IEEE 754 representation, and 2^10 is 0.5*2^11.) Add 243 to the exponent
+//   and store the result (which will be between 1 and 254) as a single
+//   byte. Note that small powers of two are preferred values for the zero
+//   threshold. The default value for the zero threshold is 2^-128 (or
+//   0.5*2^-127 in IEEE 754 representation) and will therefore be encoded as a
+//   single byte (with value 116).
+//
+// * In all other cases, store 255 as a single byte, followed by the 8 bytes of
+//   the threshold as a float64, i.e. taking 9 bytes in total.
+func putZeroThreshold(b *bstream, threshold float64) {
+	if threshold == 0 {
+		b.writeByte(0)
+		return
+	}
+	frac, exp := math.Frexp(threshold)
+	if frac != 0.5 || exp < -242 || exp > 11 {
+		b.writeByte(255)
+		b.writeBits(math.Float64bits(threshold), 64)
+		return
+	}
+	b.writeByte(byte(exp + 243))
+}
+
+// readZeroThreshold reads the zero threshold written with putZeroThreshold.
+func readZeroThreshold(br *bstreamReader) (float64, error) {
+	b, err := br.ReadByte()
+	if err != nil {
+		return 0, err
+	}
+	switch b {
+	case 0:
+		return 0, nil
+	case 255:
+		v, err := br.readBits(64)
+		if err != nil {
+			return 0, err
+		}
+		return math.Float64frombits(v), nil
+	default:
+		return math.Ldexp(0.5, int(b-243)), nil
+	}
 }
 
 type bucketIterator struct {
