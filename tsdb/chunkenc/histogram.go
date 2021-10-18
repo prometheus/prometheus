@@ -838,69 +838,11 @@ func (it *histogramIterator) Next() bool {
 }
 
 func (it *histogramIterator) readSum() bool {
-	bit, err := it.br.readBitFast()
-	if err != nil {
-		bit, err = it.br.readBit()
-	}
+	sum, leading, trailing, err := xorRead(&it.br, it.sum, it.leading, it.trailing)
 	if err != nil {
 		it.err = err
 		return false
 	}
-
-	if bit == zero {
-		return true // it.sum = it.sum
-	}
-
-	bit, err = it.br.readBitFast()
-	if err != nil {
-		bit, err = it.br.readBit()
-	}
-	if err != nil {
-		it.err = err
-		return false
-	}
-	if bit == zero {
-		// Reuse leading/trailing zero bits.
-		// it.leading, it.trailing = it.leading, it.trailing
-	} else {
-		bits, err := it.br.readBitsFast(5)
-		if err != nil {
-			bits, err = it.br.readBits(5)
-		}
-		if err != nil {
-			it.err = err
-			return false
-		}
-		it.leading = uint8(bits)
-
-		bits, err = it.br.readBitsFast(6)
-		if err != nil {
-			bits, err = it.br.readBits(6)
-		}
-		if err != nil {
-			it.err = err
-			return false
-		}
-		mbits := uint8(bits)
-		// 0 significant bits here means we overflowed and we actually
-		// need 64; see comment in encoder.
-		if mbits == 0 {
-			mbits = 64
-		}
-		it.trailing = 64 - it.leading - mbits
-	}
-
-	mbits := 64 - it.leading - it.trailing
-	bits, err := it.br.readBitsFast(mbits)
-	if err != nil {
-		bits, err = it.br.readBits(mbits)
-	}
-	if err != nil {
-		it.err = err
-		return false
-	}
-	vbits := math.Float64bits(it.sum)
-	vbits ^= bits << it.trailing
-	it.sum = math.Float64frombits(vbits)
+	it.sum, it.leading, it.trailing = sum, leading, trailing
 	return true
 }
