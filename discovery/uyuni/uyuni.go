@@ -210,7 +210,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 	*apiURL = *conf.Server.URL
 	apiURL.Path = path.Join(apiURL.Path, uyuniXMLRPCAPIPath)
 
-	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "uyuni_sd", config.WithHTTP2Disabled())
+	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "uyuni_sd")
 	if err != nil {
 		return nil, err
 	}
