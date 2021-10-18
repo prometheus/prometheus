@@ -95,24 +95,13 @@ git commit -m "Update dependencies"
 
 #### Updating React dependencies
 
-Either upgrade the dependencies within their existing version constraints as specified in the `package.json` file (see https://docs.npmjs.com/files/package.json#dependencies):
+The React application recently moved to a monorepo system with multiple internal npm packages. Dependency upgrades are
+quite sensitive for the time being and should be done manually with caution. 
 
-```
-cd web/ui/react-app
-npm update
-git add package.json package-lock.json
-```
+When you want to update a dependency, you have to go to every internal npm package where the dependency is used and
+manually change the version. Once you have taken care of that, you need to go back to `web/ui` and run `npm install`
 
-Or alternatively, update all dependencies to their latest major versions. This is potentially more disruptive and will require more follow-up fixes, but should be done from time to time (use your best judgement):
-
-```
-cd web/ui/react-app
-npx npm-check-updates -u
-npm install
-git add package.json package-lock.json
-```
-
-You can find more details on managing npm dependencies and updates [in this blog post](https://www.carlrippon.com/upgrading-npm-dependencies/).
+**NOTE**: We are researching ways to automate and improve this.
 
 ### 1. Prepare your release
 
