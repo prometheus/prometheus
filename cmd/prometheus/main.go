@@ -58,6 +58,8 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
 	_ "github.com/prometheus/prometheus/discovery/install" // Register service discovery implementations.
+	"github.com/prometheus/prometheus/discovery/legacymanager"
+	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -122,6 +124,7 @@ type flagConfig struct {
 	enablePromQLAtModifier     bool
 	enablePromQLNegativeOffset bool
 	enableExpandExternalLabels bool
+	enableNewSDManager         bool
 
 	prometheusURL   string
 	corsRegexString string
@@ -156,6 +159,9 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 			case "extra-scrape-metrics":
 				c.scrape.ExtraMetrics = true
 				level.Info(logger).Log("msg", "Experimental additional scrape metrics")
+			case "new-service-discovery-manager":
+				c.enableNewSDManager = true
+				level.Info(logger).Log("msg", "Experimental service discovery manager")
 			case "":
 				continue
 			default:
@@ -457,13 +463,28 @@ func main() {
 		ctxRule           = context.Background()
 
 		notifierManager = notifier.NewManager(&cfg.notifier, log.With(logger, "component", "notifier"))
+	)
 
-		ctxScrape, cancelScrape = context.WithCancel(context.Background())
-		discoveryManagerScrape  = discovery.NewManager(ctxScrape, log.With(logger, "component", "discovery manager scrape"), discovery.Name("scrape"))
+	ctxScrape, cancelScrape := context.WithCancel(context.Background())
+	var discoveryManagerScrape discoveryManager
+	if cfg.enableNewSDManager {
+		discovery.RegisterMetrics()
+		discoveryManagerScrape = discovery.NewManager(ctxScrape, log.With(logger, "component", "discovery manager scrape"), discovery.Name("scrape"))
+	} else {
+		legacymanager.RegisterMetrics()
+		discoveryManagerScrape = legacymanager.NewManager(ctxScrape, log.With(logger, "component", "discovery manager scrape"), legacymanager.Name("scrape"))
 
-		ctxNotify, cancelNotify = context.WithCancel(context.Background())
-		discoveryManagerNotify  = discovery.NewManager(ctxNotify, log.With(logger, "component", "discovery manager notify"), discovery.Name("notify"))
+	}
 
+	ctxNotify, cancelNotify := context.WithCancel(context.Background())
+	var discoveryManagerNotify discoveryManager
+	if cfg.enableNewSDManager {
+		discoveryManagerNotify = discovery.NewManager(ctxNotify, log.With(logger, "component", "discovery manager notify"), discovery.Name("notify"))
+	} else {
+		discoveryManagerNotify = legacymanager.NewManager(ctxNotify, log.With(logger, "component", "discovery manager notify"), legacymanager.Name("notify"))
+	}
+
+	var (
 		scrapeManager = scrape.NewManager(&cfg.scrape, log.With(logger, "component", "scrape manager"), fanoutStorage)
 
 		opts = promql.EngineOpts{
@@ -1345,4 +1366,13 @@ func (l jaegerLogger) Error(msg string) {
 func (l jaegerLogger) Infof(msg string, args ...interface{}) {
 	keyvals := []interface{}{"msg", fmt.Sprintf(msg, args...)}
 	level.Info(l.logger).Log(keyvals...)
+}
+
+// discoveryManager interfaces discovery manager. This is used to preserve old
+// code path for a few releases until we feel like the new manager can be
+// enabled for all users.
+type discoveryManager interface {
+	ApplyConfig(cfg map[string]discovery.Configs) error
+	Run() error
+	SyncCh() <-chan map[string][]*targetgroup.Group
 }
