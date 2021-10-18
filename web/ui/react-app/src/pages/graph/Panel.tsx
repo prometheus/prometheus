@@ -5,7 +5,6 @@ import { Alert, Button, Col, Nav, NavItem, NavLink, Row, TabContent, TabPane } f
 import moment from 'moment-timezone';
 
 import ExpressionInput from './ExpressionInput';
-import CMExpressionInput from './CMExpressionInput';
 import GraphControls from './GraphControls';
 import { GraphTabContent } from './GraphTabContent';
 import DataTable from './DataTable';
@@ -24,7 +23,6 @@ interface PanelProps {
   removePanel: () => void;
   onExecuteQuery: (query: string) => void;
   pathPrefix: string;
-  useExperimentalEditor: boolean;
   enableAutocomplete: boolean;
   enableHighlighting: boolean;
   enableLinter: boolean;
@@ -272,29 +270,17 @@ class Panel extends Component<PanelProps, PanelState> {
       <div className="panel">
         <Row>
           <Col>
-            {this.props.useExperimentalEditor ? (
-              <CMExpressionInput
-                value={this.state.exprInputValue}
-                onExpressionChange={this.handleExpressionChange}
-                executeQuery={this.executeQuery}
-                loading={this.state.loading}
-                enableAutocomplete={this.props.enableAutocomplete}
-                enableHighlighting={this.props.enableHighlighting}
-                enableLinter={this.props.enableLinter}
-                queryHistory={pastQueries}
-                metricNames={metricNames}
-              />
-            ) : (
-              <ExpressionInput
-                value={this.state.exprInputValue}
-                onExpressionChange={this.handleExpressionChange}
-                executeQuery={this.executeQuery}
-                loading={this.state.loading}
-                enableAutocomplete={this.props.enableAutocomplete}
-                queryHistory={pastQueries}
-                metricNames={metricNames}
-              />
-            )}
+            <ExpressionInput
+              value={this.state.exprInputValue}
+              onExpressionChange={this.handleExpressionChange}
+              executeQuery={this.executeQuery}
+              loading={this.state.loading}
+              enableAutocomplete={this.props.enableAutocomplete}
+              enableHighlighting={this.props.enableHighlighting}
+              enableLinter={this.props.enableLinter}
+              queryHistory={pastQueries}
+              metricNames={metricNames}
+            />
           </Col>
         </Row>
         <Row>
