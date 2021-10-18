@@ -34,6 +34,7 @@ import (
 	_ "github.com/prometheus/prometheus/discovery/puppetdb"     // register puppetdb
 	_ "github.com/prometheus/prometheus/discovery/scaleway"     // register scaleway
 	_ "github.com/prometheus/prometheus/discovery/triton"       // register triton
+	_ "github.com/prometheus/prometheus/discovery/uyuni"        // register uyuni
 	_ "github.com/prometheus/prometheus/discovery/xds"          // register xds
 	_ "github.com/prometheus/prometheus/discovery/zookeeper"    // register zookeeper
 )

@@ -288,6 +288,10 @@ serverset_sd_configs:
 triton_sd_configs:
   [ - <triton_sd_config> ... ]
 
+# List of Uyuni service discovery configurations.
+uyuni_sd_configs:
+  [ - <uyuni_sd_config> ... ]
+
 # List of labeled statically configured targets for this job.
 static_configs:
   [ - <static_config> ... ]
@@ -2256,6 +2260,79 @@ tls_config:
   [ <tls_config> ]
 ```
 
+### `<uyuni_sd_config>`
+
+Uyuni SD configurations allow retrieving scrape targets from managed systems
+via [Uyuni](https://www.uyuni-project.org/) API.
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_uyuni_endpoint_name`: the name of the application endpoint
+* `__meta_uyuni_exporter`: the exporter exposing metrics for the target
+* `__meta_uyuni_groups`: the system groups of the target
+* `__meta_uyuni_metrics_path`: metrics path for the target
+* `__meta_uyuni_minion_hostname`: hostname of the Uyuni client
+* `__meta_uyuni_primary_fqdn`: primary FQDN of the Uyuni client
+* `__meta_uyuni_proxy_module`: the module name if _Exporter Exporter_ proxy is
+  configured for the target
+* `__meta_uyuni_scheme`:  the protocol scheme used for requests
+* `__meta_uyuni_system_id`: the system ID of the client
+
+See below for the configuration options for Uyuni discovery:
+
+```yaml
+# The URL to connect to the Uyuni server.
+server: <string>
+
+# Credentials are used to authenticate the requests to Uyuni API.
+username: <string>
+password: <secret>
+
+# The entitlement string to filter eligible systems.
+[ entitlement: <string> | default = monitoring_entitled ]
+
+# The string by which Uyuni group names are joined into the groups label.
+[ separator: <string> | default = , ]
+
+# Refresh interval to re-read the managed targets list.
+[ refresh_interval: <duration> | default = 60s ]
+
+# Optional HTTP basic authentication information, currently not supported by Uyuni.
+basic_auth:
+  [ username: <string> ]
+    [ password: <secret> ]
+    [ password_file: <string> ]
+
+# Optional `Authorization` header configuration, currently not supported by Uyuni.
+authorization:
+  # Sets the authentication type.
+    [ type: <string> | default: Bearer ]
+    # Sets the credentials. It is mutually exclusive with
+    # `credentials_file`.
+    [ credentials: <secret> ]
+    # Sets the credentials to the credentials read from the configured file.
+    # It is mutually exclusive with `credentials`.
+    [ credentials_file: <filename> ]
+
+# Optional OAuth 2.0 configuration, currently not supported by Uyuni.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2:
+  [ <oauth2> ]
+
+# Optional proxy URL.
+  [ proxy_url: <string> ]
+
+# Configure whether HTTP requests follow HTTP 3xx redirects.
+  [ follow_redirects: <bool> | default = true ]
+
+# TLS configuration.
+tls_config:
+  [ <tls_config> ]
+```
+
+See [the Prometheus uyuni-sd configuration file](/documentation/examples/prometheus-uyuni.yml)
+for a practical example on how to set up Uyuni Prometheus configuration.
+
 ### `<static_config>`
 
 A `static_config` allows specifying a list of targets and a common label set
@@ -2517,6 +2594,10 @@ serverset_sd_configs:
 # List of Triton service discovery configurations.
 triton_sd_configs:
   [ - <triton_sd_config> ... ]
+
+# List of Uyuni service discovery configurations.
+uyuni_sd_configs:
+  [ - <uyuni_sd_config> ... ]
 
 # List of labeled statically configured Alertmanagers.
 static_configs:
