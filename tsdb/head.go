@@ -1465,9 +1465,9 @@ type memSeries struct {
 
 	ref           uint64
 	lset          labels.Labels
-	mmappedChunks []*mmappedChunk // closed chunks that have not yet gone into a block
+	mmappedChunks []*mmappedChunk // Immutable chunks on disk that have not yet gone into a block.
 	mmMaxTime     int64           // Max time of any mmapped chunk, only used during WAL replay.
-	headChunk     *memChunk       // most current chunk that's still buing built
+	headChunk     *memChunk       // Most recent chunk in memory that's still being built.
 	chunkRange    int64
 	firstChunkID  int
 

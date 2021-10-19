@@ -5,11 +5,11 @@ This directory contains documentation for any developers who wish to work on or 
 
 Tip: `tsdb/db_test.go` demonstrates various usages of the TSDB library.
 
-## Instantiating a database.
+## Instantiating a database
 
 Callers should use [`tsdb.Open`](https://pkg.go.dev/github.com/prometheus/prometheus/tsdb#Open) to open a TSDB.
 (the directory may be new or pre-existing).
-This returns a [`tsdb.*DB`](https://pkg.go.dev/github.com/prometheus/prometheus/tsdb#DB) which is the actual database.
+This returns a [`*tsdb.DB`](https://pkg.go.dev/github.com/prometheus/prometheus/tsdb#DB) which is the actual database.
 
 a `DB` has the following main components:
 
@@ -29,7 +29,7 @@ The `Head` is responsible for a lot.  Here are some of its main components:
 ## Adding data
 
 Use [`db.Appender()`](https://pkg.go.dev/github.com/prometheus/prometheus/tsdb#DB.Appender) to obtain an "appender".
-The [golang docs](https://pkg.go.dev/github.com/prometheus/prometheus@v1.8.2-0.20211003130516-1270b87970ba/storage#Appender) speak mostly for themselves.
+The [golang docs](https://pkg.go.dev/github.com/prometheus/prometheus/storage#Appender) speak mostly for themselves.
 
 Remember:
 
@@ -45,15 +45,15 @@ Append may reject data due to these conditions:
   * `tsdb.min-block-duration/2` older than the max time in the Head chunk. Note that while technically `storage.tsdb.min-block-duration` is configurable, it's a hidden option and changing it is discouraged.  So We can assume this value to be 2h.
   Breaching this condition results in "out of bounds" errors.  
   The first condition assures the block that will be generated doesn't overlap with the previous one (which simplifies querying)  
-  The second condition assures the sample won't go into the so called "compaction window", that is the section of the data that might be in process of being saved into a persistent chunk on disk.  (because that logic runs concurrently with ingestion without a lock)
+  The second condition assures the sample won't go into the so called "compaction window", that is the section of the data that might be in process of being saved into a persistent block on disk.  (because that logic runs concurrently with ingestion without a lock)
 2) The labels don't validate. (if the set is empty or contains duplicate label names)
-3) If the sample, for the respective serie (based on all the labels) is out of order or has a different value for the last (highest) timestamp seen. (results in storage.ErrOutOfOrderSample or storage.ErrDuplicateSampleForTimestamp respectively)
+3) If the sample, for the respective series (based on all the labels) is out of order or has a different value for the last (highest) timestamp seen. (results in storage.ErrOutOfOrderSample or storage.ErrDuplicateSampleForTimestamp respectively)
 
 Commit() may also refuse data that is out of order with respect to samples that were added via a different appender.
 
 Example:
 
-```
+```go
 package main
 
 import (
@@ -85,6 +85,7 @@ func main() {
 	err = app.Commit()
 	noErr(err)
 	app = db.Appender(ctx) // need a new one. See app.Commit() docs
+	// ... adding more samples.
 }
 ```
 
@@ -92,7 +93,7 @@ func main() {
 ## Querying data
 
 Use [`db.Querier()`](https://pkg.go.dev/github.com/prometheus/prometheus/tsdb#DB.Querier) to obtain a "querier".
-The [golang docs](https://pkg.go.dev/github.com/prometheus/prometheus@v1.8.2-0.20211003130516-1270b87970ba/storage#Querier) speak mostly for themselves.
+The [golang docs](https://pkg.go.dev/github.com/prometheus/prometheus/storage#Querier) speak mostly for themselves.
 
 Remember:
 
@@ -102,7 +103,7 @@ Remember:
 
 Example:
 
-```
+```go
 package main
 
 import (
@@ -125,7 +126,7 @@ func main() {
 	db, err := tsdb.Open("tsdb-test", nil, nil, &opts, nil)
 	noErr(err)
 
-	querier, err := db.Querier(context.TODO(), 0, math.MaxInt64)
+	querier, err := db.Querier(context.TODO(), math.MinInt64, math.MaxInt64)
 	noErr(err)
 	ss := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
 

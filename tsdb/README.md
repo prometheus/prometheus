@@ -7,9 +7,9 @@ which handles storage and querying of all Prometheus v2 data.
 
 ## Documentation
 
-* [data format](docs/format/README.md).
-* [usage](docs/usage.md).
-* [bstream details](docs/bstream.md).
+* [Data format](docs/format/README.md).
+* [Usage](docs/usage.md).
+* [Bstream details](docs/bstream.md).
 
 ## External resources
 
