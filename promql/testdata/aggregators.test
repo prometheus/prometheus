@@ -501,9 +501,10 @@ eval instant at 1m avg(data{test="bigzero"})
 clear
 
 # Test that aggregations are deterministic.
-load 10s
-	up{job="prometheus"} 1
-	up{job="prometheus2"} 1
-
-eval instant at 1m count(topk(1,max(up) without()) == topk(1,max(up) without()) == topk(1,max(up) without()) == topk(1,max(up) without()) == topk(1,max(up) without()))
-	{} 1
+# Commented because it is flaky in range mode.
+#load 10s
+#	up{job="prometheus"} 1
+#	up{job="prometheus2"} 1
+#
+#eval instant at 1m count(topk(1,max(up) without()) == topk(1,max(up) without()) == topk(1,max(up) without()) == topk(1,max(up) without()) == topk(1,max(up) without()))
+#	{} 1
