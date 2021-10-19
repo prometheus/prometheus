@@ -773,35 +773,6 @@ func verifyPresence(t *testing.T, tSets map[poolKey]map[string]*targetgroup.Grou
 	}
 }
 
-func verifyAbsence(t *testing.T, tSets map[poolKey]map[string]*targetgroup.Group, poolKey poolKey) {
-	t.Helper()
-	if _, ok := tSets[poolKey]; ok {
-		t.Fatalf("'%s' should be absent from Pool keys: %v", poolKey, tSets)
-	}
-}
-
-func verifyLen(t *testing.T, tSets map[poolKey]map[string]*targetgroup.Group, exp int) {
-	t.Helper()
-	if got := len(tSets); got != exp {
-		t.Fatalf("Invalid number of Pool keys: expected %d, got %d: %v", exp, got, tSets)
-	}
-}
-
-func verifySyncedLen(t *testing.T, tGroups map[string][]*targetgroup.Group, exp int) {
-	t.Helper()
-	if got := len(tGroups); got != exp {
-		t.Fatalf("Invalid number of Group map keys: expected %d, got %d: %v", exp, got, tGroups)
-	}
-
-}
-
-func verifySyncedKeyLen(t *testing.T, tGroups map[string][]*targetgroup.Group, key string, exp int) {
-	t.Helper()
-	if got := len(tGroups[key]); got != exp {
-		t.Fatalf("Invalid number of Groups under %s key: expected %d, got %d: %v", key, exp, got, tGroups[key])
-	}
-}
-
 func pk(provider, setName string, n int) poolKey {
 	return poolKey{
 		setName:  setName,
@@ -824,21 +795,21 @@ func TestTargetSetTargetGroupsPresentOnConfigReload(t *testing.T) {
 	discoveryManager.ApplyConfig(c)
 
 	syncedTargets := <-discoveryManager.SyncCh()
-	verifySyncedLen(t, syncedTargets, 1)
+	require.Equal(t, 1, len(syncedTargets))
 	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
-	verifySyncedKeyLen(t, syncedTargets, "prometheus", 1)
+	require.Equal(t, 1, len(syncedTargets["prometheus"]))
 	p := pk("static", "prometheus", 0)
 	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"foo:9090\"}", true)
-	verifyLen(t, discoveryManager.targets, 1)
+	require.Equal(t, 1, len(discoveryManager.targets))
 
 	discoveryManager.ApplyConfig(c)
 
 	syncedTargets = <-discoveryManager.SyncCh()
 	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"foo:9090\"}", true)
-	verifyLen(t, discoveryManager.targets, 1)
-	verifySyncedLen(t, syncedTargets, 1)
+	require.Equal(t, 1, len(discoveryManager.targets))
+	require.Equal(t, 1, len(syncedTargets))
 	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
-	verifySyncedKeyLen(t, syncedTargets, "prometheus", 1)
+	require.Equal(t, 1, len(syncedTargets["prometheus"]))
 }
 
 func TestTargetSetTargetGroupsPresentOnConfigRename(t *testing.T) {
@@ -856,12 +827,12 @@ func TestTargetSetTargetGroupsPresentOnConfigRename(t *testing.T) {
 	discoveryManager.ApplyConfig(c)
 
 	syncedTargets := <-discoveryManager.SyncCh()
-	verifySyncedLen(t, syncedTargets, 1)
+	require.Equal(t, 1, len(syncedTargets))
 	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
-	verifySyncedKeyLen(t, syncedTargets, "prometheus", 1)
+	require.Equal(t, 1, len(syncedTargets["prometheus"]))
 	p := pk("static", "prometheus", 0)
 	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"foo:9090\"}", true)
-	verifyLen(t, discoveryManager.targets, 1)
+	require.Equal(t, 1, len(discoveryManager.targets))
 
 	c["prometheus2"] = c["prometheus"]
 	delete(c, "prometheus")
@@ -870,10 +841,10 @@ func TestTargetSetTargetGroupsPresentOnConfigRename(t *testing.T) {
 	syncedTargets = <-discoveryManager.SyncCh()
 	p = pk("static", "prometheus2", 0)
 	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"foo:9090\"}", true)
-	verifyLen(t, discoveryManager.targets, 1)
-	verifySyncedLen(t, syncedTargets, 1)
+	require.Equal(t, 1, len(discoveryManager.targets))
+	require.Equal(t, 1, len(syncedTargets))
 	verifySyncedPresence(t, syncedTargets, "prometheus2", "{__address__=\"foo:9090\"}", true)
-	verifySyncedKeyLen(t, syncedTargets, "prometheus2", 1)
+	require.Equal(t, 1, len(syncedTargets["prometheus2"]))
 }
 
 func TestTargetSetTargetGroupsPresentOnConfigDuplicateAndDeleteOriginal(t *testing.T) {
@@ -894,24 +865,24 @@ func TestTargetSetTargetGroupsPresentOnConfigDuplicateAndDeleteOriginal(t *testi
 	c["prometheus2"] = c["prometheus"]
 	discoveryManager.ApplyConfig(c)
 	syncedTargets := <-discoveryManager.SyncCh()
-	verifySyncedLen(t, syncedTargets, 2)
+	require.Equal(t, 2, len(syncedTargets))
 	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
-	verifySyncedKeyLen(t, syncedTargets, "prometheus", 1)
+	require.Equal(t, 1, len(syncedTargets["prometheus"]))
 	verifySyncedPresence(t, syncedTargets, "prometheus2", "{__address__=\"foo:9090\"}", true)
-	verifySyncedKeyLen(t, syncedTargets, "prometheus2", 1)
+	require.Equal(t, 1, len(syncedTargets["prometheus2"]))
 	p := pk("static", "prometheus", 0)
 	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"foo:9090\"}", true)
-	verifyLen(t, discoveryManager.targets, 2)
+	require.Equal(t, 2, len(discoveryManager.targets))
 
 	delete(c, "prometheus")
 	discoveryManager.ApplyConfig(c)
 	syncedTargets = <-discoveryManager.SyncCh()
 	p = pk("static", "prometheus2", 0)
 	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"foo:9090\"}", true)
-	verifyLen(t, discoveryManager.targets, 1)
-	verifySyncedLen(t, syncedTargets, 1)
+	require.Equal(t, 1, len(discoveryManager.targets))
+	require.Equal(t, 1, len(syncedTargets))
 	verifySyncedPresence(t, syncedTargets, "prometheus2", "{__address__=\"foo:9090\"}", true)
-	verifySyncedKeyLen(t, syncedTargets, "prometheus2", 1)
+	require.Equal(t, 1, len(syncedTargets["prometheus2"]))
 }
 
 func TestTargetSetTargetGroupsPresentOnConfigChange(t *testing.T) {
@@ -929,9 +900,9 @@ func TestTargetSetTargetGroupsPresentOnConfigChange(t *testing.T) {
 	discoveryManager.ApplyConfig(c)
 
 	syncedTargets := <-discoveryManager.SyncCh()
-	verifySyncedLen(t, syncedTargets, 1)
+	require.Equal(t, 1, len(syncedTargets))
 	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
-	verifySyncedKeyLen(t, syncedTargets, "prometheus", 1)
+	require.Equal(t, 1, len(syncedTargets["prometheus"]))
 
 	var mu sync.Mutex
 	c["prometheus2"] = Configs{
@@ -946,33 +917,33 @@ func TestTargetSetTargetGroupsPresentOnConfigChange(t *testing.T) {
 	// Original targets should be present as soon as possible.
 	syncedTargets = <-discoveryManager.SyncCh()
 	mu.Unlock()
-	verifySyncedLen(t, syncedTargets, 1)
+	require.Equal(t, 1, len(syncedTargets))
 	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
-	verifySyncedKeyLen(t, syncedTargets, "prometheus", 1)
+	require.Equal(t, 1, len(syncedTargets["prometheus"]))
 
 	// prometheus2 configs should be ready on second sync.
 	syncedTargets = <-discoveryManager.SyncCh()
-	verifySyncedLen(t, syncedTargets, 2)
+	require.Equal(t, 2, len(syncedTargets))
 	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
-	verifySyncedKeyLen(t, syncedTargets, "prometheus", 1)
+	require.Equal(t, 1, len(syncedTargets["prometheus"]))
 	verifySyncedPresence(t, syncedTargets, "prometheus2", "{__address__=\"bar:9090\"}", true)
-	verifySyncedKeyLen(t, syncedTargets, "prometheus2", 1)
+	require.Equal(t, 1, len(syncedTargets["prometheus2"]))
 
 	p := pk("static", "prometheus", 0)
 	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"foo:9090\"}", true)
 	p = pk("lockstatic", "prometheus2", 1)
 	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"bar:9090\"}", true)
-	verifyLen(t, discoveryManager.targets, 2)
+	require.Equal(t, 2, len(discoveryManager.targets))
 
 	// Delete part of config and ensure only original targets exist.
 	delete(c, "prometheus2")
 	discoveryManager.ApplyConfig(c)
 	syncedTargets = <-discoveryManager.SyncCh()
-	verifyAbsence(t, discoveryManager.targets, p)
+	require.Equal(t, 1, len(discoveryManager.targets))
 	verifyPresence(t, discoveryManager.targets, pk("static", "prometheus", 0), "{__address__=\"foo:9090\"}", true)
-	verifySyncedLen(t, syncedTargets, 1)
+	require.Equal(t, 1, len(syncedTargets))
 	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
-	verifySyncedKeyLen(t, syncedTargets, "prometheus", 1)
+	require.Equal(t, 1, len(syncedTargets["prometheus"]))
 }
 
 func TestTargetSetRecreatesTargetGroupsOnConfigChange(t *testing.T) {
@@ -993,25 +964,25 @@ func TestTargetSetRecreatesTargetGroupsOnConfigChange(t *testing.T) {
 	p := pk("static", "prometheus", 0)
 	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"foo:9090\"}", true)
 	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"bar:9090\"}", true)
-	verifyLen(t, discoveryManager.targets, 1)
-	verifySyncedLen(t, syncedTargets, 1)
+	require.Equal(t, 1, len(discoveryManager.targets))
+	require.Equal(t, 1, len(syncedTargets))
 	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
 	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"bar:9090\"}", true)
-	verifySyncedKeyLen(t, syncedTargets, "prometheus", 2)
+	require.Equal(t, 2, len(syncedTargets["prometheus"]))
 
 	c["prometheus"] = Configs{
 		staticConfig("foo:9090"),
 	}
 	discoveryManager.ApplyConfig(c)
 	syncedTargets = <-discoveryManager.SyncCh()
-	verifyAbsence(t, discoveryManager.targets, p)
+	require.Equal(t, 1, len(discoveryManager.targets))
 	p = pk("static", "prometheus", 1)
 	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"foo:9090\"}", true)
 	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"bar:9090\"}", false)
-	verifyLen(t, discoveryManager.targets, 1)
-	verifySyncedLen(t, syncedTargets, 1)
+	require.Equal(t, 1, len(discoveryManager.targets))
+	require.Equal(t, 1, len(syncedTargets))
 	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
-	verifySyncedKeyLen(t, syncedTargets, "prometheus", 1)
+	require.Equal(t, 1, len(syncedTargets["prometheus"]))
 }
 
 func TestDiscovererConfigs(t *testing.T) {
@@ -1035,12 +1006,12 @@ func TestDiscovererConfigs(t *testing.T) {
 	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"bar:9090\"}", true)
 	p = pk("static", "prometheus", 1)
 	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"baz:9090\"}", true)
-	verifyLen(t, discoveryManager.targets, 2)
-	verifySyncedLen(t, syncedTargets, 1)
+	require.Equal(t, 2, len(discoveryManager.targets))
+	require.Equal(t, 1, len(syncedTargets))
 	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
 	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"bar:9090\"}", true)
 	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"baz:9090\"}", true)
-	verifySyncedKeyLen(t, syncedTargets, "prometheus", 3)
+	require.Equal(t, 3, len(syncedTargets["prometheus"]))
 }
 
 // TestTargetSetRecreatesEmptyStaticConfigs ensures that reloading a config file after
@@ -1063,9 +1034,9 @@ func TestTargetSetRecreatesEmptyStaticConfigs(t *testing.T) {
 	syncedTargets := <-discoveryManager.SyncCh()
 	p := pk("static", "prometheus", 0)
 	verifyPresence(t, discoveryManager.targets, p, "{__address__=\"foo:9090\"}", true)
-	verifySyncedLen(t, syncedTargets, 1)
+	require.Equal(t, 1, len(syncedTargets))
 	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
-	verifySyncedKeyLen(t, syncedTargets, "prometheus", 1)
+	require.Equal(t, 1, len(syncedTargets["prometheus"]))
 
 	c["prometheus"] = Configs{
 		StaticConfig{{}},
@@ -1086,8 +1057,8 @@ func TestTargetSetRecreatesEmptyStaticConfigs(t *testing.T) {
 	if len(group.Targets) != 0 {
 		t.Fatalf("Invalid number of targets: expected 0, got %d", len(group.Targets))
 	}
-	verifySyncedLen(t, syncedTargets, 1)
-	verifySyncedKeyLen(t, syncedTargets, "prometheus", 1)
+	require.Equal(t, 1, len(syncedTargets))
+	require.Equal(t, 1, len(syncedTargets["prometheus"]))
 	if lbls := syncedTargets["prometheus"][0].Labels; lbls != nil {
 		t.Fatalf("Unexpected Group: expected nil Labels, got %v", lbls)
 	}
@@ -1117,12 +1088,11 @@ func TestIdenticalConfigurationsAreCoalesced(t *testing.T) {
 	if len(discoveryManager.providers) != 1 {
 		t.Fatalf("Invalid number of providers: expected 1, got %d", len(discoveryManager.providers))
 	}
-	verifySyncedLen(t, syncedTargets, 2)
+	require.Equal(t, 2, len(syncedTargets))
 	verifySyncedPresence(t, syncedTargets, "prometheus", "{__address__=\"foo:9090\"}", true)
-	verifySyncedKeyLen(t, syncedTargets, "prometheus", 1)
+	require.Equal(t, 1, len(syncedTargets["prometheus"]))
 	verifySyncedPresence(t, syncedTargets, "prometheus2", "{__address__=\"foo:9090\"}", true)
-	verifySyncedKeyLen(t, syncedTargets, "prometheus2", 1)
-
+	require.Equal(t, 1, len(syncedTargets["prometheus2"]))
 }
 
 func TestApplyConfigDoesNotModifyStaticTargets(t *testing.T) {
