@@ -107,7 +107,7 @@ You can build a docker image locally with the following commands:
 
 ## React UI Development
 
-For more information on building, running, and developing on the new React-based UI, see the React app's [README.md](web/ui/react-app/README.md).
+For more information on building, running, and developing on the new React-based UI, see the React app's [README.md](web/ui/README.md).
 
 ## More information
 
