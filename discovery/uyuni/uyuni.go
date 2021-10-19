@@ -71,8 +71,6 @@ type SDConfig struct {
 	RefreshInterval  model.Duration          `yaml:"refresh_interval,omitempty"`
 }
 
-// systemGroupID, networkInfo and endpointInfo and Uyuni API Response
-// structures.
 type systemGroupID struct {
 	GroupID   int    `xmlrpc:"id"`
 	GroupName string `xmlrpc:"name"`
