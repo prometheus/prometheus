@@ -136,7 +136,7 @@ func readZeroThreshold(br *bstreamReader) (float64, error) {
 		}
 		return math.Float64frombits(v), nil
 	default:
-		return math.Ldexp(0.5, int(b-243)), nil
+		return math.Ldexp(0.5, int(b)-243), nil
 	}
 }
 

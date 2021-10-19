@@ -19,6 +19,7 @@
 package chunkenc
 
 import (
+	"math"
 	"testing"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -292,5 +293,79 @@ func TestInterjection(t *testing.T) {
 			require.Equal(t, s.bucketsOut, gotBuckets)
 
 		})
+	}
+}
+
+func TestWriteReadHistogramChunkLayout(t *testing.T) {
+	layouts := []struct {
+		schema                       int32
+		zeroThreshold                float64
+		positiveSpans, negativeSpans []histogram.Span
+	}{
+		{
+			schema:        3,
+			zeroThreshold: 0,
+			positiveSpans: []histogram.Span{{Offset: -4, Length: 3}, {Offset: 2, Length: 42}},
+			negativeSpans: nil,
+		},
+		{
+			schema:        -2,
+			zeroThreshold: 2.938735877055719e-39, // Default value in client_golang.
+			positiveSpans: nil,
+			negativeSpans: []histogram.Span{{Offset: 2, Length: 5}, {Offset: 1, Length: 34}},
+		},
+		{
+			schema:        6,
+			zeroThreshold: 1024, // The largest power of two we can encode in one byte.
+			positiveSpans: nil,
+			negativeSpans: nil,
+		},
+		{
+			schema:        6,
+			zeroThreshold: 1025,
+			positiveSpans: []histogram.Span{{Offset: 2, Length: 5}, {Offset: 1, Length: 34}, {Offset: 0, Length: 0}}, // Weird span.
+			negativeSpans: []histogram.Span{{Offset: -345, Length: 4545}, {Offset: 53645665, Length: 345}, {Offset: 945995, Length: 85848}},
+		},
+		{
+			schema:        6,
+			zeroThreshold: 2048,
+			positiveSpans: nil,
+			negativeSpans: nil,
+		},
+		{
+			schema:        0,
+			zeroThreshold: math.Ldexp(0.5, -242), // The smallest power of two we can encode in one byte.
+			positiveSpans: []histogram.Span{{Offset: -4, Length: 3}},
+			negativeSpans: []histogram.Span{{Offset: 2, Length: 5}, {Offset: 1, Length: 34}},
+		},
+		{
+			schema:        0,
+			zeroThreshold: math.Ldexp(0.5, -243),
+			positiveSpans: []histogram.Span{{Offset: -4, Length: 3}},
+			negativeSpans: []histogram.Span{{Offset: 2, Length: 5}, {Offset: 1, Length: 34}},
+		},
+		{
+			schema:        4,
+			zeroThreshold: 42, // Not a power of two.
+			positiveSpans: nil,
+			negativeSpans: nil,
+		},
+	}
+
+	bs := bstream{}
+
+	for _, l := range layouts {
+		writeHistogramChunkLayout(&bs, l.schema, l.zeroThreshold, l.positiveSpans, l.negativeSpans)
+	}
+
+	bsr := newBReader(bs.bytes())
+
+	for _, want := range layouts {
+		gotSchema, gotZeroThreshold, gotPositiveSpans, gotNegativeSpans, err := readHistogramChunkLayout(&bsr)
+		require.NoError(t, err)
+		require.Equal(t, want.schema, gotSchema)
+		require.Equal(t, want.zeroThreshold, gotZeroThreshold)
+		require.Equal(t, want.positiveSpans, gotPositiveSpans)
+		require.Equal(t, want.negativeSpans, gotNegativeSpans)
 	}
 }
