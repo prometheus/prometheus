@@ -76,9 +76,9 @@ When enabled, for each instance scrape, Prometheus stores a sample in the follow
 
 `--enable-feature=new-service-discovery-manager`
 
-When enables, Prometheus uses a new service discovery manager that does not
+When enabled, Prometheus uses a new service discovery manager that does not
 restart unchanged discoveries upon reloads. This makes reloads faster and reduces
-pressure on service discoveries sources.
+pressure on service discoveries' sources.
 
 Users are encouraged to test the new service discovery manager and report any
 issues upstream.
