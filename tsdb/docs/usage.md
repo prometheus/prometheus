@@ -1,6 +1,6 @@
 # Usage
 
-TSDB can be - and is - used by other applications such as [Cortex](https://cortexmetrics.io/) and Thanos (TODO confirm this).
+TSDB can be - and is - used by other applications such as [Cortex](https://cortexmetrics.io/) and [Thanos](https://thanos.io/).
 This directory contains documentation for any developers who wish to work on or with TSDB.
 
 Tip: `tsdb/db_test.go` demonstrates various usages of the TSDB library.
@@ -13,7 +13,7 @@ This returns a [`*tsdb.DB`](https://pkg.go.dev/github.com/prometheus/prometheus/
 
 a `DB` has the following main components:
 
-* Compactor: a leveled compactor. Note: there is currently one compactor implementation. It runs automatically.
+* Compactor: a [leveled compactor](https://github.com/prometheus/prometheus/blob/c0c22ed04200a8d24d1d5719f605c85710f0d008/tsdb/compact.go#L78). Note: it is currently the only compactor implementation. It runs automatically.
 * [`Head`](https://pkg.go.dev/github.com/prometheus/prometheus/tsdb#DB.Head)
 
 The `Head` is responsible for a lot.  Here are some of its main components:
@@ -33,7 +33,7 @@ The [golang docs](https://pkg.go.dev/github.com/prometheus/prometheus/storage#Ap
 
 Remember:
 
-* Use Commit() to update the WAL.
+* Use Commit() to add the samples to the DB and update the WAL.
 * create a new appender each time you commit.
 
 You can use multiple appenders concurrently (TODO: use case? trade-offs ?)
@@ -71,8 +71,7 @@ func noErr(err error) {
 }
 
 func main() {
-	var opts tsdb.Options
-	db, err := tsdb.Open("tsdb-test", nil, nil, &opts, nil)
+	db, err := tsdb.Open("tsdb-test", nil, nil, tsdb.DefaultOptions(), nil)
 	noErr(err)
 
 	ctx := context.Background()
@@ -99,7 +98,7 @@ Remember:
 
 * A querier can only see data that was committed when it was created. This limits the lifetime of a querier.
 * A querier should be closed when you're done with it.
-* TODO: what is the purpose of mint/maxt ? Prevent from reading beyond predefined limits?
+* Use mint/maxt to avoid loading unneeded data.
 
 Example:
 
@@ -122,8 +121,7 @@ func noErr(err error) {
 }
 
 func main() {
-	var opts tsdb.Options
-	db, err := tsdb.Open("tsdb-test", nil, nil, &opts, nil)
+	db, err := tsdb.Open("tsdb-test", nil, nil, tsdb.DefaultOptions(), nil)
 	noErr(err)
 
 	querier, err := db.Querier(context.TODO(), math.MinInt64, math.MaxInt64)

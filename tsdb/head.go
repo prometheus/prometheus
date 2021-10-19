@@ -1472,7 +1472,7 @@ type memSeries struct {
 	firstChunkID  int
 
 	nextAt        int64     // Timestamp at which to cut the next chunk.
-	sampleBuf     [4]sample // TODO why do we need this? what do we use it for?
+	sampleBuf     [4]sample // We keep the last 4 samples here so we don't need coordination between appender and querier
 	pendingCommit bool      // Whether there are samples waiting to be committed to this series.
 
 	app chunkenc.Appender // Current appender for the chunk.
