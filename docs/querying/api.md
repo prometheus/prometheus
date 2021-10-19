@@ -576,6 +576,13 @@ GET /api/v1/rules
 URL query parameters:
 - `type=alert|record`: return only the alerting rules (e.g. `type=alert`) or the recording rules (e.g. `type=record`). When the parameter is absent or empty, no filtering is done.
 
+Limit:
+-`Limit`: group-level limit of the number of alerts produced by an alerting rule 
+  or series produced by a recording rule. If the limit is exceeded, 
+  the active alerts are removed. If it's an alerting rule, 
+  and the rule returns an error, then it subsequently sets the health to bad. 
+  defalut value of limit is 0.
+
 ```json
 $ curl http://localhost:9090/api/v1/rules
 
@@ -621,7 +628,7 @@ $ curl http://localhost:9090/api/v1/rules
                 "file": "/rules.yaml",
                 "interval": 60,
                 "name": "example",
-                "limit": 1,    //default is 0
+                "limit": 1,    
             }
         ]
     },
