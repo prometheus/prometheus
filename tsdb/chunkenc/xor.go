@@ -388,41 +388,44 @@ func (it *xorIterator) readValue() bool {
 
 func xorWrite(
 	b *bstream,
-	current, previous float64,
+	newValue, currentValue float64,
 	currentLeading, currentTrailing uint8,
 ) (newLeading, newTrailing uint8) {
-	delta := math.Float64bits(current) ^ math.Float64bits(previous)
+	delta := math.Float64bits(newValue) ^ math.Float64bits(currentValue)
 
 	if delta == 0 {
 		b.writeBit(zero)
-		return
+		return currentLeading, currentTrailing
 	}
 	b.writeBit(one)
 
-	leading := uint8(bits.LeadingZeros64(delta))
-	trailing := uint8(bits.TrailingZeros64(delta))
+	newLeading = uint8(bits.LeadingZeros64(delta))
+	newTrailing = uint8(bits.TrailingZeros64(delta))
 
 	// Clamp number of leading zeros to avoid overflow when encoding.
-	if leading >= 32 {
-		leading = 31
+	if newLeading >= 32 {
+		newLeading = 31
 	}
 
-	if currentLeading != 0xff && leading >= currentLeading && trailing >= currentTrailing {
+	if currentLeading != 0xff && newLeading >= currentLeading && newTrailing >= currentTrailing {
+		// In this case, we stick with the current leading/trailing.
 		b.writeBit(zero)
 		b.writeBits(delta>>currentTrailing, 64-int(currentLeading)-int(currentTrailing))
 		return currentLeading, currentTrailing
 	}
 
 	b.writeBit(one)
-	b.writeBits(uint64(leading), 5)
+	b.writeBits(uint64(newLeading), 5)
 
-	// Note that if leading == trailing == 0, then sigbits == 64.  But that value doesn't actually fit into the 6 bits we have.
-	// Luckily, we never need to encode 0 significant bits, since that would put us in the other case (vdelta == 0).
-	// So instead we write out a 0 and adjust it back to 64 on unpacking.
-	sigbits := 64 - leading - trailing
+	// Note that if newLeading == newTrailing == 0, then sigbits == 64. But
+	// that value doesn't actually fit into the 6 bits we have.  Luckily, we
+	// never need to encode 0 significant bits, since that would put us in
+	// the other case (vdelta == 0).  So instead we write out a 0 and adjust
+	// it back to 64 on unpacking.
+	sigbits := 64 - newLeading - newTrailing
 	b.writeBits(uint64(sigbits), 6)
-	b.writeBits(delta>>trailing, int(sigbits))
-	return leading, trailing
+	b.writeBits(delta>>newTrailing, int(sigbits))
+	return
 }
 
 func xorRead(
