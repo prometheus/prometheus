@@ -1146,6 +1146,7 @@ type RuleGroup struct {
 	// specific properties, both alerting and recording rules are exposed in the
 	// same array.
 	Rules          []rule    `json:"rules"`
+	Limit          int       `json:"limit"`
 	Interval       float64   `json:"interval"`
 	EvaluationTime float64   `json:"evaluationTime"`
 	LastEvaluation time.Time `json:"lastEvaluation"`
@@ -1198,6 +1199,7 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 		apiRuleGroup := &RuleGroup{
 			Name:           grp.Name(),
 			File:           grp.File(),
+			Limit:          grp.Limit(),
 			Interval:       grp.Interval().Seconds(),
 			Rules:          []rule{},
 			EvaluationTime: grp.GetEvaluationTime().Seconds(),

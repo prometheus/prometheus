@@ -1475,6 +1475,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 						Name:     "grp",
 						File:     "/path/to/file",
 						Interval: 1,
+						Limit:    0,
 						Rules: []rule{
 							alertingRule{
 								State:       "inactive",
@@ -1521,6 +1522,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 						Name:     "grp",
 						File:     "/path/to/file",
 						Interval: 1,
+						Limit:    0,
 						Rules: []rule{
 							alertingRule{
 								State:       "inactive",
@@ -1560,6 +1562,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 						Name:     "grp",
 						File:     "/path/to/file",
 						Interval: 1,
+						Limit:    0,
 						Rules: []rule{
 							recordingRule{
 								Name:   "recording-rule-1",

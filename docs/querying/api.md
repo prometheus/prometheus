@@ -620,7 +620,8 @@ $ curl http://localhost:9090/api/v1/rules
                 ],
                 "file": "/rules.yaml",
                 "interval": 60,
-                "name": "example"
+                "name": "example",
+                "limit": 1,    //default is 0
             }
         ]
     },
