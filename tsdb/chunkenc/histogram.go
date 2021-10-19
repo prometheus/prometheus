@@ -27,8 +27,6 @@ const ()
 // HistogramChunk holds encoded sample data for a sparse, high-resolution
 // histogram.
 //
-// TODO(beorn7): Document the layout of chunk metadata.
-//
 // Each sample has multiple "fields", stored in the following way (raw = store
 // number directly, delta = store delta to the previous number, dod = store
 // delta of the delta to the previous number, xor = what we do for regular
