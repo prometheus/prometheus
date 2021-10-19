@@ -325,7 +325,7 @@ func main() {
 	a.Flag("query.max-samples", "Maximum number of samples a single query can load into memory. Note that queries will fail if they try to load more samples than this into memory, so this also limits the number of samples a query can return.").
 		Default("50000000").IntVar(&cfg.queryMaxSamples)
 
-	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-at-modifier, promql-negative-offset, remote-write-receiver, extra-scrape-metrics. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
+	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-at-modifier, promql-negative-offset, remote-write-receiver, extra-scrape-metrics, new-service-discovery-manager. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
 		Default("").StringsVar(&cfg.featureList)
 
 	promlogflag.AddFlags(a, &cfg.promlogConfig)
@@ -463,24 +463,20 @@ func main() {
 		ctxRule           = context.Background()
 
 		notifierManager = notifier.NewManager(&cfg.notifier, log.With(logger, "component", "notifier"))
+
+		ctxScrape, cancelScrape = context.WithCancel(context.Background())
+		ctxNotify, cancelNotify = context.WithCancel(context.Background())
+		discoveryManagerScrape  discoveryManager
+		discoveryManagerNotify  discoveryManager
 	)
 
-	ctxScrape, cancelScrape := context.WithCancel(context.Background())
-	var discoveryManagerScrape discoveryManager
 	if cfg.enableNewSDManager {
 		discovery.RegisterMetrics()
 		discoveryManagerScrape = discovery.NewManager(ctxScrape, log.With(logger, "component", "discovery manager scrape"), discovery.Name("scrape"))
+		discoveryManagerNotify = discovery.NewManager(ctxNotify, log.With(logger, "component", "discovery manager notify"), discovery.Name("notify"))
 	} else {
 		legacymanager.RegisterMetrics()
 		discoveryManagerScrape = legacymanager.NewManager(ctxScrape, log.With(logger, "component", "discovery manager scrape"), legacymanager.Name("scrape"))
-
-	}
-
-	ctxNotify, cancelNotify := context.WithCancel(context.Background())
-	var discoveryManagerNotify discoveryManager
-	if cfg.enableNewSDManager {
-		discoveryManagerNotify = discovery.NewManager(ctxNotify, log.With(logger, "component", "discovery manager notify"), discovery.Name("notify"))
-	} else {
 		discoveryManagerNotify = legacymanager.NewManager(ctxNotify, log.With(logger, "component", "discovery manager notify"), legacymanager.Name("notify"))
 	}
 
@@ -1368,9 +1364,9 @@ func (l jaegerLogger) Infof(msg string, args ...interface{}) {
 	level.Info(l.logger).Log(keyvals...)
 }
 
-// discoveryManager interfaces discovery manager. This is used to preserve old
-// code path for a few releases until we feel like the new manager can be
-// enabled for all users.
+// discoveryManager interfaces the discovery manager. This is used to keep using
+// the manager that restarts SD's on reload for a few releases until we feel
+// the new manager can be enabled for all users.
 type discoveryManager interface {
 	ApplyConfig(cfg map[string]discovery.Configs) error
 	Run() error
