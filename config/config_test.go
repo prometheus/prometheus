@@ -49,6 +49,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/scaleway"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/discovery/triton"
+	"github.com/prometheus/prometheus/discovery/uyuni"
 	"github.com/prometheus/prometheus/discovery/xds"
 	"github.com/prometheus/prometheus/discovery/zookeeper"
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -934,6 +935,26 @@ var expectedConf = &Config{
 				},
 			},
 		},
+		{
+			JobName: "uyuni",
+
+			HonorTimestamps:  true,
+			ScrapeInterval:   model.Duration(15 * time.Second),
+			ScrapeTimeout:    DefaultGlobalConfig.ScrapeTimeout,
+			HTTPClientConfig: config.HTTPClientConfig{FollowRedirects: true},
+			MetricsPath:      DefaultScrapeConfig.MetricsPath,
+			Scheme:           DefaultScrapeConfig.Scheme,
+			ServiceDiscoveryConfigs: discovery.Configs{
+				&uyuni.SDConfig{
+					Server:          kubernetesSDHostURL(),
+					Username:        "gopher",
+					Password:        "hole",
+					Entitlement:     "monitoring_entitled",
+					Separator:       ",",
+					RefreshInterval: model.Duration(60 * time.Second),
+				},
+			},
+		},
 	},
 	AlertingConfig: AlertingConfig{
 		AlertmanagerConfigs: []*AlertmanagerConfig{
@@ -1018,7 +1039,7 @@ func TestElideSecrets(t *testing.T) {
 	yamlConfig := string(config)
 
 	matches := secretRe.FindAllStringIndex(yamlConfig, -1)
-	require.Equal(t, 15, len(matches), "wrong number of secret matches found")
+	require.Equal(t, 16, len(matches), "wrong number of secret matches found")
 	require.NotContains(t, yamlConfig, "mysecret",
 		"yaml marshal reveals authentication credentials.")
 }

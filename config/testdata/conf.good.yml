@@ -349,6 +349,12 @@ scrape_configs:
       - authorization:
           credentials: abcdef
 
+  - job_name: uyuni
+    uyuni_sd_configs:
+      - server: https://localhost:1234
+        username: gopher
+        password: hole
+
 alerting:
   alertmanagers:
     - scheme: https

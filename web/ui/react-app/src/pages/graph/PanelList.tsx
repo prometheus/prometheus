@@ -20,7 +20,6 @@ interface PanelListContentProps {
   panels: PanelMeta[];
   metrics: string[];
   useLocalTime: boolean;
-  useExperimentalEditor: boolean;
   queryHistoryEnabled: boolean;
   enableAutocomplete: boolean;
   enableHighlighting: boolean;
@@ -30,7 +29,6 @@ interface PanelListContentProps {
 export const PanelListContent: FC<PanelListContentProps> = ({
   metrics = [],
   useLocalTime,
-  useExperimentalEditor,
   queryHistoryEnabled,
   enableAutocomplete,
   enableHighlighting,
@@ -105,7 +103,6 @@ export const PanelListContent: FC<PanelListContentProps> = ({
               )
             )
           }
-          useExperimentalEditor={useExperimentalEditor}
           useLocalTime={useLocalTime}
           metricNames={metrics}
           pastQueries={queryHistoryEnabled ? historyItems : []}
@@ -123,7 +120,6 @@ export const PanelListContent: FC<PanelListContentProps> = ({
 
 const PanelList: FC = () => {
   const [delta, setDelta] = useState(0);
-  const [useExperimentalEditor, setUseExperimentalEditor] = useLocalStorage('use-new-editor', true);
   const [useLocalTime, setUseLocalTime] = useLocalStorage('use-local-time', false);
   const [enableQueryHistory, setEnableQueryHistory] = useLocalStorage('enable-query-history', false);
   const [enableAutocomplete, setEnableAutocomplete] = useLocalStorage('enable-metric-autocomplete', true);
@@ -180,34 +176,22 @@ const PanelList: FC = () => {
             Enable autocomplete
           </Checkbox>
         </div>
-        <div className="float-right">
-          <Checkbox
-            wrapperStyles={{ display: 'inline-block' }}
-            id="use-experimental-editor-checkbox"
-            onChange={({ target }) => setUseExperimentalEditor(target.checked)}
-            defaultChecked={useExperimentalEditor}
-          >
-            Use experimental editor
-          </Checkbox>
-          <Checkbox
-            wrapperStyles={{ marginLeft: 20, display: 'inline-block' }}
-            id="highlighting-checkbox"
-            onChange={({ target }) => setEnableHighlighting(target.checked)}
-            defaultChecked={enableHighlighting}
-            disabled={!useExperimentalEditor}
-          >
-            Enable highlighting
-          </Checkbox>
-          <Checkbox
-            wrapperStyles={{ marginLeft: 20, display: 'inline-block' }}
-            id="linter-checkbox"
-            onChange={({ target }) => setEnableLinter(target.checked)}
-            defaultChecked={enableLinter}
-            disabled={!useExperimentalEditor}
-          >
-            Enable linter
-          </Checkbox>
-        </div>
+        <Checkbox
+          wrapperStyles={{ marginLeft: 20, display: 'inline-block' }}
+          id="highlighting-checkbox"
+          onChange={({ target }) => setEnableHighlighting(target.checked)}
+          defaultChecked={enableHighlighting}
+        >
+          Enable highlighting
+        </Checkbox>
+        <Checkbox
+          wrapperStyles={{ marginLeft: 20, display: 'inline-block' }}
+          id="linter-checkbox"
+          onChange={({ target }) => setEnableLinter(target.checked)}
+          defaultChecked={enableLinter}
+        >
+          Enable linter
+        </Checkbox>
       </div>
       {(delta > 30 || timeErr) && (
         <Alert color="danger">
@@ -227,7 +211,6 @@ const PanelList: FC = () => {
         panels={decodePanelOptionsFromQueryString(window.location.search)}
         useLocalTime={useLocalTime}
         metrics={metricsRes.data}
-        useExperimentalEditor={useExperimentalEditor}
         queryHistoryEnabled={enableQueryHistory}
         enableAutocomplete={enableAutocomplete}
         enableHighlighting={enableHighlighting}

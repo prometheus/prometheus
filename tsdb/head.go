@@ -636,7 +636,7 @@ func (h *Head) Init(minValidTime int64) error {
 
 func (h *Head) loadMmappedChunks(refSeries map[uint64]*memSeries) (map[uint64][]*mmappedChunk, error) {
 	mmappedChunks := map[uint64][]*mmappedChunk{}
-	if err := h.chunkDiskMapper.IterateAllChunks(func(seriesRef, chunkRef uint64, mint, maxt int64, numSamples uint16) error {
+	if err := h.chunkDiskMapper.IterateAllChunks(func(seriesRef uint64, chunkRef chunks.ChunkDiskMapperRef, mint, maxt int64, numSamples uint16) error {
 		if maxt < h.minValidTime.Load() {
 			return nil
 		}
@@ -1612,8 +1612,9 @@ func overlapsClosedInterval(mint1, maxt1, mint2, maxt2 int64) bool {
 	return mint1 <= maxt2 && mint2 <= maxt1
 }
 
+// mappedChunks describes chunk data on disk that can be mmapped
 type mmappedChunk struct {
-	ref              uint64
+	ref              chunks.ChunkDiskMapperRef
 	numSamples       uint16
 	minTime, maxTime int64
 }

@@ -147,10 +147,16 @@ func (importer *ruleImporter) importRule(ctx context.Context, ruleExpr, ruleName
 			matrix = val.(model.Matrix)
 
 			for _, sample := range matrix {
-				lb := labels.NewBuilder(ruleLabels)
+				lb := labels.NewBuilder(labels.Labels{})
 
 				for name, value := range sample.Metric {
 					lb.Set(string(name), string(value))
+				}
+
+				// Setting the rule labels after the output of the query,
+				// so they can override query output.
+				for _, l := range ruleLabels {
+					lb.Set(l.Name, l.Value)
 				}
 
 				lb.Set(labels.MetricName, ruleName)

@@ -24,6 +24,7 @@ import (
 	"math"
 	"net/http"
 	"reflect"
+	"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -641,22 +642,27 @@ func verifyLabelLimits(lset labels.Labels, limits *labelLimits) error {
 
 func mutateSampleLabels(lset labels.Labels, target *Target, honor bool, rc []*relabel.Config) labels.Labels {
 	lb := labels.NewBuilder(lset)
+	targetLabels := target.Labels()
 
 	if honor {
-		for _, l := range target.Labels() {
+		for _, l := range targetLabels {
 			if !lset.Has(l.Name) {
 				lb.Set(l.Name, l.Value)
 			}
 		}
 	} else {
-		for _, l := range target.Labels() {
-			// existingValue will be empty if l.Name doesn't exist.
+		var conflictingExposedLabels labels.Labels
+		for _, l := range targetLabels {
 			existingValue := lset.Get(l.Name)
 			if existingValue != "" {
-				lb.Set(model.ExportedLabelPrefix+l.Name, existingValue)
+				conflictingExposedLabels = append(conflictingExposedLabels, labels.Label{Name: l.Name, Value: existingValue})
 			}
 			// It is now safe to set the target label.
 			lb.Set(l.Name, l.Value)
+		}
+
+		if len(conflictingExposedLabels) > 0 {
+			resolveConflictingExposedLabels(lb, lset, targetLabels, conflictingExposedLabels)
 		}
 	}
 
@@ -667,6 +673,29 @@ func mutateSampleLabels(lset labels.Labels, target *Target, honor bool, rc []*re
 	}
 
 	return res
+}
+
+func resolveConflictingExposedLabels(lb *labels.Builder, exposedLabels, targetLabels, conflictingExposedLabels labels.Labels) {
+	sort.SliceStable(conflictingExposedLabels, func(i, j int) bool {
+		return len(conflictingExposedLabels[i].Name) < len(conflictingExposedLabels[j].Name)
+	})
+
+	for i, l := range conflictingExposedLabels {
+		newName := l.Name
+		for {
+			newName = model.ExportedLabelPrefix + newName
+			if !exposedLabels.Has(newName) &&
+				!targetLabels.Has(newName) &&
+				!conflictingExposedLabels[:i].Has(newName) {
+				conflictingExposedLabels[i].Name = newName
+				break
+			}
+		}
+	}
+
+	for _, l := range conflictingExposedLabels {
+		lb.Set(l.Name, l.Value)
+	}
 }
 
 func mutateReportSampleLabels(lset labels.Labels, target *Target) labels.Labels {

@@ -2085,6 +2085,8 @@ func scalarBinop(op parser.ItemType, lhs, rhs float64) float64 {
 		return btos(lhs >= rhs)
 	case parser.LTE:
 		return btos(lhs <= rhs)
+	case parser.ATAN2:
+		return math.Atan2(lhs, rhs)
 	}
 	panic(errors.Errorf("operator %q not allowed for Scalar operations", op))
 }
@@ -2136,6 +2138,7 @@ type groupedAggregation struct {
 func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without bool, param interface{}, vec Vector, seriesHelper []EvalSeriesHelper, enh *EvalNodeHelper) Vector {
 
 	result := map[uint64]*groupedAggregation{}
+	orderedResult := []*groupedAggregation{}
 	var k int64
 	if op == parser.TOPK || op == parser.BOTTOMK {
 		f := param.(float64)
@@ -2204,12 +2207,16 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 			} else {
 				m = metric.WithLabels(grouping...)
 			}
-			result[groupingKey] = &groupedAggregation{
+			newAgg := &groupedAggregation{
 				labels:     m,
 				value:      s.V,
 				mean:       s.V,
 				groupCount: 1,
 			}
+
+			result[groupingKey] = newAgg
+			orderedResult = append(orderedResult, newAgg)
+
 			inputVecLen := int64(len(vec))
 			resultSize := k
 			if k > inputVecLen {
@@ -2331,7 +2338,7 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 	}
 
 	// Construct the result Vector from the aggregated groups.
-	for _, aggr := range result {
+	for _, aggr := range orderedResult {
 		switch op {
 		case parser.AVG:
 			aggr.value = aggr.mean

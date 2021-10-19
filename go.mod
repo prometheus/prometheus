@@ -33,6 +33,7 @@ require (
 	github.com/hetznercloud/hcloud-go v1.32.0
 	github.com/influxdata/influxdb v1.9.3
 	github.com/json-iterator/go v1.1.11
+	github.com/kolo/xmlrpc v0.0.0-20201022064351-38db28db192b
 	github.com/linode/linodego v0.32.0
 	github.com/miekg/dns v1.1.43
 	github.com/moby/term v0.0.0-20201216013528-df9cb8a40635 // indirect
