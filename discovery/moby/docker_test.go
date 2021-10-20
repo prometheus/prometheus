@@ -25,6 +25,8 @@ import (
 )
 
 func TestDockerSDRefresh(t *testing.T) {
+	t.Parallel()
+
 	sdmock := NewSDMock(t, "dockerprom")
 	sdmock.Setup()
 
@@ -104,8 +106,12 @@ host: %s
 			"__meta_docker_network_ip":                                 "",
 		},
 	} {
+		lbls := lbls
+		targets := tg.Targets[i]
 		t.Run(fmt.Sprintf("item %d", i), func(t *testing.T) {
-			require.Equal(t, lbls, tg.Targets[i])
+			t.Parallel()
+
+			require.Equal(t, lbls, targets)
 		})
 	}
 }

@@ -27,6 +27,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
+//nolint:paralleltest // TODO: This test currently fails when running in parallel.
 func TestChunkDiskMapper_WriteChunk_Chunk_IterateChunks(t *testing.T) {
 	hrw := testChunkDiskMapper(t)
 	defer func() {
@@ -159,6 +160,8 @@ func TestChunkDiskMapper_WriteChunk_Chunk_IterateChunks(t *testing.T) {
 // * Empty current file does not lead to creation of another file after truncation.
 // * Non-empty current file leads to creation of another file after truncation.
 func TestChunkDiskMapper_Truncate(t *testing.T) {
+	t.Parallel()
+
 	hrw := testChunkDiskMapper(t)
 	defer func() {
 		require.NoError(t, hrw.Close())
@@ -248,6 +251,8 @@ func TestChunkDiskMapper_Truncate(t *testing.T) {
 // This test exposes https://github.com/prometheus/prometheus/issues/7412 where the truncation
 // simply deleted all empty files instead of stopping once it encountered a non-empty file.
 func TestChunkDiskMapper_Truncate_PreservesFileSequence(t *testing.T) {
+	t.Parallel()
+
 	hrw := testChunkDiskMapper(t)
 	defer func() {
 		require.NoError(t, hrw.Close())
@@ -318,6 +323,8 @@ func TestChunkDiskMapper_Truncate_PreservesFileSequence(t *testing.T) {
 // TestHeadReadWriter_TruncateAfterIterateChunksError tests for
 // https://github.com/prometheus/prometheus/issues/7753
 func TestHeadReadWriter_TruncateAfterFailedIterateChunks(t *testing.T) {
+	t.Parallel()
+
 	hrw := testChunkDiskMapper(t)
 	defer func() {
 		require.NoError(t, hrw.Close())
@@ -344,6 +351,8 @@ func TestHeadReadWriter_TruncateAfterFailedIterateChunks(t *testing.T) {
 }
 
 func TestHeadReadWriter_ReadRepairOnEmptyLastFile(t *testing.T) {
+	t.Parallel()
+
 	hrw := testChunkDiskMapper(t)
 	defer func() {
 		require.NoError(t, hrw.Close())

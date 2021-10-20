@@ -26,6 +26,8 @@ func TestMain(m *testing.M) {
 }
 
 func TestNewDiscoveryError(t *testing.T) {
+	t.Parallel()
+
 	_, err := NewDiscovery(
 		[]string{"unreachable.test"},
 		time.Second, []string{"/"},

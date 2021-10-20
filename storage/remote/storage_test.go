@@ -25,6 +25,7 @@ import (
 	"github.com/prometheus/prometheus/config"
 )
 
+//nolint:paralleltest // TODO: This test currently panics on accessing global metric when running in parallel.
 func TestStorageLifecycle(t *testing.T) {
 	dir, err := ioutil.TempDir("", "TestStorageLifecycle")
 	require.NoError(t, err)
@@ -64,6 +65,7 @@ func TestStorageLifecycle(t *testing.T) {
 	require.NoError(t, err)
 }
 
+//nolint:paralleltest // TODO: This test currently panics on accessing global metric when running in parallel.
 func TestUpdateRemoteReadConfigs(t *testing.T) {
 	dir, err := ioutil.TempDir("", "TestUpdateRemoteReadConfigs")
 	require.NoError(t, err)

@@ -131,6 +131,8 @@ func TestRuleEvalDuplicate(t *testing.T) {
 }
 
 func TestRecordingRuleLimit(t *testing.T) {
+	t.Parallel()
+
 	suite, err := promql.NewTest(t, `
 		load 1m
 			metric{label="1"} 1

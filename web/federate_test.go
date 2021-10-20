@@ -209,25 +209,27 @@ func TestFederation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer suite.Close()
+	t.Cleanup(func() { suite.Close() })
 
 	if err := suite.Run(); err != nil {
 		t.Fatal(err)
-	}
-
-	h := &Handler{
-		localStorage:  &dbAdapter{suite.TSDB()},
-		lookbackDelta: 5 * time.Minute,
-		now:           func() model.Time { return 101 * 60 * 1000 }, // 101min after epoch.
-		config: &config.Config{
-			GlobalConfig: config.GlobalConfig{},
-		},
 	}
 
 	for name, scenario := range scenarios {
 		scenario := scenario
 
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			h := &Handler{
+				localStorage:  &dbAdapter{suite.TSDB()},
+				lookbackDelta: 5 * time.Minute,
+				now:           func() model.Time { return 101 * 60 * 1000 }, // 101min after epoch.
+				config: &config.Config{
+					GlobalConfig: config.GlobalConfig{},
+				},
+			}
+
 			h.config.GlobalConfig.ExternalLabels = scenario.externalLabels
 			req := httptest.NewRequest("GET", "http://example.org/federate?"+scenario.params, nil)
 			res := httptest.NewRecorder()

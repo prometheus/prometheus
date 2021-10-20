@@ -26,6 +26,8 @@ func mustNewMatcher(t *testing.T, mType MatchType, value string) *Matcher {
 }
 
 func TestMatcher(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		matcher *Matcher
 		value   string
@@ -89,6 +91,8 @@ func TestMatcher(t *testing.T) {
 }
 
 func TestInverse(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		matcher  *Matcher
 		expected *Matcher

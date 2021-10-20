@@ -27,6 +27,8 @@ import (
 )
 
 func TestFanout_SelectSorted(t *testing.T) {
+	t.Parallel()
+
 	inputLabel := labels.FromStrings(model.MetricNameLabel, "a")
 	outputLabel := labels.FromStrings(model.MetricNameLabel, "a")
 
@@ -34,7 +36,7 @@ func TestFanout_SelectSorted(t *testing.T) {
 	ctx := context.Background()
 
 	priStorage := teststorage.New(t)
-	defer priStorage.Close()
+	t.Cleanup(func() { priStorage.Close() })
 	app1 := priStorage.Appender(ctx)
 	app1.Append(0, inputLabel, 0, 0)
 	inputTotalSize++
@@ -46,7 +48,7 @@ func TestFanout_SelectSorted(t *testing.T) {
 	require.NoError(t, err)
 
 	remoteStorage1 := teststorage.New(t)
-	defer remoteStorage1.Close()
+	t.Cleanup(func() { remoteStorage1.Close() })
 	app2 := remoteStorage1.Appender(ctx)
 	app2.Append(0, inputLabel, 3000, 3)
 	inputTotalSize++
@@ -58,7 +60,7 @@ func TestFanout_SelectSorted(t *testing.T) {
 	require.NoError(t, err)
 
 	remoteStorage2 := teststorage.New(t)
-	defer remoteStorage2.Close()
+	t.Cleanup(func() { remoteStorage2.Close() })
 
 	app3 := remoteStorage2.Appender(ctx)
 	app3.Append(0, inputLabel, 6000, 6)
@@ -74,6 +76,8 @@ func TestFanout_SelectSorted(t *testing.T) {
 	fanoutStorage := storage.NewFanout(nil, priStorage, remoteStorage1, remoteStorage2)
 
 	t.Run("querier", func(t *testing.T) {
+		t.Parallel()
+
 		querier, err := fanoutStorage.Querier(context.Background(), 0, 8000)
 		require.NoError(t, err)
 		defer querier.Close()
@@ -100,6 +104,8 @@ func TestFanout_SelectSorted(t *testing.T) {
 		require.Equal(t, inputTotalSize, len(result))
 	})
 	t.Run("chunk querier", func(t *testing.T) {
+		t.Parallel()
+
 		querier, err := fanoutStorage.ChunkQuerier(ctx, 0, 8000)
 		require.NoError(t, err)
 		defer querier.Close()
@@ -129,8 +135,10 @@ func TestFanout_SelectSorted(t *testing.T) {
 }
 
 func TestFanoutErrors(t *testing.T) {
+	t.Parallel()
+
 	workingStorage := teststorage.New(t)
-	defer workingStorage.Close()
+	t.Cleanup(func() { workingStorage.Close() })
 
 	cases := []struct {
 		primary   storage.Storage
@@ -153,9 +161,12 @@ func TestFanoutErrors(t *testing.T) {
 	}
 
 	for _, tc := range cases {
+		tc := tc
 		fanoutStorage := storage.NewFanout(nil, tc.primary, tc.secondary)
 
 		t.Run("samples", func(t *testing.T) {
+			t.Parallel()
+
 			querier, err := fanoutStorage.Querier(context.Background(), 0, 8000)
 			require.NoError(t, err)
 			defer querier.Close()
@@ -180,6 +191,8 @@ func TestFanoutErrors(t *testing.T) {
 			}
 		})
 		t.Run("chunks", func(t *testing.T) {
+			t.Parallel()
+
 			t.Skip("enable once TestStorage and TSDB implements ChunkQuerier")
 			querier, err := fanoutStorage.ChunkQuerier(context.Background(), 0, 8000)
 			require.NoError(t, err)

@@ -48,6 +48,7 @@ func getCompressionHandlerFunc() CompressionHandler {
 	}
 }
 
+//nolint:paralleltest // TODO: Tests use global mux and server right now.
 func TestCompressionHandler_PlainText(t *testing.T) {
 	tearDown := setup()
 	defer tearDown()
@@ -72,6 +73,7 @@ func TestCompressionHandler_PlainText(t *testing.T) {
 	require.Equal(t, expected, actual, "expected response with content")
 }
 
+//nolint:paralleltest // TODO: Tests use global mux and server right now.
 func TestCompressionHandler_Gzip(t *testing.T) {
 	tearDown := setup()
 	defer tearDown()
@@ -107,6 +109,7 @@ func TestCompressionHandler_Gzip(t *testing.T) {
 	require.Equal(t, expected, actual, "unexpected response content")
 }
 
+//nolint:paralleltest // TODO: Tests use global mux and server right now.
 func TestCompressionHandler_Deflate(t *testing.T) {
 	tearDown := setup()
 	defer tearDown()

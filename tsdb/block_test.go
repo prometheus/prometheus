@@ -286,6 +286,7 @@ func TestLabelValuesWithMatchers(t *testing.T) {
 		},
 	}
 
+	//nolint:paralleltest // TODO: Serial tests.
 	for _, tt := range testCases {
 		t.Run(tt.name, func(t *testing.T) {
 			actualValues, err := indexReader.SortedLabelValues(tt.labelName, tt.matchers...)

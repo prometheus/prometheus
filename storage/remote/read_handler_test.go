@@ -33,6 +33,8 @@ import (
 )
 
 func TestSampledReadEndpoint(t *testing.T) {
+	t.Parallel()
+
 	suite, err := promql.NewTest(t, `
 		load 1m
 			test_metric1{foo="bar",baz="qux"} 1
@@ -113,6 +115,8 @@ func TestSampledReadEndpoint(t *testing.T) {
 }
 
 func TestStreamReadEndpoint(t *testing.T) {
+	t.Parallel()
+
 	// First with 120 samples. We expect 1 frame with 1 chunk.
 	// Second with 121 samples, We expect 1 frame with 2 chunks.
 	// Third with 241 samples. We expect 1 frame with 2 chunks, and 1 frame with 1 chunk for the same series due to bytes limit.

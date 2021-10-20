@@ -38,6 +38,8 @@ func TestMain(m *testing.M) {
 // TestWALRepair_ReadingError ensures that a repair is run for an error
 // when reading a record.
 func TestWALRepair_ReadingError(t *testing.T) {
+	t.Parallel()
+
 	for name, test := range map[string]struct {
 		corrSgm    int              // Which segment to corrupt.
 		corrFunc   func(f *os.File) // Func that applies the corruption.
@@ -117,7 +119,11 @@ func TestWALRepair_ReadingError(t *testing.T) {
 			4,
 		},
 	} {
+		test := test
+
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
 			dir := t.TempDir()
 
 			// We create 3 segments with 3 records each and
@@ -212,6 +218,8 @@ func TestWALRepair_ReadingError(t *testing.T) {
 // ensures that an error during reading that segment are correctly repaired before
 // moving to write more records to the WAL.
 func TestCorruptAndCarryOn(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 
 	var (
@@ -336,6 +344,8 @@ func TestCorruptAndCarryOn(t *testing.T) {
 
 // TestClose ensures that calling Close more than once doesn't panic and doesn't block.
 func TestClose(t *testing.T) {
+	t.Parallel()
+
 	dir := t.TempDir()
 	w, err := NewSize(nil, nil, dir, pageSize, false)
 	require.NoError(t, err)
@@ -344,6 +354,8 @@ func TestClose(t *testing.T) {
 }
 
 func TestSegmentMetric(t *testing.T) {
+	t.Parallel()
+
 	var (
 		segmentSize = pageSize
 		recordSize  = (pageSize / 2) - recordHeaderSize
@@ -369,6 +381,8 @@ func TestSegmentMetric(t *testing.T) {
 }
 
 func TestCompression(t *testing.T) {
+	t.Parallel()
+
 	bootstrap := func(compressed bool) string {
 		const (
 			segmentSize = pageSize
@@ -408,6 +422,8 @@ func TestCompression(t *testing.T) {
 }
 
 func TestLogPartialWrite(t *testing.T) {
+	t.Parallel()
+
 	const segmentSize = pageSize * 2
 	record := []byte{1, 2, 3, 4, 5}
 
@@ -435,7 +451,11 @@ func TestLogPartialWrite(t *testing.T) {
 	}
 
 	for testName, testData := range tests {
+		testData := testData
+
 		t.Run(testName, func(t *testing.T) {
+			t.Parallel()
+
 			dirPath := t.TempDir()
 
 			w, err := NewSize(nil, nil, dirPath, segmentSize, false)

@@ -36,6 +36,8 @@ func (s *hcloudSDTestSuite) SetupTest(t *testing.T) {
 }
 
 func TestHCloudSDRefresh(t *testing.T) {
+	t.Parallel()
+
 	suite := &hcloudSDTestSuite{}
 	suite.SetupTest(t)
 
@@ -123,8 +125,13 @@ func TestHCloudSDRefresh(t *testing.T) {
 			"__meta_hetzner_hcloud_server_type":                      model.LabelValue("cpx11"),
 		},
 	} {
+		labelSet := labelSet
+		targets := targetGroup.Targets[i]
+
 		t.Run(fmt.Sprintf("item %d", i), func(t *testing.T) {
-			require.Equal(t, labelSet, targetGroup.Targets[i])
+			t.Parallel()
+
+			require.Equal(t, labelSet, targets)
 		})
 	}
 }

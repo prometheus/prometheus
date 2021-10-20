@@ -33,6 +33,8 @@ import (
 )
 
 func TestNoDuplicateReadConfigs(t *testing.T) {
+	t.Parallel()
+
 	dir, err := ioutil.TempDir("", "TestNoDuplicateReadConfigs")
 	require.NoError(t, err)
 	defer os.RemoveAll(dir)
@@ -94,7 +96,11 @@ func TestNoDuplicateReadConfigs(t *testing.T) {
 	}
 
 	for _, tc := range cases {
+		tc := tc
+
 		t.Run("", func(t *testing.T) {
+			t.Parallel()
+
 			s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil)
 			conf := &config.Config{
 				GlobalConfig:      config.DefaultGlobalConfig,
@@ -110,6 +116,8 @@ func TestNoDuplicateReadConfigs(t *testing.T) {
 }
 
 func TestExternalLabelsQuerierAddExternalLabels(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		el          labels.Labels
 		inMatchers  []*labels.Matcher
@@ -176,6 +184,8 @@ func TestExternalLabelsQuerierAddExternalLabels(t *testing.T) {
 }
 
 func TestSeriesSetFilter(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		in       *prompb.QueryResult
 		toRemove labels.Labels
@@ -243,20 +253,9 @@ func (c *mockedRemoteClient) Read(_ context.Context, query *prompb.Query) (*prom
 	return q, nil
 }
 
-func (c *mockedRemoteClient) reset() {
-	c.got = nil
-}
-
 // NOTE: We don't need to test ChunkQuerier as it's uses querier for all operations anyway.
 func TestSampleAndChunkQueryableClient(t *testing.T) {
-	m := &mockedRemoteClient{
-		// Samples does not matter for below tests.
-		store: []*prompb.TimeSeries{
-			{Labels: []prompb.Label{{Name: "a", Value: "b"}}},
-			{Labels: []prompb.Label{{Name: "a", Value: "b3"}, {Name: "region", Value: "us"}}},
-			{Labels: []prompb.Label{{Name: "a", Value: "b2"}, {Name: "region", Value: "europe"}}},
-		},
-	}
+	t.Parallel()
 
 	for _, tc := range []struct {
 		name             string
@@ -480,8 +479,19 @@ func TestSampleAndChunkQueryableClient(t *testing.T) {
 			expectedSeries: nil, // Given matchers does not match with required ones, noop expected.
 		},
 	} {
+		tc := tc
+
 		t.Run(tc.name, func(t *testing.T) {
-			m.reset()
+			t.Parallel()
+
+			m := &mockedRemoteClient{
+				// Samples does not matter for below tests.
+				store: []*prompb.TimeSeries{
+					{Labels: []prompb.Label{{Name: "a", Value: "b"}}},
+					{Labels: []prompb.Label{{Name: "a", Value: "b3"}, {Name: "region", Value: "us"}}},
+					{Labels: []prompb.Label{{Name: "a", Value: "b2"}, {Name: "region", Value: "europe"}}},
+				},
+			}
 
 			c := NewSampleAndChunkQueryableClient(
 				m,

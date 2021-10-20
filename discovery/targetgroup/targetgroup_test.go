@@ -23,6 +23,8 @@ import (
 )
 
 func TestTargetGroupStrictJsonUnmarshal(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		json          string
 		expectedReply error
@@ -60,6 +62,8 @@ func TestTargetGroupStrictJsonUnmarshal(t *testing.T) {
 }
 
 func TestTargetGroupYamlMarshal(t *testing.T) {
+	t.Parallel()
+
 	marshal := func(g interface{}) []byte {
 		d, err := yaml.Marshal(g)
 		if err != nil {
@@ -101,6 +105,8 @@ func TestTargetGroupYamlMarshal(t *testing.T) {
 }
 
 func TestTargetGroupYamlUnmarshal(t *testing.T) {
+	t.Parallel()
+
 	unmarshal := func(d []byte) func(interface{}) error {
 		return func(o interface{}) error {
 			return yaml.Unmarshal(d, o)
@@ -142,6 +148,8 @@ func TestTargetGroupYamlUnmarshal(t *testing.T) {
 }
 
 func TestString(t *testing.T) {
+	t.Parallel()
+
 	// String() should return only the source, regardless of other attributes.
 	group1 :=
 		Group{

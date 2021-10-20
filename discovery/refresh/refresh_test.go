@@ -31,6 +31,8 @@ func TestMain(m *testing.M) {
 }
 
 func TestRefresh(t *testing.T) {
+	t.Parallel()
+
 	tg1 := []*targetgroup.Group{
 		{
 			Source: "tg",

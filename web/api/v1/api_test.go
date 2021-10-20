@@ -294,6 +294,8 @@ var sampleFlagMap = map[string]string{
 }
 
 func TestEndpoints(t *testing.T) {
+	t.Parallel()
+
 	suite, err := promql.NewTest(t, `
 		load 1m
 			test_metric1{foo="bar"} 0+100x100
@@ -355,13 +357,15 @@ func TestEndpoints(t *testing.T) {
 	}
 
 	require.NoError(t, err)
-	defer suite.Close()
+	t.Cleanup(func() { suite.Close() })
 
-	require.NoError(t, suite.Run())
+	require.NoError(t, suite.Run()) //nolint:paralleltest // False positive.
 
 	now := time.Now()
 
 	t.Run("local", func(t *testing.T) {
+		t.Parallel()
+
 		var algr rulesRetrieverMock
 		algr.testing = t
 
@@ -390,6 +394,8 @@ func TestEndpoints(t *testing.T) {
 	// the remote read client to a test server, which in turn sends them to the
 	// data from the test suite.
 	t.Run("remote", func(t *testing.T) {
+		t.Parallel()
+
 		server := setupRemote(suite.Storage())
 		defer server.Close()
 
@@ -453,6 +459,8 @@ func TestEndpoints(t *testing.T) {
 }
 
 func TestLabelNames(t *testing.T) {
+	t.Parallel()
+
 	// TestEndpoints doesn't have enough label names to test api.labelNames
 	// endpoint properly. Hence we test it separately.
 	suite, err := promql.NewTest(t, `
@@ -464,7 +472,9 @@ func TestLabelNames(t *testing.T) {
 			test_metric2{foo="baz", abc="qwerty"} 1+0x100
 	`)
 	require.NoError(t, err)
-	defer suite.Close()
+	t.Cleanup(func() {
+		suite.Close()
+	})
 	require.NoError(t, suite.Run())
 
 	api := &API{
@@ -511,7 +521,10 @@ func TestLabelNames(t *testing.T) {
 			expected: []string{"__name__", "abc", "foo", "xyz"},
 		},
 	} {
+		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			for _, method := range []string{http.MethodGet, http.MethodPost} {
 				ctx := context.Background()
 				req, err := request(method, tc.matchers...)
@@ -2182,6 +2195,8 @@ func (f *fakeDB) WALReplayStatus() (tsdb.WALReplayStatus, error) {
 }
 
 func TestAdminEndpoints(t *testing.T) {
+	t.Parallel()
+
 	tsdb, tsdbWithError, tsdbNotReady := &fakeDB{}, &fakeDB{err: errors.New("some error")}, &fakeDB{err: errors.Wrap(tsdb.ErrNotReady, "wrap")}
 	snapshotAPI := func(api *API) apiFunc { return api.snapshot }
 	cleanAPI := func(api *API) apiFunc { return api.cleanTombstones }
@@ -2344,6 +2359,8 @@ func TestAdminEndpoints(t *testing.T) {
 	} {
 		tc := tc
 		t.Run("", func(t *testing.T) {
+			t.Parallel()
+
 			dir, _ := ioutil.TempDir("", "fakeDB")
 			defer func() { require.NoError(t, os.RemoveAll(dir)) }()
 
@@ -2365,6 +2382,8 @@ func TestAdminEndpoints(t *testing.T) {
 }
 
 func TestRespondSuccess(t *testing.T) {
+	t.Parallel()
+
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		api := API{}
 		api.respond(w, "test", nil)
@@ -2401,6 +2420,8 @@ func TestRespondSuccess(t *testing.T) {
 }
 
 func TestRespondError(t *testing.T) {
+	t.Parallel()
+
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		api := API{}
 		api.respondError(w, &apiError{errorTimeout, errors.New("message")}, "test")
@@ -2439,6 +2460,8 @@ func TestRespondError(t *testing.T) {
 }
 
 func TestParseTimeParam(t *testing.T) {
+	t.Parallel()
+
 	type resultType struct {
 		asTime  time.Time
 		asError func() error
@@ -2501,6 +2524,8 @@ func TestParseTimeParam(t *testing.T) {
 }
 
 func TestParseTime(t *testing.T) {
+	t.Parallel()
+
 	ts, err := time.Parse(time.RFC3339Nano, "2015-06-03T13:21:58.555Z")
 	if err != nil {
 		panic(err)
@@ -2571,6 +2596,8 @@ func TestParseTime(t *testing.T) {
 }
 
 func TestParseDuration(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		input  string
 		fail   bool
@@ -2625,6 +2652,8 @@ func TestParseDuration(t *testing.T) {
 }
 
 func TestOptionsMethod(t *testing.T) {
+	t.Parallel()
+
 	r := route.New()
 	api := &API{ready: func(f http.HandlerFunc) http.HandlerFunc { return f }}
 	api.Register(r)
@@ -2648,6 +2677,8 @@ func TestOptionsMethod(t *testing.T) {
 }
 
 func TestRespond(t *testing.T) {
+	t.Parallel()
+
 	cases := []struct {
 		response interface{}
 		expected string
@@ -2780,6 +2811,8 @@ func TestRespond(t *testing.T) {
 }
 
 func TestTSDBStatus(t *testing.T) {
+	t.Parallel()
+
 	tsdb := &fakeDB{}
 	tsdbStatusAPI := func(api *API) apiFunc { return api.serveTSDBStatus }
 
@@ -2801,6 +2834,8 @@ func TestTSDBStatus(t *testing.T) {
 	} {
 		tc := tc
 		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+			t.Parallel()
+
 			api := &API{db: tc.db, gatherer: prometheus.DefaultGatherer}
 			endpoint := tc.endpoint(api)
 			req, err := http.NewRequest(tc.method, fmt.Sprintf("?%s", tc.values.Encode()), nil)
@@ -2814,6 +2849,8 @@ func TestTSDBStatus(t *testing.T) {
 }
 
 func TestReturnAPIError(t *testing.T) {
+	t.Parallel()
+
 	cases := []struct {
 		err      error
 		expected errorType
@@ -2875,6 +2912,8 @@ func BenchmarkRespond(b *testing.B) {
 }
 
 func TestGetGlobalURL(t *testing.T) {
+	t.Parallel()
+
 	mustParseURL := func(t *testing.T, u string) *url.URL {
 		parsed, err := url.Parse(u)
 		require.NoError(t, err)
@@ -2970,7 +3009,10 @@ func TestGetGlobalURL(t *testing.T) {
 	}
 
 	for i, tc := range testcases {
+		tc := tc
 		t.Run(fmt.Sprintf("Test %d", i), func(t *testing.T) {
+			t.Parallel()
+
 			output, err := getGlobalURL(tc.input, tc.opts)
 			if tc.errorful {
 				require.Error(t, err)

@@ -43,6 +43,8 @@ func (s *LinodeSDTestSuite) SetupTest(t *testing.T) {
 }
 
 func TestLinodeSDRefresh(t *testing.T) {
+	t.Parallel()
+
 	sdmock := &LinodeSDTestSuite{}
 	sdmock.SetupTest(t)
 	t.Cleanup(sdmock.TearDownSuite)
@@ -164,8 +166,12 @@ func TestLinodeSDRefresh(t *testing.T) {
 			"__meta_linode_extra_ips":            model.LabelValue(",172.104.18.104,"),
 		},
 	} {
+		lbls := lbls
+		targets := tg.Targets[i]
 		t.Run(fmt.Sprintf("item %d", i), func(t *testing.T) {
-			require.Equal(t, lbls, tg.Targets[i])
+			t.Parallel()
+
+			require.Equal(t, lbls, targets)
 		})
 	}
 }

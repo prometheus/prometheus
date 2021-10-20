@@ -34,6 +34,8 @@ import (
 )
 
 func TestUnsupported(t *testing.T) {
+	t.Parallel()
+
 	promAgentDir := t.TempDir()
 
 	opts := DefaultOptions()
@@ -46,22 +48,30 @@ func TestUnsupported(t *testing.T) {
 	}()
 
 	t.Run("Querier", func(t *testing.T) {
+		t.Parallel()
+
 		_, err := s.Querier(context.TODO(), 0, 0)
 		require.Equal(t, err, ErrUnsupported)
 	})
 
 	t.Run("ChunkQuerier", func(t *testing.T) {
+		t.Parallel()
+
 		_, err := s.ChunkQuerier(context.TODO(), 0, 0)
 		require.Equal(t, err, ErrUnsupported)
 	})
 
 	t.Run("ExemplarQuerier", func(t *testing.T) {
+		t.Parallel()
+
 		_, err := s.ExemplarQuerier(context.TODO())
 		require.Equal(t, err, ErrUnsupported)
 	})
 }
 
 func TestCommit(t *testing.T) {
+	t.Parallel()
+
 	const (
 		numDatapoints = 1000
 		numSeries     = 8
@@ -158,6 +168,8 @@ func TestCommit(t *testing.T) {
 }
 
 func TestRollback(t *testing.T) {
+	t.Parallel()
+
 	const (
 		numDatapoints = 1000
 		numSeries     = 8
@@ -255,6 +267,8 @@ func TestRollback(t *testing.T) {
 }
 
 func TestFullTruncateWAL(t *testing.T) {
+	t.Parallel()
+
 	const (
 		numDatapoints = 1000
 		numSeries     = 800
@@ -299,6 +313,8 @@ func TestFullTruncateWAL(t *testing.T) {
 }
 
 func TestPartialTruncateWAL(t *testing.T) {
+	t.Parallel()
+
 	const (
 		numDatapoints = 1000
 		numSeries     = 800
@@ -360,6 +376,8 @@ func TestPartialTruncateWAL(t *testing.T) {
 }
 
 func TestWALReplay(t *testing.T) {
+	t.Parallel()
+
 	const (
 		numDatapoints = 1000
 		numSeries     = 8

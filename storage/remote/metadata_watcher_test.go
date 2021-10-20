@@ -88,6 +88,8 @@ func (fm *fakeManager) TargetsActive() map[string][]*scrape.Target {
 }
 
 func TestWatchScrapeManager_NotReady(t *testing.T) {
+	t.Parallel()
+
 	wt := newMetadataWriteToMock()
 	smm := &scrapeManagerMock{
 		ready: false,
@@ -102,6 +104,8 @@ func TestWatchScrapeManager_NotReady(t *testing.T) {
 }
 
 func TestWatchScrapeManager_ReadyForCollection(t *testing.T) {
+	t.Parallel()
+
 	wt := newMetadataWriteToMock()
 
 	metadata := &TestMetaStore{

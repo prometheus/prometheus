@@ -37,6 +37,8 @@ import (
 )
 
 func TestSplitByRange(t *testing.T) {
+	t.Parallel()
+
 	cases := []struct {
 		trange int64
 		ranges [][2]int64
@@ -141,6 +143,8 @@ func TestSplitByRange(t *testing.T) {
 
 // See https://github.com/prometheus/prometheus/issues/3064
 func TestNoPanicFor0Tombstones(t *testing.T) {
+	t.Parallel()
+
 	metas := []dirMeta{
 		{
 			dir: "1",
@@ -165,6 +169,8 @@ func TestNoPanicFor0Tombstones(t *testing.T) {
 }
 
 func TestLeveledCompactor_plan(t *testing.T) {
+	t.Parallel()
+
 	// This mimics our default ExponentialBlockRanges with min block size equals to 20.
 	compactor, err := NewLeveledCompactor(context.Background(), nil, nil, []int64{
 		20,

@@ -29,6 +29,8 @@ import (
 )
 
 func TestMergeQuerierWithChainMerger(t *testing.T) {
+	t.Parallel()
+
 	for _, tc := range []struct {
 		name                 string
 		primaryQuerierSeries []Series
@@ -175,7 +177,11 @@ func TestMergeQuerierWithChainMerger(t *testing.T) {
 			),
 		},
 	} {
+		tc := tc
+
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			var p Querier
 			if tc.primaryQuerierSeries != nil {
 				p = &mockQuerier{toReturn: tc.primaryQuerierSeries}
@@ -212,6 +218,8 @@ func TestMergeQuerierWithChainMerger(t *testing.T) {
 }
 
 func TestMergeChunkQuerierWithNoVerticalChunkSeriesMerger(t *testing.T) {
+	t.Parallel()
+
 	for _, tc := range []struct {
 		name                    string
 		primaryChkQuerierSeries []ChunkSeries
@@ -350,7 +358,11 @@ func TestMergeChunkQuerierWithNoVerticalChunkSeriesMerger(t *testing.T) {
 			),
 		},
 	} {
+		tc := tc
+
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			var p ChunkQuerier
 			if tc.primaryChkQuerierSeries != nil {
 				p = &mockChunkQurier{toReturn: tc.primaryChkQuerierSeries}
@@ -382,6 +394,8 @@ func TestMergeChunkQuerierWithNoVerticalChunkSeriesMerger(t *testing.T) {
 }
 
 func TestCompactingChunkSeriesMerger(t *testing.T) {
+	t.Parallel()
+
 	m := NewCompactingChunkSeriesMerger(ChainedSeriesMerge)
 
 	for _, tc := range []struct {
@@ -487,7 +501,10 @@ func TestCompactingChunkSeriesMerger(t *testing.T) {
 			),
 		},
 	} {
+		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			merged := m(tc.input...)
 			require.Equal(t, tc.expected.Labels(), merged.Labels())
 			actChks, actErr := ExpandChunks(merged.Iterator())
@@ -592,6 +609,8 @@ func (m *mockChunkSeriesSet) Err() error { return nil }
 func (m *mockChunkSeriesSet) Warnings() Warnings { return nil }
 
 func TestChainSampleIterator(t *testing.T) {
+	t.Parallel()
+
 	for _, tc := range []struct {
 		input    []chunkenc.Iterator
 		expected []tsdbutil.Sample
@@ -640,6 +659,8 @@ func TestChainSampleIterator(t *testing.T) {
 }
 
 func TestChainSampleIteratorSeek(t *testing.T) {
+	t.Parallel()
+
 	for _, tc := range []struct {
 		input    []chunkenc.Iterator
 		seek     int64
@@ -835,6 +856,8 @@ func unwrapMockGenericQuerier(t *testing.T, qr genericQuerier) *mockGenericQueri
 }
 
 func TestMergeGenericQuerierWithSecondaries_ErrorHandling(t *testing.T) {
+	t.Parallel()
+
 	var (
 		errStorage  = errors.New("storage error")
 		warnStorage = errors.New("storage warning")
@@ -950,7 +973,11 @@ func TestMergeGenericQuerierWithSecondaries_ErrorHandling(t *testing.T) {
 			},
 		},
 	} {
+		tcase := tcase
+
 		t.Run(tcase.name, func(t *testing.T) {
+			t.Parallel()
+
 			q := &mergeGenericQuerier{
 				queriers: tcase.queriers,
 				mergeFn:  func(l ...Labels) Labels { return l[0] },

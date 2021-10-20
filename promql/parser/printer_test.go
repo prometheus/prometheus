@@ -212,7 +212,11 @@ func TestVectorSelector_String(t *testing.T) {
 			expected: `{__name__="foobar"}`,
 		},
 	} {
+		tc := tc
+
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
 			require.Equal(t, tc.expected, tc.vs.String())
 		})
 	}

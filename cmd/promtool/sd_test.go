@@ -27,6 +27,8 @@ import (
 )
 
 func TestSDCheckResult(t *testing.T) {
+	t.Parallel()
+
 	targetGroups := []*targetgroup.Group{{
 		Targets: []model.LabelSet{
 			map[model.LabelName]model.LabelValue{"__address__": "localhost:8080", "foo": "bar"},

@@ -208,6 +208,8 @@ func TestSendAlerts(t *testing.T) {
 }
 
 func TestWALSegmentSizeBounds(t *testing.T) {
+	t.Parallel()
+
 	if testing.Short() {
 		t.Skip("skipping test in short mode.")
 	}
@@ -366,6 +368,8 @@ func getCurrentGaugeValuesFor(t *testing.T, reg prometheus.Gatherer, metricNames
 }
 
 func TestAgentSuccessfulStartup(t *testing.T) {
+	t.Parallel()
+
 	prom := exec.Command(promPath, "-test.main", "--enable-feature=agent", "--config.file="+agentConfig)
 	require.NoError(t, prom.Start())
 
@@ -384,6 +388,8 @@ func TestAgentSuccessfulStartup(t *testing.T) {
 }
 
 func TestAgentFailedStartupWithServerFlag(t *testing.T) {
+	t.Parallel()
+
 	prom := exec.Command(promPath, "-test.main", "--enable-feature=agent", "--storage.tsdb.path=.", "--config.file="+promConfig)
 
 	output := bytes.Buffer{}
@@ -411,6 +417,8 @@ func TestAgentFailedStartupWithServerFlag(t *testing.T) {
 }
 
 func TestAgentFailedStartupWithInvalidConfig(t *testing.T) {
+	t.Parallel()
+
 	prom := exec.Command(promPath, "-test.main", "--enable-feature=agent", "--config.file="+promConfig)
 	require.NoError(t, prom.Start())
 
@@ -429,6 +437,8 @@ func TestAgentFailedStartupWithInvalidConfig(t *testing.T) {
 }
 
 func TestModeSpecificFlags(t *testing.T) {
+	t.Parallel()
+
 	if testing.Short() {
 		t.Skip("skipping test in short mode.")
 	}
@@ -446,6 +456,8 @@ func TestModeSpecificFlags(t *testing.T) {
 
 	for _, tc := range testcases {
 		t.Run(fmt.Sprintf("%s mode with option %s", tc.mode, tc.arg), func(t *testing.T) {
+			t.Parallel()
+
 			args := []string{"-test.main", tc.arg, t.TempDir()}
 
 			if tc.mode == "agent" {

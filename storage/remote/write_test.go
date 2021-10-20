@@ -44,6 +44,8 @@ func testRemoteWriteConfig() *config.RemoteWriteConfig {
 }
 
 func TestNoDuplicateWriteConfigs(t *testing.T) {
+	t.Parallel()
+
 	dir, err := ioutil.TempDir("", "TestNoDuplicateWriteConfigs")
 	require.NoError(t, err)
 	defer func() {
@@ -132,6 +134,8 @@ func TestNoDuplicateWriteConfigs(t *testing.T) {
 }
 
 func TestRestartOnNameChange(t *testing.T) {
+	t.Parallel()
+
 	dir, err := ioutil.TempDir("", "TestRestartOnNameChange")
 	require.NoError(t, err)
 	defer func() {
@@ -166,6 +170,8 @@ func TestRestartOnNameChange(t *testing.T) {
 }
 
 func TestUpdateWithRegisterer(t *testing.T) {
+	t.Parallel()
+
 	dir, err := ioutil.TempDir("", "TestRestartWithRegisterer")
 	require.NoError(t, err)
 	defer func() {
@@ -210,6 +216,8 @@ func TestUpdateWithRegisterer(t *testing.T) {
 }
 
 func TestWriteStorageLifecycle(t *testing.T) {
+	t.Parallel()
+
 	dir, err := ioutil.TempDir("", "TestWriteStorageLifecycle")
 	require.NoError(t, err)
 	defer func() {
@@ -231,6 +239,8 @@ func TestWriteStorageLifecycle(t *testing.T) {
 }
 
 func TestUpdateExternalLabels(t *testing.T) {
+	t.Parallel()
+
 	dir, err := ioutil.TempDir("", "TestUpdateExternalLabels")
 	require.NoError(t, err)
 	defer func() {
@@ -264,6 +274,8 @@ func TestUpdateExternalLabels(t *testing.T) {
 }
 
 func TestWriteStorageApplyConfigsIdempotent(t *testing.T) {
+	t.Parallel()
+
 	dir, err := ioutil.TempDir("", "TestWriteStorageApplyConfigsIdempotent")
 	require.NoError(t, err)
 	defer func() {
@@ -305,6 +317,8 @@ func TestWriteStorageApplyConfigsIdempotent(t *testing.T) {
 }
 
 func TestWriteStorageApplyConfigsPartialUpdate(t *testing.T) {
+	t.Parallel()
+
 	dir, err := ioutil.TempDir("", "TestWriteStorageApplyConfigsPartialUpdate")
 	require.NoError(t, err)
 	defer func() {

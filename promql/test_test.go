@@ -24,6 +24,8 @@ import (
 )
 
 func TestLazyLoader_WithSamplesTill(t *testing.T) {
+	t.Parallel()
+
 	type testCase struct {
 		ts             time.Time
 		series         []Series // Each series is checked separately. Need not mention all series here.

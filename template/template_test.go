@@ -27,6 +27,8 @@ import (
 )
 
 func TestTemplateExpansion(t *testing.T) {
+	t.Parallel()
+
 	scenarios := []struct {
 		text        string
 		output      string

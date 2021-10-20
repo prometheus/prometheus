@@ -28,6 +28,8 @@ import (
 )
 
 func TestDeriv(t *testing.T) {
+	t.Parallel()
+
 	// https://github.com/prometheus/prometheus/issues/2674#issuecomment-315439393
 	// This requires more precision than the usual test system offers,
 	// so we test it by hand.
@@ -61,6 +63,8 @@ func TestDeriv(t *testing.T) {
 }
 
 func TestFunctionList(t *testing.T) {
+	t.Parallel()
+
 	// Test that Functions and parser.Functions list the same functions.
 	for i := range FunctionCalls {
 		_, ok := parser.Functions[i]
@@ -74,6 +78,8 @@ func TestFunctionList(t *testing.T) {
 }
 
 func TestKahanSum(t *testing.T) {
+	t.Parallel()
+
 	vals := []float64{1.0, math.Pow(10, 100), 1.0, -1 * math.Pow(10, 100)}
 	expected := 2.0
 	require.Equal(t, expected, kahanSum(vals))

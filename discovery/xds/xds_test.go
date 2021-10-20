@@ -128,6 +128,8 @@ func (rc testResourceClient) Close() {
 }
 
 func TestPollingRefreshSkipUpdate(t *testing.T) {
+	t.Parallel()
+
 	rc := &testResourceClient{
 		fetch: func(ctx context.Context) (*v3.DiscoveryResponse, error) {
 			return nil, nil
@@ -158,6 +160,8 @@ func TestPollingRefreshSkipUpdate(t *testing.T) {
 }
 
 func TestPollingRefreshAttachesGroupMetadata(t *testing.T) {
+	t.Parallel()
+
 	server := "http://198.161.2.0"
 	source := "test"
 	rc := &testResourceClient{
@@ -205,6 +209,8 @@ func TestPollingRefreshAttachesGroupMetadata(t *testing.T) {
 }
 
 func TestPollingDisappearingTargets(t *testing.T) {
+	t.Parallel()
+
 	server := "http://198.161.2.0"
 	source := "test"
 	rc := &testResourceClient{

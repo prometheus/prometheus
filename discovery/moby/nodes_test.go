@@ -25,6 +25,8 @@ import (
 )
 
 func TestDockerSwarmNodesSDRefresh(t *testing.T) {
+	t.Parallel()
+
 	sdmock := NewSDMock(t, "swarmprom")
 	sdmock.Setup()
 
@@ -123,8 +125,13 @@ host: %s
 			"__meta_dockerswarm_node_status":                model.LabelValue("ready"),
 		},
 	} {
+		lbls := lbls
+		targets := tg.Targets[i]
+
 		t.Run(fmt.Sprintf("item %d", i), func(t *testing.T) {
-			require.Equal(t, lbls, tg.Targets[i])
+			t.Parallel()
+
+			require.Equal(t, lbls, targets)
 		})
 	}
 }

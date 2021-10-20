@@ -61,6 +61,8 @@ func newHighestTimestampMetric() *maxTimestamp {
 }
 
 func TestSampleDelivery(t *testing.T) {
+	t.Parallel()
+
 	testcases := []struct {
 		name      string
 		samples   bool
@@ -105,6 +107,7 @@ func TestSampleDelivery(t *testing.T) {
 		},
 	}
 
+	//nolint:paralleltest // TODO: Serial tests.
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
 			var (
@@ -152,6 +155,8 @@ func TestSampleDelivery(t *testing.T) {
 }
 
 func TestMetadataDelivery(t *testing.T) {
+	t.Parallel()
+
 	c := NewTestWriteClient()
 
 	dir, err := ioutil.TempDir("", "TestMetadataDelivery")
@@ -188,6 +193,8 @@ func TestMetadataDelivery(t *testing.T) {
 }
 
 func TestSampleDeliveryTimeout(t *testing.T) {
+	t.Parallel()
+
 	// Let's send one less sample than batch size, and wait the timeout duration
 	n := 9
 	samples, series := createTimeseries(n, n)
@@ -221,6 +228,8 @@ func TestSampleDeliveryTimeout(t *testing.T) {
 }
 
 func TestSampleDeliveryOrder(t *testing.T) {
+	t.Parallel()
+
 	ts := 10
 	n := config.DefaultQueueConfig.MaxSamplesPerSend * ts
 	samples := make([]record.RefSample, 0, n)
@@ -262,6 +271,8 @@ func TestSampleDeliveryOrder(t *testing.T) {
 }
 
 func TestShutdown(t *testing.T) {
+	t.Parallel()
+
 	deadline := 1 * time.Second
 	c := NewTestBlockedWriteClient()
 
@@ -303,6 +314,8 @@ func TestShutdown(t *testing.T) {
 }
 
 func TestSeriesReset(t *testing.T) {
+	t.Parallel()
+
 	c := NewTestBlockedWriteClient()
 	deadline := 5 * time.Second
 	numSegments := 4
@@ -331,6 +344,8 @@ func TestSeriesReset(t *testing.T) {
 }
 
 func TestReshard(t *testing.T) {
+	t.Parallel()
+
 	size := 10 // Make bigger to find more races.
 	nSeries := 6
 	nSamples := config.DefaultQueueConfig.Capacity * size
@@ -374,6 +389,8 @@ func TestReshard(t *testing.T) {
 }
 
 func TestReshardRaceWithStop(t *testing.T) {
+	t.Parallel()
+
 	c := NewTestWriteClient()
 	var m *QueueManager
 	h := sync.Mutex{}
@@ -401,6 +418,8 @@ func TestReshardRaceWithStop(t *testing.T) {
 }
 
 func TestReleaseNoninternedString(t *testing.T) {
+	t.Parallel()
+
 	cfg := config.DefaultQueueConfig
 	mcfg := config.DefaultMetadataConfig
 	metrics := newQueueManagerMetrics(nil, "", "")
@@ -429,6 +448,8 @@ func TestReleaseNoninternedString(t *testing.T) {
 }
 
 func TestShouldReshard(t *testing.T) {
+	t.Parallel()
+
 	type testcase struct {
 		startingShards                           int
 		samplesIn, samplesOut, lastSendTimestamp int64
@@ -802,6 +823,8 @@ func BenchmarkStartup(b *testing.B) {
 }
 
 func TestProcessExternalLabels(t *testing.T) {
+	t.Parallel()
+
 	for _, tc := range []struct {
 		labels         labels.Labels
 		externalLabels labels.Labels
@@ -861,6 +884,8 @@ func TestProcessExternalLabels(t *testing.T) {
 }
 
 func TestCalculateDesiredShards(t *testing.T) {
+	t.Parallel()
+
 	c := NewTestWriteClient()
 	cfg := config.DefaultQueueConfig
 	mcfg := config.DefaultMetadataConfig
@@ -942,6 +967,8 @@ func TestCalculateDesiredShards(t *testing.T) {
 }
 
 func TestQueueManagerMetrics(t *testing.T) {
+	t.Parallel()
+
 	reg := prometheus.NewPedanticRegistry()
 	metrics := newQueueManagerMetrics(reg, "name", "http://localhost:1234")
 

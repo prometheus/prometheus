@@ -54,6 +54,8 @@ var writeRequestFixture = &prompb.WriteRequest{
 }
 
 func TestValidateLabelsAndMetricName(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		input       labels.Labels
 		expectedErr string
@@ -141,7 +143,11 @@ func TestValidateLabelsAndMetricName(t *testing.T) {
 	}
 
 	for _, test := range tests {
+		test := test
+
 		t.Run(test.description, func(t *testing.T) {
+			t.Parallel()
+
 			err := validateLabelsAndMetricName(test.input)
 			if test.expectedErr != "" {
 				require.Error(t, err)
@@ -154,6 +160,8 @@ func TestValidateLabelsAndMetricName(t *testing.T) {
 }
 
 func TestConcreteSeriesSet(t *testing.T) {
+	t.Parallel()
+
 	series1 := &concreteSeries{
 		labels:  labels.FromStrings("foo", "bar"),
 		samples: []prompb.Sample{{Value: 1, Timestamp: 2}},
@@ -173,6 +181,8 @@ func TestConcreteSeriesSet(t *testing.T) {
 }
 
 func TestConcreteSeriesClonesLabels(t *testing.T) {
+	t.Parallel()
+
 	lbls := labels.Labels{
 		labels.Label{Name: "a", Value: "b"},
 		labels.Label{Name: "c", Value: "d"},
@@ -192,6 +202,8 @@ func TestConcreteSeriesClonesLabels(t *testing.T) {
 }
 
 func TestFromQueryResultWithDuplicates(t *testing.T) {
+	t.Parallel()
+
 	ts1 := prompb.TimeSeries{
 		Labels: []prompb.Label{
 			{Name: "foo", Value: "bar"},
@@ -218,6 +230,8 @@ func TestFromQueryResultWithDuplicates(t *testing.T) {
 }
 
 func TestNegotiateResponseType(t *testing.T) {
+	t.Parallel()
+
 	r, err := NegotiateResponseType([]prompb.ReadRequest_ResponseType{
 		prompb.ReadRequest_STREAMED_XOR_CHUNKS,
 		prompb.ReadRequest_SAMPLES,
@@ -242,6 +256,8 @@ func TestNegotiateResponseType(t *testing.T) {
 }
 
 func TestMergeLabels(t *testing.T) {
+	t.Parallel()
+
 	for _, tc := range []struct {
 		primary, secondary, expected []prompb.Label
 	}{
@@ -261,6 +277,8 @@ func TestMergeLabels(t *testing.T) {
 }
 
 func TestMetricTypeToMetricTypeProto(t *testing.T) {
+	t.Parallel()
+
 	tc := []struct {
 		desc     string
 		input    textparse.MetricType
@@ -284,7 +302,10 @@ func TestMetricTypeToMetricTypeProto(t *testing.T) {
 	}
 
 	for _, tt := range tc {
+		tt := tt
 		t.Run(tt.desc, func(t *testing.T) {
+			t.Parallel()
+
 			m := metricTypeToMetricTypeProto(tt.input)
 			require.Equal(t, tt.expected, m)
 		})
@@ -292,6 +313,8 @@ func TestMetricTypeToMetricTypeProto(t *testing.T) {
 }
 
 func TestDecodeWriteRequest(t *testing.T) {
+	t.Parallel()
+
 	buf, _, err := buildWriteRequest(writeRequestFixture.Timeseries, nil, nil, nil)
 	require.NoError(t, err)
 

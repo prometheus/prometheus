@@ -22,6 +22,8 @@ import (
 )
 
 func TestLabels_String(t *testing.T) {
+	t.Parallel()
+
 	cases := []struct {
 		lables   Labels
 		expected string
@@ -55,6 +57,8 @@ func TestLabels_String(t *testing.T) {
 }
 
 func TestLabels_MatchLabels(t *testing.T) {
+	t.Parallel()
+
 	labels := Labels{
 		{
 			Name:  "__name__",
@@ -186,6 +190,8 @@ func TestLabels_MatchLabels(t *testing.T) {
 }
 
 func TestLabels_HasDuplicateLabelNames(t *testing.T) {
+	t.Parallel()
+
 	cases := []struct {
 		Input     Labels
 		Duplicate bool
@@ -212,6 +218,8 @@ func TestLabels_HasDuplicateLabelNames(t *testing.T) {
 }
 
 func TestLabels_WithoutEmpty(t *testing.T) {
+	t.Parallel()
+
 	for _, test := range []struct {
 		input    Labels
 		expected Labels
@@ -286,13 +294,19 @@ func TestLabels_WithoutEmpty(t *testing.T) {
 			},
 		},
 	} {
+		test := test
+
 		t.Run("", func(t *testing.T) {
+			t.Parallel()
+
 			require.Equal(t, test.expected, test.input.WithoutEmpty())
 		})
 	}
 }
 
 func TestLabels_Equal(t *testing.T) {
+	t.Parallel()
+
 	labels := Labels{
 		{
 			Name:  "aaa",
@@ -373,6 +387,8 @@ func TestLabels_Equal(t *testing.T) {
 }
 
 func TestLabels_FromStrings(t *testing.T) {
+	t.Parallel()
+
 	labels := FromStrings("aaa", "111", "bbb", "222")
 	expected := Labels{
 		{
@@ -391,6 +407,8 @@ func TestLabels_FromStrings(t *testing.T) {
 }
 
 func TestLabels_Compare(t *testing.T) {
+	t.Parallel()
+
 	labels := Labels{
 		{
 			Name:  "aaa",
@@ -510,6 +528,8 @@ func TestLabels_Compare(t *testing.T) {
 }
 
 func TestLabels_Has(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		input    string
 		expected bool
@@ -542,6 +562,8 @@ func TestLabels_Has(t *testing.T) {
 }
 
 func TestLabels_Get(t *testing.T) {
+	t.Parallel()
+
 	require.Equal(t, "", Labels{{"aaa", "111"}, {"bbb", "222"}}.Get("foo"))
 	require.Equal(t, "111", Labels{{"aaa", "111"}, {"bbb", "222"}}.Get("aaa"))
 }
@@ -587,23 +609,33 @@ func BenchmarkLabels_Get(b *testing.B) {
 }
 
 func TestLabels_Copy(t *testing.T) {
+	t.Parallel()
+
 	require.Equal(t, Labels{{"aaa", "111"}, {"bbb", "222"}}, Labels{{"aaa", "111"}, {"bbb", "222"}}.Copy())
 }
 
 func TestLabels_Map(t *testing.T) {
+	t.Parallel()
+
 	require.Equal(t, map[string]string{"aaa": "111", "bbb": "222"}, Labels{{"aaa", "111"}, {"bbb", "222"}}.Map())
 }
 
 func TestLabels_WithLabels(t *testing.T) {
+	t.Parallel()
+
 	require.Equal(t, Labels{{"aaa", "111"}, {"bbb", "222"}}, Labels{{"aaa", "111"}, {"bbb", "222"}, {"ccc", "333"}}.WithLabels("aaa", "bbb"))
 }
 
 func TestLabels_WithoutLabels(t *testing.T) {
+	t.Parallel()
+
 	require.Equal(t, Labels{{"aaa", "111"}}, Labels{{"aaa", "111"}, {"bbb", "222"}, {"ccc", "333"}}.WithoutLabels("bbb", "ccc"))
 	require.Equal(t, Labels{{"aaa", "111"}}, Labels{{"aaa", "111"}, {"bbb", "222"}, {MetricName, "333"}}.WithoutLabels("bbb"))
 }
 
 func TestBulider_NewBulider(t *testing.T) {
+	t.Parallel()
+
 	require.Equal(
 		t,
 		&Builder{
@@ -616,6 +648,8 @@ func TestBulider_NewBulider(t *testing.T) {
 }
 
 func TestBuilder_Del(t *testing.T) {
+	t.Parallel()
+
 	require.Equal(
 		t,
 		&Builder{
@@ -630,6 +664,8 @@ func TestBuilder_Del(t *testing.T) {
 }
 
 func TestBuilder_Set(t *testing.T) {
+	t.Parallel()
+
 	require.Equal(
 		t,
 		&Builder{
@@ -660,6 +696,8 @@ func TestBuilder_Set(t *testing.T) {
 }
 
 func TestBuilder_Labels(t *testing.T) {
+	t.Parallel()
+
 	require.Equal(
 		t,
 		Labels{{"aaa", "111"}, {"ccc", "333"}, {"ddd", "444"}},
@@ -672,6 +710,8 @@ func TestBuilder_Labels(t *testing.T) {
 }
 
 func TestLabels_Hash(t *testing.T) {
+	t.Parallel()
+
 	lbls := Labels{
 		{Name: "foo", Value: "bar"},
 		{Name: "baz", Value: "qux"},

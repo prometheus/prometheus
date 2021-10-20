@@ -20,6 +20,8 @@ import (
 )
 
 func TestReaderWithInvalidBuffer(t *testing.T) {
+	t.Parallel()
+
 	b := realByteSlice([]byte{0x81, 0x81, 0x81, 0x81, 0x81, 0x81})
 	r := &Reader{bs: []ByteSlice{b}}
 

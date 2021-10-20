@@ -25,6 +25,8 @@ import (
 )
 
 func TestDockerSwarmSDServicesRefresh(t *testing.T) {
+	t.Parallel()
+
 	sdmock := NewSDMock(t, "swarmprom")
 	sdmock.Setup()
 
@@ -309,13 +311,20 @@ host: %s
 			"__meta_dockerswarm_service_task_container_image":             model.LabelValue("stefanprodan/caddy:latest@sha256:44541cfacb66f4799f81f17fcfb3cb757ccc8f327592745549f5930c42d115c9"),
 		},
 	} {
+		lbls := lbls
+		targets := tg.Targets[i]
+
 		t.Run(fmt.Sprintf("item %d", i), func(t *testing.T) {
-			require.Equal(t, lbls, tg.Targets[i])
+			t.Parallel()
+
+			require.Equal(t, lbls, targets)
 		})
 	}
 }
 
 func TestDockerSwarmSDServicesRefreshWithFilters(t *testing.T) {
+	t.Parallel()
+
 	sdmock := NewSDMock(t, "swarmprom")
 	sdmock.Setup()
 
@@ -418,8 +427,13 @@ filters:
 			"__meta_dockerswarm_service_task_container_image":             model.LabelValue("stefanprodan/swarmprom-grafana:5.3.4@sha256:2aca8aa5716e6e0eed3fcdc88fec256a0a1828c491a8cf240486ae7cc473092d"),
 		},
 	} {
+		lbls := lbls
+		targets := tg.Targets[i]
+
 		t.Run(fmt.Sprintf("item %d", i), func(t *testing.T) {
-			require.Equal(t, lbls, tg.Targets[i])
+			t.Parallel()
+
+			require.Equal(t, lbls, targets)
 		})
 	}
 }

@@ -31,6 +31,8 @@ import (
 var longErrMessage = strings.Repeat("error message", maxErrMsgLen)
 
 func TestStoreHTTPErrorHandling(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		code int
 		err  error
@@ -85,6 +87,8 @@ func TestStoreHTTPErrorHandling(t *testing.T) {
 }
 
 func TestClientRetryAfter(t *testing.T) {
+	t.Parallel()
+
 	server := httptest.NewServer(
 		http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, longErrMessage, 429)
@@ -127,6 +131,8 @@ func TestClientRetryAfter(t *testing.T) {
 }
 
 func TestRetryAfterDuration(t *testing.T) {
+	t.Parallel()
+
 	tc := []struct {
 		name     string
 		tInput   string

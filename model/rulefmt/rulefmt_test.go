@@ -21,11 +21,15 @@ import (
 )
 
 func TestParseFileSuccess(t *testing.T) {
+	t.Parallel()
+
 	_, errs := ParseFile("testdata/test.yaml")
 	require.Empty(t, errs, "unexpected errors parsing file")
 }
 
 func TestParseFileFailure(t *testing.T) {
+	t.Parallel()
+
 	table := []struct {
 		filename string
 		errMsg   string
@@ -80,6 +84,8 @@ func TestParseFileFailure(t *testing.T) {
 }
 
 func TestTemplateParsing(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		ruleString string
 		shouldPass bool
@@ -159,6 +165,8 @@ groups:
 }
 
 func TestUniqueErrorNodes(t *testing.T) {
+	t.Parallel()
+
 	group := `
 groups:
 - name: example

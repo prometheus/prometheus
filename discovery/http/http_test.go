@@ -30,6 +30,8 @@ import (
 )
 
 func TestHTTPValidRefresh(t *testing.T) {
+	t.Parallel()
+
 	ts := httptest.NewServer(http.FileServer(http.Dir("./fixtures")))
 	t.Cleanup(ts.Close)
 
@@ -64,6 +66,8 @@ func TestHTTPValidRefresh(t *testing.T) {
 }
 
 func TestHTTPInvalidCode(t *testing.T) {
+	t.Parallel()
+
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 	}))
@@ -85,6 +89,8 @@ func TestHTTPInvalidCode(t *testing.T) {
 }
 
 func TestHTTPInvalidFormat(t *testing.T) {
+	t.Parallel()
+
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintln(w, "{}")
 	}))
@@ -106,6 +112,8 @@ func TestHTTPInvalidFormat(t *testing.T) {
 }
 
 func TestContentTypeRegex(t *testing.T) {
+	t.Parallel()
+
 	cases := []struct {
 		header string
 		match  bool
@@ -157,13 +165,19 @@ func TestContentTypeRegex(t *testing.T) {
 	}
 
 	for _, test := range cases {
+		test := test
+
 		t.Run(test.header, func(t *testing.T) {
+			t.Parallel()
+
 			require.Equal(t, test.match, matchContentType.MatchString(test.header))
 		})
 	}
 }
 
 func TestSourceDisappeared(t *testing.T) {
+	t.Parallel()
+
 	var stubResponse string
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

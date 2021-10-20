@@ -86,6 +86,8 @@ func testBlocks(t *testing.T, db *tsdb.DB, expectedMinTime, expectedMaxTime, exp
 }
 
 func TestBackfill(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		ToParse              string
 		IsOk                 bool
@@ -684,7 +686,11 @@ after_eof 1 2
 		},
 	}
 	for _, test := range tests {
+		test := test
+
 		t.Run(test.Description, func(t *testing.T) {
+			t.Parallel()
+
 			t.Logf("Test:%s", test.Description)
 
 			outputDir, err := ioutil.TempDir("", "myDir")

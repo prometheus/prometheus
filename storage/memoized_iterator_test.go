@@ -20,6 +20,8 @@ import (
 )
 
 func TestMemoizedSeriesIterator(t *testing.T) {
+	t.Parallel()
+
 	var it *MemoizedSeriesIterator
 
 	sampleEq := func(ets int64, ev float64) {

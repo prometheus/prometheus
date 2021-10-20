@@ -24,6 +24,8 @@ import (
 )
 
 func TestQueryLogging(t *testing.T) {
+	t.Parallel()
+
 	fileAsBytes := make([]byte, 4096)
 	queryLogger := ActiveQueryTracker{
 		mmapedFile:   fileAsBytes,
@@ -68,6 +70,8 @@ func TestQueryLogging(t *testing.T) {
 }
 
 func TestIndexReuse(t *testing.T) {
+	t.Parallel()
+
 	queryBytes := make([]byte, 1+3*entrySize)
 	queryLogger := ActiveQueryTracker{
 		mmapedFile:   queryBytes,
@@ -105,6 +109,8 @@ func TestIndexReuse(t *testing.T) {
 }
 
 func TestMMapFile(t *testing.T) {
+	t.Parallel()
+
 	file, err := ioutil.TempFile("", "mmapedFile")
 	require.NoError(t, err)
 
@@ -128,6 +134,8 @@ func TestMMapFile(t *testing.T) {
 }
 
 func TestParseBrokenJSON(t *testing.T) {
+	t.Parallel()
+
 	for _, tc := range []struct {
 		b []byte
 
@@ -154,7 +162,11 @@ func TestParseBrokenJSON(t *testing.T) {
 			out: "[\"up == 0\",\"rate(http_requests[2w]\"]",
 		},
 	} {
+		tc := tc
+
 		t.Run("", func(t *testing.T) {
+			t.Parallel()
+
 			out, ok := parseBrokenJSON(tc.b)
 			require.Equal(t, tc.ok, ok)
 			if ok {

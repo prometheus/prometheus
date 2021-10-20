@@ -142,6 +142,8 @@ func TestNodeDiscoveryDelete(t *testing.T) {
 }
 
 func TestNodeDiscoveryUpdate(t *testing.T) {
+	t.Parallel()
+
 	n, c := makeDiscovery(RoleNode, NamespaceDiscovery{})
 
 	k8sDiscoveryTest{

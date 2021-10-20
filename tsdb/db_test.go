@@ -1019,7 +1019,7 @@ func TestWALSegmentSizeOptions(t *testing.T) {
 			require.NoError(t, err)
 		},
 	}
-	for segmentSize, testFunc := range tests {
+	for segmentSize, testFunc := range tests { //nolint:paralleltest // Serial tests.
 		t.Run(fmt.Sprintf("WALSegmentSize %d test", segmentSize), func(t *testing.T) {
 			opts := DefaultOptions()
 			opts.WALSegmentSize = segmentSize
@@ -1953,6 +1953,7 @@ func TestNoEmptyBlocks(t *testing.T) {
 	defaultLabel := labels.FromStrings("foo", "bar")
 	defaultMatcher := labels.MustNewMatcher(labels.MatchRegexp, "", ".*")
 
+	//nolint:paralleltest // TODO: Serial tests.
 	t.Run("Test no blocks after compact with empty head.", func(t *testing.T) {
 		require.NoError(t, db.Compact())
 		actBlocks, err := blockDirs(db.Dir())
@@ -1962,6 +1963,7 @@ func TestNoEmptyBlocks(t *testing.T) {
 		require.Equal(t, 0, int(prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.ran)), "no compaction should be triggered here")
 	})
 
+	//nolint:paralleltest // TODO: Serial tests.
 	t.Run("Test no blocks after deleting all samples from head.", func(t *testing.T) {
 		app := db.Appender(ctx)
 		_, err := app.Append(0, defaultLabel, 1, 0)
@@ -2002,6 +2004,7 @@ func TestNoEmptyBlocks(t *testing.T) {
 		require.Equal(t, 1, len(actBlocks), "No blocks created when compacting with >0 samples")
 	})
 
+	//nolint:paralleltest // TODO: Serial tests.
 	t.Run(`When no new block is created from head, and there are some blocks on disk
 	compaction should not run into infinite loop (was seen during development).`, func(t *testing.T) {
 		oldBlocks := db.Blocks()
@@ -2020,6 +2023,7 @@ func TestNoEmptyBlocks(t *testing.T) {
 		require.Equal(t, oldBlocks, db.Blocks())
 	})
 
+	//nolint:paralleltest // TODO: Serial tests.
 	t.Run("Test no blocks remaining after deleting all samples from disk.", func(t *testing.T) {
 		currentTime := db.Head().MaxTime()
 		blocks := []*BlockMeta{
@@ -2288,6 +2292,9 @@ func TestBlockRanges(t *testing.T) {
 
 // TestDBReadOnly ensures that opening a DB in readonly mode doesn't modify any files on the disk.
 // It also checks that the API calls return equivalent results as a normal db.Open() mode.
+//
+//nolint:paralleltest // TODO: This test fails on Windows when running in parallel.
+//                    // See https://github.com/prometheus/prometheus/issues/7770.
 func TestDBReadOnly(t *testing.T) {
 	var (
 		dbDir     string
@@ -2305,9 +2312,9 @@ func TestDBReadOnly(t *testing.T) {
 		dbDir, err = ioutil.TempDir("", "test")
 		require.NoError(t, err)
 
-		defer func() {
+		t.Cleanup(func() {
 			require.NoError(t, os.RemoveAll(dbDir))
-		}()
+		})
 
 		dbBlocks := []*BlockMeta{
 			// Create three 2-sample blocks.
@@ -2359,9 +2366,9 @@ func TestDBReadOnly(t *testing.T) {
 	// Open a read only db and ensure that the API returns the same result as the normal DB.
 	dbReadOnly, err := OpenDBReadOnly(dbDir, logger)
 	require.NoError(t, err)
-	defer func() { require.NoError(t, dbReadOnly.Close()) }()
+	t.Cleanup(func() { require.NoError(t, dbReadOnly.Close()) })
 
-	t.Run("blocks", func(t *testing.T) {
+	t.Run("blocks", func(t *testing.T) { //nolint:paralleltest // TODO: Right now clients can't access in parallel.
 		blocks, err := dbReadOnly.Blocks()
 		require.NoError(t, err)
 		require.Equal(t, len(expBlocks), len(blocks))
@@ -2370,7 +2377,7 @@ func TestDBReadOnly(t *testing.T) {
 		}
 	})
 
-	t.Run("querier", func(t *testing.T) {
+	t.Run("querier", func(t *testing.T) { //nolint:paralleltest // TODO: Right now clients can't access in parallel.
 		// Open a read only db and ensure that the API returns the same result as the normal DB.
 		q, err := dbReadOnly.Querier(context.TODO(), math.MinInt64, math.MaxInt64)
 		require.NoError(t, err)
@@ -2381,7 +2388,7 @@ func TestDBReadOnly(t *testing.T) {
 		require.Equal(t, expSeries, readOnlySeries, "series mismatch")
 		require.Equal(t, expDBHash, readOnlyDBHash, "after all read operations the db hash should remain the same")
 	})
-	t.Run("chunk querier", func(t *testing.T) {
+	t.Run("chunk querier", func(t *testing.T) { //nolint:paralleltest // TODO: Right now clients can't access in parallel.
 		cq, err := dbReadOnly.ChunkQuerier(context.TODO(), math.MinInt64, math.MaxInt64)
 		require.NoError(t, err)
 		readOnlySeries := queryChunks(t, cq, matchAll)
@@ -3305,6 +3312,8 @@ func TestLockfileMetric(t *testing.T) {
 }
 
 func TestQuerier_ShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChunks(t *testing.T) {
+	t.Parallel()
+
 	t.Skip("TODO: investigate why process crash in CI")
 
 	const numRuns = 5
@@ -3443,6 +3452,8 @@ func testQuerierShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChunks(t 
 }
 
 func TestChunkQuerier_ShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChunks(t *testing.T) {
+	t.Parallel()
+
 	t.Skip("TODO: investigate why process crash in CI")
 
 	const numRuns = 5

@@ -22,6 +22,8 @@ import (
 )
 
 func TestLocking(t *testing.T) {
+	t.Parallel()
+
 	dir := testutil.NewTemporaryDirectory("test_flock", t)
 	defer dir.Close()
 

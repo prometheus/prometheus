@@ -29,6 +29,8 @@ import (
 )
 
 func TestPromParse(t *testing.T) {
+	t.Parallel()
+
 	input := `# HELP go_gc_duration_seconds A summary of the GC invocation durations.
 # 	TYPE go_gc_duration_seconds summary
 go_gc_duration_seconds{quantile="0"} 4.9351e-05
@@ -214,6 +216,8 @@ testmetric{label="\"bar\""} 1`
 }
 
 func TestPromParseErrors(t *testing.T) {
+	t.Parallel()
+
 	cases := []struct {
 		input string
 		err   string
@@ -284,6 +288,8 @@ func TestPromParseErrors(t *testing.T) {
 }
 
 func TestPromNullByteHandling(t *testing.T) {
+	t.Parallel()
+
 	cases := []struct {
 		input string
 		err   string

@@ -28,10 +28,16 @@ type pair struct {
 }
 
 func TestChunk(t *testing.T) {
+	t.Parallel()
+
 	for enc, nc := range map[Encoding]func() Chunk{
 		EncXOR: func() Chunk { return NewXORChunk() },
 	} {
+		nc := nc
+
 		t.Run(fmt.Sprintf("%v", enc), func(t *testing.T) {
+			t.Parallel()
+
 			for range make([]struct{}, 1) {
 				c := nc()
 				testChunk(t, c)

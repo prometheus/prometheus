@@ -26,6 +26,8 @@ func TestMain(m *testing.M) {
 }
 
 func TestMapFromVMWithEmptyTags(t *testing.T) {
+	t.Parallel()
+
 	id := "test"
 	name := "name"
 	vmType := "type"
@@ -72,6 +74,8 @@ func TestMapFromVMWithEmptyTags(t *testing.T) {
 }
 
 func TestMapFromVMWithTags(t *testing.T) {
+	t.Parallel()
+
 	id := "test"
 	name := "name"
 	vmType := "type"
@@ -121,6 +125,8 @@ func TestMapFromVMWithTags(t *testing.T) {
 }
 
 func TestMapFromVMScaleSetVMWithEmptyTags(t *testing.T) {
+	t.Parallel()
+
 	id := "test"
 	name := "name"
 	vmType := "type"
@@ -169,6 +175,8 @@ func TestMapFromVMScaleSetVMWithEmptyTags(t *testing.T) {
 }
 
 func TestMapFromVMScaleSetVMWithTags(t *testing.T) {
+	t.Parallel()
+
 	id := "test"
 	name := "name"
 	vmType := "type"
@@ -220,6 +228,8 @@ func TestMapFromVMScaleSetVMWithTags(t *testing.T) {
 }
 
 func TestNewAzureResourceFromID(t *testing.T) {
+	t.Parallel()
+
 	for _, tc := range []struct {
 		id       string
 		expected azureResource

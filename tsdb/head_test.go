@@ -696,7 +696,11 @@ func TestHeadDeleteSimple(t *testing.T) {
 	}
 
 	for _, compress := range []bool{false, true} {
+		compress := compress
+
 		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
+			t.Parallel()
+
 			for _, c := range cases {
 				head, w := newTestHead(t, 1000, compress)
 
@@ -2053,7 +2057,11 @@ func TestHeadLabelNamesValuesWithMinMaxRange(t *testing.T) {
 	}
 
 	for _, tt := range testCases {
+		tt := tt
+
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			headIdxReader := head.indexRange(tt.mint, tt.maxt)
 			actualLabelNames, err := headIdxReader.LabelNames()
 			require.NoError(t, err)
@@ -2194,7 +2202,11 @@ func TestHeadLabelNamesWithMatchers(t *testing.T) {
 	}
 
 	for _, tt := range testCases {
+		tt := tt
+
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			headIdxReader := head.indexRange(0, 200)
 
 			actualNames, err := headIdxReader.LabelNames(tt.matchers...)
@@ -2555,7 +2567,10 @@ func TestIsQuerierCollidingWithTruncation(t *testing.T) {
 	}
 
 	for _, c := range cases {
+		c := c
 		t.Run(fmt.Sprintf("mint=%d,maxt=%d", c.mint, c.maxt), func(t *testing.T) {
+			t.Parallel()
+
 			shouldClose, getNew, newMint := db.head.IsQuerierCollidingWithTruncation(c.mint, c.maxt)
 			require.Equal(t, c.expShouldClose, shouldClose)
 			require.Equal(t, c.expGetNew, getNew)
@@ -2568,24 +2583,6 @@ func TestIsQuerierCollidingWithTruncation(t *testing.T) {
 
 func TestWaitForPendingReadersInTimeRange(t *testing.T) {
 	t.Parallel()
-
-	db := newTestDB(t)
-	db.DisableCompactions()
-
-	sampleTs := func(i int64) int64 { return i * DefaultBlockDuration / (4 * 120) }
-
-	var (
-		app = db.Appender(context.Background())
-		ref = storage.SeriesRef(0)
-		err error
-	)
-
-	for i := int64(0); i <= 3000; i++ {
-		ts := sampleTs(i)
-		ref, err = app.Append(ref, labels.FromStrings("a", "b"), ts, float64(i))
-		require.NoError(t, err)
-	}
-	require.NoError(t, app.Commit())
 
 	truncMint, truncMaxt := int64(1000), int64(2000)
 	cases := []struct {
@@ -2600,7 +2597,29 @@ func TestWaitForPendingReadersInTimeRange(t *testing.T) {
 		{2100, 2500, false}, // After truncation range.
 	}
 	for _, c := range cases {
+		c := c
+
 		t.Run(fmt.Sprintf("mint=%d,maxt=%d,shouldWait=%t", c.mint, c.maxt, c.shouldWait), func(t *testing.T) {
+			t.Parallel()
+
+			db := newTestDB(t)
+			db.DisableCompactions()
+
+			sampleTs := func(i int64) int64 { return i * DefaultBlockDuration / (4 * 120) }
+
+			var (
+				app = db.Appender(context.Background())
+				ref = storage.SeriesRef(0)
+				err error
+			)
+
+			for i := int64(0); i <= 3000; i++ {
+				ts := sampleTs(i)
+				ref, err = app.Append(ref, labels.FromStrings("a", "b"), ts, float64(i))
+				require.NoError(t, err)
+			}
+			require.NoError(t, app.Commit())
+
 			checkWaiting := func(cl io.Closer) {
 				var waitOver atomic.Bool
 				go func() {

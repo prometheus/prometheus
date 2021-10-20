@@ -47,6 +47,8 @@ func mockServer(t *testing.T) *httptest.Server {
 }
 
 func TestPuppetSlashInURL(t *testing.T) {
+	t.Parallel()
+
 	tests := map[string]string{
 		"https://puppetserver":      "https://puppetserver/pdb/query/v4",
 		"https://puppetserver/":     "https://puppetserver/pdb/query/v4",
@@ -69,6 +71,8 @@ func TestPuppetSlashInURL(t *testing.T) {
 }
 
 func TestPuppetDBRefresh(t *testing.T) {
+	t.Parallel()
+
 	ts := mockServer(t)
 
 	cfg := SDConfig{
@@ -108,6 +112,8 @@ func TestPuppetDBRefresh(t *testing.T) {
 }
 
 func TestPuppetDBRefreshWithParameters(t *testing.T) {
+	t.Parallel()
+
 	ts := mockServer(t)
 
 	cfg := SDConfig{
@@ -154,6 +160,8 @@ func TestPuppetDBRefreshWithParameters(t *testing.T) {
 }
 
 func TestPuppetDBInvalidCode(t *testing.T) {
+	t.Parallel()
+
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusBadRequest)
 	}))
@@ -175,6 +183,8 @@ func TestPuppetDBInvalidCode(t *testing.T) {
 }
 
 func TestPuppetDBInvalidFormat(t *testing.T) {
+	t.Parallel()
+
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintln(w, "{}")
 	}))

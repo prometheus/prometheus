@@ -24,6 +24,8 @@ import (
 )
 
 func TestOpenMetricsParse(t *testing.T) {
+	t.Parallel()
+
 	input := `# HELP go_gc_duration_seconds A summary of the GC invocation durations.
 # TYPE go_gc_duration_seconds summary
 # UNIT go_gc_duration_seconds seconds
@@ -269,6 +271,8 @@ foo_total 17.0 1520879607.789 # {xx="yy"} 5`
 }
 
 func TestOpenMetricsParseErrors(t *testing.T) {
+	t.Parallel()
+
 	cases := []struct {
 		input string
 		err   string
@@ -541,6 +545,8 @@ func TestOpenMetricsParseErrors(t *testing.T) {
 }
 
 func TestOMNullByteHandling(t *testing.T) {
+	t.Parallel()
+
 	cases := []struct {
 		input string
 		err   string

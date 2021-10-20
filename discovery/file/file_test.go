@@ -308,6 +308,8 @@ func valid2Tg(file string) []*targetgroup.Group {
 }
 
 func TestInitialUpdate(t *testing.T) {
+	t.Parallel()
+
 	for _, tc := range []string{
 		"fixtures/valid.yml",
 		"fixtures/valid.json",
@@ -328,6 +330,8 @@ func TestInitialUpdate(t *testing.T) {
 }
 
 func TestInvalidFile(t *testing.T) {
+	t.Parallel()
+
 	for _, tc := range []string{
 		"fixtures/invalid_nil.yml",
 		"fixtures/invalid_nil.json",

@@ -34,6 +34,8 @@ var (
 )
 
 func TestScalewayInstanceRefresh(t *testing.T) {
+	t.Parallel()
+
 	mock := httptest.NewServer(http.HandlerFunc(mockScalewayInstance))
 	defer mock.Close()
 
@@ -111,8 +113,13 @@ api_url: %s
 			"__meta_scaleway_instance_zone":                   "fr-par-1",
 		},
 	} {
+		lbls := lbls
+		targets := tg.Targets[i]
+
 		t.Run(fmt.Sprintf("item %d", i), func(t *testing.T) {
-			require.Equal(t, lbls, tg.Targets[i])
+			t.Parallel()
+
+			require.Equal(t, lbls, targets)
 		})
 	}
 }
@@ -140,6 +147,8 @@ func mockScalewayInstance(w http.ResponseWriter, r *http.Request) {
 }
 
 func TestScalewayInstanceAuthToken(t *testing.T) {
+	t.Parallel()
+
 	mock := httptest.NewServer(http.HandlerFunc(mockScalewayInstance))
 	defer mock.Close()
 

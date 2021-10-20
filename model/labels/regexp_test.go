@@ -21,6 +21,8 @@ import (
 )
 
 func TestNewFastRegexMatcher(t *testing.T) {
+	t.Parallel()
+
 	cases := []struct {
 		regex    string
 		value    string
@@ -60,6 +62,8 @@ func TestNewFastRegexMatcher(t *testing.T) {
 }
 
 func TestOptimizeConcatRegex(t *testing.T) {
+	t.Parallel()
+
 	cases := []struct {
 		regex    string
 		prefix   string

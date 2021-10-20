@@ -39,6 +39,8 @@ var linkTests = []linkTest{
 }
 
 func TestLink(t *testing.T) {
+	t.Parallel()
+
 	for _, tt := range linkTests {
 		graphLink := GraphLinkForExpression(tt.expression)
 		require.Equal(t, tt.expectedGraphLink, graphLink,
@@ -51,6 +53,8 @@ func TestLink(t *testing.T) {
 }
 
 func TestSanitizeLabelName(t *testing.T) {
+	t.Parallel()
+
 	actual := SanitizeLabelName("fooClientLABEL")
 	expected := "fooClientLABEL"
 	require.Equal(t, expected, actual, "SanitizeLabelName failed for label (%s)", expected)

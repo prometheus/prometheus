@@ -30,6 +30,8 @@ import (
 )
 
 func TestPopulateLabels(t *testing.T) {
+	t.Parallel()
+
 	cases := []struct {
 		in      labels.Labels
 		cfg     *config.ScrapeConfig
@@ -332,18 +334,24 @@ func TestPopulateLabels(t *testing.T) {
 			err:     "scrape timeout cannot be greater than scrape interval (\"2s\" > \"1s\")",
 		},
 	}
-	for _, c := range cases {
+	for i, c := range cases {
+		c := c
+
 		in := c.in.Copy()
 
-		res, orig, err := PopulateLabels(c.in, c.cfg)
-		if c.err != "" {
-			require.EqualError(t, err, c.err)
-		} else {
-			require.NoError(t, err)
-		}
-		require.Equal(t, c.in, in)
-		require.Equal(t, c.res, res)
-		require.Equal(t, c.resOrig, orig)
+		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			t.Parallel()
+
+			res, orig, err := PopulateLabels(c.in, c.cfg)
+			if c.err != "" {
+				require.EqualError(t, err, c.err)
+			} else {
+				require.NoError(t, err)
+			}
+			require.Equal(t, c.in, in)
+			require.Equal(t, c.res, res)
+			require.Equal(t, c.resOrig, orig)
+		})
 	}
 }
 
@@ -364,6 +372,7 @@ func noopLoop() loop {
 	}
 }
 
+//nolint:paralleltest // TODO: NewManager() is not thread-safe.
 func TestManagerApplyConfig(t *testing.T) {
 	// Valid initial configuration.
 	cfgText1 := `
@@ -460,6 +469,7 @@ scrape_configs:
 	}
 }
 
+//nolint:paralleltest // TODO: NewManager() is not thread-safe.
 func TestManagerTargetsUpdates(t *testing.T) {
 	opts := Options{}
 	m := NewManager(&opts, nil, nil)
@@ -498,6 +508,7 @@ func TestManagerTargetsUpdates(t *testing.T) {
 	}
 }
 
+//nolint:paralleltest // TODO: NewManager() is not thread-safe.
 func TestSetJitter(t *testing.T) {
 	getConfig := func(prometheus string) *config.Config {
 		cfgText := `

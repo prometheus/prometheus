@@ -28,6 +28,8 @@ func (c *counter) Log(keyvals ...interface{}) error {
 }
 
 func TestDedupe(t *testing.T) {
+	t.Parallel()
+
 	var c counter
 	d := Dedupe(&c, 100*time.Millisecond)
 	defer d.Stop()

@@ -29,6 +29,8 @@ func (f *mockedFlusher) Flush() {
 }
 
 func TestChunkedReaderCanReadFromChunkedWriter(t *testing.T) {
+	t.Parallel()
+
 	b := &bytes.Buffer{}
 	f := &mockedFlusher{}
 	w := NewChunkedWriter(b, f)
@@ -73,6 +75,8 @@ func TestChunkedReaderCanReadFromChunkedWriter(t *testing.T) {
 }
 
 func TestChunkedReader_Overflow(t *testing.T) {
+	t.Parallel()
+
 	b := &bytes.Buffer{}
 	_, err := NewChunkedWriter(b, &mockedFlusher{}).Write([]byte("twelve bytes"))
 	require.NoError(t, err)
@@ -90,6 +94,8 @@ func TestChunkedReader_Overflow(t *testing.T) {
 }
 
 func TestChunkedReader_CorruptedFrame(t *testing.T) {
+	t.Parallel()
+
 	b := &bytes.Buffer{}
 	w := NewChunkedWriter(b, &mockedFlusher{})
 

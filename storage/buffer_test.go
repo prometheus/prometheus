@@ -21,6 +21,8 @@ import (
 )
 
 func TestSampleRing(t *testing.T) {
+	t.Parallel()
+
 	cases := []struct {
 		input []int64
 		delta int64
@@ -87,6 +89,8 @@ func TestSampleRing(t *testing.T) {
 }
 
 func TestBufferedSeriesIterator(t *testing.T) {
+	t.Parallel()
+
 	var it *BufferedSeriesIterator
 
 	bufferEq := func(exp []sample) {
@@ -153,6 +157,8 @@ func TestBufferedSeriesIterator(t *testing.T) {
 
 // At() should not be called once Next() returns false.
 func TestBufferedSeriesIteratorNoBadAt(t *testing.T) {
+	t.Parallel()
+
 	done := false
 
 	m := &mockSeriesIterator{

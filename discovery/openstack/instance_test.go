@@ -51,6 +51,8 @@ func (s *OpenstackSDInstanceTestSuite) openstackAuthSuccess() (refresher, error)
 }
 
 func TestOpenstackSDInstanceRefresh(t *testing.T) {
+	t.Parallel()
+
 	mock := &OpenstackSDInstanceTestSuite{}
 	mock.SetupTest(t)
 
@@ -118,13 +120,20 @@ func TestOpenstackSDInstanceRefresh(t *testing.T) {
 			"__meta_openstack_user_id":         model.LabelValue("9349aff8be7545ac9d2f1d00999a23cd"),
 		},
 	} {
+		lbls := lbls
+		targets := tg.Targets[i]
+
 		t.Run(fmt.Sprintf("item %d", i), func(t *testing.T) {
-			require.Equal(t, lbls, tg.Targets[i])
+			t.Parallel()
+
+			require.Equal(t, lbls, targets)
 		})
 	}
 }
 
 func TestOpenstackSDInstanceRefreshWithDoneContext(t *testing.T) {
+	t.Parallel()
+
 	mock := &OpenstackSDHypervisorTestSuite{}
 	mock.SetupTest(t)
 

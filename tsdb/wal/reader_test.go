@@ -169,9 +169,16 @@ func encodedRecord(t recType, b []byte) []byte {
 
 // TestReader feeds the reader a stream of encoded records with different types.
 func TestReader(t *testing.T) {
+	t.Parallel()
+
 	for name, fn := range readerConstructors {
+		fn := fn
 		for i, c := range testReaderCases {
+			c := c
+
 			t.Run(fmt.Sprintf("%s/%d", name, i), func(t *testing.T) {
+				t.Parallel()
+
 				var buf []byte
 				for _, r := range c.t {
 					buf = append(buf, encodedRecord(r.t, r.b)...)
@@ -199,10 +206,14 @@ func TestReader(t *testing.T) {
 }
 
 func TestReader_Live(t *testing.T) {
+	t.Parallel()
+
 	logger := testutil.NewLogger(t)
 
 	for i := range testReaderCases {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
+			t.Parallel()
+
 			writeFd, err := ioutil.TempFile("", "TestReader_Live")
 			require.NoError(t, err)
 			defer os.Remove(writeFd.Name())
@@ -310,9 +321,17 @@ func allSegments(dir string) (io.ReadCloser, error) {
 }
 
 func TestReaderFuzz(t *testing.T) {
+	t.Parallel()
+
 	for name, fn := range readerConstructors {
+		fn := fn
+
 		for _, compress := range []bool{false, true} {
+			compress := compress
+
 			t.Run(fmt.Sprintf("%s,compress=%t", name, compress), func(t *testing.T) {
+				t.Parallel()
+
 				dir := t.TempDir()
 
 				w, err := NewSize(nil, nil, dir, 128*pageSize, compress)
@@ -349,9 +368,14 @@ func TestReaderFuzz(t *testing.T) {
 }
 
 func TestReaderFuzz_Live(t *testing.T) {
+	t.Parallel()
+
 	logger := testutil.NewLogger(t)
+
 	for _, compress := range []bool{false, true} {
 		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
+			t.Parallel()
+
 			dir := t.TempDir()
 
 			w, err := NewSize(nil, nil, dir, 128*pageSize, compress)
@@ -435,6 +459,8 @@ func TestReaderFuzz_Live(t *testing.T) {
 }
 
 func TestLiveReaderCorrupt_ShortFile(t *testing.T) {
+	t.Parallel()
+
 	// Write a corrupt WAL segment, there is one record of pageSize in length,
 	// but the segment is only half written.
 	logger := testutil.NewLogger(t)
@@ -476,6 +502,8 @@ func TestLiveReaderCorrupt_ShortFile(t *testing.T) {
 }
 
 func TestLiveReaderCorrupt_RecordTooLongAndShort(t *testing.T) {
+	t.Parallel()
+
 	// Write a corrupt WAL segment, when record len > page size.
 	logger := testutil.NewLogger(t)
 	dir := t.TempDir()
@@ -520,13 +548,19 @@ func TestLiveReaderCorrupt_RecordTooLongAndShort(t *testing.T) {
 }
 
 func TestReaderData(t *testing.T) {
+	t.Parallel()
+
 	dir := os.Getenv("WALDIR")
 	if dir == "" {
 		return
 	}
 
 	for name, fn := range readerConstructors {
+		fn := fn
+
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
 			w, err := New(nil, nil, dir, true)
 			require.NoError(t, err)
 

@@ -36,6 +36,8 @@ func (s *robotSDTestSuite) SetupTest(t *testing.T) {
 }
 
 func TestRobotSDRefresh(t *testing.T) {
+	t.Parallel()
+
 	suite := &robotSDTestSuite{}
 	suite.SetupTest(t)
 	cfg := DefaultSDConfig
@@ -79,13 +81,20 @@ func TestRobotSDRefresh(t *testing.T) {
 			"__meta_hetzner_robot_cancelled": model.LabelValue("true"),
 		},
 	} {
+		labelSet := labelSet
+		targets := targetGroup.Targets[i]
+
 		t.Run(fmt.Sprintf("item %d", i), func(t *testing.T) {
-			require.Equal(t, labelSet, targetGroup.Targets[i])
+			t.Parallel()
+
+			require.Equal(t, labelSet, targets)
 		})
 	}
 }
 
 func TestRobotSDRefreshHandleError(t *testing.T) {
+	t.Parallel()
+
 	suite := &robotSDTestSuite{}
 	suite.SetupTest(t)
 	cfg := DefaultSDConfig

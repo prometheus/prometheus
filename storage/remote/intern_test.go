@@ -27,6 +27,8 @@ import (
 )
 
 func TestIntern(t *testing.T) {
+	t.Parallel()
+
 	interner := newPool()
 	testString := "TestIntern"
 	interner.intern(testString)
@@ -37,6 +39,8 @@ func TestIntern(t *testing.T) {
 }
 
 func TestIntern_MultiRef(t *testing.T) {
+	t.Parallel()
+
 	interner := newPool()
 	testString := "TestIntern_MultiRef"
 
@@ -54,6 +58,8 @@ func TestIntern_MultiRef(t *testing.T) {
 }
 
 func TestIntern_DeleteRef(t *testing.T) {
+	t.Parallel()
+
 	interner := newPool()
 	testString := "TestIntern_DeleteRef"
 
@@ -69,6 +75,8 @@ func TestIntern_DeleteRef(t *testing.T) {
 }
 
 func TestIntern_MultiRef_Concurrent(t *testing.T) {
+	t.Parallel()
+
 	interner := newPool()
 	testString := "TestIntern_MultiRef_Concurrent"
 

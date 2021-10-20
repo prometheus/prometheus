@@ -180,6 +180,8 @@ func BenchmarkCheckDuplicates(b *testing.B) {
 }
 
 func TestCheckTargetConfig(t *testing.T) {
+	t.Parallel()
+
 	cases := []struct {
 		name string
 		file string
@@ -207,7 +209,11 @@ func TestCheckTargetConfig(t *testing.T) {
 		},
 	}
 	for _, test := range cases {
+		test := test
+
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			_, err := checkConfig(false, "testdata/"+test.file)
 			if test.err != "" {
 				require.Equalf(t, test.err, err.Error(), "Expected error %q, got %q", test.err, err.Error())

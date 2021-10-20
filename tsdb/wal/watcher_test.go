@@ -104,12 +104,18 @@ func newWriteToMock() *writeToMock {
 }
 
 func TestTailSamples(t *testing.T) {
+	t.Parallel()
+
 	pageSize := 32 * 1024
 	const seriesCount = 10
 	const samplesCount = 250
 	const exemplarsCount = 25
 	for _, compress := range []bool{false, true} {
+		compress := compress
+
 		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
+			t.Parallel()
+
 			now := time.Now()
 
 			dir := t.TempDir()
@@ -196,13 +202,20 @@ func TestTailSamples(t *testing.T) {
 }
 
 func TestReadToEndNoCheckpoint(t *testing.T) {
+	t.Parallel()
+
 	pageSize := 32 * 1024
 	const seriesCount = 10
 	const samplesCount = 250
 
 	for _, compress := range []bool{false, true} {
+		compress := compress
+
 		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
+			t.Parallel()
+
 			dir := t.TempDir()
+
 			wdir := path.Join(dir, "wal")
 			err := os.Mkdir(wdir, 0o777)
 			require.NoError(t, err)
@@ -263,6 +276,8 @@ func TestReadToEndNoCheckpoint(t *testing.T) {
 }
 
 func TestReadToEndWithCheckpoint(t *testing.T) {
+	t.Parallel()
+
 	segmentSize := 32 * 1024
 	// We need something similar to this # of series and samples
 	// in order to get enough segments for us to checkpoint.
@@ -270,7 +285,11 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 	const samplesCount = 250
 
 	for _, compress := range []bool{false, true} {
+		compress := compress
+
 		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
+			t.Parallel()
+
 			dir := t.TempDir()
 
 			wdir := path.Join(dir, "wal")
@@ -352,12 +371,18 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 }
 
 func TestReadCheckpoint(t *testing.T) {
+	t.Parallel()
+
 	pageSize := 32 * 1024
 	const seriesCount = 10
 	const samplesCount = 250
 
 	for _, compress := range []bool{false, true} {
+		compress := compress
+
 		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
+			t.Parallel()
+
 			dir := t.TempDir()
 
 			wdir := path.Join(dir, "wal")
@@ -418,6 +443,8 @@ func TestReadCheckpoint(t *testing.T) {
 }
 
 func TestReadCheckpointMultipleSegments(t *testing.T) {
+	t.Parallel()
+
 	pageSize := 32 * 1024
 
 	const segments = 1
@@ -425,7 +452,11 @@ func TestReadCheckpointMultipleSegments(t *testing.T) {
 	const samplesCount = 300
 
 	for _, compress := range []bool{false, true} {
+		compress := compress
+
 		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
+			t.Parallel()
+
 			dir := t.TempDir()
 
 			wdir := path.Join(dir, "wal")
@@ -489,6 +520,8 @@ func TestReadCheckpointMultipleSegments(t *testing.T) {
 }
 
 func TestCheckpointSeriesReset(t *testing.T) {
+	t.Parallel()
+
 	segmentSize := 32 * 1024
 	// We need something similar to this # of series and samples
 	// in order to get enough segments for us to checkpoint.
@@ -503,7 +536,11 @@ func TestCheckpointSeriesReset(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
+		tc := tc
+
 		t.Run(fmt.Sprintf("compress=%t", tc.compress), func(t *testing.T) {
+			t.Parallel()
+
 			dir := t.TempDir()
 
 			wdir := path.Join(dir, "wal")

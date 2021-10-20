@@ -20,6 +20,8 @@ import (
 )
 
 func TestBstreamReader(t *testing.T) {
+	t.Parallel()
+
 	// Write to the bit stream.
 	w := bstream{}
 	for _, bit := range []bit{true, false} {

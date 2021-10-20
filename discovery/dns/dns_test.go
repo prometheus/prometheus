@@ -35,6 +35,8 @@ func TestMain(m *testing.M) {
 }
 
 func TestDNS(t *testing.T) {
+	t.Parallel()
+
 	testCases := []struct {
 		name   string
 		config SDConfig
@@ -212,6 +214,8 @@ func TestDNS(t *testing.T) {
 }
 
 func TestSDConfigUnmarshalYAML(t *testing.T) {
+	t.Parallel()
+
 	marshal := func(c SDConfig) []byte {
 		d, err := yaml.Marshal(c)
 		if err != nil {
@@ -292,7 +296,11 @@ func TestSDConfigUnmarshalYAML(t *testing.T) {
 	}
 
 	for _, c := range cases {
+		c := c
+
 		t.Run(c.name, func(t *testing.T) {
+			t.Parallel()
+
 			var config SDConfig
 			d := marshal(c.input)
 			err := config.UnmarshalYAML(unmarshal(d))

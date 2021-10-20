@@ -137,6 +137,8 @@ func (m mockIndex) Series(ref storage.SeriesRef, lset *labels.Labels, chks *[]ch
 }
 
 func TestIndexRW_Create_Open(t *testing.T) {
+	t.Parallel()
+
 	dir, err := ioutil.TempDir("", "test_index_create")
 	require.NoError(t, err)
 	defer func() {
@@ -166,6 +168,8 @@ func TestIndexRW_Create_Open(t *testing.T) {
 }
 
 func TestIndexRW_Postings(t *testing.T) {
+	t.Parallel()
+
 	dir, err := ioutil.TempDir("", "test_index_postings")
 	require.NoError(t, err)
 	defer func() {
@@ -250,6 +254,8 @@ func TestIndexRW_Postings(t *testing.T) {
 }
 
 func TestPostingsMany(t *testing.T) {
+	t.Parallel()
+
 	dir, err := ioutil.TempDir("", "test_postings_many")
 	require.NoError(t, err)
 	defer func() {
@@ -344,6 +350,8 @@ func TestPostingsMany(t *testing.T) {
 }
 
 func TestPersistence_index_e2e(t *testing.T) {
+	t.Parallel()
+
 	dir, err := ioutil.TempDir("", "test_persistence_e2e")
 	require.NoError(t, err)
 	defer func() {
@@ -486,6 +494,8 @@ func TestPersistence_index_e2e(t *testing.T) {
 }
 
 func TestDecbufUvarintWithInvalidBuffer(t *testing.T) {
+	t.Parallel()
+
 	b := realByteSlice([]byte{0x81, 0x81, 0x81, 0x81, 0x81, 0x81})
 
 	db := encoding.NewDecbufUvarintAt(b, 0, castagnoliTable)
@@ -493,6 +503,8 @@ func TestDecbufUvarintWithInvalidBuffer(t *testing.T) {
 }
 
 func TestReaderWithInvalidBuffer(t *testing.T) {
+	t.Parallel()
+
 	b := realByteSlice([]byte{0x81, 0x81, 0x81, 0x81, 0x81, 0x81})
 
 	_, err := NewReader(b)
@@ -501,6 +513,8 @@ func TestReaderWithInvalidBuffer(t *testing.T) {
 
 // TestNewFileReaderErrorNoOpenFiles ensures that in case of an error no file remains open.
 func TestNewFileReaderErrorNoOpenFiles(t *testing.T) {
+	t.Parallel()
+
 	dir := testutil.NewTemporaryDirectory("block", t)
 
 	idxName := filepath.Join(dir.Path(), "index")
@@ -515,6 +529,8 @@ func TestNewFileReaderErrorNoOpenFiles(t *testing.T) {
 }
 
 func TestSymbols(t *testing.T) {
+	t.Parallel()
+
 	buf := encoding.Encbuf{}
 
 	// Add prefix to the buffer to simulate symbols as part of larger buffer.

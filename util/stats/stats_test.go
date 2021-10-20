@@ -26,6 +26,8 @@ import (
 )
 
 func TestTimerGroupNewTimer(t *testing.T) {
+	t.Parallel()
+
 	tg := NewTimerGroup()
 	timer := tg.GetTimer(ExecTotalTime)
 	duration := timer.Duration()
@@ -42,6 +44,8 @@ func TestTimerGroupNewTimer(t *testing.T) {
 }
 
 func TestQueryStatsWithTimers(t *testing.T) {
+	t.Parallel()
+
 	qt := NewQueryTimers()
 	timer := qt.GetTimer(ExecTotalTime)
 	timer.Start()
@@ -58,6 +62,8 @@ func TestQueryStatsWithTimers(t *testing.T) {
 }
 
 func TestQueryStatsWithSpanTimers(t *testing.T) {
+	t.Parallel()
+
 	qt := NewQueryTimers()
 	ctx := &testutil.MockContext{DoneCh: make(chan struct{})}
 	qst, _ := qt.GetSpanTimer(ctx, ExecQueueTime, prometheus.NewSummary(prometheus.SummaryOpts{}))
@@ -73,6 +79,8 @@ func TestQueryStatsWithSpanTimers(t *testing.T) {
 }
 
 func TestTimerGroup(t *testing.T) {
+	t.Parallel()
+
 	tg := NewTimerGroup()
 	require.Equal(t, "Exec total time: 0s", tg.GetTimer(ExecTotalTime).String())
 

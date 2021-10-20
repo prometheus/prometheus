@@ -37,6 +37,8 @@ func TestMain(m *testing.M) {
 
 // TestTargetUpdatesOrder checks that the target updates are received in the expected order.
 func TestTargetUpdatesOrder(t *testing.T) {
+	t.Parallel()
+
 	// The order by which the updates are send is determined by the interval passed to the mock discovery adapter
 	// Final targets array is ordered alphabetically by the name of the discoverer.
 	// For example discoverer "A" with targets "t2,t3" and discoverer "B" with targets "t1,t2" will result in "t2,t3,t1,t2" after the merge.
@@ -661,6 +663,8 @@ func TestTargetUpdatesOrder(t *testing.T) {
 	for i, tc := range testCases {
 		tc := tc
 		t.Run(tc.title, func(t *testing.T) {
+			t.Parallel()
+
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 
@@ -746,6 +750,8 @@ func verifyPresence(t *testing.T, tSets map[poolKey]map[string]*targetgroup.Grou
 }
 
 func TestTargetSetRecreatesTargetGroupsEveryRun(t *testing.T) {
+	t.Parallel()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	discoveryManager := NewManager(ctx, log.NewNopLogger())
@@ -774,6 +780,8 @@ func TestTargetSetRecreatesTargetGroupsEveryRun(t *testing.T) {
 }
 
 func TestDiscovererConfigs(t *testing.T) {
+	t.Parallel()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	discoveryManager := NewManager(ctx, log.NewNopLogger())
@@ -798,6 +806,8 @@ func TestDiscovererConfigs(t *testing.T) {
 // removing all targets from the static_configs sends an update with empty targetGroups.
 // This is required to signal the receiver that this target set has no current targets.
 func TestTargetSetRecreatesEmptyStaticConfigs(t *testing.T) {
+	t.Parallel()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	discoveryManager := NewManager(ctx, log.NewNopLogger())
@@ -837,6 +847,8 @@ func TestTargetSetRecreatesEmptyStaticConfigs(t *testing.T) {
 }
 
 func TestIdenticalConfigurationsAreCoalesced(t *testing.T) {
+	t.Parallel()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	discoveryManager := NewManager(ctx, nil)
@@ -862,6 +874,8 @@ func TestIdenticalConfigurationsAreCoalesced(t *testing.T) {
 }
 
 func TestApplyConfigDoesNotModifyStaticTargets(t *testing.T) {
+	t.Parallel()
+
 	originalConfig := discovery.Configs{
 		staticConfig("foo:9090", "bar:9090", "baz:9090"),
 	}
@@ -892,6 +906,7 @@ func (e errorConfig) NewDiscoverer(discovery.DiscovererOptions) (discovery.Disco
 	return nil, e.err
 }
 
+//nolint:paralleltest // This test currently fails when run in parallel.
 func TestGaugeFailedConfigs(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -927,6 +942,8 @@ func TestGaugeFailedConfigs(t *testing.T) {
 }
 
 func TestCoordinationWithReceiver(t *testing.T) {
+	t.Parallel()
+
 	updateDelay := 100 * time.Millisecond
 
 	type expect struct {
@@ -1048,6 +1065,8 @@ func TestCoordinationWithReceiver(t *testing.T) {
 	for _, tc := range testCases {
 		tc := tc
 		t.Run(tc.title, func(t *testing.T) {
+			t.Parallel()
+
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 

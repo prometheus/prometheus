@@ -24,6 +24,8 @@ import (
 )
 
 func TestJSONFileLogger_basic(t *testing.T) {
+	t.Parallel()
+
 	f, err := ioutil.TempFile("", "logging")
 	require.NoError(t, err)
 	defer func() {
@@ -53,6 +55,8 @@ func TestJSONFileLogger_basic(t *testing.T) {
 }
 
 func TestJSONFileLogger_parallel(t *testing.T) {
+	t.Parallel()
+
 	f, err := ioutil.TempFile("", "logging")
 	require.NoError(t, err)
 	defer func() {

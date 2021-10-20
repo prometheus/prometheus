@@ -24,6 +24,8 @@ import (
 )
 
 func TestFetchApps(t *testing.T) {
+	t.Parallel()
+
 	appsXML := `<applications>
   <versions__delta>1</versions__delta>
   <apps__hashcode>UP_4_</apps__hashcode>
@@ -198,6 +200,8 @@ func TestFetchApps(t *testing.T) {
 }
 
 func Test500ErrorHttpResponse(t *testing.T) {
+	t.Parallel()
+
 	// Simulate 500 error.
 	respHandler := func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)

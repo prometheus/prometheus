@@ -40,6 +40,8 @@ import (
 )
 
 func TestPostPath(t *testing.T) {
+	t.Parallel()
+
 	cases := []struct {
 		in, out string
 	}{
@@ -70,6 +72,8 @@ func TestPostPath(t *testing.T) {
 }
 
 func TestHandlerNextBatch(t *testing.T) {
+	t.Parallel()
+
 	h := NewManager(&Options{}, nil)
 
 	for i := range make([]struct{}, 2*maxBatchSize+1) {
@@ -99,6 +103,8 @@ func alertsEqual(a, b []*Alert) error {
 }
 
 func TestHandlerSendAll(t *testing.T) {
+	t.Parallel()
+
 	var (
 		errc             = make(chan error, 1)
 		expected         = make([]*Alert, 0, maxBatchSize)
@@ -214,6 +220,8 @@ func TestHandlerSendAll(t *testing.T) {
 }
 
 func TestCustomDo(t *testing.T) {
+	t.Parallel()
+
 	const testURL = "http://testurl.com/"
 	const testBody = "testbody"
 
@@ -241,6 +249,8 @@ func TestCustomDo(t *testing.T) {
 }
 
 func TestExternalLabels(t *testing.T) {
+	t.Parallel()
+
 	h := NewManager(&Options{
 		QueueCapacity:  3 * maxBatchSize,
 		ExternalLabels: labels.Labels{{Name: "a", Value: "b"}},
@@ -275,6 +285,8 @@ func TestExternalLabels(t *testing.T) {
 }
 
 func TestHandlerRelabel(t *testing.T) {
+	t.Parallel()
+
 	h := NewManager(&Options{
 		QueueCapacity: 3 * maxBatchSize,
 		RelabelConfigs: []*relabel.Config{
@@ -311,6 +323,8 @@ func TestHandlerRelabel(t *testing.T) {
 }
 
 func TestHandlerQueuing(t *testing.T) {
+	t.Parallel()
+
 	var (
 		expectedc = make(chan []*Alert)
 		called    = make(chan struct{})
@@ -446,6 +460,8 @@ func (a alertmanagerMock) url() *url.URL {
 }
 
 func TestLabelSetNotReused(t *testing.T) {
+	t.Parallel()
+
 	tg := makeInputTargetGroup()
 	_, _, err := AlertmanagerFromGroup(tg, &config.AlertmanagerConfig{})
 
@@ -456,6 +472,8 @@ func TestLabelSetNotReused(t *testing.T) {
 }
 
 func TestReload(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		in  *targetgroup.Group
 		out string
@@ -503,6 +521,8 @@ alerting:
 }
 
 func TestDroppedAlertmanagers(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		in  *targetgroup.Group
 		out string
@@ -570,5 +590,7 @@ func makeInputTargetGroup() *targetgroup.Group {
 }
 
 func TestLabelsToOpenAPILabelSet(t *testing.T) {
+	t.Parallel()
+
 	require.Equal(t, models.LabelSet{"aaa": "111", "bbb": "222"}, labelsToOpenAPILabelSet(labels.Labels{{Name: "aaa", Value: "111"}, {Name: "bbb", Value: "222"}}))
 }

@@ -39,6 +39,8 @@ const (
 )
 
 func TestTargetLabels(t *testing.T) {
+	t.Parallel()
+
 	target := newTestTarget("example.com:80", 0, labels.FromStrings("job", "some_job", "foo", "bar"))
 	want := labels.FromStrings(model.JobLabel, "some_job", "foo", "bar")
 	got := target.Labels()
@@ -46,6 +48,8 @@ func TestTargetLabels(t *testing.T) {
 }
 
 func TestTargetOffset(t *testing.T) {
+	t.Parallel()
+
 	interval := 10 * time.Second
 	jitter := uint64(0)
 
@@ -93,6 +97,8 @@ func TestTargetOffset(t *testing.T) {
 }
 
 func TestTargetURL(t *testing.T) {
+	t.Parallel()
+
 	params := url.Values{
 		"abc": []string{"foo", "bar", "baz"},
 		"xyz": []string{"hoo"},
@@ -133,6 +139,8 @@ func newTestTarget(targetURL string, deadline time.Duration, lbls labels.Labels)
 }
 
 func TestNewHTTPBearerToken(t *testing.T) {
+	t.Parallel()
+
 	server := httptest.NewServer(
 		http.HandlerFunc(
 			func(w http.ResponseWriter, r *http.Request) {
@@ -160,6 +168,8 @@ func TestNewHTTPBearerToken(t *testing.T) {
 }
 
 func TestNewHTTPBearerTokenFile(t *testing.T) {
+	t.Parallel()
+
 	server := httptest.NewServer(
 		http.HandlerFunc(
 			func(w http.ResponseWriter, r *http.Request) {
@@ -187,6 +197,8 @@ func TestNewHTTPBearerTokenFile(t *testing.T) {
 }
 
 func TestNewHTTPBasicAuth(t *testing.T) {
+	t.Parallel()
+
 	server := httptest.NewServer(
 		http.HandlerFunc(
 			func(w http.ResponseWriter, r *http.Request) {
@@ -216,6 +228,8 @@ func TestNewHTTPBasicAuth(t *testing.T) {
 }
 
 func TestNewHTTPCACert(t *testing.T) {
+	t.Parallel()
+
 	server := httptest.NewUnstartedServer(
 		http.HandlerFunc(
 			func(w http.ResponseWriter, r *http.Request) {
@@ -244,6 +258,8 @@ func TestNewHTTPCACert(t *testing.T) {
 }
 
 func TestNewHTTPClientCert(t *testing.T) {
+	t.Parallel()
+
 	server := httptest.NewUnstartedServer(
 		http.HandlerFunc(
 			func(w http.ResponseWriter, r *http.Request) {
@@ -277,6 +293,8 @@ func TestNewHTTPClientCert(t *testing.T) {
 }
 
 func TestNewHTTPWithServerName(t *testing.T) {
+	t.Parallel()
+
 	server := httptest.NewUnstartedServer(
 		http.HandlerFunc(
 			func(w http.ResponseWriter, r *http.Request) {
@@ -306,6 +324,8 @@ func TestNewHTTPWithServerName(t *testing.T) {
 }
 
 func TestNewHTTPWithBadServerName(t *testing.T) {
+	t.Parallel()
+
 	server := httptest.NewUnstartedServer(
 		http.HandlerFunc(
 			func(w http.ResponseWriter, r *http.Request) {
@@ -355,6 +375,8 @@ func newTLSConfig(certName string, t *testing.T) *tls.Config {
 }
 
 func TestNewClientWithBadTLSConfig(t *testing.T) {
+	t.Parallel()
+
 	cfg := config_util.HTTPClientConfig{
 		TLSConfig: config_util.TLSConfig{
 			CAFile:   "testdata/nonexistent_ca.cer",
@@ -369,6 +391,8 @@ func TestNewClientWithBadTLSConfig(t *testing.T) {
 }
 
 func TestTargetsFromGroup(t *testing.T) {
+	t.Parallel()
+
 	expectedError := "instance 0 in group : no address"
 
 	targets, failures := TargetsFromGroup(&targetgroup.Group{Targets: []model.LabelSet{{}, {model.AddressLabel: "localhost:9090"}}}, &config.ScrapeConfig{})

@@ -40,6 +40,8 @@ func (s *DigitalOceanSDTestSuite) SetupTest(t *testing.T) {
 }
 
 func TestDigitalOceanSDRefresh(t *testing.T) {
+	t.Parallel()
+
 	sdmock := &DigitalOceanSDTestSuite{}
 	sdmock.SetupTest(t)
 	t.Cleanup(sdmock.TearDownSuite)
@@ -126,8 +128,13 @@ func TestDigitalOceanSDRefresh(t *testing.T) {
 			"__meta_digitalocean_features":     model.LabelValue(",ipv6,private_networking,"),
 		},
 	} {
+		lbls := lbls
+		targets := tg.Targets[i]
+
 		t.Run(fmt.Sprintf("item %d", i), func(t *testing.T) {
-			require.Equal(t, lbls, tg.Targets[i])
+			t.Parallel()
+
+			require.Equal(t, lbls, targets)
 		})
 	}
 }

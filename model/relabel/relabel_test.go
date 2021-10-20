@@ -23,6 +23,8 @@ import (
 )
 
 func TestRelabel(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		input   labels.Labels
 		relabel []*Config
@@ -453,6 +455,8 @@ func TestRelabel(t *testing.T) {
 }
 
 func TestTargetLabelValidity(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		str   string
 		valid bool

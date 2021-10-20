@@ -21,11 +21,16 @@ import (
 )
 
 func TestEvaluations(t *testing.T) {
+	t.Parallel()
+
 	files, err := filepath.Glob("testdata/*.test")
 	require.NoError(t, err)
 
 	for _, fn := range files {
+		fn := fn
 		t.Run(fn, func(t *testing.T) {
+			t.Parallel()
+
 			test, err := newTestFromFile(t, fn)
 			require.NoError(t, err)
 			require.NoError(t, test.Run())

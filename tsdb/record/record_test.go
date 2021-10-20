@@ -26,6 +26,8 @@ import (
 )
 
 func TestRecord_EncodeDecode(t *testing.T) {
+	t.Parallel()
+
 	var enc Encoder
 	var dec Decoder
 
@@ -88,10 +90,14 @@ func TestRecord_EncodeDecode(t *testing.T) {
 // TestRecord_Corrupted ensures that corrupted records return the correct error.
 // Bugfix check for pull/521 and pull/523.
 func TestRecord_Corrupted(t *testing.T) {
+	t.Parallel()
+
 	var enc Encoder
 	var dec Decoder
 
 	t.Run("Test corrupted series record", func(t *testing.T) {
+		t.Parallel()
+
 		series := []RefSeries{
 			{
 				Ref:    100,
@@ -105,6 +111,8 @@ func TestRecord_Corrupted(t *testing.T) {
 	})
 
 	t.Run("Test corrupted sample record", func(t *testing.T) {
+		t.Parallel()
+
 		samples := []RefSample{
 			{Ref: 0, T: 12423423, V: 1.2345},
 		}
@@ -115,6 +123,8 @@ func TestRecord_Corrupted(t *testing.T) {
 	})
 
 	t.Run("Test corrupted tombstone record", func(t *testing.T) {
+		t.Parallel()
+
 		tstones := []tombstones.Stone{
 			{Ref: 123, Intervals: tombstones.Intervals{
 				{Mint: -1000, Maxt: 1231231},
@@ -128,6 +138,8 @@ func TestRecord_Corrupted(t *testing.T) {
 	})
 
 	t.Run("Test corrupted exemplar record", func(t *testing.T) {
+		t.Parallel()
+
 		exemplars := []RefExemplar{
 			{Ref: 0, T: 12423423, V: 1.2345, Labels: labels.FromStrings("traceID", "asdf")},
 		}
@@ -139,6 +151,8 @@ func TestRecord_Corrupted(t *testing.T) {
 }
 
 func TestRecord_Type(t *testing.T) {
+	t.Parallel()
+
 	var enc Encoder
 	var dec Decoder
 
