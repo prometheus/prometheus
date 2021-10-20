@@ -1792,9 +1792,11 @@ func (ev *evaluator) VectorOr(lhs, rhs Vector, matching *parser.VectorMatching, 
 		panic("set operations must only use many-to-many matching")
 	}
 	if len(lhs) == 0 { // Short-circuit.
-		return rhs
+		enh.Out = append(enh.Out, rhs...)
+		return enh.Out
 	} else if len(rhs) == 0 {
-		return lhs
+		enh.Out = append(enh.Out, lhs...)
+		return enh.Out
 	}
 
 	leftSigs := map[string]struct{}{}
@@ -1819,7 +1821,8 @@ func (ev *evaluator) VectorUnless(lhs, rhs Vector, matching *parser.VectorMatchi
 	// Short-circuit: empty rhs means we will return everything in lhs;
 	// empty lhs means we will return empty - don't need to build a map.
 	if len(lhs) == 0 || len(rhs) == 0 {
-		return lhs
+		enh.Out = append(enh.Out, lhs...)
+		return enh.Out
 	}
 
 	rightSigs := map[string]struct{}{}

@@ -2410,6 +2410,32 @@ func TestRangeQuery(t *testing.T) {
 			End:      time.Unix(120, 0),
 			Interval: 1 * time.Minute,
 		},
+		{
+			Name: "short-circuit",
+			Load: `load 30s
+							foo{job="1"} 1+1x4
+							bar{job="2"} 1+1x4`,
+			Query: `foo > 2 or bar`,
+			Result: Matrix{
+				Series{
+					Points: []Point{{V: 1, T: 0}, {V: 3, T: 60000}, {V: 5, T: 120000}},
+					Metric: labels.Labels{
+						labels.Label{Name: "__name__", Value: "bar"},
+						labels.Label{Name: "job", Value: "2"},
+					},
+				},
+				Series{
+					Points: []Point{{V: 3, T: 60000}, {V: 5, T: 120000}},
+					Metric: labels.Labels{
+						labels.Label{Name: "__name__", Value: "foo"},
+						labels.Label{Name: "job", Value: "1"},
+					},
+				},
+			},
+			Start:    time.Unix(0, 0),
+			End:      time.Unix(120, 0),
+			Interval: 1 * time.Minute,
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.Name, func(t *testing.T) {
