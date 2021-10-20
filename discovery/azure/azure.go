@@ -64,6 +64,7 @@ var DefaultSDConfig = SDConfig{
 	RefreshInterval:      model.Duration(5 * time.Minute),
 	Environment:          azure.PublicCloud.Name,
 	AuthenticationMethod: authMethodOAuth,
+	HTTPClientConfig:     config_util.DefaultHTTPClientConfig,
 }
 
 func init() {
@@ -80,6 +81,8 @@ type SDConfig struct {
 	ClientSecret         config_util.Secret `yaml:"client_secret,omitempty"`
 	RefreshInterval      model.Duration     `yaml:"refresh_interval,omitempty"`
 	AuthenticationMethod string             `yaml:"authentication_method,omitempty"`
+
+	HTTPClientConfig config_util.HTTPClientConfig `yaml:",inline"`
 }
 
 // Name returns the name of the Config.
@@ -200,19 +203,29 @@ func createAzureClient(cfg SDConfig) (azureClient, error) {
 		}
 	}
 
+	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, "azure_sd")
+	if err != nil {
+		return azureClient{}, err
+	}
+	sender := autorest.DecorateSender(client)
+
 	bearerAuthorizer := autorest.NewBearerAuthorizer(spt)
 
 	c.vm = compute.NewVirtualMachinesClientWithBaseURI(resourceManagerEndpoint, cfg.SubscriptionID)
 	c.vm.Authorizer = bearerAuthorizer
+	c.vm.Sender = sender
 
 	c.nic = network.NewInterfacesClientWithBaseURI(resourceManagerEndpoint, cfg.SubscriptionID)
 	c.nic.Authorizer = bearerAuthorizer
+	c.nic.Sender = sender
 
 	c.vmss = compute.NewVirtualMachineScaleSetsClientWithBaseURI(resourceManagerEndpoint, cfg.SubscriptionID)
 	c.vmss.Authorizer = bearerAuthorizer
+	c.vm.Sender = sender
 
 	c.vmssvm = compute.NewVirtualMachineScaleSetVMsClientWithBaseURI(resourceManagerEndpoint, cfg.SubscriptionID)
 	c.vmssvm.Authorizer = bearerAuthorizer
+	c.vmssvm.Sender = sender
 
 	return c, nil
 }
