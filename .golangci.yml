@@ -12,6 +12,7 @@ linters:
     - depguard
     - gofumpt
     - goimports
+    - paralleltest
     - revive
 
 issues:
@@ -19,6 +20,10 @@ issues:
     - path: _test.go
       linters:
         - errcheck
+    # False positive: https://github.com/kunwardeep/paralleltest/issues/8.
+    - linters:
+        - paralleltest
+      text: "does not use range value in test Run"
 
 linters-settings:
   depguard:
