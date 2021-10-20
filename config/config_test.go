@@ -565,6 +565,7 @@ var expectedConf = &Config{
 					AuthenticationMethod: "OAuth",
 					RefreshInterval:      model.Duration(5 * time.Minute),
 					Port:                 9100,
+					HTTPClientConfig:     config.DefaultHTTPClientConfig,
 				},
 			},
 		},
