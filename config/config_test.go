@@ -103,6 +103,10 @@ var expectedConf = &Config{
 					ClientID:     "123",
 					ClientSecret: "456",
 					TokenURL:     "http://remote1/auth",
+					TLSConfig: config.TLSConfig{
+						CertFile: filepath.FromSlash("testdata/valid_cert_file"),
+						KeyFile:  filepath.FromSlash("testdata/valid_key_file"),
+					},
 				},
 				FollowRedirects: true,
 			},
