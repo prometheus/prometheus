@@ -58,6 +58,8 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
 	_ "github.com/prometheus/prometheus/discovery/install" // Register service discovery implementations.
+	"github.com/prometheus/prometheus/discovery/legacymanager"
+	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -122,6 +124,7 @@ type flagConfig struct {
 	enablePromQLAtModifier     bool
 	enablePromQLNegativeOffset bool
 	enableExpandExternalLabels bool
+	enableNewSDManager         bool
 
 	prometheusURL   string
 	corsRegexString string
@@ -156,6 +159,9 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 			case "extra-scrape-metrics":
 				c.scrape.ExtraMetrics = true
 				level.Info(logger).Log("msg", "Experimental additional scrape metrics")
+			case "new-service-discovery-manager":
+				c.enableNewSDManager = true
+				level.Info(logger).Log("msg", "Experimental service discovery manager")
 			case "":
 				continue
 			default:
@@ -319,7 +325,7 @@ func main() {
 	a.Flag("query.max-samples", "Maximum number of samples a single query can load into memory. Note that queries will fail if they try to load more samples than this into memory, so this also limits the number of samples a query can return.").
 		Default("50000000").IntVar(&cfg.queryMaxSamples)
 
-	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-at-modifier, promql-negative-offset, remote-write-receiver, extra-scrape-metrics. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
+	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-at-modifier, promql-negative-offset, remote-write-receiver, extra-scrape-metrics, new-service-discovery-manager. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
 		Default("").StringsVar(&cfg.featureList)
 
 	promlogflag.AddFlags(a, &cfg.promlogConfig)
@@ -459,11 +465,22 @@ func main() {
 		notifierManager = notifier.NewManager(&cfg.notifier, log.With(logger, "component", "notifier"))
 
 		ctxScrape, cancelScrape = context.WithCancel(context.Background())
-		discoveryManagerScrape  = discovery.NewManager(ctxScrape, log.With(logger, "component", "discovery manager scrape"), discovery.Name("scrape"))
-
 		ctxNotify, cancelNotify = context.WithCancel(context.Background())
-		discoveryManagerNotify  = discovery.NewManager(ctxNotify, log.With(logger, "component", "discovery manager notify"), discovery.Name("notify"))
+		discoveryManagerScrape  discoveryManager
+		discoveryManagerNotify  discoveryManager
+	)
 
+	if cfg.enableNewSDManager {
+		discovery.RegisterMetrics()
+		discoveryManagerScrape = discovery.NewManager(ctxScrape, log.With(logger, "component", "discovery manager scrape"), discovery.Name("scrape"))
+		discoveryManagerNotify = discovery.NewManager(ctxNotify, log.With(logger, "component", "discovery manager notify"), discovery.Name("notify"))
+	} else {
+		legacymanager.RegisterMetrics()
+		discoveryManagerScrape = legacymanager.NewManager(ctxScrape, log.With(logger, "component", "discovery manager scrape"), legacymanager.Name("scrape"))
+		discoveryManagerNotify = legacymanager.NewManager(ctxNotify, log.With(logger, "component", "discovery manager notify"), legacymanager.Name("notify"))
+	}
+
+	var (
 		scrapeManager = scrape.NewManager(&cfg.scrape, log.With(logger, "component", "scrape manager"), fanoutStorage)
 
 		opts = promql.EngineOpts{
@@ -1345,4 +1362,13 @@ func (l jaegerLogger) Error(msg string) {
 func (l jaegerLogger) Infof(msg string, args ...interface{}) {
 	keyvals := []interface{}{"msg", fmt.Sprintf(msg, args...)}
 	level.Info(l.logger).Log(keyvals...)
+}
+
+// discoveryManager interfaces the discovery manager. This is used to keep using
+// the manager that restarts SD's on reload for a few releases until we feel
+// the new manager can be enabled for all users.
+type discoveryManager interface {
+	ApplyConfig(cfg map[string]discovery.Configs) error
+	Run() error
+	SyncCh() <-chan map[string][]*targetgroup.Group
 }

@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package discovery
+package legacymanager
 
 import (
 	"context"
@@ -24,6 +24,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
@@ -77,7 +78,7 @@ type poolKey struct {
 // provider holds a Discoverer instance, its configuration and its subscribers.
 type provider struct {
 	name   string
-	d      Discoverer
+	d      discovery.Discoverer
 	subs   []string
 	config interface{}
 }
@@ -152,7 +153,7 @@ func (m *Manager) SyncCh() <-chan map[string][]*targetgroup.Group {
 }
 
 // ApplyConfig removes all running discovery providers and starts new ones using the provided config.
-func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
+func (m *Manager) ApplyConfig(cfg map[string]discovery.Configs) error {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
@@ -181,7 +182,7 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 }
 
 // StartCustomProvider is used for sdtool. Only use this if you know what you're doing.
-func (m *Manager) StartCustomProvider(ctx context.Context, name string, worker Discoverer) {
+func (m *Manager) StartCustomProvider(ctx context.Context, name string, worker discovery.Discoverer) {
 	p := &provider{
 		name: name,
 		d:    worker,
@@ -295,12 +296,12 @@ func (m *Manager) allGroups() map[string][]*targetgroup.Group {
 }
 
 // registerProviders returns a number of failed SD config.
-func (m *Manager) registerProviders(cfgs Configs, setName string) int {
+func (m *Manager) registerProviders(cfgs discovery.Configs, setName string) int {
 	var (
 		failed int
 		added  bool
 	)
-	add := func(cfg Config) {
+	add := func(cfg discovery.Config) {
 		for _, p := range m.providers {
 			if reflect.DeepEqual(cfg, p.config) {
 				p.subs = append(p.subs, setName)
@@ -309,7 +310,7 @@ func (m *Manager) registerProviders(cfgs Configs, setName string) int {
 			}
 		}
 		typ := cfg.Name()
-		d, err := cfg.NewDiscoverer(DiscovererOptions{
+		d, err := cfg.NewDiscoverer(discovery.DiscovererOptions{
 			Logger: log.With(m.logger, "discovery", typ),
 		})
 		if err != nil {
@@ -334,7 +335,7 @@ func (m *Manager) registerProviders(cfgs Configs, setName string) int {
 		// current targets.
 		// It can happen because the combined set of SD configurations is empty
 		// or because we fail to instantiate all the SD configurations.
-		add(StaticConfig{{}})
+		add(discovery.StaticConfig{{}})
 	}
 	return failed
 }
