@@ -172,7 +172,7 @@ func NewChunkDiskMapper(dir string, pool chunkenc.Pool, writeBufferSize int) (*C
 		m.pool = chunkenc.NewPool()
 	}
 
-	return m, m.OpenMMapFiles()
+	return m, m.openMMapFiles()
 }
 
 func (cdm *ChunkDiskMapper) Pool() chunkenc.Pool {
@@ -183,8 +183,7 @@ func (cdm *ChunkDiskMapper) WriteBufferSize() int {
 	return cdm.writeBufferSize
 }
 
-// OpenMMapFiles opens head chunks and mmaps them.
-func (cdm *ChunkDiskMapper) OpenMMapFiles() (returnErr error) {
+func (cdm *ChunkDiskMapper) openMMapFiles() (returnErr error) {
 	cdm.mmappedChunkFiles = map[int]*mmappedChunkFile{}
 	cdm.closers = map[int]io.Closer{}
 	defer func() {

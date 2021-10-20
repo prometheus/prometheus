@@ -36,6 +36,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 
+	"github.com/go-kit/log"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -1001,6 +1002,76 @@ func TestDelete_e2e(t *testing.T) {
 			require.Equal(t, 0, len(ss.Warnings()))
 		}
 	}
+}
+
+func TestOnCorruptedCheckpoint(t *testing.T) {
+	dbDir, err := ioutil.TempDir("", "test")
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, os.RemoveAll(dbDir))
+	}()
+
+	walDir := filepath.Join(dbDir, "wal")
+	wlog, err := wal.NewSize(nil, nil, walDir, 32*1024, true)
+	require.NoError(t, err)
+	head, err := NewHead(nil, nil, wlog, DefaultHeadOptions(), nil)
+	require.NoError(t, err)
+
+	app := head.Appender(context.Background())
+	series := genSeries(100, 3, 0, 100)
+	for _, s := range series {
+		lbls := s.Labels()
+		itr := s.Iterator()
+		for itr.Next() {
+			ts, v := itr.At()
+			_, err = app.Append(0, lbls, ts, v)
+			require.NoError(t, err)
+		}
+	}
+	require.NoError(t, app.Commit())
+
+	// Create a checkpoint.
+	_, _, err = wal.LastCheckpoint(walDir)
+	require.Equal(t, record.ErrNotFound, err)
+
+	first, _, err := wal.Segments(walDir)
+	require.NoError(t, err)
+
+	// We have 2 segments, i.e., 0 & 1. Let's create a checkpoint of 0 segment only.
+	_, err = wal.Checkpoint(log.NewNopLogger(), wlog, first, first, func(_ uint64) bool { return true }, 0)
+	require.NoError(t, err)
+
+	_, checkpointNum, err := wal.LastCheckpoint(walDir)
+	require.NoError(t, err)
+	require.Equal(t, 0, checkpointNum)
+
+	// Stop the head.
+	require.NoError(t, head.Close())
+
+	// Introduce checkpoint corruption.
+	checkpointFile := filepath.Join(walDir, "checkpoint.00000000/00000000")
+
+	contents, err := ioutil.ReadFile(checkpointFile)
+	require.NoError(t, err)
+
+	total := len(contents)
+	newContent := []byte("random_stuff")
+	newContent = append(newContent, contents[total/2:]...)
+	contents = append(contents[:total/2-100], newContent...)
+	require.NoError(t, ioutil.WriteFile(checkpointFile, contents, 0644))
+
+	// Restart Head and initialize it.
+	wlog, err = wal.New(nil, nil, walDir, true)
+	require.NoError(t, err)
+	head, err = NewHead(nil, nil, wlog, DefaultHeadOptions(), nil)
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, head.Close())
+	}()
+
+	err = head.Init(math.MinInt64)
+	require.NotNil(t, err)
+	require.True(t, strings.Contains(err.Error(), ErrCheckpointCorrupted.Error()))
 }
 
 func boundedSamples(full []tsdbutil.Sample, mint, maxt int64) []tsdbutil.Sample {

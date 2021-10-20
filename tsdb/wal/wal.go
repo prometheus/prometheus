@@ -294,7 +294,7 @@ func NewSize(logger log.Logger, reg prometheus.Registerer, dir string, segmentSi
 		return nil, err
 	}
 
-	if err := w.SetSegment(segment); err != nil {
+	if err := w.setSegment(segment); err != nil {
 		return nil, err
 	}
 
@@ -404,7 +404,7 @@ func (w *WAL) Repair(origErr error) error {
 	if err != nil {
 		return err
 	}
-	if err := w.SetSegment(s); err != nil {
+	if err := w.setSegment(s); err != nil {
 		return err
 	}
 
@@ -452,7 +452,7 @@ func (w *WAL) Repair(origErr error) error {
 	if err != nil {
 		return err
 	}
-	if err := w.SetSegment(s); err != nil {
+	if err := w.setSegment(s); err != nil {
 		return err
 	}
 	return nil
@@ -487,7 +487,7 @@ func (w *WAL) nextSegment() error {
 		return errors.Wrap(err, "create new segment file")
 	}
 	prev := w.segment
-	if err := w.SetSegment(next); err != nil {
+	if err := w.setSegment(next); err != nil {
 		return err
 	}
 
@@ -503,8 +503,7 @@ func (w *WAL) nextSegment() error {
 	return nil
 }
 
-// SetSegment sets the current segment for writes.
-func (w *WAL) SetSegment(segment *Segment) error {
+func (w *WAL) setSegment(segment *Segment) error {
 	w.segment = segment
 
 	// Correctly initialize donePages.
