@@ -14,11 +14,10 @@ scrape_configs:
 
   - job_name: 'puppetdb-scrape-jobs'
     puppetdb_sd_configs:
-    # This example uses the Prometheus::Scrape_job
-    # exported resources.
-    # https://github.com/camptocamp/prometheus-puppetdb-sd
-    # This examples is compatible with Prometheus-puppetdb-sd,
-    # if the exported Prometheus::Scrape_job only have at most one target.
+    # This example uses Prometheus::Scrape_job exported resources.
+    # It is compatible with the prometheus-puppetdb-sd
+    # (https://github.com/camptocamp/prometheus-puppetdb-sd) if the
+    # exported resources have exactly one target.
       - url: https://puppetdb.example.com
         query: 'resources { type = "Prometheus::Scrape_job" and exported = true }'
         include_parameters: true
