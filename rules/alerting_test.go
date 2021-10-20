@@ -494,7 +494,7 @@ func TestAlertingRuleLimit(t *testing.T) {
 		},
 		{
 			limit: -1,
-			err:   "exceeded limit of -1 with 1 alerts",
+			err:   "exceeded limit of -1 with 1 alerts/samples",
 		},
 	}
 
