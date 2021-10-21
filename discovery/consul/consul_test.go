@@ -307,11 +307,15 @@ func TestNoTargets(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	ch := make(chan []*targetgroup.Group)
-	go d.Run(ctx, ch)
+	go func() {
+		d.Run(ctx, ch)
+		close(ch)
+	}()
 
 	targets := (<-ch)[0].Targets
 	require.Equal(t, 0, len(targets))
 	cancel()
+	<-ch
 }
 
 // Watch only the test service.
