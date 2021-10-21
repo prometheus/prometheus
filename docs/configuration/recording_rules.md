@@ -130,8 +130,8 @@ annotations:
 
 # Limiting alerts and series
 
-A limit for alerts and series produced by alerting and recording rules can
-be configured per-group. When the limit is exceeded, _all_ samples produced
+A limit for alerts produced by alerting rules and series produced recording rules
+can be configured per-group. When the limit is exceeded, _all_ series produced
 by the rule are discarded, and if it's an alerting rule, _all_ alerts for
 the rule, active, pending, or inactive, are cleared as well. The event will be
 recorded as an error in the evaluation, and as such no stale markers are
