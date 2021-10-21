@@ -11,7 +11,7 @@ require (
 	github.com/alecthomas/units v0.0.0-20210927113745-59d0afb8317a
 	github.com/aws/aws-sdk-go v1.41.7
 	github.com/cespare/xxhash/v2 v2.1.2
-	github.com/containerd/containerd v1.5.4 // indirect
+	github.com/containerd/containerd v1.5.7 // indirect
 	github.com/dennwc/varint v1.0.0
 	github.com/dgryski/go-sip13 v0.0.0-20200911182023-62edffca9245
 	github.com/digitalocean/godo v1.69.1
@@ -36,7 +36,7 @@ require (
 	github.com/kolo/xmlrpc v0.0.0-20201022064351-38db28db192b
 	github.com/linode/linodego v1.1.0
 	github.com/miekg/dns v1.1.43
-	github.com/moby/term v0.0.0-20201216013528-df9cb8a40635 // indirect
+	github.com/moby/term v0.0.0-20210619224110-3f7ff695adc6 // indirect
 	github.com/morikuni/aec v1.0.0 // indirect
 	github.com/mwitkow/go-conntrack v0.0.0-20190716064945-2f068394615f
 	github.com/oklog/run v1.1.0
