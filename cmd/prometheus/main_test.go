@@ -202,7 +202,7 @@ func TestWALSegmentSizeBounds(t *testing.T) {
 	}
 
 	for size, expectedExitStatus := range map[string]int{"9MB": 1, "257MB": 1, "10": 2, "1GB": 1, "12MB": 0} {
-		prom := exec.Command(promPath, "-test.main", "--storage.tsdb.wal-segment-size="+size, "--config.file="+promConfig)
+		prom := exec.Command(promPath, "-test.main", "--storage.tsdb.wal-segment-size="+size, "--web.listen-address=0.0.0.0:0", "--config.file="+promConfig)
 
 		// Log stderr in case of failure.
 		stderr, err := prom.StderrPipe()
@@ -244,7 +244,7 @@ func TestMaxBlockChunkSegmentSizeBounds(t *testing.T) {
 	}
 
 	for size, expectedExitStatus := range map[string]int{"512KB": 1, "1MB": 0} {
-		prom := exec.Command(promPath, "-test.main", "--storage.tsdb.max-block-chunk-segment-size="+size, "--config.file="+promConfig)
+		prom := exec.Command(promPath, "-test.main", "--storage.tsdb.max-block-chunk-segment-size="+size, "--web.listen-address=0.0.0.0:0", "--config.file="+promConfig)
 
 		// Log stderr in case of failure.
 		stderr, err := prom.StderrPipe()
