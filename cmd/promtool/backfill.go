@@ -66,7 +66,7 @@ func getMinAndMaxTimestamps(p textparse.Parser) (int64, int64, error) {
 	return maxt, mint, nil
 }
 
-func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesInAppender int, outputDir string, humanReadable, quiet bool) (returnErr error) {
+func getCompatibleBlockDuration(maxBlockDuration int64) int64 {
 	blockDuration := tsdb.DefaultBlockDuration
 	if maxBlockDuration > tsdb.DefaultBlockDuration {
 		ranges := tsdb.ExponentialBlockRanges(tsdb.DefaultBlockDuration, 10, 3)
@@ -79,6 +79,11 @@ func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesIn
 		}
 		blockDuration = ranges[idx]
 	}
+	return blockDuration
+}
+
+func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesInAppender int, outputDir string, humanReadable, quiet bool) (returnErr error) {
+	blockDuration := getCompatibleBlockDuration(maxBlockDuration)
 	mint = blockDuration * (mint / blockDuration)
 
 	db, err := tsdb.OpenDBReadOnly(outputDir, nil)
