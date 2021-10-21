@@ -389,6 +389,7 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 		r.active[h] = a
 	}
 
+	var numActivePending int
 	// Check if any pending alerts should be removed or fire now. Write out alert timeseries.
 	for fp, a := range r.active {
 		if _, ok := resultFPs[fp]; !ok {
@@ -403,6 +404,7 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 			}
 			continue
 		}
+		numActivePending++
 
 		if a.State == StatePending && ts.Sub(a.ActiveAt) >= r.holdDuration {
 			a.State = StateFiring
@@ -415,10 +417,9 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 		}
 	}
 
-	numSamples := len(vec)
-	if limit != 0 && numSamples > limit {
+	if limit > 0 && numActivePending > limit {
 		r.active = map[uint64]*Alert{}
-		return nil, errors.Errorf("exceeded limit of %d with %d alerts/samples", limit, numSamples)
+		return nil, errors.Errorf("exceeded limit of %d with %d alerts", limit, numActivePending)
 	}
 
 	return vec, nil
