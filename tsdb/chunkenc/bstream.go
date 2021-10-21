@@ -48,8 +48,8 @@ import (
 
 // bstream is a stream of bits.
 type bstream struct {
-	stream []byte // the data stream
-	count  uint8  // how many right-most bits are available for writing in the current byte (the last byte of the stream).
+	stream []byte // The data stream.
+	count  uint8  // How many right-most bits are available for writing in the current byte (the last byte of the stream).
 }
 
 func (b *bstream) bytes() []byte {
