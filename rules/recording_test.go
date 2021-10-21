@@ -168,7 +168,7 @@ func TestRecordingRuleLimit(t *testing.T) {
 		if err != nil {
 			require.EqualError(t, err, test.err)
 		} else if test.err != "" {
-			t.Errorf("Expected errror %s, got none", test.err)
+			t.Errorf("Expected error %s, got none", test.err)
 		}
 	}
 }

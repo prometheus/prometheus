@@ -136,5 +136,3 @@ by the rule are discarded, and if it's an alerting rule, _all_ alerts for
 the rule, active, pending, or inactive, are cleared as well. The event will be
 recorded as an error in the evaluation, and as such no stale markers are
 written.
-
-Note: inactive alerts are not included within the quota.
