@@ -466,23 +466,17 @@ func TestAlertingRuleDuplicate(t *testing.T) {
 }
 
 func TestAlertingRuleLimit(t *testing.T) {
-	storage := teststorage.New(t)
-	defer storage.Close()
+	suite, err := promql.NewTest(t, `
+		load 1m
+			metric{label="1"} 1
+			metric{label="2"} 1
+	`)
+	require.NoError(t, err)
+	defer suite.Close()
 
-	opts := promql.EngineOpts{
-		Logger:     nil,
-		Reg:        nil,
-		MaxSamples: 10,
-		Timeout:    10 * time.Second,
-	}
+	require.NoError(t, suite.Run())
 
-	engine := promql.NewEngine(opts)
-	ctx, cancelCtx := context.WithCancel(context.Background())
-	defer cancelCtx()
-
-	now := time.Now()
-
-	suite := []struct {
+	tests := []struct {
 		limit int
 		err   string
 	}{
@@ -490,31 +484,37 @@ func TestAlertingRuleLimit(t *testing.T) {
 			limit: 0,
 		},
 		{
-			limit: 1,
+			limit: -1,
 		},
 		{
-			limit: -1,
-			err:   "exceeded limit of -1 with 1 alerts",
+			limit: 2,
+		},
+		{
+			limit: 1,
+			err:   "exceeded limit of 1 with 2 alerts",
 		},
 	}
 
-	for _, test := range suite {
-		expr, _ := parser.ParseExpr(`1`)
-		rule := NewAlertingRule(
-			"foo",
-			expr,
-			time.Minute,
-			labels.FromStrings("test", "test"),
-			nil,
-			nil,
-			"",
-			true, log.NewNopLogger(),
-		)
-		_, err := rule.Eval(ctx, now, EngineQueryFunc(engine, storage), nil, test.limit)
-		if test.err == "" {
-			require.NoError(t, err)
-		} else {
-			require.Equal(t, test.err, err.Error())
+	expr, _ := parser.ParseExpr(`metric > 0`)
+	rule := NewAlertingRule(
+		"foo",
+		expr,
+		time.Minute,
+		labels.FromStrings("test", "test"),
+		nil,
+		nil,
+		"",
+		true, log.NewNopLogger(),
+	)
+
+	evalTime := time.Unix(0, 0)
+
+	for _, test := range tests {
+		_, err := rule.Eval(suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil, test.limit)
+		if err != nil {
+			require.EqualError(t, err, test.err)
+		} else if test.err != "" {
+			t.Errorf("Expected errror %s, got none", test.err)
 		}
 	}
 }
