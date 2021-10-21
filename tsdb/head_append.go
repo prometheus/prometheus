@@ -305,12 +305,20 @@ func (s *memSeries) appendable(t int64, v float64) error {
 
 // AppendExemplar for headAppender assumes the series ref already exists, and so it doesn't
 // use getOrCreate or make any of the lset sanity checks that Append does.
-func (a *headAppender) AppendExemplar(ref uint64, _ labels.Labels, e exemplar.Exemplar) (uint64, error) {
+func (a *headAppender) AppendExemplar(ref uint64, lset labels.Labels, e exemplar.Exemplar) (uint64, error) {
 	// Check if exemplar storage is enabled.
 	if !a.head.opts.EnableExemplarStorage || a.head.opts.MaxExemplars.Load() <= 0 {
 		return 0, nil
 	}
+
+	// Get Series
 	s := a.head.series.getByID(ref)
+	if s == nil {
+		s = a.head.series.getByHash(lset.Hash(), lset)
+		if s != nil {
+			ref = s.ref
+		}
+	}
 	if s == nil {
 		return 0, fmt.Errorf("unknown series ref. when trying to add exemplar: %d", ref)
 	}
