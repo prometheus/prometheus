@@ -7,6 +7,8 @@ run:
 linters:
   enable:
     - depguard
+    - gofumpt
+    - goimports
     - revive
 
 issues:
@@ -28,3 +30,7 @@ linters-settings:
       - github.com/go-kit/kit/log: "Use github.com/go-kit/log instead of github.com/go-kit/kit/log"
   errcheck:
     exclude: scripts/errcheck_excludes.txt
+  goimports:
+    local-prefixes: github.com/prometheus/prometheus
+  gofumpt:
+    extra-rules: true
