@@ -59,100 +59,102 @@ var readerConstructors = map[string]func(io.Reader) reader{
 	},
 }
 
-var data = make([]byte, 100000)
-var testReaderCases = []struct {
-	t    []rec
-	exp  [][]byte
-	fail bool
-}{
-	// Sequence of valid records.
-	{
-		t: []rec{
-			{recFull, data[0:200]},
-			{recFirst, data[200:300]},
-			{recLast, data[300:400]},
-			{recFirst, data[400:800]},
-			{recMiddle, data[800:900]},
-			{recPageTerm, make([]byte, pageSize-900-recordHeaderSize*5-1)}, // exactly lines up with page boundary.
-			{recLast, data[900:900]},
-			{recFirst, data[900:1000]},
-			{recMiddle, data[1000:1200]},
-			{recMiddle, data[1200:30000]},
-			{recMiddle, data[30000:30001]},
-			{recMiddle, data[30001:30001]},
-			{recLast, data[30001:32000]},
+var (
+	data            = make([]byte, 100000)
+	testReaderCases = []struct {
+		t    []rec
+		exp  [][]byte
+		fail bool
+	}{
+		// Sequence of valid records.
+		{
+			t: []rec{
+				{recFull, data[0:200]},
+				{recFirst, data[200:300]},
+				{recLast, data[300:400]},
+				{recFirst, data[400:800]},
+				{recMiddle, data[800:900]},
+				{recPageTerm, make([]byte, pageSize-900-recordHeaderSize*5-1)}, // exactly lines up with page boundary.
+				{recLast, data[900:900]},
+				{recFirst, data[900:1000]},
+				{recMiddle, data[1000:1200]},
+				{recMiddle, data[1200:30000]},
+				{recMiddle, data[30000:30001]},
+				{recMiddle, data[30001:30001]},
+				{recLast, data[30001:32000]},
+			},
+			exp: [][]byte{
+				data[0:200],
+				data[200:400],
+				data[400:900],
+				data[900:32000],
+			},
 		},
-		exp: [][]byte{
-			data[0:200],
-			data[200:400],
-			data[400:900],
-			data[900:32000],
+		// Exactly at the limit of one page minus the header size
+		{
+			t: []rec{
+				{recFull, data[0 : pageSize-recordHeaderSize]},
+			},
+			exp: [][]byte{
+				data[:pageSize-recordHeaderSize],
+			},
 		},
-	},
-	// Exactly at the limit of one page minus the header size
-	{
-		t: []rec{
-			{recFull, data[0 : pageSize-recordHeaderSize]},
+		// More than a full page, this exceeds our buffer and can never happen
+		// when written by the WAL.
+		{
+			t: []rec{
+				{recFull, data[0 : pageSize+1]},
+			},
+			fail: true,
 		},
-		exp: [][]byte{
-			data[:pageSize-recordHeaderSize],
+		// Two records the together are too big for a page.
+		// NB currently the non-live reader succeeds on this. I think this is a bug.
+		// but we've seen it in production.
+		{
+			t: []rec{
+				{recFull, data[:pageSize/2]},
+				{recFull, data[:pageSize/2]},
+			},
+			exp: [][]byte{
+				data[:pageSize/2],
+				data[:pageSize/2],
+			},
 		},
-	},
-	// More than a full page, this exceeds our buffer and can never happen
-	// when written by the WAL.
-	{
-		t: []rec{
-			{recFull, data[0 : pageSize+1]},
+		// Invalid orders of record types.
+		{
+			t:    []rec{{recMiddle, data[:200]}},
+			fail: true,
 		},
-		fail: true,
-	},
-	// Two records the together are too big for a page.
-	// NB currently the non-live reader succeeds on this. I think this is a bug.
-	// but we've seen it in production.
-	{
-		t: []rec{
-			{recFull, data[:pageSize/2]},
-			{recFull, data[:pageSize/2]},
+		{
+			t:    []rec{{recLast, data[:200]}},
+			fail: true,
 		},
-		exp: [][]byte{
-			data[:pageSize/2],
-			data[:pageSize/2],
+		{
+			t: []rec{
+				{recFirst, data[:200]},
+				{recFull, data[200:400]},
+			},
+			fail: true,
 		},
-	},
-	// Invalid orders of record types.
-	{
-		t:    []rec{{recMiddle, data[:200]}},
-		fail: true,
-	},
-	{
-		t:    []rec{{recLast, data[:200]}},
-		fail: true,
-	},
-	{
-		t: []rec{
-			{recFirst, data[:200]},
-			{recFull, data[200:400]},
+		{
+			t: []rec{
+				{recFirst, data[:100]},
+				{recMiddle, data[100:200]},
+				{recFull, data[200:400]},
+			},
+			fail: true,
 		},
-		fail: true,
-	},
-	{
-		t: []rec{
-			{recFirst, data[:100]},
-			{recMiddle, data[100:200]},
-			{recFull, data[200:400]},
+		// Non-zero data after page termination.
+		{
+			t: []rec{
+				{recFull, data[:100]},
+				{recPageTerm, append(make([]byte, pageSize-recordHeaderSize-102), 1)},
+			},
+			exp:  [][]byte{data[:100]},
+			fail: true,
 		},
-		fail: true,
-	},
-	// Non-zero data after page termination.
-	{
-		t: []rec{
-			{recFull, data[:100]},
-			{recPageTerm, append(make([]byte, pageSize-recordHeaderSize-102), 1)},
-		},
-		exp:  [][]byte{data[:100]},
-		fail: true,
-	},
-}
+	}
+)
 
 func encodedRecord(t recType, b []byte) []byte {
 	if t == recPageTerm {
@@ -279,6 +281,7 @@ type multiReadCloser struct {
 func (m *multiReadCloser) Read(p []byte) (n int, err error) {
 	return m.reader.Read(p)
 }
+
 func (m *multiReadCloser) Close() error {
 	return tsdb_errors.NewMulti(tsdb_errors.CloseAll(m.closers)).Err()
 }
@@ -439,7 +442,7 @@ func TestLiveReaderCorrupt_ShortFile(t *testing.T) {
 	err = w.Close()
 	require.NoError(t, err)
 
-	segmentFile, err := os.OpenFile(filepath.Join(dir, "00000000"), os.O_RDWR, 0666)
+	segmentFile, err := os.OpenFile(filepath.Join(dir, "00000000"), os.O_RDWR, 0o666)
 	require.NoError(t, err)
 
 	err = segmentFile.Truncate(pageSize / 2)
@@ -479,7 +482,7 @@ func TestLiveReaderCorrupt_RecordTooLongAndShort(t *testing.T) {
 	err = w.Close()
 	require.NoError(t, err)
 
-	segmentFile, err := os.OpenFile(filepath.Join(dir, "00000000"), os.O_RDWR, 0666)
+	segmentFile, err := os.OpenFile(filepath.Join(dir, "00000000"), os.O_RDWR, 0o666)
 	require.NoError(t, err)
 
 	// Override the record length

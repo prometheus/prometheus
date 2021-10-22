@@ -119,7 +119,6 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	*c = DefaultSDConfig
 	type plain SDConfig
 	err := unmarshal((*plain)(c))
-
 	if err != nil {
 		return err
 	}
@@ -141,7 +140,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	return nil
 }
 
-func login(rpcclient *xmlrpc.Client, user string, pass string) (string, error) {
+func login(rpcclient *xmlrpc.Client, user, pass string) (string, error) {
 	var result string
 	err := rpcclient.Call("auth.login", []interface{}{user, pass}, &result)
 	return result, err
@@ -151,7 +150,7 @@ func logout(rpcclient *xmlrpc.Client, token string) error {
 	return rpcclient.Call("auth.logout", token, nil)
 }
 
-func getSystemGroupsInfoOfMonitoredClients(rpcclient *xmlrpc.Client, token string, entitlement string) (map[int][]systemGroupID, error) {
+func getSystemGroupsInfoOfMonitoredClients(rpcclient *xmlrpc.Client, token, entitlement string) (map[int][]systemGroupID, error) {
 	var systemGroupsInfos []struct {
 		SystemID     int             `xmlrpc:"id"`
 		SystemGroups []systemGroupID `xmlrpc:"system_groups"`
@@ -234,7 +233,6 @@ func (d *Discovery) getEndpointLabels(
 	systemGroupIDs []systemGroupID,
 	networkInfo networkInfo,
 ) model.LabelSet {
-
 	var addr, scheme string
 	managedGroupNames := getSystemGroupNames(systemGroupIDs)
 	addr = fmt.Sprintf("%s:%d", networkInfo.Hostname, endpoint.Port)
@@ -274,7 +272,6 @@ func (d *Discovery) getTargetsForSystems(
 	token string,
 	entitlement string,
 ) ([]model.LabelSet, error) {
-
 	result := make([]model.LabelSet, 0)
 
 	systemGroupIDsBySystemID, err := getSystemGroupsInfoOfMonitoredClients(rpcClient, token, entitlement)

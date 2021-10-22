@@ -185,7 +185,7 @@ func TestCorruptedChunk(t *testing.T) {
 			require.NoError(t, err)
 			require.Greater(t, len(files), 0, "No chunk created.")
 
-			f, err := os.OpenFile(files[0], os.O_RDWR, 0666)
+			f, err := os.OpenFile(files[0], os.O_RDWR, 0o666)
 			require.NoError(t, err)
 
 			// Apply corruption function.
@@ -505,7 +505,7 @@ func createBlockFromHead(tb testing.TB, dir string, head *Head) string {
 	compactor, err := NewLeveledCompactor(context.Background(), nil, log.NewNopLogger(), []int64{1000000}, nil, nil)
 	require.NoError(tb, err)
 
-	require.NoError(tb, os.MkdirAll(dir, 0777))
+	require.NoError(tb, os.MkdirAll(dir, 0o777))
 
 	// Add +1 millisecond to block maxt because block intervals are half-open: [b.MinTime, b.MaxTime).
 	// Because of this block intervals are always +1 than the total samples it includes.

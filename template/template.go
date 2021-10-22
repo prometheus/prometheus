@@ -87,7 +87,7 @@ func query(ctx context.Context, q string, ts time.Time, queryFn QueryFunc) (quer
 	// promql.Vector is hard to work with in templates, so convert to
 	// base data types.
 	// TODO(fabxc): probably not true anymore after type rework.
-	var result = make(queryResult, len(vector))
+	result := make(queryResult, len(vector))
 	for n, v := range vector {
 		s := sample{
 			Value:  v.V,
@@ -301,7 +301,7 @@ func NewTemplateExpander(
 }
 
 // AlertTemplateData returns the interface to be used in expanding the template.
-func AlertTemplateData(labels map[string]string, externalLabels map[string]string, externalURL string, value float64) interface{} {
+func AlertTemplateData(labels, externalLabels map[string]string, externalURL string, value float64) interface{} {
 	return struct {
 		Labels         map[string]string
 		ExternalLabels map[string]string

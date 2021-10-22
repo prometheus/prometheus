@@ -36,9 +36,7 @@ import (
 	"go.uber.org/atomic"
 )
 
-var (
-	ErrUnsupported = errors.New("unsupported operation with WAL-only storage")
-)
+var ErrUnsupported = errors.New("unsupported operation with WAL-only storage")
 
 // Default values for options.
 var (

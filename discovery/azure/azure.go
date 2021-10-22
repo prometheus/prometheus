@@ -339,7 +339,6 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 			// Get the IP address information via separate call to the network provider.
 			for _, nicID := range vm.NetworkInterfaces {
 				networkInterface, err := client.getNetworkInterfaceByID(ctx, nicID)
-
 				if err != nil {
 					level.Error(d.logger).Log("msg", "Unable to get network interface", "name", nicID, "err", err)
 					ch <- target{labelSet: nil, err: err}
@@ -437,9 +436,8 @@ func (client *azureClient) getScaleSets(ctx context.Context) ([]compute.VirtualM
 
 func (client *azureClient) getScaleSetVMs(ctx context.Context, scaleSet compute.VirtualMachineScaleSet) ([]virtualMachine, error) {
 	var vms []virtualMachine
-	//TODO do we really need to fetch the resourcegroup this way?
+	// TODO do we really need to fetch the resourcegroup this way?
 	r, err := newAzureResourceFromID(*scaleSet.ID, nil)
-
 	if err != nil {
 		return nil, errors.Wrap(err, "could not parse scale set ID")
 	}

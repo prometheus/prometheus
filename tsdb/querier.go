@@ -606,6 +606,7 @@ func (p *populateWithDelGenericSeriesIterator) Err() error { return p.err }
 func (p *populateWithDelGenericSeriesIterator) toSeriesIterator() chunkenc.Iterator {
 	return &populateWithDelSeriesIterator{populateWithDelGenericSeriesIterator: p}
 }
+
 func (p *populateWithDelGenericSeriesIterator) toChunkSeriesIterator() chunks.Iterator {
 	return &populateWithDelChunkSeriesIterator{populateWithDelGenericSeriesIterator: p}
 }
@@ -779,7 +780,7 @@ func (b *blockChunkSeriesSet) At() storage.ChunkSeries {
 }
 
 // NewMergedStringIter returns string iterator that allows to merge symbols on demand and stream result.
-func NewMergedStringIter(a index.StringIter, b index.StringIter) index.StringIter {
+func NewMergedStringIter(a, b index.StringIter) index.StringIter {
 	return &mergedStringIter{a: a, b: b, aok: a.Next(), bok: b.Next()}
 }
 
@@ -875,7 +876,6 @@ Outer:
 
 			if ts <= tr.Maxt {
 				return true
-
 			}
 			it.Intervals = it.Intervals[1:]
 		}

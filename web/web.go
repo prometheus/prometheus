@@ -607,7 +607,6 @@ func (h *Handler) Run(ctx context.Context, listener net.Listener, webConfig stri
 }
 
 func (h *Handler) alerts(w http.ResponseWriter, r *http.Request) {
-
 	var groups []*rules.Group
 	for _, group := range h.ruleManager.RuleGroups() {
 		if group.HasAlertingRules() {

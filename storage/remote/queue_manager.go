@@ -728,7 +728,7 @@ func (t *QueueManager) releaseLabels(ls labels.Labels) {
 
 // processExternalLabels merges externalLabels into ls. If ls contains
 // a label in externalLabels, the value in ls wins.
-func processExternalLabels(ls labels.Labels, externalLabels labels.Labels) labels.Labels {
+func processExternalLabels(ls, externalLabels labels.Labels) labels.Labels {
 	i, j, result := 0, 0, make(labels.Labels, 0, len(ls)+len(externalLabels))
 	for i < len(ls) && j < len(externalLabels) {
 		if ls[i].Name < externalLabels[j].Name {
@@ -1048,7 +1048,7 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue chan interface
 		max += int(float64(max) * 0.1)
 	}
 
-	var pendingData = make([]prompb.TimeSeries, max)
+	pendingData := make([]prompb.TimeSeries, max)
 	for i := range pendingData {
 		pendingData[i].Samples = []prompb.Sample{{}}
 		if s.qm.sendExemplars {
@@ -1142,7 +1142,7 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue chan interface
 	}
 }
 
-func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, sampleCount int, exemplarCount int, pBuf *proto.Buffer, buf *[]byte) {
+func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, sampleCount, exemplarCount int, pBuf *proto.Buffer, buf *[]byte) {
 	begin := time.Now()
 	err := s.sendSamplesWithBackoff(ctx, samples, sampleCount, exemplarCount, pBuf, buf)
 	if err != nil {
@@ -1159,7 +1159,7 @@ func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, s
 }
 
 // sendSamples to the remote storage with backoff for recoverable errors.
-func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.TimeSeries, sampleCount int, exemplarCount int, pBuf *proto.Buffer, buf *[]byte) error {
+func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.TimeSeries, sampleCount, exemplarCount int, pBuf *proto.Buffer, buf *[]byte) error {
 	// Build the WriteRequest with no metadata.
 	req, highest, err := buildWriteRequest(samples, nil, pBuf, *buf)
 	if err != nil {

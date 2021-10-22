@@ -506,7 +506,6 @@ func TestSampleAndChunkQueryableClient(t *testing.T) {
 			}
 			require.NoError(t, ss.Err())
 			require.Equal(t, tc.expectedSeries, got)
-
 		})
 	}
 }

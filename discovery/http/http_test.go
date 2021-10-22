@@ -60,7 +60,6 @@ func TestHTTPValidRefresh(t *testing.T) {
 		},
 	}
 	require.Equal(t, tgs, expectedTargets)
-
 }
 
 func TestHTTPInvalidCode(t *testing.T) {
@@ -398,5 +397,4 @@ func TestSourceDisappeared(t *testing.T) {
 			require.Equal(t, test.expectedTargets[i], tgs)
 		}
 	}
-
 }

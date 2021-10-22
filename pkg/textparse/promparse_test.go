@@ -457,9 +457,7 @@ func BenchmarkParse(b *testing.B) {
 				total := 0
 
 				for i := 0; i < b.N; i += promtestdataSampleCount {
-					var (
-						decSamples = make(model.Vector, 0, 50)
-					)
+					decSamples := make(model.Vector, 0, 50)
 					sdec := expfmt.SampleDecoder{
 						Dec: expfmt.NewDecoder(bytes.NewReader(buf), expfmt.FmtText),
 						Opts: &expfmt.DecodeOptions{
@@ -480,6 +478,7 @@ func BenchmarkParse(b *testing.B) {
 		}
 	}
 }
+
 func BenchmarkGzip(b *testing.B) {
 	for _, fn := range []string{"promtestdata.txt", "promtestdata.nometa.txt"} {
 		b.Run(fn, func(b *testing.B) {

@@ -40,7 +40,7 @@ import (
 )
 
 func TestPostPath(t *testing.T) {
-	var cases = []struct {
+	cases := []struct {
 		in, out string
 	}{
 		{
@@ -456,7 +456,7 @@ func TestLabelSetNotReused(t *testing.T) {
 }
 
 func TestReload(t *testing.T) {
-	var tests = []struct {
+	tests := []struct {
 		in  *targetgroup.Group
 		out string
 	}{
@@ -500,11 +500,10 @@ alerting:
 
 		require.Equal(t, tt.out, res)
 	}
-
 }
 
 func TestDroppedAlertmanagers(t *testing.T) {
-	var tests = []struct {
+	tests := []struct {
 		in  *targetgroup.Group
 		out string
 	}{

@@ -105,7 +105,6 @@ func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesIn
 			// The next sample is not in this timerange, we can avoid parsing
 			// the file for this timerange.
 			continue
-
 		}
 		nextSampleTs = math.MaxInt64
 
@@ -207,13 +206,11 @@ func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesIn
 
 			return nil
 		}()
-
 		if err != nil {
 			return errors.Wrap(err, "process blocks")
 		}
 	}
 	return nil
-
 }
 
 func backfill(maxSamplesInAppender int, input []byte, outputDir string, humanReadable, quiet bool, maxBlockDuration time.Duration) (err error) {

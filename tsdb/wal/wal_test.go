@@ -141,7 +141,7 @@ func TestWALRepair_ReadingError(t *testing.T) {
 
 			require.NoError(t, w.Close())
 
-			f, err := os.OpenFile(SegmentName(dir, test.corrSgm), os.O_RDWR, 0666)
+			f, err := os.OpenFile(SegmentName(dir, test.corrSgm), os.O_RDWR, 0o666)
 			require.NoError(t, err)
 
 			// Apply corruption function.
@@ -167,7 +167,7 @@ func TestWALRepair_ReadingError(t *testing.T) {
 				for r.Next() {
 				}
 
-				//Close the segment so we don't break things on Windows.
+				// Close the segment so we don't break things on Windows.
 				s.Close()
 
 				// No corruption in this segment.
@@ -244,7 +244,7 @@ func TestCorruptAndCarryOn(t *testing.T) {
 		segments, err := listSegments(dir)
 		require.NoError(t, err)
 		for _, segment := range segments {
-			f, err := os.OpenFile(filepath.Join(dir, fmt.Sprintf("%08d", segment.index)), os.O_RDONLY, 0666)
+			f, err := os.OpenFile(filepath.Join(dir, fmt.Sprintf("%08d", segment.index)), os.O_RDONLY, 0o666)
 			require.NoError(t, err)
 
 			fi, err := f.Stat()
@@ -261,7 +261,7 @@ func TestCorruptAndCarryOn(t *testing.T) {
 	// Truncate the first file, splitting the middle record in the second
 	// page in half, leaving 4 valid records.
 	{
-		f, err := os.OpenFile(filepath.Join(dir, fmt.Sprintf("%08d", 0)), os.O_RDWR, 0666)
+		f, err := os.OpenFile(filepath.Join(dir, fmt.Sprintf("%08d", 0)), os.O_RDWR, 0o666)
 		require.NoError(t, err)
 
 		fi, err := f.Stat()

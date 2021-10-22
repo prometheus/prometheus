@@ -173,8 +173,7 @@ func init() {
 
 // Discovery periodically performs Scaleway requests. It implements
 // the Discoverer interface.
-type Discovery struct {
-}
+type Discovery struct{}
 
 func NewDiscovery(conf *SDConfig, logger log.Logger) (*refresh.Discovery, error) {
 	r, err := newRefresher(conf)

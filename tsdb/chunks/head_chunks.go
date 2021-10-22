@@ -42,11 +42,9 @@ const (
 	headChunksFormatV1 = 1
 )
 
-var (
-	// ErrChunkDiskMapperClosed returned by any method indicates
-	// that the ChunkDiskMapper was closed.
-	ErrChunkDiskMapperClosed = errors.New("ChunkDiskMapper closed")
-)
+// ErrChunkDiskMapperClosed returned by any method indicates
+// that the ChunkDiskMapper was closed.
+var ErrChunkDiskMapperClosed = errors.New("ChunkDiskMapper closed")
 
 const (
 	// MintMaxtSize is the size of the mint/maxt for head chunk file and chunks.
@@ -83,7 +81,6 @@ func (ref ChunkDiskMapperRef) Unpack() (sgmIndex, chkStart int) {
 	sgmIndex = int(ref >> 32)
 	chkStart = int((ref << 32) >> 32)
 	return sgmIndex, chkStart
-
 }
 
 // CorruptionErr is an error that's returned when corruption is encountered.
@@ -152,7 +149,7 @@ func NewChunkDiskMapper(dir string, pool chunkenc.Pool, writeBufferSize int) (*C
 		return nil, errors.Errorf("ChunkDiskMapper write buffer size should be a multiple of 1024 (actual: %d)", writeBufferSize)
 	}
 
-	if err := os.MkdirAll(dir, 0777); err != nil {
+	if err := os.MkdirAll(dir, 0o777); err != nil {
 		return nil, err
 	}
 	dirFile, err := fileutil.OpenDir(dir)
