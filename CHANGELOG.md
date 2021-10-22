@@ -3,7 +3,7 @@
 * [FEATURE] Discovery: New experimental discovery manager that does not restart upon reload. Disabled by default (`--enable-feature=new-service-discovery-manager`). #9349 #9537
 * [FEATURE] HTTP: Re-enable HTTP2. #9398
 * [FEATURE] PromQL: Add trigonometric functions and `atan2` binary operator. #9239 #9248 #9515
-* [FEATURE] Remote: Add support for exemplar to the remote write receiver endpoint. #9319 #9414
+* [FEATURE] Remote: Add support for exemplar in the remote write receiver endpoint. #9319 #9414
 * [FEATURE] SD: Add PuppetDB service discovery. #8883
 * [FEATURE] SD: Add Uyuni service discovery. #8190
 * [FEATURE] Web: Add support for security-related HTTP headers. #9546
