@@ -7,13 +7,13 @@
 * [FEATURE] SD: Add PuppetDB service discovery. #8883
 * [FEATURE] SD: Add Uyuni service discovery. #8190
 * [FEATURE] Web: Add support for security-related HTTP headers. #9546
+* [ENHANCEMENT] Azure SD: Add `proxy_url`, `follow_redirects`, `tls_config`. #9267
 * [ENHANCEMENT] Backfill: add `--max-block-duration` in `promtool create-blocks-from rules`. #9511
+* [ENHANCEMENT] Kubernetes SD: Add documentation for endpointslice. #9436
 * [ENHANCEMENT] Kubernetes SD: Warn user in case of endpoint over-capacity. #9467
 * [ENHANCEMENT] OAuth2: Add TLS configuration to token requests. #9550
 * [ENHANCEMENT] PromQL: Several optimizations. #9365 #9360 #9362 #9552
 * [ENHANCEMENT] PromQL: make aggregations deterministic in instant queries. #9459
-* [ENHANCEMENT] SD: Add `proxy_url`, `follow_redirects`, `tls_config` to Azure SD. #9267
-* [ENHANCEMENT] SD: Add documentation for endpointslice. #9436
 * [ENHANCEMENT] UI: Debounce timerange setting changes. #9359
 * [ENHANCEMENT] Config: Print human-readable sizes with unit instead of raw numbers. #9361
 * [ENHANCEMENT] Rules: Add the ability to limit number of alerts or series. #9260 #9541
