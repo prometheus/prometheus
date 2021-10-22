@@ -7,7 +7,7 @@
 * [FEATURE] SD: Add PuppetDB service discovery. #8883
 * [FEATURE] SD: Add Uyuni service discovery. #8190
 * [FEATURE] Web: Add support for security-related HTTP headers. #9546
-* [ENHANCEMENT] Backfill: add `--max-block-duration` in promtool create-blocks-from rules. #9511
+* [ENHANCEMENT] Backfill: add `--max-block-duration` in `promtool create-blocks-from rules`. #9511
 * [ENHANCEMENT] Kubernetes SD: Warn user in case of endpoint over-capacity. #9467
 * [ENHANCEMENT] OAuth2: Add TLS configuration to token requests. #9550
 * [ENHANCEMENT] PromQL: Several optimizations. #9365 #9360 #9362 #9552
