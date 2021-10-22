@@ -38,7 +38,8 @@ func TestTargetGroupStrictJsonUnmarshal(t *testing.T) {
 			expectedReply: nil,
 			expectedGroup: Group{Targets: []model.LabelSet{
 				{"__address__": "localhost:9090"},
-				{"__address__": "localhost:9091"}}, Labels: model.LabelSet{"my": "label"}},
+				{"__address__": "localhost:9091"},
+			}, Labels: model.LabelSet{"my": "label"}},
 		},
 		{
 			json: `	{"label": {},"targets": []}`,
@@ -56,7 +57,6 @@ func TestTargetGroupStrictJsonUnmarshal(t *testing.T) {
 		require.Equal(t, test.expectedReply, actual)
 		require.Equal(t, test.expectedGroup, tg)
 	}
-
 }
 
 func TestTargetGroupYamlMarshal(t *testing.T) {
@@ -81,10 +81,13 @@ func TestTargetGroupYamlMarshal(t *testing.T) {
 		},
 		{
 			// targets only exposes addresses.
-			group: Group{Targets: []model.LabelSet{
-				{"__address__": "localhost:9090"},
-				{"__address__": "localhost:9091"}},
-				Labels: model.LabelSet{"foo": "bar", "bar": "baz"}},
+			group: Group{
+				Targets: []model.LabelSet{
+					{"__address__": "localhost:9090"},
+					{"__address__": "localhost:9091"},
+				},
+				Labels: model.LabelSet{"foo": "bar", "bar": "baz"},
+			},
 			expectedYaml: "targets:\n- localhost:9090\n- localhost:9091\nlabels:\n  bar: baz\n  foo: bar\n",
 			expectedErr:  nil,
 		},
@@ -120,7 +123,8 @@ func TestTargetGroupYamlUnmarshal(t *testing.T) {
 			expectedReply: nil,
 			expectedGroup: Group{Targets: []model.LabelSet{
 				{"__address__": "localhost:9090"},
-				{"__address__": "localhost:9191"}}, Labels: model.LabelSet{"my": "label"}},
+				{"__address__": "localhost:9191"},
+			}, Labels: model.LabelSet{"my": "label"}},
 		},
 		{
 			// incorrect syntax.
@@ -135,21 +139,25 @@ func TestTargetGroupYamlUnmarshal(t *testing.T) {
 		require.Equal(t, test.expectedReply, actual)
 		require.Equal(t, test.expectedGroup, tg)
 	}
-
 }
 
 func TestString(t *testing.T) {
 	// String() should return only the source, regardless of other attributes.
 	group1 :=
-		Group{Targets: []model.LabelSet{
-			{"__address__": "localhost:9090"},
-			{"__address__": "localhost:9091"}},
+		Group{
+			Targets: []model.LabelSet{
+				{"__address__": "localhost:9090"},
+				{"__address__": "localhost:9091"},
+			},
 			Source: "<source>",
-			Labels: model.LabelSet{"foo": "bar", "bar": "baz"}}
+			Labels: model.LabelSet{"foo": "bar", "bar": "baz"},
+		}
 	group2 :=
-		Group{Targets: []model.LabelSet{},
-			Source: "<source>",
-			Labels: model.LabelSet{}}
+		Group{
+			Targets: []model.LabelSet{},
+			Source:  "<source>",
+			Labels:  model.LabelSet{},
+		}
 	require.Equal(t, "<source>", group1.String())
 	require.Equal(t, "<source>", group2.String())
 	require.Equal(t, group1.String(), group2.String())

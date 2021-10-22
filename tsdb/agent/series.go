@@ -54,7 +54,7 @@ func (m seriesHashmap) Set(hash uint64, s *memSeries) {
 	m[hash] = append(seriesSet, s)
 }
 
-func (m seriesHashmap) Delete(hash uint64, ref uint64) {
+func (m seriesHashmap) Delete(hash, ref uint64) {
 	var rem []*memSeries
 	for _, s := range m[hash] {
 		if s.ref != ref {

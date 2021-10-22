@@ -379,7 +379,7 @@ func TestHeadReadWriter_ReadRepairOnEmptyLastFile(t *testing.T) {
 
 	// Write an empty last file mimicking an abrupt shutdown on file creation.
 	emptyFileName := segmentFile(dir, lastFile+1)
-	f, err := os.OpenFile(emptyFileName, os.O_WRONLY|os.O_CREATE, 0666)
+	f, err := os.OpenFile(emptyFileName, os.O_WRONLY|os.O_CREATE, 0o666)
 	require.NoError(t, err)
 	require.NoError(t, f.Sync())
 	stat, err := f.Stat()
@@ -409,7 +409,6 @@ func TestHeadReadWriter_ReadRepairOnEmptyLastFile(t *testing.T) {
 		require.NoError(t, err)
 		require.LessOrEqual(t, seq, uint64(lastFile), "file index on disk is bigger than previous last file")
 	}
-
 }
 
 func testChunkDiskMapper(t *testing.T) *ChunkDiskMapper {

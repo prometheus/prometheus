@@ -918,7 +918,7 @@ func TestPopulateWithDelSeriesIterator_NextWithMinTime(t *testing.T) {
 // The subset are all equivalent so this does not capture merging of partial or non-overlapping sets well.
 // TODO(bwplotka): Merge with storage merged series set benchmark.
 func BenchmarkMergedSeriesSet(b *testing.B) {
-	var sel = func(sets []storage.SeriesSet) storage.SeriesSet {
+	sel := func(sets []storage.SeriesSet) storage.SeriesSet {
 		return storage.NewMergeSeriesSet(sets, storage.ChainedSeriesMerge)
 	}
 
@@ -1860,7 +1860,6 @@ func TestPostingsForMatchers(t *testing.T) {
 			t.Errorf("Evaluating %v, missing results %+v", c.matchers, exp)
 		}
 	}
-
 }
 
 // TestClose ensures that calling Close more than once doesn't block and doesn't panic.
@@ -2116,7 +2115,12 @@ func TestBlockBaseSeriesSet(t *testing.T) {
 				{
 					lset: labels.New([]labels.Label{{Name: "a", Value: "a"}}...),
 					chunks: []chunks.Meta{
-						{Ref: 29}, {Ref: 45}, {Ref: 245}, {Ref: 123}, {Ref: 4232}, {Ref: 5344},
+						{Ref: 29},
+						{Ref: 45},
+						{Ref: 245},
+						{Ref: 123},
+						{Ref: 4232},
+						{Ref: 5344},
 						{Ref: 121},
 					},
 					ref: 12,

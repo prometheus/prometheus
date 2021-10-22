@@ -49,14 +49,12 @@ func GetFQDN() (string, error) {
 			if fqdn, err := lookup(ip); err == nil {
 				return fqdn, nil
 			}
-
 		}
 
 		if ip := addr.To16(); ip != nil {
 			if fqdn, err := lookup(ip); err == nil {
 				return fqdn, nil
 			}
-
 		}
 	}
 	return hostname, nil

@@ -36,37 +36,37 @@ func TestLastCheckpoint(t *testing.T) {
 	_, _, err := LastCheckpoint(dir)
 	require.Equal(t, record.ErrNotFound, err)
 
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "checkpoint.0000"), 0777))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "checkpoint.0000"), 0o777))
 	s, k, err := LastCheckpoint(dir)
 	require.NoError(t, err)
 	require.Equal(t, filepath.Join(dir, "checkpoint.0000"), s)
 	require.Equal(t, 0, k)
 
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "checkpoint.xyz"), 0777))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "checkpoint.xyz"), 0o777))
 	s, k, err = LastCheckpoint(dir)
 	require.NoError(t, err)
 	require.Equal(t, filepath.Join(dir, "checkpoint.0000"), s)
 	require.Equal(t, 0, k)
 
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "checkpoint.1"), 0777))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "checkpoint.1"), 0o777))
 	s, k, err = LastCheckpoint(dir)
 	require.NoError(t, err)
 	require.Equal(t, filepath.Join(dir, "checkpoint.1"), s)
 	require.Equal(t, 1, k)
 
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "checkpoint.1000"), 0777))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "checkpoint.1000"), 0o777))
 	s, k, err = LastCheckpoint(dir)
 	require.NoError(t, err)
 	require.Equal(t, filepath.Join(dir, "checkpoint.1000"), s)
 	require.Equal(t, 1000, k)
 
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "checkpoint.99999999"), 0777))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "checkpoint.99999999"), 0o777))
 	s, k, err = LastCheckpoint(dir)
 	require.NoError(t, err)
 	require.Equal(t, filepath.Join(dir, "checkpoint.99999999"), s)
 	require.Equal(t, 99999999, k)
 
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "checkpoint.100000000"), 0777))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "checkpoint.100000000"), 0o777))
 	s, k, err = LastCheckpoint(dir)
 	require.NoError(t, err)
 	require.Equal(t, filepath.Join(dir, "checkpoint.100000000"), s)
@@ -78,10 +78,10 @@ func TestDeleteCheckpoints(t *testing.T) {
 
 	require.NoError(t, DeleteCheckpoints(dir, 0))
 
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "checkpoint.00"), 0777))
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "checkpoint.01"), 0777))
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "checkpoint.02"), 0777))
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "checkpoint.03"), 0777))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "checkpoint.00"), 0o777))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "checkpoint.01"), 0o777))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "checkpoint.02"), 0o777))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "checkpoint.03"), 0o777))
 
 	require.NoError(t, DeleteCheckpoints(dir, 2))
 
@@ -93,9 +93,9 @@ func TestDeleteCheckpoints(t *testing.T) {
 	}
 	require.Equal(t, []string{"checkpoint.02", "checkpoint.03"}, fns)
 
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "checkpoint.99999999"), 0777))
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "checkpoint.100000000"), 0777))
-	require.NoError(t, os.MkdirAll(filepath.Join(dir, "checkpoint.100000001"), 0777))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "checkpoint.99999999"), 0o777))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "checkpoint.100000000"), 0o777))
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "checkpoint.100000001"), 0o777))
 
 	require.NoError(t, DeleteCheckpoints(dir, 100000000))
 
@@ -233,11 +233,12 @@ func TestCheckpointNoTmpFolderAfterError(t *testing.T) {
 	require.NoError(t, err)
 	var enc record.Encoder
 	require.NoError(t, w.Log(enc.Series([]record.RefSeries{
-		{Ref: 0, Labels: labels.FromStrings("a", "b", "c", "2")}}, nil)))
+		{Ref: 0, Labels: labels.FromStrings("a", "b", "c", "2")},
+	}, nil)))
 	require.NoError(t, w.Close())
 
 	// Corrupt data.
-	f, err := os.OpenFile(filepath.Join(w.Dir(), "00000000"), os.O_WRONLY, 0666)
+	f, err := os.OpenFile(filepath.Join(w.Dir(), "00000000"), os.O_WRONLY, 0o666)
 	require.NoError(t, err)
 	_, err = f.WriteAt([]byte{42}, 1)
 	require.NoError(t, err)

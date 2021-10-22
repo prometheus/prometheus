@@ -154,7 +154,7 @@ func TestIndexRW_Create_Open(t *testing.T) {
 	require.NoError(t, ir.Close())
 
 	// Modify magic header must cause open to fail.
-	f, err := os.OpenFile(fn, os.O_WRONLY, 0666)
+	f, err := os.OpenFile(fn, os.O_WRONLY, 0o666)
 	require.NoError(t, err)
 	_, err = f.WriteAt([]byte{0, 0}, 0)
 	require.NoError(t, err)
@@ -340,7 +340,6 @@ func TestPostingsMany(t *testing.T) {
 		}
 		require.Equal(t, exp, got, fmt.Sprintf("input: %v", c.in))
 	}
-
 }
 
 func TestPersistence_index_e2e(t *testing.T) {
@@ -504,7 +503,7 @@ func TestNewFileReaderErrorNoOpenFiles(t *testing.T) {
 	dir := testutil.NewTemporaryDirectory("block", t)
 
 	idxName := filepath.Join(dir.Path(), "index")
-	err := ioutil.WriteFile(idxName, []byte("corrupted contents"), 0666)
+	err := ioutil.WriteFile(idxName, []byte("corrupted contents"), 0o666)
 	require.NoError(t, err)
 
 	_, err = NewFileReader(idxName)

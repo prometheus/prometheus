@@ -97,9 +97,7 @@ func (cm *Meta) OverlapsClosedInterval(mint, maxt int64) bool {
 	return cm.MinTime <= maxt && mint <= cm.MaxTime
 }
 
-var (
-	errInvalidSize = fmt.Errorf("invalid size")
-)
+var errInvalidSize = fmt.Errorf("invalid size")
 
 var castagnoliTable *crc32.Table
 
@@ -148,7 +146,7 @@ func newWriter(dir string, segmentSize int64) (*Writer, error) {
 		segmentSize = DefaultChunkSegmentSize
 	}
 
-	if err := os.MkdirAll(dir, 0777); err != nil {
+	if err := os.MkdirAll(dir, 0o777); err != nil {
 		return nil, err
 	}
 	dirFile, err := fileutil.OpenDir(dir)
@@ -224,7 +222,7 @@ func cutSegmentFile(dirFile *os.File, magicNumber uint32, chunksFormat byte, all
 		return 0, nil, 0, errors.Wrap(err, "next sequence file")
 	}
 	ptmp := p + ".tmp"
-	f, err := os.OpenFile(ptmp, os.O_WRONLY|os.O_CREATE, 0666)
+	f, err := os.OpenFile(ptmp, os.O_WRONLY|os.O_CREATE, 0o666)
 	if err != nil {
 		return 0, nil, 0, errors.Wrap(err, "open temp file")
 	}
@@ -266,7 +264,7 @@ func cutSegmentFile(dirFile *os.File, magicNumber uint32, chunksFormat byte, all
 		return 0, nil, 0, errors.Wrap(err, "replace file")
 	}
 
-	f, err = os.OpenFile(p, os.O_WRONLY, 0666)
+	f, err = os.OpenFile(p, os.O_WRONLY, 0o666)
 	if err != nil {
 		return 0, nil, 0, errors.Wrap(err, "open final file")
 	}
@@ -355,7 +353,7 @@ func (w *Writer) writeChunks(chks []Meta) error {
 		return nil
 	}
 
-	var seq = uint64(w.seq()) << 32
+	seq := uint64(w.seq()) << 32
 	for i := range chks {
 		chk := &chks[i]
 

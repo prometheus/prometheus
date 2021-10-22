@@ -15,11 +15,6 @@ package tsdb
 
 import (
 	"fmt"
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
-	"github.com/prometheus/prometheus/tsdb/encoding"
-	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
-	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"io/ioutil"
 	"math"
 	"os"
@@ -29,6 +24,12 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/encoding"
+	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
+	"github.com/prometheus/prometheus/tsdb/fileutil"
 
 	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
@@ -585,7 +586,7 @@ func (h *Head) ChunkSnapshot() (*ChunkSnapshotStats, error) {
 	cpdirtmp := cpdir + ".tmp"
 	stats.Dir = cpdir
 
-	if err := os.MkdirAll(cpdirtmp, 0777); err != nil {
+	if err := os.MkdirAll(cpdirtmp, 0o777); err != nil {
 		return stats, errors.Wrap(err, "create chunk snapshot dir")
 	}
 	cp, err := wal.New(nil, nil, cpdirtmp, h.wal.CompressionEnabled())

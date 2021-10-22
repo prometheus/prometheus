@@ -784,17 +784,19 @@ var expectedConf = &Config{
 			Scheme:           DefaultScrapeConfig.Scheme,
 			HTTPClientConfig: config.DefaultHTTPClientConfig,
 
-			ServiceDiscoveryConfigs: discovery.Configs{&openstack.SDConfig{
-				Role:            "instance",
-				Region:          "RegionOne",
-				Port:            80,
-				Availability:    "public",
-				RefreshInterval: model.Duration(60 * time.Second),
-				TLSConfig: config.TLSConfig{
-					CAFile:   "testdata/valid_ca_file",
-					CertFile: "testdata/valid_cert_file",
-					KeyFile:  "testdata/valid_key_file",
-				}},
+			ServiceDiscoveryConfigs: discovery.Configs{
+				&openstack.SDConfig{
+					Role:            "instance",
+					Region:          "RegionOne",
+					Port:            80,
+					Availability:    "public",
+					RefreshInterval: model.Duration(60 * time.Second),
+					TLSConfig: config.TLSConfig{
+						CAFile:   "testdata/valid_ca_file",
+						CertFile: "testdata/valid_cert_file",
+						KeyFile:  "testdata/valid_key_file",
+					},
+				},
 			},
 		},
 		{
@@ -808,21 +810,22 @@ var expectedConf = &Config{
 			Scheme:           DefaultScrapeConfig.Scheme,
 			HTTPClientConfig: config.DefaultHTTPClientConfig,
 
-			ServiceDiscoveryConfigs: discovery.Configs{&puppetdb.SDConfig{
-				URL:               "https://puppetserver/",
-				Query:             "resources { type = \"Package\" and title = \"httpd\" }",
-				IncludeParameters: true,
-				Port:              80,
-				RefreshInterval:   model.Duration(60 * time.Second),
-				HTTPClientConfig: config.HTTPClientConfig{
-					FollowRedirects: true,
-					TLSConfig: config.TLSConfig{
-						CAFile:   "testdata/valid_ca_file",
-						CertFile: "testdata/valid_cert_file",
-						KeyFile:  "testdata/valid_key_file",
+			ServiceDiscoveryConfigs: discovery.Configs{
+				&puppetdb.SDConfig{
+					URL:               "https://puppetserver/",
+					Query:             "resources { type = \"Package\" and title = \"httpd\" }",
+					IncludeParameters: true,
+					Port:              80,
+					RefreshInterval:   model.Duration(60 * time.Second),
+					HTTPClientConfig: config.HTTPClientConfig{
+						FollowRedirects: true,
+						TLSConfig: config.TLSConfig{
+							CAFile:   "testdata/valid_ca_file",
+							CertFile: "testdata/valid_cert_file",
+							KeyFile:  "testdata/valid_key_file",
+						},
 					},
 				},
-			},
 			},
 		},
 		{
@@ -1086,170 +1089,224 @@ var expectedErrors = []struct {
 	{
 		filename: "jobname.bad.yml",
 		errMsg:   `job_name is empty`,
-	}, {
+	},
+	{
 		filename: "jobname_dup.bad.yml",
 		errMsg:   `found multiple scrape configs with job name "prometheus"`,
-	}, {
+	},
+	{
 		filename: "scrape_interval.bad.yml",
 		errMsg:   `scrape timeout greater than scrape interval`,
-	}, {
+	},
+	{
 		filename: "labelname.bad.yml",
 		errMsg:   `"not$allowed" is not a valid label name`,
-	}, {
+	},
+	{
 		filename: "labelname2.bad.yml",
 		errMsg:   `"not:allowed" is not a valid label name`,
-	}, {
+	},
+	{
 		filename: "labelvalue.bad.yml",
 		errMsg:   `"\xff" is not a valid label value`,
-	}, {
+	},
+	{
 		filename: "regex.bad.yml",
 		errMsg:   "error parsing regexp",
-	}, {
+	},
+	{
 		filename: "modulus_missing.bad.yml",
 		errMsg:   "relabel configuration for hashmod requires non-zero modulus",
-	}, {
+	},
+	{
 		filename: "labelkeep.bad.yml",
 		errMsg:   "labelkeep action requires only 'regex', and no other fields",
-	}, {
+	},
+	{
 		filename: "labelkeep2.bad.yml",
 		errMsg:   "labelkeep action requires only 'regex', and no other fields",
-	}, {
+	},
+	{
 		filename: "labelkeep3.bad.yml",
 		errMsg:   "labelkeep action requires only 'regex', and no other fields",
-	}, {
+	},
+	{
 		filename: "labelkeep4.bad.yml",
 		errMsg:   "labelkeep action requires only 'regex', and no other fields",
-	}, {
+	},
+	{
 		filename: "labelkeep5.bad.yml",
 		errMsg:   "labelkeep action requires only 'regex', and no other fields",
-	}, {
+	},
+	{
 		filename: "labeldrop.bad.yml",
 		errMsg:   "labeldrop action requires only 'regex', and no other fields",
-	}, {
+	},
+	{
 		filename: "labeldrop2.bad.yml",
 		errMsg:   "labeldrop action requires only 'regex', and no other fields",
-	}, {
+	},
+	{
 		filename: "labeldrop3.bad.yml",
 		errMsg:   "labeldrop action requires only 'regex', and no other fields",
-	}, {
+	},
+	{
 		filename: "labeldrop4.bad.yml",
 		errMsg:   "labeldrop action requires only 'regex', and no other fields",
-	}, {
+	},
+	{
 		filename: "labeldrop5.bad.yml",
 		errMsg:   "labeldrop action requires only 'regex', and no other fields",
-	}, {
+	},
+	{
 		filename: "labelmap.bad.yml",
 		errMsg:   "\"l-$1\" is invalid 'replacement' for labelmap action",
-	}, {
+	},
+	{
 		filename: "rules.bad.yml",
 		errMsg:   "invalid rule file path",
-	}, {
+	},
+	{
 		filename: "unknown_attr.bad.yml",
 		errMsg:   "field consult_sd_configs not found in type",
-	}, {
+	},
+	{
 		filename: "bearertoken.bad.yml",
 		errMsg:   "at most one of bearer_token & bearer_token_file must be configured",
-	}, {
+	},
+	{
 		filename: "bearertoken_basicauth.bad.yml",
 		errMsg:   "at most one of basic_auth, oauth2, bearer_token & bearer_token_file must be configured",
-	}, {
+	},
+	{
 		filename: "kubernetes_http_config_without_api_server.bad.yml",
 		errMsg:   "to use custom HTTP client configuration please provide the 'api_server' URL explicitly",
-	}, {
+	},
+	{
 		filename: "kubernetes_kubeconfig_with_apiserver.bad.yml",
 		errMsg:   "cannot use 'kubeconfig_file' and 'api_server' simultaneously",
-	}, {
+	},
+	{
 		filename: "kubernetes_kubeconfig_with_http_config.bad.yml",
 		errMsg:   "cannot use a custom HTTP client configuration together with 'kubeconfig_file'",
 	},
 	{
 		filename: "kubernetes_bearertoken.bad.yml",
 		errMsg:   "at most one of bearer_token & bearer_token_file must be configured",
-	}, {
+	},
+	{
 		filename: "kubernetes_role.bad.yml",
 		errMsg:   "role",
-	}, {
+	},
+	{
 		filename: "kubernetes_selectors_endpoints.bad.yml",
 		errMsg:   "endpoints role supports only pod, service, endpoints selectors",
-	}, {
+	},
+	{
 		filename: "kubernetes_selectors_ingress.bad.yml",
 		errMsg:   "ingress role supports only ingress selectors",
-	}, {
+	},
+	{
 		filename: "kubernetes_selectors_node.bad.yml",
 		errMsg:   "node role supports only node selectors",
-	}, {
+	},
+	{
 		filename: "kubernetes_selectors_pod.bad.yml",
 		errMsg:   "pod role supports only pod selectors",
-	}, {
+	},
+	{
 		filename: "kubernetes_selectors_service.bad.yml",
 		errMsg:   "service role supports only service selectors",
-	}, {
+	},
+	{
 		filename: "kubernetes_namespace_discovery.bad.yml",
 		errMsg:   "field foo not found in type kubernetes.plain",
-	}, {
+	},
+	{
 		filename: "kubernetes_selectors_duplicated_role.bad.yml",
 		errMsg:   "duplicated selector role: pod",
-	}, {
+	},
+	{
 		filename: "kubernetes_selectors_incorrect_selector.bad.yml",
 		errMsg:   "invalid selector: 'metadata.status-Running'; can't understand 'metadata.status-Running'",
-	}, {
+	},
+	{
 		filename: "kubernetes_bearertoken_basicauth.bad.yml",
 		errMsg:   "at most one of basic_auth, oauth2, bearer_token & bearer_token_file must be configured",
-	}, {
+	},
+	{
 		filename: "kubernetes_authorization_basicauth.bad.yml",
 		errMsg:   "at most one of basic_auth, oauth2 & authorization must be configured",
-	}, {
+	},
+	{
 		filename: "marathon_no_servers.bad.yml",
 		errMsg:   "marathon_sd: must contain at least one Marathon server",
-	}, {
+	},
+	{
 		filename: "marathon_authtoken_authtokenfile.bad.yml",
 		errMsg:   "marathon_sd: at most one of auth_token & auth_token_file must be configured",
-	}, {
+	},
+	{
 		filename: "marathon_authtoken_basicauth.bad.yml",
 		errMsg:   "marathon_sd: at most one of basic_auth, auth_token & auth_token_file must be configured",
-	}, {
+	},
+	{
 		filename: "marathon_authtoken_bearertoken.bad.yml",
 		errMsg:   "marathon_sd: at most one of bearer_token, bearer_token_file, auth_token & auth_token_file must be configured",
-	}, {
+	},
+	{
 		filename: "marathon_authtoken_authorization.bad.yml",
 		errMsg:   "marathon_sd: at most one of auth_token, auth_token_file & authorization must be configured",
-	}, {
+	},
+	{
 		filename: "openstack_role.bad.yml",
 		errMsg:   "unknown OpenStack SD role",
-	}, {
+	},
+	{
 		filename: "openstack_availability.bad.yml",
 		errMsg:   "unknown availability invalid, must be one of admin, internal or public",
-	}, {
+	},
+	{
 		filename: "url_in_targetgroup.bad.yml",
 		errMsg:   "\"http://bad\" is not a valid hostname",
-	}, {
+	},
+	{
 		filename: "target_label_missing.bad.yml",
 		errMsg:   "relabel configuration for replace action requires 'target_label' value",
-	}, {
+	},
+	{
 		filename: "target_label_hashmod_missing.bad.yml",
 		errMsg:   "relabel configuration for hashmod action requires 'target_label' value",
-	}, {
+	},
+	{
 		filename: "unknown_global_attr.bad.yml",
 		errMsg:   "field nonexistent_field not found in type config.plain",
-	}, {
+	},
+	{
 		filename: "remote_read_url_missing.bad.yml",
 		errMsg:   `url for remote_read is empty`,
-	}, {
+	},
+	{
 		filename: "remote_write_header.bad.yml",
 		errMsg:   `x-prometheus-remote-write-version is a reserved header. It must not be changed`,
-	}, {
+	},
+	{
 		filename: "remote_read_header.bad.yml",
 		errMsg:   `x-prometheus-remote-write-version is a reserved header. It must not be changed`,
-	}, {
+	},
+	{
 		filename: "remote_write_authorization_header.bad.yml",
 		errMsg:   `authorization header must be changed via the basic_auth, authorization, oauth2, or sigv4 parameter`,
-	}, {
+	},
+	{
 		filename: "remote_write_url_missing.bad.yml",
 		errMsg:   `url for remote_write is empty`,
-	}, {
+	},
+	{
 		filename: "remote_write_dup.bad.yml",
 		errMsg:   `found multiple remote write configs with job name "queue1"`,
-	}, {
+	},
+	{
 		filename: "remote_read_dup.bad.yml",
 		errMsg:   `found multiple remote read configs with job name "queue1"`,
 	},

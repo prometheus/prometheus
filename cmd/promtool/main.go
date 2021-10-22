@@ -257,7 +257,7 @@ func main() {
 
 	case tsdbDumpCmd.FullCommand():
 		os.Exit(checkErr(dumpSamples(*dumpPath, *dumpMinTime, *dumpMaxTime)))
-	//TODO(aSquare14): Work on adding support for custom block size.
+	// TODO(aSquare14): Work on adding support for custom block size.
 	case openMetricsImportCmd.FullCommand():
 		os.Exit(backfillOpenMetrics(*importFilePath, *importDBPath, *importHumanReadable, *importQuiet, *maxBlockDuration))
 
@@ -560,7 +560,6 @@ func checkDuplicates(groups []rulefmt.RuleGroup) []compareRuleType {
 	var rules compareRuleTypes
 
 	for _, group := range groups {
-
 		for _, rule := range group.Rules {
 			rules = append(rules, compareRuleType{
 				metric: ruleMetric(rule),
@@ -774,7 +773,7 @@ func QuerySeries(url *url.URL, matchers []string, start, end string, p printer) 
 }
 
 // QueryLabels queries for label values against a Prometheus server.
-func QueryLabels(url *url.URL, name string, start, end string, p printer) int {
+func QueryLabels(url *url.URL, name, start, end string, p printer) int {
 	if url.Scheme == "" {
 		url.Scheme = "http"
 	}
@@ -952,11 +951,13 @@ type promqlPrinter struct{}
 func (p *promqlPrinter) printValue(v model.Value) {
 	fmt.Println(v)
 }
+
 func (p *promqlPrinter) printSeries(val []model.LabelSet) {
 	for _, v := range val {
 		fmt.Println(v)
 	}
 }
+
 func (p *promqlPrinter) printLabelValues(val model.LabelValues) {
 	for _, v := range val {
 		fmt.Println(v)
@@ -969,10 +970,12 @@ func (j *jsonPrinter) printValue(v model.Value) {
 	//nolint:errcheck
 	json.NewEncoder(os.Stdout).Encode(v)
 }
+
 func (j *jsonPrinter) printSeries(v []model.LabelSet) {
 	//nolint:errcheck
 	json.NewEncoder(os.Stdout).Encode(v)
 }
+
 func (j *jsonPrinter) printLabelValues(v model.LabelValues) {
 	//nolint:errcheck
 	json.NewEncoder(os.Stdout).Encode(v)
@@ -980,7 +983,7 @@ func (j *jsonPrinter) printLabelValues(v model.LabelValues) {
 
 // importRules backfills recording rules from the files provided. The output are blocks of data
 // at the outputDir location.
-func importRules(url *url.URL, start, end, outputDir string, evalInterval time.Duration, maxBlockDuration time.Duration, files ...string) error {
+func importRules(url *url.URL, start, end, outputDir string, evalInterval, maxBlockDuration time.Duration, files ...string) error {
 	ctx := context.Background()
 	var stime, etime time.Time
 	var err error

@@ -46,21 +46,24 @@ func TestSDCheckResult(t *testing.T) {
 	}
 
 	expectedSDCheckResult := []sdCheckResult{
-		sdCheckResult{
+		{
 			DiscoveredLabels: labels.Labels{
 				labels.Label{Name: "__address__", Value: "localhost:8080"},
 				labels.Label{Name: "__scrape_interval__", Value: "0s"},
 				labels.Label{Name: "__scrape_timeout__", Value: "0s"},
-				labels.Label{Name: "foo", Value: "bar"}},
+				labels.Label{Name: "foo", Value: "bar"},
+			},
 			Labels: labels.Labels{
 				labels.Label{Name: "__address__", Value: "localhost:8080"},
 				labels.Label{Name: "__scrape_interval__", Value: "0s"},
 				labels.Label{Name: "__scrape_timeout__", Value: "0s"},
 				labels.Label{Name: "foo", Value: "bar"},
 				labels.Label{Name: "instance", Value: "localhost:8080"},
-				labels.Label{Name: "newfoo", Value: "bar"}},
+				labels.Label{Name: "newfoo", Value: "bar"},
+			},
 			Error: nil,
-		}}
+		},
+	}
 
 	require.Equal(t, expectedSDCheckResult, getSDCheckResult(targetGroups, scrapeConfig))
 }

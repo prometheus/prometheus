@@ -171,13 +171,15 @@ type hasSynced interface {
 	hasSynced() bool
 }
 
-var _ hasSynced = &Discovery{}
-var _ hasSynced = &Node{}
-var _ hasSynced = &Endpoints{}
-var _ hasSynced = &EndpointSlice{}
-var _ hasSynced = &Ingress{}
-var _ hasSynced = &Pod{}
-var _ hasSynced = &Service{}
+var (
+	_ hasSynced = &Discovery{}
+	_ hasSynced = &Node{}
+	_ hasSynced = &Endpoints{}
+	_ hasSynced = &EndpointSlice{}
+	_ hasSynced = &Ingress{}
+	_ hasSynced = &Pod{}
+	_ hasSynced = &Service{}
+)
 
 func (d *Discovery) hasSynced() bool {
 	d.RLock()

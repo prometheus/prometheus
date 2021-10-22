@@ -326,7 +326,7 @@ func TestWALRestoreCorrupted(t *testing.T) {
 		{
 			name: "truncate_checksum",
 			f: func(t *testing.T, w *SegmentWAL) {
-				f, err := os.OpenFile(w.files[0].Name(), os.O_WRONLY, 0666)
+				f, err := os.OpenFile(w.files[0].Name(), os.O_WRONLY, 0o666)
 				require.NoError(t, err)
 				defer f.Close()
 
@@ -339,7 +339,7 @@ func TestWALRestoreCorrupted(t *testing.T) {
 		{
 			name: "truncate_body",
 			f: func(t *testing.T, w *SegmentWAL) {
-				f, err := os.OpenFile(w.files[0].Name(), os.O_WRONLY, 0666)
+				f, err := os.OpenFile(w.files[0].Name(), os.O_WRONLY, 0o666)
 				require.NoError(t, err)
 				defer f.Close()
 
@@ -352,7 +352,7 @@ func TestWALRestoreCorrupted(t *testing.T) {
 		{
 			name: "body_content",
 			f: func(t *testing.T, w *SegmentWAL) {
-				f, err := os.OpenFile(w.files[0].Name(), os.O_WRONLY, 0666)
+				f, err := os.OpenFile(w.files[0].Name(), os.O_WRONLY, 0o666)
 				require.NoError(t, err)
 				defer f.Close()
 
@@ -367,7 +367,7 @@ func TestWALRestoreCorrupted(t *testing.T) {
 		{
 			name: "checksum",
 			f: func(t *testing.T, w *SegmentWAL) {
-				f, err := os.OpenFile(w.files[0].Name(), os.O_WRONLY, 0666)
+				f, err := os.OpenFile(w.files[0].Name(), os.O_WRONLY, 0o666)
 				require.NoError(t, err)
 				defer f.Close()
 

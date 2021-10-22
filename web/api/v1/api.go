@@ -75,9 +75,7 @@ const (
 	errorNotFound    errorType = "not_found"
 )
 
-var (
-	LocalhostRepresentations = []string{"127.0.0.1", "localhost", "::1"}
-)
+var LocalhostRepresentations = []string{"127.0.0.1", "localhost", "::1"}
 
 type apiError struct {
 	typ errorType
@@ -1453,7 +1451,7 @@ func (api *API) snapshot(r *http.Request) apiFuncResult {
 			rand.Int63())
 		dir = filepath.Join(snapdir, name)
 	)
-	if err := os.MkdirAll(dir, 0777); err != nil {
+	if err := os.MkdirAll(dir, 0o777); err != nil {
 		return apiFuncResult{nil, &apiError{errorInternal, errors.Wrap(err, "create snapshot directory")}, nil, nil}
 	}
 	if err := api.db.Snapshot(dir, !skipHead); err != nil {
@@ -1509,7 +1507,6 @@ func (api *API) respondError(w http.ResponseWriter, apiErr *apiError, data inter
 		Error:     apiErr.err.Error(),
 		Data:      data,
 	})
-
 	if err != nil {
 		level.Error(api.logger).Log("msg", "error marshaling json response", "err", err)
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -1652,7 +1649,7 @@ func marshalExemplarJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
 	stream.WriteMore()
 	stream.WriteObjectField(`timestamp`)
 	marshalTimestamp(p.Ts, stream)
-	//marshalTimestamp(p.Ts, stream)
+	// marshalTimestamp(p.Ts, stream)
 
 	stream.WriteObjectEnd()
 }

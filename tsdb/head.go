@@ -850,7 +850,7 @@ func (h *Head) WaitForPendingReadersInTimeRange(mint, maxt int64) {
 // new range head and the new querier. This methods helps preventing races with the truncation of in-memory data.
 //
 // NOTE: The querier should already be taken before calling this.
-func (h *Head) IsQuerierCollidingWithTruncation(querierMint, querierMaxt int64) (shouldClose bool, getNew bool, newMint int64) {
+func (h *Head) IsQuerierCollidingWithTruncation(querierMint, querierMaxt int64) (shouldClose, getNew bool, newMint int64) {
 	if !h.memTruncationInProcess.Load() {
 		return false, false, 0
 	}
@@ -1197,7 +1197,6 @@ func (h *Head) Close() error {
 		errs.Add(h.performChunkSnapshot())
 	}
 	return errs.Err()
-
 }
 
 // String returns an human readable representation of the TSDB head. It's important to

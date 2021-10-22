@@ -311,7 +311,7 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 	resultFPs := map[uint64]struct{}{}
 
 	var vec promql.Vector
-	var alerts = make(map[uint64]*Alert, len(res))
+	alerts := make(map[uint64]*Alert, len(res))
 	for _, smpl := range res {
 		// Provide the alert information to the template.
 		l := make(map[string]string, len(smpl.Metric))
@@ -479,7 +479,7 @@ func (r *AlertingRule) ForEachActiveAlert(f func(*Alert)) {
 	}
 }
 
-func (r *AlertingRule) sendAlerts(ctx context.Context, ts time.Time, resendDelay time.Duration, interval time.Duration, notifyFunc NotifyFunc) {
+func (r *AlertingRule) sendAlerts(ctx context.Context, ts time.Time, resendDelay, interval time.Duration, notifyFunc NotifyFunc) {
 	alerts := []*Alert{}
 	r.ForEachActiveAlert(func(alert *Alert) {
 		if alert.needsSending(ts, resendDelay) {

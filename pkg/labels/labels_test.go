@@ -704,7 +704,7 @@ func BenchmarkLabels_Hash(b *testing.B) {
 			lbls: func() Labels {
 				lbls := make(Labels, 10)
 				for i := 0; i < len(lbls); i++ {
-					//Label ~50B name, 50B value.
+					// Label ~50B name, 50B value.
 					lbls[i] = Label{Name: fmt.Sprintf("abcdefghijabcdefghijabcdefghijabcdefghijabcdefghij%d", i), Value: fmt.Sprintf("abcdefghijabcdefghijabcdefghijabcdefghijabcdefghij%d", i)}
 				}
 				return lbls

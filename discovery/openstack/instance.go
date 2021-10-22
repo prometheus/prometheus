@@ -63,8 +63,10 @@ func newInstanceDiscovery(provider *gophercloud.ProviderClient, opts *gopherclou
 	if l == nil {
 		l = log.NewNopLogger()
 	}
-	return &InstanceDiscovery{provider: provider, authOpts: opts,
-		region: region, port: port, allTenants: allTenants, availability: availability, logger: l}
+	return &InstanceDiscovery{
+		provider: provider, authOpts: opts,
+		region: region, port: port, allTenants: allTenants, availability: availability, logger: l,
+	}
 }
 
 type floatingIPKey struct {

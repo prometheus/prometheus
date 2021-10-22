@@ -37,7 +37,6 @@ func TestMain(m *testing.M) {
 
 // TestTargetUpdatesOrder checks that the target updates are received in the expected order.
 func TestTargetUpdatesOrder(t *testing.T) {
-
 	// The order by which the updates are send is determined by the interval passed to the mock discovery adapter
 	// Final targets array is ordered alphabetically by the name of the discoverer.
 	// For example discoverer "A" with targets "t2,t3" and discoverer "B" with targets "t1,t2" will result in "t2,t3,t1,t2" after the merge.
@@ -117,7 +116,8 @@ func TestTargetUpdatesOrder(t *testing.T) {
 							{
 								Source:  "tp1_group2",
 								Targets: []model.LabelSet{{"__instance__": "2"}},
-							}},
+							},
+						},
 					},
 				},
 			},
@@ -719,7 +719,7 @@ func staticConfig(addrs ...string) StaticConfig {
 	return cfg
 }
 
-func verifySyncedPresence(t *testing.T, tGroups map[string][]*targetgroup.Group, key string, label string, present bool) {
+func verifySyncedPresence(t *testing.T, tGroups map[string][]*targetgroup.Group, key, label string, present bool) {
 	t.Helper()
 	if _, ok := tGroups[key]; !ok {
 		t.Fatalf("'%s' should be present in Group map keys: %v", key, tGroups)
@@ -734,7 +734,6 @@ func verifySyncedPresence(t *testing.T, tGroups map[string][]*targetgroup.Group,
 				match = true
 			}
 		}
-
 	}
 	if match != present {
 		msg := ""
@@ -755,14 +754,12 @@ func verifyPresence(t *testing.T, tSets map[poolKey]map[string]*targetgroup.Grou
 	match := false
 	var mergedTargets string
 	for _, targetGroup := range tSets[poolKey] {
-
 		for _, l := range targetGroup.Targets {
 			mergedTargets = mergedTargets + " " + l.String()
 			if l.String() == label {
 				match = true
 			}
 		}
-
 	}
 	if match != present {
 		msg := ""
@@ -1062,7 +1059,6 @@ func TestTargetSetRecreatesEmptyStaticConfigs(t *testing.T) {
 	if lbls := syncedTargets["prometheus"][0].Labels; lbls != nil {
 		t.Fatalf("Unexpected Group: expected nil Labels, got %v", lbls)
 	}
-
 }
 
 func TestIdenticalConfigurationsAreCoalesced(t *testing.T) {
@@ -1179,7 +1175,6 @@ func TestGaugeFailedConfigs(t *testing.T) {
 	if failedCount != 0 {
 		t.Fatalf("Expected to get no failed config, got: %v", failedCount)
 	}
-
 }
 
 func TestCoordinationWithReceiver(t *testing.T) {

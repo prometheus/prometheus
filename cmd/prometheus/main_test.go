@@ -35,10 +35,12 @@ import (
 	"github.com/prometheus/prometheus/rules"
 )
 
-var promPath = os.Args[0]
-var promConfig = filepath.Join("..", "..", "documentation", "examples", "prometheus.yml")
-var agentConfig = filepath.Join("..", "..", "documentation", "examples", "prometheus-agent.yml")
-var promData = filepath.Join(os.TempDir(), "data")
+var (
+	promPath    = os.Args[0]
+	promConfig  = filepath.Join("..", "..", "documentation", "examples", "prometheus.yml")
+	agentConfig = filepath.Join("..", "..", "documentation", "examples", "prometheus-agent.yml")
+	promData    = filepath.Join(os.TempDir(), "data")
+)
 
 func TestMain(m *testing.M) {
 	for i, arg := range os.Args {
