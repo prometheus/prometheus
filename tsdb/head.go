@@ -52,6 +52,9 @@ var (
 	// ErrAppenderClosed is returned if an appender has already be successfully
 	// rolled back or committed.
 	ErrAppenderClosed = errors.New("appender closed")
+
+	// DefaultIsolationState is the default isolation level
+	DefaultIsolationState = true
 )
 
 // Head handles reads and writes of time series data within a time window.
@@ -143,7 +146,7 @@ func DefaultHeadOptions() *HeadOptions {
 		ChunkWriteBufferSize: chunks.DefaultWriteBufferSize,
 		StripeSize:           DefaultStripeSize,
 		SeriesCallback:       &noopSeriesLifecycleCallback{},
-		IsolationDisabled:    false,
+		IsolationDisabled:    !DefaultIsolationState,
 	}
 }
 

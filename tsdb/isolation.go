@@ -63,8 +63,7 @@ type isolation struct {
 	readMtx sync.RWMutex
 	// All current in use isolationStates. This is a doubly-linked list.
 	readsOpen *isolationState
-	// codesome's suggestion
-	disabled bool
+	disabled  bool
 }
 
 func newIsolation() *isolation {

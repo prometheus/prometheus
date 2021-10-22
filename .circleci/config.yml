@@ -93,6 +93,7 @@ jobs:
     steps:
       - checkout
       - run: go test ./tsdb/...
+      - run: go test ./tsdb/ -test.tsdb-isolation=false
 
   test_mixins:
     executor: golang
