@@ -8,13 +8,13 @@
 * [ENHANCEMENT] Azure SD: Add `proxy_url`, `follow_redirects`, `tls_config`. #9267
 * [ENHANCEMENT] Backfill: Add `--max-block-duration` in `promtool create-blocks-from rules`. #9511
 * [ENHANCEMENT] Config: Print human-readable sizes with unit instead of raw numbers. #9361
-* [ENHANCEMENT] Discovery: New experimental discovery manager that does not restart upon reload. Disabled by default (`--enable-feature=new-service-discovery-manager`). #9349 #9537
-* [ENHANCEMENT] HTTP: Re-enable HTTP2. #9398
-* [ENHANCEMENT] Kubernetes SD: Warn user in case of endpoint over-capacity. #9467
+* [ENHANCEMENT] HTTP: Re-enable HTTP/2. #9398
+* [ENHANCEMENT] Kubernetes SD: Warn user if number of endpoints exceeds limit. #9467
 * [ENHANCEMENT] OAuth2: Add TLS configuration to token requests. #9550
 * [ENHANCEMENT] PromQL: Several optimizations. #9365 #9360 #9362 #9552
 * [ENHANCEMENT] PromQL: Make aggregations deterministic in instant queries. #9459
 * [ENHANCEMENT] Rules: Add the ability to limit number of alerts or series. #9260 #9541
+* [ENHANCEMENT] SD: Experimental discovery manager to avoid restarts upon reload. Disabled by default, enable with flag `--enable-feature=new-service-discovery-manager`. #9349 #9537
 * [ENHANCEMENT] UI: Debounce timerange setting changes. #9359
 * [BUGFIX] Backfill: Apply rule labels after query labels. #9421
 * [BUGFIX] Scrape: Resolve conflicts between multiple exported label prefixes. #9479 #9518
