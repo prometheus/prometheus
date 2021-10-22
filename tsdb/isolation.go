@@ -63,6 +63,8 @@ type isolation struct {
 	readMtx sync.RWMutex
 	// All current in use isolationStates. This is a doubly-linked list.
 	readsOpen *isolationState
+	// codesome's suggestion
+	disabled bool
 }
 
 func newIsolation() *isolation {
@@ -85,12 +87,20 @@ func newIsolation() *isolation {
 // lowWatermark returns the appendID below which we no longer need to track
 // which appends were from which appendID.
 func (i *isolation) lowWatermark() uint64 {
+	if i.disabled {
+		return 0
+	}
+
 	i.appendMtx.RLock() // Take appendMtx first.
 	defer i.appendMtx.RUnlock()
 	return i.lowWatermarkLocked()
 }
 
 func (i *isolation) lowWatermarkLocked() uint64 {
+	if i.disabled {
+		return 0
+	}
+
 	i.readMtx.RLock()
 	defer i.readMtx.RUnlock()
 	if i.readsOpen.prev != i.readsOpen {
@@ -104,6 +114,10 @@ func (i *isolation) lowWatermarkLocked() uint64 {
 // State returns an object used to control isolation
 // between a query and appends. Must be closed when complete.
 func (i *isolation) State(mint, maxt int64) *isolationState {
+	if i.disabled {
+		return &isolationState{}
+	}
+
 	i.appendMtx.RLock() // Take append mutex before read mutex.
 	defer i.appendMtx.RUnlock()
 	isoState := &isolationState{
@@ -131,6 +145,10 @@ func (i *isolation) State(mint, maxt int64) *isolationState {
 // function on those states. The given function MUST NOT mutate the isolationState.
 // The iteration is stopped when the function returns false or once all reads have been iterated.
 func (i *isolation) TraverseOpenReads(f func(s *isolationState) bool) {
+	if i.disabled {
+		return
+	}
+
 	i.readMtx.RLock()
 	defer i.readMtx.RUnlock()
 	s := i.readsOpen.next
@@ -146,6 +164,10 @@ func (i *isolation) TraverseOpenReads(f func(s *isolationState) bool) {
 // ID. The first ID returned is 1.
 // Also returns the low watermark, to keep lock/unlock operations down.
 func (i *isolation) newAppendID() (uint64, uint64) {
+	if i.disabled {
+		return 0, 0
+	}
+
 	i.appendMtx.Lock()
 	defer i.appendMtx.Unlock()
 
@@ -165,6 +187,10 @@ func (i *isolation) newAppendID() (uint64, uint64) {
 }
 
 func (i *isolation) lastAppendID() uint64 {
+	if i.disabled {
+		return 0
+	}
+
 	i.appendMtx.RLock()
 	defer i.appendMtx.RUnlock()
 
@@ -172,6 +198,10 @@ func (i *isolation) lastAppendID() uint64 {
 }
 
 func (i *isolation) closeAppend(appendID uint64) {
+	if i.disabled {
+		return
+	}
+
 	i.appendMtx.Lock()
 	defer i.appendMtx.Unlock()
 

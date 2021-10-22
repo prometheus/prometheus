@@ -131,6 +131,8 @@ type HeadOptions struct {
 	SeriesCallback                 SeriesLifecycleCallback
 	EnableExemplarStorage          bool
 	EnableMemorySnapshotOnShutdown bool
+
+	IsolationDisabled bool
 }
 
 func DefaultHeadOptions() *HeadOptions {
@@ -141,6 +143,7 @@ func DefaultHeadOptions() *HeadOptions {
 		ChunkWriteBufferSize: chunks.DefaultWriteBufferSize,
 		StripeSize:           DefaultStripeSize,
 		SeriesCallback:       &noopSeriesLifecycleCallback{},
+		IsolationDisabled:    false,
 	}
 }
 
@@ -230,12 +233,16 @@ func (h *Head) resetInMemoryState() error {
 		return err
 	}
 
+	h.iso = newIsolation()
+	if h.opts.IsolationDisabled {
+		h.iso.disabled = true
+	}
+
 	h.exemplarMetrics = em
 	h.exemplars = es
 	h.series = newStripeSeries(h.opts.StripeSize, h.opts.SeriesCallback)
 	h.postings = index.NewUnorderedMemPostings()
 	h.tombstones = tombstones.NewMemTombstones()
-	h.iso = newIsolation()
 	h.deleted = map[chunks.HeadSeriesRef]int{}
 	h.chunkRange.Store(h.opts.ChunkRange)
 	h.minTime.Store(math.MaxInt64)
