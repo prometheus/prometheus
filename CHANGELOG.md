@@ -9,7 +9,6 @@
 * [FEATURE] Web: Add support for security-related HTTP headers. #9546
 * [ENHANCEMENT] Azure SD: Add `proxy_url`, `follow_redirects`, `tls_config`. #9267
 * [ENHANCEMENT] Backfill: add `--max-block-duration` in `promtool create-blocks-from rules`. #9511
-* [ENHANCEMENT] Kubernetes SD: Add documentation for endpointslice. #9436
 * [ENHANCEMENT] Kubernetes SD: Warn user in case of endpoint over-capacity. #9467
 * [ENHANCEMENT] OAuth2: Add TLS configuration to token requests. #9550
 * [ENHANCEMENT] PromQL: Several optimizations. #9365 #9360 #9362 #9552
