@@ -13,7 +13,7 @@
 * [ENHANCEMENT] Kubernetes SD: Warn user in case of endpoint over-capacity. #9467
 * [ENHANCEMENT] OAuth2: Add TLS configuration to token requests. #9550
 * [ENHANCEMENT] PromQL: Several optimizations. #9365 #9360 #9362 #9552
-* [ENHANCEMENT] PromQL: make aggregations deterministic in instant queries. #9459
+* [ENHANCEMENT] PromQL: Make aggregations deterministic in instant queries. #9459
 * [ENHANCEMENT] Rules: Add the ability to limit number of alerts or series. #9260 #9541
 * [ENHANCEMENT] UI: Debounce timerange setting changes. #9359
 * [BUGFIX] Backfill: Apply rule labels after query labels. #9421
