@@ -188,7 +188,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	case "cn":
 		endpointFormat = "https://%s:%d/v%d/gz/discover"
 	default:
-		return nil, errors.New(fmt.Sprintf("unknown role '%s' in configuration", d.sdConfig.Role))
+		return nil, fmt.Errorf("unknown role '%s' in configuration", d.sdConfig.Role)
 	}
 	var endpoint = fmt.Sprintf(endpointFormat, d.sdConfig.Endpoint, d.sdConfig.Port, d.sdConfig.Version)
 	if len(d.sdConfig.Groups) > 0 {
@@ -223,7 +223,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	case "cn":
 		return d.processComputeNodeResponse(data, endpoint)
 	default:
-		return nil, errors.New(fmt.Sprintf("unknown role '%s' in configuration", d.sdConfig.Role))
+		return nil, fmt.Errorf("unknown role '%s' in configuration", d.sdConfig.Role)
 	}
 }
 

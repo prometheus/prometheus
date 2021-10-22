@@ -170,7 +170,7 @@ func (importer *ruleImporter) importRule(ctx context.Context, ruleExpr, ruleName
 				}
 			}
 		default:
-			return errors.New(fmt.Sprintf("rule result is wrong type %s", val.Type().String()))
+			return fmt.Errorf("rule result is wrong type %s", val.Type().String())
 		}
 
 		if err := app.flushAndCommit(ctx); err != nil {
