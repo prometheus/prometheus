@@ -1,22 +1,22 @@
 ## 2.31.0-rc.0 / 2021-10-21
 
-* [FEATURE] Discovery: New experimental discovery manager that does not restart upon reload. Disabled by default (--enable-feature=new-service-discovery-manager). #9349 #9537
+* [FEATURE] Discovery: New experimental discovery manager that does not restart upon reload. Disabled by default (`--enable-feature=new-service-discovery-manager`). #9349 #9537
 * [FEATURE] HTTP: Re-enable HTTP2. #9398
 * [FEATURE] PromQL: Add trigonometric functions and `atan2` binary operator. #9239 #9248 #9515
 * [FEATURE] Remote: Add support for exemplar to the remote write receiver endpoint. #9319 #9414
 * [FEATURE] SD: Add PuppetDB service discovery. #8883
 * [FEATURE] SD: Add Uyuni service discovery. #8190
 * [FEATURE] Web: Add support for security-related HTTP headers. #9546
-* [ENHANCEMENT] Backfill: add --max-block-duration in promtool create-blocks-from rules. #9511
+* [ENHANCEMENT] Backfill: add `--max-block-duration` in promtool create-blocks-from rules. #9511
+* [ENHANCEMENT] Kubernetes SD: Warn user in case of endpoint over-capacity. #9467
 * [ENHANCEMENT] OAuth2: Add TLS configuration to token requests. #9550
 * [ENHANCEMENT] PromQL: Several optimizations. #9365 #9360 #9362 #9552
 * [ENHANCEMENT] PromQL: make aggregations deterministic in instant queries. #9459
-* [ENHANCEMENT] SD: Add `proxy_url` to Azure SD. #9267
+* [ENHANCEMENT] SD: Add `proxy_url`, `follow_redirects`, `tls_config` to Azure SD. #9267
 * [ENHANCEMENT] SD: Add documentation for endpointslice. #9436
 * [ENHANCEMENT] UI: Debounce timerange setting changes. #9359
 * [ENHANCEMENT] Config: Print human-readable sizes with unit instead of raw numbers. #9361
 * [ENHANCEMENT] Rules: Add the ability to limit number of alerts or series. #9260 #9541
-* [ENHANCEMENT] SD: kubernetes: Warn user in case of endpoint over-capacity. #9467
 * [BUGFIX] Backfill: Apply rule labels after query labels. #9421
 * [BUGFIX] Scrape: Resolve conflicts between multiple exported label prefixes. #9479 #9518
 * [BUGFIX] Scrape: Restart scrape loops when `__scrape_interval__` is changed. #9551
