@@ -160,7 +160,7 @@ endif
 update-go-deps:
 	@echo ">> updating Go dependencies"
 	@for m in $$($(GO) list -mod=readonly -m -f '{{ if and (not .Indirect) (not .Main)}}{{.Path}}{{end}}' all); do \
-		$(GO) get $$m; \
+		$(GO) get -d $$m; \
 	done
 	GO111MODULE=$(GO111MODULE) $(GO) mod tidy
 ifneq (,$(wildcard vendor))
