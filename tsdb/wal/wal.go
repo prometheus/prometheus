@@ -875,7 +875,7 @@ type segmentBufReader struct {
 	off  int // Offset of read data into current segment.
 }
 
-// nolint:golint // TODO: Consider exporting segmentBufReader
+// nolint:revive // TODO: Consider exporting segmentBufReader
 func NewSegmentBufReader(segs ...*Segment) *segmentBufReader {
 	return &segmentBufReader{
 		buf:  bufio.NewReaderSize(segs[0], 16*pageSize),
@@ -883,7 +883,7 @@ func NewSegmentBufReader(segs ...*Segment) *segmentBufReader {
 	}
 }
 
-// nolint:golint
+// nolint:revive
 func NewSegmentBufReaderWithOffset(offset int, segs ...*Segment) (sbr *segmentBufReader, err error) {
 	if offset == 0 {
 		return NewSegmentBufReader(segs...), nil
