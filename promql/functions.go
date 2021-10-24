@@ -23,6 +23,7 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
+	"golang.org/x/mod/semver"
 
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -942,6 +943,46 @@ func funcLabelJoin(vals []parser.Value, args parser.Expressions, enh *EvalNodeHe
 	return enh.Out
 }
 
+// === semver_compare(Vector parser.ValueTypeVector, label_name, version parser.ValueTypeString) Vector ===
+func funcSemverCompare(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	var (
+		vector  = vals[0].(Vector)
+		src     = stringFromArg(args[1])
+		version = stringFromArg(args[2])
+	)
+
+	if !model.LabelName(src).IsValid() {
+		panic(errors.Errorf("invalid source label name in semver_compare(): %s", src))
+	}
+
+	if version[0] != 'v' {
+		version = "v" + version
+	}
+
+	if !semver.IsValid(version) {
+		panic(errors.Errorf("invalid version in semver_compare(): %s", version))
+	}
+
+	for _, el := range vector {
+		srcVersion := el.Metric.Get(src)
+		if srcVersion == "" {
+			continue
+		}
+
+		if srcVersion[0] != 'v' {
+			srcVersion = "v" + srcVersion
+		}
+
+		res := semver.Compare(srcVersion, version)
+
+		enh.Out = append(enh.Out, Sample{
+			Metric: enh.DropMetricName(el.Metric),
+			Point:  Point{V: float64(res)},
+		})
+	}
+	return enh.Out
+}
+
 // Common code for date related functions.
 func dateWrapper(vals []parser.Value, enh *EvalNodeHelper, f func(time.Time) float64) Vector {
 	if len(vals) == 0 {
@@ -1064,6 +1105,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"resets":             funcResets,
 	"round":              funcRound,
 	"scalar":             funcScalar,
+	"semver_compare":     funcSemverCompare,
 	"sgn":                funcSgn,
 	"sin":                funcSin,
 	"sinh":               funcSinh,

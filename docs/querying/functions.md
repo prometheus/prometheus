@@ -377,6 +377,18 @@ Given a single-element input vector, `scalar(v instant-vector)` returns the
 sample value of that single element as a scalar. If the input vector does not
 have exactly one element, `scalar` will return `NaN`.
 
+## `semver_compare()`
+
+`semver_compare(v instant-vector, label_name string, version string)` performs
+a semantic versioning comparison between the value of the specified label (a)
+and a given version string (b).
+
+Values returned are:
+
+- 0 if a == b
+- -1 if a < b
+- +1 if a > b
+
 ## `sgn()`
 
 `sgn(v instant-vector)` returns a vector with all sample values converted to their sign, defined as this: 1 if v is positive, -1 if v is negative and 0 if v is equal to zero.

@@ -287,6 +287,11 @@ var Functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeVector},
 		ReturnType: ValueTypeScalar,
 	},
+	"semver_compare": {
+		Name:       "semver_compare",
+		ArgTypes:   []ValueType{ValueTypeVector, ValueTypeString, ValueTypeString},
+		ReturnType: ValueTypeVector,
+	},
 	"sgn": {
 		Name:       "sgn",
 		ArgTypes:   []ValueType{ValueTypeVector},

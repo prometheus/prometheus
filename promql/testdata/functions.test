@@ -1023,3 +1023,37 @@ eval instant at 5m log10(exp_root_log - 20)
 	{l="y"} -Inf
 
 clear
+
+# Tests for semver_compare.
+load 5m
+  testmetric{version="v1.0.0", instance="a"} 1
+  testmetric{version="v1.1.0", instance="b"} 1
+  testmetric{version="v1.2.0", instance="c"} 1
+  testmetric{version="v0.9.0", instance="d"} 1
+  testmetric{version="1.1.0", instance="e"} 1
+  badmetric{version="v", instance="f"} 1
+  prefixmetric{goversion="go1.17.1", instance="g"} 1
+
+eval instant at 0m semver_compare(testmetric, "version", "v1.0.0")
+  {version="v1.0.0", instance="a"} 0
+  {version="v1.1.0", instance="b"} 1
+  {version="v1.2.0", instance="c"} 1
+  {version="v0.9.0", instance="d"} -1
+  {version="1.1.0", instance="e"} 1
+
+eval instant at 0m semver_compare(testmetric, "version", "v1.1.0")
+  {version="v1.0.0", instance="a"} -1
+  {version="v1.1.0", instance="b"} 0
+  {version="v1.2.0", instance="c"} 1
+  {version="v0.9.0", instance="d"} -1
+  {version="1.1.0", instance="e"} 0
+
+eval instant at 0m semver_compare(badmetric, "version", "v0.0.1")
+  {version="v", instance="f"} -1
+
+# Check that comparing with relabeling works correctly
+eval instant at 0m semver_compare(label_replace(prefixmetric, "version", "v$1", "goversion", "go(.+)"), "version", "1.17.1")
+  {goversion="go1.17.1", version="v1.17.1", instance="g"} 0
+
+eval instant at 0m semver_compare(prefixmetric, "goversion", "1.17.1")
+  {goversion="go1.17.1", instance="g"} -1
