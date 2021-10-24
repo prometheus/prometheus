@@ -992,12 +992,15 @@ func (h *Head) Stats(statsByLabelName string) *Stats {
 	}
 }
 
+// RangeHead allows querying Head via an IndexReader, ChunkReader and tombstones.Reader
+// but only within a restricted range.  Used for queries and compactions
 type RangeHead struct {
 	head       *Head
 	mint, maxt int64
 }
 
 // NewRangeHead returns a *RangeHead.
+// TODO caller must make sure mint/maxt are within bounds of head ? or something?
 func NewRangeHead(head *Head, mint, maxt int64) *RangeHead {
 	return &RangeHead{
 		head: head,
@@ -1465,17 +1468,17 @@ type memSeries struct {
 
 	ref           uint64
 	lset          labels.Labels
-	mmappedChunks []*mmappedChunk // Immutable chunks on disk that have not yet gone into a block.
+	mmappedChunks []*mmappedChunk // Immutable chunks on disk that have not yet gone into a block, in order of ascending time stamps.
 	mmMaxTime     int64           // Max time of any mmapped chunk, only used during WAL replay.
 	headChunk     *memChunk       // Most recent chunk in memory that's still being built.
 	chunkRange    int64
-	firstChunkID  int
+	firstChunkID  int // ChunkID corresponding to mmappedChunks[0].ref
 
 	nextAt        int64     // Timestamp at which to cut the next chunk.
-	sampleBuf     [4]sample // We keep the last 4 samples here so we don't need coordination between appender and querier
+	sampleBuf     [4]sample // We keep the last 4 samples here (in addition to appending them) so we don't need coordination between appender and querier. Probably because even the most compact encoding of a sample takes 2 bits, so the last byte is not contended.
 	pendingCommit bool      // Whether there are samples waiting to be committed to this series.
 
-	app chunkenc.Appender // Current appender for the chunk.
+	app chunkenc.Appender // Current appender for the head chunk. Set when a new head chunk is cut. TODO when exactly is it nil or not nil? is it valid to be nil?
 
 	memChunkPool *sync.Pool
 

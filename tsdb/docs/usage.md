@@ -35,8 +35,9 @@ Remember:
 
 * Use Commit() to add the samples to the DB and update the WAL.
 * create a new appender each time you commit.
-
-You can use multiple appenders concurrently (TODO: use case? trade-offs ?)
+* appenders are not concurrency safe, but scrapes run concurrently and as such, leverage multiple appenders concurrently.
+  This reduces contention, although Commit() contend the same critical section (writing to the WAL is serialized), and may
+  inflate append tail latency if multiple appenders try to commit at the same time.
 
 Append may reject data due to these conditions:
 
