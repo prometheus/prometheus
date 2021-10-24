@@ -1200,7 +1200,7 @@ mainLoop:
 			}
 		}
 
-		last = sl.scrapeAndReport(sl.interval, sl.timeout, last, scrapeTime, errc)
+		last = sl.scrapeAndReport(last, scrapeTime, errc)
 
 		select {
 		case <-sl.parentCtx.Done():
@@ -1224,12 +1224,12 @@ mainLoop:
 // In the happy scenario, a single appender is used.
 // This function uses sl.parentCtx instead of sl.ctx on purpose. A scrape should
 // only be cancelled on shutdown, not on reloads.
-func (sl *scrapeLoop) scrapeAndReport(interval, timeout time.Duration, last, appendTime time.Time, errc chan<- error) time.Time {
+func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- error) time.Time {
 	start := time.Now()
 
 	// Only record after the first scrape.
 	if !last.IsZero() {
-		targetIntervalLength.WithLabelValues(interval.String()).Observe(
+		targetIntervalLength.WithLabelValues(sl.interval.String()).Observe(
 			time.Since(last).Seconds(),
 		)
 	}
@@ -1254,7 +1254,7 @@ func (sl *scrapeLoop) scrapeAndReport(interval, timeout time.Duration, last, app
 	}()
 
 	defer func() {
-		if err = sl.report(app, appendTime, timeout, time.Since(start), total, added, seriesAdded, scrapeErr); err != nil {
+		if err = sl.report(app, appendTime, time.Since(start), total, added, seriesAdded, scrapeErr); err != nil {
 			level.Warn(sl.l).Log("msg", "Appending scrape report failed", "err", err)
 		}
 	}()
@@ -1275,7 +1275,7 @@ func (sl *scrapeLoop) scrapeAndReport(interval, timeout time.Duration, last, app
 	}
 
 	var contentType string
-	scrapeCtx, cancel := context.WithTimeout(sl.parentCtx, timeout)
+	scrapeCtx, cancel := context.WithTimeout(sl.parentCtx, sl.timeout)
 	contentType, scrapeErr = sl.scraper.scrape(scrapeCtx, buf)
 	cancel()
 
@@ -1647,7 +1647,7 @@ const (
 	scrapeSampleLimitMetricName  = "scrape_sample_limit" + "\xff"
 )
 
-func (sl *scrapeLoop) report(app storage.Appender, start time.Time, timeout, duration time.Duration, scraped, added, seriesAdded int, scrapeErr error) (err error) {
+func (sl *scrapeLoop) report(app storage.Appender, start time.Time, duration time.Duration, scraped, added, seriesAdded int, scrapeErr error) (err error) {
 	sl.scraper.Report(start, duration, scrapeErr)
 
 	ts := timestamp.FromTime(start)
@@ -1673,7 +1673,7 @@ func (sl *scrapeLoop) report(app storage.Appender, start time.Time, timeout, dur
 		return
 	}
 	if sl.reportScrapeTimeout {
-		if err = sl.addReportSample(app, scrapeTimeoutMetricName, ts, timeout.Seconds()); err != nil {
+		if err = sl.addReportSample(app, scrapeTimeoutMetricName, ts, sl.timeout.Seconds()); err != nil {
 			return
 		}
 		if err = sl.addReportSample(app, scrapeSampleLimitMetricName, ts, float64(sl.sampleLimit)); err != nil {
