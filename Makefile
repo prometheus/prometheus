@@ -35,7 +35,9 @@ ui-install:
 
 .PHONY: ui-build
 ui-build:
-	cd $(UI_PATH) && npm run build
+	# The "PUBLIC_URL=." ensures that all links in the generated asset bundle will be
+	# relative, so that assets are loaded correctly even when a path prefix is used.
+	cd $(UI_PATH) && PUBLIC_URL=. npm run build
 
 .PHONY: ui-build-module
 ui-build-module:
