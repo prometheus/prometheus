@@ -29,11 +29,14 @@ import (
 var (
 	marathonValidLabel = map[string]string{"prometheus": "yes"}
 	testServers        = []string{"http://localhost:8080"}
-	conf               = SDConfig{Servers: testServers}
 )
 
+func testConfig() SDConfig {
+	return SDConfig{Servers: testServers}
+}
+
 func testUpdateServices(client appListClient) ([]*targetgroup.Group, error) {
-	md, err := NewDiscovery(conf, nil)
+	md, err := NewDiscovery(testConfig(), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -126,7 +129,7 @@ func TestMarathonSDSendGroup(t *testing.T) {
 }
 
 func TestMarathonSDRemoveApp(t *testing.T) {
-	md, err := NewDiscovery(conf, nil)
+	md, err := NewDiscovery(testConfig(), nil)
 	if err != nil {
 		t.Fatalf("%s", err)
 	}
@@ -278,13 +281,6 @@ func Test500ErrorHttpResponseWithValidJSONBody(t *testing.T) {
 	// Create a test server with mock HTTP handler.
 	ts := httptest.NewServer(http.HandlerFunc(respHandler))
 	defer ts.Close()
-	// Backup conf for future tests.
-	backupConf := conf
-	defer func() {
-		conf = backupConf
-	}()
-	// Setup conf for the test case.
-	conf = SDConfig{Servers: []string{ts.URL}}
 	// Execute test case and validate behavior.
 	_, err := testUpdateServices(nil)
 	if err == nil {
