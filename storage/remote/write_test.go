@@ -218,7 +218,7 @@ func TestWriteStorageLifecycle(t *testing.T) {
 			&config.DefaultRemoteWriteConfig,
 		},
 	}
-	s.ApplyConfig(conf)
+	require.NoError(t, s.ApplyConfig(conf))
 	require.Equal(t, 1, len(s.queues))
 
 	err = s.Close()
@@ -243,14 +243,14 @@ func TestUpdateExternalLabels(t *testing.T) {
 	}
 	hash, err := toHash(conf.RemoteWriteConfigs[0])
 	require.NoError(t, err)
-	s.ApplyConfig(conf)
+	require.NoError(t, s.ApplyConfig(conf))
 	require.Equal(t, 1, len(s.queues))
 	require.Equal(t, labels.Labels(nil), s.queues[hash].externalLabels)
 
 	conf.GlobalConfig.ExternalLabels = externalLabels
 	hash, err = toHash(conf.RemoteWriteConfigs[0])
 	require.NoError(t, err)
-	s.ApplyConfig(conf)
+	require.NoError(t, s.ApplyConfig(conf))
 	require.Equal(t, 1, len(s.queues))
 	require.Equal(t, externalLabels, s.queues[hash].externalLabels)
 
@@ -282,10 +282,10 @@ func TestWriteStorageApplyConfigsIdempotent(t *testing.T) {
 	hash, err := toHash(conf.RemoteWriteConfigs[0])
 	require.NoError(t, err)
 
-	s.ApplyConfig(conf)
+	require.NoError(t, s.ApplyConfig(conf))
 	require.Equal(t, 1, len(s.queues))
 
-	s.ApplyConfig(conf)
+	require.NoError(t, s.ApplyConfig(conf))
 	require.Equal(t, 1, len(s.queues))
 	_, hashExists := s.queues[hash]
 	require.True(t, hashExists, "Queue pointer should have remained the same")
@@ -391,7 +391,7 @@ func TestWriteStorageApplyConfigsPartialUpdate(t *testing.T) {
 		GlobalConfig:       config.GlobalConfig{},
 		RemoteWriteConfigs: []*config.RemoteWriteConfig{c1, c2},
 	}
-	s.ApplyConfig(conf)
+	require.NoError(t, s.ApplyConfig(conf))
 	require.Equal(t, 2, len(s.queues))
 
 	_, hashExists = s.queues[hashes[0]]
