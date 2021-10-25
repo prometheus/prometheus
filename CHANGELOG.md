@@ -1,3 +1,7 @@
+## 2.31.0-rc.1 / 2021-10-25
+
+* [BUGFIX] UI: Fix assets loading when a prefix is used in `--web.route-prefix` or `--web.external-url`. #9586
+
 ## 2.31.0-rc.0 / 2021-10-21
 
 * [FEATURE] PromQL: Add trigonometric functions and `atan2` binary operator. #9239 #9248 #9515
