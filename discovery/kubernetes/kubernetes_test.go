@@ -86,15 +86,18 @@ func (d k8sDiscoveryTest) Run(t *testing.T) {
 	// Ensure that discovery has a discoverer set. This prevents a race
 	// condition where the above go routine may or may not have set a
 	// discoverer yet.
+	lastDiscoverersCount := 0
+	dis := d.discovery.(*Discovery)
 	for {
-		dis := d.discovery.(*Discovery)
 		dis.RLock()
 		l := len(dis.discoverers)
 		dis.RUnlock()
-		if l > 0 {
+		if l > 0 && l == lastDiscoverersCount {
 			break
 		}
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
+
+		lastDiscoverersCount = l
 	}
 
 	resChan := make(chan map[string]*targetgroup.Group)
