@@ -663,6 +663,7 @@ func TestDB_SnapshotWithDelete(t *testing.T) {
 	numSamples := int64(10)
 
 	db := openTestDB(t, nil, nil)
+	defer func() { require.NoError(t, db.Close()) }()
 
 	ctx := context.Background()
 	app := db.Appender(ctx)
@@ -700,15 +701,14 @@ Outer:
 			require.NoError(t, os.RemoveAll(snap))
 		}()
 		require.NoError(t, db.Snapshot(snap, true))
-		require.NoError(t, db.Close())
 
 		// reopen DB from snapshot
-		db, err = Open(snap, nil, nil, nil, nil)
+		newDB, err := Open(snap, nil, nil, nil, nil)
 		require.NoError(t, err)
-		defer func() { require.NoError(t, db.Close()) }()
+		defer func() { require.NoError(t, newDB.Close()) }()
 
 		// Compare the result.
-		q, err := db.Querier(context.TODO(), 0, numSamples)
+		q, err := newDB.Querier(context.TODO(), 0, numSamples)
 		require.NoError(t, err)
 		defer func() { require.NoError(t, q.Close()) }()
 
