@@ -367,7 +367,7 @@ func aggrOverTime(vals []parser.Value, enh *EvalNodeHelper, aggrFn func([]Point)
 // === avg_over_time(Matrix parser.ValueTypeMatrix) Vector ===
 func funcAvgOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return aggrOverTime(vals, enh, func(values []Point) float64 {
-		var mean, count float64
+		var mean, count, c float64
 		for _, v := range values {
 			count++
 			if math.IsInf(mean, 0) {
@@ -387,9 +387,13 @@ func funcAvgOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 					continue
 				}
 			}
-			mean += v.V/count - mean/count
+			mean, c = kahanSummationIter(v.V/count-mean/count, mean, c)
 		}
-		return mean
+
+		if math.IsInf(mean, 0) {
+			return mean
+		}
+		return mean + c
 	})
 }
 
