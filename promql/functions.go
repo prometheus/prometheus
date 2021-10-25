@@ -439,11 +439,14 @@ func funcMinOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 // === sum_over_time(Matrix parser.ValueTypeMatrix) Vector ===
 func funcSumOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return aggrOverTime(vals, enh, func(values []Point) float64 {
-		var sum float64
+		var sum, c float64
 		for _, v := range values {
-			sum += v.V
+			sum, c = kahanSummationIter(v.V, sum, c)
 		}
-		return sum
+		if math.IsInf(sum, 0) {
+			return sum
+		}
+		return sum + c
 	})
 }
 
@@ -675,23 +678,52 @@ func funcTimestamp(vals []parser.Value, args parser.Expressions, enh *EvalNodeHe
 	return enh.Out
 }
 
+func kahanSummation(samples []float64) float64 {
+	sum, c := 0.0, 0.0
+
+	for _, v := range samples {
+		sum, c = kahanSummationIter(v, sum, c)
+	}
+	return sum + c
+}
+
+func kahanSummationIter(v, sum, c float64) (float64, float64) {
+	t := sum + v
+	// using Neumaier improvement, swap if next term larger than sum
+	if math.Abs(sum) >= math.Abs(v) {
+		c += (sum - t) + v
+	} else {
+		c += (v - t) + sum
+	}
+	sum = t
+	return sum, c
+}
+
 // linearRegression performs a least-square linear regression analysis on the
 // provided SamplePairs. It returns the slope, and the intercept value at the
 // provided time.
 func linearRegression(samples []Point, interceptTime int64) (slope, intercept float64) {
 	var (
-		n            float64
-		sumX, sumY   float64
-		sumXY, sumX2 float64
+		n          float64
+		sumX, cX   float64
+		sumY, cY   float64
+		sumXY, cXY float64
+		sumX2, cX2 float64
 	)
 	for _, sample := range samples {
-		x := float64(sample.T-interceptTime) / 1e3
 		n += 1.0
-		sumY += sample.V
-		sumX += x
-		sumXY += x * sample.V
-		sumX2 += x * x
+		x := float64(sample.T-interceptTime) / 1e3
+		sumX, cX = kahanSummationIter(x, sumX, cX)
+		sumY, cY = kahanSummationIter(sample.V, sumY, cY)
+		sumXY, cXY = kahanSummationIter(x*sample.V, sumXY, cXY)
+		sumX2, cX2 = kahanSummationIter(x*x, sumX2, cX2)
 	}
+
+	sumX = sumX + cX
+	sumY = sumY + cY
+	sumXY = sumXY + cXY
+	sumX2 = sumX2 + cX2
+
 	covXY := sumXY - sumX*sumY/n
 	varX := sumX2 - sumX*sumX/n
 
