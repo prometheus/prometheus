@@ -908,6 +908,144 @@ func TestDB_e2e(t *testing.T) {
 	}
 }
 
+func TestDB_OnCorruptedCheckpoint(t *testing.T) {
+	dbDir, err := ioutil.TempDir("", "test")
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, os.RemoveAll(dbDir))
+	}()
+
+	walDir := filepath.Join(dbDir, "wal")
+	wlog, err := wal.NewSize(nil, nil, walDir, 32*1024, true)
+	require.NoError(t, err)
+	head, err := NewHead(nil, nil, wlog, DefaultHeadOptions(), nil)
+	require.NoError(t, err)
+
+	app := head.Appender(context.Background())
+	series := genSeries(100, 3, 0, 100)
+	for _, s := range series {
+		lbls := s.Labels()
+		itr := s.Iterator()
+		for itr.Next() {
+			ts, v := itr.At()
+			_, err = app.Append(0, lbls, ts, v)
+			require.NoError(t, err)
+		}
+	}
+	require.NoError(t, app.Commit())
+
+	// Create a checkpoint.
+	_, _, err = wal.LastCheckpoint(walDir)
+	require.Equal(t, record.ErrNotFound, err)
+
+	first, _, err := wal.Segments(walDir)
+	require.NoError(t, err)
+
+	// We have 2 segments, i.e., 0 & 1. Let's create a checkpoint of 0 segment only.
+	_, err = wal.Checkpoint(log.NewNopLogger(), wlog, first, first, func(_ uint64) bool { return true }, 0)
+	require.NoError(t, err)
+
+	_, checkpointNum, err := wal.LastCheckpoint(walDir)
+	require.NoError(t, err)
+	require.Equal(t, 0, checkpointNum)
+
+	// Stop the head.
+	require.NoError(t, head.Close())
+
+	// Introduce checkpoint corruption.
+	checkpointFile := filepath.Join(walDir, "checkpoint.00000000/00000000")
+
+	contents, err := ioutil.ReadFile(checkpointFile)
+	require.NoError(t, err)
+
+	total := len(contents)
+	newContent := []byte("random_stuff")
+	newContent = append(newContent, contents[total/2:]...)
+	contents = append(contents[:total/2-100], newContent...)
+	require.NoError(t, ioutil.WriteFile(checkpointFile, contents, 0644))
+
+	// Restart Head and initialize it.
+	wlog, err = wal.New(nil, nil, walDir, true)
+	require.NoError(t, err)
+	head, err = NewHead(nil, nil, wlog, DefaultHeadOptions(), nil)
+	require.NoError(t, err)
+
+	err = head.Init(math.MinInt64)
+	require.NotNil(t, err)
+
+	// Verify if head reports the expected checkpoint corrupted error.
+	require.True(t, strings.Contains(err.Error(), ErrCheckpointCorrupted.Error()))
+	require.NoError(t, head.Close())
+
+	// Now we have a corrupted checkpoint. Let's start the db and see if everything goes fine.
+	db, err := Open(dbDir, nil, nil, DefaultOptions(), nil)
+	require.NoError(t, err)
+	defer db.Close()
+
+	// Ensure db is empty.
+	querier, err := db.Querier(context.Background(), 0, 10)
+	require.NoError(t, err)
+
+	ss := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, labels.MetricName, ".*"))
+	numSeries := 0
+	for ss.Next() {
+		numSeries++
+	}
+	require.Equal(t, 0, numSeries)
+	require.NoError(t, ss.Err())
+
+	// Ensure that db dir is empty.
+	_, _, err = wal.LastCheckpoint(walDir)
+	require.Equal(t, storage.ErrNotFound.Error(), err.Error())
+
+	wlog = db.head.wal
+	seg, _, err := wlog.LastSegmentAndOffset()
+	require.NoError(t, err)
+	require.Equal(t, 0, seg)
+
+	walSize, err := wlog.Size()
+	require.NoError(t, err)
+	require.Equal(t, int64(0), walSize)
+
+	// Ingest dummy data and query to ensure everything is fine.
+	app = db.Appender(context.Background())
+
+	series = genSeries(3, 3, 0, 10)
+	expected := make([]tsdbutil.Sample, 0, 10)
+	seriesIdx := 0
+	for _, s := range series {
+		seriesIdx++
+		itr := s.Iterator()
+		for itr.Next() {
+			ts, v := itr.At()
+			_, err = app.Append(0, s.Labels(), ts, v)
+			require.NoError(t, err)
+			if seriesIdx == 1 {
+				// Only record samples from first series for comparison.
+				expected = append(expected, sample{t: ts, v: v})
+			}
+		}
+	}
+	require.NoError(t, app.Commit())
+
+	querier, err = db.Querier(context.Background(), 0, 10)
+	require.NoError(t, err)
+
+	ss = querier.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, defaultLabelName, "0"))
+	received := make([]tsdbutil.Sample, 0, 10)
+	for ss.Next() {
+		series := ss.At()
+		itr := series.Iterator()
+		for itr.Next() {
+			ts, v := itr.At()
+			received = append(received, sample{t: ts, v: v})
+		}
+	}
+	require.NoError(t, ss.Err())
+	require.Len(t, ss.Warnings(), 0)
+	require.Equal(t, expected, received)
+}
+
 func TestWALFlushedOnDBClose(t *testing.T) {
 	db := openTestDB(t, nil, nil)
 

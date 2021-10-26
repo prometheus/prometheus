@@ -610,13 +610,13 @@ func (h *Head) Init(minValidTime int64) error {
 // CleanRestart cleans up the WAL and Head chunks dir and restarts the Head.
 // It must not be called after calling head.Init()
 func (h *Head) CleanRestart() error {
-	level.Warn(h.logger).Log("msg", "Restarting Head clean...")
+	level.Warn(h.logger).Log("msg", "Restarting Head clean")
 
 	oldWAL := h.wal
 	oldHeadChunks := h.chunkDiskMapper
 
 	// Clean up on disk data (WAL + head chunks).
-	level.Debug(h.logger).Log("msg", "Cleaning up WAL...")
+	level.Debug(h.logger).Log("msg", "Cleaning up WAL")
 	err := oldWAL.Close()
 	if err != nil {
 		return errors.Wrap(err, "close WAL")
@@ -624,7 +624,7 @@ func (h *Head) CleanRestart() error {
 	if err = os.RemoveAll(oldWAL.Dir()); err != nil {
 		return errors.Wrap(err, "remove WAL")
 	}
-	level.Debug(h.logger).Log("msg", "Cleaning up head chunks...")
+	level.Debug(h.logger).Log("msg", "Cleaning up head chunks")
 	if err = oldHeadChunks.Close(); err != nil {
 		return errors.Wrap(err, "close head chunks")
 	}
