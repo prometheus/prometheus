@@ -97,7 +97,7 @@ When enabled, GOMAXPROCS variable is automatically set to match Linux container 
 
 ## No Default Scrape Port
 
-`--enable-feature=extra-scrape-metrics`
+`--enable-feature=no-default-scrape-port`
 
 When enabled, the default port for HTTP or HTTPS won't be added a target's address if no port is specified.
 In addition, if a default port (`:80` or `:443`) has already been attached, it will be removed.
