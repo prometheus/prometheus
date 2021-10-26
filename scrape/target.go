@@ -401,6 +401,7 @@ func PopulateLabels(lset labels.Labels, cfg *config.ScrapeConfig, noDefaultPort 
 	}
 
 	addr := lset.Get(model.AddressLabel)
+	addr2 := addr
 	scheme := lset.Get(model.SchemeLabel)
 	host, port, add := addPort(addr)
 	// If it's an address with no trailing port, infer it based on the used scheme
@@ -416,7 +417,9 @@ func PopulateLabels(lset labels.Labels, cfg *config.ScrapeConfig, noDefaultPort 
 			return nil, nil, errors.Errorf("invalid scheme: %q", cfg.Scheme)
 		}
 		lb.Set(model.AddressLabel, addr)
-	} else if noDefaultPort && !add {
+	}
+
+	if noDefaultPort {
 		// If it's an address with a trailing default port and the
 		// no-default-scrape-port flag is present, remove the port.
 		switch port {
@@ -428,6 +431,8 @@ func PopulateLabels(lset labels.Labels, cfg *config.ScrapeConfig, noDefaultPort 
 			if scheme == "https" {
 				lb.Set(model.AddressLabel, host)
 			}
+		case "":
+			lb.Set(model.AddressLabel, addr2)
 		}
 	}
 
