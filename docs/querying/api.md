@@ -577,8 +577,7 @@ URL query parameters:
 - `type=alert|record`: return only the alerting rules (e.g. `type=alert`) or the recording rules (e.g. `type=record`). When the parameter is absent or empty, no filtering is done.
 
 Limit:
--`Limit`: group-level limit of the number of alerts produced by an alerting rule 
-  or series produced by a recording rule. Defalut value of limit is 0.
+-`Limit`: group-level limit of the number of alerts produced by an alerting rule or series produced by a recording rule. Defalut value of limit is 0.
 
 ```json
 $ curl http://localhost:9090/api/v1/rules
