@@ -578,10 +578,7 @@ URL query parameters:
 
 Limit:
 -`Limit`: group-level limit of the number of alerts produced by an alerting rule 
-  or series produced by a recording rule. If the limit is exceeded, 
-  the active alerts are removed. If it's an alerting rule, 
-  and the rule returns an error, then it subsequently sets the health to bad. 
-  defalut value of limit is 0.
+  or series produced by a recording rule. Defalut value of limit is 0.
 
 ```json
 $ curl http://localhost:9090/api/v1/rules
