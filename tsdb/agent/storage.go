@@ -42,9 +42,9 @@ var (
 
 // Default values for options.
 var (
-	DefaultTruncateFrequency = 2 * time.Hour
-	DefaultMinWALTime        = 5 * time.Minute
-	DefaultMaxWALTime        = 4 * time.Hour
+	DefaultTruncateFrequency = int64(2 * time.Hour / time.Millisecond)
+	DefaultMinWALTime        = int64(5 * time.Minute / time.Millisecond)
+	DefaultMaxWALTime        = int64(4 * time.Hour / time.Millisecond)
 )
 
 // Options of the WAL storage.
@@ -57,19 +57,15 @@ type Options struct {
 	// WALCompression will turn on Snappy compression for records on the WAL.
 	WALCompression bool
 
-	// StripeSize is the size in entries of the series hash map. Reducing the size will save memory but impact performance.
+	// StripeSize is the size (power of 2) in entries of the series hash map. Reducing the size will save memory but impact performance.
 	StripeSize int
 
-	// SeriesLifecycleCallback specifies a list of callbacks that will be called during a lifecycle of a series.
-	// It is always a no-op in Prometheus and mainly meant for external users who import TSDB.
-	SeriesLifecycleCallback tsdb.SeriesLifecycleCallback
-
 	// TruncateFrequency determines how frequently to truncate data from the WAL.
-	TruncateFrequency time.Duration
+	TruncateFrequency int64
 
 	// Shortest and longest amount of time data can exist in the WAL before being
 	// deleted.
-	MinWALTime, MaxWALTime time.Duration
+	MinWALTime, MaxWALTime int64
 }
 
 // DefaultOptions used for the WAL storage. They are sane for setups using
@@ -88,33 +84,82 @@ func DefaultOptions() *Options {
 type storageMetrics struct {
 	r prometheus.Registerer
 
-	numActiveSeries      prometheus.Gauge
-	numDeletedSeries     prometheus.Gauge
-	totalAppendedSamples prometheus.Counter
+	numActiveSeries             prometheus.Gauge
+	numWALSeriesPendingDeletion prometheus.Gauge
+	totalAppendedSamples        prometheus.Counter
+	walTruncateDuration         prometheus.Summary
+	walCorruptionsTotal         prometheus.Counter
+	walTotalReplayDuration      prometheus.Gauge
+	checkpointDeleteFail        prometheus.Counter
+	checkpointDeleteTotal       prometheus.Counter
+	checkpointCreationFail      prometheus.Counter
+	checkpointCreationTotal     prometheus.Counter
 }
 
 func newStorageMetrics(r prometheus.Registerer) *storageMetrics {
 	m := storageMetrics{r: r}
 	m.numActiveSeries = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "prometheus_agent_wal_active_series",
-		Help: "Current number of active series being tracked by the WAL storage",
+		Name: "prometheus_agent_active_series",
+		Help: "Number of active series being tracked by the WAL storage",
 	})
 
-	m.numDeletedSeries = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "prometheus_agent_wal_deleted_series",
-		Help: "Current number of series pending deletion from the WAL",
+	m.numWALSeriesPendingDeletion = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "prometheus_agent_deleted_series",
+		Help: "Number of series pending deletion from the WAL",
 	})
 
 	m.totalAppendedSamples = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: "prometheus_agent_wal_samples_appended_total",
-		Help: "Total number of samples appended to the WAL",
+		Name: "prometheus_agent_samples_appended_total",
+		Help: "Total number of samples appended to the storage",
+	})
+
+	m.walTruncateDuration = prometheus.NewSummary(prometheus.SummaryOpts{
+		Name: "prometheus_agent_truncate_duration_seconds",
+		Help: "Duration of WAL truncation.",
+	})
+
+	m.walCorruptionsTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "prometheus_agent_corruptions_total",
+		Help: "Total number of WAL corruptions.",
+	})
+
+	m.walTotalReplayDuration = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "prometheus_agent_data_replay_duration_seconds",
+		Help: "Time taken to replay the data on disk.",
+	})
+
+	m.checkpointDeleteFail = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "prometheus_agent_checkpoint_deletions_failed_total",
+		Help: "Total number of checkpoint deletions that failed.",
+	})
+
+	m.checkpointDeleteTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "prometheus_agent_checkpoint_deletions_total",
+		Help: "Total number of checkpoint deletions attempted.",
+	})
+
+	m.checkpointCreationFail = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "prometheus_agent_checkpoint_creations_failed_total",
+		Help: "Total number of checkpoint creations that failed.",
+	})
+
+	m.checkpointCreationTotal = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "prometheus_agent_checkpoint_creations_total",
+		Help: "Total number of checkpoint creations attempted.",
 	})
 
 	if r != nil {
 		r.MustRegister(
 			m.numActiveSeries,
-			m.numDeletedSeries,
+			m.numWALSeriesPendingDeletion,
 			m.totalAppendedSamples,
+			m.walTruncateDuration,
+			m.walCorruptionsTotal,
+			m.walTotalReplayDuration,
+			m.checkpointDeleteFail,
+			m.checkpointDeleteTotal,
+			m.checkpointCreationFail,
+			m.checkpointCreationTotal,
 		)
 	}
 
@@ -127,7 +172,7 @@ func (m *storageMetrics) Unregister() {
 	}
 	cs := []prometheus.Collector{
 		m.numActiveSeries,
-		m.numDeletedSeries,
+		m.numWALSeriesPendingDeletion,
 		m.totalAppendedSamples,
 	}
 	for _, c := range cs {
@@ -149,8 +194,8 @@ type Storage struct {
 
 	nextRef *atomic.Uint64
 	series  *stripeSeries
-	// deleted is a map of ref IDs that should be deleted to the WAL segment they
-	// must be kept around to.
+	// deleted is a map of (ref IDs that should be deleted from WAL) to (the WAL segment they
+	// must be kept around to).
 	deleted map[uint64]int
 
 	donec chan struct{}
@@ -218,7 +263,9 @@ func validateOptions(opts *Options) *Options {
 	if opts.WALSegmentSize <= 0 {
 		opts.WALSegmentSize = wal.DefaultSegmentSize
 	}
-	if opts.StripeSize <= 0 {
+
+	// Revert Stripesize to DefaultStripsize if Stripsize is either 0 or not a power of 2.
+	if opts.StripeSize <= 0 || !((opts.StripeSize & (opts.StripeSize - 1)) == 0) {
 		opts.StripeSize = tsdb.DefaultStripeSize
 	}
 	if opts.TruncateFrequency <= 0 {
@@ -228,7 +275,7 @@ func validateOptions(opts *Options) *Options {
 		opts.MinWALTime = 0
 	}
 	if opts.MaxWALTime <= 0 {
-		opts.MaxWALTime = time.Hour * 4
+		opts.MaxWALTime = DefaultMaxWALTime
 	}
 	if opts.MaxWALTime < opts.TruncateFrequency {
 		opts.MaxWALTime = opts.TruncateFrequency
@@ -238,10 +285,14 @@ func validateOptions(opts *Options) *Options {
 
 func (s *Storage) replayWAL() error {
 	level.Info(s.logger).Log("msg", "replaying WAL, this may take a while", "dir", s.wal.Dir())
+	start := time.Now()
+
 	dir, startFrom, err := wal.LastCheckpoint(s.wal.Dir())
 	if err != nil && err != record.ErrNotFound {
 		return errors.Wrap(err, "find last checkpoint")
 	}
+
+	multiRef := map[uint64]uint64{}
 
 	if err == nil {
 		sr, err := wal.NewSegmentsReader(dir)
@@ -256,7 +307,7 @@ func (s *Storage) replayWAL() error {
 
 		// A corrupted checkpoint is a hard error for now and requires user
 		// intervention. There's likely little data that can be recovered anyway.
-		if err := s.loadWAL(wal.NewReader(sr)); err != nil {
+		if err := s.loadWAL(wal.NewReader(sr), multiRef); err != nil {
 			return errors.Wrap(err, "backfill checkpoint")
 		}
 		startFrom++
@@ -277,7 +328,7 @@ func (s *Storage) replayWAL() error {
 		}
 
 		sr := wal.NewSegmentBufReader(seg)
-		err = s.loadWAL(wal.NewReader(sr))
+		err = s.loadWAL(wal.NewReader(sr), multiRef)
 		if err := sr.Close(); err != nil {
 			level.Warn(s.logger).Log("msg", "error while closing the wal segments reader", "err", err)
 		}
@@ -287,10 +338,13 @@ func (s *Storage) replayWAL() error {
 		level.Info(s.logger).Log("msg", "WAL segment loaded", "segment", i, "maxSegment", last)
 	}
 
+	walReplayDuration := time.Since(start)
+	s.metrics.walTotalReplayDuration.Set(walReplayDuration.Seconds())
+
 	return nil
 }
 
-func (s *Storage) loadWAL(r *wal.Reader) (err error) {
+func (s *Storage) loadWAL(r *wal.Reader, multiRef map[uint64]uint64) (err error) {
 	var (
 		dec     record.Decoder
 		lastRef uint64
@@ -341,6 +395,9 @@ func (s *Storage) loadWAL(r *wal.Reader) (err error) {
 			case record.Tombstones:
 				// We don't care about tombstones
 				continue
+			case record.Exemplars:
+				// We don't care about exemplars
+				continue
 			default:
 				errCh <- &wal.CorruptionErr{
 					Err:     errors.Errorf("invalid record type %v", dec.Type(rec)),
@@ -350,6 +407,8 @@ func (s *Storage) loadWAL(r *wal.Reader) (err error) {
 			}
 		}
 	}()
+
+	var nonExistentSeriesRefs atomic.Uint64
 
 	for d := range decoded {
 		switch v := d.(type) {
@@ -361,9 +420,8 @@ func (s *Storage) loadWAL(r *wal.Reader) (err error) {
 				if s.series.GetByID(entry.Ref) == nil {
 					series := &memSeries{ref: entry.Ref, lset: entry.Labels, lastTs: 0}
 					s.series.Set(entry.Labels.Hash(), series)
-
+					multiRef[entry.Ref] = series.ref
 					s.metrics.numActiveSeries.Inc()
-
 					if entry.Ref > lastRef {
 						lastRef = entry.Ref
 					}
@@ -375,17 +433,15 @@ func (s *Storage) loadWAL(r *wal.Reader) (err error) {
 		case []record.RefSample:
 			for _, entry := range v {
 				// Update the lastTs for the series based
-				series := s.series.GetByID(entry.Ref)
-				if series == nil {
-					level.Warn(s.logger).Log("msg", "found sample referencing non-existing series, skipping")
+				ref, ok := multiRef[entry.Ref]
+				if !ok {
+					nonExistentSeriesRefs.Inc()
 					continue
 				}
-
-				series.Lock()
+				series := s.series.GetByID(ref)
 				if entry.T > series.lastTs {
 					series.lastTs = entry.T
 				}
-				series.Unlock()
 			}
 
 			//nolint:staticcheck
@@ -393,6 +449,10 @@ func (s *Storage) loadWAL(r *wal.Reader) (err error) {
 		default:
 			panic(fmt.Errorf("unexpected decoded type: %T", d))
 		}
+	}
+
+	if nonExistentSeriesRefs.Load() > 0 {
+		level.Warn(s.logger).Log("msg", "found sample referencing non-existing series, skipping", nonExistentSeriesRefs.Load())
 	}
 
 	s.nextRef.Store(lastRef)
@@ -416,14 +476,14 @@ Loop:
 		select {
 		case <-s.stopc:
 			break Loop
-		case <-time.After(s.opts.TruncateFrequency):
-			ts := s.rs.LowestSentTimestamp() - s.opts.MinWALTime.Milliseconds()
+		case <-time.After(time.Duration(s.opts.TruncateFrequency) * time.Millisecond):
+			ts := s.rs.LowestSentTimestamp() - s.opts.MinWALTime
 			if ts < 0 {
 				ts = 0
 			}
 
 			// Clamp timestamp to be the maximum lifetime of WAL data.
-			if maxTS := timestamp.FromTime(time.Now().Add(-s.opts.MaxWALTime)); ts < maxTS {
+			if maxTS := timestamp.FromTime(time.Now()) - s.opts.MaxWALTime; ts < maxTS {
 				ts = maxTS
 			}
 
@@ -472,10 +532,18 @@ func (s *Storage) truncate(mint int64) error {
 		if s.series.GetByID(id) != nil {
 			return true
 		}
-		_, ok := s.deleted[id]
-		return ok
+
+		seg, ok := s.deleted[id]
+		return ok && seg >= first
 	}
+
+	s.metrics.checkpointCreationTotal.Inc()
+
 	if _, err = wal.Checkpoint(s.logger, s.wal, first, last, keep, mint); err != nil {
+		s.metrics.checkpointCreationFail.Inc()
+		if _, ok := errors.Cause(err).(*wal.CorruptionErr); ok {
+			s.metrics.walCorruptionsTotal.Inc()
+		}
 		return errors.Wrap(err, "create checkpoint")
 	}
 	if err := s.wal.Truncate(last + 1); err != nil {
@@ -492,14 +560,18 @@ func (s *Storage) truncate(mint int64) error {
 			delete(s.deleted, ref)
 		}
 	}
-	s.metrics.numDeletedSeries.Set(float64(len(s.deleted)))
+	s.metrics.checkpointDeleteTotal.Inc()
+	s.metrics.numWALSeriesPendingDeletion.Set(float64(len(s.deleted)))
 
 	if err := wal.DeleteCheckpoints(s.wal.Dir(), last); err != nil {
 		// Leftover old checkpoints do not cause problems down the line beyond
 		// occupying disk space. They will just be ignored since a newer checkpoint
 		// exists.
 		level.Error(s.logger).Log("msg", "delete old checkpoints", "err", err)
+		s.metrics.checkpointDeleteFail.Inc()
 	}
+
+	s.metrics.walTruncateDuration.Observe(time.Since(start).Seconds())
 
 	level.Info(s.logger).Log("msg", "WAL checkpoint complete", "first", first, "last", last, "duration", time.Since(start))
 	return nil
@@ -520,7 +592,7 @@ func (s *Storage) gc(mint int64) {
 		s.deleted[ref] = last
 	}
 
-	s.metrics.numDeletedSeries.Set(float64(len(s.deleted)))
+	s.metrics.numWALSeriesPendingDeletion.Set(float64(len(s.deleted)))
 }
 
 // StartTime implements the Storage interface.

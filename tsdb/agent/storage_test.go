@@ -260,7 +260,7 @@ func TestFullTruncateWAL(t *testing.T) {
 
 	lbls := labelsForTest(t.Name(), numSeries)
 	opts := DefaultOptions()
-	opts.TruncateFrequency = time.Minute * 2
+	opts.TruncateFrequency = int64(2 * time.Minute / time.Millisecond)
 	logger := log.NewNopLogger()
 	reg := prometheus.NewRegistry()
 	remoteStorage := remote.NewStorage(log.With(logger, "component", "remote"), reg, startTime, promAgentDir, time.Second*30, nil)
@@ -285,7 +285,7 @@ func TestFullTruncateWAL(t *testing.T) {
 	// Truncate WAL with mint to GC all the samples.
 	s.truncate(lastTs + 1)
 
-	m := gatherFamily(t, reg, "prometheus_agent_wal_deleted_series")
+	m := gatherFamily(t, reg, "prometheus_agent_deleted_series")
 	require.Equal(t, float64(numSeries), m.Metric[0].Gauge.GetValue(), "agent wal truncate mismatch of deleted series count")
 }
 
@@ -302,7 +302,7 @@ func TestPartialTruncateWAL(t *testing.T) {
 	})
 
 	opts := DefaultOptions()
-	opts.TruncateFrequency = time.Minute * 2
+	opts.TruncateFrequency = int64(2 * time.Minute / time.Millisecond)
 	logger := log.NewNopLogger()
 	reg := prometheus.NewRegistry()
 	remoteStorage := remote.NewStorage(log.With(logger, "component", "remote"), reg, startTime, promAgentDir, time.Second*30, nil)
@@ -346,7 +346,7 @@ func TestPartialTruncateWAL(t *testing.T) {
 	// Truncate WAL with mint to GC only the first batch of 800 series and retaining 2nd batch of 800 series.
 	s.truncate(lastTs - 1)
 
-	m := gatherFamily(t, reg, "prometheus_agent_wal_deleted_series")
+	m := gatherFamily(t, reg, "prometheus_agent_deleted_series")
 	require.Equal(t, m.Metric[0].Gauge.GetValue(), float64(numSeries), "agent wal truncate mismatch of deleted series count")
 }
 
@@ -398,7 +398,7 @@ func TestWALReplay(t *testing.T) {
 	}
 
 	// Check if all the series are retrieved back from the WAL.
-	m := gatherFamily(t, restartReg, "prometheus_agent_wal_active_series")
+	m := gatherFamily(t, restartReg, "prometheus_agent_active_series")
 	require.Equal(t, float64(numSeries), m.Metric[0].Gauge.GetValue(), "agent wal replay mismatch of active series count")
 
 	// Check if lastTs of the samples retrieved from the WAL is retained.

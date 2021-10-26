@@ -101,7 +101,7 @@ func newStripeSeries(stripeSize int) *stripeSeries {
 	return s
 }
 
-// GC garbage collects old series that have not received a sample before mint
+// GC garbage collects old series that have not received a sample after mint
 // and will fully delete them.
 func (s *stripeSeries) GC(mint int64) map[uint64]struct{} {
 	var deleted = map[uint64]struct{}{}
