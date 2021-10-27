@@ -75,10 +75,13 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 	if isCounter {
 		var lastValue float64
 		for _, sample := range samples.Points {
-			if sample.V < lastValue {
+			if sample.V*2 < lastValue {
 				resultValue += lastValue
 			}
 			lastValue = sample.V
+		}
+		if resultValue < 0{
+			resultValue = 0
 		}
 	}
 
@@ -169,7 +172,11 @@ func instantValue(vals []parser.Value, out Vector, isRate bool) Vector {
 	var resultValue float64
 	if isRate && lastSample.V < previousSample.V {
 		// Counter reset.
-		resultValue = lastSample.V
+		if lastSample.V*2 < previousSample.V{
+			resultValue = lastSample.V
+		}else {
+			return out
+		}
 	} else {
 		resultValue = lastSample.V - previousSample.V
 	}
