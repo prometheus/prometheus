@@ -102,7 +102,7 @@ func TestCorruptedChunk(t *testing.T) {
 			corrFunc: func(f *os.File) {
 				require.NoError(t, f.Truncate(1))
 			},
-			openErr: errors.New("invalid segment header in segment 0: invalid size"),
+			openErr: errors.New("load lazy-reader: invalid segment header in segment 0: invalid size"),
 		},
 		{
 			name: "invalid magic number",
@@ -118,7 +118,7 @@ func TestCorruptedChunk(t *testing.T) {
 				require.NoError(t, err)
 				require.Equal(t, chunks.MagicChunksSize, n)
 			},
-			openErr: errors.New("invalid magic number 0"),
+			openErr: errors.New("load lazy-reader: invalid magic number 0"),
 		},
 		{
 			name: "invalid chunk format version",
@@ -134,7 +134,7 @@ func TestCorruptedChunk(t *testing.T) {
 				require.NoError(t, err)
 				require.Equal(t, chunks.ChunksFormatVersionSize, n)
 			},
-			openErr: errors.New("invalid chunk format version 0"),
+			openErr: errors.New("load lazy-reader: invalid chunk format version 0"),
 		},
 		{
 			name: "chunk not enough bytes to read the chunk length",

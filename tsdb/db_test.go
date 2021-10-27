@@ -1099,7 +1099,7 @@ func TestTombstoneClean(t *testing.T) {
 		require.Equal(t, 0, len(res.Warnings()))
 
 		for _, b := range db.Blocks() {
-			require.Equal(t, tombstones.NewMemTombstones(), b.tombstones)
+			require.Equal(t, tombstones.NewMemTombstones(), b.reader.tombstones)
 		}
 	}
 }
@@ -1173,7 +1173,7 @@ func TestTombstoneCleanFail(t *testing.T) {
 		// Add some fake tombstones to trigger the compaction.
 		tomb := tombstones.NewMemTombstones()
 		tomb.AddInterval(0, tombstones.Interval{Mint: int64(i), Maxt: int64(i) + 1})
-		block.tombstones = tomb
+		block.reader.tombstones = tomb
 
 		db.blocks = append(db.blocks, block)
 		oldBlockDirs = append(oldBlockDirs, blockDir)
@@ -1223,7 +1223,7 @@ func TestTombstoneCleanRetentionLimitsRace(t *testing.T) {
 			// Cover block with tombstones so it can be deleted with CleanTombstones() as well.
 			tomb := tombstones.NewMemTombstones()
 			tomb.AddInterval(0, tombstones.Interval{Mint: int64(j), Maxt: int64(j) + 1})
-			block.tombstones = tomb
+			block.reader.tombstones = tomb
 
 			db.blocks = append(db.blocks, block)
 		}

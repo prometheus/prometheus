@@ -15,6 +15,7 @@
 package tsdb
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"io/ioutil"
@@ -257,23 +258,14 @@ type Block struct {
 	closing        bool
 	pendingReaders sync.WaitGroup
 
-	dir  string
-	meta BlockMeta
+	dir          string
+	meta         BlockMeta
+	numBytesMeta int64
 
-	// Symbol Table Size in bytes.
-	// We maintain this variable to avoid recalculation every time.
-	symbolTableSize uint64
-
-	chunkr     ChunkReader
-	indexr     IndexReader
-	tombstones tombstones.Reader
+	reader     *LazyReader
+	stopReader context.CancelFunc
 
 	logger log.Logger
-
-	numBytesChunks    int64
-	numBytesIndex     int64
-	numBytesTombstone int64
-	numBytesMeta      int64
 }
 
 // OpenBlock opens the block in the directory. It can be passed a chunk pool, which is used
@@ -293,36 +285,21 @@ func OpenBlock(logger log.Logger, dir string, pool chunkenc.Pool) (pb *Block, er
 		return nil, err
 	}
 
-	cr, err := chunks.NewDirReader(chunkDir(dir), pool)
-	if err != nil {
-		return nil, err
+	ctx, stopLazyReader := context.WithCancel(context.Background())
+	lazyReader := NewLazyReader(ctx, logger, dir, pool)
+	// Call load once during start to fill up block stats.
+	if err = lazyReader.load(); err != nil {
+		stopLazyReader()
+		return nil, errors.Wrap(err, "load lazy-reader")
 	}
-	closers = append(closers, cr)
-
-	ir, err := index.NewFileReader(filepath.Join(dir, indexFilename))
-	if err != nil {
-		return nil, err
-	}
-	closers = append(closers, ir)
-
-	tr, sizeTomb, err := tombstones.ReadTombstones(dir)
-	if err != nil {
-		return nil, err
-	}
-	closers = append(closers, tr)
 
 	pb = &Block{
-		dir:               dir,
-		meta:              *meta,
-		chunkr:            cr,
-		indexr:            ir,
-		tombstones:        tr,
-		symbolTableSize:   ir.SymbolTableSize(),
-		logger:            logger,
-		numBytesChunks:    cr.Size(),
-		numBytesIndex:     ir.Size(),
-		numBytesTombstone: sizeTomb,
-		numBytesMeta:      sizeMeta,
+		dir:          dir,
+		meta:         *meta,
+		reader:       lazyReader,
+		stopReader:   stopLazyReader,
+		logger:       logger,
+		numBytesMeta: sizeMeta,
 	}
 	return pb, nil
 }
@@ -335,11 +312,8 @@ func (pb *Block) Close() error {
 
 	pb.pendingReaders.Wait()
 
-	return tsdb_errors.NewMulti(
-		pb.chunkr.Close(),
-		pb.indexr.Close(),
-		pb.tombstones.Close(),
-	).Err()
+	pb.stopReader()
+	return nil
 }
 
 func (pb *Block) String() string {
@@ -360,7 +334,8 @@ func (pb *Block) MaxTime() int64 { return pb.meta.MaxTime }
 
 // Size returns the number of bytes that the block takes up.
 func (pb *Block) Size() int64 {
-	return pb.numBytesChunks + pb.numBytesIndex + pb.numBytesTombstone + pb.numBytesMeta
+	stats := pb.reader.Stats()
+	return stats.numBytesChunks + stats.numBytesIndex + stats.numBytesTombstone + pb.numBytesMeta
 }
 
 // ErrClosing is returned when a block is in the process of being closed.
@@ -382,7 +357,11 @@ func (pb *Block) Index() (IndexReader, error) {
 	if err := pb.startRead(); err != nil {
 		return nil, err
 	}
-	return blockIndexReader{ir: pb.indexr, b: pb}, nil
+	ir, err := pb.reader.Index()
+	if err != nil {
+		return nil, errors.Wrapf(err, "reader index")
+	}
+	return blockIndexReader{ir: ir, b: pb}, nil
 }
 
 // Chunks returns a new ChunkReader against the block data.
@@ -390,7 +369,11 @@ func (pb *Block) Chunks() (ChunkReader, error) {
 	if err := pb.startRead(); err != nil {
 		return nil, err
 	}
-	return blockChunkReader{ChunkReader: pb.chunkr, b: pb}, nil
+	cr, err := pb.reader.Chunks()
+	if err != nil {
+		return nil, errors.Wrapf(err, "reader chunks")
+	}
+	return blockChunkReader{ChunkReader: cr, b: pb}, nil
 }
 
 // Tombstones returns a new TombstoneReader against the block data.
@@ -398,12 +381,16 @@ func (pb *Block) Tombstones() (tombstones.Reader, error) {
 	if err := pb.startRead(); err != nil {
 		return nil, err
 	}
-	return blockTombstoneReader{Reader: pb.tombstones, b: pb}, nil
+	tr, err := pb.reader.Tombstones()
+	if err != nil {
+		return nil, errors.Wrapf(err, "reader tombstones")
+	}
+	return blockTombstoneReader{Reader: tr, b: pb}, nil
 }
 
 // GetSymbolTableSize returns the Symbol Table Size in the index of this block.
 func (pb *Block) GetSymbolTableSize() uint64 {
-	return pb.symbolTableSize
+	return pb.reader.Stats().symbolTableSize
 }
 
 func (pb *Block) setCompactionFailed() error {
@@ -522,12 +509,15 @@ func (pb *Block) Delete(mint, maxt int64, ms ...*labels.Matcher) error {
 		return ErrClosing
 	}
 
-	p, err := PostingsForMatchers(pb.indexr, ms...)
+	ir, err := pb.reader.Index()
+	if err != nil {
+		return errors.Wrap(err, "index")
+	}
+
+	p, err := PostingsForMatchers(ir, ms...)
 	if err != nil {
 		return errors.Wrap(err, "select series")
 	}
-
-	ir := pb.indexr
 
 	// Choose only valid postings which have chunks in the time-range.
 	stones := tombstones.NewMemTombstones()
@@ -556,7 +546,12 @@ Outer:
 		return p.Err()
 	}
 
-	err = pb.tombstones.Iter(func(id uint64, ivs tombstones.Intervals) error {
+	tr, err := pb.reader.Tombstones()
+	if err != nil {
+		return errors.Wrap(err, "tombstones")
+	}
+
+	err = tr.Iter(func(id uint64, ivs tombstones.Intervals) error {
 		for _, iv := range ivs {
 			stones.AddInterval(id, iv)
 		}
@@ -565,14 +560,22 @@ Outer:
 	if err != nil {
 		return err
 	}
-	pb.tombstones = stones
-	pb.meta.Stats.NumTombstones = pb.tombstones.Total()
+	if err = pb.reader.UpdateTombstones(stones); err != nil {
+		return errors.Wrap(err, "update tombstones")
+	}
+	tr, err = pb.reader.Tombstones()
+	if err != nil {
+		return errors.Wrap(err, "updated tombstones")
+	}
+	pb.meta.Stats.NumTombstones = tr.Total()
 
-	n, err := tombstones.WriteFile(pb.logger, pb.dir, pb.tombstones)
+	n, err := tombstones.WriteFile(pb.logger, pb.dir, tr)
 	if err != nil {
 		return err
 	}
-	pb.numBytesTombstone = n
+	pb.reader.mtx.Lock()
+	pb.reader.stats.numBytesTombstone = n
+	pb.reader.mtx.Unlock()
 	n, err = writeMetaFile(pb.logger, pb.dir, &pb.meta)
 	if err != nil {
 		return err
@@ -588,7 +591,12 @@ Outer:
 func (pb *Block) CleanTombstones(dest string, c Compactor) (*ulid.ULID, bool, error) {
 	numStones := 0
 
-	if err := pb.tombstones.Iter(func(id uint64, ivs tombstones.Intervals) error {
+	tr, err := pb.reader.Tombstones()
+	if err != nil {
+		return nil, false, errors.Wrap(err, "tombstones")
+	}
+
+	if err := tr.Iter(func(id uint64, ivs tombstones.Intervals) error {
 		numStones += len(ivs)
 		return nil
 	}); err != nil {
@@ -657,7 +665,11 @@ func (pb *Block) OverlapsClosedInterval(mint, maxt int64) bool {
 
 // LabelNames returns all the unique label names present in the Block in sorted order.
 func (pb *Block) LabelNames() ([]string, error) {
-	return pb.indexr.LabelNames()
+	ir, err := pb.reader.Index()
+	if err != nil {
+		return nil, errors.Wrap(err, "index")
+	}
+	return ir.LabelNames()
 }
 
 func clampInterval(a, b, mint, maxt int64) (int64, int64) {
