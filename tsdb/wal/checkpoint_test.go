@@ -31,13 +31,9 @@ import (
 )
 
 func TestLastCheckpoint(t *testing.T) {
-	dir, err := ioutil.TempDir("", "test_checkpoint")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 
-	_, _, err = LastCheckpoint(dir)
+	_, _, err := LastCheckpoint(dir)
 	require.Equal(t, record.ErrNotFound, err)
 
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "checkpoint.0000"), 0777))
@@ -78,11 +74,7 @@ func TestLastCheckpoint(t *testing.T) {
 }
 
 func TestDeleteCheckpoints(t *testing.T) {
-	dir, err := ioutil.TempDir("", "test_checkpoint")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 
 	require.NoError(t, DeleteCheckpoints(dir, 0))
 
@@ -119,11 +111,7 @@ func TestDeleteCheckpoints(t *testing.T) {
 func TestCheckpoint(t *testing.T) {
 	for _, compress := range []bool{false, true} {
 		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
-			dir, err := ioutil.TempDir("", "test_checkpoint")
-			require.NoError(t, err)
-			defer func() {
-				require.NoError(t, os.RemoveAll(dir))
-			}()
+			dir := t.TempDir()
 
 			var enc record.Encoder
 			// Create a dummy segment to bump the initial number.
@@ -240,11 +228,7 @@ func TestCheckpoint(t *testing.T) {
 
 func TestCheckpointNoTmpFolderAfterError(t *testing.T) {
 	// Create a new wal with invalid data.
-	dir, err := ioutil.TempDir("", "test_checkpoint")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 	w, err := NewSize(nil, nil, dir, 64*1024, false)
 	require.NoError(t, err)
 	var enc record.Encoder

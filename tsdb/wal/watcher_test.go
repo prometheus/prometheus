@@ -14,7 +14,6 @@ package wal
 
 import (
 	"fmt"
-	"io/ioutil"
 	"math/rand"
 	"os"
 	"path"
@@ -110,14 +109,10 @@ func TestTailSamples(t *testing.T) {
 		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
 			now := time.Now()
 
-			dir, err := ioutil.TempDir("", "readCheckpoint")
-			require.NoError(t, err)
-			defer func() {
-				require.NoError(t, os.RemoveAll(dir))
-			}()
+			dir := t.TempDir()
 
 			wdir := path.Join(dir, "wal")
-			err = os.Mkdir(wdir, 0777)
+			err := os.Mkdir(wdir, 0777)
 			require.NoError(t, err)
 
 			enc := record.Encoder{}
@@ -204,13 +199,9 @@ func TestReadToEndNoCheckpoint(t *testing.T) {
 
 	for _, compress := range []bool{false, true} {
 		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
-			dir, err := ioutil.TempDir("", "readToEnd_noCheckpoint")
-			require.NoError(t, err)
-			defer func() {
-				require.NoError(t, os.RemoveAll(dir))
-			}()
+			dir := t.TempDir()
 			wdir := path.Join(dir, "wal")
-			err = os.Mkdir(wdir, 0777)
+			err := os.Mkdir(wdir, 0777)
 			require.NoError(t, err)
 
 			w, err := NewSize(nil, nil, wdir, 128*pageSize, compress)
@@ -277,14 +268,10 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 
 	for _, compress := range []bool{false, true} {
 		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
-			dir, err := ioutil.TempDir("", "readToEnd_withCheckpoint")
-			require.NoError(t, err)
-			defer func() {
-				require.NoError(t, os.RemoveAll(dir))
-			}()
+			dir := t.TempDir()
 
 			wdir := path.Join(dir, "wal")
-			err = os.Mkdir(wdir, 0777)
+			err := os.Mkdir(wdir, 0777)
 			require.NoError(t, err)
 
 			enc := record.Encoder{}
@@ -368,14 +355,10 @@ func TestReadCheckpoint(t *testing.T) {
 
 	for _, compress := range []bool{false, true} {
 		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
-			dir, err := ioutil.TempDir("", "readCheckpoint")
-			require.NoError(t, err)
-			defer func() {
-				require.NoError(t, os.RemoveAll(dir))
-			}()
+			dir := t.TempDir()
 
 			wdir := path.Join(dir, "wal")
-			err = os.Mkdir(wdir, 0777)
+			err := os.Mkdir(wdir, 0777)
 			require.NoError(t, err)
 
 			os.Create(SegmentName(wdir, 30))
@@ -440,14 +423,10 @@ func TestReadCheckpointMultipleSegments(t *testing.T) {
 
 	for _, compress := range []bool{false, true} {
 		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
-			dir, err := ioutil.TempDir("", "readCheckpoint")
-			require.NoError(t, err)
-			defer func() {
-				require.NoError(t, os.RemoveAll(dir))
-			}()
+			dir := t.TempDir()
 
 			wdir := path.Join(dir, "wal")
-			err = os.Mkdir(wdir, 0777)
+			err := os.Mkdir(wdir, 0777)
 			require.NoError(t, err)
 
 			enc := record.Encoder{}
@@ -522,14 +501,10 @@ func TestCheckpointSeriesReset(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(fmt.Sprintf("compress=%t", tc.compress), func(t *testing.T) {
-			dir, err := ioutil.TempDir("", "seriesReset")
-			require.NoError(t, err)
-			defer func() {
-				require.NoError(t, os.RemoveAll(dir))
-			}()
+			dir := t.TempDir()
 
 			wdir := path.Join(dir, "wal")
-			err = os.Mkdir(wdir, 0777)
+			err := os.Mkdir(wdir, 0777)
 			require.NoError(t, err)
 
 			enc := record.Encoder{}
