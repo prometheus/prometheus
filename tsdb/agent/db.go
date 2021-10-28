@@ -622,26 +622,26 @@ func (db *DB) ChunkQuerier(ctx context.Context, mint, maxt int64) (storage.Chunk
 }
 
 // ExemplarQuerier implements the Storage interface.
-func (s *DB) ExemplarQuerier(ctx context.Context) (storage.ExemplarQuerier, error) {
+func (db *DB) ExemplarQuerier(ctx context.Context) (storage.ExemplarQuerier, error) {
 	return nil, ErrUnsupported
 }
 
 // Appender implements storage.Storage.
-func (s *DB) Appender(_ context.Context) storage.Appender {
-	return s.appenderPool.Get().(storage.Appender)
+func (db *DB) Appender(_ context.Context) storage.Appender {
+	return db.appenderPool.Get().(storage.Appender)
 }
 
 // Close implements the Storage interface.
-func (s *DB) Close() error {
-	s.mtx.Lock()
-	defer s.mtx.Unlock()
+func (db *DB) Close() error {
+	db.mtx.Lock()
+	defer db.mtx.Unlock()
 
-	close(s.stopc)
-	<-s.donec
+	close(db.stopc)
+	<-db.donec
 
-	s.metrics.Unregister()
+	db.metrics.Unregister()
 
-	return s.wal.Close()
+	return db.wal.Close()
 }
 
 type appender struct {
