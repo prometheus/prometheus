@@ -166,7 +166,7 @@ func TestWALRepair_ReadingError(t *testing.T) {
 				s, err := OpenReadSegment(SegmentName(w.Dir(), i))
 				require.NoError(t, err)
 
-				sr := NewSegmentBufReader(s)
+				sr, err := NewSegmentBufReader(s)
 				require.NoError(t, err)
 				r := NewReader(sr)
 				for r.Next() {
@@ -483,7 +483,10 @@ func TestLogPartialWrite(t *testing.T) {
 			require.NoError(t, err)
 			defer func() { require.NoError(t, s.Close()) }()
 
-			r := NewReader(NewSegmentBufReader(s))
+			sbr, err := NewSegmentBufReader(s)
+			require.NoError(t, err)
+
+			r := NewReader(sbr)
 			for i := 0; i < testData.numRecords; i++ {
 				require.True(t, r.Next())
 				require.NoError(t, r.Err())

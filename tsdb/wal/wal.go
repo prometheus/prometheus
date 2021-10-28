@@ -860,7 +860,7 @@ func NewSegmentsRangeReader(sr ...SegmentRange) (io.ReadCloser, error) {
 			segs = append(segs, s)
 		}
 	}
-	return NewSegmentBufReader(segs...), nil
+	return NewSegmentBufReader(segs...)
 }
 
 // segmentBufReader is a buffered reader that reads in multiples of pages.
@@ -876,22 +876,24 @@ type segmentBufReader struct {
 }
 
 // nolint:revive // TODO: Consider exporting segmentBufReader
-func NewSegmentBufReader(segs ...*Segment) *segmentBufReader {
+func NewSegmentBufReader(segs ...*Segment) (*segmentBufReader, error) {
+	if len(segs) == 0 {
+		return nil, fmt.Errorf("no segments provided")
+	}
+
 	return &segmentBufReader{
 		buf:  bufio.NewReaderSize(segs[0], 16*pageSize),
 		segs: segs,
-	}
+	}, nil
 }
 
 // nolint:revive
 func NewSegmentBufReaderWithOffset(offset int, segs ...*Segment) (sbr *segmentBufReader, err error) {
-	if offset == 0 {
-		return NewSegmentBufReader(segs...), nil
+	sbr, err = NewSegmentBufReader(segs...)
+	if err != nil {
+		return nil, err
 	}
-	sbr = &segmentBufReader{
-		buf:  bufio.NewReaderSize(segs[0], 16*pageSize),
-		segs: segs,
-	}
+
 	if offset > 0 {
 		_, err = sbr.buf.Discard(offset)
 	}
