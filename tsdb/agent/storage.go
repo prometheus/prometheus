@@ -42,7 +42,7 @@ var (
 
 // Default values for options.
 var (
-	DefaultTruncateFrequency = int64(2 * time.Hour / time.Millisecond)
+	DefaultTruncateFrequency = 2 * time.Hour
 	DefaultMinWALTime        = int64(5 * time.Minute / time.Millisecond)
 	DefaultMaxWALTime        = int64(4 * time.Hour / time.Millisecond)
 )
@@ -61,7 +61,7 @@ type Options struct {
 	StripeSize int
 
 	// TruncateFrequency determines how frequently to truncate data from the WAL.
-	TruncateFrequency int64
+	TruncateFrequency time.Duration
 
 	// Shortest and longest amount of time data can exist in the WAL before being
 	// deleted.
@@ -265,7 +265,7 @@ func validateOptions(opts *Options) *Options {
 	}
 
 	// Revert Stripesize to DefaultStripsize if Stripsize is either 0 or not a power of 2.
-	if opts.StripeSize <= 0 || !((opts.StripeSize & (opts.StripeSize - 1)) == 0) {
+	if opts.StripeSize <= 0 || ((opts.StripeSize & (opts.StripeSize - 1)) != 0) {
 		opts.StripeSize = tsdb.DefaultStripeSize
 	}
 	if opts.TruncateFrequency <= 0 {
@@ -277,8 +277,9 @@ func validateOptions(opts *Options) *Options {
 	if opts.MaxWALTime <= 0 {
 		opts.MaxWALTime = DefaultMaxWALTime
 	}
-	if opts.MaxWALTime < opts.TruncateFrequency {
-		opts.MaxWALTime = opts.TruncateFrequency
+
+	if t := int64(opts.TruncateFrequency * time.Hour / time.Millisecond); opts.MaxWALTime < t {
+		opts.MaxWALTime = t
 	}
 	return opts
 }
@@ -451,8 +452,8 @@ func (s *Storage) loadWAL(r *wal.Reader, multiRef map[uint64]uint64) (err error)
 		}
 	}
 
-	if nonExistentSeriesRefs.Load() > 0 {
-		level.Warn(s.logger).Log("msg", "found sample referencing non-existing series, skipping", nonExistentSeriesRefs.Load())
+	if v := nonExistentSeriesRefs.Load(); v > 0 {
+		level.Warn(s.logger).Log("msg", "found sample referencing non-existing series, skipped_series", v)
 	}
 
 	s.nextRef.Store(lastRef)
@@ -476,7 +477,7 @@ Loop:
 		select {
 		case <-s.stopc:
 			break Loop
-		case <-time.After(time.Duration(s.opts.TruncateFrequency) * time.Millisecond):
+		case <-time.After(s.opts.TruncateFrequency):
 			ts := s.rs.LowestSentTimestamp() - s.opts.MinWALTime
 			if ts < 0 {
 				ts = 0

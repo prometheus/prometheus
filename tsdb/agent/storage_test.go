@@ -260,7 +260,7 @@ func TestFullTruncateWAL(t *testing.T) {
 
 	lbls := labelsForTest(t.Name(), numSeries)
 	opts := DefaultOptions()
-	opts.TruncateFrequency = int64(2 * time.Minute / time.Millisecond)
+	opts.TruncateFrequency = time.Minute * 2
 	logger := log.NewNopLogger()
 	reg := prometheus.NewRegistry()
 	remoteStorage := remote.NewStorage(log.With(logger, "component", "remote"), reg, startTime, promAgentDir, time.Second*30, nil)
@@ -302,7 +302,7 @@ func TestPartialTruncateWAL(t *testing.T) {
 	})
 
 	opts := DefaultOptions()
-	opts.TruncateFrequency = int64(2 * time.Minute / time.Millisecond)
+	opts.TruncateFrequency = time.Minute * 2
 	logger := log.NewNopLogger()
 	reg := prometheus.NewRegistry()
 	remoteStorage := remote.NewStorage(log.With(logger, "component", "remote"), reg, startTime, promAgentDir, time.Second*30, nil)

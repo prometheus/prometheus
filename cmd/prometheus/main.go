@@ -1557,7 +1557,7 @@ func (opts agentOptions) ToAgentOptions() agent.Options {
 		WALSegmentSize:    int(opts.WALSegmentSize),
 		WALCompression:    opts.WALCompression,
 		StripeSize:        opts.StripeSize,
-		TruncateFrequency: durationToInt64Millis(time.Duration(opts.TruncateFrequency)),
+		TruncateFrequency: time.Duration(opts.TruncateFrequency),
 		MinWALTime:        durationToInt64Millis(time.Duration(opts.MinWALTime)),
 		MaxWALTime:        durationToInt64Millis(time.Duration(opts.MaxWALTime)),
 	}
