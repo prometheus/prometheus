@@ -119,7 +119,9 @@ func (ls *Labels) UnmarshalYAML(unmarshal func(interface{}) error) error {
 func (ls Labels) MatchLabels(on bool, names ...string) Labels {
 	matchedLabels := Labels{}
 
-	nameSet := map[string]struct{}{}
+	// Don't preallocate capacity as Prometheus accepts queries such as
+	// "up and on (a,a) up" which would result in unnecessary allocation.
+	nameSet := make(map[string]struct{})
 	for _, n := range names {
 		nameSet[n] = struct{}{}
 	}
@@ -349,7 +351,7 @@ func FromStrings(ss ...string) Labels {
 	if len(ss)%2 != 0 {
 		panic("invalid number of strings")
 	}
-	var res Labels
+	res := make(Labels, 0, len(ss)/2)
 	for i := 0; i < len(ss); i += 2 {
 		res = append(res, Label{Name: ss[i], Value: ss[i+1]})
 	}
