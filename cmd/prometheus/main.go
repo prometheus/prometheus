@@ -78,8 +78,7 @@ import (
 )
 
 var (
-	appName       = "prometheus"
-	defaultListen = "0.0.0.0:9090"
+	appName = "prometheus"
 
 	configSuccess = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "prometheus_config_last_reload_successful",
@@ -245,7 +244,7 @@ func main() {
 		Default("prometheus.yml").StringVar(&cfg.configFile)
 
 	a.Flag("web.listen-address", "Address to listen on for UI, API, and telemetry.").
-		Default(defaultListen).StringVar(&cfg.web.ListenAddress)
+		Default("0.0.0.0:9090").StringVar(&cfg.web.ListenAddress)
 
 	webConfig := toolkit_webflag.AddFlags(a)
 
