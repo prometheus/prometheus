@@ -44,13 +44,16 @@ import (
 	yaml "gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/file"
 	_ "github.com/prometheus/prometheus/discovery/install" // Register service discovery implementations.
 	"github.com/prometheus/prometheus/discovery/kubernetes"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/rulefmt"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/scrape"
 )
 
 func main() {
@@ -363,19 +366,60 @@ func checkConfig(filename string) ([]string, error) {
 					}
 					if len(files) != 0 {
 						for _, f := range files {
-							err = checkSDFile(f)
+							var targetGroups []*targetgroup.Group
+							targetGroups, err = checkSDFile(f)
 							if err != nil {
 								return nil, errors.Errorf("checking SD file %q: %v", file, err)
+							}
+							if err := checkTargetGroupsForScrapeConfig(targetGroups, scfg); err != nil {
+								return nil, err
 							}
 						}
 						continue
 					}
 					fmt.Printf("  WARNING: file %q for file_sd in scrape job %q does not exist\n", file, scfg.JobName)
 				}
+			case discovery.StaticConfig:
+				if err := checkTargetGroupsForScrapeConfig(c, scfg); err != nil {
+					return nil, err
+				}
 			}
 		}
 	}
 
+	alertConfig := cfg.AlertingConfig
+	for _, amcfg := range alertConfig.AlertmanagerConfigs {
+		for _, c := range amcfg.ServiceDiscoveryConfigs {
+			switch c := c.(type) {
+			case *file.SDConfig:
+				for _, file := range c.Files {
+					files, err := filepath.Glob(file)
+					if err != nil {
+						return nil, err
+					}
+					if len(files) != 0 {
+						for _, f := range files {
+							var targetGroups []*targetgroup.Group
+							targetGroups, err = checkSDFile(f)
+							if err != nil {
+								return nil, errors.Errorf("checking SD file %q: %v", file, err)
+							}
+
+							if err := checkTargetGroupsForAlertmanager(targetGroups, amcfg); err != nil {
+								return nil, err
+							}
+						}
+						continue
+					}
+					fmt.Printf("  WARNING: file %q for file_sd in alertmanager config does not exist\n", file)
+				}
+			case discovery.StaticConfig:
+				if err := checkTargetGroupsForAlertmanager(c, amcfg); err != nil {
+					return nil, err
+				}
+			}
+		}
+	}
 	return ruleFiles, nil
 }
 
@@ -397,16 +441,16 @@ func checkTLSConfig(tlsConfig config_util.TLSConfig) error {
 	return nil
 }
 
-func checkSDFile(filename string) error {
+func checkSDFile(filename string) ([]*targetgroup.Group, error) {
 	fd, err := os.Open(filename)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer fd.Close()
 
 	content, err := ioutil.ReadAll(fd)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	var targetGroups []*targetgroup.Group
@@ -414,23 +458,23 @@ func checkSDFile(filename string) error {
 	switch ext := filepath.Ext(filename); strings.ToLower(ext) {
 	case ".json":
 		if err := json.Unmarshal(content, &targetGroups); err != nil {
-			return err
+			return nil, err
 		}
 	case ".yml", ".yaml":
 		if err := yaml.UnmarshalStrict(content, &targetGroups); err != nil {
-			return err
+			return nil, err
 		}
 	default:
-		return errors.Errorf("invalid file extension: %q", ext)
+		return nil, errors.Errorf("invalid file extension: %q", ext)
 	}
 
 	for i, tg := range targetGroups {
 		if tg == nil {
-			return errors.Errorf("nil target group item found (index %d)", i)
+			return nil, errors.Errorf("nil target group item found (index %d)", i)
 		}
 	}
 
-	return nil
+	return targetGroups, nil
 }
 
 // CheckRules validates rule files.
@@ -977,6 +1021,28 @@ func importRules(url *url.URL, start, end, outputDir string, evalInterval time.D
 	}
 	if len(errs) > 0 {
 		return errors.New("error importing rules")
+	}
+
+	return nil
+}
+
+func checkTargetGroupsForAlertmanager(targetGroups []*targetgroup.Group, amcfg *config.AlertmanagerConfig) error {
+	for _, tg := range targetGroups {
+		if _, _, err := notifier.AlertmanagerFromGroup(tg, amcfg); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func checkTargetGroupsForScrapeConfig(targetGroups []*targetgroup.Group, scfg *config.ScrapeConfig) error {
+	for _, tg := range targetGroups {
+		_, failures := scrape.TargetsFromGroup(tg, scfg)
+		if len(failures) > 0 {
+			first := failures[0]
+			return first
+		}
 	}
 
 	return nil
