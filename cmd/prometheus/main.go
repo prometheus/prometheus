@@ -1007,7 +1007,7 @@ func main() {
 						return errors.New("flag 'storage.agent.segment-size' must be set between 10MB and 256MB")
 					}
 				}
-				db, err := agent.NewStorage(
+				db, err := agent.Open(
 					logger,
 					prometheus.DefaultRegisterer,
 					remoteStorage,
@@ -1339,7 +1339,7 @@ func (s *readyStorage) StartTime() (int64, error) {
 			}
 			// Add a safety margin as it may take a few minutes for everything to spin up.
 			return startTime + s.startTimeMargin, nil
-		case *agent.Storage:
+		case *agent.DB:
 			return db.StartTime()
 		default:
 			panic(fmt.Sprintf("unkown storage type %T", db))
@@ -1370,7 +1370,7 @@ func (s *readyStorage) ExemplarQuerier(ctx context.Context) (storage.ExemplarQue
 		switch db := x.(type) {
 		case *tsdb.DB:
 			return db.ExemplarQuerier(ctx)
-		case *agent.Storage:
+		case *agent.DB:
 			return nil, agent.ErrUnsupported
 		default:
 			panic(fmt.Sprintf("unknown storage type %T", db))
@@ -1415,7 +1415,7 @@ func (s *readyStorage) CleanTombstones() error {
 		switch db := x.(type) {
 		case *tsdb.DB:
 			return db.CleanTombstones()
-		case *agent.Storage:
+		case *agent.DB:
 			return agent.ErrUnsupported
 		default:
 			panic(fmt.Sprintf("unknown storage type %T", db))
@@ -1430,7 +1430,7 @@ func (s *readyStorage) Delete(mint, maxt int64, ms ...*labels.Matcher) error {
 		switch db := x.(type) {
 		case *tsdb.DB:
 			return db.Delete(mint, maxt, ms...)
-		case *agent.Storage:
+		case *agent.DB:
 			return agent.ErrUnsupported
 		default:
 			panic(fmt.Sprintf("unknown storage type %T", db))
@@ -1445,7 +1445,7 @@ func (s *readyStorage) Snapshot(dir string, withHead bool) error {
 		switch db := x.(type) {
 		case *tsdb.DB:
 			return db.Snapshot(dir, withHead)
-		case *agent.Storage:
+		case *agent.DB:
 			return agent.ErrUnsupported
 		default:
 			panic(fmt.Sprintf("unknown storage type %T", db))
@@ -1460,7 +1460,7 @@ func (s *readyStorage) Stats(statsByLabelName string) (*tsdb.Stats, error) {
 		switch db := x.(type) {
 		case *tsdb.DB:
 			return db.Head().Stats(statsByLabelName), nil
-		case *agent.Storage:
+		case *agent.DB:
 			return nil, agent.ErrUnsupported
 		default:
 			panic(fmt.Sprintf("unknown storage type %T", db))
