@@ -1025,8 +1025,8 @@ func main() {
 					level.Info(logger).Log("fs_type", fsType)
 				}
 
-				level.Info(logger).Log("msg", "WAL storage started")
-				level.Debug(logger).Log("msg", "WAL storage options",
+				level.Info(logger).Log("msg", "Agent WAL storage started")
+				level.Debug(logger).Log("msg", "Agent WAL storage options",
 					"WALSegmentSize", cfg.agent.WALSegmentSize,
 					"WALCompression", cfg.agent.WALCompression,
 					"StripeSize", cfg.agent.StripeSize,

@@ -348,7 +348,6 @@ func getCurrentGaugeValuesFor(t *testing.T, reg prometheus.Gatherer, metricNames
 	return res
 }
 
-// Test for successful startup.
 func TestAgentSuccessfulStartup(t *testing.T) {
 	prom := exec.Command(promPath, "-test.main", "--agent", "--config.file="+promConfig)
 	err := prom.Start()

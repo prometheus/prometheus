@@ -453,7 +453,7 @@ func (s *Storage) loadWAL(r *wal.Reader, multiRef map[uint64]uint64) (err error)
 	}
 
 	if v := nonExistentSeriesRefs.Load(); v > 0 {
-		level.Warn(s.logger).Log("msg", "found sample referencing non-existing series, skipped_series", v)
+		level.Warn(s.logger).Log("msg", "found sample referencing non-existing series", "skipped_series", v)
 	}
 
 	s.nextRef.Store(lastRef)

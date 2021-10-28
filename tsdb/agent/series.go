@@ -104,7 +104,7 @@ func newStripeSeries(stripeSize int) *stripeSeries {
 // GC garbage collects old series that have not received a sample after mint
 // and will fully delete them.
 func (s *stripeSeries) GC(mint int64) map[uint64]struct{} {
-	var deleted = map[uint64]struct{}{}
+	deleted := map[uint64]struct{}{}
 
 	for hashLock := 0; hashLock < s.size; hashLock++ {
 		s.locks[hashLock].Lock()
