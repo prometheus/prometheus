@@ -932,8 +932,7 @@ func main() {
 				ruleManager.Stop()
 			},
 		)
-	}
-	if !agentMode {
+
 		// TSDB.
 		opts := cfg.tsdb.ToTSDBOptions()
 		cancel := make(chan struct{})
