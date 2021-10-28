@@ -107,6 +107,8 @@ func init() {
 	}
 }
 
+// agentOnlySetting can be provided to a kingpin flag's PreAction to mark a
+// flag as agent-only.
 func agentOnlySetting() func(*kingpin.ParseContext) error {
 	return func(pc *kingpin.ParseContext) error {
 		agentOnlyFlags = append(agentOnlyFlags, extractFlagName(pc))
@@ -114,6 +116,8 @@ func agentOnlySetting() func(*kingpin.ParseContext) error {
 	}
 }
 
+// serverOnlySetting can be provided to a kingpin flag's PreAction to mark a
+// flag as server-only.
 func serverOnlySetting() func(*kingpin.ParseContext) error {
 	return func(pc *kingpin.ParseContext) error {
 		serverOnlyFlags = append(serverOnlyFlags, extractFlagName(pc))
@@ -121,8 +125,8 @@ func serverOnlySetting() func(*kingpin.ParseContext) error {
 	}
 }
 
-// extractFlagName gets the flag name from the ParseContext. Panics if not a
-// context set via a flag PreAction.
+// extractFlagName gets the flag name from the ParseContext. Only call
+// from agentOnlySetting or serverOnlySetting.
 func extractFlagName(pc *kingpin.ParseContext) string {
 	for _, pe := range pc.Elements {
 		fc, ok := pe.Clause.(*kingpin.FlagClause)
@@ -131,7 +135,7 @@ func extractFlagName(pc *kingpin.ParseContext) string {
 		}
 		return fc.Model().Name
 	}
-	panic("ParseContext not from a flag PreAction")
+	panic("extractFlagName not called from a kingpin PreAction. This is a bug, please report to Prometheus.")
 }
 
 type flagConfig struct {
@@ -477,7 +481,8 @@ func main() {
 	// RoutePrefix must always be at least '/'.
 	cfg.web.RoutePrefix = "/" + strings.Trim(cfg.web.RoutePrefix, "/")
 
-	if !agentMode { // Time retention settings.
+	if !agentMode {
+		// Time retention settings.
 		if oldFlagRetentionDuration != 0 {
 			level.Warn(logger).Log("deprecation_notice", "'storage.tsdb.retention' flag is deprecated use 'storage.tsdb.retention.time' instead.")
 			cfg.tsdb.RetentionDuration = oldFlagRetentionDuration
@@ -502,9 +507,8 @@ func main() {
 			cfg.tsdb.RetentionDuration = y
 			level.Warn(logger).Log("msg", "Time retention value is too high. Limiting to: "+y.String())
 		}
-	}
 
-	if !agentMode { // Max block size  settings.
+		// Max block size settings.
 		if cfg.tsdb.MaxBlockDuration == 0 {
 			maxBlockDuration, err := model.ParseDuration("31d")
 			if err != nil {
