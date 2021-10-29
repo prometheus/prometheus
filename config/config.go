@@ -109,8 +109,22 @@ func LoadFile(filename string, agentMode bool, expandExternalLabels bool, logger
 		return nil, errors.Wrapf(err, "parsing YAML file %s", filename)
 	}
 
-	if agentMode && len(cfg.RemoteWriteConfigs) == 0 {
-		return nil, errors.New("at least one remote_write target must be specified in agent mode")
+	if agentMode {
+		if len(cfg.RemoteWriteConfigs) == 0 {
+			return nil, errors.New("at least one remote_write target must be specified in agent mode")
+		}
+
+		if len(cfg.AlertingConfig.AlertmanagerConfigs) > 0 || len(cfg.AlertingConfig.AlertRelabelConfigs) > 0 {
+			return nil, errors.New("field alerting is not allowed in agent mode")
+		}
+
+		if len(cfg.RuleFiles) > 0 {
+			return nil, errors.New("field rule_files is not allowed in agent mode")
+		}
+
+		if len(cfg.RemoteReadConfigs) > 0 {
+			return nil, errors.New("field remote_read is not allowed in agent mode")
+		}
 	}
 
 	cfg.SetDirectory(filepath.Dir(filename))
