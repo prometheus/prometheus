@@ -23,6 +23,7 @@ import (
 	"path/filepath"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -268,9 +269,14 @@ type Block struct {
 	logger log.Logger
 }
 
+type UnmapStrategy struct {
+	UnmapAfter    time.Duration
+	CheckInterval time.Duration
+}
+
 // OpenBlock opens the block in the directory. It can be passed a chunk pool, which is used
 // to instantiate chunk structs.
-func OpenBlock(logger log.Logger, dir string, pool chunkenc.Pool) (pb *Block, err error) {
+func OpenBlock(logger log.Logger, dir string, pool chunkenc.Pool, unmap *UnmapStrategy) (pb *Block, err error) {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -286,7 +292,18 @@ func OpenBlock(logger log.Logger, dir string, pool chunkenc.Pool) (pb *Block, er
 	}
 
 	ctx, stopLazyReader := context.WithCancel(context.Background())
-	lazyReader := NewLazyReader(ctx, logger, dir, pool)
+
+	var lazyReader *LazyReader
+	if unmap != nil {
+		if unmap.CheckInterval > unmap.UnmapAfter {
+			stopLazyReader()
+			return nil, errors.New("last used check-interval cannot be greater than unmap-after")
+		}
+		lazyReader = NewLazyReader(ctx, logger, dir, unmap.UnmapAfter, unmap.CheckInterval, pool)
+	} else {
+		lazyReader = NewLazyReader(ctx, logger, dir, time.Minute*10, time.Minute, pool)
+	}
+
 	// Call load once during start to fill up block stats.
 	if err = lazyReader.load(); err != nil {
 		stopLazyReader()

@@ -16,8 +16,6 @@ package tsdb
 
 import (
 	"context"
-	"github.com/go-kit/log/level"
-	"github.com/pkg/errors"
 	"io"
 	"path/filepath"
 	"sync"
@@ -26,6 +24,8 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
+	"github.com/pkg/errors"
 
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -48,9 +48,10 @@ type LazyReader struct {
 	tombstones tombstones.Reader
 	stats      ReaderStats
 
-	lastUsed   atomic.Time
-	unmapAfter time.Duration
-	isActive   atomic.Bool
+	lastUsed      atomic.Time
+	unmapAfter    time.Duration
+	checkInterval time.Duration
+	isMMapped     atomic.Bool
 }
 
 type ReaderStats struct {
@@ -60,18 +61,21 @@ type ReaderStats struct {
 	numBytesTombstone int64
 }
 
-// NewLazyReader opens the block in the directory. It can be passed a chunk pool, which is used
-// to instantiate chunk structs.
-func NewLazyReader(ctx context.Context, logger log.Logger, dir string, pool chunkenc.Pool) *LazyReader {
+// NewLazyReader opens block readers and mmaps them when block contents are called. It unmaps the readers when
+// lastUsed >= unmapAfter, every checkInterval.
+// The provided ctx must be cancelled while closing a block to avoid stalls in graceful shutdowns.
+func NewLazyReader(ctx context.Context, logger log.Logger, dir string, unmapAfter time.Duration, checkInterval time.Duration, pool chunkenc.Pool) *LazyReader {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
 
 	return &LazyReader{
-		ctx:    ctx,
-		dir:    dir,
-		logger: logger,
-		pool:   pool,
+		ctx:           ctx,
+		dir:           dir,
+		logger:        logger,
+		unmapAfter:    unmapAfter,
+		checkInterval: checkInterval,
+		pool:          pool,
 	}
 }
 
@@ -116,8 +120,8 @@ func (lb *LazyReader) load() (err error) {
 	defer lb.mtx.Unlock()
 
 	lb.lastUsed.Store(time.Now())
-	if lb.isActive.Load() {
-		// Block already loaded, skip.
+	if lb.isMMapped.Load() {
+		// Readers already unmapped, skip.
 		return nil
 	}
 
@@ -156,50 +160,52 @@ func (lb *LazyReader) load() (err error) {
 	lb.stats.numBytesTombstone = sizeTomb
 
 	closers = append(closers, tr)
+
 	lb.lastUsed.Store(time.Now()) // Update last used as loading block contents can take time.
+	lb.isMMapped.Store(true)
 
 	go lb.unmapRoutine()
 
 	return nil
 }
 
-// unmapRoutine checks if the lastUsed > unmapAfter and unmaps the block and exits.
+// unmapRoutine checks if the lastUsed >= unmapAfter and unmaps the block and exits.
 func (lb *LazyReader) unmapRoutine() {
-	if lb.isActive.Load() {
-		// Block not loaded, hence watching last used is of no use.
+	if !lb.isMMapped.Load() {
+		// Readers not mmapped, hence watching last used is of no use.
 		return
 	}
-	check := time.NewTicker(time.Minute)
+	check := time.NewTicker(lb.checkInterval)
 	defer check.Stop()
 
-	lb.isActive.Store(true)
+	lb.isMMapped.Store(true)
 
-	closeReaders := func() {
+	unmap := func() {
 		lb.mtx.Lock()
 		defer lb.mtx.Unlock()
 		if err := lb.chunkr.Close(); err != nil {
-			level.Error(lb.logger).Log("msg", "error closing chunk reader", "err", err)
+			level.Error(lb.logger).Log("msg", "error unmapping chunk reader", "err", err)
 		}
 		if err := lb.indexr.Close(); err != nil {
-			level.Error(lb.logger).Log("msg", "error closing index reader", "err", err)
+			level.Error(lb.logger).Log("msg", "error unmapping index reader", "err", err)
 		}
 		if err := lb.tombstones.Close(); err != nil {
-			level.Error(lb.logger).Log("msg", "error closing tombstones", "err", err)
+			level.Error(lb.logger).Log("msg", "error unmapping tombstones", "err", err)
 		}
-		lb.isActive.Store(false)
+		lb.isMMapped.Store(false)
 	}
 
 	for {
 		select {
 		case <-lb.ctx.Done():
 			// Return to avoid stalls in graceful shutdowns.
-			closeReaders()
+			unmap()
 			return
 		case <-check.C:
 		}
 
 		if time.Since(lb.lastUsed.Load()) >= lb.unmapAfter {
-			closeReaders()
+			unmap()
 			return
 		}
 	}
