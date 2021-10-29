@@ -51,7 +51,7 @@ type startTimeCallback func() (int64, error)
 // Storage represents all the remote read and write endpoints.  It implements
 // storage.Storage.
 type Storage struct {
-	logger log.Logger
+	logger *logging.Deduper
 	mtx    sync.Mutex
 
 	rws *WriteStorage
@@ -66,9 +66,10 @@ func NewStorage(l log.Logger, reg prometheus.Registerer, stCallback startTimeCal
 	if l == nil {
 		l = log.NewNopLogger()
 	}
+	logger := logging.Dedupe(l, 1*time.Minute)
 
 	s := &Storage{
-		logger:                 logging.Dedupe(l, 1*time.Minute),
+		logger:                 logger,
 		localStartTimeCallback: stCallback,
 	}
 	s.rws = NewWriteStorage(s.logger, reg, walDir, flushDeadline, sm)
@@ -186,6 +187,7 @@ func (s *Storage) LowestSentTimestamp() int64 {
 
 // Close the background processing of the storage queues.
 func (s *Storage) Close() error {
+	s.logger.Stop()
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 	return s.rws.Close()
