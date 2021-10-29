@@ -37,6 +37,7 @@ import (
 
 var promPath = os.Args[0]
 var promConfig = filepath.Join("..", "..", "documentation", "examples", "prometheus.yml")
+var agentConfig = filepath.Join("..", "..", "documentation", "examples", "prometheus-agent.yml")
 var promData = filepath.Join(os.TempDir(), "data")
 
 func TestMain(m *testing.M) {
@@ -349,7 +350,7 @@ func getCurrentGaugeValuesFor(t *testing.T, reg prometheus.Gatherer, metricNames
 }
 
 func TestAgentSuccessfulStartup(t *testing.T) {
-	prom := exec.Command(promPath, "-test.main", "--agent", "--config.file="+promConfig)
+	prom := exec.Command(promPath, "-test.main", "--agent", "--config.file="+agentConfig)
 	err := prom.Start()
 	require.NoError(t, err)
 
@@ -361,6 +362,26 @@ func TestAgentSuccessfulStartup(t *testing.T) {
 	select {
 	case err := <-done:
 		t.Logf("prometheus agent should be still running: %v", err)
+		actualExitStatus = prom.ProcessState.ExitCode()
+	case <-time.After(5 * time.Second):
+		prom.Process.Kill()
+	}
+	require.Equal(t, expectedExitStatus, actualExitStatus)
+}
+
+func TestAgentStartupWithInvalidConfig(t *testing.T) {
+	prom := exec.Command(promPath, "-test.main", "--agent", "--config.file="+promConfig)
+	err := prom.Start()
+	require.NoError(t, err)
+
+	expectedExitStatus := 2
+	actualExitStatus := 0
+
+	done := make(chan error, 1)
+	go func() { done <- prom.Wait() }()
+	select {
+	case err := <-done:
+		t.Logf("prometheus agent should not be running: %v", err)
 		actualExitStatus = prom.ProcessState.ExitCode()
 	case <-time.After(5 * time.Second):
 		prom.Process.Kill()
