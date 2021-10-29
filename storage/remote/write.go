@@ -16,6 +16,7 @@ package remote
 import (
 	"context"
 	"fmt"
+	"math"
 	"sync"
 	"time"
 
@@ -205,6 +206,26 @@ func (rws *WriteStorage) Appender(_ context.Context) storage.Appender {
 		writeStorage:         rws,
 		highestRecvTimestamp: rws.highestTimestamp,
 	}
+}
+
+// LowestSentTimestamp returns the lowest sent timestamp across all queues.
+func (rws *WriteStorage) LowestSentTimestamp() int64 {
+	rws.mtx.Lock()
+	defer rws.mtx.Unlock()
+
+	var lowestTs int64 = math.MaxInt64
+
+	for _, q := range rws.queues {
+		ts := int64(q.metrics.highestSentTimestamp.Get() * 1000)
+		if ts < lowestTs {
+			lowestTs = ts
+		}
+	}
+	if len(rws.queues) == 0 {
+		lowestTs = 0
+	}
+
+	return lowestTs
 }
 
 // Close closes the WriteStorage.

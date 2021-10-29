@@ -526,6 +526,68 @@ func TestHandleMultipleQuitRequests(t *testing.T) {
 	}
 }
 
+// Test for availability of API endpoints in Prometheus Agent mode.
+func TestAgentAPIEndPoints(t *testing.T) {
+	t.Parallel()
+
+	opts := &Options{
+		ListenAddress:  ":9090",
+		ReadTimeout:    30 * time.Second,
+		MaxConnections: 512,
+		Context:        nil,
+		Storage:        nil,
+		QueryEngine:    nil,
+		ScrapeManager:  &scrape.Manager{},
+		RuleManager:    &rules.Manager{},
+		Notifier:       nil,
+		RoutePrefix:    "/",
+		EnableAdminAPI: true,
+		ExternalURL: &url.URL{
+			Scheme: "http",
+			Host:   "localhost:9090",
+			Path:   "/",
+		},
+		Version:  &PrometheusVersion{},
+		Gatherer: prometheus.DefaultGatherer,
+		IsAgent:  true,
+	}
+
+	opts.Flags = map[string]string{}
+
+	webHandler := New(nil, opts)
+	webHandler.Ready()
+
+	// Test for non-available endpoints in the Agent mode.
+	for _, u := range []string{
+		"http://localhost:9090/-/labels",
+		"http://localhost:9090/label",
+		"http://localhost:9090/series",
+		"http://localhost:9090/alertmanagers",
+		"http://localhost:9090/query",
+		"http://localhost:9090/query_range",
+		"http://localhost:9090/query_exemplars",
+	} {
+		w := httptest.NewRecorder()
+		req, err := http.NewRequest("GET", u, nil)
+		require.NoError(t, err)
+		webHandler.router.ServeHTTP(w, req)
+		require.Equal(t, http.StatusNotFound, w.Code)
+	}
+
+	// Test for available endpoints in the Agent mode.
+	for _, u := range []string{
+		"http://localhost:9090/targets",
+		"http://localhost:9090/status",
+	} {
+		w := httptest.NewRecorder()
+		req, err := http.NewRequest("GET", u, nil)
+		require.NoError(t, err)
+		webHandler.router.ServeHTTP(w, req)
+		fmt.Println(u)
+		require.Equal(t, http.StatusOK, w.Code)
+	}
+}
+
 func cleanupTestResponse(t *testing.T, resp *http.Response) {
 	_, err := io.Copy(ioutil.Discard, resp.Body)
 	require.NoError(t, err)

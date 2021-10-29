@@ -179,6 +179,11 @@ func (s *Storage) Appender(ctx context.Context) storage.Appender {
 	return s.rws.Appender(ctx)
 }
 
+// LowestSentTimestamp returns the lowest sent timestamp across all queues.
+func (s *Storage) LowestSentTimestamp() int64 {
+	return s.rws.LowestSentTimestamp()
+}
+
 // Close the background processing of the storage queues.
 func (s *Storage) Close() error {
 	s.mtx.Lock()
