@@ -1196,6 +1196,10 @@ func TestTombstoneCleanFail(t *testing.T) {
 	// Only one block should have been replaced by a new block.
 	require.Equal(t, len(oldBlockDirs), len(actualBlockDirs))
 	require.Equal(t, len(intersection(oldBlockDirs, actualBlockDirs)), len(actualBlockDirs)-1)
+
+	for _, b := range db.blocks {
+		require.NoError(t, b.Close())
+	}
 }
 
 // TestTombstoneCleanRetentionLimitsRace tests that a CleanTombstones operation

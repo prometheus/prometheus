@@ -15,7 +15,6 @@
 package tsdb
 
 import (
-	"context"
 	"encoding/json"
 	"io"
 	"io/ioutil"
@@ -263,8 +262,7 @@ type Block struct {
 	meta         BlockMeta
 	numBytesMeta int64
 
-	reader     *LazyReader
-	stopReader context.CancelFunc
+	reader *LazyReader
 
 	logger log.Logger
 }
@@ -291,22 +289,18 @@ func OpenBlock(logger log.Logger, dir string, pool chunkenc.Pool, unmap *UnmapSt
 		return nil, err
 	}
 
-	ctx, stopLazyReader := context.WithCancel(context.Background())
-
 	var lazyReader *LazyReader
 	if unmap != nil {
 		if unmap.CheckInterval > unmap.UnmapAfter {
-			stopLazyReader()
 			return nil, errors.New("last used check-interval cannot be greater than unmap-after")
 		}
-		lazyReader = NewLazyReader(ctx, logger, dir, unmap.UnmapAfter, unmap.CheckInterval, pool)
+		lazyReader = NewLazyReader(logger, dir, unmap.UnmapAfter, unmap.CheckInterval, pool)
 	} else {
-		lazyReader = NewLazyReader(ctx, logger, dir, time.Minute*10, time.Minute, pool)
+		lazyReader = NewLazyReader(logger, dir, time.Minute*10, time.Minute, pool)
 	}
 
 	// Call load once during start to fill up block stats.
 	if err = lazyReader.load(); err != nil {
-		stopLazyReader()
 		return nil, errors.Wrap(err, "load lazy-reader")
 	}
 
@@ -314,7 +308,6 @@ func OpenBlock(logger log.Logger, dir string, pool chunkenc.Pool, unmap *UnmapSt
 		dir:          dir,
 		meta:         *meta,
 		reader:       lazyReader,
-		stopReader:   stopLazyReader,
 		logger:       logger,
 		numBytesMeta: sizeMeta,
 	}
@@ -325,11 +318,10 @@ func OpenBlock(logger log.Logger, dir string, pool chunkenc.Pool, unmap *UnmapSt
 func (pb *Block) Close() error {
 	pb.mtx.Lock()
 	pb.closing = true
+	pb.reader.Close()
 	pb.mtx.Unlock()
 
 	pb.pendingReaders.Wait()
-
-	pb.stopReader()
 	return nil
 }
 

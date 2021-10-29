@@ -1965,6 +1965,7 @@ func BenchmarkQueries(b *testing.B) {
 				for x := 0; x <= 10; x++ {
 					block, err := OpenBlock(nil, createBlock(b, dir, series), nil, nil)
 					require.NoError(b, err)
+					defer block.Close()
 					q, err := NewBlockQuerier(block, 1, int64(nSamples))
 					require.NoError(b, err)
 					qs = append(qs, q)

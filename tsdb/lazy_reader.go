@@ -36,9 +36,11 @@ import (
 
 // LazyReader represents a directory of time series data covering a continuous time range.
 type LazyReader struct {
-	ctx    context.Context
-	mtx    sync.RWMutex
-	logger log.Logger
+	ctx     context.Context
+	stop    context.CancelFunc
+	mtx     sync.RWMutex
+	logger  log.Logger
+	pending sync.WaitGroup
 
 	dir  string
 	pool chunkenc.Pool
@@ -64,13 +66,16 @@ type ReaderStats struct {
 // NewLazyReader opens block readers and mmaps them when block contents are called. It unmaps the readers when
 // lastUsed >= unmapAfter, every checkInterval.
 // The provided ctx must be cancelled while closing a block to avoid stalls in graceful shutdowns.
-func NewLazyReader(ctx context.Context, logger log.Logger, dir string, unmapAfter time.Duration, checkInterval time.Duration, pool chunkenc.Pool) *LazyReader {
+func NewLazyReader(logger log.Logger, dir string, unmapAfter time.Duration, checkInterval time.Duration, pool chunkenc.Pool) *LazyReader {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
 
+	ctx, stop := context.WithCancel(context.Background())
+
 	return &LazyReader{
 		ctx:           ctx,
+		stop:          stop,
 		dir:           dir,
 		logger:        logger,
 		unmapAfter:    unmapAfter,
@@ -164,21 +169,28 @@ func (lb *LazyReader) load() (err error) {
 	lb.lastUsed.Store(time.Now()) // Update last used as loading block contents can take time.
 	lb.isMMapped.Store(true)
 
+	lb.pending.Add(1)
 	go lb.unmapRoutine()
 
 	return nil
 }
 
+func (lb *LazyReader) Close() error {
+	lb.stop()
+	lb.pending.Wait()
+	return nil
+}
+
 // unmapRoutine checks if the lastUsed >= unmapAfter and unmaps the block and exits.
 func (lb *LazyReader) unmapRoutine() {
+	defer lb.pending.Done()
+
 	if !lb.isMMapped.Load() {
 		// Readers not mmapped, hence watching last used is of no use.
 		return
 	}
 	check := time.NewTicker(lb.checkInterval)
 	defer check.Stop()
-
-	lb.isMMapped.Store(true)
 
 	unmap := func() {
 		lb.mtx.Lock()
