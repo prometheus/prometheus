@@ -132,7 +132,7 @@ func extractFlagName(pc *kingpin.ParseContext) string {
 		if !ok {
 			continue
 		}
-		return fc.Model().Name
+		return "--" + fc.Model().Name
 	}
 	panic("extractFlagName not called from a kingpin PreAction. This is a bug, please report to Prometheus.")
 }
@@ -200,6 +200,9 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 			case "new-service-discovery-manager":
 				c.enableNewSDManager = true
 				level.Info(logger).Log("msg", "Experimental service discovery manager")
+			case "agent":
+				agentMode = true
+				level.Info(logger).Log("msg", "Experimental agent mode enabled.")
 			case "":
 				continue
 			default:
@@ -237,8 +240,6 @@ func main() {
 	a.Version(version.Print(appName))
 
 	a.HelpFlag.Short('h')
-
-	a.Flag("agent", "Agent mode.").BoolVar(&agentMode)
 
 	a.Flag("config.file", "Prometheus configuration file path.").
 		Default("prometheus.yml").StringVar(&cfg.configFile)
@@ -335,16 +336,16 @@ func main() {
 		PreAction(agentOnlySetting()).
 		Default("data-agent/").StringVar(&cfg.localStoragePath)
 
-	a.Flag("storage.agent.segment-size",
+	a.Flag("storage.agent.wal-segment-size",
 		"Size at which to split WAL segment files. Example: 100MB").
 		PreAction(agentOnlySetting()).
 		Hidden().PlaceHolder("<bytes>").BytesVar(&cfg.agent.WALSegmentSize)
 
-	a.Flag("storage.agent.compression", "Compress the agent WAL.").
+	a.Flag("storage.agent.wal-compression", "Compress the agent WAL.").
 		PreAction(agentOnlySetting()).
 		Default("true").BoolVar(&cfg.agent.WALCompression)
 
-	a.Flag("storage.agent.truncate-frequency",
+	a.Flag("storage.agent.wal-truncate-frequency",
 		"The frequency at which to truncate the WAL and remove old data.").
 		PreAction(agentOnlySetting()).
 		Hidden().PlaceHolder("<duration>").SetValue(&cfg.agent.TruncateFrequency)
@@ -432,6 +433,16 @@ func main() {
 	if err := cfg.setFeatureListOptions(logger); err != nil {
 		fmt.Fprintln(os.Stderr, errors.Wrapf(err, "Error parsing feature list"))
 		os.Exit(1)
+	}
+
+	if agentMode && len(serverOnlyFlags) > 0 {
+		fmt.Fprintf(os.Stderr, "The following flag(s) can not be used in agent mode: %q", serverOnlyFlags)
+		os.Exit(3)
+	}
+
+	if !agentMode && len(agentOnlyFlags) > 0 {
+		fmt.Fprintf(os.Stderr, "The following flag(s) can only be used in agent mode: %q", agentOnlyFlags)
+		os.Exit(3)
 	}
 
 	cfg.web.ExternalURL, err = computeExternalURL(cfg.prometheusURL, cfg.web.ListenAddress)
@@ -1006,7 +1017,7 @@ func main() {
 				level.Info(logger).Log("msg", "Starting WAL storage ...")
 				if cfg.agent.WALSegmentSize != 0 {
 					if cfg.agent.WALSegmentSize < 10*1024*1024 || cfg.agent.WALSegmentSize > 256*1024*1024 {
-						return errors.New("flag 'storage.agent.segment-size' must be set between 10MB and 256MB")
+						return errors.New("flag 'storage.agent.wal-segment-size' must be set between 10MB and 256MB")
 					}
 				}
 				db, err := agent.Open(
