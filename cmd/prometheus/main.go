@@ -452,7 +452,7 @@ func main() {
 
 	// Throw error for invalid config before starting other components.
 	var cfgFile *config.Config
-	if cfgFile, err = config.LoadFile(cfg.configFile, false, log.NewNopLogger()); err != nil {
+	if cfgFile, err = config.LoadFile(cfg.configFile, agentMode, false, log.NewNopLogger()); err != nil {
 		level.Error(logger).Log("msg", fmt.Sprintf("Error loading config (--config.file=%s)", cfg.configFile), "err", err)
 		os.Exit(2)
 	}
@@ -1162,7 +1162,7 @@ func reloadConfig(filename string, expandExternalLabels bool, enableExemplarStor
 		}
 	}()
 
-	conf, err := config.LoadFile(filename, expandExternalLabels, logger)
+	conf, err := config.LoadFile(filename, agentMode, expandExternalLabels, logger)
 	if err != nil {
 		return errors.Wrapf(err, "couldn't load configuration (--config.file=%q)", filename)
 	}

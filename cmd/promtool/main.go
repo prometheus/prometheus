@@ -82,6 +82,7 @@ func main() {
 	).Required().ExistingFiles()
 
 	checkMetricsCmd := checkCmd.Command("metrics", checkMetricsUsage)
+	agentMode := checkConfigCmd.Flag("agent", "Check config file for Prometheus in Agent mode.").Bool()
 
 	queryCmd := app.Command("query", "Run query against a Prometheus server.")
 	queryCmdFmt := queryCmd.Flag("format", "Output format of the query.").Short('o').Default("promql").Enum("promql", "json")
@@ -202,7 +203,7 @@ func main() {
 
 	switch parsedCmd {
 	case checkConfigCmd.FullCommand():
-		os.Exit(CheckConfig(*configFiles...))
+		os.Exit(CheckConfig(*agentMode, *configFiles...))
 
 	case checkWebConfigCmd.FullCommand():
 		os.Exit(CheckWebConfig(*webConfigFiles...))
@@ -258,11 +259,11 @@ func main() {
 }
 
 // CheckConfig validates configuration files.
-func CheckConfig(files ...string) int {
+func CheckConfig(agentMode bool, files ...string) int {
 	failed := false
 
 	for _, f := range files {
-		ruleFiles, err := checkConfig(f)
+		ruleFiles, err := checkConfig(agentMode, f)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "  FAILED:", err)
 			failed = true
@@ -317,10 +318,10 @@ func checkFileExists(fn string) error {
 	return err
 }
 
-func checkConfig(filename string) ([]string, error) {
+func checkConfig(agentMode bool, filename string) ([]string, error) {
 	fmt.Println("Checking", filename)
 
-	cfg, err := config.LoadFile(filename, false, log.NewNopLogger())
+	cfg, err := config.LoadFile(filename, agentMode, false, log.NewNopLogger())
 	if err != nil {
 		return nil, err
 	}
