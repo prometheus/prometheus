@@ -73,8 +73,8 @@ func TestFunctionList(t *testing.T) {
 	}
 }
 
-func TestKahanSummation(t *testing.T) {
+func TestKahanSum(t *testing.T) {
 	vals := []float64{1.0, math.Pow(10, 100), 1.0, -1 * math.Pow(10, 100)}
 	expected := 2.0
-	require.Equal(t, expected, kahanSummation(vals))
+	require.Equal(t, expected, kahanSum(vals))
 }

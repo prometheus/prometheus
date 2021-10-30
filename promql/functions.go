@@ -471,28 +471,32 @@ func funcQuantileOverTime(vals []parser.Value, args parser.Expressions, enh *Eva
 // === stddev_over_time(Matrix parser.ValueTypeMatrix) Vector ===
 func funcStddevOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return aggrOverTime(vals, enh, func(values []Point) float64 {
-		var aux, count, mean float64
+		var count float64
+		var mean, cMean float64
+		var aux, cAux float64
 		for _, v := range values {
 			count++
-			delta := v.V - mean
-			mean += delta / count
-			aux += delta * (v.V - mean)
+			delta := v.V - (mean + cMean)
+			mean, cMean = kahanSumInc(delta/count, mean, cMean)
+			aux, cAux = kahanSumInc(delta*(v.V-(mean+cMean)), aux, cAux)
 		}
-		return math.Sqrt(aux / count)
+		return math.Sqrt((aux + cAux) / count)
 	})
 }
 
 // === stdvar_over_time(Matrix parser.ValueTypeMatrix) Vector ===
 func funcStdvarOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return aggrOverTime(vals, enh, func(values []Point) float64 {
-		var aux, count, mean float64
+		var count float64
+		var mean, cMean float64
+		var aux, cAux float64
 		for _, v := range values {
 			count++
-			delta := v.V - mean
-			mean += delta / count
-			aux += delta * (v.V - mean)
+			delta := v.V - (mean + cMean)
+			mean, cMean = kahanSumInc(delta/count, mean, cMean)
+			aux, cAux = kahanSumInc(delta*(v.V-(mean+cMean)), aux, cAux)
 		}
-		return aux / count
+		return (aux + cAux) / count
 	})
 }
 
