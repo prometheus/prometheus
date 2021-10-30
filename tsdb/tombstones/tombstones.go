@@ -39,8 +39,10 @@ const (
 	// MagicTombstone is 4 bytes at the head of a tombstone file.
 	MagicTombstone = 0x0130BA30
 
-	tombstoneFormatV1    = 1
-	tombstonesHeaderSize = 5
+	tombstoneFormatV1          = 1
+	tombstoneFormatVersionSize = 1
+	tombstonesHeaderSize       = 5
+	tombstonesCRCSize          = 4
 )
 
 // The table gets initialized with sync.Once but may still cause a race
@@ -110,7 +112,7 @@ func WriteFile(logger log.Logger, dir string, tr Reader) (int64, error) {
 	}
 
 	// Ignore first byte which is the format type. We do this for compatibility.
-	if _, err := hash.Write(bytes[1:]); err != nil {
+	if _, err := hash.Write(bytes[tombstoneFormatVersionSize:]); err != nil {
 		return 0, errors.Wrap(err, "calculating hash for tombstones")
 	}
 
@@ -198,7 +200,7 @@ func ReadTombstones(dir string) (Reader, int64, error) {
 		return nil, 0, errors.Wrap(encoding.ErrInvalidSize, "tombstones header")
 	}
 
-	d := &encoding.Decbuf{B: b[:len(b)-4]} // 4 for the checksum.
+	d := &encoding.Decbuf{B: b[:len(b)-tombstonesCRCSize]}
 	if mg := d.Be32(); mg != MagicTombstone {
 		return nil, 0, fmt.Errorf("invalid magic number %x", mg)
 	}
@@ -206,10 +208,10 @@ func ReadTombstones(dir string) (Reader, int64, error) {
 	// Verify checksum.
 	hash := newCRC32()
 	// Ignore first byte which is the format type.
-	if _, err := hash.Write(d.Get()[1:]); err != nil {
+	if _, err := hash.Write(d.Get()[tombstoneFormatVersionSize:]); err != nil {
 		return nil, 0, errors.Wrap(err, "write to hash")
 	}
-	if binary.BigEndian.Uint32(b[len(b)-4:]) != hash.Sum32() {
+	if binary.BigEndian.Uint32(b[len(b)-tombstonesCRCSize:]) != hash.Sum32() {
 		return nil, 0, errors.New("checksum did not match")
 	}
 
