@@ -387,7 +387,7 @@ func funcAvgOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 					continue
 				}
 			}
-			mean, c = kahanSummationIter(v.V/count-mean/count, mean, c)
+			mean, c = kahanSumInc(v.V/count-mean/count, mean, c)
 		}
 
 		if math.IsInf(mean, 0) {
@@ -445,7 +445,7 @@ func funcSumOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 	return aggrOverTime(vals, enh, func(values []Point) float64 {
 		var sum, c float64
 		for _, v := range values {
-			sum, c = kahanSummationIter(v.V, sum, c)
+			sum, c = kahanSumInc(v.V, sum, c)
 		}
 		if math.IsInf(sum, 0) {
 			return sum
@@ -682,25 +682,24 @@ func funcTimestamp(vals []parser.Value, args parser.Expressions, enh *EvalNodeHe
 	return enh.Out
 }
 
-func kahanSummation(samples []float64) float64 {
-	sum, c := 0.0, 0.0
+func kahanSum(samples []float64) float64 {
+	var sum, c float64
 
 	for _, v := range samples {
-		sum, c = kahanSummationIter(v, sum, c)
+		sum, c = kahanSumInc(v, sum, c)
 	}
 	return sum + c
 }
 
-func kahanSummationIter(v, sum, c float64) (float64, float64) {
-	t := sum + v
-	// using Neumaier improvement, swap if next term larger than sum
-	if math.Abs(sum) >= math.Abs(v) {
-		c += (sum - t) + v
+func kahanSumInc(inc, sum, c float64) (newSum, newC float64) {
+	t := sum + inc
+	// Using Neumaier improvement, swap if next term larger than sum.
+	if math.Abs(sum) >= math.Abs(inc) {
+		c += (sum - t) + inc
 	} else {
-		c += (v - t) + sum
+		c += (inc - t) + sum
 	}
-	sum = t
-	return sum, c
+	return t, c
 }
 
 // linearRegression performs a least-square linear regression analysis on the
@@ -717,10 +716,10 @@ func linearRegression(samples []Point, interceptTime int64) (slope, intercept fl
 	for _, sample := range samples {
 		n += 1.0
 		x := float64(sample.T-interceptTime) / 1e3
-		sumX, cX = kahanSummationIter(x, sumX, cX)
-		sumY, cY = kahanSummationIter(sample.V, sumY, cY)
-		sumXY, cXY = kahanSummationIter(x*sample.V, sumXY, cXY)
-		sumX2, cX2 = kahanSummationIter(x*x, sumX2, cX2)
+		sumX, cX = kahanSumInc(x, sumX, cX)
+		sumY, cY = kahanSumInc(sample.V, sumY, cY)
+		sumXY, cXY = kahanSumInc(x*sample.V, sumXY, cXY)
+		sumX2, cX2 = kahanSumInc(x*x, sumX2, cX2)
 	}
 
 	sumX = sumX + cX
