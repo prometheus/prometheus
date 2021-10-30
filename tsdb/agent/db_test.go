@@ -80,9 +80,6 @@ func TestCommit(t *testing.T) {
 
 	s, err := Open(logger, reg, remoteStorage, promAgentDir, opts)
 	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, s.Close())
-	}()
 
 	a := s.Appender(context.TODO())
 
@@ -94,8 +91,10 @@ func TestCommit(t *testing.T) {
 			_, err := a.Append(0, lset, sample[0].T(), sample[0].V())
 			require.NoError(t, err)
 		}
-		require.NoError(t, a.Commit())
 	}
+
+	require.NoError(t, a.Commit())
+	require.NoError(t, s.Close())
 
 	// Read records from WAL and check for expected count of series and samples.
 	walSeriesCount := 0
@@ -176,9 +175,6 @@ func TestRollback(t *testing.T) {
 
 	s, err := Open(logger, reg, remoteStorage, promAgentDir, opts)
 	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, s.Close())
-	}()
 
 	a := s.Appender(context.TODO())
 
@@ -193,6 +189,7 @@ func TestRollback(t *testing.T) {
 	}
 
 	require.NoError(t, a.Rollback())
+	require.NoError(t, s.Close())
 
 	// Read records from WAL and check for expected count of series and samples.
 	walSeriesCount := 0
@@ -380,9 +377,6 @@ func TestWALReplay(t *testing.T) {
 
 	s, err := Open(logger, reg, remoteStorage, promAgentDir, opts)
 	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, s.Close())
-	}()
 
 	a := s.Appender(context.TODO())
 
@@ -396,15 +390,11 @@ func TestWALReplay(t *testing.T) {
 	}
 
 	require.NoError(t, a.Commit())
-
 	require.NoError(t, s.Close())
 
 	restartOpts := DefaultOptions()
 	restartLogger := log.NewNopLogger()
 	restartReg := prometheus.NewRegistry()
-
-	// Close the old WAL to release the lock.
-	require.NoError(t, s.Close())
 
 	s, err = Open(restartLogger, restartReg, nil, promAgentDir, restartOpts)
 	require.NoError(t, err)
