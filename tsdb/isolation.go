@@ -33,6 +33,10 @@ type isolationState struct {
 
 // Close closes the state.
 func (i *isolationState) Close() {
+	if i.isolation == nil || i.isolation.disabled {
+		return
+	}
+
 	i.isolation.readMtx.Lock()
 	defer i.isolation.readMtx.Unlock()
 	i.next.prev = i.prev

@@ -1549,6 +1549,10 @@ func TestAddDuplicateLabelName(t *testing.T) {
 }
 
 func TestMemSeriesIsolation(t *testing.T) {
+	if !DefaultIsolationState {
+		return
+	}
+
 	// Put a series, select it. GC it and then access it.
 	lastValue := func(h *Head, maxAppendID uint64) int {
 		idx, err := h.Index()
@@ -1720,6 +1724,10 @@ func TestMemSeriesIsolation(t *testing.T) {
 }
 
 func TestIsolationRollback(t *testing.T) {
+	if !DefaultIsolationState {
+		return
+	}
+
 	// Rollback after a failed append and test if the low watermark has progressed anyway.
 	hb, _ := newTestHead(t, 1000, false)
 	defer func() {
@@ -1748,6 +1756,10 @@ func TestIsolationRollback(t *testing.T) {
 }
 
 func TestIsolationLowWatermarkMonotonous(t *testing.T) {
+	if !DefaultIsolationState {
+		return
+	}
+
 	hb, _ := newTestHead(t, 1000, false)
 	defer func() {
 		require.NoError(t, hb.Close())
@@ -1781,6 +1793,10 @@ func TestIsolationLowWatermarkMonotonous(t *testing.T) {
 }
 
 func TestIsolationAppendIDZeroIsNoop(t *testing.T) {
+	if !DefaultIsolationState {
+		return
+	}
+
 	h, _ := newTestHead(t, 1000, false)
 	defer func() {
 		require.NoError(t, h.Close())
@@ -1802,6 +1818,10 @@ func TestHeadSeriesChunkRace(t *testing.T) {
 }
 
 func TestIsolationWithoutAdd(t *testing.T) {
+	if !DefaultIsolationState {
+		return
+	}
+
 	hb, _ := newTestHead(t, 1000, false)
 	defer func() {
 		require.NoError(t, hb.Close())
