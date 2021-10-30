@@ -59,10 +59,6 @@ const (
 	tmpForCreationBlockDirSuffix = ".tmp-for-creation"
 	// Pre-2.21 tmp dir suffix, used in clean-up functions.
 	tmpLegacy = ".tmp"
-
-	lockfileDisabled       = -1
-	lockfileReplaced       = 0
-	lockfileCreatedCleanly = 1
 )
 
 // ErrNotReady is returned if the underlying storage is not ready yet.
@@ -162,9 +158,8 @@ type BlocksToDeleteFunc func(blocks []*Block) map[ulid.ULID]struct{}
 // DB handles reads and writes of time series falling into
 // a hashed partition of a seriedb.
 type DB struct {
-	dir       string
-	lockf     fileutil.Releaser
-	lockfPath string
+	dir    string
+	locker *Locker
 
 	logger         log.Logger
 	metrics        *dbMetrics
@@ -196,20 +191,19 @@ type DB struct {
 }
 
 type dbMetrics struct {
-	loadedBlocks           prometheus.GaugeFunc
-	symbolTableSize        prometheus.GaugeFunc
-	reloads                prometheus.Counter
-	reloadsFailed          prometheus.Counter
-	compactionsFailed      prometheus.Counter
-	compactionsTriggered   prometheus.Counter
-	compactionsSkipped     prometheus.Counter
-	sizeRetentionCount     prometheus.Counter
-	timeRetentionCount     prometheus.Counter
-	startTime              prometheus.GaugeFunc
-	tombCleanTimer         prometheus.Histogram
-	blocksBytes            prometheus.Gauge
-	maxBytes               prometheus.Gauge
-	lockfileCreatedCleanly prometheus.Gauge
+	loadedBlocks         prometheus.GaugeFunc
+	symbolTableSize      prometheus.GaugeFunc
+	reloads              prometheus.Counter
+	reloadsFailed        prometheus.Counter
+	compactionsFailed    prometheus.Counter
+	compactionsTriggered prometheus.Counter
+	compactionsSkipped   prometheus.Counter
+	sizeRetentionCount   prometheus.Counter
+	timeRetentionCount   prometheus.Counter
+	startTime            prometheus.GaugeFunc
+	tombCleanTimer       prometheus.Histogram
+	blocksBytes          prometheus.Gauge
+	maxBytes             prometheus.Gauge
 }
 
 func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
@@ -287,10 +281,6 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 		Name: "prometheus_tsdb_size_retentions_total",
 		Help: "The number of times that blocks were deleted because the maximum number of bytes was exceeded.",
 	})
-	m.lockfileCreatedCleanly = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "prometheus_tsdb_clean_start",
-		Help: "-1: lockfile is disabled. 0: a lockfile from a previous execution was replaced. 1: lockfile creation was clean",
-	})
 
 	if r != nil {
 		r.MustRegister(
@@ -307,7 +297,6 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 			m.tombCleanTimer,
 			m.blocksBytes,
 			m.maxBytes,
-			m.lockfileCreatedCleanly,
 		)
 	}
 	return m
@@ -669,29 +658,17 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 		db.blocksToDelete = DefaultBlocksToDelete(db)
 	}
 
-	lockfileCreationStatus := lockfileDisabled
+	var err error
+	db.locker, err = NewLocker(dir, "tsdb", db.logger, r)
+	if err != nil {
+		return nil, err
+	}
 	if !opts.NoLockfile {
-		absdir, err := filepath.Abs(dir)
-		if err != nil {
+		if err := db.locker.Lock(); err != nil {
 			return nil, err
 		}
-		db.lockfPath = filepath.Join(absdir, "lock")
-
-		if _, err := os.Stat(db.lockfPath); err == nil {
-			level.Warn(db.logger).Log("msg", "A TSDB lockfile from a previous execution already existed. It was replaced", "file", db.lockfPath)
-			lockfileCreationStatus = lockfileReplaced
-		} else {
-			lockfileCreationStatus = lockfileCreatedCleanly
-		}
-
-		lockf, _, err := fileutil.Flock(db.lockfPath)
-		if err != nil {
-			return nil, errors.Wrap(err, "lock DB directory")
-		}
-		db.lockf = lockf
 	}
 
-	var err error
 	ctx, cancel := context.WithCancel(context.Background())
 	db.compactor, err = NewLeveledCompactorWithChunkSize(ctx, r, l, rngs, db.chunkPool, opts.MaxBlockChunkSegmentSize, nil)
 	if err != nil {
@@ -735,7 +712,6 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	if maxBytes < 0 {
 		maxBytes = 0
 	}
-	db.metrics.lockfileCreatedCleanly.Set(float64(lockfileCreationStatus))
 	db.metrics.maxBytes.Set(float64(maxBytes))
 
 	if err := db.reload(); err != nil {
@@ -1448,11 +1424,7 @@ func (db *DB) Close() error {
 		g.Go(pb.Close)
 	}
 
-	errs := tsdb_errors.NewMulti(g.Wait())
-	if db.lockf != nil {
-		errs.Add(db.lockf.Release())
-		errs.Add(os.Remove(db.lockfPath))
-	}
+	errs := tsdb_errors.NewMulti(g.Wait(), db.locker.Release())
 	if db.head != nil {
 		errs.Add(db.head.Close())
 	}

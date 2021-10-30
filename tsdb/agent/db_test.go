@@ -403,6 +403,9 @@ func TestWALReplay(t *testing.T) {
 	restartLogger := log.NewNopLogger()
 	restartReg := prometheus.NewRegistry()
 
+	// Close the old WAL to release the lock.
+	require.NoError(t, s.Close())
+
 	s, err = Open(restartLogger, restartReg, nil, promAgentDir, restartOpts)
 	require.NoError(t, err)
 
