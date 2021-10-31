@@ -49,10 +49,10 @@ func TestUnsupported(t *testing.T) {
 	logger := log.NewNopLogger()
 
 	s, err := Open(logger, prometheus.DefaultRegisterer, nil, promAgentDir, opts)
-	if err != nil {
-		t.Fatalf("unable to create storage for the agent: %v", err)
-	}
-	defer s.Close()
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, s.Close())
+	}()
 
 	t.Run("Querier", func(t *testing.T) {
 		_, err := s.Querier(context.TODO(), 0, 0)
@@ -89,9 +89,10 @@ func TestCommit(t *testing.T) {
 	remoteStorage := remote.NewStorage(log.With(logger, "component", "remote"), reg, startTime, promAgentDir, time.Second*30, nil)
 
 	s, err := Open(logger, reg, remoteStorage, promAgentDir, opts)
-	if err != nil {
-		t.Fatalf("unable to create storage for the agent: %v", err)
-	}
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, s.Close())
+	}()
 
 	a := s.Appender(context.TODO())
 
@@ -114,9 +115,7 @@ func TestCommit(t *testing.T) {
 	remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"), reg, startTime, promAgentDir, time.Second*30, nil)
 
 	s, err = Open(logger, nil, remoteStorage, promAgentDir, opts)
-	if err != nil {
-		t.Fatalf("unable to create storage for the agent: %v", err)
-	}
+	require.NoError(t, err)
 
 	var dec record.Decoder
 
@@ -178,9 +177,10 @@ func TestRollback(t *testing.T) {
 	remoteStorage := remote.NewStorage(log.With(logger, "component", "remote"), reg, startTime, promAgentDir, time.Second*30, nil)
 
 	s, err := Open(logger, reg, remoteStorage, promAgentDir, opts)
-	if err != nil {
-		t.Fatalf("unable to create storage for the agent: %v", err)
-	}
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, s.Close())
+	}()
 
 	a := s.Appender(context.TODO())
 
@@ -204,9 +204,7 @@ func TestRollback(t *testing.T) {
 	remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"), reg, startTime, promAgentDir, time.Second*30, nil)
 
 	s, err = Open(logger, nil, remoteStorage, promAgentDir, opts)
-	if err != nil {
-		t.Fatalf("unable to create storage for the agent: %v", err)
-	}
+	require.NoError(t, err)
 
 	var dec record.Decoder
 
@@ -270,9 +268,10 @@ func TestFullTruncateWAL(t *testing.T) {
 	remoteStorage := remote.NewStorage(log.With(logger, "component", "remote"), reg, startTime, promAgentDir, time.Second*30, nil)
 
 	s, err := Open(logger, reg, remoteStorage, promAgentDir, opts)
-	if err != nil {
-		t.Fatalf("unable to create storage for the agent: %v", err)
-	}
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, s.Close())
+	}()
 
 	a := s.Appender(context.TODO())
 
@@ -312,9 +311,10 @@ func TestPartialTruncateWAL(t *testing.T) {
 	remoteStorage := remote.NewStorage(log.With(logger, "component", "remote"), reg, startTime, promAgentDir, time.Second*30, nil)
 
 	s, err := Open(logger, reg, remoteStorage, promAgentDir, opts)
-	if err != nil {
-		t.Fatalf("unable to create storage for the agent: %v", err)
-	}
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, s.Close())
+	}()
 
 	a := s.Appender(context.TODO())
 
@@ -375,9 +375,10 @@ func TestWALReplay(t *testing.T) {
 	remoteStorage := remote.NewStorage(log.With(logger, "component", "remote"), reg, startTime, promAgentDir, time.Second*30, nil)
 
 	s, err := Open(logger, reg, remoteStorage, promAgentDir, opts)
-	if err != nil {
-		t.Fatalf("unable to create storage for the agent: %v", err)
-	}
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, s.Close())
+	}()
 
 	a := s.Appender(context.TODO())
 
@@ -397,9 +398,7 @@ func TestWALReplay(t *testing.T) {
 	restartReg := prometheus.NewRegistry()
 
 	s, err = Open(restartLogger, restartReg, nil, promAgentDir, restartOpts)
-	if err != nil {
-		t.Fatalf("unable to create storage for the agent: %v", err)
-	}
+	require.NoError(t, err)
 
 	// Check if all the series are retrieved back from the WAL.
 	m := gatherFamily(t, restartReg, "prometheus_agent_active_series")
