@@ -107,8 +107,6 @@ func TestCommit(t *testing.T) {
 		require.NoError(t, a.Commit())
 	}
 
-	require.NoError(t, s.Close())
-
 	// Read records from WAL and check for expected count of series and samples.
 	walSeriesCount := 0
 	walSamplesCount := 0
@@ -116,13 +114,16 @@ func TestCommit(t *testing.T) {
 	reg = prometheus.NewRegistry()
 	remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"), reg, startTime, promAgentDir, time.Second*30, nil)
 
-	s, err = Open(logger, nil, remoteStorage, promAgentDir, opts)
+	s1, err := Open(logger, nil, remoteStorage, promAgentDir, opts)
 	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, s1.Close())
+	}()
 
 	var dec record.Decoder
 
 	if err == nil {
-		sr, err := wal.NewSegmentsReader(s.wal.Dir())
+		sr, err := wal.NewSegmentsReader(s1.wal.Dir())
 		require.NoError(t, err)
 
 		r := wal.NewReader(sr)
@@ -198,8 +199,6 @@ func TestRollback(t *testing.T) {
 
 	require.NoError(t, a.Rollback())
 
-	require.NoError(t, s.Close())
-
 	// Read records from WAL and check for expected count of series and samples.
 	walSeriesCount := 0
 	walSamplesCount := 0
@@ -207,13 +206,16 @@ func TestRollback(t *testing.T) {
 	reg = prometheus.NewRegistry()
 	remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"), reg, startTime, promAgentDir, time.Second*30, nil)
 
-	s, err = Open(logger, nil, remoteStorage, promAgentDir, opts)
+	s1, err := Open(logger, nil, remoteStorage, promAgentDir, opts)
 	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, s1.Close())
+	}()
 
 	var dec record.Decoder
 
 	if err == nil {
-		sr, err := wal.NewSegmentsReader(s.wal.Dir())
+		sr, err := wal.NewSegmentsReader(s1.wal.Dir())
 		require.NoError(t, err)
 
 		r := wal.NewReader(sr)
