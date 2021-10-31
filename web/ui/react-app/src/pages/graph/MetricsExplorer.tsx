@@ -1,4 +1,4 @@
-import React, { Component } from 'react';
+import React, { Component, ChangeEvent } from 'react';
 import { Modal, ModalBody, ModalHeader, Input } from 'reactstrap';
 
 interface Props {
@@ -15,7 +15,7 @@ class MetricsExplorer extends Component<Props, MetricsExplorerState> {
     super(props);
     this.state = { searchTerm: '' };
   }
-  handleSearchTerm = (event: any): void => {
+  handleSearchTerm = (event: ChangeEvent<HTMLInputElement>): void => {
     this.setState({ searchTerm: event.target.value });
   };
   handleMetricClick = (query: string): void => {

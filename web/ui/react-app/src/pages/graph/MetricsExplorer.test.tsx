@@ -1,14 +1,18 @@
 import * as React from 'react';
-import { mount, ReactWrapper} from 'enzyme';
+import { mount, ReactWrapper } from 'enzyme';
 import MetricsExplorer from './MetricsExplorer';
 import { Input } from 'reactstrap';
 
 describe('MetricsExplorer', () => {
-  const spyInsertAtCursor = jest.fn().mockImplementation((value:string) => {});
+  const spyInsertAtCursor = jest.fn().mockImplementation((value: string) => {
+    value = value;
+  });
   const metricsExplorerProps = {
     show: true,
-    updateShow:(show: boolean): void => {},
-    metrics:['go_test_1','prometheus_test_1'],
+    updateShow: (show: boolean): void => {
+      show = show;
+    },
+    metrics: ['go_test_1', 'prometheus_test_1'],
     insertAtCursor: spyInsertAtCursor,
   };
 
@@ -29,7 +33,7 @@ describe('MetricsExplorer', () => {
 
   it('filters metrics with search', () => {
     const input = metricsExplorer.find(Input);
-    input.simulate('change', { target: { value: 'go' }});
+    input.simulate('change', { target: { value: 'go' } });
     const metrics = metricsExplorer.find('.metric');
     expect(metrics).toHaveLength(1);
   });
@@ -40,7 +44,7 @@ describe('MetricsExplorer', () => {
     expect(metricsExplorerProps.insertAtCursor).toHaveBeenCalled();
   });
 
-/*  it('executes the query when clicking the execute button', () => {
+  /*  it('executes the query when clicking the execute button', () => {
     const spyExecuteQuery = jest.fn();
     const props = { ...expressionInputProps, executeQuery: spyExecuteQuery };
     const wrapper = mount(<ExpressionInput {...props} />);
