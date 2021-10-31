@@ -107,6 +107,8 @@ func TestCommit(t *testing.T) {
 		require.NoError(t, a.Commit())
 	}
 
+	require.NoError(t, s.Close())
+
 	// Read records from WAL and check for expected count of series and samples.
 	walSeriesCount := 0
 	walSamplesCount := 0
@@ -195,6 +197,8 @@ func TestRollback(t *testing.T) {
 	}
 
 	require.NoError(t, a.Rollback())
+
+	require.NoError(t, s.Close())
 
 	// Read records from WAL and check for expected count of series and samples.
 	walSeriesCount := 0
@@ -392,6 +396,8 @@ func TestWALReplay(t *testing.T) {
 	}
 
 	require.NoError(t, a.Commit())
+
+	require.NoError(t, s.Close())
 
 	restartOpts := DefaultOptions()
 	restartLogger := log.NewNopLogger()
