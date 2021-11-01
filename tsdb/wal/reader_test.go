@@ -310,11 +310,7 @@ func TestReaderFuzz(t *testing.T) {
 	for name, fn := range readerConstructors {
 		for _, compress := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s,compress=%t", name, compress), func(t *testing.T) {
-				dir, err := ioutil.TempDir("", "wal_fuzz_live")
-				require.NoError(t, err)
-				defer func() {
-					require.NoError(t, os.RemoveAll(dir))
-				}()
+				dir := t.TempDir()
 
 				w, err := NewSize(nil, nil, dir, 128*pageSize, compress)
 				require.NoError(t, err)
@@ -347,11 +343,7 @@ func TestReaderFuzz_Live(t *testing.T) {
 	logger := testutil.NewLogger(t)
 	for _, compress := range []bool{false, true} {
 		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
-			dir, err := ioutil.TempDir("", "wal_fuzz_live")
-			require.NoError(t, err)
-			defer func() {
-				require.NoError(t, os.RemoveAll(dir))
-			}()
+			dir := t.TempDir()
 
 			w, err := NewSize(nil, nil, dir, 128*pageSize, compress)
 			require.NoError(t, err)
@@ -432,11 +424,7 @@ func TestLiveReaderCorrupt_ShortFile(t *testing.T) {
 	// Write a corrupt WAL segment, there is one record of pageSize in length,
 	// but the segment is only half written.
 	logger := testutil.NewLogger(t)
-	dir, err := ioutil.TempDir("", "wal_live_corrupt")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 
 	w, err := NewSize(nil, nil, dir, pageSize, false)
 	require.NoError(t, err)
@@ -476,11 +464,7 @@ func TestLiveReaderCorrupt_ShortFile(t *testing.T) {
 func TestLiveReaderCorrupt_RecordTooLongAndShort(t *testing.T) {
 	// Write a corrupt WAL segment, when record len > page size.
 	logger := testutil.NewLogger(t)
-	dir, err := ioutil.TempDir("", "wal_live_corrupt")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 
 	w, err := NewSize(nil, nil, dir, pageSize*2, false)
 	require.NoError(t, err)
