@@ -1,9 +1,6 @@
-## 2.31.0-rc.1 / 2021-10-25
+## 2.31.0 / 2021-11-02
 
-* [BUGFIX] UI: Fix assets loading when a prefix is used in `--web.route-prefix` or `--web.external-url`. #9586
-
-## 2.31.0-rc.0 / 2021-10-21
-
+* [CHANGE] UI: Remove standard PromQL editor in favour of the codemirror-based editor. #9452
 * [FEATURE] PromQL: Add trigonometric functions and `atan2` binary operator. #9239 #9248 #9515
 * [FEATURE] Remote: Add support for exemplar in the remote write receiver endpoint. #9319 #9414
 * [FEATURE] SD: Add PuppetDB service discovery. #8883
