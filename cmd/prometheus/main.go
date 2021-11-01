@@ -1344,7 +1344,7 @@ func (s *readyStorage) StartTime() (int64, error) {
 		case *agent.DB:
 			return db.StartTime()
 		default:
-			panic(fmt.Sprintf("unkown storage type %T", db))
+			panic(fmt.Sprintf("unknown storage type %T", db))
 		}
 	}
 
