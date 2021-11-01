@@ -63,6 +63,11 @@ func main() {
 
 	checkCmd := app.Command("check", "Check the resources for validity.")
 
+	sdCheckCmd := checkCmd.Command("service-discovery", "Perform service discovery for the given job name and report the results, including relabeling.")
+	sdConfigFile := sdCheckCmd.Arg("config-file", "The prometheus config file.").Required().ExistingFile()
+	sdJobName := sdCheckCmd.Arg("job", "The job to run service discovery for.").Required().String()
+	sdTimeout := sdCheckCmd.Flag("timeout", "The time to wait for discovery results.").Default("30s").Duration()
+
 	checkConfigCmd := checkCmd.Command("config", "Check if the config files are valid or not.")
 	configFiles := checkConfigCmd.Arg(
 		"config-files",
@@ -202,6 +207,9 @@ func main() {
 	}
 
 	switch parsedCmd {
+	case sdCheckCmd.FullCommand():
+		os.Exit(CheckSD(*sdConfigFile, *sdJobName, *sdTimeout))
+
 	case checkConfigCmd.FullCommand():
 		os.Exit(CheckConfig(*agentMode, *configFiles...))
 
