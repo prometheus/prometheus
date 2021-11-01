@@ -462,7 +462,7 @@ func (a *headAppender) Commit() (err error) {
 // isolation for this append.)
 // It is unsafe to call this concurrently with s.iterator(...) without holding the series lock.
 func (s *memSeries) append(t int64, v float64, appendID uint64, chunkDiskMapper *chunks.ChunkDiskMapper) (sampleInOrder, chunkCreated bool) {
-	const samplesPerChunk = 30
+	const samplesPerChunk = 180
 
 	c := s.head()
 
