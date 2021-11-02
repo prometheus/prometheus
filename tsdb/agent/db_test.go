@@ -15,8 +15,6 @@ package agent
 
 import (
 	"context"
-	"io/ioutil"
-	"os"
 	"strconv"
 	"sync"
 	"testing"
@@ -35,11 +33,7 @@ import (
 )
 
 func TestUnsupported(t *testing.T) {
-	promAgentDir, err := ioutil.TempDir("", "TestUnsupported")
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, os.RemoveAll(promAgentDir))
-	})
+	promAgentDir := t.TempDir()
 
 	opts := DefaultOptions()
 	logger := log.NewNopLogger()
@@ -72,11 +66,7 @@ func TestCommit(t *testing.T) {
 		numSeries     = 8
 	)
 
-	promAgentDir, err := ioutil.TempDir("", t.Name())
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, os.RemoveAll(promAgentDir))
-	})
+	promAgentDir := t.TempDir()
 
 	lbls := labelsForTest(t.Name(), numSeries)
 	opts := DefaultOptions()
@@ -161,11 +151,7 @@ func TestRollback(t *testing.T) {
 		numSeries     = 8
 	)
 
-	promAgentDir, err := ioutil.TempDir("", t.Name())
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, os.RemoveAll(promAgentDir))
-	})
+	promAgentDir := t.TempDir()
 
 	lbls := labelsForTest(t.Name(), numSeries)
 	opts := DefaultOptions()
@@ -252,11 +238,7 @@ func TestFullTruncateWAL(t *testing.T) {
 		lastTs        = 500
 	)
 
-	promAgentDir, err := ioutil.TempDir("", t.Name())
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, os.RemoveAll(promAgentDir))
-	})
+	promAgentDir := t.TempDir()
 
 	lbls := labelsForTest(t.Name(), numSeries)
 	opts := DefaultOptions()
@@ -295,11 +277,7 @@ func TestPartialTruncateWAL(t *testing.T) {
 		numSeries     = 800
 	)
 
-	promAgentDir, err := ioutil.TempDir("", t.Name())
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, os.RemoveAll(promAgentDir))
-	})
+	promAgentDir := t.TempDir()
 
 	opts := DefaultOptions()
 	opts.TruncateFrequency = time.Minute * 2
@@ -357,11 +335,7 @@ func TestWALReplay(t *testing.T) {
 		lastTs        = 500
 	)
 
-	promAgentDir, err := ioutil.TempDir("", t.Name())
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, os.RemoveAll(promAgentDir))
-	})
+	promAgentDir := t.TempDir()
 
 	lbls := labelsForTest(t.Name(), numSeries)
 	opts := DefaultOptions()

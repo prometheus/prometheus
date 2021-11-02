@@ -58,16 +58,15 @@ func TestMain(m *testing.M) {
 }
 
 func openTestDB(t testing.TB, opts *Options, rngs []int64) (db *DB) {
-	tmpdir, err := ioutil.TempDir("", "test")
-	require.NoError(t, err)
+	tmpdir := t.TempDir()
 
 	if len(rngs) == 0 {
-		db, err = Open(tmpdir, nil, nil, opts, nil)
+		db, _ = Open(tmpdir, nil, nil, opts, nil)
 	} else {
 		opts, rngs = validateOpts(opts, rngs)
-		db, err = open(tmpdir, nil, nil, opts, rngs, nil)
+		db, _ = open(tmpdir, nil, nil, opts, rngs, nil)
 	}
-	require.NoError(t, err)
+	require.NoError(t, nil)
 
 	// Do not Close() the test database by default as it will deadlock on test failures.
 	t.Cleanup(func() {
@@ -571,17 +570,12 @@ func TestDB_Snapshot(t *testing.T) {
 	require.NoError(t, app.Commit())
 
 	// create snapshot
-	snap, err := ioutil.TempDir("", "snap")
-	require.NoError(t, err)
-
-	defer func() {
-		require.NoError(t, os.RemoveAll(snap))
-	}()
+	snap := t.TempDir()
 	require.NoError(t, db.Snapshot(snap, true))
 	require.NoError(t, db.Close())
 
 	// reopen DB from snapshot
-	db, err = Open(snap, nil, nil, nil, nil)
+	db, err := Open(snap, nil, nil, nil, nil)
 	require.NoError(t, err)
 	defer func() { require.NoError(t, db.Close()) }()
 
@@ -620,8 +614,7 @@ func TestDB_Snapshot_ChunksOutsideOfCompactedRange(t *testing.T) {
 	}
 	require.NoError(t, app.Commit())
 
-	snap, err := ioutil.TempDir("", "snap")
-	require.NoError(t, err)
+	snap := t.TempDir()
 
 	// Hackingly introduce "race", by having lower max time then maxTime in last chunk.
 	db.head.maxTime.Sub(10)
@@ -694,12 +687,7 @@ Outer:
 		}
 
 		// create snapshot
-		snap, err := ioutil.TempDir("", "snap")
-		require.NoError(t, err)
-
-		defer func() {
-			require.NoError(t, os.RemoveAll(snap))
-		}()
+		snap := t.TempDir()
 		require.NoError(t, db.Snapshot(snap, true))
 
 		// reopen DB from snapshot
@@ -1036,17 +1024,12 @@ func TestTombstoneClean(t *testing.T) {
 		// Delete the ranges.
 
 		// Create snapshot.
-		snap, err := ioutil.TempDir("", "snap")
-		require.NoError(t, err)
-
-		defer func() {
-			require.NoError(t, os.RemoveAll(snap))
-		}()
+		snap := t.TempDir()
 		require.NoError(t, db.Snapshot(snap, true))
 		require.NoError(t, db.Close())
 
 		// Reopen DB from snapshot.
-		db, err = Open(snap, nil, nil, nil, nil)
+		db, err := Open(snap, nil, nil, nil, nil)
 		require.NoError(t, err)
 		defer db.Close()
 
@@ -1125,17 +1108,12 @@ func TestTombstoneCleanResultEmptyBlock(t *testing.T) {
 	intervals := tombstones.Intervals{{Mint: 0, Maxt: numSamples}}
 
 	// Create snapshot.
-	snap, err := ioutil.TempDir("", "snap")
-	require.NoError(t, err)
-
-	defer func() {
-		require.NoError(t, os.RemoveAll(snap))
-	}()
+	snap := t.TempDir()
 	require.NoError(t, db.Snapshot(snap, true))
 	require.NoError(t, db.Close())
 
 	// Reopen DB from snapshot.
-	db, err = Open(snap, nil, nil, nil, nil)
+	db, err := Open(snap, nil, nil, nil, nil)
 	require.NoError(t, err)
 	defer db.Close()
 
@@ -1751,11 +1729,7 @@ func TestQuerierWithBoundaryChunks(t *testing.T) {
 // 	- with blocks with WAL: same as above
 func TestInitializeHeadTimestamp(t *testing.T) {
 	t.Run("clean", func(t *testing.T) {
-		dir, err := ioutil.TempDir("", "test_head_init")
-		require.NoError(t, err)
-		defer func() {
-			require.NoError(t, os.RemoveAll(dir))
-		}()
+		dir := t.TempDir()
 
 		db, err := Open(dir, nil, nil, nil, nil)
 		require.NoError(t, err)
@@ -1775,11 +1749,7 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 		require.Equal(t, int64(1000), db.head.MaxTime())
 	})
 	t.Run("wal-only", func(t *testing.T) {
-		dir, err := ioutil.TempDir("", "test_head_init")
-		require.NoError(t, err)
-		defer func() {
-			require.NoError(t, os.RemoveAll(dir))
-		}()
+		dir := t.TempDir()
 
 		require.NoError(t, os.MkdirAll(path.Join(dir, "wal"), 0777))
 		w, err := wal.New(nil, nil, path.Join(dir, "wal"), false)
@@ -1807,11 +1777,7 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 		require.Equal(t, int64(15000), db.head.MaxTime())
 	})
 	t.Run("existing-block", func(t *testing.T) {
-		dir, err := ioutil.TempDir("", "test_head_init")
-		require.NoError(t, err)
-		defer func() {
-			require.NoError(t, os.RemoveAll(dir))
-		}()
+		dir := t.TempDir()
 
 		createBlock(t, dir, genSeries(1, 1, 1000, 2000))
 
@@ -1823,11 +1789,7 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 		require.Equal(t, int64(2000), db.head.MaxTime())
 	})
 	t.Run("existing-block-and-wal", func(t *testing.T) {
-		dir, err := ioutil.TempDir("", "test_head_init")
-		require.NoError(t, err)
-		defer func() {
-			require.NoError(t, os.RemoveAll(dir))
-		}()
+		dir := t.TempDir()
 
 		createBlock(t, dir, genSeries(1, 1, 1000, 6000))
 
@@ -2118,8 +2080,7 @@ func TestBlockRanges(t *testing.T) {
 	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
 	ctx := context.Background()
 
-	dir, err := ioutil.TempDir("", "test_storage")
-	require.NoError(t, err)
+	dir := t.TempDir()
 
 	// Test that the compactor doesn't create overlapping blocks
 	// when a non standard block already exists.
@@ -2218,12 +2179,7 @@ func TestDBReadOnly(t *testing.T) {
 
 	// Bootstrap the db.
 	{
-		dbDir, err = ioutil.TempDir("", "test")
-		require.NoError(t, err)
-
-		defer func() {
-			require.NoError(t, os.RemoveAll(dbDir))
-		}()
+		dbDir := t.TempDir()
 
 		dbBlocks := []*BlockMeta{
 			// Create three 2-sample blocks.
@@ -2312,12 +2268,7 @@ func TestDBReadOnly(t *testing.T) {
 // TestDBReadOnlyClosing ensures that after closing the db
 // all api methods return an ErrClosed.
 func TestDBReadOnlyClosing(t *testing.T) {
-	dbDir, err := ioutil.TempDir("", "test")
-	require.NoError(t, err)
-
-	defer func() {
-		require.NoError(t, os.RemoveAll(dbDir))
-	}()
+	dbDir := t.TempDir()
 	db, err := OpenDBReadOnly(dbDir, log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr)))
 	require.NoError(t, err)
 	require.NoError(t, db.Close())
@@ -2339,12 +2290,7 @@ func TestDBReadOnly_FlushWAL(t *testing.T) {
 
 	// Bootstrap the db.
 	{
-		dbDir, err = ioutil.TempDir("", "test")
-		require.NoError(t, err)
-
-		defer func() {
-			require.NoError(t, os.RemoveAll(dbDir))
-		}()
+		dbDir := t.TempDir()
 
 		// Append data to the WAL.
 		db, err := Open(dbDir, logger, nil, nil, nil)
@@ -2364,12 +2310,7 @@ func TestDBReadOnly_FlushWAL(t *testing.T) {
 	db, err := OpenDBReadOnly(dbDir, logger)
 	require.NoError(t, err)
 
-	flush, err := ioutil.TempDir("", "flush")
-	require.NoError(t, err)
-
-	defer func() {
-		require.NoError(t, os.RemoveAll(flush))
-	}()
+	flush := t.TempDir()
 	require.NoError(t, db.FlushWAL(flush))
 	require.NoError(t, db.Close())
 
@@ -2403,10 +2344,7 @@ func TestDBReadOnly_FlushWAL(t *testing.T) {
 }
 
 func TestDBCannotSeePartialCommits(t *testing.T) {
-	tmpdir, _ := ioutil.TempDir("", "test")
-	defer func() {
-		require.NoError(t, os.RemoveAll(tmpdir))
-	}()
+	tmpdir := t.TempDir()
 
 	db, err := Open(tmpdir, nil, nil, nil, nil)
 	require.NoError(t, err)
@@ -2473,10 +2411,7 @@ func TestDBCannotSeePartialCommits(t *testing.T) {
 }
 
 func TestDBQueryDoesntSeeAppendsAfterCreation(t *testing.T) {
-	tmpdir, _ := ioutil.TempDir("", "test")
-	defer func() {
-		require.NoError(t, os.RemoveAll(tmpdir))
-	}()
+	tmpdir := t.TempDir()
 
 	db, err := Open(tmpdir, nil, nil, nil, nil)
 	require.NoError(t, err)
@@ -2664,9 +2599,7 @@ func TestChunkWriter_ReadAfterWrite(t *testing.T) {
 	for i, test := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 
-			tempDir, err := ioutil.TempDir("", "test_chunk_writer")
-			require.NoError(t, err)
-			defer func() { require.NoError(t, os.RemoveAll(tempDir)) }()
+			tempDir := t.TempDir()
 
 			chunkw, err := chunks.NewWriterWithSegSize(tempDir, chunks.SegmentHeaderSize+int64(test.segmentSize))
 			require.NoError(t, err)
@@ -2753,9 +2686,7 @@ func TestChunkReader_ConcurrentReads(t *testing.T) {
 		tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 5}}),
 	}
 
-	tempDir, err := ioutil.TempDir("", "test_chunk_writer")
-	require.NoError(t, err)
-	defer func() { require.NoError(t, os.RemoveAll(tempDir)) }()
+	tempDir := t.TempDir()
 
 	chunkw, err := chunks.NewWriter(tempDir)
 	require.NoError(t, err)
@@ -2792,9 +2723,7 @@ func TestChunkReader_ConcurrentReads(t *testing.T) {
 // * compacts the head; and
 // * queries the db to ensure the samples are present from the compacted head.
 func TestCompactHead(t *testing.T) {
-	dbDir, err := ioutil.TempDir("", "testFlush")
-	require.NoError(t, err)
-	defer func() { require.NoError(t, os.RemoveAll(dbDir)) }()
+	dbDir := t.TempDir()
 
 	// Open a DB and append data to the WAL.
 	tsdbCfg := &Options{
@@ -2875,11 +2804,7 @@ func deleteNonBlocks(dbDir string) error {
 }
 
 func TestOpen_VariousBlockStates(t *testing.T) {
-	tmpDir, err := ioutil.TempDir("", "test")
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, os.RemoveAll(tmpDir))
-	})
+	tmpDir := t.TempDir()
 
 	var (
 		expectedLoadedDirs  = map[string]struct{}{}
@@ -2994,11 +2919,7 @@ func TestOneCheckpointPerCompactCall(t *testing.T) {
 		MaxBlockDuration:  blockRange,
 	}
 
-	tmpDir, err := ioutil.TempDir("", "test")
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, os.RemoveAll(tmpDir))
-	})
+	tmpDir := t.TempDir()
 
 	db, err := Open(tmpDir, log.NewNopLogger(), prometheus.NewRegistry(), tsdbCfg, nil)
 	require.NoError(t, err)
@@ -3107,11 +3028,7 @@ func TestOneCheckpointPerCompactCall(t *testing.T) {
 }
 
 func TestNoPanicOnTSDBOpenError(t *testing.T) {
-	tmpdir, err := ioutil.TempDir("", "test")
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, os.RemoveAll(tmpdir))
-	})
+	tmpdir := t.TempDir()
 
 	absdir, err := filepath.Abs(tmpdir)
 	require.NoError(t, err)
@@ -3155,11 +3072,7 @@ func TestLockfileMetric(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(fmt.Sprintf("%+v", c), func(t *testing.T) {
-			tmpdir, err := ioutil.TempDir("", "test")
-			require.NoError(t, err)
-			t.Cleanup(func() {
-				require.NoError(t, os.RemoveAll(tmpdir))
-			})
+			tmpdir := t.TempDir()
 			absdir, err := filepath.Abs(tmpdir)
 			require.NoError(t, err)
 
@@ -3446,11 +3359,7 @@ func testChunkQuerierShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChun
 }
 
 func newTestDB(t *testing.T) *DB {
-	dir, err := ioutil.TempDir("", "test")
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, os.RemoveAll(dir))
-	})
+	dir := t.TempDir()
 
 	db, err := Open(dir, nil, nil, DefaultOptions(), nil)
 	require.NoError(t, err)

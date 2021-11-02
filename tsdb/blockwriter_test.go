@@ -15,9 +15,7 @@ package tsdb
 
 import (
 	"context"
-	"io/ioutil"
 	"math"
-	"os"
 	"path/filepath"
 	"testing"
 
@@ -30,9 +28,7 @@ import (
 
 func TestBlockWriter(t *testing.T) {
 	ctx := context.Background()
-	outputDir, err := ioutil.TempDir(os.TempDir(), "output")
-	require.NoError(t, err)
-	defer func() { require.NoError(t, os.RemoveAll(outputDir)) }()
+	outputDir := t.TempDir()
 	w, err := NewBlockWriter(log.NewNopLogger(), outputDir, DefaultBlockDuration)
 	require.NoError(t, err)
 

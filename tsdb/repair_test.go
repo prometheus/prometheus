@@ -14,7 +14,6 @@
 package tsdb
 
 import (
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -28,11 +27,7 @@ import (
 )
 
 func TestRepairBadIndexVersion(t *testing.T) {
-	tmpDir, err := ioutil.TempDir("", "test")
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, os.RemoveAll(tmpDir))
-	})
+	tmpDir := t.TempDir()
 
 	// The broken index used in this test was written by the following script
 	// at a broken revision.
