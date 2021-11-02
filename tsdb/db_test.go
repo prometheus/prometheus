@@ -626,7 +626,7 @@ func TestDB_Snapshot_ChunksOutsideOfCompactedRange(t *testing.T) {
 	require.NoError(t, db.Close())
 
 	// Reopen DB from snapshot.
-	db, err = Open(snap, nil, nil, nil, nil)
+	db, err := Open(snap, nil, nil, nil, nil)
 	require.NoError(t, err)
 	defer func() { require.NoError(t, db.Close()) }()
 
