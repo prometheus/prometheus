@@ -1371,7 +1371,11 @@ func (tp mockdiscoveryProvider) Run(ctx context.Context, upCh chan<- []*targetgr
 		for i := range u.targetGroups {
 			tgs[i] = &u.targetGroups[i]
 		}
-		upCh <- tgs
+		select {
+		case <-ctx.Done():
+			return
+		case upCh <- tgs:
+		}
 	}
 	<-ctx.Done()
 }

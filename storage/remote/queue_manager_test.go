@@ -408,6 +408,7 @@ func TestReleaseNoninternedString(t *testing.T) {
 	c := NewTestWriteClient()
 	m := NewQueueManager(metrics, nil, nil, nil, "", newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, nil, nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false)
 	m.Start()
+	defer m.Stop()
 
 	for i := 1; i < 1000; i++ {
 		m.StoreSeries([]record.RefSeries{

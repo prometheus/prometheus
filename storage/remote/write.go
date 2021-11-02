@@ -16,6 +16,7 @@ package remote
 import (
 	"context"
 	"fmt"
+	"math"
 	"sync"
 	"time"
 
@@ -60,6 +61,7 @@ type WriteStorage struct {
 	flushDeadline     time.Duration
 	interner          *pool
 	scraper           ReadyScrapeManager
+	quit              chan struct{}
 
 	// For timestampTracker.
 	highestTimestamp *maxTimestamp
@@ -81,6 +83,7 @@ func NewWriteStorage(logger log.Logger, reg prometheus.Registerer, walDir string
 		walDir:            walDir,
 		interner:          newPool(),
 		scraper:           sm,
+		quit:              make(chan struct{}),
 		highestTimestamp: &maxTimestamp{
 			Gauge: prometheus.NewGauge(prometheus.GaugeOpts{
 				Namespace: namespace,
@@ -100,8 +103,13 @@ func NewWriteStorage(logger log.Logger, reg prometheus.Registerer, walDir string
 func (rws *WriteStorage) run() {
 	ticker := time.NewTicker(shardUpdateDuration)
 	defer ticker.Stop()
-	for range ticker.C {
-		rws.samplesIn.tick()
+	for {
+		select {
+		case <-ticker.C:
+			rws.samplesIn.tick()
+		case <-rws.quit:
+			return
+		}
 	}
 }
 
@@ -207,6 +215,26 @@ func (rws *WriteStorage) Appender(_ context.Context) storage.Appender {
 	}
 }
 
+// LowestSentTimestamp returns the lowest sent timestamp across all queues.
+func (rws *WriteStorage) LowestSentTimestamp() int64 {
+	rws.mtx.Lock()
+	defer rws.mtx.Unlock()
+
+	var lowestTs int64 = math.MaxInt64
+
+	for _, q := range rws.queues {
+		ts := int64(q.metrics.highestSentTimestamp.Get() * 1000)
+		if ts < lowestTs {
+			lowestTs = ts
+		}
+	}
+	if len(rws.queues) == 0 {
+		lowestTs = 0
+	}
+
+	return lowestTs
+}
+
 // Close closes the WriteStorage.
 func (rws *WriteStorage) Close() error {
 	rws.mtx.Lock()
@@ -214,6 +242,7 @@ func (rws *WriteStorage) Close() error {
 	for _, q := range rws.queues {
 		q.Stop()
 	}
+	close(rws.quit)
 	return nil
 }
 

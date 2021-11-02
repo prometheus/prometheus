@@ -447,7 +447,7 @@ func (a alertmanagerMock) url() *url.URL {
 
 func TestLabelSetNotReused(t *testing.T) {
 	tg := makeInputTargetGroup()
-	_, _, err := alertmanagerFromGroup(tg, &config.AlertmanagerConfig{})
+	_, _, err := AlertmanagerFromGroup(tg, &config.AlertmanagerConfig{})
 
 	require.NoError(t, err)
 
