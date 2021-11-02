@@ -40,8 +40,9 @@ func NewBuffer(delta int64) *BufferedSeriesIterator {
 // NewBufferIterator returns a new iterator that buffers the values within the
 // time range of the current element and the duration of delta before.
 func NewBufferIterator(it chunkenc.Iterator, delta int64) *BufferedSeriesIterator {
+	// TODO(codesome): based on encoding, allocate different buffer.
 	bit := &BufferedSeriesIterator{
-		buf:   newSampleRing(delta, 16),
+		buf:   newSampleRing(delta, 16, it.ChunkEncoding()),
 		delta: delta,
 	}
 	bit.Reset(it)
@@ -67,8 +68,9 @@ func (b *BufferedSeriesIterator) ReduceDelta(delta int64) bool {
 
 // PeekBack returns the nth previous element of the iterator. If there is none buffered,
 // ok is false.
-func (b *BufferedSeriesIterator) PeekBack(n int) (t int64, v float64, ok bool) {
-	return b.buf.nthLast(n)
+func (b *BufferedSeriesIterator) PeekBack(n int) (t int64, v float64, h *histogram.Histogram, ok bool) {
+	s, ok := b.buf.nthLast(n)
+	return s.t, s.v, s.h, ok
 }
 
 // Buffer returns an iterator over the buffered data. Invalidates previously
@@ -90,7 +92,11 @@ func (b *BufferedSeriesIterator) Seek(t int64) bool {
 		if !b.ok {
 			return false
 		}
-		b.lastTime, _ = b.Values()
+		if b.it.ChunkEncoding() == chunkenc.EncHistogram {
+			b.lastTime, _ = b.HistogramValues()
+		} else {
+			b.lastTime, _ = b.Values()
+		}
 	}
 
 	if b.lastTime >= t {
@@ -112,11 +118,21 @@ func (b *BufferedSeriesIterator) Next() bool {
 	}
 
 	// Add current element to buffer before advancing.
-	b.buf.add(b.it.At())
+	if b.it.ChunkEncoding() == chunkenc.EncHistogram {
+		t, h := b.it.AtHistogram()
+		b.buf.add(sample{t: t, h: &h})
+	} else {
+		t, v := b.it.At()
+		b.buf.add(sample{t: t, v: v})
+	}
 
 	b.ok = b.it.Next()
 	if b.ok {
-		b.lastTime, _ = b.Values()
+		if b.it.ChunkEncoding() == chunkenc.EncHistogram {
+			b.lastTime, _ = b.HistogramValues()
+		} else {
+			b.lastTime, _ = b.Values()
+		}
 	}
 
 	return b.ok
@@ -127,6 +143,16 @@ func (b *BufferedSeriesIterator) Values() (int64, float64) {
 	return b.it.At()
 }
 
+// HistogramValues returns the current histogram element of the iterator.
+func (b *BufferedSeriesIterator) HistogramValues() (int64, histogram.Histogram) {
+	return b.it.AtHistogram()
+}
+
+// ChunkEncoding return the chunk encoding of the underlying iterator.
+func (b *BufferedSeriesIterator) ChunkEncoding() chunkenc.Encoding {
+	return b.it.ChunkEncoding()
+}
+
 // Err returns the last encountered error.
 func (b *BufferedSeriesIterator) Err() error {
 	return b.it.Err()
@@ -135,6 +161,7 @@ func (b *BufferedSeriesIterator) Err() error {
 type sample struct {
 	t int64
 	v float64
+	h *histogram.Histogram
 }
 
 func (s sample) T() int64 {
@@ -145,9 +172,14 @@ func (s sample) V() float64 {
 	return s.v
 }
 
+func (s sample) H() *histogram.Histogram {
+	return s.h
+}
+
 type sampleRing struct {
 	delta int64
 
+	enc chunkenc.Encoding
 	buf []sample // lookback buffer
 	i   int      // position of most recent element in ring buffer
 	f   int      // position of first element in ring buffer
@@ -156,8 +188,8 @@ type sampleRing struct {
 	it sampleRingIterator
 }
 
-func newSampleRing(delta int64, sz int) *sampleRing {
-	r := &sampleRing{delta: delta, buf: make([]sample, sz)}
+func newSampleRing(delta int64, sz int, enc chunkenc.Encoding) *sampleRing {
+	r := &sampleRing{delta: delta, buf: make([]sample, sz), enc: enc}
 	r.reset()
 
 	return r
@@ -200,13 +232,12 @@ func (it *sampleRingIterator) At() (int64, float64) {
 
 // AtHistogram always returns (0, histogram.Histogram{}) because there is no
 // support for histogram values yet.
-// TODO(beorn7): Fix that for histogram support in PromQL.
 func (it *sampleRingIterator) AtHistogram() (int64, histogram.Histogram) {
-	return 0, histogram.Histogram{}
+	return it.r.atHistogram(it.i)
 }
 
 func (it *sampleRingIterator) ChunkEncoding() chunkenc.Encoding {
-	return chunkenc.EncXOR
+	return it.r.enc
 }
 
 func (r *sampleRing) at(i int) (int64, float64) {
@@ -215,9 +246,20 @@ func (r *sampleRing) at(i int) (int64, float64) {
 	return s.t, s.v
 }
 
+func (r *sampleRing) atHistogram(i int) (int64, histogram.Histogram) {
+	j := (r.f + i) % len(r.buf)
+	s := r.buf[j]
+	return s.t, *s.h
+}
+
+func (r *sampleRing) atSample(i int) sample {
+	j := (r.f + i) % len(r.buf)
+	return r.buf[j]
+}
+
 // add adds a sample to the ring buffer and frees all samples that fall
 // out of the delta range.
-func (r *sampleRing) add(t int64, v float64) {
+func (r *sampleRing) add(s sample) {
 	l := len(r.buf)
 	// Grow the ring buffer if it fits no more elements.
 	if l == r.l {
@@ -236,11 +278,11 @@ func (r *sampleRing) add(t int64, v float64) {
 		}
 	}
 
-	r.buf[r.i] = sample{t: t, v: v}
+	r.buf[r.i] = s
 	r.l++
 
 	// Free head of the buffer of samples that just fell out of the range.
-	tmin := t - r.delta
+	tmin := s.t - r.delta
 	for r.buf[r.f].t < tmin {
 		r.f++
 		if r.f >= l {
@@ -276,12 +318,11 @@ func (r *sampleRing) reduceDelta(delta int64) bool {
 }
 
 // nthLast returns the nth most recent element added to the ring.
-func (r *sampleRing) nthLast(n int) (int64, float64, bool) {
+func (r *sampleRing) nthLast(n int) (sample, bool) {
 	if n > r.l {
-		return 0, 0, false
+		return sample{}, false
 	}
-	t, v := r.at(r.l - n)
-	return t, v, true
+	return r.atSample(r.l - n), true
 }
 
 func (r *sampleRing) samples() []sample {

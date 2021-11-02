@@ -2544,7 +2544,7 @@ func TestAppendHistogram(t *testing.T) {
 				h histogram.Histogram
 			}
 			expHistograms := make([]timedHistogram, 0, numHistograms)
-			for i, h := range generateHistograms(numHistograms) {
+			for i, h := range GenerateTestHistograms(numHistograms) {
 				_, err := app.AppendHistogram(0, l, int64(i), h)
 				require.NoError(t, err)
 				expHistograms = append(expHistograms, timedHistogram{int64(i), h})
@@ -2591,7 +2591,7 @@ func TestHistogramInWAL(t *testing.T) {
 		h histogram.Histogram
 	}
 	expHistograms := make([]timedHistogram, 0, numHistograms)
-	for i, h := range generateHistograms(numHistograms) {
+	for i, h := range GenerateTestHistograms(numHistograms) {
 		h.NegativeSpans = h.PositiveSpans
 		h.NegativeBuckets = h.PositiveBuckets
 		_, err := app.AppendHistogram(0, l, int64(i), h)
@@ -2628,25 +2628,6 @@ func TestHistogramInWAL(t *testing.T) {
 	}
 
 	require.Equal(t, expHistograms, actHistograms)
-}
-
-func generateHistograms(n int) (r []histogram.Histogram) {
-	for i := 0; i < n; i++ {
-		r = append(r, histogram.Histogram{
-			Count:         5 + uint64(i*4),
-			ZeroCount:     2 + uint64(i),
-			ZeroThreshold: 0.001,
-			Sum:           18.4 * float64(i+1),
-			Schema:        1,
-			PositiveSpans: []histogram.Span{
-				{Offset: 0, Length: 2},
-				{Offset: 1, Length: 2},
-			},
-			PositiveBuckets: []int64{int64(i + 1), 1, -1, 0},
-		})
-	}
-
-	return r
 }
 
 func TestChunkSnapshot(t *testing.T) {
@@ -2962,7 +2943,7 @@ func TestHistogramMetrics(t *testing.T) {
 	for x := 0; x < 5; x++ {
 		expHSeries++
 		l := labels.Labels{{Name: "a", Value: fmt.Sprintf("b%d", x)}}
-		for i, h := range generateHistograms(10) {
+		for i, h := range GenerateTestHistograms(10) {
 			app := head.Appender(context.Background())
 			_, err := app.AppendHistogram(0, l, int64(i), h)
 			require.NoError(t, err)
@@ -3039,7 +3020,7 @@ func TestHistogramStaleSample(t *testing.T) {
 
 	// Adding stale in the same appender.
 	app := head.Appender(context.Background())
-	for _, h := range generateHistograms(numHistograms) {
+	for _, h := range GenerateTestHistograms(numHistograms) {
 		_, err := app.AppendHistogram(0, l, 100*int64(len(expHistograms)), h)
 		require.NoError(t, err)
 		expHistograms = append(expHistograms, timedHistogram{100 * int64(len(expHistograms)), h})
@@ -3058,7 +3039,7 @@ func TestHistogramStaleSample(t *testing.T) {
 
 	// Adding stale in different appender and continuing series after a stale sample.
 	app = head.Appender(context.Background())
-	for _, h := range generateHistograms(2 * numHistograms)[numHistograms:] {
+	for _, h := range GenerateTestHistograms(2 * numHistograms)[numHistograms:] {
 		_, err := app.AppendHistogram(0, l, 100*int64(len(expHistograms)), h)
 		require.NoError(t, err)
 		expHistograms = append(expHistograms, timedHistogram{100 * int64(len(expHistograms)), h})
@@ -3112,7 +3093,7 @@ func TestHistogramCounterResetHeader(t *testing.T) {
 		require.Equal(t, expHeaders[len(expHeaders)-1], ms.headChunk.chunk.(*chunkenc.HistogramChunk).GetCounterResetHeader())
 	}
 
-	h := generateHistograms(1)[0]
+	h := GenerateTestHistograms(1)[0]
 	if len(h.NegativeBuckets) == 0 {
 		h.NegativeSpans = append([]histogram.Span{}, h.PositiveSpans...)
 		h.NegativeBuckets = append([]int64{}, h.PositiveBuckets...)

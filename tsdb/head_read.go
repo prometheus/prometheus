@@ -444,6 +444,7 @@ func (s *memSeries) iterator(id int, isoState *isolationState, chunkDiskMapper *
 		msIter.stopAfter = stopAfter
 		msIter.buf = s.sampleBuf
 		msIter.histogramBuf = s.histogramBuf
+		msIter.histogramSeries = s.histogramSeries
 		return msIter
 	}
 	return &memSafeIterator{
@@ -452,18 +453,20 @@ func (s *memSeries) iterator(id int, isoState *isolationState, chunkDiskMapper *
 			i:         -1,
 			stopAfter: stopAfter,
 		},
-		total:        numSamples,
-		buf:          s.sampleBuf,
-		histogramBuf: s.histogramBuf,
+		total:           numSamples,
+		buf:             s.sampleBuf,
+		histogramBuf:    s.histogramBuf,
+		histogramSeries: s.histogramSeries,
 	}
 }
 
 type memSafeIterator struct {
 	stopIterator
 
-	total        int
-	buf          [4]sample
-	histogramBuf [4]histogramSample
+	histogramSeries bool
+	total           int
+	buf             [4]sample
+	histogramBuf    [4]histogramSample
 }
 
 func (it *memSafeIterator) Seek(t int64) bool {
@@ -471,13 +474,27 @@ func (it *memSafeIterator) Seek(t int64) bool {
 		return false
 	}
 
-	ts, _ := it.At()
-
-	for t > ts || it.i == -1 {
-		if !it.Next() {
-			return false
-		}
+	var ts int64
+	if it.histogramSeries {
+		ts, _ = it.AtHistogram()
+	} else {
 		ts, _ = it.At()
+	}
+
+	if it.histogramSeries {
+		for t > ts || it.i == -1 {
+			if !it.Next() {
+				return false
+			}
+			ts, _ = it.AtHistogram()
+		}
+	} else {
+		for t > ts || it.i == -1 {
+			if !it.Next() {
+				return false
+			}
+			ts, _ = it.At()
+		}
 	}
 
 	return true

@@ -78,9 +78,12 @@ func (s Series) String() string {
 }
 
 // Point represents a single data point for a given timestamp.
+// If H is not nil, then this is a histogram point and only (T, H) is valid.
+// If H is nil, then only (T, V) is valid.
 type Point struct {
 	T int64
 	V float64
+	H *histogram.Histogram
 }
 
 func (p Point) String() string {

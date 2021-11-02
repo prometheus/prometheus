@@ -1336,7 +1336,7 @@ func TestHeadCompactionWithHistograms(t *testing.T) {
 	timeStep := DefaultBlockDuration / int64(numHistograms)
 	expHists := make([]timedHist, 0, numHistograms)
 	l := labels.Labels{{Name: "a", Value: "b"}}
-	for i, h := range generateHistograms(numHistograms) {
+	for i, h := range GenerateTestHistograms(numHistograms) {
 		_, err := app.AppendHistogram(0, l, int64(i)*timeStep, h)
 		require.NoError(t, err)
 		expHists = append(expHists, timedHist{int64(i) * timeStep, h})
@@ -1715,8 +1715,8 @@ func TestSparseHistogramCompactionAndQuery(t *testing.T) {
 	}
 	expHists := make(map[string][]timedHist)
 
-	series1Histograms := generateHistograms(20)
-	series2Histograms := generateHistograms(20)
+	series1Histograms := GenerateTestHistograms(20)
+	series2Histograms := GenerateTestHistograms(20)
 	idx1, idx2 := -1, -1
 	addNextHists := func(ts int64, app storage.Appender) {
 		lbls1 := labels.Labels{{Name: "a", Value: "b"}}

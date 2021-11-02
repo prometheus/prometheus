@@ -102,6 +102,7 @@ func (b *BufferedSeriesIterator) Err() error {
 type sample struct {
 	t int64
 	v float64
+	h *histogram.Histogram
 }
 
 func (s sample) T() int64 {
@@ -110,6 +111,10 @@ func (s sample) T() int64 {
 
 func (s sample) V() float64 {
 	return s.v
+}
+
+func (s sample) H() *histogram.Histogram {
+	return s.h
 }
 
 type sampleRing struct {
