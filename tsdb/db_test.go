@@ -2311,8 +2311,6 @@ func TestDBReadOnly_FlushWAL(t *testing.T) {
 	require.NoError(t, err)
 
 	flush := t.TempDir()
-	require.NoError(t, db.FlushWAL(flush))
-	require.NoError(t, db.Close())
 
 	// Reopen the DB from the flushed WAL block.
 	db, err = OpenDBReadOnly(flush, logger)
