@@ -1390,7 +1390,7 @@ func BenchmarkQuerySeek(b *testing.B) {
 					require.NoError(b, it.Err())
 				}
 				require.NoError(b, ss.Err())
-				require.NoError(b, err)
+				require.NoError(b, nil)
 				require.Equal(b, 0, len(ss.Warnings()))
 			})
 		}

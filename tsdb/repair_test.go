@@ -69,7 +69,7 @@ func TestRepairBadIndexVersion(t *testing.T) {
 
 	// Check the current db.
 	// In its current state, lookups should fail with the fixed code.
-	_, _, err = readMetaFile(tmpDbDir)
+	_, _, err := readMetaFile(tmpDbDir)
 	require.Error(t, err)
 
 	// Touch chunks dir in block to imitate them.

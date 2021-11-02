@@ -278,7 +278,7 @@ func TestBlockSize(t *testing.T) {
 	// Create a block and compare the reported size vs actual disk size.
 	{
 		blockDirInit = createBlock(t, tmpdir, genSeries(10, 1, 1, 100))
-		blockInit, err = OpenBlock(nil, blockDirInit, nil)
+		blockInit, err := OpenBlock(nil, blockDirInit, nil)
 		require.NoError(t, err)
 		defer func() {
 			require.NoError(t, blockInit.Close())
