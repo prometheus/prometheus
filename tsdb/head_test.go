@@ -63,7 +63,7 @@ func newTestHead(t testing.TB, chunkRange int64, compressWAL bool) (*Head, *wal.
 	h, err := NewHead(nil, nil, wlog, opts, nil)
 	require.NoError(t, err)
 
-	require.NoError(t, h.chunkDiskMapper.IterateAllChunks(func(_, _ uint64, _, _ int64, _ uint16) error { return nil }))
+	require.NoError(t, h.chunkDiskMapper.IterateAllChunks(func(_ uint64, _ chunks.ChunkDiskMapperRef, _, _ int64, _ uint16) error { return nil }))
 
 	t.Cleanup(func() {
 		require.NoError(t, os.RemoveAll(dir))
@@ -844,7 +844,6 @@ func TestDeletedSamplesAndSeriesStillInWALAfterCheckpoint(t *testing.T) {
 	require.Equal(t, 1, series)
 	require.Equal(t, 9999, samples)
 	require.Equal(t, 1, stones)
-
 }
 
 func TestDelete_e2e(t *testing.T) {
@@ -1400,7 +1399,7 @@ func TestWalRepair_DecodingError(t *testing.T) {
 					err = errors.Cause(initErr) // So that we can pick up errors even if wrapped.
 					_, corrErr := err.(*wal.CorruptionErr)
 					require.True(t, corrErr, "reading the wal didn't return corruption error")
-					require.NoError(t, h.Close())
+					require.NoError(t, h.Close()) // Head will close the wal as well.
 				}
 
 				// Open the db to trigger a repair.
@@ -1475,7 +1474,7 @@ func TestHeadReadWriterRepair(t *testing.T) {
 		require.Equal(t, 7, len(files))
 
 		// Corrupt the 4th file by writing a random byte to series ref.
-		f, err := os.OpenFile(filepath.Join(mmappedChunksDir(dir), files[3].Name()), os.O_WRONLY, 0666)
+		f, err := os.OpenFile(filepath.Join(mmappedChunksDir(dir), files[3].Name()), os.O_WRONLY, 0o666)
 		require.NoError(t, err)
 		n, err := f.WriteAt([]byte{67, 88}, chunks.HeadChunkFileHeaderSize+2)
 		require.NoError(t, err)
@@ -1949,7 +1948,8 @@ func TestHeadLabelNamesValuesWithMinMaxRange(t *testing.T) {
 		lastSeriesTimestamp   int64 = 300
 	)
 	var (
-		seriesTimestamps = []int64{firstSeriesTimestamp,
+		seriesTimestamps = []int64{
+			firstSeriesTimestamp,
 			secondSeriesTimestamp,
 			lastSeriesTimestamp,
 		}
@@ -1966,7 +1966,7 @@ func TestHeadLabelNamesValuesWithMinMaxRange(t *testing.T) {
 	require.Equal(t, head.MinTime(), firstSeriesTimestamp)
 	require.Equal(t, head.MaxTime(), lastSeriesTimestamp)
 
-	var testCases = []struct {
+	testCases := []struct {
 		name           string
 		mint           int64
 		maxt           int64
@@ -2010,7 +2010,7 @@ func TestHeadLabelValuesWithMatchers(t *testing.T) {
 	}
 	require.NoError(t, app.Commit())
 
-	var testCases = []struct {
+	testCases := []struct {
 		name           string
 		labelName      string
 		matchers       []*labels.Matcher
@@ -2833,7 +2833,6 @@ func TestChunkSnapshot(t *testing.T) {
 
 		require.Equal(t, 0.0, prom_testutil.ToFloat64(head.metrics.snapshotReplayErrorTotal))
 	}
-
 }
 
 func TestSnapshotError(t *testing.T) {

@@ -1,4 +1,4 @@
-Julien Pivotto (<roidelapluie@prometheus.io> / @roidelapluie) is the main/default maintainer, some parts of the codebase have other maintainers:
+Julien Pivotto (<roidelapluie@prometheus.io> / @roidelapluie) and Levi Harrison (<levi@leviharrison.dev> / @LeviHarrison) are the main/default maintainers, some parts of the codebase have other maintainers:
 
 * `cmd`
   * `promtool`: David Leadbeater (<dgl@dgl.cx> / @dgl), Jessica Grebenschikov (<jessica.greben1@gmail.com> / @jessicagreben)
@@ -19,4 +19,3 @@ size of this repository, the natural changes in focus of maintainers over time,
 and nuances of where particular features live, this list will always be
 incomplete and out of date. However the listed maintainer(s) should be able to
 direct a PR/question to the right person.
-

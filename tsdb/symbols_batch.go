@@ -257,7 +257,6 @@ func openFiles(filenames []string) ([]*os.File, error) {
 
 	for _, fn := range filenames {
 		f, err := os.Open(fn)
-
 		if err != nil {
 			// Close files opened so far.
 			for _, sf := range result {

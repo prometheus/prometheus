@@ -650,8 +650,8 @@ func TestCompaction_CompactEmptyBlocks(t *testing.T) {
 		}
 
 		bdir := filepath.Join(dir, id.String())
-		require.NoError(t, os.Mkdir(bdir, 0777))
-		require.NoError(t, os.Mkdir(chunkDir(bdir), 0777))
+		require.NoError(t, os.Mkdir(bdir, 0o777))
+		require.NoError(t, os.Mkdir(chunkDir(bdir), 0o777))
 
 		_, err := writeMetaFile(log.NewNopLogger(), bdir, m)
 		require.NoError(t, err)

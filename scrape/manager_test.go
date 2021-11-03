@@ -335,7 +335,7 @@ func TestPopulateLabels(t *testing.T) {
 	for _, c := range cases {
 		in := c.in.Copy()
 
-		res, orig, err := populateLabels(c.in, c.cfg)
+		res, orig, err := PopulateLabels(c.in, c.cfg)
 		if c.err != "" {
 			require.EqualError(t, err, c.err)
 		} else {

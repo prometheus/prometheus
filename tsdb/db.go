@@ -67,10 +67,8 @@ const (
 	lockfileCreatedCleanly = 1
 )
 
-var (
-	// ErrNotReady is returned if the underlying storage is not ready yet.
-	ErrNotReady = errors.New("TSDB not ready")
-)
+// ErrNotReady is returned if the underlying storage is not ready yet.
+var ErrNotReady = errors.New("TSDB not ready")
 
 // DefaultOptions used for the DB. They are sane for setups using
 // millisecond precision timestamps.
@@ -615,7 +613,7 @@ func validateOpts(opts *Options, rngs []int64) (*Options, []int64) {
 }
 
 func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs []int64, stats *DBStats) (_ *DB, returnedErr error) {
-	if err := os.MkdirAll(dir, 0777); err != nil {
+	if err := os.MkdirAll(dir, 0o777); err != nil {
 		return nil, err
 	}
 	if l == nil {
@@ -1653,7 +1651,7 @@ func (db *DB) ExemplarQuerier(ctx context.Context) (storage.ExemplarQuerier, err
 	return db.head.exemplars.ExemplarQuerier(ctx)
 }
 
-func rangeForTimestamp(t int64, width int64) (maxt int64) {
+func rangeForTimestamp(t, width int64) (maxt int64) {
 	return (t/width)*width + width
 }
 

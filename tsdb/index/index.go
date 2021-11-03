@@ -263,7 +263,7 @@ type FileWriter struct {
 }
 
 func NewFileWriter(name string) (*FileWriter, error) {
-	f, err := os.OpenFile(name, os.O_CREATE|os.O_RDWR, 0666)
+	f, err := os.OpenFile(name, os.O_CREATE|os.O_RDWR, 0o666)
 	if err != nil {
 		return nil, err
 	}
@@ -904,7 +904,6 @@ func (w *Writer) writePostingsToTmpFiles() error {
 			values := make([]uint32, 0, len(postings[sid]))
 			for v := range postings[sid] {
 				values = append(values, v)
-
 			}
 			// Symbol numbers are in order, so the strings will also be in order.
 			sort.Sort(uint32slice(values))
@@ -1284,7 +1283,7 @@ type Symbols struct {
 const symbolFactor = 32
 
 // NewSymbols returns a Symbols object for symbol lookups.
-func NewSymbols(bs ByteSlice, version int, off int) (*Symbols, error) {
+func NewSymbols(bs ByteSlice, version, off int) (*Symbols, error) {
 	s := &Symbols{
 		bs:      bs,
 		version: version,
@@ -1523,7 +1522,7 @@ func (r *Reader) LabelValues(name string, matchers ...*labels.Matcher) ([]string
 		} else {
 			d.Skip(skip)
 		}
-		s := yoloString(d.UvarintBytes()) //Label value.
+		s := yoloString(d.UvarintBytes()) // Label value.
 		values = append(values, s)
 		if s == lastVal {
 			break

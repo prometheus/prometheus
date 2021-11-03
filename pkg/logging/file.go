@@ -21,11 +21,9 @@ import (
 	"github.com/pkg/errors"
 )
 
-var (
-	timestampFormat = log.TimestampFormat(
-		func() time.Time { return time.Now().UTC() },
-		"2006-01-02T15:04:05.000Z07:00",
-	)
+var timestampFormat = log.TimestampFormat(
+	func() time.Time { return time.Now().UTC() },
+	"2006-01-02T15:04:05.000Z07:00",
 )
 
 // JSONFileLogger represents a logger that writes JSON to a file.
@@ -40,7 +38,7 @@ func NewJSONFileLogger(s string) (*JSONFileLogger, error) {
 		return nil, nil
 	}
 
-	f, err := os.OpenFile(s, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666)
+	f, err := os.OpenFile(s, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o666)
 	if err != nil {
 		return nil, errors.Wrap(err, "can't create json logger")
 	}

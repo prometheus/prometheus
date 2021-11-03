@@ -24,10 +24,11 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/scaleway/scaleway-sdk-go/scw"
+
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/refresh"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-	"github.com/scaleway/scaleway-sdk-go/scw"
 )
 
 // metaLabelPrefix is the meta prefix used for all meta labels.
@@ -173,8 +174,7 @@ func init() {
 
 // Discovery periodically performs Scaleway requests. It implements
 // the Discoverer interface.
-type Discovery struct {
-}
+type Discovery struct{}
 
 func NewDiscovery(conf *SDConfig, logger log.Logger) (*refresh.Discovery, error) {
 	r, err := newRefresher(conf)

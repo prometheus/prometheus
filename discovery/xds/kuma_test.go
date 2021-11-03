@@ -91,7 +91,6 @@ func getKumaMadsV1DiscoveryResponse(resources ...*MonitoringAssignment) (*v3.Dis
 	serialized := make([]*anypb.Any, len(resources))
 	for i, res := range resources {
 		data, err := proto.Marshal(res)
-
 		if err != nil {
 			return nil, err
 		}

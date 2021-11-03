@@ -73,7 +73,7 @@ func (t *testRunner) copyFile(src string) string {
 }
 
 // copyFileTo atomically copies a file with a different name to the runner's directory.
-func (t *testRunner) copyFileTo(src string, name string) string {
+func (t *testRunner) copyFileTo(src, name string) string {
 	t.Helper()
 
 	newf, err := ioutil.TempFile(t.dir, "")
@@ -95,7 +95,7 @@ func (t *testRunner) copyFileTo(src string, name string) string {
 }
 
 // writeString writes atomically a string to a file.
-func (t *testRunner) writeString(file string, data string) {
+func (t *testRunner) writeString(file, data string) {
 	t.Helper()
 
 	newf, err := ioutil.TempFile(t.dir, "")
@@ -477,6 +477,7 @@ func TestRemoveFile(t *testing.T) {
 			},
 			{
 				Source: fileSource(sdFile, 1),
-			}},
+			},
+		},
 	)
 }
