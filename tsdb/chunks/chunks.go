@@ -74,7 +74,6 @@ func NewHeadChunkRef(hsr HeadSeriesRef, chunkID uint64) HeadChunkRef {
 		panic("chunk ID exceeds 3 bytes")
 	}
 	return HeadChunkRef(uint64(hsr<<24) | chunkID)
-
 }
 
 func (p HeadChunkRef) Unpack() (HeadSeriesRef, uint64) {
@@ -88,14 +87,20 @@ type BlockChunkRef uint64
 
 // NewBlockChunkRef packs the file index and byte offset into a BlockChunkRef.
 func NewBlockChunkRef(fileIndex, fileOffset uint64) BlockChunkRef {
-	return BlockChunkRef(fileIndex | fileOffset)
+	return BlockChunkRef(fileIndex<<32 | fileOffset)
+}
+
+func (b BlockChunkRef) Unpack() (int, int) {
+	sgmIndex := int(b >> 32)
+	chkStart := int((b << 32) >> 32)
+	return sgmIndex, chkStart
 }
 
 // Meta holds information about a chunk of data.
 type Meta struct {
 	// Ref and Chunk hold either a reference that can be used to retrieve
 	// chunk data or the data itself.
-	// If Chunk is nil, call ChunkReader.Chunk(Meta.Ref) to initialize it
+	// If Chunk is nil, call ChunkReader.Chunk(Meta.Ref) to get the chunk and assign it to the Chunk field
 	Ref   ChunkRef
 	Chunk chunkenc.Chunk
 
@@ -389,7 +394,7 @@ func (w *Writer) writeChunks(chks []Meta) error {
 		return nil
 	}
 
-	seq := uint64(w.seq()) << 32
+	seq := uint64(w.seq())
 	for i := range chks {
 		chk := &chks[i]
 
@@ -527,15 +532,8 @@ func (s *Reader) Size() int64 {
 
 // Chunk returns a chunk from a given reference.
 func (s *Reader) Chunk(ref ChunkRef) (chunkenc.Chunk, error) {
-	var (
-		// Get the upper 4 bytes.
-		// These contain the segment index.
-		sgmIndex = int(ref >> 32)
-		// Get the lower 4 bytes.
-		// These contain the segment offset where the data for this chunk starts.
-		chkStart = int((ref << 32) >> 32)
-		chkCRC32 = newCRC32()
-	)
+	sgmIndex, chkStart := BlockChunkRef(ref).Unpack()
+	chkCRC32 := newCRC32()
 
 	if sgmIndex >= len(s.bs) {
 		return nil, errors.Errorf("segment index %d out of range", sgmIndex)

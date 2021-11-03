@@ -62,7 +62,6 @@ func newCRC32() hash.Hash32 {
 }
 
 // Reader gives access to tombstone intervals by series reference.
-// TODO SeriesRef or HeadSeriesRef here?
 type Reader interface {
 	// Get returns deletion intervals for the series with the given reference.
 	Get(ref storage.SeriesRef) (Intervals, error)
@@ -186,7 +185,7 @@ func Decode(b []byte) (Reader, error) {
 // Stone holds the information on the posting and time-range
 // that is deleted.
 type Stone struct {
-	Ref       uint64 // TODO storage.SeriesRef or HeadSeriesRef?
+	Ref       storage.SeriesRef
 	Intervals Intervals
 }
 
@@ -230,7 +229,7 @@ func ReadTombstones(dir string) (Reader, int64, error) {
 }
 
 type MemTombstones struct {
-	intvlGroups map[storage.SeriesRef]Intervals // TODO SeriesRef or HeadSeriesRef?
+	intvlGroups map[storage.SeriesRef]Intervals
 	mtx         sync.RWMutex
 }
 

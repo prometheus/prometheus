@@ -1082,7 +1082,7 @@ func (h *Head) Delete(mint, maxt int64, ms ...*labels.Matcher) error {
 		}
 		// Delete only until the current values and not beyond.
 		t0, t1 = clampInterval(mint, maxt, t0, t1)
-		stones = append(stones, tombstones.Stone{Ref: uint64(p.At()), Intervals: tombstones.Intervals{{Mint: t0, Maxt: t1}}})
+		stones = append(stones, tombstones.Stone{Ref: p.At(), Intervals: tombstones.Intervals{{Mint: t0, Maxt: t1}}})
 	}
 	if p.Err() != nil {
 		return p.Err()

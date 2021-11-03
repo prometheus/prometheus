@@ -160,7 +160,7 @@ func (d *Decoder) Tombstones(rec []byte, tstones []tombstones.Stone) ([]tombston
 	}
 	for dec.Len() > 0 && dec.Err() == nil {
 		tstones = append(tstones, tombstones.Stone{
-			Ref: dec.Be64(),
+			Ref: storage.SeriesRef(dec.Be64()),
 			Intervals: tombstones.Intervals{
 				{Mint: dec.Varint64(), Maxt: dec.Varint64()},
 			},
@@ -274,7 +274,7 @@ func (e *Encoder) Tombstones(tstones []tombstones.Stone, b []byte) []byte {
 
 	for _, s := range tstones {
 		for _, iv := range s.Intervals {
-			buf.PutBE64(s.Ref)
+			buf.PutBE64(uint64(s.Ref))
 			buf.PutVarint64(iv.Mint)
 			buf.PutVarint64(iv.Maxt)
 		}

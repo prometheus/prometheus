@@ -2650,7 +2650,7 @@ func TestChunkSnapshot(t *testing.T) {
 			}
 			head.tombstones.AddInterval(ref, itvs...)
 			err := head.wal.Log(enc.Tombstones([]tombstones.Stone{
-				{Ref: uint64(ref), Intervals: itvs},
+				{Ref: ref, Intervals: itvs},
 			}, nil))
 			require.NoError(t, err)
 		}
@@ -2711,7 +2711,7 @@ func TestChunkSnapshot(t *testing.T) {
 			}
 			head.tombstones.AddInterval(ref, itvs...)
 			err := head.wal.Log(enc.Tombstones([]tombstones.Stone{
-				{Ref: uint64(ref), Intervals: itvs},
+				{Ref: ref, Intervals: itvs},
 			}, nil))
 			require.NoError(t, err)
 		}
