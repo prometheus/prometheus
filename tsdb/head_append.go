@@ -114,7 +114,7 @@ func (h *Head) Appender(_ context.Context) storage.Appender {
 }
 
 func (h *Head) appender() *headAppender {
-	appendID, cleanupAppendIDsBelow := h.iso.newAppendID() // every appender gets an ID that is cleared again upon commit/rollback
+	appendID, cleanupAppendIDsBelow := h.iso.newAppendID() // Every appender gets an ID that is cleared upon commit/rollback.
 
 	// Allocate the exemplars buffer only if exemplars are enabled.
 	var exemplarsBuf []exemplarWithSeriesRef
@@ -361,7 +361,7 @@ func (a *headAppender) GetRef(lset labels.Labels) (uint64, labels.Labels) {
 	return s.ref, s.lset
 }
 
-// log writes all headAppender's data to the WAL
+// log writes all headAppender's data to the WAL.
 func (a *headAppender) log() error {
 	if a.head.wal == nil {
 		return nil
@@ -413,7 +413,7 @@ func exemplarsForEncoding(es []exemplarWithSeriesRef) []record.RefExemplar {
 	return ret
 }
 
-// Commit writes to the WAL and adds the data to the Head
+// Commit writes to the WAL and adds the data to the Head.
 func (a *headAppender) Commit() (err error) {
 	if a.closed {
 		return ErrAppenderClosed
@@ -585,7 +585,7 @@ func (s *memSeries) mmapCurrentHeadChunk(chunkDiskMapper *chunks.ChunkDiskMapper
 	})
 }
 
-// Rollback removes the headAppender's data from the series (TODO is this correct) and writes the series to WAL.
+// Rollback removes the samples and exemplars from headAppender and writes any series to WAL.
 func (a *headAppender) Rollback() (err error) {
 	if a.closed {
 		return ErrAppenderClosed

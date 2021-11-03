@@ -176,6 +176,7 @@ func (h *headIndexReader) Series(ref uint64, lbls *labels.Labels, chks *[]chunks
 }
 
 // chunkID returns the ID corresponding to .mmappedChunks[pos]
+// (head chunk if pos==len(mmappedChunks))
 func (s *memSeries) chunkID(pos int) int {
 	return pos + s.firstChunkID
 }
@@ -352,7 +353,7 @@ func (c *safeChunk) Iterator(reuseIter chunkenc.Iterator) chunkenc.Iterator {
 	return it
 }
 
-// iterator returns a chunk iterator for the requested chunkID // TODO I think?
+// iterator returns a chunk iterator for the requested chunkID.
 // It is unsafe to call this concurrently with s.append(...) without holding the series lock.
 func (s *memSeries) iterator(id int, isoState *isolationState, chunkDiskMapper *chunks.ChunkDiskMapper, it chunkenc.Iterator) chunkenc.Iterator {
 	c, garbageCollect, err := s.chunk(id, chunkDiskMapper)
@@ -456,7 +457,7 @@ func (s *memSeries) iterator(id int, isoState *isolationState, chunkDiskMapper *
 	}
 }
 
-// memSafe returns values from the wrapped stopIterator
+// memSafeIterator returns values from the wrapped stopIterator
 // except the last 4, which come from buf.
 type memSafeIterator struct {
 	stopIterator
@@ -502,7 +503,7 @@ func (it *memSafeIterator) At() (int64, float64) {
 }
 
 // stopIterator wraps an Iterator, but only returns the first
-// stopAfter-1 values. // TODO should this not be after stopAfter ?
+// stopAfter values, if initialized with i=-1.
 type stopIterator struct {
 	chunkenc.Iterator
 

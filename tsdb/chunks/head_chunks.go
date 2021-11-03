@@ -131,10 +131,10 @@ type ChunkDiskMapper struct {
 	closed bool
 }
 
-// mmappedChunkFile provides mmapp access to an entire head chunks file that holds many chunks
+// mmappedChunkFile provides mmapp access to an entire head chunks file that holds many chunks.
 type mmappedChunkFile struct {
 	byteSlice ByteSlice
-	maxt      int64 // maxt among all of this chunkfile's chunks.
+	maxt      int64 // maxt among all of this file's chunks.
 }
 
 // NewChunkDiskMapper returns a new ChunkDiskMapper against the given directory
@@ -173,7 +173,7 @@ func NewChunkDiskMapper(dir string, pool chunkenc.Pool, writeBufferSize int) (*C
 	return m, m.openMMapFiles()
 }
 
-// openMMapFiles opens all files within dir for mmapping
+// openMMapFiles opens all files within dir for mmapping.
 func (cdm *ChunkDiskMapper) openMMapFiles() (returnErr error) {
 	cdm.mmappedChunkFiles = map[int]*mmappedChunkFile{}
 	cdm.closers = map[int]io.Closer{}

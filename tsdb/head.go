@@ -993,14 +993,14 @@ func (h *Head) Stats(statsByLabelName string) *Stats {
 }
 
 // RangeHead allows querying Head via an IndexReader, ChunkReader and tombstones.Reader
-// but only within a restricted range.  Used for queries and compactions
+// but only within a restricted range.  Used for queries and compactions.
 type RangeHead struct {
 	head       *Head
 	mint, maxt int64
 }
 
 // NewRangeHead returns a *RangeHead.
-// TODO caller must make sure mint/maxt are within bounds of head ? or something?
+// There are no restrictions on mint/maxt.
 func NewRangeHead(head *Head, mint, maxt int64) *RangeHead {
 	return &RangeHead{
 		head: head,
@@ -1295,8 +1295,8 @@ const (
 // dereferences.
 type stripeSeries struct {
 	size                    int
-	series                  []map[uint64]*memSeries // by ref. A series ref is the value of `size` when the series was being newly added.
-	hashes                  []seriesHashmap         // by label hash.
+	series                  []map[uint64]*memSeries // Sharded and lookup by ref. A series ref is the value of `size` when the series was being newly added.
+	hashes                  []seriesHashmap         // Sharded and lookup by label hash.
 	locks                   []stripeLock
 	seriesLifecycleCallback SeriesLifecycleCallback
 }
@@ -1474,11 +1474,18 @@ type memSeries struct {
 	chunkRange    int64
 	firstChunkID  int // ChunkID corresponding to mmappedChunks[0].ref
 
-	nextAt        int64     // Timestamp at which to cut the next chunk.
-	sampleBuf     [4]sample // We keep the last 4 samples here (in addition to appending them) so we don't need coordination between appender and querier. Probably because even the most compact encoding of a sample takes 2 bits, so the last byte is not contended.
-	pendingCommit bool      // Whether there are samples waiting to be committed to this series.
+	nextAt int64 // Timestamp at which to cut the next chunk.
 
-	app chunkenc.Appender // Current appender for the head chunk. Set when a new head chunk is cut. TODO when exactly is it nil or not nil? is it valid to be nil?
+	// We keep the last 4 samples here (in addition to appending them to the chunk) so we don't need coordination between appender and querier.
+	// Even the most compact encoding of a sample takes 2 bits, so the last byte is not contended.
+	sampleBuf [4]sample
+
+	pendingCommit bool // Whether there are samples waiting to be committed to this series.
+
+	// Current appender for the head chunk. Set when a new head chunk is cut.
+	// It is nil only if headChunk is nil. E.g. if there was an appender that created a new series, but rolled back the commit
+	// (the first sample would create a headChunk, hence appender, but rollback skipped it while the Append() call would create a series).
+	app chunkenc.Appender
 
 	memChunkPool *sync.Pool
 
