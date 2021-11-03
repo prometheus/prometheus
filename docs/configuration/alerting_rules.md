@@ -32,7 +32,7 @@ groups:
 ```
 
 The optional `for` clause causes Prometheus to wait for a certain duration
-between first encountering a new expression output vector element and counting an alert as firing for this element. In this case, Prometheus will check that the alert continues to be active during each evaluation for 10 minutes before firing the alert. Elements that are active, but not firing yet, are in the pending state.
+between first encountering a new expression output vector element and counting an alert as firing for this element. In this case, Prometheus will check that the alert continues to be active during each evaluation for 10 minutes before firing the alert. Elements that are active, but not firing yet, are in the pending state. When the current alert is not yet triggered and the alert expression does not result in any vector element then the timer is reset. In case the current alert is triggered and the alert expression does not result in any vector element, the alert resolves.
 
 The `labels` clause allows specifying a set of additional labels to be attached
 to the alert. Any existing conflicting labels will be overwritten. The label
