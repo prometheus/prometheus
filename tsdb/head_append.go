@@ -141,6 +141,16 @@ func (h *Head) appendableMinValidTime() int64 {
 	return max(h.minValidTime.Load(), h.MaxTime()-h.chunkRange.Load()/2)
 }
 
+// AppendableMinValidTime returns the minimum valid time for samples to be appended to the Head.
+// Returns false if Head hasn't been initialized yet and the minimum time isn't known yet.
+func (h *Head) AppendableMinValidTime() (int64, bool) {
+	if h.MinTime() == math.MaxInt64 {
+		return 0, false
+	}
+
+	return h.appendableMinValidTime(), true
+}
+
 func max(a, b int64) int64 {
 	if a > b {
 		return a
