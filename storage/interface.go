@@ -146,10 +146,10 @@ type SelectHints struct {
 	By       bool     // Indicate whether it is without or by.
 	Range    int64    // Range vector selector range in milliseconds.
 
-	// TrimDisabled allows to disable trimming of matching series chunks based on query Start and End time.
+	// DisableTrimming allows to disable trimming of matching series chunks based on query Start and End time.
 	// When disabled, the result may contain samples outside the queried time range but Select() performances
 	// may be improved.
-	TrimDisabled bool
+	DisableTrimming bool
 }
 
 // TODO(bwplotka): Move to promql/engine_test.go?

@@ -325,7 +325,7 @@ func TestBlockQuerier(t *testing.T) {
 			// time range will be returned.
 			mint:  2,
 			maxt:  6,
-			hints: &storage.SelectHints{Start: 2, End: 6, TrimDisabled: true},
+			hints: &storage.SelectHints{Start: 2, End: 6, DisableTrimming: true},
 			ms:    []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "a", "a")},
 			exp: newMockSeriesSet([]storage.Series{
 				storage.NewListSeries(labels.Labels{{Name: "a", Value: "a"}},
@@ -351,7 +351,7 @@ func TestBlockQuerier(t *testing.T) {
 			// time range will be returned.
 			mint:  5,
 			maxt:  6,
-			hints: &storage.SelectHints{Start: 5, End: 6, TrimDisabled: true},
+			hints: &storage.SelectHints{Start: 5, End: 6, DisableTrimming: true},
 			ms:    []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "a", "a")},
 			exp: newMockSeriesSet([]storage.Series{
 				storage.NewListSeries(labels.Labels{{Name: "a", Value: "a"}},
