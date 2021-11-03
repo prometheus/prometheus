@@ -114,7 +114,6 @@ func serverOnlyFlag(app *kingpin.Application, name, help string) *kingpin.FlagCl
 			serverOnlyFlags = append(serverOnlyFlags, "--"+name)
 			return nil
 		})
-
 }
 
 // agentOnlyFlag creates agent-only kingpin flag.
