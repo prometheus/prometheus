@@ -82,9 +82,9 @@ func DeleteCheckpoints(dir string, maxIndex int) error {
 
 const checkpointPrefix = "checkpoint."
 
-// Checkpoint creates a compacted checkpoint of segments in range [first, last] in the given WAL.
+// Checkpoint creates a compacted checkpoint of segments in range [from, to] in the given WAL.
 // It includes the most recent checkpoint if it exists.
-// All series not satisfying keep and samples below mint are dropped.
+// All series not satisfying keep and samples/tombstones/exemplars below mint are dropped.
 //
 // The checkpoint is stored in a directory named checkpoint.N in the same
 // segmented format as the original WAL itself.
@@ -97,7 +97,6 @@ func Checkpoint(logger log.Logger, w *WAL, from, to int, keep func(id uint64) bo
 	level.Info(logger).Log("msg", "Creating checkpoint", "from_segment", from, "to_segment", to, "mint", mint)
 
 	{
-
 		var sgmRange []SegmentRange
 		dir, idx, err := LastCheckpoint(w.Dir())
 		if err != nil && err != record.ErrNotFound {
