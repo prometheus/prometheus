@@ -32,6 +32,7 @@ import (
 	"regexp"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	template_text "text/template"
@@ -408,6 +409,7 @@ func New(logger log.Logger, o *Options) *Handler {
 		}
 		replacedIdx := bytes.ReplaceAll(idx, []byte("CONSOLES_LINK_PLACEHOLDER"), []byte(h.consolesPath()))
 		replacedIdx = bytes.ReplaceAll(replacedIdx, []byte("TITLE_PLACEHOLDER"), []byte(h.options.PageTitle))
+		replacedIdx = bytes.ReplaceAll(replacedIdx, []byte("PROMETHEUS_AGENT_MODE_PLACEHOLDER"), []byte(strconv.FormatBool(h.options.IsAgent)))
 		w.Write(replacedIdx)
 	}
 
