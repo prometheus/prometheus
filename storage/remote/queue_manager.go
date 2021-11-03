@@ -1168,7 +1168,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 		return err
 	}
 
-	reqSize := len(*buf)
+	reqSize := len(req)
 	*buf = req
 
 	// An anonymous function allows us to defer the completion of our per-try spans
@@ -1264,7 +1264,6 @@ func sendWriteRequestWithBackoff(ctx context.Context, cfg config.QueueConfig, l 
 		}
 
 		try++
-		continue
 	}
 }
 
