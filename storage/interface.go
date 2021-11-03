@@ -146,8 +146,8 @@ type SelectHints struct {
 	By       bool     // Indicate whether it is without or by.
 	Range    int64    // Range vector selector range in milliseconds.
 
-	// TrimDisabled allows to disable trimming matching series chunks based on query Start and End time.
-	// When disabled the returned samples may be outside the queried time range but Select() performances
+	// TrimDisabled allows to disable trimming of matching series chunks based on query Start and End time.
+	// When disabled, the result may contain samples outside the queried time range but Select() performances
 	// may be improved.
 	TrimDisabled bool
 }
