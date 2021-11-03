@@ -169,7 +169,7 @@ func BenchmarkQuerierSelect(b *testing.B) {
 	}
 	require.NoError(b, app.Commit())
 
-	bench := func(b *testing.B, br BlockReader, sorted bool, sharding bool) {
+	bench := func(b *testing.B, br BlockReader, sorted, sharding bool) {
 		matcher := labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")
 		for s := 1; s <= numSeries; s *= 10 {
 			b.Run(fmt.Sprintf("%dof%d", s, numSeries), func(b *testing.B) {
