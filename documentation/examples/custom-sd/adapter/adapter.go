@@ -163,7 +163,7 @@ func (a *Adapter) Run() {
 }
 
 // NewAdapter creates a new instance of Adapter.
-func NewAdapter(ctx context.Context, file string, name string, d discovery.Discoverer, logger log.Logger) *Adapter {
+func NewAdapter(ctx context.Context, file, name string, d discovery.Discoverer, logger log.Logger) *Adapter {
 	return &Adapter{
 		ctx:     ctx,
 		disc:    d,

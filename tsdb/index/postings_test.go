@@ -67,7 +67,7 @@ func TestIntersect(t *testing.T) {
 	a := newListPostings(1, 2, 3)
 	b := newListPostings(2, 3, 4)
 
-	var cases = []struct {
+	cases := []struct {
 		in []Postings
 
 		res Postings
@@ -182,7 +182,7 @@ func TestIntersect(t *testing.T) {
 }
 
 func TestMultiIntersect(t *testing.T) {
-	var cases = []struct {
+	cases := []struct {
 		p   [][]uint64
 		res []uint64
 	}{
@@ -320,7 +320,7 @@ func TestMultiMerge(t *testing.T) {
 }
 
 func TestMergedPostings(t *testing.T) {
-	var cases = []struct {
+	cases := []struct {
 		in []Postings
 
 		res Postings
@@ -424,7 +424,7 @@ func TestMergedPostings(t *testing.T) {
 }
 
 func TestMergedPostingsSeek(t *testing.T) {
-	var cases = []struct {
+	cases := []struct {
 		a, b []uint64
 
 		seek    uint64
@@ -486,7 +486,7 @@ func TestMergedPostingsSeek(t *testing.T) {
 }
 
 func TestRemovedPostings(t *testing.T) {
-	var cases = []struct {
+	cases := []struct {
 		a, b []uint64
 		res  []uint64
 	}{
@@ -535,7 +535,6 @@ func TestRemovedPostings(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, c.res, res)
 	}
-
 }
 
 func TestRemovedNextStackoverflow(t *testing.T) {
@@ -561,7 +560,7 @@ func TestRemovedNextStackoverflow(t *testing.T) {
 }
 
 func TestRemovedPostingsSeek(t *testing.T) {
-	var cases = []struct {
+	cases := []struct {
 		a, b []uint64
 
 		seek    uint64
@@ -738,7 +737,7 @@ func TestIntersectWithMerge(t *testing.T) {
 }
 
 func TestWithoutPostings(t *testing.T) {
-	var cases = []struct {
+	cases := []struct {
 		base Postings
 		drop Postings
 
@@ -826,7 +825,6 @@ func BenchmarkPostings_Stats(b *testing.B) {
 			p.Add(seriesID, labels.FromStrings(name, value))
 			seriesID++
 		}
-
 	}
 	createPostingsLabelValues("__name__", "metrics_name_can_be_very_big_and_bad", 1e3)
 	for i := 0; i < 20; i++ {
@@ -845,7 +843,6 @@ func BenchmarkPostings_Stats(b *testing.B) {
 	for n := 0; n < b.N; n++ {
 		p.Stats("__name__")
 	}
-
 }
 
 func TestMemPostings_Delete(t *testing.T) {

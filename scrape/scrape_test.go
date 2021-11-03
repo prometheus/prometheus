@@ -109,7 +109,6 @@ func TestDroppedTargetsList(t *testing.T) {
 // TestDiscoveredLabelsUpdate checks that DiscoveredLabels are updated
 // even when new labels don't affect the target `hash`.
 func TestDiscoveredLabelsUpdate(t *testing.T) {
-
 	sp := &scrapePool{}
 	// These are used when syncing so need this to avoid a panic.
 	sp.config = &config.ScrapeConfig{
@@ -350,7 +349,7 @@ func TestScrapePoolTargetLimit(t *testing.T) {
 		client:        http.DefaultClient,
 	}
 
-	var tgs = []*targetgroup.Group{}
+	tgs := []*targetgroup.Group{}
 	for i := 0; i < 50; i++ {
 		tgs = append(tgs,
 			&targetgroup.Group{
@@ -1000,6 +999,7 @@ func BenchmarkScrapeLoopAppend(b *testing.B) {
 		_, _, _, _ = sl.append(slApp, metrics, "", ts)
 	}
 }
+
 func BenchmarkScrapeLoopAppendOM(b *testing.B) {
 	ctx, sl := simpleTestScrapeLoop(b)
 
@@ -1379,6 +1379,83 @@ func TestScrapeLoopAppend(t *testing.T) {
 	}
 }
 
+func TestScrapeLoopAppendForConflictingPrefixedLabels(t *testing.T) {
+	testcases := map[string]struct {
+		targetLabels  []string
+		exposedLabels string
+		expected      []string
+	}{
+		"One target label collides with existing label": {
+			targetLabels:  []string{"foo", "2"},
+			exposedLabels: `metric{foo="1"} 0`,
+			expected:      []string{"__name__", "metric", "exported_foo", "1", "foo", "2"},
+		},
+
+		"One target label collides with existing label, plus target label already with prefix 'exported'": {
+			targetLabels:  []string{"foo", "2", "exported_foo", "3"},
+			exposedLabels: `metric{foo="1"} 0`,
+			expected:      []string{"__name__", "metric", "exported_exported_foo", "1", "exported_foo", "3", "foo", "2"},
+		},
+		"One target label collides with existing label, plus existing label already with prefix 'exported": {
+			targetLabels:  []string{"foo", "3"},
+			exposedLabels: `metric{foo="1" exported_foo="2"} 0`,
+			expected:      []string{"__name__", "metric", "exported_exported_foo", "1", "exported_foo", "2", "foo", "3"},
+		},
+		"One target label collides with existing label, both already with prefix 'exported'": {
+			targetLabels:  []string{"exported_foo", "2"},
+			exposedLabels: `metric{exported_foo="1"} 0`,
+			expected:      []string{"__name__", "metric", "exported_exported_foo", "1", "exported_foo", "2"},
+		},
+		"Two target labels collide with existing labels, both with and without prefix 'exported'": {
+			targetLabels:  []string{"foo", "3", "exported_foo", "4"},
+			exposedLabels: `metric{foo="1" exported_foo="2"} 0`,
+			expected: []string{
+				"__name__", "metric", "exported_exported_foo", "1", "exported_exported_exported_foo",
+				"2", "exported_foo", "4", "foo", "3",
+			},
+		},
+		"Extreme example": {
+			targetLabels:  []string{"foo", "0", "exported_exported_foo", "1", "exported_exported_exported_foo", "2"},
+			exposedLabels: `metric{foo="3" exported_foo="4" exported_exported_exported_foo="5"} 0`,
+			expected: []string{
+				"__name__", "metric",
+				"exported_exported_exported_exported_exported_foo", "5",
+				"exported_exported_exported_exported_foo", "3",
+				"exported_exported_exported_foo", "2",
+				"exported_exported_foo", "1",
+				"exported_foo", "4",
+				"foo", "0",
+			},
+		},
+	}
+
+	for name, tc := range testcases {
+		t.Run(name, func(t *testing.T) {
+			app := &collectResultAppender{}
+			sl := newScrapeLoop(context.Background(), nil, nil, nil,
+				func(l labels.Labels) labels.Labels {
+					return mutateSampleLabels(l, &Target{labels: labels.FromStrings(tc.targetLabels...)}, false, nil)
+				},
+				nil,
+				func(ctx context.Context) storage.Appender { return app }, nil, 0, true, 0, nil, 0, 0, false,
+			)
+			slApp := sl.appender(context.Background())
+			_, _, _, err := sl.append(slApp, []byte(tc.exposedLabels), "", time.Date(2000, 1, 1, 1, 0, 0, 0, time.UTC))
+			require.NoError(t, err)
+
+			require.NoError(t, slApp.Commit())
+
+			require.Equal(t, []sample{
+				{
+					metric: labels.FromStrings(tc.expected...),
+					t:      timestamp.FromTime(time.Date(2000, 1, 1, 1, 0, 0, 0, time.UTC)),
+					v:      0,
+				},
+			}, app.result)
+		})
+	}
+}
+
 func TestScrapeLoopAppendCacheEntryButErrNotFound(t *testing.T) {
 	// collectResultAppender's AddFast always returns ErrNotFound if we don't give it a next.
 	app := &collectResultAppender{}
@@ -1668,7 +1745,8 @@ func TestScrapeLoopAppendExemplar(t *testing.T) {
 			exemplars: []exemplar.Exemplar{
 				{Labels: labels.FromStrings("a", "abc"), Value: 1},
 			},
-		}, {
+		},
+		{
 			title:           "Metric with exemplars and TS",
 			scrapeText:      "metric_total{n=\"1\"} 0 # {a=\"abc\"} 1.0 10000\n# EOF",
 			discoveryLabels: []string{"n", "2"},
@@ -1679,7 +1757,8 @@ func TestScrapeLoopAppendExemplar(t *testing.T) {
 			exemplars: []exemplar.Exemplar{
 				{Labels: labels.FromStrings("a", "abc"), Value: 1, Ts: 10000000, HasTs: true},
 			},
-		}, {
+		},
+		{
 			title: "Two metrics and exemplars",
 			scrapeText: `metric_total{n="1"} 1 # {t="1"} 1.0 10000
 metric_total{n="2"} 2 # {t="2"} 2.0 20000
@@ -1965,7 +2044,6 @@ func TestScrapeLoopOutOfBoundsTimeError(t *testing.T) {
 	require.Equal(t, 1, total)
 	require.Equal(t, 1, added)
 	require.Equal(t, 0, seriesAdded)
-
 }
 
 func TestTargetScraperScrapeOK(t *testing.T) {

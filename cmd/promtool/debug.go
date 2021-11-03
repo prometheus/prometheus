@@ -57,7 +57,6 @@ func debugWrite(cfg debugWriterConfig) error {
 				return errors.Wrap(err, "error writing into the archive")
 			}
 		}
-
 	}
 
 	if err := archiver.close(); err != nil {

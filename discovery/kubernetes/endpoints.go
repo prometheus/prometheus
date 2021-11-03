@@ -18,8 +18,6 @@ import (
 	"net"
 	"strconv"
 
-	"github.com/prometheus/prometheus/util/strutil"
-
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
@@ -29,6 +27,7 @@ import (
 	"k8s.io/client-go/util/workqueue"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/util/strutil"
 )
 
 var (
@@ -306,6 +305,14 @@ func (e *Endpoints) buildEndpoints(eps *apiv1.Endpoints) *targetgroup.Group {
 				add(addr, port, "false")
 			}
 		}
+	}
+
+	v := eps.Labels[apiv1.EndpointsOverCapacity]
+	if v == "truncated" {
+		level.Warn(e.logger).Log("msg", "Number of endpoints in one Endpoints object exceeds 1000 and has been truncated, please use \"role: endpointslice\" instead", "endpoint", eps.Name)
+	}
+	if v == "warning" {
+		level.Warn(e.logger).Log("msg", "Number of endpoints in one Endpoints object exceeds 1000, please use \"role: endpointslice\" instead", "endpoint", eps.Name)
 	}
 
 	// For all seen pods, check all container ports. If they were not covered

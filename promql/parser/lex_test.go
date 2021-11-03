@@ -318,25 +318,32 @@ var tests = []struct {
 			{
 				input:    "offset",
 				expected: []Item{{OFFSET, 0, "offset"}},
-			}, {
+			},
+			{
 				input:    "by",
 				expected: []Item{{BY, 0, "by"}},
-			}, {
+			},
+			{
 				input:    "without",
 				expected: []Item{{WITHOUT, 0, "without"}},
-			}, {
+			},
+			{
 				input:    "on",
 				expected: []Item{{ON, 0, "on"}},
-			}, {
+			},
+			{
 				input:    "ignoring",
 				expected: []Item{{IGNORING, 0, "ignoring"}},
-			}, {
+			},
+			{
 				input:    "group_left",
 				expected: []Item{{GROUP_LEFT, 0, "group_left"}},
-			}, {
+			},
+			{
 				input:    "group_right",
 				expected: []Item{{GROUP_RIGHT, 0, "group_right"}},
-			}, {
+			},
+			{
 				input:    "bool",
 				expected: []Item{{BOOL, 0, "bool"}},
 			},
@@ -569,7 +576,8 @@ var tests = []struct {
 					{DURATION, 24, `4s`},
 					{RIGHT_BRACKET, 26, `]`},
 				},
-			}, {
+			},
+			{
 				input: `test:name{on!~"b:ar"}[4m:4s]`,
 				expected: []Item{
 					{METRIC_IDENTIFIER, 0, `test:name`},
@@ -584,7 +592,8 @@ var tests = []struct {
 					{DURATION, 25, `4s`},
 					{RIGHT_BRACKET, 27, `]`},
 				},
-			}, {
+			},
+			{
 				input: `test:name{on!~"b:ar"}[4m:]`,
 				expected: []Item{
 					{METRIC_IDENTIFIER, 0, `test:name`},
@@ -598,7 +607,8 @@ var tests = []struct {
 					{COLON, 24, `:`},
 					{RIGHT_BRACKET, 25, `]`},
 				},
-			}, { // Nested Subquery.
+			},
+			{ // Nested Subquery.
 				input: `min_over_time(rate(foo{bar="baz"}[2s])[5m:])[4m:3s]`,
 				expected: []Item{
 
@@ -646,7 +656,8 @@ var tests = []struct {
 					{OFFSET, 29, "offset"},
 					{DURATION, 36, "10m"},
 				},
-			}, {
+			},
+			{
 				input: `min_over_time(rate(foo{bar="baz"}[2s])[5m:] offset 6m)[4m:3s]`,
 				expected: []Item{
 
@@ -737,7 +748,6 @@ func TestLexer(t *testing.T) {
 						if item.Typ == ERROR {
 							hasError = true
 						}
-
 					}
 					if !hasError {
 						t.Logf("%d: input %q", i, test.input)

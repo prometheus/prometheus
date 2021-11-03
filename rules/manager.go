@@ -834,12 +834,10 @@ func (g *Group) RestoreForState(ts time.Time) {
 			level.Debug(g.logger).Log("msg", "'for' state restored",
 				labels.AlertName, alertRule.Name(), "restored_time", a.ActiveAt.Format(time.RFC850),
 				"labels", a.Labels.String())
-
 		})
 
 		alertRule.SetRestored(true)
 	}
-
 }
 
 // Equals return if two groups are the same.

@@ -25,7 +25,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
-func makeNode(name, address string, labels map[string]string, annotations map[string]string) *v1.Node {
+func makeNode(name, address string, labels, annotations map[string]string) *v1.Node {
 	return &v1.Node{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        name,

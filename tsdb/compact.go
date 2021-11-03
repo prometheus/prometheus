@@ -634,7 +634,7 @@ func (c *LeveledCompactor) write(dest string, outBlocks []shardedBlock, blocks .
 			return err
 		}
 
-		if err = os.MkdirAll(tmp, 0777); err != nil {
+		if err = os.MkdirAll(tmp, 0o777); err != nil {
 			return err
 		}
 

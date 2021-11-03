@@ -24,8 +24,9 @@ import (
 	"github.com/go-kit/log"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
 func TestHTTPValidRefresh(t *testing.T) {
@@ -60,7 +61,6 @@ func TestHTTPValidRefresh(t *testing.T) {
 		},
 	}
 	require.Equal(t, tgs, expectedTargets)
-
 }
 
 func TestHTTPInvalidCode(t *testing.T) {
@@ -398,5 +398,4 @@ func TestSourceDisappeared(t *testing.T) {
 			require.Equal(t, test.expectedTargets[i], tgs)
 		}
 	}
-
 }

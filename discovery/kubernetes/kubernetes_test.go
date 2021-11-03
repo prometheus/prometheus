@@ -86,15 +86,18 @@ func (d k8sDiscoveryTest) Run(t *testing.T) {
 	// Ensure that discovery has a discoverer set. This prevents a race
 	// condition where the above go routine may or may not have set a
 	// discoverer yet.
+	lastDiscoverersCount := 0
+	dis := d.discovery.(*Discovery)
 	for {
-		dis := d.discovery.(*Discovery)
 		dis.RLock()
 		l := len(dis.discoverers)
 		dis.RUnlock()
-		if l > 0 {
+		if l > 0 && l == lastDiscoverersCount {
 			break
 		}
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
+
+		lastDiscoverersCount = l
 	}
 
 	resChan := make(chan map[string]*targetgroup.Group)
@@ -171,13 +174,15 @@ type hasSynced interface {
 	hasSynced() bool
 }
 
-var _ hasSynced = &Discovery{}
-var _ hasSynced = &Node{}
-var _ hasSynced = &Endpoints{}
-var _ hasSynced = &EndpointSlice{}
-var _ hasSynced = &Ingress{}
-var _ hasSynced = &Pod{}
-var _ hasSynced = &Service{}
+var (
+	_ hasSynced = &Discovery{}
+	_ hasSynced = &Node{}
+	_ hasSynced = &Endpoints{}
+	_ hasSynced = &EndpointSlice{}
+	_ hasSynced = &Ingress{}
+	_ hasSynced = &Pod{}
+	_ hasSynced = &Service{}
+)
 
 func (d *Discovery) hasSynced() bool {
 	d.RLock()

@@ -202,9 +202,11 @@ type BlockMetaCompaction struct {
 	Failed  bool        `json:"failed,omitempty"`
 }
 
-const indexFilename = "index"
-const metaFilename = "meta.json"
-const metaVersion1 = 1
+const (
+	indexFilename = "index"
+	metaFilename  = "meta.json"
+	metaVersion1  = 1
+)
 
 func chunkDir(dir string) string { return filepath.Join(dir, "chunks") }
 
@@ -637,12 +639,12 @@ func (pb *Block) CleanTombstones(dest string, c Compactor) (*ulid.ULID, bool, er
 // Snapshot creates snapshot of the block into dir.
 func (pb *Block) Snapshot(dir string) error {
 	blockDir := filepath.Join(dir, pb.meta.ULID.String())
-	if err := os.MkdirAll(blockDir, 0777); err != nil {
+	if err := os.MkdirAll(blockDir, 0o777); err != nil {
 		return errors.Wrap(err, "create snapshot block dir")
 	}
 
 	chunksDir := chunkDir(blockDir)
-	if err := os.MkdirAll(chunksDir, 0777); err != nil {
+	if err := os.MkdirAll(chunksDir, 0o777); err != nil {
 		return errors.Wrap(err, "create snapshot chunk dir")
 	}
 

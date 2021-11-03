@@ -730,7 +730,7 @@ func (b *blockChunkSeriesSet) At() storage.ChunkSeries {
 }
 
 // NewMergedStringIter returns string iterator that allows to merge symbols on demand and stream result.
-func NewMergedStringIter(a index.StringIter, b index.StringIter) index.StringIter {
+func NewMergedStringIter(a, b index.StringIter) index.StringIter {
 	return &mergedStringIter{a: a, b: b, aok: a.Next(), bok: b.Next()}
 }
 

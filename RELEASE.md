@@ -35,8 +35,8 @@ Release cadence of first pre-releases being cut is 6 weeks.
 | v2.28          | 2021-06-16                                 | Julius Volz (GitHub: @juliusv)              |
 | v2.29          | 2021-07-28                                 | Frederic Branczyk (GitHub: @brancz)         |
 | v2.30          | 2021-09-08                                 | Ganesh Vernekar (GitHub: @codesome)         |
-| v2.31          | 2021-10-20                                 | **searching for volunteer**                 |
-| v2.32          | 2021-12-01                                 | **searching for volunteer**                 |
+| v2.31          | 2021-10-20                                 | Julien Pivotto (GitHub: @roidelapluie)      |
+| v2.32          | 2021-12-01                                 | Julius Volz (GitHub: @juliusv)              |
 | v2.33          | 2022-01-12                                 | **searching for volunteer**                 |
 
 If you are interested in volunteering please create a pull request against the [prometheus/prometheus](https://github.com/prometheus/prometheus) repository and propose yourself for the release series of your choice.
@@ -95,24 +95,13 @@ git commit -m "Update dependencies"
 
 #### Updating React dependencies
 
-Either upgrade the dependencies within their existing version constraints as specified in the `package.json` file (see https://docs.npmjs.com/files/package.json#dependencies):
+The React application recently moved to a monorepo system with multiple internal npm packages. Dependency upgrades are
+quite sensitive for the time being and should be done manually with caution. 
 
-```
-cd web/ui/react-app
-npm update
-git add package.json package-lock.json
-```
+When you want to update a dependency, you have to go to every internal npm package where the dependency is used and
+manually change the version. Once you have taken care of that, you need to go back to `web/ui` and run `npm install`
 
-Or alternatively, update all dependencies to their latest major versions. This is potentially more disruptive and will require more follow-up fixes, but should be done from time to time (use your best judgement):
-
-```
-cd web/ui/react-app
-npx npm-check-updates -u
-npm install
-git add package.json package-lock.json
-```
-
-You can find more details on managing npm dependencies and updates [in this blog post](https://www.carlrippon.com/upgrading-npm-dependencies/).
+**NOTE**: We are researching ways to automate and improve this.
 
 ### 1. Prepare your release
 

@@ -145,7 +145,6 @@ func NewDiscovery(conf *SDConfig, l log.Logger) (*refresh.Discovery, error) {
 		time.Duration(conf.RefreshInterval),
 		r.refresh,
 	), nil
-
 }
 
 func newRefresher(conf *SDConfig, l log.Logger) (refresher, error) {

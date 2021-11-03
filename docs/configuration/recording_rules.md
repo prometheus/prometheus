@@ -78,8 +78,8 @@ name: <string>
 # How often rules in the group are evaluated.
 [ interval: <duration> | default = global.evaluation_interval ]
 
-# Limit the number of alerts and series individual rules can produce.
-# 0 is no limit.
+# Limit the number of alerts an alerting rule and series a recording
+# rule can produce. 0 is no limit.
 [ limit: <int> | default = 0 ]
 
 rules:
@@ -128,3 +128,11 @@ annotations:
   [ <labelname>: <tmpl_string> ]
 ```
 
+# Limiting alerts and series
+
+A limit for alerts produced by alerting rules and series produced recording rules
+can be configured per-group. When the limit is exceeded, _all_ series produced
+by the rule are discarded, and if it's an alerting rule, _all_ alerts for
+the rule, active, pending, or inactive, are cleared as well. The event will be
+recorded as an error in the evaluation, and as such no stale markers are
+written.

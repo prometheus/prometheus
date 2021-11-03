@@ -41,10 +41,8 @@ const (
 	Exemplars Type = 4
 )
 
-var (
-	// ErrNotFound is returned if a looked up resource was not found. Duplicate ErrNotFound from head.go.
-	ErrNotFound = errors.New("not found")
-)
+// ErrNotFound is returned if a looked up resource was not found. Duplicate ErrNotFound from head.go.
+var ErrNotFound = errors.New("not found")
 
 // RefSeries is the series labels with the series ID.
 type RefSeries struct {
@@ -69,8 +67,7 @@ type RefExemplar struct {
 
 // Decoder decodes series, sample, and tombstone records.
 // The zero value is ready to use.
-type Decoder struct {
-}
+type Decoder struct{}
 
 // Type returns the type of the record.
 // Returns RecordUnknown if no valid record type is found.
@@ -225,8 +222,7 @@ func (d *Decoder) ExemplarsFromBuffer(dec *encoding.Decbuf, exemplars []RefExemp
 
 // Encoder encodes series, sample, and tombstones records.
 // The zero value is ready to use.
-type Encoder struct {
-}
+type Encoder struct{}
 
 // Series appends the encoded series to b and returns the resulting slice.
 func (e *Encoder) Series(series []RefSeries, b []byte) []byte {

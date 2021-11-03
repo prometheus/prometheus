@@ -586,7 +586,7 @@ func (h *Head) ChunkSnapshot() (*ChunkSnapshotStats, error) {
 	cpdirtmp := cpdir + ".tmp"
 	stats.Dir = cpdir
 
-	if err := os.MkdirAll(cpdirtmp, 0777); err != nil {
+	if err := os.MkdirAll(cpdirtmp, 0o777); err != nil {
 		return stats, errors.Wrap(err, "create chunk snapshot dir")
 	}
 	cp, err := wal.New(nil, nil, cpdirtmp, h.wal.CompressionEnabled())

@@ -20,6 +20,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/pkg/exemplar"
 	"github.com/prometheus/prometheus/pkg/labels"
@@ -284,7 +285,7 @@ func (ce *CircularExemplarStorage) Resize(l int64) int {
 		// This math is essentially looking at nextIndex, where we would write the next exemplar to,
 		// and find the index in the old exemplar buffer that we should start migrating exemplars from.
 		// This way we don't migrate exemplars that would just be overwritten when migrating later exemplars.
-		var startIndex int64 = (oldNextIndex - count + int64(len(oldBuffer))) % int64(len(oldBuffer))
+		startIndex := (oldNextIndex - count + int64(len(oldBuffer))) % int64(len(oldBuffer))
 
 		for i := int64(0); i < count; i++ {
 			idx := (startIndex + i) % int64(len(oldBuffer))

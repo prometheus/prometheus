@@ -50,7 +50,7 @@ var (
 	tagsLabel = model.MetaLabelPrefix + "consul_tags"
 	// serviceAddressLabel is the name of the label containing the (optional) service address.
 	serviceAddressLabel = model.MetaLabelPrefix + "consul_service_address"
-	//servicePortLabel is the name of the label containing the service port.
+	// servicePortLabel is the name of the label containing the service port.
 	servicePortLabel = model.MetaLabelPrefix + "consul_service_port"
 	// serviceIDLabel is the name of the label containing the service ID.
 	serviceIDLabel = model.MetaLabelPrefix + "consul_service_id"
@@ -120,7 +120,7 @@ func (d *discovery) parseServiceNodes(resp *http.Response, name string) (*target
 	for _, node := range nodes {
 		// We surround the separated list with the separator as well. This way regular expressions
 		// in relabeling rules don't have to consider tag positions.
-		var tags = "," + strings.Join(node.ServiceTags, ",") + ","
+		tags := "," + strings.Join(node.ServiceTags, ",") + ","
 
 		// If the service address is not empty it should be used instead of the node address
 		// since the service may be registered remotely through a different node.
@@ -162,7 +162,6 @@ func (d *discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	for c := time.Tick(time.Duration(d.refreshInterval) * time.Second); ; {
 		var srvs map[string][]string
 		resp, err := http.Get(fmt.Sprintf("http://%s/v1/catalog/services", d.address))
-
 		if err != nil {
 			level.Error(d.logger).Log("msg", "Error getting services list", "err", err)
 			time.Sleep(time.Duration(d.refreshInterval) * time.Second)

@@ -171,7 +171,7 @@ type SegmentWAL struct {
 // OpenSegmentWAL opens or creates a write ahead log in the given directory.
 // The WAL must be read completely before new data is written.
 func OpenSegmentWAL(dir string, logger log.Logger, flushInterval time.Duration, r prometheus.Registerer) (*SegmentWAL, error) {
-	if err := os.MkdirAll(dir, 0777); err != nil {
+	if err := os.MkdirAll(dir, 0o777); err != nil {
 		return nil, err
 	}
 	df, err := fileutil.OpenDir(dir)
@@ -505,7 +505,7 @@ func (w *SegmentWAL) LogDeletes(stones []tombstones.Stone) error {
 func (w *SegmentWAL) openSegmentFile(name string) (*os.File, error) {
 	// We must open all files in read/write mode as we may have to truncate along
 	// the way and any file may become the head.
-	f, err := os.OpenFile(name, os.O_RDWR, 0666)
+	f, err := os.OpenFile(name, os.O_RDWR, 0o666)
 	if err != nil {
 		return nil, err
 	}

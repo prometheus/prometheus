@@ -87,7 +87,8 @@ func TestTemplateExpansion(t *testing.T) {
 				{
 					Metric: labels.FromStrings(labels.MetricName, "metric", "instance", "a"),
 					Point:  promql.Point{T: 0, V: 11},
-				}},
+				},
+			},
 			output: "11",
 		},
 		{
@@ -98,7 +99,8 @@ func TestTemplateExpansion(t *testing.T) {
 				{
 					Metric: labels.FromStrings(labels.MetricName, "metric", "instance", "a"),
 					Point:  promql.Point{T: 0, V: 11},
-				}},
+				},
+			},
 			output: "a",
 		},
 		{
@@ -108,7 +110,8 @@ func TestTemplateExpansion(t *testing.T) {
 				{
 					Metric: labels.FromStrings(labels.MetricName, "metric", "__value__", "a"),
 					Point:  promql.Point{T: 0, V: 11},
-				}},
+				},
+			},
 			output: "a",
 		},
 		{
@@ -118,7 +121,8 @@ func TestTemplateExpansion(t *testing.T) {
 				{
 					Metric: labels.FromStrings(labels.MetricName, "metric", "instance", "a"),
 					Point:  promql.Point{T: 0, V: 11},
-				}},
+				},
+			},
 			output: "",
 		},
 		{
@@ -128,7 +132,8 @@ func TestTemplateExpansion(t *testing.T) {
 				{
 					Metric: labels.FromStrings(labels.MetricName, "metric", "instance", "a"),
 					Point:  promql.Point{T: 0, V: 11},
-				}},
+				},
+			},
 			output: "",
 		},
 		{
@@ -137,7 +142,8 @@ func TestTemplateExpansion(t *testing.T) {
 				{
 					Metric: labels.FromStrings(labels.MetricName, "metric", "instance", "a"),
 					Point:  promql.Point{T: 0, V: 11},
-				}},
+				},
+			},
 			output: "",
 			html:   true,
 		},
@@ -151,7 +157,8 @@ func TestTemplateExpansion(t *testing.T) {
 				}, {
 					Metric: labels.FromStrings(labels.MetricName, "metric", "instance", "a"),
 					Point:  promql.Point{T: 0, V: 11},
-				}},
+				},
+			},
 			output: "a:11: b:21: ",
 		},
 		{
