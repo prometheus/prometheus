@@ -113,6 +113,7 @@ jobs:
       - checkout
       - run: ./scripts/sync_repo_files.sh
       - run: ./scripts/sync_codemirror.sh
+      - run: ./scripts/sync_lezer.sh
 
 workflows:
   version: 2
