@@ -106,35 +106,25 @@ func init() {
 	}
 }
 
-// agentOnlySetting can be provided to a kingpin flag's PreAction to mark a
-// flag as agent-only.
-func agentOnlySetting() func(*kingpin.ParseContext) error {
-	return func(pc *kingpin.ParseContext) error {
-		agentOnlyFlags = append(agentOnlyFlags, extractFlagName(pc))
-		return nil
-	}
+// serverOnlyFlag creates server-only kingpin flag.
+func serverOnlyFlag(app *kingpin.Application, name, help string) *kingpin.FlagClause {
+	return app.Flag(name, fmt.Sprintf("%s Use with server mode only.", help)).
+		PreAction(func(parseContext *kingpin.ParseContext) error {
+			// This will be invoked only if flag is actually provided by user.
+			serverOnlyFlags = append(serverOnlyFlags, "--"+name)
+			return nil
+		})
+
 }
 
-// serverOnlySetting can be provided to a kingpin flag's PreAction to mark a
-// flag as server-only.
-func serverOnlySetting() func(*kingpin.ParseContext) error {
-	return func(pc *kingpin.ParseContext) error {
-		serverOnlyFlags = append(serverOnlyFlags, extractFlagName(pc))
-		return nil
-	}
-}
-
-// extractFlagName gets the flag name from the ParseContext. Only call
-// from agentOnlySetting or serverOnlySetting.
-func extractFlagName(pc *kingpin.ParseContext) string {
-	for _, pe := range pc.Elements {
-		fc, ok := pe.Clause.(*kingpin.FlagClause)
-		if !ok {
-			continue
-		}
-		return "--" + fc.Model().Name
-	}
-	panic("extractFlagName not called from a kingpin PreAction. This is a bug, please report to Prometheus.")
+// agentOnlyFlag creates agent-only kingpin flag.
+func agentOnlyFlag(app *kingpin.Application, name, help string) *kingpin.FlagClause {
+	return app.Flag(name, fmt.Sprintf("%s Use with agent mode only.", help)).
+		PreAction(func(parseContext *kingpin.ParseContext) error {
+			// This will be invoked only if flag is actually provided by user.
+			agentOnlyFlags = append(agentOnlyFlags, "--"+name)
+			return nil
+		})
 }
 
 type flagConfig struct {
@@ -285,106 +275,83 @@ func main() {
 	a.Flag("web.cors.origin", `Regex for CORS origin. It is fully anchored. Example: 'https?://(domain1|domain2)\.com'`).
 		Default(".*").StringVar(&cfg.corsRegexString)
 
-	a.Flag("storage.tsdb.path", "Base path for metrics storage.").
-		PreAction(serverOnlySetting()).
+	serverOnlyFlag(a, "storage.tsdb.path", "Base path for metrics storage.").
 		Default("data/").StringVar(&cfg.localStoragePath)
 
-	a.Flag("storage.tsdb.min-block-duration", "Minimum duration of a data block before being persisted. For use in testing.").
-		PreAction(serverOnlySetting()).
+	serverOnlyFlag(a, "storage.tsdb.min-block-duration", "Minimum duration of a data block before being persisted. For use in testing.").
 		Hidden().Default("2h").SetValue(&cfg.tsdb.MinBlockDuration)
 
-	a.Flag("storage.tsdb.max-block-duration",
+	serverOnlyFlag(a, "storage.tsdb.max-block-duration",
 		"Maximum duration compacted blocks may span. For use in testing. (Defaults to 10% of the retention period.)").
-		PreAction(serverOnlySetting()).
 		Hidden().PlaceHolder("<duration>").SetValue(&cfg.tsdb.MaxBlockDuration)
 
-	a.Flag("storage.tsdb.max-block-chunk-segment-size",
+	serverOnlyFlag(a, "storage.tsdb.max-block-chunk-segment-size",
 		"The maximum size for a single chunk segment in a block. Example: 512MB").
-		PreAction(serverOnlySetting()).
 		Hidden().PlaceHolder("<bytes>").BytesVar(&cfg.tsdb.MaxBlockChunkSegmentSize)
 
-	a.Flag("storage.tsdb.wal-segment-size",
+	serverOnlyFlag(a, "storage.tsdb.wal-segment-size",
 		"Size at which to split the tsdb WAL segment files. Example: 100MB").
-		PreAction(serverOnlySetting()).
 		Hidden().PlaceHolder("<bytes>").BytesVar(&cfg.tsdb.WALSegmentSize)
 
-	a.Flag("storage.tsdb.retention", "[DEPRECATED] How long to retain samples in storage. This flag has been deprecated, use \"storage.tsdb.retention.time\" instead.").
-		PreAction(serverOnlySetting()).
+	serverOnlyFlag(a, "storage.tsdb.retention", "[DEPRECATED] How long to retain samples in storage. This flag has been deprecated, use \"storage.tsdb.retention.time\" instead.").
 		SetValue(&oldFlagRetentionDuration)
 
-	a.Flag("storage.tsdb.retention.time", "How long to retain samples in storage. When this flag is set it overrides \"storage.tsdb.retention\". If neither this flag nor \"storage.tsdb.retention\" nor \"storage.tsdb.retention.size\" is set, the retention time defaults to "+defaultRetentionString+". Units Supported: y, w, d, h, m, s, ms.").
-		PreAction(serverOnlySetting()).
+	serverOnlyFlag(a, "storage.tsdb.retention.time", "How long to retain samples in storage. When this flag is set it overrides \"storage.tsdb.retention\". If neither this flag nor \"storage.tsdb.retention\" nor \"storage.tsdb.retention.size\" is set, the retention time defaults to "+defaultRetentionString+". Units Supported: y, w, d, h, m, s, ms.").
 		SetValue(&newFlagRetentionDuration)
 
-	a.Flag("storage.tsdb.retention.size", "Maximum number of bytes that can be stored for blocks. A unit is required, supported units: B, KB, MB, GB, TB, PB, EB. Ex: \"512MB\".").
-		PreAction(serverOnlySetting()).
+	serverOnlyFlag(a, "storage.tsdb.retention.size", "Maximum number of bytes that can be stored for blocks. A unit is required, supported units: B, KB, MB, GB, TB, PB, EB. Ex: \"512MB\".").
 		BytesVar(&cfg.tsdb.MaxBytes)
 
-	a.Flag("storage.tsdb.no-lockfile", "Do not create lockfile in data directory.").
-		PreAction(serverOnlySetting()).
+	serverOnlyFlag(a, "storage.tsdb.no-lockfile", "Do not create lockfile in data directory.").
 		Default("false").BoolVar(&cfg.tsdb.NoLockfile)
 
-	a.Flag("storage.tsdb.allow-overlapping-blocks", "Allow overlapping blocks, which in turn enables vertical compaction and vertical query merge.").
-		PreAction(serverOnlySetting()).
+	serverOnlyFlag(a, "storage.tsdb.allow-overlapping-blocks", "Allow overlapping blocks, which in turn enables vertical compaction and vertical query merge.").
 		Default("false").BoolVar(&cfg.tsdb.AllowOverlappingBlocks)
 
-	a.Flag("storage.tsdb.wal-compression", "Compress the tsdb WAL.").
-		PreAction(serverOnlySetting()).
+	serverOnlyFlag(a, "storage.tsdb.wal-compression", "Compress the tsdb WAL.").
 		Hidden().Default("true").BoolVar(&cfg.tsdb.WALCompression)
 
-	a.Flag("storage.agent.path", "Base path for metrics storage.").
-		PreAction(agentOnlySetting()).
+	agentOnlyFlag(a, "storage.agent.path", "Base path for metrics storage.").
 		Default("data-agent/").StringVar(&cfg.localStoragePath)
 
-	a.Flag("storage.agent.wal-segment-size",
+	agentOnlyFlag(a, "storage.agent.wal-segment-size",
 		"Size at which to split WAL segment files. Example: 100MB").
-		PreAction(agentOnlySetting()).
 		Hidden().PlaceHolder("<bytes>").BytesVar(&cfg.agent.WALSegmentSize)
 
-	a.Flag("storage.agent.wal-compression", "Compress the agent WAL.").
-		PreAction(agentOnlySetting()).
+	agentOnlyFlag(a, "storage.agent.wal-compression", "Compress the agent WAL.").
 		Default("true").BoolVar(&cfg.agent.WALCompression)
 
-	a.Flag("storage.agent.wal-truncate-frequency",
+	agentOnlyFlag(a, "storage.agent.wal-truncate-frequency",
 		"The frequency at which to truncate the WAL and remove old data.").
-		PreAction(agentOnlySetting()).
 		Hidden().PlaceHolder("<duration>").SetValue(&cfg.agent.TruncateFrequency)
 
-	a.Flag("storage.agent.retention.min-time",
+	agentOnlyFlag(a, "storage.agent.retention.min-time",
 		"Minimum age samples may be before being considered for deletion when the WAL is truncated").
-		PreAction(agentOnlySetting()).
 		SetValue(&cfg.agent.MinWALTime)
 
-	a.Flag("storage.agent.retention.max-time",
+	agentOnlyFlag(a, "storage.agent.retention.max-time",
 		"Maximum age samples may be before being forcibly deleted when the WAL is truncated").
-		PreAction(agentOnlySetting()).
 		SetValue(&cfg.agent.MaxWALTime)
 
 	a.Flag("storage.remote.flush-deadline", "How long to wait flushing sample on shutdown or config reload.").
 		Default("1m").PlaceHolder("<duration>").SetValue(&cfg.RemoteFlushDeadline)
 
-	a.Flag("storage.remote.read-sample-limit", "Maximum overall number of samples to return via the remote read interface, in a single query. 0 means no limit. This limit is ignored for streamed response types.").
-		PreAction(serverOnlySetting()).
+	serverOnlyFlag(a, "storage.remote.read-sample-limit", "Maximum overall number of samples to return via the remote read interface, in a single query. 0 means no limit. This limit is ignored for streamed response types.").
 		Default("5e7").IntVar(&cfg.web.RemoteReadSampleLimit)
 
-	a.Flag("storage.remote.read-concurrent-limit", "Maximum number of concurrent remote read calls. 0 means no limit.").
-		PreAction(serverOnlySetting()).
+	serverOnlyFlag(a, "storage.remote.read-concurrent-limit", "Maximum number of concurrent remote read calls. 0 means no limit.").
 		Default("10").IntVar(&cfg.web.RemoteReadConcurrencyLimit)
 
-	a.Flag("storage.remote.read-max-bytes-in-frame", "Maximum number of bytes in a single frame for streaming remote read response types before marshalling. Note that client might have limit on frame size as well. 1MB as recommended by protobuf by default.").
-		PreAction(serverOnlySetting()).
+	serverOnlyFlag(a, "storage.remote.read-max-bytes-in-frame", "Maximum number of bytes in a single frame for streaming remote read response types before marshalling. Note that client might have limit on frame size as well. 1MB as recommended by protobuf by default.").
 		Default("1048576").IntVar(&cfg.web.RemoteReadBytesInFrame)
 
-	a.Flag("rules.alert.for-outage-tolerance", "Max time to tolerate prometheus outage for restoring \"for\" state of alert.").
-		PreAction(serverOnlySetting()).
+	serverOnlyFlag(a, "rules.alert.for-outage-tolerance", "Max time to tolerate prometheus outage for restoring \"for\" state of alert.").
 		Default("1h").SetValue(&cfg.outageTolerance)
 
-	a.Flag("rules.alert.for-grace-period", "Minimum duration between alert and restored \"for\" state. This is maintained only for alerts with configured \"for\" time greater than grace period.").
-		PreAction(serverOnlySetting()).
+	serverOnlyFlag(a, "rules.alert.for-grace-period", "Minimum duration between alert and restored \"for\" state. This is maintained only for alerts with configured \"for\" time greater than grace period.").
 		Default("10m").SetValue(&cfg.forGracePeriod)
 
-	a.Flag("rules.alert.resend-delay", "Minimum amount of time to wait before resending an alert to Alertmanager.").
-		PreAction(serverOnlySetting()).
+	serverOnlyFlag(a, "rules.alert.resend-delay", "Minimum amount of time to wait before resending an alert to Alertmanager.").
 		Default("1m").SetValue(&cfg.resendDelay)
 
 	a.Flag("scrape.adjust-timestamps", "Adjust scrape timestamps by up to `scrape.timestamp-tolerance` to align them to the intended schedule. See https://github.com/prometheus/prometheus/issues/7846 for more context. Experimental. This flag will be removed in a future release.").
@@ -393,27 +360,22 @@ func main() {
 	a.Flag("scrape.timestamp-tolerance", "Timestamp tolerance. See https://github.com/prometheus/prometheus/issues/7846 for more context. Experimental. This flag will be removed in a future release.").
 		Hidden().Default("2ms").DurationVar(&scrape.ScrapeTimestampTolerance)
 
-	a.Flag("alertmanager.notification-queue-capacity", "The capacity of the queue for pending Alertmanager notifications.").
-		PreAction(serverOnlySetting()).
+	serverOnlyFlag(a, "alertmanager.notification-queue-capacity", "The capacity of the queue for pending Alertmanager notifications.").
 		Default("10000").IntVar(&cfg.notifier.QueueCapacity)
 
 	// TODO: Remove in Prometheus 3.0.
 	alertmanagerTimeout := a.Flag("alertmanager.timeout", "[DEPRECATED] This flag has no effect.").Hidden().String()
 
-	a.Flag("query.lookback-delta", "The maximum lookback duration for retrieving metrics during expression evaluations and federation.").
-		PreAction(serverOnlySetting()).
+	serverOnlyFlag(a, "query.lookback-delta", "The maximum lookback duration for retrieving metrics during expression evaluations and federation.").
 		Default("5m").SetValue(&cfg.lookbackDelta)
 
-	a.Flag("query.timeout", "Maximum time a query may take before being aborted.").
-		PreAction(serverOnlySetting()).
+	serverOnlyFlag(a, "query.timeout", "Maximum time a query may take before being aborted.").
 		Default("2m").SetValue(&cfg.queryTimeout)
 
-	a.Flag("query.max-concurrency", "Maximum number of queries executed concurrently.").
-		PreAction(serverOnlySetting()).
+	serverOnlyFlag(a, "query.max-concurrency", "Maximum number of queries executed concurrently.").
 		Default("20").IntVar(&cfg.queryConcurrency)
 
-	a.Flag("query.max-samples", "Maximum number of samples a single query can load into memory. Note that queries will fail if they try to load more samples than this into memory, so this also limits the number of samples a query can return.").
-		PreAction(serverOnlySetting()).
+	serverOnlyFlag(a, "query.max-samples", "Maximum number of samples a single query can load into memory. Note that queries will fail if they try to load more samples than this into memory, so this also limits the number of samples a query can return.").
 		Default("50000000").IntVar(&cfg.queryMaxSamples)
 
 	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-at-modifier, promql-negative-offset, remote-write-receiver, extra-scrape-metrics, new-service-discovery-manager. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
