@@ -145,6 +145,11 @@ type SelectHints struct {
 	Grouping []string // List of label names used in aggregation.
 	By       bool     // Indicate whether it is without or by.
 	Range    int64    // Range vector selector range in milliseconds.
+
+	// DisableTrimming allows to disable trimming of matching series chunks based on query Start and End time.
+	// When disabled, the result may contain samples outside the queried time range but Select() performances
+	// may be improved.
+	DisableTrimming bool
 }
 
 // TODO(bwplotka): Move to promql/engine_test.go?

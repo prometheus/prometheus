@@ -162,6 +162,7 @@ func createIdxChkReaders(t *testing.T, tc []seriesSamples) (IndexReader, ChunkRe
 type blockQuerierTestCase struct {
 	mint, maxt int64
 	ms         []*labels.Matcher
+	hints      *storage.SelectHints
 	exp        storage.SeriesSet
 	expChks    storage.ChunkSeriesSet
 }
@@ -179,7 +180,7 @@ func testBlockQuerier(t *testing.T, c blockQuerierTestCase, ir IndexReader, cr C
 			},
 		}
 
-		res := q.Select(false, nil, c.ms...)
+		res := q.Select(false, c.hints, c.ms...)
 		defer func() { require.NoError(t, q.Close()) }()
 
 		for {
@@ -214,7 +215,7 @@ func testBlockQuerier(t *testing.T, c blockQuerierTestCase, ir IndexReader, cr C
 				maxt: c.maxt,
 			},
 		}
-		res := q.Select(false, nil, c.ms...)
+		res := q.Select(false, c.hints, c.ms...)
 		defer func() { require.NoError(t, q.Close()) }()
 
 		for {
@@ -316,6 +317,56 @@ func TestBlockQuerier(t *testing.T) {
 				),
 				storage.NewListChunkSeriesFromSamples(labels.Labels{{Name: "a", Value: "a"}, {Name: "b", Value: "b"}},
 					[]tsdbutil.Sample{sample{2, 2}, sample{3, 3}}, []tsdbutil.Sample{sample{5, 3}, sample{6, 6}},
+				),
+			}),
+		},
+		{
+			// This test runs a query disabling trimming. All chunks containing at least 1 sample within the queried
+			// time range will be returned.
+			mint:  2,
+			maxt:  6,
+			hints: &storage.SelectHints{Start: 2, End: 6, DisableTrimming: true},
+			ms:    []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "a", "a")},
+			exp: newMockSeriesSet([]storage.Series{
+				storage.NewListSeries(labels.Labels{{Name: "a", Value: "a"}},
+					[]tsdbutil.Sample{sample{1, 2}, sample{2, 3}, sample{3, 4}, sample{5, 2}, sample{6, 3}, sample{7, 4}},
+				),
+				storage.NewListSeries(labels.Labels{{Name: "a", Value: "a"}, {Name: "b", Value: "b"}},
+					[]tsdbutil.Sample{sample{1, 1}, sample{2, 2}, sample{3, 3}, sample{5, 3}, sample{6, 6}},
+				),
+			}),
+			expChks: newMockChunkSeriesSet([]storage.ChunkSeries{
+				storage.NewListChunkSeriesFromSamples(labels.Labels{{Name: "a", Value: "a"}},
+					[]tsdbutil.Sample{sample{1, 2}, sample{2, 3}, sample{3, 4}},
+					[]tsdbutil.Sample{sample{5, 2}, sample{6, 3}, sample{7, 4}},
+				),
+				storage.NewListChunkSeriesFromSamples(labels.Labels{{Name: "a", Value: "a"}, {Name: "b", Value: "b"}},
+					[]tsdbutil.Sample{sample{1, 1}, sample{2, 2}, sample{3, 3}},
+					[]tsdbutil.Sample{sample{5, 3}, sample{6, 6}},
+				),
+			}),
+		},
+		{
+			// This test runs a query disabling trimming. All chunks containing at least 1 sample within the queried
+			// time range will be returned.
+			mint:  5,
+			maxt:  6,
+			hints: &storage.SelectHints{Start: 5, End: 6, DisableTrimming: true},
+			ms:    []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "a", "a")},
+			exp: newMockSeriesSet([]storage.Series{
+				storage.NewListSeries(labels.Labels{{Name: "a", Value: "a"}},
+					[]tsdbutil.Sample{sample{5, 2}, sample{6, 3}, sample{7, 4}},
+				),
+				storage.NewListSeries(labels.Labels{{Name: "a", Value: "a"}, {Name: "b", Value: "b"}},
+					[]tsdbutil.Sample{sample{5, 3}, sample{6, 6}},
+				),
+			}),
+			expChks: newMockChunkSeriesSet([]storage.ChunkSeries{
+				storage.NewListChunkSeriesFromSamples(labels.Labels{{Name: "a", Value: "a"}},
+					[]tsdbutil.Sample{sample{5, 2}, sample{6, 3}, sample{7, 4}},
+				),
+				storage.NewListChunkSeriesFromSamples(labels.Labels{{Name: "a", Value: "a"}, {Name: "b", Value: "b"}},
+					[]tsdbutil.Sample{sample{5, 3}, sample{6, 6}},
 				),
 			}),
 		},
