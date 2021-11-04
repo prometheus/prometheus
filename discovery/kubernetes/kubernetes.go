@@ -118,9 +118,9 @@ type SDConfig struct {
 	APIServer          config.URL              `yaml:"api_server,omitempty"`
 	Role               Role                    `yaml:"role"`
 	KubeConfig         string                  `yaml:"kubeconfig_file"`
-	HTTPClientConfig   config.HTTPClientConfig `yaml:",inline"`
 	NamespaceDiscovery NamespaceDiscovery      `yaml:"namespaces,omitempty"`
 	Selectors          []SelectorConfig        `yaml:"selectors,omitempty"`
+	HTTPClientConfig   config.HTTPClientConfig `yaml:",inline"`
 }
 
 // Name returns the name of the Config.

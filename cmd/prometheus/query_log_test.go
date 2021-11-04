@@ -45,12 +45,12 @@ const (
 
 // queryLogTest defines a query log test.
 type queryLogTest struct {
-	origin         origin   // Kind of queries tested: api, console, rules.
+	configFile     *os.File // The configuration file.
 	prefix         string   // Set as --web.route-prefix.
 	host           string   // Used in --web.listen-address. Used with 127.0.0.1 and ::1.
-	port           int      // Used in --web.listen-address.
 	cwd            string   // Directory where the test is running. Required to find the rules in testdata.
-	configFile     *os.File // The configuration file.
+	origin         origin   // Kind of queries tested: api, console, rules.
+	port           int      // Used in --web.listen-address.
 	enabledAtStart bool     // Whether query log is enabled at startup.
 }
 
@@ -375,12 +375,6 @@ func (p *queryLogTest) run(t *testing.T) {
 }
 
 type queryLogLine struct {
-	Params struct {
-		Query string `json:"query"`
-		Step  int    `json:"step"`
-		Start string `json:"start"`
-		End   string `json:"end"`
-	} `json:"params"`
 	Request struct {
 		Path     string `json:"path"`
 		ClientIP string `json:"clientIP"`
@@ -389,6 +383,12 @@ type queryLogLine struct {
 		File string `json:"file"`
 		Name string `json:"name"`
 	} `json:"ruleGroup"`
+	Params struct {
+		Query string `json:"query"`
+		Start string `json:"start"`
+		End   string `json:"end"`
+		Step  int    `json:"step"`
+	} `json:"params"`
 }
 
 // readQueryLog unmarshal a json-formatted query log into query log lines.

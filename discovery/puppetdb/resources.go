@@ -23,15 +23,15 @@ import (
 )
 
 type Resource struct {
+	Parameters  Parameters `json:"parameters"`
 	Certname    string     `json:"certname"`
 	Resource    string     `json:"resource"`
 	Type        string     `json:"type"`
 	Title       string     `json:"title"`
-	Exported    bool       `json:"exported"`
-	Tags        []string   `json:"tags"`
 	File        string     `json:"file"`
 	Environment string     `json:"environment"`
-	Parameters  Parameters `json:"parameters"`
+	Tags        []string   `json:"tags"`
+	Exported    bool       `json:"exported"`
 }
 
 type Parameters map[string]interface{}

@@ -35,13 +35,13 @@ import (
 type baremetalDiscovery struct {
 	*refresh.Discovery
 	client     *scw.Client
-	port       int
 	zone       string
 	project    string
 	accessKey  string
 	secretKey  string
 	nameFilter string
 	tagsFilter []string
+	port       int
 }
 
 const (

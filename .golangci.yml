@@ -37,3 +37,7 @@ linters-settings:
     local-prefixes: github.com/prometheus/prometheus
   gofumpt:
     extra-rules: true
+  govet:
+    # TODO: Enable additioanl govet linting.
+    # enable:
+    #   - fieldalignment

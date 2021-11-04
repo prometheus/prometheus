@@ -65,14 +65,12 @@ func init() {
 
 // DockerSDConfig is the configuration for Docker (non-swarm) based service discovery.
 type DockerSDConfig struct {
-	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
-
-	Host               string   `yaml:"host"`
-	Port               int      `yaml:"port"`
-	Filters            []Filter `yaml:"filters"`
-	HostNetworkingHost string   `yaml:"host_networking_host"`
-
-	RefreshInterval model.Duration `yaml:"refresh_interval"`
+	Host               string                  `yaml:"host"`
+	HostNetworkingHost string                  `yaml:"host_networking_host"`
+	Filters            []Filter                `yaml:"filters"`
+	HTTPClientConfig   config.HTTPClientConfig `yaml:",inline"`
+	Port               int                     `yaml:"port"`
+	RefreshInterval    model.Duration          `yaml:"refresh_interval"`
 }
 
 // Name returns the name of the Config.

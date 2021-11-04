@@ -295,13 +295,13 @@ type network struct {
 
 // App describes a service running on Marathon.
 type app struct {
-	ID              string            `json:"id"`
-	Tasks           []task            `json:"tasks"`
-	RunningTasks    int               `json:"tasksRunning"`
 	Labels          map[string]string `json:"labels"`
+	ID              string            `json:"id"`
 	Container       container         `json:"container"`
+	Tasks           []task            `json:"tasks"`
 	PortDefinitions []portDefinition  `json:"portDefinitions"`
 	Networks        []network         `json:"networks"`
+	RunningTasks    int               `json:"tasksRunning"`
 	RequirePorts    bool              `json:"requirePorts"`
 }
 

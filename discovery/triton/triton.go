@@ -112,12 +112,12 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 // DiscoveryResponse models a JSON response from the Triton discovery.
 type DiscoveryResponse struct {
 	Containers []struct {
-		Groups      []string `json:"groups"`
 		ServerUUID  string   `json:"server_uuid"`
 		VMAlias     string   `json:"vm_alias"`
 		VMBrand     string   `json:"vm_brand"`
 		VMImageUUID string   `json:"vm_image_uuid"`
 		VMUUID      string   `json:"vm_uuid"`
+		Groups      []string `json:"groups"`
 	} `json:"containers"`
 }
 

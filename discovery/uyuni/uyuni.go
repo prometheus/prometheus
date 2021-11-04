@@ -65,15 +65,15 @@ type SDConfig struct {
 	Server           config.URL              `yaml:"server"`
 	Username         string                  `yaml:"username"`
 	Password         config.Secret           `yaml:"password"`
-	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
 	Entitlement      string                  `yaml:"entitlement,omitempty"`
 	Separator        string                  `yaml:"separator,omitempty"`
+	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
 	RefreshInterval  model.Duration          `yaml:"refresh_interval,omitempty"`
 }
 
 type systemGroupID struct {
-	GroupID   int    `xmlrpc:"id"`
 	GroupName string `xmlrpc:"name"`
+	GroupID   int    `xmlrpc:"id"`
 }
 
 type networkInfo struct {

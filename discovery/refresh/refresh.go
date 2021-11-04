@@ -49,11 +49,10 @@ func init() {
 // Discovery implements the Discoverer interface.
 type Discovery struct {
 	logger   log.Logger
-	interval time.Duration
-	refreshf func(ctx context.Context) ([]*targetgroup.Group, error)
-
 	failures prometheus.Counter
 	duration prometheus.Observer
+	refreshf func(ctx context.Context) ([]*targetgroup.Group, error)
+	interval time.Duration
 }
 
 // NewDiscovery returns a Discoverer function that calls a refresh() function at every interval.

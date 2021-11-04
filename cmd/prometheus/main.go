@@ -127,16 +127,20 @@ func agentOnlyFlag(app *kingpin.Application, name, help string) *kingpin.FlagCla
 }
 
 type flagConfig struct {
-	configFile string
+	web           web.Options
+	promlogConfig promlog.Config
+	notifier      notifier.Options
 
-	agentStoragePath    string
-	serverStoragePath   string
-	notifier            notifier.Options
+	configFile       string
+	agentStoragePath string
+	serverStoragePath string
+	prometheusURL    string
+	corsRegexString  string
+	featureList      []string
+
 	forGracePeriod      model.Duration
 	outageTolerance     model.Duration
 	resendDelay         model.Duration
-	web                 web.Options
-	scrape              scrape.Options
 	tsdb                tsdbOptions
 	agent               agentOptions
 	lookbackDelta       model.Duration
@@ -146,7 +150,6 @@ type flagConfig struct {
 	queryMaxSamples     int
 	RemoteFlushDeadline model.Duration
 
-	featureList []string
 	// These options are extracted from featureList
 	// for ease of use.
 	enablePromQLAtModifier     bool
@@ -154,10 +157,7 @@ type flagConfig struct {
 	enableExpandExternalLabels bool
 	enableNewSDManager         bool
 
-	prometheusURL   string
-	corsRegexString string
-
-	promlogConfig promlog.Config
+	scrape scrape.Options
 }
 
 // setFeatureListOptions sets the corresponding options from the featureList.
@@ -730,8 +730,8 @@ func main() {
 	// sync.Once is used to make sure we can close the channel at different execution stages(SIGTERM or when the config is loaded).
 	type closeOnce struct {
 		C     chan struct{}
-		once  sync.Once
 		Close func()
+		once  sync.Once
 	}
 	// Wait until the server is ready to handle reloading.
 	reloadReady := &closeOnce{
@@ -1119,8 +1119,8 @@ func (i *safePromQLNoStepSubqueryInterval) Get(int64) int64 {
 }
 
 type reloader struct {
-	name     string
 	reloader func(*config.Config) error
+	name     string
 }
 
 func reloadConfig(filename string, expandExternalLabels, enableExemplarStorage bool, logger log.Logger, noStepSuqueryInterval *safePromQLNoStepSubqueryInterval, rls ...reloader) (err error) {
@@ -1247,10 +1247,10 @@ func sendAlerts(s sender, externalURL string) rules.NotifyFunc {
 // readyStorage implements the Storage interface while allowing to set the actual
 // storage at a later point in time.
 type readyStorage struct {
-	mtx             sync.RWMutex
 	db              storage.Storage
-	startTimeMargin int64
 	stats           *tsdb.DBStats
+	startTimeMargin int64
+	mtx             sync.RWMutex
 }
 
 func (s *readyStorage) ApplyConfig(conf *config.Config) error {
@@ -1440,8 +1440,8 @@ var ErrNotReady = errors.New("Scrape manager not ready")
 
 // ReadyScrapeManager allows a scrape manager to be retrieved. Even if it's set at a later point in time.
 type readyScrapeManager struct {
-	mtx sync.RWMutex
 	m   *scrape.Manager
+	mtx sync.RWMutex
 }
 
 // Set the scrape manager.
@@ -1467,18 +1467,18 @@ func (rm *readyScrapeManager) Get() (*scrape.Manager, error) {
 // tsdbOptions is tsdb.Option version with defined units.
 // This is required as tsdb.Option fields are unit agnostic (time).
 type tsdbOptions struct {
+	MinBlockDuration               model.Duration
+	MaxBlockDuration               model.Duration
 	WALSegmentSize                 units.Base2Bytes
 	MaxBlockChunkSegmentSize       units.Base2Bytes
 	RetentionDuration              model.Duration
 	MaxBytes                       units.Base2Bytes
+	StripeSize                     int
+	MaxExemplars                   int64
+	EnableExemplarStorage          bool
 	NoLockfile                     bool
 	AllowOverlappingBlocks         bool
 	WALCompression                 bool
-	StripeSize                     int
-	MinBlockDuration               model.Duration
-	MaxBlockDuration               model.Duration
-	EnableExemplarStorage          bool
-	MaxExemplars                   int64
 	EnableMemorySnapshotOnShutdown bool
 }
 

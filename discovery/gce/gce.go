@@ -110,14 +110,14 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 // the Discoverer interface.
 type Discovery struct {
 	*refresh.Discovery
-	project      string
-	zone         string
-	filter       string
 	client       *http.Client
 	svc          *compute.Service
 	isvc         *compute.InstancesService
-	port         int
+	project      string
+	zone         string
+	filter       string
 	tagSeparator string
+	port         int
 }
 
 // NewDiscovery returns a new Discovery which periodically refreshes its targets.
