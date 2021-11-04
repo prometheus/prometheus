@@ -129,6 +129,7 @@ func agentOnlyFlag(app *kingpin.Application, name, help string) *kingpin.FlagCla
 type flagConfig struct {
 	configFile string
 
+	agentStoragePath    string
 	localStoragePath    string
 	notifier            notifier.Options
 	forGracePeriod      model.Duration
@@ -311,7 +312,7 @@ func main() {
 		Hidden().Default("true").BoolVar(&cfg.tsdb.WALCompression)
 
 	agentOnlyFlag(a, "storage.agent.path", "Base path for metrics storage.").
-		Default("data-agent/").StringVar(&cfg.localStoragePath)
+		Default("data-agent/").StringVar(&cfg.agentStoragePath)
 
 	agentOnlyFlag(a, "storage.agent.wal-segment-size",
 		"Size at which to split WAL segment files. Example: 100MB").
@@ -984,14 +985,14 @@ func main() {
 					logger,
 					prometheus.DefaultRegisterer,
 					remoteStorage,
-					cfg.localStoragePath,
+					cfg.agentStoragePath,
 					&opts,
 				)
 				if err != nil {
 					return errors.Wrap(err, "opening storage failed")
 				}
 
-				switch fsType := prom_runtime.Statfs(cfg.localStoragePath); fsType {
+				switch fsType := prom_runtime.Statfs(cfg.agentStoragePath); fsType {
 				case "NFS_SUPER_MAGIC":
 					level.Warn(logger).Log("fs_type", fsType, "msg", "This filesystem is not supported and may lead to data corruption and data loss. Please carefully read https://prometheus.io/docs/prometheus/latest/storage/ to learn more about supported filesystems.")
 				default:
