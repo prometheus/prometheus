@@ -164,11 +164,11 @@ func (m *Manager) Run(tsets <-chan map[string][]*targetgroup.Group) error {
 }
 
 func (m *Manager) reloader() {
-	for{
-		if cluster.Position() != 0{
+	for {
+		if cluster.Position() != 0 {
 			time.Sleep(10 * time.Second)
 			continue
-		}else{
+		} else {
 			level.Info(m.logger).Log("msg", "become to be work node !")
 			break
 		}

@@ -25,7 +25,7 @@ func Position()int{
 
 	k := 0
 	for _, n := range all {
-		if n.Name == mlist.LocalNode().Name{
+		if n.Name == mlist.LocalNode().Name {
 			break
 		}
 		k++
