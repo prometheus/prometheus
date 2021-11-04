@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -86,6 +87,7 @@ type dbMetrics struct {
 	numActiveSeries             prometheus.Gauge
 	numWALSeriesPendingDeletion prometheus.Gauge
 	totalAppendedSamples        prometheus.Counter
+	totalAppendedExemplars      prometheus.Counter
 	walTruncateDuration         prometheus.Summary
 	walCorruptionsTotal         prometheus.Counter
 	walTotalReplayDuration      prometheus.Gauge
@@ -110,6 +112,11 @@ func newDBMetrics(r prometheus.Registerer) *dbMetrics {
 	m.totalAppendedSamples = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_agent_samples_appended_total",
 		Help: "Total number of samples appended to the storage",
+	})
+
+	m.totalAppendedExemplars = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "prometheus_agent_exemplars_appended_total",
+		Help: "Total number of exemplars appended to the storage",
 	})
 
 	m.walTruncateDuration = prometheus.NewSummary(prometheus.SummaryOpts{
@@ -152,6 +159,7 @@ func newDBMetrics(r prometheus.Registerer) *dbMetrics {
 			m.numActiveSeries,
 			m.numWALSeriesPendingDeletion,
 			m.totalAppendedSamples,
+			m.totalAppendedExemplars,
 			m.walTruncateDuration,
 			m.walCorruptionsTotal,
 			m.walTotalReplayDuration,
@@ -173,6 +181,14 @@ func (m *dbMetrics) Unregister() {
 		m.numActiveSeries,
 		m.numWALSeriesPendingDeletion,
 		m.totalAppendedSamples,
+		m.totalAppendedExemplars,
+		m.walTruncateDuration,
+		m.walCorruptionsTotal,
+		m.walTotalReplayDuration,
+		m.checkpointDeleteFail,
+		m.checkpointDeleteTotal,
+		m.checkpointCreationFail,
+		m.checkpointCreationTotal,
 	}
 	for _, c := range cs {
 		m.r.Unregister(c)
@@ -238,9 +254,10 @@ func Open(l log.Logger, reg prometheus.Registerer, rs *remote.Storage, dir strin
 
 	db.appenderPool.New = func() interface{} {
 		return &appender{
-			DB:             db,
-			pendingSeries:  make([]record.RefSeries, 0, 100),
-			pendingSamples: make([]record.RefSample, 0, 100),
+			DB:               db,
+			pendingSeries:    make([]record.RefSeries, 0, 100),
+			pendingSamples:   make([]record.RefSample, 0, 100),
+			pendingExamplars: make([]record.RefSample, 0, 10),
 		}
 	}
 
@@ -392,11 +409,8 @@ func (db *DB) loadWAL(r *wal.Reader, multiRef map[uint64]uint64) (err error) {
 					return
 				}
 				decoded <- samples
-			case record.Tombstones:
-				// We don't care about tombstones
-				continue
-			case record.Exemplars:
-				// We don't care about exemplars
+			case record.Tombstones, record.Exemplars:
+				// We don't care about tombstones or exemplars during replay
 				continue
 			default:
 				errCh <- &wal.CorruptionErr{
@@ -646,54 +660,65 @@ func (db *DB) Close() error {
 type appender struct {
 	*DB
 
-	pendingSeries  []record.RefSeries
-	pendingSamples []record.RefSample
+	pendingSeries    []record.RefSeries
+	pendingSamples   []record.RefSample
+	pendingExamplars []record.RefExemplar
 }
 
 func (a *appender) Append(ref uint64, l labels.Labels, t int64, v float64) (uint64, error) {
-	if ref == 0 {
-		return a.Add(l, t, v)
+	series := a.series.GetByID(ref)
+	if series == nil {
+		// Ensure no empty or duplicate labels have gotten through. This mirrors the
+		// equivalent validation code in the TSDB's headAppender.
+		l = l.WithoutEmpty()
+		if len(l) == 0 {
+			return 0, errors.Wrap(tsdb.ErrInvalidSample, "empty labelset")
+		}
+
+		if lbl, dup := l.HasDuplicateLabelNames(); dup {
+			return 0, errors.Wrap(tsdb.ErrInvalidSample, fmt.Sprintf(`label name "%s" is not unique`, lbl))
+		}
+
+		var created bool
+		series, created = a.getOrCreate(l)
+		if created {
+			a.pendingSeries = append(a.pendingSeries, record.RefSeries{
+				Ref:    series.ref,
+				Labels: l,
+			})
+
+			a.metrics.numActiveSeries.Inc()
+		}
 	}
-	return ref, a.AddFast(ref, t, v)
-}
 
-func (a *appender) Add(l labels.Labels, t int64, v float64) (uint64, error) {
-	hash := l.Hash()
-	series := a.series.GetByHash(hash, l)
-	if series != nil {
-		return series.ref, a.AddFast(series.ref, t, v)
-	}
+	series.Lock()
+	defer series.Unlock()
 
-	// Ensure no empty or duplicate labels have gotten through. This mirrors the
-	// equivalent validation code in the TSDB's headAppender.
-	l = l.WithoutEmpty()
-	if len(l) == 0 {
-		return 0, errors.Wrap(tsdb.ErrInvalidSample, "empty labelset")
-	}
+	// Update last recorded timestamp. Used by Storage.gc to determine if a
+	// series is stale.
+	series.lastTs = t
 
-	if lbl, dup := l.HasDuplicateLabelNames(); dup {
-		return 0, errors.Wrap(tsdb.ErrInvalidSample, fmt.Sprintf(`label name "%s" is not unique`, lbl))
-	}
-
-	ref := a.nextRef.Inc()
-	series = &memSeries{ref: ref, lset: l, lastTs: t}
-
-	a.pendingSeries = append(a.pendingSeries, record.RefSeries{
-		Ref:    ref,
-		Labels: l,
-	})
 	a.pendingSamples = append(a.pendingSamples, record.RefSample{
-		Ref: ref,
+		Ref: series.ref,
 		T:   t,
 		V:   v,
 	})
 
-	a.series.Set(hash, series)
-
-	a.metrics.numActiveSeries.Inc()
 	a.metrics.totalAppendedSamples.Inc()
-
 	return series.ref, nil
+}
+
+func (a *appender) getOrCreate(l labels.Labels) (series *memSeries, created bool) {
+	hash := l.Hash()
+
+	series = a.series.GetByHash(hash, l)
+	if series != nil {
+		return series, false
+	}
+
+	series = &memSeries{ref: a.nextRef.Inc(), lset: l}
+	a.series.Set(l.Hash(), series)
+	return series, true
 }
 
 func (a *appender) AddFast(ref uint64, t int64, v float64) error {
@@ -719,8 +744,38 @@ func (a *appender) AddFast(ref uint64, t int64, v float64) error {
 }
 
 func (a *appender) AppendExemplar(ref uint64, l labels.Labels, e exemplar.Exemplar) (uint64, error) {
-	// remote_write doesn't support exemplars yet, so do nothing here.
-	return 0, nil
+	s := a.series.GetByID(ref)
+	if s == nil {
+		return 0, fmt.Errorf("unknown series ref. when trying to add exemplar: %d", ref)
+	}
+
+	// Ensure no empty labels have gotten through.
+	e.Labels = e.Labels.WithoutEmpty()
+
+	if lbl, dup := e.Labels.HasDuplicateLabelNames(); dup {
+		return 0, errors.Wrap(tsdb.ErrInvalidExemplar, fmt.Sprintf(`label name "%s" is not unique`, lbl))
+	}
+
+	// Exemplar label length does not include chars involved in text rendering such as quotes
+	// equals sign, or commas. See definition of const ExemplarMaxLabelLength.
+	labelSetLen := 0
+	for _, l := range e.Labels {
+		labelSetLen += utf8.RuneCountInString(l.Name)
+		labelSetLen += utf8.RuneCountInString(l.Value)
+
+		if labelSetLen > exemplar.ExemplarMaxLabelSetLength {
+			return 0, storage.ErrExemplarLabelLength
+		}
+	}
+
+	a.pendingExamplars = append(a.pendingExamplars, record.RefExemplar{
+		Ref:    ref,
+		T:      e.Ts,
+		V:      e.Value,
+		Labels: e.Labels,
+	})
+
+	return s.ref, nil
 }
 
 // Commit submits the collected samples and purges the batch.
@@ -747,6 +802,14 @@ func (a *appender) Commit() error {
 		buf = buf[:0]
 	}
 
+	if len(a.pendingExamplars) > 0 {
+		buf = encoder.Exemplars(a.pendingExamplars, buf)
+		if err := a.wal.Log(buf); err != nil {
+			return err
+		}
+		buf = buf[:0]
+	}
+
 	//nolint:staticcheck
 	a.bufPool.Put(buf)
 	return a.Rollback()
@@ -755,6 +818,7 @@ func (a *appender) Commit() error {
 func (a *appender) Rollback() error {
 	a.pendingSeries = a.pendingSeries[:0]
 	a.pendingSamples = a.pendingSamples[:0]
+	a.pendingExamplars = a.pendingExamplars[:0]
 	a.appenderPool.Put(a)
 	return nil
 }
