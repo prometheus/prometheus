@@ -487,7 +487,7 @@ func (d *Discovery) watchService(ctx context.Context, ch chan<- []*targetgroup.G
 
 // Get updates for a service.
 func (srv *consulService) watch(ctx context.Context, ch chan<- []*targetgroup.Group, health *consul.Health, lastIndex *uint64) {
-	level.Debug(srv.logger).Log("msg", "Watching service", "service", srv.name, "tags", strings.Join(srv.tags, ","))
+	level.Debug(srv.logger).Log("msg", "Watching service", "service", srv.name, "datacenter", srv.labels[datacenterLabel], "tags", strings.Join(srv.tags, ","))
 
 	opts := &consul.QueryOptions{
 		WaitIndex:  *lastIndex,
@@ -510,7 +510,7 @@ func (srv *consulService) watch(ctx context.Context, ch chan<- []*targetgroup.Gr
 	}
 
 	if err != nil {
-		level.Error(srv.logger).Log("msg", "Error refreshing service", "service", srv.name, "tags", strings.Join(srv.tags, ","), "err", err)
+		level.Error(srv.logger).Log("msg", "Error refreshing service", "service", srv.name, "datacenter", srv.labels[datacenterLabel], "tags", strings.Join(srv.tags, ","), "err", err)
 		rpcFailuresCount.Inc()
 		time.Sleep(retryInterval)
 		return
