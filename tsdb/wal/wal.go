@@ -463,6 +463,10 @@ func SegmentName(dir string, i int) string {
 	return filepath.Join(dir, fmt.Sprintf("%08d", i))
 }
 
+func (w *WAL) SegmentSize() int {
+	return w.segmentSize
+}
+
 // NextSegment creates the next segment and closes the previous one.
 func (w *WAL) NextSegment() error {
 	w.mtx.Lock()
@@ -782,8 +786,8 @@ func (w *WAL) Close() (err error) {
 	return nil
 }
 
-// Segments returns the range [first, n] of currently existing segments.
-// If no segments are found, first and n are -1.
+// Segments returns the range [first, last] of currently existing segments.
+// If no segments are found, first and last are -1.
 func Segments(walDir string) (first, last int, err error) {
 	refs, err := listSegments(walDir)
 	if err != nil {

@@ -751,9 +751,22 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 
 	if initErr := db.head.Init(minValidTime); initErr != nil {
 		db.head.metrics.walCorruptionsTotal.Inc()
-		level.Warn(db.logger).Log("msg", "Encountered WAL read error, attempting repair", "err", initErr)
-		if err := wlog.Repair(initErr); err != nil {
-			return nil, errors.Wrap(err, "repair corrupted WAL")
+		if strings.Contains(initErr.Error(), ErrCheckpointCorrupted.Error()) && wlog != nil {
+			// Clean restart the head if initializing the head leads to a checkpoint corruption error.
+			level.Warn(db.logger).Log("msg", "Encountered checkpoint corruption error, starting Head fresh", "err", err)
+			if err = db.head.CleanRestart(); err != nil {
+				return nil, errors.Wrap(err, "Head clean restart")
+			}
+			// Reset initErr as CleanRestart succeeded.
+			initErr = nil
+			// Initialize the Head. If the error still persists, we continue as a repairable error.
+			initErr = db.head.Init(minValidTime)
+		}
+		if initErr != nil {
+			level.Warn(db.logger).Log("msg", "Encountered WAL read error, attempting repair", "err", initErr)
+			if err := wlog.Repair(initErr); err != nil {
+				return nil, errors.Wrap(err, "repair corrupted WAL")
+			}
 		}
 	}
 

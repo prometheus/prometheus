@@ -172,6 +172,14 @@ func NewChunkDiskMapper(dir string, pool chunkenc.Pool, writeBufferSize int) (*C
 	return m, m.openMMapFiles()
 }
 
+func (cdm *ChunkDiskMapper) Pool() chunkenc.Pool {
+	return cdm.pool
+}
+
+func (cdm *ChunkDiskMapper) WriteBufferSize() int {
+	return cdm.writeBufferSize
+}
+
 func (cdm *ChunkDiskMapper) openMMapFiles() (returnErr error) {
 	cdm.mmappedChunkFiles = map[int]*mmappedChunkFile{}
 	cdm.closers = map[int]io.Closer{}
@@ -364,6 +372,14 @@ func (cdm *ChunkDiskMapper) CutNewFile() (returnErr error) {
 	defer cdm.writePathMtx.Unlock()
 
 	return cdm.cut()
+}
+
+func (cdm *ChunkDiskMapper) Dir() (string, error) {
+	path, err := filepath.Abs(cdm.dir.Name())
+	if err != nil {
+		return "", errors.Wrap(err, "absolute path")
+	}
+	return path, nil
 }
 
 // cut creates a new m-mapped file. The write lock should be held before calling this.
