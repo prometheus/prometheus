@@ -257,7 +257,7 @@ func Open(l log.Logger, reg prometheus.Registerer, rs *remote.Storage, dir strin
 			DB:               db,
 			pendingSeries:    make([]record.RefSeries, 0, 100),
 			pendingSamples:   make([]record.RefSample, 0, 100),
-			pendingExamplars: make([]record.RefSample, 0, 10),
+			pendingExamplars: make([]record.RefExemplar, 0, 10),
 		}
 	}
 
