@@ -15,6 +15,7 @@ package scrape
 
 import (
 	"fmt"
+	"github.com/prometheus/prometheus/cluster"
 	"hash/fnv"
 	"reflect"
 	"sync"
@@ -163,6 +164,15 @@ func (m *Manager) Run(tsets <-chan map[string][]*targetgroup.Group) error {
 }
 
 func (m *Manager) reloader() {
+	for{
+		if cluster.Position() != 0{
+			time.Sleep(10 * time.Second)
+			continue
+		}else{
+			level.Info(m.logger).Log("msg", "become to be work node !")
+			break
+		}
+	}
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 

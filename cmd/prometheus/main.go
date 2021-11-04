@@ -17,6 +17,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/prometheus/prometheus/cluster"
 	"io"
 	"math"
 	"math/bits"
@@ -168,6 +169,8 @@ type flagConfig struct {
 	corsRegexString string
 
 	promlogConfig promlog.Config
+	cluster 			clusterOptions
+
 }
 
 // setFeatureListOptions sets the corresponding options from the featureList.
@@ -419,6 +422,12 @@ func main() {
 	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-at-modifier, promql-negative-offset, remote-write-receiver, extra-scrape-metrics, new-service-discovery-manager. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
 		Default("").StringsVar(&cfg.featureList)
 
+	a.Flag("cluster.listen.port", "gossip cluster node listen port").
+		Default("4001").IntVar(&cfg.cluster.ClusterlistenPort)
+
+	a.Flag("cluster.peer", "gossip member").
+		Default("127.0.0.1:4001").StringsVar(&cfg.cluster.ClusterPeer)
+
 	promlogflag.AddFlags(a, &cfg.promlogConfig)
 
 	_, err := a.Parse(os.Args[1:])
@@ -665,6 +674,11 @@ func main() {
 
 	// This is passed to ruleManager.Update().
 	externalURL := cfg.web.ExternalURL.String()
+
+	//初始化集群
+	clusterOpts := cfg.cluster.ToClusterOptions()
+
+	cluster.CreateCluster(&clusterOpts)
 
 	reloaders := []reloader{
 		{
@@ -1552,6 +1566,18 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		EnableExemplarStorage:          opts.EnableExemplarStorage,
 		MaxExemplars:                   opts.MaxExemplars,
 		EnableMemorySnapshotOnShutdown: opts.EnableMemorySnapshotOnShutdown,
+	}
+}
+
+type clusterOptions struct {
+	ClusterlistenPort     int
+	ClusterPeer 		  []string
+}
+
+func (opts clusterOptions) ToClusterOptions() cluster.Options {
+	return cluster.Options{
+		opts.ClusterlistenPort,
+		opts.ClusterPeer,
 	}
 }
 
