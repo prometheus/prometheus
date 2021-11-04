@@ -134,7 +134,7 @@ type ChunkDiskMapper struct {
 // mmappedChunkFile provides mmapp access to an entire head chunks file that holds many chunks.
 type mmappedChunkFile struct {
 	byteSlice ByteSlice
-	maxt      int64 // maxt among all of this file's chunks.
+	maxt      int64 // Max timestamp among all of this file's chunks.
 }
 
 // NewChunkDiskMapper returns a new ChunkDiskMapper against the given directory
