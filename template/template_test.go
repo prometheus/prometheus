@@ -244,6 +244,18 @@ func TestTemplateExpansion(t *testing.T) {
 			errorMsg:   `error executing template test: template: test:1:3: executing "test" at <humanize "one">: error calling humanize: strconv.ParseFloat: parsing "one": invalid syntax`,
 		},
 		{
+			// Humanize - int.
+			text:   "{{ range . }}{{ humanize . }}:{{ end }}",
+			input:  []int{0, -1, 1, 1234567, math.MaxInt64},
+			output: "0:-1:1:1.235M:9.223E:",
+		},
+		{
+			// Humanize - uint.
+			text:   "{{ range . }}{{ humanize . }}:{{ end }}",
+			input:  []uint{0, 1, 1234567, math.MaxUint64},
+			output: "0:1:1.235M:18.45E:",
+		},
+		{
 			// Humanize1024 - float64.
 			text:   "{{ range . }}{{ humanize1024 . }}:{{ end }}",
 			input:  []float64{0.0, 1.0, 1048576.0, .12},
@@ -260,6 +272,18 @@ func TestTemplateExpansion(t *testing.T) {
 			text:       `{{ humanize1024 "one" }}`,
 			shouldFail: true,
 			errorMsg:   `error executing template test: template: test:1:3: executing "test" at <humanize1024 "one">: error calling humanize1024: strconv.ParseFloat: parsing "one": invalid syntax`,
+		},
+		{
+			// Humanize1024 - int.
+			text:   "{{ range . }}{{ humanize1024 . }}:{{ end }}",
+			input:  []int{0, -1, 1, 1234567, math.MaxInt64},
+			output: "0:-1:1:1.177Mi:8Ei:",
+		},
+		{
+			// Humanize1024 - uint.
+			text:   "{{ range . }}{{ humanize1024 . }}:{{ end }}",
+			input:  []uint{0, 1, 1234567, math.MaxUint64},
+			output: "0:1:1.177Mi:16Ei:",
 		},
 		{
 			// HumanizeDuration - seconds - float64.
@@ -292,6 +316,18 @@ func TestTemplateExpansion(t *testing.T) {
 			errorMsg:   `error executing template test: template: test:1:3: executing "test" at <humanizeDuration "one">: error calling humanizeDuration: strconv.ParseFloat: parsing "one": invalid syntax`,
 		},
 		{
+			// HumanizeDuration - int.
+			text:   "{{ range . }}{{ humanizeDuration . }}:{{ end }}",
+			input:  []int{0, -1, 1, 1234567, math.MaxInt64},
+			output: "0s:-1s:1s:14d 6h 56m 7s:-106751991167300d -15h -30m -8s:",
+		},
+		{
+			// HumanizeDuration - uint.
+			text:   "{{ range . }}{{ humanizeDuration . }}:{{ end }}",
+			input:  []uint{0, 1, 1234567, math.MaxUint64},
+			output: "0s:1s:14d 6h 56m 7s:-106751991167300d -15h -30m -8s:",
+		},
+		{
 			// Humanize* Inf and NaN - float64.
 			text:   "{{ range . }}{{ humanize . }}:{{ humanize1024 . }}:{{ humanizeDuration . }}:{{humanizeTimestamp .}}:{{ end }}",
 			input:  []float64{math.Inf(1), math.Inf(-1), math.NaN()},
@@ -309,6 +345,18 @@ func TestTemplateExpansion(t *testing.T) {
 			output: "-22.22%:0%:12.35%:123.5%",
 		},
 		{
+			// HumanizePercentage - int.
+			text:   "{{ range . }}{{ humanizePercentage . }}:{{ end }}",
+			input:  []int{0, -1, 1, 1234567, math.MaxInt64},
+			output: "0%:-100%:100%:1.235e+08%:9.223e+20%:",
+		},
+		{
+			// HumanizePercentage - uint.
+			text:   "{{ range . }}{{ humanizePercentage . }}:{{ end }}",
+			input:  []uint{0, 1, 1234567, math.MaxUint64},
+			output: "0%:100%:1.235e+08%:1.845e+21%:",
+		},
+		{
 			// HumanizePercentage - model.SampleValue input - string.
 			text:   `{{ "-0.22222" | humanizePercentage }}:{{ "0.0" | humanizePercentage }}:{{ "0.1234567" | humanizePercentage }}:{{ "1.23456" | humanizePercentage }}`,
 			output: "-22.22%:0%:12.35%:123.5%",
@@ -318,6 +366,32 @@ func TestTemplateExpansion(t *testing.T) {
 			text:       `{{ "one" | humanizePercentage }}`,
 			shouldFail: true,
 			errorMsg:   `error executing template test: template: test:1:11: executing "test" at <humanizePercentage>: error calling humanizePercentage: strconv.ParseFloat: parsing "one": invalid syntax`,
+		},
+		{
+			// HumanizeTimestamp - int.
+			text:   "{{ range . }}{{ humanizeTimestamp . }}:{{ end }}",
+			input:  []int{0, -1, 1, 1234567, 9223372036},
+			output: "1970-01-01 00:00:00 +0000 UTC:1969-12-31 23:59:59 +0000 UTC:1970-01-01 00:00:01 +0000 UTC:1970-01-15 06:56:07 +0000 UTC:2262-04-11 23:47:16 +0000 UTC:",
+		},
+		{
+			// HumanizeTimestamp - uint.
+			text:   "{{ range . }}{{ humanizeTimestamp . }}:{{ end }}",
+			input:  []uint{0, 1, 1234567, 9223372036},
+			output: "1970-01-01 00:00:00 +0000 UTC:1970-01-01 00:00:01 +0000 UTC:1970-01-15 06:56:07 +0000 UTC:2262-04-11 23:47:16 +0000 UTC:",
+		},
+		{
+			// HumanizeTimestamp - int with error.
+			text:       "{{ range . }}{{ humanizeTimestamp . }}:{{ end }}",
+			input:      []int{math.MinInt64, math.MaxInt64},
+			shouldFail: true,
+			errorMsg:   `error executing template test: template: test:1:16: executing "test" at <humanizeTimestamp .>: error calling humanizeTimestamp: -9.223372036854776e+18 cannot be represented as a nanoseconds timestamp since it overflows int64`,
+		},
+		{
+			// HumanizeTimestamp - uint with error.
+			text:       "{{ range . }}{{ humanizeTimestamp . }}:{{ end }}",
+			input:      []uint{math.MaxUint64},
+			shouldFail: true,
+			errorMsg:   `error executing template test: template: test:1:16: executing "test" at <humanizeTimestamp .>: error calling humanizeTimestamp: 1.8446744073709552e+19 cannot be represented as a nanoseconds timestamp since it overflows int64`,
 		},
 		{
 			// HumanizeTimestamp - model.SampleValue input - float64.
