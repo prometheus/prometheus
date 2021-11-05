@@ -291,7 +291,7 @@ func (r *AlertingRule) SetRestored(restored bool) {
 	r.restored = restored
 }
 
-// Restored returns the if restoration state of the alerting rule.
+// Restored returns the restoration state of the alerting rule.
 func (r *AlertingRule) Restored() bool {
 	r.mtx.Lock()
 	defer r.mtx.Unlock()
