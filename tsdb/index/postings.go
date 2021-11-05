@@ -241,7 +241,7 @@ func (p *MemPostings) EnsureOrder() {
 				}
 
 				job = job[:0]
-				ensureOrderBatchPool.Put(job)
+				ensureOrderBatchPool.Put(job) //nolint:staticcheck // Ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
 			}
 			wg.Done()
 		}()
