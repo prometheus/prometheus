@@ -11,7 +11,7 @@ branch="repo_sync_codemirror"
 commit_msg="Update codemirror"
 pr_title="Synchronize codemirror from prometheus/prometheus"
 pr_msg="Propagating changes from prometheus/prometheus default branch."
-target_repo="prometheus-community/codemirror-promql"
+target_repo="prometheus/codemirror-promql"
 source_path="web/ui/module/codemirror-promql"
 
 color_red='\e[31m'
