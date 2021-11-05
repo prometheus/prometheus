@@ -130,7 +130,7 @@ type flagConfig struct {
 	configFile string
 
 	agentStoragePath    string
-	localStoragePath    string
+	serverStoragePath   string
 	notifier            notifier.Options
 	forGracePeriod      model.Duration
 	outageTolerance     model.Duration
@@ -276,7 +276,7 @@ func main() {
 		Default(".*").StringVar(&cfg.corsRegexString)
 
 	serverOnlyFlag(a, "storage.tsdb.path", "Base path for metrics storage.").
-		Default("data/").StringVar(&cfg.localStoragePath)
+		Default("data/").StringVar(&cfg.serverStoragePath)
 
 	serverOnlyFlag(a, "storage.tsdb.min-block-duration", "Minimum duration of a data block before being persisted. For use in testing.").
 		Hidden().Default("2h").SetValue(&cfg.tsdb.MinBlockDuration)
@@ -407,6 +407,11 @@ func main() {
 		os.Exit(3)
 	}
 
+	localStoragePath := cfg.serverStoragePath
+	if agentMode {
+		localStoragePath = cfg.agentStoragePath
+	}
+
 	cfg.web.ExternalURL, err = computeExternalURL(cfg.prometheusURL, cfg.web.ListenAddress)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, errors.Wrapf(err, "parse external URL %q", cfg.prometheusURL))
@@ -517,7 +522,7 @@ func main() {
 	var (
 		localStorage  = &readyStorage{stats: tsdb.NewDBStats()}
 		scraper       = &readyScrapeManager{}
-		remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, cfg.localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper)
+		remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper)
 		fanoutStorage = storage.NewFanout(logger, localStorage, remoteStorage)
 	)
 
@@ -556,7 +561,7 @@ func main() {
 			Reg:                      prometheus.DefaultRegisterer,
 			MaxSamples:               cfg.queryMaxSamples,
 			Timeout:                  time.Duration(cfg.queryTimeout),
-			ActiveQueryTracker:       promql.NewActiveQueryTracker(cfg.localStoragePath, cfg.queryConcurrency, log.With(logger, "component", "activeQueryTracker")),
+			ActiveQueryTracker:       promql.NewActiveQueryTracker(localStoragePath, cfg.queryConcurrency, log.With(logger, "component", "activeQueryTracker")),
 			LookbackDelta:            time.Duration(cfg.lookbackDelta),
 			NoStepSubqueryIntervalFn: noStepSubqueryInterval.Get,
 			EnableAtModifier:         cfg.enablePromQLAtModifier,
@@ -585,7 +590,7 @@ func main() {
 	cfg.web.Context = ctxWeb
 	cfg.web.TSDBRetentionDuration = cfg.tsdb.RetentionDuration
 	cfg.web.TSDBMaxBytes = cfg.tsdb.MaxBytes
-	cfg.web.TSDBDir = cfg.localStoragePath
+	cfg.web.TSDBDir = localStoragePath
 	cfg.web.LocalStorage = localStorage
 	cfg.web.Storage = fanoutStorage
 	cfg.web.ExemplarStorage = localStorage
@@ -925,18 +930,12 @@ func main() {
 					}
 				}
 
-				db, err := openDBWithMetrics(
-					cfg.localStoragePath,
-					logger,
-					prometheus.DefaultRegisterer,
-					&opts,
-					localStorage.getStats(),
-				)
+				db, err := openDBWithMetrics(localStoragePath, logger, prometheus.DefaultRegisterer, &opts, localStorage.getStats())
 				if err != nil {
 					return errors.Wrapf(err, "opening storage failed")
 				}
 
-				switch fsType := prom_runtime.Statfs(cfg.localStoragePath); fsType {
+				switch fsType := prom_runtime.Statfs(localStoragePath); fsType {
 				case "NFS_SUPER_MAGIC":
 					level.Warn(logger).Log("fs_type", fsType, "msg", "This filesystem is not supported and may lead to data corruption and data loss. Please carefully read https://prometheus.io/docs/prometheus/latest/storage/ to learn more about supported filesystems.")
 				default:
@@ -985,14 +984,14 @@ func main() {
 					logger,
 					prometheus.DefaultRegisterer,
 					remoteStorage,
-					cfg.agentStoragePath,
+					localStoragePath,
 					&opts,
 				)
 				if err != nil {
 					return errors.Wrap(err, "opening storage failed")
 				}
 
-				switch fsType := prom_runtime.Statfs(cfg.agentStoragePath); fsType {
+				switch fsType := prom_runtime.Statfs(localStoragePath); fsType {
 				case "NFS_SUPER_MAGIC":
 					level.Warn(logger).Log("fs_type", fsType, "msg", "This filesystem is not supported and may lead to data corruption and data loss. Please carefully read https://prometheus.io/docs/prometheus/latest/storage/ to learn more about supported filesystems.")
 				default:
