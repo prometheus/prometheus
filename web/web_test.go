@@ -583,7 +583,7 @@ func TestAgentAPIEndPoints(t *testing.T) {
 		req, err := http.NewRequest("GET", u, nil)
 		require.NoError(t, err)
 		webHandler.router.ServeHTTP(w, req)
-		fmt.Println(u)
+		fmt.Println(w.Body.String())
 		require.Equal(t, http.StatusOK, w.Code)
 	}
 }

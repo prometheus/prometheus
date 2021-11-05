@@ -14,6 +14,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io/ioutil"
@@ -21,6 +22,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -355,13 +357,11 @@ func getCurrentGaugeValuesFor(t *testing.T, reg prometheus.Gatherer, metricNames
 
 func TestAgentSuccessfulStartup(t *testing.T) {
 	prom := exec.Command(promPath, "-test.main", "--enable-feature=agent", "--config.file="+agentConfig)
-	err := prom.Start()
-	require.NoError(t, err)
+	require.NoError(t, prom.Start())
 
-	expectedExitStatus := 0
 	actualExitStatus := 0
-
 	done := make(chan error, 1)
+
 	go func() { done <- prom.Wait() }()
 	select {
 	case err := <-done:
@@ -370,18 +370,19 @@ func TestAgentSuccessfulStartup(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		prom.Process.Kill()
 	}
-	require.Equal(t, expectedExitStatus, actualExitStatus)
+	require.Equal(t, 0, actualExitStatus)
 }
 
-func TestAgentStartupWithInvalidConfig(t *testing.T) {
-	prom := exec.Command(promPath, "-test.main", "--enable-feature=agent", "--config.file="+promConfig)
-	err := prom.Start()
-	require.NoError(t, err)
+func TestAgentFailedStartupWithServerFlag(t *testing.T) {
+	prom := exec.Command(promPath, "-test.main", "--enable-feature=agent", "--storage.tsdb.path=.", "--config.file="+promConfig)
 
-	expectedExitStatus := 2
+	output := bytes.Buffer{}
+	prom.Stderr = &output
+	require.NoError(t, prom.Start())
+
 	actualExitStatus := 0
-
 	done := make(chan error, 1)
+
 	go func() { done <- prom.Wait() }()
 	select {
 	case err := <-done:
@@ -390,7 +391,31 @@ func TestAgentStartupWithInvalidConfig(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		prom.Process.Kill()
 	}
-	require.Equal(t, expectedExitStatus, actualExitStatus)
+
+	require.Equal(t, 3, actualExitStatus)
+
+	// Assert on last line.
+	lines := strings.Split(output.String(), "\n")
+	last := lines[len(lines)-1]
+	require.Equal(t, "The following flag(s) can not be used in agent mode: [\"--storage.tsdb.path\"]", last)
+}
+
+func TestAgentFailedStartupWithInvalidConfig(t *testing.T) {
+	prom := exec.Command(promPath, "-test.main", "--enable-feature=agent", "--config.file="+promConfig)
+	require.NoError(t, prom.Start())
+
+	actualExitStatus := 0
+	done := make(chan error, 1)
+
+	go func() { done <- prom.Wait() }()
+	select {
+	case err := <-done:
+		t.Logf("prometheus agent should not be running: %v", err)
+		actualExitStatus = prom.ProcessState.ExitCode()
+	case <-time.After(5 * time.Second):
+		prom.Process.Kill()
+	}
+	require.Equal(t, 2, actualExitStatus)
 }
 
 func TestModeSpecificFlags(t *testing.T) {

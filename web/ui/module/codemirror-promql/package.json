@@ -16,7 +16,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/prometheus-community/codemirror-promql.git"
+    "url": "git+https://github.com/prometheus/codemirror-promql.git"
   },
   "keywords": [
     "promql",
@@ -27,9 +27,9 @@
   "author": "Prometheus Authors <prometheus-developers@googlegroups.com>",
   "license": "Apache-2.0",
   "bugs": {
-    "url": "https://github.com/prometheus-community/codemirror-promql/issues"
+    "url": "https://github.com/prometheus/codemirror-promql/issues"
   },
-  "homepage": "https://github.com/prometheus-community/codemirror-promql/blob/master/README.md",
+  "homepage": "https://github.com/prometheus/codemirror-promql/blob/master/README.md",
   "dependencies": {
     "lru-cache": "^6.0.0"
   },

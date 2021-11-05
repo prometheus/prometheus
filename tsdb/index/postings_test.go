@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"math/rand"
 	"sort"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -60,6 +61,59 @@ func TestMemPostings_ensureOrder(t *testing.T) {
 				t.Fatalf("postings list %v is not sorted", l)
 			}
 		}
+	}
+}
+
+func BenchmarkMemPostings_ensureOrder(b *testing.B) {
+	tests := map[string]struct {
+		numLabels         int
+		numValuesPerLabel int
+		numRefsPerValue   int
+	}{
+		"many values per label": {
+			numLabels:         100,
+			numValuesPerLabel: 10000,
+			numRefsPerValue:   100,
+		},
+		"few values per label": {
+			numLabels:         1000000,
+			numValuesPerLabel: 1,
+			numRefsPerValue:   100,
+		},
+		"few refs per label value": {
+			numLabels:         1000,
+			numValuesPerLabel: 1000,
+			numRefsPerValue:   10,
+		},
+	}
+
+	for testName, testData := range tests {
+		b.Run(testName, func(b *testing.B) {
+			p := NewUnorderedMemPostings()
+
+			// Generate postings.
+			for l := 0; l < testData.numLabels; l++ {
+				labelName := strconv.Itoa(l)
+				p.m[labelName] = map[string][]uint64{}
+
+				for v := 0; v < testData.numValuesPerLabel; v++ {
+					refs := make([]uint64, testData.numRefsPerValue)
+					for j := range refs {
+						refs[j] = rand.Uint64()
+					}
+
+					labelValue := strconv.Itoa(v)
+					p.m[labelName][labelValue] = refs
+				}
+			}
+
+			b.ResetTimer()
+
+			for n := 0; n < b.N; n++ {
+				p.EnsureOrder()
+				p.ordered = false
+			}
+		})
 	}
 }
 
