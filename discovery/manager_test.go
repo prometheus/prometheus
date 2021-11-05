@@ -1393,3 +1393,91 @@ func (o onceProvider) Run(_ context.Context, ch chan<- []*targetgroup.Group) {
 	}
 	close(ch)
 }
+
+// TestTargetSetTargetGroupsUpdateDuringApplyConfig is used to detect races when
+// ApplyConfig happens at the same time as targets update.
+func TestTargetSetTargetGroupsUpdateDuringApplyConfig(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	discoveryManager := NewManager(ctx, log.NewNopLogger())
+	discoveryManager.updatert = 100 * time.Millisecond
+	go discoveryManager.Run()
+
+	td := newTestDiscoverer()
+
+	c := map[string]Configs{
+		"prometheus": {
+			td,
+		},
+	}
+	discoveryManager.ApplyConfig(c)
+
+	var wg sync.WaitGroup
+	wg.Add(2000)
+
+	start := make(chan struct{})
+	for i := 0; i < 1000; i++ {
+		go func() {
+			<-start
+			td.update([]*targetgroup.Group{
+				{
+					Targets: []model.LabelSet{
+						{model.AddressLabel: model.LabelValue("127.0.0.1:9090")},
+					},
+				},
+			})
+			wg.Done()
+		}()
+	}
+
+	for i := 0; i < 1000; i++ {
+		go func(i int) {
+			<-start
+			c := map[string]Configs{
+				fmt.Sprintf("prometheus-%d", i): {
+					td,
+				},
+			}
+			discoveryManager.ApplyConfig(c)
+			wg.Done()
+		}(i)
+	}
+
+	close(start)
+	wg.Wait()
+}
+
+// testDiscoverer is a config and a discoverer that can adjust targets with a
+// simple function.
+type testDiscoverer struct {
+	up    chan<- []*targetgroup.Group
+	ready chan struct{}
+}
+
+func newTestDiscoverer() *testDiscoverer {
+	return &testDiscoverer{
+		ready: make(chan struct{}),
+	}
+}
+
+// Name implements Config.
+func (t *testDiscoverer) Name() string {
+	return "test"
+}
+
+// NewDiscoverer implements Config.
+func (t *testDiscoverer) NewDiscoverer(DiscovererOptions) (Discoverer, error) {
+	return t, nil
+}
+
+// Run implements Discoverer.
+func (t *testDiscoverer) Run(ctx context.Context, up chan<- []*targetgroup.Group) {
+	t.up = up
+	close(t.ready)
+	<-ctx.Done()
+}
+
+func (t *testDiscoverer) update(tgs []*targetgroup.Group) {
+	<-t.ready
+	t.up <- tgs
+}

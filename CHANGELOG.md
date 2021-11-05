@@ -1,3 +1,8 @@
+## 2.31.1 / 2021-11-05
+
+* [BUGFIX] SD: Fix a panic when the experimental discovery manager receives
+  targets during a reload. #9656
+
 ## 2.31.0 / 2021-11-02
 
 * [CHANGE] UI: Remove standard PromQL editor in favour of the codemirror-based editor. #9452
