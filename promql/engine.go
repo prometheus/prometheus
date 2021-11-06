@@ -363,7 +363,7 @@ func (ng *Engine) NewInstantQuery(q storage.Queryable, qs string, ts time.Time) 
 	}
 	qry.q = qs
 
-	return qry, nil
+	return OptimizeQuery(qry), nil
 }
 
 // NewRangeQuery returns an evaluation query for the given time range and with
@@ -382,7 +382,7 @@ func (ng *Engine) NewRangeQuery(q storage.Queryable, qs string, start, end time.
 	}
 	qry.q = qs
 
-	return qry, nil
+	return OptimizeQuery(qry), nil
 }
 
 func (ng *Engine) newQuery(q storage.Queryable, expr parser.Expr, start, end time.Time, interval time.Duration) (*query, error) {
@@ -391,7 +391,7 @@ func (ng *Engine) newQuery(q storage.Queryable, expr parser.Expr, start, end tim
 	}
 
 	es := &parser.EvalStmt{
-		Expr:     PreprocessExpr(expr, start, end),
+		Expr:     expr,
 		Start:    start,
 		End:      end,
 		Interval: interval,
@@ -402,6 +402,7 @@ func (ng *Engine) newQuery(q storage.Queryable, expr parser.Expr, start, end tim
 		stats:     stats.NewQueryTimers(),
 		queryable: q,
 	}
+
 	return qry, nil
 }
 
@@ -418,8 +419,9 @@ func (ng *Engine) validateOpts(expr parser.Expr) error {
 	var atModifierUsed, negativeOffsetUsed bool
 
 	var validationErr error
-	parser.Inspect(expr, func(node parser.Node, path []parser.Node) error {
-		switch n := node.(type) {
+	v := expr.(parser.Node)
+	parser.Inspect(&v, func(node *parser.Node, path []parser.Node) error {
+		switch n := (*node).(type) {
 		case *parser.VectorSelector:
 			if n.Timestamp != nil || n.StartOrEnd == parser.START || n.StartOrEnd == parser.END {
 				atModifierUsed = true
@@ -702,8 +704,9 @@ func (ng *Engine) findMinMaxTime(s *parser.EvalStmt) (int64, int64) {
 	// The evaluation of the VectorSelector inside then evaluates the given range and unsets
 	// the variable.
 	var evalRange time.Duration
-	parser.Inspect(s.Expr, func(node parser.Node, path []parser.Node) error {
-		switch n := node.(type) {
+	v := s.Expr.(parser.Node)
+	parser.Inspect(&v, func(node *parser.Node, path []parser.Node) error {
+		switch n := (*node).(type) {
 		case *parser.VectorSelector:
 			start, end := ng.getTimeRangesForSelector(s, n, path, evalRange)
 			if start < minTimestamp {
@@ -769,9 +772,9 @@ func (ng *Engine) populateSeries(querier storage.Querier, s *parser.EvalStmt) {
 	// The evaluation of the VectorSelector inside then evaluates the given range and unsets
 	// the variable.
 	var evalRange time.Duration
-
-	parser.Inspect(s.Expr, func(node parser.Node, path []parser.Node) error {
-		switch n := node.(type) {
+	v := s.Expr.(parser.Node)
+	parser.Inspect(&v, func(node *parser.Node, path []parser.Node) error {
+		switch n := (*node).(type) {
 		case *parser.VectorSelector:
 			start, end := ng.getTimeRangesForSelector(s, n, path, evalRange)
 			hints := &storage.SelectHints{
@@ -2461,111 +2464,6 @@ func unwrapStepInvariantExpr(e parser.Expr) parser.Expr {
 	return e
 }
 
-// PreprocessExpr wraps all possible step invariant parts of the given expression with
-// StepInvariantExpr. It also resolves the preprocessors.
-func PreprocessExpr(expr parser.Expr, start, end time.Time) parser.Expr {
-	isStepInvariant := preprocessExprHelper(expr, start, end)
-	if isStepInvariant {
-		return newStepInvariantExpr(expr)
-	}
-	return expr
-}
-
-// preprocessExprHelper wraps the child nodes of the expression
-// with a StepInvariantExpr wherever it's step invariant. The returned boolean is true if the
-// passed expression qualifies to be wrapped by StepInvariantExpr.
-// It also resolves the preprocessors.
-func preprocessExprHelper(expr parser.Expr, start, end time.Time) bool {
-	switch n := expr.(type) {
-	case *parser.VectorSelector:
-		if n.StartOrEnd == parser.START {
-			n.Timestamp = makeInt64Pointer(timestamp.FromTime(start))
-		} else if n.StartOrEnd == parser.END {
-			n.Timestamp = makeInt64Pointer(timestamp.FromTime(end))
-		}
-		return n.Timestamp != nil
-
-	case *parser.AggregateExpr:
-		return preprocessExprHelper(n.Expr, start, end)
-
-	case *parser.BinaryExpr:
-		isInvariant1, isInvariant2 := preprocessExprHelper(n.LHS, start, end), preprocessExprHelper(n.RHS, start, end)
-		if isInvariant1 && isInvariant2 {
-			return true
-		}
-
-		if isInvariant1 {
-			n.LHS = newStepInvariantExpr(n.LHS)
-		}
-		if isInvariant2 {
-			n.RHS = newStepInvariantExpr(n.RHS)
-		}
-
-		return false
-
-	case *parser.Call:
-		_, ok := AtModifierUnsafeFunctions[n.Func.Name]
-		isStepInvariant := !ok
-		isStepInvariantSlice := make([]bool, len(n.Args))
-		for i := range n.Args {
-			isStepInvariantSlice[i] = preprocessExprHelper(n.Args[i], start, end)
-			isStepInvariant = isStepInvariant && isStepInvariantSlice[i]
-		}
-
-		if isStepInvariant {
-			// The function and all arguments are step invariant.
-			return true
-		}
-
-		for i, isi := range isStepInvariantSlice {
-			if isi {
-				n.Args[i] = newStepInvariantExpr(n.Args[i])
-			}
-		}
-		return false
-
-	case *parser.MatrixSelector:
-		return preprocessExprHelper(n.VectorSelector, start, end)
-
-	case *parser.SubqueryExpr:
-		// Since we adjust offset for the @ modifier evaluation,
-		// it gets tricky to adjust it for every subquery step.
-		// Hence we wrap the inside of subquery irrespective of
-		// @ on subquery (given it is also step invariant) so that
-		// it is evaluated only once w.r.t. the start time of subquery.
-		isInvariant := preprocessExprHelper(n.Expr, start, end)
-		if isInvariant {
-			n.Expr = newStepInvariantExpr(n.Expr)
-		}
-		if n.StartOrEnd == parser.START {
-			n.Timestamp = makeInt64Pointer(timestamp.FromTime(start))
-		} else if n.StartOrEnd == parser.END {
-			n.Timestamp = makeInt64Pointer(timestamp.FromTime(end))
-		}
-		return n.Timestamp != nil
-
-	case *parser.ParenExpr:
-		return preprocessExprHelper(n.Expr, start, end)
-
-	case *parser.UnaryExpr:
-		return preprocessExprHelper(n.Expr, start, end)
-
-	case *parser.StringLiteral, *parser.NumberLiteral:
-		return true
-	}
-
-	panic(fmt.Sprintf("found unexpected node %#v", expr))
-}
-
-func newStepInvariantExpr(expr parser.Expr) parser.Expr {
-	if e, ok := expr.(*parser.ParenExpr); ok {
-		// Wrapping the inside of () makes it easy to unwrap the paren later.
-		// But this effectively unwraps the paren.
-		return newStepInvariantExpr(e.Expr)
-	}
-	return &parser.StepInvariantExpr{Expr: expr}
-}
-
 // setOffsetForAtModifier modifies the offset of vector and matrix selector
 // and subquery in the tree to accommodate the timestamp of @ modifier.
 // The offset is adjusted w.r.t. the given evaluation time.
@@ -2585,8 +2483,9 @@ func setOffsetForAtModifier(evalTime int64, expr parser.Expr) {
 		return originalOffset + offsetDiff
 	}
 
-	parser.Inspect(expr, func(node parser.Node, path []parser.Node) error {
-		switch n := node.(type) {
+	v := expr.(parser.Node)
+	parser.Inspect(&v, func(node *parser.Node, path []parser.Node) error {
+		switch n := (*node).(type) {
 		case *parser.VectorSelector:
 			n.Offset = getOffset(n.Timestamp, n.OriginalOffset, path)
 

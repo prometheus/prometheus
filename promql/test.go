@@ -457,14 +457,15 @@ func atModifierTestCases(exprStr string, evalTime time.Time) ([]atModifierTestCa
 	// Setting the @ timestamp for all selectors to be evalTime.
 	// If there is a subquery, then the selectors inside it don't get the @ timestamp.
 	// If any selector already has the @ timestamp set, then it is untouched.
-	parser.Inspect(expr, func(node parser.Node, path []parser.Node) error {
+	v := expr.(parser.Node)
+	parser.Inspect(&v, func(node *parser.Node, path []parser.Node) error {
 		_, _, subqTs := subqueryTimes(path)
 		if subqTs != nil {
 			// There is a subquery with timestamp in the path,
 			// hence don't change any timestamps further.
 			return nil
 		}
-		switch n := node.(type) {
+		switch n := (*node).(type) {
 		case *parser.VectorSelector:
 			if n.Timestamp == nil {
 				n.Timestamp = makeInt64Pointer(ts)

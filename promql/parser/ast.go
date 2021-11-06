@@ -290,7 +290,7 @@ type VectorMatching struct {
 // If the result visitor w is not nil and no error, Walk visits each of the children
 // of node with the visitor w, followed by a call of w.Visit(nil, nil).
 type Visitor interface {
-	Visit(node Node, path []Node) (w Visitor, err error)
+	Visit(node *Node, path []Node) (w Visitor, err error)
 }
 
 // Walk traverses an AST in depth-first order: It starts by calling
@@ -299,27 +299,27 @@ type Visitor interface {
 // invoked recursively with visitor w for each of the non-nil children of node,
 // followed by a call of w.Visit(nil), returning an error
 // As the tree is descended the path of previous nodes is provided.
-func Walk(v Visitor, node Node, path []Node) error {
+func Walk(v Visitor, node *Node, path []Node) error {
 	var err error
 	if v, err = v.Visit(node, path); v == nil || err != nil {
 		return err
 	}
-	path = append(path, node)
+	path = append(path, *node)
 
 	for _, e := range Children(node) {
-		if err := Walk(v, e, path); err != nil {
+		if err := Walk(v, &e, path); err != nil {
 			return err
 		}
 	}
 
-	_, err = v.Visit(nil, nil)
 	return err
 }
 
 func ExtractSelectors(expr Expr) [][]*labels.Matcher {
 	var selectors [][]*labels.Matcher
-	Inspect(expr, func(node Node, _ []Node) error {
-		vs, ok := node.(*VectorSelector)
+	v := expr.(Node)
+	Inspect(&v, func(node *Node, _ []Node) error {
+		vs, ok := (*node).(*VectorSelector)
 		if ok {
 			selectors = append(selectors, vs.LabelMatchers)
 		}
@@ -328,9 +328,9 @@ func ExtractSelectors(expr Expr) [][]*labels.Matcher {
 	return selectors
 }
 
-type inspector func(Node, []Node) error
+type inspector func(*Node, []Node) error
 
-func (f inspector) Visit(node Node, path []Node) (Visitor, error) {
+func (f inspector) Visit(node *Node, path []Node) (Visitor, error) {
 	if err := f(node, path); err != nil {
 		return nil, err
 	}
@@ -341,15 +341,15 @@ func (f inspector) Visit(node Node, path []Node) (Visitor, error) {
 // Inspect traverses an AST in depth-first order: It starts by calling
 // f(node, path); node must not be nil. If f returns a nil error, Inspect invokes f
 // for all the non-nil children of node, recursively.
-func Inspect(node Node, f inspector) {
+func Inspect(node *Node, f inspector) {
 	//nolint: errcheck
 	Walk(inspector(f), node, nil)
 }
 
 // Children returns a list of all child nodes of a syntax tree node.
-func Children(node Node) []Node {
+func Children(node *Node) []Node {
 	// For some reasons these switches have significantly better performance than interfaces
-	switch n := node.(type) {
+	switch n := (*node).(type) {
 	case *EvalStmt:
 		return []Node{n.Expr}
 	case Expressions:

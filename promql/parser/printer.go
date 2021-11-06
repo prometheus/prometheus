@@ -39,7 +39,7 @@ func tree(node Node, level string) string {
 
 	level += " · · ·"
 
-	for _, e := range Children(node) {
+	for _, e := range Children(&node) {
 		t += tree(e, level)
 	}
 
