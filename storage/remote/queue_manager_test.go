@@ -43,6 +43,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/scrape"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
 )
 
@@ -227,12 +228,12 @@ func TestSampleDeliveryOrder(t *testing.T) {
 	for i := 0; i < n; i++ {
 		name := fmt.Sprintf("test_metric_%d", i%ts)
 		samples = append(samples, record.RefSample{
-			Ref: uint64(i),
+			Ref: chunks.HeadSeriesRef(i),
 			T:   int64(i),
 			V:   float64(i),
 		})
 		series = append(series, record.RefSeries{
-			Ref:    uint64(i),
+			Ref:    chunks.HeadSeriesRef(i),
 			Labels: labels.Labels{labels.Label{Name: "__name__", Value: name}},
 		})
 	}
@@ -320,7 +321,7 @@ func TestSeriesReset(t *testing.T) {
 	for i := 0; i < numSegments; i++ {
 		series := []record.RefSeries{}
 		for j := 0; j < numSeries; j++ {
-			series = append(series, record.RefSeries{Ref: uint64((i * 100) + j), Labels: labels.Labels{{Name: "a", Value: "a"}}})
+			series = append(series, record.RefSeries{Ref: chunks.HeadSeriesRef((i * 100) + j), Labels: labels.Labels{{Name: "a", Value: "a"}}})
 		}
 		m.StoreSeries(series, i)
 	}
@@ -411,7 +412,7 @@ func TestReleaseNoninternedString(t *testing.T) {
 	for i := 1; i < 1000; i++ {
 		m.StoreSeries([]record.RefSeries{
 			{
-				Ref: uint64(i),
+				Ref: chunks.HeadSeriesRef(i),
 				Labels: labels.Labels{
 					labels.Label{
 						Name:  "asdf",
@@ -480,13 +481,13 @@ func createTimeseries(numSamples, numSeries int, extraLabels ...labels.Label) ([
 		name := fmt.Sprintf("test_metric_%d", i)
 		for j := 0; j < numSamples; j++ {
 			samples = append(samples, record.RefSample{
-				Ref: uint64(i),
+				Ref: chunks.HeadSeriesRef(i),
 				T:   int64(j),
 				V:   float64(i),
 			})
 		}
 		series = append(series, record.RefSeries{
-			Ref:    uint64(i),
+			Ref:    chunks.HeadSeriesRef(i),
 			Labels: append(labels.Labels{{Name: "__name__", Value: name}}, extraLabels...),
 		})
 	}
@@ -500,7 +501,7 @@ func createExemplars(numExemplars, numSeries int) ([]record.RefExemplar, []recor
 		name := fmt.Sprintf("test_metric_%d", i)
 		for j := 0; j < numExemplars; j++ {
 			e := record.RefExemplar{
-				Ref:    uint64(i),
+				Ref:    chunks.HeadSeriesRef(i),
 				T:      int64(j),
 				V:      float64(i),
 				Labels: labels.FromStrings("traceID", fmt.Sprintf("trace-%d", i)),
@@ -508,7 +509,7 @@ func createExemplars(numExemplars, numSeries int) ([]record.RefExemplar, []recor
 			exemplars = append(exemplars, e)
 		}
 		series = append(series, record.RefSeries{
-			Ref:    uint64(i),
+			Ref:    chunks.HeadSeriesRef(i),
 			Labels: labels.Labels{{Name: "__name__", Value: name}},
 		})
 	}

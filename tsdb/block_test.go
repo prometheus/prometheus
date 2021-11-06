@@ -522,7 +522,7 @@ func createHead(tb testing.TB, w *wal.WAL, series []storage.Series, chunkDir str
 
 	app := head.Appender(context.Background())
 	for _, s := range series {
-		ref := uint64(0)
+		ref := storage.SeriesRef(0)
 		it := s.Iterator()
 		lset := s.Labels()
 		for it.Next() {

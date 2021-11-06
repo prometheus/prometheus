@@ -745,7 +745,7 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 	}
 
 	var (
-		ref  = uint64(0)
+		ref  = storage.SeriesRef(0)
 		chks []chunks.Meta
 	)
 
