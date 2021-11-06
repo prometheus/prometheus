@@ -472,6 +472,10 @@ func (w *WAL) NextSegment() error {
 
 // nextSegment creates the next segment and closes the previous one.
 func (w *WAL) nextSegment() error {
+	if w.closed {
+		return errors.New("wal is closed")
+	}
+
 	// Only flush the current page if it actually holds data.
 	if w.page.alloc > 0 {
 		if err := w.flushPage(true); err != nil {
