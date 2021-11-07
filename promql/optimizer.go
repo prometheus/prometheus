@@ -128,25 +128,54 @@ func newStepInvariantExpr(expr parser.Expr) parser.Expr {
 
 func FoldConstants(expr parser.Expr) parser.Expr {
 	v := expr.(parser.Node)
-	parser.Inspect(&v, func(node *parser.Node, path []parser.Node) error {
+	parser.InspectPostOrder(&v, func(node *parser.Node, path []parser.Node) error {
 		if node == nil {
 			return nil
 		}
 		switch n := (*node).(type) {
-		case *parser.BinaryExpr:
-			lt, lOK := n.LHS.(*parser.NumberLiteral)
-			rt, rOK := n.RHS.(*parser.NumberLiteral)
-			if lOK && rOK {
-				res := scalarBinop(n.Op, lt.Val, rt.Val)
-				*node = &parser.NumberLiteral{
-					Val:      res,
-					PosRange: parser.PositionRange{Start: lt.PosRange.Start, End: rt.PosRange.End},
-				}
+		case *parser.EvalStmt:
+			n.Expr = resolveBinaryExpr(n.Expr)
+		case *parser.Expressions:
+			for i, e := range *n {
+				(*n)[i] = resolveBinaryExpr(e)
 			}
+		case *parser.AggregateExpr:
+			n.Param = resolveBinaryExpr(n.Param)
+		case *parser.Call:
+			for i, e := range (*n).Args {
+				(*n).Args[i] = resolveBinaryExpr(e)
+			}
+		case *parser.SubqueryExpr:
+			n.Expr = resolveBinaryExpr(n.Expr)
+		case *parser.BinaryExpr:
+			n.LHS = resolveBinaryExpr(n.LHS)
+			n.RHS = resolveBinaryExpr(n.RHS)
+			*node = resolveBinaryExpr(n)
+		case *parser.ParenExpr:
+			n.Expr = resolveBinaryExpr(n.Expr)
 		}
 		return nil
 	})
 	return v.(parser.Expr)
+}
+
+func resolveBinaryExpr(expr parser.Expr) parser.Expr {
+	switch n := expr.(type) {
+	case *parser.ParenExpr:
+		unwrapParenExpr(&expr)
+		return resolveBinaryExpr(expr)
+	case *parser.BinaryExpr:
+		lt, lOK := n.LHS.(*parser.NumberLiteral)
+		rt, rOK := n.RHS.(*parser.NumberLiteral)
+		if lOK && rOK {
+			res := scalarBinop(n.Op, lt.Val, rt.Val)
+			newNode := parser.NumberLiteral{
+				Val: res,
+			}
+			return &newNode
+		}
+	}
+	return expr
 }
 
 func OptimizeQuery(q Query) Query {

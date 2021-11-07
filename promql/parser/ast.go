@@ -307,11 +307,32 @@ func Walk(v Visitor, node *Node, path []Node) error {
 	path = append(path, *node)
 
 	for _, e := range Children(node) {
-		if err := Walk(v, &e, path); err != nil {
+		if err := Walk(v, e, path); err != nil {
 			return err
 		}
 	}
 
+	return err
+}
+
+// PostOrderWalk traverses an AST in post order-traversal.
+// If the visitor w returned by v.Visit(node, path) is not nil and the visitor returns no error,
+// PostOrderWalk is invoked recursively with visitor w for each of the non-nil children of node,
+// followed by a call of node itself. As the tree is descended the path of previous nodes is provided.
+func PostOrderWalk(v Visitor, node *Node, path []Node) error {
+	var err error
+
+	for _, e := range Children(node) {
+		path = append(path, *e)
+		if err := PostOrderWalk(v, e, path); err != nil {
+			return err
+		}
+	}
+
+	path = append(path, *node)
+	if v, err = v.Visit(node, path); v == nil || err != nil {
+		return err
+	}
 	return err
 }
 
@@ -346,17 +367,27 @@ func Inspect(node *Node, f inspector) {
 	Walk(inspector(f), node, nil)
 }
 
+// InspectPostOrder traverses an AST in post order: It starts by calling
+// f(node, path); node must not be nil. If f returns a nil error, Inspect invokes f
+// for all the non-nil children of node, recursively.
+func InspectPostOrder(node *Node, f inspector) {
+	//nolint: errcheck
+	PostOrderWalk(inspector(f), node, nil)
+}
+
 // Children returns a list of all child nodes of a syntax tree node.
-func Children(node *Node) []Node {
+func Children(node *Node) []*Node {
 	// For some reasons these switches have significantly better performance than interfaces
 	switch n := (*node).(type) {
 	case *EvalStmt:
-		return []Node{n.Expr}
+		v := n.Expr.(Node)
+		return []*Node{&v}
 	case Expressions:
 		// golang cannot convert slices of interfaces
-		ret := make([]Node, len(n))
+		ret := make([]*Node, len(n))
 		for i, e := range n {
-			ret[i] = e
+			v := e.(Node)
+			ret[i] = &v
 		}
 		return ret
 	case *AggregateExpr:
@@ -365,34 +396,46 @@ func Children(node *Node) []Node {
 		if n.Expr == nil && n.Param == nil {
 			return nil
 		} else if n.Expr == nil {
-			return []Node{n.Param}
+			v := n.Param.(Node)
+			return []*Node{&v}
 		} else if n.Param == nil {
-			return []Node{n.Expr}
+			v := n.Expr.(Node)
+			return []*Node{&v}
 		} else {
-			return []Node{n.Expr, n.Param}
+			v := n.Param.(Node)
+			x := n.Expr.(Node)
+			return []*Node{&x, &v}
 		}
 	case *BinaryExpr:
-		return []Node{n.LHS, n.RHS}
+		lhs := n.LHS.(Node)
+		rhs := n.RHS.(Node)
+		return []*Node{&lhs, &rhs}
 	case *Call:
 		// golang cannot convert slices of interfaces
-		ret := make([]Node, len(n.Args))
+		ret := make([]*Node, len(n.Args))
 		for i, e := range n.Args {
-			ret[i] = e
+			v := e.(Node)
+			ret[i] = &v
 		}
 		return ret
 	case *SubqueryExpr:
-		return []Node{n.Expr}
+		v := n.Expr.(Node)
+		return []*Node{&v}
 	case *ParenExpr:
-		return []Node{n.Expr}
+		v := n.Expr.(Node)
+		return []*Node{&v}
 	case *UnaryExpr:
-		return []Node{n.Expr}
+		v := n.Expr.(Node)
+		return []*Node{&v}
 	case *MatrixSelector:
-		return []Node{n.VectorSelector}
+		v := n.VectorSelector.(Node)
+		return []*Node{&v}
 	case *StepInvariantExpr:
-		return []Node{n.Expr}
+		v := n.Expr.(Node)
+		return []*Node{&v}
 	case *NumberLiteral, *StringLiteral, *VectorSelector:
 		// nothing to do
-		return []Node{}
+		return []*Node{}
 	default:
 		panic(errors.Errorf("promql.Children: unhandled node type %T", node))
 	}

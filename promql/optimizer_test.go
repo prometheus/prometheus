@@ -765,33 +765,50 @@ func TestWrapStepInvariantExpr(t *testing.T) {
 
 func TestFoldConstants(t *testing.T) {
 	testCases := []struct {
-		input    string      // The input to be parsed.
-		expected parser.Expr // The expected expression AST.
+		input    string
+		expected string
 	}{
 		{
-			input: "123.4567",
-			expected: &parser.NumberLiteral{
-				Val:      123.4567,
-				PosRange: parser.PositionRange{Start: 0, End: 8},
-			},
-		}, {
-			input: "1 + 2",
-			expected: &parser.NumberLiteral{
-				Val: 3.0,
-				PosRange: parser.PositionRange{
-					Start: 0,
-					End:   5,
-				},
-			},
+			input:    "123.4567",
+			expected: "123.4567",
+		},
+		{
+			input:    "1 + 2",
+			expected: "3",
+		},
+		{
+			input:    "1 + 2 + 3 + 4 + 5",
+			expected: "15",
+		},
+		{
+			input:    "(1 + 2) + (3 + 4 + 5)",
+			expected: "15",
+		},
+		{
+			input:    "(1 + 2)",
+			expected: "(3)",
+		},
+		{
+			input:    "(1 + ((2))) * (3 + (((4 + 5))))",
+			expected: "36",
+		},
+		{
+			input:    "predict_linear(my_counter[5m], 1+(2)+3+4)",
+			expected: "predict_linear(my_counter[5m], 10)",
 		},
 	}
 
 	for _, test := range testCases {
 		t.Run(test.input, func(t *testing.T) {
-			expr, err := parser.ParseExpr(test.input)
+			inputExpr, err := parser.ParseExpr(test.input)
 			require.NoError(t, err)
-			expr = FoldConstants(expr)
-			require.Equal(t, test.expected, expr, "error on input '%s'", test.input)
+			inputExpr = FoldConstants(inputExpr)
+
+			expectedExpr, err := parser.ParseExpr(test.expected)
+			require.NoError(t, err)
+
+			require.Equal(t, expectedExpr.Type(), inputExpr.Type())
+			require.Equal(t, expectedExpr.String(), inputExpr.String())
 		})
 	}
 }
