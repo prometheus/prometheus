@@ -80,6 +80,50 @@ docker run -p 9090:9090 my-prometheus
 A more advanced option is to render the configuration dynamically on start
 with some tooling or even have a daemon update it periodically.
 
+## Quick-start using Docker and node-exporter
+
+When running Prometheus via Docker, you often want to report system metrics using node_exporter, 
+but are constrained by the node running inside a Docker container. Here is an example docker-compose configuration:
+
+```yml
+version: "3.7"
+
+services:
+  node_exporter:
+    image: prom/node-exporter
+    container_name: prometheus_node
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - "--path.procfs=/host/proc"
+      - "--path.rootfs=/rootfs"
+      - "--path.sysfs=/host/sys"
+      - "--collector.filesystem.ignored-mount-points=^/(sys|proc|dev|host|etc)($$|/)"
+    restart: always
+
+  prometheus:
+    image: my-prometheus
+    container_name: prometheus
+    restart: always
+    ports:
+      - 9090:9090
+```
+
+You also need to ensure that the configuration in your `prometheus.yml` contains something like this:
+
+```yml
+scrape_configs:
+  - job_name: node
+    static_configs:
+      - targets: ['node_exporter:9100']
+```
+
+Note that the address of the node_exporter is NOT `localhost` but `node_exporter` - which will be properly resolved by Docker to the correct container, 
+and there is no need to expose any extra ports to the host.
+
+
 ## Using configuration management systems
 
 If you prefer using configuration management systems you might be interested in
