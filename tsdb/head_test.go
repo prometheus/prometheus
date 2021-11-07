@@ -1550,7 +1550,7 @@ func TestAddDuplicateLabelName(t *testing.T) {
 
 func TestMemSeriesIsolation(t *testing.T) {
 	if !DefaultIsolationState {
-		return
+		t.Skip("skipping test since testing with isolation disabled")
 	}
 
 	// Put a series, select it. GC it and then access it.
@@ -1725,7 +1725,7 @@ func TestMemSeriesIsolation(t *testing.T) {
 
 func TestIsolationRollback(t *testing.T) {
 	if !DefaultIsolationState {
-		return
+		t.Skip("skipping test since testing with isolation disabled")
 	}
 
 	// Rollback after a failed append and test if the low watermark has progressed anyway.
@@ -1757,7 +1757,7 @@ func TestIsolationRollback(t *testing.T) {
 
 func TestIsolationLowWatermarkMonotonous(t *testing.T) {
 	if !DefaultIsolationState {
-		return
+		t.Skip("skipping test since testing with isolation disabled")
 	}
 
 	hb, _ := newTestHead(t, 1000, false)
@@ -1794,7 +1794,7 @@ func TestIsolationLowWatermarkMonotonous(t *testing.T) {
 
 func TestIsolationAppendIDZeroIsNoop(t *testing.T) {
 	if !DefaultIsolationState {
-		return
+		t.Skip("skipping test since testing with isolation disabled")
 	}
 
 	h, _ := newTestHead(t, 1000, false)
@@ -1819,7 +1819,7 @@ func TestHeadSeriesChunkRace(t *testing.T) {
 
 func TestIsolationWithoutAdd(t *testing.T) {
 	if !DefaultIsolationState {
-		return
+		t.Skip("skipping test since testing with isolation disabled")
 	}
 
 	hb, _ := newTestHead(t, 1000, false)
