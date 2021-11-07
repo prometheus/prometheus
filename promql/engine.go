@@ -1767,7 +1767,7 @@ func (ev *evaluator) matrixIterSlice(it *storage.BufferedSeriesIterator, mint, m
 			}
 		}
 	}
-	// The seeked sample might also be in the range.
+	// The sought sample might also be in the range.
 	if ok {
 		if it.ChunkEncoding() == chunkenc.EncHistogram {
 			t, h := it.HistogramValues()

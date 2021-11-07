@@ -87,6 +87,7 @@ type Point struct {
 }
 
 func (p Point) String() string {
+	// TODO(beorn7): Support Histogram.
 	v := strconv.FormatFloat(p.V, 'f', -1, 64)
 	return fmt.Sprintf("%v @[%v]", v, p.T)
 }
@@ -299,11 +300,9 @@ func (ssi *storageSeriesIterator) At() (t int64, v float64) {
 	return p.T, p.V
 }
 
-// AtHistogram always returns (0, histogram.Histogram{}) because there is no
-// support for histogram values yet.
-// TODO(beorn7): Fix that for histogram support in PromQL.
 func (ssi *storageSeriesIterator) AtHistogram() (int64, histogram.Histogram) {
-	return 0, histogram.Histogram{}
+	p := ssi.points[ssi.curr]
+	return p.T, *p.H
 }
 
 func (ssi *storageSeriesIterator) ChunkEncoding() chunkenc.Encoding {

@@ -166,6 +166,7 @@ func (it *sampleRingIterator) At() (int64, float64) {
 }
 
 func (it *sampleRingIterator) AtHistogram() (int64, histogram.Histogram) {
+	// TODO(beorn7): Add proper histogram support.
 	return 0, histogram.Histogram{}
 }
 

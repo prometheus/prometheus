@@ -91,10 +91,9 @@ func (it *listSeriesIterator) At() (int64, float64) {
 	return s.T(), s.V()
 }
 
-// AtHistogram always returns (0, histogram.Histogram{}) because there is no
-// support for histogram values yet.
 func (it *listSeriesIterator) AtHistogram() (int64, histogram.Histogram) {
-	return 0, histogram.Histogram{}
+	s := it.samples.Get(it.idx)
+	return s.T(), *s.H()
 }
 
 func (it *listSeriesIterator) ChunkEncoding() chunkenc.Encoding {

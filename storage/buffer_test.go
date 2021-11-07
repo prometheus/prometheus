@@ -216,11 +216,11 @@ func newFakeSeriesIterator(nsamples, step int64) *fakeSeriesIterator {
 }
 
 func (it *fakeSeriesIterator) At() (int64, float64) {
-	return it.idx * it.step, 123 // value doesn't matter
+	return it.idx * it.step, 123 // Value doesn't matter.
 }
 
 func (it *fakeSeriesIterator) AtHistogram() (int64, histogram.Histogram) {
-	return it.idx * it.step, histogram.Histogram{} // value doesn't matter
+	return it.idx * it.step, histogram.Histogram{} // Value doesn't matter.
 }
 
 func (it *fakeSeriesIterator) ChunkEncoding() chunkenc.Encoding {

@@ -230,8 +230,6 @@ func (it *sampleRingIterator) At() (int64, float64) {
 	return it.r.at(it.i)
 }
 
-// AtHistogram always returns (0, histogram.Histogram{}) because there is no
-// support for histogram values yet.
 func (it *sampleRingIterator) AtHistogram() (int64, histogram.Histogram) {
 	return it.r.atHistogram(it.i)
 }

@@ -89,6 +89,8 @@ type Appender interface {
 // Iterator iterates over the samples of a time series, in timestamp-increasing order.
 type Iterator interface {
 	// Next advances the iterator by one.
+	// TODO(beorn7): Perhaps this should return if the next value is a float or a histogram
+	// to make it easier calling the right method (At vs AtHistogram)?
 	Next() bool
 	// Seek advances the iterator forward to the first sample with the timestamp equal or greater than t.
 	// If current sample found by previous `Next` or `Seek` operation already has this property, Seek has no effect.
@@ -100,6 +102,7 @@ type Iterator interface {
 	At() (int64, float64)
 	// AtHistogram returns the current timestamp/histogram pair.
 	// Before the iterator has advanced AtHistogram behaviour is unspecified.
+	// TODO(beorn7): Maybe return *histogram.Histogram? It's a fairly large struct.
 	AtHistogram() (int64, histogram.Histogram)
 	// Err returns the current error. It should be used only after iterator is
 	// exhausted, that is `Next` or `Seek` returns false.
