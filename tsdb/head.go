@@ -213,6 +213,35 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, opts *HeadOpti
 	return h, nil
 }
 
+// CheckSampleEqualsLastFour returns true if the sample matches the last 4 samples appended to Head, false otherwise.
+// This function is used by downstream projects (e.g. Cortex) to check out of order samples.
+// See https://github.com/prometheus/prometheus/issues/9210.
+func (h *Head) CheckSampleEqualsLastFour(ref chunks.HeadSeriesRef, seriesLabels labels.Labels, t int64, v float64) bool {
+	var s *memSeries
+	if len(seriesLabels) != 0 {
+		s = h.series.getByHash(seriesLabels.Hash(), seriesLabels)
+	} else {
+		s = h.series.getByID(ref)
+	}
+
+	if s == nil || s.head() == nil {
+		return false
+	}
+
+	switch {
+	case math.Float64bits(s.sampleBuf[3].v) == math.Float64bits(v) && s.sampleBuf[3].t == t:
+		return true
+	case math.Float64bits(s.sampleBuf[2].v) == math.Float64bits(v) && s.sampleBuf[2].t == t:
+		return true
+	case math.Float64bits(s.sampleBuf[1].v) == math.Float64bits(v) && s.sampleBuf[1].t == t:
+		return true
+	case math.Float64bits(s.sampleBuf[0].v) == math.Float64bits(v) && s.sampleBuf[0].t == t:
+		return true
+	}
+
+	return false
+}
+
 func (h *Head) resetInMemoryState() error {
 	var err error
 	var em *ExemplarMetrics

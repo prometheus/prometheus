@@ -1793,6 +1793,38 @@ func TestIsolationAppendIDZeroIsNoop(t *testing.T) {
 	require.Equal(t, 0, s.txs.txIDCount, "Series should not have an appendID after append with appendID=0.")
 }
 
+func TestCheckOutOfOrderSample(t *testing.T) {
+	h, _ := newTestHead(t, 1000, false)
+	defer func() {
+		require.NoError(t, h.Close())
+	}()
+
+	h.initTime(0)
+
+	app := h.Appender(context.Background())
+	var err error
+	seriesLabels := labels.FromStrings("foo", "bar")
+	for i := 0; i < 5; i++ {
+		_, err = app.Append(1, seriesLabels, int64(i), float64(i))
+		require.NoError(t, err)
+	}
+
+	require.NoError(t, app.Commit())
+	for i := 1; i < 5; i++ {
+		require.True(t, h.CheckSampleEqualsLastFour(1, seriesLabels, int64(i), float64(i)))
+		require.True(t, h.CheckSampleEqualsLastFour(1, nil, int64(i), float64(i)))
+	}
+
+	require.False(t, h.CheckSampleEqualsLastFour(1, seriesLabels, 0, 0))
+	require.False(t, h.CheckSampleEqualsLastFour(1, nil, 0, 0))
+
+	require.False(t, h.CheckSampleEqualsLastFour(1, nil, 5, 1))
+	require.False(t, h.CheckSampleEqualsLastFour(1, seriesLabels, 5, 1))
+
+	require.False(t, h.CheckSampleEqualsLastFour(1, nil, 10, 10))
+	require.False(t, h.CheckSampleEqualsLastFour(1, seriesLabels, 10, 10))
+}
+
 func TestHeadSeriesChunkRace(t *testing.T) {
 	for i := 0; i < 1000; i++ {
 		testHeadSeriesChunkRace(t)
