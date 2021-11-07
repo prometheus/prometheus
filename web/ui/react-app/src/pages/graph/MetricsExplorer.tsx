@@ -1,5 +1,7 @@
 import React, { Component, ChangeEvent } from 'react';
 import { Modal, ModalBody, ModalHeader, Input } from 'reactstrap';
+import { Fuzzy, FuzzyResult } from '@nexucis/fuzzy';
+const fuz = new Fuzzy({ pre: '<strong>', post: '</strong>', shouldSort: true });
 
 interface Props {
   show: boolean;
@@ -33,12 +35,19 @@ class MetricsExplorer extends Component<Props, MetricsExplorerState> {
         <ModalHeader toggle={this.toggle}>Metrics Explorer</ModalHeader>
         <ModalBody>
           <Input placeholder="Search" value={this.state.searchTerm} type="text" onChange={this.handleSearchTerm} />
-          {this.props.metrics
-            .filter((metric) => {
-              if (this.state.searchTerm === '') return true;
-              return metric.toLowerCase().includes(this.state.searchTerm.toLowerCase());
-            })
-            .map((metric) => (
+          {this.state.searchTerm.length > 0 &&
+            fuz
+              .filter(this.state.searchTerm, this.props.metrics)
+              .map((result: FuzzyResult) => (
+                <p
+                  key={result.original}
+                  className="metric"
+                  onClick={this.handleMetricClick.bind(this, result.original)}
+                  dangerouslySetInnerHTML={{ __html: result.rendered }}
+                ></p>
+              ))}
+          {this.state.searchTerm.length === 0 &&
+            this.props.metrics.map((metric) => (
               <p key={metric} className="metric" onClick={this.handleMetricClick.bind(this, metric)}>
                 {metric}
               </p>
