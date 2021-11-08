@@ -34,4 +34,7 @@ crossbuild:
         - linux
         - netbsd
         - openbsd
-        - windows
+        # Commented until we support windows/arm64.
+        # - windows
+        - windows/i386
+        - windows/amd64
