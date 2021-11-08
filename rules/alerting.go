@@ -258,6 +258,42 @@ func (r *AlertingRule) forStateSample(alert *Alert, ts time.Time, v float64) pro
 	return s
 }
 
+// forStateSample returns the series for ALERTS_FOR_STATE.
+func (r *AlertingRule) queryforStateSample(alert *Alert, q storage.Querier) (storage.Series, error) {
+	smpl := r.forStateSample(alert, time.Now(), 0)
+	var matchers []*labels.Matcher
+	for _, l := range smpl.Metric {
+		mt, err := labels.NewMatcher(labels.MatchEqual, l.Name, l.Value)
+		if err != nil {
+			panic(err)
+		}
+		matchers = append(matchers, mt)
+	}
+	sset := q.Select(false, nil, matchers...)
+
+	var s storage.Series
+	for sset.Next() {
+		// Query assures that smpl.Metric is included in sset.At().Labels(),
+		// hence just checking the length would act like equality.
+		// (This is faster than calling labels.Compare again as we already have some info).
+		if len(sset.At().Labels()) == len(matchers) {
+			s = sset.At()
+			break
+		}
+	}
+
+	if err := sset.Err(); err != nil {
+		// Querier Warnings are ignored. We do not care unless we have an error.
+		return nil, err
+	}
+
+	if s == nil {
+		return nil, nil
+	}
+
+	return s, nil
+}
+
 // SetEvaluationDuration updates evaluationDuration to the duration it took to evaluate the rule on its last evaluation.
 func (r *AlertingRule) SetEvaluationDuration(dur time.Duration) {
 	r.mtx.Lock()
