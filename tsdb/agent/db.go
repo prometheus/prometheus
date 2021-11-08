@@ -33,6 +33,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/wal"
 )
@@ -195,7 +196,7 @@ type DB struct {
 	series  *stripeSeries
 	// deleted is a map of (ref IDs that should be deleted from WAL) to (the WAL segment they
 	// must be kept around to).
-	deleted map[uint64]int
+	deleted map[chunks.HeadSeriesRef]int
 
 	donec chan struct{}
 	stopc chan struct{}
@@ -224,7 +225,7 @@ func Open(l log.Logger, reg prometheus.Registerer, rs *remote.Storage, dir strin
 
 		nextRef: atomic.NewUint64(0),
 		series:  newStripeSeries(opts.StripeSize),
-		deleted: make(map[uint64]int),
+		deleted: make(map[chunks.HeadSeriesRef]int),
 
 		donec: make(chan struct{}),
 		stopc: make(chan struct{}),
@@ -292,7 +293,7 @@ func (db *DB) replayWAL() error {
 		return errors.Wrap(err, "find last checkpoint")
 	}
 
-	multiRef := map[uint64]uint64{}
+	multiRef := map[chunks.HeadSeriesRef]chunks.HeadSeriesRef{}
 
 	if err == nil {
 		sr, err := wal.NewSegmentsReader(dir)
@@ -344,10 +345,10 @@ func (db *DB) replayWAL() error {
 	return nil
 }
 
-func (db *DB) loadWAL(r *wal.Reader, multiRef map[uint64]uint64) (err error) {
+func (db *DB) loadWAL(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef) (err error) {
 	var (
 		dec     record.Decoder
-		lastRef uint64
+		lastRef chunks.HeadSeriesRef
 
 		decoded    = make(chan interface{}, 10)
 		errCh      = make(chan error, 1)
@@ -455,7 +456,7 @@ func (db *DB) loadWAL(r *wal.Reader, multiRef map[uint64]uint64) (err error) {
 		level.Warn(db.logger).Log("msg", "found sample referencing non-existing series", "skipped_series", v)
 	}
 
-	db.nextRef.Store(lastRef)
+	db.nextRef.Store(uint64(lastRef))
 
 	select {
 	case err := <-errCh:
@@ -538,7 +539,7 @@ func (db *DB) truncate(mint int64) error {
 		return nil
 	}
 
-	keep := func(id uint64) bool {
+	keep := func(id chunks.HeadSeriesRef) bool {
 		if db.series.GetByID(id) != nil {
 			return true
 		}
@@ -650,14 +651,15 @@ type appender struct {
 	pendingSamples []record.RefSample
 }
 
-func (a *appender) Append(ref uint64, l labels.Labels, t int64, v float64) (uint64, error) {
+func (a *appender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
 	if ref == 0 {
-		return a.Add(l, t, v)
+		r, err := a.Add(l, t, v)
+		return storage.SeriesRef(r), err
 	}
-	return ref, a.AddFast(ref, t, v)
+	return ref, a.AddFast(chunks.HeadSeriesRef(ref), t, v)
 }
 
-func (a *appender) Add(l labels.Labels, t int64, v float64) (uint64, error) {
+func (a *appender) Add(l labels.Labels, t int64, v float64) (chunks.HeadSeriesRef, error) {
 	hash := l.Hash()
 	series := a.series.GetByHash(hash, l)
 	if series != nil {
@@ -675,7 +677,7 @@ func (a *appender) Add(l labels.Labels, t int64, v float64) (uint64, error) {
 		return 0, errors.Wrap(tsdb.ErrInvalidSample, fmt.Sprintf(`label name "%s" is not unique`, lbl))
 	}
 
-	ref := a.nextRef.Inc()
+	ref := chunks.HeadSeriesRef(a.nextRef.Inc())
 	series = &memSeries{ref: ref, lset: l, lastTs: t}
 
 	a.pendingSeries = append(a.pendingSeries, record.RefSeries{
@@ -696,7 +698,7 @@ func (a *appender) Add(l labels.Labels, t int64, v float64) (uint64, error) {
 	return series.ref, nil
 }
 
-func (a *appender) AddFast(ref uint64, t int64, v float64) error {
+func (a *appender) AddFast(ref chunks.HeadSeriesRef, t int64, v float64) error {
 	series := a.series.GetByID(ref)
 	if series == nil {
 		return storage.ErrNotFound
@@ -718,7 +720,7 @@ func (a *appender) AddFast(ref uint64, t int64, v float64) error {
 	return nil
 }
 
-func (a *appender) AppendExemplar(ref uint64, l labels.Labels, e exemplar.Exemplar) (uint64, error) {
+func (a *appender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
 	// remote_write doesn't support exemplars yet, so do nothing here.
 	return 0, nil
 }

@@ -36,6 +36,11 @@ var (
 	ErrExemplarsDisabled           = fmt.Errorf("exemplar storage is disabled or max exemplars is less than or equal to 0")
 )
 
+// SeriesRef is a generic series reference. In prometheus it is either a
+// HeadSeriesRef or BlockSeriesRef, though other implementations may have
+// their own reference types.
+type SeriesRef uint64
+
 // Appendable allows creating appenders.
 type Appendable interface {
 	// Appender returns a new appender for the storage. The implementation
@@ -175,7 +180,7 @@ type Appender interface {
 	// to Append() at any point. Adding the sample via Append() returns a new
 	// reference number.
 	// If the reference is 0 it must not be used for caching.
-	Append(ref uint64, l labels.Labels, t int64, v float64) (uint64, error)
+	Append(ref SeriesRef, l labels.Labels, t int64, v float64) (SeriesRef, error)
 
 	// Commit submits the collected samples and purges the batch. If Commit
 	// returns a non-nil error, it also rolls back all modifications made in
@@ -196,7 +201,7 @@ type GetRef interface {
 	// Returns reference number that can be used to pass to Appender.Append(),
 	// and a set of labels that will not cause another copy when passed to Appender.Append().
 	// 0 means the appender does not have a reference to this series.
-	GetRef(lset labels.Labels) (uint64, labels.Labels)
+	GetRef(lset labels.Labels) (SeriesRef, labels.Labels)
 }
 
 // ExemplarAppender provides an interface for adding samples to exemplar storage, which
@@ -213,7 +218,7 @@ type ExemplarAppender interface {
 	// Note that in our current implementation of Prometheus' exemplar storage
 	// calls to Append should generate the reference numbers, AppendExemplar
 	// generating a new reference number should be considered possible erroneous behaviour and be logged.
-	AppendExemplar(ref uint64, l labels.Labels, e exemplar.Exemplar) (uint64, error)
+	AppendExemplar(ref SeriesRef, l labels.Labels, e exemplar.Exemplar) (SeriesRef, error)
 }
 
 // SeriesSet contains a set of series.

@@ -143,7 +143,7 @@ type Writer struct {
 
 	// Hold last series to validate that clients insert new series in order.
 	lastSeries labels.Labels
-	lastRef    uint64
+	lastRef    storage.SeriesRef
 
 	crc32 hash.Hash
 
@@ -414,7 +414,7 @@ func (w *Writer) writeMeta() error {
 }
 
 // AddSeries adds the series one at a time along with its chunks.
-func (w *Writer) AddSeries(ref uint64, lset labels.Labels, chunks ...chunks.Meta) error {
+func (w *Writer) AddSeries(ref storage.SeriesRef, lset labels.Labels, chunks ...chunks.Meta) error {
 	if err := w.ensureStage(idxStageSeries); err != nil {
 		return err
 	}
@@ -472,7 +472,7 @@ func (w *Writer) AddSeries(ref uint64, lset labels.Labels, chunks ...chunks.Meta
 		c := chunks[0]
 		w.buf2.PutVarint64(c.MinTime)
 		w.buf2.PutUvarint64(uint64(c.MaxTime - c.MinTime))
-		w.buf2.PutUvarint64(c.Ref)
+		w.buf2.PutUvarint64(uint64(c.Ref))
 		t0 := c.MaxTime
 		ref0 := int64(c.Ref)
 
@@ -1518,7 +1518,7 @@ func (r *Reader) LabelValues(name string, matchers ...*labels.Matcher) ([]string
 
 // LabelNamesFor returns all the label names for the series referred to by IDs.
 // The names returned are sorted.
-func (r *Reader) LabelNamesFor(ids ...uint64) ([]string, error) {
+func (r *Reader) LabelNamesFor(ids ...storage.SeriesRef) ([]string, error) {
 	// Gather offsetsMap the name offsetsMap in the symbol table first
 	offsetsMap := make(map[uint32]struct{})
 	for _, id := range ids {
@@ -1560,7 +1560,7 @@ func (r *Reader) LabelNamesFor(ids ...uint64) ([]string, error) {
 }
 
 // LabelValueFor returns label value for the given label name in the series referred to by ID.
-func (r *Reader) LabelValueFor(id uint64, label string) (string, error) {
+func (r *Reader) LabelValueFor(id storage.SeriesRef, label string) (string, error) {
 	offset := id
 	// In version 2 series IDs are no longer exact references but series are 16-byte padded
 	// and the ID is the multiple of 16 of the actual position.
@@ -1586,7 +1586,7 @@ func (r *Reader) LabelValueFor(id uint64, label string) (string, error) {
 }
 
 // Series reads the series with the given ID and writes its labels and chunks into lbls and chks.
-func (r *Reader) Series(id uint64, lbls *labels.Labels, chks *[]chunks.Meta) error {
+func (r *Reader) Series(id storage.SeriesRef, lbls *labels.Labels, chks *[]chunks.Meta) error {
 	offset := id
 	// In version 2 series IDs are no longer exact references but series are 16-byte padded
 	// and the ID is the multiple of 16 of the actual position.
@@ -1859,7 +1859,7 @@ func (dec *Decoder) Series(b []byte, lbls *labels.Labels, chks *[]chunks.Meta) e
 	ref0 := int64(d.Uvarint64())
 
 	*chks = append(*chks, chunks.Meta{
-		Ref:     uint64(ref0),
+		Ref:     chunks.ChunkRef(ref0),
 		MinTime: t0,
 		MaxTime: maxt,
 	})
@@ -1877,7 +1877,7 @@ func (dec *Decoder) Series(b []byte, lbls *labels.Labels, chks *[]chunks.Meta) e
 		}
 
 		*chks = append(*chks, chunks.Meta{
-			Ref:     uint64(ref0),
+			Ref:     chunks.ChunkRef(ref0),
 			MinTime: mint,
 			MaxTime: maxt,
 		})

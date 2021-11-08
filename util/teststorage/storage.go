@@ -70,6 +70,6 @@ func (s TestStorage) ExemplarQueryable() storage.ExemplarQueryable {
 	return s.exemplarStorage
 }
 
-func (s TestStorage) AppendExemplar(ref uint64, l labels.Labels, e exemplar.Exemplar) (uint64, error) {
+func (s TestStorage) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
 	return ref, s.exemplarStorage.AddExemplar(l, e)
 }
