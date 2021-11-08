@@ -4,7 +4,7 @@ import { Fuzzy, FuzzyResult } from '@nexucis/fuzzy';
 
 const fuz = new Fuzzy({ pre: '<strong>', post: '</strong>', shouldSort: true });
 
-interface Props {
+interface MetricsExplorerProps {
   show: boolean;
   updateShow(show: boolean): void;
   metrics: string[];
@@ -15,8 +15,8 @@ type MetricsExplorerState = {
   searchTerm: string;
 };
 
-class MetricsExplorer extends Component<Props, MetricsExplorerState> {
-  constructor(props: Props) {
+class MetricsExplorer extends Component<MetricsExplorerProps, MetricsExplorerState> {
+  constructor(props: MetricsExplorerProps) {
     super(props);
     this.state = { searchTerm: '' };
   }
