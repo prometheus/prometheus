@@ -142,6 +142,7 @@ export const functionIdentifierTerms = [
     detail: 'function',
     info: 'Calculate the cosine, in radians, for input series',
     type: 'function',
+    // Avoid ranking higher than `count`.
     boost: -1,
   },
   {
@@ -149,6 +150,7 @@ export const functionIdentifierTerms = [
     detail: 'function',
     info: 'Calculate the hyperbolic cosine, in radians, for input series',
     type: 'function',
+    // Avoid ranking higher than `count`.
     boost: -1,
   },
   {
@@ -180,6 +182,7 @@ export const functionIdentifierTerms = [
     detail: 'function',
     info: 'Convert radians to degrees for input series',
     type: 'function',
+    // Avoid ranking higher than `delta`.
     boost: -1,
   },
   {
@@ -331,6 +334,7 @@ export const functionIdentifierTerms = [
     detail: 'function',
     info: 'Convert degrees to radians for input series',
     type: 'function',
+    // Avoid ranking higher than `rate`.
     boost: -1,
   },
   {
