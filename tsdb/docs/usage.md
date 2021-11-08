@@ -7,23 +7,23 @@ Tip: `tsdb/db_test.go` demonstrates various usages of the TSDB library.
 
 ## Instantiating a database
 
-Callers should use [`tsdb.Open`](https://pkg.go.dev/github.com/prometheus/prometheus/tsdb#Open) to open a TSDB.
+Callers should use [`tsdb.Open`](https://pkg.go.dev/github.com/prometheus/prometheus/tsdb#Open) to open a TSDB
 (the directory may be new or pre-existing).
 This returns a [`*tsdb.DB`](https://pkg.go.dev/github.com/prometheus/prometheus/tsdb#DB) which is the actual database.
 
-a `DB` has the following main components:
+A `DB` has the following main components:
 
 * Compactor: a [leveled compactor](https://github.com/prometheus/prometheus/blob/c0c22ed04200a8d24d1d5719f605c85710f0d008/tsdb/compact.go#L78). Note: it is currently the only compactor implementation. It runs automatically.
 * [`Head`](https://pkg.go.dev/github.com/prometheus/prometheus/tsdb#DB.Head)
 
 The `Head` is responsible for a lot.  Here are some of its main components:
 
-* [wal](https://pkg.go.dev/github.com/prometheus/prometheus/tsdb/wal#WAL) (Write Ahead Log)
+* [WAL](https://pkg.go.dev/github.com/prometheus/prometheus/tsdb/wal#WAL) (Write Ahead Log).
 * [`stripeSeries`](https://github.com/prometheus/prometheus/blob/1270b87970baeb926fcce64552db5c744ffaf83f/tsdb/head.go#L1279):
   this holds all the active series by linking to [`memSeries`](https://github.com/prometheus/prometheus/blob/1270b87970baeb926fcce64552db5c744ffaf83f/tsdb/head.go#L1449)
   by an ID (aka "ref") and by labels hash.
-* postings list (reverse index): For any label-value pair, holds all the corresponding series refs. Used for queries.
-* tombstones
+* Postings list (reverse index): For any label-value pair, holds all the corresponding series refs. Used for queries.
+* Tombstones.
 
 
 ## Adding data
@@ -33,9 +33,9 @@ The [golang docs](https://pkg.go.dev/github.com/prometheus/prometheus/storage#Ap
 
 Remember:
 
-* Use Commit() to add the samples to the DB and update the WAL.
-* create a new appender each time you commit.
-* appenders are not concurrency safe, but scrapes run concurrently and as such, leverage multiple appenders concurrently.
+* Use `Commit()` to add the samples to the DB and update the WAL.
+* Create a new appender each time you commit.
+* Appenders are not concurrency safe, but scrapes run concurrently and as such, leverage multiple appenders concurrently.
   This reduces contention, although Commit() contend the same critical section (writing to the WAL is serialized), and may
   inflate append tail latency if multiple appenders try to commit at the same time.
 
@@ -43,14 +43,14 @@ Append may reject data due to these conditions:
 
 1) `timestamp < minValidTime` where `minValidTime` is the highest of:
   * the maxTime of the last block (i.e. the last truncation time of Head) - updated via [`Head.Truncate()`](https://pkg.go.dev/github.com/prometheus/prometheus/tsdb#Head.Truncate) and [`DB.CompactHead()`](https://github.com/prometheus/prometheus/blob/1270b87970baeb926fcce64552db5c744ffaf83f/tsdb/db.go#L968)
-  * `tsdb.min-block-duration/2` older than the max time in the Head chunk. Note that while technically `storage.tsdb.min-block-duration` is configurable, it's a hidden option and changing it is discouraged.  So We can assume this value to be 2h.
+  * `tsdb.min-block-duration/2` older than the max time in the Head block. Note that while technically `storage.tsdb.min-block-duration` is configurable, it's a hidden option and changing it is discouraged.  So We can assume this value to be 2h.
   Breaching this condition results in "out of bounds" errors.  
   The first condition assures the block that will be generated doesn't overlap with the previous one (which simplifies querying)  
   The second condition assures the sample won't go into the so called "compaction window", that is the section of the data that might be in process of being saved into a persistent block on disk.  (because that logic runs concurrently with ingestion without a lock)
 2) The labels don't validate. (if the set is empty or contains duplicate label names)
-3) If the sample, for the respective series (based on all the labels) is out of order or has a different value for the last (highest) timestamp seen. (results in storage.ErrOutOfOrderSample or storage.ErrDuplicateSampleForTimestamp respectively)
+3) If the sample, for the respective series (based on all the labels) is out of order or has a different value for the last (highest) timestamp seen. (results in `storage.ErrOutOfOrderSample` and `storage.ErrDuplicateSampleForTimestamp` respectively)
 
-Commit() may also refuse data that is out of order with respect to samples that were added via a different appender.
+`Commit()` may also refuse data that is out of order with respect to samples that were added via a different appender.
 
 Example:
 
@@ -79,12 +79,14 @@ func main() {
 	app := db.Appender(ctx)
 
 	series := labels.FromStrings("foo", "bar")
+	// ref is 0 for the first append since we don't know the reference for the series.
 	ref, err := app.Append(0, series, time.Now().Unix(), 123)
 	time.Sleep(time.Second)
+	// Re-using the ref from above since it's the same series, makes append faster.
 	_, err = app.Append(ref, series, time.Now().Unix(), 124)
 	err = app.Commit()
 	noErr(err)
-	app = db.Appender(ctx) // need a new one. See app.Commit() docs
+	app = db.Appender(ctx) // Need a new one. See app.Commit() docs.
 	// ... adding more samples.
 }
 ```
