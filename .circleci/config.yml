@@ -2,7 +2,7 @@
 version: 2.1
 
 orbs:
-  prometheus: prometheus/prometheus@0.11.0
+  prometheus: prometheus/prometheus@0.14.0
   go: circleci/go@1.7.0
   win: circleci/windows@2.3.0
 
@@ -140,8 +140,19 @@ workflows:
               only: /.*/
       - prometheus/build:
           name: build
+          parallelism: 3
+          promu_opts: "-p linux/amd64 -p windows/amd64 -p linux/arm64 -p darwin/amd64 -p darwin/arm64 -p linux/386"
+          filters:
+            tags:
+              ignore: /^v[0-9]+(\.[0-9]+){2}(-.+|[^-.]*)$/
+            branches:
+              ignore: /^(main|release-.*|.*build-all.*)$/
+      - prometheus/build:
+          name: build_all
           parallelism: 12
           filters:
+            branches:
+              only: /^(main|release-.*|.*build-all.*)$/
             tags:
               only: /^v[0-9]+(\.[0-9]+){2}(-.+|[^-.]*)$/
       - prometheus/publish_main:
@@ -149,7 +160,7 @@ workflows:
           requires:
             - test_go
             - test_ui
-            - build
+            - build_all
           filters:
             branches:
               only: main
@@ -159,7 +170,7 @@ workflows:
           requires:
             - test_go
             - test_ui
-            - build
+            - build_all
           filters:
             tags:
               only: /^v[0-9]+(\.[0-9]+){2}(-.+|[^-.]*)$/
