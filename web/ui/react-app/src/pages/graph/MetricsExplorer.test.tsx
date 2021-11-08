@@ -43,13 +43,4 @@ describe('MetricsExplorer', () => {
     metric.simulate('click');
     expect(metricsExplorerProps.insertAtCursor).toHaveBeenCalled();
   });
-
-  /*  it('executes the query when clicking the execute button', () => {
-    const spyExecuteQuery = jest.fn();
-    const props = { ...expressionInputProps, executeQuery: spyExecuteQuery };
-    const wrapper = mount(<ExpressionInput {...props} />);
-    const btn = wrapper.find(Button).filterWhere((btn) => btn.hasClass('execute-btn'));
-    btn.simulate('click');
-    expect(spyExecuteQuery).toHaveBeenCalledTimes(1);
-  });  */
 });

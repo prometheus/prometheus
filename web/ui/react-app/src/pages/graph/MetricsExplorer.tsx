@@ -1,6 +1,7 @@
 import React, { Component, ChangeEvent } from 'react';
 import { Modal, ModalBody, ModalHeader, Input } from 'reactstrap';
 import { Fuzzy, FuzzyResult } from '@nexucis/fuzzy';
+
 const fuz = new Fuzzy({ pre: '<strong>', post: '</strong>', shouldSort: true });
 
 interface Props {
@@ -9,9 +10,11 @@ interface Props {
   metrics: string[];
   insertAtCursor(value: string): void;
 }
+
 type MetricsExplorerState = {
   searchTerm: string;
 };
+
 class MetricsExplorer extends Component<Props, MetricsExplorerState> {
   constructor(props: Props) {
     super(props);
