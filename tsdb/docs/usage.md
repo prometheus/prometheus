@@ -16,7 +16,7 @@ A `DB` has the following main components:
 * Compactor: a [leveled compactor](https://github.com/prometheus/prometheus/blob/c0c22ed04200a8d24d1d5719f605c85710f0d008/tsdb/compact.go#L78). Note: it is currently the only compactor implementation. It runs automatically.
 * [`Head`](https://pkg.go.dev/github.com/prometheus/prometheus/tsdb#DB.Head)
 
-The `Head` is responsible for a lot.  Here are some of its main components:
+The `Head` is responsible for a lot.  Here are its main components:
 
 * [WAL](https://pkg.go.dev/github.com/prometheus/prometheus/tsdb/wal#WAL) (Write Ahead Log).
 * [`stripeSeries`](https://github.com/prometheus/prometheus/blob/1270b87970baeb926fcce64552db5c744ffaf83f/tsdb/head.go#L1279):
@@ -24,6 +24,7 @@ The `Head` is responsible for a lot.  Here are some of its main components:
   by an ID (aka "ref") and by labels hash.
 * Postings list (reverse index): For any label-value pair, holds all the corresponding series refs. Used for queries.
 * Tombstones.
+* [Blocks (persistent blocks)](https://pkg.go.dev/github.com/prometheus/prometheus/tsdb#DB.Blocks)
 
 
 ## Adding data
@@ -127,7 +128,7 @@ func main() {
 	db, err := tsdb.Open("tsdb-test", nil, nil, tsdb.DefaultOptions(), nil)
 	noErr(err)
 
-	querier, err := db.Querier(context.TODO(), math.MinInt64, math.MaxInt64)
+	querier, err := db.Querier(context.Background(), math.MinInt64, math.MaxInt64)
 	noErr(err)
 	ss := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
 
