@@ -221,7 +221,7 @@ Alertmanager API v2 was released in Alertmanager v0.16.0 (released in January
 * [ENHANCEMENT] Mixins: Scope grafana configuration. #8332
 * [ENHANCEMENT] Kubernetes SD: Add endpoint labels metadata. #8273
 * [ENHANCEMENT] UI: Expose total number of label pairs in head in TSDB stats page. #8343
-* [ENHANCEMENT] TSDB: Reload blocks every minute, to detect new blocks and enforce retention more often. #8343
+* [ENHANCEMENT] TSDB: Reload blocks every minute, to detect new blocks and enforce retention more often. #8340
 * [BUGFIX] API: Fix global URL when external address has no port. #8359
 * [BUGFIX] Backfill: Fix error message handling. #8432
 * [BUGFIX] Backfill: Fix "add sample: out of bounds" error when series span an entire block. #8476
