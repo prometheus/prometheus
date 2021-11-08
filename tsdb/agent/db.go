@@ -717,7 +717,7 @@ func (a *appender) getOrCreate(l labels.Labels) (series *memSeries, created bool
 	}
 
 	series = &memSeries{ref: a.nextRef.Inc(), lset: l}
-	a.series.Set(l.Hash(), series)
+	a.series.Set(hash, series)
 	return series, true
 }
 
@@ -746,7 +746,7 @@ func (a *appender) AddFast(ref uint64, t int64, v float64) error {
 func (a *appender) AppendExemplar(ref uint64, l labels.Labels, e exemplar.Exemplar) (uint64, error) {
 	s := a.series.GetByID(ref)
 	if s == nil {
-		return 0, fmt.Errorf("unknown series ref. when trying to add exemplar: %d", ref)
+		return 0, fmt.Errorf("unknown series ref when trying to add exemplar: %d", ref)
 	}
 
 	// Ensure no empty labels have gotten through.
