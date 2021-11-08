@@ -1469,13 +1469,24 @@ func (s sample) V() float64                        { return s.v }
 type memSeries struct {
 	sync.RWMutex
 
-	ref           chunks.HeadSeriesRef
-	lset          labels.Labels
-	mmappedChunks []*mmappedChunk // Immutable chunks on disk that have not yet gone into a block, in order of ascending time stamps.
-	mmMaxTime     int64           // Max time of any mmapped chunk, only used during WAL replay.
-	headChunk     *memChunk       // Most recent chunk in memory that's still being built.
-	chunkRange    int64
-	firstChunkID  int
+	ref  chunks.HeadSeriesRef
+	lset labels.Labels
+
+	// Immutable chunks on disk that have not yet gone into a block, in order of ascending time stamps.
+	// When compaction runs, chunks get moved into a block and all pointers are shifted like so:
+	//
+	//                                    /------- let's say these 2 chunks get stored into a block
+	//                                    |  |
+	// before compaction: mmappedChunks=[p5,p6,p7,p8,p9] firstChunkID=5
+	//  after compaction: mmappedChunks=[p7,p8,p9]       firstChunkID=7
+	//
+	// pN is the pointer to the mmappedChunk referered to by HeadChunkID=N
+	mmappedChunks []*mmappedChunk
+
+	mmMaxTime    int64     // Max time of any mmapped chunk, only used during WAL replay.
+	headChunk    *memChunk // Most recent chunk in memory that's still being built.
+	chunkRange   int64
+	firstChunkID chunks.HeadChunkID // HeadChunkID for mmappedChunks[0]
 
 	nextAt int64 // Timestamp at which to cut the next chunk.
 
@@ -1535,7 +1546,7 @@ func (s *memSeries) truncateChunksBefore(mint int64) (removed int) {
 	if s.headChunk != nil && s.headChunk.maxTime < mint {
 		// If head chunk is truncated, we can truncate all mmapped chunks.
 		removed = 1 + len(s.mmappedChunks)
-		s.firstChunkID += removed
+		s.firstChunkID += chunks.HeadChunkID(removed)
 		s.headChunk = nil
 		s.mmappedChunks = nil
 		return removed
@@ -1548,7 +1559,7 @@ func (s *memSeries) truncateChunksBefore(mint int64) (removed int) {
 			removed = i + 1
 		}
 		s.mmappedChunks = append(s.mmappedChunks[:0], s.mmappedChunks[removed:]...)
-		s.firstChunkID += removed
+		s.firstChunkID += chunks.HeadChunkID(removed)
 	}
 	return removed
 }

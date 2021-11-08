@@ -561,7 +561,7 @@ func TestMemSeries_truncateChunks(t *testing.T) {
 	// Check that truncate removes half of the chunks and afterwards
 	// that the ID of the last chunk still gives us the same chunk afterwards.
 	countBefore := len(s.mmappedChunks) + 1 // +1 for the head chunk.
-	lastID := s.chunkID(countBefore - 1)
+	lastID := s.headChunkID(countBefore - 1)
 	lastChunk, _, err := s.chunk(lastID, chunkDiskMapper)
 	require.NoError(t, err)
 	require.NotNil(t, lastChunk)
@@ -582,11 +582,11 @@ func TestMemSeries_truncateChunks(t *testing.T) {
 
 	// Validate that the series' sample buffer is applied correctly to the last chunk
 	// after truncation.
-	it1 := s.iterator(s.chunkID(len(s.mmappedChunks)), nil, chunkDiskMapper, nil)
+	it1 := s.iterator(s.headChunkID(len(s.mmappedChunks)), nil, chunkDiskMapper, nil)
 	_, ok := it1.(*memSafeIterator)
 	require.True(t, ok)
 
-	it2 := s.iterator(s.chunkID(len(s.mmappedChunks)-1), nil, chunkDiskMapper, nil)
+	it2 := s.iterator(s.headChunkID(len(s.mmappedChunks)-1), nil, chunkDiskMapper, nil)
 	_, ok = it2.(*memSafeIterator)
 	require.False(t, ok, "non-last chunk incorrectly wrapped with sample buffer")
 }
@@ -2262,7 +2262,7 @@ func TestMemSafeIteratorSeekIntoBuffer(t *testing.T) {
 		require.True(t, ok, "sample append failed")
 	}
 
-	it := s.iterator(s.chunkID(len(s.mmappedChunks)), nil, chunkDiskMapper, nil)
+	it := s.iterator(s.headChunkID(len(s.mmappedChunks)), nil, chunkDiskMapper, nil)
 	_, ok := it.(*memSafeIterator)
 	require.True(t, ok)
 
