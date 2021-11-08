@@ -452,10 +452,7 @@ func (w *WAL) Repair(origErr error) error {
 	if err != nil {
 		return err
 	}
-	if err := w.setSegment(s); err != nil {
-		return err
-	}
-	return nil
+	return w.setSegment(s)
 }
 
 // SegmentName builds a segment name for the directory.
