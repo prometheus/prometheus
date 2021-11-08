@@ -26,6 +26,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
 )
 
@@ -53,7 +54,7 @@ type writeToMock struct {
 	samplesAppended      int
 	exemplarsAppended    int
 	seriesLock           sync.Mutex
-	seriesSegmentIndexes map[uint64]int
+	seriesSegmentIndexes map[chunks.HeadSeriesRef]int
 }
 
 func (wtm *writeToMock) Append(s []record.RefSample) bool {
@@ -98,7 +99,7 @@ func (wtm *writeToMock) checkNumLabels() int {
 
 func newWriteToMock() *writeToMock {
 	return &writeToMock{
-		seriesSegmentIndexes: make(map[uint64]int),
+		seriesSegmentIndexes: make(map[chunks.HeadSeriesRef]int),
 	}
 }
 
@@ -129,7 +130,7 @@ func TestTailSamples(t *testing.T) {
 				ref := i + 100
 				series := enc.Series([]record.RefSeries{
 					{
-						Ref:    uint64(ref),
+						Ref:    chunks.HeadSeriesRef(ref),
 						Labels: labels.Labels{labels.Label{Name: "__name__", Value: fmt.Sprintf("metric_%d", i)}},
 					},
 				}, nil)
@@ -139,7 +140,7 @@ func TestTailSamples(t *testing.T) {
 					inner := rand.Intn(ref + 1)
 					sample := enc.Samples([]record.RefSample{
 						{
-							Ref: uint64(inner),
+							Ref: chunks.HeadSeriesRef(inner),
 							T:   now.UnixNano() + 1,
 							V:   float64(i),
 						},
@@ -151,7 +152,7 @@ func TestTailSamples(t *testing.T) {
 					inner := rand.Intn(ref + 1)
 					exemplar := enc.Exemplars([]record.RefExemplar{
 						{
-							Ref:    uint64(inner),
+							Ref:    chunks.HeadSeriesRef(inner),
 							T:      now.UnixNano() + 1,
 							V:      float64(i),
 							Labels: labels.FromStrings("traceID", fmt.Sprintf("trace-%d", inner)),
@@ -219,7 +220,7 @@ func TestReadToEndNoCheckpoint(t *testing.T) {
 			for i := 0; i < seriesCount; i++ {
 				series := enc.Series([]record.RefSeries{
 					{
-						Ref:    uint64(i),
+						Ref:    chunks.HeadSeriesRef(i),
 						Labels: labels.Labels{labels.Label{Name: "__name__", Value: fmt.Sprintf("metric_%d", i)}},
 					},
 				}, nil)
@@ -227,7 +228,7 @@ func TestReadToEndNoCheckpoint(t *testing.T) {
 				for j := 0; j < samplesCount; j++ {
 					sample := enc.Samples([]record.RefSample{
 						{
-							Ref: uint64(j),
+							Ref: chunks.HeadSeriesRef(j),
 							T:   int64(i),
 							V:   float64(i),
 						},
@@ -288,7 +289,7 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 				ref := i + 100
 				series := enc.Series([]record.RefSeries{
 					{
-						Ref:    uint64(ref),
+						Ref:    chunks.HeadSeriesRef(ref),
 						Labels: labels.Labels{labels.Label{Name: "__name__", Value: fmt.Sprintf("metric_%d", i)}},
 					},
 				}, nil)
@@ -300,7 +301,7 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 					inner := rand.Intn(ref + 1)
 					sample := enc.Samples([]record.RefSample{
 						{
-							Ref: uint64(inner),
+							Ref: chunks.HeadSeriesRef(inner),
 							T:   int64(i),
 							V:   float64(i),
 						},
@@ -309,14 +310,14 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 				}
 			}
 
-			Checkpoint(log.NewNopLogger(), w, 0, 1, func(x uint64) bool { return true }, 0)
+			Checkpoint(log.NewNopLogger(), w, 0, 1, func(x chunks.HeadSeriesRef) bool { return true }, 0)
 			w.Truncate(1)
 
 			// Write more records after checkpointing.
 			for i := 0; i < seriesCount; i++ {
 				series := enc.Series([]record.RefSeries{
 					{
-						Ref:    uint64(i),
+						Ref:    chunks.HeadSeriesRef(i),
 						Labels: labels.Labels{labels.Label{Name: "__name__", Value: fmt.Sprintf("metric_%d", i)}},
 					},
 				}, nil)
@@ -325,7 +326,7 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 				for j := 0; j < samplesCount; j++ {
 					sample := enc.Samples([]record.RefSample{
 						{
-							Ref: uint64(j),
+							Ref: chunks.HeadSeriesRef(j),
 							T:   int64(i),
 							V:   float64(i),
 						},
@@ -377,7 +378,7 @@ func TestReadCheckpoint(t *testing.T) {
 				ref := i + 100
 				series := enc.Series([]record.RefSeries{
 					{
-						Ref:    uint64(ref),
+						Ref:    chunks.HeadSeriesRef(ref),
 						Labels: labels.Labels{labels.Label{Name: "__name__", Value: fmt.Sprintf("metric_%d", i)}},
 					},
 				}, nil)
@@ -387,7 +388,7 @@ func TestReadCheckpoint(t *testing.T) {
 					inner := rand.Intn(ref + 1)
 					sample := enc.Samples([]record.RefSample{
 						{
-							Ref: uint64(inner),
+							Ref: chunks.HeadSeriesRef(inner),
 							T:   int64(i),
 							V:   float64(i),
 						},
@@ -395,7 +396,7 @@ func TestReadCheckpoint(t *testing.T) {
 					require.NoError(t, w.Log(sample))
 				}
 			}
-			Checkpoint(log.NewNopLogger(), w, 30, 31, func(x uint64) bool { return true }, 0)
+			Checkpoint(log.NewNopLogger(), w, 30, 31, func(x chunks.HeadSeriesRef) bool { return true }, 0)
 			w.Truncate(32)
 
 			// Start read after checkpoint, no more data written.
@@ -441,7 +442,7 @@ func TestReadCheckpointMultipleSegments(t *testing.T) {
 					ref := j + (i * 100)
 					series := enc.Series([]record.RefSeries{
 						{
-							Ref:    uint64(ref),
+							Ref:    chunks.HeadSeriesRef(ref),
 							Labels: labels.Labels{labels.Label{Name: "__name__", Value: fmt.Sprintf("metric_%d", j)}},
 						},
 					}, nil)
@@ -451,7 +452,7 @@ func TestReadCheckpointMultipleSegments(t *testing.T) {
 						inner := rand.Intn(ref + 1)
 						sample := enc.Samples([]record.RefSample{
 							{
-								Ref: uint64(inner),
+								Ref: chunks.HeadSeriesRef(inner),
 								T:   int64(i),
 								V:   float64(i),
 							},
@@ -521,7 +522,7 @@ func TestCheckpointSeriesReset(t *testing.T) {
 				ref := i + 100
 				series := enc.Series([]record.RefSeries{
 					{
-						Ref:    uint64(ref),
+						Ref:    chunks.HeadSeriesRef(ref),
 						Labels: labels.Labels{labels.Label{Name: "__name__", Value: fmt.Sprintf("metric_%d", i)}},
 					},
 				}, nil)
@@ -531,7 +532,7 @@ func TestCheckpointSeriesReset(t *testing.T) {
 					inner := rand.Intn(ref + 1)
 					sample := enc.Samples([]record.RefSample{
 						{
-							Ref: uint64(inner),
+							Ref: chunks.HeadSeriesRef(inner),
 							T:   int64(i),
 							V:   float64(i),
 						},
@@ -554,7 +555,7 @@ func TestCheckpointSeriesReset(t *testing.T) {
 			})
 			require.Equal(t, seriesCount, wt.checkNumLabels())
 
-			_, err = Checkpoint(log.NewNopLogger(), w, 2, 4, func(x uint64) bool { return true }, 0)
+			_, err = Checkpoint(log.NewNopLogger(), w, 2, 4, func(x chunks.HeadSeriesRef) bool { return true }, 0)
 			require.NoError(t, err)
 
 			err = w.Truncate(5)

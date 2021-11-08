@@ -1475,7 +1475,7 @@ func TestScrapeLoopAppendCacheEntryButErrNotFound(t *testing.T) {
 		false,
 	)
 
-	fakeRef := uint64(1)
+	fakeRef := storage.SeriesRef(1)
 	expValue := float64(1)
 	metric := `metric{n="1"} 1`
 	p := textparse.New([]byte(metric), "")
@@ -1962,7 +1962,7 @@ type errorAppender struct {
 	collectResultAppender
 }
 
-func (app *errorAppender) Append(ref uint64, lset labels.Labels, t int64, v float64) (uint64, error) {
+func (app *errorAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
 	switch lset.Get(model.MetricNameLabel) {
 	case "out_of_order":
 		return 0, storage.ErrOutOfOrderSample
