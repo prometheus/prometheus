@@ -432,7 +432,7 @@ func analyzeBlock(path, blockID string, limit int, runExtended bool) error {
 	meta := block.Meta()
 	fmt.Printf("Block ID: %s\n", meta.ULID)
 	// Presume 1ms resolution that Prometheus uses.
-	fmt.Printf("Duration: %s\n", (time.Duration(meta.MaxTime-meta.MinTime) * 1e6).String())
+	fmt.Printf("Duration: %s\n", time.Duration(meta.MaxTime-meta.MinTime*time.Millisecond.Nanoseconds()).String())
 	fmt.Printf("Series: %d\n", meta.Stats.NumSeries)
 	ir, err := block.Index()
 	if err != nil {
@@ -621,6 +621,134 @@ func analyzeCompaction(block tsdb.BlockReader, indexr tsdb.IndexReader) (err err
 			fmt.Printf("#")
 		}
 		fmt.Println()
+	}
+
+	return nil
+}
+
+func analyzeBlockChunks(path, blockID string, limit int) error {
+	db, block, err := openBlock(path, blockID)
+	if err != nil {
+		return fmt.Errorf("failed to open block: %w", err)
+	}
+	defer func() {
+		err = tsdb_errors.NewMulti(err, db.Close()).Err()
+	}()
+
+	ir, err := block.Index()
+	if err != nil {
+		return fmt.Errorf("failed to open block index: %w", err)
+	}
+	defer ir.Close()
+
+	cr, err := block.Chunks()
+	if err != nil {
+		return fmt.Errorf("failed to open chunks: %w", err)
+	}
+	defer cr.Close()
+
+	postingsr, err := ir.Postings(index.AllPostingsKey())
+	if err != nil {
+		return fmt.Errorf("failed to open postings reader: %w", err)
+	}
+
+	i := 0
+
+	type ChunkStat struct {
+		Metric     string
+		Samples    int
+		Unique     int
+		Uniqueness float64
+		Bytes      int
+	}
+
+	var stats []ChunkStat
+
+	for postingsr.Next() {
+		var (
+			lset = labels.Labels{}
+			chks []chunks.Meta
+		)
+		if err := ir.Series(postingsr.At(), &lset, &chks); err != nil {
+			return fmt.Errorf("failed to get chunks for series: %w", err)
+		}
+
+		dedup := map[float64]struct{}{}
+		var s []float64
+		bytesLen := 0
+
+		for _, c := range chks {
+			chunk, err := cr.Chunk(c.Ref)
+			if err != nil {
+				return fmt.Errorf("failed to open chunk: %w", err)
+			}
+			bytesLen += len(chunk.Bytes())
+
+			it := chunk.Iterator(nil)
+			for it.Next() {
+				_, v := it.At()
+				dedup[v] = struct{}{}
+				s = append(s, v)
+			}
+		}
+
+		if len(s) < 10 {
+			// Ignore series with less than 10 samples - not worth redoing whatsoever.
+			continue
+		}
+
+		stats = append(stats, ChunkStat{
+			Metric:     lset.String(),
+			Samples:    len(s),
+			Unique:     len(dedup),
+			Uniqueness: float64(len(dedup)) / float64(len(s)),
+			Bytes:      bytesLen,
+		})
+
+		i++
+	}
+
+	// ALL
+
+	//sort.Slice(stats, func(i, j int) bool {
+	//	return stats[i].Samples > stats[j].Samples
+	//})
+	//
+	//w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', tabwriter.Debug)
+	//_, _ = fmt.Fprintln(w, "Metric\tSamples\tUnique\tUniqueness\tBytes\tBytes/Sample")
+	//for _, s := range stats {
+	//	_, _ = fmt.Fprintf(w, "%s\t%d\t%d\t%.5f\t%d\t%.2f\n", s.Metric, s.Samples, s.Unique, s.Uniqueness, s.Bytes, float64(s.Bytes)/float64(s.Samples))
+	//}
+	//_ = w.Flush()
+
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', tabwriter.Debug)
+	_, _ = fmt.Fprintln(w, "Metric\tSamples\tUnique\tUniqueness\tBytes\tBytes/Sample")
+	rleChunks := 0
+	for _, s := range stats {
+		if s.Uniqueness < 0.0025 {
+			rleChunks += 1
+			_, _ = fmt.Fprintf(w, "%s\t%d\t%d\t%.5f\t%d\t%.2f\n", s.Metric, s.Samples, s.Unique, s.Uniqueness, s.Bytes, float64(s.Bytes)/float64(s.Samples))
+		}
+	}
+	_ = w.Flush()
+
+	//w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', tabwriter.Debug)
+	//_, _ = fmt.Fprintln(w, "Metric\tSamples\tUnique\tUniqueness\tBytes\tBytes/Sample")
+	deltaChunks := 0
+	for _, s := range stats {
+		if s.Uniqueness > 0.99 { // TODO: Something's wrong with this still
+			deltaChunks += 1
+			//_, _ = fmt.Fprintf(w, "%s\t%d\t%d\t%.5f\t%d\t%.2f\n", s.Metric, s.Samples, s.Unique, s.Uniqueness, s.Bytes, float64(s.Bytes)/float64(s.Samples))
+		}
+	}
+	//_ = w.Flush()
+
+	fmt.Println("total chunks", len(stats))
+	fmt.Printf("possible RLE chunks %d that is %.3f%% of all chunks\n", rleChunks, 100*float64(rleChunks)/float64(len(stats)))
+	fmt.Printf("possible delta chunks %d that is %.3f%% of all chunks\n", deltaChunks, 100*float64(deltaChunks)/float64(len(stats)))
+
+	if postingsr.Err() != nil {
+		return fmt.Errorf("encountered error iterating through postings: %w", err)
 	}
 
 	return nil

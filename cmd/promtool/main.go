@@ -43,7 +43,7 @@ import (
 	"github.com/prometheus/common/version"
 	"github.com/prometheus/exporter-toolkit/web"
 	"gopkg.in/alecthomas/kingpin.v2"
-	yaml "gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v2"
 
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
@@ -162,6 +162,11 @@ func main() {
 	analyzeLimit := tsdbAnalyzeCmd.Flag("limit", "How many items to show in each list.").Default("20").Int()
 	analyzeRunExtended := tsdbAnalyzeCmd.Flag("extended", "Run extended analysis.").Bool()
 
+	tsdbChunksCmd := tsdbCmd.Command("chunks", "Analyze the chunks of a block.")
+	analyzeChunksPath := tsdbChunksCmd.Arg("db path", "Database path (default is "+defaultDBPath+").").Default(defaultDBPath).String()
+	analyzeChunksBlockID := tsdbChunksCmd.Arg("block id", "Block to analyze (default is the last block).").String()
+	analyzeChunksLimit := tsdbChunksCmd.Flag("limit", "How many items to show in each list.").Default("20").Int()
+
 	tsdbListCmd := tsdbCmd.Command("list", "List tsdb blocks.")
 	listHumanReadable := tsdbListCmd.Flag("human-readable", "Print human readable values.").Short('r').Bool()
 	listPath := tsdbListCmd.Arg("db path", "Database path (default is "+defaultDBPath+").").Default(defaultDBPath).String()
@@ -268,6 +273,9 @@ func main() {
 
 	case tsdbAnalyzeCmd.FullCommand():
 		os.Exit(checkErr(analyzeBlock(*analyzePath, *analyzeBlockID, *analyzeLimit, *analyzeRunExtended)))
+
+	case tsdbChunksCmd.FullCommand():
+		os.Exit(checkErr(analyzeBlockChunks(*analyzeChunksPath, *analyzeChunksBlockID, *analyzeChunksLimit)))
 
 	case tsdbListCmd.FullCommand():
 		os.Exit(checkErr(listBlocks(*listPath, *listHumanReadable)))
