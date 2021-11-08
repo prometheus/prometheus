@@ -11,8 +11,6 @@ branch="repo_sync_codemirror"
 commit_msg="Update codemirror"
 pr_title="Synchronize codemirror from prometheus/prometheus"
 pr_msg="Propagating changes from prometheus/prometheus default branch."
-target_repo="prometheus/codemirror-promql"
-source_path="web/ui/module/codemirror-promql"
 
 color_red='\e[31m'
 color_green='\e[32m'
@@ -44,10 +42,16 @@ excluded_dirs=".github .circleci"
 # Go to the root of the repo
 cd "$(git rev-parse --show-cdup)" || exit 1
 
-source_dir="$(pwd)/${source_path}"
-
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "${tmp_dir}"' EXIT
+
+source_dir() {
+  source_path="$1"
+  cd "$(git rev-parse --show-cdup)" || exit 1
+
+  source_dir="$(pwd)/${source_path}"
+  echo "${source_dir}"
+}
 
 ## Internal functions
 github_api() {
@@ -86,6 +90,9 @@ process_repo() {
   local org_repo
   local default_branch
   org_repo="$1"
+  source_path="$2"
+  should_clear="$3"
+  source_dir=$(source_dir "${source_path}")
   mkdir -p "${tmp_dir}/${org_repo}"
   echo_green "Processing '${org_repo}'"
 
@@ -101,7 +108,10 @@ process_repo() {
   cd "${tmp_dir}/${org_repo}" || return 1
   git checkout -b "${branch}" || return 1
 
-  git rm -r .
+  if [[ -z "${should_clear}" ]]; then
+    git rm -r .
+    return
+  fi
 
   cp -ra ${source_dir}/. .
   git add .
@@ -132,4 +142,5 @@ process_repo() {
   fi
 }
 
-process_repo ${target_repo}
+process_repo "prometheus/codemirror-promql" "web/ui/module/codemirror-promql"
+process_repo "prometheus/lezer-promql" "web/ui/module/codemirror-promql/src/grammar" "true"
