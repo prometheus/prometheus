@@ -35,6 +35,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/template"
 	"github.com/prometheus/prometheus/util/strutil"
+	"github.com/prometheus/prometheus/storage"
 )
 
 const (
