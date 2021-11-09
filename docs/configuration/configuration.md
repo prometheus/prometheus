@@ -2752,7 +2752,7 @@ queue_config:
   # Initial retry delay. Gets doubled for every retry.
   [ min_backoff: <duration> | default = 30ms ]
   # Maximum retry delay.
-  [ max_backoff: <duration> | default = 100ms ]
+  [ max_backoff: <duration> | default = 5s ]
   # Retry upon receiving a 429 status code from the remote-write storage.
   # This is experimental and might change in the future.
   [ retry_on_http_429: <boolean> | default = false ]
