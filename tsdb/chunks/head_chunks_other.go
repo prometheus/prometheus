@@ -17,5 +17,6 @@
 package chunks
 
 // HeadChunkFilePreallocationSize is the size to which the m-map file should be preallocated when a new file is cut.
-// Windows needs pre-allocations while the other OS does not.
-var HeadChunkFilePreallocationSize int64
+// Windows needs pre-allocations while the other OS does not. But we observed that a 0 pre-allocation causes unit tests to flake.
+// This small allocation for non-Windows OSes removes the flake.
+var HeadChunkFilePreallocationSize int64 = MinWriteBufferSize * 2
