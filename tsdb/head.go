@@ -1527,6 +1527,7 @@ type memSeries struct {
 	txs *txRing
 
 	// Temporary variable for sparsehistogram experiment.
+	// true if the head chunk in the series is for histograms.
 	histogramSeries bool
 }
 

@@ -589,6 +589,7 @@ func (s *memSeries) append(t int64, v float64, appendID uint64, chunkDiskMapper 
 	}
 
 	s.app.Append(t, v)
+	s.histogramSeries = false
 
 	c.maxTime = t
 
@@ -698,6 +699,13 @@ func (s *memSeries) appendPreprocessor(t int64, e chunkenc.Encoding, chunkDiskMa
 	// Out of order sample.
 	if c.maxTime >= t {
 		return c, false, chunkCreated
+	}
+
+	if c.chunk.Encoding() != e {
+		// The chunk encoding expected by this append is different than the head chunk's
+		// encoding. So we cut a new chunk with the expected encoding.
+		c = s.cutNewHeadChunk(t, e, chunkDiskMapper)
+		chunkCreated = true
 	}
 
 	numSamples := c.chunk.NumSamples()
