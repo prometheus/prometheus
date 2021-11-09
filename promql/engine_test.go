@@ -2460,4 +2460,5 @@ func TestSparseHistogramRate(t *testing.T) {
 	require.NoError(t, err)
 	res := qry.Exec(test.Context())
 	require.NoError(t, res.Err)
+	fmt.Println(res)
 }

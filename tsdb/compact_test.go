@@ -1533,7 +1533,6 @@ func TestSparseHistogramSpaceSavings(t *testing.T) {
 								require.NoError(t, err)
 								itIdx++
 							}
-							require.NoError(t, it.Err())
 							// _count metric.
 							countLbls := ah.baseLabels.Copy()
 							countLbls[0].Value = countLbls[0].Value + "_count"
