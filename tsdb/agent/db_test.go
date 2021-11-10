@@ -39,7 +39,7 @@ func TestUnsupported(t *testing.T) {
 	opts := DefaultOptions()
 	logger := log.NewNopLogger()
 
-	s, err := Open(logger, prometheus.DefaultRegisterer, nil, promAgentDir, opts)
+	s, err := Open(logger, prometheus.NewRegistry(), nil, promAgentDir, opts)
 	require.NoError(t, err)
 	defer func() {
 		require.NoError(t, s.Close())
