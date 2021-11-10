@@ -21,8 +21,9 @@ import (
 
 	"github.com/go-kit/log"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
-	"github.com/prometheus/prometheus/util/testutil"
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 // TestDirLockerUsage performs a set of tests which guarantee correct usage of
@@ -70,7 +71,7 @@ func TestDirLockerUsage(t *testing.T, open func(t *testing.T, data string, creat
 			if c.fileAlreadyExists {
 				tmpLocker, err := NewDirLocker(tmpdir, "tsdb", log.NewNopLogger(), nil)
 				require.NoError(t, err)
-				err = ioutil.WriteFile(tmpLocker.path, []byte{}, 0644)
+				err = ioutil.WriteFile(tmpLocker.path, []byte{}, 0o644)
 				require.NoError(t, err)
 			}
 
