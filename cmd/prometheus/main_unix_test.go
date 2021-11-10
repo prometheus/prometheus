@@ -17,11 +17,14 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
 	"testing"
 	"time"
+
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 // As soon as prometheus starts responding to http request it should be able to
@@ -31,7 +34,9 @@ func TestStartupInterrupt(t *testing.T) {
 		t.Skip("skipping test in short mode.")
 	}
 
-	prom := exec.Command(promPath, "-test.main", "--config.file="+promConfig, "--storage.tsdb.path="+t.TempDir())
+	port := fmt.Sprintf(":%d", testutil.RandomUnprivilegedPort(t))
+
+	prom := exec.Command(promPath, "-test.main", "--config.file="+promConfig, "--storage.tsdb.path="+t.TempDir(), "--web.listen-address=0.0.0.0"+port)
 	err := prom.Start()
 	if err != nil {
 		t.Fatalf("execution error: %v", err)
@@ -45,11 +50,13 @@ func TestStartupInterrupt(t *testing.T) {
 	var startedOk bool
 	var stoppedErr error
 
+	url := "http://localhost" + port + "/graph"
+
 Loop:
 	for x := 0; x < 10; x++ {
 		// error=nil means prometheus has started so we can send the interrupt
 		// signal and wait for the graceful shutdown.
-		if _, err := http.Get("http://localhost:9090/graph"); err == nil {
+		if _, err := http.Get(url); err == nil {
 			startedOk = true
 			prom.Process.Signal(os.Interrupt)
 			select {
