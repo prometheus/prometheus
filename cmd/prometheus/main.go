@@ -1145,25 +1145,6 @@ func reloadConfig(filename string, expandExternalLabels, enableExemplarStorage b
 		}
 	}
 
-	// Perform validation for Agent-compatible configs and remove anything that's unsupported.
-	if agentMode {
-		// Perform validation for Agent-compatible configs and remove anything that's
-		// unsupported.
-		if len(conf.AlertingConfig.AlertRelabelConfigs) > 0 || len(conf.AlertingConfig.AlertmanagerConfigs) > 0 {
-			level.Warn(logger).Log("msg", "alerting configs not supported in agent mode")
-			conf.AlertingConfig.AlertRelabelConfigs = []*relabel.Config{}
-			conf.AlertingConfig.AlertmanagerConfigs = config.AlertmanagerConfigs{}
-		}
-		if len(conf.RuleFiles) > 0 {
-			level.Warn(logger).Log("msg", "recording rules not supported in agent mode")
-			conf.RuleFiles = []string{}
-		}
-		if len(conf.RemoteReadConfigs) > 0 {
-			level.Warn(logger).Log("msg", "remote_read configs not supported in agent mode")
-			conf.RemoteReadConfigs = []*config.RemoteReadConfig{}
-		}
-	}
-
 	failed := false
 	for _, rl := range rls {
 		rstart := time.Now()
