@@ -31,6 +31,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/tsdb/wal"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestUnsupported(t *testing.T) {
@@ -411,6 +412,28 @@ func TestWALReplay(t *testing.T) {
 			require.Equal(t, v.lastTs, int64(lastTs))
 		}
 	}
+}
+
+func TestLockfile(t *testing.T) {
+	tsdbutil.TestDirLockerUsage(t, func(t *testing.T, data string, createLock bool) (*tsdbutil.DirLocker, testutil.Closer) {
+		logger := log.NewNopLogger()
+		reg := prometheus.NewRegistry()
+		rs := remote.NewStorage(logger, reg, startTime, data, time.Second*30, nil)
+		t.Cleanup(func() {
+			require.NoError(t, rs.Close())
+		})
+
+		opts := DefaultOptions()
+		opts.NoLockfile = !createLock
+
+		// Create the DB. This should create lockfile and its metrics.
+		db, err := Open(logger, nil, rs, data, opts)
+		require.NoError(t, err)
+
+		return db.locker, testutil.NewCallbackCloser(func() {
+			require.NoError(t, db.Close())
+		})
+	})
 }
 
 func startTime() (int64, error) {

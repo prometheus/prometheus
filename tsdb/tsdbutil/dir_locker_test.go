@@ -14,75 +14,24 @@
 package tsdbutil
 
 import (
-	"fmt"
-	"io/ioutil"
-	"os"
 	"testing"
 
 	"github.com/go-kit/log"
-	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/prometheus/prometheus/util/testutil"
 	"github.com/stretchr/testify/require"
 )
 
 func TestLockfile(t *testing.T) {
-	cases := []struct {
-		fileAlreadyExists bool
-		lockFileDisabled  bool
-		expectedValue     int
-	}{
-		{
-			fileAlreadyExists: false,
-			lockFileDisabled:  false,
-			expectedValue:     lockfileCreatedCleanly,
-		},
-		{
-			fileAlreadyExists: true,
-			lockFileDisabled:  false,
-			expectedValue:     lockfileReplaced,
-		},
-		{
-			fileAlreadyExists: true,
-			lockFileDisabled:  true,
-			expectedValue:     lockfileDisabled,
-		},
-		{
-			fileAlreadyExists: false,
-			lockFileDisabled:  true,
-			expectedValue:     lockfileDisabled,
-		},
-	}
+	TestDirLockerUsage(t, func(t *testing.T, data string, createLock bool) (*DirLocker, testutil.Closer) {
+		locker, err := NewDirLocker(data, "tsdbutil", log.NewNopLogger(), nil)
+		require.NoError(t, err)
 
-	for _, c := range cases {
-		t.Run(fmt.Sprintf("%+v", c), func(t *testing.T) {
-			tmpdir, err := ioutil.TempDir("", "test")
-			require.NoError(t, err)
-			t.Cleanup(func() {
-				require.NoError(t, os.RemoveAll(tmpdir))
-			})
+		if createLock {
+			require.NoError(t, locker.Lock())
+		}
 
-			locker, err := NewDirLocker(tmpdir, "tsdb", log.NewNopLogger(), nil)
-			require.NoError(t, err)
-
-			// Test preconditions (file already exists + lockfile option)
-			if c.fileAlreadyExists {
-				err = ioutil.WriteFile(locker.path, []byte{}, 0644)
-				require.NoError(t, err)
-			}
-
-			if !c.lockFileDisabled {
-				// Obtain the lock. This should create a lockfile and update the metric.
-				require.NoError(t, locker.Lock())
-			}
-			require.Equal(t, float64(c.expectedValue), prom_testutil.ToFloat64(locker.createdCleanly))
-
-			// Release the lock, this should delete the lockfile
+		return locker, testutil.NewCallbackCloser(func() {
 			require.NoError(t, locker.Release())
-
-			// Check that the lockfile is always deleted
-			if !c.lockFileDisabled {
-				_, err = os.Stat(locker.path)
-				require.True(t, os.IsNotExist(err), "lockfile was not deleted")
-			}
 		})
-	}
+	})
 }

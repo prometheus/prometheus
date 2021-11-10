@@ -3123,6 +3123,21 @@ func TestNoPanicOnTSDBOpenError(t *testing.T) {
 	require.NoError(t, l.Release())
 }
 
+func TestLockfile(t *testing.T) {
+	tsdbutil.TestDirLockerUsage(t, func(t *testing.T, data string, createLock bool) (*tsdbutil.DirLocker, testutil.Closer) {
+		opts := DefaultOptions()
+		opts.NoLockfile = !createLock
+
+		// Create the DB. This should create lockfile and its metrics.
+		db, err := Open(data, nil, nil, opts, nil)
+		require.NoError(t, err)
+
+		return db.locker, testutil.NewCallbackCloser(func() {
+			require.NoError(t, db.Close())
+		})
+	})
+}
+
 func TestQuerier_ShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChunks(t *testing.T) {
 	t.Skip("TODO: investigate why process crash in CI")
 
