@@ -215,6 +215,9 @@ func TestRollback(t *testing.T) {
 	if err == nil {
 		sr, err := wal.NewSegmentsReader(s1.wal.Dir())
 		require.NoError(t, err)
+		defer func() {
+			require.NoError(t, sr.Close())
+		}()
 
 		r := wal.NewReader(sr)
 		seriesPool := sync.Pool{
