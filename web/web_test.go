@@ -545,8 +545,10 @@ func TestHandleMultipleQuitRequests(t *testing.T) {
 func TestAgentAPIEndPoints(t *testing.T) {
 	t.Parallel()
 
+	port := fmt.Sprintf(":%d", testutil.RandomUnprivilegedPort(t))
+
 	opts := &Options{
-		ListenAddress:  ":9090",
+		ListenAddress:  port,
 		ReadTimeout:    30 * time.Second,
 		MaxConnections: 512,
 		Context:        nil,
@@ -559,7 +561,7 @@ func TestAgentAPIEndPoints(t *testing.T) {
 		EnableAdminAPI: true,
 		ExternalURL: &url.URL{
 			Scheme: "http",
-			Host:   "localhost:9090",
+			Host:   "localhost" + port,
 			Path:   "/",
 		},
 		Version:  &PrometheusVersion{},
@@ -572,18 +574,20 @@ func TestAgentAPIEndPoints(t *testing.T) {
 	webHandler := New(nil, opts)
 	webHandler.Ready()
 
+	baseURL := "http://localhost" + port
+
 	// Test for non-available endpoints in the Agent mode.
 	for _, u := range []string{
-		"http://localhost:9090/-/labels",
-		"http://localhost:9090/label",
-		"http://localhost:9090/series",
-		"http://localhost:9090/alertmanagers",
-		"http://localhost:9090/query",
-		"http://localhost:9090/query_range",
-		"http://localhost:9090/query_exemplars",
+		"/-/labels",
+		"/label",
+		"/series",
+		"/alertmanagers",
+		"/query",
+		"/query_range",
+		"/query_exemplars",
 	} {
 		w := httptest.NewRecorder()
-		req, err := http.NewRequest("GET", u, nil)
+		req, err := http.NewRequest("GET", baseURL+u, nil)
 		require.NoError(t, err)
 		webHandler.router.ServeHTTP(w, req)
 		require.Equal(t, http.StatusNotFound, w.Code)
@@ -591,14 +595,13 @@ func TestAgentAPIEndPoints(t *testing.T) {
 
 	// Test for available endpoints in the Agent mode.
 	for _, u := range []string{
-		"http://localhost:9090/targets",
-		"http://localhost:9090/status",
+		"/targets",
+		"/status",
 	} {
 		w := httptest.NewRecorder()
-		req, err := http.NewRequest("GET", u, nil)
+		req, err := http.NewRequest("GET", baseURL+u, nil)
 		require.NoError(t, err)
 		webHandler.router.ServeHTTP(w, req)
-		fmt.Println(u)
 		require.Equal(t, http.StatusOK, w.Code)
 	}
 }
