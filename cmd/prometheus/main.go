@@ -333,8 +333,7 @@ func main() {
 		"Maximum age samples may be before being forcibly deleted when the WAL is truncated").
 		SetValue(&cfg.agent.MaxWALTime)
 
-	a.Flag("storage.agent.no-lockfile", "Do not create lockfile in data directory.").
-		PreAction(agentOnlySetting()).
+	agentOnlyFlag(a, "storage.agent.no-lockfile", "Do not create lockfile in data directory.").
 		Default("false").BoolVar(&cfg.agent.NoLockfile)
 
 	a.Flag("storage.remote.flush-deadline", "How long to wait flushing sample on shutdown or config reload.").
