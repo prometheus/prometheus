@@ -34,8 +34,7 @@ func TestStartupInterrupt(t *testing.T) {
 	prom := exec.Command(promPath, "-test.main", "--config.file="+promConfig, "--storage.tsdb.path="+t.TempDir())
 	err := prom.Start()
 	if err != nil {
-		t.Errorf("execution error: %v", err)
-		return
+		t.Fatalf("execution error: %v", err)
 	}
 
 	done := make(chan error, 1)
@@ -64,12 +63,11 @@ Loop:
 	}
 
 	if !startedOk {
-		t.Errorf("prometheus didn't start in the specified timeout")
-		return
+		t.Fatal("prometheus didn't start in the specified timeout")
 	}
 	if err := prom.Process.Kill(); err == nil {
 		t.Errorf("prometheus didn't shutdown gracefully after sending the Interrupt signal")
 	} else if stoppedErr != nil && stoppedErr.Error() != "signal: interrupt" { // TODO - find a better way to detect when the process didn't exit as expected!
-		t.Errorf("prometheus exited with an unexpected error:%v", stoppedErr)
+		t.Errorf("prometheus exited with an unexpected error: %v", stoppedErr)
 	}
 }
