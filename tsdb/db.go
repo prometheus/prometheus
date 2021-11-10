@@ -43,6 +43,7 @@ import (
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	_ "github.com/prometheus/prometheus/tsdb/goversion" // Load the package into main to make sure minium Go version is met.
+	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/tsdb/wal"
 )
 
@@ -159,7 +160,7 @@ type BlocksToDeleteFunc func(blocks []*Block) map[ulid.ULID]struct{}
 // a hashed partition of a seriedb.
 type DB struct {
 	dir    string
-	locker *Locker
+	locker *tsdbutil.DirLocker
 
 	logger         log.Logger
 	metrics        *dbMetrics
@@ -659,7 +660,7 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	}
 
 	var err error
-	db.locker, err = NewLocker(dir, "tsdb", db.logger, r)
+	db.locker, err = tsdbutil.NewDirLocker(dir, "tsdb", db.logger, r)
 	if err != nil {
 		return nil, err
 	}

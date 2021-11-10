@@ -3113,7 +3113,7 @@ func TestNoPanicOnTSDBOpenError(t *testing.T) {
 	})
 
 	// Taking the lock will cause a TSDB startup error.
-	l, err := NewLocker(tmpdir, "tsdb", log.NewNopLogger(), nil)
+	l, err := tsdbutil.NewDirLocker(tmpdir, "tsdb", log.NewNopLogger(), nil)
 	require.NoError(t, err)
 	require.NoError(t, l.Lock())
 

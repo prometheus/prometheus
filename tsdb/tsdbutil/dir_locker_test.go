@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package tsdb
+package tsdbutil
 
 import (
 	"fmt"
@@ -60,7 +60,7 @@ func TestLockfile(t *testing.T) {
 				require.NoError(t, os.RemoveAll(tmpdir))
 			})
 
-			locker, err := NewLocker(tmpdir, "tsdb", log.NewNopLogger(), nil)
+			locker, err := NewDirLocker(tmpdir, "tsdb", log.NewNopLogger(), nil)
 			require.NoError(t, err)
 
 			// Test preconditions (file already exists + lockfile option)
@@ -81,7 +81,7 @@ func TestLockfile(t *testing.T) {
 			// Check that the lockfile is always deleted
 			if !c.lockFileDisabled {
 				_, err = os.Stat(locker.path)
-				require.Error(t, err, "lockfile was not deleted")
+				require.True(t, os.IsNotExist(err), "lockfile was not deleted")
 			}
 		})
 	}

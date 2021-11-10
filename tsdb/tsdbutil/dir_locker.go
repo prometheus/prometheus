@@ -11,9 +11,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package tsdb
+package tsdbutil
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -31,7 +32,7 @@ const (
 	lockfileCreatedCleanly = 1
 )
 
-type Locker struct {
+type DirLocker struct {
 	logger log.Logger
 
 	createdCleanly prometheus.Gauge
@@ -40,15 +41,13 @@ type Locker struct {
 	path     string
 }
 
-// NewLocker creates a locker that can obtain an exclusive lock on dir.
-func NewLocker(dir, subsystem string, l log.Logger, r prometheus.Registerer) (*Locker, error) {
-	lock := &Locker{
+// NewDirLocker creates a DirLocker that can obtain an exclusive lock on dir.
+func NewDirLocker(dir, subsystem string, l log.Logger, r prometheus.Registerer) (*DirLocker, error) {
+	lock := &DirLocker{
 		logger: l,
 		createdCleanly: prometheus.NewGauge(prometheus.GaugeOpts{
-			Namespace: "prometheus",
-			Subsystem: subsystem,
-			Name:      "clean_start",
-			Help:      "-1: lockfile is disabled. 0: a lockfile from a previous execution was replaced. 1: lockfile creation was clean",
+			Name: fmt.Sprintf("prometheus_%s_clean_start", subsystem),
+			Help: "-1: lockfile is disabled. 0: a lockfile from a previous execution was replaced. 1: lockfile creation was clean",
 		}),
 	}
 
@@ -68,7 +67,7 @@ func NewLocker(dir, subsystem string, l log.Logger, r prometheus.Registerer) (*L
 }
 
 // Lock obtains the lock on the locker directory.
-func (l *Locker) Lock() error {
+func (l *DirLocker) Lock() error {
 	if l.releaser != nil {
 		return errors.New("DB lock already obtained")
 	}
@@ -90,7 +89,7 @@ func (l *Locker) Lock() error {
 }
 
 // Release releases the lock. No-op if the lock is not held.
-func (l *Locker) Release() error {
+func (l *DirLocker) Release() error {
 	if l.releaser == nil {
 		return nil
 	}

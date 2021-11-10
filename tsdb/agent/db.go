@@ -36,6 +36,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/record"
+	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/tsdb/wal"
 )
 
@@ -193,7 +194,7 @@ type DB struct {
 	rs     *remote.Storage
 
 	wal    *wal.WAL
-	locker *tsdb.Locker
+	locker *tsdbutil.DirLocker
 
 	appenderPool sync.Pool
 	bufPool      sync.Pool
@@ -214,7 +215,7 @@ type DB struct {
 func Open(l log.Logger, reg prometheus.Registerer, rs *remote.Storage, dir string, opts *Options) (*DB, error) {
 	opts = validateOptions(opts)
 
-	locker, err := tsdb.NewLocker(dir, "agent", l, reg)
+	locker, err := tsdbutil.NewDirLocker(dir, "agent", l, reg)
 	if err != nil {
 		return nil, err
 	}
