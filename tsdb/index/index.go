@@ -967,7 +967,8 @@ func (w *Writer) writePosting(name, value string, offs []uint32) error {
 
 	w.buf2.Reset()
 	l := w.buf1.Len()
-	if l > math.MaxUint32 {
+	// We convert to uint to make code compile on 32-bit systems, as math.MaxUint32 doesn't fit into int there.
+	if uint(l) > math.MaxUint32 {
 		return errors.Errorf("posting size exceeds 4 bytes: %d", l)
 	}
 	w.buf2.PutBE32int(l)
