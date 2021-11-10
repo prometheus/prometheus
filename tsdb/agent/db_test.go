@@ -77,9 +77,9 @@ func TestCommit(t *testing.T) {
 	logger := log.NewNopLogger()
 	reg := prometheus.NewRegistry()
 	remoteStorage := remote.NewStorage(log.With(logger, "component", "remote"), reg, startTime, promAgentDir, time.Second*30, nil)
-	defer func() {
-		require.NoError(t, remoteStorage.Close())
-	}()
+	defer func(rs *remote.Storage) {
+		require.NoError(t, rs.Close())
+	}(remoteStorage)
 
 	s, err := Open(logger, reg, remoteStorage, promAgentDir, opts)
 	require.NoError(t, err)
@@ -121,6 +121,9 @@ func TestCommit(t *testing.T) {
 	if err == nil {
 		sr, err := wal.NewSegmentsReader(s1.wal.Dir())
 		require.NoError(t, err)
+		defer func() {
+			require.NoError(t, sr.Close())
+		}()
 
 		r := wal.NewReader(sr)
 		seriesPool := sync.Pool{
@@ -170,9 +173,9 @@ func TestRollback(t *testing.T) {
 	logger := log.NewNopLogger()
 	reg := prometheus.NewRegistry()
 	remoteStorage := remote.NewStorage(log.With(logger, "component", "remote"), reg, startTime, promAgentDir, time.Second*30, nil)
-	defer func() {
-		require.NoError(t, remoteStorage.Close())
-	}()
+	defer func(rs *remote.Storage) {
+		require.NoError(t, rs.Close())
+	}(remoteStorage)
 
 	s, err := Open(logger, reg, remoteStorage, promAgentDir, opts)
 	require.NoError(t, err)
