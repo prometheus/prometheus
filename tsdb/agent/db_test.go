@@ -11,15 +11,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !windows
-// +build !windows
-
 package agent
 
 import (
 	"context"
-	"io/ioutil"
-	"os"
 	"strconv"
 	"sync"
 	"testing"
@@ -39,20 +34,16 @@ import (
 )
 
 func TestUnsupported(t *testing.T) {
-	promAgentDir, err := ioutil.TempDir("", "TestUnsupported")
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, os.RemoveAll(promAgentDir))
-	})
+	promAgentDir := t.TempDir()
 
 	opts := DefaultOptions()
 	logger := log.NewNopLogger()
 
 	s, err := Open(logger, prometheus.DefaultRegisterer, nil, promAgentDir, opts)
-	if err != nil {
-		t.Fatalf("unable to create storage for the agent: %v", err)
-	}
-	defer s.Close()
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, s.Close())
+	}()
 
 	t.Run("Querier", func(t *testing.T) {
 		_, err := s.Querier(context.TODO(), 0, 0)
@@ -76,22 +67,22 @@ func TestCommit(t *testing.T) {
 		numSeries     = 8
 	)
 
-	promAgentDir, err := ioutil.TempDir("", t.Name())
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, os.RemoveAll(promAgentDir))
-	})
+	promAgentDir := t.TempDir()
 
 	lbls := labelsForTest(t.Name(), numSeries)
 	opts := DefaultOptions()
 	logger := log.NewNopLogger()
 	reg := prometheus.NewRegistry()
 	remoteStorage := remote.NewStorage(log.With(logger, "component", "remote"), reg, startTime, promAgentDir, time.Second*30, nil)
+	defer func(rs *remote.Storage) {
+		require.NoError(t, rs.Close())
+	}(remoteStorage)
 
 	s, err := Open(logger, reg, remoteStorage, promAgentDir, opts)
-	if err != nil {
-		t.Fatalf("unable to create storage for the agent: %v", err)
-	}
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, s.Close())
+	}()
 
 	a := s.Appender(context.TODO())
 
@@ -112,17 +103,24 @@ func TestCommit(t *testing.T) {
 
 	reg = prometheus.NewRegistry()
 	remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"), reg, startTime, promAgentDir, time.Second*30, nil)
+	defer func() {
+		require.NoError(t, remoteStorage.Close())
+	}()
 
-	s, err = Open(logger, nil, remoteStorage, promAgentDir, opts)
-	if err != nil {
-		t.Fatalf("unable to create storage for the agent: %v", err)
-	}
+	s1, err := Open(logger, nil, remoteStorage, promAgentDir, opts)
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, s1.Close())
+	}()
 
 	var dec record.Decoder
 
 	if err == nil {
-		sr, err := wal.NewSegmentsReader(s.wal.Dir())
+		sr, err := wal.NewSegmentsReader(s1.wal.Dir())
 		require.NoError(t, err)
+		defer func() {
+			require.NoError(t, sr.Close())
+		}()
 
 		r := wal.NewReader(sr)
 		seriesPool := sync.Pool{
@@ -165,22 +163,22 @@ func TestRollback(t *testing.T) {
 		numSeries     = 8
 	)
 
-	promAgentDir, err := ioutil.TempDir("", t.Name())
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, os.RemoveAll(promAgentDir))
-	})
+	promAgentDir := t.TempDir()
 
 	lbls := labelsForTest(t.Name(), numSeries)
 	opts := DefaultOptions()
 	logger := log.NewNopLogger()
 	reg := prometheus.NewRegistry()
 	remoteStorage := remote.NewStorage(log.With(logger, "component", "remote"), reg, startTime, promAgentDir, time.Second*30, nil)
+	defer func(rs *remote.Storage) {
+		require.NoError(t, rs.Close())
+	}(remoteStorage)
 
 	s, err := Open(logger, reg, remoteStorage, promAgentDir, opts)
-	if err != nil {
-		t.Fatalf("unable to create storage for the agent: %v", err)
-	}
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, s.Close())
+	}()
 
 	a := s.Appender(context.TODO())
 
@@ -202,17 +200,24 @@ func TestRollback(t *testing.T) {
 
 	reg = prometheus.NewRegistry()
 	remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"), reg, startTime, promAgentDir, time.Second*30, nil)
+	defer func() {
+		require.NoError(t, remoteStorage.Close())
+	}()
 
-	s, err = Open(logger, nil, remoteStorage, promAgentDir, opts)
-	if err != nil {
-		t.Fatalf("unable to create storage for the agent: %v", err)
-	}
+	s1, err := Open(logger, nil, remoteStorage, promAgentDir, opts)
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, s1.Close())
+	}()
 
 	var dec record.Decoder
 
 	if err == nil {
-		sr, err := wal.NewSegmentsReader(s.wal.Dir())
+		sr, err := wal.NewSegmentsReader(s1.wal.Dir())
 		require.NoError(t, err)
+		defer func() {
+			require.NoError(t, sr.Close())
+		}()
 
 		r := wal.NewReader(sr)
 		seriesPool := sync.Pool{
@@ -256,11 +261,7 @@ func TestFullTruncateWAL(t *testing.T) {
 		lastTs        = 500
 	)
 
-	promAgentDir, err := ioutil.TempDir("", t.Name())
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, os.RemoveAll(promAgentDir))
-	})
+	promAgentDir := t.TempDir()
 
 	lbls := labelsForTest(t.Name(), numSeries)
 	opts := DefaultOptions()
@@ -268,11 +269,15 @@ func TestFullTruncateWAL(t *testing.T) {
 	logger := log.NewNopLogger()
 	reg := prometheus.NewRegistry()
 	remoteStorage := remote.NewStorage(log.With(logger, "component", "remote"), reg, startTime, promAgentDir, time.Second*30, nil)
+	defer func() {
+		require.NoError(t, remoteStorage.Close())
+	}()
 
 	s, err := Open(logger, reg, remoteStorage, promAgentDir, opts)
-	if err != nil {
-		t.Fatalf("unable to create storage for the agent: %v", err)
-	}
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, s.Close())
+	}()
 
 	a := s.Appender(context.TODO())
 
@@ -299,22 +304,22 @@ func TestPartialTruncateWAL(t *testing.T) {
 		numSeries     = 800
 	)
 
-	promAgentDir, err := ioutil.TempDir("", t.Name())
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, os.RemoveAll(promAgentDir))
-	})
+	promAgentDir := t.TempDir()
 
 	opts := DefaultOptions()
 	opts.TruncateFrequency = time.Minute * 2
 	logger := log.NewNopLogger()
 	reg := prometheus.NewRegistry()
 	remoteStorage := remote.NewStorage(log.With(logger, "component", "remote"), reg, startTime, promAgentDir, time.Second*30, nil)
+	defer func() {
+		require.NoError(t, remoteStorage.Close())
+	}()
 
 	s, err := Open(logger, reg, remoteStorage, promAgentDir, opts)
-	if err != nil {
-		t.Fatalf("unable to create storage for the agent: %v", err)
-	}
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, s.Close())
+	}()
 
 	a := s.Appender(context.TODO())
 
@@ -361,11 +366,7 @@ func TestWALReplay(t *testing.T) {
 		lastTs        = 500
 	)
 
-	promAgentDir, err := ioutil.TempDir("", t.Name())
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, os.RemoveAll(promAgentDir))
-	})
+	promAgentDir := t.TempDir()
 
 	lbls := labelsForTest(t.Name(), numSeries)
 	opts := DefaultOptions()
@@ -373,11 +374,15 @@ func TestWALReplay(t *testing.T) {
 	logger := log.NewNopLogger()
 	reg := prometheus.NewRegistry()
 	remoteStorage := remote.NewStorage(log.With(logger, "component", "remote"), reg, startTime, promAgentDir, time.Second*30, nil)
+	defer func() {
+		require.NoError(t, remoteStorage.Close())
+	}()
 
 	s, err := Open(logger, reg, remoteStorage, promAgentDir, opts)
-	if err != nil {
-		t.Fatalf("unable to create storage for the agent: %v", err)
-	}
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, s.Close())
+	}()
 
 	a := s.Appender(context.TODO())
 
@@ -392,14 +397,14 @@ func TestWALReplay(t *testing.T) {
 
 	require.NoError(t, a.Commit())
 
+	require.NoError(t, s.Close())
+
 	restartOpts := DefaultOptions()
 	restartLogger := log.NewNopLogger()
 	restartReg := prometheus.NewRegistry()
 
 	s, err = Open(restartLogger, restartReg, nil, promAgentDir, restartOpts)
-	if err != nil {
-		t.Fatalf("unable to create storage for the agent: %v", err)
-	}
+	require.NoError(t, err)
 
 	// Check if all the series are retrieved back from the WAL.
 	m := gatherFamily(t, restartReg, "prometheus_agent_active_series")
