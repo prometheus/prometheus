@@ -525,7 +525,7 @@ func (w *Writer) AddSymbol(sym string) error {
 func (w *Writer) finishSymbols() error {
 	symbolTableSize := w.f.pos - w.toc.Symbols - 4
 	// The symbol table's <len> part is 4 bytes. So the total symbol table size must be less than or equal to 2^32-1
-	if symbolTableSize > 4294967295 {
+	if symbolTableSize > math.MaxUint32 {
 		return errors.Errorf("symbol table size exceeds 4 bytes: %d", symbolTableSize)
 	}
 
@@ -657,7 +657,11 @@ func (w *Writer) writeLabelIndex(name string, values []uint32) error {
 
 	// Write out the length.
 	w.buf1.Reset()
-	w.buf1.PutBE32int(int(w.f.pos - startPos - 4))
+	l := w.f.pos - startPos - 4
+	if l > math.MaxUint32 {
+		return errors.Errorf("label index size exceeds 4 bytes: %d", l)
+	}
+	w.buf1.PutBE32int(int(l))
 	if err := w.writeAt(w.buf1.Get(), startPos); err != nil {
 		return err
 	}
@@ -697,7 +701,11 @@ func (w *Writer) writeLabelIndexesOffsetTable() error {
 	}
 	// Write out the length.
 	w.buf1.Reset()
-	w.buf1.PutBE32int(int(w.f.pos - startPos - 4))
+	l := w.f.pos - startPos - 4
+	if l > math.MaxUint32 {
+		return errors.Errorf("label indexes offset table size exceeds 4 bytes: %d", l)
+	}
+	w.buf1.PutBE32int(int(l))
 	if err := w.writeAt(w.buf1.Get(), startPos); err != nil {
 		return err
 	}
@@ -774,7 +782,11 @@ func (w *Writer) writePostingsOffsetTable() error {
 
 	// Write out the length.
 	w.buf1.Reset()
-	w.buf1.PutBE32int(int(w.f.pos - startPos - 4))
+	l := w.f.pos - startPos - 4
+	if l > math.MaxUint32 {
+		return errors.Errorf("postings offset table size exceeds 4 bytes: %d", l)
+	}
+	w.buf1.PutBE32int(int(l))
 	if err := w.writeAt(w.buf1.Get(), startPos); err != nil {
 		return err
 	}
@@ -954,7 +966,12 @@ func (w *Writer) writePosting(name, value string, offs []uint32) error {
 	}
 
 	w.buf2.Reset()
-	w.buf2.PutBE32int(w.buf1.Len())
+	l := w.buf1.Len()
+	// We convert to uint to make code compile on 32-bit systems, as math.MaxUint32 doesn't fit into int there.
+	if uint(l) > math.MaxUint32 {
+		return errors.Errorf("posting size exceeds 4 bytes: %d", l)
+	}
+	w.buf2.PutBE32int(l)
 	w.buf1.PutHash(w.crc32)
 	return w.fP.Write(w.buf2.Get(), w.buf1.Get())
 }
