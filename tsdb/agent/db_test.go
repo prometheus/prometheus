@@ -397,15 +397,20 @@ func TestWALReplay(t *testing.T) {
 	restartLogger := log.NewNopLogger()
 	restartReg := prometheus.NewRegistry()
 
-	s, err = Open(restartLogger, restartReg, nil, promAgentDir, restartOpts)
+	// Open a new DB with the same WAL to check that series from the previous DB
+	// get replayed.
+	replayDB, err := Open(restartLogger, restartReg, nil, promAgentDir, restartOpts)
 	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, replayDB.Close())
+	}()
 
 	// Check if all the series are retrieved back from the WAL.
 	m := gatherFamily(t, restartReg, "prometheus_agent_active_series")
 	require.Equal(t, float64(numSeries), m.Metric[0].Gauge.GetValue(), "agent wal replay mismatch of active series count")
 
 	// Check if lastTs of the samples retrieved from the WAL is retained.
-	metrics := s.series.series
+	metrics := replayDB.series.series
 	for i := 0; i < len(metrics); i++ {
 		mp := metrics[i]
 		for _, v := range mp {
