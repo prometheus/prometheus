@@ -34,7 +34,9 @@ import (
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/record"
+	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/tsdb/wal"
 )
 
@@ -66,6 +68,9 @@ type Options struct {
 	// Shortest and longest amount of time data can exist in the WAL before being
 	// deleted.
 	MinWALTime, MaxWALTime int64
+
+	// NoLockfile disables creation and consideration of a lock file.
+	NoLockfile bool
 }
 
 // DefaultOptions used for the WAL storage. They are sane for setups using
@@ -78,6 +83,7 @@ func DefaultOptions() *Options {
 		TruncateFrequency: DefaultTruncateFrequency,
 		MinWALTime:        DefaultMinWALTime,
 		MaxWALTime:        DefaultMaxWALTime,
+		NoLockfile:        false,
 	}
 }
 
@@ -187,7 +193,8 @@ type DB struct {
 	opts   *Options
 	rs     *remote.Storage
 
-	wal *wal.WAL
+	wal    *wal.WAL
+	locker *tsdbutil.DirLocker
 
 	appenderPool sync.Pool
 	bufPool      sync.Pool
@@ -208,6 +215,16 @@ type DB struct {
 func Open(l log.Logger, reg prometheus.Registerer, rs *remote.Storage, dir string, opts *Options) (*DB, error) {
 	opts = validateOptions(opts)
 
+	locker, err := tsdbutil.NewDirLocker(dir, "agent", l, reg)
+	if err != nil {
+		return nil, err
+	}
+	if !opts.NoLockfile {
+		if err := locker.Lock(); err != nil {
+			return nil, err
+		}
+	}
+
 	// remote_write expects WAL to be stored in a "wal" subdirectory of the main storage.
 	dir = filepath.Join(dir, "wal")
 
@@ -221,7 +238,8 @@ func Open(l log.Logger, reg prometheus.Registerer, rs *remote.Storage, dir strin
 		opts:   opts,
 		rs:     rs,
 
-		wal: w,
+		wal:    w,
+		locker: locker,
 
 		nextRef: atomic.NewUint64(0),
 		series:  newStripeSeries(opts.StripeSize),
@@ -641,7 +659,7 @@ func (db *DB) Close() error {
 
 	db.metrics.Unregister()
 
-	return db.wal.Close()
+	return tsdb_errors.NewMulti(db.locker.Release(), db.wal.Close()).Err()
 }
 
 type appender struct {

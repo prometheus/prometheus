@@ -333,6 +333,9 @@ func main() {
 		"Maximum age samples may be before being forcibly deleted when the WAL is truncated").
 		SetValue(&cfg.agent.MaxWALTime)
 
+	agentOnlyFlag(a, "storage.agent.no-lockfile", "Do not create lockfile in data directory.").
+		Default("false").BoolVar(&cfg.agent.NoLockfile)
+
 	a.Flag("storage.remote.flush-deadline", "How long to wait flushing sample on shutdown or config reload.").
 		Default("1m").PlaceHolder("<duration>").SetValue(&cfg.RemoteFlushDeadline)
 
@@ -1505,6 +1508,7 @@ type agentOptions struct {
 	StripeSize             int
 	TruncateFrequency      model.Duration
 	MinWALTime, MaxWALTime model.Duration
+	NoLockfile             bool
 }
 
 func (opts agentOptions) ToAgentOptions() agent.Options {
@@ -1515,6 +1519,7 @@ func (opts agentOptions) ToAgentOptions() agent.Options {
 		TruncateFrequency: time.Duration(opts.TruncateFrequency),
 		MinWALTime:        durationToInt64Millis(time.Duration(opts.MinWALTime)),
 		MaxWALTime:        durationToInt64Millis(time.Duration(opts.MaxWALTime)),
+		NoLockfile:        opts.NoLockfile,
 	}
 }
 

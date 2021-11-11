@@ -3116,80 +3116,30 @@ func TestNoPanicOnTSDBOpenError(t *testing.T) {
 		require.NoError(t, os.RemoveAll(tmpdir))
 	})
 
-	absdir, err := filepath.Abs(tmpdir)
+	// Taking the lock will cause a TSDB startup error.
+	l, err := tsdbutil.NewDirLocker(tmpdir, "tsdb", log.NewNopLogger(), nil)
 	require.NoError(t, err)
-	// Taking the file lock will cause TSDB startup error.
-	lockf, _, err := fileutil.Flock(filepath.Join(absdir, "lock"))
-	require.NoError(t, err)
+	require.NoError(t, l.Lock())
 
 	_, err = Open(tmpdir, nil, nil, DefaultOptions(), nil)
 	require.Error(t, err)
 
-	require.NoError(t, lockf.Release())
+	require.NoError(t, l.Release())
 }
 
-func TestLockfileMetric(t *testing.T) {
-	cases := []struct {
-		fileAlreadyExists bool
-		lockFileDisabled  bool
-		expectedValue     int
-	}{
-		{
-			fileAlreadyExists: false,
-			lockFileDisabled:  false,
-			expectedValue:     lockfileCreatedCleanly,
-		},
-		{
-			fileAlreadyExists: true,
-			lockFileDisabled:  false,
-			expectedValue:     lockfileReplaced,
-		},
-		{
-			fileAlreadyExists: true,
-			lockFileDisabled:  true,
-			expectedValue:     lockfileDisabled,
-		},
-		{
-			fileAlreadyExists: false,
-			lockFileDisabled:  true,
-			expectedValue:     lockfileDisabled,
-		},
-	}
+func TestLockfile(t *testing.T) {
+	tsdbutil.TestDirLockerUsage(t, func(t *testing.T, data string, createLock bool) (*tsdbutil.DirLocker, testutil.Closer) {
+		opts := DefaultOptions()
+		opts.NoLockfile = !createLock
 
-	for _, c := range cases {
-		t.Run(fmt.Sprintf("%+v", c), func(t *testing.T) {
-			tmpdir, err := ioutil.TempDir("", "test")
-			require.NoError(t, err)
-			t.Cleanup(func() {
-				require.NoError(t, os.RemoveAll(tmpdir))
-			})
-			absdir, err := filepath.Abs(tmpdir)
-			require.NoError(t, err)
+		// Create the DB. This should create lockfile and its metrics.
+		db, err := Open(data, nil, nil, opts, nil)
+		require.NoError(t, err)
 
-			// Test preconditions (file already exists + lockfile option)
-			lockfilePath := filepath.Join(absdir, "lock")
-			if c.fileAlreadyExists {
-				err = ioutil.WriteFile(lockfilePath, []byte{}, 0o644)
-				require.NoError(t, err)
-			}
-			opts := DefaultOptions()
-			opts.NoLockfile = c.lockFileDisabled
-
-			// Create the DB, this should create a lockfile and the metrics
-			db, err := Open(tmpdir, nil, nil, opts, nil)
-			require.NoError(t, err)
-			require.Equal(t, float64(c.expectedValue), prom_testutil.ToFloat64(db.metrics.lockfileCreatedCleanly))
-
-			// Close the DB, this should delete the lockfile
+		return db.locker, testutil.NewCallbackCloser(func() {
 			require.NoError(t, db.Close())
-
-			// Check that the lockfile is always deleted
-			if !c.lockFileDisabled {
-				_, err = os.Stat(lockfilePath)
-				require.Error(t, err, "lockfile was not deleted")
-			}
 		})
-	}
+	})
 }
 
 func TestQuerier_ShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChunks(t *testing.T) {
