@@ -1748,7 +1748,7 @@ func (ev *evaluator) matrixIterSlice(it *storage.BufferedSeriesIterator, mint, m
 					ev.error(ErrTooManySamples(env))
 				}
 				ev.currentSamples++
-				out = append(out, Point{T: t, H: &h})
+				out = append(out, Point{T: t, H: h})
 			}
 		}
 	} else {
@@ -1775,7 +1775,7 @@ func (ev *evaluator) matrixIterSlice(it *storage.BufferedSeriesIterator, mint, m
 				if ev.currentSamples >= ev.maxSamples {
 					ev.error(ErrTooManySamples(env))
 				}
-				out = append(out, Point{T: t, H: &h})
+				out = append(out, Point{T: t, H: h})
 				ev.currentSamples++
 			}
 		} else {

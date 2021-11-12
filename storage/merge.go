@@ -486,7 +486,7 @@ func (c *chainSampleIterator) At() (t int64, v float64) {
 	return c.curr.At()
 }
 
-func (c *chainSampleIterator) AtHistogram() (int64, histogram.Histogram) {
+func (c *chainSampleIterator) AtHistogram() (int64, *histogram.Histogram) {
 	if c.curr == nil {
 		panic("chainSampleIterator.AtHistogram() called before first .Next() or after .Next() returned false.")
 	}

@@ -120,7 +120,7 @@ func (b *BufferedSeriesIterator) Next() bool {
 	// Add current element to buffer before advancing.
 	if b.it.ChunkEncoding() == chunkenc.EncHistogram {
 		t, h := b.it.AtHistogram()
-		b.buf.add(sample{t: t, h: &h})
+		b.buf.add(sample{t: t, h: h})
 	} else {
 		t, v := b.it.At()
 		b.buf.add(sample{t: t, v: v})
@@ -144,7 +144,7 @@ func (b *BufferedSeriesIterator) Values() (int64, float64) {
 }
 
 // HistogramValues returns the current histogram element of the iterator.
-func (b *BufferedSeriesIterator) HistogramValues() (int64, histogram.Histogram) {
+func (b *BufferedSeriesIterator) HistogramValues() (int64, *histogram.Histogram) {
 	return b.it.AtHistogram()
 }
 
@@ -230,7 +230,7 @@ func (it *sampleRingIterator) At() (int64, float64) {
 	return it.r.at(it.i)
 }
 
-func (it *sampleRingIterator) AtHistogram() (int64, histogram.Histogram) {
+func (it *sampleRingIterator) AtHistogram() (int64, *histogram.Histogram) {
 	return it.r.atHistogram(it.i)
 }
 
@@ -244,10 +244,10 @@ func (r *sampleRing) at(i int) (int64, float64) {
 	return s.t, s.v
 }
 
-func (r *sampleRing) atHistogram(i int) (int64, histogram.Histogram) {
+func (r *sampleRing) atHistogram(i int) (int64, *histogram.Histogram) {
 	j := (r.f + i) % len(r.buf)
 	s := r.buf[j]
-	return s.t, *s.h
+	return s.t, s.h
 }
 
 func (r *sampleRing) atSample(i int) sample {

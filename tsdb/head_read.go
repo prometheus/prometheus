@@ -519,7 +519,7 @@ func (it *memSafeIterator) At() (int64, float64) {
 	return s.t, s.v
 }
 
-func (it *memSafeIterator) AtHistogram() (int64, histogram.Histogram) {
+func (it *memSafeIterator) AtHistogram() (int64, *histogram.Histogram) {
 	if it.total-it.i > 4 {
 		return it.Iterator.AtHistogram()
 	}

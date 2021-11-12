@@ -82,7 +82,7 @@ type Chunk interface {
 // Appender adds sample pairs to a chunk.
 type Appender interface {
 	Append(int64, float64)
-	AppendHistogram(t int64, h histogram.Histogram)
+	AppendHistogram(t int64, h *histogram.Histogram)
 }
 
 // Iterator is a simple iterator that can only get the next value.
@@ -102,8 +102,7 @@ type Iterator interface {
 	At() (int64, float64)
 	// AtHistogram returns the current timestamp/histogram pair.
 	// Before the iterator has advanced AtHistogram behaviour is unspecified.
-	// TODO(beorn7): Maybe return *histogram.Histogram? It's a fairly large struct.
-	AtHistogram() (int64, histogram.Histogram)
+	AtHistogram() (int64, *histogram.Histogram)
 	// Err returns the current error. It should be used only after iterator is
 	// exhausted, that is `Next` or `Seek` returns false.
 	Err() error
@@ -120,8 +119,8 @@ type nopIterator struct{}
 
 func (nopIterator) Seek(int64) bool      { return false }
 func (nopIterator) At() (int64, float64) { return math.MinInt64, 0 }
-func (nopIterator) AtHistogram() (int64, histogram.Histogram) {
-	return math.MinInt64, histogram.Histogram{}
+func (nopIterator) AtHistogram() (int64, *histogram.Histogram) {
+	return math.MinInt64, nil
 }
 func (nopIterator) Next() bool              { return false }
 func (nopIterator) Err() error              { return nil }

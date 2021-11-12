@@ -245,7 +245,7 @@ func (a *HistogramAppender) Append(int64, float64) {
 // The method returns an additional boolean set to true if it is not appendable
 // because of a counter reset. If the given sample is stale, it is always ok to
 // append. If counterReset is true, okToAppend is always false.
-func (a *HistogramAppender) Appendable(h histogram.Histogram) (
+func (a *HistogramAppender) Appendable(h *histogram.Histogram) (
 	positiveInterjections, negativeInterjections []Interjection,
 	okToAppend bool, counterReset bool,
 ) {
@@ -369,14 +369,14 @@ func counterResetInAnyBucket(oldBuckets, newBuckets []int64, oldSpans, newSpans 
 // the histogram is properly structured, e.g. the number of buckets used
 // corresponds to the number conveyed by the span structures. First call
 // Appendable() and act accordingly!
-func (a *HistogramAppender) AppendHistogram(t int64, h histogram.Histogram) {
+func (a *HistogramAppender) AppendHistogram(t int64, h *histogram.Histogram) {
 	var tDelta, cntDelta, zCntDelta int64
 	num := binary.BigEndian.Uint16(a.b.bytes())
 
 	if value.IsStaleNaN(h.Sum) {
 		// Emptying out other fields to write no buckets, and an empty
 		// layout in case of first histogram in the chunk.
-		h = histogram.Histogram{Sum: h.Sum}
+		h = &histogram.Histogram{Sum: h.Sum}
 	}
 
 	switch num {
@@ -401,7 +401,7 @@ func (a *HistogramAppender) AppendHistogram(t int64, h histogram.Histogram) {
 		// Now store the actual data.
 		putVarbitInt(a.b, t)
 		putVarbitUint(a.b, h.Count)
-		putVarbitUint(a.b, h.ZeroCount) //
+		putVarbitUint(a.b, h.ZeroCount)
 		a.b.writeBits(math.Float64bits(h.Sum), 64)
 		for _, b := range h.PositiveBuckets {
 			putVarbitInt(a.b, b)
@@ -582,11 +582,11 @@ func (it *histogramIterator) ChunkEncoding() Encoding {
 	return EncHistogram
 }
 
-func (it *histogramIterator) AtHistogram() (int64, histogram.Histogram) {
+func (it *histogramIterator) AtHistogram() (int64, *histogram.Histogram) {
 	if value.IsStaleNaN(it.sum) {
-		return it.t, histogram.Histogram{Sum: it.sum}
+		return it.t, &histogram.Histogram{Sum: it.sum}
 	}
-	return it.t, histogram.Histogram{
+	return it.t, &histogram.Histogram{
 		Count:           it.cnt,
 		ZeroCount:       it.zCnt,
 		Sum:             it.sum,

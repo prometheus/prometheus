@@ -91,9 +91,9 @@ func (it *listSeriesIterator) At() (int64, float64) {
 	return s.T(), s.V()
 }
 
-func (it *listSeriesIterator) AtHistogram() (int64, histogram.Histogram) {
+func (it *listSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
 	s := it.samples.Get(it.idx)
-	return s.T(), *s.H()
+	return s.T(), s.H()
 }
 
 func (it *listSeriesIterator) ChunkEncoding() chunkenc.Encoding {
@@ -302,13 +302,12 @@ func ExpandSamples(iter chunkenc.Iterator, newSampleFn func(t int64, v float64, 
 	}
 
 	var result []tsdbutil.Sample
-	if iter.ChunkEncoding() == chunkenc.EncHistogram {
-		for iter.Next() {
+	for iter.Next() {
+		// Only after Next() returned true, it is safe to ask for the ChunkEncoding.
+		if iter.ChunkEncoding() == chunkenc.EncHistogram {
 			t, h := iter.AtHistogram()
-			result = append(result, newSampleFn(t, 0, &h))
-		}
-	} else {
-		for iter.Next() {
+			result = append(result, newSampleFn(t, 0, h))
+		} else {
 			t, v := iter.At()
 			// NaNs can't be compared normally, so substitute for another value.
 			if math.IsNaN(v) {

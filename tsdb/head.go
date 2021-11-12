@@ -1490,7 +1490,7 @@ func (s *stripeSeries) getOrSet(hash uint64, lset labels.Labels, createSeries fu
 
 type histogramSample struct {
 	t int64
-	h histogram.Histogram
+	h *histogram.Histogram
 }
 
 type sample struct {
@@ -1499,10 +1499,11 @@ type sample struct {
 	h *histogram.Histogram
 }
 
-func newSample(t int64, v float64) tsdbutil.Sample { return sample{t, v, nil} }
-func (s sample) T() int64                          { return s.t }
-func (s sample) V() float64                        { return s.v }
-func (s sample) H() *histogram.Histogram           { return s.h }
+func newSample(t int64, v float64, h *histogram.Histogram) tsdbutil.Sample { return sample{t, v, h} }
+
+func (s sample) T() int64                { return s.t }
+func (s sample) V() float64              { return s.v }
+func (s sample) H() *histogram.Histogram { return s.h }
 
 // memSeries is the in-memory representation of a series. None of its methods
 // are goroutine safe and it is the caller's responsibility to lock it.
@@ -1661,9 +1662,9 @@ func (h *Head) updateWALReplayStatusRead(current int) {
 	h.stats.WALReplayStatus.Current = current
 }
 
-func GenerateTestHistograms(n int) (r []histogram.Histogram) {
+func GenerateTestHistograms(n int) (r []*histogram.Histogram) {
 	for i := 0; i < n; i++ {
-		r = append(r, histogram.Histogram{
+		r = append(r, &histogram.Histogram{
 			Count:         5 + uint64(i*4),
 			ZeroCount:     2 + uint64(i),
 			ZeroThreshold: 0.001,

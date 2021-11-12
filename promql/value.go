@@ -300,9 +300,9 @@ func (ssi *storageSeriesIterator) At() (t int64, v float64) {
 	return p.T, p.V
 }
 
-func (ssi *storageSeriesIterator) AtHistogram() (int64, histogram.Histogram) {
+func (ssi *storageSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
 	p := ssi.points[ssi.curr]
-	return p.T, *p.H
+	return p.T, p.H
 }
 
 func (ssi *storageSeriesIterator) ChunkEncoding() chunkenc.Encoding {

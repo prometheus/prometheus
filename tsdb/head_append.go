@@ -67,7 +67,7 @@ func (a *initAppender) AppendExemplar(ref uint64, l labels.Labels, e exemplar.Ex
 	return a.app.AppendExemplar(ref, l, e)
 }
 
-func (a *initAppender) AppendHistogram(ref uint64, l labels.Labels, t int64, h histogram.Histogram) (uint64, error) {
+func (a *initAppender) AppendHistogram(ref uint64, l labels.Labels, t int64, h *histogram.Histogram) (uint64, error) {
 	if a.app != nil {
 		return a.app.AppendHistogram(ref, l, t, h)
 	}
@@ -270,7 +270,7 @@ func (a *headAppender) Append(ref uint64, lset labels.Labels, t int64, v float64
 	}
 
 	if value.IsStaleNaN(v) && s.histogramSeries {
-		return a.AppendHistogram(ref, lset, t, histogram.Histogram{Sum: v})
+		return a.AppendHistogram(ref, lset, t, &histogram.Histogram{Sum: v})
 	}
 
 	s.Lock()
@@ -322,7 +322,7 @@ func (s *memSeries) appendable(t int64, v float64) error {
 }
 
 // appendableHistogram checks whether the given sample is valid for appending to the series.
-func (s *memSeries) appendableHistogram(t int64, sh histogram.Histogram) error {
+func (s *memSeries) appendableHistogram(t int64, h *histogram.Histogram) error {
 	c := s.head()
 	if c == nil {
 		return nil
@@ -334,7 +334,7 @@ func (s *memSeries) appendableHistogram(t int64, sh histogram.Histogram) error {
 	if t < c.maxTime {
 		return storage.ErrOutOfOrderSample
 	}
-	// TODO: do it for histogram.
+	// TODO(beorn7): do it for histogram.
 	// We are allowing exact duplicates as we can encounter them in valid cases
 	// like federation and erroring out at that time would be extremely noisy.
 	//if math.Float64bits(s.sampleBuf[3].v) != math.Float64bits(v) {
@@ -372,7 +372,7 @@ func (a *headAppender) AppendExemplar(ref uint64, _ labels.Labels, e exemplar.Ex
 	return s.ref, nil
 }
 
-func (a *headAppender) AppendHistogram(ref uint64, lset labels.Labels, t int64, h histogram.Histogram) (uint64, error) {
+func (a *headAppender) AppendHistogram(ref uint64, lset labels.Labels, t int64, h *histogram.Histogram) (uint64, error) {
 	if t < a.minValidTime {
 		a.head.metrics.outOfBoundSamples.Inc()
 		return 0, storage.ErrOutOfBounds
@@ -606,7 +606,7 @@ func (s *memSeries) append(t int64, v float64, appendID uint64, chunkDiskMapper 
 
 // appendHistogram adds the histogram.
 // It is unsafe to call this concurrently with s.iterator(...) without holding the series lock.
-func (s *memSeries) appendHistogram(t int64, h histogram.Histogram, appendID uint64, chunkDiskMapper *chunks.ChunkDiskMapper) (sampleInOrder, chunkCreated bool) {
+func (s *memSeries) appendHistogram(t int64, h *histogram.Histogram, appendID uint64, chunkDiskMapper *chunks.ChunkDiskMapper) (sampleInOrder, chunkCreated bool) {
 	// Head controls the execution of recoding, so that we own the proper chunk reference afterwards.
 	// We check for Appendable before appendPreprocessor because in case it ends up creating a new chunk,
 	// we need to know if there was also a counter reset or not to set the meta properly.

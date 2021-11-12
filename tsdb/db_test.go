@@ -420,7 +420,7 @@ Outer:
 
 		expSamples := make([]tsdbutil.Sample, 0, len(c.remaint))
 		for _, ts := range c.remaint {
-			expSamples = append(expSamples, sample{ts, smpls[ts]})
+			expSamples = append(expSamples, sample{ts, smpls[ts], nil})
 		}
 
 		expss := newMockSeriesSet([]storage.Series{
@@ -536,7 +536,7 @@ func TestSkippingInvalidValuesInSameTxn(t *testing.T) {
 	ssMap := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 
 	require.Equal(t, map[string][]tsdbutil.Sample{
-		labels.New(labels.Label{Name: "a", Value: "b"}).String(): {sample{0, 1}},
+		labels.New(labels.Label{Name: "a", Value: "b"}).String(): {sample{0, 1, nil}},
 	}, ssMap)
 
 	// Append Out of Order Value.
@@ -553,7 +553,7 @@ func TestSkippingInvalidValuesInSameTxn(t *testing.T) {
 	ssMap = query(t, q, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 
 	require.Equal(t, map[string][]tsdbutil.Sample{
-		labels.New(labels.Label{Name: "a", Value: "b"}).String(): {sample{0, 1}, sample{10, 3}},
+		labels.New(labels.Label{Name: "a", Value: "b"}).String(): {sample{0, 1, nil}, sample{10, 3, nil}},
 	}, ssMap)
 }
 
@@ -716,7 +716,7 @@ Outer:
 
 		expSamples := make([]tsdbutil.Sample, 0, len(c.remaint))
 		for _, ts := range c.remaint {
-			expSamples = append(expSamples, sample{ts, smpls[ts]})
+			expSamples = append(expSamples, sample{ts, smpls[ts], nil})
 		}
 
 		expss := newMockSeriesSet([]storage.Series{
@@ -821,7 +821,7 @@ func TestDB_e2e(t *testing.T) {
 		for i := 0; i < numDatapoints; i++ {
 			v := rand.Float64()
 
-			series = append(series, sample{ts, v})
+			series = append(series, sample{ts, v, nil})
 
 			_, err := app.Append(0, lset, ts, v)
 			require.NoError(t, err)
@@ -1066,7 +1066,7 @@ func TestTombstoneClean(t *testing.T) {
 
 		expSamples := make([]tsdbutil.Sample, 0, len(c.remaint))
 		for _, ts := range c.remaint {
-			expSamples = append(expSamples, sample{ts, smpls[ts]})
+			expSamples = append(expSamples, sample{ts, smpls[ts], nil})
 		}
 
 		expss := newMockSeriesSet([]storage.Series{
@@ -2541,11 +2541,11 @@ func TestDBQueryDoesntSeeAppendsAfterCreation(t *testing.T) {
 // TestChunkWriter_ReadAfterWrite ensures that chunk segment are cut at the set segment size and
 // that the resulted segments includes the expected chunks data.
 func TestChunkWriter_ReadAfterWrite(t *testing.T) {
-	chk1 := tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 1}})
-	chk2 := tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 2}})
-	chk3 := tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 3}})
-	chk4 := tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 4}})
-	chk5 := tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 5}})
+	chk1 := tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 1, nil}})
+	chk2 := tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 2, nil}})
+	chk3 := tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 3, nil}})
+	chk4 := tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 4, nil}})
+	chk5 := tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 5, nil}})
 	chunkSize := len(chk1.Chunk.Bytes()) + chunks.MaxChunkLengthFieldSize + chunks.ChunkEncodingSize + crc32.Size
 
 	tests := []struct {
@@ -2746,11 +2746,11 @@ func TestRangeForTimestamp(t *testing.T) {
 // Regression test for https://github.com/prometheus/prometheus/pull/6514.
 func TestChunkReader_ConcurrentReads(t *testing.T) {
 	chks := []chunks.Meta{
-		tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 1}}),
-		tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 2}}),
-		tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 3}}),
-		tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 4}}),
-		tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 5}}),
+		tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 1, nil}}),
+		tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 2, nil}}),
+		tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 3, nil}}),
+		tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 4, nil}}),
+		tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 5, nil}}),
 	}
 
 	tempDir, err := ioutil.TempDir("", "test_chunk_writer")
@@ -2815,7 +2815,7 @@ func TestCompactHead(t *testing.T) {
 		val := rand.Float64()
 		_, err := app.Append(0, labels.FromStrings("a", "b"), int64(i), val)
 		require.NoError(t, err)
-		expSamples = append(expSamples, sample{int64(i), val})
+		expSamples = append(expSamples, sample{int64(i), val, nil})
 	}
 	require.NoError(t, app.Commit())
 
@@ -2842,7 +2842,7 @@ func TestCompactHead(t *testing.T) {
 		series := seriesSet.At().Iterator()
 		for series.Next() {
 			time, val := series.At()
-			actSamples = append(actSamples, sample{int64(time), val})
+			actSamples = append(actSamples, sample{int64(time), val, nil})
 		}
 		require.NoError(t, series.Err())
 	}

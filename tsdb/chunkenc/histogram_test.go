@@ -30,7 +30,7 @@ func TestHistogramChunkSameBuckets(t *testing.T) {
 	require.Equal(t, 0, c.NumSamples())
 
 	ts := int64(1234567890)
-	h := histogram.Histogram{
+	h := &histogram.Histogram{
 		Count:         5,
 		ZeroCount:     2,
 		Sum:           18.4,
@@ -48,6 +48,7 @@ func TestHistogramChunkSameBuckets(t *testing.T) {
 
 	// Add an updated histogram.
 	ts += 16
+	h = h.Copy()
 	h.Count += 9
 	h.ZeroCount++
 	h.Sum = 24.4
@@ -61,6 +62,7 @@ func TestHistogramChunkSameBuckets(t *testing.T) {
 	require.NoError(t, err)
 
 	ts += 14
+	h = h.Copy()
 	h.Count += 13
 	h.ZeroCount += 2
 	h.Sum = 24.4
@@ -113,7 +115,7 @@ func TestHistogramChunkSameBuckets(t *testing.T) {
 
 type res struct {
 	t int64
-	h histogram.Histogram
+	h *histogram.Histogram
 }
 
 // Mimics the scenario described for compareSpans().
@@ -126,7 +128,7 @@ func TestHistogramChunkBucketChanges(t *testing.T) {
 	require.Equal(t, 0, c.NumSamples())
 
 	ts1 := int64(1234567890)
-	h1 := histogram.Histogram{
+	h1 := &histogram.Histogram{
 		Count:         5,
 		ZeroCount:     2,
 		Sum:           18.4,
@@ -147,7 +149,7 @@ func TestHistogramChunkBucketChanges(t *testing.T) {
 
 	// Add a new histogram that has expanded buckets.
 	ts2 := ts1 + 16
-	h2 := h1
+	h2 := h1.Copy()
 	h2.PositiveSpans = []histogram.Span{
 		{Offset: 0, Length: 3},
 		{Offset: 1, Length: 1},
@@ -202,7 +204,7 @@ func TestHistoChunkAppendable(t *testing.T) {
 	require.Equal(t, 0, c.NumSamples())
 
 	ts := int64(1234567890)
-	h1 := histogram.Histogram{
+	h1 := &histogram.Histogram{
 		Count:         5,
 		ZeroCount:     2,
 		Sum:           18.4,

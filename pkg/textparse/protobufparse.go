@@ -135,7 +135,7 @@ func (p *ProtobufParser) Series() ([]byte, *int64, float64) {
 // Histogram returns the bytes of a series with a sparse histogram as a
 // value, the timestamp if set, and the sparse histogram in the current
 // sample.
-func (p *ProtobufParser) Histogram() ([]byte, *int64, histogram.Histogram) {
+func (p *ProtobufParser) Histogram() ([]byte, *int64, *histogram.Histogram) {
 	var (
 		m  = p.mf.GetMetric()[p.metricPos]
 		ts = m.GetTimestampMs()
@@ -161,12 +161,12 @@ func (p *ProtobufParser) Histogram() ([]byte, *int64, histogram.Histogram) {
 		sh.NegativeSpans[i].Length = span.GetLength()
 	}
 	if ts != 0 {
-		return p.metricBytes.Bytes(), &ts, sh
+		return p.metricBytes.Bytes(), &ts, &sh
 	}
 	// Nasty hack: Assume that ts==0 means no timestamp. That's not true in
 	// general, but proto3 has no distinction between unset and
 	// default. Need to avoid in the final format.
-	return p.metricBytes.Bytes(), nil, sh
+	return p.metricBytes.Bytes(), nil, &sh
 }
 
 // Help returns the metric name and help text in the current entry.

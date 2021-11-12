@@ -331,11 +331,11 @@ func TestHead_ReadWAL(t *testing.T) {
 				require.NoError(t, c.Err())
 				return x
 			}
-			require.Equal(t, []sample{{100, 2}, {101, 5}}, expandChunk(s10.iterator(0, nil, head.chunkDiskMapper, nil)))
-			require.Equal(t, []sample{{101, 6}}, expandChunk(s50.iterator(0, nil, head.chunkDiskMapper, nil)))
+			require.Equal(t, []sample{{100, 2, nil}, {101, 5, nil}}, expandChunk(s10.iterator(0, nil, head.chunkDiskMapper, nil)))
+			require.Equal(t, []sample{{101, 6, nil}}, expandChunk(s50.iterator(0, nil, head.chunkDiskMapper, nil)))
 			// The samples before the new series record should be discarded since a duplicate record
 			// is only possible when old samples were compacted.
-			require.Equal(t, []sample{{101, 7}}, expandChunk(s100.iterator(0, nil, head.chunkDiskMapper, nil)))
+			require.Equal(t, []sample{{101, 7, nil}}, expandChunk(s100.iterator(0, nil, head.chunkDiskMapper, nil)))
 
 			q, err := head.ExemplarQuerier(context.Background())
 			require.NoError(t, err)
@@ -401,8 +401,8 @@ func TestHead_WALMultiRef(t *testing.T) {
 	// The samples before the new ref should be discarded since Head truncation
 	// happens only after compacting the Head.
 	require.Equal(t, map[string][]tsdbutil.Sample{`{foo="bar"}`: {
-		sample{1700, 3},
-		sample{2000, 4},
+		sample{1700, 3, nil},
+		sample{2000, 4, nil},
 	}}, series)
 }
 
@@ -798,7 +798,7 @@ func TestDeleteUntilCurMax(t *testing.T) {
 	it = exps.Iterator()
 	resSamples, err := storage.ExpandSamples(it, newSample)
 	require.NoError(t, err)
-	require.Equal(t, []tsdbutil.Sample{sample{11, 1}}, resSamples)
+	require.Equal(t, []tsdbutil.Sample{sample{11, 1, nil}}, resSamples)
 	for res.Next() {
 	}
 	require.NoError(t, res.Err())
@@ -913,7 +913,7 @@ func TestDelete_e2e(t *testing.T) {
 			v := rand.Float64()
 			_, err := app.Append(0, ls, ts, v)
 			require.NoError(t, err)
-			series = append(series, sample{ts, v})
+			series = append(series, sample{ts, v, nil})
 			ts += rand.Int63n(timeInterval) + 1
 		}
 		seriesMap[labels.New(l...).String()] = series
@@ -2397,7 +2397,7 @@ func TestDataMissingOnQueryDuringCompaction(t *testing.T) {
 		ref, err = app.Append(ref, labels.FromStrings("a", "b"), ts, float64(i))
 		require.NoError(t, err)
 		maxt = ts
-		expSamples = append(expSamples, sample{ts, float64(i)})
+		expSamples = append(expSamples, sample{ts, float64(i), nil})
 	}
 	require.NoError(t, app.Commit())
 
@@ -2541,7 +2541,7 @@ func TestAppendHistogram(t *testing.T) {
 
 			type timedHistogram struct {
 				t int64
-				h histogram.Histogram
+				h *histogram.Histogram
 			}
 			expHistograms := make([]timedHistogram, 0, numHistograms)
 			for i, h := range GenerateTestHistograms(numHistograms) {
@@ -2588,7 +2588,7 @@ func TestHistogramInWAL(t *testing.T) {
 
 	type timedHistogram struct {
 		t int64
-		h histogram.Histogram
+		h *histogram.Histogram
 	}
 	expHistograms := make([]timedHistogram, 0, numHistograms)
 	for i, h := range GenerateTestHistograms(numHistograms) {
@@ -2728,7 +2728,7 @@ func TestChunkSnapshot(t *testing.T) {
 			// 240 samples should m-map at least 1 chunk.
 			for ts := int64(1); ts <= 240; ts++ {
 				val := rand.Float64()
-				expSeries[lblStr] = append(expSeries[lblStr], sample{ts, val})
+				expSeries[lblStr] = append(expSeries[lblStr], sample{ts, val, nil})
 				ref, err := app.Append(0, lbls, ts, val)
 				require.NoError(t, err)
 
@@ -2788,7 +2788,7 @@ func TestChunkSnapshot(t *testing.T) {
 			// 240 samples should m-map at least 1 chunk.
 			for ts := int64(241); ts <= 480; ts++ {
 				val := rand.Float64()
-				expSeries[lblStr] = append(expSeries[lblStr], sample{ts, val})
+				expSeries[lblStr] = append(expSeries[lblStr], sample{ts, val, nil})
 				ref, err := app.Append(0, lbls, ts, val)
 				require.NoError(t, err)
 
@@ -2977,7 +2977,7 @@ func TestHistogramStaleSample(t *testing.T) {
 
 	type timedHistogram struct {
 		t int64
-		h histogram.Histogram
+		h *histogram.Histogram
 	}
 	expHistograms := make([]timedHistogram, 0, numHistograms)
 
@@ -3011,6 +3011,7 @@ func TestHistogramStaleSample(t *testing.T) {
 				require.True(t, value.IsStaleNaN(ah.h.Sum))
 				// To make require.Equal work.
 				ah.h.Sum = 0
+				eh.h = eh.h.Copy()
 				eh.h.Sum = 0
 			}
 			require.Equal(t, eh, ah)
@@ -3028,7 +3029,7 @@ func TestHistogramStaleSample(t *testing.T) {
 	// +1 so that delta-of-delta is not 0.
 	_, err := app.Append(0, l, 100*int64(len(expHistograms))+1, math.Float64frombits(value.StaleNaN))
 	require.NoError(t, err)
-	expHistograms = append(expHistograms, timedHistogram{100*int64(len(expHistograms)) + 1, histogram.Histogram{Sum: math.Float64frombits(value.StaleNaN)}})
+	expHistograms = append(expHistograms, timedHistogram{100*int64(len(expHistograms)) + 1, &histogram.Histogram{Sum: math.Float64frombits(value.StaleNaN)}})
 	require.NoError(t, app.Commit())
 
 	// Only 1 chunk in the memory, no m-mapped chunk.
@@ -3050,7 +3051,7 @@ func TestHistogramStaleSample(t *testing.T) {
 	// +1 so that delta-of-delta is not 0.
 	_, err = app.Append(0, l, 100*int64(len(expHistograms))+1, math.Float64frombits(value.StaleNaN))
 	require.NoError(t, err)
-	expHistograms = append(expHistograms, timedHistogram{100*int64(len(expHistograms)) + 1, histogram.Histogram{Sum: math.Float64frombits(value.StaleNaN)}})
+	expHistograms = append(expHistograms, timedHistogram{100*int64(len(expHistograms)) + 1, &histogram.Histogram{Sum: math.Float64frombits(value.StaleNaN)}})
 	require.NoError(t, app.Commit())
 
 	// Total 2 chunks, 1 m-mapped.
@@ -3069,7 +3070,7 @@ func TestHistogramCounterResetHeader(t *testing.T) {
 	require.NoError(t, head.Init(0))
 
 	ts := int64(0)
-	appendHistogram := func(h histogram.Histogram) {
+	appendHistogram := func(h *histogram.Histogram) {
 		ts++
 		app := head.Appender(context.Background())
 		_, err := app.AppendHistogram(0, l, ts, h)

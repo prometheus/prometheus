@@ -1190,7 +1190,7 @@ func (n notReadyAppender) AppendExemplar(ref uint64, l labels.Labels, e exemplar
 	return 0, tsdb.ErrNotReady
 }
 
-func (n notReadyAppender) AppendHistogram(ref uint64, l labels.Labels, t int64, sh histogram.Histogram) (uint64, error) {
+func (n notReadyAppender) AppendHistogram(ref uint64, l labels.Labels, t int64, h *histogram.Histogram) (uint64, error) {
 	return 0, tsdb.ErrNotReady
 }
 
