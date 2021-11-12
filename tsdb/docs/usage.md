@@ -7,30 +7,30 @@ Tip: `tsdb/db_test.go` demonstrates various usages of the TSDB library.
 
 ## Instantiating a database
 
-Callers should use [`tsdb.Open`](https://pkg.go.dev/github.com/prometheus/prometheus/tsdb#Open) to open a TSDB
+Callers should use [`tsdb.Open`](https://pkg.go.dev/github.com/prometheus/prometheus@v1.8.2-0.20211105201321-411021ada9ab/tsdb#Open) to open a TSDB
 (the directory may be new or pre-existing).
-This returns a [`*tsdb.DB`](https://pkg.go.dev/github.com/prometheus/prometheus/tsdb#DB) which is the actual database.
+This returns a [`*tsdb.DB`](https://pkg.go.dev/github.com/prometheus/prometheus@v1.8.2-0.20211105201321-411021ada9ab/tsdb#DB) which is the actual database.
 
 A `DB` has the following main components:
 
-* Compactor: a [leveled compactor](https://github.com/prometheus/prometheus/blob/c0c22ed04200a8d24d1d5719f605c85710f0d008/tsdb/compact.go#L78). Note: it is currently the only compactor implementation. It runs automatically.
-* [`Head`](https://pkg.go.dev/github.com/prometheus/prometheus/tsdb#DB.Head)
+* Compactor: a [leveled compactor](https://pkg.go.dev/github.com/prometheus/prometheus@v1.8.2-0.20211105201321-411021ada9ab/tsdb#LeveledCompactor). Note: it is currently the only compactor implementation. It runs automatically.
+* [`Head`](https://pkg.go.dev/github.com/prometheus/prometheus@v1.8.2-0.20211105201321-411021ada9ab/tsdb#DB.Head)
+* [Blocks (persistent blocks)](https://pkg.go.dev/github.com/prometheus/prometheus@v1.8.2-0.20211105201321-411021ada9ab/tsdb#DB.Blocks)
 
 The `Head` is responsible for a lot.  Here are its main components:
 
-* [WAL](https://pkg.go.dev/github.com/prometheus/prometheus/tsdb/wal#WAL) (Write Ahead Log).
-* [`stripeSeries`](https://github.com/prometheus/prometheus/blob/1270b87970baeb926fcce64552db5c744ffaf83f/tsdb/head.go#L1279):
-  this holds all the active series by linking to [`memSeries`](https://github.com/prometheus/prometheus/blob/1270b87970baeb926fcce64552db5c744ffaf83f/tsdb/head.go#L1449)
+* [WAL](https://pkg.go.dev/github.com/prometheus/prometheus@v1.8.2-0.20211105201321-411021ada9ab/tsdb/wal#WAL) (Write Ahead Log).
+* [`stripeSeries`](https://github.com/prometheus/prometheus/blob/411021ada9ab41095923b8d2df9365b632fd40c3/tsdb/head.go#L1292):
+  this holds all the active series by linking to [`memSeries`](https://github.com/prometheus/prometheus/blob/411021ada9ab41095923b8d2df9365b632fd40c3/tsdb/head.go#L1462)
   by an ID (aka "ref") and by labels hash.
 * Postings list (reverse index): For any label-value pair, holds all the corresponding series refs. Used for queries.
 * Tombstones.
-* [Blocks (persistent blocks)](https://pkg.go.dev/github.com/prometheus/prometheus/tsdb#DB.Blocks)
 
 
 ## Adding data
 
-Use [`db.Appender()`](https://pkg.go.dev/github.com/prometheus/prometheus/tsdb#DB.Appender) to obtain an "appender".
-The [golang docs](https://pkg.go.dev/github.com/prometheus/prometheus/storage#Appender) speak mostly for themselves.
+Use [`db.Appender()`](https://pkg.go.dev/github.com/prometheus/prometheus@v1.8.2-0.20211105201321-411021ada9ab/tsdb#DB.Appender) to obtain an "appender".
+The [golang docs](https://pkg.go.dev/github.com/prometheus/prometheus@v1.8.2-0.20211105201321-411021ada9ab/storage#Appender) speak mostly for themselves.
 
 Remember:
 
@@ -43,7 +43,7 @@ Remember:
 Append may reject data due to these conditions:
 
 1) `timestamp < minValidTime` where `minValidTime` is the highest of:
-  * the maxTime of the last block (i.e. the last truncation time of Head) - updated via [`Head.Truncate()`](https://pkg.go.dev/github.com/prometheus/prometheus/tsdb#Head.Truncate) and [`DB.CompactHead()`](https://github.com/prometheus/prometheus/blob/1270b87970baeb926fcce64552db5c744ffaf83f/tsdb/db.go#L968)
+  * the maxTime of the last block (i.e. the last truncation time of Head) - updated via [`Head.Truncate()`](https://pkg.go.dev/github.com/prometheus/prometheus@v1.8.2-0.20211105201321-411021ada9ab/tsdb#Head.Truncate) and [`DB.compactHead()`](https://github.com/prometheus/prometheus/blob/411021ada9ab41095923b8d2df9365b632fd40c3/tsdb/db.go#L968)
   * `tsdb.min-block-duration/2` older than the max time in the Head block. Note that while technically `storage.tsdb.min-block-duration` is configurable, it's a hidden option and changing it is discouraged.  So We can assume this value to be 2h.
 
   Breaching this condition results in "out of bounds" errors.  
@@ -96,8 +96,8 @@ func main() {
 
 ## Querying data
 
-Use [`db.Querier()`](https://pkg.go.dev/github.com/prometheus/prometheus/tsdb#DB.Querier) to obtain a "querier".
-The [golang docs](https://pkg.go.dev/github.com/prometheus/prometheus/storage#Querier) speak mostly for themselves.
+Use [`db.Querier()`](https://pkg.go.dev/github.com/prometheus/prometheus@v1.8.2-0.20211105201321-411021ada9ab/tsdb#DB.Querier) to obtain a "querier".
+The [golang docs](https://pkg.go.dev/github.com/prometheus/prometheus@v1.8.2-0.20211105201321-411021ada9ab/storage#Querier) speak mostly for themselves.
 
 Remember:
 
