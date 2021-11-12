@@ -22,8 +22,8 @@ import (
 	"github.com/go-kit/log"
 	"github.com/pkg/errors"
 
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/textparse"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/tsdb"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 )

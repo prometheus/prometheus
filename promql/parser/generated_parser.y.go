@@ -13,8 +13,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/value"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/value"
 )
 
 //line promql/parser/generated_parser.y:28
