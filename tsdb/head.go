@@ -1475,7 +1475,7 @@ type memSeries struct {
 	mmMaxTime     int64           // Max time of any mmapped chunk, only used during WAL replay.
 	headChunk     *memChunk       // Most recent chunk in memory that's still being built.
 	chunkRange    int64
-	firstChunkID  int // ChunkID corresponding to mmappedChunks[0].ref
+	firstChunkID  int
 
 	nextAt int64 // Timestamp at which to cut the next chunk.
 
