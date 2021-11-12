@@ -3,7 +3,8 @@
 TSDB can be - and is - used by other applications such as [Cortex](https://cortexmetrics.io/) and [Thanos](https://thanos.io/).
 This directory contains documentation for any developers who wish to work on or with TSDB.
 
-Tip: `tsdb/db_test.go` demonstrates various usages of the TSDB library.
+For a full example of instantiating a database, adding and querying data, see the [tsdb example in the docs](https://pkg.go.dev/github.com/prometheus/prometheus@v1.8.2-0.20211105201321-411021ada9ab/tsdb).
+`tsdb/db_test.go` also demonstrates various specific usages of the TSDB library.
 
 ## Instantiating a database
 
@@ -25,7 +26,6 @@ The `Head` is responsible for a lot.  Here are its main components:
   by an ID (aka "ref") and by labels hash.
 * Postings list (reverse index): For any label-value pair, holds all the corresponding series refs. Used for queries.
 * Tombstones.
-
 
 ## Adding data
 
@@ -54,46 +54,6 @@ Append may reject data due to these conditions:
 
 `Commit()` may also refuse data that is out of order with respect to samples that were added via a different appender.
 
-Example:
-
-```go
-package main
-
-import (
-	"context"
-	"time"
-
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/tsdb"
-)
-
-func noErr(err error) {
-	if err != nil {
-		panic(err)
-	}
-}
-
-func main() {
-	db, err := tsdb.Open("tsdb-test", nil, nil, tsdb.DefaultOptions(), nil)
-	noErr(err)
-
-	ctx := context.Background()
-	app := db.Appender(ctx)
-
-	series := labels.FromStrings("foo", "bar")
-	// ref is 0 for the first append since we don't know the reference for the series.
-	ref, err := app.Append(0, series, time.Now().Unix(), 123)
-	time.Sleep(time.Second)
-	// Re-using the ref from above since it's the same series, makes append faster.
-	_, err = app.Append(ref, series, time.Now().Unix(), 124)
-	err = app.Commit()
-	noErr(err)
-	app = db.Appender(ctx) // Need a new one. See app.Commit() docs.
-	// ... adding more samples.
-}
-```
-
-
 ## Querying data
 
 Use [`db.Querier()`](https://pkg.go.dev/github.com/prometheus/prometheus@v1.8.2-0.20211105201321-411021ada9ab/tsdb#DB.Querier) to obtain a "querier".
@@ -104,53 +64,3 @@ Remember:
 * A querier can only see data that was committed when it was created. This limits the lifetime of a querier.
 * A querier should be closed when you're done with it.
 * Use mint/maxt to avoid loading unneeded data.
-
-Example:
-
-```go
-package main
-
-import (
-	"context"
-	"fmt"
-	"math"
-
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/tsdb"
-)
-
-func noErr(err error) {
-	if err != nil {
-		panic(err)
-	}
-}
-
-func main() {
-	db, err := tsdb.Open("tsdb-test", nil, nil, tsdb.DefaultOptions(), nil)
-	noErr(err)
-
-	querier, err := db.Querier(context.Background(), math.MinInt64, math.MaxInt64)
-	noErr(err)
-	ss := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
-
-	for ss.Next() {
-		series := ss.At()
-		fmt.Println("series:", series.Labels().String())
-
-		it := series.Iterator()
-		for it.Next() {
-			t, v := it.At()
-			fmt.Println("sample", t, v)
-		}
-
-		fmt.Println("it.Err():", it.Err())
-	}
-	fmt.Println("ss.Err():", ss.Err())
-	ws := ss.Warnings()
-	if len(ws) > 0 {
-		fmt.Println("warnings:", ws)
-	}
-	err = querier.Close()
-	noErr(err)
-}
-```
