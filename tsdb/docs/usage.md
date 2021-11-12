@@ -45,6 +45,7 @@ Append may reject data due to these conditions:
 1) `timestamp < minValidTime` where `minValidTime` is the highest of:
   * the maxTime of the last block (i.e. the last truncation time of Head) - updated via [`Head.Truncate()`](https://pkg.go.dev/github.com/prometheus/prometheus/tsdb#Head.Truncate) and [`DB.CompactHead()`](https://github.com/prometheus/prometheus/blob/1270b87970baeb926fcce64552db5c744ffaf83f/tsdb/db.go#L968)
   * `tsdb.min-block-duration/2` older than the max time in the Head block. Note that while technically `storage.tsdb.min-block-duration` is configurable, it's a hidden option and changing it is discouraged.  So We can assume this value to be 2h.
+
   Breaching this condition results in "out of bounds" errors.  
   The first condition assures the block that will be generated doesn't overlap with the previous one (which simplifies querying)  
   The second condition assures the sample won't go into the so called "compaction window", that is the section of the data that might be in process of being saved into a persistent block on disk.  (because that logic runs concurrently with ingestion without a lock)
