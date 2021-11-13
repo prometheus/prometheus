@@ -16,6 +16,7 @@ package tsdb
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
 	"math"
 	"os"
 	"time"
@@ -32,7 +33,7 @@ func noErr(err error) {
 func Example() {
 	// Create a random dir to work in.  Open() doesn't require a pre-existing dir, but
 	// we want to make sure not to make a mess where we shouldn't.
-	dir, err := os.MkdirTemp("", "tsdb-test")
+	dir, err := ioutil.TempDir("", "tsdb-test")
 	noErr(err)
 
 	// Open a TSDB for reading and/or writing.
