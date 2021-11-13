@@ -24,7 +24,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
@@ -56,7 +56,7 @@ func funcTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper)
 // It calculates the rate (allowing for counter resets if isCounter is true),
 // extrapolates if the first/last sample is close to the boundary, and returns
 // the result as either per-second (if isRate is true) or overall.
-func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper, isCounter bool, isRate bool) Vector {
+func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper, isCounter, isRate bool) Vector {
 	ms := args[0].(*parser.MatrixSelector)
 	vs := ms.VectorSelector.(*parser.VectorSelector)
 	var (
@@ -367,7 +367,7 @@ func aggrOverTime(vals []parser.Value, enh *EvalNodeHelper, aggrFn func([]Point)
 // === avg_over_time(Matrix parser.ValueTypeMatrix) Vector ===
 func funcAvgOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return aggrOverTime(vals, enh, func(values []Point) float64 {
-		var mean, count float64
+		var mean, count, c float64
 		for _, v := range values {
 			count++
 			if math.IsInf(mean, 0) {
@@ -387,9 +387,13 @@ func funcAvgOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 					continue
 				}
 			}
-			mean += v.V/count - mean/count
+			mean, c = kahanSumInc(v.V/count-mean/count, mean, c)
 		}
-		return mean
+
+		if math.IsInf(mean, 0) {
+			return mean
+		}
+		return mean + c
 	})
 }
 
@@ -439,11 +443,14 @@ func funcMinOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 // === sum_over_time(Matrix parser.ValueTypeMatrix) Vector ===
 func funcSumOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return aggrOverTime(vals, enh, func(values []Point) float64 {
-		var sum float64
+		var sum, c float64
 		for _, v := range values {
-			sum += v.V
+			sum, c = kahanSumInc(v.V, sum, c)
 		}
-		return sum
+		if math.IsInf(sum, 0) {
+			return sum
+		}
+		return sum + c
 	})
 }
 
@@ -464,28 +471,32 @@ func funcQuantileOverTime(vals []parser.Value, args parser.Expressions, enh *Eva
 // === stddev_over_time(Matrix parser.ValueTypeMatrix) Vector ===
 func funcStddevOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return aggrOverTime(vals, enh, func(values []Point) float64 {
-		var aux, count, mean float64
+		var count float64
+		var mean, cMean float64
+		var aux, cAux float64
 		for _, v := range values {
 			count++
-			delta := v.V - mean
-			mean += delta / count
-			aux += delta * (v.V - mean)
+			delta := v.V - (mean + cMean)
+			mean, cMean = kahanSumInc(delta/count, mean, cMean)
+			aux, cAux = kahanSumInc(delta*(v.V-(mean+cMean)), aux, cAux)
 		}
-		return math.Sqrt(aux / count)
+		return math.Sqrt((aux + cAux) / count)
 	})
 }
 
 // === stdvar_over_time(Matrix parser.ValueTypeMatrix) Vector ===
 func funcStdvarOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return aggrOverTime(vals, enh, func(values []Point) float64 {
-		var aux, count, mean float64
+		var count float64
+		var mean, cMean float64
+		var aux, cAux float64
 		for _, v := range values {
 			count++
-			delta := v.V - mean
-			mean += delta / count
-			aux += delta * (v.V - mean)
+			delta := v.V - (mean + cMean)
+			mean, cMean = kahanSumInc(delta/count, mean, cMean)
+			aux, cAux = kahanSumInc(delta*(v.V-(mean+cMean)), aux, cAux)
 		}
-		return aux / count
+		return (aux + cAux) / count
 	})
 }
 
@@ -511,6 +522,13 @@ func funcAbsentOverTime(vals []parser.Value, args parser.Expressions, enh *EvalN
 		Sample{
 			Point: Point{V: 1},
 		})
+}
+
+// === present_over_time(Vector parser.ValueTypeMatrix) Vector ===
+func funcPresentOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	return aggrOverTime(vals, enh, func(values []Point) float64 {
+		return 1
+	})
 }
 
 func simpleFunc(vals []parser.Value, enh *EvalNodeHelper, f func(float64) float64) Vector {
@@ -563,6 +581,87 @@ func funcLog10(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper
 	return simpleFunc(vals, enh, math.Log10)
 }
 
+// === sin(Vector parser.ValueTypeVector) Vector ===
+func funcSin(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	return simpleFunc(vals, enh, math.Sin)
+}
+
+// === cos(Vector parser.ValueTypeVector) Vector ===
+func funcCos(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	return simpleFunc(vals, enh, math.Cos)
+}
+
+// === tan(Vector parser.ValueTypeVector) Vector ===
+func funcTan(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	return simpleFunc(vals, enh, math.Tan)
+}
+
+// == asin(Vector parser.ValueTypeVector) Vector ===
+func funcAsin(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	return simpleFunc(vals, enh, math.Asin)
+}
+
+// == acos(Vector parser.ValueTypeVector) Vector ===
+func funcAcos(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	return simpleFunc(vals, enh, math.Acos)
+}
+
+// == atan(Vector parser.ValueTypeVector) Vector ===
+func funcAtan(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	return simpleFunc(vals, enh, math.Atan)
+}
+
+// == sinh(Vector parser.ValueTypeVector) Vector ===
+func funcSinh(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	return simpleFunc(vals, enh, math.Sinh)
+}
+
+// == cosh(Vector parser.ValueTypeVector) Vector ===
+func funcCosh(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	return simpleFunc(vals, enh, math.Cosh)
+}
+
+// == tanh(Vector parser.ValueTypeVector) Vector ===
+func funcTanh(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	return simpleFunc(vals, enh, math.Tanh)
+}
+
+// == asinh(Vector parser.ValueTypeVector) Vector ===
+func funcAsinh(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	return simpleFunc(vals, enh, math.Asinh)
+}
+
+// == acosh(Vector parser.ValueTypeVector) Vector ===
+func funcAcosh(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	return simpleFunc(vals, enh, math.Acosh)
+}
+
+// == atanh(Vector parser.ValueTypeVector) Vector ===
+func funcAtanh(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	return simpleFunc(vals, enh, math.Atanh)
+}
+
+// === rad(Vector parser.ValueTypeVector) Vector ===
+func funcRad(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	return simpleFunc(vals, enh, func(v float64) float64 {
+		return v * math.Pi / 180
+	})
+}
+
+// === deg(Vector parser.ValueTypeVector) Vector ===
+func funcDeg(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	return simpleFunc(vals, enh, func(v float64) float64 {
+		return v * 180 / math.Pi
+	})
+}
+
+// === pi() Scalar ===
+func funcPi(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	return Vector{Sample{Point: Point{
+		V: math.Pi,
+	}}}
+}
+
 // === sgn(Vector parser.ValueTypeVector) Vector ===
 func funcSgn(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return simpleFunc(vals, enh, func(v float64) float64 {
@@ -587,23 +686,51 @@ func funcTimestamp(vals []parser.Value, args parser.Expressions, enh *EvalNodeHe
 	return enh.Out
 }
 
+func kahanSum(samples []float64) float64 {
+	var sum, c float64
+
+	for _, v := range samples {
+		sum, c = kahanSumInc(v, sum, c)
+	}
+	return sum + c
+}
+
+func kahanSumInc(inc, sum, c float64) (newSum, newC float64) {
+	t := sum + inc
+	// Using Neumaier improvement, swap if next term larger than sum.
+	if math.Abs(sum) >= math.Abs(inc) {
+		c += (sum - t) + inc
+	} else {
+		c += (inc - t) + sum
+	}
+	return t, c
+}
+
 // linearRegression performs a least-square linear regression analysis on the
 // provided SamplePairs. It returns the slope, and the intercept value at the
 // provided time.
 func linearRegression(samples []Point, interceptTime int64) (slope, intercept float64) {
 	var (
-		n            float64
-		sumX, sumY   float64
-		sumXY, sumX2 float64
+		n          float64
+		sumX, cX   float64
+		sumY, cY   float64
+		sumXY, cXY float64
+		sumX2, cX2 float64
 	)
 	for _, sample := range samples {
-		x := float64(sample.T-interceptTime) / 1e3
 		n += 1.0
-		sumY += sample.V
-		sumX += x
-		sumXY += x * sample.V
-		sumX2 += x * x
+		x := float64(sample.T-interceptTime) / 1e3
+		sumX, cX = kahanSumInc(x, sumX, cX)
+		sumY, cY = kahanSumInc(sample.V, sumY, cY)
+		sumXY, cXY = kahanSumInc(x*sample.V, sumXY, cXY)
+		sumX2, cX2 = kahanSumInc(x*x, sumX2, cX2)
 	}
+
+	sumX = sumX + cX
+	sumY = sumY + cY
+	sumXY = sumXY + cXY
+	sumX2 = sumX2 + cX2
+
 	covXY := sumXY - sumX*sumY/n
 	varX := sumX2 - sumX*sumX/n
 
@@ -928,16 +1055,25 @@ var FunctionCalls = map[string]FunctionCall{
 	"abs":                funcAbs,
 	"absent":             funcAbsent,
 	"absent_over_time":   funcAbsentOverTime,
+	"acos":               funcAcos,
+	"acosh":              funcAcosh,
+	"asin":               funcAsin,
+	"asinh":              funcAsinh,
+	"atan":               funcAtan,
+	"atanh":              funcAtanh,
 	"avg_over_time":      funcAvgOverTime,
 	"ceil":               funcCeil,
 	"changes":            funcChanges,
 	"clamp":              funcClamp,
 	"clamp_max":          funcClampMax,
 	"clamp_min":          funcClampMin,
+	"cos":                funcCos,
+	"cosh":               funcCosh,
 	"count_over_time":    funcCountOverTime,
 	"days_in_month":      funcDaysInMonth,
 	"day_of_month":       funcDayOfMonth,
 	"day_of_week":        funcDayOfWeek,
+	"deg":                funcDeg,
 	"delta":              funcDelta,
 	"deriv":              funcDeriv,
 	"exp":                funcExp,
@@ -958,19 +1094,26 @@ var FunctionCalls = map[string]FunctionCall{
 	"min_over_time":      funcMinOverTime,
 	"minute":             funcMinute,
 	"month":              funcMonth,
+	"pi":                 funcPi,
 	"predict_linear":     funcPredictLinear,
+	"present_over_time":  funcPresentOverTime,
 	"quantile_over_time": funcQuantileOverTime,
+	"rad":                funcRad,
 	"rate":               funcRate,
 	"resets":             funcResets,
 	"round":              funcRound,
 	"scalar":             funcScalar,
 	"sgn":                funcSgn,
+	"sin":                funcSin,
+	"sinh":               funcSinh,
 	"sort":               funcSort,
 	"sort_desc":          funcSortDesc,
 	"sqrt":               funcSqrt,
 	"stddev_over_time":   funcStddevOverTime,
 	"stdvar_over_time":   funcStdvarOverTime,
 	"sum_over_time":      funcSumOverTime,
+	"tan":                funcTan,
+	"tanh":               funcTanh,
 	"time":               funcTime,
 	"timestamp":          funcTimestamp,
 	"vector":             funcVector,
@@ -1084,5 +1227,7 @@ func createLabelsForAbsentFunction(expr parser.Expr) labels.Labels {
 }
 
 func stringFromArg(e parser.Expr) string {
-	return unwrapStepInvariantExpr(e).(*parser.StringLiteral).Val
+	tmp := unwrapStepInvariantExpr(e) // Unwrap StepInvariant
+	unwrapParenExpr(&tmp)             // Optionally unwrap ParenExpr
+	return tmp.(*parser.StringLiteral).Val
 }

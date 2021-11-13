@@ -20,7 +20,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 )
 
 func TestLazyLoader_WithSamplesTill(t *testing.T) {
@@ -109,7 +109,7 @@ func TestLazyLoader_WithSamplesTill(t *testing.T) {
 	}
 
 	for _, c := range cases {
-		suite, err := NewLazyLoader(t, c.loadString)
+		suite, err := NewLazyLoader(t, c.loadString, LazyLoaderOpts{})
 		require.NoError(t, err)
 		defer suite.Close()
 

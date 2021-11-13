@@ -36,6 +36,9 @@ tls_server_config:
   # Server policy for client authentication. Maps to ClientAuth Policies.
   # For more detail on clientAuth options:
   # https://golang.org/pkg/crypto/tls/#ClientAuthType
+  #
+  # NOTE: If you want to enable client authentication, you need to use
+  # RequireAndVerifyClientCert. Other values are insecure.
   [ client_auth_type: <string> | default = "NoClientCert" ]
 
   # CA certificate for client certificate authentication to the server.
@@ -70,6 +73,30 @@ http_server_config:
   # Enable HTTP/2 support. Note that HTTP/2 is only supported with TLS.
   # This can not be changed on the fly.
   [ http2: <boolean> | default = true ]
+  # List of headers that can be added to HTTP responses.
+  [ headers:
+    # Set the Content-Security-Policy header to HTTP responses.
+    # Unset if blank.
+    [ Content-Security-Policy: <string> ]
+    # Set the X-Frame-Options header to HTTP responses.
+    # Unset if blank. Accepted values are deny and sameorigin.
+    # https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-Frame-Options
+    [ X-Frame-Options: <string> ]
+    # Set the X-Content-Type-Options header to HTTP responses.
+    # Unset if blank. Accepted value is nosniff.
+    # https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-Content-Type-Options
+    [ X-Content-Type-Options: <string> ]
+    # Set the X-XSS-Protection header to all responses.
+    # Unset if blank. Accepted value is nosniff.
+    # https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/X-XSS-Protection
+    [ X-XSS-Protection: <string> ]
+    # Set the Strict-Transport-Security header to HTTP responses.
+    # Unset if blank.
+    # Please make sure that you use this with care as this header might force
+    # browsers to load Prometheus and the other applications hosted on the same
+    # domain and subdomains over HTTPS.
+    # https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Strict-Transport-Security
+    [ Strict-Transport-Security: <string> ] ]
 
 # Usernames and hashed passwords that have full access to the web
 # server via basic authentication. If empty, no basic authentication is

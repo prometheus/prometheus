@@ -23,7 +23,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 )
@@ -616,7 +616,8 @@ func TestChainSampleIterator(t *testing.T) {
 				NewListSeriesIterator(samples{sample{2, 2}, sample{5, 5}}),
 			},
 			expected: []tsdbutil.Sample{
-				sample{0, 0}, sample{1, 1}, sample{2, 2}, sample{3, 3}, sample{4, 4}, sample{5, 5}},
+				sample{0, 0}, sample{1, 1}, sample{2, 2}, sample{3, 3}, sample{4, 4}, sample{5, 5},
+			},
 		},
 		// Overlap.
 		{
@@ -631,7 +632,7 @@ func TestChainSampleIterator(t *testing.T) {
 			expected: []tsdbutil.Sample{sample{0, 0}, sample{1, 1}, sample{2, 2}, sample{3, 3}},
 		},
 	} {
-		merged := newChainSampleIterator(tc.input)
+		merged := NewChainSampleIterator(tc.input)
 		actual, err := ExpandSamples(merged, nil)
 		require.NoError(t, err)
 		require.Equal(t, tc.expected, actual)
@@ -677,7 +678,7 @@ func TestChainSampleIteratorSeek(t *testing.T) {
 			expected: []tsdbutil.Sample{sample{0, 0}, sample{1, 1}, sample{2, 2}, sample{3, 3}},
 		},
 	} {
-		merged := newChainSampleIterator(tc.input)
+		merged := NewChainSampleIterator(tc.input)
 		actual := []tsdbutil.Sample{}
 		if merged.Seek(tc.seek) {
 			t, v := merged.At()
@@ -778,7 +779,7 @@ func (m *mockGenericQuerier) LabelValues(name string, matchers ...*labels.Matche
 	return m.resp, m.warnings, m.err
 }
 
-func (m *mockGenericQuerier) LabelNames() ([]string, Warnings, error) {
+func (m *mockGenericQuerier) LabelNames(...*labels.Matcher) ([]string, Warnings, error) {
 	m.mtx.Lock()
 	m.labelNamesCalls++
 	m.mtx.Unlock()

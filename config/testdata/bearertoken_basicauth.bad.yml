@@ -5,4 +5,3 @@ scrape_configs:
     basic_auth:
       username: user
       password: password
-

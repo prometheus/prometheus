@@ -15,7 +15,7 @@ describe('Filter', () => {
     showUnhealthy: true,
   };
   let setFilter: SinonSpy;
-  let filterWrapper: ShallowWrapper<FilterProps, Readonly<{}>, Component<{}, {}, Component>>;
+  let filterWrapper: ShallowWrapper<FilterProps, Readonly<unknown>, Component<unknown, unknown, Component>>;
   beforeEach(() => {
     setFilter = sinon.spy();
     setExpaned = sinon.spy();

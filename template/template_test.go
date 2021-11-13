@@ -22,7 +22,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 )
 
@@ -31,6 +31,7 @@ func TestTemplateExpansion(t *testing.T) {
 		text        string
 		output      string
 		input       interface{}
+		options     []string
 		queryResult promql.Vector
 		shouldFail  bool
 		html        bool
@@ -50,7 +51,7 @@ func TestTemplateExpansion(t *testing.T) {
 			// Non-ASCII space (not allowed in text/template, see https://github.com/golang/go/blob/master/src/text/template/parse/lex.go#L98)
 			text:       "{{ }}",
 			shouldFail: true,
-			errorMsg:   "error parsing template test: template: test:1: unexpected unrecognized character in action: U+00A0 in command",
+			errorMsg:   "error parsing template test: template: test:1: unrecognized character in action: U+00A0",
 		},
 		{
 			// HTML escaping.
@@ -86,7 +87,8 @@ func TestTemplateExpansion(t *testing.T) {
 				{
 					Metric: labels.FromStrings(labels.MetricName, "metric", "instance", "a"),
 					Point:  promql.Point{T: 0, V: 11},
-				}},
+				},
+			},
 			output: "11",
 		},
 		{
@@ -97,7 +99,8 @@ func TestTemplateExpansion(t *testing.T) {
 				{
 					Metric: labels.FromStrings(labels.MetricName, "metric", "instance", "a"),
 					Point:  promql.Point{T: 0, V: 11},
-				}},
+				},
+			},
 			output: "a",
 		},
 		{
@@ -107,7 +110,8 @@ func TestTemplateExpansion(t *testing.T) {
 				{
 					Metric: labels.FromStrings(labels.MetricName, "metric", "__value__", "a"),
 					Point:  promql.Point{T: 0, V: 11},
-				}},
+				},
+			},
 			output: "a",
 		},
 		{
@@ -117,7 +121,8 @@ func TestTemplateExpansion(t *testing.T) {
 				{
 					Metric: labels.FromStrings(labels.MetricName, "metric", "instance", "a"),
 					Point:  promql.Point{T: 0, V: 11},
-				}},
+				},
+			},
 			output: "",
 		},
 		{
@@ -127,7 +132,8 @@ func TestTemplateExpansion(t *testing.T) {
 				{
 					Metric: labels.FromStrings(labels.MetricName, "metric", "instance", "a"),
 					Point:  promql.Point{T: 0, V: 11},
-				}},
+				},
+			},
 			output: "",
 		},
 		{
@@ -136,7 +142,8 @@ func TestTemplateExpansion(t *testing.T) {
 				{
 					Metric: labels.FromStrings(labels.MetricName, "metric", "instance", "a"),
 					Point:  promql.Point{T: 0, V: 11},
-				}},
+				},
+			},
 			output: "",
 			html:   true,
 		},
@@ -150,14 +157,54 @@ func TestTemplateExpansion(t *testing.T) {
 				}, {
 					Metric: labels.FromStrings(labels.MetricName, "metric", "instance", "a"),
 					Point:  promql.Point{T: 0, V: 11},
-				}},
+				},
+			},
 			output: "a:11: b:21: ",
+		},
+		{
+			// Missing value is no value for nil options.
+			text:   "{{ .Foo }}",
+			output: "<no value>",
+		},
+		{
+			// Missing value is no value for no options.
+			text:    "{{ .Foo }}",
+			options: make([]string, 0),
+			output:  "<no value>",
+		},
+		{
+			// Assert that missing value returns error with missingkey=error.
+			text:       "{{ .Foo }}",
+			options:    []string{"missingkey=error"},
+			shouldFail: true,
+			errorMsg:   `error executing template test: template: test:1:3: executing "test" at <.Foo>: nil data; no entry for key "Foo"`,
+		},
+		{
+			// Missing value is "" for nil options in ExpandHTML.
+			text:   "{{ .Foo }}",
+			output: "",
+			html:   true,
+		},
+		{
+			// Missing value is "" for no options in ExpandHTML.
+			text:    "{{ .Foo }}",
+			options: make([]string, 0),
+			output:  "",
+			html:    true,
+		},
+		{
+			// Assert that missing value returns error with missingkey=error in ExpandHTML.
+			text:       "{{ .Foo }}",
+			options:    []string{"missingkey=error"},
+			shouldFail: true,
+			errorMsg:   `error executing template test: template: test:1:3: executing "test" at <.Foo>: nil data; no entry for key "Foo"`,
+			html:       true,
 		},
 		{
 			// Unparsable template.
 			text:       "{{",
 			shouldFail: true,
-			errorMsg:   "error parsing template test: template: test:1: unexpected unclosed action in command",
+			errorMsg:   "error parsing template test: template: test:1: unclosed action",
 		},
 		{
 			// Error in function.
@@ -194,7 +241,19 @@ func TestTemplateExpansion(t *testing.T) {
 			// Humanize - string with error.
 			text:       `{{ humanize "one" }}`,
 			shouldFail: true,
-			errorMsg:   `strconv.ParseFloat: parsing "one": invalid syntax`,
+			errorMsg:   `error executing template test: template: test:1:3: executing "test" at <humanize "one">: error calling humanize: strconv.ParseFloat: parsing "one": invalid syntax`,
+		},
+		{
+			// Humanize - int.
+			text:   "{{ range . }}{{ humanize . }}:{{ end }}",
+			input:  []int{0, -1, 1, 1234567, math.MaxInt64},
+			output: "0:-1:1:1.235M:9.223E:",
+		},
+		{
+			// Humanize - uint.
+			text:   "{{ range . }}{{ humanize . }}:{{ end }}",
+			input:  []uint{0, 1, 1234567, math.MaxUint64},
+			output: "0:1:1.235M:18.45E:",
 		},
 		{
 			// Humanize1024 - float64.
@@ -212,7 +271,19 @@ func TestTemplateExpansion(t *testing.T) {
 			// Humanize1024 - string with error.
 			text:       `{{ humanize1024 "one" }}`,
 			shouldFail: true,
-			errorMsg:   `strconv.ParseFloat: parsing "one": invalid syntax`,
+			errorMsg:   `error executing template test: template: test:1:3: executing "test" at <humanize1024 "one">: error calling humanize1024: strconv.ParseFloat: parsing "one": invalid syntax`,
+		},
+		{
+			// Humanize1024 - int.
+			text:   "{{ range . }}{{ humanize1024 . }}:{{ end }}",
+			input:  []int{0, -1, 1, 1234567, math.MaxInt64},
+			output: "0:-1:1:1.177Mi:8Ei:",
+		},
+		{
+			// Humanize1024 - uint.
+			text:   "{{ range . }}{{ humanize1024 . }}:{{ end }}",
+			input:  []uint{0, 1, 1234567, math.MaxUint64},
+			output: "0:1:1.177Mi:16Ei:",
 		},
 		{
 			// HumanizeDuration - seconds - float64.
@@ -242,7 +313,19 @@ func TestTemplateExpansion(t *testing.T) {
 			// HumanizeDuration - string with error.
 			text:       `{{ humanizeDuration "one" }}`,
 			shouldFail: true,
-			errorMsg:   `strconv.ParseFloat: parsing "one": invalid syntax`,
+			errorMsg:   `error executing template test: template: test:1:3: executing "test" at <humanizeDuration "one">: error calling humanizeDuration: strconv.ParseFloat: parsing "one": invalid syntax`,
+		},
+		{
+			// HumanizeDuration - int.
+			text:   "{{ range . }}{{ humanizeDuration . }}:{{ end }}",
+			input:  []int{0, -1, 1, 1234567, math.MaxInt64},
+			output: "0s:-1s:1s:14d 6h 56m 7s:-106751991167300d -15h -30m -8s:",
+		},
+		{
+			// HumanizeDuration - uint.
+			text:   "{{ range . }}{{ humanizeDuration . }}:{{ end }}",
+			input:  []uint{0, 1, 1234567, math.MaxUint64},
+			output: "0s:1s:14d 6h 56m 7s:-106751991167300d -15h -30m -8s:",
 		},
 		{
 			// Humanize* Inf and NaN - float64.
@@ -262,6 +345,18 @@ func TestTemplateExpansion(t *testing.T) {
 			output: "-22.22%:0%:12.35%:123.5%",
 		},
 		{
+			// HumanizePercentage - int.
+			text:   "{{ range . }}{{ humanizePercentage . }}:{{ end }}",
+			input:  []int{0, -1, 1, 1234567, math.MaxInt64},
+			output: "0%:-100%:100%:1.235e+08%:9.223e+20%:",
+		},
+		{
+			// HumanizePercentage - uint.
+			text:   "{{ range . }}{{ humanizePercentage . }}:{{ end }}",
+			input:  []uint{0, 1, 1234567, math.MaxUint64},
+			output: "0%:100%:1.235e+08%:1.845e+21%:",
+		},
+		{
 			// HumanizePercentage - model.SampleValue input - string.
 			text:   `{{ "-0.22222" | humanizePercentage }}:{{ "0.0" | humanizePercentage }}:{{ "0.1234567" | humanizePercentage }}:{{ "1.23456" | humanizePercentage }}`,
 			output: "-22.22%:0%:12.35%:123.5%",
@@ -270,7 +365,33 @@ func TestTemplateExpansion(t *testing.T) {
 			// HumanizePercentage - model.SampleValue input - string with error.
 			text:       `{{ "one" | humanizePercentage }}`,
 			shouldFail: true,
-			errorMsg:   `strconv.ParseFloat: parsing "one": invalid syntax`,
+			errorMsg:   `error executing template test: template: test:1:11: executing "test" at <humanizePercentage>: error calling humanizePercentage: strconv.ParseFloat: parsing "one": invalid syntax`,
+		},
+		{
+			// HumanizeTimestamp - int.
+			text:   "{{ range . }}{{ humanizeTimestamp . }}:{{ end }}",
+			input:  []int{0, -1, 1, 1234567, 9223372036},
+			output: "1970-01-01 00:00:00 +0000 UTC:1969-12-31 23:59:59 +0000 UTC:1970-01-01 00:00:01 +0000 UTC:1970-01-15 06:56:07 +0000 UTC:2262-04-11 23:47:16 +0000 UTC:",
+		},
+		{
+			// HumanizeTimestamp - uint.
+			text:   "{{ range . }}{{ humanizeTimestamp . }}:{{ end }}",
+			input:  []uint{0, 1, 1234567, 9223372036},
+			output: "1970-01-01 00:00:00 +0000 UTC:1970-01-01 00:00:01 +0000 UTC:1970-01-15 06:56:07 +0000 UTC:2262-04-11 23:47:16 +0000 UTC:",
+		},
+		{
+			// HumanizeTimestamp - int with error.
+			text:       "{{ range . }}{{ humanizeTimestamp . }}:{{ end }}",
+			input:      []int{math.MinInt64, math.MaxInt64},
+			shouldFail: true,
+			errorMsg:   `error executing template test: template: test:1:16: executing "test" at <humanizeTimestamp .>: error calling humanizeTimestamp: -9.223372036854776e+18 cannot be represented as a nanoseconds timestamp since it overflows int64`,
+		},
+		{
+			// HumanizeTimestamp - uint with error.
+			text:       "{{ range . }}{{ humanizeTimestamp . }}:{{ end }}",
+			input:      []uint{math.MaxUint64},
+			shouldFail: true,
+			errorMsg:   `error executing template test: template: test:1:16: executing "test" at <humanizeTimestamp .>: error calling humanizeTimestamp: 1.8446744073709552e+19 cannot be represented as a nanoseconds timestamp since it overflows int64`,
 		},
 		{
 			// HumanizeTimestamp - model.SampleValue input - float64.
@@ -328,6 +449,11 @@ func TestTemplateExpansion(t *testing.T) {
 			text:   "{{ externalURL }}",
 			output: "http://testhost:9090/path/prefix",
 		},
+		{
+			// parseDuration (using printf to ensure the return is a string).
+			text:   "{{ printf \"%0.2f\" (parseDuration \"1h2m10ms\") }}",
+			output: "3720.01",
+		},
 	}
 
 	extURL, err := url.Parse("http://testhost:9090/path/prefix")
@@ -341,7 +467,7 @@ func TestTemplateExpansion(t *testing.T) {
 		}
 		var result string
 		var err error
-		expander := NewTemplateExpander(context.Background(), s.text, "test", s.input, 0, queryFunc, extURL)
+		expander := NewTemplateExpander(context.Background(), s.text, "test", s.input, 0, queryFunc, extURL, s.options)
 		if s.html {
 			result, err = expander.ExpandHTML(nil)
 		} else {
@@ -349,13 +475,14 @@ func TestTemplateExpansion(t *testing.T) {
 		}
 		if s.shouldFail {
 			require.Error(t, err, "%v", s.text)
+			require.EqualError(t, err, s.errorMsg)
 			continue
 		}
 
 		require.NoError(t, err)
 
 		if err == nil {
-			require.Equal(t, result, s.output)
+			require.Equal(t, s.output, result)
 		}
 	}
 }

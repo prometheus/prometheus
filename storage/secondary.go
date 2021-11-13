@@ -16,7 +16,7 @@ package storage
 import (
 	"sync"
 
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 )
 
 // secondaryQuerier is a wrapper that allows a querier to be treated in a best effort manner.
@@ -55,8 +55,8 @@ func (s *secondaryQuerier) LabelValues(name string, matchers ...*labels.Matcher)
 	return vals, w, nil
 }
 
-func (s *secondaryQuerier) LabelNames() ([]string, Warnings, error) {
-	names, w, err := s.genericQuerier.LabelNames()
+func (s *secondaryQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, Warnings, error) {
+	names, w, err := s.genericQuerier.LabelNames(matchers...)
 	if err != nil {
 		return nil, append([]error{err}, w...), nil
 	}

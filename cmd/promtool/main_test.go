@@ -22,6 +22,9 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/rulefmt"
 )
 
 func TestQueryRange(t *testing.T) {
@@ -76,4 +79,127 @@ func mockServer(code int, body string) (*httptest.Server, func() *http.Request) 
 		return req
 	}
 	return server, f
+}
+
+func TestCheckSDFile(t *testing.T) {
+	cases := []struct {
+		name string
+		file string
+		err  string
+	}{
+		{
+			name: "good .yml",
+			file: "./testdata/good-sd-file.yml",
+		},
+		{
+			name: "good .yaml",
+			file: "./testdata/good-sd-file.yaml",
+		},
+		{
+			name: "good .json",
+			file: "./testdata/good-sd-file.json",
+		},
+		{
+			name: "bad file extension",
+			file: "./testdata/bad-sd-file-extension.nonexistant",
+			err:  "invalid file extension: \".nonexistant\"",
+		},
+		{
+			name: "bad format",
+			file: "./testdata/bad-sd-file-format.yml",
+			err:  "yaml: unmarshal errors:\n  line 1: field targats not found in type struct { Targets []string \"yaml:\\\"targets\\\"\"; Labels model.LabelSet \"yaml:\\\"labels\\\"\" }",
+		},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := checkSDFile(test.file)
+			if test.err != "" {
+				require.Equalf(t, test.err, err.Error(), "Expected error %q, got %q", test.err, err.Error())
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+}
+
+func TestCheckDuplicates(t *testing.T) {
+	cases := []struct {
+		name         string
+		ruleFile     string
+		expectedDups []compareRuleType
+	}{
+		{
+			name:     "no duplicates",
+			ruleFile: "./testdata/rules.yml",
+		},
+		{
+			name:     "duplicate in other group",
+			ruleFile: "./testdata/rules_duplicates.yml",
+			expectedDups: []compareRuleType{
+				{
+					metric: "job:test:count_over_time1m",
+					label:  labels.New(),
+				},
+			},
+		},
+	}
+
+	for _, test := range cases {
+		c := test
+		t.Run(c.name, func(t *testing.T) {
+			rgs, err := rulefmt.ParseFile(c.ruleFile)
+			require.Empty(t, err)
+			dups := checkDuplicates(rgs.Groups)
+			require.Equal(t, c.expectedDups, dups)
+		})
+	}
+}
+
+func BenchmarkCheckDuplicates(b *testing.B) {
+	rgs, err := rulefmt.ParseFile("./testdata/rules_large.yml")
+	require.Empty(b, err)
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		checkDuplicates(rgs.Groups)
+	}
+}
+
+func TestCheckTargetConfig(t *testing.T) {
+	cases := []struct {
+		name string
+		file string
+		err  string
+	}{
+		{
+			name: "url_in_scrape_targetgroup_with_relabel_config.good",
+			file: "url_in_scrape_targetgroup_with_relabel_config.good.yml",
+			err:  "",
+		},
+		{
+			name: "url_in_alert_targetgroup_with_relabel_config.good",
+			file: "url_in_alert_targetgroup_with_relabel_config.good.yml",
+			err:  "",
+		},
+		{
+			name: "url_in_scrape_targetgroup_with_relabel_config.bad",
+			file: "url_in_scrape_targetgroup_with_relabel_config.bad.yml",
+			err:  "instance 0 in group 0: \"http://bad\" is not a valid hostname",
+		},
+		{
+			name: "url_in_alert_targetgroup_with_relabel_config.bad",
+			file: "url_in_alert_targetgroup_with_relabel_config.bad.yml",
+			err:  "\"http://bad\" is not a valid hostname",
+		},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := checkConfig(false, "testdata/"+test.file)
+			if test.err != "" {
+				require.Equalf(t, test.err, err.Error(), "Expected error %q, got %q", test.err, err.Error())
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
 }

@@ -28,6 +28,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/refresh"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -51,10 +52,11 @@ const (
 
 // DefaultDockerSDConfig is the default Docker SD configuration.
 var DefaultDockerSDConfig = DockerSDConfig{
-	RefreshInterval:  model.Duration(60 * time.Second),
-	Port:             80,
-	Filters:          []Filter{},
-	HTTPClientConfig: config.DefaultHTTPClientConfig,
+	RefreshInterval:    model.Duration(60 * time.Second),
+	Port:               80,
+	Filters:            []Filter{},
+	HostNetworkingHost: "localhost",
+	HTTPClientConfig:   config.DefaultHTTPClientConfig,
 }
 
 func init() {
@@ -65,9 +67,10 @@ func init() {
 type DockerSDConfig struct {
 	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
 
-	Host    string   `yaml:"host"`
-	Port    int      `yaml:"port"`
-	Filters []Filter `yaml:"filters"`
+	Host               string   `yaml:"host"`
+	Port               int      `yaml:"port"`
+	Filters            []Filter `yaml:"filters"`
+	HostNetworkingHost string   `yaml:"host_networking_host"`
 
 	RefreshInterval model.Duration `yaml:"refresh_interval"`
 }
@@ -104,9 +107,10 @@ func (c *DockerSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error 
 
 type DockerDiscovery struct {
 	*refresh.Discovery
-	client  *client.Client
-	port    int
-	filters filters.Args
+	client             *client.Client
+	port               int
+	hostNetworkingHost string
+	filters            filters.Args
 }
 
 // NewDockerDiscovery returns a new DockerDiscovery which periodically refreshes its targets.
@@ -114,7 +118,8 @@ func NewDockerDiscovery(conf *DockerSDConfig, logger log.Logger) (*DockerDiscove
 	var err error
 
 	d := &DockerDiscovery{
-		port: conf.Port,
+		port:               conf.Port,
+		hostNetworkingHost: conf.HostNetworkingHost,
 	}
 
 	hostURL, err := url.Parse(conf.Host)
@@ -138,7 +143,7 @@ func NewDockerDiscovery(conf *DockerSDConfig, logger log.Logger) (*DockerDiscove
 	// unix, which are not supported by the HTTP client. Passing HTTP client
 	// options to the Docker client makes those non-HTTP requests fail.
 	if hostURL.Scheme == "http" || hostURL.Scheme == "https" {
-		rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "docker_sd", config.WithHTTP2Disabled())
+		rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "docker_sd")
 		if err != nil {
 			return nil, err
 		}
@@ -245,7 +250,15 @@ func (d *DockerDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 					labels[model.LabelName(k)] = model.LabelValue(v)
 				}
 
-				addr := net.JoinHostPort(n.IPAddress, strconv.FormatUint(uint64(d.port), 10))
+				// Containers in host networking mode don't have ports,
+				// so they only end up here, not in the previous loop.
+				var addr string
+				if c.HostConfig.NetworkMode != "host" {
+					addr = net.JoinHostPort(n.IPAddress, strconv.FormatUint(uint64(d.port), 10))
+				} else {
+					addr = d.hostNetworkingHost
+				}
+
 				labels[model.AddressLabel] = model.LabelValue(addr)
 				tg.Targets = append(tg.Targets, labels)
 			}

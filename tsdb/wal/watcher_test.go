@@ -14,7 +14,6 @@ package wal
 
 import (
 	"fmt"
-	"io/ioutil"
 	"math/rand"
 	"os"
 	"path"
@@ -26,13 +25,16 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
 )
 
-var defaultRetryInterval = 100 * time.Millisecond
-var defaultRetries = 100
-var wMetrics = NewWatcherMetrics(prometheus.DefaultRegisterer)
+var (
+	defaultRetryInterval = 100 * time.Millisecond
+	defaultRetries       = 100
+	wMetrics             = NewWatcherMetrics(prometheus.DefaultRegisterer)
+)
 
 // retry executes f() n times at each interval until it returns true.
 func retry(t *testing.T, interval time.Duration, n int, f func() bool) {
@@ -52,7 +54,7 @@ type writeToMock struct {
 	samplesAppended      int
 	exemplarsAppended    int
 	seriesLock           sync.Mutex
-	seriesSegmentIndexes map[uint64]int
+	seriesSegmentIndexes map[chunks.HeadSeriesRef]int
 }
 
 func (wtm *writeToMock) Append(s []record.RefSample) bool {
@@ -66,6 +68,10 @@ func (wtm *writeToMock) AppendExemplars(e []record.RefExemplar) bool {
 }
 
 func (wtm *writeToMock) StoreSeries(series []record.RefSeries, index int) {
+	wtm.UpdateSeriesSegment(series, index)
+}
+
+func (wtm *writeToMock) UpdateSeriesSegment(series []record.RefSeries, index int) {
 	wtm.seriesLock.Lock()
 	defer wtm.seriesLock.Unlock()
 	for _, s := range series {
@@ -93,7 +99,7 @@ func (wtm *writeToMock) checkNumLabels() int {
 
 func newWriteToMock() *writeToMock {
 	return &writeToMock{
-		seriesSegmentIndexes: make(map[uint64]int),
+		seriesSegmentIndexes: make(map[chunks.HeadSeriesRef]int),
 	}
 }
 
@@ -106,14 +112,10 @@ func TestTailSamples(t *testing.T) {
 		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
 			now := time.Now()
 
-			dir, err := ioutil.TempDir("", "readCheckpoint")
-			require.NoError(t, err)
-			defer func() {
-				require.NoError(t, os.RemoveAll(dir))
-			}()
+			dir := t.TempDir()
 
 			wdir := path.Join(dir, "wal")
-			err = os.Mkdir(wdir, 0777)
+			err := os.Mkdir(wdir, 0o777)
 			require.NoError(t, err)
 
 			enc := record.Encoder{}
@@ -128,7 +130,7 @@ func TestTailSamples(t *testing.T) {
 				ref := i + 100
 				series := enc.Series([]record.RefSeries{
 					{
-						Ref:    uint64(ref),
+						Ref:    chunks.HeadSeriesRef(ref),
 						Labels: labels.Labels{labels.Label{Name: "__name__", Value: fmt.Sprintf("metric_%d", i)}},
 					},
 				}, nil)
@@ -138,7 +140,7 @@ func TestTailSamples(t *testing.T) {
 					inner := rand.Intn(ref + 1)
 					sample := enc.Samples([]record.RefSample{
 						{
-							Ref: uint64(inner),
+							Ref: chunks.HeadSeriesRef(inner),
 							T:   now.UnixNano() + 1,
 							V:   float64(i),
 						},
@@ -150,7 +152,7 @@ func TestTailSamples(t *testing.T) {
 					inner := rand.Intn(ref + 1)
 					exemplar := enc.Exemplars([]record.RefExemplar{
 						{
-							Ref:    uint64(inner),
+							Ref:    chunks.HeadSeriesRef(inner),
 							T:      now.UnixNano() + 1,
 							V:      float64(i),
 							Labels: labels.FromStrings("traceID", fmt.Sprintf("trace-%d", inner)),
@@ -200,13 +202,9 @@ func TestReadToEndNoCheckpoint(t *testing.T) {
 
 	for _, compress := range []bool{false, true} {
 		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
-			dir, err := ioutil.TempDir("", "readToEnd_noCheckpoint")
-			require.NoError(t, err)
-			defer func() {
-				require.NoError(t, os.RemoveAll(dir))
-			}()
+			dir := t.TempDir()
 			wdir := path.Join(dir, "wal")
-			err = os.Mkdir(wdir, 0777)
+			err := os.Mkdir(wdir, 0o777)
 			require.NoError(t, err)
 
 			w, err := NewSize(nil, nil, wdir, 128*pageSize, compress)
@@ -222,7 +220,7 @@ func TestReadToEndNoCheckpoint(t *testing.T) {
 			for i := 0; i < seriesCount; i++ {
 				series := enc.Series([]record.RefSeries{
 					{
-						Ref:    uint64(i),
+						Ref:    chunks.HeadSeriesRef(i),
 						Labels: labels.Labels{labels.Label{Name: "__name__", Value: fmt.Sprintf("metric_%d", i)}},
 					},
 				}, nil)
@@ -230,7 +228,7 @@ func TestReadToEndNoCheckpoint(t *testing.T) {
 				for j := 0; j < samplesCount; j++ {
 					sample := enc.Samples([]record.RefSample{
 						{
-							Ref: uint64(j),
+							Ref: chunks.HeadSeriesRef(j),
 							T:   int64(i),
 							V:   float64(i),
 						},
@@ -273,14 +271,10 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 
 	for _, compress := range []bool{false, true} {
 		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
-			dir, err := ioutil.TempDir("", "readToEnd_withCheckpoint")
-			require.NoError(t, err)
-			defer func() {
-				require.NoError(t, os.RemoveAll(dir))
-			}()
+			dir := t.TempDir()
 
 			wdir := path.Join(dir, "wal")
-			err = os.Mkdir(wdir, 0777)
+			err := os.Mkdir(wdir, 0o777)
 			require.NoError(t, err)
 
 			enc := record.Encoder{}
@@ -295,7 +289,7 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 				ref := i + 100
 				series := enc.Series([]record.RefSeries{
 					{
-						Ref:    uint64(ref),
+						Ref:    chunks.HeadSeriesRef(ref),
 						Labels: labels.Labels{labels.Label{Name: "__name__", Value: fmt.Sprintf("metric_%d", i)}},
 					},
 				}, nil)
@@ -307,7 +301,7 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 					inner := rand.Intn(ref + 1)
 					sample := enc.Samples([]record.RefSample{
 						{
-							Ref: uint64(inner),
+							Ref: chunks.HeadSeriesRef(inner),
 							T:   int64(i),
 							V:   float64(i),
 						},
@@ -316,14 +310,14 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 				}
 			}
 
-			Checkpoint(log.NewNopLogger(), w, 0, 1, func(x uint64) bool { return true }, 0)
+			Checkpoint(log.NewNopLogger(), w, 0, 1, func(x chunks.HeadSeriesRef) bool { return true }, 0)
 			w.Truncate(1)
 
 			// Write more records after checkpointing.
 			for i := 0; i < seriesCount; i++ {
 				series := enc.Series([]record.RefSeries{
 					{
-						Ref:    uint64(i),
+						Ref:    chunks.HeadSeriesRef(i),
 						Labels: labels.Labels{labels.Label{Name: "__name__", Value: fmt.Sprintf("metric_%d", i)}},
 					},
 				}, nil)
@@ -332,7 +326,7 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 				for j := 0; j < samplesCount; j++ {
 					sample := enc.Samples([]record.RefSample{
 						{
-							Ref: uint64(j),
+							Ref: chunks.HeadSeriesRef(j),
 							T:   int64(i),
 							V:   float64(i),
 						},
@@ -364,14 +358,10 @@ func TestReadCheckpoint(t *testing.T) {
 
 	for _, compress := range []bool{false, true} {
 		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
-			dir, err := ioutil.TempDir("", "readCheckpoint")
-			require.NoError(t, err)
-			defer func() {
-				require.NoError(t, os.RemoveAll(dir))
-			}()
+			dir := t.TempDir()
 
 			wdir := path.Join(dir, "wal")
-			err = os.Mkdir(wdir, 0777)
+			err := os.Mkdir(wdir, 0o777)
 			require.NoError(t, err)
 
 			os.Create(SegmentName(wdir, 30))
@@ -388,7 +378,7 @@ func TestReadCheckpoint(t *testing.T) {
 				ref := i + 100
 				series := enc.Series([]record.RefSeries{
 					{
-						Ref:    uint64(ref),
+						Ref:    chunks.HeadSeriesRef(ref),
 						Labels: labels.Labels{labels.Label{Name: "__name__", Value: fmt.Sprintf("metric_%d", i)}},
 					},
 				}, nil)
@@ -398,7 +388,7 @@ func TestReadCheckpoint(t *testing.T) {
 					inner := rand.Intn(ref + 1)
 					sample := enc.Samples([]record.RefSample{
 						{
-							Ref: uint64(inner),
+							Ref: chunks.HeadSeriesRef(inner),
 							T:   int64(i),
 							V:   float64(i),
 						},
@@ -406,7 +396,7 @@ func TestReadCheckpoint(t *testing.T) {
 					require.NoError(t, w.Log(sample))
 				}
 			}
-			Checkpoint(log.NewNopLogger(), w, 30, 31, func(x uint64) bool { return true }, 0)
+			Checkpoint(log.NewNopLogger(), w, 30, 31, func(x chunks.HeadSeriesRef) bool { return true }, 0)
 			w.Truncate(32)
 
 			// Start read after checkpoint, no more data written.
@@ -436,14 +426,10 @@ func TestReadCheckpointMultipleSegments(t *testing.T) {
 
 	for _, compress := range []bool{false, true} {
 		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
-			dir, err := ioutil.TempDir("", "readCheckpoint")
-			require.NoError(t, err)
-			defer func() {
-				require.NoError(t, os.RemoveAll(dir))
-			}()
+			dir := t.TempDir()
 
 			wdir := path.Join(dir, "wal")
-			err = os.Mkdir(wdir, 0777)
+			err := os.Mkdir(wdir, 0o777)
 			require.NoError(t, err)
 
 			enc := record.Encoder{}
@@ -456,7 +442,7 @@ func TestReadCheckpointMultipleSegments(t *testing.T) {
 					ref := j + (i * 100)
 					series := enc.Series([]record.RefSeries{
 						{
-							Ref:    uint64(ref),
+							Ref:    chunks.HeadSeriesRef(ref),
 							Labels: labels.Labels{labels.Label{Name: "__name__", Value: fmt.Sprintf("metric_%d", j)}},
 						},
 					}, nil)
@@ -466,7 +452,7 @@ func TestReadCheckpointMultipleSegments(t *testing.T) {
 						inner := rand.Intn(ref + 1)
 						sample := enc.Samples([]record.RefSample{
 							{
-								Ref: uint64(inner),
+								Ref: chunks.HeadSeriesRef(inner),
 								T:   int64(i),
 								V:   float64(i),
 							},
@@ -479,7 +465,7 @@ func TestReadCheckpointMultipleSegments(t *testing.T) {
 
 			// At this point we should have at least 6 segments, lets create a checkpoint dir of the first 5.
 			checkpointDir := dir + "/wal/checkpoint.000004"
-			err = os.Mkdir(checkpointDir, 0777)
+			err = os.Mkdir(checkpointDir, 0o777)
 			require.NoError(t, err)
 			for i := 0; i <= 4; i++ {
 				err := os.Rename(SegmentName(dir+"/wal", i), SegmentName(checkpointDir, i))
@@ -496,7 +482,7 @@ func TestReadCheckpointMultipleSegments(t *testing.T) {
 			lastCheckpoint, _, err := LastCheckpoint(watcher.walDir)
 			require.NoError(t, err)
 
-			err = watcher.readCheckpoint(lastCheckpoint)
+			err = watcher.readCheckpoint(lastCheckpoint, (*Watcher).readSegment)
 			require.NoError(t, err)
 		})
 	}
@@ -518,14 +504,10 @@ func TestCheckpointSeriesReset(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(fmt.Sprintf("compress=%t", tc.compress), func(t *testing.T) {
-			dir, err := ioutil.TempDir("", "seriesReset")
-			require.NoError(t, err)
-			defer func() {
-				require.NoError(t, os.RemoveAll(dir))
-			}()
+			dir := t.TempDir()
 
 			wdir := path.Join(dir, "wal")
-			err = os.Mkdir(wdir, 0777)
+			err := os.Mkdir(wdir, 0o777)
 			require.NoError(t, err)
 
 			enc := record.Encoder{}
@@ -540,7 +522,7 @@ func TestCheckpointSeriesReset(t *testing.T) {
 				ref := i + 100
 				series := enc.Series([]record.RefSeries{
 					{
-						Ref:    uint64(ref),
+						Ref:    chunks.HeadSeriesRef(ref),
 						Labels: labels.Labels{labels.Label{Name: "__name__", Value: fmt.Sprintf("metric_%d", i)}},
 					},
 				}, nil)
@@ -550,7 +532,7 @@ func TestCheckpointSeriesReset(t *testing.T) {
 					inner := rand.Intn(ref + 1)
 					sample := enc.Samples([]record.RefSample{
 						{
-							Ref: uint64(inner),
+							Ref: chunks.HeadSeriesRef(inner),
 							T:   int64(i),
 							V:   float64(i),
 						},
@@ -573,7 +555,7 @@ func TestCheckpointSeriesReset(t *testing.T) {
 			})
 			require.Equal(t, seriesCount, wt.checkNumLabels())
 
-			_, err = Checkpoint(log.NewNopLogger(), w, 2, 4, func(x uint64) bool { return true }, 0)
+			_, err = Checkpoint(log.NewNopLogger(), w, 2, 4, func(x chunks.HeadSeriesRef) bool { return true }, 0)
 			require.NoError(t, err)
 
 			err = w.Truncate(5)

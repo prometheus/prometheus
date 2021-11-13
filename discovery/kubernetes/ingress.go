@@ -15,11 +15,13 @@ package kubernetes
 
 import (
 	"context"
+	"strings"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
+	v1 "k8s.io/api/networking/v1"
 	"k8s.io/api/networking/v1beta1"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
@@ -112,26 +114,24 @@ func (i *Ingress) process(ctx context.Context, ch chan<- []*targetgroup.Group) b
 		send(ctx, ch, &targetgroup.Group{Source: ingressSourceFromNamespaceAndName(namespace, name)})
 		return true
 	}
-	eps, err := convertToIngress(o)
-	if err != nil {
-		level.Error(i.logger).Log("msg", "converting to Ingress object failed", "err", err)
+
+	var ia ingressAdaptor
+	switch ingress := o.(type) {
+	case *v1.Ingress:
+		ia = newIngressAdaptorFromV1(ingress)
+	case *v1beta1.Ingress:
+		ia = newIngressAdaptorFromV1beta1(ingress)
+	default:
+		level.Error(i.logger).Log("msg", "converting to Ingress object failed", "err",
+			errors.Errorf("received unexpected object: %v", o))
 		return true
 	}
-	send(ctx, ch, i.buildIngress(eps))
+	send(ctx, ch, i.buildIngress(ia))
 	return true
 }
 
-func convertToIngress(o interface{}) (*v1beta1.Ingress, error) {
-	ingress, ok := o.(*v1beta1.Ingress)
-	if ok {
-		return ingress, nil
-	}
-
-	return nil, errors.Errorf("received unexpected object: %v", o)
-}
-
-func ingressSource(s *v1beta1.Ingress) string {
-	return ingressSourceFromNamespaceAndName(s.Namespace, s.Name)
+func ingressSource(s ingressAdaptor) string {
+	return ingressSourceFromNamespaceAndName(s.namespace(), s.name())
 }
 
 func ingressSourceFromNamespaceAndName(namespace, name string) string {
@@ -150,22 +150,22 @@ const (
 	ingressClassNameLabel          = metaLabelPrefix + "ingress_class_name"
 )
 
-func ingressLabels(ingress *v1beta1.Ingress) model.LabelSet {
+func ingressLabels(ingress ingressAdaptor) model.LabelSet {
 	// Each label and annotation will create two key-value pairs in the map.
-	ls := make(model.LabelSet, 2*(len(ingress.Labels)+len(ingress.Annotations))+2)
-	ls[ingressNameLabel] = lv(ingress.Name)
-	ls[namespaceLabel] = lv(ingress.Namespace)
-	if ingress.Spec.IngressClassName != nil {
-		ls[ingressClassNameLabel] = lv(*ingress.Spec.IngressClassName)
+	ls := make(model.LabelSet, 2*(len(ingress.labels())+len(ingress.annotations()))+2)
+	ls[ingressNameLabel] = lv(ingress.name())
+	ls[namespaceLabel] = lv(ingress.namespace())
+	if cls := ingress.ingressClassName(); cls != nil {
+		ls[ingressClassNameLabel] = lv(*cls)
 	}
 
-	for k, v := range ingress.Labels {
+	for k, v := range ingress.labels() {
 		ln := strutil.SanitizeLabelName(k)
 		ls[model.LabelName(ingressLabelPrefix+ln)] = lv(v)
 		ls[model.LabelName(ingressLabelPresentPrefix+ln)] = presentValue
 	}
 
-	for k, v := range ingress.Annotations {
+	for k, v := range ingress.annotations() {
 		ln := strutil.SanitizeLabelName(k)
 		ls[model.LabelName(ingressAnnotationPrefix+ln)] = lv(v)
 		ls[model.LabelName(ingressAnnotationPresentPrefix+ln)] = presentValue
@@ -173,14 +173,14 @@ func ingressLabels(ingress *v1beta1.Ingress) model.LabelSet {
 	return ls
 }
 
-func pathsFromIngressRule(rv *v1beta1.IngressRuleValue) []string {
-	if rv.HTTP == nil {
+func pathsFromIngressPaths(ingressPaths []string) []string {
+	if ingressPaths == nil {
 		return []string{"/"}
 	}
-	paths := make([]string, len(rv.HTTP.Paths))
-	for n, p := range rv.HTTP.Paths {
-		path := p.Path
-		if path == "" {
+	paths := make([]string, len(ingressPaths))
+	for n, p := range ingressPaths {
+		path := p
+		if p == "" {
 			path = "/"
 		}
 		paths[n] = path
@@ -188,37 +188,63 @@ func pathsFromIngressRule(rv *v1beta1.IngressRuleValue) []string {
 	return paths
 }
 
-func (i *Ingress) buildIngress(ingress *v1beta1.Ingress) *targetgroup.Group {
+func (i *Ingress) buildIngress(ingress ingressAdaptor) *targetgroup.Group {
 	tg := &targetgroup.Group{
 		Source: ingressSource(ingress),
 	}
 	tg.Labels = ingressLabels(ingress)
 
-	tlsHosts := make(map[string]struct{})
-	for _, tls := range ingress.Spec.TLS {
-		for _, host := range tls.Hosts {
-			tlsHosts[host] = struct{}{}
-		}
-	}
-
-	for _, rule := range ingress.Spec.Rules {
-		paths := pathsFromIngressRule(&rule.IngressRuleValue)
-
+	for _, rule := range ingress.rules() {
 		scheme := "http"
-		_, isTLS := tlsHosts[rule.Host]
-		if isTLS {
-			scheme = "https"
+		paths := pathsFromIngressPaths(rule.paths())
+
+	out:
+		for _, pattern := range ingress.tlsHosts() {
+			if matchesHostnamePattern(pattern, rule.host()) {
+				scheme = "https"
+				break out
+			}
 		}
 
 		for _, path := range paths {
 			tg.Targets = append(tg.Targets, model.LabelSet{
-				model.AddressLabel: lv(rule.Host),
+				model.AddressLabel: lv(rule.host()),
 				ingressSchemeLabel: lv(scheme),
-				ingressHostLabel:   lv(rule.Host),
+				ingressHostLabel:   lv(rule.host()),
 				ingressPathLabel:   lv(path),
 			})
 		}
 	}
 
 	return tg
+}
+
+// matchesHostnamePattern returns true if the host matches a wildcard DNS
+// pattern or pattern and host are equal.
+func matchesHostnamePattern(pattern, host string) bool {
+	if pattern == host {
+		return true
+	}
+
+	patternParts := strings.Split(pattern, ".")
+	hostParts := strings.Split(host, ".")
+
+	// If the first element of the pattern is not a wildcard, give up.
+	if len(patternParts) == 0 || patternParts[0] != "*" {
+		return false
+	}
+
+	// A wildcard match require the pattern to have the same length as the host
+	// path.
+	if len(patternParts) != len(hostParts) {
+		return false
+	}
+
+	for i := 1; i < len(patternParts); i++ {
+		if patternParts[i] != hostParts[i] {
+			return false
+		}
+	}
+
+	return true
 }

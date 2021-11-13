@@ -29,11 +29,12 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/sigv4"
 	yaml "gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/discovery"
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/relabel"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/relabel"
 )
 
 var (
@@ -98,7 +99,7 @@ func Load(s string, expandExternalLabels bool, logger log.Logger) (*Config, erro
 }
 
 // LoadFile parses the given YAML file into a Config.
-func LoadFile(filename string, expandExternalLabels bool, logger log.Logger) (*Config, error) {
+func LoadFile(filename string, agentMode, expandExternalLabels bool, logger log.Logger) (*Config, error) {
 	content, err := ioutil.ReadFile(filename)
 	if err != nil {
 		return nil, err
@@ -107,6 +108,25 @@ func LoadFile(filename string, expandExternalLabels bool, logger log.Logger) (*C
 	if err != nil {
 		return nil, errors.Wrapf(err, "parsing YAML file %s", filename)
 	}
+
+	if agentMode {
+		if len(cfg.RemoteWriteConfigs) == 0 {
+			return nil, errors.New("at least one remote_write target must be specified in agent mode")
+		}
+
+		if len(cfg.AlertingConfig.AlertmanagerConfigs) > 0 || len(cfg.AlertingConfig.AlertRelabelConfigs) > 0 {
+			return nil, errors.New("field alerting is not allowed in agent mode")
+		}
+
+		if len(cfg.RuleFiles) > 0 {
+			return nil, errors.New("field rule_files is not allowed in agent mode")
+		}
+
+		if len(cfg.RemoteReadConfigs) > 0 {
+			return nil, errors.New("field remote_read is not allowed in agent mode")
+		}
+	}
+
 	cfg.SetDirectory(filepath.Dir(filename))
 	return cfg, nil
 }
@@ -168,19 +188,29 @@ var (
 
 		// Backoff times for retrying a batch of samples on recoverable errors.
 		MinBackoff: model.Duration(30 * time.Millisecond),
-		MaxBackoff: model.Duration(100 * time.Millisecond),
+		MaxBackoff: model.Duration(5 * time.Second),
 	}
 
 	// DefaultMetadataConfig is the default metadata configuration for a remote write endpoint.
 	DefaultMetadataConfig = MetadataConfig{
-		Send:         true,
-		SendInterval: model.Duration(1 * time.Minute),
+		Send:              true,
+		SendInterval:      model.Duration(1 * time.Minute),
+		MaxSamplesPerSend: 500,
 	}
 
 	// DefaultRemoteReadConfig is the default remote read configuration.
 	DefaultRemoteReadConfig = RemoteReadConfig{
 		RemoteTimeout:    model.Duration(1 * time.Minute),
 		HTTPClientConfig: config.DefaultHTTPClientConfig,
+	}
+
+	// DefaultStorageConfig is the default TSDB/Exemplar storage configuration.
+	DefaultStorageConfig = StorageConfig{
+		ExemplarsConfig: &DefaultExemplarsConfig,
+	}
+
+	DefaultExemplarsConfig = ExemplarsConfig{
+		MaxExemplars: 100000,
 	}
 )
 
@@ -190,6 +220,7 @@ type Config struct {
 	AlertingConfig AlertingConfig  `yaml:"alerting,omitempty"`
 	RuleFiles      []string        `yaml:"rule_files,omitempty"`
 	ScrapeConfigs  []*ScrapeConfig `yaml:"scrape_configs,omitempty"`
+	StorageConfig  StorageConfig   `yaml:"storage,omitempty"`
 
 	RemoteWriteConfigs []*RemoteWriteConfig `yaml:"remote_write,omitempty"`
 	RemoteReadConfigs  []*RemoteReadConfig  `yaml:"remote_read,omitempty"`
@@ -463,6 +494,18 @@ func (c *ScrapeConfig) MarshalYAML() (interface{}, error) {
 	return discovery.MarshalYAMLWithInlineConfigs(c)
 }
 
+// StorageConfig configures runtime reloadable configuration options.
+type StorageConfig struct {
+	ExemplarsConfig *ExemplarsConfig `yaml:"exemplars,omitempty"`
+}
+
+// ExemplarsConfig configures runtime reloadable configuration options.
+type ExemplarsConfig struct {
+	// MaxExemplars sets the size, in # of exemplars stored, of the single circular buffer used to store exemplars in memory.
+	// Use a value of 0 or less than 0 to disable the storage without having to restart Prometheus.
+	MaxExemplars int64 `yaml:"max_exemplars,omitempty"`
+}
+
 // AlertingConfig configures alerting and alertmanager related configs.
 type AlertingConfig struct {
 	AlertRelabelConfigs []*relabel.Config   `yaml:"alert_relabel_configs,omitempty"`
@@ -643,7 +686,7 @@ type RemoteWriteConfig struct {
 	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
 	QueueConfig      QueueConfig             `yaml:"queue_config,omitempty"`
 	MetadataConfig   MetadataConfig          `yaml:"metadata_config,omitempty"`
-	SigV4Config      *SigV4Config            `yaml:"sigv4,omitempty"`
+	SigV4Config      *sigv4.SigV4Config      `yaml:"sigv4,omitempty"`
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -731,17 +774,8 @@ type MetadataConfig struct {
 	Send bool `yaml:"send"`
 	// SendInterval controls how frequently we send metric metadata.
 	SendInterval model.Duration `yaml:"send_interval"`
-}
-
-// SigV4Config is the configuration for signing remote write requests with
-// AWS's SigV4 verification process. Empty values will be retrieved using the
-// AWS default credentials chain.
-type SigV4Config struct {
-	Region    string        `yaml:"region,omitempty"`
-	AccessKey string        `yaml:"access_key,omitempty"`
-	SecretKey config.Secret `yaml:"secret_key,omitempty"`
-	Profile   string        `yaml:"profile,omitempty"`
-	RoleARN   string        `yaml:"role_arn,omitempty"`
+	// Maximum number of samples per send.
+	MaxSamplesPerSend int `yaml:"max_samples_per_send,omitempty"`
 }
 
 // RemoteReadConfig is the configuration for reading from remote storage.

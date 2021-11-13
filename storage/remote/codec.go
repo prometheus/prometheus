@@ -26,8 +26,9 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/textparse"
+	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -448,6 +449,17 @@ func FromLabelMatchers(matchers []*prompb.LabelMatcher) ([]*labels.Matcher, erro
 		result = append(result, matcher)
 	}
 	return result, nil
+}
+
+func exemplarProtoToExemplar(ep prompb.Exemplar) exemplar.Exemplar {
+	timestamp := ep.Timestamp
+
+	return exemplar.Exemplar{
+		Labels: labelProtosToLabels(ep.Labels),
+		Value:  ep.Value,
+		Ts:     timestamp,
+		HasTs:  timestamp != 0,
+	}
 }
 
 // LabelProtosToMetric unpack a []*prompb.Label to a model.Metric

@@ -30,11 +30,13 @@ import (
 	"github.com/prometheus/common/version"
 	apiv1 "k8s.io/api/core/v1"
 	disv1beta1 "k8s.io/api/discovery/v1beta1"
+	networkv1 "k8s.io/api/networking/v1"
 	"k8s.io/api/networking/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
+	utilversion "k8s.io/apimachinery/pkg/util/version"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -281,7 +283,7 @@ func New(l log.Logger, conf *SDConfig) (*Discovery, error) {
 		}
 		level.Info(l).Log("msg", "Using pod service account via in-cluster config")
 	} else {
-		rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "kubernetes_sd", config.WithHTTP2Disabled())
+		rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "kubernetes_sd")
 		if err != nil {
 			return nil, err
 		}
@@ -491,23 +493,58 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			go svc.informer.Run(ctx.Done())
 		}
 	case RoleIngress:
+		// Check "networking.k8s.io/v1" availability with retries.
+		// If "v1" is not avaiable, use "networking.k8s.io/v1beta1" for backward compatibility
+		var v1Supported bool
+		if retryOnError(ctx, 10*time.Second,
+			func() (err error) {
+				v1Supported, err = checkNetworkingV1Supported(d.client)
+				if err != nil {
+					level.Error(d.logger).Log("msg", "Failed to check networking.k8s.io/v1 availability", "err", err)
+				}
+				return err
+			},
+		) {
+			d.Unlock()
+			return
+		}
+
 		for _, namespace := range namespaces {
-			i := d.client.NetworkingV1beta1().Ingresses(namespace)
-			ilw := &cache.ListWatch{
-				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
-					options.FieldSelector = d.selectors.ingress.field
-					options.LabelSelector = d.selectors.ingress.label
-					return i.List(ctx, options)
-				},
-				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
-					options.FieldSelector = d.selectors.ingress.field
-					options.LabelSelector = d.selectors.ingress.label
-					return i.Watch(ctx, options)
-				},
+			var informer cache.SharedInformer
+			if v1Supported {
+				i := d.client.NetworkingV1().Ingresses(namespace)
+				ilw := &cache.ListWatch{
+					ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+						options.FieldSelector = d.selectors.ingress.field
+						options.LabelSelector = d.selectors.ingress.label
+						return i.List(ctx, options)
+					},
+					WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+						options.FieldSelector = d.selectors.ingress.field
+						options.LabelSelector = d.selectors.ingress.label
+						return i.Watch(ctx, options)
+					},
+				}
+				informer = cache.NewSharedInformer(ilw, &networkv1.Ingress{}, resyncPeriod)
+			} else {
+				i := d.client.NetworkingV1beta1().Ingresses(namespace)
+				ilw := &cache.ListWatch{
+					ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+						options.FieldSelector = d.selectors.ingress.field
+						options.LabelSelector = d.selectors.ingress.label
+						return i.List(ctx, options)
+					},
+					WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+						options.FieldSelector = d.selectors.ingress.field
+						options.LabelSelector = d.selectors.ingress.label
+						return i.Watch(ctx, options)
+					},
+				}
+				informer = cache.NewSharedInformer(ilw, &v1beta1.Ingress{}, resyncPeriod)
 			}
 			ingress := NewIngress(
 				log.With(d.logger, "role", "ingress"),
-				cache.NewSharedInformer(ilw, &v1beta1.Ingress{}, resyncPeriod),
+				informer,
 			)
 			d.discoverers = append(d.discoverers, ingress)
 			go ingress.informer.Run(ctx.Done())
@@ -562,4 +599,34 @@ func send(ctx context.Context, ch chan<- []*targetgroup.Group, tg *targetgroup.G
 	case <-ctx.Done():
 	case ch <- []*targetgroup.Group{tg}:
 	}
+}
+
+func retryOnError(ctx context.Context, interval time.Duration, f func() error) (canceled bool) {
+	var err error
+	err = f()
+	for {
+		if err == nil {
+			return false
+		}
+		select {
+		case <-ctx.Done():
+			return true
+		case <-time.After(interval):
+			err = f()
+		}
+	}
+}
+
+func checkNetworkingV1Supported(client kubernetes.Interface) (bool, error) {
+	k8sVer, err := client.Discovery().ServerVersion()
+	if err != nil {
+		return false, err
+	}
+	semVer, err := utilversion.ParseSemantic(k8sVer.String())
+	if err != nil {
+		return false, err
+	}
+	// networking.k8s.io/v1 is available since Kubernetes v1.19
+	// https://github.com/kubernetes/kubernetes/blob/master/CHANGELOG/CHANGELOG-1.19.md
+	return semVer.Major() >= 1 && semVer.Minor() >= 19, nil
 }

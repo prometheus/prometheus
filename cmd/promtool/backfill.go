@@ -17,11 +17,13 @@ import (
 	"context"
 	"io"
 	"math"
+	"time"
 
 	"github.com/go-kit/log"
 	"github.com/pkg/errors"
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/textparse"
+
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/tsdb"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 )
@@ -65,8 +67,24 @@ func getMinAndMaxTimestamps(p textparse.Parser) (int64, int64, error) {
 	return maxt, mint, nil
 }
 
-func createBlocks(input []byte, mint, maxt int64, maxSamplesInAppender int, outputDir string, humanReadable, quiet bool) (returnErr error) {
+func getCompatibleBlockDuration(maxBlockDuration int64) int64 {
 	blockDuration := tsdb.DefaultBlockDuration
+	if maxBlockDuration > tsdb.DefaultBlockDuration {
+		ranges := tsdb.ExponentialBlockRanges(tsdb.DefaultBlockDuration, 10, 3)
+		idx := len(ranges) - 1 // Use largest range if user asked for something enormous.
+		for i, v := range ranges {
+			if v > maxBlockDuration {
+				idx = i - 1
+				break
+			}
+		}
+		blockDuration = ranges[idx]
+	}
+	return blockDuration
+}
+
+func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesInAppender int, outputDir string, humanReadable, quiet bool) (returnErr error) {
+	blockDuration := getCompatibleBlockDuration(maxBlockDuration)
 	mint = blockDuration * (mint / blockDuration)
 
 	db, err := tsdb.OpenDBReadOnly(outputDir, nil)
@@ -88,7 +106,6 @@ func createBlocks(input []byte, mint, maxt int64, maxSamplesInAppender int, outp
 			// The next sample is not in this timerange, we can avoid parsing
 			// the file for this timerange.
 			continue
-
 		}
 		nextSampleTs = math.MaxInt64
 
@@ -190,20 +207,18 @@ func createBlocks(input []byte, mint, maxt int64, maxSamplesInAppender int, outp
 
 			return nil
 		}()
-
 		if err != nil {
 			return errors.Wrap(err, "process blocks")
 		}
 	}
 	return nil
-
 }
 
-func backfill(maxSamplesInAppender int, input []byte, outputDir string, humanReadable, quiet bool) (err error) {
+func backfill(maxSamplesInAppender int, input []byte, outputDir string, humanReadable, quiet bool, maxBlockDuration time.Duration) (err error) {
 	p := textparse.NewOpenMetricsParser(input)
 	maxt, mint, err := getMinAndMaxTimestamps(p)
 	if err != nil {
 		return errors.Wrap(err, "getting min and max timestamp")
 	}
-	return errors.Wrap(createBlocks(input, mint, maxt, maxSamplesInAppender, outputDir, humanReadable, quiet), "block creation")
+	return errors.Wrap(createBlocks(input, mint, maxt, int64(maxBlockDuration/time.Millisecond), maxSamplesInAppender, outputDir, humanReadable, quiet), "block creation")
 }

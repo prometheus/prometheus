@@ -18,8 +18,11 @@ import (
 	"os"
 	"time"
 
-	"github.com/prometheus/prometheus/pkg/exemplar"
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/util/testutil"
@@ -29,24 +32,20 @@ import (
 // that removes all associated files on closing.
 func New(t testutil.T) *TestStorage {
 	dir, err := ioutil.TempDir("", "test_storage")
-	if err != nil {
-		t.Fatalf("Opening test dir failed: %s", err)
-	}
+	require.NoError(t, err, "unexpected error while opening test directory")
 
 	// Tests just load data for a series sequentially. Thus we
 	// need a long appendable window.
 	opts := tsdb.DefaultOptions()
 	opts.MinBlockDuration = int64(24 * time.Hour / time.Millisecond)
 	opts.MaxBlockDuration = int64(24 * time.Hour / time.Millisecond)
-	opts.MaxExemplars = 10
 	db, err := tsdb.Open(dir, nil, nil, opts, tsdb.NewDBStats())
-	if err != nil {
-		t.Fatalf("Opening test storage failed: %s", err)
-	}
-	es, err := tsdb.NewCircularExemplarStorage(10, nil)
-	if err != nil {
-		t.Fatalf("Opening test exemplar storage failed: %s", err)
-	}
+	require.NoError(t, err, "unexpected error while opening test storage")
+	reg := prometheus.NewRegistry()
+	eMetrics := tsdb.NewExemplarMetrics(reg)
+
+	es, err := tsdb.NewCircularExemplarStorage(10, eMetrics)
+	require.NoError(t, err, "unexpected error while opening test exemplar storage")
 	return &TestStorage{DB: db, exemplarStorage: es, dir: dir}
 }
 
@@ -71,6 +70,6 @@ func (s TestStorage) ExemplarQueryable() storage.ExemplarQueryable {
 	return s.exemplarStorage
 }
 
-func (s TestStorage) AppendExemplar(ref uint64, l labels.Labels, e exemplar.Exemplar) (uint64, error) {
+func (s TestStorage) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
 	return ref, s.exemplarStorage.AddExemplar(l, e)
 }

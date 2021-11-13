@@ -30,10 +30,10 @@ import (
 	"go.uber.org/goleak"
 	yaml "gopkg.in/yaml.v2"
 
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/rulefmt"
-	"github.com/prometheus/prometheus/pkg/timestamp"
-	"github.com/prometheus/prometheus/pkg/value"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/rulefmt"
+	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
@@ -119,17 +119,19 @@ func TestAlertingRule(t *testing.T) {
 
 	baseTime := time.Unix(0, 0)
 
-	var tests = []struct {
+	tests := []struct {
 		time   time.Duration
 		result promql.Vector
 	}{
 		{
 			time:   0,
 			result: result[:2],
-		}, {
+		},
+		{
 			time:   5 * time.Minute,
 			result: result[2:],
-		}, {
+		},
+		{
 			time:   10 * time.Minute,
 			result: result[2:3],
 		},
@@ -156,7 +158,7 @@ func TestAlertingRule(t *testing.T) {
 
 		evalTime := baseTime.Add(test.time)
 
-		res, err := rule.Eval(suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil)
+		res, err := rule.Eval(suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil, 0)
 		require.NoError(t, err)
 
 		var filteredRes promql.Vector // After removing 'ALERTS_FOR_STATE' samples.
@@ -256,7 +258,7 @@ func TestForStateAddSamples(t *testing.T) {
 
 	baseTime := time.Unix(0, 0)
 
-	var tests = []struct {
+	tests := []struct {
 		time            time.Duration
 		result          promql.Vector
 		persistThisTime bool // If true, it means this 'time' is persisted for 'for'.
@@ -305,7 +307,7 @@ func TestForStateAddSamples(t *testing.T) {
 			forState = float64(value.StaleNaN)
 		}
 
-		res, err := rule.Eval(suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil)
+		res, err := rule.Eval(suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil, 0)
 		require.NoError(t, err)
 
 		var filteredRes promql.Vector // After removing 'ALERTS' samples.
@@ -769,7 +771,12 @@ func TestUpdate(t *testing.T) {
 		} else {
 			rgs.Groups[i].Interval = model.Duration(10)
 		}
+	}
+	reloadAndValidate(rgs, t, tmpFile, ruleManager, expected, ogs)
 
+	// Update limit and reload.
+	for i := range rgs.Groups {
+		rgs.Groups[i].Limit = 1
 	}
 	reloadAndValidate(rgs, t, tmpFile, ruleManager, expected, ogs)
 
@@ -791,6 +798,7 @@ type ruleGroupsTest struct {
 type ruleGroupTest struct {
 	Name     string         `yaml:"name"`
 	Interval model.Duration `yaml:"interval,omitempty"`
+	Limit    int            `yaml:"limit,omitempty"`
 	Rules    []rulefmt.Rule `yaml:"rules"`
 }
 
@@ -812,6 +820,7 @@ func formatRules(r *rulefmt.RuleGroups) ruleGroupsTest {
 		tmp = append(tmp, ruleGroupTest{
 			Name:     g.Name,
 			Interval: g.Interval,
+			Limit:    g.Limit,
 			Rules:    rtmp,
 		})
 	}

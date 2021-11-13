@@ -5,11 +5,13 @@ import { QueryParams, ExemplarData } from '../../types/types';
 import { isPresent } from '../../utils';
 
 interface GraphTabContentProps {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   data: any;
   exemplars: ExemplarData;
   stacked: boolean;
   useLocalTime: boolean;
   showExemplars: boolean;
+  handleTimeRangeSelection: (startTime: number, endTime: number) => void;
   lastQueryParams: QueryParams | null;
   id: string;
 }
@@ -21,6 +23,7 @@ export const GraphTabContent: FC<GraphTabContentProps> = ({
   useLocalTime,
   lastQueryParams,
   showExemplars,
+  handleTimeRangeSelection,
   id,
 }) => {
   if (!isPresent(data)) {
@@ -41,6 +44,7 @@ export const GraphTabContent: FC<GraphTabContentProps> = ({
       stacked={stacked}
       useLocalTime={useLocalTime}
       showExemplars={showExemplars}
+      handleTimeRangeSelection={handleTimeRangeSelection}
       queryParams={lastQueryParams}
       id={id}
     />

@@ -1,5 +1,7 @@
 /web/ui @juliusv
+/web/ui/module @juliusv @nexucis
 /storage/remote @csmarchbanks @cstyan @bwplotka @tomwilkie
 /discovery/kubernetes @brancz
 /tsdb @codesome
 /promql @codesome @roidelapluie
+/cmd/promtool @jessicagreben @dgl

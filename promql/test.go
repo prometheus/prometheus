@@ -25,10 +25,11 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
+	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/prometheus/pkg/exemplar"
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/timestamp"
+	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
@@ -583,7 +584,7 @@ func (t *Test) exec(tc testCommand) error {
 				err = cmd.compareResult(vec)
 			}
 			if err != nil {
-				return errors.Wrapf(err, "error in %s %s (line %d) rande mode", cmd, iq.expr, cmd.line)
+				return errors.Wrapf(err, "error in %s %s (line %d) range mode", cmd, iq.expr, cmd.line)
 			}
 
 		}
@@ -597,9 +598,8 @@ func (t *Test) exec(tc testCommand) error {
 // clear the current test storage of all inserted samples.
 func (t *Test) clear() {
 	if t.storage != nil {
-		if err := t.storage.Close(); err != nil {
-			t.T.Fatalf("closing test storage: %s", err)
-		}
+		err := t.storage.Close()
+		require.NoError(t.T, err, "Unexpected error while closing test storage.")
 	}
 	if t.cancelCtx != nil {
 		t.cancelCtx()
@@ -623,9 +623,8 @@ func (t *Test) clear() {
 func (t *Test) Close() {
 	t.cancelCtx()
 
-	if err := t.storage.Close(); err != nil {
-		t.T.Fatalf("closing test storage: %s", err)
-	}
+	err := t.storage.Close()
+	require.NoError(t.T, err, "Unexpected error while closing test storage.")
 }
 
 // samplesAlmostEqual returns true if the two sample lines only differ by a
@@ -675,12 +674,21 @@ type LazyLoader struct {
 	queryEngine *Engine
 	context     context.Context
 	cancelCtx   context.CancelFunc
+
+	opts LazyLoaderOpts
+}
+
+// LazyLoaderOpts are options for the lazy loader.
+type LazyLoaderOpts struct {
+	// Disabled PromQL engine features.
+	EnableAtModifier, EnableNegativeOffset bool
 }
 
 // NewLazyLoader returns an initialized empty LazyLoader.
-func NewLazyLoader(t testutil.T, input string) (*LazyLoader, error) {
+func NewLazyLoader(t testutil.T, input string, opts LazyLoaderOpts) (*LazyLoader, error) {
 	ll := &LazyLoader{
-		T: t,
+		T:    t,
+		opts: opts,
 	}
 	err := ll.parse(input)
 	ll.clear()
@@ -713,9 +721,8 @@ func (ll *LazyLoader) parse(input string) error {
 // clear the current test storage of all inserted samples.
 func (ll *LazyLoader) clear() {
 	if ll.storage != nil {
-		if err := ll.storage.Close(); err != nil {
-			ll.T.Fatalf("closing test storage: %s", err)
-		}
+		err := ll.storage.Close()
+		require.NoError(ll.T, err, "Unexpected error while closing test storage.")
 	}
 	if ll.cancelCtx != nil {
 		ll.cancelCtx()
@@ -728,7 +735,8 @@ func (ll *LazyLoader) clear() {
 		MaxSamples:               10000,
 		Timeout:                  100 * time.Second,
 		NoStepSubqueryIntervalFn: func(int64) int64 { return durationMilliseconds(ll.SubqueryInterval) },
-		EnableAtModifier:         true,
+		EnableAtModifier:         ll.opts.EnableAtModifier,
+		EnableNegativeOffset:     ll.opts.EnableNegativeOffset,
 	}
 
 	ll.queryEngine = NewEngine(opts)
@@ -788,8 +796,6 @@ func (ll *LazyLoader) Storage() storage.Storage {
 // Close closes resources associated with the LazyLoader.
 func (ll *LazyLoader) Close() {
 	ll.cancelCtx()
-
-	if err := ll.storage.Close(); err != nil {
-		ll.T.Fatalf("closing test storage: %s", err)
-	}
+	err := ll.storage.Close()
+	require.NoError(ll.T, err, "Unexpected error while closing test storage.")
 }

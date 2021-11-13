@@ -18,12 +18,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"math"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
-	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -40,12 +41,19 @@ import (
 	"github.com/prometheus/common/version"
 	"github.com/prometheus/exporter-toolkit/web"
 	"gopkg.in/alecthomas/kingpin.v2"
+	yaml "gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/file"
 	_ "github.com/prometheus/prometheus/discovery/install" // Register service discovery implementations.
 	"github.com/prometheus/prometheus/discovery/kubernetes"
-	"github.com/prometheus/prometheus/pkg/rulefmt"
+	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/rulefmt"
+	"github.com/prometheus/prometheus/notifier"
+	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/scrape"
 )
 
 func main() {
@@ -54,6 +62,11 @@ func main() {
 	app.HelpFlag.Short('h')
 
 	checkCmd := app.Command("check", "Check the resources for validity.")
+
+	sdCheckCmd := checkCmd.Command("service-discovery", "Perform service discovery for the given job name and report the results, including relabeling.")
+	sdConfigFile := sdCheckCmd.Arg("config-file", "The prometheus config file.").Required().ExistingFile()
+	sdJobName := sdCheckCmd.Arg("job", "The job to run service discovery for.").Required().String()
+	sdTimeout := sdCheckCmd.Flag("timeout", "The time to wait for discovery results.").Default("30s").Duration()
 
 	checkConfigCmd := checkCmd.Command("config", "Check if the config files are valid or not.")
 	configFiles := checkConfigCmd.Arg(
@@ -74,6 +87,7 @@ func main() {
 	).Required().ExistingFiles()
 
 	checkMetricsCmd := checkCmd.Command("metrics", checkMetricsUsage)
+	agentMode := checkConfigCmd.Flag("agent", "Check config file for Prometheus in Agent mode.").Bool()
 
 	queryCmd := app.Command("query", "Run query against a Prometheus server.")
 	queryCmdFmt := queryCmd.Flag("format", "Output format of the query.").Short('o').Default("promql").Enum("promql", "json")
@@ -128,10 +142,11 @@ func main() {
 	benchWriteNumScrapes := tsdbBenchWriteCmd.Flag("scrapes", "Number of scrapes to simulate.").Default("3000").Int()
 	benchSamplesFile := tsdbBenchWriteCmd.Arg("file", "Input file with samples data, default is ("+filepath.Join("..", "..", "tsdb", "testdata", "20kseries.json")+").").Default(filepath.Join("..", "..", "tsdb", "testdata", "20kseries.json")).String()
 
-	tsdbAnalyzeCmd := tsdbCmd.Command("analyze", "Analyze churn, label pair cardinality.")
+	tsdbAnalyzeCmd := tsdbCmd.Command("analyze", "Analyze churn, label pair cardinality and compaction efficiency.")
 	analyzePath := tsdbAnalyzeCmd.Arg("db path", "Database path (default is "+defaultDBPath+").").Default(defaultDBPath).String()
 	analyzeBlockID := tsdbAnalyzeCmd.Arg("block id", "Block to analyze (default is the last block).").String()
 	analyzeLimit := tsdbAnalyzeCmd.Flag("limit", "How many items to show in each list.").Default("20").Int()
+	analyzeRunExtended := tsdbAnalyzeCmd.Flag("extended", "Run extended analysis.").Bool()
 
 	tsdbListCmd := tsdbCmd.Command("list", "List tsdb blocks.")
 	listHumanReadable := tsdbListCmd.Flag("human-readable", "Print human readable values.").Short('r').Bool()
@@ -145,8 +160,8 @@ func main() {
 	importCmd := tsdbCmd.Command("create-blocks-from", "[Experimental] Import samples from input and produce TSDB blocks. Please refer to the storage docs for more details.")
 	importHumanReadable := importCmd.Flag("human-readable", "Print human readable values.").Short('r').Bool()
 	importQuiet := importCmd.Flag("quiet", "Do not print created blocks.").Short('q').Bool()
+	maxBlockDuration := importCmd.Flag("max-block-duration", "Maximum duration created blocks may span. Anything less than 2h is ignored.").Hidden().PlaceHolder("<duration>").Duration()
 	openMetricsImportCmd := importCmd.Command("openmetrics", "Import samples from OpenMetrics input and produce TSDB blocks. Please refer to the storage docs for more details.")
-	// TODO(aSquare14): add flag to set default block duration
 	importFilePath := openMetricsImportCmd.Arg("input file", "OpenMetrics file to read samples from.").Required().String()
 	importDBPath := openMetricsImportCmd.Arg("output directory", "Output directory for generated blocks.").Default(defaultDBPath).String()
 	importRulesCmd := importCmd.Command("rules", "Create blocks of data for new recording rules.")
@@ -162,6 +177,8 @@ func main() {
 		"A list of one or more files containing recording rules to be backfilled. All recording rules listed in the files will be backfilled. Alerting rules are not evaluated.",
 	).Required().ExistingFiles()
 
+	featureList := app.Flag("enable-feature", "Comma separated feature names to enable (only PromQL related). See https://prometheus.io/docs/prometheus/latest/feature_flags/ for the options and more details.").Default("").Strings()
+
 	parsedCmd := kingpin.MustParse(app.Parse(os.Args[1:]))
 
 	var p printer
@@ -172,9 +189,29 @@ func main() {
 		p = &promqlPrinter{}
 	}
 
+	var queryOpts promql.LazyLoaderOpts
+	for _, f := range *featureList {
+		opts := strings.Split(f, ",")
+		for _, o := range opts {
+			switch o {
+			case "promql-at-modifier":
+				queryOpts.EnableAtModifier = true
+			case "promql-negative-offset":
+				queryOpts.EnableNegativeOffset = true
+			case "":
+				continue
+			default:
+				fmt.Printf("  WARNING: Unknown option for --enable-feature: %q\n", o)
+			}
+		}
+	}
+
 	switch parsedCmd {
+	case sdCheckCmd.FullCommand():
+		os.Exit(CheckSD(*sdConfigFile, *sdJobName, *sdTimeout))
+
 	case checkConfigCmd.FullCommand():
-		os.Exit(CheckConfig(*configFiles...))
+		os.Exit(CheckConfig(*agentMode, *configFiles...))
 
 	case checkWebConfigCmd.FullCommand():
 		os.Exit(CheckWebConfig(*webConfigFiles...))
@@ -207,34 +244,34 @@ func main() {
 		os.Exit(QueryLabels(*queryLabelsServer, *queryLabelsName, *queryLabelsBegin, *queryLabelsEnd, p))
 
 	case testRulesCmd.FullCommand():
-		os.Exit(RulesUnitTest(*testRulesFiles...))
+		os.Exit(RulesUnitTest(queryOpts, *testRulesFiles...))
 
 	case tsdbBenchWriteCmd.FullCommand():
 		os.Exit(checkErr(benchmarkWrite(*benchWriteOutPath, *benchSamplesFile, *benchWriteNumMetrics, *benchWriteNumScrapes)))
 
 	case tsdbAnalyzeCmd.FullCommand():
-		os.Exit(checkErr(analyzeBlock(*analyzePath, *analyzeBlockID, *analyzeLimit)))
+		os.Exit(checkErr(analyzeBlock(*analyzePath, *analyzeBlockID, *analyzeLimit, *analyzeRunExtended)))
 
 	case tsdbListCmd.FullCommand():
 		os.Exit(checkErr(listBlocks(*listPath, *listHumanReadable)))
 
 	case tsdbDumpCmd.FullCommand():
 		os.Exit(checkErr(dumpSamples(*dumpPath, *dumpMinTime, *dumpMaxTime)))
-	//TODO(aSquare14): Work on adding support for custom block size.
+	// TODO(aSquare14): Work on adding support for custom block size.
 	case openMetricsImportCmd.FullCommand():
-		os.Exit(backfillOpenMetrics(*importFilePath, *importDBPath, *importHumanReadable, *importQuiet))
+		os.Exit(backfillOpenMetrics(*importFilePath, *importDBPath, *importHumanReadable, *importQuiet, *maxBlockDuration))
 
 	case importRulesCmd.FullCommand():
-		os.Exit(checkErr(importRules(*importRulesURL, *importRulesStart, *importRulesEnd, *importRulesOutputDir, *importRulesEvalInterval, *importRulesFiles...)))
+		os.Exit(checkErr(importRules(*importRulesURL, *importRulesStart, *importRulesEnd, *importRulesOutputDir, *importRulesEvalInterval, *maxBlockDuration, *importRulesFiles...)))
 	}
 }
 
 // CheckConfig validates configuration files.
-func CheckConfig(files ...string) int {
+func CheckConfig(agentMode bool, files ...string) int {
 	failed := false
 
 	for _, f := range files {
-		ruleFiles, err := checkConfig(f)
+		ruleFiles, err := checkConfig(agentMode, f)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "  FAILED:", err)
 			failed = true
@@ -289,10 +326,10 @@ func checkFileExists(fn string) error {
 	return err
 }
 
-func checkConfig(filename string) ([]string, error) {
+func checkConfig(agentMode bool, filename string) ([]string, error) {
 	fmt.Println("Checking", filename)
 
-	cfg, err := config.LoadFile(filename, false, log.NewNopLogger())
+	cfg, err := config.LoadFile(filename, agentMode, false, log.NewNopLogger())
 	if err != nil {
 		return nil, err
 	}
@@ -337,16 +374,61 @@ func checkConfig(filename string) ([]string, error) {
 						return nil, err
 					}
 					if len(files) != 0 {
-						// There was at least one match for the glob and we can assume checkFileExists
-						// for all matches would pass, we can continue the loop.
+						for _, f := range files {
+							var targetGroups []*targetgroup.Group
+							targetGroups, err = checkSDFile(f)
+							if err != nil {
+								return nil, errors.Errorf("checking SD file %q: %v", file, err)
+							}
+							if err := checkTargetGroupsForScrapeConfig(targetGroups, scfg); err != nil {
+								return nil, err
+							}
+						}
 						continue
 					}
 					fmt.Printf("  WARNING: file %q for file_sd in scrape job %q does not exist\n", file, scfg.JobName)
+				}
+			case discovery.StaticConfig:
+				if err := checkTargetGroupsForScrapeConfig(c, scfg); err != nil {
+					return nil, err
 				}
 			}
 		}
 	}
 
+	alertConfig := cfg.AlertingConfig
+	for _, amcfg := range alertConfig.AlertmanagerConfigs {
+		for _, c := range amcfg.ServiceDiscoveryConfigs {
+			switch c := c.(type) {
+			case *file.SDConfig:
+				for _, file := range c.Files {
+					files, err := filepath.Glob(file)
+					if err != nil {
+						return nil, err
+					}
+					if len(files) != 0 {
+						for _, f := range files {
+							var targetGroups []*targetgroup.Group
+							targetGroups, err = checkSDFile(f)
+							if err != nil {
+								return nil, errors.Errorf("checking SD file %q: %v", file, err)
+							}
+
+							if err := checkTargetGroupsForAlertmanager(targetGroups, amcfg); err != nil {
+								return nil, err
+							}
+						}
+						continue
+					}
+					fmt.Printf("  WARNING: file %q for file_sd in alertmanager config does not exist\n", file)
+				}
+			case discovery.StaticConfig:
+				if err := checkTargetGroupsForAlertmanager(c, amcfg); err != nil {
+					return nil, err
+				}
+			}
+		}
+	}
 	return ruleFiles, nil
 }
 
@@ -366,6 +448,42 @@ func checkTLSConfig(tlsConfig config_util.TLSConfig) error {
 	}
 
 	return nil
+}
+
+func checkSDFile(filename string) ([]*targetgroup.Group, error) {
+	fd, err := os.Open(filename)
+	if err != nil {
+		return nil, err
+	}
+	defer fd.Close()
+
+	content, err := ioutil.ReadAll(fd)
+	if err != nil {
+		return nil, err
+	}
+
+	var targetGroups []*targetgroup.Group
+
+	switch ext := filepath.Ext(filename); strings.ToLower(ext) {
+	case ".json":
+		if err := json.Unmarshal(content, &targetGroups); err != nil {
+			return nil, err
+		}
+	case ".yml", ".yaml":
+		if err := yaml.UnmarshalStrict(content, &targetGroups); err != nil {
+			return nil, err
+		}
+	default:
+		return nil, errors.Errorf("invalid file extension: %q", ext)
+	}
+
+	for i, tg := range targetGroups {
+		if tg == nil {
+			return nil, errors.Errorf("nil target group item found (index %d)", i)
+		}
+	}
+
+	return targetGroups, nil
 }
 
 // CheckRules validates rule files.
@@ -408,8 +526,8 @@ func checkRules(filename string) (int, []error) {
 		fmt.Printf("%d duplicate rule(s) found.\n", len(dRules))
 		for _, n := range dRules {
 			fmt.Printf("Metric: %s\nLabel(s):\n", n.metric)
-			for i, l := range n.label {
-				fmt.Printf("\t%s: %s\n", i, l)
+			for _, l := range n.label {
+				fmt.Printf("\t%s: %s\n", l.Name, l.Value)
 			}
 		}
 		fmt.Println("Might cause inconsistency while recording expressions.")
@@ -420,29 +538,51 @@ func checkRules(filename string) (int, []error) {
 
 type compareRuleType struct {
 	metric string
-	label  map[string]string
+	label  labels.Labels
+}
+
+type compareRuleTypes []compareRuleType
+
+func (c compareRuleTypes) Len() int           { return len(c) }
+func (c compareRuleTypes) Swap(i, j int)      { c[i], c[j] = c[j], c[i] }
+func (c compareRuleTypes) Less(i, j int) bool { return compare(c[i], c[j]) < 0 }
+
+func compare(a, b compareRuleType) int {
+	if res := strings.Compare(a.metric, b.metric); res != 0 {
+		return res
+	}
+
+	return labels.Compare(a.label, b.label)
 }
 
 func checkDuplicates(groups []rulefmt.RuleGroup) []compareRuleType {
 	var duplicates []compareRuleType
+	var rules compareRuleTypes
 
 	for _, group := range groups {
-		for index, rule := range group.Rules {
-			inst := compareRuleType{
+		for _, rule := range group.Rules {
+			rules = append(rules, compareRuleType{
 				metric: ruleMetric(rule),
-				label:  rule.Labels,
-			}
-			for i := 0; i < index; i++ {
-				t := compareRuleType{
-					metric: ruleMetric(group.Rules[i]),
-					label:  group.Rules[i].Labels,
-				}
-				if reflect.DeepEqual(t, inst) {
-					duplicates = append(duplicates, t)
-				}
-			}
+				label:  labels.FromMap(rule.Labels),
+			})
 		}
 	}
+	if len(rules) < 2 {
+		return duplicates
+	}
+	sort.Sort(rules)
+
+	last := rules[0]
+	for i := 1; i < len(rules); i++ {
+		if compare(last, rules[i]) == 0 {
+			// Don't add a duplicated rule multiple times.
+			if len(duplicates) == 0 || compare(last, duplicates[len(duplicates)-1]) != 0 {
+				duplicates = append(duplicates, rules[i])
+			}
+		}
+		last = rules[i]
+	}
+
 	return duplicates
 }
 
@@ -633,7 +773,7 @@ func QuerySeries(url *url.URL, matchers []string, start, end string, p printer) 
 }
 
 // QueryLabels queries for label values against a Prometheus server.
-func QueryLabels(url *url.URL, name string, start, end string, p printer) int {
+func QueryLabels(url *url.URL, name, start, end string, p printer) int {
 	if url.Scheme == "" {
 		url.Scheme = "http"
 	}
@@ -811,11 +951,13 @@ type promqlPrinter struct{}
 func (p *promqlPrinter) printValue(v model.Value) {
 	fmt.Println(v)
 }
+
 func (p *promqlPrinter) printSeries(val []model.LabelSet) {
 	for _, v := range val {
 		fmt.Println(v)
 	}
 }
+
 func (p *promqlPrinter) printLabelValues(val model.LabelValues) {
 	for _, v := range val {
 		fmt.Println(v)
@@ -828,10 +970,12 @@ func (j *jsonPrinter) printValue(v model.Value) {
 	//nolint:errcheck
 	json.NewEncoder(os.Stdout).Encode(v)
 }
+
 func (j *jsonPrinter) printSeries(v []model.LabelSet) {
 	//nolint:errcheck
 	json.NewEncoder(os.Stdout).Encode(v)
 }
+
 func (j *jsonPrinter) printLabelValues(v model.LabelValues) {
 	//nolint:errcheck
 	json.NewEncoder(os.Stdout).Encode(v)
@@ -839,7 +983,7 @@ func (j *jsonPrinter) printLabelValues(v model.LabelValues) {
 
 // importRules backfills recording rules from the files provided. The output are blocks of data
 // at the outputDir location.
-func importRules(url *url.URL, start, end, outputDir string, evalInterval time.Duration, files ...string) error {
+func importRules(url *url.URL, start, end, outputDir string, evalInterval, maxBlockDuration time.Duration, files ...string) error {
 	ctx := context.Background()
 	var stime, etime time.Time
 	var err error
@@ -848,51 +992,70 @@ func importRules(url *url.URL, start, end, outputDir string, evalInterval time.D
 	} else {
 		etime, err = parseTime(end)
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "error parsing end time:", err)
-			return err
+			return fmt.Errorf("error parsing end time: %v", err)
 		}
 	}
 
 	stime, err = parseTime(start)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "error parsing start time:", err)
-		return err
+		return fmt.Errorf("error parsing start time: %v", err)
 	}
 
 	if !stime.Before(etime) {
-		fmt.Fprintln(os.Stderr, "start time is not before end time")
-		return nil
+		return errors.New("start time is not before end time")
 	}
 
 	cfg := ruleImporterConfig{
-		outputDir:    outputDir,
-		start:        stime,
-		end:          etime,
-		evalInterval: evalInterval,
+		outputDir:        outputDir,
+		start:            stime,
+		end:              etime,
+		evalInterval:     evalInterval,
+		maxBlockDuration: maxBlockDuration,
 	}
 	client, err := api.NewClient(api.Config{
 		Address: url.String(),
 	})
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "new api client error", err)
-		return err
+		return fmt.Errorf("new api client error: %v", err)
 	}
 
 	ruleImporter := newRuleImporter(log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr)), cfg, v1.NewAPI(client))
 	errs := ruleImporter.loadGroups(ctx, files)
 	for _, err := range errs {
 		if err != nil {
-			fmt.Fprintln(os.Stderr, "rule importer parse error", err)
-			return err
+			return fmt.Errorf("rule importer parse error: %v", err)
 		}
 	}
 
 	errs = ruleImporter.importAll(ctx)
 	for _, err := range errs {
-		if err != nil {
-			fmt.Fprintln(os.Stderr, "rule importer error", err)
+		fmt.Fprintln(os.Stderr, "rule importer error:", err)
+	}
+	if len(errs) > 0 {
+		return errors.New("error importing rules")
+	}
+
+	return nil
+}
+
+func checkTargetGroupsForAlertmanager(targetGroups []*targetgroup.Group, amcfg *config.AlertmanagerConfig) error {
+	for _, tg := range targetGroups {
+		if _, _, err := notifier.AlertmanagerFromGroup(tg, amcfg); err != nil {
+			return err
 		}
 	}
 
-	return err
+	return nil
+}
+
+func checkTargetGroupsForScrapeConfig(targetGroups []*targetgroup.Group, scfg *config.ScrapeConfig) error {
+	for _, tg := range targetGroups {
+		_, failures := scrape.TargetsFromGroup(tg, scfg)
+		if len(failures) > 0 {
+			first := failures[0]
+			return first
+		}
+	}
+
+	return nil
 }

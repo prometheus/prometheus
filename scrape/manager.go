@@ -14,11 +14,8 @@
 package scrape
 
 import (
-	"encoding"
 	"fmt"
 	"hash/fnv"
-	"net"
-	"os"
 	"reflect"
 	"sync"
 	"time"
@@ -30,8 +27,9 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/osutil"
 )
 
 var targetMetadataCache = newMetadataMetricsCollector()
@@ -101,12 +99,16 @@ func (mc *MetadataMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 }
 
 // NewManager is the Manager constructor
-func NewManager(logger log.Logger, app storage.Appendable) *Manager {
+func NewManager(o *Options, logger log.Logger, app storage.Appendable) *Manager {
+	if o == nil {
+		o = &Options{}
+	}
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
 	m := &Manager{
 		append:        app,
+		opts:          o,
 		logger:        logger,
 		scrapeConfigs: make(map[string]*config.ScrapeConfig),
 		scrapePools:   make(map[string]*scrapePool),
@@ -118,9 +120,15 @@ func NewManager(logger log.Logger, app storage.Appendable) *Manager {
 	return m
 }
 
+// Options are the configuration parameters to the scrape manager.
+type Options struct {
+	ExtraMetrics bool
+}
+
 // Manager maintains a set of scrape pools and manages start/stop cycles
-// when receiving new target groups form the discovery manager.
+// when receiving new target groups from the discovery manager.
 type Manager struct {
+	opts      *Options
 	logger    log.Logger
 	append    storage.Appendable
 	graceShut chan struct{}
@@ -183,7 +191,7 @@ func (m *Manager) reload() {
 				level.Error(m.logger).Log("msg", "error reloading target set", "err", "invalid config id:"+setName)
 				continue
 			}
-			sp, err := newScrapePool(scrapeConfig, m.append, m.jitterSeed, log.With(m.logger, "scrape_pool", setName))
+			sp, err := newScrapePool(scrapeConfig, m.append, m.jitterSeed, log.With(m.logger, "scrape_pool", setName), m.opts.ExtraMetrics)
 			if err != nil {
 				level.Error(m.logger).Log("msg", "error creating new scrape pool", "err", err, "scrape_pool", setName)
 				continue
@@ -206,7 +214,7 @@ func (m *Manager) reload() {
 // setJitterSeed calculates a global jitterSeed per server relying on extra label set.
 func (m *Manager) setJitterSeed(labels labels.Labels) error {
 	h := fnv.New64a()
-	hostname, err := getFqdn()
+	hostname, err := osutil.GetFQDN()
 	if err != nil {
 		return err
 	}
@@ -318,47 +326,4 @@ func (m *Manager) TargetsDropped() map[string][]*Target {
 		targets[tset] = sp.DroppedTargets()
 	}
 	return targets
-}
-
-// getFqdn returns a FQDN if it's possible, otherwise falls back to hostname.
-func getFqdn() (string, error) {
-	hostname, err := os.Hostname()
-	if err != nil {
-		return "", err
-	}
-
-	ips, err := net.LookupIP(hostname)
-	if err != nil {
-		// Return the system hostname if we can't look up the IP address.
-		return hostname, nil
-	}
-
-	lookup := func(ipStr encoding.TextMarshaler) (string, error) {
-		ip, err := ipStr.MarshalText()
-		if err != nil {
-			return "", err
-		}
-		hosts, err := net.LookupAddr(string(ip))
-		if err != nil || len(hosts) == 0 {
-			return "", err
-		}
-		return hosts[0], nil
-	}
-
-	for _, addr := range ips {
-		if ip := addr.To4(); ip != nil {
-			if fqdn, err := lookup(ip); err == nil {
-				return fqdn, nil
-			}
-
-		}
-
-		if ip := addr.To16(); ip != nil {
-			if fqdn, err := lookup(ip); err == nil {
-				return fqdn, nil
-			}
-
-		}
-	}
-	return hostname, nil
 }

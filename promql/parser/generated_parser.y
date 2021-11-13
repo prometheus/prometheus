@@ -20,8 +20,8 @@ import (
         "strconv"
         "time"
 
-        "github.com/prometheus/prometheus/pkg/labels"
-        "github.com/prometheus/prometheus/pkg/value"
+        "github.com/prometheus/prometheus/model/labels"
+        "github.com/prometheus/prometheus/model/value"
 )
 %}
 
@@ -84,6 +84,7 @@ NEQ_REGEX
 POW
 SUB
 AT
+ATAN2
 %token	operatorsEnd
 
 // Aggregators.
@@ -156,7 +157,7 @@ START_METRIC_SELECTOR
 %left LAND LUNLESS
 %left EQLC GTE GTR LSS LTE NEQ
 %left ADD SUB
-%left MUL DIV MOD
+%left MUL DIV MOD ATAN2
 %right POW
 
 // Offset modifiers do not have associativity.
@@ -237,6 +238,7 @@ aggregate_modifier:
 
 // Operator precedence only works if each of those is listed separately.
 binary_expr     : expr ADD     bin_modifier expr { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4) }
+                | expr ATAN2   bin_modifier expr { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4) }
                 | expr DIV     bin_modifier expr { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4) }
                 | expr EQLC    bin_modifier expr { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4) }
                 | expr GTE     bin_modifier expr { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4) }
@@ -571,7 +573,7 @@ metric          : metric_identifier label_set
                 ;
 
 
-metric_identifier: AVG | BOTTOMK | BY | COUNT | COUNT_VALUES | GROUP | IDENTIFIER |  LAND | LOR | LUNLESS | MAX | METRIC_IDENTIFIER | MIN | OFFSET | QUANTILE | STDDEV | STDVAR | SUM | TOPK | WITHOUT;
+metric_identifier: AVG | BOTTOMK | BY | COUNT | COUNT_VALUES | GROUP | IDENTIFIER |  LAND | LOR | LUNLESS | MAX | METRIC_IDENTIFIER | MIN | OFFSET | QUANTILE | STDDEV | STDVAR | SUM | TOPK | WITHOUT | START | END;
 
 label_set       : LEFT_BRACE label_set_list RIGHT_BRACE
                         { $$ = labels.New($2...) }
@@ -674,7 +676,7 @@ series_value    : IDENTIFIER
 aggregate_op    : AVG | BOTTOMK | COUNT | COUNT_VALUES | GROUP | MAX | MIN | QUANTILE | STDDEV | STDVAR | SUM | TOPK ;
 
 // inside of grouping options label names can be recognized as keywords by the lexer. This is a list of keywords that could also be a label name.
-maybe_label     : AVG | BOOL | BOTTOMK | BY | COUNT | COUNT_VALUES | GROUP | GROUP_LEFT | GROUP_RIGHT | IDENTIFIER | IGNORING | LAND | LOR | LUNLESS | MAX | METRIC_IDENTIFIER | MIN | OFFSET | ON | QUANTILE | STDDEV | STDVAR | SUM | TOPK;
+maybe_label     : AVG | BOOL | BOTTOMK | BY | COUNT | COUNT_VALUES | GROUP | GROUP_LEFT | GROUP_RIGHT | IDENTIFIER | IGNORING | LAND | LOR | LUNLESS | MAX | METRIC_IDENTIFIER | MIN | OFFSET | ON | QUANTILE | STDDEV | STDVAR | SUM | TOPK | START | END | ATAN2;
 
 unary_op        : ADD | SUB;
 

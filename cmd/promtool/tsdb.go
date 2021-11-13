@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"math"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -30,11 +31,14 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/index"
+
 	"github.com/alecthomas/units"
 	"github.com/go-kit/log"
 	"github.com/pkg/errors"
 
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
@@ -76,7 +80,7 @@ func benchmarkWrite(outPath, samplesFile string, numMetrics, numScrapes int) err
 	if err := os.RemoveAll(b.outPath); err != nil {
 		return err
 	}
-	if err := os.MkdirAll(b.outPath, 0777); err != nil {
+	if err := os.MkdirAll(b.outPath, 0o777); err != nil {
 		return err
 	}
 
@@ -185,7 +189,7 @@ func (b *writeBenchmark) ingestScrapesShard(lbls []labels.Labels, scrapeCount in
 	type sample struct {
 		labels labels.Labels
 		value  int64
-		ref    *uint64
+		ref    *storage.SeriesRef
 	}
 
 	scrape := make([]*sample, 0, len(lbls))
@@ -205,7 +209,7 @@ func (b *writeBenchmark) ingestScrapesShard(lbls []labels.Labels, scrapeCount in
 		for _, s := range scrape {
 			s.value += 1000
 
-			var ref uint64
+			var ref storage.SeriesRef
 			if s.ref != nil {
 				ref = *s.ref
 			}
@@ -416,7 +420,7 @@ func openBlock(path, blockID string) (*tsdb.DBReadOnly, tsdb.BlockReader, error)
 	return db, block, nil
 }
 
-func analyzeBlock(path, blockID string, limit int) error {
+func analyzeBlock(path, blockID string, limit int, runExtended bool) error {
 	db, block, err := openBlock(path, blockID)
 	if err != nil {
 		return err
@@ -561,6 +565,64 @@ func analyzeBlock(path, blockID string, limit int) error {
 	}
 	fmt.Printf("\nHighest cardinality metric names:\n")
 	printInfo(postingInfos)
+
+	if runExtended {
+		return analyzeCompaction(block, ir)
+	}
+
+	return nil
+}
+
+func analyzeCompaction(block tsdb.BlockReader, indexr tsdb.IndexReader) (err error) {
+	postingsr, err := indexr.Postings(index.AllPostingsKey())
+	if err != nil {
+		return err
+	}
+	chunkr, err := block.Chunks()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		err = tsdb_errors.NewMulti(err, chunkr.Close()).Err()
+	}()
+
+	const maxSamplesPerChunk = 120
+	nBuckets := 10
+	histogram := make([]int, nBuckets)
+	totalChunks := 0
+	for postingsr.Next() {
+		lbsl := labels.Labels{}
+		var chks []chunks.Meta
+		if err := indexr.Series(postingsr.At(), &lbsl, &chks); err != nil {
+			return err
+		}
+
+		for _, chk := range chks {
+			// Load the actual data of the chunk.
+			chk, err := chunkr.Chunk(chk.Ref)
+			if err != nil {
+				return err
+			}
+			chunkSize := math.Min(float64(chk.NumSamples()), maxSamplesPerChunk)
+			// Calculate the bucket for the chunk and increment it in the histogram.
+			bucket := int(math.Ceil(float64(nBuckets)*chunkSize/maxSamplesPerChunk)) - 1
+			histogram[bucket]++
+			totalChunks++
+		}
+	}
+
+	fmt.Printf("\nCompaction analysis:\n")
+	fmt.Println("Fullness: Amount of samples in chunks (100% is 120 samples)")
+	// Normalize absolute counts to percentages and print them out.
+	for bucket, count := range histogram {
+		percentage := 100.0 * count / totalChunks
+		fmt.Printf("%7d%%: ", (bucket+1)*10)
+		for j := 0; j < percentage; j++ {
+			fmt.Printf("#")
+		}
+		fmt.Println()
+	}
+
 	return nil
 }
 
@@ -611,16 +673,16 @@ func checkErr(err error) int {
 	return 0
 }
 
-func backfillOpenMetrics(path string, outputDir string, humanReadable, quiet bool) int {
+func backfillOpenMetrics(path, outputDir string, humanReadable, quiet bool, maxBlockDuration time.Duration) int {
 	inputFile, err := fileutil.OpenMmapFile(path)
 	if err != nil {
 		return checkErr(err)
 	}
 	defer inputFile.Close()
 
-	if err := os.MkdirAll(outputDir, 0777); err != nil {
+	if err := os.MkdirAll(outputDir, 0o777); err != nil {
 		return checkErr(errors.Wrap(err, "create output dir"))
 	}
 
-	return checkErr(backfill(5000, inputFile.Bytes(), outputDir, humanReadable, quiet))
+	return checkErr(backfill(5000, inputFile.Bytes(), outputDir, humanReadable, quiet, maxBlockDuration))
 }

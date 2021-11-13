@@ -35,9 +35,9 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/uber/jaeger-client-go"
 
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/timestamp"
-	"github.com/prometheus/prometheus/pkg/value"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/stats"
@@ -87,12 +87,15 @@ type (
 func (e ErrQueryTimeout) Error() string {
 	return fmt.Sprintf("query timed out in %s", string(e))
 }
+
 func (e ErrQueryCanceled) Error() string {
 	return fmt.Sprintf("query was canceled in %s", string(e))
 }
+
 func (e ErrTooManySamples) Error() string {
 	return fmt.Sprintf("query processing would load too many samples into memory in %s", string(e))
 }
+
 func (e ErrStorage) Error() string {
 	return e.Err.Error()
 }
@@ -117,6 +120,8 @@ type Query interface {
 	Stats() *stats.QueryTimers
 	// Cancel signals that a running query execution should be aborted.
 	Cancel()
+	// String returns the original query string.
+	String() string
 }
 
 // query implements the Query interface.
@@ -141,8 +146,15 @@ type query struct {
 type QueryOrigin struct{}
 
 // Statement implements the Query interface.
+// Calling this after Exec may result in panic,
+// see https://github.com/prometheus/prometheus/issues/8949.
 func (q *query) Statement() parser.Statement {
 	return q.stmt
+}
+
+// String implements the Query interface.
+func (q *query) String() string {
+	return q.q
 }
 
 // Stats implements the Query interface.
@@ -393,8 +405,10 @@ func (ng *Engine) newQuery(q storage.Queryable, expr parser.Expr, start, end tim
 	return qry, nil
 }
 
-var ErrValidationAtModifierDisabled = errors.New("@ modifier is disabled")
-var ErrValidationNegativeOffsetDisabled = errors.New("negative offset is disabled")
+var (
+	ErrValidationAtModifierDisabled     = errors.New("@ modifier is disabled")
+	ErrValidationNegativeOffsetDisabled = errors.New("negative offset is disabled")
+)
 
 func (ng *Engine) validateOpts(expr parser.Expr) error {
 	if ng.enableAtModifier && ng.enableNegativeOffset {
@@ -520,8 +534,6 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v parser.Value, ws storag
 
 	// Cancel when execution is done or an error was raised.
 	defer q.cancel()
-
-	const env = "query execution"
 
 	evalSpanTimer, ctx := q.stats.GetSpanTimer(ctx, stats.EvalTotalTime)
 	defer evalSpanTimer.Finish()
@@ -906,6 +918,8 @@ func (ev *evaluator) Eval(expr parser.Expr) (v parser.Value, ws storage.Warnings
 type EvalSeriesHelper struct {
 	// The grouping key used by aggregation.
 	groupingKey uint64
+	// Used to map left-hand to right-hand in binary operations.
+	signature string
 }
 
 // EvalNodeHelper stores extra information and caches for evaluating a single node across steps.
@@ -918,8 +932,6 @@ type EvalNodeHelper struct {
 	// Caches.
 	// DropMetricName and label_*.
 	Dmn map[uint64]labels.Labels
-	// signatureFunc.
-	sigf map[string]string
 	// funcHistogramQuantile.
 	signatureToMetricWithBuckets map[string]*metricWithBuckets
 	// label_replace.
@@ -948,23 +960,6 @@ func (enh *EvalNodeHelper) DropMetricName(l labels.Labels) labels.Labels {
 	ret = dropMetricName(l)
 	enh.Dmn[h] = ret
 	return ret
-}
-
-func (enh *EvalNodeHelper) signatureFunc(on bool, names ...string) func(labels.Labels) string {
-	if enh.sigf == nil {
-		enh.sigf = make(map[string]string, len(enh.Out))
-	}
-	f := signatureFunc(on, enh.lblBuf, names...)
-	return func(l labels.Labels) string {
-		enh.lblBuf = l.Bytes(enh.lblBuf)
-		ret, ok := enh.sigf[string(enh.lblBuf)]
-		if ok {
-			return ret
-		}
-		ret = f(l)
-		enh.sigf[string(enh.lblBuf)] = ret
-		return ret
-	}
 }
 
 // rangeEval evaluates the given expressions, and then for each step calls
@@ -1185,7 +1180,9 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 		}
 
 		unwrapParenExpr(&e.Param)
-		if s, ok := unwrapStepInvariantExpr(e.Param).(*parser.StringLiteral); ok {
+		param := unwrapStepInvariantExpr(e.Param)
+		unwrapParenExpr(&param)
+		if s, ok := param.(*parser.StringLiteral); ok {
 			return ev.rangeEval(initSeries, func(v []parser.Value, sh [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, storage.Warnings) {
 				return ev.aggregation(e.Op, sortedGrouping, e.Without, s.Val, v[0].(Vector), sh[0], enh), nil
 			}, e.Expr)
@@ -1207,6 +1204,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 			// a vector selector.
 			unwrapParenExpr(&e.Args[0])
 			arg := unwrapStepInvariantExpr(e.Args[0])
+			unwrapParenExpr(&arg)
 			vs, ok := arg.(*parser.VectorSelector)
 			if ok {
 				return ev.rangeEval(nil, func(v []parser.Value, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, storage.Warnings) {
@@ -1230,6 +1228,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 		for i := range e.Args {
 			unwrapParenExpr(&e.Args[i])
 			a := unwrapStepInvariantExpr(e.Args[i])
+			unwrapParenExpr(&a)
 			if _, ok := a.(*parser.MatrixSelector); ok {
 				matrixArgIndex = i
 				matrixArg = true
@@ -1272,7 +1271,10 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 			}
 		}
 
-		sel := unwrapStepInvariantExpr(e.Args[matrixArgIndex]).(*parser.MatrixSelector)
+		unwrapParenExpr(&e.Args[matrixArgIndex])
+		arg := unwrapStepInvariantExpr(e.Args[matrixArgIndex])
+		unwrapParenExpr(&arg)
+		sel := arg.(*parser.MatrixSelector)
 		selVS := sel.VectorSelector.(*parser.VectorSelector)
 
 		ws, err := checkAndExpandSeriesSet(ev.ctx, sel)
@@ -1425,22 +1427,28 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 				return append(enh.Out, Sample{Point: Point{V: val}}), nil
 			}, e.LHS, e.RHS)
 		case lt == parser.ValueTypeVector && rt == parser.ValueTypeVector:
+			// Function to compute the join signature for each series.
+			buf := make([]byte, 0, 1024)
+			sigf := signatureFunc(e.VectorMatching.On, buf, e.VectorMatching.MatchingLabels...)
+			initSignatures := func(series labels.Labels, h *EvalSeriesHelper) {
+				h.signature = sigf(series)
+			}
 			switch e.Op {
 			case parser.LAND:
-				return ev.rangeEval(nil, func(v []parser.Value, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, storage.Warnings) {
-					return ev.VectorAnd(v[0].(Vector), v[1].(Vector), e.VectorMatching, enh), nil
+				return ev.rangeEval(initSignatures, func(v []parser.Value, sh [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, storage.Warnings) {
+					return ev.VectorAnd(v[0].(Vector), v[1].(Vector), e.VectorMatching, sh[0], sh[1], enh), nil
 				}, e.LHS, e.RHS)
 			case parser.LOR:
-				return ev.rangeEval(nil, func(v []parser.Value, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, storage.Warnings) {
-					return ev.VectorOr(v[0].(Vector), v[1].(Vector), e.VectorMatching, enh), nil
+				return ev.rangeEval(initSignatures, func(v []parser.Value, sh [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, storage.Warnings) {
+					return ev.VectorOr(v[0].(Vector), v[1].(Vector), e.VectorMatching, sh[0], sh[1], enh), nil
 				}, e.LHS, e.RHS)
 			case parser.LUNLESS:
-				return ev.rangeEval(nil, func(v []parser.Value, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, storage.Warnings) {
-					return ev.VectorUnless(v[0].(Vector), v[1].(Vector), e.VectorMatching, enh), nil
+				return ev.rangeEval(initSignatures, func(v []parser.Value, sh [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, storage.Warnings) {
+					return ev.VectorUnless(v[0].(Vector), v[1].(Vector), e.VectorMatching, sh[0], sh[1], enh), nil
 				}, e.LHS, e.RHS)
 			default:
-				return ev.rangeEval(nil, func(v []parser.Value, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, storage.Warnings) {
-					return ev.VectorBinop(e.Op, v[0].(Vector), v[1].(Vector), e.VectorMatching, e.ReturnBool, enh), nil
+				return ev.rangeEval(initSignatures, func(v []parser.Value, sh [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, storage.Warnings) {
+					return ev.VectorBinop(e.Op, v[0].(Vector), v[1].(Vector), e.VectorMatching, e.ReturnBool, sh[0], sh[1], enh), nil
 				}, e.LHS, e.RHS)
 			}
 
@@ -1767,62 +1775,75 @@ func (ev *evaluator) matrixIterSlice(it *storage.BufferedSeriesIterator, mint, m
 	return out
 }
 
-func (ev *evaluator) VectorAnd(lhs, rhs Vector, matching *parser.VectorMatching, enh *EvalNodeHelper) Vector {
+func (ev *evaluator) VectorAnd(lhs, rhs Vector, matching *parser.VectorMatching, lhsh, rhsh []EvalSeriesHelper, enh *EvalNodeHelper) Vector {
 	if matching.Card != parser.CardManyToMany {
 		panic("set operations must only use many-to-many matching")
 	}
-	sigf := enh.signatureFunc(matching.On, matching.MatchingLabels...)
+	if len(lhs) == 0 || len(rhs) == 0 {
+		return nil // Short-circuit: AND with nothing is nothing.
+	}
 
 	// The set of signatures for the right-hand side Vector.
 	rightSigs := map[string]struct{}{}
 	// Add all rhs samples to a map so we can easily find matches later.
-	for _, rs := range rhs {
-		rightSigs[sigf(rs.Metric)] = struct{}{}
+	for _, sh := range rhsh {
+		rightSigs[sh.signature] = struct{}{}
 	}
 
-	for _, ls := range lhs {
+	for i, ls := range lhs {
 		// If there's a matching entry in the right-hand side Vector, add the sample.
-		if _, ok := rightSigs[sigf(ls.Metric)]; ok {
+		if _, ok := rightSigs[lhsh[i].signature]; ok {
 			enh.Out = append(enh.Out, ls)
 		}
 	}
 	return enh.Out
 }
 
-func (ev *evaluator) VectorOr(lhs, rhs Vector, matching *parser.VectorMatching, enh *EvalNodeHelper) Vector {
+func (ev *evaluator) VectorOr(lhs, rhs Vector, matching *parser.VectorMatching, lhsh, rhsh []EvalSeriesHelper, enh *EvalNodeHelper) Vector {
 	if matching.Card != parser.CardManyToMany {
 		panic("set operations must only use many-to-many matching")
 	}
-	sigf := enh.signatureFunc(matching.On, matching.MatchingLabels...)
+	if len(lhs) == 0 { // Short-circuit.
+		enh.Out = append(enh.Out, rhs...)
+		return enh.Out
+	} else if len(rhs) == 0 {
+		enh.Out = append(enh.Out, lhs...)
+		return enh.Out
+	}
 
 	leftSigs := map[string]struct{}{}
 	// Add everything from the left-hand-side Vector.
-	for _, ls := range lhs {
-		leftSigs[sigf(ls.Metric)] = struct{}{}
+	for i, ls := range lhs {
+		leftSigs[lhsh[i].signature] = struct{}{}
 		enh.Out = append(enh.Out, ls)
 	}
 	// Add all right-hand side elements which have not been added from the left-hand side.
-	for _, rs := range rhs {
-		if _, ok := leftSigs[sigf(rs.Metric)]; !ok {
+	for j, rs := range rhs {
+		if _, ok := leftSigs[rhsh[j].signature]; !ok {
 			enh.Out = append(enh.Out, rs)
 		}
 	}
 	return enh.Out
 }
 
-func (ev *evaluator) VectorUnless(lhs, rhs Vector, matching *parser.VectorMatching, enh *EvalNodeHelper) Vector {
+func (ev *evaluator) VectorUnless(lhs, rhs Vector, matching *parser.VectorMatching, lhsh, rhsh []EvalSeriesHelper, enh *EvalNodeHelper) Vector {
 	if matching.Card != parser.CardManyToMany {
 		panic("set operations must only use many-to-many matching")
 	}
-	sigf := enh.signatureFunc(matching.On, matching.MatchingLabels...)
-
-	rightSigs := map[string]struct{}{}
-	for _, rs := range rhs {
-		rightSigs[sigf(rs.Metric)] = struct{}{}
+	// Short-circuit: empty rhs means we will return everything in lhs;
+	// empty lhs means we will return empty - don't need to build a map.
+	if len(lhs) == 0 || len(rhs) == 0 {
+		enh.Out = append(enh.Out, lhs...)
+		return enh.Out
 	}
 
-	for _, ls := range lhs {
-		if _, ok := rightSigs[sigf(ls.Metric)]; !ok {
+	rightSigs := map[string]struct{}{}
+	for _, sh := range rhsh {
+		rightSigs[sh.signature] = struct{}{}
+	}
+
+	for i, ls := range lhs {
+		if _, ok := rightSigs[lhsh[i].signature]; !ok {
 			enh.Out = append(enh.Out, ls)
 		}
 	}
@@ -1830,17 +1851,20 @@ func (ev *evaluator) VectorUnless(lhs, rhs Vector, matching *parser.VectorMatchi
 }
 
 // VectorBinop evaluates a binary operation between two Vectors, excluding set operators.
-func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *parser.VectorMatching, returnBool bool, enh *EvalNodeHelper) Vector {
+func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *parser.VectorMatching, returnBool bool, lhsh, rhsh []EvalSeriesHelper, enh *EvalNodeHelper) Vector {
 	if matching.Card == parser.CardManyToMany {
 		panic("many-to-many only allowed for set operators")
 	}
-	sigf := enh.signatureFunc(matching.On, matching.MatchingLabels...)
+	if len(lhs) == 0 || len(rhs) == 0 {
+		return nil // Short-circuit: nothing is going to match.
+	}
 
 	// The control flow below handles one-to-one or many-to-one matching.
 	// For one-to-many, swap sidedness and account for the swap when calculating
 	// values.
 	if matching.Card == parser.CardOneToMany {
 		lhs, rhs = rhs, lhs
+		lhsh, rhsh = rhsh, lhsh
 	}
 
 	// All samples from the rhs hashed by the matching label/values.
@@ -1854,8 +1878,8 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 	rightSigs := enh.rightSigs
 
 	// Add all rhs samples to a map so we can easily find matches later.
-	for _, rs := range rhs {
-		sig := sigf(rs.Metric)
+	for i, rs := range rhs {
+		sig := rhsh[i].signature
 		// The rhs is guaranteed to be the 'one' side. Having multiple samples
 		// with the same signature means that the matching is many-to-many.
 		if duplSample, found := rightSigs[sig]; found {
@@ -1885,8 +1909,8 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 
 	// For all lhs samples find a respective rhs sample and perform
 	// the binary operation.
-	for _, ls := range lhs {
-		sig := sigf(ls.Metric)
+	for i, ls := range lhs {
+		sig := lhsh[i].signature
 
 		rs, found := rightSigs[sig] // Look for a match in the rhs Vector.
 		if !found {
@@ -2076,6 +2100,8 @@ func scalarBinop(op parser.ItemType, lhs, rhs float64) float64 {
 		return btos(lhs >= rhs)
 	case parser.LTE:
 		return btos(lhs <= rhs)
+	case parser.ATAN2:
+		return math.Atan2(lhs, rhs)
 	}
 	panic(errors.Errorf("operator %q not allowed for Scalar operations", op))
 }
@@ -2107,6 +2133,8 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64) (float64, bool) {
 		return lhs, lhs >= rhs
 	case parser.LTE:
 		return lhs, lhs <= rhs
+	case parser.ATAN2:
+		return math.Atan2(lhs, rhs), true
 	}
 	panic(errors.Errorf("operator %q not allowed for operations between Vectors", op))
 }
@@ -2123,8 +2151,8 @@ type groupedAggregation struct {
 // aggregation evaluates an aggregation operation on a Vector. The provided grouping labels
 // must be sorted.
 func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without bool, param interface{}, vec Vector, seriesHelper []EvalSeriesHelper, enh *EvalNodeHelper) Vector {
-
 	result := map[uint64]*groupedAggregation{}
+	orderedResult := []*groupedAggregation{}
 	var k int64
 	if op == parser.TOPK || op == parser.BOTTOMK {
 		f := param.(float64)
@@ -2193,32 +2221,38 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 			} else {
 				m = metric.WithLabels(grouping...)
 			}
-			result[groupingKey] = &groupedAggregation{
+			newAgg := &groupedAggregation{
 				labels:     m,
 				value:      s.V,
 				mean:       s.V,
 				groupCount: 1,
 			}
+
+			result[groupingKey] = newAgg
+			orderedResult = append(orderedResult, newAgg)
+
 			inputVecLen := int64(len(vec))
 			resultSize := k
 			if k > inputVecLen {
 				resultSize = inputVecLen
+			} else if k == 0 {
+				resultSize = 1
 			}
 			switch op {
 			case parser.STDVAR, parser.STDDEV:
 				result[groupingKey].value = 0
 			case parser.TOPK, parser.QUANTILE:
-				result[groupingKey].heap = make(vectorByValueHeap, 0, resultSize)
-				heap.Push(&result[groupingKey].heap, &Sample{
+				result[groupingKey].heap = make(vectorByValueHeap, 1, resultSize)
+				result[groupingKey].heap[0] = Sample{
 					Point:  Point{V: s.V},
 					Metric: s.Metric,
-				})
+				}
 			case parser.BOTTOMK:
-				result[groupingKey].reverseHeap = make(vectorByReverseValueHeap, 0, resultSize)
-				heap.Push(&result[groupingKey].reverseHeap, &Sample{
+				result[groupingKey].reverseHeap = make(vectorByReverseValueHeap, 1, resultSize)
+				result[groupingKey].reverseHeap[0] = Sample{
 					Point:  Point{V: s.V},
 					Metric: s.Metric,
-				})
+				}
 			case parser.GROUP:
 				result[groupingKey].value = 1
 			}
@@ -2276,6 +2310,13 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 		case parser.TOPK:
 			if int64(len(group.heap)) < k || group.heap[0].V < s.V || math.IsNaN(group.heap[0].V) {
 				if int64(len(group.heap)) == k {
+					if k == 1 { // For k==1 we can replace in-situ.
+						group.heap[0] = Sample{
+							Point:  Point{V: s.V},
+							Metric: s.Metric,
+						}
+						break
+					}
 					heap.Pop(&group.heap)
 				}
 				heap.Push(&group.heap, &Sample{
@@ -2287,6 +2328,13 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 		case parser.BOTTOMK:
 			if int64(len(group.reverseHeap)) < k || group.reverseHeap[0].V > s.V || math.IsNaN(group.reverseHeap[0].V) {
 				if int64(len(group.reverseHeap)) == k {
+					if k == 1 { // For k==1 we can replace in-situ.
+						group.reverseHeap[0] = Sample{
+							Point:  Point{V: s.V},
+							Metric: s.Metric,
+						}
+						break
+					}
 					heap.Pop(&group.reverseHeap)
 				}
 				heap.Push(&group.reverseHeap, &Sample{
@@ -2304,7 +2352,7 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 	}
 
 	// Construct the result Vector from the aggregated groups.
-	for _, aggr := range result {
+	for _, aggr := range orderedResult {
 		switch op {
 		case parser.AVG:
 			aggr.value = aggr.mean
@@ -2320,7 +2368,9 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 
 		case parser.TOPK:
 			// The heap keeps the lowest value on top, so reverse it.
-			sort.Sort(sort.Reverse(aggr.heap))
+			if len(aggr.heap) > 1 {
+				sort.Sort(sort.Reverse(aggr.heap))
+			}
 			for _, v := range aggr.heap {
 				enh.Out = append(enh.Out, Sample{
 					Metric: v.Metric,
@@ -2331,7 +2381,9 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 
 		case parser.BOTTOMK:
 			// The heap keeps the highest value on top, so reverse it.
-			sort.Sort(sort.Reverse(aggr.reverseHeap))
+			if len(aggr.reverseHeap) > 1 {
+				sort.Sort(sort.Reverse(aggr.reverseHeap))
+			}
 			for _, v := range aggr.reverseHeap {
 				enh.Out = append(enh.Out, Sample{
 					Metric: v.Metric,
@@ -2468,7 +2520,6 @@ func preprocessExprHelper(expr parser.Expr, start, end time.Time) bool {
 		}
 
 		if isStepInvariant {
-
 			// The function and all arguments are step invariant.
 			return true
 		}
@@ -2514,12 +2565,6 @@ func preprocessExprHelper(expr parser.Expr, start, end time.Time) bool {
 }
 
 func newStepInvariantExpr(expr parser.Expr) parser.Expr {
-	if e, ok := expr.(*parser.ParenExpr); ok {
-		// Wrapping the inside of () makes it easy to unwrap the paren later.
-		// But this effectively unwraps the paren.
-		return newStepInvariantExpr(e.Expr)
-
-	}
 	return &parser.StepInvariantExpr{Expr: expr}
 }
 

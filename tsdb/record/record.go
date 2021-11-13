@@ -20,7 +20,9 @@ import (
 
 	"github.com/pkg/errors"
 
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 )
@@ -41,27 +43,25 @@ const (
 	Exemplars Type = 4
 )
 
-var (
-	// ErrNotFound is returned if a looked up resource was not found. Duplicate ErrNotFound from head.go.
-	ErrNotFound = errors.New("not found")
-)
+// ErrNotFound is returned if a looked up resource was not found. Duplicate ErrNotFound from head.go.
+var ErrNotFound = errors.New("not found")
 
 // RefSeries is the series labels with the series ID.
 type RefSeries struct {
-	Ref    uint64
+	Ref    chunks.HeadSeriesRef
 	Labels labels.Labels
 }
 
 // RefSample is a timestamp/value pair associated with a reference to a series.
 type RefSample struct {
-	Ref uint64
+	Ref chunks.HeadSeriesRef
 	T   int64
 	V   float64
 }
 
 // RefExemplar is an exemplar with it's labels, timestamp, value the exemplar was collected/observed with, and a reference to a series.
 type RefExemplar struct {
-	Ref    uint64
+	Ref    chunks.HeadSeriesRef
 	T      int64
 	V      float64
 	Labels labels.Labels
@@ -69,8 +69,7 @@ type RefExemplar struct {
 
 // Decoder decodes series, sample, and tombstone records.
 // The zero value is ready to use.
-type Decoder struct {
-}
+type Decoder struct{}
 
 // Type returns the type of the record.
 // Returns RecordUnknown if no valid record type is found.
@@ -93,7 +92,7 @@ func (d *Decoder) Series(rec []byte, series []RefSeries) ([]RefSeries, error) {
 		return nil, errors.New("invalid record type")
 	}
 	for len(dec.B) > 0 && dec.Err() == nil {
-		ref := dec.Be64()
+		ref := storage.SeriesRef(dec.Be64())
 
 		lset := make(labels.Labels, dec.Uvarint())
 
@@ -104,7 +103,7 @@ func (d *Decoder) Series(rec []byte, series []RefSeries) ([]RefSeries, error) {
 		sort.Sort(lset)
 
 		series = append(series, RefSeries{
-			Ref:    ref,
+			Ref:    chunks.HeadSeriesRef(ref),
 			Labels: lset,
 		})
 	}
@@ -137,7 +136,7 @@ func (d *Decoder) Samples(rec []byte, samples []RefSample) ([]RefSample, error) 
 		val := dec.Be64()
 
 		samples = append(samples, RefSample{
-			Ref: uint64(int64(baseRef) + dref),
+			Ref: chunks.HeadSeriesRef(int64(baseRef) + dref),
 			T:   baseTime + dtime,
 			V:   math.Float64frombits(val),
 		})
@@ -161,7 +160,7 @@ func (d *Decoder) Tombstones(rec []byte, tstones []tombstones.Stone) ([]tombston
 	}
 	for dec.Len() > 0 && dec.Err() == nil {
 		tstones = append(tstones, tombstones.Stone{
-			Ref: dec.Be64(),
+			Ref: storage.SeriesRef(dec.Be64()),
 			Intervals: tombstones.Intervals{
 				{Mint: dec.Varint64(), Maxt: dec.Varint64()},
 			},
@@ -182,6 +181,11 @@ func (d *Decoder) Exemplars(rec []byte, exemplars []RefExemplar) ([]RefExemplar,
 	if t != Exemplars {
 		return nil, errors.New("invalid record type")
 	}
+
+	return d.ExemplarsFromBuffer(&dec, exemplars)
+}
+
+func (d *Decoder) ExemplarsFromBuffer(dec *encoding.Decbuf, exemplars []RefExemplar) ([]RefExemplar, error) {
 	if dec.Len() == 0 {
 		return exemplars, nil
 	}
@@ -202,7 +206,7 @@ func (d *Decoder) Exemplars(rec []byte, exemplars []RefExemplar) ([]RefExemplar,
 		sort.Sort(lset)
 
 		exemplars = append(exemplars, RefExemplar{
-			Ref:    baseRef + uint64(dref),
+			Ref:    chunks.HeadSeriesRef(baseRef + uint64(dref)),
 			T:      baseTime + dtime,
 			V:      math.Float64frombits(val),
 			Labels: lset,
@@ -220,8 +224,7 @@ func (d *Decoder) Exemplars(rec []byte, exemplars []RefExemplar) ([]RefExemplar,
 
 // Encoder encodes series, sample, and tombstones records.
 // The zero value is ready to use.
-type Encoder struct {
-}
+type Encoder struct{}
 
 // Series appends the encoded series to b and returns the resulting slice.
 func (e *Encoder) Series(series []RefSeries, b []byte) []byte {
@@ -229,7 +232,7 @@ func (e *Encoder) Series(series []RefSeries, b []byte) []byte {
 	buf.PutByte(byte(Series))
 
 	for _, s := range series {
-		buf.PutBE64(s.Ref)
+		buf.PutBE64(uint64(s.Ref))
 		buf.PutUvarint(len(s.Labels))
 
 		for _, l := range s.Labels {
@@ -253,7 +256,7 @@ func (e *Encoder) Samples(samples []RefSample, b []byte) []byte {
 	// All samples encode their timestamp and ref as delta to those.
 	first := samples[0]
 
-	buf.PutBE64(first.Ref)
+	buf.PutBE64(uint64(first.Ref))
 	buf.PutBE64int64(first.T)
 
 	for _, s := range samples {
@@ -271,7 +274,7 @@ func (e *Encoder) Tombstones(tstones []tombstones.Stone, b []byte) []byte {
 
 	for _, s := range tstones {
 		for _, iv := range s.Intervals {
-			buf.PutBE64(s.Ref)
+			buf.PutBE64(uint64(s.Ref))
 			buf.PutVarint64(iv.Mint)
 			buf.PutVarint64(iv.Maxt)
 		}
@@ -287,11 +290,17 @@ func (e *Encoder) Exemplars(exemplars []RefExemplar, b []byte) []byte {
 		return buf.Get()
 	}
 
+	e.EncodeExemplarsIntoBuffer(exemplars, &buf)
+
+	return buf.Get()
+}
+
+func (e *Encoder) EncodeExemplarsIntoBuffer(exemplars []RefExemplar, buf *encoding.Encbuf) {
 	// Store base timestamp and base reference number of first sample.
 	// All samples encode their timestamp and ref as delta to those.
 	first := exemplars[0]
 
-	buf.PutBE64(first.Ref)
+	buf.PutBE64(uint64(first.Ref))
 	buf.PutBE64int64(first.T)
 
 	for _, ex := range exemplars {
@@ -305,6 +314,4 @@ func (e *Encoder) Exemplars(exemplars []RefExemplar, b []byte) []byte {
 			buf.PutUvarintStr(l.Value)
 		}
 	}
-
-	return buf.Get()
 }

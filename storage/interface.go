@@ -18,8 +18,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/prometheus/prometheus/pkg/exemplar"
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 )
@@ -33,7 +33,13 @@ var (
 	ErrOutOfOrderExemplar          = errors.New("out of order exemplar")
 	ErrDuplicateExemplar           = errors.New("duplicate exemplar")
 	ErrExemplarLabelLength         = fmt.Errorf("label length for exemplar exceeds maximum of %d UTF-8 characters", exemplar.ExemplarMaxLabelSetLength)
+	ErrExemplarsDisabled           = fmt.Errorf("exemplar storage is disabled or max exemplars is less than or equal to 0")
 )
+
+// SeriesRef is a generic series reference. In prometheus it is either a
+// HeadSeriesRef or BlockSeriesRef, though other implementations may have
+// their own reference types.
+type SeriesRef uint64
 
 // Appendable allows creating appenders.
 type Appendable interface {
@@ -112,8 +118,9 @@ type LabelQuerier interface {
 	LabelValues(name string, matchers ...*labels.Matcher) ([]string, Warnings, error)
 
 	// LabelNames returns all the unique label names present in the block in sorted order.
-	// TODO(yeya24): support matchers or hints.
-	LabelNames() ([]string, Warnings, error)
+	// If matchers are specified the returned result set is reduced
+	// to label names of metrics matching the matchers.
+	LabelNames(matchers ...*labels.Matcher) ([]string, Warnings, error)
 
 	// Close releases the resources of the Querier.
 	Close() error
@@ -143,6 +150,11 @@ type SelectHints struct {
 	Grouping []string // List of label names used in aggregation.
 	By       bool     // Indicate whether it is without or by.
 	Range    int64    // Range vector selector range in milliseconds.
+
+	// DisableTrimming allows to disable trimming of matching series chunks based on query Start and End time.
+	// When disabled, the result may contain samples outside the queried time range but Select() performances
+	// may be improved.
+	DisableTrimming bool
 }
 
 // TODO(bwplotka): Move to promql/engine_test.go?
@@ -168,7 +180,7 @@ type Appender interface {
 	// to Append() at any point. Adding the sample via Append() returns a new
 	// reference number.
 	// If the reference is 0 it must not be used for caching.
-	Append(ref uint64, l labels.Labels, t int64, v float64) (uint64, error)
+	Append(ref SeriesRef, l labels.Labels, t int64, v float64) (SeriesRef, error)
 
 	// Commit submits the collected samples and purges the batch. If Commit
 	// returns a non-nil error, it also rolls back all modifications made in
@@ -189,7 +201,7 @@ type GetRef interface {
 	// Returns reference number that can be used to pass to Appender.Append(),
 	// and a set of labels that will not cause another copy when passed to Appender.Append().
 	// 0 means the appender does not have a reference to this series.
-	GetRef(lset labels.Labels) (uint64, labels.Labels)
+	GetRef(lset labels.Labels) (SeriesRef, labels.Labels)
 }
 
 // ExemplarAppender provides an interface for adding samples to exemplar storage, which
@@ -206,7 +218,7 @@ type ExemplarAppender interface {
 	// Note that in our current implementation of Prometheus' exemplar storage
 	// calls to Append should generate the reference numbers, AppendExemplar
 	// generating a new reference number should be considered possible erroneous behaviour and be logged.
-	AppendExemplar(ref uint64, l labels.Labels, e exemplar.Exemplar) (uint64, error)
+	AppendExemplar(ref SeriesRef, l labels.Labels, e exemplar.Exemplar) (SeriesRef, error)
 }
 
 // SeriesSet contains a set of series.

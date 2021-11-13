@@ -46,6 +46,7 @@ const (
 	azureLabelMachineID            = azureLabel + "machine_id"
 	azureLabelMachineResourceGroup = azureLabel + "machine_resource_group"
 	azureLabelMachineName          = azureLabel + "machine_name"
+	azureLabelMachineComputerName  = azureLabel + "machine_computer_name"
 	azureLabelMachineOSType        = azureLabel + "machine_os_type"
 	azureLabelMachineLocation      = azureLabel + "machine_location"
 	azureLabelMachinePrivateIP     = azureLabel + "machine_private_ip"
@@ -63,6 +64,7 @@ var DefaultSDConfig = SDConfig{
 	RefreshInterval:      model.Duration(5 * time.Minute),
 	Environment:          azure.PublicCloud.Name,
 	AuthenticationMethod: authMethodOAuth,
+	HTTPClientConfig:     config_util.DefaultHTTPClientConfig,
 }
 
 func init() {
@@ -79,6 +81,8 @@ type SDConfig struct {
 	ClientSecret         config_util.Secret `yaml:"client_secret,omitempty"`
 	RefreshInterval      model.Duration     `yaml:"refresh_interval,omitempty"`
 	AuthenticationMethod string             `yaml:"authentication_method,omitempty"`
+
+	HTTPClientConfig config_util.HTTPClientConfig `yaml:",inline"`
 }
 
 // Name returns the name of the Config.
@@ -199,19 +203,29 @@ func createAzureClient(cfg SDConfig) (azureClient, error) {
 		}
 	}
 
+	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, "azure_sd")
+	if err != nil {
+		return azureClient{}, err
+	}
+	sender := autorest.DecorateSender(client)
+
 	bearerAuthorizer := autorest.NewBearerAuthorizer(spt)
 
 	c.vm = compute.NewVirtualMachinesClientWithBaseURI(resourceManagerEndpoint, cfg.SubscriptionID)
 	c.vm.Authorizer = bearerAuthorizer
+	c.vm.Sender = sender
 
 	c.nic = network.NewInterfacesClientWithBaseURI(resourceManagerEndpoint, cfg.SubscriptionID)
 	c.nic.Authorizer = bearerAuthorizer
+	c.nic.Sender = sender
 
 	c.vmss = compute.NewVirtualMachineScaleSetsClientWithBaseURI(resourceManagerEndpoint, cfg.SubscriptionID)
 	c.vmss.Authorizer = bearerAuthorizer
+	c.vm.Sender = sender
 
 	c.vmssvm = compute.NewVirtualMachineScaleSetVMsClientWithBaseURI(resourceManagerEndpoint, cfg.SubscriptionID)
 	c.vmssvm.Authorizer = bearerAuthorizer
+	c.vmssvm.Sender = sender
 
 	return c, nil
 }
@@ -226,6 +240,7 @@ type azureResource struct {
 type virtualMachine struct {
 	ID                string
 	Name              string
+	ComputerName      string
 	Type              string
 	Location          string
 	OsType            string
@@ -306,6 +321,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 				azureLabelTenantID:             model.LabelValue(d.cfg.TenantID),
 				azureLabelMachineID:            model.LabelValue(vm.ID),
 				azureLabelMachineName:          model.LabelValue(vm.Name),
+				azureLabelMachineComputerName:  model.LabelValue(vm.ComputerName),
 				azureLabelMachineOSType:        model.LabelValue(vm.OsType),
 				azureLabelMachineLocation:      model.LabelValue(vm.Location),
 				azureLabelMachineResourceGroup: model.LabelValue(r.ResourceGroup),
@@ -323,7 +339,6 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 			// Get the IP address information via separate call to the network provider.
 			for _, nicID := range vm.NetworkInterfaces {
 				networkInterface, err := client.getNetworkInterfaceByID(ctx, nicID)
-
 				if err != nil {
 					level.Error(d.logger).Log("msg", "Unable to get network interface", "name", nicID, "err", err)
 					ch <- target{labelSet: nil, err: err}
@@ -421,9 +436,8 @@ func (client *azureClient) getScaleSets(ctx context.Context) ([]compute.VirtualM
 
 func (client *azureClient) getScaleSetVMs(ctx context.Context, scaleSet compute.VirtualMachineScaleSet) ([]virtualMachine, error) {
 	var vms []virtualMachine
-	//TODO do we really need to fetch the resourcegroup this way?
+	// TODO do we really need to fetch the resourcegroup this way?
 	r, err := newAzureResourceFromID(*scaleSet.ID, nil)
-
 	if err != nil {
 		return nil, errors.Wrap(err, "could not parse scale set ID")
 	}
@@ -449,6 +463,7 @@ func mapFromVM(vm compute.VirtualMachine) virtualMachine {
 	osType := string(vm.StorageProfile.OsDisk.OsType)
 	tags := map[string]*string{}
 	networkInterfaces := []string{}
+	var computerName string
 
 	if vm.Tags != nil {
 		tags = vm.Tags
@@ -460,9 +475,16 @@ func mapFromVM(vm compute.VirtualMachine) virtualMachine {
 		}
 	}
 
+	if vm.VirtualMachineProperties != nil &&
+		vm.VirtualMachineProperties.OsProfile != nil &&
+		vm.VirtualMachineProperties.OsProfile.ComputerName != nil {
+		computerName = *(vm.VirtualMachineProperties.OsProfile.ComputerName)
+	}
+
 	return virtualMachine{
 		ID:                *(vm.ID),
 		Name:              *(vm.Name),
+		ComputerName:      computerName,
 		Type:              *(vm.Type),
 		Location:          *(vm.Location),
 		OsType:            osType,
@@ -476,6 +498,7 @@ func mapFromVMScaleSetVM(vm compute.VirtualMachineScaleSetVM, scaleSetName strin
 	osType := string(vm.StorageProfile.OsDisk.OsType)
 	tags := map[string]*string{}
 	networkInterfaces := []string{}
+	var computerName string
 
 	if vm.Tags != nil {
 		tags = vm.Tags
@@ -487,9 +510,14 @@ func mapFromVMScaleSetVM(vm compute.VirtualMachineScaleSetVM, scaleSetName strin
 		}
 	}
 
+	if vm.VirtualMachineScaleSetVMProperties != nil && vm.VirtualMachineScaleSetVMProperties.OsProfile != nil {
+		computerName = *(vm.VirtualMachineScaleSetVMProperties.OsProfile.ComputerName)
+	}
+
 	return virtualMachine{
 		ID:                *(vm.ID),
 		Name:              *(vm.Name),
+		ComputerName:      computerName,
 		Type:              *(vm.Type),
 		Location:          *(vm.Location),
 		OsType:            osType,

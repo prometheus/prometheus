@@ -20,8 +20,8 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/textparse"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
 )
@@ -36,7 +36,8 @@ var writeRequestFixture = &prompb.WriteRequest{
 				{Name: "d", Value: "e"},
 				{Name: "foo", Value: "bar"},
 			},
-			Samples: []prompb.Sample{{Value: 1, Timestamp: 0}},
+			Samples:   []prompb.Sample{{Value: 1, Timestamp: 0}},
+			Exemplars: []prompb.Exemplar{{Labels: []prompb.Label{{Name: "f", Value: "g"}}, Value: 1, Timestamp: 0}},
 		},
 		{
 			Labels: []prompb.Label{
@@ -46,7 +47,8 @@ var writeRequestFixture = &prompb.WriteRequest{
 				{Name: "d", Value: "e"},
 				{Name: "foo", Value: "bar"},
 			},
-			Samples: []prompb.Sample{{Value: 2, Timestamp: 1}},
+			Samples:   []prompb.Sample{{Value: 2, Timestamp: 1}},
+			Exemplars: []prompb.Exemplar{{Labels: []prompb.Label{{Name: "h", Value: "i"}}, Value: 2, Timestamp: 1}},
 		},
 	},
 }
@@ -290,7 +292,7 @@ func TestMetricTypeToMetricTypeProto(t *testing.T) {
 }
 
 func TestDecodeWriteRequest(t *testing.T) {
-	buf, _, err := buildWriteRequest(writeRequestFixture.Timeseries, nil, nil)
+	buf, _, err := buildWriteRequest(writeRequestFixture.Timeseries, nil, nil, nil)
 	require.NoError(t, err)
 
 	actual, err := DecodeWriteRequest(bytes.NewReader(buf))

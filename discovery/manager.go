@@ -65,7 +65,7 @@ var (
 	)
 )
 
-func init() {
+func RegisterMetrics() {
 	prometheus.MustRegister(failedConfigs, discoveredTargets, receivedUpdates, delayedUpdates, sentUpdates)
 }
 
@@ -74,12 +74,26 @@ type poolKey struct {
 	provider string
 }
 
-// provider holds a Discoverer instance, its configuration and its subscribers.
+// provider holds a Discoverer instance, its configuration, cancel func and its subscribers.
 type provider struct {
 	name   string
 	d      Discoverer
-	subs   []string
 	config interface{}
+
+	cancel context.CancelFunc
+	// done should be called after cleaning up resources associated with cancelled provider.
+	done func()
+
+	mu   sync.RWMutex
+	subs map[string]struct{}
+
+	// newSubs is used to temporary store subs to be used upon config reload completion.
+	newSubs map[string]struct{}
+}
+
+// IsStarted return true if Discoverer is started.
+func (p *provider) IsStarted() bool {
+	return p.cancel != nil
 }
 
 // NewManager is the Discovery Manager constructor.
@@ -88,13 +102,12 @@ func NewManager(ctx context.Context, logger log.Logger, options ...func(*Manager
 		logger = log.NewNopLogger()
 	}
 	mgr := &Manager{
-		logger:         logger,
-		syncCh:         make(chan map[string][]*targetgroup.Group),
-		targets:        make(map[poolKey]map[string]*targetgroup.Group),
-		discoverCancel: []context.CancelFunc{},
-		ctx:            ctx,
-		updatert:       5 * time.Second,
-		triggerSend:    make(chan struct{}, 1),
+		logger:      logger,
+		syncCh:      make(chan map[string][]*targetgroup.Group),
+		targets:     make(map[poolKey]map[string]*targetgroup.Group),
+		ctx:         ctx,
+		updatert:    5 * time.Second,
+		triggerSend: make(chan struct{}, 1),
 	}
 	for _, option := range options {
 		option(mgr)
@@ -114,15 +127,16 @@ func Name(n string) func(*Manager) {
 // Manager maintains a set of discovery providers and sends each update to a map channel.
 // Targets are grouped by the target set name.
 type Manager struct {
-	logger         log.Logger
-	name           string
-	mtx            sync.RWMutex
-	ctx            context.Context
-	discoverCancel []context.CancelFunc
+	logger log.Logger
+	name   string
+	mtx    sync.RWMutex
+	ctx    context.Context
 
-	// Some Discoverers(eg. k8s) send only the updates for a given target group
+	// Some Discoverers(e.g. k8s) send only the updates for a given target group,
 	// so we use map[tg.Source]*targetgroup.Group to know which group to update.
-	targets map[poolKey]map[string]*targetgroup.Group
+	targets    map[poolKey]map[string]*targetgroup.Group
+	targetsMtx sync.Mutex
+
 	// providers keeps track of SD providers.
 	providers []*provider
 	// The sync channel sends the updates as a map where the key is the job value from the scrape config.
@@ -132,11 +146,14 @@ type Manager struct {
 	// should only be modified in unit tests.
 	updatert time.Duration
 
-	// The triggerSend channel signals to the manager that new updates have been received from providers.
+	// The triggerSend channel signals to the Manager that new updates have been received from providers.
 	triggerSend chan struct{}
+
+	// lastProvider counts providers registered during Manager's lifetime.
+	lastProvider uint
 }
 
-// Run starts the background processing
+// Run starts the background processing.
 func (m *Manager) Run() error {
 	go m.sender()
 	for range m.ctx.Done() {
@@ -151,31 +168,82 @@ func (m *Manager) SyncCh() <-chan map[string][]*targetgroup.Group {
 	return m.syncCh
 }
 
-// ApplyConfig removes all running discovery providers and starts new ones using the provided config.
+// ApplyConfig checks if discovery provider with supplied config is already running and keeps them as is.
+// Remaining providers are then stopped and new required providers are started using the provided config.
 func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
-	for pk := range m.targets {
-		if _, ok := cfg[pk.setName]; !ok {
-			discoveredTargets.DeleteLabelValues(m.name, pk.setName)
-		}
-	}
-	m.cancelDiscoverers()
-	m.targets = make(map[poolKey]map[string]*targetgroup.Group)
-	m.providers = nil
-	m.discoverCancel = nil
-
-	failedCount := 0
+	var failedCount int
 	for name, scfg := range cfg {
 		failedCount += m.registerProviders(scfg, name)
-		discoveredTargets.WithLabelValues(m.name, name).Set(0)
 	}
 	failedConfigs.WithLabelValues(m.name).Set(float64(failedCount))
 
+	var (
+		wg sync.WaitGroup
+		// keep shows if we keep any providers after reload.
+		keep         bool
+		newProviders []*provider
+	)
 	for _, prov := range m.providers {
-		m.startProvider(m.ctx, prov)
+		// Cancel obsolete providers.
+		if len(prov.newSubs) == 0 {
+			wg.Add(1)
+			prov.done = func() {
+				wg.Done()
+			}
+			prov.cancel()
+			continue
+		}
+		newProviders = append(newProviders, prov)
+		// refTargets keeps reference targets used to populate new subs' targets
+		var refTargets map[string]*targetgroup.Group
+		prov.mu.Lock()
+
+		m.targetsMtx.Lock()
+		for s := range prov.subs {
+			keep = true
+			refTargets = m.targets[poolKey{s, prov.name}]
+			// Remove obsolete subs' targets.
+			if _, ok := prov.newSubs[s]; !ok {
+				delete(m.targets, poolKey{s, prov.name})
+				discoveredTargets.DeleteLabelValues(m.name, s)
+			}
+		}
+		// Set metrics and targets for new subs.
+		for s := range prov.newSubs {
+			if _, ok := prov.subs[s]; !ok {
+				discoveredTargets.WithLabelValues(m.name, s).Set(0)
+			}
+			if l := len(refTargets); l > 0 {
+				m.targets[poolKey{s, prov.name}] = make(map[string]*targetgroup.Group, l)
+				for k, v := range refTargets {
+					m.targets[poolKey{s, prov.name}][k] = v
+				}
+			}
+		}
+		m.targetsMtx.Unlock()
+
+		prov.subs = prov.newSubs
+		prov.newSubs = map[string]struct{}{}
+		prov.mu.Unlock()
+		if !prov.IsStarted() {
+			m.startProvider(m.ctx, prov)
+		}
 	}
+	// Currently downstream managers expect full target state upon config reload, so we must oblige.
+	// While startProvider does pull the trigger, it may take some time to do so, therefore
+	// we pull the trigger as soon as possible so that downstream managers can populate their state.
+	// See https://github.com/prometheus/prometheus/pull/8639 for details.
+	if keep {
+		select {
+		case m.triggerSend <- struct{}{}:
+		default:
+		}
+	}
+	m.providers = newProviders
+	wg.Wait()
 
 	return nil
 }
@@ -185,7 +253,9 @@ func (m *Manager) StartCustomProvider(ctx context.Context, name string, worker D
 	p := &provider{
 		name: name,
 		d:    worker,
-		subs: []string{name},
+		subs: map[string]struct{}{
+			name: {},
+		},
 	}
 	m.providers = append(m.providers, p)
 	m.startProvider(ctx, p)
@@ -196,13 +266,29 @@ func (m *Manager) startProvider(ctx context.Context, p *provider) {
 	ctx, cancel := context.WithCancel(ctx)
 	updates := make(chan []*targetgroup.Group)
 
-	m.discoverCancel = append(m.discoverCancel, cancel)
+	p.cancel = cancel
 
 	go p.d.Run(ctx, updates)
 	go m.updater(ctx, p, updates)
 }
 
+// cleaner cleans resources associated with provider.
+func (m *Manager) cleaner(p *provider) {
+	m.targetsMtx.Lock()
+	p.mu.RLock()
+	for s := range p.subs {
+		delete(m.targets, poolKey{s, p.name})
+	}
+	p.mu.RUnlock()
+	m.targetsMtx.Unlock()
+	if p.done != nil {
+		p.done()
+	}
+}
+
 func (m *Manager) updater(ctx context.Context, p *provider, updates chan []*targetgroup.Group) {
+	// Ensure targets from this provider are cleaned up.
+	defer m.cleaner(p)
 	for {
 		select {
 		case <-ctx.Done():
@@ -211,12 +297,16 @@ func (m *Manager) updater(ctx context.Context, p *provider, updates chan []*targ
 			receivedUpdates.WithLabelValues(m.name).Inc()
 			if !ok {
 				level.Debug(m.logger).Log("msg", "Discoverer channel closed", "provider", p.name)
+				// Wait for provider cancellation to ensure targets are cleaned up when expected.
+				<-ctx.Done()
 				return
 			}
 
-			for _, s := range p.subs {
+			p.mu.RLock()
+			for s := range p.subs {
 				m.updateGroup(poolKey{setName: s, provider: p.name}, tgs)
 			}
+			p.mu.RUnlock()
 
 			select {
 			case m.triggerSend <- struct{}{}:
@@ -234,7 +324,7 @@ func (m *Manager) sender() {
 		select {
 		case <-m.ctx.Done():
 			return
-		case <-ticker.C: // Some discoverers send updates too often so we throttle these with the ticker.
+		case <-ticker.C: // Some discoverers send updates too often, so we throttle these with the ticker.
 			select {
 			case <-m.triggerSend:
 				sentUpdates.WithLabelValues(m.name).Inc()
@@ -255,14 +345,18 @@ func (m *Manager) sender() {
 }
 
 func (m *Manager) cancelDiscoverers() {
-	for _, c := range m.discoverCancel {
-		c()
+	m.mtx.RLock()
+	defer m.mtx.RUnlock()
+	for _, p := range m.providers {
+		if p.cancel != nil {
+			p.cancel()
+		}
 	}
 }
 
 func (m *Manager) updateGroup(poolKey poolKey, tgs []*targetgroup.Group) {
-	m.mtx.Lock()
-	defer m.mtx.Unlock()
+	m.targetsMtx.Lock()
+	defer m.targetsMtx.Unlock()
 
 	if _, ok := m.targets[poolKey]; !ok {
 		m.targets[poolKey] = make(map[string]*targetgroup.Group)
@@ -275,11 +369,11 @@ func (m *Manager) updateGroup(poolKey poolKey, tgs []*targetgroup.Group) {
 }
 
 func (m *Manager) allGroups() map[string][]*targetgroup.Group {
-	m.mtx.RLock()
-	defer m.mtx.RUnlock()
-
 	tSets := map[string][]*targetgroup.Group{}
 	n := map[string]int{}
+
+	m.targetsMtx.Lock()
+	defer m.targetsMtx.Unlock()
 	for pkey, tsets := range m.targets {
 		for _, tg := range tsets {
 			// Even if the target group 'tg' is empty we still need to send it to the 'Scrape manager'
@@ -303,7 +397,7 @@ func (m *Manager) registerProviders(cfgs Configs, setName string) int {
 	add := func(cfg Config) {
 		for _, p := range m.providers {
 			if reflect.DeepEqual(cfg, p.config) {
-				p.subs = append(p.subs, setName)
+				p.newSubs[setName] = struct{}{}
 				added = true
 				return
 			}
@@ -318,11 +412,14 @@ func (m *Manager) registerProviders(cfgs Configs, setName string) int {
 			return
 		}
 		m.providers = append(m.providers, &provider{
-			name:   fmt.Sprintf("%s/%d", typ, len(m.providers)),
+			name:   fmt.Sprintf("%s/%d", typ, m.lastProvider),
 			d:      d,
 			config: cfg,
-			subs:   []string{setName},
+			newSubs: map[string]struct{}{
+				setName: {},
+			},
 		})
+		m.lastProvider++
 		added = true
 	}
 	for _, cfg := range cfgs {

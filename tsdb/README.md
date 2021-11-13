@@ -10,7 +10,7 @@ Based on the Gorilla TSDB [white papers](http://www.vldb.org/pvldb/vol8/p1816-te
 
 Video: [Storing 16 Bytes at Scale](https://youtu.be/b_pEevMAC3I) from [PromCon 2017](https://promcon.io/2017-munich/).
 
-See also the [format documentation](docs/format/README.md).
+See also the [format documentation](docs/format/README.md) and [bstream details](docs/bstream.md).
 
 A series of blog posts explaining different components of TSDB:
 * [The Head Block](https://ganeshvernekar.com/blog/prometheus-tsdb-the-head-block/)
@@ -18,3 +18,5 @@ A series of blog posts explaining different components of TSDB:
 * [Memory Mapping of Head Chunks from Disk](https://ganeshvernekar.com/blog/prometheus-tsdb-mmapping-head-chunks-from-disk/)
 * [Persistent Block and its Index](https://ganeshvernekar.com/blog/prometheus-tsdb-persistent-block-and-its-index/)
 * [Queries](https://ganeshvernekar.com/blog/prometheus-tsdb-queries/)
+* [Compaction and Retention](https://ganeshvernekar.com/blog/prometheus-tsdb-compaction-and-retention/)
+* [Snapshot on Shutdown](https://ganeshvernekar.com/blog/prometheus-tsdb-snapshot-on-shutdown/)

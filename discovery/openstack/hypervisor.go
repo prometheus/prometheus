@@ -51,8 +51,10 @@ type HypervisorDiscovery struct {
 // newHypervisorDiscovery returns a new hypervisor discovery.
 func newHypervisorDiscovery(provider *gophercloud.ProviderClient, opts *gophercloud.AuthOptions,
 	port int, region string, availability gophercloud.Availability, l log.Logger) *HypervisorDiscovery {
-	return &HypervisorDiscovery{provider: provider, authOpts: opts,
-		region: region, port: port, availability: availability, logger: l}
+	return &HypervisorDiscovery{
+		provider: provider, authOpts: opts,
+		region: region, port: port, availability: availability, logger: l,
+	}
 }
 
 func (h *HypervisorDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
@@ -74,7 +76,7 @@ func (h *HypervisorDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group
 	}
 	// OpenStack API reference
 	// https://developer.openstack.org/api-ref/compute/#list-hypervisors-details
-	pagerHypervisors := hypervisors.List(client)
+	pagerHypervisors := hypervisors.List(client, nil)
 	err = pagerHypervisors.EachPage(func(page pagination.Page) (bool, error) {
 		hypervisorList, err := hypervisors.ExtractHypervisors(page)
 		if err != nil {

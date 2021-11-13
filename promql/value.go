@@ -21,7 +21,7 @@ import (
 
 	"github.com/pkg/errors"
 
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -170,8 +170,8 @@ func (m Matrix) Len() int           { return len(m) }
 func (m Matrix) Less(i, j int) bool { return labels.Compare(m[i].Metric, m[j].Metric) < 0 }
 func (m Matrix) Swap(i, j int)      { m[i], m[j] = m[j], m[i] }
 
-// ContainsSameLabelset checks if a matrix has samples with the same labelset
-// Such a behavior is semantically undefined
+// ContainsSameLabelset checks if a matrix has samples with the same labelset.
+// Such a behavior is semantically undefined.
 // https://github.com/prometheus/prometheus/issues/4562
 func (m Matrix) ContainsSameLabelset() bool {
 	l := make(map[uint64]struct{}, len(m))

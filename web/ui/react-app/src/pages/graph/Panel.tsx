@@ -5,7 +5,6 @@ import { Alert, Button, Col, Nav, NavItem, NavLink, Row, TabContent, TabPane } f
 import moment from 'moment-timezone';
 
 import ExpressionInput from './ExpressionInput';
-import CMExpressionInput from './CMExpressionInput';
 import GraphControls from './GraphControls';
 import { GraphTabContent } from './GraphTabContent';
 import DataTable from './DataTable';
@@ -13,6 +12,7 @@ import TimeInput from './TimeInput';
 import QueryStatsView, { QueryStats } from './QueryStatsView';
 import { QueryParams, ExemplarData } from '../../types/types';
 import { API_PATH } from '../../constants/constants';
+import { debounce } from '../../utils';
 
 interface PanelProps {
   options: PanelOptions;
@@ -23,7 +23,6 @@ interface PanelProps {
   removePanel: () => void;
   onExecuteQuery: (query: string) => void;
   pathPrefix: string;
-  useExperimentalEditor: boolean;
   enableAutocomplete: boolean;
   enableHighlighting: boolean;
   enableLinter: boolean;
@@ -31,6 +30,7 @@ interface PanelProps {
 }
 
 interface PanelState {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   data: any; // TODO: Type data.
   exemplars: ExemplarData;
   lastQueryParams: QueryParams | null;
@@ -68,6 +68,7 @@ export const PanelDefaultOptions: PanelOptions = {
 
 class Panel extends Component<PanelProps, PanelState> {
   private abortInFlightFetch: (() => void) | null = null;
+  private debounceExecuteQuery: () => void;
 
   constructor(props: PanelProps) {
     super(props);
@@ -82,25 +83,28 @@ class Panel extends Component<PanelProps, PanelState> {
       stats: null,
       exprInputValue: props.options.expr,
     };
+
+    this.debounceExecuteQuery = debounce(this.executeQuery.bind(this), 250);
   }
 
-  componentDidUpdate({ options: prevOpts }: PanelProps) {
+  componentDidUpdate({ options: prevOpts }: PanelProps): void {
     const { endTime, range, resolution, showExemplars, type } = this.props.options;
-    if (
-      prevOpts.endTime !== endTime ||
-      prevOpts.range !== range ||
-      prevOpts.resolution !== resolution ||
-      prevOpts.type !== type ||
-      showExemplars !== prevOpts.showExemplars
-    ) {
+
+    if (prevOpts.endTime !== endTime || prevOpts.range !== range) {
+      this.debounceExecuteQuery();
+      return;
+    }
+
+    if (prevOpts.resolution !== resolution || prevOpts.type !== type || showExemplars !== prevOpts.showExemplars) {
       this.executeQuery();
     }
   }
 
-  componentDidMount() {
+  componentDidMount(): void {
     this.executeQuery();
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   executeQuery = async (): Promise<any> => {
     const { exprInputValue: expr } = this.state;
     const queryStart = Date.now();
@@ -151,7 +155,7 @@ class Panel extends Component<PanelProps, PanelState> {
         cache: 'no-store',
         credentials: 'same-origin',
         signal: abortController.signal,
-      }).then(resp => resp.json());
+      }).then((resp) => resp.json());
 
       if (query.status !== 'success') {
         throw new Error(query.error || 'invalid response JSON');
@@ -163,7 +167,7 @@ class Panel extends Component<PanelProps, PanelState> {
           cache: 'no-store',
           credentials: 'same-origin',
           signal: abortController.signal,
-        }).then(resp => resp.json());
+        }).then((resp) => resp.json());
 
         if (exemplars.status !== 'success') {
           throw new Error(exemplars.error || 'invalid response JSON');
@@ -198,7 +202,8 @@ class Panel extends Component<PanelProps, PanelState> {
         loading: false,
       });
       this.abortInFlightFetch = null;
-    } catch (error) {
+    } catch (err: unknown) {
+      const error = err as Error;
       if (error.name === 'AbortError') {
         // Aborts are expected, don't show an error for them.
         return;
@@ -210,7 +215,7 @@ class Panel extends Component<PanelProps, PanelState> {
     }
   };
 
-  setOptions(opts: object): void {
+  setOptions(opts: Partial<PanelOptions>): void {
     const newOpts = { ...this.props.options, ...opts };
     this.props.onOptionsChanged(newOpts);
   }
@@ -230,15 +235,15 @@ class Panel extends Component<PanelProps, PanelState> {
     return this.props.options.endTime;
   };
 
-  handleChangeEndTime = (endTime: number | null) => {
+  handleChangeEndTime = (endTime: number | null): void => {
     this.setOptions({ endTime: endTime });
   };
 
-  handleChangeResolution = (resolution: number | null) => {
+  handleChangeResolution = (resolution: number | null): void => {
     this.setOptions({ resolution: resolution });
   };
 
-  handleChangeType = (type: PanelType) => {
+  handleChangeType = (type: PanelType): void => {
     if (this.props.options.type === type) {
       return;
     }
@@ -247,43 +252,35 @@ class Panel extends Component<PanelProps, PanelState> {
     this.setOptions({ type: type });
   };
 
-  handleChangeStacking = (stacked: boolean) => {
+  handleChangeStacking = (stacked: boolean): void => {
     this.setOptions({ stacked: stacked });
   };
 
-  handleChangeShowExemplars = (show: boolean) => {
+  handleChangeShowExemplars = (show: boolean): void => {
     this.setOptions({ showExemplars: show });
   };
 
-  render() {
+  handleTimeRangeSelection = (startTime: number, endTime: number): void => {
+    this.setOptions({ range: endTime - startTime, endTime: endTime });
+  };
+
+  render(): JSX.Element {
     const { pastQueries, metricNames, options } = this.props;
     return (
       <div className="panel">
         <Row>
           <Col>
-            {this.props.useExperimentalEditor ? (
-              <CMExpressionInput
-                value={this.state.exprInputValue}
-                onExpressionChange={this.handleExpressionChange}
-                executeQuery={this.executeQuery}
-                loading={this.state.loading}
-                enableAutocomplete={this.props.enableAutocomplete}
-                enableHighlighting={this.props.enableHighlighting}
-                enableLinter={this.props.enableLinter}
-                queryHistory={pastQueries}
-                metricNames={metricNames}
-              />
-            ) : (
-              <ExpressionInput
-                value={this.state.exprInputValue}
-                onExpressionChange={this.handleExpressionChange}
-                executeQuery={this.executeQuery}
-                loading={this.state.loading}
-                enableAutocomplete={this.props.enableAutocomplete}
-                queryHistory={pastQueries}
-                metricNames={metricNames}
-              />
-            )}
+            <ExpressionInput
+              value={this.state.exprInputValue}
+              onExpressionChange={this.handleExpressionChange}
+              executeQuery={this.executeQuery}
+              loading={this.state.loading}
+              enableAutocomplete={this.props.enableAutocomplete}
+              enableHighlighting={this.props.enableHighlighting}
+              enableLinter={this.props.enableLinter}
+              queryHistory={pastQueries}
+              metricNames={metricNames}
+            />
           </Col>
         </Row>
         <Row>
@@ -356,6 +353,7 @@ class Panel extends Component<PanelProps, PanelState> {
                       showExemplars={options.showExemplars}
                       lastQueryParams={this.state.lastQueryParams}
                       id={this.props.id}
+                      handleTimeRangeSelection={this.handleTimeRangeSelection}
                     />
                   </>
                 )}
