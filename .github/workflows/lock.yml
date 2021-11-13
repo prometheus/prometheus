@@ -2,7 +2,7 @@ name: 'Lock Threads'
 
 on:
   schedule:
-    - cron: '0 4 * * *'
+    - cron: '13 23 * * *'
   workflow_dispatch:
 
 permissions:
@@ -19,3 +19,4 @@ jobs:
         with:
           process-only: 'issues'
           issue-inactive-days: '180'
+          github-token: ${{ secrets.PROMBOT_LOCKTHREADS_TOKEN }}
