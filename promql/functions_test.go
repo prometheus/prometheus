@@ -48,8 +48,8 @@ func TestDeriv(t *testing.T) {
 	// introduce some timestamp jitter to test 0 slope case
 	// https://github.com/prometheus/prometheus/issues/7180
 	for i := 0; i < 15; i++ {
-		jitter := 12*i%2
-		a.Append(0, metric, int64 (start + 30 * i + jitter), 1057)
+		jitter := 12 * i % 2
+		a.Append(0, metric, int64(start+30*i+jitter), 1057)
 	}
 
 	require.NoError(t, a.Commit())
