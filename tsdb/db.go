@@ -149,9 +149,6 @@ type Options struct {
 	// Enables the snapshot of in-memory chunks on shutdown. This makes restarts faster.
 	EnableMemorySnapshotOnShutdown bool
 
-	// Disables tsdb isolation.
-	IsolationDisabled bool
-
 	// MaxExemplars sets the size, in # of exemplars stored, of the single circular buffer used to store exemplars in memory.
 	// See tsdb/exemplar.go, specifically the CircularExemplarStorage struct and it's constructor NewCircularExemplarStorage.
 	MaxExemplars int64
@@ -705,7 +702,6 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	headOpts.EnableExemplarStorage = opts.EnableExemplarStorage
 	headOpts.MaxExemplars.Store(opts.MaxExemplars)
 	headOpts.EnableMemorySnapshotOnShutdown = opts.EnableMemorySnapshotOnShutdown
-	headOpts.IsolationEnabled = !opts.IsolationDisabled
 	db.head, err = NewHead(r, l, wlog, headOpts, stats.Head)
 	if err != nil {
 		return nil, err
