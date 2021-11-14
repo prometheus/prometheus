@@ -705,7 +705,7 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	headOpts.EnableExemplarStorage = opts.EnableExemplarStorage
 	headOpts.MaxExemplars.Store(opts.MaxExemplars)
 	headOpts.EnableMemorySnapshotOnShutdown = opts.EnableMemorySnapshotOnShutdown
-	headOpts.IsolationDisabled = opts.IsolationDisabled
+	headOpts.IsolationEnabled = !opts.IsolationDisabled
 	db.head, err = NewHead(r, l, wlog, headOpts, stats.Head)
 	if err != nil {
 		return nil, err

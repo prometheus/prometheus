@@ -117,10 +117,6 @@ func (i *isolation) lowWatermarkLocked() uint64 {
 // State returns an object used to control isolation
 // between a query and appends. Must be closed when complete.
 func (i *isolation) State(mint, maxt int64) *isolationState {
-	if i.disabled {
-		return &isolationState{}
-	}
-
 	i.appendMtx.RLock() // Take append mutex before read mutex.
 	defer i.appendMtx.RUnlock()
 	isoState := &isolationState{
@@ -148,10 +144,6 @@ func (i *isolation) State(mint, maxt int64) *isolationState {
 // function on those states. The given function MUST NOT mutate the isolationState.
 // The iteration is stopped when the function returns false or once all reads have been iterated.
 func (i *isolation) TraverseOpenReads(f func(s *isolationState) bool) {
-	if i.disabled {
-		return
-	}
-
 	i.readMtx.RLock()
 	defer i.readMtx.RUnlock()
 	s := i.readsOpen.next

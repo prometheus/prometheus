@@ -53,8 +53,8 @@ var (
 	// rolled back or committed.
 	ErrAppenderClosed = errors.New("appender closed")
 
-	// DefaultIsolationState is the default isolation level
-	DefaultIsolationState = true
+	// defaultIsolationState defines whether isolation is enabled by default.
+	defaultIsolationState = true
 )
 
 // Head handles reads and writes of time series data within a time window.
@@ -135,7 +135,7 @@ type HeadOptions struct {
 	EnableExemplarStorage          bool
 	EnableMemorySnapshotOnShutdown bool
 
-	IsolationDisabled bool
+	IsolationEnabled bool
 }
 
 func DefaultHeadOptions() *HeadOptions {
@@ -146,7 +146,7 @@ func DefaultHeadOptions() *HeadOptions {
 		ChunkWriteBufferSize: chunks.DefaultWriteBufferSize,
 		StripeSize:           DefaultStripeSize,
 		SeriesCallback:       &noopSeriesLifecycleCallback{},
-		IsolationDisabled:    !DefaultIsolationState,
+		IsolationEnabled:     defaultIsolationState,
 	}
 }
 
@@ -237,7 +237,7 @@ func (h *Head) resetInMemoryState() error {
 	}
 
 	h.iso = newIsolation()
-	if h.opts.IsolationDisabled {
+	if !h.opts.IsolationEnabled {
 		h.iso.disabled = true
 	}
 

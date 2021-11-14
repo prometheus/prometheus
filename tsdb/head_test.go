@@ -60,7 +60,7 @@ func newTestHead(t testing.TB, chunkRange int64, compressWAL bool) (*Head, *wal.
 	opts.ChunkDirRoot = dir
 	opts.EnableExemplarStorage = true
 	opts.MaxExemplars.Store(config.DefaultExemplarsConfig.MaxExemplars)
-	require.Equal(t, !DefaultIsolationState, opts.IsolationDisabled)
+	require.Equal(t, !defaultIsolationState, opts.IsolationEnabled)
 
 	h, err := NewHead(nil, nil, wlog, opts, nil)
 	require.NoError(t, err)
@@ -1549,8 +1549,8 @@ func TestAddDuplicateLabelName(t *testing.T) {
 }
 
 func TestMemSeriesIsolation(t *testing.T) {
-	if !DefaultIsolationState {
-		t.Skip("skipping test since testing with isolation disabled")
+	if !defaultIsolationState {
+		t.Skip("skipping test since tsdb isolation is disabled")
 	}
 
 	// Put a series, select it. GC it and then access it.
@@ -1724,8 +1724,8 @@ func TestMemSeriesIsolation(t *testing.T) {
 }
 
 func TestIsolationRollback(t *testing.T) {
-	if !DefaultIsolationState {
-		t.Skip("skipping test since testing with isolation disabled")
+	if !defaultIsolationState {
+		t.Skip("skipping test since tsdb isolation is disabled")
 	}
 
 	// Rollback after a failed append and test if the low watermark has progressed anyway.
@@ -1756,8 +1756,8 @@ func TestIsolationRollback(t *testing.T) {
 }
 
 func TestIsolationLowWatermarkMonotonous(t *testing.T) {
-	if !DefaultIsolationState {
-		t.Skip("skipping test since testing with isolation disabled")
+	if !defaultIsolationState {
+		t.Skip("skipping test since tsdb isolation is disabled")
 	}
 
 	hb, _ := newTestHead(t, 1000, false)
@@ -1793,8 +1793,8 @@ func TestIsolationLowWatermarkMonotonous(t *testing.T) {
 }
 
 func TestIsolationAppendIDZeroIsNoop(t *testing.T) {
-	if !DefaultIsolationState {
-		t.Skip("skipping test since testing with isolation disabled")
+	if !defaultIsolationState {
+		t.Skip("skipping test since tsdb isolation is disabled")
 	}
 
 	h, _ := newTestHead(t, 1000, false)
@@ -1818,8 +1818,8 @@ func TestHeadSeriesChunkRace(t *testing.T) {
 }
 
 func TestIsolationWithoutAdd(t *testing.T) {
-	if !DefaultIsolationState {
-		t.Skip("skipping test since testing with isolation disabled")
+	if !defaultIsolationState {
+		t.Skip("skipping test since tsdb isolation is disabled")
 	}
 
 	hb, _ := newTestHead(t, 1000, false)
