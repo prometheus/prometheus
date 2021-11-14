@@ -732,7 +732,7 @@ func linearRegression(samples []Point, interceptTime int64) (slope, intercept fl
 		sumXY, cXY = kahanSumInc(x*sample.V, sumXY, cXY)
 		sumX2, cX2 = kahanSumInc(x*x, sumX2, cX2)
 	}
-	if constY == true {
+	if constY {
 		return 0, initY
 	}
 	sumX = sumX + cX
