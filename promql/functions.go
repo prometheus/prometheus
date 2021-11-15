@@ -735,7 +735,7 @@ func linearRegression(samples []Point, interceptTime int64) (slope, intercept fl
 	}
 	if constY {
 		if math.IsInf(initY, 0) {
-			return math.NaN(),math.NaN()
+			return math.NaN(), math.NaN()
 		}
 		return 0, initY
 	}
