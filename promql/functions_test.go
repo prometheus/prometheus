@@ -46,7 +46,7 @@ func TestDeriv(t *testing.T) {
 	metric := labels.FromStrings("__name__", "foo")
 	start := 1493712816939
 	interval := 30 * 1000
-	// introduce some timestamp jitter to test 0 slope case
+	// Introduce some timestamp jitter to test 0 slope case.
 	// https://github.com/prometheus/prometheus/issues/7180
 	for i := 0; i < 15; i++ {
 		jitter := 12 * i % 2

@@ -722,7 +722,7 @@ func linearRegression(samples []Point, interceptTime int64) (slope, intercept fl
 	initY = samples[0].V
 	constY = true
 	for i, sample := range samples {
-		// Reset constY to false if any new y values are encountered
+		// Set constY to false if any new y values are encountered.
 		if constY && i > 0 && sample.V != initY {
 			constY = false
 		}
@@ -735,7 +735,7 @@ func linearRegression(samples []Point, interceptTime int64) (slope, intercept fl
 	}
 	if constY {
 		if math.IsInf(initY, 0) {
-			return Math.NaN(),Math.NaN()
+			return math.NaN(),math.NaN()
 		}
 		return 0, initY
 	}
