@@ -80,7 +80,11 @@ func (b *MemoizedSeriesIterator) Seek(t int64) bool {
 		if !b.ok {
 			return false
 		}
-		b.lastTime, _ = b.it.At()
+		if b.it.ChunkEncoding() == chunkenc.EncHistogram {
+			b.lastTime, _ = b.it.AtHistogram()
+		} else {
+			b.lastTime, _ = b.it.At()
+		}
 	}
 
 	if b.lastTime >= t {
@@ -102,11 +106,19 @@ func (b *MemoizedSeriesIterator) Next() bool {
 	}
 
 	// Keep track of the previous element.
-	b.prevTime, b.prevValue = b.it.At()
+	if b.it.ChunkEncoding() == chunkenc.EncHistogram {
+		b.prevTime, b.prev
+	} else {
+		b.prevTime, b.prevValue = b.it.At()
+	}
 
 	b.ok = b.it.Next()
 	if b.ok {
-		b.lastTime, _ = b.it.At()
+		if b.it.ChunkEncoding() == chunkenc.EncHistogram {
+			b.lastTime, _ = b.it.AtHistogram()
+		} else {
+			b.lastTime, _ = b.it.At()
+		}
 	}
 
 	return b.ok

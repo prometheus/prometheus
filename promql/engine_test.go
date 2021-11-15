@@ -2455,10 +2455,11 @@ func TestSparseHistogramRate(t *testing.T) {
 	require.NoError(t, test.Run())
 	engine := test.QueryEngine()
 
-	queryString := fmt.Sprintf("rate(%s[1m])", seriesName)
+	//queryString := fmt.Sprintf("rate(%s[1m])", seriesName)
+	queryString := fmt.Sprintf("%s", seriesName)
 	qry, err := engine.NewInstantQuery(test.Queryable(), queryString, timestamp.Time(int64(5*time.Minute/time.Millisecond)))
 	require.NoError(t, err)
 	res := qry.Exec(test.Context())
 	require.NoError(t, res.Err)
-	// fmt.Println(res)
+	fmt.Println(res)
 }

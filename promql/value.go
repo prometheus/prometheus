@@ -87,9 +87,13 @@ type Point struct {
 }
 
 func (p Point) String() string {
-	// TODO(beorn7): Support Histogram.
-	v := strconv.FormatFloat(p.V, 'f', -1, 64)
-	return fmt.Sprintf("%v @[%v]", v, p.T)
+	var s string
+	if p.H != nil {
+		s = p.H.String()
+	} else {
+		s = strconv.FormatFloat(p.V, 'f', -1, 64)
+	}
+	return fmt.Sprintf("%s @[%v]", s, p.T)
 }
 
 // MarshalJSON implements json.Marshaler.
