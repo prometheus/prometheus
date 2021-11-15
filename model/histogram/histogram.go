@@ -47,7 +47,7 @@ type Histogram struct {
 	ZeroCount uint64
 	// Total number of observations.
 	Count uint64
-	// Sum of observations.
+	// Sum of observations. This is also used as the stale marker.
 	Sum float64
 	// Spans for positive and negative buckets (see Span below).
 	PositiveSpans, NegativeSpans []Span

@@ -35,6 +35,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/uber/jaeger-client-go"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/pkg/value"
@@ -1475,10 +1476,10 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 			}
 
 			for ts := ev.startTimestamp; ts <= ev.endTimestamp; ts += ev.interval {
-				_, v, ok := ev.vectorSelectorSingle(it, e, ts)
+				_, v, h, ok := ev.vectorSelectorSingle(it, e, ts)
 				if ok {
 					if ev.currentSamples < ev.maxSamples {
-						ss.Points = append(ss.Points, Point{V: v, T: ts})
+						ss.Points = append(ss.Points, Point{V: v, H: h, T: ts})
 						ev.currentSamples++
 					} else {
 						ev.error(ErrTooManySamples(env))
@@ -1601,11 +1602,11 @@ func (ev *evaluator) vectorSelector(node *parser.VectorSelector, ts int64) (Vect
 	for i, s := range node.Series {
 		it.Reset(s.Iterator())
 
-		t, v, ok := ev.vectorSelectorSingle(it, node, ts)
+		t, v, h, ok := ev.vectorSelectorSingle(it, node, ts)
 		if ok {
 			vec = append(vec, Sample{
 				Metric: node.Series[i].Labels(),
-				Point:  Point{V: v, T: t},
+				Point:  Point{V: v, H: h, T: t},
 			})
 
 			ev.currentSamples++
@@ -1618,33 +1619,37 @@ func (ev *evaluator) vectorSelector(node *parser.VectorSelector, ts int64) (Vect
 	return vec, ws
 }
 
-// vectorSelectorSingle evaluates a instant vector for the iterator of one time series.
-func (ev *evaluator) vectorSelectorSingle(it *storage.MemoizedSeriesIterator, node *parser.VectorSelector, ts int64) (int64, float64, bool) {
+// vectorSelectorSingle evaluates an instant vector for the iterator of one time series.
+func (ev *evaluator) vectorSelectorSingle(it *storage.MemoizedSeriesIterator, node *parser.VectorSelector, ts int64) (int64, float64, *histogram.Histogram, bool) {
 	refTime := ts - durationMilliseconds(node.Offset)
 	var t int64
 	var v float64
+	var h *histogram.Histogram
 
-	ok := it.Seek(refTime)
-	if !ok {
+	valueType := it.Seek(refTime)
+	switch valueType {
+	case storage.ValNone:
 		if it.Err() != nil {
 			ev.error(it.Err())
 		}
-	}
-
-	if ok {
+	case storage.ValFloat:
 		t, v = it.Values()
+	case storage.ValHistogram:
+		t, h = it.HistogramValues()
+	default:
+		panic(fmt.Errorf("unknown value type %v", valueType))
 	}
-
-	if !ok || t > refTime {
-		t, v, ok = it.PeekPrev()
+	if valueType == storage.ValNone || t > refTime {
+		var ok bool
+		t, v, h, ok = it.PeekPrev()
 		if !ok || t < refTime-durationMilliseconds(ev.lookbackDelta) {
-			return 0, 0, false
+			return 0, 0, nil, false
 		}
 	}
-	if value.IsStaleNaN(v) {
-		return 0, 0, false
+	if value.IsStaleNaN(v) || (h != nil && value.IsStaleNaN(h.Sum)) {
+		return 0, 0, nil, false
 	}
-	return t, v, true
+	return t, v, h, true
 }
 
 var pointPool = sync.Pool{}

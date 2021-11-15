@@ -16,7 +16,17 @@ package storage
 import (
 	"math"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+)
+
+// ValueType defines the type of a value in the storage.
+type ValueType int
+
+const (
+	ValNone ValueType = iota
+	ValFloat
+	ValHistogram
 )
 
 // MemoizedSeriesIterator wraps an iterator with a buffer to look back the previous element.
@@ -24,12 +34,13 @@ type MemoizedSeriesIterator struct {
 	it    chunkenc.Iterator
 	delta int64
 
-	lastTime int64
-	ok       bool
+	lastTime  int64
+	valueType ValueType
 
 	// Keep track of the previously returned value.
-	prevTime  int64
-	prevValue float64
+	prevTime      int64
+	prevValue     float64
+	prevHistogram *histogram.Histogram
 }
 
 // NewMemoizedEmptyIterator is like NewMemoizedIterator but it's initialised with an empty iterator.
@@ -53,22 +64,26 @@ func NewMemoizedIterator(it chunkenc.Iterator, delta int64) *MemoizedSeriesItera
 func (b *MemoizedSeriesIterator) Reset(it chunkenc.Iterator) {
 	b.it = it
 	b.lastTime = math.MinInt64
-	b.ok = true
 	b.prevTime = math.MinInt64
 	it.Next()
+	if it.ChunkEncoding() == chunkenc.EncHistogram {
+		b.valueType = ValHistogram
+	} else {
+		b.valueType = ValFloat
+	}
 }
 
 // PeekPrev returns the previous element of the iterator. If there is none buffered,
 // ok is false.
-func (b *MemoizedSeriesIterator) PeekPrev() (t int64, v float64, ok bool) {
+func (b *MemoizedSeriesIterator) PeekPrev() (t int64, v float64, h *histogram.Histogram, ok bool) {
 	if b.prevTime == math.MinInt64 {
-		return 0, 0, false
+		return 0, 0, nil, false
 	}
-	return b.prevTime, b.prevValue, true
+	return b.prevTime, b.prevValue, b.prevHistogram, true
 }
 
 // Seek advances the iterator to the element at time t or greater.
-func (b *MemoizedSeriesIterator) Seek(t int64) bool {
+func (b *MemoizedSeriesIterator) Seek(t int64) ValueType {
 	t0 := t - b.delta
 
 	if t0 > b.lastTime {
@@ -76,57 +91,71 @@ func (b *MemoizedSeriesIterator) Seek(t int64) bool {
 		// more than the delta.
 		b.prevTime = math.MinInt64
 
-		b.ok = b.it.Seek(t0)
-		if !b.ok {
-			return false
+		ok := b.it.Seek(t0)
+		if !ok {
+			b.valueType = ValNone
+			return ValNone
 		}
 		if b.it.ChunkEncoding() == chunkenc.EncHistogram {
+			b.valueType = ValHistogram
 			b.lastTime, _ = b.it.AtHistogram()
 		} else {
+			b.valueType = ValFloat
 			b.lastTime, _ = b.it.At()
 		}
 	}
 
 	if b.lastTime >= t {
-		return true
+		return b.valueType
 	}
-	for b.Next() {
+	for b.Next() != ValNone {
 		if b.lastTime >= t {
-			return true
+			return b.valueType
 		}
 	}
 
-	return false
+	return ValNone
 }
 
 // Next advances the iterator to the next element.
-func (b *MemoizedSeriesIterator) Next() bool {
-	if !b.ok {
-		return false
+func (b *MemoizedSeriesIterator) Next() ValueType {
+	if b.valueType == ValNone {
+		return ValNone
 	}
 
 	// Keep track of the previous element.
 	if b.it.ChunkEncoding() == chunkenc.EncHistogram {
-		b.prevTime, b.prev
+		b.prevTime, b.prevHistogram = b.it.AtHistogram()
+		b.prevValue = 0
 	} else {
 		b.prevTime, b.prevValue = b.it.At()
+		b.prevHistogram = nil
 	}
 
-	b.ok = b.it.Next()
-	if b.ok {
+	ok := b.it.Next()
+	if ok {
 		if b.it.ChunkEncoding() == chunkenc.EncHistogram {
 			b.lastTime, _ = b.it.AtHistogram()
+			b.valueType = ValHistogram
+
 		} else {
 			b.lastTime, _ = b.it.At()
+			b.valueType = ValFloat
 		}
+	} else {
+		b.valueType = ValNone
 	}
-
-	return b.ok
+	return b.valueType
 }
 
 // Values returns the current element of the iterator.
 func (b *MemoizedSeriesIterator) Values() (int64, float64) {
 	return b.it.At()
+}
+
+// Values returns the current element of the iterator.
+func (b *MemoizedSeriesIterator) HistogramValues() (int64, *histogram.Histogram) {
+	return b.it.AtHistogram()
 }
 
 // Err returns the last encountered error.
