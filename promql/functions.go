@@ -722,6 +722,7 @@ func linearRegression(samples []Point, interceptTime int64) (slope, intercept fl
 	initY = samples[0].V
 	constY = true
 	for i, sample := range samples {
+		// Reset constY to false if any new y values are encountered
 		if constY && i > 0 && sample.V != initY {
 			constY = false
 		}
@@ -733,8 +734,8 @@ func linearRegression(samples []Point, interceptTime int64) (slope, intercept fl
 		sumX2, cX2 = kahanSumInc(x*x, sumX2, cX2)
 	}
 	if constY {
-		if math.IsNaN(initY) || math.IsInf(initY, 0) {
-			return math.NaN(), math.NaN()
+		if math.IsInf(initY, 0) {
+			initY = math.NaN()
 		}
 		return 0, initY
 	}
