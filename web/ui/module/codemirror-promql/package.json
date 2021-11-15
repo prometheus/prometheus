@@ -47,7 +47,7 @@
     "@types/lru-cache": "^5.1.0",
     "@types/mocha": "^8.0.3",
     "@types/node": "^16.7.6",
-    "@typescript-eslint/eslint-plugin": "^4.31.0",
+    "@typescript-eslint/eslint-plugin": "^4.33.0",
     "@typescript-eslint/parser": "^4.31.0",
     "chai": "^4.2.0",
     "codecov": "^3.8.1",
