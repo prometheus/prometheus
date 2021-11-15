@@ -24,7 +24,7 @@
     "codemirror-promql": "0.18.0",
     "css.escape": "^1.5.1",
     "downshift": "^3.4.8",
-    "i": "^0.3.6",
+    "i": "^0.3.7",
     "jquery": "^3.5.1",
     "jquery.flot.tooltip": "^0.9.0",
     "moment": "^2.24.0",
