@@ -68,7 +68,7 @@
     "@types/enzyme": "^3.10.9",
     "@types/flot": "0.0.32",
     "@types/jest": "^27.0.1",
-    "@types/jquery": "^3.5.1",
+    "@types/jquery": "^3.5.8",
     "@types/node": "^16.11.7",
     "@types/react": "^17.0.19",
     "@types/react-copy-to-clipboard": "^5.0.2",
