@@ -43,7 +43,7 @@
     "@codemirror/view": "^0.19.7",
     "@lezer/common": "^0.15.8",
     "@lezer/generator": "^0.15.1",
-    "@types/chai": "^4.2.12",
+    "@types/chai": "^4.2.22",
     "@types/lru-cache": "^5.1.0",
     "@types/mocha": "^9.0.0",
     "@types/node": "^16.11.7",
