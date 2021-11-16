@@ -221,6 +221,7 @@ type Config struct {
 	RuleFiles      []string        `yaml:"rule_files,omitempty"`
 	ScrapeConfigs  []*ScrapeConfig `yaml:"scrape_configs,omitempty"`
 	StorageConfig  StorageConfig   `yaml:"storage,omitempty"`
+	TracingConfig  TracingConfig   `yaml:"tracing,omitempty"`
 
 	RemoteWriteConfigs []*RemoteWriteConfig `yaml:"remote_write,omitempty"`
 	RemoteReadConfigs  []*RemoteReadConfig  `yaml:"remote_read,omitempty"`
@@ -497,6 +498,15 @@ func (c *ScrapeConfig) MarshalYAML() (interface{}, error) {
 // StorageConfig configures runtime reloadable configuration options.
 type StorageConfig struct {
 	ExemplarsConfig *ExemplarsConfig `yaml:"exemplars,omitempty"`
+}
+
+// TracingConfig configures the tracing options.
+type TracingConfig struct {
+	GrpcClient       bool    `yaml:"grpc_client,omitempty"`
+	ServiceName      string  `yaml:"service_name,omitempty"`
+	Endpoint         string  `yaml:"endpoint,omitempty"`
+	SamplingFraction float64 `yaml:"sampling_fraction,omitempty"`
+	WithInsecure     bool    `yaml:"with_insecure,omitempty"`
 }
 
 // ExemplarsConfig configures runtime reloadable configuration options.
