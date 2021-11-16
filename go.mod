@@ -34,7 +34,7 @@ require (
 	github.com/influxdata/influxdb v1.9.5
 	github.com/json-iterator/go v1.1.12
 	github.com/kolo/xmlrpc v0.0.0-20201022064351-38db28db192b
-	github.com/linode/linodego v1.1.0
+	github.com/linode/linodego v1.2.1
 	github.com/miekg/dns v1.1.43
 	github.com/moby/term v0.0.0-20210619224110-3f7ff695adc6 // indirect
 	github.com/morikuni/aec v1.0.0 // indirect
