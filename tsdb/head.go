@@ -125,6 +125,8 @@ type HeadOptions struct {
 	ChunkDirRoot         string
 	ChunkPool            chunkenc.Pool
 	ChunkWriteBufferSize int
+	ChunkEndTimeVariance float64
+
 	// StripeSize sets the number of entries in the hash map, it must be a power of 2.
 	// A larger StripeSize will allocate more memory up-front, but will increase performance when handling a large number of series.
 	// A smaller StripeSize reduces the memory allocated, but can decrease performance with large number of series.
@@ -140,6 +142,7 @@ func DefaultHeadOptions() *HeadOptions {
 		ChunkDirRoot:         "",
 		ChunkPool:            chunkenc.NewPool(),
 		ChunkWriteBufferSize: chunks.DefaultWriteBufferSize,
+		ChunkEndTimeVariance: 0,
 		StripeSize:           DefaultStripeSize,
 		SeriesCallback:       &noopSeriesLifecycleCallback{},
 	}
@@ -1226,7 +1229,7 @@ func (h *Head) getOrCreate(hash uint64, lset labels.Labels) (*memSeries, bool, e
 
 func (h *Head) getOrCreateWithID(id, hash uint64, lset labels.Labels) (*memSeries, bool, error) {
 	s, created, err := h.series.getOrSet(hash, lset, func() *memSeries {
-		return newMemSeries(lset, id, hash, h.chunkRange.Load(), &h.memChunkPool)
+		return newMemSeries(lset, id, hash, h.chunkRange.Load(), h.opts.ChunkEndTimeVariance, &h.memChunkPool)
 	})
 	if err != nil {
 		return nil, false, err
@@ -1473,6 +1476,10 @@ type memSeries struct {
 	chunkRange    int64
 	firstChunkID  int
 
+	// chunkEndTimeVariance is how much variance (between 0 and 1) should be applied to the chunk end time,
+	// to spread chunks writing across time. Doesn't apply to the last chunk of the chunk range. 0 to disable variance.
+	chunkEndTimeVariance float64
+
 	nextAt        int64 // Timestamp at which to cut the next chunk.
 	sampleBuf     [4]sample
 	pendingCommit bool // Whether there are samples waiting to be committed to this series.
@@ -1484,15 +1491,16 @@ type memSeries struct {
 	txs *txRing
 }
 
-func newMemSeries(lset labels.Labels, id, hash uint64, chunkRange int64, memChunkPool *sync.Pool) *memSeries {
+func newMemSeries(lset labels.Labels, id, hash uint64, chunkRange int64, chunkEndTimeVariance float64, memChunkPool *sync.Pool) *memSeries {
 	s := &memSeries{
-		lset:         lset,
-		hash:         hash,
-		ref:          id,
-		chunkRange:   chunkRange,
-		nextAt:       math.MinInt64,
-		txs:          newTxRing(4),
-		memChunkPool: memChunkPool,
+		lset:                 lset,
+		hash:                 hash,
+		ref:                  id,
+		chunkRange:           chunkRange,
+		chunkEndTimeVariance: chunkEndTimeVariance,
+		nextAt:               math.MinInt64,
+		txs:                  newTxRing(4),
+		memChunkPool:         memChunkPool,
 	}
 	return s
 }

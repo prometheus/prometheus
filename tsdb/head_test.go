@@ -228,7 +228,7 @@ func BenchmarkLoadWAL(b *testing.B) {
 						for k := 0; k < c.batches*c.seriesPerBatch; k++ {
 							// Create one mmapped chunk per series, with one sample at the given time.
 							lbls := labels.Labels{}
-							s := newMemSeries(lbls, uint64(k)*101, lbls.Hash(), c.mmappedChunkT, nil)
+							s := newMemSeries(lbls, uint64(k)*101, lbls.Hash(), c.mmappedChunkT, 0, nil)
 							s.append(c.mmappedChunkT, 42, 0, chunkDiskMapper)
 							s.mmapCurrentHeadChunk(chunkDiskMapper)
 						}
@@ -553,7 +553,7 @@ func TestMemSeries_truncateChunks(t *testing.T) {
 	}
 
 	lbls := labels.FromStrings("a", "b")
-	s := newMemSeries(lbls, 1, lbls.Hash(), 2000, &memChunkPool)
+	s := newMemSeries(lbls, 1, lbls.Hash(), 2000, 0, &memChunkPool)
 
 	for i := 0; i < 4000; i += 5 {
 		ok, _ := s.append(int64(i), float64(i), 0, chunkDiskMapper)
@@ -1092,7 +1092,7 @@ func TestMemSeries_append(t *testing.T) {
 	}()
 
 	lbls := labels.Labels{}
-	s := newMemSeries(lbls, 1, lbls.Hash(), 500, nil)
+	s := newMemSeries(lbls, 1, lbls.Hash(), 500, 0, nil)
 
 	// Add first two samples at the very end of a chunk range and the next two
 	// on and after it.
@@ -2323,7 +2323,7 @@ func TestMemSafeIteratorSeekIntoBuffer(t *testing.T) {
 	}()
 
 	lbls := labels.Labels{}
-	s := newMemSeries(lbls, 1, lbls.Hash(), 500, nil)
+	s := newMemSeries(lbls, 1, lbls.Hash(), 500, 0, nil)
 
 	for i := 0; i < 7; i++ {
 		ok, _ := s.append(int64(i), float64(i), 0, chunkDiskMapper)
