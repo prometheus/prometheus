@@ -161,8 +161,12 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 
 	if d.lastResults != nil && d.eventPollingEnabled {
 		// Check to see if there have been any events. If so, refresh our data.
-		opts := linodego.NewListOptions(1, fmt.Sprintf(filterTemplate, d.lastRefreshTimestamp.Format("2006-01-02T15:04:05")))
-		events, err := d.client.ListEvents(ctx, opts)
+		opts := linodego.ListOptions{
+			PageOptions: &linodego.PageOptions{Page: 1},
+			PageSize:    25,
+			Filter:      fmt.Sprintf(filterTemplate, d.lastRefreshTimestamp.Format("2006-01-02T15:04:05")),
+		}
+		events, err := d.client.ListEvents(ctx, &opts)
 		if err != nil {
 			var e *linodego.Error
 			if errors.As(err, &e) && e.Code == http.StatusUnauthorized {
@@ -205,13 +209,13 @@ func (d *Discovery) refreshData(ctx context.Context) ([]*targetgroup.Group, erro
 	}
 
 	// Gather all linode instances.
-	instances, err := d.client.ListInstances(ctx, &linodego.ListOptions{})
+	instances, err := d.client.ListInstances(ctx, &linodego.ListOptions{PageSize: 500})
 	if err != nil {
 		return nil, err
 	}
 
 	// Gather detailed IP address info for all IPs on all linode instances.
-	detailedIPs, err := d.client.ListIPAddresses(ctx, &linodego.ListOptions{})
+	detailedIPs, err := d.client.ListIPAddresses(ctx, &linodego.ListOptions{PageSize: 500})
 	if err != nil {
 		return nil, err
 	}
