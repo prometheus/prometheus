@@ -39,7 +39,7 @@
     "@codemirror/highlight": "^0.19.6",
     "@codemirror/language": "^0.19.4",
     "@codemirror/lint": "^0.19.1",
-    "@codemirror/state": "^0.19.2",
+    "@codemirror/state": "^0.19.5",
     "@codemirror/view": "^0.19.7",
     "@lezer/common": "^0.15.8",
     "@lezer/generator": "^0.15.1",
@@ -71,7 +71,7 @@
     "@codemirror/highlight": "^0.19.6",
     "@codemirror/language": "^0.19.4",
     "@codemirror/lint": "^0.19.1",
-    "@codemirror/state": "^0.19.2",
+    "@codemirror/state": "^0.19.5",
     "@codemirror/view": "^0.19.7",
     "@lezer/common": "^0.15.8"
   },
