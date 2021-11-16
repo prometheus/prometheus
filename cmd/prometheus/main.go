@@ -559,6 +559,12 @@ func main() {
 		ruleManager *rules.Manager
 	)
 
+	var tracingManager *tracing.Manager
+	if cfg.enableTracing {
+		tracingManager = tracing.NewManager(logger)
+		defer tracingManager.Shutdown()
+	}
+
 	if !agentMode {
 		opts := promql.EngineOpts{
 			Logger:                   log.With(logger, "component", "query engine"),
@@ -717,6 +723,15 @@ func main() {
 					cfg.GlobalConfig.ExternalLabels,
 					externalURL,
 				)
+			},
+		}, {
+			name: "tracing",
+			reloader: func(cfg *config.Config) error {
+				if tracingManager == nil {
+					return nil
+				}
+
+				return tracingManager.ApplyConfig(cfg)
 			},
 		},
 	}
