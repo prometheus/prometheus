@@ -9,7 +9,7 @@
     "@codemirror/comment": "^0.19.0",
     "@codemirror/highlight": "^0.19.6",
     "@codemirror/history": "^0.19.0",
-    "@codemirror/language": "^0.19.3",
+    "@codemirror/language": "^0.19.4",
     "@codemirror/lint": "^0.19.1",
     "@codemirror/matchbrackets": "^0.19.1",
     "@codemirror/search": "^0.19.2",
