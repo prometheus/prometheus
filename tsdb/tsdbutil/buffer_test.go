@@ -152,8 +152,9 @@ func (it *listSeriesIterator) At() (int64, float64) {
 	return s.t, s.v
 }
 
-func (it *listSeriesIterator) AtHistogram() (int64, histogram.Histogram) {
-	return 0, histogram.Histogram{}
+func (it *listSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
+	s := it.list[it.idx]
+	return s.t, s.h
 }
 
 func (it *listSeriesIterator) ChunkEncoding() chunkenc.Encoding {

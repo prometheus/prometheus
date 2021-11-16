@@ -649,9 +649,11 @@ func (p *populateWithDelSeriesIterator) Seek(t int64) bool {
 }
 
 func (p *populateWithDelSeriesIterator) At() (int64, float64) { return p.curr.At() }
-func (p *populateWithDelSeriesIterator) AtHistogram() (int64, histogram.Histogram) {
+
+func (p *populateWithDelSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
 	return p.curr.AtHistogram()
 }
+
 func (p *populateWithDelSeriesIterator) ChunkEncoding() chunkenc.Encoding {
 	return p.curr.ChunkEncoding()
 }
@@ -714,7 +716,7 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 	var (
 		t int64
 		v float64
-		h histogram.Histogram
+		h *histogram.Histogram
 	)
 	if p.currDelIter.ChunkEncoding() == chunkenc.EncHistogram {
 		if hc, ok := p.currChkMeta.Chunk.(*chunkenc.HistogramChunk); ok {
@@ -870,7 +872,7 @@ func (it *DeletedIterator) At() (int64, float64) {
 	return it.Iter.At()
 }
 
-func (it *DeletedIterator) AtHistogram() (int64, histogram.Histogram) {
+func (it *DeletedIterator) AtHistogram() (int64, *histogram.Histogram) {
 	t, h := it.Iter.AtHistogram()
 	return t, h
 }

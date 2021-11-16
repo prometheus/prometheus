@@ -115,7 +115,8 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 		if ok {
 			t, v = it.Values()
 		} else {
-			t, v, ok = it.PeekBack(1)
+			// TODO(beorn7): Handle histograms.
+			t, v, _, ok = it.PeekBack(1)
 			if !ok {
 				continue
 			}
@@ -220,6 +221,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 
 		protMetric.TimestampMs = proto.Int64(s.T)
 		protMetric.Untyped.Value = proto.Float64(s.V)
+		// TODO(beorn7): Handle histograms.
 
 		protMetricFam.Metric = append(protMetricFam.Metric, protMetric)
 	}

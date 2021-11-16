@@ -1326,20 +1326,20 @@ func TestHeadCompactionWithHistograms(t *testing.T) {
 	require.NoError(t, head.Init(0))
 	app := head.Appender(context.Background())
 
-	type timedHist struct {
+	type timedHistogram struct {
 		t int64
-		h histogram.Histogram
+		h *histogram.Histogram
 	}
 
 	// Ingest samples.
 	numHistograms := 120 * 4
 	timeStep := DefaultBlockDuration / int64(numHistograms)
-	expHists := make([]timedHist, 0, numHistograms)
+	expHists := make([]timedHistogram, 0, numHistograms)
 	l := labels.Labels{{Name: "a", Value: "b"}}
-	for i, h := range generateHistograms(numHistograms) {
+	for i, h := range GenerateTestHistograms(numHistograms) {
 		_, err := app.AppendHistogram(0, l, int64(i)*timeStep, h)
 		require.NoError(t, err)
-		expHists = append(expHists, timedHist{int64(i) * timeStep, h})
+		expHists = append(expHists, timedHistogram{int64(i) * timeStep, h})
 	}
 	require.NoError(t, app.Commit())
 
@@ -1372,10 +1372,10 @@ func TestHeadCompactionWithHistograms(t *testing.T) {
 	require.False(t, ss.Next())
 
 	it := s.Iterator()
-	actHists := make([]timedHist, 0, len(expHists))
+	actHists := make([]timedHistogram, 0, len(expHists))
 	for it.Next() {
 		t, h := it.AtHistogram()
-		actHists = append(actHists, timedHist{t, h.Copy()})
+		actHists = append(actHists, timedHistogram{t, h.Copy()})
 	}
 
 	require.Equal(t, expHists, actHists)
@@ -1455,7 +1455,7 @@ func TestSparseHistogramSpaceSavings(t *testing.T) {
 
 				var allSparseSeries []struct {
 					baseLabels labels.Labels
-					hists      []histogram.Histogram
+					hists      []*histogram.Histogram
 				}
 
 				for sid, schema := range allSchemas {
@@ -1467,7 +1467,7 @@ func TestSparseHistogramSpaceSavings(t *testing.T) {
 						}
 						allSparseSeries = append(allSparseSeries, struct {
 							baseLabels labels.Labels
-							hists      []histogram.Histogram
+							hists      []*histogram.Histogram
 						}{baseLabels: lbls, hists: generateCustomHistograms(numHistograms, c.numBuckets, c.numSpans, c.gapBetweenSpans, schema)})
 					}
 				}
@@ -1533,7 +1533,6 @@ func TestSparseHistogramSpaceSavings(t *testing.T) {
 								require.NoError(t, err)
 								itIdx++
 							}
-							require.NoError(t, it.Err())
 							// _count metric.
 							countLbls := ah.baseLabels.Copy()
 							countLbls[0].Value = countLbls[0].Value + "_count"
@@ -1614,9 +1613,9 @@ Savings: Index=%.2f%%, Chunks=%.2f%%, Total=%.2f%%
 	}
 }
 
-func generateCustomHistograms(numHists, numBuckets, numSpans, gapBetweenSpans, schema int) (r []histogram.Histogram) {
+func generateCustomHistograms(numHists, numBuckets, numSpans, gapBetweenSpans, schema int) (r []*histogram.Histogram) {
 	// First histogram with all the settings.
-	h := histogram.Histogram{
+	h := &histogram.Histogram{
 		Sum:    1000 * rand.Float64(),
 		Schema: int32(schema),
 	}
@@ -1709,14 +1708,14 @@ func TestSparseHistogramCompactionAndQuery(t *testing.T) {
 	})
 	db.DisableCompactions()
 
-	type timedHist struct {
+	type timedHistogram struct {
 		t int64
-		h histogram.Histogram
+		h *histogram.Histogram
 	}
-	expHists := make(map[string][]timedHist)
+	expHists := make(map[string][]timedHistogram)
 
-	series1Histograms := generateHistograms(20)
-	series2Histograms := generateHistograms(20)
+	series1Histograms := GenerateTestHistograms(20)
+	series2Histograms := GenerateTestHistograms(20)
 	idx1, idx2 := -1, -1
 	addNextHists := func(ts int64, app storage.Appender) {
 		lbls1 := labels.Labels{{Name: "a", Value: "b"}}
@@ -1729,8 +1728,8 @@ func TestSparseHistogramCompactionAndQuery(t *testing.T) {
 		require.NoError(t, err)
 
 		l1, l2 := lbls1.String(), lbls2.String()
-		expHists[l1] = append(expHists[l1], timedHist{t: ts, h: series1Histograms[idx1]})
-		expHists[l2] = append(expHists[l2], timedHist{t: ts, h: series2Histograms[idx2]})
+		expHists[l1] = append(expHists[l1], timedHistogram{t: ts, h: series1Histograms[idx1]})
+		expHists[l2] = append(expHists[l2], timedHistogram{t: ts, h: series2Histograms[idx2]})
 	}
 
 	testQuery := func() {
@@ -1741,13 +1740,13 @@ func TestSparseHistogramCompactionAndQuery(t *testing.T) {
 		}()
 
 		ss := q.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "a", ".*"))
-		actHists := make(map[string][]timedHist)
+		actHists := make(map[string][]timedHistogram)
 		for ss.Next() {
 			s := ss.At()
 			it := s.Iterator()
 			for it.Next() {
 				ts, h := it.AtHistogram()
-				actHists[s.Labels().String()] = append(actHists[s.Labels().String()], timedHist{ts, h.Copy()})
+				actHists[s.Labels().String()] = append(actHists[s.Labels().String()], timedHistogram{ts, h.Copy()})
 			}
 			require.NoError(t, it.Err())
 		}

@@ -16,6 +16,7 @@ package promql
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io/ioutil"
 	"os"
 	"sort"
@@ -30,6 +31,7 @@ import (
 	"github.com/prometheus/prometheus/pkg/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb"
 )
 
 func TestMain(m *testing.M) {
@@ -2428,4 +2430,34 @@ func TestRangeQuery(t *testing.T) {
 			require.Equal(t, c.Result, res.Value)
 		})
 	}
+}
+
+func TestSparseHistogramRate(t *testing.T) {
+	// Currently, this test it to only find panics or errors in the engine execution path.
+	// The panic stack trace will mostly tell you what code path is breaking and needs fixing for
+	// fetching the raw histograms and passing it rightly upto the rate() function implementation.
+	// TODO: Check the result for correctness once implementation is ready.
+
+	test, err := NewTest(t, "")
+	require.NoError(t, err)
+	defer test.Close()
+
+	seriesName := "sparse_histogram_series"
+	lbls := labels.FromStrings("__name__", seriesName)
+
+	app := test.Storage().Appender(context.TODO())
+	for i, h := range tsdb.GenerateTestHistograms(100) {
+		_, err := app.AppendHistogram(0, lbls, int64(i)*int64(15*time.Second/time.Millisecond), h)
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+
+	require.NoError(t, test.Run())
+	engine := test.QueryEngine()
+
+	queryString := fmt.Sprintf("rate(%s[1m])", seriesName)
+	qry, err := engine.NewInstantQuery(test.Queryable(), queryString, timestamp.Time(int64(5*time.Minute/time.Millisecond)))
+	require.NoError(t, err)
+	res := qry.Exec(test.Context())
+	require.NoError(t, res.Err)
 }

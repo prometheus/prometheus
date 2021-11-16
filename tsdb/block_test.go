@@ -179,7 +179,7 @@ func TestCorruptedChunk(t *testing.T) {
 				require.NoError(t, os.RemoveAll(tmpdir))
 			}()
 
-			series := storage.NewListSeries(labels.FromStrings("a", "b"), []tsdbutil.Sample{sample{1, 1}})
+			series := storage.NewListSeries(labels.FromStrings("a", "b"), []tsdbutil.Sample{sample{1, 1, nil}})
 			blockDir := createBlock(t, tmpdir, []storage.Series{series})
 			files, err := sequenceFiles(chunkDir(blockDir))
 			require.NoError(t, err)
@@ -226,7 +226,7 @@ func TestLabelValuesWithMatchers(t *testing.T) {
 		seriesEntries = append(seriesEntries, storage.NewListSeries(labels.Labels{
 			{Name: "unique", Value: fmt.Sprintf("value%d", i)},
 			{Name: "tens", Value: fmt.Sprintf("value%d", i/10)},
-		}, []tsdbutil.Sample{sample{100, 0}}))
+		}, []tsdbutil.Sample{sample{100, 0, nil}}))
 	}
 
 	blockDir := createBlock(t, tmpdir, seriesEntries)
@@ -389,7 +389,7 @@ func BenchmarkLabelValuesWithMatchers(b *testing.B) {
 			{Name: "unique", Value: fmt.Sprintf("value%d", i)},
 			{Name: "tens", Value: fmt.Sprintf("value%d", i/(metricCount/10))},
 			{Name: "ninety", Value: fmt.Sprintf("value%d", i/(metricCount/10)/9)}, // "0" for the first 90%, then "1"
-		}, []tsdbutil.Sample{sample{100, 0}}))
+		}, []tsdbutil.Sample{sample{100, 0, nil}}))
 	}
 
 	blockDir := createBlock(b, tmpdir, seriesEntries)
@@ -427,13 +427,13 @@ func TestLabelNamesWithMatchers(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		seriesEntries = append(seriesEntries, storage.NewListSeries(labels.Labels{
 			{Name: "unique", Value: fmt.Sprintf("value%d", i)},
-		}, []tsdbutil.Sample{sample{100, 0}}))
+		}, []tsdbutil.Sample{sample{100, 0, nil}}))
 
 		if i%10 == 0 {
 			seriesEntries = append(seriesEntries, storage.NewListSeries(labels.Labels{
 				{Name: "unique", Value: fmt.Sprintf("value%d", i)},
 				{Name: "tens", Value: fmt.Sprintf("value%d", i/10)},
-			}, []tsdbutil.Sample{sample{100, 0}}))
+			}, []tsdbutil.Sample{sample{100, 0, nil}}))
 		}
 
 		if i%20 == 0 {
@@ -441,7 +441,7 @@ func TestLabelNamesWithMatchers(t *testing.T) {
 				{Name: "unique", Value: fmt.Sprintf("value%d", i)},
 				{Name: "tens", Value: fmt.Sprintf("value%d", i/10)},
 				{Name: "twenties", Value: fmt.Sprintf("value%d", i/20)},
-			}, []tsdbutil.Sample{sample{100, 0}}))
+			}, []tsdbutil.Sample{sample{100, 0, nil}}))
 		}
 
 	}

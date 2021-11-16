@@ -241,7 +241,7 @@ func (t *timestampTracker) AppendExemplar(_ uint64, _ labels.Labels, _ exemplar.
 	return 0, nil
 }
 
-func (t *timestampTracker) AppendHistogram(_ uint64, _ labels.Labels, ts int64, _ histogram.Histogram) (uint64, error) {
+func (t *timestampTracker) AppendHistogram(_ uint64, _ labels.Labels, ts int64, _ *histogram.Histogram) (uint64, error) {
 	t.histograms++
 	if ts > t.highestTimestamp {
 		t.highestTimestamp = ts

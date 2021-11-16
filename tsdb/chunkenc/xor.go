@@ -150,7 +150,7 @@ type xorAppender struct {
 	trailing uint8
 }
 
-func (a *xorAppender) AppendHistogram(t int64, h histogram.Histogram) {
+func (a *xorAppender) AppendHistogram(t int64, h *histogram.Histogram) {
 	panic("appended a histogram to an xor chunk")
 }
 
@@ -253,8 +253,8 @@ func (it *xorIterator) At() (int64, float64) {
 	return it.t, it.val
 }
 
-func (it *xorIterator) AtHistogram() (int64, histogram.Histogram) {
-	panic("cannot call xorIterator.AtHistogram().")
+func (it *xorIterator) AtHistogram() (int64, *histogram.Histogram) {
+	panic("cannot call xorIterator.AtHistogram")
 }
 
 func (it *xorIterator) ChunkEncoding() Encoding {

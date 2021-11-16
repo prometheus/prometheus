@@ -14,6 +14,7 @@
 package tsdbutil
 
 import (
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 )
@@ -26,6 +27,7 @@ type Samples interface {
 type Sample interface {
 	T() int64
 	V() float64
+	H() *histogram.Histogram
 }
 
 type SampleSlice []Sample
@@ -61,7 +63,7 @@ func ChunkFromSamplesGeneric(s Samples) chunks.Meta {
 func PopulatedChunk(numSamples int, minTime int64) chunks.Meta {
 	samples := make([]Sample, numSamples)
 	for i := 0; i < numSamples; i++ {
-		samples[i] = sample{minTime + int64(i*1000), 1.0}
+		samples[i] = sample{t: minTime + int64(i*1000), v: 1.0}
 	}
 	return ChunkFromSamples(samples)
 }

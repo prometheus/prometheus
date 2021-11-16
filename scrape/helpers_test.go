@@ -35,7 +35,7 @@ func (a nopAppender) Append(uint64, labels.Labels, int64, float64) (uint64, erro
 func (a nopAppender) AppendExemplar(uint64, labels.Labels, exemplar.Exemplar) (uint64, error) {
 	return 0, nil
 }
-func (a nopAppender) AppendHistogram(uint64, labels.Labels, int64, histogram.Histogram) (uint64, error) {
+func (a nopAppender) AppendHistogram(uint64, labels.Labels, int64, *histogram.Histogram) (uint64, error) {
 	return 0, nil
 }
 func (a nopAppender) Commit() error   { return nil }
@@ -49,7 +49,7 @@ type sample struct {
 
 type histogramSample struct {
 	t int64
-	h histogram.Histogram
+	h *histogram.Histogram
 }
 
 // collectResultAppender records all samples that were added through the appender.
@@ -96,7 +96,7 @@ func (a *collectResultAppender) AppendExemplar(ref uint64, l labels.Labels, e ex
 	return a.next.AppendExemplar(ref, l, e)
 }
 
-func (a *collectResultAppender) AppendHistogram(ref uint64, l labels.Labels, t int64, h histogram.Histogram) (uint64, error) {
+func (a *collectResultAppender) AppendHistogram(ref uint64, l labels.Labels, t int64, h *histogram.Histogram) (uint64, error) {
 	a.pendingHistograms = append(a.pendingHistograms, histogramSample{h: h, t: t})
 	if a.next == nil {
 		return 0, nil

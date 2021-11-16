@@ -82,13 +82,15 @@ type Chunk interface {
 // Appender adds sample pairs to a chunk.
 type Appender interface {
 	Append(int64, float64)
-	AppendHistogram(t int64, h histogram.Histogram)
+	AppendHistogram(t int64, h *histogram.Histogram)
 }
 
 // Iterator is a simple iterator that can only get the next value.
 // Iterator iterates over the samples of a time series, in timestamp-increasing order.
 type Iterator interface {
 	// Next advances the iterator by one.
+	// TODO(beorn7): Perhaps this should return if the next value is a float or a histogram
+	// to make it easier calling the right method (At vs AtHistogram)?
 	Next() bool
 	// Seek advances the iterator forward to the first sample with the timestamp equal or greater than t.
 	// If current sample found by previous `Next` or `Seek` operation already has this property, Seek has no effect.
@@ -100,7 +102,7 @@ type Iterator interface {
 	At() (int64, float64)
 	// AtHistogram returns the current timestamp/histogram pair.
 	// Before the iterator has advanced AtHistogram behaviour is unspecified.
-	AtHistogram() (int64, histogram.Histogram)
+	AtHistogram() (int64, *histogram.Histogram)
 	// Err returns the current error. It should be used only after iterator is
 	// exhausted, that is `Next` or `Seek` returns false.
 	Err() error
@@ -117,8 +119,8 @@ type nopIterator struct{}
 
 func (nopIterator) Seek(int64) bool      { return false }
 func (nopIterator) At() (int64, float64) { return math.MinInt64, 0 }
-func (nopIterator) AtHistogram() (int64, histogram.Histogram) {
-	return math.MinInt64, histogram.Histogram{}
+func (nopIterator) AtHistogram() (int64, *histogram.Histogram) {
+	return math.MinInt64, nil
 }
 func (nopIterator) Next() bool              { return false }
 func (nopIterator) Err() error              { return nil }

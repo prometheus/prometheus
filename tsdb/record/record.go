@@ -74,7 +74,7 @@ type RefExemplar struct {
 type RefHistogram struct {
 	Ref uint64
 	T   int64
-	H   histogram.Histogram
+	H   *histogram.Histogram
 }
 
 // Decoder decodes series, sample, and tombstone records.
@@ -253,7 +253,7 @@ func (d *Decoder) Histograms(rec []byte, histograms []RefHistogram) ([]RefHistog
 		rh := RefHistogram{
 			Ref: baseRef + uint64(dref),
 			T:   baseTime + dtime,
-			H: histogram.Histogram{
+			H: &histogram.Histogram{
 				Schema:        0,
 				ZeroThreshold: 0,
 				ZeroCount:     0,

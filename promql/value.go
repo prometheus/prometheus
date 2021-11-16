@@ -78,14 +78,22 @@ func (s Series) String() string {
 }
 
 // Point represents a single data point for a given timestamp.
+// If H is not nil, then this is a histogram point and only (T, H) is valid.
+// If H is nil, then only (T, V) is valid.
 type Point struct {
 	T int64
 	V float64
+	H *histogram.Histogram
 }
 
 func (p Point) String() string {
-	v := strconv.FormatFloat(p.V, 'f', -1, 64)
-	return fmt.Sprintf("%v @[%v]", v, p.T)
+	var s string
+	if p.H != nil {
+		s = p.H.String()
+	} else {
+		s = strconv.FormatFloat(p.V, 'f', -1, 64)
+	}
+	return fmt.Sprintf("%s @[%v]", s, p.T)
 }
 
 // MarshalJSON implements json.Marshaler.
@@ -296,11 +304,9 @@ func (ssi *storageSeriesIterator) At() (t int64, v float64) {
 	return p.T, p.V
 }
 
-// AtHistogram always returns (0, histogram.Histogram{}) because there is no
-// support for histogram values yet.
-// TODO(beorn7): Fix that for histogram support in PromQL.
-func (ssi *storageSeriesIterator) AtHistogram() (int64, histogram.Histogram) {
-	return 0, histogram.Histogram{}
+func (ssi *storageSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
+	p := ssi.points[ssi.curr]
+	return p.T, p.H
 }
 
 func (ssi *storageSeriesIterator) ChunkEncoding() chunkenc.Encoding {

@@ -14,7 +14,9 @@
 package histogram
 
 import (
+	"fmt"
 	"math"
+	"strings"
 )
 
 // Histogram encodes a sparse, high-resolution histogram. See the design
@@ -45,7 +47,7 @@ type Histogram struct {
 	ZeroCount uint64
 	// Total number of observations.
 	Count uint64
-	// Sum of observations.
+	// Sum of observations. This is also used as the stale marker.
 	Sum float64
 	// Spans for positive and negative buckets (see Span below).
 	PositiveSpans, NegativeSpans []Span
@@ -65,7 +67,7 @@ type Span struct {
 }
 
 // Copy returns a deep copy of the Histogram.
-func (h Histogram) Copy() Histogram {
+func (h Histogram) Copy() *Histogram {
 	c := h
 
 	if h.PositiveSpans != nil {
@@ -85,7 +87,61 @@ func (h Histogram) Copy() Histogram {
 		copy(c.NegativeBuckets, h.NegativeBuckets)
 	}
 
-	return c
+	return &c
+}
+
+// String returns a string representation of the Histogram.
+func (h Histogram) String() string {
+	var sb strings.Builder
+	fmt.Fprintf(&sb, "{count:%d, sum:%g", h.Count, h.Sum)
+
+	var nBuckets []Bucket
+	for it := h.NegativeBucketIterator(); it.Next(); {
+		bucket := it.At()
+		if bucket.Count != 0 {
+			nBuckets = append(nBuckets, it.At())
+		}
+	}
+	for i := len(nBuckets) - 1; i >= 0; i-- {
+		fmt.Fprintf(&sb, ", %s", nBuckets[i].String())
+	}
+
+	if h.ZeroCount != 0 {
+		fmt.Fprintf(&sb, ", %s", h.ZeroBucket().String())
+	}
+
+	for it := h.PositiveBucketIterator(); it.Next(); {
+		bucket := it.At()
+		if bucket.Count != 0 {
+			fmt.Fprintf(&sb, ", %s", bucket.String())
+		}
+	}
+
+	sb.WriteRune('}')
+	return sb.String()
+}
+
+// ZeroBucket returns the zero bucket.
+func (h Histogram) ZeroBucket() Bucket {
+	return Bucket{
+		Lower:          -h.ZeroThreshold,
+		Upper:          h.ZeroThreshold,
+		LowerInclusive: true,
+		UpperInclusive: true,
+		Count:          h.ZeroCount,
+	}
+}
+
+// PositiveBucketIterator returns a BucketIterator to iterate over all positive
+// buckets in ascending order (starting next to the zero bucket and going up).
+func (h Histogram) PositiveBucketIterator() BucketIterator {
+	return newRegularBucketIterator(&h, true)
+}
+
+// NegativeBucketIterator returns a BucketIterator to iterate over all negative
+// buckets in descending order (starting next to the zero bucket and going down).
+func (h Histogram) NegativeBucketIterator() BucketIterator {
+	return newRegularBucketIterator(&h, false)
 }
 
 // CumulativeBucketIterator returns a BucketIterator to iterate over a
@@ -96,7 +152,7 @@ func (h Histogram) CumulativeBucketIterator() BucketIterator {
 	if len(h.NegativeBuckets) > 0 {
 		panic("CumulativeIterator called on Histogram with negative buckets")
 	}
-	return &cumulativeBucketIterator{h: h, posSpansIdx: -1}
+	return &cumulativeBucketIterator{h: &h, posSpansIdx: -1}
 }
 
 // BucketIterator iterates over the buckets of a Histogram, returning decoded
@@ -106,26 +162,126 @@ type BucketIterator interface {
 	Next() bool
 	// At returns the current bucket.
 	At() Bucket
-	// Err returns the current error. It should be used only after iterator is
-	// exhausted, that is `Next` or `Seek` returns false.
-	Err() error
 }
 
-// Bucket represents a bucket (currently only a cumulative one with an upper
-// inclusive bound and a cumulative count).
+// Bucket represents a bucket with lower and upper limit and the count of
+// samples in the bucket. It also specifies if each limit is inclusive or
+// not. (Mathematically, inclusive limits create a closed interval, and
+// non-inclusive limits an open interval.)
+//
+// To represent cumulative buckets, Lower is set to -Inf, and the Count is then
+// cumulative (including the counts of all buckets for smaller values).
 type Bucket struct {
-	Upper float64
-	Count uint64
+	Lower, Upper                   float64
+	LowerInclusive, UpperInclusive bool
+	Count                          uint64
+	Index                          int32 // Index within schema. To easily compare buckets that share the same schema.
+}
+
+// String returns a string representation, using the usual mathematical notation
+// of '['/']' for inclusive bounds and '('/')' for non-inclusive bounds.
+func (b Bucket) String() string {
+	var sb strings.Builder
+	if b.LowerInclusive {
+		sb.WriteRune('[')
+	} else {
+		sb.WriteRune('(')
+	}
+	fmt.Fprintf(&sb, "%g,%g", b.Lower, b.Upper)
+	if b.UpperInclusive {
+		sb.WriteRune(']')
+	} else {
+		sb.WriteRune(')')
+	}
+	fmt.Fprintf(&sb, ":%d", b.Count)
+	return sb.String()
+}
+
+type regularBucketIterator struct {
+	schema  int32
+	spans   []Span
+	buckets []int64
+
+	positive bool // Whether this is for positive buckets.
+
+	spansIdx   int    // Current span within spans slice.
+	idxInSpan  uint32 // Index in the current span. 0 <= idxInSpan < span.Length.
+	bucketsIdx int    // Current bucket within buckets slice.
+
+	currCount            int64   // Count in the current bucket.
+	currIdx              int32   // The actual bucket index.
+	currLower, currUpper float64 // Limits of the current bucket.
+
+}
+
+func newRegularBucketIterator(h *Histogram, positive bool) *regularBucketIterator {
+	r := &regularBucketIterator{schema: h.Schema, positive: positive}
+	if positive {
+		r.spans = h.PositiveSpans
+		r.buckets = h.PositiveBuckets
+	} else {
+		r.spans = h.NegativeSpans
+		r.buckets = h.NegativeBuckets
+	}
+	return r
+}
+
+func (r *regularBucketIterator) Next() bool {
+	if r.spansIdx >= len(r.spans) {
+		return false
+	}
+	span := r.spans[r.spansIdx]
+	// Seed currIdx for the first bucket.
+	if r.bucketsIdx == 0 {
+		r.currIdx = span.Offset
+	} else {
+		r.currIdx++
+	}
+	for r.idxInSpan >= span.Length {
+		// We have exhausted the current span and have to find a new
+		// one. We'll even handle pathologic spans of length 0.
+		r.idxInSpan = 0
+		r.spansIdx++
+		if r.spansIdx >= len(r.spans) {
+			return false
+		}
+		span = r.spans[r.spansIdx]
+		r.currIdx += span.Offset
+	}
+
+	r.currCount += r.buckets[r.bucketsIdx]
+	if r.positive {
+		r.currUpper = getBound(r.currIdx, r.schema)
+		r.currLower = getBound(r.currIdx-1, r.schema)
+	} else {
+		r.currLower = -getBound(r.currIdx, r.schema)
+		r.currUpper = -getBound(r.currIdx-1, r.schema)
+	}
+
+	r.idxInSpan++
+	r.bucketsIdx++
+	return true
+}
+
+func (r *regularBucketIterator) At() Bucket {
+	return Bucket{
+		Count:          uint64(r.currCount),
+		Lower:          r.currLower,
+		Upper:          r.currUpper,
+		LowerInclusive: r.currLower < 0,
+		UpperInclusive: r.currUpper > 0,
+		Index:          r.currIdx,
+	}
 }
 
 type cumulativeBucketIterator struct {
-	h Histogram
+	h *Histogram
 
 	posSpansIdx   int    // Index in h.PositiveSpans we are in. -1 means 0 bucket.
 	posBucketsIdx int    // Index in h.PositiveBuckets.
 	idxInSpan     uint32 // Index in the current span. 0 <= idxInSpan < span.Length.
 
-	initialised         bool
+	initialized         bool
 	currIdx             int32   // The actual bucket index after decoding from spans.
 	currUpper           float64 // The upper boundary of the current bucket.
 	currCount           int64   // Current non-cumulative count for the current bucket. Does not apply for empty bucket.
@@ -158,24 +314,24 @@ func (c *cumulativeBucketIterator) Next() bool {
 
 	if c.emptyBucketCount > 0 {
 		// We are traversing through empty buckets at the moment.
-		c.currUpper = getUpper(c.currIdx, c.h.Schema)
+		c.currUpper = getBound(c.currIdx, c.h.Schema)
 		c.currIdx++
 		c.emptyBucketCount--
 		return true
 	}
 
 	span := c.h.PositiveSpans[c.posSpansIdx]
-	if c.posSpansIdx == 0 && !c.initialised {
+	if c.posSpansIdx == 0 && !c.initialized {
 		// Initialising.
 		c.currIdx = span.Offset
-		// The first bucket is absolute value and not a delta with Zero bucket.
+		// The first bucket is an absolute value and not a delta with Zero bucket.
 		c.currCount = 0
-		c.initialised = true
+		c.initialized = true
 	}
 
 	c.currCount += c.h.PositiveBuckets[c.posBucketsIdx]
 	c.currCumulativeCount += uint64(c.currCount)
-	c.currUpper = getUpper(c.currIdx, c.h.Schema)
+	c.currUpper = getBound(c.currIdx, c.h.Schema)
 
 	c.posBucketsIdx++
 	c.idxInSpan++
@@ -191,15 +347,19 @@ func (c *cumulativeBucketIterator) Next() bool {
 
 	return true
 }
+
 func (c *cumulativeBucketIterator) At() Bucket {
 	return Bucket{
-		Upper: c.currUpper,
-		Count: c.currCumulativeCount,
+		Upper:          c.currUpper,
+		Lower:          math.Inf(-1),
+		UpperInclusive: true,
+		LowerInclusive: true,
+		Count:          c.currCumulativeCount,
+		Index:          c.currIdx - 1,
 	}
 }
-func (c *cumulativeBucketIterator) Err() error { return nil }
 
-func getUpper(idx, schema int32) float64 {
+func getBound(idx, schema int32) float64 {
 	if schema < 0 {
 		return math.Ldexp(1, int(idx)<<(-schema))
 	}

@@ -370,11 +370,11 @@ func (c *concreteSeriesIterator) At() (t int64, v float64) {
 	return s.Timestamp, s.Value
 }
 
-// AtHistogram always returns (0, histogram.Histogram{}) because there is no
-// support for histogram values yet.
+// AtHistogram always returns (0, nil) because there is no support for histogram
+// values yet.
 // TODO(beorn7): Fix that for histogram support in remote storage.
-func (c *concreteSeriesIterator) AtHistogram() (int64, histogram.Histogram) {
-	return 0, histogram.Histogram{}
+func (c *concreteSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
+	return 0, nil
 }
 
 func (c *concreteSeriesIterator) ChunkEncoding() chunkenc.Encoding {

@@ -91,10 +91,9 @@ func (it *listSeriesIterator) At() (int64, float64) {
 	return s.T(), s.V()
 }
 
-// AtHistogram always returns (0, histogram.Histogram{}) because there is no
-// support for histogram values yet.
-func (it *listSeriesIterator) AtHistogram() (int64, histogram.Histogram) {
-	return 0, histogram.Histogram{}
+func (it *listSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
+	s := it.samples.Get(it.idx)
+	return s.T(), s.H()
 }
 
 func (it *listSeriesIterator) ChunkEncoding() chunkenc.Encoding {
@@ -297,19 +296,25 @@ func (e errChunksIterator) Err() error      { return e.err }
 // ExpandSamples iterates over all samples in the iterator, buffering all in slice.
 // Optionally it takes samples constructor, useful when you want to compare sample slices with different
 // sample implementations. if nil, sample type from this package will be used.
-func ExpandSamples(iter chunkenc.Iterator, newSampleFn func(t int64, v float64) tsdbutil.Sample) ([]tsdbutil.Sample, error) {
+func ExpandSamples(iter chunkenc.Iterator, newSampleFn func(t int64, v float64, h *histogram.Histogram) tsdbutil.Sample) ([]tsdbutil.Sample, error) {
 	if newSampleFn == nil {
-		newSampleFn = func(t int64, v float64) tsdbutil.Sample { return sample{t, v} }
+		newSampleFn = func(t int64, v float64, h *histogram.Histogram) tsdbutil.Sample { return sample{t, v, h} }
 	}
 
 	var result []tsdbutil.Sample
 	for iter.Next() {
-		t, v := iter.At()
-		// NaNs can't be compared normally, so substitute for another value.
-		if math.IsNaN(v) {
-			v = -42
+		// Only after Next() returned true, it is safe to ask for the ChunkEncoding.
+		if iter.ChunkEncoding() == chunkenc.EncHistogram {
+			t, h := iter.AtHistogram()
+			result = append(result, newSampleFn(t, 0, h))
+		} else {
+			t, v := iter.At()
+			// NaNs can't be compared normally, so substitute for another value.
+			if math.IsNaN(v) {
+				v = -42
+			}
+			result = append(result, newSampleFn(t, v, nil))
 		}
-		result = append(result, newSampleFn(t, v))
 	}
 	return result, iter.Err()
 }

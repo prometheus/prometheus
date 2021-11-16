@@ -1440,7 +1440,7 @@ loop:
 			met                      []byte
 			parsedTimestamp          *int64
 			val                      float64
-			h                        histogram.Histogram
+			h                        *histogram.Histogram
 		)
 		if et, err = p.Next(); err != nil {
 			if err == io.EOF {

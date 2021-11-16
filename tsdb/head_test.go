@@ -331,11 +331,11 @@ func TestHead_ReadWAL(t *testing.T) {
 				require.NoError(t, c.Err())
 				return x
 			}
-			require.Equal(t, []sample{{100, 2}, {101, 5}}, expandChunk(s10.iterator(0, nil, head.chunkDiskMapper, nil)))
-			require.Equal(t, []sample{{101, 6}}, expandChunk(s50.iterator(0, nil, head.chunkDiskMapper, nil)))
+			require.Equal(t, []sample{{100, 2, nil}, {101, 5, nil}}, expandChunk(s10.iterator(0, nil, head.chunkDiskMapper, nil)))
+			require.Equal(t, []sample{{101, 6, nil}}, expandChunk(s50.iterator(0, nil, head.chunkDiskMapper, nil)))
 			// The samples before the new series record should be discarded since a duplicate record
 			// is only possible when old samples were compacted.
-			require.Equal(t, []sample{{101, 7}}, expandChunk(s100.iterator(0, nil, head.chunkDiskMapper, nil)))
+			require.Equal(t, []sample{{101, 7, nil}}, expandChunk(s100.iterator(0, nil, head.chunkDiskMapper, nil)))
 
 			q, err := head.ExemplarQuerier(context.Background())
 			require.NoError(t, err)
@@ -401,8 +401,8 @@ func TestHead_WALMultiRef(t *testing.T) {
 	// The samples before the new ref should be discarded since Head truncation
 	// happens only after compacting the Head.
 	require.Equal(t, map[string][]tsdbutil.Sample{`{foo="bar"}`: {
-		sample{1700, 3},
-		sample{2000, 4},
+		sample{1700, 3, nil},
+		sample{2000, 4, nil},
 	}}, series)
 }
 
@@ -798,7 +798,7 @@ func TestDeleteUntilCurMax(t *testing.T) {
 	it = exps.Iterator()
 	resSamples, err := storage.ExpandSamples(it, newSample)
 	require.NoError(t, err)
-	require.Equal(t, []tsdbutil.Sample{sample{11, 1}}, resSamples)
+	require.Equal(t, []tsdbutil.Sample{sample{11, 1, nil}}, resSamples)
 	for res.Next() {
 	}
 	require.NoError(t, res.Err())
@@ -913,7 +913,7 @@ func TestDelete_e2e(t *testing.T) {
 			v := rand.Float64()
 			_, err := app.Append(0, ls, ts, v)
 			require.NoError(t, err)
-			series = append(series, sample{ts, v})
+			series = append(series, sample{ts, v, nil})
 			ts += rand.Int63n(timeInterval) + 1
 		}
 		seriesMap[labels.New(l...).String()] = series
@@ -2397,7 +2397,7 @@ func TestDataMissingOnQueryDuringCompaction(t *testing.T) {
 		ref, err = app.Append(ref, labels.FromStrings("a", "b"), ts, float64(i))
 		require.NoError(t, err)
 		maxt = ts
-		expSamples = append(expSamples, sample{ts, float64(i)})
+		expSamples = append(expSamples, sample{ts, float64(i), nil})
 	}
 	require.NoError(t, app.Commit())
 
@@ -2541,10 +2541,10 @@ func TestAppendHistogram(t *testing.T) {
 
 			type timedHistogram struct {
 				t int64
-				h histogram.Histogram
+				h *histogram.Histogram
 			}
 			expHistograms := make([]timedHistogram, 0, numHistograms)
-			for i, h := range generateHistograms(numHistograms) {
+			for i, h := range GenerateTestHistograms(numHistograms) {
 				_, err := app.AppendHistogram(0, l, int64(i), h)
 				require.NoError(t, err)
 				expHistograms = append(expHistograms, timedHistogram{int64(i), h})
@@ -2588,10 +2588,10 @@ func TestHistogramInWAL(t *testing.T) {
 
 	type timedHistogram struct {
 		t int64
-		h histogram.Histogram
+		h *histogram.Histogram
 	}
 	expHistograms := make([]timedHistogram, 0, numHistograms)
-	for i, h := range generateHistograms(numHistograms) {
+	for i, h := range GenerateTestHistograms(numHistograms) {
 		h.NegativeSpans = h.PositiveSpans
 		h.NegativeBuckets = h.PositiveBuckets
 		_, err := app.AppendHistogram(0, l, int64(i), h)
@@ -2628,25 +2628,6 @@ func TestHistogramInWAL(t *testing.T) {
 	}
 
 	require.Equal(t, expHistograms, actHistograms)
-}
-
-func generateHistograms(n int) (r []histogram.Histogram) {
-	for i := 0; i < n; i++ {
-		r = append(r, histogram.Histogram{
-			Count:         5 + uint64(i*4),
-			ZeroCount:     2 + uint64(i),
-			ZeroThreshold: 0.001,
-			Sum:           18.4 * float64(i+1),
-			Schema:        1,
-			PositiveSpans: []histogram.Span{
-				{Offset: 0, Length: 2},
-				{Offset: 1, Length: 2},
-			},
-			PositiveBuckets: []int64{int64(i + 1), 1, -1, 0},
-		})
-	}
-
-	return r
 }
 
 func TestChunkSnapshot(t *testing.T) {
@@ -2747,7 +2728,7 @@ func TestChunkSnapshot(t *testing.T) {
 			// 240 samples should m-map at least 1 chunk.
 			for ts := int64(1); ts <= 240; ts++ {
 				val := rand.Float64()
-				expSeries[lblStr] = append(expSeries[lblStr], sample{ts, val})
+				expSeries[lblStr] = append(expSeries[lblStr], sample{ts, val, nil})
 				ref, err := app.Append(0, lbls, ts, val)
 				require.NoError(t, err)
 
@@ -2807,7 +2788,7 @@ func TestChunkSnapshot(t *testing.T) {
 			// 240 samples should m-map at least 1 chunk.
 			for ts := int64(241); ts <= 480; ts++ {
 				val := rand.Float64()
-				expSeries[lblStr] = append(expSeries[lblStr], sample{ts, val})
+				expSeries[lblStr] = append(expSeries[lblStr], sample{ts, val, nil})
 				ref, err := app.Append(0, lbls, ts, val)
 				require.NoError(t, err)
 
@@ -2962,7 +2943,7 @@ func TestHistogramMetrics(t *testing.T) {
 	for x := 0; x < 5; x++ {
 		expHSeries++
 		l := labels.Labels{{Name: "a", Value: fmt.Sprintf("b%d", x)}}
-		for i, h := range generateHistograms(10) {
+		for i, h := range GenerateTestHistograms(10) {
 			app := head.Appender(context.Background())
 			_, err := app.AppendHistogram(0, l, int64(i), h)
 			require.NoError(t, err)
@@ -2996,7 +2977,7 @@ func TestHistogramStaleSample(t *testing.T) {
 
 	type timedHistogram struct {
 		t int64
-		h histogram.Histogram
+		h *histogram.Histogram
 	}
 	expHistograms := make([]timedHistogram, 0, numHistograms)
 
@@ -3030,6 +3011,7 @@ func TestHistogramStaleSample(t *testing.T) {
 				require.True(t, value.IsStaleNaN(ah.h.Sum))
 				// To make require.Equal work.
 				ah.h.Sum = 0
+				eh.h = eh.h.Copy()
 				eh.h.Sum = 0
 			}
 			require.Equal(t, eh, ah)
@@ -3039,7 +3021,7 @@ func TestHistogramStaleSample(t *testing.T) {
 
 	// Adding stale in the same appender.
 	app := head.Appender(context.Background())
-	for _, h := range generateHistograms(numHistograms) {
+	for _, h := range GenerateTestHistograms(numHistograms) {
 		_, err := app.AppendHistogram(0, l, 100*int64(len(expHistograms)), h)
 		require.NoError(t, err)
 		expHistograms = append(expHistograms, timedHistogram{100 * int64(len(expHistograms)), h})
@@ -3047,7 +3029,7 @@ func TestHistogramStaleSample(t *testing.T) {
 	// +1 so that delta-of-delta is not 0.
 	_, err := app.Append(0, l, 100*int64(len(expHistograms))+1, math.Float64frombits(value.StaleNaN))
 	require.NoError(t, err)
-	expHistograms = append(expHistograms, timedHistogram{100*int64(len(expHistograms)) + 1, histogram.Histogram{Sum: math.Float64frombits(value.StaleNaN)}})
+	expHistograms = append(expHistograms, timedHistogram{100*int64(len(expHistograms)) + 1, &histogram.Histogram{Sum: math.Float64frombits(value.StaleNaN)}})
 	require.NoError(t, app.Commit())
 
 	// Only 1 chunk in the memory, no m-mapped chunk.
@@ -3058,7 +3040,7 @@ func TestHistogramStaleSample(t *testing.T) {
 
 	// Adding stale in different appender and continuing series after a stale sample.
 	app = head.Appender(context.Background())
-	for _, h := range generateHistograms(2 * numHistograms)[numHistograms:] {
+	for _, h := range GenerateTestHistograms(2 * numHistograms)[numHistograms:] {
 		_, err := app.AppendHistogram(0, l, 100*int64(len(expHistograms)), h)
 		require.NoError(t, err)
 		expHistograms = append(expHistograms, timedHistogram{100 * int64(len(expHistograms)), h})
@@ -3069,7 +3051,7 @@ func TestHistogramStaleSample(t *testing.T) {
 	// +1 so that delta-of-delta is not 0.
 	_, err = app.Append(0, l, 100*int64(len(expHistograms))+1, math.Float64frombits(value.StaleNaN))
 	require.NoError(t, err)
-	expHistograms = append(expHistograms, timedHistogram{100*int64(len(expHistograms)) + 1, histogram.Histogram{Sum: math.Float64frombits(value.StaleNaN)}})
+	expHistograms = append(expHistograms, timedHistogram{100*int64(len(expHistograms)) + 1, &histogram.Histogram{Sum: math.Float64frombits(value.StaleNaN)}})
 	require.NoError(t, app.Commit())
 
 	// Total 2 chunks, 1 m-mapped.
@@ -3088,7 +3070,7 @@ func TestHistogramCounterResetHeader(t *testing.T) {
 	require.NoError(t, head.Init(0))
 
 	ts := int64(0)
-	appendHistogram := func(h histogram.Histogram) {
+	appendHistogram := func(h *histogram.Histogram) {
 		ts++
 		app := head.Appender(context.Background())
 		_, err := app.AppendHistogram(0, l, ts, h)
@@ -3112,7 +3094,7 @@ func TestHistogramCounterResetHeader(t *testing.T) {
 		require.Equal(t, expHeaders[len(expHeaders)-1], ms.headChunk.chunk.(*chunkenc.HistogramChunk).GetCounterResetHeader())
 	}
 
-	h := generateHistograms(1)[0]
+	h := GenerateTestHistograms(1)[0]
 	if len(h.NegativeBuckets) == 0 {
 		h.NegativeSpans = append([]histogram.Span{}, h.PositiveSpans...)
 		h.NegativeBuckets = append([]int64{}, h.PositiveBuckets...)

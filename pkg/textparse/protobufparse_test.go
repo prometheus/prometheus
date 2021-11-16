@@ -266,7 +266,7 @@ metric: <
 		help    string
 		unit    string
 		comment string
-		shs     histogram.Histogram
+		shs     *histogram.Histogram
 		e       []exemplar.Exemplar
 	}{
 		{
@@ -332,7 +332,7 @@ metric: <
 		{
 			m: "test_histogram",
 			t: 1234568,
-			shs: histogram.Histogram{
+			shs: &histogram.Histogram{
 				Count:         175,
 				ZeroCount:     2,
 				Sum:           0.0008280461746287094,
