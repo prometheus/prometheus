@@ -73,7 +73,7 @@
     "@types/react": "^17.0.19",
     "@types/react-copy-to-clipboard": "^5.0.2",
     "@types/react-dom": "^17.0.9",
-    "@types/react-resize-detector": "^5.0.0",
+    "@types/react-resize-detector": "^6.1.0",
     "@types/react-router-dom": "^5.3.2",
     "@types/sanitize-html": "^1.20.2",
     "@types/sinon": "^10.0.2",
