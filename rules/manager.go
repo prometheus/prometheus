@@ -24,10 +24,11 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
@@ -584,10 +585,10 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 		}
 
 		func(i int, rule Rule) {
-			sp, ctx := opentracing.StartSpanFromContext(ctx, "rule")
-			sp.SetTag("name", rule.Name())
+			ctx, sp := otel.Tracer("").Start(ctx, "rule")
+			sp.SetAttributes(attribute.String("name", rule.Name()))
 			defer func(t time.Time) {
-				sp.Finish()
+				sp.End()
 
 				since := time.Since(t)
 				g.metrics.EvalDuration.Observe(since.Seconds())
