@@ -1,3 +1,28 @@
+## 2.32.0-beta.0 / 2021-11-16
+
+This beta release introduces the Prometheus Agent, a new mode of operation for
+Prometheus optimized for remote-write only scenarios. In this mode, Prometheus
+does not generate blocks on the local filesystem and is not queryable locally.
+Enable with `--enable-feature=agent`.
+
+Learn more about the Prometheus Agent in our [blog post](https://prometheus.io/blog/2021/11/16/agent/).
+
+* [CHANGE] remote-write: Change default max retry time from 100ms to 5 seconds. #9634
+* [FEATURE] Agent: New mode of operation optimized for remote-write only scenarios, without local storage. Enable with `--enable-feature=agent`. #8785
+* [FEATURE] Promtool: Add `promtool check service-discovery` command. #8970
+* [FEATURE] UI: Add search in metrics dropdown. #9629
+* [FEATURE] Templates: Add parseDuration to template functions. #8817
+* [ENHANCEMENT] Promtool: Improve test output. #8064
+* [ENHANCEMENT] Promtool: Use kahan summation for better numerical stability. #9588
+* [ENHANCEMENT] Remote-write: Reuse memory for marshalling. #9412
+* [ENHANCEMENT] Scrape: Add `scrape_body_size_bytes` scrape metric behind the `--enable-feature=extra-scrape-metrics` flag. #9569
+* [ENHANCEMENT] TSDB: Add windows arm64 support. #9703
+* [ENHANCEMENT] TSDB: Optimize query by skipping unneeded sorting in TSDB. #9673
+* [ENHANCEMENT] Templates: Support int and uint as datatypes for template formatting. #9680
+* [ENHANCEMENT] UI: Prefer `rate` over `rad`, `delta` over `deg`, and `count` over `cos` in autocomplete. #9688
+* [BUGFIX] TSDB: Add more size checks when writing individual sections in the index. #9710
+* [BUGFIX] PromQL: Make `deriv()` return zero values for constant series. #9728
+
 ## 2.31.1 / 2021-11-05
 
 * [BUGFIX] SD: Fix a panic when the experimental discovery manager receives
