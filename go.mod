@@ -22,10 +22,12 @@ require (
 	github.com/envoyproxy/protoc-gen-validate v0.6.2
 	github.com/go-kit/log v0.2.0
 	github.com/go-logfmt/logfmt v0.5.1
-	github.com/go-openapi/strfmt v0.20.3
+	github.com/go-openapi/strfmt v0.21.0
 	github.com/go-zookeeper/zk v1.0.2
 	github.com/gogo/protobuf v1.3.2
+	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/golang/snappy v0.0.4
+	github.com/google/btree v1.0.1 // indirect
 	github.com/google/pprof v0.0.0-20211008130755-947d60d73cc0
 	github.com/gophercloud/gophercloud v0.23.0
 	github.com/grpc-ecosystem/grpc-gateway v1.16.0
@@ -56,8 +58,6 @@ require (
 	github.com/stretchr/testify v1.7.0
 	github.com/uber/jaeger-client-go v2.29.1+incompatible
 	github.com/uber/jaeger-lib v2.4.1+incompatible
-	go.uber.org/atomic v1.9.0
-	go.uber.org/goleak v1.1.12
 	golang.org/x/net v0.0.0-20211020060615-d418f374d309
 	golang.org/x/oauth2 v0.0.0-20211005180243-6b3c2da341f1
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
@@ -71,9 +71,6 @@ require (
 	gopkg.in/fsnotify/fsnotify.v1 v1.4.7
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
-	k8s.io/api v0.22.3
-	k8s.io/apimachinery v0.22.3
-	k8s.io/client-go v0.22.3
 	k8s.io/klog v1.0.0
 	k8s.io/klog/v2 v2.20.0
 )
