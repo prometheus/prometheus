@@ -403,7 +403,7 @@
               or
               (
                 count by (%(prometheusHAGroupLabels)s) (
-                  changes(process_start_time_seconds{%(prometheusSelector)s}[1h]) > 4
+                  changes(process_start_time_seconds{%(prometheusSelector)s}[30m]) > 4
                 )
               /
                 count by (%(prometheusHAGroupLabels)s) (
@@ -418,7 +418,7 @@
             },
             annotations: {
               summary: 'More than half of the Prometheus instances within the same HA group are crashlooping.',
-              description: '{{ $value | humanizePercentage }} of Prometheus instances within the %(prometheusHAGroupName)s HA group have had at least 5 total restarts or 2 unclean restarts in the last 1h.' % $._config,
+              description: '{{ $value | humanizePercentage }} of Prometheus instances within the %(prometheusHAGroupName)s HA group have had at least 5 recent total restarts or 2 recent unclean restarts.' % $._config,
             },
           },
         ],
