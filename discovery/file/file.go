@@ -25,13 +25,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/fsnotify/fsnotify"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
-	fsnotify "gopkg.in/fsnotify/fsnotify.v1"
 	yaml "gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/discovery"
