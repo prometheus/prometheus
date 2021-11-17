@@ -64,3 +64,8 @@ Remember:
 * A querier can only see data that was committed when it was created. This limits the lifetime of a querier.
 * A querier should be closed when you're done with it.
 * Use mint/maxt to avoid loading unneeded data.
+
+
+## Example code
+
+Find the example code for ingesting samples and querying them in [`tsdb/example_test.go`](../example_test.go)

@@ -1,4 +1,4 @@
-// Copyright 2017 The Prometheus Authors
+// Copyright 2021 The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -16,89 +16,97 @@ package tsdb
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"math"
-	"os"
+	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"
 )
 
-func noErr(err error) {
-	if err != nil {
-		panic(err)
-	}
-}
-
-func Example() {
+func TestExample(t *testing.T) {
 	// Create a random dir to work in.  Open() doesn't require a pre-existing dir, but
 	// we want to make sure not to make a mess where we shouldn't.
-	dir, err := ioutil.TempDir("", "tsdb-test")
-	noErr(err)
+	dir := t.TempDir()
 
 	// Open a TSDB for reading and/or writing.
 	db, err := Open(dir, nil, nil, DefaultOptions(), nil)
-	noErr(err)
+	require.NoError(t, err)
 
 	// Open an appender for writing.
 	app := db.Appender(context.Background())
 
-	series := labels.FromStrings("foo", "bar")
+	lbls := labels.FromStrings("foo", "bar")
+	var appendedSamples []sample
 
 	// Ref is 0 for the first append since we don't know the reference for the series.
-	ref, err := app.Append(0, series, time.Now().Unix(), 123)
-	noErr(err)
+	ts, v := time.Now().Unix(), 123.0
+	ref, err := app.Append(0, lbls, ts, v)
+	require.NoError(t, err)
+	appendedSamples = append(appendedSamples, sample{ts, v})
 
 	// Another append for a second later.
 	// Re-using the ref from above since it's the same series, makes append faster.
 	time.Sleep(time.Second)
-	_, err = app.Append(ref, series, time.Now().Unix(), 124)
-	noErr(err)
+	ts, v = time.Now().Unix(), 124
+	_, err = app.Append(ref, lbls, ts, v)
+	require.NoError(t, err)
+	appendedSamples = append(appendedSamples, sample{ts, v})
 
 	// Commit to storage.
 	err = app.Commit()
-	noErr(err)
+	require.NoError(t, err)
 
 	// In case you want to do more appends after app.Commit(),
 	// you need a new appender.
-	app = db.Appender(context.Background())
+	// app = db.Appender(context.Background())
+	//
 	// ... adding more samples.
+	//
+	// Commit to storage.
+	// err = app.Commit()
+	// require.NoError(t, err)
 
 	// Open a querier for reading.
 	querier, err := db.Querier(context.Background(), math.MinInt64, math.MaxInt64)
-	noErr(err)
-	ss := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+	require.NoError(t, err)
 
+	ss := querier.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+	var queriedSamples []sample
 	for ss.Next() {
 		series := ss.At()
 		fmt.Println("series:", series.Labels().String())
 
 		it := series.Iterator()
 		for it.Next() {
-			_, v := it.At() // We ignore the timestamp here, only to have a predictable output we can test against (below)
-			fmt.Println("sample", v)
+			ts, v := it.At()
+			fmt.Println("sample", ts, v)
+			queriedSamples = append(queriedSamples, sample{ts, v})
 		}
 
+		require.NoError(t, it.Err())
 		fmt.Println("it.Err():", it.Err())
 	}
+	require.NoError(t, ss.Err())
 	fmt.Println("ss.Err():", ss.Err())
 	ws := ss.Warnings()
 	if len(ws) > 0 {
 		fmt.Println("warnings:", ws)
 	}
 	err = querier.Close()
-	noErr(err)
+	require.NoError(t, err)
 
 	// Clean up any last resources when done.
 	err = db.Close()
-	noErr(err)
-	err = os.RemoveAll(dir)
-	noErr(err)
+	require.NoError(t, err)
+
+	require.Equal(t, appendedSamples, queriedSamples)
 
 	// Output:
 	// series: {foo="bar"}
-	// sample 123
-	// sample 124
+	// sample <ts1> 123
+	// sample <ts2> 124
 	// it.Err(): <nil>
 	// ss.Err(): <nil>
 }
