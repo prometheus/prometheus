@@ -28,7 +28,7 @@
     "jquery": "^3.5.1",
     "jquery.flot.tooltip": "^0.9.0",
     "moment": "^2.24.0",
-    "moment-timezone": "^0.5.23",
+    "moment-timezone": "^0.5.34",
     "popper.js": "^1.14.3",
     "react": "^17.0.2",
     "react-copy-to-clipboard": "^5.0.4",
