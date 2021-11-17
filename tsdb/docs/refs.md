@@ -1,9 +1,5 @@
 # An overview of different Series and Chunk reference types
 
-## Used internally in TSDB
-
-* `ChunkDiskMapperRef`: to load mmapped chunks from disk.
-
 ## Used by callers of TSDB
 
 | Location           | Series access                  | Chunk access                                                       |
@@ -60,7 +56,7 @@ Note: we cover the implementations as used in Prometheus.  Other projects may us
 A `HeadChunkRef` is an 8 byte integer that packs together:
 
 * 5 Bytes for `HeadSeriesRef`.
-* 3 Bytes for `ChunkID` (uint64). This is simply an index into a slice of mmappedChunks for a given series
+* 3 Bytes for `HeadChunkID` (uint64) (see below).
 
 There are two implications here:
 
@@ -85,3 +81,11 @@ The `ChunkRef` types allow retrieving the chunk data as efficiently as possible.
   Hence we need to pack the `HeadSeriesRef` to get to the series.
 * In persistent blocks, the chunk files are separated from the index and static. Hence you only need the co-ordinates within the `chunks` directory
   to get to the chunk. Hence no need of `BlockSeriesRef`.
+
+## Used internally in TSDB
+
+* [`HeadChunkID`](https://pkg.go.dev/github.com/prometheus/prometheus@v1.8.2-0.20211105201321-411021ada9ab/tsdb/chunks#HeadChunkID) references a chunk of a `memSeries` (either an `mmappedChunk` or `headChunk`).
+  If a caller has, for whatever reason, an "old" `HeadChunkID` that refers to a chunk that has been compacted into a block, querying the memSeries for it will not return any data.
+* [`ChunkDiskMapperRef`](https://pkg.go.dev/github.com/prometheus/prometheus@v1.8.2-0.20211105201321-411021ada9ab/tsdb/chunks#ChunkDiskMapperRef) is an 8 Byte integer.
+  4 Bytes are used to refer to a chunks file number and 4 bytes serve as byte offset (similar to `BlockChunkRef`).  `mmappedChunk` provide this value such that callers can load the mmapped chunk from disk.
+

@@ -66,19 +66,34 @@ type HeadSeriesRef uint64
 // The HeadSeriesRef and ChunkID may not exceed 5 and 3 bytes respectively.
 type HeadChunkRef uint64
 
-func NewHeadChunkRef(hsr HeadSeriesRef, chunkID uint64) HeadChunkRef {
+func NewHeadChunkRef(hsr HeadSeriesRef, chunkID HeadChunkID) HeadChunkRef {
 	if hsr > (1<<40)-1 {
 		panic("series ID exceeds 5 bytes")
 	}
 	if chunkID > (1<<24)-1 {
 		panic("chunk ID exceeds 3 bytes")
 	}
-	return HeadChunkRef(uint64(hsr<<24) | chunkID)
+	return HeadChunkRef(uint64(hsr<<24) | uint64(chunkID))
 }
 
-func (p HeadChunkRef) Unpack() (HeadSeriesRef, uint64) {
-	return HeadSeriesRef(p >> 24), uint64(p<<40) >> 40
+func (p HeadChunkRef) Unpack() (HeadSeriesRef, HeadChunkID) {
+	return HeadSeriesRef(p >> 24), HeadChunkID(p<<40) >> 40
 }
+
+// HeadChunkID refers to a specific chunk in a series (memSeries) in the Head.
+// Each memSeries has its own monotonically increasing number to refer to its chunks.
+// If the HeadChunkID value is...
+// * memSeries.firstChunkID+len(memSeries.mmappedChunks), it's the head chunk.
+// * less than the above, but >= memSeries.firstID, then it's
+//   memSeries.mmappedChunks[i] where i = HeadChunkID - memSeries.firstID.
+// Example:
+// assume a memSeries.firstChunkID=7 and memSeries.mmappedChunks=[p5,p6,p7,p8,p9].
+// | HeadChunkID value | refers to ...                                                                          |
+// |-------------------|----------------------------------------------------------------------------------------|
+// |               0-6 | chunks that have been compacted to blocks, these won't return data for queries in Head |
+// |              7-11 | memSeries.mmappedChunks[i] where i is 0 to 4.                                          |
+// |                12 | memSeries.headChunk                                                                    |
+type HeadChunkID uint64
 
 // BlockChunkRef refers to a chunk within a persisted block.
 // The upper 4 bytes are for the segment index and
