@@ -596,6 +596,9 @@ func validateOpts(opts *Options, rngs []int64) (*Options, []int64) {
 	return opts, rngs
 }
 
+// open returns a new DB in the given directory.
+// It initializes the lockfile, WAL, compactor, and Head (by replaying the WAL), and runs the database.
+// It is not safe to open more than one DB in the same directory.
 func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs []int64, stats *DBStats) (_ *DB, returnedErr error) {
 	if err := os.MkdirAll(dir, 0o777); err != nil {
 		return nil, err

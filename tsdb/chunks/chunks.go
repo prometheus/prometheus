@@ -109,7 +109,7 @@ type Meta struct {
 	MinTime, MaxTime int64
 }
 
-// Iterator iterates over the chunk of a time series.
+// Iterator iterates over the chunks of a single time series.
 type Iterator interface {
 	// At returns the current meta.
 	// It depends on implementation if the chunk is populated or not.

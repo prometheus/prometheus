@@ -173,9 +173,9 @@ func (f QueryableFunc) Querier(ctx context.Context, mint, maxt int64) (Querier, 
 // Operations on the Appender interface are not goroutine-safe.
 type Appender interface {
 	// Append adds a sample pair for the given series.
-	// An optional reference number can be provided to accelerate calls.
-	// A reference number is returned which can be used to add further
-	// samples in the same or later transactions.
+	// An optional series reference can be provided to accelerate calls.
+	// A series reference number is returned which can be used to add further
+	// samples to the given series in the same or later transactions.
 	// Returned reference numbers are ephemeral and may be rejected in calls
 	// to Append() at any point. Adding the sample via Append() returns a new
 	// reference number.

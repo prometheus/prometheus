@@ -175,6 +175,8 @@ func (h *headIndexReader) Series(ref storage.SeriesRef, lbls *labels.Labels, chk
 	return nil
 }
 
+// chunkID returns the ID corresponding to .mmappedChunks[pos]
+// (head chunk if pos==len(mmappedChunks))
 func (s *memSeries) chunkID(pos int) int {
 	return pos + s.firstChunkID
 }
@@ -288,9 +290,9 @@ func (h *headChunkReader) Chunk(ref chunks.ChunkRef) (chunkenc.Chunk, error) {
 	}, nil
 }
 
-// chunk returns the chunk for the chunk id from memory or by m-mapping it from the disk.
+// chunk returns the chunk for the chunkID from memory or by m-mapping it from the disk.
 // If garbageCollect is true, it means that the returned *memChunk
-// (and not the chunkenc.Chunk inside it) can be garbage collected after it's usage.
+// (and not the chunkenc.Chunk inside it) can be garbage collected after its usage.
 func (s *memSeries) chunk(id int, chunkDiskMapper *chunks.ChunkDiskMapper) (chunk *memChunk, garbageCollect bool, err error) {
 	// ix represents the index of chunk in the s.mmappedChunks slice. The chunk id's are
 	// incremented by 1 when new chunk is created, hence (id - firstChunkID) gives the slice index.
@@ -335,7 +337,7 @@ func (c *safeChunk) Iterator(reuseIter chunkenc.Iterator) chunkenc.Iterator {
 	return it
 }
 
-// iterator returns a chunk iterator.
+// iterator returns a chunk iterator for the requested chunkID.
 // It is unsafe to call this concurrently with s.append(...) without holding the series lock.
 func (s *memSeries) iterator(id int, isoState *isolationState, chunkDiskMapper *chunks.ChunkDiskMapper, it chunkenc.Iterator) chunkenc.Iterator {
 	c, garbageCollect, err := s.chunk(id, chunkDiskMapper)
@@ -439,6 +441,8 @@ func (s *memSeries) iterator(id int, isoState *isolationState, chunkDiskMapper *
 	}
 }
 
+// memSafeIterator returns values from the wrapped stopIterator
+// except the last 4, which come from buf.
 type memSafeIterator struct {
 	stopIterator
 
@@ -482,6 +486,8 @@ func (it *memSafeIterator) At() (int64, float64) {
 	return s.t, s.v
 }
 
+// stopIterator wraps an Iterator, but only returns the first
+// stopAfter values, if initialized with i=-1.
 type stopIterator struct {
 	chunkenc.Iterator
 
