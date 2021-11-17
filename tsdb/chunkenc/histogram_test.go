@@ -16,8 +16,9 @@ package chunkenc
 import (
 	"testing"
 
-	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/model/histogram"
 )
 
 func TestHistogramChunkSameBuckets(t *testing.T) {
@@ -83,9 +84,9 @@ func TestHistogramChunkSameBuckets(t *testing.T) {
 	require.Equal(t, exp, act)
 
 	// 2. Expand second iterator while reusing first one.
-	//it2 := c.Iterator(it1)
-	//var res2 []pair
-	//for it2.Next() {
+	// it2 := c.Iterator(it1)
+	// var res2 []pair
+	// for it2.Next() {
 	//	ts, v := it2.At()
 	//	res2 = append(res2, pair{t: ts, v: v})
 	//	}

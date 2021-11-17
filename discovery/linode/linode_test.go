@@ -56,7 +56,7 @@ func TestLinodeSDRefresh(t *testing.T) {
 	require.NoError(t, err)
 	endpoint, err := url.Parse(sdmock.Mock.Endpoint())
 	require.NoError(t, err)
-	d.client.SetBaseURL(fmt.Sprintf("%s/v4", endpoint.String()))
+	d.client.SetBaseURL(endpoint.String())
 
 	tgs, err := d.refresh(context.Background())
 	require.NoError(t, err)

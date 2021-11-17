@@ -26,8 +26,8 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/timestamp"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/util/strutil"
 )
 
@@ -241,7 +241,7 @@ func (p *parser) addParseErr(positionRange PositionRange, err error) {
 // unexpected creates a parser error complaining about an unexpected lexer item.
 // The item that is presented as unexpected is always the last item produced
 // by the lexer.
-func (p *parser) unexpected(context string, expected string) {
+func (p *parser) unexpected(context, expected string) {
 	var errMsg strings.Builder
 
 	// Do not report lexer errors twice
@@ -354,7 +354,8 @@ func (p *parser) InjectItem(typ ItemType) {
 	p.inject = typ
 	p.injecting = true
 }
-func (p *parser) newBinaryExpression(lhs Node, op Item, modifiers Node, rhs Node) *BinaryExpr {
+
+func (p *parser) newBinaryExpression(lhs Node, op Item, modifiers, rhs Node) *BinaryExpr {
 	ret := modifiers.(*BinaryExpr)
 
 	ret.LHS = lhs.(Expr)
@@ -374,7 +375,7 @@ func (p *parser) assembleVectorSelector(vs *VectorSelector) {
 	}
 }
 
-func (p *parser) newAggregateExpr(op Item, modifier Node, args Node) (ret *AggregateExpr) {
+func (p *parser) newAggregateExpr(op Item, modifier, args Node) (ret *AggregateExpr) {
 	ret = modifier.(*AggregateExpr)
 	arguments := args.(Expressions)
 
@@ -650,10 +651,9 @@ func (p *parser) parseGenerated(startSymbol ItemType) interface{} {
 	p.yyParser.Parse(p)
 
 	return p.generatedParserResult
-
 }
 
-func (p *parser) newLabelMatcher(label Item, operator Item, value Item) *labels.Matcher {
+func (p *parser) newLabelMatcher(label, operator, value Item) *labels.Matcher {
 	op := operator.Typ
 	val := p.unquoteString(value.Val)
 

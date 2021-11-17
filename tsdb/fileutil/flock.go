@@ -29,7 +29,7 @@ type Releaser interface {
 // locking has failed. Neither this function nor the returned Releaser is
 // goroutine-safe.
 func Flock(fileName string) (r Releaser, existed bool, err error) {
-	if err = os.MkdirAll(filepath.Dir(fileName), 0755); err != nil {
+	if err = os.MkdirAll(filepath.Dir(fileName), 0o755); err != nil {
 		return nil, false, err
 	}
 

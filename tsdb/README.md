@@ -1,16 +1,25 @@
 # TSDB 
 
-[![GoPkg](https://pkg.go.dev/badge/github.com/prometheus/prometheus/tsdb.svg)](https://pkg.go.dev/github.com/prometheus/prometheus/tsdb)
+[![GoPkg](https://pkg.go.dev/badge/github.com/prometheus/prometheus/tsdb.svg)](https://pkg.go.dev/github.com/prometheus/prometheus@v1.8.2-0.20211105201321-411021ada9ab/tsdb)
 
-This directory contains the Prometheus storage layer that is used in its 2.x releases.
+This directory contains the Prometheus TSDB (Time Series DataBase) library,
+which handles storage and querying of all Prometheus v2 data.
 
-A writeup of its design can be found [here](https://fabxc.org/blog/2017-04-10-writing-a-tsdb/).
+Due to an issue with versioning, the "latest" docs shown on Godoc are outdated.
+Instead you may use [the docs for v2.31.1](https://pkg.go.dev/github.com/prometheus/prometheus@v1.8.2-0.20211105201321-411021ada9ab)
 
-Based on the Gorilla TSDB [white papers](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf).
+## Documentation
 
-Video: [Storing 16 Bytes at Scale](https://youtu.be/b_pEevMAC3I) from [PromCon 2017](https://promcon.io/2017-munich/).
+* [Data format](docs/format/README.md).
+* [Usage](docs/usage.md).
+* [Bstream details](docs/bstream.md).
 
-See also the [format documentation](docs/format/README.md).
+## External resources
+
+* A writeup of the original design can be found [here](https://fabxc.org/blog/2017-04-10-writing-a-tsdb/).
+* Video: [Storing 16 Bytes at Scale](https://youtu.be/b_pEevMAC3I) from [PromCon 2017](https://promcon.io/2017-munich/).
+* Compression is based on the Gorilla TSDB [white paper](http://www.vldb.org/pvldb/vol8/p1816-teller.pdf).
+
 
 A series of blog posts explaining different components of TSDB:
 * [The Head Block](https://ganeshvernekar.com/blog/prometheus-tsdb-the-head-block/)

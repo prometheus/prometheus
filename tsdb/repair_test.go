@@ -21,7 +21,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/index"
@@ -78,7 +78,7 @@ func TestRepairBadIndexVersion(t *testing.T) {
 	require.Error(t, err)
 
 	// Touch chunks dir in block to imitate them.
-	require.NoError(t, os.MkdirAll(filepath.Join(tmpDbDir, "chunks"), 0777))
+	require.NoError(t, os.MkdirAll(filepath.Join(tmpDbDir, "chunks"), 0o777))
 
 	// Read current index to check integrity.
 	r, err := index.NewFileReader(filepath.Join(tmpDbDir, indexFilename))

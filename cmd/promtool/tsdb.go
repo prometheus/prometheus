@@ -17,7 +17,6 @@ import (
 	"bufio"
 	"context"
 	"fmt"
-	"github.com/prometheus/prometheus/tsdb/index"
 	"io"
 	"io/ioutil"
 	"math"
@@ -32,11 +31,14 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/index"
+
 	"github.com/alecthomas/units"
 	"github.com/go-kit/log"
 	"github.com/pkg/errors"
 
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
@@ -78,7 +80,7 @@ func benchmarkWrite(outPath, samplesFile string, numMetrics, numScrapes int) err
 	if err := os.RemoveAll(b.outPath); err != nil {
 		return err
 	}
-	if err := os.MkdirAll(b.outPath, 0777); err != nil {
+	if err := os.MkdirAll(b.outPath, 0o777); err != nil {
 		return err
 	}
 
@@ -187,7 +189,7 @@ func (b *writeBenchmark) ingestScrapesShard(lbls []labels.Labels, scrapeCount in
 	type sample struct {
 		labels labels.Labels
 		value  int64
-		ref    *uint64
+		ref    *storage.SeriesRef
 	}
 
 	scrape := make([]*sample, 0, len(lbls))
@@ -207,7 +209,7 @@ func (b *writeBenchmark) ingestScrapesShard(lbls []labels.Labels, scrapeCount in
 		for _, s := range scrape {
 			s.value += 1000
 
-			var ref uint64
+			var ref storage.SeriesRef
 			if s.ref != nil {
 				ref = *s.ref
 			}
@@ -589,7 +591,7 @@ func analyzeCompaction(block tsdb.BlockReader, indexr tsdb.IndexReader) (err err
 	histogram := make([]int, nBuckets)
 	totalChunks := 0
 	for postingsr.Next() {
-		var lbsl = labels.Labels{}
+		lbsl := labels.Labels{}
 		var chks []chunks.Meta
 		if err := indexr.Series(postingsr.At(), &lbsl, &chks); err != nil {
 			return err
@@ -671,14 +673,14 @@ func checkErr(err error) int {
 	return 0
 }
 
-func backfillOpenMetrics(path string, outputDir string, humanReadable, quiet bool, maxBlockDuration time.Duration) int {
+func backfillOpenMetrics(path, outputDir string, humanReadable, quiet bool, maxBlockDuration time.Duration) int {
 	inputFile, err := fileutil.OpenMmapFile(path)
 	if err != nil {
 		return checkErr(err)
 	}
 	defer inputFile.Close()
 
-	if err := os.MkdirAll(outputDir, 0777); err != nil {
+	if err := os.MkdirAll(outputDir, 0o777); err != nil {
 		return checkErr(errors.Wrap(err, "create output dir"))
 	}
 

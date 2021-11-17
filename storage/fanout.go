@@ -20,9 +20,9 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/common/model"
 
+	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/pkg/exemplar"
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 )
 
@@ -145,7 +145,7 @@ type fanoutAppender struct {
 	secondaries []Appender
 }
 
-func (f *fanoutAppender) Append(ref uint64, l labels.Labels, t int64, v float64) (uint64, error) {
+func (f *fanoutAppender) Append(ref SeriesRef, l labels.Labels, t int64, v float64) (SeriesRef, error) {
 	ref, err := f.primary.Append(ref, l, t, v)
 	if err != nil {
 		return ref, err
@@ -159,7 +159,7 @@ func (f *fanoutAppender) Append(ref uint64, l labels.Labels, t int64, v float64)
 	return ref, nil
 }
 
-func (f *fanoutAppender) AppendExemplar(ref uint64, l labels.Labels, e exemplar.Exemplar) (uint64, error) {
+func (f *fanoutAppender) AppendExemplar(ref SeriesRef, l labels.Labels, e exemplar.Exemplar) (SeriesRef, error) {
 	ref, err := f.primary.AppendExemplar(ref, l, e)
 	if err != nil {
 		return ref, err
@@ -173,7 +173,7 @@ func (f *fanoutAppender) AppendExemplar(ref uint64, l labels.Labels, e exemplar.
 	return ref, nil
 }
 
-func (f *fanoutAppender) AppendHistogram(ref uint64, l labels.Labels, t int64, h *histogram.Histogram) (uint64, error) {
+func (f *fanoutAppender) AppendHistogram(ref SeriesRef, l labels.Labels, t int64, h *histogram.Histogram) (SeriesRef, error) {
 	ref, err := f.primary.AppendHistogram(ref, l, t, h)
 	if err != nil {
 		return ref, err

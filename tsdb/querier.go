@@ -22,7 +22,7 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -124,6 +124,8 @@ func NewBlockQuerier(b BlockReader, mint, maxt int64) (storage.Querier, error) {
 func (q *blockQuerier) Select(sortSeries bool, hints *storage.SelectHints, ms ...*labels.Matcher) storage.SeriesSet {
 	mint := q.mint
 	maxt := q.maxt
+	disableTrimming := false
+
 	p, err := PostingsForMatchers(q.index, ms...)
 	if err != nil {
 		return storage.ErrSeriesSet(err)
@@ -135,13 +137,14 @@ func (q *blockQuerier) Select(sortSeries bool, hints *storage.SelectHints, ms ..
 	if hints != nil {
 		mint = hints.Start
 		maxt = hints.End
+		disableTrimming = hints.DisableTrimming
 		if hints.Func == "series" {
 			// When you're only looking up metadata (for example series API), you don't need to load any chunks.
-			return newBlockSeriesSet(q.index, newNopChunkReader(), q.tombstones, p, mint, maxt)
+			return newBlockSeriesSet(q.index, newNopChunkReader(), q.tombstones, p, mint, maxt, disableTrimming)
 		}
 	}
 
-	return newBlockSeriesSet(q.index, q.chunks, q.tombstones, p, mint, maxt)
+	return newBlockSeriesSet(q.index, q.chunks, q.tombstones, p, mint, maxt, disableTrimming)
 }
 
 // blockChunkQuerier provides chunk querying access to a single block database.
@@ -161,9 +164,11 @@ func NewBlockChunkQuerier(b BlockReader, mint, maxt int64) (storage.ChunkQuerier
 func (q *blockChunkQuerier) Select(sortSeries bool, hints *storage.SelectHints, ms ...*labels.Matcher) storage.ChunkSeriesSet {
 	mint := q.mint
 	maxt := q.maxt
+	disableTrimming := false
 	if hints != nil {
 		mint = hints.Start
 		maxt = hints.End
+		disableTrimming = hints.DisableTrimming
 	}
 	p, err := PostingsForMatchers(q.index, ms...)
 	if err != nil {
@@ -172,7 +177,7 @@ func (q *blockChunkQuerier) Select(sortSeries bool, hints *storage.SelectHints, 
 	if sortSeries {
 		p = q.index.SortedPostings(p)
 	}
-	return newBlockChunkSeriesSet(q.index, q.chunks, q.tombstones, p, mint, maxt)
+	return newBlockChunkSeriesSet(q.index, q.chunks, q.tombstones, p, mint, maxt, disableTrimming)
 }
 
 func findSetMatches(pattern string) []string {
@@ -414,7 +419,7 @@ func labelNamesWithMatchers(r IndexReader, matchers ...*labels.Matcher) ([]strin
 		return nil, err
 	}
 
-	var postings []uint64
+	var postings []storage.SeriesRef
 	for p.Next() {
 		postings = append(postings, p.At())
 	}
@@ -429,11 +434,12 @@ func labelNamesWithMatchers(r IndexReader, matchers ...*labels.Matcher) ([]strin
 // Iterated series are trimmed with given min and max time as well as tombstones.
 // See newBlockSeriesSet and newBlockChunkSeriesSet to use it for either sample or chunk iterating.
 type blockBaseSeriesSet struct {
-	p          index.Postings
-	index      IndexReader
-	chunks     ChunkReader
-	tombstones tombstones.Reader
-	mint, maxt int64
+	p               index.Postings
+	index           IndexReader
+	chunks          ChunkReader
+	tombstones      tombstones.Reader
+	mint, maxt      int64
+	disableTrimming bool
 
 	currIterFn func() *populateWithDelGenericSeriesIterator
 	currLabels labels.Labels
@@ -488,11 +494,13 @@ func (b *blockBaseSeriesSet) Next() bool {
 			}
 
 			// If still not entirely deleted, check if trim is needed based on requested time range.
-			if chk.MinTime < b.mint {
-				trimFront = true
-			}
-			if chk.MaxTime > b.maxt {
-				trimBack = true
+			if !b.disableTrimming {
+				if chk.MinTime < b.mint {
+					trimFront = true
+				}
+				if chk.MaxTime > b.maxt {
+					trimBack = true
+				}
 			}
 		}
 
@@ -607,6 +615,7 @@ func (p *populateWithDelGenericSeriesIterator) Err() error { return p.err }
 func (p *populateWithDelGenericSeriesIterator) toSeriesIterator() chunkenc.Iterator {
 	return &populateWithDelSeriesIterator{populateWithDelGenericSeriesIterator: p}
 }
+
 func (p *populateWithDelGenericSeriesIterator) toChunkSeriesIterator() chunks.Iterator {
 	return &populateWithDelChunkSeriesIterator{populateWithDelGenericSeriesIterator: p}
 }
@@ -758,16 +767,17 @@ type blockSeriesSet struct {
 	blockBaseSeriesSet
 }
 
-func newBlockSeriesSet(i IndexReader, c ChunkReader, t tombstones.Reader, p index.Postings, mint, maxt int64) storage.SeriesSet {
+func newBlockSeriesSet(i IndexReader, c ChunkReader, t tombstones.Reader, p index.Postings, mint, maxt int64, disableTrimming bool) storage.SeriesSet {
 	return &blockSeriesSet{
 		blockBaseSeriesSet{
-			index:      i,
-			chunks:     c,
-			tombstones: t,
-			p:          p,
-			mint:       mint,
-			maxt:       maxt,
-			bufLbls:    make(labels.Labels, 0, 10),
+			index:           i,
+			chunks:          c,
+			tombstones:      t,
+			p:               p,
+			mint:            mint,
+			maxt:            maxt,
+			disableTrimming: disableTrimming,
+			bufLbls:         make(labels.Labels, 0, 10),
 		},
 	}
 }
@@ -790,16 +800,17 @@ type blockChunkSeriesSet struct {
 	blockBaseSeriesSet
 }
 
-func newBlockChunkSeriesSet(i IndexReader, c ChunkReader, t tombstones.Reader, p index.Postings, mint, maxt int64) storage.ChunkSeriesSet {
+func newBlockChunkSeriesSet(i IndexReader, c ChunkReader, t tombstones.Reader, p index.Postings, mint, maxt int64, disableTrimming bool) storage.ChunkSeriesSet {
 	return &blockChunkSeriesSet{
 		blockBaseSeriesSet{
-			index:      i,
-			chunks:     c,
-			tombstones: t,
-			p:          p,
-			mint:       mint,
-			maxt:       maxt,
-			bufLbls:    make(labels.Labels, 0, 10),
+			index:           i,
+			chunks:          c,
+			tombstones:      t,
+			p:               p,
+			mint:            mint,
+			maxt:            maxt,
+			disableTrimming: disableTrimming,
+			bufLbls:         make(labels.Labels, 0, 10),
 		},
 	}
 }
@@ -816,7 +827,7 @@ func (b *blockChunkSeriesSet) At() storage.ChunkSeries {
 }
 
 // NewMergedStringIter returns string iterator that allows to merge symbols on demand and stream result.
-func NewMergedStringIter(a index.StringIter, b index.StringIter) index.StringIter {
+func NewMergedStringIter(a, b index.StringIter) index.StringIter {
 	return &mergedStringIter{a: a, b: b, aok: a.Next(), bok: b.Next()}
 }
 
@@ -931,7 +942,6 @@ Outer:
 
 			if ts <= tr.Maxt {
 				return true
-
 			}
 			it.Intervals = it.Intervals[1:]
 		}
@@ -952,6 +962,8 @@ func newNopChunkReader() ChunkReader {
 	}
 }
 
-func (cr nopChunkReader) Chunk(ref uint64) (chunkenc.Chunk, error) { return cr.emptyChunk, nil }
+func (cr nopChunkReader) Chunk(ref chunks.ChunkRef) (chunkenc.Chunk, error) {
+	return cr.emptyChunk, nil
+}
 
 func (cr nopChunkReader) Close() error { return nil }

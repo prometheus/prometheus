@@ -25,6 +25,8 @@ import (
 	"github.com/go-kit/log"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
+
+	"github.com/prometheus/prometheus/storage"
 )
 
 func TestMain(m *testing.M) {
@@ -50,7 +52,7 @@ func TestWriteAndReadbackTombstones(t *testing.T) {
 			dranges = dranges.Add(Interval{mint, mint + rand.Int63n(1000)})
 			mint += rand.Int63n(1000) + 1
 		}
-		stones.AddInterval(ref, dranges...)
+		stones.AddInterval(storage.SeriesRef(ref), dranges...)
 	}
 
 	_, err := WriteFile(log.NewNopLogger(), tmpdir, stones)
@@ -66,18 +68,18 @@ func TestWriteAndReadbackTombstones(t *testing.T) {
 func TestDeletingTombstones(t *testing.T) {
 	stones := NewMemTombstones()
 
-	ref := uint64(42)
+	ref := storage.SeriesRef(42)
 	mint := rand.Int63n(time.Now().UnixNano())
 	dranges := make(Intervals, 0, 1)
 	dranges = dranges.Add(Interval{mint, mint + rand.Int63n(1000)})
 	stones.AddInterval(ref, dranges...)
-	stones.AddInterval(uint64(43), dranges...)
+	stones.AddInterval(storage.SeriesRef(43), dranges...)
 
 	intervals, err := stones.Get(ref)
 	require.NoError(t, err)
 	require.Equal(t, intervals, dranges)
 
-	stones.DeleteTombstones(map[uint64]struct{}{ref: struct{}{}})
+	stones.DeleteTombstones(map[storage.SeriesRef]struct{}{ref: {}})
 
 	intervals, err = stones.Get(ref)
 	require.NoError(t, err)
@@ -112,7 +114,7 @@ func TestTruncateBefore(t *testing.T) {
 		},
 	}
 	for _, c := range cases {
-		ref := uint64(42)
+		ref := storage.SeriesRef(42)
 		stones := NewMemTombstones()
 		stones.AddInterval(ref, c.before...)
 
@@ -231,13 +233,13 @@ func TestMemTombstonesConcurrency(t *testing.T) {
 
 	go func() {
 		for x := 0; x < totalRuns; x++ {
-			tomb.AddInterval(uint64(x), Interval{int64(x), int64(x)})
+			tomb.AddInterval(storage.SeriesRef(x), Interval{int64(x), int64(x)})
 		}
 		wg.Done()
 	}()
 	go func() {
 		for x := 0; x < totalRuns; x++ {
-			_, err := tomb.Get(uint64(x))
+			_, err := tomb.Get(storage.SeriesRef(x))
 			require.NoError(t, err)
 		}
 		wg.Done()

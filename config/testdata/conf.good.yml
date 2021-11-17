@@ -23,6 +23,9 @@ remote_write:
       client_id: "123"
       client_secret: "456"
       token_url: "http://remote1/auth"
+      tls_config:
+        cert_file: valid_cert_file
+        key_file: valid_key_file
 
   - url: http://remote2/push
     name: rw_tls

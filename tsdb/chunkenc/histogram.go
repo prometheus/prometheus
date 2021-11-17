@@ -18,10 +18,8 @@ import (
 	"math"
 
 	"github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/pkg/value"
+	"github.com/prometheus/prometheus/model/value"
 )
-
-const ()
 
 // HistogramChunk holds encoded sample data for a sparse, high-resolution
 // histogram.
@@ -247,7 +245,7 @@ func (a *HistogramAppender) Append(int64, float64) {
 // append. If counterReset is true, okToAppend is always false.
 func (a *HistogramAppender) Appendable(h *histogram.Histogram) (
 	positiveInterjections, negativeInterjections []Interjection,
-	okToAppend bool, counterReset bool,
+	okToAppend, counterReset bool,
 ) {
 	if value.IsStaleNaN(h.Sum) {
 		// This is a stale sample whose buckets and spans don't matter.

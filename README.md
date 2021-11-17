@@ -107,11 +107,11 @@ You can build a docker image locally with the following commands:
 
 ## React UI Development
 
-For more information on building, running, and developing on the new React-based UI, see the React app's [README.md](web/ui/react-app/README.md).
+For more information on building, running, and developing on the new React-based UI, see the React app's [README.md](web/ui/README.md).
 
 ## More information
 
-  * The source code is periodically indexed: [Prometheus Core](https://pkg.go.dev/github.com/prometheus/prometheus).
+  * The source code is periodically indexed, but due to an issue with versioning, the "latest" docs shown on Godoc are outdated. Instead, you can use [the docs for v2.31.1](https://pkg.go.dev/github.com/prometheus/prometheus@v1.8.2-0.20211105201321-411021ada9ab).
   * You will find a CircleCI configuration in [`.circleci/config.yml`](.circleci/config.yml).
   * See the [Community page](https://prometheus.io/community) for how to reach the Prometheus developers and users on various communication channels.
 

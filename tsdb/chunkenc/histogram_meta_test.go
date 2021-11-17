@@ -22,8 +22,9 @@ import (
 	"math"
 	"testing"
 
-	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/model/histogram"
 )
 
 // Example of a span layout and resulting bucket indices (_idx_ is used in this
@@ -291,7 +292,6 @@ func TestInterjection(t *testing.T) {
 			gotBuckets := make([]int64, len(s.bucketsOut))
 			interject(s.bucketsIn, gotBuckets, interjections)
 			require.Equal(t, s.bucketsOut, gotBuckets)
-
 		})
 	}
 }

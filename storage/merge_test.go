@@ -23,7 +23,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 )
@@ -616,7 +616,8 @@ func TestChainSampleIterator(t *testing.T) {
 				NewListSeriesIterator(samples{sample{2, 2, nil}, sample{5, 5, nil}}),
 			},
 			expected: []tsdbutil.Sample{
-				sample{0, 0, nil}, sample{1, 1, nil}, sample{2, 2, nil}, sample{3, 3, nil}, sample{4, 4, nil}, sample{5, 5, nil}},
+				sample{0, 0, nil}, sample{1, 1, nil}, sample{2, 2, nil}, sample{3, 3, nil}, sample{4, 4, nil}, sample{5, 5, nil},
+			},
 		},
 		// Overlap.
 		{

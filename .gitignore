@@ -8,7 +8,9 @@
 /promtool
 benchmark.txt
 /data
+/data-agent
 /cmd/prometheus/data
+/cmd/prometheus/data-agent
 /cmd/prometheus/debug
 /benchout
 /cmd/promtool/data

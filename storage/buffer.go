@@ -326,7 +326,7 @@ func (r *sampleRing) nthLast(n int) (sample, bool) {
 func (r *sampleRing) samples() []sample {
 	res := make([]sample, r.l)
 
-	var k = r.f + r.l
+	k := r.f + r.l
 	var j int
 	if k > len(r.buf) {
 		k = len(r.buf)

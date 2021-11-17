@@ -16,6 +16,7 @@ package remote
 import (
 	"context"
 	"fmt"
+	"math"
 	"sync"
 	"time"
 
@@ -24,9 +25,9 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/pkg/exemplar"
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/wal"
 )
@@ -61,6 +62,7 @@ type WriteStorage struct {
 	flushDeadline     time.Duration
 	interner          *pool
 	scraper           ReadyScrapeManager
+	quit              chan struct{}
 
 	// For timestampTracker.
 	highestTimestamp *maxTimestamp
@@ -82,6 +84,7 @@ func NewWriteStorage(logger log.Logger, reg prometheus.Registerer, walDir string
 		walDir:            walDir,
 		interner:          newPool(),
 		scraper:           sm,
+		quit:              make(chan struct{}),
 		highestTimestamp: &maxTimestamp{
 			Gauge: prometheus.NewGauge(prometheus.GaugeOpts{
 				Namespace: namespace,
@@ -101,8 +104,13 @@ func NewWriteStorage(logger log.Logger, reg prometheus.Registerer, walDir string
 func (rws *WriteStorage) run() {
 	ticker := time.NewTicker(shardUpdateDuration)
 	defer ticker.Stop()
-	for range ticker.C {
-		rws.samplesIn.tick()
+	for {
+		select {
+		case <-ticker.C:
+			rws.samplesIn.tick()
+		case <-rws.quit:
+			return
+		}
 	}
 }
 
@@ -208,6 +216,26 @@ func (rws *WriteStorage) Appender(_ context.Context) storage.Appender {
 	}
 }
 
+// LowestSentTimestamp returns the lowest sent timestamp across all queues.
+func (rws *WriteStorage) LowestSentTimestamp() int64 {
+	rws.mtx.Lock()
+	defer rws.mtx.Unlock()
+
+	var lowestTs int64 = math.MaxInt64
+
+	for _, q := range rws.queues {
+		ts := int64(q.metrics.highestSentTimestamp.Get() * 1000)
+		if ts < lowestTs {
+			lowestTs = ts
+		}
+	}
+	if len(rws.queues) == 0 {
+		lowestTs = 0
+	}
+
+	return lowestTs
+}
+
 // Close closes the WriteStorage.
 func (rws *WriteStorage) Close() error {
 	rws.mtx.Lock()
@@ -215,6 +243,7 @@ func (rws *WriteStorage) Close() error {
 	for _, q := range rws.queues {
 		q.Stop()
 	}
+	close(rws.quit)
 	return nil
 }
 
@@ -228,7 +257,7 @@ type timestampTracker struct {
 }
 
 // Append implements storage.Appender.
-func (t *timestampTracker) Append(_ uint64, _ labels.Labels, ts int64, _ float64) (uint64, error) {
+func (t *timestampTracker) Append(_ storage.SeriesRef, _ labels.Labels, ts int64, _ float64) (storage.SeriesRef, error) {
 	t.samples++
 	if ts > t.highestTimestamp {
 		t.highestTimestamp = ts
@@ -236,12 +265,12 @@ func (t *timestampTracker) Append(_ uint64, _ labels.Labels, ts int64, _ float64
 	return 0, nil
 }
 
-func (t *timestampTracker) AppendExemplar(_ uint64, _ labels.Labels, _ exemplar.Exemplar) (uint64, error) {
+func (t *timestampTracker) AppendExemplar(_ storage.SeriesRef, _ labels.Labels, _ exemplar.Exemplar) (storage.SeriesRef, error) {
 	t.exemplars++
 	return 0, nil
 }
 
-func (t *timestampTracker) AppendHistogram(_ uint64, _ labels.Labels, ts int64, _ *histogram.Histogram) (uint64, error) {
+func (t *timestampTracker) AppendHistogram(_ storage.SeriesRef, _ labels.Labels, ts int64, _ *histogram.Histogram) (storage.SeriesRef, error) {
 	t.histograms++
 	if ts > t.highestTimestamp {
 		t.highestTimestamp = ts

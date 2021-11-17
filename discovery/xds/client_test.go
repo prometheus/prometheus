@@ -26,8 +26,8 @@ import (
 	"google.golang.org/protobuf/types/known/anypb"
 )
 
-var (
-	httpResourceConf = &HTTPResourceClientConfig{
+func testHTTPResourceConfig() *HTTPResourceClientConfig {
+	return &HTTPResourceClientConfig{
 		HTTPClientConfig: config.HTTPClientConfig{
 			TLSConfig: config.TLSConfig{InsecureSkipVerify: true},
 		},
@@ -37,11 +37,10 @@ var (
 		Server:          "http://localhost",
 		ClientID:        "test-id",
 	}
-)
+}
 
 func urlMustParse(str string) *url.URL {
 	parsed, err := url.Parse(str)
-
 	if err != nil {
 		panic(err)
 	}
@@ -92,7 +91,6 @@ func TestCreateNewHTTPResourceClient(t *testing.T) {
 
 	require.Equal(t, client.endpoint, "http://127.0.0.1:5000/v3/discovery:monitoring?param1=v1")
 	require.Equal(t, client.client.Timeout, 1*time.Minute)
-
 }
 
 func createTestHTTPResourceClient(t *testing.T, conf *HTTPResourceClientConfig, protocolVersion ProtocolVersion, responder discoveryResponder) (*HTTPResourceClient, func()) {
@@ -110,7 +108,7 @@ func createTestHTTPResourceClient(t *testing.T, conf *HTTPResourceClientConfig, 
 }
 
 func TestHTTPResourceClientFetchEmptyResponse(t *testing.T) {
-	client, cleanup := createTestHTTPResourceClient(t, httpResourceConf, ProtocolV3, func(request *v3.DiscoveryRequest) (*v3.DiscoveryResponse, error) {
+	client, cleanup := createTestHTTPResourceClient(t, testHTTPResourceConfig(), ProtocolV3, func(request *v3.DiscoveryRequest) (*v3.DiscoveryResponse, error) {
 		return nil, nil
 	})
 	defer cleanup()
@@ -121,7 +119,7 @@ func TestHTTPResourceClientFetchEmptyResponse(t *testing.T) {
 }
 
 func TestHTTPResourceClientFetchFullResponse(t *testing.T) {
-	client, cleanup := createTestHTTPResourceClient(t, httpResourceConf, ProtocolV3, func(request *v3.DiscoveryRequest) (*v3.DiscoveryResponse, error) {
+	client, cleanup := createTestHTTPResourceClient(t, testHTTPResourceConfig(), ProtocolV3, func(request *v3.DiscoveryRequest) (*v3.DiscoveryResponse, error) {
 		if request.VersionInfo == "1" {
 			return nil, nil
 		}
@@ -150,7 +148,7 @@ func TestHTTPResourceClientFetchFullResponse(t *testing.T) {
 }
 
 func TestHTTPResourceClientServerError(t *testing.T) {
-	client, cleanup := createTestHTTPResourceClient(t, httpResourceConf, ProtocolV3, func(request *v3.DiscoveryRequest) (*v3.DiscoveryResponse, error) {
+	client, cleanup := createTestHTTPResourceClient(t, testHTTPResourceConfig(), ProtocolV3, func(request *v3.DiscoveryRequest) (*v3.DiscoveryResponse, error) {
 		return nil, errors.New("server error")
 	})
 	defer cleanup()

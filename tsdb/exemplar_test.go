@@ -22,11 +22,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/prometheus/pkg/exemplar"
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 )
 
@@ -448,7 +448,6 @@ func TestResize(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-
 			exs, err := NewCircularExemplarStorage(tc.startSize, eMetrics)
 			require.NoError(t, err)
 			es := exs.(*CircularExemplarStorage)
@@ -456,7 +455,8 @@ func TestResize(t *testing.T) {
 			for i := 0; int64(i) < tc.startSize; i++ {
 				err = es.AddExemplar(labels.FromStrings("service", strconv.Itoa(i)), exemplar.Exemplar{
 					Value: float64(i),
-					Ts:    int64(i)})
+					Ts:    int64(i),
+				})
 				require.NoError(t, err)
 			}
 

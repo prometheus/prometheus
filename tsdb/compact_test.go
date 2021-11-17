@@ -33,7 +33,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -1488,7 +1488,7 @@ func TestSparseHistogramSpaceSavings(t *testing.T) {
 					// Ingest sparse histograms.
 					for _, ah := range allSparseSeries {
 						var (
-							ref uint64
+							ref storage.SeriesRef
 							err error
 						)
 						for i := 0; i < numHistograms; i++ {
@@ -1515,7 +1515,7 @@ func TestSparseHistogramSpaceSavings(t *testing.T) {
 
 					// Ingest histograms the old way.
 					for _, ah := range allSparseSeries {
-						refs := make([]uint64, c.numBuckets+((c.numSpans-1)*c.gapBetweenSpans))
+						refs := make([]storage.SeriesRef, c.numBuckets+((c.numSpans-1)*c.gapBetweenSpans))
 						for i := 0; i < numHistograms; i++ {
 							ts := int64(i) * timeStep
 

@@ -30,7 +30,7 @@ import (
 	"github.com/prometheus/common/model"
 	yaml "gopkg.in/yaml.v2"
 
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/rules"
@@ -47,6 +47,7 @@ func RulesUnitTest(queryOpts promql.LazyLoaderOpts, files ...string) int {
 			fmt.Fprintln(os.Stderr, "  FAILED:")
 			for _, e := range errs {
 				fmt.Fprintln(os.Stderr, e.Error())
+				fmt.Println()
 			}
 			failed = true
 		} else {
@@ -313,30 +314,18 @@ func (tg *testGroup) test(evalInterval time.Duration, groupOrderMap map[string]i
 					})
 				}
 
-				var sb strings.Builder
-				if gotAlerts.Len() != expAlerts.Len() {
+				sort.Sort(gotAlerts)
+				sort.Sort(expAlerts)
+
+				if !reflect.DeepEqual(expAlerts, gotAlerts) {
+					var testName string
 					if tg.TestGroupName != "" {
-						fmt.Fprintf(&sb, "    name: %s,\n", tg.TestGroupName)
+						testName = fmt.Sprintf("    name: %s,\n", tg.TestGroupName)
 					}
-					fmt.Fprintf(&sb, "    alertname:%s, time:%s, \n", testcase.Alertname, testcase.EvalTime.String())
-					fmt.Fprintf(&sb, "        exp:%#v, \n", expAlerts.String())
-					fmt.Fprintf(&sb, "        got:%#v", gotAlerts.String())
-
-					errs = append(errs, errors.New(sb.String()))
-				} else {
-					sort.Sort(gotAlerts)
-					sort.Sort(expAlerts)
-
-					if !reflect.DeepEqual(expAlerts, gotAlerts) {
-						if tg.TestGroupName != "" {
-							fmt.Fprintf(&sb, "    name: %s,\n", tg.TestGroupName)
-						}
-						fmt.Fprintf(&sb, "    alertname:%s, time:%s, \n", testcase.Alertname, testcase.EvalTime.String())
-						fmt.Fprintf(&sb, "        exp:%#v, \n", expAlerts.String())
-						fmt.Fprintf(&sb, "        got:%#v", gotAlerts.String())
-
-						errs = append(errs, errors.New(sb.String()))
-					}
+					expString := indentLines(expAlerts.String(), "            ")
+					gotString := indentLines(gotAlerts.String(), "            ")
+					errs = append(errs, errors.Errorf("%s    alertname: %s, time: %s, \n        exp:%v, \n        got:%v",
+						testName, testcase.Alertname, testcase.EvalTime.String(), expString, gotString))
 				}
 			}
 
@@ -385,7 +374,7 @@ Outer:
 			return labels.Compare(gotSamples[i].Labels, gotSamples[j].Labels) <= 0
 		})
 		if !reflect.DeepEqual(expSamples, gotSamples) {
-			errs = append(errs, errors.Errorf("    expr: %q, time: %s,\n        exp:%#v\n        got:%#v", testCase.Expr,
+			errs = append(errs, errors.Errorf("    expr: %q, time: %s,\n        exp: %v\n        got: %v", testCase.Expr,
 				testCase.EvalTime.String(), parsedSamplesString(expSamples), parsedSamplesString(gotSamples)))
 		}
 	}
@@ -398,7 +387,6 @@ Outer:
 
 // seriesLoadingString returns the input series in PromQL notation.
 func (tg *testGroup) seriesLoadingString() string {
-
 	result := fmt.Sprintf("load %v\n", shortDuration(tg.Interval))
 	for _, is := range tg.InputSeries {
 		result += fmt.Sprintf("  %v %v\n", is.Series, is.Values)
@@ -468,6 +456,23 @@ func query(ctx context.Context, qs string, t time.Time, engine *promql.Engine, q
 	}
 }
 
+// indentLines prefixes each line in the supplied string with the given "indent"
+// string.
+func indentLines(lines, indent string) string {
+	sb := strings.Builder{}
+	n := strings.Split(lines, "\n")
+	for i, l := range n {
+		if i > 0 {
+			sb.WriteString(indent)
+		}
+		sb.WriteString(l)
+		if i != len(n)-1 {
+			sb.WriteRune('\n')
+		}
+	}
+	return sb.String()
+}
+
 type labelsAndAnnotations []labelAndAnnotation
 
 func (la labelsAndAnnotations) Len() int      { return len(la) }
@@ -484,11 +489,11 @@ func (la labelsAndAnnotations) String() string {
 	if len(la) == 0 {
 		return "[]"
 	}
-	s := "[" + la[0].String()
-	for _, l := range la[1:] {
-		s += ", " + l.String()
+	s := "[\n0:" + indentLines("\n"+la[0].String(), "  ")
+	for i, l := range la[1:] {
+		s += ",\n" + fmt.Sprintf("%d", i+1) + ":" + indentLines("\n"+l.String(), "  ")
 	}
-	s += "]"
+	s += "\n]"
 
 	return s
 }
@@ -499,7 +504,7 @@ type labelAndAnnotation struct {
 }
 
 func (la *labelAndAnnotation) String() string {
-	return "Labels:" + la.Labels.String() + " Annotations:" + la.Annotations.String()
+	return "Labels:" + la.Labels.String() + "\nAnnotations:" + la.Annotations.String()
 }
 
 type series struct {

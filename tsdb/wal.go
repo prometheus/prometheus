@@ -32,7 +32,9 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/record"
@@ -113,8 +115,8 @@ type WALReader interface {
 // the truncation threshold can be compacted.
 type segmentFile struct {
 	*os.File
-	maxTime   int64  // highest tombstone or sample timestamp in segment
-	minSeries uint64 // lowerst series ID in segment
+	maxTime   int64                // highest tombstone or sample timestamp in segment
+	minSeries chunks.HeadSeriesRef // lowerst series ID in segment
 }
 
 func newSegmentFile(f *os.File) *segmentFile {
@@ -171,7 +173,7 @@ type SegmentWAL struct {
 // OpenSegmentWAL opens or creates a write ahead log in the given directory.
 // The WAL must be read completely before new data is written.
 func OpenSegmentWAL(dir string, logger log.Logger, flushInterval time.Duration, r prometheus.Registerer) (*SegmentWAL, error) {
-	if err := os.MkdirAll(dir, 0777); err != nil {
+	if err := os.MkdirAll(dir, 0o777); err != nil {
 		return nil, err
 	}
 	df, err := fileutil.OpenDir(dir)
@@ -292,7 +294,7 @@ func (w *SegmentWAL) putBuffer(b *encoding.Encbuf) {
 
 // Truncate deletes the values prior to mint and the series which the keep function
 // does not indicate to preserve.
-func (w *SegmentWAL) Truncate(mint int64, keep func(uint64) bool) error {
+func (w *SegmentWAL) Truncate(mint int64, keep func(chunks.HeadSeriesRef) bool) error {
 	// The last segment is always active.
 	if len(w.files) < 2 {
 		return nil
@@ -505,7 +507,7 @@ func (w *SegmentWAL) LogDeletes(stones []tombstones.Stone) error {
 func (w *SegmentWAL) openSegmentFile(name string) (*os.File, error) {
 	// We must open all files in read/write mode as we may have to truncate along
 	// the way and any file may become the head.
-	f, err := os.OpenFile(name, os.O_RDWR, 0666)
+	f, err := os.OpenFile(name, os.O_RDWR, 0o666)
 	if err != nil {
 		return nil, err
 	}
@@ -787,7 +789,7 @@ const (
 
 func (w *SegmentWAL) encodeSeries(buf *encoding.Encbuf, series []record.RefSeries) uint8 {
 	for _, s := range series {
-		buf.PutBE64(s.Ref)
+		buf.PutBE64(uint64(s.Ref))
 		buf.PutUvarint(len(s.Labels))
 
 		for _, l := range s.Labels {
@@ -808,7 +810,7 @@ func (w *SegmentWAL) encodeSamples(buf *encoding.Encbuf, samples []record.RefSam
 	// TODO(fabxc): optimize for all samples having the same timestamp.
 	first := samples[0]
 
-	buf.PutBE64(first.Ref)
+	buf.PutBE64(uint64(first.Ref))
 	buf.PutBE64int64(first.T)
 
 	for _, s := range samples {
@@ -822,7 +824,7 @@ func (w *SegmentWAL) encodeSamples(buf *encoding.Encbuf, samples []record.RefSam
 func (w *SegmentWAL) encodeDeletes(buf *encoding.Encbuf, stones []tombstones.Stone) uint8 {
 	for _, s := range stones {
 		for _, iv := range s.Intervals {
-			buf.PutBE64(s.Ref)
+			buf.PutBE64(uint64(s.Ref))
 			buf.PutVarint64(iv.Mint)
 			buf.PutVarint64(iv.Maxt)
 		}
@@ -1120,7 +1122,7 @@ func (r *walReader) decodeSeries(flag byte, b []byte, res *[]record.RefSeries) e
 	dec := encoding.Decbuf{B: b}
 
 	for len(dec.B) > 0 && dec.Err() == nil {
-		ref := dec.Be64()
+		ref := chunks.HeadSeriesRef(dec.Be64())
 
 		lset := make(labels.Labels, dec.Uvarint())
 
@@ -1161,7 +1163,7 @@ func (r *walReader) decodeSamples(flag byte, b []byte, res *[]record.RefSample) 
 		val := dec.Be64()
 
 		*res = append(*res, record.RefSample{
-			Ref: uint64(int64(baseRef) + dref),
+			Ref: chunks.HeadSeriesRef(int64(baseRef) + dref),
 			T:   baseTime + dtime,
 			V:   math.Float64frombits(val),
 		})
@@ -1181,7 +1183,7 @@ func (r *walReader) decodeDeletes(flag byte, b []byte, res *[]tombstones.Stone) 
 
 	for dec.Len() > 0 && dec.Err() == nil {
 		*res = append(*res, tombstones.Stone{
-			Ref: dec.Be64(),
+			Ref: storage.SeriesRef(dec.Be64()),
 			Intervals: tombstones.Intervals{
 				{Mint: dec.Varint64(), Maxt: dec.Varint64()},
 			},

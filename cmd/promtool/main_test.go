@@ -21,9 +21,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/rulefmt"
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/rulefmt"
 )
 
 func TestQueryRange(t *testing.T) {
@@ -111,7 +112,7 @@ func TestCheckSDFile(t *testing.T) {
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
-			err := checkSDFile(test.file)
+			_, err := checkSDFile(test.file)
 			if test.err != "" {
 				require.Equalf(t, test.err, err.Error(), "Expected error %q, got %q", test.err, err.Error())
 				return
@@ -161,5 +162,44 @@ func BenchmarkCheckDuplicates(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		checkDuplicates(rgs.Groups)
+	}
+}
+
+func TestCheckTargetConfig(t *testing.T) {
+	cases := []struct {
+		name string
+		file string
+		err  string
+	}{
+		{
+			name: "url_in_scrape_targetgroup_with_relabel_config.good",
+			file: "url_in_scrape_targetgroup_with_relabel_config.good.yml",
+			err:  "",
+		},
+		{
+			name: "url_in_alert_targetgroup_with_relabel_config.good",
+			file: "url_in_alert_targetgroup_with_relabel_config.good.yml",
+			err:  "",
+		},
+		{
+			name: "url_in_scrape_targetgroup_with_relabel_config.bad",
+			file: "url_in_scrape_targetgroup_with_relabel_config.bad.yml",
+			err:  "instance 0 in group 0: \"http://bad\" is not a valid hostname",
+		},
+		{
+			name: "url_in_alert_targetgroup_with_relabel_config.bad",
+			file: "url_in_alert_targetgroup_with_relabel_config.bad.yml",
+			err:  "\"http://bad\" is not a valid hostname",
+		},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := checkConfig(false, "testdata/"+test.file)
+			if test.err != "" {
+				require.Equalf(t, test.err, err.Error(), "Expected error %q, got %q", test.err, err.Error())
+				return
+			}
+			require.NoError(t, err)
+		})
 	}
 }

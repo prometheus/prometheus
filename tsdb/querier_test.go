@@ -29,7 +29,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -106,13 +106,13 @@ func createIdxChkReaders(t *testing.T, tc []seriesSamples) (IndexReader, ChunkRe
 	})
 
 	postings := index.NewMemPostings()
-	chkReader := mockChunkReader(make(map[uint64]chunkenc.Chunk))
+	chkReader := mockChunkReader(make(map[chunks.ChunkRef]chunkenc.Chunk))
 	lblIdx := make(map[string]map[string]struct{})
 	mi := newMockIndex()
 	blockMint := int64(math.MaxInt64)
 	blockMaxt := int64(math.MinInt64)
 
-	var chunkRef uint64
+	var chunkRef chunks.ChunkRef
 	for i, s := range tc {
 		i = i + 1 // 0 is not a valid posting.
 		metas := make([]chunks.Meta, 0, len(s.chunks))
@@ -139,9 +139,9 @@ func createIdxChkReaders(t *testing.T, tc []seriesSamples) (IndexReader, ChunkRe
 			chunkRef++
 		}
 		ls := labels.FromMap(s.lset)
-		require.NoError(t, mi.AddSeries(uint64(i), ls, metas...))
+		require.NoError(t, mi.AddSeries(storage.SeriesRef(i), ls, metas...))
 
-		postings.Add(uint64(i), ls)
+		postings.Add(storage.SeriesRef(i), ls)
 
 		for _, l := range ls {
 			vs, present := lblIdx[l.Name]
@@ -162,6 +162,7 @@ func createIdxChkReaders(t *testing.T, tc []seriesSamples) (IndexReader, ChunkRe
 type blockQuerierTestCase struct {
 	mint, maxt int64
 	ms         []*labels.Matcher
+	hints      *storage.SelectHints
 	exp        storage.SeriesSet
 	expChks    storage.ChunkSeriesSet
 }
@@ -179,7 +180,7 @@ func testBlockQuerier(t *testing.T, c blockQuerierTestCase, ir IndexReader, cr C
 			},
 		}
 
-		res := q.Select(false, nil, c.ms...)
+		res := q.Select(false, c.hints, c.ms...)
 		defer func() { require.NoError(t, q.Close()) }()
 
 		for {
@@ -214,7 +215,7 @@ func testBlockQuerier(t *testing.T, c blockQuerierTestCase, ir IndexReader, cr C
 				maxt: c.maxt,
 			},
 		}
-		res := q.Select(false, nil, c.ms...)
+		res := q.Select(false, c.hints, c.ms...)
 		defer func() { require.NoError(t, q.Close()) }()
 
 		for {
@@ -316,6 +317,56 @@ func TestBlockQuerier(t *testing.T) {
 				),
 				storage.NewListChunkSeriesFromSamples(labels.Labels{{Name: "a", Value: "a"}, {Name: "b", Value: "b"}},
 					[]tsdbutil.Sample{sample{2, 2, nil}, sample{3, 3, nil}}, []tsdbutil.Sample{sample{5, 3, nil}, sample{6, 6, nil}},
+				),
+			}),
+		},
+		{
+			// This test runs a query disabling trimming. All chunks containing at least 1 sample within the queried
+			// time range will be returned.
+			mint:  2,
+			maxt:  6,
+			hints: &storage.SelectHints{Start: 2, End: 6, DisableTrimming: true},
+			ms:    []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "a", "a")},
+			exp: newMockSeriesSet([]storage.Series{
+				storage.NewListSeries(labels.Labels{{Name: "a", Value: "a"}},
+					[]tsdbutil.Sample{sample{1, 2, nil}, sample{2, 3, nil}, sample{3, 4, nil}, sample{5, 2, nil}, sample{6, 3, nil}, sample{7, 4, nil}},
+				),
+				storage.NewListSeries(labels.Labels{{Name: "a", Value: "a"}, {Name: "b", Value: "b"}},
+					[]tsdbutil.Sample{sample{1, 1, nil}, sample{2, 2, nil}, sample{3, 3, nil}, sample{5, 3, nil}, sample{6, 6, nil}},
+				),
+			}),
+			expChks: newMockChunkSeriesSet([]storage.ChunkSeries{
+				storage.NewListChunkSeriesFromSamples(labels.Labels{{Name: "a", Value: "a"}},
+					[]tsdbutil.Sample{sample{1, 2, nil}, sample{2, 3, nil}, sample{3, 4, nil}},
+					[]tsdbutil.Sample{sample{5, 2, nil}, sample{6, 3, nil}, sample{7, 4, nil}},
+				),
+				storage.NewListChunkSeriesFromSamples(labels.Labels{{Name: "a", Value: "a"}, {Name: "b", Value: "b"}},
+					[]tsdbutil.Sample{sample{1, 1, nil}, sample{2, 2, nil}, sample{3, 3, nil}},
+					[]tsdbutil.Sample{sample{5, 3, nil}, sample{6, 6, nil}},
+				),
+			}),
+		},
+		{
+			// This test runs a query disabling trimming. All chunks containing at least 1 sample within the queried
+			// time range will be returned.
+			mint:  5,
+			maxt:  6,
+			hints: &storage.SelectHints{Start: 5, End: 6, DisableTrimming: true},
+			ms:    []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "a", "a")},
+			exp: newMockSeriesSet([]storage.Series{
+				storage.NewListSeries(labels.Labels{{Name: "a", Value: "a"}},
+					[]tsdbutil.Sample{sample{5, 2, nil}, sample{6, 3, nil}, sample{7, 4, nil}},
+				),
+				storage.NewListSeries(labels.Labels{{Name: "a", Value: "a"}, {Name: "b", Value: "b"}},
+					[]tsdbutil.Sample{sample{5, 3, nil}, sample{6, 6, nil}},
+				),
+			}),
+			expChks: newMockChunkSeriesSet([]storage.ChunkSeries{
+				storage.NewListChunkSeriesFromSamples(labels.Labels{{Name: "a", Value: "a"}},
+					[]tsdbutil.Sample{sample{5, 2, nil}, sample{6, 3, nil}, sample{7, 4, nil}},
+				),
+				storage.NewListChunkSeriesFromSamples(labels.Labels{{Name: "a", Value: "a"}, {Name: "b", Value: "b"}},
+					[]tsdbutil.Sample{sample{5, 3, nil}, sample{6, 6, nil}},
 				),
 			}),
 		},
@@ -556,21 +607,21 @@ func TestBlockQuerierDelete(t *testing.T) {
 
 type fakeChunksReader struct {
 	ChunkReader
-	chks map[uint64]chunkenc.Chunk
+	chks map[chunks.ChunkRef]chunkenc.Chunk
 }
 
 func createFakeReaderAndNotPopulatedChunks(s ...[]tsdbutil.Sample) (*fakeChunksReader, []chunks.Meta) {
 	f := &fakeChunksReader{
-		chks: map[uint64]chunkenc.Chunk{},
+		chks: map[chunks.ChunkRef]chunkenc.Chunk{},
 	}
 	chks := make([]chunks.Meta, 0, len(s))
 
 	for ref, samples := range s {
 		chk := tsdbutil.ChunkFromSamples(samples)
-		f.chks[uint64(ref)] = chk.Chunk
+		f.chks[chunks.ChunkRef(ref)] = chk.Chunk
 
 		chks = append(chks, chunks.Meta{
-			Ref:     uint64(ref),
+			Ref:     chunks.ChunkRef(ref),
 			MinTime: chk.MinTime,
 			MaxTime: chk.MaxTime,
 		})
@@ -578,7 +629,7 @@ func createFakeReaderAndNotPopulatedChunks(s ...[]tsdbutil.Sample) (*fakeChunksR
 	return f, chks
 }
 
-func (r *fakeChunksReader) Chunk(ref uint64) (chunkenc.Chunk, error) {
+func (r *fakeChunksReader) Chunk(ref chunks.ChunkRef) (chunkenc.Chunk, error) {
 	chk, ok := r.chks[ref]
 	if !ok {
 		return nil, errors.Errorf("chunk not found at ref %v", ref)
@@ -918,7 +969,7 @@ func TestPopulateWithDelSeriesIterator_NextWithMinTime(t *testing.T) {
 // The subset are all equivalent so this does not capture merging of partial or non-overlapping sets well.
 // TODO(bwplotka): Merge with storage merged series set benchmark.
 func BenchmarkMergedSeriesSet(b *testing.B) {
-	var sel = func(sets []storage.SeriesSet) storage.SeriesSet {
+	sel := func(sets []storage.SeriesSet) storage.SeriesSet {
 		return storage.NewMergeSeriesSet(sets, storage.ChainedSeriesMerge)
 	}
 
@@ -965,9 +1016,9 @@ func BenchmarkMergedSeriesSet(b *testing.B) {
 	}
 }
 
-type mockChunkReader map[uint64]chunkenc.Chunk
+type mockChunkReader map[chunks.ChunkRef]chunkenc.Chunk
 
-func (cr mockChunkReader) Chunk(id uint64) (chunkenc.Chunk, error) {
+func (cr mockChunkReader) Chunk(id chunks.ChunkRef) (chunkenc.Chunk, error) {
 	chk, ok := cr[id]
 	if ok {
 		return chk, nil
@@ -1087,15 +1138,15 @@ type series struct {
 }
 
 type mockIndex struct {
-	series   map[uint64]series
-	postings map[labels.Label][]uint64
+	series   map[storage.SeriesRef]series
+	postings map[labels.Label][]storage.SeriesRef
 	symbols  map[string]struct{}
 }
 
 func newMockIndex() mockIndex {
 	ix := mockIndex{
-		series:   make(map[uint64]series),
-		postings: make(map[labels.Label][]uint64),
+		series:   make(map[storage.SeriesRef]series),
+		postings: make(map[labels.Label][]storage.SeriesRef),
 		symbols:  make(map[string]struct{}),
 	}
 	return ix
@@ -1110,7 +1161,7 @@ func (m mockIndex) Symbols() index.StringIter {
 	return index.NewStringListIter(l)
 }
 
-func (m *mockIndex) AddSeries(ref uint64, l labels.Labels, chunks ...chunks.Meta) error {
+func (m *mockIndex) AddSeries(ref storage.SeriesRef, l labels.Labels, chunks ...chunks.Meta) error {
 	if _, ok := m.series[ref]; ok {
 		return errors.Errorf("series with reference %d already added", ref)
 	}
@@ -1177,11 +1228,11 @@ func (m mockIndex) LabelValues(name string, matchers ...*labels.Matcher) ([]stri
 	return values, nil
 }
 
-func (m mockIndex) LabelValueFor(id uint64, label string) (string, error) {
+func (m mockIndex) LabelValueFor(id storage.SeriesRef, label string) (string, error) {
 	return m.series[id].l.Get(label), nil
 }
 
-func (m mockIndex) LabelNamesFor(ids ...uint64) ([]string, error) {
+func (m mockIndex) LabelNamesFor(ids ...storage.SeriesRef) ([]string, error) {
 	namesMap := make(map[string]bool)
 	for _, id := range ids {
 		for _, lbl := range m.series[id].l {
@@ -1216,7 +1267,7 @@ func (m mockIndex) SortedPostings(p index.Postings) index.Postings {
 	return index.NewListPostings(ep)
 }
 
-func (m mockIndex) Series(ref uint64, lset *labels.Labels, chks *[]chunks.Meta) error {
+func (m mockIndex) Series(ref storage.SeriesRef, lset *labels.Labels, chks *[]chunks.Meta) error {
 	s, ok := m.series[ref]
 	if !ok {
 		return storage.ErrNotFound
@@ -1860,7 +1911,6 @@ func TestPostingsForMatchers(t *testing.T) {
 			t.Errorf("Evaluating %v, missing results %+v", c.matchers, exp)
 		}
 	}
-
 }
 
 // TestClose ensures that calling Close more than once doesn't block and doesn't panic.
@@ -2035,11 +2085,11 @@ func (m mockMatcherIndex) LabelValues(name string, matchers ...*labels.Matcher) 
 	return []string{}, errors.New("label values called")
 }
 
-func (m mockMatcherIndex) LabelValueFor(id uint64, label string) (string, error) {
+func (m mockMatcherIndex) LabelValueFor(id storage.SeriesRef, label string) (string, error) {
 	return "", errors.New("label value for called")
 }
 
-func (m mockMatcherIndex) LabelNamesFor(ids ...uint64) ([]string, error) {
+func (m mockMatcherIndex) LabelNamesFor(ids ...storage.SeriesRef) ([]string, error) {
 	return nil, errors.New("label names for for called")
 }
 
@@ -2051,7 +2101,7 @@ func (m mockMatcherIndex) SortedPostings(p index.Postings) index.Postings {
 	return index.EmptyPostings()
 }
 
-func (m mockMatcherIndex) Series(ref uint64, lset *labels.Labels, chks *[]chunks.Meta) error {
+func (m mockMatcherIndex) Series(ref storage.SeriesRef, lset *labels.Labels, chks *[]chunks.Meta) error {
 	return nil
 }
 
@@ -2101,13 +2151,13 @@ func TestBlockBaseSeriesSet(t *testing.T) {
 		lset   labels.Labels
 		chunks []chunks.Meta
 
-		ref uint64
+		ref storage.SeriesRef
 	}
 
 	cases := []struct {
 		series []refdSeries
 		// Postings should be in the sorted order of the series
-		postings []uint64
+		postings []storage.SeriesRef
 
 		expIdxs []int
 	}{
@@ -2116,7 +2166,12 @@ func TestBlockBaseSeriesSet(t *testing.T) {
 				{
 					lset: labels.New([]labels.Label{{Name: "a", Value: "a"}}...),
 					chunks: []chunks.Meta{
-						{Ref: 29}, {Ref: 45}, {Ref: 245}, {Ref: 123}, {Ref: 4232}, {Ref: 5344},
+						{Ref: 29},
+						{Ref: 45},
+						{Ref: 245},
+						{Ref: 123},
+						{Ref: 4232},
+						{Ref: 5344},
 						{Ref: 121},
 					},
 					ref: 12,
@@ -2141,7 +2196,7 @@ func TestBlockBaseSeriesSet(t *testing.T) {
 					ref: 108,
 				},
 			},
-			postings: []uint64{12, 13, 10, 108}, // 13 doesn't exist and should just be skipped over.
+			postings: []storage.SeriesRef{12, 13, 10, 108}, // 13 doesn't exist and should just be skipped over.
 			expIdxs:  []int{0, 1, 3},
 		},
 		{
@@ -2159,7 +2214,7 @@ func TestBlockBaseSeriesSet(t *testing.T) {
 					ref:    3,
 				},
 			},
-			postings: []uint64{},
+			postings: []storage.SeriesRef{},
 			expIdxs:  []int{},
 		},
 	}

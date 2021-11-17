@@ -25,15 +25,15 @@ import (
 	"github.com/go-kit/log"
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/pkg/exemplar"
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
 )
 
 func TestRemoteWriteHandler(t *testing.T) {
-	buf, _, err := buildWriteRequest(writeRequestFixture.Timeseries, nil, nil)
+	buf, _, err := buildWriteRequest(writeRequestFixture.Timeseries, nil, nil, nil)
 	require.NoError(t, err)
 
 	req, err := http.NewRequest("", "", bytes.NewReader(buf))
@@ -69,7 +69,7 @@ func TestOutOfOrderSample(t *testing.T) {
 	buf, _, err := buildWriteRequest([]prompb.TimeSeries{{
 		Labels:  []prompb.Label{{Name: "__name__", Value: "test_metric"}},
 		Samples: []prompb.Sample{{Value: 1, Timestamp: 0}},
-	}}, nil, nil)
+	}}, nil, nil, nil)
 	require.NoError(t, err)
 
 	req, err := http.NewRequest("", "", bytes.NewReader(buf))
@@ -94,7 +94,7 @@ func TestOutOfOrderExemplar(t *testing.T) {
 	buf, _, err := buildWriteRequest([]prompb.TimeSeries{{
 		Labels:    []prompb.Label{{Name: "__name__", Value: "test_metric"}},
 		Exemplars: []prompb.Exemplar{{Labels: []prompb.Label{{Name: "foo", Value: "bar"}}, Value: 1, Timestamp: 0}},
-	}}, nil, nil)
+	}}, nil, nil, nil)
 	require.NoError(t, err)
 
 	req, err := http.NewRequest("", "", bytes.NewReader(buf))
@@ -114,7 +114,7 @@ func TestOutOfOrderExemplar(t *testing.T) {
 }
 
 func TestCommitErr(t *testing.T) {
-	buf, _, err := buildWriteRequest(writeRequestFixture.Timeseries, nil, nil)
+	buf, _, err := buildWriteRequest(writeRequestFixture.Timeseries, nil, nil, nil)
 	require.NoError(t, err)
 
 	req, err := http.NewRequest("", "", bytes.NewReader(buf))
@@ -160,7 +160,7 @@ func (m *mockAppendable) Appender(_ context.Context) storage.Appender {
 	return m
 }
 
-func (m *mockAppendable) Append(_ uint64, l labels.Labels, t int64, v float64) (uint64, error) {
+func (m *mockAppendable) Append(_ storage.SeriesRef, l labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
 	if t < m.latestSample {
 		return 0, storage.ErrOutOfOrderSample
 	}
@@ -178,7 +178,7 @@ func (*mockAppendable) Rollback() error {
 	return fmt.Errorf("not implemented")
 }
 
-func (m *mockAppendable) AppendExemplar(_ uint64, l labels.Labels, e exemplar.Exemplar) (uint64, error) {
+func (m *mockAppendable) AppendExemplar(_ storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
 	if e.Ts < m.latestExemplar {
 		return 0, storage.ErrOutOfOrderExemplar
 	}
@@ -188,7 +188,7 @@ func (m *mockAppendable) AppendExemplar(_ uint64, l labels.Labels, e exemplar.Ex
 	return 0, nil
 }
 
-func (*mockAppendable) AppendHistogram(ref uint64, l labels.Labels, t int64, h *histogram.Histogram) (uint64, error) {
+func (*mockAppendable) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram) (storage.SeriesRef, error) {
 	// TODO(beorn7): Noop until we implement sparse histograms over remote write.
 	return 0, nil
 }
