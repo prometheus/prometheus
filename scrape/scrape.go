@@ -40,14 +40,14 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-	"github.com/prometheus/prometheus/pkg/exemplar"
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/pool"
-	"github.com/prometheus/prometheus/pkg/relabel"
-	"github.com/prometheus/prometheus/pkg/textparse"
-	"github.com/prometheus/prometheus/pkg/timestamp"
-	"github.com/prometheus/prometheus/pkg/value"
+	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/relabel"
+	"github.com/prometheus/prometheus/model/textparse"
+	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/pool"
 )
 
 // ScrapeTimestampTolerance is the tolerance for scrape appends timestamps
@@ -829,7 +829,7 @@ type loop interface {
 }
 
 type cacheEntry struct {
-	ref      uint64
+	ref      storage.SeriesRef
 	lastIter uint64
 	hash     uint64
 	lset     labels.Labels
@@ -976,7 +976,7 @@ func (c *scrapeCache) get(met string) (*cacheEntry, bool) {
 	return e, true
 }
 
-func (c *scrapeCache) addRef(met string, ref uint64, lset labels.Labels, hash uint64) {
+func (c *scrapeCache) addRef(met string, ref storage.SeriesRef, lset labels.Labels, hash uint64) {
 	if ref == 0 {
 		return
 	}
@@ -1477,7 +1477,7 @@ loop:
 		}
 		ce, ok := sl.cache.get(yoloString(met))
 		var (
-			ref  uint64
+			ref  storage.SeriesRef
 			lset labels.Labels
 			mets string
 			hash uint64
@@ -1727,7 +1727,7 @@ func (sl *scrapeLoop) reportStale(app storage.Appender, start time.Time) (err er
 
 func (sl *scrapeLoop) addReportSample(app storage.Appender, s string, t int64, v float64) error {
 	ce, ok := sl.cache.get(s)
-	var ref uint64
+	var ref storage.SeriesRef
 	var lset labels.Labels
 	if ok {
 		ref = ce.ref

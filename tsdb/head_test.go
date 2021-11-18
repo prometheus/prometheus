@@ -37,8 +37,8 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/pkg/exemplar"
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -63,7 +63,7 @@ func newTestHead(t testing.TB, chunkRange int64, compressWAL bool) (*Head, *wal.
 	h, err := NewHead(nil, nil, wlog, opts, nil)
 	require.NoError(t, err)
 
-	require.NoError(t, h.chunkDiskMapper.IterateAllChunks(func(_ uint64, _ chunks.ChunkDiskMapperRef, _, _ int64, _ uint16) error { return nil }))
+	require.NoError(t, h.chunkDiskMapper.IterateAllChunks(func(_ chunks.HeadSeriesRef, _ chunks.ChunkDiskMapperRef, _, _ int64, _ uint16) error { return nil }))
 
 	t.Cleanup(func() {
 		require.NoError(t, os.RemoveAll(dir))
@@ -200,7 +200,7 @@ func BenchmarkLoadWAL(b *testing.B) {
 							for j := 1; len(lbls) < labelsPerSeries; j++ {
 								lbls[defaultLabelName+strconv.Itoa(j)] = defaultLabelValue + strconv.Itoa(j)
 							}
-							refSeries = append(refSeries, record.RefSeries{Ref: uint64(i) * 101, Labels: labels.FromMap(lbls)})
+							refSeries = append(refSeries, record.RefSeries{Ref: chunks.HeadSeriesRef(i) * 101, Labels: labels.FromMap(lbls)})
 						}
 						populateTestWAL(b, w, []interface{}{refSeries})
 					}
@@ -212,7 +212,7 @@ func BenchmarkLoadWAL(b *testing.B) {
 							refSamples = refSamples[:0]
 							for k := j * c.seriesPerBatch; k < (j+1)*c.seriesPerBatch; k++ {
 								refSamples = append(refSamples, record.RefSample{
-									Ref: uint64(k) * 101,
+									Ref: chunks.HeadSeriesRef(k) * 101,
 									T:   int64(i) * 10,
 									V:   float64(i) * 100,
 								})
@@ -228,7 +228,7 @@ func BenchmarkLoadWAL(b *testing.B) {
 						for k := 0; k < c.batches*c.seriesPerBatch; k++ {
 							// Create one mmapped chunk per series, with one sample at the given time.
 							lbls := labels.Labels{}
-							s := newMemSeries(lbls, uint64(k)*101, lbls.Hash(), c.mmappedChunkT, 0, nil)
+							s := newMemSeries(lbls, chunks.HeadSeriesRef(k)*101, lbls.Hash(), c.mmappedChunkT, 0, nil)
 							s.append(c.mmappedChunkT, 42, 0, chunkDiskMapper)
 							s.mmapCurrentHeadChunk(chunkDiskMapper)
 						}
@@ -242,7 +242,7 @@ func BenchmarkLoadWAL(b *testing.B) {
 							refExemplars = refExemplars[:0]
 							for k := j * c.seriesPerBatch; k < (j+1)*c.seriesPerBatch; k++ {
 								refExemplars = append(refExemplars, record.RefExemplar{
-									Ref:    uint64(k) * 101,
+									Ref:    chunks.HeadSeriesRef(k) * 101,
 									T:      int64(i) * 10,
 									V:      float64(i) * 100,
 									Labels: labels.FromStrings("traceID", fmt.Sprintf("trace-%d", i)),
@@ -498,10 +498,10 @@ func TestHead_Truncate(t *testing.T) {
 	postingsC1, _ := index.ExpandPostings(h.postings.Get("c", "1"))
 	postingsAll, _ := index.ExpandPostings(h.postings.Get("", ""))
 
-	require.Equal(t, []uint64{s1.ref}, postingsA1)
-	require.Equal(t, []uint64{s2.ref}, postingsA2)
-	require.Equal(t, []uint64{s1.ref, s2.ref}, postingsB1)
-	require.Equal(t, []uint64{s1.ref, s2.ref}, postingsAll)
+	require.Equal(t, []storage.SeriesRef{storage.SeriesRef(s1.ref)}, postingsA1)
+	require.Equal(t, []storage.SeriesRef{storage.SeriesRef(s2.ref)}, postingsA2)
+	require.Equal(t, []storage.SeriesRef{storage.SeriesRef(s1.ref), storage.SeriesRef(s2.ref)}, postingsB1)
+	require.Equal(t, []storage.SeriesRef{storage.SeriesRef(s1.ref), storage.SeriesRef(s2.ref)}, postingsAll)
 	require.Nil(t, postingsB2)
 	require.Nil(t, postingsC1)
 
@@ -563,7 +563,7 @@ func TestMemSeries_truncateChunks(t *testing.T) {
 	// Check that truncate removes half of the chunks and afterwards
 	// that the ID of the last chunk still gives us the same chunk afterwards.
 	countBefore := len(s.mmappedChunks) + 1 // +1 for the head chunk.
-	lastID := s.chunkID(countBefore - 1)
+	lastID := s.headChunkID(countBefore - 1)
 	lastChunk, _, err := s.chunk(lastID, chunkDiskMapper)
 	require.NoError(t, err)
 	require.NotNil(t, lastChunk)
@@ -584,11 +584,11 @@ func TestMemSeries_truncateChunks(t *testing.T) {
 
 	// Validate that the series' sample buffer is applied correctly to the last chunk
 	// after truncation.
-	it1 := s.iterator(s.chunkID(len(s.mmappedChunks)), nil, chunkDiskMapper, nil)
+	it1 := s.iterator(s.headChunkID(len(s.mmappedChunks)), nil, chunkDiskMapper, nil)
 	_, ok := it1.(*memSafeIterator)
 	require.True(t, ok)
 
-	it2 := s.iterator(s.chunkID(len(s.mmappedChunks)-1), nil, chunkDiskMapper, nil)
+	it2 := s.iterator(s.headChunkID(len(s.mmappedChunks)-1), nil, chunkDiskMapper, nil)
 	_, ok = it2.(*memSafeIterator)
 	require.False(t, ok, "non-last chunk incorrectly wrapped with sample buffer")
 }
@@ -2147,7 +2147,7 @@ func TestHeadShardedPostings(t *testing.T) {
 	p, err := ir.Postings("const", "1")
 	require.NoError(t, err)
 
-	var expected []uint64
+	var expected []storage.SeriesRef
 	for p.Next() {
 		expected = append(expected, p.At())
 	}
@@ -2156,8 +2156,8 @@ func TestHeadShardedPostings(t *testing.T) {
 
 	// Query the same postings for each shard.
 	const shardCount = uint64(4)
-	actualShards := make(map[uint64][]uint64)
-	actualPostings := make([]uint64, 0, len(expected))
+	actualShards := make(map[uint64][]storage.SeriesRef)
+	actualPostings := make([]storage.SeriesRef, 0, len(expected))
 
 	for shardIndex := uint64(0); shardIndex < shardCount; shardIndex++ {
 		p, err = ir.Postings("const", "1")
@@ -2330,7 +2330,7 @@ func TestMemSafeIteratorSeekIntoBuffer(t *testing.T) {
 		require.True(t, ok, "sample append failed")
 	}
 
-	it := s.iterator(s.chunkID(len(s.mmappedChunks)), nil, chunkDiskMapper, nil)
+	it := s.iterator(s.headChunkID(len(s.mmappedChunks)), nil, chunkDiskMapper, nil)
 	_, ok := it.(*memSafeIterator)
 	require.True(t, ok)
 
@@ -2385,7 +2385,7 @@ func TestChunkNotFoundHeadGCRace(t *testing.T) {
 
 	var (
 		app        = db.Appender(context.Background())
-		ref        = uint64(0)
+		ref        = storage.SeriesRef(0)
 		mint, maxt = int64(0), int64(0)
 		err        error
 	)
@@ -2450,7 +2450,7 @@ func TestDataMissingOnQueryDuringCompaction(t *testing.T) {
 
 	var (
 		app        = db.Appender(context.Background())
-		ref        = uint64(0)
+		ref        = storage.SeriesRef(0)
 		mint, maxt = int64(0), int64(0)
 		err        error
 	)
@@ -2497,7 +2497,7 @@ func TestIsQuerierCollidingWithTruncation(t *testing.T) {
 
 	var (
 		app = db.Appender(context.Background())
-		ref = uint64(0)
+		ref = storage.SeriesRef(0)
 		err error
 	)
 
@@ -2544,7 +2544,7 @@ func TestWaitForPendingReadersInTimeRange(t *testing.T) {
 
 	var (
 		app = db.Appender(context.Background())
-		ref = uint64(0)
+		ref = storage.SeriesRef(0)
 		err error
 	)
 
@@ -2607,10 +2607,10 @@ func TestChunkSnapshot(t *testing.T) {
 
 	numSeries := 10
 	expSeries := make(map[string][]tsdbutil.Sample)
-	expTombstones := make(map[uint64]tombstones.Intervals)
+	expTombstones := make(map[storage.SeriesRef]tombstones.Intervals)
 	expExemplars := make([]ex, 0)
 
-	addExemplar := func(app storage.Appender, ref uint64, lbls labels.Labels, ts int64) {
+	addExemplar := func(app storage.Appender, ref storage.SeriesRef, lbls labels.Labels, ts int64) {
 		e := ex{
 			seriesLabels: lbls,
 			e: exemplar.Exemplar{
@@ -2633,8 +2633,8 @@ func TestChunkSnapshot(t *testing.T) {
 	checkTombstones := func() {
 		tr, err := head.Tombstones()
 		require.NoError(t, err)
-		actTombstones := make(map[uint64]tombstones.Intervals)
-		require.NoError(t, tr.Iter(func(ref uint64, itvs tombstones.Intervals) error {
+		actTombstones := make(map[storage.SeriesRef]tombstones.Intervals)
+		require.NoError(t, tr.Iter(func(ref storage.SeriesRef, itvs tombstones.Intervals) error {
 			for _, itv := range itvs {
 				actTombstones[ref].Add(itv)
 			}
@@ -2708,7 +2708,7 @@ func TestChunkSnapshot(t *testing.T) {
 		// Add some tombstones.
 		var enc record.Encoder
 		for i := 1; i <= numSeries; i++ {
-			ref := uint64(i)
+			ref := storage.SeriesRef(i)
 			itvs := tombstones.Intervals{
 				{Mint: 1234, Maxt: 2345},
 				{Mint: 3456, Maxt: 4567},
@@ -2769,7 +2769,7 @@ func TestChunkSnapshot(t *testing.T) {
 		// Add more tombstones.
 		var enc record.Encoder
 		for i := 1; i <= numSeries; i++ {
-			ref := uint64(i)
+			ref := storage.SeriesRef(i)
 			itvs := tombstones.Intervals{
 				{Mint: 12345, Maxt: 23456},
 				{Mint: 34567, Maxt: 45678},

@@ -4,6 +4,8 @@ import (
 	"sync"
 
 	"go.uber.org/atomic"
+
+	"github.com/prometheus/prometheus/storage"
 )
 
 const (
@@ -116,7 +118,7 @@ type cacheGeneration struct {
 type blockCacheGeneration struct {
 	// hashes maps per-block series ID with its hash.
 	hashesMx sync.RWMutex
-	hashes   map[uint64]uint64
+	hashes   map[storage.SeriesRef]uint64
 
 	// Keeps track of the number of items added to the cache. This counter is
 	// shared with all blockCacheGeneration in the "parent" cacheGeneration.
@@ -125,7 +127,7 @@ type blockCacheGeneration struct {
 
 func newBlockCacheGeneration(length *atomic.Uint64) *blockCacheGeneration {
 	return &blockCacheGeneration{
-		hashes: make(map[uint64]uint64),
+		hashes: make(map[storage.SeriesRef]uint64),
 		length: length,
 	}
 }
@@ -136,7 +138,7 @@ type BlockSeriesHashCache struct {
 
 // Fetch the hash of the given seriesID from the cache and returns a boolean
 // whether the series was found in the cache or not.
-func (c *BlockSeriesHashCache) Fetch(seriesID uint64) (uint64, bool) {
+func (c *BlockSeriesHashCache) Fetch(seriesID storage.SeriesRef) (uint64, bool) {
 	// Look for it in all generations, starting from the most recent one (index 0).
 	for idx := 0; idx < numGenerations; idx++ {
 		gen := c.generations[idx]
@@ -159,7 +161,7 @@ func (c *BlockSeriesHashCache) Fetch(seriesID uint64) (uint64, bool) {
 }
 
 // Store the hash of the given seriesID in the cache.
-func (c *BlockSeriesHashCache) Store(seriesID, hash uint64) {
+func (c *BlockSeriesHashCache) Store(seriesID storage.SeriesRef, hash uint64) {
 	// Store it in the most recent generation (index 0).
 	gen := c.generations[0]
 

@@ -25,7 +25,7 @@ import (
 	"github.com/prometheus/common/model"
 	yaml "gopkg.in/yaml.v3"
 
-	"github.com/prometheus/prometheus/pkg/timestamp"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/template"
 )
@@ -38,6 +38,16 @@ type Error struct {
 	Err      WrappedError
 }
 
+// Error prints the error message in a formatted string.
+func (err *Error) Error() string {
+	if err.Err.nodeAlt != nil {
+		return errors.Wrapf(err.Err.err, "%d:%d: %d:%d: group %q, rule %d, %q", err.Err.node.Line, err.Err.node.Column, err.Err.nodeAlt.Line, err.Err.nodeAlt.Column, err.Group, err.Rule, err.RuleName).Error()
+	} else if err.Err.node != nil {
+		return errors.Wrapf(err.Err.err, "%d:%d: group %q, rule %d, %q", err.Err.node.Line, err.Err.node.Column, err.Group, err.Rule, err.RuleName).Error()
+	}
+	return errors.Wrapf(err.Err.err, "group %q, rule %d, %q", err.Group, err.Rule, err.RuleName).Error()
+}
+
 // WrappedError wraps error with the yaml node which can be used to represent
 // the line and column numbers of the error.
 type WrappedError struct {
@@ -46,13 +56,14 @@ type WrappedError struct {
 	nodeAlt *yaml.Node
 }
 
-func (err *Error) Error() string {
-	if err.Err.nodeAlt != nil {
-		return errors.Wrapf(err.Err.err, "%d:%d: %d:%d: group %q, rule %d, %q", err.Err.node.Line, err.Err.node.Column, err.Err.nodeAlt.Line, err.Err.nodeAlt.Column, err.Group, err.Rule, err.RuleName).Error()
-	} else if err.Err.node != nil {
-		return errors.Wrapf(err.Err.err, "%d:%d: group %q, rule %d, %q", err.Err.node.Line, err.Err.node.Column, err.Group, err.Rule, err.RuleName).Error()
+// Error prints the error message in a formatted string.
+func (we *WrappedError) Error() string {
+	if we.nodeAlt != nil {
+		return errors.Wrapf(we.err, "%d:%d: %d:%d", we.node.Line, we.node.Column, we.nodeAlt.Line, we.nodeAlt.Column).Error()
+	} else if we.node != nil {
+		return errors.Wrapf(we.err, "%d:%d", we.node.Line, we.node.Column).Error()
 	}
-	return errors.Wrapf(err.Err.err, "group %q, rule %d, %q", err.Group, err.Rule, err.RuleName).Error()
+	return we.err.Error()
 }
 
 // RuleGroups is a set of rule groups that are typically exposed in a file.

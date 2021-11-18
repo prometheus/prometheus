@@ -28,7 +28,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/encoding"
@@ -46,18 +47,18 @@ type series struct {
 }
 
 type mockIndex struct {
-	series   map[uint64]series
-	postings map[labels.Label][]uint64
+	series   map[storage.SeriesRef]series
+	postings map[labels.Label][]storage.SeriesRef
 	symbols  map[string]struct{}
 }
 
 func newMockIndex() mockIndex {
 	ix := mockIndex{
-		series:   make(map[uint64]series),
-		postings: make(map[labels.Label][]uint64),
+		series:   make(map[storage.SeriesRef]series),
+		postings: make(map[labels.Label][]storage.SeriesRef),
 		symbols:  make(map[string]struct{}),
 	}
-	ix.postings[allPostingsKey] = []uint64{}
+	ix.postings[allPostingsKey] = []storage.SeriesRef{}
 	return ix
 }
 
@@ -65,7 +66,7 @@ func (m mockIndex) Symbols() (map[string]struct{}, error) {
 	return m.symbols, nil
 }
 
-func (m mockIndex) AddSeries(ref uint64, l labels.Labels, chunks ...chunks.Meta) error {
+func (m mockIndex) AddSeries(ref storage.SeriesRef, l labels.Labels, chunks ...chunks.Meta) error {
 	if _, ok := m.series[ref]; ok {
 		return errors.Errorf("series with reference %d already added", ref)
 	}
@@ -73,7 +74,7 @@ func (m mockIndex) AddSeries(ref uint64, l labels.Labels, chunks ...chunks.Meta)
 		m.symbols[lbl.Name] = struct{}{}
 		m.symbols[lbl.Value] = struct{}{}
 		if _, ok := m.postings[lbl]; !ok {
-			m.postings[lbl] = []uint64{}
+			m.postings[lbl] = []storage.SeriesRef{}
 		}
 		m.postings[lbl] = append(m.postings[lbl], ref)
 	}
@@ -125,7 +126,7 @@ func (m mockIndex) SortedPostings(p Postings) Postings {
 	return NewListPostings(ep)
 }
 
-func (m mockIndex) Series(ref uint64, lset *labels.Labels, chks *[]chunks.Meta) error {
+func (m mockIndex) Series(ref storage.SeriesRef, lset *labels.Labels, chks *[]chunks.Meta) error {
 	s, ok := m.series[ref]
 	if !ok {
 		return errors.New("not found")
@@ -262,7 +263,7 @@ func TestIndexRW_Postings(t *testing.T) {
 			p, err = ir.Postings("a", "1")
 			require.NoError(t, err)
 
-			var expected []uint64
+			var expected []storage.SeriesRef
 			for p.Next() {
 				expected = append(expected, p.At())
 			}
@@ -271,8 +272,8 @@ func TestIndexRW_Postings(t *testing.T) {
 
 			// Query the same postings for each shard.
 			const shardCount = uint64(4)
-			actualShards := make(map[uint64][]uint64)
-			actualPostings := make([]uint64, 0, len(expected))
+			actualShards := make(map[uint64][]storage.SeriesRef)
+			actualPostings := make([]storage.SeriesRef, 0, len(expected))
 
 			for shardIndex := uint64(0); shardIndex < shardCount; shardIndex++ {
 				p, err = ir.Postings("a", "1")
@@ -339,7 +340,7 @@ func TestPostingsMany(t *testing.T) {
 	}
 
 	for i, s := range series {
-		require.NoError(t, iw.AddSeries(uint64(i), s))
+		require.NoError(t, iw.AddSeries(storage.SeriesRef(i), s))
 	}
 	require.NoError(t, iw.Close())
 
@@ -431,7 +432,7 @@ func TestPersistence_index_e2e(t *testing.T) {
 			metas = append(metas, chunks.Meta{
 				MinTime: int64(j * 10000),
 				MaxTime: int64((j + 1) * 10000),
-				Ref:     rand.Uint64(),
+				Ref:     chunks.ChunkRef(rand.Uint64()),
 				Chunk:   chunkenc.NewXORChunk(),
 			})
 		}
@@ -462,9 +463,9 @@ func TestPersistence_index_e2e(t *testing.T) {
 	mi := newMockIndex()
 
 	for i, s := range input {
-		err = iw.AddSeries(uint64(i), s.labels, s.chunks...)
+		err = iw.AddSeries(storage.SeriesRef(i), s.labels, s.chunks...)
 		require.NoError(t, err)
-		require.NoError(t, mi.AddSeries(uint64(i), s.labels, s.chunks...))
+		require.NoError(t, mi.AddSeries(storage.SeriesRef(i), s.labels, s.chunks...))
 
 		for _, l := range s.labels {
 			valset, ok := values[l.Name]
@@ -474,7 +475,7 @@ func TestPersistence_index_e2e(t *testing.T) {
 			}
 			valset[l.Value] = struct{}{}
 		}
-		postings.Add(uint64(i), s.labels)
+		postings.Add(storage.SeriesRef(i), s.labels)
 	}
 
 	err = iw.Close()
@@ -643,7 +644,7 @@ func BenchmarkReader_ShardedPostings(b *testing.B) {
 	require.NoError(b, iw.AddSymbol("unique"))
 
 	for i := 1; i <= numSeries; i++ {
-		require.NoError(b, iw.AddSeries(uint64(i), labels.Labels{
+		require.NoError(b, iw.AddSeries(storage.SeriesRef(i), labels.Labels{
 			{Name: "const", Value: fmt.Sprintf("%10d", 1)},
 			{Name: "unique", Value: fmt.Sprintf("%10d", i)},
 		}))

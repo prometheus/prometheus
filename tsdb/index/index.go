@@ -30,7 +30,7 @@ import (
 
 	"github.com/pkg/errors"
 
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/encoding"
@@ -144,7 +144,7 @@ type Writer struct {
 
 	// Hold last series to validate that clients insert new series in order.
 	lastSeries labels.Labels
-	lastRef    uint64
+	lastRef    storage.SeriesRef
 
 	crc32 hash.Hash
 
@@ -415,7 +415,7 @@ func (w *Writer) writeMeta() error {
 }
 
 // AddSeries adds the series one at a time along with its chunks.
-func (w *Writer) AddSeries(ref uint64, lset labels.Labels, chunks ...chunks.Meta) error {
+func (w *Writer) AddSeries(ref storage.SeriesRef, lset labels.Labels, chunks ...chunks.Meta) error {
 	if err := w.ensureStage(idxStageSeries); err != nil {
 		return err
 	}
@@ -473,7 +473,7 @@ func (w *Writer) AddSeries(ref uint64, lset labels.Labels, chunks ...chunks.Meta
 		c := chunks[0]
 		w.buf2.PutVarint64(c.MinTime)
 		w.buf2.PutUvarint64(uint64(c.MaxTime - c.MinTime))
-		w.buf2.PutUvarint64(c.Ref)
+		w.buf2.PutUvarint64(uint64(c.Ref))
 		t0 := c.MaxTime
 		ref0 := int64(c.Ref)
 
@@ -526,7 +526,7 @@ func (w *Writer) AddSymbol(sym string) error {
 func (w *Writer) finishSymbols() error {
 	symbolTableSize := w.f.pos - w.toc.Symbols - 4
 	// The symbol table's <len> part is 4 bytes. So the total symbol table size must be less than or equal to 2^32-1
-	if symbolTableSize > 4294967295 {
+	if symbolTableSize > math.MaxUint32 {
 		return errors.Errorf("symbol table size exceeds 4 bytes: %d", symbolTableSize)
 	}
 
@@ -658,7 +658,11 @@ func (w *Writer) writeLabelIndex(name string, values []uint32) error {
 
 	// Write out the length.
 	w.buf1.Reset()
-	w.buf1.PutBE32int(int(w.f.pos - startPos - 4))
+	l := w.f.pos - startPos - 4
+	if l > math.MaxUint32 {
+		return errors.Errorf("label index size exceeds 4 bytes: %d", l)
+	}
+	w.buf1.PutBE32int(int(l))
 	if err := w.writeAt(w.buf1.Get(), startPos); err != nil {
 		return err
 	}
@@ -698,7 +702,11 @@ func (w *Writer) writeLabelIndexesOffsetTable() error {
 	}
 	// Write out the length.
 	w.buf1.Reset()
-	w.buf1.PutBE32int(int(w.f.pos - startPos - 4))
+	l := w.f.pos - startPos - 4
+	if l > math.MaxUint32 {
+		return errors.Errorf("label indexes offset table size exceeds 4 bytes: %d", l)
+	}
+	w.buf1.PutBE32int(int(l))
 	if err := w.writeAt(w.buf1.Get(), startPos); err != nil {
 		return err
 	}
@@ -775,7 +783,11 @@ func (w *Writer) writePostingsOffsetTable() error {
 
 	// Write out the length.
 	w.buf1.Reset()
-	w.buf1.PutBE32int(int(w.f.pos - startPos - 4))
+	l := w.f.pos - startPos - 4
+	if l > math.MaxUint32 {
+		return errors.Errorf("postings offset table size exceeds 4 bytes: %d", l)
+	}
+	w.buf1.PutBE32int(int(l))
 	if err := w.writeAt(w.buf1.Get(), startPos); err != nil {
 		return err
 	}
@@ -955,7 +967,12 @@ func (w *Writer) writePosting(name, value string, offs []uint32) error {
 	}
 
 	w.buf2.Reset()
-	w.buf2.PutBE32int(w.buf1.Len())
+	l := w.buf1.Len()
+	// We convert to uint to make code compile on 32-bit systems, as math.MaxUint32 doesn't fit into int there.
+	if uint(l) > math.MaxUint32 {
+		return errors.Errorf("posting size exceeds 4 bytes: %d", l)
+	}
+	w.buf2.PutBE32int(l)
 	w.buf1.PutHash(w.crc32)
 	return w.fP.Write(w.buf2.Get(), w.buf1.Get())
 }
@@ -1537,7 +1554,7 @@ func (r *Reader) LabelValues(name string, matchers ...*labels.Matcher) ([]string
 
 // LabelNamesFor returns all the label names for the series referred to by IDs.
 // The names returned are sorted.
-func (r *Reader) LabelNamesFor(ids ...uint64) ([]string, error) {
+func (r *Reader) LabelNamesFor(ids ...storage.SeriesRef) ([]string, error) {
 	// Gather offsetsMap the name offsetsMap in the symbol table first
 	offsetsMap := make(map[uint32]struct{})
 	for _, id := range ids {
@@ -1579,7 +1596,7 @@ func (r *Reader) LabelNamesFor(ids ...uint64) ([]string, error) {
 }
 
 // LabelValueFor returns label value for the given label name in the series referred to by ID.
-func (r *Reader) LabelValueFor(id uint64, label string) (string, error) {
+func (r *Reader) LabelValueFor(id storage.SeriesRef, label string) (string, error) {
 	offset := id
 	// In version 2 series IDs are no longer exact references but series are 16-byte padded
 	// and the ID is the multiple of 16 of the actual position.
@@ -1606,7 +1623,7 @@ func (r *Reader) LabelValueFor(id uint64, label string) (string, error) {
 
 // Series reads the series with the given ID and writes its labels and chunks into lbls and chks.
 // Chunks will be skipped if chks is nil.
-func (r *Reader) Series(id uint64, lbls *labels.Labels, chks *[]chunks.Meta) error {
+func (r *Reader) Series(id storage.SeriesRef, lbls *labels.Labels, chks *[]chunks.Meta) error {
 	offset := id
 	// In version 2 series IDs are no longer exact references but series are 16-byte padded
 	// and the ID is the multiple of 16 of the actual position.
@@ -1729,7 +1746,7 @@ func (r *Reader) SortedPostings(p Postings) Postings {
 // ShardedPostings returns a postings list filtered by the provided shardIndex out of shardCount.
 func (r *Reader) ShardedPostings(p Postings, shardIndex, shardCount uint64) Postings {
 	var (
-		out     = make([]uint64, 0, 128)
+		out     = make([]storage.SeriesRef, 0, 128)
 		bufLbls = make(labels.Labels, 0, 10)
 	)
 
@@ -1938,7 +1955,7 @@ func (dec *Decoder) Series(b []byte, lbls *labels.Labels, chks *[]chunks.Meta) e
 	ref0 := int64(d.Uvarint64())
 
 	*chks = append(*chks, chunks.Meta{
-		Ref:     uint64(ref0),
+		Ref:     chunks.ChunkRef(ref0),
 		MinTime: t0,
 		MaxTime: maxt,
 	})
@@ -1956,7 +1973,7 @@ func (dec *Decoder) Series(b []byte, lbls *labels.Labels, chks *[]chunks.Meta) e
 		}
 
 		*chks = append(*chks, chunks.Meta{
-			Ref:     uint64(ref0),
+			Ref:     chunks.ChunkRef(ref0),
 			MinTime: mint,
 			MaxTime: maxt,
 		})

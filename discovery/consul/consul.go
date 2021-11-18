@@ -297,6 +297,7 @@ func (d *Discovery) getDatacenter() error {
 	}
 
 	d.clientDatacenter = dc
+	d.logger = log.With(d.logger, "datacenter", dc)
 	return nil
 }
 

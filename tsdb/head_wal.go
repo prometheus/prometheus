@@ -25,24 +25,24 @@ import (
 	"sync"
 	"time"
 
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
-	"github.com/prometheus/prometheus/tsdb/encoding"
-	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
-	"github.com/prometheus/prometheus/tsdb/fileutil"
-
 	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
 	"go.uber.org/atomic"
 
-	"github.com/prometheus/prometheus/pkg/exemplar"
+	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/encoding"
+	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
+	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/wal"
 )
 
-func (h *Head) loadWAL(r *wal.Reader, multiRef map[uint64]uint64, mmappedChunks map[uint64][]*mmappedChunk) (err error) {
+func (h *Head) loadWAL(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef, mmappedChunks map[chunks.HeadSeriesRef][]*mmappedChunk) (err error) {
 	// Track number of samples that referenced a series we don't know about
 	// for error reporting.
 	var unknownRefs atomic.Uint64
@@ -208,8 +208,8 @@ Outer:
 					break Outer
 				}
 
-				if h.lastSeriesID.Load() < walSeries.Ref {
-					h.lastSeriesID.Store(walSeries.Ref)
+				if chunks.HeadSeriesRef(h.lastSeriesID.Load()) < walSeries.Ref {
+					h.lastSeriesID.Store(uint64(walSeries.Ref))
 				}
 
 				mmc := mmappedChunks[walSeries.Ref]
@@ -226,7 +226,7 @@ Outer:
 
 				multiRef[walSeries.Ref] = mSeries.ref
 
-				idx := mSeries.ref % uint64(n)
+				idx := uint64(mSeries.ref) % uint64(n)
 				// It is possible that some old sample is being processed in processWALSamples that
 				// could cause race below. So we wait for the goroutine to empty input the buffer and finish
 				// processing all old samples after emptying the buffer.
@@ -298,7 +298,7 @@ Outer:
 					if r, ok := multiRef[sam.Ref]; ok {
 						sam.Ref = r
 					}
-					mod := sam.Ref % uint64(n)
+					mod := uint64(sam.Ref) % uint64(n)
 					shards[mod] = append(shards[mod], sam)
 				}
 				for i := 0; i < n; i++ {
@@ -314,11 +314,11 @@ Outer:
 					if itv.Maxt < h.minValidTime.Load() {
 						continue
 					}
-					if m := h.series.getByID(s.Ref); m == nil {
+					if m := h.series.getByID(chunks.HeadSeriesRef(s.Ref)); m == nil {
 						unknownRefs.Inc()
 						continue
 					}
-					h.tombstones.AddInterval(s.Ref, itv)
+					h.tombstones.AddInterval(storage.SeriesRef(s.Ref), itv)
 				}
 			}
 			//nolint:staticcheck // Ignore SA6002 relax staticcheck verification.
@@ -429,7 +429,7 @@ const (
 )
 
 type chunkSnapshotRecord struct {
-	ref        uint64
+	ref        chunks.HeadSeriesRef
 	lset       labels.Labels
 	chunkRange int64
 	mc         *memChunk
@@ -440,7 +440,7 @@ func (s *memSeries) encodeToSnapshotRecord(b []byte) []byte {
 	buf := encoding.Encbuf{B: b}
 
 	buf.PutByte(chunkSnapshotRecordTypeSeries)
-	buf.PutBE64(s.ref)
+	buf.PutBE64(uint64(s.ref))
 	buf.PutUvarint(len(s.lset))
 	for _, l := range s.lset {
 		buf.PutUvarintStr(l.Name)
@@ -475,7 +475,7 @@ func decodeSeriesFromChunkSnapshot(b []byte) (csr chunkSnapshotRecord, err error
 		return csr, errors.Errorf("invalid record type %x", flag)
 	}
 
-	csr.ref = dec.Be64()
+	csr.ref = chunks.HeadSeriesRef(dec.Be64())
 
 	// The label set written to the disk is already sorted.
 	csr.lset = make(labels.Labels, dec.Uvarint())
@@ -817,7 +817,7 @@ func DeleteChunkSnapshots(dir string, maxIndex, maxOffset int) error {
 
 // loadChunkSnapshot replays the chunk snapshot and restores the Head state from it. If there was any error returned,
 // it is the responsibility of the caller to clear the contents of the Head.
-func (h *Head) loadChunkSnapshot() (int, int, map[uint64]*memSeries, error) {
+func (h *Head) loadChunkSnapshot() (int, int, map[chunks.HeadSeriesRef]*memSeries, error) {
 	dir, snapIdx, snapOffset, err := LastChunkSnapshot(h.opts.ChunkDirRoot)
 	if err != nil {
 		if err == record.ErrNotFound {
@@ -843,9 +843,9 @@ func (h *Head) loadChunkSnapshot() (int, int, map[uint64]*memSeries, error) {
 		n                = runtime.GOMAXPROCS(0)
 		wg               sync.WaitGroup
 		recordChan       = make(chan chunkSnapshotRecord, 5*n)
-		shardedRefSeries = make([]map[uint64]*memSeries, n)
+		shardedRefSeries = make([]map[chunks.HeadSeriesRef]*memSeries, n)
 		errChan          = make(chan error, n)
-		refSeries        map[uint64]*memSeries
+		refSeries        map[chunks.HeadSeriesRef]*memSeries
 		exemplarBuf      []record.RefExemplar
 		dec              record.Decoder
 	)
@@ -861,7 +861,7 @@ func (h *Head) loadChunkSnapshot() (int, int, map[uint64]*memSeries, error) {
 				}
 			}()
 
-			shardedRefSeries[idx] = make(map[uint64]*memSeries)
+			shardedRefSeries[idx] = make(map[chunks.HeadSeriesRef]*memSeries)
 			localRefSeries := shardedRefSeries[idx]
 
 			for csr := range rc {
@@ -871,8 +871,8 @@ func (h *Head) loadChunkSnapshot() (int, int, map[uint64]*memSeries, error) {
 					return
 				}
 				localRefSeries[csr.ref] = series
-				if h.lastSeriesID.Load() < series.ref {
-					h.lastSeriesID.Store(series.ref)
+				if chunks.HeadSeriesRef(h.lastSeriesID.Load()) < series.ref {
+					h.lastSeriesID.Store(uint64(series.ref))
 				}
 
 				series.chunkRange = csr.chunkRange
@@ -927,7 +927,7 @@ Outer:
 				break Outer
 			}
 
-			if err = tr.Iter(func(ref uint64, ivs tombstones.Intervals) error {
+			if err = tr.Iter(func(ref storage.SeriesRef, ivs tombstones.Intervals) error {
 				h.tombstones.AddInterval(ref, ivs...)
 				return nil
 			}); err != nil {
@@ -941,7 +941,7 @@ Outer:
 				close(recordChan)
 				wg.Wait()
 
-				refSeries = make(map[uint64]*memSeries, numSeries)
+				refSeries = make(map[chunks.HeadSeriesRef]*memSeries, numSeries)
 				for _, shard := range shardedRefSeries {
 					for k, v := range shard {
 						refSeries[k] = v
@@ -1007,7 +1007,7 @@ Outer:
 
 	if len(refSeries) == 0 {
 		// We had no exemplar record, so we have to build the map here.
-		refSeries = make(map[uint64]*memSeries, numSeries)
+		refSeries = make(map[chunks.HeadSeriesRef]*memSeries, numSeries)
 		for _, shard := range shardedRefSeries {
 			for k, v := range shard {
 				refSeries[k] = v

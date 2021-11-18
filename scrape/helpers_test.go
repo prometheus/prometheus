@@ -17,8 +17,8 @@ import (
 	"context"
 	"math/rand"
 
-	"github.com/prometheus/prometheus/pkg/exemplar"
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 )
 
@@ -30,8 +30,11 @@ func (a nopAppendable) Appender(_ context.Context) storage.Appender {
 
 type nopAppender struct{}
 
-func (a nopAppender) Append(uint64, labels.Labels, int64, float64) (uint64, error) { return 0, nil }
-func (a nopAppender) AppendExemplar(uint64, labels.Labels, exemplar.Exemplar) (uint64, error) {
+func (a nopAppender) Append(storage.SeriesRef, labels.Labels, int64, float64) (storage.SeriesRef, error) {
+	return 0, nil
+}
+
+func (a nopAppender) AppendExemplar(storage.SeriesRef, labels.Labels, exemplar.Exemplar) (storage.SeriesRef, error) {
 	return 0, nil
 }
 func (a nopAppender) Commit() error   { return nil }
@@ -54,7 +57,7 @@ type collectResultAppender struct {
 	resultExemplars  []exemplar.Exemplar
 }
 
-func (a *collectResultAppender) Append(ref uint64, lset labels.Labels, t int64, v float64) (uint64, error) {
+func (a *collectResultAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
 	a.pendingResult = append(a.pendingResult, sample{
 		metric: lset,
 		t:      t,
@@ -62,7 +65,7 @@ func (a *collectResultAppender) Append(ref uint64, lset labels.Labels, t int64, 
 	})
 
 	if ref == 0 {
-		ref = rand.Uint64()
+		ref = storage.SeriesRef(rand.Uint64())
 	}
 	if a.next == nil {
 		return ref, nil
@@ -75,7 +78,7 @@ func (a *collectResultAppender) Append(ref uint64, lset labels.Labels, t int64, 
 	return ref, err
 }
 
-func (a *collectResultAppender) AppendExemplar(ref uint64, l labels.Labels, e exemplar.Exemplar) (uint64, error) {
+func (a *collectResultAppender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
 	a.pendingExemplars = append(a.pendingExemplars, e)
 	if a.next == nil {
 		return 0, nil

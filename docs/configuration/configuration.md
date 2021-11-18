@@ -1603,7 +1603,7 @@ Available meta labels:
   from underlying pods), the following labels are attached:
 * `__meta_kubernetes_endpointslice_address_target_kind`: Kind of the referenced object.
 * `__meta_kubernetes_endpointslice_address_target_name`: Name of referenced object.
-* `__meta_kubernetes_endpointslice_address_type`: The ip protocol family of the adress target.
+* `__meta_kubernetes_endpointslice_address_type`: The ip protocol family of the address of the target.
 * `__meta_kubernetes_endpointslice_endpoint_conditions_ready`:  Set to `true` or `false` for the referenced endpoint's ready state.
 * `__meta_kubernetes_endpointslice_endpoint_topology_kubernetes_io_hostname`:  Name of the node hosting the referenced endpoint.
 * `__meta_kubernetes_endpointslice_endpoint_topology_present_kubernetes_io_hostname`: Flag that shows if the referenced object has a kubernetes.io/hostname annotation.
@@ -2752,7 +2752,7 @@ queue_config:
   # Initial retry delay. Gets doubled for every retry.
   [ min_backoff: <duration> | default = 30ms ]
   # Maximum retry delay.
-  [ max_backoff: <duration> | default = 100ms ]
+  [ max_backoff: <duration> | default = 5s ]
   # Retry upon receiving a 429 status code from the remote-write storage.
   # This is experimental and might change in the future.
   [ retry_on_http_429: <boolean> | default = false ]

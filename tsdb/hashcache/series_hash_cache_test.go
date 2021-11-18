@@ -10,6 +10,8 @@ import (
 
 	"github.com/oklog/ulid"
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/storage"
 )
 
 func TestSeriesHashCache(t *testing.T) {
@@ -54,10 +56,10 @@ func TestSeriesHashCache_MeasureApproximateSizePerEntry(t *testing.T) {
 
 	// Preallocate the map in order to not account for re-allocations
 	// since we want to measure the heap utilization and not allocations.
-	b.generations[0].hashes = make(map[uint64]uint64, numEntries)
+	b.generations[0].hashes = make(map[storage.SeriesRef]uint64, numEntries)
 
 	for i := uint64(0); i < numEntries; i++ {
-		b.Store(i, i)
+		b.Store(storage.SeriesRef(i), i)
 	}
 
 	after := runtime.MemStats{}
@@ -89,8 +91,8 @@ func TestSeriesHashCache_Concurrency(t *testing.T) {
 				blockID := strconv.Itoa(n % numBlocks)
 
 				blockCache := c.GetBlockCache(blockID)
-				blockCache.Store(uint64(n), uint64(n))
-				actual, ok := blockCache.Fetch(uint64(n))
+				blockCache.Store(storage.SeriesRef(n), uint64(n))
+				actual, ok := blockCache.Fetch(storage.SeriesRef(n))
 
 				require.True(t, ok)
 				require.Equal(t, uint64(n), actual)
@@ -119,16 +121,16 @@ func BenchmarkSeriesHashCache_StoreAndFetch(b *testing.B) {
 
 			for n := 0; n < b.N; n++ {
 				if n < storeOps {
-					blockCaches[n%numBlocks].Store(uint64(n), uint64(n))
+					blockCaches[n%numBlocks].Store(storage.SeriesRef(n), uint64(n))
 				} else {
-					blockCaches[n%numBlocks].Fetch(uint64(n % storeOps))
+					blockCaches[n%numBlocks].Fetch(storage.SeriesRef(n % storeOps))
 				}
 			}
 		})
 	}
 }
 
-func assertFetch(t *testing.T, c *BlockSeriesHashCache, seriesID, expectedValue uint64, expectedOk bool) {
+func assertFetch(t *testing.T, c *BlockSeriesHashCache, seriesID storage.SeriesRef, expectedValue uint64, expectedOk bool) {
 	actualValue, actualOk := c.Fetch(seriesID)
 	require.Equal(t, expectedValue, actualValue)
 	require.Equal(t, expectedOk, actualOk)

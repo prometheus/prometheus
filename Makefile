@@ -55,8 +55,8 @@ assets: ui-install ui-build
 	# Un-setting GOOS and GOARCH here because the generated Go code is always the same,
 	# but the cached object code is incompatible between architectures and OSes (which
 	# breaks cross-building for different combinations on CI in the same container).
-	cd web/ui && GO111MODULE=$(GO111MODULE) GOOS= GOARCH= $(GO) generate -x -v $(GOOPTS)
-	@$(GOFMT) -w ./web/ui
+	cd $(UI_PATH) && GO111MODULE=$(GO111MODULE) GOOS= GOARCH= $(GO) generate -x -v $(GOOPTS)
+	@$(GOFMT) -w ./$(UI_PATH)
 
 .PHONY: test
 # If we only want to only test go code we have to change the test target

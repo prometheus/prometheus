@@ -18,8 +18,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/prometheus/prometheus/pkg/exemplar"
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 )
@@ -35,6 +35,11 @@ var (
 	ErrExemplarLabelLength         = fmt.Errorf("label length for exemplar exceeds maximum of %d UTF-8 characters", exemplar.ExemplarMaxLabelSetLength)
 	ErrExemplarsDisabled           = fmt.Errorf("exemplar storage is disabled or max exemplars is less than or equal to 0")
 )
+
+// SeriesRef is a generic series reference. In prometheus it is either a
+// HeadSeriesRef or BlockSeriesRef, though other implementations may have
+// their own reference types.
+type SeriesRef uint64
 
 // Appendable allows creating appenders.
 type Appendable interface {
@@ -171,14 +176,14 @@ func (f QueryableFunc) Querier(ctx context.Context, mint, maxt int64) (Querier, 
 // Operations on the Appender interface are not goroutine-safe.
 type Appender interface {
 	// Append adds a sample pair for the given series.
-	// An optional reference number can be provided to accelerate calls.
-	// A reference number is returned which can be used to add further
-	// samples in the same or later transactions.
+	// An optional series reference can be provided to accelerate calls.
+	// A series reference number is returned which can be used to add further
+	// samples to the given series in the same or later transactions.
 	// Returned reference numbers are ephemeral and may be rejected in calls
 	// to Append() at any point. Adding the sample via Append() returns a new
 	// reference number.
 	// If the reference is 0 it must not be used for caching.
-	Append(ref uint64, l labels.Labels, t int64, v float64) (uint64, error)
+	Append(ref SeriesRef, l labels.Labels, t int64, v float64) (SeriesRef, error)
 
 	// Commit submits the collected samples and purges the batch. If Commit
 	// returns a non-nil error, it also rolls back all modifications made in
@@ -199,7 +204,7 @@ type GetRef interface {
 	// Returns reference number that can be used to pass to Appender.Append(),
 	// and a set of labels that will not cause another copy when passed to Appender.Append().
 	// 0 means the appender does not have a reference to this series.
-	GetRef(lset labels.Labels) (uint64, labels.Labels)
+	GetRef(lset labels.Labels) (SeriesRef, labels.Labels)
 }
 
 // ExemplarAppender provides an interface for adding samples to exemplar storage, which
@@ -216,7 +221,7 @@ type ExemplarAppender interface {
 	// Note that in our current implementation of Prometheus' exemplar storage
 	// calls to Append should generate the reference numbers, AppendExemplar
 	// generating a new reference number should be considered possible erroneous behaviour and be logged.
-	AppendExemplar(ref uint64, l labels.Labels, e exemplar.Exemplar) (uint64, error)
+	AppendExemplar(ref SeriesRef, l labels.Labels, e exemplar.Exemplar) (SeriesRef, error)
 }
 
 // SeriesSet contains a set of series.

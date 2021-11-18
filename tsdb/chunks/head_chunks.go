@@ -51,7 +51,7 @@ const (
 	MintMaxtSize = 8
 	// SeriesRefSize is the size of series reference on disk.
 	SeriesRefSize = 8
-	// HeadChunkFileHeaderSize is the total size of the header for the head chunk file.
+	// HeadChunkFileHeaderSize is the total size of the header for a head chunk file.
 	HeadChunkFileHeaderSize = SegmentHeaderSize
 	// MaxHeadChunkFileSize is the max size of a head chunk file.
 	MaxHeadChunkFileSize = 128 * 1024 * 1024 // 128 MiB.
@@ -124,26 +124,27 @@ type ChunkDiskMapper struct {
 	// from which chunks are served till they are flushed and are ready for m-mapping.
 	chunkBuffer *chunkBuffer
 
-	// If 'true', it indicated that the maxt of all the on-disk files were set
-	// after iterating through all the chunks in those files.
+	// Whether the maxt field is set for all mmapped chunk files tracked within the mmappedChunkFiles map.
+	// This is done after iterating through all the chunks in those files using the IterateAllChunks method.
 	fileMaxtSet bool
 
 	closed bool
 }
 
+// mmappedChunkFile provides mmapp access to an entire head chunks file that holds many chunks.
 type mmappedChunkFile struct {
 	byteSlice ByteSlice
-	maxt      int64
+	maxt      int64 // Max timestamp among all of this file's chunks.
 }
 
-// NewChunkDiskMapper returns a new writer against the given directory
+// NewChunkDiskMapper returns a new ChunkDiskMapper against the given directory
 // using the default head chunk file duration.
 // NOTE: 'IterateAllChunks' method needs to be called at least once after creating ChunkDiskMapper
 // to set the maxt of all the file.
 func NewChunkDiskMapper(dir string, pool chunkenc.Pool, writeBufferSize int) (*ChunkDiskMapper, error) {
 	// Validate write buffer size.
 	if writeBufferSize < MinWriteBufferSize || writeBufferSize > MaxWriteBufferSize {
-		return nil, errors.Errorf("ChunkDiskMapper write buffer size should be between %d and %d (actual: %d)", MinWriteBufferSize, MaxHeadChunkFileSize, writeBufferSize)
+		return nil, errors.Errorf("ChunkDiskMapper write buffer size should be between %d and %d (actual: %d)", MinWriteBufferSize, MaxWriteBufferSize, writeBufferSize)
 	}
 	if writeBufferSize%1024 != 0 {
 		return nil, errors.Errorf("ChunkDiskMapper write buffer size should be a multiple of 1024 (actual: %d)", writeBufferSize)
@@ -172,6 +173,7 @@ func NewChunkDiskMapper(dir string, pool chunkenc.Pool, writeBufferSize int) (*C
 	return m, m.openMMapFiles()
 }
 
+// openMMapFiles opens all files within dir for mmapping.
 func (cdm *ChunkDiskMapper) openMMapFiles() (returnErr error) {
 	cdm.mmappedChunkFiles = map[int]*mmappedChunkFile{}
 	cdm.closers = map[int]io.Closer{}
@@ -254,7 +256,7 @@ func listChunkFiles(dir string) (map[int]string, error) {
 }
 
 // repairLastChunkFile deletes the last file if it's empty.
-// Because we don't fsync when creating these file, we could end
+// Because we don't fsync when creating these files, we could end
 // up with an empty file at the end during an abrupt shutdown.
 func repairLastChunkFile(files map[int]string) (_ map[int]string, returnErr error) {
 	lastFile := -1
@@ -285,7 +287,7 @@ func repairLastChunkFile(files map[int]string) (_ map[int]string, returnErr erro
 
 // WriteChunk writes the chunk to the disk.
 // The returned chunk ref is the reference from where the chunk encoding starts for the chunk.
-func (cdm *ChunkDiskMapper) WriteChunk(seriesRef uint64, mint, maxt int64, chk chunkenc.Chunk) (chkRef ChunkDiskMapperRef, err error) {
+func (cdm *ChunkDiskMapper) WriteChunk(seriesRef HeadSeriesRef, mint, maxt int64, chk chunkenc.Chunk) (chkRef ChunkDiskMapperRef, err error) {
 	cdm.writePathMtx.Lock()
 	defer cdm.writePathMtx.Unlock()
 
@@ -312,7 +314,7 @@ func (cdm *ChunkDiskMapper) WriteChunk(seriesRef uint64, mint, maxt int64, chk c
 
 	chkRef = newChunkDiskMapperRef(uint64(cdm.curFileSequence), uint64(cdm.curFileSize()))
 
-	binary.BigEndian.PutUint64(cdm.byteBuf[bytesWritten:], seriesRef)
+	binary.BigEndian.PutUint64(cdm.byteBuf[bytesWritten:], uint64(seriesRef))
 	bytesWritten += SeriesRefSize
 	binary.BigEndian.PutUint64(cdm.byteBuf[bytesWritten:], uint64(mint))
 	bytesWritten += MintMaxtSize
@@ -350,7 +352,7 @@ func (cdm *ChunkDiskMapper) WriteChunk(seriesRef uint64, mint, maxt int64, chk c
 	return chkRef, nil
 }
 
-// shouldCutNewFile decides the cutting of a new file based on time and size retention.
+// shouldCutNewFile returns whether a new file should be cut, based on time and size retention.
 // Size retention: because depending on the system architecture, there is a limit on how big of a file we can m-map.
 // Time retention: so that we can delete old chunks with some time guarantee in low load environments.
 func (cdm *ChunkDiskMapper) shouldCutNewFile(chunkSize int) bool {
@@ -465,7 +467,7 @@ func (cdm *ChunkDiskMapper) flushBuffer() error {
 // Chunk returns a chunk from a given reference.
 func (cdm *ChunkDiskMapper) Chunk(ref ChunkDiskMapperRef) (chunkenc.Chunk, error) {
 	cdm.readPathMtx.RLock()
-	// We hold this read lock for the entire duration because if the Close()
+	// We hold this read lock for the entire duration because if Close()
 	// is called, the data in the byte slice will get corrupted as the mmapped
 	// file will be closed.
 	defer cdm.readPathMtx.RUnlock()
@@ -575,11 +577,11 @@ func (cdm *ChunkDiskMapper) Chunk(ref ChunkDiskMapperRef) (chunkenc.Chunk, error
 	return chk, nil
 }
 
-// IterateAllChunks iterates on all the chunks in its byte slices in the order of the head chunk file sequence
-// and runs the provided function on each chunk. It returns on the first error encountered.
+// IterateAllChunks iterates all mmappedChunkFiles (in order of head chunk file name/number) and all the chunks within it
+// and runs the provided function with information about each chunk. It returns on the first error encountered.
 // NOTE: This method needs to be called at least once after creating ChunkDiskMapper
 // to set the maxt of all the file.
-func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef uint64, chunkRef ChunkDiskMapperRef, mint, maxt int64, numSamples uint16) error) (err error) {
+func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef HeadSeriesRef, chunkRef ChunkDiskMapperRef, mint, maxt int64, numSamples uint16) error) (err error) {
 	cdm.writePathMtx.Lock()
 	defer cdm.writePathMtx.Unlock()
 
@@ -627,7 +629,7 @@ func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef uint64, chunkRef C
 			chunkRef := newChunkDiskMapperRef(uint64(segID), uint64(idx))
 
 			startIdx := idx
-			seriesRef := binary.BigEndian.Uint64(mmapFile.byteSlice.Range(idx, idx+SeriesRefSize))
+			seriesRef := HeadSeriesRef(binary.BigEndian.Uint64(mmapFile.byteSlice.Range(idx, idx+SeriesRefSize)))
 			idx += SeriesRefSize
 			mint := int64(binary.BigEndian.Uint64(mmapFile.byteSlice.Range(idx, idx+MintMaxtSize)))
 			idx += MintMaxtSize
@@ -825,7 +827,7 @@ func closeAllFromMap(cs map[int]io.Closer) error {
 
 const inBufferShards = 128 // 128 is a randomly chosen number.
 
-// chunkBuffer is a thread safe buffer for chunks.
+// chunkBuffer is a thread safe lookup table for chunks by their ref.
 type chunkBuffer struct {
 	inBufferChunks     [inBufferShards]map[ChunkDiskMapperRef]chunkenc.Chunk
 	inBufferChunksMtxs [inBufferShards]sync.RWMutex
