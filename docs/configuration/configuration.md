@@ -2648,6 +2648,28 @@ relabel_configs:
   [ - <relabel_config> ... ]
 ```
 
+### `<tracing>`
+`tracing` configures exporting traces from Prometheus to a tracing backend via the OTLP protocol.
+
+Must be used together with `--enable-feature=tracing` flag.
+
+```yaml
+# Decides whether to use HTTP or gRPC client to export the traces.
+[ client_type: <string> | default = grpc ]
+
+# Service name to be used for tracing purposes.
+[ service_name: <string> | default = prometheus ]
+
+# Endpoint to send the traces to. By default, this is the Otel Collector's gRPC port 7314 on a localhost.
+[ endpoint: <string> | default = localhost:7314 ]
+
+# Sets the probability a given trace will be sampled. Must be a float between 0 and 1. The default is 0, meaning no traces are exported.
+[ sampling_fraction: <float> | default = 0 ]
+
+# If enabled, the client will use a secure connection.
+[ with_secure: <bool> | default = false ]
+```
+
 ### `<remote_write>`
 
 `write_relabel_configs` is relabeling applied to samples before sending them

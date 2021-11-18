@@ -96,3 +96,11 @@ discovery, scrape and remote write.
 
 This is useful when you do not need to query the Prometheus data locally, but
 only from a central [remote endpoint](https://prometheus.io/docs/operating/integrations/#remote-endpoints-and-storage).
+
+## Tracing
+
+`--enable-feature=tracing`
+
+Prometheus supports exporting traces using the OTLP protocol into a compatible tracing backend, such as the [OpenTelemetry Collector](https://opentelemetry.io/docs/collector/).
+
+The accompanying tracing configuration should be provided in the configuration file. See the [relevant part](configuration/configuration.md#tracing) of the documentation.
