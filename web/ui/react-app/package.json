@@ -89,7 +89,7 @@
     "prettier": "^2.4.1",
     "react-scripts": "4.0.3",
     "sinon": "^11.1.2",
-    "typescript": "^4.4.2"
+    "typescript": "^4.5.2"
   },
   "proxy": "http://localhost:9090",
   "jest": {
