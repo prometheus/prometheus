@@ -114,7 +114,7 @@ func (h *Head) Appender(_ context.Context) storage.Appender {
 }
 
 func (h *Head) appender() *headAppender {
-	appendID, cleanupAppendIDsBelow := h.iso.newAppendID()
+	appendID, cleanupAppendIDsBelow := h.iso.newAppendID() // Every appender gets an ID that is cleared upon commit/rollback.
 
 	// Allocate the exemplars buffer only if exemplars are enabled.
 	var exemplarsBuf []exemplarWithSeriesRef
@@ -224,10 +224,10 @@ type headAppender struct {
 	minValidTime int64 // No samples below this timestamp are allowed.
 	mint, maxt   int64
 
-	series       []record.RefSeries
-	samples      []record.RefSample
-	exemplars    []exemplarWithSeriesRef
-	sampleSeries []*memSeries
+	series       []record.RefSeries      // New series held by this appender.
+	samples      []record.RefSample      // New samples held by this appender.
+	exemplars    []exemplarWithSeriesRef // New exemplars held by this appender.
+	sampleSeries []*memSeries            // Series corresponding to the samples held by this appender (using corresponding slice indices - same series may appear more than once).
 
 	appendID, cleanupAppendIDsBelow uint64
 	closed                          bool
@@ -361,6 +361,7 @@ func (a *headAppender) GetRef(lset labels.Labels) (storage.SeriesRef, labels.Lab
 	return storage.SeriesRef(s.ref), s.lset
 }
 
+// log writes all headAppender's data to the WAL.
 func (a *headAppender) log() error {
 	if a.head.wal == nil {
 		return nil
@@ -412,6 +413,7 @@ func exemplarsForEncoding(es []exemplarWithSeriesRef) []record.RefExemplar {
 	return ret
 }
 
+// Commit writes to the WAL and adds the data to the Head.
 func (a *headAppender) Commit() (err error) {
 	if a.closed {
 		return ErrAppenderClosed
@@ -481,7 +483,7 @@ func (s *memSeries) append(t int64, v float64, appendID uint64, chunkDiskMapper 
 
 	if c == nil {
 		if len(s.mmappedChunks) > 0 && s.mmappedChunks[len(s.mmappedChunks)-1].maxTime >= t {
-			// Out of order sample. Sample timestamp is already in the mmaped chunks, so ignore it.
+			// Out of order sample. Sample timestamp is already in the mmapped chunks, so ignore it.
 			return false, false
 		}
 		// There is no chunk in this series yet, create the first chunk for the sample.
@@ -583,6 +585,7 @@ func (s *memSeries) mmapCurrentHeadChunk(chunkDiskMapper *chunks.ChunkDiskMapper
 	})
 }
 
+// Rollback removes the samples and exemplars from headAppender and writes any series to WAL.
 func (a *headAppender) Rollback() (err error) {
 	if a.closed {
 		return ErrAppenderClosed

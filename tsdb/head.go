@@ -992,12 +992,15 @@ func (h *Head) Stats(statsByLabelName string) *Stats {
 	}
 }
 
+// RangeHead allows querying Head via an IndexReader, ChunkReader and tombstones.Reader
+// but only within a restricted range.  Used for queries and compactions.
 type RangeHead struct {
 	head       *Head
 	mint, maxt int64
 }
 
 // NewRangeHead returns a *RangeHead.
+// There are no restrictions on mint/maxt.
 func NewRangeHead(head *Head, mint, maxt int64) *RangeHead {
 	return &RangeHead{
 		head: head,
@@ -1284,15 +1287,17 @@ const (
 	DefaultStripeSize = 1 << 14
 )
 
-// stripeSeries locks modulo ranges of IDs and hashes to reduce lock contention.
+// stripeSeries holds series by HeadSeriesRef ("ID") and also by hash of their labels.
+// ID-based lookups via (getByID()) are preferred over getByHash() for performance reasons.
+// It locks modulo ranges of IDs and hashes to reduce lock contention.
 // The locks are padded to not be on the same cache line. Filling the padded space
 // with the maps was profiled to be slower – likely due to the additional pointer
 // dereferences.
 type stripeSeries struct {
 	size                    int
-	series                  []map[chunks.HeadSeriesRef]*memSeries
-	hashes                  []seriesHashmap
-	locks                   []stripeLock
+	series                  []map[chunks.HeadSeriesRef]*memSeries // Sharded by ref. A series ref is the value of `size` when the series was being newly added.
+	hashes                  []seriesHashmap                       // Sharded by label hash.
+	locks                   []stripeLock                          // Sharded by ref for series access, by label hash for hashes access.
 	seriesLifecycleCallback SeriesLifecycleCallback
 }
 
@@ -1464,19 +1469,37 @@ func (s sample) V() float64                        { return s.v }
 type memSeries struct {
 	sync.RWMutex
 
-	ref           chunks.HeadSeriesRef
-	lset          labels.Labels
-	mmappedChunks []*mmappedChunk
-	mmMaxTime     int64 // Max time of any mmapped chunk, only used during WAL replay.
-	headChunk     *memChunk
-	chunkRange    int64
-	firstChunkID  int
+	ref  chunks.HeadSeriesRef
+	lset labels.Labels
 
-	nextAt        int64 // Timestamp at which to cut the next chunk.
-	sampleBuf     [4]sample
+	// Immutable chunks on disk that have not yet gone into a block, in order of ascending time stamps.
+	// When compaction runs, chunks get moved into a block and all pointers are shifted like so:
+	//
+	//                                    /------- let's say these 2 chunks get stored into a block
+	//                                    |  |
+	// before compaction: mmappedChunks=[p5,p6,p7,p8,p9] firstChunkID=5
+	//  after compaction: mmappedChunks=[p7,p8,p9]       firstChunkID=7
+	//
+	// pN is the pointer to the mmappedChunk referered to by HeadChunkID=N
+	mmappedChunks []*mmappedChunk
+
+	mmMaxTime    int64     // Max time of any mmapped chunk, only used during WAL replay.
+	headChunk    *memChunk // Most recent chunk in memory that's still being built.
+	chunkRange   int64
+	firstChunkID chunks.HeadChunkID // HeadChunkID for mmappedChunks[0]
+
+	nextAt int64 // Timestamp at which to cut the next chunk.
+
+	// We keep the last 4 samples here (in addition to appending them to the chunk) so we don't need coordination between appender and querier.
+	// Even the most compact encoding of a sample takes 2 bits, so the last byte is not contended.
+	sampleBuf [4]sample
+
 	pendingCommit bool // Whether there are samples waiting to be committed to this series.
 
-	app chunkenc.Appender // Current appender for the chunk.
+	// Current appender for the head chunk. Set when a new head chunk is cut.
+	// It is nil only if headChunk is nil. E.g. if there was an appender that created a new series, but rolled back the commit
+	// (the first sample would create a headChunk, hence appender, but rollback skipped it while the Append() call would create a series).
+	app chunkenc.Appender
 
 	memChunkPool *sync.Pool
 
@@ -1523,7 +1546,7 @@ func (s *memSeries) truncateChunksBefore(mint int64) (removed int) {
 	if s.headChunk != nil && s.headChunk.maxTime < mint {
 		// If head chunk is truncated, we can truncate all mmapped chunks.
 		removed = 1 + len(s.mmappedChunks)
-		s.firstChunkID += removed
+		s.firstChunkID += chunks.HeadChunkID(removed)
 		s.headChunk = nil
 		s.mmappedChunks = nil
 		return removed
@@ -1536,7 +1559,7 @@ func (s *memSeries) truncateChunksBefore(mint int64) (removed int) {
 			removed = i + 1
 		}
 		s.mmappedChunks = append(s.mmappedChunks[:0], s.mmappedChunks[removed:]...)
-		s.firstChunkID += removed
+		s.firstChunkID += chunks.HeadChunkID(removed)
 	}
 	return removed
 }

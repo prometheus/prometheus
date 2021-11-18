@@ -9,32 +9,33 @@ require (
 	github.com/Azure/go-autorest/autorest/to v0.4.0 // indirect
 	github.com/Azure/go-autorest/autorest/validation v0.3.1 // indirect
 	github.com/alecthomas/units v0.0.0-20210927113745-59d0afb8317a
-	github.com/aws/aws-sdk-go v1.42.4
+	github.com/aws/aws-sdk-go v1.42.6
 	github.com/cespare/xxhash/v2 v2.1.2
 	github.com/containerd/containerd v1.5.7 // indirect
 	github.com/dennwc/varint v1.0.0
 	github.com/dgryski/go-sip13 v0.0.0-20200911182023-62edffca9245
-	github.com/digitalocean/godo v1.69.1
+	github.com/digitalocean/godo v1.71.0
 	github.com/docker/docker v20.10.10+incompatible
 	github.com/docker/go-connections v0.4.0 // indirect
 	github.com/edsrzf/mmap-go v1.0.0
-	github.com/envoyproxy/go-control-plane v0.9.10-0.20210907150352-cf90f659a021
-	github.com/envoyproxy/protoc-gen-validate v0.6.1
+	github.com/envoyproxy/go-control-plane v0.10.1
+	github.com/envoyproxy/protoc-gen-validate v0.6.2
+	github.com/fsnotify/fsnotify v1.5.1
 	github.com/go-kit/log v0.2.0
 	github.com/go-logfmt/logfmt v0.5.1
-	github.com/go-openapi/strfmt v0.20.3
+	github.com/go-openapi/strfmt v0.21.0
 	github.com/go-zookeeper/zk v1.0.2
 	github.com/gogo/protobuf v1.3.2
 	github.com/golang/snappy v0.0.4
 	github.com/google/pprof v0.0.0-20211008130755-947d60d73cc0
-	github.com/gophercloud/gophercloud v0.22.0
+	github.com/gophercloud/gophercloud v0.23.0
 	github.com/grpc-ecosystem/grpc-gateway v1.16.0
 	github.com/hashicorp/consul/api v1.11.0
 	github.com/hetznercloud/hcloud-go v1.33.1
 	github.com/influxdata/influxdb v1.9.5
 	github.com/json-iterator/go v1.1.12
 	github.com/kolo/xmlrpc v0.0.0-20201022064351-38db28db192b
-	github.com/linode/linodego v1.1.0
+	github.com/linode/linodego v1.2.1
 	github.com/miekg/dns v1.1.43
 	github.com/moby/term v0.0.0-20210619224110-3f7ff695adc6 // indirect
 	github.com/morikuni/aec v1.0.0 // indirect
@@ -69,10 +70,8 @@ require (
 	golang.org/x/tools v0.1.7
 	google.golang.org/api v0.60.0
 	google.golang.org/genproto v0.0.0-20211021150943-2b146023228c
-	google.golang.org/grpc v1.42.0
 	google.golang.org/protobuf v1.27.1
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
-	gopkg.in/fsnotify/fsnotify.v1 v1.4.7
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
 	k8s.io/api v0.22.3
