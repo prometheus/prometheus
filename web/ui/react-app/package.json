@@ -18,7 +18,7 @@
     "@forevolve/bootstrap-dark": "^1.0.0",
     "@fortawesome/fontawesome-svg-core": "^1.2.14",
     "@fortawesome/free-solid-svg-icons": "^5.7.1",
-    "@fortawesome/react-fontawesome": "^0.1.4",
+    "@fortawesome/react-fontawesome": "^0.1.16",
     "@nexucis/fuzzy": "^0.3.0",
     "bootstrap": "^5.1.3",
     "codemirror-promql": "0.18.0",
