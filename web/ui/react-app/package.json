@@ -67,7 +67,7 @@
     "@testing-library/react-hooks": "^7.0.1",
     "@types/enzyme": "^3.10.10",
     "@types/flot": "0.0.32",
-    "@types/jest": "^27.0.1",
+    "@types/jest": "^27.0.2",
     "@types/jquery": "^3.5.8",
     "@types/node": "^16.11.7",
     "@types/react": "^17.0.35",
