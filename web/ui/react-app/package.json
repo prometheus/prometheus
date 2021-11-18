@@ -65,7 +65,7 @@
   ],
   "devDependencies": {
     "@testing-library/react-hooks": "^7.0.1",
-    "@types/enzyme": "^3.10.9",
+    "@types/enzyme": "^3.10.10",
     "@types/flot": "0.0.32",
     "@types/jest": "^27.0.1",
     "@types/jquery": "^3.5.8",
