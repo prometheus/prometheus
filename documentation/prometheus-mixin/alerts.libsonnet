@@ -418,7 +418,7 @@
             },
             annotations: {
               summary: 'More than half of the Prometheus instances within the same HA group are crashlooping.',
-              description: '{{ $value | humanizePercentage }} of Prometheus instances within the %(prometheusHAGroupName)s HA group have had at least 5 recent total restarts or 2 recent unclean restarts.' % $._config,
+              description: '{{ $value | humanizePercentage }} of Prometheus instances within the %(prometheusHAGroupName)s HA group have had at least 5 total restarts in the last 30m or 2 unclean restarts in the last 1h.' % $._config,
             },
           },
         ],
