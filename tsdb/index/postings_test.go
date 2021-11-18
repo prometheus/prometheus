@@ -940,11 +940,11 @@ func TestPostingsCloner(t *testing.T) {
 			check: func(t testing.TB, pc *PostingsCloner) {
 				p1 := pc.Clone()
 				require.False(t, p1.Seek(9))
-				require.Equal(t, uint64(0), p1.At())
+				require.Equal(t, storage.SeriesRef(0), p1.At())
 
 				p2 := pc.Clone()
 				require.False(t, p2.Seek(10))
-				require.Equal(t, uint64(0), p2.At())
+				require.Equal(t, storage.SeriesRef(0), p2.At())
 			},
 		},
 		{
@@ -952,11 +952,11 @@ func TestPostingsCloner(t *testing.T) {
 			check: func(t testing.TB, pc *PostingsCloner) {
 				p1 := pc.Clone()
 				require.False(t, p1.Seek(9))
-				require.Equal(t, uint64(0), p1.At())
+				require.Equal(t, storage.SeriesRef(0), p1.At())
 
 				p2 := pc.Clone()
 				require.True(t, p2.Seek(2))
-				require.Equal(t, uint64(2), p2.At())
+				require.Equal(t, storage.SeriesRef(2), p2.At())
 			},
 		},
 		{
@@ -964,9 +964,9 @@ func TestPostingsCloner(t *testing.T) {
 			check: func(t testing.TB, pc *PostingsCloner) {
 				p := pc.Clone()
 				require.True(t, p.Seek(3))
-				require.Equal(t, uint64(4), p.At())
+				require.Equal(t, storage.SeriesRef(4), p.At())
 				require.True(t, p.Seek(4))
-				require.Equal(t, uint64(4), p.At())
+				require.Equal(t, storage.SeriesRef(4), p.At())
 			},
 		},
 		{
@@ -974,24 +974,24 @@ func TestPostingsCloner(t *testing.T) {
 			check: func(t testing.TB, pc *PostingsCloner) {
 				p1 := pc.Clone()
 				require.True(t, p1.Seek(1))
-				require.Equal(t, uint64(1), p1.At())
+				require.Equal(t, storage.SeriesRef(1), p1.At())
 
 				p2 := pc.Clone()
 				require.True(t, p2.Seek(2))
-				require.Equal(t, uint64(2), p2.At())
+				require.Equal(t, storage.SeriesRef(2), p2.At())
 
 				p3 := pc.Clone()
 				require.True(t, p3.Seek(4))
-				require.Equal(t, uint64(4), p3.At())
+				require.Equal(t, storage.SeriesRef(4), p3.At())
 
 				p4 := pc.Clone()
 				require.True(t, p4.Seek(5))
-				require.Equal(t, uint64(8), p4.At())
+				require.Equal(t, storage.SeriesRef(8), p4.At())
 
 				require.True(t, p1.Seek(3))
-				require.Equal(t, uint64(4), p1.At())
+				require.Equal(t, storage.SeriesRef(4), p1.At())
 				require.True(t, p1.Seek(4))
-				require.Equal(t, uint64(4), p1.At())
+				require.Equal(t, storage.SeriesRef(4), p1.At())
 			},
 		},
 		{
@@ -1002,29 +1002,29 @@ func TestPostingsCloner(t *testing.T) {
 
 				// both one step
 				require.True(t, p1.Next())
-				require.Equal(t, uint64(1), p1.At())
+				require.Equal(t, storage.SeriesRef(1), p1.At())
 				require.True(t, p2.Next())
-				require.Equal(t, uint64(1), p2.At())
+				require.Equal(t, storage.SeriesRef(1), p2.At())
 
 				require.True(t, p1.Next())
-				require.Equal(t, uint64(2), p1.At())
+				require.Equal(t, storage.SeriesRef(2), p1.At())
 				require.True(t, p1.Next())
-				require.Equal(t, uint64(4), p1.At())
+				require.Equal(t, storage.SeriesRef(4), p1.At())
 				require.True(t, p1.Next())
-				require.Equal(t, uint64(8), p1.At())
+				require.Equal(t, storage.SeriesRef(8), p1.At())
 				require.False(t, p1.Next())
 
 				require.True(t, p2.Next())
-				require.Equal(t, uint64(2), p2.At())
+				require.Equal(t, storage.SeriesRef(2), p2.At())
 				require.True(t, p2.Next())
-				require.Equal(t, uint64(4), p2.At())
+				require.Equal(t, storage.SeriesRef(4), p2.At())
 			},
 		},
 		{
 			name: "at before call of next shouldn't panic",
 			check: func(t testing.TB, pc *PostingsCloner) {
 				p := pc.Clone()
-				require.Equal(t, uint64(0), p.At())
+				require.Equal(t, storage.SeriesRef(0), p.At())
 			},
 		},
 		{
@@ -1032,9 +1032,9 @@ func TestPostingsCloner(t *testing.T) {
 			check: func(t testing.TB, pc *PostingsCloner) {
 				p := pc.Clone()
 				require.False(t, p.Seek(9))
-				require.Equal(t, uint64(0), p.At())
+				require.Equal(t, storage.SeriesRef(0), p.At())
 				require.False(t, p.Next())
-				require.Equal(t, uint64(0), p.At())
+				require.Equal(t, storage.SeriesRef(0), p.At())
 			},
 		},
 	} {
