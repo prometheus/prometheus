@@ -30,7 +30,6 @@ import (
 	tracesdk "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.7.0"
 	"go.opentelemetry.io/otel/trace"
-	"google.golang.org/grpc"
 
 	"github.com/prometheus/prometheus/config"
 )
@@ -81,7 +80,7 @@ func (m *Manager) ApplyConfig(cfg *config.Config) error {
 	m.config = cfg.TracingConfig
 	otel.SetTracerProvider(tp)
 
-	level.Info(m.logger).Log("msg", "Succefully installed a new tracer provider.")
+	level.Info(m.logger).Log("msg", "Successfully installed a new tracer provider.")
 	return nil
 }
 
@@ -149,19 +148,17 @@ func buildTracerProvider(ctx context.Context, tracingCfg config.TracingConfig) (
 // on the provided tracing configuration.
 func getClient(tracingCfg config.TracingConfig) otlptrace.Client {
 	var client otlptrace.Client
-	if tracingCfg.GrpcClient {
-		opts := []otlptracegrpc.Option{
-			otlptracegrpc.WithEndpoint(tracingCfg.Endpoint),
-			otlptracegrpc.WithDialOption(grpc.WithBlock()),
-		}
-		if tracingCfg.WithInsecure {
+	switch tracingCfg.ClientType {
+	case config.TracingClientGRPC:
+		opts := []otlptracegrpc.Option{otlptracegrpc.WithEndpoint(tracingCfg.Endpoint)}
+		if !tracingCfg.WithSecure {
 			opts = append(opts, otlptracegrpc.WithInsecure())
 		}
 
 		client = otlptracegrpc.NewClient(opts...)
-	} else {
+	case config.TracingClientHTTP:
 		opts := []otlptracehttp.Option{otlptracehttp.WithEndpoint(tracingCfg.Endpoint)}
-		if tracingCfg.WithInsecure {
+		if !tracingCfg.WithSecure {
 			opts = append(opts, otlptracehttp.WithInsecure())
 		}
 		client = otlptracehttp.NewClient(opts...)

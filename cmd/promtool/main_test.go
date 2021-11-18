@@ -194,7 +194,7 @@ func TestCheckTargetConfig(t *testing.T) {
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
-			_, err := checkConfig(false, "testdata/"+test.file)
+			_, err := checkConfig(false, false, "testdata/"+test.file)
 			if test.err != "" {
 				require.Equalf(t, test.err, err.Error(), "Expected error %q, got %q", test.err, err.Error())
 				return

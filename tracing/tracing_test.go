@@ -30,6 +30,7 @@ func TestInstallingNewTracerProvider(t *testing.T) {
 	cfg := config.Config{
 		TracingConfig: config.TracingConfig{
 			ServiceName: "test",
+			ClientType:  config.TracingClientGRPC,
 		},
 	}
 
@@ -42,6 +43,7 @@ func TestReinstallingTracerProvider(t *testing.T) {
 	cfg := config.Config{
 		TracingConfig: config.TracingConfig{
 			ServiceName: "test",
+			ClientType:  config.TracingClientGRPC,
 		},
 	}
 
@@ -55,6 +57,7 @@ func TestReinstallingTracerProvider(t *testing.T) {
 	cfg2 := config.Config{
 		TracingConfig: config.TracingConfig{
 			ServiceName: "test-2",
+			ClientType:  config.TracingClientGRPC,
 		},
 	}
 	m.ApplyConfig(&cfg2)

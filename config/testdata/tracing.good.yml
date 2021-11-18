@@ -1,0 +1,4 @@
+tracing:
+  service_name: "test"
+  endpoint: "localhost:1234"
+  sampling_fraction: 1
