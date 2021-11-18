@@ -40,7 +40,7 @@ type sdCheckResult struct {
 func CheckSD(sdConfigFiles, sdJobName string, sdTimeout time.Duration) int {
 	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
 
-	cfg, err := config.LoadFile(sdConfigFiles, false, false, logger)
+	cfg, err := config.LoadFile(sdConfigFiles, false, false, false, logger)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Cannot load config", err)
 		return 2

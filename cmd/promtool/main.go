@@ -189,7 +189,10 @@ func main() {
 		p = &promqlPrinter{}
 	}
 
-	var queryOpts promql.LazyLoaderOpts
+	var (
+		queryOpts      promql.LazyLoaderOpts
+		tracingEnabled bool
+	)
 	for _, f := range *featureList {
 		opts := strings.Split(f, ",")
 		for _, o := range opts {
@@ -198,6 +201,8 @@ func main() {
 				queryOpts.EnableAtModifier = true
 			case "promql-negative-offset":
 				queryOpts.EnableNegativeOffset = true
+			case "tracing":
+				tracingEnabled = true
 			case "":
 				continue
 			default:
@@ -211,7 +216,7 @@ func main() {
 		os.Exit(CheckSD(*sdConfigFile, *sdJobName, *sdTimeout))
 
 	case checkConfigCmd.FullCommand():
-		os.Exit(CheckConfig(*agentMode, *configFiles...))
+		os.Exit(CheckConfig(*agentMode, tracingEnabled, *configFiles...))
 
 	case checkWebConfigCmd.FullCommand():
 		os.Exit(CheckWebConfig(*webConfigFiles...))
@@ -267,11 +272,11 @@ func main() {
 }
 
 // CheckConfig validates configuration files.
-func CheckConfig(agentMode bool, files ...string) int {
+func CheckConfig(agentMode, tracingEnabled bool, files ...string) int {
 	failed := false
 
 	for _, f := range files {
-		ruleFiles, err := checkConfig(agentMode, f)
+		ruleFiles, err := checkConfig(agentMode, tracingEnabled, f)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "  FAILED:", err)
 			failed = true
@@ -326,10 +331,10 @@ func checkFileExists(fn string) error {
 	return err
 }
 
-func checkConfig(agentMode bool, filename string) ([]string, error) {
+func checkConfig(agentMode, tracingEnabled bool, filename string) ([]string, error) {
 	fmt.Println("Checking", filename)
 
-	cfg, err := config.LoadFile(filename, agentMode, false, log.NewNopLogger())
+	cfg, err := config.LoadFile(filename, agentMode, false, tracingEnabled, log.NewNopLogger())
 	if err != nil {
 		return nil, err
 	}
