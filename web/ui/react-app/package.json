@@ -77,7 +77,7 @@
     "@types/react-router-dom": "^5.3.2",
     "@types/sanitize-html": "^2.5.0",
     "@types/sinon": "^10.0.6",
-    "@wojtekmaj/enzyme-adapter-react-17": "^0.6.3",
+    "@wojtekmaj/enzyme-adapter-react-17": "^0.6.5",
     "enzyme": "^3.11.0",
     "enzyme-to-json": "^3.6.2",
     "eslint-config-prettier": "^8.3.0",
