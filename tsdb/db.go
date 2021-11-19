@@ -79,6 +79,7 @@ func DefaultOptions() *Options {
 		WALCompression:            false,
 		StripeSize:                DefaultStripeSize,
 		HeadChunksWriteBufferSize: chunks.DefaultWriteBufferSize,
+		IsolationDisabled:         defaultIsolationDisabled,
 	}
 }
 
@@ -143,7 +144,7 @@ type Options struct {
 	// mainly meant for external users who import TSDB.
 	BlocksToDelete BlocksToDeleteFunc
 
-	// Enables the in memory exemplar storage,.
+	// Enables the in memory exemplar storage.
 	EnableExemplarStorage bool
 
 	// Enables the snapshot of in-memory chunks on shutdown. This makes restarts faster.
@@ -152,6 +153,9 @@ type Options struct {
 	// MaxExemplars sets the size, in # of exemplars stored, of the single circular buffer used to store exemplars in memory.
 	// See tsdb/exemplar.go, specifically the CircularExemplarStorage struct and it's constructor NewCircularExemplarStorage.
 	MaxExemplars int64
+
+	// Disables isolation between reads and in-flight appends.
+	IsolationDisabled bool
 }
 
 type BlocksToDeleteFunc func(blocks []*Block) map[ulid.ULID]struct{}
@@ -705,6 +709,10 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	headOpts.EnableExemplarStorage = opts.EnableExemplarStorage
 	headOpts.MaxExemplars.Store(opts.MaxExemplars)
 	headOpts.EnableMemorySnapshotOnShutdown = opts.EnableMemorySnapshotOnShutdown
+	if opts.IsolationDisabled {
+		// We only override this flag if isolation is disabled at DB level. We use the default otherwise.
+		headOpts.IsolationDisabled = opts.IsolationDisabled
+	}
 	db.head, err = NewHead(r, l, wlog, headOpts, stats.Head)
 	if err != nil {
 		return nil, err

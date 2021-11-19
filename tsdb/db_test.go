@@ -17,6 +17,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/binary"
+	"flag"
 	"fmt"
 	"hash/crc32"
 	"io/ioutil"
@@ -54,6 +55,11 @@ import (
 )
 
 func TestMain(m *testing.M) {
+	var isolationEnabled bool
+	flag.BoolVar(&isolationEnabled, "test.tsdb-isolation", true, "enable isolation")
+	flag.Parse()
+	defaultIsolationDisabled = !isolationEnabled
+
 	goleak.VerifyTestMain(m, goleak.IgnoreTopFunction("github.com/prometheus/prometheus/tsdb.(*SegmentWAL).cut.func1"), goleak.IgnoreTopFunction("github.com/prometheus/prometheus/tsdb.(*SegmentWAL).cut.func2"))
 }
 
@@ -2407,6 +2413,10 @@ func TestDBReadOnly_FlushWAL(t *testing.T) {
 }
 
 func TestDBCannotSeePartialCommits(t *testing.T) {
+	if defaultIsolationDisabled {
+		t.Skip("skipping test since tsdb isolation is disabled")
+	}
+
 	tmpdir, _ := ioutil.TempDir("", "test")
 	defer func() {
 		require.NoError(t, os.RemoveAll(tmpdir))
@@ -2477,6 +2487,10 @@ func TestDBCannotSeePartialCommits(t *testing.T) {
 }
 
 func TestDBQueryDoesntSeeAppendsAfterCreation(t *testing.T) {
+	if defaultIsolationDisabled {
+		t.Skip("skipping test since tsdb isolation is disabled")
+	}
+
 	tmpdir, _ := ioutil.TempDir("", "test")
 	defer func() {
 		require.NoError(t, os.RemoveAll(tmpdir))
