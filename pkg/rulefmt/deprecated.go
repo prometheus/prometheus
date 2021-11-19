@@ -16,12 +16,16 @@ package rulefmt
 
 import "github.com/prometheus/prometheus/model/rulefmt"
 
-type Error = rulefmt.Error
-type Rule = rulefmt.Rule
-type RuleGroup = rulefmt.RuleGroup
-type RuleGroups = rulefmt.RuleGroups
-type RuleNode = rulefmt.RuleNode
-type WrappedError = rulefmt.WrappedError
+type (
+	Error        = rulefmt.Error
+	Rule         = rulefmt.Rule
+	RuleGroup    = rulefmt.RuleGroup
+	RuleGroups   = rulefmt.RuleGroups
+	RuleNode     = rulefmt.RuleNode
+	WrappedError = rulefmt.WrappedError
+)
 
-var Parse = rulefmt.Parse
-var ParseFile = rulefmt.ParseFile
+var (
+	Parse     = rulefmt.Parse
+	ParseFile = rulefmt.ParseFile
+)

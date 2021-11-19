@@ -16,28 +16,34 @@ package labels
 
 import "github.com/prometheus/prometheus/model/labels"
 
-const MetricName = labels.MetricName
-const MatchEqual = labels.MatchEqual
-const MatchNotEqual = labels.MatchNotEqual
-const MatchRegexp = labels.MatchRegexp
-const MatchNotRegexp = labels.MatchNotRegexp
+const (
+	MetricName     = labels.MetricName
+	MatchEqual     = labels.MatchEqual
+	MatchNotEqual  = labels.MatchNotEqual
+	MatchRegexp    = labels.MatchRegexp
+	MatchNotRegexp = labels.MatchNotRegexp
+)
 
-var Compare = labels.Compare
-var Equal = labels.Equal
-var NewBuilder = labels.NewBuilder
-var NewFastRegexMatcher = labels.NewFastRegexMatcher
-var FromMap = labels.FromMap
-var FromStrings = labels.FromStrings
-var New = labels.New
-var ReadLabels = labels.ReadLabels
-var MustNewMatcher = labels.MustNewMatcher
-var NewMatcher = labels.NewMatcher
+var (
+	Compare             = labels.Compare
+	Equal               = labels.Equal
+	NewBuilder          = labels.NewBuilder
+	NewFastRegexMatcher = labels.NewFastRegexMatcher
+	FromMap             = labels.FromMap
+	FromStrings         = labels.FromStrings
+	New                 = labels.New
+	ReadLabels          = labels.ReadLabels
+	MustNewMatcher      = labels.MustNewMatcher
+	NewMatcher          = labels.NewMatcher
+)
 
-type Builder = labels.Builder
-type FastRegexMatcher = labels.FastRegexMatcher
-type Label = labels.Label
-type Labels = labels.Labels
-type MatchType = labels.MatchType
-type Matcher = labels.Matcher
-type Selector = labels.Selector
-type Slice = labels.Slice
+type (
+	Builder          = labels.Builder
+	FastRegexMatcher = labels.FastRegexMatcher
+	Label            = labels.Label
+	Labels           = labels.Labels
+	MatchType        = labels.MatchType
+	Matcher          = labels.Matcher
+	Selector         = labels.Selector
+	Slice            = labels.Slice
+)

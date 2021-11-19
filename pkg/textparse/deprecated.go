@@ -16,28 +16,36 @@ package textparse
 
 import "github.com/prometheus/prometheus/model/textparse"
 
-const EntryInvalid = textparse.EntryInvalid
-const EntryType = textparse.EntryType
-const EntryHelp = textparse.EntryHelp
-const EntrySeries = textparse.EntrySeries
-const EntryComment = textparse.EntryComment
-const EntryUnit = textparse.EntryUnit
+const (
+	EntryInvalid = textparse.EntryInvalid
+	EntryType    = textparse.EntryType
+	EntryHelp    = textparse.EntryHelp
+	EntrySeries  = textparse.EntrySeries
+	EntryComment = textparse.EntryComment
+	EntryUnit    = textparse.EntryUnit
+)
 
-const MetricTypeCounter = textparse.MetricTypeCounter
-const MetricTypeGauge = textparse.MetricTypeGauge
-const MetricTypeHistogram = textparse.MetricTypeHistogram
-const MetricTypeGaugeHistogram = textparse.MetricTypeGaugeHistogram
-const MetricTypeSummary = textparse.MetricTypeSummary
-const MetricTypeInfo = textparse.MetricTypeInfo
-const MetricTypeStateset = textparse.MetricTypeStateset
-const MetricTypeUnknown = textparse.MetricTypeUnknown
+const (
+	MetricTypeCounter        = textparse.MetricTypeCounter
+	MetricTypeGauge          = textparse.MetricTypeGauge
+	MetricTypeHistogram      = textparse.MetricTypeHistogram
+	MetricTypeGaugeHistogram = textparse.MetricTypeGaugeHistogram
+	MetricTypeSummary        = textparse.MetricTypeSummary
+	MetricTypeInfo           = textparse.MetricTypeInfo
+	MetricTypeStateset       = textparse.MetricTypeStateset
+	MetricTypeUnknown        = textparse.MetricTypeUnknown
+)
 
-type Entry = textparse.Entry
-type MetricType = textparse.MetricType
-type OpenMetricsParser = textparse.OpenMetricsParser
-type Parser = textparse.Parser
-type PromParser = textparse.PromParser
+type (
+	Entry             = textparse.Entry
+	MetricType        = textparse.MetricType
+	OpenMetricsParser = textparse.OpenMetricsParser
+	Parser            = textparse.Parser
+	PromParser        = textparse.PromParser
+)
 
-var New = textparse.New
-var NewOpenMetricsParser = textparse.NewOpenMetricsParser
-var NewPromParser = textparse.NewPromParser
+var (
+	New                  = textparse.New
+	NewOpenMetricsParser = textparse.NewOpenMetricsParser
+	NewPromParser        = textparse.NewPromParser
+)

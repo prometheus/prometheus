@@ -16,6 +16,8 @@ package timestamp
 
 import "github.com/prometheus/prometheus/model/timestamp"
 
-var FromFloatSeconds = timestamp.FromFloatSeconds
-var FromTime = timestamp.FromTime
-var Time = timestamp.Time
+var (
+	FromFloatSeconds = timestamp.FromFloatSeconds
+	FromTime         = timestamp.FromTime
+	Time             = timestamp.Time
+)
