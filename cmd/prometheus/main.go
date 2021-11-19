@@ -60,12 +60,10 @@ import (
 	_ "github.com/prometheus/prometheus/discovery/install" // Register service discovery implementations.
 	"github.com/prometheus/prometheus/discovery/legacymanager"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/notifier"
-	"github.com/prometheus/prometheus/pkg/exemplar"
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/logging"
-	"github.com/prometheus/prometheus/pkg/relabel"
-	prom_runtime "github.com/prometheus/prometheus/pkg/runtime"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
@@ -73,6 +71,8 @@ import (
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/agent"
+	"github.com/prometheus/prometheus/util/logging"
+	prom_runtime "github.com/prometheus/prometheus/util/runtime"
 	"github.com/prometheus/prometheus/util/strutil"
 	"github.com/prometheus/prometheus/web"
 )
@@ -130,7 +130,7 @@ type flagConfig struct {
 	configFile string
 
 	agentStoragePath    string
-	localStoragePath    string
+	serverStoragePath   string
 	notifier            notifier.Options
 	forGracePeriod      model.Duration
 	outageTolerance     model.Duration
@@ -276,7 +276,7 @@ func main() {
 		Default(".*").StringVar(&cfg.corsRegexString)
 
 	serverOnlyFlag(a, "storage.tsdb.path", "Base path for metrics storage.").
-		Default("data/").StringVar(&cfg.localStoragePath)
+		Default("data/").StringVar(&cfg.serverStoragePath)
 
 	serverOnlyFlag(a, "storage.tsdb.min-block-duration", "Minimum duration of a data block before being persisted. For use in testing.").
 		Hidden().Default("2h").SetValue(&cfg.tsdb.MinBlockDuration)
@@ -332,6 +332,9 @@ func main() {
 	agentOnlyFlag(a, "storage.agent.retention.max-time",
 		"Maximum age samples may be before being forcibly deleted when the WAL is truncated").
 		SetValue(&cfg.agent.MaxWALTime)
+
+	agentOnlyFlag(a, "storage.agent.no-lockfile", "Do not create lockfile in data directory.").
+		Default("false").BoolVar(&cfg.agent.NoLockfile)
 
 	a.Flag("storage.remote.flush-deadline", "How long to wait flushing sample on shutdown or config reload.").
 		Default("1m").PlaceHolder("<duration>").SetValue(&cfg.RemoteFlushDeadline)
@@ -405,6 +408,11 @@ func main() {
 	if !agentMode && len(agentOnlyFlags) > 0 {
 		fmt.Fprintf(os.Stderr, "The following flag(s) can only be used in agent mode: %q", agentOnlyFlags)
 		os.Exit(3)
+	}
+
+	localStoragePath := cfg.serverStoragePath
+	if agentMode {
+		localStoragePath = cfg.agentStoragePath
 	}
 
 	cfg.web.ExternalURL, err = computeExternalURL(cfg.prometheusURL, cfg.web.ListenAddress)
@@ -517,7 +525,7 @@ func main() {
 	var (
 		localStorage  = &readyStorage{stats: tsdb.NewDBStats()}
 		scraper       = &readyScrapeManager{}
-		remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, cfg.localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper)
+		remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"), prometheus.DefaultRegisterer, localStorage.StartTime, localStoragePath, time.Duration(cfg.RemoteFlushDeadline), scraper)
 		fanoutStorage = storage.NewFanout(logger, localStorage, remoteStorage)
 	)
 
@@ -556,7 +564,7 @@ func main() {
 			Reg:                      prometheus.DefaultRegisterer,
 			MaxSamples:               cfg.queryMaxSamples,
 			Timeout:                  time.Duration(cfg.queryTimeout),
-			ActiveQueryTracker:       promql.NewActiveQueryTracker(cfg.localStoragePath, cfg.queryConcurrency, log.With(logger, "component", "activeQueryTracker")),
+			ActiveQueryTracker:       promql.NewActiveQueryTracker(localStoragePath, cfg.queryConcurrency, log.With(logger, "component", "activeQueryTracker")),
 			LookbackDelta:            time.Duration(cfg.lookbackDelta),
 			NoStepSubqueryIntervalFn: noStepSubqueryInterval.Get,
 			EnableAtModifier:         cfg.enablePromQLAtModifier,
@@ -585,7 +593,7 @@ func main() {
 	cfg.web.Context = ctxWeb
 	cfg.web.TSDBRetentionDuration = cfg.tsdb.RetentionDuration
 	cfg.web.TSDBMaxBytes = cfg.tsdb.MaxBytes
-	cfg.web.TSDBDir = cfg.localStoragePath
+	cfg.web.TSDBDir = localStoragePath
 	cfg.web.LocalStorage = localStorage
 	cfg.web.Storage = fanoutStorage
 	cfg.web.ExemplarStorage = localStorage
@@ -925,18 +933,12 @@ func main() {
 					}
 				}
 
-				db, err := openDBWithMetrics(
-					cfg.localStoragePath,
-					logger,
-					prometheus.DefaultRegisterer,
-					&opts,
-					localStorage.getStats(),
-				)
+				db, err := openDBWithMetrics(localStoragePath, logger, prometheus.DefaultRegisterer, &opts, localStorage.getStats())
 				if err != nil {
 					return errors.Wrapf(err, "opening storage failed")
 				}
 
-				switch fsType := prom_runtime.Statfs(cfg.localStoragePath); fsType {
+				switch fsType := prom_runtime.Statfs(localStoragePath); fsType {
 				case "NFS_SUPER_MAGIC":
 					level.Warn(logger).Log("fs_type", fsType, "msg", "This filesystem is not supported and may lead to data corruption and data loss. Please carefully read https://prometheus.io/docs/prometheus/latest/storage/ to learn more about supported filesystems.")
 				default:
@@ -985,14 +987,14 @@ func main() {
 					logger,
 					prometheus.DefaultRegisterer,
 					remoteStorage,
-					cfg.agentStoragePath,
+					localStoragePath,
 					&opts,
 				)
 				if err != nil {
 					return errors.Wrap(err, "opening storage failed")
 				}
 
-				switch fsType := prom_runtime.Statfs(cfg.agentStoragePath); fsType {
+				switch fsType := prom_runtime.Statfs(localStoragePath); fsType {
 				case "NFS_SUPER_MAGIC":
 					level.Warn(logger).Log("fs_type", fsType, "msg", "This filesystem is not supported and may lead to data corruption and data loss. Please carefully read https://prometheus.io/docs/prometheus/latest/storage/ to learn more about supported filesystems.")
 				default:
@@ -1143,25 +1145,6 @@ func reloadConfig(filename string, expandExternalLabels, enableExemplarStorage b
 	if enableExemplarStorage {
 		if conf.StorageConfig.ExemplarsConfig == nil {
 			conf.StorageConfig.ExemplarsConfig = &config.DefaultExemplarsConfig
-		}
-	}
-
-	// Perform validation for Agent-compatible configs and remove anything that's unsupported.
-	if agentMode {
-		// Perform validation for Agent-compatible configs and remove anything that's
-		// unsupported.
-		if len(conf.AlertingConfig.AlertRelabelConfigs) > 0 || len(conf.AlertingConfig.AlertmanagerConfigs) > 0 {
-			level.Warn(logger).Log("msg", "alerting configs not supported in agent mode")
-			conf.AlertingConfig.AlertRelabelConfigs = []*relabel.Config{}
-			conf.AlertingConfig.AlertmanagerConfigs = config.AlertmanagerConfigs{}
-		}
-		if len(conf.RuleFiles) > 0 {
-			level.Warn(logger).Log("msg", "recording rules not supported in agent mode")
-			conf.RuleFiles = []string{}
-		}
-		if len(conf.RemoteReadConfigs) > 0 {
-			level.Warn(logger).Log("msg", "remote_read configs not supported in agent mode")
-			conf.RemoteReadConfigs = []*config.RemoteReadConfig{}
 		}
 	}
 
@@ -1364,11 +1347,11 @@ func (s *readyStorage) Appender(ctx context.Context) storage.Appender {
 
 type notReadyAppender struct{}
 
-func (n notReadyAppender) Append(ref uint64, l labels.Labels, t int64, v float64) (uint64, error) {
+func (n notReadyAppender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
 	return 0, tsdb.ErrNotReady
 }
 
-func (n notReadyAppender) AppendExemplar(ref uint64, l labels.Labels, e exemplar.Exemplar) (uint64, error) {
+func (n notReadyAppender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
 	return 0, tsdb.ErrNotReady
 }
 
@@ -1525,6 +1508,7 @@ type agentOptions struct {
 	StripeSize             int
 	TruncateFrequency      model.Duration
 	MinWALTime, MaxWALTime model.Duration
+	NoLockfile             bool
 }
 
 func (opts agentOptions) ToAgentOptions() agent.Options {
@@ -1535,6 +1519,7 @@ func (opts agentOptions) ToAgentOptions() agent.Options {
 		TruncateFrequency: time.Duration(opts.TruncateFrequency),
 		MinWALTime:        durationToInt64Millis(time.Duration(opts.MinWALTime)),
 		MaxWALTime:        durationToInt64Millis(time.Duration(opts.MaxWALTime)),
+		NoLockfile:        opts.NoLockfile,
 	}
 }
 

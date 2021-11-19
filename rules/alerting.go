@@ -28,9 +28,9 @@ import (
 	"github.com/prometheus/common/model"
 	yaml "gopkg.in/yaml.v2"
 
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/rulefmt"
-	"github.com/prometheus/prometheus/pkg/timestamp"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/rulefmt"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/template"
@@ -289,6 +289,13 @@ func (r *AlertingRule) GetEvaluationTimestamp() time.Time {
 // SetRestored updates the restoration state of the alerting rule.
 func (r *AlertingRule) SetRestored(restored bool) {
 	r.restored = restored
+}
+
+// Restored returns the restoration state of the alerting rule.
+func (r *AlertingRule) Restored() bool {
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
+	return r.restored
 }
 
 // resolvedRetention is the duration for which a resolved alert instance

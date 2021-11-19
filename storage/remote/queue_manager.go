@@ -31,10 +31,11 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/relabel"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/scrape"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/wal"
 )
@@ -353,11 +354,11 @@ type QueueManager struct {
 	storeClient WriteClient
 
 	seriesMtx     sync.Mutex // Covers seriesLabels and droppedSeries.
-	seriesLabels  map[uint64]labels.Labels
-	droppedSeries map[uint64]struct{}
+	seriesLabels  map[chunks.HeadSeriesRef]labels.Labels
+	droppedSeries map[chunks.HeadSeriesRef]struct{}
 
 	seriesSegmentMtx     sync.Mutex // Covers seriesSegmentIndexes - if you also lock seriesMtx, take seriesMtx first.
-	seriesSegmentIndexes map[uint64]int
+	seriesSegmentIndexes map[chunks.HeadSeriesRef]int
 
 	shards      *shards
 	numShards   int
@@ -406,9 +407,9 @@ func NewQueueManager(
 		storeClient:    client,
 		sendExemplars:  enableExemplarRemoteWrite,
 
-		seriesLabels:         make(map[uint64]labels.Labels),
-		seriesSegmentIndexes: make(map[uint64]int),
-		droppedSeries:        make(map[uint64]struct{}),
+		seriesLabels:         make(map[chunks.HeadSeriesRef]labels.Labels),
+		seriesSegmentIndexes: make(map[chunks.HeadSeriesRef]int),
+		droppedSeries:        make(map[chunks.HeadSeriesRef]struct{}),
 
 		numShards:   cfg.MinShards,
 		reshardChan: make(chan int),
@@ -669,7 +670,8 @@ func (t *QueueManager) StoreSeries(series []record.RefSeries, index int) {
 	}
 }
 
-// Update the segment number held against the series, so we can trim older ones in SeriesReset.
+// UpdateSeriesSegment updates the segment number held against the series,
+// so we can trim older ones in SeriesReset.
 func (t *QueueManager) UpdateSeriesSegment(series []record.RefSeries, index int) {
 	t.seriesSegmentMtx.Lock()
 	defer t.seriesSegmentMtx.Unlock()
@@ -997,7 +999,7 @@ func (s *shards) stop() {
 
 // enqueue data (sample or exemplar).  If we are currently in the process of shutting down or resharding,
 // will return false; in this case, you should back off and retry.
-func (s *shards) enqueue(ref uint64, data interface{}) bool {
+func (s *shards) enqueue(ref chunks.HeadSeriesRef, data interface{}) bool {
 	s.mtx.RLock()
 	defer s.mtx.RUnlock()
 

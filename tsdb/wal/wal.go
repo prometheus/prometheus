@@ -452,10 +452,7 @@ func (w *WAL) Repair(origErr error) error {
 	if err != nil {
 		return err
 	}
-	if err := w.setSegment(s); err != nil {
-		return err
-	}
-	return nil
+	return w.setSegment(s)
 }
 
 // SegmentName builds a segment name for the directory.
@@ -472,6 +469,10 @@ func (w *WAL) NextSegment() error {
 
 // nextSegment creates the next segment and closes the previous one.
 func (w *WAL) nextSegment() error {
+	if w.closed {
+		return errors.New("wal is closed")
+	}
+
 	// Only flush the current page if it actually holds data.
 	if w.page.alloc > 0 {
 		if err := w.flushPage(true); err != nil {
@@ -877,6 +878,10 @@ type segmentBufReader struct {
 
 // nolint:revive // TODO: Consider exporting segmentBufReader
 func NewSegmentBufReader(segs ...*Segment) *segmentBufReader {
+	if len(segs) == 0 {
+		return &segmentBufReader{}
+	}
+
 	return &segmentBufReader{
 		buf:  bufio.NewReaderSize(segs[0], 16*pageSize),
 		segs: segs,
@@ -885,9 +890,10 @@ func NewSegmentBufReader(segs ...*Segment) *segmentBufReader {
 
 // nolint:revive
 func NewSegmentBufReaderWithOffset(offset int, segs ...*Segment) (sbr *segmentBufReader, err error) {
-	if offset == 0 {
+	if offset == 0 || len(segs) == 0 {
 		return NewSegmentBufReader(segs...), nil
 	}
+
 	sbr = &segmentBufReader{
 		buf:  bufio.NewReaderSize(segs[0], 16*pageSize),
 		segs: segs,
@@ -909,6 +915,10 @@ func (r *segmentBufReader) Close() (err error) {
 
 // Read implements io.Reader.
 func (r *segmentBufReader) Read(b []byte) (n int, err error) {
+	if len(r.segs) == 0 {
+		return 0, io.EOF
+	}
+
 	n, err = r.buf.Read(b)
 	r.off += n
 

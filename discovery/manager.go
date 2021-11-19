@@ -200,14 +200,14 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 		// refTargets keeps reference targets used to populate new subs' targets
 		var refTargets map[string]*targetgroup.Group
 		prov.mu.Lock()
+
+		m.targetsMtx.Lock()
 		for s := range prov.subs {
 			keep = true
 			refTargets = m.targets[poolKey{s, prov.name}]
 			// Remove obsolete subs' targets.
 			if _, ok := prov.newSubs[s]; !ok {
-				m.targetsMtx.Lock()
 				delete(m.targets, poolKey{s, prov.name})
-				m.targetsMtx.Unlock()
 				discoveredTargets.DeleteLabelValues(m.name, s)
 			}
 		}
@@ -223,6 +223,8 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 				}
 			}
 		}
+		m.targetsMtx.Unlock()
+
 		prov.subs = prov.newSubs
 		prov.newSubs = map[string]struct{}{}
 		prov.mu.Unlock()
