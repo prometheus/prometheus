@@ -1,3 +1,4 @@
+// Package relabel is deprecated and replaced with github.com/prometheus/prometheus/model/relabel.
 package relabel
 
 import "github.com/prometheus/prometheus/model/relabel"

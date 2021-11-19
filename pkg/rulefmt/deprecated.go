@@ -1,3 +1,4 @@
+// Package rulefmt is deprecated and replaced with github.com/prometheus/prometheus/model/rulefmt.
 package rulefmt
 
 import "github.com/prometheus/prometheus/model/rulefmt"

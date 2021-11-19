@@ -1,3 +1,4 @@
+// Package labels is deprecated and replaced with github.com/prometheus/prometheus/model/labels.
 package labels
 
 import "github.com/prometheus/prometheus/model/labels"

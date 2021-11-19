@@ -1,3 +1,4 @@
+// Package exemplar is deprecated and replaced with github.com/prometheus/prometheus/model/exemplar.
 package exemplar
 
 import "github.com/prometheus/prometheus/model/exemplar"

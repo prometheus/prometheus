@@ -1,3 +1,4 @@
+// Package textparse is deprecated and replaced with github.com/prometheus/prometheus/model/textparse.
 package textparse
 
 import "github.com/prometheus/prometheus/model/textparse"
