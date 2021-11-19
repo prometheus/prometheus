@@ -142,6 +142,11 @@ var Functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeMatrix},
 		ReturnType: ValueTypeVector,
 	},
+	"sumd": {
+		Name:       "sumd",
+		ArgTypes:   []ValueType{ValueTypeMatrix},
+		ReturnType: ValueTypeVector,
+	},
 	"deriv": {
 		Name:       "deriv",
 		ArgTypes:   []ValueType{ValueTypeMatrix},

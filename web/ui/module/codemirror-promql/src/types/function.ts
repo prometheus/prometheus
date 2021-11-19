@@ -35,6 +35,7 @@ import {
   DaysInMonth,
   Deg,
   Delta,
+  Sumd,
   Deriv,
   Exp,
   Floor,
@@ -232,6 +233,12 @@ const promqlFunctions: { [key: number]: PromQLFunction } = {
   },
   [Delta]: {
     name: 'delta',
+    argTypes: [ValueType.matrix],
+    variadic: 0,
+    returnType: ValueType.vector,
+  },
+  [Sumd]: {
+    name: 'sumd',
     argTypes: [ValueType.matrix],
     variadic: 0,
     returnType: ValueType.vector,

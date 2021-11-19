@@ -135,6 +135,28 @@ func funcDelta(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper
 	return extrapolatedRate(vals, args, enh, false, false)
 }
 
+// === sumd(Matrix parser.ValueTypeMatrix) Vector ===
+func funcSumd(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	var lastV float64
+	var lastT int64
+	var result Vector
+
+	q := vals[0].(Matrix)[0]
+	var sum float64
+	for _, v := range q.Points {
+		if lastV == v.V {
+			continue
+		}
+
+		sum += v.V
+		lastT = v.T
+		lastV = v.V
+	}
+
+	result = append(result, Sample{Point: Point{V: sum, T: lastT}, Metric: q.Metric})
+	return result
+}
+
 // === rate(node parser.ValueTypeMatrix) Vector ===
 func funcRate(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return extrapolatedRate(vals, args, enh, true, true)
@@ -1089,6 +1111,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"deg":                funcDeg,
 	"delta":              funcDelta,
 	"deriv":              funcDeriv,
+	"sumd":               funcSumd,
 	"exp":                funcExp,
 	"floor":              funcFloor,
 	"histogram_quantile": funcHistogramQuantile,

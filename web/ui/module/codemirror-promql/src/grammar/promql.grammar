@@ -142,6 +142,7 @@ FunctionIdentifier {
   DayOfWeek |
   Deg |
   Delta |
+  Sumd |
   Deriv |
   Exp |
   Floor |
@@ -380,6 +381,7 @@ NumberLiteral  {
   DayOfWeek { condFn<"day_of_week"> }
   Deg { condFn<"deg"> }
   Delta { condFn<"delta"> }
+  Sumd { condFn<"sumd"> }
   Deriv { condFn<"deriv"> }
   Exp { condFn<"exp"> }
   Floor { condFn<"floor"> }
