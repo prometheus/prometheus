@@ -2413,6 +2413,10 @@ func TestDBReadOnly_FlushWAL(t *testing.T) {
 }
 
 func TestDBCannotSeePartialCommits(t *testing.T) {
+	if defaultIsolationDisabled {
+		t.Skip("skipping test since tsdb isolation is disabled")
+	}
+
 	tmpdir, _ := ioutil.TempDir("", "test")
 	defer func() {
 		require.NoError(t, os.RemoveAll(tmpdir))
@@ -2483,6 +2487,10 @@ func TestDBCannotSeePartialCommits(t *testing.T) {
 }
 
 func TestDBQueryDoesntSeeAppendsAfterCreation(t *testing.T) {
+	if defaultIsolationDisabled {
+		t.Skip("skipping test since tsdb isolation is disabled")
+	}
+
 	tmpdir, _ := ioutil.TempDir("", "test")
 	defer func() {
 		require.NoError(t, os.RemoveAll(tmpdir))

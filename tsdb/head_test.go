@@ -2490,7 +2490,6 @@ func TestIsQuerierCollidingWithTruncation(t *testing.T) {
 }
 
 func TestWaitForPendingReadersInTimeRange(t *testing.T) {
-	defaultIsolationDisabled = true
 	db := newTestDB(t)
 	db.DisableCompactions()
 
