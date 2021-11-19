@@ -2445,7 +2445,6 @@ func TestDataMissingOnQueryDuringCompaction(t *testing.T) {
 }
 
 func TestIsQuerierCollidingWithTruncation(t *testing.T) {
-	defaultIsolationDisabled = true
 	db := newTestDB(t)
 	db.DisableCompactions()
 
