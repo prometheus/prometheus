@@ -55,8 +55,10 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	flag.BoolVar(&defaultIsolationState, "test.tsdb-isolation", true, "enable isolation")
+	var isolationEnabled bool
+	flag.BoolVar(&isolationEnabled, "test.tsdb-isolation", true, "enable isolation")
 	flag.Parse()
+	defaultIsolationDisabled = !isolationEnabled
 
 	goleak.VerifyTestMain(m, goleak.IgnoreTopFunction("github.com/prometheus/prometheus/tsdb.(*SegmentWAL).cut.func1"), goleak.IgnoreTopFunction("github.com/prometheus/prometheus/tsdb.(*SegmentWAL).cut.func2"))
 }

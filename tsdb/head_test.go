@@ -60,7 +60,6 @@ func newTestHead(t testing.TB, chunkRange int64, compressWAL bool) (*Head, *wal.
 	opts.ChunkDirRoot = dir
 	opts.EnableExemplarStorage = true
 	opts.MaxExemplars.Store(config.DefaultExemplarsConfig.MaxExemplars)
-	require.Equal(t, defaultIsolationState, opts.IsolationEnabled)
 
 	h, err := NewHead(nil, nil, wlog, opts, nil)
 	require.NoError(t, err)
@@ -229,7 +228,7 @@ func BenchmarkLoadWAL(b *testing.B) {
 						require.NoError(b, err)
 						for k := 0; k < c.batches*c.seriesPerBatch; k++ {
 							// Create one mmapped chunk per series, with one sample at the given time.
-							s := newMemSeries(labels.Labels{}, chunks.HeadSeriesRef(k)*101, c.mmappedChunkT, nil)
+							s := newMemSeries(labels.Labels{}, chunks.HeadSeriesRef(k)*101, c.mmappedChunkT, nil, defaultIsolationDisabled)
 							s.append(c.mmappedChunkT, 42, 0, chunkDiskMapper)
 							s.mmapCurrentHeadChunk(chunkDiskMapper)
 						}
@@ -553,7 +552,7 @@ func TestMemSeries_truncateChunks(t *testing.T) {
 		},
 	}
 
-	s := newMemSeries(labels.FromStrings("a", "b"), 1, 2000, &memChunkPool)
+	s := newMemSeries(labels.FromStrings("a", "b"), 1, 2000, &memChunkPool, defaultIsolationDisabled)
 
 	for i := 0; i < 4000; i += 5 {
 		ok, _ := s.append(int64(i), float64(i), 0, chunkDiskMapper)
@@ -1091,7 +1090,7 @@ func TestMemSeries_append(t *testing.T) {
 		require.NoError(t, chunkDiskMapper.Close())
 	}()
 
-	s := newMemSeries(labels.Labels{}, 1, 500, nil)
+	s := newMemSeries(labels.Labels{}, 1, 500, nil, defaultIsolationDisabled)
 
 	// Add first two samples at the very end of a chunk range and the next two
 	// on and after it.
@@ -1549,7 +1548,7 @@ func TestAddDuplicateLabelName(t *testing.T) {
 }
 
 func TestMemSeriesIsolation(t *testing.T) {
-	if !defaultIsolationState {
+	if defaultIsolationDisabled {
 		t.Skip("skipping test since tsdb isolation is disabled")
 	}
 
@@ -1724,7 +1723,7 @@ func TestMemSeriesIsolation(t *testing.T) {
 }
 
 func TestIsolationRollback(t *testing.T) {
-	if !defaultIsolationState {
+	if defaultIsolationDisabled {
 		t.Skip("skipping test since tsdb isolation is disabled")
 	}
 
@@ -1756,7 +1755,7 @@ func TestIsolationRollback(t *testing.T) {
 }
 
 func TestIsolationLowWatermarkMonotonous(t *testing.T) {
-	if !defaultIsolationState {
+	if defaultIsolationDisabled {
 		t.Skip("skipping test since tsdb isolation is disabled")
 	}
 
@@ -1793,7 +1792,7 @@ func TestIsolationLowWatermarkMonotonous(t *testing.T) {
 }
 
 func TestIsolationAppendIDZeroIsNoop(t *testing.T) {
-	if !defaultIsolationState {
+	if defaultIsolationDisabled {
 		t.Skip("skipping test since tsdb isolation is disabled")
 	}
 
@@ -1818,7 +1817,7 @@ func TestHeadSeriesChunkRace(t *testing.T) {
 }
 
 func TestIsolationWithoutAdd(t *testing.T) {
-	if !defaultIsolationState {
+	if defaultIsolationDisabled {
 		t.Skip("skipping test since tsdb isolation is disabled")
 	}
 
@@ -2277,7 +2276,7 @@ func TestMemSafeIteratorSeekIntoBuffer(t *testing.T) {
 		require.NoError(t, chunkDiskMapper.Close())
 	}()
 
-	s := newMemSeries(labels.Labels{}, 1, 500, nil)
+	s := newMemSeries(labels.Labels{}, 1, 500, nil, defaultIsolationDisabled)
 
 	for i := 0; i < 7; i++ {
 		ok, _ := s.append(int64(i), float64(i), 0, chunkDiskMapper)
@@ -2446,6 +2445,7 @@ func TestDataMissingOnQueryDuringCompaction(t *testing.T) {
 }
 
 func TestIsQuerierCollidingWithTruncation(t *testing.T) {
+	defaultIsolationDisabled = true
 	db := newTestDB(t)
 	db.DisableCompactions()
 
@@ -2491,6 +2491,7 @@ func TestIsQuerierCollidingWithTruncation(t *testing.T) {
 }
 
 func TestWaitForPendingReadersInTimeRange(t *testing.T) {
+	defaultIsolationDisabled = true
 	db := newTestDB(t)
 	db.DisableCompactions()
 

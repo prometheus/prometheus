@@ -33,14 +33,14 @@ type isolationState struct {
 
 // Close closes the state.
 func (i *isolationState) Close() {
-	if i.isolation == nil || i.isolation.disabled {
-		return
-	}
-
 	i.isolation.readMtx.Lock()
 	defer i.isolation.readMtx.Unlock()
 	i.next.prev = i.prev
 	i.prev.next = i.next
+}
+
+func (i *isolationState) IsolationDisabled() bool {
+	return i.isolation.disabled
 }
 
 type isolationAppender struct {
@@ -67,10 +67,11 @@ type isolation struct {
 	readMtx sync.RWMutex
 	// All current in use isolationStates. This is a doubly-linked list.
 	readsOpen *isolationState
-	disabled  bool
+	// If true, writes are not tracked while reads are still tracked.
+	disabled bool
 }
 
-func newIsolation() *isolation {
+func newIsolation(disabled bool) *isolation {
 	isoState := &isolationState{}
 	isoState.next = isoState
 	isoState.prev = isoState
@@ -83,6 +84,7 @@ func newIsolation() *isolation {
 		appendsOpen:     map[uint64]*isolationAppender{},
 		appendsOpenList: appender,
 		readsOpen:       isoState,
+		disabled:        disabled,
 		appendersPool:   sync.Pool{New: func() interface{} { return &isolationAppender{} }},
 	}
 }
@@ -119,6 +121,8 @@ func (i *isolation) lowWatermarkLocked() uint64 {
 func (i *isolation) State(mint, maxt int64) *isolationState {
 	i.appendMtx.RLock() // Take append mutex before read mutex.
 	defer i.appendMtx.RUnlock()
+
+	// We need to track the reads even when isolation is disabled.
 	isoState := &isolationState{
 		maxAppendID:       i.appendsOpenList.appendID,
 		lowWatermark:      i.appendsOpenList.next.appendID, // Lowest appendID from appenders, or lastAppendId.
@@ -137,6 +141,7 @@ func (i *isolation) State(mint, maxt int64) *isolationState {
 	isoState.next = i.readsOpen.next
 	i.readsOpen.next.prev = isoState
 	i.readsOpen.next = isoState
+
 	return isoState
 }
 

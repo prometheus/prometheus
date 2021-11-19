@@ -360,7 +360,7 @@ func (s *memSeries) iterator(id int, isoState *isolationState, chunkDiskMapper *
 	numSamples := c.chunk.NumSamples()
 	stopAfter := numSamples
 
-	if isoState != nil {
+	if isoState != nil && !isoState.IsolationDisabled() {
 		totalSamples := 0    // Total samples in this series.
 		previousSamples := 0 // Samples before this chunk.
 
