@@ -45,15 +45,17 @@ type RecordingRule struct {
 	lastError error
 	// Duration of how long it took to evaluate the recording rule.
 	evaluationDuration time.Duration
+	sourceTenants      []string
 }
 
 // NewRecordingRule returns a new recording rule.
-func NewRecordingRule(name string, vector parser.Expr, lset labels.Labels) *RecordingRule {
+func NewRecordingRule(name string, vector parser.Expr, lset labels.Labels, sourceTenants []string) *RecordingRule {
 	return &RecordingRule{
-		name:   name,
-		vector: vector,
-		health: HealthUnknown,
-		labels: lset,
+		name:          name,
+		vector:        vector,
+		health:        HealthUnknown,
+		labels:        lset,
+		sourceTenants: sourceTenants,
 	}
 }
 
@@ -111,9 +113,10 @@ func (rule *RecordingRule) Eval(ctx context.Context, ts time.Time, query QueryFu
 
 func (rule *RecordingRule) String() string {
 	r := rulefmt.Rule{
-		Record: rule.name,
-		Expr:   rule.vector.String(),
-		Labels: rule.labels.Map(),
+		Record:        rule.name,
+		Expr:          rule.vector.String(),
+		Labels:        rule.labels.Map(),
+		SourceTenants: rule.sourceTenants,
 	}
 
 	byt, err := yaml.Marshal(r)
@@ -200,4 +203,8 @@ func (rule *RecordingRule) HTMLSnippet(pathPrefix string) template.HTML {
 	}
 
 	return template.HTML(byt)
+}
+
+func (rule *RecordingRule) GetSourceTenants() []string {
+	return rule.sourceTenants
 }

@@ -235,6 +235,8 @@ type Rule interface {
 	// HTMLSnippet returns a human-readable string representation of the rule,
 	// decorated with HTML elements for use the web frontend.
 	HTMLSnippet(pathPrefix string) html_template.HTML
+	// GetSourceTenants gets the source tenants to be used for the rule.
+	GetSourceTenants() []string
 }
 
 // Group is a set of rules that have a logical relation.
@@ -1059,6 +1061,7 @@ func (m *Manager) LoadGroups(
 						externalLabels,
 						m.restored,
 						log.With(m.logger, "alert", r.Alert),
+						r.SourceTenants,
 					))
 					continue
 				}
@@ -1066,6 +1069,7 @@ func (m *Manager) LoadGroups(
 					r.Record.Value,
 					expr,
 					labels.FromMap(r.Labels),
+					r.SourceTenants,
 				))
 			}
 

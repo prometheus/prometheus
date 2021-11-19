@@ -138,6 +138,8 @@ type AlertingRule struct {
 	// the fingerprint of the labelset they correspond to.
 	active map[uint64]*Alert
 
+	sourceTenants []string
+
 	logger log.Logger
 }
 
@@ -145,7 +147,7 @@ type AlertingRule struct {
 func NewAlertingRule(
 	name string, vec parser.Expr, hold time.Duration,
 	labels, annotations, externalLabels labels.Labels,
-	restored bool, logger log.Logger,
+	restored bool, logger log.Logger, sourceTenants []string,
 ) *AlertingRule {
 	el := make(map[string]string, len(externalLabels))
 	for _, lbl := range externalLabels {
@@ -163,6 +165,7 @@ func NewAlertingRule(
 		active:         map[uint64]*Alert{},
 		logger:         logger,
 		restored:       restored,
+		sourceTenants:  sourceTenants,
 	}
 }
 
@@ -217,6 +220,10 @@ func (r *AlertingRule) Labels() labels.Labels {
 // Annotations returns the annotations of the alerting rule.
 func (r *AlertingRule) Annotations() labels.Labels {
 	return r.annotations
+}
+
+func (r *AlertingRule) GetSourceTenants() []string {
+	return r.sourceTenants
 }
 
 func (r *AlertingRule) sample(alert *Alert, ts time.Time) promql.Sample {
@@ -498,11 +505,12 @@ func (r *AlertingRule) sendAlerts(ctx context.Context, ts time.Time, resendDelay
 
 func (r *AlertingRule) String() string {
 	ar := rulefmt.Rule{
-		Alert:       r.name,
-		Expr:        r.vector.String(),
-		For:         model.Duration(r.holdDuration),
-		Labels:      r.labels.Map(),
-		Annotations: r.annotations.Map(),
+		Alert:         r.name,
+		Expr:          r.vector.String(),
+		For:           model.Duration(r.holdDuration),
+		Labels:        r.labels.Map(),
+		Annotations:   r.annotations.Map(),
+		SourceTenants: r.sourceTenants,
 	}
 
 	byt, err := yaml.Marshal(ar)
@@ -533,11 +541,12 @@ func (r *AlertingRule) HTMLSnippet(pathPrefix string) html_template.HTML {
 	}
 
 	ar := rulefmt.Rule{
-		Alert:       fmt.Sprintf("<a href=%q>%s</a>", pathPrefix+strutil.TableLinkForExpression(alertMetric.String()), r.name),
-		Expr:        fmt.Sprintf("<a href=%q>%s</a>", pathPrefix+strutil.TableLinkForExpression(r.vector.String()), html_template.HTMLEscapeString(r.vector.String())),
-		For:         model.Duration(r.holdDuration),
-		Labels:      labelsMap,
-		Annotations: annotationsMap,
+		Alert:         fmt.Sprintf("<a href=%q>%s</a>", pathPrefix+strutil.TableLinkForExpression(alertMetric.String()), r.name),
+		Expr:          fmt.Sprintf("<a href=%q>%s</a>", pathPrefix+strutil.TableLinkForExpression(r.vector.String()), html_template.HTMLEscapeString(r.vector.String())),
+		For:           model.Duration(r.holdDuration),
+		Labels:        labelsMap,
+		Annotations:   annotationsMap,
+		SourceTenants: r.sourceTenants,
 	}
 
 	byt, err := yaml.Marshal(ar)
