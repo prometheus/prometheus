@@ -1024,7 +1024,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 
 * `__meta_openstack_hypervisor_host_ip`: the hypervisor node's IP address.
 * `__meta_openstack_hypervisor_id`: the hypervisor node's ID.
-* `__meta_openstack_hypervisor_name`: the hypervisor node's name.
+* `__meta_openstack_hypervisor_hostname`: the hypervisor node's name.
 * `__meta_openstack_hypervisor_state`: the hypervisor node's state.
 * `__meta_openstack_hypervisor_status`: the hypervisor node's status.
 * `__meta_openstack_hypervisor_type`: the hypervisor node's type.
