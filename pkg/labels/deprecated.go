@@ -27,4 +27,3 @@ type MatchType = labels.MatchType
 type Matcher = labels.Matcher
 type Selector = labels.Selector
 type Slice = labels.Slice
-type StringMatcher = labels.StringMatcher
