@@ -20,7 +20,7 @@
     "@fortawesome/free-solid-svg-icons": "^5.7.1",
     "@fortawesome/react-fontawesome": "^0.1.16",
     "@nexucis/fuzzy": "^0.3.0",
-    "bootstrap": "^4.6.1",
+    "bootstrap": "^5.1.3",
     "codemirror-promql": "0.18.0",
     "css.escape": "^1.5.1",
     "downshift": "^6.1.7",
