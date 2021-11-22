@@ -40,7 +40,7 @@
     "@codemirror/language": "^0.19.5",
     "@codemirror/lint": "^0.19.3",
     "@codemirror/state": "^0.19.5",
-    "@codemirror/view": "^0.19.19",
+    "@codemirror/view": "^0.19.20",
     "@lezer/common": "^0.15.8",
     "@lezer/generator": "^0.15.2",
     "@types/chai": "^4.2.22",
@@ -72,7 +72,7 @@
     "@codemirror/language": "^0.19.5",
     "@codemirror/lint": "^0.19.3",
     "@codemirror/state": "^0.19.5",
-    "@codemirror/view": "^0.19.19",
+    "@codemirror/view": "^0.19.20",
     "@lezer/common": "^0.15.8"
   },
   "prettier": {
