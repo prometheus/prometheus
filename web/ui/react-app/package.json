@@ -12,7 +12,7 @@
     "@codemirror/language": "^0.19.5",
     "@codemirror/lint": "^0.19.3",
     "@codemirror/matchbrackets": "^0.19.3",
-    "@codemirror/search": "^0.19.2",
+    "@codemirror/search": "^0.19.3",
     "@codemirror/state": "^0.19.5",
     "@codemirror/view": "^0.19.20",
     "@forevolve/bootstrap-dark": "^1.0.0",
