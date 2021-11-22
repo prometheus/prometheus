@@ -15,6 +15,7 @@ package tsdb
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/binary"
 	"flag"
@@ -199,6 +200,39 @@ func TestDataAvailableOnlyAfterCommit(t *testing.T) {
 	seriesSet = query(t, querier, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
 
 	require.Equal(t, map[string][]tsdbutil.Sample{`{foo="bar"}`: {sample{t: 0, v: 0}}}, seriesSet)
+}
+
+func TestNoUnknownSeriesReferencesOnConcurrentSeriesCreation(t *testing.T) {
+	db := openTestDB(t, nil, nil)
+	ctx := context.Background()
+
+	// Create a slow appender, create the series and append a sample.
+	slowAppender := db.Appender(ctx)
+	_, err := slowAppender.Append(0, labels.FromStrings("foo", "bar"), 0, 0)
+	require.NoError(t, err)
+
+	// Create a fast appender and append another sample.
+	fastAppender := db.Appender(ctx)
+	_, err = fastAppender.Append(0, labels.FromStrings("foo", "bar"), 1, 1)
+	require.NoError(t, err)
+	require.NoError(t, fastAppender.Commit())
+
+	// Commit the slow appender.
+	require.NoError(t, slowAppender.Commit())
+
+	// Close the DB.
+	require.NoError(t, db.Close())
+
+	// Reopen the DB, replaying the WAL.
+	logs := &bytes.Buffer{}
+	reopenDB, err := Open(db.Dir(), log.NewLogfmtLogger(logs), nil, nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, reopenDB.Close())
+	})
+
+	// Ensure no "Unknown series references" error occurred.
+	require.NotContains(t, logs.String(), "Unknown series references")
 }
 
 // TestNoPanicAfterWALCorruption ensures that querying the db after a WAL corruption doesn't cause a panic.
