@@ -58,7 +58,7 @@
     "eslint-plugin-prettier": "^4.0.0",
     "isomorphic-fetch": "^3.0.0",
     "mocha": "^8.4.0",
-    "nock": "^13.0.11",
+    "nock": "^13.2.1",
     "nyc": "^15.1.0",
     "prettier": "^2.4.1",
     "ts-loader": "^7.0.4",
