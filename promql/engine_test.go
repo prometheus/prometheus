@@ -650,7 +650,7 @@ load 10s
 			Query: "metric",
 			Result: Vector{
 				Sample{
-					Point:  Point{V: 1, T: 1000},
+					Point:  &FloatPoint{V: 1, T: 1000},
 					Metric: labels.FromStrings("__name__", "metric"),
 				},
 			},
@@ -660,7 +660,7 @@ load 10s
 			Query: "metric[20s]",
 			Result: Matrix{
 				Series{
-					Points: []Point{{V: 1, T: 0}, {V: 2, T: 10000}},
+					Points: []Point{&FloatPoint{V: 1, T: 0}, &FloatPoint{V: 2, T: 10000}},
 					Metric: labels.FromStrings("__name__", "metric"),
 				},
 			},
@@ -671,7 +671,7 @@ load 10s
 			Query: "1",
 			Result: Matrix{
 				Series{
-					Points: []Point{{V: 1, T: 0}, {V: 1, T: 1000}, {V: 1, T: 2000}},
+					Points: []Point{&FloatPoint{V: 1, T: 0}, &FloatPoint{V: 1, T: 1000}, &FloatPoint{V: 1, T: 2000}},
 					Metric: labels.FromStrings(),
 				},
 			},
@@ -683,7 +683,7 @@ load 10s
 			Query: "metric",
 			Result: Matrix{
 				Series{
-					Points: []Point{{V: 1, T: 0}, {V: 1, T: 1000}, {V: 1, T: 2000}},
+					Points: []Point{&FloatPoint{V: 1, T: 0}, &FloatPoint{V: 1, T: 1000}, &FloatPoint{V: 1, T: 2000}},
 					Metric: labels.FromStrings("__name__", "metric"),
 				},
 			},
@@ -695,7 +695,7 @@ load 10s
 			Query: "metric",
 			Result: Matrix{
 				Series{
-					Points: []Point{{V: 1, T: 0}, {V: 1, T: 5000}, {V: 2, T: 10000}},
+					Points: []Point{&FloatPoint{V: 1, T: 0}, &FloatPoint{V: 1, T: 5000}, &FloatPoint{V: 2, T: 10000}},
 					Metric: labels.FromStrings("__name__", "metric"),
 				},
 			},
@@ -957,20 +957,20 @@ load 1ms
 			query: `metric_neg @ 0`,
 			start: 100,
 			result: Vector{
-				Sample{Point: Point{V: 1, T: 100000}, Metric: lblsneg},
+				Sample{Point: &FloatPoint{V: 1, T: 100000}, Metric: lblsneg},
 			},
 		}, {
 			query: `metric_neg @ -200`,
 			start: 100,
 			result: Vector{
-				Sample{Point: Point{V: 201, T: 100000}, Metric: lblsneg},
+				Sample{Point: &FloatPoint{V: 201, T: 100000}, Metric: lblsneg},
 			},
 		}, {
 			query: `metric{job="2"} @ 50`,
 			start: -2, end: 2, interval: 1,
 			result: Matrix{
 				Series{
-					Points: []Point{{V: 10, T: -2000}, {V: 10, T: -1000}, {V: 10, T: 0}, {V: 10, T: 1000}, {V: 10, T: 2000}},
+					Points: []Point{&FloatPoint{V: 10, T: -2000}, &FloatPoint{V: 10, T: -1000}, &FloatPoint{V: 10, T: 0}, &FloatPoint{V: 10, T: 1000}, &FloatPoint{V: 10, T: 2000}},
 					Metric: lbls2,
 				},
 			},
@@ -979,11 +979,11 @@ load 1ms
 			start: 10,
 			result: Matrix{
 				Series{
-					Points: []Point{{V: 28, T: 280000}, {V: 29, T: 290000}, {V: 30, T: 300000}},
+					Points: []Point{&FloatPoint{V: 28, T: 280000}, &FloatPoint{V: 29, T: 290000}, &FloatPoint{V: 30, T: 300000}},
 					Metric: lbls1,
 				},
 				Series{
-					Points: []Point{{V: 56, T: 280000}, {V: 58, T: 290000}, {V: 60, T: 300000}},
+					Points: []Point{&FloatPoint{V: 56, T: 280000}, &FloatPoint{V: 58, T: 290000}, &FloatPoint{V: 60, T: 300000}},
 					Metric: lbls2,
 				},
 			},
@@ -992,7 +992,7 @@ load 1ms
 			start: 100,
 			result: Matrix{
 				Series{
-					Points: []Point{{V: 3, T: -2000}, {V: 2, T: -1000}, {V: 1, T: 0}},
+					Points: []Point{&FloatPoint{V: 3, T: -2000}, &FloatPoint{V: 2, T: -1000}, &FloatPoint{V: 1, T: 0}},
 					Metric: lblsneg,
 				},
 			},
@@ -1001,7 +1001,7 @@ load 1ms
 			start: 100,
 			result: Matrix{
 				Series{
-					Points: []Point{{V: 504, T: -503000}, {V: 503, T: -502000}, {V: 502, T: -501000}, {V: 501, T: -500000}},
+					Points: []Point{&FloatPoint{V: 504, T: -503000}, &FloatPoint{V: 503, T: -502000}, &FloatPoint{V: 502, T: -501000}, &FloatPoint{V: 501, T: -500000}},
 					Metric: lblsneg,
 				},
 			},
@@ -1010,7 +1010,7 @@ load 1ms
 			start: 100,
 			result: Matrix{
 				Series{
-					Points: []Point{{V: 2342, T: 2342}, {V: 2343, T: 2343}, {V: 2344, T: 2344}, {V: 2345, T: 2345}},
+					Points: []Point{&FloatPoint{V: 2342, T: 2342}, &FloatPoint{V: 2343, T: 2343}, &FloatPoint{V: 2344, T: 2344}, &FloatPoint{V: 2345, T: 2345}},
 					Metric: lblsms,
 				},
 			},
@@ -1019,11 +1019,11 @@ load 1ms
 			start: 100,
 			result: Matrix{
 				Series{
-					Points: []Point{{V: 20, T: 200000}, {V: 22, T: 225000}, {V: 25, T: 250000}, {V: 27, T: 275000}, {V: 30, T: 300000}},
+					Points: []Point{&FloatPoint{V: 20, T: 200000}, &FloatPoint{V: 22, T: 225000}, &FloatPoint{V: 25, T: 250000}, &FloatPoint{V: 27, T: 275000}, &FloatPoint{V: 30, T: 300000}},
 					Metric: lbls1,
 				},
 				Series{
-					Points: []Point{{V: 40, T: 200000}, {V: 44, T: 225000}, {V: 50, T: 250000}, {V: 54, T: 275000}, {V: 60, T: 300000}},
+					Points: []Point{&FloatPoint{V: 40, T: 200000}, &FloatPoint{V: 44, T: 225000}, &FloatPoint{V: 50, T: 250000}, &FloatPoint{V: 54, T: 275000}, &FloatPoint{V: 60, T: 300000}},
 					Metric: lbls2,
 				},
 			},
@@ -1032,7 +1032,7 @@ load 1ms
 			start: 100,
 			result: Matrix{
 				Series{
-					Points: []Point{{V: 51, T: -50000}, {V: 26, T: -25000}, {V: 1, T: 0}},
+					Points: []Point{&FloatPoint{V: 51, T: -50000}, &FloatPoint{V: 26, T: -25000}, &FloatPoint{V: 1, T: 0}},
 					Metric: lblsneg,
 				},
 			},
@@ -1041,7 +1041,7 @@ load 1ms
 			start: 100,
 			result: Matrix{
 				Series{
-					Points: []Point{{V: 151, T: -150000}, {V: 126, T: -125000}, {V: 101, T: -100000}},
+					Points: []Point{&FloatPoint{V: 151, T: -150000}, &FloatPoint{V: 126, T: -125000}, &FloatPoint{V: 101, T: -100000}},
 					Metric: lblsneg,
 				},
 			},
@@ -1050,7 +1050,7 @@ load 1ms
 			start: 100,
 			result: Matrix{
 				Series{
-					Points: []Point{{V: 2250, T: 2250}, {V: 2275, T: 2275}, {V: 2300, T: 2300}, {V: 2325, T: 2325}},
+					Points: []Point{&FloatPoint{V: 2250, T: 2250}, &FloatPoint{V: 2275, T: 2275}, &FloatPoint{V: 2300, T: 2300}, &FloatPoint{V: 2325, T: 2325}},
 					Metric: lblsms,
 				},
 			},
@@ -1059,7 +1059,7 @@ load 1ms
 			start: 50, end: 80, interval: 10,
 			result: Matrix{
 				Series{
-					Points: []Point{{V: 995, T: 50000}, {V: 994, T: 60000}, {V: 993, T: 70000}, {V: 992, T: 80000}},
+					Points: []Point{&FloatPoint{V: 995, T: 50000}, &FloatPoint{V: 994, T: 60000}, &FloatPoint{V: 993, T: 70000}, &FloatPoint{V: 992, T: 80000}},
 					Metric: lblstopk3,
 				},
 			},
@@ -1068,7 +1068,7 @@ load 1ms
 			start: 50, end: 80, interval: 10,
 			result: Matrix{
 				Series{
-					Points: []Point{{V: 10, T: 50000}, {V: 12, T: 60000}, {V: 14, T: 70000}, {V: 16, T: 80000}},
+					Points: []Point{&FloatPoint{V: 10, T: 50000}, &FloatPoint{V: 12, T: 60000}, &FloatPoint{V: 14, T: 70000}, &FloatPoint{V: 16, T: 80000}},
 					Metric: lblstopk2,
 				},
 			},
@@ -1077,7 +1077,7 @@ load 1ms
 			start: 70, end: 100, interval: 10,
 			result: Matrix{
 				Series{
-					Points: []Point{{V: 993, T: 70000}, {V: 992, T: 80000}, {V: 991, T: 90000}, {V: 990, T: 100000}},
+					Points: []Point{&FloatPoint{V: 993, T: 70000}, &FloatPoint{V: 992, T: 80000}, &FloatPoint{V: 991, T: 90000}, &FloatPoint{V: 990, T: 100000}},
 					Metric: lblstopk3,
 				},
 			},
@@ -1086,7 +1086,7 @@ load 1ms
 			start: 100, end: 130, interval: 10,
 			result: Matrix{
 				Series{
-					Points: []Point{{V: 990, T: 100000}, {V: 989, T: 110000}, {V: 988, T: 120000}, {V: 987, T: 130000}},
+					Points: []Point{&FloatPoint{V: 990, T: 100000}, &FloatPoint{V: 989, T: 110000}, &FloatPoint{V: 988, T: 120000}, &FloatPoint{V: 987, T: 130000}},
 					Metric: lblstopk3,
 				},
 			},
@@ -1098,14 +1098,14 @@ load 1ms
 			result: Matrix{
 				Series{
 					Points: []Point{
-						{V: 3600, T: 0},
-						{V: 3600, T: 60 * 1000},
-						{V: 3600, T: 2 * 60 * 1000},
-						{V: 3600, T: 3 * 60 * 1000},
-						{V: 3600, T: 4 * 60 * 1000},
-						{V: 3600, T: 5 * 60 * 1000},
-						{V: 3600, T: 6 * 60 * 1000},
-						{V: 3600, T: 7 * 60 * 1000},
+						&FloatPoint{V: 3600, T: 0},
+						&FloatPoint{V: 3600, T: 60 * 1000},
+						&FloatPoint{V: 3600, T: 2 * 60 * 1000},
+						&FloatPoint{V: 3600, T: 3 * 60 * 1000},
+						&FloatPoint{V: 3600, T: 4 * 60 * 1000},
+						&FloatPoint{V: 3600, T: 5 * 60 * 1000},
+						&FloatPoint{V: 3600, T: 6 * 60 * 1000},
+						&FloatPoint{V: 3600, T: 7 * 60 * 1000},
 					},
 					Metric: labels.Labels{},
 				},
@@ -1208,7 +1208,7 @@ func TestSubquerySelector(t *testing.T) {
 						nil,
 						Matrix{
 							Series{
-								Points: []Point{{V: 1, T: 0}, {V: 2, T: 10000}},
+								Points: []Point{&FloatPoint{V: 1, T: 0}, &FloatPoint{V: 2, T: 10000}},
 								Metric: labels.FromStrings("__name__", "metric"),
 							},
 						},
@@ -1222,7 +1222,7 @@ func TestSubquerySelector(t *testing.T) {
 						nil,
 						Matrix{
 							Series{
-								Points: []Point{{V: 1, T: 0}, {V: 1, T: 5000}, {V: 2, T: 10000}},
+								Points: []Point{&FloatPoint{V: 1, T: 0}, &FloatPoint{V: 1, T: 5000}, &FloatPoint{V: 2, T: 10000}},
 								Metric: labels.FromStrings("__name__", "metric"),
 							},
 						},
@@ -1236,7 +1236,7 @@ func TestSubquerySelector(t *testing.T) {
 						nil,
 						Matrix{
 							Series{
-								Points: []Point{{V: 1, T: 0}, {V: 1, T: 5000}, {V: 2, T: 10000}},
+								Points: []Point{&FloatPoint{V: 1, T: 0}, &FloatPoint{V: 1, T: 5000}, &FloatPoint{V: 2, T: 10000}},
 								Metric: labels.FromStrings("__name__", "metric"),
 							},
 						},
@@ -1250,7 +1250,7 @@ func TestSubquerySelector(t *testing.T) {
 						nil,
 						Matrix{
 							Series{
-								Points: []Point{{V: 1, T: 0}, {V: 1, T: 5000}, {V: 2, T: 10000}},
+								Points: []Point{&FloatPoint{V: 1, T: 0}, &FloatPoint{V: 1, T: 5000}, &FloatPoint{V: 2, T: 10000}},
 								Metric: labels.FromStrings("__name__", "metric"),
 							},
 						},
@@ -1264,7 +1264,7 @@ func TestSubquerySelector(t *testing.T) {
 						nil,
 						Matrix{
 							Series{
-								Points: []Point{{V: 2, T: 15000}, {V: 2, T: 20000}, {V: 2, T: 25000}, {V: 2, T: 30000}},
+								Points: []Point{&FloatPoint{V: 2, T: 15000}, &FloatPoint{V: 2, T: 20000}, &FloatPoint{V: 2, T: 25000}, &FloatPoint{V: 2, T: 30000}},
 								Metric: labels.FromStrings("__name__", "metric"),
 							},
 						},
@@ -1278,7 +1278,7 @@ func TestSubquerySelector(t *testing.T) {
 						nil,
 						Matrix{
 							Series{
-								Points: []Point{{V: 2, T: 10000}, {V: 2, T: 15000}, {V: 2, T: 20000}, {V: 2, T: 25000}, {V: 2, T: 30000}},
+								Points: []Point{&FloatPoint{V: 2, T: 10000}, &FloatPoint{V: 2, T: 15000}, &FloatPoint{V: 2, T: 20000}, &FloatPoint{V: 2, T: 25000}, &FloatPoint{V: 2, T: 30000}},
 								Metric: labels.FromStrings("__name__", "metric"),
 							},
 						},
@@ -1292,7 +1292,7 @@ func TestSubquerySelector(t *testing.T) {
 						nil,
 						Matrix{
 							Series{
-								Points: []Point{{V: 2, T: 10000}, {V: 2, T: 15000}, {V: 2, T: 20000}, {V: 2, T: 25000}},
+								Points: []Point{&FloatPoint{V: 2, T: 10000}, &FloatPoint{V: 2, T: 15000}, &FloatPoint{V: 2, T: 20000}, &FloatPoint{V: 2, T: 25000}},
 								Metric: labels.FromStrings("__name__", "metric"),
 							},
 						},
@@ -1306,7 +1306,7 @@ func TestSubquerySelector(t *testing.T) {
 						nil,
 						Matrix{
 							Series{
-								Points: []Point{{V: 2, T: 10000}, {V: 2, T: 15000}, {V: 2, T: 20000}, {V: 2, T: 25000}},
+								Points: []Point{&FloatPoint{V: 2, T: 10000}, &FloatPoint{V: 2, T: 15000}, &FloatPoint{V: 2, T: 20000}, &FloatPoint{V: 2, T: 25000}},
 								Metric: labels.FromStrings("__name__", "metric"),
 							},
 						},
@@ -1329,7 +1329,7 @@ func TestSubquerySelector(t *testing.T) {
 						nil,
 						Matrix{
 							Series{
-								Points: []Point{{V: 9990, T: 9990000}, {V: 10000, T: 10000000}, {V: 100, T: 10010000}, {V: 130, T: 10020000}},
+								Points: []Point{&FloatPoint{V: 9990, T: 9990000}, &FloatPoint{V: 10000, T: 10000000}, &FloatPoint{V: 100, T: 10010000}, &FloatPoint{V: 130, T: 10020000}},
 								Metric: labels.FromStrings("__name__", "http_requests", "job", "api-server", "instance", "0", "group", "production"),
 							},
 						},
@@ -1343,7 +1343,7 @@ func TestSubquerySelector(t *testing.T) {
 						nil,
 						Matrix{
 							Series{
-								Points: []Point{{V: 9840, T: 9840000}, {V: 9900, T: 9900000}, {V: 9960, T: 9960000}, {V: 130, T: 10020000}, {V: 310, T: 10080000}},
+								Points: []Point{&FloatPoint{V: 9840, T: 9840000}, &FloatPoint{V: 9900, T: 9900000}, &FloatPoint{V: 9960, T: 9960000}, &FloatPoint{V: 130, T: 10020000}, &FloatPoint{V: 310, T: 10080000}},
 								Metric: labels.FromStrings("__name__", "http_requests", "job", "api-server", "instance", "0", "group", "production"),
 							},
 						},
@@ -1357,7 +1357,7 @@ func TestSubquerySelector(t *testing.T) {
 						nil,
 						Matrix{
 							Series{
-								Points: []Point{{V: 8640, T: 8640000}, {V: 8700, T: 8700000}, {V: 8760, T: 8760000}, {V: 8820, T: 8820000}, {V: 8880, T: 8880000}},
+								Points: []Point{&FloatPoint{V: 8640, T: 8640000}, &FloatPoint{V: 8700, T: 8700000}, &FloatPoint{V: 8760, T: 8760000}, &FloatPoint{V: 8820, T: 8820000}, &FloatPoint{V: 8880, T: 8880000}},
 								Metric: labels.FromStrings("__name__", "http_requests", "job", "api-server", "instance", "0", "group", "production"),
 							},
 						},
@@ -1371,19 +1371,19 @@ func TestSubquerySelector(t *testing.T) {
 						nil,
 						Matrix{
 							Series{
-								Points: []Point{{V: 3, T: 7985000}, {V: 3, T: 7990000}, {V: 3, T: 7995000}, {V: 3, T: 8000000}},
+								Points: []Point{&FloatPoint{V: 3, T: 7985000}, &FloatPoint{V: 3, T: 7990000}, &FloatPoint{V: 3, T: 7995000}, &FloatPoint{V: 3, T: 8000000}},
 								Metric: labels.FromStrings("job", "api-server", "instance", "0", "group", "canary"),
 							},
 							Series{
-								Points: []Point{{V: 4, T: 7985000}, {V: 4, T: 7990000}, {V: 4, T: 7995000}, {V: 4, T: 8000000}},
+								Points: []Point{&FloatPoint{V: 4, T: 7985000}, &FloatPoint{V: 4, T: 7990000}, &FloatPoint{V: 4, T: 7995000}, &FloatPoint{V: 4, T: 8000000}},
 								Metric: labels.FromStrings("job", "api-server", "instance", "1", "group", "canary"),
 							},
 							Series{
-								Points: []Point{{V: 1, T: 7985000}, {V: 1, T: 7990000}, {V: 1, T: 7995000}, {V: 1, T: 8000000}},
+								Points: []Point{&FloatPoint{V: 1, T: 7985000}, &FloatPoint{V: 1, T: 7990000}, &FloatPoint{V: 1, T: 7995000}, &FloatPoint{V: 1, T: 8000000}},
 								Metric: labels.FromStrings("job", "api-server", "instance", "0", "group", "production"),
 							},
 							Series{
-								Points: []Point{{V: 2, T: 7985000}, {V: 2, T: 7990000}, {V: 2, T: 7995000}, {V: 2, T: 8000000}},
+								Points: []Point{&FloatPoint{V: 2, T: 7985000}, &FloatPoint{V: 2, T: 7990000}, &FloatPoint{V: 2, T: 7995000}, &FloatPoint{V: 2, T: 8000000}},
 								Metric: labels.FromStrings("job", "api-server", "instance", "1", "group", "production"),
 							},
 						},
@@ -1397,7 +1397,7 @@ func TestSubquerySelector(t *testing.T) {
 						nil,
 						Matrix{
 							Series{
-								Points: []Point{{V: 270, T: 90000}, {V: 300, T: 100000}, {V: 330, T: 110000}, {V: 360, T: 120000}},
+								Points: []Point{&FloatPoint{V: 270, T: 90000}, &FloatPoint{V: 300, T: 100000}, &FloatPoint{V: 330, T: 110000}, &FloatPoint{V: 360, T: 120000}},
 								Metric: labels.Labels{},
 							},
 						},
@@ -1411,7 +1411,7 @@ func TestSubquerySelector(t *testing.T) {
 						nil,
 						Matrix{
 							Series{
-								Points: []Point{{V: 800, T: 80000}, {V: 900, T: 90000}, {V: 1000, T: 100000}, {V: 1100, T: 110000}, {V: 1200, T: 120000}},
+								Points: []Point{&FloatPoint{V: 800, T: 80000}, &FloatPoint{V: 900, T: 90000}, &FloatPoint{V: 1000, T: 100000}, &FloatPoint{V: 1100, T: 110000}, &FloatPoint{V: 1200, T: 120000}},
 								Metric: labels.Labels{},
 							},
 						},
@@ -1425,7 +1425,7 @@ func TestSubquerySelector(t *testing.T) {
 						nil,
 						Matrix{
 							Series{
-								Points: []Point{{V: 1000, T: 100000}, {V: 1000, T: 105000}, {V: 1100, T: 110000}, {V: 1100, T: 115000}, {V: 1200, T: 120000}},
+								Points: []Point{&FloatPoint{V: 1000, T: 100000}, &FloatPoint{V: 1000, T: 105000}, &FloatPoint{V: 1100, T: 110000}, &FloatPoint{V: 1100, T: 115000}, &FloatPoint{V: 1200, T: 120000}},
 								Metric: labels.Labels{},
 							},
 						},
@@ -2481,7 +2481,7 @@ func TestRangeQuery(t *testing.T) {
 			Query: "sum_over_time(bar[30s])",
 			Result: Matrix{
 				Series{
-					Points: []Point{{V: 0, T: 0}, {V: 11, T: 60000}, {V: 1100, T: 120000}},
+					Points: []Point{&FloatPoint{V: 0, T: 0}, &FloatPoint{V: 11, T: 60000}, &FloatPoint{V: 1100, T: 120000}},
 					Metric: labels.Labels{},
 				},
 			},
@@ -2496,7 +2496,7 @@ func TestRangeQuery(t *testing.T) {
 			Query: "sum_over_time(bar[30s])",
 			Result: Matrix{
 				Series{
-					Points: []Point{{V: 0, T: 0}, {V: 11, T: 60000}, {V: 1100, T: 120000}},
+					Points: []Point{&FloatPoint{V: 0, T: 0}, &FloatPoint{V: 11, T: 60000}, &FloatPoint{V: 1100, T: 120000}},
 					Metric: labels.Labels{},
 				},
 			},
@@ -2511,7 +2511,7 @@ func TestRangeQuery(t *testing.T) {
 			Query: "sum_over_time(bar[30s])",
 			Result: Matrix{
 				Series{
-					Points: []Point{{V: 0, T: 0}, {V: 11, T: 60000}, {V: 1100, T: 120000}, {V: 110000, T: 180000}, {V: 11000000, T: 240000}},
+					Points: []Point{&FloatPoint{V: 0, T: 0}, &FloatPoint{V: 11, T: 60000}, &FloatPoint{V: 1100, T: 120000}, &FloatPoint{V: 110000, T: 180000}, &FloatPoint{V: 11000000, T: 240000}},
 					Metric: labels.Labels{},
 				},
 			},
@@ -2526,7 +2526,7 @@ func TestRangeQuery(t *testing.T) {
 			Query: "sum_over_time(bar[30s])",
 			Result: Matrix{
 				Series{
-					Points: []Point{{V: 5, T: 0}, {V: 59, T: 60000}, {V: 9, T: 120000}, {V: 956, T: 180000}},
+					Points: []Point{&FloatPoint{V: 5, T: 0}, &FloatPoint{V: 59, T: 60000}, &FloatPoint{V: 9, T: 120000}, &FloatPoint{V: 956, T: 180000}},
 					Metric: labels.Labels{},
 				},
 			},
@@ -2541,7 +2541,7 @@ func TestRangeQuery(t *testing.T) {
 			Query: "metric",
 			Result: Matrix{
 				Series{
-					Points: []Point{{V: 1, T: 0}, {V: 3, T: 60000}, {V: 5, T: 120000}},
+					Points: []Point{&FloatPoint{V: 1, T: 0}, &FloatPoint{V: 3, T: 60000}, &FloatPoint{V: 5, T: 120000}},
 					Metric: labels.Labels{labels.Label{Name: "__name__", Value: "metric"}},
 				},
 			},
@@ -2556,7 +2556,7 @@ func TestRangeQuery(t *testing.T) {
 			Query: "metric",
 			Result: Matrix{
 				Series{
-					Points: []Point{{V: 1, T: 0}, {V: 3, T: 60000}, {V: 5, T: 120000}},
+					Points: []Point{&FloatPoint{V: 1, T: 0}, &FloatPoint{V: 3, T: 60000}, &FloatPoint{V: 5, T: 120000}},
 					Metric: labels.Labels{labels.Label{Name: "__name__", Value: "metric"}},
 				},
 			},
@@ -2572,14 +2572,14 @@ func TestRangeQuery(t *testing.T) {
 			Query: `foo > 2 or bar`,
 			Result: Matrix{
 				Series{
-					Points: []Point{{V: 1, T: 0}, {V: 3, T: 60000}, {V: 5, T: 120000}},
+					Points: []Point{&FloatPoint{V: 1, T: 0}, &FloatPoint{V: 3, T: 60000}, &FloatPoint{V: 5, T: 120000}},
 					Metric: labels.Labels{
 						labels.Label{Name: "__name__", Value: "bar"},
 						labels.Label{Name: "job", Value: "2"},
 					},
 				},
 				Series{
-					Points: []Point{{V: 3, T: 60000}, {V: 5, T: 120000}},
+					Points: []Point{&FloatPoint{V: 3, T: 60000}, &FloatPoint{V: 5, T: 120000}},
 					Metric: labels.Labels{
 						labels.Label{Name: "__name__", Value: "foo"},
 						labels.Label{Name: "job", Value: "1"},

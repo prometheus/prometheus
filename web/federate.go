@@ -131,7 +131,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 
 		vec = append(vec, promql.Sample{
 			Metric: s.Labels(),
-			Point:  promql.Point{T: t, V: v},
+			Point:  &promql.FloatPoint{T: t, V: v},
 		})
 	}
 	if ws := set.Warnings(); len(ws) > 0 {
@@ -219,9 +219,9 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 			}
 		}
 
-		protMetric.TimestampMs = proto.Int64(s.T)
-		protMetric.Untyped.Value = proto.Float64(s.V)
-		// TODO(beorn7): Handle histograms.
+		protMetric.TimestampMs = proto.Int64(s.Timestamp())
+		// TODO(beorn7): Handle histogram.
+		protMetric.Untyped.Value = proto.Float64(s.Point.(*promql.FloatPoint).V)
 
 		protMetricFam.Metric = append(protMetricFam.Metric, protMetric)
 	}

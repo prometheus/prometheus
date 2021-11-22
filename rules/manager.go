@@ -15,6 +15,7 @@ package rules
 
 import (
 	"context"
+	"fmt"
 	html_template "html/template"
 	"math"
 	"net/url"
@@ -197,7 +198,7 @@ func EngineQueryFunc(engine *promql.Engine, q storage.Queryable) QueryFunc {
 			return v, nil
 		case promql.Scalar:
 			return promql.Vector{promql.Sample{
-				Point:  promql.Point{T: v.T, V: v.V},
+				Point:  &promql.FloatPoint{T: v.T, V: v.V},
 				Metric: labels.Labels{},
 			}}, nil
 		default:
@@ -637,7 +638,16 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 			}()
 
 			for _, s := range vector {
-				if _, err := app.Append(0, s.Metric, s.T, s.V); err != nil {
+				var err error
+				switch p := s.Point.(type) {
+				case *promql.FloatPoint:
+					_, err = app.Append(0, s.Metric, p.T, p.V)
+				case *promql.HistogramPoint:
+					_, err = app.AppendHistogram(0, s.Metric, p.T, p.V)
+				default:
+					err = fmt.Errorf("unexpected point type: %s", p.Type())
+				}
+				if err != nil {
 					rule.SetHealth(HealthBad)
 					rule.SetLastError(err)
 

@@ -77,30 +77,78 @@ func (s Series) String() string {
 	return fmt.Sprintf("%s =>\n%s", s.Metric, strings.Join(vals, "\n"))
 }
 
+// PointType describes the value type of a point.
+type PointType string
+
+// The valid point types.
+const (
+	PointTypeFloat          PointType = "float"
+	PointTypeHistogram      PointType = "histogram"
+	PointTypeGaugeHistogram PointType = "gaugehistogram"
+)
+
 // Point represents a single data point for a given timestamp.
-// If H is not nil, then this is a histogram point and only (T, H) is valid.
-// If H is nil, then only (T, V) is valid.
-type Point struct {
+type Point interface {
+	Timestamp() int64
+	SetTimestamp(t int64) Point // Sets timestamp in place, returns Point for convenience.
+	Copy() Point                // Returns shallow copy (for independent timestamp manipulation).
+	Type() PointType
+	String() string
+}
+
+type FloatPoint struct {
 	T int64
 	V float64
-	H *histogram.Histogram
 }
 
-func (p Point) String() string {
-	var s string
-	if p.H != nil {
-		s = p.H.String()
-	} else {
-		s = strconv.FormatFloat(p.V, 'f', -1, 64)
-	}
-	return fmt.Sprintf("%s @[%v]", s, p.T)
+type HistogramPoint struct {
+	T int64
+	V *histogram.Histogram
 }
+
+type GaugeHistogramPoint struct {
+	T int64
+	// V *histogram.GaugeHistogram // TODO(beorn7): Implement.
+}
+
+func (p FloatPoint) Timestamp() int64          { return p.T }
+func (p HistogramPoint) Timestamp() int64      { return p.T }
+func (p GaugeHistogramPoint) Timestamp() int64 { return p.T }
+
+func (p *FloatPoint) SetTimestamp(t int64) Point {
+	p.T = t
+	return p
+}
+
+func (p *HistogramPoint) SetTimestamp(t int64) Point {
+	p.T = t
+	return p
+}
+
+func (p *GaugeHistogramPoint) SetTimestamp(t int64) Point {
+	p.T = t
+	return p
+}
+
+func (p FloatPoint) Copy() Point          { return &p }
+func (p HistogramPoint) Copy() Point      { return &p }
+func (p GaugeHistogramPoint) Copy() Point { return &p }
+
+func (FloatPoint) Type() PointType          { return PointTypeFloat }
+func (HistogramPoint) Type() PointType      { return PointTypeHistogram }
+func (GaugeHistogramPoint) Type() PointType { return PointTypeGaugeHistogram }
+
+func (p FloatPoint) String() string          { return fmt.Sprintf("%f @[%v]", p.V, p.T) }
+func (p HistogramPoint) String() string      { return fmt.Sprintf("%v @[%v]", p.V, p.T) }
+func (p GaugeHistogramPoint) String() string { return "implemente me" } // TODO(beorn7): Implement
 
 // MarshalJSON implements json.Marshaler.
-func (p Point) MarshalJSON() ([]byte, error) {
+func (p FloatPoint) MarshalJSON() ([]byte, error) {
 	v := strconv.FormatFloat(p.V, 'f', -1, 64)
 	return json.Marshal([...]interface{}{float64(p.T) / 1000, v})
 }
+
+// TODO(beorn7): Implement MarshalJSON for HistogramPoint and GaugeHistogramPoint.
 
 // Sample is a single sample belonging to a metric.
 type Sample struct {
@@ -290,7 +338,7 @@ func (ssi *storageSeriesIterator) Seek(t int64) bool {
 		i = 0
 	}
 	for ; i < len(ssi.points); i++ {
-		if ssi.points[i].T >= t {
+		if ssi.points[i].Timestamp() >= t {
 			ssi.curr = i
 			return true
 		}
@@ -300,13 +348,13 @@ func (ssi *storageSeriesIterator) Seek(t int64) bool {
 }
 
 func (ssi *storageSeriesIterator) At() (t int64, v float64) {
-	p := ssi.points[ssi.curr]
+	p := ssi.points[ssi.curr].(*FloatPoint)
 	return p.T, p.V
 }
 
 func (ssi *storageSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
-	p := ssi.points[ssi.curr]
-	return p.T, p.H
+	p := ssi.points[ssi.curr].(*HistogramPoint)
+	return p.T, p.V
 }
 
 func (ssi *storageSeriesIterator) ChunkEncoding() chunkenc.Encoding {

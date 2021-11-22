@@ -348,7 +348,8 @@ Outer:
 		for _, s := range got {
 			gotSamples = append(gotSamples, parsedSample{
 				Labels: s.Metric.Copy(),
-				Value:  s.V,
+				// TODO(beorn7): Handle histogram.
+				Value: s.Point.(*promql.FloatPoint).V,
 			})
 		}
 
@@ -448,7 +449,7 @@ func query(ctx context.Context, qs string, t time.Time, engine *promql.Engine, q
 		return v, nil
 	case promql.Scalar:
 		return promql.Vector{promql.Sample{
-			Point:  promql.Point{T: v.T, V: v.V},
+			Point:  &promql.FloatPoint{T: v.T, V: v.V},
 			Metric: labels.Labels{},
 		}}, nil
 	default:

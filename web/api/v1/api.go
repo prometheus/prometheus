@@ -186,7 +186,7 @@ type API struct {
 }
 
 func init() {
-	jsoniter.RegisterTypeEncoderFunc("promql.Point", marshalPointJSON, marshalPointJSONIsEmpty)
+	jsoniter.RegisterTypeEncoderFunc("*promql.FloatPoint", marshalPointJSON, marshalPointJSONIsEmpty)
 	jsoniter.RegisterTypeEncoderFunc("exemplar.Exemplar", marshalExemplarJSON, marshalExemplarJSONEmpty)
 }
 
@@ -1791,9 +1791,9 @@ OUTER:
 
 // marshalPointJSON writes `[ts, "val"]`.
 func marshalPointJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
-	p := *((*promql.Point)(ptr))
+	p := *((**promql.FloatPoint)(ptr))
 	stream.WriteArrayStart()
-	marshalTimestamp(p.T, stream)
+	marshalTimestamp(p.Timestamp(), stream)
 	stream.WriteMore()
 	marshalValue(p.V, stream)
 	stream.WriteArrayEnd()

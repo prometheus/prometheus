@@ -303,7 +303,7 @@ func (cmd *loadCmd) set(m labels.Labels, vals ...parser.SequenceValue) {
 	ts := testStartTime
 	for _, v := range vals {
 		if !v.Omitted {
-			samples = append(samples, Point{
+			samples = append(samples, &FloatPoint{
 				T: ts.UnixNano() / int64(time.Millisecond/time.Nanosecond),
 				V: v.Value,
 			})
@@ -319,9 +319,18 @@ func (cmd *loadCmd) append(a storage.Appender) error {
 	for h, smpls := range cmd.defs {
 		m := cmd.metrics[h]
 
-		for _, s := range smpls {
-			if _, err := a.Append(0, m, s.T, s.V); err != nil {
-				return err
+		for _, sample := range smpls {
+			switch s := sample.(type) {
+			case *FloatPoint:
+				if _, err := a.Append(0, m, s.T, s.V); err != nil {
+					return err
+				}
+			case *HistogramPoint:
+				if _, err := a.AppendHistogram(0, m, s.T, s.V); err != nil {
+					return err
+				}
+			default:
+				// TODO(beorn7): Handle remaining point types.
 			}
 		}
 	}
@@ -394,8 +403,8 @@ func (ev *evalCmd) compareResult(result parser.Value) error {
 			if ev.ordered && exp.pos != pos+1 {
 				return errors.Errorf("expected metric %s with %v at position %d but was at %d", v.Metric, exp.vals, exp.pos, pos+1)
 			}
-			if !almostEqual(exp.vals[0].Value, v.V) {
-				return errors.Errorf("expected %v for %s but got %v", exp.vals[0].Value, v.Metric, v.V)
+			if !almostEqual(exp.vals[0].Value, v.Point.(*FloatPoint).V) {
+				return errors.Errorf("expected %v for %s but got %v", exp.vals[0].Value, v.Metric, v.Point.(*FloatPoint).V)
 			}
 
 			seen[fp] = true
@@ -572,14 +581,14 @@ func (t *Test) exec(tc testCommand) error {
 			vec := make(Vector, 0, len(mat))
 			for _, series := range mat {
 				for _, point := range series.Points {
-					if point.T == timeMilliseconds(iq.evalTime) {
+					if point.Timestamp() == timeMilliseconds(iq.evalTime) {
 						vec = append(vec, Sample{Metric: series.Metric, Point: point})
 						break
 					}
 				}
 			}
 			if _, ok := res.Value.(Scalar); ok {
-				err = cmd.compareResult(Scalar{V: vec[0].Point.V})
+				err = cmd.compareResult(Scalar{V: vec[0].Point.(*FloatPoint).V})
 			} else {
 				err = cmd.compareResult(vec)
 			}
@@ -748,14 +757,23 @@ func (ll *LazyLoader) appendTill(ts int64) error {
 	app := ll.storage.Appender(ll.Context())
 	for h, smpls := range ll.loadCmd.defs {
 		m := ll.loadCmd.metrics[h]
-		for i, s := range smpls {
-			if s.T > ts {
+		for i, sample := range smpls {
+			if sample.Timestamp() > ts {
 				// Removing the already added samples.
 				ll.loadCmd.defs[h] = smpls[i:]
 				break
 			}
-			if _, err := app.Append(0, m, s.T, s.V); err != nil {
-				return err
+			switch s := sample.(type) {
+			case *FloatPoint:
+				if _, err := app.Append(0, m, s.T, s.V); err != nil {
+					return err
+				}
+			case *HistogramPoint:
+				if _, err := app.AppendHistogram(0, m, s.T, s.V); err != nil {
+					return err
+				}
+			default:
+				// TODO(beorn7): Handle other point types.
 			}
 			if i == len(smpls)-1 {
 				ll.loadCmd.defs[h] = nil

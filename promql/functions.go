@@ -47,7 +47,7 @@ type FunctionCall func(vals []parser.Value, args parser.Expressions, enh *EvalNo
 
 // === time() float64 ===
 func funcTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
-	return Vector{Sample{Point: Point{
+	return Vector{Sample{Point: &FloatPoint{
 		V: float64(enh.Ts) / 1000,
 	}}}
 }
@@ -71,25 +71,33 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 		return enh.Out
 	}
 
-	resultValue := samples.Points[len(samples.Points)-1].V - samples.Points[0].V
+	// TODO(beorn7): Handle histograms. And handle change of type during range gracefully.
+	if _, ok := samples.Points[0].(*HistogramPoint); ok {
+		return enh.Out
+	}
+	if _, ok := samples.Points[len(samples.Points)-1].(*HistogramPoint); ok {
+		return enh.Out
+	}
+
+	resultValue := samples.Points[len(samples.Points)-1].(*FloatPoint).V - samples.Points[0].(*FloatPoint).V
 	if isCounter {
 		var lastValue float64
 		for _, sample := range samples.Points {
-			if sample.V < lastValue {
+			if sample.(*FloatPoint).V < lastValue {
 				resultValue += lastValue
 			}
-			lastValue = sample.V
+			lastValue = sample.(*FloatPoint).V
 		}
 	}
 
 	// Duration between first/last samples and boundary of range.
-	durationToStart := float64(samples.Points[0].T-rangeStart) / 1000
-	durationToEnd := float64(rangeEnd-samples.Points[len(samples.Points)-1].T) / 1000
+	durationToStart := float64(samples.Points[0].Timestamp()-rangeStart) / 1000
+	durationToEnd := float64(rangeEnd-samples.Points[len(samples.Points)-1].Timestamp()) / 1000
 
-	sampledInterval := float64(samples.Points[len(samples.Points)-1].T-samples.Points[0].T) / 1000
+	sampledInterval := float64(samples.Points[len(samples.Points)-1].Timestamp()-samples.Points[0].Timestamp()) / 1000
 	averageDurationBetweenSamples := sampledInterval / float64(len(samples.Points)-1)
 
-	if isCounter && resultValue > 0 && samples.Points[0].V >= 0 {
+	if isCounter && resultValue > 0 && samples.Points[0].(*FloatPoint).V >= 0 {
 		// Counters cannot be negative. If we have any slope at
 		// all (i.e. resultValue went up), we can extrapolate
 		// the zero point of the counter. If the duration to the
@@ -97,7 +105,7 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 		// take the zero point as the start of the series,
 		// thereby avoiding extrapolation to negative counter
 		// values.
-		durationToZero := sampledInterval * (samples.Points[0].V / resultValue)
+		durationToZero := sampledInterval * (samples.Points[0].(*FloatPoint).V / resultValue)
 		if durationToZero < durationToStart {
 			durationToStart = durationToZero
 		}
@@ -126,7 +134,7 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 	}
 
 	return append(enh.Out, Sample{
-		Point: Point{V: resultValue},
+		Point: &FloatPoint{V: resultValue},
 	})
 }
 
@@ -163,8 +171,9 @@ func instantValue(vals []parser.Value, out Vector, isRate bool) Vector {
 		return out
 	}
 
-	lastSample := samples.Points[len(samples.Points)-1]
-	previousSample := samples.Points[len(samples.Points)-2]
+	// TODO(beorn7): Handle histograms.
+	lastSample := samples.Points[len(samples.Points)-1].(*FloatPoint)
+	previousSample := samples.Points[len(samples.Points)-2].(*FloatPoint)
 
 	var resultValue float64
 	if isRate && lastSample.V < previousSample.V {
@@ -186,7 +195,7 @@ func instantValue(vals []parser.Value, out Vector, isRate bool) Vector {
 	}
 
 	return append(out, Sample{
-		Point: Point{V: resultValue},
+		Point: &FloatPoint{V: resultValue},
 	})
 }
 
@@ -215,11 +224,13 @@ func calcTrendValue(i int, tf, s0, s1, b float64) float64 {
 func funcHoltWinters(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	samples := vals[0].(Matrix)[0]
 
+	// TODO(beorn7): Handle histogram gracefully.
+
 	// The smoothing factor argument.
-	sf := vals[1].(Vector)[0].V
+	sf := vals[1].(Vector)[0].Point.(*FloatPoint).V
 
 	// The trend factor argument.
-	tf := vals[2].(Vector)[0].V
+	tf := vals[2].(Vector)[0].Point.(*FloatPoint).V
 
 	// Sanity check the input.
 	if sf <= 0 || sf >= 1 {
@@ -238,15 +249,15 @@ func funcHoltWinters(vals []parser.Value, args parser.Expressions, enh *EvalNode
 
 	var s0, s1, b float64
 	// Set initial values.
-	s1 = samples.Points[0].V
-	b = samples.Points[1].V - samples.Points[0].V
+	s1 = samples.Points[0].(*FloatPoint).V
+	b = samples.Points[1].(*FloatPoint).V - samples.Points[0].(*FloatPoint).V
 
 	// Run the smoothing operation.
 	var x, y float64
 	for i := 1; i < l; i++ {
 
 		// Scale the raw value against the smoothing factor.
-		x = sf * samples.Points[i].V
+		x = sf * samples.Points[i].(*FloatPoint).V
 
 		// Scale the last smoothed value with the trend at this point.
 		b = calcTrendValue(i-1, tf, s0, s1, b)
@@ -256,7 +267,7 @@ func funcHoltWinters(vals []parser.Value, args parser.Expressions, enh *EvalNode
 	}
 
 	return append(enh.Out, Sample{
-		Point: Point{V: s1},
+		Point: &FloatPoint{V: s1},
 	})
 }
 
@@ -281,15 +292,16 @@ func funcSortDesc(vals []parser.Value, args parser.Expressions, enh *EvalNodeHel
 // === clamp(Vector parser.ValueTypeVector, min, max Scalar) Vector ===
 func funcClamp(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	vec := vals[0].(Vector)
-	min := vals[1].(Vector)[0].Point.V
-	max := vals[2].(Vector)[0].Point.V
+	min := vals[1].(Vector)[0].Point.(*FloatPoint).V
+	max := vals[2].(Vector)[0].Point.(*FloatPoint).V
 	if max < min {
 		return enh.Out
 	}
 	for _, el := range vec {
 		enh.Out = append(enh.Out, Sample{
 			Metric: enh.DropMetricName(el.Metric),
-			Point:  Point{V: math.Max(min, math.Min(max, el.V))},
+			// TODO(beorn7): Handle histogram gracefully.
+			Point: &FloatPoint{V: math.Max(min, math.Min(max, el.Point.(*FloatPoint).V))},
 		})
 	}
 	return enh.Out
@@ -298,11 +310,12 @@ func funcClamp(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper
 // === clamp_max(Vector parser.ValueTypeVector, max Scalar) Vector ===
 func funcClampMax(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	vec := vals[0].(Vector)
-	max := vals[1].(Vector)[0].Point.V
+	max := vals[1].(Vector)[0].Point.(*FloatPoint).V
 	for _, el := range vec {
 		enh.Out = append(enh.Out, Sample{
 			Metric: enh.DropMetricName(el.Metric),
-			Point:  Point{V: math.Min(max, el.V)},
+			// TODO(beorn7): Handle histogram gracefully.
+			Point: &FloatPoint{V: math.Min(max, el.Point.(*FloatPoint).V)},
 		})
 	}
 	return enh.Out
@@ -311,11 +324,12 @@ func funcClampMax(vals []parser.Value, args parser.Expressions, enh *EvalNodeHel
 // === clamp_min(Vector parser.ValueTypeVector, min Scalar) Vector ===
 func funcClampMin(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	vec := vals[0].(Vector)
-	min := vals[1].(Vector)[0].Point.V
+	min := vals[1].(Vector)[0].Point.(*FloatPoint).V
 	for _, el := range vec {
 		enh.Out = append(enh.Out, Sample{
 			Metric: enh.DropMetricName(el.Metric),
-			Point:  Point{V: math.Max(min, el.V)},
+			// TODO(beorn7): Handle histogram gracefully.
+			Point: &FloatPoint{V: math.Max(min, el.Point.(*FloatPoint).V)},
 		})
 	}
 	return enh.Out
@@ -328,16 +342,17 @@ func funcRound(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper
 	// Ties are solved by rounding up.
 	toNearest := float64(1)
 	if len(args) >= 2 {
-		toNearest = vals[1].(Vector)[0].Point.V
+		toNearest = vals[1].(Vector)[0].Point.(*FloatPoint).V
 	}
 	// Invert as it seems to cause fewer floating point accuracy issues.
 	toNearestInverse := 1.0 / toNearest
 
 	for _, el := range vec {
-		v := math.Floor(el.V*toNearestInverse+0.5) / toNearestInverse
+		// TODO(beorn7): Handle histogram gracefully.
+		v := math.Floor(el.Point.(*FloatPoint).V*toNearestInverse+0.5) / toNearestInverse
 		enh.Out = append(enh.Out, Sample{
 			Metric: enh.DropMetricName(el.Metric),
-			Point:  Point{V: v},
+			Point:  &FloatPoint{V: v},
 		})
 	}
 	return enh.Out
@@ -348,11 +363,12 @@ func funcScalar(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelpe
 	v := vals[0].(Vector)
 	if len(v) != 1 {
 		return append(enh.Out, Sample{
-			Point: Point{V: math.NaN()},
+			Point: &FloatPoint{V: math.NaN()},
 		})
 	}
 	return append(enh.Out, Sample{
-		Point: Point{V: v[0].V},
+		// TODO(beorn7): Handle histogram gracefully.
+		Point: &FloatPoint{V: v[0].Point.(*FloatPoint).V},
 	})
 }
 
@@ -360,7 +376,7 @@ func aggrOverTime(vals []parser.Value, enh *EvalNodeHelper, aggrFn func([]Point)
 	el := vals[0].(Matrix)[0]
 
 	return append(enh.Out, Sample{
-		Point: Point{V: aggrFn(el.Points)},
+		Point: &FloatPoint{V: aggrFn(el.Points)},
 	})
 }
 
@@ -370,14 +386,16 @@ func funcAvgOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 		var mean, count, c float64
 		for _, v := range values {
 			count++
+			// TODO(beorn7): Handle histogram gracefully.
+			vv := v.(*FloatPoint).V
 			if math.IsInf(mean, 0) {
-				if math.IsInf(v.V, 0) && (mean > 0) == (v.V > 0) {
-					// The `mean` and `v.V` values are `Inf` of the same sign.  They
+				if math.IsInf(vv, 0) && (mean > 0) == (vv > 0) {
+					// The `mean` and `vv` values are `Inf` of the same sign.  They
 					// can't be subtracted, but the value of `mean` is correct
 					// already.
 					continue
 				}
-				if !math.IsInf(v.V, 0) && !math.IsNaN(v.V) {
+				if !math.IsInf(vv, 0) && !math.IsNaN(vv) {
 					// At this stage, the mean is an infinite. If the added
 					// value is neither an Inf or a Nan, we can keep that mean
 					// value.
@@ -387,7 +405,7 @@ func funcAvgOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 					continue
 				}
 			}
-			mean, c = kahanSumInc(v.V/count-mean/count, mean, c)
+			mean, c = kahanSumInc(vv/count-mean/count, mean, c)
 		}
 
 		if math.IsInf(mean, 0) {
@@ -410,17 +428,18 @@ func funcLastOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNod
 
 	return append(enh.Out, Sample{
 		Metric: el.Metric,
-		Point:  Point{V: el.Points[len(el.Points)-1].V},
+		Point:  el.Points[len(el.Points)-1].Copy(),
 	})
 }
 
 // === max_over_time(Matrix parser.ValueTypeMatrix) Vector ===
 func funcMaxOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return aggrOverTime(vals, enh, func(values []Point) float64 {
-		max := values[0].V
+		// TODO(beorn7): Handle histogram gracefully.
+		max := values[0].(*FloatPoint).V
 		for _, v := range values {
-			if v.V > max || math.IsNaN(max) {
-				max = v.V
+			if v.(*FloatPoint).V > max || math.IsNaN(max) {
+				max = v.(*FloatPoint).V
 			}
 		}
 		return max
@@ -430,10 +449,11 @@ func funcMaxOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 // === min_over_time(Matrix parser.ValueTypeMatrix) Vector ===
 func funcMinOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return aggrOverTime(vals, enh, func(values []Point) float64 {
-		min := values[0].V
+		// TODO(beorn7): Handle histogram gracefully.
+		min := values[0].(*FloatPoint).V
 		for _, v := range values {
-			if v.V < min || math.IsNaN(min) {
-				min = v.V
+			if v.(*FloatPoint).V < min || math.IsNaN(min) {
+				min = v.(*FloatPoint).V
 			}
 		}
 		return min
@@ -445,7 +465,8 @@ func funcSumOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 	return aggrOverTime(vals, enh, func(values []Point) float64 {
 		var sum, c float64
 		for _, v := range values {
-			sum, c = kahanSumInc(v.V, sum, c)
+			// TODO(beorn7): Handle histogram gracefully.
+			sum, c = kahanSumInc(v.(*FloatPoint).V, sum, c)
 		}
 		if math.IsInf(sum, 0) {
 			return sum
@@ -456,15 +477,16 @@ func funcSumOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 
 // === quantile_over_time(Matrix parser.ValueTypeMatrix) Vector ===
 func funcQuantileOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
-	q := vals[0].(Vector)[0].V
+	q := vals[0].(Vector)[0].Point.(*FloatPoint).V
 	el := vals[1].(Matrix)[0]
 
 	values := make(vectorByValueHeap, 0, len(el.Points))
 	for _, v := range el.Points {
-		values = append(values, Sample{Point: Point{V: v.V}})
+		// TODO(beorn7): Handle histogram gracefully.
+		values = append(values, Sample{Point: &FloatPoint{V: v.(*FloatPoint).V}})
 	}
 	return append(enh.Out, Sample{
-		Point: Point{V: quantile(q, values)},
+		Point: &FloatPoint{V: quantile(q, values)},
 	})
 }
 
@@ -476,9 +498,11 @@ func funcStddevOverTime(vals []parser.Value, args parser.Expressions, enh *EvalN
 		var aux, cAux float64
 		for _, v := range values {
 			count++
-			delta := v.V - (mean + cMean)
+			// TODO(beorn7): Handle histogram gracefully.
+			vv := v.(*FloatPoint).V
+			delta := vv - (mean + cMean)
 			mean, cMean = kahanSumInc(delta/count, mean, cMean)
-			aux, cAux = kahanSumInc(delta*(v.V-(mean+cMean)), aux, cAux)
+			aux, cAux = kahanSumInc(delta*(vv-(mean+cMean)), aux, cAux)
 		}
 		return math.Sqrt((aux + cAux) / count)
 	})
@@ -492,9 +516,11 @@ func funcStdvarOverTime(vals []parser.Value, args parser.Expressions, enh *EvalN
 		var aux, cAux float64
 		for _, v := range values {
 			count++
-			delta := v.V - (mean + cMean)
+			// TODO(beorn7): Handle histogram gracefully.
+			vv := v.(*FloatPoint).V
+			delta := vv - (mean + cMean)
 			mean, cMean = kahanSumInc(delta/count, mean, cMean)
-			aux, cAux = kahanSumInc(delta*(v.V-(mean+cMean)), aux, cAux)
+			aux, cAux = kahanSumInc(delta*(vv-(mean+cMean)), aux, cAux)
 		}
 		return (aux + cAux) / count
 	})
@@ -508,7 +534,7 @@ func funcAbsent(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelpe
 	return append(enh.Out,
 		Sample{
 			Metric: createLabelsForAbsentFunction(args[0]),
-			Point:  Point{V: 1},
+			Point:  &FloatPoint{V: 1},
 		})
 }
 
@@ -520,7 +546,7 @@ func funcAbsent(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelpe
 func funcAbsentOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return append(enh.Out,
 		Sample{
-			Point: Point{V: 1},
+			Point: &FloatPoint{V: 1},
 		})
 }
 
@@ -535,7 +561,8 @@ func simpleFunc(vals []parser.Value, enh *EvalNodeHelper, f func(float64) float6
 	for _, el := range vals[0].(Vector) {
 		enh.Out = append(enh.Out, Sample{
 			Metric: enh.DropMetricName(el.Metric),
-			Point:  Point{V: f(el.V)},
+			// TODO(beorn7): Handle histogram gracefully.
+			Point: &FloatPoint{V: f(el.Point.(*FloatPoint).V)},
 		})
 	}
 	return enh.Out
@@ -657,9 +684,7 @@ func funcDeg(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) 
 
 // === pi() Scalar ===
 func funcPi(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
-	return Vector{Sample{Point: Point{
-		V: math.Pi,
-	}}}
+	return Vector{Sample{Point: &FloatPoint{V: math.Pi}}}
 }
 
 // === sgn(Vector parser.ValueTypeVector) Vector ===
@@ -680,7 +705,7 @@ func funcTimestamp(vals []parser.Value, args parser.Expressions, enh *EvalNodeHe
 	for _, el := range vec {
 		enh.Out = append(enh.Out, Sample{
 			Metric: enh.DropMetricName(el.Metric),
-			Point:  Point{V: float64(el.T) / 1000},
+			Point:  &FloatPoint{V: float64(el.Timestamp()) / 1000},
 		})
 	}
 	return enh.Out
@@ -719,18 +744,21 @@ func linearRegression(samples []Point, interceptTime int64) (slope, intercept fl
 		initY      float64
 		constY     bool
 	)
-	initY = samples[0].V
+	// TODO(beorn7): Handle histogram gracefully.
+	initY = samples[0].(*FloatPoint).V
 	constY = true
 	for i, sample := range samples {
+		// TODO(beorn7): Handle histogram gracefully.
+		sampleV := sample.(*FloatPoint).V
 		// Set constY to false if any new y values are encountered.
-		if constY && i > 0 && sample.V != initY {
+		if constY && i > 0 && sampleV != initY {
 			constY = false
 		}
 		n += 1.0
-		x := float64(sample.T-interceptTime) / 1e3
+		x := float64(sample.Timestamp()-interceptTime) / 1e3
 		sumX, cX = kahanSumInc(x, sumX, cX)
-		sumY, cY = kahanSumInc(sample.V, sumY, cY)
-		sumXY, cXY = kahanSumInc(x*sample.V, sumXY, cXY)
+		sumY, cY = kahanSumInc(sampleV, sumY, cY)
+		sumXY, cXY = kahanSumInc(x*sampleV, sumXY, cXY)
 		sumX2, cX2 = kahanSumInc(x*x, sumX2, cX2)
 	}
 	if constY {
@@ -765,16 +793,16 @@ func funcDeriv(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper
 	// We pass in an arbitrary timestamp that is near the values in use
 	// to avoid floating point accuracy issues, see
 	// https://github.com/prometheus/prometheus/issues/2674
-	slope, _ := linearRegression(samples.Points, samples.Points[0].T)
+	slope, _ := linearRegression(samples.Points, samples.Points[0].Timestamp())
 	return append(enh.Out, Sample{
-		Point: Point{V: slope},
+		Point: &FloatPoint{V: slope},
 	})
 }
 
 // === predict_linear(node parser.ValueTypeMatrix, k parser.ValueTypeScalar) Vector ===
 func funcPredictLinear(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	samples := vals[0].(Matrix)[0]
-	duration := vals[1].(Vector)[0].V
+	duration := vals[1].(Vector)[0].Point.(*FloatPoint).V
 	// No sense in trying to predict anything without at least two points.
 	// Drop this Vector element.
 	if len(samples.Points) < 2 {
@@ -783,13 +811,13 @@ func funcPredictLinear(vals []parser.Value, args parser.Expressions, enh *EvalNo
 	slope, intercept := linearRegression(samples.Points, enh.Ts)
 
 	return append(enh.Out, Sample{
-		Point: Point{V: slope*duration + intercept},
+		Point: &FloatPoint{V: slope*duration + intercept},
 	})
 }
 
 // === histogram_quantile(k parser.ValueTypeScalar, Vector parser.ValueTypeVector) Vector ===
 func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
-	q := vals[0].(Vector)[0].V
+	q := vals[0].(Vector)[0].Point.(*FloatPoint).V
 	inVec := vals[1].(Vector)
 	sigf := signatureFunc(false, enh.lblBuf, excludedLabels...)
 
@@ -820,14 +848,15 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 			mb = &metricWithBuckets{el.Metric, nil}
 			enh.signatureToMetricWithBuckets[l] = mb
 		}
-		mb.buckets = append(mb.buckets, bucket{upperBound, el.V})
+		// TODO(beorn7): Handle histogram gracefully.
+		mb.buckets = append(mb.buckets, bucket{upperBound, el.Point.(*FloatPoint).V})
 	}
 
 	for _, mb := range enh.signatureToMetricWithBuckets {
 		if len(mb.buckets) > 0 {
 			enh.Out = append(enh.Out, Sample{
 				Metric: mb.metric,
-				Point:  Point{V: bucketQuantile(q, mb.buckets)},
+				Point:  &FloatPoint{V: bucketQuantile(q, mb.buckets)},
 			})
 		}
 	}
@@ -840,9 +869,10 @@ func funcResets(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelpe
 	samples := vals[0].(Matrix)[0]
 
 	resets := 0
-	prev := samples.Points[0].V
+	// TODO(beorn7): Handle histograms.
+	prev := samples.Points[0].(*FloatPoint).V
 	for _, sample := range samples.Points[1:] {
-		current := sample.V
+		current := sample.(*FloatPoint).V
 		if current < prev {
 			resets++
 		}
@@ -850,7 +880,7 @@ func funcResets(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelpe
 	}
 
 	return append(enh.Out, Sample{
-		Point: Point{V: float64(resets)},
+		Point: &FloatPoint{V: float64(resets)},
 	})
 }
 
@@ -859,9 +889,10 @@ func funcChanges(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelp
 	samples := vals[0].(Matrix)[0]
 
 	changes := 0
-	prev := samples.Points[0].V
+	// TODO(beorn7): Handle histogram gracefully.
+	prev := samples.Points[0].(*FloatPoint).V
 	for _, sample := range samples.Points[1:] {
-		current := sample.V
+		current := sample.(*FloatPoint).V
 		if current != prev && !(math.IsNaN(current) && math.IsNaN(prev)) {
 			changes++
 		}
@@ -869,7 +900,7 @@ func funcChanges(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelp
 	}
 
 	return append(enh.Out, Sample{
-		Point: Point{V: float64(changes)},
+		Point: &FloatPoint{V: float64(changes)},
 	})
 }
 
@@ -921,7 +952,7 @@ func funcLabelReplace(vals []parser.Value, args parser.Expressions, enh *EvalNod
 
 		enh.Out = append(enh.Out, Sample{
 			Metric: outMetric,
-			Point:  Point{V: el.Point.V},
+			Point:  el.Point.Copy(),
 		})
 	}
 	return enh.Out
@@ -932,7 +963,7 @@ func funcVector(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelpe
 	return append(enh.Out,
 		Sample{
 			Metric: labels.Labels{},
-			Point:  Point{V: vals[0].(Vector)[0].V},
+			Point:  &FloatPoint{V: vals[0].(Vector)[0].Point.(*FloatPoint).V},
 		})
 }
 
@@ -988,7 +1019,7 @@ func funcLabelJoin(vals []parser.Value, args parser.Expressions, enh *EvalNodeHe
 
 		enh.Out = append(enh.Out, Sample{
 			Metric: outMetric,
-			Point:  Point{V: el.Point.V},
+			Point:  el.Point.Copy(),
 		})
 	}
 	return enh.Out
@@ -1000,15 +1031,15 @@ func dateWrapper(vals []parser.Value, enh *EvalNodeHelper, f func(time.Time) flo
 		return append(enh.Out,
 			Sample{
 				Metric: labels.Labels{},
-				Point:  Point{V: f(time.Unix(enh.Ts/1000, 0).UTC())},
+				Point:  &FloatPoint{V: f(time.Unix(enh.Ts/1000, 0).UTC())},
 			})
 	}
 
 	for _, el := range vals[0].(Vector) {
-		t := time.Unix(int64(el.V), 0).UTC()
+		t := time.Unix(int64(el.Point.(*FloatPoint).V), 0).UTC()
 		enh.Out = append(enh.Out, Sample{
 			Metric: enh.DropMetricName(el.Metric),
-			Point:  Point{V: f(t)},
+			Point:  &FloatPoint{V: f(t)},
 		})
 	}
 	return enh.Out
@@ -1155,10 +1186,10 @@ func (s vectorByValueHeap) Len() int {
 }
 
 func (s vectorByValueHeap) Less(i, j int) bool {
-	if math.IsNaN(s[i].V) {
+	if math.IsNaN(s[i].Point.(*FloatPoint).V) {
 		return true
 	}
-	return s[i].V < s[j].V
+	return s[i].Point.(*FloatPoint).V < s[j].Point.(*FloatPoint).V
 }
 
 func (s vectorByValueHeap) Swap(i, j int) {
@@ -1184,10 +1215,10 @@ func (s vectorByReverseValueHeap) Len() int {
 }
 
 func (s vectorByReverseValueHeap) Less(i, j int) bool {
-	if math.IsNaN(s[i].V) {
+	if math.IsNaN(s[i].Point.(*FloatPoint).V) {
 		return true
 	}
-	return s[i].V > s[j].V
+	return s[i].Point.(*FloatPoint).V > s[j].Point.(*FloatPoint).V
 }
 
 func (s vectorByReverseValueHeap) Swap(i, j int) {

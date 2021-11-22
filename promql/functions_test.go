@@ -63,7 +63,7 @@ func TestDeriv(t *testing.T) {
 
 	vec, _ := result.Vector()
 	require.Equal(t, 1, len(vec), "Expected 1 result, got %d", len(vec))
-	require.Equal(t, 0.0, vec[0].V, "Expected 0.0 as value, got %f", vec[0].V)
+	require.Equal(t, 0.0, vec[0].Point.(*FloatPoint).V, "Expected 0.0 as value, got %f", vec[0].Point.(*FloatPoint).V)
 }
 
 func TestFunctionList(t *testing.T) {

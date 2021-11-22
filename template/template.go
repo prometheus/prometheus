@@ -89,8 +89,9 @@ func query(ctx context.Context, q string, ts time.Time, queryFn QueryFunc) (quer
 	// TODO(fabxc): probably not true anymore after type rework.
 	result := make(queryResult, len(vector))
 	for n, v := range vector {
+		// TODO(beorn7): Handle histogram.
 		s := sample{
-			Value:  v.V,
+			Value:  v.Point.(*promql.FloatPoint).V,
 			Labels: v.Metric.Map(),
 		}
 		result[n] = &s
