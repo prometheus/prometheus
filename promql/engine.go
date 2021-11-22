@@ -903,8 +903,10 @@ func (ev *evaluator) recover(ws *storage.Warnings, errp *error) {
 	case errWithWarnings:
 		*errp = err.err
 		*ws = append(*ws, err.warnings...)
+	case error:
+		*errp = err
 	default:
-		*errp = e.(error)
+		*errp = fmt.Errorf("%v", err)
 	}
 }
 
@@ -1753,8 +1755,8 @@ func (ev *evaluator) matrixIterSlice(it *storage.BufferedSeriesIterator, mint, m
 	}
 
 	buf := it.Buffer()
-	if it.ChunkEncoding() == chunkenc.EncHistogram {
-		for buf.Next() {
+	for buf.Next() {
+		if buf.ChunkEncoding() == chunkenc.EncHistogram {
 			t, h := buf.AtHistogram()
 			if value.IsStaleNaN(h.Sum) {
 				continue
@@ -1767,9 +1769,7 @@ func (ev *evaluator) matrixIterSlice(it *storage.BufferedSeriesIterator, mint, m
 				ev.currentSamples++
 				out = append(out, Point{T: t, H: h})
 			}
-		}
-	} else {
-		for buf.Next() {
+		} else {
 			t, v := buf.At()
 			if value.IsStaleNaN(v) {
 				continue
