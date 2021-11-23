@@ -141,6 +141,9 @@ func TestCommit(t *testing.T) {
 
 	sr, err := wal.NewSegmentsReader(s.wal.Dir())
 	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, sr.Close())
+	}()
 
 	// Read records from WAL and check for expected count of series and samples.
 	var (
@@ -208,6 +211,9 @@ func TestRollback(t *testing.T) {
 
 	sr, err := wal.NewSegmentsReader(s.wal.Dir())
 	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, sr.Close())
+	}()
 
 	// Read records from WAL and check for expected count of series and samples.
 	var (
