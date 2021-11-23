@@ -212,20 +212,6 @@ Outer:
 					h.lastSeriesID.Store(uint64(walSeries.Ref))
 				}
 
-				mmc := mmappedChunks[walSeries.Ref]
-
-				if created {
-					// This is the first WAL series record for this series.
-					h.setMMappedChunks(mSeries, mmc)
-					continue
-				}
-
-				// There's already a different ref for this series.
-				// A duplicate series record is only possible when the old samples were already compacted into a block.
-				// Hence we can discard all the samples and m-mapped chunks replayed till now for this series.
-
-				multiRef[walSeries.Ref] = mSeries.ref
-
 				idx := uint64(mSeries.ref) % uint64(n)
 				// It is possible that some old sample is being processed in processWALSamples that
 				// could cause race below. So we wait for the goroutine to empty input the buffer and finish
@@ -242,6 +228,20 @@ Outer:
 					default:
 					}
 				}
+
+				mmc := mmappedChunks[walSeries.Ref]
+
+				if created {
+					// This is the first WAL series record for this series.
+					h.setMMappedChunks(mSeries, mmc)
+					continue
+				}
+
+				// There's already a different ref for this series.
+				// A duplicate series record is only possible when the old samples were already compacted into a block.
+				// Hence we can discard all the samples and m-mapped chunks replayed till now for this series.
+
+				multiRef[walSeries.Ref] = mSeries.ref
 
 				// Checking if the new m-mapped chunks overlap with the already existing ones.
 				if len(mSeries.mmappedChunks) > 0 && len(mmc) > 0 {

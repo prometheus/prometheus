@@ -2847,3 +2847,57 @@ func TestSnapshotError(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 0, len(tm))
 }
+
+// https://github.com/prometheus/prometheus/issues/9846
+func TestWALReplayRace(t *testing.T) {
+	opts := DefaultOptions()
+	opts.MinBlockDuration = 120 * 4
+	opts.MaxBlockDuration = 120 * 4
+
+	for c := 0; c < 10; c++ {
+		t.Run(fmt.Sprintf("%d", c), func(t *testing.T) {
+			db := openTestDB(t, nil, nil)
+			db.DisableCompactions()
+
+			lbls := labels.FromStrings("foo", "bar")
+
+			// Add few sample records.
+
+			ts := int64(0)
+			var enc record.Encoder
+			for i := 0; i < 10; i++ {
+				var samples []record.RefSample
+				for j := 0; j < 10; j++ {
+					samples = append(samples, record.RefSample{
+						Ref: 1,
+						T:   ts,
+						V:   float64(ts),
+					})
+					ts++
+				}
+				err := db.Head().wal.Log(enc.Samples(samples, nil))
+				require.NoError(t, err)
+			}
+
+			// Add samples via appender till we have some mmapped chunks.
+			for i := 0; i < 50; i++ {
+				app := db.Appender(context.Background())
+				for j := 0; j < 10; j++ {
+					_, err := app.Append(0, lbls, ts, float64(ts))
+					ts++
+					require.NoError(t, err)
+				}
+				require.NoError(t, app.Commit())
+			}
+
+			require.NoError(t, db.Close())
+
+			// Reopen the DB, replaying the WAL.
+			reopenDB, err := Open(db.Dir(), nil, nil, opts, nil)
+			require.NoError(t, err)
+			t.Cleanup(func() {
+				require.NoError(t, reopenDB.Close())
+			})
+		})
+	}
+}
