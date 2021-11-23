@@ -744,28 +744,6 @@ func (a *appender) getOrCreate(l labels.Labels) (series *memSeries, created bool
 	return series, true
 }
 
-func (a *appender) AddFast(ref chunks.HeadSeriesRef, t int64, v float64) error {
-	series := a.series.GetByID(ref)
-	if series == nil {
-		return storage.ErrNotFound
-	}
-	series.Lock()
-	defer series.Unlock()
-
-	// Update last recorded timestamp. Used by Storage.gc to determine if a
-	// series is dead.
-	series.lastTs = t
-
-	a.pendingSamples = append(a.pendingSamples, record.RefSample{
-		Ref: ref,
-		T:   t,
-		V:   v,
-	})
-
-	a.metrics.totalAppendedSamples.Inc()
-	return nil
-}
-
 func (a *appender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
 	// series references and chunk references are identical for agent mode.
 	headRef := chunks.HeadSeriesRef(ref)
