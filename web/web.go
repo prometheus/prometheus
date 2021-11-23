@@ -71,6 +71,7 @@ import (
 
 // Paths that are handled by the React / Reach router that should all be served the main React app's index.html.
 var reactRouterPaths = []string{
+	"/agent",
 	"/alerts",
 	"/config",
 	"/flags",
@@ -346,10 +347,15 @@ func New(logger log.Logger, o *Options) *Handler {
 		router = router.WithPrefix(o.RoutePrefix)
 	}
 
+	homePage := "/graph"
+	if o.IsAgent {
+		homePage = "/agent"
+	}
+
 	readyf := h.testReady
 
 	router.Get("/", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, path.Join(o.ExternalURL.Path, "/graph"), http.StatusFound)
+		http.Redirect(w, r, path.Join(o.ExternalURL.Path, homePage), http.StatusFound)
 	})
 	router.Get("/classic/", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, path.Join(o.ExternalURL.Path, "/classic/graph"), http.StatusFound)
