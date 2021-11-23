@@ -29,10 +29,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/rulefmt"
-	"github.com/prometheus/prometheus/pkg/timestamp"
-	"github.com/prometheus/prometheus/pkg/value"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/rulefmt"
+	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
@@ -652,7 +652,8 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 						level.Warn(g.logger).Log("msg", "Rule evaluation result discarded", "err", err, "sample", s)
 					}
 				} else {
-					seriesReturned[s.Metric.String()] = s.Metric
+					buf := [1024]byte{}
+					seriesReturned[string(s.Metric.Bytes(buf[:]))] = s.Metric
 				}
 			}
 			if numOutOfOrder > 0 {
@@ -672,7 +673,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 						// Do not count these in logging, as this is expected if series
 						// is exposed from a different rule.
 					default:
-						level.Warn(g.logger).Log("msg", "Adding stale sample failed", "sample", metric, "err", err)
+						level.Warn(g.logger).Log("msg", "Adding stale sample failed", "sample", lset.String(), "err", err)
 					}
 				}
 			}

@@ -11,15 +11,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !windows
-// +build !windows
-
 package agent
 
 import (
 	"context"
-	"io/ioutil"
-	"os"
 	"path/filepath"
 	"strconv"
 	"testing"
@@ -31,14 +26,15 @@ import (
 	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/prometheus/pkg/exemplar"
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/tsdb/wal"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestDB_InvalidSeries(t *testing.T) {
@@ -80,13 +76,11 @@ func TestDB_InvalidSeries(t *testing.T) {
 func createTestAgentDB(t *testing.T, reg prometheus.Registerer, opts *Options) *DB {
 	t.Helper()
 
-	dbDir, err := ioutil.TempDir("", t.Name())
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, os.RemoveAll(dbDir))
-	})
-
+	dbDir := t.TempDir()
 	rs := remote.NewStorage(log.NewNopLogger(), reg, startTime, dbDir, time.Second*30, nil)
+	t.Cleanup(func() {
+		require.NoError(t, rs.Close())
+	})
 
 	db, err := Open(log.NewNopLogger(), reg, rs, dbDir, opts)
 	require.NoError(t, err)
@@ -385,6 +379,28 @@ func TestWALReplay(t *testing.T) {
 			require.Equal(t, v.lastTs, int64(lastTs))
 		}
 	}
+}
+
+func TestLockfile(t *testing.T) {
+	tsdbutil.TestDirLockerUsage(t, func(t *testing.T, data string, createLock bool) (*tsdbutil.DirLocker, testutil.Closer) {
+		logger := log.NewNopLogger()
+		reg := prometheus.NewRegistry()
+		rs := remote.NewStorage(logger, reg, startTime, data, time.Second*30, nil)
+		t.Cleanup(func() {
+			require.NoError(t, rs.Close())
+		})
+
+		opts := DefaultOptions()
+		opts.NoLockfile = !createLock
+
+		// Create the DB. This should create lockfile and its metrics.
+		db, err := Open(logger, nil, rs, data, opts)
+		require.NoError(t, err)
+
+		return db.locker, testutil.NewCallbackCloser(func() {
+			require.NoError(t, db.Close())
+		})
+	})
 }
 
 func startTime() (int64, error) {

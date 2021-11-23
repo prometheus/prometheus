@@ -20,7 +20,7 @@ package promql
 import (
 	"io"
 
-	"github.com/prometheus/prometheus/pkg/textparse"
+	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/promql/parser"
 )
 

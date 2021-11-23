@@ -40,10 +40,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/pkg/exemplar"
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/textparse"
-	"github.com/prometheus/prometheus/pkg/timestamp"
+	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/textparse"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -1472,8 +1472,8 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 						Name:     "grp",
 						File:     "/path/to/file",
 						Interval: 1,
-						Rules: []rule{
-							alertingRule{
+						Rules: []Rule{
+							AlertingRule{
 								State:       "inactive",
 								Name:        "test_metric3",
 								Query:       "absent(test_metric3) != 1",
@@ -1484,7 +1484,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 								Health:      "unknown",
 								Type:        "alerting",
 							},
-							alertingRule{
+							AlertingRule{
 								State:       "inactive",
 								Name:        "test_metric4",
 								Query:       "up == 1",
@@ -1495,7 +1495,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 								Health:      "unknown",
 								Type:        "alerting",
 							},
-							recordingRule{
+							RecordingRule{
 								Name:   "recording-rule-1",
 								Query:  "vector(1)",
 								Labels: labels.Labels{},
@@ -1518,8 +1518,8 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 						Name:     "grp",
 						File:     "/path/to/file",
 						Interval: 1,
-						Rules: []rule{
-							alertingRule{
+						Rules: []Rule{
+							AlertingRule{
 								State:       "inactive",
 								Name:        "test_metric3",
 								Query:       "absent(test_metric3) != 1",
@@ -1530,7 +1530,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 								Health:      "unknown",
 								Type:        "alerting",
 							},
-							alertingRule{
+							AlertingRule{
 								State:       "inactive",
 								Name:        "test_metric4",
 								Query:       "up == 1",
@@ -1557,8 +1557,8 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 						Name:     "grp",
 						File:     "/path/to/file",
 						Interval: 1,
-						Rules: []rule{
-							recordingRule{
+						Rules: []Rule{
+							RecordingRule{
 								Name:   "recording-rule-1",
 								Query:  "vector(1)",
 								Labels: labels.Labels{},

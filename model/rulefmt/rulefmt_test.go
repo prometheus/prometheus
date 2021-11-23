@@ -14,10 +14,12 @@
 package rulefmt
 
 import (
+	"errors"
 	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 )
 
 func TestParseFileSuccess(t *testing.T) {
@@ -183,4 +185,117 @@ groups:
 	err0 := errs[0].(*Error).Err.node
 	err1 := errs[1].(*Error).Err.node
 	require.NotEqual(t, err0, err1, "Error nodes should not be the same")
+}
+
+func TestError(t *testing.T) {
+	tests := []struct {
+		name  string
+		error *Error
+		want  string
+	}{
+		{
+			name: "with alternative node provided in WrappedError",
+			error: &Error{
+				Group:    "some group",
+				Rule:     1,
+				RuleName: "some rule name",
+				Err: WrappedError{
+					err: errors.New("some error"),
+					node: &yaml.Node{
+						Line:   10,
+						Column: 20,
+					},
+					nodeAlt: &yaml.Node{
+						Line:   11,
+						Column: 21,
+					},
+				},
+			},
+			want: `10:20: 11:21: group "some group", rule 1, "some rule name": some error`,
+		},
+		{
+			name: "with node provided in WrappedError",
+			error: &Error{
+				Group:    "some group",
+				Rule:     1,
+				RuleName: "some rule name",
+				Err: WrappedError{
+					err: errors.New("some error"),
+					node: &yaml.Node{
+						Line:   10,
+						Column: 20,
+					},
+				},
+			},
+			want: `10:20: group "some group", rule 1, "some rule name": some error`,
+		},
+		{
+			name: "with only err provided in WrappedError",
+			error: &Error{
+				Group:    "some group",
+				Rule:     1,
+				RuleName: "some rule name",
+				Err: WrappedError{
+					err: errors.New("some error"),
+				},
+			},
+			want: `group "some group", rule 1, "some rule name": some error`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.error.Error()
+			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestWrappedError(t *testing.T) {
+	tests := []struct {
+		name         string
+		wrappedError *WrappedError
+		want         string
+	}{
+		{
+			name: "with alternative node provided",
+			wrappedError: &WrappedError{
+				err: errors.New("some error"),
+				node: &yaml.Node{
+					Line:   10,
+					Column: 20,
+				},
+				nodeAlt: &yaml.Node{
+					Line:   11,
+					Column: 21,
+				},
+			},
+			want: `10:20: 11:21: some error`,
+		},
+		{
+			name: "with node provided",
+			wrappedError: &WrappedError{
+				err: errors.New("some error"),
+				node: &yaml.Node{
+					Line:   10,
+					Column: 20,
+				},
+			},
+			want: `10:20: some error`,
+		},
+		{
+			name: "with only err provided",
+			wrappedError: &WrappedError{
+				err: errors.New("some error"),
+			},
+			want: `some error`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := tt.wrappedError.Error()
+			require.Equal(t, tt.want, got)
+		})
+	}
 }

@@ -1,7 +1,7 @@
 CodeMirror-promql
 =================
 [![CircleCI](https://circleci.com/gh/prometheus/codemirror-promql.svg?style=shield)](https://circleci.com/gh/prometheus/codemirror-promql) [![GitHub license](https://img.shields.io/badge/license-Apache-blue.svg)](./LICENSE)
-[![NPM version](https://img.shields.io/npm/v/codemirror-promql.svg)](https://www.npmjs.org/package/codemirror-promql) [![codecov](https://codecov.io/gh/prometheus/codemirror-promql/branch/master/graph/badge.svg?token=1OSVPBDKZC)](https://codecov.io/gh/prometheus/codemirror-promql)
+[![NPM version](https://img.shields.io/npm/v/codemirror-promql.svg)](https://www.npmjs.org/package/codemirror-promql) [![codecov](https://codecov.io/gh/prometheus/codemirror-promql/branch/main/graph/badge.svg?token=rBHsyXshfl)](https://codecov.io/gh/prometheus/codemirror-promql)
 
 ## Overview
 
@@ -222,7 +222,7 @@ const promQL = new PromQLExtension().setComplete({
 ##### Override the default Prometheus client
 
 In case you are not satisfied by our default Prometheus client, you can still provide your own. It has to implement the
-interface [PrometheusClient](https://github.com/prometheus/codemirror-promql/blob/master/src/lang-promql/client/prometheus.ts#L111-L117)
+interface [PrometheusClient](https://github.com/prometheus/codemirror-promql/blob/main/src/client/prometheus.ts#L24-L39)
 .
 
 ```typescript
@@ -246,4 +246,4 @@ Note: In case this parameter is provided, then the rest of the configuration is 
 
 ## License
 
-Apache License 2.0, see [LICENSE](https://github.com/prometheus/codemirror-promql/blob/master/LICENSE).
+Apache License 2.0, see [LICENSE](https://github.com/prometheus/codemirror-promql/blob/main/LICENSE).

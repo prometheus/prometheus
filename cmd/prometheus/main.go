@@ -60,12 +60,10 @@ import (
 	_ "github.com/prometheus/prometheus/discovery/install" // Register service discovery implementations.
 	"github.com/prometheus/prometheus/discovery/legacymanager"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/notifier"
-	"github.com/prometheus/prometheus/pkg/exemplar"
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/logging"
-	"github.com/prometheus/prometheus/pkg/relabel"
-	prom_runtime "github.com/prometheus/prometheus/pkg/runtime"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
@@ -73,6 +71,8 @@ import (
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/agent"
+	"github.com/prometheus/prometheus/util/logging"
+	prom_runtime "github.com/prometheus/prometheus/util/runtime"
 	"github.com/prometheus/prometheus/util/strutil"
 	"github.com/prometheus/prometheus/web"
 )
@@ -332,6 +332,9 @@ func main() {
 	agentOnlyFlag(a, "storage.agent.retention.max-time",
 		"Maximum age samples may be before being forcibly deleted when the WAL is truncated").
 		SetValue(&cfg.agent.MaxWALTime)
+
+	agentOnlyFlag(a, "storage.agent.no-lockfile", "Do not create lockfile in data directory.").
+		Default("false").BoolVar(&cfg.agent.NoLockfile)
 
 	a.Flag("storage.remote.flush-deadline", "How long to wait flushing sample on shutdown or config reload.").
 		Default("1m").PlaceHolder("<duration>").SetValue(&cfg.RemoteFlushDeadline)
@@ -1145,25 +1148,6 @@ func reloadConfig(filename string, expandExternalLabels, enableExemplarStorage b
 		}
 	}
 
-	// Perform validation for Agent-compatible configs and remove anything that's unsupported.
-	if agentMode {
-		// Perform validation for Agent-compatible configs and remove anything that's
-		// unsupported.
-		if len(conf.AlertingConfig.AlertRelabelConfigs) > 0 || len(conf.AlertingConfig.AlertmanagerConfigs) > 0 {
-			level.Warn(logger).Log("msg", "alerting configs not supported in agent mode")
-			conf.AlertingConfig.AlertRelabelConfigs = []*relabel.Config{}
-			conf.AlertingConfig.AlertmanagerConfigs = config.AlertmanagerConfigs{}
-		}
-		if len(conf.RuleFiles) > 0 {
-			level.Warn(logger).Log("msg", "recording rules not supported in agent mode")
-			conf.RuleFiles = []string{}
-		}
-		if len(conf.RemoteReadConfigs) > 0 {
-			level.Warn(logger).Log("msg", "remote_read configs not supported in agent mode")
-			conf.RemoteReadConfigs = []*config.RemoteReadConfig{}
-		}
-	}
-
 	failed := false
 	for _, rl := range rls {
 		rstart := time.Now()
@@ -1524,6 +1508,7 @@ type agentOptions struct {
 	StripeSize             int
 	TruncateFrequency      model.Duration
 	MinWALTime, MaxWALTime model.Duration
+	NoLockfile             bool
 }
 
 func (opts agentOptions) ToAgentOptions() agent.Options {
@@ -1534,6 +1519,7 @@ func (opts agentOptions) ToAgentOptions() agent.Options {
 		TruncateFrequency: time.Duration(opts.TruncateFrequency),
 		MinWALTime:        durationToInt64Millis(time.Duration(opts.MinWALTime)),
 		MaxWALTime:        durationToInt64Millis(time.Duration(opts.MaxWALTime)),
+		NoLockfile:        opts.NoLockfile,
 	}
 }
 
