@@ -143,6 +143,7 @@ func (p HistogramPoint) String() string      { return fmt.Sprintf("%v @[%v]", p.
 func (p GaugeHistogramPoint) String() string { return "implemente me" } // TODO(beorn7): Implement
 
 // MarshalJSON implements json.Marshaler.
+// TODO(beorn7): Weirdly, the API uses its own marshaling, overriding this one. Shouldn't we have just one?
 func (p FloatPoint) MarshalJSON() ([]byte, error) {
 	v := strconv.FormatFloat(p.V, 'f', -1, 64)
 	return json.Marshal([...]interface{}{float64(p.T) / 1000, v})
