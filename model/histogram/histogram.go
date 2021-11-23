@@ -67,8 +67,8 @@ type Span struct {
 }
 
 // Copy returns a deep copy of the Histogram.
-func (h Histogram) Copy() *Histogram {
-	c := h
+func (h *Histogram) Copy() *Histogram {
+	c := *h
 
 	if h.PositiveSpans != nil {
 		c.PositiveSpans = make([]Span, len(h.PositiveSpans))
@@ -91,7 +91,7 @@ func (h Histogram) Copy() *Histogram {
 }
 
 // String returns a string representation of the Histogram.
-func (h Histogram) String() string {
+func (h *Histogram) String() string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "{count:%d, sum:%g", h.Count, h.Sum)
 
@@ -122,7 +122,7 @@ func (h Histogram) String() string {
 }
 
 // ZeroBucket returns the zero bucket.
-func (h Histogram) ZeroBucket() Bucket {
+func (h *Histogram) ZeroBucket() Bucket {
 	return Bucket{
 		Lower:          -h.ZeroThreshold,
 		Upper:          h.ZeroThreshold,
@@ -134,25 +134,70 @@ func (h Histogram) ZeroBucket() Bucket {
 
 // PositiveBucketIterator returns a BucketIterator to iterate over all positive
 // buckets in ascending order (starting next to the zero bucket and going up).
-func (h Histogram) PositiveBucketIterator() BucketIterator {
-	return newRegularBucketIterator(&h, true)
+func (h *Histogram) PositiveBucketIterator() BucketIterator {
+	return newRegularBucketIterator(h, true)
 }
 
 // NegativeBucketIterator returns a BucketIterator to iterate over all negative
 // buckets in descending order (starting next to the zero bucket and going down).
-func (h Histogram) NegativeBucketIterator() BucketIterator {
-	return newRegularBucketIterator(&h, false)
+func (h *Histogram) NegativeBucketIterator() BucketIterator {
+	return newRegularBucketIterator(h, false)
 }
 
 // CumulativeBucketIterator returns a BucketIterator to iterate over a
 // cumulative view of the buckets. This method currently only supports
 // Histograms without negative buckets and panics if the Histogram has negative
 // buckets. It is currently only used for testing.
-func (h Histogram) CumulativeBucketIterator() BucketIterator {
+func (h *Histogram) CumulativeBucketIterator() BucketIterator {
 	if len(h.NegativeBuckets) > 0 {
-		panic("CumulativeIterator called on Histogram with negative buckets")
+		panic("CumulativeBucketIterator called on Histogram with negative buckets")
 	}
-	return &cumulativeBucketIterator{h: &h, posSpansIdx: -1}
+	return &cumulativeBucketIterator{h: h, posSpansIdx: -1}
+}
+
+// ToFloat returns a FloatHistogram representation of the Histogram. It is a
+// deep copy (e.g. spans are not shared).
+func (h *Histogram) ToFloat() *FloatHistogram {
+	var (
+		positiveSpans, negativeSpans     []Span
+		positiveBuckets, negativeBuckets []float64
+	)
+	if h.PositiveSpans != nil {
+		positiveSpans = make([]Span, len(h.PositiveSpans))
+		copy(positiveSpans, h.PositiveSpans)
+	}
+	if h.NegativeSpans != nil {
+		negativeSpans = make([]Span, len(h.NegativeSpans))
+		copy(negativeSpans, h.NegativeSpans)
+	}
+	if h.PositiveBuckets != nil {
+		positiveBuckets = make([]float64, len(h.PositiveBuckets))
+		var current float64
+		for i, b := range h.PositiveBuckets {
+			current += float64(b)
+			positiveBuckets[i] = current
+		}
+	}
+	if h.NegativeBuckets != nil {
+		negativeBuckets = make([]float64, len(h.NegativeBuckets))
+		var current float64
+		for i, b := range h.NegativeBuckets {
+			current += float64(b)
+			negativeBuckets[i] = current
+		}
+	}
+
+	return &FloatHistogram{
+		Schema:          h.Schema,
+		ZeroThreshold:   h.ZeroThreshold,
+		ZeroCount:       float64(h.ZeroCount),
+		Count:           float64(h.Count),
+		Sum:             h.Sum,
+		PositiveSpans:   positiveSpans,
+		NegativeSpans:   negativeSpans,
+		PositiveBuckets: positiveBuckets,
+		NegativeBuckets: negativeBuckets,
+	}
 }
 
 // BucketIterator iterates over the buckets of a Histogram, returning decoded
@@ -178,8 +223,9 @@ type Bucket struct {
 	Index                          int32 // Index within schema. To easily compare buckets that share the same schema.
 }
 
-// String returns a string representation, using the usual mathematical notation
-// of '['/']' for inclusive bounds and '('/')' for non-inclusive bounds.
+// String returns a string representation of a Bucket, using the usual
+// mathematical notation of '['/']' for inclusive bounds and '('/')' for
+// non-inclusive bounds.
 func (b Bucket) String() string {
 	var sb strings.Builder
 	if b.LowerInclusive {
@@ -322,7 +368,7 @@ func (c *cumulativeBucketIterator) Next() bool {
 
 	span := c.h.PositiveSpans[c.posSpansIdx]
 	if c.posSpansIdx == 0 && !c.initialized {
-		// Initialising.
+		// Initializing.
 		c.currIdx = span.Offset
 		// The first bucket is an absolute value and not a delta with Zero bucket.
 		c.currCount = 0

@@ -385,3 +385,28 @@ func TestRegularBucketIterator(t *testing.T) {
 		})
 	}
 }
+
+func TestHistogramToFloat(t *testing.T) {
+	h := Histogram{
+		Schema:        3,
+		Count:         61,
+		Sum:           2.7,
+		ZeroThreshold: 0.1,
+		ZeroCount:     42,
+		PositiveSpans: []Span{
+			{Offset: 0, Length: 4},
+			{Offset: 0, Length: 0},
+			{Offset: 0, Length: 3},
+		},
+		PositiveBuckets: []int64{1, 2, -2, 1, -1, 0, 0},
+		NegativeSpans: []Span{
+			{Offset: 0, Length: 5},
+			{Offset: 1, Length: 0},
+			{Offset: 0, Length: 1},
+		},
+		NegativeBuckets: []int64{1, 2, -2, 1, -1, 0},
+	}
+	fh := h.ToFloat()
+
+	require.Equal(t, h.String(), fh.String())
+}
