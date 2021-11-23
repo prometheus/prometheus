@@ -95,6 +95,7 @@ type dbMetrics struct {
 	numWALSeriesPendingDeletion prometheus.Gauge
 	totalAppendedSamples        prometheus.Counter
 	totalAppendedExemplars      prometheus.Counter
+	totalOutOfOrderSamples      prometheus.Counter
 	walTruncateDuration         prometheus.Summary
 	walCorruptionsTotal         prometheus.Counter
 	walTotalReplayDuration      prometheus.Gauge
@@ -124,6 +125,11 @@ func newDBMetrics(r prometheus.Registerer) *dbMetrics {
 	m.totalAppendedExemplars = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_agent_exemplars_appended_total",
 		Help: "Total number of exemplars appended to the storage",
+	})
+
+	m.totalOutOfOrderSamples = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "prometheus_agent_out_of_order_samples_total",
+		Help: "Total number of out of order samples ingestion failed attempts.",
 	})
 
 	m.walTruncateDuration = prometheus.NewSummary(prometheus.SummaryOpts{
@@ -167,6 +173,7 @@ func newDBMetrics(r prometheus.Registerer) *dbMetrics {
 			m.numWALSeriesPendingDeletion,
 			m.totalAppendedSamples,
 			m.totalAppendedExemplars,
+			m.totalOutOfOrderSamples,
 			m.walTruncateDuration,
 			m.walCorruptionsTotal,
 			m.walTotalReplayDuration,
@@ -189,6 +196,7 @@ func (m *dbMetrics) Unregister() {
 		m.numWALSeriesPendingDeletion,
 		m.totalAppendedSamples,
 		m.totalAppendedExemplars,
+		m.totalOutOfOrderSamples,
 		m.walTruncateDuration,
 		m.walCorruptionsTotal,
 		m.walTotalReplayDuration,
@@ -682,6 +690,10 @@ type appender struct {
 	pendingSeries    []record.RefSeries
 	pendingSamples   []record.RefSample
 	pendingExamplars []record.RefExemplar
+
+	// Pointers to the series referenced by each element of pendingSamples.
+	// Series lock is not held on elements.
+	sampleSeries []*memSeries
 }
 
 func (a *appender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
@@ -716,15 +728,18 @@ func (a *appender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v flo
 	series.Lock()
 	defer series.Unlock()
 
-	// Update last recorded timestamp. Used by Storage.gc to determine if a
-	// series is stale.
-	series.lastTs = t
+	if t < series.lastTs {
+		a.metrics.totalOutOfOrderSamples.Inc()
+		return 0, storage.ErrOutOfOrderSample
+	}
 
+	// NOTE: always modify pendingSamples and sampleSeries together
 	a.pendingSamples = append(a.pendingSamples, record.RefSample{
 		Ref: series.ref,
 		T:   t,
 		V:   v,
 	})
+	a.sampleSeries = append(a.sampleSeries, series)
 
 	a.metrics.totalAppendedSamples.Inc()
 	return storage.SeriesRef(series.ref), nil
@@ -814,6 +829,14 @@ func (a *appender) Commit() error {
 		buf = buf[:0]
 	}
 
+	var series *memSeries
+	for i, s := range a.pendingSamples {
+		series = a.sampleSeries[i]
+		if !series.updateTimestamp(s.T) {
+			a.metrics.totalOutOfOrderSamples.Inc()
+		}
+	}
+
 	//nolint:staticcheck
 	a.bufPool.Put(buf)
 	return a.Rollback()
@@ -823,6 +846,7 @@ func (a *appender) Rollback() error {
 	a.pendingSeries = a.pendingSeries[:0]
 	a.pendingSamples = a.pendingSamples[:0]
 	a.pendingExamplars = a.pendingExamplars[:0]
+	a.sampleSeries = a.sampleSeries[:0]
 	a.appenderPool.Put(a)
 	return nil
 }
