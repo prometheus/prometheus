@@ -98,8 +98,7 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 
 	wg.Add(n)
 	for i := 0; i < n; i++ {
-		processors[i].output = make(chan []record.RefSample, 300)
-		processors[i].input = make(chan []record.RefSample, 300)
+		processors[i].setup()
 
 		go func(wp *walSubsetProcessor) {
 			unknown := wp.processWALSamples(h)
@@ -211,18 +210,7 @@ Outer:
 				// It is possible that some old sample is being processed in processWALSamples that
 				// could cause race below. So we wait for the goroutine to empty input the buffer and finish
 				// processing all old samples after emptying the buffer.
-				select {
-				case <-processors[idx].output: // allow output side to drain to avoid deadlock
-				default:
-				}
-				processors[idx].input <- []record.RefSample{}
-				for len(processors[idx].input) != 0 {
-					time.Sleep(1 * time.Millisecond)
-					select {
-					case <-processors[idx].output: // allow output side to drain to avoid deadlock
-					default:
-					}
-				}
+				processors[idx].waitUntilIdle()
 
 				mmc := mmappedChunks[walSeries.Ref]
 
@@ -282,12 +270,7 @@ Outer:
 					m = len(samples)
 				}
 				for i := 0; i < n; i++ {
-					var buf []record.RefSample
-					select {
-					case buf = <-processors[i].output:
-					default:
-					}
-					shards[i] = buf[:0]
+					shards[i] = processors[i].reuseBuf()
 				}
 				for _, sam := range samples[:m] {
 					if r, ok := multiRef[sam.Ref]; ok {
@@ -378,10 +361,25 @@ type walSubsetProcessor struct {
 	output chan []record.RefSample
 }
 
+func (wp *walSubsetProcessor) setup() {
+	wp.output = make(chan []record.RefSample, 300)
+	wp.input = make(chan []record.RefSample, 300)
+}
+
 func (wp *walSubsetProcessor) closeAndDrain() {
 	close(wp.input)
 	for range wp.output {
 	}
+}
+
+// If there is a buffer in the output chan, return it for reuse, otherwise return nil.
+func (wp *walSubsetProcessor) reuseBuf() []record.RefSample {
+	select {
+	case buf := <-wp.output:
+		return buf[:0]
+	default:
+	}
+	return nil
 }
 
 // process adds the samples it receives to the head and passes
@@ -422,6 +420,21 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head) (unknownRefs uint64) {
 	h.updateMinMaxTime(mint, maxt)
 
 	return unknownRefs
+}
+
+func (wp *walSubsetProcessor) waitUntilIdle() {
+	select {
+	case <-wp.output: // allow output side to drain to avoid deadlock
+	default:
+	}
+	wp.input <- []record.RefSample{}
+	for len(wp.input) != 0 {
+		time.Sleep(1 * time.Millisecond)
+		select {
+		case <-wp.output: // allow output side to drain to avoid deadlock
+		default:
+		}
+	}
 }
 
 const (
