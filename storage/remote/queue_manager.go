@@ -16,6 +16,7 @@ package remote
 import (
 	"context"
 	"errors"
+	"io/ioutil"
 	"math"
 	"os"
 	"path/filepath"
@@ -458,7 +459,7 @@ func (t *QueueManager) LastCheckpointedSegment() (segment *int) {
 	}
 
 	fname := filepath.Join(dir, "segment")
-	bb, err := os.ReadFile(fname)
+	bb, err := ioutil.ReadFile(fname)
 	if os.IsNotExist(err) {
 		level.Warn(t.logger).Log("msg", "checkpoint segment file does not exist")
 		return
@@ -490,7 +491,7 @@ func (t *QueueManager) CheckpointSegment(segment int) {
 		tmp   = fname + ".tmp"
 	)
 
-	if err := os.WriteFile(tmp, []byte(segmentText), 0o660); err != nil {
+	if err := ioutil.WriteFile(tmp, []byte(segmentText), 0o660); err != nil {
 		level.Error(t.logger).Log("msg", "could not create segment checkpoint file", "file", tmp, "err", err)
 		return
 	}
