@@ -288,12 +288,7 @@ func TestMaxBlockChunkSegmentSizeBounds(t *testing.T) {
 }
 
 func TestTimeMetrics(t *testing.T) {
-	tmpDir, err := ioutil.TempDir("", "time_metrics_e2e")
-	require.NoError(t, err)
-
-	defer func() {
-		require.NoError(t, os.RemoveAll(tmpDir))
-	}()
+	tmpDir := t.TempDir()
 
 	reg := prometheus.NewRegistry()
 	db, err := openDBWithMetrics(tmpDir, log.NewNopLogger(), reg, nil, nil)
