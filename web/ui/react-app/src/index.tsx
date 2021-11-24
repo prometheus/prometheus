@@ -23,4 +23,4 @@ if (
   consolesLink = null;
 }
 
-ReactDOM.render(<App consolesLink={consolesLink} agentMode={agentMode == 'true'} />, document.getElementById('root'));
+ReactDOM.render(<App consolesLink={consolesLink} agentMode={agentMode === 'true'} />, document.getElementById('root'));

@@ -79,12 +79,12 @@ var reactRouterPaths = []string{
 	"/starting",
 }
 
-// Paths that are handed by the React router when the Agent mode is set.
+// Paths that are handled by the React router when the Agent mode is set.
 var reactRouterAgentPaths = []string{
 	"/agent",
 }
 
-// Paths that are handed by the React router when the Agent mode is not set.
+// Paths that are handled by the React router when the Agent mode is not set.
 var reactRouterServerPaths = []string{
 	"/alerts",
 	"/graph",
