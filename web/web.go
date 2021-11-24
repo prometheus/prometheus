@@ -71,17 +71,25 @@ import (
 
 // Paths that are handled by the React / Reach router that should all be served the main React app's index.html.
 var reactRouterPaths = []string{
-	"/agent",
-	"/alerts",
 	"/config",
 	"/flags",
-	"/graph",
-	"/rules",
 	"/service-discovery",
 	"/status",
 	"/targets",
-	"/tsdb-status",
 	"/starting",
+}
+
+// Paths that are handed by the React router when the Agent mode is set.
+var reactRouterAgentPaths = []string{
+	"/agent",
+}
+
+// Paths that are handed by the React router when the Agent mode is not set.
+var reactRouterServerPaths = []string{
+	"/alerts",
+	"/graph",
+	"/rules",
+	"/tsdb-status",
 }
 
 // withStackTrace logs the stack trace in case the request panics. The function
@@ -422,6 +430,16 @@ func New(logger log.Logger, o *Options) *Handler {
 	// Serve the React app.
 	for _, p := range reactRouterPaths {
 		router.Get(p, serveReactApp)
+	}
+
+	if h.options.IsAgent {
+		for _, p := range reactRouterAgentPaths {
+			router.Get(p, serveReactApp)
+		}
+	} else {
+		for _, p := range reactRouterServerPaths {
+			router.Get(p, serveReactApp)
+		}
 	}
 
 	// The favicon and manifest are bundled as part of the React app, but we want to serve
