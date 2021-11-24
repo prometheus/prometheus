@@ -33,7 +33,7 @@ var noReferenceReleases = promauto.NewCounter(prometheus.CounterOpts{
 	Help:      "The number of times release has been called for strings that are not interned.",
 })
 
-type pool struct {
+type Pool struct {
 	mtx  sync.RWMutex
 	pool map[string]*entry
 }
@@ -48,13 +48,13 @@ func newEntry(s string) *entry {
 	return &entry{s: s}
 }
 
-func newPool() *pool {
-	return &pool{
+func NewPool() *Pool {
+	return &Pool{
 		pool: map[string]*entry{},
 	}
 }
 
-func (p *pool) intern(s string) string {
+func (p *Pool) Intern(s string) string {
 	if s == "" {
 		return ""
 	}
@@ -78,7 +78,7 @@ func (p *pool) intern(s string) string {
 	return s
 }
 
-func (p *pool) release(s string) {
+func (p *Pool) Release(s string) {
 	p.mtx.RLock()
 	interned, ok := p.pool[s]
 	p.mtx.RUnlock()

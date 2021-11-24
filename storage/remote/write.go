@@ -57,14 +57,14 @@ type WriteStorage struct {
 	externalLabels    labels.Labels
 	walDir            string
 	queues            map[string]*QueueManager
-	samplesIn         *ewmaRate
+	samplesIn         *EWMARate
 	flushDeadline     time.Duration
-	interner          *pool
+	interner          *Pool
 	scraper           ReadyScrapeManager
 	quit              chan struct{}
 
 	// For timestampTracker.
-	highestTimestamp *maxTimestamp
+	highestTimestamp *MaxTimestamp
 }
 
 // NewWriteStorage creates and runs a WriteStorage.
@@ -79,12 +79,12 @@ func NewWriteStorage(logger log.Logger, reg prometheus.Registerer, walDir string
 		logger:            logger,
 		reg:               reg,
 		flushDeadline:     flushDeadline,
-		samplesIn:         newEWMARate(ewmaWeight, shardUpdateDuration),
+		samplesIn:         NewEWMARate(ewmaWeight, shardUpdateDuration),
 		walDir:            walDir,
-		interner:          newPool(),
+		interner:          NewPool(),
 		scraper:           sm,
 		quit:              make(chan struct{}),
-		highestTimestamp: &maxTimestamp{
+		highestTimestamp: &MaxTimestamp{
 			Gauge: prometheus.NewGauge(prometheus.GaugeOpts{
 				Namespace: namespace,
 				Subsystem: subsystem,
@@ -106,7 +106,7 @@ func (rws *WriteStorage) run() {
 	for {
 		select {
 		case <-ticker.C:
-			rws.samplesIn.tick()
+			rws.samplesIn.Tick()
 		case <-rws.quit:
 			return
 		}
@@ -171,7 +171,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 		// only used for metric labels.
 		endpoint := rwConf.URL.Redacted()
 		newQueues[hash] = NewQueueManager(
-			newQueueManagerMetrics(rws.reg, name, endpoint),
+			NewQueueManagerMetrics(rws.reg, name, endpoint),
 			rws.watcherMetrics,
 			rws.liveReaderMetrics,
 			rws.logger,
@@ -251,7 +251,7 @@ type timestampTracker struct {
 	samples              int64
 	exemplars            int64
 	highestTimestamp     int64
-	highestRecvTimestamp *maxTimestamp
+	highestRecvTimestamp *MaxTimestamp
 }
 
 // Append implements storage.Appender.
@@ -270,7 +270,7 @@ func (t *timestampTracker) AppendExemplar(_ storage.SeriesRef, _ labels.Labels, 
 
 // Commit implements storage.Appender.
 func (t *timestampTracker) Commit() error {
-	t.writeStorage.samplesIn.incr(t.samples + t.exemplars)
+	t.writeStorage.samplesIn.Incr(t.samples + t.exemplars)
 
 	samplesIn.Add(float64(t.samples))
 	exemplarsIn.Add(float64(t.exemplars))

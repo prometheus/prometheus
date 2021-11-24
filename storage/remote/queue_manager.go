@@ -50,7 +50,7 @@ const (
 	shardToleranceFraction = 0.3
 )
 
-type queueManagerMetrics struct {
+type QueueManagerMetrics struct {
 	reg prometheus.Registerer
 
 	samplesTotal          prometheus.Counter
@@ -66,7 +66,7 @@ type queueManagerMetrics struct {
 	droppedExemplarsTotal prometheus.Counter
 	enqueueRetriesTotal   prometheus.Counter
 	sentBatchDuration     prometheus.Histogram
-	highestSentTimestamp  *maxTimestamp
+	highestSentTimestamp  *MaxTimestamp
 	pendingSamples        prometheus.Gauge
 	pendingExemplars      prometheus.Gauge
 	shardCapacity         prometheus.Gauge
@@ -79,8 +79,8 @@ type queueManagerMetrics struct {
 	maxSamplesPerSend     prometheus.Gauge
 }
 
-func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManagerMetrics {
-	m := &queueManagerMetrics{
+func NewQueueManagerMetrics(r prometheus.Registerer, rn, e string) *QueueManagerMetrics {
+	m := &QueueManagerMetrics{
 		reg: r,
 	}
 	constLabels := prometheus.Labels{
@@ -180,7 +180,7 @@ func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManager
 		Buckets:     append(prometheus.DefBuckets, 25, 60, 120, 300),
 		ConstLabels: constLabels,
 	})
-	m.highestSentTimestamp = &maxTimestamp{
+	m.highestSentTimestamp = &MaxTimestamp{
 		Gauge: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace:   namespace,
 			Subsystem:   subsystem,
@@ -263,7 +263,7 @@ func newQueueManagerMetrics(r prometheus.Registerer, rn, e string) *queueManager
 	return m
 }
 
-func (m *queueManagerMetrics) register() {
+func (m *QueueManagerMetrics) Register() {
 	if m.reg != nil {
 		m.reg.MustRegister(
 			m.samplesTotal,
@@ -294,7 +294,7 @@ func (m *queueManagerMetrics) register() {
 	}
 }
 
-func (m *queueManagerMetrics) unregister() {
+func (m *QueueManagerMetrics) Unregister() {
 	if m.reg != nil {
 		m.reg.Unregister(m.samplesTotal)
 		m.reg.Unregister(m.exemplarsTotal)
@@ -366,29 +366,29 @@ type QueueManager struct {
 	quit        chan struct{}
 	wg          sync.WaitGroup
 
-	dataIn, dataDropped, dataOut, dataOutDuration *ewmaRate
+	DataIn, DataDropped, DataOut, DataOutDuration *EWMARate
 
-	metrics              *queueManagerMetrics
-	interner             *pool
-	highestRecvTimestamp *maxTimestamp
+	metrics              *QueueManagerMetrics
+	interner             *Pool
+	highestRecvTimestamp *MaxTimestamp
 }
 
 // NewQueueManager builds a new QueueManager.
 func NewQueueManager(
-	metrics *queueManagerMetrics,
+	metrics *QueueManagerMetrics,
 	watcherMetrics *wal.WatcherMetrics,
 	readerMetrics *wal.LiveReaderMetrics,
 	logger log.Logger,
 	walDir string,
-	samplesIn *ewmaRate,
+	samplesIn *EWMARate,
 	cfg config.QueueConfig,
 	mCfg config.MetadataConfig,
 	externalLabels labels.Labels,
 	relabelConfigs []*relabel.Config,
 	client WriteClient,
 	flushDeadline time.Duration,
-	interner *pool,
-	highestRecvTimestamp *maxTimestamp,
+	interner *Pool,
+	highestRecvTimestamp *MaxTimestamp,
 	sm ReadyScrapeManager,
 	enableExemplarRemoteWrite bool,
 ) *QueueManager {
@@ -415,17 +415,19 @@ func NewQueueManager(
 		reshardChan: make(chan int),
 		quit:        make(chan struct{}),
 
-		dataIn:          samplesIn,
-		dataDropped:     newEWMARate(ewmaWeight, shardUpdateDuration),
-		dataOut:         newEWMARate(ewmaWeight, shardUpdateDuration),
-		dataOutDuration: newEWMARate(ewmaWeight, shardUpdateDuration),
+		DataIn:          samplesIn,
+		DataDropped:     NewEWMARate(ewmaWeight, shardUpdateDuration),
+		DataOut:         NewEWMARate(ewmaWeight, shardUpdateDuration),
+		DataOutDuration: NewEWMARate(ewmaWeight, shardUpdateDuration),
 
 		metrics:              metrics,
 		interner:             interner,
 		highestRecvTimestamp: highestRecvTimestamp,
 	}
 
-	t.watcher = wal.NewWatcher(watcherMetrics, readerMetrics, logger, client.Name(), t, walDir, enableExemplarRemoteWrite)
+	if walDir != "" {
+		t.watcher = wal.NewWatcher(watcherMetrics, readerMetrics, logger, client.Name(), t, walDir, enableExemplarRemoteWrite)
+	}
 	if t.mcfg.Send {
 		t.metadataWatcher = NewMetadataWatcher(logger, sm, client.Name(), t, t.mcfg.SendInterval, flushDeadline)
 	}
@@ -514,7 +516,7 @@ outer:
 		lbls, ok := t.seriesLabels[s.Ref]
 		if !ok {
 			t.metrics.droppedSamplesTotal.Inc()
-			t.dataDropped.incr(1)
+			t.DataDropped.Incr(1)
 			if _, ok := t.droppedSeries[s.Ref]; !ok {
 				level.Info(t.logger).Log("msg", "Dropped sample for series that was not explicitly dropped via relabelling", "ref", s.Ref)
 			}
@@ -560,7 +562,7 @@ outer:
 		if !ok {
 			t.metrics.droppedExemplarsTotal.Inc()
 			// Track dropped exemplars in the same EWMA for sharding calc.
-			t.dataDropped.incr(1)
+			t.DataDropped.Incr(1)
 			if _, ok := t.droppedSeries[e.Ref]; !ok {
 				level.Info(t.logger).Log("msg", "Dropped exemplar for series that was not explicitly dropped via relabelling", "ref", e.Ref)
 			}
@@ -598,7 +600,7 @@ outer:
 // Does not block.
 func (t *QueueManager) Start() {
 	// Register and initialise some metrics.
-	t.metrics.register()
+	t.metrics.Register()
 	t.metrics.shardCapacity.Set(float64(t.cfg.Capacity))
 	t.metrics.maxNumShards.Set(float64(t.cfg.MaxShards))
 	t.metrics.minNumShards.Set(float64(t.cfg.MinShards))
@@ -606,7 +608,9 @@ func (t *QueueManager) Start() {
 	t.metrics.maxSamplesPerSend.Set(float64(t.cfg.MaxSamplesPerSend))
 
 	t.shards.start(t.numShards)
-	t.watcher.Start()
+	if t.watcher != nil {
+		t.watcher.Start()
+	}
 	if t.mcfg.Send {
 		t.metadataWatcher.Start()
 	}
@@ -628,7 +632,9 @@ func (t *QueueManager) Stop() {
 	// is to ensure we don't end up executing a reshard and shards.stop() at the same time, which
 	// causes a closed channel panic.
 	t.shards.stop()
-	t.watcher.Stop()
+	if t.watcher != nil {
+		t.watcher.Stop()
+	}
 	if t.mcfg.Send {
 		t.metadataWatcher.Stop()
 	}
@@ -639,7 +645,7 @@ func (t *QueueManager) Stop() {
 		t.releaseLabels(labels)
 	}
 	t.seriesMtx.Unlock()
-	t.metrics.unregister()
+	t.metrics.Unregister()
 }
 
 // StoreSeries keeps track of which series we know about for lookups when sending samples to remote.
@@ -716,15 +722,15 @@ func (t *QueueManager) client() WriteClient {
 
 func (t *QueueManager) internLabels(lbls labels.Labels) {
 	for i, l := range lbls {
-		lbls[i].Name = t.interner.intern(l.Name)
-		lbls[i].Value = t.interner.intern(l.Value)
+		lbls[i].Name = t.interner.Intern(l.Name)
+		lbls[i].Value = t.interner.Intern(l.Value)
 	}
 }
 
 func (t *QueueManager) releaseLabels(ls labels.Labels) {
 	for _, l := range ls {
-		t.interner.release(l.Name)
-		t.interner.release(l.Value)
+		t.interner.Release(l.Name)
+		t.interner.Release(l.Value)
 	}
 }
 
@@ -803,19 +809,19 @@ func (t *QueueManager) shouldReshard(desiredShards int) bool {
 // outlined in this functions implementation. It is up to the caller to reshard, or not,
 // based on the return value.
 func (t *QueueManager) calculateDesiredShards() int {
-	t.dataOut.tick()
-	t.dataDropped.tick()
-	t.dataOutDuration.tick()
+	t.DataOut.Tick()
+	t.DataDropped.Tick()
+	t.DataOutDuration.Tick()
 
 	// We use the number of incoming samples as a prediction of how much work we
 	// will need to do next iteration.  We add to this any pending samples
 	// (received - send) so we can catch up with any backlog. We use the average
 	// outgoing batch latency to work out how many shards we need.
 	var (
-		dataInRate      = t.dataIn.rate()
-		dataOutRate     = t.dataOut.rate()
-		dataKeptRatio   = dataOutRate / (t.dataDropped.rate() + dataOutRate)
-		dataOutDuration = t.dataOutDuration.rate() / float64(time.Second)
+		dataInRate      = t.DataIn.Rate()
+		dataOutRate     = t.DataOut.Rate()
+		dataKeptRatio   = dataOutRate / (t.DataDropped.Rate() + dataOutRate)
+		dataOutDuration = t.DataOutDuration.Rate() / float64(time.Second)
 		dataPendingRate = dataInRate*dataKeptRatio - dataOutRate
 		highestSent     = t.metrics.highestSentTimestamp.Get()
 		highestRecv     = t.highestRecvTimestamp.Get()
@@ -1155,8 +1161,8 @@ func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, s
 
 	// These counters are used to calculate the dynamic sharding, and as such
 	// should be maintained irrespective of success or failure.
-	s.qm.dataOut.incr(int64(len(samples)))
-	s.qm.dataOutDuration.incr(int64(time.Since(begin)))
+	s.qm.DataOut.Incr(int64(len(samples)))
+	s.qm.DataOutDuration.Incr(int64(time.Since(begin)))
 	s.qm.lastSendTimestamp.Store(time.Now().Unix())
 }
 
