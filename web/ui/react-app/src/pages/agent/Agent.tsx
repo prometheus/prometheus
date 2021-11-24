@@ -1,20 +1,16 @@
 import React, { FC } from 'react';
 
-export const AgentContent: FC = () => {
+const Agent: FC = () => {
   return (
     <>
       <h2>Prometheus Agent</h2>
       <p>
-        This Prometheus instance runs in <strong>agent mode</strong>. In this mode, Prometheus is only used to scrape
+        This Prometheus instance is running in <strong>agent mode</strong>. In this mode, Prometheus is only used to scrape
         discovered targets and forward them to remote write endpoints.
       </p>
-      <p>The PromQL editor, graph console, recording rules and alerting page are not available in this mode.</p>
+      <p>Some features are not available in this mode, such as querying and alerting.</p>
     </>
   );
-};
-
-const Agent: FC = () => {
-  return <AgentContent />;
 };
 
 export default Agent;

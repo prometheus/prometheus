@@ -23,7 +23,7 @@ import useMedia from './hooks/useMedia';
 
 interface AppProps {
   consolesLink: string | null;
-  agentMode: boolean | null;
+  agentMode: boolean;
 }
 
 const App: FC<AppProps> = ({ consolesLink, agentMode }) => {
@@ -76,7 +76,7 @@ const App: FC<AppProps> = ({ consolesLink, agentMode }) => {
           <Navigation consolesLink={consolesLink} agentMode={agentMode} />
           <Container fluid style={{ paddingTop: 70 }}>
             <Switch>
-              <Redirect exact from="/" to={agentMode ? `agent` : `agent`} />
+              <Redirect exact from="/" to={agentMode ? '/agent' : '/graph'} />
               {/*
               NOTE: Any route added here needs to also be added to the list of
               React-handled router paths ("reactRouterPaths") in /web/web.go.

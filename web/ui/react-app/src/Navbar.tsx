@@ -17,7 +17,7 @@ import { ThemeToggle } from './Theme';
 
 interface NavbarProps {
   consolesLink: string | null;
-  agentMode: boolean | null;
+  agentMode: boolean;
 }
 
 const Navigation: FC<NavbarProps> = ({ consolesLink, agentMode }) => {
@@ -27,8 +27,8 @@ const Navigation: FC<NavbarProps> = ({ consolesLink, agentMode }) => {
   return (
     <Navbar className="mb-3" dark color="dark" expand="md" fixed="top">
       <NavbarToggler onClick={toggle} className="mr-2" />
-      <Link className="pt-0 navbar-brand" to={agentMode ? `/agent` : `/graph`}>
-        Prometheus{agentMode && ` Agent`}
+      <Link className="pt-0 navbar-brand" to={agentMode ? '/agent' : '/graph'}>
+        Prometheus{agentMode && ' Agent'}
       </Link>
       <Collapse isOpen={isOpen} navbar style={{ justifyContent: 'space-between' }}>
         <Nav className="ml-0" navbar>
