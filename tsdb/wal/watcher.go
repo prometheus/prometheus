@@ -46,9 +46,9 @@ var (
 	readAllSegments = -1
 
 	// CheckpointerReadAllSegments will read samples from all segments.
-	CheckpointerReadAllSegments *int = &readAllSegments
+	CheckpointerReadAllSegments = &readAllSegments
 	// CheckpointerReadNewSegments will only read samples from new segments.
-	CheckpointerReadNewSegments *int = nil
+	CheckpointerReadNewSegments = (*int)(nil)
 )
 
 // WriteTo is an interface used by the Watcher to send the samples it's read

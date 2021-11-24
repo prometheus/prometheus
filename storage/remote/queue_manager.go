@@ -467,18 +467,18 @@ func (t *QueueManager) LastCheckpointedSegment() (segment *int) {
 		return
 	}
 
-	if i, err := strconv.Atoi(string(bb)); err != nil {
+	savedSegment, err := strconv.Atoi(string(bb))
+	if err != nil {
 		level.Error(t.logger).Log("msg", "could not read segment checkpoint file", "file", fname, "err", err)
 		return
-	} else {
-		return &i
 	}
+	return &savedSegment
 }
 
 // CheckpointSegment implements wal.Checkpointer. segment will be saved to a queue-specific file.
 func (t *QueueManager) CheckpointSegment(segment int) {
 	dir := filepath.Join(t.walDir, "remote", t.client().Name())
-	if err := os.MkdirAll(dir, 0770); err != nil {
+	if err := os.MkdirAll(dir, 0o770); err != nil {
 		level.Error(t.logger).Log("msg", "could not create segment checkpoint folder", "dir", dir, "err", err)
 		return
 	}
@@ -490,7 +490,7 @@ func (t *QueueManager) CheckpointSegment(segment int) {
 		tmp   = fname + ".tmp"
 	)
 
-	if err := os.WriteFile(tmp, []byte(segmentText), 0660); err != nil {
+	if err := os.WriteFile(tmp, []byte(segmentText), 0o660); err != nil {
 		level.Error(t.logger).Log("msg", "could not create segment checkpoint file", "file", tmp, "err", err)
 		return
 	}
