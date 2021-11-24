@@ -8,6 +8,9 @@ eval instant at 10s sum_over_time(metric[50s:10s])
 eval instant at 10s sum_over_time(metric[50s:5s])
   {} 4
 
+eval instant at 10s sum_over_time(metric[11s::3s])
+  {} 3
+
 # Every evaluation yields the last value, i.e. 2
 eval instant at 5m sum_over_time(metric[50s:10s])
   {} 12
@@ -34,6 +37,10 @@ load 10s
 eval instant at 8000s rate(http_requests{group=~"pro.*"}[1m:10s])
   {job="api-server", instance="0", group="production"} 1
   {job="api-server", instance="1", group="production"} 2
+
+eval instant at 8000s rate(http_requests{group=~"pro.*"}[1m::9s])
+  {job="api-server", instance="0", group="production"} 0.9259259259259259
+  {job="api-server", instance="1", group="production"} 1.8518518518518519
 
 eval instant at 20000s avg_over_time(rate(http_requests[1m])[1m:1s])
   {job="api-server", instance="0", group="canary"}     8
