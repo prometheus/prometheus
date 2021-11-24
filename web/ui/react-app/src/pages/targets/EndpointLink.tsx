@@ -20,11 +20,10 @@ const EndpointLink: FC<EndpointLinkProps> = ({ endpoint, globalUrl }) => {
 
   const { host, pathname, protocol, searchParams }: URL = url;
   const params = Array.from(searchParams.entries());
-  const href = invalidURL ? endpoint : globalUrl;
   const displayLink = invalidURL ? endpoint.replace(search, '') : `${protocol}//${host}${pathname}`;
   return (
     <>
-      <a href={href}>{displayLink}</a>
+      <a href={globalUrl}>{displayLink}</a>
       {params.length > 0 ? <br /> : null}
       {params.map(([labelName, labelValue]: [string, string]) => {
         return (

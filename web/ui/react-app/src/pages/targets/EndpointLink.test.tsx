@@ -31,8 +31,10 @@ describe('EndpointLink', () => {
   });
 
   it('renders an anchor for IPv6 link with zone ID including labels for query params', () => {
-    const endpoint = 'http://[fe80::f1ee:adeb:371d:983%eth1]:9100/stats/prometheus?module=http_2xx&target=http://some-service';
-    const globalURL = 'http://[fe80::f1ee:adeb:371d:983%eth1]:9100/stats/prometheus?module=http_2xx&target=http://some-service';
+    const endpoint =
+      'http://[fe80::f1ee:adeb:371d:983%eth1]:9100/stats/prometheus?module=http_2xx&target=http://some-service';
+    const globalURL =
+      'http://[fe80::f1ee:adeb:371d:983%eth1]:9100/stats/prometheus?module=http_2xx&target=http://some-service';
     const endpointLink = shallow(<EndpointLink endpoint={endpoint} globalUrl={globalURL} />);
     const anchor = endpointLink.find('a');
     const badges = endpointLink.find(Badge);
