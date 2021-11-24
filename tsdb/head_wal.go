@@ -211,12 +211,15 @@ Outer:
 				// could cause race below. So we wait for the goroutine to empty input the buffer and finish
 				// processing all old samples after emptying the buffer.
 				processors[idx].waitUntilIdle()
+				// Lock the subset so we can modify the series object
+				processors[idx].mx.Lock()
 
 				mmc := mmappedChunks[walSeries.Ref]
 
 				if created {
 					// This is the first WAL series record for this series.
 					h.setMMappedChunks(mSeries, mmc)
+					processors[idx].mx.Unlock()
 					continue
 				}
 
@@ -255,6 +258,7 @@ Outer:
 				mSeries.nextAt = 0
 				mSeries.headChunk = nil
 				mSeries.app = nil
+				processors[idx].mx.Unlock()
 			}
 			//nolint:staticcheck // Ignore SA6002 relax staticcheck verification.
 			seriesPool.Put(v)
@@ -357,6 +361,7 @@ func (h *Head) setMMappedChunks(mSeries *memSeries, mmc []*mmappedChunk) {
 }
 
 type walSubsetProcessor struct {
+	mx     sync.Mutex // take this lock while modifying series in the subset
 	input  chan []record.RefSample
 	output chan []record.RefSample
 }
@@ -392,6 +397,7 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head) (unknownRefs uint64) {
 	mint, maxt := int64(math.MaxInt64), int64(math.MinInt64)
 
 	for samples := range wp.input {
+		wp.mx.Lock()
 		for _, s := range samples {
 			if s.T < minValidTime {
 				continue
@@ -415,6 +421,7 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head) (unknownRefs uint64) {
 				mint = s.T
 			}
 		}
+		wp.mx.Unlock()
 		wp.output <- samples
 	}
 	h.updateMinMaxTime(mint, maxt)
