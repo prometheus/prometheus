@@ -1,5 +1,5 @@
 import React, { FC } from 'react';
-import { Badge, Alert } from 'reactstrap';
+import { Badge } from 'reactstrap';
 
 export interface EndpointLinkProps {
   endpoint: string;
@@ -8,23 +8,23 @@ export interface EndpointLinkProps {
 
 const EndpointLink: FC<EndpointLinkProps> = ({ endpoint, globalUrl }) => {
   let url: URL;
+  let search = '';
+  let invalidURL = false;
   try {
     url = new URL(endpoint);
   } catch (err: unknown) {
-    const error = err as Error;
-    return (
-      <Alert color="danger">
-        <strong>Error:</strong> {error.message}
-      </Alert>
-    );
+    invalidURL = true;
+    if (endpoint.indexOf('?') > -1) search = endpoint.substring(endpoint.indexOf('?'));
+    url = new URL('http://0.0.0.0' + search);
   }
 
   const { host, pathname, protocol, searchParams }: URL = url;
   const params = Array.from(searchParams.entries());
-
+  const href = invalidURL ? endpoint : globalUrl;
+  const displayLink = invalidURL ? endpoint.replace(search, '') : `${protocol}//${host}${pathname}`;
   return (
     <>
-      <a href={globalUrl}>{`${protocol}//${host}${pathname}`}</a>
+      <a href={href}>{displayLink}</a>
       {params.length > 0 ? <br /> : null}
       {params.map(([labelName, labelValue]: [string, string]) => {
         return (
