@@ -345,17 +345,16 @@ type WriteClient interface {
 type QueueManager struct {
 	lastSendTimestamp atomic.Int64
 
-	logger             log.Logger
-	flushDeadline      time.Duration
-	cfg                config.QueueConfig
-	mcfg               config.MetadataConfig
-	externalLabels     labels.Labels
-	relabelConfigs     []*relabel.Config
-	sendExemplars      bool
-	watcher            *wal.Watcher
-	metadataWatcher    *MetadataWatcher
-	walDir             string
-	defaultLastSegment *int
+	logger          log.Logger
+	flushDeadline   time.Duration
+	cfg             config.QueueConfig
+	mcfg            config.MetadataConfig
+	externalLabels  labels.Labels
+	relabelConfigs  []*relabel.Config
+	sendExemplars   bool
+	watcher         *wal.Watcher
+	metadataWatcher *MetadataWatcher
+	walDir          string
 
 	clientMtx   sync.RWMutex
 	storeClient WriteClient
@@ -405,16 +404,15 @@ func NewQueueManager(
 
 	logger = log.With(logger, remoteName, client.Name(), endpoint, client.Endpoint())
 	t := &QueueManager{
-		logger:             logger,
-		flushDeadline:      flushDeadline,
-		cfg:                cfg,
-		mcfg:               mCfg,
-		externalLabels:     externalLabels,
-		relabelConfigs:     relabelConfigs,
-		storeClient:        client,
-		sendExemplars:      enableExemplarRemoteWrite,
-		walDir:             walDir,
-		defaultLastSegment: wal.CheckpointerReadAllSegments,
+		logger:         logger,
+		flushDeadline:  flushDeadline,
+		cfg:            cfg,
+		mcfg:           mCfg,
+		externalLabels: externalLabels,
+		relabelConfigs: relabelConfigs,
+		storeClient:    client,
+		sendExemplars:  enableExemplarRemoteWrite,
+		walDir:         walDir,
 
 		seriesLabels:         make(map[chunks.HeadSeriesRef]labels.Labels),
 		seriesSegmentIndexes: make(map[chunks.HeadSeriesRef]int),
@@ -444,11 +442,9 @@ func NewQueueManager(
 }
 
 // LastCheckpointedSegment implements wal.Checkpointer. It returns the last
-// read segment from the queue-specific file. Requests the WAL watcher to read
-// all samples from the WAL if the checkpoint file doesn't exist yet.
+// read segment from the queue-specific file. Requests the WAL watcher to start
+// at the end of the WAL if the checkpoint file doesn't exist yet.
 func (t *QueueManager) LastCheckpointedSegment() (segment *int) {
-	segment = t.defaultLastSegment
-
 	dir := filepath.Join(t.walDir, "remote", t.client().Name())
 	if _, err := os.Stat(dir); os.IsNotExist(err) {
 		level.Warn(t.logger).Log("msg", "checkpoint segment does not exist")

@@ -41,16 +41,6 @@ const (
 	consumer           = "consumer"
 )
 
-// Default values that LastCheckpointedSegment can return.
-var (
-	readAllSegments = -1
-
-	// CheckpointerReadAllSegments will read samples from all segments.
-	CheckpointerReadAllSegments = &readAllSegments
-	// CheckpointerReadNewSegments will only read samples from new segments.
-	CheckpointerReadNewSegments = (*int)(nil)
-)
-
 // WriteTo is an interface used by the Watcher to send the samples it's read
 // from the WAL on to somewhere else. Functions will be called concurrently
 // and it is left to the implementer to make sure they are safe.
