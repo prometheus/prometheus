@@ -51,13 +51,10 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 	var mmapOverlappingChunks uint64
 
 	// Start workers that each process samples for a partition of the series ID space.
-	// They are connected through a ring of channels which ensures that all sample batches
-	// read from the WAL are processed in order.
 	var (
 		wg             sync.WaitGroup
 		n              = runtime.GOMAXPROCS(0)
-		inputs         = make([]chan []record.RefSample, n)
-		outputs        = make([]chan []record.RefSample, n)
+		processors     = make([]walSubsetProcessor, n)
 		exemplarsInput chan record.RefExemplar
 
 		dec    record.Decoder
@@ -92,9 +89,7 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 		_, ok := err.(*wal.CorruptionErr)
 		if ok || seriesCreationErr != nil {
 			for i := 0; i < n; i++ {
-				close(inputs[i])
-				for range outputs[i] {
-				}
+				processors[i].closeAndDrain()
 			}
 			close(exemplarsInput)
 			wg.Wait()
@@ -103,14 +98,14 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 
 	wg.Add(n)
 	for i := 0; i < n; i++ {
-		outputs[i] = make(chan []record.RefSample, 300)
-		inputs[i] = make(chan []record.RefSample, 300)
+		processors[i].output = make(chan []record.RefSample, 300)
+		processors[i].input = make(chan []record.RefSample, 300)
 
-		go func(input <-chan []record.RefSample, output chan<- []record.RefSample) {
-			unknown := h.processWALSamples(h.minValidTime.Load(), input, output)
+		go func(wp *walSubsetProcessor) {
+			unknown := wp.processWALSamples(h)
 			unknownRefs.Add(unknown)
 			wg.Done()
-		}(inputs[i], outputs[i])
+		}(&processors[i])
 	}
 
 	wg.Add(1)
@@ -217,14 +212,14 @@ Outer:
 				// could cause race below. So we wait for the goroutine to empty input the buffer and finish
 				// processing all old samples after emptying the buffer.
 				select {
-				case <-outputs[idx]: // allow output side to drain to avoid deadlock
+				case <-processors[idx].output: // allow output side to drain to avoid deadlock
 				default:
 				}
-				inputs[idx] <- []record.RefSample{}
-				for len(inputs[idx]) != 0 {
+				processors[idx].input <- []record.RefSample{}
+				for len(processors[idx].input) != 0 {
 					time.Sleep(1 * time.Millisecond)
 					select {
-					case <-outputs[idx]: // allow output side to drain to avoid deadlock
+					case <-processors[idx].output: // allow output side to drain to avoid deadlock
 					default:
 					}
 				}
@@ -289,7 +284,7 @@ Outer:
 				for i := 0; i < n; i++ {
 					var buf []record.RefSample
 					select {
-					case buf = <-outputs[i]:
+					case buf = <-processors[i].output:
 					default:
 					}
 					shards[i] = buf[:0]
@@ -302,7 +297,7 @@ Outer:
 					shards[mod] = append(shards[mod], sam)
 				}
 				for i := 0; i < n; i++ {
-					inputs[i] <- shards[i]
+					processors[i].input <- shards[i]
 				}
 				samples = samples[m:]
 			}
@@ -346,9 +341,7 @@ Outer:
 
 	// Signal termination to each worker and wait for it to close its output channel.
 	for i := 0; i < n; i++ {
-		close(inputs[i])
-		for range outputs[i] {
-		}
+		processors[i].closeAndDrain()
 	}
 	close(exemplarsInput)
 	wg.Wait()
@@ -380,18 +373,27 @@ func (h *Head) setMMappedChunks(mSeries *memSeries, mmc []*mmappedChunk) {
 	}
 }
 
-// processWALSamples adds the samples it receives to the head and passes
+type walSubsetProcessor struct {
+	input  chan []record.RefSample
+	output chan []record.RefSample
+}
+
+func (wp *walSubsetProcessor) closeAndDrain() {
+	close(wp.input)
+	for range wp.output {
+	}
+}
+
+// process adds the samples it receives to the head and passes
 // the buffer received to an output channel for reuse.
 // Samples before the minValidTime timestamp are discarded.
-func (h *Head) processWALSamples(
-	minValidTime int64,
-	input <-chan []record.RefSample, output chan<- []record.RefSample,
-) (unknownRefs uint64) {
-	defer close(output)
+func (wp *walSubsetProcessor) processWALSamples(h *Head) (unknownRefs uint64) {
+	defer close(wp.output)
 
+	minValidTime := h.minValidTime.Load()
 	mint, maxt := int64(math.MaxInt64), int64(math.MinInt64)
 
-	for samples := range input {
+	for samples := range wp.input {
 		for _, s := range samples {
 			if s.T < minValidTime {
 				continue
@@ -415,7 +417,7 @@ func (h *Head) processWALSamples(
 				mint = s.T
 			}
 		}
-		output <- samples
+		wp.output <- samples
 	}
 	h.updateMinMaxTime(mint, maxt)
 
