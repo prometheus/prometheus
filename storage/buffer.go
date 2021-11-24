@@ -14,6 +14,7 @@
 package storage
 
 import (
+	"fmt"
 	"math"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -26,8 +27,8 @@ type BufferedSeriesIterator struct {
 	buf   *sampleRing
 	delta int64
 
-	lastTime int64
-	ok       bool
+	lastTime  int64
+	valueType chunkenc.ValueType
 }
 
 // NewBuffer returns a new iterator that buffers the values within the time range
@@ -42,7 +43,7 @@ func NewBuffer(delta int64) *BufferedSeriesIterator {
 func NewBufferIterator(it chunkenc.Iterator, delta int64) *BufferedSeriesIterator {
 	// TODO(codesome): based on encoding, allocate different buffer.
 	bit := &BufferedSeriesIterator{
-		buf:   newSampleRing(delta, 16, it.ChunkEncoding()),
+		buf:   newSampleRing(delta, 16),
 		delta: delta,
 	}
 	bit.Reset(it)
@@ -55,10 +56,9 @@ func NewBufferIterator(it chunkenc.Iterator, delta int64) *BufferedSeriesIterato
 func (b *BufferedSeriesIterator) Reset(it chunkenc.Iterator) {
 	b.it = it
 	b.lastTime = math.MinInt64
-	b.ok = true
 	b.buf.reset()
 	b.buf.delta = b.delta
-	it.Next()
+	b.valueType = it.Next()
 }
 
 // ReduceDelta lowers the buffered time delta, for the current SeriesIterator only.
@@ -80,7 +80,7 @@ func (b *BufferedSeriesIterator) Buffer() chunkenc.Iterator {
 }
 
 // Seek advances the iterator to the element at time t or greater.
-func (b *BufferedSeriesIterator) Seek(t int64) bool {
+func (b *BufferedSeriesIterator) Seek(t int64) chunkenc.ValueType {
 	t0 := t - b.buf.delta
 
 	// If the delta would cause us to seek backwards, preserve the buffer
@@ -88,54 +88,64 @@ func (b *BufferedSeriesIterator) Seek(t int64) bool {
 	if t0 > b.lastTime {
 		b.buf.reset()
 
-		b.ok = b.it.Seek(t0)
-		if !b.ok {
-			return false
-		}
-		if b.it.ChunkEncoding() == chunkenc.EncHistogram {
-			b.lastTime, _ = b.HistogramValues()
-		} else {
+		b.valueType = b.it.Seek(t0)
+		switch b.valueType {
+		case chunkenc.ValNone:
+			return chunkenc.ValNone
+		case chunkenc.ValFloat:
 			b.lastTime, _ = b.Values()
+		case chunkenc.ValHistogram:
+			b.lastTime, _ = b.HistogramValues()
+		case chunkenc.ValFloatHistogram:
+			b.lastTime, _ = b.FloatHistogramValues()
+		default:
+			panic(fmt.Errorf("BufferedSeriesIterator: unknown value type %v", b.valueType))
 		}
 	}
 
 	if b.lastTime >= t {
-		return true
+		return b.valueType
 	}
-	for b.Next() {
-		if b.lastTime >= t {
-			return true
+	for {
+		if b.valueType = b.Next(); b.valueType == chunkenc.ValNone || b.lastTime >= t {
+			return b.valueType
 		}
 	}
-
-	return false
 }
 
 // Next advances the iterator to the next element.
-func (b *BufferedSeriesIterator) Next() bool {
-	if !b.ok {
-		return false
-	}
-
+func (b *BufferedSeriesIterator) Next() chunkenc.ValueType {
 	// Add current element to buffer before advancing.
-	if b.it.ChunkEncoding() == chunkenc.EncHistogram {
-		t, h := b.it.AtHistogram()
-		b.buf.add(sample{t: t, h: h})
-	} else {
+	switch b.valueType {
+	case chunkenc.ValNone:
+		return chunkenc.ValNone
+	case chunkenc.ValFloat:
 		t, v := b.it.At()
 		b.buf.add(sample{t: t, v: v})
+	case chunkenc.ValHistogram:
+		t, h := b.it.AtHistogram()
+		b.buf.add(sample{t: t, h: h})
+	case chunkenc.ValFloatHistogram:
+		t, fh := b.it.AtFloatHistogram()
+		b.buf.add(sample{t: t, fh: fh})
+	default:
+		panic(fmt.Errorf("BufferedSeriesIterator: unknown value type %v", b.valueType))
 	}
 
-	b.ok = b.it.Next()
-	if b.ok {
-		if b.it.ChunkEncoding() == chunkenc.EncHistogram {
-			b.lastTime, _ = b.HistogramValues()
-		} else {
-			b.lastTime, _ = b.Values()
-		}
+	b.valueType = b.it.Next()
+	switch b.valueType {
+	case chunkenc.ValNone:
+		// Do nothing.
+	case chunkenc.ValFloat:
+		b.lastTime, _ = b.Values()
+	case chunkenc.ValHistogram:
+		b.lastTime, _ = b.HistogramValues()
+	case chunkenc.ValFloatHistogram:
+		b.lastTime, _ = b.FloatHistogramValues()
+	default:
+		panic(fmt.Errorf("BufferedSeriesIterator: unknown value type %v", b.valueType))
 	}
-
-	return b.ok
+	return b.valueType
 }
 
 // Values returns the current element of the iterator.
@@ -148,9 +158,9 @@ func (b *BufferedSeriesIterator) HistogramValues() (int64, *histogram.Histogram)
 	return b.it.AtHistogram()
 }
 
-// ChunkEncoding return the chunk encoding of the underlying iterator.
-func (b *BufferedSeriesIterator) ChunkEncoding() chunkenc.Encoding {
-	return b.it.ChunkEncoding()
+// FloatHistogramValues returns the current float-histogram element of the iterator.
+func (b *BufferedSeriesIterator) FloatHistogramValues() (int64, *histogram.FloatHistogram) {
+	return b.it.AtFloatHistogram()
 }
 
 // Err returns the last encountered error.
@@ -158,10 +168,12 @@ func (b *BufferedSeriesIterator) Err() error {
 	return b.it.Err()
 }
 
+// TODO(beorn7): Consider having different sample types for different value types.
 type sample struct {
-	t int64
-	v float64
-	h *histogram.Histogram
+	t  int64
+	v  float64
+	h  *histogram.Histogram
+	fh *histogram.FloatHistogram
 }
 
 func (s sample) T() int64 {
@@ -176,10 +188,24 @@ func (s sample) H() *histogram.Histogram {
 	return s.h
 }
 
+func (s sample) FH() *histogram.FloatHistogram {
+	return s.fh
+}
+
+func (s sample) Type() chunkenc.ValueType {
+	switch {
+	case s.h != nil:
+		return chunkenc.ValHistogram
+	case s.fh != nil:
+		return chunkenc.ValFloatHistogram
+	default:
+		return chunkenc.ValFloat
+	}
+}
+
 type sampleRing struct {
 	delta int64
 
-	enc chunkenc.Encoding
 	buf []sample // lookback buffer
 	i   int      // position of most recent element in ring buffer
 	f   int      // position of first element in ring buffer
@@ -188,8 +214,8 @@ type sampleRing struct {
 	it sampleRingIterator
 }
 
-func newSampleRing(delta int64, sz int, enc chunkenc.Encoding) *sampleRing {
-	r := &sampleRing{delta: delta, buf: make([]sample, sz), enc: enc}
+func newSampleRing(delta int64, sz int) *sampleRing {
+	r := &sampleRing{delta: delta, buf: make([]sample, sz)}
 	r.reset()
 
 	return r
@@ -213,13 +239,24 @@ type sampleRingIterator struct {
 	i int
 }
 
-func (it *sampleRingIterator) Next() bool {
+func (it *sampleRingIterator) Next() chunkenc.ValueType {
 	it.i++
-	return it.i < it.r.l
+	if it.i >= it.r.l {
+		return chunkenc.ValNone
+	}
+	s := it.r.at(it.i)
+	switch {
+	case s.h != nil:
+		return chunkenc.ValHistogram
+	case s.fh != nil:
+		return chunkenc.ValFloatHistogram
+	default:
+		return chunkenc.ValFloat
+	}
 }
 
-func (it *sampleRingIterator) Seek(int64) bool {
-	return false
+func (it *sampleRingIterator) Seek(int64) chunkenc.ValueType {
+	return chunkenc.ValNone
 }
 
 func (it *sampleRingIterator) Err() error {
@@ -227,30 +264,29 @@ func (it *sampleRingIterator) Err() error {
 }
 
 func (it *sampleRingIterator) At() (int64, float64) {
-	return it.r.at(it.i)
-}
-
-func (it *sampleRingIterator) AtHistogram() (int64, *histogram.Histogram) {
-	return it.r.atHistogram(it.i)
-}
-
-func (it *sampleRingIterator) ChunkEncoding() chunkenc.Encoding {
-	return it.r.enc
-}
-
-func (r *sampleRing) at(i int) (int64, float64) {
-	j := (r.f + i) % len(r.buf)
-	s := r.buf[j]
+	s := it.r.at(it.i)
 	return s.t, s.v
 }
 
-func (r *sampleRing) atHistogram(i int) (int64, *histogram.Histogram) {
-	j := (r.f + i) % len(r.buf)
-	s := r.buf[j]
+func (it *sampleRingIterator) AtHistogram() (int64, *histogram.Histogram) {
+	s := it.r.at(it.i)
 	return s.t, s.h
 }
 
-func (r *sampleRing) atSample(i int) sample {
+func (it *sampleRingIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+	s := it.r.at(it.i)
+	if s.fh == nil {
+		return s.t, s.h.ToFloat()
+	}
+	return s.t, s.fh
+}
+
+func (it *sampleRingIterator) AtT() int64 {
+	s := it.r.at(it.i)
+	return s.t
+}
+
+func (r *sampleRing) at(i int) sample {
 	j := (r.f + i) % len(r.buf)
 	return r.buf[j]
 }
@@ -320,7 +356,7 @@ func (r *sampleRing) nthLast(n int) (sample, bool) {
 	if n > r.l {
 		return sample{}, false
 	}
-	return r.atSample(r.l - n), true
+	return r.at(r.l - n), true
 }
 
 func (r *sampleRing) samples() []sample {

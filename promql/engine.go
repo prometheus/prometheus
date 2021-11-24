@@ -1634,28 +1634,30 @@ func (ev *evaluator) vectorSelector(node *parser.VectorSelector, ts int64) (Vect
 }
 
 // vectorSelectorSingle evaluates an instant vector for the iterator of one time series.
-func (ev *evaluator) vectorSelectorSingle(it *storage.MemoizedSeriesIterator, node *parser.VectorSelector, ts int64) (int64, float64, *histogram.Histogram, bool) {
+func (ev *evaluator) vectorSelectorSingle(it *storage.MemoizedSeriesIterator, node *parser.VectorSelector, ts int64) (
+	int64, float64, *histogram.FloatHistogram, bool,
+) {
 	refTime := ts - durationMilliseconds(node.Offset)
 	var t int64
 	var v float64
-	var h *histogram.Histogram
+	var h *histogram.FloatHistogram
 
 	valueType := it.Seek(refTime)
 	switch valueType {
-	case storage.ValNone:
+	case chunkenc.ValNone:
 		if it.Err() != nil {
 			ev.error(it.Err())
 		}
-	case storage.ValFloat:
+	case chunkenc.ValFloat:
 		t, v = it.Values()
-	case storage.ValHistogram:
-		t, h = it.HistogramValues()
+	case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
+		t, h = it.FloatHistogramValues()
 	default:
 		panic(fmt.Errorf("unknown value type %v", valueType))
 	}
-	if valueType == storage.ValNone || t > refTime {
+	if valueType == chunkenc.ValNone || t > refTime {
 		var ok bool
-		t, v, h, ok = it.PeekPrev()
+		t, v, _, h, ok = it.PeekPrev()
 		if !ok || t < refTime-durationMilliseconds(ev.lookbackDelta) {
 			return 0, 0, nil, false
 		}
@@ -1747,19 +1749,23 @@ func (ev *evaluator) matrixIterSlice(it *storage.BufferedSeriesIterator, mint, m
 		out = out[:0]
 	}
 
-	ok := it.Seek(maxt)
-	if !ok {
+	soughtValueType := it.Seek(maxt)
+	if soughtValueType == chunkenc.ValNone {
 		if it.Err() != nil {
 			ev.error(it.Err())
 		}
 	}
 
 	buf := it.Buffer()
-	for buf.Next() {
-		if buf.ChunkEncoding() == chunkenc.EncHistogram {
-			t, h := buf.AtHistogram()
+loop:
+	for {
+		switch buf.Next() {
+		case chunkenc.ValNone:
+			break loop
+		case chunkenc.ValFloatHistogram, chunkenc.ValHistogram:
+			t, h := buf.AtFloatHistogram()
 			if value.IsStaleNaN(h.Sum) {
-				continue
+				continue loop
 			}
 			// Values in the buffer are guaranteed to be smaller than maxt.
 			if t >= mint {
@@ -1769,10 +1775,10 @@ func (ev *evaluator) matrixIterSlice(it *storage.BufferedSeriesIterator, mint, m
 				ev.currentSamples++
 				out = append(out, Point{T: t, H: h})
 			}
-		} else {
+		case chunkenc.ValFloat:
 			t, v := buf.At()
 			if value.IsStaleNaN(v) {
-				continue
+				continue loop
 			}
 			// Values in the buffer are guaranteed to be smaller than maxt.
 			if t >= mint {
@@ -1785,25 +1791,24 @@ func (ev *evaluator) matrixIterSlice(it *storage.BufferedSeriesIterator, mint, m
 		}
 	}
 	// The sought sample might also be in the range.
-	if ok {
-		if it.ChunkEncoding() == chunkenc.EncHistogram {
-			t, h := it.HistogramValues()
-			if t == maxt && !value.IsStaleNaN(h.Sum) {
-				if ev.currentSamples >= ev.maxSamples {
-					ev.error(ErrTooManySamples(env))
-				}
-				out = append(out, Point{T: t, H: h})
-				ev.currentSamples++
+	switch soughtValueType {
+	case chunkenc.ValFloatHistogram, chunkenc.ValHistogram:
+		t, h := it.FloatHistogramValues()
+		if t == maxt && !value.IsStaleNaN(h.Sum) {
+			if ev.currentSamples >= ev.maxSamples {
+				ev.error(ErrTooManySamples(env))
 			}
-		} else {
-			t, v := it.Values()
-			if t == maxt && !value.IsStaleNaN(v) {
-				if ev.currentSamples >= ev.maxSamples {
-					ev.error(ErrTooManySamples(env))
-				}
-				out = append(out, Point{T: t, V: v})
-				ev.currentSamples++
+			out = append(out, Point{T: t, H: h})
+			ev.currentSamples++
+		}
+	case chunkenc.ValFloat:
+		t, v := it.Values()
+		if t == maxt && !value.IsStaleNaN(v) {
+			if ev.currentSamples >= ev.maxSamples {
+				ev.error(ErrTooManySamples(env))
 			}
+			out = append(out, Point{T: t, V: v})
+			ev.currentSamples++
 		}
 	}
 	return out

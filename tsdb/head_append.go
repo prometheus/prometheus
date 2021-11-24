@@ -416,7 +416,6 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 		}
 		s.isHistogramSeries = true
 		if created {
-			a.head.metrics.histogramSeries.Inc()
 			a.series = append(a.series, record.RefSeries{
 				Ref:    s.ref,
 				Labels: lset,
@@ -607,7 +606,6 @@ func (s *memSeries) append(t int64, v float64, appendID uint64, chunkDiskMapper 
 	if !sampleInOrder {
 		return sampleInOrder, chunkCreated
 	}
-
 	s.app.Append(t, v)
 	s.isHistogramSeries = false
 
@@ -683,10 +681,10 @@ func (s *memSeries) appendHistogram(t int64, h *histogram.Histogram, appendID ui
 
 	c.maxTime = t
 
-	s.histogramBuf[0] = s.histogramBuf[1]
-	s.histogramBuf[1] = s.histogramBuf[2]
-	s.histogramBuf[2] = s.histogramBuf[3]
-	s.histogramBuf[3] = histogramSample{t: t, h: h}
+	s.sampleBuf[0] = s.sampleBuf[1]
+	s.sampleBuf[1] = s.sampleBuf[2]
+	s.sampleBuf[2] = s.sampleBuf[3]
+	s.sampleBuf[3] = sample{t: t, h: h}
 
 	if appendID > 0 {
 		s.txs.add(appendID)

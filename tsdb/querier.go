@@ -14,6 +14,7 @@
 package tsdb
 
 import (
+	"fmt"
 	"math"
 	"sort"
 	"strings"
@@ -627,9 +628,11 @@ type populateWithDelSeriesIterator struct {
 	curr chunkenc.Iterator
 }
 
-func (p *populateWithDelSeriesIterator) Next() bool {
-	if p.curr != nil && p.curr.Next() {
-		return true
+func (p *populateWithDelSeriesIterator) Next() chunkenc.ValueType {
+	if p.curr != nil {
+		if valueType := p.curr.Next(); valueType != chunkenc.ValNone {
+			return valueType
+		}
 	}
 
 	for p.next() {
@@ -638,33 +641,41 @@ func (p *populateWithDelSeriesIterator) Next() bool {
 		} else {
 			p.curr = p.currChkMeta.Chunk.Iterator(nil)
 		}
-		if p.curr.Next() {
-			return true
+		if valueType := p.curr.Next(); valueType != chunkenc.ValNone {
+			return valueType
 		}
 	}
-	return false
+	return chunkenc.ValNone
 }
 
-func (p *populateWithDelSeriesIterator) Seek(t int64) bool {
-	if p.curr != nil && p.curr.Seek(t) {
-		return true
-	}
-	for p.Next() {
-		if p.curr.Seek(t) {
-			return true
+func (p *populateWithDelSeriesIterator) Seek(t int64) chunkenc.ValueType {
+	if p.curr != nil {
+		if valueType := p.curr.Seek(t); valueType != chunkenc.ValNone {
+			return valueType
 		}
 	}
-	return false
+	for p.Next() != chunkenc.ValNone {
+		if valueType := p.curr.Seek(t); valueType != chunkenc.ValNone {
+			return valueType
+		}
+	}
+	return chunkenc.ValNone
 }
 
-func (p *populateWithDelSeriesIterator) At() (int64, float64) { return p.curr.At() }
+func (p *populateWithDelSeriesIterator) At() (int64, float64) {
+	return p.curr.At()
+}
 
 func (p *populateWithDelSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
 	return p.curr.AtHistogram()
 }
 
-func (p *populateWithDelSeriesIterator) ChunkEncoding() chunkenc.Encoding {
-	return p.curr.ChunkEncoding()
+func (p *populateWithDelSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+	return p.curr.AtFloatHistogram()
+}
+
+func (p *populateWithDelSeriesIterator) AtT() int64 {
+	return p.curr.AtT()
 }
 
 func (p *populateWithDelSeriesIterator) Err() error {
@@ -693,61 +704,67 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 		return true
 	}
 
-	// Re-encode the chunk if iterator is provider. This means that it has some samples to be deleted or chunk is opened.
-	var (
-		newChunk chunkenc.Chunk
-		app      chunkenc.Appender
-		err      error
-	)
-	if p.currDelIter.ChunkEncoding() == chunkenc.EncHistogram {
-		newChunk = chunkenc.NewHistogramChunk()
-		app, err = newChunk.Appender()
-	} else {
-		newChunk = chunkenc.NewXORChunk()
-		app, err = newChunk.Appender()
-	}
-	if err != nil {
-		p.err = err
-		return false
-	}
-
-	if !p.currDelIter.Next() {
+	valueType := p.currDelIter.Next()
+	if valueType == chunkenc.ValNone {
 		if err := p.currDelIter.Err(); err != nil {
 			p.err = errors.Wrap(err, "iterate chunk while re-encoding")
 			return false
 		}
 
 		// Empty chunk, this should not happen, as we assume full deletions being filtered before this iterator.
-		p.err = errors.Wrap(err, "populateWithDelChunkSeriesIterator: unexpected empty chunk found while rewriting chunk")
+		p.err = errors.New("populateWithDelChunkSeriesIterator: unexpected empty chunk found while rewriting chunk")
 		return false
 	}
 
+	// Re-encode the chunk if iterator is provider. This means that it has some samples to be deleted or chunk is opened.
 	var (
-		t int64
-		v float64
-		h *histogram.Histogram
+		newChunk chunkenc.Chunk
+		app      chunkenc.Appender
+		t        int64
+		err      error
 	)
-	if p.currDelIter.ChunkEncoding() == chunkenc.EncHistogram {
+	switch valueType {
+	case chunkenc.ValHistogram:
+		newChunk = chunkenc.NewHistogramChunk()
+		if app, err = newChunk.Appender(); err != nil {
+			break
+		}
 		if hc, ok := p.currChkMeta.Chunk.(*chunkenc.HistogramChunk); ok {
 			newChunk.(*chunkenc.HistogramChunk).SetCounterResetHeader(hc.GetCounterResetHeader())
 		}
+		var h *histogram.Histogram
 		t, h = p.currDelIter.AtHistogram()
 		p.curr.MinTime = t
-		app.AppendHistogram(t, h.Copy())
-		for p.currDelIter.Next() {
+		app.AppendHistogram(t, h)
+		for p.currDelIter.Next() == chunkenc.ValHistogram {
+			// TODO(beorn7): Is it possible that the value type changes during iteration?
 			t, h = p.currDelIter.AtHistogram()
-			app.AppendHistogram(t, h.Copy())
+			app.AppendHistogram(t, h)
 		}
-	} else {
+	case chunkenc.ValFloat:
+		newChunk = chunkenc.NewXORChunk()
+		if app, err = newChunk.Appender(); err != nil {
+			break
+		}
+		var v float64
 		t, v = p.currDelIter.At()
 		p.curr.MinTime = t
 		app.Append(t, v)
-		for p.currDelIter.Next() {
+		for p.currDelIter.Next() == chunkenc.ValFloat {
+			// TODO(beorn7): Is it possible that the value type changes during iteration?
 			t, v = p.currDelIter.At()
 			app.Append(t, v)
 		}
+
+	default:
+		// TODO(beorn7): Need FloatHistogram eventually.
+		err = fmt.Errorf("populateWithDelChunkSeriesIterator: value type %v unsupported", valueType)
 	}
 
+	if err != nil {
+		p.err = errors.Wrap(err, "iterate chunk while re-encoding")
+		return false
+	}
 	if err := p.currDelIter.Err(); err != nil {
 		p.err = errors.Wrap(err, "iterate chunk while re-encoding")
 		return false
@@ -888,28 +905,29 @@ func (it *DeletedIterator) AtHistogram() (int64, *histogram.Histogram) {
 	return t, h
 }
 
-func (it *DeletedIterator) ChunkEncoding() chunkenc.Encoding {
-	return it.Iter.ChunkEncoding()
+func (it *DeletedIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+	t, h := it.Iter.AtFloatHistogram()
+	return t, h
 }
 
-func (it *DeletedIterator) Seek(t int64) bool {
+func (it *DeletedIterator) AtT() int64 {
+	return it.Iter.AtT()
+}
+
+func (it *DeletedIterator) Seek(t int64) chunkenc.ValueType {
 	if it.Iter.Err() != nil {
-		return false
+		return chunkenc.ValNone
 	}
-	if ok := it.Iter.Seek(t); !ok {
-		return false
+	valueType := it.Iter.Seek(t)
+	if valueType == chunkenc.ValNone {
+		return chunkenc.ValNone
 	}
 
 	// Now double check if the entry falls into a deleted interval.
-	var ts int64
-	if it.ChunkEncoding() == chunkenc.EncHistogram {
-		ts, _ = it.AtHistogram()
-	} else {
-		ts, _ = it.At()
-	}
+	ts := it.AtT()
 	for _, itv := range it.Intervals {
 		if ts < itv.Mint {
-			return true
+			return valueType
 		}
 
 		if ts > itv.Maxt {
@@ -922,32 +940,26 @@ func (it *DeletedIterator) Seek(t int64) bool {
 	}
 
 	// The timestamp is greater than all the deleted intervals.
-	return true
+	return valueType
 }
 
-func (it *DeletedIterator) Next() bool {
+func (it *DeletedIterator) Next() chunkenc.ValueType {
 Outer:
-	for it.Iter.Next() {
-		var ts int64
-		if it.ChunkEncoding() == chunkenc.EncHistogram {
-			ts, _ = it.AtHistogram()
-		} else {
-			ts, _ = it.At()
-		}
-
+	for valueType := it.Iter.Next(); valueType != chunkenc.ValNone; valueType = it.Iter.Next() {
+		ts := it.AtT()
 		for _, tr := range it.Intervals {
 			if tr.InBounds(ts) {
 				continue Outer
 			}
 
 			if ts <= tr.Maxt {
-				return true
+				return valueType
 			}
 			it.Intervals = it.Intervals[1:]
 		}
-		return true
+		return valueType
 	}
-	return false
+	return chunkenc.ValNone
 }
 
 func (it *DeletedIterator) Err() error { return it.Iter.Err() }

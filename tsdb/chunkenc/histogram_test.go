@@ -76,9 +76,9 @@ func TestHistogramChunkSameBuckets(t *testing.T) {
 	it := c.iterator(nil)
 	require.NoError(t, it.Err())
 	var act []res
-	for it.Next() {
+	for it.Next() == ValHistogram {
 		ts, h := it.AtHistogram()
-		act = append(act, res{t: ts, h: h.Copy()})
+		act = append(act, res{t: ts, h: h})
 	}
 	require.NoError(t, it.Err())
 	require.Equal(t, exp, act)
@@ -188,9 +188,9 @@ func TestHistogramChunkBucketChanges(t *testing.T) {
 	}
 	it := c.Iterator(nil)
 	var act []res
-	for it.Next() {
+	for it.Next() == ValHistogram {
 		ts, h := it.AtHistogram()
-		act = append(act, res{t: ts, h: h.Copy()})
+		act = append(act, res{t: ts, h: h})
 	}
 	require.NoError(t, it.Err())
 	require.Equal(t, exp, act)

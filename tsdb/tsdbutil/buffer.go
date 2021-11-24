@@ -14,13 +14,20 @@
 package tsdbutil
 
 import (
+	"fmt"
 	"math"
+
+	"github.com/pkg/errors"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
 // BufferedSeriesIterator wraps an iterator with a look-back buffer.
+//
+// TODO(beorn7): BufferedSeriesIterator does not support Histograms or
+// FloatHistograms. Either add support or remove BufferedSeriesIterator
+// altogether (it seems unused).
 type BufferedSeriesIterator struct {
 	it  chunkenc.Iterator
 	buf *sampleRing
@@ -50,7 +57,7 @@ func (b *BufferedSeriesIterator) Buffer() chunkenc.Iterator {
 }
 
 // Seek advances the iterator to the element at time t or greater.
-func (b *BufferedSeriesIterator) Seek(t int64) bool {
+func (b *BufferedSeriesIterator) Seek(t int64) chunkenc.ValueType {
 	t0 := t - b.buf.delta
 
 	// If the delta would cause us to seek backwards, preserve the buffer
@@ -58,40 +65,63 @@ func (b *BufferedSeriesIterator) Seek(t int64) bool {
 	if t0 > b.lastTime {
 		b.buf.reset()
 
-		ok := b.it.Seek(t0)
-		if !ok {
-			return false
+		if b.it.Seek(t0) == chunkenc.ValNone {
+			return chunkenc.ValNone
 		}
-		b.lastTime, _ = b.At()
+		b.lastTime = b.AtT()
 	}
 
 	if b.lastTime >= t {
-		return true
+		return chunkenc.ValFloat
 	}
-	for b.Next() {
+	for {
+		valueType := b.Next()
+		switch valueType {
+		case chunkenc.ValNone:
+			return chunkenc.ValNone
+		case chunkenc.ValFloat:
+			if b.lastTime >= t {
+				return valueType
+			}
+		default:
+			panic(fmt.Errorf("BufferedSeriesIterator: unsupported value type %v", valueType))
+		}
 		if b.lastTime >= t {
-			return true
+			return valueType
 		}
 	}
-
-	return false
 }
 
 // Next advances the iterator to the next element.
-func (b *BufferedSeriesIterator) Next() bool {
+func (b *BufferedSeriesIterator) Next() chunkenc.ValueType {
 	// Add current element to buffer before advancing.
 	b.buf.add(b.it.At())
 
-	ok := b.it.Next()
-	if ok {
-		b.lastTime, _ = b.At()
+	valueType := b.it.Next()
+	if valueType != chunkenc.ValNone {
+		b.lastTime = b.AtT()
 	}
-	return ok
+	return valueType
 }
 
 // At returns the current element of the iterator.
 func (b *BufferedSeriesIterator) At() (int64, float64) {
 	return b.it.At()
+}
+
+// AtHistogram is unsupported.
+func (b *BufferedSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
+	panic(errors.New("BufferedSeriesIterator: AtHistogram not implemented"))
+}
+
+// AtFloatHistogram is unsupported.
+func (b *BufferedSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+	panic(errors.New("BufferedSeriesIterator: AtFloatHistogram not implemented"))
+}
+
+// At returns the timestamp of the current element of the iterator.
+func (b *BufferedSeriesIterator) AtT() int64 {
+	return b.it.AtT()
 }
 
 // Err returns the last encountered error.
@@ -100,9 +130,10 @@ func (b *BufferedSeriesIterator) Err() error {
 }
 
 type sample struct {
-	t int64
-	v float64
-	h *histogram.Histogram
+	t  int64
+	v  float64
+	h  *histogram.Histogram
+	fh *histogram.FloatHistogram
 }
 
 func (s sample) T() int64 {
@@ -115,6 +146,21 @@ func (s sample) V() float64 {
 
 func (s sample) H() *histogram.Histogram {
 	return s.h
+}
+
+func (s sample) FH() *histogram.FloatHistogram {
+	return s.fh
+}
+
+func (s sample) Type() chunkenc.ValueType {
+	switch {
+	case s.h != nil:
+		return chunkenc.ValHistogram
+	case s.fh != nil:
+		return chunkenc.ValFloatHistogram
+	default:
+		return chunkenc.ValFloat
+	}
 }
 
 type sampleRing struct {
@@ -148,13 +194,16 @@ type sampleRingIterator struct {
 	i int
 }
 
-func (it *sampleRingIterator) Next() bool {
+func (it *sampleRingIterator) Next() chunkenc.ValueType {
 	it.i++
-	return it.i < it.r.l
+	if it.i < it.r.l {
+		return chunkenc.ValFloat
+	}
+	return chunkenc.ValNone
 }
 
-func (it *sampleRingIterator) Seek(int64) bool {
-	return false
+func (it *sampleRingIterator) Seek(int64) chunkenc.ValueType {
+	return chunkenc.ValNone
 }
 
 func (it *sampleRingIterator) Err() error {
@@ -166,12 +215,16 @@ func (it *sampleRingIterator) At() (int64, float64) {
 }
 
 func (it *sampleRingIterator) AtHistogram() (int64, *histogram.Histogram) {
-	// TODO(beorn7): Add proper histogram support.
-	return 0, nil
+	panic(errors.New("sampleRingIterator: AtHistogram not implemented"))
 }
 
-func (it *sampleRingIterator) ChunkEncoding() chunkenc.Encoding {
-	return chunkenc.EncXOR
+func (it *sampleRingIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+	panic(errors.New("sampleRingIterator: AtFloatHistogram not implemented"))
+}
+
+func (it *sampleRingIterator) AtT() int64 {
+	t, _ := it.r.at(it.i)
+	return t
 }
 
 func (r *sampleRing) at(i int) (int64, float64) {

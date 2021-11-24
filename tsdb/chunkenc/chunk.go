@@ -25,6 +25,13 @@ import (
 // Encoding is the identifier for a chunk encoding.
 type Encoding uint8
 
+// The different available chunk encodings.
+const (
+	EncNone Encoding = iota
+	EncXOR
+	EncHistogram
+)
+
 func (e Encoding) String() string {
 	switch e {
 	case EncNone:
@@ -45,13 +52,6 @@ func IsValidEncoding(e Encoding) bool {
 	}
 	return false
 }
-
-// The different available chunk encodings.
-const (
-	EncNone Encoding = iota
-	EncXOR
-	EncHistogram
-)
 
 // Chunk holds a sequence of sample pairs that can be iterated over and appended to.
 type Chunk interface {
@@ -89,26 +89,61 @@ type Appender interface {
 // Iterator is a simple iterator that can only get the next value.
 // Iterator iterates over the samples of a time series, in timestamp-increasing order.
 type Iterator interface {
-	// Next advances the iterator by one.
-	// TODO(beorn7): Perhaps this should return if the next value is a float or a histogram
-	// to make it easier calling the right method (At vs AtHistogram)?
-	Next() bool
-	// Seek advances the iterator forward to the first sample with the timestamp equal or greater than t.
-	// If current sample found by previous `Next` or `Seek` operation already has this property, Seek has no effect.
-	// Seek returns true, if such sample exists, false otherwise.
-	// Iterator is exhausted when the Seek returns false.
-	Seek(t int64) bool
-	// At returns the current timestamp/value pair.
-	// Before the iterator has advanced At behaviour is unspecified.
+	// Next advances the iterator by one and returns the type of the value
+	// at the new position (or ValNone if the iterator is exhausted).
+	Next() ValueType
+	// Seek advances the iterator forward to the first sample with a
+	// timestamp equal or greater than t. If the current sample found by a
+	// previous `Next` or `Seek` operation already has this property, Seek
+	// has no effect. If a sample has been found, Seek returns the type of
+	// its value. Otherwise, it returns ValNone, after with the iterator is
+	// exhausted.
+	Seek(t int64) ValueType
+	// At returns the current timestamp/value pair if the value is a float.
+	// Before the iterator has advanced, the behaviour is unspecified.
 	At() (int64, float64)
-	// AtHistogram returns the current timestamp/histogram pair.
-	// Before the iterator has advanced AtHistogram behaviour is unspecified.
+	// AtHistogram returns the current timestamp/value pair if the value is
+	// a histogram with integer counts. Before the iterator has advanced,
+	// the behaviour is unspecified.
 	AtHistogram() (int64, *histogram.Histogram)
-	// Err returns the current error. It should be used only after iterator is
-	// exhausted, that is `Next` or `Seek` returns false.
+	// AtFloatHistogram returns the current timestamp/value pair if the
+	// value is a histogram with floating-point counts. It also works if the
+	// value is a histogram with integer counts, in which case a
+	// FloatHistogram copy of the histogram is returned. Before the iterator
+	// has advanced, the behaviour is unspecified.
+	AtFloatHistogram() (int64, *histogram.FloatHistogram)
+	// AtT returns the current timestamp.
+	// Before the iterator has advanced, the behaviour is unspecified.
+	AtT() int64
+	// Err returns the current error. It should be used only after the
+	// iterator is exhausted, i.e. `Next` or `Seek` have returned ValNone.
 	Err() error
-	// ChunkEncoding returns the encoding of the chunk that it is iterating.
-	ChunkEncoding() Encoding
+}
+
+// ValueType defines the type of a value an Iterator points to.
+type ValueType uint8
+
+// Possible values for ValueType.
+const (
+	ValNone           ValueType = iota // No value at the current position.
+	ValFloat                           // A simple float, retrieved with At.
+	ValHistogram                       // A histogram, retrieve with AtHistogram, but AtFloatHistogram works, too.
+	ValFloatHistogram                  // A floating-point histogram, retrive with AtFloatHistogram.
+)
+
+func (v ValueType) String() string {
+	switch v {
+	case ValNone:
+		return "none"
+	case ValFloat:
+		return "float"
+	case ValHistogram:
+		return "histogram"
+	case ValFloatHistogram:
+		return "floathistogram"
+	default:
+		return "unknown"
+	}
 }
 
 // NewNopIterator returns a new chunk iterator that does not hold any data.
@@ -118,14 +153,13 @@ func NewNopIterator() Iterator {
 
 type nopIterator struct{}
 
-func (nopIterator) Seek(int64) bool      { return false }
-func (nopIterator) At() (int64, float64) { return math.MinInt64, 0 }
-func (nopIterator) AtHistogram() (int64, *histogram.Histogram) {
-	return math.MinInt64, nil
-}
-func (nopIterator) Next() bool              { return false }
-func (nopIterator) Err() error              { return nil }
-func (nopIterator) ChunkEncoding() Encoding { return EncNone }
+func (nopIterator) Next() ValueType                                      { return ValNone }
+func (nopIterator) Seek(int64) ValueType                                 { return ValNone }
+func (nopIterator) At() (int64, float64)                                 { return math.MinInt64, 0 }
+func (nopIterator) AtHistogram() (int64, *histogram.Histogram)           { return math.MinInt64, nil }
+func (nopIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) { return math.MinInt64, nil }
+func (nopIterator) AtT() int64                                           { return math.MinInt64 }
+func (nopIterator) Err() error                                           { return nil }
 
 // Pool is used to create and reuse chunk references to avoid allocations.
 type Pool interface {

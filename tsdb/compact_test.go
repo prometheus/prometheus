@@ -977,7 +977,7 @@ func TestCompaction_populateBlock(t *testing.T) {
 						firstTs int64 = math.MaxInt64
 						s       sample
 					)
-					for iter.Next() {
+					for iter.Next() == chunkenc.ValFloat {
 						s.t, s.v = iter.At()
 						if firstTs == math.MaxInt64 {
 							firstTs = s.t
@@ -1373,9 +1373,10 @@ func TestHeadCompactionWithHistograms(t *testing.T) {
 
 	it := s.Iterator()
 	actHists := make([]timedHistogram, 0, len(expHists))
-	for it.Next() {
+	for it.Next() == chunkenc.ValHistogram {
+		// TODO(beorn7): Test mixed series?
 		t, h := it.AtHistogram()
-		actHists = append(actHists, timedHistogram{t, h.Copy()})
+		actHists = append(actHists, timedHistogram{t, h})
 	}
 
 	require.Equal(t, expHists, actHists)
@@ -1744,7 +1745,7 @@ func TestSparseHistogramCompactionAndQuery(t *testing.T) {
 		for ss.Next() {
 			s := ss.At()
 			it := s.Iterator()
-			for it.Next() {
+			for it.Next() == chunkenc.ValHistogram {
 				ts, h := it.AtHistogram()
 				actHists[s.Labels().String()] = append(actHists[s.Labels().String()], timedHistogram{ts, h.Copy()})
 			}

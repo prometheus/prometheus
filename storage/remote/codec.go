@@ -120,7 +120,8 @@ func ToQueryResult(ss storage.SeriesSet, sampleLimit int) (*prompb.QueryResult, 
 		iter := series.Iterator()
 		samples := []prompb.Sample{}
 
-		for iter.Next() {
+		for iter.Next() == chunkenc.ValFloat {
+			// TODO(beorn7): Add Histogram support.
 			numSamples++
 			if sampleLimit > 0 && numSamples > sampleLimit {
 				return nil, ss.Warnings(), HTTPError{
@@ -357,14 +358,26 @@ func newConcreteSeriersIterator(series *concreteSeries) chunkenc.Iterator {
 }
 
 // Seek implements storage.SeriesIterator.
-func (c *concreteSeriesIterator) Seek(t int64) bool {
-	c.cur = sort.Search(len(c.series.samples), func(n int) bool {
-		return c.series.samples[n].Timestamp >= t
+func (c *concreteSeriesIterator) Seek(t int64) chunkenc.ValueType {
+	if c.cur == -1 {
+		c.cur = 0
+	}
+	// No-op check.
+	if s := c.series.samples[c.cur]; s.Timestamp >= t {
+		return chunkenc.ValFloat
+	}
+	// Do binary search between current position and end.
+	c.cur += sort.Search(len(c.series.samples)-c.cur, func(n int) bool {
+		return c.series.samples[n+c.cur].Timestamp >= t
 	})
-	return c.cur < len(c.series.samples)
+	if c.cur < len(c.series.samples) {
+		return chunkenc.ValFloat
+	}
+	return chunkenc.ValNone
+	// TODO(beorn7): Add histogram support.
 }
 
-// At implements storage.SeriesIterator.
+// At implements chunkenc.Iterator.
 func (c *concreteSeriesIterator) At() (t int64, v float64) {
 	s := c.series.samples[c.cur]
 	return s.Timestamp, s.Value
@@ -377,17 +390,30 @@ func (c *concreteSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
 	return 0, nil
 }
 
-func (c *concreteSeriesIterator) ChunkEncoding() chunkenc.Encoding {
-	return chunkenc.EncXOR
+// AtFloatHistogram always returns (0, nil) because there is no support for histogram
+// values yet.
+// TODO(beorn7): Fix that for histogram support in remote storage.
+func (c *concreteSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+	return 0, nil
 }
 
-// Next implements storage.SeriesIterator.
-func (c *concreteSeriesIterator) Next() bool {
+// AtT implements chunkenc.Iterator.
+func (c *concreteSeriesIterator) AtT() int64 {
+	s := c.series.samples[c.cur]
+	return s.Timestamp
+}
+
+// Next implements chunkenc.Iterator.
+func (c *concreteSeriesIterator) Next() chunkenc.ValueType {
 	c.cur++
-	return c.cur < len(c.series.samples)
+	if c.cur < len(c.series.samples) {
+		return chunkenc.ValFloat
+	}
+	return chunkenc.ValNone
+	// TODO(beorn7): Add histogram support.
 }
 
-// Err implements storage.SeriesIterator.
+// Err implements chunkenc.Iterator.
 func (c *concreteSeriesIterator) Err() error {
 	return nil
 }

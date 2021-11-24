@@ -83,7 +83,7 @@ func (s Series) String() string {
 type Point struct {
 	T int64
 	V float64
-	H *histogram.Histogram
+	H *histogram.FloatHistogram
 }
 
 func (p Point) String() string {
@@ -98,6 +98,7 @@ func (p Point) String() string {
 
 // MarshalJSON implements json.Marshaler.
 func (p Point) MarshalJSON() ([]byte, error) {
+	// TODO(beorn7): Support histogram.
 	v := strconv.FormatFloat(p.V, 'f', -1, 64)
 	return json.Marshal([...]interface{}{float64(p.T) / 1000, v})
 }
@@ -284,19 +285,23 @@ func newStorageSeriesIterator(series Series) *storageSeriesIterator {
 	}
 }
 
-func (ssi *storageSeriesIterator) Seek(t int64) bool {
+func (ssi *storageSeriesIterator) Seek(t int64) chunkenc.ValueType {
 	i := ssi.curr
 	if i < 0 {
 		i = 0
 	}
 	for ; i < len(ssi.points); i++ {
-		if ssi.points[i].T >= t {
+		p := ssi.points[i]
+		if p.T >= t {
 			ssi.curr = i
-			return true
+			if p.H != nil {
+				return chunkenc.ValFloatHistogram
+			}
+			return chunkenc.ValFloat
 		}
 	}
 	ssi.curr = len(ssi.points) - 1
-	return false
+	return chunkenc.ValNone
 }
 
 func (ssi *storageSeriesIterator) At() (t int64, v float64) {
@@ -305,17 +310,29 @@ func (ssi *storageSeriesIterator) At() (t int64, v float64) {
 }
 
 func (ssi *storageSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
+	panic(errors.New("storageSeriesIterator: AtHistogram not supported"))
+}
+
+func (ssi *storageSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
 	p := ssi.points[ssi.curr]
 	return p.T, p.H
 }
 
-func (ssi *storageSeriesIterator) ChunkEncoding() chunkenc.Encoding {
-	return chunkenc.EncXOR
+func (ssi *storageSeriesIterator) AtT() int64 {
+	p := ssi.points[ssi.curr]
+	return p.T
 }
 
-func (ssi *storageSeriesIterator) Next() bool {
+func (ssi *storageSeriesIterator) Next() chunkenc.ValueType {
 	ssi.curr++
-	return ssi.curr < len(ssi.points)
+	if ssi.curr >= len(ssi.points) {
+		return chunkenc.ValNone
+	}
+	p := ssi.points[ssi.curr]
+	if p.H != nil {
+		return chunkenc.ValFloatHistogram
+	}
+	return chunkenc.ValFloat
 }
 
 func (ssi *storageSeriesIterator) Err() error {
