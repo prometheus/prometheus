@@ -17,6 +17,8 @@ import (
 	"context"
 	"errors"
 	"math"
+	"os"
+	"path/filepath"
 	"strconv"
 	"sync"
 	"time"
@@ -37,6 +39,7 @@ import (
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/wal"
 )
@@ -341,15 +344,17 @@ type WriteClient interface {
 type QueueManager struct {
 	lastSendTimestamp atomic.Int64
 
-	logger          log.Logger
-	flushDeadline   time.Duration
-	cfg             config.QueueConfig
-	mcfg            config.MetadataConfig
-	externalLabels  labels.Labels
-	relabelConfigs  []*relabel.Config
-	sendExemplars   bool
-	watcher         *wal.Watcher
-	metadataWatcher *MetadataWatcher
+	logger             log.Logger
+	flushDeadline      time.Duration
+	cfg                config.QueueConfig
+	mcfg               config.MetadataConfig
+	externalLabels     labels.Labels
+	relabelConfigs     []*relabel.Config
+	sendExemplars      bool
+	watcher            *wal.Watcher
+	metadataWatcher    *MetadataWatcher
+	walDir             string
+	defaultLastSegment *int
 
 	clientMtx   sync.RWMutex
 	storeClient WriteClient
@@ -399,14 +404,16 @@ func NewQueueManager(
 
 	logger = log.With(logger, remoteName, client.Name(), endpoint, client.Endpoint())
 	t := &QueueManager{
-		logger:         logger,
-		flushDeadline:  flushDeadline,
-		cfg:            cfg,
-		mcfg:           mCfg,
-		externalLabels: externalLabels,
-		relabelConfigs: relabelConfigs,
-		storeClient:    client,
-		sendExemplars:  enableExemplarRemoteWrite,
+		logger:             logger,
+		flushDeadline:      flushDeadline,
+		cfg:                cfg,
+		mcfg:               mCfg,
+		externalLabels:     externalLabels,
+		relabelConfigs:     relabelConfigs,
+		storeClient:        client,
+		sendExemplars:      enableExemplarRemoteWrite,
+		walDir:             walDir,
+		defaultLastSegment: wal.CheckpointerReadAllSegments,
 
 		seriesLabels:         make(map[chunks.HeadSeriesRef]labels.Labels),
 		seriesSegmentIndexes: make(map[chunks.HeadSeriesRef]int),
@@ -426,13 +433,73 @@ func NewQueueManager(
 		highestRecvTimestamp: highestRecvTimestamp,
 	}
 
-	t.watcher = wal.NewWatcher(watcherMetrics, readerMetrics, logger, client.Name(), t, walDir, enableExemplarRemoteWrite)
+	t.watcher = wal.NewWatcher(watcherMetrics, readerMetrics, logger, client.Name(), t, t, walDir, enableExemplarRemoteWrite)
 	if t.mcfg.Send {
 		t.metadataWatcher = NewMetadataWatcher(logger, sm, client.Name(), t, t.mcfg.SendInterval, flushDeadline)
 	}
 	t.shards = t.newShards()
 
 	return t
+}
+
+// LastCheckpointedSegment implements wal.Checkpointer. It returns the last
+// read segment from the queue-specific file. Requests the WAL watcher to read
+// all samples from the WAL if the checkpoint file doesn't exist yet.
+func (t *QueueManager) LastCheckpointedSegment() (segment *int) {
+	segment = t.defaultLastSegment
+
+	dir := filepath.Join(t.walDir, "remote", t.client().Name())
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		level.Warn(t.logger).Log("msg", "checkpoint segment does not exist")
+		return
+	} else if err != nil {
+		level.Error(t.logger).Log("msg", "could not access segment checkpoint folder", "dir", dir, "err", err)
+		return
+	}
+
+	fname := filepath.Join(dir, "segment")
+	bb, err := os.ReadFile(fname)
+	if os.IsNotExist(err) {
+		level.Warn(t.logger).Log("msg", "checkpoint segment file does not exist")
+		return
+	} else if err != nil {
+		level.Error(t.logger).Log("msg", "could not access segment checkpoint file", "file", fname, "err", err)
+		return
+	}
+
+	if i, err := strconv.Atoi(string(bb)); err != nil {
+		level.Error(t.logger).Log("msg", "could not read segment checkpoint file", "file", fname, "err", err)
+		return
+	} else {
+		return &i
+	}
+}
+
+// CheckpointSegment implements wal.Checkpointer. segment will be saved to a queue-specific file.
+func (t *QueueManager) CheckpointSegment(segment int) {
+	dir := filepath.Join(t.walDir, "remote", t.client().Name())
+	if err := os.MkdirAll(dir, 0770); err != nil {
+		level.Error(t.logger).Log("msg", "could not create segment checkpoint folder", "dir", dir, "err", err)
+		return
+	}
+
+	var (
+		segmentText = strconv.Itoa(segment)
+
+		fname = filepath.Join(dir, "segment")
+		tmp   = fname + ".tmp"
+	)
+
+	if err := os.WriteFile(tmp, []byte(segmentText), 0660); err != nil {
+		level.Error(t.logger).Log("msg", "could not create segment checkpoint file", "file", tmp, "err", err)
+		return
+	}
+	if err := fileutil.Replace(tmp, fname); err != nil {
+		level.Error(t.logger).Log("msg", "could not replace segment checkpoint file", "file", fname, "err", err)
+		return
+	}
+
+	level.Debug(t.logger).Log("msg", "updated checkpoint segment file", "file", fname, "segment", segment)
 }
 
 // AppendMetadata sends metadata the remote storage. Metadata is sent in batches, but is not parallelized.

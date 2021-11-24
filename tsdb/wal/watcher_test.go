@@ -167,7 +167,7 @@ func TestTailSamples(t *testing.T) {
 			require.NoError(t, err)
 
 			wt := newWriteToMock()
-			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, true)
+			watcher := NewWatcher(wMetrics, nil, nil, "", wt, nil, dir, true)
 			watcher.SetStartTime(now)
 
 			// Set the Watcher's metrics so they're not nil pointers.
@@ -249,7 +249,7 @@ func TestReadToEndNoCheckpoint(t *testing.T) {
 			require.NoError(t, err)
 
 			wt := newWriteToMock()
-			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false)
+			watcher := NewWatcher(wMetrics, nil, nil, "", wt, nil, dir, false)
 			go watcher.Start()
 
 			expected := seriesCount
@@ -338,7 +338,7 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 			_, _, err = Segments(w.Dir())
 			require.NoError(t, err)
 			wt := newWriteToMock()
-			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false)
+			watcher := NewWatcher(wMetrics, nil, nil, "", wt, nil, dir, false)
 			go watcher.Start()
 
 			expected := seriesCount * 2
@@ -404,7 +404,7 @@ func TestReadCheckpoint(t *testing.T) {
 			require.NoError(t, err)
 
 			wt := newWriteToMock()
-			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false)
+			watcher := NewWatcher(wMetrics, nil, nil, "", wt, nil, dir, false)
 			go watcher.Start()
 
 			expectedSeries := seriesCount
@@ -473,7 +473,7 @@ func TestReadCheckpointMultipleSegments(t *testing.T) {
 			}
 
 			wt := newWriteToMock()
-			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false)
+			watcher := NewWatcher(wMetrics, nil, nil, "", wt, nil, dir, false)
 			watcher.MaxSegment = -1
 
 			// Set the Watcher's metrics so they're not nil pointers.
@@ -545,7 +545,7 @@ func TestCheckpointSeriesReset(t *testing.T) {
 			require.NoError(t, err)
 
 			wt := newWriteToMock()
-			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false)
+			watcher := NewWatcher(wMetrics, nil, nil, "", wt, nil, dir, false)
 			watcher.MaxSegment = -1
 			go watcher.Start()
 

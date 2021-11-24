@@ -41,6 +41,16 @@ const (
 	consumer           = "consumer"
 )
 
+// Default values that LastCheckpointedSegment can return.
+var (
+	readAllSegments = -1
+
+	// CheckpointerReadAllSegments will read samples from all segments.
+	CheckpointerReadAllSegments *int = &readAllSegments
+	// CheckpointerReadNewSegments will only read samples from new segments.
+	CheckpointerReadNewSegments *int = nil
+)
+
 // WriteTo is an interface used by the Watcher to send the samples it's read
 // from the WAL on to somewhere else. Functions will be called concurrently
 // and it is left to the implementer to make sure they are safe.
@@ -61,6 +71,20 @@ type WriteTo interface {
 	SeriesReset(int)
 }
 
+// Checkpointer allows the Watcher to start from a specific segment in the WAL.
+// Implementers can use this interface to save and restore save points.
+type Checkpointer interface {
+	// LastCheckpointedSegment should return the last segment stored in the
+	// checkpoint. Must return nil if there is no checkpoint.
+	//
+	// The Watcher will start reading the first segment whose value is greater
+	// than the return value.
+	LastCheckpointedSegment() *int
+
+	// CheckpointSegment will be invoked AFTER a segment is read to completion.
+	CheckpointSegment(int)
+}
+
 type WatcherMetrics struct {
 	recordsRead           *prometheus.CounterVec
 	recordDecodeFails     *prometheus.CounterVec
@@ -72,6 +96,7 @@ type WatcherMetrics struct {
 type Watcher struct {
 	name           string
 	writer         WriteTo
+	cpoint         Checkpointer
 	logger         log.Logger
 	walDir         string
 	lastCheckpoint string
@@ -81,6 +106,7 @@ type Watcher struct {
 
 	startTime      time.Time
 	startTimestamp int64 // the start time as a Prometheus timestamp
+	savedSegment   *int  // Last tailed checkpoint. Overrides startTimestamp.
 	sendSamples    bool
 
 	recordsReadMetric       *prometheus.CounterVec
@@ -145,14 +171,16 @@ func NewWatcherMetrics(reg prometheus.Registerer) *WatcherMetrics {
 	return m
 }
 
-// NewWatcher creates a new WAL watcher for a given WriteTo.
-func NewWatcher(metrics *WatcherMetrics, readerMetrics *LiveReaderMetrics, logger log.Logger, name string, writer WriteTo, walDir string, sendExemplars bool) *Watcher {
+// NewWatcher creates a new WAL watcher for a given WriteTo. cp will be used
+// for saving and restoring consumed segments, if non nil.
+func NewWatcher(metrics *WatcherMetrics, readerMetrics *LiveReaderMetrics, logger log.Logger, name string, writer WriteTo, cpoint Checkpointer, walDir string, sendExemplars bool) *Watcher {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
 	return &Watcher{
 		logger:        logger,
 		writer:        writer,
+		cpoint:        cpoint,
 		metrics:       metrics,
 		readerMetrics: readerMetrics,
 		walDir:        path.Join(walDir, "wal"),
@@ -208,7 +236,13 @@ func (w *Watcher) loop() {
 
 	// We may encounter failures processing the WAL; we should wait and retry.
 	for !isClosed(w.quit) {
+		if w.cpoint != nil {
+			w.savedSegment = w.cpoint.LastCheckpointedSegment()
+			level.Debug(w.logger).Log("msg", "last saved segment", "segment", w.savedSegment)
+		}
+
 		w.SetStartTime(time.Now())
+
 		if err := w.Run(); err != nil {
 			level.Error(w.logger).Log("msg", "error tailing WAL", "err", err)
 		}
@@ -267,6 +301,12 @@ func (w *Watcher) Run() error {
 		// For testing: stop when you hit a specific segment.
 		if currentSegment == w.MaxSegment {
 			return nil
+		}
+
+		// Pass the completed segment to the checkpointer before incrementing to
+		// the next segment to read.
+		if w.cpoint != nil {
+			w.cpoint.CheckpointSegment(currentSegment)
 		}
 
 		currentSegment++
@@ -506,11 +546,11 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 				return err
 			}
 			for _, s := range samples {
-				if s.T > w.startTimestamp {
+				if w.canSendSamples(segmentNum, s.T) {
 					if !w.sendSamples {
 						w.sendSamples = true
 						duration := time.Since(w.startTime)
-						level.Info(w.logger).Log("msg", "Done replaying WAL", "duration", duration)
+						level.Info(w.logger).Log("msg", "Done replaying WAL", "duration", duration, "segment", segmentNum)
 					}
 					send = append(send, s)
 				}
@@ -545,6 +585,13 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 		}
 	}
 	return errors.Wrapf(r.Err(), "segment %d: %v", segmentNum, r.Err())
+}
+
+func (w *Watcher) canSendSamples(segmentNum int, ts int64) bool {
+	if w.savedSegment != nil && segmentNum > *w.savedSegment {
+		return true
+	}
+	return ts > w.startTimestamp
 }
 
 // Go through all series in a segment updating the segmentNum, so we can delete older series.
