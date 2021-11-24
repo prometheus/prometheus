@@ -30,6 +30,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -737,6 +738,63 @@ func (c *LeveledCompactor) write(dest string, outBlocks []shardedBlock, blocks .
 	return nil
 }
 
+func debugOutOfOrderChunks(chks []chunks.Meta, logger log.Logger) {
+	if len(chks) <= 1 {
+		return
+	}
+
+	prevChk := chks[0]
+	for i := 1; i < len(chks); i++ {
+		currChk := chks[i]
+
+		if currChk.MinTime > prevChk.MaxTime {
+			// Not out of order.
+			continue
+		}
+
+		// Looks like the chunk is out of order.
+		prevSafeChk, prevIsSafeChk := prevChk.Chunk.(*safeChunk)
+		currSafeChk, currIsSafeChk := currChk.Chunk.(*safeChunk)
+
+		// Get info out of safeChunk (if possible).
+		prevHeadChunkID := chunks.HeadChunkID(0)
+		currHeadChunkID := chunks.HeadChunkID(0)
+		prevLabels := labels.Labels{}
+		currLabels := labels.Labels{}
+		if prevSafeChk != nil {
+			prevHeadChunkID = prevSafeChk.cid
+			prevLabels = prevSafeChk.s.lset
+		}
+		if currSafeChk != nil {
+			currHeadChunkID = currSafeChk.cid
+			currLabels = currSafeChk.s.lset
+		}
+
+		level.Warn(logger).Log(
+			"msg", "found out-of-order chunk when compacting",
+			"prev_ref", prevChk.Ref,
+			"curr_ref", currChk.Ref,
+			"prev_min_time", timeFromMillis(prevChk.MinTime).UTC().String(),
+			"prev_max_time", timeFromMillis(prevChk.MaxTime).UTC().String(),
+			"curr_min_time", timeFromMillis(currChk.MinTime).UTC().String(),
+			"curr_max_time", timeFromMillis(currChk.MaxTime).UTC().String(),
+			"prev_samples", prevChk.Chunk.NumSamples(),
+			"curr_samples", currChk.Chunk.NumSamples(),
+			"prev_is_safe_chunk", prevIsSafeChk,
+			"curr_is_safe_chunk", currIsSafeChk,
+			"prev_head_chunk_id", prevHeadChunkID,
+			"curr_head_chunk_id", currHeadChunkID,
+			"prev_labelset", prevLabels.String(),
+			"curr_labelset", currLabels.String(),
+			"num_chunks_for_series", len(chks),
+		)
+	}
+}
+
+func timeFromMillis(ms int64) time.Time {
+	return time.Unix(0, ms*int64(time.Millisecond))
+}
+
 // populateBlock fills the index and chunk writers of output blocks with new data gathered as the union
 // of the provided blocks.
 // It expects sorted blocks input by mint.
@@ -882,6 +940,8 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, minT, maxT int64,
 		if len(chks) == 0 {
 			continue
 		}
+
+		debugOutOfOrderChunks(chks, c.logger)
 
 		obIx := uint64(0)
 		if len(outBlocks) > 1 {
