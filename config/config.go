@@ -65,7 +65,7 @@ var (
 )
 
 // Load parses the YAML input s into a Config.
-func Load(s string, expandExternalLabels, tracingEnabled bool, logger log.Logger) (*Config, error) {
+func Load(s string, expandExternalLabels bool, logger log.Logger) (*Config, error) {
 	cfg := &Config{}
 	// If the entire config body is empty the UnmarshalYAML method is
 	// never called. We thus have to set the DefaultConfig at the entry
@@ -75,24 +75,6 @@ func Load(s string, expandExternalLabels, tracingEnabled bool, logger log.Logger
 	err := yaml.UnmarshalStrict([]byte(s), cfg)
 	if err != nil {
 		return nil, err
-	}
-
-	// If tracing flag is not set, but the configuration is provided, return an error.
-	// Otherwise, if the flag is set, use defaults if a parameter is missing.
-	if !tracingEnabled {
-		if !cfg.TracingConfig.isZero() {
-			return nil, errors.New("tracing is configured, but the feature flag for tracing has not been set")
-		}
-	} else {
-		if cfg.TracingConfig.ServiceName == "" {
-			cfg.TracingConfig.ServiceName = DefaultTracingConfig.ServiceName
-		}
-		if cfg.TracingConfig.Endpoint == "" {
-			cfg.TracingConfig.Endpoint = DefaultTracingConfig.Endpoint
-		}
-		if cfg.TracingConfig.ClientType == "" {
-			cfg.TracingConfig.ClientType = DefaultTracingConfig.ClientType
-		}
 	}
 
 	if !expandExternalLabels {
@@ -117,12 +99,12 @@ func Load(s string, expandExternalLabels, tracingEnabled bool, logger log.Logger
 }
 
 // LoadFile parses the given YAML file into a Config.
-func LoadFile(filename string, agentMode, expandExternalLabels, tracingEnabled bool, logger log.Logger) (*Config, error) {
+func LoadFile(filename string, agentMode, expandExternalLabels bool, logger log.Logger) (*Config, error) {
 	content, err := ioutil.ReadFile(filename)
 	if err != nil {
 		return nil, err
 	}
-	cfg, err := Load(string(content), expandExternalLabels, tracingEnabled, logger)
+	cfg, err := Load(string(content), expandExternalLabels, logger)
 	if err != nil {
 		return nil, errors.Wrapf(err, "parsing YAML file %s", filename)
 	}
@@ -229,12 +211,6 @@ var (
 
 	DefaultExemplarsConfig = ExemplarsConfig{
 		MaxExemplars: 100000,
-	}
-
-	DefaultTracingConfig = TracingConfig{
-		ServiceName: "prometheus",
-		Endpoint:    "localhost:4317",
-		ClientType:  TracingClientGRPC,
 	}
 )
 
@@ -551,18 +527,40 @@ func (t *TracingClientType) UnmarshalYAML(unmarshal func(interface{}) error) err
 // TracingConfig configures the tracing options.
 type TracingConfig struct {
 	ClientType       TracingClientType `yaml:"client_type,omitempty"`
-	ServiceName      string            `yaml:"service_name,omitempty"`
 	Endpoint         string            `yaml:"endpoint,omitempty"`
 	SamplingFraction float64           `yaml:"sampling_fraction,omitempty"`
 	WithSecure       bool              `yaml:"with_secure,omitempty"`
 }
 
 func (t *TracingConfig) isZero() bool {
-	return t.ServiceName == "" &&
-		t.Endpoint == "" &&
+	return t.Endpoint == "" &&
 		t.SamplingFraction == 0 &&
 		t.ClientType == "" &&
 		!t.WithSecure
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (t *TracingConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*t = TracingConfig{}
+	type plain TracingConfig
+	if err := unmarshal((*plain)(t)); err != nil {
+		return err
+	}
+
+	// If zero, assume tracing is disabled.
+	if t.isZero() {
+		return nil
+	}
+
+	if t.Endpoint == "" {
+		return errors.New("tracing endpoint must be set")
+	}
+
+	if t.ClientType == "" {
+		return errors.New("tracing client type must be set")
+	}
+
+	return nil
 }
 
 // ExemplarsConfig configures runtime reloadable configuration options.

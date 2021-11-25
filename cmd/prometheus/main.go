@@ -150,7 +150,6 @@ type flagConfig struct {
 	enablePromQLNegativeOffset bool
 	enableExpandExternalLabels bool
 	enableNewSDManager         bool
-	enableTracing              bool
 
 	prometheusURL   string
 	corsRegexString string
@@ -191,9 +190,6 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 			case "agent":
 				agentMode = true
 				level.Info(logger).Log("msg", "Experimental agent mode enabled.")
-			case "tracing":
-				c.enableTracing = true
-				level.Info(logger).Log("msg", "Tracing enabled.")
 			case "":
 				continue
 			default:
@@ -434,7 +430,7 @@ func main() {
 
 	// Throw error for invalid config before starting other components.
 	var cfgFile *config.Config
-	if cfgFile, err = config.LoadFile(cfg.configFile, agentMode, false, cfg.enableTracing, log.NewNopLogger()); err != nil {
+	if cfgFile, err = config.LoadFile(cfg.configFile, agentMode, false, log.NewNopLogger()); err != nil {
 		level.Error(logger).Log("msg", fmt.Sprintf("Error loading config (--config.file=%s)", cfg.configFile), "err", err)
 		os.Exit(2)
 	}
@@ -553,17 +549,12 @@ func main() {
 	}
 
 	var (
-		scrapeManager = scrape.NewManager(&cfg.scrape, log.With(logger, "component", "scrape manager"), fanoutStorage)
+		scrapeManager  = scrape.NewManager(&cfg.scrape, log.With(logger, "component", "scrape manager"), fanoutStorage)
+		tracingManager = tracing.NewManager(logger)
 
 		queryEngine *promql.Engine
 		ruleManager *rules.Manager
 	)
-
-	var tracingManager *tracing.Manager
-	if cfg.enableTracing {
-		tracingManager = tracing.NewManager(logger)
-		defer tracingManager.Shutdown()
-	}
 
 	if !agentMode {
 		opts := promql.EngineOpts{
@@ -725,14 +716,8 @@ func main() {
 				)
 			},
 		}, {
-			name: "tracing",
-			reloader: func(cfg *config.Config) error {
-				if tracingManager == nil {
-					return nil
-				}
-
-				return tracingManager.ApplyConfig(cfg)
-			},
+			name:     "tracing",
+			reloader: tracingManager.ApplyConfig,
 		},
 	}
 
@@ -847,6 +832,19 @@ func main() {
 		)
 	}
 	{
+		// Tracing manager.
+		g.Add(
+			func() error {
+				<-reloadReady.C
+				tracingManager.Run()
+				return nil
+			},
+			func(err error) {
+				tracingManager.Stop()
+			},
+		)
+	}
+	{
 		// Reload handler.
 
 		// Make sure that sighup handler is registered with a redirect to the channel before the potentially
@@ -861,11 +859,11 @@ func main() {
 				for {
 					select {
 					case <-hup:
-						if err := reloadConfig(cfg.configFile, cfg.enableExpandExternalLabels, cfg.tsdb.EnableExemplarStorage, cfg.enableTracing, logger, noStepSubqueryInterval, reloaders...); err != nil {
+						if err := reloadConfig(cfg.configFile, cfg.enableExpandExternalLabels, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, reloaders...); err != nil {
 							level.Error(logger).Log("msg", "Error reloading config", "err", err)
 						}
 					case rc := <-webHandler.Reload():
-						if err := reloadConfig(cfg.configFile, cfg.enableExpandExternalLabels, cfg.tsdb.EnableExemplarStorage, cfg.enableTracing, logger, noStepSubqueryInterval, reloaders...); err != nil {
+						if err := reloadConfig(cfg.configFile, cfg.enableExpandExternalLabels, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, reloaders...); err != nil {
 							level.Error(logger).Log("msg", "Error reloading config", "err", err)
 							rc <- err
 						} else {
@@ -896,7 +894,7 @@ func main() {
 					return nil
 				}
 
-				if err := reloadConfig(cfg.configFile, cfg.enableExpandExternalLabels, cfg.tsdb.EnableExemplarStorage, cfg.enableTracing, logger, noStepSubqueryInterval, reloaders...); err != nil {
+				if err := reloadConfig(cfg.configFile, cfg.enableExpandExternalLabels, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, reloaders...); err != nil {
 					return errors.Wrapf(err, "error loading config from %q", cfg.configFile)
 				}
 
@@ -1132,7 +1130,7 @@ type reloader struct {
 	reloader func(*config.Config) error
 }
 
-func reloadConfig(filename string, expandExternalLabels, enableExemplarStorage, enableTracing bool, logger log.Logger, noStepSuqueryInterval *safePromQLNoStepSubqueryInterval, rls ...reloader) (err error) {
+func reloadConfig(filename string, expandExternalLabels, enableExemplarStorage bool, logger log.Logger, noStepSuqueryInterval *safePromQLNoStepSubqueryInterval, rls ...reloader) (err error) {
 	start := time.Now()
 	timings := []interface{}{}
 	level.Info(logger).Log("msg", "Loading configuration file", "filename", filename)
@@ -1146,7 +1144,7 @@ func reloadConfig(filename string, expandExternalLabels, enableExemplarStorage, 
 		}
 	}()
 
-	conf, err := config.LoadFile(filename, agentMode, expandExternalLabels, enableTracing, logger)
+	conf, err := config.LoadFile(filename, agentMode, expandExternalLabels, logger)
 	if err != nil {
 		return errors.Wrapf(err, "couldn't load configuration (--config.file=%q)", filename)
 	}

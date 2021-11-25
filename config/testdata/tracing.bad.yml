@@ -1,0 +1,3 @@
+tracing:
+  client_type: "grpc"
+  sampling_fraction: 1

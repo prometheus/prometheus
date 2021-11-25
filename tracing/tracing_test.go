@@ -29,8 +29,8 @@ func TestInstallingNewTracerProvider(t *testing.T) {
 	m := NewManager(log.NewNopLogger())
 	cfg := config.Config{
 		TracingConfig: config.TracingConfig{
-			ServiceName: "test",
-			ClientType:  config.TracingClientGRPC,
+			Endpoint:   "localhost:1234",
+			ClientType: config.TracingClientGRPC,
 		},
 	}
 
@@ -42,8 +42,8 @@ func TestReinstallingTracerProvider(t *testing.T) {
 	m := NewManager(log.NewNopLogger())
 	cfg := config.Config{
 		TracingConfig: config.TracingConfig{
-			ServiceName: "test",
-			ClientType:  config.TracingClientGRPC,
+			Endpoint:   "localhost:1234",
+			ClientType: config.TracingClientGRPC,
 		},
 	}
 
@@ -56,8 +56,8 @@ func TestReinstallingTracerProvider(t *testing.T) {
 
 	cfg2 := config.Config{
 		TracingConfig: config.TracingConfig{
-			ServiceName: "test-2",
-			ClientType:  config.TracingClientGRPC,
+			Endpoint:   "localhost:1234",
+			ClientType: config.TracingClientHTTP,
 		},
 	}
 	m.ApplyConfig(&cfg2)
