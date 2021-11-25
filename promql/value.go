@@ -77,6 +77,9 @@ func (s Series) String() string {
 }
 
 // Point represents a single data point for a given timestamp.
+//
+// Note that Point's JSON marshaling is done in an optimized fashion in
+// web/api/v1/api.go. Therefore, no MarshalJSON method is provided here.
 type Point struct {
 	T int64
 	V float64
@@ -85,12 +88,6 @@ type Point struct {
 func (p Point) String() string {
 	v := strconv.FormatFloat(p.V, 'f', -1, 64)
 	return fmt.Sprintf("%v @[%v]", v, p.T)
-}
-
-// MarshalJSON implements json.Marshaler.
-func (p Point) MarshalJSON() ([]byte, error) {
-	v := strconv.FormatFloat(p.V, 'f', -1, 64)
-	return json.Marshal([...]interface{}{float64(p.T) / 1000, v})
 }
 
 // Sample is a single sample belonging to a metric.

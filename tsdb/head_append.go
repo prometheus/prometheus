@@ -524,7 +524,7 @@ func (s *memSeries) append(t int64, v float64, appendID uint64, chunkDiskMapper 
 	s.sampleBuf[2] = s.sampleBuf[3]
 	s.sampleBuf[3] = sample{t: t, v: v}
 
-	if appendID > 0 {
+	if appendID > 0 && s.txs != nil {
 		s.txs.add(appendID)
 	}
 

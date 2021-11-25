@@ -560,3 +560,8 @@ func TestSymbols(t *testing.T) {
 	}
 	require.NoError(t, iter.Err())
 }
+
+func TestDecoder_Postings_WrongInput(t *testing.T) {
+	_, _, err := (&Decoder{}).Postings([]byte("the cake is a lie"))
+	require.Error(t, err)
+}

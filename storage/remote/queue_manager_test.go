@@ -75,11 +75,7 @@ func TestSampleDelivery(t *testing.T) {
 	// batch timeout case.
 	n := 3
 
-	dir, err := ioutil.TempDir("", "TestSampleDelivery")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 
 	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil)
 	defer s.Close()
@@ -154,9 +150,7 @@ func TestSampleDelivery(t *testing.T) {
 func TestMetadataDelivery(t *testing.T) {
 	c := NewTestWriteClient()
 
-	dir, err := ioutil.TempDir("", "TestMetadataDelivery")
-	require.NoError(t, err)
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
 
 	cfg := config.DefaultQueueConfig
 	mcfg := config.DefaultMetadataConfig
@@ -198,11 +192,7 @@ func TestSampleDeliveryTimeout(t *testing.T) {
 	cfg.MaxShards = 1
 	cfg.BatchSendDeadline = model.Duration(100 * time.Millisecond)
 
-	dir, err := ioutil.TempDir("", "TestSampleDeliveryTimeout")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 
 	metrics := newQueueManagerMetrics(nil, "", "")
 	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, nil, nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false)
@@ -241,11 +231,7 @@ func TestSampleDeliveryOrder(t *testing.T) {
 	c := NewTestWriteClient()
 	c.expectSamples(samples, series)
 
-	dir, err := ioutil.TempDir("", "TestSampleDeliveryOrder")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 
 	cfg := config.DefaultQueueConfig
 	mcfg := config.DefaultMetadataConfig
@@ -265,11 +251,7 @@ func TestShutdown(t *testing.T) {
 	deadline := 1 * time.Second
 	c := NewTestBlockedWriteClient()
 
-	dir, err := ioutil.TempDir("", "TestShutdown")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 
 	cfg := config.DefaultQueueConfig
 	mcfg := config.DefaultMetadataConfig
@@ -308,11 +290,7 @@ func TestSeriesReset(t *testing.T) {
 	numSegments := 4
 	numSeries := 25
 
-	dir, err := ioutil.TempDir("", "TestSeriesReset")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 
 	cfg := config.DefaultQueueConfig
 	mcfg := config.DefaultMetadataConfig
@@ -343,11 +321,7 @@ func TestReshard(t *testing.T) {
 	mcfg := config.DefaultMetadataConfig
 	cfg.MaxShards = 1
 
-	dir, err := ioutil.TempDir("", "TestReshard")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 
 	metrics := newQueueManagerMetrics(nil, "", "")
 	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, nil, nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false)
@@ -740,9 +714,7 @@ func BenchmarkSampleDelivery(b *testing.B) {
 	cfg.BatchSendDeadline = model.Duration(100 * time.Millisecond)
 	cfg.MaxShards = 1
 
-	dir, err := ioutil.TempDir("", "BenchmarkSampleDelivery")
-	require.NoError(b, err)
-	defer os.RemoveAll(dir)
+	dir := b.TempDir()
 
 	metrics := newQueueManagerMetrics(nil, "", "")
 	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, nil, nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false)
@@ -865,11 +837,7 @@ func TestCalculateDesiredShards(t *testing.T) {
 	cfg := config.DefaultQueueConfig
 	mcfg := config.DefaultMetadataConfig
 
-	dir, err := ioutil.TempDir("", "TestCalculateDesiredShards")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 
 	metrics := newQueueManagerMetrics(nil, "", "")
 	samplesIn := newEWMARate(ewmaWeight, shardUpdateDuration)
