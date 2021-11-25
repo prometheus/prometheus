@@ -1013,6 +1013,92 @@ func TestWALSegmentSizeOptions(t *testing.T) {
 	}
 }
 
+// https://github.com/prometheus/prometheus/issues/9846
+// https://github.com/prometheus/prometheus/issues/9859
+func TestWALReplayRaceOnSamplesLoggedBeforeSeries(t *testing.T) {
+	const (
+		numRuns                        = 1
+		numSamplesBeforeSeriesCreation = 1000
+	)
+
+	// We test both with few and many samples appended after series creation. If samples are < 120 then there's no
+	// mmap-ed chunk, otherwise there's at least 1 mmap-ed chunk when replaying the WAL.
+	for _, numSamplesAfterSeriesCreation := range []int{1, 1000} {
+		for run := 1; run <= numRuns; run++ {
+			t.Run(fmt.Sprintf("samples after series creation = %d, run = %d", numSamplesAfterSeriesCreation, run), func(t *testing.T) {
+				testWALReplayRaceOnSamplesLoggedBeforeSeries(t, numSamplesBeforeSeriesCreation, numSamplesAfterSeriesCreation)
+			})
+		}
+	}
+}
+
+func testWALReplayRaceOnSamplesLoggedBeforeSeries(t *testing.T, numSamplesBeforeSeriesCreation, numSamplesAfterSeriesCreation int) {
+	const numSeries = 1000
+
+	db := openTestDB(t, nil, nil)
+	db.DisableCompactions()
+
+	for seriesRef := 1; seriesRef <= numSeries; seriesRef++ {
+		// Log samples before the series is logged to the WAL.
+		var enc record.Encoder
+		var samples []record.RefSample
+
+		for ts := 0; ts < numSamplesBeforeSeriesCreation; ts++ {
+			samples = append(samples, record.RefSample{
+				Ref: chunks.HeadSeriesRef(uint64(seriesRef)),
+				T:   int64(ts),
+				V:   float64(ts),
+			})
+		}
+
+		err := db.Head().wal.Log(enc.Samples(samples, nil))
+		require.NoError(t, err)
+
+		// Add samples via appender so that they're logged after the series in the WAL.
+		app := db.Appender(context.Background())
+		lbls := labels.FromStrings("series_id", strconv.Itoa(seriesRef))
+
+		for ts := numSamplesBeforeSeriesCreation; ts < numSamplesBeforeSeriesCreation+numSamplesAfterSeriesCreation; ts++ {
+			_, err := app.Append(0, lbls, int64(ts), float64(ts))
+			require.NoError(t, err)
+		}
+		require.NoError(t, app.Commit())
+	}
+
+	require.NoError(t, db.Close())
+
+	// Reopen the DB, replaying the WAL.
+	reopenDB, err := Open(db.Dir(), log.NewLogfmtLogger(os.Stderr), nil, nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, reopenDB.Close())
+	})
+
+	// Query back chunks for all series.
+	q, err := reopenDB.ChunkQuerier(context.Background(), math.MinInt64, math.MaxInt64)
+	require.NoError(t, err)
+
+	set := q.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "series_id", ".+"))
+	actualSeries := 0
+
+	for set.Next() {
+		actualSeries++
+		actualChunks := 0
+
+		chunksIt := set.At().Iterator()
+		for chunksIt.Next() {
+			actualChunks++
+		}
+		require.NoError(t, chunksIt.Err())
+
+		// We expect 1 chunk every 120 samples after series creation.
+		require.Equalf(t, (numSamplesAfterSeriesCreation/120)+1, actualChunks, "series: %s", set.At().Labels().String())
+	}
+
+	require.NoError(t, set.Err())
+	require.Equal(t, numSeries, actualSeries)
+}
+
 func TestTombstoneClean(t *testing.T) {
 	numSamples := int64(10)
 
