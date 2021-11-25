@@ -248,11 +248,7 @@ func (p *queryLogTest) run(t *testing.T) {
 		p.setQueryLog(t, "")
 	}
 
-	dir, err := ioutil.TempDir("", "query_log_test")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 
 	params := append([]string{
 		"-test.main",

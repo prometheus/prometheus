@@ -17,7 +17,6 @@ import (
 	"context"
 	"io/ioutil"
 	"math"
-	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -72,11 +71,7 @@ func TestBackfillRuleIntegration(t *testing.T) {
 	}
 	for _, tt := range testCases {
 		t.Run(tt.name, func(t *testing.T) {
-			tmpDir, err := ioutil.TempDir("", "backfilldata")
-			require.NoError(t, err)
-			defer func() {
-				require.NoError(t, os.RemoveAll(tmpDir))
-			}()
+			tmpDir := t.TempDir()
 			ctx := context.Background()
 
 			// Execute the test more than once to simulate running the rule importer twice with the same data.
@@ -219,11 +214,7 @@ func createMultiRuleTestFiles(path string) error {
 // TestBackfillLabels confirms that the labels in the rule file override the labels from the metrics
 // received from Prometheus Query API, including the __name__ label.
 func TestBackfillLabels(t *testing.T) {
-	tmpDir, err := ioutil.TempDir("", "backfilldata")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(tmpDir))
-	}()
+	tmpDir := t.TempDir()
 	ctx := context.Background()
 
 	start := time.Date(2009, time.November, 10, 6, 34, 0, 0, time.UTC)

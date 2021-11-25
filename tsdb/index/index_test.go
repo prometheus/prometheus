@@ -674,3 +674,8 @@ func BenchmarkReader_ShardedPostings(b *testing.B) {
 		})
 	}
 }
+
+func TestDecoder_Postings_WrongInput(t *testing.T) {
+	_, _, err := (&Decoder{}).Postings([]byte("the cake is a lie"))
+	require.Error(t, err)
+}
