@@ -1013,6 +1013,8 @@ func TestWALSegmentSizeOptions(t *testing.T) {
 	}
 }
 
+// https://github.com/prometheus/prometheus/issues/9846
+// https://github.com/prometheus/prometheus/issues/9859
 func TestWALReplayRaceOnSamplesLoggedBeforeSeries(t *testing.T) {
 	const (
 		numRuns                        = 1
