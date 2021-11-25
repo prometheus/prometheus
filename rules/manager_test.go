@@ -718,11 +718,12 @@ func TestUpdate(t *testing.T) {
 	}
 	engine := promql.NewEngine(opts)
 	ruleManager := NewManager(&ManagerOptions{
-		Appendable: st,
-		Queryable:  st,
-		QueryFunc:  EngineQueryFunc(engine, st),
-		Context:    context.Background(),
-		Logger:     log.NewNopLogger(),
+		Appendable:           st,
+		Queryable:            st,
+		QueryFunc:            EngineQueryFunc(engine, st),
+		Context:              context.Background(),
+		FederatedContextFunc: func(*Group) context.Context { return context.Background() },
+		Logger:               log.NewNopLogger(),
 	})
 	ruleManager.start()
 	defer ruleManager.Stop()
@@ -787,6 +788,12 @@ func TestUpdate(t *testing.T) {
 		}
 	}
 	reloadAndValidate(rgs, t, tmpFile, ruleManager, expected, ogs)
+
+	// Change group source tenants and reload.
+	for i := range rgs.Groups {
+		rgs.Groups[i].SourceTenants = []string{"tenant-2"}
+	}
+	reloadAndValidate(rgs, t, tmpFile, ruleManager, expected, ogs)
 }
 
 // ruleGroupsTest for running tests over rules.
@@ -796,10 +803,11 @@ type ruleGroupsTest struct {
 
 // ruleGroupTest forms a testing struct for running tests over rules.
 type ruleGroupTest struct {
-	Name     string         `yaml:"name"`
-	Interval model.Duration `yaml:"interval,omitempty"`
-	Limit    int            `yaml:"limit,omitempty"`
-	Rules    []rulefmt.Rule `yaml:"rules"`
+	Name          string         `yaml:"name"`
+	Interval      model.Duration `yaml:"interval,omitempty"`
+	Limit         int            `yaml:"limit,omitempty"`
+	Rules         []rulefmt.Rule `yaml:"rules"`
+	SourceTenants []string       `yaml:"source_tenants,omitempty"`
 }
 
 func formatRules(r *rulefmt.RuleGroups) ruleGroupsTest {
@@ -818,10 +826,11 @@ func formatRules(r *rulefmt.RuleGroups) ruleGroupsTest {
 			})
 		}
 		tmp = append(tmp, ruleGroupTest{
-			Name:     g.Name,
-			Interval: g.Interval,
-			Limit:    g.Limit,
-			Rules:    rtmp,
+			Name:          g.Name,
+			Interval:      g.Interval,
+			Limit:         g.Limit,
+			Rules:         rtmp,
+			SourceTenants: g.SourceTenants,
 		})
 	}
 	return ruleGroupsTest{

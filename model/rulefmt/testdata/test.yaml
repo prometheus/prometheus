@@ -36,6 +36,7 @@ groups:
 
   - name: my-another-name
     interval: 30s # defaults to global interval
+    source_tenants: [tenant-1]
     rules:
       - alert: HighErrors
         expr: |
