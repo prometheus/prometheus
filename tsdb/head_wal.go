@@ -51,13 +51,10 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 	var mmapOverlappingChunks uint64
 
 	// Start workers that each process samples for a partition of the series ID space.
-	// They are connected through a ring of channels which ensures that all sample batches
-	// read from the WAL are processed in order.
 	var (
 		wg             sync.WaitGroup
 		n              = runtime.GOMAXPROCS(0)
-		inputs         = make([]chan []record.RefSample, n)
-		outputs        = make([]chan []record.RefSample, n)
+		processors     = make([]walSubsetProcessor, n)
 		exemplarsInput chan record.RefExemplar
 
 		dec    record.Decoder
@@ -92,9 +89,7 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 		_, ok := err.(*wal.CorruptionErr)
 		if ok || seriesCreationErr != nil {
 			for i := 0; i < n; i++ {
-				close(inputs[i])
-				for range outputs[i] {
-				}
+				processors[i].closeAndDrain()
 			}
 			close(exemplarsInput)
 			wg.Wait()
@@ -103,14 +98,13 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 
 	wg.Add(n)
 	for i := 0; i < n; i++ {
-		outputs[i] = make(chan []record.RefSample, 300)
-		inputs[i] = make(chan []record.RefSample, 300)
+		processors[i].setup()
 
-		go func(input <-chan []record.RefSample, output chan<- []record.RefSample) {
-			unknown := h.processWALSamples(h.minValidTime.Load(), input, output)
+		go func(wp *walSubsetProcessor) {
+			unknown := wp.processWALSamples(h)
 			unknownRefs.Add(unknown)
 			wg.Done()
-		}(inputs[i], outputs[i])
+		}(&processors[i])
 	}
 
 	wg.Add(1)
@@ -212,11 +206,20 @@ Outer:
 					h.lastSeriesID.Store(uint64(walSeries.Ref))
 				}
 
+				idx := uint64(mSeries.ref) % uint64(n)
+				// It is possible that some old sample is being processed in processWALSamples that
+				// could cause race below. So we wait for the goroutine to empty input the buffer and finish
+				// processing all old samples after emptying the buffer.
+				processors[idx].waitUntilIdle()
+				// Lock the subset so we can modify the series object
+				processors[idx].mx.Lock()
+
 				mmc := mmappedChunks[walSeries.Ref]
 
 				if created {
 					// This is the first WAL series record for this series.
-					h.setMMappedChunks(mSeries, mmc)
+					h.resetSeriesWithMMappedChunks(mSeries, mmc)
+					processors[idx].mx.Unlock()
 					continue
 				}
 
@@ -225,23 +228,6 @@ Outer:
 				// Hence we can discard all the samples and m-mapped chunks replayed till now for this series.
 
 				multiRef[walSeries.Ref] = mSeries.ref
-
-				idx := uint64(mSeries.ref) % uint64(n)
-				// It is possible that some old sample is being processed in processWALSamples that
-				// could cause race below. So we wait for the goroutine to empty input the buffer and finish
-				// processing all old samples after emptying the buffer.
-				select {
-				case <-outputs[idx]: // allow output side to drain to avoid deadlock
-				default:
-				}
-				inputs[idx] <- []record.RefSample{}
-				for len(inputs[idx]) != 0 {
-					time.Sleep(1 * time.Millisecond)
-					select {
-					case <-outputs[idx]: // allow output side to drain to avoid deadlock
-					default:
-					}
-				}
 
 				// Checking if the new m-mapped chunks overlap with the already existing ones.
 				if len(mSeries.mmappedChunks) > 0 && len(mmc) > 0 {
@@ -266,12 +252,9 @@ Outer:
 				}
 
 				// Replacing m-mapped chunks with the new ones (could be empty).
-				h.setMMappedChunks(mSeries, mmc)
+				h.resetSeriesWithMMappedChunks(mSeries, mmc)
 
-				// Any samples replayed till now would already be compacted. Resetting the head chunk.
-				mSeries.nextAt = 0
-				mSeries.headChunk = nil
-				mSeries.app = nil
+				processors[idx].mx.Unlock()
 			}
 			//nolint:staticcheck // Ignore SA6002 relax staticcheck verification.
 			seriesPool.Put(v)
@@ -287,12 +270,7 @@ Outer:
 					m = len(samples)
 				}
 				for i := 0; i < n; i++ {
-					var buf []record.RefSample
-					select {
-					case buf = <-outputs[i]:
-					default:
-					}
-					shards[i] = buf[:0]
+					shards[i] = processors[i].reuseBuf()
 				}
 				for _, sam := range samples[:m] {
 					if r, ok := multiRef[sam.Ref]; ok {
@@ -302,7 +280,7 @@ Outer:
 					shards[mod] = append(shards[mod], sam)
 				}
 				for i := 0; i < n; i++ {
-					inputs[i] <- shards[i]
+					processors[i].input <- shards[i]
 				}
 				samples = samples[m:]
 			}
@@ -346,9 +324,7 @@ Outer:
 
 	// Signal termination to each worker and wait for it to close its output channel.
 	for i := 0; i < n; i++ {
-		close(inputs[i])
-		for range outputs[i] {
-		}
+		processors[i].closeAndDrain()
 	}
 	close(exemplarsInput)
 	wg.Wait()
@@ -366,7 +342,8 @@ Outer:
 	return nil
 }
 
-func (h *Head) setMMappedChunks(mSeries *memSeries, mmc []*mmappedChunk) {
+// resetSeriesWithMMappedChunks is only used during the WAL replay.
+func (h *Head) resetSeriesWithMMappedChunks(mSeries *memSeries, mmc []*mmappedChunk) {
 	h.metrics.chunksCreated.Add(float64(len(mmc)))
 	h.metrics.chunksRemoved.Add(float64(len(mSeries.mmappedChunks)))
 	h.metrics.chunks.Add(float64(len(mmc) - len(mSeries.mmappedChunks)))
@@ -378,20 +355,51 @@ func (h *Head) setMMappedChunks(mSeries *memSeries, mmc []*mmappedChunk) {
 		mSeries.mmMaxTime = mmc[len(mmc)-1].maxTime
 		h.updateMinMaxTime(mmc[0].minTime, mSeries.mmMaxTime)
 	}
+
+	// Any samples replayed till now would already be compacted. Resetting the head chunk.
+	mSeries.nextAt = 0
+	mSeries.headChunk = nil
+	mSeries.app = nil
+}
+
+type walSubsetProcessor struct {
+	mx     sync.Mutex // Take this lock while modifying series in the subset.
+	input  chan []record.RefSample
+	output chan []record.RefSample
+}
+
+func (wp *walSubsetProcessor) setup() {
+	wp.output = make(chan []record.RefSample, 300)
+	wp.input = make(chan []record.RefSample, 300)
+}
+
+func (wp *walSubsetProcessor) closeAndDrain() {
+	close(wp.input)
+	for range wp.output {
+	}
+}
+
+// If there is a buffer in the output chan, return it for reuse, otherwise return nil.
+func (wp *walSubsetProcessor) reuseBuf() []record.RefSample {
+	select {
+	case buf := <-wp.output:
+		return buf[:0]
+	default:
+	}
+	return nil
 }
 
 // processWALSamples adds the samples it receives to the head and passes
 // the buffer received to an output channel for reuse.
 // Samples before the minValidTime timestamp are discarded.
-func (h *Head) processWALSamples(
-	minValidTime int64,
-	input <-chan []record.RefSample, output chan<- []record.RefSample,
-) (unknownRefs uint64) {
-	defer close(output)
+func (wp *walSubsetProcessor) processWALSamples(h *Head) (unknownRefs uint64) {
+	defer close(wp.output)
 
+	minValidTime := h.minValidTime.Load()
 	mint, maxt := int64(math.MaxInt64), int64(math.MinInt64)
 
-	for samples := range input {
+	for samples := range wp.input {
+		wp.mx.Lock()
 		for _, s := range samples {
 			if s.T < minValidTime {
 				continue
@@ -415,11 +423,27 @@ func (h *Head) processWALSamples(
 				mint = s.T
 			}
 		}
-		output <- samples
+		wp.mx.Unlock()
+		wp.output <- samples
 	}
 	h.updateMinMaxTime(mint, maxt)
 
 	return unknownRefs
+}
+
+func (wp *walSubsetProcessor) waitUntilIdle() {
+	select {
+	case <-wp.output: // Allow output side to drain to avoid deadlock.
+	default:
+	}
+	wp.input <- []record.RefSample{}
+	for len(wp.input) != 0 {
+		time.Sleep(1 * time.Millisecond)
+		select {
+		case <-wp.output: // Allow output side to drain to avoid deadlock.
+		default:
+		}
+	}
 }
 
 const (
