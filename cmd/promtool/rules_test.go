@@ -24,13 +24,11 @@ import (
 
 	"github.com/go-kit/log"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
-	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/pkg/labels"
-	p_value "github.com/prometheus/prometheus/pkg/value"
-	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/tsdb"
 )
 
@@ -60,18 +58,17 @@ func createMockMetricsSingleSeries(ts time.Time) []*model.SampleStream {
 	}
 }
 
-const defaultBlockDuration = time.Duration(tsdb.DefaultBlockDuration) * time.Millisecond
+const (
+	defaultBlockDuration = time.Duration(tsdb.DefaultBlockDuration) * time.Millisecond
+	evalInterval         = 60 * time.Second
+)
 
 // TestBackfillRuleIntegration is an integration test that runs all the rule importer code to confirm the parts work together.
 func TestBackfillRuleIntegration(t *testing.T) {
 	var (
-		start                     = time.Date(2009, time.November, 6, 1, 34, 0, 0, time.UTC)
-		end                       = start.Add(4 * time.Hour)
-		testTime                  = start.Add(1 * time.Hour)
-		testTime2                 = start.Add(2 * time.Hour)
 		start                     = time.Date(2009, time.November, 10, 6, 34, 0, 0, time.UTC)
-		testTime                  = model.Time(start.Add(-9 * time.Hour).Unix())
-		testTime2                 = model.Time(start.Add(-8 * time.Hour).Unix())
+		testTime                  = start.Add(-9 * time.Hour)
+		testTime2                 = start.Add(-8 * time.Hour)
 		twentyFourHourDuration, _ = time.ParseDuration("24h")
 	)
 
@@ -84,11 +81,10 @@ func TestBackfillRuleIntegration(t *testing.T) {
 		expectedSampleCount int
 		samples             []*model.SampleStream
 	}{
-		{"no samples", 1, 0, 0, 0, []*model.SampleStream{}},
-		{"run importer once", 1, 16, 4, 12, createMockMetricsSingleSeries(testTime)},
-		{"run importer twice", 2, defaultBlockDuration, 8, 4, 8, createMockMetricsSingleSeries(testTime2)},
-		{"run importer with dup name label", 1, defaultBlockDuration, 8, 4, 4, []*model.SampleStream{{Metric: model.Metric{"__name__": "val1", "name1": "val1"}, Values: []model.SamplePair{{Timestamp: testTime, Value: testValue}}}}},
-		{"run importer once with larger blocks", 1, twentyFourHourDuration, 4, 4, 4, []*model.SampleStream{{Metric: model.Metric{"name1": "val1"}, Values: []model.SamplePair{{Timestamp: testTime, Value: testValue}}}}},
+		{"no samples", 1, defaultBlockDuration, 0, 0, 0, []*model.SampleStream{}},
+		{"run importer once", 1, defaultBlockDuration, 12, 4, 12, createMockMetricsSingleSeries(testTime)},
+		{"run importer twice", 2, defaultBlockDuration, 12, 4, 12, createMockMetricsSingleSeries(testTime2)},
+		{"run importer once with larger blocks", 1, twentyFourHourDuration, 8, 4, 12, createMockMetricsSingleSeries(testTime)},
 	}
 	for _, tt := range testCases {
 		t.Run(tt.name, func(t *testing.T) {
@@ -102,9 +98,109 @@ func TestBackfillRuleIntegration(t *testing.T) {
 			// Execute the test more than once to simulate running the rule importer twice with the same data.
 			// We expect duplicate blocks with the same series are created when run more than once.
 			for i := 0; i < tt.runcount; i++ {
+				cfg := ruleImporterConfig{
+					outputDir:        tmpDir,
+					start:            start.Add(-10 * time.Hour),
+					end:              start.Add(-7 * time.Hour),
+					evalInterval:     evalInterval,
+					maxBlockDuration: tt.maxBlockDuration,
+				}
+				ruleImporter := newRuleImporter(log.NewNopLogger(), cfg, mockQueryRangeAPI{
+					samples: tt.samples,
+				})
+				path1 := filepath.Join(tmpDir, "test.file")
+				require.NoError(t, createSingleRuleTestFiles(path1))
+				path2 := filepath.Join(tmpDir, "test2.file")
+				require.NoError(t, createMultiRuleTestFiles(path2))
 
-				ruleImporter, err := newTestRuleImporter(ctx, start, tmpDir, tt.samples, tt.maxBlockDuration)
+				errs := ruleImporter.loadGroups(ctx, []string{path1, path2})
+				for _, err := range errs {
+					require.NoError(t, err)
+				}
+
+				// Backfill all recording rules then check the blocks to confirm the correct data was created.
+				errs = ruleImporter.importAll(ctx)
+				for _, err := range errs {
+					require.NoError(t, err)
+				}
+
+				opts := tsdb.DefaultOptions()
+				opts.AllowOverlappingBlocks = true
+				db, err := tsdb.Open(tmpDir, nil, nil, opts, nil)
 				require.NoError(t, err)
+
+				blocks := db.Blocks()
+				require.Equal(t, (i+1)*tt.expectedBlockCount, len(blocks))
+
+				q, err := db.Querier(context.Background(), math.MinInt64, math.MaxInt64)
+				require.NoError(t, err)
+
+				selectedSeries := q.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "", ".*"))
+				var seriesCount, samplesCount int
+				for selectedSeries.Next() {
+					seriesCount++
+					series := selectedSeries.At()
+					it := series.Iterator()
+					for it.Next() {
+						samplesCount++
+					}
+					require.NoError(t, it.Err())
+				}
+				require.NoError(t, selectedSeries.Err())
+				require.Equal(t, tt.expectedSeriesCount, seriesCount)
+				require.Equal(t, tt.expectedSampleCount, samplesCount)
+				require.NoError(t, q.Close())
+				require.NoError(t, db.Close())
+			}
+		})
+	}
+}
+func TestBackfillParseRules(t *testing.T) {
+	var (
+		start1                    = time.Date(2009, time.November, 6, 1, 34, 0, 0, time.UTC)
+		ttestTime                 = start1.Add(1 * time.Hour)
+		ttestTime2                = start1.Add(2 * time.Hour)
+		start                     = time.Date(2009, time.November, 10, 6, 34, 0, 0, time.UTC)
+		testTime                  = model.Time(start.Add(-9 * time.Hour).Unix())
+		twentyFourHourDuration, _ = time.ParseDuration("24h")
+	)
+
+	testCases := []struct {
+		name                string
+		runcount            int
+		maxBlockDuration    time.Duration
+		expectedBlockCount  int
+		expectedSeriesCount int
+		expectedSampleCount int
+		samples             []*model.SampleStream
+	}{
+		{"no samples", 1, defaultBlockDuration, 0, 0, 0, []*model.SampleStream{}},
+		{"run importer once", 1, defaultBlockDuration, 8, 4, 8, createMockMetricsSingleSeries(ttestTime)},
+		{"run importer twice", 2, defaultBlockDuration, 8, 4, 8, createMockMetricsSingleSeries(ttestTime2)},
+		{"run importer once with larger blocks", 1, twentyFourHourDuration, 4, 4, 4, []*model.SampleStream{{Metric: model.Metric{"name1": "val1"}, Values: []model.SamplePair{{Timestamp: testTime, Value: 2}}}}},
+	}
+	for _, tt := range testCases {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir, err := ioutil.TempDir("", "backfilldata")
+			require.NoError(t, err)
+			defer func() {
+				require.NoError(t, os.RemoveAll(tmpDir))
+			}()
+			ctx := context.Background()
+
+			// Execute the test more than once to simulate running the rule importer twice with the same data.
+			// We expect duplicate blocks with the same series are created when run more than once.
+			for i := 0; i < tt.runcount; i++ {
+				cfg := ruleImporterConfig{
+					outputDir:        tmpDir,
+					start:            start.Add(-10 * time.Hour),
+					end:              start.Add(-7 * time.Hour),
+					evalInterval:     evalInterval,
+					maxBlockDuration: tt.maxBlockDuration,
+				}
+				ruleImporter := newRuleImporter(log.NewNopLogger(), cfg, mockQueryRangeAPI{
+					samples: tt.samples,
+				})
 				path1 := filepath.Join(tmpDir, "test.file")
 				require.NoError(t, createSingleRuleTestFiles(path1))
 				path2 := filepath.Join(tmpDir, "test2.file")
@@ -134,68 +230,9 @@ func TestBackfillRuleIntegration(t *testing.T) {
 				require.Equal(t, "grp2_rule1", g2Rules[0].Name())
 				require.Equal(t, "grp2_rule1_expr", g2Rules[0].Query().String())
 				require.Equal(t, 0, len(g2Rules[0].Labels()))
-
-				// Backfill all recording rules then check the blocks to confirm the correct data was created.
-				errs = ruleImporter.importAll(ctx)
-				for _, err := range errs {
-					require.NoError(t, err)
-				}
-
-				opts := tsdb.DefaultOptions()
-				opts.AllowOverlappingBlocks = true
-				db, err := tsdb.Open(tmpDir, nil, nil, opts, nil)
-				require.NoError(t, err)
-
-				blocks := db.Blocks()
-				require.Equal(t, (i+1)*tt.expectedBlockCount, len(blocks))
-
-				q, err := db.Querier(context.Background(), math.MinInt64, math.MaxInt64)
-				require.NoError(t, err)
-
-				selectedSeries := q.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "", ".*"))
-				var seriesCount, samplesCount int
-				for selectedSeries.Next() {
-					seriesCount++
-					series := selectedSeries.At()
-					if len(series.Labels()) != 3 {
-						require.Equal(t, 2, len(series.Labels()))
-						expectedLabels := labels.Labels{
-							labels.Label{Name: "__name__", Value: "grp2_rule1"},
-							labels.Label{Name: "metric1", Value: "metric1val1"},
-						}
-						require.Equal(t, expectedLabels, series.Labels())
-					} else {
-						require.Equal(t, 3, len(series.Labels()))
-					}
-					it := series.Iterator()
-					for it.Next() {
-						samplesCount++
-					}
-					require.NoError(t, it.Err())
-				}
-				require.NoError(t, selectedSeries.Err())
-				require.Equal(t, tt.expectedSeriesCount, seriesCount)
-				require.Equal(t, tt.expectedSampleCount, samplesCount)
-				require.NoError(t, q.Close())
-				require.NoError(t, db.Close())
 			}
 		})
 	}
-}
-
-func newTestRuleImporter(ctx context.Context, start time.Time, tmpDir string, testSamples model.Matrix, maxBlockDuration time.Duration) (*ruleImporter, error) {
-	logger := log.NewNopLogger()
-	cfg := ruleImporterConfig{
-		outputDir:        tmpDir,
-		start:            start.Add(-10 * time.Hour),
-		end:              start.Add(-7 * time.Hour),
-		evalInterval:     60 * time.Second,
-		maxBlockDuration: maxBlockDuration,
-	}
-
-	return newRuleImporter(logger, cfg, mockQueryRangeAPI{
-		samples: testSamples,
-	}), nil
 }
 
 func createSingleRuleTestFiles(path string) error {
@@ -230,72 +267,6 @@ func createMultiRuleTestFiles(path string) error {
 	return ioutil.WriteFile(path, []byte(recordingRules), 0o777)
 }
 
-// TestBackfillLabels confirms that the labels in the rule file override the labels from the metrics
-// received from Prometheus Query API, including the __name__ label.
-func TestBackfillLabels(t *testing.T) {
-	tmpDir, err := ioutil.TempDir("", "backfilldata")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(tmpDir))
-	}()
-	ctx := context.Background()
-
-	start := time.Date(2009, time.November, 10, 6, 34, 0, 0, time.UTC)
-	mockAPISamples := []*model.SampleStream{
-		{
-			Metric: model.Metric{"name1": "override-me", "__name__": "override-me-too"},
-			Values: []model.SamplePair{{Timestamp: model.TimeFromUnixNano(start.UnixNano()), Value: 123}},
-		},
-	}
-	ruleImporter, err := newTestRuleImporter(ctx, start, tmpDir, mockAPISamples, defaultBlockDuration)
-	require.NoError(t, err)
-
-	path := filepath.Join(tmpDir, "test.file")
-	recordingRules := `groups:
-- name: group0
-  rules:
-  - record: rulename
-    expr:  ruleExpr
-    labels:
-        name1: value-from-rule
-`
-	require.NoError(t, ioutil.WriteFile(path, []byte(recordingRules), 0o777))
-	errs := ruleImporter.loadGroups(ctx, []string{path})
-	for _, err := range errs {
-		require.NoError(t, err)
-	}
-
-	errs = ruleImporter.importAll(ctx)
-	for _, err := range errs {
-		require.NoError(t, err)
-	}
-
-	opts := tsdb.DefaultOptions()
-	opts.AllowOverlappingBlocks = true
-	db, err := tsdb.Open(tmpDir, nil, nil, opts, nil)
-	require.NoError(t, err)
-
-	q, err := db.Querier(context.Background(), math.MinInt64, math.MaxInt64)
-	require.NoError(t, err)
-
-	t.Run("correct-labels", func(t *testing.T) {
-		selectedSeries := q.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "", ".*"))
-		for selectedSeries.Next() {
-			series := selectedSeries.At()
-			expectedLabels := labels.Labels{
-				labels.Label{Name: "__name__", Value: "rulename"},
-				labels.Label{Name: "name1", Value: "value-from-rule"},
-			}
-			require.Equal(t, expectedLabels, series.Labels())
-		}
-		require.NoError(t, selectedSeries.Err())
-		require.NoError(t, q.Close())
-		require.NoError(t, db.Close())
-	})
-}
-
-const evalInterval = 60 * time.Second
-
 func createMockStaleMetricsSingleSeries(ts time.Time) []*model.SampleStream {
 	return []*model.SampleStream{
 		{
@@ -309,7 +280,7 @@ func createMockStaleMetricsSingleSeries(ts time.Time) []*model.SampleStream {
 					Timestamp: model.TimeFromUnixNano(ts.Add(1 * evalInterval).UnixNano()),
 					Value:     2,
 				},
-				// there stale marker should be inserted between these 2 because the next sample is more than 1 step after
+				// stale marker should be inserted between these 2 because the next sample is more than 1 step after
 				{
 					Timestamp: model.TimeFromUnixNano(ts.Add(5 * evalInterval).UnixNano()),
 					Value:     3,
@@ -333,23 +304,30 @@ func createMockStaleMetricsSingleSeries(ts time.Time) []*model.SampleStream {
 	}
 }
 
-func TestRuleImporterStale(t *testing.T) {
+func TestBackfillRuleImporterStale(t *testing.T) {
 	var (
 		start    = time.Date(2009, time.November, 6, 1, 34, 0, 0, time.UTC)
-		end      = start.Add(4 * time.Hour)
 		testTime = start.Add(1 * time.Hour)
 	)
 
 	var testCases = []struct {
-		name                string
-		expectedBlockCount  int
-		expectedSeriesCount int
-		expectedSampleCount int
-		expectedStaleCount  int
-		expectedStaleOrder  []int
-		samples             []*model.SampleStream
+		name            string
+		wantBlockCount  int
+		wantSeriesCount int
+		wantSampleCount int
+		wantStaleCount  int
+		wantStaleOrder  []int
+		samples         []*model.SampleStream
 	}{
-		{"stale within 1 series", 2, 1, 9, 3, []int{0, 0, 1, 0, 0, 0, 1, 0, 1}, createMockStaleMetricsSingleSeries(testTime)},
+		{
+			name:            "stale within 1 series",
+			wantBlockCount:  2,
+			wantSeriesCount: 1,
+			wantSampleCount: 9,
+			wantStaleCount:  3,
+			wantStaleOrder:  []int{0, 0, 1, 0, 0, 0, 1, 0, 1},
+			samples:         createMockStaleMetricsSingleSeries(testTime),
+		},
 	}
 
 	for _, tt := range testCases {
@@ -362,7 +340,16 @@ func TestRuleImporterStale(t *testing.T) {
 			}()
 			ctx := context.Background()
 
-			ruleImporter, err := newTestRuleImporter(ctx, start, end, tmpDir, tt.samples)
+			cfg := ruleImporterConfig{
+				outputDir:        tmpDir,
+				start:            start,
+				end:              start.Add(4 * time.Hour),
+				evalInterval:     evalInterval,
+				maxBlockDuration: defaultBlockDuration,
+			}
+			ruleImporter := newRuleImporter(log.NewNopLogger(), cfg, mockQueryRangeAPI{
+				samples: tt.samples,
+			})
 			require.NoError(t, err)
 			path1 := filepath.Join(tmpDir, "test.file")
 			require.NoError(t, createSingleRuleTestFiles(path1))
@@ -384,7 +371,7 @@ func TestRuleImporterStale(t *testing.T) {
 			require.NoError(t, err)
 
 			blocks := db.Blocks()
-			require.GreaterOrEqual(t, len(blocks), tt.expectedBlockCount)
+			require.GreaterOrEqual(t, len(blocks), tt.wantBlockCount)
 
 			q, err := db.Querier(context.Background(), math.MinInt64, math.MaxInt64)
 			require.NoError(t, err)
@@ -401,7 +388,7 @@ func TestRuleImporterStale(t *testing.T) {
 				for it.Next() {
 					samplesCount++
 					_, v := it.At()
-					if p_value.IsStaleNaN(v) {
+					if value.IsStaleNaN(v) {
 						staleCount++
 						actualStaleOrder = append(actualStaleOrder, 1)
 					} else {
@@ -410,13 +397,13 @@ func TestRuleImporterStale(t *testing.T) {
 				}
 				require.NoError(t, it.Err())
 				require.NoError(t, selectedSeries.Err())
-				require.Equal(t, tt.expectedSeriesCount, seriesCount)
-				require.Equal(t, tt.expectedSampleCount, samplesCount)
-				require.Equal(t, tt.expectedStaleCount, staleCount)
-				if len(tt.expectedStaleOrder) != len(actualStaleOrder) {
-					t.Fatalf("expected %d, actual %d", len(tt.expectedStaleOrder), len(actualStaleOrder))
+				require.Equal(t, tt.wantSeriesCount, seriesCount)
+				require.Equal(t, tt.wantSampleCount, samplesCount)
+				require.Equal(t, tt.wantStaleCount, staleCount)
+				if len(tt.wantStaleOrder) != len(actualStaleOrder) {
+					t.Fatalf("expected %d, actual %d", len(tt.wantStaleOrder), len(actualStaleOrder))
 				}
-				for i, expected := range tt.expectedStaleOrder {
+				for i, expected := range tt.wantStaleOrder {
 					if actualStaleOrder[i] != expected {
 						t.Fatalf("expected %d, actual %d at position %d", expected, actualStaleOrder[i], i)
 					}
@@ -425,5 +412,35 @@ func TestRuleImporterStale(t *testing.T) {
 				require.NoError(t, db.Close())
 			}
 		})
+	}
+}
+
+// TestBackfillBuildLabels confirms that the labels in the rule file override the labels from the metrics
+// received from Prometheus Query API, including the __name__ label.
+func TestBackfillBuildLabels(t *testing.T) {
+	queryMetric := model.Metric{"label1": "override-me", "__name__": "override-me-too", "label2": "dont-override"}
+	ruleLabels := labels.Labels{
+		labels.Label{Name: "__name__", Value: "rule-name"},
+		labels.Label{Name: "label1", Value: "rule-label-override"},
+		labels.Label{Name: "foo", Value: "bar"},
+	}
+	ruleName := "test"
+
+	wantLabels := labels.Labels{
+		labels.Label{Name: "__name__", Value: ruleName},
+		labels.Label{Name: "foo", Value: "bar"},
+		labels.Label{Name: "label1", Value: "rule-label-override"},
+		labels.Label{Name: "label2", Value: "dont-override"},
+	}
+	gotLabels := buildLabels(queryMetric, ruleLabels, ruleName)
+
+	if len(wantLabels) != len(gotLabels) {
+		t.Fatalf("wanted %d, got %d", len(wantLabels), len(gotLabels))
+	}
+
+	for i, got := range gotLabels {
+		if got != wantLabels[i] {
+			t.Fatalf("wanted %v, got %v", wantLabels[i], got)
+		}
 	}
 }

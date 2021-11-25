@@ -27,7 +27,7 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
-	p_value "github.com/prometheus/prometheus/pkg/value"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
@@ -35,6 +35,8 @@ import (
 )
 
 const maxSamplesInMemory = 5000
+
+var staleNaN = math.Float64frombits(value.StaleNaN)
 
 type queryRangeAPI interface {
 	QueryRange(ctx context.Context, query string, r v1.Range) (model.Value, v1.Warnings, error)
@@ -48,6 +50,10 @@ type ruleImporter struct {
 
 	groups      map[string]*rules.Group
 	ruleManager *rules.Manager
+
+	startMs            int64
+	endMs              int64
+	maxBlockDurationMs int64
 }
 
 type ruleImporterConfig struct {
@@ -63,10 +69,13 @@ type ruleImporterConfig struct {
 func newRuleImporter(logger log.Logger, config ruleImporterConfig, apiClient queryRangeAPI) *ruleImporter {
 	level.Info(logger).Log("backfiller", "new rule importer", "start", config.start.Format(time.RFC822), "end", config.end.Format(time.RFC822))
 	return &ruleImporter{
-		logger:      logger,
-		config:      config,
-		apiClient:   apiClient,
-		ruleManager: rules.NewManager(&rules.ManagerOptions{}),
+		logger:             logger,
+		config:             config,
+		apiClient:          apiClient,
+		ruleManager:        rules.NewManager(&rules.ManagerOptions{}),
+		startMs:            config.start.Unix() * int64(time.Second/time.Millisecond),
+		endMs:              config.end.Unix() * int64(time.Second/time.Millisecond),
+		maxBlockDurationMs: int64(config.maxBlockDuration / time.Millisecond),
 	}
 }
 
@@ -87,7 +96,7 @@ func (importer *ruleImporter) importAll(ctx context.Context) (errs []error) {
 
 		for i, r := range group.Rules() {
 			level.Info(importer.logger).Log("backfiller", "processing rule", "id", i, "name", r.Name())
-			if err := importer.importRule(ctx, r.Query().String(), r.Name(), r.Labels(), importer.config.start, importer.config.end, int64(importer.config.maxBlockDuration/time.Millisecond), group); err != nil {
+			if err := importer.importRule(ctx, r.Query().String(), r.Name(), r.Labels(), group); err != nil {
 				errs = append(errs, err)
 			}
 		}
@@ -95,80 +104,41 @@ func (importer *ruleImporter) importAll(ctx context.Context) (errs []error) {
 	return errs
 }
 
-type cacheEntry struct {
-	ts   time.Time
-	lset labels.Labels
-}
-
-// stalenessCache tracks staleness of series between blocks of data.
-type stalenessCache struct {
-	step time.Duration
-	// seriesPrev stores the labels of series that were seen previous block.
-	seriesPrev map[uint64]*cacheEntry
-}
-
-func newStalenessCache(step time.Duration) *stalenessCache {
-	return &stalenessCache{
-		step:       step,
-		seriesPrev: map[uint64]*cacheEntry{},
-	}
-}
-
-func (c *stalenessCache) trackStaleness(ts time.Time, lset labels.Labels) {
-	c.seriesPrev[lset.Hash()] = &cacheEntry{
-		ts:   ts,
-		lset: lset,
-	}
-}
-
-func (c *stalenessCache) isStale(lset labels.Labels, currTs time.Time) bool {
-	previous, ok := c.seriesPrev[lset.Hash()]
-	if !ok {
-		c.trackStaleness(currTs, lset)
-		return false
-	}
-	return previous.ts.Add(c.step).Before(currTs)
-}
-
-func (c *stalenessCache) remove(lset labels.Labels) {
-	delete(c.seriesPrev, lset.Hash())
-}
-
 // importRule queries a prometheus API to evaluate rules at times in the past.
-func (importer *ruleImporter) importRule(ctx context.Context, ruleExpr, ruleName string, ruleLabels labels.Labels, ruleBackfillStart, ruleBackfillEnd time.Time,
-	maxBlockDuration int64, grp *rules.Group) (err error) {
-	blockDuration := getCompatibleBlockDuration(maxBlockDuration)
-	ruleBackfillStartMs := ruleBackfillStart.Unix() * int64(time.Second/time.Millisecond)
-	ruleBackfillEndMs := ruleBackfillEnd.Unix() * int64(time.Second/time.Millisecond)
+func (importer *ruleImporter) importRule(ctx context.Context, ruleExpr, ruleName string, ruleLabels labels.Labels, grp *rules.Group) (err error) {
+	blockDuration := getCompatibleBlockDuration(importer.maxBlockDurationMs)
 
+	interval := grp.Interval()
 	// use cache for track staleness of series between blocks
-	c := newStalenessCache(grp.Interval())
+	staleCache := newStalenessCache(interval)
 
-	var currTs, blockEndWithAlignment time.Time
-	var app *multipleAppender
-	var currentLabels labels.Labels
+	var appender *ruleBackfillAppender
+	var currentLabels = labels.Labels{}
 	var closed bool
 	var w *tsdb.BlockWriter
-	stale := math.Float64frombits(p_value.StaleNaN)
 
-	for startOfBlock := blockDuration * (ruleBackfillStartMs / blockDuration); startOfBlock <= ruleBackfillEndMs; startOfBlock = startOfBlock + blockDuration {
+	for startOfBlock := blockDuration * (importer.startMs / blockDuration); startOfBlock <= importer.endMs; startOfBlock += blockDuration {
+
 		endOfBlock := startOfBlock + blockDuration - 1
 
-		currStart := max(startOfBlock/int64(time.Second/time.Millisecond), ruleBackfillStart.Unix())
+		currStart := max(startOfBlock/int64(time.Second/time.Millisecond), importer.config.start.Unix())
+
 		blockStartWithAlignment := grp.EvalTimestamp(time.Unix(currStart, 0).UTC().UnixNano())
 		for blockStartWithAlignment.Unix() < currStart {
-			blockStartWithAlignment = blockStartWithAlignment.Add(grp.Interval())
+			blockStartWithAlignment = blockStartWithAlignment.Add(interval)
 		}
-		blockEndWithAlignment = time.Unix(min(endOfBlock/int64(time.Second/time.Millisecond), ruleBackfillEnd.Unix()), 0).UTC()
-		if blockEndWithAlignment.Before(blockStartWithAlignment) {
+
+		blockEndWithAlignment := time.Unix(min(endOfBlock/int64(time.Second/time.Millisecond), importer.config.end.Unix()), 0).UTC()
+		if blockStartWithAlignment.After(blockEndWithAlignment) {
 			break
 		}
+
 		val, warnings, err := importer.apiClient.QueryRange(ctx,
 			ruleExpr,
 			v1.Range{
 				Start: blockStartWithAlignment,
 				End:   blockEndWithAlignment,
-				Step:  grp.Interval(),
+				Step:  interval,
 			},
 		)
 		if err != nil {
@@ -194,91 +164,72 @@ func (importer *ruleImporter) importRule(ctx context.Context, ruleExpr, ruleName
 			}
 		}()
 
-		app = newMultipleAppender(ctx, w)
+		appender = newAppenderWithStaleMarkers(
+			newMultipleAppender(ctx, w),
+			staleCache,
+			interval,
+		)
+
 		var matrix model.Matrix
 		switch val.Type() {
 		case model.ValMatrix:
 			matrix = val.(model.Matrix)
-
 			for _, sample := range matrix {
-				lb := labels.NewBuilder(labels.Labels{})
-
-				for name, value := range sample.Metric {
-					lb.Set(string(name), string(value))
+				currentLabels = buildLabels(sample.Metric, ruleLabels, ruleName)
+				if err := appender.add(ctx, sample.Values, currentLabels); err != nil {
+					return errors.Wrap(err, "app.add")
 				}
-
-				// Setting the rule labels after the output of the query,
-				// so they can override query output.
-				for _, l := range ruleLabels {
-					lb.Set(l.Name, l.Value)
-				}
-
-				lb.Set(labels.MetricName, ruleName)
-
-				// track timestamps between samples in a block to check for staleness
-				var previousTs time.Time
-				for _, value := range sample.Values {
-					currTs = value.Timestamp.Time()
-					v := float64(value.Value)
-
-					// Add a stale markers when:
-					// 1) thers is a gap in data greater than the eval interval
-					// 2) the last sample occurs before the "end"
-
-					// when previousTs is zero it means we are at the beginning of a block
-					if previousTs.IsZero() {
-						// check the staleness cache to confirm the current sample is not stale from the previous block
-						if c.isStale(currentLabels, currTs) {
-							if err := app.add(ctx, currentLabels, timestamp.FromTime(previousTs.Add(grp.Interval())), stale); err != nil {
-								return errors.Wrap(err, "add")
-							}
-							// remove from the stale marker cache once a sample is created for it
-							c.remove(currentLabels)
-						}
-					}
-
-					// insert staleNaN if there is a gap in the data greater than the eval interval
-					if previousTs.Add(grp.Interval()).Before(currTs) && !previousTs.IsZero() {
-						if err := app.add(ctx, currentLabels, timestamp.FromTime(previousTs.Add(grp.Interval())), stale); err != nil {
-							return errors.Wrap(err, "add")
-						}
-					}
-
-					if err := app.add(ctx, currentLabels, timestamp.FromTime(currTs), v); err != nil {
-						return errors.Wrap(err, "add")
-					}
-
-					previousTs = currTs
-				}
-
-				// add each sample to stale cache to track staleness between blocks
-				c.trackStaleness(previousTs, currentLabels)
 			}
 		default:
 			return fmt.Errorf("rule result is wrong type %s", val.Type().String())
 		}
 
-		if err := app.flushAndCommit(ctx); err != nil {
+		if err := appender.flushAndCommit(ctx); err != nil {
 			return errors.Wrap(err, "flush and commit")
 		}
 	}
 
-	// insert staleNan at the end of all the blocks if its before the backfill end time
-	if !currTs.IsZero() {
-		nextTs := currTs.Add(grp.Interval())
-		if nextTs.Before(ruleBackfillEnd) {
-			if err := app.add(ctx, currentLabels, timestamp.FromTime(nextTs), stale); err != nil {
-				return errors.Wrap(err, "add")
-			}
-		}
+	// if appender is nil it means we never processed any data so just return
+	if appender == nil {
+		return err
 	}
-	if err := app.flushAndCommit(ctx); err != nil {
+	// insert a staleNan at the end of all the blocks if the last sample is before the backfill end time.
+	if err := appender.insertEndStaleMarker(ctx, importer.config.end, currentLabels); err != nil {
+		return errors.Wrap(err, "insert end stale")
+	}
+	if err := appender.flushAndCommit(ctx); err != nil {
 		return errors.Wrap(err, "flush and commit")
+	}
+
+	if w == nil {
+		return err
 	}
 	err = tsdb_errors.NewMulti(err, w.Close()).Err()
 	closed = true
 
 	return err
+}
+
+// buildLabels creates a label set with the labels from the metrics returned from the Query API
+// and the labels from the recording rule. Any conflicting rule labels overwrites the metrics
+// from the Query API. The rule name overrides the Query API metric name.
+func buildLabels(queryMetric model.Metric, ruleLabels labels.Labels, ruleName string) labels.Labels {
+	lb := labels.NewBuilder(labels.Labels{})
+
+	for name, value := range queryMetric {
+		lb.Set(string(name), string(value))
+	}
+
+	// rule labels should override query metric labels so
+	// we set them here after the query labels are set
+	for _, l := range ruleLabels {
+		lb.Set(l.Name, l.Value)
+	}
+
+	// set the metric name last so that the rule name
+	// overrides the query metric name
+	lb.Set(labels.MetricName, ruleName)
+	return lb.Labels()
 }
 
 func newMultipleAppender(ctx context.Context, blockWriter *tsdb.BlockWriter) *multipleAppender {
@@ -343,4 +294,116 @@ func min(x, y int64) int64 {
 		return x
 	}
 	return y
+}
+
+type cacheEntry struct {
+	ts   time.Time
+	lset labels.Labels
+}
+
+// stalenessCache tracks staleness of series between blocks of data.
+type stalenessCache struct {
+	step time.Duration
+	// seriesPrev stores the labels of series that were seen previous block.
+	seriesPrev map[uint64]*cacheEntry
+}
+
+func newStalenessCache(step time.Duration) *stalenessCache {
+	return &stalenessCache{
+		step:       step,
+		seriesPrev: map[uint64]*cacheEntry{},
+	}
+}
+
+func (c *stalenessCache) trackStaleness(ts time.Time, lset labels.Labels, lsetHash uint64) {
+	c.seriesPrev[lsetHash] = &cacheEntry{
+		ts:   ts,
+		lset: lset,
+	}
+}
+
+func (c *stalenessCache) isStale(ts time.Time, lset labels.Labels, lsetHash uint64) bool {
+	previous, ok := c.seriesPrev[uint64(lsetHash)]
+	if !ok {
+		c.trackStaleness(ts, lset, lsetHash)
+		return false
+	}
+	return previous.ts.Add(c.step).Before(ts)
+}
+
+func (c *stalenessCache) remove(lsetHash uint64) {
+	delete(c.seriesPrev, lsetHash)
+}
+
+// ruleBackfillAppender adds samples and stale markers where needed.
+// stale markers are added when:
+// 1) there is a gap in data greater than the eval interval
+// 2) the last sample occurs before the desired backfill end time
+type ruleBackfillAppender struct {
+	app          *multipleAppender
+	staleCache   *stalenessCache
+	previousTs   time.Time
+	evalInterval time.Duration
+}
+
+func newAppenderWithStaleMarkers(multiAppender *multipleAppender, cache *stalenessCache, interval time.Duration) *ruleBackfillAppender {
+	return &ruleBackfillAppender{
+		app:          multiAppender,
+		staleCache:   cache,
+		evalInterval: interval,
+	}
+}
+
+func (a *ruleBackfillAppender) add(ctx context.Context, values []model.SamplePair, currentLabels labels.Labels) error {
+	labelsHash := currentLabels.Hash()
+
+	// track timestamps between samples in a block to check for staleness
+	for _, value := range values {
+		currTs := value.Timestamp.Time()
+		v := float64(value.Value)
+
+		// when previousTs is zero it means we are at the beginning of a block
+		if a.previousTs.IsZero() {
+			// check the staleness cache to confirm the current sample is not stale from the previous block
+			if a.staleCache.isStale(currTs, currentLabels, labelsHash) {
+				if err := a.app.add(ctx, currentLabels, timestamp.FromTime(a.previousTs.Add(a.evalInterval)), staleNaN); err != nil {
+					return errors.Wrap(err, "add")
+				}
+				// remove the sample from the stale marker cache once a stale marker is created for it
+				a.staleCache.remove(labelsHash)
+			}
+		}
+
+		// insert a stale marker if there is a gap in the data greater than the eval interval
+		if a.previousTs.Add(a.evalInterval).Before(currTs) && !a.previousTs.IsZero() {
+			if err := a.app.add(ctx, currentLabels, timestamp.FromTime(a.previousTs.Add(a.evalInterval)), staleNaN); err != nil {
+				return errors.Wrap(err, "add")
+			}
+		}
+
+		if err := a.app.add(ctx, currentLabels, timestamp.FromTime(currTs), v); err != nil {
+			return errors.Wrap(err, "add")
+		}
+
+		a.previousTs = currTs
+	}
+
+	// add the final sample to the stale cache to track staleness between blocks
+	a.staleCache.trackStaleness(a.previousTs, currentLabels, labelsHash)
+	return nil
+}
+
+func (a *ruleBackfillAppender) flushAndCommit(ctx context.Context) error {
+	return a.app.flushAndCommit(ctx)
+}
+
+// insertEndStaleMarker inserts a stale marker if the last sample added is before the end of the backfill.
+func (a *ruleBackfillAppender) insertEndStaleMarker(ctx context.Context, backfillEnd time.Time, currentLabels labels.Labels) error {
+	nextTs := a.previousTs.Add(a.evalInterval)
+	if nextTs.Before(backfillEnd) && len(currentLabels) != 0 {
+		if err := a.app.add(ctx, currentLabels, timestamp.FromTime(nextTs), staleNaN); err != nil {
+			return errors.Wrap(err, "add")
+		}
+	}
+	return nil
 }
