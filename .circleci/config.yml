@@ -81,8 +81,6 @@ jobs:
           command: refreshenv
       - run:
           command: |
-            $env:GOARCH=""; $env:GOOS=""; cd web/ui; go generate
-            cd ../..
             $TestTargets = go list ./... | Where-Object { $_ -NotMatch "(github.com/prometheus/prometheus/discovery.*|github.com/prometheus/prometheus/config|github.com/prometheus/prometheus/web)"}
             go test $TestTargets -vet=off -v
           environment:
