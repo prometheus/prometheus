@@ -363,7 +363,7 @@ func (h *Head) resetSeriesWithMMappedChunks(mSeries *memSeries, mmc []*mmappedCh
 }
 
 type walSubsetProcessor struct {
-	mx     sync.Mutex // take this lock while modifying series in the subset
+	mx     sync.Mutex // Take this lock while modifying series in the subset.
 	input  chan []record.RefSample
 	output chan []record.RefSample
 }
@@ -389,7 +389,7 @@ func (wp *walSubsetProcessor) reuseBuf() []record.RefSample {
 	return nil
 }
 
-// process adds the samples it receives to the head and passes
+// processWALSamples adds the samples it receives to the head and passes
 // the buffer received to an output channel for reuse.
 // Samples before the minValidTime timestamp are discarded.
 func (wp *walSubsetProcessor) processWALSamples(h *Head) (unknownRefs uint64) {
@@ -433,14 +433,14 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head) (unknownRefs uint64) {
 
 func (wp *walSubsetProcessor) waitUntilIdle() {
 	select {
-	case <-wp.output: // allow output side to drain to avoid deadlock
+	case <-wp.output: // Allow output side to drain to avoid deadlock.
 	default:
 	}
 	wp.input <- []record.RefSample{}
 	for len(wp.input) != 0 {
 		time.Sleep(1 * time.Millisecond)
 		select {
-		case <-wp.output: // allow output side to drain to avoid deadlock
+		case <-wp.output: // Allow output side to drain to avoid deadlock.
 		default:
 		}
 	}
