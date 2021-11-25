@@ -14,9 +14,7 @@
 package remote
 
 import (
-	"io/ioutil"
 	"net/url"
-	"os"
 	"testing"
 	"time"
 
@@ -44,11 +42,7 @@ func testRemoteWriteConfig() *config.RemoteWriteConfig {
 }
 
 func TestNoDuplicateWriteConfigs(t *testing.T) {
-	dir, err := ioutil.TempDir("", "TestNoDuplicateWriteConfigs")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 
 	cfg1 := config.RemoteWriteConfig{
 		Name: "write-1",
@@ -132,11 +126,7 @@ func TestNoDuplicateWriteConfigs(t *testing.T) {
 }
 
 func TestRestartOnNameChange(t *testing.T) {
-	dir, err := ioutil.TempDir("", "TestRestartOnNameChange")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 
 	cfg := testRemoteWriteConfig()
 
@@ -166,11 +156,7 @@ func TestRestartOnNameChange(t *testing.T) {
 }
 
 func TestUpdateWithRegisterer(t *testing.T) {
-	dir, err := ioutil.TempDir("", "TestRestartWithRegisterer")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 
 	s := NewWriteStorage(nil, prometheus.NewRegistry(), dir, time.Millisecond, nil)
 	c1 := &config.RemoteWriteConfig{
@@ -205,16 +191,12 @@ func TestUpdateWithRegisterer(t *testing.T) {
 		require.Equal(t, 10, queue.cfg.MaxShards)
 	}
 
-	err = s.Close()
+	err := s.Close()
 	require.NoError(t, err)
 }
 
 func TestWriteStorageLifecycle(t *testing.T) {
-	dir, err := ioutil.TempDir("", "TestWriteStorageLifecycle")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 
 	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil)
 	conf := &config.Config{
@@ -226,16 +208,12 @@ func TestWriteStorageLifecycle(t *testing.T) {
 	require.NoError(t, s.ApplyConfig(conf))
 	require.Equal(t, 1, len(s.queues))
 
-	err = s.Close()
+	err := s.Close()
 	require.NoError(t, err)
 }
 
 func TestUpdateExternalLabels(t *testing.T) {
-	dir, err := ioutil.TempDir("", "TestUpdateExternalLabels")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 
 	s := NewWriteStorage(nil, prometheus.NewRegistry(), dir, time.Second, nil)
 
@@ -264,11 +242,7 @@ func TestUpdateExternalLabels(t *testing.T) {
 }
 
 func TestWriteStorageApplyConfigsIdempotent(t *testing.T) {
-	dir, err := ioutil.TempDir("", "TestWriteStorageApplyConfigsIdempotent")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 
 	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil)
 
@@ -305,11 +279,7 @@ func TestWriteStorageApplyConfigsIdempotent(t *testing.T) {
 }
 
 func TestWriteStorageApplyConfigsPartialUpdate(t *testing.T) {
-	dir, err := ioutil.TempDir("", "TestWriteStorageApplyConfigsPartialUpdate")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 
 	s := NewWriteStorage(nil, nil, dir, defaultFlushDeadline, nil)
 
@@ -383,7 +353,7 @@ func TestWriteStorageApplyConfigsPartialUpdate(t *testing.T) {
 	secondClient := s.queues[hashes[1]].client()
 	// Update c1.
 	c1.HTTPClientConfig.BearerToken = "bar"
-	err = s.ApplyConfig(conf)
+	err := s.ApplyConfig(conf)
 	require.NoError(t, err)
 	require.Equal(t, 3, len(s.queues))
 

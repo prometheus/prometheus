@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// Package record contains the various record types used for encoding various Head block data in the WAL and in-memory snapshot.
 package record
 
 import (

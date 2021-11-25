@@ -161,22 +161,23 @@ func (h *headIndexReader) Series(ref storage.SeriesRef, lbls *labels.Labels, chk
 		*chks = append(*chks, chunks.Meta{
 			MinTime: c.minTime,
 			MaxTime: c.maxTime,
-			Ref:     chunks.ChunkRef(chunks.NewHeadChunkRef(s.ref, uint64(s.chunkID(i)))),
+			Ref:     chunks.ChunkRef(chunks.NewHeadChunkRef(s.ref, s.headChunkID(i))),
 		})
 	}
 	if s.headChunk != nil && s.headChunk.OverlapsClosedInterval(h.mint, h.maxt) {
 		*chks = append(*chks, chunks.Meta{
 			MinTime: s.headChunk.minTime,
 			MaxTime: math.MaxInt64, // Set the head chunks as open (being appended to).
-			Ref:     chunks.ChunkRef(chunks.NewHeadChunkRef(s.ref, uint64(s.chunkID(len(s.mmappedChunks))))),
+			Ref:     chunks.ChunkRef(chunks.NewHeadChunkRef(s.ref, s.headChunkID(len(s.mmappedChunks)))),
 		})
 	}
 
 	return nil
 }
 
-func (s *memSeries) chunkID(pos int) int {
-	return pos + s.firstChunkID
+// headChunkID returns the HeadChunkID corresponding to .mmappedChunks[pos]
+func (s *memSeries) headChunkID(pos int) chunks.HeadChunkID {
+	return chunks.HeadChunkID(pos) + s.firstChunkID
 }
 
 // LabelValueFor returns label value for the given label name in the series referred to by ID.
@@ -259,7 +260,7 @@ func (h *headChunkReader) Chunk(ref chunks.ChunkRef) (chunkenc.Chunk, error) {
 	}
 
 	s.Lock()
-	c, garbageCollect, err := s.chunk(int(cid), h.head.chunkDiskMapper)
+	c, garbageCollect, err := s.chunk(cid, h.head.chunkDiskMapper)
 	if err != nil {
 		s.Unlock()
 		return nil, err
@@ -282,21 +283,21 @@ func (h *headChunkReader) Chunk(ref chunks.ChunkRef) (chunkenc.Chunk, error) {
 	return &safeChunk{
 		Chunk:           c.chunk,
 		s:               s,
-		cid:             int(cid),
+		cid:             cid,
 		isoState:        h.isoState,
 		chunkDiskMapper: h.head.chunkDiskMapper,
 	}, nil
 }
 
-// chunk returns the chunk for the chunk id from memory or by m-mapping it from the disk.
+// chunk returns the chunk for the HeadChunkID from memory or by m-mapping it from the disk.
 // If garbageCollect is true, it means that the returned *memChunk
-// (and not the chunkenc.Chunk inside it) can be garbage collected after it's usage.
-func (s *memSeries) chunk(id int, chunkDiskMapper *chunks.ChunkDiskMapper) (chunk *memChunk, garbageCollect bool, err error) {
+// (and not the chunkenc.Chunk inside it) can be garbage collected after its usage.
+func (s *memSeries) chunk(id chunks.HeadChunkID, chunkDiskMapper *chunks.ChunkDiskMapper) (chunk *memChunk, garbageCollect bool, err error) {
 	// ix represents the index of chunk in the s.mmappedChunks slice. The chunk id's are
 	// incremented by 1 when new chunk is created, hence (id - firstChunkID) gives the slice index.
 	// The max index for the s.mmappedChunks slice can be len(s.mmappedChunks)-1, hence if the ix
 	// is len(s.mmappedChunks), it represents the next chunk, which is the head chunk.
-	ix := id - s.firstChunkID
+	ix := int(id) - int(s.firstChunkID)
 	if ix < 0 || ix > len(s.mmappedChunks) {
 		return nil, false, storage.ErrNotFound
 	}
@@ -323,7 +324,7 @@ func (s *memSeries) chunk(id int, chunkDiskMapper *chunks.ChunkDiskMapper) (chun
 type safeChunk struct {
 	chunkenc.Chunk
 	s               *memSeries
-	cid             int
+	cid             chunks.HeadChunkID
 	isoState        *isolationState
 	chunkDiskMapper *chunks.ChunkDiskMapper
 }
@@ -335,9 +336,9 @@ func (c *safeChunk) Iterator(reuseIter chunkenc.Iterator) chunkenc.Iterator {
 	return it
 }
 
-// iterator returns a chunk iterator.
+// iterator returns a chunk iterator for the requested chunkID, or a NopIterator if the requested ID is out of range.
 // It is unsafe to call this concurrently with s.append(...) without holding the series lock.
-func (s *memSeries) iterator(id int, isoState *isolationState, chunkDiskMapper *chunks.ChunkDiskMapper, it chunkenc.Iterator) chunkenc.Iterator {
+func (s *memSeries) iterator(id chunks.HeadChunkID, isoState *isolationState, chunkDiskMapper *chunks.ChunkDiskMapper, it chunkenc.Iterator) chunkenc.Iterator {
 	c, garbageCollect, err := s.chunk(id, chunkDiskMapper)
 	// TODO(fabxc): Work around! An error will be returns when a querier have retrieved a pointer to a
 	// series's chunk, which got then garbage collected before it got
@@ -355,12 +356,12 @@ func (s *memSeries) iterator(id int, isoState *isolationState, chunkDiskMapper *
 		}
 	}()
 
-	ix := id - s.firstChunkID
+	ix := int(id) - int(s.firstChunkID)
 
 	numSamples := c.chunk.NumSamples()
 	stopAfter := numSamples
 
-	if isoState != nil {
+	if isoState != nil && !isoState.IsolationDisabled() {
 		totalSamples := 0    // Total samples in this series.
 		previousSamples := 0 // Samples before this chunk.
 
@@ -402,7 +403,7 @@ func (s *memSeries) iterator(id int, isoState *isolationState, chunkDiskMapper *
 		return chunkenc.NewNopIterator()
 	}
 
-	if id-s.firstChunkID < len(s.mmappedChunks) {
+	if int(id)-int(s.firstChunkID) < len(s.mmappedChunks) {
 		if stopAfter == numSamples {
 			return c.chunk.Iterator(it)
 		}
@@ -439,6 +440,8 @@ func (s *memSeries) iterator(id int, isoState *isolationState, chunkDiskMapper *
 	}
 }
 
+// memSafeIterator returns values from the wrapped stopIterator
+// except the last 4, which come from buf.
 type memSafeIterator struct {
 	stopIterator
 
@@ -482,6 +485,8 @@ func (it *memSafeIterator) At() (int64, float64) {
 	return s.t, s.v
 }
 
+// stopIterator wraps an Iterator, but only returns the first
+// stopAfter values, if initialized with i=-1.
 type stopIterator struct {
 	chunkenc.Iterator
 

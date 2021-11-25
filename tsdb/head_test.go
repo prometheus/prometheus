@@ -60,6 +60,7 @@ func newTestHead(t testing.TB, chunkRange int64, compressWAL bool) (*Head, *wal.
 	opts.ChunkDirRoot = dir
 	opts.EnableExemplarStorage = true
 	opts.MaxExemplars.Store(config.DefaultExemplarsConfig.MaxExemplars)
+
 	h, err := NewHead(nil, nil, wlog, opts, nil)
 	require.NoError(t, err)
 
@@ -227,7 +228,7 @@ func BenchmarkLoadWAL(b *testing.B) {
 						require.NoError(b, err)
 						for k := 0; k < c.batches*c.seriesPerBatch; k++ {
 							// Create one mmapped chunk per series, with one sample at the given time.
-							s := newMemSeries(labels.Labels{}, chunks.HeadSeriesRef(k)*101, c.mmappedChunkT, nil)
+							s := newMemSeries(labels.Labels{}, chunks.HeadSeriesRef(k)*101, c.mmappedChunkT, nil, defaultIsolationDisabled)
 							s.append(c.mmappedChunkT, 42, 0, chunkDiskMapper)
 							s.mmapCurrentHeadChunk(chunkDiskMapper)
 						}
@@ -551,7 +552,7 @@ func TestMemSeries_truncateChunks(t *testing.T) {
 		},
 	}
 
-	s := newMemSeries(labels.FromStrings("a", "b"), 1, 2000, &memChunkPool)
+	s := newMemSeries(labels.FromStrings("a", "b"), 1, 2000, &memChunkPool, defaultIsolationDisabled)
 
 	for i := 0; i < 4000; i += 5 {
 		ok, _ := s.append(int64(i), float64(i), 0, chunkDiskMapper)
@@ -561,7 +562,7 @@ func TestMemSeries_truncateChunks(t *testing.T) {
 	// Check that truncate removes half of the chunks and afterwards
 	// that the ID of the last chunk still gives us the same chunk afterwards.
 	countBefore := len(s.mmappedChunks) + 1 // +1 for the head chunk.
-	lastID := s.chunkID(countBefore - 1)
+	lastID := s.headChunkID(countBefore - 1)
 	lastChunk, _, err := s.chunk(lastID, chunkDiskMapper)
 	require.NoError(t, err)
 	require.NotNil(t, lastChunk)
@@ -582,11 +583,11 @@ func TestMemSeries_truncateChunks(t *testing.T) {
 
 	// Validate that the series' sample buffer is applied correctly to the last chunk
 	// after truncation.
-	it1 := s.iterator(s.chunkID(len(s.mmappedChunks)), nil, chunkDiskMapper, nil)
+	it1 := s.iterator(s.headChunkID(len(s.mmappedChunks)), nil, chunkDiskMapper, nil)
 	_, ok := it1.(*memSafeIterator)
 	require.True(t, ok)
 
-	it2 := s.iterator(s.chunkID(len(s.mmappedChunks)-1), nil, chunkDiskMapper, nil)
+	it2 := s.iterator(s.headChunkID(len(s.mmappedChunks)-1), nil, chunkDiskMapper, nil)
 	_, ok = it2.(*memSafeIterator)
 	require.False(t, ok, "non-last chunk incorrectly wrapped with sample buffer")
 }
@@ -1089,7 +1090,7 @@ func TestMemSeries_append(t *testing.T) {
 		require.NoError(t, chunkDiskMapper.Close())
 	}()
 
-	s := newMemSeries(labels.Labels{}, 1, 500, nil)
+	s := newMemSeries(labels.Labels{}, 1, 500, nil, defaultIsolationDisabled)
 
 	// Add first two samples at the very end of a chunk range and the next two
 	// on and after it.
@@ -1547,6 +1548,10 @@ func TestAddDuplicateLabelName(t *testing.T) {
 }
 
 func TestMemSeriesIsolation(t *testing.T) {
+	if defaultIsolationDisabled {
+		t.Skip("skipping test since tsdb isolation is disabled")
+	}
+
 	// Put a series, select it. GC it and then access it.
 	lastValue := func(h *Head, maxAppendID uint64) int {
 		idx, err := h.Index()
@@ -1718,6 +1723,10 @@ func TestMemSeriesIsolation(t *testing.T) {
 }
 
 func TestIsolationRollback(t *testing.T) {
+	if defaultIsolationDisabled {
+		t.Skip("skipping test since tsdb isolation is disabled")
+	}
+
 	// Rollback after a failed append and test if the low watermark has progressed anyway.
 	hb, _ := newTestHead(t, 1000, false)
 	defer func() {
@@ -1746,6 +1755,10 @@ func TestIsolationRollback(t *testing.T) {
 }
 
 func TestIsolationLowWatermarkMonotonous(t *testing.T) {
+	if defaultIsolationDisabled {
+		t.Skip("skipping test since tsdb isolation is disabled")
+	}
+
 	hb, _ := newTestHead(t, 1000, false)
 	defer func() {
 		require.NoError(t, hb.Close())
@@ -1779,6 +1792,10 @@ func TestIsolationLowWatermarkMonotonous(t *testing.T) {
 }
 
 func TestIsolationAppendIDZeroIsNoop(t *testing.T) {
+	if defaultIsolationDisabled {
+		t.Skip("skipping test since tsdb isolation is disabled")
+	}
+
 	h, _ := newTestHead(t, 1000, false)
 	defer func() {
 		require.NoError(t, h.Close())
@@ -1800,6 +1817,10 @@ func TestHeadSeriesChunkRace(t *testing.T) {
 }
 
 func TestIsolationWithoutAdd(t *testing.T) {
+	if defaultIsolationDisabled {
+		t.Skip("skipping test since tsdb isolation is disabled")
+	}
+
 	hb, _ := newTestHead(t, 1000, false)
 	defer func() {
 		require.NoError(t, hb.Close())
@@ -2255,14 +2276,14 @@ func TestMemSafeIteratorSeekIntoBuffer(t *testing.T) {
 		require.NoError(t, chunkDiskMapper.Close())
 	}()
 
-	s := newMemSeries(labels.Labels{}, 1, 500, nil)
+	s := newMemSeries(labels.Labels{}, 1, 500, nil, defaultIsolationDisabled)
 
 	for i := 0; i < 7; i++ {
 		ok, _ := s.append(int64(i), float64(i), 0, chunkDiskMapper)
 		require.True(t, ok, "sample append failed")
 	}
 
-	it := s.iterator(s.chunkID(len(s.mmappedChunks)), nil, chunkDiskMapper, nil)
+	it := s.iterator(s.headChunkID(len(s.mmappedChunks)), nil, chunkDiskMapper, nil)
 	_, ok := it.(*memSafeIterator)
 	require.True(t, ok)
 
