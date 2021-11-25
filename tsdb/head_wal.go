@@ -218,7 +218,7 @@ Outer:
 
 				if created {
 					// This is the first WAL series record for this series.
-					h.setMMappedChunks(mSeries, mmc)
+					h.resetSeriesWithMMappedChunks(mSeries, mmc)
 					processors[idx].mx.Unlock()
 					continue
 				}
@@ -252,12 +252,8 @@ Outer:
 				}
 
 				// Replacing m-mapped chunks with the new ones (could be empty).
-				h.setMMappedChunks(mSeries, mmc)
+				h.resetSeriesWithMMappedChunks(mSeries, mmc)
 
-				// Any samples replayed till now would already be compacted. Resetting the head chunk.
-				mSeries.nextAt = 0
-				mSeries.headChunk = nil
-				mSeries.app = nil
 				processors[idx].mx.Unlock()
 			}
 			//nolint:staticcheck // Ignore SA6002 relax staticcheck verification.
@@ -346,7 +342,8 @@ Outer:
 	return nil
 }
 
-func (h *Head) setMMappedChunks(mSeries *memSeries, mmc []*mmappedChunk) {
+// resetSeriesWithMMappedChunks is only used during the WAL replay.
+func (h *Head) resetSeriesWithMMappedChunks(mSeries *memSeries, mmc []*mmappedChunk) {
 	h.metrics.chunksCreated.Add(float64(len(mmc)))
 	h.metrics.chunksRemoved.Add(float64(len(mSeries.mmappedChunks)))
 	h.metrics.chunks.Add(float64(len(mmc) - len(mSeries.mmappedChunks)))
@@ -358,6 +355,11 @@ func (h *Head) setMMappedChunks(mSeries *memSeries, mmc []*mmappedChunk) {
 		mSeries.mmMaxTime = mmc[len(mmc)-1].maxTime
 		h.updateMinMaxTime(mmc[0].minTime, mSeries.mmMaxTime)
 	}
+
+	// Any samples replayed till now would already be compacted. Resetting the head chunk.
+	mSeries.nextAt = 0
+	mSeries.headChunk = nil
+	mSeries.app = nil
 }
 
 type walSubsetProcessor struct {
