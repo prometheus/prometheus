@@ -1094,7 +1094,7 @@ func testWALReplayRaceOnSamplesLoggedBeforeSeries(t *testing.T, numSamplesBefore
 	}
 
 	require.NoError(t, set.Err())
-	require.Equal(t, 1, actualSeries)
+	require.Equal(t, numSeries, actualSeries)
 }
 
 func TestTombstoneClean(t *testing.T) {
