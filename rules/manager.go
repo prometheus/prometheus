@@ -907,10 +907,11 @@ type ContextFunc func(g *Group) context.Context
 
 // ManagerOptions bundles options for the Manager.
 type ManagerOptions struct {
-	ExternalURL          *url.URL
-	QueryFunc            QueryFunc
-	NotifyFunc           NotifyFunc
-	Context              context.Context
+	ExternalURL *url.URL
+	QueryFunc   QueryFunc
+	NotifyFunc  NotifyFunc
+	Context     context.Context
+	// FederatedContextFunc will be called to obtain a context when evaluating rules with non-empty SourceTenants
 	FederatedContextFunc ContextFunc
 	Appendable           storage.Appendable
 	Queryable            storage.Queryable
