@@ -718,12 +718,11 @@ func TestUpdate(t *testing.T) {
 	}
 	engine := promql.NewEngine(opts)
 	ruleManager := NewManager(&ManagerOptions{
-		Appendable:           st,
-		Queryable:            st,
-		QueryFunc:            EngineQueryFunc(engine, st),
-		Context:              context.Background(),
-		FederatedContextFunc: func(*Group) context.Context { return context.Background() },
-		Logger:               log.NewNopLogger(),
+		Appendable: st,
+		Queryable:  st,
+		QueryFunc:  EngineQueryFunc(engine, st),
+		Context:    context.Background(),
+		Logger:     log.NewNopLogger(),
 	})
 	ruleManager.start()
 	defer ruleManager.Stop()
