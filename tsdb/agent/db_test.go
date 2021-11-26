@@ -535,3 +535,7 @@ func TestStorage_DuplicateExemplarsIgnored(t *testing.T) {
 	// We had 9 calls to AppendExemplar but only 4 of those should have gotten through.
 	require.Equal(t, 4, walExemplarsCount)
 }
+
+func Test_validateOptions_Defaults(t *testing.T) {
+	require.Equal(t, DefaultOptions(), validateOptions(nil))
+}
