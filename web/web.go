@@ -32,6 +32,7 @@ import (
 	"regexp"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	template_text "text/template"
@@ -248,6 +249,7 @@ type Options struct {
 	RemoteReadConcurrencyLimit int
 	RemoteReadBytesInFrame     int
 	RemoteWriteReceiver        bool
+	IsAgent                    bool
 
 	Gatherer   prometheus.Gatherer
 	Registerer prometheus.Registerer
@@ -328,6 +330,7 @@ func New(logger log.Logger, o *Options) *Handler {
 		h.options.RemoteReadSampleLimit,
 		h.options.RemoteReadConcurrencyLimit,
 		h.options.RemoteReadBytesInFrame,
+		h.options.IsAgent,
 		h.options.CORSOrigin,
 		h.runtimeInfo,
 		h.versionInfo,
@@ -406,6 +409,7 @@ func New(logger log.Logger, o *Options) *Handler {
 		}
 		replacedIdx := bytes.ReplaceAll(idx, []byte("CONSOLES_LINK_PLACEHOLDER"), []byte(h.consolesPath()))
 		replacedIdx = bytes.ReplaceAll(replacedIdx, []byte("TITLE_PLACEHOLDER"), []byte(h.options.PageTitle))
+		replacedIdx = bytes.ReplaceAll(replacedIdx, []byte("PROMETHEUS_AGENT_MODE_PLACEHOLDER"), []byte(strconv.FormatBool(h.options.IsAgent)))
 		w.Write(replacedIdx)
 	}
 
@@ -605,7 +609,6 @@ func (h *Handler) Run(ctx context.Context, listener net.Listener, webConfig stri
 }
 
 func (h *Handler) alerts(w http.ResponseWriter, r *http.Request) {
-
 	var groups []*rules.Group
 	for _, group := range h.ruleManager.RuleGroups() {
 		if group.HasAlertingRules() {

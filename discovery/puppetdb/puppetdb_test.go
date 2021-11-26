@@ -25,8 +25,9 @@ import (
 	"github.com/go-kit/log"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
 func mockServer(t *testing.T) *httptest.Server {

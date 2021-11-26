@@ -1,3 +1,58 @@
+## 2.32.0-beta.0 / 2021-11-16
+
+This beta release introduces the Prometheus Agent, a new mode of operation for
+Prometheus optimized for remote-write only scenarios. In this mode, Prometheus
+does not generate blocks on the local filesystem and is not queryable locally.
+Enable with `--enable-feature=agent`.
+
+Learn more about the Prometheus Agent in our [blog post](https://prometheus.io/blog/2021/11/16/agent/).
+
+* [CHANGE] remote-write: Change default max retry time from 100ms to 5 seconds. #9634
+* [FEATURE] Agent: New mode of operation optimized for remote-write only scenarios, without local storage. Enable with `--enable-feature=agent`. #8785
+* [FEATURE] Promtool: Add `promtool check service-discovery` command. #8970
+* [FEATURE] UI: Add search in metrics dropdown. #9629
+* [FEATURE] Templates: Add parseDuration to template functions. #8817
+* [ENHANCEMENT] Promtool: Improve test output. #8064
+* [ENHANCEMENT] Promtool: Use kahan summation for better numerical stability. #9588
+* [ENHANCEMENT] Remote-write: Reuse memory for marshalling. #9412
+* [ENHANCEMENT] Scrape: Add `scrape_body_size_bytes` scrape metric behind the `--enable-feature=extra-scrape-metrics` flag. #9569
+* [ENHANCEMENT] TSDB: Add windows arm64 support. #9703
+* [ENHANCEMENT] TSDB: Optimize query by skipping unneeded sorting in TSDB. #9673
+* [ENHANCEMENT] Templates: Support int and uint as datatypes for template formatting. #9680
+* [ENHANCEMENT] UI: Prefer `rate` over `rad`, `delta` over `deg`, and `count` over `cos` in autocomplete. #9688
+* [BUGFIX] TSDB: Add more size checks when writing individual sections in the index. #9710
+* [BUGFIX] PromQL: Make `deriv()` return zero values for constant series. #9728
+
+## 2.31.1 / 2021-11-05
+
+* [BUGFIX] SD: Fix a panic when the experimental discovery manager receives
+  targets during a reload. #9656
+
+## 2.31.0 / 2021-11-02
+
+* [CHANGE] UI: Remove standard PromQL editor in favour of the codemirror-based editor. #9452
+* [FEATURE] PromQL: Add trigonometric functions and `atan2` binary operator. #9239 #9248 #9515
+* [FEATURE] Remote: Add support for exemplar in the remote write receiver endpoint. #9319 #9414
+* [FEATURE] SD: Add PuppetDB service discovery. #8883
+* [FEATURE] SD: Add Uyuni service discovery. #8190
+* [FEATURE] Web: Add support for security-related HTTP headers. #9546
+* [ENHANCEMENT] Azure SD: Add `proxy_url`, `follow_redirects`, `tls_config`. #9267
+* [ENHANCEMENT] Backfill: Add `--max-block-duration` in `promtool create-blocks-from rules`. #9511
+* [ENHANCEMENT] Config: Print human-readable sizes with unit instead of raw numbers. #9361
+* [ENHANCEMENT] HTTP: Re-enable HTTP/2. #9398
+* [ENHANCEMENT] Kubernetes SD: Warn user if number of endpoints exceeds limit. #9467
+* [ENHANCEMENT] OAuth2: Add TLS configuration to token requests. #9550
+* [ENHANCEMENT] PromQL: Several optimizations. #9365 #9360 #9362 #9552
+* [ENHANCEMENT] PromQL: Make aggregations deterministic in instant queries. #9459
+* [ENHANCEMENT] Rules: Add the ability to limit number of alerts or series. #9260 #9541
+* [ENHANCEMENT] SD: Experimental discovery manager to avoid restarts upon reload. Disabled by default, enable with flag `--enable-feature=new-service-discovery-manager`. #9349 #9537
+* [ENHANCEMENT] UI: Debounce timerange setting changes. #9359
+* [BUGFIX] Backfill: Apply rule labels after query labels. #9421
+* [BUGFIX] Scrape: Resolve conflicts between multiple exported label prefixes. #9479 #9518
+* [BUGFIX] Scrape: Restart scrape loops when `__scrape_interval__` is changed. #9551
+* [BUGFIX] TSDB: Fix memory leak in samples deletion. #9151
+* [BUGFIX] UI: Use consistent margin-bottom for all alert kinds. #9318
+
 ## 2.30.3 / 2021-10-05
 
 * [BUGFIX] TSDB: Fix panic on failed snapshot replay. #9438
@@ -191,7 +246,7 @@ Alertmanager API v2 was released in Alertmanager v0.16.0 (released in January
 * [ENHANCEMENT] Mixins: Scope grafana configuration. #8332
 * [ENHANCEMENT] Kubernetes SD: Add endpoint labels metadata. #8273
 * [ENHANCEMENT] UI: Expose total number of label pairs in head in TSDB stats page. #8343
-* [ENHANCEMENT] TSDB: Reload blocks every minute, to detect new blocks and enforce retention more often. #8343
+* [ENHANCEMENT] TSDB: Reload blocks every minute, to detect new blocks and enforce retention more often. #8340
 * [BUGFIX] API: Fix global URL when external address has no port. #8359
 * [BUGFIX] Backfill: Fix error message handling. #8432
 * [BUGFIX] Backfill: Fix "add sample: out of bounds" error when series span an entire block. #8476

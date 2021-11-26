@@ -35,12 +35,12 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/relabel"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/relabel"
 )
 
 func TestPostPath(t *testing.T) {
-	var cases = []struct {
+	cases := []struct {
 		in, out string
 	}{
 		{
@@ -447,7 +447,7 @@ func (a alertmanagerMock) url() *url.URL {
 
 func TestLabelSetNotReused(t *testing.T) {
 	tg := makeInputTargetGroup()
-	_, _, err := alertmanagerFromGroup(tg, &config.AlertmanagerConfig{})
+	_, _, err := AlertmanagerFromGroup(tg, &config.AlertmanagerConfig{})
 
 	require.NoError(t, err)
 
@@ -456,7 +456,7 @@ func TestLabelSetNotReused(t *testing.T) {
 }
 
 func TestReload(t *testing.T) {
-	var tests = []struct {
+	tests := []struct {
 		in  *targetgroup.Group
 		out string
 	}{
@@ -500,11 +500,10 @@ alerting:
 
 		require.Equal(t, tt.out, res)
 	}
-
 }
 
 func TestDroppedAlertmanagers(t *testing.T) {
-	var tests = []struct {
+	tests := []struct {
 		in  *targetgroup.Group
 		out string
 	}{

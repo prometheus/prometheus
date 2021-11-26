@@ -13,8 +13,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/value"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/value"
 )
 
 //line promql/parser/generated_parser.y:28
@@ -33,82 +33,84 @@ type yySymType struct {
 	duration time.Duration
 }
 
-const EQL = 57346
-const BLANK = 57347
-const COLON = 57348
-const COMMA = 57349
-const COMMENT = 57350
-const DURATION = 57351
-const EOF = 57352
-const ERROR = 57353
-const IDENTIFIER = 57354
-const LEFT_BRACE = 57355
-const LEFT_BRACKET = 57356
-const LEFT_PAREN = 57357
-const METRIC_IDENTIFIER = 57358
-const NUMBER = 57359
-const RIGHT_BRACE = 57360
-const RIGHT_BRACKET = 57361
-const RIGHT_PAREN = 57362
-const SEMICOLON = 57363
-const SPACE = 57364
-const STRING = 57365
-const TIMES = 57366
-const operatorsStart = 57367
-const ADD = 57368
-const DIV = 57369
-const EQLC = 57370
-const EQL_REGEX = 57371
-const GTE = 57372
-const GTR = 57373
-const LAND = 57374
-const LOR = 57375
-const LSS = 57376
-const LTE = 57377
-const LUNLESS = 57378
-const MOD = 57379
-const MUL = 57380
-const NEQ = 57381
-const NEQ_REGEX = 57382
-const POW = 57383
-const SUB = 57384
-const AT = 57385
-const ATAN2 = 57386
-const operatorsEnd = 57387
-const aggregatorsStart = 57388
-const AVG = 57389
-const BOTTOMK = 57390
-const COUNT = 57391
-const COUNT_VALUES = 57392
-const GROUP = 57393
-const MAX = 57394
-const MIN = 57395
-const QUANTILE = 57396
-const STDDEV = 57397
-const STDVAR = 57398
-const SUM = 57399
-const TOPK = 57400
-const aggregatorsEnd = 57401
-const keywordsStart = 57402
-const BOOL = 57403
-const BY = 57404
-const GROUP_LEFT = 57405
-const GROUP_RIGHT = 57406
-const IGNORING = 57407
-const OFFSET = 57408
-const ON = 57409
-const WITHOUT = 57410
-const keywordsEnd = 57411
-const preprocessorStart = 57412
-const START = 57413
-const END = 57414
-const preprocessorEnd = 57415
-const startSymbolsStart = 57416
-const START_METRIC = 57417
-const START_SERIES_DESCRIPTION = 57418
-const START_EXPRESSION = 57419
-const START_METRIC_SELECTOR = 57420
-const startSymbolsEnd = 57421
+const (
+	EQL                      = 57346
+	BLANK                    = 57347
+	COLON                    = 57348
+	COMMA                    = 57349
+	COMMENT                  = 57350
+	DURATION                 = 57351
+	EOF                      = 57352
+	ERROR                    = 57353
+	IDENTIFIER               = 57354
+	LEFT_BRACE               = 57355
+	LEFT_BRACKET             = 57356
+	LEFT_PAREN               = 57357
+	METRIC_IDENTIFIER        = 57358
+	NUMBER                   = 57359
+	RIGHT_BRACE              = 57360
+	RIGHT_BRACKET            = 57361
+	RIGHT_PAREN              = 57362
+	SEMICOLON                = 57363
+	SPACE                    = 57364
+	STRING                   = 57365
+	TIMES                    = 57366
+	operatorsStart           = 57367
+	ADD                      = 57368
+	DIV                      = 57369
+	EQLC                     = 57370
+	EQL_REGEX                = 57371
+	GTE                      = 57372
+	GTR                      = 57373
+	LAND                     = 57374
+	LOR                      = 57375
+	LSS                      = 57376
+	LTE                      = 57377
+	LUNLESS                  = 57378
+	MOD                      = 57379
+	MUL                      = 57380
+	NEQ                      = 57381
+	NEQ_REGEX                = 57382
+	POW                      = 57383
+	SUB                      = 57384
+	AT                       = 57385
+	ATAN2                    = 57386
+	operatorsEnd             = 57387
+	aggregatorsStart         = 57388
+	AVG                      = 57389
+	BOTTOMK                  = 57390
+	COUNT                    = 57391
+	COUNT_VALUES             = 57392
+	GROUP                    = 57393
+	MAX                      = 57394
+	MIN                      = 57395
+	QUANTILE                 = 57396
+	STDDEV                   = 57397
+	STDVAR                   = 57398
+	SUM                      = 57399
+	TOPK                     = 57400
+	aggregatorsEnd           = 57401
+	keywordsStart            = 57402
+	BOOL                     = 57403
+	BY                       = 57404
+	GROUP_LEFT               = 57405
+	GROUP_RIGHT              = 57406
+	IGNORING                 = 57407
+	OFFSET                   = 57408
+	ON                       = 57409
+	WITHOUT                  = 57410
+	keywordsEnd              = 57411
+	preprocessorStart        = 57412
+	START                    = 57413
+	END                      = 57414
+	preprocessorEnd          = 57415
+	startSymbolsStart        = 57416
+	START_METRIC             = 57417
+	START_SERIES_DESCRIPTION = 57418
+	START_EXPRESSION         = 57419
+	START_METRIC_SELECTOR    = 57420
+	startSymbolsEnd          = 57421
+)
 
 var yyToknames = [...]string{
 	"$end",
@@ -194,9 +196,11 @@ var yyToknames = [...]string{
 
 var yyStatenames = [...]string{}
 
-const yyEofCode = 1
-const yyErrCode = 2
-const yyInitialStackSize = 16
+const (
+	yyEofCode          = 1
+	yyErrCode          = 2
+	yyInitialStackSize = 16
+)
 
 //line promql/parser/generated_parser.y:749
 

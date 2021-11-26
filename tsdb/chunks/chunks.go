@@ -54,13 +54,69 @@ const (
 	ChunkEncodingSize = 1
 )
 
+// ChunkRef is a generic reference for reading chunk data. In prometheus it
+// is either a HeadChunkRef or BlockChunkRef, though other implementations
+// may have their own reference types.
+type ChunkRef uint64
+
+// HeadSeriesRef refers to in-memory series.
+type HeadSeriesRef uint64
+
+// HeadChunkRef packs a HeadSeriesRef and a ChunkID into a global 8 Byte ID.
+// The HeadSeriesRef and ChunkID may not exceed 5 and 3 bytes respectively.
+type HeadChunkRef uint64
+
+func NewHeadChunkRef(hsr HeadSeriesRef, chunkID HeadChunkID) HeadChunkRef {
+	if hsr > (1<<40)-1 {
+		panic("series ID exceeds 5 bytes")
+	}
+	if chunkID > (1<<24)-1 {
+		panic("chunk ID exceeds 3 bytes")
+	}
+	return HeadChunkRef(uint64(hsr<<24) | uint64(chunkID))
+}
+
+func (p HeadChunkRef) Unpack() (HeadSeriesRef, HeadChunkID) {
+	return HeadSeriesRef(p >> 24), HeadChunkID(p<<40) >> 40
+}
+
+// HeadChunkID refers to a specific chunk in a series (memSeries) in the Head.
+// Each memSeries has its own monotonically increasing number to refer to its chunks.
+// If the HeadChunkID value is...
+// * memSeries.firstChunkID+len(memSeries.mmappedChunks), it's the head chunk.
+// * less than the above, but >= memSeries.firstID, then it's
+//   memSeries.mmappedChunks[i] where i = HeadChunkID - memSeries.firstID.
+// Example:
+// assume a memSeries.firstChunkID=7 and memSeries.mmappedChunks=[p5,p6,p7,p8,p9].
+// | HeadChunkID value | refers to ...                                                                          |
+// |-------------------|----------------------------------------------------------------------------------------|
+// |               0-6 | chunks that have been compacted to blocks, these won't return data for queries in Head |
+// |              7-11 | memSeries.mmappedChunks[i] where i is 0 to 4.                                          |
+// |                12 | memSeries.headChunk                                                                    |
+type HeadChunkID uint64
+
+// BlockChunkRef refers to a chunk within a persisted block.
+// The upper 4 bytes are for the segment index and
+// the lower 4 bytes are for the segment offset where the data starts for this chunk.
+type BlockChunkRef uint64
+
+// NewBlockChunkRef packs the file index and byte offset into a BlockChunkRef.
+func NewBlockChunkRef(fileIndex, fileOffset uint64) BlockChunkRef {
+	return BlockChunkRef(fileIndex<<32 | fileOffset)
+}
+
+func (b BlockChunkRef) Unpack() (int, int) {
+	sgmIndex := int(b >> 32)
+	chkStart := int((b << 32) >> 32)
+	return sgmIndex, chkStart
+}
+
 // Meta holds information about a chunk of data.
 type Meta struct {
 	// Ref and Chunk hold either a reference that can be used to retrieve
 	// chunk data or the data itself.
-	// When it is a reference it is the segment offset at which the chunk bytes start.
-	// Generally, only one of them is set.
-	Ref   uint64
+	// If Chunk is nil, call ChunkReader.Chunk(Meta.Ref) to get the chunk and assign it to the Chunk field
+	Ref   ChunkRef
 	Chunk chunkenc.Chunk
 
 	// Time range the data covers.
@@ -68,7 +124,7 @@ type Meta struct {
 	MinTime, MaxTime int64
 }
 
-// Iterator iterates over the chunk of a time series.
+// Iterator iterates over the chunks of a single time series.
 type Iterator interface {
 	// At returns the current meta.
 	// It depends on implementation if the chunk is populated or not.
@@ -97,9 +153,7 @@ func (cm *Meta) OverlapsClosedInterval(mint, maxt int64) bool {
 	return cm.MinTime <= maxt && mint <= cm.MaxTime
 }
 
-var (
-	errInvalidSize = fmt.Errorf("invalid size")
-)
+var errInvalidSize = fmt.Errorf("invalid size")
 
 var castagnoliTable *crc32.Table
 
@@ -148,7 +202,7 @@ func newWriter(dir string, segmentSize int64) (*Writer, error) {
 		segmentSize = DefaultChunkSegmentSize
 	}
 
-	if err := os.MkdirAll(dir, 0777); err != nil {
+	if err := os.MkdirAll(dir, 0o777); err != nil {
 		return nil, err
 	}
 	dirFile, err := fileutil.OpenDir(dir)
@@ -224,7 +278,7 @@ func cutSegmentFile(dirFile *os.File, magicNumber uint32, chunksFormat byte, all
 		return 0, nil, 0, errors.Wrap(err, "next sequence file")
 	}
 	ptmp := p + ".tmp"
-	f, err := os.OpenFile(ptmp, os.O_WRONLY|os.O_CREATE, 0666)
+	f, err := os.OpenFile(ptmp, os.O_WRONLY|os.O_CREATE, 0o666)
 	if err != nil {
 		return 0, nil, 0, errors.Wrap(err, "open temp file")
 	}
@@ -266,7 +320,7 @@ func cutSegmentFile(dirFile *os.File, magicNumber uint32, chunksFormat byte, all
 		return 0, nil, 0, errors.Wrap(err, "replace file")
 	}
 
-	f, err = os.OpenFile(p, os.O_WRONLY, 0666)
+	f, err = os.OpenFile(p, os.O_WRONLY, 0o666)
 	if err != nil {
 		return 0, nil, 0, errors.Wrap(err, "open final file")
 	}
@@ -355,16 +409,11 @@ func (w *Writer) writeChunks(chks []Meta) error {
 		return nil
 	}
 
-	var seq = uint64(w.seq()) << 32
+	seq := uint64(w.seq())
 	for i := range chks {
 		chk := &chks[i]
 
-		// The reference is set to the segment index and the offset where
-		// the data starts for this chunk.
-		//
-		// The upper 4 bytes are for the segment index and
-		// the lower 4 bytes are for the segment offset where to start reading this chunk.
-		chk.Ref = seq | uint64(w.n)
+		chk.Ref = ChunkRef(NewBlockChunkRef(seq, uint64(w.n)))
 
 		n := binary.PutUvarint(w.buf[:], uint64(len(chk.Chunk.Bytes())))
 
@@ -497,16 +546,9 @@ func (s *Reader) Size() int64 {
 }
 
 // Chunk returns a chunk from a given reference.
-func (s *Reader) Chunk(ref uint64) (chunkenc.Chunk, error) {
-	var (
-		// Get the upper 4 bytes.
-		// These contain the segment index.
-		sgmIndex = int(ref >> 32)
-		// Get the lower 4 bytes.
-		// These contain the segment offset where the data for this chunk starts.
-		chkStart = int((ref << 32) >> 32)
-		chkCRC32 = newCRC32()
-	)
+func (s *Reader) Chunk(ref ChunkRef) (chunkenc.Chunk, error) {
+	sgmIndex, chkStart := BlockChunkRef(ref).Unpack()
+	chkCRC32 := newCRC32()
 
 	if sgmIndex >= len(s.bs) {
 		return nil, errors.Errorf("segment index %d out of range", sgmIndex)

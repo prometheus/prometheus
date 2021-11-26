@@ -41,8 +41,8 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/relabel"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/relabel"
 )
 
 const (
@@ -303,7 +303,6 @@ func (n *Manager) nextBatch() []*Alert {
 
 // Run dispatches notifications continuously.
 func (n *Manager) Run(tsets <-chan map[string][]*targetgroup.Group) {
-
 	for {
 		select {
 		case <-n.ctx.Done():
@@ -602,7 +601,7 @@ func (n *Manager) Stop() {
 	n.cancel()
 }
 
-// alertmanager holds Alertmanager endpoint information.
+// Alertmanager holds Alertmanager endpoint information.
 type alertmanager interface {
 	url() *url.URL
 }
@@ -654,7 +653,7 @@ func (s *alertmanagerSet) sync(tgs []*targetgroup.Group) {
 	allDroppedAms := []alertmanager{}
 
 	for _, tg := range tgs {
-		ams, droppedAms, err := alertmanagerFromGroup(tg, s.cfg)
+		ams, droppedAms, err := AlertmanagerFromGroup(tg, s.cfg)
 		if err != nil {
 			level.Error(s.logger).Log("msg", "Creating discovered Alertmanagers failed", "err", err)
 			continue
@@ -691,9 +690,9 @@ func postPath(pre string, v config.AlertmanagerAPIVersion) string {
 	return path.Join("/", pre, alertPushEndpoint)
 }
 
-// alertmanagerFromGroup extracts a list of alertmanagers from a target group
+// AlertmanagerFromGroup extracts a list of alertmanagers from a target group
 // and an associated AlertmanagerConfig.
-func alertmanagerFromGroup(tg *targetgroup.Group, cfg *config.AlertmanagerConfig) ([]alertmanager, []alertmanager, error) {
+func AlertmanagerFromGroup(tg *targetgroup.Group, cfg *config.AlertmanagerConfig) ([]alertmanager, []alertmanager, error) {
 	var res []alertmanager
 	var droppedAlertManagers []alertmanager
 

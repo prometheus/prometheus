@@ -30,7 +30,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
@@ -179,13 +179,13 @@ func TestCorruptedChunk(t *testing.T) {
 				require.NoError(t, os.RemoveAll(tmpdir))
 			}()
 
-			series := storage.NewListSeries(labels.FromStrings("a", "b"), []tsdbutil.Sample{sample{1, 1}})
+			series := storage.NewListSeries(labels.FromStrings("a", "b"), []tsdbutil.Sample{sample{1, 1, nil}})
 			blockDir := createBlock(t, tmpdir, []storage.Series{series})
 			files, err := sequenceFiles(chunkDir(blockDir))
 			require.NoError(t, err)
 			require.Greater(t, len(files), 0, "No chunk created.")
 
-			f, err := os.OpenFile(files[0], os.O_RDWR, 0666)
+			f, err := os.OpenFile(files[0], os.O_RDWR, 0o666)
 			require.NoError(t, err)
 
 			// Apply corruption function.
@@ -226,7 +226,7 @@ func TestLabelValuesWithMatchers(t *testing.T) {
 		seriesEntries = append(seriesEntries, storage.NewListSeries(labels.Labels{
 			{Name: "unique", Value: fmt.Sprintf("value%d", i)},
 			{Name: "tens", Value: fmt.Sprintf("value%d", i/10)},
-		}, []tsdbutil.Sample{sample{100, 0}}))
+		}, []tsdbutil.Sample{sample{100, 0, nil}}))
 	}
 
 	blockDir := createBlock(t, tmpdir, seriesEntries)
@@ -389,7 +389,7 @@ func BenchmarkLabelValuesWithMatchers(b *testing.B) {
 			{Name: "unique", Value: fmt.Sprintf("value%d", i)},
 			{Name: "tens", Value: fmt.Sprintf("value%d", i/(metricCount/10))},
 			{Name: "ninety", Value: fmt.Sprintf("value%d", i/(metricCount/10)/9)}, // "0" for the first 90%, then "1"
-		}, []tsdbutil.Sample{sample{100, 0}}))
+		}, []tsdbutil.Sample{sample{100, 0, nil}}))
 	}
 
 	blockDir := createBlock(b, tmpdir, seriesEntries)
@@ -427,13 +427,13 @@ func TestLabelNamesWithMatchers(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		seriesEntries = append(seriesEntries, storage.NewListSeries(labels.Labels{
 			{Name: "unique", Value: fmt.Sprintf("value%d", i)},
-		}, []tsdbutil.Sample{sample{100, 0}}))
+		}, []tsdbutil.Sample{sample{100, 0, nil}}))
 
 		if i%10 == 0 {
 			seriesEntries = append(seriesEntries, storage.NewListSeries(labels.Labels{
 				{Name: "unique", Value: fmt.Sprintf("value%d", i)},
 				{Name: "tens", Value: fmt.Sprintf("value%d", i/10)},
-			}, []tsdbutil.Sample{sample{100, 0}}))
+			}, []tsdbutil.Sample{sample{100, 0, nil}}))
 		}
 
 		if i%20 == 0 {
@@ -441,7 +441,7 @@ func TestLabelNamesWithMatchers(t *testing.T) {
 				{Name: "unique", Value: fmt.Sprintf("value%d", i)},
 				{Name: "tens", Value: fmt.Sprintf("value%d", i/10)},
 				{Name: "twenties", Value: fmt.Sprintf("value%d", i/20)},
-			}, []tsdbutil.Sample{sample{100, 0}}))
+			}, []tsdbutil.Sample{sample{100, 0, nil}}))
 		}
 
 	}
@@ -505,7 +505,7 @@ func createBlockFromHead(tb testing.TB, dir string, head *Head) string {
 	compactor, err := NewLeveledCompactor(context.Background(), nil, log.NewNopLogger(), []int64{1000000}, nil, nil)
 	require.NoError(tb, err)
 
-	require.NoError(tb, os.MkdirAll(dir, 0777))
+	require.NoError(tb, os.MkdirAll(dir, 0o777))
 
 	// Add +1 millisecond to block maxt because block intervals are half-open: [b.MinTime, b.MaxTime).
 	// Because of this block intervals are always +1 than the total samples it includes.
@@ -522,7 +522,7 @@ func createHead(tb testing.TB, w *wal.WAL, series []storage.Series, chunkDir str
 
 	app := head.Appender(context.Background())
 	for _, s := range series {
-		ref := uint64(0)
+		ref := storage.SeriesRef(0)
 		it := s.Iterator()
 		lset := s.Labels()
 		for it.Next() {

@@ -103,11 +103,7 @@ func (c *KumaSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return errors.Errorf("kuma SD server must not be empty and have a scheme: %s", c.Server)
 	}
 
-	if err := c.HTTPClientConfig.Validate(); err != nil {
-		return err
-	}
-
-	return nil
+	return c.HTTPClientConfig.Validate()
 }
 
 func (c *KumaSDConfig) Name() string {

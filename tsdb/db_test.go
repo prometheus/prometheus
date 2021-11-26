@@ -40,7 +40,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -228,7 +228,7 @@ func TestNoPanicAfterWALCorruption(t *testing.T) {
 	{
 		walFiles, err := ioutil.ReadDir(path.Join(db.Dir(), "wal"))
 		require.NoError(t, err)
-		f, err := os.OpenFile(path.Join(db.Dir(), "wal", walFiles[0].Name()), os.O_RDWR, 0666)
+		f, err := os.OpenFile(path.Join(db.Dir(), "wal", walFiles[0].Name()), os.O_RDWR, 0o666)
 		require.NoError(t, err)
 		r := wal.NewReader(bufio.NewReader(f))
 		require.True(t, r.Next(), "reading the series record")
@@ -420,7 +420,7 @@ Outer:
 
 		expSamples := make([]tsdbutil.Sample, 0, len(c.remaint))
 		for _, ts := range c.remaint {
-			expSamples = append(expSamples, sample{ts, smpls[ts]})
+			expSamples = append(expSamples, sample{ts, smpls[ts], nil})
 		}
 
 		expss := newMockSeriesSet([]storage.Series{
@@ -536,7 +536,7 @@ func TestSkippingInvalidValuesInSameTxn(t *testing.T) {
 	ssMap := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 
 	require.Equal(t, map[string][]tsdbutil.Sample{
-		labels.New(labels.Label{Name: "a", Value: "b"}).String(): {sample{0, 1}},
+		labels.New(labels.Label{Name: "a", Value: "b"}).String(): {sample{0, 1, nil}},
 	}, ssMap)
 
 	// Append Out of Order Value.
@@ -553,7 +553,7 @@ func TestSkippingInvalidValuesInSameTxn(t *testing.T) {
 	ssMap = query(t, q, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 
 	require.Equal(t, map[string][]tsdbutil.Sample{
-		labels.New(labels.Label{Name: "a", Value: "b"}).String(): {sample{0, 1}, sample{10, 3}},
+		labels.New(labels.Label{Name: "a", Value: "b"}).String(): {sample{0, 1, nil}, sample{10, 3, nil}},
 	}, ssMap)
 }
 
@@ -663,6 +663,7 @@ func TestDB_SnapshotWithDelete(t *testing.T) {
 	numSamples := int64(10)
 
 	db := openTestDB(t, nil, nil)
+	defer func() { require.NoError(t, db.Close()) }()
 
 	ctx := context.Background()
 	app := db.Appender(ctx)
@@ -700,15 +701,14 @@ Outer:
 			require.NoError(t, os.RemoveAll(snap))
 		}()
 		require.NoError(t, db.Snapshot(snap, true))
-		require.NoError(t, db.Close())
 
 		// reopen DB from snapshot
-		db, err = Open(snap, nil, nil, nil, nil)
+		newDB, err := Open(snap, nil, nil, nil, nil)
 		require.NoError(t, err)
-		defer func() { require.NoError(t, db.Close()) }()
+		defer func() { require.NoError(t, newDB.Close()) }()
 
 		// Compare the result.
-		q, err := db.Querier(context.TODO(), 0, numSamples)
+		q, err := newDB.Querier(context.TODO(), 0, numSamples)
 		require.NoError(t, err)
 		defer func() { require.NoError(t, q.Close()) }()
 
@@ -716,7 +716,7 @@ Outer:
 
 		expSamples := make([]tsdbutil.Sample, 0, len(c.remaint))
 		for _, ts := range c.remaint {
-			expSamples = append(expSamples, sample{ts, smpls[ts]})
+			expSamples = append(expSamples, sample{ts, smpls[ts], nil})
 		}
 
 		expss := newMockSeriesSet([]storage.Series{
@@ -821,7 +821,7 @@ func TestDB_e2e(t *testing.T) {
 		for i := 0; i < numDatapoints; i++ {
 			v := rand.Float64()
 
-			series = append(series, sample{ts, v})
+			series = append(series, sample{ts, v, nil})
 
 			_, err := app.Append(0, lset, ts, v)
 			require.NoError(t, err)
@@ -1066,7 +1066,7 @@ func TestTombstoneClean(t *testing.T) {
 
 		expSamples := make([]tsdbutil.Sample, 0, len(c.remaint))
 		for _, ts := range c.remaint {
-			expSamples = append(expSamples, sample{ts, smpls[ts]})
+			expSamples = append(expSamples, sample{ts, smpls[ts], nil})
 		}
 
 		expss := newMockSeriesSet([]storage.Series{
@@ -1202,6 +1202,10 @@ func TestTombstoneCleanFail(t *testing.T) {
 // and retention limit policies, when triggered at the same time,
 // won't race against each other.
 func TestTombstoneCleanRetentionLimitsRace(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode.")
+	}
+
 	opts := DefaultOptions()
 	var wg sync.WaitGroup
 
@@ -1245,7 +1249,6 @@ func TestTombstoneCleanRetentionLimitsRace(t *testing.T) {
 
 		require.NoError(t, db.Close())
 	}
-
 }
 
 func intersection(oldBlocks, actualBlocks []string) (intersection []string) {
@@ -1272,6 +1275,7 @@ type mockCompactorFailing struct {
 func (*mockCompactorFailing) Plan(dir string) ([]string, error) {
 	return nil, nil
 }
+
 func (c *mockCompactorFailing) Write(dest string, b BlockReader, mint, maxt int64, parent *BlockMeta) (ulid.ULID, error) {
 	if len(c.blocks) >= c.max {
 		return ulid.ULID{}, fmt.Errorf("the compactor already did the maximum allowed blocks so it is time to fail")
@@ -1388,7 +1392,7 @@ func TestSizeRetention(t *testing.T) {
 	// Create a WAL checkpoint, and compare sizes.
 	first, last, err := wal.Segments(db.Head().wal.Dir())
 	require.NoError(t, err)
-	_, err = wal.Checkpoint(log.NewNopLogger(), db.Head().wal, first, last-1, func(x uint64) bool { return false }, 0)
+	_, err = wal.Checkpoint(log.NewNopLogger(), db.Head().wal, first, last-1, func(x chunks.HeadSeriesRef) bool { return false }, 0)
 	require.NoError(t, err)
 	blockSize = int64(prom_testutil.ToFloat64(db.metrics.blocksBytes)) // Use the actual internal metrics.
 	walSize, err = db.Head().wal.Size()
@@ -1559,7 +1563,7 @@ func expandSeriesSet(ss storage.SeriesSet) ([]labels.Labels, map[string][]sample
 func TestOverlappingBlocksDetectsAllOverlaps(t *testing.T) {
 	// Create 10 blocks that does not overlap (0-10, 10-20, ..., 100-110) but in reverse order to ensure our algorithm
 	// will handle that.
-	var metas = make([]BlockMeta, 11)
+	metas := make([]BlockMeta, 11)
 	for i := 10; i >= 0; i-- {
 		metas[i] = BlockMeta{MinTime: int64(i * 10), MaxTime: int64((i + 1) * 10)}
 	}
@@ -1781,7 +1785,7 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 			require.NoError(t, os.RemoveAll(dir))
 		}()
 
-		require.NoError(t, os.MkdirAll(path.Join(dir, "wal"), 0777))
+		require.NoError(t, os.MkdirAll(path.Join(dir, "wal"), 0o777))
 		w, err := wal.New(nil, nil, path.Join(dir, "wal"), false)
 		require.NoError(t, err)
 
@@ -1831,7 +1835,7 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 
 		createBlock(t, dir, genSeries(1, 1, 1000, 6000))
 
-		require.NoError(t, os.MkdirAll(path.Join(dir, "wal"), 0777))
+		require.NoError(t, os.MkdirAll(path.Join(dir, "wal"), 0o777))
 		w, err := wal.New(nil, nil, path.Join(dir, "wal"), false)
 		require.NoError(t, err)
 
@@ -2541,11 +2545,11 @@ func TestDBQueryDoesntSeeAppendsAfterCreation(t *testing.T) {
 // TestChunkWriter_ReadAfterWrite ensures that chunk segment are cut at the set segment size and
 // that the resulted segments includes the expected chunks data.
 func TestChunkWriter_ReadAfterWrite(t *testing.T) {
-	chk1 := tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 1}})
-	chk2 := tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 2}})
-	chk3 := tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 3}})
-	chk4 := tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 4}})
-	chk5 := tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 5}})
+	chk1 := tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 1, nil}})
+	chk2 := tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 2, nil}})
+	chk3 := tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 3, nil}})
+	chk4 := tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 4, nil}})
+	chk5 := tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 5, nil}})
 	chunkSize := len(chk1.Chunk.Bytes()) + chunks.MaxChunkLengthFieldSize + chunks.ChunkEncodingSize + crc32.Size
 
 	tests := []struct {
@@ -2663,7 +2667,6 @@ func TestChunkWriter_ReadAfterWrite(t *testing.T) {
 
 	for i, test := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-
 			tempDir, err := ioutil.TempDir("", "test_chunk_writer")
 			require.NoError(t, err)
 			defer func() { require.NoError(t, os.RemoveAll(tempDir)) }()
@@ -2746,11 +2749,11 @@ func TestRangeForTimestamp(t *testing.T) {
 // Regression test for https://github.com/prometheus/prometheus/pull/6514.
 func TestChunkReader_ConcurrentReads(t *testing.T) {
 	chks := []chunks.Meta{
-		tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 1}}),
-		tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 2}}),
-		tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 3}}),
-		tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 4}}),
-		tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 5}}),
+		tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 1, nil}}),
+		tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 2, nil}}),
+		tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 3, nil}}),
+		tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 4, nil}}),
+		tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 5, nil}}),
 	}
 
 	tempDir, err := ioutil.TempDir("", "test_chunk_writer")
@@ -2815,7 +2818,7 @@ func TestCompactHead(t *testing.T) {
 		val := rand.Float64()
 		_, err := app.Append(0, labels.FromStrings("a", "b"), int64(i), val)
 		require.NoError(t, err)
-		expSamples = append(expSamples, sample{int64(i), val})
+		expSamples = append(expSamples, sample{int64(i), val, nil})
 	}
 	require.NoError(t, app.Commit())
 
@@ -2842,7 +2845,7 @@ func TestCompactHead(t *testing.T) {
 		series := seriesSet.At().Iterator()
 		for series.Next() {
 			time, val := series.At()
-			actSamples = append(actSamples, sample{int64(time), val})
+			actSamples = append(actSamples, sample{int64(time), val, nil})
 		}
 		require.NoError(t, series.Err())
 	}
@@ -2899,7 +2902,7 @@ func TestOpen_VariousBlockStates(t *testing.T) {
 		expectedLoadedDirs[outDir] = struct{}{}
 
 		// Touch chunks dir in block.
-		require.NoError(t, os.MkdirAll(filepath.Join(dbDir, "chunks"), 0777))
+		require.NoError(t, os.MkdirAll(filepath.Join(dbDir, "chunks"), 0o777))
 		defer func() {
 			require.NoError(t, os.RemoveAll(filepath.Join(dbDir, "chunks")))
 		}()
@@ -3113,80 +3116,30 @@ func TestNoPanicOnTSDBOpenError(t *testing.T) {
 		require.NoError(t, os.RemoveAll(tmpdir))
 	})
 
-	absdir, err := filepath.Abs(tmpdir)
+	// Taking the lock will cause a TSDB startup error.
+	l, err := tsdbutil.NewDirLocker(tmpdir, "tsdb", log.NewNopLogger(), nil)
 	require.NoError(t, err)
-	// Taking the file lock will cause TSDB startup error.
-	lockf, _, err := fileutil.Flock(filepath.Join(absdir, "lock"))
-	require.NoError(t, err)
+	require.NoError(t, l.Lock())
 
 	_, err = Open(tmpdir, nil, nil, DefaultOptions(), nil)
 	require.Error(t, err)
 
-	require.NoError(t, lockf.Release())
+	require.NoError(t, l.Release())
 }
 
-func TestLockfileMetric(t *testing.T) {
-	cases := []struct {
-		fileAlreadyExists bool
-		lockFileDisabled  bool
-		expectedValue     int
-	}{
-		{
-			fileAlreadyExists: false,
-			lockFileDisabled:  false,
-			expectedValue:     lockfileCreatedCleanly,
-		},
-		{
-			fileAlreadyExists: true,
-			lockFileDisabled:  false,
-			expectedValue:     lockfileReplaced,
-		},
-		{
-			fileAlreadyExists: true,
-			lockFileDisabled:  true,
-			expectedValue:     lockfileDisabled,
-		},
-		{
-			fileAlreadyExists: false,
-			lockFileDisabled:  true,
-			expectedValue:     lockfileDisabled,
-		},
-	}
+func TestLockfile(t *testing.T) {
+	tsdbutil.TestDirLockerUsage(t, func(t *testing.T, data string, createLock bool) (*tsdbutil.DirLocker, testutil.Closer) {
+		opts := DefaultOptions()
+		opts.NoLockfile = !createLock
 
-	for _, c := range cases {
-		t.Run(fmt.Sprintf("%+v", c), func(t *testing.T) {
-			tmpdir, err := ioutil.TempDir("", "test")
-			require.NoError(t, err)
-			t.Cleanup(func() {
-				require.NoError(t, os.RemoveAll(tmpdir))
-			})
-			absdir, err := filepath.Abs(tmpdir)
-			require.NoError(t, err)
+		// Create the DB. This should create lockfile and its metrics.
+		db, err := Open(data, nil, nil, opts, nil)
+		require.NoError(t, err)
 
-			// Test preconditions (file already exists + lockfile option)
-			lockfilePath := filepath.Join(absdir, "lock")
-			if c.fileAlreadyExists {
-				err = ioutil.WriteFile(lockfilePath, []byte{}, 0644)
-				require.NoError(t, err)
-			}
-			opts := DefaultOptions()
-			opts.NoLockfile = c.lockFileDisabled
-
-			// Create the DB, this should create a lockfile and the metrics
-			db, err := Open(tmpdir, nil, nil, opts, nil)
-			require.NoError(t, err)
-			require.Equal(t, float64(c.expectedValue), prom_testutil.ToFloat64(db.metrics.lockfileCreatedCleanly))
-
-			// Close the DB, this should delete the lockfile
+		return db.locker, testutil.NewCallbackCloser(func() {
 			require.NoError(t, db.Close())
-
-			// Check that the lockfile is always deleted
-			if !c.lockFileDisabled {
-				_, err = os.Stat(lockfilePath)
-				require.Error(t, err, "lockfile was not deleted")
-			}
 		})
-	}
+	})
 }
 
 func TestQuerier_ShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChunks(t *testing.T) {

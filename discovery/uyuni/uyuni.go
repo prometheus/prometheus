@@ -71,7 +71,6 @@ type SDConfig struct {
 	RefreshInterval  model.Duration          `yaml:"refresh_interval,omitempty"`
 }
 
-// Uyuni API Response structures
 type systemGroupID struct {
 	GroupID   int    `xmlrpc:"id"`
 	GroupName string `xmlrpc:"name"`
@@ -120,7 +119,6 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	*c = DefaultSDConfig
 	type plain SDConfig
 	err := unmarshal((*plain)(c))
-
 	if err != nil {
 		return err
 	}
@@ -142,20 +140,17 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	return nil
 }
 
-// Attempt to login in Uyuni Server and get an auth token
-func login(rpcclient *xmlrpc.Client, user string, pass string) (string, error) {
+func login(rpcclient *xmlrpc.Client, user, pass string) (string, error) {
 	var result string
 	err := rpcclient.Call("auth.login", []interface{}{user, pass}, &result)
 	return result, err
 }
 
-// Logout from Uyuni API
 func logout(rpcclient *xmlrpc.Client, token string) error {
 	return rpcclient.Call("auth.logout", token, nil)
 }
 
-// Get the system groups information of monitored clients
-func getSystemGroupsInfoOfMonitoredClients(rpcclient *xmlrpc.Client, token string, entitlement string) (map[int][]systemGroupID, error) {
+func getSystemGroupsInfoOfMonitoredClients(rpcclient *xmlrpc.Client, token, entitlement string) (map[int][]systemGroupID, error) {
 	var systemGroupsInfos []struct {
 		SystemID     int             `xmlrpc:"id"`
 		SystemGroups []systemGroupID `xmlrpc:"system_groups"`
@@ -173,7 +168,6 @@ func getSystemGroupsInfoOfMonitoredClients(rpcclient *xmlrpc.Client, token strin
 	return result, nil
 }
 
-// GetSystemNetworkInfo lists client FQDNs.
 func getNetworkInformationForSystems(rpcclient *xmlrpc.Client, token string, systemIDs []int) (map[int]networkInfo, error) {
 	var networkInfos []networkInfo
 	err := rpcclient.Call("system.getNetworkForSystems", []interface{}{token, systemIDs}, &networkInfos)
@@ -188,7 +182,6 @@ func getNetworkInformationForSystems(rpcclient *xmlrpc.Client, token string, sys
 	return result, nil
 }
 
-// Get endpoints information for given systems
 func getEndpointInfoForSystems(
 	rpcclient *xmlrpc.Client,
 	token string,
@@ -210,7 +203,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 	*apiURL = *conf.Server.URL
 	apiURL.Path = path.Join(apiURL.Path, uyuniXMLRPCAPIPath)
 
-	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "uyuni_sd", config.WithHTTP2Disabled())
+	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "uyuni_sd")
 	if err != nil {
 		return nil, err
 	}
@@ -240,7 +233,6 @@ func (d *Discovery) getEndpointLabels(
 	systemGroupIDs []systemGroupID,
 	networkInfo networkInfo,
 ) model.LabelSet {
-
 	var addr, scheme string
 	managedGroupNames := getSystemGroupNames(systemGroupIDs)
 	addr = fmt.Sprintf("%s:%d", networkInfo.Hostname, endpoint.Port)
@@ -280,7 +272,6 @@ func (d *Discovery) getTargetsForSystems(
 	token string,
 	entitlement string,
 ) ([]model.LabelSet, error) {
-
 	result := make([]model.LabelSet, 0)
 
 	systemGroupIDsBySystemID, err := getSystemGroupsInfoOfMonitoredClients(rpcClient, token, entitlement)

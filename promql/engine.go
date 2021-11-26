@@ -35,11 +35,13 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/uber/jaeger-client-go"
 
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/timestamp"
-	"github.com/prometheus/prometheus/pkg/value"
+	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/stats"
 )
 
@@ -87,12 +89,15 @@ type (
 func (e ErrQueryTimeout) Error() string {
 	return fmt.Sprintf("query timed out in %s", string(e))
 }
+
 func (e ErrQueryCanceled) Error() string {
 	return fmt.Sprintf("query was canceled in %s", string(e))
 }
+
 func (e ErrTooManySamples) Error() string {
 	return fmt.Sprintf("query processing would load too many samples into memory in %s", string(e))
 }
+
 func (e ErrStorage) Error() string {
 	return e.Err.Error()
 }
@@ -181,7 +186,6 @@ func (q *query) Exec(ctx context.Context) *Result {
 
 	// Exec query.
 	res, warnings, err := q.ng.exec(ctx, q)
-
 	return &Result{Err: err, Value: res, Warnings: warnings}
 }
 
@@ -402,8 +406,10 @@ func (ng *Engine) newQuery(q storage.Queryable, expr parser.Expr, start, end tim
 	return qry, nil
 }
 
-var ErrValidationAtModifierDisabled = errors.New("@ modifier is disabled")
-var ErrValidationNegativeOffsetDisabled = errors.New("negative offset is disabled")
+var (
+	ErrValidationAtModifierDisabled     = errors.New("@ modifier is disabled")
+	ErrValidationNegativeOffsetDisabled = errors.New("negative offset is disabled")
+)
 
 func (ng *Engine) validateOpts(expr parser.Expr) error {
 	if ng.enableAtModifier && ng.enableNegativeOffset {
@@ -614,7 +620,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 			for i, s := range mat {
 				// Point might have a different timestamp, force it to the evaluation
 				// timestamp as that is when we ran the evaluation.
-				vector[i] = Sample{Metric: s.Metric, Point: Point{V: s.Points[0].V, T: start}}
+				vector[i] = Sample{Metric: s.Metric, Point: Point{V: s.Points[0].V, H: s.Points[0].H, T: start}}
 			}
 			return vector, warnings, nil
 		case parser.ValueTypeScalar:
@@ -897,8 +903,10 @@ func (ev *evaluator) recover(ws *storage.Warnings, errp *error) {
 	case errWithWarnings:
 		*errp = err.err
 		*ws = append(*ws, err.warnings...)
+	case error:
+		*errp = err
 	default:
-		*errp = e.(error)
+		*errp = fmt.Errorf("%v", err)
 	}
 }
 
@@ -1175,7 +1183,9 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 		}
 
 		unwrapParenExpr(&e.Param)
-		if s, ok := unwrapStepInvariantExpr(e.Param).(*parser.StringLiteral); ok {
+		param := unwrapStepInvariantExpr(e.Param)
+		unwrapParenExpr(&param)
+		if s, ok := param.(*parser.StringLiteral); ok {
 			return ev.rangeEval(initSeries, func(v []parser.Value, sh [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, storage.Warnings) {
 				return ev.aggregation(e.Op, sortedGrouping, e.Without, s.Val, v[0].(Vector), sh[0], enh), nil
 			}, e.Expr)
@@ -1197,6 +1207,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 			// a vector selector.
 			unwrapParenExpr(&e.Args[0])
 			arg := unwrapStepInvariantExpr(e.Args[0])
+			unwrapParenExpr(&arg)
 			vs, ok := arg.(*parser.VectorSelector)
 			if ok {
 				return ev.rangeEval(nil, func(v []parser.Value, _ [][]EvalSeriesHelper, enh *EvalNodeHelper) (Vector, storage.Warnings) {
@@ -1220,6 +1231,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 		for i := range e.Args {
 			unwrapParenExpr(&e.Args[i])
 			a := unwrapStepInvariantExpr(e.Args[i])
+			unwrapParenExpr(&a)
 			if _, ok := a.(*parser.MatrixSelector); ok {
 				matrixArgIndex = i
 				matrixArg = true
@@ -1262,7 +1274,10 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 			}
 		}
 
-		sel := unwrapStepInvariantExpr(e.Args[matrixArgIndex]).(*parser.MatrixSelector)
+		unwrapParenExpr(&e.Args[matrixArgIndex])
+		arg := unwrapStepInvariantExpr(e.Args[matrixArgIndex])
+		unwrapParenExpr(&arg)
+		sel := arg.(*parser.MatrixSelector)
 		selVS := sel.VectorSelector.(*parser.VectorSelector)
 
 		ws, err := checkAndExpandSeriesSet(ev.ctx, sel)
@@ -1324,7 +1339,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 				outVec := call(inArgs, e.Args, enh)
 				enh.Out = outVec[:0]
 				if len(outVec) > 0 {
-					ss.Points = append(ss.Points, Point{V: outVec[0].Point.V, T: ts})
+					ss.Points = append(ss.Points, Point{V: outVec[0].Point.V, H: outVec[0].Point.H, T: ts})
 				}
 				// Only buffer stepRange milliseconds from the second step on.
 				it.ReduceDelta(stepRange)
@@ -1474,10 +1489,10 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 			}
 
 			for ts := ev.startTimestamp; ts <= ev.endTimestamp; ts += ev.interval {
-				_, v, ok := ev.vectorSelectorSingle(it, e, ts)
+				_, v, h, ok := ev.vectorSelectorSingle(it, e, ts)
 				if ok {
 					if ev.currentSamples < ev.maxSamples {
-						ss.Points = append(ss.Points, Point{V: v, T: ts})
+						ss.Points = append(ss.Points, Point{V: v, H: h, T: ts})
 						ev.currentSamples++
 					} else {
 						ev.error(ErrTooManySamples(env))
@@ -1576,6 +1591,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 				mat[i].Points = append(mat[i].Points, Point{
 					T: ts,
 					V: mat[i].Points[0].V,
+					H: mat[i].Points[0].H,
 				})
 				ev.currentSamples++
 				if ev.currentSamples > ev.maxSamples {
@@ -1600,11 +1616,11 @@ func (ev *evaluator) vectorSelector(node *parser.VectorSelector, ts int64) (Vect
 	for i, s := range node.Series {
 		it.Reset(s.Iterator())
 
-		t, v, ok := ev.vectorSelectorSingle(it, node, ts)
+		t, v, h, ok := ev.vectorSelectorSingle(it, node, ts)
 		if ok {
 			vec = append(vec, Sample{
 				Metric: node.Series[i].Labels(),
-				Point:  Point{V: v, T: t},
+				Point:  Point{V: v, H: h, T: t},
 			})
 
 			ev.currentSamples++
@@ -1617,33 +1633,37 @@ func (ev *evaluator) vectorSelector(node *parser.VectorSelector, ts int64) (Vect
 	return vec, ws
 }
 
-// vectorSelectorSingle evaluates a instant vector for the iterator of one time series.
-func (ev *evaluator) vectorSelectorSingle(it *storage.MemoizedSeriesIterator, node *parser.VectorSelector, ts int64) (int64, float64, bool) {
+// vectorSelectorSingle evaluates an instant vector for the iterator of one time series.
+func (ev *evaluator) vectorSelectorSingle(it *storage.MemoizedSeriesIterator, node *parser.VectorSelector, ts int64) (int64, float64, *histogram.Histogram, bool) {
 	refTime := ts - durationMilliseconds(node.Offset)
 	var t int64
 	var v float64
+	var h *histogram.Histogram
 
-	ok := it.Seek(refTime)
-	if !ok {
+	valueType := it.Seek(refTime)
+	switch valueType {
+	case storage.ValNone:
 		if it.Err() != nil {
 			ev.error(it.Err())
 		}
-	}
-
-	if ok {
+	case storage.ValFloat:
 		t, v = it.Values()
+	case storage.ValHistogram:
+		t, h = it.HistogramValues()
+	default:
+		panic(fmt.Errorf("unknown value type %v", valueType))
 	}
-
-	if !ok || t > refTime {
-		t, v, ok = it.PeekPrev()
+	if valueType == storage.ValNone || t > refTime {
+		var ok bool
+		t, v, h, ok = it.PeekPrev()
 		if !ok || t < refTime-durationMilliseconds(ev.lookbackDelta) {
-			return 0, 0, false
+			return 0, 0, nil, false
 		}
 	}
-	if value.IsStaleNaN(v) {
-		return 0, 0, false
+	if value.IsStaleNaN(v) || (h != nil && value.IsStaleNaN(h.Sum)) {
+		return 0, 0, nil, false
 	}
-	return t, v, true
+	return t, v, h, true
 }
 
 var pointPool = sync.Pool{}
@@ -1736,28 +1756,54 @@ func (ev *evaluator) matrixIterSlice(it *storage.BufferedSeriesIterator, mint, m
 
 	buf := it.Buffer()
 	for buf.Next() {
-		t, v := buf.At()
-		if value.IsStaleNaN(v) {
-			continue
-		}
-		// Values in the buffer are guaranteed to be smaller than maxt.
-		if t >= mint {
-			if ev.currentSamples >= ev.maxSamples {
-				ev.error(ErrTooManySamples(env))
+		if buf.ChunkEncoding() == chunkenc.EncHistogram {
+			t, h := buf.AtHistogram()
+			if value.IsStaleNaN(h.Sum) {
+				continue
 			}
-			ev.currentSamples++
-			out = append(out, Point{T: t, V: v})
+			// Values in the buffer are guaranteed to be smaller than maxt.
+			if t >= mint {
+				if ev.currentSamples >= ev.maxSamples {
+					ev.error(ErrTooManySamples(env))
+				}
+				ev.currentSamples++
+				out = append(out, Point{T: t, H: h})
+			}
+		} else {
+			t, v := buf.At()
+			if value.IsStaleNaN(v) {
+				continue
+			}
+			// Values in the buffer are guaranteed to be smaller than maxt.
+			if t >= mint {
+				if ev.currentSamples >= ev.maxSamples {
+					ev.error(ErrTooManySamples(env))
+				}
+				ev.currentSamples++
+				out = append(out, Point{T: t, V: v})
+			}
 		}
 	}
-	// The seeked sample might also be in the range.
+	// The sought sample might also be in the range.
 	if ok {
-		t, v := it.Values()
-		if t == maxt && !value.IsStaleNaN(v) {
-			if ev.currentSamples >= ev.maxSamples {
-				ev.error(ErrTooManySamples(env))
+		if it.ChunkEncoding() == chunkenc.EncHistogram {
+			t, h := it.HistogramValues()
+			if t == maxt && !value.IsStaleNaN(h.Sum) {
+				if ev.currentSamples >= ev.maxSamples {
+					ev.error(ErrTooManySamples(env))
+				}
+				out = append(out, Point{T: t, H: h})
+				ev.currentSamples++
 			}
-			out = append(out, Point{T: t, V: v})
-			ev.currentSamples++
+		} else {
+			t, v := it.Values()
+			if t == maxt && !value.IsStaleNaN(v) {
+				if ev.currentSamples >= ev.maxSamples {
+					ev.error(ErrTooManySamples(env))
+				}
+				out = append(out, Point{T: t, V: v})
+				ev.currentSamples++
+			}
 		}
 	}
 	return out
@@ -1792,9 +1838,11 @@ func (ev *evaluator) VectorOr(lhs, rhs Vector, matching *parser.VectorMatching, 
 		panic("set operations must only use many-to-many matching")
 	}
 	if len(lhs) == 0 { // Short-circuit.
-		return rhs
+		enh.Out = append(enh.Out, rhs...)
+		return enh.Out
 	} else if len(rhs) == 0 {
-		return lhs
+		enh.Out = append(enh.Out, lhs...)
+		return enh.Out
 	}
 
 	leftSigs := map[string]struct{}{}
@@ -1819,7 +1867,8 @@ func (ev *evaluator) VectorUnless(lhs, rhs Vector, matching *parser.VectorMatchi
 	// Short-circuit: empty rhs means we will return everything in lhs;
 	// empty lhs means we will return empty - don't need to build a map.
 	if len(lhs) == 0 || len(rhs) == 0 {
-		return lhs
+		enh.Out = append(enh.Out, lhs...)
+		return enh.Out
 	}
 
 	rightSigs := map[string]struct{}{}
@@ -2136,7 +2185,6 @@ type groupedAggregation struct {
 // aggregation evaluates an aggregation operation on a Vector. The provided grouping labels
 // must be sorted.
 func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without bool, param interface{}, vec Vector, seriesHelper []EvalSeriesHelper, enh *EvalNodeHelper) Vector {
-
 	result := map[uint64]*groupedAggregation{}
 	orderedResult := []*groupedAggregation{}
 	var k int64
@@ -2506,7 +2554,6 @@ func preprocessExprHelper(expr parser.Expr, start, end time.Time) bool {
 		}
 
 		if isStepInvariant {
-
 			// The function and all arguments are step invariant.
 			return true
 		}
@@ -2552,12 +2599,6 @@ func preprocessExprHelper(expr parser.Expr, start, end time.Time) bool {
 }
 
 func newStepInvariantExpr(expr parser.Expr) parser.Expr {
-	if e, ok := expr.(*parser.ParenExpr); ok {
-		// Wrapping the inside of () makes it easy to unwrap the paren later.
-		// But this effectively unwraps the paren.
-		return newStepInvariantExpr(e.Expr)
-
-	}
 	return &parser.StepInvariantExpr{Expr: expr}
 }
 

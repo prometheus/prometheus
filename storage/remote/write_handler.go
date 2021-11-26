@@ -22,7 +22,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
 
-	"github.com/prometheus/prometheus/pkg/exemplar"
+	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
 )
@@ -81,9 +81,7 @@ func (h *writeHandler) checkAppendExemplarError(err error, e exemplar.Exemplar, 
 }
 
 func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err error) {
-	var (
-		outOfOrderExemplarErrs = 0
-	)
+	outOfOrderExemplarErrs := 0
 
 	app := h.appendable.Appender(ctx)
 	defer func() {

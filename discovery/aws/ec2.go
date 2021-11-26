@@ -63,13 +63,11 @@ const (
 	ec2LabelSeparator         = ","
 )
 
-var (
-	// DefaultEC2SDConfig is the default EC2 SD configuration.
-	DefaultEC2SDConfig = EC2SDConfig{
-		Port:            80,
-		RefreshInterval: model.Duration(60 * time.Second),
-	}
-)
+// DefaultEC2SDConfig is the default EC2 SD configuration.
+var DefaultEC2SDConfig = EC2SDConfig{
+	Port:            80,
+	RefreshInterval: model.Duration(60 * time.Second),
+}
 
 func init() {
 	discovery.RegisterConfig(&EC2SDConfig{})

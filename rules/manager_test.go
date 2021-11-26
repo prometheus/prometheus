@@ -30,10 +30,10 @@ import (
 	"go.uber.org/goleak"
 	yaml "gopkg.in/yaml.v2"
 
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/rulefmt"
-	"github.com/prometheus/prometheus/pkg/timestamp"
-	"github.com/prometheus/prometheus/pkg/value"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/rulefmt"
+	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
@@ -67,7 +67,7 @@ func TestAlertingRule(t *testing.T) {
 		nil, nil, "", true, nil,
 	)
 	result := promql.Vector{
-		{
+		promql.Sample{
 			Metric: labels.FromStrings(
 				"__name__", "ALERTS",
 				"alertname", "HTTPRequestRateLow",
@@ -79,7 +79,7 @@ func TestAlertingRule(t *testing.T) {
 			),
 			Point: promql.Point{V: 1},
 		},
-		{
+		promql.Sample{
 			Metric: labels.FromStrings(
 				"__name__", "ALERTS",
 				"alertname", "HTTPRequestRateLow",
@@ -91,7 +91,7 @@ func TestAlertingRule(t *testing.T) {
 			),
 			Point: promql.Point{V: 1},
 		},
-		{
+		promql.Sample{
 			Metric: labels.FromStrings(
 				"__name__", "ALERTS",
 				"alertname", "HTTPRequestRateLow",
@@ -103,7 +103,7 @@ func TestAlertingRule(t *testing.T) {
 			),
 			Point: promql.Point{V: 1},
 		},
-		{
+		promql.Sample{
 			Metric: labels.FromStrings(
 				"__name__", "ALERTS",
 				"alertname", "HTTPRequestRateLow",
@@ -119,17 +119,19 @@ func TestAlertingRule(t *testing.T) {
 
 	baseTime := time.Unix(0, 0)
 
-	var tests = []struct {
+	tests := []struct {
 		time   time.Duration
 		result promql.Vector
 	}{
 		{
 			time:   0,
 			result: result[:2],
-		}, {
+		},
+		{
 			time:   5 * time.Minute,
 			result: result[2:],
-		}, {
+		},
+		{
 			time:   10 * time.Minute,
 			result: result[2:3],
 		},
@@ -208,7 +210,7 @@ func TestForStateAddSamples(t *testing.T) {
 		nil, nil, "", true, nil,
 	)
 	result := promql.Vector{
-		{
+		promql.Sample{
 			Metric: labels.FromStrings(
 				"__name__", "ALERTS_FOR_STATE",
 				"alertname", "HTTPRequestRateLow",
@@ -219,7 +221,7 @@ func TestForStateAddSamples(t *testing.T) {
 			),
 			Point: promql.Point{V: 1},
 		},
-		{
+		promql.Sample{
 			Metric: labels.FromStrings(
 				"__name__", "ALERTS_FOR_STATE",
 				"alertname", "HTTPRequestRateLow",
@@ -230,7 +232,7 @@ func TestForStateAddSamples(t *testing.T) {
 			),
 			Point: promql.Point{V: 1},
 		},
-		{
+		promql.Sample{
 			Metric: labels.FromStrings(
 				"__name__", "ALERTS_FOR_STATE",
 				"alertname", "HTTPRequestRateLow",
@@ -241,7 +243,7 @@ func TestForStateAddSamples(t *testing.T) {
 			),
 			Point: promql.Point{V: 1},
 		},
-		{
+		promql.Sample{
 			Metric: labels.FromStrings(
 				"__name__", "ALERTS_FOR_STATE",
 				"alertname", "HTTPRequestRateLow",
@@ -256,7 +258,7 @@ func TestForStateAddSamples(t *testing.T) {
 
 	baseTime := time.Unix(0, 0)
 
-	var tests = []struct {
+	tests := []struct {
 		time            time.Duration
 		result          promql.Vector
 		persistThisTime bool // If true, it means this 'time' is persisted for 'for'.
@@ -769,7 +771,6 @@ func TestUpdate(t *testing.T) {
 		} else {
 			rgs.Groups[i].Interval = model.Duration(10)
 		}
-
 	}
 	reloadAndValidate(rgs, t, tmpFile, ruleManager, expected, ogs)
 

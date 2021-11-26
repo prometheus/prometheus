@@ -27,7 +27,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
 )
@@ -506,7 +506,6 @@ func TestSampleAndChunkQueryableClient(t *testing.T) {
 			}
 			require.NoError(t, ss.Err())
 			require.Equal(t, tc.expectedSeries, got)
-
 		})
 	}
 }

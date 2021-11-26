@@ -150,7 +150,7 @@ type xorAppender struct {
 	trailing uint8
 }
 
-func (a *xorAppender) AppendHistogram(t int64, h histogram.Histogram) {
+func (a *xorAppender) AppendHistogram(t int64, h *histogram.Histogram) {
 	panic("appended a histogram to an xor chunk")
 }
 
@@ -213,6 +213,8 @@ func (a *xorAppender) Append(t int64, v float64) {
 	a.tDelta = tDelta
 }
 
+// bitRange returns whether the given integer can be represented by nbits.
+// See docs/bstream.md.
 func bitRange(x int64, nbits uint8) bool {
 	return -((1<<(nbits-1))-1) <= x && x <= 1<<(nbits-1)
 }
@@ -253,8 +255,8 @@ func (it *xorIterator) At() (int64, float64) {
 	return it.t, it.val
 }
 
-func (it *xorIterator) AtHistogram() (int64, histogram.Histogram) {
-	panic("cannot call xorIterator.AtHistogram().")
+func (it *xorIterator) AtHistogram() (int64, *histogram.Histogram) {
+	panic("cannot call xorIterator.AtHistogram")
 }
 
 func (it *xorIterator) ChunkEncoding() Encoding {
@@ -362,9 +364,11 @@ func (it *xorIterator) Next() bool {
 			it.err = err
 			return false
 		}
+
+		// Account for negative numbers, which come back as high unsigned numbers.
+		// See docs/bstream.md.
 		if bits > (1 << (sz - 1)) {
-			// or something
-			bits = bits - (1 << sz)
+			bits -= 1 << sz
 		}
 		dod = int64(bits)
 	}

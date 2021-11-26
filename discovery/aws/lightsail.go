@@ -53,13 +53,11 @@ const (
 	lightsailLabelSeparator           = ","
 )
 
-var (
-	// DefaultLightsailSDConfig is the default Lightsail SD configuration.
-	DefaultLightsailSDConfig = LightsailSDConfig{
-		Port:            80,
-		RefreshInterval: model.Duration(60 * time.Second),
-	}
-)
+// DefaultLightsailSDConfig is the default Lightsail SD configuration.
+var DefaultLightsailSDConfig = LightsailSDConfig{
+	Port:            80,
+	RefreshInterval: model.Duration(60 * time.Second),
+}
 
 func init() {
 	discovery.RegisterConfig(&LightsailSDConfig{})

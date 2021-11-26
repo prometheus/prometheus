@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"github.com/prometheus/common/model"
+
 	"github.com/prometheus/prometheus/util/strutil"
 )
 

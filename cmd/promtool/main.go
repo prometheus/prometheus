@@ -44,13 +44,16 @@ import (
 	yaml "gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/file"
 	_ "github.com/prometheus/prometheus/discovery/install" // Register service discovery implementations.
 	"github.com/prometheus/prometheus/discovery/kubernetes"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/rulefmt"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/rulefmt"
+	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/scrape"
 )
 
 func main() {
@@ -59,6 +62,11 @@ func main() {
 	app.HelpFlag.Short('h')
 
 	checkCmd := app.Command("check", "Check the resources for validity.")
+
+	sdCheckCmd := checkCmd.Command("service-discovery", "Perform service discovery for the given job name and report the results, including relabeling.")
+	sdConfigFile := sdCheckCmd.Arg("config-file", "The prometheus config file.").Required().ExistingFile()
+	sdJobName := sdCheckCmd.Arg("job", "The job to run service discovery for.").Required().String()
+	sdTimeout := sdCheckCmd.Flag("timeout", "The time to wait for discovery results.").Default("30s").Duration()
 
 	checkConfigCmd := checkCmd.Command("config", "Check if the config files are valid or not.")
 	configFiles := checkConfigCmd.Arg(
@@ -79,6 +87,7 @@ func main() {
 	).Required().ExistingFiles()
 
 	checkMetricsCmd := checkCmd.Command("metrics", checkMetricsUsage)
+	agentMode := checkConfigCmd.Flag("agent", "Check config file for Prometheus in Agent mode.").Bool()
 
 	queryCmd := app.Command("query", "Run query against a Prometheus server.")
 	queryCmdFmt := queryCmd.Flag("format", "Output format of the query.").Short('o').Default("promql").Enum("promql", "json")
@@ -198,8 +207,11 @@ func main() {
 	}
 
 	switch parsedCmd {
+	case sdCheckCmd.FullCommand():
+		os.Exit(CheckSD(*sdConfigFile, *sdJobName, *sdTimeout))
+
 	case checkConfigCmd.FullCommand():
-		os.Exit(CheckConfig(*configFiles...))
+		os.Exit(CheckConfig(*agentMode, *configFiles...))
 
 	case checkWebConfigCmd.FullCommand():
 		os.Exit(CheckWebConfig(*webConfigFiles...))
@@ -245,21 +257,21 @@ func main() {
 
 	case tsdbDumpCmd.FullCommand():
 		os.Exit(checkErr(dumpSamples(*dumpPath, *dumpMinTime, *dumpMaxTime)))
-	//TODO(aSquare14): Work on adding support for custom block size.
+	// TODO(aSquare14): Work on adding support for custom block size.
 	case openMetricsImportCmd.FullCommand():
 		os.Exit(backfillOpenMetrics(*importFilePath, *importDBPath, *importHumanReadable, *importQuiet, *maxBlockDuration))
 
 	case importRulesCmd.FullCommand():
-		os.Exit(checkErr(importRules(*importRulesURL, *importRulesStart, *importRulesEnd, *importRulesOutputDir, *importRulesEvalInterval, *importRulesFiles...)))
+		os.Exit(checkErr(importRules(*importRulesURL, *importRulesStart, *importRulesEnd, *importRulesOutputDir, *importRulesEvalInterval, *maxBlockDuration, *importRulesFiles...)))
 	}
 }
 
 // CheckConfig validates configuration files.
-func CheckConfig(files ...string) int {
+func CheckConfig(agentMode bool, files ...string) int {
 	failed := false
 
 	for _, f := range files {
-		ruleFiles, err := checkConfig(f)
+		ruleFiles, err := checkConfig(agentMode, f)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "  FAILED:", err)
 			failed = true
@@ -314,10 +326,10 @@ func checkFileExists(fn string) error {
 	return err
 }
 
-func checkConfig(filename string) ([]string, error) {
+func checkConfig(agentMode bool, filename string) ([]string, error) {
 	fmt.Println("Checking", filename)
 
-	cfg, err := config.LoadFile(filename, false, log.NewNopLogger())
+	cfg, err := config.LoadFile(filename, agentMode, false, log.NewNopLogger())
 	if err != nil {
 		return nil, err
 	}
@@ -363,19 +375,60 @@ func checkConfig(filename string) ([]string, error) {
 					}
 					if len(files) != 0 {
 						for _, f := range files {
-							err = checkSDFile(f)
+							var targetGroups []*targetgroup.Group
+							targetGroups, err = checkSDFile(f)
 							if err != nil {
 								return nil, errors.Errorf("checking SD file %q: %v", file, err)
+							}
+							if err := checkTargetGroupsForScrapeConfig(targetGroups, scfg); err != nil {
+								return nil, err
 							}
 						}
 						continue
 					}
 					fmt.Printf("  WARNING: file %q for file_sd in scrape job %q does not exist\n", file, scfg.JobName)
 				}
+			case discovery.StaticConfig:
+				if err := checkTargetGroupsForScrapeConfig(c, scfg); err != nil {
+					return nil, err
+				}
 			}
 		}
 	}
 
+	alertConfig := cfg.AlertingConfig
+	for _, amcfg := range alertConfig.AlertmanagerConfigs {
+		for _, c := range amcfg.ServiceDiscoveryConfigs {
+			switch c := c.(type) {
+			case *file.SDConfig:
+				for _, file := range c.Files {
+					files, err := filepath.Glob(file)
+					if err != nil {
+						return nil, err
+					}
+					if len(files) != 0 {
+						for _, f := range files {
+							var targetGroups []*targetgroup.Group
+							targetGroups, err = checkSDFile(f)
+							if err != nil {
+								return nil, errors.Errorf("checking SD file %q: %v", file, err)
+							}
+
+							if err := checkTargetGroupsForAlertmanager(targetGroups, amcfg); err != nil {
+								return nil, err
+							}
+						}
+						continue
+					}
+					fmt.Printf("  WARNING: file %q for file_sd in alertmanager config does not exist\n", file)
+				}
+			case discovery.StaticConfig:
+				if err := checkTargetGroupsForAlertmanager(c, amcfg); err != nil {
+					return nil, err
+				}
+			}
+		}
+	}
 	return ruleFiles, nil
 }
 
@@ -397,16 +450,16 @@ func checkTLSConfig(tlsConfig config_util.TLSConfig) error {
 	return nil
 }
 
-func checkSDFile(filename string) error {
+func checkSDFile(filename string) ([]*targetgroup.Group, error) {
 	fd, err := os.Open(filename)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer fd.Close()
 
 	content, err := ioutil.ReadAll(fd)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	var targetGroups []*targetgroup.Group
@@ -414,23 +467,23 @@ func checkSDFile(filename string) error {
 	switch ext := filepath.Ext(filename); strings.ToLower(ext) {
 	case ".json":
 		if err := json.Unmarshal(content, &targetGroups); err != nil {
-			return err
+			return nil, err
 		}
 	case ".yml", ".yaml":
 		if err := yaml.UnmarshalStrict(content, &targetGroups); err != nil {
-			return err
+			return nil, err
 		}
 	default:
-		return errors.Errorf("invalid file extension: %q", ext)
+		return nil, errors.Errorf("invalid file extension: %q", ext)
 	}
 
 	for i, tg := range targetGroups {
 		if tg == nil {
-			return errors.Errorf("nil target group item found (index %d)", i)
+			return nil, errors.Errorf("nil target group item found (index %d)", i)
 		}
 	}
 
-	return nil
+	return targetGroups, nil
 }
 
 // CheckRules validates rule files.
@@ -507,7 +560,6 @@ func checkDuplicates(groups []rulefmt.RuleGroup) []compareRuleType {
 	var rules compareRuleTypes
 
 	for _, group := range groups {
-
 		for _, rule := range group.Rules {
 			rules = append(rules, compareRuleType{
 				metric: ruleMetric(rule),
@@ -721,7 +773,7 @@ func QuerySeries(url *url.URL, matchers []string, start, end string, p printer) 
 }
 
 // QueryLabels queries for label values against a Prometheus server.
-func QueryLabels(url *url.URL, name string, start, end string, p printer) int {
+func QueryLabels(url *url.URL, name, start, end string, p printer) int {
 	if url.Scheme == "" {
 		url.Scheme = "http"
 	}
@@ -899,11 +951,13 @@ type promqlPrinter struct{}
 func (p *promqlPrinter) printValue(v model.Value) {
 	fmt.Println(v)
 }
+
 func (p *promqlPrinter) printSeries(val []model.LabelSet) {
 	for _, v := range val {
 		fmt.Println(v)
 	}
 }
+
 func (p *promqlPrinter) printLabelValues(val model.LabelValues) {
 	for _, v := range val {
 		fmt.Println(v)
@@ -916,10 +970,12 @@ func (j *jsonPrinter) printValue(v model.Value) {
 	//nolint:errcheck
 	json.NewEncoder(os.Stdout).Encode(v)
 }
+
 func (j *jsonPrinter) printSeries(v []model.LabelSet) {
 	//nolint:errcheck
 	json.NewEncoder(os.Stdout).Encode(v)
 }
+
 func (j *jsonPrinter) printLabelValues(v model.LabelValues) {
 	//nolint:errcheck
 	json.NewEncoder(os.Stdout).Encode(v)
@@ -927,7 +983,7 @@ func (j *jsonPrinter) printLabelValues(v model.LabelValues) {
 
 // importRules backfills recording rules from the files provided. The output are blocks of data
 // at the outputDir location.
-func importRules(url *url.URL, start, end, outputDir string, evalInterval time.Duration, files ...string) error {
+func importRules(url *url.URL, start, end, outputDir string, evalInterval, maxBlockDuration time.Duration, files ...string) error {
 	ctx := context.Background()
 	var stime, etime time.Time
 	var err error
@@ -950,10 +1006,11 @@ func importRules(url *url.URL, start, end, outputDir string, evalInterval time.D
 	}
 
 	cfg := ruleImporterConfig{
-		outputDir:    outputDir,
-		start:        stime,
-		end:          etime,
-		evalInterval: evalInterval,
+		outputDir:        outputDir,
+		start:            stime,
+		end:              etime,
+		evalInterval:     evalInterval,
+		maxBlockDuration: maxBlockDuration,
 	}
 	client, err := api.NewClient(api.Config{
 		Address: url.String(),
@@ -976,6 +1033,28 @@ func importRules(url *url.URL, start, end, outputDir string, evalInterval time.D
 	}
 	if len(errs) > 0 {
 		return errors.New("error importing rules")
+	}
+
+	return nil
+}
+
+func checkTargetGroupsForAlertmanager(targetGroups []*targetgroup.Group, amcfg *config.AlertmanagerConfig) error {
+	for _, tg := range targetGroups {
+		if _, _, err := notifier.AlertmanagerFromGroup(tg, amcfg); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func checkTargetGroupsForScrapeConfig(targetGroups []*targetgroup.Group, scfg *config.ScrapeConfig) error {
+	for _, tg := range targetGroups {
+		_, failures := scrape.TargetsFromGroup(tg, scfg)
+		if len(failures) > 0 {
+			first := failures[0]
+			return first
+		}
 	}
 
 	return nil

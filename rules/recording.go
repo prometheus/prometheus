@@ -23,8 +23,8 @@ import (
 
 	yaml "gopkg.in/yaml.v2"
 
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/rulefmt"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/util/strutil"
@@ -99,9 +99,9 @@ func (rule *RecordingRule) Eval(ctx context.Context, ts time.Time, query QueryFu
 		return nil, fmt.Errorf("vector contains metrics with the same labelset after applying rule labels")
 	}
 
-	numSamples := len(vector)
-	if limit != 0 && numSamples > limit {
-		return nil, fmt.Errorf("exceeded limit %d with %d samples", limit, numSamples)
+	numSeries := len(vector)
+	if limit > 0 && numSeries > limit {
+		return nil, fmt.Errorf("exceeded limit of %d with %d series", limit, numSeries)
 	}
 
 	rule.SetHealth(HealthGood)

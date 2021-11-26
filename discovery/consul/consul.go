@@ -54,7 +54,7 @@ const (
 	healthLabel = model.MetaLabelPrefix + "consul_health"
 	// serviceAddressLabel is the name of the label containing the (optional) service address.
 	serviceAddressLabel = model.MetaLabelPrefix + "consul_service_address"
-	//servicePortLabel is the name of the label containing the service port.
+	// servicePortLabel is the name of the label containing the service port.
 	servicePortLabel = model.MetaLabelPrefix + "consul_service_port"
 	// datacenterLabel is the name of the label containing the datacenter ID.
 	datacenterLabel = model.MetaLabelPrefix + "consul_dc"
@@ -297,6 +297,7 @@ func (d *Discovery) getDatacenter() error {
 	}
 
 	d.clientDatacenter = dc
+	d.logger = log.With(d.logger, "datacenter", dc)
 	return nil
 }
 
@@ -530,7 +531,7 @@ func (srv *consulService) watch(ctx context.Context, ch chan<- []*targetgroup.Gr
 	for _, serviceNode := range serviceNodes {
 		// We surround the separated list with the separator as well. This way regular expressions
 		// in relabeling rules don't have to consider tag positions.
-		var tags = srv.tagSeparator + strings.Join(serviceNode.Service.Tags, srv.tagSeparator) + srv.tagSeparator
+		tags := srv.tagSeparator + strings.Join(serviceNode.Service.Tags, srv.tagSeparator) + srv.tagSeparator
 
 		// If the service address is not empty it should be used instead of the node address
 		// since the service may be registered remotely through a different node.

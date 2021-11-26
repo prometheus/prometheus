@@ -41,7 +41,7 @@ type Client struct {
 }
 
 // NewClient creates a new Client.
-func NewClient(logger log.Logger, conf influx.HTTPConfig, db string, rp string) *Client {
+func NewClient(logger log.Logger, conf influx.HTTPConfig, db, rp string) *Client {
 	c, err := influx.NewHTTPClient(conf)
 	// Currently influx.NewClient() *should* never return an error.
 	if err != nil {

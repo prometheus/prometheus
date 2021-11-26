@@ -22,8 +22,8 @@ import (
 	"github.com/go-kit/log"
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/timestamp"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/util/teststorage"
@@ -112,7 +112,7 @@ func TestAlertingRuleLabelsUpdate(t *testing.T) {
 
 	results := []promql.Vector{
 		{
-			{
+			promql.Sample{
 				Metric: labels.FromStrings(
 					"__name__", "ALERTS",
 					"alertname", "HTTPRequestRateLow",
@@ -125,7 +125,7 @@ func TestAlertingRuleLabelsUpdate(t *testing.T) {
 			},
 		},
 		{
-			{
+			promql.Sample{
 				Metric: labels.FromStrings(
 					"__name__", "ALERTS",
 					"alertname", "HTTPRequestRateLow",
@@ -138,7 +138,7 @@ func TestAlertingRuleLabelsUpdate(t *testing.T) {
 			},
 		},
 		{
-			{
+			promql.Sample{
 				Metric: labels.FromStrings(
 					"__name__", "ALERTS",
 					"alertname", "HTTPRequestRateLow",
@@ -151,7 +151,7 @@ func TestAlertingRuleLabelsUpdate(t *testing.T) {
 			},
 		},
 		{
-			{
+			promql.Sample{
 				Metric: labels.FromStrings(
 					"__name__", "ALERTS",
 					"alertname", "HTTPRequestRateLow",
@@ -222,7 +222,7 @@ func TestAlertingRuleExternalLabelsInTemplate(t *testing.T) {
 		true, log.NewNopLogger(),
 	)
 	result := promql.Vector{
-		{
+		promql.Sample{
 			Metric: labels.FromStrings(
 				"__name__", "ALERTS",
 				"alertname", "ExternalLabelDoesNotExist",
@@ -233,7 +233,7 @@ func TestAlertingRuleExternalLabelsInTemplate(t *testing.T) {
 			),
 			Point: promql.Point{V: 1},
 		},
-		{
+		promql.Sample{
 			Metric: labels.FromStrings(
 				"__name__", "ALERTS",
 				"alertname", "ExternalLabelExists",
@@ -316,7 +316,7 @@ func TestAlertingRuleExternalURLInTemplate(t *testing.T) {
 		true, log.NewNopLogger(),
 	)
 	result := promql.Vector{
-		{
+		promql.Sample{
 			Metric: labels.FromStrings(
 				"__name__", "ALERTS",
 				"alertname", "ExternalURLDoesNotExist",
@@ -327,7 +327,7 @@ func TestAlertingRuleExternalURLInTemplate(t *testing.T) {
 			),
 			Point: promql.Point{V: 1},
 		},
-		{
+		promql.Sample{
 			Metric: labels.FromStrings(
 				"__name__", "ALERTS",
 				"alertname", "ExternalURLExists",
@@ -400,7 +400,7 @@ func TestAlertingRuleEmptyLabelFromTemplate(t *testing.T) {
 		true, log.NewNopLogger(),
 	)
 	result := promql.Vector{
-		{
+		promql.Sample{
 			Metric: labels.FromStrings(
 				"__name__", "ALERTS",
 				"alertname", "EmptyLabel",
@@ -466,23 +466,17 @@ func TestAlertingRuleDuplicate(t *testing.T) {
 }
 
 func TestAlertingRuleLimit(t *testing.T) {
-	storage := teststorage.New(t)
-	defer storage.Close()
+	suite, err := promql.NewTest(t, `
+		load 1m
+			metric{label="1"} 1
+			metric{label="2"} 1
+	`)
+	require.NoError(t, err)
+	defer suite.Close()
 
-	opts := promql.EngineOpts{
-		Logger:     nil,
-		Reg:        nil,
-		MaxSamples: 10,
-		Timeout:    10 * time.Second,
-	}
+	require.NoError(t, suite.Run())
 
-	engine := promql.NewEngine(opts)
-	ctx, cancelCtx := context.WithCancel(context.Background())
-	defer cancelCtx()
-
-	now := time.Now()
-
-	suite := []struct {
+	tests := []struct {
 		limit int
 		err   string
 	}{
@@ -490,31 +484,37 @@ func TestAlertingRuleLimit(t *testing.T) {
 			limit: 0,
 		},
 		{
-			limit: 1,
+			limit: -1,
 		},
 		{
-			limit: -1,
-			err:   "exceeded limit of -1 with 1 alerts",
+			limit: 2,
+		},
+		{
+			limit: 1,
+			err:   "exceeded limit of 1 with 2 alerts",
 		},
 	}
 
-	for _, test := range suite {
-		expr, _ := parser.ParseExpr(`1`)
-		rule := NewAlertingRule(
-			"foo",
-			expr,
-			time.Minute,
-			labels.FromStrings("test", "test"),
-			nil,
-			nil,
-			"",
-			true, log.NewNopLogger(),
-		)
-		_, err := rule.Eval(ctx, now, EngineQueryFunc(engine, storage), nil, test.limit)
-		if test.err == "" {
-			require.NoError(t, err)
-		} else {
-			require.Equal(t, test.err, err.Error())
+	expr, _ := parser.ParseExpr(`metric > 0`)
+	rule := NewAlertingRule(
+		"foo",
+		expr,
+		time.Minute,
+		labels.FromStrings("test", "test"),
+		nil,
+		nil,
+		"",
+		true, log.NewNopLogger(),
+	)
+
+	evalTime := time.Unix(0, 0)
+
+	for _, test := range tests {
+		_, err := rule.Eval(suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil, test.limit)
+		if err != nil {
+			require.EqualError(t, err, test.err)
+		} else if test.err != "" {
+			t.Errorf("Expected errror %s, got none", test.err)
 		}
 	}
 }

@@ -25,8 +25,8 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/relabel"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/relabel"
 )
 
 func TestPopulateLabels(t *testing.T) {
@@ -335,7 +335,7 @@ func TestPopulateLabels(t *testing.T) {
 	for _, c := range cases {
 		in := c.in.Copy()
 
-		res, orig, err := populateLabels(c.in, c.cfg)
+		res, orig, err := PopulateLabels(c.in, c.cfg)
 		if c.err != "" {
 			require.EqualError(t, err, c.err)
 		} else {

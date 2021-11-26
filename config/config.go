@@ -33,8 +33,8 @@ import (
 	yaml "gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/discovery"
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/relabel"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/relabel"
 )
 
 var (
@@ -99,7 +99,7 @@ func Load(s string, expandExternalLabels bool, logger log.Logger) (*Config, erro
 }
 
 // LoadFile parses the given YAML file into a Config.
-func LoadFile(filename string, expandExternalLabels bool, logger log.Logger) (*Config, error) {
+func LoadFile(filename string, agentMode, expandExternalLabels bool, logger log.Logger) (*Config, error) {
 	content, err := ioutil.ReadFile(filename)
 	if err != nil {
 		return nil, err
@@ -108,6 +108,25 @@ func LoadFile(filename string, expandExternalLabels bool, logger log.Logger) (*C
 	if err != nil {
 		return nil, errors.Wrapf(err, "parsing YAML file %s", filename)
 	}
+
+	if agentMode {
+		if len(cfg.RemoteWriteConfigs) == 0 {
+			return nil, errors.New("at least one remote_write target must be specified in agent mode")
+		}
+
+		if len(cfg.AlertingConfig.AlertmanagerConfigs) > 0 || len(cfg.AlertingConfig.AlertRelabelConfigs) > 0 {
+			return nil, errors.New("field alerting is not allowed in agent mode")
+		}
+
+		if len(cfg.RuleFiles) > 0 {
+			return nil, errors.New("field rule_files is not allowed in agent mode")
+		}
+
+		if len(cfg.RemoteReadConfigs) > 0 {
+			return nil, errors.New("field remote_read is not allowed in agent mode")
+		}
+	}
+
 	cfg.SetDirectory(filepath.Dir(filename))
 	return cfg, nil
 }
@@ -169,7 +188,7 @@ var (
 
 		// Backoff times for retrying a batch of samples on recoverable errors.
 		MinBackoff: model.Duration(30 * time.Millisecond),
-		MaxBackoff: model.Duration(100 * time.Millisecond),
+		MaxBackoff: model.Duration(5 * time.Second),
 	}
 
 	// DefaultMetadataConfig is the default metadata configuration for a remote write endpoint.

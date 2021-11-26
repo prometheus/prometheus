@@ -31,7 +31,7 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 )
 
 const (
@@ -371,7 +371,7 @@ func TestNewClientWithBadTLSConfig(t *testing.T) {
 func TestTargetsFromGroup(t *testing.T) {
 	expectedError := "instance 0 in group : no address"
 
-	targets, failures := targetsFromGroup(&targetgroup.Group{Targets: []model.LabelSet{{}, {model.AddressLabel: "localhost:9090"}}}, &config.ScrapeConfig{})
+	targets, failures := TargetsFromGroup(&targetgroup.Group{Targets: []model.LabelSet{{}, {model.AddressLabel: "localhost:9090"}}}, &config.ScrapeConfig{})
 	if len(targets) != 1 {
 		t.Fatalf("Expected 1 target, got %v", len(targets))
 	}
@@ -381,30 +381,4 @@ func TestTargetsFromGroup(t *testing.T) {
 	if failures[0].Error() != expectedError {
 		t.Fatalf("Expected error %s, got %s", expectedError, failures[0])
 	}
-}
-
-func TestTargetHash(t *testing.T) {
-	target1 := &Target{
-		labels: labels.Labels{
-			{Name: model.AddressLabel, Value: "localhost"},
-			{Name: model.SchemeLabel, Value: "http"},
-			{Name: model.MetricsPathLabel, Value: "/metrics"},
-			{Name: model.ScrapeIntervalLabel, Value: "15s"},
-			{Name: model.ScrapeTimeoutLabel, Value: "500ms"},
-		},
-	}
-	hash1 := target1.hash()
-
-	target2 := &Target{
-		labels: labels.Labels{
-			{Name: model.AddressLabel, Value: "localhost"},
-			{Name: model.SchemeLabel, Value: "http"},
-			{Name: model.MetricsPathLabel, Value: "/metrics"},
-			{Name: model.ScrapeIntervalLabel, Value: "14s"},
-			{Name: model.ScrapeTimeoutLabel, Value: "600ms"},
-		},
-	}
-	hash2 := target2.hash()
-
-	require.Equal(t, hash1, hash2, "Scrape interval and duration labels should not effect hash.")
 }

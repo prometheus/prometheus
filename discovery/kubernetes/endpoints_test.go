@@ -27,7 +27,7 @@ import (
 )
 
 func makeEndpoints() *v1.Endpoints {
-	var nodeName = "foobar"
+	nodeName := "foobar"
 	return &v1.Endpoints{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "testendpoints",
