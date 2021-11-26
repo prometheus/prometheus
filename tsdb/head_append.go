@@ -269,7 +269,7 @@ func (a *headAppender) Append(ref uint64, lset labels.Labels, t int64, v float64
 		}
 	}
 
-	if value.IsStaleNaN(v) && s.histogramSeries {
+	if value.IsStaleNaN(v) && s.isHistogramSeries {
 		return a.AppendHistogram(ref, lset, t, histogram.Histogram{Sum: v})
 	}
 
@@ -396,7 +396,7 @@ func (a *headAppender) AppendHistogram(ref uint64, lset labels.Labels, t int64, 
 		if err != nil {
 			return 0, err
 		}
-		s.histogramSeries = true
+		s.isHistogramSeries = true
 		if created {
 			a.head.metrics.histogramSeries.Inc()
 			a.series = append(a.series, record.RefSeries{
@@ -589,7 +589,7 @@ func (s *memSeries) append(t int64, v float64, appendID uint64, chunkDiskMapper 
 	}
 
 	s.app.Append(t, v)
-	s.histogramSeries = false
+	s.isHistogramSeries = false
 
 	c.maxTime = t
 
@@ -659,7 +659,7 @@ func (s *memSeries) appendHistogram(t int64, h histogram.Histogram, appendID uin
 	}
 
 	s.app.AppendHistogram(t, h)
-	s.histogramSeries = true
+	s.isHistogramSeries = true
 
 	c.maxTime = t
 

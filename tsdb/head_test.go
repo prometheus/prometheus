@@ -3256,7 +3256,7 @@ func TestAppendingDifferentEncodingToSameSeries(t *testing.T) {
 	require.NoError(t, app.Commit())
 
 	// Combination of histograms and float64 in the same commit. The behaviour is undefined, but we want to also
-	// verify how TSDB would behave. Here the histogram is appended at the end, hence will be considered at out of order.
+	// verify how TSDB would behave. Here the histogram is appended at the end, hence will be considered as out of order.
 	app = db.Appender(context.Background())
 	addFloat64Sample(app, 4, 4)
 	// This won't be committed.
