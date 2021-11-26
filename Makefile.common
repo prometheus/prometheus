@@ -238,11 +238,8 @@ endif
 
 .PHONY: common-build
 common-build: promu
-	@bash -c "trap 'echo \">> restoring assets\"; scripts/compress_assets.sh -d;' EXIT; \
-	          echo '>> compressing assets'; \
-	          scripts/compress_assets.sh; \
-	          echo '>> building binaries'; \
-	          GO111MODULE=$(GO111MODULE) $(PROMU) build --prefix $(PREFIX) $(PROMU_BINARIES)"
+	@echo ">> building binaries"
+	GO111MODULE=$(GO111MODULE) $(PROMU) build --prefix $(PREFIX) $(PROMU_BINARIES)
 
 .PHONY: common-tarball
 common-tarball: promu

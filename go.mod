@@ -1,6 +1,6 @@
 module github.com/prometheus/prometheus
 
-go 1.16
+go 1.14
 
 require (
 	github.com/Azure/azure-sdk-for-go v58.3.0+incompatible
@@ -49,11 +49,11 @@ require (
 	github.com/prometheus/client_golang v1.11.0
 	github.com/prometheus/client_model v0.2.0
 	github.com/prometheus/common v0.32.1
-	github.com/prometheus/common/assets v0.1.0
 	github.com/prometheus/common/sigv4 v0.1.0
 	github.com/prometheus/exporter-toolkit v0.7.0
 	github.com/scaleway/scaleway-sdk-go v1.0.0-beta.7.0.20210223165440-c65ae3540d44
 	github.com/shurcooL/httpfs v0.0.0-20190707220628-8d4bc4ba7749
+	github.com/shurcooL/vfsgen v0.0.0-20200824052919-0d455de96546
 	github.com/stretchr/testify v1.7.0
 	github.com/uber/jaeger-client-go v2.29.1+incompatible
 	github.com/uber/jaeger-lib v2.4.1+incompatible
@@ -117,5 +117,3 @@ exclude (
 	k8s.io/client-go v9.0.0+incompatible
 	k8s.io/client-go v9.0.0-invalid+incompatible
 )
-
-replace github.com/prometheus/common/assets => github.com/jan--f/common/assets v0.0.0-20211112085804-0bbedfb4d189
