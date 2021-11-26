@@ -869,18 +869,25 @@ func (g *Group) Equals(ng *Group) bool {
 		return false
 	}
 
-	if len(g.sourceTenants) != len(ng.sourceTenants) {
-		return false
-	}
-
-	for i, tenant := range g.sourceTenants {
-		if ng.sourceTenants[i] != tenant {
+	for i, gr := range g.rules {
+		if gr.String() != ng.rules[i].String() {
 			return false
 		}
 	}
 
-	for i, gr := range g.rules {
-		if gr.String() != ng.rules[i].String() {
+	// compare source tenants ignoring their order
+	if len(g.sourceTenants) != len(ng.sourceTenants) {
+		return false
+	}
+
+	thisSourceTenants := make(map[string]struct{}, len(g.sourceTenants))
+
+	for _, tenant := range g.sourceTenants {
+		thisSourceTenants[tenant] = struct{}{}
+	}
+
+	for _, tenant := range ng.sourceTenants {
+		if _, ok := thisSourceTenants[tenant]; !ok {
 			return false
 		}
 	}
