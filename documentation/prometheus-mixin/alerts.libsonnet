@@ -276,6 +276,20 @@
             },
           },
           {
+            alert: 'PrometheusScrapeBodySizeLimitHit',
+            expr: |||
+              increase(prometheus_target_scrapes_exceeded_body_size_limit_total{%(prometheusSelector)s}[5m]) > 0
+            ||| % $._config,
+            'for': '15m',
+            labels: {
+              severity: 'warning',
+            },
+            annotations: {
+              summary: 'Prometheus has dropped some targets that exceeded body size limit.',
+              description: 'Prometheus %(prometheusName)s has dropped {{ printf "%%.0f" $value }} targets because some targets exceeded the configured body_size_limit.' % $._config,
+            },
+          },
+          {
             alert: 'PrometheusTargetSyncFailure',
             expr: |||
               increase(prometheus_target_sync_failed_total{%(prometheusSelector)s}[30m]) > 0
@@ -389,11 +403,11 @@
               (
                   prometheus_tsdb_clean_start{%(prometheusSelector)s} == 0
                 and
-                  ( 
+                  (
                     count by (%(prometheusHAGroupLabels)s) (
                       changes(process_start_time_seconds{%(prometheusSelector)s}[1h]) > 1
-                    ) 
-                    / 
+                    )
+                    /
                     count by (%(prometheusHAGroupLabels)s) (
                       up{%(prometheusSelector)s}
                     )
