@@ -429,7 +429,7 @@ func (s *memSeries) iterator(id chunks.HeadChunkID, isoState *isolationState, ch
 		msIter.stopAfter = stopAfter
 		msIter.buf = s.sampleBuf
 		msIter.histogramBuf = s.histogramBuf
-		msIter.histogramSeries = s.histogramSeries
+		msIter.isHistogramSeries = s.isHistogramSeries
 		return msIter
 	}
 	return &memSafeIterator{
@@ -438,10 +438,10 @@ func (s *memSeries) iterator(id chunks.HeadChunkID, isoState *isolationState, ch
 			i:         -1,
 			stopAfter: stopAfter,
 		},
-		total:           numSamples,
-		buf:             s.sampleBuf,
-		histogramBuf:    s.histogramBuf,
-		histogramSeries: s.histogramSeries,
+		total:             numSamples,
+		buf:               s.sampleBuf,
+		histogramBuf:      s.histogramBuf,
+		isHistogramSeries: s.isHistogramSeries,
 	}
 }
 
@@ -450,10 +450,10 @@ func (s *memSeries) iterator(id chunks.HeadChunkID, isoState *isolationState, ch
 type memSafeIterator struct {
 	stopIterator
 
-	histogramSeries bool
-	total           int
-	buf             [4]sample
-	histogramBuf    [4]histogramSample
+	isHistogramSeries bool
+	total             int
+	buf               [4]sample
+	histogramBuf      [4]histogramSample
 }
 
 func (it *memSafeIterator) Seek(t int64) bool {
@@ -462,13 +462,13 @@ func (it *memSafeIterator) Seek(t int64) bool {
 	}
 
 	var ts int64
-	if it.histogramSeries {
+	if it.isHistogramSeries {
 		ts, _ = it.AtHistogram()
 	} else {
 		ts, _ = it.At()
 	}
 
-	if it.histogramSeries {
+	if it.isHistogramSeries {
 		for t > ts || it.i == -1 {
 			if !it.Next() {
 				return false

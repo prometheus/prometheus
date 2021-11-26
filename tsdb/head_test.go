@@ -3159,3 +3159,131 @@ func TestHistogramCounterResetHeader(t *testing.T) {
 	appendHistogram(h)
 	checkExpCounterResetHeader(chunkenc.CounterReset)
 }
+
+func TestAppendingDifferentEncodingToSameSeries(t *testing.T) {
+	dir := t.TempDir()
+	db, err := Open(dir, nil, nil, DefaultOptions(), nil)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, db.Close())
+	})
+	db.DisableCompactions()
+
+	hists := GenerateTestHistograms(10)
+	lbls := labels.Labels{{Name: "a", Value: "b"}}
+
+	type result struct {
+		t   int64
+		v   float64
+		h   *histogram.Histogram
+		enc chunkenc.Encoding
+	}
+	expResult := []result{}
+	ref := storage.SeriesRef(0)
+	addFloat64Sample := func(app storage.Appender, ts int64, v float64) {
+		ref, err = app.Append(ref, lbls, ts, v)
+		require.NoError(t, err)
+		expResult = append(expResult, result{
+			t:   ts,
+			v:   v,
+			enc: chunkenc.EncXOR,
+		})
+	}
+	addHistogramSample := func(app storage.Appender, ts int64, h *histogram.Histogram) {
+		ref, err = app.AppendHistogram(ref, lbls, ts, h)
+		require.NoError(t, err)
+		expResult = append(expResult, result{
+			t:   ts,
+			h:   h,
+			enc: chunkenc.EncHistogram,
+		})
+	}
+	checkExpChunks := func(count int) {
+		ms, created, err := db.Head().getOrCreate(lbls.Hash(), lbls)
+		require.NoError(t, err)
+		require.False(t, created)
+		require.NotNil(t, ms)
+		require.Len(t, ms.mmappedChunks, count-1) // One will be the head chunk.
+	}
+
+	// Only histograms in first commit.
+	app := db.Appender(context.Background())
+	addHistogramSample(app, 1, hists[1])
+	require.NoError(t, app.Commit())
+	checkExpChunks(1)
+
+	// Only float64 in second commit, a new chunk should be cut.
+	app = db.Appender(context.Background())
+	addFloat64Sample(app, 2, 2)
+	require.NoError(t, app.Commit())
+	checkExpChunks(2)
+
+	// Out of order histogram is shown correctly for a float64 chunk. No new chunk.
+	app = db.Appender(context.Background())
+	_, err = app.AppendHistogram(ref, lbls, 1, hists[2])
+	require.Equal(t, storage.ErrOutOfOrderSample, err)
+	require.NoError(t, app.Commit())
+
+	// Only histograms in third commit to check float64 -> histogram transition.
+	app = db.Appender(context.Background())
+	addHistogramSample(app, 3, hists[3])
+	require.NoError(t, app.Commit())
+	checkExpChunks(3)
+
+	// Out of order float64 is shown correctly for a histogram chunk. No new chunk.
+	app = db.Appender(context.Background())
+	_, err = app.Append(ref, lbls, 1, 2)
+	require.Equal(t, storage.ErrOutOfOrderSample, err)
+	require.NoError(t, app.Commit())
+
+	// Combination of histograms and float64 in the same commit. The behaviour is undefined, but we want to also
+	// verify how TSDB would behave. Here the histogram is appended at the end, hence will be considered as out of order.
+	app = db.Appender(context.Background())
+	addFloat64Sample(app, 4, 4)
+	// This won't be committed.
+	addHistogramSample(app, 5, hists[5])
+	expResult = expResult[0 : len(expResult)-1]
+	addFloat64Sample(app, 6, 6)
+	require.NoError(t, app.Commit())
+	checkExpChunks(4) // Only 1 new chunk for float64.
+
+	// Here the histogram is appended at the end, hence the first histogram is out of order.
+	app = db.Appender(context.Background())
+	// Out of order w.r.t. the next float64 sample that is appended first.
+	addHistogramSample(app, 7, hists[7])
+	expResult = expResult[0 : len(expResult)-1]
+	addFloat64Sample(app, 8, 9)
+	addHistogramSample(app, 9, hists[9])
+	require.NoError(t, app.Commit())
+	checkExpChunks(5) // float64 added to old chunk, only 1 new for histograms.
+
+	// Query back and expect same order of samples.
+	q, err := db.Querier(context.Background(), math.MinInt64, math.MaxInt64)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, q.Close())
+	})
+
+	ss := q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
+	require.True(t, ss.Next())
+	s := ss.At()
+	it := s.Iterator()
+	expIdx := 0
+	for it.Next() {
+		require.Equal(t, expResult[expIdx].enc, it.ChunkEncoding())
+		if it.ChunkEncoding() == chunkenc.EncHistogram {
+			ts, h := it.AtHistogram()
+			require.Equal(t, expResult[expIdx].t, ts)
+			require.Equal(t, expResult[expIdx].h, h)
+		} else {
+			ts, v := it.At()
+			require.Equal(t, expResult[expIdx].t, ts)
+			require.Equal(t, expResult[expIdx].v, v)
+		}
+		expIdx++
+	}
+	require.NoError(t, it.Err())
+	require.NoError(t, ss.Err())
+	require.Equal(t, len(expResult), expIdx)
+	require.False(t, ss.Next()) // Only 1 series.
+}

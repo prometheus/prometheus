@@ -160,7 +160,7 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 
 			if ms.head() == nil {
 				// First histogram for the series. Count this in metrics.
-				ms.histogramSeries = true
+				ms.isHistogramSeries = true
 			}
 
 			if rh.T < h.minValidTime.Load() {

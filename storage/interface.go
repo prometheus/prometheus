@@ -172,6 +172,9 @@ func (f QueryableFunc) Querier(ctx context.Context, mint, maxt int64) (Querier, 
 // It must be completed with a call to Commit or Rollback and must not be reused afterwards.
 //
 // Operations on the Appender interface are not goroutine-safe.
+//
+// The type of samples (float64, histogram, etc) appended for a given series must remain same within an Appender.
+// The behaviour is undefined if samples of different types are appended to the same series in a single Commit().
 type Appender interface {
 	// Append adds a sample pair for the given series.
 	// An optional series reference can be provided to accelerate calls.

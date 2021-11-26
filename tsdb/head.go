@@ -614,7 +614,7 @@ func (h *Head) Init(minValidTime int64) error {
 		sparseHistogramSeries := 0
 		for _, m := range h.series.series {
 			for _, ms := range m {
-				if ms.histogramSeries {
+				if ms.isHistogramSeries {
 					sparseHistogramSeries++
 				}
 			}
@@ -1404,7 +1404,7 @@ func (s *stripeSeries) gc(mint int64) (map[storage.SeriesRef]struct{}, int, int6
 					s.locks[j].Lock()
 				}
 
-				if series.histogramSeries {
+				if series.isHistogramSeries {
 					sparseHistogramSeriesDeleted++
 				}
 				deleted[storage.SeriesRef(series.ref)] = struct{}{}
@@ -1554,8 +1554,7 @@ type memSeries struct {
 
 	txs *txRing
 
-	// Temporary variable for sparsehistogram experiment.
-	histogramSeries bool
+	isHistogramSeries bool
 }
 
 func newMemSeries(lset labels.Labels, id chunks.HeadSeriesRef, chunkRange int64, memChunkPool *sync.Pool) *memSeries {
