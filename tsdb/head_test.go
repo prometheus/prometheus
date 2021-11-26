@@ -3169,17 +3169,17 @@ func TestAppendingDifferentEncodingToSameSeries(t *testing.T) {
 	})
 	db.DisableCompactions()
 
-	hists := generateHistograms(10)
+	hists := GenerateTestHistograms(10)
 	lbls := labels.Labels{{Name: "a", Value: "b"}}
 
 	type result struct {
 		t   int64
 		v   float64
-		h   histogram.Histogram
+		h   *histogram.Histogram
 		enc chunkenc.Encoding
 	}
 	expResult := []result{}
-	ref := uint64(0)
+	ref := storage.SeriesRef(0)
 	addFloat64Sample := func(app storage.Appender, ts int64, v float64) {
 		ref, err = app.Append(ref, lbls, ts, v)
 		require.NoError(t, err)
@@ -3189,7 +3189,7 @@ func TestAppendingDifferentEncodingToSameSeries(t *testing.T) {
 			enc: chunkenc.EncXOR,
 		})
 	}
-	addHistogramSample := func(app storage.Appender, ts int64, h histogram.Histogram) {
+	addHistogramSample := func(app storage.Appender, ts int64, h *histogram.Histogram) {
 		ref, err = app.AppendHistogram(ref, lbls, ts, h)
 		require.NoError(t, err)
 		expResult = append(expResult, result{
