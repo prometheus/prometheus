@@ -13,8 +13,14 @@ const EndpointLink: FC<EndpointLinkProps> = ({ endpoint, globalUrl }) => {
   try {
     url = new URL(endpoint);
   } catch (err: unknown) {
+    // In cases of IPv6 addresses with a Zone ID, URL may not be parseable.
+    // See https://github.com/prometheus/prometheus/issues/9760
+    // In this case, we attempt to prepare a synthetic URL with the
+    // same query parameters, for rendering purposes.
     invalidURL = true;
-    if (endpoint.indexOf('?') > -1) search = endpoint.substring(endpoint.indexOf('?'));
+    if (endpoint.indexOf('?') > -1) {
+      search = endpoint.substring(endpoint.indexOf('?'));
+    }
     url = new URL('http://0.0.0.0' + search);
   }
 
