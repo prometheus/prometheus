@@ -446,6 +446,25 @@ func Test_ExistingWAL_NextRef(t *testing.T) {
 	require.Equal(t, uint64(seriesCount), db.nextRef.Load(), "nextRef should be equal to the number of series written across the entire WAL")
 }
 
+func Test_validateOptions(t *testing.T) {
+	t.Run("Apply defaults to zero values", func(t *testing.T) {
+		opts := validateOptions(&Options{})
+		require.Equal(t, DefaultOptions(), opts)
+	})
+
+	t.Run("Defaults are already valid", func(t *testing.T) {
+		require.Equal(t, DefaultOptions(), validateOptions(nil))
+	})
+
+	t.Run("MaxWALTime should not be lower than TruncateFrequency", func(t *testing.T) {
+		opts := validateOptions(&Options{
+			MaxWALTime:        int64(time.Hour / time.Millisecond),
+			TruncateFrequency: 2 * time.Hour,
+		})
+		require.Equal(t, int64(2*time.Hour/time.Millisecond), opts.MaxWALTime)
+	})
+}
+
 func startTime() (int64, error) {
 	return time.Now().Unix() * 1000, nil
 }
@@ -534,8 +553,4 @@ func TestStorage_DuplicateExemplarsIgnored(t *testing.T) {
 
 	// We had 9 calls to AppendExemplar but only 4 of those should have gotten through.
 	require.Equal(t, 4, walExemplarsCount)
-}
-
-func Test_validateOptions_Defaults(t *testing.T) {
-	require.Equal(t, DefaultOptions(), validateOptions(nil))
 }

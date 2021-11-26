@@ -317,7 +317,7 @@ func validateOptions(opts *Options) *Options {
 		opts.TruncateFrequency = DefaultTruncateFrequency
 	}
 	if opts.MinWALTime <= 0 {
-		opts.MinWALTime = 0
+		opts.MinWALTime = DefaultMinWALTime
 	}
 	if opts.MaxWALTime <= 0 {
 		opts.MaxWALTime = DefaultMaxWALTime
