@@ -329,6 +329,7 @@ func (g *Group) Interval() time.Duration { return g.interval }
 func (g *Group) Limit() int { return g.limit }
 
 // SourceTenants returns the source tenants for the group.
+// If it's empty or nil, then the owning user/tenant is considered to be the source tenant.
 func (g *Group) SourceTenants() []string { return g.sourceTenants }
 
 func (g *Group) run(ctx context.Context) {
