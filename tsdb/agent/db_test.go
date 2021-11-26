@@ -45,10 +45,10 @@ func TestDB_InvalidSeries(t *testing.T) {
 
 	t.Run("Samples", func(t *testing.T) {
 		_, err := app.Append(0, labels.Labels{}, 0, 0)
-		require.Error(t, err, "should reject empty labels")
+		require.ErrorIs(t, err, tsdb.ErrInvalidSample, "should reject empty labels")
 
 		_, err = app.Append(0, labels.Labels{{Name: "a", Value: "1"}, {Name: "a", Value: "2"}}, 0, 0)
-		require.Error(t, err, "should reject duplicate labels")
+		require.ErrorIs(t, err, tsdb.ErrInvalidSample, "should reject duplicate labels")
 	})
 
 	t.Run("Exemplars", func(t *testing.T) {
@@ -56,7 +56,7 @@ func TestDB_InvalidSeries(t *testing.T) {
 		require.NoError(t, err, "should not reject valid series")
 
 		_, err = app.AppendExemplar(0, nil, exemplar.Exemplar{})
-		require.Error(t, err, "should reject unknown series ref")
+		require.EqualError(t, err, "unknown series ref when trying to add exemplar: 0")
 
 		e := exemplar.Exemplar{Labels: labels.Labels{{Name: "a", Value: "1"}, {Name: "a", Value: "2"}}}
 		_, err = app.AppendExemplar(sRef, nil, e)
@@ -87,7 +87,7 @@ func createTestAgentDB(t *testing.T, reg prometheus.Registerer, opts *Options) *
 	return db
 }
 
-func TestUnsupported(t *testing.T) {
+func TestUnsupportedFunctions(t *testing.T) {
 	s := createTestAgentDB(t, nil, DefaultOptions())
 	defer s.Close()
 
@@ -145,7 +145,7 @@ func TestCommit(t *testing.T) {
 		require.NoError(t, sr.Close())
 	}()
 
-	// Read records from WAL and check for expected count of series and samples.
+	// Read records from WAL and check for expected count of series, samples, and exemplars.
 	var (
 		r   = wal.NewReader(sr)
 		dec record.Decoder
@@ -178,9 +178,9 @@ func TestCommit(t *testing.T) {
 	}
 
 	// Check that the WAL contained the same number of commited series/samples/exemplars.
-	require.Equal(t, walSeriesCount, numSeries, "unexpected number of series")
-	require.Equal(t, walSamplesCount, numSeries*numDatapoints, "unexpected number of samples")
-	require.Equal(t, walExemplarsCount, numSeries*numDatapoints, "unexpected number of exemplars")
+	require.Equal(t, numSeries, walSeriesCount, "unexpected number of series")
+	require.Equal(t, numSeries*numDatapoints, walSamplesCount, "unexpected number of samples")
+	require.Equal(t, numSeries*numDatapoints, walExemplarsCount, "unexpected number of exemplars")
 }
 
 func TestRollback(t *testing.T) {
@@ -248,9 +248,9 @@ func TestRollback(t *testing.T) {
 	}
 
 	// Check that the rollback ensured nothing got stored.
-	require.Equal(t, walSeriesCount, 0, "unexpected number of series")
-	require.Equal(t, walSamplesCount, 0, "unexpected number of samples")
-	require.Equal(t, walExemplarsCount, 0, "unexpected number of exemplars")
+	require.Equal(t, 0, walSeriesCount, "series should not have been written to WAL")
+	require.Equal(t, 0, walSamplesCount, "samples should not have been written to WAL")
+	require.Equal(t, 0, walExemplarsCount, "exemplars should not have been written to WAL")
 }
 
 func TestFullTruncateWAL(t *testing.T) {

@@ -16,6 +16,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"math"
 	"path/filepath"
 	"sync"
 	"time"
@@ -437,7 +438,7 @@ func (db *DB) loadWAL(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.He
 				}
 				decoded <- samples
 			case record.Tombstones, record.Exemplars:
-				// We don't care about tombstones or exemplars during replay
+				// We don't care about tombstones or exemplars during replay.
 				continue
 			default:
 				errCh <- &wal.CorruptionErr{
@@ -754,7 +755,7 @@ func (a *appender) getOrCreate(l labels.Labels) (series *memSeries, created bool
 	}
 
 	ref := chunks.HeadSeriesRef(a.nextRef.Inc())
-	series = &memSeries{ref: ref, lset: l}
+	series = &memSeries{ref: ref, lset: l, lastTs: math.MinInt64}
 	a.series.Set(hash, series)
 	return series, true
 }
