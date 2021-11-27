@@ -1688,6 +1688,7 @@ tls_config:
 
 # Optional namespace discovery. If omitted, all namespaces are used.
 namespaces:
+  own_namespace: <bool>
   names:
     [ - <string> ]
 

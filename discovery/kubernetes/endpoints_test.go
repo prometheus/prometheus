@@ -615,3 +615,86 @@ func TestEndpointsDiscoveryNamespaces(t *testing.T) {
 		},
 	}.Run(t)
 }
+
+func TestEndpointsDiscoveryOwnNamespace(t *testing.T) {
+	epOne := makeEndpoints()
+	epOne.Namespace = "own-ns"
+
+	epTwo := makeEndpoints()
+	epTwo.Namespace = "non-own-ns"
+
+	podOne := &v1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "testpod",
+			Namespace: "own-ns",
+			UID:       types.UID("deadbeef"),
+		},
+		Spec: v1.PodSpec{
+			NodeName: "testnode",
+			Containers: []v1.Container{
+				{
+					Name: "p1",
+					Ports: []v1.ContainerPort{
+						{
+							Name:          "mainport",
+							ContainerPort: 9000,
+							Protocol:      v1.ProtocolTCP,
+						},
+					},
+				},
+			},
+		},
+		Status: v1.PodStatus{
+			HostIP: "2.3.4.5",
+			PodIP:  "4.3.2.1",
+		},
+	}
+
+	podTwo := podOne.DeepCopy()
+	podTwo.Namespace = "non-own-ns"
+
+	objs := []runtime.Object{
+		epOne,
+		epTwo,
+		podOne,
+		podTwo,
+	}
+
+	n, _ := makeDiscovery(RoleEndpoint, NamespaceDiscovery{IncludeOwnNamespace: true}, objs...)
+
+	k8sDiscoveryTest{
+		discovery:        n,
+		expectedMaxItems: 1,
+		expectedRes: map[string]*targetgroup.Group{
+			"endpoints/own-ns/testendpoints": {
+				Targets: []model.LabelSet{
+					{
+						"__address__":                              "1.2.3.4:9000",
+						"__meta_kubernetes_endpoint_hostname":      "testendpoint1",
+						"__meta_kubernetes_endpoint_node_name":     "foobar",
+						"__meta_kubernetes_endpoint_port_name":     "testport",
+						"__meta_kubernetes_endpoint_port_protocol": "TCP",
+						"__meta_kubernetes_endpoint_ready":         "true",
+					},
+					{
+						"__address__":                              "2.3.4.5:9001",
+						"__meta_kubernetes_endpoint_port_name":     "testport",
+						"__meta_kubernetes_endpoint_port_protocol": "TCP",
+						"__meta_kubernetes_endpoint_ready":         "true",
+					},
+					{
+						"__address__":                              "2.3.4.5:9001",
+						"__meta_kubernetes_endpoint_port_name":     "testport",
+						"__meta_kubernetes_endpoint_port_protocol": "TCP",
+						"__meta_kubernetes_endpoint_ready":         "false",
+					},
+				},
+				Labels: model.LabelSet{
+					"__meta_kubernetes_namespace":      "own-ns",
+					"__meta_kubernetes_endpoints_name": "testendpoints",
+				},
+				Source: "endpoints/own-ns/testendpoints",
+			},
+		},
+	}.Run(t)
+}
