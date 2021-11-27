@@ -16,6 +16,8 @@ package kubernetes
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
+	"os"
 	"reflect"
 	"strings"
 	"sync"
@@ -72,6 +74,12 @@ var (
 	DefaultSDConfig = SDConfig{
 		HTTPClientConfig: config.DefaultHTTPClientConfig,
 	}
+
+)
+
+const (
+	podNamespaceFile = "/var/run/secrets/kubernetes.io/serviceaccount/namespace"
+	podNamespaceMark = "."
 )
 
 func init() {
@@ -257,7 +265,28 @@ func (d *Discovery) getNamespaces() []string {
 	if len(namespaces) == 0 {
 		namespaces = []string{apiv1.NamespaceAll}
 	}
-	return namespaces
+	// used to filter duplicated namespace
+	m := make(map[string]bool)
+	targetNamespaces := make([]string, 0)
+	for _, n := range namespaces {
+		if m[n] {
+			continue
+		}
+		m[n] = true
+		if n == podNamespaceMark {
+			var err error
+			n, err = getPodNamespace()
+			if err != nil {
+				level.Error(d.logger).Log("msg", "fail to get the namespace of current pod", "err", err)
+				continue
+			}
+			if m[n] {
+				continue
+			}
+		}
+		targetNamespaces = append(targetNamespaces, n)
+	}
+	return targetNamespaces
 }
 
 // New creates a new Kubernetes discovery for the given role.
@@ -629,4 +658,16 @@ func checkNetworkingV1Supported(client kubernetes.Interface) (bool, error) {
 	// networking.k8s.io/v1 is available since Kubernetes v1.19
 	// https://github.com/kubernetes/kubernetes/blob/master/CHANGELOG/CHANGELOG-1.19.md
 	return semVer.Major() >= 1 && semVer.Minor() >= 19, nil
+}
+
+func getPodNamespace() (string, error) {
+	if _, err := os.Stat(podNamespaceFile); errors.Is(err, os.ErrNotExist) {
+		return "", errors.New("unable to load pod namespace configuration, " + podNamespaceFile + " does not exist")
+	}
+	//return the namespace associated with the service account token, if available
+	ns, err := ioutil.ReadFile(podNamespaceFile)
+	if err == nil {
+		return string(ns), nil
+	}
+	return "", err
 }
