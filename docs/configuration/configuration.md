@@ -2849,5 +2849,6 @@ with this feature.
 Note that exemplar storage is still considered experimental and must be enabled via `--enable-feature=exemplar-storage`.
 
 ```yaml
-  # Configures the maximum size of the circular buffer used to store exemplars for all series. Resizable during runtime.
-  [ max_exemplars: <int> | default = 100000 ]
+# Configures the maximum size of the circular buffer used to store exemplars for all series. Resizable during runtime.
+[ max_exemplars: <int> | default = 100000 ]
+```
