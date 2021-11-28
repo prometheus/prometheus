@@ -532,24 +532,12 @@ type TracingConfig struct {
 	WithSecure       bool              `yaml:"with_secure,omitempty"`
 }
 
-func (t *TracingConfig) isZero() bool {
-	return t.Endpoint == "" &&
-		t.SamplingFraction == 0 &&
-		t.ClientType == "" &&
-		!t.WithSecure
-}
-
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
 func (t *TracingConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	*t = TracingConfig{}
 	type plain TracingConfig
 	if err := unmarshal((*plain)(t)); err != nil {
 		return err
-	}
-
-	// If zero, assume tracing is disabled.
-	if t.isZero() {
-		return nil
 	}
 
 	if t.Endpoint == "" {

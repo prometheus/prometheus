@@ -2652,8 +2652,7 @@ relabel_configs:
 `tracing` configures exporting traces from Prometheus to a tracing backend via the OTLP protocol. Tracing is currently an **experimental** feature and could change in the future.
 
 ```yaml
-# Decides whether to use gRPC or HTTP client to export the traces. Valid values are
-# 'grpc' or 'http'.
+# Client used to export the traces. Options are 'http' or 'grpc'.
 [ client_type: <string> ]
 
 # Endpoint to send the traces to.
