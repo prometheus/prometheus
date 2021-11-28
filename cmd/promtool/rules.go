@@ -112,10 +112,12 @@ func (importer *ruleImporter) importRule(ctx context.Context, ruleExpr, ruleName
 	// use cache for track staleness of series between blocks
 	staleCache := newStalenessCache(interval)
 
-	var appender *ruleBackfillAppender
-	var currentLabels = labels.Labels{}
-	var closed bool
-	var w *tsdb.BlockWriter
+	var (
+		appender *ruleBackfillAppender
+		closed   bool
+		w        *tsdb.BlockWriter
+	)
+	currentLabels := labels.Labels{}
 
 	for startOfBlock := blockDuration * (importer.startMs / blockDuration); startOfBlock <= importer.endMs; startOfBlock += blockDuration {
 

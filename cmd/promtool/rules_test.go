@@ -17,6 +17,7 @@ import (
 	"context"
 	"io/ioutil"
 	"math"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -150,84 +151,54 @@ func TestBackfillRuleIntegration(t *testing.T) {
 		})
 	}
 }
+
 func TestBackfillParseRules(t *testing.T) {
-	var (
-		start1                    = time.Date(2009, time.November, 6, 1, 34, 0, 0, time.UTC)
-		ttestTime                 = start1.Add(1 * time.Hour)
-		ttestTime2                = start1.Add(2 * time.Hour)
-		start                     = time.Date(2009, time.November, 10, 6, 34, 0, 0, time.UTC)
-		testTime                  = model.Time(start.Add(-9 * time.Hour).Unix())
-		twentyFourHourDuration, _ = time.ParseDuration("24h")
-	)
+	tmpDir, err := ioutil.TempDir("", "backfilldata")
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, os.RemoveAll(tmpDir))
+	}()
+	ctx := context.Background()
 
-	testCases := []struct {
-		name                string
-		runcount            int
-		maxBlockDuration    time.Duration
-		expectedBlockCount  int
-		expectedSeriesCount int
-		expectedSampleCount int
-		samples             []*model.SampleStream
-	}{
-		{"no samples", 1, defaultBlockDuration, 0, 0, 0, []*model.SampleStream{}},
-		{"run importer once", 1, defaultBlockDuration, 8, 4, 8, createMockMetricsSingleSeries(ttestTime)},
-		{"run importer twice", 2, defaultBlockDuration, 8, 4, 8, createMockMetricsSingleSeries(ttestTime2)},
-		{"run importer once with larger blocks", 1, twentyFourHourDuration, 4, 4, 4, []*model.SampleStream{{Metric: model.Metric{"name1": "val1"}, Values: []model.SamplePair{{Timestamp: testTime, Value: 2}}}}},
+	cfg := ruleImporterConfig{
+		outputDir:        tmpDir,
+		start:            time.Now(),
+		end:              time.Now(),
+		evalInterval:     evalInterval,
+		maxBlockDuration: defaultBlockDuration,
 	}
-	for _, tt := range testCases {
-		t.Run(tt.name, func(t *testing.T) {
-			tmpDir, err := ioutil.TempDir("", "backfilldata")
-			require.NoError(t, err)
-			defer func() {
-				require.NoError(t, os.RemoveAll(tmpDir))
-			}()
-			ctx := context.Background()
+	ruleImporter := newRuleImporter(log.NewNopLogger(), cfg, mockQueryRangeAPI{
+		samples: model.Matrix{},
+	})
+	path1 := filepath.Join(tmpDir, "test.file")
+	require.NoError(t, createSingleRuleTestFiles(path1))
+	path2 := filepath.Join(tmpDir, "test2.file")
+	require.NoError(t, createMultiRuleTestFiles(path2))
 
-			// Execute the test more than once to simulate running the rule importer twice with the same data.
-			// We expect duplicate blocks with the same series are created when run more than once.
-			for i := 0; i < tt.runcount; i++ {
-				cfg := ruleImporterConfig{
-					outputDir:        tmpDir,
-					start:            start.Add(-10 * time.Hour),
-					end:              start.Add(-7 * time.Hour),
-					evalInterval:     evalInterval,
-					maxBlockDuration: tt.maxBlockDuration,
-				}
-				ruleImporter := newRuleImporter(log.NewNopLogger(), cfg, mockQueryRangeAPI{
-					samples: tt.samples,
-				})
-				path1 := filepath.Join(tmpDir, "test.file")
-				require.NoError(t, createSingleRuleTestFiles(path1))
-				path2 := filepath.Join(tmpDir, "test2.file")
-				require.NoError(t, createMultiRuleTestFiles(path2))
-
-				// Confirm that the rule files were loaded in correctly.
-				errs := ruleImporter.loadGroups(ctx, []string{path1, path2})
-				for _, err := range errs {
-					require.NoError(t, err)
-				}
-				require.Equal(t, 3, len(ruleImporter.groups))
-				group1 := ruleImporter.groups[path1+";group0"]
-				require.NotNil(t, group1)
-				const defaultInterval = 60
-				require.Equal(t, defaultInterval*time.Second, group1.Interval())
-				gRules := group1.Rules()
-				require.Equal(t, 1, len(gRules))
-				require.Equal(t, "grp0_rule1", gRules[0].Name())
-				require.Equal(t, "ruleExpr", gRules[0].Query().String())
-				require.Equal(t, 1, len(gRules[0].Labels()))
-
-				group2 := ruleImporter.groups[path2+";group2"]
-				require.NotNil(t, group2)
-				require.Equal(t, defaultInterval*time.Second, group2.Interval())
-				g2Rules := group2.Rules()
-				require.Equal(t, 2, len(g2Rules))
-				require.Equal(t, "grp2_rule1", g2Rules[0].Name())
-				require.Equal(t, "grp2_rule1_expr", g2Rules[0].Query().String())
-				require.Equal(t, 0, len(g2Rules[0].Labels()))
-			}
-		})
+	// Confirm that the rule files were loaded in correctly.
+	errs := ruleImporter.loadGroups(ctx, []string{path1, path2})
+	for _, err := range errs {
+		require.NoError(t, err)
 	}
+	require.Equal(t, 3, len(ruleImporter.groups))
+	group1 := ruleImporter.groups[path1+";group0"]
+	require.NotNil(t, group1)
+	const defaultInterval = 60
+	require.Equal(t, defaultInterval*time.Second, group1.Interval())
+	gRules := group1.Rules()
+	require.Equal(t, 1, len(gRules))
+	require.Equal(t, "grp0_rule1", gRules[0].Name())
+	require.Equal(t, "ruleExpr", gRules[0].Query().String())
+	require.Equal(t, 1, len(gRules[0].Labels()))
+
+	group2 := ruleImporter.groups[path2+";group2"]
+	require.NotNil(t, group2)
+	require.Equal(t, defaultInterval*time.Second, group2.Interval())
+	g2Rules := group2.Rules()
+	require.Equal(t, 2, len(g2Rules))
+	require.Equal(t, "grp2_rule1", g2Rules[0].Name())
+	require.Equal(t, "grp2_rule1_expr", g2Rules[0].Query().String())
+	require.Equal(t, 0, len(g2Rules[0].Labels()))
 }
 
 func createSingleRuleTestFiles(path string) error {
@@ -305,7 +276,7 @@ func TestBackfillRuleImporterStale(t *testing.T) {
 		testTime = start.Add(1 * time.Hour)
 	)
 
-	var testCases = []struct {
+	testCases := []struct {
 		name            string
 		wantBlockCount  int
 		wantSeriesCount int
