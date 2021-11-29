@@ -133,17 +133,8 @@ func (b *BufferedSeriesIterator) Next() chunkenc.ValueType {
 	}
 
 	b.valueType = b.it.Next()
-	switch b.valueType {
-	case chunkenc.ValNone:
-		// Do nothing.
-	case chunkenc.ValFloat:
-		b.lastTime, _ = b.At()
-	case chunkenc.ValHistogram:
-		b.lastTime, _ = b.AtHistogram()
-	case chunkenc.ValFloatHistogram:
-		b.lastTime, _ = b.AtFloatHistogram()
-	default:
-		panic(fmt.Errorf("BufferedSeriesIterator: unknown value type %v", b.valueType))
+	if b.valueType != chunkenc.ValNone {
+		b.lastTime = b.AtT()
 	}
 	return b.valueType
 }
@@ -161,6 +152,11 @@ func (b *BufferedSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
 // AtFloatHistogram returns the current float-histogram element of the iterator.
 func (b *BufferedSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
 	return b.it.AtFloatHistogram()
+}
+
+// AtT returns the current timestamp of the iterator.
+func (b *BufferedSeriesIterator) AtT() int64 {
+	return b.it.AtT()
 }
 
 // Err returns the last encountered error.

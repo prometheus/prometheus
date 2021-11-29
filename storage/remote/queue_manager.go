@@ -670,7 +670,8 @@ func (t *QueueManager) StoreSeries(series []record.RefSeries, index int) {
 	}
 }
 
-// Update the segment number held against the series, so we can trim older ones in SeriesReset.
+// UpdateSeriesSegment updates the segment number held against the series,
+// so we can trim older ones in SeriesReset.
 func (t *QueueManager) UpdateSeriesSegment(series []record.RefSeries, index int) {
 	t.seriesSegmentMtx.Lock()
 	defer t.seriesSegmentMtx.Unlock()
