@@ -371,6 +371,9 @@ type QueueManager struct {
 	metrics              *queueManagerMetrics
 	interner             *pool
 	highestRecvTimestamp *maxTimestamp
+
+	sendPool  sync.Pool // For re-use of buffers used in batching samples to shards.
+	batchPool sync.Pool // Two very similar pools, but different object sizes.
 }
 
 // NewQueueManager builds a new QueueManager.
@@ -423,6 +426,13 @@ func NewQueueManager(
 		metrics:              metrics,
 		interner:             interner,
 		highestRecvTimestamp: highestRecvTimestamp,
+
+		sendPool: sync.Pool{},
+		batchPool: sync.Pool{
+			New: func() interface{} {
+				return make([]sampleOrExemplar, cfg.Capacity)
+			},
+		},
 	}
 
 	t.watcher = wal.NewWatcher(watcherMetrics, readerMetrics, logger, client.Name(), t, walDir, enableExemplarRemoteWrite)
@@ -508,7 +518,14 @@ func (t *QueueManager) sendMetadataWithBackoff(ctx context.Context, metadata []p
 // breaks them into sets to be sent to each shard. Blocks until all samples are
 // enqueued on their shards or a shutdown signal is received.
 func (t *QueueManager) Append(samples []record.RefSample) bool {
-	toSend := make([]sampleOrExemplar, 0, len(samples))
+	var toSend []sampleOrExemplar
+	pooledBuf := t.sendPool.Get()
+	if pooledBuf != nil && cap(pooledBuf.([]sampleOrExemplar)) <= len(samples) {
+		toSend = pooledBuf.([]sampleOrExemplar)[:0]
+	} else {
+		toSend = make([]sampleOrExemplar, 0, len(samples))
+	}
+	defer t.sendPool.Put(toSend)
 	// Turn the record.RefSample objects that we receive into sampleOrExemplar
 	// objects that have a reference to the series labels.
 	t.seriesMtx.Lock()
@@ -546,6 +563,9 @@ func (t *QueueManager) enqueue(toSend []sampleOrExemplar) bool {
 		for ; index < len(toSend); index++ {
 			s := toSend[index]
 			shard := uint64(s.ref) % uint64(nShards)
+			if batches[shard] == nil {
+				batches[shard] = t.batchPool.Get().([]sampleOrExemplar)[:0]
+			}
 			batches[shard] = append(batches[shard], s)
 			// Once one shard's batch reaches capacity, break this loop and go to sending phase
 			if len(batches[shard]) >= t.cfg.Capacity {
@@ -1169,6 +1189,7 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue chan []sampleO
 					nPending = 0
 				}
 			}
+			s.qm.batchPool.Put(samples)
 			stop()
 			timer.Reset(time.Duration(s.qm.cfg.BatchSendDeadline))
 
