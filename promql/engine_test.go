@@ -27,6 +27,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -2619,11 +2620,8 @@ func TestRangeQuery(t *testing.T) {
 }
 
 func TestSparseHistogramRate(t *testing.T) {
-	// Currently, this test it to only find panics or errors in the engine execution path.
-	// The panic stack trace will mostly tell you what code path is breaking and needs fixing for
-	// fetching the raw histograms and passing it rightly upto the rate() function implementation.
-	// TODO: Check the result for correctness once implementation is ready.
-
+	// TODO(beorn7): Integrate histograms into the PromQL testing framework
+	// and write more tests there.
 	test, err := NewTest(t, "")
 	require.NoError(t, err)
 	defer test.Close()
@@ -2646,4 +2644,21 @@ func TestSparseHistogramRate(t *testing.T) {
 	require.NoError(t, err)
 	res := qry.Exec(test.Context())
 	require.NoError(t, res.Err)
+	vector, err := res.Vector()
+	require.NoError(t, err)
+	require.Len(t, vector, 1)
+	actualHistogram := vector[0].H
+	expectedHistogram := &histogram.FloatHistogram{
+		Schema:        1,
+		ZeroThreshold: 0.001,
+		ZeroCount:     1. / 15.,
+		Count:         4. / 15.,
+		Sum:           1.226666666666667,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 1, Length: 2},
+		},
+		PositiveBuckets: []float64{1. / 15., 1. / 15., 1. / 15., 1. / 15.},
+	}
+	require.Equal(t, expectedHistogram, actualHistogram)
 }
