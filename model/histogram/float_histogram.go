@@ -235,7 +235,7 @@ func (r *floatBucketIterator) Next() bool {
 		r.currIdx += span.Offset
 	}
 
-	r.currCount = r.buckets[r.bucketsIdx]
+	r.currCount += r.buckets[r.bucketsIdx]
 	if r.positive {
 		r.currUpper = getBound(r.currIdx, r.schema)
 		r.currLower = getBound(r.currIdx-1, r.schema)
