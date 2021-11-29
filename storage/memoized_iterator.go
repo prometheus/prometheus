@@ -112,8 +112,8 @@ func (b *MemoizedSeriesIterator) Next() bool {
 	return b.ok
 }
 
-// Values returns the current element of the iterator.
-func (b *MemoizedSeriesIterator) Values() (int64, float64) {
+// At returns the current element of the iterator.
+func (b *MemoizedSeriesIterator) At() (int64, float64) {
 	return b.it.At()
 }
 
