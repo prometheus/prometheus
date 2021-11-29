@@ -112,9 +112,7 @@ func (a *dbAdapter) WALReplayStatus() (tsdb.WALReplayStatus, error) {
 func TestReadyAndHealthy(t *testing.T) {
 	t.Parallel()
 
-	dbDir, err := ioutil.TempDir("", "tsdb-ready")
-	require.NoError(t, err)
-	defer func() { require.NoError(t, os.RemoveAll(dbDir)) }()
+	dbDir := t.TempDir()
 
 	db, err := tsdb.Open(dbDir, nil, nil, nil, nil)
 	require.NoError(t, err)
@@ -235,9 +233,7 @@ func TestReadyAndHealthy(t *testing.T) {
 
 func TestRoutePrefix(t *testing.T) {
 	t.Parallel()
-	dbDir, err := ioutil.TempDir("", "tsdb-ready")
-	require.NoError(t, err)
-	defer func() { require.NoError(t, os.RemoveAll(dbDir)) }()
+	dbDir := t.TempDir()
 
 	db, err := tsdb.Open(dbDir, nil, nil, nil, nil)
 	require.NoError(t, err)
@@ -404,9 +400,7 @@ func TestHTTPMetrics(t *testing.T) {
 }
 
 func TestShutdownWithStaleConnection(t *testing.T) {
-	dbDir, err := ioutil.TempDir("", "tsdb-ready")
-	require.NoError(t, err)
-	defer func() { require.NoError(t, os.RemoveAll(dbDir)) }()
+	dbDir := t.TempDir()
 
 	db, err := tsdb.Open(dbDir, nil, nil, nil, nil)
 	require.NoError(t, err)
