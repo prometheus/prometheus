@@ -795,6 +795,48 @@ func TestUpdate(t *testing.T) {
 	reloadAndValidate(rgs, t, tmpFile, ruleManager, expected, ogs)
 }
 
+func TestUpdateSetsSourceTenants(t *testing.T) {
+	st := teststorage.New(t)
+	defer st.Close()
+
+	opts := promql.EngineOpts{
+		Logger:     nil,
+		Reg:        nil,
+		MaxSamples: 10,
+		Timeout:    10 * time.Second,
+	}
+	engine := promql.NewEngine(opts)
+	ruleManager := NewManager(&ManagerOptions{
+		Appendable: st,
+		Queryable:  st,
+		QueryFunc:  EngineQueryFunc(engine, st),
+		Context:    context.Background(),
+		Logger:     log.NewNopLogger(),
+	})
+	ruleManager.start()
+	defer ruleManager.Stop()
+
+	rgs, errs := rulefmt.ParseFile("fixtures/rules_with_source_tenants.yaml")
+	require.Equal(t, 0, len(errs), "file parsing failures")
+
+	tmpFile, err := ioutil.TempFile("", "rules.test.*.yaml")
+	require.NoError(t, err)
+	defer os.Remove(tmpFile.Name())
+	defer tmpFile.Close()
+
+	reloadRules(rgs, t, tmpFile, ruleManager)
+
+	// check that all source tenants were actually set
+	require.Len(t, ruleManager.groups, len(rgs.Groups))
+
+	for _, expectedGroup := range rgs.Groups {
+		actualGroup, ok := ruleManager.groups[GroupKey(tmpFile.Name(), expectedGroup.Name)]
+
+		require.True(t, ok, "actual groups don't contain at one of the expected groups")
+		require.ElementsMatch(t, expectedGroup.SourceTenants, actualGroup.SourceTenants())
+	}
+}
+
 // ruleGroupsTest for running tests over rules.
 type ruleGroupsTest struct {
 	Groups []ruleGroupTest `yaml:"groups"`
@@ -837,14 +879,19 @@ func formatRules(r *rulefmt.RuleGroups) ruleGroupsTest {
 	}
 }
 
-func reloadAndValidate(rgs *rulefmt.RuleGroups, t *testing.T, tmpFile *os.File, ruleManager *Manager, expected map[string]labels.Labels, ogs map[string]*Group) {
+func reloadRules(rgs *rulefmt.RuleGroups, t *testing.T, tmpFile *os.File, ruleManager *Manager) {
 	bs, err := yaml.Marshal(formatRules(rgs))
 	require.NoError(t, err)
-	tmpFile.Seek(0, 0)
+	_, _ = tmpFile.Seek(0, 0)
 	_, err = tmpFile.Write(bs)
 	require.NoError(t, err)
 	err = ruleManager.Update(10*time.Second, []string{tmpFile.Name()}, nil, "")
 	require.NoError(t, err)
+}
+
+func reloadAndValidate(rgs *rulefmt.RuleGroups, t *testing.T, tmpFile *os.File, ruleManager *Manager, expected map[string]labels.Labels, ogs map[string]*Group) {
+	reloadRules(rgs, t, tmpFile, ruleManager)
+
 	for h, g := range ruleManager.groups {
 		if ogs[h] == g {
 			t.Fail()

@@ -1,0 +1,6 @@
+groups:
+  - name: test
+    rules:
+      - record: job:http_requests:rate5m
+        expr: sum by (job)(rate(http_requests_total[5m]))
+    source_tenants: [tenant-1, tenant-2]
