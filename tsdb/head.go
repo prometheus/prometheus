@@ -282,6 +282,7 @@ type headMetrics struct {
 	checkpointCreationTotal  prometheus.Counter
 	mmapChunkCorruptionTotal prometheus.Counter
 	snapshotReplayErrorTotal prometheus.Counter // Will be either 0 or 1.
+	oooHistogram             prometheus.Histogram
 }
 
 func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
@@ -379,6 +380,20 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 		snapshotReplayErrorTotal: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_snapshot_replay_error_total",
 			Help: "Total number snapshot replays that failed.",
+		}),
+		oooHistogram: prometheus.NewHistogram(prometheus.HistogramOpts{
+			Name: "prometheus_tsdb_sample_ooo_delta",
+			Help: "Delta in seconds by which a sample is considered out of order.",
+			Buckets: []float64{
+				// Note that mimir distributor only gives us a range of wallclock-12h to wallclock+15min
+				60 * 10,      // 10 min
+				60 * 30,      // 30 min
+				60 * 60,      // 60 min
+				60 * 60 * 2,  // 2h
+				60 * 60 * 3,  // 3h
+				60 * 60 * 6,  // 6h
+				60 * 60 * 12, // 12h
+			},
 		}),
 	}
 

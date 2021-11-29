@@ -273,10 +273,11 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 	}
 
 	s.Lock()
-	if err := s.appendable(t, v); err != nil {
+	if delta, err := s.appendable(t, v); err != nil {
 		s.Unlock()
 		if err == storage.ErrOutOfOrderSample {
 			a.head.metrics.outOfOrderSamples.Inc()
+			a.head.metrics.oooHistogram.Observe(float64(delta) / 1000)
 		}
 		return 0, err
 	}
@@ -300,24 +301,23 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 }
 
 // appendable checks whether the given sample is valid for appending to the series.
-func (s *memSeries) appendable(t int64, v float64) error {
+func (s *memSeries) appendable(t int64, v float64) (int64, error) {
 	c := s.head()
 	if c == nil {
-		return nil
+		return 0, nil
 	}
-
 	if t > c.maxTime {
-		return nil
+		return 0, nil
 	}
 	if t < c.maxTime {
-		return storage.ErrOutOfOrderSample
+		return c.maxTime - t, storage.ErrOutOfOrderSample
 	}
 	// We are allowing exact duplicates as we can encounter them in valid cases
 	// like federation and erroring out at that time would be extremely noisy.
 	if math.Float64bits(s.sampleBuf[3].v) != math.Float64bits(v) {
-		return storage.ErrDuplicateSampleForTimestamp
+		return 0, storage.ErrDuplicateSampleForTimestamp
 	}
-	return nil
+	return 0, nil
 }
 
 // AppendExemplar for headAppender assumes the series ref already exists, and so it doesn't
@@ -455,13 +455,14 @@ func (a *headAppender) Commit() (err error) {
 	for i, s := range a.samples {
 		series = a.sampleSeries[i]
 		series.Lock()
-		ok, chunkCreated := series.append(s.T, s.V, a.appendID, a.head.chunkDiskMapper)
+		delta, ok, chunkCreated := series.append(s.T, s.V, a.appendID, a.head.chunkDiskMapper)
 		series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
 		series.pendingCommit = false
 		series.Unlock()
 
 		if !ok {
 			total--
+			a.head.metrics.oooHistogram.Observe(float64(delta) / 1000)
 			a.head.metrics.outOfOrderSamples.Inc()
 		}
 		if chunkCreated {
@@ -480,7 +481,7 @@ func (a *headAppender) Commit() (err error) {
 // the appendID for isolation. (The appendID can be zero, which results in no
 // isolation for this append.)
 // It is unsafe to call this concurrently with s.iterator(...) without holding the series lock.
-func (s *memSeries) append(t int64, v float64, appendID uint64, chunkDiskMapper *chunks.ChunkDiskMapper) (sampleInOrder, chunkCreated bool) {
+func (s *memSeries) append(t int64, v float64, appendID uint64, chunkDiskMapper *chunks.ChunkDiskMapper) (delta int64, sampleInOrder, chunkCreated bool) {
 	// Based on Gorilla white papers this offers near-optimal compression ratio
 	// so anything bigger that this has diminishing returns and increases
 	// the time range within which we have to decompress all samples.
@@ -491,7 +492,7 @@ func (s *memSeries) append(t int64, v float64, appendID uint64, chunkDiskMapper 
 	if c == nil {
 		if len(s.mmappedChunks) > 0 && s.mmappedChunks[len(s.mmappedChunks)-1].maxTime >= t {
 			// Out of order sample. Sample timestamp is already in the mmapped chunks, so ignore it.
-			return false, false
+			return s.mmappedChunks[len(s.mmappedChunks)-1].maxTime - t, false, false
 		}
 		// There is no chunk in this series yet, create the first chunk for the sample.
 		c = s.cutNewHeadChunk(t, chunkDiskMapper)
@@ -500,7 +501,7 @@ func (s *memSeries) append(t int64, v float64, appendID uint64, chunkDiskMapper 
 
 	// Out of order sample.
 	if c.maxTime >= t {
-		return false, chunkCreated
+		return c.maxTime - t, false, chunkCreated
 	}
 
 	numSamples := c.chunk.NumSamples()
@@ -538,7 +539,7 @@ func (s *memSeries) append(t int64, v float64, appendID uint64, chunkDiskMapper 
 		s.txs.add(appendID)
 	}
 
-	return true, chunkCreated
+	return 0, true, chunkCreated
 }
 
 // computeChunkEndTime estimates the end timestamp based the beginning of a
