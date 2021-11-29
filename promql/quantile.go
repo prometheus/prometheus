@@ -17,6 +17,7 @@ import (
 	"math"
 	"sort"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 )
 
@@ -44,6 +45,11 @@ func (b buckets) Less(i, j int) bool { return b[i].upperBound < b[j].upperBound 
 type metricWithBuckets struct {
 	metric  labels.Labels
 	buckets buckets
+}
+
+type metricWithHistograms struct {
+	metric     labels.Labels
+	histograms []*histogram.FloatHistogram
 }
 
 // bucketQuantile calculates the quantile 'q' based on the given buckets. The
@@ -112,6 +118,82 @@ func bucketQuantile(q float64, buckets buckets) float64 {
 		rank -= buckets[b-1].count
 	}
 	return bucketStart + (bucketEnd-bucketStart)*(rank/count)
+}
+
+// histogramQuantile calculates the quantile 'q' based on the given histograms
+// The quantile value is interpolated assuming a linear distribution within a bucket.
+// A natural lower bound of 0 is assumed if the upper bound of the
+// lowest bucket is greater 0. In that case, interpolation in the lowest bucket
+// happens linearly between 0 and the upper bound of the lowest bucket.
+// However, if the lowest bucket has an upper bound less or equal 0, this upper
+// bound is returned if the quantile falls into the lowest bucket.
+//
+// There are a number of special cases (once we have a way to report errors
+// happening during evaluations of AST functions, we should report those
+// explicitly):
+//
+// If 'buckets' has 0 observations, NaN is returned.
+//
+// If q<0, -Inf is returned.
+//
+// If q>1, +Inf is returned.
+//
+// The following special cases are ignored from conventional histograms because
+// we don't have a +Inf bucket in new histograms:
+//  If the highest bucket is not +Inf, NaN is returned.
+//  If 'buckets' has fewer than 2 elements, NaN is returned.
+//
+// TODO(codesome): Support different ZeroThreshold.
+// TODO(codesome): Support mixed schemas.
+// TODO(codesome): Support negative buckets.
+func histogramQuantile(q float64, histograms []*histogram.FloatHistogram) float64 {
+	if q < 0 {
+		return math.Inf(-1)
+	}
+	if q > 1 {
+		return math.Inf(+1)
+	}
+
+	observations := float64(0)
+	zeroObservations := float64(0)
+	zeroThreshold := float64(0)
+	its := make([]histogram.FloatBucketIterator, 0, len(histograms))
+	for _, h := range histograms {
+		observations += h.ZeroCount + h.Count
+		zeroObservations += h.ZeroCount
+		zeroThreshold = h.ZeroThreshold
+		its = append(its, h.PositiveBucketIterator())
+	}
+	if observations == 0 {
+		return math.NaN()
+	}
+
+	rank := q * observations
+
+	if zeroObservations >= rank {
+		if zeroObservations == 0 {
+			return 0
+		}
+		return zeroThreshold * rank / zeroObservations
+	}
+
+	var count float64
+	var bucket *histogram.FloatBucket
+	it := histogram.NewMergeFloatBucketIterator(its...)
+	for it.Next() {
+		b := it.At()
+		count += b.Count
+		if count >= rank {
+			bucket = &b
+			break
+		}
+	}
+	if bucket == nil {
+		panic("histogramQuantile: not possible")
+	}
+
+	// TODO(codesome): Use a better estimation than linear.
+	return bucket.Lower + (bucket.Upper-bucket.Lower)*(rank/count)
 }
 
 // coalesceBuckets merges buckets with the same upper bound.

@@ -800,7 +800,37 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 			v.buckets = v.buckets[:0]
 		}
 	}
+	if enh.signatureToMetricWithHistograms == nil {
+		enh.signatureToMetricWithHistograms = map[string]*metricWithHistograms{}
+	} else {
+		for _, v := range enh.signatureToMetricWithHistograms {
+			v.histograms = v.histograms[:0]
+		}
+	}
 	for _, el := range inVec {
+		if el.H != nil {
+			// It's a histogram type.
+			l := sigf(el.Metric)
+
+			_, ok := enh.signatureToMetricWithBuckets[l]
+			if ok {
+				// This signature exists for both conventional and new histograms which
+				// is not supported.
+				panic("histogram_quantile got both conventional and new histograms for same signature") // TODO(codesome): can we not panic and do better?
+			}
+
+			mh, ok := enh.signatureToMetricWithHistograms[l]
+			if !ok {
+				el.Metric = labels.NewBuilder(el.Metric).
+					Del(labels.BucketLabel, labels.MetricName).
+					Labels()
+
+				mh = &metricWithHistograms{el.Metric, nil}
+				enh.signatureToMetricWithHistograms[l] = mh
+			}
+			mh.histograms = append(mh.histograms, el.H)
+			continue
+		}
 		upperBound, err := strconv.ParseFloat(
 			el.Metric.Get(model.BucketLabel), 64,
 		)
@@ -810,6 +840,13 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 			continue
 		}
 		l := sigf(el.Metric)
+
+		_, ok := enh.signatureToMetricWithHistograms[l]
+		if ok {
+			// This signature exists for both conventional and new histograms which
+			// is not supported.
+			panic("histogram_quantile got both conventional and new histograms for same signature") // TODO(codesome): can we not panic and do better?
+		}
 
 		mb, ok := enh.signatureToMetricWithBuckets[l]
 		if !ok {
@@ -828,6 +865,15 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 			enh.Out = append(enh.Out, Sample{
 				Metric: mb.metric,
 				Point:  Point{V: bucketQuantile(q, mb.buckets)},
+			})
+		}
+	}
+
+	for _, mh := range enh.signatureToMetricWithHistograms {
+		if len(mh.histograms) > 0 {
+			enh.Out = append(enh.Out, Sample{
+				Metric: mh.metric,
+				Point:  Point{V: histogramQuantile(q, mh.histograms)},
 			})
 		}
 	}
