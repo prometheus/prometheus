@@ -21,6 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
 func TestLazyLoader_WithSamplesTill(t *testing.T) {
@@ -143,7 +144,7 @@ func TestLazyLoader_WithSamplesTill(t *testing.T) {
 						Metric: storageSeries.Labels(),
 					}
 					it := storageSeries.Iterator()
-					for it.Next() {
+					for it.Next() == chunkenc.ValFloat {
 						t, v := it.At()
 						got.Points = append(got.Points, Point{T: t, V: v})
 					}

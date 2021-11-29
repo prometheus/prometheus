@@ -97,7 +97,7 @@ func (c *XORChunk) Appender() (Appender, error) {
 	// To get an appender we must know the state it would have if we had
 	// appended all existing data from scratch.
 	// We iterate through the end and populate via the iterator's state.
-	for it.Next() {
+	for it.Next() != ValNone {
 	}
 	if err := it.Err(); err != nil {
 		return nil, err
@@ -238,17 +238,17 @@ type xorIterator struct {
 	err    error
 }
 
-func (it *xorIterator) Seek(t int64) bool {
+func (it *xorIterator) Seek(t int64) ValueType {
 	if it.err != nil {
-		return false
+		return ValNone
 	}
 
 	for t > it.t || it.numRead == 0 {
-		if !it.Next() {
-			return false
+		if it.Next() == ValNone {
+			return ValNone
 		}
 	}
-	return true
+	return ValFloat
 }
 
 func (it *xorIterator) At() (int64, float64) {
@@ -259,8 +259,12 @@ func (it *xorIterator) AtHistogram() (int64, *histogram.Histogram) {
 	panic("cannot call xorIterator.AtHistogram")
 }
 
-func (it *xorIterator) ChunkEncoding() Encoding {
-	return EncXOR
+func (it *xorIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+	panic("cannot call xorIterator.AtFloatHistogram")
+}
+
+func (it *xorIterator) AtT() int64 {
+	return it.t
 }
 
 func (it *xorIterator) Err() error {
@@ -282,33 +286,33 @@ func (it *xorIterator) Reset(b []byte) {
 	it.err = nil
 }
 
-func (it *xorIterator) Next() bool {
+func (it *xorIterator) Next() ValueType {
 	if it.err != nil || it.numRead == it.numTotal {
-		return false
+		return ValNone
 	}
 
 	if it.numRead == 0 {
 		t, err := binary.ReadVarint(&it.br)
 		if err != nil {
 			it.err = err
-			return false
+			return ValNone
 		}
 		v, err := it.br.readBits(64)
 		if err != nil {
 			it.err = err
-			return false
+			return ValNone
 		}
 		it.t = t
 		it.val = math.Float64frombits(v)
 
 		it.numRead++
-		return true
+		return ValFloat
 	}
 	if it.numRead == 1 {
 		tDelta, err := binary.ReadUvarint(&it.br)
 		if err != nil {
 			it.err = err
-			return false
+			return ValNone
 		}
 		it.tDelta = tDelta
 		it.t = it.t + int64(it.tDelta)
@@ -326,7 +330,7 @@ func (it *xorIterator) Next() bool {
 		}
 		if err != nil {
 			it.err = err
-			return false
+			return ValNone
 		}
 		if bit == zero {
 			break
@@ -349,7 +353,7 @@ func (it *xorIterator) Next() bool {
 		bits, err := it.br.readBits(64)
 		if err != nil {
 			it.err = err
-			return false
+			return ValNone
 		}
 
 		dod = int64(bits)
@@ -362,7 +366,7 @@ func (it *xorIterator) Next() bool {
 		}
 		if err != nil {
 			it.err = err
-			return false
+			return ValNone
 		}
 
 		// Account for negative numbers, which come back as high unsigned numbers.
@@ -379,15 +383,15 @@ func (it *xorIterator) Next() bool {
 	return it.readValue()
 }
 
-func (it *xorIterator) readValue() bool {
+func (it *xorIterator) readValue() ValueType {
 	val, leading, trailing, err := xorRead(&it.br, it.val, it.leading, it.trailing)
 	if err != nil {
 		it.err = err
-		return false
+		return ValNone
 	}
 	it.val, it.leading, it.trailing = val, leading, trailing
 	it.numRead++
-	return true
+	return ValFloat
 }
 
 func xorWrite(

@@ -36,6 +36,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
 // RuleHealth describes the health state of a rule.
@@ -787,7 +788,7 @@ func (g *Group) RestoreForState(ts time.Time) {
 			var t int64
 			var v float64
 			it := s.Iterator()
-			for it.Next() {
+			for it.Next() == chunkenc.ValFloat {
 				t, v = it.At()
 			}
 			if it.Err() != nil {

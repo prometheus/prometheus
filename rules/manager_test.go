@@ -37,6 +37,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/teststorage"
 )
 
@@ -597,7 +598,7 @@ func readSeriesSet(ss storage.SeriesSet) (map[string][]promql.Point, error) {
 
 		points := []promql.Point{}
 		it := series.Iterator()
-		for it.Next() {
+		for it.Next() == chunkenc.ValFloat {
 			t, v := it.At()
 			points = append(points, promql.Point{T: t, V: v})
 		}

@@ -33,6 +33,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
 var (
@@ -110,9 +111,10 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 
 		var t int64
 		var v float64
+		var ok bool
 
-		ok := it.Seek(maxt)
-		if ok {
+		valueType := it.Seek(maxt)
+		if valueType == chunkenc.ValFloat {
 			t, v = it.Values()
 		} else {
 			// TODO(beorn7): Handle histograms.

@@ -28,6 +28,8 @@ type Sample interface {
 	T() int64
 	V() float64
 	H() *histogram.Histogram
+	FH() *histogram.FloatHistogram
+	Type() chunkenc.ValueType
 }
 
 type SampleSlice []Sample

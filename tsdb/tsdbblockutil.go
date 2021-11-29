@@ -21,6 +21,7 @@ import (
 	"github.com/go-kit/log"
 
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
 var ErrInvalidTimes = fmt.Errorf("max time is lesser than min time")
@@ -51,7 +52,8 @@ func CreateBlock(series []storage.Series, dir string, chunkRange int64, logger l
 		ref := storage.SeriesRef(0)
 		it := s.Iterator()
 		lset := s.Labels()
-		for it.Next() {
+		for it.Next() == chunkenc.ValFloat {
+			// TODO(beorn7): Add histogram support.
 			t, v := it.At()
 			ref, err = app.Append(ref, lset, t, v)
 			if err != nil {

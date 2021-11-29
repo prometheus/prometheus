@@ -91,7 +91,7 @@ func TestBufferedSeriesIterator(t *testing.T) {
 	bufferEq := func(exp []sample) {
 		var b []sample
 		bit := it.Buffer()
-		for bit.Next() {
+		for bit.Next() == chunkenc.ValFloat {
 			t, v := bit.At()
 			b = append(b, sample{t: t, v: v})
 		}
@@ -114,29 +114,29 @@ func TestBufferedSeriesIterator(t *testing.T) {
 		{t: 101, v: 10},
 	}), 2)
 
-	require.True(t, it.Seek(-123), "seek failed")
+	require.Equal(t, chunkenc.ValFloat, it.Seek(-123), "seek failed")
 	sampleEq(1, 2)
 	bufferEq(nil)
 
-	require.True(t, it.Next(), "next failed")
+	require.Equal(t, chunkenc.ValFloat, it.Next(), "next failed")
 	sampleEq(2, 3)
 	bufferEq([]sample{{t: 1, v: 2}})
 
-	require.True(t, it.Next(), "next failed")
-	require.True(t, it.Next(), "next failed")
-	require.True(t, it.Next(), "next failed")
+	require.Equal(t, chunkenc.ValFloat, it.Next(), "next failed")
+	require.Equal(t, chunkenc.ValFloat, it.Next(), "next failed")
+	require.Equal(t, chunkenc.ValFloat, it.Next(), "next failed")
 	sampleEq(5, 6)
 	bufferEq([]sample{{t: 2, v: 3}, {t: 3, v: 4}, {t: 4, v: 5}})
 
-	require.True(t, it.Seek(5), "seek failed")
+	require.Equal(t, chunkenc.ValFloat, it.Seek(5), "seek failed")
 	sampleEq(5, 6)
 	bufferEq([]sample{{t: 2, v: 3}, {t: 3, v: 4}, {t: 4, v: 5}})
 
-	require.True(t, it.Seek(101), "seek failed")
+	require.Equal(t, chunkenc.ValFloat, it.Seek(101), "seek failed")
 	sampleEq(101, 10)
 	bufferEq([]sample{{t: 99, v: 8}, {t: 100, v: 9}})
 
-	require.False(t, it.Next(), "next succeeded unexpectedly")
+	require.Equal(t, chunkenc.ValNone, it.Next(), "next succeeded unexpectedly")
 }
 
 type listSeriesIterator struct {
@@ -158,26 +158,42 @@ func (it *listSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
 	return s.t, s.h
 }
 
-func (it *listSeriesIterator) ChunkEncoding() chunkenc.Encoding {
-	return chunkenc.EncXOR
+func (it *listSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+	s := it.list[it.idx]
+	return s.t, s.fh
 }
 
-func (it *listSeriesIterator) Next() bool {
+func (it *listSeriesIterator) AtT() int64 {
+	s := it.list[it.idx]
+	return s.t
+}
+
+func (it *listSeriesIterator) Next() chunkenc.ValueType {
 	it.idx++
-	return it.idx < len(it.list)
+	if it.idx >= len(it.list) {
+		return chunkenc.ValNone
+	}
+	return it.list[it.idx].Type()
 }
 
-func (it *listSeriesIterator) Seek(t int64) bool {
+func (it *listSeriesIterator) Seek(t int64) chunkenc.ValueType {
 	if it.idx == -1 {
 		it.idx = 0
 	}
+	// No-op check.
+	if s := it.list[it.idx]; s.t >= t {
+		return s.Type()
+	}
 	// Do binary search between current position and end.
-	it.idx = sort.Search(len(it.list)-it.idx, func(i int) bool {
+	it.idx += sort.Search(len(it.list)-it.idx, func(i int) bool {
 		s := it.list[i+it.idx]
 		return s.t >= t
 	})
 
-	return it.idx < len(it.list)
+	if it.idx >= len(it.list) {
+		return chunkenc.ValNone
+	}
+	return it.list[it.idx].Type()
 }
 
 func (it *listSeriesIterator) Err() error {

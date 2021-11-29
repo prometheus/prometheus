@@ -23,6 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
 func TestExample(t *testing.T) {
@@ -44,7 +45,7 @@ func TestExample(t *testing.T) {
 	ts, v := time.Now().Unix(), 123.0
 	ref, err := app.Append(0, lbls, ts, v)
 	require.NoError(t, err)
-	appendedSamples = append(appendedSamples, sample{ts, v, nil})
+	appendedSamples = append(appendedSamples, sample{ts, v, nil, nil})
 
 	// Another append for a second later.
 	// Re-using the ref from above since it's the same series, makes append faster.
@@ -52,7 +53,7 @@ func TestExample(t *testing.T) {
 	ts, v = time.Now().Unix(), 124
 	_, err = app.Append(ref, lbls, ts, v)
 	require.NoError(t, err)
-	appendedSamples = append(appendedSamples, sample{ts, v, nil})
+	appendedSamples = append(appendedSamples, sample{ts, v, nil, nil})
 
 	// Commit to storage.
 	err = app.Commit()
@@ -79,10 +80,10 @@ func TestExample(t *testing.T) {
 		fmt.Println("series:", series.Labels().String())
 
 		it := series.Iterator()
-		for it.Next() {
+		for it.Next() == chunkenc.ValFloat {
 			ts, v := it.At()
 			fmt.Println("sample", ts, v)
-			queriedSamples = append(queriedSamples, sample{ts, v, nil})
+			queriedSamples = append(queriedSamples, sample{ts, v, nil, nil})
 		}
 
 		require.NoError(t, it.Err())

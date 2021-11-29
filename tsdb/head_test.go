@@ -324,18 +324,18 @@ func TestHead_ReadWAL(t *testing.T) {
 			require.Equal(t, labels.FromStrings("a", "3"), s100.lset)
 
 			expandChunk := func(c chunkenc.Iterator) (x []sample) {
-				for c.Next() {
+				for c.Next() == chunkenc.ValFloat {
 					t, v := c.At()
 					x = append(x, sample{t: t, v: v})
 				}
 				require.NoError(t, c.Err())
 				return x
 			}
-			require.Equal(t, []sample{{100, 2, nil}, {101, 5, nil}}, expandChunk(s10.iterator(0, nil, head.chunkDiskMapper, nil)))
-			require.Equal(t, []sample{{101, 6, nil}}, expandChunk(s50.iterator(0, nil, head.chunkDiskMapper, nil)))
+			require.Equal(t, []sample{{100, 2, nil, nil}, {101, 5, nil, nil}}, expandChunk(s10.iterator(0, nil, head.chunkDiskMapper, nil)))
+			require.Equal(t, []sample{{101, 6, nil, nil}}, expandChunk(s50.iterator(0, nil, head.chunkDiskMapper, nil)))
 			// The samples before the new series record should be discarded since a duplicate record
 			// is only possible when old samples were compacted.
-			require.Equal(t, []sample{{101, 7, nil}}, expandChunk(s100.iterator(0, nil, head.chunkDiskMapper, nil)))
+			require.Equal(t, []sample{{101, 7, nil, nil}}, expandChunk(s100.iterator(0, nil, head.chunkDiskMapper, nil)))
 
 			q, err := head.ExemplarQuerier(context.Background())
 			require.NoError(t, err)
@@ -401,8 +401,8 @@ func TestHead_WALMultiRef(t *testing.T) {
 	// The samples before the new ref should be discarded since Head truncation
 	// happens only after compacting the Head.
 	require.Equal(t, map[string][]tsdbutil.Sample{`{foo="bar"}`: {
-		sample{1700, 3, nil},
-		sample{2000, 4, nil},
+		sample{1700, 3, nil, nil},
+		sample{2000, 4, nil, nil},
 	}}, series)
 }
 
@@ -779,7 +779,7 @@ func TestDeleteUntilCurMax(t *testing.T) {
 	require.True(t, res.Next(), "series is not present")
 	s := res.At()
 	it := s.Iterator()
-	require.False(t, it.Next(), "expected no samples")
+	require.Equal(t, chunkenc.ValNone, it.Next(), "expected no samples")
 	for res.Next() {
 	}
 	require.NoError(t, res.Err())
@@ -798,7 +798,7 @@ func TestDeleteUntilCurMax(t *testing.T) {
 	it = exps.Iterator()
 	resSamples, err := storage.ExpandSamples(it, newSample)
 	require.NoError(t, err)
-	require.Equal(t, []tsdbutil.Sample{sample{11, 1, nil}}, resSamples)
+	require.Equal(t, []tsdbutil.Sample{sample{11, 1, nil, nil}}, resSamples)
 	for res.Next() {
 	}
 	require.NoError(t, res.Err())
@@ -912,7 +912,7 @@ func TestDelete_e2e(t *testing.T) {
 			v := rand.Float64()
 			_, err := app.Append(0, ls, ts, v)
 			require.NoError(t, err)
-			series = append(series, sample{ts, v, nil})
+			series = append(series, sample{ts, v, nil, nil})
 			ts += rand.Int63n(timeInterval) + 1
 		}
 		seriesMap[labels.New(l...).String()] = series
@@ -979,7 +979,7 @@ func TestDelete_e2e(t *testing.T) {
 				eok, rok := expSs.Next(), ss.Next()
 				// Skip a series if iterator is empty.
 				if rok {
-					for !ss.At().Iterator().Next() {
+					for ss.At().Iterator().Next() == chunkenc.ValNone {
 						rok = ss.Next()
 						if !rok {
 							break
@@ -2269,47 +2269,40 @@ func TestMemSafeIteratorSeekIntoBuffer(t *testing.T) {
 	require.True(t, ok)
 
 	// First point.
-	ok = it.Seek(0)
-	require.True(t, ok)
+	require.Equal(t, chunkenc.ValFloat, it.Seek(0))
 	ts, val := it.At()
 	require.Equal(t, int64(0), ts)
 	require.Equal(t, float64(0), val)
 
 	// Advance one point.
-	ok = it.Next()
-	require.True(t, ok)
+	require.Equal(t, chunkenc.ValFloat, it.Next())
 	ts, val = it.At()
 	require.Equal(t, int64(1), ts)
 	require.Equal(t, float64(1), val)
 
 	// Seeking an older timestamp shouldn't cause the iterator to go backwards.
-	ok = it.Seek(0)
-	require.True(t, ok)
+	require.Equal(t, chunkenc.ValFloat, it.Seek(0))
 	ts, val = it.At()
 	require.Equal(t, int64(1), ts)
 	require.Equal(t, float64(1), val)
 
 	// Seek into the buffer.
-	ok = it.Seek(3)
-	require.True(t, ok)
+	require.Equal(t, chunkenc.ValFloat, it.Seek(3))
 	ts, val = it.At()
 	require.Equal(t, int64(3), ts)
 	require.Equal(t, float64(3), val)
 
 	// Iterate through the rest of the buffer.
 	for i := 4; i < 7; i++ {
-		ok = it.Next()
-		require.True(t, ok)
+		require.Equal(t, chunkenc.ValFloat, it.Next())
 		ts, val = it.At()
 		require.Equal(t, int64(i), ts)
 		require.Equal(t, float64(i), val)
 	}
 
 	// Run out of elements in the iterator.
-	ok = it.Next()
-	require.False(t, ok)
-	ok = it.Seek(7)
-	require.False(t, ok)
+	require.Equal(t, chunkenc.ValNone, it.Next())
+	require.Equal(t, chunkenc.ValNone, it.Seek(7))
 }
 
 // Tests https://github.com/prometheus/prometheus/issues/8221.
@@ -2358,7 +2351,7 @@ func TestChunkNotFoundHeadGCRace(t *testing.T) {
 
 	// Now consume after compaction when it's gone.
 	it := s.Iterator()
-	for it.Next() {
+	for it.Next() == chunkenc.ValFloat {
 		_, _ = it.At()
 	}
 	// It should error here without any fix for the mentioned issue.
@@ -2366,7 +2359,7 @@ func TestChunkNotFoundHeadGCRace(t *testing.T) {
 	for ss.Next() {
 		s = ss.At()
 		it := s.Iterator()
-		for it.Next() {
+		for it.Next() == chunkenc.ValFloat {
 			_, _ = it.At()
 		}
 		require.NoError(t, it.Err())
@@ -2397,7 +2390,7 @@ func TestDataMissingOnQueryDuringCompaction(t *testing.T) {
 		ref, err = app.Append(ref, labels.FromStrings("a", "b"), ts, float64(i))
 		require.NoError(t, err)
 		maxt = ts
-		expSamples = append(expSamples, sample{ts, float64(i), nil})
+		expSamples = append(expSamples, sample{ts, float64(i), nil, nil})
 	}
 	require.NoError(t, app.Commit())
 
@@ -2565,9 +2558,9 @@ func TestAppendHistogram(t *testing.T) {
 
 			it := s.Iterator()
 			actHistograms := make([]timedHistogram, 0, len(expHistograms))
-			for it.Next() {
+			for it.Next() == chunkenc.ValHistogram {
 				t, h := it.AtHistogram()
-				actHistograms = append(actHistograms, timedHistogram{t, h.Copy()})
+				actHistograms = append(actHistograms, timedHistogram{t, h})
 			}
 
 			require.Equal(t, expHistograms, actHistograms)
@@ -2622,9 +2615,9 @@ func TestHistogramInWAL(t *testing.T) {
 
 	it := s.Iterator()
 	actHistograms := make([]timedHistogram, 0, len(expHistograms))
-	for it.Next() {
+	for it.Next() == chunkenc.ValHistogram {
 		t, h := it.AtHistogram()
-		actHistograms = append(actHistograms, timedHistogram{t, h.Copy()})
+		actHistograms = append(actHistograms, timedHistogram{t, h})
 	}
 
 	require.Equal(t, expHistograms, actHistograms)
@@ -2728,7 +2721,7 @@ func TestChunkSnapshot(t *testing.T) {
 			// 240 samples should m-map at least 1 chunk.
 			for ts := int64(1); ts <= 240; ts++ {
 				val := rand.Float64()
-				expSeries[lblStr] = append(expSeries[lblStr], sample{ts, val, nil})
+				expSeries[lblStr] = append(expSeries[lblStr], sample{ts, val, nil, nil})
 				ref, err := app.Append(0, lbls, ts, val)
 				require.NoError(t, err)
 
@@ -2788,7 +2781,7 @@ func TestChunkSnapshot(t *testing.T) {
 			// 240 samples should m-map at least 1 chunk.
 			for ts := int64(241); ts <= 480; ts++ {
 				val := rand.Float64()
-				expSeries[lblStr] = append(expSeries[lblStr], sample{ts, val, nil})
+				expSeries[lblStr] = append(expSeries[lblStr], sample{ts, val, nil, nil})
 				ref, err := app.Append(0, lbls, ts, val)
 				require.NoError(t, err)
 
@@ -2951,7 +2944,6 @@ func TestHistogramMetrics(t *testing.T) {
 		}
 	}
 
-	require.Equal(t, float64(expHSeries), prom_testutil.ToFloat64(head.metrics.histogramSeries))
 	require.Equal(t, float64(expHSamples), prom_testutil.ToFloat64(head.metrics.histogramSamplesTotal))
 
 	require.NoError(t, head.Close())
@@ -2961,7 +2953,6 @@ func TestHistogramMetrics(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, head.Init(0))
 
-	require.Equal(t, float64(expHSeries), prom_testutil.ToFloat64(head.metrics.histogramSeries))
 	require.Equal(t, float64(0), prom_testutil.ToFloat64(head.metrics.histogramSamplesTotal)) // Counter reset.
 }
 
@@ -2995,9 +2986,9 @@ func TestHistogramStaleSample(t *testing.T) {
 
 		it := s.Iterator()
 		actHistograms := make([]timedHistogram, 0, len(expHistograms))
-		for it.Next() {
+		for it.Next() == chunkenc.ValHistogram {
 			t, h := it.AtHistogram()
-			actHistograms = append(actHistograms, timedHistogram{t, h.Copy()})
+			actHistograms = append(actHistograms, timedHistogram{t, h})
 		}
 
 		// We cannot compare StaleNAN with require.Equal, hence checking each histogram manually.
@@ -3173,10 +3164,10 @@ func TestAppendingDifferentEncodingToSameSeries(t *testing.T) {
 	lbls := labels.Labels{{Name: "a", Value: "b"}}
 
 	type result struct {
-		t   int64
-		v   float64
-		h   *histogram.Histogram
-		enc chunkenc.Encoding
+		t  int64
+		v  float64
+		h  *histogram.Histogram
+		vt chunkenc.ValueType
 	}
 	expResult := []result{}
 	ref := storage.SeriesRef(0)
@@ -3184,18 +3175,18 @@ func TestAppendingDifferentEncodingToSameSeries(t *testing.T) {
 		ref, err = app.Append(ref, lbls, ts, v)
 		require.NoError(t, err)
 		expResult = append(expResult, result{
-			t:   ts,
-			v:   v,
-			enc: chunkenc.EncXOR,
+			t:  ts,
+			v:  v,
+			vt: chunkenc.ValFloat,
 		})
 	}
 	addHistogramSample := func(app storage.Appender, ts int64, h *histogram.Histogram) {
 		ref, err = app.AppendHistogram(ref, lbls, ts, h)
 		require.NoError(t, err)
 		expResult = append(expResult, result{
-			t:   ts,
-			h:   h,
-			enc: chunkenc.EncHistogram,
+			t:  ts,
+			h:  h,
+			vt: chunkenc.ValHistogram,
 		})
 	}
 	checkExpChunks := func(count int) {
@@ -3269,17 +3260,25 @@ func TestAppendingDifferentEncodingToSameSeries(t *testing.T) {
 	s := ss.At()
 	it := s.Iterator()
 	expIdx := 0
-	for it.Next() {
-		require.Equal(t, expResult[expIdx].enc, it.ChunkEncoding())
-		if it.ChunkEncoding() == chunkenc.EncHistogram {
-			ts, h := it.AtHistogram()
-			require.Equal(t, expResult[expIdx].t, ts)
-			require.Equal(t, expResult[expIdx].h, h)
-		} else {
+loop:
+	for {
+		vt := it.Next()
+		switch vt {
+		case chunkenc.ValNone:
+			require.Equal(t, len(expResult), expIdx)
+			break loop
+		case chunkenc.ValFloat:
 			ts, v := it.At()
 			require.Equal(t, expResult[expIdx].t, ts)
 			require.Equal(t, expResult[expIdx].v, v)
+		case chunkenc.ValHistogram:
+			ts, h := it.AtHistogram()
+			require.Equal(t, expResult[expIdx].t, ts)
+			require.Equal(t, expResult[expIdx].h, h)
+		default:
+			require.Error(t, fmt.Errorf("unexpected ValueType %v", vt))
 		}
+		require.Equal(t, expResult[expIdx].vt, vt)
 		expIdx++
 	}
 	require.NoError(t, it.Err())

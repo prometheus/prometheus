@@ -17,6 +17,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
 func TestMemoizedSeriesIterator(t *testing.T) {
@@ -29,7 +31,7 @@ func TestMemoizedSeriesIterator(t *testing.T) {
 		require.Equal(t, ev, v, "value mismatch")
 	}
 	prevSampleEq := func(ets int64, ev float64, eok bool) {
-		ts, v, _, ok := it.PeekPrev()
+		ts, v, _, _, ok := it.PeekPrev()
 		require.Equal(t, eok, ok, "exist mismatch")
 		require.Equal(t, ets, ts, "timestamp mismatch")
 		require.Equal(t, ev, v, "value mismatch")
@@ -46,29 +48,29 @@ func TestMemoizedSeriesIterator(t *testing.T) {
 		sample{t: 101, v: 10},
 	}), 2)
 
-	require.Equal(t, it.Seek(-123), ValFloat, "seek failed")
+	require.Equal(t, it.Seek(-123), chunkenc.ValFloat, "seek failed")
 	sampleEq(1, 2)
 	prevSampleEq(0, 0, false)
 
-	require.Equal(t, it.Next(), ValFloat, "next failed")
+	require.Equal(t, it.Next(), chunkenc.ValFloat, "next failed")
 	sampleEq(2, 3)
 	prevSampleEq(1, 2, true)
 
-	require.Equal(t, it.Next(), ValFloat, "next failed")
-	require.Equal(t, it.Next(), ValFloat, "next failed")
-	require.Equal(t, it.Next(), ValFloat, "next failed")
+	require.Equal(t, it.Next(), chunkenc.ValFloat, "next failed")
+	require.Equal(t, it.Next(), chunkenc.ValFloat, "next failed")
+	require.Equal(t, it.Next(), chunkenc.ValFloat, "next failed")
 	sampleEq(5, 6)
 	prevSampleEq(4, 5, true)
 
-	require.Equal(t, it.Seek(5), ValFloat, "seek failed")
+	require.Equal(t, it.Seek(5), chunkenc.ValFloat, "seek failed")
 	sampleEq(5, 6)
 	prevSampleEq(4, 5, true)
 
-	require.Equal(t, it.Seek(101), ValFloat, "seek failed")
+	require.Equal(t, it.Seek(101), chunkenc.ValFloat, "seek failed")
 	sampleEq(101, 10)
 	prevSampleEq(100, 9, true)
 
-	require.Equal(t, it.Next(), ValNone, "next succeeded unexpectedly")
+	require.Equal(t, it.Next(), chunkenc.ValNone, "next succeeded unexpectedly")
 }
 
 func BenchmarkMemoizedSeriesIterator(b *testing.B) {
@@ -79,7 +81,7 @@ func BenchmarkMemoizedSeriesIterator(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	for it.Next() != ValNone {
+	for it.Next() != chunkenc.ValNone {
 		// scan everything
 	}
 	require.NoError(b, it.Err())

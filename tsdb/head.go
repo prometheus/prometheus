@@ -274,7 +274,6 @@ type headMetrics struct {
 	// Sparse histogram metrics for experiments.
 	// TODO: remove these in the final version.
 	histogramSamplesTotal prometheus.Counter
-	histogramSeries       prometheus.Gauge
 }
 
 func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
@@ -377,10 +376,6 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			Name: "prometheus_tsdb_histogram_samples_total",
 			Help: "Total number of histograms samples added.",
 		}),
-		histogramSeries: prometheus.NewGauge(prometheus.GaugeOpts{
-			Name: "prometheus_tsdb_histogram_series",
-			Help: "Number of histogram series currently present in the head block.",
-		}),
 	}
 
 	if r != nil {
@@ -409,7 +404,6 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			m.mmapChunkCorruptionTotal,
 			m.snapshotReplayErrorTotal,
 			m.histogramSamplesTotal,
-			m.histogramSeries,
 			// Metrics bound to functions and not needed in tests
 			// can be created and registered on the spot.
 			prometheus.NewGaugeFunc(prometheus.GaugeOpts{
@@ -605,21 +599,6 @@ func (h *Head) Init(minValidTime int64) error {
 		}
 		level.Info(h.logger).Log("msg", "WAL segment loaded", "segment", i, "maxSegment", endAt)
 		h.updateWALReplayStatusRead(i)
-	}
-
-	{
-		// Set the sparseHistogramSeries metric once replay is done.
-		// This is a temporary hack.
-		// TODO: remove this hack and do it while replaying WAL if we keep this metric around.
-		sparseHistogramSeries := 0
-		for _, m := range h.series.series {
-			for _, ms := range m {
-				if ms.isHistogramSeries {
-					sparseHistogramSeries++
-				}
-			}
-		}
-		h.metrics.histogramSeries.Set(float64(sparseHistogramSeries))
 	}
 
 	walReplayDuration := time.Since(start)
@@ -1142,13 +1121,12 @@ func (h *Head) gc() int64 {
 
 	// Drop old chunks and remember series IDs and hashes if they can be
 	// deleted entirely.
-	deleted, chunksRemoved, actualMint, sparseHistogramSeriesDeleted := h.series.gc(mint)
+	deleted, chunksRemoved, actualMint := h.series.gc(mint)
 	seriesRemoved := len(deleted)
 
 	h.metrics.seriesRemoved.Add(float64(seriesRemoved))
 	h.metrics.chunksRemoved.Add(float64(chunksRemoved))
 	h.metrics.chunks.Sub(float64(chunksRemoved))
-	h.metrics.histogramSeries.Sub(float64(sparseHistogramSeriesDeleted))
 	h.numSeries.Sub(uint64(seriesRemoved))
 
 	// Remove deleted series IDs from the postings lists.
@@ -1366,13 +1344,12 @@ func newStripeSeries(stripeSize int, seriesCallback SeriesLifecycleCallback) *st
 // note: returning map[chunks.HeadSeriesRef]struct{} would be more accurate,
 // but the returned map goes into postings.Delete() which expects a map[storage.SeriesRef]struct
 // and there's no easy way to cast maps.
-func (s *stripeSeries) gc(mint int64) (map[storage.SeriesRef]struct{}, int, int64, int) {
+func (s *stripeSeries) gc(mint int64) (map[storage.SeriesRef]struct{}, int, int64) {
 	var (
-		deleted                            = map[storage.SeriesRef]struct{}{}
-		deletedForCallback                 = []labels.Labels{}
-		rmChunks                           = 0
-		actualMint                   int64 = math.MaxInt64
-		sparseHistogramSeriesDeleted       = 0
+		deleted                  = map[storage.SeriesRef]struct{}{}
+		deletedForCallback       = []labels.Labels{}
+		rmChunks                 = 0
+		actualMint         int64 = math.MaxInt64
 	)
 	// Run through all series and truncate old chunks. Mark those with no
 	// chunks left as deleted and store their ID.
@@ -1404,9 +1381,6 @@ func (s *stripeSeries) gc(mint int64) (map[storage.SeriesRef]struct{}, int, int6
 					s.locks[j].Lock()
 				}
 
-				if series.isHistogramSeries {
-					sparseHistogramSeriesDeleted++
-				}
 				deleted[storage.SeriesRef(series.ref)] = struct{}{}
 				s.hashes[i].del(hash, series.lset)
 				delete(s.series[j], series.ref)
@@ -1430,7 +1404,7 @@ func (s *stripeSeries) gc(mint int64) (map[storage.SeriesRef]struct{}, int, int6
 		actualMint = mint
 	}
 
-	return deleted, rmChunks, actualMint, sparseHistogramSeriesDeleted
+	return deleted, rmChunks, actualMint
 }
 
 func (s *stripeSeries) getByID(id chunks.HeadSeriesRef) *memSeries {
@@ -1495,22 +1469,32 @@ func (s *stripeSeries) getOrSet(hash uint64, lset labels.Labels, createSeries fu
 	return series, true, nil
 }
 
-type histogramSample struct {
-	t int64
-	h *histogram.Histogram
-}
-
 type sample struct {
-	t int64
-	v float64
-	h *histogram.Histogram
+	t  int64
+	v  float64
+	h  *histogram.Histogram
+	fh *histogram.FloatHistogram
 }
 
-func newSample(t int64, v float64, h *histogram.Histogram) tsdbutil.Sample { return sample{t, v, h} }
+func newSample(t int64, v float64, h *histogram.Histogram, fh *histogram.FloatHistogram) tsdbutil.Sample {
+	return sample{t, v, h, fh}
+}
 
-func (s sample) T() int64                { return s.t }
-func (s sample) V() float64              { return s.v }
-func (s sample) H() *histogram.Histogram { return s.h }
+func (s sample) T() int64                      { return s.t }
+func (s sample) V() float64                    { return s.v }
+func (s sample) H() *histogram.Histogram       { return s.h }
+func (s sample) FH() *histogram.FloatHistogram { return s.fh }
+
+func (s sample) Type() chunkenc.ValueType {
+	switch {
+	case s.h != nil:
+		return chunkenc.ValHistogram
+	case s.fh != nil:
+		return chunkenc.ValFloatHistogram
+	default:
+		return chunkenc.ValFloat
+	}
+}
 
 // memSeries is the in-memory representation of a series. None of its methods
 // are goroutine safe and it is the caller's responsibility to lock it.
@@ -1540,8 +1524,7 @@ type memSeries struct {
 
 	// We keep the last 4 samples here (in addition to appending them to the chunk) so we don't need coordination between appender and querier.
 	// Even the most compact encoding of a sample takes 2 bits, so the last byte is not contended.
-	sampleBuf    [4]sample
-	histogramBuf [4]histogramSample
+	sampleBuf [4]sample
 
 	pendingCommit bool // Whether there are samples waiting to be committed to this series.
 
@@ -1554,6 +1537,8 @@ type memSeries struct {
 
 	txs *txRing
 
+	// TODO(beorn7): The only reason we track this is to create a staleness
+	// marker as either histogram or float sample. Perhaps there is a better way.
 	isHistogramSeries bool
 }
 

@@ -150,9 +150,9 @@ type FloatBucketIterator interface {
 }
 
 // FloatBucket represents a bucket with lower and upper limit and the count of
-// samples in the bucket. It also specifies if each limit is inclusive or
-// not. (Mathematically, inclusive limits create a closed interval, and
-// non-inclusive limits an open interval.)
+// samples in the bucket as a float64. It also specifies if each limit is
+// inclusive or not. (Mathematically, inclusive limits create a closed interval,
+// and non-inclusive limits an open interval.)
 //
 // To represent cumulative buckets, Lower is set to -Inf, and the Count is then
 // cumulative (including the counts of all buckets for smaller values).

@@ -70,19 +70,19 @@ type Span struct {
 func (h *Histogram) Copy() *Histogram {
 	c := *h
 
-	if h.PositiveSpans != nil {
+	if len(h.PositiveSpans) != 0 {
 		c.PositiveSpans = make([]Span, len(h.PositiveSpans))
 		copy(c.PositiveSpans, h.PositiveSpans)
 	}
-	if h.NegativeSpans != nil {
+	if len(h.NegativeSpans) != 0 {
 		c.NegativeSpans = make([]Span, len(h.NegativeSpans))
 		copy(c.NegativeSpans, h.NegativeSpans)
 	}
-	if h.PositiveBuckets != nil {
+	if len(h.PositiveBuckets) != 0 {
 		c.PositiveBuckets = make([]int64, len(h.PositiveBuckets))
 		copy(c.PositiveBuckets, h.PositiveBuckets)
 	}
-	if h.NegativeBuckets != nil {
+	if len(h.NegativeBuckets) != 0 {
 		c.NegativeBuckets = make([]int64, len(h.NegativeBuckets))
 		copy(c.NegativeBuckets, h.NegativeBuckets)
 	}
@@ -162,15 +162,15 @@ func (h *Histogram) ToFloat() *FloatHistogram {
 		positiveSpans, negativeSpans     []Span
 		positiveBuckets, negativeBuckets []float64
 	)
-	if h.PositiveSpans != nil {
+	if len(h.PositiveSpans) != 0 {
 		positiveSpans = make([]Span, len(h.PositiveSpans))
 		copy(positiveSpans, h.PositiveSpans)
 	}
-	if h.NegativeSpans != nil {
+	if len(h.NegativeSpans) != 0 {
 		negativeSpans = make([]Span, len(h.NegativeSpans))
 		copy(negativeSpans, h.NegativeSpans)
 	}
-	if h.PositiveBuckets != nil {
+	if len(h.PositiveBuckets) != 0 {
 		positiveBuckets = make([]float64, len(h.PositiveBuckets))
 		var current float64
 		for i, b := range h.PositiveBuckets {
@@ -178,7 +178,7 @@ func (h *Histogram) ToFloat() *FloatHistogram {
 			positiveBuckets[i] = current
 		}
 	}
-	if h.NegativeBuckets != nil {
+	if len(h.NegativeBuckets) != 0 {
 		negativeBuckets = make([]float64, len(h.NegativeBuckets))
 		var current float64
 		for i, b := range h.NegativeBuckets {

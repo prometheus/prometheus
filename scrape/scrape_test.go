@@ -45,6 +45,7 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -2755,7 +2756,7 @@ func TestScrapeReportSingleAppender(t *testing.T) {
 		c := 0
 		for series.Next() {
 			i := series.At().Iterator()
-			for i.Next() {
+			for i.Next() != chunkenc.ValNone {
 				c++
 			}
 		}
