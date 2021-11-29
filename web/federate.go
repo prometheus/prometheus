@@ -115,7 +115,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 
 		valueType := it.Seek(maxt)
 		if valueType == chunkenc.ValFloat {
-			t, v = it.Values()
+			t, v = it.At()
 		} else {
 			// TODO(beorn7): Handle histograms.
 			t, v, _, ok = it.PeekBack(1)

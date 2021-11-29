@@ -1649,9 +1649,9 @@ func (ev *evaluator) vectorSelectorSingle(it *storage.MemoizedSeriesIterator, no
 			ev.error(it.Err())
 		}
 	case chunkenc.ValFloat:
-		t, v = it.Values()
+		t, v = it.At()
 	case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
-		t, h = it.FloatHistogramValues()
+		t, h = it.AtFloatHistogram()
 	default:
 		panic(fmt.Errorf("unknown value type %v", valueType))
 	}
@@ -1793,7 +1793,7 @@ loop:
 	// The sought sample might also be in the range.
 	switch soughtValueType {
 	case chunkenc.ValFloatHistogram, chunkenc.ValHistogram:
-		t, h := it.FloatHistogramValues()
+		t, h := it.AtFloatHistogram()
 		if t == maxt && !value.IsStaleNaN(h.Sum) {
 			if ev.currentSamples >= ev.maxSamples {
 				ev.error(ErrTooManySamples(env))
@@ -1802,7 +1802,7 @@ loop:
 			ev.currentSamples++
 		}
 	case chunkenc.ValFloat:
-		t, v := it.Values()
+		t, v := it.At()
 		if t == maxt && !value.IsStaleNaN(v) {
 			if ev.currentSamples >= ev.maxSamples {
 				ev.error(ErrTooManySamples(env))

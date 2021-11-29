@@ -93,11 +93,11 @@ func (b *BufferedSeriesIterator) Seek(t int64) chunkenc.ValueType {
 		case chunkenc.ValNone:
 			return chunkenc.ValNone
 		case chunkenc.ValFloat:
-			b.lastTime, _ = b.Values()
+			b.lastTime, _ = b.At()
 		case chunkenc.ValHistogram:
-			b.lastTime, _ = b.HistogramValues()
+			b.lastTime, _ = b.AtHistogram()
 		case chunkenc.ValFloatHistogram:
-			b.lastTime, _ = b.FloatHistogramValues()
+			b.lastTime, _ = b.AtFloatHistogram()
 		default:
 			panic(fmt.Errorf("BufferedSeriesIterator: unknown value type %v", b.valueType))
 		}
@@ -137,29 +137,29 @@ func (b *BufferedSeriesIterator) Next() chunkenc.ValueType {
 	case chunkenc.ValNone:
 		// Do nothing.
 	case chunkenc.ValFloat:
-		b.lastTime, _ = b.Values()
+		b.lastTime, _ = b.At()
 	case chunkenc.ValHistogram:
-		b.lastTime, _ = b.HistogramValues()
+		b.lastTime, _ = b.AtHistogram()
 	case chunkenc.ValFloatHistogram:
-		b.lastTime, _ = b.FloatHistogramValues()
+		b.lastTime, _ = b.AtFloatHistogram()
 	default:
 		panic(fmt.Errorf("BufferedSeriesIterator: unknown value type %v", b.valueType))
 	}
 	return b.valueType
 }
 
-// Values returns the current element of the iterator.
-func (b *BufferedSeriesIterator) Values() (int64, float64) {
+// At returns the current float element of the iterator.
+func (b *BufferedSeriesIterator) At() (int64, float64) {
 	return b.it.At()
 }
 
-// HistogramValues returns the current histogram element of the iterator.
-func (b *BufferedSeriesIterator) HistogramValues() (int64, *histogram.Histogram) {
+// AtHistogram returns the current histogram element of the iterator.
+func (b *BufferedSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
 	return b.it.AtHistogram()
 }
 
-// FloatHistogramValues returns the current float-histogram element of the iterator.
-func (b *BufferedSeriesIterator) FloatHistogramValues() (int64, *histogram.FloatHistogram) {
+// AtFloatHistogram returns the current float-histogram element of the iterator.
+func (b *BufferedSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
 	return b.it.AtFloatHistogram()
 }
 

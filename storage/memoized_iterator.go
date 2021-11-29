@@ -127,18 +127,18 @@ func (b *MemoizedSeriesIterator) Next() chunkenc.ValueType {
 	return b.valueType
 }
 
-// Values returns the current element of the iterator.
-func (b *MemoizedSeriesIterator) Values() (int64, float64) {
+// At returns the current float element of the iterator.
+func (b *MemoizedSeriesIterator) At() (int64, float64) {
 	return b.it.At()
 }
 
-// Values returns the current element of the iterator.
-func (b *MemoizedSeriesIterator) HistogramValues() (int64, *histogram.Histogram) {
+// AtHistogram returns the current histogram element of the iterator.
+func (b *MemoizedSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
 	return b.it.AtHistogram()
 }
 
-// Values returns the current element of the iterator.
-func (b *MemoizedSeriesIterator) FloatHistogramValues() (int64, *histogram.FloatHistogram) {
+// AtFloatHistogram returns the current float-histogram element of the iterator.
+func (b *MemoizedSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
 	return b.it.AtFloatHistogram()
 }
 
