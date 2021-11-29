@@ -357,8 +357,16 @@ func newConcreteSeriersIterator(series *concreteSeries) chunkenc.Iterator {
 
 // Seek implements storage.SeriesIterator.
 func (c *concreteSeriesIterator) Seek(t int64) bool {
-	c.cur = sort.Search(len(c.series.samples), func(n int) bool {
-		return c.series.samples[n].Timestamp >= t
+	if c.cur == -1 {
+		c.cur = 0
+	}
+	// No-op check.
+	if s := c.series.samples[c.cur]; s.Timestamp >= t {
+		return true
+	}
+	// Do binary search between current position and end.
+	c.cur += sort.Search(len(c.series.samples)-c.cur, func(n int) bool {
+		return c.series.samples[n+c.cur].Timestamp >= t
 	})
 	return c.cur < len(c.series.samples)
 }
