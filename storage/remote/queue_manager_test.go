@@ -277,7 +277,7 @@ func TestShutdown(t *testing.T) {
 
 	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, nil, nil, c, deadline, newPool(), newHighestTimestampMetric(), nil, false)
 	n := 2 * config.DefaultQueueConfig.MaxSamplesPerSend
-	samples, series := createTimeseries(n, n)
+	samples, series := createTimeseries(1, n)
 	m.StoreSeries(series, 0)
 	m.Start()
 
