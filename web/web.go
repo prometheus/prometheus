@@ -594,7 +594,7 @@ func (h *Handler) Run(ctx context.Context, listener net.Listener, webConfig stri
 		ReadTimeout: h.options.ReadTimeout,
 	}
 
-	errCh := make(chan error)
+	errCh := make(chan error, 1)
 	go func() {
 		errCh <- toolkit_web.Serve(listener, httpSrv, webConfig, h.logger)
 	}()

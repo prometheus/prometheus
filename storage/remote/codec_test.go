@@ -24,6 +24,7 @@ import (
 	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
 var writeRequestFixture = &prompb.WriteRequest{
@@ -189,6 +190,50 @@ func TestConcreteSeriesClonesLabels(t *testing.T) {
 
 	gotLabels = cs.Labels()
 	require.Equal(t, lbls, gotLabels)
+}
+
+func TestConcreteSeriesIterator(t *testing.T) {
+	series := &concreteSeries{
+		labels: labels.FromStrings("foo", "bar"),
+		samples: []prompb.Sample{
+			{Value: 1, Timestamp: 1},
+			{Value: 1.5, Timestamp: 1},
+			{Value: 2, Timestamp: 2},
+			{Value: 3, Timestamp: 3},
+			{Value: 4, Timestamp: 4},
+		},
+	}
+	it := series.Iterator()
+
+	// Seek to the first sample with ts=1.
+	require.Equal(t, chunkenc.ValFloat, it.Seek(1))
+	ts, v := it.At()
+	require.Equal(t, int64(1), ts)
+	require.Equal(t, 1., v)
+
+	// Seek one further, next sample still has ts=1.
+	require.Equal(t, chunkenc.ValFloat, it.Next())
+	ts, v = it.At()
+	require.Equal(t, int64(1), ts)
+	require.Equal(t, 1.5, v)
+
+	// Seek again to 1 and make sure we stay where we are.
+	require.Equal(t, chunkenc.ValFloat, it.Seek(1))
+	ts, v = it.At()
+	require.Equal(t, int64(1), ts)
+	require.Equal(t, 1.5, v)
+
+	// Another seek.
+	require.Equal(t, chunkenc.ValFloat, it.Seek(3))
+	ts, v = it.At()
+	require.Equal(t, int64(3), ts)
+	require.Equal(t, 3., v)
+
+	// And we don't go back.
+	require.Equal(t, chunkenc.ValFloat, it.Seek(2))
+	ts, v = it.At()
+	require.Equal(t, int64(3), ts)
+	require.Equal(t, 3., v)
 }
 
 func TestFromQueryResultWithDuplicates(t *testing.T) {

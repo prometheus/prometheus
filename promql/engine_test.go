@@ -60,10 +60,19 @@ func TestQueryConcurrency(t *testing.T) {
 
 	block := make(chan struct{})
 	processing := make(chan struct{})
+	done := make(chan int)
+	defer close(done)
 
 	f := func(context.Context) error {
-		processing <- struct{}{}
-		<-block
+		select {
+		case processing <- struct{}{}:
+		case <-done:
+		}
+
+		select {
+		case <-block:
+		case <-done:
+		}
 		return nil
 	}
 
@@ -372,7 +381,6 @@ func TestSelectHintsSetCorrectly(t *testing.T) {
 				{Start: -45000, End: 80000, Func: "count_over_time"},
 			},
 		}, {
-
 			query: "foo", start: 10000, end: 20000,
 			expected: []*storage.SelectHints{
 				{Start: 5000, End: 20000, Step: 1000},
