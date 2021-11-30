@@ -24,9 +24,24 @@ import (
 type memSeries struct {
 	sync.Mutex
 
-	ref    chunks.HeadSeriesRef
-	lset   labels.Labels
+	ref  chunks.HeadSeriesRef
+	lset labels.Labels
+
+	// Last recorded timestamp. Used by Storage.gc to determine if a series is
+	// stale.
 	lastTs int64
+}
+
+// updateTimestamp obtains the lock on s and will attempt to update lastTs.
+// fails if newTs < lastTs.
+func (m *memSeries) updateTimestamp(newTs int64) bool {
+	m.Lock()
+	defer m.Unlock()
+	if newTs >= m.lastTs {
+		m.lastTs = newTs
+		return true
+	}
+	return false
 }
 
 // seriesHashmap is a simple hashmap for memSeries by their label set.

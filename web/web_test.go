@@ -585,6 +585,8 @@ func TestAgentAPIEndPoints(t *testing.T) {
 		"/query",
 		"/query_range",
 		"/query_exemplars",
+		"/graph",
+		"/rules",
 	} {
 		w := httptest.NewRecorder()
 		req, err := http.NewRequest("GET", baseURL+u, nil)
@@ -595,6 +597,7 @@ func TestAgentAPIEndPoints(t *testing.T) {
 
 	// Test for available endpoints in the Agent mode.
 	for _, u := range []string{
+		"/agent",
 		"/targets",
 		"/status",
 	} {
