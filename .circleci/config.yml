@@ -36,6 +36,7 @@ jobs:
             GOOPTS: "-p 2"
             GOMAXPROCS: "2"
             GO111MODULE: "on"
+      - run: go test ./tsdb/ -test.tsdb-isolation=false
       - prometheus/check_proto:
           version: "3.15.8"
       - prometheus/store_artifact:
@@ -93,6 +94,7 @@ jobs:
     steps:
       - checkout
       - run: go test ./tsdb/...
+      - run: go test ./tsdb/ -test.tsdb-isolation=false
 
   test_mixins:
     executor: golang

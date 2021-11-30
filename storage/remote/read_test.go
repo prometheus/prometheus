@@ -15,9 +15,7 @@ package remote
 
 import (
 	"context"
-	"io/ioutil"
 	"net/url"
-	"os"
 	"sort"
 	"testing"
 
@@ -33,9 +31,7 @@ import (
 )
 
 func TestNoDuplicateReadConfigs(t *testing.T) {
-	dir, err := ioutil.TempDir("", "TestNoDuplicateReadConfigs")
-	require.NoError(t, err)
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
 
 	cfg1 := config.RemoteReadConfig{
 		Name: "write-1",

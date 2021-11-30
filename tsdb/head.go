@@ -53,6 +53,9 @@ var (
 	// ErrAppenderClosed is returned if an appender has already be successfully
 	// rolled back or committed.
 	ErrAppenderClosed = errors.New("appender closed")
+
+	// defaultIsolationDisabled is true if isolation is disabled by default.
+	defaultIsolationDisabled = false
 )
 
 // Head handles reads and writes of time series data within a time window.
@@ -132,6 +135,8 @@ type HeadOptions struct {
 	SeriesCallback                 SeriesLifecycleCallback
 	EnableExemplarStorage          bool
 	EnableMemorySnapshotOnShutdown bool
+
+	IsolationDisabled bool
 }
 
 func DefaultHeadOptions() *HeadOptions {
@@ -142,6 +147,7 @@ func DefaultHeadOptions() *HeadOptions {
 		ChunkWriteBufferSize: chunks.DefaultWriteBufferSize,
 		StripeSize:           DefaultStripeSize,
 		SeriesCallback:       &noopSeriesLifecycleCallback{},
+		IsolationDisabled:    defaultIsolationDisabled,
 	}
 }
 
@@ -231,12 +237,13 @@ func (h *Head) resetInMemoryState() error {
 		return err
 	}
 
+	h.iso = newIsolation(h.opts.IsolationDisabled)
+
 	h.exemplarMetrics = em
 	h.exemplars = es
 	h.series = newStripeSeries(h.opts.StripeSize, h.opts.SeriesCallback)
 	h.postings = index.NewUnorderedMemPostings()
 	h.tombstones = tombstones.NewMemTombstones()
-	h.iso = newIsolation()
 	h.deleted = map[chunks.HeadSeriesRef]int{}
 	h.chunkRange.Store(h.opts.ChunkRange)
 	h.minTime.Store(math.MaxInt64)
@@ -1240,7 +1247,7 @@ func (h *Head) getOrCreate(hash uint64, lset labels.Labels) (*memSeries, bool, e
 
 func (h *Head) getOrCreateWithID(id chunks.HeadSeriesRef, hash uint64, lset labels.Labels) (*memSeries, bool, error) {
 	s, created, err := h.series.getOrSet(hash, lset, func() *memSeries {
-		return newMemSeries(lset, id, h.chunkRange.Load(), &h.memChunkPool)
+		return newMemSeries(lset, id, h.chunkRange.Load(), &h.memChunkPool, h.opts.IsolationDisabled)
 	})
 	if err != nil {
 		return nil, false, err
@@ -1535,6 +1542,7 @@ type memSeries struct {
 
 	memChunkPool *sync.Pool
 
+	// txs is nil if isolation is disabled.
 	txs *txRing
 
 	// TODO(beorn7): The only reason we track this is to create a staleness
@@ -1542,14 +1550,16 @@ type memSeries struct {
 	isHistogramSeries bool
 }
 
-func newMemSeries(lset labels.Labels, id chunks.HeadSeriesRef, chunkRange int64, memChunkPool *sync.Pool) *memSeries {
+func newMemSeries(lset labels.Labels, id chunks.HeadSeriesRef, chunkRange int64, memChunkPool *sync.Pool, isolationDisabled bool) *memSeries {
 	s := &memSeries{
 		lset:         lset,
 		ref:          id,
 		chunkRange:   chunkRange,
 		nextAt:       math.MinInt64,
-		txs:          newTxRing(4),
 		memChunkPool: memChunkPool,
+	}
+	if !isolationDisabled {
+		s.txs = newTxRing(4)
 	}
 	return s
 }
@@ -1603,7 +1613,9 @@ func (s *memSeries) truncateChunksBefore(mint int64) (removed int) {
 // cleanupAppendIDsBelow cleans up older appendIDs. Has to be called after
 // acquiring lock.
 func (s *memSeries) cleanupAppendIDsBelow(bound uint64) {
-	s.txs.cleanupAppendIDsBelow(bound)
+	if s.txs != nil {
+		s.txs.cleanupAppendIDsBelow(bound)
+	}
 }
 
 func (s *memSeries) head() *memChunk {
