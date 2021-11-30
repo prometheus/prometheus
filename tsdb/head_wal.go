@@ -349,7 +349,7 @@ Outer:
 					histogramShards[mod] = append(histogramShards[mod], sam)
 				}
 				for i := 0; i < n; i++ {
-					processors[i].histogramsInput <- histogramShards[i]
+					processors[i].input <- histogramShards[i]
 				}
 				samples = samples[m:]
 			}
@@ -411,23 +411,20 @@ func (h *Head) resetSeriesWithMMappedChunks(mSeries *memSeries, mmc []*mmappedCh
 }
 
 type walSubsetProcessor struct {
-	mx               sync.Mutex // Take this lock while modifying series in the subset.
-	input            chan []record.RefSample
+	mx               sync.Mutex       // Take this lock while modifying series in the subset.
+	input            chan interface{} // Either []record.RefSample or []record.RefHistogram.
 	output           chan []record.RefSample
-	histogramsInput  chan []record.RefHistogram
 	histogramsOutput chan []record.RefHistogram
 }
 
 func (wp *walSubsetProcessor) setup() {
 	wp.output = make(chan []record.RefSample, 300)
-	wp.input = make(chan []record.RefSample, 300)
+	wp.input = make(chan interface{}, 300)
 	wp.histogramsOutput = make(chan []record.RefHistogram, 300)
-	wp.histogramsInput = make(chan []record.RefHistogram, 300)
 }
 
 func (wp *walSubsetProcessor) closeAndDrain() {
 	close(wp.input)
-	close(wp.histogramsInput)
 	for range wp.output {
 	}
 	for range wp.histogramsOutput {
@@ -464,63 +461,65 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head) (unknownRefs, unknownHi
 	minValidTime := h.minValidTime.Load()
 	mint, maxt := int64(math.MaxInt64), int64(math.MinInt64)
 
-	for samples := range wp.input {
+	for v := range wp.input {
 		wp.mx.Lock()
-		for _, s := range samples {
-			if s.T < minValidTime {
-				continue
+		switch samples := v.(type) {
+		case []record.RefSample:
+			for _, s := range samples {
+				if s.T < minValidTime {
+					continue
+				}
+				ms := h.series.getByID(s.Ref)
+				if ms == nil {
+					unknownRefs++
+					continue
+				}
+				ms.isHistogramSeries = false
+				if s.T <= ms.mmMaxTime {
+					continue
+				}
+				if _, chunkCreated := ms.append(s.T, s.V, 0, h.chunkDiskMapper); chunkCreated {
+					h.metrics.chunksCreated.Inc()
+					h.metrics.chunks.Inc()
+				}
+				if s.T > maxt {
+					maxt = s.T
+				}
+				if s.T < mint {
+					mint = s.T
+				}
 			}
-			ms := h.series.getByID(s.Ref)
-			if ms == nil {
-				unknownRefs++
-				continue
+			wp.output <- samples
+		case []record.RefHistogram:
+			for _, s := range samples {
+				if s.T < minValidTime {
+					continue
+				}
+				ms := h.series.getByID(s.Ref)
+				if ms == nil {
+					unknownHistogramRefs++
+					continue
+				}
+				ms.isHistogramSeries = true
+				if s.T <= ms.mmMaxTime {
+					continue
+				}
+				if _, chunkCreated := ms.appendHistogram(s.T, s.H, 0, h.chunkDiskMapper); chunkCreated {
+					h.metrics.chunksCreated.Inc()
+					h.metrics.chunks.Inc()
+				}
+				if s.T > maxt {
+					maxt = s.T
+				}
+				if s.T < mint {
+					mint = s.T
+				}
 			}
-			ms.isHistogramSeries = false
-			if s.T <= ms.mmMaxTime {
-				continue
-			}
-			if _, chunkCreated := ms.append(s.T, s.V, 0, h.chunkDiskMapper); chunkCreated {
-				h.metrics.chunksCreated.Inc()
-				h.metrics.chunks.Inc()
-			}
-			if s.T > maxt {
-				maxt = s.T
-			}
-			if s.T < mint {
-				mint = s.T
-			}
+			wp.histogramsOutput <- samples
 		}
+
 		wp.mx.Unlock()
-		wp.output <- samples
-	}
-	for samples := range wp.histogramsInput {
-		wp.mx.Lock()
-		for _, s := range samples {
-			if s.T < minValidTime {
-				continue
-			}
-			ms := h.series.getByID(s.Ref)
-			if ms == nil {
-				unknownHistogramRefs++
-				continue
-			}
-			ms.isHistogramSeries = true
-			if s.T <= ms.mmMaxTime {
-				continue
-			}
-			if _, chunkCreated := ms.appendHistogram(s.T, s.H, 0, h.chunkDiskMapper); chunkCreated {
-				h.metrics.chunksCreated.Inc()
-				h.metrics.chunks.Inc()
-			}
-			if s.T > maxt {
-				maxt = s.T
-			}
-			if s.T < mint {
-				mint = s.T
-			}
-		}
-		wp.mx.Unlock()
-		wp.histogramsOutput <- samples
+
 	}
 	h.updateMinMaxTime(mint, maxt)
 
@@ -532,11 +531,19 @@ func (wp *walSubsetProcessor) waitUntilIdle() {
 	case <-wp.output: // Allow output side to drain to avoid deadlock.
 	default:
 	}
+	select {
+	case <-wp.histogramsOutput: // Allow output side to drain to avoid deadlock.
+	default:
+	}
 	wp.input <- []record.RefSample{}
 	for len(wp.input) != 0 {
 		time.Sleep(1 * time.Millisecond)
 		select {
 		case <-wp.output: // Allow output side to drain to avoid deadlock.
+		default:
+		}
+		select {
+		case <-wp.histogramsOutput: // Allow output side to drain to avoid deadlock.
 		default:
 		}
 	}
