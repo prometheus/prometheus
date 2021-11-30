@@ -15,8 +15,8 @@ package agent
 
 import (
 	"context"
+	"path/filepath"
 	"strconv"
-	"sync"
 	"testing"
 	"time"
 
@@ -26,25 +26,70 @@ import (
 	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/tsdb/wal"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
-func TestUnsupported(t *testing.T) {
-	promAgentDir := t.TempDir()
+func TestDB_InvalidSeries(t *testing.T) {
+	s := createTestAgentDB(t, nil, DefaultOptions())
+	defer s.Close()
 
-	opts := DefaultOptions()
-	logger := log.NewNopLogger()
+	app := s.Appender(context.Background())
 
-	s, err := Open(logger, prometheus.NewRegistry(), nil, promAgentDir, opts)
+	t.Run("Samples", func(t *testing.T) {
+		_, err := app.Append(0, labels.Labels{}, 0, 0)
+		require.ErrorIs(t, err, tsdb.ErrInvalidSample, "should reject empty labels")
+
+		_, err = app.Append(0, labels.Labels{{Name: "a", Value: "1"}, {Name: "a", Value: "2"}}, 0, 0)
+		require.ErrorIs(t, err, tsdb.ErrInvalidSample, "should reject duplicate labels")
+	})
+
+	t.Run("Exemplars", func(t *testing.T) {
+		sRef, err := app.Append(0, labels.Labels{{Name: "a", Value: "1"}}, 0, 0)
+		require.NoError(t, err, "should not reject valid series")
+
+		_, err = app.AppendExemplar(0, nil, exemplar.Exemplar{})
+		require.EqualError(t, err, "unknown series ref when trying to add exemplar: 0")
+
+		e := exemplar.Exemplar{Labels: labels.Labels{{Name: "a", Value: "1"}, {Name: "a", Value: "2"}}}
+		_, err = app.AppendExemplar(sRef, nil, e)
+		require.ErrorIs(t, err, tsdb.ErrInvalidExemplar, "should reject duplicate labels")
+
+		e = exemplar.Exemplar{Labels: labels.Labels{{Name: "a_somewhat_long_trace_id", Value: "nYJSNtFrFTY37VR7mHzEE/LIDt7cdAQcuOzFajgmLDAdBSRHYPDzrxhMA4zz7el8naI/AoXFv9/e/G0vcETcIoNUi3OieeLfaIRQci2oa"}}}
+		_, err = app.AppendExemplar(sRef, nil, e)
+		require.ErrorIs(t, err, storage.ErrExemplarLabelLength, "should reject too long label length")
+
+		// Inverse check
+		e = exemplar.Exemplar{Labels: labels.Labels{{Name: "a", Value: "1"}}, Value: 20, Ts: 10, HasTs: true}
+		_, err = app.AppendExemplar(sRef, nil, e)
+		require.NoError(t, err, "should not reject valid exemplars")
+	})
+}
+
+func createTestAgentDB(t *testing.T, reg prometheus.Registerer, opts *Options) *DB {
+	t.Helper()
+
+	dbDir := t.TempDir()
+	rs := remote.NewStorage(log.NewNopLogger(), reg, startTime, dbDir, time.Second*30, nil)
+	t.Cleanup(func() {
+		require.NoError(t, rs.Close())
+	})
+
+	db, err := Open(log.NewNopLogger(), reg, rs, dbDir, opts)
 	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, s.Close())
-	}()
+	return db
+}
+
+func TestUnsupportedFunctions(t *testing.T) {
+	s := createTestAgentDB(t, nil, DefaultOptions())
+	defer s.Close()
 
 	t.Run("Querier", func(t *testing.T) {
 		_, err := s.Querier(context.TODO(), 0, 0)
@@ -68,93 +113,74 @@ func TestCommit(t *testing.T) {
 		numSeries     = 8
 	)
 
-	promAgentDir := t.TempDir()
+	s := createTestAgentDB(t, nil, DefaultOptions())
+	app := s.Appender(context.TODO())
 
 	lbls := labelsForTest(t.Name(), numSeries)
-	opts := DefaultOptions()
-	logger := log.NewNopLogger()
-	reg := prometheus.NewRegistry()
-	remoteStorage := remote.NewStorage(log.With(logger, "component", "remote"), reg, startTime, promAgentDir, time.Second*30, nil)
-	defer func(rs *remote.Storage) {
-		require.NoError(t, rs.Close())
-	}(remoteStorage)
-
-	s, err := Open(logger, reg, remoteStorage, promAgentDir, opts)
-	require.NoError(t, err)
-
-	a := s.Appender(context.TODO())
-
 	for _, l := range lbls {
 		lset := labels.New(l...)
 
 		for i := 0; i < numDatapoints; i++ {
 			sample := tsdbutil.GenerateSamples(0, 1)
-			_, err := a.Append(0, lset, sample[0].T(), sample[0].V())
+			ref, err := app.Append(0, lset, sample[0].T(), sample[0].V())
+			require.NoError(t, err)
+
+			e := exemplar.Exemplar{
+				Labels: lset,
+				Ts:     sample[0].T(),
+				Value:  sample[0].V(),
+				HasTs:  true,
+			}
+			_, err = app.AppendExemplar(ref, lset, e)
 			require.NoError(t, err)
 		}
 	}
 
-	require.NoError(t, a.Commit())
+	require.NoError(t, app.Commit())
 	require.NoError(t, s.Close())
 
-	// Read records from WAL and check for expected count of series and samples.
-	walSeriesCount := 0
-	walSamplesCount := 0
-
-	reg = prometheus.NewRegistry()
-	remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"), reg, startTime, promAgentDir, time.Second*30, nil)
-	defer func() {
-		require.NoError(t, remoteStorage.Close())
-	}()
-
-	s1, err := Open(logger, nil, remoteStorage, promAgentDir, opts)
+	sr, err := wal.NewSegmentsReader(s.wal.Dir())
 	require.NoError(t, err)
 	defer func() {
-		require.NoError(t, s1.Close())
+		require.NoError(t, sr.Close())
 	}()
 
-	var dec record.Decoder
+	// Read records from WAL and check for expected count of series, samples, and exemplars.
+	var (
+		r   = wal.NewReader(sr)
+		dec record.Decoder
 
-	if err == nil {
-		sr, err := wal.NewSegmentsReader(s1.wal.Dir())
-		require.NoError(t, err)
-		defer func() {
-			require.NoError(t, sr.Close())
-		}()
+		walSeriesCount, walSamplesCount, walExemplarsCount int
+	)
+	for r.Next() {
+		rec := r.Record()
+		switch dec.Type(rec) {
+		case record.Series:
+			var series []record.RefSeries
+			series, err = dec.Series(rec, series)
+			require.NoError(t, err)
+			walSeriesCount += len(series)
 
-		r := wal.NewReader(sr)
-		seriesPool := sync.Pool{
-			New: func() interface{} {
-				return []record.RefSeries{}
-			},
-		}
-		samplesPool := sync.Pool{
-			New: func() interface{} {
-				return []record.RefSample{}
-			},
-		}
+		case record.Samples:
+			var samples []record.RefSample
+			samples, err = dec.Samples(rec, samples)
+			require.NoError(t, err)
+			walSamplesCount += len(samples)
 
-		for r.Next() {
-			rec := r.Record()
-			switch dec.Type(rec) {
-			case record.Series:
-				series := seriesPool.Get().([]record.RefSeries)[:0]
-				series, _ = dec.Series(rec, series)
-				walSeriesCount += len(series)
-			case record.Samples:
-				samples := samplesPool.Get().([]record.RefSample)[:0]
-				samples, _ = dec.Samples(rec, samples)
-				walSamplesCount += len(samples)
-			default:
-			}
+		case record.Exemplars:
+			var exemplars []record.RefExemplar
+			exemplars, err = dec.Exemplars(rec, exemplars)
+			require.NoError(t, err)
+			walExemplarsCount += len(exemplars)
+
+		default:
 		}
 	}
 
-	// Retrieved series count from WAL should match the count of series been added to the WAL.
-	require.Equal(t, walSeriesCount, numSeries)
-
-	// Retrieved samples count from WAL should match the count of samples been added to the WAL.
-	require.Equal(t, walSamplesCount, numSeries*numDatapoints)
+	// Check that the WAL contained the same number of commited series/samples/exemplars.
+	require.Equal(t, numSeries, walSeriesCount, "unexpected number of series")
+	require.Equal(t, numSeries*numDatapoints, walSamplesCount, "unexpected number of samples")
+	require.Equal(t, numSeries*numDatapoints, walExemplarsCount, "unexpected number of exemplars")
 }
 
 func TestRollback(t *testing.T) {
@@ -163,93 +189,68 @@ func TestRollback(t *testing.T) {
 		numSeries     = 8
 	)
 
-	promAgentDir := t.TempDir()
+	s := createTestAgentDB(t, nil, DefaultOptions())
+	app := s.Appender(context.TODO())
 
 	lbls := labelsForTest(t.Name(), numSeries)
-	opts := DefaultOptions()
-	logger := log.NewNopLogger()
-	reg := prometheus.NewRegistry()
-	remoteStorage := remote.NewStorage(log.With(logger, "component", "remote"), reg, startTime, promAgentDir, time.Second*30, nil)
-	defer func(rs *remote.Storage) {
-		require.NoError(t, rs.Close())
-	}(remoteStorage)
-
-	s, err := Open(logger, reg, remoteStorage, promAgentDir, opts)
-	require.NoError(t, err)
-
-	a := s.Appender(context.TODO())
-
 	for _, l := range lbls {
 		lset := labels.New(l...)
 
 		for i := 0; i < numDatapoints; i++ {
 			sample := tsdbutil.GenerateSamples(0, 1)
-			_, err := a.Append(0, lset, sample[0].T(), sample[0].V())
+			_, err := app.Append(0, lset, sample[0].T(), sample[0].V())
 			require.NoError(t, err)
 		}
 	}
 
-	require.NoError(t, a.Rollback())
+	// Do a rollback, which should clear uncommitted data. A followup call to
+	// commit should persist nothing to the WAL.
+	require.NoError(t, app.Rollback())
+	require.NoError(t, app.Commit())
 	require.NoError(t, s.Close())
 
-	// Read records from WAL and check for expected count of series and samples.
-	walSeriesCount := 0
-	walSamplesCount := 0
-
-	reg = prometheus.NewRegistry()
-	remoteStorage = remote.NewStorage(log.With(logger, "component", "remote"), reg, startTime, promAgentDir, time.Second*30, nil)
-	defer func() {
-		require.NoError(t, remoteStorage.Close())
-	}()
-
-	s1, err := Open(logger, nil, remoteStorage, promAgentDir, opts)
+	sr, err := wal.NewSegmentsReader(s.wal.Dir())
 	require.NoError(t, err)
 	defer func() {
-		require.NoError(t, s1.Close())
+		require.NoError(t, sr.Close())
 	}()
 
-	var dec record.Decoder
+	// Read records from WAL and check for expected count of series and samples.
+	var (
+		r   = wal.NewReader(sr)
+		dec record.Decoder
 
-	if err == nil {
-		sr, err := wal.NewSegmentsReader(s1.wal.Dir())
-		require.NoError(t, err)
-		defer func() {
-			require.NoError(t, sr.Close())
-		}()
+		walSeriesCount, walSamplesCount, walExemplarsCount int
+	)
+	for r.Next() {
+		rec := r.Record()
+		switch dec.Type(rec) {
+		case record.Series:
+			var series []record.RefSeries
+			series, err = dec.Series(rec, series)
+			require.NoError(t, err)
+			walSeriesCount += len(series)
 
-		r := wal.NewReader(sr)
-		seriesPool := sync.Pool{
-			New: func() interface{} {
-				return []record.RefSeries{}
-			},
-		}
-		samplesPool := sync.Pool{
-			New: func() interface{} {
-				return []record.RefSample{}
-			},
-		}
+		case record.Samples:
+			var samples []record.RefSample
+			samples, err = dec.Samples(rec, samples)
+			require.NoError(t, err)
+			walSamplesCount += len(samples)
 
-		for r.Next() {
-			rec := r.Record()
-			switch dec.Type(rec) {
-			case record.Series:
-				series := seriesPool.Get().([]record.RefSeries)[:0]
-				series, _ = dec.Series(rec, series)
-				walSeriesCount += len(series)
-			case record.Samples:
-				samples := samplesPool.Get().([]record.RefSample)[:0]
-				samples, _ = dec.Samples(rec, samples)
-				walSamplesCount += len(samples)
-			default:
-			}
+		case record.Exemplars:
+			var exemplars []record.RefExemplar
+			exemplars, err = dec.Exemplars(rec, exemplars)
+			require.NoError(t, err)
+			walExemplarsCount += len(exemplars)
+
+		default:
 		}
 	}
 
-	// Retrieved series count from WAL should be zero.
-	require.Equal(t, walSeriesCount, 0)
-
-	// Retrieved samples count from WAL should be zero.
-	require.Equal(t, walSamplesCount, 0)
+	// Check that the rollback ensured nothing got stored.
+	require.Equal(t, 0, walSeriesCount, "series should not have been written to WAL")
+	require.Equal(t, 0, walSamplesCount, "samples should not have been written to WAL")
+	require.Equal(t, 0, walExemplarsCount, "exemplars should not have been written to WAL")
 }
 
 func TestFullTruncateWAL(t *testing.T) {
@@ -259,34 +260,25 @@ func TestFullTruncateWAL(t *testing.T) {
 		lastTs        = 500
 	)
 
-	promAgentDir := t.TempDir()
-
-	lbls := labelsForTest(t.Name(), numSeries)
+	reg := prometheus.NewRegistry()
 	opts := DefaultOptions()
 	opts.TruncateFrequency = time.Minute * 2
-	logger := log.NewNopLogger()
-	reg := prometheus.NewRegistry()
-	remoteStorage := remote.NewStorage(log.With(logger, "component", "remote"), reg, startTime, promAgentDir, time.Second*30, nil)
-	defer func() {
-		require.NoError(t, remoteStorage.Close())
-	}()
 
-	s, err := Open(logger, reg, remoteStorage, promAgentDir, opts)
-	require.NoError(t, err)
+	s := createTestAgentDB(t, reg, opts)
 	defer func() {
 		require.NoError(t, s.Close())
 	}()
+	app := s.Appender(context.TODO())
 
-	a := s.Appender(context.TODO())
-
+	lbls := labelsForTest(t.Name(), numSeries)
 	for _, l := range lbls {
 		lset := labels.New(l...)
 
 		for i := 0; i < numDatapoints; i++ {
-			_, err := a.Append(0, lset, int64(lastTs), 0)
+			_, err := app.Append(0, lset, int64(lastTs), 0)
 			require.NoError(t, err)
 		}
-		require.NoError(t, a.Commit())
+		require.NoError(t, app.Commit())
 	}
 
 	// Truncate WAL with mint to GC all the samples.
@@ -302,52 +294,40 @@ func TestPartialTruncateWAL(t *testing.T) {
 		numSeries     = 800
 	)
 
-	promAgentDir := t.TempDir()
-
 	opts := DefaultOptions()
 	opts.TruncateFrequency = time.Minute * 2
-	logger := log.NewNopLogger()
-	reg := prometheus.NewRegistry()
-	remoteStorage := remote.NewStorage(log.With(logger, "component", "remote"), reg, startTime, promAgentDir, time.Second*30, nil)
-	defer func() {
-		require.NoError(t, remoteStorage.Close())
-	}()
 
-	s, err := Open(logger, reg, remoteStorage, promAgentDir, opts)
-	require.NoError(t, err)
+	reg := prometheus.NewRegistry()
+	s := createTestAgentDB(t, reg, opts)
 	defer func() {
 		require.NoError(t, s.Close())
 	}()
-
-	a := s.Appender(context.TODO())
-
-	var lastTs int64
+	app := s.Appender(context.TODO())
 
 	// Create first batch of 800 series with 1000 data-points with a fixed lastTs as 500.
-	lastTs = 500
+	var lastTs int64 = 500
 	lbls := labelsForTest(t.Name()+"batch-1", numSeries)
 	for _, l := range lbls {
 		lset := labels.New(l...)
 
 		for i := 0; i < numDatapoints; i++ {
-			_, err := a.Append(0, lset, lastTs, 0)
+			_, err := app.Append(0, lset, lastTs, 0)
 			require.NoError(t, err)
 		}
-		require.NoError(t, a.Commit())
+		require.NoError(t, app.Commit())
 	}
 
 	// Create second batch of 800 series with 1000 data-points with a fixed lastTs as 600.
 	lastTs = 600
-
 	lbls = labelsForTest(t.Name()+"batch-2", numSeries)
 	for _, l := range lbls {
 		lset := labels.New(l...)
 
 		for i := 0; i < numDatapoints; i++ {
-			_, err := a.Append(0, lset, lastTs, 0)
+			_, err := app.Append(0, lset, lastTs, 0)
 			require.NoError(t, err)
 		}
-		require.NoError(t, a.Commit())
+		require.NoError(t, app.Commit())
 	}
 
 	// Truncate WAL with mint to GC only the first batch of 800 series and retaining 2nd batch of 800 series.
@@ -364,53 +344,41 @@ func TestWALReplay(t *testing.T) {
 		lastTs        = 500
 	)
 
-	promAgentDir := t.TempDir()
+	s := createTestAgentDB(t, nil, DefaultOptions())
+	app := s.Appender(context.TODO())
 
 	lbls := labelsForTest(t.Name(), numSeries)
-	opts := DefaultOptions()
-
-	logger := log.NewNopLogger()
-	reg := prometheus.NewRegistry()
-	remoteStorage := remote.NewStorage(log.With(logger, "component", "remote"), reg, startTime, promAgentDir, time.Second*30, nil)
-	defer func() {
-		require.NoError(t, remoteStorage.Close())
-	}()
-
-	s, err := Open(logger, reg, remoteStorage, promAgentDir, opts)
-	require.NoError(t, err)
-
-	a := s.Appender(context.TODO())
-
 	for _, l := range lbls {
 		lset := labels.New(l...)
 
 		for i := 0; i < numDatapoints; i++ {
-			_, err := a.Append(0, lset, lastTs, 0)
+			_, err := app.Append(0, lset, lastTs, 0)
 			require.NoError(t, err)
 		}
 	}
 
-	require.NoError(t, a.Commit())
+	require.NoError(t, app.Commit())
 	require.NoError(t, s.Close())
 
-	restartOpts := DefaultOptions()
-	restartLogger := log.NewNopLogger()
-	restartReg := prometheus.NewRegistry()
+	// Hack: s.wal.Dir() is the /wal subdirectory of the original storage path.
+	// We need the original directory so we can recreate the storage for replay.
+	storageDir := filepath.Dir(s.wal.Dir())
 
-	// Open a new DB with the same WAL to check that series from the previous DB
-	// get replayed.
-	replayDB, err := Open(restartLogger, restartReg, nil, promAgentDir, restartOpts)
-	require.NoError(t, err)
+	reg := prometheus.NewRegistry()
+	replayStorage, err := Open(s.logger, reg, nil, storageDir, s.opts)
+	if err != nil {
+		t.Fatalf("unable to create storage for the agent: %v", err)
+	}
 	defer func() {
-		require.NoError(t, replayDB.Close())
+		require.NoError(t, replayStorage.Close())
 	}()
 
 	// Check if all the series are retrieved back from the WAL.
-	m := gatherFamily(t, restartReg, "prometheus_agent_active_series")
+	m := gatherFamily(t, reg, "prometheus_agent_active_series")
 	require.Equal(t, float64(numSeries), m.Metric[0].Gauge.GetValue(), "agent wal replay mismatch of active series count")
 
 	// Check if lastTs of the samples retrieved from the WAL is retained.
-	metrics := replayDB.series.series
+	metrics := replayStorage.series.series
 	for i := 0; i < len(metrics); i++ {
 		mp := metrics[i]
 		for _, v := range mp {
