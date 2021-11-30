@@ -682,7 +682,15 @@ func (c *TestBlockingWriteClient) Endpoint() string {
 	return "http://test-remote-blocking.com/1234"
 }
 
-func BenchmarkSampleDelivery(b *testing.B) {
+// For benchmarking the send and not the receive side.
+type NopWriteClient struct{}
+
+func NewNopWriteClient() *NopWriteClient                            { return &NopWriteClient{} }
+func (c *NopWriteClient) Store(_ context.Context, req []byte) error { return nil }
+func (c *NopWriteClient) Name() string                              { return "nopwriteclient" }
+func (c *NopWriteClient) Endpoint() string                          { return "http://test-remote.com/1234" }
+
+func BenchmarkSampleSend(b *testing.B) {
 	// Send one sample per series, which is the typical remote_write case
 	const numSamples = 1
 	const numSeries = 10000
@@ -707,12 +715,13 @@ func BenchmarkSampleDelivery(b *testing.B) {
 	}
 	samples, series := createTimeseries(numSamples, numSeries, extraLabels...)
 
-	c := NewTestWriteClient()
+	c := NewNopWriteClient()
 
 	cfg := config.DefaultQueueConfig
 	mcfg := config.DefaultMetadataConfig
 	cfg.BatchSendDeadline = model.Duration(100 * time.Millisecond)
-	cfg.MaxShards = 1
+	cfg.MinShards = 20
+	cfg.MaxShards = 20
 
 	dir := b.TempDir()
 
@@ -726,11 +735,9 @@ func BenchmarkSampleDelivery(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		c.expectDataCount(len(samples))
-		go m.Append(samples)
+		m.Append(samples)
 		m.UpdateSeriesSegment(series, i+1) // simulate what wal.Watcher.garbageCollectSeries does
 		m.SeriesReset(i + 1)
-		c.waitForExpectedDataCount()
 	}
 	// Do not include shutdown
 	b.StopTimer()
