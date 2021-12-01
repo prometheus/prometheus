@@ -226,6 +226,14 @@ scrape_configs:
               - web
               - db
 
+  - job_name: service-msk
+    msk_sd_configs:
+      - region: us-east-1
+        access_key: access
+        secret_key: mysecret
+        profile: profile
+        cluster_name_filter: msk_demo
+
   - job_name: service-lightsail
     lightsail_sd_configs:
       - region: us-east-1

@@ -527,6 +527,28 @@ var expectedConf = &Config{
 			},
 		},
 		{
+			JobName: "service-msk",
+
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
+
+			MetricsPath:      DefaultScrapeConfig.MetricsPath,
+			Scheme:           DefaultScrapeConfig.Scheme,
+			HTTPClientConfig: config.DefaultHTTPClientConfig,
+
+			ServiceDiscoveryConfigs: discovery.Configs{
+				&aws.MSKSDConfig{
+					Region:            "us-east-1",
+					AccessKey:         "access",
+					SecretKey:         "mysecret",
+					Profile:           "profile",
+					RefreshInterval:   model.Duration(60 * time.Second),
+					ClusterNameFilter: "msk_demo",
+				},
+			},
+		},
+		{
 			JobName: "service-lightsail",
 
 			HonorTimestamps: true,

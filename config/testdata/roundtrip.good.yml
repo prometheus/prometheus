@@ -84,6 +84,13 @@ scrape_configs:
               - web
               - db
 
+    msk_sd_configs:
+      - region: us-east-1
+        access_key: access
+        secret_key: <secret>
+        profile: profile
+        cluster_name_filter: msk_demo
+
     file_sd_configs:
       - files:
           - single/file.yml

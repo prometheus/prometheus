@@ -1008,6 +1008,41 @@ way to filter targets based on arbitrary labels. For users with thousands of
 instances it can be more efficient to use the EC2 API directly which has
 support for filtering instances.
 
+### `<msk_sd_config>`
+
+MSK SD configurations allow retrieving scrape targets from AWS MSK
+instances. The broker `jmx` and `node` exporter url were used.
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_msk_cluster_name`: the MSK cluster name
+* `__meta_msk_cluster_size`: the size of MSK cluster
+* `__meta_msk_kafka_version`: the current version of Kafka the MSK cluster is running
+* `__meta_msk_tag_<tagkey>`: each tag value of the cluster
+
+See below for the configuration options for EC2 discovery:
+
+```yaml
+# The AWS region. If blank, the region from the instance metadata is used.
+[ region: <string> ]
+
+# The AWS API keys. If blank, the environment variables `AWS_ACCESS_KEY_ID`
+# and `AWS_SECRET_ACCESS_KEY` are used.
+[ access_key: <string> ]
+[ secret_key: <secret> ]
+# Named AWS profile used to connect to the API.
+[ profile: <string> ]
+
+# AWS Role ARN, an alternative to using AWS API keys.
+[ role_arn: <string> ]
+
+# Refresh interval to re-read the instance list.
+[ refresh_interval: <duration> | default = 60s ]
+
+# Filter the desired clusters by name
+[ cluster_name_filter: <string>]
+```
+
 ### `<openstack_sd_config>`
 
 OpenStack SD configurations allow retrieving scrape targets from OpenStack Nova
@@ -2562,6 +2597,10 @@ dns_sd_configs:
 # List of EC2 service discovery configurations.
 ec2_sd_configs:
   [ - <ec2_sd_config> ... ]
+
+# List of MSK service discovery configurations.
+msk_sd_configs:
+  [ - <msk_sd_config> ... ]
 
 # List of Eureka service discovery configurations.
 eureka_sd_configs:
