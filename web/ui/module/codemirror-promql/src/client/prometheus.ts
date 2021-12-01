@@ -47,7 +47,7 @@ export interface CacheConfig {
 }
 
 export interface PrometheusConfig {
-  url: string;
+  url?: string;
   lookbackInterval?: number;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   httpErrorHandler?: (error: any) => void;
@@ -84,7 +84,7 @@ export class HTTPPrometheusClient implements PrometheusClient {
   private readonly fetchFn: FetchFn = (input: RequestInfo, init?: RequestInit): Promise<Response> => fetch(input, init);
 
   constructor(config: PrometheusConfig) {
-    this.url = config.url;
+    this.url = config.url ? config.url : '';
     this.errorHandler = config.httpErrorHandler;
     if (config.lookbackInterval) {
       this.lookbackInterval = config.lookbackInterval;
@@ -242,12 +242,15 @@ export class HTTPPrometheusClient implements PrometheusClient {
   private labelsEndpoint(): string {
     return `${this.apiPrefix}/labels`;
   }
+
   private labelValuesEndpoint(): string {
     return `${this.apiPrefix}/label/:name/values`;
   }
+
   private seriesEndpoint(): string {
     return `${this.apiPrefix}/series`;
   }
+
   private metricMetadataEndpoint(): string {
     return `${this.apiPrefix}/metadata`;
   }
