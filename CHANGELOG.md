@@ -2,8 +2,8 @@
 
 This list of changes is relative to [v2.32.0-beta.0](https://github.com/prometheus/prometheus/releases/tag/v2.32.0-beta.0), which was a special 2.32 beta release to pre-publish the Prometheus Agent features.
 
-* [FEATURE] TSDB: Add support for forwarding exemplars in Agent mode.
-* [FEATURE] UI: Adapt web UI for Prometheus Agent mode. #9851.
+* [FEATURE] TSDB: Add support for forwarding exemplars in Agent mode. #9664
+* [FEATURE] UI: Adapt web UI for Prometheus Agent mode. #9851
 * [ENHANCEMENT] Linode SD: Tune API request page sizes. #9779
 * [ENHANCEMENT] TSDB: Check postings bytes length when decoding. #9766
 * [BUGFIX] TSDB: Fix panic when checkpoint directory is empty. #9687
