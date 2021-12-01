@@ -14,7 +14,8 @@ local template = grafana.template;
         '%(prefix)sOverview' % $._config.grafanaPrometheus
       )
       .addMultiTemplate('job', 'prometheus_build_info{%(prometheusSelector)s}' % $._config, 'job')
-      .addMultiTemplate('instance', 'prometheus_build_info{job=~"$job"}', 'instance')
+      .addMultiTemplate('cluster', 'kube_pod_container_info{image=~".*prometheus.*"}', 'cluster')
+      .addMultiTemplate('instance', 'prometheus_build_info{job=~"$job", cluster=~"$cluster"}', 'instance')
       .addRow(
         g.row('Prometheus Stats')
         .addPanel(
