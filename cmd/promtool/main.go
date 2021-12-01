@@ -57,9 +57,10 @@ import (
 )
 
 const (
-	successExitCode = 0
-	failureExitCode = 1
-	// exit code 3 is used for "one or more lint issues detected".
+	successExitCode   = 0
+	failureExitCode   = 1
+	configErrExitCode = 2
+	// Exit code 3 is used for "one or more lint issues detected".
 	lintErrExitCode = 3
 )
 
