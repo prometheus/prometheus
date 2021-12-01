@@ -56,9 +56,9 @@ func RulesUnitTest(queryOpts promql.LazyLoaderOpts, files ...string) int {
 		fmt.Println()
 	}
 	if failed {
-		return 1
+		return failureExitCode
 	}
-	return 0
+	return successExitCode
 }
 
 func ruleUnitTest(filename string, queryOpts promql.LazyLoaderOpts) []error {
