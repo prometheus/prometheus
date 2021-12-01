@@ -787,6 +787,103 @@ func TestUpdate(t *testing.T) {
 		}
 	}
 	reloadAndValidate(rgs, t, tmpFile, ruleManager, expected, ogs)
+
+	// Change group source tenants and reload.
+	for i := range rgs.Groups {
+		rgs.Groups[i].SourceTenants = []string{"tenant-2"}
+	}
+	reloadAndValidate(rgs, t, tmpFile, ruleManager, expected, ogs)
+}
+
+func TestUpdateSetsSourceTenants(t *testing.T) {
+	st := teststorage.New(t)
+	defer st.Close()
+
+	opts := promql.EngineOpts{
+		Logger:     nil,
+		Reg:        nil,
+		MaxSamples: 10,
+		Timeout:    10 * time.Second,
+	}
+	engine := promql.NewEngine(opts)
+	ruleManager := NewManager(&ManagerOptions{
+		Appendable: st,
+		Queryable:  st,
+		QueryFunc:  EngineQueryFunc(engine, st),
+		Context:    context.Background(),
+		Logger:     log.NewNopLogger(),
+	})
+	ruleManager.start()
+	defer ruleManager.Stop()
+
+	rgs, errs := rulefmt.ParseFile("fixtures/rules_with_source_tenants.yaml")
+	require.Empty(t, errs, "file parsing failures")
+
+	tmpFile, err := ioutil.TempFile("", "rules.test.*.yaml")
+	require.NoError(t, err)
+	defer os.Remove(tmpFile.Name())
+	defer tmpFile.Close()
+
+	reloadRules(rgs, t, tmpFile, ruleManager, 0)
+
+	// check that all source tenants were actually set
+	require.Len(t, ruleManager.groups, len(rgs.Groups))
+
+	for _, expectedGroup := range rgs.Groups {
+		actualGroup, ok := ruleManager.groups[GroupKey(tmpFile.Name(), expectedGroup.Name)]
+
+		require.True(t, ok, "actual groups don't contain at one of the expected groups")
+		require.ElementsMatch(t, expectedGroup.SourceTenants, actualGroup.SourceTenants())
+	}
+}
+
+func TestGroupEvaluationContextFuncIsCalledWhenSupplied(t *testing.T) {
+	type testContextKeyType string
+	var testContextKey testContextKeyType = "TestGroupEvaluationContextFuncIsCalledWhenSupplied"
+	oldContextTestValue := context.Background().Value(testContextKey)
+
+	contextTestValueChannel := make(chan interface{})
+	mockQueryFunc := func(ctx context.Context, qs string, t time.Time) (promql.Vector, error) {
+		contextTestValueChannel <- ctx.Value(testContextKey)
+		return promql.Vector{}, nil
+	}
+
+	mockContextWrapFunc := func(ctx context.Context, g *Group) context.Context {
+		return context.WithValue(ctx, testContextKey, 42)
+	}
+
+	st := teststorage.New(t)
+	defer st.Close()
+
+	ruleManager := NewManager(&ManagerOptions{
+		Appendable:                 st,
+		Queryable:                  st,
+		QueryFunc:                  mockQueryFunc,
+		Context:                    context.Background(),
+		Logger:                     log.NewNopLogger(),
+		GroupEvaluationContextFunc: mockContextWrapFunc,
+	})
+
+	rgs, errs := rulefmt.ParseFile("fixtures/rules_with_source_tenants.yaml")
+	require.Empty(t, errs, "file parsing failures")
+
+	tmpFile, err := ioutil.TempFile("", "rules.test.*.yaml")
+	require.NoError(t, err)
+	defer os.Remove(tmpFile.Name())
+	defer tmpFile.Close()
+
+	// no filesystem is harmed when running this test, set the interval low
+	reloadRules(rgs, t, tmpFile, ruleManager, 10*time.Millisecond)
+
+	ruleManager.start()
+	defer ruleManager.Stop()
+
+	// check that all source tenants were actually set
+	require.Len(t, ruleManager.groups, len(rgs.Groups))
+
+	require.Nil(t, oldContextTestValue, "Context contained test key before the test, impossible")
+	newContextTestValue := <-contextTestValueChannel
+	require.Equal(t, 42, newContextTestValue, "Context does not contain the correct value that should be injected")
 }
 
 // ruleGroupsTest for running tests over rules.
@@ -796,10 +893,11 @@ type ruleGroupsTest struct {
 
 // ruleGroupTest forms a testing struct for running tests over rules.
 type ruleGroupTest struct {
-	Name     string         `yaml:"name"`
-	Interval model.Duration `yaml:"interval,omitempty"`
-	Limit    int            `yaml:"limit,omitempty"`
-	Rules    []rulefmt.Rule `yaml:"rules"`
+	Name          string         `yaml:"name"`
+	Interval      model.Duration `yaml:"interval,omitempty"`
+	Limit         int            `yaml:"limit,omitempty"`
+	Rules         []rulefmt.Rule `yaml:"rules"`
+	SourceTenants []string       `yaml:"source_tenants,omitempty"`
 }
 
 func formatRules(r *rulefmt.RuleGroups) ruleGroupsTest {
@@ -818,10 +916,11 @@ func formatRules(r *rulefmt.RuleGroups) ruleGroupsTest {
 			})
 		}
 		tmp = append(tmp, ruleGroupTest{
-			Name:     g.Name,
-			Interval: g.Interval,
-			Limit:    g.Limit,
-			Rules:    rtmp,
+			Name:          g.Name,
+			Interval:      g.Interval,
+			Limit:         g.Limit,
+			Rules:         rtmp,
+			SourceTenants: g.SourceTenants,
 		})
 	}
 	return ruleGroupsTest{
@@ -829,14 +928,23 @@ func formatRules(r *rulefmt.RuleGroups) ruleGroupsTest {
 	}
 }
 
-func reloadAndValidate(rgs *rulefmt.RuleGroups, t *testing.T, tmpFile *os.File, ruleManager *Manager, expected map[string]labels.Labels, ogs map[string]*Group) {
+func reloadRules(rgs *rulefmt.RuleGroups, t *testing.T, tmpFile *os.File, ruleManager *Manager, interval time.Duration) {
+	if interval == 0 {
+		interval = 10 * time.Second
+	}
+
 	bs, err := yaml.Marshal(formatRules(rgs))
 	require.NoError(t, err)
-	tmpFile.Seek(0, 0)
+	_, _ = tmpFile.Seek(0, 0)
 	_, err = tmpFile.Write(bs)
 	require.NoError(t, err)
-	err = ruleManager.Update(10*time.Second, []string{tmpFile.Name()}, nil, "")
+	err = ruleManager.Update(interval, []string{tmpFile.Name()}, nil, "")
 	require.NoError(t, err)
+}
+
+func reloadAndValidate(rgs *rulefmt.RuleGroups, t *testing.T, tmpFile *os.File, ruleManager *Manager, expected map[string]labels.Labels, ogs map[string]*Group) {
+	reloadRules(rgs, t, tmpFile, ruleManager, 0)
+
 	for h, g := range ruleManager.groups {
 		if ogs[h] == g {
 			t.Fail()
