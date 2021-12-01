@@ -2,6 +2,7 @@
 
 This list of changes is relative to [v2.32.0-beta.0](https://github.com/prometheus/prometheus/releases/tag/v2.32.0-beta.0), which was a special 2.32 beta release to pre-publish the Prometheus Agent features.
 
+* [FEATURE] TSDB: Add support for forwarding exemplars in Agent mode.
 * [FEATURE] UI: Adapt web UI for Prometheus Agent mode. #9851.
 * [ENHANCEMENT] Linode SD: Tune API request page sizes. #9779
 * [ENHANCEMENT] TSDB: Check postings bytes length when decoding. #9766
@@ -10,7 +11,7 @@ This list of changes is relative to [v2.32.0-beta.0](https://github.com/promethe
 * [BUGFIX] TSDB: Fix panic, out of order chunks, and race warning during WAL replay. #9856
 * [BUGFIX] TSDB: Fix and improve the `Seek()` method of various iterators. #9878
 * [BUGFIX] UI: Correctly render links for targets with IPv6 addresses that contain a Zone ID. #9853
-* [BUGFIX] Promtool: Fix checking of `authorization.credentials_file` field. #9883
+* [BUGFIX] Promtool: Fix checking of `authorization.credentials_file` and `bearer_token_file` fields. #9883
 
 ## 2.32.0-beta.0 / 2021-11-16
 
