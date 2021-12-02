@@ -1513,3 +1513,118 @@ func TestDeleteCompactionBlockAfterFailedReload(t *testing.T) {
 		})
 	}
 }
+
+func TestOpenBlocksForCompaction(t *testing.T) {
+	dir := t.TempDir()
+
+	const blocks = 5
+
+	var blockDirs []string
+	for ix := 0; ix < blocks; ix++ {
+		d := createBlock(t, dir, genSeries(100, 10, 0, 5000))
+		blockDirs = append(blockDirs, d)
+	}
+
+	// Open subset of blocks first.
+	const blocksToOpen = 2
+	opened, toClose, err := openBlocksForCompaction(blockDirs[:blocksToOpen], nil, log.NewNopLogger(), nil, 10)
+	for _, b := range toClose {
+		defer func(b *Block) { require.NoError(t, b.Close()) }(b)
+	}
+
+	require.NoError(t, err)
+	checkBlocks(t, opened, blockDirs[:blocksToOpen]...)
+	checkBlocks(t, toClose, blockDirs[:blocksToOpen]...)
+
+	// Open all blocks, but provide previously opened blocks.
+	opened2, toClose2, err := openBlocksForCompaction(blockDirs, opened, log.NewNopLogger(), nil, 10)
+	for _, b := range toClose2 {
+		defer func(b *Block) { require.NoError(t, b.Close()) }(b)
+	}
+
+	require.NoError(t, err)
+	checkBlocks(t, opened2, blockDirs...)
+	checkBlocks(t, toClose2, blockDirs[blocksToOpen:]...)
+}
+
+func TestOpenBlocksForCompactionErrorsNoMeta(t *testing.T) {
+	dir := t.TempDir()
+
+	const blocks = 5
+
+	var blockDirs []string
+	for ix := 0; ix < blocks; ix++ {
+		d := createBlock(t, dir, genSeries(100, 10, 0, 5000))
+		blockDirs = append(blockDirs, d)
+
+		if ix == 3 {
+			blockDirs = append(blockDirs, path.Join(dir, "invalid-block"))
+		}
+	}
+
+	// open block[0]
+	b0, err := OpenBlock(log.NewNopLogger(), blockDirs[0], nil)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, b0.Close()) }()
+
+	_, toClose, err := openBlocksForCompaction(blockDirs, []*Block{b0}, log.NewNopLogger(), nil, 10)
+
+	require.Error(t, err)
+	// We didn't get to opening more blocks, because we found invalid dir, so there is nothing to close.
+	require.Empty(t, toClose)
+}
+
+func TestOpenBlocksForCompactionErrorsMissingIndex(t *testing.T) {
+	dir := t.TempDir()
+
+	const blocks = 5
+
+	var blockDirs []string
+	for ix := 0; ix < blocks; ix++ {
+		d := createBlock(t, dir, genSeries(100, 10, 0, 5000))
+		blockDirs = append(blockDirs, d)
+
+		if ix == 3 {
+			require.NoError(t, os.Remove(path.Join(d, indexFilename)))
+		}
+	}
+
+	// open block[1]
+	b1, err := OpenBlock(log.NewNopLogger(), blockDirs[1], nil)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, b1.Close()) }()
+
+	// We use concurrency = 1 to simplify the test.
+	// Block[0] will be opened correctly.
+	// Block[1] is already opened.
+	// Block[2] will be opened correctly.
+	// Block[3] is invalid and will cause error.
+	// Block[4] will not be opened at all.
+	opened, toClose, err := openBlocksForCompaction(blockDirs, []*Block{b1}, log.NewNopLogger(), nil, 1)
+	for _, b := range toClose {
+		defer func(b *Block) { require.NoError(t, b.Close()) }(b)
+	}
+
+	require.Error(t, err)
+	checkBlocks(t, opened, blockDirs[0:3]...)
+	checkBlocks(t, toClose, blockDirs[0], blockDirs[2])
+}
+
+// Check that blocks match IDs from directories.
+func checkBlocks(t *testing.T, blocks []*Block, dirs ...string) {
+	t.Helper()
+
+	blockIDs := map[string]struct{}{}
+	for _, b := range blocks {
+		blockIDs[b.Meta().ULID.String()] = struct{}{}
+	}
+
+	dirBlockIDs := map[string]struct{}{}
+	for _, d := range dirs {
+		m, _, err := readMetaFile(d)
+		require.NoError(t, err)
+		dirBlockIDs[m.ULID.String()] = struct{}{}
+	}
+
+	require.Equal(t, blockIDs, dirBlockIDs)
+}
