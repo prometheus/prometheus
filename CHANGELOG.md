@@ -7,7 +7,6 @@ This list of changes is relative to [v2.32.0-beta.0](https://github.com/promethe
 * [ENHANCEMENT] Linode SD: Tune API request page sizes. #9779
 * [BUGFIX] TSDB: Fix panic when checkpoint directory is empty. #9687
 * [BUGFIX] TSDB: Fix panic, out of order chunks, and race warning during WAL replay. #9856
-* [BUGFIX] TSDB: Fix and improve the `Seek()` method of various iterators. #9878
 * [BUGFIX] UI: Correctly render links for targets with IPv6 addresses that contain a Zone ID. #9853
 * [BUGFIX] Promtool: Fix checking of `authorization.credentials_file` and `bearer_token_file` fields. #9883
 
