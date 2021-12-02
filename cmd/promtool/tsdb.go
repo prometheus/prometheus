@@ -708,44 +708,28 @@ func analyzeBlockChunks(path, blockID string, limit int) error {
 		i++
 	}
 
-	// ALL
-
-	//sort.Slice(stats, func(i, j int) bool {
-	//	return stats[i].Samples > stats[j].Samples
-	//})
-	//
-	//w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', tabwriter.Debug)
-	//_, _ = fmt.Fprintln(w, "Metric\tSamples\tUnique\tUniqueness\tBytes\tBytes/Sample")
-	//for _, s := range stats {
-	//	_, _ = fmt.Fprintf(w, "%s\t%d\t%d\t%.5f\t%d\t%.2f\n", s.Metric, s.Samples, s.Unique, s.Uniqueness, s.Bytes, float64(s.Bytes)/float64(s.Samples))
-	//}
-	//_ = w.Flush()
-
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', tabwriter.Debug)
-	_, _ = fmt.Fprintln(w, "Metric\tSamples\tUnique\tUniqueness\tBytes\tBytes/Sample")
 	rleChunks := 0
 	for _, s := range stats {
 		if s.Uniqueness < 0.0025 {
 			rleChunks += 1
-			_, _ = fmt.Fprintf(w, "%s\t%d\t%d\t%.5f\t%d\t%.2f\n", s.Metric, s.Samples, s.Unique, s.Uniqueness, s.Bytes, float64(s.Bytes)/float64(s.Samples))
 		}
 	}
-	_ = w.Flush()
 
-	//w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', tabwriter.Debug)
-	//_, _ = fmt.Fprintln(w, "Metric\tSamples\tUnique\tUniqueness\tBytes\tBytes/Sample")
 	deltaChunks := 0
 	for _, s := range stats {
 		if s.Uniqueness > 0.99 { // TODO: Something's wrong with this still
 			deltaChunks += 1
-			//_, _ = fmt.Fprintf(w, "%s\t%d\t%d\t%.5f\t%d\t%.2f\n", s.Metric, s.Samples, s.Unique, s.Uniqueness, s.Bytes, float64(s.Bytes)/float64(s.Samples))
 		}
 	}
-	//_ = w.Flush()
 
-	fmt.Println("total chunks", len(stats))
-	fmt.Printf("possible RLE chunks %d that is %.3f%% of all chunks\n", rleChunks, 100*float64(rleChunks)/float64(len(stats)))
-	fmt.Printf("possible delta chunks %d that is %.3f%% of all chunks\n", deltaChunks, 100*float64(deltaChunks)/float64(len(stats)))
+	total := len(stats)
+	unchanged := total - rleChunks - deltaChunks
+	//fmt.Println("total chunks", total)
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', tabwriter.Debug)
+	_, _ = fmt.Fprintf(w, "XOR\t%.3f%%\t%d\n", 100*float64(unchanged)/float64(total), unchanged)
+	_, _ = fmt.Fprintf(w, "RLE\t%.3f%%\t%d\n", 100*float64(rleChunks)/float64(total), rleChunks)
+	_, _ = fmt.Fprintf(w, "delta\t%.3f%%\t%d\n", 100*float64(deltaChunks)/float64(total), deltaChunks)
+	_ = w.Flush()
 
 	if postingsr.Err() != nil {
 		return fmt.Errorf("encountered error iterating through postings: %w", err)
