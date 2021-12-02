@@ -1601,6 +1601,7 @@ address referenced in the endpointslice object one target is discovered. If the 
 additional container ports of the pod, not bound to an endpoint port, are discovered as targets as well.
 
 Available meta labels:
+
 * `__meta_kubernetes_namespace`: The namespace of the endpoints object.
 * `__meta_kubernetes_endpointslice_name`: The name of endpointslice object.
 * For all targets discovered directly from the endpointslice list (those not additionally inferred
