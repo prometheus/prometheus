@@ -353,8 +353,10 @@ func checkConfig(agentMode bool, filename string) ([]string, error) {
 	}
 
 	for _, scfg := range cfg.ScrapeConfigs {
-		if err := checkFileExists(scfg.HTTPClientConfig.BearerTokenFile); err != nil {
-			return nil, errors.Wrapf(err, "error checking bearer token file %q", scfg.HTTPClientConfig.BearerTokenFile)
+		if scfg.HTTPClientConfig.Authorization != nil {
+			if err := checkFileExists(scfg.HTTPClientConfig.Authorization.CredentialsFile); err != nil {
+				return nil, errors.Wrapf(err, "error checking authorization credentials or bearer token file %q", scfg.HTTPClientConfig.Authorization.CredentialsFile)
+			}
 		}
 
 		if err := checkTLSConfig(scfg.HTTPClientConfig.TLSConfig); err != nil {

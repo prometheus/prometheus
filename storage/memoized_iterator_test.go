@@ -23,7 +23,7 @@ func TestMemoizedSeriesIterator(t *testing.T) {
 	var it *MemoizedSeriesIterator
 
 	sampleEq := func(ets int64, ev float64) {
-		ts, v := it.Values()
+		ts, v := it.At()
 		require.Equal(t, ets, ts, "timestamp mismatch")
 		require.Equal(t, ev, v, "value mismatch")
 	}

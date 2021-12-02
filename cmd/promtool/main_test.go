@@ -203,3 +203,33 @@ func TestCheckTargetConfig(t *testing.T) {
 		})
 	}
 }
+
+func TestAuthorizationConfig(t *testing.T) {
+	cases := []struct {
+		name string
+		file string
+		err  string
+	}{
+		{
+			name: "authorization_credentials_file.bad",
+			file: "authorization_credentials_file.bad.yml",
+			err:  "error checking authorization credentials or bearer token file",
+		},
+		{
+			name: "authorization_credentials_file.good",
+			file: "authorization_credentials_file.good.yml",
+			err:  "",
+		},
+	}
+
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := checkConfig(false, "testdata/"+test.file)
+			if test.err != "" {
+				require.Contains(t, err.Error(), test.err, "Expected error to contain %q, got %q", test.err, err.Error())
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+}

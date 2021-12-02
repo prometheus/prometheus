@@ -113,7 +113,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 
 		ok := it.Seek(maxt)
 		if ok {
-			t, v = it.Values()
+			t, v = it.At()
 		} else {
 			t, v, ok = it.PeekBack(1)
 			if !ok {

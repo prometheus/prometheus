@@ -95,6 +95,10 @@ remote_write:
 # Settings related to the remote read feature.
 remote_read:
   [ - <remote_read> ... ]
+
+# Storage related settings that are runtime reloadable.
+storage:
+  [ - <exemplars> ... ]  
 ```
 
 ### `<scrape_config>`
@@ -2839,3 +2843,12 @@ tls_config:
 There is a list of
 [integrations](https://prometheus.io/docs/operating/integrations/#remote-endpoints-and-storage)
 with this feature.
+
+### `<exemplars>`
+
+Note that exemplar storage is still considered experimental and must be enabled via `--enable-feature=exemplar-storage`.
+
+```yaml
+# Configures the maximum size of the circular buffer used to store exemplars for all series. Resizable during runtime.
+[ max_exemplars: <int> | default = 100000 ]
+```
