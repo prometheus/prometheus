@@ -545,6 +545,7 @@ var expectedConf = &Config{
 					Profile:           "profile",
 					RefreshInterval:   model.Duration(60 * time.Second),
 					ClusterNameFilter: "msk_demo",
+					TagFilters:        []*aws.TagFilter{{Key: "Env", Pattern: "^staging$"}},
 				},
 			},
 		},

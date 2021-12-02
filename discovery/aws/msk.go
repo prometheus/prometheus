@@ -17,6 +17,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"regexp"
 	"strings"
 	"time"
 
@@ -42,6 +43,7 @@ const (
 	mskLabelTag          = mskLabel + "tag_"
 	mskLabelKafkaVersion = mskLabel + "kafka_version"
 	mskLabelClusterSize  = mskLabel + "cluster_size"
+	mskLabelInstanceType = mskLabel + "instance_type"
 	mskLabelSeparator    = ","
 )
 
@@ -54,6 +56,11 @@ func init() {
 	discovery.RegisterConfig(&MSKSDConfig{})
 }
 
+type TagFilter struct {
+	Key     string `yaml:"key"`
+	Pattern string `yaml:"pattern"`
+}
+
 // MSKSDConfig is the configuration for MSK based service discovery.
 type MSKSDConfig struct {
 	Region            string         `yaml:"region"`
@@ -63,6 +70,7 @@ type MSKSDConfig struct {
 	RoleARN           string         `yaml:"role_arn,omitempty"`
 	RefreshInterval   model.Duration `yaml:"refresh_interval,omitempty"`
 	ClusterNameFilter string         `yaml:"cluster_name_filter,omitempty"`
+	TagFilters        []*TagFilter   `yaml:"tag_filters,omitempty"`
 }
 
 // Name returns the name of the MSK Config.
@@ -94,6 +102,11 @@ type MSKDiscovery struct {
 	logger log.Logger
 	cfg    *MSKSDConfig
 	kafka  *kafka.Kafka
+}
+
+type clusterTarget struct {
+	clusterInfo *kafka.ClusterInfo
+	hosts       []*string
 }
 
 // NewMSKDiscovery returns a new MSKDiscovery which periodically refreshes its targets.
@@ -145,13 +158,42 @@ func (d *MSKDiscovery) mskClient(ctx context.Context) (*kafka.Kafka, error) {
 	return d.kafka, nil
 }
 
+func filterByTags(clusterInfoList []*kafka.ClusterInfo, tagFilters []*TagFilter) []*kafka.ClusterInfo {
+	if tagFilters == nil {
+		return clusterInfoList
+	}
+	var filteredList []*kafka.ClusterInfo
+	for _, c := range clusterInfoList {
+		flag := true
+		for _, filter := range tagFilters {
+			if tag, ok := c.Tags[filter.Key]; ok {
+				match, err := regexp.MatchString(filter.Pattern, *tag)
+				if err != nil {
+					continue
+				}
+				if !match {
+					flag = false
+					break
+				}
+			} else {
+				flag = false
+				break
+			}
+		}
+		if flag {
+			filteredList = append(filteredList, c)
+		}
+	}
+	return filteredList
+}
+
 func (d *MSKDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	mskClient, err := d.mskClient(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	var clustersArn []*string
+	var clusterInfoList []*kafka.ClusterInfo
 	input := &kafka.ListClustersInput{}
 	if d.cfg.ClusterNameFilter != "" {
 		input.SetClusterNameFilter(d.cfg.ClusterNameFilter)
@@ -166,16 +208,35 @@ func (d *MSKDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 			break
 		}
 
-		var clustersArnPaged []*string
-		for _, c := range result.ClusterInfoList {
-			clustersArnPaged = append(clustersArnPaged, c.ClusterArn)
-		}
-		clustersArn = append(clustersArn, clustersArnPaged...)
-		input.NextToken = result.NextToken
+		clusterInfoList = append(clusterInfoList, result.ClusterInfoList...)
 
+		input.NextToken = result.NextToken
 		if result.NextToken == nil {
 			break
 		}
+	}
+
+	clusterInfoList = filterByTags(clusterInfoList, d.cfg.TagFilters)
+
+	var clusterTargets []*clusterTarget
+	for _, clusterInfo := range clusterInfoList {
+		getBrokersInput := &kafka.GetBootstrapBrokersInput{
+			ClusterArn: clusterInfo.ClusterArn,
+		}
+		brokers, err := mskClient.GetBootstrapBrokers(getBrokersInput)
+		if err != nil {
+			continue
+		}
+		var hosts []*string
+		for _, brokerURL := range strings.Split(*brokers.BootstrapBrokerString, mskLabelSeparator) {
+			host, _, _ := net.SplitHostPort(brokerURL)
+			hosts = append(hosts, &host)
+		}
+		clusterTarget := &clusterTarget{
+			clusterInfo: clusterInfo,
+			hosts:       hosts,
+		}
+		clusterTargets = append(clusterTargets, clusterTarget)
 	}
 
 	exporterPorts := map[string]int{
@@ -184,53 +245,35 @@ func (d *MSKDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 	}
 
 	var tgs []*targetgroup.Group
-
 	for exporter, port := range exporterPorts {
 		tg := &targetgroup.Group{
-			Source: d.cfg.Region,
+			Source: exporter,
 			Labels: model.LabelSet{
 				"exporter": model.LabelValue(exporter),
 			},
 		}
 
-		for _, clusterArn := range clustersArn {
-			getBrokersInput := &kafka.GetBootstrapBrokersInput{
-				ClusterArn: clusterArn,
-			}
-			brokers, err := mskClient.GetBootstrapBrokers(getBrokersInput)
-			if err != nil {
-				continue
-			}
-
-			descClusterInput := &kafka.DescribeClusterInput{
-				ClusterArn: clusterArn,
-			}
-
-			cluster, err := mskClient.DescribeCluster(descClusterInput)
-
-			for _, brokerURL := range strings.Split(*brokers.BootstrapBrokerString, mskLabelSeparator) {
-				host, _, _ := net.SplitHostPort(brokerURL)
-				addr := net.JoinHostPort(host, fmt.Sprintf("%d", port))
+		for _, c := range clusterTargets {
+			for _, host := range c.hosts {
+				addr := net.JoinHostPort(*host, fmt.Sprintf("%d", port))
 				target := model.LabelSet{
 					model.AddressLabel: model.LabelValue(addr),
 				}
-				if err == nil {
-					target[mskLabelClusterName] = model.LabelValue(*cluster.ClusterInfo.ClusterName)
-					for k, v := range cluster.ClusterInfo.Tags {
-						if k == "" || v == nil {
-							continue
-						}
-						name := strutil.SanitizeLabelName(k)
-						target[mskLabelTag+model.LabelName(name)] = model.LabelValue(*v)
+				target[mskLabelClusterName] = model.LabelValue(*c.clusterInfo.ClusterName)
+				for k, v := range c.clusterInfo.Tags {
+					if k == "" || v == nil {
+						continue
 					}
-					target[mskLabelKafkaVersion] = model.LabelValue(*cluster.ClusterInfo.CurrentVersion)
-					target[mskLabelClusterSize] = model.LabelValue(fmt.Sprint(*cluster.ClusterInfo.NumberOfBrokerNodes))
+					name := strutil.SanitizeLabelName(k)
+					target[mskLabelTag+model.LabelName(name)] = model.LabelValue(*v)
 				}
+				target[mskLabelKafkaVersion] = model.LabelValue(*c.clusterInfo.CurrentBrokerSoftwareInfo.KafkaVersion)
+				target[mskLabelClusterSize] = model.LabelValue(fmt.Sprint(*c.clusterInfo.NumberOfBrokerNodes))
+				target[mskLabelInstanceType] = model.LabelValue(*c.clusterInfo.BrokerNodeGroupInfo.InstanceType)
 				tg.Targets = append(tg.Targets, target)
 			}
 		}
 		tgs = append(tgs, tg)
 	}
-
 	return tgs, nil
 }

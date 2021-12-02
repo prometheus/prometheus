@@ -233,6 +233,9 @@ scrape_configs:
         secret_key: mysecret
         profile: profile
         cluster_name_filter: msk_demo
+        tag_filters:
+          - key: Env
+            pattern: "^staging$"
 
   - job_name: service-lightsail
     lightsail_sd_configs:

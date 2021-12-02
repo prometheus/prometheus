@@ -71,7 +71,7 @@ endif
 npm_licenses: ui-install
 	@echo ">> bundling npm licenses"
 	rm -f $(REACT_APP_NPM_LICENSES_TARBALL)
-	find $(UI_NODE_MODULES_PATH) -iname "license*" | tar cfj $(REACT_APP_NPM_LICENSES_TARBALL) --transform 's/^/npm_licenses\//' --files-from=-
+	find $(UI_NODE_MODULES_PATH) -iname "license*" | gtar cfj $(REACT_APP_NPM_LICENSES_TARBALL) --transform 's/^/npm_licenses\//' --files-from=-
 
 .PHONY: tarball
 tarball: npm_licenses common-tarball

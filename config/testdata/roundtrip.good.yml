@@ -90,6 +90,9 @@ scrape_configs:
         secret_key: <secret>
         profile: profile
         cluster_name_filter: msk_demo
+        tag_filters:
+          - key: Env
+            pattern: "^staging$"
 
     file_sd_configs:
       - files:

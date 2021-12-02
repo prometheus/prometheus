@@ -1022,6 +1022,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_msk_cluster_name`: the MSK cluster name
 * `__meta_msk_cluster_size`: the size of MSK cluster
 * `__meta_msk_kafka_version`: the current version of Kafka the MSK cluster is running
+* `__meta_msk_instance_type`: the current instance type of MSK cluster is running, e.g. `kafka.t3.small`
 * `__meta_msk_tag_<tagkey>`: each tag value of the cluster
 
 See below for the configuration options for EC2 discovery:
@@ -1045,6 +1046,11 @@ See below for the configuration options for EC2 discovery:
 
 # Filter the desired clusters by name
 [ cluster_name_filter: <string>]
+
+# Filter the desired clusters by tags
+tag_filters:
+  [ - key: <string>
+      pattern: <string>, [...] ]
 ```
 
 ### `<openstack_sd_config>`
