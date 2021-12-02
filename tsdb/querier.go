@@ -379,30 +379,27 @@ func labelValuesWithMatchers(r IndexReader, name string, matchers ...*labels.Mat
 	if err != nil {
 		return nil, errors.Wrap(err, "fetching postings for matchers")
 	}
-	ep, err := index.ExpandPostings(p)
-	if err != nil {
-		return nil, errors.Wrap(err, "expanding postings for matchers")
-	}
 
 	allValues, err := r.LabelValues(name)
 	if err != nil {
 		return nil, errors.Wrapf(err, "fetching values of label %s", name)
 	}
-	values := make([]string, 0, len(allValues))
-
-	for _, value := range allValues {
-		vp, err := r.Postings(name, value)
+	valuesPostings := make([]index.Postings, len(allValues))
+	for i, value := range allValues {
+		valuesPostings[i], err = r.Postings(name, value)
 		if err != nil {
 			return nil, errors.Wrapf(err, "fetching postings for %s=%q", name, value)
 		}
+	}
+	indexes, err := index.FindIntersectingPostings(p, valuesPostings)
+	if err != nil {
+		return nil, errors.Wrap(err, "intersecting postings")
+	}
+	sort.Ints(indexes)
 
-		intersection := index.Intersect(vp, index.NewListPostings(ep))
-		if intersection.Next() {
-			values = append(values, value)
-		}
-		if err := intersection.Err(); err != nil {
-			return nil, errors.Wrapf(err, "intersecting postings for %s=%q", name, value)
-		}
+	values := make([]string, 0, len(indexes))
+	for _, idx := range indexes {
+		values = append(values, allValues[idx])
 	}
 
 	return values, nil
