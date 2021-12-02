@@ -62,7 +62,7 @@ func init() {
 
 // SDConfig is the configuration for Uyuni based service discovery.
 type SDConfig struct {
-	Server           config.URL              `yaml:"server"`
+	Server           string                  `yaml:"server"`
 	Username         string                  `yaml:"username"`
 	Password         config.Secret           `yaml:"password"`
 	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
@@ -122,11 +122,11 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err != nil {
 		return err
 	}
-	if c.Server.URL == nil {
+	if c.Server == "" {
 		return errors.New("Uyuni SD configuration requires server host")
 	}
 
-	_, err = url.Parse(c.Server.String())
+	_, err = url.Parse(c.Server)
 	if err != nil {
 		return errors.Wrap(err, "Uyuni Server URL is not valid")
 	}
@@ -199,8 +199,10 @@ func getEndpointInfoForSystems(
 
 // NewDiscovery returns a uyuni discovery for the given configuration.
 func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
-	var apiURL *url.URL
-	*apiURL = *conf.Server.URL
+	apiURL, err := url.Parse(conf.Server)
+	if err != nil {
+		return nil, err
+	}
 	apiURL.Path = path.Join(apiURL.Path, uyuniXMLRPCAPIPath)
 
 	rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "uyuni_sd")
