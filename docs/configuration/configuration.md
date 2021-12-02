@@ -224,6 +224,10 @@ dns_sd_configs:
 ec2_sd_configs:
   [ - <ec2_sd_config> ... ]
 
+# List of MSK service discovery configurations.
+msk_sd_configs:
+  [ - <msk_sd_config> ... ]
+
 # List of Eureka service discovery configurations.
 eureka_sd_configs:
   [ - <eureka_sd_config> ... ]

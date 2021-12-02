@@ -107,7 +107,7 @@ func NewMSKDiscovery(conf *MSKSDConfig, logger log.Logger) *MSKDiscovery {
 	}
 	d.Discovery = refresh.NewDiscovery(
 		logger,
-		"MSK",
+		"msk",
 		time.Duration(d.cfg.RefreshInterval),
 		d.refresh,
 	)
