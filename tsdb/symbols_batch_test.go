@@ -8,14 +8,25 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestSymbolsBatchAndIteration(t *testing.T) {
+func TestSymbolsBatchAndIteration1(t *testing.T) {
+	testSymbolsBatchAndIterationWithFlushersConcurrency(t, 1)
+}
+
+func TestSymbolsBatchAndIteration5(t *testing.T) {
+	testSymbolsBatchAndIterationWithFlushersConcurrency(t, 5)
+}
+
+func testSymbolsBatchAndIterationWithFlushersConcurrency(t *testing.T, flushersConcurrency int) {
+	flushers := newSymbolFlushers(flushersConcurrency)
+	defer func() { _ = flushers.close() }()
+
 	dir := t.TempDir()
 
-	b := newSymbolsBatcher(100, dir)
+	b := newSymbolsBatcher(100, dir, flushers)
 
 	allWords := map[string]struct{}{}
 
-	for i := 0; i < 10; i++ {
+	for i := 0; i < 10*flushersConcurrency; i++ {
 		require.NoError(t, b.addSymbol(""))
 		allWords[""] = struct{}{}
 
@@ -29,8 +40,12 @@ func TestSymbolsBatchAndIteration(t *testing.T) {
 	}
 
 	require.NoError(t, b.flushSymbols(true))
+	require.NoError(t, b.flushSymbols(true)) // call again, this should do nothing, and not create new empty file.
+	require.NoError(t, flushers.close())
 
-	it, err := newSymbolsIterator(b.symbolFiles())
+	symbols := b.getSymbolFiles()
+
+	it, err := newSymbolsIterator(symbols)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		require.NoError(t, it.Close())
