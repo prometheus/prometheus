@@ -136,8 +136,6 @@ func bucketQuantile(q float64, buckets buckets) float64 {
 //
 // If q<0, -Inf is returned.
 //
-// If q>1, +Inf is returned.
-//
 // The following special cases are ignored from conventional histograms because
 // we don't have a +Inf bucket in new histograms:
 //  If the highest bucket is not +Inf, NaN is returned.
@@ -152,25 +150,21 @@ func histogramQuantile(q float64, h *histogram.FloatHistogram) float64 {
 		return math.Inf(+1)
 	}
 
-	observations := h.Count
-	zeroObservations := h.ZeroCount
-	zeroThreshold := h.ZeroThreshold
-
-	if observations == 0 {
+	if h.Count == 0 {
 		return math.NaN()
 	}
 
-	rank := q * observations
+	rank := q * h.Count
 
-	if zeroObservations >= rank {
-		if zeroObservations == 0 {
+	if h.ZeroCount >= rank {
+		if h.ZeroCount == 0 {
 			return 0
 		}
-		return zeroThreshold * rank / zeroObservations
+		return h.ZeroThreshold * rank / h.ZeroCount
 	}
 
-	count := zeroObservations
 	var bucket *histogram.FloatBucket
+	count := h.ZeroCount
 	it := h.PositiveBucketIterator()
 	for it.Next() {
 		b := it.At()

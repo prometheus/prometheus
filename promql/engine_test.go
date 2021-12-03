@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"math"
 	"os"
 	"sort"
 	"testing"
@@ -27,6 +28,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -2646,4 +2648,96 @@ func TestSparseHistogramRate(t *testing.T) {
 	require.NoError(t, err)
 	res := qry.Exec(test.Context())
 	require.NoError(t, res.Err)
+}
+
+func TestSparseHistogram_HistogramQuantile(t *testing.T) {
+	// TODO(codesome): Integrate histograms into the PromQL testing framework
+	// and write more tests there.
+	test, err := NewTest(t, "")
+	require.NoError(t, err)
+	defer test.Close()
+
+	seriesName := "sparse_histogram_series"
+	lbls := labels.FromStrings("__name__", seriesName)
+
+	h := &histogram.Histogram{
+		Count:         12,
+		ZeroCount:     2,
+		ZeroThreshold: 0.001,
+		Sum:           100, // Does not matter.
+		Schema:        0,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 1, Length: 2},
+		},
+		PositiveBuckets: []int64{2, 1, -2, 3},
+	}
+	ts := int64(time.Minute / time.Millisecond)
+	app := test.Storage().Appender(context.TODO())
+	_, err = app.AppendHistogram(0, lbls, ts, h)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	require.NoError(t, test.Run())
+	engine := test.QueryEngine()
+
+	cases := []struct {
+		quantile string
+		value    float64
+	}{
+		{
+			quantile: "1.0001",
+			value:    math.Inf(1),
+		},
+		{
+			quantile: "1",
+			value:    16,
+		},
+		{
+			quantile: "0.99",
+			value:    15.919999999999998,
+		},
+		{
+			quantile: "0.9",
+			value:    15.2,
+		},
+		{
+			quantile: "0.6",
+			value:    7.6,
+		},
+		{
+			quantile: "0.5",
+			value:    1.8571428571428572,
+		},
+		{ // Zero bucket.
+			quantile: "0.1",
+			value:    0.0006000000000000001,
+		},
+		{
+			quantile: "0",
+			value:    0,
+		},
+		{
+			quantile: "-1",
+			value:    math.Inf(-1),
+		},
+	}
+
+	for i, c := range cases {
+		t.Run(fmt.Sprintf("%d %s", i, c.quantile), func(t *testing.T) {
+			queryString := fmt.Sprintf("histogram_quantile(%s, %s)", c.quantile, seriesName)
+			qry, err := engine.NewInstantQuery(test.Queryable(), queryString, timestamp.Time(ts))
+			require.NoError(t, err)
+
+			res := qry.Exec(test.Context())
+			require.NoError(t, res.Err)
+
+			vector, err := res.Vector()
+			require.NoError(t, err)
+
+			require.Len(t, vector, 1)
+			require.Nil(t, vector[0].H)
+			require.Equal(t, c.value, vector[0].V)
+		})
+	}
 }
