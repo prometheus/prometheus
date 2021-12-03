@@ -792,6 +792,7 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 	q := vals[0].(Vector)[0].V
 	inVec := vals[1].(Vector)
 	sigf := signatureFunc(false, enh.lblBuf, excludedLabels...)
+	ignoreSignature := make(map[string]bool) // For signatures having both new and old histograms.
 
 	if enh.signatureToMetricWithBuckets == nil {
 		enh.signatureToMetricWithBuckets = map[string]*metricWithBuckets{}
@@ -804,33 +805,37 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 		enh.signatureToMetricWithHistograms = map[string]*metricWithHistograms{}
 	} else {
 		for _, v := range enh.signatureToMetricWithHistograms {
-			v.histograms = v.histograms[:0]
+			v.histogram = nil
 		}
 	}
 	for _, el := range inVec {
-		if el.H != nil {
-			// It's a histogram type.
-			l := sigf(el.Metric)
-
-			_, ok := enh.signatureToMetricWithBuckets[l]
-			if ok {
-				// This signature exists for both conventional and new histograms which
-				// is not supported.
-				panic("histogram_quantile got both conventional and new histograms for same signature") // TODO(codesome): can we not panic and do better?
-			}
-
-			mh, ok := enh.signatureToMetricWithHistograms[l]
-			if !ok {
-				el.Metric = labels.NewBuilder(el.Metric).
-					Del(labels.BucketLabel, labels.MetricName).
-					Labels()
-
-				mh = &metricWithHistograms{el.Metric, nil}
-				enh.signatureToMetricWithHistograms[l] = mh
-			}
-			mh.histograms = append(mh.histograms, el.H)
+		l := sigf(el.Metric)
+		if ignoreSignature[l] {
 			continue
 		}
+
+		if el.H != nil { // It's a histogram type.
+			_, ok := enh.signatureToMetricWithBuckets[l]
+			if ok {
+				// This signature exists for both conventional and new histograms which is not supported.
+				delete(enh.signatureToMetricWithBuckets, l)
+				delete(enh.signatureToMetricWithHistograms, l)
+				ignoreSignature[l] = true
+				continue
+			}
+
+			_, ok = enh.signatureToMetricWithHistograms[l]
+			if ok {
+				panic(errors.New("histogram_quantile: vector cannot contain metrics with the same labelset"))
+			}
+			el.Metric = labels.NewBuilder(el.Metric).
+				Del(labels.BucketLabel, labels.MetricName).
+				Labels()
+
+			enh.signatureToMetricWithHistograms[l] = &metricWithHistograms{el.Metric, el.H}
+			continue
+		}
+
 		upperBound, err := strconv.ParseFloat(
 			el.Metric.Get(model.BucketLabel), 64,
 		)
@@ -839,13 +844,14 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 			// TODO(beorn7): Issue a warning somehow.
 			continue
 		}
-		l := sigf(el.Metric)
 
 		_, ok := enh.signatureToMetricWithHistograms[l]
 		if ok {
-			// This signature exists for both conventional and new histograms which
-			// is not supported.
-			panic("histogram_quantile got both conventional and new histograms for same signature") // TODO(codesome): can we not panic and do better?
+			// This signature exists for both conventional and new histograms which is not supported.
+			delete(enh.signatureToMetricWithBuckets, l)
+			delete(enh.signatureToMetricWithHistograms, l)
+			ignoreSignature[l] = true
+			continue
 		}
 
 		mb, ok := enh.signatureToMetricWithBuckets[l]
@@ -870,10 +876,10 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 	}
 
 	for _, mh := range enh.signatureToMetricWithHistograms {
-		if len(mh.histograms) > 0 {
+		if mh.histogram != nil {
 			enh.Out = append(enh.Out, Sample{
 				Metric: mh.metric,
-				Point:  Point{V: histogramQuantile(q, mh.histograms)},
+				Point:  Point{V: histogramQuantile(q, mh.histogram)},
 			})
 		}
 	}

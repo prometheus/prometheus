@@ -48,8 +48,8 @@ type metricWithBuckets struct {
 }
 
 type metricWithHistograms struct {
-	metric     labels.Labels
-	histograms []*histogram.FloatHistogram
+	metric    labels.Labels
+	histogram *histogram.FloatHistogram
 }
 
 // bucketQuantile calculates the quantile 'q' based on the given buckets. The
@@ -120,7 +120,7 @@ func bucketQuantile(q float64, buckets buckets) float64 {
 	return bucketStart + (bucketEnd-bucketStart)*(rank/count)
 }
 
-// histogramQuantile calculates the quantile 'q' based on the given histograms
+// histogramQuantile calculates the quantile 'q' based on the given histogram.
 // The quantile value is interpolated assuming a linear distribution within a bucket.
 // A natural lower bound of 0 is assumed if the upper bound of the
 // lowest bucket is greater 0. In that case, interpolation in the lowest bucket
@@ -143,10 +143,8 @@ func bucketQuantile(q float64, buckets buckets) float64 {
 //  If the highest bucket is not +Inf, NaN is returned.
 //  If 'buckets' has fewer than 2 elements, NaN is returned.
 //
-// TODO(codesome): Support different ZeroThreshold.
-// TODO(codesome): Support mixed schemas.
 // TODO(codesome): Support negative buckets.
-func histogramQuantile(q float64, histograms []*histogram.FloatHistogram) float64 {
+func histogramQuantile(q float64, h *histogram.FloatHistogram) float64 {
 	if q < 0 {
 		return math.Inf(-1)
 	}
@@ -154,16 +152,10 @@ func histogramQuantile(q float64, histograms []*histogram.FloatHistogram) float6
 		return math.Inf(+1)
 	}
 
-	observations := float64(0)
-	zeroObservations := float64(0)
-	zeroThreshold := float64(0)
-	its := make([]histogram.FloatBucketIterator, 0, len(histograms))
-	for _, h := range histograms {
-		observations += h.ZeroCount + h.Count
-		zeroObservations += h.ZeroCount
-		zeroThreshold = h.ZeroThreshold
-		its = append(its, h.PositiveBucketIterator())
-	}
+	observations := h.Count
+	zeroObservations := h.ZeroCount
+	zeroThreshold := h.ZeroThreshold
+
 	if observations == 0 {
 		return math.NaN()
 	}
@@ -177,9 +169,9 @@ func histogramQuantile(q float64, histograms []*histogram.FloatHistogram) float6
 		return zeroThreshold * rank / zeroObservations
 	}
 
-	var count float64
+	count := zeroObservations
 	var bucket *histogram.FloatBucket
-	it := histogram.NewMergeFloatBucketIterator(its...)
+	it := h.PositiveBucketIterator()
 	for it.Next() {
 		b := it.At()
 		count += b.Count
