@@ -29,7 +29,7 @@
   "bugs": {
     "url": "https://github.com/prometheus/codemirror-promql/issues"
   },
-  "homepage": "https://github.com/prometheus/codemirror-promql/blob/master/README.md",
+  "homepage": "https://github.com/prometheus/codemirror-promql/blob/main/README.md",
   "dependencies": {
     "lru-cache": "^6.0.0"
   },
