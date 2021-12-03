@@ -18,6 +18,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -194,9 +196,96 @@ func TestCheckTargetConfig(t *testing.T) {
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
-			_, err := checkConfig(false, "testdata/"+test.file)
+			_, err := checkConfig(false, "testdata/"+test.file, false)
 			if test.err != "" {
 				require.Equalf(t, test.err, err.Error(), "Expected error %q, got %q", test.err, err.Error())
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+}
+
+func TestCheckConfigSyntax(t *testing.T) {
+	cases := []struct {
+		name       string
+		file       string
+		syntaxOnly bool
+		err        string
+		errWindows string
+	}{
+		{
+			name:       "check with syntax only succeeds with nonexistent rule files",
+			file:       "config_with_rule_files.yml",
+			syntaxOnly: true,
+			err:        "",
+			errWindows: "",
+		},
+		{
+			name:       "check without syntax only fails with nonexistent rule files",
+			file:       "config_with_rule_files.yml",
+			syntaxOnly: false,
+			err:        "\"testdata/non-existent-file.yml\" does not point to an existing file",
+			errWindows: "\"testdata\\\\non-existent-file.yml\" does not point to an existing file",
+		},
+		{
+			name:       "check with syntax only succeeds with nonexistent service discovery files",
+			file:       "config_with_service_discovery_files.yml",
+			syntaxOnly: true,
+			err:        "",
+			errWindows: "",
+		},
+		// The test below doesn't fail because the file verification for ServiceDiscoveryConfigs doesn't fail the check if
+		// file isn't found; it only outputs a warning message.
+		{
+			name:       "check without syntax only succeeds with nonexistent service discovery files",
+			file:       "config_with_service_discovery_files.yml",
+			syntaxOnly: false,
+			err:        "",
+			errWindows: "",
+		},
+		{
+			name:       "check with syntax only succeeds with nonexistent TLS files",
+			file:       "config_with_tls_files.yml",
+			syntaxOnly: true,
+			err:        "",
+			errWindows: "",
+		},
+		{
+			name:       "check without syntax only fails with nonexistent TLS files",
+			file:       "config_with_tls_files.yml",
+			syntaxOnly: false,
+			err: "error checking client cert file \"testdata/nonexistent_cert_file.yml\": " +
+				"stat testdata/nonexistent_cert_file.yml: no such file or directory",
+			errWindows: "error checking client cert file \"testdata\\\\nonexistent_cert_file.yml\": " +
+				"CreateFile testdata\\nonexistent_cert_file.yml: The system cannot find the file specified.",
+		},
+		{
+			name:       "check with syntax only succeeds with nonexistent credentials file",
+			file:       "authorization_credentials_file.bad.yml",
+			syntaxOnly: true,
+			err:        "",
+			errWindows: "",
+		},
+		{
+			name:       "check without syntax only fails with nonexistent credentials file",
+			file:       "authorization_credentials_file.bad.yml",
+			syntaxOnly: false,
+			err: "error checking authorization credentials or bearer token file \"/random/file/which/does/not/exist.yml\": " +
+				"stat /random/file/which/does/not/exist.yml: no such file or directory",
+			errWindows: "error checking authorization credentials or bearer token file \"testdata\\\\random\\\\file\\\\which\\\\does\\\\not\\\\exist.yml\": " +
+				"CreateFile testdata\\random\\file\\which\\does\\not\\exist.yml: The system cannot find the path specified.",
+		},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := checkConfig(false, "testdata/"+test.file, test.syntaxOnly)
+			expectedErrMsg := test.err
+			if strings.Contains(runtime.GOOS, "windows") {
+				expectedErrMsg = test.errWindows
+			}
+			if expectedErrMsg != "" {
+				require.Equalf(t, expectedErrMsg, err.Error(), "Expected error %q, got %q", test.err, err.Error())
 				return
 			}
 			require.NoError(t, err)
@@ -224,7 +313,7 @@ func TestAuthorizationConfig(t *testing.T) {
 
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
-			_, err := checkConfig(false, "testdata/"+test.file)
+			_, err := checkConfig(false, "testdata/"+test.file, false)
 			if test.err != "" {
 				require.Contains(t, err.Error(), test.err, "Expected error to contain %q, got %q", test.err, err.Error())
 				return
