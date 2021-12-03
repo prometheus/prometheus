@@ -29,6 +29,8 @@ func (e Encoding) String() string {
 		return "none"
 	case EncXOR:
 		return "XOR"
+	case EncDoubleDelta:
+		return "DoubleDelta"
 	}
 	return "<unknown>"
 }
@@ -37,6 +39,7 @@ func (e Encoding) String() string {
 const (
 	EncNone Encoding = iota
 	EncXOR
+	EncDoubleDelta
 )
 
 // Chunk holds a sequence of sample pairs that can be iterated over and appended to.
