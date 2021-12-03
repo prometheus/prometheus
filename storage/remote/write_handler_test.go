@@ -32,7 +32,7 @@ import (
 )
 
 func TestRemoteWriteHandler(t *testing.T) {
-	buf, _, err := buildWriteRequest(writeRequestFixture.Timeseries, nil, nil, nil)
+	buf, err := buildWriteRequest(writeRequestFixture.Timeseries, nil, nil, nil)
 	require.NoError(t, err)
 
 	req, err := http.NewRequest("", "", bytes.NewReader(buf))
@@ -65,7 +65,7 @@ func TestRemoteWriteHandler(t *testing.T) {
 }
 
 func TestOutOfOrderSample(t *testing.T) {
-	buf, _, err := buildWriteRequest([]prompb.TimeSeries{{
+	buf, err := buildWriteRequest([]prompb.TimeSeries{{
 		Labels:  []prompb.Label{{Name: "__name__", Value: "test_metric"}},
 		Samples: []prompb.Sample{{Value: 1, Timestamp: 0}},
 	}}, nil, nil, nil)
@@ -90,7 +90,7 @@ func TestOutOfOrderSample(t *testing.T) {
 // don't fail on ingestion errors since the exemplar storage is
 // still experimental.
 func TestOutOfOrderExemplar(t *testing.T) {
-	buf, _, err := buildWriteRequest([]prompb.TimeSeries{{
+	buf, err := buildWriteRequest([]prompb.TimeSeries{{
 		Labels:    []prompb.Label{{Name: "__name__", Value: "test_metric"}},
 		Exemplars: []prompb.Exemplar{{Labels: []prompb.Label{{Name: "foo", Value: "bar"}}, Value: 1, Timestamp: 0}},
 	}}, nil, nil, nil)
@@ -113,7 +113,7 @@ func TestOutOfOrderExemplar(t *testing.T) {
 }
 
 func TestCommitErr(t *testing.T) {
-	buf, _, err := buildWriteRequest(writeRequestFixture.Timeseries, nil, nil, nil)
+	buf, err := buildWriteRequest(writeRequestFixture.Timeseries, nil, nil, nil)
 	require.NoError(t, err)
 
 	req, err := http.NewRequest("", "", bytes.NewReader(buf))

@@ -463,7 +463,7 @@ func (t *QueueManager) AppendMetadata(ctx context.Context, metadata []scrape.Met
 
 func (t *QueueManager) sendMetadataWithBackoff(ctx context.Context, metadata []prompb.MetricMetadata, pBuf *proto.Buffer) error {
 	// Build the WriteRequest with no samples.
-	req, _, err := buildWriteRequest(nil, metadata, pBuf, nil)
+	req, err := buildWriteRequest(nil, metadata, pBuf, nil)
 	if err != nil {
 		return err
 	}
@@ -1264,7 +1264,7 @@ func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, s
 // sendSamples to the remote storage with backoff for recoverable errors.
 func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.TimeSeries, sampleCount, exemplarCount int, pBuf *proto.Buffer, buf *[]byte) error {
 	// Build the WriteRequest with no metadata.
-	req, highest, err := buildWriteRequest(samples, nil, pBuf, *buf)
+	req, err := buildWriteRequest(samples, nil, pBuf, *buf)
 	if err != nil {
 		// Failing to build the write request is non-recoverable, since it will
 		// only error if marshaling the proto to bytes fails.
@@ -1315,7 +1315,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 		return err
 	}
 	s.qm.metrics.sentBytesTotal.Add(float64(reqSize))
-	s.qm.metrics.highestSentTimestamp.Set(float64(highest / 1000))
+	s.qm.metrics.highestSentTimestamp.Set(float64(highestTimestamp(samples) / 1000))
 	return nil
 }
 
@@ -1370,7 +1370,7 @@ func sendWriteRequestWithBackoff(ctx context.Context, cfg config.QueueConfig, l 
 	}
 }
 
-func buildWriteRequest(samples []prompb.TimeSeries, metadata []prompb.MetricMetadata, pBuf *proto.Buffer, buf []byte) ([]byte, int64, error) {
+func highestTimestamp(samples []prompb.TimeSeries) int64 {
 	var highest int64
 	for _, ts := range samples {
 		// At the moment we only ever append a TimeSeries with a single sample or exemplar in it.
@@ -1381,7 +1381,10 @@ func buildWriteRequest(samples []prompb.TimeSeries, metadata []prompb.MetricMeta
 			highest = ts.Exemplars[0].Timestamp
 		}
 	}
+	return highest
+}
 
+func buildWriteRequest(samples []prompb.TimeSeries, metadata []prompb.MetricMetadata, pBuf *proto.Buffer, buf []byte) ([]byte, error) {
 	req := &prompb.WriteRequest{
 		Timeseries: samples,
 		Metadata:   metadata,
@@ -1394,7 +1397,7 @@ func buildWriteRequest(samples []prompb.TimeSeries, metadata []prompb.MetricMeta
 	}
 	err := pBuf.Marshal(req)
 	if err != nil {
-		return nil, highest, err
+		return nil, err
 	}
 
 	// snappy uses len() to see if it needs to allocate a new slice. Make the
@@ -1403,5 +1406,5 @@ func buildWriteRequest(samples []prompb.TimeSeries, metadata []prompb.MetricMeta
 		buf = buf[0:cap(buf)]
 	}
 	compressed := snappy.Encode(buf, pBuf.Bytes())
-	return compressed, highest, nil
+	return compressed, nil
 }
