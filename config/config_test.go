@@ -227,7 +227,6 @@ var expectedConf = &Config{
 			},
 		},
 		{
-
 			JobName: "service-x",
 
 			HonorTimestamps: true,
@@ -1433,6 +1432,10 @@ var expectedErrors = []struct {
 	{
 		filename: "empty_scrape_config_action.bad.yml",
 		errMsg:   "relabel action cannot be empty",
+	},
+	{
+		filename: "uyuni_no_server.bad.yml",
+		errMsg:   "Uyuni SD configuration requires server host",
 	},
 }
 
