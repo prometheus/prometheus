@@ -2844,7 +2844,7 @@ func TestSparseHistogram_HistogramQuantile(t *testing.T) {
 	}
 
 	for i, c := range cases {
-		t.Run(fmt.Sprintf("%s", c.text), func(t *testing.T) {
+		t.Run(c.text, func(t *testing.T) {
 			// TODO(codesome): Check if TSDB is handling these histograms properly.
 			// When testing, the 3rd case of both pos neg was getting no histograms in the query engine
 			// when the storage was shared even with good time gap between all histograms.
