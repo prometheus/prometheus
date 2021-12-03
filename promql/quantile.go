@@ -154,19 +154,16 @@ func histogramQuantile(q float64, h *histogram.FloatHistogram) float64 {
 		return math.NaN()
 	}
 
-	rank := q * h.Count
-
-	if h.ZeroCount >= rank {
-		if h.ZeroCount == 0 {
-			return 0
-		}
-		return h.ZeroThreshold * rank / h.ZeroCount
-	}
-
-	var bucket *histogram.FloatBucket
-	count := h.ZeroCount
-	it := h.PositiveBucketIterator()
+	var (
+		bucket *histogram.FloatBucket
+		count  float64
+		it     = h.AllFloatBucketIterator()
+		rank   = q * h.Count
+		idx    = -1
+	)
+	// TODO(codesome): Do we need any special handling for negative buckets?
 	for it.Next() {
+		idx++
 		b := it.At()
 		count += b.Count
 		if count >= rank {
@@ -178,8 +175,15 @@ func histogramQuantile(q float64, h *histogram.FloatHistogram) float64 {
 		panic("histogramQuantile: not possible")
 	}
 
+	if idx == 0 && bucket.Lower < 0 && bucket.Upper > 0 {
+		// Zero bucket has the result and it happens to be the first bucket of this histogram.
+		// So we consider 0 to be the lower bound.
+		bucket.Lower = 0
+	}
+
+	rank -= count - bucket.Count
 	// TODO(codesome): Use a better estimation than linear.
-	return bucket.Lower + (bucket.Upper-bucket.Lower)*(rank/count)
+	return bucket.Lower + (bucket.Upper-bucket.Lower)*(rank/bucket.Count)
 }
 
 // coalesceBuckets merges buckets with the same upper bound.
