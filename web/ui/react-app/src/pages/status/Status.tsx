@@ -83,7 +83,7 @@ const StatusWithStatusIndicator = withStatusIndicator(StatusContent);
 
 StatusContent.displayName = 'Status';
 
-const StatusResult: FC<{ fetchPath: string; title: string; agentMode: boolean }> = ({ fetchPath, title, agentMode }) => {
+const StatusResult: FC<{ fetchPath: string; title: string }> = ({ fetchPath, title }) => {
   const { response, isLoading, error } = useFetch(fetchPath);
   return (
     <StatusWithStatusIndicator
@@ -111,7 +111,7 @@ const Status: FC<{ agentMode: boolean }> = ({ agentMode }) => {
         if (agentMode && title === 'Alertmanagers') {
           return null;
         }
-        return <StatusResult fetchPath={fetchPath} title={title} agentMode={agentMode} />;
+        return <StatusResult fetchPath={fetchPath} title={title} />;
       })}
     </>
   );
