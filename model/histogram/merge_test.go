@@ -2,6 +2,7 @@ package histogram
 
 import (
 	"fmt"
+	"math/rand"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -131,4 +132,54 @@ func TestMergeHistograms(t *testing.T) {
 			require.Equal(t, c.expected, res)
 		})
 	}
+}
+
+func BenchmarkHistogramAdd(b *testing.B) {
+	for _, numHists := range []int{10, 100, 1000, 10000} {
+		for _, maxBuckets := range []int{10, 30, 50, 100, 150} {
+			b.Run(fmt.Sprintf("numHists=%d,maxBuckets=%d", numHists, maxBuckets), func(b *testing.B) {
+				hists := make([]FloatHistogram, 0, numHists)
+				for x := 0; x < numHists; x++ {
+					h := FloatHistogram{
+						Schema:        0,
+						Count:         4,
+						Sum:           1234.5,
+						ZeroThreshold: 0.001,
+						ZeroCount:     4,
+					}
+
+					currBuckets := 0
+					for currBuckets < maxBuckets {
+						moreBuckets := rand.Intn(maxBuckets/3) + 1
+						offset := rand.Intn(15) + 1
+						h.PositiveSpans = append(h.PositiveSpans, Span{
+							Offset: int32(offset),
+							Length: uint32(moreBuckets),
+						})
+						for i := 0; i < moreBuckets; i++ {
+							b := float64(rand.Intn(50))
+							h.PositiveBuckets = append(h.PositiveBuckets, b)
+							h.Count += b
+						}
+						currBuckets += moreBuckets
+					}
+					hists = append(hists, h)
+				}
+
+				b.ResetTimer()
+				b.ReportAllocs()
+
+				// Uncomment this for old way.
+				//res := &hists[0]
+				//for _, h := range hists[1:] {
+				//	res = res.Add(&h)
+				//}
+				//_ = res
+
+				// Uncomment this for new way.
+				//_ = MergeHistograms(hists...)
+			})
+		}
+	}
+
 }
