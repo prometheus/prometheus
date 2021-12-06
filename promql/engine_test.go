@@ -2899,3 +2899,125 @@ func TestSparseHistogram_HistogramQuantile(t *testing.T) {
 		})
 	}
 }
+
+func TestSparseHistogram_Sum(t *testing.T) {
+	// TODO(codesome): Integrate histograms into the PromQL testing framework
+	// and write more tests there.
+	cases := []struct {
+		histograms []histogram.Histogram
+		expected   histogram.FloatHistogram
+	}{
+		{
+			histograms: []histogram.Histogram{
+				{
+					Schema:        0,
+					Count:         9,
+					Sum:           1234.5,
+					ZeroThreshold: 0.001,
+					ZeroCount:     4,
+					PositiveSpans: []histogram.Span{
+						{Offset: 0, Length: 2},
+						{Offset: 1, Length: 2},
+					},
+					PositiveBuckets: []int64{1, 1, -1, 0},
+					NegativeSpans: []histogram.Span{
+						{Offset: 0, Length: 2},
+						{Offset: 2, Length: 2},
+					},
+					NegativeBuckets: []int64{2, 2, -3, 8},
+				},
+				{
+					Schema:        0,
+					Count:         15,
+					Sum:           2345.6,
+					ZeroThreshold: 0.001,
+					ZeroCount:     5,
+					PositiveSpans: []histogram.Span{
+						{Offset: 0, Length: 4},
+						{Offset: 0, Length: 0},
+						{Offset: 0, Length: 3},
+					},
+					PositiveBuckets: []int64{1, 2, -2, 1, -1, 0, 0},
+					NegativeSpans: []histogram.Span{
+						{Offset: 1, Length: 4},
+						{Offset: 2, Length: 0},
+						{Offset: 2, Length: 3},
+					},
+					NegativeBuckets: []int64{1, 3, -2, 5, -2, 0, -3},
+				},
+				{
+					Schema:        0,
+					Count:         15,
+					Sum:           1111.1,
+					ZeroThreshold: 0.001,
+					ZeroCount:     5,
+					PositiveSpans: []histogram.Span{
+						{Offset: 0, Length: 4},
+						{Offset: 0, Length: 0},
+						{Offset: 0, Length: 3},
+					},
+					PositiveBuckets: []int64{1, 2, -2, 1, -1, 0, 0},
+					NegativeSpans: []histogram.Span{
+						{Offset: 1, Length: 4},
+						{Offset: 2, Length: 0},
+						{Offset: 2, Length: 3},
+					},
+					NegativeBuckets: []int64{1, 3, -2, 5, -2, 0, -3},
+				},
+			},
+			expected: histogram.FloatHistogram{
+				Schema:        0,
+				ZeroThreshold: 0.001,
+				ZeroCount:     14,
+				Count:         39,
+				Sum:           4691.2,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 3},
+					{Offset: 0, Length: 4},
+				},
+				PositiveBuckets: []float64{3, 8, 2, 5, 3, 2, 2},
+				NegativeSpans: []histogram.Span{
+					{Offset: 0, Length: 4},
+					{Offset: 0, Length: 2},
+					{Offset: 3, Length: 3},
+				},
+				NegativeBuckets: []float64{2, 6, 8, 4, 15, 9, 10, 10, 4},
+			},
+		},
+	}
+
+	for i, c := range cases {
+		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+			test, err := NewTest(t, "")
+			require.NoError(t, err)
+			t.Cleanup(test.Close)
+
+			seriesName := "sparse_histogram_series"
+
+			engine := test.QueryEngine()
+
+			ts := int64(i+1) * int64(10*time.Minute/time.Millisecond)
+			app := test.Storage().Appender(context.TODO())
+			for idx, h := range c.histograms {
+				// TODO(codesome): Without h.Copy(), it was working weird. TSDB is keeping reference of last histogram. AppendHistogram should not take pointers!
+				lbls := labels.FromStrings("__name__", seriesName, "idx", fmt.Sprintf("%d", idx))
+				_, err = app.AppendHistogram(0, lbls, ts, h.Copy())
+			}
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+
+			queryString := fmt.Sprintf("sum(%s)", seriesName)
+			qry, err := engine.NewInstantQuery(test.Queryable(), queryString, timestamp.Time(ts))
+			require.NoError(t, err)
+
+			res := qry.Exec(test.Context())
+			require.NoError(t, res.Err)
+
+			vector, err := res.Vector()
+			require.NoError(t, err)
+
+			require.Len(t, vector, 1)
+			require.Equal(t, &c.expected, vector[0].H)
+		})
+	}
+}
