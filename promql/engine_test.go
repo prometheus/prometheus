@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"math"
 	"os"
 	"sort"
 	"testing"
@@ -2661,4 +2662,240 @@ func TestSparseHistogramRate(t *testing.T) {
 		PositiveBuckets: []float64{1. / 15., 1. / 15., 1. / 15., 1. / 15.},
 	}
 	require.Equal(t, expectedHistogram, actualHistogram)
+}
+
+func TestSparseHistogram_HistogramQuantile(t *testing.T) {
+	// TODO(codesome): Integrate histograms into the PromQL testing framework
+	// and write more tests there.
+	type subCase struct {
+		quantile string
+		value    float64
+	}
+
+	cases := []struct {
+		text string
+		// Histogram to test.
+		h *histogram.Histogram
+		// Different quantiles to test for this histogram.
+		subCases []subCase
+	}{
+		{
+			text: "all positive buckets with zero bucket",
+			h: &histogram.Histogram{
+				Count:         12,
+				ZeroCount:     2,
+				ZeroThreshold: 0.001,
+				Sum:           100, // Does not matter.
+				Schema:        0,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				PositiveBuckets: []int64{2, 1, -2, 3},
+			},
+			subCases: []subCase{
+				{
+					quantile: "1.0001",
+					value:    math.Inf(1),
+				},
+				{
+					quantile: "1",
+					value:    16,
+				},
+				{
+					quantile: "0.99",
+					value:    15.759999999999998,
+				},
+				{
+					quantile: "0.9",
+					value:    13.600000000000001,
+				},
+				{
+					quantile: "0.6",
+					value:    4.799999999999997,
+				},
+				{
+					quantile: "0.5",
+					value:    1.6666666666666665,
+				},
+				{ // Zero bucket.
+					quantile: "0.1",
+					value:    0.0006000000000000001,
+				},
+				{
+					quantile: "0",
+					value:    0,
+				},
+				{
+					quantile: "-1",
+					value:    math.Inf(-1),
+				},
+			},
+		},
+		{
+			text: "all negative buckets with zero bucket",
+			h: &histogram.Histogram{
+				Count:         12,
+				ZeroCount:     2,
+				ZeroThreshold: 0.001,
+				Sum:           100, // Does not matter.
+				Schema:        0,
+				NegativeSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				NegativeBuckets: []int64{2, 1, -2, 3},
+			},
+			subCases: []subCase{
+				{
+					quantile: "1.0001",
+					value:    math.Inf(1),
+				},
+				{ // Zero bucket.
+					quantile: "1",
+					value:    0.001,
+				},
+				{ // Zero bucket.
+					quantile: "0.99",
+					value:    0.0008799999999999991,
+				},
+				{ // Zero bucket.
+					quantile: "0.9",
+					value:    -0.00019999999999999933,
+				},
+				{
+					quantile: "0.5",
+					value:    -1.6666666666666667,
+				},
+				{
+					quantile: "0.1",
+					value:    -13.6,
+				},
+				{
+					quantile: "0",
+					value:    -16,
+				},
+				{
+					quantile: "-1",
+					value:    math.Inf(-1),
+				},
+			},
+		},
+		{
+			text: "both positive and negative buckets with zero bucket",
+			h: &histogram.Histogram{
+				Count:         24,
+				ZeroCount:     4,
+				ZeroThreshold: 0.001,
+				Sum:           100, // Does not matter.
+				Schema:        0,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				PositiveBuckets: []int64{2, 1, -2, 3},
+				NegativeSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				NegativeBuckets: []int64{2, 1, -2, 3},
+			},
+			subCases: []subCase{
+				{
+					quantile: "1.0001",
+					value:    math.Inf(1),
+				},
+				{
+					quantile: "1",
+					value:    16,
+				},
+				{
+					quantile: "0.99",
+					value:    15.519999999999996,
+				},
+				{
+					quantile: "0.9",
+					value:    11.200000000000003,
+				},
+				{
+					quantile: "0.7",
+					value:    1.2666666666666657,
+				},
+				{ // Zero bucket.
+					quantile: "0.55",
+					value:    0.0006000000000000005,
+				},
+				{ // Zero bucket.
+					quantile: "0.5",
+					value:    0,
+				},
+				{ // Zero bucket.
+					quantile: "0.45",
+					value:    -0.0005999999999999996,
+				},
+				{
+					quantile: "0.3",
+					value:    -1.266666666666667,
+				},
+				{
+					quantile: "0.1",
+					value:    -11.2,
+				},
+				{
+					quantile: "0.01",
+					value:    -15.52,
+				},
+				{
+					quantile: "0",
+					value:    -16,
+				},
+				{
+					quantile: "-1",
+					value:    math.Inf(-1),
+				},
+			},
+		},
+	}
+
+	for i, c := range cases {
+		t.Run(c.text, func(t *testing.T) {
+			// TODO(codesome): Check if TSDB is handling these histograms properly.
+			// When testing, the 3rd case of both pos neg was getting no histograms in the query engine
+			// when the storage was shared even with good time gap between all histograms.
+			// It is possible that the recode is failing. It was fine between first 2 cases where there is
+			// a change of bucket layout.
+
+			test, err := NewTest(t, "")
+			require.NoError(t, err)
+			t.Cleanup(test.Close)
+
+			seriesName := "sparse_histogram_series"
+			lbls := labels.FromStrings("__name__", seriesName)
+			engine := test.QueryEngine()
+
+			ts := int64(i+1) * int64(10*time.Minute/time.Millisecond)
+			app := test.Storage().Appender(context.TODO())
+			_, err = app.AppendHistogram(0, lbls, ts, c.h)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+
+			for j, sc := range c.subCases {
+				t.Run(fmt.Sprintf("%d %s", j, sc.quantile), func(t *testing.T) {
+					queryString := fmt.Sprintf("histogram_quantile(%s, %s)", sc.quantile, seriesName)
+					qry, err := engine.NewInstantQuery(test.Queryable(), queryString, timestamp.Time(ts))
+					require.NoError(t, err)
+
+					res := qry.Exec(test.Context())
+					require.NoError(t, res.Err)
+
+					vector, err := res.Vector()
+					require.NoError(t, err)
+
+					require.Len(t, vector, 1)
+					require.Nil(t, vector[0].H)
+					require.Equal(t, sc.value, vector[0].V)
+				})
+			}
+		})
+	}
 }
