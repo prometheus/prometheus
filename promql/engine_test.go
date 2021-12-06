@@ -2900,7 +2900,7 @@ func TestSparseHistogram_HistogramQuantile(t *testing.T) {
 	}
 }
 
-func TestSparseHistogram_Sum(t *testing.T) {
+func TestSparseHistogram_Sum_AddOperator(t *testing.T) {
 	// TODO(codesome): Integrate histograms into the PromQL testing framework
 	// and write more tests there.
 	cases := []struct {
@@ -3006,18 +3006,30 @@ func TestSparseHistogram_Sum(t *testing.T) {
 			require.NoError(t, err)
 			require.NoError(t, app.Commit())
 
+			queryAndCheck := func(queryString string) {
+				qry, err := engine.NewInstantQuery(test.Queryable(), queryString, timestamp.Time(ts))
+				require.NoError(t, err)
+
+				res := qry.Exec(test.Context())
+				require.NoError(t, res.Err)
+
+				vector, err := res.Vector()
+				require.NoError(t, err)
+
+				require.Len(t, vector, 1)
+				require.Equal(t, &c.expected, vector[0].H)
+			}
+
+			// sum().
 			queryString := fmt.Sprintf("sum(%s)", seriesName)
-			qry, err := engine.NewInstantQuery(test.Queryable(), queryString, timestamp.Time(ts))
-			require.NoError(t, err)
+			queryAndCheck(queryString)
 
-			res := qry.Exec(test.Context())
-			require.NoError(t, res.Err)
-
-			vector, err := res.Vector()
-			require.NoError(t, err)
-
-			require.Len(t, vector, 1)
-			require.Equal(t, &c.expected, vector[0].H)
+			// + operator.
+			queryString = fmt.Sprintf(`%s{idx="0"}`, seriesName)
+			for idx := 1; idx < len(c.histograms); idx++ {
+				queryString += fmt.Sprintf(` + ignoring(idx) %s{idx="%d"}`, seriesName, idx)
+			}
+			queryAndCheck(queryString)
 		})
 	}
 }
