@@ -533,7 +533,7 @@ func (t *Test) exec(tc testCommand) error {
 		}
 		queries = append([]atModifierTestCase{{expr: cmd.expr, evalTime: cmd.start}}, queries...)
 		for _, iq := range queries {
-			q, err := t.QueryEngine().NewInstantQuery(t.storage, iq.expr, iq.evalTime)
+			q, err := t.QueryEngine().NewInstantQuery(t.storage, iq.expr, iq.evalTime, 0)
 			if err != nil {
 				return err
 			}

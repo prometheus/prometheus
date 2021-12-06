@@ -225,14 +225,14 @@ func TestQueryError(t *testing.T) {
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
 
-	vectorQuery, err := engine.NewInstantQuery(queryable, "foo", time.Unix(1, 0))
+	vectorQuery, err := engine.NewInstantQuery(queryable, "foo", time.Unix(1, 0), 0)
 	require.NoError(t, err)
 
 	res := vectorQuery.Exec(ctx)
 	require.Error(t, res.Err, "expected error on failed select but got none")
 	require.True(t, errors.Is(res.Err, errStorage), "expected error doesn't match")
 
-	matrixQuery, err := engine.NewInstantQuery(queryable, "foo[1m]", time.Unix(1, 0))
+	matrixQuery, err := engine.NewInstantQuery(queryable, "foo[1m]", time.Unix(1, 0), 0)
 	require.NoError(t, err)
 
 	res = matrixQuery.Exec(ctx)
@@ -559,7 +559,7 @@ func TestSelectHintsSetCorrectly(t *testing.T) {
 				err   error
 			)
 			if tc.end == 0 {
-				query, err = engine.NewInstantQuery(hintsRecorder, tc.query, timestamp.Time(tc.start))
+				query, err = engine.NewInstantQuery(hintsRecorder, tc.query, timestamp.Time(tc.start), 0)
 			} else {
 				query, err = engine.NewRangeQuery(hintsRecorder, tc.query, timestamp.Time(tc.start), timestamp.Time(tc.end), time.Second)
 			}
@@ -719,7 +719,7 @@ load 10s
 		var err error
 		var qry Query
 		if c.Interval == 0 {
-			qry, err = test.QueryEngine().NewInstantQuery(test.Queryable(), c.Query, c.Start)
+			qry, err = test.QueryEngine().NewInstantQuery(test.Queryable(), c.Query, c.Start, 0)
 		} else {
 			qry, err = test.QueryEngine().NewRangeQuery(test.Queryable(), c.Query, c.Start, c.End, c.Interval)
 		}
@@ -892,7 +892,7 @@ load 10s
 				var err error
 				var qry Query
 				if c.Interval == 0 {
-					qry, err = engine.NewInstantQuery(test.Queryable(), c.Query, c.Start)
+					qry, err = engine.NewInstantQuery(test.Queryable(), c.Query, c.Start, 0)
 				} else {
 					qry, err = engine.NewRangeQuery(test.Queryable(), c.Query, c.Start, c.End, c.Interval)
 				}
@@ -1128,7 +1128,7 @@ load 1ms
 			var err error
 			var qry Query
 			if c.end == 0 {
-				qry, err = test.QueryEngine().NewInstantQuery(test.Queryable(), c.query, start)
+				qry, err = test.QueryEngine().NewInstantQuery(test.Queryable(), c.query, start, 0)
 			} else {
 				qry, err = test.QueryEngine().NewRangeQuery(test.Queryable(), c.query, start, end, interval)
 			}
@@ -1451,7 +1451,7 @@ func TestSubquerySelector(t *testing.T) {
 			engine := test.QueryEngine()
 			for _, c := range tst.cases {
 				t.Run(c.Query, func(t *testing.T) {
-					qry, err := engine.NewInstantQuery(test.Queryable(), c.Query, c.Start)
+					qry, err := engine.NewInstantQuery(test.Queryable(), c.Query, c.Start, 0)
 					require.NoError(t, err)
 
 					res := qry.Exec(test.Context())
@@ -2458,7 +2458,7 @@ func TestEngineOptsValidation(t *testing.T) {
 
 	for _, c := range cases {
 		eng := NewEngine(c.opts)
-		_, err1 := eng.NewInstantQuery(nil, c.query, time.Unix(10, 0))
+		_, err1 := eng.NewInstantQuery(nil, c.query, time.Unix(10, 0), 0)
 		_, err2 := eng.NewRangeQuery(nil, c.query, time.Unix(0, 0), time.Unix(10, 0), time.Second)
 		if c.fail {
 			require.Equal(t, c.expError, err1)
@@ -2612,6 +2612,89 @@ func TestRangeQuery(t *testing.T) {
 			res := qry.Exec(test.Context())
 			require.NoError(t, res.Err)
 			require.Equal(t, c.Result, res.Value)
+		})
+	}
+}
+
+func TestQueryLookbackDelta(t *testing.T) {
+	var (
+		load = `load 5m
+metric 0 1 2
+`
+		query           = "metric"
+		lastDatapointTs = time.Unix(600, 0)
+	)
+
+	cases := []struct {
+		name                          string
+		ts                            time.Time
+		engineLookback, queryLookback time.Duration
+		expectSamples                 bool
+	}{
+		{
+			name:          "default lookback delta",
+			ts:            lastDatapointTs.Add(defaultLookbackDelta),
+			expectSamples: true,
+		},
+		{
+			name:          "outside default lookback delta",
+			ts:            lastDatapointTs.Add(defaultLookbackDelta + time.Millisecond),
+			expectSamples: false,
+		},
+		{
+			name:           "custom engine lookback delta",
+			ts:             lastDatapointTs.Add(10 * time.Minute),
+			engineLookback: 10 * time.Minute,
+			expectSamples:  true,
+		},
+		{
+			name:           "outside custom engine lookback delta",
+			ts:             lastDatapointTs.Add(10*time.Minute + time.Millisecond),
+			engineLookback: 10 * time.Minute,
+			expectSamples:  false,
+		},
+		{
+			name:           "custom query lookback delta",
+			ts:             lastDatapointTs.Add(20 * time.Minute),
+			engineLookback: 10 * time.Minute,
+			queryLookback:  20 * time.Minute,
+			expectSamples:  true,
+		},
+		{
+			name:           "outside custom query lookback delta",
+			ts:             lastDatapointTs.Add(20*time.Minute + time.Millisecond),
+			engineLookback: 10 * time.Minute,
+			queryLookback:  20 * time.Minute,
+			expectSamples:  false,
+		},
+	}
+
+	for _, c := range cases {
+		c := c
+		t.Run(c.name, func(t *testing.T) {
+			test, err := NewTest(t, load)
+			require.NoError(t, err)
+			defer test.Close()
+
+			err = test.Run()
+			require.NoError(t, err)
+
+			eng := test.QueryEngine()
+			if c.engineLookback != 0 {
+				eng.lookbackDelta = c.engineLookback
+			}
+			qry, err := eng.NewInstantQuery(test.Queryable(), query, c.ts, c.queryLookback)
+			require.NoError(t, err)
+
+			res := qry.Exec(test.Context())
+			require.NoError(t, res.Err)
+			vec, ok := res.Value.(Vector)
+			require.True(t, ok)
+			if c.expectSamples {
+				require.NotEmpty(t, vec)
+			} else {
+				require.Empty(t, vec)
+			}
 		})
 	}
 }

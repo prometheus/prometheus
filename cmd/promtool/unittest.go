@@ -435,7 +435,7 @@ func (tg *testGroup) maxEvalTime() time.Duration {
 }
 
 func query(ctx context.Context, qs string, t time.Time, engine *promql.Engine, qu storage.Queryable) (promql.Vector, error) {
-	q, err := engine.NewInstantQuery(qu, qs, t)
+	q, err := engine.NewInstantQuery(qu, qs, t, 0)
 	if err != nil {
 		return nil, err
 	}

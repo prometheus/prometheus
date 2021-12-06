@@ -352,12 +352,12 @@ func (ng *Engine) SetQueryLogger(l QueryLogger) {
 }
 
 // NewInstantQuery returns an evaluation query for the given expression at the given time.
-func (ng *Engine) NewInstantQuery(q storage.Queryable, qs string, ts time.Time) (Query, error) {
+func (ng *Engine) NewInstantQuery(q storage.Queryable, qs string, ts time.Time, lookbackDelta time.Duration) (Query, error) {
 	expr, err := parser.ParseExpr(qs)
 	if err != nil {
 		return nil, err
 	}
-	qry, err := ng.newQuery(q, expr, ts, ts, 0)
+	qry, err := ng.newQuery(q, expr, ts, ts, 0, lookbackDelta)
 	if err != nil {
 		return nil, err
 	}
@@ -376,7 +376,7 @@ func (ng *Engine) NewRangeQuery(q storage.Queryable, qs string, start, end time.
 	if expr.Type() != parser.ValueTypeVector && expr.Type() != parser.ValueTypeScalar {
 		return nil, errors.Errorf("invalid expression type %q for range query, must be Scalar or instant Vector", parser.DocumentedType(expr.Type()))
 	}
-	qry, err := ng.newQuery(q, expr, start, end, interval)
+	qry, err := ng.newQuery(q, expr, start, end, interval, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -385,16 +385,21 @@ func (ng *Engine) NewRangeQuery(q storage.Queryable, qs string, start, end time.
 	return qry, nil
 }
 
-func (ng *Engine) newQuery(q storage.Queryable, expr parser.Expr, start, end time.Time, interval time.Duration) (*query, error) {
+func (ng *Engine) newQuery(q storage.Queryable, expr parser.Expr, start, end time.Time, interval, lookbackDelta time.Duration) (*query, error) {
 	if err := ng.validateOpts(expr); err != nil {
 		return nil, err
 	}
 
+	if lookbackDelta == 0 {
+		lookbackDelta = ng.lookbackDelta
+	}
+
 	es := &parser.EvalStmt{
-		Expr:     PreprocessExpr(expr, start, end),
-		Start:    start,
-		End:      end,
-		Interval: interval,
+		Expr:          PreprocessExpr(expr, start, end),
+		Start:         start,
+		End:           end,
+		Interval:      interval,
+		LookbackDelta: lookbackDelta,
 	}
 	qry := &query{
 		stmt:      es,
@@ -589,7 +594,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 			ctx:                      ctxInnerEval,
 			maxSamples:               ng.maxSamplesPerQuery,
 			logger:                   ng.logger,
-			lookbackDelta:            ng.lookbackDelta,
+			lookbackDelta:            s.LookbackDelta,
 			noStepSubqueryIntervalFn: ng.noStepSubqueryIntervalFn,
 		}
 
@@ -639,7 +644,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 		ctx:                      ctxInnerEval,
 		maxSamples:               ng.maxSamplesPerQuery,
 		logger:                   ng.logger,
-		lookbackDelta:            ng.lookbackDelta,
+		lookbackDelta:            s.LookbackDelta,
 		noStepSubqueryIntervalFn: ng.noStepSubqueryIntervalFn,
 	}
 	val, warnings, err := evaluator.Eval(s.Expr)
@@ -750,7 +755,7 @@ func (ng *Engine) getTimeRangesForSelector(s *parser.EvalStmt, n *parser.VectorS
 	}
 
 	if evalRange == 0 {
-		start = start - durationMilliseconds(ng.lookbackDelta)
+		start = start - durationMilliseconds(s.LookbackDelta)
 	} else {
 		// For all matrix queries we want to ensure that we have (end-start) + range selected
 		// this way we have `range` data before the start time
