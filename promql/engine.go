@@ -2181,12 +2181,15 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64) (float64, bool) {
 }
 
 type groupedAggregation struct {
-	labels      labels.Labels
-	value       float64
-	mean        float64
-	groupCount  int
-	heap        vectorByValueHeap
-	reverseHeap vectorByReverseValueHeap
+	hasFloat       bool // Has at least 1 float64 sample aggregated.
+	hasHistogram   bool // Has at least 1 histogram sample aggregated.
+	labels         labels.Labels
+	value          float64
+	histogramValue *histogram.FloatHistogram
+	mean           float64
+	groupCount     int
+	heap           vectorByValueHeap
+	reverseHeap    vectorByReverseValueHeap
 }
 
 // aggregation evaluates an aggregation operation on a Vector. The provided grouping labels
@@ -2268,6 +2271,12 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 				mean:       s.V,
 				groupCount: 1,
 			}
+			if s.H != nil {
+				newAgg.histogramValue = s.H.Copy()
+				newAgg.hasHistogram = true
+			} else {
+				newAgg.hasFloat = true
+			}
 
 			result[groupingKey] = newAgg
 			orderedResult = append(orderedResult, newAgg)
@@ -2302,7 +2311,13 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 
 		switch op {
 		case parser.SUM:
-			group.value += s.V
+			if s.H != nil {
+				group.hasHistogram = true
+				group.histogramValue.Add(s.H)
+			} else {
+				group.hasFloat = true
+				group.value += s.V
+			}
 
 		case parser.AVG:
 			group.groupCount++
@@ -2436,13 +2451,18 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 		case parser.QUANTILE:
 			aggr.value = quantile(q, aggr.heap)
 
+		case parser.SUM:
+			if aggr.hasFloat && aggr.hasHistogram {
+				// We cannot aggregate histogram sample with a float64 sample.
+				continue
+			}
 		default:
 			// For other aggregations, we already have the right value.
 		}
 
 		enh.Out = append(enh.Out, Sample{
 			Metric: aggr.labels,
-			Point:  Point{V: aggr.value},
+			Point:  Point{V: aggr.value, H: aggr.histogramValue},
 		})
 	}
 	return enh.Out
