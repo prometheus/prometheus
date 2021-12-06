@@ -24,6 +24,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 )
@@ -60,9 +61,11 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 	ms := args[0].(*parser.MatrixSelector)
 	vs := ms.VectorSelector.(*parser.VectorSelector)
 	var (
-		samples    = vals[0].(Matrix)[0]
-		rangeStart = enh.Ts - durationMilliseconds(ms.Range+vs.Offset)
-		rangeEnd   = enh.Ts - durationMilliseconds(vs.Offset)
+		samples         = vals[0].(Matrix)[0]
+		rangeStart      = enh.Ts - durationMilliseconds(ms.Range+vs.Offset)
+		rangeEnd        = enh.Ts - durationMilliseconds(vs.Offset)
+		resultValue     float64
+		resultHistogram *histogram.FloatHistogram
 	)
 
 	// No sense in trying to compute a rate without at least two points. Drop
@@ -71,14 +74,32 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 		return enh.Out
 	}
 
-	resultValue := samples.Points[len(samples.Points)-1].V - samples.Points[0].V
-	if isCounter {
-		var lastValue float64
-		for _, sample := range samples.Points {
-			if sample.V < lastValue {
-				resultValue += lastValue
+	if samples.Points[0].H != nil {
+		resultHistogram = histogramRate(samples.Points, isCounter)
+		if resultHistogram == nil {
+			// Points are a mix of floats and histograms, or the histograms
+			// are not compatible with each other.
+			// TODO(beorn7): find a way of communicating the exact reason
+			return enh.Out
+		}
+	} else {
+		resultValue = samples.Points[len(samples.Points)-1].V - samples.Points[0].V
+		prevValue := samples.Points[0].V
+		// We have to iterate through everything even in the non-counter
+		// case because we have to check that everything is a float.
+		// TODO(beorn7): Find a way to check that earlier, e.g. by
+		// handing in a []FloatPoint and a []HistogramPoint separately.
+		for _, currPoint := range samples.Points[1:] {
+			if currPoint.H != nil {
+				return nil // Range contains a mix of histograms and floats.
 			}
-			lastValue = sample.V
+			if !isCounter {
+				continue
+			}
+			if currPoint.V < prevValue {
+				resultValue += prevValue
+			}
+			prevValue = currPoint.V
 		}
 	}
 
@@ -89,6 +110,7 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 	sampledInterval := float64(samples.Points[len(samples.Points)-1].T-samples.Points[0].T) / 1000
 	averageDurationBetweenSamples := sampledInterval / float64(len(samples.Points)-1)
 
+	// TODO(beorn7): Do this for histograms, too.
 	if isCounter && resultValue > 0 && samples.Points[0].V >= 0 {
 		// Counters cannot be negative. If we have any slope at
 		// all (i.e. resultValue went up), we can extrapolate
@@ -120,14 +142,58 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 	} else {
 		extrapolateToInterval += averageDurationBetweenSamples / 2
 	}
-	resultValue = resultValue * (extrapolateToInterval / sampledInterval)
+	factor := extrapolateToInterval / sampledInterval
 	if isRate {
-		resultValue = resultValue / ms.Range.Seconds()
+		factor /= ms.Range.Seconds()
+	}
+	if resultHistogram == nil {
+		resultValue *= factor
+	} else {
+		resultHistogram.Scale(factor)
 	}
 
 	return append(enh.Out, Sample{
-		Point: Point{V: resultValue},
+		Point: Point{V: resultValue, H: resultHistogram},
 	})
+}
+
+// histogramRate is a helper function for extrapolatedRate. It requires
+// points[0] to be a histogram. It returns nil if any other Point in points is
+// not a histogram. Currently, it also returns nil on mixed schemas or zero
+// thresholds in the histograms, because it cannot handle those schema changes
+// yet.
+func histogramRate(points []Point, isCounter bool) *histogram.FloatHistogram {
+	prev := points[0].H // We already know that this is a histogram.
+	last := points[len(points)-1].H
+	if last == nil {
+		return nil // Last point in range is not a histogram.
+	}
+	if last.Schema != prev.Schema || last.ZeroThreshold != prev.ZeroThreshold {
+		return nil // TODO(beorn7): Handle schema changes properly.
+	}
+	h := last.Copy()
+	h.Sub(prev)
+	// We have to iterate through everything even in the non-counter case
+	// because we have to check that everything is a histogram.
+	// TODO(beorn7): Find a way to check that earlier, e.g. by handing in a
+	// []FloatPoint and a []HistogramPoint separately.
+	for _, currPoint := range points[1:] {
+		curr := currPoint.H
+		if curr == nil {
+			return nil // Range contains a mix of histograms and floats.
+		}
+		if !isCounter {
+			continue
+		}
+		if curr.Schema != prev.Schema || curr.ZeroThreshold != prev.ZeroThreshold {
+			return nil // TODO(beorn7): Handle schema changes properly.
+		}
+		if curr.DetectReset(prev) {
+			h.Add(prev)
+		}
+		prev = curr
+	}
+	return h.Compact(3)
 }
 
 // === delta(Matrix parser.ValueTypeMatrix) Vector ===

@@ -115,6 +115,295 @@ func (h *FloatHistogram) ZeroBucket() FloatBucket {
 	}
 }
 
+// Scale scales the FloatHistogram by the provided factor, i.e. it scales all
+// bucket counts including the zero bucket and the count and the sum of
+// observations. The bucket layout stays the same. This method changes the
+// receiving histogram directly (rather than acting on a copy). It returns a
+// pointer to the receiving histogram for convenience.
+func (h *FloatHistogram) Scale(factor float64) *FloatHistogram {
+	h.ZeroCount *= factor
+	h.Count *= factor
+	h.Sum *= factor
+	for i := range h.PositiveBuckets {
+		h.PositiveBuckets[i] *= factor
+	}
+	for i := range h.NegativeBuckets {
+		h.NegativeBuckets[i] *= factor
+	}
+	return h
+}
+
+// Add adds the provided other histogram to the receiving histogram. Count, Sum,
+// and buckets from the other histogram are added to the corresponding
+// components of the receiving histogram. Buckets in the other histogram that do
+// not exist in the receiving histogram are inserted into the latter. The
+// resulting histogram might have buckets with a population of zero or directly
+// adjacent spans (offset=0). To normalize those, call the Compact method.
+//
+// This method returns a pointer to the receiving histogram for convenience.
+//
+// IMPORTANT: This method requires the Schema and the ZeroThreshold to be the
+// same in both histograms. Otherwise, its behavior is undefined.
+// TODO(beorn7): Change that!
+func (h *FloatHistogram) Add(other *FloatHistogram) *FloatHistogram {
+	h.ZeroCount += other.ZeroCount
+	h.Count += other.Count
+	h.Sum += other.Sum
+
+	// TODO(beorn7): If needed, this can be optimized by inspecting the
+	// spans in other and create missing buckets in h in batches.
+	iSpan, iBucket := -1, -1
+	var iInSpan, index int32
+	for it := other.PositiveBucketIterator(); it.Next(); {
+		b := it.At()
+		h.PositiveSpans, h.PositiveBuckets, iSpan, iBucket, iInSpan = addBucket(
+			b, h.PositiveSpans, h.PositiveBuckets, iSpan, iBucket, iInSpan, index,
+		)
+		index = b.Index
+	}
+	iSpan, iBucket = -1, -1
+	for it := other.NegativeBucketIterator(); it.Next(); {
+		b := it.At()
+		h.NegativeSpans, h.NegativeBuckets, iSpan, iBucket, iInSpan = addBucket(
+			b, h.NegativeSpans, h.NegativeBuckets, iSpan, iBucket, iInSpan, index,
+		)
+		index = b.Index
+	}
+	return h
+}
+
+// Sub works like Add but subtracts the other histogram.
+//
+// IMPORTANT: This method requires the Schema and the ZeroThreshold to be the
+// same in both histograms. Otherwise, its behavior is undefined.
+// TODO(beorn7): Change that!
+func (h *FloatHistogram) Sub(other *FloatHistogram) *FloatHistogram {
+	h.ZeroCount -= other.ZeroCount
+	h.Count -= other.Count
+	h.Sum -= other.Sum
+
+	// TODO(beorn7): If needed, this can be optimized by inspecting the
+	// spans in other and create missing buckets in h in batches.
+	iSpan, iBucket := -1, -1
+	var iInSpan, index int32
+	for it := other.PositiveBucketIterator(); it.Next(); {
+		b := it.At()
+		b.Count *= -1
+		h.PositiveSpans, h.PositiveBuckets, iSpan, iBucket, iInSpan = addBucket(
+			b, h.PositiveSpans, h.PositiveBuckets, iSpan, iBucket, iInSpan, index,
+		)
+		index = b.Index
+	}
+	iSpan, iBucket = -1, -1
+	for it := other.NegativeBucketIterator(); it.Next(); {
+		b := it.At()
+		b.Count *= -1
+		h.NegativeSpans, h.NegativeBuckets, iSpan, iBucket, iInSpan = addBucket(
+			b, h.NegativeSpans, h.NegativeBuckets, iSpan, iBucket, iInSpan, index,
+		)
+		index = b.Index
+	}
+	return h
+}
+
+// addBucket takes the "coordinates" of the last bucket that was handled and
+// adds the provided bucket after it. If a corresponding bucket exists, the
+// count is added. If not, the bucket is inserted. The updated slices and the
+// coordinates of the inserted or added-to bucket are returned.
+func addBucket(
+	b FloatBucket,
+	spans []Span, buckets []float64,
+	iSpan, iBucket int,
+	iInSpan, index int32,
+) (
+	newSpans []Span, newBuckets []float64,
+	newISpan, newIBucket int, newIInSpan int32,
+) {
+	if iSpan == -1 {
+		// First add, check if it is before all spans.
+		if len(spans) == 0 || spans[0].Offset > b.Index {
+			// Add bucket before all others.
+			buckets = append(buckets, 0)
+			copy(buckets[1:], buckets)
+			buckets[0] = b.Count
+			if spans[0].Offset == b.Index+1 {
+				spans[0].Length++
+				spans[0].Offset--
+				return spans, buckets, 0, 0, 0
+			}
+			spans = append(spans, Span{})
+			copy(spans[1:], spans)
+			spans[0] = Span{Offset: b.Index, Length: 1}
+			if len(spans) > 1 {
+				// Convert the absolute offset in the formerly
+				// first span to a relative offset.
+				spans[1].Offset -= b.Index + 1
+			}
+			return spans, buckets, 0, 0, 0
+		}
+		if spans[0].Offset == b.Index {
+			// Just add to first bucket.
+			buckets[0] += b.Count
+			return spans, buckets, 0, 0, 0
+		}
+		// We are behind the first bucket, so set everything to the
+		// first bucket and continue normally.
+		iSpan, iBucket, iInSpan = 0, 0, 0
+		index = spans[0].Offset
+	}
+	deltaIndex := b.Index - index
+	for {
+		remainingInSpan := int32(spans[iSpan].Length) - iInSpan
+		if deltaIndex < remainingInSpan {
+			// Bucket is in current span.
+			iBucket += int(deltaIndex)
+			iInSpan += deltaIndex
+			buckets[iBucket] += b.Count
+			return spans, buckets, iSpan, iBucket, iInSpan
+		}
+		deltaIndex -= remainingInSpan
+		iBucket += int(remainingInSpan)
+		iSpan++
+		if iSpan == len(spans) || deltaIndex < spans[iSpan].Offset {
+			// Bucket is in gap behind previous span (or there are no further spans).
+			buckets = append(buckets, 0)
+			copy(buckets[iBucket+1:], buckets[iBucket:])
+			buckets[iBucket] = b.Count
+			if deltaIndex == 0 {
+				// Directly after previous span, extend previous span.
+				if iSpan < len(spans) {
+					spans[iSpan].Offset--
+				}
+				iSpan--
+				iInSpan = int32(spans[iSpan].Length)
+				spans[iSpan].Length++
+				return spans, buckets, iSpan, iBucket, iInSpan
+			}
+			if iSpan < len(spans) && deltaIndex == spans[iSpan].Offset-1 {
+				// Directly before next span, extend next span.
+				iInSpan = 0
+				spans[iSpan].Offset--
+				spans[iSpan].Length++
+				return spans, buckets, iSpan, iBucket, iInSpan
+			}
+			// No next span, or next span is not directly adjacent to new bucket.
+			// Add new span.
+			iInSpan = 0
+			if iSpan < len(spans) {
+				spans[iSpan].Offset -= deltaIndex + 1
+			}
+			spans = append(spans, Span{})
+			copy(spans[iSpan+1:], spans[iSpan:])
+			spans[iSpan] = Span{Length: 1, Offset: deltaIndex}
+			return spans, buckets, iSpan, iBucket, iInSpan
+		}
+		// Try start of next span.
+		deltaIndex -= spans[iSpan].Offset
+		iInSpan = 0
+	}
+}
+
+// Compact eliminates empty buckets at the beginning and end of each span, then
+// merges spans that are consecutive or at most maxEmptyBuckets apart, and
+// finally splits spans that contain more than maxEmptyBuckets. The compaction
+// happens "in place" in the receiving histogram, but a pointer to it is
+// returned for convenience.
+func (h *FloatHistogram) Compact(maxEmptyBuckets int) *FloatHistogram {
+	// TODO(beorn7): Implement.
+	return h
+}
+
+// DetectReset returns true if the receiving histogram is missing any buckets
+// that have a non-zero population in the provided previous histogram. It also
+// returns true if any count (in any bucket, in the zero count, or in the count
+// of observations, but NOT the sum of observations) is smaller in the receiving
+// histogram compared to the previous histogram. Otherwise, it returns false.
+//
+// IMPORTANT: This method requires the Schema and the ZeroThreshold to be the
+// same in both histograms. Otherwise, its behavior is undefined.
+// TODO(beorn7): Change that!
+//
+// Note that this kind of reset detection is quite expensive. Ideally, resets
+// are detected at ingest time and stored in the TSDB, so that the reset
+// information can be read directly from there rather than be detected each time
+// again.
+func (h *FloatHistogram) DetectReset(previous *FloatHistogram) bool {
+	if h.Count < previous.Count {
+		return true
+	}
+	if h.ZeroCount < previous.ZeroCount {
+		return true
+	}
+	currIt := h.PositiveBucketIterator()
+	prevIt := previous.PositiveBucketIterator()
+	if detectReset(currIt, prevIt) {
+		return true
+	}
+	currIt = h.NegativeBucketIterator()
+	prevIt = previous.NegativeBucketIterator()
+	return detectReset(currIt, prevIt)
+}
+
+func detectReset(currIt, prevIt FloatBucketIterator) bool {
+	if !prevIt.Next() {
+		return false // If no buckets in previous histogram, nothing can be reset.
+	}
+	prevBucket := prevIt.At()
+	if !currIt.Next() {
+		// No bucket in current, but at least one in previous
+		// histogram. Check if any of those are non-zero, in which case
+		// this is a reset.
+		for {
+			if prevBucket.Count != 0 {
+				return true
+			}
+			if !prevIt.Next() {
+				return false
+			}
+		}
+	}
+	currBucket := currIt.At()
+	for {
+		// Forward currIt until we find the bucket corresponding to prevBucket.
+		for currBucket.Index < prevBucket.Index {
+			if !currIt.Next() {
+				// Reached end of currIt early, therefore
+				// previous histogram has a bucket that the
+				// current one does not have. Unlass all
+				// remaining buckets in the previous histogram
+				// are unpopulated, this is a reset.
+				for {
+					if prevBucket.Count != 0 {
+						return true
+					}
+					if !prevIt.Next() {
+						return false
+					}
+				}
+			}
+			currBucket = currIt.At()
+		}
+		if currBucket.Index > prevBucket.Index {
+			// Previous histogram has a bucket the current one does
+			// not have. If it's populated, it's a reset.
+			if prevBucket.Count != 0 {
+				return true
+			}
+		} else {
+			// We have reached corresponding buckets in both iterators.
+			// We can finally compare the counts.
+			if currBucket.Count < prevBucket.Count {
+				return true
+			}
+		}
+		if !prevIt.Next() {
+			// Reached end of prevIt without finding offending buckets.
+			return false
+		}
+		prevBucket = prevIt.At()
+	}
+}
+
 // PositiveBucketIterator returns a FloatBucketIterator to iterate over all
 // positive buckets in ascending order (starting next to the zero bucket and
 // going up).
