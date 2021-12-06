@@ -1960,10 +1960,12 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 
 		// Account for potentially swapped sidedness.
 		vl, vr := ls.V, rs.V
+		hl, hr := ls.H, rs.H
 		if matching.Card == parser.CardOneToMany {
 			vl, vr = vr, vl
+			hl, hr = hr, hl
 		}
-		value, keep := vectorElemBinop(op, vl, vr)
+		value, histogramValue, keep := vectorElemBinop(op, vl, vr, hl, hr)
 		if returnBool {
 			if keep {
 				value = 1.0
@@ -1998,10 +2000,13 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 			insertedSigs[insertSig] = struct{}{}
 		}
 
-		enh.Out = append(enh.Out, Sample{
-			Metric: metric,
-			Point:  Point{V: value},
-		})
+		if (hl != nil && hr != nil) || (hl == nil && hr == nil) {
+			// Both lhs and rhs are of same type.
+			enh.Out = append(enh.Out, Sample{
+				Metric: metric,
+				Point:  Point{V: value, H: histogramValue},
+			})
+		}
 	}
 	return enh.Out
 }
@@ -2085,7 +2090,7 @@ func (ev *evaluator) VectorscalarBinop(op parser.ItemType, lhs Vector, rhs Scala
 		if swap {
 			lv, rv = rv, lv
 		}
-		value, keep := vectorElemBinop(op, lv, rv)
+		value, _, keep := vectorElemBinop(op, lv, rv, nil, nil)
 		// Catch cases where the scalar is the LHS in a scalar-vector comparison operation.
 		// We want to always keep the vector element value as the output value, even if it's on the RHS.
 		if op.IsComparisonOperator() && swap {
@@ -2148,34 +2153,37 @@ func scalarBinop(op parser.ItemType, lhs, rhs float64) float64 {
 }
 
 // vectorElemBinop evaluates a binary operation between two Vector elements.
-func vectorElemBinop(op parser.ItemType, lhs, rhs float64) (float64, bool) {
+func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool) {
 	switch op {
 	case parser.ADD:
-		return lhs + rhs, true
+		if hlhs != nil && hrhs != nil {
+			return 0, hlhs.Copy().Add(hrhs), true
+		}
+		return lhs + rhs, nil, true
 	case parser.SUB:
-		return lhs - rhs, true
+		return lhs - rhs, nil, true
 	case parser.MUL:
-		return lhs * rhs, true
+		return lhs * rhs, nil, true
 	case parser.DIV:
-		return lhs / rhs, true
+		return lhs / rhs, nil, true
 	case parser.POW:
-		return math.Pow(lhs, rhs), true
+		return math.Pow(lhs, rhs), nil, true
 	case parser.MOD:
-		return math.Mod(lhs, rhs), true
+		return math.Mod(lhs, rhs), nil, true
 	case parser.EQLC:
-		return lhs, lhs == rhs
+		return lhs, nil, lhs == rhs
 	case parser.NEQ:
-		return lhs, lhs != rhs
+		return lhs, nil, lhs != rhs
 	case parser.GTR:
-		return lhs, lhs > rhs
+		return lhs, nil, lhs > rhs
 	case parser.LSS:
-		return lhs, lhs < rhs
+		return lhs, nil, lhs < rhs
 	case parser.GTE:
-		return lhs, lhs >= rhs
+		return lhs, nil, lhs >= rhs
 	case parser.LTE:
-		return lhs, lhs <= rhs
+		return lhs, nil, lhs <= rhs
 	case parser.ATAN2:
-		return math.Atan2(lhs, rhs), true
+		return math.Atan2(lhs, rhs), nil, true
 	}
 	panic(errors.Errorf("operator %q not allowed for operations between Vectors", op))
 }
