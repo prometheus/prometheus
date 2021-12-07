@@ -1385,17 +1385,33 @@ func highestTimestamp(samples []prompb.TimeSeries) int64 {
 }
 
 func buildWriteRequest(samples []prompb.TimeSeries, metadata []prompb.MetricMetadata, pBuf *proto.Buffer, buf []byte) ([]byte, error) {
-	req := &prompb.WriteRequest{
-		Timeseries: samples,
-		Metadata:   metadata,
-	}
-
 	if pBuf == nil {
 		pBuf = proto.NewBuffer(nil) // For convenience in tests. Not efficient.
 	} else {
 		pBuf.Reset()
 	}
-	err := pBuf.Marshal(req)
+	var err error
+	if metadata == nil {
+		requiredSize := timeseriesSliceSize(samples)
+		data := pBuf.Bytes()
+		if cap(data) < requiredSize {
+			data = make([]byte, requiredSize)
+		}
+		data = data[:requiredSize]
+		_, err = marshalTimeseriesSliceToBuffer(samples, data)
+		if err != nil {
+			return nil, err
+		}
+		pBuf.SetBuf(data)
+	} else {
+		req := &prompb.WriteRequest{
+			Timeseries: samples,
+			Metadata:   metadata,
+		}
+
+		err = pBuf.Marshal(req)
+	}
+
 	if err != nil {
 		return nil, err
 	}
