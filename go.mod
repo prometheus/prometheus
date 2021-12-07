@@ -65,7 +65,7 @@ require (
 	golang.org/x/sys v0.0.0-20211124211545-fe61309f8881
 	golang.org/x/time v0.0.0-20211116232009-f0f3c7e86c11
 	golang.org/x/tools v0.1.7
-	google.golang.org/api v0.60.0
+	google.golang.org/api v0.61.0
 	google.golang.org/genproto v0.0.0-20211129164237-f09f9a12af12
 	google.golang.org/protobuf v1.27.1
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
