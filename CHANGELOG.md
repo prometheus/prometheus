@@ -1,3 +1,9 @@
+## 2.32.0-rc.1 / 2021-12-07
+
+* [ENHANCEMENT] Web: Improve message wording on /agent page. #9943
+* [BUGFIX] Web: Don't try to fetch and display Alertmanager stats on /status page in Agent mode. #9941
+* [BUGFIX] Flags: Mention Agent mode in `--enable-feature` flag help description. (#9939)
+
 ## 2.32.0-rc.0 / 2021-12-01
 
 This list of changes is relative to [v2.32.0-beta.0](https://github.com/prometheus/prometheus/releases/tag/v2.32.0-beta.0), which was a special 2.32 beta release to pre-publish the Prometheus Agent features.
