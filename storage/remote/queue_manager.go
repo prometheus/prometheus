@@ -1176,10 +1176,8 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 			if !ok {
 				return
 			}
-			nPendingSamples, nPendingExemplars := s.populateTimeSeries(batch, pendingData)
+			s.sendSamples(ctx, batch, pBuf, &buf)
 			queue.ReturnForReuse(batch)
-			n := nPendingSamples + nPendingExemplars
-			s.sendSamples(ctx, pendingData[:n], nPendingSamples, nPendingExemplars, pBuf, &buf)
 
 			stop()
 			timer.Reset(time.Duration(s.qm.cfg.BatchSendDeadline))
@@ -1198,10 +1196,8 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 			}
 			s.mtx.Unlock()
 			if len(batch) > 0 {
-				nPendingSamples, nPendingExemplars := s.populateTimeSeries(batch, pendingData)
-				n := nPendingSamples + nPendingExemplars
-				level.Debug(s.qm.logger).Log("msg", "runShard timer ticked, sending buffered data", "samples", nPendingSamples, "exemplars", nPendingExemplars, "shard", shardNum)
-				s.sendSamples(ctx, pendingData[:n], nPendingSamples, nPendingExemplars, pBuf, &buf)
+				level.Debug(s.qm.logger).Log("msg", "runShard timer ticked, sending buffered data", "data", len(batch), "shard", shardNum)
+				s.sendSamples(ctx, batch, pBuf, &buf)
 			}
 			queue.ReturnForReuse(batch)
 			timer.Reset(time.Duration(s.qm.cfg.BatchSendDeadline))
@@ -1209,37 +1205,15 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 	}
 }
 
-func (s *shards) populateTimeSeries(batch []sampleOrExemplar, pendingData []prompb.TimeSeries) (int, int) {
-	var nPendingSamples, nPendingExemplars int
-	for nPending, d := range batch {
-		pendingData[nPending].Samples = pendingData[nPending].Samples[:0]
-		if s.qm.sendExemplars {
-			pendingData[nPending].Exemplars = pendingData[nPending].Exemplars[:0]
-		}
-		// Number of pending samples is limited by the fact that sendSamples (via sendSamplesWithBackoff)
-		// retries endlessly, so once we reach max samples, if we can never send to the endpoint we'll
-		// stop reading from the queue. This makes it safe to reference pendingSamples by index.
-		if d.isSample {
-			pendingData[nPending].Labels = labelsToLabelsProto(d.seriesLabels, pendingData[nPending].Labels)
-			pendingData[nPending].Samples = append(pendingData[nPending].Samples, prompb.Sample{
-				Value:     d.value,
-				Timestamp: d.timestamp,
-			})
-			nPendingSamples++
+func (s *shards) sendSamples(ctx context.Context, samples []sampleOrExemplar, pBuf *proto.Buffer, buf *[]byte) {
+	var sampleCount, exemplarCount int
+	for _, s := range samples {
+		if s.isSample {
+			sampleCount++
 		} else {
-			pendingData[nPending].Labels = labelsToLabelsProto(d.seriesLabels, pendingData[nPending].Labels)
-			pendingData[nPending].Exemplars = append(pendingData[nPending].Exemplars, prompb.Exemplar{
-				Labels:    labelsToLabelsProto(d.exemplarLabels, nil),
-				Value:     d.value,
-				Timestamp: d.timestamp,
-			})
-			nPendingExemplars++
+			exemplarCount++
 		}
 	}
-	return nPendingSamples, nPendingExemplars
-}
-
-func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, sampleCount, exemplarCount int, pBuf *proto.Buffer, buf *[]byte) {
 	begin := time.Now()
 	err := s.sendSamplesWithBackoff(ctx, samples, sampleCount, exemplarCount, pBuf, buf)
 	if err != nil {
@@ -1262,9 +1236,9 @@ func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, s
 }
 
 // sendSamples to the remote storage with backoff for recoverable errors.
-func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.TimeSeries, sampleCount, exemplarCount int, pBuf *proto.Buffer, buf *[]byte) error {
+func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []sampleOrExemplar, sampleCount, exemplarCount int, pBuf *proto.Buffer, buf *[]byte) error {
 	// Build the WriteRequest with no metadata.
-	req, err := buildWriteRequest(samples, nil, pBuf, *buf)
+	req, err := samplesToProtobuf(samples, pBuf, *buf)
 	if err != nil {
 		// Failing to build the write request is non-recoverable, since it will
 		// only error if marshaling the proto to bytes fails.
@@ -1370,47 +1344,51 @@ func sendWriteRequestWithBackoff(ctx context.Context, cfg config.QueueConfig, l 
 	}
 }
 
-func highestTimestamp(samples []prompb.TimeSeries) int64 {
+func highestTimestamp(samples []sampleOrExemplar) int64 {
 	var highest int64
-	for _, ts := range samples {
-		// At the moment we only ever append a TimeSeries with a single sample or exemplar in it.
-		if len(ts.Samples) > 0 && ts.Samples[0].Timestamp > highest {
-			highest = ts.Samples[0].Timestamp
-		}
-		if len(ts.Exemplars) > 0 && ts.Exemplars[0].Timestamp > highest {
-			highest = ts.Exemplars[0].Timestamp
+	for _, s := range samples {
+		if s.timestamp > highest {
+			highest = s.timestamp
 		}
 	}
 	return highest
 }
 
+func samplesToProtobuf(samples []sampleOrExemplar, pBuf *proto.Buffer, buf []byte) ([]byte, error) {
+	pBuf.Reset()
+	requiredSize := sampleOrExemplarSliceSize(samples)
+	data := pBuf.Bytes()
+	if cap(data) < requiredSize {
+		data = make([]byte, requiredSize)
+	}
+	data = data[:requiredSize]
+	_, err := marshalSampleOrExemplarSliceToBuffer(samples, data)
+	if err != nil {
+		return nil, err
+	}
+	pBuf.SetBuf(data)
+	// snappy uses len() to see if it needs to allocate a new slice. Make the
+	// buffer as long as possible.
+	if buf != nil {
+		buf = buf[0:cap(buf)]
+	}
+	compressed := snappy.Encode(buf, pBuf.Bytes())
+	return compressed, nil
+}
+
 func buildWriteRequest(samples []prompb.TimeSeries, metadata []prompb.MetricMetadata, pBuf *proto.Buffer, buf []byte) ([]byte, error) {
+	req := &prompb.WriteRequest{
+		Timeseries: samples,
+		Metadata:   metadata,
+	}
+
 	if pBuf == nil {
 		pBuf = proto.NewBuffer(nil) // For convenience in tests. Not efficient.
 	} else {
 		pBuf.Reset()
 	}
-	var err error
-	if metadata == nil {
-		requiredSize := timeseriesSliceSize(samples)
-		data := pBuf.Bytes()
-		if cap(data) < requiredSize {
-			data = make([]byte, requiredSize)
-		}
-		data = data[:requiredSize]
-		_, err = marshalTimeseriesSliceToBuffer(samples, data)
-		if err != nil {
-			return nil, err
-		}
-		pBuf.SetBuf(data)
-	} else {
-		req := &prompb.WriteRequest{
-			Timeseries: samples,
-			Metadata:   metadata,
-		}
 
-		err = pBuf.Marshal(req)
-	}
+	err := pBuf.Marshal(req)
 
 	if err != nil {
 		return nil, err

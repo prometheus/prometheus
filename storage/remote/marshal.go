@@ -18,174 +18,188 @@ import (
 	"math"
 	math_bits "math/bits"
 
-	"github.com/prometheus/prometheus/prompb"
+	"github.com/prometheus/prometheus/model/labels"
 )
 
-func marshalTimeseriesSliceToBuffer(timeseries []prompb.TimeSeries, dAtA []byte) (int, error) {
-	i := len(dAtA)
-	for iNdEx := len(timeseries) - 1; iNdEx >= 0; iNdEx-- {
-		size, err := marshalTimeseriesToSizedBuffer(&timeseries[iNdEx], dAtA[:i])
+const (
+	timeseriesTag        = 0xa
+	labelTag             = 0xa
+	sampleTag            = 0x12
+	sampleTimestampTag   = 0x10
+	sampleValueTag       = 0x9
+	exemplarTag          = 0x1a
+	exemplarTimestampTag = 0x18
+	exemplarValueTag     = 0x11
+	labelValueTag        = 0x12
+	labelNameTag         = 0xa
+)
+
+// Turn a set of samples and exemplars into the expected protobuf encoding for RemoteWrite.
+// Similar to protoc-generated code, we expect a buffer of exactly the right size, and
+// go backwards through the data. This makes it easier to insert the length before each element.
+func marshalSampleOrExemplarSliceToBuffer(in []sampleOrExemplar, data []byte) (int, error) {
+	i := len(data)
+	for index := len(in) - 1; index >= 0; index-- {
+		size, err := in[index].marshalToSizedBuffer(data[:i])
 		if err != nil {
 			return 0, err
 		}
 		i -= size
-		i = encodeVarint(dAtA, i, uint64(size))
+		i = encodeVarint(data, i, uint64(size))
 		i--
-		dAtA[i] = 0xa
+		data[i] = timeseriesTag
 	}
-	return len(dAtA) - i, nil
+	return len(data) - i, nil
 }
 
-func marshalTimeseriesToSizedBuffer(m *prompb.TimeSeries, dAtA []byte) (int, error) {
-	i := len(dAtA)
-	for iNdEx := len(m.Exemplars) - 1; iNdEx >= 0; iNdEx-- {
-		size, err := marshalExemplarToSizedBuffer(&m.Exemplars[iNdEx], dAtA[:i])
+func (m *sampleOrExemplar) marshalToSizedBuffer(data []byte) (int, error) {
+	i := len(data)
+	if m.isSample {
+		size, err := marshalSampleToSizedBuffer(m, data[:i])
 		if err != nil {
 			return 0, err
 		}
 		i -= size
-		i = encodeVarint(dAtA, i, uint64(size))
+		i = encodeVarint(data, i, uint64(size))
 		i--
-		dAtA[i] = 0x1a
-	}
-	for iNdEx := len(m.Samples) - 1; iNdEx >= 0; iNdEx-- {
-		size, err := marshalSampleToSizedBuffer(&m.Samples[iNdEx], dAtA[:i])
+		data[i] = sampleTag
+	} else { // exemplar
+		size, err := marshalExemplarToSizedBuffer(m, data[:i])
 		if err != nil {
 			return 0, err
 		}
 		i -= size
-		i = encodeVarint(dAtA, i, uint64(size))
+		i = encodeVarint(data, i, uint64(size))
 		i--
-		dAtA[i] = 0x12
+		data[i] = exemplarTag
 	}
-	for iNdEx := len(m.Labels) - 1; iNdEx >= 0; iNdEx-- {
-		size, err := marshalLabelToSizedBuffer(&m.Labels[iNdEx], dAtA[:i])
-		if err != nil {
-			return 0, err
-		}
-		i -= size
-		i = encodeVarint(dAtA, i, uint64(size))
-		i--
-		dAtA[i] = 0xa
+	size, err := marshalLabelsToSizedBuffer(m.seriesLabels, data[:i])
+	if err != nil {
+		return 0, err
 	}
-	return len(dAtA) - i, nil
+	i -= size
+	return len(data) - i, nil
 }
 
-func marshalExemplarToSizedBuffer(m *prompb.Exemplar, dAtA []byte) (int, error) {
-	i := len(dAtA)
-	if m.Timestamp != 0 {
-		i = encodeVarint(dAtA, i, uint64(m.Timestamp))
+func marshalExemplarToSizedBuffer(m *sampleOrExemplar, data []byte) (int, error) {
+	i := len(data)
+	if m.timestamp != 0 {
+		i = encodeVarint(data, i, uint64(m.timestamp))
 		i--
-		dAtA[i] = 0x18
+		data[i] = exemplarTimestampTag
 	}
-	if m.Value != 0 {
+	if m.value != 0 {
 		i -= 8
-		encoding_binary.LittleEndian.PutUint64(dAtA[i:], uint64(math.Float64bits(float64(m.Value))))
+		encoding_binary.LittleEndian.PutUint64(data[i:], math.Float64bits(m.value))
 		i--
-		dAtA[i] = 0x11
+		data[i] = exemplarValueTag
 	}
-	for iNdEx := len(m.Labels) - 1; iNdEx >= 0; iNdEx-- {
-		size, err := marshalLabelToSizedBuffer(&m.Labels[iNdEx], dAtA[:i])
+	size, err := marshalLabelsToSizedBuffer(m.exemplarLabels, data[:i])
+	if err != nil {
+		return 0, err
+	}
+	i -= size
+	return len(data) - i, nil
+}
+
+func marshalSampleToSizedBuffer(m *sampleOrExemplar, data []byte) (int, error) {
+	i := len(data)
+	if m.timestamp != 0 {
+		i = encodeVarint(data, i, uint64(m.timestamp))
+		i--
+		data[i] = sampleTimestampTag
+	}
+	if m.value != 0 {
+		i -= 8
+		encoding_binary.LittleEndian.PutUint64(data[i:], math.Float64bits(m.value))
+		i--
+		data[i] = sampleValueTag
+	}
+	return len(data) - i, nil
+}
+
+func marshalLabelsToSizedBuffer(lbls labels.Labels, data []byte) (int, error) {
+	i := len(data)
+	for index := len(lbls) - 1; index >= 0; index-- {
+		size, err := marshalLabelToSizedBuffer(&lbls[index], data[:i])
 		if err != nil {
 			return 0, err
 		}
 		i -= size
-		i = encodeVarint(dAtA, i, uint64(size))
+		i = encodeVarint(data, i, uint64(size))
 		i--
-		dAtA[i] = 0xa
+		data[i] = labelTag
 	}
-	return len(dAtA) - i, nil
+	return len(data) - i, nil
 }
 
-func marshalSampleToSizedBuffer(m *prompb.Sample, dAtA []byte) (int, error) {
-	i := len(dAtA)
-	if m.Timestamp != 0 {
-		i = encodeVarint(dAtA, i, uint64(m.Timestamp))
-		i--
-		dAtA[i] = 0x10
-	}
-	if m.Value != 0 {
-		i -= 8
-		encoding_binary.LittleEndian.PutUint64(dAtA[i:], uint64(math.Float64bits(float64(m.Value))))
-		i--
-		dAtA[i] = 0x9
-	}
-	return len(dAtA) - i, nil
-}
-
-func marshalLabelToSizedBuffer(m *prompb.Label, dAtA []byte) (int, error) {
-	i := len(dAtA)
+func marshalLabelToSizedBuffer(m *labels.Label, data []byte) (int, error) {
+	i := len(data)
 	if len(m.Value) > 0 {
 		i -= len(m.Value)
-		copy(dAtA[i:], m.Value)
-		i = encodeVarint(dAtA, i, uint64(len(m.Value)))
+		copy(data[i:], m.Value)
+		i = encodeVarint(data, i, uint64(len(m.Value)))
 		i--
-		dAtA[i] = 0x12
+		data[i] = labelValueTag
 	}
 	if len(m.Name) > 0 {
 		i -= len(m.Name)
-		copy(dAtA[i:], m.Name)
-		i = encodeVarint(dAtA, i, uint64(len(m.Name)))
+		copy(data[i:], m.Name)
+		i = encodeVarint(data, i, uint64(len(m.Name)))
 		i--
-		dAtA[i] = 0xa
+		data[i] = labelNameTag
 	}
-	return len(dAtA) - i, nil
+	return len(data) - i, nil
 }
 
 func sov(x uint64) (n int) {
 	return (math_bits.Len64(x|1) + 6) / 7
 }
 
-func encodeVarint(dAtA []byte, offset int, v uint64) int {
+func encodeVarint(data []byte, offset int, v uint64) int {
 	offset -= sov(v)
 	base := offset
 	for v >= 1<<7 {
-		dAtA[offset] = uint8(v&0x7f | 0x80)
+		data[offset] = uint8(v&0x7f | 0x80)
 		v >>= 7
 		offset++
 	}
-	dAtA[offset] = uint8(v)
+	data[offset] = uint8(v)
 	return base
 }
 
-func timeseriesSliceSize(timeseries []prompb.TimeSeries) (n int) {
-	for _, e := range timeseries {
-		l := timeseriesSize(&e)
+func sampleOrExemplarSliceSize(data []sampleOrExemplar) (n int) {
+	for _, e := range data {
+		l := e.protoSize()      // for the sample or exemplar struct
+		l += 1 + sov(uint64(l)) // for the timeSeries struct that wraps it
 		n += 1 + l + sov(uint64(l))
 	}
 	return n
 }
 
-func timeseriesSize(m *prompb.TimeSeries) (n int) {
-	if m == nil {
-		return 0
+func (m *sampleOrExemplar) protoSize() (n int) {
+	n += labelsSize(&m.seriesLabels)
+	if !m.isSample {
+		n += labelsSize(&m.exemplarLabels)
 	}
-	var l int
-	if len(m.Labels) > 0 {
-		for _, e := range m.Labels {
-			l = labelSize(&e)
-			n += 1 + l + sov(uint64(l))
-		}
+	if m.value != 0 {
+		n += 9
 	}
-	if len(m.Samples) > 0 {
-		for _, e := range m.Samples {
-			l = sampleSize(&e)
-			n += 1 + l + sov(uint64(l))
-		}
-	}
-	if len(m.Exemplars) > 0 {
-		for _, e := range m.Exemplars {
-			l = exemplarSize(&e)
-			n += 1 + l + sov(uint64(l))
-		}
+	if m.timestamp != 0 {
+		n += 1 + sov(uint64(m.timestamp))
 	}
 	return n
 }
 
-func labelSize(m *prompb.Label) (n int) {
-	if m == nil {
-		return 0
+func labelsSize(lbls *labels.Labels) (n int) {
+	for _, e := range *lbls {
+		l := labelSize(&e)
+		n += 1 + l + sov(uint64(l))
 	}
+	return n
+}
+
+func labelSize(m *labels.Label) (n int) {
 	l := len(m.Name)
 	if l > 0 {
 		n += 1 + l + sov(uint64(l))
@@ -193,38 +207,6 @@ func labelSize(m *prompb.Label) (n int) {
 	l = len(m.Value)
 	if l > 0 {
 		n += 1 + l + sov(uint64(l))
-	}
-	return n
-}
-
-func sampleSize(m *prompb.Sample) (n int) {
-	if m == nil {
-		return 0
-	}
-	if m.Value != 0 {
-		n += 9
-	}
-	if m.Timestamp != 0 {
-		n += 1 + sov(uint64(m.Timestamp))
-	}
-	return n
-}
-
-func exemplarSize(m *prompb.Exemplar) (n int) {
-	if m == nil {
-		return 0
-	}
-	if len(m.Labels) > 0 {
-		for _, e := range m.Labels {
-			l := labelSize(&e)
-			n += 1 + l + sov(uint64(l))
-		}
-	}
-	if m.Value != 0 {
-		n += 9
-	}
-	if m.Timestamp != 0 {
-		n += 1 + sov(uint64(m.Timestamp))
 	}
 	return n
 }
