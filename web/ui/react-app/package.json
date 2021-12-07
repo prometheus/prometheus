@@ -14,7 +14,7 @@
     "@codemirror/matchbrackets": "^0.19.3",
     "@codemirror/search": "^0.19.3",
     "@codemirror/state": "^0.19.6",
-    "@codemirror/view": "^0.19.24",
+    "@codemirror/view": "^0.19.27",
     "@forevolve/bootstrap-dark": "^1.0.0",
     "@fortawesome/fontawesome-svg-core": "^1.2.36",
     "@fortawesome/free-solid-svg-icons": "^5.7.2",
