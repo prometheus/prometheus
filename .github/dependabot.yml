@@ -6,6 +6,7 @@ updates:
       interval: "weekly"
   - package-ecosystem: "npm"
     directory: "/web/ui"
+    open-pull-requests-limit: 0
     schedule:
       interval: "weekly"
   - package-ecosystem: "github-actions"
