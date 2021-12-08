@@ -227,7 +227,6 @@ var expectedConf = &Config{
 			},
 		},
 		{
-
 			JobName: "service-x",
 
 			HonorTimestamps: true,
@@ -954,7 +953,7 @@ var expectedConf = &Config{
 			Scheme:           DefaultScrapeConfig.Scheme,
 			ServiceDiscoveryConfigs: discovery.Configs{
 				&uyuni.SDConfig{
-					Server:          kubernetesSDHostURL(),
+					Server:          "https://localhost:1234",
 					Username:        "gopher",
 					Password:        "hole",
 					Entitlement:     "monitoring_entitled",
@@ -1433,6 +1432,10 @@ var expectedErrors = []struct {
 	{
 		filename: "empty_scrape_config_action.bad.yml",
 		errMsg:   "relabel action cannot be empty",
+	},
+	{
+		filename: "uyuni_no_server.bad.yml",
+		errMsg:   "Uyuni SD configuration requires server host",
 	},
 }
 
