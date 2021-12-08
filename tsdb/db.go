@@ -83,6 +83,7 @@ func DefaultOptions() *Options {
 		HeadChunksWriteBufferSize: chunks.DefaultWriteBufferSize,
 		IsolationDisabled:         defaultIsolationDisabled,
 		HeadChunksEndTimeVariance: 0,
+		HeadChunksWriteQueueSize:  chunks.DefaultWriteQueueSize,
 	}
 }
 
@@ -141,6 +142,9 @@ type Options struct {
 	// HeadChunksEndTimeVariance is how much variance (between 0 and 1) should be applied to the chunk end time,
 	// to spread chunks writing across time. Doesn't apply to the last chunk of the chunk range. 0 to disable variance.
 	HeadChunksEndTimeVariance float64
+
+	// HeadChunksWriteQueueSize configures the size of the chunk write queue used in the head chunks mapper.
+	HeadChunksWriteQueueSize int
 
 	// SeriesLifecycleCallback specifies a list of callbacks that will be called during a lifecycle of a series.
 	// It is always a no-op in Prometheus and mainly meant for external users who import TSDB.
@@ -596,6 +600,9 @@ func validateOpts(opts *Options, rngs []int64) (*Options, []int64) {
 	if opts.HeadChunksEndTimeVariance <= 0 {
 		opts.HeadChunksEndTimeVariance = 0
 	}
+	if opts.HeadChunksWriteQueueSize < 0 {
+		opts.HeadChunksWriteQueueSize = chunks.DefaultWriteQueueSize
+	}
 	if opts.MaxBlockChunkSegmentSize <= 0 {
 		opts.MaxBlockChunkSegmentSize = chunks.DefaultChunkSegmentSize
 	}
@@ -719,6 +726,7 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	headOpts.ChunkPool = db.chunkPool
 	headOpts.ChunkWriteBufferSize = opts.HeadChunksWriteBufferSize
 	headOpts.ChunkEndTimeVariance = opts.HeadChunksEndTimeVariance
+	headOpts.ChunkWriteQueueSize = opts.HeadChunksWriteQueueSize
 	headOpts.StripeSize = opts.StripeSize
 	headOpts.SeriesCallback = opts.SeriesLifecycleCallback
 	headOpts.EnableExemplarStorage = opts.EnableExemplarStorage

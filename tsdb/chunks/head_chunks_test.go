@@ -20,6 +20,7 @@ import (
 	"math/rand"
 	"os"
 	"strconv"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -28,7 +29,7 @@ import (
 )
 
 func TestChunkDiskMapper_WriteChunk_Chunk_IterateChunks(t *testing.T) {
-	hrw := testChunkDiskMapper(t)
+	hrw := createChunkDiskMapper(t, "")
 	defer func() {
 		require.NoError(t, hrw.Close())
 	}()
@@ -129,8 +130,7 @@ func TestChunkDiskMapper_WriteChunk_Chunk_IterateChunks(t *testing.T) {
 	// Testing IterateAllChunks method.
 	dir := hrw.dir.Name()
 	require.NoError(t, hrw.Close())
-	hrw, err = NewChunkDiskMapper(dir, chunkenc.NewPool(), DefaultWriteBufferSize)
-	require.NoError(t, err)
+	hrw = createChunkDiskMapper(t, dir)
 
 	idx := 0
 	require.NoError(t, hrw.IterateAllChunks(func(seriesRef HeadSeriesRef, chunkRef ChunkDiskMapperRef, mint, maxt int64, numSamples uint16) error {
@@ -156,10 +156,9 @@ func TestChunkDiskMapper_WriteChunk_Chunk_IterateChunks(t *testing.T) {
 // TestChunkDiskMapper_Truncate tests
 // * If truncation is happening properly based on the time passed.
 // * The active file is not deleted even if the passed time makes it eligible to be deleted.
-// * Empty current file does not lead to creation of another file after truncation.
 // * Non-empty current file leads to creation of another file after truncation.
 func TestChunkDiskMapper_Truncate(t *testing.T) {
-	hrw := testChunkDiskMapper(t)
+	hrw := createChunkDiskMapper(t, "")
 	defer func() {
 		require.NoError(t, hrw.Close())
 	}()
@@ -167,14 +166,20 @@ func TestChunkDiskMapper_Truncate(t *testing.T) {
 	timeRange := 0
 	fileTimeStep := 100
 	var thirdFileMinT, sixthFileMinT int64
-
+	var callbackWg sync.WaitGroup
 	addChunk := func() int {
+		t.Helper()
+
+		callbackWg.Add(1)
+
 		mint := timeRange + 1                // Just after the new file cut.
 		maxt := timeRange + fileTimeStep - 1 // Just before the next file.
 
 		// Write a chunks to set maxt for the segment.
-		_, err := hrw.WriteChunk(1, int64(mint), int64(maxt), randomChunk(t))
-		require.NoError(t, err)
+		hrw.WriteChunk(1, int64(mint), int64(maxt), randomChunk(t), func(err error) {
+			callbackWg.Done()
+			require.NoError(t, err)
+		})
 
 		timeRange += fileTimeStep
 
@@ -183,6 +188,9 @@ func TestChunkDiskMapper_Truncate(t *testing.T) {
 
 	verifyFiles := func(remainingFiles []int) {
 		t.Helper()
+
+		// Wait until all chunk write jobs have been processed.
+		callbackWg.Wait()
 
 		files, err := ioutil.ReadDir(hrw.dir.Name())
 		require.NoError(t, err)
@@ -198,7 +206,7 @@ func TestChunkDiskMapper_Truncate(t *testing.T) {
 
 	// Create segments 1 to 7.
 	for i := 1; i <= 7; i++ {
-		require.NoError(t, hrw.CutNewFile())
+		hrw.CutNewFile()
 		mint := int64(addChunk())
 		if i == 3 {
 			thirdFileMinT = mint
@@ -210,19 +218,17 @@ func TestChunkDiskMapper_Truncate(t *testing.T) {
 
 	// Truncating files.
 	require.NoError(t, hrw.Truncate(thirdFileMinT))
+
+	// Add a chunk to trigger truncation.
+	addChunk()
+
 	verifyFiles([]int{3, 4, 5, 6, 7, 8})
 
 	dir := hrw.dir.Name()
 	require.NoError(t, hrw.Close())
 
 	// Restarted.
-	var err error
-	hrw, err = NewChunkDiskMapper(dir, chunkenc.NewPool(), DefaultWriteBufferSize)
-	require.NoError(t, err)
-
-	require.False(t, hrw.fileMaxtSet)
-	require.NoError(t, hrw.IterateAllChunks(func(_ HeadSeriesRef, _ ChunkDiskMapperRef, _, _ int64, _ uint16) error { return nil }))
-	require.True(t, hrw.fileMaxtSet)
+	hrw = createChunkDiskMapper(t, dir)
 
 	verifyFiles([]int{3, 4, 5, 6, 7, 8})
 	// New file is created after restart even if last file was empty.
@@ -231,15 +237,18 @@ func TestChunkDiskMapper_Truncate(t *testing.T) {
 
 	// Truncating files after restart.
 	require.NoError(t, hrw.Truncate(sixthFileMinT))
-	verifyFiles([]int{6, 7, 8, 9, 10})
 
-	// As the last file was empty, this creates no new files.
-	require.NoError(t, hrw.Truncate(sixthFileMinT+1))
-	verifyFiles([]int{6, 7, 8, 9, 10})
+	// Add a chunk to trigger truncation.
 	addChunk()
+
+	verifyFiles([]int{6, 7, 8, 9, 10})
 
 	// Truncating till current time should not delete the current active file.
 	require.NoError(t, hrw.Truncate(int64(timeRange+(2*fileTimeStep))))
+
+	// Add a chunk to trigger truncation.
+	addChunk()
+
 	verifyFiles([]int{10, 11}) // One file is the previously active file and one currently created.
 }
 
@@ -248,23 +257,42 @@ func TestChunkDiskMapper_Truncate(t *testing.T) {
 // This test exposes https://github.com/prometheus/prometheus/issues/7412 where the truncation
 // simply deleted all empty files instead of stopping once it encountered a non-empty file.
 func TestChunkDiskMapper_Truncate_PreservesFileSequence(t *testing.T) {
-	hrw := testChunkDiskMapper(t)
+	hrw := createChunkDiskMapper(t, "")
 	defer func() {
 		require.NoError(t, hrw.Close())
 	}()
-
 	timeRange := 0
+
+	var callbackWg sync.WaitGroup
 	addChunk := func() {
+		t.Helper()
+
+		callbackWg.Add(1)
+
 		step := 100
 		mint, maxt := timeRange+1, timeRange+step-1
-		_, err := hrw.WriteChunk(1, int64(mint), int64(maxt), randomChunk(t))
-		require.NoError(t, err)
+		hrw.WriteChunk(1, int64(mint), int64(maxt), randomChunk(t), func(err error) {
+			callbackWg.Done()
+			require.NoError(t, err)
+		})
 		timeRange += step
 	}
+
 	emptyFile := func() {
-		require.NoError(t, hrw.CutNewFile())
+		t.Helper()
+
+		callbackWg.Wait()
+
+		_, _, err := hrw.cut()
+		require.NoError(t, err)
+		hrw.evtlPosMtx.Lock()
+		hrw.evtlPos.toNewFile()
+		hrw.evtlPosMtx.Unlock()
 	}
+
 	nonEmptyFile := func() {
+		t.Helper()
+
 		emptyFile()
 		addChunk()
 	}
@@ -279,6 +307,7 @@ func TestChunkDiskMapper_Truncate_PreservesFileSequence(t *testing.T) {
 	verifyFiles := func(remainingFiles []int) {
 		t.Helper()
 
+		callbackWg.Wait()
 		files, err := ioutil.ReadDir(hrw.dir.Name())
 		require.NoError(t, err)
 		require.Equal(t, len(remainingFiles), len(files), "files on disk")
@@ -297,42 +326,39 @@ func TestChunkDiskMapper_Truncate_PreservesFileSequence(t *testing.T) {
 	// though files 4 and 6 are empty.
 	file2Maxt := hrw.mmappedChunkFiles[2].maxt
 	require.NoError(t, hrw.Truncate(file2Maxt+1))
-	// As 6 was empty, it should not create another file.
 	verifyFiles([]int{3, 4, 5, 6})
-
-	addChunk()
-	// Truncate creates another file as 6 is not empty now.
-	require.NoError(t, hrw.Truncate(file2Maxt+1))
-	verifyFiles([]int{3, 4, 5, 6, 7})
 
 	dir := hrw.dir.Name()
 	require.NoError(t, hrw.Close())
-
 	// Restarting checks for unsequential files.
-	var err error
-	hrw, err = NewChunkDiskMapper(dir, chunkenc.NewPool(), DefaultWriteBufferSize)
-	require.NoError(t, err)
-	verifyFiles([]int{3, 4, 5, 6, 7})
+	hrw = createChunkDiskMapper(t, dir)
+	verifyFiles([]int{3, 4, 5, 6})
 }
 
 // TestHeadReadWriter_TruncateAfterIterateChunksError tests for
 // https://github.com/prometheus/prometheus/issues/7753
 func TestHeadReadWriter_TruncateAfterFailedIterateChunks(t *testing.T) {
-	hrw := testChunkDiskMapper(t)
+	hrw := createChunkDiskMapper(t, "")
 	defer func() {
 		require.NoError(t, hrw.Close())
 	}()
 
 	// Write a chunks to iterate on it later.
-	_, err := hrw.WriteChunk(1, 0, 1000, randomChunk(t))
+	var err error
+	var callbackWg sync.WaitGroup
+	callbackWg.Add(1)
+	hrw.WriteChunk(1, 0, 1000, randomChunk(t), func(cbErr error) {
+		err = cbErr
+		callbackWg.Done()
+	})
+	callbackWg.Wait()
 	require.NoError(t, err)
 
 	dir := hrw.dir.Name()
 	require.NoError(t, hrw.Close())
 
 	// Restarting to recreate https://github.com/prometheus/prometheus/issues/7753.
-	hrw, err = NewChunkDiskMapper(dir, chunkenc.NewPool(), DefaultWriteBufferSize)
-	require.NoError(t, err)
+	hrw = createChunkDiskMapper(t, dir)
 
 	// Forcefully failing IterateAllChunks.
 	require.Error(t, hrw.IterateAllChunks(func(_ HeadSeriesRef, _ ChunkDiskMapperRef, _, _ int64, _ uint16) error {
@@ -344,7 +370,7 @@ func TestHeadReadWriter_TruncateAfterFailedIterateChunks(t *testing.T) {
 }
 
 func TestHeadReadWriter_ReadRepairOnEmptyLastFile(t *testing.T) {
-	hrw := testChunkDiskMapper(t)
+	hrw := createChunkDiskMapper(t, "")
 	defer func() {
 		require.NoError(t, hrw.Close())
 	}()
@@ -353,12 +379,18 @@ func TestHeadReadWriter_ReadRepairOnEmptyLastFile(t *testing.T) {
 	addChunk := func() {
 		step := 100
 		mint, maxt := timeRange+1, timeRange+step-1
-		_, err := hrw.WriteChunk(1, int64(mint), int64(maxt), randomChunk(t))
+		var err error
+		awaitCb := make(chan struct{})
+		hrw.WriteChunk(1, int64(mint), int64(maxt), randomChunk(t), func(cbErr error) {
+			err = cbErr
+			close(awaitCb)
+		})
+		<-awaitCb
 		require.NoError(t, err)
 		timeRange += step
 	}
 	nonEmptyFile := func() {
-		require.NoError(t, hrw.CutNewFile())
+		hrw.CutNewFile()
 		addChunk()
 	}
 
@@ -388,11 +420,7 @@ func TestHeadReadWriter_ReadRepairOnEmptyLastFile(t *testing.T) {
 	require.NoError(t, f.Close())
 
 	// Open chunk disk mapper again, corrupt file should be removed.
-	hrw, err = NewChunkDiskMapper(dir, chunkenc.NewPool(), DefaultWriteBufferSize)
-	require.NoError(t, err)
-	require.False(t, hrw.fileMaxtSet)
-	require.NoError(t, hrw.IterateAllChunks(func(_ HeadSeriesRef, _ ChunkDiskMapperRef, _, _ int64, _ uint16) error { return nil }))
-	require.True(t, hrw.fileMaxtSet)
+	hrw = createChunkDiskMapper(t, dir)
 
 	// Removed from memory.
 	require.Equal(t, 3, len(hrw.mmappedChunkFiles))
@@ -411,18 +439,22 @@ func TestHeadReadWriter_ReadRepairOnEmptyLastFile(t *testing.T) {
 	}
 }
 
-func testChunkDiskMapper(t *testing.T) *ChunkDiskMapper {
-	tmpdir, err := ioutil.TempDir("", "data")
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, os.RemoveAll(tmpdir))
-	})
+func createChunkDiskMapper(t *testing.T, dir string) *ChunkDiskMapper {
+	if dir == "" {
+		var err error
+		dir, err = ioutil.TempDir("", "data")
+		require.NoError(t, err)
+		t.Cleanup(func() {
+			require.NoError(t, os.RemoveAll(dir))
+		})
+	}
 
-	hrw, err := NewChunkDiskMapper(tmpdir, chunkenc.NewPool(), DefaultWriteBufferSize)
+	hrw, err := NewChunkDiskMapper(nil, dir, chunkenc.NewPool(), DefaultWriteBufferSize, DefaultWriteQueueSize)
 	require.NoError(t, err)
 	require.False(t, hrw.fileMaxtSet)
 	require.NoError(t, hrw.IterateAllChunks(func(_ HeadSeriesRef, _ ChunkDiskMapperRef, _, _ int64, _ uint16) error { return nil }))
 	require.True(t, hrw.fileMaxtSet)
+
 	return hrw
 }
 
@@ -443,7 +475,12 @@ func createChunk(t *testing.T, idx int, hrw *ChunkDiskMapper) (seriesRef HeadSer
 	mint = int64((idx)*1000 + 1)
 	maxt = int64((idx + 1) * 1000)
 	chunk = randomChunk(t)
-	chunkRef, err = hrw.WriteChunk(seriesRef, mint, maxt, chunk)
-	require.NoError(t, err)
+	var callbackWg sync.WaitGroup
+	callbackWg.Add(1)
+	chunkRef = hrw.WriteChunk(seriesRef, mint, maxt, chunk, func(cbErr error) {
+		require.NoError(t, err)
+		callbackWg.Done()
+	})
+	callbackWg.Wait()
 	return
 }
