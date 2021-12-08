@@ -212,17 +212,13 @@ func TestNoPanicAfterWALCorruption(t *testing.T) {
 	var maxt int64
 	ctx := context.Background()
 	{
-		for {
+		// Appending 121 samples because on the 121st a new chunk will be created.
+		for i := 0; i < 121; i++ {
 			app := db.Appender(ctx)
 			_, err := app.Append(0, labels.FromStrings("foo", "bar"), maxt, 0)
 			expSamples = append(expSamples, sample{t: maxt, v: 0})
 			require.NoError(t, err)
 			require.NoError(t, app.Commit())
-			mmapedChunks, err := ioutil.ReadDir(mmappedChunksDir(db.Dir()))
-			require.NoError(t, err)
-			if len(mmapedChunks) > 0 {
-				break
-			}
 			maxt++
 		}
 		require.NoError(t, db.Close())
@@ -2453,7 +2449,7 @@ func TestDBReadOnly_FlushWAL(t *testing.T) {
 			require.NoError(t, err)
 		}
 		require.NoError(t, app.Commit())
-		defer func() { require.NoError(t, db.Close()) }()
+		require.NoError(t, db.Close())
 	}
 
 	// Flush WAL.
