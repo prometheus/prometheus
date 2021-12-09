@@ -233,6 +233,7 @@ func TestBackfillLabels(t *testing.T) {
 		},
 	}
 	ruleImporter, err := newTestRuleImporter(ctx, start, tmpDir, mockAPISamples, defaultBlockDuration)
+	require.NoError(t, err)
 
 	path := filepath.Join(tmpDir, "test.file")
 	recordingRules := `groups:
