@@ -71,16 +71,25 @@ import (
 
 // Paths that are handled by the React / Reach router that should all be served the main React app's index.html.
 var reactRouterPaths = []string{
-	"/alerts",
 	"/config",
 	"/flags",
-	"/graph",
-	"/rules",
 	"/service-discovery",
 	"/status",
 	"/targets",
-	"/tsdb-status",
 	"/starting",
+}
+
+// Paths that are handled by the React router when the Agent mode is set.
+var reactRouterAgentPaths = []string{
+	"/agent",
+}
+
+// Paths that are handled by the React router when the Agent mode is not set.
+var reactRouterServerPaths = []string{
+	"/alerts",
+	"/graph",
+	"/rules",
+	"/tsdb-status",
 }
 
 // withStackTrace logs the stack trace in case the request panics. The function
@@ -346,10 +355,15 @@ func New(logger log.Logger, o *Options) *Handler {
 		router = router.WithPrefix(o.RoutePrefix)
 	}
 
+	homePage := "/graph"
+	if o.IsAgent {
+		homePage = "/agent"
+	}
+
 	readyf := h.testReady
 
 	router.Get("/", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, path.Join(o.ExternalURL.Path, "/graph"), http.StatusFound)
+		http.Redirect(w, r, path.Join(o.ExternalURL.Path, homePage), http.StatusFound)
 	})
 	router.Get("/classic/", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, path.Join(o.ExternalURL.Path, "/classic/graph"), http.StatusFound)
@@ -409,13 +423,23 @@ func New(logger log.Logger, o *Options) *Handler {
 		}
 		replacedIdx := bytes.ReplaceAll(idx, []byte("CONSOLES_LINK_PLACEHOLDER"), []byte(h.consolesPath()))
 		replacedIdx = bytes.ReplaceAll(replacedIdx, []byte("TITLE_PLACEHOLDER"), []byte(h.options.PageTitle))
-		replacedIdx = bytes.ReplaceAll(replacedIdx, []byte("PROMETHEUS_AGENT_MODE_PLACEHOLDER"), []byte(strconv.FormatBool(h.options.IsAgent)))
+		replacedIdx = bytes.ReplaceAll(replacedIdx, []byte("AGENT_MODE_PLACEHOLDER"), []byte(strconv.FormatBool(h.options.IsAgent)))
 		w.Write(replacedIdx)
 	}
 
 	// Serve the React app.
 	for _, p := range reactRouterPaths {
 		router.Get(p, serveReactApp)
+	}
+
+	if h.options.IsAgent {
+		for _, p := range reactRouterAgentPaths {
+			router.Get(p, serveReactApp)
+		}
+	} else {
+		for _, p := range reactRouterServerPaths {
+			router.Get(p, serveReactApp)
+		}
 	}
 
 	// The favicon and manifest are bundled as part of the React app, but we want to serve

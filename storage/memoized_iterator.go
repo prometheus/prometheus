@@ -71,7 +71,7 @@ func (b *MemoizedSeriesIterator) PeekPrev() (t int64, v float64, ok bool) {
 func (b *MemoizedSeriesIterator) Seek(t int64) bool {
 	t0 := t - b.delta
 
-	if t0 > b.lastTime {
+	if b.ok && t0 > b.lastTime {
 		// Reset the previously stored element because the seek advanced
 		// more than the delta.
 		b.prevTime = math.MinInt64
@@ -112,8 +112,8 @@ func (b *MemoizedSeriesIterator) Next() bool {
 	return b.ok
 }
 
-// Values returns the current element of the iterator.
-func (b *MemoizedSeriesIterator) Values() (int64, float64) {
+// At returns the current element of the iterator.
+func (b *MemoizedSeriesIterator) At() (int64, float64) {
 	return b.it.At()
 }
 

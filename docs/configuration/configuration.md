@@ -95,6 +95,10 @@ remote_write:
 # Settings related to the remote read feature.
 remote_read:
   [ - <remote_read> ... ]
+
+# Storage related settings that are runtime reloadable.
+storage:
+  [ - <exemplars> ... ]  
 ```
 
 ### `<scrape_config>`
@@ -1509,6 +1513,7 @@ node object in the address type order of `NodeInternalIP`, `NodeExternalIP`,
 Available meta labels:
 
 * `__meta_kubernetes_node_name`: The name of the node object.
+* `__meta_kubernetes_node_provider_id`: The cloud provider's name for the node object.
 * `__meta_kubernetes_node_label_<labelname>`: Each label from the node object.
 * `__meta_kubernetes_node_labelpresent_<labelname>`: `true` for each label from the node object.
 * `__meta_kubernetes_node_annotation_<annotationname>`: Each annotation from the node object.
@@ -1597,6 +1602,7 @@ address referenced in the endpointslice object one target is discovered. If the 
 additional container ports of the pod, not bound to an endpoint port, are discovered as targets as well.
 
 Available meta labels:
+
 * `__meta_kubernetes_namespace`: The namespace of the endpoints object.
 * `__meta_kubernetes_endpointslice_name`: The name of endpointslice object.
 * For all targets discovered directly from the endpointslice list (those not additionally inferred
@@ -2839,3 +2845,12 @@ tls_config:
 There is a list of
 [integrations](https://prometheus.io/docs/operating/integrations/#remote-endpoints-and-storage)
 with this feature.
+
+### `<exemplars>`
+
+Note that exemplar storage is still considered experimental and must be enabled via `--enable-feature=exemplar-storage`.
+
+```yaml
+# Configures the maximum size of the circular buffer used to store exemplars for all series. Resizable during runtime.
+[ max_exemplars: <int> | default = 100000 ]
+```
