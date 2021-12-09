@@ -777,7 +777,8 @@ func LastChunkSnapshot(dir string) (string, int, int, error) {
 
 		splits := strings.Split(fi.Name()[len(chunkSnapshotPrefix):], ".")
 		if len(splits) != 2 {
-			return "", 0, 0, errors.Errorf("chunk snapshot %s is not in the right format", fi.Name())
+			// Chunk snapshots is not in the right format, we do not care about it.
+			continue
 		}
 
 		idx, err := strconv.Atoi(splits[0])

@@ -457,6 +457,11 @@ func NewChainSampleIterator(iterators []chunkenc.Iterator) chunkenc.Iterator {
 }
 
 func (c *chainSampleIterator) Seek(t int64) bool {
+	// No-op check
+	if c.curr != nil && c.lastt >= t {
+		return true
+	}
+
 	c.h = samplesIteratorHeap{}
 	for _, iter := range c.iterators {
 		if iter.Seek(t) {

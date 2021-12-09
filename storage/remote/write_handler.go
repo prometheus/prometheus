@@ -54,7 +54,6 @@ func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case nil:
 	case storage.ErrOutOfOrderSample, storage.ErrOutOfBounds, storage.ErrDuplicateSampleForTimestamp:
 		// Indicated an out of order sample is a bad request to prevent retries.
-		level.Error(h.logger).Log("msg", "Out of order sample from remote write", "err", err.Error())
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	default:
@@ -98,6 +97,10 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 		for _, s := range ts.Samples {
 			_, err = app.Append(0, labels, s.Timestamp, s.Value)
 			if err != nil {
+				switch errors.Cause(err) {
+				case storage.ErrOutOfOrderSample, storage.ErrOutOfBounds, storage.ErrDuplicateSampleForTimestamp:
+					level.Error(h.logger).Log("msg", "Out of order sample from remote write", "err", err.Error(), "series", labels.String(), "timestamp", s.Timestamp)
+				}
 				return err
 			}
 

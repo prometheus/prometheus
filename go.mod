@@ -3,18 +3,18 @@ module github.com/prometheus/prometheus
 go 1.14
 
 require (
-	github.com/Azure/azure-sdk-for-go v58.3.0+incompatible
+	github.com/Azure/azure-sdk-for-go v59.4.0+incompatible
 	github.com/Azure/go-autorest/autorest v0.11.22
 	github.com/Azure/go-autorest/autorest/adal v0.9.17
 	github.com/Azure/go-autorest/autorest/to v0.4.0 // indirect
 	github.com/Azure/go-autorest/autorest/validation v0.3.1 // indirect
 	github.com/alecthomas/units v0.0.0-20210927113745-59d0afb8317a
-	github.com/aws/aws-sdk-go v1.42.10
+	github.com/aws/aws-sdk-go v1.42.20
 	github.com/cespare/xxhash/v2 v2.1.2
 	github.com/containerd/containerd v1.5.7 // indirect
 	github.com/dennwc/varint v1.0.0
 	github.com/dgryski/go-sip13 v0.0.0-20200911182023-62edffca9245
-	github.com/digitalocean/godo v1.71.0
+	github.com/digitalocean/godo v1.73.0
 	github.com/docker/docker v20.10.11+incompatible
 	github.com/docker/go-connections v0.4.0 // indirect
 	github.com/edsrzf/mmap-go v1.0.0
@@ -23,11 +23,11 @@ require (
 	github.com/fsnotify/fsnotify v1.5.1
 	github.com/go-kit/log v0.2.0
 	github.com/go-logfmt/logfmt v0.5.1
-	github.com/go-openapi/strfmt v0.21.0
+	github.com/go-openapi/strfmt v0.21.1
 	github.com/go-zookeeper/zk v1.0.2
 	github.com/gogo/protobuf v1.3.2
 	github.com/golang/snappy v0.0.4
-	github.com/google/pprof v0.0.0-20211008130755-947d60d73cc0
+	github.com/google/pprof v0.0.0-20211122183932-1daafda22083
 	github.com/gophercloud/gophercloud v0.23.0
 	github.com/grpc-ecosystem/grpc-gateway v1.16.0
 	github.com/hashicorp/consul/api v1.11.0
@@ -59,14 +59,14 @@ require (
 	github.com/uber/jaeger-lib v2.4.1+incompatible
 	go.uber.org/atomic v1.9.0
 	go.uber.org/goleak v1.1.12
-	golang.org/x/net v0.0.0-20211020060615-d418f374d309
-	golang.org/x/oauth2 v0.0.0-20211005180243-6b3c2da341f1
+	golang.org/x/net v0.0.0-20211123203042-d83791d6bcd9
+	golang.org/x/oauth2 v0.0.0-20211104180415-d3ed0bb246c8
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
-	golang.org/x/sys v0.0.0-20211025201205-69cdffdb9359
-	golang.org/x/time v0.0.0-20210723032227-1f47c861a9ac
-	golang.org/x/tools v0.1.7
-	google.golang.org/api v0.60.0
-	google.golang.org/genproto v0.0.0-20211021150943-2b146023228c
+	golang.org/x/sys v0.0.0-20211124211545-fe61309f8881
+	golang.org/x/time v0.0.0-20211116232009-f0f3c7e86c11
+	golang.org/x/tools v0.1.8
+	google.golang.org/api v0.61.0
+	google.golang.org/genproto v0.0.0-20211129164237-f09f9a12af12
 	google.golang.org/protobuf v1.27.1
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 	gopkg.in/yaml.v2 v2.4.0
