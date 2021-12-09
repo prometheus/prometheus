@@ -1,3 +1,7 @@
+## 2.30.4 / 2021-12-09
+
+* [BUGFIX] TSDB: Fix queries after a failed snapshot replay. #9980
+
 ## 2.30.3 / 2021-10-05
 
 * [BUGFIX] TSDB: Fix panic on failed snapshot replay. #9438
