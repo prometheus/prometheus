@@ -168,7 +168,7 @@ func sizeVarint(x uint64) (n int) {
 		n += 2
 	}
 	if x >= 1<<7 {
-		n += 1
+		n++
 	}
 	return n + 1
 }
@@ -188,7 +188,7 @@ func encodeVarint(data []byte, offset int, v uint64) int {
 // Special code for the common case that a size is less than 128
 func encodeSize(data []byte, offset, v int) int {
 	if v < 1<<7 {
-		offset -= 1
+		offset--
 		data[offset] = uint8(v)
 		return offset
 	}
