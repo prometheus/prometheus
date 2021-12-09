@@ -578,22 +578,6 @@ func (c *TestWriteClient) waitForExpectedData(tb testing.TB) {
 	}
 }
 
-func (c *TestWriteClient) expectDataCount(numSamples int) {
-	if !c.withWaitGroup {
-		return
-	}
-	c.mtx.Lock()
-	defer c.mtx.Unlock()
-	c.wg.Add(numSamples)
-}
-
-func (c *TestWriteClient) waitForExpectedDataCount() {
-	if !c.withWaitGroup {
-		return
-	}
-	c.wg.Wait()
-}
-
 func (c *TestWriteClient) Store(_ context.Context, req []byte) error {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()

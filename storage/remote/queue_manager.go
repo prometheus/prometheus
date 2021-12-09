@@ -1011,11 +1011,10 @@ func (s *shards) enqueue(ref chunks.HeadSeriesRef, data sampleOrExemplar) bool {
 		if !appended {
 			return false
 		}
-		switch data.isSample {
-		case true:
+		if data.isSample {
 			s.qm.metrics.pendingSamples.Inc()
 			s.enqueuedSamples.Inc()
-		case false:
+		} else {
 			s.qm.metrics.pendingExemplars.Inc()
 			s.enqueuedExemplars.Inc()
 		}
@@ -1220,15 +1219,14 @@ func (s *shards) populateTimeSeries(batch []sampleOrExemplar, pendingData []prom
 		// Number of pending samples is limited by the fact that sendSamples (via sendSamplesWithBackoff)
 		// retries endlessly, so once we reach max samples, if we can never send to the endpoint we'll
 		// stop reading from the queue. This makes it safe to reference pendingSamples by index.
-		switch d.isSample {
-		case true:
+		if d.isSample {
 			pendingData[nPending].Labels = labelsToLabelsProto(d.seriesLabels, pendingData[nPending].Labels)
 			pendingData[nPending].Samples = append(pendingData[nPending].Samples, prompb.Sample{
 				Value:     d.value,
 				Timestamp: d.timestamp,
 			})
 			nPendingSamples++
-		case false:
+		} else {
 			pendingData[nPending].Labels = labelsToLabelsProto(d.seriesLabels, pendingData[nPending].Labels)
 			pendingData[nPending].Exemplars = append(pendingData[nPending].Exemplars, prompb.Exemplar{
 				Labels:    labelsToLabelsProto(d.exemplarLabels, nil),
