@@ -16,7 +16,6 @@ package remote
 import (
 	encoding_binary "encoding/binary"
 	"math"
-	math_bits "math/bits"
 
 	"github.com/prometheus/prometheus/model/labels"
 )
@@ -126,7 +125,7 @@ func marshalLabelsToSizedBuffer(lbls labels.Labels, data []byte) (int, error) {
 			return 0, err
 		}
 		i -= size
-		i = encodeVarint(data, i, uint64(size))
+		i = encodeSize(data, i, size)
 		i--
 		data[i] = labelTag
 	}
@@ -138,26 +137,44 @@ func marshalLabelToSizedBuffer(m *labels.Label, data []byte) (int, error) {
 	if len(m.Value) > 0 {
 		i -= len(m.Value)
 		copy(data[i:], m.Value)
-		i = encodeVarint(data, i, uint64(len(m.Value)))
+		i = encodeSize(data, i, len(m.Value))
 		i--
 		data[i] = labelValueTag
 	}
 	if len(m.Name) > 0 {
 		i -= len(m.Name)
 		copy(data[i:], m.Name)
-		i = encodeVarint(data, i, uint64(len(m.Name)))
+		i = encodeSize(data, i, len(m.Name))
 		i--
 		data[i] = labelNameTag
 	}
 	return len(data) - i, nil
 }
 
-func sov(x uint64) (n int) {
-	return (math_bits.Len64(x|1) + 6) / 7
+func sizeVarint(x uint64) (n int) {
+	// Most common case first
+	if x < 1<<7 {
+		return 1
+	}
+	if x >= 1<<56 {
+		return 9
+	}
+	if x >= 1<<28 {
+		x >>= 28
+		n = 4
+	}
+	if x >= 1<<14 {
+		x >>= 14
+		n += 2
+	}
+	if x >= 1<<7 {
+		n += 1
+	}
+	return n + 1
 }
 
 func encodeVarint(data []byte, offset int, v uint64) int {
-	offset -= sov(v)
+	offset -= sizeVarint(v)
 	base := offset
 	for v >= 1<<7 {
 		data[offset] = uint8(v&0x7f | 0x80)
@@ -168,11 +185,21 @@ func encodeVarint(data []byte, offset int, v uint64) int {
 	return base
 }
 
+// Special code for the common case that a size is less than 128
+func encodeSize(data []byte, offset int, v int) int {
+	if v < 1<<7 {
+		offset -= 1
+		data[offset] = uint8(v)
+		return offset
+	}
+	return encodeVarint(data, offset, uint64(v))
+}
+
 func sampleOrExemplarSliceSize(data []sampleOrExemplar) (n int) {
 	for _, e := range data {
-		l := e.protoSize()      // for the sample or exemplar struct
-		l += 1 + sov(uint64(l)) // for the timeSeries struct that wraps it
-		n += 1 + l + sov(uint64(l))
+		l := e.protoSize()             // for the sample or exemplar struct
+		l += 1 + sizeVarint(uint64(l)) // for the timeSeries struct that wraps it
+		n += 1 + l + sizeVarint(uint64(l))
 	}
 	return n
 }
@@ -186,7 +213,7 @@ func (m *sampleOrExemplar) protoSize() (n int) {
 		n += 9
 	}
 	if m.timestamp != 0 {
-		n += 1 + sov(uint64(m.timestamp))
+		n += 1 + sizeVarint(uint64(m.timestamp))
 	}
 	return n
 }
@@ -194,7 +221,7 @@ func (m *sampleOrExemplar) protoSize() (n int) {
 func labelsSize(lbls *labels.Labels) (n int) {
 	for _, e := range *lbls {
 		l := labelSize(&e)
-		n += 1 + l + sov(uint64(l))
+		n += 1 + l + sizeVarint(uint64(l))
 	}
 	return n
 }
@@ -202,11 +229,11 @@ func labelsSize(lbls *labels.Labels) (n int) {
 func labelSize(m *labels.Label) (n int) {
 	l := len(m.Name)
 	if l > 0 {
-		n += 1 + l + sov(uint64(l))
+		n += 1 + l + sizeVarint(uint64(l))
 	}
 	l = len(m.Value)
 	if l > 0 {
-		n += 1 + l + sov(uint64(l))
+		n += 1 + l + sizeVarint(uint64(l))
 	}
 	return n
 }
