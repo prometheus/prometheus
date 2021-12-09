@@ -186,7 +186,7 @@ func encodeVarint(data []byte, offset int, v uint64) int {
 }
 
 // Special code for the common case that a size is less than 128
-func encodeSize(data []byte, offset int, v int) int {
+func encodeSize(data []byte, offset, v int) int {
 	if v < 1<<7 {
 		offset -= 1
 		data[offset] = uint8(v)

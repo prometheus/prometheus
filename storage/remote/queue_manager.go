@@ -1389,7 +1389,6 @@ func buildWriteRequest(samples []prompb.TimeSeries, metadata []prompb.MetricMeta
 	}
 
 	err := pBuf.Marshal(req)
-
 	if err != nil {
 		return nil, err
 	}

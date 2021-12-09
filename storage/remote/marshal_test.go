@@ -18,7 +18,7 @@ import (
 	math_bits "math/bits"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func Test_sizeVarint(t *testing.T) {
@@ -27,7 +27,7 @@ func Test_sizeVarint(t *testing.T) {
 		t.Run(fmt.Sprint(x), func(t *testing.T) {
 			want := (math_bits.Len64(x|1) + 6) / 7 // Implementation used by protoc.
 			got := sizeVarint(x)
-			assert.Equal(t, want, got)
+			require.Equal(t, want, got)
 		})
 	}
 }
