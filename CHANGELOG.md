@@ -1,3 +1,7 @@
+## 2.31.2 / 2021-12-09
+
+* [BUGFIX] TSDB: Fix queries after a failed snapshot replay. #9980
+
 ## 2.31.1 / 2021-11-05
 
 * [BUGFIX] SD: Fix a panic when the experimental discovery manager receives
