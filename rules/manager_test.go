@@ -348,6 +348,103 @@ func sortAlerts(items []*Alert) {
 	})
 }
 
+func TestForStateSync(t *testing.T) {
+	suite, err := promql.NewTest(t, `
+		load 5m
+		http_requests{instance="0"}	75  85 50 0 0 25 0 0 40 0 120
+	`)
+	require.NoError(t, err)
+	defer suite.Close()
+
+	err = suite.Run()
+	require.NoError(t, err)
+
+	expr, err := parser.ParseExpr(`http_requests{instance="0"} < 100`)
+	require.NoError(t, err)
+
+	type testInput struct {
+		alertForStateValue float64
+		evalTime           time.Time
+		expectedActiveAt   time.Time
+	}
+
+	tests := []testInput{
+		// activeAt should NOT be updated to epoch time 0 since (evalTime < alertForStateValue)
+		{
+			alertForStateValue: 300,
+			evalTime:           time.Unix(0, 0),
+			expectedActiveAt:   time.Unix(0, 0),
+		},
+		// activeAt should be updated to epoch time 0 since (alertForStateValue < evalTime)
+		{
+			alertForStateValue: 0,
+			evalTime:           time.Unix(300,0),
+			expectedActiveAt:   time.Unix(0, 0),
+		},
+		// activeAt should be epoch time 0 since (alertForStateValue = evalTime = 0)
+		{
+			alertForStateValue: 0,
+			evalTime:           time.Unix(0, 0),
+			expectedActiveAt:   time.Unix(0, 0),
+		},
+	}
+
+	testFunc := func(tst testInput){
+		labelSet := []string{"__name__", "ALERTS_FOR_STATE", "alertname", "HTTPRequestRateLow", "instance", "0", "severity", "critical"}
+
+		selectMockFunction := func(sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+			return storage.TestSeriesSet(storage.MockSeries([]int64{}, []float64{tst.alertForStateValue}, labelSet))
+		}
+		mockQueryable := storage.MockQueryable{
+			MockQuerier: &storage.MockQuerier{
+				SelectMockFunction: selectMockFunction,
+			},
+		}
+
+		opts := &ManagerOptions{
+			QueryFunc:       EngineQueryFunc(suite.QueryEngine(), suite.Storage()),
+			Appendable:      suite.Storage(),
+			Queryable:       &mockQueryable,
+			Context:         context.Background(),
+			Logger:          log.NewNopLogger(),
+			NotifyFunc:      func(ctx context.Context, expr string, alerts ...*Alert) {},
+			OutageTolerance: 30 * time.Minute,
+			ForGracePeriod:  10 * time.Minute,
+		}
+
+		rule := NewAlertingRule(
+			"HTTPRequestRateLow",
+			expr,
+			25 * time.Minute,
+			labels.FromStrings("severity", "critical"),
+			nil, nil, "", true, nil,
+		)
+		group := NewGroup(GroupOptions{
+			Name:          "default",
+			Interval:      time.Second,
+			Rules:         []Rule{rule},
+			ShouldRestore: true,
+			Opts:          opts,
+		})
+		groups := make(map[string]*Group)
+		groups["default;"] = group
+
+		group.Eval(suite.Context(), tst.evalTime)
+
+		group.SyncForState(time.Now().UTC())
+
+		exp := rule.ActiveAlerts()
+		for _, aa := range exp {
+			require.Equal(t, tst.expectedActiveAt.UTC(), aa.ActiveAt.UTC())
+		}
+	}
+
+	for _, tst := range tests {
+		testFunc(tst)
+	}
+
+}
+
 func TestForStateRestore(t *testing.T) {
 	suite, err := promql.NewTest(t, `
 		load 5m

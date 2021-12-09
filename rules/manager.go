@@ -739,7 +739,7 @@ func (g *Group) SyncForState(ts time.Time) {
 			}
 
 			var s storage.Series
-			s, err := alertRule.queryforStateSample(a, q)
+			s, err := alertRule.queryforStateSeries(a, q)
 			if err != nil {
 				// Querier Warnings are ignored. We do not care unless we have an error.
 				level.Error(g.logger).Log(
@@ -774,7 +774,7 @@ func (g *Group) SyncForState(ts time.Time) {
 			compare := restoredActiveAt.Sub(a.ActiveAt)
 
 			if compare <= 0 {
-				// We have another ruler instance evaluating the same rule group ealier
+				// We have another ruler instance evaluating the same rule group earlier
 				a.ActiveAt = restoredActiveAt
 			}
 
@@ -819,32 +819,9 @@ func (g *Group) RestoreForState(ts time.Time) {
 		}
 
 		alertRule.ForEachActiveAlert(func(a *Alert) {
-			smpl := alertRule.forStateSample(a, time.Now(), 0)
-			var matchers []*labels.Matcher
-			for _, l := range smpl.Metric {
-				mt, err := labels.NewMatcher(labels.MatchEqual, l.Name, l.Value)
-				if err != nil {
-					panic(err)
-				}
-				matchers = append(matchers, mt)
-			}
-
-			sset := q.Select(false, nil, matchers...)
-
-			seriesFound := false
 			var s storage.Series
-			for sset.Next() {
-				// Query assures that smpl.Metric is included in sset.At().Labels(),
-				// hence just checking the length would act like equality.
-				// (This is faster than calling labels.Compare again as we already have some info).
-				if len(sset.At().Labels()) == len(smpl.Metric) {
-					s = sset.At()
-					seriesFound = true
-					break
-				}
-			}
-
-			if err := sset.Err(); err != nil {
+			s, err := alertRule.queryforStateSeries(a, q)
+			if err != nil {
 				// Querier Warnings are ignored. We do not care unless we have an error.
 				level.Error(g.logger).Log(
 					"msg", "Failed to restore 'for' state",
@@ -855,7 +832,7 @@ func (g *Group) RestoreForState(ts time.Time) {
 				return
 			}
 
-			if !seriesFound {
+			if s == nil {
 				return
 			}
 
