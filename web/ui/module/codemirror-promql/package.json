@@ -51,7 +51,7 @@
     "@typescript-eslint/parser": "^5.5.0",
     "chai": "^4.2.0",
     "codecov": "^3.8.3",
-    "eslint": "^8.4.0",
+    "eslint": "^8.4.1",
     "eslint-config-prettier": "^8.3.0",
     "eslint-plugin-flowtype": "^8.0.3",
     "eslint-plugin-import": "^2.25.3",
