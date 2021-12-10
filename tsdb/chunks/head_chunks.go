@@ -61,7 +61,7 @@ const (
 	CRCSize = 4
 	// MaxHeadChunkMetaSize is the max size of an mmapped chunks minus the chunks data.
 	// Max because the uvarint size can be smaller.
-	MaxHeadChunkMetaSize = SeriesRefSize + 2*MintMaxtSize + ChunksFormatVersionSize + MaxChunkLengthFieldSize + CRCSize
+	MaxHeadChunkMetaSize = SeriesRefSize + 2*MintMaxtSize + ChunkEncodingSize + MaxChunkLengthFieldSize + CRCSize
 	// MinWriteBufferSize is the minimum write buffer size allowed.
 	MinWriteBufferSize = 64 * 1024 // 64KB.
 	// MaxWriteBufferSize is the maximum write buffer size allowed.
@@ -113,7 +113,7 @@ func (f *chunkPos) getNextChunkRef(chk chunkenc.Chunk) (chkRef ChunkDiskMapperRe
 	chkLen := uint64(len(chk.Bytes()))
 	bytesToWrite := f.bytesToWriteForChunk(chkLen)
 
-	if f.shouldCutNewFile(chkLen) {
+	if f.shouldCutNewFile(bytesToWrite) {
 		f.toNewFile()
 		f.cutFile = false
 		cutFile = true
@@ -144,14 +144,14 @@ func (f *chunkPos) setSeq(seq uint64) {
 }
 
 // shouldCutNewFile returns whether a new file should be cut based on the file size.
-// The read or write lock on chunkPos must be held when calling this.
-func (f *chunkPos) shouldCutNewFile(chunkSize uint64) bool {
+// Not thread safe, a lock must be held when calling this.
+func (f *chunkPos) shouldCutNewFile(bytesToWrite uint64) bool {
 	if f.cutFile {
 		return true
 	}
 
 	return f.offset == 0 || // First head chunk file.
-		f.offset+chunkSize+MaxHeadChunkMetaSize > MaxHeadChunkFileSize // Exceeds the max head chunk file size.
+		f.offset+bytesToWrite > MaxHeadChunkFileSize // Exceeds the max head chunk file size.
 }
 
 // bytesToWriteForChunk returns the number of bytes that will need to be written for the given chunk size,
