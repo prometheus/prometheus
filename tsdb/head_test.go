@@ -1655,7 +1655,7 @@ func TestHeadReadWriterRepair(t *testing.T) {
 			_, ok, chunkCreated = s.append(int64(i*chunkRange)+chunkRange-1, float64(i*chunkRange), 0, h.chunkDiskMapper)
 			require.True(t, ok, "series append failed")
 			require.False(t, chunkCreated, "chunk was created")
-			h.chunkDiskMapper.CutNewFile()
+			require.NoError(t, h.chunkDiskMapper.CutNewFile())
 		}
 		require.NoError(t, h.Close())
 
