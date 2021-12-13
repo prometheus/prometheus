@@ -447,11 +447,14 @@ func TestRelabel(t *testing.T) {
 			input: labels.FromMap(map[string]string{}),
 			relabel: []*Config{{
 				TargetLabel: "out",
-				Template:    MustNewTemplateExpr(`{{ GetEnv "USER" }}`),
-				Action:      Template,
+				Template: func() TemplateExpr {
+					os.Setenv("TEST_ENV", "Hello, world!")
+					return MustNewTemplateExpr(`{{ GetEnv "TEST_ENV" }}`)
+				}(),
+				Action: Template,
 			}},
 			output: labels.FromMap(map[string]string{
-				"out": os.Getenv("USER"),
+				"out": "Hello, world!",
 			}),
 		},
 	}
