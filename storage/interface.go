@@ -97,7 +97,7 @@ type Querier interface {
 }
 
 // MockQuerier is used for test purposes to mock the selected series that is returned
-type MockQuerier struct{
+type MockQuerier struct {
 	SelectMockFunction func(sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) SeriesSet
 }
 
@@ -323,9 +323,10 @@ type Series interface {
 
 type mockSeries struct {
 	timestamps []int64
-	values	   []float64
+	values     []float64
 	labelSet   []string
 }
+
 func (s mockSeries) Labels() labels.Labels {
 	return labels.FromStrings(s.labelSet...)
 }

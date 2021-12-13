@@ -104,17 +104,19 @@ type mockSeriesIterator struct {
 	currIndex  int
 }
 
-func (it *mockSeriesIterator) Seek(int64) bool      { return false }
-func (it *mockSeriesIterator) At() (int64, float64) { return it.timeStamps[it.currIndex], it.values[it.currIndex]}
-func (it *mockSeriesIterator) Next() bool           {
-	if it.currIndex < len(it.timeStamps) - 1 {
+func (it *mockSeriesIterator) Seek(int64) bool { return false }
+func (it *mockSeriesIterator) At() (int64, float64) {
+	return it.timeStamps[it.currIndex], it.values[it.currIndex]
+}
+func (it *mockSeriesIterator) Next() bool {
+	if it.currIndex < len(it.timeStamps)-1 {
 		it.currIndex++
 		return true
 	}
 
 	return false
 }
-func (it *mockSeriesIterator) Err() error           { return nil }
+func (it *mockSeriesIterator) Err() error { return nil }
 
 // NewNopIterator returns a new chunk iterator that does not hold any data.
 func NewNopIterator() Iterator {

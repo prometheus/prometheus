@@ -537,7 +537,7 @@ func TestQueryForStateSeries(t *testing.T) {
 				return storage.EmptySeriesSet()
 			},
 			expectedSeries: nil,
-			expectedError: nil,
+			expectedError:  nil,
 		},
 		// test for error series
 		{
@@ -545,20 +545,20 @@ func TestQueryForStateSeries(t *testing.T) {
 				return storage.ErrSeriesSet(testError)
 			},
 			expectedSeries: nil,
-			expectedError: testError,
+			expectedError:  testError,
 		},
 		// test for mock series
 		{
 			selectMockFunction: func(sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 				return storage.TestSeriesSet(storage.MockSeries(
-					[]int64{1,2,3},
-					[]float64{1,2,3},
+					[]int64{1, 2, 3},
+					[]float64{1, 2, 3},
 					[]string{"__name__", "ALERTS_FOR_STATE", "alertname", "TestRule", "severity", "critical"},
 				))
 			},
 			expectedSeries: storage.MockSeries(
-				[]int64{1,2,3},
-				[]float64{1,2,3},
+				[]int64{1, 2, 3},
+				[]float64{1, 2, 3},
 				[]string{"__name__", "ALERTS_FOR_STATE", "alertname", "TestRule", "severity", "critical"},
 			),
 			expectedError: nil,

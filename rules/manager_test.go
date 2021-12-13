@@ -378,7 +378,7 @@ func TestForStateSync(t *testing.T) {
 		// activeAt should be updated to epoch time 0 since (alertForStateValue < evalTime)
 		{
 			alertForStateValue: 0,
-			evalTime:           time.Unix(300,0),
+			evalTime:           time.Unix(300, 0),
 			expectedActiveAt:   time.Unix(0, 0),
 		},
 		// activeAt should be epoch time 0 since (alertForStateValue = evalTime = 0)
@@ -389,7 +389,7 @@ func TestForStateSync(t *testing.T) {
 		},
 	}
 
-	testFunc := func(tst testInput){
+	testFunc := func(tst testInput) {
 		labelSet := []string{"__name__", "ALERTS_FOR_STATE", "alertname", "HTTPRequestRateLow", "instance", "0", "severity", "critical"}
 
 		selectMockFunction := func(sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
@@ -415,7 +415,7 @@ func TestForStateSync(t *testing.T) {
 		rule := NewAlertingRule(
 			"HTTPRequestRateLow",
 			expr,
-			25 * time.Minute,
+			25*time.Minute,
 			labels.FromStrings("severity", "critical"),
 			nil, nil, "", true, nil,
 		)
