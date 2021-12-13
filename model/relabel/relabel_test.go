@@ -14,6 +14,7 @@
 package relabel
 
 import (
+	"os"
 	"testing"
 
 	"github.com/prometheus/common/model"
@@ -428,6 +429,31 @@ func TestRelabel(t *testing.T) {
 				"a": "foo",
 			}),
 		},
+		{
+			input: labels.FromMap(map[string]string{
+				"in": "foo",
+			}),
+			relabel: []*Config{{
+				TargetLabel: "out",
+				Template:    MustNewTemplateExpr("{{ len .Labels.in }}"),
+				Action:      Template,
+			}},
+			output: labels.FromMap(map[string]string{
+				"in":  "foo",
+				"out": "3",
+			}),
+		},
+		{
+			input: labels.FromMap(map[string]string{}),
+			relabel: []*Config{{
+				TargetLabel: "out",
+				Template:    MustNewTemplateExpr(`{{ GetEnv "USER" }}`),
+				Action:      Template,
+			}},
+			output: labels.FromMap(map[string]string{
+				"out": os.Getenv("USER"),
+			}),
+		},
 	}
 
 	for _, test := range tests {
@@ -477,4 +503,40 @@ func TestTargetLabelValidity(t *testing.T) {
 		require.Equal(t, test.valid, relabelTarget.Match([]byte(test.str)),
 			"Expected %q to be %v", test.str, test.valid)
 	}
+}
+
+func BenchmarkTemplate(b *testing.B) {
+	inLabels := labels.FromMap(map[string]string{
+		"a": "foo",
+		"b": "bar",
+		"c": "baz",
+	})
+
+	b.Run("Template", func(b *testing.B) {
+		rules := []*Config{{
+			TargetLabel: "out",
+			Template: MustNewTemplateExpr(
+				`{{ .Labels.a }}/{{ .Labels.b }}/{{ .Labels.c }}`,
+			),
+			Action: Template,
+		}}
+
+		for i := 0; i < b.N; i++ {
+			_ = Process(inLabels, rules...)
+		}
+	})
+
+	b.Run("Replacement", func(b *testing.B) {
+		rules := []*Config{{
+			Regex:        DefaultRelabelConfig.Regex,
+			TargetLabel:  "out",
+			Separator:    "/",
+			SourceLabels: model.LabelNames{"a", "b", "c"},
+			Action:       Replace,
+		}}
+
+		for i := 0; i < b.N; i++ {
+			_ = Process(inLabels, rules...)
+		}
+	})
 }
