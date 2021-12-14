@@ -1,18 +1,6 @@
-## 2.32.0-rc.0 / 2021-12-01
+## 2.32.0 / 2021-12-09
 
-This list of changes is relative to [v2.32.0-beta.0](https://github.com/prometheus/prometheus/releases/tag/v2.32.0-beta.0), which was a special 2.32 beta release to pre-publish the Prometheus Agent features.
-
-* [FEATURE] TSDB: Add support for forwarding exemplars in Agent mode. #9664
-* [FEATURE] UI: Adapt web UI for Prometheus Agent mode. #9851
-* [ENHANCEMENT] Linode SD: Tune API request page sizes. #9779
-* [BUGFIX] TSDB: Fix panic when checkpoint directory is empty. #9687
-* [BUGFIX] TSDB: Fix panic, out of order chunks, and race warning during WAL replay. #9856
-* [BUGFIX] UI: Correctly render links for targets with IPv6 addresses that contain a Zone ID. #9853
-* [BUGFIX] Promtool: Fix checking of `authorization.credentials_file` and `bearer_token_file` fields. #9883
-
-## 2.32.0-beta.0 / 2021-11-16
-
-This beta release introduces the Prometheus Agent, a new mode of operation for
+This release introduces the Prometheus Agent, a new mode of operation for
 Prometheus optimized for remote-write only scenarios. In this mode, Prometheus
 does not generate blocks on the local filesystem and is not queryable locally.
 Enable with `--enable-feature=agent`.
@@ -20,7 +8,7 @@ Enable with `--enable-feature=agent`.
 Learn more about the Prometheus Agent in our [blog post](https://prometheus.io/blog/2021/11/16/agent/).
 
 * [CHANGE] remote-write: Change default max retry time from 100ms to 5 seconds. #9634
-* [FEATURE] Agent: New mode of operation optimized for remote-write only scenarios, without local storage. Enable with `--enable-feature=agent`. #8785
+* [FEATURE] Agent: New mode of operation optimized for remote-write only scenarios, without local storage. Enable with `--enable-feature=agent`. #8785 #9851 #9664 #9939 #9941 #9943
 * [FEATURE] Promtool: Add `promtool check service-discovery` command. #8970
 * [FEATURE] UI: Add search in metrics dropdown. #9629
 * [FEATURE] Templates: Add parseDuration to template functions. #8817
@@ -32,8 +20,15 @@ Learn more about the Prometheus Agent in our [blog post](https://prometheus.io/b
 * [ENHANCEMENT] TSDB: Optimize query by skipping unneeded sorting in TSDB. #9673
 * [ENHANCEMENT] Templates: Support int and uint as datatypes for template formatting. #9680
 * [ENHANCEMENT] UI: Prefer `rate` over `rad`, `delta` over `deg`, and `count` over `cos` in autocomplete. #9688
+* [ENHANCEMENT] Linode SD: Tune API request page sizes. #9779
 * [BUGFIX] TSDB: Add more size checks when writing individual sections in the index. #9710
 * [BUGFIX] PromQL: Make `deriv()` return zero values for constant series. #9728
+* [BUGFIX] TSDB: Fix panic when checkpoint directory is empty. #9687
+* [BUGFIX] TSDB: Fix panic, out of order chunks, and race warning during WAL replay. #9856
+* [BUGFIX] UI: Correctly render links for targets with IPv6 addresses that contain a Zone ID. #9853
+* [BUGFIX] Promtool: Fix checking of `authorization.credentials_file` and `bearer_token_file` fields. #9883
+* [BUGFIX] Uyuni SD: Fix null pointer exception during initialization. #9924 #9950
+* [BUGFIX] TSDB: Fix queries after a failed snapshot replay. #9980
 
 ## 2.31.1 / 2021-11-05
 
