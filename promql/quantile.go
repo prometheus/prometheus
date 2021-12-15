@@ -151,31 +151,34 @@ func histogramQuantile(q float64, h *histogram.FloatHistogram) float64 {
 	}
 
 	var (
-		bucket *histogram.FloatBucket
+		bucket histogram.FloatBucket
 		count  float64
 		it     = h.AllBucketIterator()
 		rank   = q * h.Count
-		idx    = -1
 	)
-	// TODO(codesome): Do we need any special handling for negative buckets?
 	for it.Next() {
-		idx++
-		b := it.At()
-		count += b.Count
+		bucket = it.At()
+		count += bucket.Count
 		if count >= rank {
-			bucket = &b
 			break
 		}
 	}
-	if bucket == nil {
-		panic("histogramQuantile: not possible")
-	}
-
-	if idx == 0 && bucket.Lower < 0 && bucket.Upper > 0 {
-		// Zero bucket has the result and it happens to be the first
-		// bucket of this histogram.  So we consider 0 to be the lower
-		// bound.
+	if bucket.Lower < 0 && bucket.Upper > 0 && len(h.NegativeBuckets) == 0 {
+		// The result is in the zero bucket and the histogram has no
+		// negative buckets. So we consider 0 to be the lower bound.
 		bucket.Lower = 0
+	}
+	// Due to numerical inaccuracies, we could end up with a higher count
+	// than h.Count. Thus, make sure count is never higher than h.Count.
+	if count > h.Count {
+		count = h.Count
+	}
+	// We could have hit the highest bucket without even reaching the rank
+	// (observations not counted in any bucket are considered "overflow"
+	// observations above the highest bucket), in which case we simple
+	// return the upper limit of the highest explicit bucket.
+	if count < rank {
+		return bucket.Upper
 	}
 
 	rank -= count - bucket.Count
