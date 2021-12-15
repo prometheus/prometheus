@@ -824,7 +824,7 @@ func TestUpdate(t *testing.T) {
 	ruleManager.start()
 	defer ruleManager.Stop()
 
-	err := ruleManager.Update(10*time.Second, files, nil, "")
+	err := ruleManager.Update(10*time.Second, files, nil, "", nil)
 	require.NoError(t, err)
 	require.Greater(t, len(ruleManager.groups), 0, "expected non-empty rule groups")
 	ogs := map[string]*Group{}
@@ -835,7 +835,7 @@ func TestUpdate(t *testing.T) {
 		ogs[h] = g
 	}
 
-	err = ruleManager.Update(10*time.Second, files, nil, "")
+	err = ruleManager.Update(10*time.Second, files, nil, "", nil)
 	require.NoError(t, err)
 	for h, g := range ruleManager.groups {
 		for _, actual := range g.seriesInPreviousEval {
@@ -854,7 +854,7 @@ func TestUpdate(t *testing.T) {
 	defer os.Remove(tmpFile.Name())
 	defer tmpFile.Close()
 
-	err = ruleManager.Update(10*time.Second, []string{tmpFile.Name()}, nil, "")
+	err = ruleManager.Update(10*time.Second, []string{tmpFile.Name()}, nil, "", nil)
 	require.NoError(t, err)
 
 	for h, g := range ruleManager.groups {
@@ -932,7 +932,7 @@ func reloadAndValidate(rgs *rulefmt.RuleGroups, t *testing.T, tmpFile *os.File, 
 	tmpFile.Seek(0, 0)
 	_, err = tmpFile.Write(bs)
 	require.NoError(t, err)
-	err = ruleManager.Update(10*time.Second, []string{tmpFile.Name()}, nil, "")
+	err = ruleManager.Update(10*time.Second, []string{tmpFile.Name()}, nil, "", nil)
 	require.NoError(t, err)
 	for h, g := range ruleManager.groups {
 		if ogs[h] == g {
@@ -1077,7 +1077,7 @@ func TestMetricsUpdate(t *testing.T) {
 	}
 
 	for i, c := range cases {
-		err := ruleManager.Update(time.Second, c.files, nil, "")
+		err := ruleManager.Update(time.Second, c.files, nil, "", nil)
 		require.NoError(t, err)
 		time.Sleep(2 * time.Second)
 		require.Equal(t, c.metrics, countMetrics(), "test %d: invalid count of metrics", i)
@@ -1151,7 +1151,7 @@ func TestGroupStalenessOnRemoval(t *testing.T) {
 
 	var totalStaleNaN int
 	for i, c := range cases {
-		err := ruleManager.Update(time.Second, c.files, nil, "")
+		err := ruleManager.Update(time.Second, c.files, nil, "", nil)
 		require.NoError(t, err)
 		time.Sleep(3 * time.Second)
 		totalStaleNaN += c.staleNaN
@@ -1193,11 +1193,11 @@ func TestMetricsStalenessOnManagerShutdown(t *testing.T) {
 		}
 	}()
 
-	err := ruleManager.Update(2*time.Second, files, nil, "")
+	err := ruleManager.Update(2*time.Second, files, nil, "", nil)
 	time.Sleep(4 * time.Second)
 	require.NoError(t, err)
 	start := time.Now()
-	err = ruleManager.Update(3*time.Second, files[:0], nil, "")
+	err = ruleManager.Update(3*time.Second, files[:0], nil, "", nil)
 	require.NoError(t, err)
 	ruleManager.Stop()
 	stopped = true
@@ -1325,4 +1325,86 @@ func TestRuleHealthUpdates(t *testing.T) {
 	rules = group.Rules()[0]
 	require.EqualError(t, rules.LastError(), storage.ErrOutOfOrderSample.Error())
 	require.Equal(t, HealthBad, rules.Health())
+}
+
+func TestUpdateMissedEvalMetrics(t *testing.T) {
+	suite, err := promql.NewTest(t, `
+		load 5m
+		http_requests{instance="0"}	75  85 50 0 0 25 0 0 40 0 120
+	`)
+
+	require.NoError(t, err)
+	defer suite.Close()
+
+	err = suite.Run()
+	require.NoError(t, err)
+
+	expr, err := parser.ParseExpr(`http_requests{group="canary", job="app-server"} < 100`)
+	require.NoError(t, err)
+
+	testValue := 1
+
+	overrideFunc := func(g *Group, ts time.Time) {
+		g.SyncForState(ts)
+		testValue = 2
+	}
+
+	type testInput struct {
+		overrideFunc  func(g *Group, ts time.Time)
+		expectedValue int
+	}
+
+	tests := []testInput{
+		// testValue should still have value of 1 since overrideFunc is nil
+		{
+			overrideFunc:  nil,
+			expectedValue: 1,
+		},
+		// testValue should be incremented to 2 since overrideFunc is called
+		{
+			overrideFunc:  overrideFunc,
+			expectedValue: 2,
+		},
+	}
+
+	testFunc := func(tst testInput) {
+		opts := &ManagerOptions{
+			QueryFunc:       EngineQueryFunc(suite.QueryEngine(), suite.Storage()),
+			Appendable:      suite.Storage(),
+			Queryable:       suite.Storage(),
+			Context:         context.Background(),
+			Logger:          log.NewNopLogger(),
+			NotifyFunc:      func(ctx context.Context, expr string, alerts ...*Alert) {},
+			OutageTolerance: 30 * time.Minute,
+			ForGracePeriod:  10 * time.Minute,
+		}
+
+		rule := NewAlertingRule(
+			"HTTPRequestRateLow",
+			expr,
+			25*time.Minute,
+			labels.FromStrings("severity", "critical"),
+			nil, nil, "", true, nil,
+		)
+		group := NewGroup(GroupOptions{
+			Name:                     "default",
+			Interval:                 time.Second,
+			Rules:                    []Rule{rule},
+			ShouldRestore:            true,
+			Opts:                     opts,
+			SyncForStateOverrideFunc: tst.overrideFunc,
+		})
+
+		go func() {
+			group.run(opts.Context)
+		}()
+
+		time.Sleep(3 * time.Second)
+		group.stop()
+		require.Equal(t, tst.expectedValue, testValue)
+	}
+
+	for _, tst := range tests {
+		testFunc(tst)
+	}
 }

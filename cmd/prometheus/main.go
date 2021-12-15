@@ -707,6 +707,7 @@ func main() {
 					files,
 					cfg.GlobalConfig.ExternalLabels,
 					externalURL,
+					nil,
 				)
 			},
 		},

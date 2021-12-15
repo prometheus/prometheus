@@ -263,16 +263,21 @@ type Group struct {
 	logger log.Logger
 
 	metrics *Metrics
+
+	syncForStateOverrideFunc SyncForStateOverrideFuncType
 }
 
+type SyncForStateOverrideFuncType func(g *Group, ts time.Time)
+
 type GroupOptions struct {
-	Name, File    string
-	Interval      time.Duration
-	Limit         int
-	Rules         []Rule
-	ShouldRestore bool
-	Opts          *ManagerOptions
-	done          chan struct{}
+	Name, File               string
+	Interval                 time.Duration
+	Limit                    int
+	Rules                    []Rule
+	ShouldRestore            bool
+	Opts                     *ManagerOptions
+	done                     chan struct{}
+	SyncForStateOverrideFunc SyncForStateOverrideFuncType
 }
 
 // NewGroup makes a new Group with the given name, options, and rules.
@@ -294,19 +299,20 @@ func NewGroup(o GroupOptions) *Group {
 	metrics.GroupInterval.WithLabelValues(key).Set(o.Interval.Seconds())
 
 	return &Group{
-		name:                 o.Name,
-		file:                 o.File,
-		interval:             o.Interval,
-		limit:                o.Limit,
-		rules:                o.Rules,
-		shouldRestore:        o.ShouldRestore,
-		opts:                 o.Opts,
-		seriesInPreviousEval: make([]map[string]labels.Labels, len(o.Rules)),
-		done:                 make(chan struct{}),
-		managerDone:          o.done,
-		terminated:           make(chan struct{}),
-		logger:               log.With(o.Opts.Logger, "group", o.Name),
-		metrics:              metrics,
+		name:                     o.Name,
+		file:                     o.File,
+		interval:                 o.Interval,
+		limit:                    o.Limit,
+		rules:                    o.Rules,
+		shouldRestore:            o.ShouldRestore,
+		opts:                     o.Opts,
+		seriesInPreviousEval:     make([]map[string]labels.Labels, len(o.Rules)),
+		done:                     make(chan struct{}),
+		managerDone:              o.done,
+		terminated:               make(chan struct{}),
+		logger:                   log.With(o.Opts.Logger, "group", o.Name),
+		metrics:                  metrics,
+		syncForStateOverrideFunc: o.SyncForStateOverrideFunc,
 	}
 }
 
@@ -422,7 +428,11 @@ func (g *Group) run(ctx context.Context) {
 					g.metrics.IterationsScheduled.WithLabelValues(GroupKey(g.file, g.name)).Add(float64(missed))
 				}
 				evalTimestamp = evalTimestamp.Add((missed + 1) * g.interval)
-				g.SyncForState(time.Now())
+
+				if g.syncForStateOverrideFunc != nil {
+					g.syncForStateOverrideFunc(g, time.Now())
+				}
+
 				iter()
 			}
 		}
@@ -1010,11 +1020,12 @@ func (m *Manager) Stop() {
 
 // Update the rule manager's state as the config requires. If
 // loading the new rules failed the old rule set is restored.
-func (m *Manager) Update(interval time.Duration, files []string, externalLabels labels.Labels, externalURL string) error {
+func (m *Manager) Update(interval time.Duration, files []string, externalLabels labels.Labels, externalURL string, syncForStateOverrideFunc SyncForStateOverrideFuncType) error {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
-	groups, errs := m.LoadGroups(interval, externalLabels, externalURL, files...)
+	groups, errs := m.LoadGroups(interval, externalLabels, externalURL, syncForStateOverrideFunc, files...)
+
 	if errs != nil {
 		for _, e := range errs {
 			level.Error(m.logger).Log("msg", "loading groups failed", "err", e)
@@ -1098,7 +1109,7 @@ func (FileLoader) Parse(query string) (parser.Expr, error) { return parser.Parse
 
 // LoadGroups reads groups from a list of files.
 func (m *Manager) LoadGroups(
-	interval time.Duration, externalLabels labels.Labels, externalURL string, filenames ...string,
+	interval time.Duration, externalLabels labels.Labels, externalURL string, syncForStateOverrideFunc SyncForStateOverrideFuncType, filenames ...string,
 ) (map[string]*Group, []error) {
 	groups := make(map[string]*Group)
 
@@ -1145,14 +1156,15 @@ func (m *Manager) LoadGroups(
 			}
 
 			groups[GroupKey(fn, rg.Name)] = NewGroup(GroupOptions{
-				Name:          rg.Name,
-				File:          fn,
-				Interval:      itv,
-				Limit:         rg.Limit,
-				Rules:         rules,
-				ShouldRestore: shouldRestore,
-				Opts:          m.opts,
-				done:          m.done,
+				Name:                     rg.Name,
+				File:                     fn,
+				Interval:                 itv,
+				Limit:                    rg.Limit,
+				Rules:                    rules,
+				ShouldRestore:            shouldRestore,
+				Opts:                     m.opts,
+				done:                     m.done,
+				SyncForStateOverrideFunc: syncForStateOverrideFunc,
 			})
 		}
 	}
