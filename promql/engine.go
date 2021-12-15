@@ -2321,7 +2321,12 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 		case parser.SUM:
 			if s.H != nil {
 				group.hasHistogram = true
-				group.histogramValue.Add(s.H)
+				if group.histogramValue != nil {
+					group.histogramValue.Add(s.H)
+				}
+				// Otherwise the aggregation contained floats
+				// previously and will be invalid anyway. No
+				// point in copying the histogram in that case.
 			} else {
 				group.hasFloat = true
 				group.value += s.V
