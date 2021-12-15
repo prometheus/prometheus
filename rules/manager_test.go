@@ -1350,7 +1350,6 @@ func TestUpdateMissedEvalMetrics(t *testing.T) {
 		ts.Add(time.Minute)
 	}
 
-
 	type testInput struct {
 		overrideFunc  func(g *Group, ts time.Time)
 		expectedValue int
@@ -1359,12 +1358,12 @@ func TestUpdateMissedEvalMetrics(t *testing.T) {
 	tests := []testInput{
 		// testValue should still have value of 1 since overrideFunc is nil
 		{
-			overrideFunc: nil,
+			overrideFunc:  nil,
 			expectedValue: 1,
 		},
 		// testValue should be incremented to 2 since overrideFunc is called
 		{
-			overrideFunc: overrideFunc,
+			overrideFunc:  overrideFunc,
 			expectedValue: 2,
 		},
 	}
