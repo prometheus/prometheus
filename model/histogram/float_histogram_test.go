@@ -983,7 +983,7 @@ func TestAllFloatBucketIterator(t *testing.T) {
 				}
 			}
 
-			it := c.h.AllFloatBucketIterator()
+			it := c.h.AllBucketIterator()
 			for it.Next() {
 				actBuckets = append(actBuckets, it.At())
 			}

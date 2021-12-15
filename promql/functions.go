@@ -883,7 +883,9 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 		if el.H != nil { // It's a histogram type.
 			_, ok := enh.signatureToMetricWithBuckets[l]
 			if ok {
-				// This signature exists for both conventional and new histograms which is not supported.
+				// This signature exists for both conventional
+				// and new histograms, which is not supported.
+				// TODO(beorn7): Issue a warning somehow.
 				delete(enh.signatureToMetricWithBuckets, l)
 				delete(enh.signatureToMetricWithHistograms, l)
 				ignoreSignature[l] = true
@@ -913,7 +915,9 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 
 		_, ok := enh.signatureToMetricWithHistograms[l]
 		if ok {
-			// This signature exists for both conventional and new histograms which is not supported.
+			// This signature exists for both conventional and new
+			// histograms, which is not supported.
+			// TODO(beorn7): Issue a warning somehow.
 			delete(enh.signatureToMetricWithBuckets, l)
 			delete(enh.signatureToMetricWithHistograms, l)
 			ignoreSignature[l] = true

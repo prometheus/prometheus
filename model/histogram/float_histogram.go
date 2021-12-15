@@ -419,23 +419,23 @@ func (h *FloatHistogram) NegativeBucketIterator() FloatBucketIterator {
 }
 
 // PositiveReverseBucketIterator returns a FloatBucketIterator to iterate over all
-// positive buckets in decending order (starting at the highest bucket and going
-// down upto zero bucket).
+// positive buckets in descending order (starting at the highest bucket and going
+// down towards the zero bucket).
 func (h *FloatHistogram) PositiveReverseBucketIterator() FloatBucketIterator {
 	return newReverseFloatBucketIterator(h, true)
 }
 
 // NegativeReverseBucketIterator returns a FloatBucketIterator to iterate over all
-// negative buckets in ascending order (starting at the lowest bucket and doing up
-// upto zero bucket).
+// negative buckets in ascending order (starting at the lowest bucket and going up
+// towards the zero bucket).
 func (h *FloatHistogram) NegativeReverseBucketIterator() FloatBucketIterator {
 	return newReverseFloatBucketIterator(h, false)
 }
 
-// AllFloatBucketIterator returns a FloatBucketIterator to iterate over all
-// negative, zero, and positive buckets in ascending order (starting at the
-// lowest bucket and going up).
-func (h *FloatHistogram) AllFloatBucketIterator() FloatBucketIterator {
+// AllBucketIterator returns a FloatBucketIterator to iterate over all negative,
+// zero, and positive buckets in ascending order (starting at the lowest bucket
+// and going up).
+func (h *FloatHistogram) AllBucketIterator() FloatBucketIterator {
 	return newAllFloatBucketIterator(h)
 }
 
@@ -657,7 +657,7 @@ type allFloatBucketIterator struct {
 	h                *FloatHistogram
 	negIter, posIter FloatBucketIterator
 	// -1 means we are iterating negative buckets.
-	// 0 means it is time for zero bucket.
+	// 0 means it is time for the zero bucket.
 	// 1 means we are iterating positive buckets.
 	// Anything else means iteration is over.
 	state      int8
