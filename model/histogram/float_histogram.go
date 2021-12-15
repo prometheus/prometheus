@@ -584,8 +584,6 @@ type reverseFloatBucketIterator struct {
 	currCount            float64 // Count in the current bucket.
 	currIdx              int32   // The actual bucket index.
 	currLower, currUpper float64 // Limits of the current bucket.
-
-	initiated bool
 }
 
 func newReverseFloatBucketIterator(h *FloatHistogram, positive bool) *reverseFloatBucketIterator {
@@ -597,24 +595,21 @@ func newReverseFloatBucketIterator(h *FloatHistogram, positive bool) *reverseFlo
 		r.spans = h.NegativeSpans
 		r.buckets = h.NegativeBuckets
 	}
+
+	r.spansIdx = len(r.spans) - 1
+	r.bucketsIdx = len(r.buckets) - 1
+	if r.spansIdx >= 0 {
+		r.idxInSpan = int32(r.spans[r.spansIdx].Length) - 1
+	}
+	r.currIdx = 0
+	for _, s := range r.spans {
+		r.currIdx += s.Offset + int32(s.Length)
+	}
+
 	return r
 }
 
 func (r *reverseFloatBucketIterator) Next() bool {
-	if !r.initiated {
-		r.initiated = true
-		r.spansIdx = len(r.spans) - 1
-		r.bucketsIdx = len(r.buckets) - 1
-		if r.spansIdx >= 0 {
-			r.idxInSpan = int32(r.spans[r.spansIdx].Length) - 1
-		}
-
-		r.currIdx = 0
-		for _, s := range r.spans {
-			r.currIdx += s.Offset + int32(s.Length)
-		}
-	}
-
 	r.currIdx--
 	if r.bucketsIdx < 0 {
 		return false
