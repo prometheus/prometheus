@@ -1247,6 +1247,37 @@ describe('autocomplete promQL test', () => {
         span: /^[a-zA-Z0-9_:]+$/,
       },
     },
+    {
+      title: 'online autocomplete with initial metric list',
+      expr: 'rat',
+      pos: 3,
+      conf: { remote: { cache: { initialMetricList: ['metric1', 'metric2', 'rat'] } } },
+      expectedResult: {
+        options: ([] as Completion[]).concat(
+          [
+            {
+              label: 'metric1',
+              type: 'constant',
+            },
+            {
+              label: 'metric2',
+              type: 'constant',
+            },
+            {
+              label: 'rat',
+              type: 'constant',
+            },
+          ],
+          functionIdentifierTerms,
+          aggregateOpTerms,
+          numberTerms,
+          snippets
+        ),
+        from: 0,
+        to: 3,
+        span: /^[a-zA-Z0-9_:]+$/,
+      },
+    },
   ];
   testCases.forEach((value) => {
     it(value.title, async () => {

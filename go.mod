@@ -3,19 +3,19 @@ module github.com/prometheus/prometheus
 go 1.14
 
 require (
-	github.com/Azure/azure-sdk-for-go v59.4.0+incompatible
-	github.com/Azure/go-autorest/autorest v0.11.22
+	github.com/Azure/azure-sdk-for-go v60.1.0+incompatible
+	github.com/Azure/go-autorest/autorest v0.11.23
 	github.com/Azure/go-autorest/autorest/adal v0.9.17
 	github.com/Azure/go-autorest/autorest/to v0.4.0 // indirect
 	github.com/Azure/go-autorest/autorest/validation v0.3.1 // indirect
 	github.com/alecthomas/units v0.0.0-20210927113745-59d0afb8317a
-	github.com/aws/aws-sdk-go v1.42.15
+	github.com/aws/aws-sdk-go v1.42.23
 	github.com/cespare/xxhash/v2 v2.1.2
 	github.com/containerd/containerd v1.5.7 // indirect
 	github.com/dennwc/varint v1.0.0
 	github.com/dgryski/go-sip13 v0.0.0-20200911182023-62edffca9245
-	github.com/digitalocean/godo v1.71.0
-	github.com/docker/docker v20.10.11+incompatible
+	github.com/digitalocean/godo v1.73.0
+	github.com/docker/docker v20.10.12+incompatible
 	github.com/docker/go-connections v0.4.0 // indirect
 	github.com/edsrzf/mmap-go v1.0.0
 	github.com/envoyproxy/go-control-plane v0.10.1
@@ -27,8 +27,8 @@ require (
 	github.com/go-zookeeper/zk v1.0.2
 	github.com/gogo/protobuf v1.3.2
 	github.com/golang/snappy v0.0.4
-	github.com/google/pprof v0.0.0-20211008130755-947d60d73cc0
-	github.com/gophercloud/gophercloud v0.23.0
+	github.com/google/pprof v0.0.0-20211122183932-1daafda22083
+	github.com/gophercloud/gophercloud v0.24.0
 	github.com/grpc-ecosystem/grpc-gateway v1.16.0
 	github.com/hashicorp/consul/api v1.11.0
 	github.com/hetznercloud/hcloud-go v1.33.1
@@ -50,7 +50,7 @@ require (
 	github.com/prometheus/client_model v0.2.0
 	github.com/prometheus/common v0.32.1
 	github.com/prometheus/common/sigv4 v0.1.0
-	github.com/prometheus/exporter-toolkit v0.7.0
+	github.com/prometheus/exporter-toolkit v0.7.1
 	github.com/scaleway/scaleway-sdk-go v1.0.0-beta.7.0.20210223165440-c65ae3540d44
 	github.com/shurcooL/httpfs v0.0.0-20190707220628-8d4bc4ba7749
 	github.com/shurcooL/vfsgen v0.0.0-20200824052919-0d455de96546
@@ -59,23 +59,23 @@ require (
 	github.com/uber/jaeger-lib v2.4.1+incompatible
 	go.uber.org/atomic v1.9.0
 	go.uber.org/goleak v1.1.12
-	golang.org/x/net v0.0.0-20211020060615-d418f374d309
-	golang.org/x/oauth2 v0.0.0-20211005180243-6b3c2da341f1
+	golang.org/x/net v0.0.0-20211209124913-491a49abca63
+	golang.org/x/oauth2 v0.0.0-20211104180415-d3ed0bb246c8
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
-	golang.org/x/sys v0.0.0-20211025201205-69cdffdb9359
-	golang.org/x/time v0.0.0-20210723032227-1f47c861a9ac
-	golang.org/x/tools v0.1.7
-	google.golang.org/api v0.60.0
-	google.golang.org/genproto v0.0.0-20211021150943-2b146023228c
+	golang.org/x/sys v0.0.0-20211210111614-af8b64212486
+	golang.org/x/time v0.0.0-20211116232009-f0f3c7e86c11
+	golang.org/x/tools v0.1.8
+	google.golang.org/api v0.63.0
+	google.golang.org/genproto v0.0.0-20211208223120-3a66f561d7aa
 	google.golang.org/protobuf v1.27.1
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
-	k8s.io/api v0.22.4
-	k8s.io/apimachinery v0.22.4
-	k8s.io/client-go v0.22.4
+	k8s.io/api v0.23.0
+	k8s.io/apimachinery v0.23.0
+	k8s.io/client-go v0.23.0
 	k8s.io/klog v1.0.0
-	k8s.io/klog/v2 v2.20.0
+	k8s.io/klog/v2 v2.30.0
 )
 
 replace (

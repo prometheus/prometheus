@@ -71,6 +71,7 @@ func TestMemoizedSeriesIterator(t *testing.T) {
 	prevSampleEq(100, 9, true)
 
 	require.Equal(t, it.Next(), chunkenc.ValNone, "next succeeded unexpectedly")
+	require.Equal(t, it.Seek(1024), chunkenc.ValNone, "seek succeeded unexpectedly")
 }
 
 func BenchmarkMemoizedSeriesIterator(b *testing.B) {

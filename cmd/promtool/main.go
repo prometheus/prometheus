@@ -73,6 +73,7 @@ func main() {
 		"config-files",
 		"The config files to check.",
 	).Required().ExistingFiles()
+	checkConfigSyntaxOnly := checkConfigCmd.Flag("syntax-only", "Only check the config file syntax, ignoring file and content validation referenced in the config").Bool()
 
 	checkWebConfigCmd := checkCmd.Command("web-config", "Check if the web config files are valid or not.")
 	webConfigFiles := checkWebConfigCmd.Arg(
@@ -211,7 +212,7 @@ func main() {
 		os.Exit(CheckSD(*sdConfigFile, *sdJobName, *sdTimeout))
 
 	case checkConfigCmd.FullCommand():
-		os.Exit(CheckConfig(*agentMode, *configFiles...))
+		os.Exit(CheckConfig(*agentMode, *checkConfigSyntaxOnly, *configFiles...))
 
 	case checkWebConfigCmd.FullCommand():
 		os.Exit(CheckWebConfig(*webConfigFiles...))
@@ -267,16 +268,19 @@ func main() {
 }
 
 // CheckConfig validates configuration files.
-func CheckConfig(agentMode bool, files ...string) int {
+func CheckConfig(agentMode, checkSyntaxOnly bool, files ...string) int {
 	failed := false
 
 	for _, f := range files {
-		ruleFiles, err := checkConfig(agentMode, f)
+		ruleFiles, err := checkConfig(agentMode, f, checkSyntaxOnly)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "  FAILED:", err)
 			failed = true
 		} else {
-			fmt.Printf("  SUCCESS: %d rule files found\n", len(ruleFiles))
+			if len(ruleFiles) > 0 {
+				fmt.Printf("  SUCCESS: %d rule files found\n", len(ruleFiles))
+			}
+			fmt.Printf(" SUCCESS: %s is valid prometheus config file syntax\n", f)
 		}
 		fmt.Println()
 
@@ -326,7 +330,7 @@ func checkFileExists(fn string) error {
 	return err
 }
 
-func checkConfig(agentMode bool, filename string) ([]string, error) {
+func checkConfig(agentMode bool, filename string, checkSyntaxOnly bool) ([]string, error) {
 	fmt.Println("Checking", filename)
 
 	cfg, err := config.LoadFile(filename, agentMode, false, log.NewNopLogger())
@@ -335,41 +339,46 @@ func checkConfig(agentMode bool, filename string) ([]string, error) {
 	}
 
 	var ruleFiles []string
-	for _, rf := range cfg.RuleFiles {
-		rfs, err := filepath.Glob(rf)
-		if err != nil {
-			return nil, err
-		}
-		// If an explicit file was given, error if it is not accessible.
-		if !strings.Contains(rf, "*") {
-			if len(rfs) == 0 {
-				return nil, errors.Errorf("%q does not point to an existing file", rf)
+	if !checkSyntaxOnly {
+		for _, rf := range cfg.RuleFiles {
+			rfs, err := filepath.Glob(rf)
+			if err != nil {
+				return nil, err
 			}
-			if err := checkFileExists(rfs[0]); err != nil {
-				return nil, errors.Wrapf(err, "error checking rule file %q", rfs[0])
+			// If an explicit file was given, error if it is not accessible.
+			if !strings.Contains(rf, "*") {
+				if len(rfs) == 0 {
+					return nil, errors.Errorf("%q does not point to an existing file", rf)
+				}
+				if err := checkFileExists(rfs[0]); err != nil {
+					return nil, errors.Wrapf(err, "error checking rule file %q", rfs[0])
+				}
 			}
+			ruleFiles = append(ruleFiles, rfs...)
 		}
-		ruleFiles = append(ruleFiles, rfs...)
 	}
 
 	for _, scfg := range cfg.ScrapeConfigs {
-		if scfg.HTTPClientConfig.Authorization != nil {
+		if !checkSyntaxOnly && scfg.HTTPClientConfig.Authorization != nil {
 			if err := checkFileExists(scfg.HTTPClientConfig.Authorization.CredentialsFile); err != nil {
 				return nil, errors.Wrapf(err, "error checking authorization credentials or bearer token file %q", scfg.HTTPClientConfig.Authorization.CredentialsFile)
 			}
 		}
 
-		if err := checkTLSConfig(scfg.HTTPClientConfig.TLSConfig); err != nil {
+		if err := checkTLSConfig(scfg.HTTPClientConfig.TLSConfig, checkSyntaxOnly); err != nil {
 			return nil, err
 		}
 
 		for _, c := range scfg.ServiceDiscoveryConfigs {
 			switch c := c.(type) {
 			case *kubernetes.SDConfig:
-				if err := checkTLSConfig(c.HTTPClientConfig.TLSConfig); err != nil {
+				if err := checkTLSConfig(c.HTTPClientConfig.TLSConfig, checkSyntaxOnly); err != nil {
 					return nil, err
 				}
 			case *file.SDConfig:
+				if checkSyntaxOnly {
+					break
+				}
 				for _, file := range c.Files {
 					files, err := filepath.Glob(file)
 					if err != nil {
@@ -403,6 +412,9 @@ func checkConfig(agentMode bool, filename string) ([]string, error) {
 		for _, c := range amcfg.ServiceDiscoveryConfigs {
 			switch c := c.(type) {
 			case *file.SDConfig:
+				if checkSyntaxOnly {
+					break
+				}
 				for _, file := range c.Files {
 					files, err := filepath.Glob(file)
 					if err != nil {
@@ -434,19 +446,23 @@ func checkConfig(agentMode bool, filename string) ([]string, error) {
 	return ruleFiles, nil
 }
 
-func checkTLSConfig(tlsConfig config_util.TLSConfig) error {
-	if err := checkFileExists(tlsConfig.CertFile); err != nil {
-		return errors.Wrapf(err, "error checking client cert file %q", tlsConfig.CertFile)
-	}
-	if err := checkFileExists(tlsConfig.KeyFile); err != nil {
-		return errors.Wrapf(err, "error checking client key file %q", tlsConfig.KeyFile)
-	}
-
+func checkTLSConfig(tlsConfig config_util.TLSConfig, checkSyntaxOnly bool) error {
 	if len(tlsConfig.CertFile) > 0 && len(tlsConfig.KeyFile) == 0 {
 		return errors.Errorf("client cert file %q specified without client key file", tlsConfig.CertFile)
 	}
 	if len(tlsConfig.KeyFile) > 0 && len(tlsConfig.CertFile) == 0 {
 		return errors.Errorf("client key file %q specified without client cert file", tlsConfig.KeyFile)
+	}
+
+	if checkSyntaxOnly {
+		return nil
+	}
+
+	if err := checkFileExists(tlsConfig.CertFile); err != nil {
+		return errors.Wrapf(err, "error checking client cert file %q", tlsConfig.CertFile)
+	}
+	if err := checkFileExists(tlsConfig.KeyFile); err != nil {
+		return errors.Wrapf(err, "error checking client key file %q", tlsConfig.KeyFile)
 	}
 
 	return nil

@@ -85,7 +85,7 @@ func (b *BufferedSeriesIterator) Seek(t int64) chunkenc.ValueType {
 
 	// If the delta would cause us to seek backwards, preserve the buffer
 	// and just continue regular advancement while filling the buffer on the way.
-	if t0 > b.lastTime {
+	if b.valueType != chunkenc.ValNone && t0 > b.lastTime {
 		b.buf.reset()
 
 		b.valueType = b.it.Seek(t0)

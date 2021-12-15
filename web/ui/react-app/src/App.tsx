@@ -103,7 +103,7 @@ const App: FC<AppProps> = ({ consolesLink, agentMode }) => {
                 <ServiceDiscoveryPage />
               </Route>
               <Route path="/status">
-                <StatusPage />
+                <StatusPage agentMode={agentMode} />
               </Route>
               <Route path="/tsdb-status">
                 <TSDBStatusPage />

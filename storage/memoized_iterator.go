@@ -77,7 +77,7 @@ func (b *MemoizedSeriesIterator) PeekPrev() (t int64, v float64, h *histogram.Hi
 func (b *MemoizedSeriesIterator) Seek(t int64) chunkenc.ValueType {
 	t0 := t - b.delta
 
-	if t0 > b.lastTime {
+	if b.valueType != chunkenc.ValNone && t0 > b.lastTime {
 		// Reset the previously stored element because the seek advanced
 		// more than the delta.
 		b.prevTime = math.MinInt64

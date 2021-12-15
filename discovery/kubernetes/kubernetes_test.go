@@ -54,6 +54,7 @@ func makeDiscoveryWithVersion(role Role, nsDiscovery NamespaceDiscovery, k8sVer 
 		logger:             log.NewNopLogger(),
 		role:               role,
 		namespaceDiscovery: &nsDiscovery,
+		ownNamespace:       "own-ns",
 	}, clientset
 }
 

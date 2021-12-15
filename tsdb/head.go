@@ -483,7 +483,9 @@ const cardinalityCacheExpirationTime = time.Duration(30) * time.Second
 // limits the ingested samples to the head min valid time.
 func (h *Head) Init(minValidTime int64) error {
 	h.minValidTime.Store(minValidTime)
-	defer h.postings.EnsureOrder()
+	defer func() {
+		h.postings.EnsureOrder()
+	}()
 	defer h.gc() // After loading the wal remove the obsolete data from the head.
 	defer func() {
 		// Loading of m-mapped chunks and snapshot can make the mint of the Head
@@ -696,17 +698,18 @@ func (h *Head) ApplyConfig(cfg *config.Config) error {
 	}
 
 	// Head uses opts.MaxExemplars in combination with opts.EnableExemplarStorage
-	// to decide if it should pass exemplars along to it's exemplar storage, so we
+	// to decide if it should pass exemplars along to its exemplar storage, so we
 	// need to update opts.MaxExemplars here.
 	prevSize := h.opts.MaxExemplars.Load()
 	h.opts.MaxExemplars.Store(cfg.StorageConfig.ExemplarsConfig.MaxExemplars)
+	newSize := h.opts.MaxExemplars.Load()
 
-	if prevSize == h.opts.MaxExemplars.Load() {
+	if prevSize == newSize {
 		return nil
 	}
 
-	migrated := h.exemplars.(*CircularExemplarStorage).Resize(h.opts.MaxExemplars.Load())
-	level.Info(h.logger).Log("msg", "Exemplar storage resized", "from", prevSize, "to", h.opts.MaxExemplars, "migrated", migrated)
+	migrated := h.exemplars.(*CircularExemplarStorage).Resize(newSize)
+	level.Info(h.logger).Log("msg", "Exemplar storage resized", "from", prevSize, "to", newSize, "migrated", migrated)
 	return nil
 }
 

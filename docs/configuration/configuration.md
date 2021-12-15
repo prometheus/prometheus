@@ -95,6 +95,10 @@ remote_write:
 # Settings related to the remote read feature.
 remote_read:
   [ - <remote_read> ... ]
+
+# Storage related settings that are runtime reloadable.
+storage:
+  [ - <exemplars> ... ]  
 ```
 
 ### `<scrape_config>`
@@ -1509,6 +1513,7 @@ node object in the address type order of `NodeInternalIP`, `NodeExternalIP`,
 Available meta labels:
 
 * `__meta_kubernetes_node_name`: The name of the node object.
+* `__meta_kubernetes_node_provider_id`: The cloud provider's name for the node object.
 * `__meta_kubernetes_node_label_<labelname>`: Each label from the node object.
 * `__meta_kubernetes_node_labelpresent_<labelname>`: `true` for each label from the node object.
 * `__meta_kubernetes_node_annotation_<annotationname>`: Each annotation from the node object.
@@ -1597,19 +1602,20 @@ address referenced in the endpointslice object one target is discovered. If the 
 additional container ports of the pod, not bound to an endpoint port, are discovered as targets as well.
 
 Available meta labels:
+
 * `__meta_kubernetes_namespace`: The namespace of the endpoints object.
 * `__meta_kubernetes_endpointslice_name`: The name of endpointslice object.
 * For all targets discovered directly from the endpointslice list (those not additionally inferred
   from underlying pods), the following labels are attached:
-* `__meta_kubernetes_endpointslice_address_target_kind`: Kind of the referenced object.
-* `__meta_kubernetes_endpointslice_address_target_name`: Name of referenced object.
-* `__meta_kubernetes_endpointslice_address_type`: The ip protocol family of the address of the target.
-* `__meta_kubernetes_endpointslice_endpoint_conditions_ready`:  Set to `true` or `false` for the referenced endpoint's ready state.
-* `__meta_kubernetes_endpointslice_endpoint_topology_kubernetes_io_hostname`:  Name of the node hosting the referenced endpoint.
-* `__meta_kubernetes_endpointslice_endpoint_topology_present_kubernetes_io_hostname`: Flag that shows if the referenced object has a kubernetes.io/hostname annotation.
-* `__meta_kubernetes_endpointslice_port`: Port of the referenced endpoint.
-* `__meta_kubernetes_endpointslice_port_name`: Named port of the referenced endpoint.
-* `__meta_kubernetes_endpointslice_port_protocol`: Protocol of the referenced endpoint.
+  * `__meta_kubernetes_endpointslice_address_target_kind`: Kind of the referenced object.
+  * `__meta_kubernetes_endpointslice_address_target_name`: Name of referenced object.
+  * `__meta_kubernetes_endpointslice_address_type`: The ip protocol family of the address of the target.
+  * `__meta_kubernetes_endpointslice_endpoint_conditions_ready`:  Set to `true` or `false` for the referenced endpoint's ready state.
+  * `__meta_kubernetes_endpointslice_endpoint_topology_kubernetes_io_hostname`:  Name of the node hosting the referenced endpoint.
+  * `__meta_kubernetes_endpointslice_endpoint_topology_present_kubernetes_io_hostname`: Flag that shows if the referenced object has a kubernetes.io/hostname annotation.
+  * `__meta_kubernetes_endpointslice_port`: Port of the referenced endpoint.
+  * `__meta_kubernetes_endpointslice_port_name`: Named port of the referenced endpoint.
+  * `__meta_kubernetes_endpointslice_port_protocol`: Protocol of the referenced endpoint.
 * If the endpoints belong to a service, all labels of the `role: service` discovery are attached.
 * For all targets backed by a pod, all labels of the `role: pod` discovery are attached.
 
@@ -1688,6 +1694,7 @@ tls_config:
 
 # Optional namespace discovery. If omitted, all namespaces are used.
 namespaces:
+  own_namespace: <bool>
   names:
     [ - <string> ]
 
@@ -2839,3 +2846,12 @@ tls_config:
 There is a list of
 [integrations](https://prometheus.io/docs/operating/integrations/#remote-endpoints-and-storage)
 with this feature.
+
+### `<exemplars>`
+
+Note that exemplar storage is still considered experimental and must be enabled via `--enable-feature=exemplar-storage`.
+
+```yaml
+# Configures the maximum size of the circular buffer used to store exemplars for all series. Resizable during runtime.
+[ max_exemplars: <int> | default = 100000 ]
+```
