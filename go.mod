@@ -28,7 +28,7 @@ require (
 	github.com/gogo/protobuf v1.3.2
 	github.com/golang/snappy v0.0.4
 	github.com/google/pprof v0.0.0-20211122183932-1daafda22083
-	github.com/gophercloud/gophercloud v0.23.0
+	github.com/gophercloud/gophercloud v0.24.0
 	github.com/grpc-ecosystem/grpc-gateway v1.16.0
 	github.com/hashicorp/consul/api v1.11.0
 	github.com/hetznercloud/hcloud-go v1.33.1
