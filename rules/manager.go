@@ -325,7 +325,9 @@ func (g *Group) Interval() time.Duration { return g.interval }
 // Limit returns the group's limit.
 func (g *Group) Limit() int { return g.limit }
 
-func (g *Group) run(ctx context.Context) {
+type SyncForStateOverrideFunc func(g *Group, ts time.Time)
+
+func (g *Group) run(ctx context.Context, syncForStateOverrideFunc SyncForStateOverrideFunc) {
 	defer close(g.terminated)
 
 	// Wait an initial amount to have consistently slotted intervals.
@@ -416,17 +418,25 @@ func (g *Group) run(ctx context.Context) {
 			case <-g.done:
 				return
 			case <-tick.C:
-				missed := (time.Since(evalTimestamp) / g.interval) - 1
-				if missed > 0 {
-					g.metrics.IterationsMissed.WithLabelValues(GroupKey(g.file, g.name)).Add(float64(missed))
-					g.metrics.IterationsScheduled.WithLabelValues(GroupKey(g.file, g.name)).Add(float64(missed))
-				}
-				evalTimestamp = evalTimestamp.Add((missed + 1) * g.interval)
-				g.SyncForState(time.Now())
-				iter()
+				updateMissedEvalMetrics(g, &evalTimestamp, syncForStateOverrideFunc, iter)
 			}
 		}
 	}
+}
+
+func updateMissedEvalMetrics(g *Group, evalTimestamp *time.Time, syncForStateOverrideFunc SyncForStateOverrideFunc, iterFunc func()) {
+	missed := (time.Since(*evalTimestamp) / g.interval) - 1
+	if missed > 0 {
+		g.metrics.IterationsMissed.WithLabelValues(GroupKey(g.file, g.name)).Add(float64(missed))
+		g.metrics.IterationsScheduled.WithLabelValues(GroupKey(g.file, g.name)).Add(float64(missed))
+	}
+	*evalTimestamp = evalTimestamp.Add((missed + 1) * g.interval)
+
+	if syncForStateOverrideFunc != nil {
+		syncForStateOverrideFunc(g, time.Now())
+	}
+
+	iterFunc()
 }
 
 func (g *Group) stop() {
@@ -711,7 +721,7 @@ func (g *Group) cleanupStaleSeries(ctx context.Context, ts time.Time) {
 
 // SyncForState sync the 'for' state of the alerts
 // by looking up last ActiveAt from storage.
-func (g *Group) SyncForState(ts time.Time) {
+func SyncForState(g *Group, ts time.Time) {
 	maxtMS := int64(model.TimeFromUnixNano(ts.UnixNano()))
 	// We allow sync only if alerts were active before after certain time.
 	mint := ts.Add(-g.opts.OutageTolerance)
@@ -1049,7 +1059,7 @@ func (m *Manager) Update(interval time.Duration, files []string, externalLabels 
 			// is told to run. This is necessary to avoid running
 			// queries against a bootstrapping storage.
 			<-m.block
-			newg.run(m.opts.Context)
+			newg.run(m.opts.Context, nil)
 		}(newg)
 	}
 
