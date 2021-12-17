@@ -404,7 +404,9 @@ func TestShutdownWithStaleConnection(t *testing.T) {
 
 	db, err := tsdb.Open(dbDir, nil, nil, nil, nil)
 	require.NoError(t, err)
-
+	t.Cleanup(func() {
+		require.NoError(t, db.Close())
+	})
 	timeout := 10 * time.Second
 
 	port := fmt.Sprintf(":%d", testutil.RandomUnprivilegedPort(t))
