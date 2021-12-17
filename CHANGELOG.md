@@ -1,8 +1,8 @@
 ## 2.32.1 / 2021-12-17
 
 * [BUGFIX] Scrape: Fix reporting metrics when sample limit is reached during the report. #9996
-* [BUGFIX] Scrape: Ensure that scrape interval and scrape timeout are always set. #10023 #10031
-* [BUGFIX] TSDB: Expose and fix bug #10027 in iterators' `Seek()` method. #10030
+* [BUGFIX] Scrape: Ensure that scrape interval and scrape timeout are always set. #10023
+* [BUGFIX] TSDB: Expose and fix bug in iterators' `Seek()` method. #10030
 
 ## 2.32.0 / 2021-12-09
 
