@@ -202,7 +202,18 @@ func TestWriteStorageLifecycle(t *testing.T) {
 	conf := &config.Config{
 		GlobalConfig: config.DefaultGlobalConfig,
 		RemoteWriteConfigs: []*config.RemoteWriteConfig{
-			&config.DefaultRemoteWriteConfig,
+			&config.RemoteWriteConfig{
+				RemoteTimeout:    model.Duration(30 * time.Second),
+				QueueConfig:      config.DefaultQueueConfig,
+				MetadataConfig:   config.DefaultMetadataConfig,
+				HTTPClientConfig: common_config.DefaultHTTPClientConfig,
+				URL: &common_config.URL{
+					URL: &url.URL{
+						Scheme: "http",
+						Host:   "localhost",
+					},
+				},
+			},
 		},
 	}
 	require.NoError(t, s.ApplyConfig(conf))
