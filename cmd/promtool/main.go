@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"math"
 	"net/http"
@@ -28,6 +29,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"text/tabwriter"
 
 	"github.com/go-kit/log"
 	"github.com/google/pprof/profile"
@@ -43,6 +45,8 @@ import (
 	"gopkg.in/alecthomas/kingpin.v2"
 	yaml "gopkg.in/yaml.v2"
 
+	io_prometheus_client "github.com/prometheus/client_model/go"
+	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/file"
@@ -88,6 +92,7 @@ func main() {
 	).Required().ExistingFiles()
 
 	checkMetricsCmd := checkCmd.Command("metrics", checkMetricsUsage)
+	checkMetricsWeight := checkMetricsCmd.Flag("weight", "Check the weight of metrics.").Bool()
 	agentMode := checkConfigCmd.Flag("agent", "Check config file for Prometheus in Agent mode.").Bool()
 
 	queryCmd := app.Command("query", "Run query against a Prometheus server.")
@@ -221,7 +226,7 @@ func main() {
 		os.Exit(CheckRules(*ruleFiles...))
 
 	case checkMetricsCmd.FullCommand():
-		os.Exit(CheckMetrics())
+		os.Exit(CheckMetrics(*checkMetricsWeight))
 
 	case queryInstantCmd.FullCommand():
 		os.Exit(QueryInstant(*queryInstantServer, *queryInstantExpr, *queryInstantTime, p))
@@ -622,8 +627,10 @@ $ curl -s http://localhost:9090/metrics | promtool check metrics
 `)
 
 // CheckMetrics performs a linting pass on input metrics.
-func CheckMetrics() int {
-	l := promlint.New(os.Stdin)
+func CheckMetrics(checkMetricsWeight bool) int {
+	var buf bytes.Buffer
+	tee := io.TeeReader(os.Stdin, &buf)
+	l := promlint.New(tee)
 	problems, err := l.Lint()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error while linting:", err)
@@ -638,7 +645,55 @@ func CheckMetrics() int {
 		return 3
 	}
 
+	if checkMetricsWeight {
+		p := expfmt.TextParser{}
+		metricFamilies, err := p.TextToMetricFamilies(&buf)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error while parsing text to metric families:", err)
+			return 1
+		}
+		var total int
+		stats := make([]MetricStat, 0, len(metricFamilies))
+		for _, mf := range metricFamilies {
+			var count int
+			switch mf.GetType() {
+			case io_prometheus_client.MetricType_COUNTER, io_prometheus_client.MetricType_GAUGE, io_prometheus_client.MetricType_UNTYPED:
+				count = len(mf.Metric)
+			case io_prometheus_client.MetricType_HISTOGRAM:
+				// histogram metrics includes sum, count, buckets
+				buckets := len(mf.Metric[0].Histogram.Bucket)
+				count = len(mf.Metric) * (2 + buckets)
+			case io_prometheus_client.MetricType_SUMMARY:
+				// summary metrics includes sum, count, quantiles
+				quantiles := len(mf.Metric[0].Summary.Quantile)
+				count = len(mf.Metric) * (2 + quantiles)
+			}
+			stats = append(stats, MetricStat{Name: mf.GetName(), Count: count})
+			total += count
+		}
+		sort.Slice(stats, func(i, j int) bool {
+			return stats[i].Count < stats[j].Count
+		})
+		for i := range stats {
+			stats[i].Weight = float64(stats[i].Count) / float64(total)
+		}
+
+		w := tabwriter.NewWriter(os.Stdout, 4, 4, 4, ' ', tabwriter.TabIndent)
+		fmt.Fprintf(w, "Metric\tCount\tWeight\t\n")
+		for _, stat := range stats {
+			fmt.Fprintf(w, "%s\t%d\t%.2f%%\t\n", stat.Name, stat.Count, stat.Weight*100)
+		}
+		fmt.Fprintf(w, "Total\t%d\t%.f%%\t\n", total, 100.)
+		w.Flush()
+	}
+
 	return 0
+}
+
+type MetricStat struct {
+	Name   string
+	Count  int
+	Weight float64
 }
 
 // QueryInstant performs an instant query against a Prometheus server.
