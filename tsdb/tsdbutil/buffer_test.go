@@ -181,7 +181,7 @@ func (it *listSeriesIterator) Seek(t int64) chunkenc.ValueType {
 		it.idx = 0
 	}
 	if it.idx >= len(it.list) {
-		return false
+		return chunkenc.ValNone
 	}
 	// No-op check.
 	if s := it.list[it.idx]; s.t >= t {

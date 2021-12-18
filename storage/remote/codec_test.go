@@ -236,9 +236,9 @@ func TestConcreteSeriesIterator(t *testing.T) {
 	require.Equal(t, 3., v)
 
 	// Seek beyond the end.
-	require.False(t, it.Seek(5))
+	require.Equal(t, chunkenc.ValNone, it.Seek(5))
 	// And we don't go back. (This exposes issue #10027.)
-	require.False(t, it.Seek(2))
+	require.Equal(t, chunkenc.ValNone, it.Seek(2))
 }
 
 func TestFromQueryResultWithDuplicates(t *testing.T) {

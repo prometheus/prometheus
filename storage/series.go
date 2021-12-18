@@ -119,7 +119,7 @@ func (it *listSeriesIterator) Seek(t int64) chunkenc.ValueType {
 		it.idx = 0
 	}
 	if it.idx >= it.samples.Len() {
-		return false
+		return chunkenc.ValNone
 	}
 	// No-op check.
 	if s := it.samples.Get(it.idx); s.T() >= t {
