@@ -431,7 +431,7 @@ func TestForStateSync(t *testing.T) {
 
 		group.Eval(suite.Context(), tst.evalTime)
 
-		SyncForState(group, time.Now().UTC())
+		group.SyncForState(time.Now().UTC())
 
 		exp := rule.ActiveAlerts()
 		for _, aa := range exp {
@@ -1343,11 +1343,10 @@ func TestUpdateMissedEvalMetrics(t *testing.T) {
 	require.NoError(t, err)
 
 	testValue := 1
-	timestamp := time.Unix(0, 0)
 
 	overrideFunc := func(g *Group, ts time.Time) {
-		testValue += 1
-		ts.Add(time.Minute)
+		g.SyncForState(ts)
+		testValue = 2
 	}
 
 	type testInput struct {
@@ -1395,7 +1394,12 @@ func TestUpdateMissedEvalMetrics(t *testing.T) {
 			Opts:          opts,
 		})
 
-		updateMissedEvalMetrics(group, &timestamp, tst.overrideFunc, func() {})
+		go func() {
+			group.run(opts.Context, tst.overrideFunc)
+		}()
+
+		time.Sleep(3 * time.Second)
+		group.stop()
 		require.Equal(t, tst.expectedValue, testValue)
 	}
 

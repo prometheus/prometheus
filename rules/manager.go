@@ -265,14 +265,17 @@ type Group struct {
 	metrics *Metrics
 }
 
+type SyncForStateOverrideFuncType func(g *Group, ts time.Time)
+
 type GroupOptions struct {
-	Name, File    string
-	Interval      time.Duration
-	Limit         int
-	Rules         []Rule
-	ShouldRestore bool
-	Opts          *ManagerOptions
-	done          chan struct{}
+	Name, File               string
+	Interval                 time.Duration
+	Limit                    int
+	Rules                    []Rule
+	ShouldRestore            bool
+	Opts                     *ManagerOptions
+	done                     chan struct{}
+	SyncForStateOverrideFunc SyncForStateOverrideFuncType
 }
 
 // NewGroup makes a new Group with the given name, options, and rules.
@@ -325,9 +328,7 @@ func (g *Group) Interval() time.Duration { return g.interval }
 // Limit returns the group's limit.
 func (g *Group) Limit() int { return g.limit }
 
-type SyncForStateOverrideFunc func(g *Group, ts time.Time)
-
-func (g *Group) run(ctx context.Context, syncForStateOverrideFunc SyncForStateOverrideFunc) {
+func (g *Group) run(ctx context.Context, syncForStateOverrideFunc SyncForStateOverrideFuncType) {
 	defer close(g.terminated)
 
 	// Wait an initial amount to have consistently slotted intervals.
@@ -418,25 +419,21 @@ func (g *Group) run(ctx context.Context, syncForStateOverrideFunc SyncForStateOv
 			case <-g.done:
 				return
 			case <-tick.C:
-				updateMissedEvalMetrics(g, &evalTimestamp, syncForStateOverrideFunc, iter)
+				missed := (time.Since(evalTimestamp) / g.interval) - 1
+				if missed > 0 {
+					g.metrics.IterationsMissed.WithLabelValues(GroupKey(g.file, g.name)).Add(float64(missed))
+					g.metrics.IterationsScheduled.WithLabelValues(GroupKey(g.file, g.name)).Add(float64(missed))
+				}
+				evalTimestamp = evalTimestamp.Add((missed + 1) * g.interval)
+
+				if syncForStateOverrideFunc != nil {
+					syncForStateOverrideFunc(g, time.Now())
+				}
+
+				iter()
 			}
 		}
 	}
-}
-
-func updateMissedEvalMetrics(g *Group, evalTimestamp *time.Time, syncForStateOverrideFunc SyncForStateOverrideFunc, iterFunc func()) {
-	missed := (time.Since(*evalTimestamp) / g.interval) - 1
-	if missed > 0 {
-		g.metrics.IterationsMissed.WithLabelValues(GroupKey(g.file, g.name)).Add(float64(missed))
-		g.metrics.IterationsScheduled.WithLabelValues(GroupKey(g.file, g.name)).Add(float64(missed))
-	}
-	*evalTimestamp = evalTimestamp.Add((missed + 1) * g.interval)
-
-	if syncForStateOverrideFunc != nil {
-		syncForStateOverrideFunc(g, time.Now())
-	}
-
-	iterFunc()
 }
 
 func (g *Group) stop() {
@@ -721,7 +718,7 @@ func (g *Group) cleanupStaleSeries(ctx context.Context, ts time.Time) {
 
 // SyncForState sync the 'for' state of the alerts
 // by looking up last ActiveAt from storage.
-func SyncForState(g *Group, ts time.Time) {
+func (g *Group) SyncForState(ts time.Time) {
 	maxtMS := int64(model.TimeFromUnixNano(ts.UnixNano()))
 	// We allow sync only if alerts were active before after certain time.
 	mint := ts.Add(-g.opts.OutageTolerance)
