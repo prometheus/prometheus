@@ -362,6 +362,9 @@ func (c *concreteSeriesIterator) Seek(t int64) chunkenc.ValueType {
 	if c.cur == -1 {
 		c.cur = 0
 	}
+	if c.cur >= len(c.series.samples) {
+		return false
+	}
 	// No-op check.
 	if s := c.series.samples[c.cur]; s.Timestamp >= t {
 		return chunkenc.ValFloat

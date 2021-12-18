@@ -567,39 +567,68 @@ func TestAgentAPIEndPoints(t *testing.T) {
 
 	webHandler := New(nil, opts)
 	webHandler.Ready()
-
-	baseURL := "http://localhost" + port
-
-	// Test for non-available endpoints in the Agent mode.
-	for _, u := range []string{
-		"/-/labels",
-		"/label",
-		"/series",
-		"/alertmanagers",
-		"/query",
-		"/query_range",
-		"/query_exemplars",
-		"/graph",
-		"/rules",
-	} {
-		w := httptest.NewRecorder()
-		req, err := http.NewRequest("GET", baseURL+u, nil)
-		require.NoError(t, err)
-		webHandler.router.ServeHTTP(w, req)
-		require.Equal(t, http.StatusNotFound, w.Code)
+	webHandler.config = &config.Config{}
+	webHandler.notifier = &notifier.Manager{}
+	l, err := webHandler.Listener()
+	if err != nil {
+		panic(fmt.Sprintf("Unable to start web listener: %s", err))
 	}
 
-	// Test for available endpoints in the Agent mode.
-	for _, u := range []string{
-		"/agent",
-		"/targets",
-		"/status",
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		err := webHandler.Run(ctx, l, "")
+		if err != nil {
+			panic(fmt.Sprintf("Can't start web handler:%s", err))
+		}
+	}()
+
+	// Give some time for the web goroutine to run since we need the server
+	// to be up before starting tests.
+	time.Sleep(5 * time.Second)
+	baseURL := "http://localhost" + port + "/api/v1"
+
+	// Test for non-available endpoints in the Agent mode.
+	for path, methods := range map[string][]string{
+		"/labels":                      {http.MethodGet, http.MethodPost},
+		"/label/:name/values":          {http.MethodGet},
+		"/series":                      {http.MethodGet, http.MethodPost, http.MethodDelete},
+		"/alertmanagers":               {http.MethodGet},
+		"/query":                       {http.MethodGet, http.MethodPost},
+		"/query_range":                 {http.MethodGet, http.MethodPost},
+		"/query_exemplars":             {http.MethodGet, http.MethodPost},
+		"/status/tsdb":                 {http.MethodGet},
+		"/alerts":                      {http.MethodGet},
+		"/rules":                       {http.MethodGet},
+		"/admin/tsdb/delete_series":    {http.MethodPost, http.MethodPut},
+		"/admin/tsdb/clean_tombstones": {http.MethodPost, http.MethodPut},
+		"/admin/tsdb/snapshot":         {http.MethodPost, http.MethodPut},
 	} {
-		w := httptest.NewRecorder()
-		req, err := http.NewRequest("GET", baseURL+u, nil)
-		require.NoError(t, err)
-		webHandler.router.ServeHTTP(w, req)
-		require.Equal(t, http.StatusOK, w.Code)
+		for _, m := range methods {
+			req, err := http.NewRequest(m, baseURL+path, nil)
+			require.NoError(t, err)
+			resp, err := http.DefaultClient.Do(req)
+			require.NoError(t, err)
+			require.Equal(t, http.StatusUnprocessableEntity, resp.StatusCode)
+		}
+	}
+
+	// Test for some of available endpoints in the Agent mode.
+	for path, methods := range map[string][]string{
+		"/targets":            {http.MethodGet},
+		"/targets/metadata":   {http.MethodGet},
+		"/metadata":           {http.MethodGet},
+		"/status/config":      {http.MethodGet},
+		"/status/runtimeinfo": {http.MethodGet},
+		"/status/flags":       {http.MethodGet},
+	} {
+		for _, m := range methods {
+			req, err := http.NewRequest(m, baseURL+path, nil)
+			require.NoError(t, err)
+			resp, err := http.DefaultClient.Do(req)
+			require.NoError(t, err)
+			require.Equal(t, http.StatusOK, resp.StatusCode)
+		}
 	}
 }
 

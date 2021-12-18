@@ -180,6 +180,9 @@ func (it *listSeriesIterator) Seek(t int64) chunkenc.ValueType {
 	if it.idx == -1 {
 		it.idx = 0
 	}
+	if it.idx >= len(it.list) {
+		return false
+	}
 	// No-op check.
 	if s := it.list[it.idx]; s.t >= t {
 		return s.Type()
