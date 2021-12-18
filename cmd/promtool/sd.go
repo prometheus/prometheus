@@ -74,7 +74,7 @@ func CheckSD(sdConfigFiles, sdJobName string, sdTimeout time.Duration) int {
 		d, err := cfg.NewDiscoverer(discovery.DiscovererOptions{Logger: logger})
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Could not create new discoverer", err)
-			return configErrExitCode
+			return failureExitCode
 		}
 		go d.Run(ctx, targetGroupChan)
 	}
@@ -100,7 +100,7 @@ outerLoop:
 	res, err := json.MarshalIndent(results, "", "  ")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Could not marshal result json: %s", err)
-		return configErrExitCode
+		return failureExitCode
 	}
 
 	fmt.Printf("%s", res)
