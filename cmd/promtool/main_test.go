@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"runtime"
 	"strings"
 	"testing"
@@ -321,4 +322,36 @@ func TestAuthorizationConfig(t *testing.T) {
 			require.NoError(t, err)
 		})
 	}
+}
+
+func TestCheckMetricsWeight(t *testing.T) {
+	f, err := os.Open("testdata/metrics-test.prom")
+	require.NoError(t, err)
+	defer f.Close()
+
+	stats, total, err := checkMetricsWeight(f)
+	require.NoError(t, err)
+	require.Equal(t, 27, total)
+	require.Equal(t, []MetricStat{
+		{
+			Name:   "prometheus_tsdb_compaction_chunk_size_bytes",
+			Count:  15,
+			Weight: float64(15) / float64(27),
+		},
+		{
+			Name:   "go_gc_duration_seconds",
+			Count:  7,
+			Weight: float64(7) / float64(27),
+		},
+		{
+			Name:   "net_conntrack_dialer_conn_attempted_total",
+			Count:  4,
+			Weight: float64(4) / float64(27),
+		},
+		{
+			Name:   "go_info",
+			Count:  1,
+			Weight: float64(1) / float64(27),
+		},
+	}, stats)
 }
