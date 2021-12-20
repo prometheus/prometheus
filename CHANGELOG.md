@@ -66,6 +66,10 @@ Learn more about the Prometheus Agent in our [blog post](https://prometheus.io/b
 * [BUGFIX] TSDB: Fix memory leak in samples deletion. #9151
 * [BUGFIX] UI: Use consistent margin-bottom for all alert kinds. #9318
 
+## 2.30.4 / 2021-12-09
+
+* [BUGFIX] TSDB: Fix queries after a failed snapshot replay. #9980
+
 ## 2.30.3 / 2021-10-05
 
 * [BUGFIX] TSDB: Fix panic on failed snapshot replay. #9438
