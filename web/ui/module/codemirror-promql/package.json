@@ -41,7 +41,8 @@
     "@codemirror/lint": "^0.19.3",
     "@codemirror/state": "^0.19.6",
     "@codemirror/view": "^0.19.27",
-    "@lezer/common": "^0.15.10",
+    "@lezer/common": "^0.15.11",
+    "@lezer/lr": "^0.15.5",
     "@lezer/generator": "^0.15.2",
     "@types/chai": "^4.2.22",
     "@types/lru-cache": "^5.1.1",
@@ -73,7 +74,7 @@
     "@codemirror/lint": "^0.19.3",
     "@codemirror/state": "^0.19.6",
     "@codemirror/view": "^0.19.27",
-    "@lezer/common": "^0.15.10"
+    "@lezer/common": "^0.15.11"
   },
   "prettier": {
     "singleQuote": true,
