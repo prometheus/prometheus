@@ -1,9 +1,15 @@
+0.19.0 / 2021-12-20
+===================
+
+* **[Enhancement]**: Add a negative autocompletion boost to some trigonometric functions that can overlap with other more popular PromQL functions.
+* **[BugFix]**: Improve checking of whether a `PrometheusConfig` object was passed to `newCompleteStrategy()`.
+
 0.18.0 / 2021-10-20
 ===================
 
 * **[Feature]**: Allow overriding the API prefix used to contact a remote Prometheus.
 * **[Feature]**: Add linter and autocompletion support for trigonometric functions (like `sin`, `cos`)
-* **[BreakingChange]**: The lib is now exposed under the `dist` folder. When importing `codemirror-promql`, it means you 
+* **[BreakingChange]**: The lib is now exposed under the `dist` folder. When importing `codemirror-promql`, it means you
 will need to add `dist` in the import. For example `import { newCompleteStrategy } from 'codemirror-promql/cjs/complete';`
 becomes `import { newCompleteStrategy } from 'codemirror-promql/dist/cjs/complete';`
 * **[BreakingChange]**: lezer-promql has been migrated into codemirror-promql in the `grammar` folder
@@ -22,8 +28,8 @@ becomes `import { newCompleteStrategy } from 'codemirror-promql/dist/cjs/complet
   name. (#142)
 * **[Feature]**: Autocomplete `NaN` and `Inf` (#141)
 * **[Enhancement]**: Fetch series using the HTTP `POST` method (#139)
-* **[Enhancement]**: Upgrade lezer-promql that fixed the parsing of metric names starting with `Inf`/`NaN` like infra (#142)  
-* **[BreakingChange]**: The constant `promQLLanguage` has been changed to be a function. It takes a `LanguageType` as a 
+* **[Enhancement]**: Upgrade lezer-promql that fixed the parsing of metric names starting with `Inf`/`NaN` like infra (#142)
+* **[BreakingChange]**: The constant `promQLLanguage` has been changed to be a function. It takes a `LanguageType` as a
   parameter (#142)
 
 0.15.0 / 2021-04-13
