@@ -824,7 +824,7 @@ func TestUpdate(t *testing.T) {
 	ruleManager.start()
 	defer ruleManager.Stop()
 
-	err := ruleManager.Update(10*time.Second, files, nil, "")
+	err := ruleManager.Update(10*time.Second, files, nil, "", nil)
 	require.NoError(t, err)
 	require.Greater(t, len(ruleManager.groups), 0, "expected non-empty rule groups")
 	ogs := map[string]*Group{}
@@ -835,7 +835,7 @@ func TestUpdate(t *testing.T) {
 		ogs[h] = g
 	}
 
-	err = ruleManager.Update(10*time.Second, files, nil, "")
+	err = ruleManager.Update(10*time.Second, files, nil, "", nil)
 	require.NoError(t, err)
 	for h, g := range ruleManager.groups {
 		for _, actual := range g.seriesInPreviousEval {
@@ -854,7 +854,7 @@ func TestUpdate(t *testing.T) {
 	defer os.Remove(tmpFile.Name())
 	defer tmpFile.Close()
 
-	err = ruleManager.Update(10*time.Second, []string{tmpFile.Name()}, nil, "")
+	err = ruleManager.Update(10*time.Second, []string{tmpFile.Name()}, nil, "", nil)
 	require.NoError(t, err)
 
 	for h, g := range ruleManager.groups {
@@ -932,7 +932,7 @@ func reloadAndValidate(rgs *rulefmt.RuleGroups, t *testing.T, tmpFile *os.File, 
 	tmpFile.Seek(0, 0)
 	_, err = tmpFile.Write(bs)
 	require.NoError(t, err)
-	err = ruleManager.Update(10*time.Second, []string{tmpFile.Name()}, nil, "")
+	err = ruleManager.Update(10*time.Second, []string{tmpFile.Name()}, nil, "", nil)
 	require.NoError(t, err)
 	for h, g := range ruleManager.groups {
 		if ogs[h] == g {
@@ -1077,7 +1077,7 @@ func TestMetricsUpdate(t *testing.T) {
 	}
 
 	for i, c := range cases {
-		err := ruleManager.Update(time.Second, c.files, nil, "")
+		err := ruleManager.Update(time.Second, c.files, nil, "", nil)
 		require.NoError(t, err)
 		time.Sleep(2 * time.Second)
 		require.Equal(t, c.metrics, countMetrics(), "test %d: invalid count of metrics", i)
@@ -1151,7 +1151,7 @@ func TestGroupStalenessOnRemoval(t *testing.T) {
 
 	var totalStaleNaN int
 	for i, c := range cases {
-		err := ruleManager.Update(time.Second, c.files, nil, "")
+		err := ruleManager.Update(time.Second, c.files, nil, "", nil)
 		require.NoError(t, err)
 		time.Sleep(3 * time.Second)
 		totalStaleNaN += c.staleNaN
@@ -1193,11 +1193,11 @@ func TestMetricsStalenessOnManagerShutdown(t *testing.T) {
 		}
 	}()
 
-	err := ruleManager.Update(2*time.Second, files, nil, "")
+	err := ruleManager.Update(2*time.Second, files, nil, "", nil)
 	time.Sleep(4 * time.Second)
 	require.NoError(t, err)
 	start := time.Now()
-	err = ruleManager.Update(3*time.Second, files[:0], nil, "")
+	err = ruleManager.Update(3*time.Second, files[:0], nil, "", nil)
 	require.NoError(t, err)
 	ruleManager.Stop()
 	stopped = true
@@ -1392,10 +1392,11 @@ func TestUpdateMissedEvalMetrics(t *testing.T) {
 			Rules:         []Rule{rule},
 			ShouldRestore: true,
 			Opts:          opts,
+			SyncForStateOverrideFunc: tst.overrideFunc,
 		})
 
 		go func() {
-			group.run(opts.Context, tst.overrideFunc)
+			group.run(opts.Context, group.syncForStateOverrideFunc)
 		}()
 
 		time.Sleep(3 * time.Second)

@@ -263,6 +263,8 @@ type Group struct {
 	logger log.Logger
 
 	metrics *Metrics
+
+	syncForStateOverrideFunc SyncForStateOverrideFuncType
 }
 
 type SyncForStateOverrideFuncType func(g *Group, ts time.Time)
@@ -310,6 +312,7 @@ func NewGroup(o GroupOptions) *Group {
 		terminated:           make(chan struct{}),
 		logger:               log.With(o.Opts.Logger, "group", o.Name),
 		metrics:              metrics,
+		syncForStateOverrideFunc: o.SyncForStateOverrideFunc,
 	}
 }
 
@@ -1017,11 +1020,12 @@ func (m *Manager) Stop() {
 
 // Update the rule manager's state as the config requires. If
 // loading the new rules failed the old rule set is restored.
-func (m *Manager) Update(interval time.Duration, files []string, externalLabels labels.Labels, externalURL string) error {
+func (m *Manager) Update(interval time.Duration, files []string, externalLabels labels.Labels, externalURL string, syncForStateOverrideFunc SyncForStateOverrideFuncType) error {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
-	groups, errs := m.LoadGroups(interval, externalLabels, externalURL, files...)
+	groups, errs := m.LoadGroups(interval, externalLabels, externalURL, syncForStateOverrideFunc, files...)
+
 	if errs != nil {
 		for _, e := range errs {
 			level.Error(m.logger).Log("msg", "loading groups failed", "err", e)
@@ -1056,7 +1060,7 @@ func (m *Manager) Update(interval time.Duration, files []string, externalLabels 
 			// is told to run. This is necessary to avoid running
 			// queries against a bootstrapping storage.
 			<-m.block
-			newg.run(m.opts.Context, nil)
+			newg.run(m.opts.Context, newg.syncForStateOverrideFunc)
 		}(newg)
 	}
 
@@ -1105,7 +1109,7 @@ func (FileLoader) Parse(query string) (parser.Expr, error) { return parser.Parse
 
 // LoadGroups reads groups from a list of files.
 func (m *Manager) LoadGroups(
-	interval time.Duration, externalLabels labels.Labels, externalURL string, filenames ...string,
+	interval time.Duration, externalLabels labels.Labels, externalURL string, syncForStateOverrideFunc SyncForStateOverrideFuncType, filenames ...string,
 ) (map[string]*Group, []error) {
 	groups := make(map[string]*Group)
 
@@ -1160,6 +1164,7 @@ func (m *Manager) LoadGroups(
 				ShouldRestore: shouldRestore,
 				Opts:          m.opts,
 				done:          m.done,
+				SyncForStateOverrideFunc: syncForStateOverrideFunc,
 			})
 		}
 	}
