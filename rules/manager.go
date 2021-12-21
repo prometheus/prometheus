@@ -299,19 +299,19 @@ func NewGroup(o GroupOptions) *Group {
 	metrics.GroupInterval.WithLabelValues(key).Set(o.Interval.Seconds())
 
 	return &Group{
-		name:                 o.Name,
-		file:                 o.File,
-		interval:             o.Interval,
-		limit:                o.Limit,
-		rules:                o.Rules,
-		shouldRestore:        o.ShouldRestore,
-		opts:                 o.Opts,
-		seriesInPreviousEval: make([]map[string]labels.Labels, len(o.Rules)),
-		done:                 make(chan struct{}),
-		managerDone:          o.done,
-		terminated:           make(chan struct{}),
-		logger:               log.With(o.Opts.Logger, "group", o.Name),
-		metrics:              metrics,
+		name:                     o.Name,
+		file:                     o.File,
+		interval:                 o.Interval,
+		limit:                    o.Limit,
+		rules:                    o.Rules,
+		shouldRestore:            o.ShouldRestore,
+		opts:                     o.Opts,
+		seriesInPreviousEval:     make([]map[string]labels.Labels, len(o.Rules)),
+		done:                     make(chan struct{}),
+		managerDone:              o.done,
+		terminated:               make(chan struct{}),
+		logger:                   log.With(o.Opts.Logger, "group", o.Name),
+		metrics:                  metrics,
 		syncForStateOverrideFunc: o.SyncForStateOverrideFunc,
 	}
 }
@@ -1156,14 +1156,14 @@ func (m *Manager) LoadGroups(
 			}
 
 			groups[GroupKey(fn, rg.Name)] = NewGroup(GroupOptions{
-				Name:          rg.Name,
-				File:          fn,
-				Interval:      itv,
-				Limit:         rg.Limit,
-				Rules:         rules,
-				ShouldRestore: shouldRestore,
-				Opts:          m.opts,
-				done:          m.done,
+				Name:                     rg.Name,
+				File:                     fn,
+				Interval:                 itv,
+				Limit:                    rg.Limit,
+				Rules:                    rules,
+				ShouldRestore:            shouldRestore,
+				Opts:                     m.opts,
+				done:                     m.done,
 				SyncForStateOverrideFunc: syncForStateOverrideFunc,
 			})
 		}
