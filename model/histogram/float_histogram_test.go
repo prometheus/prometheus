@@ -496,7 +496,200 @@ func TestFloatHistogramCompact(t *testing.T) {
 		maxEmptyBuckets int
 		expected        *FloatHistogram
 	}{
-		// TODO(beorn7): Add test cases.
+		{
+			"empty histogram",
+			&FloatHistogram{},
+			0,
+			&FloatHistogram{},
+		},
+		{
+			"nothing should happen",
+			&FloatHistogram{
+				PositiveSpans:   []Span{{-2, 1}, {2, 3}},
+				PositiveBuckets: []float64{1, 3.3, 4.2, 0.1},
+				NegativeSpans:   []Span{{3, 2}, {3, 2}},
+				NegativeBuckets: []float64{3.1, 3, 1.234e5, 1000},
+			},
+			0,
+			&FloatHistogram{
+				PositiveSpans:   []Span{{-2, 1}, {2, 3}},
+				PositiveBuckets: []float64{1, 3.3, 4.2, 0.1},
+				NegativeSpans:   []Span{{3, 2}, {3, 2}},
+				NegativeBuckets: []float64{3.1, 3, 1.234e5, 1000},
+			},
+		},
+		{
+			"eliminate zero offsets",
+			&FloatHistogram{
+				PositiveSpans:   []Span{{-2, 1}, {0, 3}, {0, 1}},
+				PositiveBuckets: []float64{1, 3.3, 4.2, 0.1, 3.3},
+				NegativeSpans:   []Span{{0, 2}, {0, 2}, {2, 1}, {0, 1}},
+				NegativeBuckets: []float64{3.1, 3, 1.234e5, 1000, 3, 4},
+			},
+			0,
+			&FloatHistogram{
+				PositiveSpans:   []Span{{-2, 5}},
+				PositiveBuckets: []float64{1, 3.3, 4.2, 0.1, 3.3},
+				NegativeSpans:   []Span{{0, 4}, {2, 2}},
+				NegativeBuckets: []float64{3.1, 3, 1.234e5, 1000, 3, 4},
+			},
+		},
+		{
+			"eliminate zero length",
+			&FloatHistogram{
+				PositiveSpans:   []Span{{-2, 2}, {2, 0}, {3, 3}},
+				PositiveBuckets: []float64{1, 3.3, 4.2, 0.1, 3.3},
+				NegativeSpans:   []Span{{0, 2}, {0, 0}, {2, 0}, {1, 4}},
+				NegativeBuckets: []float64{3.1, 3, 1.234e5, 1000, 3, 4},
+			},
+			0,
+			&FloatHistogram{
+				PositiveSpans:   []Span{{-2, 2}, {5, 3}},
+				PositiveBuckets: []float64{1, 3.3, 4.2, 0.1, 3.3},
+				NegativeSpans:   []Span{{0, 2}, {3, 4}},
+				NegativeBuckets: []float64{3.1, 3, 1.234e5, 1000, 3, 4},
+			},
+		},
+		{
+			"eliminate multiple zero length spans",
+			&FloatHistogram{
+				PositiveSpans:   []Span{{-2, 2}, {2, 0}, {2, 0}, {2, 0}, {3, 3}},
+				PositiveBuckets: []float64{1, 3.3, 4.2, 0.1, 3.3},
+			},
+			0,
+			&FloatHistogram{
+				PositiveSpans:   []Span{{-2, 2}, {9, 3}},
+				PositiveBuckets: []float64{1, 3.3, 4.2, 0.1, 3.3},
+			},
+		},
+		{
+			"cut empty buckets at start or end",
+			&FloatHistogram{
+				PositiveSpans:   []Span{{-4, 4}, {5, 3}},
+				PositiveBuckets: []float64{0, 0, 1, 3.3, 4.2, 0.1, 3.3},
+				NegativeSpans:   []Span{{0, 2}, {3, 5}},
+				NegativeBuckets: []float64{3.1, 3, 1.234e5, 1000, 3, 4, 0},
+			},
+			0,
+			&FloatHistogram{
+				PositiveSpans:   []Span{{-2, 2}, {5, 3}},
+				PositiveBuckets: []float64{1, 3.3, 4.2, 0.1, 3.3},
+				NegativeSpans:   []Span{{0, 2}, {3, 4}},
+				NegativeBuckets: []float64{3.1, 3, 1.234e5, 1000, 3, 4},
+			},
+		},
+		{
+			"cut empty buckets at start and end",
+			&FloatHistogram{
+				PositiveSpans:   []Span{{-4, 4}, {5, 6}},
+				PositiveBuckets: []float64{0, 0, 1, 3.3, 4.2, 0.1, 3.3, 0, 0, 0},
+				NegativeSpans:   []Span{{-2, 4}, {3, 5}},
+				NegativeBuckets: []float64{0, 0, 3.1, 3, 1.234e5, 1000, 3, 4, 0},
+			},
+			0,
+			&FloatHistogram{
+				PositiveSpans:   []Span{{-2, 2}, {5, 3}},
+				PositiveBuckets: []float64{1, 3.3, 4.2, 0.1, 3.3},
+				NegativeSpans:   []Span{{0, 2}, {3, 4}},
+				NegativeBuckets: []float64{3.1, 3, 1.234e5, 1000, 3, 4},
+			},
+		},
+		{
+			"cut empty buckets at start or end of chunks, even in the middle",
+			&FloatHistogram{
+				PositiveSpans:   []Span{{-4, 6}, {3, 6}},
+				PositiveBuckets: []float64{0, 0, 1, 3.3, 0, 0, 4.2, 0.1, 3.3, 0, 0, 0},
+				NegativeSpans:   []Span{{0, 2}, {2, 6}},
+				NegativeBuckets: []float64{3.1, 3, 0, 1.234e5, 1000, 3, 4, 0},
+			},
+			0,
+			&FloatHistogram{
+				PositiveSpans:   []Span{{-2, 2}, {5, 3}},
+				PositiveBuckets: []float64{1, 3.3, 4.2, 0.1, 3.3},
+				NegativeSpans:   []Span{{0, 2}, {3, 4}},
+				NegativeBuckets: []float64{3.1, 3, 1.234e5, 1000, 3, 4},
+			},
+		},
+		{
+			"cut empty buckets at start or end but merge spans due to maxEmptyBuckets",
+			&FloatHistogram{
+				PositiveSpans:   []Span{{-4, 4}, {5, 3}},
+				PositiveBuckets: []float64{0, 0, 1, 3.3, 4.2, 0.1, 3.3},
+				NegativeSpans:   []Span{{0, 2}, {3, 5}},
+				NegativeBuckets: []float64{3.1, 3, 1.234e5, 1000, 3, 4, 0},
+			},
+			10,
+			&FloatHistogram{
+				PositiveSpans:   []Span{{-2, 10}},
+				PositiveBuckets: []float64{1, 3.3, 0, 0, 0, 0, 0, 4.2, 0.1, 3.3},
+				NegativeSpans:   []Span{{0, 9}},
+				NegativeBuckets: []float64{3.1, 3, 0, 0, 0, 1.234e5, 1000, 3, 4},
+			},
+		},
+		{
+			"cut empty buckets from the middle of a chunk",
+			&FloatHistogram{
+				PositiveSpans:   []Span{{-4, 6}, {3, 3}},
+				PositiveBuckets: []float64{0, 0, 1, 0, 0, 3.3, 4.2, 0.1, 3.3},
+				NegativeSpans:   []Span{{0, 2}, {3, 5}},
+				NegativeBuckets: []float64{3.1, 3, 1.234e5, 1000, 0, 3, 4},
+			},
+			0,
+			&FloatHistogram{
+				PositiveSpans:   []Span{{-2, 1}, {2, 1}, {3, 3}},
+				PositiveBuckets: []float64{1, 3.3, 4.2, 0.1, 3.3},
+				NegativeSpans:   []Span{{0, 2}, {3, 2}, {1, 2}},
+				NegativeBuckets: []float64{3.1, 3, 1.234e5, 1000, 3, 4},
+			},
+		},
+		{
+			"cut empty buckets from the middle of a chunk, avoiding some due to maxEmptyBuckets",
+			&FloatHistogram{
+				PositiveSpans:   []Span{{-4, 6}, {3, 3}},
+				PositiveBuckets: []float64{0, 0, 1, 0, 0, 3.3, 4.2, 0.1, 3.3},
+				NegativeSpans:   []Span{{0, 2}, {3, 5}},
+				NegativeBuckets: []float64{3.1, 3, 1.234e5, 1000, 0, 3, 4},
+			},
+			1,
+			&FloatHistogram{
+				PositiveSpans:   []Span{{-2, 1}, {2, 1}, {3, 3}},
+				PositiveBuckets: []float64{1, 3.3, 4.2, 0.1, 3.3},
+				NegativeSpans:   []Span{{0, 2}, {3, 5}},
+				NegativeBuckets: []float64{3.1, 3, 1.234e5, 1000, 0, 3, 4},
+			},
+		},
+		{
+			"avoiding all cutting of empty buckets from the middle of a chunk due to maxEmptyBuckets",
+			&FloatHistogram{
+				PositiveSpans:   []Span{{-4, 6}, {3, 3}},
+				PositiveBuckets: []float64{0, 0, 1, 0, 0, 3.3, 4.2, 0.1, 3.3},
+				NegativeSpans:   []Span{{0, 2}, {3, 5}},
+				NegativeBuckets: []float64{3.1, 3, 1.234e5, 1000, 0, 3, 4},
+			},
+			2,
+			&FloatHistogram{
+				PositiveSpans:   []Span{{-2, 4}, {3, 3}},
+				PositiveBuckets: []float64{1, 0, 0, 3.3, 4.2, 0.1, 3.3},
+				NegativeSpans:   []Span{{0, 2}, {3, 5}},
+				NegativeBuckets: []float64{3.1, 3, 1.234e5, 1000, 0, 3, 4},
+			},
+		},
+		{
+			"everything merged into one span due to maxEmptyBuckets",
+			&FloatHistogram{
+				PositiveSpans:   []Span{{-4, 6}, {3, 3}},
+				PositiveBuckets: []float64{0, 0, 1, 0, 0, 3.3, 4.2, 0.1, 3.3},
+				NegativeSpans:   []Span{{0, 2}, {3, 5}},
+				NegativeBuckets: []float64{3.1, 3, 1.234e5, 1000, 0, 3, 4},
+			},
+			3,
+			&FloatHistogram{
+				PositiveSpans:   []Span{{-2, 10}},
+				PositiveBuckets: []float64{1, 0, 0, 3.3, 0, 0, 0, 4.2, 0.1, 3.3},
+				NegativeSpans:   []Span{{0, 10}},
+				NegativeBuckets: []float64{3.1, 3, 0, 0, 0, 1.234e5, 1000, 0, 3, 4},
+			},
+		},
 	}
 
 	for _, c := range cases {

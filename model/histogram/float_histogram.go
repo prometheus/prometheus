@@ -305,12 +305,162 @@ func addBucket(
 
 // Compact eliminates empty buckets at the beginning and end of each span, then
 // merges spans that are consecutive or at most maxEmptyBuckets apart, and
-// finally splits spans that contain more than maxEmptyBuckets. The compaction
-// happens "in place" in the receiving histogram, but a pointer to it is
-// returned for convenience.
+// finally splits spans that contain more consecutive empty buckets than
+// maxEmptyBuckets. (The actual implementation might do something more efficient
+// but with the same result.)  The compaction happens "in place" in the
+// receiving histogram, but a pointer to it is returned for convenience.
 func (h *FloatHistogram) Compact(maxEmptyBuckets int) *FloatHistogram {
-	// TODO(beorn7): Implement.
+	h.PositiveBuckets, h.PositiveSpans = compactBuckets(
+		h.PositiveBuckets, h.PositiveSpans, maxEmptyBuckets,
+	)
+	h.NegativeBuckets, h.NegativeSpans = compactBuckets(
+		h.NegativeBuckets, h.NegativeSpans, maxEmptyBuckets,
+	)
 	return h
+}
+
+func compactBuckets(buckets []float64, spans []Span, maxEmptyBuckets int) ([]float64, []Span) {
+	if len(buckets) == 0 {
+		return buckets, spans
+	}
+
+	var iBucket, iSpan int
+	var posInSpan uint32
+
+	// Helper function.
+	emptyBucketsHere := func() int {
+		i := 0
+		for i+iBucket < len(buckets) &&
+			uint32(i)+posInSpan < spans[iSpan].Length &&
+			buckets[i+iBucket] == 0 {
+			i++
+		}
+		return i
+	}
+
+	// Merge spans with zero-offset to avoid special cases later.
+	if len(spans) > 1 {
+		for i, span := range spans[1:] {
+			if span.Offset == 0 {
+				spans[iSpan].Length += span.Length
+				continue
+			}
+			iSpan++
+			if i+1 != iSpan {
+				spans[iSpan] = span
+			}
+		}
+		spans = spans[:iSpan+1]
+		iSpan = 0
+	}
+
+	// Merge spans with zero-length to avoid special cases later.
+	for i, span := range spans {
+		if span.Length == 0 {
+			if i+1 < len(spans) {
+				spans[i+1].Offset += span.Offset
+			}
+			continue
+		}
+		if i != iSpan {
+			spans[iSpan] = span
+		}
+		iSpan++
+	}
+	spans = spans[:iSpan]
+	iSpan = 0
+
+	// Cut out empty buckets from start and end of spans, no matter
+	// what. Also cut out empty buckets from the middle of a span but only
+	// if there are more than maxEmptyBuckets consecutive empty buckets.
+	for iBucket < len(buckets) {
+		if nEmpty := emptyBucketsHere(); nEmpty > 0 {
+			if posInSpan > 0 &&
+				nEmpty < int(spans[iSpan].Length-posInSpan) &&
+				nEmpty <= maxEmptyBuckets {
+				// The empty buckets are in the middle of a
+				// span, and there are few enough to not bother.
+				// Just fast-forward.
+				iBucket += nEmpty
+				posInSpan += uint32(nEmpty)
+				continue
+			}
+			// In all other cases, we cut out the empty buckets.
+			buckets = append(buckets[:iBucket], buckets[iBucket+nEmpty:]...)
+			if posInSpan == 0 {
+				// Start of span.
+				if nEmpty == int(spans[iSpan].Length) {
+					// The whole span is empty.
+					spans = append(spans[:iSpan], spans[iSpan+1:]...)
+					continue
+				}
+				spans[iSpan].Length -= uint32(nEmpty)
+				spans[iSpan].Offset += int32(nEmpty)
+				continue
+			}
+			// It's in the middle or in the end of the span.
+			// Split the current span.
+			newSpan := Span{
+				Offset: int32(nEmpty),
+				Length: spans[iSpan].Length - posInSpan - uint32(nEmpty),
+			}
+			spans[iSpan].Length = posInSpan
+			// In any case, we have to split to the next span.
+			iSpan++
+			posInSpan = 0
+			if newSpan.Length == 0 {
+				// The span is empty, so we were already at the end of a span.
+				// We don't have to insert the new span, just adjust the next
+				// span's offset, if there is one.
+				if iSpan < len(spans) {
+					spans[iSpan].Offset += int32(nEmpty)
+				}
+				continue
+			}
+			// Insert the new span.
+			spans = append(spans, Span{})
+			if iSpan+1 < len(spans) {
+				copy(spans[iSpan+1:], spans[iSpan:])
+			}
+			spans[iSpan] = newSpan
+			continue
+		}
+		iBucket++
+		posInSpan++
+		if posInSpan >= spans[iSpan].Length {
+			posInSpan = 0
+			iSpan++
+		}
+	}
+	if maxEmptyBuckets == 0 {
+		return buckets, spans
+	}
+
+	// Finally, check if any offsets between spans are small enough to merge
+	// the spans.
+	iBucket = int(spans[0].Length)
+	iSpan = 1
+	for iSpan < len(spans) {
+		if int(spans[iSpan].Offset) > maxEmptyBuckets {
+			iBucket += int(spans[iSpan].Length)
+			iSpan++
+			continue
+		}
+		// Merge span with previous one and insert empty buckets.
+		offset := int(spans[iSpan].Offset)
+		spans[iSpan-1].Length += uint32(offset) + spans[iSpan].Length
+		spans = append(spans[:iSpan], spans[iSpan+1:]...)
+		newBuckets := make([]float64, len(buckets)+offset)
+		copy(newBuckets, buckets[:iBucket])
+		copy(newBuckets[iBucket+offset:], buckets[iBucket:])
+		iBucket += offset
+		buckets = newBuckets
+		// Note that with many merges, it would be more efficient to
+		// first record all the chunks of empty buckets to insert and
+		// then do it in one go through all the buckets.
+	}
+
+	return buckets, spans
 }
 
 // DetectReset returns true if the receiving histogram is missing any buckets
