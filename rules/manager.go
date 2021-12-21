@@ -331,7 +331,7 @@ func (g *Group) Interval() time.Duration { return g.interval }
 // Limit returns the group's limit.
 func (g *Group) Limit() int { return g.limit }
 
-func (g *Group) run(ctx context.Context, syncForStateOverrideFunc SyncForStateOverrideFuncType) {
+func (g *Group) run(ctx context.Context) {
 	defer close(g.terminated)
 
 	// Wait an initial amount to have consistently slotted intervals.
@@ -429,8 +429,8 @@ func (g *Group) run(ctx context.Context, syncForStateOverrideFunc SyncForStateOv
 				}
 				evalTimestamp = evalTimestamp.Add((missed + 1) * g.interval)
 
-				if syncForStateOverrideFunc != nil {
-					syncForStateOverrideFunc(g, time.Now())
+				if g.syncForStateOverrideFunc != nil {
+					g.syncForStateOverrideFunc(g, time.Now())
 				}
 
 				iter()
@@ -1060,7 +1060,7 @@ func (m *Manager) Update(interval time.Duration, files []string, externalLabels 
 			// is told to run. This is necessary to avoid running
 			// queries against a bootstrapping storage.
 			<-m.block
-			newg.run(m.opts.Context, newg.syncForStateOverrideFunc)
+			newg.run(m.opts.Context)
 		}(newg)
 	}
 

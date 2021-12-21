@@ -1396,7 +1396,7 @@ func TestUpdateMissedEvalMetrics(t *testing.T) {
 		})
 
 		go func() {
-			group.run(opts.Context, group.syncForStateOverrideFunc)
+			group.run(opts.Context)
 		}()
 
 		time.Sleep(3 * time.Second)
