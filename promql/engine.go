@@ -207,13 +207,27 @@ func contextErr(err error, env string) error {
 	}
 }
 
+// QueryTracker should provide access to two features: tracking of active query, that are logged on restart,
+// and control over maximum number of concurrent requests.
+type QueryTracker interface {
+	// GetMaxConcurrent returns maximum number of concurrent queries that are allowed by this tracker.
+	GetMaxConcurrent() int
+
+	// Insert inserts query into activity tracker. This can block, if maximum number of queries is already running.
+	// Returned value is used in Delete call.
+	Insert(ctx context.Context, query string) (int, error)
+
+	// Delete removes query from activity tracker. InsertIndex is value returned by Insert call.
+	Delete(insertIndex int)
+}
+
 // EngineOpts contains configuration options used when creating a new Engine.
 type EngineOpts struct {
 	Logger             log.Logger
 	Reg                prometheus.Registerer
 	MaxSamples         int
 	Timeout            time.Duration
-	ActiveQueryTracker *ActiveQueryTracker
+	ActiveQueryTracker QueryTracker
 	// LookbackDelta determines the time since the last sample after which a time
 	// series is considered stale.
 	LookbackDelta time.Duration
@@ -236,7 +250,7 @@ type Engine struct {
 	metrics                  *engineMetrics
 	timeout                  time.Duration
 	maxSamplesPerQuery       int
-	activeQueryTracker       *ActiveQueryTracker
+	activeQueryTracker       QueryTracker
 	queryLogger              QueryLogger
 	queryLoggerLock          sync.RWMutex
 	lookbackDelta            time.Duration
