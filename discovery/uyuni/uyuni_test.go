@@ -61,7 +61,7 @@ func TestUyuniSDHandleError(t *testing.T) {
 func TestUyuniSDLogin(t *testing.T) {
 	var (
 		errTesting  = "unable to get the managed system groups information of monitored clients: request error: bad status code - 500"
-		call = 0
+		call        = 0
 		respHandler = func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/xml")
 			switch call {
