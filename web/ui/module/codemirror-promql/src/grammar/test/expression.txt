@@ -847,6 +847,14 @@ MetricName(MetricIdentifier(Identifier))
 
 ==>
 PromQL(Expr(BinaryExpr(Expr(NumberLiteral),Add,BinModifiers,Expr(BinaryExpr(Expr(VectorSelector(MetricIdentifier(Identifier))),Atan2,BinModifiers,Expr(VectorSelector(MetricIdentifier(Identifier))))))))
+
+# Subquery
+
+metric[10s:5s]
+
+==>
+PromQL(Expr(SubqueryExpr(Expr(VectorSelector(MetricIdentifier(Identifier))),Duration,Duration)))
+
 # Evaluation aligned variant of a subquery
 
 metric[10s::5s]

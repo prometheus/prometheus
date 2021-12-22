@@ -519,6 +519,30 @@ describe('analyzeCompletion test', () => {
       expectedContext: [{ kind: ContextKind.Duration }],
     },
     {
+      title: 'autocomplete duration for an evaluation-aligned subQuery',
+      expr: 'go[5d::5]',
+      pos: 8,
+      expectedContext: [{ kind: ContextKind.Duration }],
+    },
+    {
+      title: 'autocomplete duration for an evaluation-aligned subQuery 2',
+      expr: 'go[5d::L5d4]',
+      pos: 10,
+      expectedContext: [{ kind: ContextKind.Duration }],
+    },
+    {
+      title: 'autocomplete duration for an evaluation-aligned subQuery 3',
+      expr: 'rate(my_metric{l1="l2"}[25d::6])',
+      pos: 30,
+      expectedContext: [{ kind: ContextKind.Duration }],
+    },
+    {
+      title: 'autocomplete duration for an evaluation-aligned subQuery 4',
+      expr: 'rate(my_metric{l1="l2"}[25d::6d5])',
+      pos: 32,
+      expectedContext: [{ kind: ContextKind.Duration }],
+    },
+    {
       title: 'autocomplete at modifiers',
       expr: '1 @ s',
       pos: 5,
