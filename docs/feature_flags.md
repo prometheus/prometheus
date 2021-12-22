@@ -40,7 +40,7 @@ with more recent data.
 
 More details can be found [here](querying/basics.md#offset-modifier).
 
-# Evaluation time aligned subqueries in PromQL
+# Evaluation-time-aligned subqueries in PromQL
 
 `--enable-feature=promql-eval-aligned-subqueries`
 
