@@ -3271,6 +3271,21 @@ func TestRangeQuery(t *testing.T) {
 			End:      time.Unix(120, 0),
 			Interval: 1 * time.Minute,
 		},
+		{
+			Name: "evaluation-aligned subquery",
+			Load: `load 300s
+			        metric 1+1x300`,
+			Query: `rate(metric[10s::3s])`,
+			Result: Matrix{
+				Series{
+					Points: []Point{{T: 100000, V: 0}, {T: 200000, V: 0}, {T: 300000, V: 0.11111111111111112}},
+					Metric: labels.Labels{},
+				},
+			},
+			Start:    time.Unix(100, 0),
+			End:      time.Unix(300, 0),
+			Interval: 100 * time.Second,
+		},
 	}
 	for _, c := range cases {
 		t.Run(c.Name, func(t *testing.T) {
