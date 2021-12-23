@@ -1192,6 +1192,51 @@ describe('autocomplete promQL test', () => {
       },
     },
     {
+      title: 'offline autocomplete duration for an evaluation-aligned subQuery',
+      expr: 'go[5d::5]',
+      pos: 8,
+      expectedResult: {
+        options: durationTerms,
+        from: 8,
+        to: 8,
+        span: undefined,
+      },
+    },
+    {
+      title: 'offline autocomplete duration for an evaluation-aligned subQuery 2',
+      expr: 'go[5d::5d4]',
+      pos: 10,
+      expectedResult: {
+        options: durationTerms,
+        from: 10,
+        to: 10,
+        span: undefined,
+      },
+    },
+    {
+      title: 'offline autocomplete duration for an evaluation-aligned subQuery 3',
+      expr: 'rate(my_metric{l1="l2"}[25d::6])',
+      pos: 30,
+      expectedResult: {
+        options: durationTerms,
+        from: 30,
+        to: 30,
+        span: undefined,
+      },
+    },
+    {
+      title: 'offline autocomplete duration for an evaluation-aligned subQuery 4',
+      expr: 'rate(my_metric{l1="l2"}[25d::6d5])',
+      pos: 32,
+      expectedResult: {
+        options: durationTerms,
+        from: 32,
+        to: 32,
+        span: undefined,
+      },
+    },
+
+    {
       title: 'offline autocomplete duration for a subQuery 4',
       expr: 'rate(my_metric{l1="l2"}[25d:6d5])',
       pos: 31,
