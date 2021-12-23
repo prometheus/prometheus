@@ -1720,6 +1720,12 @@ namespaces:
   [ - role: <string>
     [ label: <string> ]
     [ field: <string> ] ]]
+
+# Optional metadata to attach to discovered targets. If omitted, no additional metadata is attached.
+attach_metadata:
+# Attaches node metadata to discovered targets. Only valid for role: pod. 
+# When set to true, Prometheus must have permissions to get Nodes. 
+  [ node: <boolean> | default = false ]
 ```
 
 See [this example Prometheus configuration file](/documentation/examples/prometheus-kubernetes.yml)
