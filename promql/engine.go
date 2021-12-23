@@ -213,9 +213,9 @@ type QueryTracker interface {
 	// GetMaxConcurrent returns maximum number of concurrent queries that are allowed by this tracker.
 	GetMaxConcurrent() int
 
-	// Insert inserts query into activity tracker. This can block, if maximum number of queries is already running.
-	// If Insert doesn't return error, then returned integer value should be used in subsequent Delete call.
-	// Returns error if context is finished before query can proceed.
+	// Insert inserts query into query tracker. This call can block if maximum number of queries is already running.
+	// If Insert doesn't return error then returned integer value should be used in subsequent Delete call.
+	// Insert returns error if context is finished before query can proceed.
 	Insert(ctx context.Context, query string) (int, error)
 
 	// Delete removes query from activity tracker. InsertIndex is value returned by Insert call.
