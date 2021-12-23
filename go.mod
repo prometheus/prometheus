@@ -3,7 +3,7 @@ module github.com/prometheus/prometheus
 go 1.14
 
 require (
-	github.com/Azure/azure-sdk-for-go v60.1.0+incompatible
+	github.com/Azure/azure-sdk-for-go v60.2.0+incompatible
 	github.com/Azure/go-autorest/autorest v0.11.23
 	github.com/Azure/go-autorest/autorest/adal v0.9.17
 	github.com/Azure/go-autorest/autorest/to v0.4.0 // indirect
