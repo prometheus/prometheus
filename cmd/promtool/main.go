@@ -45,7 +45,7 @@ import (
 	"gopkg.in/alecthomas/kingpin.v2"
 	yaml "gopkg.in/yaml.v2"
 
-	io_prometheus_client "github.com/prometheus/client_model/go"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
 
 	"github.com/prometheus/prometheus/config"
@@ -651,7 +651,7 @@ func CheckMetrics() int {
 }
 
 var checkMetricsWeightUsage = strings.TrimSpace(`
-Pass Prometheus metrics over stdin to rank them in descending order of how much weight of scrape they take up.
+Pass Prometheus metrics over stdin to rank them in descending order of how much of the scrape they take up.
 
 examples:
 
@@ -670,53 +670,57 @@ func CheckMetricsWeight() int {
 	w := tabwriter.NewWriter(os.Stdout, 4, 4, 4, ' ', tabwriter.TabIndent)
 	fmt.Fprintf(w, "Metric\tCount\tWeight\t\n")
 	for _, stat := range stats {
-		fmt.Fprintf(w, "%s\t%d\t%.2f%%\t\n", stat.Name, stat.Count, stat.Weight*100)
+		fmt.Fprintf(w, "%s\t%d\t%.2f%%\t\n", stat.name, stat.count, stat.weight*100)
 	}
 	fmt.Fprintf(w, "Total\t%d\t%.f%%\t\n", total, 100.)
 	w.Flush()
 	return 0
 }
 
-func checkMetricsWeight(r io.Reader) ([]MetricStat, int, error) {
+type metricStat struct {
+	name   string
+	count  int
+	weight float64
+}
+
+func checkMetricsWeight(r io.Reader) ([]metricStat, int, error) {
 	p := expfmt.TextParser{}
 	metricFamilies, err := p.TextToMetricFamilies(r)
 	if err != nil {
 		return nil, 0, fmt.Errorf("error while parsing text to metric families: %w", err)
 	}
+
 	var total int
-	stats := make([]MetricStat, 0, len(metricFamilies))
+	stats := make([]metricStat, 0, len(metricFamilies))
 	for _, mf := range metricFamilies {
 		var count int
 		switch mf.GetType() {
-		case io_prometheus_client.MetricType_COUNTER, io_prometheus_client.MetricType_GAUGE, io_prometheus_client.MetricType_UNTYPED:
+		case dto.MetricType_COUNTER, dto.MetricType_GAUGE, dto.MetricType_UNTYPED:
 			count = len(mf.Metric)
-		case io_prometheus_client.MetricType_HISTOGRAM:
-			// histogram metrics includes sum, count, buckets
+		case dto.MetricType_HISTOGRAM:
+			// Histogram metrics includes sum, count, buckets.
 			buckets := len(mf.Metric[0].Histogram.Bucket)
 			count = len(mf.Metric) * (2 + buckets)
-		case io_prometheus_client.MetricType_SUMMARY:
-			// summary metrics includes sum, count, quantiles
+		case dto.MetricType_SUMMARY:
+			// Summary metrics includes sum, count, quantiles.
 			quantiles := len(mf.Metric[0].Summary.Quantile)
 			count = len(mf.Metric) * (2 + quantiles)
 		default:
 			count = len(mf.Metric)
 		}
-		stats = append(stats, MetricStat{Name: mf.GetName(), Count: count})
+		stats = append(stats, metricStat{name: mf.GetName(), count: count})
 		total += count
 	}
-	for i := range stats {
-		stats[i].Weight = float64(stats[i].Count) / float64(total)
-	}
-	sort.SliceStable(stats, func(i, j int) bool {
-		return stats[i].Count > stats[j].Count
-	})
-	return stats, total, nil
-}
 
-type MetricStat struct {
-	Name   string
-	Count  int
-	Weight float64
+	for i := range stats {
+		stats[i].weight = float64(stats[i].count) / float64(total)
+	}
+
+	sort.SliceStable(stats, func(i, j int) bool {
+		return stats[i].count > stats[j].count
+	})
+
+	return stats, total, nil
 }
 
 // QueryInstant performs an instant query against a Prometheus server.

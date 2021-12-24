@@ -332,26 +332,26 @@ func TestCheckMetricsWeight(t *testing.T) {
 	stats, total, err := checkMetricsWeight(f)
 	require.NoError(t, err)
 	require.Equal(t, 27, total)
-	require.Equal(t, []MetricStat{
+	require.Equal(t, []metricStat{
 		{
-			Name:   "prometheus_tsdb_compaction_chunk_size_bytes",
-			Count:  15,
-			Weight: float64(15) / float64(27),
+			name:   "prometheus_tsdb_compaction_chunk_size_bytes",
+			count:  15,
+			weight: float64(15) / float64(27),
 		},
 		{
-			Name:   "go_gc_duration_seconds",
-			Count:  7,
-			Weight: float64(7) / float64(27),
+			name:   "go_gc_duration_seconds",
+			count:  7,
+			weight: float64(7) / float64(27),
 		},
 		{
-			Name:   "net_conntrack_dialer_conn_attempted_total",
-			Count:  4,
-			Weight: float64(4) / float64(27),
+			name:   "net_conntrack_dialer_conn_attempted_total",
+			count:  4,
+			weight: float64(4) / float64(27),
 		},
 		{
-			Name:   "go_info",
-			Count:  1,
-			Weight: float64(1) / float64(27),
+			name:   "go_info",
+			count:  1,
+			weight: float64(1) / float64(27),
 		},
 	}, stats)
 }
