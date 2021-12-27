@@ -42,17 +42,19 @@ type Label struct {
 
 // Labels is a sorted set of labels. Order has to be guaranteed upon
 // instantiation.
-type Labels []Label
+type Labels struct {
+	lbls []Label
+}
 
-func (ls Labels) Len() int           { return len(ls) }
-func (ls Labels) Swap(i, j int)      { ls[i], ls[j] = ls[j], ls[i] }
-func (ls Labels) Less(i, j int) bool { return ls[i].Name < ls[j].Name }
+func (ls Labels) Len() int           { return len(ls.lbls) }
+func (ls Labels) Swap(i, j int)      { ls.lbls[i], ls.lbls[j] = ls.lbls[j], ls.lbls[i] }
+func (ls Labels) Less(i, j int) bool { return ls.lbls[i].Name < ls.lbls[j].Name }
 
 func (ls Labels) String() string {
 	var b bytes.Buffer
 
 	b.WriteByte('{')
-	for i, l := range ls {
+	for i, l := range ls.lbls {
 		if i > 0 {
 			b.WriteByte(',')
 			b.WriteByte(' ')
@@ -70,7 +72,7 @@ func (ls Labels) String() string {
 func (ls Labels) Bytes(buf []byte) []byte {
 	b := bytes.NewBuffer(buf[:0])
 	b.WriteByte(labelSep)
-	for i, l := range ls {
+	for i, l := range ls.lbls {
 		if i > 0 {
 			b.WriteByte(seps[0])
 		}
@@ -103,6 +105,11 @@ func (ls Labels) MarshalYAML() (interface{}, error) {
 	return ls.Map(), nil
 }
 
+// IsZero implements yaml.IsZeroer - if we don't have this then 'omitempty' fields are always omitted.
+func (ls Labels) IsZero() bool {
+	return len(ls.lbls) == 0
+}
+
 // UnmarshalYAML implements yaml.Unmarshaler.
 func (ls *Labels) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	var m map[string]string
@@ -125,9 +132,9 @@ func (ls Labels) MatchLabels(on bool, names ...string) Labels {
 		nameSet[n] = struct{}{}
 	}
 
-	for _, v := range ls {
+	for _, v := range ls.lbls {
 		if _, ok := nameSet[v.Name]; on == ok && (on || v.Name != MetricName) {
-			matchedLabels = append(matchedLabels, v)
+			matchedLabels.lbls = append(matchedLabels.lbls, v)
 		}
 	}
 
@@ -139,12 +146,12 @@ func (ls Labels) MatchLabels(on bool, names ...string) Labels {
 func (ls Labels) Hash() uint64 {
 	// Use xxhash.Sum64(b) for fast path as it's faster.
 	b := make([]byte, 0, 1024)
-	for i, v := range ls {
+	for i, v := range ls.lbls {
 		if len(b)+len(v.Name)+len(v.Value)+2 >= cap(b) {
 			// If labels entry is 1KB+ do not allocate whole entry.
 			h := xxhash.New()
 			_, _ = h.Write(b)
-			for _, v := range ls[i:] {
+			for _, v := range ls.lbls[i:] {
 				_, _ = h.WriteString(v.Name)
 				_, _ = h.Write(seps)
 				_, _ = h.WriteString(v.Value)
@@ -166,15 +173,15 @@ func (ls Labels) Hash() uint64 {
 func (ls Labels) HashForLabels(b []byte, names ...string) (uint64, []byte) {
 	b = b[:0]
 	i, j := 0, 0
-	for i < len(ls) && j < len(names) {
-		if names[j] < ls[i].Name {
+	for i < len(ls.lbls) && j < len(names) {
+		if names[j] < ls.lbls[i].Name {
 			j++
-		} else if ls[i].Name < names[j] {
+		} else if ls.lbls[i].Name < names[j] {
 			i++
 		} else {
-			b = append(b, ls[i].Name...)
+			b = append(b, ls.lbls[i].Name...)
 			b = append(b, seps[0])
-			b = append(b, ls[i].Value...)
+			b = append(b, ls.lbls[i].Value...)
 			b = append(b, seps[0])
 			i++
 			j++
@@ -189,16 +196,16 @@ func (ls Labels) HashForLabels(b []byte, names ...string) (uint64, []byte) {
 func (ls Labels) HashWithoutLabels(b []byte, names ...string) (uint64, []byte) {
 	b = b[:0]
 	j := 0
-	for i := range ls {
-		for j < len(names) && names[j] < ls[i].Name {
+	for i := range ls.lbls {
+		for j < len(names) && names[j] < ls.lbls[i].Name {
 			j++
 		}
-		if ls[i].Name == MetricName || (j < len(names) && ls[i].Name == names[j]) {
+		if ls.lbls[i].Name == MetricName || (j < len(names) && ls.lbls[i].Name == names[j]) {
 			continue
 		}
-		b = append(b, ls[i].Name...)
+		b = append(b, ls.lbls[i].Name...)
 		b = append(b, seps[0])
-		b = append(b, ls[i].Value...)
+		b = append(b, ls.lbls[i].Value...)
 		b = append(b, seps[0])
 	}
 	return xxhash.Sum64(b), b
@@ -210,18 +217,18 @@ func (ls Labels) BytesWithLabels(buf []byte, names ...string) []byte {
 	b := bytes.NewBuffer(buf[:0])
 	b.WriteByte(labelSep)
 	i, j := 0, 0
-	for i < len(ls) && j < len(names) {
-		if names[j] < ls[i].Name {
+	for i < len(ls.lbls) && j < len(names) {
+		if names[j] < ls.lbls[i].Name {
 			j++
-		} else if ls[i].Name < names[j] {
+		} else if ls.lbls[i].Name < names[j] {
 			i++
 		} else {
 			if b.Len() > 1 {
 				b.WriteByte(seps[0])
 			}
-			b.WriteString(ls[i].Name)
+			b.WriteString(ls.lbls[i].Name)
 			b.WriteByte(seps[0])
-			b.WriteString(ls[i].Value)
+			b.WriteString(ls.lbls[i].Value)
 			i++
 			j++
 		}
@@ -235,34 +242,34 @@ func (ls Labels) BytesWithoutLabels(buf []byte, names ...string) []byte {
 	b := bytes.NewBuffer(buf[:0])
 	b.WriteByte(labelSep)
 	j := 0
-	for i := range ls {
-		for j < len(names) && names[j] < ls[i].Name {
+	for i := range ls.lbls {
+		for j < len(names) && names[j] < ls.lbls[i].Name {
 			j++
 		}
-		if j < len(names) && ls[i].Name == names[j] {
+		if j < len(names) && ls.lbls[i].Name == names[j] {
 			continue
 		}
 		if b.Len() > 1 {
 			b.WriteByte(seps[0])
 		}
-		b.WriteString(ls[i].Name)
+		b.WriteString(ls.lbls[i].Name)
 		b.WriteByte(seps[0])
-		b.WriteString(ls[i].Value)
+		b.WriteString(ls.lbls[i].Value)
 	}
 	return b.Bytes()
 }
 
 // Copy returns a copy of the labels.
 func (ls Labels) Copy() Labels {
-	res := make(Labels, len(ls))
-	copy(res, ls)
+	res := Labels{lbls: make([]Label, len(ls.lbls))}
+	copy(res.lbls, ls.lbls)
 	return res
 }
 
 // Get returns the value for the label with the given name.
 // Returns an empty string if the label doesn't exist.
 func (ls Labels) Get(name string) string {
-	for _, l := range ls {
+	for _, l := range ls.lbls {
 		if l.Name == name {
 			return l.Value
 		}
@@ -272,7 +279,7 @@ func (ls Labels) Get(name string) string {
 
 // Has returns true if the label with the given name is present.
 func (ls Labels) Has(name string) bool {
-	for _, l := range ls {
+	for _, l := range ls.lbls {
 		if l.Name == name {
 			return true
 		}
@@ -283,11 +290,11 @@ func (ls Labels) Has(name string) bool {
 // HasDuplicateLabelNames returns whether ls has duplicate label names.
 // It assumes that the labelset is sorted.
 func (ls Labels) HasDuplicateLabelNames() (string, bool) {
-	for i, l := range ls {
+	for i, l := range ls.lbls {
 		if i == 0 {
 			continue
 		}
-		if l.Name == ls[i-1].Name {
+		if l.Name == ls.lbls[i-1].Name {
 			return l.Name, true
 		}
 	}
@@ -297,15 +304,15 @@ func (ls Labels) HasDuplicateLabelNames() (string, bool) {
 // WithoutEmpty returns the labelset without empty labels.
 // May return the same labelset.
 func (ls Labels) WithoutEmpty() Labels {
-	for _, v := range ls {
+	for _, v := range ls.lbls {
 		if v.Value != "" {
 			continue
 		}
 		// Do not copy the slice until it's necessary.
-		els := make(Labels, 0, len(ls)-1)
-		for _, v := range ls {
+		els := Labels{lbls: make([]Label, 0, len(ls.lbls)-1)}
+		for _, v := range ls.lbls {
 			if v.Value != "" {
-				els = append(els, v)
+				els.lbls = append(els.lbls, v)
 			}
 		}
 		return els
@@ -328,11 +335,11 @@ func (ls Labels) IsValid() bool {
 
 // Equal returns whether the two label sets are equal.
 func Equal(ls, o Labels) bool {
-	if len(ls) != len(o) {
+	if len(ls.lbls) != len(o.lbls) {
 		return false
 	}
-	for i, l := range ls {
-		if l != o[i] {
+	for i, l := range ls.lbls {
+		if l != o.lbls[i] {
 			return false
 		}
 	}
@@ -341,8 +348,8 @@ func Equal(ls, o Labels) bool {
 
 // Map returns a string map of the labels.
 func (ls Labels) Map() map[string]string {
-	m := make(map[string]string, len(ls))
-	for _, l := range ls {
+	m := make(map[string]string, len(ls.lbls))
+	for _, l := range ls.lbls {
 		m[l.Name] = l.Value
 	}
 	return m
@@ -356,10 +363,8 @@ func EmptyLabels() Labels {
 // New returns a sorted Labels from the given labels.
 // The caller has to guarantee that all label names are unique.
 func New(ls ...Label) Labels {
-	set := make(Labels, 0, len(ls))
-	for _, l := range ls {
-		set = append(set, l)
-	}
+	set := Labels{lbls: make([]Label, 0, len(ls))}
+	set.lbls = append(set.lbls, ls...)
 	sort.Sort(set)
 
 	return set
@@ -379,9 +384,9 @@ func FromStrings(ss ...string) Labels {
 	if len(ss)%2 != 0 {
 		panic("invalid number of strings")
 	}
-	res := make(Labels, 0, len(ss)/2)
+	res := Labels{lbls: make([]Label, 0, len(ss)/2)}
 	for i := 0; i < len(ss); i += 2 {
-		res = append(res, Label{Name: ss[i], Value: ss[i+1]})
+		res.lbls = append(res.lbls, Label{Name: ss[i], Value: ss[i+1]})
 	}
 
 	sort.Sort(res)
@@ -391,27 +396,27 @@ func FromStrings(ss ...string) Labels {
 // Compare compares the two label sets.
 // The result will be 0 if a==b, <0 if a < b, and >0 if a > b.
 func Compare(a, b Labels) int {
-	l := len(a)
-	if len(b) < l {
-		l = len(b)
+	l := len(a.lbls)
+	if len(b.lbls) < l {
+		l = len(b.lbls)
 	}
 
 	for i := 0; i < l; i++ {
-		if a[i].Name != b[i].Name {
-			if a[i].Name < b[i].Name {
+		if a.lbls[i].Name != b.lbls[i].Name {
+			if a.lbls[i].Name < b.lbls[i].Name {
 				return -1
 			}
 			return 1
 		}
-		if a[i].Value != b[i].Value {
-			if a[i].Value < b[i].Value {
+		if a.lbls[i].Value != b.lbls[i].Value {
+			if a.lbls[i].Value < b.lbls[i].Value {
 				return -1
 			}
 			return 1
 		}
 	}
 	// If all labels so far were in common, the set with fewer labels comes first.
-	return len(a) - len(b)
+	return len(a.lbls) - len(b.lbls)
 }
 
 // Builder allows modifying Labels.
@@ -436,7 +441,7 @@ func (b *Builder) Reset(base Labels) {
 	b.base = base
 	b.del = b.del[:0]
 	b.add = b.add[:0]
-	for _, l := range b.base {
+	for _, l := range b.base.lbls {
 		if l.Value == "" {
 			b.del = append(b.del, l.Name)
 		}
@@ -459,7 +464,7 @@ func (b *Builder) Del(ns ...string) *Builder {
 // Keep removes all labels from the base except those with the given names.
 func (b *Builder) Keep(ns ...string) *Builder {
 Outer:
-	for _, l := range b.base {
+	for _, l := range b.base.lbls {
 		for _, n := range ns {
 			if l.Name == n {
 				continue Outer
@@ -500,18 +505,18 @@ func (b *Builder) Labels(res Labels) Labels {
 		return b.base
 	}
 
-	if res == nil {
+	if res.lbls == nil {
 		// In the general case, labels are removed, modified or moved
 		// rather than added.
-		res = make(Labels, 0, len(b.base))
+		res.lbls = make([]Label, 0, len(b.base.lbls))
 	} else {
-		res = res[:0]
+		res.lbls = res.lbls[:0]
 	}
 Outer:
 	// Justification that res can be the same slice as base: in this loop
 	// we move forward through base, and either skip an element or assign
 	// it to res at its current position or an earlier position.
-	for _, l := range b.base {
+	for _, l := range b.base.lbls {
 		for _, n := range b.del {
 			if l.Name == n {
 				continue Outer
@@ -522,10 +527,10 @@ Outer:
 				continue Outer
 			}
 		}
-		res = append(res, l)
+		res.lbls = append(res.lbls, l)
 	}
 	if len(b.add) > 0 { // Base is already in order, so we only need to sort if we add to it.
-		res = append(res, b.add...)
+		res.lbls = append(res.lbls, b.add...)
 		sort.Sort(res)
 	}
 	return res

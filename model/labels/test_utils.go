@@ -57,7 +57,7 @@ func ReadLabels(fn string, n int) ([]Labels, error) {
 	i := 0
 
 	for scanner.Scan() && i < n {
-		m := make(Labels, 0, 10)
+		m := Labels{lbls: make([]Label, 0, 10)}
 
 		r := strings.NewReplacer("\"", "", "{", "", "}", "")
 		s := r.Replace(scanner.Text())
@@ -65,7 +65,7 @@ func ReadLabels(fn string, n int) ([]Labels, error) {
 		labelChunks := strings.Split(s, ",")
 		for _, labelChunk := range labelChunks {
 			split := strings.Split(labelChunk, ":")
-			m = append(m, Label{Name: split[0], Value: split[1]})
+			m.lbls = append(m.lbls, Label{Name: split[0], Value: split[1]})
 		}
 		// Order of the k/v labels matters, don't assume we'll always receive them already sorted.
 		sort.Sort(m)
