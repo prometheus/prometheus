@@ -395,7 +395,6 @@ func labelValuesWithMatchers(r IndexReader, name string, matchers ...*labels.Mat
 	if err != nil {
 		return nil, errors.Wrap(err, "intersecting postings")
 	}
-	sort.Ints(indexes)
 
 	values := make([]string, 0, len(indexes))
 	for _, idx := range indexes {
