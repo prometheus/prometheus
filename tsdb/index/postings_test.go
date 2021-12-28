@@ -937,13 +937,13 @@ func TestFindIntersectingPostings(t *testing.T) {
 	t.Run("multiple intersections", func(t *testing.T) {
 		p := NewListPostings([]storage.SeriesRef{10, 15, 20, 25, 30, 35, 40, 45, 50})
 		candidates := []Postings{
-			0: NewListPostings([]storage.SeriesRef{7, 13, 14, 27}), // does not intersect
-			1: NewListPostings([]storage.SeriesRef{10, 20}),        // does intersect
-			2: NewListPostings([]storage.SeriesRef{29, 30, 31}),    // does intersect
-			3: NewListPostings([]storage.SeriesRef{29, 30, 31}),    // does intersect (same again)
-			4: NewListPostings([]storage.SeriesRef{60}),            // does not intersect
-			5: NewListPostings([]storage.SeriesRef{45}),            // does intersect
-			6: EmptyPostings(),                                     // does not intersect
+			0: NewListPostings([]storage.SeriesRef{7, 13, 14, 27}), // Does not intersect.
+			1: NewListPostings([]storage.SeriesRef{10, 20}),        // Does intersect.
+			2: NewListPostings([]storage.SeriesRef{29, 30, 31}),    // Does intersect.
+			3: NewListPostings([]storage.SeriesRef{29, 30, 31}),    // Does intersect (same again).
+			4: NewListPostings([]storage.SeriesRef{60}),            // Does not intersect.
+			5: NewListPostings([]storage.SeriesRef{45}),            // Does intersect.
+			6: EmptyPostings(),                                     // Does not intersect.
 		}
 
 		indexes, err := FindIntersectingPostings(p, candidates)
@@ -955,9 +955,9 @@ func TestFindIntersectingPostings(t *testing.T) {
 	t.Run("no intersections", func(t *testing.T) {
 		p := NewListPostings([]storage.SeriesRef{10, 15, 20, 25, 30, 35, 40, 45, 50})
 		candidates := []Postings{
-			0: NewListPostings([]storage.SeriesRef{7, 13, 14, 27}), // does not intersect
-			1: NewListPostings([]storage.SeriesRef{60}),            // does not intersect
-			2: EmptyPostings(),                                     // does not intersect
+			0: NewListPostings([]storage.SeriesRef{7, 13, 14, 27}), // Does not intersect.
+			1: NewListPostings([]storage.SeriesRef{60}),            // Does not intersect.
+			2: EmptyPostings(),                                     // Does not intersect.
 		}
 
 		indexes, err := FindIntersectingPostings(p, candidates)

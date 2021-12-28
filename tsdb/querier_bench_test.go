@@ -165,12 +165,12 @@ func benchmarkLabelValuesWithMatchers(b *testing.B, ir IndexReader) {
 		labelName string
 		matchers  []*labels.Matcher
 	}{
-		// i has 100k values
+		// i has 100k values.
 		{`i with n="1"`, "i", []*labels.Matcher{n1}},
 		{`i with n="^.+$"`, "i", []*labels.Matcher{nPlus}},
 		{`i with n="1",j!="foo"`, "i", []*labels.Matcher{n1, jNotFoo}},
 		{`i with n="1",i=~"^.*$",j!="foo"`, "i", []*labels.Matcher{n1, iStar, jNotFoo}},
-		// n has 10 values
+		// n has 10 values.
 		{`n with j!="foo"`, "n", []*labels.Matcher{jNotFoo}},
 		{`n with i="1"`, "n", []*labels.Matcher{i1}},
 	}
