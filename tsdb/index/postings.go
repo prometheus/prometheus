@@ -842,10 +842,8 @@ func FindIntersectingPostings(p Postings, candidates []Postings) (indexes []int,
 	for idx, it := range candidates {
 		if it.Next() {
 			h = append(h, postingsWithIndex{index: idx, p: it})
-		} else {
-			if it.Err() != nil {
-				return nil, it.Err()
-			}
+		} else if it.Err() != nil {
+			return nil, it.Err()
 		}
 	}
 	if len(h) == 0 {
