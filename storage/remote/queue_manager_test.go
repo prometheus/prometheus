@@ -356,6 +356,7 @@ func TestReshardRaceWithStop(t *testing.T) {
 
 	cfg := config.DefaultQueueConfig
 	mcfg := config.DefaultMetadataConfig
+	exitCh := make(chan struct{})
 	go func() {
 		for {
 			metrics := newQueueManagerMetrics(nil, "", "")
@@ -364,6 +365,12 @@ func TestReshardRaceWithStop(t *testing.T) {
 			h.Unlock()
 			h.Lock()
 			m.Stop()
+
+			select {
+			case exitCh <- struct{}{}:
+				return
+			default:
+			}
 		}
 	}()
 
@@ -372,6 +379,7 @@ func TestReshardRaceWithStop(t *testing.T) {
 		m.reshardChan <- i
 		h.Unlock()
 	}
+	<-exitCh
 }
 
 func TestReleaseNoninternedString(t *testing.T) {
