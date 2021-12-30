@@ -43,7 +43,7 @@ func CheckSD(sdConfigFiles, sdJobName string, sdTimeout time.Duration) int {
 	cfg, err := config.LoadFile(sdConfigFiles, false, false, logger)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Cannot load config", err)
-		return configErrExitCode
+		return failureExitCode
 	}
 
 	var scrapeConfig *config.ScrapeConfig
