@@ -56,6 +56,13 @@ import (
 	"github.com/prometheus/prometheus/scrape"
 )
 
+const (
+	successExitCode = 0
+	failureExitCode = 1
+	// Exit code 3 is used for "one or more lint issues detected".
+	lintErrExitCode = 3
+)
+
 func main() {
 	app := kingpin.New(filepath.Base(os.Args[0]), "Tooling for the Prometheus monitoring system.").UsageWriter(os.Stdout)
 	app.Version(version.Print("promtool"))
@@ -298,9 +305,9 @@ func CheckConfig(agentMode, checkSyntaxOnly bool, files ...string) int {
 		}
 	}
 	if failed {
-		return 1
+		return failureExitCode
 	}
-	return 0
+	return successExitCode
 }
 
 // CheckWebConfig validates web configuration files.
@@ -316,9 +323,9 @@ func CheckWebConfig(files ...string) int {
 		fmt.Fprintln(os.Stderr, f, "SUCCESS")
 	}
 	if failed {
-		return 1
+		return failureExitCode
 	}
-	return 0
+	return successExitCode
 }
 
 func checkFileExists(fn string) error {
@@ -521,9 +528,9 @@ func CheckRules(files ...string) int {
 		fmt.Println()
 	}
 	if failed {
-		return 1
+		return failureExitCode
 	}
-	return 0
+	return successExitCode
 }
 
 func checkRules(filename string) (int, []error) {
@@ -531,7 +538,7 @@ func checkRules(filename string) (int, []error) {
 
 	rgs, errs := rulefmt.ParseFile(filename)
 	if errs != nil {
-		return 0, errs
+		return successExitCode, errs
 	}
 
 	numRules := 0
@@ -627,7 +634,7 @@ func CheckMetrics() int {
 	problems, err := l.Lint()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error while linting:", err)
-		return 1
+		return failureExitCode
 	}
 
 	for _, p := range problems {
@@ -635,10 +642,10 @@ func CheckMetrics() int {
 	}
 
 	if len(problems) > 0 {
-		return 3
+		return lintErrExitCode
 	}
 
-	return 0
+	return successExitCode
 }
 
 // QueryInstant performs an instant query against a Prometheus server.
@@ -654,7 +661,7 @@ func QueryInstant(url *url.URL, query, evalTime string, p printer) int {
 	c, err := api.NewClient(config)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error creating API client:", err)
-		return 1
+		return failureExitCode
 	}
 
 	eTime := time.Now()
@@ -662,7 +669,7 @@ func QueryInstant(url *url.URL, query, evalTime string, p printer) int {
 		eTime, err = parseTime(evalTime)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "error parsing evaluation time:", err)
-			return 1
+			return failureExitCode
 		}
 	}
 
@@ -678,7 +685,7 @@ func QueryInstant(url *url.URL, query, evalTime string, p printer) int {
 
 	p.printValue(val)
 
-	return 0
+	return successExitCode
 }
 
 // QueryRange performs a range query against a Prometheus server.
@@ -703,7 +710,7 @@ func QueryRange(url *url.URL, headers map[string]string, query, start, end strin
 	c, err := api.NewClient(config)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error creating API client:", err)
-		return 1
+		return failureExitCode
 	}
 
 	var stime, etime time.Time
@@ -714,7 +721,7 @@ func QueryRange(url *url.URL, headers map[string]string, query, start, end strin
 		etime, err = parseTime(end)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "error parsing end time:", err)
-			return 1
+			return failureExitCode
 		}
 	}
 
@@ -724,13 +731,13 @@ func QueryRange(url *url.URL, headers map[string]string, query, start, end strin
 		stime, err = parseTime(start)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "error parsing start time:", err)
-			return 1
+			return failureExitCode
 		}
 	}
 
 	if !stime.Before(etime) {
 		fmt.Fprintln(os.Stderr, "start time is not before end time")
-		return 1
+		return failureExitCode
 	}
 
 	if step == 0 {
@@ -751,7 +758,7 @@ func QueryRange(url *url.URL, headers map[string]string, query, start, end strin
 	}
 
 	p.printValue(val)
-	return 0
+	return successExitCode
 }
 
 // QuerySeries queries for a series against a Prometheus server.
@@ -767,13 +774,13 @@ func QuerySeries(url *url.URL, matchers []string, start, end string, p printer) 
 	c, err := api.NewClient(config)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error creating API client:", err)
-		return 1
+		return failureExitCode
 	}
 
 	stime, etime, err := parseStartTimeAndEndTime(start, end)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return failureExitCode
 	}
 
 	// Run query against client.
@@ -787,7 +794,7 @@ func QuerySeries(url *url.URL, matchers []string, start, end string, p printer) 
 	}
 
 	p.printSeries(val)
-	return 0
+	return successExitCode
 }
 
 // QueryLabels queries for label values against a Prometheus server.
@@ -803,13 +810,13 @@ func QueryLabels(url *url.URL, name, start, end string, p printer) int {
 	c, err := api.NewClient(config)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error creating API client:", err)
-		return 1
+		return failureExitCode
 	}
 
 	stime, etime, err := parseStartTimeAndEndTime(start, end)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return failureExitCode
 	}
 
 	// Run query against client.
@@ -826,7 +833,7 @@ func QueryLabels(url *url.URL, name, start, end string, p printer) int {
 	}
 
 	p.printLabelValues(val)
-	return 0
+	return successExitCode
 }
 
 func handleAPIError(err error) int {
@@ -837,7 +844,7 @@ func handleAPIError(err error) int {
 		fmt.Fprintln(os.Stderr, "query error:", err)
 	}
 
-	return 1
+	return failureExitCode
 }
 
 func parseStartTimeAndEndTime(start, end string) (time.Time, time.Time, error) {
@@ -929,9 +936,9 @@ func debugPprof(url string) int {
 		endPointGroups: pprofEndpoints,
 	}); err != nil {
 		fmt.Fprintln(os.Stderr, "error completing debug command:", err)
-		return 1
+		return failureExitCode
 	}
-	return 0
+	return successExitCode
 }
 
 func debugMetrics(url string) int {
@@ -941,9 +948,9 @@ func debugMetrics(url string) int {
 		endPointGroups: metricsEndpoints,
 	}); err != nil {
 		fmt.Fprintln(os.Stderr, "error completing debug command:", err)
-		return 1
+		return failureExitCode
 	}
-	return 0
+	return successExitCode
 }
 
 func debugAll(url string) int {
@@ -953,9 +960,9 @@ func debugAll(url string) int {
 		endPointGroups: allEndpoints,
 	}); err != nil {
 		fmt.Fprintln(os.Stderr, "error completing debug command:", err)
-		return 1
+		return failureExitCode
 	}
-	return 0
+	return successExitCode
 }
 
 type printer interface {
