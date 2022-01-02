@@ -1,6 +1,6 @@
 module github.com/prometheus/prometheus
 
-go 1.14
+go 1.16
 
 require (
 	github.com/Azure/azure-sdk-for-go v60.3.0+incompatible
@@ -71,9 +71,9 @@ require (
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
-	k8s.io/api v0.23.1
-	k8s.io/apimachinery v0.23.1
-	k8s.io/client-go v0.23.1
+	k8s.io/api v0.22.4
+	k8s.io/apimachinery v0.22.4
+	k8s.io/client-go v0.22.4
 	k8s.io/klog v1.0.0
 	k8s.io/klog/v2 v2.30.0
 )
