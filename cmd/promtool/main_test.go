@@ -325,6 +325,10 @@ func TestAuthorizationConfig(t *testing.T) {
 }
 
 func TestCheckMetricsWeight(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping on windows")
+	}
+
 	f, err := os.Open("testdata/metrics-test.prom")
 	require.NoError(t, err)
 	defer f.Close()
