@@ -37,6 +37,13 @@ func TestRulesUnitTest(t *testing.T) {
 			want: 0,
 		},
 		{
+			name: "Long evaluation interval",
+			args: args{
+				files: []string{"./testdata/long-period.yml"},
+			},
+			want: 0,
+		},
+		{
 			name: "Bad input series",
 			args: args{
 				files: []string{"./testdata/bad-input-series.yml"},
