@@ -6,7 +6,7 @@
   "module": "dist/esm/index.js",
   "scripts": {
     "build": "npm run build:grammar && npm run build:lib",
-    "build:grammar": "lezer-generator src/grammar/promql.grammar -o src/grammar/parser",
+    "build:grammar": "npx lezer-generator src/grammar/promql.grammar -o src/grammar/parser",
     "build:lib": "bash ./build.sh",
     "test": "npm run build:grammar && ts-mocha -p tsconfig.json ./**/*.test.ts",
     "test:coverage": "npm run build:grammar && nyc ts-mocha -p ./tsconfig.json ./**/*.test.ts",
