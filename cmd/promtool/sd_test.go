@@ -15,6 +15,7 @@ package main
 
 import (
 	"testing"
+	"time"
 
 	"github.com/prometheus/common/model"
 
@@ -37,6 +38,8 @@ func TestSDCheckResult(t *testing.T) {
 	require.Nil(t, err)
 
 	scrapeConfig := &config.ScrapeConfig{
+		ScrapeInterval: model.Duration(1 * time.Minute),
+		ScrapeTimeout:  model.Duration(10 * time.Second),
 		RelabelConfigs: []*relabel.Config{{
 			SourceLabels: model.LabelNames{"foo"},
 			Action:       relabel.Replace,
@@ -50,14 +53,14 @@ func TestSDCheckResult(t *testing.T) {
 		{
 			DiscoveredLabels: labels.Labels{
 				labels.Label{Name: "__address__", Value: "localhost:8080"},
-				labels.Label{Name: "__scrape_interval__", Value: "0s"},
-				labels.Label{Name: "__scrape_timeout__", Value: "0s"},
+				labels.Label{Name: "__scrape_interval__", Value: "1m"},
+				labels.Label{Name: "__scrape_timeout__", Value: "10s"},
 				labels.Label{Name: "foo", Value: "bar"},
 			},
 			Labels: labels.Labels{
 				labels.Label{Name: "__address__", Value: "localhost:8080"},
-				labels.Label{Name: "__scrape_interval__", Value: "0s"},
-				labels.Label{Name: "__scrape_timeout__", Value: "0s"},
+				labels.Label{Name: "__scrape_interval__", Value: "1m"},
+				labels.Label{Name: "__scrape_timeout__", Value: "10s"},
 				labels.Label{Name: "foo", Value: "bar"},
 				labels.Label{Name: "instance", Value: "localhost:8080"},
 				labels.Label{Name: "newfoo", Value: "bar"},

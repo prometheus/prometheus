@@ -20,6 +20,8 @@ import (
 	"sort"
 	"sync"
 
+	"github.com/pkg/errors"
+
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 )
@@ -853,3 +855,78 @@ type seriesRefSlice []storage.SeriesRef
 func (x seriesRefSlice) Len() int           { return len(x) }
 func (x seriesRefSlice) Less(i, j int) bool { return x[i] < x[j] }
 func (x seriesRefSlice) Swap(i, j int)      { x[i], x[j] = x[j], x[i] }
+
+// FindIntersectingPostings checks the intersection of p and candidates[i] for each i in candidates,
+// if intersection is non empty, then i is added to the indexes returned.
+// Returned indexes are not sorted.
+func FindIntersectingPostings(p Postings, candidates []Postings) (indexes []int, err error) {
+	h := make(postingsWithIndexHeap, 0, len(candidates))
+	for idx, it := range candidates {
+		if it.Next() {
+			h = append(h, postingsWithIndex{index: idx, p: it})
+		} else if it.Err() != nil {
+			return nil, it.Err()
+		}
+	}
+	if len(h) == 0 {
+		return nil, nil
+	}
+	h.Init()
+
+	for len(h) > 0 {
+		if !p.Seek(h.At()) {
+			return indexes, p.Err()
+		}
+		if p.At() == h.At() {
+			found := heap.Pop(&h).(postingsWithIndex)
+			indexes = append(indexes, found.index)
+		} else if err := h.Next(); err != nil {
+			return nil, err
+		}
+	}
+
+	return indexes, nil
+}
+
+type postingsWithIndex struct {
+	index int
+	p     Postings
+}
+
+type postingsWithIndexHeap []postingsWithIndex
+
+func (h *postingsWithIndexHeap) Init()                { heap.Init(h) }
+func (h postingsWithIndexHeap) At() storage.SeriesRef { return h[0].p.At() }
+func (h *postingsWithIndexHeap) Next() error {
+	pi := (*h)[0]
+	next := pi.p.Next()
+	if next {
+		heap.Fix(h, 0)
+		return nil
+	}
+
+	if err := pi.p.Err(); err != nil {
+		return errors.Wrapf(err, "postings %d", pi.index)
+	}
+
+	heap.Pop(h)
+	return nil
+}
+
+func (h postingsWithIndexHeap) Len() int           { return len(h) }
+func (h postingsWithIndexHeap) Less(i, j int) bool { return h[i].p.At() < h[j].p.At() }
+func (h *postingsWithIndexHeap) Swap(i, j int)     { (*h)[i], (*h)[j] = (*h)[j], (*h)[i] }
+
+func (h *postingsWithIndexHeap) Push(x interface{}) {
+	*h = append(*h, x.(postingsWithIndex))
+}
+
+// Pop implements heap.Interface and pops the last element, which is NOT the min element,
+// so this doesn't return the same heap.Pop()
+func (h *postingsWithIndexHeap) Pop() interface{} {
+	old := *h
+	n := len(old)
+	x := old[n-1]
+	*h = old[0 : n-1]
+	return x
+}
