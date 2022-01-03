@@ -371,7 +371,11 @@ func TestNewClientWithBadTLSConfig(t *testing.T) {
 func TestTargetsFromGroup(t *testing.T) {
 	expectedError := "instance 0 in group : no address"
 
-	targets, failures := TargetsFromGroup(&targetgroup.Group{Targets: []model.LabelSet{{}, {model.AddressLabel: "localhost:9090"}}}, &config.ScrapeConfig{})
+	cfg := config.ScrapeConfig{
+		ScrapeTimeout:  model.Duration(10 * time.Second),
+		ScrapeInterval: model.Duration(1 * time.Minute),
+	}
+	targets, failures := TargetsFromGroup(&targetgroup.Group{Targets: []model.LabelSet{{}, {model.AddressLabel: "localhost:9090"}}}, &cfg)
 	if len(targets) != 1 {
 		t.Fatalf("Expected 1 target, got %v", len(targets))
 	}

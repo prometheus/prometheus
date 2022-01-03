@@ -305,7 +305,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed 
 				return mutateSampleLabels(l, opts.target, opts.honorLabels, opts.mrc)
 			},
 			func(l labels.Labels) labels.Labels { return mutateReportSampleLabels(l, opts.target) },
-			func(ctx context.Context) storage.Appender { return appender(app.Appender(ctx), opts.sampleLimit) },
+			func(ctx context.Context) storage.Appender { return app.Appender(ctx) },
 			cache,
 			jitterSeed,
 			opts.honorTimestamps,
@@ -1425,6 +1425,9 @@ func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string,
 		sampleLimitErr error
 		e              exemplar.Exemplar // escapes to heap so hoisted out of loop
 	)
+
+	// Take an appender with limits.
+	app = appender(app, sl.sampleLimit)
 
 	defer func() {
 		if err != nil {

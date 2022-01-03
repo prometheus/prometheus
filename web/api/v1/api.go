@@ -155,11 +155,18 @@ type TSDBAdminStats interface {
 	WALReplayStatus() (tsdb.WALReplayStatus, error)
 }
 
+// QueryEngine defines the interface for the *promql.Engine, so it can be replaced, wrapped or mocked.
+type QueryEngine interface {
+	SetQueryLogger(l promql.QueryLogger)
+	NewInstantQuery(q storage.Queryable, qs string, ts time.Time) (promql.Query, error)
+	NewRangeQuery(q storage.Queryable, qs string, start, end time.Time, interval time.Duration) (promql.Query, error)
+}
+
 // API can register a set of endpoints in a router and handle
 // them using the provided storage and query engine.
 type API struct {
 	Queryable         storage.SampleAndChunkQueryable
-	QueryEngine       *promql.Engine
+	QueryEngine       QueryEngine
 	ExemplarQueryable storage.ExemplarQueryable
 
 	targetRetriever       func(context.Context) TargetRetriever
@@ -192,7 +199,7 @@ func init() {
 
 // NewAPI returns an initialized API type.
 func NewAPI(
-	qe *promql.Engine,
+	qe QueryEngine,
 	q storage.SampleAndChunkQueryable,
 	ap storage.Appendable,
 	eq storage.ExemplarQueryable,

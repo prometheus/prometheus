@@ -16,6 +16,7 @@ package kubernetes
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
 	"reflect"
 	"strings"
 	"sync"
@@ -48,7 +49,7 @@ import (
 )
 
 const (
-	// kubernetesMetaLabelPrefix is the meta prefix used for all meta labels.
+	// metaLabelPrefix is the meta prefix used for all meta labels.
 	// in this discovery.
 	metaLabelPrefix  = model.MetaLabelPrefix + "kubernetes_"
 	namespaceLabel   = metaLabelPrefix + "namespace"
@@ -230,7 +231,8 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 // NamespaceDiscovery is the configuration for discovering
 // Kubernetes namespaces.
 type NamespaceDiscovery struct {
-	Names []string `yaml:"names"`
+	IncludeOwnNamespace bool     `yaml:"own_namespace"`
+	Names               []string `yaml:"names"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -250,13 +252,21 @@ type Discovery struct {
 	namespaceDiscovery *NamespaceDiscovery
 	discoverers        []discovery.Discoverer
 	selectors          roleSelector
+	ownNamespace       string
 }
 
 func (d *Discovery) getNamespaces() []string {
 	namespaces := d.namespaceDiscovery.Names
-	if len(namespaces) == 0 {
-		namespaces = []string{apiv1.NamespaceAll}
+	includeOwnNamespace := d.namespaceDiscovery.IncludeOwnNamespace
+
+	if len(namespaces) == 0 && !includeOwnNamespace {
+		return []string{apiv1.NamespaceAll}
 	}
+
+	if includeOwnNamespace {
+		return append(namespaces, d.ownNamespace)
+	}
+
 	return namespaces
 }
 
@@ -299,6 +309,12 @@ func New(l log.Logger, conf *SDConfig) (*Discovery, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	ownNamespace, err := ioutil.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
+	if err != nil {
+		return nil, fmt.Errorf("could not determine the pod's namespace: %w", err)
+	}
+
 	return &Discovery{
 		client:             c,
 		logger:             l,
@@ -306,6 +322,7 @@ func New(l log.Logger, conf *SDConfig) (*Discovery, error) {
 		namespaceDiscovery: &conf.NamespaceDiscovery,
 		discoverers:        make([]discovery.Discoverer, 0),
 		selectors:          mapSelector(conf.Selectors),
+		ownNamespace:       string(ownNamespace),
 	}, nil
 }
 
