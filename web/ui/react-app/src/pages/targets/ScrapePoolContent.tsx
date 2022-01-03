@@ -7,6 +7,7 @@ import styles from './ScrapePoolPanel.module.css';
 import { formatRelative } from '../../utils';
 import { now } from 'moment';
 import TargetScrapeDuration from './TargetScrapeDuration';
+import EndpointLink from './EndpointLink';
 
 const columns = ['Endpoint', 'State', 'Labels', 'Last Scrape', 'Scrape Duration', 'Error'];
 const initialNumberOfTargetDisplayed = 50;
@@ -42,7 +43,7 @@ export function ScrapePoolContent(props: ScrapePoolContentProps): JSX.Element {
       dataLength={items.length}
       height={items.length > 25 ? '75vh' : ''}
     >
-      <Table className={styles.table} size="sm">
+      <Table className={styles.table} size="sm" hover>
         <thead>
           <tr key="header">
             {columns.map((column) => (
@@ -54,7 +55,9 @@ export function ScrapePoolContent(props: ScrapePoolContentProps): JSX.Element {
           {items.map((target, index) => {
             return (
               <tr key={index}>
-                <td>{target.scrapeUrl}</td>
+                <td className={styles.endpoint}>
+                  <EndpointLink endpoint={target.scrapeUrl} globalUrl={target.globalUrl} />
+                </td>
                 <td>
                   <Badge color={getColor(target.health)}>{target.health.toUpperCase()}</Badge>
                 </td>
