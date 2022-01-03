@@ -476,7 +476,8 @@ func TestRelabel(t *testing.T) {
 			}
 		}
 
-		res := Process(test.input, test.relabel...)
+		res, err := Process(test.input, test.relabel...)
+		require.NoError(t, err)
 		require.Equal(t, test.output, res)
 	}
 }
@@ -525,7 +526,7 @@ func BenchmarkTemplate(b *testing.B) {
 		}}
 
 		for i := 0; i < b.N; i++ {
-			_ = Process(inLabels, rules...)
+			_, _ = Process(inLabels, rules...)
 		}
 	})
 
@@ -539,7 +540,7 @@ func BenchmarkTemplate(b *testing.B) {
 		}}
 
 		for i := 0; i < b.N; i++ {
-			_ = Process(inLabels, rules...)
+			_, _ = Process(inLabels, rules...)
 		}
 	})
 }

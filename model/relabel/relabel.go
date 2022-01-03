@@ -188,17 +188,22 @@ func (re Regexp) MarshalYAML() (interface{}, error) {
 // are applied in order of input.
 // If a label set is dropped, nil is returned.
 // May return the input labelSet modified.
-func Process(labels labels.Labels, cfgs ...*Config) labels.Labels {
+//
+// Partially applied relabels will be returned if an error occurs.
+func Process(labels labels.Labels, cfgs ...*Config) (labels.Labels, error) {
 	for _, cfg := range cfgs {
-		labels = relabel(labels, cfg)
-		if labels == nil {
-			return nil
+		result, err := relabel(labels, cfg)
+		if result == nil {
+			return nil, nil
+		} else if err != nil {
+			return labels, err
 		}
+		labels = result
 	}
-	return labels
+	return labels, nil
 }
 
-func relabel(lset labels.Labels, cfg *Config) labels.Labels {
+func relabel(lset labels.Labels, cfg *Config) (labels.Labels, error) {
 	values := make([]string, 0, len(cfg.SourceLabels))
 	for _, ln := range cfg.SourceLabels {
 		values = append(values, lset.Get(string(ln)))
@@ -210,11 +215,11 @@ func relabel(lset labels.Labels, cfg *Config) labels.Labels {
 	switch cfg.Action {
 	case Drop:
 		if cfg.Regex.MatchString(val) {
-			return nil
+			return nil, nil
 		}
 	case Keep:
 		if !cfg.Regex.MatchString(val) {
-			return nil
+			return nil, nil
 		}
 	case Replace:
 		indexes := cfg.Regex.FindStringSubmatchIndex(val)
@@ -256,14 +261,16 @@ func relabel(lset labels.Labels, cfg *Config) labels.Labels {
 			}
 		}
 	case Template:
-		// TODO(rfratto): It's not clear how to handle a failure here.
-		res, _ := cfg.Template.Execute(lset)
+		res, err := cfg.Template.Execute(lset)
+		if err != nil {
+			return nil, err
+		}
 		lb.Set(cfg.TargetLabel, res)
 	default:
 		panic(errors.Errorf("relabel: unknown relabel action type %q", cfg.Action))
 	}
 
-	return lb.Labels()
+	return lb.Labels(), nil
 }
 
 // sum64 sums the md5 hash to an uint64.
