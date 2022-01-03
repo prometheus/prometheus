@@ -1,26 +1,67 @@
-import React, { FC } from 'react';
-import Filter, { Expanded, FilterData } from './Filter';
-import { useFetch } from '../../hooks/useFetch';
-import { groupTargets, Target } from './target';
-import ScrapePoolPanel from './ScrapePoolPanel';
-import { withStatusIndicator } from '../../components/withStatusIndicator';
+import { KVSearch } from '@nexucis/kvsearch';
 import { usePathPrefix } from '../../contexts/PathPrefixContext';
+import { useFetch } from '../../hooks/useFetch';
 import { API_PATH } from '../../constants/constants';
+import { groupTargets, ScrapePool, ScrapePools, Target } from './target';
+import { withStatusIndicator } from '../../components/withStatusIndicator';
+import React, { ChangeEvent, FC, useState } from 'react';
+import { Collapse, Container, Input, InputGroup, InputGroupAddon, InputGroupText } from 'reactstrap';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faSearch } from '@fortawesome/free-solid-svg-icons';
+import { ScrapePoolContent } from './ScrapePoolContent';
+import Filter, { Expanded, FilterData } from './Filter';
 import { useLocalStorage } from '../../hooks/useLocalStorage';
+import styles from './ScrapePoolPanel.module.css';
+import { ToggleMoreLess } from '../../components/ToggleMoreLess';
 
 interface ScrapePoolListProps {
   activeTargets: Target[];
 }
 
-export const ScrapePoolContent: FC<ScrapePoolListProps> = ({ activeTargets }) => {
-  const targetGroups = groupTargets(activeTargets);
+const kvSearch = new KVSearch({
+  shouldSort: true,
+  indexedKeys: ['labels', 'scrapePool', ['labels', /.*/]],
+});
+
+interface PanelProps {
+  scrapePool: string;
+  targetGroup: ScrapePool;
+  expanded: boolean;
+  toggleExpanded: () => void;
+}
+
+const ScrapePoolPanel: FC<PanelProps> = (props: PanelProps) => {
+  const modifier = props.targetGroup.upCount < props.targetGroup.targets.length ? 'danger' : 'normal';
+  const id = `pool-${props.scrapePool}`;
+  const anchorProps = {
+    href: `#${id}`,
+    id,
+  };
+  return (
+    <div>
+      <ToggleMoreLess event={props.toggleExpanded} showMore={props.expanded}>
+        <a className={styles[modifier]} {...anchorProps}>
+          {`${props.scrapePool} (${props.targetGroup.upCount}/${props.targetGroup.targets.length} up)`}
+        </a>
+      </ToggleMoreLess>
+      <Collapse isOpen={props.expanded}>
+        <ScrapePoolContent targets={props.targetGroup.targets} />
+      </Collapse>
+    </div>
+  );
+};
+
+// ScrapePoolListContent is taking care of every possible filter
+const ScrapePoolListContent: FC<ScrapePoolListProps> = ({ activeTargets }) => {
+  const initialPoolList = groupTargets(activeTargets);
+  const [poolList, setPoolList] = useState<ScrapePools>(initialPoolList);
   const initialFilter: FilterData = {
     showHealthy: true,
     showUnhealthy: true,
   };
   const [filter, setFilter] = useLocalStorage('targets-page-filter', initialFilter);
 
-  const initialExpanded: Expanded = Object.keys(targetGroups).reduce(
+  const initialExpanded: Expanded = Object.keys(initialPoolList).reduce(
     (acc: { [scrapePool: string]: boolean }, scrapePool: string) => ({
       ...acc,
       [scrapePool]: true,
@@ -28,14 +69,36 @@ export const ScrapePoolContent: FC<ScrapePoolListProps> = ({ activeTargets }) =>
     {}
   );
   const [expanded, setExpanded] = useLocalStorage('targets-page-expansion-state', initialExpanded);
-
   const { showHealthy, showUnhealthy } = filter;
+
+  const handleSearchChange = (e: ChangeEvent<HTMLTextAreaElement | HTMLInputElement>) => {
+    if (e.target.value !== '') {
+      const result = kvSearch.filter(e.target.value.trim(), activeTargets);
+      setPoolList(
+        groupTargets(
+          result.map((value) => {
+            return value.original as unknown as Target;
+          })
+        )
+      );
+    } else {
+      setPoolList(initialPoolList);
+    }
+  };
   return (
     <>
       <Filter filter={filter} setFilter={setFilter} expanded={expanded} setExpanded={setExpanded} />
-      {Object.keys(targetGroups)
+      <Container>
+        <InputGroup>
+          <InputGroupAddon addonType="prepend">
+            <InputGroupText>{<FontAwesomeIcon icon={faSearch} />}</InputGroupText>
+          </InputGroupAddon>
+          <Input onChange={handleSearchChange} />
+        </InputGroup>
+      </Container>
+      {Object.keys(poolList)
         .filter((scrapePool) => {
-          const targetGroup = targetGroups[scrapePool];
+          const targetGroup = poolList[scrapePool];
           const isHealthy = targetGroup.upCount === targetGroup.targets.length;
           return (isHealthy && showHealthy) || (!isHealthy && showUnhealthy);
         })
@@ -43,7 +106,7 @@ export const ScrapePoolContent: FC<ScrapePoolListProps> = ({ activeTargets }) =>
           <ScrapePoolPanel
             key={scrapePool}
             scrapePool={scrapePool}
-            targetGroup={targetGroups[scrapePool]}
+            targetGroup={poolList[scrapePool]}
             expanded={expanded[scrapePool]}
             toggleExpanded={(): void => setExpanded({ ...expanded, [scrapePool]: !expanded[scrapePool] })}
           />
@@ -51,11 +114,10 @@ export const ScrapePoolContent: FC<ScrapePoolListProps> = ({ activeTargets }) =>
     </>
   );
 };
-ScrapePoolContent.displayName = 'ScrapePoolContent';
 
-const ScrapePoolListWithStatusIndicator = withStatusIndicator(ScrapePoolContent);
+const ScrapePoolListWithStatusIndicator = withStatusIndicator(ScrapePoolListContent);
 
-const ScrapePoolList: FC = () => {
+export const ScrapePoolList: FC = () => {
   const pathPrefix = usePathPrefix();
   const { response, error, isLoading } = useFetch<ScrapePoolListProps>(`${pathPrefix}/${API_PATH}/targets?state=active`);
   const { status: responseStatus } = response;

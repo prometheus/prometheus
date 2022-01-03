@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { FC, useEffect, useState } from 'react';
 import { getColor, Target } from './target';
 import InfiniteScroll from 'react-infinite-scroll-component';
 import { Badge, Table } from 'reactstrap';
@@ -10,28 +10,29 @@ import TargetScrapeDuration from './TargetScrapeDuration';
 import EndpointLink from './EndpointLink';
 
 const columns = ['Endpoint', 'State', 'Labels', 'Last Scrape', 'Scrape Duration', 'Error'];
-const initialNumberOfTargetDisplayed = 50;
+const initialNumberOfTargetsDisplayed = 50;
 
 interface ScrapePoolContentProps {
   targets: Target[];
 }
 
-export function ScrapePoolContent(props: ScrapePoolContentProps): JSX.Element {
-  const [items, setItems] = useState<Target[]>(props.targets.slice(0, 50));
-  const [index, setIndex] = useState<number>(initialNumberOfTargetDisplayed);
-  const [hasMore, setHasMore] = useState<boolean>(props.targets.length > initialNumberOfTargetDisplayed);
+export const ScrapePoolContent: FC<ScrapePoolContentProps> = ({ targets }) => {
+  const [items, setItems] = useState<Target[]>(targets.slice(0, 50));
+  const [index, setIndex] = useState<number>(initialNumberOfTargetsDisplayed);
+  const [hasMore, setHasMore] = useState<boolean>(targets.length > initialNumberOfTargetsDisplayed);
+
   useEffect(() => {
-    setItems(props.targets.slice(0, initialNumberOfTargetDisplayed));
-    setHasMore(props.targets.length > initialNumberOfTargetDisplayed);
-  }, [props.targets]);
+    setItems(targets.slice(0, initialNumberOfTargetsDisplayed));
+    setHasMore(targets.length > initialNumberOfTargetsDisplayed);
+  }, [targets]);
 
   const fetchMoreData = () => {
-    if (items.length === props.targets.length) {
+    if (items.length === targets.length) {
       setHasMore(false);
     } else {
-      const newIndex = index + initialNumberOfTargetDisplayed;
+      const newIndex = index + initialNumberOfTargetsDisplayed;
       setIndex(newIndex);
-      setItems(props.targets.slice(0, newIndex));
+      setItems(targets.slice(0, newIndex));
     }
   };
 
@@ -39,7 +40,7 @@ export function ScrapePoolContent(props: ScrapePoolContentProps): JSX.Element {
     <InfiniteScroll
       next={fetchMoreData}
       hasMore={hasMore}
-      loader={<h4>loading ....</h4>}
+      loader={<h4>loading...</h4>}
       dataLength={items.length}
       height={items.length > 25 ? '75vh' : ''}
     >
@@ -89,4 +90,4 @@ export function ScrapePoolContent(props: ScrapePoolContentProps): JSX.Element {
       </Table>
     </InfiniteScroll>
   );
-}
+};
