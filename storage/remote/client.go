@@ -199,7 +199,7 @@ func (c *Client) Store(ctx context.Context, req []byte) error {
 		return err
 	}
 
-	httpReq.Header.Add("Content-Encoding", "snappy")
+	// httpReq.Header.Add("Content-Encoding", "snappy")
 	httpReq.Header.Set("Content-Type", "application/x-protobuf")
 	httpReq.Header.Set("User-Agent", UserAgent)
 	httpReq.Header.Set("X-Prometheus-Remote-Write-Version", "0.1.0")
