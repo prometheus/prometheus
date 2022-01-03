@@ -1,11 +1,11 @@
 import React, { FC } from 'react';
-import ScrapePoolList from './ScrapePoolList';
+import { ScrapePoolList2 } from './ScrapePoolList2';
 
 const Targets: FC = () => {
   return (
     <>
       <h2>Targets</h2>
-      <ScrapePoolList />
+      <ScrapePoolList2 />
     </>
   );
 };
