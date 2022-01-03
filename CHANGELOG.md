@@ -1,3 +1,6 @@
+## 2.32.1-lb1 / 2022-01-03
+* [CHANGE] remote-write: Remove remote-write snappy compression header
+
 ## 2.32.1 / 2021-12-17
 
 * [BUGFIX] Scrape: Fix reporting metrics when sample limit is reached during the report. #9996
