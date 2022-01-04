@@ -30,7 +30,7 @@ interface PanelProps {
   toggleExpanded: () => void;
 }
 
-const ScrapePoolPanel: FC<PanelProps> = (props: PanelProps) => {
+export const ScrapePoolPanel: FC<PanelProps> = (props: PanelProps) => {
   const modifier = props.targetGroup.upCount < props.targetGroup.targets.length ? 'danger' : 'normal';
   const id = `pool-${props.scrapePool}`;
   const anchorProps = {
