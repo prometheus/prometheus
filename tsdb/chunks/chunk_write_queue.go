@@ -50,8 +50,8 @@ type chunkWriteQueue struct {
 	chunkRefMap          map[ChunkDiskMapperRef]chunkenc.Chunk
 	chunkRefMapOversized bool // indicates whether more than <size> chunks were put into the chunkRefMap.
 
-	isRunningMtx sync.RWMutex // protects the isRunning property.
-	isRunning    bool         // used to prevent that new jobs get added to the queue when the chan is already closed.
+	isRunningMtx sync.Mutex // protects the isRunning property.
+	isRunning    bool       // used to prevent that new jobs get added to the queue when the chan is already closed.
 
 	workerWg sync.WaitGroup
 
@@ -130,8 +130,8 @@ func (c *chunkWriteQueue) processJob(job chunkWriteJob) {
 }
 
 func (c *chunkWriteQueue) addJob(job chunkWriteJob) error {
-	c.isRunningMtx.RLock()
-	defer c.isRunningMtx.RUnlock()
+	c.isRunningMtx.Lock()
+	defer c.isRunningMtx.Unlock()
 
 	if !c.isRunning {
 		return errors.New("queue is not started")
