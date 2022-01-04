@@ -3002,8 +3002,8 @@ func TestSparseHistogram_Sum_AddOperator(t *testing.T) {
 			ts := int64(i+1) * int64(10*time.Minute/time.Millisecond)
 			app := test.Storage().Appender(context.TODO())
 			for idx, h := range c.histograms {
-				// TODO(codesome): Without h.Copy(), it was working weird. TSDB is keeping reference of last histogram. AppendHistogram should not take pointers!
 				lbls := labels.FromStrings("__name__", seriesName, "idx", fmt.Sprintf("%d", idx))
+				// Since we mutate h later, we need to create a copy here.
 				_, err = app.AppendHistogram(0, lbls, ts, h.Copy())
 			}
 			require.NoError(t, err)

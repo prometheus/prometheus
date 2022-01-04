@@ -470,7 +470,10 @@ type FloatBucket struct {
 	Lower, Upper                   float64
 	LowerInclusive, UpperInclusive bool
 	Count                          float64
-	Index                          int32 // Index within schema. To easily compare buckets that share the same schema.
+
+	// Index within schema. To easily compare buckets that share the same
+	// schema and sign (positive or negative). Irrelevant for the zero bucket.
+	Index int32
 }
 
 // String returns a string representation of a FloatBucket, using the usual
@@ -686,7 +689,7 @@ func (r *allFloatBucketIterator) Next() bool {
 				LowerInclusive: true,
 				UpperInclusive: true,
 				Count:          r.h.ZeroCount,
-				Index:          math.MinInt32, // TODO(codesome): What is the index for this?
+				// Index is irrelevant for the zero bucket.
 			}
 			return true
 		}
