@@ -53,39 +53,37 @@ export const ScrapePoolContent: FC<ScrapePoolContentProps> = ({ targets }) => {
           </tr>
         </thead>
         <tbody>
-          {items.map((target, index) => {
-            return (
-              <tr key={index}>
-                <td className={styles.endpoint}>
-                  <EndpointLink endpoint={target.scrapeUrl} globalUrl={target.globalUrl} />
-                </td>
-                <td>
-                  <Badge color={getColor(target.health)}>{target.health.toUpperCase()}</Badge>
-                </td>
-                <td>
-                  <TargetLabels
-                    discoveredLabels={target.discoveredLabels}
-                    labels={target.labels}
-                    scrapePool={target.scrapePool}
-                    idx={index}
-                  />
-                </td>
-                <td className={styles['last-scrape']}>{formatRelative(target.lastScrape, now())}</td>
-                <td className={styles['scrape-duration']}>
-                  <TargetScrapeDuration
-                    duration={target.lastScrapeDuration}
-                    scrapePool={target.scrapePool}
-                    idx={index}
-                    interval={target.scrapeInterval}
-                    timeout={target.scrapeTimeout}
-                  />
-                </td>
-                <td className={styles.errors}>
-                  {target.lastError ? <span className="text-danger">{target.lastError}</span> : null}
-                </td>
-              </tr>
-            );
-          })}
+          {items.map((target, index) => (
+            <tr key={index}>
+              <td className={styles.endpoint}>
+                <EndpointLink endpoint={target.scrapeUrl} globalUrl={target.globalUrl} />
+              </td>
+              <td>
+                <Badge color={getColor(target.health)}>{target.health.toUpperCase()}</Badge>
+              </td>
+              <td>
+                <TargetLabels
+                  discoveredLabels={target.discoveredLabels}
+                  labels={target.labels}
+                  scrapePool={target.scrapePool}
+                  idx={index}
+                />
+              </td>
+              <td className={styles['last-scrape']}>{formatRelative(target.lastScrape, now())}</td>
+              <td className={styles['scrape-duration']}>
+                <TargetScrapeDuration
+                  duration={target.lastScrapeDuration}
+                  scrapePool={target.scrapePool}
+                  idx={index}
+                  interval={target.scrapeInterval}
+                  timeout={target.scrapeTimeout}
+                />
+              </td>
+              <td className={styles.errors}>
+                {target.lastError ? <span className="text-danger">{target.lastError}</span> : null}
+              </td>
+            </tr>
+          ))}
         </tbody>
       </Table>
     </InfiniteScroll>
