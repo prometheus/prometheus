@@ -6,7 +6,7 @@ on:
 jobs:
   steps:
     - uses: actions/checkout@v2
-    - uses: bufbuild/buf-setup-action@v0.5.0
+    - uses: bufbuild/buf-setup-action@v0.6.0
     - uses: bufbuild/buf-lint-action@v1
       with:
         input: 'prompb'
