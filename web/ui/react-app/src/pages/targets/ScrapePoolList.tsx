@@ -5,7 +5,7 @@ import { API_PATH } from '../../constants/constants';
 import { groupTargets, ScrapePool, ScrapePools, Target } from './target';
 import { withStatusIndicator } from '../../components/withStatusIndicator';
 import React, { ChangeEvent, FC, useState } from 'react';
-import { Collapse, Container, Input, InputGroup, InputGroupAddon, InputGroupText } from 'reactstrap';
+import { Col, Collapse, Input, InputGroup, InputGroupAddon, InputGroupText, Row } from 'reactstrap';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faSearch } from '@fortawesome/free-solid-svg-icons';
 import { ScrapePoolContent } from './ScrapePoolContent';
@@ -87,15 +87,19 @@ const ScrapePoolListContent: FC<ScrapePoolListProps> = ({ activeTargets }) => {
   };
   return (
     <>
-      <Filter filter={filter} setFilter={setFilter} expanded={expanded} setExpanded={setExpanded} />
-      <Container>
-        <InputGroup>
-          <InputGroupAddon addonType="prepend">
-            <InputGroupText>{<FontAwesomeIcon icon={faSearch} />}</InputGroupText>
-          </InputGroupAddon>
-          <Input onChange={handleSearchChange} />
-        </InputGroup>
-      </Container>
+      <Row xs="4" className="align-items-center">
+        <Col>
+          <Filter filter={filter} setFilter={setFilter} expanded={expanded} setExpanded={setExpanded} />
+        </Col>
+        <Col xs="6">
+          <InputGroup>
+            <InputGroupAddon addonType="prepend">
+              <InputGroupText>{<FontAwesomeIcon icon={faSearch} />}</InputGroupText>
+            </InputGroupAddon>
+            <Input onChange={handleSearchChange} />
+          </InputGroup>
+        </Col>
+      </Row>
       {Object.keys(poolList)
         .filter((scrapePool) => {
           const targetGroup = poolList[scrapePool];
