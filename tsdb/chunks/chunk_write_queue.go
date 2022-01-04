@@ -121,6 +121,13 @@ func (c *chunkWriteQueue) processJob(job chunkWriteJob) {
 }
 
 func (c *chunkWriteQueue) addJob(job chunkWriteJob) error {
+	success := false
+	defer func() {
+		if success {
+			c.operationsMetric.WithLabelValues(queueOperationAdd).Inc()
+		}
+	}()
+
 	c.isRunningMtx.Lock()
 	defer c.isRunningMtx.Unlock()
 
@@ -133,8 +140,7 @@ func (c *chunkWriteQueue) addJob(job chunkWriteJob) error {
 	c.chunkRefMapMtx.Unlock()
 
 	c.jobs <- job
-
-	c.operationsMetric.WithLabelValues(queueOperationAdd).Inc()
+	success = true
 
 	return nil
 }
