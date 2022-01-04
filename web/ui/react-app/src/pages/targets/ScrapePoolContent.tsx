@@ -58,10 +58,10 @@ export const ScrapePoolContent: FC<ScrapePoolContentProps> = ({ targets }) => {
               <td className={styles.endpoint}>
                 <EndpointLink endpoint={target.scrapeUrl} globalUrl={target.globalUrl} />
               </td>
-              <td>
+              <td className={styles.state}>
                 <Badge color={getColor(target.health)}>{target.health.toUpperCase()}</Badge>
               </td>
-              <td>
+              <td className={styles.labels}>
                 <TargetLabels
                   discoveredLabels={target.discoveredLabels}
                   labels={target.labels}
