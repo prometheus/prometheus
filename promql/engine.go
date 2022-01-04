@@ -207,13 +207,14 @@ func contextErr(err error, env string) error {
 	}
 }
 
-// QueryTracker should provide access to two features: tracking of active query, that are logged on restart,
-// and control over maximum number of concurrent requests.
+// QueryTracker provides access to two features:
+// 1) tracking of active query that are logged on restart if PromQL engine crashes while executing the query, and
+// 2) enforcement of the maximum number of concurrent requests.
 type QueryTracker interface {
 	// GetMaxConcurrent returns maximum number of concurrent queries that are allowed by this tracker.
 	GetMaxConcurrent() int
 
-	// Insert inserts query into query tracker. This call can block if maximum number of queries is already running.
+	// Insert inserts query into query tracker. This call must block if maximum number of queries is already running.
 	// If Insert doesn't return error then returned integer value should be used in subsequent Delete call.
 	// Insert returns error if context is finished before query can proceed.
 	Insert(ctx context.Context, query string) (int, error)
