@@ -1,3 +1,6 @@
+## 2.32.1-lb2 / 2022-01-04
+* [CHANGE] remote-write: Add tenant header from environment if set
+* 
 ## 2.32.1-lb1 / 2022-01-03
 * [CHANGE] remote-write: Remove remote-write snappy compression header
 
