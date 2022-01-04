@@ -657,7 +657,7 @@ func CheckMetrics(checkMetricsExtended bool) int {
 		stats, total, err := checkMetricsCount(&buf)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
-			return 1
+			return failureExitCode
 		}
 		w := tabwriter.NewWriter(os.Stdout, 4, 4, 4, ' ', tabwriter.TabIndent)
 		fmt.Fprintf(w, "Metric\tCount\tPercentage\t\n")
