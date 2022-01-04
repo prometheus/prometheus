@@ -315,8 +315,9 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	defer rpcClient.Close()
 
 	// If the current token has expired or will expire in the next second, refresh it
-	if time.Now().Sub(d.tokenCreated) > (tokenDuration - time.Second) {
-		//TODO: Uyuni API doesn't state the unit of measure for the duration, is it seconds?
+	if time.Since(d.tokenCreated) > (tokenDuration - time.Second) {
+		// Uyuni API doesn't state the unit of measure for the duration.
+		// From looking at the code, I believe it is it seconds.
 		d.token, err = login(rpcClient, d.username, d.password, int(tokenDuration.Seconds()))
 		if err != nil {
 			return nil, errors.Wrap(err, "unable to login to Uyuni API")
