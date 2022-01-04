@@ -46,9 +46,8 @@ type chunkWriteQueue struct {
 	size int
 	jobs chan chunkWriteJob
 
-	chunkRefMapMtx       sync.RWMutex
-	chunkRefMap          map[ChunkDiskMapperRef]chunkenc.Chunk
-	chunkRefMapOversized bool // indicates whether more than <size> chunks were put into the chunkRefMap.
+	chunkRefMapMtx sync.RWMutex
+	chunkRefMap    map[ChunkDiskMapperRef]chunkenc.Chunk
 
 	isRunningMtx sync.Mutex // protects the isRunning property.
 	isRunning    bool       // used to prevent that new jobs get added to the queue when the chan is already closed.
@@ -118,14 +117,6 @@ func (c *chunkWriteQueue) processJob(job chunkWriteJob) {
 
 	delete(c.chunkRefMap, job.ref)
 
-	if len(c.chunkRefMap) == 0 {
-		// If the map had to be grown beyond its allocated size, then we recreate it to free memory.
-		if c.chunkRefMapOversized {
-			c.chunkRefMap = make(map[ChunkDiskMapperRef]chunkenc.Chunk, c.size)
-			c.chunkRefMapOversized = false
-		}
-	}
-
 	c.operationsMetric.WithLabelValues(queueOperationComplete).Inc()
 }
 
@@ -138,11 +129,7 @@ func (c *chunkWriteQueue) addJob(job chunkWriteJob) error {
 	}
 
 	c.chunkRefMapMtx.Lock()
-	// The map might grow beyond the allocated size here, in which case we'll recreate it as soon as it is drained.
 	c.chunkRefMap[job.ref] = job.chk
-	if len(c.chunkRefMap) > c.size {
-		c.chunkRefMapOversized = true
-	}
 	c.chunkRefMapMtx.Unlock()
 
 	c.jobs <- job
