@@ -19,6 +19,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/trace"
 
 	"github.com/prometheus/prometheus/config"
 )
@@ -34,7 +35,7 @@ func TestInstallingNewTracerProvider(t *testing.T) {
 		},
 	}
 
-	m.ApplyConfig(&cfg)
+	require.NoError(t, m.ApplyConfig(&cfg))
 	require.NotEqual(t, tpBefore, otel.GetTracerProvider())
 }
 
@@ -47,11 +48,11 @@ func TestReinstallingTracerProvider(t *testing.T) {
 		},
 	}
 
-	m.ApplyConfig(&cfg)
+	require.NoError(t, m.ApplyConfig(&cfg))
 	tpFirstConfig := otel.GetTracerProvider()
 
 	// Trying to apply the same config should not reinstall provider.
-	m.ApplyConfig(&cfg)
+	require.NoError(t, m.ApplyConfig(&cfg))
 	require.Equal(t, tpFirstConfig, otel.GetTracerProvider())
 
 	cfg2 := config.Config{
@@ -60,7 +61,46 @@ func TestReinstallingTracerProvider(t *testing.T) {
 			ClientType: config.TracingClientHTTP,
 		},
 	}
-	m.ApplyConfig(&cfg2)
 
+	require.NoError(t, m.ApplyConfig(&cfg2))
 	require.NotEqual(t, tpFirstConfig, otel.GetTracerProvider())
+}
+
+func TestUninstallingTracerProvider(t *testing.T) {
+	m := NewManager(log.NewNopLogger())
+	cfg := config.Config{
+		TracingConfig: config.TracingConfig{
+			Endpoint:   "localhost:1234",
+			ClientType: config.TracingClientGRPC,
+		},
+	}
+
+	require.NoError(t, m.ApplyConfig(&cfg))
+	require.NotEqual(t, trace.NewNoopTracerProvider(), otel.GetTracerProvider())
+
+	// Uninstall by passing empty config.
+	cfg2 := config.Config{
+		TracingConfig: config.TracingConfig{},
+	}
+
+	require.NoError(t, m.ApplyConfig(&cfg2))
+	// Make sure we get a no-op tracer provider after uninstallation.
+	require.Equal(t, trace.NewNoopTracerProvider(), otel.GetTracerProvider())
+}
+
+func TestTracerProviderShutdown(t *testing.T) {
+	m := NewManager(log.NewNopLogger())
+	cfg := config.Config{
+		TracingConfig: config.TracingConfig{
+			Endpoint:   "localhost:1234",
+			ClientType: config.TracingClientGRPC,
+		},
+	}
+
+	require.NoError(t, m.ApplyConfig(&cfg))
+	m.Stop()
+
+	// Check if we closed the done channel.
+	_, ok := <-m.done
+	require.Equal(t, ok, false)
 }
