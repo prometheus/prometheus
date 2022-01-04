@@ -72,7 +72,7 @@ If a bug fix got accidentally merged into main after non-bug-fix changes in main
 
 Maintaining the release branches for older minor releases happens on a best effort basis.
 
-### 0. Updating dependencies
+### 0. Updating dependencies and promoting/demoting experimental features
 
 A few days before a major or minor release, consider updating the dependencies.
 
@@ -86,6 +86,10 @@ In case of doubt or issues that can't be solved in a reasonable amount of time,
 you can skip the dependency update or only update select dependencies. In such a
 case, you have to create an issue or pull request in the GitHub project for
 later follow-up.
+
+This is also a good time to consider any experimental features and feature
+flags for promotion to stable or for deprecation or ultimately removal. Do any
+of these in pull requests, one per feature.
 
 #### Updating Go dependencies
 
@@ -157,3 +161,5 @@ For release candidate versions (`v2.16.0-rc.0`), run the benchmark for 3 days us
 If the release has happened in the latest release branch, merge the changes into main.
 
 Once the binaries have been uploaded, announce the release on `prometheus-announce@googlegroups.com`. (Please do not use `prometheus-users@googlegroups.com` for announcements anymore.) Check out previous announcement mails for inspiration.
+
+Finally, in case there is no release shepherd listed for the next release yet, find a volunteer.
