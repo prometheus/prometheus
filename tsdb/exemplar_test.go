@@ -112,7 +112,7 @@ func TestAddExemplar(t *testing.T) {
 	}
 
 	require.NoError(t, es.AddExemplar(l, e))
-	require.Equal(t, es.index[l.String()].newest, 0, "exemplar was not stored correctly")
+	require.Equal(t, es.index[string(l.Bytes(nil))].newest, 0, "exemplar was not stored correctly")
 
 	e2 := exemplar.Exemplar{
 		Labels: labels.Labels{
@@ -126,8 +126,8 @@ func TestAddExemplar(t *testing.T) {
 	}
 
 	require.NoError(t, es.AddExemplar(l, e2))
-	require.Equal(t, es.index[l.String()].newest, 1, "exemplar was not stored correctly, location of newest exemplar for series in index did not update")
-	require.True(t, es.exemplars[es.index[l.String()].newest].exemplar.Equals(e2), "exemplar was not stored correctly, expected %+v got: %+v", e2, es.exemplars[es.index[l.String()].newest].exemplar)
+	require.Equal(t, es.index[string(l.Bytes(nil))].newest, 1, "exemplar was not stored correctly, location of newest exemplar for series in index did not update")
+	require.True(t, es.exemplars[es.index[string(l.Bytes(nil))].newest].exemplar.Equals(e2), "exemplar was not stored correctly, expected %+v got: %+v", e2, es.exemplars[es.index[string(l.Bytes(nil))].newest].exemplar)
 
 	require.NoError(t, es.AddExemplar(l, e2), "no error is expected attempting to add duplicate exemplar")
 
@@ -300,7 +300,7 @@ func TestSelectExemplar_TimeRange(t *testing.T) {
 			Ts:    int64(101 + i),
 		})
 		require.NoError(t, err)
-		require.Equal(t, es.index[l.String()].newest, i, "exemplar was not stored correctly")
+		require.Equal(t, es.index[string(l.Bytes(nil))].newest, i, "exemplar was not stored correctly")
 	}
 
 	m, err := labels.NewMatcher(labels.MatchEqual, l[0].Name, l[0].Value)
@@ -376,14 +376,14 @@ func TestIndexOverwrite(t *testing.T) {
 
 	// Ensure index GC'ing is taking place, there should no longer be any
 	// index entry for series l1 since we just wrote two exemplars for series l2.
-	_, ok := es.index[l1.String()]
+	_, ok := es.index[string(l1.Bytes(nil))]
 	require.False(t, ok)
-	require.Equal(t, &indexEntry{1, 0, l2}, es.index[l2.String()])
+	require.Equal(t, &indexEntry{1, 0, l2}, es.index[string(l2.Bytes(nil))])
 
 	err = es.AddExemplar(l1, exemplar.Exemplar{Value: 4, Ts: 4})
 	require.NoError(t, err)
 
-	i := es.index[l2.String()]
+	i := es.index[string(l2.Bytes(nil))]
 	require.Equal(t, &indexEntry{0, 0, l2}, i)
 }
 
