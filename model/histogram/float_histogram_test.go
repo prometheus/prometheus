@@ -15,7 +15,6 @@ package histogram
 
 import (
 	"fmt"
-	"math"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -973,7 +972,6 @@ func TestAllFloatBucketIterator(t *testing.T) {
 					LowerInclusive: true,
 					UpperInclusive: true,
 					Count:          c.h.ZeroCount,
-					Index:          math.MinInt32,
 				})
 			}
 			if c.includePos {

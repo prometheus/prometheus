@@ -234,7 +234,11 @@ type HistogramAppender interface {
 	// histograms in the same or later transactions. Returned reference
 	// numbers are ephemeral and may be rejected in calls to Append() at any
 	// point. Adding the sample via Append() returns a new reference number.
-	// If the reference is 0 it must not be used for caching.
+	// If the reference is 0, it must not be used for caching.
+	//
+	// For efficiency reasons, the histogram is passed as a
+	// pointer. AppendHistogram won't mutate the histogram, but in turn
+	// depends on the caller to not mutate it either.
 	AppendHistogram(ref SeriesRef, l labels.Labels, t int64, h *histogram.Histogram) (SeriesRef, error)
 }
 
