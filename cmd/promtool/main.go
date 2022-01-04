@@ -93,7 +93,7 @@ func main() {
 	).Required().ExistingFiles()
 
 	checkMetricsCmd := checkCmd.Command("metrics", checkMetricsUsage)
-	checkMetricsWeightCmd := checkCmd.Command("metrics-weight", checkMetricsWeightUsage)
+	checkMetricsExtended := checkCmd.Flag("extended", "Run extended check.").Bool()
 	agentMode := checkConfigCmd.Flag("agent", "Check config file for Prometheus in Agent mode.").Bool()
 
 	queryCmd := app.Command("query", "Run query against a Prometheus server.")
@@ -227,10 +227,7 @@ func main() {
 		os.Exit(CheckRules(*ruleFiles...))
 
 	case checkMetricsCmd.FullCommand():
-		os.Exit(CheckMetrics())
-
-	case checkMetricsWeightCmd.FullCommand():
-		os.Exit(CheckMetricsWeight())
+		os.Exit(CheckMetrics(*checkMetricsExtended))
 
 	case queryInstantCmd.FullCommand():
 		os.Exit(QueryInstant(*queryInstantServer, *queryInstantExpr, *queryInstantTime, p))
@@ -631,8 +628,10 @@ $ curl -s http://localhost:9090/metrics | promtool check metrics
 `)
 
 // CheckMetrics performs a linting pass on input metrics.
-func CheckMetrics() int {
-	l := promlint.New(os.Stdin)
+func CheckMetrics(checkMetricsExtended bool) int {
+	var buf bytes.Buffer
+	tee := io.TeeReader(os.Stdin, &buf)
+	l := promlint.New(tee)
 	problems, err := l.Lint()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error while linting:", err)
@@ -647,43 +646,31 @@ func CheckMetrics() int {
 		return 3
 	}
 
-	return 0
-}
-
-var checkMetricsWeightUsage = strings.TrimSpace(`
-Pass Prometheus metrics over stdin to rank them in descending order of how much of the scrape they take up.
-
-examples:
-
-$ cat metrics.prom | promtool check metrics-weight
-
-$ curl -s http://localhost:9090/metrics | promtool check metrics-weight
-`)
-
-func CheckMetricsWeight() int {
-	stats, total, err := checkMetricsWeight(os.Stdin)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		return 1
+	if checkMetricsExtended {
+		stats, total, err := checkMetricsCount(&buf)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return 1
+		}
+		w := tabwriter.NewWriter(os.Stdout, 4, 4, 4, ' ', tabwriter.TabIndent)
+		fmt.Fprintf(w, "Metric\tCount\tPercentage\t\n")
+		for _, stat := range stats {
+			fmt.Fprintf(w, "%s\t%d\t%.2f%%\t\n", stat.name, stat.count, stat.percentage*100)
+		}
+		fmt.Fprintf(w, "Total\t%d\t%.f%%\t\n", total, 100.)
+		w.Flush()
 	}
 
-	w := tabwriter.NewWriter(os.Stdout, 4, 4, 4, ' ', tabwriter.TabIndent)
-	fmt.Fprintf(w, "Metric\tCount\tWeight\t\n")
-	for _, stat := range stats {
-		fmt.Fprintf(w, "%s\t%d\t%.2f%%\t\n", stat.name, stat.count, stat.weight*100)
-	}
-	fmt.Fprintf(w, "Total\t%d\t%.f%%\t\n", total, 100.)
-	w.Flush()
 	return 0
 }
 
 type metricStat struct {
-	name   string
-	count  int
-	weight float64
+	name       string
+	count      int
+	percentage float64
 }
 
-func checkMetricsWeight(r io.Reader) ([]metricStat, int, error) {
+func checkMetricsCount(r io.Reader) ([]metricStat, int, error) {
 	p := expfmt.TextParser{}
 	metricFamilies, err := p.TextToMetricFamilies(r)
 	if err != nil {
@@ -713,7 +700,7 @@ func checkMetricsWeight(r io.Reader) ([]metricStat, int, error) {
 	}
 
 	for i := range stats {
-		stats[i].weight = float64(stats[i].count) / float64(total)
+		stats[i].percentage = float64(stats[i].count) / float64(total)
 	}
 
 	sort.SliceStable(stats, func(i, j int) bool {

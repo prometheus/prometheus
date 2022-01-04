@@ -324,7 +324,7 @@ func TestAuthorizationConfig(t *testing.T) {
 	}
 }
 
-func TestCheckMetricsWeight(t *testing.T) {
+func TestCheckMetricsCount(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("Skipping on windows")
 	}
@@ -333,29 +333,29 @@ func TestCheckMetricsWeight(t *testing.T) {
 	require.NoError(t, err)
 	defer f.Close()
 
-	stats, total, err := checkMetricsWeight(f)
+	stats, total, err := checkMetricsCount(f)
 	require.NoError(t, err)
 	require.Equal(t, 27, total)
 	require.Equal(t, []metricStat{
 		{
-			name:   "prometheus_tsdb_compaction_chunk_size_bytes",
-			count:  15,
-			weight: float64(15) / float64(27),
+			name:       "prometheus_tsdb_compaction_chunk_size_bytes",
+			count:      15,
+			percentage: float64(15) / float64(27),
 		},
 		{
-			name:   "go_gc_duration_seconds",
-			count:  7,
-			weight: float64(7) / float64(27),
+			name:       "go_gc_duration_seconds",
+			count:      7,
+			percentage: float64(7) / float64(27),
 		},
 		{
-			name:   "net_conntrack_dialer_conn_attempted_total",
-			count:  4,
-			weight: float64(4) / float64(27),
+			name:       "net_conntrack_dialer_conn_attempted_total",
+			count:      4,
+			percentage: float64(4) / float64(27),
 		},
 		{
-			name:   "go_info",
-			count:  1,
-			weight: float64(1) / float64(27),
+			name:       "go_info",
+			count:      1,
+			percentage: float64(1) / float64(27),
 		},
 	}, stats)
 }
