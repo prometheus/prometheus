@@ -43,7 +43,7 @@ func CheckSD(sdConfigFiles, sdJobName string, sdTimeout time.Duration) int {
 	cfg, err := config.LoadFile(sdConfigFiles, false, false, logger)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Cannot load config", err)
-		return 2
+		return failureExitCode
 	}
 
 	var scrapeConfig *config.ScrapeConfig
@@ -63,7 +63,7 @@ func CheckSD(sdConfigFiles, sdJobName string, sdTimeout time.Duration) int {
 		for _, job := range jobs {
 			fmt.Fprintf(os.Stderr, "\t%s\n", job)
 		}
-		return 1
+		return failureExitCode
 	}
 
 	targetGroupChan := make(chan []*targetgroup.Group)
@@ -74,7 +74,7 @@ func CheckSD(sdConfigFiles, sdJobName string, sdTimeout time.Duration) int {
 		d, err := cfg.NewDiscoverer(discovery.DiscovererOptions{Logger: logger})
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "Could not create new discoverer", err)
-			return 2
+			return failureExitCode
 		}
 		go d.Run(ctx, targetGroupChan)
 	}
@@ -100,11 +100,11 @@ outerLoop:
 	res, err := json.MarshalIndent(results, "", "  ")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Could not marshal result json: %s", err)
-		return 2
+		return failureExitCode
 	}
 
 	fmt.Printf("%s", res)
-	return 0
+	return successExitCode
 }
 
 func getSDCheckResult(targetGroups []*targetgroup.Group, scrapeConfig *config.ScrapeConfig) []sdCheckResult {

@@ -342,7 +342,7 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode): Context
       }
       break;
     case PromQL:
-      if (!node.firstChild) {
+      if (node.firstChild !== null && node.firstChild.type.id === 0) {
         // this situation can happen when there is nothing in the text area and the user is explicitly triggering the autocompletion (with ctrl + space)
         result.push(
           { kind: ContextKind.MetricName, metricName: '' },

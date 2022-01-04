@@ -36,6 +36,10 @@ Learn more about the Prometheus Agent in our [blog post](https://prometheus.io/b
 * [BUGFIX] Uyuni SD: Fix null pointer exception during initialization. #9924 #9950
 * [BUGFIX] TSDB: Fix queries after a failed snapshot replay. #9980
 
+## 2.31.2 / 2021-12-09
+
+* [BUGFIX] TSDB: Fix queries after a failed snapshot replay. #9980
+
 ## 2.31.1 / 2021-11-05
 
 * [BUGFIX] SD: Fix a panic when the experimental discovery manager receives
@@ -65,6 +69,10 @@ Learn more about the Prometheus Agent in our [blog post](https://prometheus.io/b
 * [BUGFIX] Scrape: Restart scrape loops when `__scrape_interval__` is changed. #9551
 * [BUGFIX] TSDB: Fix memory leak in samples deletion. #9151
 * [BUGFIX] UI: Use consistent margin-bottom for all alert kinds. #9318
+
+## 2.30.4 / 2021-12-09
+
+* [BUGFIX] TSDB: Fix queries after a failed snapshot replay. #9980
 
 ## 2.30.3 / 2021-10-05
 
