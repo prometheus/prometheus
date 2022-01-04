@@ -84,7 +84,7 @@ func newChunkWriteQueue(reg prometheus.Registerer, size int, writeChunk writeChu
 
 		// Initialize series for all the possible labels.
 		for _, op := range queueOperations {
-			q.operationsMetric.WithLabelValues(op).Add(0)
+			q.operationsMetric.WithLabelValues(op)
 		}
 	}
 
