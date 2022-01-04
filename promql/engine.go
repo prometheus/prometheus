@@ -1643,7 +1643,7 @@ func (ev *evaluator) vectorSelectorSingle(it *storage.MemoizedSeriesIterator, no
 	}
 
 	if ok {
-		t, v = it.Values()
+		t, v = it.At()
 	}
 
 	if !ok || t > refTime {
@@ -1763,7 +1763,7 @@ func (ev *evaluator) matrixIterSlice(it *storage.BufferedSeriesIterator, mint, m
 	}
 	// The seeked sample might also be in the range.
 	if ok {
-		t, v := it.Values()
+		t, v := it.At()
 		if t == maxt && !value.IsStaleNaN(v) {
 			if ev.currentSamples >= ev.maxSamples {
 				ev.error(ErrTooManySamples(env))

@@ -407,9 +407,7 @@ func TestEndpoints(t *testing.T) {
 			Format: &af,
 		}
 
-		dbDir, err := ioutil.TempDir("", "tsdb-api-ready")
-		require.NoError(t, err)
-		defer os.RemoveAll(dbDir)
+		dbDir := t.TempDir()
 
 		remote := remote.NewStorage(promlog.New(&promlogConfig), prometheus.DefaultRegisterer, func() (int64, error) {
 			return 0, nil
@@ -2344,8 +2342,7 @@ func TestAdminEndpoints(t *testing.T) {
 	} {
 		tc := tc
 		t.Run("", func(t *testing.T) {
-			dir, _ := ioutil.TempDir("", "fakeDB")
-			defer func() { require.NoError(t, os.RemoveAll(dir)) }()
+			dir := t.TempDir()
 
 			api := &API{
 				db:          tc.db,

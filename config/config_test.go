@@ -227,7 +227,6 @@ var expectedConf = &Config{
 			},
 		},
 		{
-
 			JobName: "service-x",
 
 			HonorTimestamps: true,
@@ -954,7 +953,7 @@ var expectedConf = &Config{
 			Scheme:           DefaultScrapeConfig.Scheme,
 			ServiceDiscoveryConfigs: discovery.Configs{
 				&uyuni.SDConfig{
-					Server:          kubernetesSDHostURL(),
+					Server:          "https://localhost:1234",
 					Username:        "gopher",
 					Password:        "hole",
 					Entitlement:     "monitoring_entitled",
@@ -1441,6 +1440,10 @@ var expectedErrors = []struct {
 	{
 		filename: "tracing.bad.yml",
 		errMsg:   "tracing endpoint must be set",
+	},
+	{
+		filename: "uyuni_no_server.bad.yml",
+		errMsg:   "Uyuni SD configuration requires server host",
 	},
 }
 

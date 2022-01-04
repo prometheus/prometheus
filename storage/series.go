@@ -99,8 +99,15 @@ func (it *listSeriesIterator) Seek(t int64) bool {
 	if it.idx == -1 {
 		it.idx = 0
 	}
+	if it.idx >= it.samples.Len() {
+		return false
+	}
+	// No-op check.
+	if s := it.samples.Get(it.idx); s.T() >= t {
+		return true
+	}
 	// Do binary search between current position and end.
-	it.idx = sort.Search(it.samples.Len()-it.idx, func(i int) bool {
+	it.idx += sort.Search(it.samples.Len()-it.idx, func(i int) bool {
 		s := it.samples.Get(i + it.idx)
 		return s.T() >= t
 	})

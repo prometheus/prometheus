@@ -162,6 +162,41 @@ func TestTemplateExpansion(t *testing.T) {
 			output: "a:11: b:21: ",
 		},
 		{
+			// Simple hostname.
+			text:   "{{ \"foo.example.com\" | stripPort }}",
+			output: "foo.example.com",
+		},
+		{
+			// Hostname with port.
+			text:   "{{ \"foo.example.com:12345\" | stripPort }}",
+			output: "foo.example.com",
+		},
+		{
+			// Simple IPv4 address.
+			text:   "{{ \"192.0.2.1\" | stripPort }}",
+			output: "192.0.2.1",
+		},
+		{
+			// IPv4 address with port.
+			text:   "{{ \"192.0.2.1:12345\" | stripPort }}",
+			output: "192.0.2.1",
+		},
+		{
+			// Simple IPv6 address.
+			text:   "{{ \"2001:0DB8::1\" | stripPort }}",
+			output: "2001:0DB8::1",
+		},
+		{
+			// IPv6 address with port.
+			text:   "{{ \"[2001:0DB8::1]:12345\" | stripPort }}",
+			output: "2001:0DB8::1",
+		},
+		{
+			// Value can't be split into host and port.
+			text:   "{{ \"[2001:0DB8::1]::12345\" | stripPort }}",
+			output: "[2001:0DB8::1]::12345",
+		},
+		{
 			// Missing value is no value for nil options.
 			text:   "{{ .Foo }}",
 			output: "<no value>",

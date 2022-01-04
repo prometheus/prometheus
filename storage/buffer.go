@@ -82,14 +82,14 @@ func (b *BufferedSeriesIterator) Seek(t int64) bool {
 
 	// If the delta would cause us to seek backwards, preserve the buffer
 	// and just continue regular advancement while filling the buffer on the way.
-	if t0 > b.lastTime {
+	if b.ok && t0 > b.lastTime {
 		b.buf.reset()
 
 		b.ok = b.it.Seek(t0)
 		if !b.ok {
 			return false
 		}
-		b.lastTime, _ = b.Values()
+		b.lastTime, _ = b.At()
 	}
 
 	if b.lastTime >= t {
@@ -115,14 +115,14 @@ func (b *BufferedSeriesIterator) Next() bool {
 
 	b.ok = b.it.Next()
 	if b.ok {
-		b.lastTime, _ = b.Values()
+		b.lastTime, _ = b.At()
 	}
 
 	return b.ok
 }
 
-// Values returns the current element of the iterator.
-func (b *BufferedSeriesIterator) Values() (int64, float64) {
+// At returns the current element of the iterator.
+func (b *BufferedSeriesIterator) At() (int64, float64) {
 	return b.it.At()
 }
 

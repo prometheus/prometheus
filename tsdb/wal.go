@@ -190,7 +190,7 @@ func OpenSegmentWAL(dir string, logger log.Logger, flushInterval time.Duration, 
 		flushInterval: flushInterval,
 		donec:         make(chan struct{}),
 		stopc:         make(chan struct{}),
-		actorc:        make(chan func() error, 1),
+		actorc:        make(chan func() error, 2),
 		segmentSize:   walSegmentSizeBytes,
 		crc32:         newCRC32(),
 	}
