@@ -215,7 +215,7 @@ func queueIsEmpty(q *chunkWriteQueue) bool {
 func queueIsFull(q *chunkWriteQueue) bool {
 	// When the queue is full and blocked on the writer the chunkRefMap has one more job than the cap of the jobCh
 	// because one job is currently being processed and blocked in the writer.
-	return queueSize(q) == cap(q.jobCh)+1
+	return queueSize(q) == cap(q.jobs)+1
 }
 
 func queueSize(q *chunkWriteQueue) int {

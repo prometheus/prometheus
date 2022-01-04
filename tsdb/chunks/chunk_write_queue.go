@@ -43,15 +43,15 @@ var (
 // Chunks that shall be written get added to the queue, which is consumed asynchronously.
 // Adding jobs to the job is non-blocking as long as the queue isn't full.
 type chunkWriteQueue struct {
-	size  int
-	jobCh chan chunkWriteJob
+	size int
+	jobs chan chunkWriteJob
 
 	chunkRefMapMtx       sync.RWMutex
 	chunkRefMap          map[ChunkDiskMapperRef]chunkenc.Chunk
 	chunkRefMapOversized bool // indicates whether more than <size> chunks were put into the chunkRefMap.
 
-	isRunningMtx sync.RWMutex
-	isRunning    bool
+	isRunningMtx sync.RWMutex // protects the isRunning property.
+	isRunning    bool         // used to prevent that new jobs get added to the queue when the chan is already closed.
 
 	workerWg sync.WaitGroup
 
@@ -66,7 +66,7 @@ type writeChunkF func(HeadSeriesRef, int64, int64, chunkenc.Chunk, ChunkDiskMapp
 func newChunkWriteQueue(reg prometheus.Registerer, size int, writeChunk writeChunkF) *chunkWriteQueue {
 	q := &chunkWriteQueue{
 		size:        size,
-		jobCh:       make(chan chunkWriteJob, size),
+		jobs:        make(chan chunkWriteJob, size),
 		chunkRefMap: make(map[ChunkDiskMapperRef]chunkenc.Chunk, size),
 		writeChunk:  writeChunk,
 
@@ -97,7 +97,7 @@ func (c *chunkWriteQueue) start() {
 	go func() {
 		defer c.workerWg.Done()
 
-		for job := range c.jobCh {
+		for job := range c.jobs {
 			c.processJob(job)
 		}
 	}()
@@ -145,7 +145,7 @@ func (c *chunkWriteQueue) addJob(job chunkWriteJob) error {
 	}
 	c.chunkRefMapMtx.Unlock()
 
-	c.jobCh <- job
+	c.jobs <- job
 
 	c.operationsMetric.WithLabelValues(queueOperationAdd).Inc()
 
@@ -174,7 +174,7 @@ func (c *chunkWriteQueue) stop() {
 
 	c.isRunning = false
 
-	close(c.jobCh)
+	close(c.jobs)
 
 	c.workerWg.Wait()
 }

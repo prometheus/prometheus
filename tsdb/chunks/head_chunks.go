@@ -137,9 +137,9 @@ func (f *chunkPos) cutFileOnNextChunk() {
 	f.cutFile = true
 }
 
-// setSeq sets the sequence number of the head chunk file.
+// initSeq sets the sequence number of the head chunk file.
 // Should only be used for initialization, after that the sequence number will be managed by chunkPos.
-func (f *chunkPos) setSeq(seq uint64) {
+func (f *chunkPos) initSeq(seq uint64) {
 	f.seq = seq
 }
 
@@ -321,7 +321,7 @@ func (cdm *ChunkDiskMapper) openMMapFiles() (returnErr error) {
 		}
 	}
 
-	cdm.evtlPos.setSeq(uint64(lastSeq))
+	cdm.evtlPos.initSeq(uint64(lastSeq))
 
 	return nil
 }
