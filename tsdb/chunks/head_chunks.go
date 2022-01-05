@@ -158,16 +158,16 @@ func (f *chunkPos) shouldCutNewFile(chunkSize uint64) bool {
 // including all meta data before and after the chunk data.
 // Head chunk format: https://github.com/prometheus/prometheus/blob/main/tsdb/docs/format/head_chunks.md#chunk
 func (f *chunkPos) bytesToWriteForChunk(chkLen uint64) uint64 {
-	// headers
+	// Headers.
 	bytes := uint64(SeriesRefSize) + 2*MintMaxtSize + ChunkEncodingSize
 
-	// size of chunk length encoded as uvarint
+	// Size of chunk length encoded as uvarint.
 	bytes += uint64(varint.UvarintSize(chkLen))
 
-	// chunk length
+	// Chunk length.
 	bytes += chkLen
 
-	// crc32
+	// crc32.
 	bytes += CRCSize
 
 	return bytes

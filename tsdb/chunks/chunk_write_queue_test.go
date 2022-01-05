@@ -90,7 +90,7 @@ func TestChunkWriteQueue_WritingThroughQueue(t *testing.T) {
 	// Wait until job has been consumed.
 	callbackWg.Wait()
 
-	// compare whether the write function has received all job attributes correctly
+	// Compare whether the write function has received all job attributes correctly.
 	require.Equal(t, seriesRef, gotSeriesRef)
 	require.Equal(t, mint, gotMint)
 	require.Equal(t, maxt, gotMaxt)

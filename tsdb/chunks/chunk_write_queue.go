@@ -32,17 +32,10 @@ type chunkWriteJob struct {
 	callback  func(error)
 }
 
-var (
-	queueOperationAdd      = "add"
-	queueOperationGet      = "get"
-	queueOperationComplete = "complete"
-)
-
 // chunkWriteQueue is a queue for writing chunks to disk in a non-blocking fashion.
 // Chunks that shall be written get added to the queue, which is consumed asynchronously.
 // Adding jobs to the job is non-blocking as long as the queue isn't full.
 type chunkWriteQueue struct {
-	size int
 	jobs chan chunkWriteJob
 
 	chunkRefMapMtx sync.RWMutex
@@ -75,14 +68,13 @@ func newChunkWriteQueue(reg prometheus.Registerer, size int, writeChunk writeChu
 	)
 
 	q := &chunkWriteQueue{
-		size:        size,
 		jobs:        make(chan chunkWriteJob, size),
 		chunkRefMap: make(map[ChunkDiskMapperRef]chunkenc.Chunk, size),
 		writeChunk:  writeChunk,
 
-		adds:      counters.WithLabelValues(queueOperationAdd),
-		gets:      counters.WithLabelValues(queueOperationGet),
-		completed: counters.WithLabelValues(queueOperationComplete),
+		adds:      counters.WithLabelValues("add"),
+		gets:      counters.WithLabelValues("get"),
+		completed: counters.WithLabelValues("complete"),
 	}
 
 	if reg != nil {
@@ -124,7 +116,7 @@ func (c *chunkWriteQueue) processJob(job chunkWriteJob) {
 
 func (c *chunkWriteQueue) addJob(job chunkWriteJob) (err error) {
 	defer func() {
-		if err != nil {
+		if err == nil {
 			c.adds.Inc()
 		}
 	}()
