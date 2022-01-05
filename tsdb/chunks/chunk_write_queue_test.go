@@ -15,6 +15,7 @@ package chunks
 
 import (
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -206,6 +207,68 @@ func TestChunkWriteQueue_HandlerErrorViaCallback(t *testing.T) {
 	callbackWg.Wait()
 
 	require.Equal(t, testError, gotError)
+}
+
+func BenchmarkChunkWriteQueue_addJob(b *testing.B) {
+	for _, withReads := range []bool{false, true} {
+		b.Run(fmt.Sprintf("with reads %t", withReads), func(b *testing.B) {
+			for _, concurrentWrites := range []int{1, 10, 100, 1000} {
+				b.Run(fmt.Sprintf("%d concurrent writes", concurrentWrites), func(b *testing.B) {
+					issueReadSignal := make(chan struct{})
+					q := newChunkWriteQueue(nil, 1000, func(ref HeadSeriesRef, i int64, i2 int64, chunk chunkenc.Chunk, ref2 ChunkDiskMapperRef, b bool) error {
+						if withReads {
+							select {
+							case issueReadSignal <- struct{}{}:
+							default:
+								// can't, don't block
+							}
+						}
+						return nil
+					})
+					b.Cleanup(func() {
+						// stopped already, so no more writes will happen
+						close(issueReadSignal)
+					})
+					b.Cleanup(q.stop)
+
+					start := sync.WaitGroup{}
+					start.Add(1)
+
+					jobs := make(chan chunkWriteJob, b.N)
+					for i := 0; i < b.N; i++ {
+						jobs <- chunkWriteJob{
+							seriesRef: HeadSeriesRef(i),
+							ref:       ChunkDiskMapperRef(i),
+						}
+					}
+					close(jobs)
+
+					go func() {
+						for range issueReadSignal {
+							// we don't care about the ID we're getting, we just want to grab the lock
+							_ = q.get(ChunkDiskMapperRef(0))
+						}
+					}()
+
+					done := sync.WaitGroup{}
+					done.Add(concurrentWrites)
+					for w := 0; w < concurrentWrites; w++ {
+						go func() {
+							start.Wait()
+							for j := range jobs {
+								_ = q.addJob(j)
+							}
+							done.Done()
+						}()
+					}
+
+					b.ResetTimer()
+					start.Done()
+					done.Wait()
+				})
+			}
+		})
+	}
 }
 
 func queueIsEmpty(q *chunkWriteQueue) bool {
