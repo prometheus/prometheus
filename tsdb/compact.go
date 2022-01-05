@@ -18,7 +18,6 @@ import (
 	"crypto/rand"
 	"fmt"
 	"io"
-	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -373,19 +372,20 @@ func splitByRange(ds []dirMeta, tr int64) [][]dirMeta {
 }
 
 // CompactBlockMetas merges many block metas into one, combining it's source blocks together
-// and adjusting compaction level.
+// and adjusting compaction level. Min/Max time of result block meta covers all input blocks.
 func CompactBlockMetas(uid ulid.ULID, blocks ...*BlockMeta) *BlockMeta {
 	res := &BlockMeta{
-		ULID:    uid,
-		MinTime: blocks[0].MinTime,
+		ULID: uid,
 	}
 
 	sources := map[ulid.ULID]struct{}{}
-	// For overlapping blocks, the Maxt can be
-	// in any block so we track it globally.
-	maxt := int64(math.MinInt64)
+	mint := blocks[0].MinTime
+	maxt := blocks[0].MaxTime
 
 	for _, b := range blocks {
+		if b.MinTime < mint {
+			mint = b.MinTime
+		}
 		if b.MaxTime > maxt {
 			maxt = b.MaxTime
 		}
@@ -410,6 +410,7 @@ func CompactBlockMetas(uid ulid.ULID, blocks ...*BlockMeta) *BlockMeta {
 		return res.Compaction.Sources[i].Compare(res.Compaction.Sources[j]) < 0
 	})
 
+	res.MinTime = mint
 	res.MaxTime = maxt
 	return res
 }
