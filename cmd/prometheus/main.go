@@ -168,10 +168,10 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 			switch o {
 			case "promql-at-modifier":
 				c.enablePromQLAtModifier = true
-				level.Info(logger).Log("msg", "Experimental promql-at-modifier enabled")
+				level.Info(logger).Log("msg", "promql-at-modifier enabled")
 			case "promql-negative-offset":
 				c.enablePromQLNegativeOffset = true
-				level.Info(logger).Log("msg", "Experimental promql-negative-offset enabled")
+				level.Info(logger).Log("msg", "promql-negative-offset enabled")
 			case "remote-write-receiver":
 				c.web.EnableRemoteWriteReceiver = true
 				level.Warn(logger).Log("msg", "Remote write receiver enabled via feature flag remote-write-receiver. This is DEPRECATED. Use --web.enable-remote-write-receiver.")
