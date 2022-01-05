@@ -257,7 +257,7 @@ type Options struct {
 	RemoteReadSampleLimit      int
 	RemoteReadConcurrencyLimit int
 	RemoteReadBytesInFrame     int
-	RemoteWriteReceiver        bool
+	EnableRemoteWriteReceiver  bool
 	IsAgent                    bool
 
 	Gatherer   prometheus.Gatherer
@@ -314,7 +314,7 @@ func New(logger log.Logger, o *Options) *Handler {
 	FactoryRr := func(_ context.Context) api_v1.RulesRetriever { return h.ruleManager }
 
 	var app storage.Appendable
-	if o.RemoteWriteReceiver {
+	if o.EnableRemoteWriteReceiver {
 		app = h.storage
 	}
 
