@@ -1628,3 +1628,38 @@ func checkBlocks(t *testing.T, blocks []*Block, dirs ...string) {
 
 	require.Equal(t, blockIDs, dirBlockIDs)
 }
+
+func TestCompactBlockMetas(t *testing.T) {
+	parent1 := ulid.MustNew(100, nil)
+	parent2 := ulid.MustNew(200, nil)
+	parent3 := ulid.MustNew(300, nil)
+	parent4 := ulid.MustNew(400, nil)
+
+	input := []*BlockMeta{
+		{ULID: parent1, MinTime: 1000, MaxTime: 2000, Compaction: BlockMetaCompaction{Level: 2, Sources: []ulid.ULID{ulid.MustNew(1, nil), ulid.MustNew(10, nil)}}},
+		{ULID: parent2, MinTime: 200, MaxTime: 500, Compaction: BlockMetaCompaction{Level: 1}},
+		{ULID: parent3, MinTime: 500, MaxTime: 2500, Compaction: BlockMetaCompaction{Level: 3, Sources: []ulid.ULID{ulid.MustNew(5, nil), ulid.MustNew(6, nil)}}},
+		{ULID: parent4, MinTime: 100, MaxTime: 900, Compaction: BlockMetaCompaction{Level: 1}},
+	}
+
+	outUlid := ulid.MustNew(1000, nil)
+	output := CompactBlockMetas(outUlid, input...)
+
+	expected := &BlockMeta{
+		ULID:    outUlid,
+		MinTime: 100,
+		MaxTime: 2500,
+		Stats:   BlockStats{},
+		Compaction: BlockMetaCompaction{
+			Level:   4,
+			Sources: []ulid.ULID{ulid.MustNew(1, nil), ulid.MustNew(5, nil), ulid.MustNew(6, nil), ulid.MustNew(10, nil)},
+			Parents: []BlockDesc{
+				{ULID: parent1, MinTime: 1000, MaxTime: 2000},
+				{ULID: parent2, MinTime: 200, MaxTime: 500},
+				{ULID: parent3, MinTime: 500, MaxTime: 2500},
+				{ULID: parent4, MinTime: 100, MaxTime: 900},
+			},
+		},
+	}
+	require.Equal(t, expected, output)
+}
