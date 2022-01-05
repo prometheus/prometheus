@@ -18,6 +18,11 @@ They may be enabled by default in future versions.
 The `@` modifier lets you specify the evaluation time for instant vector selectors,
 range vector selectors, and subqueries. More details can be found [here](querying/basics.md#modifier).
 
+This feature is considered stable, but since it breaks the invariant that
+PromQL does not look ahead of the evaluation time, it still needs to be enabled
+via this feature flag. The feature will be permanently enabled (and the feature
+flag ignored) upon major release v3.
+
 ## Expand environment variables in external labels
 
 `--enable-feature=expand-external-labels`
@@ -39,6 +44,11 @@ to use a negative offset is reviewing past data and making temporal comparisons
 with more recent data.
 
 More details can be found [here](querying/basics.md#offset-modifier).
+
+This feature is considered stable, but since it breaks the invariant that
+PromQL does not look ahead of the evaluation time, it still needs to be enabled
+via this feature flag. The feature will be permanently enabled (and the feature
+flag ignored) upon major release v3.
 
 ## Remote Write Receiver
 
