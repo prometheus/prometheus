@@ -220,13 +220,13 @@ func BenchmarkChunkWriteQueue_addJob(b *testing.B) {
 							select {
 							case issueReadSignal <- struct{}{}:
 							default:
-								// can't, don't block
+								// Can't write to issueReadSignal, don't block but omit read instead.
 							}
 						}
 						return nil
 					})
 					b.Cleanup(func() {
-						// stopped already, so no more writes will happen
+						// Stopped already, so no more writes will happen.
 						close(issueReadSignal)
 					})
 					b.Cleanup(q.stop)
@@ -245,7 +245,7 @@ func BenchmarkChunkWriteQueue_addJob(b *testing.B) {
 
 					go func() {
 						for range issueReadSignal {
-							// we don't care about the ID we're getting, we just want to grab the lock
+							// We don't care about the ID we're getting, we just want to grab the lock.
 							_ = q.get(ChunkDiskMapperRef(0))
 						}
 					}()

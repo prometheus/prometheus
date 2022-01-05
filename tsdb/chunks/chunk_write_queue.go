@@ -48,8 +48,8 @@ type chunkWriteQueue struct {
 	chunkRefMapMtx sync.RWMutex
 	chunkRefMap    map[ChunkDiskMapperRef]chunkenc.Chunk
 
-	isRunningMtx sync.Mutex // protects the isRunning property.
-	isRunning    bool       // used to prevent that new jobs get added to the queue when the chan is already closed.
+	isRunningMtx sync.Mutex // Protects the isRunning property.
+	isRunning    bool       // Used to prevent that new jobs get added to the queue when the chan is already closed.
 
 	workerWg sync.WaitGroup
 
