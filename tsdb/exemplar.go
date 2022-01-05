@@ -27,8 +27,12 @@ import (
 	"github.com/prometheus/prometheus/storage"
 )
 
-// Indicates that there is no index entry for an exmplar.
-const noExemplar = -1
+const (
+	// Indicates that there is no index entry for an exmplar.
+	noExemplar = -1
+	// Estimated number of exemplars per series, for sizing the index.
+	estimatedExemplarsPerSeries = 16
+)
 
 type CircularExemplarStorage struct {
 	lock      sync.RWMutex
@@ -117,7 +121,7 @@ func NewCircularExemplarStorage(len int64, m *ExemplarMetrics) (ExemplarStorage,
 	}
 	c := &CircularExemplarStorage{
 		exemplars: make([]*circularBufferEntry, len),
-		index:     make(map[string]*indexEntry),
+		index:     make(map[string]*indexEntry, len/estimatedExemplarsPerSeries),
 		metrics:   m,
 	}
 
@@ -270,7 +274,7 @@ func (ce *CircularExemplarStorage) Resize(l int64) int {
 	oldNextIndex := int64(ce.nextIndex)
 
 	ce.exemplars = make([]*circularBufferEntry, l)
-	ce.index = make(map[string]*indexEntry)
+	ce.index = make(map[string]*indexEntry, l/estimatedExemplarsPerSeries)
 	ce.nextIndex = 0
 
 	// Replay as many entries as needed, starting with oldest first.
