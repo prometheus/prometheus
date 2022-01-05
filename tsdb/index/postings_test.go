@@ -1047,7 +1047,7 @@ func TestPostingsWithIndexHeap(t *testing.T) {
 			require.Equal(t, expected, h.At())
 			require.NoError(t, h.Next())
 		}
-		require.Empty(t, h)
+		require.True(t, h.empty())
 	})
 
 	t.Run("pop", func(t *testing.T) {
