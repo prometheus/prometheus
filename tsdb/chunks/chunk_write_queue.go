@@ -36,7 +36,6 @@ var (
 	queueOperationAdd      = "add"
 	queueOperationGet      = "get"
 	queueOperationComplete = "complete"
-	queueOperations        = []string{queueOperationAdd, queueOperationGet, queueOperationComplete}
 )
 
 // chunkWriteQueue is a queue for writing chunks to disk in a non-blocking fashion.
@@ -56,35 +55,38 @@ type chunkWriteQueue struct {
 
 	writeChunk writeChunkF
 
-	operationsMetric *prometheus.CounterVec
+	// Keeping three separate counters instead of only a single CounterVec to improve the performance of the critical
+	// addJob() method which otherwise would need to perform a WithLabelValues call on the CounterVec.
+	adds      prometheus.Counter
+	gets      prometheus.Counter
+	completed prometheus.Counter
 }
 
 // writeChunkF is a function which writes chunks, it is dynamic to allow mocking in tests.
 type writeChunkF func(HeadSeriesRef, int64, int64, chunkenc.Chunk, ChunkDiskMapperRef, bool) error
 
 func newChunkWriteQueue(reg prometheus.Registerer, size int, writeChunk writeChunkF) *chunkWriteQueue {
+	counters := prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "prometheus_tsdb_chunk_write_queue_operations_total",
+			Help: "Number of operations on the chunk_write_queue.",
+		},
+		[]string{"operation"},
+	)
+
 	q := &chunkWriteQueue{
 		size:        size,
 		jobs:        make(chan chunkWriteJob, size),
 		chunkRefMap: make(map[ChunkDiskMapperRef]chunkenc.Chunk, size),
 		writeChunk:  writeChunk,
 
-		operationsMetric: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: "prometheus_tsdb_chunk_write_queue_operations_total",
-				Help: "Number of operations on the chunk_write_queue.",
-			},
-			[]string{"operation"},
-		),
+		adds:      counters.WithLabelValues(queueOperationAdd),
+		gets:      counters.WithLabelValues(queueOperationGet),
+		completed: counters.WithLabelValues(queueOperationComplete),
 	}
 
 	if reg != nil {
-		reg.MustRegister(q.operationsMetric)
-
-		// Initialize series for all the possible labels.
-		for _, op := range queueOperations {
-			q.operationsMetric.WithLabelValues(op)
-		}
+		reg.MustRegister(counters)
 	}
 
 	q.start()
@@ -117,13 +119,13 @@ func (c *chunkWriteQueue) processJob(job chunkWriteJob) {
 
 	delete(c.chunkRefMap, job.ref)
 
-	c.operationsMetric.WithLabelValues(queueOperationComplete).Inc()
+	c.completed.Inc()
 }
 
 func (c *chunkWriteQueue) addJob(job chunkWriteJob) (err error) {
 	defer func() {
 		if err != nil {
-			c.operationsMetric.WithLabelValues(queueOperationAdd).Inc()
+			c.adds.Inc()
 		}
 	}()
 
@@ -149,7 +151,7 @@ func (c *chunkWriteQueue) get(ref ChunkDiskMapperRef) chunkenc.Chunk {
 
 	chk, ok := c.chunkRefMap[ref]
 	if ok {
-		c.operationsMetric.WithLabelValues(queueOperationGet).Inc()
+		c.gets.Inc()
 	}
 
 	return chk
