@@ -410,7 +410,7 @@ func (cdm *ChunkDiskMapper) writeChunk(seriesRef HeadSeriesRef, mint, maxt int64
 	}
 
 	if cutFile {
-		err := cdm.cutExpectRef(ref)
+		err := cdm.cutAndExpectRef(ref)
 		if err != nil {
 			return err
 		}
@@ -473,10 +473,10 @@ func (cdm *ChunkDiskMapper) CutNewFile() {
 	cdm.evtlPos.cutFileOnNextChunk()
 }
 
-// cutExpectRef creates a new m-mapped file.
+// cutAndExpectRef creates a new m-mapped file.
 // The write lock should be held before calling this.
 // It ensures that the position in the new file matches the given chunk reference, if not then it errors.
-func (cdm *ChunkDiskMapper) cutExpectRef(chkRef ChunkDiskMapperRef) (err error) {
+func (cdm *ChunkDiskMapper) cutAndExpectRef(chkRef ChunkDiskMapperRef) (err error) {
 	seq, offset, err := cdm.cut()
 	if err != nil {
 		return err
