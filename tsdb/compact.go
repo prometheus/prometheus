@@ -21,6 +21,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/go-kit/log"
@@ -28,6 +29,7 @@ import (
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -82,6 +84,7 @@ type LeveledCompactor struct {
 	ctx                      context.Context
 	maxBlockChunkSegmentSize int64
 	mergeFunc                storage.VerticalChunkSeriesMergeFunc
+	concurrencyOpts          LeveledCompactorConcurrencyOptions
 }
 
 type compactorMetrics struct {
@@ -170,7 +173,23 @@ func NewLeveledCompactorWithChunkSize(ctx context.Context, r prometheus.Register
 		ctx:                      ctx,
 		maxBlockChunkSegmentSize: maxBlockChunkSegmentSize,
 		mergeFunc:                mergeFunc,
+		concurrencyOpts:          DefaultLeveledCompactorConcurrencyOptions(),
 	}, nil
+}
+
+// LeveledCompactorConcurrencyOptions is a collection of concurrency options used by LeveledCompactor.
+type LeveledCompactorConcurrencyOptions struct {
+	MaxOpeningBlocks int // Number of goroutines opening blocks before compaction.
+}
+
+func DefaultLeveledCompactorConcurrencyOptions() LeveledCompactorConcurrencyOptions {
+	return LeveledCompactorConcurrencyOptions{
+		MaxOpeningBlocks: 1,
+	}
+}
+
+func (c *LeveledCompactor) SetConcurrencyOptions(opts LeveledCompactorConcurrencyOptions) {
+	c.concurrencyOpts = opts
 }
 
 type dirMeta struct {
@@ -392,44 +411,27 @@ func CompactBlockMetas(uid ulid.ULID, blocks ...*BlockMeta) *BlockMeta {
 // Compact creates a new block in the compactor's directory from the blocks in the
 // provided directories.
 func (c *LeveledCompactor) Compact(dest string, dirs []string, open []*Block) (uid ulid.ULID, err error) {
+	start := time.Now()
+
+	bs, blocksToClose, err := openBlocksForCompaction(dirs, open, c.logger, c.chunkPool, c.concurrencyOpts.MaxOpeningBlocks)
+	for _, b := range blocksToClose {
+		defer b.Close()
+	}
+
+	if err != nil {
+		return uid, err
+	}
+
 	var (
 		blocks []BlockReader
-		bs     []*Block
 		metas  []*BlockMeta
 		uids   []string
 	)
-	start := time.Now()
-
-	for _, d := range dirs {
-		meta, _, err := readMetaFile(d)
-		if err != nil {
-			return uid, err
-		}
-
-		var b *Block
-
-		// Use already open blocks if we can, to avoid
-		// having the index data in memory twice.
-		for _, o := range open {
-			if meta.ULID == o.Meta().ULID {
-				b = o
-				break
-			}
-		}
-
-		if b == nil {
-			var err error
-			b, err = OpenBlock(c.logger, d, c.chunkPool)
-			if err != nil {
-				return uid, err
-			}
-			defer b.Close()
-		}
-
-		metas = append(metas, meta)
+	for _, b := range bs {
 		blocks = append(blocks, b)
-		bs = append(bs, b)
-		uids = append(uids, meta.ULID.String())
+		m := b.Meta()
+		metas = append(metas, &m)
+		uids = append(uids, b.meta.ULID.String())
 	}
 
 	uid = ulid.MustNew(ulid.Now(), rand.Reader)
@@ -806,4 +808,90 @@ func (c *LeveledCompactor) populateBlock(blocks []BlockReader, meta *BlockMeta, 
 	}
 
 	return nil
+}
+
+// Returns opened blocks, and blocks that should be closed (also returned in case of error).
+func openBlocksForCompaction(dirs []string, open []*Block, logger log.Logger, pool chunkenc.Pool, concurrency int) (blocks, blocksToClose []*Block, _ error) {
+	blocks = make([]*Block, 0, len(dirs))
+	blocksToClose = make([]*Block, 0, len(dirs))
+
+	toOpenCh := make(chan string, len(dirs))
+	for _, d := range dirs {
+		meta, _, err := readMetaFile(d)
+		if err != nil {
+			return nil, blocksToClose, err
+		}
+
+		var b *Block
+
+		// Use already open blocks if we can, to avoid
+		// having the index data in memory twice.
+		for _, o := range open {
+			if meta.ULID == o.Meta().ULID {
+				b = o
+				break
+			}
+		}
+
+		if b != nil {
+			blocks = append(blocks, b)
+		} else {
+			toOpenCh <- d
+		}
+	}
+	close(toOpenCh)
+
+	type openResult struct {
+		b   *Block
+		err error
+	}
+
+	openResultCh := make(chan openResult, len(toOpenCh))
+	// Signals to all opening goroutines that there was an error opening some block, and they can stop early.
+	// If openingError is true, at least one error is sent to openResultCh.
+	openingError := atomic.NewBool(false)
+
+	wg := sync.WaitGroup{}
+	if len(dirs) < concurrency {
+		concurrency = len(dirs)
+	}
+	for i := 0; i < concurrency; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			for d := range toOpenCh {
+				if openingError.Load() {
+					return
+				}
+
+				b, err := OpenBlock(logger, d, pool)
+				openResultCh <- openResult{b: b, err: err}
+
+				if err != nil {
+					openingError.Store(true)
+					return
+				}
+			}
+		}()
+	}
+	wg.Wait()
+
+	// All writers to openResultCh have stopped, we can close the output channel, so we can range over it.
+	close(openResultCh)
+
+	var firstErr error
+	for or := range openResultCh {
+		if or.err != nil {
+			// Don't stop on error, but iterate over all opened blocks to collect blocksToClose.
+			if firstErr == nil {
+				firstErr = or.err
+			}
+		} else {
+			blocks = append(blocks, or.b)
+			blocksToClose = append(blocksToClose, or.b)
+		}
+	}
+
+	return blocks, blocksToClose, firstErr
 }
