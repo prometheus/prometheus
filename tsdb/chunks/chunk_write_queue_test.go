@@ -215,7 +215,7 @@ func BenchmarkChunkWriteQueue_addJob(b *testing.B) {
 			for _, concurrentWrites := range []int{1, 10, 100, 1000} {
 				b.Run(fmt.Sprintf("%d concurrent writes", concurrentWrites), func(b *testing.B) {
 					issueReadSignal := make(chan struct{})
-					q := newChunkWriteQueue(nil, 1000, func(ref HeadSeriesRef, i int64, i2 int64, chunk chunkenc.Chunk, ref2 ChunkDiskMapperRef, b bool) error {
+					q := newChunkWriteQueue(nil, 1000, func(ref HeadSeriesRef, i, i2 int64, chunk chunkenc.Chunk, ref2 ChunkDiskMapperRef, b bool) error {
 						if withReads {
 							select {
 							case issueReadSignal <- struct{}{}:
