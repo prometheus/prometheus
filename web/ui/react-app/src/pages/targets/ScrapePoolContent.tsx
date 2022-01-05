@@ -44,7 +44,7 @@ export const ScrapePoolContent: FC<ScrapePoolContentProps> = ({ targets }) => {
       dataLength={items.length}
       height={items.length > 25 ? '75vh' : ''}
     >
-      <Table className={styles.table} size="sm" hover>
+      <Table className={styles.table} size="sm" bordered hover striped>
         <thead>
           <tr key="header">
             {columns.map((column) => (
