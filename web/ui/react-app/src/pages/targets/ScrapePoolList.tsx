@@ -96,7 +96,7 @@ const ScrapePoolListContent: FC<ScrapePoolListProps> = ({ activeTargets }) => {
             <InputGroupAddon addonType="prepend">
               <InputGroupText>{<FontAwesomeIcon icon={faSearch} />}</InputGroupText>
             </InputGroupAddon>
-            <Input onChange={handleSearchChange} />
+            <Input autoFocus onChange={handleSearchChange} placeholder="Filter by endpoint or labels" />
           </InputGroup>
         </Col>
       </Row>
