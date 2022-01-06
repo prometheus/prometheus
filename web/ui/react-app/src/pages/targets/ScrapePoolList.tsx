@@ -4,7 +4,7 @@ import { useFetch } from '../../hooks/useFetch';
 import { API_PATH } from '../../constants/constants';
 import { groupTargets, ScrapePool, ScrapePools, Target } from './target';
 import { withStatusIndicator } from '../../components/withStatusIndicator';
-import React, { ChangeEvent, FC, useState } from 'react';
+import { ChangeEvent, FC, useEffect, useState } from 'react';
 import { Col, Collapse, Input, InputGroup, InputGroupAddon, InputGroupText, Row } from 'reactstrap';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faSearch } from '@fortawesome/free-solid-svg-icons';
@@ -55,6 +55,8 @@ export const ScrapePoolPanel: FC<PanelProps> = (props: PanelProps) => {
 const ScrapePoolListContent: FC<ScrapePoolListProps> = ({ activeTargets }) => {
   const initialPoolList = groupTargets(activeTargets);
   const [poolList, setPoolList] = useState<ScrapePools>(initialPoolList);
+  const [targetList, setTargetList] = useState(activeTargets);
+
   const initialFilter: FilterData = {
     showHealthy: true,
     showUnhealthy: true,
@@ -74,17 +76,28 @@ const ScrapePoolListContent: FC<ScrapePoolListProps> = ({ activeTargets }) => {
   const handleSearchChange = (e: ChangeEvent<HTMLTextAreaElement | HTMLInputElement>) => {
     if (e.target.value !== '') {
       const result = kvSearch.filter(e.target.value.trim(), activeTargets);
-      setPoolList(
-        groupTargets(
-          result.map((value) => {
-            return value.original as unknown as Target;
-          })
-        )
+      setTargetList(
+        result.map((value) => {
+          return value.original as unknown as Target;
+        })
       );
     } else {
-      setPoolList(initialPoolList);
+      setTargetList(activeTargets);
     }
   };
+
+  useEffect(() => {
+    const list = targetList.filter((t) => {
+      if (!showHealthy) {
+        if (t.health.toLowerCase() === 'up') {
+          return false;
+        }
+      }
+      return true;
+    });
+    setPoolList(groupTargets(list));
+  }, [showHealthy, targetList]);
+
   return (
     <>
       <Row xs="4" className="align-items-center">
