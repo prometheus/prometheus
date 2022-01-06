@@ -391,7 +391,7 @@ func TestHead_HighConcurrencyReadAndWrite(t *testing.T) {
 				}
 
 				if len(samples) != 1 {
-					return false, fmt.Errorf("expected 1 sample, got %d", len(samples))
+					return false, fmt.Errorf("expected 1 series, got %d", len(samples))
 				}
 
 				series := lbls.String()
