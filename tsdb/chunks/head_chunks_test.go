@@ -20,7 +20,6 @@ import (
 	"math/rand"
 	"os"
 	"strconv"
-	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -263,25 +262,23 @@ func TestChunkDiskMapper_Truncate_PreservesFileSequence(t *testing.T) {
 	}()
 	timeRange := 0
 
-	var callbackWg sync.WaitGroup
 	addChunk := func() {
 		t.Helper()
 
-		callbackWg.Add(1)
+		awaitCb := make(chan struct{})
 
 		step := 100
 		mint, maxt := timeRange+1, timeRange+step-1
 		hrw.WriteChunk(1, int64(mint), int64(maxt), randomChunk(t), func(err error) {
-			callbackWg.Done()
+			close(awaitCb)
 			require.NoError(t, err)
 		})
+		<-awaitCb
 		timeRange += step
 	}
 
 	emptyFile := func() {
 		t.Helper()
-
-		callbackWg.Wait()
 
 		_, _, err := hrw.cut()
 		require.NoError(t, err)
@@ -307,7 +304,6 @@ func TestChunkDiskMapper_Truncate_PreservesFileSequence(t *testing.T) {
 	verifyFiles := func(remainingFiles []int) {
 		t.Helper()
 
-		callbackWg.Wait()
 		files, err := ioutil.ReadDir(hrw.dir.Name())
 		require.NoError(t, err)
 		require.Equal(t, len(remainingFiles), len(files), "files on disk")
@@ -345,13 +341,12 @@ func TestHeadReadWriter_TruncateAfterFailedIterateChunks(t *testing.T) {
 
 	// Write a chunks to iterate on it later.
 	var err error
-	var callbackWg sync.WaitGroup
-	callbackWg.Add(1)
+	awaitCb := make(chan struct{})
 	hrw.WriteChunk(1, 0, 1000, randomChunk(t), func(cbErr error) {
 		err = cbErr
-		callbackWg.Done()
+		close(awaitCb)
 	})
-	callbackWg.Wait()
+	<-awaitCb
 	require.NoError(t, err)
 
 	dir := hrw.dir.Name()
@@ -479,12 +474,11 @@ func createChunk(t *testing.T, idx int, hrw *ChunkDiskMapper) (seriesRef HeadSer
 	mint = int64((idx)*1000 + 1)
 	maxt = int64((idx + 1) * 1000)
 	chunk = randomChunk(t)
-	var callbackWg sync.WaitGroup
-	callbackWg.Add(1)
+	awaitCb := make(chan struct{})
 	chunkRef = hrw.WriteChunk(seriesRef, mint, maxt, chunk, func(cbErr error) {
 		require.NoError(t, err)
-		callbackWg.Done()
+		close(awaitCb)
 	})
-	callbackWg.Wait()
+	<-awaitCb
 	return
 }
