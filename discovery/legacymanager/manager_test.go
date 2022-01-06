@@ -1118,7 +1118,12 @@ func (tp mockdiscoveryProvider) Run(ctx context.Context, upCh chan<- []*targetgr
 		for i := range u.targetGroups {
 			tgs[i] = &u.targetGroups[i]
 		}
-		upCh <- tgs
+		select {
+		case <-ctx.Done():
+			return
+		case upCh <- tgs:
+		}
+
 	}
 	<-ctx.Done()
 }
@@ -1135,9 +1140,13 @@ type onceProvider struct {
 	tgs []*targetgroup.Group
 }
 
-func (o onceProvider) Run(_ context.Context, ch chan<- []*targetgroup.Group) {
+func (o onceProvider) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	if len(o.tgs) > 0 {
-		ch <- o.tgs
+		select {
+		case <-ctx.Done():
+			return
+		case ch <- o.tgs:
+		}
 	}
 	close(ch)
 }
