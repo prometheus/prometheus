@@ -12,7 +12,7 @@ exports[`AlertsContent matches a snapshot 1`] = `
       onChange={[Function]}
       wrapperStyles={
         Object {
-          "marginRight": 10,
+          "marginRight": 20,
         }
       }
     >
@@ -35,7 +35,7 @@ exports[`AlertsContent matches a snapshot 1`] = `
       onChange={[Function]}
       wrapperStyles={
         Object {
-          "marginRight": 10,
+          "marginRight": 20,
         }
       }
     >
@@ -58,7 +58,7 @@ exports[`AlertsContent matches a snapshot 1`] = `
       onChange={[Function]}
       wrapperStyles={
         Object {
-          "marginRight": 10,
+          "marginRight": 20,
         }
       }
     >
