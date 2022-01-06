@@ -87,14 +87,7 @@ const ScrapePoolListContent: FC<ScrapePoolListProps> = ({ activeTargets }) => {
   };
 
   useEffect(() => {
-    const list = targetList.filter((t) => {
-      if (!showHealthy) {
-        if (t.health.toLowerCase() === 'up') {
-          return false;
-        }
-      }
-      return true;
-    });
+    const list = targetList.filter((t) => showHealthy || t.health.toLowerCase() !== 'up');
     setPoolList(groupTargets(list));
   }, [showHealthy, targetList]);
 
