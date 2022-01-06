@@ -81,14 +81,11 @@ func TestChunkWriteQueue_WritingThroughQueue(t *testing.T) {
 	chunk := chunkenc.NewXORChunk()
 	ref := newChunkDiskMapperRef(321, 123)
 	cutFile := true
-	var callbackWg sync.WaitGroup
-	callbackWg.Add(1)
+	awaitCb := make(chan struct{})
 	require.NoError(t, q.addJob(chunkWriteJob{seriesRef: seriesRef, mint: mint, maxt: maxt, chk: chunk, ref: ref, cutFile: cutFile, callback: func(err error) {
-		callbackWg.Done()
+		close(awaitCb)
 	}}))
-
-	// Wait until job has been consumed.
-	callbackWg.Wait()
+	<-awaitCb
 
 	// Compare whether the write function has received all job attributes correctly.
 	require.Equal(t, seriesRef, gotSeriesRef)
@@ -190,12 +187,11 @@ func TestChunkWriteQueue_HandlerErrorViaCallback(t *testing.T) {
 		return testError
 	}
 
-	var callbackWg sync.WaitGroup
-	callbackWg.Add(1)
+	awaitCb := make(chan struct{})
 	var gotError error
 	callback := func(err error) {
 		gotError = err
-		callbackWg.Done()
+		close(awaitCb)
 	}
 
 	q := newChunkWriteQueue(nil, 1, chunkWriter)
@@ -204,7 +200,7 @@ func TestChunkWriteQueue_HandlerErrorViaCallback(t *testing.T) {
 	job := chunkWriteJob{callback: callback}
 	require.NoError(t, q.addJob(job))
 
-	callbackWg.Wait()
+	<-awaitCb
 
 	require.Equal(t, testError, gotError)
 }
