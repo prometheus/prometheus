@@ -323,9 +323,9 @@ func TestHead_HighConcurrencyReadAndWrite(t *testing.T) {
 	workerReadyWg.Add(writeConcurrency + readConcurrency)
 
 	// Start the write workers.
-	for workerID := 0; workerID < writeConcurrency; workerID++ {
+	for wid := 0; wid < writeConcurrency; wid++ {
 		// Create copy of workerID to be used by worker routine.
-		workerID := workerID
+		workerID := wid
 
 		g.Go(func() error {
 			// The label sets which this worker will write.
@@ -367,9 +367,9 @@ func TestHead_HighConcurrencyReadAndWrite(t *testing.T) {
 	readerTsCh := make(chan uint64)
 
 	// Start the read workers.
-	for workerID := 0; workerID < readConcurrency; workerID++ {
+	for wid := 0; wid < readConcurrency; wid++ {
 		// Create copy of threadID to be used by worker routine.
-		workerID := workerID
+		workerID := wid
 
 		g.Go(func() error {
 			querySeriesRef := (seriesCnt / readConcurrency) * workerID
