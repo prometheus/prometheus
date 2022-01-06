@@ -294,7 +294,7 @@ func TestHead_HighConcurrencyReadAndWrite(t *testing.T) {
 		labelSets[i] = labels.FromStrings("seriesId", strconv.Itoa(i))
 	}
 
-	head.initTime(0)
+	head.Init(0)
 
 	g, ctx := errgroup.WithContext(context.Background())
 	whileNotCanceled := func(f func() (bool, error)) error {
