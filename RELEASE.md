@@ -80,7 +80,10 @@ Maintaining the release branches for older minor releases happens on a best effo
 
 A few days before a major or minor release, consider updating the dependencies.
 
-Then create a pull request against the main branch.
+Note that we use [Dependabot](.github/dependabot.yml) to continuously update most things automatically. Therefore, most dependencies should be up to date.
+Check the [dependencies GitHub label](https://github.com/prometheus/prometheus/labels/dependencies) to see if there are any pending updates.
+
+This bot currently does not manage `+incompatible` and `v0.0.0` in the version specifier for Go modules.
 
 Note that after a dependency update, you should look out for any weirdness that
 might have happened. Such weirdnesses include but are not limited to: flaky
@@ -95,7 +98,9 @@ This is also a good time to consider any experimental features and feature
 flags for promotion to stable or for deprecation or ultimately removal. Do any
 of these in pull requests, one per feature.
 
-#### Updating Go dependencies
+#### Manually updating Go dependencies
+
+This is usually only needed for `+incompatible` and `v0.0.0` non-semver updates.
 
 ```bash
 make update-go-deps
@@ -103,7 +108,7 @@ git add go.mod go.sum
 git commit -m "Update dependencies"
 ```
 
-#### Updating React dependencies
+#### Manually updating React dependencies
 
 The React application recently moved to a monorepo system with multiple internal npm packages. Dependency upgrades are
 quite sensitive for the time being.
