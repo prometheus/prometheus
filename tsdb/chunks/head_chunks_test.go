@@ -324,11 +324,21 @@ func TestChunkDiskMapper_Truncate_PreservesFileSequence(t *testing.T) {
 	require.NoError(t, hrw.Truncate(file2Maxt+1))
 	verifyFiles([]int{3, 4, 5, 6})
 
+	// Add chunk, so file 6 is not empty anymore.
+	addChunk()
+	verifyFiles([]int{3, 4, 5, 6})
+
+	// Truncating till file 3 should also delete file 4, because it is empty.
+	file3Maxt := hrw.mmappedChunkFiles[3].maxt
+	require.NoError(t, hrw.Truncate(file3Maxt+1))
+	addChunk()
+	verifyFiles([]int{5, 6, 7})
+
 	dir := hrw.dir.Name()
 	require.NoError(t, hrw.Close())
 	// Restarting checks for unsequential files.
 	hrw = createChunkDiskMapper(t, dir)
-	verifyFiles([]int{3, 4, 5, 6})
+	verifyFiles([]int{5, 6, 7})
 }
 
 // TestHeadReadWriter_TruncateAfterIterateChunksError tests for
