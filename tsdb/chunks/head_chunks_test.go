@@ -166,31 +166,26 @@ func TestChunkDiskMapper_Truncate(t *testing.T) {
 	timeRange := 0
 	fileTimeStep := 100
 	var thirdFileMinT, sixthFileMinT int64
-	var callbackWg sync.WaitGroup
 	addChunk := func() int {
 		t.Helper()
 
-		callbackWg.Add(1)
-
-		mint := timeRange + 1                // Just after the new file cut.
-		maxt := timeRange + fileTimeStep - 1 // Just before the next file.
-
-		// Write a chunks to set maxt for the segment.
-		hrw.WriteChunk(1, int64(mint), int64(maxt), randomChunk(t), func(err error) {
-			callbackWg.Done()
-			require.NoError(t, err)
+		step := 100
+		mint, maxt := timeRange+1, timeRange+step-1
+		var err error
+		awaitCb := make(chan struct{})
+		hrw.WriteChunk(1, int64(mint), int64(maxt), randomChunk(t), func(cbErr error) {
+			err = cbErr
+			close(awaitCb)
 		})
-
-		timeRange += fileTimeStep
+		<-awaitCb
+		require.NoError(t, err)
+		timeRange += step
 
 		return mint
 	}
 
 	verifyFiles := func(remainingFiles []int) {
 		t.Helper()
-
-		// Wait until all chunk write jobs have been processed.
-		callbackWg.Wait()
 
 		files, err := ioutil.ReadDir(hrw.dir.Name())
 		require.NoError(t, err)
@@ -219,7 +214,7 @@ func TestChunkDiskMapper_Truncate(t *testing.T) {
 	// Truncating files.
 	require.NoError(t, hrw.Truncate(thirdFileMinT))
 
-	// Add a chunk to trigger truncation.
+	// Add a chunk to trigger cutting of new file.
 	addChunk()
 
 	verifyFiles([]int{3, 4, 5, 6, 7, 8})
@@ -237,8 +232,13 @@ func TestChunkDiskMapper_Truncate(t *testing.T) {
 
 	// Truncating files after restart.
 	require.NoError(t, hrw.Truncate(sixthFileMinT))
+	verifyFiles([]int{6, 7, 8, 9})
 
-	// Add a chunk to trigger truncation.
+	// Truncating a second time without adding a chunk shouldn't create a new file.
+	require.NoError(t, hrw.Truncate(sixthFileMinT+1))
+	verifyFiles([]int{6, 7, 8, 9})
+
+	// Add a chunk to trigger cutting of new file.
 	addChunk()
 
 	verifyFiles([]int{6, 7, 8, 9, 10})
@@ -246,7 +246,7 @@ func TestChunkDiskMapper_Truncate(t *testing.T) {
 	// Truncating till current time should not delete the current active file.
 	require.NoError(t, hrw.Truncate(int64(timeRange+(2*fileTimeStep))))
 
-	// Add a chunk to trigger truncation.
+	// Add a chunk to trigger cutting of new file.
 	addChunk()
 
 	verifyFiles([]int{10, 11}) // One file is the previously active file and one currently created.
@@ -377,6 +377,8 @@ func TestHeadReadWriter_ReadRepairOnEmptyLastFile(t *testing.T) {
 
 	timeRange := 0
 	addChunk := func() {
+		t.Helper()
+
 		step := 100
 		mint, maxt := timeRange+1, timeRange+step-1
 		var err error
@@ -390,6 +392,8 @@ func TestHeadReadWriter_ReadRepairOnEmptyLastFile(t *testing.T) {
 		timeRange += step
 	}
 	nonEmptyFile := func() {
+		t.Helper()
+
 		hrw.CutNewFile()
 		addChunk()
 	}
