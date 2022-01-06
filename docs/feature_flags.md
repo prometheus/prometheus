@@ -25,6 +25,7 @@ range vector selectors, and subqueries. More details can be found [here](queryin
 Replace `${var}` or `$var` in the [`external_labels`](configuration/configuration.md#configuration-file)
 values according to the values of the current environment variables. References
 to undefined variables are replaced by the empty string.
+The $ character can be escaped by using $$.
 
 ## Negative offset in PromQL
 
