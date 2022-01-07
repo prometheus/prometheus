@@ -811,7 +811,7 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 		}
 		l := sigf(el.Metric)
 		// Add the metric name (which is always removed) to the signature to prevent combining multiple histograms
-		// with the same label set
+		// with the same label set. See https://github.com/prometheus/prometheus/issues/9910
 		l = l + el.Metric.Get(model.MetricNameLabel)
 
 		mb, ok := enh.signatureToMetricWithBuckets[l]
