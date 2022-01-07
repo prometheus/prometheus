@@ -100,7 +100,7 @@ func main() {
 	).Required().ExistingFiles()
 
 	checkMetricsCmd := checkCmd.Command("metrics", checkMetricsUsage)
-	checkMetricsExtended := checkCmd.Flag("extended", "Run extended check.").Bool()
+	checkMetricsExtended := checkCmd.Flag("extended", "Print extended information related to the cardinality of the metrics.").Bool()
 	agentMode := checkConfigCmd.Flag("agent", "Check config file for Prometheus in Agent mode.").Bool()
 
 	queryCmd := app.Command("query", "Run query against a Prometheus server.")
@@ -635,7 +635,7 @@ $ curl -s http://localhost:9090/metrics | promtool check metrics
 `)
 
 // CheckMetrics performs a linting pass on input metrics.
-func CheckMetrics(checkMetricsExtended bool) int {
+func CheckMetrics(extended bool) int {
 	var buf bytes.Buffer
 	tee := io.TeeReader(os.Stdin, &buf)
 	l := promlint.New(tee)
@@ -653,16 +653,16 @@ func CheckMetrics(checkMetricsExtended bool) int {
 		return lintErrExitCode
 	}
 
-	if checkMetricsExtended {
-		stats, total, err := checkMetricsCount(&buf)
+	if extended {
+		stats, total, err := checkMetricsExtended(&buf)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			return failureExitCode
 		}
 		w := tabwriter.NewWriter(os.Stdout, 4, 4, 4, ' ', tabwriter.TabIndent)
-		fmt.Fprintf(w, "Metric\tCount\tPercentage\t\n")
+		fmt.Fprintf(w, "Metric\tCardinality\tPercentage\t\n")
 		for _, stat := range stats {
-			fmt.Fprintf(w, "%s\t%d\t%.2f%%\t\n", stat.name, stat.count, stat.percentage*100)
+			fmt.Fprintf(w, "%s\t%d\t%.2f%%\t\n", stat.name, stat.cardinality, stat.percentage*100)
 		}
 		fmt.Fprintf(w, "Total\t%d\t%.f%%\t\n", total, 100.)
 		w.Flush()
@@ -672,12 +672,12 @@ func CheckMetrics(checkMetricsExtended bool) int {
 }
 
 type metricStat struct {
-	name       string
-	count      int
-	percentage float64
+	name        string
+	cardinality int
+	percentage  float64
 }
 
-func checkMetricsCount(r io.Reader) ([]metricStat, int, error) {
+func checkMetricsExtended(r io.Reader) ([]metricStat, int, error) {
 	p := expfmt.TextParser{}
 	metricFamilies, err := p.TextToMetricFamilies(r)
 	if err != nil {
@@ -687,31 +687,31 @@ func checkMetricsCount(r io.Reader) ([]metricStat, int, error) {
 	var total int
 	stats := make([]metricStat, 0, len(metricFamilies))
 	for _, mf := range metricFamilies {
-		var count int
+		var cardinality int
 		switch mf.GetType() {
 		case dto.MetricType_COUNTER, dto.MetricType_GAUGE, dto.MetricType_UNTYPED:
-			count = len(mf.Metric)
+			cardinality = len(mf.Metric)
 		case dto.MetricType_HISTOGRAM:
 			// Histogram metrics includes sum, count, buckets.
 			buckets := len(mf.Metric[0].Histogram.Bucket)
-			count = len(mf.Metric) * (2 + buckets)
+			cardinality = len(mf.Metric) * (2 + buckets)
 		case dto.MetricType_SUMMARY:
 			// Summary metrics includes sum, count, quantiles.
 			quantiles := len(mf.Metric[0].Summary.Quantile)
-			count = len(mf.Metric) * (2 + quantiles)
+			cardinality = len(mf.Metric) * (2 + quantiles)
 		default:
-			count = len(mf.Metric)
+			cardinality = len(mf.Metric)
 		}
-		stats = append(stats, metricStat{name: mf.GetName(), count: count})
-		total += count
+		stats = append(stats, metricStat{name: mf.GetName(), cardinality: cardinality})
+		total += cardinality
 	}
 
 	for i := range stats {
-		stats[i].percentage = float64(stats[i].count) / float64(total)
+		stats[i].percentage = float64(stats[i].cardinality) / float64(total)
 	}
 
 	sort.SliceStable(stats, func(i, j int) bool {
-		return stats[i].count > stats[j].count
+		return stats[i].cardinality > stats[j].cardinality
 	})
 
 	return stats, total, nil
