@@ -1,4 +1,4 @@
-# Prometheus
+# Prometheus Fork
 
 [![CircleCI](https://circleci.com/gh/prometheus/prometheus/tree/main.svg?style=shield)][circleci]
 [![Docker Repository on Quay](https://quay.io/repository/prometheus/prometheus/status)][quay]
