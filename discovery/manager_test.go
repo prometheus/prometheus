@@ -668,12 +668,15 @@ func TestTargetUpdatesOrder(t *testing.T) {
 			discoveryManager.updatert = 100 * time.Millisecond
 
 			var totalUpdatesCount int
-			provUpdates := make(chan []*targetgroup.Group)
 			for _, up := range tc.updates {
-				go newMockDiscoveryProvider(up...).Run(ctx, provUpdates)
 				if len(up) > 0 {
 					totalUpdatesCount += len(up)
 				}
+			}
+			provUpdates := make(chan []*targetgroup.Group, totalUpdatesCount)
+
+			for _, up := range tc.updates {
+				go newMockDiscoveryProvider(up...).Run(ctx, provUpdates)
 			}
 
 			for x := 0; x < totalUpdatesCount; x++ {
