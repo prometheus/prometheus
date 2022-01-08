@@ -44,6 +44,7 @@ import (
 EQL
 BLANK
 COLON
+DOUBLECOLON
 COMMA
 COMMENT
 DURATION
@@ -452,6 +453,16 @@ subquery_expr   : expr LEFT_BRACKET duration COLON maybe_duration RIGHT_BRACKET
                                 Range: $3,
                                 Step:  $5,
 
+                                EndPos: $6.Pos + 1,
+                        }
+                        }
+                | expr LEFT_BRACKET duration DOUBLECOLON maybe_duration RIGHT_BRACKET
+                        {
+                        $$ = &SubqueryExpr{
+                                Expr: $1.(Expr),
+                                Range: $3,
+                                Step: $5,
+                                AlignEvalTime: true,
                                 EndPos: $6.Pos + 1,
                         }
                         }

@@ -1,0 +1,7 @@
+rule_files:
+  - eval-aligned-subqueries.yml
+
+tests:
+  - input_series:
+      - series: "requests{}"
+        values: "0+0x1440"

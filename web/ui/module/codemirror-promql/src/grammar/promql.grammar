@@ -211,7 +211,7 @@ MatrixSelector {
 }
 
 SubqueryExpr {
-  Expr "[" Duration ":" ("" | Duration) "]"
+  Expr "[" Duration (":" | "::") ("" | Duration) "]"
 }
 
 UnaryExpr {
