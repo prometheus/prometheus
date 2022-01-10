@@ -1041,13 +1041,13 @@ func TestPostingsWithIndexHeap(t *testing.T) {
 		for _, node := range h {
 			node.p.Next()
 		}
-		h.Init()
+		heap.Init(&h)
 
 		for _, expected := range []storage.SeriesRef{1, 5, 10, 20, 25, 30, 50} {
-			require.Equal(t, expected, h.At())
-			require.NoError(t, h.Next())
+			require.Equal(t, expected, h.at())
+			require.NoError(t, h.next())
 		}
-		require.Empty(t, h)
+		require.True(t, h.empty())
 	})
 
 	t.Run("pop", func(t *testing.T) {
@@ -1059,13 +1059,13 @@ func TestPostingsWithIndexHeap(t *testing.T) {
 		for _, node := range h {
 			node.p.Next()
 		}
-		h.Init()
+		heap.Init(&h)
 
 		for _, expected := range []storage.SeriesRef{1, 5, 10, 20} {
-			require.Equal(t, expected, h.At())
-			require.NoError(t, h.Next())
+			require.Equal(t, expected, h.at())
+			require.NoError(t, h.next())
 		}
-		require.Equal(t, storage.SeriesRef(25), h.At())
+		require.Equal(t, storage.SeriesRef(25), h.at())
 		node := heap.Pop(&h).(postingsWithIndex)
 		require.Equal(t, 2, node.index)
 		require.Equal(t, storage.SeriesRef(25), node.p.At())
