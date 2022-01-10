@@ -104,14 +104,15 @@ against regular expressions. The following label matching operators exist:
 * `=~`: Select labels that regex-match the provided string.
 * `!~`: Select labels that do not regex-match the provided string.
 
+Regex matches are fully anchored. A match of `env=~"foo"` is treated as `env=~"^foo$"`.
+
 For example, this selects all `http_requests_total` time series for `staging`,
 `testing`, and `development` environments and HTTP methods other than `GET`.
 
     http_requests_total{environment=~"staging|testing|development",method!="GET"}
 
 Label matchers that match empty label values also select all time series that
-do not have the specific label set at all. Regex-matches are fully anchored. It
-is possible to have multiple matchers for the same label name.
+do not have the specific label set at all. It is possible to have multiple matchers for the same label name.
 
 Vector selectors must either specify a name or at least one label matcher
 that does not match the empty string. The following expression is illegal:
