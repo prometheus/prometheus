@@ -163,7 +163,7 @@ const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
           <GroupInfo rules={group.rules}>
             {group.file} &gt; {group.name}
           </GroupInfo>
-          <CustomInfiniteScroll value={group.rules} child={GroupContent(showAnnotations.checked)} />
+          <CustomInfiniteScroll allItems={group.rules} child={GroupContent(showAnnotations.checked)} />
         </Fragment>
       ))}
     </>
