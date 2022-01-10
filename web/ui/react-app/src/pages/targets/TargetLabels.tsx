@@ -33,10 +33,16 @@ const TargetLabels: FC<TargetLabelsProps> = ({ discoveredLabels, labels, idx, sc
           );
         })}
       </div>
-      <Tooltip isOpen={tooltipOpen} target={CSS.escape(id)} toggle={toggle} style={{ maxWidth: 'none', textAlign: 'left' }}>
+      <Tooltip
+        isOpen={tooltipOpen}
+        target={CSS.escape(id)}
+        toggle={toggle}
+        placement={'right-end'}
+        style={{ maxWidth: 'none', textAlign: 'left' }}
+      >
         <b>Before relabeling:</b>
-        {formatLabels(discoveredLabels).map((s: string, idx: number) => (
-          <Fragment key={idx}>
+        {formatLabels(discoveredLabels).map((s: string, labelIndex: number) => (
+          <Fragment key={labelIndex}>
             <br />
             <span className={styles.discovered}>{s}</span>
           </Fragment>
