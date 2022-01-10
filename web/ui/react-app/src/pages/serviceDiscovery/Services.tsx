@@ -121,7 +121,7 @@ export const ServiceDiscoveryContent: FC<ServiceMap> = ({ activeTargets, dropped
           <InputGroupAddon addonType="prepend">
             <InputGroupText>{<FontAwesomeIcon icon={faSearch} />}</InputGroupText>
           </InputGroupAddon>
-          <Input autoFocus onChange={handleSearchChange} placeholder="Filter by endpoint or labels" />
+          <Input autoFocus onChange={handleSearchChange} placeholder="Filter by labels" />
         </InputGroup>
       </Container>
       <ul>
