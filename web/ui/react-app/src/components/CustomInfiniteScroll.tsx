@@ -1,36 +1,36 @@
 import { ComponentType, useEffect, useState } from 'react';
 import InfiniteScroll from 'react-infinite-scroll-component';
 
-const initialNumberOfTargetsDisplayed = 50;
+const initialNumberOfItemsDisplayed = 50;
 
 export interface InfiniteScrollItemsProps<T> {
   items: T[];
 }
 
-interface InfiniteScrollProps<T> {
-  value: T[];
+interface CustomInfiniteScrollProps<T> {
+  allItems: T[];
   child: ComponentType<InfiniteScrollItemsProps<T>>;
 }
 
 // eslint-disable-next-line @typescript-eslint/explicit-module-boundary-types
-const CustomInfiniteScroll = <T extends unknown>({ value, child }: InfiniteScrollProps<T>) => {
-  const [items, setItems] = useState<T[]>(value.slice(0, 50));
-  const [index, setIndex] = useState<number>(initialNumberOfTargetsDisplayed);
-  const [hasMore, setHasMore] = useState<boolean>(value.length > initialNumberOfTargetsDisplayed);
+const CustomInfiniteScroll = <T extends unknown>({ allItems, child }: CustomInfiniteScrollProps<T>) => {
+  const [items, setItems] = useState<T[]>(allItems.slice(0, 50));
+  const [index, setIndex] = useState<number>(initialNumberOfItemsDisplayed);
+  const [hasMore, setHasMore] = useState<boolean>(allItems.length > initialNumberOfItemsDisplayed);
   const Child = child;
 
   useEffect(() => {
-    setItems(value.slice(0, initialNumberOfTargetsDisplayed));
-    setHasMore(value.length > initialNumberOfTargetsDisplayed);
-  }, [value]);
+    setItems(allItems.slice(0, initialNumberOfItemsDisplayed));
+    setHasMore(allItems.length > initialNumberOfItemsDisplayed);
+  }, [allItems]);
 
   const fetchMoreData = () => {
-    if (items.length === value.length) {
+    if (items.length === allItems.length) {
       setHasMore(false);
     } else {
-      const newIndex = index + initialNumberOfTargetsDisplayed;
+      const newIndex = index + initialNumberOfItemsDisplayed;
       setIndex(newIndex);
-      setItems(value.slice(0, newIndex));
+      setItems(allItems.slice(0, newIndex));
     }
   };
 
@@ -38,7 +38,7 @@ const CustomInfiniteScroll = <T extends unknown>({ value, child }: InfiniteScrol
     <InfiniteScroll
       next={fetchMoreData}
       hasMore={hasMore}
-      loader={<h4>loading</h4>}
+      loader={<h4>loading...</h4>}
       dataLength={items.length}
       height={items.length > 25 ? '75vh' : ''}
     >

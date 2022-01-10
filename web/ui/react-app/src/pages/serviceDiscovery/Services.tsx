@@ -25,7 +25,7 @@ export interface TargetLabels {
 
 const kvSearch = new KVSearch({
   shouldSort: true,
-  indexedKeys: ['labels', 'scrapePool', ['labels', /.*/]],
+  indexedKeys: ['labels', 'discoveredLabels', ['discoveredLabels', /.*/], ['labels', /.*/]],
 });
 
 export const processSummary = (

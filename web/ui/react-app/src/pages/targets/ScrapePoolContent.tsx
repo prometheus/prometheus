@@ -63,5 +63,5 @@ const ScrapePoolContentTable: FC<InfiniteScrollItemsProps<Target>> = ({ items })
 };
 
 export const ScrapePoolContent: FC<ScrapePoolContentProps> = ({ targets }) => {
-  return <CustomInfiniteScroll value={targets} child={ScrapePoolContentTable} />;
+  return <CustomInfiniteScroll allItems={targets} child={ScrapePoolContentTable} />;
 };

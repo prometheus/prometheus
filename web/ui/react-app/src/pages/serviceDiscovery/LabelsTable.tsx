@@ -63,7 +63,7 @@ export const LabelsTable: FC<LabelProps> = ({ value, name }) => {
           <span className="target-head">{name}</span>
         </ToggleMoreLess>
       </div>
-      {showMore ? <CustomInfiniteScroll value={value} child={LabelsTableContent} /> : null}
+      {showMore ? <CustomInfiniteScroll allItems={value} child={LabelsTableContent} /> : null}
     </>
   );
 };
