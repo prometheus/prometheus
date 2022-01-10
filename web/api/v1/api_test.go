@@ -1501,6 +1501,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 								Type:   "recording",
 							},
 						},
+						Limit: 1,
 					},
 				},
 			},

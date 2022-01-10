@@ -1166,6 +1166,7 @@ type RuleGroup struct {
 	Interval       float64   `json:"interval"`
 	EvaluationTime float64   `json:"evaluationTime"`
 	LastEvaluation time.Time `json:"lastEvaluation"`
+	Limit          int       `json:"limit"`
 }
 
 type Rule interface{}
@@ -1219,6 +1220,7 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 			Rules:          []Rule{},
 			EvaluationTime: grp.GetEvaluationTime().Seconds(),
 			LastEvaluation: grp.GetLastEvaluation(),
+			Limit:          grp.Limit(),
 		}
 		for _, r := range grp.Rules() {
 			var enrichedRule Rule

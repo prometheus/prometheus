@@ -572,6 +572,11 @@ guarantees as the overarching API v1.
 ```
 GET /api/v1/rules
 ```
+```
+# Limit the number of alerts and series individual rules can produce.
+# 0 is no limit.
+[ limit: <int> | default = 0 ]
+```
 
 URL query parameters:
 - `type=alert|record`: return only the alerting rules (e.g. `type=alert`) or the recording rules (e.g. `type=record`). When the parameter is absent or empty, no filtering is done.
@@ -620,7 +625,8 @@ $ curl http://localhost:9090/api/v1/rules
                 ],
                 "file": "/rules.yaml",
                 "interval": 60,
-                "name": "example"
+                "name": "example",
+                "limit": 1
             }
         ]
     },
