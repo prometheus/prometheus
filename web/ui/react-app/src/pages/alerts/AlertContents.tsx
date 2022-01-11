@@ -120,24 +120,22 @@ const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
   return (
     <>
       <Row className="align-items-center">
-        <Col>
-          <div className="d-flex togglers-wrapper">
-            {stateColorTuples.map(([state, color]) => {
-              return (
-                <Checkbox
-                  key={state}
-                  wrapperStyles={{ marginRight: 10 }}
-                  checked={filter[state]}
-                  id={`${state}-toggler`}
-                  onChange={toggleFilter(state)}
-                >
-                  <Badge color={color} className="text-capitalize">
-                    {state} ({statsCount[state]})
-                  </Badge>
-                </Checkbox>
-              );
-            })}
-          </div>
+        <Col className="d-flex">
+          {stateColorTuples.map(([state, color]) => {
+            return (
+              <Checkbox
+                key={state}
+                wrapperStyles={{ marginRight: 10 }}
+                checked={filter[state]}
+                id={`${state}-toggler`}
+                onChange={toggleFilter(state)}
+              >
+                <Badge color={color} className="text-capitalize">
+                  {state} ({statsCount[state]})
+                </Badge>
+              </Checkbox>
+            );
+          })}
         </Col>
         <Col xs="6">
           <InputGroup>
@@ -147,7 +145,7 @@ const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
             <Input autoFocus onChange={handleSearchChange} placeholder="Filter by name or labels" />
           </InputGroup>
         </Col>
-        <Col>
+        <Col className="d-flex flex-row-reverse">
           <Checkbox
             wrapperStyles={{ marginLeft: 'auto' }}
             checked={showAnnotations.checked}
