@@ -11,18 +11,6 @@ Their behaviour can change in future releases which will be communicated via the
 You can enable them using the `--enable-feature` flag with a comma separated list of features.
 They may be enabled by default in future versions.
 
-## `@` Modifier in PromQL
-
-`--enable-feature=promql-at-modifier`
-
-The `@` modifier lets you specify the evaluation time for instant vector selectors,
-range vector selectors, and subqueries. More details can be found [here](querying/basics.md#modifier).
-
-This feature is considered stable, but since it breaks the invariant that
-PromQL does not look ahead of the evaluation time, it still needs to be enabled
-via this feature flag. The feature will be permanently enabled (and the feature
-flag ignored) upon major release v3.
-
 ## Expand environment variables in external labels
 
 `--enable-feature=expand-external-labels`
@@ -30,25 +18,6 @@ flag ignored) upon major release v3.
 Replace `${var}` or `$var` in the [`external_labels`](configuration/configuration.md#configuration-file)
 values according to the values of the current environment variables. References
 to undefined variables are replaced by the empty string.
-
-## Negative offset in PromQL
-
-This negative offset is disabled by default since it breaks the invariant
-that PromQL does not look ahead of the evaluation time for samples.
-
-`--enable-feature=promql-negative-offset`
-
-In contrast to the positive offset modifier, the negative offset modifier lets
-one shift a vector selector into the future. An example in which one may want
-to use a negative offset is reviewing past data and making temporal comparisons
-with more recent data.
-
-More details can be found [here](querying/basics.md#offset-modifier).
-
-This feature is considered stable, but since it breaks the invariant that
-PromQL does not look ahead of the evaluation time, it still needs to be enabled
-via this feature flag. The feature will be permanently enabled (and the feature
-flag ignored) upon major release v3.
 
 ## Remote Write Receiver
 

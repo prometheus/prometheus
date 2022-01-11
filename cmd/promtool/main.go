@@ -203,17 +203,14 @@ func main() {
 		p = &promqlPrinter{}
 	}
 
-	var queryOpts promql.LazyLoaderOpts
 	for _, f := range *featureList {
 		opts := strings.Split(f, ",")
 		for _, o := range opts {
 			switch o {
-			case "promql-at-modifier":
-				queryOpts.EnableAtModifier = true
-			case "promql-negative-offset":
-				queryOpts.EnableNegativeOffset = true
 			case "":
 				continue
+			case "promql-at-modifier", "promql-negative-offset":
+				fmt.Printf("  WARNING: Option for --enable-feature is a no-op after promotion to a stable feature: %q\n", o)
 			default:
 				fmt.Printf("  WARNING: Unknown option for --enable-feature: %q\n", o)
 			}
@@ -258,7 +255,13 @@ func main() {
 		os.Exit(QueryLabels(*queryLabelsServer, *queryLabelsName, *queryLabelsBegin, *queryLabelsEnd, p))
 
 	case testRulesCmd.FullCommand():
-		os.Exit(RulesUnitTest(queryOpts, *testRulesFiles...))
+		os.Exit(RulesUnitTest(
+			promql.LazyLoaderOpts{
+				EnableAtModifier:     true,
+				EnableNegativeOffset: true,
+			},
+			*testRulesFiles...),
+		)
 
 	case tsdbBenchWriteCmd.FullCommand():
 		os.Exit(checkErr(benchmarkWrite(*benchWriteOutPath, *benchSamplesFile, *benchWriteNumMetrics, *benchWriteNumScrapes)))

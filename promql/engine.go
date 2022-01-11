@@ -222,10 +222,17 @@ type EngineOpts struct {
 	// a subquery in milliseconds if no step in range vector was specified `[30m:<step>]`.
 	NoStepSubqueryIntervalFn func(rangeMillis int64) int64
 
-	// EnableAtModifier if true enables @ modifier. Disabled otherwise.
+	// EnableAtModifier if true enables @ modifier. Disabled otherwise. This
+	// is supposed to be enabled for regular PromQL (as of Prometheus v2.33)
+	// but the option to disable it is still provided here for those using
+	// the Engine outside of Prometheus.
 	EnableAtModifier bool
 
-	// EnableNegativeOffset if true enables negative (-) offset values. Disabled otherwise.
+	// EnableNegativeOffset if true enables negative (-) offset
+	// values. Disabled otherwise. This is supposed to be enabled for
+	// regular PromQL (as of Prometheus v2.33) but the option to disable it
+	// is still provided here for those using the Engine outside of
+	// Prometheus.
 	EnableNegativeOffset bool
 }
 
