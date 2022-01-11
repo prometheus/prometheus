@@ -613,6 +613,7 @@ func (t *Test) clear() {
 		Timeout:                  100 * time.Second,
 		NoStepSubqueryIntervalFn: func(int64) int64 { return durationMilliseconds(1 * time.Minute) },
 		EnableAtModifier:         true,
+		EnableNegativeOffset:     true,
 	}
 
 	t.queryEngine = NewEngine(opts)
