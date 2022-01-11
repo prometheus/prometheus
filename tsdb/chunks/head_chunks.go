@@ -473,6 +473,10 @@ func (cdm *ChunkDiskMapper) CutNewFile() {
 	cdm.evtlPos.cutFileOnNextChunk()
 }
 
+func (cdm *ChunkDiskMapper) IsQueueEmpty() bool {
+	return cdm.writeQueue.queueIsEmpty()
+}
+
 // cutAndExpectRef creates a new m-mapped file.
 // The write lock should be held before calling this.
 // It ensures that the position in the new file matches the given chunk reference, if not then it errors.
