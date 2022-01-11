@@ -680,7 +680,9 @@ type LazyLoader struct {
 
 // LazyLoaderOpts are options for the lazy loader.
 type LazyLoaderOpts struct {
-	// Disabled PromQL engine features.
+	// Both of these must be set to true for regular PromQL (as of
+	// Prometheus v2.33). They can still be disabled here for legacy and
+	// other uses.
 	EnableAtModifier, EnableNegativeOffset bool
 }
 
