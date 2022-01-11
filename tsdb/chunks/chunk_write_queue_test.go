@@ -146,7 +146,7 @@ func TestChunkWriteQueue_WrappingAroundSizeLimit(t *testing.T) {
 	}
 
 	// The queue should be full.
-	require.True(t, queueIsFull(q))
+	require.True(t, q.queueIsFull())
 
 	// Adding another job should block as long as no job from the queue gets consumed.
 	addedJob := atomic.NewBool(false)
@@ -166,19 +166,19 @@ func TestChunkWriteQueue_WrappingAroundSizeLimit(t *testing.T) {
 	require.Eventually(t, func() bool { return addedJob.Load() }, time.Second, time.Millisecond*10)
 
 	// The queue should be full again.
-	require.True(t, queueIsFull(q))
+	require.True(t, q.queueIsFull())
 
 	// Consume <sizeLimit>+1 jobs from the queue.
 	// To drain the queue we need to consume <sizeLimit>+1 jobs because 1 job
 	// is already in the state of being processed.
 	for job := 0; job < sizeLimit+1; job++ {
-		require.False(t, queueIsEmpty(q))
+		require.False(t, q.queueIsEmpty())
 		unblockChunkWriter()
 	}
 
 	// Wait until all jobs have been processed.
 	callbackWg.Wait()
-	require.True(t, queueIsEmpty(q))
+	require.True(t, q.queueIsEmpty())
 }
 
 func TestChunkWriteQueue_HandlerErrorViaCallback(t *testing.T) {
@@ -265,23 +265,4 @@ func BenchmarkChunkWriteQueue_addJob(b *testing.B) {
 			}
 		})
 	}
-}
-
-func queueIsEmpty(q *chunkWriteQueue) bool {
-	return queueSize(q) == 0
-}
-
-func queueIsFull(q *chunkWriteQueue) bool {
-	// When the queue is full and blocked on the writer the chunkRefMap has one more job than the cap of the jobCh
-	// because one job is currently being processed and blocked in the writer.
-	return queueSize(q) == cap(q.jobs)+1
-}
-
-func queueSize(q *chunkWriteQueue) int {
-	q.chunkRefMapMtx.Lock()
-	defer q.chunkRefMapMtx.Unlock()
-
-	// Looking at chunkRefMap instead of jobCh because the job is popped from the chan before it has
-	// been fully processed, it remains in the chunkRefMap until the processing is complete.
-	return len(q.chunkRefMap)
 }

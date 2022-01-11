@@ -1461,6 +1461,10 @@ func TestSizeRetention(t *testing.T) {
 	}
 	require.NoError(t, headApp.Commit())
 
+	require.Eventually(t, func() bool {
+		return db.Head().chunkDiskMapper.IsQueueEmpty()
+	}, 2*time.Second, 100*time.Millisecond)
+
 	// Test that registered size matches the actual disk size.
 	require.NoError(t, db.reloadBlocks())                               // Reload the db to register the new db size.
 	require.Equal(t, len(blocks), len(db.Blocks()))                     // Ensure all blocks are registered.

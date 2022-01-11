@@ -163,3 +163,22 @@ func (c *chunkWriteQueue) stop() {
 
 	c.workerWg.Wait()
 }
+
+func (c *chunkWriteQueue) queueIsEmpty() bool {
+	return c.queueSize() == 0
+}
+
+func (c *chunkWriteQueue) queueIsFull() bool {
+	// When the queue is full and blocked on the writer the chunkRefMap has one more job than the cap of the jobCh
+	// because one job is currently being processed and blocked in the writer.
+	return c.queueSize() == cap(c.jobs)+1
+}
+
+func (c *chunkWriteQueue) queueSize() int {
+	c.chunkRefMapMtx.Lock()
+	defer c.chunkRefMapMtx.Unlock()
+
+	// Looking at chunkRefMap instead of jobCh because the job is popped from the chan before it has
+	// been fully processed, it remains in the chunkRefMap until the processing is complete.
+	return len(c.chunkRefMap)
+}
