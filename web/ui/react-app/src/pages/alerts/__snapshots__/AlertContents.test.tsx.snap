@@ -17,6 +17,8 @@ exports[`AlertsContent matches a snapshot 1`] = `
   >
     <Col
       className="d-flex"
+      lg="4"
+      md="5"
       tag="div"
       widths={
         Array [
@@ -33,11 +35,6 @@ exports[`AlertsContent matches a snapshot 1`] = `
         id="inactive-toggler"
         key="inactive"
         onChange={[Function]}
-        wrapperStyles={
-          Object {
-            "marginRight": 10,
-          }
-        }
       >
         <Badge
           className="text-capitalize"
@@ -56,11 +53,6 @@ exports[`AlertsContent matches a snapshot 1`] = `
         id="pending-toggler"
         key="pending"
         onChange={[Function]}
-        wrapperStyles={
-          Object {
-            "marginRight": 10,
-          }
-        }
       >
         <Badge
           className="text-capitalize"
@@ -79,11 +71,6 @@ exports[`AlertsContent matches a snapshot 1`] = `
         id="firing-toggler"
         key="firing"
         onChange={[Function]}
-        wrapperStyles={
-          Object {
-            "marginRight": 10,
-          }
-        }
       >
         <Badge
           className="text-capitalize"
@@ -99,6 +86,9 @@ exports[`AlertsContent matches a snapshot 1`] = `
       </Memo(Checkbox)>
     </Col>
     <Col
+      lg="5"
+      md="4"
+      sm="2"
       tag="div"
       widths={
         Array [
@@ -109,7 +99,6 @@ exports[`AlertsContent matches a snapshot 1`] = `
           "xl",
         ]
       }
-      xs="6"
     >
       <InputGroup
         tag="div"
@@ -164,6 +153,7 @@ exports[`AlertsContent matches a snapshot 1`] = `
     </Col>
     <Col
       className="d-flex flex-row-reverse"
+      md="3"
       tag="div"
       widths={
         Array [
@@ -174,16 +164,12 @@ exports[`AlertsContent matches a snapshot 1`] = `
           "xl",
         ]
       }
+      xs="2"
     >
       <Memo(Checkbox)
         checked={false}
         id="show-annotations-toggler"
         onChange={[Function]}
-        wrapperStyles={
-          Object {
-            "marginLeft": "auto",
-          }
-        }
       >
         <span
           style={

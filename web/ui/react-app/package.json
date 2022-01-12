@@ -51,7 +51,8 @@
     "test:debug": "react-scripts --inspect-brk test --runInBand --no-cache",
     "eject": "react-scripts eject",
     "lint:ci": "eslint --quiet \"src/**/*.{ts,tsx}\"",
-    "lint": "eslint --fix \"src/**/*.{ts,tsx}\""
+    "lint": "eslint --fix \"src/**/*.{ts,tsx}\"",
+    "snapshot": "react-scripts test --updateSnapshot"
   },
   "prettier": {
     "singleQuote": true,
