@@ -8,9 +8,8 @@ import { mapObjEntries } from '../../utils';
 import { usePathPrefix } from '../../contexts/PathPrefixContext';
 import { API_PATH } from '../../constants/constants';
 import { KVSearch } from '@nexucis/kvsearch';
-import { Container, Input, InputGroup, InputGroupAddon, InputGroupText } from 'reactstrap';
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faSearch } from '@fortawesome/free-solid-svg-icons';
+import { Container } from 'reactstrap';
+import SearchBar from '../../components/SearchBar';
 
 interface ServiceMap {
   activeTargets: Target[];
@@ -117,12 +116,7 @@ export const ServiceDiscoveryContent: FC<ServiceMap> = ({ activeTargets, dropped
     <>
       <h2>Service Discovery</h2>
       <Container>
-        <InputGroup>
-          <InputGroupAddon addonType="prepend">
-            <InputGroupText>{<FontAwesomeIcon icon={faSearch} />}</InputGroupText>
-          </InputGroupAddon>
-          <Input autoFocus onChange={handleSearchChange} placeholder="Filter by labels" />
-        </InputGroup>
+        <SearchBar handleChange={handleSearchChange} placeholder="filter by labels" />
       </Container>
       <ul>
         {mapObjEntries(targetList, ([k, v]) => (
