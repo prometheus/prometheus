@@ -378,11 +378,6 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 	}
 
 	qry, err := api.QueryEngine.NewInstantQuery(api.Queryable, r.FormValue("query"), ts)
-	if err == promql.ErrValidationAtModifierDisabled {
-		err = errors.New("@ modifier is disabled, use --enable-feature=promql-at-modifier to enable it")
-	} else if err == promql.ErrValidationNegativeOffsetDisabled {
-		err = errors.New("negative offset is disabled, use --enable-feature=promql-negative-offset to enable it")
-	}
 	if err != nil {
 		return invalidParamError(err, "query")
 	}
@@ -458,11 +453,6 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 	}
 
 	qry, err := api.QueryEngine.NewRangeQuery(api.Queryable, r.FormValue("query"), start, end, step)
-	if err == promql.ErrValidationAtModifierDisabled {
-		err = errors.New("@ modifier is disabled, use --enable-feature=promql-at-modifier to enable it")
-	} else if err == promql.ErrValidationNegativeOffsetDisabled {
-		err = errors.New("negative offset is disabled, use --enable-feature=promql-negative-offset to enable it")
-	}
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
