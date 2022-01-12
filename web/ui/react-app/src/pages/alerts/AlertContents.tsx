@@ -50,12 +50,12 @@ const stateColorTuples: Array<[RuleState, 'success' | 'warning' | 'danger']> = [
   ['firing', 'danger'],
 ];
 
-function GroupContent(showAnnotation: boolean) {
+function GroupContent(showAnnotations: boolean) {
   const Content: FC<InfiniteScrollItemsProps<Rule>> = ({ items }) => {
     return (
       <>
         {items.map((rule, j) => (
-          <CollapsibleAlertPanel key={rule.name + j} showAnnotations={showAnnotation} rule={rule} />
+          <CollapsibleAlertPanel key={rule.name + j} showAnnotations={showAnnotations} rule={rule} />
         ))}
       </>
     );
@@ -120,16 +120,10 @@ const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
   return (
     <>
       <Row className="align-items-center">
-        <Col className="d-flex">
+        <Col className="d-flex" lg="4" md="5">
           {stateColorTuples.map(([state, color]) => {
             return (
-              <Checkbox
-                key={state}
-                wrapperStyles={{ marginRight: 10 }}
-                checked={filter[state]}
-                id={`${state}-toggler`}
-                onChange={toggleFilter(state)}
-              >
+              <Checkbox key={state} checked={filter[state]} id={`${state}-toggler`} onChange={toggleFilter(state)}>
                 <Badge color={color} className="text-capitalize">
                   {state} ({statsCount[state]})
                 </Badge>
@@ -137,7 +131,7 @@ const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
             );
           })}
         </Col>
-        <Col xs="6">
+        <Col lg="5" md="4" sm="2">
           <InputGroup>
             <InputGroupAddon addonType="prepend">
               <InputGroupText>{<FontAwesomeIcon icon={faSearch} />}</InputGroupText>
@@ -145,9 +139,8 @@ const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
             <Input autoFocus onChange={handleSearchChange} placeholder="Filter by name or labels" />
           </InputGroup>
         </Col>
-        <Col className="d-flex flex-row-reverse">
+        <Col className="d-flex flex-row-reverse" md="3" xs="2">
           <Checkbox
-            wrapperStyles={{ marginLeft: 'auto' }}
             checked={showAnnotations.checked}
             id="show-annotations-toggler"
             onChange={({ target }) => setShowAnnotations({ checked: target.checked })}
