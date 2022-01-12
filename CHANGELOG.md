@@ -1,3 +1,31 @@
+## 2.33.0-rc.0 / 2022-01-12
+
+* [CHANGE] PromQL: Promote negative offset and `@` modifer to stable features. #10121
+* [CHANGE] Web: Promote remote-write-receiver to stable. #10119
+* [FEATURE] Config: Add `stripPort` template function. #10002
+* [FEATURE] Promtool: Add cardinality analysis to `check metrics`, enabled by flag `--extended`. #10045
+* [FEATURE] SD: Enable target discovery in own K8s namespace. #9881
+* [FEATURE] SD: Add provider ID label in K8s SD. #9603
+* [FEATURE] Web: Add limit field to the rules API. #10152
+* [ENHANCEMENT] Remote-write: Avoid allocations by buffering concrete structs instead of interfaces. #9934
+* [ENHANCEMENT] Remote-write: Log time series details for out-of-order samples in remote write receiver. #9894
+* [ENHANCEMENT] Remote-write: Shard up more when backlogged. #9274
+* [ENHANCEMENT] TSDB: Use simpler map key to improve exemplar ingest performance. #10111
+* [ENHANCEMENT] TSDB: Avoid allocations when popping from the intersected postings heap. #10092
+* [ENHANCEMENT] TSDB: Make chunk writing non-blocking, avoiding latency spikes in remote-write. #10051
+* [ENHANCEMENT] TSDB: Improve label matching performance. #9907
+* [ENHANCEMENT] UI: Optimize the service discovery page and add a search bar. #10131
+* [ENHANCEMENT] UI: Optimize the target page and add a search bar. #10103
+* [BUGFIX] Promtool: Make exit codes more consistent. #9861
+* [BUGFIX] Promtool: Fix flakiness of rule testing. #8818
+* [BUGFIX] Remote-write: Update `prometheus_remote_storage_queue_highest_sent_timestamp_seconds` metric when write irrecoverably fails. #10102
+* [BUGFIX] Storage: Avoid panic in `BufferedSeriesIterator`. #9945
+* [BUGFIX] TSDB: CompactBlockMetas should produce correct mint/maxt for overlapping blocks. #10108
+* [BUGFIX] TSDB: Fix logging of exemplar storage size. #9938
+* [BUGFIX] UI: Fix overlapping click targets for the alert state checkboxes. #10136
+* [BUGFIX] UI: Fix _Unhealthy_ filter on target page to actually display only _Unhealthy_ targets. #10103
+* [BUGFIX] UI: Fix autocompletion when expression is empty. #10053
+
 ## 2.32.1 / 2021-12-17
 
 * [BUGFIX] Scrape: Fix reporting metrics when sample limit is reached during the report. #9996
@@ -13,7 +41,7 @@ Enable with `--enable-feature=agent`.
 
 Learn more about the Prometheus Agent in our [blog post](https://prometheus.io/blog/2021/11/16/agent/).
 
-* [CHANGE] remote-write: Change default max retry time from 100ms to 5 seconds. #9634
+* [CHANGE] Remote-write: Change default max retry time from 100ms to 5 seconds. #9634
 * [FEATURE] Agent: New mode of operation optimized for remote-write only scenarios, without local storage. Enable with `--enable-feature=agent`. #8785 #9851 #9664 #9939 #9941 #9943
 * [FEATURE] Promtool: Add `promtool check service-discovery` command. #8970
 * [FEATURE] UI: Add search in metrics dropdown. #9629
