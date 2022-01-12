@@ -1164,6 +1164,7 @@ type RuleGroup struct {
 	// same array.
 	Rules          []Rule    `json:"rules"`
 	Interval       float64   `json:"interval"`
+	Limit          int       `json:"limit"`
 	EvaluationTime float64   `json:"evaluationTime"`
 	LastEvaluation time.Time `json:"lastEvaluation"`
 }
@@ -1216,6 +1217,7 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 			Name:           grp.Name(),
 			File:           grp.File(),
 			Interval:       grp.Interval().Seconds(),
+			Limit:          grp.Limit(),
 			Rules:          []Rule{},
 			EvaluationTime: grp.GetEvaluationTime().Seconds(),
 			LastEvaluation: grp.GetLastEvaluation(),
