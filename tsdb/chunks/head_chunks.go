@@ -61,7 +61,7 @@ const (
 	CRCSize = 4
 	// MaxHeadChunkMetaSize is the max size of an mmapped chunks minus the chunks data.
 	// Max because the uvarint size can be smaller.
-	MaxHeadChunkMetaSize = SeriesRefSize + 2*MintMaxtSize + ChunkEncodingSize + MaxChunkLengthFieldSize + CRCSize
+	MaxHeadChunkMetaSize = SeriesRefSize + 2*MintMaxtSize + ChunksFormatVersionSize + MaxChunkLengthFieldSize + CRCSize
 	// MinWriteBufferSize is the minimum write buffer size allowed.
 	MinWriteBufferSize = 64 * 1024 // 64KB.
 	// MaxWriteBufferSize is the maximum write buffer size allowed.
@@ -471,6 +471,10 @@ func (cdm *ChunkDiskMapper) CutNewFile() {
 	defer cdm.evtlPosMtx.Unlock()
 
 	cdm.evtlPos.cutFileOnNextChunk()
+}
+
+func (cdm *ChunkDiskMapper) IsQueueEmpty() bool {
+	return cdm.writeQueue.queueIsEmpty()
 }
 
 // cutAndExpectRef creates a new m-mapped file.
