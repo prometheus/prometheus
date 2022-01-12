@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"math"
 	"net/http"
@@ -27,6 +28,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"text/tabwriter"
 	"time"
 
 	"github.com/go-kit/log"
@@ -42,6 +44,9 @@ import (
 	"github.com/prometheus/exporter-toolkit/web"
 	"gopkg.in/alecthomas/kingpin.v2"
 	yaml "gopkg.in/yaml.v2"
+
+	dto "github.com/prometheus/client_model/go"
+	"github.com/prometheus/common/expfmt"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
@@ -95,6 +100,7 @@ func main() {
 	).Required().ExistingFiles()
 
 	checkMetricsCmd := checkCmd.Command("metrics", checkMetricsUsage)
+	checkMetricsExtended := checkCmd.Flag("extended", "Print extended information related to the cardinality of the metrics.").Bool()
 	agentMode := checkConfigCmd.Flag("agent", "Check config file for Prometheus in Agent mode.").Bool()
 
 	queryCmd := app.Command("query", "Run query against a Prometheus server.")
@@ -228,7 +234,7 @@ func main() {
 		os.Exit(CheckRules(*ruleFiles...))
 
 	case checkMetricsCmd.FullCommand():
-		os.Exit(CheckMetrics())
+		os.Exit(CheckMetrics(*checkMetricsExtended))
 
 	case queryInstantCmd.FullCommand():
 		os.Exit(QueryInstant(*queryInstantServer, *queryInstantExpr, *queryInstantTime, p))
@@ -629,8 +635,10 @@ $ curl -s http://localhost:9090/metrics | promtool check metrics
 `)
 
 // CheckMetrics performs a linting pass on input metrics.
-func CheckMetrics() int {
-	l := promlint.New(os.Stdin)
+func CheckMetrics(extended bool) int {
+	var buf bytes.Buffer
+	tee := io.TeeReader(os.Stdin, &buf)
+	l := promlint.New(tee)
 	problems, err := l.Lint()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error while linting:", err)
@@ -645,7 +653,68 @@ func CheckMetrics() int {
 		return lintErrExitCode
 	}
 
+	if extended {
+		stats, total, err := checkMetricsExtended(&buf)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return failureExitCode
+		}
+		w := tabwriter.NewWriter(os.Stdout, 4, 4, 4, ' ', tabwriter.TabIndent)
+		fmt.Fprintf(w, "Metric\tCardinality\tPercentage\t\n")
+		for _, stat := range stats {
+			fmt.Fprintf(w, "%s\t%d\t%.2f%%\t\n", stat.name, stat.cardinality, stat.percentage*100)
+		}
+		fmt.Fprintf(w, "Total\t%d\t%.f%%\t\n", total, 100.)
+		w.Flush()
+	}
+
 	return successExitCode
+}
+
+type metricStat struct {
+	name        string
+	cardinality int
+	percentage  float64
+}
+
+func checkMetricsExtended(r io.Reader) ([]metricStat, int, error) {
+	p := expfmt.TextParser{}
+	metricFamilies, err := p.TextToMetricFamilies(r)
+	if err != nil {
+		return nil, 0, fmt.Errorf("error while parsing text to metric families: %w", err)
+	}
+
+	var total int
+	stats := make([]metricStat, 0, len(metricFamilies))
+	for _, mf := range metricFamilies {
+		var cardinality int
+		switch mf.GetType() {
+		case dto.MetricType_COUNTER, dto.MetricType_GAUGE, dto.MetricType_UNTYPED:
+			cardinality = len(mf.Metric)
+		case dto.MetricType_HISTOGRAM:
+			// Histogram metrics includes sum, count, buckets.
+			buckets := len(mf.Metric[0].Histogram.Bucket)
+			cardinality = len(mf.Metric) * (2 + buckets)
+		case dto.MetricType_SUMMARY:
+			// Summary metrics includes sum, count, quantiles.
+			quantiles := len(mf.Metric[0].Summary.Quantile)
+			cardinality = len(mf.Metric) * (2 + quantiles)
+		default:
+			cardinality = len(mf.Metric)
+		}
+		stats = append(stats, metricStat{name: mf.GetName(), cardinality: cardinality})
+		total += cardinality
+	}
+
+	for i := range stats {
+		stats[i].percentage = float64(stats[i].cardinality) / float64(total)
+	}
+
+	sort.SliceStable(stats, func(i, j int) bool {
+		return stats[i].cardinality > stats[j].cardinality
+	})
+
+	return stats, total, nil
 }
 
 // QueryInstant performs an instant query against a Prometheus server.

@@ -15,6 +15,7 @@ package chunks
 
 import (
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -80,16 +81,13 @@ func TestChunkWriteQueue_WritingThroughQueue(t *testing.T) {
 	chunk := chunkenc.NewXORChunk()
 	ref := newChunkDiskMapperRef(321, 123)
 	cutFile := true
-	var callbackWg sync.WaitGroup
-	callbackWg.Add(1)
+	awaitCb := make(chan struct{})
 	require.NoError(t, q.addJob(chunkWriteJob{seriesRef: seriesRef, mint: mint, maxt: maxt, chk: chunk, ref: ref, cutFile: cutFile, callback: func(err error) {
-		callbackWg.Done()
+		close(awaitCb)
 	}}))
+	<-awaitCb
 
-	// Wait until job has been consumed.
-	callbackWg.Wait()
-
-	// compare whether the write function has received all job attributes correctly
+	// Compare whether the write function has received all job attributes correctly.
 	require.Equal(t, seriesRef, gotSeriesRef)
 	require.Equal(t, mint, gotMint)
 	require.Equal(t, maxt, gotMaxt)
@@ -148,7 +146,7 @@ func TestChunkWriteQueue_WrappingAroundSizeLimit(t *testing.T) {
 	}
 
 	// The queue should be full.
-	require.True(t, queueIsFull(q))
+	require.True(t, q.queueIsFull())
 
 	// Adding another job should block as long as no job from the queue gets consumed.
 	addedJob := atomic.NewBool(false)
@@ -168,19 +166,19 @@ func TestChunkWriteQueue_WrappingAroundSizeLimit(t *testing.T) {
 	require.Eventually(t, func() bool { return addedJob.Load() }, time.Second, time.Millisecond*10)
 
 	// The queue should be full again.
-	require.True(t, queueIsFull(q))
+	require.True(t, q.queueIsFull())
 
 	// Consume <sizeLimit>+1 jobs from the queue.
 	// To drain the queue we need to consume <sizeLimit>+1 jobs because 1 job
 	// is already in the state of being processed.
 	for job := 0; job < sizeLimit+1; job++ {
-		require.False(t, queueIsEmpty(q))
+		require.False(t, q.queueIsEmpty())
 		unblockChunkWriter()
 	}
 
 	// Wait until all jobs have been processed.
 	callbackWg.Wait()
-	require.True(t, queueIsEmpty(q))
+	require.True(t, q.queueIsEmpty())
 }
 
 func TestChunkWriteQueue_HandlerErrorViaCallback(t *testing.T) {
@@ -189,12 +187,11 @@ func TestChunkWriteQueue_HandlerErrorViaCallback(t *testing.T) {
 		return testError
 	}
 
-	var callbackWg sync.WaitGroup
-	callbackWg.Add(1)
+	awaitCb := make(chan struct{})
 	var gotError error
 	callback := func(err error) {
 		gotError = err
-		callbackWg.Done()
+		close(awaitCb)
 	}
 
 	q := newChunkWriteQueue(nil, 1, chunkWriter)
@@ -203,26 +200,69 @@ func TestChunkWriteQueue_HandlerErrorViaCallback(t *testing.T) {
 	job := chunkWriteJob{callback: callback}
 	require.NoError(t, q.addJob(job))
 
-	callbackWg.Wait()
+	<-awaitCb
 
 	require.Equal(t, testError, gotError)
 }
 
-func queueIsEmpty(q *chunkWriteQueue) bool {
-	return queueSize(q) == 0
-}
+func BenchmarkChunkWriteQueue_addJob(b *testing.B) {
+	for _, withReads := range []bool{false, true} {
+		b.Run(fmt.Sprintf("with reads %t", withReads), func(b *testing.B) {
+			for _, concurrentWrites := range []int{1, 10, 100, 1000} {
+				b.Run(fmt.Sprintf("%d concurrent writes", concurrentWrites), func(b *testing.B) {
+					issueReadSignal := make(chan struct{})
+					q := newChunkWriteQueue(nil, 1000, func(ref HeadSeriesRef, i, i2 int64, chunk chunkenc.Chunk, ref2 ChunkDiskMapperRef, b bool) error {
+						if withReads {
+							select {
+							case issueReadSignal <- struct{}{}:
+							default:
+								// Can't write to issueReadSignal, don't block but omit read instead.
+							}
+						}
+						return nil
+					})
+					b.Cleanup(func() {
+						// Stopped already, so no more writes will happen.
+						close(issueReadSignal)
+					})
+					b.Cleanup(q.stop)
 
-func queueIsFull(q *chunkWriteQueue) bool {
-	// When the queue is full and blocked on the writer the chunkRefMap has one more job than the cap of the jobCh
-	// because one job is currently being processed and blocked in the writer.
-	return queueSize(q) == cap(q.jobCh)+1
-}
+					start := sync.WaitGroup{}
+					start.Add(1)
 
-func queueSize(q *chunkWriteQueue) int {
-	q.chunkRefMapMtx.Lock()
-	defer q.chunkRefMapMtx.Unlock()
+					jobs := make(chan chunkWriteJob, b.N)
+					for i := 0; i < b.N; i++ {
+						jobs <- chunkWriteJob{
+							seriesRef: HeadSeriesRef(i),
+							ref:       ChunkDiskMapperRef(i),
+						}
+					}
+					close(jobs)
 
-	// Looking at chunkRefMap instead of jobCh because the job is popped from the chan before it has
-	// been fully processed, it remains in the chunkRefMap until the processing is complete.
-	return len(q.chunkRefMap)
+					go func() {
+						for range issueReadSignal {
+							// We don't care about the ID we're getting, we just want to grab the lock.
+							_ = q.get(ChunkDiskMapperRef(0))
+						}
+					}()
+
+					done := sync.WaitGroup{}
+					done.Add(concurrentWrites)
+					for w := 0; w < concurrentWrites; w++ {
+						go func() {
+							start.Wait()
+							for j := range jobs {
+								_ = q.addJob(j)
+							}
+							done.Done()
+						}()
+					}
+
+					b.ResetTimer()
+					start.Done()
+					done.Wait()
+				})
+			}
+		})
+	}
 }
