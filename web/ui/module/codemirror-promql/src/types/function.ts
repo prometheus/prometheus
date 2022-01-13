@@ -75,6 +75,7 @@ import {
   Tan,
   Tanh,
   Time,
+  TimeTZ,
   Timestamp,
   Vector,
   Year,
@@ -473,6 +474,12 @@ const promqlFunctions: { [key: number]: PromQLFunction } = {
   [Time]: {
     name: 'time',
     argTypes: [],
+    variadic: 0,
+    returnType: ValueType.scalar,
+  },
+  [TimeTZ]: {
+    name: 'time_tz',
+    argTypes: [ValueType.string],
     variadic: 0,
     returnType: ValueType.scalar,
   },

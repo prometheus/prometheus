@@ -1128,6 +1128,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"tan":                funcTan,
 	"tanh":               funcTanh,
 	"time":               funcTime,
+	"time_tz":            funcTimeTZ,
 	"timestamp":          funcTimestamp,
 	"vector":             funcVector,
 	"year":               funcYear,
@@ -1142,7 +1143,7 @@ var AtModifierUnsafeFunctions = map[string]struct{}{
 	// Step invariant functions.
 	"days_in_month": {}, "day_of_month": {}, "day_of_week": {},
 	"hour": {}, "minute": {}, "month": {}, "year": {},
-	"predict_linear": {}, "time": {},
+	"predict_linear": {}, "time": {}, "time_tz": {},
 	// Uses timestamp of the argument for the result,
 	// hence unsafe to use with @ modifier.
 	"timestamp": {},

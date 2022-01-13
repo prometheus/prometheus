@@ -400,6 +400,25 @@ Same as `sort`, but sorts in descending order.
 this does not actually return the current time, but the time at which the
 expression is to be evaluated.
 
+## `time_tz(tz string)`
+
+`time_tz(tz)` returns the number of seconds since January 1, 1970 UTC offsetted by
+the number of seconds between the input timezone and UTC, e.g.:
+
+```
+time() - time_tz("Europe/Paris")      -> -3600 during DST period
+                                      -> -7200 otherwise
+time() - time_tz("Asia/Kuala_Lumpur") -> -28800 (No DST period in Malaysia)
+```
+
+This query will give you the hour of the evaluated sample on the desired timezone:
+
+```
+hour(vector(time_tz("Europe/Paris")))
+```
+
+⚠️  Due to some golang limitations, this function does not work on Windows platforms.
+
 ## `timestamp()`
 
 `timestamp(v instant-vector)` returns the timestamp of each of the samples of

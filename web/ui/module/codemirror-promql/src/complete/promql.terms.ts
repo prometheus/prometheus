@@ -434,6 +434,12 @@ export const functionIdentifierTerms = [
     type: 'function',
   },
   {
+    label: 'time_tz',
+    detail: 'function',
+    info: 'Return the Unix timestamp offseted by the delta TZ-UTC at the current evaluation time',
+    type: 'function',
+  },
+  {
     label: 'timestamp',
     detail: 'function',
     info: 'Return the Unix timestamp for the samples in the input vector',
@@ -588,5 +594,12 @@ export const snippets: readonly Completion[] = [
     detail: 'snippet',
     info: 'Count the number of series per distinct sample value',
     apply: snippet('count_values("${__label_name__}", ${__metric__})'),
+  },
+  {
+    label: 'time_tz("Europe/Paris")',
+    type: 'function',
+    detail: 'snippet',
+    info: 'Return the Unix timestamp offseted by the delta TZ-UTC at the current evaluation time',
+    apply: snippet('time_tz("Europe/Paris")'),
   },
 ];

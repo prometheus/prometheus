@@ -183,6 +183,7 @@ FunctionIdentifier {
   Tanh |
   Timestamp |
   Time |
+  TimeTZ |
   Vector |
   Year
 }
@@ -420,6 +421,7 @@ NumberLiteral  {
   Tan { condFn<"tan"> }
   Tanh { condFn<"tanh">}
   Time { condFn<"time"> }
+  TimeTZ { condFn<"time_tz"> }
   Timestamp { condFn<"timestamp"> }
   Vector { condFn<"vector"> }
   Year { condFn<"year"> }
