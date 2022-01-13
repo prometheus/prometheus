@@ -305,3 +305,22 @@ const stdDeviation = (sum: number, values: number[]): number => {
 };
 
 const exValue = (exemplar: GraphExemplar): number => exemplar.data[0][1];
+
+export const emphasizeLine = (chart: jquery.flot.plot, index: number | undefined): void => {
+  const defaultLineWidth = chart.getOptions().series.points.lineWidth;
+  const boldLineWidth = defaultLineWidth + 2;
+  const chartData = chart.getData();
+  // Reset each line to its normal width
+  chartData.forEach((line) => {
+    if (line.lines) {
+      line.lines.lineWidth = defaultLineWidth;
+    }
+  });
+  // Increase the width of the line that needs to be emphasized
+  if (typeof index !== 'undefined' && chartData[index]) {
+    const linesData = chartData[index].lines;
+    if (linesData) {
+      linesData.lineWidth = boldLineWidth;
+    }
+  }
+};

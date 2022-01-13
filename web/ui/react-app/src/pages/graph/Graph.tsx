@@ -5,7 +5,7 @@ import ReactResizeDetector from 'react-resize-detector';
 import { Legend } from './Legend';
 import { Metric, ExemplarData, QueryParams } from '../../types/types';
 import { isPresent } from '../../utils';
-import { normalizeData, getOptions, toHoverColor } from './GraphHelpers';
+import { normalizeData, getOptions, toHoverColor, emphasizeLine } from './GraphHelpers';
 import { Button } from 'reactstrap';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faTimes } from '@fortawesome/free-solid-svg-icons';
@@ -105,6 +105,7 @@ class Graph extends PureComponent<GraphProps, GraphState> {
 
   componentDidMount(): void {
     this.plot();
+    let currentlyHovering = false;
 
     $(`.graph-${this.props.id}`).bind('plotclick', (event, pos, item) => {
       // If an item has the series label property that means it's an exemplar.
@@ -127,6 +128,24 @@ class Graph extends PureComponent<GraphProps, GraphState> {
         // @ts-ignore Typescript doesn't think this method exists although it actually does.
         this.$chart.clearSelection();
         this.props.handleTimeRangeSelection(ranges.xaxis.from, ranges.xaxis.to);
+      }
+    });
+
+    $(`.graph-${this.props.id}`).on('plothover', (event, pos, item) => {
+      if (this.$chart) {
+        if (item) {
+          currentlyHovering = true;
+          const index = item.series.index;
+          emphasizeLine(this.$chart, index);
+        } else if (currentlyHovering) {
+          // If we were just hovering over a line, revert it back to normal
+          emphasizeLine(this.$chart, undefined);
+          currentlyHovering = false;
+        } else {
+          // If we weren't just hovering over a line, the chart doesn't need to be re-drawn
+          return;
+        }
+        this.$chart.draw();
       }
     });
   }
@@ -153,10 +172,14 @@ class Graph extends PureComponent<GraphProps, GraphState> {
   };
 
   plotSetAndDraw(
-    data: (GraphSeries | GraphExemplar)[] = [...this.state.chartData.series, ...this.state.chartData.exemplars]
+    data: (GraphSeries | GraphExemplar)[] = [...this.state.chartData.series, ...this.state.chartData.exemplars],
+    index: number | undefined = undefined
   ): void {
     if (isPresent(this.$chart)) {
       this.$chart.setData(data);
+      if (typeof index !== 'undefined') {
+        emphasizeLine(this.$chart, index);
+      }
       this.$chart.draw();
     }
   }
@@ -189,10 +212,10 @@ class Graph extends PureComponent<GraphProps, GraphState> {
       cancelAnimationFrame(this.rafID);
     }
     this.rafID = requestAnimationFrame(() => {
-      this.plotSetAndDraw([
-        ...this.state.chartData.series.map(toHoverColor(index, this.props.stacked)),
-        ...this.state.chartData.exemplars,
-      ]);
+      this.plotSetAndDraw(
+        [...this.state.chartData.series.map(toHoverColor(index, this.props.stacked)), ...this.state.chartData.exemplars],
+        index
+      );
     });
   };
 
