@@ -1004,9 +1004,23 @@ func dateWrapper(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelp
 			})
 	}
 
+	// If set, the second argument of the function is expected be a timezone location.
+	var tloc *time.Location
+	if len(args) == 2 {
+		var err error
+		tloc, err = time.LoadLocation(stringFromArg(args[1]))
+		if err != nil {
+			panic(err)
+		}
+	}
+
 	for _, el := range vals[0].(Vector) {
 		t := time.Unix(int64(el.V), 0).UTC()
-		applyTimezone(&args, &t)
+
+		// Apply the timezone.
+		if tloc != nil {
+			t = t.In(tloc)
+		}
 
 		enh.Out = append(enh.Out, Sample{
 			Metric: enh.DropMetricName(el.Metric),
