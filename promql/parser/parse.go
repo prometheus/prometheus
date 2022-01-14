@@ -31,11 +31,14 @@ import (
 	"github.com/prometheus/prometheus/util/strutil"
 )
 
-var parserPool = sync.Pool{
-	New: func() interface{} {
-		return &parser{}
-	},
-}
+var (
+	EnableTimezones = false
+	parserPool      = sync.Pool{
+		New: func() interface{} {
+			return &parser{}
+		},
+	}
+)
 
 type parser struct {
 	lex Lexer
@@ -546,7 +549,10 @@ func (p *parser) checkAST(node Node) (typ ValueType) {
 				p.addParseErrf(n.PositionRange(), "expected %d argument(s) in call to %q, got %d", nargs, n.Func.Name, len(n.Args))
 			}
 		} else {
-			na := nargs - 1
+			na := nargs - n.Func.Variadic
+			if n.Func.Variadic < 0 {
+				na = nargs - 1
+			}
 			if na > len(n.Args) {
 				p.addParseErrf(n.PositionRange(), "expected at least %d argument(s) in call to %q, got %d", na, n.Func.Name, len(n.Args))
 			} else if nargsmax := na + n.Func.Variadic; n.Func.Variadic > 0 && nargsmax < len(n.Args) {

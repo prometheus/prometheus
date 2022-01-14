@@ -2604,7 +2604,7 @@ var testExpr = []struct {
 	{
 		input:  "hour(some_metric, some_metric, some_metric)",
 		fail:   true,
-		errMsg: "expected at most 1 argument(s) in call to \"hour\", got 3",
+		errMsg: fmt.Sprintf("expected at most %d argument(s) in call to \"hour\", got 3", 1+boolToInt(EnableTimezones)),
 	},
 	{
 		input:  "time(some_metric)",
@@ -3774,4 +3774,11 @@ func TestExtractSelectors(t *testing.T) {
 
 		require.Equal(t, expected, ExtractSelectors(expr))
 	}
+}
+
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }

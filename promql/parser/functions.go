@@ -116,20 +116,20 @@ var Functions = map[string]*Function{
 	},
 	"days_in_month": {
 		Name:       "days_in_month",
-		ArgTypes:   []ValueType{ValueTypeVector, ValueTypeString},
-		Variadic:   2,
+		ArgTypes:   []ValueType{ValueTypeVector},
+		Variadic:   1,
 		ReturnType: ValueTypeVector,
 	},
 	"day_of_month": {
 		Name:       "day_of_month",
-		ArgTypes:   []ValueType{ValueTypeVector, ValueTypeString},
-		Variadic:   2,
+		ArgTypes:   []ValueType{ValueTypeVector},
+		Variadic:   1,
 		ReturnType: ValueTypeVector,
 	},
 	"day_of_week": {
 		Name:       "day_of_week",
-		ArgTypes:   []ValueType{ValueTypeVector, ValueTypeString},
-		Variadic:   2,
+		ArgTypes:   []ValueType{ValueTypeVector},
+		Variadic:   1,
 		ReturnType: ValueTypeVector,
 	},
 	"deg": {
@@ -169,8 +169,8 @@ var Functions = map[string]*Function{
 	},
 	"hour": {
 		Name:       "hour",
-		ArgTypes:   []ValueType{ValueTypeVector, ValueTypeString},
-		Variadic:   2,
+		ArgTypes:   []ValueType{ValueTypeVector},
+		Variadic:   1,
 		ReturnType: ValueTypeVector,
 	},
 	"idelta": {
@@ -231,14 +231,14 @@ var Functions = map[string]*Function{
 	},
 	"minute": {
 		Name:       "minute",
-		ArgTypes:   []ValueType{ValueTypeVector, ValueTypeString},
-		Variadic:   2,
+		ArgTypes:   []ValueType{ValueTypeVector},
+		Variadic:   1,
 		ReturnType: ValueTypeVector,
 	},
 	"month": {
 		Name:       "month",
-		ArgTypes:   []ValueType{ValueTypeVector, ValueTypeString},
-		Variadic:   2,
+		ArgTypes:   []ValueType{ValueTypeVector},
+		Variadic:   1,
 		ReturnType: ValueTypeVector,
 	},
 	"pi": {
@@ -359,6 +359,54 @@ var Functions = map[string]*Function{
 	},
 	"year": {
 		Name:       "year",
+		ArgTypes:   []ValueType{ValueTypeVector},
+		Variadic:   1,
+		ReturnType: ValueTypeVector,
+	},
+}
+
+// FunctionsTZ is a list of all functions which are time related and can receive
+// an optional timezone parameter as second argument if the Timezones feature is
+// enabled.
+var FunctionsTZ = map[string]*Function{
+	"days_in_month": {
+		Name:       "days_in_month",
+		ArgTypes:   []ValueType{ValueTypeVector, ValueTypeString},
+		Variadic:   2,
+		ReturnType: ValueTypeVector,
+	},
+	"day_of_month": {
+		Name:       "day_of_month",
+		ArgTypes:   []ValueType{ValueTypeVector, ValueTypeString},
+		Variadic:   2,
+		ReturnType: ValueTypeVector,
+	},
+	"day_of_week": {
+		Name:       "day_of_week",
+		ArgTypes:   []ValueType{ValueTypeVector, ValueTypeString},
+		Variadic:   2,
+		ReturnType: ValueTypeVector,
+	},
+	"hour": {
+		Name:       "hour",
+		ArgTypes:   []ValueType{ValueTypeVector, ValueTypeString},
+		Variadic:   2,
+		ReturnType: ValueTypeVector,
+	},
+	"minute": {
+		Name:       "minute",
+		ArgTypes:   []ValueType{ValueTypeVector, ValueTypeString},
+		Variadic:   2,
+		ReturnType: ValueTypeVector,
+	},
+	"month": {
+		Name:       "month",
+		ArgTypes:   []ValueType{ValueTypeVector, ValueTypeString},
+		Variadic:   2,
+		ReturnType: ValueTypeVector,
+	},
+	"year": {
+		Name:       "year",
 		ArgTypes:   []ValueType{ValueTypeVector, ValueTypeString},
 		Variadic:   2,
 		ReturnType: ValueTypeVector,
@@ -367,6 +415,11 @@ var Functions = map[string]*Function{
 
 // getFunction returns a predefined Function object for the given name.
 func getFunction(name string) (*Function, bool) {
+	if EnableTimezones {
+		if function, ok := FunctionsTZ[name]; ok {
+			return function, ok
+		}
+	}
 	function, ok := Functions[name]
 	return function, ok
 }
