@@ -257,7 +257,19 @@ describe('Graph', () => {
   });
   describe('plotSetAndDraw', () => {
     it('should call spyPlotSetAndDraw on legend hover', () => {
-      jest.spyOn($, 'plot').mockReturnValue({ setData: jest.fn(), draw: jest.fn(), destroy: jest.fn() } as any);
+      jest.spyOn($, 'plot').mockReturnValue({
+        setData: jest.fn(),
+        draw: jest.fn(),
+        destroy: jest.fn(),
+        getOptions: () => {
+          return {
+            series: { points: { lineWidth: 2 } },
+          };
+        },
+        getData: () => {
+          return [];
+        },
+      } as any);
       const graph = mount(
         <Graph
           {...({

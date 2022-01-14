@@ -1,4 +1,4 @@
-import { formatValue, getColors, parseValue, getOptions } from './GraphHelpers';
+import { formatValue, getColors, parseValue, getOptions, emphasizeLine } from './GraphHelpers';
 import moment from 'moment';
 require('../../vendor/flot/jquery.flot'); // need for $.colors
 
@@ -238,6 +238,48 @@ describe('GraphHelpers', () => {
           mode: 'x',
         },
       });
+    });
+  });
+
+  describe('emphasizeLine', () => {
+    function getFakeChart() {
+      return {
+        getOptions: jest.fn().mockImplementation(() => {
+          return {
+            series: { points: { lineWidth: 2 } },
+          };
+        }),
+        getData: jest.fn().mockImplementation(() => {
+          return [{ lineWidth: 2 }, { lineWidth: 2 }];
+        }),
+        destroy: jest.fn(),
+        highlight: jest.fn(),
+        unhighlight: jest.fn(),
+        setData: jest.fn(),
+        setupGrid: jest.fn(),
+        draw: jest.fn(),
+        triggerRedrawOverlay: jest.fn(),
+        resize: jest.fn(),
+        shutdown: jest.fn(),
+        getAxes: jest.fn(),
+        getXAxes: jest.fn(),
+        getYAxes: jest.fn(),
+        getPlaceholder: jest.fn(),
+        getCanvas: jest.fn(),
+        getPlotOffset: jest.fn(),
+        width: jest.fn(),
+        height: jest.fn(),
+        offset: jest.fn(),
+        pointOffset: jest.fn(),
+      };
+    }
+    it('should emphasize a line without problems', () => {
+      const fakeChart = getFakeChart();
+      emphasizeLine(fakeChart, 0);
+    });
+    it('should emphasize no lines without problems', () => {
+      const fakeChart = getFakeChart();
+      emphasizeLine(fakeChart, undefined);
     });
   });
 });
