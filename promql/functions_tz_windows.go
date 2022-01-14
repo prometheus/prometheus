@@ -19,7 +19,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
-// === time_tz() float64 ===
+// === time_tz(tz string) float64 ===
 func funcTimeTZ(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	panic(errors.New("Timezones are not supported on Windows platforms"))
 }

@@ -22,9 +22,9 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
-// === time_tz() float64 ===
+// === time_tz(tz string) float64 ===
 func funcTimeTZ(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
-	tutc := time.UnixMilli(enh.Ts)
+	tutc := time.Unix(enh.Ts/1000, 0)
 	tz, err := time.LoadLocation(stringFromArg(args[0]))
 	if err != nil {
 		panic(err)
