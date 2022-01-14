@@ -347,11 +347,6 @@ var Functions = map[string]*Function{
 		ArgTypes:   []ValueType{},
 		ReturnType: ValueTypeScalar,
 	},
-	"time_tz": {
-		Name:       "time_tz",
-		ArgTypes:   []ValueType{ValueTypeString},
-		ReturnType: ValueTypeScalar,
-	},
 	"timestamp": {
 		Name:       "timestamp",
 		ArgTypes:   []ValueType{ValueTypeVector},
