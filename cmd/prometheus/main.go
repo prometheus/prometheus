@@ -187,6 +187,15 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 				agentMode = true
 				level.Info(logger).Log("msg", "Experimental agent mode enabled.")
 			case "timezones":
+				if runtime.GOOS == "windows" {
+					zoneinfo := os.Getenv("ZONEINFO")
+					if len(zoneinfo) == 0 {
+						return errors.New("timezones support on Windows requires env var ZONEINFO to be supplied")
+					}
+					if _, err := os.Stat(zoneinfo); errors.Is(err, os.ErrNotExist) {
+						return fmt.Errorf("invalid ZONEINFO env var: %w", err)
+					}
+				}
 				parser.EnableTimezones = true
 				level.Info(logger).Log("msg", "Experimental timezones support.")
 			case "":
