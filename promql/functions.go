@@ -995,7 +995,7 @@ func funcLabelJoin(vals []parser.Value, args parser.Expressions, enh *EvalNodeHe
 }
 
 // Common code for date related functions.
-func dateWrapper(vals []parser.Value, enh *EvalNodeHelper, f func(time.Time) float64) Vector {
+func dateWrapper(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper, f func(time.Time) float64) Vector {
 	if len(vals) == 0 {
 		return append(enh.Out,
 			Sample{
@@ -1006,6 +1006,8 @@ func dateWrapper(vals []parser.Value, enh *EvalNodeHelper, f func(time.Time) flo
 
 	for _, el := range vals[0].(Vector) {
 		t := time.Unix(int64(el.V), 0).UTC()
+		applyTimezone(&args, &t)
+
 		enh.Out = append(enh.Out, Sample{
 			Metric: enh.DropMetricName(el.Metric),
 			Point:  Point{V: f(t)},
@@ -1016,49 +1018,49 @@ func dateWrapper(vals []parser.Value, enh *EvalNodeHelper, f func(time.Time) flo
 
 // === days_in_month(v Vector) Scalar ===
 func funcDaysInMonth(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
-	return dateWrapper(vals, enh, func(t time.Time) float64 {
+	return dateWrapper(vals, args, enh, func(t time.Time) float64 {
 		return float64(32 - time.Date(t.Year(), t.Month(), 32, 0, 0, 0, 0, time.UTC).Day())
 	})
 }
 
 // === day_of_month(v Vector) Scalar ===
 func funcDayOfMonth(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
-	return dateWrapper(vals, enh, func(t time.Time) float64 {
+	return dateWrapper(vals, args, enh, func(t time.Time) float64 {
 		return float64(t.Day())
 	})
 }
 
 // === day_of_week(v Vector) Scalar ===
 func funcDayOfWeek(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
-	return dateWrapper(vals, enh, func(t time.Time) float64 {
+	return dateWrapper(vals, args, enh, func(t time.Time) float64 {
 		return float64(t.Weekday())
 	})
 }
 
 // === hour(v Vector) Scalar ===
 func funcHour(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
-	return dateWrapper(vals, enh, func(t time.Time) float64 {
+	return dateWrapper(vals, args, enh, func(t time.Time) float64 {
 		return float64(t.Hour())
 	})
 }
 
 // === minute(v Vector) Scalar ===
 func funcMinute(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
-	return dateWrapper(vals, enh, func(t time.Time) float64 {
+	return dateWrapper(vals, args, enh, func(t time.Time) float64 {
 		return float64(t.Minute())
 	})
 }
 
 // === month(v Vector) Scalar ===
 func funcMonth(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
-	return dateWrapper(vals, enh, func(t time.Time) float64 {
+	return dateWrapper(vals, args, enh, func(t time.Time) float64 {
 		return float64(t.Month())
 	})
 }
 
 // === year(v Vector) Scalar ===
 func funcYear(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
-	return dateWrapper(vals, enh, func(t time.Time) float64 {
+	return dateWrapper(vals, args, enh, func(t time.Time) float64 {
 		return float64(t.Year())
 	})
 }

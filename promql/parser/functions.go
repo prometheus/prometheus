@@ -116,20 +116,20 @@ var Functions = map[string]*Function{
 	},
 	"days_in_month": {
 		Name:       "days_in_month",
-		ArgTypes:   []ValueType{ValueTypeVector},
-		Variadic:   1,
+		ArgTypes:   []ValueType{ValueTypeVector, ValueTypeString},
+		Variadic:   2,
 		ReturnType: ValueTypeVector,
 	},
 	"day_of_month": {
 		Name:       "day_of_month",
-		ArgTypes:   []ValueType{ValueTypeVector},
-		Variadic:   1,
+		ArgTypes:   []ValueType{ValueTypeVector, ValueTypeString},
+		Variadic:   2,
 		ReturnType: ValueTypeVector,
 	},
 	"day_of_week": {
 		Name:       "day_of_week",
-		ArgTypes:   []ValueType{ValueTypeVector},
-		Variadic:   1,
+		ArgTypes:   []ValueType{ValueTypeVector, ValueTypeString},
+		Variadic:   2,
 		ReturnType: ValueTypeVector,
 	},
 	"deg": {
@@ -169,8 +169,8 @@ var Functions = map[string]*Function{
 	},
 	"hour": {
 		Name:       "hour",
-		ArgTypes:   []ValueType{ValueTypeVector},
-		Variadic:   1,
+		ArgTypes:   []ValueType{ValueTypeVector, ValueTypeString},
+		Variadic:   2,
 		ReturnType: ValueTypeVector,
 	},
 	"idelta": {
@@ -231,14 +231,14 @@ var Functions = map[string]*Function{
 	},
 	"minute": {
 		Name:       "minute",
-		ArgTypes:   []ValueType{ValueTypeVector},
-		Variadic:   1,
+		ArgTypes:   []ValueType{ValueTypeVector, ValueTypeString},
+		Variadic:   2,
 		ReturnType: ValueTypeVector,
 	},
 	"month": {
 		Name:       "month",
-		ArgTypes:   []ValueType{ValueTypeVector},
-		Variadic:   1,
+		ArgTypes:   []ValueType{ValueTypeVector, ValueTypeString},
+		Variadic:   2,
 		ReturnType: ValueTypeVector,
 	},
 	"pi": {
@@ -359,8 +359,8 @@ var Functions = map[string]*Function{
 	},
 	"year": {
 		Name:       "year",
-		ArgTypes:   []ValueType{ValueTypeVector},
-		Variadic:   1,
+		ArgTypes:   []ValueType{ValueTypeVector, ValueTypeString},
+		Variadic:   2,
 		ReturnType: ValueTypeVector,
 	},
 }

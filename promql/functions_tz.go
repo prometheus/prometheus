@@ -15,3 +15,19 @@
 // +build !windows
 
 package promql
+
+import (
+	"time"
+
+	"github.com/prometheus/prometheus/promql/parser"
+)
+
+func applyTimezone(args *parser.Expressions, t *time.Time) {
+	if len(*args) == 2 {
+		tz, err := time.LoadLocation(stringFromArg((*args)[1]))
+		if err != nil {
+			panic(err)
+		}
+		*t = t.In(tz)
+	}
+}

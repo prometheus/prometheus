@@ -12,3 +12,13 @@
 // limitations under the License.
 
 package promql
+
+import (
+	"errors"
+
+	"github.com/prometheus/prometheus/promql/parser"
+)
+
+func applyTimezone(args *parser.Expressions, t *time.Time) {
+	panic(errors.New("Timezones are not supported on Windows platforms"))
+}
