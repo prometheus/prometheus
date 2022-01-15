@@ -12,9 +12,9 @@ executors:
   golang:
     docker:
       - image: quay.io/prometheus/golang-builder:1.17-base
-  golang_115:
+  golang_oldest:
     docker:
-      - image: quay.io/prometheus/golang-builder:1.15-base
+      - image: quay.io/prometheus/golang-builder:1.16-base
 
 jobs:
   test_go:
@@ -89,10 +89,11 @@ jobs:
             GOGC: "20"
             GOOPTS: "-p 2"
 
-  test_tsdb_go115:
-    executor: golang_115
+  test_golang_oldest:
+    executor: golang_oldest
     steps:
       - checkout
+      - run: make build
       - run: go test ./tsdb/...
       - run: go test ./tsdb/ -test.tsdb-isolation=false
 
@@ -128,7 +129,7 @@ workflows:
           filters:
             tags:
               only: /.*/
-      - test_tsdb_go115:
+      - test_golang_oldest:
           filters:
             tags:
               only: /.*/

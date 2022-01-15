@@ -15,6 +15,7 @@ package remote
 
 import (
 	"context"
+	"errors"
 	"math"
 	"strconv"
 	"sync"
@@ -830,14 +831,12 @@ func (t *QueueManager) calculateDesiredShards() int {
 		return t.numShards
 	}
 
-	// When behind we will try to catch up on a proporation of samples per tick.
-	// This works similarly to an integral accumulator in that pending samples
-	// is the result of the error integral.
-	const integralGain = 0.1 / float64(shardUpdateDuration/time.Second)
-
 	var (
+		// When behind we will try to catch up on 5% of samples per second.
+		backlogCatchup = 0.05 * dataPending
+		// Calculate Time to send one sample, averaged across all sends done this tick.
 		timePerSample = dataOutDuration / dataOutRate
-		desiredShards = timePerSample * (dataInRate*dataKeptRatio + integralGain*dataPending)
+		desiredShards = timePerSample * (dataInRate*dataKeptRatio + backlogCatchup)
 	)
 	t.metrics.desiredNumShards.Set(desiredShards)
 	level.Debug(t.logger).Log("msg", "QueueManager.calculateDesiredShards",
@@ -860,11 +859,13 @@ func (t *QueueManager) calculateDesiredShards() int {
 	)
 	level.Debug(t.logger).Log("msg", "QueueManager.updateShardsLoop",
 		"lowerBound", lowerBound, "desiredShards", desiredShards, "upperBound", upperBound)
+
+	desiredShards = math.Ceil(desiredShards) // Round up to be on the safe side.
 	if lowerBound <= desiredShards && desiredShards <= upperBound {
 		return t.numShards
 	}
 
-	numShards := int(math.Ceil(desiredShards))
+	numShards := int(desiredShards)
 	// Do not downshard if we are more than ten seconds back.
 	if numShards < t.numShards && delay > 10.0 {
 		level.Debug(t.logger).Log("msg", "Not downsharding due to being too far behind")
@@ -1311,12 +1312,16 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 	}
 
 	err = sendWriteRequestWithBackoff(ctx, s.qm.cfg, s.qm.logger, attemptStore, onRetry)
-	if err != nil {
+	if errors.Is(err, context.Canceled) {
+		// When there is resharding, we cancel the context for this queue, which means the data is not sent.
+		// So we exit early to not update the metrics.
 		return err
 	}
+
 	s.qm.metrics.sentBytesTotal.Add(float64(reqSize))
 	s.qm.metrics.highestSentTimestamp.Set(float64(highest / 1000))
-	return nil
+
+	return err
 }
 
 func sendWriteRequestWithBackoff(ctx context.Context, cfg config.QueueConfig, l log.Logger, attempt func(int) error, onRetry func()) error {
