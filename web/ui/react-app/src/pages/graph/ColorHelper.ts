@@ -1,4 +1,4 @@
-export const ListOfColors = [
+export const colorPool = [
   '#008000',
   '#008080',
   '#800000',
