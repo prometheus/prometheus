@@ -4,7 +4,7 @@ import { escapeHTML } from '../../utils';
 import { Metric } from '../../types/types';
 import { GraphProps, GraphData, GraphSeries, GraphExemplar } from './Graph';
 import moment from 'moment-timezone';
-import { ListOfColors } from './ColorHelper';
+import { colorPool } from './ColorHelper';
 
 export const formatValue = (y: number | null): string => {
   if (y === null) {
@@ -163,16 +163,8 @@ export const getColors = (data: {
   resultType: string;
   result: Array<{ metric: Metric; values: [number, string][] }>;
 }): Color[] => {
-  const colorPool = ListOfColors;
   const colorPoolSize = colorPool.length;
   return data.result.map((_, i) => {
-    // Each time we exhaust the colors in the pool we adjust
-    // a scaling factor used to produce more variations on
-    // those colors. The factor alternates negative/positive
-    // to produce lighter/darker colors.
-
-    // Reset the variation after every few cycles, or else
-    // it will end up producing only white or black colors.
     return $.color.parse(colorPool[i % colorPoolSize]).scale('rgb', 1);
   });
 };
