@@ -18,6 +18,7 @@ They may be enabled by default in future versions.
 Replace `${var}` or `$var` in the [`external_labels`](configuration/configuration.md#configuration-file)
 values according to the values of the current environment variables. References
 to undefined variables are replaced by the empty string.
+The `$` character can be escaped by using `$$`.
 
 ## Remote Write Receiver
 
