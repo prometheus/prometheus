@@ -3,7 +3,7 @@ import $ from 'jquery';
 import { escapeHTML } from '../../utils';
 import { GraphProps, GraphData, GraphSeries, GraphExemplar } from './Graph';
 import moment from 'moment-timezone';
-import { colorPool } from './ColorHelper';
+import { colorPool } from './ColorPool';
 
 export const formatValue = (y: number | null): string => {
   if (y === null) {
