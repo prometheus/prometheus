@@ -1,7 +1,6 @@
 import $ from 'jquery';
 
 import { escapeHTML } from '../../utils';
-import { Metric } from '../../types/types';
 import { GraphProps, GraphData, GraphSeries, GraphExemplar } from './Graph';
 import moment from 'moment-timezone';
 import { colorPool } from './ColorHelper';
@@ -159,18 +158,7 @@ export const getOptions = (stacked: boolean, useLocalTime: boolean): jquery.flot
   };
 };
 
-export const getColors = (data: {
-  resultType: string;
-  result: Array<{ metric: Metric; values: [number, string][] }>;
-}): Color[] => {
-  const colorPoolSize = colorPool.length;
-  return data.result.map((_, i) => {
-    return $.color.parse(colorPool[i % colorPoolSize]).scale('rgb', 1);
-  });
-};
-
 export const normalizeData = ({ queryParams, data, exemplars, stacked }: GraphProps): GraphData => {
-  const colors = getColors(data);
   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
   const { startTime, endTime, resolution } = queryParams!;
 
@@ -219,7 +207,7 @@ export const normalizeData = ({ queryParams, data, exemplars, stacked }: GraphPr
 
       return {
         labels: metric !== null ? metric : {},
-        color: colors[index].toString(),
+        color: colorPool[index % colorPool.length],
         stack: stacked,
         data,
         index,
