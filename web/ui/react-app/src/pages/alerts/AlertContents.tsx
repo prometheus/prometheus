@@ -63,7 +63,7 @@ const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
           return (
             <Checkbox
               key={state}
-              wrapperStyles={{ marginRight: 10 }}
+              wrapperStyles={{ marginRight: 20 }}
               checked={filter[state]}
               id={`${state}-toggler`}
               onChange={toggleFilter(state)}

@@ -83,6 +83,9 @@ func Load(s string, expandExternalLabels bool, logger log.Logger) (*Config, erro
 
 	for i, v := range cfg.GlobalConfig.ExternalLabels {
 		newV := os.Expand(v.Value, func(s string) string {
+			if s == "$" {
+				return "$"
+			}
 			if v := os.Getenv(s); v != "" {
 				return v
 			}
