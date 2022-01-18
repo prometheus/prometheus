@@ -1,9 +1,9 @@
 import $ from 'jquery';
 
 import { escapeHTML } from '../../utils';
-import { Metric } from '../../types/types';
 import { GraphProps, GraphData, GraphSeries, GraphExemplar } from './Graph';
 import moment from 'moment-timezone';
+import { colorPool } from './ColorPool';
 
 export const formatValue = (y: number | null): string => {
   if (y === null) {
@@ -69,13 +69,13 @@ export const getHoverColor = (color: string, opacity: number, stacked: boolean):
 
 export const toHoverColor =
   (index: number, stacked: boolean) =>
-  (
-    series: GraphSeries,
-    i: number
-  ): { color: string; data: (number | null)[][]; index: number; labels: { [p: string]: string } } => ({
-    ...series,
-    color: getHoverColor(series.color, i !== index ? 0.3 : 1, stacked),
-  });
+    (
+      series: GraphSeries,
+      i: number
+    ): { color: string; data: (number | null)[][]; index: number; labels: { [p: string]: string } } => ({
+      ...series,
+      color: getHoverColor(series.color, i !== index ? 0.3 : 1, stacked),
+    });
 
 export const getOptions = (stacked: boolean, useLocalTime: boolean): jquery.flot.plotOptions => {
   return {
@@ -118,9 +118,9 @@ export const getOptions = (stacked: boolean, useLocalTime: boolean): jquery.flot
               ${Object.keys(labels).length === 0 ? '<div class="mb-1 font-italic">no labels</div>' : ''}
               ${labels['__name__'] ? `<div class="mb-1"><strong>${labels['__name__']}</strong></div>` : ''}
               ${Object.keys(labels)
-                .filter((k) => k !== '__name__')
-                .map((k) => `<div class="mb-1"><strong>${k}</strong>: ${escapeHTML(labels[k])}</div>`)
-                .join('')}
+            .filter((k) => k !== '__name__')
+            .map((k) => `<div class="mb-1"><strong>${k}</strong>: ${escapeHTML(labels[k])}</div>`)
+            .join('')}
             </div>`;
 
         return `
@@ -132,12 +132,12 @@ export const getOptions = (stacked: boolean, useLocalTime: boolean): jquery.flot
             <div class="mt-2 mb-1 font-weight-bold">${'seriesLabels' in both ? 'Trace exemplar:' : 'Series:'}</div>
             ${formatLabels(labels)}
             ${
-              'seriesLabels' in both
+            'seriesLabels' in both
                 ? `
             <div class="mt-2 mb-1 font-weight-bold">Associated series:</div>${formatLabels(both.seriesLabels)}
 `
                 : ''
-            }
+        }
           `.trimEnd();
       },
       defaultTheme: false,
@@ -158,36 +158,7 @@ export const getOptions = (stacked: boolean, useLocalTime: boolean): jquery.flot
   };
 };
 
-// This was adapted from Flot's color generation code.
-export const getColors = (data: {
-  resultType: string;
-  result: Array<{ metric: Metric; values: [number, string][] }>;
-}): Color[] => {
-  const colorPool = ['#edc240', '#afd8f8', '#cb4b4b', '#4da74d', '#9440ed'];
-  const colorPoolSize = colorPool.length;
-  let variation = 0;
-  return data.result.map((_, i) => {
-    // Each time we exhaust the colors in the pool we adjust
-    // a scaling factor used to produce more variations on
-    // those colors. The factor alternates negative/positive
-    // to produce lighter/darker colors.
-
-    // Reset the variation after every few cycles, or else
-    // it will end up producing only white or black colors.
-
-    if (i % colorPoolSize === 0 && i) {
-      if (variation >= 0) {
-        variation = variation < 0.5 ? -variation - 0.2 : 0;
-      } else {
-        variation = -variation;
-      }
-    }
-    return $.color.parse(colorPool[i % colorPoolSize] || '#666').scale('rgb', 1 + variation);
-  });
-};
-
 export const normalizeData = ({ queryParams, data, exemplars, stacked }: GraphProps): GraphData => {
-  const colors = getColors(data);
   // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
   const { startTime, endTime, resolution } = queryParams!;
 
@@ -236,7 +207,7 @@ export const normalizeData = ({ queryParams, data, exemplars, stacked }: GraphPr
 
       return {
         labels: metric !== null ? metric : {},
-        color: colors[index].toString(),
+        color: colorPool[index % colorPool.length],
         stack: stacked,
         data,
         index,

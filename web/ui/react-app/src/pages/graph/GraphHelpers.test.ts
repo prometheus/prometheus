@@ -1,4 +1,4 @@
-import { formatValue, getColors, parseValue, getOptions } from './GraphHelpers';
+import { formatValue, parseValue, getOptions } from './GraphHelpers';
 import moment from 'moment';
 require('../../vendor/flot/jquery.flot'); // need for $.colors
 
@@ -72,21 +72,6 @@ describe('GraphHelpers', () => {
       }
     });
   });
-  describe('getColors', () => {
-    it('should generate proper colors', () => {
-      const data: any = {
-        resultType: 'matrix',
-        result: [{}, {}, {}, {}, {}, {}, {}],
-      };
-      expect(
-        getColors(data)
-          .map((c) => c.toString())
-          .join(',')
-      ).toEqual(
-        'rgb(237,194,64),rgb(175,216,248),rgb(203,75,75),rgb(77,167,77),rgb(148,64,237),rgb(189,155,51),rgb(140,172,198)'
-      );
-    });
-  });
   describe('parseValue', () => {
     it('should parse number properly', () => {
       expect(parseValue('12.3e')).toEqual(12.3);
@@ -140,44 +125,44 @@ describe('GraphHelpers', () => {
     });
     it('should return proper tooltip html from options', () => {
       expect(
-        getOptions(true, false).tooltip.content('', 1572128592, 1572128592, {
-          series: { labels: { foo: '1', bar: '2' }, color: '' },
-        } as any)
+          getOptions(true, false).tooltip.content('', 1572128592, 1572128592, {
+            series: { labels: { foo: '1', bar: '2' }, color: '' },
+          } as any)
       ).toEqual(
-        `
-            <div class="date">1970-01-19 04:42:08 +00:00</div>
-            <div>
-              <span class="detail-swatch" style="background-color: "></span>
-              <span>value: <strong>1572128592</strong></span>
-            </div>
-            <div class="mt-2 mb-1 font-weight-bold">Series:</div>
-            
-            <div class="labels">
-              
-              
-              <div class="mb-1"><strong>foo</strong>: 1</div><div class="mb-1"><strong>bar</strong>: 2</div>
-            </div>`
+          `
+        <div class="date">1970-01-19 04:42:08 +00:00</div>
+        <div>
+          <span class="detail-swatch" style="background-color: "></span>
+          <span>value: <strong>1572128592</strong></span>
+        </div>
+        <div class="mt-2 mb-1 font-weight-bold">Series:</div>
+        
+        <div class="labels">
+          
+          
+          <div class="mb-1"><strong>foo</strong>: 1</div><div class="mb-1"><strong>bar</strong>: 2</div>
+        </div>`
       );
     });
     it('should return proper tooltip html from options with local time', () => {
       moment.tz.setDefault('America/New_York');
       expect(
-        getOptions(true, true).tooltip.content('', 1572128592, 1572128592, {
-          series: { labels: { foo: '1', bar: '2' }, color: '' },
-        } as any)
+          getOptions(true, true).tooltip.content('', 1572128592, 1572128592, {
+            series: { labels: { foo: '1', bar: '2' }, color: '' },
+          } as any)
       ).toEqual(`
-            <div class="date">1970-01-18 23:42:08 -05:00</div>
-            <div>
-              <span class="detail-swatch" style="background-color: "></span>
-              <span>value: <strong>1572128592</strong></span>
-            </div>
-            <div class="mt-2 mb-1 font-weight-bold">Series:</div>
-            
-            <div class="labels">
-              
-              
-              <div class="mb-1"><strong>foo</strong>: 1</div><div class="mb-1"><strong>bar</strong>: 2</div>
-            </div>`);
+        <div class="date">1970-01-18 23:42:08 -05:00</div>
+        <div>
+          <span class="detail-swatch" style="background-color: "></span>
+          <span>value: <strong>1572128592</strong></span>
+        </div>
+        <div class="mt-2 mb-1 font-weight-bold">Series:</div>
+        
+        <div class="labels">
+          
+          
+          <div class="mb-1"><strong>foo</strong>: 1</div><div class="mb-1"><strong>bar</strong>: 2</div>
+        </div>`);
     });
     it('should return proper tooltip for exemplar', () => {
       expect(
@@ -185,25 +170,25 @@ describe('GraphHelpers', () => {
           series: { labels: { foo: '1', bar: '2' }, seriesLabels: { foo: '2', bar: '3' }, color: '' },
         } as any)
       ).toEqual(`
-            <div class="date">1970-01-19 04:42:08 +00:00</div>
-            <div>
-              <span class="detail-swatch" style="background-color: "></span>
-              <span>value: <strong>1572128592</strong></span>
-            </div>
-            <div class="mt-2 mb-1 font-weight-bold">Trace exemplar:</div>
-            
-            <div class="labels">
-              
-              
-              <div class="mb-1"><strong>foo</strong>: 1</div><div class="mb-1"><strong>bar</strong>: 2</div>
-            </div>
-            
-            <div class="mt-2 mb-1 font-weight-bold">Associated series:</div>
-            <div class="labels">
-              
-              
-              <div class="mb-1"><strong>foo</strong>: 2</div><div class="mb-1"><strong>bar</strong>: 3</div>
-            </div>`);
+        <div class="date">1970-01-19 04:42:08 +00:00</div>
+        <div>
+          <span class="detail-swatch" style="background-color: "></span>
+          <span>value: <strong>1572128592</strong></span>
+        </div>
+        <div class="mt-2 mb-1 font-weight-bold">Trace exemplar:</div>
+        
+        <div class="labels">
+          
+          
+          <div class="mb-1"><strong>foo</strong>: 1</div><div class="mb-1"><strong>bar</strong>: 2</div>
+        </div>
+        
+        <div class="mt-2 mb-1 font-weight-bold">Associated series:</div>
+        <div class="labels">
+          
+          
+          <div class="mb-1"><strong>foo</strong>: 2</div><div class="mb-1"><strong>bar</strong>: 3</div>
+        </div>`);
     });
     it('should render Plot with proper options', () => {
       expect(getOptions(true, false)).toEqual({
