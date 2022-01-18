@@ -114,15 +114,15 @@ describe('Graph', () => {
       mockPlot = jest.spyOn($, 'plot').mockReturnValue({ setData: jest.fn(), draw: jest.fn(), destroy: jest.fn() } as any);
       graph = mount(
         <Graph
-            {...({
-              stacked: true,
-              queryParams: {
-                startTime: 1572128592,
-                endTime: 1572128598,
-                resolution: 28,
-              },
-              data: { result: [{ values: [], metric: {} }] },
-            } as any)}
+          {...({
+            stacked: true,
+            queryParams: {
+              startTime: 1572128592,
+              endTime: 1572128598,
+              resolution: 28,
+            },
+            data: { result: [{ values: [], metric: {} }] },
+          } as any)}
         />
       );
       spyState = jest.spyOn(graph.instance(), 'setState');
