@@ -68,14 +68,14 @@ export const getHoverColor = (color: string, opacity: number, stacked: boolean):
 };
 
 export const toHoverColor =
-    (index: number, stacked: boolean) =>
-        (
-            series: GraphSeries,
-            i: number
-        ): { color: string; data: (number | null)[][]; index: number; labels: { [p: string]: string } } => ({
-          ...series,
-          color: getHoverColor(series.color, i !== index ? 0.3 : 1, stacked),
-        });
+  (index: number, stacked: boolean) =>
+  (
+    series: GraphSeries,
+    i: number
+  ): { color: string; data: (number | null)[][]; index: number; labels: { [p: string]: string } } => ({
+    ...series,
+    color: getHoverColor(series.color, i !== index ? 0.3 : 1, stacked),
+  });
 
 export const getOptions = (stacked: boolean, useLocalTime: boolean): jquery.flot.plotOptions => {
   return {
@@ -118,9 +118,9 @@ export const getOptions = (stacked: boolean, useLocalTime: boolean): jquery.flot
               ${Object.keys(labels).length === 0 ? '<div class="mb-1 font-italic">no labels</div>' : ''}
               ${labels['__name__'] ? `<div class="mb-1"><strong>${labels['__name__']}</strong></div>` : ''}
               ${Object.keys(labels)
-            .filter((k) => k !== '__name__')
-            .map((k) => `<div class="mb-1"><strong>${k}</strong>: ${escapeHTML(labels[k])}</div>`)
-            .join('')}
+                .filter((k) => k !== '__name__')
+                .map((k) => `<div class="mb-1"><strong>${k}</strong>: ${escapeHTML(labels[k])}</div>`)
+                .join('')}
             </div>`;
 
         return `
@@ -132,12 +132,12 @@ export const getOptions = (stacked: boolean, useLocalTime: boolean): jquery.flot
             <div class="mt-2 mb-1 font-weight-bold">${'seriesLabels' in both ? 'Trace exemplar:' : 'Series:'}</div>
             ${formatLabels(labels)}
             ${
-            'seriesLabels' in both
+              'seriesLabels' in both
                 ? `
             <div class="mt-2 mb-1 font-weight-bold">Associated series:</div>${formatLabels(both.seriesLabels)}
 `
                 : ''
-        }
+            }
           `.trimEnd();
       },
       defaultTheme: false,
@@ -218,20 +218,20 @@ export const normalizeData = ({ queryParams, data, exemplars, stacked }: GraphPr
         return bucket[0];
       }
       return bucket
-          .sort((a, b) => exValue(b) - exValue(a)) // Sort exemplars by value in descending order.
-          .reduce((exemplars: GraphExemplar[], exemplar) => {
-            if (exemplars.length === 0) {
+        .sort((a, b) => exValue(b) - exValue(a)) // Sort exemplars by value in descending order.
+        .reduce((exemplars: GraphExemplar[], exemplar) => {
+          if (exemplars.length === 0) {
+            exemplars.push(exemplar);
+          } else {
+            const prev = exemplars[exemplars.length - 1];
+            // Don't plot this exemplar if it's less than two times the standard
+            // deviation spaced from the last.
+            if (exValue(prev) - exValue(exemplar) >= 2 * deviation) {
               exemplars.push(exemplar);
-            } else {
-              const prev = exemplars[exemplars.length - 1];
-              // Don't plot this exemplar if it's less than two times the standard
-              // deviation spaced from the last.
-              if (exValue(prev) - exValue(exemplar) >= 2 * deviation) {
-                exemplars.push(exemplar);
-              }
             }
-            return exemplars;
-          }, []);
+          }
+          return exemplars;
+        }, []);
     }),
   };
 };
