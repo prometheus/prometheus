@@ -93,6 +93,8 @@ type stripeSeries struct {
 	series []map[chunks.HeadSeriesRef]*memSeries
 	hashes []seriesHashmap
 	locks  []stripeLock
+
+	gcMut sync.Mutex
 }
 
 type stripeLock struct {
@@ -120,12 +122,14 @@ func newStripeSeries(stripeSize int) *stripeSeries {
 // GC garbage collects old series that have not received a sample after mint
 // and will fully delete them.
 func (s *stripeSeries) GC(mint int64) map[chunks.HeadSeriesRef]struct{} {
-	deleted := map[chunks.HeadSeriesRef]struct{}{}
-
-	// NOTE(rfratto): GC will grab two locks, one for the hash and the other
-	// for series. It's not valid for any other function to grab both locks,
+	// NOTE(rfratto): GC will grab two locks, one for the hash and the other for
+	// series. It's not valid for any other function to grab both locks,
 	// otherwise a deadlock might occur when running GC in parallel with
 	// appending.
+	s.gcMut.Lock()
+	defer s.gcMut.Unlock()
+
+	deleted := map[chunks.HeadSeriesRef]struct{}{}
 	for hashLock := 0; hashLock < s.size; hashLock++ {
 		s.locks[hashLock].Lock()
 
@@ -189,7 +193,6 @@ func (s *stripeSeries) Set(hash uint64, series *memSeries) {
 	//
 	// We update s.series first because GC expects anything in s.hashes to
 	// already exist in s.series.
-
 	s.locks[refLock].Lock()
 	s.series[refLock][series.ref] = series
 	s.locks[refLock].Unlock()

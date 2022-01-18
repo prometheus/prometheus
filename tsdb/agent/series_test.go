@@ -14,9 +14,9 @@
 package agent
 
 import (
-	"context"
 	"fmt"
 	"math"
+	"sync"
 	"testing"
 	"time"
 
@@ -27,53 +27,50 @@ import (
 )
 
 func TestNoDeadlock(t *testing.T) {
-	// This test by necessity unfortunately uses a fair amount of CPU to try to
-	// trigger a deadlock. It may also generate false positives, but never false
-	// negatives.
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	const numWorkers = 1000
 
 	var (
+		wg           sync.WaitGroup
+		started      = make(chan struct{})
 		stripeSeries = newStripeSeries(3)
-		createdChan  = make(chan struct{})
 	)
 
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			default:
-				_ = stripeSeries.GC(math.MaxInt64)
-			}
-		}
-	}()
+	wg.Add(numWorkers)
+	for i := 0; i < numWorkers; i++ {
+		go func() {
+			defer wg.Done()
+			<-started
+			_ = stripeSeries.GC(math.MaxInt64)
+		}()
+	}
 
-	go func() {
-		defer close(createdChan)
+	wg.Add(numWorkers)
+	for i := 0; i < numWorkers; i++ {
+		go func(i int) {
+			defer wg.Done()
+			<-started
 
-		for i := 1; i <= 100_000; i++ {
 			series := &memSeries{
 				ref: chunks.HeadSeriesRef(i),
 				lset: labels.FromMap(map[string]string{
 					"id": fmt.Sprintf("%d", i),
 				}),
 			}
-			hash := series.lset.Hash()
+			stripeSeries.Set(series.lset.Hash(), series)
+		}(i)
+	}
 
-			stripeSeries.Set(hash, series)
-			createdChan <- struct{}{}
-		}
+	finished := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(finished)
 	}()
 
-	for {
-		select {
-		case _, ok := <-createdChan:
-			if !ok {
-				return
-			}
-		case <-time.After(time.Second):
-			require.FailNow(t, "deadlock detected")
-		}
+	close(started)
+	select {
+	case <-finished:
+		return
+	case <-time.After(15 * time.Second):
+		require.FailNow(t, "deadlock detected")
 	}
 }
