@@ -136,10 +136,21 @@ class Graph extends PureComponent<GraphProps, GraphState> {
         if (item) {
           currentlyHovering = true;
           const index = item.series.index;
-          emphasizeLine(this.$chart, index);
+          if (this.rafID) {
+            cancelAnimationFrame(this.rafID);
+          }
+          this.rafID = requestAnimationFrame(() => {
+            this.plotSetAndDraw(
+              [
+                ...this.state.chartData.series.map(toHoverColor(index, this.props.stacked)),
+                ...this.state.chartData.exemplars,
+              ],
+              index
+            );
+          });
         } else if (currentlyHovering) {
           // If we were just hovering over a line, revert it back to normal
-          emphasizeLine(this.$chart, undefined);
+          this.handleLegendMouseOut();
           currentlyHovering = false;
         } else {
           // If we weren't just hovering over a line, the chart doesn't need to be re-drawn
