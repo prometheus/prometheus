@@ -545,8 +545,9 @@ func (t *TracingConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return errors.New("tracing endpoint must be set")
 	}
 
+	// Fill in gRPC client as default if none is set.
 	if t.ClientType == "" {
-		return errors.New("tracing client type must be set")
+		t.ClientType = TracingClientGRPC
 	}
 
 	return nil
