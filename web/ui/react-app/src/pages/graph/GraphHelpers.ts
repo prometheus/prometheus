@@ -69,13 +69,13 @@ export const getHoverColor = (color: string, opacity: number, stacked: boolean):
 
 export const toHoverColor =
   (index: number, stacked: boolean) =>
-    (
-      series: GraphSeries,
-      i: number
-    ): { color: string; data: (number | null)[][]; index: number; labels: { [p: string]: string } } => ({
-      ...series,
-      color: getHoverColor(series.color, i !== index ? 0.3 : 1, stacked),
-    });
+  (
+    series: GraphSeries,
+    i: number
+  ): { color: string; data: (number | null)[][]; index: number; labels: { [p: string]: string } } => ({
+    ...series,
+    color: getHoverColor(series.color, i !== index ? 0.3 : 1, stacked),
+  });
 
 export const getOptions = (stacked: boolean, useLocalTime: boolean): jquery.flot.plotOptions => {
   return {
@@ -118,8 +118,8 @@ export const getOptions = (stacked: boolean, useLocalTime: boolean): jquery.flot
               ${Object.keys(labels).length === 0 ? '<div class="mb-1 font-italic">no labels</div>' : ''}
               ${labels['__name__'] ? `<div class="mb-1"><strong>${labels['__name__']}</strong></div>` : ''}
               ${Object.keys(labels)
-            .filter((k) => k !== '__name__')
-            .map((k) => `<div class="mb-1"><strong>${k}</strong>: ${escapeHTML(labels[k])}</div>`)
+                .filter((k) => k !== '__name__')
+                .map((k) => `<div class="mb-1"><strong>${k}</strong>: ${escapeHTML(labels[k])}</div>`)
             .join('')}
             </div>`;
 
@@ -132,12 +132,12 @@ export const getOptions = (stacked: boolean, useLocalTime: boolean): jquery.flot
             <div class="mt-2 mb-1 font-weight-bold">${'seriesLabels' in both ? 'Trace exemplar:' : 'Series:'}</div>
             ${formatLabels(labels)}
             ${
-            'seriesLabels' in both
+              'seriesLabels' in both
                 ? `
             <div class="mt-2 mb-1 font-weight-bold">Associated series:</div>${formatLabels(both.seriesLabels)}
 `
                 : ''
-        }
+            }
           `.trimEnd();
       },
       defaultTheme: false,

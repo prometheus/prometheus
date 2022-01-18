@@ -113,17 +113,17 @@ describe('Graph', () => {
     beforeEach(() => {
       mockPlot = jest.spyOn($, 'plot').mockReturnValue({ setData: jest.fn(), draw: jest.fn(), destroy: jest.fn() } as any);
       graph = mount(
-          <Graph
-              {...({
-                stacked: true,
-                queryParams: {
-                  startTime: 1572128592,
-                  endTime: 1572128598,
-                  resolution: 28,
-                },
-                data: { result: [{ values: [], metric: {} }] },
-              } as any)}
-          />
+        <Graph
+            {...({
+              stacked: true,
+              queryParams: {
+                startTime: 1572128592,
+                endTime: 1572128598,
+                resolution: 28,
+              },
+              data: { result: [{ values: [], metric: {} }] },
+            } as any)}
+        />
       );
       spyState = jest.spyOn(graph.instance(), 'setState');
     });
@@ -134,58 +134,58 @@ describe('Graph', () => {
     it('should trigger state update when new data is received', () => {
       graph.setProps({ data: { result: [{ values: [{}], metric: {} }] } });
       expect(spyState).toHaveBeenCalledWith(
-          {
-            chartData: {
-              exemplars: [],
-              series: [
-                {
-                  color: '#008000',
-                  data: [[1572128592000, null]],
-                  index: 0,
-                  labels: {},
-                  stack: true,
-                },
-              ],
-            },
+        {
+          chartData: {
+            exemplars: [],
+            series: [
+              {
+                color: '#008000',
+                data: [[1572128592000, null]],
+                index: 0,
+                labels: {},
+                stack: true,
+              },
+            ],
           },
-          expect.anything()
+        },
+        expect.anything()
       );
     });
     it('should trigger state update when stacked prop is changed', () => {
       graph.setProps({ stacked: false });
       expect(spyState).toHaveBeenCalledWith(
-          {
-            chartData: {
-              exemplars: [],
-              series: [
-                {
-                  color: '#008000',
-                  data: [[1572128592000, null]],
-                  index: 0,
-                  labels: {},
-                  stack: false,
-                },
-              ],
-            },
+        {
+          chartData: {
+            exemplars: [],
+            series: [
+              {
+                color: '#008000',
+                data: [[1572128592000, null]],
+                index: 0,
+                labels: {},
+                stack: false,
+              },
+            ],
           },
-          expect.anything()
+        },
+        expect.anything()
       );
     });
   });
   describe('on unmount', () => {
     it('should call destroy plot', () => {
       const graph = mount(
-          <Graph
-              {...({
-                stacked: true,
-                queryParams: {
-                  startTime: 1572128592,
-                  endTime: 1572130692,
-                  resolution: 28,
-                },
-                data: { result: [{ values: [], metric: {} }] },
-              } as any)}
-          />
+        <Graph
+          {...({
+            stacked: true,
+            queryParams: {
+              startTime: 1572128592,
+              endTime: 1572130692,
+              resolution: 28,
+            },
+            data: { result: [{ values: [], metric: {} }] },
+          } as any)}
+        />
       );
       const spyPlotDestroy = jest.spyOn(graph.instance(), 'componentWillUnmount');
       graph.unmount();
@@ -199,37 +199,37 @@ describe('Graph', () => {
       const mockSetData = jest.fn();
       jest.spyOn($, 'plot').mockReturnValue({ setData: mockSetData, draw: jest.fn(), destroy: jest.fn() } as any);
       const graph = shallow(
-          <Graph
-              {...({
-                stacked: true,
-                queryParams: {
-                  startTime: 1572128592,
-                  endTime: 1572128598,
-                  resolution: 28,
-                },
-                data: { result: [{ values: [], metric: {} }] },
-              } as any)}
-          />
+        <Graph
+          {...({
+            stacked: true,
+            queryParams: {
+              startTime: 1572128592,
+              endTime: 1572128598,
+              resolution: 28,
+            },
+            data: { result: [{ values: [], metric: {} }] },
+          } as any)}
+        />
       );
       (graph.instance() as any).plot();
       expect(mockSetData).not.toBeCalled();
     });
     it('should call jquery.plot if chartRef exist', () => {
       const mockPlot = jest
-          .spyOn($, 'plot')
-          .mockReturnValue({ setData: jest.fn(), draw: jest.fn(), destroy: jest.fn() } as any);
+        .spyOn($, 'plot')
+        .mockReturnValue({ setData: jest.fn(), draw: jest.fn(), destroy: jest.fn() } as any);
       const graph = mount(
-          <Graph
-              {...({
-                stacked: true,
-                queryParams: {
-                  startTime: 1572128592,
-                  endTime: 1572128598,
-                  resolution: 28,
-                },
-                data: { result: [{ values: [], metric: {} }] },
-              } as any)}
-          />
+        <Graph
+          {...({
+            stacked: true,
+            queryParams: {
+              startTime: 1572128592,
+              endTime: 1572128598,
+              resolution: 28,
+            },
+            data: { result: [{ values: [], metric: {} }] },
+          } as any)}
+        />
       );
       (graph.instance() as any).plot();
       expect(mockPlot).toBeCalled();
@@ -238,17 +238,17 @@ describe('Graph', () => {
       const mockDestroy = jest.fn();
       jest.spyOn($, 'plot').mockReturnValue({ setData: jest.fn(), draw: jest.fn(), destroy: mockDestroy } as any);
       const graph = mount(
-          <Graph
-              {...({
-                stacked: true,
-                queryParams: {
-                  startTime: 1572128592,
-                  endTime: 1572128598,
-                  resolution: 28,
-                },
-                data: { result: [{ values: [], metric: {} }] },
-              } as any)}
-          />
+        <Graph
+          {...({
+            stacked: true,
+            queryParams: {
+              startTime: 1572128592,
+              endTime: 1572128598,
+              resolution: 28,
+            },
+            data: { result: [{ values: [], metric: {} }] },
+          } as any)}
+        />
       );
       (graph.instance() as any).plot();
       (graph.instance() as any).destroyPlot();
@@ -259,22 +259,22 @@ describe('Graph', () => {
     it('should call spyPlotSetAndDraw on legend hover', () => {
       jest.spyOn($, 'plot').mockReturnValue({ setData: jest.fn(), draw: jest.fn(), destroy: jest.fn() } as any);
       const graph = mount(
-          <Graph
-              {...({
-                stacked: true,
-                queryParams: {
-                  startTime: 1572128592,
-                  endTime: 1572128598,
-                  resolution: 28,
-                },
-                data: {
-                  result: [
-                    { values: [], metric: {} },
-                    { values: [], metric: {} },
-                  ],
-                },
-              } as any)}
-          />
+        <Graph
+          {...({
+            stacked: true,
+            queryParams: {
+              startTime: 1572128592,
+              endTime: 1572128598,
+              resolution: 28,
+            },
+            data: {
+              result: [
+                { values: [], metric: {} },
+                { values: [], metric: {} },
+              ],
+            },
+          } as any)}
+        />
       );
       (graph.instance() as any).plot(); // create chart
       const spyPlotSetAndDraw = jest.spyOn(graph.instance() as any, 'plotSetAndDraw');
@@ -284,25 +284,25 @@ describe('Graph', () => {
     it('should call spyPlotSetAndDraw with chartDate from state as default value', () => {
       const mockSetData = jest.fn();
       const spyPlot = jest
-          .spyOn($, 'plot')
-          .mockReturnValue({ setData: mockSetData, draw: jest.fn(), destroy: jest.fn() } as any);
+        .spyOn($, 'plot')
+        .mockReturnValue({ setData: mockSetData, draw: jest.fn(), destroy: jest.fn() } as any);
       const graph: any = mount(
-          <Graph
-              {...({
-                stacked: true,
-                queryParams: {
-                  startTime: 1572128592,
-                  endTime: 1572128598,
-                  resolution: 28,
-                },
-                data: {
-                  result: [
-                    { values: [], metric: {} },
-                    { values: [], metric: {} },
-                  ],
-                },
-              } as any)}
-          />
+        <Graph
+          {...({
+            stacked: true,
+            queryParams: {
+              startTime: 1572128592,
+              endTime: 1572128598,
+              resolution: 28,
+            },
+            data: {
+              result: [
+                { values: [], metric: {} },
+                { values: [], metric: {} },
+              ],
+            },
+          } as any)}
+        />
       );
       (graph.instance() as any).plot(); // create chart
       graph.find('.graph-legend').simulate('mouseout');
