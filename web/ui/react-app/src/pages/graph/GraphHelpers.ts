@@ -120,7 +120,7 @@ export const getOptions = (stacked: boolean, useLocalTime: boolean): jquery.flot
               ${Object.keys(labels)
                 .filter((k) => k !== '__name__')
                 .map((k) => `<div class="mb-1"><strong>${k}</strong>: ${escapeHTML(labels[k])}</div>`)
-            .join('')}
+                .join('')}
             </div>`;
 
         return `
