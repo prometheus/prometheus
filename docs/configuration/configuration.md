@@ -102,7 +102,7 @@ storage:
 
 # Configures exporting traces.
 tracing:
-  [ <tracing> ]
+  [ <tracing_config> ]
 ```
 
 ### `<scrape_config>`

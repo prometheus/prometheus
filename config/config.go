@@ -530,6 +530,7 @@ type TracingConfig struct {
 	Endpoint         string            `yaml:"endpoint,omitempty"`
 	SamplingFraction float64           `yaml:"sampling_fraction,omitempty"`
 	WithSecure       bool              `yaml:"with_secure,omitempty"`
+	TLSConfig        config.TLSConfig  `yaml:"tls_config,omitempty"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.

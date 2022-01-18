@@ -20,6 +20,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
+	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/version"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
@@ -30,6 +31,7 @@ import (
 	tracesdk "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.7.0"
 	"go.opentelemetry.io/otel/trace"
+	"google.golang.org/grpc/credentials"
 
 	"github.com/prometheus/prometheus/config"
 )
@@ -123,7 +125,12 @@ func (o otelErrHandler) Handle(err error) {
 // buildTracerProvider return a new tracer provider ready for installation, together
 // with a shutdown function.
 func buildTracerProvider(ctx context.Context, tracingCfg config.TracingConfig) (trace.TracerProvider, func() error, error) {
-	exp, err := otlptrace.New(ctx, getClient(tracingCfg))
+	client, err := getClient(tracingCfg)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	exp, err := otlptrace.New(ctx, client)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -165,23 +172,34 @@ func buildTracerProvider(ctx context.Context, tracingCfg config.TracingConfig) (
 
 // getClient returns an appropriate OTLP client (either gRPC or HTTP), based
 // on the provided tracing configuration.
-func getClient(tracingCfg config.TracingConfig) otlptrace.Client {
+func getClient(tracingCfg config.TracingConfig) (otlptrace.Client, error) {
 	var client otlptrace.Client
 	switch tracingCfg.ClientType {
 	case config.TracingClientGRPC:
 		opts := []otlptracegrpc.Option{otlptracegrpc.WithEndpoint(tracingCfg.Endpoint)}
 		if !tracingCfg.WithSecure {
 			opts = append(opts, otlptracegrpc.WithInsecure())
+		} else {
+			tlsConf, err := config_util.NewTLSConfig(&tracingCfg.TLSConfig)
+			if err != nil {
+				return nil, err
+			}
+			opts = append(opts, otlptracegrpc.WithTLSCredentials(credentials.NewTLS(tlsConf)))
 		}
-
 		client = otlptracegrpc.NewClient(opts...)
 	case config.TracingClientHTTP:
 		opts := []otlptracehttp.Option{otlptracehttp.WithEndpoint(tracingCfg.Endpoint)}
 		if !tracingCfg.WithSecure {
 			opts = append(opts, otlptracehttp.WithInsecure())
+		} else {
+			tlsConf, err := config_util.NewTLSConfig(&tracingCfg.TLSConfig)
+			if err != nil {
+				return nil, err
+			}
+			opts = append(opts, otlptracehttp.WithTLSClientConfig(tlsConf))
 		}
 		client = otlptracehttp.NewClient(opts...)
 	}
 
-	return client
+	return client, nil
 }
