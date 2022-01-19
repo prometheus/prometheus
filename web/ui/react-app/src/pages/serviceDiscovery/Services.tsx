@@ -116,7 +116,7 @@ export const ServiceDiscoveryContent: FC<ServiceMap> = ({ activeTargets, dropped
     <>
       <h2>Service Discovery</h2>
       <Container>
-        <SearchBar handleChange={handleSearchChange} placeholder="filter by labels" />
+        <SearchBar handleChange={handleSearchChange} placeholder="Filter by labels" />
       </Container>
       <ul>
         {mapObjEntries(targetList, ([k, v]) => (
