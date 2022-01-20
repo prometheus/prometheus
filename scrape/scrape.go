@@ -22,7 +22,6 @@ import (
 	"io"
 	"io/ioutil"
 	"math"
-	"mime"
 	"net/http"
 	"reflect"
 	"sort"
@@ -1419,12 +1418,8 @@ type appendErrors struct {
 }
 
 func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string, ts time.Time) (total, added, seriesAdded int, err error) {
-	if _, _, err := mime.ParseMediaType(contentType); err != nil {
-		level.Debug(sl.l).Log("msg", "Invalid media type", "media-type", contentType, "err", err)
-	}
-
 	var (
-		p              = textparse.New(b, contentType)
+		p              = textparse.New(b, contentType, sl.l)
 		defTime        = timestamp.FromTime(ts)
 		appErrs        = appendErrors{}
 		sampleLimitErr error

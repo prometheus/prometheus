@@ -16,6 +16,8 @@ package textparse
 import (
 	"mime"
 
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
 )
@@ -61,9 +63,11 @@ type Parser interface {
 }
 
 // New returns a new parser of the byte slice.
-func New(b []byte, contentType string) Parser {
+func New(b []byte, contentType string, l log.Logger) Parser {
 	mediaType, _, err := mime.ParseMediaType(contentType)
-	if err == nil && mediaType == "application/openmetrics-text" {
+	if err != nil {
+		level.Debug(l).Log("msg", "Invalid media type", "media-type", contentType, "err", err)
+	} else if mediaType == "application/openmetrics-text" {
 		return NewOpenMetricsParser(b)
 	}
 	return NewPromParser(b)
