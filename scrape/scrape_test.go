@@ -1479,7 +1479,8 @@ func TestScrapeLoopAppendCacheEntryButErrNotFound(t *testing.T) {
 	fakeRef := storage.SeriesRef(1)
 	expValue := float64(1)
 	metric := `metric{n="1"} 1`
-	p := textparse.New([]byte(metric), "", log.NewNopLogger())
+	p, err := textparse.New([]byte(metric), "")
+	require.NoError(t, err)
 
 	var lset labels.Labels
 	p.Next()
@@ -1491,7 +1492,7 @@ func TestScrapeLoopAppendCacheEntryButErrNotFound(t *testing.T) {
 	now := time.Now()
 
 	slApp := sl.appender(context.Background())
-	_, _, _, err := sl.append(slApp, []byte(metric), "", now)
+	_, _, _, err = sl.append(slApp, []byte(metric), "", now)
 	require.NoError(t, err)
 	require.NoError(t, slApp.Commit())
 

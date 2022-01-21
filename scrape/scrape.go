@@ -1418,8 +1418,14 @@ type appendErrors struct {
 }
 
 func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string, ts time.Time) (total, added, seriesAdded int, err error) {
+	p, pErr := textparse.New(b, contentType)
+	if pErr != nil {
+		p = textparse.NewPromParser(b)
+		// we are tolerant with wrong content types, but a log can be handy for debugging
+		level.Debug(sl.l).Log("msg", "Invalid Content-Type", "content-type", contentType, "err", pErr)
+	}
+
 	var (
-		p              = textparse.New(b, contentType, sl.l)
 		defTime        = timestamp.FromTime(ts)
 		appErrs        = appendErrors{}
 		sampleLimitErr error
