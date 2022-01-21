@@ -1480,12 +1480,16 @@ func TestExpandExternalLabels(t *testing.T) {
 	require.Equal(t, labels.Label{Name: "bar", Value: "foo"}, c.GlobalConfig.ExternalLabels[0])
 	require.Equal(t, labels.Label{Name: "baz", Value: "foo${TEST}bar"}, c.GlobalConfig.ExternalLabels[1])
 	require.Equal(t, labels.Label{Name: "foo", Value: "${TEST}"}, c.GlobalConfig.ExternalLabels[2])
+	require.Equal(t, labels.Label{Name: "qux", Value: "foo$${TEST}"}, c.GlobalConfig.ExternalLabels[3])
+	require.Equal(t, labels.Label{Name: "xyz", Value: "foo$$bar"}, c.GlobalConfig.ExternalLabels[4])
 
 	c, err = LoadFile("testdata/external_labels.good.yml", false, true, log.NewNopLogger())
 	require.NoError(t, err)
 	require.Equal(t, labels.Label{Name: "bar", Value: "foo"}, c.GlobalConfig.ExternalLabels[0])
 	require.Equal(t, labels.Label{Name: "baz", Value: "foobar"}, c.GlobalConfig.ExternalLabels[1])
 	require.Equal(t, labels.Label{Name: "foo", Value: ""}, c.GlobalConfig.ExternalLabels[2])
+	require.Equal(t, labels.Label{Name: "qux", Value: "foo${TEST}"}, c.GlobalConfig.ExternalLabels[3])
+	require.Equal(t, labels.Label{Name: "xyz", Value: "foo$bar"}, c.GlobalConfig.ExternalLabels[4])
 
 	os.Setenv("TEST", "TestValue")
 	c, err = LoadFile("testdata/external_labels.good.yml", false, true, log.NewNopLogger())
@@ -1493,6 +1497,8 @@ func TestExpandExternalLabels(t *testing.T) {
 	require.Equal(t, labels.Label{Name: "bar", Value: "foo"}, c.GlobalConfig.ExternalLabels[0])
 	require.Equal(t, labels.Label{Name: "baz", Value: "fooTestValuebar"}, c.GlobalConfig.ExternalLabels[1])
 	require.Equal(t, labels.Label{Name: "foo", Value: "TestValue"}, c.GlobalConfig.ExternalLabels[2])
+	require.Equal(t, labels.Label{Name: "qux", Value: "foo${TEST}"}, c.GlobalConfig.ExternalLabels[3])
+	require.Equal(t, labels.Label{Name: "xyz", Value: "foo$bar"}, c.GlobalConfig.ExternalLabels[4])
 }
 
 func TestEmptyGlobalBlock(t *testing.T) {

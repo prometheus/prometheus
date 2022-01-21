@@ -613,6 +613,7 @@ func (t *Test) clear() {
 		Timeout:                  100 * time.Second,
 		NoStepSubqueryIntervalFn: func(int64) int64 { return durationMilliseconds(1 * time.Minute) },
 		EnableAtModifier:         true,
+		EnableNegativeOffset:     true,
 	}
 
 	t.queryEngine = NewEngine(opts)
@@ -680,7 +681,9 @@ type LazyLoader struct {
 
 // LazyLoaderOpts are options for the lazy loader.
 type LazyLoaderOpts struct {
-	// Disabled PromQL engine features.
+	// Both of these must be set to true for regular PromQL (as of
+	// Prometheus v2.33). They can still be disabled here for legacy and
+	// other uses.
 	EnableAtModifier, EnableNegativeOffset bool
 }
 

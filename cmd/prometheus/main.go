@@ -149,8 +149,6 @@ type flagConfig struct {
 	featureList []string
 	// These options are extracted from featureList
 	// for ease of use.
-	enablePromQLAtModifier     bool
-	enablePromQLNegativeOffset bool
 	enableExpandExternalLabels bool
 	enableNewSDManager         bool
 
@@ -166,12 +164,6 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 		opts := strings.Split(f, ",")
 		for _, o := range opts {
 			switch o {
-			case "promql-at-modifier":
-				c.enablePromQLAtModifier = true
-				level.Info(logger).Log("msg", "Experimental promql-at-modifier enabled")
-			case "promql-negative-offset":
-				c.enablePromQLNegativeOffset = true
-				level.Info(logger).Log("msg", "Experimental promql-negative-offset enabled")
 			case "remote-write-receiver":
 				c.web.EnableRemoteWriteReceiver = true
 				level.Warn(logger).Log("msg", "Remote write receiver enabled via feature flag remote-write-receiver. This is DEPRECATED. Use --web.enable-remote-write-receiver.")
@@ -195,6 +187,8 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 				level.Info(logger).Log("msg", "Experimental agent mode enabled.")
 			case "":
 				continue
+			case "promql-at-modifier", "promql-negative-offset":
+				level.Warn(logger).Log("msg", "This option for --enable-feature is now permanently enabled and therefore a no-op.", "option", o)
 			default:
 				level.Warn(logger).Log("msg", "Unknown option for --enable-feature", "option", o)
 			}
@@ -302,7 +296,7 @@ func main() {
 	serverOnlyFlag(a, "storage.tsdb.retention.time", "How long to retain samples in storage. When this flag is set it overrides \"storage.tsdb.retention\". If neither this flag nor \"storage.tsdb.retention\" nor \"storage.tsdb.retention.size\" is set, the retention time defaults to "+defaultRetentionString+". Units Supported: y, w, d, h, m, s, ms.").
 		SetValue(&newFlagRetentionDuration)
 
-	serverOnlyFlag(a, "storage.tsdb.retention.size", "Maximum number of bytes that can be stored for blocks. A unit is required, supported units: B, KB, MB, GB, TB, PB, EB. Ex: \"512MB\".").
+	serverOnlyFlag(a, "storage.tsdb.retention.size", "Maximum number of bytes that can be stored for blocks. A unit is required, supported units: B, KB, MB, GB, TB, PB, EB. Ex: \"512MB\". Based on powers-of-2, so 1KB is 1024B.").
 		BytesVar(&cfg.tsdb.MaxBytes)
 
 	serverOnlyFlag(a, "storage.tsdb.no-lockfile", "Do not create lockfile in data directory.").
@@ -570,8 +564,10 @@ func main() {
 			ActiveQueryTracker:       promql.NewActiveQueryTracker(localStoragePath, cfg.queryConcurrency, log.With(logger, "component", "activeQueryTracker")),
 			LookbackDelta:            time.Duration(cfg.lookbackDelta),
 			NoStepSubqueryIntervalFn: noStepSubqueryInterval.Get,
-			EnableAtModifier:         cfg.enablePromQLAtModifier,
-			EnableNegativeOffset:     cfg.enablePromQLNegativeOffset,
+			// EnableAtModifier and EnableNegativeOffset have to be
+			// always on for regular PromQL as of Prometheus v2.33.
+			EnableAtModifier:     true,
+			EnableNegativeOffset: true,
 		}
 
 		queryEngine = promql.NewEngine(opts)
