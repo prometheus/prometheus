@@ -1,3 +1,9 @@
+## 2.33.0-rc.1 / 2022-01-19
+
+* [ENHANCEMENT] UI: Debounce search bar. #10157
+* [BUGFIX] TSDB: Fix deadlock from simultaneous GC and write. #10166
+* [BUGFIX] TSDB: Fix minor issues introduced in #10051. #10159
+
 ## 2.33.0-rc.0 / 2022-01-12
 
 * [CHANGE] PromQL: Promote negative offset and `@` modifer to stable features. #10121
