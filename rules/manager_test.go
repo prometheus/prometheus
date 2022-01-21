@@ -1344,13 +1344,13 @@ func TestGroup_Equals(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		groupOne Group
-		groupTwo Group
+		groupOne *Group
+		groupTwo *Group
 		areEqual bool
 	}{
 		{
 			name: "identical configs",
-			groupOne: Group{
+			groupOne: &Group{
 				name: "example_group",
 				rules: []Rule{
 					&RecordingRule{
@@ -1360,7 +1360,7 @@ func TestGroup_Equals(t *testing.T) {
 					},
 				},
 			},
-			groupTwo: Group{
+			groupTwo: &Group{
 				name: "example_group",
 				rules: []Rule{
 					&RecordingRule{
@@ -1374,7 +1374,7 @@ func TestGroup_Equals(t *testing.T) {
 		},
 		{
 			name: "differently ordered source tenants (should still be equivalent)",
-			groupOne: Group{
+			groupOne: &Group{
 				name:          "example_group",
 				sourceTenants: []string{"tenant-2", "tenant-1"},
 				rules: []Rule{
@@ -1385,7 +1385,7 @@ func TestGroup_Equals(t *testing.T) {
 					},
 				},
 			},
-			groupTwo: Group{
+			groupTwo: &Group{
 				name:          "example_group",
 				sourceTenants: []string{"tenant-1", "tenant-2"},
 				rules: []Rule{
@@ -1400,7 +1400,7 @@ func TestGroup_Equals(t *testing.T) {
 		},
 		{
 			name: "different rule length",
-			groupOne: Group{
+			groupOne: &Group{
 				name: "example_group",
 				rules: []Rule{
 					&RecordingRule{
@@ -1410,7 +1410,7 @@ func TestGroup_Equals(t *testing.T) {
 					},
 				},
 			},
-			groupTwo: Group{
+			groupTwo: &Group{
 				name: "example_group",
 				rules: []Rule{
 					&RecordingRule{
@@ -1429,7 +1429,7 @@ func TestGroup_Equals(t *testing.T) {
 		},
 		{
 			name: "different rule labels",
-			groupOne: Group{
+			groupOne: &Group{
 				name: "example_group",
 				rules: []Rule{
 					&RecordingRule{
@@ -1439,7 +1439,7 @@ func TestGroup_Equals(t *testing.T) {
 					},
 				},
 			},
-			groupTwo: Group{
+			groupTwo: &Group{
 				name: "example_group",
 				rules: []Rule{
 					&RecordingRule{
@@ -1453,7 +1453,7 @@ func TestGroup_Equals(t *testing.T) {
 		},
 		{
 			name: "different source tenants",
-			groupOne: Group{
+			groupOne: &Group{
 				name:          "example_group",
 				sourceTenants: []string{"tenant-1", "tenant-3"},
 				rules: []Rule{
@@ -1464,7 +1464,7 @@ func TestGroup_Equals(t *testing.T) {
 					},
 				},
 			},
-			groupTwo: Group{
+			groupTwo: &Group{
 				name:          "example_group",
 				sourceTenants: []string{"tenant-1", "tenant-2"},
 				rules: []Rule{
@@ -1479,7 +1479,7 @@ func TestGroup_Equals(t *testing.T) {
 		},
 		{
 			name: "repeating source tenants",
-			groupOne: Group{
+			groupOne: &Group{
 				name:          "example_group",
 				sourceTenants: []string{"tenant-1", "tenant-2"},
 				rules: []Rule{
@@ -1490,7 +1490,7 @@ func TestGroup_Equals(t *testing.T) {
 					},
 				},
 			},
-			groupTwo: Group{
+			groupTwo: &Group{
 				name:          "example_group",
 				sourceTenants: []string{"tenant-1", "tenant-1"},
 				rules: []Rule{
@@ -1507,8 +1507,8 @@ func TestGroup_Equals(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.areEqual, tt.groupOne.Equals(&tt.groupTwo))
-			require.Equal(t, tt.areEqual, tt.groupTwo.Equals(&tt.groupOne))
+			require.Equal(t, tt.areEqual, tt.groupOne.Equals(tt.groupTwo))
+			require.Equal(t, tt.areEqual, tt.groupTwo.Equals(tt.groupOne))
 		})
 	}
 }
