@@ -1,5 +1,5 @@
 import React, { ChangeEvent, FC, Fragment, useEffect, useState } from 'react';
-import { Badge, Col, Input, InputGroup, InputGroupAddon, InputGroupText, Row } from 'reactstrap';
+import { Badge, Col, Row } from 'reactstrap';
 import CollapsibleAlertPanel from './CollapsibleAlertPanel';
 import Checkbox from '../../components/Checkbox';
 import { isPresent } from '../../utils';
@@ -7,8 +7,7 @@ import { Rule } from '../../types/types';
 import { useLocalStorage } from '../../hooks/useLocalStorage';
 import CustomInfiniteScroll, { InfiniteScrollItemsProps } from '../../components/CustomInfiniteScroll';
 import { KVSearch } from '@nexucis/kvsearch';
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faSearch } from '@fortawesome/free-solid-svg-icons';
+import SearchBar from '../../components/SearchBar';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type RuleState = keyof RuleStatus<any>;
@@ -131,21 +130,18 @@ const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
             );
           })}
         </Col>
-        <Col lg="5" md="4" sm="2">
-          <InputGroup>
-            <InputGroupAddon addonType="prepend">
-              <InputGroupText>{<FontAwesomeIcon icon={faSearch} />}</InputGroupText>
-            </InputGroupAddon>
-            <Input autoFocus onChange={handleSearchChange} placeholder="Filter by name or labels" />
-          </InputGroup>
+        <Col lg="5" md="4">
+          <SearchBar handleChange={handleSearchChange} placeholder="Filter by name or labels" />
         </Col>
-        <Col className="d-flex flex-row-reverse" md="3" xs="2">
+        <Col className="d-flex flex-row-reverse" md="3">
           <Checkbox
             checked={showAnnotations.checked}
             id="show-annotations-toggler"
             onChange={({ target }) => setShowAnnotations({ checked: target.checked })}
           >
-            <span style={{ fontSize: '0.9rem', lineHeight: 1.9 }}>Show annotations</span>
+            <span style={{ fontSize: '0.9rem', lineHeight: 1.9, display: 'inline-block', whiteSpace: 'nowrap' }}>
+              Show annotations
+            </span>
           </Checkbox>
         </Col>
       </Row>
