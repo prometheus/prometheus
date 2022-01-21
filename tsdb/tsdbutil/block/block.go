@@ -11,11 +11,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package tsdb
+package block
 
 import (
 	"context"
 	"fmt"
+	"github.com/prometheus/prometheus/tsdb"
 	"path/filepath"
 
 	"github.com/go-kit/log"
@@ -28,13 +29,13 @@ var ErrInvalidTimes = fmt.Errorf("max time is lesser than min time")
 // CreateBlock creates a chunkrange block from the samples passed to it, and writes it to disk.
 func CreateBlock(series []storage.Series, dir string, chunkRange int64, logger log.Logger) (string, error) {
 	if chunkRange == 0 {
-		chunkRange = DefaultBlockDuration
+		chunkRange = tsdb.DefaultBlockDuration
 	}
 	if chunkRange < 0 {
 		return "", ErrInvalidTimes
 	}
 
-	w, err := NewBlockWriter(logger, dir, chunkRange)
+	w, err := tsdb.NewBlockWriter(logger, dir, chunkRange)
 	if err != nil {
 		return "", err
 	}

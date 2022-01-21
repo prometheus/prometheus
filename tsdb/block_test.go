@@ -18,6 +18,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"github.com/prometheus/prometheus/tsdb/tsdbutil/block"
 	"hash/crc32"
 	"io/ioutil"
 	"math/rand"
@@ -496,7 +497,7 @@ func TestLabelNamesWithMatchers(t *testing.T) {
 
 // createBlock creates a block with given set of series and returns its dir.
 func createBlock(tb testing.TB, dir string, series []storage.Series) string {
-	blockDir, err := CreateBlock(series, dir, 0, log.NewNopLogger())
+	blockDir, err := block.CreateBlock(series, dir, 0, log.NewNopLogger())
 	require.NoError(tb, err)
 	return blockDir
 }
