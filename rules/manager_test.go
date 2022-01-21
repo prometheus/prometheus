@@ -1337,3 +1337,178 @@ func TestRuleHealthUpdates(t *testing.T) {
 	require.EqualError(t, rules.LastError(), storage.ErrOutOfOrderSample.Error())
 	require.Equal(t, HealthBad, rules.Health())
 }
+
+func TestGroup_Equals(t *testing.T) {
+	testExpression, err := parser.ParseExpr("up")
+	require.NoError(t, err)
+
+	tests := []struct {
+		name     string
+		groupOne Group
+		groupTwo Group
+		areEqual bool
+	}{
+		{
+			name: "identical configs",
+			groupOne: Group{
+				name: "example_group",
+				rules: []Rule{
+					&RecordingRule{
+						name:   "one",
+						vector: testExpression,
+						labels: labels.FromMap(map[string]string{"a": "b", "c": "d"}),
+					},
+				},
+			},
+			groupTwo: Group{
+				name: "example_group",
+				rules: []Rule{
+					&RecordingRule{
+						name:   "one",
+						vector: testExpression,
+						labels: labels.FromMap(map[string]string{"a": "b", "c": "d"}),
+					},
+				},
+			},
+			areEqual: true,
+		},
+		{
+			name: "differently ordered source tenants (should still be equivalent)",
+			groupOne: Group{
+				name:          "example_group",
+				sourceTenants: []string{"tenant-2", "tenant-1"},
+				rules: []Rule{
+					&RecordingRule{
+						name:   "one",
+						vector: testExpression,
+						labels: labels.FromMap(map[string]string{"a": "b", "c": "d"}),
+					},
+				},
+			},
+			groupTwo: Group{
+				name:          "example_group",
+				sourceTenants: []string{"tenant-1", "tenant-2"},
+				rules: []Rule{
+					&RecordingRule{
+						name:   "one",
+						vector: testExpression,
+						labels: labels.FromMap(map[string]string{"a": "b", "c": "d"}),
+					},
+				},
+			},
+			areEqual: true,
+		},
+		{
+			name: "different rule length",
+			groupOne: Group{
+				name: "example_group",
+				rules: []Rule{
+					&RecordingRule{
+						name:   "one",
+						vector: testExpression,
+						labels: labels.FromMap(map[string]string{"a": "b", "c": "d"}),
+					},
+				},
+			},
+			groupTwo: Group{
+				name: "example_group",
+				rules: []Rule{
+					&RecordingRule{
+						name:   "one",
+						vector: testExpression,
+						labels: labels.FromMap(map[string]string{"a": "b", "c": "d"}),
+					},
+					&RecordingRule{
+						name:   "one",
+						vector: testExpression,
+						labels: labels.FromMap(map[string]string{"a": "b", "c": "d"}),
+					},
+				},
+			},
+			areEqual: false,
+		},
+		{
+			name: "different rule labels",
+			groupOne: Group{
+				name: "example_group",
+				rules: []Rule{
+					&RecordingRule{
+						name:   "one",
+						vector: testExpression,
+						labels: labels.FromMap(map[string]string{"a": "b", "c": "d"}),
+					},
+				},
+			},
+			groupTwo: Group{
+				name: "example_group",
+				rules: []Rule{
+					&RecordingRule{
+						name:   "one",
+						vector: testExpression,
+						labels: labels.FromMap(map[string]string{"1": "2", "3": "4"}),
+					},
+				},
+			},
+			areEqual: false,
+		},
+		{
+			name: "different source tenants",
+			groupOne: Group{
+				name:          "example_group",
+				sourceTenants: []string{"tenant-1", "tenant-3"},
+				rules: []Rule{
+					&RecordingRule{
+						name:   "one",
+						vector: testExpression,
+						labels: labels.FromMap(map[string]string{"a": "b", "c": "d"}),
+					},
+				},
+			},
+			groupTwo: Group{
+				name:          "example_group",
+				sourceTenants: []string{"tenant-1", "tenant-2"},
+				rules: []Rule{
+					&RecordingRule{
+						name:   "one",
+						vector: testExpression,
+						labels: labels.FromMap(map[string]string{"a": "b", "c": "d"}),
+					},
+				},
+			},
+			areEqual: false,
+		},
+		{
+			name: "repeating source tenants",
+			groupOne: Group{
+				name:          "example_group",
+				sourceTenants: []string{"tenant-1", "tenant-2"},
+				rules: []Rule{
+					&RecordingRule{
+						name:   "one",
+						vector: testExpression,
+						labels: labels.FromMap(map[string]string{"a": "b", "c": "d"}),
+					},
+				},
+			},
+			groupTwo: Group{
+				name:          "example_group",
+				sourceTenants: []string{"tenant-1", "tenant-1"},
+				rules: []Rule{
+					&RecordingRule{
+						name:   "one",
+						vector: testExpression,
+						labels: labels.FromMap(map[string]string{"a": "b", "c": "d"}),
+					},
+				},
+			},
+			areEqual: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.areEqual, tt.groupOne.Equals(&tt.groupTwo))
+			require.Equal(t, tt.areEqual, tt.groupTwo.Equals(&tt.groupOne))
+		})
+	}
+}
