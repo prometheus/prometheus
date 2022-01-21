@@ -17,6 +17,7 @@ import (
 	"testing"
 
 	"github.com/go-kit/log"
+	config_util "github.com/prometheus/common/config"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
@@ -45,6 +46,11 @@ func TestReinstallingTracerProvider(t *testing.T) {
 		TracingConfig: config.TracingConfig{
 			Endpoint:   "localhost:1234",
 			ClientType: config.TracingClientGRPC,
+			TLSConfig: config_util.TLSConfig{
+				CAFile:     "ca-file.pem",
+				CertFile:   "cert.pem",
+				ServerName: "test-server",
+			},
 		},
 	}
 
@@ -59,6 +65,11 @@ func TestReinstallingTracerProvider(t *testing.T) {
 		TracingConfig: config.TracingConfig{
 			Endpoint:   "localhost:1234",
 			ClientType: config.TracingClientHTTP,
+			TLSConfig: config_util.TLSConfig{
+				CAFile:     "ca-file.pem",
+				CertFile:   "cert.pem",
+				ServerName: "test-server",
+			},
 		},
 	}
 
