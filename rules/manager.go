@@ -875,21 +875,26 @@ func (g *Group) Equals(ng *Group) bool {
 			return false
 		}
 	}
-
-	// compare source tenants ignoring their order
-	if len(g.sourceTenants) != len(ng.sourceTenants) {
-		return false
-	}
-
-	thisSourceTenants := make(map[string]struct{}, len(g.sourceTenants))
-
-	for _, tenant := range g.sourceTenants {
-		thisSourceTenants[tenant] = struct{}{}
-	}
-
-	for _, tenant := range ng.sourceTenants {
-		if _, ok := thisSourceTenants[tenant]; !ok {
+	{
+		// compare source tenants
+		if len(g.sourceTenants) != len(ng.sourceTenants) {
 			return false
+		}
+
+		copyAndSort := func(x []string) []string {
+			copied := make([]string, len(x))
+			copy(copied, x)
+			sort.Strings(copied)
+			return copied
+		}
+
+		ngSourceTenantsCopy := copyAndSort(ng.sourceTenants)
+		gSourceTenantsCopy := copyAndSort(g.sourceTenants)
+
+		for i := range ngSourceTenantsCopy {
+			if gSourceTenantsCopy[i] != ngSourceTenantsCopy[i] {
+				return false
+			}
 		}
 	}
 
