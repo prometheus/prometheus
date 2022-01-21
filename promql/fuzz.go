@@ -20,7 +20,6 @@ package promql
 import (
 	"io"
 
-	"github.com/go-kit/log"
 	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/promql/parser"
 )
@@ -64,6 +63,7 @@ func fuzzParseMetricWithContentType(in []byte, contentType string) int {
 		// in this context
 		panic(err)
 	}
+
 	for {
 		_, err = p.Next()
 		if err != nil {
