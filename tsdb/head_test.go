@@ -51,8 +51,7 @@ import (
 )
 
 func newTestHead(t testing.TB, chunkRange int64, compressWAL bool) (*Head, *wal.WAL) {
-	dir, err := ioutil.TempDir("", "test")
-	require.NoError(t, err)
+	dir := t.TempDir()
 	wlog, err := wal.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, compressWAL)
 	require.NoError(t, err)
 
@@ -67,9 +66,6 @@ func newTestHead(t testing.TB, chunkRange int64, compressWAL bool) (*Head, *wal.
 
 	require.NoError(t, h.chunkDiskMapper.IterateAllChunks(func(_ chunks.HeadSeriesRef, _ chunks.ChunkDiskMapperRef, _, _ int64, _ uint16) error { return nil }))
 
-	t.Cleanup(func() {
-		require.NoError(t, os.RemoveAll(dir))
-	})
 	return h, wlog
 }
 
@@ -183,11 +179,7 @@ func BenchmarkLoadWAL(b *testing.B) {
 			// fmt.Println("exemplars per series: ", exemplarsPerSeries)
 			b.Run(fmt.Sprintf("batches=%d,seriesPerBatch=%d,samplesPerSeries=%d,exemplarsPerSeries=%d,mmappedChunkT=%d", c.batches, c.seriesPerBatch, c.samplesPerSeries, exemplarsPerSeries, c.mmappedChunkT),
 				func(b *testing.B) {
-					dir, err := ioutil.TempDir("", "test_load_wal")
-					require.NoError(b, err)
-					defer func() {
-						require.NoError(b, os.RemoveAll(dir))
-					}()
+					dir := b.TempDir()
 
 					w, err := wal.New(nil, nil, dir, false)
 					require.NoError(b, err)
@@ -724,11 +716,7 @@ func TestHead_Truncate(t *testing.T) {
 // Validate various behaviors brought on by firstChunkID accounting for
 // garbage collected chunks.
 func TestMemSeries_truncateChunks(t *testing.T) {
-	dir, err := ioutil.TempDir("", "truncate_chunks")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 	// This is usually taken from the Head, but passing manually here.
 	chunkDiskMapper, err := chunks.NewChunkDiskMapper(nil, dir, chunkenc.NewPool(), chunks.DefaultWriteBufferSize, chunks.DefaultWriteQueueSize)
 	require.NoError(t, err)
@@ -1268,11 +1256,7 @@ func TestComputeChunkEndTime(t *testing.T) {
 }
 
 func TestMemSeries_append(t *testing.T) {
-	dir, err := ioutil.TempDir("", "append")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 	// This is usually taken from the Head, but passing manually here.
 	chunkDiskMapper, err := chunks.NewChunkDiskMapper(nil, dir, chunkenc.NewPool(), chunks.DefaultWriteBufferSize, chunks.DefaultWriteQueueSize)
 	require.NoError(t, err)
@@ -1556,11 +1540,7 @@ func TestWalRepair_DecodingError(t *testing.T) {
 	} {
 		for _, compress := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s,compress=%t", name, compress), func(t *testing.T) {
-				dir, err := ioutil.TempDir("", "wal_repair")
-				require.NoError(t, err)
-				defer func() {
-					require.NoError(t, os.RemoveAll(dir))
-				}()
+				dir := t.TempDir()
 
 				// Fill the wal and corrupt it.
 				{
@@ -1620,11 +1600,7 @@ func TestWalRepair_DecodingError(t *testing.T) {
 }
 
 func TestHeadReadWriterRepair(t *testing.T) {
-	dir, err := ioutil.TempDir("", "head_read_writer_repair")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 
 	const chunkRange = 1000
 
@@ -2030,11 +2006,7 @@ func TestIsolationWithoutAdd(t *testing.T) {
 }
 
 func TestOutOfOrderSamplesMetric(t *testing.T) {
-	dir, err := ioutil.TempDir("", "test")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 
 	db, err := Open(dir, nil, nil, DefaultOptions(), nil)
 	require.NoError(t, err)
@@ -2456,11 +2428,7 @@ func BenchmarkHeadLabelValuesWithMatchers(b *testing.B) {
 }
 
 func TestMemSafeIteratorSeekIntoBuffer(t *testing.T) {
-	dir, err := ioutil.TempDir("", "iterator_seek")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 	// This is usually taken from the Head, but passing manually here.
 	chunkDiskMapper, err := chunks.NewChunkDiskMapper(nil, dir, chunkenc.NewPool(), chunks.DefaultWriteBufferSize, chunks.DefaultWriteQueueSize)
 	require.NoError(t, err)
