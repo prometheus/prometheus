@@ -253,6 +253,6 @@ func (DummyRulesRetriever) RuleGroups() []*rules.Group {
 }
 
 // AlertingRules implements RulesRetriever.
-func (DummyRulesRetriever) AlertingRules() []*rules.AlertingRule {
+func (DummyRulesRetriever) AlertingRules(_ ...[]*labels.Matcher) []*rules.AlertingRule {
 	return nil
 }

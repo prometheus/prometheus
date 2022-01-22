@@ -151,7 +151,29 @@ func (g *Group) Name() string { return g.name }
 func (g *Group) File() string { return g.file }
 
 // Rules returns the group's rules.
-func (g *Group) Rules() []Rule { return g.rules }
+func (g *Group) Rules(matcherSets ...[]*labels.Matcher) []Rule {
+	if len(matcherSets) == 0 {
+		return g.rules
+	}
+	var rules []Rule
+	for _, rule := range g.rules {
+		if matches(matcherSets, rule.Labels()) {
+			rules = append(rules, rule)
+		}
+	}
+	return rules
+}
+
+func matches(matcherSets [][]*labels.Matcher, labels labels.Labels) bool {
+	for _, matchers := range matcherSets {
+		for _, m := range matchers {
+			if v := labels.Get(m.Name); !m.Matches(v) {
+				return false
+			}
+		}
+	}
+	return true
+}
 
 // Queryable returns the group's querable.
 func (g *Group) Queryable() storage.Queryable { return g.opts.Queryable }
@@ -277,12 +299,12 @@ func (g *Group) hash() uint64 {
 }
 
 // AlertingRules returns the list of the group's alerting rules.
-func (g *Group) AlertingRules() []*AlertingRule {
+func (g *Group) AlertingRules(matcherSets ...[]*labels.Matcher) []*AlertingRule {
 	g.mtx.Lock()
 	defer g.mtx.Unlock()
 
 	var alerts []*AlertingRule
-	for _, rule := range g.rules {
+	for _, rule := range g.Rules(matcherSets...) {
 		if alertingRule, ok := rule.(*AlertingRule); ok {
 			alerts = append(alerts, alertingRule)
 		}

@@ -313,7 +313,7 @@ func (m *rulesRetrieverMock) CreateRuleGroups() {
 	m.ruleGroups = []*rules.Group{group}
 }
 
-func (m *rulesRetrieverMock) AlertingRules() []*rules.AlertingRule {
+func (m *rulesRetrieverMock) AlertingRules(matcherSets ...[]*labels.Matcher) []*rules.AlertingRule {
 	return m.alertingRules
 }
 
