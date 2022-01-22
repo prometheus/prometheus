@@ -113,7 +113,7 @@ type AlertmanagerRetriever interface {
 // RulesRetriever provides a list of active rules and alerts.
 type RulesRetriever interface {
 	RuleGroups() []*rules.Group
-	AlertingRules() []*rules.AlertingRule
+	AlertingRules(matcherSets ...[]*labels.Matcher) []*rules.AlertingRule
 }
 
 type StatsRenderer func(context.Context, *stats.Statistics, string) stats.QueryStats
@@ -1182,7 +1182,16 @@ type Alert struct {
 }
 
 func (api *API) alerts(r *http.Request) apiFuncResult {
-	alertingRules := api.rulesRetriever(r.Context()).AlertingRules()
+	if err := r.ParseForm(); err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, errors.Wrapf(err, "error parsing form values")}, nil, nil}
+	}
+
+	matcherSets, err := parseMatchersParam(r.Form["match[]"])
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
+	}
+
+	alertingRules := api.rulesRetriever(r.Context()).AlertingRules(matcherSets...)
 	alerts := []*Alert{}
 
 	for _, alertingRule := range alertingRules {
@@ -1362,6 +1371,11 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 	rgSet := queryFormToSet(r.Form["rule_group[]"])
 	fSet := queryFormToSet(r.Form["file[]"])
 
+	matcherSets, err := parseMatchersParam(r.Form["match[]"])
+	if err != nil {
+		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
+	}
+
 	ruleGroups := api.rulesRetriever(r.Context()).RuleGroups()
 	res := &RuleDiscovery{RuleGroups: make([]*RuleGroup, 0, len(ruleGroups))}
 	typ := strings.ToLower(r.URL.Query().Get("type"))
@@ -1396,7 +1410,8 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 			EvaluationTime: grp.GetEvaluationTime().Seconds(),
 			LastEvaluation: grp.GetLastEvaluation(),
 		}
-		for _, rr := range grp.Rules() {
+
+		for _, rr := range grp.Rules(matcherSets...) {
 			var enrichedRule Rule
 
 			if len(rnSet) > 0 {
