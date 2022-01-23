@@ -11,11 +11,18 @@ import SearchBar from '../../components/SearchBar';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type RuleState = keyof RuleStatus<any>;
+export type RuleHealth = keyof RuleHealthStatus<any>;
 
 export interface RuleStatus<T> {
   firing: T;
   pending: T;
   inactive: T;
+}
+
+export interface RuleHealthStatus<T> {
+  unknown: T;
+  err: T;
+  ok: T;
 }
 
 export interface AlertsProps {

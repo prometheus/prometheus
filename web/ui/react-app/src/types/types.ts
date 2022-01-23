@@ -1,4 +1,4 @@
-import { Alert, RuleState } from '../pages/alerts/AlertContents';
+import { Alert, RuleState, RuleHealth } from '../pages/alerts/AlertContents';
 
 export interface Metric {
   [key: string]: string;
@@ -21,7 +21,7 @@ export type Rule = {
   annotations: Record<string, string>;
   duration: number;
   evaluationTime: string;
-  health: string;
+  health: RuleHealth;
   labels: Record<string, string>;
   lastError?: string;
   lastEvaluation: string;
