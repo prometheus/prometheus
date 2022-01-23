@@ -438,7 +438,7 @@ subscription_id: <string>
 # instead be specified in the relabeling rule.
 [ port: <int> | default = 80 ]
 
-# Authentication information used to authenticate to the consul server.
+# Authentication information used to authenticate to the Azure API.
 # Note that `basic_auth`, `authorization` and `oauth2` options are
 # mutually exclusive.
 # `password` and `password_file` are mutually exclusive.
