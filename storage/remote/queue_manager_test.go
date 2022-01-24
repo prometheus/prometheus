@@ -913,11 +913,7 @@ func TestCalculateDesiredShardsDetail(t *testing.T) {
 	cfg := config.DefaultQueueConfig
 	mcfg := config.DefaultMetadataConfig
 
-	dir, err := ioutil.TempDir("", "TestCalculateDesiredShards")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 
 	metrics := newQueueManagerMetrics(nil, "", "")
 	samplesIn := newEWMARate(ewmaWeight, shardUpdateDuration)
