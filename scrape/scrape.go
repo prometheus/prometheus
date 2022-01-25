@@ -1420,7 +1420,7 @@ type appendErrors struct {
 func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string, ts time.Time) (total, added, seriesAdded int, err error) {
 	p, warning := textparse.New(b, contentType)
 	if warning != nil {
-		level.Warn(sl.l).Log(
+		level.Debug(sl.l).Log(
 			"msg", "Invalid content type on scrape, using prometheus parser as fallback",
 			"content-type", contentType,
 			"err", warning,
