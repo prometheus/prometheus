@@ -20,6 +20,7 @@ import (
 	"sort"
 	"sync"
 
+	"github.com/dgraph-io/sroar"
 	"github.com/pkg/errors"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -777,6 +778,45 @@ func (it *ListPostings) Seek(x storage.SeriesRef) bool {
 
 func (it *ListPostings) Err() error {
 	return nil
+}
+
+type roaringBitmapPostings struct {
+	bitmap *sroar.Bitmap
+	itr    *sroar.Iterator
+	curr   uint64
+}
+
+func newRoaringBitmapPostings(l []byte) (*roaringBitmapPostings, error) {
+	if len(l)%2 != 0 {
+		return nil, errors.New("byte len must be multiple of 2")
+	}
+	bitmap := sroar.FromBuffer(l) // todo: l may require a revisit in terms of capacity
+	b := &roaringBitmapPostings{
+		bitmap: bitmap,
+		itr:    bitmap.NewIterator(),
+	}
+	return b, nil
+}
+
+func (it *roaringBitmapPostings) At() storage.SeriesRef {
+	return storage.SeriesRef(it.curr)
+}
+
+func (it *roaringBitmapPostings) Next() bool {
+	curr := it.itr.Next()
+	if curr == 0 {
+		return false
+	}
+	it.curr = curr
+	return true
+}
+
+func (it *roaringBitmapPostings) Err() error {
+	return nil
+}
+
+func (it *roaringBitmapPostings) Seek(x storage.SeriesRef) bool {
+	return it.bitmap.Contains(uint64(x))
 }
 
 // bigEndianPostings implements the Postings interface over a byte stream of

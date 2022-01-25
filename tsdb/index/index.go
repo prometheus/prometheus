@@ -18,7 +18,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
-	"fmt"
 	"hash"
 	"hash/crc32"
 	"io"
@@ -864,7 +863,7 @@ func (w *Writer) writePostingsToTmpFiles() error {
 		}
 	}
 	seriesIdsBitmap.SetMany(seriesIds)
-	maxPostings := uint64(seriesIdsBitmap.GetCardinality()) // No label name can have more postings than this. :todo: harkishen
+	maxPostings := uint64(seriesIdsBitmap.GetCardinality()) // No label name can have more postings than this.
 
 	if err := w.writePosting("", "", seriesIdsBitmap); err != nil {
 		return err
@@ -912,6 +911,9 @@ func (w *Writer) writePostingsToTmpFiles() error {
 				if _, ok := nameSymbols[lno]; ok {
 					if _, ok := postings[lno]; !ok {
 						postings[lno] = map[uint32]*sroar.Bitmap{}
+					}
+					if _, ok := postings[lno][lvo]; !ok {
+						postings[lno][lvo] = bitmapPool.Get().(*sroar.Bitmap)
 					}
 					postings[lno][lvo].Set(startPos / 16)
 				}
@@ -1797,10 +1799,11 @@ func (dec *Decoder) Postings(b []byte) (int, Postings, error) {
 	if d.Err() != nil {
 		return 0, nil, d.Err()
 	}
-	if len(l) != 4*n {
-		return 0, nil, fmt.Errorf("unexpected postings length, should be %d bytes for %d postings, got %d bytes", 4*n, n, len(l))
+	postings, err := newRoaringBitmapPostings(l)
+	if err != nil {
+		return 0, nil, errors.Wrap(err, "creating bitmap")
 	}
-	return n, newBigEndianPostings(l), nil
+	return n, postings, nil
 }
 
 // LabelNamesOffsetsFor decodes the offsets of the name symbols for a given series.
