@@ -15,7 +15,7 @@ package stats
 
 import (
 	"context"
-
+	"encoding/json"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
@@ -85,15 +85,26 @@ type queryTimings struct {
 	ExecTotalTime        float64 `json:"execTotalTime"`
 }
 
+type querySamples struct {
+	TotalSamplesPerTime TotalSamplesPerTime `json:"totalSamplesPerTime"`
+	TotalSamples        int                 `json:"totalSamples"`
+}
+
 // QueryStats currently only holding query timings.
 type QueryStats struct {
 	Timings queryTimings `json:"timings,omitempty"`
+	Samples querySamples `json:"samples"`
 }
 
 // NewQueryStats makes a QueryStats struct with all QueryTimings found in the
 // given TimerGroup.
-func NewQueryStats(tg *QueryTimers) *QueryStats {
-	var qt queryTimings
+func NewQueryStats(s *Statistics) *QueryStats {
+	var (
+		qt      queryTimings
+		samples querySamples
+		tg      = s.Timers
+		sp      = s.Samples
+	)
 
 	for s, timer := range tg.TimerGroup.timers {
 		switch s {
@@ -112,7 +123,12 @@ func NewQueryStats(tg *QueryTimers) *QueryStats {
 		}
 	}
 
-	qs := QueryStats{Timings: qt}
+	samples = querySamples{
+		TotalSamples:        sp.TotalSamples,
+		TotalSamplesPerTime: sp.TotalSamplesPerTime,
+	}
+
+	qs := QueryStats{Timings: qt, Samples: samples}
 	return &qs
 }
 
@@ -145,12 +161,54 @@ func (s *SpanTimer) Finish() {
 	}
 }
 
+type Statistics struct {
+	Timers  *QueryTimers
+	Samples *QuerySamples
+}
+
 type QueryTimers struct {
 	*TimerGroup
 }
 
+type TotalSamplesPerTime map[int64]int
+
+func (p *TotalSamplesPerTime) MarshalJSON() ([]byte, error) {
+	toMs := map[int64]int{}
+
+	for k, v := range *p {
+		toMs[k/1000] = v
+	}
+
+	return json.Marshal(toMs)
+}
+
+type QuerySamples struct {
+	// TotalSamplesPerTime represents the total number of samples scanned
+	// while evaluating a query.
+	TotalSamples        int
+	TotalSamplesPerTime TotalSamplesPerTime
+}
+
+type Stats struct {
+	TimerStats  *QueryTimers
+	SampleStats *QuerySamples
+}
+
+// IncrementSamples increments the total samples count.
+func (qs *QuerySamples) IncrementSamples(t int64, samples int) {
+	if qs == nil {
+		return
+	}
+	qs.TotalSamplesPerTime[t] += samples
+	qs.TotalSamples += samples
+}
+
 func NewQueryTimers() *QueryTimers {
 	return &QueryTimers{NewTimerGroup()}
+}
+
+func NewQuerySamples() *QuerySamples {
+	return &QuerySamples{TotalSamplesPerTime: TotalSamplesPerTime{}}
 }
 
 func (qs *QueryTimers) GetSpanTimer(ctx context.Context, qt QueryTiming, observers ...prometheus.Observer) (*SpanTimer, context.Context) {

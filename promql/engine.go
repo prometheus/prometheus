@@ -118,7 +118,7 @@ type Query interface {
 	// Statement returns the parsed statement of the query.
 	Statement() parser.Statement
 	// Stats returns statistics about the lifetime of the query.
-	Stats() *stats.QueryTimers
+	Stats() *stats.Statistics
 	// Cancel signals that a running query execution should be aborted.
 	Cancel()
 	// String returns the original query string.
@@ -135,6 +135,8 @@ type query struct {
 	stmt parser.Statement
 	// Timer stats for the query execution.
 	stats *stats.QueryTimers
+	// Sample stats for the query execution.
+	sampleStats *stats.QuerySamples
 	// Result matrix for reuse.
 	matrix Matrix
 	// Cancellation function for the query.
@@ -159,8 +161,11 @@ func (q *query) String() string {
 }
 
 // Stats implements the Query interface.
-func (q *query) Stats() *stats.QueryTimers {
-	return q.stats
+func (q *query) Stats() *stats.Statistics {
+	return &stats.Statistics{
+		Timers:  q.stats,
+		Samples: q.sampleStats,
+	}
 }
 
 // Cancel implements the Query interface.
@@ -405,10 +410,11 @@ func (ng *Engine) newQuery(q storage.Queryable, expr parser.Expr, start, end tim
 		Interval: interval,
 	}
 	qry := &query{
-		stmt:      es,
-		ng:        ng,
-		stats:     stats.NewQueryTimers(),
-		queryable: q,
+		stmt:        es,
+		ng:          ng,
+		stats:       stats.NewQueryTimers(),
+		sampleStats: stats.NewQuerySamples(),
+		queryable:   q,
 	}
 	return qry, nil
 }
@@ -471,10 +477,11 @@ func (ng *Engine) validateOpts(expr parser.Expr) error {
 
 func (ng *Engine) newTestQuery(f func(context.Context) error) Query {
 	qry := &query{
-		q:     "test statement",
-		stmt:  parser.TestStmt(f),
-		ng:    ng,
-		stats: stats.NewQueryTimers(),
+		q:           "test statement",
+		stmt:        parser.TestStmt(f),
+		ng:          ng,
+		stats:       stats.NewQueryTimers(),
+		sampleStats: stats.NewQuerySamples(),
 	}
 	return qry
 }
@@ -596,6 +603,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 			maxSamples:               ng.maxSamplesPerQuery,
 			logger:                   ng.logger,
 			lookbackDelta:            ng.lookbackDelta,
+			samplesStats:             query.sampleStats,
 			noStepSubqueryIntervalFn: ng.noStepSubqueryIntervalFn,
 		}
 
@@ -627,8 +635,17 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 				// timestamp as that is when we ran the evaluation.
 				vector[i] = Sample{Metric: s.Metric, Point: Point{V: s.Points[0].V, T: start}}
 			}
+
+			if len(query.sampleStats.TotalSamplesPerTime) > 0 {
+				query.sampleStats.TotalSamplesPerTime = stats.TotalSamplesPerTime{}
+				query.sampleStats.TotalSamplesPerTime[start] = query.sampleStats.TotalSamples
+			}
 			return vector, warnings, nil
 		case parser.ValueTypeScalar:
+			if len(query.sampleStats.TotalSamplesPerTime) > 0 {
+				query.sampleStats.TotalSamplesPerTime = stats.TotalSamplesPerTime{}
+				query.sampleStats.TotalSamplesPerTime[start] = query.sampleStats.TotalSamples
+			}
 			return Scalar{V: mat[0].Points[0].V, T: start}, warnings, nil
 		case parser.ValueTypeMatrix:
 			return mat, warnings, nil
@@ -646,6 +663,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 		maxSamples:               ng.maxSamplesPerQuery,
 		logger:                   ng.logger,
 		lookbackDelta:            ng.lookbackDelta,
+		samplesStats:             query.sampleStats,
 		noStepSubqueryIntervalFn: ng.noStepSubqueryIntervalFn,
 	}
 	val, warnings, err := evaluator.Eval(s.Expr)
@@ -877,6 +895,7 @@ type evaluator struct {
 	currentSamples           int
 	logger                   log.Logger
 	lookbackDelta            time.Duration
+	samplesStats             *stats.QuerySamples
 	noStepSubqueryIntervalFn func(rangeMillis int64) int64
 }
 
@@ -1135,7 +1154,11 @@ func (ev *evaluator) rangeEval(prepSeries func(labels.Labels, *EvalSeriesHelper)
 // evalSubquery evaluates given SubqueryExpr and returns an equivalent
 // evaluated MatrixSelector in its place. Note that the Name and LabelMatchers are not set.
 func (ev *evaluator) evalSubquery(subq *parser.SubqueryExpr) (*parser.MatrixSelector, int, storage.Warnings) {
+	sampleStats := ev.samplesStats
+	// Avoid double counting samples when running a subquery, those samples will be counted in later stage
+	ev.samplesStats = nil
 	val, ws := ev.eval(subq)
+	ev.samplesStats = sampleStats
 	mat := val.(Matrix)
 	vs := &parser.VectorSelector{
 		OriginalOffset: subq.OriginalOffset,
@@ -1341,6 +1364,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 				enh.Ts = ts
 				// Make the function call.
 				outVec := call(inArgs, e.Args, enh)
+				ev.samplesStats.IncrementSamples(ts, len(points))
 				enh.Out = outVec[:0]
 				if len(outVec) > 0 {
 					ss.Points = append(ss.Points, Point{V: outVec[0].Point.V, T: ts})
@@ -1528,6 +1552,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 			maxSamples:               ev.maxSamples,
 			logger:                   ev.logger,
 			lookbackDelta:            ev.lookbackDelta,
+			samplesStats:             stats.NewQuerySamples(),
 			noStepSubqueryIntervalFn: ev.noStepSubqueryIntervalFn,
 		}
 
@@ -1553,6 +1578,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 
 		res, ws := newEv.eval(e.Expr)
 		ev.currentSamples = newEv.currentSamples
+		ev.samplesStats.IncrementSamples(ev.endTimestamp, newEv.samplesStats.TotalSamples)
 		return res, ws
 	case *parser.StepInvariantExpr:
 		switch ce := e.Expr.(type) {
@@ -1569,10 +1595,14 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 			maxSamples:               ev.maxSamples,
 			logger:                   ev.logger,
 			lookbackDelta:            ev.lookbackDelta,
+			samplesStats:             stats.NewQuerySamples(),
 			noStepSubqueryIntervalFn: ev.noStepSubqueryIntervalFn,
 		}
 		res, ws := newEv.eval(e.Expr)
 		ev.currentSamples = newEv.currentSamples
+		for ts := ev.startTimestamp; ts <= ev.endTimestamp; ts = ts + ev.interval {
+			ev.samplesStats.IncrementSamples(ts, newEv.samplesStats.TotalSamples)
+		}
 		switch e.Expr.(type) {
 		case *parser.MatrixSelector, *parser.SubqueryExpr:
 			// We do not duplicate results for range selectors since result is a matrix
@@ -1627,6 +1657,7 @@ func (ev *evaluator) vectorSelector(node *parser.VectorSelector, ts int64) (Vect
 			})
 
 			ev.currentSamples++
+			ev.samplesStats.IncrementSamples(t, 1)
 			if ev.currentSamples > ev.maxSamples {
 				ev.error(ErrTooManySamples(env))
 			}
@@ -1662,6 +1693,7 @@ func (ev *evaluator) vectorSelectorSingle(it *storage.MemoizedSeriesIterator, no
 	if value.IsStaleNaN(v) {
 		return 0, 0, false
 	}
+	ev.samplesStats.IncrementSamples(ts, 1)
 	return t, v, true
 }
 
@@ -1708,6 +1740,7 @@ func (ev *evaluator) matrixSelector(node *parser.MatrixSelector) (Matrix, storag
 		}
 
 		ss.Points = ev.matrixIterSlice(it, mint, maxt, getPointSlice(16))
+		ev.samplesStats.IncrementSamples(ev.startTimestamp, len(ss.Points))
 
 		if len(ss.Points) > 0 {
 			matrix = append(matrix, ss)

@@ -43,13 +43,14 @@ func TestTimerGroupNewTimer(t *testing.T) {
 
 func TestQueryStatsWithTimers(t *testing.T) {
 	qt := NewQueryTimers()
+	qs := NewQuerySamples()
 	timer := qt.GetTimer(ExecTotalTime)
 	timer.Start()
 	time.Sleep(2 * time.Millisecond)
 	timer.Stop()
 
-	qs := NewQueryStats(qt)
-	actual, err := json.Marshal(qs)
+	qstats := NewQueryStats(&Statistics{Timers: qt, Samples: qs})
+	actual, err := json.Marshal(qstats)
 	require.NoError(t, err, "unexpected error during serialization")
 	// Timing value is one of multiple fields, unit is seconds (float).
 	match, err := regexp.MatchString(`[,{]"execTotalTime":\d+\.\d+[,}]`, string(actual))
@@ -59,12 +60,13 @@ func TestQueryStatsWithTimers(t *testing.T) {
 
 func TestQueryStatsWithSpanTimers(t *testing.T) {
 	qt := NewQueryTimers()
+	qs := NewQuerySamples()
 	ctx := &testutil.MockContext{DoneCh: make(chan struct{})}
 	qst, _ := qt.GetSpanTimer(ctx, ExecQueueTime, prometheus.NewSummary(prometheus.SummaryOpts{}))
 	time.Sleep(5 * time.Millisecond)
 	qst.Finish()
-	qs := NewQueryStats(qt)
-	actual, err := json.Marshal(qs)
+	qstats := NewQueryStats(&Statistics{Timers: qt, Samples: qs})
+	actual, err := json.Marshal(qstats)
 	require.NoError(t, err, "unexpected error during serialization")
 	// Timing value is one of multiple fields, unit is seconds (float).
 	match, err := regexp.MatchString(`[,{]"execQueueTime":\d+\.\d+[,}]`, string(actual))
