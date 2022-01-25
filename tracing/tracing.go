@@ -68,8 +68,11 @@ func (m *Manager) Run() {
 // ApplyConfig takes care of refreshing the tracing configuration by shutting down
 // the current tracer provider (if any is registered) and installing a new one.
 func (m *Manager) ApplyConfig(cfg *config.Config) error {
-	// Update only if a config change is detected.
-	if m.config == cfg.TracingConfig {
+	// Update only if a config change is detected. If TLS configuration is
+	// set, we have to restart the manager to make sure that new TLS
+	// certificates are picked up.
+	var blankTLSConfig config_util.TLSConfig
+	if m.config == cfg.TracingConfig && m.config.TLSConfig == blankTLSConfig {
 		return nil
 	}
 
@@ -177,27 +180,29 @@ func getClient(tracingCfg config.TracingConfig) (otlptrace.Client, error) {
 	switch tracingCfg.ClientType {
 	case config.TracingClientGRPC:
 		opts := []otlptracegrpc.Option{otlptracegrpc.WithEndpoint(tracingCfg.Endpoint)}
-		if !tracingCfg.WithSecure {
+		if tracingCfg.Insecure {
 			opts = append(opts, otlptracegrpc.WithInsecure())
-		} else {
-			tlsConf, err := config_util.NewTLSConfig(&tracingCfg.TLSConfig)
-			if err != nil {
-				return nil, err
-			}
-			opts = append(opts, otlptracegrpc.WithTLSCredentials(credentials.NewTLS(tlsConf)))
 		}
+
+		tlsConf, err := config_util.NewTLSConfig(&tracingCfg.TLSConfig)
+		if err != nil {
+			return nil, err
+		}
+		opts = append(opts, otlptracegrpc.WithTLSCredentials(credentials.NewTLS(tlsConf)))
+
 		client = otlptracegrpc.NewClient(opts...)
 	case config.TracingClientHTTP:
 		opts := []otlptracehttp.Option{otlptracehttp.WithEndpoint(tracingCfg.Endpoint)}
-		if !tracingCfg.WithSecure {
+		if tracingCfg.Insecure {
 			opts = append(opts, otlptracehttp.WithInsecure())
-		} else {
-			tlsConf, err := config_util.NewTLSConfig(&tracingCfg.TLSConfig)
-			if err != nil {
-				return nil, err
-			}
-			opts = append(opts, otlptracehttp.WithTLSClientConfig(tlsConf))
 		}
+
+		tlsConf, err := config_util.NewTLSConfig(&tracingCfg.TLSConfig)
+		if err != nil {
+			return nil, err
+		}
+		opts = append(opts, otlptracehttp.WithTLSClientConfig(tlsConf))
+
 		client = otlptracehttp.NewClient(opts...)
 	}
 

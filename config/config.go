@@ -234,6 +234,7 @@ type Config struct {
 func (c *Config) SetDirectory(dir string) {
 	c.GlobalConfig.SetDirectory(dir)
 	c.AlertingConfig.SetDirectory(dir)
+	c.TracingConfig.SetDirectory(dir)
 	for i, file := range c.RuleFiles {
 		c.RuleFiles[i] = config.JoinDir(dir, file)
 	}
@@ -532,13 +533,21 @@ type TracingConfig struct {
 	ClientType       TracingClientType `yaml:"client_type,omitempty"`
 	Endpoint         string            `yaml:"endpoint,omitempty"`
 	SamplingFraction float64           `yaml:"sampling_fraction,omitempty"`
-	WithSecure       bool              `yaml:"with_secure,omitempty"`
+	Insecure         bool              `yaml:"insecure,omitempty"`
 	TLSConfig        config.TLSConfig  `yaml:"tls_config,omitempty"`
+}
+
+// SetDirectory joins any relative file paths with dir.
+func (t *TracingConfig) SetDirectory(dir string) {
+	t.TLSConfig.SetDirectory(dir)
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
 func (t *TracingConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	*t = TracingConfig{}
+	*t = TracingConfig{
+		ClientType: TracingClientGRPC,
+		Insecure:   true,
+	}
 	type plain TracingConfig
 	if err := unmarshal((*plain)(t)); err != nil {
 		return err
@@ -546,11 +555,6 @@ func (t *TracingConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 	if t.Endpoint == "" {
 		return errors.New("tracing endpoint must be set")
-	}
-
-	// Fill in gRPC client as default if none is set.
-	if t.ClientType == "" {
-		t.ClientType = TracingClientGRPC
 	}
 
 	return nil
