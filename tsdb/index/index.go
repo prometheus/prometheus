@@ -27,8 +27,10 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"sync"
 	"unsafe"
 
+	"github.com/dgraph-io/sroar"
 	"github.com/pkg/errors"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -815,6 +817,17 @@ func (w *Writer) writeTOC() error {
 	return w.write(w.buf1.Get())
 }
 
+var bitmapPool = sync.Pool{
+	New: func() interface{} {
+		return sroar.NewBitmap()
+	},
+}
+
+func putBitmap(b *sroar.Bitmap) {
+	b.Reset()
+	bitmapPool.Put(b)
+}
+
 func (w *Writer) writePostingsToTmpFiles() error {
 	names := make([]string, 0, len(w.labelNames))
 	for n := range w.labelNames {
@@ -832,7 +845,8 @@ func (w *Writer) writePostingsToTmpFiles() error {
 	defer f.Close()
 
 	// Write out the special all posting.
-	offsets := []uint32{}
+	seriesIds := []uint64{}
+	seriesIdsBitmap := bitmapPool.Get().(*sroar.Bitmap)
 	d := encoding.NewDecbufRaw(realByteSlice(f.Bytes()), int(w.toc.LabelIndices))
 	d.Skip(int(w.toc.Series))
 	for d.Len() > 0 {
@@ -841,7 +855,7 @@ func (w *Writer) writePostingsToTmpFiles() error {
 		if startPos%16 != 0 {
 			return errors.Errorf("series not 16-byte aligned at %d", startPos)
 		}
-		offsets = append(offsets, uint32(startPos/16))
+		seriesIds = append(seriesIds, startPos/16)
 		// Skip to next series.
 		x := d.Uvarint()
 		d.Skip(x + crc32.Size)
@@ -849,10 +863,12 @@ func (w *Writer) writePostingsToTmpFiles() error {
 			return err
 		}
 	}
-	if err := w.writePosting("", "", offsets); err != nil {
+	seriesIdsBitmap.SetMany(seriesIds)
+	maxPostings := uint64(seriesIdsBitmap.GetCardinality()) // No label name can have more postings than this. :todo: harkishen
+
+	if err := w.writePosting("", "", seriesIdsBitmap); err != nil {
 		return err
 	}
-	maxPostings := uint64(len(offsets)) // No label name can have more postings than this.
 
 	for len(names) > 0 {
 		batchNames := []string{}
@@ -877,7 +893,7 @@ func (w *Writer) writePostingsToTmpFiles() error {
 			nameSymbols[sid] = name
 		}
 		// Label name -> label value -> positions.
-		postings := map[uint32]map[uint32][]uint32{}
+		postings := map[uint32]map[uint32]*sroar.Bitmap{}
 
 		d := encoding.NewDecbufRaw(realByteSlice(f.Bytes()), int(w.toc.LabelIndices))
 		d.Skip(int(w.toc.Series))
@@ -895,9 +911,9 @@ func (w *Writer) writePostingsToTmpFiles() error {
 
 				if _, ok := nameSymbols[lno]; ok {
 					if _, ok := postings[lno]; !ok {
-						postings[lno] = map[uint32][]uint32{}
+						postings[lno] = map[uint32]*sroar.Bitmap{}
 					}
-					postings[lno][lvo] = append(postings[lno][lvo], uint32(startPos/16))
+					postings[lno][lvo].Set(startPos / 16)
 				}
 			}
 			// Skip to next series.
@@ -939,7 +955,7 @@ func (w *Writer) writePostingsToTmpFiles() error {
 	return nil
 }
 
-func (w *Writer) writePosting(name, value string, offs []uint32) error {
+func (w *Writer) writePosting(name, value string, postings *sroar.Bitmap) error {
 	// Align beginning to 4 bytes for more efficient postings list scans.
 	if err := w.fP.AddPadding(4); err != nil {
 		return err
@@ -957,14 +973,9 @@ func (w *Writer) writePosting(name, value string, offs []uint32) error {
 	w.cntPO++
 
 	w.buf1.Reset()
-	w.buf1.PutBE32int(len(offs))
-
-	for _, off := range offs {
-		if off > (1<<32)-1 {
-			return errors.Errorf("series offset %d exceeds 4 bytes", off)
-		}
-		w.buf1.PutBE32(off)
-	}
+	w.buf1.PutBE32int(postings.GetCardinality())
+	w.buf1.PutBytes(postings.ToBuffer())
+	putBitmap(postings)
 
 	w.buf2.Reset()
 	l := w.buf1.Len()

@@ -14,6 +14,7 @@ require (
 	github.com/cespare/xxhash/v2 v2.1.2
 	github.com/containerd/containerd v1.5.9 // indirect
 	github.com/dennwc/varint v1.0.0
+	github.com/dgraph-io/sroar v0.0.0-20211209113350-3e3f1b382a64 // indirect
 	github.com/dgryski/go-sip13 v0.0.0-20200911182023-62edffca9245
 	github.com/digitalocean/godo v1.75.0
 	github.com/docker/docker v20.10.12+incompatible
