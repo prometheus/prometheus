@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/kolo/xmlrpc"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/config"
@@ -307,27 +308,35 @@ func (d *Discovery) getTargetsForSystems(
 	return result, nil
 }
 
-func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
+func (d *Discovery) refresh(_ context.Context) ([]*targetgroup.Group, error) {
 	rpcClient, err := xmlrpc.NewClient(d.apiURL.String(), d.roundTripper)
 	if err != nil {
 		return nil, err
 	}
 	defer rpcClient.Close()
 
-	// If the current token has expired or will expire in the next second, refresh it
-	if time.Since(d.tokenCreated) > (tokenDuration - time.Second) {
-		// Uyuni API doesn't state the unit of measure for the duration.
-		// From looking at the code, I believe it is it seconds.
-		d.token, err = login(rpcClient, d.username, d.password, int(tokenDuration.Seconds()))
-		if err != nil {
-			return nil, errors.Wrap(err, "unable to login to Uyuni API")
+	tries := 0
+	maxTries := 2
+	for {
+		// If the current token has expired or will expire in the next second OR there was a prior error, refresh it
+		if time.Since(d.tokenCreated) > (tokenDuration-time.Second) || err != nil {
+			// Uyuni API doesn't state the unit of measure for the duration.
+			// From looking at the code, I believe it is in seconds.
+			d.token, err = login(rpcClient, d.username, d.password, int(tokenDuration.Seconds()))
+			if err != nil {
+				return nil, errors.Wrap(err, "unable to login to Uyuni API")
+			}
 		}
-	}
 
-	targetsForSystems, err := d.getTargetsForSystems(rpcClient, d.entitlement)
-	if err != nil {
-		return nil, err
-	}
+		tries++
+		targetsForSystems, err := d.getTargetsForSystems(rpcClient, d.entitlement)
+		if err == nil {
+			return []*targetgroup.Group{{Targets: targetsForSystems, Source: d.apiURL.String()}}, nil
+		} else if tries >= maxTries {
+			return nil, err
+		}
 
-	return []*targetgroup.Group{{Targets: targetsForSystems, Source: d.apiURL.String()}}, nil
+		// Log and try again
+		level.Info(d.logger).Log("msg", "error refreshing Uyuni services, retrying", "err", err.Error())
+	}
 }

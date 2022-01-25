@@ -21,6 +21,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-kit/log"
+
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -35,7 +37,7 @@ func testUpdateServices(respHandler http.HandlerFunc) ([]*targetgroup.Group, err
 		Server: ts.URL,
 	}
 
-	md, err := NewDiscovery(&conf, nil)
+	md, err := NewDiscovery(&conf, log.NewNopLogger())
 	if err != nil {
 		return nil, err
 	}
@@ -65,7 +67,7 @@ func TestUyuniSDLogin(t *testing.T) {
 		respHandler = func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/xml")
 			switch call {
-			case 0:
+			case 0, 2:
 				w.WriteHeader(http.StatusOK)
 				io.WriteString(w, `<?xml version="1.0"?>
 <methodResponse>
@@ -77,7 +79,7 @@ func TestUyuniSDLogin(t *testing.T) {
 		</param>
 	</params>
 </methodResponse>`)
-			case 1:
+			case 1, 3:
 				w.WriteHeader(http.StatusInternalServerError)
 				io.WriteString(w, ``)
 			}
@@ -108,7 +110,7 @@ func TestUyuniSDSkipLogin(t *testing.T) {
 		Server: ts.URL,
 	}
 
-	md, err := NewDiscovery(&conf, nil)
+	md, err := NewDiscovery(&conf, log.NewNopLogger())
 	if err != nil {
 		t.Error(err)
 	}
