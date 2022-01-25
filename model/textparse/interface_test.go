@@ -19,7 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestNew(t *testing.T) {
+func TestNewParser(t *testing.T) {
 	t.Parallel()
 
 	requirePromParser := func(t *testing.T, p Parser) {
