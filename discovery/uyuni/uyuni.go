@@ -23,7 +23,6 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/kolo/xmlrpc"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/config"
@@ -98,16 +97,16 @@ type endpointInfo struct {
 // Discovery periodically performs Uyuni API requests. It implements the Discoverer interface.
 type Discovery struct {
 	*refresh.Discovery
-	apiURL       *url.URL
-	roundTripper http.RoundTripper
-	username     string
-	password     string
-	token        string
-	tokenCreated time.Time
-	entitlement  string
-	separator    string
-	interval     time.Duration
-	logger       log.Logger
+	apiURL          *url.URL
+	roundTripper    http.RoundTripper
+	username        string
+	password        string
+	token           string
+	tokenExpiration time.Time
+	entitlement     string
+	separator       string
+	interval        time.Duration
+	logger          log.Logger
 }
 
 // Name returns the name of the Config.
@@ -211,15 +210,15 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 	}
 
 	d := &Discovery{
-		apiURL:       apiURL,
-		roundTripper: rt,
-		username:     conf.Username,
-		password:     string(conf.Password),
-		tokenCreated: time.Now().Add(-tokenDuration), // set an expired time
-		entitlement:  conf.Entitlement,
-		separator:    conf.Separator,
-		interval:     time.Duration(conf.RefreshInterval),
-		logger:       logger,
+		apiURL:          apiURL,
+		roundTripper:    rt,
+		username:        conf.Username,
+		password:        string(conf.Password),
+		tokenExpiration: time.Now(), // set an expired time
+		entitlement:     conf.Entitlement,
+		separator:       conf.Separator,
+		interval:        time.Duration(conf.RefreshInterval),
+		logger:          logger,
 	}
 
 	d.Discovery = refresh.NewDiscovery(
@@ -315,28 +314,24 @@ func (d *Discovery) refresh(_ context.Context) ([]*targetgroup.Group, error) {
 	}
 	defer rpcClient.Close()
 
-	tries := 0
-	maxTries := 2
-	for {
-		// If the current token has expired or will expire in the next second OR there was a prior error, refresh it
-		if time.Since(d.tokenCreated) > (tokenDuration-time.Second) || err != nil {
-			// Uyuni API doesn't state the unit of measure for the duration.
-			// From looking at the code, I believe it is in seconds.
-			d.token, err = login(rpcClient, d.username, d.password, int(tokenDuration.Seconds()))
-			if err != nil {
-				return nil, errors.Wrap(err, "unable to login to Uyuni API")
-			}
+	// If the current token has expired, refresh it
+	if time.Now().After(d.tokenExpiration) {
+		// Uyuni API doesn't state the unit of measure for the duration.
+		// From looking at the code, I believe it is in seconds.
+		d.token, err = login(rpcClient, d.username, d.password, int(tokenDuration.Seconds()))
+		if err != nil {
+			return nil, errors.Wrap(err, "unable to login to Uyuni API")
 		}
-
-		tries++
-		targetsForSystems, err := d.getTargetsForSystems(rpcClient, d.entitlement)
-		if err == nil {
-			return []*targetgroup.Group{{Targets: targetsForSystems, Source: d.apiURL.String()}}, nil
-		} else if tries >= maxTries {
-			return nil, err
-		}
-
-		// Log and try again
-		level.Info(d.logger).Log("msg", "error refreshing Uyuni services, retrying", "err", err.Error())
+		// login at half the token lifetime
+		d.tokenExpiration = time.Now().Add(tokenDuration / 2)
 	}
+
+	targetsForSystems, err := d.getTargetsForSystems(rpcClient, d.entitlement)
+	if err != nil {
+		// force login on next refresh
+		d.tokenExpiration = time.Now()
+		return nil, err
+	}
+
+	return []*targetgroup.Group{{Targets: targetsForSystems, Source: d.apiURL.String()}}, nil
 }
