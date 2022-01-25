@@ -96,7 +96,7 @@ func TestNewParser(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			tt := tt // copy to local var before going parallel
+			tt := tt // Copy to local variable before going parallel.
 			t.Parallel()
 
 			p, err := New([]byte{}, tt.contentType)
