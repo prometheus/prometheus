@@ -57,13 +57,14 @@ const (
 )
 
 func fuzzParseMetricWithContentType(in []byte, contentType string) int {
-	p, err := textparse.New(in, contentType)
-	if err != nil {
+	p, warning := textparse.New(in, contentType)
+	if warning != nil {
 		// an invalid content type is being passed, which should not happen
 		// in this context
-		panic(err)
+		panic(warning)
 	}
 
+	var err error
 	for {
 		_, err = p.Next()
 		if err != nil {

@@ -62,22 +62,18 @@ type Parser interface {
 
 // New returns a new parser of the byte slice.
 //
-// If content type is empty (NewPromParser(b), nil) is returned.
-// Any other invalid content type will return (nil, err).
-func New(b []byte, contentType string) (Parser, error) {
+// This function always returns a valid parser, but might additionally
+// return an error if the content type cannot be parsed.
+func New(b []byte, contentType string) (p Parser, warning error) {
 	if contentType == "" {
 		return NewPromParser(b), nil
 	}
 
 	mediaType, _, err := mime.ParseMediaType(contentType)
-	if err != nil {
-		return nil, err
-	}
-
-	if mediaType == "application/openmetrics-text" {
+	if err == nil && mediaType == "application/openmetrics-text" {
 		return NewOpenMetricsParser(b), nil
 	}
-	return NewPromParser(b), nil
+	return NewPromParser(b), err
 }
 
 // Entry represents the type of a parsed entry.

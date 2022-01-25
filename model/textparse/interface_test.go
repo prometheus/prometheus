@@ -34,39 +34,65 @@ func TestNew(t *testing.T) {
 		require.True(t, ok)
 	}
 
-	requireNil := func(t *testing.T, p Parser) {
-		require.Nil(t, p)
-	}
-
 	for name, tt := range map[string]*struct {
 		contentType    string
 		validateParser func(*testing.T, Parser)
-		err            string
+		warning        string
 	}{
 		"empty-string": {
 			contentType:    "",
 			validateParser: requirePromParser,
-			err:            "",
+			warning:        "",
 		},
-		"invalid-content-type": {
+		"invalid-content-type-1": {
+			contentType:    "invalid/",
+			validateParser: requirePromParser,
+			warning:        "expected token after slash",
+		},
+		"invalid-content-type-2": {
+			contentType:    "invalid/invalid/invalid",
+			validateParser: requirePromParser,
+			warning:        "unexpected content after media subtype",
+		},
+		"invalid-content-type-3": {
+			contentType:    "/",
+			validateParser: requirePromParser,
+			warning:        "no media type",
+		},
+		"invalid-content-type-4": {
 			contentType:    "application/openmetrics-text; charset=UTF-8; charset=utf-8",
-			validateParser: requireNil,
-			err:            "duplicate parameter name",
+			validateParser: requirePromParser,
+			warning:        "duplicate parameter name",
 		},
-		"application/openmetrics-text": {
+		"openmetrics": {
 			contentType:    "application/openmetrics-text",
 			validateParser: requireOpenMetricsParser,
-			err:            "",
+			warning:        "",
 		},
-		"text/plain": {
+		"openmetrics-with-charset": {
+			contentType:    "application/openmetrics-text; charset=utf-8",
+			validateParser: requireOpenMetricsParser,
+			warning:        "",
+		},
+		"openmetrics-with-charset-and-version": {
+			contentType:    "application/openmetrics-text; version=1.0.0; charset=utf-8",
+			validateParser: requireOpenMetricsParser,
+			warning:        "",
+		},
+		"plain-text": {
 			contentType:    "text/plain",
 			validateParser: requirePromParser,
-			err:            "",
+			warning:        "",
+		},
+		"plain-text-with-version": {
+			contentType:    "text/plain; version=0.0.4",
+			validateParser: requirePromParser,
+			warning:        "",
 		},
 		"some-other-valid-content-type": {
 			contentType:    "text/html",
 			validateParser: requirePromParser,
-			err:            "",
+			warning:        "",
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -75,11 +101,11 @@ func TestNew(t *testing.T) {
 
 			p, err := New([]byte{}, tt.contentType)
 			tt.validateParser(t, p)
-			if tt.err == "" {
+			if tt.warning == "" {
 				require.NoError(t, err)
 			} else {
 				require.Error(t, err)
-				require.Contains(t, err.Error(), tt.err)
+				require.Contains(t, err.Error(), tt.warning)
 			}
 		})
 	}
