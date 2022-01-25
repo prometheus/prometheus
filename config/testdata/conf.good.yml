@@ -366,3 +366,7 @@ alerting:
             - "1.2.3.4:9093"
             - "1.2.3.5:9093"
             - "1.2.3.6:9093"
+
+tracing:
+  endpoint: "localhost:4317"
+  client_type: "grpc"
