@@ -180,10 +180,10 @@ workflows:
             branches:
               ignore: /.*/
           image: circleci/golang:1-node
-  nightly:
+  daily:
     triggers:
       - schedule:
-          cron: "0 0 * * *"
+          cron: "49 19 * * *"
           filters:
             branches:
               only:
