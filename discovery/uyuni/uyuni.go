@@ -46,8 +46,6 @@ const (
 	uyuniLabelProxyModule    = uyuniMetaLabelPrefix + "proxy_module"
 	uyuniLabelMetricsPath    = uyuniMetaLabelPrefix + "metrics_path"
 	uyuniLabelScheme         = uyuniMetaLabelPrefix + "scheme"
-
-	tokenDuration = 10 * time.Minute
 )
 
 // DefaultSDConfig is the default Uyuni SD configuration.
@@ -55,6 +53,7 @@ var DefaultSDConfig = SDConfig{
 	Entitlement:     "monitoring_entitled",
 	Separator:       ",",
 	RefreshInterval: model.Duration(1 * time.Minute),
+	LoginInterval:   model.Duration(10 * time.Minute),
 }
 
 func init() {
@@ -70,6 +69,7 @@ type SDConfig struct {
 	Entitlement      string                  `yaml:"entitlement,omitempty"`
 	Separator        string                  `yaml:"separator,omitempty"`
 	RefreshInterval  model.Duration          `yaml:"refresh_interval,omitempty"`
+	LoginInterval    model.Duration          `yaml:"login_interval,omitempty"`
 }
 
 type systemGroupID struct {
@@ -102,6 +102,7 @@ type Discovery struct {
 	username        string
 	password        string
 	token           string
+	loginInterval   time.Duration
 	tokenExpiration time.Time
 	entitlement     string
 	separator       string
@@ -214,6 +215,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 		roundTripper:    rt,
 		username:        conf.Username,
 		password:        string(conf.Password),
+		loginInterval:   time.Duration(conf.LoginInterval),
 		tokenExpiration: time.Now(), // set an expired time
 		entitlement:     conf.Entitlement,
 		separator:       conf.Separator,
@@ -317,12 +319,12 @@ func (d *Discovery) refresh(_ context.Context) ([]*targetgroup.Group, error) {
 	// If the current token has expired, refresh it
 	if time.Now().After(d.tokenExpiration) {
 		// Uyuni API doesn't state the unit of measure for the duration, but got verification that it's in seconds.
-		d.token, err = login(rpcClient, d.username, d.password, int(tokenDuration.Seconds()))
+		d.token, err = login(rpcClient, d.username, d.password, int(d.loginInterval.Seconds()))
 		if err != nil {
 			return nil, errors.Wrap(err, "unable to login to Uyuni API")
 		}
 		// login at half the token lifetime
-		d.tokenExpiration = time.Now().Add(tokenDuration / 2)
+		d.tokenExpiration = time.Now().Add(d.loginInterval / 2)
 	}
 
 	targetsForSystems, err := d.getTargetsForSystems(rpcClient, d.entitlement)

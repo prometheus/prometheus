@@ -21,7 +21,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
@@ -120,4 +122,82 @@ func TestUyuniSDSkipLogin(t *testing.T) {
 
 	require.EqualError(t, err, errTesting)
 	require.Equal(t, len(tgs), 0)
+}
+
+func TestSDConfigUnmarshalYAML(t *testing.T) {
+	marshal := func(c SDConfig) []byte {
+		d, err := yaml.Marshal(c)
+		if err != nil {
+			panic(err)
+		}
+		return d
+	}
+
+	unmarshal := func(d []byte) func(interface{}) error {
+		return func(o interface{}) error {
+			return yaml.Unmarshal(d, o)
+		}
+	}
+
+	cases := []struct {
+		name      string
+		input     SDConfig
+		expectErr bool
+	}{
+		{
+			name: "valid minimal config",
+			input: SDConfig{
+				Server:   "https://localhost:1234",
+				Username: "gopher",
+				Password: "hole",
+			},
+			expectErr: false,
+		},
+		{
+			name: "valid full config",
+			input: SDConfig{
+				Server:          "https://localhost:1234",
+				Username:        "gopher",
+				Password:        "hole",
+				Entitlement:     "monitoring_entitled",
+				Separator:       ",",
+				RefreshInterval: model.Duration(60 * time.Second),
+				LoginInterval:   model.Duration(10 * time.Minute),
+			},
+			expectErr: false,
+		},
+		{
+			name: "invalid without a server",
+			input: SDConfig{
+				Username: "gopher",
+				Password: "hole",
+			},
+			expectErr: true,
+		},
+		{
+			name: "invalid without a username",
+			input: SDConfig{
+				Server:   "https://localhost:1234",
+				Password: "hole",
+			},
+			expectErr: true,
+		},
+		{
+			name: "invalid without a password",
+			input: SDConfig{
+				Server:   "https://localhost:1234",
+				Username: "gopher",
+			},
+			expectErr: true,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var config SDConfig
+			d := marshal(c.input)
+			err := config.UnmarshalYAML(unmarshal(d))
+			require.Equal(t, c.expectErr, err != nil)
+		})
+	}
 }

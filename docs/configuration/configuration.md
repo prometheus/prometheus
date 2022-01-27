@@ -2344,6 +2344,9 @@ password: <secret>
 # Refresh interval to re-read the managed targets list.
 [ refresh_interval: <duration> | default = 60s ]
 
+# Interval for refreshing the login session key, and the requested login duration. 
+[ login_interval: <duration> | default = 600s ]
+
 # Optional HTTP basic authentication information, currently not supported by Uyuni.
 basic_auth:
   [ username: <string> ]
