@@ -787,6 +787,17 @@ load 10s
 			},
 		},
 		{
+			// timestamp function as a special handling
+			Query: "timestamp(metricWith1SampleEvery10Seconds)",
+			Start: time.Unix(21, 0),
+			QuerySamples: &stats.QuerySamples{
+				TotalSamples: 1, // 1 sample / 10 seconds
+				TotalSamplesPerTime: stats.TotalSamplesPerTime{
+					21000: 1,
+				},
+			},
+		},
+		{
 			Query: "metricWith1SampleEvery10Seconds",
 			Start: time.Unix(22, 0),
 			QuerySamples: &stats.QuerySamples{
@@ -950,6 +961,16 @@ load 10s
 			},
 		},
 		{
+			Query: "absent_over_time(metricWith1SampleEvery10Seconds[60s])",
+			Start: time.Unix(201, 0),
+			QuerySamples: &stats.QuerySamples{
+				TotalSamples: 6, // 1 sample / 10 seconds * 60 seconds
+				TotalSamplesPerTime: stats.TotalSamplesPerTime{
+					201000: 6,
+				},
+			},
+		},
+		{
 			Query: "max_over_time(metricWith3SampleEvery10Seconds[60s])",
 			Start: time.Unix(201, 0),
 			QuerySamples: &stats.QuerySamples{
@@ -1026,6 +1047,22 @@ load 10s
 					209000: 1,
 					214000: 1,
 					219000: 1,
+				},
+			},
+		},
+		{
+			// timestamp function as a special handling
+			Query:    "timestamp(metricWith1SampleEvery10Seconds)",
+			Start:    time.Unix(201, 0),
+			End:      time.Unix(220, 0),
+			Interval: 5 * time.Second,
+			QuerySamples: &stats.QuerySamples{
+				TotalSamples: 4, // (1 sample / 10 seconds) * 4 steps
+				TotalSamplesPerTime: stats.TotalSamplesPerTime{
+					201000: 1,
+					206000: 1,
+					211000: 1,
+					216000: 1,
 				},
 			},
 		},

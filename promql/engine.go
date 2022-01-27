@@ -1521,6 +1521,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 				if ok {
 					if ev.currentSamples < ev.maxSamples {
 						ss.Points = append(ss.Points, Point{V: v, T: ts})
+						ev.samplesStats.IncrementSamples(ts, 1)
 						ev.currentSamples++
 					} else {
 						ev.error(ErrTooManySamples(env))
@@ -1657,7 +1658,7 @@ func (ev *evaluator) vectorSelector(node *parser.VectorSelector, ts int64) (Vect
 			})
 
 			ev.currentSamples++
-			ev.samplesStats.IncrementSamples(t, 1)
+			ev.samplesStats.IncrementSamples(ts, 1)
 			if ev.currentSamples > ev.maxSamples {
 				ev.error(ErrTooManySamples(env))
 			}
@@ -1693,7 +1694,6 @@ func (ev *evaluator) vectorSelectorSingle(it *storage.MemoizedSeriesIterator, no
 	if value.IsStaleNaN(v) {
 		return 0, 0, false
 	}
-	ev.samplesStats.IncrementSamples(ts, 1)
 	return t, v, true
 }
 
