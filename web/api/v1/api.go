@@ -1223,16 +1223,7 @@ type Alert struct {
 }
 
 func (api *API) alerts(r *http.Request) apiFuncResult {
-	if err := r.ParseForm(); err != nil {
-		return apiFuncResult{nil, &apiError{errorBadData, fmt.Errorf("error parsing form values: %w", err)}, nil, nil}
-	}
-
-	matcherSets, err := parseMatchersParam(r.Form["match[]"])
-	if err != nil {
-		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
-	}
-
-	alertingRules := api.rulesRetriever(r.Context()).AlertingRules(matcherSets...)
+	alertingRules := api.rulesRetriever(r.Context()).AlertingRules()
 	alerts := []*Alert{}
 
 	for _, alertingRule := range alertingRules {

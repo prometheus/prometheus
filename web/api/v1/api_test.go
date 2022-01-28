@@ -261,7 +261,6 @@ func (m *rulesRetrieverMock) CreateAlertingRules() {
 		false,
 		log.NewNopLogger(),
 	)
-
 	var r []*rules.AlertingRule
 	r = append(r, rule1)
 	r = append(r, rule2)
@@ -2151,6 +2150,17 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 								Health: "ok",
 								Type:   "alerting",
 							},
+							AlertingRule{
+								State:       "inactive",
+								Name:        "test_metric6",
+								Query:       "up == 1",
+								Duration:    1,
+								Labels:      labels.Labels{labels.Label{Name: "templatedlabel", Value: "{{ $externalURL }}"}},
+								Annotations: labels.Labels{},
+								Alerts:      []*Alert{},
+								Health:      "unknown",
+								Type:        "alerting",
+							},
 							RecordingRule{
 								Name:   "recording-rule-1",
 								Query:  "vector(1)",
@@ -2275,6 +2285,17 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 								},
 								Health: "ok",
 								Type:   "alerting",
+							},
+							AlertingRule{
+								State:       "inactive",
+								Name:        "test_metric6",
+								Query:       "up == 1",
+								Duration:    1,
+								Labels:      labels.Labels{labels.Label{Name: "templatedlabel", Value: "{{ $externalURL }}"}},
+								Annotations: labels.Labels{},
+								Alerts:      []*Alert{},
+								Health:      "unknown",
+								Type:        "alerting",
 							},
 						},
 					},

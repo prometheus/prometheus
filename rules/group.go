@@ -20,6 +20,8 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	text_template "text/template"
+	"text/template/parse"
 	"time"
 
 	"go.uber.org/atomic"
@@ -164,11 +166,26 @@ func (g *Group) Rules(matcherSets ...[]*labels.Matcher) []Rule {
 	return rules
 }
 
-func matches(matcherSets [][]*labels.Matcher, labels labels.Labels) bool {
+func matches(matcherSets [][]*labels.Matcher, l labels.Labels) bool {
+	if len(matcherSets) == 0 {
+		return true
+	}
+
+	var nonTemplatedLabels labels.Labels
+	labelTemplate := text_template.New("label")
+	for _, label := range l {
+		t, err := labelTemplate.Parse(label.Value)
+		// Label value is non-templated if it is one node of type NodeText.
+		if err == nil && len(t.Root.Nodes) == 1 && t.Root.Nodes[0].Type() == parse.NodeText {
+			nonTemplatedLabels = append(nonTemplatedLabels, label)
+		}
+	}
+
 	for _, matchers := range matcherSets {
 		for _, m := range matchers {
-			if v := labels.Get(m.Name); !m.Matches(v) {
+			if v := nonTemplatedLabels.Get(m.Name); !m.Matches(v) {
 				return false
+
 			}
 		}
 	}
