@@ -1653,7 +1653,7 @@ See below for the configuration options for Kubernetes discovery:
 [ api_server: <host> ]
 
 # The Kubernetes role of entities that should be discovered.
-# One of endpoints, service, pod, node, or ingress.
+# One of endpoints, endpointslice, service, pod, node, or ingress.
 role: <string>
 
 # Optional path to a kubeconfig file.
