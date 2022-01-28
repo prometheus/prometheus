@@ -679,8 +679,8 @@ URL query parameters:
 - `rule_name[]=<string>`: only return rules with the given rule name. If the parameter is repeated, rules with any of the provided names are returned. If we've filtered out all the rules of a group, the group is not returned. When the parameter is absent or empty, no filtering is done.
 - `rule_group[]=<string>`: only return rules with the given rule group name. If the parameter is repeated, rules with any of the provided rule group names are returned. When the parameter is absent or empty, no filtering is done.
 - `file[]=<string>`: only return rules with the given filepath. If the parameter is repeated, rules with any of the provided filepaths are returned. When the parameter is absent or empty, no filtering is done.
-- `match[]=<label_selector>`: Repeated label selector argument that select rules which have labels that satisfy the selectors. Optional.
-
+- `match[]=<label_selector>`: Repeated label selector argument that selects rules which have configured labels that satisfy the selectors. Note that for alerting rules it matches the top-level non-templated labels, not the rendered labels of active alerts (instances). Optional.
+ 
 ```json
 $ curl http://localhost:9090/api/v1/rules
 
@@ -741,10 +741,6 @@ The `/alerts` endpoint returns a list of all active alerts.
 
 As the `/alerts` endpoint is fairly new, it does not have the same stability
 guarantees as the overarching API v1.
-
-URL query parameters:
-- `match[]=<label_selector>`: Repeated label selector argument that select alerts whose origin rules have labels that 
-  satisfy the selectors. Optional.
 
 ```
 GET /api/v1/alerts

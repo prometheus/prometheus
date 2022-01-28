@@ -250,7 +250,20 @@ func (m rulesRetrieverMock) AlertingRules(matcherSets ...[]*labels.Matcher) []*r
 		"test_metric5",
 		expr2,
 		time.Second,
+		0,
 		labels.Labels{labels.Label{Name: "testlabel", Value: "rule"}},
+		labels.Labels{},
+		labels.Labels{},
+		"",
+		true,
+		log.NewNopLogger(),
+	)
+	rule4 := rules.NewAlertingRule(
+		"test_metric6",
+		expr2,
+		time.Second,
+		0,
+		labels.Labels{labels.Label{Name: "templatedlabel", Value: "{{ $externalURL }}"}},
 		labels.Labels{},
 		labels.Labels{},
 		"",
@@ -261,6 +274,7 @@ func (m rulesRetrieverMock) AlertingRules(matcherSets ...[]*labels.Matcher) []*r
 	r = append(r, rule1)
 	r = append(r, rule2)
 	r = append(r, rule3)
+	r = append(r, rule4)
 	return r
 }
 
@@ -2048,6 +2062,17 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 								Health:      "unknown",
 								Type:        "alerting",
 							},
+							AlertingRule{
+								State:       "inactive",
+								Name:        "test_metric6",
+								Query:       "up == 1",
+								Duration:    1,
+								Labels:      labels.Labels{labels.Label{Name: "templatedlabel", Value: "{{ $externalURL }}"}},
+								Annotations: labels.Labels{},
+								Alerts:      []*Alert{},
+								Health:      "unknown",
+								Type:        "alerting",
+							},
 							RecordingRule{
 								Name:   "recording-rule-1",
 								Query:  "vector(1)",
@@ -2108,6 +2133,17 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 								Query:       "up == 1",
 								Duration:    1,
 								Labels:      labels.Labels{labels.Label{Name: "testlabel", Value: "rule"}},
+								Annotations: labels.Labels{},
+								Alerts:      []*Alert{},
+								Health:      "unknown",
+								Type:        "alerting",
+							},
+							AlertingRule{
+								State:       "inactive",
+								Name:        "test_metric6",
+								Query:       "up == 1",
+								Duration:    1,
+								Labels:      labels.Labels{labels.Label{Name: "templatedlabel", Value: "{{ $externalURL }}"}},
 								Annotations: labels.Labels{},
 								Alerts:      []*Alert{},
 								Health:      "unknown",
