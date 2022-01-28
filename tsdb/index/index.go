@@ -26,7 +26,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"sync"
 	"unsafe"
 
 	"github.com/dgraph-io/sroar"
@@ -50,6 +49,8 @@ const (
 	FormatV1 = 1
 	// FormatV2 represents 2 version of index.
 	FormatV2 = 2
+	// FormatV3 represents 3 version of index.
+	FormatV3 = 3
 
 	indexFilename = "index"
 )
@@ -410,7 +411,7 @@ func (w *Writer) ensureStage(s indexWriterStage) error {
 func (w *Writer) writeMeta() error {
 	w.buf1.Reset()
 	w.buf1.PutBE32(MagicIndex)
-	w.buf1.PutByte(FormatV2)
+	w.buf1.PutByte(FormatV3)
 
 	return w.write(w.buf1.Get())
 }
@@ -562,7 +563,7 @@ func (w *Writer) finishSymbols() error {
 	}
 
 	// Load in the symbol table efficiently for the rest of the index writing.
-	w.symbols, err = NewSymbols(realByteSlice(w.symbolFile.Bytes()), FormatV2, int(w.toc.Symbols))
+	w.symbols, err = NewSymbols(realByteSlice(w.symbolFile.Bytes()), FormatV3, int(w.toc.Symbols))
 	if err != nil {
 		return errors.Wrap(err, "read symbols")
 	}
@@ -816,17 +817,6 @@ func (w *Writer) writeTOC() error {
 	return w.write(w.buf1.Get())
 }
 
-var bitmapPool = sync.Pool{
-	New: func() interface{} {
-		return sroar.NewBitmap()
-	},
-}
-
-func putBitmap(b *sroar.Bitmap) {
-	b.Reset()
-	bitmapPool.Put(b)
-}
-
 func (w *Writer) writePostingsToTmpFiles() error {
 	names := make([]string, 0, len(w.labelNames))
 	for n := range w.labelNames {
@@ -844,8 +834,7 @@ func (w *Writer) writePostingsToTmpFiles() error {
 	defer f.Close()
 
 	// Write out the special all posting.
-	seriesIds := []uint64{}
-	seriesIdsBitmap := bitmapPool.Get().(*sroar.Bitmap)
+	seriesIdsBitmap := sroar.NewBitmap()
 	d := encoding.NewDecbufRaw(realByteSlice(f.Bytes()), int(w.toc.LabelIndices))
 	d.Skip(int(w.toc.Series))
 	for d.Len() > 0 {
@@ -854,7 +843,7 @@ func (w *Writer) writePostingsToTmpFiles() error {
 		if startPos%16 != 0 {
 			return errors.Errorf("series not 16-byte aligned at %d", startPos)
 		}
-		seriesIds = append(seriesIds, startPos/16)
+		seriesIdsBitmap.Set(startPos / 16)
 		// Skip to next series.
 		x := d.Uvarint()
 		d.Skip(x + crc32.Size)
@@ -862,7 +851,6 @@ func (w *Writer) writePostingsToTmpFiles() error {
 			return err
 		}
 	}
-	seriesIdsBitmap.SetMany(seriesIds)
 	maxPostings := uint64(seriesIdsBitmap.GetCardinality()) // No label name can have more postings than this.
 
 	if err := w.writePosting("", "", seriesIdsBitmap); err != nil {
@@ -913,7 +901,7 @@ func (w *Writer) writePostingsToTmpFiles() error {
 						postings[lno] = map[uint32]*sroar.Bitmap{}
 					}
 					if _, ok := postings[lno][lvo]; !ok {
-						postings[lno][lvo] = bitmapPool.Get().(*sroar.Bitmap)
+						postings[lno][lvo] = sroar.NewBitmap()
 					}
 					postings[lno][lvo].Set(startPos / 16)
 				}
@@ -977,7 +965,6 @@ func (w *Writer) writePosting(name, value string, postings *sroar.Bitmap) error 
 	w.buf1.Reset()
 	w.buf1.PutBE32int(postings.GetCardinality())
 	w.buf1.PutBytes(postings.ToBuffer())
-	putBitmap(postings)
 
 	w.buf2.Reset()
 	l := w.buf1.Len()
@@ -1158,7 +1145,7 @@ func newReader(b ByteSlice, c io.Closer) (*Reader, error) {
 	}
 	r.version = int(r.b.Range(4, 5)[0])
 
-	if r.version != FormatV1 && r.version != FormatV2 {
+	if r.version != FormatV1 && r.version != FormatV2 && r.version != FormatV3 {
 		return nil, errors.Errorf("unknown index file version %d", r.version)
 	}
 
@@ -1326,7 +1313,7 @@ func (s Symbols) Lookup(o uint32) (string, error) {
 		B: s.bs.Range(0, s.bs.Len()),
 	}
 
-	if s.version == FormatV2 {
+	if s.version == FormatV2 || s.version == FormatV3 {
 		if int(o) >= s.seen {
 			return "", errors.Errorf("unknown symbol offset %d", o)
 		}
@@ -1382,7 +1369,7 @@ func (s Symbols) ReverseLookup(sym string) (uint32, error) {
 	if lastSymbol != sym {
 		return 0, errors.Errorf("unknown symbol %q", sym)
 	}
-	if s.version == FormatV2 {
+	if s.version == FormatV2 || s.version == FormatV3 {
 		return uint32(res), nil
 	}
 	return uint32(s.bs.Len() - lastLen), nil
@@ -1556,7 +1543,7 @@ func (r *Reader) LabelNamesFor(ids ...storage.SeriesRef) ([]string, error) {
 		offset := id
 		// In version 2 series IDs are no longer exact references but series are 16-byte padded
 		// and the ID is the multiple of 16 of the actual position.
-		if r.version == FormatV2 {
+		if r.version == FormatV2 || r.version == FormatV3 {
 			offset = id * 16
 		}
 
@@ -1595,7 +1582,7 @@ func (r *Reader) LabelValueFor(id storage.SeriesRef, label string) (string, erro
 	offset := id
 	// In version 2 series IDs are no longer exact references but series are 16-byte padded
 	// and the ID is the multiple of 16 of the actual position.
-	if r.version == FormatV2 {
+	if r.version == FormatV2 || r.version == FormatV3 {
 		offset = id * 16
 	}
 	d := encoding.NewDecbufUvarintAt(r.b, int(offset), castagnoliTable)
@@ -1621,7 +1608,7 @@ func (r *Reader) Series(id storage.SeriesRef, lbls *labels.Labels, chks *[]chunk
 	offset := id
 	// In version 2 series IDs are no longer exact references but series are 16-byte padded
 	// and the ID is the multiple of 16 of the actual position.
-	if r.version == FormatV2 {
+	if r.version == FormatV2 || r.version == FormatV3 {
 		offset = id * 16
 	}
 	d := encoding.NewDecbufUvarintAt(r.b, int(offset), castagnoliTable)
@@ -1645,7 +1632,7 @@ func (r *Reader) Postings(name string, values ...string) (Postings, error) {
 			}
 			// Read from the postings table.
 			d := encoding.NewDecbufAt(r.b, int(postingsOff), castagnoliTable)
-			_, p, err := r.dec.Postings(d.Get())
+			_, p, err := r.dec.Postings(FormatV1, d.Get())
 			if err != nil {
 				return nil, errors.Wrap(err, "decode postings")
 			}
@@ -1706,7 +1693,7 @@ func (r *Reader) Postings(name string, values ...string) (Postings, error) {
 				if string(v) == value {
 					// Read from the postings table.
 					d2 := encoding.NewDecbufAt(r.b, int(postingsOff), castagnoliTable)
-					_, p, err := r.dec.Postings(d2.Get())
+					_, p, err := r.dec.Postings(r.version, d2.Get())
 					if err != nil {
 						return nil, errors.Wrap(err, "decode postings")
 					}
@@ -1792,18 +1779,23 @@ type Decoder struct {
 }
 
 // Postings returns a postings list for b and its number of elements.
-func (dec *Decoder) Postings(b []byte) (int, Postings, error) {
+func (dec *Decoder) Postings(version int, b []byte) (int, Postings, error) {
 	d := encoding.Decbuf{B: b}
 	n := d.Be32int()
 	l := d.Get()
 	if d.Err() != nil {
 		return 0, nil, d.Err()
 	}
-	postings, err := newRoaringBitmapPostings(l)
-	if err != nil {
-		return 0, nil, errors.Wrap(err, "creating bitmap")
+	if version == FormatV3 {
+		if len(l)%2 != 0 {
+			return 0, nil, errors.New("byte slice length should be multiple of 2")
+		}
+		return n, newBitmapPostings(l), nil
 	}
-	return n, postings, nil
+	if len(l) != 4*n {
+		return 0, nil, errors.Errorf("unexpected postings length, should be %d bytes for %d postings, got %d bytes", 4*n, n, len(l))
+	}
+	return n, newBigEndianPostings(l), nil
 }
 
 // LabelNamesOffsetsFor decodes the offsets of the name symbols for a given series.

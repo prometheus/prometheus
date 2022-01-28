@@ -255,12 +255,12 @@ func TestLabelValuesWithMatchers(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			actualValues, err := indexReader.SortedLabelValues(tt.labelName, tt.matchers...)
 			require.NoError(t, err)
-			require.Equal(t, tt.expectedValues, actualValues)
+			require.Equal(t, tt.expectedValues, actualValues, tt.name)
 
 			actualValues, err = indexReader.LabelValues(tt.labelName, tt.matchers...)
 			sort.Strings(actualValues)
 			require.NoError(t, err)
-			require.Equal(t, tt.expectedValues, actualValues)
+			require.Equal(t, tt.expectedValues, actualValues, tt.name)
 		})
 	}
 }
@@ -339,16 +339,18 @@ func TestReadIndexFormatV1(t *testing.T) {
 
 	q, err := NewBlockQuerier(block, 0, 1000)
 	require.NoError(t, err)
-	require.Equal(t, query(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")),
-		map[string][]tsdbutil.Sample{`{foo="bar"}`: {sample{t: 1, v: 2}}})
+	require.Equal(t,
+		map[string][]tsdbutil.Sample{`{foo="bar"}`: {sample{t: 1, v: 2}}},
+		query(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar")))
 
 	q, err = NewBlockQuerier(block, 0, 1000)
 	require.NoError(t, err)
-	require.Equal(t, query(t, q, labels.MustNewMatcher(labels.MatchNotRegexp, "foo", "^.?$")),
+	require.Equal(t,
 		map[string][]tsdbutil.Sample{
 			`{foo="bar"}`: {sample{t: 1, v: 2}},
 			`{foo="baz"}`: {sample{t: 3, v: 4}},
-		})
+		},
+		query(t, q, labels.MustNewMatcher(labels.MatchNotRegexp, "foo", "^.?$")))
 }
 
 func BenchmarkLabelValuesWithMatchers(b *testing.B) {

@@ -414,6 +414,9 @@ func TestPersistence_index_e2e(t *testing.T) {
 		gotp, err := ir.Postings(p.Name, p.Value)
 		require.NoError(t, err)
 
+		_, ok := gotp.(*bitmapPostings)
+		require.True(t, ok)
+
 		expp, err := mi.Postings(p.Name, p.Value)
 		require.NoError(t, err)
 
@@ -514,7 +517,7 @@ func TestSymbols(t *testing.T) {
 	checksum := crc32.Checksum(buf.Get()[symbolsStart+4:], castagnoliTable)
 	buf.PutBE32(checksum) // Check sum at the end.
 
-	s, err := NewSymbols(realByteSlice(buf.Get()), FormatV2, symbolsStart)
+	s, err := NewSymbols(realByteSlice(buf.Get()), FormatV3, symbolsStart)
 	require.NoError(t, err)
 
 	// We store only 4 offsets to symbols.
@@ -546,6 +549,6 @@ func TestSymbols(t *testing.T) {
 }
 
 func TestDecoder_Postings_WrongInput(t *testing.T) {
-	_, _, err := (&Decoder{}).Postings([]byte("the cake is a lie"))
+	_, _, err := (&Decoder{}).Postings(FormatV3, []byte("the cake is a lie"))
 	require.Error(t, err)
 }
