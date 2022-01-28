@@ -318,8 +318,10 @@ func (m *Manager) updater(ctx context.Context, p *provider, updates chan []*targ
 
 func (m *Manager) sender() {
 	ticker := time.NewTicker(m.updatert)
-	defer ticker.Stop()
-
+	defer func() {
+		ticker.Stop()
+		close(m.syncCh)
+	}()
 	for {
 		select {
 		case <-m.ctx.Done():
