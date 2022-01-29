@@ -1,10 +1,4 @@
-## 2.33.0-rc.1 / 2022-01-19
-
-* [ENHANCEMENT] UI: Debounce search bar. #10157
-* [BUGFIX] TSDB: Fix deadlock from simultaneous GC and write. #10166
-* [BUGFIX] TSDB: Fix minor issues introduced in #10051. #10159
-
-## 2.33.0-rc.0 / 2022-01-12
+## 2.33.0 / 2022-01-29
 
 * [CHANGE] PromQL: Promote negative offset and `@` modifer to stable features. #10121
 * [CHANGE] Web: Promote remote-write-receiver to stable. #10119
@@ -31,6 +25,7 @@
 * [BUGFIX] UI: Fix overlapping click targets for the alert state checkboxes. #10136
 * [BUGFIX] UI: Fix _Unhealthy_ filter on target page to actually display only _Unhealthy_ targets. #10103
 * [BUGFIX] UI: Fix autocompletion when expression is empty. #10053
+* [BUGFIX] TSDB: Fix deadlock from simultaneous GC and write. #10166
 
 ## 2.32.1 / 2021-12-17
 
