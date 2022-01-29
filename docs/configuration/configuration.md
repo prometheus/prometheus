@@ -34,6 +34,7 @@ Generic placeholders are defined as follows:
 * `<boolean>`: a boolean that can take the values `true` or `false`
 * `<duration>`: a duration matching the regular expression `((([0-9]+)y)?(([0-9]+)w)?(([0-9]+)d)?(([0-9]+)h)?(([0-9]+)m)?(([0-9]+)s)?(([0-9]+)ms)?|0)`, e.g. `1d`, `1h30m`, `5m`, `10s`
 * `<filename>`: a valid path in the current working directory
+* `<float>`: a floating-point number
 * `<host>`: a valid string consisting of a hostname or IP followed by an optional port number
 * `<int>`: an integer value
 * `<labelname>`: a string matching the regular expression `[a-zA-Z_][a-zA-Z0-9_]*`
@@ -195,7 +196,7 @@ oauth2:
   [ <oauth2> ]
 
 # Configure whether scrape requests follow HTTP 3xx redirects.
-[ follow_redirects: <bool> | default = true ]
+[ follow_redirects: <boolean> | default = true ]
 
 # Configures the scrape request's TLS settings.
 tls_config:
@@ -472,7 +473,7 @@ oauth2:
 [ proxy_url: <string> ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
-[ follow_redirects: <bool> | default = true ]
+[ follow_redirects: <boolean> | default = true ]
 
 # TLS configuration.
 tls_config:
@@ -568,7 +569,7 @@ oauth2:
 [ proxy_url: <string> ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
-[ follow_redirects: <bool> | default = true ]
+[ follow_redirects: <boolean> | default = true ]
 
 # TLS configuration.
 tls_config:
@@ -643,7 +644,7 @@ oauth2:
 [ proxy_url: <string> ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
-[ follow_redirects: <bool> | default = true ]
+[ follow_redirects: <boolean> | default = true ]
 
 # TLS configuration.
 tls_config:
@@ -740,7 +741,7 @@ oauth2:
   [ <oauth2> ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
-[ follow_redirects: <bool> | default = true ]
+[ follow_redirects: <boolean> | default = true ]
 
 ```
 
@@ -903,7 +904,7 @@ oauth2:
   [ <oauth2> ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
-[ follow_redirects: <bool> | default = true ]
+[ follow_redirects: <boolean> | default = true ]
 
 ```
 
@@ -1206,7 +1207,7 @@ oauth2:
 [ proxy_url: <string> ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
-[ follow_redirects: <bool> | default = true ]
+[ follow_redirects: <boolean> | default = true ]
 ```
 
 See [this example Prometheus configuration file](/documentation/examples/prometheus-puppetdb.yml)
@@ -1410,7 +1411,7 @@ oauth2:
 [ proxy_url: <string> ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
-[ follow_redirects: <bool> | default = true ]
+[ follow_redirects: <boolean> | default = true ]
 
 # TLS configuration.
 tls_config:
@@ -1491,7 +1492,7 @@ oauth2:
 [ proxy_url: <string> ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
-[ follow_redirects: <bool> | default = true ]
+[ follow_redirects: <boolean> | default = true ]
 
 # TLS configuration.
 tls_config:
@@ -1690,7 +1691,7 @@ oauth2:
 [ proxy_url: <string> ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
-[ follow_redirects: <bool> | default = true ]
+[ follow_redirects: <boolean> | default = true ]
 
 # TLS configuration.
 tls_config:
@@ -1698,7 +1699,7 @@ tls_config:
 
 # Optional namespace discovery. If omitted, all namespaces are used.
 namespaces:
-  own_namespace: <bool>
+  own_namespace: <boolean>
   names:
     [ - <string> ]
 
@@ -1788,7 +1789,7 @@ oauth2:
   [ <oauth2> ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
-[ follow_redirects: <bool> | default = true ]
+[ follow_redirects: <boolean> | default = true ]
 ```
 
 The [relabeling phase](#relabel_config) is the preferred and more powerful way
@@ -1904,7 +1905,7 @@ oauth2:
 [ proxy_url: <string> ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
-[ follow_redirects: <bool> | default = true ]
+[ follow_redirects: <boolean> | default = true ]
 
 # TLS configuration.
 tls_config:
@@ -1987,7 +1988,7 @@ oauth2:
   [ <oauth2> ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
-[ follow_redirects: <bool> | default = true ]
+[ follow_redirects: <boolean> | default = true ]
 
 # TLS configuration for connecting to marathon servers
 tls_config:
@@ -2197,7 +2198,7 @@ tls_config:
 [ proxy_url: <string> ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
-[ follow_redirects: <bool> | default = true ]
+[ follow_redirects: <boolean> | default = true ]
 
 # Refresh interval to re-read the app instance list.
 [ refresh_interval: <duration> | default = 30s ]
@@ -2301,7 +2302,7 @@ tags_filter:
 [ refresh_interval: <duration> | default = 60s ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
-[ follow_redirects: <bool> | default = true ]
+[ follow_redirects: <boolean> | default = true ]
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
@@ -2374,7 +2375,7 @@ oauth2:
   [ proxy_url: <string> ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
-  [ follow_redirects: <bool> | default = true ]
+  [ follow_redirects: <boolean> | default = true ]
 
 # TLS configuration.
 tls_config:
@@ -2556,7 +2557,7 @@ tls_config:
 [ proxy_url: <string> ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
-[ follow_redirects: <bool> | default = true ]
+[ follow_redirects: <boolean> | default = true ]
 
 # List of Azure service discovery configurations.
 azure_sd_configs:
@@ -2658,18 +2659,24 @@ static_configs:
 relabel_configs:
   [ - <relabel_config> ... ]
 ```
+
 ### `<tracing_config>`
+
 `tracing_config` configures exporting traces from Prometheus to a tracing backend via the OTLP protocol. Tracing is currently an **experimental** feature and could change in the future.
 
 ```yaml
 # Client used to export the traces. Options are 'http' or 'grpc'.
 [ client_type: <string> | default = grpc ]
+
 # Endpoint to send the traces to.
 [ endpoint: <string> ]
+
 # Sets the probability a given trace will be sampled. Must be a float from 0 through 1.
 [ sampling_fraction: <float> | default = 0 ]
-# If enabled, the client will use a secure connection.
-[ with_secure: <bool> | default = false ]
+
+# If disabled, the client will use a secure connection.
+[ insecure: <boolean> | default = true ]
+
 # TLS configuration.
 tls_config:
   [ <tls_config> ]
@@ -2759,7 +2766,7 @@ tls_config:
 [ proxy_url: <string> ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
-[ follow_redirects: <bool> | default = true ]
+[ follow_redirects: <boolean> | default = true ]
 
 # Configures the queue used to write to remote storage.
 queue_config:
@@ -2860,7 +2867,7 @@ tls_config:
 [ proxy_url: <string> ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
-[ follow_redirects: <bool> | default = true ]
+[ follow_redirects: <boolean> | default = true ]
 ```
 
 There is a list of

@@ -988,6 +988,7 @@ var expectedConf = &Config{
 	TracingConfig: TracingConfig{
 		Endpoint:   "localhost:4317",
 		ClientType: TracingClientGRPC,
+		Insecure:   true,
 	},
 }
 

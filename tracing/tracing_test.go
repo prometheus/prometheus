@@ -46,11 +46,6 @@ func TestReinstallingTracerProvider(t *testing.T) {
 		TracingConfig: config.TracingConfig{
 			Endpoint:   "localhost:1234",
 			ClientType: config.TracingClientGRPC,
-			TLSConfig: config_util.TLSConfig{
-				CAFile:     "ca-file.pem",
-				CertFile:   "cert.pem",
-				ServerName: "test-server",
-			},
 		},
 	}
 
@@ -65,15 +60,30 @@ func TestReinstallingTracerProvider(t *testing.T) {
 		TracingConfig: config.TracingConfig{
 			Endpoint:   "localhost:1234",
 			ClientType: config.TracingClientHTTP,
-			TLSConfig: config_util.TLSConfig{
-				CAFile:     "ca-file.pem",
-				CertFile:   "cert.pem",
-				ServerName: "test-server",
-			},
 		},
 	}
 
 	require.NoError(t, m.ApplyConfig(&cfg2))
+	require.NotEqual(t, tpFirstConfig, otel.GetTracerProvider())
+}
+
+func TestReinstallingTracerProviderWithTLS(t *testing.T) {
+	m := NewManager(log.NewNopLogger())
+	cfg := config.Config{
+		TracingConfig: config.TracingConfig{
+			Endpoint:   "localhost:1234",
+			ClientType: config.TracingClientGRPC,
+			TLSConfig: config_util.TLSConfig{
+				CAFile: "testdata/ca.cer",
+			},
+		},
+	}
+
+	require.NoError(t, m.ApplyConfig(&cfg))
+	tpFirstConfig := otel.GetTracerProvider()
+
+	// Trying to apply the same config with TLS should reinstall provider.
+	require.NoError(t, m.ApplyConfig(&cfg))
 	require.NotEqual(t, tpFirstConfig, otel.GetTracerProvider())
 }
 
