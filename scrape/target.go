@@ -401,7 +401,6 @@ func PopulateLabels(lset labels.Labels, cfg *config.ScrapeConfig, noDefaultPort 
 	}
 
 	addr := lset.Get(model.AddressLabel)
-	addr2 := addr
 	scheme := lset.Get(model.SchemeLabel)
 	host, port, add := addPort(addr)
 	// If it's an address with no trailing port, infer it based on the used scheme
@@ -431,8 +430,6 @@ func PopulateLabels(lset labels.Labels, cfg *config.ScrapeConfig, noDefaultPort 
 			if scheme == "https" {
 				lb.Set(model.AddressLabel, host)
 			}
-		case "":
-			lb.Set(model.AddressLabel, addr2)
 		}
 	}
 
