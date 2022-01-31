@@ -59,6 +59,39 @@ func TestTargetGroupStrictJsonUnmarshal(t *testing.T) {
 	}
 }
 
+func TestTargetGroupJsonMarshal(t *testing.T) {
+	tests := []struct {
+		expectedJson string
+		expectedErr  error
+		group        Group
+	}{
+		{
+			// labels should be omitted if empty.
+			group:        Group{},
+			expectedJson: `{"targets": []}`,
+			expectedErr:  nil,
+		},
+		{
+			// targets only exposes addresses.
+			group: Group{
+				Targets: []model.LabelSet{
+					{"__address__": "localhost:9090"},
+					{"__address__": "localhost:9091"},
+				},
+				Labels: model.LabelSet{"foo": "bar", "bar": "baz"},
+			},
+			expectedJson: `{"targets": ["localhost:9090", "localhost:9091"], "labels": {"bar": "baz", "foo": "bar"}}`,
+			expectedErr:  nil,
+		},
+	}
+
+	for _, test := range tests {
+		actual, err := test.group.MarshalJSON()
+		require.Equal(t, test.expectedErr, err)
+		require.JSONEq(t, test.expectedJson, string(actual))
+	}
+}
+
 func TestTargetGroupYamlMarshal(t *testing.T) {
 	marshal := func(g interface{}) []byte {
 		d, err := yaml.Marshal(g)
