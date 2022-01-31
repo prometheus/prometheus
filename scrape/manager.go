@@ -133,6 +133,7 @@ type Options struct {
 
 	// Optional HTTP client options to use when scraping.
 	HTTPClientOptions []config_util.HTTPClientOption
+	UseSharedInterner bool
 }
 
 // Manager maintains a set of scrape pools and manages start/stop cycles
@@ -207,7 +208,7 @@ func (m *Manager) reload() {
 				level.Error(m.logger).Log("msg", "error reloading target set", "err", "invalid config id:"+setName)
 				continue
 			}
-			sp, err := newScrapePool(scrapeConfig, m.append, m.jitterSeed, log.With(m.logger, "scrape_pool", setName), m.opts.ExtraMetrics, m.opts.PassMetadataInContext, m.opts.HTTPClientOptions)
+			sp, err := newScrapePool(scrapeConfig, m.append, m.jitterSeed, log.With(m.logger, "scrape_pool", setName), m.opts.ExtraMetrics, m.opts.PassMetadataInContext, m.opts.HTTPClientOptions, m.opts.UseSharedInterner)
 			if err != nil {
 				level.Error(m.logger).Log("msg", "error creating new scrape pool", "err", err, "scrape_pool", setName)
 				continue
@@ -280,7 +281,7 @@ func (m *Manager) ApplyConfig(cfg *config.Config) error {
 			sp.stop()
 			delete(m.scrapePools, name)
 		} else if !reflect.DeepEqual(sp.config, cfg) {
-			err := sp.reload(cfg)
+			err := sp.reload(cfg, m.opts.UseSharedInterner)
 			if err != nil {
 				level.Error(m.logger).Log("msg", "error reloading scrape pool", "err", err, "scrape_pool", name)
 				failed = true

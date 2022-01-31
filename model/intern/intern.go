@@ -1,4 +1,4 @@
-// Copyright 2019 The Prometheus Authors
+// Copyright 2021 The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -22,14 +22,13 @@ import (
 	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/prometheus/model/labels"
 	"go.uber.org/atomic"
+
+	"github.com/prometheus/prometheus/model/labels"
 )
 
 // Shared interner
-var (
-	Global Interner = New(prometheus.DefaultRegisterer)
-)
+var Global = New(prometheus.DefaultRegisterer)
 
 // Interner is a string interner.
 type Interner interface {
@@ -147,18 +146,18 @@ func (p *pool) Release(s string) {
 	delete(p.pool, s)
 }
 
-// InternLabels is a helper function for interning all label names and values to a
+// Intern is a helper function for interning all label names and values to a
 // given interner.
-func InternLabels(interner Interner, lbls labels.Labels) {
+func Intern(interner Interner, lbls labels.Labels) {
 	for i, l := range lbls {
 		lbls[i].Name = interner.Intern(l.Name)
 		lbls[i].Value = interner.Intern(l.Value)
 	}
 }
 
-// ReleaseLabels is a helper function for releasing all label names and values from a
+// Release is a helper function for releasing all label names and values from a
 // given interner.
-func ReleaseLabels(interner Interner, ls labels.Labels) {
+func Release(interner Interner, ls labels.Labels) {
 	for _, l := range ls {
 		interner.Release(l.Name)
 		interner.Release(l.Value)

@@ -651,7 +651,7 @@ func (t *QueueManager) Stop() {
 	// On shutdown, release the strings in the labels from the intern pool.
 	t.seriesMtx.Lock()
 	for _, labels := range t.seriesLabels {
-		intern.ReleaseLabels(t.interner, labels)
+		intern.Release(t.interner, labels)
 	}
 	t.seriesMtx.Unlock()
 	t.metrics.unregister()
@@ -673,13 +673,13 @@ func (t *QueueManager) StoreSeries(series []record.RefSeries, index int) {
 			t.droppedSeries[s.Ref] = struct{}{}
 			continue
 		}
-		intern.InternLabels(intern.Global, lbls)
+		intern.Intern(intern.Global, lbls)
 
 		// We should not ever be replacing a series labels in the map, but just
 		// in case we do we need to ensure we do not leak the replaced interned
 		// strings.
 		if orig, ok := t.seriesLabels[s.Ref]; ok {
-			intern.ReleaseLabels(t.interner, orig)
+			intern.Release(t.interner, orig)
 		}
 		t.seriesLabels[s.Ref] = lbls
 	}
@@ -708,7 +708,7 @@ func (t *QueueManager) SeriesReset(index int) {
 	for k, v := range t.seriesSegmentIndexes {
 		if v < index {
 			delete(t.seriesSegmentIndexes, k)
-			intern.ReleaseLabels(t.interner, t.seriesLabels[k])
+			intern.Release(t.interner, t.seriesLabels[k])
 			delete(t.seriesLabels, k)
 			delete(t.droppedSeries, k)
 		}
