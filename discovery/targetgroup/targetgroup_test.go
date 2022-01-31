@@ -61,14 +61,14 @@ func TestTargetGroupStrictJsonUnmarshal(t *testing.T) {
 
 func TestTargetGroupJsonMarshal(t *testing.T) {
 	tests := []struct {
-		expectedJson string
+		expectedJSON string
 		expectedErr  error
 		group        Group
 	}{
 		{
 			// labels should be omitted if empty.
 			group:        Group{},
-			expectedJson: `{"targets": []}`,
+			expectedJSON: `{"targets": []}`,
 			expectedErr:  nil,
 		},
 		{
@@ -80,7 +80,7 @@ func TestTargetGroupJsonMarshal(t *testing.T) {
 				},
 				Labels: model.LabelSet{"foo": "bar", "bar": "baz"},
 			},
-			expectedJson: `{"targets": ["localhost:9090", "localhost:9091"], "labels": {"bar": "baz", "foo": "bar"}}`,
+			expectedJSON: `{"targets": ["localhost:9090", "localhost:9091"], "labels": {"bar": "baz", "foo": "bar"}}`,
 			expectedErr:  nil,
 		},
 	}
@@ -88,7 +88,7 @@ func TestTargetGroupJsonMarshal(t *testing.T) {
 	for _, test := range tests {
 		actual, err := test.group.MarshalJSON()
 		require.Equal(t, test.expectedErr, err)
-		require.JSONEq(t, test.expectedJson, string(actual))
+		require.JSONEq(t, test.expectedJSON, string(actual))
 	}
 }
 
