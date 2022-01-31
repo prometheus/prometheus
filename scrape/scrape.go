@@ -40,6 +40,7 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/intern"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/model/textparse"
@@ -293,7 +294,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed 
 		// Update the targets retrieval function for metadata to a new scrape cache.
 		cache := opts.cache
 		if cache == nil {
-			cache = newScrapeCache()
+			cache = newScrapeCache(intern.Global)
 		}
 		opts.target.SetMetadataStore(cache)
 
@@ -423,7 +424,7 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 			oldLoop.disableEndOfRunStalenessMarkers()
 			cache = oc
 		} else {
-			cache = newScrapeCache()
+			cache = newScrapeCache(intern.Global)
 		}
 
 		t := sp.activeTargets[fp]
@@ -891,14 +892,16 @@ type scrapeCache struct {
 	// string in addDropped().
 	droppedSeries map[string]*uint64
 
-	// seriesCur and seriesPrev store the labels of series that were seen
-	// in the current and previous scrape.
+	// seriesCur and seriesPrev store the ref of series that were seen
+	// in the current and previous scrape based on the hash.
 	// We hold two maps and swap them out to save allocations.
-	seriesCur  map[uint64]labels.Labels
-	seriesPrev map[uint64]labels.Labels
+	seriesCur  map[uint64]*cacheEntry
+	seriesPrev map[uint64]*cacheEntry
 
 	metaMtx  sync.Mutex
 	metadata map[string]*metaEntry
+
+	interner intern.Interner
 }
 
 // metaEntry holds meta information about a metric.
@@ -914,13 +917,17 @@ func (m *metaEntry) size() int {
 	return len(m.help) + len(m.unit) + len(m.typ)
 }
 
-func newScrapeCache() *scrapeCache {
+func newScrapeCache(interner intern.Interner) *scrapeCache {
+	if interner == nil {
+		interner = intern.Global
+	}
 	return &scrapeCache{
 		series:        map[string]*cacheEntry{},
 		droppedSeries: map[string]*uint64{},
-		seriesCur:     map[uint64]labels.Labels{},
-		seriesPrev:    map[uint64]labels.Labels{},
+		seriesCur:     map[uint64]*cacheEntry{},
+		seriesPrev:    map[uint64]*cacheEntry{},
 		metadata:      map[string]*metaEntry{},
+		interner:      interner,
 	}
 }
 
@@ -947,6 +954,7 @@ func (c *scrapeCache) iterDone(flushCache bool) {
 		// that haven't appeared in the last scrape.
 		for s, e := range c.series {
 			if c.iter != e.lastIter {
+				intern.ReleaseLabels(c.interner, e.lset)
 				delete(c.series, s)
 			}
 		}
@@ -985,11 +993,14 @@ func (c *scrapeCache) get(met string) (*cacheEntry, bool) {
 	return e, true
 }
 
-func (c *scrapeCache) addRef(met string, ref storage.SeriesRef, lset labels.Labels, hash uint64) {
-	if ref == 0 {
-		return
-	}
-	c.series[met] = &cacheEntry{ref: ref, lastIter: c.iter, lset: lset, hash: hash}
+func (c *scrapeCache) addRef(met string, ref storage.SeriesRef, lset labels.Labels, hash uint64) *cacheEntry {
+	// The cache entries are used for staleness tracking so even if ref is
+	// 0 we need to track it.
+	intern.InternLabels(c.interner, lset)
+
+	ce := &cacheEntry{ref: ref, lastIter: c.iter, lset: lset, hash: hash}
+	c.series[met] = ce
+	return ce
 }
 
 func (c *scrapeCache) addDropped(met string) {
@@ -1005,14 +1016,14 @@ func (c *scrapeCache) getDropped(met string) bool {
 	return ok
 }
 
-func (c *scrapeCache) trackStaleness(hash uint64, lset labels.Labels) {
-	c.seriesCur[hash] = lset
+func (c *scrapeCache) trackStaleness(ce *cacheEntry) {
+	c.seriesCur[ce.hash] = ce
 }
 
 func (c *scrapeCache) forEachStale(f func(labels.Labels) bool) {
-	for h, lset := range c.seriesPrev {
-		if _, ok := c.seriesCur[h]; !ok {
-			if !f(lset) {
+	for hash, ce := range c.seriesPrev {
+		if _, ok := c.seriesCur[hash]; !ok {
+			if !f(ce.lset) {
 				break
 			}
 		}
@@ -1143,7 +1154,7 @@ func newScrapeLoop(ctx context.Context,
 		buffers = pool.New(1e3, 1e6, 3, func(sz int) interface{} { return make([]byte, 0, sz) })
 	}
 	if cache == nil {
-		cache = newScrapeCache()
+		cache = newScrapeCache(intern.Global)
 	}
 
 	appenderCtx := ctx
@@ -1559,14 +1570,17 @@ loop:
 		}
 
 		if !ok {
+			ce := sl.cache.addRef(mets, ref, lset, hash)
 			if tp == nil {
 				// Bypass staleness logic if there is an explicit timestamp.
-				sl.cache.trackStaleness(hash, lset)
+				sl.cache.trackStaleness(ce)
 			}
-			sl.cache.addRef(mets, ref, lset, hash)
 			if sampleAdded && sampleLimitErr == nil {
 				seriesAdded++
 			}
+		} else if ce.ref != ref {
+			// Update the ref if it was invalidated.
+			ce.ref = ref
 		}
 
 		// Increment added even if there's an error so we correctly report the
@@ -1632,7 +1646,7 @@ func (sl *scrapeLoop) checkAddError(ce *cacheEntry, met []byte, tp *int64, err e
 	switch errors.Cause(err) {
 	case nil:
 		if tp == nil && ce != nil {
-			sl.cache.trackStaleness(ce.hash, ce.lset)
+			sl.cache.trackStaleness(ce)
 		}
 		return true, nil
 	case storage.ErrNotFound:
