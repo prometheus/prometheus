@@ -58,7 +58,7 @@ class GraphControls extends Component<GraphControlsProps> {
   };
 
   changeRangeInput = (range: number): void => {
-    if (this.rangeRef.current) {
+    if (this.rangeRef.current !== null) {
       this.rangeRef.current.value = formatDuration(range);
     }
   };
@@ -84,7 +84,7 @@ class GraphControls extends Component<GraphControlsProps> {
   };
 
   changeResolutionInput = (resolution: number | null): void => {
-    if (this.resolutionRef.current) {
+    if (this.resolutionRef.current !== null) {
       this.resolutionRef.current.value = resolution !== null ? resolution.toString() : '';
     }
   };
