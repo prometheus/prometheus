@@ -193,10 +193,10 @@ func (re Regexp) MarshalYAML() (interface{}, error) {
 func Process(labels labels.Labels, cfgs ...*Config) (labels.Labels, error) {
 	for _, cfg := range cfgs {
 		result, err := relabel(labels, cfg)
-		if result == nil {
-			return nil, nil
-		} else if err != nil {
+		if err != nil {
 			return labels, err
+		} else if result == nil {
+			return nil, nil
 		}
 		labels = result
 	}
