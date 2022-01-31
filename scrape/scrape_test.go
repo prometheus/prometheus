@@ -21,6 +21,7 @@ import (
 	"io"
 	"io/ioutil"
 	"math"
+	"math/rand"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -31,14 +32,17 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	config_util "github.com/prometheus/common/config"
+	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/intern"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/model/textparse"
@@ -876,7 +880,7 @@ func TestScrapeLoopMetadata(t *testing.T) {
 	var (
 		signal  = make(chan struct{})
 		scraper = &testScraper{}
-		cache   = newScrapeCache()
+		cache   = newScrapeCache(intern.Global)
 	)
 	defer close(signal)
 
@@ -3030,4 +3034,227 @@ func TestTargetScrapeIntervalAndTimeoutRelabel(t *testing.T) {
 
 	require.Equal(t, "3s", sp.ActiveTargets()[0].labels.Get(model.ScrapeIntervalLabel))
 	require.Equal(t, "750ms", sp.ActiveTargets()[0].labels.Get(model.ScrapeTimeoutLabel))
+}
+
+func TestScrapeLoopCache_Interner(t *testing.T) {
+	var (
+		signal   = make(chan struct{})
+		interner = &testInterner{refs: map[string]int{}}
+		scraper  = &testScraper{}
+		cache    = newScrapeCache(interner)
+	)
+	defer close(signal)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	sl := newScrapeLoop(ctx,
+		scraper,
+		nil, nil,
+		nopMutator,
+		nopMutator,
+		func(ctx context.Context) storage.Appender { return &collectResultAppender{} },
+		cache,
+		0,
+		true,
+		0,
+		nil,
+		10*time.Millisecond,
+		time.Hour,
+		false,
+	)
+	defer cancel()
+
+	slApp := sl.appender(ctx)
+
+	tt := []struct {
+		scrapeText string
+		expectRefs map[string]int
+	}{
+		{
+			scrapeText: `# TYPE first_metric counter
+# UNIT first_metric metric
+first_metric{first_label="first_value"} 1
+# TYPE second_metric counter
+# UNIT second_metric metric
+second_metric{second_label="second_value"} 1
+# EOF`,
+			expectRefs: map[string]int{
+				"first_metric":  1,
+				"first_label":   1,
+				"first_value":   1,
+				"second_metric": 1,
+				"second_label":  1,
+				"second_value":  1,
+			},
+		},
+		// Same scrape, ensre refs don't change
+		{
+			scrapeText: `# TYPE first_metric counter
+# UNIT first_metric metric
+first_metric{first_label="first_value"} 1
+# TYPE second_metric counter
+# UNIT second_metric metric
+second_metric{second_label="second_value"} 1
+# EOF`,
+			expectRefs: map[string]int{
+				"first_metric":  1,
+				"first_label":   1,
+				"first_value":   1,
+				"second_metric": 1,
+				"second_label":  1,
+				"second_value":  1,
+			},
+		},
+		// Remove a series, ensuring that their refs go to 0.
+		{
+			scrapeText: `# TYPE first_metric counter
+# UNIT first_metric metric
+first_metric{first_label="first_value"} 1
+# EOF`,
+			expectRefs: map[string]int{
+				"first_metric":  1,
+				"first_label":   1,
+				"first_value":   1,
+				"second_metric": 0,
+				"second_label":  0,
+				"second_value":  0,
+			},
+		},
+		// Add a label, ensuring that refs are mutated.
+		{
+			scrapeText: `# TYPE first_metric counter
+# UNIT first_metric metric
+first_metric{first_label="first_value",second_label="second_value"} 1
+# EOF`,
+			expectRefs: map[string]int{
+				"first_metric": 1,
+				"first_label":  1,
+				"first_value":  1,
+				"second_label": 1,
+				"second_value": 1,
+			},
+		},
+		// Remove everything.
+		{
+			scrapeText: `# EOF`,
+			expectRefs: map[string]int{
+				"first_metric": 0,
+				"first_label":  0,
+				"first_value":  0,
+				"second_label": 0,
+				"second_value": 0,
+			},
+		},
+	}
+
+	for _, tc := range tt {
+		_, _, _, err := sl.append(slApp, []byte(tc.scrapeText), "application/openmetrics-text", time.Now())
+		require.NoError(t, err)
+		require.NoError(t, slApp.Commit())
+
+		for k, expect := range tc.expectRefs {
+			require.Equal(t, expect, interner.refs[k], "%s must have %d references", k, expect)
+		}
+	}
+
+	fmt.Printf("interns: %d, releases: %d\n", interner.interns, interner.releases)
+}
+
+type testInterner struct {
+	intern.Interner
+
+	mut  sync.Mutex
+	refs map[string]int
+
+	interns, releases int
+}
+
+func (ti *testInterner) Intern(s string) string {
+	ti.mut.Lock()
+	defer ti.mut.Unlock()
+
+	ti.refs[s]++
+	ti.interns++
+
+	return s
+}
+
+func (ti *testInterner) Release(s string) {
+	ti.mut.Lock()
+	defer ti.mut.Unlock()
+	ti.refs[s]--
+	ti.releases++
+}
+
+func BenchmarkStringInterner(b *testing.B) {
+	var (
+		r       = rand.New(rand.NewSource(1))
+		scraper = &testScraper{}
+		cache   = newScrapeCache(intern.New(prometheus.NewRegistry()))
+	)
+
+	sl := newScrapeLoop(context.Background(),
+		scraper,
+		nil, nil,
+		nopMutator,
+		nopMutator,
+		func(ctx context.Context) storage.Appender { return &collectResultAppender{} },
+		cache,
+		0,
+		true,
+		0,
+		nil,
+		10*time.Millisecond,
+		time.Hour,
+		false,
+	)
+
+	buf := bytes.NewBuffer(nil)
+
+	// First step: generate fake metrics and write them out.
+	{
+		b.StopTimer()
+
+		// Create a set of fake metrics with 5 labels each
+		reg := prometheus.NewRegistry()
+		for i := 0; i < 1_000_000; i++ {
+			lbls := prometheus.Labels{}
+			for j := 0; j < 5; j++ {
+				lbls[randStringRunes(r, 6)] = randStringRunes(r, 6)
+			}
+
+			c := prometheus.NewCounter(prometheus.CounterOpts{
+				Name:        randStringRunes(r, 20),
+				ConstLabels: lbls,
+			})
+			c.Inc()
+
+			reg.MustRegister(c)
+		}
+
+		// Write it out.
+		enc := expfmt.NewEncoder(buf, expfmt.FmtText)
+		mfs, err := reg.Gather()
+		require.NoError(b, err)
+		for _, mf := range mfs {
+			require.NoError(b, enc.Encode(mf))
+		}
+
+		b.StartTimer()
+	}
+
+	for n := 0; n < b.N; n++ {
+		slApp := sl.appender(context.Background())
+		_, _, _, err := sl.append(slApp, buf.Bytes(), string(expfmt.FmtText), time.Now())
+		require.NoError(b, err)
+	}
+}
+
+var letterRunes = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+
+func randStringRunes(r *rand.Rand, n int) string {
+	b := make([]rune, n)
+	for i := range b {
+		b[i] = letterRunes[r.Intn(len(letterRunes))]
+	}
+	return string(b)
 }

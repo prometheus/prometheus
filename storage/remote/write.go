@@ -26,6 +26,7 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/intern"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/wal"
@@ -59,7 +60,7 @@ type WriteStorage struct {
 	queues            map[string]*QueueManager
 	samplesIn         *ewmaRate
 	flushDeadline     time.Duration
-	interner          *pool
+	interner          intern.Interner
 	scraper           ReadyScrapeManager
 	quit              chan struct{}
 
@@ -81,7 +82,7 @@ func NewWriteStorage(logger log.Logger, reg prometheus.Registerer, walDir string
 		flushDeadline:     flushDeadline,
 		samplesIn:         newEWMARate(ewmaWeight, shardUpdateDuration),
 		walDir:            walDir,
-		interner:          newPool(),
+		interner:          intern.Global,
 		scraper:           sm,
 		quit:              make(chan struct{}),
 		highestTimestamp: &maxTimestamp{
