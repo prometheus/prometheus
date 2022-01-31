@@ -176,7 +176,7 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 			case "extra-scrape-metrics":
 				c.scrape.ExtraMetrics = true
 				level.Info(logger).Log("msg", "Experimental additional scrape metrics")
-			case "scrape-cache-interner":
+			case "share-string-interner":
 				c.scrape.UseSharedInterner = true
 				level.Info(logger).Log("msg", "Experimental use of shared string interner in scrape cache")
 			case "new-service-discovery-manager":
