@@ -959,7 +959,6 @@ var expectedConf = &Config{
 					Entitlement:     "monitoring_entitled",
 					Separator:       ",",
 					RefreshInterval: model.Duration(60 * time.Second),
-					LoginInterval:   model.Duration(10 * time.Minute),
 				},
 			},
 		},
