@@ -263,7 +263,7 @@ func (d *Discovery) getNamespaces() []string {
 		return []string{apiv1.NamespaceAll}
 	}
 
-	if includeOwnNamespace {
+	if includeOwnNamespace && d.ownNamespace != "" {
 		return append(namespaces, d.ownNamespace)
 	}
 
@@ -276,8 +276,9 @@ func New(l log.Logger, conf *SDConfig) (*Discovery, error) {
 		l = log.NewNopLogger()
 	}
 	var (
-		kcfg *rest.Config
-		err  error
+		kcfg         *rest.Config
+		err          error
+		ownNamespace string
 	)
 	if conf.KubeConfig != "" {
 		kcfg, err = clientcmd.BuildConfigFromFlags("", conf.KubeConfig)
@@ -291,6 +292,13 @@ func New(l log.Logger, conf *SDConfig) (*Discovery, error) {
 		if err != nil {
 			return nil, err
 		}
+
+		ownNamespaceContents, err := ioutil.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
+		if err != nil {
+			return nil, fmt.Errorf("could not determine the pod's namespace: %w", err)
+		}
+		ownNamespace = string(ownNamespaceContents)
+
 		level.Info(l).Log("msg", "Using pod service account via in-cluster config")
 	} else {
 		rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "kubernetes_sd")
@@ -310,11 +318,6 @@ func New(l log.Logger, conf *SDConfig) (*Discovery, error) {
 		return nil, err
 	}
 
-	ownNamespace, err := ioutil.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
-	if err != nil {
-		return nil, fmt.Errorf("could not determine the pod's namespace: %w", err)
-	}
-
 	return &Discovery{
 		client:             c,
 		logger:             l,
@@ -322,7 +325,7 @@ func New(l log.Logger, conf *SDConfig) (*Discovery, error) {
 		namespaceDiscovery: &conf.NamespaceDiscovery,
 		discoverers:        make([]discovery.Discoverer, 0),
 		selectors:          mapSelector(conf.Selectors),
-		ownNamespace:       string(ownNamespace),
+		ownNamespace:       ownNamespace,
 	}, nil
 }
 
