@@ -92,7 +92,7 @@ func (tg *Group) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
-// MarshalYAML implements the json.Marshaler interface.
+// MarshalJSON implements the json.Marshaler interface.
 func (tg Group) MarshalJSON() ([]byte, error) {
 	g := &struct {
 		Targets []string       `json:"targets"`
