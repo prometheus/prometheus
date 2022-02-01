@@ -177,13 +177,6 @@ func TestReadyAndHealthy(t *testing.T) {
 
 	for _, u := range []string{
 		baseURL + "/-/ready",
-		baseURL + "/classic/graph",
-		baseURL + "/classic/flags",
-		baseURL + "/classic/rules",
-		baseURL + "/classic/service-discovery",
-		baseURL + "/classic/targets",
-		baseURL + "/classic/status",
-		baseURL + "/classic/config",
 	} {
 		resp, err = http.Get(u)
 		require.NoError(t, err)
@@ -207,13 +200,6 @@ func TestReadyAndHealthy(t *testing.T) {
 	for _, u := range []string{
 		baseURL + "/-/healthy",
 		baseURL + "/-/ready",
-		baseURL + "/classic/graph",
-		baseURL + "/classic/flags",
-		baseURL + "/classic/rules",
-		baseURL + "/classic/service-discovery",
-		baseURL + "/classic/targets",
-		baseURL + "/classic/status",
-		baseURL + "/classic/config",
 	} {
 		resp, err = http.Get(u)
 		require.NoError(t, err)
