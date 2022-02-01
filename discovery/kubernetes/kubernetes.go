@@ -184,6 +184,12 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if c.APIServer.URL == nil && !reflect.DeepEqual(c.HTTPClientConfig, config.DefaultHTTPClientConfig) {
 		return errors.Errorf("to use custom HTTP client configuration please provide the 'api_server' URL explicitly")
 	}
+	if c.APIServer.URL != nil && c.NamespaceDiscovery.IncludeOwnNamespace {
+		return errors.Errorf("cannot use 'api_server' and 'namespaces.own_namespace' simultaneously")
+	}
+	if c.KubeConfig != "" && c.NamespaceDiscovery.IncludeOwnNamespace {
+		return errors.Errorf("cannot use 'kubeconfig_file' and 'namespaces.own_namespace' simultaneously")
+	}
 
 	foundSelectorRoles := make(map[Role]struct{})
 	allowedSelectors := map[Role][]string{
@@ -276,8 +282,9 @@ func New(l log.Logger, conf *SDConfig) (*Discovery, error) {
 		l = log.NewNopLogger()
 	}
 	var (
-		kcfg *rest.Config
-		err  error
+		kcfg         *rest.Config
+		err          error
+		ownNamespace string
 	)
 	if conf.KubeConfig != "" {
 		kcfg, err = clientcmd.BuildConfigFromFlags("", conf.KubeConfig)
@@ -291,6 +298,18 @@ func New(l log.Logger, conf *SDConfig) (*Discovery, error) {
 		if err != nil {
 			return nil, err
 		}
+
+		if conf.NamespaceDiscovery.IncludeOwnNamespace {
+			ownNamespaceContents, err := ioutil.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
+			if err != nil {
+				return nil, fmt.Errorf("could not determine the pod's namespace: %w", err)
+			}
+			if len(ownNamespaceContents) == 0 {
+				return nil, errors.New("could not read own namespace name (empty file)")
+			}
+			ownNamespace = string(ownNamespaceContents)
+		}
+
 		level.Info(l).Log("msg", "Using pod service account via in-cluster config")
 	} else {
 		rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "kubernetes_sd")
@@ -310,11 +329,6 @@ func New(l log.Logger, conf *SDConfig) (*Discovery, error) {
 		return nil, err
 	}
 
-	ownNamespace, err := ioutil.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
-	if err != nil {
-		return nil, fmt.Errorf("could not determine the pod's namespace: %w", err)
-	}
-
 	return &Discovery{
 		client:             c,
 		logger:             l,
@@ -322,7 +336,7 @@ func New(l log.Logger, conf *SDConfig) (*Discovery, error) {
 		namespaceDiscovery: &conf.NamespaceDiscovery,
 		discoverers:        make([]discovery.Discoverer, 0),
 		selectors:          mapSelector(conf.Selectors),
-		ownNamespace:       string(ownNamespace),
+		ownNamespace:       ownNamespace,
 	}, nil
 }
 

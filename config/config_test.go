@@ -1182,6 +1182,14 @@ var expectedErrors = []struct {
 		errMsg:   "to use custom HTTP client configuration please provide the 'api_server' URL explicitly",
 	},
 	{
+		filename: "kubernetes_kubeconfig_with_own_namespace.bad.yml",
+		errMsg:   "cannot use 'kubeconfig_file' and 'namespaces.own_namespace' simultaneously",
+	},
+	{
+		filename: "kubernetes_api_server_with_own_namespace.bad.yml",
+		errMsg:   "cannot use 'api_server' and 'namespaces.own_namespace' simultaneously",
+	},
+	{
 		filename: "kubernetes_kubeconfig_with_apiserver.bad.yml",
 		errMsg:   "cannot use 'kubeconfig_file' and 'api_server' simultaneously",
 	},
