@@ -22,7 +22,7 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-func TestTargetGroupStrictJsonUnmarshal(t *testing.T) {
+func TestTargetGroupStrictJSONUnmarshal(t *testing.T) {
 	tests := []struct {
 		json          string
 		expectedReply error
@@ -59,7 +59,7 @@ func TestTargetGroupStrictJsonUnmarshal(t *testing.T) {
 	}
 }
 
-func TestTargetGroupJsonMarshal(t *testing.T) {
+func TestTargetGroupJSONMarshal(t *testing.T) {
 	tests := []struct {
 		expectedJSON string
 		expectedErr  error
