@@ -28,6 +28,12 @@ const Navigation: FC<NavbarProps> = ({ consolesLink, agentMode }) => {
     <Navbar className="mb-3" dark color="dark" expand="md" fixed="top">
       <NavbarToggler onClick={toggle} className="mr-2" />
       <Link className="pt-0 navbar-brand" to={agentMode ? '/agent' : '/graph'}>
+        <img
+          src={`${pathPrefix}/prometheus_logo_grey.svg`}
+          className="d-inline-block align-top"
+          alt="Prometheus logo"
+          title="Prometheus"
+        />
         Prometheus{agentMode && ' Agent'}
       </Link>
       <Collapse isOpen={isOpen} navbar style={{ justifyContent: 'space-between' }}>
