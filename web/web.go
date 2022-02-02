@@ -34,7 +34,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	template_text "text/template"
 	"time"
 
 	"github.com/alecthomas/units"
@@ -775,102 +774,6 @@ func (h *Handler) consolesPath() string {
 		}
 	}
 	return ""
-}
-
-func tmplFuncs(consolesPath string, opts *Options) template_text.FuncMap {
-	return template_text.FuncMap{
-		"since": func(t time.Time) time.Duration {
-			return time.Since(t) / time.Millisecond * time.Millisecond
-		},
-		"unixToTime": func(i int64) time.Time {
-			t := time.Unix(i/int64(time.Microsecond), 0).UTC()
-			return t
-		},
-		"consolesPath": func() string { return consolesPath },
-		"pathPrefix":   func() string { return opts.ExternalURL.Path },
-		"pageTitle":    func() string { return opts.PageTitle },
-		"buildVersion": func() string { return opts.Version.Revision },
-		"globalURL": func(u *url.URL) *url.URL {
-			host, port, err := net.SplitHostPort(u.Host)
-			if err != nil {
-				return u
-			}
-			for _, lhr := range api_v1.LocalhostRepresentations {
-				if host == lhr {
-					_, ownPort, err := net.SplitHostPort(opts.ListenAddress)
-					if err != nil {
-						return u
-					}
-
-					if port == ownPort {
-						// Only in the case where the target is on localhost and its port is
-						// the same as the one we're listening on, we know for sure that
-						// we're monitoring our own process and that we need to change the
-						// scheme, hostname, and port to the externally reachable ones as
-						// well. We shouldn't need to touch the path at all, since if a
-						// path prefix is defined, the path under which we scrape ourselves
-						// should already contain the prefix.
-						u.Scheme = opts.ExternalURL.Scheme
-						u.Host = opts.ExternalURL.Host
-					} else {
-						// Otherwise, we only know that localhost is not reachable
-						// externally, so we replace only the hostname by the one in the
-						// external URL. It could be the wrong hostname for the service on
-						// this port, but it's still the best possible guess.
-						host, _, err := net.SplitHostPort(opts.ExternalURL.Host)
-						if err != nil {
-							return u
-						}
-						u.Host = host + ":" + port
-					}
-					break
-				}
-			}
-			return u
-		},
-		"numHealthy": func(pool []*scrape.Target) int {
-			alive := len(pool)
-			for _, p := range pool {
-				if p.Health() != scrape.HealthGood {
-					alive--
-				}
-			}
-
-			return alive
-		},
-		"targetHealthToClass": func(th scrape.TargetHealth) string {
-			switch th {
-			case scrape.HealthUnknown:
-				return "warning"
-			case scrape.HealthGood:
-				return "success"
-			default:
-				return "danger"
-			}
-		},
-		"ruleHealthToClass": func(rh rules.RuleHealth) string {
-			switch rh {
-			case rules.HealthUnknown:
-				return "warning"
-			case rules.HealthGood:
-				return "success"
-			default:
-				return "danger"
-			}
-		},
-		"alertStateToClass": func(as rules.AlertState) string {
-			switch as {
-			case rules.StateInactive:
-				return "success"
-			case rules.StatePending:
-				return "warning"
-			case rules.StateFiring:
-				return "danger"
-			default:
-				panic("unknown alert state")
-			}
-		},
-	}
 }
 
 func setPathWithPrefix(prefix string) func(handlerName string, handler http.HandlerFunc) http.HandlerFunc {
