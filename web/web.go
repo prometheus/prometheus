@@ -414,7 +414,7 @@ func New(logger log.Logger, o *Options) *Handler {
 
 	// The favicon and manifest are bundled as part of the React app, but we want to serve
 	// them on the root.
-	for _, p := range []string{"/favicon.ico", "/manifest.json", "/prometheus_logo_grey.svg"} {
+	for _, p := range []string{"/favicon.ico", "/manifest.json"} {
 		assetPath := "/static/react" + p
 		router.Get(p, func(w http.ResponseWriter, r *http.Request) {
 			r.URL.Path = assetPath
