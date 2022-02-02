@@ -49,54 +49,6 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func TestGlobalURL(t *testing.T) {
-	opts := &Options{
-		ListenAddress: ":9090",
-		ExternalURL: &url.URL{
-			Scheme: "https",
-			Host:   "externalhost:80",
-			Path:   "/path/prefix",
-		},
-	}
-
-	tests := []struct {
-		inURL  string
-		outURL string
-	}{
-		{
-			// Nothing should change if the input URL is not on localhost, even if the port is our listening port.
-			inURL:  "http://somehost:9090/metrics",
-			outURL: "http://somehost:9090/metrics",
-		},
-		{
-			// Port and host should change if target is on localhost and port is our listening port.
-			inURL:  "http://localhost:9090/metrics",
-			outURL: "https://externalhost:80/metrics",
-		},
-		{
-			// Only the host should change if the port is not our listening port, but the host is localhost.
-			inURL:  "http://localhost:8000/metrics",
-			outURL: "http://externalhost:8000/metrics",
-		},
-		{
-			// Alternative localhost representations should also work.
-			inURL:  "http://127.0.0.1:9090/metrics",
-			outURL: "https://externalhost:80/metrics",
-		},
-	}
-
-	for _, test := range tests {
-		inURL, err := url.Parse(test.inURL)
-
-		require.NoError(t, err)
-
-		globalURL := tmplFuncs("", opts)["globalURL"].(func(u *url.URL) *url.URL)
-		outURL := globalURL(inURL)
-
-		require.Equal(t, test.outURL, outURL.String())
-	}
-}
-
 type dbAdapter struct {
 	*tsdb.DB
 }
@@ -177,13 +129,6 @@ func TestReadyAndHealthy(t *testing.T) {
 
 	for _, u := range []string{
 		baseURL + "/-/ready",
-		baseURL + "/classic/graph",
-		baseURL + "/classic/flags",
-		baseURL + "/classic/rules",
-		baseURL + "/classic/service-discovery",
-		baseURL + "/classic/targets",
-		baseURL + "/classic/status",
-		baseURL + "/classic/config",
 	} {
 		resp, err = http.Get(u)
 		require.NoError(t, err)
@@ -207,13 +152,6 @@ func TestReadyAndHealthy(t *testing.T) {
 	for _, u := range []string{
 		baseURL + "/-/healthy",
 		baseURL + "/-/ready",
-		baseURL + "/classic/graph",
-		baseURL + "/classic/flags",
-		baseURL + "/classic/rules",
-		baseURL + "/classic/service-discovery",
-		baseURL + "/classic/targets",
-		baseURL + "/classic/status",
-		baseURL + "/classic/config",
 	} {
 		resp, err = http.Get(u)
 		require.NoError(t, err)
