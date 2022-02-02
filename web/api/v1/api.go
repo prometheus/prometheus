@@ -157,8 +157,8 @@ type TSDBAdminStats interface {
 // QueryEngine defines the interface for the *promql.Engine, so it can be replaced, wrapped or mocked.
 type QueryEngine interface {
 	SetQueryLogger(l promql.QueryLogger)
-	NewInstantQuery(q storage.Queryable, qs string, ts time.Time) (promql.Query, error)
-	NewRangeQuery(q storage.Queryable, qs string, start, end time.Time, interval time.Duration) (promql.Query, error)
+	NewInstantQuery(q storage.Queryable, opts *promql.QueryOpts, qs string, ts time.Time) (promql.Query, error)
+	NewRangeQuery(q storage.Queryable, opts *promql.QueryOpts, qs string, start, end time.Time, interval time.Duration) (promql.Query, error)
 }
 
 // API can register a set of endpoints in a router and handle
@@ -376,7 +376,8 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 		defer cancel()
 	}
 
-	qry, err := api.QueryEngine.NewInstantQuery(api.Queryable, r.FormValue("query"), ts)
+	opts := extractQueryOpts(r)
+	qry, err := api.QueryEngine.NewInstantQuery(api.Queryable, opts, r.FormValue("query"), ts)
 	if err != nil {
 		return invalidParamError(err, "query")
 	}
@@ -408,6 +409,12 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 		Result:     res.Value,
 		Stats:      qs,
 	}, nil, res.Warnings, qry.Close}
+}
+
+func extractQueryOpts(r *http.Request) *promql.QueryOpts {
+	return &promql.QueryOpts{
+		EnablePerStepStats: r.FormValue("stats") == "all",
+	}
 }
 
 func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
@@ -451,7 +458,8 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 		defer cancel()
 	}
 
-	qry, err := api.QueryEngine.NewRangeQuery(api.Queryable, r.FormValue("query"), start, end, step)
+	opts := extractQueryOpts(r)
+	qry, err := api.QueryEngine.NewRangeQuery(api.Queryable, opts, r.FormValue("query"), start, end, step)
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}

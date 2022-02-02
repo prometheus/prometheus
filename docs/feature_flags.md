@@ -78,3 +78,13 @@ discovery, scrape and remote write.
 
 This is useful when you do not need to query the Prometheus data locally, but
 only from a central [remote endpoint](https://prometheus.io/docs/operating/integrations/#remote-endpoints-and-storage).
+
+## Per-step stats
+
+`--enable-feature=promql-per-step-stats`
+
+When enabled, passing `stats=all` in a query request returns per-step
+statistics. Currently this is limited to totalQueryableSamples.
+
+When disabled in either the engine or the query, per-step statistics are not
+computed at all.
