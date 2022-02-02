@@ -15,5 +15,7 @@
 include ../../../Makefile.common
 
 build:
-	@cd ./example_write_adapter && $(GO) build
-	@cd ./remote_storage_adapter && $(GO) build
+	@echo ">> building example_write_adapter"
+	@$(GO) build -o example_write_adapter/example_write_adapter ./example_write_adapter
+	@echo ">> building remote_storage_adapter"
+	@$(GO) build -o remote_storage_adapter/remote_storage_adapter ./remote_storage_adapter
