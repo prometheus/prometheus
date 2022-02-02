@@ -362,6 +362,7 @@ func New(logger log.Logger, o *Options) *Handler {
 		http.Redirect(w, r, path.Join(o.ExternalURL.Path, homePage), http.StatusFound)
 	})
 
+	// The console library examples at 'console_libraries/prom.lib' still depend on old asset files being served under `classic`.
 	router.Get("/classic/static/*filepath", func(w http.ResponseWriter, r *http.Request) {
 		r.URL.Path = path.Join("/static", route.Param(r.Context(), "filepath"))
 		fs := server.StaticFileServer(ui.Assets)
@@ -870,19 +871,6 @@ func tmplFuncs(consolesPath string, opts *Options) template_text.FuncMap {
 			}
 		},
 	}
-}
-
-// AlertStatus bundles alerting rules and the mapping of alert states to row classes.
-type AlertStatus struct {
-	Groups               []*rules.Group
-	AlertStateToRowClass map[rules.AlertState]string
-	Counts               AlertByStateCount
-}
-
-type AlertByStateCount struct {
-	Inactive int32
-	Pending  int32
-	Firing   int32
 }
 
 func setPathWithPrefix(prefix string) func(handlerName string, handler http.HandlerFunc) http.HandlerFunc {
