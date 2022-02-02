@@ -14,10 +14,10 @@
 package labels
 
 import (
-	"regexp/syntax"
 	"strings"
 	"testing"
 
+	"github.com/grafana/regexp/syntax"
 	"github.com/stretchr/testify/require"
 )
 
