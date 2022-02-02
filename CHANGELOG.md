@@ -1,3 +1,7 @@
+## 2.33.1 / 2022-02-02
+
+* [BUGFIX] SD: Fix _no such file or directory_ in K8s SD when not running inside K8s. #10235
+
 ## 2.33.0 / 2022-01-29
 
 * [CHANGE] PromQL: Promote negative offset and `@` modifer to stable features. #10121
