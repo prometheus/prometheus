@@ -15,6 +15,9 @@ package stats
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"strconv"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
@@ -75,6 +78,23 @@ func (s QueryTiming) SpanOperation() string {
 	}
 }
 
+// stepStat represents a single statistic for a given step timestamp.
+type stepStat struct {
+	T int64
+	V float64
+}
+
+func (s stepStat) String() string {
+	v := strconv.FormatFloat(s.V, 'f', -1, 64)
+	return fmt.Sprintf("%v @[%v]", v, s.T)
+}
+
+// MarshalJSON implements json.Marshaler.
+func (s stepStat) MarshalJSON() ([]byte, error) {
+	v := strconv.FormatFloat(s.V, 'f', -1, 64)
+	return json.Marshal([...]interface{}{float64(s.T) / 1000, v})
+}
+
 // queryTimings with all query timers mapped to durations.
 type queryTimings struct {
 	EvalTotalTime        float64 `json:"evalTotalTime"`
@@ -85,15 +105,26 @@ type queryTimings struct {
 	ExecTotalTime        float64 `json:"execTotalTime"`
 }
 
+type querySamples struct {
+	TotalQueryableSamplesPerStep []stepStat `json:"totalQueryableSamplesPerStep,omitempty"`
+	TotalQueryableSamples        int        `json:"totalQueryableSamples"`
+}
+
 // QueryStats currently only holding query timings.
 type QueryStats struct {
-	Timings queryTimings `json:"timings,omitempty"`
+	Timings queryTimings  `json:"timings,omitempty"`
+	Samples *querySamples `json:"samples,omitempty"`
 }
 
 // NewQueryStats makes a QueryStats struct with all QueryTimings found in the
 // given TimerGroup.
-func NewQueryStats(tg *QueryTimers) *QueryStats {
-	var qt queryTimings
+func NewQueryStats(s *Statistics) *QueryStats {
+	var (
+		qt      queryTimings
+		samples *querySamples
+		tg      = s.Timers
+		sp      = s.Samples
+	)
 
 	for s, timer := range tg.TimerGroup.timers {
 		switch s {
@@ -112,8 +143,39 @@ func NewQueryStats(tg *QueryTimers) *QueryStats {
 		}
 	}
 
-	qs := QueryStats{Timings: qt}
+	if sp != nil {
+		samples = &querySamples{
+			TotalQueryableSamples: sp.TotalSamples,
+		}
+		samples.TotalQueryableSamplesPerStep = sp.totalSamplesPerStepPoints()
+	}
+
+	qs := QueryStats{Timings: qt, Samples: samples}
 	return &qs
+}
+
+func (qs *QuerySamples) TotalSamplesPerStepMap() *TotalSamplesPerStep {
+	if !qs.EnablePerStepStats {
+		return nil
+	}
+
+	ts := TotalSamplesPerStep{}
+	for _, s := range qs.totalSamplesPerStepPoints() {
+		ts[s.T] = int(s.V)
+	}
+	return &ts
+}
+
+func (qs *QuerySamples) totalSamplesPerStepPoints() []stepStat {
+	if !qs.EnablePerStepStats {
+		return nil
+	}
+
+	ts := make([]stepStat, len(qs.TotalSamplesPerStep))
+	for i, c := range qs.TotalSamplesPerStep {
+		ts[i] = stepStat{T: qs.startTimestamp + int64(i)*qs.interval, V: float64(c)}
+	}
+	return ts
 }
 
 // SpanTimer unifies tracing and timing, to reduce repetition.
@@ -145,12 +207,87 @@ func (s *SpanTimer) Finish() {
 	}
 }
 
+type Statistics struct {
+	Timers  *QueryTimers
+	Samples *QuerySamples
+}
+
 type QueryTimers struct {
 	*TimerGroup
 }
 
+type TotalSamplesPerStep map[int64]int
+
+type QuerySamples struct {
+	// TotalSamples represents the total number of samples scanned
+	// while evaluating a query.
+	TotalSamples int
+
+	// TotalSamplesPerStep represents the total number of samples scanned
+	// per step while evaluating a query. Each step should be identical to the
+	// TotalSamples when a step is run as an instant query, which means
+	// we intentionally do not account for optimizations that happen inside the
+	// range query engine that reduce the actual work that happens.
+	TotalSamplesPerStep []int
+
+	EnablePerStepStats bool
+	startTimestamp     int64
+	interval           int64
+}
+
+type Stats struct {
+	TimerStats  *QueryTimers
+	SampleStats *QuerySamples
+}
+
+func (qs *QuerySamples) InitStepTracking(start, end, interval int64) {
+	if !qs.EnablePerStepStats {
+		return
+	}
+
+	numSteps := int((end-start)/interval) + 1
+	qs.TotalSamplesPerStep = make([]int, numSteps)
+	qs.startTimestamp = start
+	qs.interval = interval
+}
+
+// IncrementSamplesAtStep increments the total samples count. Use this if you know the step index.
+func (qs *QuerySamples) IncrementSamplesAtStep(i, samples int) {
+	if qs == nil {
+		return
+	}
+	qs.TotalSamples += samples
+
+	if qs.TotalSamplesPerStep != nil {
+		qs.TotalSamplesPerStep[i] += samples
+	}
+}
+
+// IncrementSamplesAtTimestamp increments the total samples count. Use this if you only have the corresponding step
+// timestamp.
+func (qs *QuerySamples) IncrementSamplesAtTimestamp(t int64, samples int) {
+	if qs == nil {
+		return
+	}
+	qs.TotalSamples += samples
+
+	if qs.TotalSamplesPerStep != nil {
+		i := int((t - qs.startTimestamp) / qs.interval)
+		qs.TotalSamplesPerStep[i] += samples
+	}
+}
+
 func NewQueryTimers() *QueryTimers {
 	return &QueryTimers{NewTimerGroup()}
+}
+
+func NewQuerySamples(enablePerStepStats bool) *QuerySamples {
+	qs := QuerySamples{EnablePerStepStats: enablePerStepStats}
+	return &qs
+}
+
+func (qs *QuerySamples) NewChild() *QuerySamples {
+	return NewQuerySamples(false)
 }
 
 func (qs *QueryTimers) GetSpanTimer(ctx context.Context, qt QueryTiming, observers ...prometheus.Observer) (*SpanTimer, context.Context) {

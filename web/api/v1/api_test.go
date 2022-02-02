@@ -522,6 +522,99 @@ func TestLabelNames(t *testing.T) {
 	}
 }
 
+func TestStats(t *testing.T) {
+	suite, err := promql.NewTest(t, ``)
+	require.NoError(t, err)
+	defer suite.Close()
+	require.NoError(t, suite.Run())
+
+	api := &API{
+		Queryable:   suite.Storage(),
+		QueryEngine: suite.QueryEngine(),
+		now: func() time.Time {
+			return time.Unix(123, 0)
+		},
+	}
+	request := func(method string, param string) (*http.Request, error) {
+		u, err := url.Parse("http://example.com")
+		require.NoError(t, err)
+		q := u.Query()
+		q.Add("stats", param)
+		q.Add("query", "up")
+		q.Add("start", "0")
+		q.Add("end", "100")
+		q.Add("step", "10")
+		u.RawQuery = q.Encode()
+
+		r, err := http.NewRequest(method, u.String(), nil)
+		if method == http.MethodPost {
+			r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		}
+		return r, err
+	}
+
+	for _, tc := range []struct {
+		name     string
+		param    string
+		expected func(*testing.T, interface{})
+	}{
+		{
+			name:  "stats is blank",
+			param: "",
+			expected: func(t *testing.T, i interface{}) {
+				require.IsType(t, i, &queryData{})
+				qd := i.(*queryData)
+				require.Nil(t, qd.Stats)
+			},
+		},
+		{
+			name:  "stats is true",
+			param: "true",
+			expected: func(t *testing.T, i interface{}) {
+				require.IsType(t, i, &queryData{})
+				qd := i.(*queryData)
+				require.NotNil(t, qd.Stats)
+				qs := qd.Stats
+				require.NotNil(t, qs.Timings)
+				require.Greater(t, qs.Timings.EvalTotalTime, float64(0))
+				require.NotNil(t, qs.Samples)
+				require.NotNil(t, qs.Samples.TotalQueryableSamples)
+				require.Nil(t, qs.Samples.TotalQueryableSamplesPerStep)
+			},
+		},
+		{
+			name:  "stats is all",
+			param: "all",
+			expected: func(t *testing.T, i interface{}) {
+				require.IsType(t, i, &queryData{})
+				qd := i.(*queryData)
+				require.NotNil(t, qd.Stats)
+				qs := qd.Stats
+				require.NotNil(t, qs.Timings)
+				require.Greater(t, qs.Timings.EvalTotalTime, float64(0))
+				require.NotNil(t, qs.Samples)
+				require.NotNil(t, qs.Samples.TotalQueryableSamples)
+				require.NotNil(t, qs.Samples.TotalQueryableSamplesPerStep)
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, method := range []string{http.MethodGet, http.MethodPost} {
+				ctx := context.Background()
+				req, err := request(method, tc.param)
+				require.NoError(t, err)
+				res := api.query(req.WithContext(ctx))
+				assertAPIError(t, res.err, "")
+				tc.expected(t, res.data)
+
+				res = api.queryRange(req.WithContext(ctx))
+				assertAPIError(t, res.err, "")
+				tc.expected(t, res.data)
+			}
+		})
+	}
+}
+
 func setupTestTargetRetriever(t *testing.T) *testTargetRetriever {
 	t.Helper()
 
