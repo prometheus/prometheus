@@ -867,8 +867,8 @@ role: <string>
 # resources.
 # The available filters are listed in the upstream documentation:
 # Services: https://docs.docker.com/engine/api/v1.40/#operation/ServiceList
-#    Tasks: https://docs.docker.com/engine/api/v1.40/#operation/TaskList
-#    Nodes: https://docs.docker.com/engine/api/v1.40/#operation/NodeList
+# Tasks: https://docs.docker.com/engine/api/v1.40/#operation/TaskList
+# Nodes: https://docs.docker.com/engine/api/v1.40/#operation/NodeList
 [ filters:
   [ - name: <string>
       values: <string>, [...] ]
