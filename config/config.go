@@ -854,6 +854,9 @@ type RemoteReadConfig struct {
 	// RequiredMatchers is an optional list of equality matchers which have to
 	// be present in a selector to query the remote read endpoint.
 	RequiredMatchers model.LabelSet `yaml:"required_matchers,omitempty"`
+	// An option to ignore external_labels, will keep reading data that has already
+	// been written if true, default is false.
+	IgnoreExternalLabels bool `yaml:"ignore_external_labels,omitempty"`
 }
 
 // SetDirectory joins any relative file paths with dir.

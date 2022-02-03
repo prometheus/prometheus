@@ -2868,6 +2868,10 @@ tls_config:
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <boolean> | default = true ]
+
+# Whether ignore external_labels, will keep reading data that 
+# has already been written if true.
+[ ignore_external_labels: <boolean> | default = false ]
 ```
 
 There is a list of
