@@ -22,8 +22,9 @@ import (
 	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/prometheus/model/labels"
 	"go.uber.org/atomic"
+
+	"github.com/prometheus/prometheus/model/labels"
 )
 
 // Shared interner
