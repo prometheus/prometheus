@@ -27,9 +27,7 @@ import (
 )
 
 // Shared interner
-var (
-	Global Interner = New(prometheus.DefaultRegisterer)
-)
+var Global = New(prometheus.DefaultRegisterer)
 
 // Interner is a string interner.
 type Interner interface {
