@@ -961,7 +961,7 @@ func (c *scrapeCache) iterDone(flushCache bool) {
 		for s, e := range c.series {
 			if c.iter != e.lastIter {
 				if c.useInterner {
-					intern.ReleaseLabels(c.interner, e.lset)
+					intern.Release(c.interner, e.lset)
 				}
 				delete(c.series, s)
 			}
@@ -1005,7 +1005,7 @@ func (c *scrapeCache) addRef(met string, ref storage.SeriesRef, lset labels.Labe
 	// The cache entries are used for staleness tracking so even if ref is
 	// 0 we need to track it.
 	if c.useInterner {
-		intern.InternLabels(c.interner, lset)
+		intern.Intern(c.interner, lset)
 	}
 
 	ce := &cacheEntry{ref: ref, lastIter: c.iter, lset: lset, hash: hash}
