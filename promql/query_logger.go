@@ -83,7 +83,20 @@ func logUnfinishedQueries(filename string, filesize int, logger log.Logger) {
 func getMMapedFile(filename string, filesize int, logger log.Logger) ([]byte, error) {
 	file, err := os.OpenFile(filename, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0o666)
 	if err != nil {
-		level.Error(logger).Log("msg", "Error opening query log file", "file", filename, "err", err)
+		// Try and log a full path to aid in debugging, even if we received a
+		// relative one
+		fullpath := "unknown"
+		if !filepath.IsAbs(filename) {
+			// If Getwd() returns an error, things are very broken, and we will
+			// just error-log the filename as we received it
+			cwd, err := os.Getwd()
+			if err == nil {
+				fullpath = filepath.Join(cwd, filename)
+			}
+		} else {
+			fullpath = filename
+		}
+		level.Error(logger).Log("msg", "Error opening query log file", "file", filename, "fullpath", fullpath, "err", err)
 		return nil, err
 	}
 
