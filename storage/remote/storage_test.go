@@ -82,7 +82,7 @@ func TestUpdateRemoteReadConfigs(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestNotIgnoreExternalLabels(t *testing.T) {
+func TestFilterExternalLabels(t *testing.T) {
 	dir := t.TempDir()
 
 	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil)
@@ -124,7 +124,7 @@ func TestIgnoreExternalLabels(t *testing.T) {
 		&config.DefaultRemoteReadConfig,
 	}
 
-	conf.RemoteReadConfigs[0].IgnoreExternalLabels = true
+	conf.RemoteReadConfigs[0].FilterExternalLabels = false
 
 	require.NoError(t, s.ApplyConfig(conf))
 	require.Equal(t, 1, len(s.queryables))
