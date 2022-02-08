@@ -428,8 +428,8 @@ func main() {
 	// Throw error for invalid config before starting other components.
 	var cfgFile *config.Config
 	if cfgFile, err = config.LoadFile(cfg.configFile, agentMode, false, log.NewNopLogger()); err != nil {
-		absPath, err := filepath.Abs(cfg.configFile)
-		if err != nil {
+		absPath, pathErr := filepath.Abs(cfg.configFile)
+		if pathErr != nil {
 			absPath = cfg.configFile
 		}
 		level.Error(logger).Log("msg", fmt.Sprintf("Error loading config (--config.file=%s)", cfg.configFile), "absPath", absPath, "err", err)
