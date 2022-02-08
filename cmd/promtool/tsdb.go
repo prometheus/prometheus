@@ -214,7 +214,7 @@ func (b *writeBenchmark) ingestScrapesShard(lbls []labels.Labels, scrapeCount in
 				ref = *s.ref
 			}
 
-			ref, err := app.Append(ref, s.labels, ts, float64(s.value))
+			ref, err := app.Append(ref, s.labels, storage.EmptyMetadata(), ts, float64(s.value))
 			if err != nil {
 				panic(err)
 			}

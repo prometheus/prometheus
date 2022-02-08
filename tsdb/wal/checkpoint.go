@@ -39,10 +39,12 @@ import (
 // CheckpointStats returns stats about a created checkpoint.
 type CheckpointStats struct {
 	DroppedSeries     int
+	DroppedMetadata   int
 	DroppedSamples    int
 	DroppedTombstones int
 	DroppedExemplars  int
 	TotalSeries       int // Processed series including dropped ones.
+	TotalMetadata     int // Processed metadata including dropped ones.
 	TotalSamples      int // Processed samples including dropped ones.
 	TotalTombstones   int // Processed tombstones including dropped ones.
 	TotalExemplars    int // Processed exemplars including dropped ones.
@@ -147,6 +149,7 @@ func Checkpoint(logger log.Logger, w *WAL, from, to int, keep func(id chunks.Hea
 
 	var (
 		series    []record.RefSeries
+		metadata  []record.RefMetadata
 		samples   []record.RefSample
 		tstones   []tombstones.Stone
 		exemplars []record.RefExemplar
@@ -156,7 +159,7 @@ func Checkpoint(logger log.Logger, w *WAL, from, to int, keep func(id chunks.Hea
 		recs      [][]byte
 	)
 	for r.Next() {
-		series, samples, tstones, exemplars = series[:0], samples[:0], tstones[:0], exemplars[:0]
+		series, metadata, samples, tstones, exemplars = series[:0], metadata[:0], samples[:0], tstones[:0], exemplars[:0]
 
 		// We don't reset the buffer since we batch up multiple records
 		// before writing them to the checkpoint.
@@ -182,6 +185,24 @@ func Checkpoint(logger log.Logger, w *WAL, from, to int, keep func(id chunks.Hea
 			}
 			stats.TotalSeries += len(series)
 			stats.DroppedSeries += len(series) - len(repl)
+
+		case record.Metadata:
+			metadata, err = dec.Metadata(rec, metadata)
+			if err != nil {
+				return nil, errors.Wrap(err, "decode metadata")
+			}
+			// Drop irrelevant metadata in place.
+			repl := metadata[:0]
+			for _, m := range metadata {
+				if keep(m.Ref) {
+					repl = append(repl, m)
+				}
+			}
+			if len(repl) > 0 {
+				buf = enc.Metadata(repl, buf)
+			}
+			stats.TotalMetadata += len(metadata)
+			stats.DroppedMetadata += len(metadata) - len(repl)
 
 		case record.Samples:
 			samples, err = dec.Samples(rec, samples)

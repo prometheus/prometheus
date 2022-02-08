@@ -22,6 +22,7 @@ import (
 	"github.com/pkg/errors"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/encoding"
@@ -42,6 +43,8 @@ const (
 	Tombstones Type = 3
 	// Exemplars is used to match WAL records of type Exemplars.
 	Exemplars Type = 4
+	// Metadata is used to match WAL records of type Metadata.
+	Metadata Type = 5
 )
 
 // ErrNotFound is returned if a looked up resource was not found. Duplicate ErrNotFound from head.go.
@@ -51,6 +54,14 @@ var ErrNotFound = errors.New("not found")
 type RefSeries struct {
 	Ref    chunks.HeadSeriesRef
 	Labels labels.Labels
+}
+
+// RefMetadata is the series metadata.
+type RefMetadata struct {
+	Ref  chunks.HeadSeriesRef
+	Type textparse.MetricType
+	Unit string
+	Help string
 }
 
 // RefSample is a timestamp/value pair associated with a reference to a series.
@@ -79,7 +90,7 @@ func (d *Decoder) Type(rec []byte) Type {
 		return Unknown
 	}
 	switch t := Type(rec[0]); t {
-	case Series, Samples, Tombstones, Exemplars:
+	case Series, Samples, Tombstones, Exemplars, Metadata:
 		return t
 	}
 	return Unknown
@@ -115,6 +126,48 @@ func (d *Decoder) Series(rec []byte, series []RefSeries) ([]RefSeries, error) {
 		return nil, errors.Errorf("unexpected %d bytes left in entry", len(dec.B))
 	}
 	return series, nil
+}
+
+// Metadata appends metadata in rec to the given slice.
+func (d *Decoder) Metadata(rec []byte, metadata []RefMetadata) ([]RefMetadata, error) {
+	dec := encoding.Decbuf{B: rec}
+
+	if Type(dec.Byte()) != Metadata {
+		return nil, errors.New("invalid record type")
+	}
+	for len(dec.B) > 0 && dec.Err() == nil {
+		ref := dec.Uvarint64()
+		size := dec.Uvarint()
+
+		remainingBeforeReadFields := dec.Len()
+
+		typ := dec.UvarintStr()
+		unit := dec.UvarintStr()
+		help := dec.UvarintStr()
+
+		// The bytes consumed will have shrunk, therefore delta between
+		// bytes unread before and bytes unread after is how much we consumed.
+		remainingAfterReadFields := dec.Len()
+		sizeFieldsRead := remainingBeforeReadFields - remainingAfterReadFields
+		if sizeFieldsUnread := size - sizeFieldsRead; sizeFieldsUnread > 0 {
+			// Need to skip fields that we didn't read and don't know about.
+			dec.Skip(sizeFieldsUnread)
+		}
+
+		metadata = append(metadata, RefMetadata{
+			Ref:  chunks.HeadSeriesRef(ref),
+			Type: textparse.MetricType(typ),
+			Unit: unit,
+			Help: help,
+		})
+	}
+	if dec.Err() != nil {
+		return nil, dec.Err()
+	}
+	if len(dec.B) > 0 {
+		return nil, errors.Errorf("unexpected %d bytes left in entry", len(dec.B))
+	}
+	return metadata, nil
 }
 
 // Samples appends samples in rec to the given slice.
@@ -241,6 +294,51 @@ func (e *Encoder) Series(series []RefSeries, b []byte) []byte {
 			buf.PutUvarintStr(l.Value)
 		}
 	}
+	return buf.Get()
+}
+
+// Metadata appends the encoded samples to b and returns the resulting slice.
+func (e *Encoder) Metadata(metadata []RefMetadata, b []byte) []byte {
+	buf := encoding.Encbuf{B: b}
+	buf.PutByte(byte(Metadata))
+
+	for _, m := range metadata {
+		// TODO: Checkif this is correct
+		buf.PutUvarint64(uint64(m.Ref))
+
+		sizeAfterSeriesRef := buf.Len()
+
+		// Reserve space to write the size of the metadata fields
+		// so once we have encoded the fields, we can rewind, write the size
+		// then copy the encoded fields backwards. This allows for the
+		// buffer to be used both for staging the encoding of the
+		// fields, then also moving them into place once size is known
+		// and written to the stream.
+		buf.PutBE64(math.MaxUint64)
+
+		sizeBeforeEncodeFields := buf.Len()
+		buf.PutUvarintStr(string(m.Type))
+		buf.PutUvarintStr(string(m.Unit))
+		buf.PutUvarintStr(string(m.Help))
+		sizeAfterEncodeFields := buf.Len()
+		sizeFieldsWritten := sizeAfterEncodeFields - sizeBeforeEncodeFields
+
+		// Take slice of bytes for encoded fields.
+		b := buf.B
+		encodedFields := b[sizeBeforeEncodeFields:sizeAfterEncodeFields]
+
+		// Rewind the buffer to before any metadata was written and
+		// then encode the size, then copy back the metadata fields into place.
+		buf.B = b[:sizeAfterSeriesRef]
+		// PutUvarint will always use less space than writing fixed size
+		// big endian uint64 that we wrote to the stream to reserve space,
+		// thus not overwriting the byte buffer with the encoded fields content.
+		buf.PutUvarint(sizeFieldsWritten)
+
+		// Copy back the encoded fields into place.
+		buf.B = append(buf.B, encodedFields...)
+	}
+
 	return buf.Get()
 }
 

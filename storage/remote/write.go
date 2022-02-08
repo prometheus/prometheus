@@ -255,7 +255,7 @@ type timestampTracker struct {
 }
 
 // Append implements storage.Appender.
-func (t *timestampTracker) Append(_ storage.SeriesRef, _ labels.Labels, ts int64, _ float64) (storage.SeriesRef, error) {
+func (t *timestampTracker) Append(_ storage.SeriesRef, _ labels.Labels, _ storage.Metadata, ts int64, _ float64) (storage.SeriesRef, error) {
 	t.samples++
 	if ts > t.highestTimestamp {
 		t.highestTimestamp = ts

@@ -1424,6 +1424,7 @@ func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string,
 		appErrs        = appendErrors{}
 		sampleLimitErr error
 		e              exemplar.Exemplar // escapes to heap so hoisted out of loop
+		meta           storage.Metadata
 	)
 
 	// Take an appender with limits.
@@ -1478,6 +1479,15 @@ loop:
 		if sl.cache.getDropped(yoloString(met)) {
 			continue
 		}
+
+		// Zero metadata out until resolved, must be done since
+		// we use a pointer later to avoid copying arg by stack for
+		// low function call overhead and thus need to declare the local var
+		// above the loop so that it does not get allocated per
+		// entry in the scrape (which could happen if we took by pointer
+		// and declared the local var inside the for loop).
+		meta = storage.Metadata{}
+
 		ce, ok := sl.cache.get(yoloString(met))
 		var (
 			ref  storage.SeriesRef
@@ -1515,7 +1525,7 @@ loop:
 			}
 		}
 
-		ref, err = app.Append(ref, lset, t, v)
+		ref, err = app.Append(ref, lset, meta, t, v)
 		sampleAdded, err = sl.checkAddError(ce, met, tp, err, &sampleLimitErr, &appErrs)
 		if err != nil {
 			if err != storage.ErrNotFound {
@@ -1575,7 +1585,7 @@ loop:
 	if err == nil {
 		sl.cache.forEachStale(func(lset labels.Labels) bool {
 			// Series no longer exposed, mark it stale.
-			_, err = app.Append(0, lset, defTime, math.Float64frombits(value.StaleNaN))
+			_, err = app.Append(0, lset, meta, defTime, math.Float64frombits(value.StaleNaN))
 			switch errors.Cause(err) {
 			case storage.ErrOutOfOrderSample, storage.ErrDuplicateSampleForTimestamp:
 				// Do not count these in logging, as this is expected if a target
@@ -1655,6 +1665,43 @@ const (
 	scrapeBodySizeBytesMetricName = "scrape_body_size_bytes" + "\xff"
 )
 
+var (
+	scrapeHealthMetricMeta = &storage.Metadata{
+		Type: textparse.MetricTypeGauge,
+		// TODO: add help based on advice.
+	}
+	scrapeDurationMetricMeta = &storage.Metadata{
+		Type: textparse.MetricTypeGauge,
+		Unit: "seconds",
+		// TODO: add help based on advice.
+	}
+	scrapeSamplesMetricMeta = &storage.Metadata{
+		Type: textparse.MetricTypeGauge,
+		// TODO: add help based on advice.
+	}
+	samplesPostRelabelMetricMeta = &storage.Metadata{
+		Type: textparse.MetricTypeGauge,
+		// TODO: add help based on advice.
+	}
+	scrapeSeriesAddedMetricMeta = &storage.Metadata{
+		Type: textparse.MetricTypeGauge,
+		// TODO: add help based on advice.
+	}
+
+	scrapeTimeoutMeta = &storage.Metadata{
+		Type: textparse.MetricTypeGauge,
+		// TODO: add help based on advice.
+	}
+	scrapeSampleLimitMeta = &storage.Metadata{
+		Type: textparse.MetricTypeGauge,
+		// TODO: add help based on advice.
+	}
+	scrapeBodySizeBytesMeta = &storage.Metadata{
+		Type: textparse.MetricTypeGauge,
+		// TODO: add help based on advice.
+	}
+)
+
 func (sl *scrapeLoop) report(app storage.Appender, start time.Time, duration time.Duration, scraped, added, seriesAdded, bytes int, scrapeErr error) (err error) {
 	sl.scraper.Report(start, duration, scrapeErr)
 
@@ -1665,29 +1712,29 @@ func (sl *scrapeLoop) report(app storage.Appender, start time.Time, duration tim
 		health = 1
 	}
 
-	if err = sl.addReportSample(app, scrapeHealthMetricName, ts, health); err != nil {
+	if err = sl.addReportSample(app, scrapeHealthMetricName, scrapeHealthMetricMeta, ts, health); err != nil {
 		return
 	}
-	if err = sl.addReportSample(app, scrapeDurationMetricName, ts, duration.Seconds()); err != nil {
+	if err = sl.addReportSample(app, scrapeDurationMetricName, scrapeDurationMetricMeta, ts, duration.Seconds()); err != nil {
 		return
 	}
-	if err = sl.addReportSample(app, scrapeSamplesMetricName, ts, float64(scraped)); err != nil {
+	if err = sl.addReportSample(app, scrapeSamplesMetricName, scrapeSamplesMetricMeta, ts, float64(scraped)); err != nil {
 		return
 	}
-	if err = sl.addReportSample(app, samplesPostRelabelMetricName, ts, float64(added)); err != nil {
+	if err = sl.addReportSample(app, samplesPostRelabelMetricName, samplesPostRelabelMetricMeta, ts, float64(added)); err != nil {
 		return
 	}
-	if err = sl.addReportSample(app, scrapeSeriesAddedMetricName, ts, float64(seriesAdded)); err != nil {
+	if err = sl.addReportSample(app, scrapeSeriesAddedMetricName, scrapeSeriesAddedMetricMeta, ts, float64(seriesAdded)); err != nil {
 		return
 	}
 	if sl.reportExtraMetrics {
-		if err = sl.addReportSample(app, scrapeTimeoutMetricName, ts, sl.timeout.Seconds()); err != nil {
+		if err = sl.addReportSample(app, scrapeTimeoutMetricName, scrapeTimeoutMeta, ts, sl.timeout.Seconds()); err != nil {
 			return
 		}
-		if err = sl.addReportSample(app, scrapeSampleLimitMetricName, ts, float64(sl.sampleLimit)); err != nil {
+		if err = sl.addReportSample(app, scrapeSampleLimitMetricName, scrapeSampleLimitMeta, ts, float64(sl.sampleLimit)); err != nil {
 			return
 		}
-		if err = sl.addReportSample(app, scrapeBodySizeBytesMetricName, ts, float64(bytes)); err != nil {
+		if err = sl.addReportSample(app, scrapeBodySizeBytesMetricName, scrapeBodySizeBytesMeta, ts, float64(bytes)); err != nil {
 			return
 		}
 	}
@@ -1699,40 +1746,41 @@ func (sl *scrapeLoop) reportStale(app storage.Appender, start time.Time) (err er
 
 	stale := math.Float64frombits(value.StaleNaN)
 
-	if err = sl.addReportSample(app, scrapeHealthMetricName, ts, stale); err != nil {
+	if err = sl.addReportSample(app, scrapeHealthMetricName, scrapeHealthMetricMeta, ts, stale); err != nil {
 		return
 	}
-	if err = sl.addReportSample(app, scrapeDurationMetricName, ts, stale); err != nil {
+	if err = sl.addReportSample(app, scrapeDurationMetricName, scrapeDurationMetricMeta, ts, stale); err != nil {
 		return
 	}
-	if err = sl.addReportSample(app, scrapeSamplesMetricName, ts, stale); err != nil {
+	if err = sl.addReportSample(app, scrapeSamplesMetricName, scrapeSamplesMetricMeta, ts, stale); err != nil {
 		return
 	}
-	if err = sl.addReportSample(app, samplesPostRelabelMetricName, ts, stale); err != nil {
+	if err = sl.addReportSample(app, samplesPostRelabelMetricName, samplesPostRelabelMetricMeta, ts, stale); err != nil {
 		return
 	}
-	if err = sl.addReportSample(app, scrapeSeriesAddedMetricName, ts, stale); err != nil {
+	if err = sl.addReportSample(app, scrapeSeriesAddedMetricName, scrapeSeriesAddedMetricMeta, ts, stale); err != nil {
 		return
 	}
 	if sl.reportExtraMetrics {
-		if err = sl.addReportSample(app, scrapeTimeoutMetricName, ts, stale); err != nil {
+		if err = sl.addReportSample(app, scrapeTimeoutMetricName, scrapeTimeoutMeta, ts, stale); err != nil {
 			return
 		}
-		if err = sl.addReportSample(app, scrapeSampleLimitMetricName, ts, stale); err != nil {
+		if err = sl.addReportSample(app, scrapeSampleLimitMetricName, scrapeSampleLimitMeta, ts, stale); err != nil {
 			return
 		}
-		if err = sl.addReportSample(app, scrapeBodySizeBytesMetricName, ts, stale); err != nil {
+		if err = sl.addReportSample(app, scrapeBodySizeBytesMetricName, scrapeBodySizeBytesMeta, ts, stale); err != nil {
 			return
 		}
 	}
 	return
 }
 
-func (sl *scrapeLoop) addReportSample(app storage.Appender, s string, t int64, v float64) error {
+func (sl *scrapeLoop) addReportSample(app storage.Appender, s string, m *storage.Metadata, t int64, v float64) error {
 	ce, ok := sl.cache.get(s)
 	var ref storage.SeriesRef
 	var lset labels.Labels
 	if ok {
+		// Metadata never changes for report samples, avoid checking if updated.
 		ref = ce.ref
 		lset = ce.lset
 	} else {
@@ -1745,7 +1793,7 @@ func (sl *scrapeLoop) addReportSample(app storage.Appender, s string, t int64, v
 		lset = sl.reportSampleMutator(lset)
 	}
 
-	ref, err := app.Append(ref, lset, t, v)
+	ref, err := app.Append(ref, lset, *m, t, v)
 	switch errors.Cause(err) {
 	case nil:
 		if !ok {

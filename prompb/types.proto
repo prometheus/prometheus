@@ -61,6 +61,9 @@ message TimeSeries {
   repeated Label labels   = 1 [(gogoproto.nullable) = false];
   repeated Sample samples = 2 [(gogoproto.nullable) = false];
   repeated Exemplar exemplars = 3 [(gogoproto.nullable) = false];
+  MetricType type         = 4;
+  string unit             = 5;
+  string help             = 6;
 }
 
 message Label {

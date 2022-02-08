@@ -38,14 +38,14 @@ type initAppender struct {
 
 var _ storage.GetRef = &initAppender{}
 
-func (a *initAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
+func (a *initAppender) Append(ref storage.SeriesRef, lset labels.Labels, meta storage.Metadata, t int64, v float64) (storage.SeriesRef, error) {
 	if a.app != nil {
-		return a.app.Append(ref, lset, t, v)
+		return a.app.Append(ref, lset, meta, t, v)
 	}
 
 	a.head.initTime(t)
 	a.app = a.head.appender()
-	return a.app.Append(ref, lset, t, v)
+	return a.app.Append(ref, lset, meta, t, v)
 }
 
 func (a *initAppender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
@@ -225,6 +225,7 @@ type headAppender struct {
 	mint, maxt   int64
 
 	series       []record.RefSeries      // New series held by this appender.
+	metadata     []record.RefMetadata    // New metadata held by this appender.
 	samples      []record.RefSample      // New samples held by this appender.
 	exemplars    []exemplarWithSeriesRef // New exemplars held by this appender.
 	sampleSeries []*memSeries            // Series corresponding to the samples held by this appender (using corresponding slice indices - same series may appear more than once).
@@ -233,7 +234,7 @@ type headAppender struct {
 	closed                          bool
 }
 
-func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
+func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, meta storage.Metadata, t int64, v float64) (storage.SeriesRef, error) {
 	if t < a.minValidTime {
 		a.head.metrics.outOfBoundSamples.Inc()
 		return 0, storage.ErrOutOfBounds
@@ -273,6 +274,23 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 		}
 		return 0, err
 	}
+
+	// Append metadata if needed
+	hasNewMetadata := false
+	s.Lock()
+	if s.typ != meta.Type {
+		hasNewMetadata = true
+		s.typ = meta.Type
+	}
+	if s.unit != meta.Unit {
+		hasNewMetadata = true
+		s.unit = meta.Unit
+	}
+	if s.help != meta.Help {
+		hasNewMetadata = true
+		s.help = meta.Help
+	}
+
 	s.pendingCommit = true
 	s.Unlock()
 
@@ -281,6 +299,15 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 	}
 	if t > a.maxt {
 		a.maxt = t
+	}
+
+	if hasNewMetadata {
+		a.metadata = append(a.metadata, record.RefMetadata{
+			Ref:  s.ref,
+			Type: s.typ,
+			Unit: s.unit,
+			Help: s.help,
+		})
 	}
 
 	a.samples = append(a.samples, record.RefSample{
@@ -379,6 +406,13 @@ func (a *headAppender) log() error {
 
 		if err := a.head.wal.Log(rec); err != nil {
 			return errors.Wrap(err, "log series")
+		}
+	}
+	if len(a.metadata) > 0 {
+		rec = enc.Metadata(a.metadata, buf)
+		buf = rec[:0]
+		if err := a.head.wal.Log(rec); err != nil {
+			return errors.Wrap(err, "log metadata")
 		}
 	}
 	if len(a.samples) > 0 {

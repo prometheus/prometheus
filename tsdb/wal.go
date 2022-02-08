@@ -33,6 +33,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/encoding"
@@ -55,10 +56,11 @@ const (
 
 // Entry types in a segment file.
 const (
-	WALEntrySymbols WALEntryType = 1
-	WALEntrySeries  WALEntryType = 2
-	WALEntrySamples WALEntryType = 3
-	WALEntryDeletes WALEntryType = 4
+	WALEntrySymbols  WALEntryType = 1
+	WALEntrySeries   WALEntryType = 2
+	WALEntrySamples  WALEntryType = 3
+	WALEntryDeletes  WALEntryType = 4
+	WALEntryMetadata WALEntryType = 5
 )
 
 type walMetrics struct {
@@ -105,6 +107,7 @@ type WAL interface {
 type WALReader interface {
 	Read(
 		seriesf func([]record.RefSeries),
+		metadataf func([]record.RefMetadata),
 		samplesf func([]record.RefSample),
 		deletesf func([]tombstones.Stone),
 	) error
@@ -231,10 +234,11 @@ type repairingWALReader struct {
 
 func (r *repairingWALReader) Read(
 	seriesf func([]record.RefSeries),
+	metadataf func([]record.RefMetadata),
 	samplesf func([]record.RefSample),
 	deletesf func([]tombstones.Stone),
 ) error {
-	err := r.r.Read(seriesf, samplesf, deletesf)
+	err := r.r.Read(seriesf, metadataf, samplesf, deletesf)
 	if err == nil {
 		return nil
 	}
@@ -868,6 +872,7 @@ func (r *walReader) Err() error {
 
 func (r *walReader) Read(
 	seriesf func([]record.RefSeries),
+	metadataf func([]record.RefMetadata),
 	samplesf func([]record.RefSample),
 	deletesf func([]tombstones.Stone),
 ) error {
@@ -876,9 +881,10 @@ func (r *walReader) Read(
 	// Historically, the processing is the bottleneck with reading and decoding using only
 	// 15% of the CPU.
 	var (
-		seriesPool sync.Pool
-		samplePool sync.Pool
-		deletePool sync.Pool
+		seriesPool   sync.Pool
+		metadataPool sync.Pool
+		samplePool   sync.Pool
+		deletePool   sync.Pool
 	)
 	donec := make(chan struct{})
 	datac := make(chan interface{}, 100)
@@ -894,6 +900,11 @@ func (r *walReader) Read(
 				}
 				//nolint:staticcheck // Ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
 				seriesPool.Put(v[:0])
+			case []record.RefMetadata:
+				if metadataf != nil {
+					metadataf(v)
+				}
+				metadataPool.Put(v[:0])
 			case []record.RefSample:
 				if samplesf != nil {
 					samplesf(v)
@@ -941,6 +952,20 @@ func (r *walReader) Read(
 					cf.minSeries = s.Ref
 				}
 			}
+		case WALEntryMetadata:
+			var meta []record.RefMetadata
+			if v := metadataPool.Get(); v == nil {
+				meta = make([]record.RefMetadata, 0, 512)
+			} else {
+				meta = v.([]record.RefMetadata)
+			}
+
+			err = r.decodeMetadata(flag, b, &meta)
+			if err != nil {
+				err = errors.Wrap(err, "decode metadata entry")
+				break
+			}
+			datac <- meta
 		case WALEntrySamples:
 			var samples []record.RefSample
 			if v := samplePool.Get(); v == nil {
@@ -1146,6 +1171,44 @@ func (r *walReader) decodeSeries(flag byte, b []byte, res *[]record.RefSeries) e
 	return nil
 }
 
+func (r *walReader) decodeMetadata(flag byte, b []byte, res *[]record.RefMetadata) error {
+	dec := encoding.Decbuf{B: b}
+
+	for len(dec.B) > 0 && dec.Err() == nil {
+		ref := dec.Uvarint64()
+		size := dec.Uvarint()
+
+		remainingBeforeReadFields := dec.Len()
+
+		typ := dec.UvarintStr()
+		unit := dec.UvarintStr()
+		help := dec.UvarintStr()
+
+		// The bytes consumed will have shrunk, therefore delta between
+		// bytes unread before and bytes unread after is how much we consumed.
+		remainingAfterReadFields := dec.Len()
+		sizeFieldsRead := remainingBeforeReadFields - remainingAfterReadFields
+		if sizeFieldsUnread := size - sizeFieldsRead; sizeFieldsUnread > 0 {
+			// Need to skip fields that we didn't read and don't know about.
+			dec.Skip(sizeFieldsUnread)
+		}
+
+		*res = append(*res, record.RefMetadata{
+			Ref:  chunks.HeadSeriesRef(ref),
+			Type: textparse.MetricType(typ),
+			Unit: unit,
+			Help: help,
+		})
+	}
+	if dec.Err() != nil {
+		return dec.Err()
+	}
+	if len(dec.B) > 0 {
+		return errors.Errorf("unexpected %d bytes left in entry", len(dec.B))
+	}
+	return nil
+}
+
 func (r *walReader) decodeSamples(flag byte, b []byte, res *[]record.RefSample) error {
 	if len(b) == 0 {
 		return nil
@@ -1273,6 +1336,12 @@ func MigrateWAL(logger log.Logger, dir string) (err error) {
 				return
 			}
 			err = repl.Log(enc.Series(s, b[:0]))
+		},
+		func(s []record.RefMetadata) {
+			if err != nil {
+				return
+			}
+			err = repl.Log(enc.Metadata(s, b[:0]))
 		},
 		func(s []record.RefSample) {
 			if err != nil {

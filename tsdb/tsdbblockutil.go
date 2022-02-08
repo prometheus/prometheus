@@ -53,7 +53,7 @@ func CreateBlock(series []storage.Series, dir string, chunkRange int64, logger l
 		lset := s.Labels()
 		for it.Next() {
 			t, v := it.At()
-			ref, err = app.Append(ref, lset, t, v)
+			ref, err = app.Append(ref, lset, storage.EmptyMetadata(), t, v)
 			if err != nil {
 				return "", err
 			}

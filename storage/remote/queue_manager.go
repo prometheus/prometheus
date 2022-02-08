@@ -36,6 +36,7 @@ import (
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/scrape"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/wal"
@@ -354,9 +355,10 @@ type QueueManager struct {
 	clientMtx   sync.RWMutex
 	storeClient WriteClient
 
-	seriesMtx     sync.Mutex // Covers seriesLabels and droppedSeries.
-	seriesLabels  map[chunks.HeadSeriesRef]labels.Labels
-	droppedSeries map[chunks.HeadSeriesRef]struct{}
+	seriesMtx      sync.Mutex // Covers seriesLabels and droppedSeries.
+	seriesMetadata map[chunks.HeadSeriesRef]storage.Metadata
+	seriesLabels   map[chunks.HeadSeriesRef]labels.Labels
+	droppedSeries  map[chunks.HeadSeriesRef]struct{}
 
 	seriesSegmentMtx     sync.Mutex // Covers seriesSegmentIndexes - if you also lock seriesMtx, take seriesMtx first.
 	seriesSegmentIndexes map[chunks.HeadSeriesRef]int
@@ -409,6 +411,7 @@ func NewQueueManager(
 		sendExemplars:  enableExemplarRemoteWrite,
 
 		seriesLabels:         make(map[chunks.HeadSeriesRef]labels.Labels),
+		seriesMetadata:       make(map[chunks.HeadSeriesRef]storage.Metadata),
 		seriesSegmentIndexes: make(map[chunks.HeadSeriesRef]int),
 		droppedSeries:        make(map[chunks.HeadSeriesRef]struct{}),
 
@@ -460,6 +463,9 @@ func (t *QueueManager) AppendMetadata(ctx context.Context, metadata []scrape.Met
 			level.Error(t.logger).Log("msg", "non-recoverable error while sending metadata", "count", last-(i*t.mcfg.MaxSamplesPerSend), "err", err)
 		}
 	}
+}
+
+func (t *QueueManager) StoreMetadata(metadata []record.RefMetadata, index int) {
 }
 
 func (t *QueueManager) sendMetadataWithBackoff(ctx context.Context, metadata []prompb.MetricMetadata, pBuf *proto.Buffer) error {

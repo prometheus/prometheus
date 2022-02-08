@@ -52,6 +52,7 @@ type WriteTo interface {
 	AppendExemplars([]record.RefExemplar) bool
 
 	StoreSeries([]record.RefSeries, int)
+	StoreMetadata([]record.RefMetadata, int)
 
 	// Next two methods are intended for garbage-collection: first we call
 	// UpdateSeriesSegment on all current series
@@ -477,6 +478,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 	var (
 		dec       record.Decoder
 		series    []record.RefSeries
+		metadata  []record.RefMetadata
 		samples   []record.RefSample
 		send      []record.RefSample
 		exemplars []record.RefExemplar
@@ -493,6 +495,14 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 				return err
 			}
 			w.writer.StoreSeries(series, segmentNum)
+
+		case record.Metadata:
+			metadata, err := dec.Metadata(rec, metadata[:0])
+			if err != nil {
+				w.recordDecodeFailsMetric.Inc()
+				return err
+			}
+			w.writer.StoreMetadata(metadata, segmentNum)
 
 		case record.Samples:
 			// If we're not tailing a segment we can ignore any samples records we see.

@@ -94,8 +94,9 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 	var exemplarErr error
 	for _, ts := range req.Timeseries {
 		labels := labelProtosToLabels(ts.Labels)
+		meta := storage.EmptyMetadata()
 		for _, s := range ts.Samples {
-			_, err = app.Append(0, labels, s.Timestamp, s.Value)
+			_, err = app.Append(0, labels, meta, s.Timestamp, s.Value)
 			if err != nil {
 				switch errors.Cause(err) {
 				case storage.ErrOutOfOrderSample, storage.ErrOutOfBounds, storage.ErrDuplicateSampleForTimestamp:
