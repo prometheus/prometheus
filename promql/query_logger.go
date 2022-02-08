@@ -84,16 +84,10 @@ func getMMapedFile(filename string, filesize int, logger log.Logger) ([]byte, er
 	file, err := os.OpenFile(filename, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0o666)
 	if err != nil {
 		// Try and log a full path to aid in debugging, even if we received a
-		// relative one
-		fullpath := "unknown"
-		if !filepath.IsAbs(filename) {
-			// If Getwd() returns an error, things are very broken, and we will
-			// just error-log the filename as we received it
-			cwd, err := os.Getwd()
-			if err == nil {
-				fullpath = filepath.Join(cwd, filename)
-			}
-		} else {
+		// relative one. if filepath.Abs returns an error, we just log the base
+		// path as received.
+		fullpath, err := filepath.Abs(filename)
+		if err == nil {
 			fullpath = filename
 		}
 		level.Error(logger).Log("msg", "Error opening query log file", "file", filename, "fullpath", fullpath, "err", err)

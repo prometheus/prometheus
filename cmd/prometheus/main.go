@@ -429,19 +429,12 @@ func main() {
 	var cfgFile *config.Config
 	if cfgFile, err = config.LoadFile(cfg.configFile, agentMode, false, log.NewNopLogger()); err != nil {
 		// Try and log a full path to aid in debugging, even if we received a
-		// relative one
-		fullpath := "unknown"
-		if !filepath.IsAbs(cfg.configFile) {
-			// If Getwd() returns an error, things are very broken, and we will
-			// just error-log "unknown" as the full path
-			cwd, err := os.Getwd()
-			if err == nil {
-				fullpath = filepath.Join(cwd, cfg.configFile)
-			}
-		} else {
+		// relative one. if filepath.Abs returns an error, we just log the base
+		// path as received.
+		fullpath, err := filepath.Abs(cfg.configFile)
+		if err == nil {
 			fullpath = cfg.configFile
 		}
-
 		level.Error(logger).Log("msg", fmt.Sprintf("Error loading config (--config.file=%s)", cfg.configFile), "fullpath", fullpath, "err", err)
 		os.Exit(2)
 	}
