@@ -428,14 +428,11 @@ func main() {
 	// Throw error for invalid config before starting other components.
 	var cfgFile *config.Config
 	if cfgFile, err = config.LoadFile(cfg.configFile, agentMode, false, log.NewNopLogger()); err != nil {
-		// Try and log a full path to aid in debugging, even if we received a
-		// relative one. if filepath.Abs returns an error, we just log the base
-		// path as received.
-		fullpath, err := filepath.Abs(cfg.configFile)
-		if err == nil {
-			fullpath = cfg.configFile
+		absPath, err := filepath.Abs(cfg.configFile)
+		if err != nil {
+			absPath = cfg.configFile
 		}
-		level.Error(logger).Log("msg", fmt.Sprintf("Error loading config (--config.file=%s)", cfg.configFile), "fullpath", fullpath, "err", err)
+		level.Error(logger).Log("msg", fmt.Sprintf("Error loading config (--config.file=%s)", cfg.configFile), "absPath", absPath, "err", err)
 		os.Exit(2)
 	}
 	if cfg.tsdb.EnableExemplarStorage {
