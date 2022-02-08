@@ -432,7 +432,7 @@ func main() {
 		if pathErr != nil {
 			absPath = cfg.configFile
 		}
-		level.Error(logger).Log("msg", fmt.Sprintf("Error loading config (--config.file=%s)", cfg.configFile), "absPath", absPath, "err", err)
+		level.Error(logger).Log("msg", fmt.Sprintf("Error loading config (--config.file=%s)", cfg.configFile), "file", cfg.configFile, "absPath", absPath, "err", err)
 		os.Exit(2)
 	}
 	if cfg.tsdb.EnableExemplarStorage {
