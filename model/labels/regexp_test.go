@@ -14,9 +14,10 @@
 package labels
 
 import (
-	"regexp/syntax"
+	"strings"
 	"testing"
 
+	"github.com/grafana/regexp/syntax"
 	"github.com/stretchr/testify/require"
 )
 
@@ -94,5 +95,44 @@ func TestOptimizeConcatRegex(t *testing.T) {
 		require.Equal(t, c.prefix, prefix)
 		require.Equal(t, c.suffix, suffix)
 		require.Equal(t, c.contains, contains)
+	}
+}
+
+func BenchmarkFastRegexMatcher(b *testing.B) {
+	var (
+		x = strings.Repeat("x", 50)
+		y = "foo" + x
+		z = x + "foo"
+	)
+	regexes := []string{
+		"foo",
+		"^foo",
+		"(foo|bar)",
+		"foo.*",
+		".*foo",
+		"^.*foo$",
+		"^.+foo$",
+		".*",
+		".+",
+		"foo.+",
+		".+foo",
+		".*foo.*",
+		"(?i:foo)",
+		"(prometheus|api_prom)_api_v1_.+",
+		"((fo(bar))|.+foo)",
+	}
+	for _, r := range regexes {
+		r := r
+		b.Run(r, func(b *testing.B) {
+			m, err := NewFastRegexMatcher(r)
+			require.NoError(b, err)
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				_ = m.MatchString(x)
+				_ = m.MatchString(y)
+				_ = m.MatchString(z)
+			}
+		})
+
 	}
 }

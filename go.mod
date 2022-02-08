@@ -31,6 +31,7 @@ require (
 	github.com/google/pprof v0.0.0-20211214055906-6f57359322fd
 	github.com/gophercloud/gophercloud v0.24.0
 	github.com/gorilla/mux v1.8.0 // indirect
+	github.com/grafana/regexp v0.0.0-20220202152315-e74e38789280
 	github.com/grpc-ecosystem/grpc-gateway v1.16.0
 	github.com/hashicorp/consul/api v1.12.0
 	github.com/hashicorp/go-hclog v0.12.2 // indirect
