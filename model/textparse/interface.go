@@ -64,7 +64,7 @@ type Parser interface {
 //
 // This function always returns a valid parser, but might additionally
 // return an error if the content type cannot be parsed.
-func New(b []byte, contentType string) (p Parser, warning error) {
+func New(b []byte, contentType string) (Parser, error) {
 	if contentType == "" {
 		return NewPromParser(b), nil
 	}
