@@ -260,7 +260,7 @@ func (r *AlertingRule) forStateSample(alert *Alert, ts time.Time, v float64) pro
 }
 
 // queryforStateSeries returns the series for ALERTS_FOR_STATE.
-func (r *AlertingRule) queryforStateSeries(alert *Alert, q storage.Querier) (storage.Series, error) {
+func (r *AlertingRule) QueryforStateSeries(alert *Alert, q storage.Querier) (storage.Series, error) {
 	smpl := r.forStateSample(alert, time.Now(), 0)
 	var matchers []*labels.Matcher
 	for _, l := range smpl.Metric {

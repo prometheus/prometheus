@@ -590,7 +590,7 @@ func TestQueryForStateSeries(t *testing.T) {
 			ValidUntil:  time.Time{},
 		}
 
-		series, err := rule.queryforStateSeries(alert, querier)
+		series, err := rule.QueryforStateSeries(alert, querier)
 
 		require.Equal(t, tst.expectedSeries, series)
 		require.Equal(t, tst.expectedError, err)

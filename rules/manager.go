@@ -326,6 +326,9 @@ func (g *Group) File() string { return g.file }
 // Rules returns the group's rules.
 func (g *Group) Rules() []Rule { return g.rules }
 
+// Queryable returns the group's querable.
+func (g *Group) Queryable() storage.Queryable { return g.opts.Queryable }
+
 // Interval returns the group's interval.
 func (g *Group) Interval() time.Duration { return g.interval }
 
@@ -721,82 +724,6 @@ func (g *Group) cleanupStaleSeries(ctx context.Context, ts time.Time) {
 	}
 }
 
-// SyncForState sync the 'for' state of the alerts
-// by looking up last ActiveAt from storage.
-func (g *Group) SyncForState(ts time.Time) {
-	maxtMS := int64(model.TimeFromUnixNano(ts.UnixNano()))
-	// We allow sync only if alerts were active before after certain time.
-	mint := ts.Add(-g.opts.OutageTolerance)
-	mintMS := int64(model.TimeFromUnixNano(mint.UnixNano()))
-	q, err := g.opts.Queryable.Querier(g.opts.Context, mintMS, maxtMS)
-	if err != nil {
-		level.Error(g.logger).Log("msg", "Failed to get Querier", "err", err)
-		return
-	}
-	defer func() {
-		if err := q.Close(); err != nil {
-			level.Error(g.logger).Log("msg", "Failed to close Querier", "err", err)
-		}
-	}()
-
-	for _, rule := range g.Rules() {
-		alertRule, ok := rule.(*AlertingRule)
-		if !ok {
-			continue
-		}
-
-		alertRule.ForEachActiveAlert(func(a *Alert) {
-			if !alertRule.restored {
-				return
-			}
-
-			var s storage.Series
-			s, err := alertRule.queryforStateSeries(a, q)
-			if err != nil {
-				// Querier Warnings are ignored. We do not care unless we have an error.
-				level.Error(g.logger).Log(
-					"msg", "Failed to sync 'for' state",
-					labels.AlertName, alertRule.Name(),
-					"stage", "Select",
-					"err", err,
-				)
-				return
-			}
-
-			if s == nil {
-				return
-			}
-
-			// Series found for the 'for' state.
-			var v float64
-			it := s.Iterator()
-			for it.Next() {
-				_, v = it.At()
-			}
-			if it.Err() != nil {
-				level.Error(g.logger).Log("msg", "Failed to sync 'for' state",
-					labels.AlertName, alertRule.Name(), "stage", "Iterator", "err", it.Err())
-				return
-			}
-			if value.IsStaleNaN(v) { // Alert was not active.
-				return
-			}
-
-			restoredActiveAt := time.Unix(int64(v), 0).UTC()
-			compare := restoredActiveAt.Sub(a.ActiveAt)
-
-			if compare <= 0 {
-				// We have another ruler instance evaluating the same rule group earlier
-				a.ActiveAt = restoredActiveAt
-			}
-
-			level.Debug(g.logger).Log("msg", "'for' state synced",
-				labels.AlertName, alertRule.Name(), "restored_time", a.ActiveAt.Format(time.RFC850),
-				"labels", a.Labels.String())
-		})
-	}
-}
-
 // RestoreForState restores the 'for' state of the alerts
 // by looking up last ActiveAt from storage.
 func (g *Group) RestoreForState(ts time.Time) {
@@ -832,7 +759,7 @@ func (g *Group) RestoreForState(ts time.Time) {
 
 		alertRule.ForEachActiveAlert(func(a *Alert) {
 			var s storage.Series
-			s, err := alertRule.queryforStateSeries(a, q)
+			s, err := alertRule.QueryforStateSeries(a, q)
 			if err != nil {
 				// Querier Warnings are ignored. We do not care unless we have an error.
 				level.Error(g.logger).Log(
