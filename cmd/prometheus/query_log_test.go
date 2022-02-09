@@ -31,6 +31,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 type origin int
@@ -246,11 +248,7 @@ func (p *queryLogTest) run(t *testing.T) {
 		p.setQueryLog(t, "")
 	}
 
-	dir, err := ioutil.TempDir("", "query_log_test")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 
 	params := append([]string{
 		"-test.main",
@@ -412,7 +410,6 @@ func TestQueryLog(t *testing.T) {
 	cwd, err := os.Getwd()
 	require.NoError(t, err)
 
-	port := 15000
 	for _, host := range []string{"127.0.0.1", "[::1]"} {
 		for _, prefix := range []string{"", "/foobar"} {
 			for _, enabledAtStart := range []bool{true, false} {
@@ -422,7 +419,7 @@ func TestQueryLog(t *testing.T) {
 						host:           host,
 						enabledAtStart: enabledAtStart,
 						prefix:         prefix,
-						port:           port,
+						port:           testutil.RandomUnprivilegedPort(t),
 						cwd:            cwd,
 					}
 

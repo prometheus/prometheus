@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"math"
 	"net/http"
@@ -27,6 +28,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"text/tabwriter"
 	"time"
 
 	"github.com/go-kit/log"
@@ -43,17 +45,27 @@ import (
 	"gopkg.in/alecthomas/kingpin.v2"
 	yaml "gopkg.in/yaml.v2"
 
+	dto "github.com/prometheus/client_model/go"
+	"github.com/prometheus/common/expfmt"
+
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/file"
 	_ "github.com/prometheus/prometheus/discovery/install" // Register service discovery implementations.
 	"github.com/prometheus/prometheus/discovery/kubernetes"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/notifier"
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/rulefmt"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/scrape"
+)
+
+const (
+	successExitCode = 0
+	failureExitCode = 1
+	// Exit code 3 is used for "one or more lint issues detected".
+	lintErrExitCode = 3
 )
 
 func main() {
@@ -73,6 +85,7 @@ func main() {
 		"config-files",
 		"The config files to check.",
 	).Required().ExistingFiles()
+	checkConfigSyntaxOnly := checkConfigCmd.Flag("syntax-only", "Only check the config file syntax, ignoring file and content validation referenced in the config").Bool()
 
 	checkWebConfigCmd := checkCmd.Command("web-config", "Check if the web config files are valid or not.")
 	webConfigFiles := checkWebConfigCmd.Arg(
@@ -87,6 +100,7 @@ func main() {
 	).Required().ExistingFiles()
 
 	checkMetricsCmd := checkCmd.Command("metrics", checkMetricsUsage)
+	checkMetricsExtended := checkCmd.Flag("extended", "Print extended information related to the cardinality of the metrics.").Bool()
 	agentMode := checkConfigCmd.Flag("agent", "Check config file for Prometheus in Agent mode.").Bool()
 
 	queryCmd := app.Command("query", "Run query against a Prometheus server.")
@@ -189,17 +203,14 @@ func main() {
 		p = &promqlPrinter{}
 	}
 
-	var queryOpts promql.LazyLoaderOpts
 	for _, f := range *featureList {
 		opts := strings.Split(f, ",")
 		for _, o := range opts {
 			switch o {
-			case "promql-at-modifier":
-				queryOpts.EnableAtModifier = true
-			case "promql-negative-offset":
-				queryOpts.EnableNegativeOffset = true
 			case "":
 				continue
+			case "promql-at-modifier", "promql-negative-offset":
+				fmt.Printf("  WARNING: Option for --enable-feature is a no-op after promotion to a stable feature: %q\n", o)
 			default:
 				fmt.Printf("  WARNING: Unknown option for --enable-feature: %q\n", o)
 			}
@@ -211,7 +222,7 @@ func main() {
 		os.Exit(CheckSD(*sdConfigFile, *sdJobName, *sdTimeout))
 
 	case checkConfigCmd.FullCommand():
-		os.Exit(CheckConfig(*agentMode, *configFiles...))
+		os.Exit(CheckConfig(*agentMode, *checkConfigSyntaxOnly, *configFiles...))
 
 	case checkWebConfigCmd.FullCommand():
 		os.Exit(CheckWebConfig(*webConfigFiles...))
@@ -220,7 +231,7 @@ func main() {
 		os.Exit(CheckRules(*ruleFiles...))
 
 	case checkMetricsCmd.FullCommand():
-		os.Exit(CheckMetrics())
+		os.Exit(CheckMetrics(*checkMetricsExtended))
 
 	case queryInstantCmd.FullCommand():
 		os.Exit(QueryInstant(*queryInstantServer, *queryInstantExpr, *queryInstantTime, p))
@@ -244,7 +255,13 @@ func main() {
 		os.Exit(QueryLabels(*queryLabelsServer, *queryLabelsName, *queryLabelsBegin, *queryLabelsEnd, p))
 
 	case testRulesCmd.FullCommand():
-		os.Exit(RulesUnitTest(queryOpts, *testRulesFiles...))
+		os.Exit(RulesUnitTest(
+			promql.LazyLoaderOpts{
+				EnableAtModifier:     true,
+				EnableNegativeOffset: true,
+			},
+			*testRulesFiles...),
+		)
 
 	case tsdbBenchWriteCmd.FullCommand():
 		os.Exit(checkErr(benchmarkWrite(*benchWriteOutPath, *benchSamplesFile, *benchWriteNumMetrics, *benchWriteNumScrapes)))
@@ -267,16 +284,19 @@ func main() {
 }
 
 // CheckConfig validates configuration files.
-func CheckConfig(agentMode bool, files ...string) int {
+func CheckConfig(agentMode, checkSyntaxOnly bool, files ...string) int {
 	failed := false
 
 	for _, f := range files {
-		ruleFiles, err := checkConfig(agentMode, f)
+		ruleFiles, err := checkConfig(agentMode, f, checkSyntaxOnly)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "  FAILED:", err)
 			failed = true
 		} else {
-			fmt.Printf("  SUCCESS: %d rule files found\n", len(ruleFiles))
+			if len(ruleFiles) > 0 {
+				fmt.Printf("  SUCCESS: %d rule files found\n", len(ruleFiles))
+			}
+			fmt.Printf(" SUCCESS: %s is valid prometheus config file syntax\n", f)
 		}
 		fmt.Println()
 
@@ -294,9 +314,9 @@ func CheckConfig(agentMode bool, files ...string) int {
 		}
 	}
 	if failed {
-		return 1
+		return failureExitCode
 	}
-	return 0
+	return successExitCode
 }
 
 // CheckWebConfig validates web configuration files.
@@ -312,9 +332,9 @@ func CheckWebConfig(files ...string) int {
 		fmt.Fprintln(os.Stderr, f, "SUCCESS")
 	}
 	if failed {
-		return 1
+		return failureExitCode
 	}
-	return 0
+	return successExitCode
 }
 
 func checkFileExists(fn string) error {
@@ -326,7 +346,7 @@ func checkFileExists(fn string) error {
 	return err
 }
 
-func checkConfig(agentMode bool, filename string) ([]string, error) {
+func checkConfig(agentMode bool, filename string, checkSyntaxOnly bool) ([]string, error) {
 	fmt.Println("Checking", filename)
 
 	cfg, err := config.LoadFile(filename, agentMode, false, log.NewNopLogger())
@@ -335,39 +355,46 @@ func checkConfig(agentMode bool, filename string) ([]string, error) {
 	}
 
 	var ruleFiles []string
-	for _, rf := range cfg.RuleFiles {
-		rfs, err := filepath.Glob(rf)
-		if err != nil {
-			return nil, err
-		}
-		// If an explicit file was given, error if it is not accessible.
-		if !strings.Contains(rf, "*") {
-			if len(rfs) == 0 {
-				return nil, errors.Errorf("%q does not point to an existing file", rf)
+	if !checkSyntaxOnly {
+		for _, rf := range cfg.RuleFiles {
+			rfs, err := filepath.Glob(rf)
+			if err != nil {
+				return nil, err
 			}
-			if err := checkFileExists(rfs[0]); err != nil {
-				return nil, errors.Wrapf(err, "error checking rule file %q", rfs[0])
+			// If an explicit file was given, error if it is not accessible.
+			if !strings.Contains(rf, "*") {
+				if len(rfs) == 0 {
+					return nil, errors.Errorf("%q does not point to an existing file", rf)
+				}
+				if err := checkFileExists(rfs[0]); err != nil {
+					return nil, errors.Wrapf(err, "error checking rule file %q", rfs[0])
+				}
 			}
+			ruleFiles = append(ruleFiles, rfs...)
 		}
-		ruleFiles = append(ruleFiles, rfs...)
 	}
 
 	for _, scfg := range cfg.ScrapeConfigs {
-		if err := checkFileExists(scfg.HTTPClientConfig.BearerTokenFile); err != nil {
-			return nil, errors.Wrapf(err, "error checking bearer token file %q", scfg.HTTPClientConfig.BearerTokenFile)
+		if !checkSyntaxOnly && scfg.HTTPClientConfig.Authorization != nil {
+			if err := checkFileExists(scfg.HTTPClientConfig.Authorization.CredentialsFile); err != nil {
+				return nil, errors.Wrapf(err, "error checking authorization credentials or bearer token file %q", scfg.HTTPClientConfig.Authorization.CredentialsFile)
+			}
 		}
 
-		if err := checkTLSConfig(scfg.HTTPClientConfig.TLSConfig); err != nil {
+		if err := checkTLSConfig(scfg.HTTPClientConfig.TLSConfig, checkSyntaxOnly); err != nil {
 			return nil, err
 		}
 
 		for _, c := range scfg.ServiceDiscoveryConfigs {
 			switch c := c.(type) {
 			case *kubernetes.SDConfig:
-				if err := checkTLSConfig(c.HTTPClientConfig.TLSConfig); err != nil {
+				if err := checkTLSConfig(c.HTTPClientConfig.TLSConfig, checkSyntaxOnly); err != nil {
 					return nil, err
 				}
 			case *file.SDConfig:
+				if checkSyntaxOnly {
+					break
+				}
 				for _, file := range c.Files {
 					files, err := filepath.Glob(file)
 					if err != nil {
@@ -401,6 +428,9 @@ func checkConfig(agentMode bool, filename string) ([]string, error) {
 		for _, c := range amcfg.ServiceDiscoveryConfigs {
 			switch c := c.(type) {
 			case *file.SDConfig:
+				if checkSyntaxOnly {
+					break
+				}
 				for _, file := range c.Files {
 					files, err := filepath.Glob(file)
 					if err != nil {
@@ -432,19 +462,23 @@ func checkConfig(agentMode bool, filename string) ([]string, error) {
 	return ruleFiles, nil
 }
 
-func checkTLSConfig(tlsConfig config_util.TLSConfig) error {
-	if err := checkFileExists(tlsConfig.CertFile); err != nil {
-		return errors.Wrapf(err, "error checking client cert file %q", tlsConfig.CertFile)
-	}
-	if err := checkFileExists(tlsConfig.KeyFile); err != nil {
-		return errors.Wrapf(err, "error checking client key file %q", tlsConfig.KeyFile)
-	}
-
+func checkTLSConfig(tlsConfig config_util.TLSConfig, checkSyntaxOnly bool) error {
 	if len(tlsConfig.CertFile) > 0 && len(tlsConfig.KeyFile) == 0 {
 		return errors.Errorf("client cert file %q specified without client key file", tlsConfig.CertFile)
 	}
 	if len(tlsConfig.KeyFile) > 0 && len(tlsConfig.CertFile) == 0 {
 		return errors.Errorf("client key file %q specified without client cert file", tlsConfig.KeyFile)
+	}
+
+	if checkSyntaxOnly {
+		return nil
+	}
+
+	if err := checkFileExists(tlsConfig.CertFile); err != nil {
+		return errors.Wrapf(err, "error checking client cert file %q", tlsConfig.CertFile)
+	}
+	if err := checkFileExists(tlsConfig.KeyFile); err != nil {
+		return errors.Wrapf(err, "error checking client key file %q", tlsConfig.KeyFile)
 	}
 
 	return nil
@@ -503,9 +537,9 @@ func CheckRules(files ...string) int {
 		fmt.Println()
 	}
 	if failed {
-		return 1
+		return failureExitCode
 	}
-	return 0
+	return successExitCode
 }
 
 func checkRules(filename string) (int, []error) {
@@ -513,7 +547,7 @@ func checkRules(filename string) (int, []error) {
 
 	rgs, errs := rulefmt.ParseFile(filename)
 	if errs != nil {
-		return 0, errs
+		return successExitCode, errs
 	}
 
 	numRules := 0
@@ -604,12 +638,14 @@ $ curl -s http://localhost:9090/metrics | promtool check metrics
 `)
 
 // CheckMetrics performs a linting pass on input metrics.
-func CheckMetrics() int {
-	l := promlint.New(os.Stdin)
+func CheckMetrics(extended bool) int {
+	var buf bytes.Buffer
+	tee := io.TeeReader(os.Stdin, &buf)
+	l := promlint.New(tee)
 	problems, err := l.Lint()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error while linting:", err)
-		return 1
+		return failureExitCode
 	}
 
 	for _, p := range problems {
@@ -617,10 +653,71 @@ func CheckMetrics() int {
 	}
 
 	if len(problems) > 0 {
-		return 3
+		return lintErrExitCode
 	}
 
-	return 0
+	if extended {
+		stats, total, err := checkMetricsExtended(&buf)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			return failureExitCode
+		}
+		w := tabwriter.NewWriter(os.Stdout, 4, 4, 4, ' ', tabwriter.TabIndent)
+		fmt.Fprintf(w, "Metric\tCardinality\tPercentage\t\n")
+		for _, stat := range stats {
+			fmt.Fprintf(w, "%s\t%d\t%.2f%%\t\n", stat.name, stat.cardinality, stat.percentage*100)
+		}
+		fmt.Fprintf(w, "Total\t%d\t%.f%%\t\n", total, 100.)
+		w.Flush()
+	}
+
+	return successExitCode
+}
+
+type metricStat struct {
+	name        string
+	cardinality int
+	percentage  float64
+}
+
+func checkMetricsExtended(r io.Reader) ([]metricStat, int, error) {
+	p := expfmt.TextParser{}
+	metricFamilies, err := p.TextToMetricFamilies(r)
+	if err != nil {
+		return nil, 0, fmt.Errorf("error while parsing text to metric families: %w", err)
+	}
+
+	var total int
+	stats := make([]metricStat, 0, len(metricFamilies))
+	for _, mf := range metricFamilies {
+		var cardinality int
+		switch mf.GetType() {
+		case dto.MetricType_COUNTER, dto.MetricType_GAUGE, dto.MetricType_UNTYPED:
+			cardinality = len(mf.Metric)
+		case dto.MetricType_HISTOGRAM:
+			// Histogram metrics includes sum, count, buckets.
+			buckets := len(mf.Metric[0].Histogram.Bucket)
+			cardinality = len(mf.Metric) * (2 + buckets)
+		case dto.MetricType_SUMMARY:
+			// Summary metrics includes sum, count, quantiles.
+			quantiles := len(mf.Metric[0].Summary.Quantile)
+			cardinality = len(mf.Metric) * (2 + quantiles)
+		default:
+			cardinality = len(mf.Metric)
+		}
+		stats = append(stats, metricStat{name: mf.GetName(), cardinality: cardinality})
+		total += cardinality
+	}
+
+	for i := range stats {
+		stats[i].percentage = float64(stats[i].cardinality) / float64(total)
+	}
+
+	sort.SliceStable(stats, func(i, j int) bool {
+		return stats[i].cardinality > stats[j].cardinality
+	})
+
+	return stats, total, nil
 }
 
 // QueryInstant performs an instant query against a Prometheus server.
@@ -636,7 +733,7 @@ func QueryInstant(url *url.URL, query, evalTime string, p printer) int {
 	c, err := api.NewClient(config)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error creating API client:", err)
-		return 1
+		return failureExitCode
 	}
 
 	eTime := time.Now()
@@ -644,7 +741,7 @@ func QueryInstant(url *url.URL, query, evalTime string, p printer) int {
 		eTime, err = parseTime(evalTime)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "error parsing evaluation time:", err)
-			return 1
+			return failureExitCode
 		}
 	}
 
@@ -660,7 +757,7 @@ func QueryInstant(url *url.URL, query, evalTime string, p printer) int {
 
 	p.printValue(val)
 
-	return 0
+	return successExitCode
 }
 
 // QueryRange performs a range query against a Prometheus server.
@@ -685,7 +782,7 @@ func QueryRange(url *url.URL, headers map[string]string, query, start, end strin
 	c, err := api.NewClient(config)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error creating API client:", err)
-		return 1
+		return failureExitCode
 	}
 
 	var stime, etime time.Time
@@ -696,7 +793,7 @@ func QueryRange(url *url.URL, headers map[string]string, query, start, end strin
 		etime, err = parseTime(end)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "error parsing end time:", err)
-			return 1
+			return failureExitCode
 		}
 	}
 
@@ -706,13 +803,13 @@ func QueryRange(url *url.URL, headers map[string]string, query, start, end strin
 		stime, err = parseTime(start)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "error parsing start time:", err)
-			return 1
+			return failureExitCode
 		}
 	}
 
 	if !stime.Before(etime) {
 		fmt.Fprintln(os.Stderr, "start time is not before end time")
-		return 1
+		return failureExitCode
 	}
 
 	if step == 0 {
@@ -733,7 +830,7 @@ func QueryRange(url *url.URL, headers map[string]string, query, start, end strin
 	}
 
 	p.printValue(val)
-	return 0
+	return successExitCode
 }
 
 // QuerySeries queries for a series against a Prometheus server.
@@ -749,13 +846,13 @@ func QuerySeries(url *url.URL, matchers []string, start, end string, p printer) 
 	c, err := api.NewClient(config)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error creating API client:", err)
-		return 1
+		return failureExitCode
 	}
 
 	stime, etime, err := parseStartTimeAndEndTime(start, end)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return failureExitCode
 	}
 
 	// Run query against client.
@@ -769,7 +866,7 @@ func QuerySeries(url *url.URL, matchers []string, start, end string, p printer) 
 	}
 
 	p.printSeries(val)
-	return 0
+	return successExitCode
 }
 
 // QueryLabels queries for label values against a Prometheus server.
@@ -785,13 +882,13 @@ func QueryLabels(url *url.URL, name, start, end string, p printer) int {
 	c, err := api.NewClient(config)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error creating API client:", err)
-		return 1
+		return failureExitCode
 	}
 
 	stime, etime, err := parseStartTimeAndEndTime(start, end)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
-		return 1
+		return failureExitCode
 	}
 
 	// Run query against client.
@@ -808,7 +905,7 @@ func QueryLabels(url *url.URL, name, start, end string, p printer) int {
 	}
 
 	p.printLabelValues(val)
-	return 0
+	return successExitCode
 }
 
 func handleAPIError(err error) int {
@@ -819,7 +916,7 @@ func handleAPIError(err error) int {
 		fmt.Fprintln(os.Stderr, "query error:", err)
 	}
 
-	return 1
+	return failureExitCode
 }
 
 func parseStartTimeAndEndTime(start, end string) (time.Time, time.Time, error) {
@@ -911,9 +1008,9 @@ func debugPprof(url string) int {
 		endPointGroups: pprofEndpoints,
 	}); err != nil {
 		fmt.Fprintln(os.Stderr, "error completing debug command:", err)
-		return 1
+		return failureExitCode
 	}
-	return 0
+	return successExitCode
 }
 
 func debugMetrics(url string) int {
@@ -923,9 +1020,9 @@ func debugMetrics(url string) int {
 		endPointGroups: metricsEndpoints,
 	}); err != nil {
 		fmt.Fprintln(os.Stderr, "error completing debug command:", err)
-		return 1
+		return failureExitCode
 	}
-	return 0
+	return successExitCode
 }
 
 func debugAll(url string) int {
@@ -935,9 +1032,9 @@ func debugAll(url string) int {
 		endPointGroups: allEndpoints,
 	}); err != nil {
 		fmt.Fprintln(os.Stderr, "error completing debug command:", err)
-		return 1
+		return failureExitCode
 	}
-	return 0
+	return successExitCode
 }
 
 type printer interface {

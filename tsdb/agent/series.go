@@ -16,16 +16,32 @@ package agent
 import (
 	"sync"
 
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 )
 
 // memSeries is a chunkless version of tsdb.memSeries.
 type memSeries struct {
 	sync.Mutex
 
-	ref    uint64
-	lset   labels.Labels
+	ref  chunks.HeadSeriesRef
+	lset labels.Labels
+
+	// Last recorded timestamp. Used by Storage.gc to determine if a series is
+	// stale.
 	lastTs int64
+}
+
+// updateTimestamp obtains the lock on s and will attempt to update lastTs.
+// fails if newTs < lastTs.
+func (m *memSeries) updateTimestamp(newTs int64) bool {
+	m.Lock()
+	defer m.Unlock()
+	if newTs >= m.lastTs {
+		m.lastTs = newTs
+		return true
+	}
+	return false
 }
 
 // seriesHashmap is a simple hashmap for memSeries by their label set.
@@ -54,7 +70,7 @@ func (m seriesHashmap) Set(hash uint64, s *memSeries) {
 	m[hash] = append(seriesSet, s)
 }
 
-func (m seriesHashmap) Delete(hash, ref uint64) {
+func (m seriesHashmap) Delete(hash uint64, ref chunks.HeadSeriesRef) {
 	var rem []*memSeries
 	for _, s := range m[hash] {
 		if s.ref != ref {
@@ -74,9 +90,11 @@ func (m seriesHashmap) Delete(hash, ref uint64) {
 // likely due to the additional pointer dereferences.
 type stripeSeries struct {
 	size   int
-	series []map[uint64]*memSeries
+	series []map[chunks.HeadSeriesRef]*memSeries
 	hashes []seriesHashmap
 	locks  []stripeLock
+
+	gcMut sync.Mutex
 }
 
 type stripeLock struct {
@@ -88,12 +106,12 @@ type stripeLock struct {
 func newStripeSeries(stripeSize int) *stripeSeries {
 	s := &stripeSeries{
 		size:   stripeSize,
-		series: make([]map[uint64]*memSeries, stripeSize),
+		series: make([]map[chunks.HeadSeriesRef]*memSeries, stripeSize),
 		hashes: make([]seriesHashmap, stripeSize),
 		locks:  make([]stripeLock, stripeSize),
 	}
 	for i := range s.series {
-		s.series[i] = map[uint64]*memSeries{}
+		s.series[i] = map[chunks.HeadSeriesRef]*memSeries{}
 	}
 	for i := range s.hashes {
 		s.hashes[i] = seriesHashmap{}
@@ -103,9 +121,15 @@ func newStripeSeries(stripeSize int) *stripeSeries {
 
 // GC garbage collects old series that have not received a sample after mint
 // and will fully delete them.
-func (s *stripeSeries) GC(mint int64) map[uint64]struct{} {
-	deleted := map[uint64]struct{}{}
+func (s *stripeSeries) GC(mint int64) map[chunks.HeadSeriesRef]struct{} {
+	// NOTE(rfratto): GC will grab two locks, one for the hash and the other for
+	// series. It's not valid for any other function to grab both locks,
+	// otherwise a deadlock might occur when running GC in parallel with
+	// appending.
+	s.gcMut.Lock()
+	defer s.gcMut.Unlock()
 
+	deleted := map[chunks.HeadSeriesRef]struct{}{}
 	for hashLock := 0; hashLock < s.size; hashLock++ {
 		s.locks[hashLock].Lock()
 
@@ -143,9 +167,8 @@ func (s *stripeSeries) GC(mint int64) map[uint64]struct{} {
 	return deleted
 }
 
-func (s *stripeSeries) GetByID(id uint64) *memSeries {
-	refLock := id & uint64(s.size-1)
-
+func (s *stripeSeries) GetByID(id chunks.HeadSeriesRef) *memSeries {
+	refLock := uint64(id) & uint64(s.size-1)
 	s.locks[refLock].RLock()
 	defer s.locks[refLock].RUnlock()
 	return s.series[refLock][id]
@@ -162,16 +185,19 @@ func (s *stripeSeries) GetByHash(hash uint64, lset labels.Labels) *memSeries {
 func (s *stripeSeries) Set(hash uint64, series *memSeries) {
 	var (
 		hashLock = hash & uint64(s.size-1)
-		refLock  = series.ref & uint64(s.size-1)
+		refLock  = uint64(series.ref) & uint64(s.size-1)
 	)
-	s.locks[hashLock].Lock()
-	defer s.locks[hashLock].Unlock()
 
-	if hashLock != refLock {
-		s.locks[refLock].Lock()
-		defer s.locks[refLock].Unlock()
-	}
-
-	s.hashes[hashLock].Set(hash, series)
+	// We can't hold both locks at once otherwise we might deadlock with a
+	// simulatenous call to GC.
+	//
+	// We update s.series first because GC expects anything in s.hashes to
+	// already exist in s.series.
+	s.locks[refLock].Lock()
 	s.series[refLock][series.ref] = series
+	s.locks[refLock].Unlock()
+
+	s.locks[hashLock].Lock()
+	s.hashes[hashLock].Set(hash, series)
+	s.locks[hashLock].Unlock()
 }

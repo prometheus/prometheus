@@ -19,6 +19,7 @@ import (
 	"fmt"
 	html_template "html/template"
 	"math"
+	"net"
 	"net/url"
 	"regexp"
 	"sort"
@@ -104,6 +105,10 @@ func convertToFloat(i interface{}) (float64, error) {
 		return v, nil
 	case string:
 		return strconv.ParseFloat(v, 64)
+	case int:
+		return float64(v), nil
+	case uint:
+		return float64(v), nil
 	default:
 		return 0, fmt.Errorf("can't convert %T to float", v)
 	}
@@ -180,6 +185,13 @@ func NewTemplateExpander(
 				sort.Stable(sorter)
 				return v
 			},
+			"stripPort": func(hostPort string) string {
+				host, _, err := net.SplitHostPort(hostPort)
+				if err != nil {
+					return hostPort
+				}
+				return host
+			},
 			"humanize": func(i interface{}) (string, error) {
 				v, err := convertToFloat(i)
 				if err != nil {
@@ -244,10 +256,11 @@ func NewTemplateExpander(
 						sign = "-"
 						v = -v
 					}
-					seconds := int64(v) % 60
-					minutes := (int64(v) / 60) % 60
-					hours := (int64(v) / 60 / 60) % 24
-					days := int64(v) / 60 / 60 / 24
+					duration := int64(v)
+					seconds := duration % 60
+					minutes := (duration / 60) % 60
+					hours := (duration / 60 / 60) % 24
+					days := duration / 60 / 60 / 24
 					// For days to minutes, we display seconds as an integer.
 					if days != 0 {
 						return fmt.Sprintf("%s%dd %dh %dm %ds", sign, days, hours, minutes, seconds), nil
@@ -286,7 +299,11 @@ func NewTemplateExpander(
 				if math.IsNaN(v) || math.IsInf(v, 0) {
 					return fmt.Sprintf("%.4g", v), nil
 				}
-				t := model.TimeFromUnixNano(int64(v * 1e9)).Time().UTC()
+				timestamp := v * 1e9
+				if timestamp > math.MaxInt64 || timestamp < math.MinInt64 {
+					return "", fmt.Errorf("%v cannot be represented as a nanoseconds timestamp since it overflows int64", v)
+				}
+				t := model.TimeFromUnixNano(int64(timestamp)).Time().UTC()
 				return fmt.Sprint(t), nil
 			},
 			"pathPrefix": func() string {
@@ -294,6 +311,13 @@ func NewTemplateExpander(
 			},
 			"externalURL": func() string {
 				return externalURL.String()
+			},
+			"parseDuration": func(d string) (float64, error) {
+				v, err := model.ParseDuration(d)
+				if err != nil {
+					return 0, err
+				}
+				return float64(time.Duration(v)) / float64(time.Second), nil
 			},
 		},
 		options: options,

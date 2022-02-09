@@ -48,7 +48,7 @@ func CreateBlock(series []storage.Series, dir string, chunkRange int64, logger l
 	app := w.Appender(ctx)
 
 	for _, s := range series {
-		ref := uint64(0)
+		ref := storage.SeriesRef(0)
 		it := s.Iterator()
 		lset := s.Labels()
 		for it.Next() {

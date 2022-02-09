@@ -27,9 +27,9 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/prometheus/pkg/exemplar"
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/timestamp"
+	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
@@ -613,6 +613,7 @@ func (t *Test) clear() {
 		Timeout:                  100 * time.Second,
 		NoStepSubqueryIntervalFn: func(int64) int64 { return durationMilliseconds(1 * time.Minute) },
 		EnableAtModifier:         true,
+		EnableNegativeOffset:     true,
 	}
 
 	t.queryEngine = NewEngine(opts)
@@ -680,7 +681,9 @@ type LazyLoader struct {
 
 // LazyLoaderOpts are options for the lazy loader.
 type LazyLoaderOpts struct {
-	// Disabled PromQL engine features.
+	// Both of these must be set to true for regular PromQL (as of
+	// Prometheus v2.33). They can still be disabled here for legacy and
+	// other uses.
 	EnableAtModifier, EnableNegativeOffset bool
 }
 

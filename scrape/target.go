@@ -27,10 +27,10 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/relabel"
-	"github.com/prometheus/prometheus/pkg/textparse"
-	"github.com/prometheus/prometheus/pkg/value"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/relabel"
+	"github.com/prometheus/prometheus/model/textparse"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
 )
 
@@ -316,7 +316,7 @@ type limitAppender struct {
 	i     int
 }
 
-func (app *limitAppender) Append(ref uint64, lset labels.Labels, t int64, v float64) (uint64, error) {
+func (app *limitAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
 	if !value.IsStaleNaN(v) {
 		app.i++
 		if app.i > app.limit {
@@ -336,7 +336,7 @@ type timeLimitAppender struct {
 	maxTime int64
 }
 
-func (app *timeLimitAppender) Append(ref uint64, lset labels.Labels, t int64, v float64) (uint64, error) {
+func (app *timeLimitAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
 	if t > app.maxTime {
 		return 0, storage.ErrOutOfBounds
 	}
@@ -418,28 +418,22 @@ func PopulateLabels(lset labels.Labels, cfg *config.ScrapeConfig) (res, orig lab
 		return nil, nil, err
 	}
 
-	var interval string
-	var intervalDuration model.Duration
-	if interval = lset.Get(model.ScrapeIntervalLabel); interval != cfg.ScrapeInterval.String() {
-		intervalDuration, err = model.ParseDuration(interval)
-		if err != nil {
-			return nil, nil, errors.Errorf("error parsing scrape interval: %v", err)
-		}
-		if time.Duration(intervalDuration) == 0 {
-			return nil, nil, errors.New("scrape interval cannot be 0")
-		}
+	interval := lset.Get(model.ScrapeIntervalLabel)
+	intervalDuration, err := model.ParseDuration(interval)
+	if err != nil {
+		return nil, nil, errors.Errorf("error parsing scrape interval: %v", err)
+	}
+	if time.Duration(intervalDuration) == 0 {
+		return nil, nil, errors.New("scrape interval cannot be 0")
 	}
 
-	var timeout string
-	var timeoutDuration model.Duration
-	if timeout = lset.Get(model.ScrapeTimeoutLabel); timeout != cfg.ScrapeTimeout.String() {
-		timeoutDuration, err = model.ParseDuration(timeout)
-		if err != nil {
-			return nil, nil, errors.Errorf("error parsing scrape timeout: %v", err)
-		}
-		if time.Duration(timeoutDuration) == 0 {
-			return nil, nil, errors.New("scrape timeout cannot be 0")
-		}
+	timeout := lset.Get(model.ScrapeTimeoutLabel)
+	timeoutDuration, err := model.ParseDuration(timeout)
+	if err != nil {
+		return nil, nil, errors.Errorf("error parsing scrape timeout: %v", err)
+	}
+	if time.Duration(timeoutDuration) == 0 {
+		return nil, nil, errors.New("scrape timeout cannot be 0")
 	}
 
 	if timeoutDuration > intervalDuration {

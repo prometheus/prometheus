@@ -3,8 +3,7 @@ import { mount, ReactWrapper } from 'enzyme';
 import { act } from 'react-dom/test-utils';
 import { Alert } from 'reactstrap';
 import { sampleApiResponse } from './__testdata__/testdata';
-import ScrapePoolList from './ScrapePoolList';
-import ScrapePoolPanel from './ScrapePoolPanel';
+import ScrapePoolList, { ScrapePoolPanel } from './ScrapePoolList';
 import { Target } from './target';
 import { FetchMock } from 'jest-fetch-mock/types';
 import { PathPrefixContext } from '../../contexts/PathPrefixContext';
@@ -48,7 +47,7 @@ describe('ScrapePoolList', () => {
       });
       const panels = scrapePoolList.find(ScrapePoolPanel);
       expect(panels).toHaveLength(3);
-      const activeTargets: Target[] = sampleApiResponse.data.activeTargets as Target[];
+      const activeTargets: Target[] = sampleApiResponse.data.activeTargets as unknown as Target[];
       activeTargets.forEach(({ scrapePool }: Target) => {
         const panel = scrapePoolList.find(ScrapePoolPanel).filterWhere((panel) => panel.prop('scrapePool') === scrapePool);
         expect(panel).toHaveLength(1);

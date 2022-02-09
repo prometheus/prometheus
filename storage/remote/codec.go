@@ -26,9 +26,9 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 
-	"github.com/prometheus/prometheus/pkg/exemplar"
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/textparse"
+	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -357,8 +357,19 @@ func newConcreteSeriersIterator(series *concreteSeries) chunkenc.Iterator {
 
 // Seek implements storage.SeriesIterator.
 func (c *concreteSeriesIterator) Seek(t int64) bool {
-	c.cur = sort.Search(len(c.series.samples), func(n int) bool {
-		return c.series.samples[n].Timestamp >= t
+	if c.cur == -1 {
+		c.cur = 0
+	}
+	if c.cur >= len(c.series.samples) {
+		return false
+	}
+	// No-op check.
+	if s := c.series.samples[c.cur]; s.Timestamp >= t {
+		return true
+	}
+	// Do binary search between current position and end.
+	c.cur += sort.Search(len(c.series.samples)-c.cur, func(n int) bool {
+		return c.series.samples[n+c.cur].Timestamp >= t
 	})
 	return c.cur < len(c.series.samples)
 }

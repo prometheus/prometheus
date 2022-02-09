@@ -40,10 +40,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/pkg/exemplar"
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/textparse"
-	"github.com/prometheus/prometheus/pkg/timestamp"
+	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/textparse"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -407,9 +407,7 @@ func TestEndpoints(t *testing.T) {
 			Format: &af,
 		}
 
-		dbDir, err := ioutil.TempDir("", "tsdb-api-ready")
-		require.NoError(t, err)
-		defer os.RemoveAll(dbDir)
+		dbDir := t.TempDir()
 
 		remote := remote.NewStorage(promlog.New(&promlogConfig), prometheus.DefaultRegisterer, func() (int64, error) {
 			return 0, nil
@@ -1472,8 +1470,9 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 						Name:     "grp",
 						File:     "/path/to/file",
 						Interval: 1,
-						Rules: []rule{
-							alertingRule{
+						Limit:    0,
+						Rules: []Rule{
+							AlertingRule{
 								State:       "inactive",
 								Name:        "test_metric3",
 								Query:       "absent(test_metric3) != 1",
@@ -1484,7 +1483,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 								Health:      "unknown",
 								Type:        "alerting",
 							},
-							alertingRule{
+							AlertingRule{
 								State:       "inactive",
 								Name:        "test_metric4",
 								Query:       "up == 1",
@@ -1495,7 +1494,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 								Health:      "unknown",
 								Type:        "alerting",
 							},
-							recordingRule{
+							RecordingRule{
 								Name:   "recording-rule-1",
 								Query:  "vector(1)",
 								Labels: labels.Labels{},
@@ -1518,8 +1517,9 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 						Name:     "grp",
 						File:     "/path/to/file",
 						Interval: 1,
-						Rules: []rule{
-							alertingRule{
+						Limit:    0,
+						Rules: []Rule{
+							AlertingRule{
 								State:       "inactive",
 								Name:        "test_metric3",
 								Query:       "absent(test_metric3) != 1",
@@ -1530,7 +1530,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 								Health:      "unknown",
 								Type:        "alerting",
 							},
-							alertingRule{
+							AlertingRule{
 								State:       "inactive",
 								Name:        "test_metric4",
 								Query:       "up == 1",
@@ -1557,8 +1557,9 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 						Name:     "grp",
 						File:     "/path/to/file",
 						Interval: 1,
-						Rules: []rule{
-							recordingRule{
+						Limit:    0,
+						Rules: []Rule{
+							RecordingRule{
 								Name:   "recording-rule-1",
 								Query:  "vector(1)",
 								Labels: labels.Labels{},
@@ -2344,8 +2345,7 @@ func TestAdminEndpoints(t *testing.T) {
 	} {
 		tc := tc
 		t.Run("", func(t *testing.T) {
-			dir, _ := ioutil.TempDir("", "fakeDB")
-			defer func() { require.NoError(t, os.RemoveAll(dir)) }()
+			dir := t.TempDir()
 
 			api := &API{
 				db:          tc.db,

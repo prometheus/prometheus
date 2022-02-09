@@ -70,10 +70,12 @@ versions.
 | title         | string        | string  | [strings.Title](https://golang.org/pkg/strings/#Title), capitalises first character of each word.|
 | toUpper       | string        | string  | [strings.ToUpper](https://golang.org/pkg/strings/#ToUpper), converts all characters to upper case.|
 | toLower       | string        | string  | [strings.ToLower](https://golang.org/pkg/strings/#ToLower), converts all characters to lower case.|
+| stripPort     | string        | string  | [net.SplitHostPort](https://pkg.go.dev/net#SplitHostPort), splits string into host and port, then returns only host.|
 | match         | pattern, text | boolean | [regexp.MatchString](https://golang.org/pkg/regexp/#MatchString) Tests for a unanchored regexp match. |
 | reReplaceAll  | pattern, replacement, text | string | [Regexp.ReplaceAllString](https://golang.org/pkg/regexp/#Regexp.ReplaceAllString) Regexp substitution, unanchored. |
 | graphLink  | expr | string | Returns path to graph view in the [expression browser](https://prometheus.io/docs/visualization/browser/) for the expression. |
 | tableLink  | expr | string | Returns path to tabular ("Table") view in the [expression browser](https://prometheus.io/docs/visualization/browser/) for the expression. |
+| parseDuration | string | float | Parses a duration string such as "1h" into the number of seconds it represents. |
 
 ### Others
 
@@ -82,6 +84,7 @@ versions.
 | args          | []interface{} | map[string]interface{} | This converts a list of objects to a map with keys arg0, arg1 etc. This is intended to allow multiple arguments to be passed to templates. |
 | tmpl          | string, []interface{} | nothing  | Like the built-in `template`, but allows non-literals as the template name. Note that the result is assumed to be safe, and will not be auto-escaped. Only available in consoles. |
 | safeHtml      | string        | string  | Marks string as HTML not requiring auto-escaping. |
+| pathPrefix    | _none_        | string  | The external URL [path](https://pkg.go.dev/net/url#URL) for use in console templates. |
 
 ## Template type differences
 

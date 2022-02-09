@@ -16,7 +16,6 @@ package tsdb
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"math"
 	"os"
 	"path"
@@ -25,11 +24,12 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
@@ -434,11 +434,7 @@ func TestCompactionFailWillCleanUpTempDir(t *testing.T) {
 	}, nil, nil)
 	require.NoError(t, err)
 
-	tmpdir, err := ioutil.TempDir("", "test")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(tmpdir))
-	}()
+	tmpdir := t.TempDir()
 
 	require.Error(t, compactor.write(tmpdir, &BlockMeta{}, erringBReader{}))
 	_, err = os.Stat(filepath.Join(tmpdir, BlockMeta{}.ULID.String()) + tmpForCreationBlockDirSuffix)
@@ -1048,11 +1044,7 @@ func BenchmarkCompaction(b *testing.B) {
 	for _, c := range cases {
 		nBlocks := len(c.ranges)
 		b.Run(fmt.Sprintf("type=%s,blocks=%d,series=%d,samplesPerSeriesPerBlock=%d", c.compactionType, nBlocks, nSeries, c.ranges[0][1]-c.ranges[0][0]+1), func(b *testing.B) {
-			dir, err := ioutil.TempDir("", "bench_compaction")
-			require.NoError(b, err)
-			defer func() {
-				require.NoError(b, os.RemoveAll(dir))
-			}()
+			dir := b.TempDir()
 			blockDirs := make([]string, 0, len(c.ranges))
 			var blocks []*Block
 			for _, r := range c.ranges {
@@ -1079,20 +1071,12 @@ func BenchmarkCompaction(b *testing.B) {
 }
 
 func BenchmarkCompactionFromHead(b *testing.B) {
-	dir, err := ioutil.TempDir("", "bench_compaction_from_head")
-	require.NoError(b, err)
-	defer func() {
-		require.NoError(b, os.RemoveAll(dir))
-	}()
+	dir := b.TempDir()
 	totalSeries := 100000
 	for labelNames := 1; labelNames < totalSeries; labelNames *= 10 {
 		labelValues := totalSeries / labelNames
 		b.Run(fmt.Sprintf("labelnames=%d,labelvalues=%d", labelNames, labelValues), func(b *testing.B) {
-			chunkDir, err := ioutil.TempDir("", "chunk_dir")
-			require.NoError(b, err)
-			defer func() {
-				require.NoError(b, os.RemoveAll(chunkDir))
-			}()
+			chunkDir := b.TempDir()
 			opts := DefaultHeadOptions()
 			opts.ChunkRange = 1000
 			opts.ChunkDirRoot = chunkDir
@@ -1174,11 +1158,7 @@ func TestDisableAutoCompactions(t *testing.T) {
 // TestCancelCompactions ensures that when the db is closed
 // any running compaction is cancelled to unblock closing the db.
 func TestCancelCompactions(t *testing.T) {
-	tmpdir, err := ioutil.TempDir("", "testCancelCompaction")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(tmpdir))
-	}()
+	tmpdir := t.TempDir()
 
 	// Create some blocks to fall within the compaction range.
 	createBlock(t, tmpdir, genSeries(1, 10000, 0, 1000))
@@ -1187,7 +1167,7 @@ func TestCancelCompactions(t *testing.T) {
 
 	// Copy the db so we have an exact copy to compare compaction times.
 	tmpdirCopy := tmpdir + "Copy"
-	err = fileutil.CopyDirs(tmpdir, tmpdirCopy)
+	err := fileutil.CopyDirs(tmpdir, tmpdirCopy)
 	require.NoError(t, err)
 	defer func() {
 		require.NoError(t, os.RemoveAll(tmpdirCopy))
@@ -1310,4 +1290,39 @@ func TestDeleteCompactionBlockAfterFailedReload(t *testing.T) {
 			require.Equal(t, expBlocks, len(actBlocks)-1, "block count should be the same as before the compaction") // -1 to exclude the corrupted block.
 		})
 	}
+}
+
+func TestCompactBlockMetas(t *testing.T) {
+	parent1 := ulid.MustNew(100, nil)
+	parent2 := ulid.MustNew(200, nil)
+	parent3 := ulid.MustNew(300, nil)
+	parent4 := ulid.MustNew(400, nil)
+
+	input := []*BlockMeta{
+		{ULID: parent1, MinTime: 1000, MaxTime: 2000, Compaction: BlockMetaCompaction{Level: 2, Sources: []ulid.ULID{ulid.MustNew(1, nil), ulid.MustNew(10, nil)}}},
+		{ULID: parent2, MinTime: 200, MaxTime: 500, Compaction: BlockMetaCompaction{Level: 1}},
+		{ULID: parent3, MinTime: 500, MaxTime: 2500, Compaction: BlockMetaCompaction{Level: 3, Sources: []ulid.ULID{ulid.MustNew(5, nil), ulid.MustNew(6, nil)}}},
+		{ULID: parent4, MinTime: 100, MaxTime: 900, Compaction: BlockMetaCompaction{Level: 1}},
+	}
+
+	outUlid := ulid.MustNew(1000, nil)
+	output := CompactBlockMetas(outUlid, input...)
+
+	expected := &BlockMeta{
+		ULID:    outUlid,
+		MinTime: 100,
+		MaxTime: 2500,
+		Stats:   BlockStats{},
+		Compaction: BlockMetaCompaction{
+			Level:   4,
+			Sources: []ulid.ULID{ulid.MustNew(1, nil), ulid.MustNew(5, nil), ulid.MustNew(6, nil), ulid.MustNew(10, nil)},
+			Parents: []BlockDesc{
+				{ULID: parent1, MinTime: 1000, MaxTime: 2000},
+				{ULID: parent2, MinTime: 200, MaxTime: 500},
+				{ULID: parent3, MinTime: 500, MaxTime: 2500},
+				{ULID: parent4, MinTime: 100, MaxTime: 900},
+			},
+		},
+	}
+	require.Equal(t, expected, output)
 }

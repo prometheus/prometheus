@@ -56,7 +56,7 @@ Prometheus will now be reachable at http://localhost:9090/.
 ### Building from source
 
 To build Prometheus from source code, You need:
-* Go [version 1.14 or greater](https://golang.org/doc/install).
+* Go [version 1.16 or greater](https://golang.org/doc/install).
 * NodeJS [version 16 or greater](https://nodejs.org/).
 * npm [version 7 or greater](https://www.npmjs.com/).
 
@@ -111,7 +111,7 @@ For more information on building, running, and developing on the new React-based
 
 ## More information
 
-  * The source code is periodically indexed: [Prometheus Core](https://pkg.go.dev/github.com/prometheus/prometheus).
+  * The source code is periodically indexed, but due to an issue with versioning, the "latest" docs shown on Godoc are outdated. Instead, you can use [the docs for v2.31.1](https://pkg.go.dev/github.com/prometheus/prometheus@v1.8.2-0.20211105201321-411021ada9ab).
   * You will find a CircleCI configuration in [`.circleci/config.yml`](.circleci/config.yml).
   * See the [Community page](https://prometheus.io/community) for how to reach the Prometheus developers and users on various communication channels.
 

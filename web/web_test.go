@@ -40,60 +40,13 @@ import (
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestMain(m *testing.M) {
 	// On linux with a global proxy the tests will fail as the go client(http,grpc) tries to connect through the proxy.
 	os.Setenv("no_proxy", "localhost,127.0.0.1,0.0.0.0,:")
 	os.Exit(m.Run())
-}
-
-func TestGlobalURL(t *testing.T) {
-	opts := &Options{
-		ListenAddress: ":9090",
-		ExternalURL: &url.URL{
-			Scheme: "https",
-			Host:   "externalhost:80",
-			Path:   "/path/prefix",
-		},
-	}
-
-	tests := []struct {
-		inURL  string
-		outURL string
-	}{
-		{
-			// Nothing should change if the input URL is not on localhost, even if the port is our listening port.
-			inURL:  "http://somehost:9090/metrics",
-			outURL: "http://somehost:9090/metrics",
-		},
-		{
-			// Port and host should change if target is on localhost and port is our listening port.
-			inURL:  "http://localhost:9090/metrics",
-			outURL: "https://externalhost:80/metrics",
-		},
-		{
-			// Only the host should change if the port is not our listening port, but the host is localhost.
-			inURL:  "http://localhost:8000/metrics",
-			outURL: "http://externalhost:8000/metrics",
-		},
-		{
-			// Alternative localhost representations should also work.
-			inURL:  "http://127.0.0.1:9090/metrics",
-			outURL: "https://externalhost:80/metrics",
-		},
-	}
-
-	for _, test := range tests {
-		inURL, err := url.Parse(test.inURL)
-
-		require.NoError(t, err)
-
-		globalURL := tmplFuncs("", opts)["globalURL"].(func(u *url.URL) *url.URL)
-		outURL := globalURL(inURL)
-
-		require.Equal(t, test.outURL, outURL.String())
-	}
 }
 
 type dbAdapter struct {
@@ -111,15 +64,17 @@ func (a *dbAdapter) WALReplayStatus() (tsdb.WALReplayStatus, error) {
 func TestReadyAndHealthy(t *testing.T) {
 	t.Parallel()
 
-	dbDir, err := ioutil.TempDir("", "tsdb-ready")
-	require.NoError(t, err)
-	defer func() { require.NoError(t, os.RemoveAll(dbDir)) }()
+	dbDir := t.TempDir()
 
 	db, err := tsdb.Open(dbDir, nil, nil, nil, nil)
 	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, db.Close())
+	})
+	port := fmt.Sprintf(":%d", testutil.RandomUnprivilegedPort(t))
 
 	opts := &Options{
-		ListenAddress:  ":9090",
+		ListenAddress:  port,
 		ReadTimeout:    30 * time.Second,
 		MaxConnections: 512,
 		Context:        nil,
@@ -134,7 +89,7 @@ func TestReadyAndHealthy(t *testing.T) {
 		EnableAdminAPI: true,
 		ExternalURL: &url.URL{
 			Scheme: "http",
-			Host:   "localhost:9090",
+			Host:   "localhost" + port,
 			Path:   "/",
 		},
 		Version:  &PrometheusVersion{},
@@ -165,20 +120,15 @@ func TestReadyAndHealthy(t *testing.T) {
 	// to be up before starting tests.
 	time.Sleep(5 * time.Second)
 
-	resp, err := http.Get("http://localhost:9090/-/healthy")
+	baseURL := "http://localhost" + port
+
+	resp, err := http.Get(baseURL + "/-/healthy")
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	cleanupTestResponse(t, resp)
 
 	for _, u := range []string{
-		"http://localhost:9090/-/ready",
-		"http://localhost:9090/classic/graph",
-		"http://localhost:9090/classic/flags",
-		"http://localhost:9090/classic/rules",
-		"http://localhost:9090/classic/service-discovery",
-		"http://localhost:9090/classic/targets",
-		"http://localhost:9090/classic/status",
-		"http://localhost:9090/classic/config",
+		baseURL + "/-/ready",
 	} {
 		resp, err = http.Get(u)
 		require.NoError(t, err)
@@ -186,12 +136,12 @@ func TestReadyAndHealthy(t *testing.T) {
 		cleanupTestResponse(t, resp)
 	}
 
-	resp, err = http.Post("http://localhost:9090/api/v1/admin/tsdb/snapshot", "", strings.NewReader(""))
+	resp, err = http.Post(baseURL+"/api/v1/admin/tsdb/snapshot", "", strings.NewReader(""))
 	require.NoError(t, err)
 	require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
 	cleanupTestResponse(t, resp)
 
-	resp, err = http.Post("http://localhost:9090/api/v1/admin/tsdb/delete_series", "", strings.NewReader("{}"))
+	resp, err = http.Post(baseURL+"/api/v1/admin/tsdb/delete_series", "", strings.NewReader("{}"))
 	require.NoError(t, err)
 	require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
 	cleanupTestResponse(t, resp)
@@ -200,15 +150,8 @@ func TestReadyAndHealthy(t *testing.T) {
 	webHandler.Ready()
 
 	for _, u := range []string{
-		"http://localhost:9090/-/healthy",
-		"http://localhost:9090/-/ready",
-		"http://localhost:9090/classic/graph",
-		"http://localhost:9090/classic/flags",
-		"http://localhost:9090/classic/rules",
-		"http://localhost:9090/classic/service-discovery",
-		"http://localhost:9090/classic/targets",
-		"http://localhost:9090/classic/status",
-		"http://localhost:9090/classic/config",
+		baseURL + "/-/healthy",
+		baseURL + "/-/ready",
 	} {
 		resp, err = http.Get(u)
 		require.NoError(t, err)
@@ -216,13 +159,13 @@ func TestReadyAndHealthy(t *testing.T) {
 		cleanupTestResponse(t, resp)
 	}
 
-	resp, err = http.Post("http://localhost:9090/api/v1/admin/tsdb/snapshot", "", strings.NewReader(""))
+	resp, err = http.Post(baseURL+"/api/v1/admin/tsdb/snapshot", "", strings.NewReader(""))
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	cleanupSnapshot(t, dbDir, resp)
 	cleanupTestResponse(t, resp)
 
-	resp, err = http.Post("http://localhost:9090/api/v1/admin/tsdb/delete_series?match[]=up", "", nil)
+	resp, err = http.Post(baseURL+"/api/v1/admin/tsdb/delete_series?match[]=up", "", nil)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusNoContent, resp.StatusCode)
 	cleanupTestResponse(t, resp)
@@ -230,15 +173,18 @@ func TestReadyAndHealthy(t *testing.T) {
 
 func TestRoutePrefix(t *testing.T) {
 	t.Parallel()
-	dbDir, err := ioutil.TempDir("", "tsdb-ready")
-	require.NoError(t, err)
-	defer func() { require.NoError(t, os.RemoveAll(dbDir)) }()
+	dbDir := t.TempDir()
 
 	db, err := tsdb.Open(dbDir, nil, nil, nil, nil)
 	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, db.Close())
+	})
+
+	port := fmt.Sprintf(":%d", testutil.RandomUnprivilegedPort(t))
 
 	opts := &Options{
-		ListenAddress:  ":9091",
+		ListenAddress:  port,
 		ReadTimeout:    30 * time.Second,
 		MaxConnections: 512,
 		Context:        nil,
@@ -252,7 +198,7 @@ func TestRoutePrefix(t *testing.T) {
 		RoutePrefix:    "/prometheus",
 		EnableAdminAPI: true,
 		ExternalURL: &url.URL{
-			Host:   "localhost.localdomain:9090",
+			Host:   "localhost.localdomain" + port,
 			Scheme: "http",
 		},
 	}
@@ -277,22 +223,24 @@ func TestRoutePrefix(t *testing.T) {
 	// to be up before starting tests.
 	time.Sleep(5 * time.Second)
 
-	resp, err := http.Get("http://localhost:9091" + opts.RoutePrefix + "/-/healthy")
+	baseURL := "http://localhost" + port
+
+	resp, err := http.Get(baseURL + opts.RoutePrefix + "/-/healthy")
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	cleanupTestResponse(t, resp)
 
-	resp, err = http.Get("http://localhost:9091" + opts.RoutePrefix + "/-/ready")
+	resp, err = http.Get(baseURL + opts.RoutePrefix + "/-/ready")
 	require.NoError(t, err)
 	require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
 	cleanupTestResponse(t, resp)
 
-	resp, err = http.Post("http://localhost:9091"+opts.RoutePrefix+"/api/v1/admin/tsdb/snapshot", "", strings.NewReader(""))
+	resp, err = http.Post(baseURL+opts.RoutePrefix+"/api/v1/admin/tsdb/snapshot", "", strings.NewReader(""))
 	require.NoError(t, err)
 	require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
 	cleanupTestResponse(t, resp)
 
-	resp, err = http.Post("http://localhost:9091"+opts.RoutePrefix+"/api/v1/admin/tsdb/delete_series", "", strings.NewReader("{}"))
+	resp, err = http.Post(baseURL+opts.RoutePrefix+"/api/v1/admin/tsdb/delete_series", "", strings.NewReader("{}"))
 	require.NoError(t, err)
 	require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
 	cleanupTestResponse(t, resp)
@@ -300,23 +248,23 @@ func TestRoutePrefix(t *testing.T) {
 	// Set to ready.
 	webHandler.Ready()
 
-	resp, err = http.Get("http://localhost:9091" + opts.RoutePrefix + "/-/healthy")
+	resp, err = http.Get(baseURL + opts.RoutePrefix + "/-/healthy")
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	cleanupTestResponse(t, resp)
 
-	resp, err = http.Get("http://localhost:9091" + opts.RoutePrefix + "/-/ready")
+	resp, err = http.Get(baseURL + opts.RoutePrefix + "/-/ready")
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	cleanupTestResponse(t, resp)
 
-	resp, err = http.Post("http://localhost:9091"+opts.RoutePrefix+"/api/v1/admin/tsdb/snapshot", "", strings.NewReader(""))
+	resp, err = http.Post(baseURL+opts.RoutePrefix+"/api/v1/admin/tsdb/snapshot", "", strings.NewReader(""))
 	require.NoError(t, err)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	cleanupSnapshot(t, dbDir, resp)
 	cleanupTestResponse(t, resp)
 
-	resp, err = http.Post("http://localhost:9091"+opts.RoutePrefix+"/api/v1/admin/tsdb/delete_series?match[]=up", "", nil)
+	resp, err = http.Post(baseURL+opts.RoutePrefix+"/api/v1/admin/tsdb/delete_series?match[]=up", "", nil)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusNoContent, resp.StatusCode)
 	cleanupTestResponse(t, resp)
@@ -395,17 +343,19 @@ func TestHTTPMetrics(t *testing.T) {
 }
 
 func TestShutdownWithStaleConnection(t *testing.T) {
-	dbDir, err := ioutil.TempDir("", "tsdb-ready")
-	require.NoError(t, err)
-	defer func() { require.NoError(t, os.RemoveAll(dbDir)) }()
+	dbDir := t.TempDir()
 
 	db, err := tsdb.Open(dbDir, nil, nil, nil, nil)
 	require.NoError(t, err)
-
+	t.Cleanup(func() {
+		require.NoError(t, db.Close())
+	})
 	timeout := 10 * time.Second
 
+	port := fmt.Sprintf(":%d", testutil.RandomUnprivilegedPort(t))
+
 	opts := &Options{
-		ListenAddress:  ":9090",
+		ListenAddress:  port,
 		ReadTimeout:    timeout,
 		MaxConnections: 512,
 		Context:        nil,
@@ -419,7 +369,7 @@ func TestShutdownWithStaleConnection(t *testing.T) {
 		RoutePrefix:    "/",
 		ExternalURL: &url.URL{
 			Scheme: "http",
-			Host:   "localhost:9090",
+			Host:   "localhost" + port,
 			Path:   "/",
 		},
 		Version:  &PrometheusVersion{},
@@ -454,7 +404,7 @@ func TestShutdownWithStaleConnection(t *testing.T) {
 
 	// Open a socket, and don't use it. This connection should then be closed
 	// after the ReadTimeout.
-	c, err := net.Dial("tcp", "localhost:9090")
+	c, err := net.Dial("tcp", opts.ExternalURL.Host)
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, c.Close()) })
 
@@ -469,14 +419,16 @@ func TestShutdownWithStaleConnection(t *testing.T) {
 }
 
 func TestHandleMultipleQuitRequests(t *testing.T) {
+	port := fmt.Sprintf(":%d", testutil.RandomUnprivilegedPort(t))
+
 	opts := &Options{
-		ListenAddress:   ":9090",
+		ListenAddress:   port,
 		MaxConnections:  512,
 		EnableLifecycle: true,
 		RoutePrefix:     "/",
 		ExternalURL: &url.URL{
 			Scheme: "http",
-			Host:   "localhost:9090",
+			Host:   "localhost" + port,
 			Path:   "/",
 		},
 	}
@@ -501,6 +453,8 @@ func TestHandleMultipleQuitRequests(t *testing.T) {
 	// to be up before starting tests.
 	time.Sleep(5 * time.Second)
 
+	baseURL := opts.ExternalURL.Scheme + "://" + opts.ExternalURL.Host
+
 	start := make(chan struct{})
 	var wg sync.WaitGroup
 	for i := 0; i < 3; i++ {
@@ -508,7 +462,7 @@ func TestHandleMultipleQuitRequests(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			<-start
-			resp, err := http.Post("http://localhost:9090/-/quit", "", strings.NewReader(""))
+			resp, err := http.Post(baseURL+"/-/quit", "", strings.NewReader(""))
 			require.NoError(t, err)
 			require.Equal(t, http.StatusOK, resp.StatusCode)
 		}()
@@ -530,8 +484,10 @@ func TestHandleMultipleQuitRequests(t *testing.T) {
 func TestAgentAPIEndPoints(t *testing.T) {
 	t.Parallel()
 
+	port := fmt.Sprintf(":%d", testutil.RandomUnprivilegedPort(t))
+
 	opts := &Options{
-		ListenAddress:  ":9090",
+		ListenAddress:  port,
 		ReadTimeout:    30 * time.Second,
 		MaxConnections: 512,
 		Context:        nil,
@@ -544,7 +500,7 @@ func TestAgentAPIEndPoints(t *testing.T) {
 		EnableAdminAPI: true,
 		ExternalURL: &url.URL{
 			Scheme: "http",
-			Host:   "localhost:9090",
+			Host:   "localhost" + port,
 			Path:   "/",
 		},
 		Version:  &PrometheusVersion{},
@@ -556,35 +512,68 @@ func TestAgentAPIEndPoints(t *testing.T) {
 
 	webHandler := New(nil, opts)
 	webHandler.Ready()
-
-	// Test for non-available endpoints in the Agent mode.
-	for _, u := range []string{
-		"http://localhost:9090/-/labels",
-		"http://localhost:9090/label",
-		"http://localhost:9090/series",
-		"http://localhost:9090/alertmanagers",
-		"http://localhost:9090/query",
-		"http://localhost:9090/query_range",
-		"http://localhost:9090/query_exemplars",
-	} {
-		w := httptest.NewRecorder()
-		req, err := http.NewRequest("GET", u, nil)
-		require.NoError(t, err)
-		webHandler.router.ServeHTTP(w, req)
-		require.Equal(t, http.StatusNotFound, w.Code)
+	webHandler.config = &config.Config{}
+	webHandler.notifier = &notifier.Manager{}
+	l, err := webHandler.Listener()
+	if err != nil {
+		panic(fmt.Sprintf("Unable to start web listener: %s", err))
 	}
 
-	// Test for available endpoints in the Agent mode.
-	for _, u := range []string{
-		"http://localhost:9090/targets",
-		"http://localhost:9090/status",
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		err := webHandler.Run(ctx, l, "")
+		if err != nil {
+			panic(fmt.Sprintf("Can't start web handler:%s", err))
+		}
+	}()
+
+	// Give some time for the web goroutine to run since we need the server
+	// to be up before starting tests.
+	time.Sleep(5 * time.Second)
+	baseURL := "http://localhost" + port + "/api/v1"
+
+	// Test for non-available endpoints in the Agent mode.
+	for path, methods := range map[string][]string{
+		"/labels":                      {http.MethodGet, http.MethodPost},
+		"/label/:name/values":          {http.MethodGet},
+		"/series":                      {http.MethodGet, http.MethodPost, http.MethodDelete},
+		"/alertmanagers":               {http.MethodGet},
+		"/query":                       {http.MethodGet, http.MethodPost},
+		"/query_range":                 {http.MethodGet, http.MethodPost},
+		"/query_exemplars":             {http.MethodGet, http.MethodPost},
+		"/status/tsdb":                 {http.MethodGet},
+		"/alerts":                      {http.MethodGet},
+		"/rules":                       {http.MethodGet},
+		"/admin/tsdb/delete_series":    {http.MethodPost, http.MethodPut},
+		"/admin/tsdb/clean_tombstones": {http.MethodPost, http.MethodPut},
+		"/admin/tsdb/snapshot":         {http.MethodPost, http.MethodPut},
 	} {
-		w := httptest.NewRecorder()
-		req, err := http.NewRequest("GET", u, nil)
-		require.NoError(t, err)
-		webHandler.router.ServeHTTP(w, req)
-		fmt.Println(u)
-		require.Equal(t, http.StatusOK, w.Code)
+		for _, m := range methods {
+			req, err := http.NewRequest(m, baseURL+path, nil)
+			require.NoError(t, err)
+			resp, err := http.DefaultClient.Do(req)
+			require.NoError(t, err)
+			require.Equal(t, http.StatusUnprocessableEntity, resp.StatusCode)
+		}
+	}
+
+	// Test for some of available endpoints in the Agent mode.
+	for path, methods := range map[string][]string{
+		"/targets":            {http.MethodGet},
+		"/targets/metadata":   {http.MethodGet},
+		"/metadata":           {http.MethodGet},
+		"/status/config":      {http.MethodGet},
+		"/status/runtimeinfo": {http.MethodGet},
+		"/status/flags":       {http.MethodGet},
+	} {
+		for _, m := range methods {
+			req, err := http.NewRequest(m, baseURL+path, nil)
+			require.NoError(t, err)
+			resp, err := http.DefaultClient.Do(req)
+			require.NoError(t, err)
+			require.Equal(t, http.StatusOK, resp.StatusCode)
+		}
 	}
 }
 

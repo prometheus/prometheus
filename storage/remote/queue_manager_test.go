@@ -38,11 +38,12 @@ import (
 	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/textparse"
-	"github.com/prometheus/prometheus/pkg/timestamp"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/textparse"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/scrape"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
 )
 
@@ -74,11 +75,7 @@ func TestSampleDelivery(t *testing.T) {
 	// batch timeout case.
 	n := 3
 
-	dir, err := ioutil.TempDir("", "TestSampleDelivery")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 
 	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil)
 	defer s.Close()
@@ -153,9 +150,7 @@ func TestSampleDelivery(t *testing.T) {
 func TestMetadataDelivery(t *testing.T) {
 	c := NewTestWriteClient()
 
-	dir, err := ioutil.TempDir("", "TestMetadataDelivery")
-	require.NoError(t, err)
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
 
 	cfg := config.DefaultQueueConfig
 	mcfg := config.DefaultMetadataConfig
@@ -197,11 +192,7 @@ func TestSampleDeliveryTimeout(t *testing.T) {
 	cfg.MaxShards = 1
 	cfg.BatchSendDeadline = model.Duration(100 * time.Millisecond)
 
-	dir, err := ioutil.TempDir("", "TestSampleDeliveryTimeout")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 
 	metrics := newQueueManagerMetrics(nil, "", "")
 	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, nil, nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false)
@@ -227,12 +218,12 @@ func TestSampleDeliveryOrder(t *testing.T) {
 	for i := 0; i < n; i++ {
 		name := fmt.Sprintf("test_metric_%d", i%ts)
 		samples = append(samples, record.RefSample{
-			Ref: uint64(i),
+			Ref: chunks.HeadSeriesRef(i),
 			T:   int64(i),
 			V:   float64(i),
 		})
 		series = append(series, record.RefSeries{
-			Ref:    uint64(i),
+			Ref:    chunks.HeadSeriesRef(i),
 			Labels: labels.Labels{labels.Label{Name: "__name__", Value: name}},
 		})
 	}
@@ -240,11 +231,7 @@ func TestSampleDeliveryOrder(t *testing.T) {
 	c := NewTestWriteClient()
 	c.expectSamples(samples, series)
 
-	dir, err := ioutil.TempDir("", "TestSampleDeliveryOrder")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 
 	cfg := config.DefaultQueueConfig
 	mcfg := config.DefaultMetadataConfig
@@ -264,11 +251,7 @@ func TestShutdown(t *testing.T) {
 	deadline := 1 * time.Second
 	c := NewTestBlockedWriteClient()
 
-	dir, err := ioutil.TempDir("", "TestShutdown")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 
 	cfg := config.DefaultQueueConfig
 	mcfg := config.DefaultMetadataConfig
@@ -307,11 +290,7 @@ func TestSeriesReset(t *testing.T) {
 	numSegments := 4
 	numSeries := 25
 
-	dir, err := ioutil.TempDir("", "TestSeriesReset")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 
 	cfg := config.DefaultQueueConfig
 	mcfg := config.DefaultMetadataConfig
@@ -320,7 +299,7 @@ func TestSeriesReset(t *testing.T) {
 	for i := 0; i < numSegments; i++ {
 		series := []record.RefSeries{}
 		for j := 0; j < numSeries; j++ {
-			series = append(series, record.RefSeries{Ref: uint64((i * 100) + j), Labels: labels.Labels{{Name: "a", Value: "a"}}})
+			series = append(series, record.RefSeries{Ref: chunks.HeadSeriesRef((i * 100) + j), Labels: labels.Labels{{Name: "a", Value: "a"}}})
 		}
 		m.StoreSeries(series, i)
 	}
@@ -342,11 +321,7 @@ func TestReshard(t *testing.T) {
 	mcfg := config.DefaultMetadataConfig
 	cfg.MaxShards = 1
 
-	dir, err := ioutil.TempDir("", "TestReshard")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 
 	metrics := newQueueManagerMetrics(nil, "", "")
 	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, nil, nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false)
@@ -381,6 +356,7 @@ func TestReshardRaceWithStop(t *testing.T) {
 
 	cfg := config.DefaultQueueConfig
 	mcfg := config.DefaultMetadataConfig
+	exitCh := make(chan struct{})
 	go func() {
 		for {
 			metrics := newQueueManagerMetrics(nil, "", "")
@@ -389,6 +365,12 @@ func TestReshardRaceWithStop(t *testing.T) {
 			h.Unlock()
 			h.Lock()
 			m.Stop()
+
+			select {
+			case exitCh <- struct{}{}:
+				return
+			default:
+			}
 		}
 	}()
 
@@ -397,6 +379,7 @@ func TestReshardRaceWithStop(t *testing.T) {
 		m.reshardChan <- i
 		h.Unlock()
 	}
+	<-exitCh
 }
 
 func TestReleaseNoninternedString(t *testing.T) {
@@ -411,7 +394,7 @@ func TestReleaseNoninternedString(t *testing.T) {
 	for i := 1; i < 1000; i++ {
 		m.StoreSeries([]record.RefSeries{
 			{
-				Ref: uint64(i),
+				Ref: chunks.HeadSeriesRef(i),
 				Labels: labels.Labels{
 					labels.Label{
 						Name:  "asdf",
@@ -480,13 +463,13 @@ func createTimeseries(numSamples, numSeries int, extraLabels ...labels.Label) ([
 		name := fmt.Sprintf("test_metric_%d", i)
 		for j := 0; j < numSamples; j++ {
 			samples = append(samples, record.RefSample{
-				Ref: uint64(i),
+				Ref: chunks.HeadSeriesRef(i),
 				T:   int64(j),
 				V:   float64(i),
 			})
 		}
 		series = append(series, record.RefSeries{
-			Ref:    uint64(i),
+			Ref:    chunks.HeadSeriesRef(i),
 			Labels: append(labels.Labels{{Name: "__name__", Value: name}}, extraLabels...),
 		})
 	}
@@ -500,7 +483,7 @@ func createExemplars(numExemplars, numSeries int) ([]record.RefExemplar, []recor
 		name := fmt.Sprintf("test_metric_%d", i)
 		for j := 0; j < numExemplars; j++ {
 			e := record.RefExemplar{
-				Ref:    uint64(i),
+				Ref:    chunks.HeadSeriesRef(i),
 				T:      int64(j),
 				V:      float64(i),
 				Labels: labels.FromStrings("traceID", fmt.Sprintf("trace-%d", i)),
@@ -508,7 +491,7 @@ func createExemplars(numExemplars, numSeries int) ([]record.RefExemplar, []recor
 			exemplars = append(exemplars, e)
 		}
 		series = append(series, record.RefSeries{
-			Ref:    uint64(i),
+			Ref:    chunks.HeadSeriesRef(i),
 			Labels: labels.Labels{{Name: "__name__", Value: name}},
 		})
 	}
@@ -603,22 +586,6 @@ func (c *TestWriteClient) waitForExpectedData(tb testing.TB) {
 	}
 }
 
-func (c *TestWriteClient) expectDataCount(numSamples int) {
-	if !c.withWaitGroup {
-		return
-	}
-	c.mtx.Lock()
-	defer c.mtx.Unlock()
-	c.wg.Add(numSamples)
-}
-
-func (c *TestWriteClient) waitForExpectedDataCount() {
-	if !c.withWaitGroup {
-		return
-	}
-	c.wg.Wait()
-}
-
 func (c *TestWriteClient) Store(_ context.Context, req []byte) error {
 	c.mtx.Lock()
 	defer c.mtx.Unlock()
@@ -707,7 +674,15 @@ func (c *TestBlockingWriteClient) Endpoint() string {
 	return "http://test-remote-blocking.com/1234"
 }
 
-func BenchmarkSampleDelivery(b *testing.B) {
+// For benchmarking the send and not the receive side.
+type NopWriteClient struct{}
+
+func NewNopWriteClient() *NopWriteClient                            { return &NopWriteClient{} }
+func (c *NopWriteClient) Store(_ context.Context, req []byte) error { return nil }
+func (c *NopWriteClient) Name() string                              { return "nopwriteclient" }
+func (c *NopWriteClient) Endpoint() string                          { return "http://test-remote.com/1234" }
+
+func BenchmarkSampleSend(b *testing.B) {
 	// Send one sample per series, which is the typical remote_write case
 	const numSamples = 1
 	const numSeries = 10000
@@ -732,16 +707,15 @@ func BenchmarkSampleDelivery(b *testing.B) {
 	}
 	samples, series := createTimeseries(numSamples, numSeries, extraLabels...)
 
-	c := NewTestWriteClient()
+	c := NewNopWriteClient()
 
 	cfg := config.DefaultQueueConfig
 	mcfg := config.DefaultMetadataConfig
 	cfg.BatchSendDeadline = model.Duration(100 * time.Millisecond)
-	cfg.MaxShards = 1
+	cfg.MinShards = 20
+	cfg.MaxShards = 20
 
-	dir, err := ioutil.TempDir("", "BenchmarkSampleDelivery")
-	require.NoError(b, err)
-	defer os.RemoveAll(dir)
+	dir := b.TempDir()
 
 	metrics := newQueueManagerMetrics(nil, "", "")
 	m := NewQueueManager(metrics, nil, nil, nil, dir, newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, nil, nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false)
@@ -753,11 +727,9 @@ func BenchmarkSampleDelivery(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		c.expectDataCount(len(samples))
-		go m.Append(samples)
+		m.Append(samples)
 		m.UpdateSeriesSegment(series, i+1) // simulate what wal.Watcher.garbageCollectSeries does
 		m.SeriesReset(i + 1)
-		c.waitForExpectedDataCount()
 	}
 	// Do not include shutdown
 	b.StopTimer()
@@ -864,11 +836,7 @@ func TestCalculateDesiredShards(t *testing.T) {
 	cfg := config.DefaultQueueConfig
 	mcfg := config.DefaultMetadataConfig
 
-	dir, err := ioutil.TempDir("", "TestCalculateDesiredShards")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 
 	metrics := newQueueManagerMetrics(nil, "", "")
 	samplesIn := newEWMARate(ewmaWeight, shardUpdateDuration)
@@ -938,6 +906,185 @@ func TestCalculateDesiredShards(t *testing.T) {
 		require.LessOrEqual(t, m.numShards, maxShards, "Shards are too high. desiredShards=%d, maxShards=%d, t_seconds=%d", m.numShards, maxShards, ts/time.Second)
 	}
 	require.Equal(t, int64(0), pendingSamples, "Remote write never caught up, there are still %d pending samples.", pendingSamples)
+}
+
+func TestCalculateDesiredShardsDetail(t *testing.T) {
+	c := NewTestWriteClient()
+	cfg := config.DefaultQueueConfig
+	mcfg := config.DefaultMetadataConfig
+
+	dir := t.TempDir()
+
+	metrics := newQueueManagerMetrics(nil, "", "")
+	samplesIn := newEWMARate(ewmaWeight, shardUpdateDuration)
+	m := NewQueueManager(metrics, nil, nil, nil, dir, samplesIn, cfg, mcfg, nil, nil, c, defaultFlushDeadline, newPool(), newHighestTimestampMetric(), nil, false)
+
+	for _, tc := range []struct {
+		name            string
+		prevShards      int
+		dataIn          int64 // Quantities normalised to seconds.
+		dataOut         int64
+		dataDropped     int64
+		dataOutDuration float64
+		backlog         float64
+		expectedShards  int
+	}{
+		{
+			name:           "nothing in or out 1",
+			prevShards:     1,
+			expectedShards: 1, // Shards stays the same.
+		},
+		{
+			name:           "nothing in or out 10",
+			prevShards:     10,
+			expectedShards: 10, // Shards stays the same.
+		},
+		{
+			name:            "steady throughput",
+			prevShards:      1,
+			dataIn:          10,
+			dataOut:         10,
+			dataOutDuration: 1,
+			expectedShards:  1,
+		},
+		{
+			name:            "scale down",
+			prevShards:      10,
+			dataIn:          10,
+			dataOut:         10,
+			dataOutDuration: 5,
+			expectedShards:  5,
+		},
+		{
+			name:            "scale down constrained",
+			prevShards:      7,
+			dataIn:          10,
+			dataOut:         10,
+			dataOutDuration: 5,
+			expectedShards:  7,
+		},
+		{
+			name:            "scale up",
+			prevShards:      1,
+			dataIn:          10,
+			dataOut:         10,
+			dataOutDuration: 10,
+			expectedShards:  10,
+		},
+		{
+			name:            "scale up constrained",
+			prevShards:      8,
+			dataIn:          10,
+			dataOut:         10,
+			dataOutDuration: 10,
+			expectedShards:  8,
+		},
+		{
+			name:            "backlogged 20s",
+			prevShards:      2,
+			dataIn:          10,
+			dataOut:         10,
+			dataOutDuration: 2,
+			backlog:         20,
+			expectedShards:  4,
+		},
+		{
+			name:            "backlogged 90s",
+			prevShards:      4,
+			dataIn:          10,
+			dataOut:         10,
+			dataOutDuration: 4,
+			backlog:         90,
+			expectedShards:  22,
+		},
+		{
+			name:            "backlog reduced",
+			prevShards:      22,
+			dataIn:          10,
+			dataOut:         20,
+			dataOutDuration: 4,
+			backlog:         10,
+			expectedShards:  3,
+		},
+		{
+			name:            "backlog eliminated",
+			prevShards:      3,
+			dataIn:          10,
+			dataOut:         10,
+			dataOutDuration: 2,
+			backlog:         0,
+			expectedShards:  2, // Shard back down.
+		},
+		{
+			name:            "slight slowdown",
+			prevShards:      1,
+			dataIn:          10,
+			dataOut:         10,
+			dataOutDuration: 1.2,
+			expectedShards:  2, // 1.2 is rounded up to 2.
+		},
+		{
+			name:            "bigger slowdown",
+			prevShards:      1,
+			dataIn:          10,
+			dataOut:         10,
+			dataOutDuration: 1.4,
+			expectedShards:  2,
+		},
+		{
+			name:            "speed up",
+			prevShards:      2,
+			dataIn:          10,
+			dataOut:         10,
+			dataOutDuration: 1.2,
+			backlog:         0,
+			expectedShards:  2, // No reaction - 1.2 is rounded up to 2.
+		},
+		{
+			name:            "speed up more",
+			prevShards:      2,
+			dataIn:          10,
+			dataOut:         10,
+			dataOutDuration: 0.9,
+			backlog:         0,
+			expectedShards:  1,
+		},
+		{
+			name:            "marginal decision A",
+			prevShards:      3,
+			dataIn:          10,
+			dataOut:         10,
+			dataOutDuration: 2.01,
+			backlog:         0,
+			expectedShards:  3, // 2.01 rounds up to 3.
+		},
+		{
+			name:            "marginal decision B",
+			prevShards:      3,
+			dataIn:          10,
+			dataOut:         10,
+			dataOutDuration: 1.99,
+			backlog:         0,
+			expectedShards:  2, // 1.99 rounds up to 2.
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m.numShards = tc.prevShards
+			forceEMWA(samplesIn, tc.dataIn*int64(shardUpdateDuration/time.Second))
+			samplesIn.tick()
+			forceEMWA(m.dataOut, tc.dataOut*int64(shardUpdateDuration/time.Second))
+			forceEMWA(m.dataDropped, tc.dataDropped*int64(shardUpdateDuration/time.Second))
+			forceEMWA(m.dataOutDuration, int64(tc.dataOutDuration*float64(shardUpdateDuration)))
+			m.highestRecvTimestamp.value = tc.backlog // Not Set() because it can only increase value.
+
+			require.Equal(t, tc.expectedShards, m.calculateDesiredShards())
+		})
+	}
+}
+
+func forceEMWA(r *ewmaRate, rate int64) {
+	r.init = false
+	r.newEvents.Store(rate)
 }
 
 func TestQueueManagerMetrics(t *testing.T) {

@@ -40,14 +40,14 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-	"github.com/prometheus/prometheus/pkg/exemplar"
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/pool"
-	"github.com/prometheus/prometheus/pkg/relabel"
-	"github.com/prometheus/prometheus/pkg/textparse"
-	"github.com/prometheus/prometheus/pkg/timestamp"
-	"github.com/prometheus/prometheus/pkg/value"
+	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/relabel"
+	"github.com/prometheus/prometheus/model/textparse"
+	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/pool"
 )
 
 // ScrapeTimestampTolerance is the tolerance for scrape appends timestamps
@@ -305,7 +305,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed 
 				return mutateSampleLabels(l, opts.target, opts.honorLabels, opts.mrc)
 			},
 			func(l labels.Labels) labels.Labels { return mutateReportSampleLabels(l, opts.target) },
-			func(ctx context.Context) storage.Appender { return appender(app.Appender(ctx), opts.sampleLimit) },
+			func(ctx context.Context) storage.Appender { return app.Appender(ctx) },
 			cache,
 			jitterSeed,
 			opts.honorTimestamps,
@@ -748,7 +748,7 @@ type targetScraper struct {
 
 var errBodySizeLimit = errors.New("body size limit exceeded")
 
-const acceptHeader = `application/openmetrics-text; version=0.0.1,text/plain;version=0.0.4;q=0.5,*/*;q=0.1`
+const acceptHeader = `application/openmetrics-text;version=1.0.0,application/openmetrics-text;version=0.0.1;q=0.75,text/plain;version=0.0.4;q=0.5,*/*;q=0.1`
 
 var UserAgent = fmt.Sprintf("Prometheus/%s", version.Version)
 
@@ -829,7 +829,7 @@ type loop interface {
 }
 
 type cacheEntry struct {
-	ref      uint64
+	ref      storage.SeriesRef
 	lastIter uint64
 	hash     uint64
 	lset     labels.Labels
@@ -976,7 +976,7 @@ func (c *scrapeCache) get(met string) (*cacheEntry, bool) {
 	return e, true
 }
 
-func (c *scrapeCache) addRef(met string, ref uint64, lset labels.Labels, hash uint64) {
+func (c *scrapeCache) addRef(met string, ref storage.SeriesRef, lset labels.Labels, hash uint64) {
 	if ref == 0 {
 		return
 	}
@@ -1418,13 +1418,24 @@ type appendErrors struct {
 }
 
 func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string, ts time.Time) (total, added, seriesAdded int, err error) {
+	p, warning := textparse.New(b, contentType)
+	if warning != nil {
+		level.Debug(sl.l).Log(
+			"msg", "Invalid content type on scrape, using prometheus parser as fallback",
+			"content-type", contentType,
+			"err", warning,
+		)
+	}
+
 	var (
-		p              = textparse.New(b, contentType)
 		defTime        = timestamp.FromTime(ts)
 		appErrs        = appendErrors{}
 		sampleLimitErr error
 		e              exemplar.Exemplar // escapes to heap so hoisted out of loop
 	)
+
+	// Take an appender with limits.
+	app = appender(app, sl.sampleLimit)
 
 	defer func() {
 		if err != nil {
@@ -1477,7 +1488,7 @@ loop:
 		}
 		ce, ok := sl.cache.get(yoloString(met))
 		var (
-			ref  uint64
+			ref  storage.SeriesRef
 			lset labels.Labels
 			mets string
 			hash uint64
@@ -1727,7 +1738,7 @@ func (sl *scrapeLoop) reportStale(app storage.Appender, start time.Time) (err er
 
 func (sl *scrapeLoop) addReportSample(app storage.Appender, s string, t int64, v float64) error {
 	ce, ok := sl.cache.get(s)
-	var ref uint64
+	var ref storage.SeriesRef
 	var lset labels.Labels
 	if ok {
 		ref = ce.ref

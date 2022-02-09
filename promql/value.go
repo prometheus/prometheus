@@ -21,7 +21,7 @@ import (
 
 	"github.com/pkg/errors"
 
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -88,6 +88,14 @@ func (p Point) String() string {
 }
 
 // MarshalJSON implements json.Marshaler.
+//
+// JSON marshaling is only needed for the HTTP API. Since Point is such a
+// frequently marshaled type, it gets an optimized treatment directly in
+// web/api/v1/api.go. Therefore, this method is unused within Prometheus. It is
+// still provided here as convenience for debugging and for other users of this
+// code. Also note that the different marshaling implementations might lead to
+// slightly different results in terms of formatting and rounding of the
+// timestamp.
 func (p Point) MarshalJSON() ([]byte, error) {
 	v := strconv.FormatFloat(p.V, 'f', -1, 64)
 	return json.Marshal([...]interface{}{float64(p.T) / 1000, v})

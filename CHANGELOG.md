@@ -1,3 +1,83 @@
+## 2.33.1 / 2022-02-02
+
+* [BUGFIX] SD: Fix _no such file or directory_ in K8s SD when not running inside K8s. #10235
+
+## 2.33.0 / 2022-01-29
+
+* [CHANGE] PromQL: Promote negative offset and `@` modifer to stable features. #10121
+* [CHANGE] Web: Promote remote-write-receiver to stable. #10119
+* [FEATURE] Config: Add `stripPort` template function. #10002
+* [FEATURE] Promtool: Add cardinality analysis to `check metrics`, enabled by flag `--extended`. #10045
+* [FEATURE] SD: Enable target discovery in own K8s namespace. #9881
+* [FEATURE] SD: Add provider ID label in K8s SD. #9603
+* [FEATURE] Web: Add limit field to the rules API. #10152
+* [ENHANCEMENT] Remote-write: Avoid allocations by buffering concrete structs instead of interfaces. #9934
+* [ENHANCEMENT] Remote-write: Log time series details for out-of-order samples in remote write receiver. #9894
+* [ENHANCEMENT] Remote-write: Shard up more when backlogged. #9274
+* [ENHANCEMENT] TSDB: Use simpler map key to improve exemplar ingest performance. #10111
+* [ENHANCEMENT] TSDB: Avoid allocations when popping from the intersected postings heap. #10092
+* [ENHANCEMENT] TSDB: Make chunk writing non-blocking, avoiding latency spikes in remote-write. #10051
+* [ENHANCEMENT] TSDB: Improve label matching performance. #9907
+* [ENHANCEMENT] UI: Optimize the service discovery page and add a search bar. #10131
+* [ENHANCEMENT] UI: Optimize the target page and add a search bar. #10103
+* [BUGFIX] Promtool: Make exit codes more consistent. #9861
+* [BUGFIX] Promtool: Fix flakiness of rule testing. #8818
+* [BUGFIX] Remote-write: Update `prometheus_remote_storage_queue_highest_sent_timestamp_seconds` metric when write irrecoverably fails. #10102
+* [BUGFIX] Storage: Avoid panic in `BufferedSeriesIterator`. #9945
+* [BUGFIX] TSDB: CompactBlockMetas should produce correct mint/maxt for overlapping blocks. #10108
+* [BUGFIX] TSDB: Fix logging of exemplar storage size. #9938
+* [BUGFIX] UI: Fix overlapping click targets for the alert state checkboxes. #10136
+* [BUGFIX] UI: Fix _Unhealthy_ filter on target page to actually display only _Unhealthy_ targets. #10103
+* [BUGFIX] UI: Fix autocompletion when expression is empty. #10053
+* [BUGFIX] TSDB: Fix deadlock from simultaneous GC and write. #10166
+
+## 2.32.1 / 2021-12-17
+
+* [BUGFIX] Scrape: Fix reporting metrics when sample limit is reached during the report. #9996
+* [BUGFIX] Scrape: Ensure that scrape interval and scrape timeout are always set. #10023
+* [BUGFIX] TSDB: Expose and fix bug in iterators' `Seek()` method. #10030
+
+## 2.32.0 / 2021-12-09
+
+This release introduces the Prometheus Agent, a new mode of operation for
+Prometheus optimized for remote-write only scenarios. In this mode, Prometheus
+does not generate blocks on the local filesystem and is not queryable locally.
+Enable with `--enable-feature=agent`.
+
+Learn more about the Prometheus Agent in our [blog post](https://prometheus.io/blog/2021/11/16/agent/).
+
+* [CHANGE] Remote-write: Change default max retry time from 100ms to 5 seconds. #9634
+* [FEATURE] Agent: New mode of operation optimized for remote-write only scenarios, without local storage. Enable with `--enable-feature=agent`. #8785 #9851 #9664 #9939 #9941 #9943
+* [FEATURE] Promtool: Add `promtool check service-discovery` command. #8970
+* [FEATURE] UI: Add search in metrics dropdown. #9629
+* [FEATURE] Templates: Add parseDuration to template functions. #8817
+* [ENHANCEMENT] Promtool: Improve test output. #8064
+* [ENHANCEMENT] Promtool: Use kahan summation for better numerical stability. #9588
+* [ENHANCEMENT] Remote-write: Reuse memory for marshalling. #9412
+* [ENHANCEMENT] Scrape: Add `scrape_body_size_bytes` scrape metric behind the `--enable-feature=extra-scrape-metrics` flag. #9569
+* [ENHANCEMENT] TSDB: Add windows arm64 support. #9703
+* [ENHANCEMENT] TSDB: Optimize query by skipping unneeded sorting in TSDB. #9673
+* [ENHANCEMENT] Templates: Support int and uint as datatypes for template formatting. #9680
+* [ENHANCEMENT] UI: Prefer `rate` over `rad`, `delta` over `deg`, and `count` over `cos` in autocomplete. #9688
+* [ENHANCEMENT] Linode SD: Tune API request page sizes. #9779
+* [BUGFIX] TSDB: Add more size checks when writing individual sections in the index. #9710
+* [BUGFIX] PromQL: Make `deriv()` return zero values for constant series. #9728
+* [BUGFIX] TSDB: Fix panic when checkpoint directory is empty. #9687
+* [BUGFIX] TSDB: Fix panic, out of order chunks, and race warning during WAL replay. #9856
+* [BUGFIX] UI: Correctly render links for targets with IPv6 addresses that contain a Zone ID. #9853
+* [BUGFIX] Promtool: Fix checking of `authorization.credentials_file` and `bearer_token_file` fields. #9883
+* [BUGFIX] Uyuni SD: Fix null pointer exception during initialization. #9924 #9950
+* [BUGFIX] TSDB: Fix queries after a failed snapshot replay. #9980
+
+## 2.31.2 / 2021-12-09
+
+* [BUGFIX] TSDB: Fix queries after a failed snapshot replay. #9980
+
+## 2.31.1 / 2021-11-05
+
+* [BUGFIX] SD: Fix a panic when the experimental discovery manager receives
+  targets during a reload. #9656
+
 ## 2.31.0 / 2021-11-02
 
 * [CHANGE] UI: Remove standard PromQL editor in favour of the codemirror-based editor. #9452
@@ -22,6 +102,10 @@
 * [BUGFIX] Scrape: Restart scrape loops when `__scrape_interval__` is changed. #9551
 * [BUGFIX] TSDB: Fix memory leak in samples deletion. #9151
 * [BUGFIX] UI: Use consistent margin-bottom for all alert kinds. #9318
+
+## 2.30.4 / 2021-12-09
+
+* [BUGFIX] TSDB: Fix queries after a failed snapshot replay. #9980
 
 ## 2.30.3 / 2021-10-05
 
@@ -216,7 +300,7 @@ Alertmanager API v2 was released in Alertmanager v0.16.0 (released in January
 * [ENHANCEMENT] Mixins: Scope grafana configuration. #8332
 * [ENHANCEMENT] Kubernetes SD: Add endpoint labels metadata. #8273
 * [ENHANCEMENT] UI: Expose total number of label pairs in head in TSDB stats page. #8343
-* [ENHANCEMENT] TSDB: Reload blocks every minute, to detect new blocks and enforce retention more often. #8343
+* [ENHANCEMENT] TSDB: Reload blocks every minute, to detect new blocks and enforce retention more often. #8340
 * [BUGFIX] API: Fix global URL when external address has no port. #8359
 * [BUGFIX] Backfill: Fix error message handling. #8432
 * [BUGFIX] Backfill: Fix "add sample: out of bounds" error when series span an entire block. #8476

@@ -17,6 +17,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/binary"
+	"flag"
 	"fmt"
 	"hash/crc32"
 	"io/ioutil"
@@ -40,7 +41,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -54,12 +55,17 @@ import (
 )
 
 func TestMain(m *testing.M) {
+	var isolationEnabled bool
+	flag.BoolVar(&isolationEnabled, "test.tsdb-isolation", true, "enable isolation")
+	flag.Parse()
+	defaultIsolationDisabled = !isolationEnabled
+
 	goleak.VerifyTestMain(m, goleak.IgnoreTopFunction("github.com/prometheus/prometheus/tsdb.(*SegmentWAL).cut.func1"), goleak.IgnoreTopFunction("github.com/prometheus/prometheus/tsdb.(*SegmentWAL).cut.func2"))
 }
 
 func openTestDB(t testing.TB, opts *Options, rngs []int64) (db *DB) {
-	tmpdir, err := ioutil.TempDir("", "test")
-	require.NoError(t, err)
+	tmpdir := t.TempDir()
+	var err error
 
 	if len(rngs) == 0 {
 		db, err = Open(tmpdir, nil, nil, opts, nil)
@@ -70,9 +76,6 @@ func openTestDB(t testing.TB, opts *Options, rngs []int64) (db *DB) {
 	require.NoError(t, err)
 
 	// Do not Close() the test database by default as it will deadlock on test failures.
-	t.Cleanup(func() {
-		require.NoError(t, os.RemoveAll(tmpdir))
-	})
 	return db
 }
 
@@ -206,17 +209,13 @@ func TestNoPanicAfterWALCorruption(t *testing.T) {
 	var maxt int64
 	ctx := context.Background()
 	{
-		for {
+		// Appending 121 samples because on the 121st a new chunk will be created.
+		for i := 0; i < 121; i++ {
 			app := db.Appender(ctx)
 			_, err := app.Append(0, labels.FromStrings("foo", "bar"), maxt, 0)
 			expSamples = append(expSamples, sample{t: maxt, v: 0})
 			require.NoError(t, err)
 			require.NoError(t, app.Commit())
-			mmapedChunks, err := ioutil.ReadDir(mmappedChunksDir(db.Dir()))
-			require.NoError(t, err)
-			if len(mmapedChunks) > 0 {
-				break
-			}
 			maxt++
 		}
 		require.NoError(t, db.Close())
@@ -571,17 +570,12 @@ func TestDB_Snapshot(t *testing.T) {
 	require.NoError(t, app.Commit())
 
 	// create snapshot
-	snap, err := ioutil.TempDir("", "snap")
-	require.NoError(t, err)
-
-	defer func() {
-		require.NoError(t, os.RemoveAll(snap))
-	}()
+	snap := t.TempDir()
 	require.NoError(t, db.Snapshot(snap, true))
 	require.NoError(t, db.Close())
 
 	// reopen DB from snapshot
-	db, err = Open(snap, nil, nil, nil, nil)
+	db, err := Open(snap, nil, nil, nil, nil)
 	require.NoError(t, err)
 	defer func() { require.NoError(t, db.Close()) }()
 
@@ -620,20 +614,16 @@ func TestDB_Snapshot_ChunksOutsideOfCompactedRange(t *testing.T) {
 	}
 	require.NoError(t, app.Commit())
 
-	snap, err := ioutil.TempDir("", "snap")
-	require.NoError(t, err)
+	snap := t.TempDir()
 
 	// Hackingly introduce "race", by having lower max time then maxTime in last chunk.
 	db.head.maxTime.Sub(10)
 
-	defer func() {
-		require.NoError(t, os.RemoveAll(snap))
-	}()
 	require.NoError(t, db.Snapshot(snap, true))
 	require.NoError(t, db.Close())
 
 	// Reopen DB from snapshot.
-	db, err = Open(snap, nil, nil, nil, nil)
+	db, err := Open(snap, nil, nil, nil, nil)
 	require.NoError(t, err)
 	defer func() { require.NoError(t, db.Close()) }()
 
@@ -694,12 +684,8 @@ Outer:
 		}
 
 		// create snapshot
-		snap, err := ioutil.TempDir("", "snap")
-		require.NoError(t, err)
+		snap := t.TempDir()
 
-		defer func() {
-			require.NoError(t, os.RemoveAll(snap))
-		}()
 		require.NoError(t, db.Snapshot(snap, true))
 
 		// reopen DB from snapshot
@@ -1007,6 +993,92 @@ func TestWALSegmentSizeOptions(t *testing.T) {
 	}
 }
 
+// https://github.com/prometheus/prometheus/issues/9846
+// https://github.com/prometheus/prometheus/issues/9859
+func TestWALReplayRaceOnSamplesLoggedBeforeSeries(t *testing.T) {
+	const (
+		numRuns                        = 1
+		numSamplesBeforeSeriesCreation = 1000
+	)
+
+	// We test both with few and many samples appended after series creation. If samples are < 120 then there's no
+	// mmap-ed chunk, otherwise there's at least 1 mmap-ed chunk when replaying the WAL.
+	for _, numSamplesAfterSeriesCreation := range []int{1, 1000} {
+		for run := 1; run <= numRuns; run++ {
+			t.Run(fmt.Sprintf("samples after series creation = %d, run = %d", numSamplesAfterSeriesCreation, run), func(t *testing.T) {
+				testWALReplayRaceOnSamplesLoggedBeforeSeries(t, numSamplesBeforeSeriesCreation, numSamplesAfterSeriesCreation)
+			})
+		}
+	}
+}
+
+func testWALReplayRaceOnSamplesLoggedBeforeSeries(t *testing.T, numSamplesBeforeSeriesCreation, numSamplesAfterSeriesCreation int) {
+	const numSeries = 1000
+
+	db := openTestDB(t, nil, nil)
+	db.DisableCompactions()
+
+	for seriesRef := 1; seriesRef <= numSeries; seriesRef++ {
+		// Log samples before the series is logged to the WAL.
+		var enc record.Encoder
+		var samples []record.RefSample
+
+		for ts := 0; ts < numSamplesBeforeSeriesCreation; ts++ {
+			samples = append(samples, record.RefSample{
+				Ref: chunks.HeadSeriesRef(uint64(seriesRef)),
+				T:   int64(ts),
+				V:   float64(ts),
+			})
+		}
+
+		err := db.Head().wal.Log(enc.Samples(samples, nil))
+		require.NoError(t, err)
+
+		// Add samples via appender so that they're logged after the series in the WAL.
+		app := db.Appender(context.Background())
+		lbls := labels.FromStrings("series_id", strconv.Itoa(seriesRef))
+
+		for ts := numSamplesBeforeSeriesCreation; ts < numSamplesBeforeSeriesCreation+numSamplesAfterSeriesCreation; ts++ {
+			_, err := app.Append(0, lbls, int64(ts), float64(ts))
+			require.NoError(t, err)
+		}
+		require.NoError(t, app.Commit())
+	}
+
+	require.NoError(t, db.Close())
+
+	// Reopen the DB, replaying the WAL.
+	reopenDB, err := Open(db.Dir(), log.NewLogfmtLogger(os.Stderr), nil, nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, reopenDB.Close())
+	})
+
+	// Query back chunks for all series.
+	q, err := reopenDB.ChunkQuerier(context.Background(), math.MinInt64, math.MaxInt64)
+	require.NoError(t, err)
+
+	set := q.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "series_id", ".+"))
+	actualSeries := 0
+
+	for set.Next() {
+		actualSeries++
+		actualChunks := 0
+
+		chunksIt := set.At().Iterator()
+		for chunksIt.Next() {
+			actualChunks++
+		}
+		require.NoError(t, chunksIt.Err())
+
+		// We expect 1 chunk every 120 samples after series creation.
+		require.Equalf(t, (numSamplesAfterSeriesCreation/120)+1, actualChunks, "series: %s", set.At().Labels().String())
+	}
+
+	require.NoError(t, set.Err())
+	require.Equal(t, numSeries, actualSeries)
+}
+
 func TestTombstoneClean(t *testing.T) {
 	numSamples := int64(10)
 
@@ -1036,17 +1108,12 @@ func TestTombstoneClean(t *testing.T) {
 		// Delete the ranges.
 
 		// Create snapshot.
-		snap, err := ioutil.TempDir("", "snap")
-		require.NoError(t, err)
-
-		defer func() {
-			require.NoError(t, os.RemoveAll(snap))
-		}()
+		snap := t.TempDir()
 		require.NoError(t, db.Snapshot(snap, true))
 		require.NoError(t, db.Close())
 
 		// Reopen DB from snapshot.
-		db, err = Open(snap, nil, nil, nil, nil)
+		db, err := Open(snap, nil, nil, nil, nil)
 		require.NoError(t, err)
 		defer db.Close()
 
@@ -1125,17 +1192,12 @@ func TestTombstoneCleanResultEmptyBlock(t *testing.T) {
 	intervals := tombstones.Intervals{{Mint: 0, Maxt: numSamples}}
 
 	// Create snapshot.
-	snap, err := ioutil.TempDir("", "snap")
-	require.NoError(t, err)
-
-	defer func() {
-		require.NoError(t, os.RemoveAll(snap))
-	}()
+	snap := t.TempDir()
 	require.NoError(t, db.Snapshot(snap, true))
 	require.NoError(t, db.Close())
 
 	// Reopen DB from snapshot.
-	db, err = Open(snap, nil, nil, nil, nil)
+	db, err := Open(snap, nil, nil, nil, nil)
 	require.NoError(t, err)
 	defer db.Close()
 
@@ -1202,6 +1264,10 @@ func TestTombstoneCleanFail(t *testing.T) {
 // and retention limit policies, when triggered at the same time,
 // won't race against each other.
 func TestTombstoneCleanRetentionLimitsRace(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode.")
+	}
+
 	opts := DefaultOptions()
 	var wg sync.WaitGroup
 
@@ -1369,6 +1435,10 @@ func TestSizeRetention(t *testing.T) {
 	}
 	require.NoError(t, headApp.Commit())
 
+	require.Eventually(t, func() bool {
+		return db.Head().chunkDiskMapper.IsQueueEmpty()
+	}, 2*time.Second, 100*time.Millisecond)
+
 	// Test that registered size matches the actual disk size.
 	require.NoError(t, db.reloadBlocks())                               // Reload the db to register the new db size.
 	require.Equal(t, len(blocks), len(db.Blocks()))                     // Ensure all blocks are registered.
@@ -1388,7 +1458,7 @@ func TestSizeRetention(t *testing.T) {
 	// Create a WAL checkpoint, and compare sizes.
 	first, last, err := wal.Segments(db.Head().wal.Dir())
 	require.NoError(t, err)
-	_, err = wal.Checkpoint(log.NewNopLogger(), db.Head().wal, first, last-1, func(x uint64) bool { return false }, 0)
+	_, err = wal.Checkpoint(log.NewNopLogger(), db.Head().wal, first, last-1, func(x chunks.HeadSeriesRef) bool { return false }, 0)
 	require.NoError(t, err)
 	blockSize = int64(prom_testutil.ToFloat64(db.metrics.blocksBytes)) // Use the actual internal metrics.
 	walSize, err = db.Head().wal.Size()
@@ -1751,11 +1821,7 @@ func TestQuerierWithBoundaryChunks(t *testing.T) {
 // 	- with blocks with WAL: same as above
 func TestInitializeHeadTimestamp(t *testing.T) {
 	t.Run("clean", func(t *testing.T) {
-		dir, err := ioutil.TempDir("", "test_head_init")
-		require.NoError(t, err)
-		defer func() {
-			require.NoError(t, os.RemoveAll(dir))
-		}()
+		dir := t.TempDir()
 
 		db, err := Open(dir, nil, nil, nil, nil)
 		require.NoError(t, err)
@@ -1775,11 +1841,7 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 		require.Equal(t, int64(1000), db.head.MaxTime())
 	})
 	t.Run("wal-only", func(t *testing.T) {
-		dir, err := ioutil.TempDir("", "test_head_init")
-		require.NoError(t, err)
-		defer func() {
-			require.NoError(t, os.RemoveAll(dir))
-		}()
+		dir := t.TempDir()
 
 		require.NoError(t, os.MkdirAll(path.Join(dir, "wal"), 0o777))
 		w, err := wal.New(nil, nil, path.Join(dir, "wal"), false)
@@ -1807,11 +1869,7 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 		require.Equal(t, int64(15000), db.head.MaxTime())
 	})
 	t.Run("existing-block", func(t *testing.T) {
-		dir, err := ioutil.TempDir("", "test_head_init")
-		require.NoError(t, err)
-		defer func() {
-			require.NoError(t, os.RemoveAll(dir))
-		}()
+		dir := t.TempDir()
 
 		createBlock(t, dir, genSeries(1, 1, 1000, 2000))
 
@@ -1823,11 +1881,7 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 		require.Equal(t, int64(2000), db.head.MaxTime())
 	})
 	t.Run("existing-block-and-wal", func(t *testing.T) {
-		dir, err := ioutil.TempDir("", "test_head_init")
-		require.NoError(t, err)
-		defer func() {
-			require.NoError(t, os.RemoveAll(dir))
-		}()
+		dir := t.TempDir()
 
 		createBlock(t, dir, genSeries(1, 1, 1000, 6000))
 
@@ -2118,8 +2172,7 @@ func TestBlockRanges(t *testing.T) {
 	logger := log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr))
 	ctx := context.Background()
 
-	dir, err := ioutil.TempDir("", "test_storage")
-	require.NoError(t, err)
+	dir := t.TempDir()
 
 	// Test that the compactor doesn't create overlapping blocks
 	// when a non standard block already exists.
@@ -2129,9 +2182,7 @@ func TestBlockRanges(t *testing.T) {
 	require.NoError(t, err)
 
 	rangeToTriggerCompaction := db.compactor.(*LeveledCompactor).ranges[0]/2*3 + 1
-	defer func() {
-		os.RemoveAll(dir)
-	}()
+
 	app := db.Appender(ctx)
 	lbl := labels.Labels{{Name: "a", Value: "b"}}
 	_, err = app.Append(0, lbl, firstBlockMaxT-1, rand.Float64())
@@ -2218,12 +2269,7 @@ func TestDBReadOnly(t *testing.T) {
 
 	// Bootstrap the db.
 	{
-		dbDir, err = ioutil.TempDir("", "test")
-		require.NoError(t, err)
-
-		defer func() {
-			require.NoError(t, os.RemoveAll(dbDir))
-		}()
+		dbDir = t.TempDir()
 
 		dbBlocks := []*BlockMeta{
 			// Create three 2-sample blocks.
@@ -2312,12 +2358,7 @@ func TestDBReadOnly(t *testing.T) {
 // TestDBReadOnlyClosing ensures that after closing the db
 // all api methods return an ErrClosed.
 func TestDBReadOnlyClosing(t *testing.T) {
-	dbDir, err := ioutil.TempDir("", "test")
-	require.NoError(t, err)
-
-	defer func() {
-		require.NoError(t, os.RemoveAll(dbDir))
-	}()
+	dbDir := t.TempDir()
 	db, err := OpenDBReadOnly(dbDir, log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr)))
 	require.NoError(t, err)
 	require.NoError(t, db.Close())
@@ -2339,12 +2380,7 @@ func TestDBReadOnly_FlushWAL(t *testing.T) {
 
 	// Bootstrap the db.
 	{
-		dbDir, err = ioutil.TempDir("", "test")
-		require.NoError(t, err)
-
-		defer func() {
-			require.NoError(t, os.RemoveAll(dbDir))
-		}()
+		dbDir = t.TempDir()
 
 		// Append data to the WAL.
 		db, err := Open(dbDir, logger, nil, nil, nil)
@@ -2357,19 +2393,14 @@ func TestDBReadOnly_FlushWAL(t *testing.T) {
 			require.NoError(t, err)
 		}
 		require.NoError(t, app.Commit())
-		defer func() { require.NoError(t, db.Close()) }()
+		require.NoError(t, db.Close())
 	}
 
 	// Flush WAL.
 	db, err := OpenDBReadOnly(dbDir, logger)
 	require.NoError(t, err)
 
-	flush, err := ioutil.TempDir("", "flush")
-	require.NoError(t, err)
-
-	defer func() {
-		require.NoError(t, os.RemoveAll(flush))
-	}()
+	flush := t.TempDir()
 	require.NoError(t, db.FlushWAL(flush))
 	require.NoError(t, db.Close())
 
@@ -2403,10 +2434,11 @@ func TestDBReadOnly_FlushWAL(t *testing.T) {
 }
 
 func TestDBCannotSeePartialCommits(t *testing.T) {
-	tmpdir, _ := ioutil.TempDir("", "test")
-	defer func() {
-		require.NoError(t, os.RemoveAll(tmpdir))
-	}()
+	if defaultIsolationDisabled {
+		t.Skip("skipping test since tsdb isolation is disabled")
+	}
+
+	tmpdir := t.TempDir()
 
 	db, err := Open(tmpdir, nil, nil, nil, nil)
 	require.NoError(t, err)
@@ -2473,10 +2505,11 @@ func TestDBCannotSeePartialCommits(t *testing.T) {
 }
 
 func TestDBQueryDoesntSeeAppendsAfterCreation(t *testing.T) {
-	tmpdir, _ := ioutil.TempDir("", "test")
-	defer func() {
-		require.NoError(t, os.RemoveAll(tmpdir))
-	}()
+	if defaultIsolationDisabled {
+		t.Skip("skipping test since tsdb isolation is disabled")
+	}
+
+	tmpdir := t.TempDir()
 
 	db, err := Open(tmpdir, nil, nil, nil, nil)
 	require.NoError(t, err)
@@ -2663,9 +2696,7 @@ func TestChunkWriter_ReadAfterWrite(t *testing.T) {
 
 	for i, test := range tests {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			tempDir, err := ioutil.TempDir("", "test_chunk_writer")
-			require.NoError(t, err)
-			defer func() { require.NoError(t, os.RemoveAll(tempDir)) }()
+			tempDir := t.TempDir()
 
 			chunkw, err := chunks.NewWriterWithSegSize(tempDir, chunks.SegmentHeaderSize+int64(test.segmentSize))
 			require.NoError(t, err)
@@ -2752,9 +2783,7 @@ func TestChunkReader_ConcurrentReads(t *testing.T) {
 		tsdbutil.ChunkFromSamples([]tsdbutil.Sample{sample{1, 5}}),
 	}
 
-	tempDir, err := ioutil.TempDir("", "test_chunk_writer")
-	require.NoError(t, err)
-	defer func() { require.NoError(t, os.RemoveAll(tempDir)) }()
+	tempDir := t.TempDir()
 
 	chunkw, err := chunks.NewWriter(tempDir)
 	require.NoError(t, err)
@@ -2791,9 +2820,7 @@ func TestChunkReader_ConcurrentReads(t *testing.T) {
 // * compacts the head; and
 // * queries the db to ensure the samples are present from the compacted head.
 func TestCompactHead(t *testing.T) {
-	dbDir, err := ioutil.TempDir("", "testFlush")
-	require.NoError(t, err)
-	defer func() { require.NoError(t, os.RemoveAll(dbDir)) }()
+	dbDir := t.TempDir()
 
 	// Open a DB and append data to the WAL.
 	tsdbCfg := &Options{
@@ -2874,11 +2901,7 @@ func deleteNonBlocks(dbDir string) error {
 }
 
 func TestOpen_VariousBlockStates(t *testing.T) {
-	tmpDir, err := ioutil.TempDir("", "test")
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, os.RemoveAll(tmpDir))
-	})
+	tmpDir := t.TempDir()
 
 	var (
 		expectedLoadedDirs  = map[string]struct{}{}
@@ -2993,11 +3016,7 @@ func TestOneCheckpointPerCompactCall(t *testing.T) {
 		MaxBlockDuration:  blockRange,
 	}
 
-	tmpDir, err := ioutil.TempDir("", "test")
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, os.RemoveAll(tmpDir))
-	})
+	tmpDir := t.TempDir()
 
 	db, err := Open(tmpDir, log.NewNopLogger(), prometheus.NewRegistry(), tsdbCfg, nil)
 	require.NoError(t, err)
@@ -3106,86 +3125,32 @@ func TestOneCheckpointPerCompactCall(t *testing.T) {
 }
 
 func TestNoPanicOnTSDBOpenError(t *testing.T) {
-	tmpdir, err := ioutil.TempDir("", "test")
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, os.RemoveAll(tmpdir))
-	})
+	tmpdir := t.TempDir()
 
-	absdir, err := filepath.Abs(tmpdir)
+	// Taking the lock will cause a TSDB startup error.
+	l, err := tsdbutil.NewDirLocker(tmpdir, "tsdb", log.NewNopLogger(), nil)
 	require.NoError(t, err)
-	// Taking the file lock will cause TSDB startup error.
-	lockf, _, err := fileutil.Flock(filepath.Join(absdir, "lock"))
-	require.NoError(t, err)
+	require.NoError(t, l.Lock())
 
 	_, err = Open(tmpdir, nil, nil, DefaultOptions(), nil)
 	require.Error(t, err)
 
-	require.NoError(t, lockf.Release())
+	require.NoError(t, l.Release())
 }
 
-func TestLockfileMetric(t *testing.T) {
-	cases := []struct {
-		fileAlreadyExists bool
-		lockFileDisabled  bool
-		expectedValue     int
-	}{
-		{
-			fileAlreadyExists: false,
-			lockFileDisabled:  false,
-			expectedValue:     lockfileCreatedCleanly,
-		},
-		{
-			fileAlreadyExists: true,
-			lockFileDisabled:  false,
-			expectedValue:     lockfileReplaced,
-		},
-		{
-			fileAlreadyExists: true,
-			lockFileDisabled:  true,
-			expectedValue:     lockfileDisabled,
-		},
-		{
-			fileAlreadyExists: false,
-			lockFileDisabled:  true,
-			expectedValue:     lockfileDisabled,
-		},
-	}
+func TestLockfile(t *testing.T) {
+	tsdbutil.TestDirLockerUsage(t, func(t *testing.T, data string, createLock bool) (*tsdbutil.DirLocker, testutil.Closer) {
+		opts := DefaultOptions()
+		opts.NoLockfile = !createLock
 
-	for _, c := range cases {
-		t.Run(fmt.Sprintf("%+v", c), func(t *testing.T) {
-			tmpdir, err := ioutil.TempDir("", "test")
-			require.NoError(t, err)
-			t.Cleanup(func() {
-				require.NoError(t, os.RemoveAll(tmpdir))
-			})
-			absdir, err := filepath.Abs(tmpdir)
-			require.NoError(t, err)
+		// Create the DB. This should create lockfile and its metrics.
+		db, err := Open(data, nil, nil, opts, nil)
+		require.NoError(t, err)
 
-			// Test preconditions (file already exists + lockfile option)
-			lockfilePath := filepath.Join(absdir, "lock")
-			if c.fileAlreadyExists {
-				err = ioutil.WriteFile(lockfilePath, []byte{}, 0o644)
-				require.NoError(t, err)
-			}
-			opts := DefaultOptions()
-			opts.NoLockfile = c.lockFileDisabled
-
-			// Create the DB, this should create a lockfile and the metrics
-			db, err := Open(tmpdir, nil, nil, opts, nil)
-			require.NoError(t, err)
-			require.Equal(t, float64(c.expectedValue), prom_testutil.ToFloat64(db.metrics.lockfileCreatedCleanly))
-
-			// Close the DB, this should delete the lockfile
+		return db.locker, testutil.NewCallbackCloser(func() {
 			require.NoError(t, db.Close())
-
-			// Check that the lockfile is always deleted
-			if !c.lockFileDisabled {
-				_, err = os.Stat(lockfilePath)
-				require.Error(t, err, "lockfile was not deleted")
-			}
 		})
-	}
+	})
 }
 
 func TestQuerier_ShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChunks(t *testing.T) {
@@ -3445,11 +3410,7 @@ func testChunkQuerierShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChun
 }
 
 func newTestDB(t *testing.T) *DB {
-	dir, err := ioutil.TempDir("", "test")
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, os.RemoveAll(dir))
-	})
+	dir := t.TempDir()
 
 	db, err := Open(dir, nil, nil, DefaultOptions(), nil)
 	require.NoError(t, err)

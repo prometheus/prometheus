@@ -16,9 +16,11 @@ package agent
 import (
 	"context"
 	"fmt"
+	"math"
 	"path/filepath"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -27,13 +29,16 @@ import (
 	"github.com/prometheus/common/model"
 	"go.uber.org/atomic"
 
-	"github.com/prometheus/prometheus/pkg/exemplar"
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/timestamp"
+	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
 	"github.com/prometheus/prometheus/tsdb"
+	"github.com/prometheus/prometheus/tsdb/chunks"
+	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/record"
+	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/tsdb/wal"
 )
 
@@ -65,6 +70,9 @@ type Options struct {
 	// Shortest and longest amount of time data can exist in the WAL before being
 	// deleted.
 	MinWALTime, MaxWALTime int64
+
+	// NoLockfile disables creation and consideration of a lock file.
+	NoLockfile bool
 }
 
 // DefaultOptions used for the WAL storage. They are sane for setups using
@@ -77,6 +85,7 @@ func DefaultOptions() *Options {
 		TruncateFrequency: DefaultTruncateFrequency,
 		MinWALTime:        DefaultMinWALTime,
 		MaxWALTime:        DefaultMaxWALTime,
+		NoLockfile:        false,
 	}
 }
 
@@ -86,6 +95,8 @@ type dbMetrics struct {
 	numActiveSeries             prometheus.Gauge
 	numWALSeriesPendingDeletion prometheus.Gauge
 	totalAppendedSamples        prometheus.Counter
+	totalAppendedExemplars      prometheus.Counter
+	totalOutOfOrderSamples      prometheus.Counter
 	walTruncateDuration         prometheus.Summary
 	walCorruptionsTotal         prometheus.Counter
 	walTotalReplayDuration      prometheus.Gauge
@@ -110,6 +121,16 @@ func newDBMetrics(r prometheus.Registerer) *dbMetrics {
 	m.totalAppendedSamples = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_agent_samples_appended_total",
 		Help: "Total number of samples appended to the storage",
+	})
+
+	m.totalAppendedExemplars = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "prometheus_agent_exemplars_appended_total",
+		Help: "Total number of exemplars appended to the storage",
+	})
+
+	m.totalOutOfOrderSamples = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "prometheus_agent_out_of_order_samples_total",
+		Help: "Total number of out of order samples ingestion failed attempts.",
 	})
 
 	m.walTruncateDuration = prometheus.NewSummary(prometheus.SummaryOpts{
@@ -152,6 +173,8 @@ func newDBMetrics(r prometheus.Registerer) *dbMetrics {
 			m.numActiveSeries,
 			m.numWALSeriesPendingDeletion,
 			m.totalAppendedSamples,
+			m.totalAppendedExemplars,
+			m.totalOutOfOrderSamples,
 			m.walTruncateDuration,
 			m.walCorruptionsTotal,
 			m.walTotalReplayDuration,
@@ -173,6 +196,15 @@ func (m *dbMetrics) Unregister() {
 		m.numActiveSeries,
 		m.numWALSeriesPendingDeletion,
 		m.totalAppendedSamples,
+		m.totalAppendedExemplars,
+		m.totalOutOfOrderSamples,
+		m.walTruncateDuration,
+		m.walCorruptionsTotal,
+		m.walTotalReplayDuration,
+		m.checkpointDeleteFail,
+		m.checkpointDeleteTotal,
+		m.checkpointCreationFail,
+		m.checkpointCreationTotal,
 	}
 	for _, c := range cs {
 		m.r.Unregister(c)
@@ -186,7 +218,8 @@ type DB struct {
 	opts   *Options
 	rs     *remote.Storage
 
-	wal *wal.WAL
+	wal    *wal.WAL
+	locker *tsdbutil.DirLocker
 
 	appenderPool sync.Pool
 	bufPool      sync.Pool
@@ -195,7 +228,7 @@ type DB struct {
 	series  *stripeSeries
 	// deleted is a map of (ref IDs that should be deleted from WAL) to (the WAL segment they
 	// must be kept around to).
-	deleted map[uint64]int
+	deleted map[chunks.HeadSeriesRef]int
 
 	donec chan struct{}
 	stopc chan struct{}
@@ -206,6 +239,16 @@ type DB struct {
 // Open returns a new agent.DB in the given directory.
 func Open(l log.Logger, reg prometheus.Registerer, rs *remote.Storage, dir string, opts *Options) (*DB, error) {
 	opts = validateOptions(opts)
+
+	locker, err := tsdbutil.NewDirLocker(dir, "agent", l, reg)
+	if err != nil {
+		return nil, err
+	}
+	if !opts.NoLockfile {
+		if err := locker.Lock(); err != nil {
+			return nil, err
+		}
+	}
 
 	// remote_write expects WAL to be stored in a "wal" subdirectory of the main storage.
 	dir = filepath.Join(dir, "wal")
@@ -220,11 +263,12 @@ func Open(l log.Logger, reg prometheus.Registerer, rs *remote.Storage, dir strin
 		opts:   opts,
 		rs:     rs,
 
-		wal: w,
+		wal:    w,
+		locker: locker,
 
 		nextRef: atomic.NewUint64(0),
 		series:  newStripeSeries(opts.StripeSize),
-		deleted: make(map[uint64]int),
+		deleted: make(map[chunks.HeadSeriesRef]int),
 
 		donec: make(chan struct{}),
 		stopc: make(chan struct{}),
@@ -238,9 +282,10 @@ func Open(l log.Logger, reg prometheus.Registerer, rs *remote.Storage, dir strin
 
 	db.appenderPool.New = func() interface{} {
 		return &appender{
-			DB:             db,
-			pendingSeries:  make([]record.RefSeries, 0, 100),
-			pendingSamples: make([]record.RefSample, 0, 100),
+			DB:               db,
+			pendingSeries:    make([]record.RefSeries, 0, 100),
+			pendingSamples:   make([]record.RefSample, 0, 100),
+			pendingExamplars: make([]record.RefExemplar, 0, 10),
 		}
 	}
 
@@ -292,7 +337,7 @@ func (db *DB) replayWAL() error {
 		return errors.Wrap(err, "find last checkpoint")
 	}
 
-	multiRef := map[uint64]uint64{}
+	multiRef := map[chunks.HeadSeriesRef]chunks.HeadSeriesRef{}
 
 	if err == nil {
 		sr, err := wal.NewSegmentsReader(dir)
@@ -344,10 +389,10 @@ func (db *DB) replayWAL() error {
 	return nil
 }
 
-func (db *DB) loadWAL(r *wal.Reader, multiRef map[uint64]uint64) (err error) {
+func (db *DB) loadWAL(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef) (err error) {
 	var (
 		dec     record.Decoder
-		lastRef uint64
+		lastRef chunks.HeadSeriesRef
 
 		decoded    = make(chan interface{}, 10)
 		errCh      = make(chan error, 1)
@@ -392,11 +437,8 @@ func (db *DB) loadWAL(r *wal.Reader, multiRef map[uint64]uint64) (err error) {
 					return
 				}
 				decoded <- samples
-			case record.Tombstones:
-				// We don't care about tombstones
-				continue
-			case record.Exemplars:
-				// We don't care about exemplars
+			case record.Tombstones, record.Exemplars:
+				// We don't care about tombstones or exemplars during replay.
 				continue
 			default:
 				errCh <- &wal.CorruptionErr{
@@ -455,7 +497,7 @@ func (db *DB) loadWAL(r *wal.Reader, multiRef map[uint64]uint64) (err error) {
 		level.Warn(db.logger).Log("msg", "found sample referencing non-existing series", "skipped_series", v)
 	}
 
-	db.nextRef.Store(lastRef)
+	db.nextRef.Store(uint64(lastRef))
 
 	select {
 	case err := <-errCh:
@@ -538,7 +580,7 @@ func (db *DB) truncate(mint int64) error {
 		return nil
 	}
 
-	keep := func(id uint64) bool {
+	keep := func(id chunks.HeadSeriesRef) bool {
 		if db.series.GetByID(id) != nil {
 			return true
 		}
@@ -640,87 +682,120 @@ func (db *DB) Close() error {
 
 	db.metrics.Unregister()
 
-	return db.wal.Close()
+	return tsdb_errors.NewMulti(db.locker.Release(), db.wal.Close()).Err()
 }
 
 type appender struct {
 	*DB
 
-	pendingSeries  []record.RefSeries
-	pendingSamples []record.RefSample
+	pendingSeries    []record.RefSeries
+	pendingSamples   []record.RefSample
+	pendingExamplars []record.RefExemplar
+
+	// Pointers to the series referenced by each element of pendingSamples.
+	// Series lock is not held on elements.
+	sampleSeries []*memSeries
 }
 
-func (a *appender) Append(ref uint64, l labels.Labels, t int64, v float64) (uint64, error) {
-	if ref == 0 {
-		return a.Add(l, t, v)
-	}
-	return ref, a.AddFast(ref, t, v)
-}
+func (a *appender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
+	// series references and chunk references are identical for agent mode.
+	headRef := chunks.HeadSeriesRef(ref)
 
-func (a *appender) Add(l labels.Labels, t int64, v float64) (uint64, error) {
-	hash := l.Hash()
-	series := a.series.GetByHash(hash, l)
-	if series != nil {
-		return series.ref, a.AddFast(series.ref, t, v)
-	}
-
-	// Ensure no empty or duplicate labels have gotten through. This mirrors the
-	// equivalent validation code in the TSDB's headAppender.
-	l = l.WithoutEmpty()
-	if len(l) == 0 {
-		return 0, errors.Wrap(tsdb.ErrInvalidSample, "empty labelset")
-	}
-
-	if lbl, dup := l.HasDuplicateLabelNames(); dup {
-		return 0, errors.Wrap(tsdb.ErrInvalidSample, fmt.Sprintf(`label name "%s" is not unique`, lbl))
-	}
-
-	ref := a.nextRef.Inc()
-	series = &memSeries{ref: ref, lset: l, lastTs: t}
-
-	a.pendingSeries = append(a.pendingSeries, record.RefSeries{
-		Ref:    ref,
-		Labels: l,
-	})
-	a.pendingSamples = append(a.pendingSamples, record.RefSample{
-		Ref: ref,
-		T:   t,
-		V:   v,
-	})
-
-	a.series.Set(hash, series)
-
-	a.metrics.numActiveSeries.Inc()
-	a.metrics.totalAppendedSamples.Inc()
-
-	return series.ref, nil
-}
-
-func (a *appender) AddFast(ref uint64, t int64, v float64) error {
-	series := a.series.GetByID(ref)
+	series := a.series.GetByID(headRef)
 	if series == nil {
-		return storage.ErrNotFound
+		// Ensure no empty or duplicate labels have gotten through. This mirrors the
+		// equivalent validation code in the TSDB's headAppender.
+		l = l.WithoutEmpty()
+		if len(l) == 0 {
+			return 0, errors.Wrap(tsdb.ErrInvalidSample, "empty labelset")
+		}
+
+		if lbl, dup := l.HasDuplicateLabelNames(); dup {
+			return 0, errors.Wrap(tsdb.ErrInvalidSample, fmt.Sprintf(`label name "%s" is not unique`, lbl))
+		}
+
+		var created bool
+		series, created = a.getOrCreate(l)
+		if created {
+			a.pendingSeries = append(a.pendingSeries, record.RefSeries{
+				Ref:    series.ref,
+				Labels: l,
+			})
+
+			a.metrics.numActiveSeries.Inc()
+		}
 	}
+
 	series.Lock()
 	defer series.Unlock()
 
-	// Update last recorded timestamp. Used by Storage.gc to determine if a
-	// series is dead.
-	series.lastTs = t
+	if t < series.lastTs {
+		a.metrics.totalOutOfOrderSamples.Inc()
+		return 0, storage.ErrOutOfOrderSample
+	}
 
+	// NOTE: always modify pendingSamples and sampleSeries together
 	a.pendingSamples = append(a.pendingSamples, record.RefSample{
-		Ref: ref,
+		Ref: series.ref,
 		T:   t,
 		V:   v,
 	})
+	a.sampleSeries = append(a.sampleSeries, series)
 
 	a.metrics.totalAppendedSamples.Inc()
-	return nil
+	return storage.SeriesRef(series.ref), nil
 }
 
-func (a *appender) AppendExemplar(ref uint64, l labels.Labels, e exemplar.Exemplar) (uint64, error) {
-	// remote_write doesn't support exemplars yet, so do nothing here.
-	return 0, nil
+func (a *appender) getOrCreate(l labels.Labels) (series *memSeries, created bool) {
+	hash := l.Hash()
+
+	series = a.series.GetByHash(hash, l)
+	if series != nil {
+		return series, false
+	}
+
+	ref := chunks.HeadSeriesRef(a.nextRef.Inc())
+	series = &memSeries{ref: ref, lset: l, lastTs: math.MinInt64}
+	a.series.Set(hash, series)
+	return series, true
+}
+
+func (a *appender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
+	// series references and chunk references are identical for agent mode.
+	headRef := chunks.HeadSeriesRef(ref)
+
+	s := a.series.GetByID(headRef)
+	if s == nil {
+		return 0, fmt.Errorf("unknown series ref when trying to add exemplar: %d", ref)
+	}
+
+	// Ensure no empty labels have gotten through.
+	e.Labels = e.Labels.WithoutEmpty()
+
+	if lbl, dup := e.Labels.HasDuplicateLabelNames(); dup {
+		return 0, errors.Wrap(tsdb.ErrInvalidExemplar, fmt.Sprintf(`label name "%s" is not unique`, lbl))
+	}
+
+	// Exemplar label length does not include chars involved in text rendering such as quotes
+	// equals sign, or commas. See definition of const ExemplarMaxLabelLength.
+	labelSetLen := 0
+	for _, l := range e.Labels {
+		labelSetLen += utf8.RuneCountInString(l.Name)
+		labelSetLen += utf8.RuneCountInString(l.Value)
+
+		if labelSetLen > exemplar.ExemplarMaxLabelSetLength {
+			return 0, storage.ErrExemplarLabelLength
+		}
+	}
+
+	a.pendingExamplars = append(a.pendingExamplars, record.RefExemplar{
+		Ref:    s.ref,
+		T:      e.Ts,
+		V:      e.Value,
+		Labels: e.Labels,
+	})
+
+	return storage.SeriesRef(s.ref), nil
 }
 
 // Commit submits the collected samples and purges the batch.
@@ -747,6 +822,22 @@ func (a *appender) Commit() error {
 		buf = buf[:0]
 	}
 
+	if len(a.pendingExamplars) > 0 {
+		buf = encoder.Exemplars(a.pendingExamplars, buf)
+		if err := a.wal.Log(buf); err != nil {
+			return err
+		}
+		buf = buf[:0]
+	}
+
+	var series *memSeries
+	for i, s := range a.pendingSamples {
+		series = a.sampleSeries[i]
+		if !series.updateTimestamp(s.T) {
+			a.metrics.totalOutOfOrderSamples.Inc()
+		}
+	}
+
 	//nolint:staticcheck
 	a.bufPool.Put(buf)
 	return a.Rollback()
@@ -755,6 +846,8 @@ func (a *appender) Commit() error {
 func (a *appender) Rollback() error {
 	a.pendingSeries = a.pendingSeries[:0]
 	a.pendingSamples = a.pendingSamples[:0]
+	a.pendingExamplars = a.pendingExamplars[:0]
+	a.sampleSeries = a.sampleSeries[:0]
 	a.appenderPool.Put(a)
 	return nil
 }

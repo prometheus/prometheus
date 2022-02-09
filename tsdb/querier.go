@@ -21,7 +21,7 @@ import (
 
 	"github.com/pkg/errors"
 
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -375,38 +375,30 @@ func inversePostingsForMatcher(ix IndexReader, m *labels.Matcher) (index.Posting
 }
 
 func labelValuesWithMatchers(r IndexReader, name string, matchers ...*labels.Matcher) ([]string, error) {
-	// We're only interested in metrics which have the label <name>.
-	requireLabel, err := labels.NewMatcher(labels.MatchNotEqual, name, "")
+	p, err := PostingsForMatchers(r, matchers...)
 	if err != nil {
-		return nil, errors.Wrapf(err, "Failed to instantiate label matcher")
+		return nil, errors.Wrap(err, "fetching postings for matchers")
 	}
 
-	var p index.Postings
-	p, err = PostingsForMatchers(r, append(matchers, requireLabel)...)
+	allValues, err := r.LabelValues(name)
 	if err != nil {
-		return nil, err
+		return nil, errors.Wrapf(err, "fetching values of label %s", name)
 	}
-
-	dedupe := map[string]interface{}{}
-	for p.Next() {
-		v, err := r.LabelValueFor(p.At(), name)
+	valuesPostings := make([]index.Postings, len(allValues))
+	for i, value := range allValues {
+		valuesPostings[i], err = r.Postings(name, value)
 		if err != nil {
-			if err == storage.ErrNotFound {
-				continue
-			}
-
-			return nil, err
+			return nil, errors.Wrapf(err, "fetching postings for %s=%q", name, value)
 		}
-		dedupe[v] = nil
+	}
+	indexes, err := index.FindIntersectingPostings(p, valuesPostings)
+	if err != nil {
+		return nil, errors.Wrap(err, "intersecting postings")
 	}
 
-	if err = p.Err(); err != nil {
-		return nil, err
-	}
-
-	values := make([]string, 0, len(dedupe))
-	for value := range dedupe {
-		values = append(values, value)
+	values := make([]string, 0, len(indexes))
+	for _, idx := range indexes {
+		values = append(values, allValues[idx])
 	}
 
 	return values, nil
@@ -418,7 +410,7 @@ func labelNamesWithMatchers(r IndexReader, matchers ...*labels.Matcher) ([]strin
 		return nil, err
 	}
 
-	var postings []uint64
+	var postings []storage.SeriesRef
 	for p.Next() {
 		postings = append(postings, p.At())
 	}
@@ -906,6 +898,8 @@ func newNopChunkReader() ChunkReader {
 	}
 }
 
-func (cr nopChunkReader) Chunk(ref uint64) (chunkenc.Chunk, error) { return cr.emptyChunk, nil }
+func (cr nopChunkReader) Chunk(ref chunks.ChunkRef) (chunkenc.Chunk, error) {
+	return cr.emptyChunk, nil
+}
 
 func (cr nopChunkReader) Close() error { return nil }

@@ -15,9 +15,7 @@ package remote
 
 import (
 	"context"
-	"io/ioutil"
 	"net/url"
-	"os"
 	"sort"
 	"testing"
 
@@ -27,15 +25,13 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
 )
 
 func TestNoDuplicateReadConfigs(t *testing.T) {
-	dir, err := ioutil.TempDir("", "TestNoDuplicateReadConfigs")
-	require.NoError(t, err)
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
 
 	cfg1 := config.RemoteReadConfig{
 		Name: "write-1",

@@ -15,6 +15,7 @@ package remote
 
 import (
 	"context"
+	"errors"
 	"math"
 	"strconv"
 	"sync"
@@ -24,17 +25,18 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
-	"github.com/opentracing/opentracing-go"
-	"github.com/opentracing/opentracing-go/ext"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/relabel"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/scrape"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/wal"
 )
@@ -353,11 +355,11 @@ type QueueManager struct {
 	storeClient WriteClient
 
 	seriesMtx     sync.Mutex // Covers seriesLabels and droppedSeries.
-	seriesLabels  map[uint64]labels.Labels
-	droppedSeries map[uint64]struct{}
+	seriesLabels  map[chunks.HeadSeriesRef]labels.Labels
+	droppedSeries map[chunks.HeadSeriesRef]struct{}
 
 	seriesSegmentMtx     sync.Mutex // Covers seriesSegmentIndexes - if you also lock seriesMtx, take seriesMtx first.
-	seriesSegmentIndexes map[uint64]int
+	seriesSegmentIndexes map[chunks.HeadSeriesRef]int
 
 	shards      *shards
 	numShards   int
@@ -406,9 +408,9 @@ func NewQueueManager(
 		storeClient:    client,
 		sendExemplars:  enableExemplarRemoteWrite,
 
-		seriesLabels:         make(map[uint64]labels.Labels),
-		seriesSegmentIndexes: make(map[uint64]int),
-		droppedSeries:        make(map[uint64]struct{}),
+		seriesLabels:         make(map[chunks.HeadSeriesRef]labels.Labels),
+		seriesSegmentIndexes: make(map[chunks.HeadSeriesRef]int),
+		droppedSeries:        make(map[chunks.HeadSeriesRef]struct{}),
 
 		numShards:   cfg.MinShards,
 		reshardChan: make(chan int),
@@ -470,21 +472,22 @@ func (t *QueueManager) sendMetadataWithBackoff(ctx context.Context, metadata []p
 	metadataCount := len(metadata)
 
 	attemptStore := func(try int) error {
-		span, ctx := opentracing.StartSpanFromContext(ctx, "Remote Metadata Send Batch")
-		defer span.Finish()
+		ctx, span := otel.Tracer("").Start(ctx, "Remote Metadata Send Batch")
+		defer span.End()
 
-		span.SetTag("metadata", metadataCount)
-		span.SetTag("try", try)
-		span.SetTag("remote_name", t.storeClient.Name())
-		span.SetTag("remote_url", t.storeClient.Endpoint())
+		span.SetAttributes(
+			attribute.Int("metadata", metadataCount),
+			attribute.Int("try", try),
+			attribute.String("remote_name", t.storeClient.Name()),
+			attribute.String("remote_url", t.storeClient.Endpoint()),
+		)
 
 		begin := time.Now()
 		err := t.storeClient.Store(ctx, req)
 		t.metrics.sentBatchDuration.Observe(time.Since(begin).Seconds())
 
 		if err != nil {
-			span.LogKV("error", err)
-			ext.Error.Set(span, true)
+			span.RecordError(err)
 			return err
 		}
 
@@ -506,7 +509,6 @@ func (t *QueueManager) sendMetadataWithBackoff(ctx context.Context, metadata []p
 // Append queues a sample to be sent to the remote storage. Blocks until all samples are
 // enqueued on their shards or a shutdown signal is received.
 func (t *QueueManager) Append(samples []record.RefSample) bool {
-	var appendSample prompb.Sample
 outer:
 	for _, s := range samples {
 		t.seriesMtx.Lock()
@@ -529,9 +531,12 @@ outer:
 				return false
 			default:
 			}
-			appendSample.Value = s.V
-			appendSample.Timestamp = s.T
-			if t.shards.enqueue(s.Ref, writeSample{lbls, appendSample}) {
+			if t.shards.enqueue(s.Ref, sampleOrExemplar{
+				seriesLabels: lbls,
+				timestamp:    s.T,
+				value:        s.V,
+				isSample:     true,
+			}) {
 				continue outer
 			}
 
@@ -551,7 +556,6 @@ func (t *QueueManager) AppendExemplars(exemplars []record.RefExemplar) bool {
 		return true
 	}
 
-	var appendExemplar prompb.Exemplar
 outer:
 	for _, e := range exemplars {
 		t.seriesMtx.Lock()
@@ -575,10 +579,12 @@ outer:
 				return false
 			default:
 			}
-			appendExemplar.Labels = labelsToLabelsProto(e.Labels, nil)
-			appendExemplar.Timestamp = e.T
-			appendExemplar.Value = e.V
-			if t.shards.enqueue(e.Ref, writeExemplar{lbls, appendExemplar}) {
+			if t.shards.enqueue(e.Ref, sampleOrExemplar{
+				seriesLabels:   lbls,
+				timestamp:      e.T,
+				value:          e.V,
+				exemplarLabels: e.Labels,
+			}) {
 				continue outer
 			}
 
@@ -669,7 +675,8 @@ func (t *QueueManager) StoreSeries(series []record.RefSeries, index int) {
 	}
 }
 
-// Update the segment number held against the series, so we can trim older ones in SeriesReset.
+// UpdateSeriesSegment updates the segment number held against the series,
+// so we can trim older ones in SeriesReset.
 func (t *QueueManager) UpdateSeriesSegment(series []record.RefSeries, index int) {
 	t.seriesSegmentMtx.Lock()
 	defer t.seriesSegmentMtx.Unlock()
@@ -825,14 +832,12 @@ func (t *QueueManager) calculateDesiredShards() int {
 		return t.numShards
 	}
 
-	// When behind we will try to catch up on a proporation of samples per tick.
-	// This works similarly to an integral accumulator in that pending samples
-	// is the result of the error integral.
-	const integralGain = 0.1 / float64(shardUpdateDuration/time.Second)
-
 	var (
+		// When behind we will try to catch up on 5% of samples per second.
+		backlogCatchup = 0.05 * dataPending
+		// Calculate Time to send one sample, averaged across all sends done this tick.
 		timePerSample = dataOutDuration / dataOutRate
-		desiredShards = timePerSample * (dataInRate*dataKeptRatio + integralGain*dataPending)
+		desiredShards = timePerSample * (dataInRate*dataKeptRatio + backlogCatchup)
 	)
 	t.metrics.desiredNumShards.Set(desiredShards)
 	level.Debug(t.logger).Log("msg", "QueueManager.calculateDesiredShards",
@@ -855,11 +860,13 @@ func (t *QueueManager) calculateDesiredShards() int {
 	)
 	level.Debug(t.logger).Log("msg", "QueueManager.updateShardsLoop",
 		"lowerBound", lowerBound, "desiredShards", desiredShards, "upperBound", upperBound)
+
+	desiredShards = math.Ceil(desiredShards) // Round up to be on the safe side.
 	if lowerBound <= desiredShards && desiredShards <= upperBound {
 		return t.numShards
 	}
 
-	numShards := int(math.Ceil(desiredShards))
+	numShards := int(desiredShards)
 	// Do not downshard if we are more than ten seconds back.
 	if numShards < t.numShards && delay > 10.0 {
 		level.Debug(t.logger).Log("msg", "Not downsharding due to being too far behind")
@@ -899,21 +906,11 @@ func (t *QueueManager) newShards() *shards {
 	return s
 }
 
-type writeSample struct {
-	seriesLabels labels.Labels
-	sample       prompb.Sample
-}
-
-type writeExemplar struct {
-	seriesLabels labels.Labels
-	exemplar     prompb.Exemplar
-}
-
 type shards struct {
 	mtx sync.RWMutex // With the WAL, this is never actually contended.
 
 	qm     *QueueManager
-	queues []chan interface{}
+	queues []*queue
 	// So we can accurately track how many of each are lost during shard shutdowns.
 	enqueuedSamples   atomic.Int64
 	enqueuedExemplars atomic.Int64
@@ -941,9 +938,9 @@ func (s *shards) start(n int) {
 	s.qm.metrics.pendingSamples.Set(0)
 	s.qm.metrics.numShards.Set(float64(n))
 
-	newQueues := make([]chan interface{}, n)
+	newQueues := make([]*queue, n)
 	for i := 0; i < n; i++ {
-		newQueues[i] = make(chan interface{}, s.qm.cfg.Capacity)
+		newQueues[i] = newQueue(s.qm.cfg.MaxSamplesPerSend, s.qm.cfg.Capacity)
 	}
 
 	s.queues = newQueues
@@ -976,7 +973,7 @@ func (s *shards) stop() {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 	for _, queue := range s.queues {
-		close(queue)
+		go queue.FlushAndShutdown(s.done)
 	}
 	select {
 	case <-s.done:
@@ -997,7 +994,7 @@ func (s *shards) stop() {
 
 // enqueue data (sample or exemplar).  If we are currently in the process of shutting down or resharding,
 // will return false; in this case, you should back off and retry.
-func (s *shards) enqueue(ref uint64, data interface{}) bool {
+func (s *shards) enqueue(ref chunks.HeadSeriesRef, data sampleOrExemplar) bool {
 	s.mtx.RLock()
 	defer s.mtx.RUnlock()
 
@@ -1011,22 +1008,117 @@ func (s *shards) enqueue(ref uint64, data interface{}) bool {
 	select {
 	case <-s.softShutdown:
 		return false
-	case s.queues[shard] <- data:
-		switch data.(type) {
-		case writeSample:
+	default:
+		appended := s.queues[shard].Append(data, s.softShutdown)
+		if !appended {
+			return false
+		}
+		if data.isSample {
 			s.qm.metrics.pendingSamples.Inc()
 			s.enqueuedSamples.Inc()
-		case writeExemplar:
+		} else {
 			s.qm.metrics.pendingExemplars.Inc()
 			s.enqueuedExemplars.Inc()
-		default:
-			level.Warn(s.qm.logger).Log("msg", "Invalid object type in shards enqueue")
 		}
 		return true
 	}
 }
 
-func (s *shards) runShard(ctx context.Context, shardID int, queue chan interface{}) {
+type queue struct {
+	batch      []sampleOrExemplar
+	batchQueue chan []sampleOrExemplar
+
+	// Since we know there are a limited number of batches out, using a stack
+	// is easy and safe so a sync.Pool is not necessary.
+	batchPool [][]sampleOrExemplar
+	// This mutex covers adding and removing batches from the batchPool.
+	poolMux sync.Mutex
+}
+
+type sampleOrExemplar struct {
+	seriesLabels   labels.Labels
+	value          float64
+	timestamp      int64
+	exemplarLabels labels.Labels
+	isSample       bool
+}
+
+func newQueue(batchSize, capacity int) *queue {
+	batches := capacity / batchSize
+	return &queue{
+		batch:      make([]sampleOrExemplar, 0, batchSize),
+		batchQueue: make(chan []sampleOrExemplar, batches),
+		// batchPool should have capacity for everything in the channel + 1 for
+		// the batch being processed.
+		batchPool: make([][]sampleOrExemplar, 0, batches+1),
+	}
+}
+
+func (q *queue) Append(datum sampleOrExemplar, stop <-chan struct{}) bool {
+	q.batch = append(q.batch, datum)
+	if len(q.batch) == cap(q.batch) {
+		select {
+		case q.batchQueue <- q.batch:
+			q.batch = q.newBatch(cap(q.batch))
+			return true
+		case <-stop:
+			// Remove the sample we just appended. It will get retried.
+			q.batch = q.batch[:len(q.batch)-1]
+			return false
+		}
+	}
+	return true
+}
+
+func (q *queue) Chan() <-chan []sampleOrExemplar {
+	return q.batchQueue
+}
+
+// Batch returns the current batch and allocates a new batch. Must not be
+// called concurrently with Append.
+func (q *queue) Batch() []sampleOrExemplar {
+	batch := q.batch
+	q.batch = q.newBatch(cap(batch))
+	return batch
+}
+
+// ReturnForReuse adds the batch buffer back to the internal pool.
+func (q *queue) ReturnForReuse(batch []sampleOrExemplar) {
+	q.poolMux.Lock()
+	defer q.poolMux.Unlock()
+	if len(q.batchPool) < cap(q.batchPool) {
+		q.batchPool = append(q.batchPool, batch[:0])
+	}
+}
+
+// FlushAndShutdown stops the queue and flushes any samples. No appends can be
+// made after this is called.
+func (q *queue) FlushAndShutdown(done <-chan struct{}) {
+	if len(q.batch) > 0 {
+		select {
+		case q.batchQueue <- q.batch:
+		case <-done:
+			// The shard has been hard shut down, so no more samples can be
+			// sent. Drop everything left in the queue.
+		}
+	}
+	q.batch = nil
+	close(q.batchQueue)
+}
+
+func (q *queue) newBatch(capacity int) []sampleOrExemplar {
+	q.poolMux.Lock()
+	defer q.poolMux.Unlock()
+	batches := len(q.batchPool)
+	if batches > 0 {
+		batch := q.batchPool[batches-1]
+		q.batchPool = q.batchPool[:batches-1]
+		return batch
+	}
+	return make([]sampleOrExemplar, 0, capacity)
+}
+
+func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 	defer func() {
 		if s.running.Dec() == 0 {
 			close(s.done)
@@ -1038,8 +1130,7 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue chan interface
 	// Send batches of at most MaxSamplesPerSend samples to the remote storage.
 	// If we have fewer samples than that, flush them out after a deadline anyways.
 	var (
-		max                                          = s.qm.cfg.MaxSamplesPerSend
-		nPending, nPendingSamples, nPendingExemplars = 0, 0, 0
+		max = s.qm.cfg.MaxSamplesPerSend
 
 		pBuf = proto.NewBuffer(nil)
 		buf  []byte
@@ -1048,6 +1139,7 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue chan interface
 		max += int(float64(max) * 0.1)
 	}
 
+	batchQueue := queue.Chan()
 	pendingData := make([]prompb.TimeSeries, max)
 	for i := range pendingData {
 		pendingData[i].Samples = []prompb.Sample{{}}
@@ -1072,8 +1164,8 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue chan interface
 		case <-ctx.Done():
 			// In this case we drop all samples in the buffer and the queue.
 			// Remove them from pending and mark them as failed.
-			droppedSamples := nPendingSamples + int(s.enqueuedSamples.Load())
-			droppedExemplars := nPendingExemplars + int(s.enqueuedExemplars.Load())
+			droppedSamples := int(s.enqueuedSamples.Load())
+			droppedExemplars := int(s.enqueuedExemplars.Load())
 			s.qm.metrics.pendingSamples.Sub(float64(droppedSamples))
 			s.qm.metrics.pendingExemplars.Sub(float64(droppedExemplars))
 			s.qm.metrics.failedSamplesTotal.Add(float64(droppedSamples))
@@ -1082,64 +1174,71 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue chan interface
 			s.exemplarsDroppedOnHardShutdown.Add(uint32(droppedExemplars))
 			return
 
-		case sample, ok := <-queue:
+		case batch, ok := <-batchQueue:
 			if !ok {
-				if nPendingSamples > 0 || nPendingExemplars > 0 {
-					level.Debug(s.qm.logger).Log("msg", "Flushing data to remote storage...", "samples", nPendingSamples, "exemplars", nPendingExemplars)
-					s.sendSamples(ctx, pendingData[:nPending], nPendingSamples, nPendingExemplars, pBuf, &buf)
-					s.qm.metrics.pendingSamples.Sub(float64(nPendingSamples))
-					s.qm.metrics.pendingExemplars.Sub(float64(nPendingExemplars))
-					level.Debug(s.qm.logger).Log("msg", "Done flushing.")
-				}
 				return
 			}
+			nPendingSamples, nPendingExemplars := s.populateTimeSeries(batch, pendingData)
+			queue.ReturnForReuse(batch)
+			n := nPendingSamples + nPendingExemplars
+			s.sendSamples(ctx, pendingData[:n], nPendingSamples, nPendingExemplars, pBuf, &buf)
 
-			pendingData[nPending].Samples = pendingData[nPending].Samples[:0]
-			if s.qm.sendExemplars {
-				pendingData[nPending].Exemplars = pendingData[nPending].Exemplars[:0]
-			}
-			// Number of pending samples is limited by the fact that sendSamples (via sendSamplesWithBackoff)
-			// retries endlessly, so once we reach max samples, if we can never send to the endpoint we'll
-			// stop reading from the queue. This makes it safe to reference pendingSamples by index.
-			switch d := sample.(type) {
-			case writeSample:
-				pendingData[nPending].Labels = labelsToLabelsProto(d.seriesLabels, pendingData[nPending].Labels)
-				pendingData[nPending].Samples = append(pendingData[nPending].Samples, d.sample)
-				nPendingSamples++
-				nPending++
-
-			case writeExemplar:
-				pendingData[nPending].Labels = labelsToLabelsProto(d.seriesLabels, pendingData[nPending].Labels)
-				pendingData[nPending].Exemplars = append(pendingData[nPending].Exemplars, d.exemplar)
-				nPendingExemplars++
-				nPending++
-			}
-
-			if nPending >= max {
-				s.sendSamples(ctx, pendingData[:nPending], nPendingSamples, nPendingExemplars, pBuf, &buf)
-				s.qm.metrics.pendingSamples.Sub(float64(nPendingSamples))
-				s.qm.metrics.pendingExemplars.Sub(float64(nPendingExemplars))
-				nPendingSamples = 0
-				nPendingExemplars = 0
-				nPending = 0
-
-				stop()
-				timer.Reset(time.Duration(s.qm.cfg.BatchSendDeadline))
-			}
+			stop()
+			timer.Reset(time.Duration(s.qm.cfg.BatchSendDeadline))
 
 		case <-timer.C:
-			if nPendingSamples > 0 || nPendingExemplars > 0 {
-				level.Debug(s.qm.logger).Log("msg", "runShard timer ticked, sending buffered data", "samples", nPendingSamples, "exemplars", nPendingExemplars, "shard", shardNum)
-				s.sendSamples(ctx, pendingData[:nPending], nPendingSamples, nPendingExemplars, pBuf, &buf)
-				s.qm.metrics.pendingSamples.Sub(float64(nPendingSamples))
-				s.qm.metrics.pendingExemplars.Sub(float64(nPendingExemplars))
-				nPendingSamples = 0
-				nPendingExemplars = 0
-				nPending = 0
+			// We need to take the lock when getting a batch to avoid
+			// concurrent Appends. Generally this will only happen on low
+			// traffic instances.
+			s.mtx.Lock()
+			// First, we need to see if we can happen to get a batch from the queue if it filled while acquiring the lock.
+			var batch []sampleOrExemplar
+			select {
+			case batch = <-batchQueue:
+			default:
+				batch = queue.Batch()
 			}
+			s.mtx.Unlock()
+			if len(batch) > 0 {
+				nPendingSamples, nPendingExemplars := s.populateTimeSeries(batch, pendingData)
+				n := nPendingSamples + nPendingExemplars
+				level.Debug(s.qm.logger).Log("msg", "runShard timer ticked, sending buffered data", "samples", nPendingSamples, "exemplars", nPendingExemplars, "shard", shardNum)
+				s.sendSamples(ctx, pendingData[:n], nPendingSamples, nPendingExemplars, pBuf, &buf)
+			}
+			queue.ReturnForReuse(batch)
 			timer.Reset(time.Duration(s.qm.cfg.BatchSendDeadline))
 		}
 	}
+}
+
+func (s *shards) populateTimeSeries(batch []sampleOrExemplar, pendingData []prompb.TimeSeries) (int, int) {
+	var nPendingSamples, nPendingExemplars int
+	for nPending, d := range batch {
+		pendingData[nPending].Samples = pendingData[nPending].Samples[:0]
+		if s.qm.sendExemplars {
+			pendingData[nPending].Exemplars = pendingData[nPending].Exemplars[:0]
+		}
+		// Number of pending samples is limited by the fact that sendSamples (via sendSamplesWithBackoff)
+		// retries endlessly, so once we reach max samples, if we can never send to the endpoint we'll
+		// stop reading from the queue. This makes it safe to reference pendingSamples by index.
+		if d.isSample {
+			pendingData[nPending].Labels = labelsToLabelsProto(d.seriesLabels, pendingData[nPending].Labels)
+			pendingData[nPending].Samples = append(pendingData[nPending].Samples, prompb.Sample{
+				Value:     d.value,
+				Timestamp: d.timestamp,
+			})
+			nPendingSamples++
+		} else {
+			pendingData[nPending].Labels = labelsToLabelsProto(d.seriesLabels, pendingData[nPending].Labels)
+			pendingData[nPending].Exemplars = append(pendingData[nPending].Exemplars, prompb.Exemplar{
+				Labels:    labelsToLabelsProto(d.exemplarLabels, nil),
+				Value:     d.value,
+				Timestamp: d.timestamp,
+			})
+			nPendingExemplars++
+		}
+	}
+	return nPendingSamples, nPendingExemplars
 }
 
 func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, sampleCount, exemplarCount int, pBuf *proto.Buffer, buf *[]byte) {
@@ -1156,6 +1255,12 @@ func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, s
 	s.qm.dataOut.incr(int64(len(samples)))
 	s.qm.dataOutDuration.incr(int64(time.Since(begin)))
 	s.qm.lastSendTimestamp.Store(time.Now().Unix())
+	// Pending samples/exemplars also should be subtracted as an error means
+	// they will not be retried.
+	s.qm.metrics.pendingSamples.Sub(float64(sampleCount))
+	s.qm.metrics.pendingExemplars.Sub(float64(exemplarCount))
+	s.enqueuedSamples.Sub(int64(sampleCount))
+	s.enqueuedExemplars.Sub(int64(exemplarCount))
 }
 
 // sendSamples to the remote storage with backoff for recoverable errors.
@@ -1175,17 +1280,20 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 	// without causing a memory leak, and it has the nice effect of not propagating any
 	// parameters for sendSamplesWithBackoff/3.
 	attemptStore := func(try int) error {
-		span, ctx := opentracing.StartSpanFromContext(ctx, "Remote Send Batch")
-		defer span.Finish()
+		ctx, span := otel.Tracer("").Start(ctx, "Remote Send Batch")
+		defer span.End()
 
-		span.SetTag("samples", sampleCount)
+		span.SetAttributes(
+			attribute.Int("request_size", reqSize),
+			attribute.Int("samples", sampleCount),
+			attribute.Int("try", try),
+			attribute.String("remote_name", s.qm.storeClient.Name()),
+			attribute.String("remote_url", s.qm.storeClient.Endpoint()),
+		)
+
 		if exemplarCount > 0 {
-			span.SetTag("exemplars", exemplarCount)
+			span.SetAttributes(attribute.Int("exemplars", exemplarCount))
 		}
-		span.SetTag("request_size", reqSize)
-		span.SetTag("try", try)
-		span.SetTag("remote_name", s.qm.storeClient.Name())
-		span.SetTag("remote_url", s.qm.storeClient.Endpoint())
 
 		begin := time.Now()
 		s.qm.metrics.samplesTotal.Add(float64(sampleCount))
@@ -1194,8 +1302,7 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 		s.qm.metrics.sentBatchDuration.Observe(time.Since(begin).Seconds())
 
 		if err != nil {
-			span.LogKV("error", err)
-			ext.Error.Set(span, true)
+			span.RecordError(err)
 			return err
 		}
 
@@ -1208,12 +1315,16 @@ func (s *shards) sendSamplesWithBackoff(ctx context.Context, samples []prompb.Ti
 	}
 
 	err = sendWriteRequestWithBackoff(ctx, s.qm.cfg, s.qm.logger, attemptStore, onRetry)
-	if err != nil {
+	if errors.Is(err, context.Canceled) {
+		// When there is resharding, we cancel the context for this queue, which means the data is not sent.
+		// So we exit early to not update the metrics.
 		return err
 	}
+
 	s.qm.metrics.sentBytesTotal.Add(float64(reqSize))
 	s.qm.metrics.highestSentTimestamp.Set(float64(highest / 1000))
-	return nil
+
+	return err
 }
 
 func sendWriteRequestWithBackoff(ctx context.Context, cfg config.QueueConfig, l log.Logger, attempt func(int) error, onRetry func()) error {

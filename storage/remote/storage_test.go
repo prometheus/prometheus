@@ -14,9 +14,7 @@
 package remote
 
 import (
-	"io/ioutil"
 	"net/url"
-	"os"
 	"testing"
 
 	common_config "github.com/prometheus/common/config"
@@ -26,9 +24,7 @@ import (
 )
 
 func TestStorageLifecycle(t *testing.T) {
-	dir, err := ioutil.TempDir("", "TestStorageLifecycle")
-	require.NoError(t, err)
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
 
 	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil)
 	conf := &config.Config{
@@ -60,14 +56,12 @@ func TestStorageLifecycle(t *testing.T) {
 	// make sure remote write has a queue.
 	require.Equal(t, 1, len(s.queryables))
 
-	err = s.Close()
+	err := s.Close()
 	require.NoError(t, err)
 }
 
 func TestUpdateRemoteReadConfigs(t *testing.T) {
-	dir, err := ioutil.TempDir("", "TestUpdateRemoteReadConfigs")
-	require.NoError(t, err)
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
 
 	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil)
 
@@ -83,6 +77,6 @@ func TestUpdateRemoteReadConfigs(t *testing.T) {
 	require.NoError(t, s.ApplyConfig(conf))
 	require.Equal(t, 1, len(s.queryables))
 
-	err = s.Close()
+	err := s.Close()
 	require.NoError(t, err)
 }

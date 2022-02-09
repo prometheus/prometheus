@@ -36,13 +36,14 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	_ "github.com/prometheus/prometheus/tsdb/goversion" // Load the package into main to make sure minium Go version is met.
+	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/tsdb/wal"
 )
 
@@ -59,10 +60,6 @@ const (
 	tmpForCreationBlockDirSuffix = ".tmp-for-creation"
 	// Pre-2.21 tmp dir suffix, used in clean-up functions.
 	tmpLegacy = ".tmp"
-
-	lockfileDisabled       = -1
-	lockfileReplaced       = 0
-	lockfileCreatedCleanly = 1
 )
 
 // ErrNotReady is returned if the underlying storage is not ready yet.
@@ -82,6 +79,8 @@ func DefaultOptions() *Options {
 		WALCompression:            false,
 		StripeSize:                DefaultStripeSize,
 		HeadChunksWriteBufferSize: chunks.DefaultWriteBufferSize,
+		IsolationDisabled:         defaultIsolationDisabled,
+		HeadChunksWriteQueueSize:  chunks.DefaultWriteQueueSize,
 	}
 }
 
@@ -137,6 +136,9 @@ type Options struct {
 	// HeadChunksWriteBufferSize configures the write buffer size used by the head chunks mapper.
 	HeadChunksWriteBufferSize int
 
+	// HeadChunksWriteQueueSize configures the size of the chunk write queue used in the head chunks mapper.
+	HeadChunksWriteQueueSize int
+
 	// SeriesLifecycleCallback specifies a list of callbacks that will be called during a lifecycle of a series.
 	// It is always a no-op in Prometheus and mainly meant for external users who import TSDB.
 	SeriesLifecycleCallback SeriesLifecycleCallback
@@ -146,7 +148,7 @@ type Options struct {
 	// mainly meant for external users who import TSDB.
 	BlocksToDelete BlocksToDeleteFunc
 
-	// Enables the in memory exemplar storage,.
+	// Enables the in memory exemplar storage.
 	EnableExemplarStorage bool
 
 	// Enables the snapshot of in-memory chunks on shutdown. This makes restarts faster.
@@ -155,6 +157,9 @@ type Options struct {
 	// MaxExemplars sets the size, in # of exemplars stored, of the single circular buffer used to store exemplars in memory.
 	// See tsdb/exemplar.go, specifically the CircularExemplarStorage struct and it's constructor NewCircularExemplarStorage.
 	MaxExemplars int64
+
+	// Disables isolation between reads and in-flight appends.
+	IsolationDisabled bool
 }
 
 type BlocksToDeleteFunc func(blocks []*Block) map[ulid.ULID]struct{}
@@ -162,9 +167,8 @@ type BlocksToDeleteFunc func(blocks []*Block) map[ulid.ULID]struct{}
 // DB handles reads and writes of time series falling into
 // a hashed partition of a seriedb.
 type DB struct {
-	dir       string
-	lockf     fileutil.Releaser
-	lockfPath string
+	dir    string
+	locker *tsdbutil.DirLocker
 
 	logger         log.Logger
 	metrics        *dbMetrics
@@ -196,20 +200,19 @@ type DB struct {
 }
 
 type dbMetrics struct {
-	loadedBlocks           prometheus.GaugeFunc
-	symbolTableSize        prometheus.GaugeFunc
-	reloads                prometheus.Counter
-	reloadsFailed          prometheus.Counter
-	compactionsFailed      prometheus.Counter
-	compactionsTriggered   prometheus.Counter
-	compactionsSkipped     prometheus.Counter
-	sizeRetentionCount     prometheus.Counter
-	timeRetentionCount     prometheus.Counter
-	startTime              prometheus.GaugeFunc
-	tombCleanTimer         prometheus.Histogram
-	blocksBytes            prometheus.Gauge
-	maxBytes               prometheus.Gauge
-	lockfileCreatedCleanly prometheus.Gauge
+	loadedBlocks         prometheus.GaugeFunc
+	symbolTableSize      prometheus.GaugeFunc
+	reloads              prometheus.Counter
+	reloadsFailed        prometheus.Counter
+	compactionsFailed    prometheus.Counter
+	compactionsTriggered prometheus.Counter
+	compactionsSkipped   prometheus.Counter
+	sizeRetentionCount   prometheus.Counter
+	timeRetentionCount   prometheus.Counter
+	startTime            prometheus.GaugeFunc
+	tombCleanTimer       prometheus.Histogram
+	blocksBytes          prometheus.Gauge
+	maxBytes             prometheus.Gauge
 }
 
 func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
@@ -287,10 +290,6 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 		Name: "prometheus_tsdb_size_retentions_total",
 		Help: "The number of times that blocks were deleted because the maximum number of bytes was exceeded.",
 	})
-	m.lockfileCreatedCleanly = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "prometheus_tsdb_clean_start",
-		Help: "-1: lockfile is disabled. 0: a lockfile from a previous execution was replaced. 1: lockfile creation was clean",
-	})
 
 	if r != nil {
 		r.MustRegister(
@@ -307,7 +306,6 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 			m.tombCleanTimer,
 			m.blocksBytes,
 			m.maxBytes,
-			m.lockfileCreatedCleanly,
 		)
 	}
 	return m
@@ -588,6 +586,9 @@ func validateOpts(opts *Options, rngs []int64) (*Options, []int64) {
 	if opts.HeadChunksWriteBufferSize <= 0 {
 		opts.HeadChunksWriteBufferSize = chunks.DefaultWriteBufferSize
 	}
+	if opts.HeadChunksWriteQueueSize < 0 {
+		opts.HeadChunksWriteQueueSize = chunks.DefaultWriteQueueSize
+	}
 	if opts.MaxBlockChunkSegmentSize <= 0 {
 		opts.MaxBlockChunkSegmentSize = chunks.DefaultChunkSegmentSize
 	}
@@ -606,6 +607,9 @@ func validateOpts(opts *Options, rngs []int64) (*Options, []int64) {
 	return opts, rngs
 }
 
+// open returns a new DB in the given directory.
+// It initializes the lockfile, WAL, compactor, and Head (by replaying the WAL), and runs the database.
+// It is not safe to open more than one DB in the same directory.
 func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs []int64, stats *DBStats) (_ *DB, returnedErr error) {
 	if err := os.MkdirAll(dir, 0o777); err != nil {
 		return nil, err
@@ -669,29 +673,17 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 		db.blocksToDelete = DefaultBlocksToDelete(db)
 	}
 
-	lockfileCreationStatus := lockfileDisabled
+	var err error
+	db.locker, err = tsdbutil.NewDirLocker(dir, "tsdb", db.logger, r)
+	if err != nil {
+		return nil, err
+	}
 	if !opts.NoLockfile {
-		absdir, err := filepath.Abs(dir)
-		if err != nil {
+		if err := db.locker.Lock(); err != nil {
 			return nil, err
 		}
-		db.lockfPath = filepath.Join(absdir, "lock")
-
-		if _, err := os.Stat(db.lockfPath); err == nil {
-			level.Warn(db.logger).Log("msg", "A TSDB lockfile from a previous execution already existed. It was replaced", "file", db.lockfPath)
-			lockfileCreationStatus = lockfileReplaced
-		} else {
-			lockfileCreationStatus = lockfileCreatedCleanly
-		}
-
-		lockf, _, err := fileutil.Flock(db.lockfPath)
-		if err != nil {
-			return nil, errors.Wrap(err, "lock DB directory")
-		}
-		db.lockf = lockf
 	}
 
-	var err error
 	ctx, cancel := context.WithCancel(context.Background())
 	db.compactor, err = NewLeveledCompactorWithChunkSize(ctx, r, l, rngs, db.chunkPool, opts.MaxBlockChunkSegmentSize, nil)
 	if err != nil {
@@ -719,11 +711,16 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	headOpts.ChunkDirRoot = dir
 	headOpts.ChunkPool = db.chunkPool
 	headOpts.ChunkWriteBufferSize = opts.HeadChunksWriteBufferSize
+	headOpts.ChunkWriteQueueSize = opts.HeadChunksWriteQueueSize
 	headOpts.StripeSize = opts.StripeSize
 	headOpts.SeriesCallback = opts.SeriesLifecycleCallback
 	headOpts.EnableExemplarStorage = opts.EnableExemplarStorage
 	headOpts.MaxExemplars.Store(opts.MaxExemplars)
 	headOpts.EnableMemorySnapshotOnShutdown = opts.EnableMemorySnapshotOnShutdown
+	if opts.IsolationDisabled {
+		// We only override this flag if isolation is disabled at DB level. We use the default otherwise.
+		headOpts.IsolationDisabled = opts.IsolationDisabled
+	}
 	db.head, err = NewHead(r, l, wlog, headOpts, stats.Head)
 	if err != nil {
 		return nil, err
@@ -735,7 +732,6 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	if maxBytes < 0 {
 		maxBytes = 0
 	}
-	db.metrics.lockfileCreatedCleanly.Set(float64(lockfileCreationStatus))
 	db.metrics.maxBytes.Set(float64(maxBytes))
 
 	if err := db.reload(); err != nil {
@@ -858,7 +854,7 @@ type dbAppender struct {
 
 var _ storage.GetRef = dbAppender{}
 
-func (a dbAppender) GetRef(lset labels.Labels) (uint64, labels.Labels) {
+func (a dbAppender) GetRef(lset labels.Labels) (storage.SeriesRef, labels.Labels) {
 	if g, ok := a.Appender.(storage.GetRef); ok {
 		return g.GetRef(lset)
 	}
@@ -1448,11 +1444,7 @@ func (db *DB) Close() error {
 		g.Go(pb.Close)
 	}
 
-	errs := tsdb_errors.NewMulti(g.Wait())
-	if db.lockf != nil {
-		errs.Add(db.lockf.Release())
-		errs.Add(os.Remove(db.lockfPath))
-	}
+	errs := tsdb_errors.NewMulti(g.Wait(), db.locker.Release())
 	if db.head != nil {
 		errs.Add(db.head.Close())
 	}

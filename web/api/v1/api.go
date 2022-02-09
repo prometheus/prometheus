@@ -39,10 +39,10 @@ import (
 	"github.com/prometheus/common/route"
 
 	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/pkg/exemplar"
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/textparse"
-	"github.com/prometheus/prometheus/pkg/timestamp"
+	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/textparse"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/rules"
@@ -155,11 +155,18 @@ type TSDBAdminStats interface {
 	WALReplayStatus() (tsdb.WALReplayStatus, error)
 }
 
+// QueryEngine defines the interface for the *promql.Engine, so it can be replaced, wrapped or mocked.
+type QueryEngine interface {
+	SetQueryLogger(l promql.QueryLogger)
+	NewInstantQuery(q storage.Queryable, qs string, ts time.Time) (promql.Query, error)
+	NewRangeQuery(q storage.Queryable, qs string, start, end time.Time, interval time.Duration) (promql.Query, error)
+}
+
 // API can register a set of endpoints in a router and handle
 // them using the provided storage and query engine.
 type API struct {
 	Queryable         storage.SampleAndChunkQueryable
-	QueryEngine       *promql.Engine
+	QueryEngine       QueryEngine
 	ExemplarQueryable storage.ExemplarQueryable
 
 	targetRetriever       func(context.Context) TargetRetriever
@@ -192,7 +199,7 @@ func init() {
 
 // NewAPI returns an initialized API type.
 func NewAPI(
-	qe *promql.Engine,
+	qe QueryEngine,
 	q storage.SampleAndChunkQueryable,
 	ap storage.Appendable,
 	eq storage.ExemplarQueryable,
@@ -371,11 +378,6 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 	}
 
 	qry, err := api.QueryEngine.NewInstantQuery(api.Queryable, r.FormValue("query"), ts)
-	if err == promql.ErrValidationAtModifierDisabled {
-		err = errors.New("@ modifier is disabled, use --enable-feature=promql-at-modifier to enable it")
-	} else if err == promql.ErrValidationNegativeOffsetDisabled {
-		err = errors.New("negative offset is disabled, use --enable-feature=promql-negative-offset to enable it")
-	}
 	if err != nil {
 		return invalidParamError(err, "query")
 	}
@@ -451,11 +453,6 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 	}
 
 	qry, err := api.QueryEngine.NewRangeQuery(api.Queryable, r.FormValue("query"), start, end, step)
-	if err == promql.ErrValidationAtModifierDisabled {
-		err = errors.New("@ modifier is disabled, use --enable-feature=promql-at-modifier to enable it")
-	} else if err == promql.ErrValidationNegativeOffsetDisabled {
-		err = errors.New("negative offset is disabled, use --enable-feature=promql-negative-offset to enable it")
-	}
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
@@ -1155,15 +1152,16 @@ type RuleGroup struct {
 	// In order to preserve rule ordering, while exposing type (alerting or recording)
 	// specific properties, both alerting and recording rules are exposed in the
 	// same array.
-	Rules          []rule    `json:"rules"`
+	Rules          []Rule    `json:"rules"`
 	Interval       float64   `json:"interval"`
+	Limit          int       `json:"limit"`
 	EvaluationTime float64   `json:"evaluationTime"`
 	LastEvaluation time.Time `json:"lastEvaluation"`
 }
 
-type rule interface{}
+type Rule interface{}
 
-type alertingRule struct {
+type AlertingRule struct {
 	// State can be "pending", "firing", "inactive".
 	State          string           `json:"state"`
 	Name           string           `json:"name"`
@@ -1180,7 +1178,7 @@ type alertingRule struct {
 	Type string `json:"type"`
 }
 
-type recordingRule struct {
+type RecordingRule struct {
 	Name           string           `json:"name"`
 	Query          string           `json:"query"`
 	Labels         labels.Labels    `json:"labels,omitempty"`
@@ -1209,12 +1207,13 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 			Name:           grp.Name(),
 			File:           grp.File(),
 			Interval:       grp.Interval().Seconds(),
-			Rules:          []rule{},
+			Limit:          grp.Limit(),
+			Rules:          []Rule{},
 			EvaluationTime: grp.GetEvaluationTime().Seconds(),
 			LastEvaluation: grp.GetLastEvaluation(),
 		}
 		for _, r := range grp.Rules() {
-			var enrichedRule rule
+			var enrichedRule Rule
 
 			lastError := ""
 			if r.LastError() != nil {
@@ -1225,7 +1224,7 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 				if !returnAlerts {
 					break
 				}
-				enrichedRule = alertingRule{
+				enrichedRule = AlertingRule{
 					State:          rule.State().String(),
 					Name:           rule.Name(),
 					Query:          rule.Query().String(),
@@ -1243,7 +1242,7 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 				if !returnRecording {
 					break
 				}
-				enrichedRule = recordingRule{
+				enrichedRule = RecordingRule{
 					Name:           rule.Name(),
 					Query:          rule.Query().String(),
 					Labels:         rule.Labels(),

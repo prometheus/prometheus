@@ -33,8 +33,8 @@ import (
 	yaml "gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/discovery"
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/relabel"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/relabel"
 )
 
 var (
@@ -83,6 +83,9 @@ func Load(s string, expandExternalLabels bool, logger log.Logger) (*Config, erro
 
 	for i, v := range cfg.GlobalConfig.ExternalLabels {
 		newV := os.Expand(v.Value, func(s string) string {
+			if s == "$" {
+				return "$"
+			}
 			if v := os.Getenv(s); v != "" {
 				return v
 			}
@@ -188,7 +191,7 @@ var (
 
 		// Backoff times for retrying a batch of samples on recoverable errors.
 		MinBackoff: model.Duration(30 * time.Millisecond),
-		MaxBackoff: model.Duration(100 * time.Millisecond),
+		MaxBackoff: model.Duration(5 * time.Second),
 	}
 
 	// DefaultMetadataConfig is the default metadata configuration for a remote write endpoint.
@@ -221,6 +224,7 @@ type Config struct {
 	RuleFiles      []string        `yaml:"rule_files,omitempty"`
 	ScrapeConfigs  []*ScrapeConfig `yaml:"scrape_configs,omitempty"`
 	StorageConfig  StorageConfig   `yaml:"storage,omitempty"`
+	TracingConfig  TracingConfig   `yaml:"tracing,omitempty"`
 
 	RemoteWriteConfigs []*RemoteWriteConfig `yaml:"remote_write,omitempty"`
 	RemoteReadConfigs  []*RemoteReadConfig  `yaml:"remote_read,omitempty"`
@@ -230,6 +234,7 @@ type Config struct {
 func (c *Config) SetDirectory(dir string) {
 	c.GlobalConfig.SetDirectory(dir)
 	c.AlertingConfig.SetDirectory(dir)
+	c.TracingConfig.SetDirectory(dir)
 	for i, file := range c.RuleFiles {
 		c.RuleFiles[i] = config.JoinDir(dir, file)
 	}
@@ -497,6 +502,62 @@ func (c *ScrapeConfig) MarshalYAML() (interface{}, error) {
 // StorageConfig configures runtime reloadable configuration options.
 type StorageConfig struct {
 	ExemplarsConfig *ExemplarsConfig `yaml:"exemplars,omitempty"`
+}
+
+type TracingClientType string
+
+const (
+	TracingClientHTTP TracingClientType = "http"
+	TracingClientGRPC TracingClientType = "grpc"
+)
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (t *TracingClientType) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*t = TracingClientType("")
+	type plain TracingClientType
+	if err := unmarshal((*plain)(t)); err != nil {
+		return err
+	}
+
+	if *t != TracingClientHTTP && *t != TracingClientGRPC {
+		return fmt.Errorf("expected tracing client type to be to be %s or %s, but got %s",
+			TracingClientHTTP, TracingClientGRPC, *t,
+		)
+	}
+
+	return nil
+}
+
+// TracingConfig configures the tracing options.
+type TracingConfig struct {
+	ClientType       TracingClientType `yaml:"client_type,omitempty"`
+	Endpoint         string            `yaml:"endpoint,omitempty"`
+	SamplingFraction float64           `yaml:"sampling_fraction,omitempty"`
+	Insecure         bool              `yaml:"insecure,omitempty"`
+	TLSConfig        config.TLSConfig  `yaml:"tls_config,omitempty"`
+}
+
+// SetDirectory joins any relative file paths with dir.
+func (t *TracingConfig) SetDirectory(dir string) {
+	t.TLSConfig.SetDirectory(dir)
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (t *TracingConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*t = TracingConfig{
+		ClientType: TracingClientGRPC,
+		Insecure:   true,
+	}
+	type plain TracingConfig
+	if err := unmarshal((*plain)(t)); err != nil {
+		return err
+	}
+
+	if t.Endpoint == "" {
+		return errors.New("tracing endpoint must be set")
+	}
+
+	return nil
 }
 
 // ExemplarsConfig configures runtime reloadable configuration options.
