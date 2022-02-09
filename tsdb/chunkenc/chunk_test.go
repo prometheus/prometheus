@@ -16,7 +16,6 @@ package chunkenc
 import (
 	"fmt"
 	"io"
-	"math/rand"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -29,7 +28,9 @@ type pair struct {
 
 func TestChunk(t *testing.T) {
 	for enc, nc := range map[Encoding]func() Chunk{
-		EncXOR: func() Chunk { return NewXORChunk() },
+		//EncXOR:         func() Chunk { return NewXORChunk() },
+		//EncDoubleDelta: func() Chunk { return NewDoubleDeltaChunk() },
+		EncRunLength: func() Chunk { return NewRunLength() },
 	} {
 		t.Run(fmt.Sprintf("%v", enc), func(t *testing.T) {
 			for range make([]struct{}, 1) {
@@ -46,16 +47,26 @@ func testChunk(t *testing.T, c Chunk) {
 
 	var exp []pair
 	var (
-		ts = int64(1234123324)
-		v  = 1243535.123
+		ts = int64(0)
+		v  = float64(0)
+		//ts = int64(1234123324)
+		////v  = 1243535.123
+		//v = float64(1243535)
 	)
 	for i := 0; i < 300; i++ {
-		ts += int64(rand.Intn(10000) + 1)
-		if i%2 == 0 {
-			v += float64(rand.Intn(1000000))
-		} else {
-			v -= float64(rand.Intn(1000000))
-		}
+		//ts += int64(rand.Intn(10000) + 1)
+		ts += 1
+
+		// Use for XOR chunks
+		//if i%2 == 0 {
+		//	v += float64(rand.Intn(1000000))
+		//} else {
+		//	v -= float64(rand.Intn(1000000))
+		//}
+
+		//v += 1.0 // Use for double delta chunks
+		//v = float64(i / 10) // Use for Run-Length-Encoding, it only increases every 10 iterations
+		v = 123.456
 
 		// Start with a new appender every 10th sample. This emulates starting
 		// appending to a partially filled chunk.
@@ -172,6 +183,18 @@ func BenchmarkXORAppender(b *testing.B) {
 	})
 }
 
+func BenchmarkDoubleDeltaAppender(b *testing.B) {
+	benchmarkAppender(b, func() Chunk {
+		return NewDoubleDeltaChunk()
+	})
+}
+
+func BenchmarkRunLengthAppender(b *testing.B) {
+	benchmarkAppender(b, func() Chunk {
+		return NewRunLength()
+	})
+}
+
 func benchmarkAppender(b *testing.B, newChunk func() Chunk) {
 	var (
 		t = int64(1234123324)
@@ -182,7 +205,8 @@ func benchmarkAppender(b *testing.B, newChunk func() Chunk) {
 		// t += int64(rand.Intn(10000) + 1)
 		t += int64(1000)
 		// v = rand.Float64()
-		v += float64(100)
+		//v += float64(100)
+		v = float64(i / 10) // Use for Run-Length-Encoding, it only increases every 10 iterations
 		exp = append(exp, pair{t: t, v: v})
 	}
 
@@ -209,5 +233,11 @@ func benchmarkAppender(b *testing.B, newChunk func() Chunk) {
 		chunks = append(chunks, c)
 	}
 
-	fmt.Println("num", b.N, "created chunks", len(chunks))
+	b.StopTimer()
+
+	var disk int
+	for _, c := range chunks {
+		disk += len(c.Bytes())
+	}
+	b.ReportMetric(float64(disk)/float64(b.N), "disk/op")
 }

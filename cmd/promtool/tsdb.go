@@ -32,6 +32,7 @@ import (
 	"time"
 
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/index"
 
 	"github.com/alecthomas/units"
@@ -655,11 +656,16 @@ func analyzeBlockChunks(path, blockID string, limit int) error {
 	i := 0
 
 	type ChunkStat struct {
-		Metric     string
+		//Metric     string
+		Chunks     int
 		Samples    int
 		Unique     int
 		Uniqueness float64
-		Bytes      int
+		Integers   bool
+
+		Encoding chunkenc.Encoding
+		OldBytes int
+		NewBytes int
 	}
 
 	var stats []ChunkStat
@@ -673,67 +679,145 @@ func analyzeBlockChunks(path, blockID string, limit int) error {
 			return fmt.Errorf("failed to get chunks for series: %w", err)
 		}
 
+		var (
+			samples     int
+			xorBytesLen int
+			ddBytesLen  int
+			rleBytesLen int
+		)
 		dedup := map[float64]struct{}{}
-		var s []float64
-		bytesLen := 0
+		integers := true
+
+		var it chunkenc.Iterator
+
+		rle := chunkenc.NewRunLength()
+		rleApp, err := rle.Appender()
+		if err != nil {
+			return err
+		}
 
 		for _, c := range chks {
 			chunk, err := cr.Chunk(c.Ref)
 			if err != nil {
 				return fmt.Errorf("failed to open chunk: %w", err)
 			}
-			bytesLen += len(chunk.Bytes())
-
-			it := chunk.Iterator(nil)
-			for it.Next() {
-				_, v := it.At()
-				dedup[v] = struct{}{}
-				s = append(s, v)
+			if chunk.NumSamples() < 10 {
+				// skip chunks with too few samples
+				continue
 			}
+
+			dd := chunkenc.NewDoubleDeltaChunk()
+			ddApp, err := dd.Appender()
+			if err != nil {
+				return err
+			}
+			it = chunk.Iterator(it)
+			for it.Next() {
+				t, v := it.At()
+				dedup[v] = struct{}{}
+				if integers && v != math.Trunc(v) {
+					integers = false
+				}
+				if integers { // Append to DoubleDelta chunk as long as we only see integer values
+					ddApp.Append(t, v)
+					rleApp.Append(t, v)
+				}
+			}
+
+			samples += chunk.NumSamples()
+			xorBytesLen += len(chunk.Bytes())
+			ddBytesLen += len(dd.Bytes())
 		}
 
-		if len(s) < 10 {
-			// Ignore series with less than 10 samples - not worth redoing whatsoever.
-			continue
-		}
+		rleBytesLen = len(rle.Bytes())
 
-		stats = append(stats, ChunkStat{
-			Metric:     lset.String(),
-			Samples:    len(s),
+		stat := ChunkStat{
+			//Metric:     lset.String(),
+			Chunks:     len(chks),
+			Samples:    samples,
 			Unique:     len(dedup),
-			Uniqueness: float64(len(dedup)) / float64(len(s)),
-			Bytes:      bytesLen,
-		})
+			Uniqueness: float64(len(dedup)) / float64(samples),
+			Integers:   integers,
+			OldBytes:   xorBytesLen,
+		}
 
+		if integers && ddBytesLen < xorBytesLen && ddBytesLen < rleBytesLen {
+			stat.Encoding = chunkenc.EncDoubleDelta
+			stat.NewBytes = ddBytesLen
+		} else if integers && rleBytesLen < xorBytesLen && rleBytesLen < ddBytesLen {
+			stat.Encoding = chunkenc.EncRunLength
+			stat.NewBytes = rleBytesLen
+		} else { // if xorBytesLen < ddBytesLen && xorBytesLen < rleBytesLen
+			// stick with XOR encoding
+			stat.Encoding = chunkenc.EncXOR
+			stat.NewBytes = xorBytesLen
+		}
+
+		stats = append(stats, stat)
 		i++
 	}
-
-	rleChunks := 0
-	for _, s := range stats {
-		if s.Uniqueness < 0.0025 {
-			rleChunks += 1
-		}
-	}
-
-	deltaChunks := 0
-	for _, s := range stats {
-		if s.Uniqueness > 0.99 { // TODO: Something's wrong with this still
-			deltaChunks += 1
-		}
-	}
-
-	total := len(stats)
-	unchanged := total - rleChunks - deltaChunks
-	//fmt.Println("total chunks", total)
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', tabwriter.Debug)
-	_, _ = fmt.Fprintf(w, "XOR\t%.3f%%\t%d\n", 100*float64(unchanged)/float64(total), unchanged)
-	_, _ = fmt.Fprintf(w, "RLE\t%.3f%%\t%d\n", 100*float64(rleChunks)/float64(total), rleChunks)
-	_, _ = fmt.Fprintf(w, "delta\t%.3f%%\t%d\n", 100*float64(deltaChunks)/float64(total), deltaChunks)
-	_ = w.Flush()
-
 	if postingsr.Err() != nil {
 		return fmt.Errorf("encountered error iterating through postings: %w", err)
 	}
+
+	var (
+		totalChunks   uint64
+		totalOldBytes uint64
+		totalNewBytes uint64
+
+		XORChunks         int
+		XORChunksOldBytes uint64
+		XORChunksNewBytes uint64
+
+		DoubleDeltaChunks         int
+		DoubleDeltaChunksOldBytes uint64
+		DoubleDeltaChunksNewBytes uint64
+
+		RunLengthChunks         int
+		RunLengthChunksOldBytes uint64
+		RunLengthChunksNewBytes uint64
+		HighestUniqueness       float64 = 0
+		LowestUniqueness        float64 = 1
+	)
+
+	for _, s := range stats {
+		switch s.Encoding {
+		case chunkenc.EncXOR:
+			XORChunks += s.Chunks
+			XORChunksOldBytes += uint64(s.OldBytes)
+			XORChunksNewBytes += uint64(s.NewBytes)
+		case chunkenc.EncDoubleDelta:
+			DoubleDeltaChunks += s.Chunks
+			DoubleDeltaChunksOldBytes += uint64(s.OldBytes)
+			DoubleDeltaChunksNewBytes += uint64(s.NewBytes)
+		case chunkenc.EncRunLength:
+			RunLengthChunks += s.Chunks
+			RunLengthChunksOldBytes += uint64(s.OldBytes)
+			RunLengthChunksNewBytes += uint64(s.NewBytes)
+
+			if HighestUniqueness < s.Uniqueness {
+				HighestUniqueness = s.Uniqueness
+			}
+			if LowestUniqueness > s.Uniqueness {
+				LowestUniqueness = s.Uniqueness
+			}
+		}
+
+		totalChunks += uint64(s.Chunks)
+		totalOldBytes += uint64(s.OldBytes)
+		totalNewBytes += uint64(s.NewBytes)
+	}
+
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', tabwriter.Debug)
+	_, _ = fmt.Fprintf(w, "Encoding\tChunks\t\tOldBytes\tNewBytes\tSavings\n")
+	_, _ = fmt.Fprintf(w, "ALL\t%d\t\t%d\t%d\t%2.f%%\n", totalChunks, totalOldBytes, totalNewBytes, 100*float64(totalNewBytes)/float64(totalOldBytes))
+	_, _ = fmt.Fprintf(w, "XOR\t%d\t%.f%%\t%d\t%d\t%2.f%%\n", XORChunks, 100*float64(XORChunks)/float64(totalChunks), XORChunksOldBytes, XORChunksNewBytes, 100*float64(XORChunksNewBytes)/float64(XORChunksOldBytes))
+	_, _ = fmt.Fprintf(w, "Delta\t%d\t%.f%%\t%d\t%d\t%2.f%%\n", DoubleDeltaChunks, 100*float64(DoubleDeltaChunks)/float64(totalChunks), DoubleDeltaChunksOldBytes, DoubleDeltaChunksNewBytes, 100*float64(DoubleDeltaChunksNewBytes)/float64(DoubleDeltaChunksOldBytes))
+	_, _ = fmt.Fprintf(w, "RLE\t%d\t%.f%%\t%d\t%d\t%2.f%%\n", RunLengthChunks, 100*float64(RunLengthChunks)/float64(totalChunks), RunLengthChunksOldBytes, RunLengthChunksNewBytes, 100*float64(RunLengthChunksNewBytes)/float64(RunLengthChunksOldBytes))
+	_ = w.Flush()
+
+	//fmt.Println("RunLengthEncoding highest uniqueness", HighestUniqueness)
+	//fmt.Println("RunLengthEncoding lowest uniqueness", LowestUniqueness)
 
 	return nil
 }
