@@ -1283,7 +1283,7 @@ func TestUpdateMissedEvalMetrics(t *testing.T) {
 		}
 
 		activeAlert := &Alert{
-			State: StateFiring,
+			State:    StateFiring,
 			ActiveAt: time.Now(),
 		}
 
@@ -1293,7 +1293,7 @@ func TestUpdateMissedEvalMetrics(t *testing.T) {
 		rule := &AlertingRule{
 			name:           "HTTPRequestRateLow",
 			vector:         expr,
-			holdDuration:   5*time.Minute,
+			holdDuration:   5 * time.Minute,
 			labels:         labels.FromStrings("severity", "critical"),
 			annotations:    nil,
 			externalLabels: nil,
