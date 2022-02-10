@@ -13,9 +13,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 )
 
-var (
-	errAsyncBlockWriterNotRunning = errors.New("asyncBlockWriter doesn't run anymore")
-)
+var errAsyncBlockWriterNotRunning = errors.New("asyncBlockWriter doesn't run anymore")
 
 // asyncBlockWriter runs a background goroutine that writes series and chunks to the block asynchronously.
 type asyncBlockWriter struct {
