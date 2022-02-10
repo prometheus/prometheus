@@ -324,9 +324,9 @@ func TestHead_HighConcurrencyReadAndWrite(t *testing.T) {
 	workerReadyWg.Add(writeConcurrency + readConcurrency)
 
 	// Start the write workers.
-	for wid := 0; wid < writeConcurrency; wid++ {
+	for workerID := 0; workerID < writeConcurrency; workerID++ {
 		// Create copy of workerID to be used by worker routine.
-		workerID := wid
+		workerID := workerID
 
 		g.Go(func() error {
 			// The label sets which this worker will write.
@@ -368,9 +368,9 @@ func TestHead_HighConcurrencyReadAndWrite(t *testing.T) {
 	readerTsCh := make(chan uint64)
 
 	// Start the read workers.
-	for wid := 0; wid < readConcurrency; wid++ {
+	for workerID := 0; workerID < readConcurrency; workerID++ {
 		// Create copy of threadID to be used by worker routine.
-		workerID := wid
+		workerID := workerID
 
 		g.Go(func() error {
 			querySeriesRef := (seriesCnt / readConcurrency) * workerID
@@ -392,7 +392,7 @@ func TestHead_HighConcurrencyReadAndWrite(t *testing.T) {
 				}
 
 				if len(samples) != 1 {
-					return false, fmt.Errorf("expected 1 series, got %d", len(samples))
+					return false, fmt.Errorf("expected 1 sample, got %d", len(samples))
 				}
 
 				series := lbls.String()
@@ -1655,7 +1655,7 @@ func TestHeadReadWriterRepair(t *testing.T) {
 			_, ok, chunkCreated = s.append(int64(i*chunkRange)+chunkRange-1, float64(i*chunkRange), 0, h.chunkDiskMapper)
 			require.True(t, ok, "series append failed")
 			require.False(t, chunkCreated, "chunk was created")
-			h.chunkDiskMapper.CutNewFile()
+			require.NoError(t, h.chunkDiskMapper.CutNewFile())
 		}
 		require.NoError(t, h.Close())
 

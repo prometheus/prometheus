@@ -57,6 +57,20 @@ var (
 	defaultIsolationDisabled = false
 )
 
+// chunkDiskMapper is a temporary interface while we transition from
+// 0 size queue to queue based chunk disk mapper.
+type chunkDiskMapper interface {
+	CutNewFile() (returnErr error)
+	IterateAllChunks(f func(seriesRef chunks.HeadSeriesRef, chunkRef chunks.ChunkDiskMapperRef, mint, maxt int64, numSamples uint16) error) (err error)
+	Truncate(mint int64) error
+	DeleteCorrupted(originalErr error) error
+	Size() (int64, error)
+	Close() error
+	Chunk(ref chunks.ChunkDiskMapperRef) (chunkenc.Chunk, error)
+	WriteChunk(seriesRef chunks.HeadSeriesRef, mint, maxt int64, chk chunkenc.Chunk, callback func(err error)) (chkRef chunks.ChunkDiskMapperRef)
+	IsQueueEmpty() bool
+}
+
 // Head handles reads and writes of time series data within a time window.
 type Head struct {
 	chunkRange               atomic.Int64
@@ -97,7 +111,7 @@ type Head struct {
 	lastPostingsStatsCall time.Duration        // Last posting stats call (PostingsCardinalityStats()) time for caching.
 
 	// chunkDiskMapper is used to write and read Head chunks to/from disk.
-	chunkDiskMapper *chunks.ChunkDiskMapper
+	chunkDiskMapper chunkDiskMapper
 
 	chunkSnapshotMtx sync.Mutex
 
@@ -215,13 +229,21 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal *wal.WAL, opts *HeadOpti
 		opts.ChunkPool = chunkenc.NewPool()
 	}
 
-	h.chunkDiskMapper, err = chunks.NewChunkDiskMapper(
-		r,
-		mmappedChunksDir(opts.ChunkDirRoot),
-		opts.ChunkPool,
-		opts.ChunkWriteBufferSize,
-		opts.ChunkWriteQueueSize,
-	)
+	if opts.ChunkWriteQueueSize > 0 {
+		h.chunkDiskMapper, err = chunks.NewChunkDiskMapper(
+			r,
+			mmappedChunksDir(opts.ChunkDirRoot),
+			opts.ChunkPool,
+			opts.ChunkWriteBufferSize,
+			opts.ChunkWriteQueueSize,
+		)
+	} else {
+		h.chunkDiskMapper, err = chunks.NewOldChunkDiskMapper(
+			mmappedChunksDir(opts.ChunkDirRoot),
+			opts.ChunkPool,
+			opts.ChunkWriteBufferSize,
+		)
+	}
 	if err != nil {
 		return nil, err
 	}
