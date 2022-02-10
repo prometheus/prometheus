@@ -1282,13 +1282,28 @@ func TestUpdateMissedEvalMetrics(t *testing.T) {
 			ForGracePeriod:  10 * time.Minute,
 		}
 
-		rule := NewAlertingRule(
-			"HTTPRequestRateLow",
-			expr,
-			25*time.Minute,
-			labels.FromStrings("severity", "critical"),
-			nil, nil, "", true, nil,
-		)
+		activeAlert := &Alert{
+			State: StateFiring,
+			ActiveAt: time.Now(),
+		}
+
+		m := map[uint64]*Alert{}
+		m[1] = activeAlert
+
+		rule := &AlertingRule{
+			name:           "HTTPRequestRateLow",
+			vector:         expr,
+			holdDuration:   5*time.Minute,
+			labels:         labels.FromStrings("severity", "critical"),
+			annotations:    nil,
+			externalLabels: nil,
+			externalURL:    "",
+			health:         HealthUnknown,
+			active:         m,
+			logger:         nil,
+			restored:       true,
+		}
+
 		group := NewGroup(GroupOptions{
 			Name:                       "default",
 			Interval:                   time.Second,
