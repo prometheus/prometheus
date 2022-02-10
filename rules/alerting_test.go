@@ -15,10 +15,11 @@ package rules
 
 import (
 	"context"
-	"github.com/pkg/errors"
 	"html/template"
 	"testing"
 	"time"
+
+	"github.com/pkg/errors"
 
 	"github.com/go-kit/log"
 	"github.com/stretchr/testify/require"

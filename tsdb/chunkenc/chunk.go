@@ -108,6 +108,7 @@ func (it *mockSeriesIterator) Seek(int64) bool { return false }
 func (it *mockSeriesIterator) At() (int64, float64) {
 	return it.timeStamps[it.currIndex], it.values[it.currIndex]
 }
+
 func (it *mockSeriesIterator) Next() bool {
 	if it.currIndex < len(it.timeStamps)-1 {
 		it.currIndex++

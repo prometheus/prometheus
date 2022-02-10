@@ -265,20 +265,20 @@ type Group struct {
 
 	metrics *Metrics
 
-	syncForStateOverrideFunc SyncForStateOverrideFuncType
+	alertsActiveAtOverrideFunc AlertsActiveAtOverrideFuncType
 }
 
-type SyncForStateOverrideFuncType func(g *Group, ts time.Time)
+type AlertsActiveAtOverrideFuncType func(g *Group, a *Alert, ts time.Time) (bool, time.Time)
 
 type GroupOptions struct {
-	Name, File               string
-	Interval                 time.Duration
-	Limit                    int
-	Rules                    []Rule
-	ShouldRestore            bool
-	Opts                     *ManagerOptions
-	done                     chan struct{}
-	SyncForStateOverrideFunc SyncForStateOverrideFuncType
+	Name, File                 string
+	Interval                   time.Duration
+	Limit                      int
+	Rules                      []Rule
+	ShouldRestore              bool
+	Opts                       *ManagerOptions
+	done                       chan struct{}
+	AlertsActiveAtOverrideFunc AlertsActiveAtOverrideFuncType
 }
 
 // NewGroup makes a new Group with the given name, options, and rules.
@@ -300,20 +300,20 @@ func NewGroup(o GroupOptions) *Group {
 	metrics.GroupInterval.WithLabelValues(key).Set(o.Interval.Seconds())
 
 	return &Group{
-		name:                     o.Name,
-		file:                     o.File,
-		interval:                 o.Interval,
-		limit:                    o.Limit,
-		rules:                    o.Rules,
-		shouldRestore:            o.ShouldRestore,
-		opts:                     o.Opts,
-		seriesInPreviousEval:     make([]map[string]labels.Labels, len(o.Rules)),
-		done:                     make(chan struct{}),
-		managerDone:              o.done,
-		terminated:               make(chan struct{}),
-		logger:                   log.With(o.Opts.Logger, "group", o.Name),
-		metrics:                  metrics,
-		syncForStateOverrideFunc: o.SyncForStateOverrideFunc,
+		name:                       o.Name,
+		file:                       o.File,
+		interval:                   o.Interval,
+		limit:                      o.Limit,
+		rules:                      o.Rules,
+		shouldRestore:              o.ShouldRestore,
+		opts:                       o.Opts,
+		seriesInPreviousEval:       make([]map[string]labels.Labels, len(o.Rules)),
+		done:                       make(chan struct{}),
+		managerDone:                o.done,
+		terminated:                 make(chan struct{}),
+		logger:                     log.With(o.Opts.Logger, "group", o.Name),
+		metrics:                    metrics,
+		alertsActiveAtOverrideFunc: o.AlertsActiveAtOverrideFunc,
 	}
 }
 
@@ -433,12 +433,27 @@ func (g *Group) run(ctx context.Context) {
 				}
 				evalTimestamp = evalTimestamp.Add((missed + 1) * g.interval)
 
-				if g.syncForStateOverrideFunc != nil {
-					g.syncForStateOverrideFunc(g, time.Now())
-				}
+				useAlertsActiveAtOverrideFunc(g)
 
 				iter()
 			}
+		}
+	}
+}
+
+func useAlertsActiveAtOverrideFunc(g *Group) {
+	if g.alertsActiveAtOverrideFunc != nil {
+		for _, rule := range g.Rules() {
+			alertRule, ok := rule.(*AlertingRule)
+			if !ok {
+				continue
+			}
+			alertRule.ForEachActiveAlert(func(a *Alert) {
+				shouldOveride, activeAt := g.alertsActiveAtOverrideFunc(g, a, time.Now())
+				if shouldOveride {
+					a.ActiveAt = activeAt
+				}
+			})
 		}
 	}
 }
@@ -949,11 +964,11 @@ func (m *Manager) Stop() {
 
 // Update the rule manager's state as the config requires. If
 // loading the new rules failed the old rule set is restored.
-func (m *Manager) Update(interval time.Duration, files []string, externalLabels labels.Labels, externalURL string, syncForStateOverrideFunc SyncForStateOverrideFuncType) error {
+func (m *Manager) Update(interval time.Duration, files []string, externalLabels labels.Labels, externalURL string, alertsActiveAtOverrideFunc AlertsActiveAtOverrideFuncType) error {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
-	groups, errs := m.LoadGroups(interval, externalLabels, externalURL, syncForStateOverrideFunc, files...)
+	groups, errs := m.LoadGroups(interval, externalLabels, externalURL, alertsActiveAtOverrideFunc, files...)
 
 	if errs != nil {
 		for _, e := range errs {
@@ -1038,7 +1053,7 @@ func (FileLoader) Parse(query string) (parser.Expr, error) { return parser.Parse
 
 // LoadGroups reads groups from a list of files.
 func (m *Manager) LoadGroups(
-	interval time.Duration, externalLabels labels.Labels, externalURL string, syncForStateOverrideFunc SyncForStateOverrideFuncType, filenames ...string,
+	interval time.Duration, externalLabels labels.Labels, externalURL string, alertsActiveAtOverrideFunc AlertsActiveAtOverrideFuncType, filenames ...string,
 ) (map[string]*Group, []error) {
 	groups := make(map[string]*Group)
 
@@ -1085,15 +1100,15 @@ func (m *Manager) LoadGroups(
 			}
 
 			groups[GroupKey(fn, rg.Name)] = NewGroup(GroupOptions{
-				Name:                     rg.Name,
-				File:                     fn,
-				Interval:                 itv,
-				Limit:                    rg.Limit,
-				Rules:                    rules,
-				ShouldRestore:            shouldRestore,
-				Opts:                     m.opts,
-				done:                     m.done,
-				SyncForStateOverrideFunc: syncForStateOverrideFunc,
+				Name:                       rg.Name,
+				File:                       fn,
+				Interval:                   itv,
+				Limit:                      rg.Limit,
+				Rules:                      rules,
+				ShouldRestore:              shouldRestore,
+				Opts:                       m.opts,
+				done:                       m.done,
+				AlertsActiveAtOverrideFunc: alertsActiveAtOverrideFunc,
 			})
 		}
 	}

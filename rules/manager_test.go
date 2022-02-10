@@ -1229,3 +1229,85 @@ func TestRuleHealthUpdates(t *testing.T) {
 	require.EqualError(t, rules.LastError(), storage.ErrOutOfOrderSample.Error())
 	require.Equal(t, HealthBad, rules.Health())
 }
+
+func TestUpdateMissedEvalMetrics(t *testing.T) {
+	suite, err := promql.NewTest(t, `
+		load 5m
+		http_requests{instance="0"}	75  85 50 0 0 25 0 0 40 0 120
+	`)
+
+	require.NoError(t, err)
+	defer suite.Close()
+
+	err = suite.Run()
+	require.NoError(t, err)
+
+	expr, err := parser.ParseExpr(`http_requests{group="canary", job="app-server"} < 100`)
+	require.NoError(t, err)
+
+	testValue := 1
+
+	overrideFunc := func(g *Group, a *Alert, ts time.Time) (bool, time.Time) {
+		testValue = 2
+		return false, time.Now()
+	}
+
+	type testInput struct {
+		overrideFunc  func(g *Group, a *Alert, ts time.Time) (bool, time.Time)
+		expectedValue int
+	}
+
+	tests := []testInput{
+		// testValue should still have value of 1 since overrideFunc is nil
+		{
+			overrideFunc:  nil,
+			expectedValue: 1,
+		},
+		// testValue should be incremented to 2 since overrideFunc is called
+		{
+			overrideFunc:  overrideFunc,
+			expectedValue: 2,
+		},
+	}
+
+	testFunc := func(tst testInput) {
+		opts := &ManagerOptions{
+			QueryFunc:       EngineQueryFunc(suite.QueryEngine(), suite.Storage()),
+			Appendable:      suite.Storage(),
+			Queryable:       suite.Storage(),
+			Context:         context.Background(),
+			Logger:          log.NewNopLogger(),
+			NotifyFunc:      func(ctx context.Context, expr string, alerts ...*Alert) {},
+			OutageTolerance: 30 * time.Minute,
+			ForGracePeriod:  10 * time.Minute,
+		}
+
+		rule := NewAlertingRule(
+			"HTTPRequestRateLow",
+			expr,
+			25*time.Minute,
+			labels.FromStrings("severity", "critical"),
+			nil, nil, "", true, nil,
+		)
+		group := NewGroup(GroupOptions{
+			Name:                       "default",
+			Interval:                   time.Second,
+			Rules:                      []Rule{rule},
+			ShouldRestore:              true,
+			Opts:                       opts,
+			AlertsActiveAtOverrideFunc: tst.overrideFunc,
+		})
+
+		go func() {
+			group.run(opts.Context)
+		}()
+
+		time.Sleep(3 * time.Second)
+		group.stop()
+		require.Equal(t, tst.expectedValue, testValue)
+	}
+
+	for _, tst := range tests {
+		testFunc(tst)
+	}
+}
