@@ -2,7 +2,6 @@ package tsdb
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/pkg/errors"
 	"go.uber.org/atomic"
@@ -12,6 +11,10 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
+)
+
+var (
+	errAsyncBlockWriterNotRunning = errors.New("asyncBlockWriter doesn't run anymore")
 )
 
 // asyncBlockWriter runs a background goroutine that writes series and chunks to the block asynchronously.
@@ -111,7 +114,14 @@ func (bw *asyncBlockWriter) addSeries(lbls labels.Labels, chks []chunks.Meta) er
 		if ok {
 			bw.result = result
 		}
-		return fmt.Errorf("asyncBlockWriter doesn't run anymore")
+
+		// If the writer isn't running anymore because of an error occurred in loop()
+		// then we should return that error too, otherwise it may be never reported
+		// and we'll never know the actual root cause.
+		if bw.result.err != nil {
+			return errors.Wrap(bw.result.err, errAsyncBlockWriterNotRunning.Error())
+		}
+		return errAsyncBlockWriterNotRunning
 	}
 }
 
