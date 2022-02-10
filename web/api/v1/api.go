@@ -104,6 +104,15 @@ type RulesRetriever interface {
 	AlertingRules() []*rules.AlertingRule
 }
 
+type StatsRenderer func(context.Context, *stats.Statistics, string) stats.QueryStats
+
+func defaultStatsRenderer(ctx context.Context, s *stats.Statistics, param string) stats.QueryStats {
+	if param != "" {
+		return stats.NewQueryStats(s)
+	}
+	return nil
+}
+
 // PrometheusVersion contains build information about Prometheus.
 type PrometheusVersion struct {
 	Version   string `json:"version"`
@@ -177,15 +186,16 @@ type API struct {
 	ready                 func(http.HandlerFunc) http.HandlerFunc
 	globalURLOptions      GlobalURLOptions
 
-	db          TSDBAdminStats
-	dbDir       string
-	enableAdmin bool
-	logger      log.Logger
-	CORSOrigin  *regexp.Regexp
-	buildInfo   *PrometheusVersion
-	runtimeInfo func() (RuntimeInfo, error)
-	gatherer    prometheus.Gatherer
-	isAgent     bool
+	db            TSDBAdminStats
+	dbDir         string
+	enableAdmin   bool
+	logger        log.Logger
+	CORSOrigin    *regexp.Regexp
+	buildInfo     *PrometheusVersion
+	runtimeInfo   func() (RuntimeInfo, error)
+	gatherer      prometheus.Gatherer
+	isAgent       bool
+	statsRenderer StatsRenderer
 
 	remoteWriteHandler http.Handler
 	remoteReadHandler  http.Handler
@@ -222,6 +232,7 @@ func NewAPI(
 	buildInfo *PrometheusVersion,
 	gatherer prometheus.Gatherer,
 	registerer prometheus.Registerer,
+	statsRenderer StatsRenderer,
 ) *API {
 	a := &API{
 		QueryEngine:       qe,
@@ -246,8 +257,13 @@ func NewAPI(
 		buildInfo:        buildInfo,
 		gatherer:         gatherer,
 		isAgent:          isAgent,
+		statsRenderer:    defaultStatsRenderer,
 
 		remoteReadHandler: remote.NewReadHandler(logger, registerer, q, configFunc, remoteReadSampleLimit, remoteReadConcurrencyLimit, remoteReadMaxBytesInFrame),
+	}
+
+	if statsRenderer != nil {
+		a.statsRenderer = statsRenderer
 	}
 
 	if ap != nil {
@@ -344,9 +360,9 @@ func (api *API) Register(r *route.Router) {
 }
 
 type queryData struct {
-	ResultType parser.ValueType  `json:"resultType"`
-	Result     parser.Value      `json:"result"`
-	Stats      *stats.QueryStats `json:"stats,omitempty"`
+	ResultType parser.ValueType `json:"resultType"`
+	Result     parser.Value     `json:"result"`
+	Stats      stats.QueryStats `json:"stats,omitempty"`
 }
 
 func invalidParamError(err error, parameter string) apiFuncResult {
@@ -399,10 +415,11 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 	}
 
 	// Optional stats field in response if parameter "stats" is not empty.
-	var qs *stats.QueryStats
-	if r.FormValue("stats") != "" {
-		qs = stats.NewQueryStats(qry.Stats())
+	sr := api.statsRenderer
+	if sr == nil {
+		sr = defaultStatsRenderer
 	}
+	qs := sr(ctx, qry.Stats(), r.FormValue("stats"))
 
 	return apiFuncResult{&queryData{
 		ResultType: res.Value.Type(),
@@ -480,10 +497,11 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 	}
 
 	// Optional stats field in response if parameter "stats" is not empty.
-	var qs *stats.QueryStats
-	if r.FormValue("stats") != "" {
-		qs = stats.NewQueryStats(qry.Stats())
+	sr := api.statsRenderer
+	if sr == nil {
+		sr = defaultStatsRenderer
 	}
+	qs := sr(ctx, qry.Stats(), r.FormValue("stats"))
 
 	return apiFuncResult{&queryData{
 		ResultType: res.Value.Type(),

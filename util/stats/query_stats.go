@@ -110,15 +110,25 @@ type querySamples struct {
 	TotalQueryableSamples        int        `json:"totalQueryableSamples"`
 }
 
-// QueryStats currently only holding query timings.
-type QueryStats struct {
+// BuiltinStats holds the statistics that Prometheus's core gathers.
+type BuiltinStats struct {
 	Timings queryTimings  `json:"timings,omitempty"`
 	Samples *querySamples `json:"samples,omitempty"`
 }
 
+// QueryStats holds BuiltinStats and any other stats the particular
+// implementation wants to collect.
+type QueryStats interface {
+	Builtin() BuiltinStats
+}
+
+func (s *BuiltinStats) Builtin() BuiltinStats {
+	return *s
+}
+
 // NewQueryStats makes a QueryStats struct with all QueryTimings found in the
 // given TimerGroup.
-func NewQueryStats(s *Statistics) *QueryStats {
+func NewQueryStats(s *Statistics) QueryStats {
 	var (
 		qt      queryTimings
 		samples *querySamples
@@ -150,7 +160,7 @@ func NewQueryStats(s *Statistics) *QueryStats {
 		samples.TotalQueryableSamplesPerStep = sp.totalSamplesPerStepPoints()
 	}
 
-	qs := QueryStats{Timings: qt, Samples: samples}
+	qs := BuiltinStats{Timings: qt, Samples: samples}
 	return &qs
 }
 
