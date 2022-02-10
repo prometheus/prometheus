@@ -30,6 +30,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/prometheus/util/stats"
+
 	"github.com/go-kit/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -522,6 +524,14 @@ func TestLabelNames(t *testing.T) {
 	}
 }
 
+type testStats struct {
+	Custom string `json:"custom"`
+}
+
+func (testStats) Builtin() (_ stats.BuiltinStats) {
+	return
+}
+
 func TestStats(t *testing.T) {
 	suite, err := promql.NewTest(t, ``)
 	require.NoError(t, err)
@@ -535,7 +545,7 @@ func TestStats(t *testing.T) {
 			return time.Unix(123, 0)
 		},
 	}
-	request := func(method string, param string) (*http.Request, error) {
+	request := func(method, param string) (*http.Request, error) {
 		u, err := url.Parse("http://example.com")
 		require.NoError(t, err)
 		q := u.Query()
@@ -555,6 +565,7 @@ func TestStats(t *testing.T) {
 
 	for _, tc := range []struct {
 		name     string
+		renderer StatsRenderer
 		param    string
 		expected func(*testing.T, interface{})
 	}{
@@ -574,7 +585,7 @@ func TestStats(t *testing.T) {
 				require.IsType(t, i, &queryData{})
 				qd := i.(*queryData)
 				require.NotNil(t, qd.Stats)
-				qs := qd.Stats
+				qs := qd.Stats.Builtin()
 				require.NotNil(t, qs.Timings)
 				require.Greater(t, qs.Timings.EvalTotalTime, float64(0))
 				require.NotNil(t, qs.Samples)
@@ -589,7 +600,7 @@ func TestStats(t *testing.T) {
 				require.IsType(t, i, &queryData{})
 				qd := i.(*queryData)
 				require.NotNil(t, qd.Stats)
-				qs := qd.Stats
+				qs := qd.Stats.Builtin()
 				require.NotNil(t, qs.Timings)
 				require.Greater(t, qs.Timings.EvalTotalTime, float64(0))
 				require.NotNil(t, qs.Samples)
@@ -597,8 +608,30 @@ func TestStats(t *testing.T) {
 				require.NotNil(t, qs.Samples.TotalQueryableSamplesPerStep)
 			},
 		},
+		{
+			name: "custom handler with known value",
+			renderer: func(ctx context.Context, s *stats.Statistics, p string) stats.QueryStats {
+				if p == "known" {
+					return testStats{"Custom Value"}
+				}
+				return nil
+			},
+			param: "known",
+			expected: func(t *testing.T, i interface{}) {
+				require.IsType(t, i, &queryData{})
+				qd := i.(*queryData)
+				require.NotNil(t, qd.Stats)
+				j, err := json.Marshal(qd.Stats)
+				require.NoError(t, err)
+				require.JSONEq(t, string(j), `{"custom":"Custom Value"}`)
+			},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			before := api.statsRenderer
+			defer func() { api.statsRenderer = before }()
+			api.statsRenderer = tc.renderer
+
 			for _, method := range []string{http.MethodGet, http.MethodPost} {
 				ctx := context.Background()
 				req, err := request(method, tc.param)
