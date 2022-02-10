@@ -17,6 +17,7 @@ package main
 import (
 	"context"
 	"fmt"
+	`io/fs`
 	"math"
 	"math/bits"
 	"net"
@@ -68,6 +69,7 @@ import (
 	"github.com/prometheus/prometheus/tracing"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/agent"
+	`github.com/prometheus/prometheus/tsdb/wal`
 	"github.com/prometheus/prometheus/util/logging"
 	prom_runtime "github.com/prometheus/prometheus/util/runtime"
 	"github.com/prometheus/prometheus/util/strutil"
@@ -408,6 +410,16 @@ func main() {
 	if agentMode {
 		localStoragePath = cfg.agentStoragePath
 	}
+	checkPointPrefix := filepath.Join(localStoragePath, wal.CheckpointPrefix)
+	filepath.Walk(checkPointPrefix, func(path string, info fs.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !(info.IsDir() && strings.HasSuffix(info.Name(), ".tmp")) {
+			return nil
+		}
+		return os.RemoveAll(path)
+	})
 
 	cfg.web.ExternalURL, err = computeExternalURL(cfg.prometheusURL, cfg.web.ListenAddress)
 	if err != nil {
