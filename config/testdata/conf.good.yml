@@ -370,3 +370,11 @@ alerting:
 tracing:
   endpoint: "localhost:4317"
   client_type: "grpc"
+  headers:
+    foo: "bar"
+  timeout: 5s
+  compression: "gzip"
+  tls_config:
+    cert_file: valid_cert_file
+    key_file: valid_key_file
+    insecure_skip_verify: true
