@@ -21,6 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 )
@@ -44,6 +45,30 @@ func TestRecord_EncodeDecode(t *testing.T) {
 	decSeries, err := dec.Series(enc.Series(series, nil), nil)
 	require.NoError(t, err)
 	require.Equal(t, series, decSeries)
+
+	metadata := []RefMetadata{
+		{
+			Ref:  100,
+			Type: textparse.MetricTypeCounter,
+			Unit: "",
+			Help: "some magic counter",
+		},
+		{
+			Ref:  1,
+			Type: textparse.MetricTypeCounter,
+			Unit: "seconds",
+			Help: "CPU time counter",
+		},
+		{
+			Ref:  147741,
+			Type: textparse.MetricTypeGauge,
+			Unit: "percentage",
+			Help: "current memory usage",
+		},
+	}
+	decMetadata, err := dec.Metadata(enc.Metadata(metadata, nil), nil)
+	require.NoError(t, err)
+	require.Equal(t, metadata, decMetadata)
 
 	samples := []RefSample{
 		{Ref: 0, T: 12423423, V: 1.2345},
@@ -159,4 +184,72 @@ func TestRecord_Type(t *testing.T) {
 
 	recordType = dec.Type([]byte{0})
 	require.Equal(t, Unknown, recordType)
+}
+
+func TestRecord_MetadataDecodeUnknownFields(t *testing.T) {
+	var enc encoding.Encbuf
+	var encFields encoding.Encbuf
+	var dec Decoder
+
+	// Write record type.
+	enc.PutByte(byte(Metadata))
+
+	// Write first metadata entry, all known fields.
+	enc.PutUvarint64(101)
+	encFields.Reset()
+	encFields.PutUvarintStr(string(textparse.MetricTypeCounter))
+	encFields.PutUvarintStr("")
+	encFields.PutUvarintStr("some magic counter")
+	// Write size of encoded fields then the encoded fields.
+	enc.PutUvarint(encFields.Len())
+	enc.B = append(enc.B, encFields.B...)
+
+	// Write second metadata entry, known fields + unknown fields.
+	enc.PutUvarint64(99)
+	encFields.Reset()
+	// Known fields.
+	encFields.PutUvarintStr(string(textparse.MetricTypeCounter))
+	encFields.PutUvarintStr("seconds")
+	encFields.PutUvarintStr("CPU time counter")
+	// Unknown fields.
+	encFields.PutUvarintStr("some unknown field")
+	encFields.PutByte('a')
+	encFields.PutUvarint64(42)
+	// Write size of encoded fields then the encoded fields.
+	enc.PutUvarint(encFields.Len())
+	enc.B = append(enc.B, encFields.B...)
+
+	// Write third metadata entry, all known fields.
+	enc.PutUvarint64(47250)
+	encFields.Reset()
+	encFields.PutUvarintStr(string(textparse.MetricTypeGauge))
+	encFields.PutUvarintStr("percentage")
+	encFields.PutUvarintStr("current memory usage")
+	// Write size of encoded fields then the encoded fields.
+	enc.PutUvarint(encFields.Len())
+	enc.B = append(enc.B, encFields.B...)
+
+	// Should yield known fields for all entries and skip over unknown fields.
+	expectedMetadata := []RefMetadata{
+		{
+			Ref:  101,
+			Type: textparse.MetricTypeCounter,
+			Unit: "",
+			Help: "some magic counter",
+		}, {
+			Ref:  99,
+			Type: textparse.MetricTypeCounter,
+			Unit: "seconds",
+			Help: "CPU time counter",
+		}, {
+			Ref:  47250,
+			Type: textparse.MetricTypeGauge,
+			Unit: "percentage",
+			Help: "current memory usage",
+		},
+	}
+
+	decMetadata, err := dec.Metadata(enc.Get(), nil)
+	require.NoError(t, err)
+	require.Equal(t, expectedMetadata, decMetadata)
 }
