@@ -39,6 +39,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -1555,12 +1556,13 @@ func TestScrapeLoopAppendCacheEntryButErrNotFound(t *testing.T) {
 	require.NoError(t, warning)
 
 	var lset labels.Labels
+	var meta metadata.Metadata
 	p.Next()
 	mets := p.Metric(&lset)
 	hash := lset.Hash()
 
 	// Create a fake entry in the cache
-	sl.cache.addRef(mets, fakeRef, lset, hash)
+	sl.cache.addRef(mets, fakeRef, lset, meta, hash)
 	now := time.Now()
 
 	slApp := sl.appender(context.Background())
