@@ -15,10 +15,10 @@ package stats
 
 import (
 	"encoding/json"
-	"regexp"
 	"testing"
 	"time"
 
+	"github.com/grafana/regexp"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 

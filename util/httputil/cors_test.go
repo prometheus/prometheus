@@ -15,9 +15,9 @@ package httputil
 
 import (
 	"net/http"
-	"regexp"
 	"testing"
 
+	"github.com/grafana/regexp"
 	"github.com/stretchr/testify/require"
 )
 
