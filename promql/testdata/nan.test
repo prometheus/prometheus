@@ -1,0 +1,21 @@
+# Two histograms with 4 buckets each (x_sum and x_count not included,
+# only buckets). Lowest bucket for one histogram < 0, for the other >
+# 0. They have the same name, just separated by label. Not useful in
+# practice, but can happen (if clients change bucketing), and the
+# server has to cope with it.
+
+# Test histogram.
+load 5m
+	testhistogram_bucket{le="0.1", start="positive"}	0+5x10
+	testhistogram_bucket{le=".2", start="positive"}		0+7x10
+	testhistogram_bucket{le="1e0", start="positive"}	0+11x10
+	testhistogram_bucket{le="+Inf", start="positive"}	0+12x10
+	testhistogram_bucket{le="-.2", start="negative"}	0+1x10
+	testhistogram_bucket{le="-0.1", start="negative"}	0+2x10
+	testhistogram_bucket{le="0.3", start="negative"}	0+2x10
+	testhistogram_bucket{le="+Inf", start="negative"}	0+3x10
+
+
+# Quantile value in lowest bucket, which is positive.
+eval instant at 50m histogram_quantile(NaN, testhistogram_bucket{start="positive"})
+	{start="positive"} 0
