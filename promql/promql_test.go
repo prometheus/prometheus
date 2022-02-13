@@ -34,18 +34,3 @@ func TestEvaluations(t *testing.T) {
 		})
 	}
 }
-
-func TestOne(t *testing.T) {
-	files, err := filepath.Glob("testdata/nan.test")
-	require.NoError(t, err)
-
-	for _, fn := range files {
-		t.Run(fn, func(t *testing.T) {
-			test, err := newTestFromFile(t, fn)
-			require.NoError(t, err)
-			require.NoError(t, test.Run())
-
-			test.Close()
-		})
-	}
-}
