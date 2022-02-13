@@ -67,11 +67,13 @@ type metricWithBuckets struct {
 //
 // If the highest bucket is not +Inf, NaN is returned.
 //
+// If q==NaN, NaN is returned.
+//
 // If q<0, -Inf is returned.
 //
 // If q>1, +Inf is returned.
 func bucketQuantile(q float64, buckets buckets) float64 {
-	if math.IsNaN(q){
+	if math.IsNaN(q) {
 		return math.NaN()
 	}
 	if q < 0 {
@@ -184,11 +186,12 @@ func ensureMonotonic(buckets buckets) {
 // quantile calculates the given quantile of a vector of samples.
 //
 // The Vector will be sorted.
-// If 'values' has zero elements or 'q' == NaN, NaN is returned.
+// If 'values' has zero elements
+// If q==NaN, NaN is returned.
 // If q<0, -Inf is returned.
 // If q>1, +Inf is returned.
 func quantile(q float64, values vectorByValueHeap) float64 {
-	if len(values) == 0 || q == math.NaN() {
+	if len(values) == 0 || math.IsNaN(q) {
 		return math.NaN()
 	}
 	if q < 0 {
