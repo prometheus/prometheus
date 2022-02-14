@@ -22,7 +22,7 @@ export interface TargetLabels {
   isDropped: boolean;
 }
 
-const kvSearch = new KVSearch({
+const kvSearch = new KVSearch<Target>({
   shouldSort: true,
   indexedKeys: ['labels', 'discoveredLabels', ['discoveredLabels', /.*/], ['labels', /.*/]],
 });
@@ -97,11 +97,7 @@ export const ServiceDiscoveryContent: FC<ServiceMap> = ({ activeTargets, dropped
   const handleSearchChange = (e: ChangeEvent<HTMLTextAreaElement | HTMLInputElement>) => {
     if (e.target.value !== '') {
       const result = kvSearch.filter(e.target.value.trim(), activeTargets);
-      setActiveTargetList(
-        result.map((value) => {
-          return value.original as unknown as Target;
-        })
-      );
+      setActiveTargetList(result.map((value) => value.original));
     } else {
       setActiveTargetList(activeTargets);
     }
