@@ -555,6 +555,10 @@ func (t *TracingConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 
+	if err := validateHeaders(t.Headers); err != nil {
+		return err
+	}
+
 	if t.Endpoint == "" {
 		return errors.New("tracing endpoint must be set")
 	}
