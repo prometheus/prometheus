@@ -210,15 +210,14 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 	}
 
 	d := &Discovery{
-		apiURL:          apiURL,
-		roundTripper:    rt,
-		username:        conf.Username,
-		password:        string(conf.Password),
-		tokenExpiration: time.Now(), // set an expired time
-		entitlement:     conf.Entitlement,
-		separator:       conf.Separator,
-		interval:        time.Duration(conf.RefreshInterval),
-		logger:          logger,
+		apiURL:       apiURL,
+		roundTripper: rt,
+		username:     conf.Username,
+		password:     string(conf.Password),
+		entitlement:  conf.Entitlement,
+		separator:    conf.Separator,
+		interval:     time.Duration(conf.RefreshInterval),
+		logger:       logger,
 	}
 
 	d.Discovery = refresh.NewDiscovery(
@@ -314,20 +313,19 @@ func (d *Discovery) refresh(_ context.Context) ([]*targetgroup.Group, error) {
 	}
 	defer rpcClient.Close()
 
-	// If the current token has expired, refresh it
 	if time.Now().After(d.tokenExpiration) {
-		// Uyuni API doesn't state the unit of measure for the duration, but got verification that it's in seconds.
+		// Uyuni API takes duration in seconds.
 		d.token, err = login(rpcClient, d.username, d.password, int(tokenDuration.Seconds()))
 		if err != nil {
 			return nil, errors.Wrap(err, "unable to login to Uyuni API")
 		}
-		// login at half the token lifetime
+		// Login again at half the token lifetime.
 		d.tokenExpiration = time.Now().Add(tokenDuration / 2)
 	}
 
 	targetsForSystems, err := d.getTargetsForSystems(rpcClient, d.entitlement)
 	if err != nil {
-		// force login on next refresh
+		// Force the renewal of the token on next refresh.
 		d.tokenExpiration = time.Now()
 		return nil, err
 	}
