@@ -23,7 +23,6 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/kolo/xmlrpc"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/config"
@@ -47,6 +46,8 @@ const (
 	uyuniLabelProxyModule    = uyuniMetaLabelPrefix + "proxy_module"
 	uyuniLabelMetricsPath    = uyuniMetaLabelPrefix + "metrics_path"
 	uyuniLabelScheme         = uyuniMetaLabelPrefix + "scheme"
+
+	tokenDuration = 10 * time.Minute
 )
 
 // DefaultSDConfig is the default Uyuni SD configuration.
@@ -96,14 +97,16 @@ type endpointInfo struct {
 // Discovery periodically performs Uyuni API requests. It implements the Discoverer interface.
 type Discovery struct {
 	*refresh.Discovery
-	apiURL       *url.URL
-	roundTripper http.RoundTripper
-	username     string
-	password     string
-	entitlement  string
-	separator    string
-	interval     time.Duration
-	logger       log.Logger
+	apiURL          *url.URL
+	roundTripper    http.RoundTripper
+	username        string
+	password        string
+	token           string
+	tokenExpiration time.Time
+	entitlement     string
+	separator       string
+	interval        time.Duration
+	logger          log.Logger
 }
 
 // Name returns the name of the Config.
@@ -140,14 +143,10 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	return nil
 }
 
-func login(rpcclient *xmlrpc.Client, user, pass string) (string, error) {
+func login(rpcclient *xmlrpc.Client, user, pass string, duration int) (string, error) {
 	var result string
-	err := rpcclient.Call("auth.login", []interface{}{user, pass}, &result)
+	err := rpcclient.Call("auth.login", []interface{}{user, pass, duration}, &result)
 	return result, err
-}
-
-func logout(rpcclient *xmlrpc.Client, token string) error {
-	return rpcclient.Call("auth.logout", token, nil)
 }
 
 func getSystemGroupsInfoOfMonitoredClients(rpcclient *xmlrpc.Client, token, entitlement string) (map[int][]systemGroupID, error) {
@@ -271,12 +270,11 @@ func getSystemGroupNames(systemGroupsIDs []systemGroupID) []string {
 
 func (d *Discovery) getTargetsForSystems(
 	rpcClient *xmlrpc.Client,
-	token string,
 	entitlement string,
 ) ([]model.LabelSet, error) {
 	result := make([]model.LabelSet, 0)
 
-	systemGroupIDsBySystemID, err := getSystemGroupsInfoOfMonitoredClients(rpcClient, token, entitlement)
+	systemGroupIDsBySystemID, err := getSystemGroupsInfoOfMonitoredClients(rpcClient, d.token, entitlement)
 	if err != nil {
 		return nil, errors.Wrap(err, "unable to get the managed system groups information of monitored clients")
 	}
@@ -286,12 +284,12 @@ func (d *Discovery) getTargetsForSystems(
 		systemIDs = append(systemIDs, systemID)
 	}
 
-	endpointInfos, err := getEndpointInfoForSystems(rpcClient, token, systemIDs)
+	endpointInfos, err := getEndpointInfoForSystems(rpcClient, d.token, systemIDs)
 	if err != nil {
 		return nil, errors.Wrap(err, "unable to get endpoints information")
 	}
 
-	networkInfoBySystemID, err := getNetworkInformationForSystems(rpcClient, token, systemIDs)
+	networkInfoBySystemID, err := getNetworkInformationForSystems(rpcClient, d.token, systemIDs)
 	if err != nil {
 		return nil, errors.Wrap(err, "unable to get the systems network information")
 	}
@@ -308,25 +306,27 @@ func (d *Discovery) getTargetsForSystems(
 	return result, nil
 }
 
-func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
+func (d *Discovery) refresh(_ context.Context) ([]*targetgroup.Group, error) {
 	rpcClient, err := xmlrpc.NewClient(d.apiURL.String(), d.roundTripper)
 	if err != nil {
 		return nil, err
 	}
 	defer rpcClient.Close()
 
-	token, err := login(rpcClient, d.username, d.password)
-	if err != nil {
-		return nil, errors.Wrap(err, "unable to login to Uyuni API")
-	}
-	defer func() {
-		if err := logout(rpcClient, token); err != nil {
-			level.Debug(d.logger).Log("msg", "Failed to log out from Uyuni API", "err", err)
+	if time.Now().After(d.tokenExpiration) {
+		// Uyuni API takes duration in seconds.
+		d.token, err = login(rpcClient, d.username, d.password, int(tokenDuration.Seconds()))
+		if err != nil {
+			return nil, errors.Wrap(err, "unable to login to Uyuni API")
 		}
-	}()
+		// Login again at half the token lifetime.
+		d.tokenExpiration = time.Now().Add(tokenDuration / 2)
+	}
 
-	targetsForSystems, err := d.getTargetsForSystems(rpcClient, token, d.entitlement)
+	targetsForSystems, err := d.getTargetsForSystems(rpcClient, d.entitlement)
 	if err != nil {
+		// Force the renewal of the token on next refresh.
+		d.tokenExpiration = time.Now()
 		return nil, err
 	}
 
