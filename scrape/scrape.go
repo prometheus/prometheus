@@ -1519,6 +1519,11 @@ loop:
 			// If any label limits is exceeded the scrape should fail.
 			if err = verifyLabelLimits(lset, sl.labelLimits); err != nil {
 				targetScrapePoolExceededLabelLimits.Inc()
+				level.Debug(sl.l).Log(
+					"msg", "Exceeded label limits",
+					"series", string(met),
+					"err", err,
+				)
 				break loop
 			}
 		}
