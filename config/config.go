@@ -203,8 +203,9 @@ var (
 
 	// DefaultRemoteReadConfig is the default remote read configuration.
 	DefaultRemoteReadConfig = RemoteReadConfig{
-		RemoteTimeout:    model.Duration(1 * time.Minute),
-		HTTPClientConfig: config.DefaultHTTPClientConfig,
+		RemoteTimeout:        model.Duration(1 * time.Minute),
+		HTTPClientConfig:     config.DefaultHTTPClientConfig,
+		FilterExternalLabels: true,
 	}
 
 	// DefaultStorageConfig is the default TSDB/Exemplar storage configuration.
@@ -854,6 +855,9 @@ type RemoteReadConfig struct {
 	// RequiredMatchers is an optional list of equality matchers which have to
 	// be present in a selector to query the remote read endpoint.
 	RequiredMatchers model.LabelSet `yaml:"required_matchers,omitempty"`
+
+	// Whether to use the external labels as selectors for the remote read endpoint.
+	FilterExternalLabels bool `yaml:"filter_external_labels,omitempty"`
 }
 
 // SetDirectory joins any relative file paths with dir.
