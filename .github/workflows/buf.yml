@@ -1,0 +1,20 @@
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  steps:
+    - uses: actions/checkout@v2
+    - uses: bufbuild/buf-setup-action@v0.6.0
+    - uses: bufbuild/buf-lint-action@v1
+      with:
+        input: 'prompb'
+    - uses: bufbuild/buf-breaking-action@v1
+      with:
+        input: 'prompb'
+        against: 'https://github.com/prometheus/prometheus.git#branch=main,ref=HEAD~1,subdir=prompb'
+    - uses: bufbuild/buf-push-action@v1
+      with:
+        input: 'prompb'
+        buf_token: ${{ secrets.BUF_TOKEN }}
