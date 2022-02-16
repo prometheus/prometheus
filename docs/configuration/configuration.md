@@ -2868,6 +2868,9 @@ tls_config:
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <boolean> | default = true ]
+
+# Whether to use the external labels as selectors for the remote read endpoint.
+[ filter_external_labels: <boolean> | default = true ]
 ```
 
 There is a list of
