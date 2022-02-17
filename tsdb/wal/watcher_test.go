@@ -57,12 +57,12 @@ type writeToMock struct {
 	seriesSegmentIndexes map[chunks.HeadSeriesRef]int
 }
 
-func (wtm *writeToMock) Append(s []record.RefSample) bool {
+func (wtm *writeToMock) Append(s []record.RefSample, segment int) bool {
 	wtm.samplesAppended += len(s)
 	return true
 }
 
-func (wtm *writeToMock) AppendExemplars(e []record.RefExemplar) bool {
+func (wtm *writeToMock) AppendExemplars(e []record.RefExemplar, segment int) bool {
 	wtm.exemplarsAppended += len(e)
 	return true
 }

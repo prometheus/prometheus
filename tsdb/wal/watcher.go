@@ -48,17 +48,17 @@ type WriteTo interface {
 	// Append and AppendExemplar should block until the samples are fully accepted,
 	// whether enqueued in memory or successfully written to it's final destination.
 	// Once returned, the WAL Watcher will not attempt to pass that data again.
-	Append([]record.RefSample) bool
-	AppendExemplars([]record.RefExemplar) bool
+	Append(samples []record.RefSample, segment int) bool
+	AppendExemplars(exemplars []record.RefExemplar, segment int) bool
 
-	StoreSeries([]record.RefSeries, int)
+	StoreSeries(series []record.RefSeries, segment int)
 
 	// Next two methods are intended for garbage-collection: first we call
 	// UpdateSeriesSegment on all current series
-	UpdateSeriesSegment([]record.RefSeries, int)
+	UpdateSeriesSegment(series []record.RefSeries, segment int)
 	// Then SeriesReset is called to allow the deletion
 	// of all series created in a segment lower than the argument.
-	SeriesReset(int)
+	SeriesReset(segment int)
 }
 
 // Marker allows the Watcher to start from a specific segment in the WAL.
@@ -537,7 +537,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 				}
 			}
 			if len(send) > 0 {
-				w.writer.Append(send)
+				w.writer.Append(send, segmentNum)
 				send = send[:0]
 			}
 
@@ -556,7 +556,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 				w.recordDecodeFailsMetric.Inc()
 				return err
 			}
-			w.writer.AppendExemplars(exemplars)
+			w.writer.AppendExemplars(exemplars, segmentNum)
 
 		case record.Tombstones:
 

@@ -133,15 +133,15 @@ func TestSampleDelivery(t *testing.T) {
 			// Send first half of data.
 			c.expectSamples(samples[:len(samples)/2], series)
 			c.expectExemplars(exemplars[:len(exemplars)/2], series)
-			qm.Append(samples[:len(samples)/2])
-			qm.AppendExemplars(exemplars[:len(exemplars)/2])
+			qm.Append(samples[:len(samples)/2], 0)
+			qm.AppendExemplars(exemplars[:len(exemplars)/2], 0)
 			c.waitForExpectedData(t)
 
 			// Send second half of data.
 			c.expectSamples(samples[len(samples)/2:], series)
 			c.expectExemplars(exemplars[len(exemplars)/2:], series)
-			qm.Append(samples[len(samples)/2:])
-			qm.AppendExemplars(exemplars[len(exemplars)/2:])
+			qm.Append(samples[len(samples)/2:], 0)
+			qm.AppendExemplars(exemplars[len(exemplars)/2:], 0)
 			c.waitForExpectedData(t)
 		})
 	}
@@ -202,11 +202,11 @@ func TestSampleDeliveryTimeout(t *testing.T) {
 
 	// Send the samples twice, waiting for the samples in the meantime.
 	c.expectSamples(samples, series)
-	m.Append(samples)
+	m.Append(samples, 0)
 	c.waitForExpectedData(t)
 
 	c.expectSamples(samples, series)
-	m.Append(samples)
+	m.Append(samples, 0)
 	c.waitForExpectedData(t)
 }
 
@@ -243,7 +243,7 @@ func TestSampleDeliveryOrder(t *testing.T) {
 	m.Start()
 	defer m.Stop()
 	// These should be received by the client.
-	m.Append(samples)
+	m.Append(samples, 0)
 	c.waitForExpectedData(t)
 }
 
@@ -265,7 +265,7 @@ func TestShutdown(t *testing.T) {
 
 	// Append blocks to guarantee delivery, so we do it in the background.
 	go func() {
-		m.Append(samples)
+		m.Append(samples, 0)
 	}()
 	time.Sleep(100 * time.Millisecond)
 
@@ -332,7 +332,7 @@ func TestReshard(t *testing.T) {
 
 	go func() {
 		for i := 0; i < len(samples); i += config.DefaultQueueConfig.Capacity {
-			sent := m.Append(samples[i : i+config.DefaultQueueConfig.Capacity])
+			sent := m.Append(samples[i:i+config.DefaultQueueConfig.Capacity], 0)
 			require.True(t, sent, "samples not sent")
 			time.Sleep(100 * time.Millisecond)
 		}
@@ -403,7 +403,7 @@ func TestReshardPartialBatch(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		done := make(chan struct{})
 		go func() {
-			m.Append(samples)
+			m.Append(samples, 0)
 			time.Sleep(batchSendDeadline)
 			m.shards.stop()
 			m.shards.start(1)
@@ -765,7 +765,7 @@ func BenchmarkSampleSend(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		m.Append(samples)
+		m.Append(samples, 0)
 		m.UpdateSeriesSegment(series, i+1) // simulate what wal.Watcher.garbageCollectSeries does
 		m.SeriesReset(i + 1)
 	}
