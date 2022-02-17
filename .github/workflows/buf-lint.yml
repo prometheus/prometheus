@@ -1,12 +1,12 @@
+name: buf.build
 on:
   pull_request:
     paths:
       - ".github/workflows/buf-lint.yml"
       - "**.proto"
-
 jobs:
   buf:
-    name: publish-buf
+    name: lint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2

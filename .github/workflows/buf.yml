@@ -1,11 +1,11 @@
+name: buf.build
 on:
   push:
     branches:
       - main
-
 jobs:
   buf:
-    name: publish-buf
+    name: lint and publish
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
