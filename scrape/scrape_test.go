@@ -59,6 +59,7 @@ func TestNewScrapePool(t *testing.T) {
 		cfg   = &config.ScrapeConfig{}
 		sp, _ = newScrapePool(cfg, app, 0, nil, false)
 	)
+	defer sp.stop()
 
 	if a, ok := sp.appendable.(*nopAppendable); !ok || a != app {
 		t.Fatalf("Wrong sample appender")
@@ -96,6 +97,8 @@ func TestDroppedTargetsList(t *testing.T) {
 		expectedLabelSetString = "{__address__=\"127.0.0.1:9090\", __scrape_interval__=\"0s\", __scrape_timeout__=\"0s\", job=\"dropMe\"}"
 		expectedLength         = 1
 	)
+	defer sp.stop()
+
 	sp.Sync(tgs)
 	sp.Sync(tgs)
 	if len(sp.droppedTargets) != expectedLength {
@@ -456,6 +459,7 @@ func TestScrapePoolAppender(t *testing.T) {
 	cfg := &config.ScrapeConfig{}
 	app := &nopAppendable{}
 	sp, _ := newScrapePool(cfg, app, 0, nil, false)
+	defer sp.stop()
 
 	loop := sp.newLoop(scrapeLoopOptions{
 		target: &Target{},

@@ -47,6 +47,7 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/logging"
 	"github.com/prometheus/prometheus/util/pool"
 )
 
@@ -286,7 +287,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed 
 		client:        client,
 		activeTargets: map[uint64]*Target{},
 		loops:         map[uint64]loop{},
-		logger:        logger,
+		logger:        logging.Dedupe(logger, time.Minute),
 	}
 	sp.newLoop = func(opts scrapeLoopOptions) loop {
 		// Update the targets retrieval function for metadata to a new scrape cache.
@@ -299,7 +300,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed 
 		return newScrapeLoop(
 			ctx,
 			opts.scraper,
-			log.With(logger, "target", opts.target),
+			log.With(sp.logger, "target", opts.target),
 			buffers,
 			func(l labels.Labels) labels.Labels {
 				return mutateSampleLabels(l, opts.target, opts.honorLabels, opts.mrc)
@@ -362,6 +363,10 @@ func (sp *scrapePool) stop() {
 
 	wg.Wait()
 	sp.client.CloseIdleConnections()
+
+	if logger, ok := sp.logger.(*logging.Deduper); ok {
+		logger.Stop()
+	}
 
 	if sp.config != nil {
 		targetScrapePoolSyncsCounter.DeleteLabelValues(sp.config.JobName)
