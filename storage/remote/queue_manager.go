@@ -441,42 +441,43 @@ func NewQueueManager(
 	return t
 }
 
-// LastCheckpointedSegment implements wal.Checkpointer. It returns the last
-// read segment from the queue-specific file. Requests the WAL watcher to start
-// at the end of the WAL if the checkpoint file doesn't exist yet.
-func (t *QueueManager) LastCheckpointedSegment() (segment *int) {
+// LastMarkedSegment implements wal.Marker. It returns the last read segment
+// from the queue-specific file. Requests the WAL watcher to start at the end
+// of the WAL if the marker file doesn't exist yet.
+func (t *QueueManager) LastMarkedSegment() (segment *int) {
 	dir := filepath.Join(t.walDir, "remote", t.client().Name())
 	if _, err := os.Stat(dir); os.IsNotExist(err) {
-		level.Warn(t.logger).Log("msg", "checkpoint segment does not exist")
+		level.Warn(t.logger).Log("msg", "marker segment does not exist")
 		return
 	} else if err != nil {
-		level.Error(t.logger).Log("msg", "could not access segment checkpoint folder", "dir", dir, "err", err)
+		level.Error(t.logger).Log("msg", "could not access segment marker folder", "dir", dir, "err", err)
 		return
 	}
 
 	fname := filepath.Join(dir, "segment")
 	bb, err := ioutil.ReadFile(fname)
 	if os.IsNotExist(err) {
-		level.Warn(t.logger).Log("msg", "checkpoint segment file does not exist")
+		level.Warn(t.logger).Log("msg", "marker segment file does not exist")
 		return
 	} else if err != nil {
-		level.Error(t.logger).Log("msg", "could not access segment checkpoint file", "file", fname, "err", err)
+		level.Error(t.logger).Log("msg", "could not access segment marker file", "file", fname, "err", err)
 		return
 	}
 
 	savedSegment, err := strconv.Atoi(string(bb))
 	if err != nil {
-		level.Error(t.logger).Log("msg", "could not read segment checkpoint file", "file", fname, "err", err)
+		level.Error(t.logger).Log("msg", "could not read segment marker file", "file", fname, "err", err)
 		return
 	}
 	return &savedSegment
 }
 
-// CheckpointSegment implements wal.Checkpointer. segment will be saved to a queue-specific file.
-func (t *QueueManager) CheckpointSegment(segment int) {
+// MarkSegment implements wal.Marker. segment will be saved to a queue-specific
+// file.
+func (t *QueueManager) MarkSegment(segment int) {
 	dir := filepath.Join(t.walDir, "remote", t.client().Name())
 	if err := os.MkdirAll(dir, 0o770); err != nil {
-		level.Error(t.logger).Log("msg", "could not create segment checkpoint folder", "dir", dir, "err", err)
+		level.Error(t.logger).Log("msg", "could not create segment marker folder", "dir", dir, "err", err)
 		return
 	}
 
@@ -488,15 +489,15 @@ func (t *QueueManager) CheckpointSegment(segment int) {
 	)
 
 	if err := ioutil.WriteFile(tmp, []byte(segmentText), 0o660); err != nil {
-		level.Error(t.logger).Log("msg", "could not create segment checkpoint file", "file", tmp, "err", err)
+		level.Error(t.logger).Log("msg", "could not create segment marker file", "file", tmp, "err", err)
 		return
 	}
 	if err := fileutil.Replace(tmp, fname); err != nil {
-		level.Error(t.logger).Log("msg", "could not replace segment checkpoint file", "file", fname, "err", err)
+		level.Error(t.logger).Log("msg", "could not replace segment marker file", "file", fname, "err", err)
 		return
 	}
 
-	level.Debug(t.logger).Log("msg", "updated checkpoint segment file", "file", fname, "segment", segment)
+	level.Debug(t.logger).Log("msg", "updated segment marker file", "file", fname, "segment", segment)
 }
 
 // AppendMetadata sends metadata the remote storage. Metadata is sent in batches, but is not parallelized.

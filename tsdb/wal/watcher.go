@@ -1,4 +1,4 @@
-// Copyright 2018 The Prometheus Authors
+// Copyright 2018 The Prometheu Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -61,18 +61,18 @@ type WriteTo interface {
 	SeriesReset(int)
 }
 
-// Checkpointer allows the Watcher to start from a specific segment in the WAL.
+// Marker allows the Watcher to start from a specific segment in the WAL.
 // Implementers can use this interface to save and restore save points.
-type Checkpointer interface {
-	// LastCheckpointedSegment should return the last segment stored in the
-	// checkpoint. Must return nil if there is no checkpoint.
+type Marker interface {
+	// LastMarkedSegment should return the last segment stored in the marker.
+	// Must return nil if there is no mark.
 	//
 	// The Watcher will start reading the first segment whose value is greater
 	// than the return value.
-	LastCheckpointedSegment() *int
+	LastMarkedSegment() *int
 
-	// CheckpointSegment will be invoked AFTER a segment is read to completion.
-	CheckpointSegment(int)
+	// MarkSegment will be invoked AFTER a segment is read to completion.
+	MarkSegment(int)
 }
 
 type WatcherMetrics struct {
@@ -86,7 +86,7 @@ type WatcherMetrics struct {
 type Watcher struct {
 	name           string
 	writer         WriteTo
-	cpoint         Checkpointer
+	marker         Marker
 	logger         log.Logger
 	walDir         string
 	lastCheckpoint string
@@ -96,7 +96,7 @@ type Watcher struct {
 
 	startTime      time.Time
 	startTimestamp int64 // the start time as a Prometheus timestamp
-	savedSegment   *int  // Last tailed checkpoint. Overrides startTimestamp.
+	savedSegment   *int  // Last tailed marker. Overrides startTimestamp.
 	sendSamples    bool
 
 	recordsReadMetric       *prometheus.CounterVec
@@ -163,14 +163,14 @@ func NewWatcherMetrics(reg prometheus.Registerer) *WatcherMetrics {
 
 // NewWatcher creates a new WAL watcher for a given WriteTo. cp will be used
 // for saving and restoring consumed segments, if non nil.
-func NewWatcher(metrics *WatcherMetrics, readerMetrics *LiveReaderMetrics, logger log.Logger, name string, writer WriteTo, cpoint Checkpointer, walDir string, sendExemplars bool) *Watcher {
+func NewWatcher(metrics *WatcherMetrics, readerMetrics *LiveReaderMetrics, logger log.Logger, name string, writer WriteTo, cpoint Marker, walDir string, sendExemplars bool) *Watcher {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
 	return &Watcher{
 		logger:        logger,
 		writer:        writer,
-		cpoint:        cpoint,
+		marker:        cpoint,
 		metrics:       metrics,
 		readerMetrics: readerMetrics,
 		walDir:        path.Join(walDir, "wal"),
@@ -226,8 +226,8 @@ func (w *Watcher) loop() {
 
 	// We may encounter failures processing the WAL; we should wait and retry.
 	for !isClosed(w.quit) {
-		if w.cpoint != nil {
-			w.savedSegment = w.cpoint.LastCheckpointedSegment()
+		if w.marker != nil {
+			w.savedSegment = w.marker.LastMarkedSegment()
 			level.Debug(w.logger).Log("msg", "last saved segment", "segment", w.savedSegment)
 		}
 
@@ -293,10 +293,10 @@ func (w *Watcher) Run() error {
 			return nil
 		}
 
-		// Pass the completed segment to the checkpointer before incrementing to
-		// the next segment to read.
-		if w.cpoint != nil {
-			w.cpoint.CheckpointSegment(currentSegment)
+		// Pass the completed segment to the marker before incrementing to the next
+		// segment to read.
+		if w.marker != nil {
+			w.marker.MarkSegment(currentSegment)
 		}
 
 		currentSegment++
