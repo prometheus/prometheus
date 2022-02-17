@@ -70,9 +70,6 @@ type Marker interface {
 	// The Watcher will start reading the first segment whose value is greater
 	// than the return value.
 	LastMarkedSegment() *int
-
-	// MarkSegment will be invoked AFTER a segment is read to completion.
-	MarkSegment(int)
 }
 
 type WatcherMetrics struct {
@@ -163,14 +160,14 @@ func NewWatcherMetrics(reg prometheus.Registerer) *WatcherMetrics {
 
 // NewWatcher creates a new WAL watcher for a given WriteTo. cp will be used
 // for saving and restoring consumed segments, if non nil.
-func NewWatcher(metrics *WatcherMetrics, readerMetrics *LiveReaderMetrics, logger log.Logger, name string, writer WriteTo, cpoint Marker, walDir string, sendExemplars bool) *Watcher {
+func NewWatcher(metrics *WatcherMetrics, readerMetrics *LiveReaderMetrics, logger log.Logger, name string, writer WriteTo, marker Marker, walDir string, sendExemplars bool) *Watcher {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
 	return &Watcher{
 		logger:        logger,
 		writer:        writer,
-		marker:        cpoint,
+		marker:        marker,
 		metrics:       metrics,
 		readerMetrics: readerMetrics,
 		walDir:        path.Join(walDir, "wal"),
@@ -291,12 +288,6 @@ func (w *Watcher) Run() error {
 		// For testing: stop when you hit a specific segment.
 		if currentSegment == w.MaxSegment {
 			return nil
-		}
-
-		// Pass the completed segment to the marker before incrementing to the next
-		// segment to read.
-		if w.marker != nil {
-			w.marker.MarkSegment(currentSegment)
 		}
 
 		currentSegment++
