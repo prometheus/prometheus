@@ -644,7 +644,7 @@ func (t *QueueManager) updatePendingData(dataCount, dataSegment int) {
 	// This could cause our saved segment to lag behind multiple segments
 	// depending on the rate that new segments are created and how long
 	// data in other segments takes to be processed.
-	if dataSegment < t.lastMarkedSegment {
+	if dataSegment <= t.latestDataSegment {
 		return
 	}
 
