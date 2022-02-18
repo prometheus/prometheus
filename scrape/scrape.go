@@ -1520,12 +1520,7 @@ loop:
 			t = *tp
 		}
 
-		// Zero metadata out until resolved, must be done since
-		// we use a pointer later to avoid copying arg by stack for
-		// low function call overhead and thus need to declare the local var
-		// above the loop so that it does not get allocated per
-		// entry in the scrape (which could happen if we took by pointer
-		// and declared the local var inside the for loop).
+		// Zero metadata out for current iteration until it's resolved.
 		meta = metadata.Metadata{}
 
 		if sl.cache.getDropped(yoloString(met)) {
@@ -1543,8 +1538,7 @@ loop:
 			ref = ce.ref
 			lset = ce.lset
 
-			// We should only update metadata for cached series if they've
-			// changed in the current iteration.
+			// Update metadata only if it's changed in the current iteration.
 			sl.cache.metaMtx.Lock()
 			metaEntry, metaOk := sl.cache.metadata[yoloString(met)]
 			if metaOk && metaEntry.lastIterChange == sl.cache.iter {

@@ -78,7 +78,7 @@ type RefSample struct {
 	V   float64
 }
 
-// RefMetadata is the series metadata.
+// RefMetadata is the metadata associated with a series ID.
 type RefMetadata struct {
 	Ref  chunks.HeadSeriesRef
 	Type textparse.MetricType

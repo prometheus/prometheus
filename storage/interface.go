@@ -252,9 +252,9 @@ type ExemplarAppender interface {
 	AppendExemplar(ref SeriesRef, l labels.Labels, e exemplar.Exemplar) (SeriesRef, error)
 }
 
-// MetadataAppender provides an interface for adding metadata to a storage.
+// MetadataAppender provides an interface for associating metadata to stored series.
 type MetadataAppender interface {
-	// AppendMetadata appends a metadata for the given series.
+	// AppendMetadata appends a metadata for the given series and labels.
 	// A series reference number is returned which can be used to modify the
 	// metadata of the given series in the same or later transactions.
 	// Returned reference numbers are ephemeral and may be rejected in calls

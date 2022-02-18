@@ -299,7 +299,6 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 	}
 
 	s.Lock()
-
 	if err := s.appendable(t, v); err != nil {
 		s.Unlock()
 		if err == storage.ErrOutOfOrderSample {
@@ -323,7 +322,6 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 		V:   v,
 	})
 	a.sampleSeries = append(a.sampleSeries, s)
-
 	return storage.SeriesRef(s.ref), nil
 }
 
@@ -386,7 +384,6 @@ func (a *headAppender) AppendExemplar(ref storage.SeriesRef, lset labels.Labels,
 }
 
 func (a *headAppender) AppendMetadata(ref storage.SeriesRef, lset labels.Labels, meta metadata.Metadata) (storage.SeriesRef, error) {
-	// Get Series
 	s := a.head.series.getByID(chunks.HeadSeriesRef(ref))
 	if s == nil {
 		s = a.head.series.getByHash(lset.Hash(), lset)
@@ -399,7 +396,6 @@ func (a *headAppender) AppendMetadata(ref storage.SeriesRef, lset labels.Labels,
 	}
 
 	hasNewMetadata := false
-
 	s.Lock()
 	if s.meta != meta {
 		hasNewMetadata = true
