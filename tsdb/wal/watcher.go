@@ -158,8 +158,8 @@ func NewWatcherMetrics(reg prometheus.Registerer) *WatcherMetrics {
 	return m
 }
 
-// NewWatcher creates a new WAL watcher for a given WriteTo. cp will be used
-// for saving and restoring consumed segments, if non nil.
+// NewWatcher creates a new WAL watcher for a given WriteTo. Reading will start
+// at the segment returned by marker if marker is non-nil.
 func NewWatcher(metrics *WatcherMetrics, readerMetrics *LiveReaderMetrics, logger log.Logger, name string, writer WriteTo, marker Marker, walDir string, sendExemplars bool) *Watcher {
 	if logger == nil {
 		logger = log.NewNopLogger()
