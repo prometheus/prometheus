@@ -488,7 +488,7 @@ func (t *QueueManager) LastMarkedSegment() (segment *int) {
 
 func (t *QueueManager) markSegment(segment int) {
 	dir := filepath.Join(t.walDir, "remote", t.client().Name())
-	if err := os.MkdirAll(dir, 0o770); err != nil {
+	if err := os.MkdirAll(dir, 0o777); err != nil {
 		level.Error(t.logger).Log("msg", "could not create segment marker folder", "dir", dir, "err", err)
 		return
 	}
@@ -500,7 +500,7 @@ func (t *QueueManager) markSegment(segment int) {
 		tmp   = fname + ".tmp"
 	)
 
-	if err := ioutil.WriteFile(tmp, []byte(segmentText), 0o660); err != nil {
+	if err := ioutil.WriteFile(tmp, []byte(segmentText), 0o666); err != nil {
 		level.Error(t.logger).Log("msg", "could not create segment marker file", "file", tmp, "err", err)
 		return
 	}
