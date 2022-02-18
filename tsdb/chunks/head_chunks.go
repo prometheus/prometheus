@@ -137,9 +137,9 @@ func (f *chunkPos) cutFileOnNextChunk() {
 	f.cutFile = true
 }
 
-// initSeq sets the sequence number of the head chunk file.
+// setSeq sets the sequence number of the head chunk file.
 // Should only be used for initialization, after that the sequence number will be managed by chunkPos.
-func (f *chunkPos) initSeq(seq uint64) {
+func (f *chunkPos) setSeq(seq uint64) {
 	f.seq = seq
 }
 
@@ -181,7 +181,7 @@ type ChunkDiskMapper struct {
 	writeBufferSize int
 
 	curFile         *os.File      // File being written to.
-	curFileSequence int           // Index of current open file being appended to.
+	curFileSequence int           // Index of current open file being appended to. 0 if no file is active.
 	curFileOffset   atomic.Uint64 // Bytes written in current open file.
 	curFileMaxt     int64         // Used for the size retention.
 
@@ -321,7 +321,7 @@ func (cdm *ChunkDiskMapper) openMMapFiles() (returnErr error) {
 		}
 	}
 
-	cdm.evtlPos.initSeq(uint64(lastSeq))
+	cdm.evtlPos.setSeq(uint64(lastSeq))
 
 	return nil
 }
@@ -870,6 +870,12 @@ func (cdm *ChunkDiskMapper) Truncate(mint int64) error {
 		cdm.CutNewFile()
 	}
 	errs.Add(cdm.deleteFiles(removedFiles))
+
+	if cdm.curFileSequence == 0 && len(chkFileIndices) == len(removedFiles) {
+		// All files were deleted on startup. Reset the current sequence.
+		cdm.evtlPos.setSeq(0)
+	}
+
 	return errs.Err()
 }
 
@@ -907,14 +913,22 @@ func (cdm *ChunkDiskMapper) DeleteCorrupted(originalErr error) error {
 	// Delete all the head chunk files following the corrupt head chunk file.
 	segs := []int{}
 	cdm.readPathMtx.RLock()
+	lastSeq := 0
 	for seg := range cdm.mmappedChunkFiles {
 		if seg >= cerr.FileIndex {
 			segs = append(segs, seg)
+		} else if seg > lastSeq {
+			lastSeq = seg
 		}
 	}
 	cdm.readPathMtx.RUnlock()
 
-	return cdm.deleteFiles(segs)
+	err = cdm.deleteFiles(segs)
+	if err == nil {
+		cdm.evtlPos.setSeq(uint64(lastSeq))
+	}
+
+	return err
 }
 
 // Size returns the size of the chunk files.
