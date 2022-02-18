@@ -300,7 +300,6 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 	}
 
 	s.Lock()
-
 	if err := s.appendable(t, v); err != nil {
 		s.Unlock()
 		if err == storage.ErrOutOfOrderSample {
@@ -324,7 +323,6 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 		V:   v,
 	})
 	a.sampleSeries = append(a.sampleSeries, s)
-
 	return storage.SeriesRef(s.ref), nil
 }
 
