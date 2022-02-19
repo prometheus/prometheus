@@ -130,10 +130,7 @@ delta(cpu_temp_celsius{host="zeus"}[2h])
 
 `deriv(v range-vector)` calculates the per-second derivative of the time series in a range
 vector `v`, using [simple linear regression](https://en.wikipedia.org/wiki/Simple_linear_regression).
-The range vector must have at least two samples in order to perform the calculation. The linear 
-regression is used to calculate a slope and offset for a trend line, and the slope value is used 
-for the derivative calculation. In order to reduce calculation errors, the timestamp of the first 
-sample in the range vector is set as `x=0` within the linear regression algorithm. When `+Inf` or 
+The range vector must have at least two samples in order to perform the calculation. When `+Inf` or 
 `-Inf` are found in the range vector, the slope and offset value calculated will be `NaN`.
 
 `deriv` should only be used with gauges.
@@ -335,11 +332,7 @@ January etc.
 `t` seconds from now, based on the range vector `v`, using [simple linear
 regression](https://en.wikipedia.org/wiki/Simple_linear_regression).
 The range vector must have at least two samples in order to perform the 
-calculation. The linear regression is used to calculate a slope and offset 
-for a trend line, and the slope and offset are used to calculate the predict 
-the value of the time series. In order to reduce calculation errors, the 
-timestamp of the first sample in the range vector is set as `x=0` within the 
-linear regression algorithm. When `+Inf` or `-Inf` are found in the range vector, 
+calculation. When `+Inf` or `-Inf` are found in the range vector, 
 the slope and offset value calculated will be `NaN`.
 
 `predict_linear` should only be used with gauges.
