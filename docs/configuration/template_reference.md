@@ -84,6 +84,7 @@ versions.
 | args          | []interface{} | map[string]interface{} | This converts a list of objects to a map with keys arg0, arg1 etc. This is intended to allow multiple arguments to be passed to templates. |
 | tmpl          | string, []interface{} | nothing  | Like the built-in `template`, but allows non-literals as the template name. Note that the result is assumed to be safe, and will not be auto-escaped. Only available in consoles. |
 | safeHtml      | string        | string  | Marks string as HTML not requiring auto-escaping. |
+| pathPrefix    | _none_        | string  | The external URL [path](https://pkg.go.dev/net/url#URL) for use in console templates. |
 
 ## Template type differences
 

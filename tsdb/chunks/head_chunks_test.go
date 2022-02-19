@@ -450,12 +450,7 @@ func TestHeadReadWriter_ReadRepairOnEmptyLastFile(t *testing.T) {
 
 func createChunkDiskMapper(t *testing.T, dir string) *ChunkDiskMapper {
 	if dir == "" {
-		var err error
-		dir, err = ioutil.TempDir("", "data")
-		require.NoError(t, err)
-		t.Cleanup(func() {
-			require.NoError(t, os.RemoveAll(dir))
-		})
+		dir = t.TempDir()
 	}
 
 	hrw, err := NewChunkDiskMapper(nil, dir, chunkenc.NewPool(), DefaultWriteBufferSize, DefaultWriteQueueSize)

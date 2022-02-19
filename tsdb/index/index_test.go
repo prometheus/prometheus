@@ -137,11 +137,7 @@ func (m mockIndex) Series(ref storage.SeriesRef, lset *labels.Labels, chks *[]ch
 }
 
 func TestIndexRW_Create_Open(t *testing.T) {
-	dir, err := ioutil.TempDir("", "test_index_create")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 
 	fn := filepath.Join(dir, indexFilename)
 
@@ -166,11 +162,7 @@ func TestIndexRW_Create_Open(t *testing.T) {
 }
 
 func TestIndexRW_Postings(t *testing.T) {
-	dir, err := ioutil.TempDir("", "test_index_postings")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 
 	fn := filepath.Join(dir, indexFilename)
 
@@ -250,11 +242,7 @@ func TestIndexRW_Postings(t *testing.T) {
 }
 
 func TestPostingsMany(t *testing.T) {
-	dir, err := ioutil.TempDir("", "test_postings_many")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 
 	fn := filepath.Join(dir, indexFilename)
 
@@ -344,11 +332,7 @@ func TestPostingsMany(t *testing.T) {
 }
 
 func TestPersistence_index_e2e(t *testing.T) {
-	dir, err := ioutil.TempDir("", "test_persistence_e2e")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 
 	lbls, err := labels.ReadLabels(filepath.Join("..", "testdata", "20kseries.json"), 20000)
 	require.NoError(t, err)

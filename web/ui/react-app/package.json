@@ -8,7 +8,7 @@
     "@codemirror/commands": "^0.19.5",
     "@codemirror/comment": "^0.19.0",
     "@codemirror/highlight": "^0.19.6",
-    "@codemirror/history": "^0.19.0",
+    "@codemirror/history": "^0.19.2",
     "@codemirror/language": "^0.19.7",
     "@codemirror/lint": "^0.19.3",
     "@codemirror/matchbrackets": "^0.19.3",
@@ -20,7 +20,7 @@
     "@fortawesome/free-solid-svg-icons": "^5.7.2",
     "@fortawesome/react-fontawesome": "^0.1.16",
     "@nexucis/fuzzy": "^0.3.0",
-    "@nexucis/kvsearch": "^0.3.0",
+    "@nexucis/kvsearch": "^0.4.0",
     "bootstrap": "^4.6.1",
     "codemirror-promql": "0.19.0",
     "css.escape": "^1.5.1",
@@ -51,7 +51,8 @@
     "test:debug": "react-scripts --inspect-brk test --runInBand --no-cache",
     "eject": "react-scripts eject",
     "lint:ci": "eslint --quiet \"src/**/*.{ts,tsx}\"",
-    "lint": "eslint --fix \"src/**/*.{ts,tsx}\""
+    "lint": "eslint --fix \"src/**/*.{ts,tsx}\"",
+    "snapshot": "react-scripts test --updateSnapshot"
   },
   "prettier": {
     "singleQuote": true,
@@ -78,7 +79,7 @@
     "@types/react-router-dom": "^5.3.2",
     "@types/sanitize-html": "^2.6.1",
     "@types/sinon": "^10.0.6",
-    "@wojtekmaj/enzyme-adapter-react-17": "^0.6.5",
+    "@wojtekmaj/enzyme-adapter-react-17": "^0.6.6",
     "enzyme": "^3.11.0",
     "enzyme-to-json": "^3.6.2",
     "eslint-config-prettier": "^8.3.0",

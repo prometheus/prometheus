@@ -14,10 +14,8 @@
 package tombstones
 
 import (
-	"io/ioutil"
 	"math"
 	"math/rand"
-	"os"
 	"sync"
 	"testing"
 	"time"
@@ -34,10 +32,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestWriteAndReadbackTombstones(t *testing.T) {
-	tmpdir, _ := ioutil.TempDir("", "test")
-	defer func() {
-		require.NoError(t, os.RemoveAll(tmpdir))
-	}()
+	tmpdir := t.TempDir()
 
 	ref := uint64(0)
 

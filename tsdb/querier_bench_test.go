@@ -16,8 +16,6 @@ package tsdb
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
-	"os"
 	"strconv"
 	"testing"
 
@@ -32,11 +30,7 @@ const (
 )
 
 func BenchmarkQuerier(b *testing.B) {
-	chunkDir, err := ioutil.TempDir("", "chunk_dir")
-	require.NoError(b, err)
-	defer func() {
-		require.NoError(b, os.RemoveAll(chunkDir))
-	}()
+	chunkDir := b.TempDir()
 	opts := DefaultHeadOptions()
 	opts.ChunkRange = 1000
 	opts.ChunkDirRoot = chunkDir
@@ -74,11 +68,7 @@ func BenchmarkQuerier(b *testing.B) {
 		})
 	})
 
-	tmpdir, err := ioutil.TempDir("", "test_benchpostingsformatchers")
-	require.NoError(b, err)
-	defer func() {
-		require.NoError(b, os.RemoveAll(tmpdir))
-	}()
+	tmpdir := b.TempDir()
 
 	blockdir := createBlockFromHead(b, tmpdir, h)
 	block, err := OpenBlock(nil, blockdir, nil)
@@ -186,11 +176,7 @@ func benchmarkLabelValuesWithMatchers(b *testing.B, ir IndexReader) {
 }
 
 func BenchmarkQuerierSelect(b *testing.B) {
-	chunkDir, err := ioutil.TempDir("", "chunk_dir")
-	require.NoError(b, err)
-	defer func() {
-		require.NoError(b, os.RemoveAll(chunkDir))
-	}()
+	chunkDir := b.TempDir()
 	opts := DefaultHeadOptions()
 	opts.ChunkRange = 1000
 	opts.ChunkDirRoot = chunkDir
@@ -230,11 +216,7 @@ func BenchmarkQuerierSelect(b *testing.B) {
 		bench(b, h, true)
 	})
 
-	tmpdir, err := ioutil.TempDir("", "test_benchquerierselect")
-	require.NoError(b, err)
-	defer func() {
-		require.NoError(b, os.RemoveAll(tmpdir))
-	}()
+	tmpdir := b.TempDir()
 
 	blockdir := createBlockFromHead(b, tmpdir, h)
 	block, err := OpenBlock(nil, blockdir, nil)

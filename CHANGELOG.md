@@ -1,4 +1,17 @@
-## 2.33.0-rc.0 / 2022-01-12
+## 2.33.3 / 2022-02-11
+
+* [BUGFIX] Azure SD: Fix a regression when public IP Address isn't set. #10289
+
+## 2.33.2 / 2022-02-11
+
+* [BUGFIX] Azure SD: Fix panic when public IP Address isn't set. #10280
+* [BUGFIX] Remote-write: Fix deadlock when stopping a shard. #10279
+
+## 2.33.1 / 2022-02-02
+
+* [BUGFIX] SD: Fix _no such file or directory_ in K8s SD when not running inside K8s. #10235
+
+## 2.33.0 / 2022-01-29
 
 * [CHANGE] PromQL: Promote negative offset and `@` modifer to stable features. #10121
 * [CHANGE] Web: Promote remote-write-receiver to stable. #10119
@@ -25,6 +38,7 @@
 * [BUGFIX] UI: Fix overlapping click targets for the alert state checkboxes. #10136
 * [BUGFIX] UI: Fix _Unhealthy_ filter on target page to actually display only _Unhealthy_ targets. #10103
 * [BUGFIX] UI: Fix autocompletion when expression is empty. #10053
+* [BUGFIX] TSDB: Fix deadlock from simultaneous GC and write. #10166
 
 ## 2.32.1 / 2021-12-17
 

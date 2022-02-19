@@ -1479,7 +1479,8 @@ func TestScrapeLoopAppendCacheEntryButErrNotFound(t *testing.T) {
 	fakeRef := storage.SeriesRef(1)
 	expValue := float64(1)
 	metric := `metric{n="1"} 1`
-	p := textparse.New([]byte(metric), "")
+	p, warning := textparse.New([]byte(metric), "")
+	require.NoError(t, warning)
 
 	var lset labels.Labels
 	p.Next()

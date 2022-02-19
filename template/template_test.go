@@ -27,16 +27,7 @@ import (
 )
 
 func TestTemplateExpansion(t *testing.T) {
-	scenarios := []struct {
-		text        string
-		output      string
-		input       interface{}
-		options     []string
-		queryResult promql.Vector
-		shouldFail  bool
-		html        bool
-		errorMsg    string
-	}{
+	testTemplateExpansion(t, []scenario{
 		{
 			// No template.
 			text:   "plain text",
@@ -353,14 +344,14 @@ func TestTemplateExpansion(t *testing.T) {
 		{
 			// HumanizeDuration - int.
 			text:   "{{ range . }}{{ humanizeDuration . }}:{{ end }}",
-			input:  []int{0, -1, 1, 1234567, math.MaxInt64},
-			output: "0s:-1s:1s:14d 6h 56m 7s:-106751991167300d -15h -30m -8s:",
+			input:  []int{0, -1, 1, 1234567},
+			output: "0s:-1s:1s:14d 6h 56m 7s:",
 		},
 		{
 			// HumanizeDuration - uint.
 			text:   "{{ range . }}{{ humanizeDuration . }}:{{ end }}",
-			input:  []uint{0, 1, 1234567, math.MaxUint64},
-			output: "0s:1s:14d 6h 56m 7s:-106751991167300d -15h -30m -8s:",
+			input:  []uint{0, 1, 1234567},
+			output: "0s:1s:14d 6h 56m 7s:",
 		},
 		{
 			// Humanize* Inf and NaN - float64.
@@ -489,8 +480,21 @@ func TestTemplateExpansion(t *testing.T) {
 			text:   "{{ printf \"%0.2f\" (parseDuration \"1h2m10ms\") }}",
 			output: "3720.01",
 		},
-	}
+	})
+}
 
+type scenario struct {
+	text        string
+	output      string
+	input       interface{}
+	options     []string
+	queryResult promql.Vector
+	shouldFail  bool
+	html        bool
+	errorMsg    string
+}
+
+func testTemplateExpansion(t *testing.T, scenarios []scenario) {
 	extURL, err := url.Parse("http://testhost:9090/path/prefix")
 	if err != nil {
 		panic(err)
