@@ -49,28 +49,28 @@ func TestDB_InvalidSeries(t *testing.T) {
 		_, err := app.Append(0, labels.Labels{}, 0, 0)
 		require.ErrorIs(t, err, tsdb.ErrInvalidSample, "should reject empty labels")
 
-		_, err = app.Append(0, labels.Labels{{Name: "a", Value: "1"}, {Name: "a", Value: "2"}}, 0, 0)
+		_, err = app.Append(0, labels.FromStrings("a", "1", "a", "2"), 0, 0)
 		require.ErrorIs(t, err, tsdb.ErrInvalidSample, "should reject duplicate labels")
 	})
 
 	t.Run("Exemplars", func(t *testing.T) {
-		sRef, err := app.Append(0, labels.Labels{{Name: "a", Value: "1"}}, 0, 0)
+		sRef, err := app.Append(0, labels.FromStrings("a", "1"), 0, 0)
 		require.NoError(t, err, "should not reject valid series")
 
-		_, err = app.AppendExemplar(0, nil, exemplar.Exemplar{})
+		_, err = app.AppendExemplar(0, labels.EmptyLabels(), exemplar.Exemplar{})
 		require.EqualError(t, err, "unknown series ref when trying to add exemplar: 0")
 
-		e := exemplar.Exemplar{Labels: labels.Labels{{Name: "a", Value: "1"}, {Name: "a", Value: "2"}}}
-		_, err = app.AppendExemplar(sRef, nil, e)
+		e := exemplar.Exemplar{Labels: labels.FromStrings("a", "1", "a", "2")}
+		_, err = app.AppendExemplar(sRef, labels.EmptyLabels(), e)
 		require.ErrorIs(t, err, tsdb.ErrInvalidExemplar, "should reject duplicate labels")
 
-		e = exemplar.Exemplar{Labels: labels.Labels{{Name: "a_somewhat_long_trace_id", Value: "nYJSNtFrFTY37VR7mHzEE/LIDt7cdAQcuOzFajgmLDAdBSRHYPDzrxhMA4zz7el8naI/AoXFv9/e/G0vcETcIoNUi3OieeLfaIRQci2oa"}}}
-		_, err = app.AppendExemplar(sRef, nil, e)
+		e = exemplar.Exemplar{Labels: labels.FromStrings("a_somewhat_long_trace_id", "nYJSNtFrFTY37VR7mHzEE/LIDt7cdAQcuOzFajgmLDAdBSRHYPDzrxhMA4zz7el8naI/AoXFv9/e/G0vcETcIoNUi3OieeLfaIRQci2oa")}
+		_, err = app.AppendExemplar(sRef, labels.EmptyLabels(), e)
 		require.ErrorIs(t, err, storage.ErrExemplarLabelLength, "should reject too long label length")
 
 		// Inverse check
-		e = exemplar.Exemplar{Labels: labels.Labels{{Name: "a", Value: "1"}}, Value: 20, Ts: 10, HasTs: true}
-		_, err = app.AppendExemplar(sRef, nil, e)
+		e = exemplar.Exemplar{Labels: labels.FromStrings("a", "1"), Value: 20, Ts: 10, HasTs: true}
+		_, err = app.AppendExemplar(sRef, labels.EmptyLabels(), e)
 		require.NoError(t, err, "should not reject valid exemplars")
 	})
 }
@@ -426,9 +426,7 @@ func Test_ExistingWAL_NextRef(t *testing.T) {
 	// Append <seriesCount> series
 	app := db.Appender(context.Background())
 	for i := 0; i < seriesCount; i++ {
-		lset := labels.Labels{
-			{Name: model.MetricNameLabel, Value: fmt.Sprintf("series_%d", i)},
-		}
+		lset := labels.FromStrings(model.MetricNameLabel, fmt.Sprintf("series_%d", i))
 		_, err := app.Append(0, lset, 0, 100)
 		require.NoError(t, err)
 	}
@@ -470,11 +468,11 @@ func startTime() (int64, error) {
 }
 
 // Create series for tests.
-func labelsForTest(lName string, seriesCount int) []labels.Labels {
-	var series []labels.Labels
+func labelsForTest(lName string, seriesCount int) [][]labels.Label {
+	var series [][]labels.Label
 
 	for i := 0; i < seriesCount; i++ {
-		lset := labels.Labels{
+		lset := []labels.Label{
 			{Name: "a", Value: lName},
 			{Name: "instance", Value: "localhost" + strconv.Itoa(i)},
 			{Name: "job", Value: "prometheus"},
@@ -507,28 +505,28 @@ func TestStorage_DuplicateExemplarsIgnored(t *testing.T) {
 	app := s.Appender(context.Background())
 	defer s.Close()
 
-	sRef, err := app.Append(0, labels.Labels{{Name: "a", Value: "1"}}, 0, 0)
+	sRef, err := app.Append(0, labels.FromStrings("a", "1"), 0, 0)
 	require.NoError(t, err, "should not reject valid series")
 
 	// Write a few exemplars to our appender and call Commit().
 	// If the Labels, Value or Timestamp are different than the last exemplar,
 	// then a new one should be appended; Otherwise, it should be skipped.
-	e := exemplar.Exemplar{Labels: labels.Labels{{Name: "a", Value: "1"}}, Value: 20, Ts: 10, HasTs: true}
-	_, _ = app.AppendExemplar(sRef, nil, e)
-	_, _ = app.AppendExemplar(sRef, nil, e)
+	e := exemplar.Exemplar{Labels: labels.FromStrings("a", "1"), Value: 20, Ts: 10, HasTs: true}
+	_, _ = app.AppendExemplar(sRef, labels.EmptyLabels(), e)
+	_, _ = app.AppendExemplar(sRef, labels.EmptyLabels(), e)
 
-	e.Labels = labels.Labels{{Name: "b", Value: "2"}}
-	_, _ = app.AppendExemplar(sRef, nil, e)
-	_, _ = app.AppendExemplar(sRef, nil, e)
-	_, _ = app.AppendExemplar(sRef, nil, e)
+	e.Labels = labels.FromStrings("b", "2")
+	_, _ = app.AppendExemplar(sRef, labels.EmptyLabels(), e)
+	_, _ = app.AppendExemplar(sRef, labels.EmptyLabels(), e)
+	_, _ = app.AppendExemplar(sRef, labels.EmptyLabels(), e)
 
 	e.Value = 42
-	_, _ = app.AppendExemplar(sRef, nil, e)
-	_, _ = app.AppendExemplar(sRef, nil, e)
+	_, _ = app.AppendExemplar(sRef, labels.EmptyLabels(), e)
+	_, _ = app.AppendExemplar(sRef, labels.EmptyLabels(), e)
 
 	e.Ts = 25
-	_, _ = app.AppendExemplar(sRef, nil, e)
-	_, _ = app.AppendExemplar(sRef, nil, e)
+	_, _ = app.AppendExemplar(sRef, labels.EmptyLabels(), e)
+	_, _ = app.AppendExemplar(sRef, labels.EmptyLabels(), e)
 
 	require.NoError(t, app.Commit())
 
