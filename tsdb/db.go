@@ -54,8 +54,6 @@ const (
 	// Block dir suffixes to make deletion and creation operations atomic.
 	// We decided to do suffixes instead of creating meta.json as last (or delete as first) one,
 	// because in error case you still can recover meta.json from the block content within local TSDB dir.
-	// TODO(bwplotka): TSDB can end up with various .tmp files (e.g meta.json.tmp, WAL or segment tmp file. Think
-	// about removing those too on start to save space. Currently only blocks tmp dirs are removed.
 	tmpForDeletionBlockDirSuffix = ".tmp-for-deletion"
 	tmpForCreationBlockDirSuffix = ".tmp-for-creation"
 	// Pre-2.21 tmp dir suffix, used in clean-up functions.
@@ -639,9 +637,11 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	if err := MigrateWAL(l, walDir); err != nil {
 		return nil, errors.Wrap(err, "migrate WAL")
 	}
-	// Remove garbage, tmp blocks.
-	if err := removeBestEffortTmpDirs(l, dir); err != nil {
-		return nil, errors.Wrap(err, "remove tmp dirs")
+	for _, tmpDir := range []string{dir, walDir} {
+		// Remove garbage, tmp blocks.
+		if err := removeBestEffortTmpDirs(l, tmpDir); err != nil {
+			return nil, errors.Wrap(err, "remove tmp dirs")
+		}
 	}
 
 	db := &DB{
@@ -760,6 +760,9 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 
 func removeBestEffortTmpDirs(l log.Logger, dir string) error {
 	files, err := ioutil.ReadDir(dir)
+	if files == nil {
+		return nil
+	}
 	if err != nil {
 		return err
 	}

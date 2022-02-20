@@ -2902,6 +2902,7 @@ func deleteNonBlocks(dbDir string) error {
 
 func TestOpen_VariousBlockStates(t *testing.T) {
 	tmpDir := t.TempDir()
+	walDir := filepath.Join(tmpDir, "wal")
 
 	var (
 		expectedLoadedDirs  = map[string]struct{}{}
@@ -2940,6 +2941,11 @@ func TestOpen_VariousBlockStates(t *testing.T) {
 		dir := createBlock(t, tmpDir, genSeries(10, 2, 30, 40))
 		require.NoError(t, fileutil.Replace(dir, dir+tmpForCreationBlockDirSuffix))
 		expectedRemovedDirs[dir+tmpForCreationBlockDirSuffix] = struct{}{}
+
+		// wal Tmp blocks during creation; those should be removed on start.
+		tmpWalDir := createBlock(t, walDir, genSeries(10, 2, 30, 40))
+		require.NoError(t, fileutil.Replace(tmpWalDir, tmpWalDir+tmpLegacy))
+		expectedRemovedDirs[tmpWalDir+tmpLegacy] = struct{}{}
 
 		// Tmp blocks during deletion; those should be removed on start.
 		dir = createBlock(t, tmpDir, genSeries(10, 2, 40, 50))
