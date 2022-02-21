@@ -18,15 +18,11 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"os"
 	"sort"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
-
-	"github.com/prometheus/prometheus/tsdb/tsdbutil"
-
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 
@@ -35,6 +31,7 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/util/stats"
 )
 
@@ -45,9 +42,7 @@ func TestMain(m *testing.M) {
 func TestQueryConcurrency(t *testing.T) {
 	maxConcurrency := 10
 
-	dir, err := os.MkdirTemp("", "test_concurrency")
-	require.NoError(t, err)
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
 	queryTracker := NewActiveQueryTracker(dir, maxConcurrency, nil)
 	t.Cleanup(queryTracker.Close)
 
@@ -61,12 +56,12 @@ func TestQueryConcurrency(t *testing.T) {
 
 	engine := NewEngine(opts)
 	ctx, cancelCtx := context.WithCancel(context.Background())
-	defer cancelCtx()
+	t.Cleanup(cancelCtx)
 
 	block := make(chan struct{})
 	processing := make(chan struct{})
 	done := make(chan int)
-	defer close(done)
+	t.Cleanup(func() { close(done) })
 
 	f := func(context.Context) error {
 		select {
@@ -83,6 +78,7 @@ func TestQueryConcurrency(t *testing.T) {
 
 	for i := 0; i < maxConcurrency; i++ {
 		q := engine.newTestQuery(f)
+
 		go q.Exec(ctx)
 		select {
 		case <-processing:
