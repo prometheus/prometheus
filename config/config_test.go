@@ -1465,6 +1465,10 @@ var expectedErrors = []struct {
 		errMsg:   "x-prometheus-remote-write-version is a reserved header. It must not be changed",
 	},
 	{
+		filename: "tracing_invalid_authorization_header.bad.yml",
+		errMsg:   "authorization header configuration is not yet supported",
+	},
+	{
 		filename: "tracing_invalid_compression.bad.yml",
 		errMsg:   "invalid compression type foo provided, valid options: gzip",
 	},

@@ -194,15 +194,11 @@ func getClient(tracingCfg config.TracingConfig) (otlptrace.Client, error) {
 			opts = append(opts, otlptracegrpc.WithTimeout(time.Duration(tracingCfg.Timeout)))
 		}
 
-		// Configure TLS only if config is not empty.
-		var blankTLSConfig config_util.TLSConfig
-		if tracingCfg.TLSConfig != blankTLSConfig {
-			tlsConf, err := config_util.NewTLSConfig(&tracingCfg.TLSConfig)
-			if err != nil {
-				return nil, err
-			}
-			opts = append(opts, otlptracegrpc.WithTLSCredentials(credentials.NewTLS(tlsConf)))
+		tlsConf, err := config_util.NewTLSConfig(&tracingCfg.TLSConfig)
+		if err != nil {
+			return nil, err
 		}
+		opts = append(opts, otlptracegrpc.WithTLSCredentials(credentials.NewTLS(tlsConf)))
 
 		client = otlptracegrpc.NewClient(opts...)
 	case config.TracingClientHTTP:
@@ -221,15 +217,11 @@ func getClient(tracingCfg config.TracingConfig) (otlptrace.Client, error) {
 			opts = append(opts, otlptracehttp.WithTimeout(time.Duration(tracingCfg.Timeout)))
 		}
 
-		// Configure TLS only if config is not empty.
-		var blankTLSConfig config_util.TLSConfig
-		if tracingCfg.TLSConfig != blankTLSConfig {
-			tlsConf, err := config_util.NewTLSConfig(&tracingCfg.TLSConfig)
-			if err != nil {
-				return nil, err
-			}
-			opts = append(opts, otlptracehttp.WithTLSClientConfig(tlsConf))
+		tlsConf, err := config_util.NewTLSConfig(&tracingCfg.TLSConfig)
+		if err != nil {
+			return nil, err
 		}
+		opts = append(opts, otlptracehttp.WithTLSClientConfig(tlsConf))
 
 		client = otlptracehttp.NewClient(opts...)
 	}
