@@ -558,7 +558,7 @@ func (t *TracingConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 
-	if err := validateHeaders(t.Headers); err != nil {
+	if err := validateHeadersForTracing(t.Headers); err != nil {
 		return err
 	}
 
@@ -802,6 +802,18 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 		return fmt.Errorf("at most one of basic_auth, authorization, oauth2, & sigv4 must be configured")
 	}
 
+	return nil
+}
+
+func validateHeadersForTracing(headers map[string]string) error {
+	for header := range headers {
+		if strings.ToLower(header) == "authorization" {
+			return errors.New("custom authorization header configuration is not yet supported")
+		}
+		if _, ok := reservedHeaders[strings.ToLower(header)]; ok {
+			return errors.Errorf("%s is a reserved header. It must not be changed", header)
+		}
+	}
 	return nil
 }
 
