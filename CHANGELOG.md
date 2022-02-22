@@ -1,3 +1,7 @@
+## 2.33.4 / 2022-02-22
+
+* [BUGFIX] TSDB: Fix panic when m-mapping head chunks onto the disk. #10316
+
 ## 2.33.3 / 2022-02-11
 
 * [BUGFIX] Azure SD: Fix a regression when public IP Address isn't set. #10289
