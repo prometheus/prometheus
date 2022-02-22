@@ -395,15 +395,15 @@ func (a *headAppender) AppendMetadata(ref storage.SeriesRef, lset labels.Labels,
 		return 0, fmt.Errorf("unknown HeadSeriesRef when trying to add metadata: %d", ref)
 	}
 
-	hasNewMetadata := false
-	s.Lock()
-	if s.meta != meta {
-		hasNewMetadata = true
-		s.meta = meta
-	}
-	s.Unlock()
+	s.RLock()
+	hasNewMetadata := s.meta != meta
+	s.RUnlock()
 
 	if hasNewMetadata {
+		s.Lock()
+		s.meta = meta
+		s.Unlock()
+
 		a.metadata = append(a.metadata, record.RefMetadata{
 			Ref:  s.ref,
 			Type: s.meta.Type,
