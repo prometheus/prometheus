@@ -886,7 +886,7 @@ func (cdm *ChunkDiskMapper) Truncate(mint int64) error {
 	return errs.Err()
 }
 
-// deleteFiles deletes the gives file sequences in order of the sequence.
+// deleteFiles deletes the given file sequences in order of the sequence.
 // In case of an error, it returns the sorted file sequences that were not deleted from the _disk_.
 func (cdm *ChunkDiskMapper) deleteFiles(removedFiles []int) ([]int, error) {
 	sort.Ints(removedFiles) // To delete them in order.
