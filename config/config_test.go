@@ -1466,7 +1466,7 @@ var expectedErrors = []struct {
 	},
 	{
 		filename: "tracing_invalid_authorization_header.bad.yml",
-		errMsg:   "authorization header configuration is not yet supported.",
+		errMsg:   "authorization header configuration is not yet supported",
 	},
 	{
 		filename: "tracing_invalid_compression.bad.yml",
