@@ -509,6 +509,8 @@ type TracingClientType string
 const (
 	TracingClientHTTP TracingClientType = "http"
 	TracingClientGRPC TracingClientType = "grpc"
+
+	GzipCompression = "gzip"
 )
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -561,6 +563,11 @@ func (t *TracingConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 	if t.Endpoint == "" {
 		return errors.New("tracing endpoint must be set")
+	}
+
+	if t.Compression != "" && t.Compression != GzipCompression {
+		return fmt.Errorf("invalid compression type %s provided, valid options: %s",
+			t.Compression, GzipCompression)
 	}
 
 	return nil

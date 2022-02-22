@@ -1463,6 +1463,10 @@ var expectedErrors = []struct {
 		errMsg:   "x-prometheus-remote-write-version is a reserved header. It must not be changed",
 	},
 	{
+		filename: "tracing_invalid_compression.bad.yml",
+		errMsg:   "invalid compression type foo provided, valid options: gzip",
+	},
+	{
 		filename: "uyuni_no_server.bad.yml",
 		errMsg:   "Uyuni SD configuration requires server host",
 	},

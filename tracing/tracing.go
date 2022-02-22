@@ -211,7 +211,7 @@ func getClient(tracingCfg config.TracingConfig) (otlptrace.Client, error) {
 			opts = append(opts, otlptracehttp.WithInsecure())
 		}
 		// Currently, OTEL supports only gzip compression.
-		if tracingCfg.Compression == "gzip" {
+		if tracingCfg.Compression == config.GzipCompression {
 			opts = append(opts, otlptracehttp.WithCompression(otlptracehttp.GzipCompression))
 		}
 		if len(tracingCfg.Headers) != 0 {
