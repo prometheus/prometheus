@@ -1115,6 +1115,7 @@ func (ev *evaluator) rangeEval(prepSeries func(labels.Labels, *EvalSeriesHelper)
 				}
 			}
 			args[i] = vectors[i]
+			ev.samplesStats.UpdatePeak(ev.currentSamples)
 		}
 
 		// Make the function call.
@@ -1130,10 +1131,12 @@ func (ev *evaluator) rangeEval(prepSeries func(labels.Labels, *EvalSeriesHelper)
 		// When we reset currentSamples to tempNumSamples during the next iteration of the loop it also
 		// needs to include the samples from the result here, as they're still in memory.
 		tempNumSamples += len(result)
+		ev.samplesStats.UpdatePeak(ev.currentSamples)
 
 		if ev.currentSamples > ev.maxSamples {
 			ev.error(ErrTooManySamples(env))
 		}
+		ev.samplesStats.UpdatePeak(ev.currentSamples)
 
 		// If this could be an instant query, shortcut so as not to change sort order.
 		if ev.endTimestamp == ev.startTimestamp {
@@ -1143,6 +1146,7 @@ func (ev *evaluator) rangeEval(prepSeries func(labels.Labels, *EvalSeriesHelper)
 				mat[i] = Series{Metric: s.Metric, Points: []Point{s.Point}}
 			}
 			ev.currentSamples = originalNumSamples + mat.TotalSamples()
+			ev.samplesStats.UpdatePeak(ev.currentSamples)
 			return mat, warnings
 		}
 
@@ -1175,17 +1179,20 @@ func (ev *evaluator) rangeEval(prepSeries func(labels.Labels, *EvalSeriesHelper)
 		mat = append(mat, ss)
 	}
 	ev.currentSamples = originalNumSamples + mat.TotalSamples()
+	ev.samplesStats.UpdatePeak(ev.currentSamples)
 	return mat, warnings
 }
 
 // evalSubquery evaluates given SubqueryExpr and returns an equivalent
 // evaluated MatrixSelector in its place. Note that the Name and LabelMatchers are not set.
 func (ev *evaluator) evalSubquery(subq *parser.SubqueryExpr) (*parser.MatrixSelector, int, storage.Warnings) {
-	sampleStats := ev.samplesStats
+	samplesStats := ev.samplesStats
 	// Avoid double counting samples when running a subquery, those samples will be counted in later stage.
-	ev.samplesStats = nil
+	ev.samplesStats = ev.samplesStats.NewChild()
 	val, ws := ev.eval(subq)
-	ev.samplesStats = sampleStats
+	// But do incorporate the peak from the subquery
+	samplesStats.UpdatePeakFromSubquery(ev.samplesStats)
+	ev.samplesStats = samplesStats
 	mat := val.(Matrix)
 	vs := &parser.VectorSelector{
 		OriginalOffset: subq.OriginalOffset,
@@ -1409,7 +1416,9 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 			} else {
 				putPointSlice(ss.Points)
 			}
+			ev.samplesStats.UpdatePeak(ev.currentSamples)
 		}
+		ev.samplesStats.UpdatePeak(ev.currentSamples)
 
 		ev.currentSamples -= len(points)
 		putPointSlice(points)
@@ -1563,6 +1572,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 				putPointSlice(ss.Points)
 			}
 		}
+		ev.samplesStats.UpdatePeak(ev.currentSamples)
 		return mat, ws
 
 	case *parser.MatrixSelector:
@@ -1607,6 +1617,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 
 		res, ws := newEv.eval(e.Expr)
 		ev.currentSamples = newEv.currentSamples
+		ev.samplesStats.UpdatePeakFromSubquery(newEv.samplesStats)
 		ev.samplesStats.IncrementSamplesAtTimestamp(ev.endTimestamp, newEv.samplesStats.TotalSamples)
 		return res, ws
 	case *parser.StepInvariantExpr:
@@ -1629,6 +1640,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 		}
 		res, ws := newEv.eval(e.Expr)
 		ev.currentSamples = newEv.currentSamples
+		ev.samplesStats.UpdatePeakFromSubquery(newEv.samplesStats)
 		for ts, step := ev.startTimestamp, -1; ts <= ev.endTimestamp; ts = ts + ev.interval {
 			step++
 			ev.samplesStats.IncrementSamplesAtStep(step, newEv.samplesStats.TotalSamples)
@@ -1662,6 +1674,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 				}
 			}
 		}
+		ev.samplesStats.UpdatePeak(ev.currentSamples)
 		return res, ws
 	}
 
@@ -1694,6 +1707,7 @@ func (ev *evaluator) vectorSelector(node *parser.VectorSelector, ts int64) (Vect
 		}
 
 	}
+	ev.samplesStats.UpdatePeak(ev.currentSamples)
 	return vec, ws
 }
 
@@ -1841,6 +1855,7 @@ func (ev *evaluator) matrixIterSlice(it *storage.BufferedSeriesIterator, mint, m
 			ev.currentSamples++
 		}
 	}
+	ev.samplesStats.UpdatePeak(ev.currentSamples)
 	return out
 }
 
