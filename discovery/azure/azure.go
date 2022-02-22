@@ -371,7 +371,9 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 
 				if *networkInterface.Primary {
 					for _, ip := range *networkInterface.IPConfigurations {
-						if ip.PublicIPAddress != nil && ip.PublicIPAddress.PublicIPAddressPropertiesFormat != nil {
+						// IPAddress is a field defined in PublicIPAddressPropertiesFormat,
+						// therefore we need to validate that both are not nil.
+						if ip.PublicIPAddress != nil && ip.PublicIPAddress.PublicIPAddressPropertiesFormat != nil && ip.PublicIPAddress.IPAddress != nil {
 							labels[azureLabelMachinePublicIP] = model.LabelValue(*ip.PublicIPAddress.IPAddress)
 						}
 						if ip.PrivateIPAddress != nil {

@@ -1,3 +1,12 @@
+## 2.33.3 / 2022-02-11
+
+* [BUGFIX] Azure SD: Fix a regression when public IP Address isn't set. #10289
+
+## 2.33.2 / 2022-02-11
+
+* [BUGFIX] Azure SD: Fix panic when public IP Address isn't set. #10280
+* [BUGFIX] Remote-write: Fix deadlock when stopping a shard. #10279
+
 ## 2.33.1 / 2022-02-02
 
 * [BUGFIX] SD: Fix _no such file or directory_ in K8s SD when not running inside K8s. #10235

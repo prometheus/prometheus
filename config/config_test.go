@@ -19,12 +19,12 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"regexp"
 	"testing"
 	"time"
 
 	"github.com/alecthomas/units"
 	"github.com/go-kit/log"
+	"github.com/grafana/regexp"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
@@ -130,11 +130,12 @@ var expectedConf = &Config{
 
 	RemoteReadConfigs: []*RemoteReadConfig{
 		{
-			URL:              mustParseURL("http://remote1/read"),
-			RemoteTimeout:    model.Duration(1 * time.Minute),
-			ReadRecent:       true,
-			Name:             "default",
-			HTTPClientConfig: config.DefaultHTTPClientConfig,
+			URL:                  mustParseURL("http://remote1/read"),
+			RemoteTimeout:        model.Duration(1 * time.Minute),
+			ReadRecent:           true,
+			Name:                 "default",
+			HTTPClientConfig:     config.DefaultHTTPClientConfig,
+			FilterExternalLabels: true,
 		},
 		{
 			URL:              mustParseURL("http://remote3/read"),
@@ -149,6 +150,7 @@ var expectedConf = &Config{
 				},
 				FollowRedirects: true,
 			},
+			FilterExternalLabels: true,
 		},
 	},
 

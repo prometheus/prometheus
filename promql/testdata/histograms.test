@@ -60,6 +60,11 @@ eval instant at 50m histogram_quantile(1.01, testhistogram_bucket)
 	{start="positive"} +Inf
 	{start="negative"} +Inf
 
+# Quantile invalid.
+eval instant at 50m histogram_quantile(NaN, testhistogram_bucket)
+	{start="positive"} NaN
+	{start="negative"} NaN
+
 # Quantile value in lowest bucket, which is positive.
 eval instant at 50m histogram_quantile(0, testhistogram_bucket{start="positive"})
 	{start="positive"} 0

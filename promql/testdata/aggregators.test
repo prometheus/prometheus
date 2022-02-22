@@ -399,6 +399,11 @@ eval instant at 1m quantile without(point)((scalar(foo)), data)
 	{test="three samples"} 1.6
 	{test="uneven samples"} 2.8
 
+eval instant at 1m quantile without(point)(NaN, data)
+    {test="two samples"} NaN
+    {test="three samples"} NaN
+    {test="uneven samples"} NaN
+
 # Tests for group.
 clear
 
