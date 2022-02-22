@@ -108,6 +108,7 @@ type queryTimings struct {
 type querySamples struct {
 	TotalQueryableSamplesPerStep []stepStat `json:"totalQueryableSamplesPerStep,omitempty"`
 	TotalQueryableSamples        int        `json:"totalQueryableSamples"`
+	PeakSamples                  int        `json:"peakSamples"`
 }
 
 // BuiltinStats holds the statistics that Prometheus's core gathers.
@@ -156,6 +157,7 @@ func NewQueryStats(s *Statistics) QueryStats {
 	if sp != nil {
 		samples = &querySamples{
 			TotalQueryableSamples: sp.TotalSamples,
+			PeakSamples:           sp.PeakSamples,
 		}
 		samples.TotalQueryableSamplesPerStep = sp.totalSamplesPerStepPoints()
 	}
@@ -229,6 +231,12 @@ type QueryTimers struct {
 type TotalSamplesPerStep map[int64]int
 
 type QuerySamples struct {
+	// PeakSamples represent the highest count of samples considered
+	// while evaluating a query. It corresponds to the peak value of
+	// currentSamples, which is in turn compared against the MaxSamples
+	// configured in the engine.
+	PeakSamples int
+
 	// TotalSamples represents the total number of samples scanned
 	// while evaluating a query.
 	TotalSamples int
@@ -284,6 +292,28 @@ func (qs *QuerySamples) IncrementSamplesAtTimestamp(t int64, samples int) {
 	if qs.TotalSamplesPerStep != nil {
 		i := int((t - qs.startTimestamp) / qs.interval)
 		qs.TotalSamplesPerStep[i] += samples
+	}
+}
+
+// UpdatePeak updates the peak number of samples considered in
+// the evaluation of a query as used with the MaxSamples limit.
+func (qs *QuerySamples) UpdatePeak(samples int) {
+	if qs == nil {
+		return
+	}
+	if samples > qs.PeakSamples {
+		qs.PeakSamples = samples
+	}
+}
+
+// UpdatePeakFromSubquery updates the peak number of samples considered
+// in a query from its evaluation of a subquery.
+func (qs *QuerySamples) UpdatePeakFromSubquery(other *QuerySamples) {
+	if qs == nil || other == nil {
+		return
+	}
+	if other.PeakSamples > qs.PeakSamples {
+		qs.PeakSamples = other.PeakSamples
 	}
 }
 
