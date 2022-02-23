@@ -1,3 +1,19 @@
+## 2.34.0-rc.0 / 2022-02-24
+
+* [CHANGE] UI: Classic UI removed. #10208
+* [CHANGE] Tracing: Migrate from Jaeger to OpenTelemetry based tracing. #9724, #10203, #10276
+* [ENHANCEMENT] Azure SD: Set Prometheus User-Agent on requests. #10209
+* [ENHANCEMENT] Uyuni SD: Reduce the number of logins to Uyuni. #10072
+* [ENHANCEMENT] Scrape: Log when an invalid media type is encounted during a scrape. #10186
+* [ENHANCEMENT] Scrape: Accept application/openmetrics-text;version=1.0.0 in addition to version=0.0.1. #9431
+* [ENHANCEMENT] Remote-read: Add an option to not use external labels as selectors for remote read. #10254
+* [ENHANCEMENT] UI: Optimize the alerts page and add a search bar. #10142
+* [ENHANCEMENT] UI: Improve graph colors that were hard to see. #10179
+* [ENHANCEMENT] Config: Allow escaping of `$` with `$$` when using environment variables with external labels. #10129
+* [BUGFIX] PromQL: Properly return an error from histogram_quantile when metrics have the same labelset. #10140 
+* [BUGFIX] UI: Fix bug that sets the range input to the resolution. #10227
+* [BUGFIX] TSDB: Fix a query panic when `memory-snapshot-on-shutdown` is enabled. #10348
+
 ## 2.33.4 / 2022-02-22
 
 * [BUGFIX] TSDB: Fix panic when m-mapping head chunks onto the disk. #10316
