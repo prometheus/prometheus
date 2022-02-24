@@ -44,7 +44,7 @@ const (
 	// Exemplars is used to match WAL records of type Exemplars.
 	Exemplars Type = 4
 	// Metadata is used to match WAL records of type Metadata.
-	Metadata Type = 5
+	Metadata Type = 6
 )
 
 func (rt Type) String() string {
@@ -57,8 +57,45 @@ func (rt Type) String() string {
 		return "exemplars"
 	case Tombstones:
 		return "tombstones"
+	case Metadata:
+		return "metadata"
 	default:
 		return "unknown"
+	}
+}
+
+// MetricType represents the type of a series.
+type MetricType uint8
+
+const (
+	UnknownMT      MetricType = 0
+	Counter        MetricType = 1
+	Gauge          MetricType = 2
+	Histogram      MetricType = 3
+	GaugeHistogram MetricType = 4
+	Summary        MetricType = 5
+	Info           MetricType = 6
+	Stateset       MetricType = 7
+)
+
+func GetMetricType(t textparse.MetricType) uint8 {
+	switch t {
+	case textparse.MetricTypeCounter:
+		return uint8(Counter)
+	case textparse.MetricTypeGauge:
+		return uint8(Gauge)
+	case textparse.MetricTypeHistogram:
+		return uint8(Histogram)
+	case textparse.MetricTypeGaugeHistogram:
+		return uint8(GaugeHistogram)
+	case textparse.MetricTypeSummary:
+		return uint8(Summary)
+	case textparse.MetricTypeInfo:
+		return uint8(Info)
+	case textparse.MetricTypeStateset:
+		return uint8(Stateset)
+	default:
+		return uint8(UnknownMT)
 	}
 }
 
@@ -81,7 +118,7 @@ type RefSample struct {
 // RefMetadata is the metadata associated with a series ID.
 type RefMetadata struct {
 	Ref  chunks.HeadSeriesRef
-	Type textparse.MetricType
+	Type uint8
 	Unit string
 	Help string
 }
@@ -156,7 +193,7 @@ func (d *Decoder) Metadata(rec []byte, metadata []RefMetadata) ([]RefMetadata, e
 
 		remainingBeforeReadFields := dec.Len()
 
-		typ := dec.UvarintStr()
+		typ := dec.Byte()
 		unit := dec.UvarintStr()
 		help := dec.UvarintStr()
 
@@ -171,7 +208,7 @@ func (d *Decoder) Metadata(rec []byte, metadata []RefMetadata) ([]RefMetadata, e
 
 		metadata = append(metadata, RefMetadata{
 			Ref:  chunks.HeadSeriesRef(ref),
-			Type: textparse.MetricType(typ),
+			Type: typ,
 			Unit: unit,
 			Help: help,
 		})
@@ -323,7 +360,7 @@ func (e *Encoder) Metadata(metadata []RefMetadata, b []byte) []byte {
 		// Use a temporary buffer to get the size of the fields
 		// that we're going to encode before writing the fields themselves.
 		tmp := encoding.Encbuf{B: []byte{}}
-		tmp.PutUvarintStr(string(m.Type))
+		tmp.PutByte(m.Type)
 		tmp.PutUvarintStr(string(m.Unit))
 		tmp.PutUvarintStr(string(m.Help))
 

@@ -21,7 +21,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 )
@@ -49,19 +48,19 @@ func TestRecord_EncodeDecode(t *testing.T) {
 	metadata := []RefMetadata{
 		{
 			Ref:  100,
-			Type: textparse.MetricTypeCounter,
+			Type: uint8(Counter),
 			Unit: "",
 			Help: "some magic counter",
 		},
 		{
 			Ref:  1,
-			Type: textparse.MetricTypeCounter,
+			Type: uint8(Counter),
 			Unit: "seconds",
 			Help: "CPU time counter",
 		},
 		{
 			Ref:  147741,
-			Type: textparse.MetricTypeGauge,
+			Type: uint8(Gauge),
 			Unit: "percentage",
 			Help: "current memory usage",
 		},
@@ -197,7 +196,7 @@ func TestRecord_MetadataDecodeUnknownFields(t *testing.T) {
 	// Write first metadata entry, all known fields.
 	enc.PutUvarint64(101)
 	encFields.Reset()
-	encFields.PutUvarintStr(string(textparse.MetricTypeCounter))
+	encFields.PutByte(byte(Counter))
 	encFields.PutUvarintStr("")
 	encFields.PutUvarintStr("some magic counter")
 	// Write size of encoded fields then the encoded fields.
@@ -208,7 +207,7 @@ func TestRecord_MetadataDecodeUnknownFields(t *testing.T) {
 	enc.PutUvarint64(99)
 	encFields.Reset()
 	// Known fields.
-	encFields.PutUvarintStr(string(textparse.MetricTypeCounter))
+	encFields.PutByte(byte(Counter))
 	encFields.PutUvarintStr("seconds")
 	encFields.PutUvarintStr("CPU time counter")
 	// Unknown fields.
@@ -222,7 +221,7 @@ func TestRecord_MetadataDecodeUnknownFields(t *testing.T) {
 	// Write third metadata entry, all known fields.
 	enc.PutUvarint64(47250)
 	encFields.Reset()
-	encFields.PutUvarintStr(string(textparse.MetricTypeGauge))
+	encFields.PutByte(byte(Gauge))
 	encFields.PutUvarintStr("percentage")
 	encFields.PutUvarintStr("current memory usage")
 	// Write size of encoded fields then the encoded fields.
@@ -233,17 +232,17 @@ func TestRecord_MetadataDecodeUnknownFields(t *testing.T) {
 	expectedMetadata := []RefMetadata{
 		{
 			Ref:  101,
-			Type: textparse.MetricTypeCounter,
+			Type: uint8(Counter),
 			Unit: "",
 			Help: "some magic counter",
 		}, {
 			Ref:  99,
-			Type: textparse.MetricTypeCounter,
+			Type: uint8(Counter),
 			Unit: "seconds",
 			Help: "CPU time counter",
 		}, {
 			Ref:  47250,
-			Type: textparse.MetricTypeGauge,
+			Type: uint8(Gauge),
 			Unit: "percentage",
 			Help: "current memory usage",
 		},

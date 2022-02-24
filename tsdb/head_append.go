@@ -406,7 +406,7 @@ func (a *headAppender) AppendMetadata(ref storage.SeriesRef, lset labels.Labels,
 
 		a.metadata = append(a.metadata, record.RefMetadata{
 			Ref:  s.ref,
-			Type: s.meta.Type,
+			Type: record.GetMetricType(s.meta.Type),
 			Unit: s.meta.Unit,
 			Help: s.meta.Help,
 		})
