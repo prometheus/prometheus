@@ -26,9 +26,9 @@ import (
 	"github.com/prometheus/common/model"
 	"google.golang.org/protobuf/types/known/anypb"
 
-	"github.com/prometheus/prometheus/discovery"
-	"github.com/prometheus/prometheus/util/osutil"
-	"github.com/prometheus/prometheus/util/strutil"
+	"github.com/prometheus/prometheus/v2/discovery"
+	"github.com/prometheus/prometheus/v2/util/osutil"
+	"github.com/prometheus/prometheus/v2/util/strutil"
 )
 
 var (

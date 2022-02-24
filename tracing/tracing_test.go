@@ -22,7 +22,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/trace"
 
-	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/v2/config"
 )
 
 func TestInstallingNewTracerProvider(t *testing.T) {

@@ -21,7 +21,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/v2/model/labels"
 )
 
 func Example() {
