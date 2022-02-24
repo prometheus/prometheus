@@ -496,6 +496,7 @@ func (h *Head) Init(minValidTime int64) error {
 	snapIdx, snapOffset := -1, 0
 	refSeries := make(map[chunks.HeadSeriesRef]*memSeries)
 
+	snapshotWasDiscarded := false
 	if h.opts.EnableMemorySnapshotOnShutdown {
 		level.Info(h.logger).Log("msg", "Chunk snapshot is enabled, replaying from the snapshot")
 		var err error
@@ -505,6 +506,7 @@ func (h *Head) Init(minValidTime int64) error {
 			h.metrics.snapshotReplayErrorTotal.Inc()
 			level.Error(h.logger).Log("msg", "Failed to load chunk snapshot", "err", err)
 			// We clear the partially loaded data to replay fresh from the WAL.
+			snapshotWasDiscarded = true
 			if err := h.resetInMemoryState(); err != nil {
 				return err
 			}
@@ -519,6 +521,15 @@ func (h *Head) Init(minValidTime int64) error {
 		if _, ok := errors.Cause(err).(*chunks.CorruptionErr); ok {
 			h.metrics.mmapChunkCorruptionTotal.Inc()
 		}
+
+		if h.opts.EnableMemorySnapshotOnShutdown && !snapshotWasDiscarded {
+			// Discard snapshot data since we need to replay the WAL for the missed m-map chunks data.
+			snapIdx, snapOffset = -1, 0
+			if err := h.resetInMemoryState(); err != nil {
+				return err
+			}
+		}
+
 		// If this fails, data will be recovered from WAL.
 		// Hence we wont lose any data (given WAL is not corrupt).
 		mmappedChunks = h.removeCorruptedMmappedChunks(err, refSeries)
@@ -630,7 +641,6 @@ func (h *Head) loadMmappedChunks(refSeries map[chunks.HeadSeriesRef]*memSeries) 
 				return errors.Errorf("out of sequence m-mapped chunk for series ref %d, last chunk: [%d, %d], new: [%d, %d]",
 					seriesRef, slice[len(slice)-1].minTime, slice[len(slice)-1].maxTime, mint, maxt)
 			}
-
 			slice = append(slice, &mmappedChunk{
 				ref:        chunkRef,
 				minTime:    mint,
@@ -672,6 +682,7 @@ func (h *Head) loadMmappedChunks(refSeries map[chunks.HeadSeriesRef]*memSeries) 
 
 // removeCorruptedMmappedChunks attempts to delete the corrupted mmapped chunks and if it fails, it clears all the previously
 // loaded mmapped chunks.
+// Note: The Head should not have any in-memory series when calling this function.
 func (h *Head) removeCorruptedMmappedChunks(err error, refSeries map[chunks.HeadSeriesRef]*memSeries) map[chunks.HeadSeriesRef][]*mmappedChunk {
 	level.Info(h.logger).Log("msg", "Deleting mmapped chunk files")
 
