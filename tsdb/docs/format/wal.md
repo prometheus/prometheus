@@ -62,9 +62,9 @@ Metadata records encode the metadata associated with a series.
 │ │ id <uvarint>                           │ │
 │ ├────────────────────────────────────────┤ │
 │ │ size <uvarint>                         │ │
+│ ├────────────────────────────────────────┤ │
+│ │ type <1b>                              │ │
 │ ├─────────────────────┬──────────────────┤ │
-│ │ len(type) <uvarint> │ type <bytes>     │ │
-│ ├─────────────────────┴──────────────────┤ │
 │ │ len(unit) <uvarint> │ unit <bytes>     │ │
 │ ├─────────────────────┴──────────────────┤ │
 │ │ len(help) <uvarint> │ help <bytes>     │ │
