@@ -564,6 +564,7 @@ var expectedConf = &Config{
 				&azure.SDConfig{
 					Environment:          "AzurePublicCloud",
 					SubscriptionID:       "11AAAA11-A11A-111A-A111-1111A1111A11",
+					ResourceGroup:        "my-resource-group",
 					TenantID:             "BBBB222B-B2B2-2B22-B222-2BB2222BB2B2",
 					ClientID:             "333333CC-3C33-3333-CCC3-33C3CCCCC33C",
 					ClientSecret:         "mysecret",

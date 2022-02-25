@@ -436,6 +436,9 @@ subscription_id: <string>
 # Optional client secret. Only required with authentication_method OAuth.
 [ client_secret: <secret> ]
 
+# Optional resource group name. Limits discovery to this resource group. 
+[ resource_group: <string> ]
+
 # Refresh interval to re-read the instance list.
 [ refresh_interval: <duration> | default = 300s ]
 
