@@ -45,6 +45,7 @@ const (
 	mskLabelClusterSize  = mskLabel + "cluster_size"
 	mskLabelInstanceType = mskLabel + "instance_type"
 	mskLabelSeparator    = ","
+	dotSeparator         = "."
 )
 
 // DefaultMSKSDConfig is the default MSK SD configuration.
@@ -220,16 +221,12 @@ func (d *MSKDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 
 	var clusterTargets []*clusterTarget
 	for _, clusterInfo := range clusterInfoList {
-		getBrokersInput := &kafka.GetBootstrapBrokersInput{
-			ClusterArn: clusterInfo.ClusterArn,
-		}
-		brokers, err := mskClient.GetBootstrapBrokers(getBrokersInput)
-		if err != nil {
-			continue
-		}
+		brokerCnt := *clusterInfo.NumberOfBrokerNodes
+		hostSuffix := extractHostSuffix(clusterInfo.ZookeeperConnectString)
+
 		var hosts []*string
-		for _, brokerURL := range strings.Split(*brokers.BootstrapBrokerString, mskLabelSeparator) {
-			host, _, _ := net.SplitHostPort(brokerURL)
+		for i := 1; i <= int(brokerCnt); i++ {
+			host := fmt.Sprintf("b-%d.%s", i, hostSuffix)
 			hosts = append(hosts, &host)
 		}
 		clusterTarget := &clusterTarget{
@@ -276,4 +273,11 @@ func (d *MSKDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 		tgs = append(tgs, tg)
 	}
 	return tgs, nil
+}
+
+func extractHostSuffix(urlStrings *string) string {
+	urlPattern := strings.Split(*urlStrings, mskLabelSeparator)[0]
+	host, _, _ := net.SplitHostPort(urlPattern)
+	hostSuffix := strings.SplitN(host, dotSeparator, 2)[1]
+	return hostSuffix
 }
