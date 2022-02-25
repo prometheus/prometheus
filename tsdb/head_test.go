@@ -3235,7 +3235,7 @@ func TestReplayAfterMmapReplayError(t *testing.T) {
 
 	// There should be less m-map files due to corruption.
 	files, err = ioutil.ReadDir(filepath.Join(dir, "chunks_head"))
-	require.Equal(t, 1, len(files))
+	require.Equal(t, 2, len(files))
 
 	// Querying should not panic.
 	q, err := NewBlockQuerier(h, 0, lastTs)
