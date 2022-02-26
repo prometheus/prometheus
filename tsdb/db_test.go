@@ -2902,7 +2902,6 @@ func deleteNonBlocks(dbDir string) error {
 
 func TestOpen_VariousBlockStates(t *testing.T) {
 	tmpDir := t.TempDir()
-	walDir := filepath.Join(tmpDir, "wal")
 
 	var (
 		expectedLoadedDirs  = map[string]struct{}{}
@@ -2942,11 +2941,6 @@ func TestOpen_VariousBlockStates(t *testing.T) {
 		require.NoError(t, fileutil.Replace(dir, dir+tmpForCreationBlockDirSuffix))
 		expectedRemovedDirs[dir+tmpForCreationBlockDirSuffix] = struct{}{}
 
-		// wal Tmp blocks during creation; those should be removed on start.
-		tmpWalDir := createBlock(t, walDir, genSeries(10, 2, 30, 40))
-		require.NoError(t, fileutil.Replace(tmpWalDir, tmpWalDir+tmpLegacy))
-		expectedRemovedDirs[tmpWalDir+tmpLegacy] = struct{}{}
-
 		// Tmp blocks during deletion; those should be removed on start.
 		dir = createBlock(t, tmpDir, genSeries(10, 2, 40, 50))
 		require.NoError(t, fileutil.Replace(dir, dir+tmpForDeletionBlockDirSuffix))
@@ -2980,6 +2974,9 @@ func TestOpen_VariousBlockStates(t *testing.T) {
 		_, err = writeMetaFile(log.NewLogfmtLogger(os.Stderr), dir, m)
 		require.NoError(t, err)
 	}
+	tmpWalDir := path.Join(tmpDir, "wal/checkpoint.00000001.tmp")
+	err := os.MkdirAll(tmpWalDir, 0o777)
+	require.NoError(t, err)
 
 	opts := DefaultOptions()
 	opts.RetentionDuration = 0
@@ -3011,6 +3008,8 @@ func TestOpen_VariousBlockStates(t *testing.T) {
 		}
 	}
 	require.Equal(t, len(expectedIgnoredDirs), ignored)
+	_, err = os.Stat(tmpWalDir)
+	require.True(t, os.IsNotExist(err))
 }
 
 func TestOneCheckpointPerCompactCall(t *testing.T) {
