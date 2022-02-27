@@ -90,8 +90,8 @@ type testTargetRetriever struct {
 
 type testTargetParams struct {
 	Identifier       string
-	Labels           []labels.Label
-	DiscoveredLabels []labels.Label
+	Labels           labels.Labels
+	DiscoveredLabels labels.Labels
 	Params           url.Values
 	Reports          []*testReport
 	Active           bool
@@ -508,9 +508,9 @@ func TestGetSeries(t *testing.T) {
 			name:     "non empty label matcher",
 			matchers: []string{`{foo=~".+"}`},
 			expected: []labels.Labels{
-				{labels.Label{Name: "__name__", Value: "test_metric2"}, labels.Label{Name: "abc", Value: "qwerty"}, labels.Label{Name: "foo", Value: "baz"}},
-				{labels.Label{Name: "__name__", Value: "test_metric2"}, labels.Label{Name: "foo", Value: "boo"}},
-				{labels.Label{Name: "__name__", Value: "test_metric2"}, labels.Label{Name: "foo", Value: "boo"}, labels.Label{Name: "xyz", Value: "qwerty"}},
+				labels.FromStrings("__name__", "test_metric2", "abc", "qwerty", "foo", "baz"),
+				labels.FromStrings("__name__", "test_metric2", "foo", "boo"),
+				labels.FromStrings("__name__", "test_metric2", "foo", "boo", "xyz", "qwerty"),
 			},
 			api: api,
 		},
@@ -518,8 +518,8 @@ func TestGetSeries(t *testing.T) {
 			name:     "exact label matcher",
 			matchers: []string{`{foo="boo"}`},
 			expected: []labels.Labels{
-				{labels.Label{Name: "__name__", Value: "test_metric2"}, labels.Label{Name: "foo", Value: "boo"}},
-				{labels.Label{Name: "__name__", Value: "test_metric2"}, labels.Label{Name: "foo", Value: "boo"}, labels.Label{Name: "xyz", Value: "qwerty"}},
+				labels.FromStrings("__name__", "test_metric2", "foo", "boo"),
+				labels.FromStrings("__name__", "test_metric2", "foo", "boo", "xyz", "qwerty"),
 			},
 			api: api,
 		},
@@ -527,9 +527,9 @@ func TestGetSeries(t *testing.T) {
 			name:     "two matchers",
 			matchers: []string{`{foo="boo"}`, `{foo="baz"}`},
 			expected: []labels.Labels{
-				{labels.Label{Name: "__name__", Value: "test_metric2"}, labels.Label{Name: "abc", Value: "qwerty"}, labels.Label{Name: "foo", Value: "baz"}},
-				{labels.Label{Name: "__name__", Value: "test_metric2"}, labels.Label{Name: "foo", Value: "boo"}},
-				{labels.Label{Name: "__name__", Value: "test_metric2"}, labels.Label{Name: "foo", Value: "boo"}, labels.Label{Name: "xyz", Value: "qwerty"}},
+				labels.FromStrings("__name__", "test_metric2", "abc", "qwerty", "foo", "baz"),
+				labels.FromStrings("__name__", "test_metric2", "foo", "boo"),
+				labels.FromStrings("__name__", "test_metric2", "foo", "boo", "xyz", "qwerty"),
 			},
 			api: api,
 		},
@@ -558,12 +558,6 @@ func TestGetSeries(t *testing.T) {
 			assertAPIError(t, res.err, tc.expectedErrorType)
 			if tc.expectedErrorType == errorNone {
 				r := res.data.([]labels.Labels)
-				for _, l := range tc.expected {
-					sort.Sort(l)
-				}
-				for _, l := range r {
-					sort.Sort(l)
-				}
 				sort.Sort(byLabels(tc.expected))
 				sort.Sort(byLabels(r))
 				require.Equal(t, tc.expected, r)
@@ -928,7 +922,7 @@ func setupTestTargetRetriever(t *testing.T) *testTargetRetriever {
 				model.ScrapeIntervalLabel: "15s",
 				model.ScrapeTimeoutLabel:  "5s",
 			}),
-			DiscoveredLabels: nil,
+			DiscoveredLabels: labels.EmptyLabels(),
 			Params:           url.Values{},
 			Reports:          []*testReport{{scrapeStart, 70 * time.Millisecond, nil}},
 			Active:           true,
@@ -943,14 +937,14 @@ func setupTestTargetRetriever(t *testing.T) *testTargetRetriever {
 				model.ScrapeIntervalLabel: "20s",
 				model.ScrapeTimeoutLabel:  "10s",
 			}),
-			DiscoveredLabels: nil,
+			DiscoveredLabels: labels.EmptyLabels(),
 			Params:           url.Values{"target": []string{"example.com"}},
 			Reports:          []*testReport{{scrapeStart, 100 * time.Millisecond, errors.New("failed")}},
 			Active:           true,
 		},
 		{
 			Identifier: "blackbox",
-			Labels:     nil,
+			Labels:     labels.EmptyLabels(),
 			DiscoveredLabels: labels.FromMap(map[string]string{
 				model.SchemeLabel:         "http",
 				model.AddressLabel:        "http://dropped.example.com:9115",
@@ -1111,7 +1105,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 							{V: 1, T: timestamp.FromTime(start.Add(1 * time.Second))},
 							{V: 2, T: timestamp.FromTime(start.Add(2 * time.Second))},
 						},
-						Metric: nil,
+						// No Metric returned - use zero value for comparison.
 					},
 				},
 			},
@@ -3296,7 +3290,7 @@ func BenchmarkRespond(b *testing.B) {
 		Result: promql.Matrix{
 			promql.Series{
 				Points: points,
-				Metric: nil,
+				Metric: labels.EmptyLabels(),
 			},
 		},
 	}
