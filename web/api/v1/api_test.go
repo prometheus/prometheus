@@ -90,8 +90,8 @@ type testTargetRetriever struct {
 
 type testTargetParams struct {
 	Identifier       string
-	Labels           []labels.Label
-	DiscoveredLabels []labels.Label
+	Labels           labels.Labels
+	DiscoveredLabels labels.Labels
 	Params           url.Values
 	Reports          []*testReport
 	Active           bool
@@ -928,7 +928,7 @@ func setupTestTargetRetriever(t *testing.T) *testTargetRetriever {
 				model.ScrapeIntervalLabel: "15s",
 				model.ScrapeTimeoutLabel:  "5s",
 			}),
-			DiscoveredLabels: nil,
+			DiscoveredLabels: labels.EmptyLabels(),
 			Params:           url.Values{},
 			Reports:          []*testReport{{scrapeStart, 70 * time.Millisecond, nil}},
 			Active:           true,
@@ -943,14 +943,14 @@ func setupTestTargetRetriever(t *testing.T) *testTargetRetriever {
 				model.ScrapeIntervalLabel: "20s",
 				model.ScrapeTimeoutLabel:  "10s",
 			}),
-			DiscoveredLabels: nil,
+			DiscoveredLabels: labels.EmptyLabels(),
 			Params:           url.Values{"target": []string{"example.com"}},
 			Reports:          []*testReport{{scrapeStart, 100 * time.Millisecond, errors.New("failed")}},
 			Active:           true,
 		},
 		{
 			Identifier: "blackbox",
-			Labels:     nil,
+			Labels:     labels.EmptyLabels(),
 			DiscoveredLabels: labels.FromMap(map[string]string{
 				model.SchemeLabel:         "http",
 				model.AddressLabel:        "http://dropped.example.com:9115",
@@ -1111,7 +1111,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 							{V: 1, T: timestamp.FromTime(start.Add(1 * time.Second))},
 							{V: 2, T: timestamp.FromTime(start.Add(2 * time.Second))},
 						},
-						Metric: nil,
+						Metric: labels.Labels{},
 					},
 				},
 			},
@@ -3296,7 +3296,7 @@ func BenchmarkRespond(b *testing.B) {
 		Result: promql.Matrix{
 			promql.Series{
 				Points: points,
-				Metric: nil,
+				Metric: labels.EmptyLabels(),
 			},
 		},
 	}
