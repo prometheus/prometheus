@@ -653,13 +653,10 @@ func (h *Handler) consoles(w http.ResponseWriter, r *http.Request) {
 		params[k] = v[0]
 	}
 
-	externalLabels := map[string]string{}
 	h.mtx.RLock()
 	els := h.config.GlobalConfig.ExternalLabels
 	h.mtx.RUnlock()
-	for _, el := range els {
-		externalLabels[el.Name] = el.Value
-	}
+	externalLabels := els.Map()
 
 	// Inject some convenience variables that are easier to remember for users
 	// who are not used to Go's templating system.
