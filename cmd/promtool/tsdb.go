@@ -315,7 +315,7 @@ func readPrometheusLabels(r io.Reader, n int) ([]labels.Labels, error) {
 	i := 0
 
 	for scanner.Scan() && i < n {
-		m := make(labels.Labels, 0, 10)
+		m := make([]labels.Label, 0, 10)
 
 		r := strings.NewReplacer("\"", "", "{", "", "}", "")
 		s := r.Replace(scanner.Text())
@@ -325,13 +325,12 @@ func readPrometheusLabels(r io.Reader, n int) ([]labels.Labels, error) {
 			split := strings.Split(labelChunk, ":")
 			m = append(m, labels.Label{Name: split[0], Value: split[1]})
 		}
-		// Order of the k/v labels matters, don't assume we'll always receive them already sorted.
-		sort.Sort(m)
-		h := m.Hash()
+		ml := labels.New(m...) // This sorts by name - order of the k/v labels matters, don't assume we'll always receive them already sorted.
+		h := ml.Hash()
 		if _, ok := hashes[h]; ok {
 			continue
 		}
-		mets = append(mets, m)
+		mets = append(mets, ml)
 		hashes[h] = struct{}{}
 		i++
 	}
@@ -479,13 +478,13 @@ func analyzeBlock(path, blockID string, limit int, runExtended bool) error {
 		}
 		// Amount of the block time range not covered by this series.
 		uncovered := uint64(meta.MaxTime-meta.MinTime) - uint64(chks[len(chks)-1].MaxTime-chks[0].MinTime)
-		for _, lbl := range lbls {
+		lbls.Range(func(lbl labels.Label) {
 			key := lbl.Name + "=" + lbl.Value
 			labelsUncovered[lbl.Name] += uncovered
 			labelpairsUncovered[key] += uncovered
 			labelpairsCount[key]++
 			entries++
-		}
+		})
 	}
 	if p.Err() != nil {
 		return p.Err()

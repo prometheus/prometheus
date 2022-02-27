@@ -631,9 +631,9 @@ func checkRules(filename string, lintSettings lintConfig) (int, []error) {
 			errMessage := fmt.Sprintf("%d duplicate rule(s) found.\n", len(dRules))
 			for _, n := range dRules {
 				errMessage += fmt.Sprintf("Metric: %s\nLabel(s):\n", n.metric)
-				for _, l := range n.label {
+				n.label.Range(func(l labels.Label) {
 					errMessage += fmt.Sprintf("\t%s: %s\n", l.Name, l.Value)
-				}
+				})
 			}
 			errMessage += "Might cause inconsistency while recording expressions"
 			return 0, []error{fmt.Errorf("%w %s", lintError, errMessage)}
