@@ -49,6 +49,7 @@ func TestQueryConcurrency(t *testing.T) {
 	require.NoError(t, err)
 	defer os.RemoveAll(dir)
 	queryTracker := NewActiveQueryTracker(dir, maxConcurrency, nil)
+	t.Cleanup(queryTracker.Close)
 
 	opts := EngineOpts{
 		Logger:             nil,
