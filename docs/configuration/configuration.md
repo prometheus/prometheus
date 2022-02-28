@@ -1448,8 +1448,9 @@ Example response body:
 ]
 ```
 
-The endpoint is queried periodically at the specified
-refresh interval.
+The endpoint is queried periodically at the specified refresh interval.
+The `prometheus_sd_http_failures_total` counter metric tracks the number of 
+refresh failures, with the `url` label set to the specified config value. 
 
 Each target has a meta label `__meta_url` during the
 [relabeling phase](#relabel_config). Its value is set to the

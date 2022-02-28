@@ -16,6 +16,8 @@ package http
 import (
 	"context"
 	"fmt"
+	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -61,6 +63,7 @@ func TestHTTPValidRefresh(t *testing.T) {
 		},
 	}
 	require.Equal(t, tgs, expectedTargets)
+	require.Equal(t, 0.0, getFailureCount(d))
 }
 
 func TestHTTPInvalidCode(t *testing.T) {
@@ -82,6 +85,7 @@ func TestHTTPInvalidCode(t *testing.T) {
 	ctx := context.Background()
 	_, err = d.refresh(ctx)
 	require.EqualError(t, err, "server returned HTTP status 400 Bad Request")
+	require.Equal(t, 1.0, getFailureCount(d))
 }
 
 func TestHTTPInvalidFormat(t *testing.T) {
@@ -103,6 +107,27 @@ func TestHTTPInvalidFormat(t *testing.T) {
 	ctx := context.Background()
 	_, err = d.refresh(ctx)
 	require.EqualError(t, err, `unsupported content type "text/plain; charset=utf-8"`)
+	require.Equal(t, 1.0, getFailureCount(d))
+}
+
+func getFailureCount(d *Discovery) float64 {
+	failureChan := make(chan prometheus.Metric)
+
+	go func() {
+		d.failures.Collect(failureChan)
+		close(failureChan)
+	}()
+
+	var counter dto.Metric
+	for {
+		metric, ok := <-failureChan
+		if ok == false {
+			break
+		}
+		metric.Write(&counter)
+	}
+
+	return *counter.Counter.Value
 }
 
 func TestContentTypeRegex(t *testing.T) {
