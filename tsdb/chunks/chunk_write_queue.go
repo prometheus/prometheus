@@ -38,7 +38,7 @@ type chunkWriteJob struct {
 type chunkWriteQueue struct {
 	jobs chan chunkWriteJob
 
-	chunkRefMapMtx sync.RWMutex
+	chunkRefMapMtx sync.Mutex
 	chunkRefMap    map[ChunkDiskMapperRef]chunkenc.Chunk
 
 	isRunningMtx sync.Mutex // Protects the isRunning property.
@@ -138,8 +138,8 @@ func (c *chunkWriteQueue) addJob(job chunkWriteJob) (err error) {
 }
 
 func (c *chunkWriteQueue) get(ref ChunkDiskMapperRef) chunkenc.Chunk {
-	c.chunkRefMapMtx.RLock()
-	defer c.chunkRefMapMtx.RUnlock()
+	c.chunkRefMapMtx.Lock()
+	defer c.chunkRefMapMtx.Unlock()
 
 	chk, ok := c.chunkRefMap[ref]
 	if ok {
