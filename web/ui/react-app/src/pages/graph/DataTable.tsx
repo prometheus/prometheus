@@ -76,17 +76,20 @@ const DataTable: FC<QueryResult> = ({ data }) => {
       break;
     case 'matrix':
       rows = (limitSeries(data.result) as RangeSamples[]).map((s, index) => {
-        const valueText = s.values
-          .map((v) => {
-            return v[1] + ' @' + v[0];
-          })
-          .join('\n');
+        const valuesAndTimes = s.values.map((v) => {
+          return (
+            <React.Fragment>
+              {v[1]} @{<span title={new Date(1000 * v[0]).toISOString()}>{v[0]}</span>}
+              <br />
+            </React.Fragment>
+          );
+        });
         return (
-          <tr style={{ whiteSpace: 'pre' }} key={index}>
+          <tr key={index}>
             <td>
               <SeriesName labels={s.metric} format={doFormat} />
             </td>
-            <td>{valueText}</td>
+            <td>{valuesAndTimes}</td>
           </tr>
         );
       });
