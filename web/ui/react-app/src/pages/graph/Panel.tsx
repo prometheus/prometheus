@@ -325,7 +325,7 @@ class Panel extends Component<PanelProps, PanelState> {
                         onChangeTime={this.handleChangeEndTime}
                       />
                     </div>
-                    <DataTable data={this.state.data} />
+                    <DataTable data={this.state.data} useLocalTime={this.props.useLocalTime} />
                   </>
                 )}
               </TabPane>

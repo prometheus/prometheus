@@ -5,6 +5,8 @@ import { Alert, Table } from 'reactstrap';
 import SeriesName from './SeriesName';
 import { Metric } from '../../types/types';
 
+import moment from 'moment';
+
 export interface QueryResult {
   data:
     | null
@@ -24,6 +26,7 @@ export interface QueryResult {
         resultType: 'string';
         result: string;
       };
+  useLocalTime: boolean;
 }
 
 interface InstantSample {
@@ -47,7 +50,7 @@ const limitSeries = <S extends InstantSample | RangeSamples>(series: S[]): S[] =
   return series;
 };
 
-const DataTable: FC<QueryResult> = ({ data }) => {
+const DataTable: FC<QueryResult> = ({ data, useLocalTime }) => {
   if (data === null) {
     return <Alert color="light">No data queried yet</Alert>;
   }
@@ -77,9 +80,10 @@ const DataTable: FC<QueryResult> = ({ data }) => {
     case 'matrix':
       rows = (limitSeries(data.result) as RangeSamples[]).map((s, index) => {
         const valuesAndTimes = s.values.map((v) => {
+          const printedDatetime = moment.unix(v[0]).toISOString(useLocalTime);
           return (
             <React.Fragment>
-              {v[1]} @{<span title={new Date(1000 * v[0]).toISOString()}>{v[0]}</span>}
+              {v[1]} @{<span title={printedDatetime}>{v[0]}</span>}
               <br />
             </React.Fragment>
           );
