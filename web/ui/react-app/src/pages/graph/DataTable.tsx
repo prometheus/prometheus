@@ -89,7 +89,7 @@ const DataTable: FC<QueryResult> = ({ data, useLocalTime }) => {
           );
         });
         return (
-          <tr key={index}>
+          <tr style={{ whiteSpace: 'pre' }} key={index}>
             <td>
               <SeriesName labels={s.metric} format={doFormat} />
             </td>
