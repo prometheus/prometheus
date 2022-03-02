@@ -762,14 +762,14 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 
 func removeBestEffortTmpDirs(l log.Logger, dir string) error {
 	files, err := ioutil.ReadDir(dir)
-	if files == nil {
+	if os.IsNotExist(err) {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
 	for _, fi := range files {
-		if isTmpBlockDir(fi) {
+		if isTmpDir(fi) {
 			if err := os.RemoveAll(filepath.Join(dir, fi.Name())); err != nil {
 				level.Error(l).Log("msg", "failed to delete tmp block dir", "dir", filepath.Join(dir, fi.Name()), "err", err)
 				continue
@@ -1725,8 +1725,8 @@ func isBlockDir(fi os.FileInfo) bool {
 	return err == nil
 }
 
-// isTmpBlockDir returns dir that consists of block dir ULID and tmp extension.
-func isTmpBlockDir(fi os.FileInfo) bool {
+// isTmpDir returns dir that consists of block dir ULID and tmp extension.
+func isTmpDir(fi os.FileInfo) bool {
 	if !fi.IsDir() {
 		return false
 	}
