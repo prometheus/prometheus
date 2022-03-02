@@ -602,7 +602,7 @@ func (cdm *ChunkDiskMapper) Chunk(ref ChunkDiskMapperRef) (chunkenc.Chunk, error
 		return nil, ErrChunkDiskMapperClosed
 	}
 
-	chunk := cdm.writeQueue.get(ref)
+	chunk := cdm.writeQueue.get(ref, 0)
 	if chunk != nil {
 		return chunk, nil
 	}

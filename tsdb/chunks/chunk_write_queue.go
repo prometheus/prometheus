@@ -32,14 +32,17 @@ type chunkWriteJob struct {
 	callback  func(error)
 }
 
+const chunkRefMapShards = 1024
+
 // chunkWriteQueue is a queue for writing chunks to disk in a non-blocking fashion.
 // Chunks that shall be written get added to the queue, which is consumed asynchronously.
 // Adding jobs to the queue is non-blocking as long as the queue isn't full.
 type chunkWriteQueue struct {
 	jobs chan chunkWriteJob
 
-	chunkRefMapMtx sync.RWMutex
-	chunkRefMap    map[ChunkDiskMapperRef]chunkenc.Chunk
+	// Sharded into <chunkRefMapShards> shards.
+	chunkRefMapMtx []sync.RWMutex
+	chunkRefMap    []map[ChunkDiskMapperRef]chunkenc.Chunk
 
 	isRunningMtx sync.Mutex // Protects the isRunning property.
 	isRunning    bool       // Used to prevent that new jobs get added to the queue when the chan is already closed.
@@ -68,13 +71,18 @@ func newChunkWriteQueue(reg prometheus.Registerer, size int, writeChunk writeChu
 	)
 
 	q := &chunkWriteQueue{
-		jobs:        make(chan chunkWriteJob, size),
-		chunkRefMap: make(map[ChunkDiskMapperRef]chunkenc.Chunk, size),
-		writeChunk:  writeChunk,
+		jobs:           make(chan chunkWriteJob, size),
+		chunkRefMapMtx: make([]sync.RWMutex, chunkRefMapShards),
+		chunkRefMap:    make([]map[ChunkDiskMapperRef]chunkenc.Chunk, chunkRefMapShards),
+		writeChunk:     writeChunk,
 
 		adds:      counters.WithLabelValues("add"),
 		gets:      counters.WithLabelValues("get"),
 		completed: counters.WithLabelValues("complete"),
+	}
+
+	for shard := 0; shard < chunkRefMapShards; shard++ {
+		q.chunkRefMap[shard] = make(map[ChunkDiskMapperRef]chunkenc.Chunk)
 	}
 
 	if reg != nil {
@@ -100,16 +108,22 @@ func (c *chunkWriteQueue) start() {
 	c.isRunningMtx.Unlock()
 }
 
+func (c *chunkWriteQueue) chunkRefMapShard(seriesRef HeadSeriesRef) int {
+	return int(seriesRef % chunkRefMapShards)
+}
+
 func (c *chunkWriteQueue) processJob(job chunkWriteJob) {
 	err := c.writeChunk(job.seriesRef, job.mint, job.maxt, job.chk, job.ref, job.cutFile)
 	if job.callback != nil {
 		job.callback(err)
 	}
 
-	c.chunkRefMapMtx.Lock()
-	defer c.chunkRefMapMtx.Unlock()
+	shard := c.chunkRefMapShard(job.seriesRef)
 
-	delete(c.chunkRefMap, job.ref)
+	c.chunkRefMapMtx[shard].Lock()
+	defer c.chunkRefMapMtx[shard].Unlock()
+
+	delete(c.chunkRefMap[shard], job.ref)
 
 	c.completed.Inc()
 }
@@ -121,6 +135,8 @@ func (c *chunkWriteQueue) addJob(job chunkWriteJob) (err error) {
 		}
 	}()
 
+	shard := c.chunkRefMapShard(job.seriesRef)
+
 	c.isRunningMtx.Lock()
 	defer c.isRunningMtx.Unlock()
 
@@ -128,20 +144,22 @@ func (c *chunkWriteQueue) addJob(job chunkWriteJob) (err error) {
 		return errors.New("queue is not started")
 	}
 
-	c.chunkRefMapMtx.Lock()
-	c.chunkRefMap[job.ref] = job.chk
-	c.chunkRefMapMtx.Unlock()
+	c.chunkRefMapMtx[shard].Lock()
+	c.chunkRefMap[shard][job.ref] = job.chk
+	c.chunkRefMapMtx[shard].Unlock()
 
 	c.jobs <- job
 
 	return nil
 }
 
-func (c *chunkWriteQueue) get(ref ChunkDiskMapperRef) chunkenc.Chunk {
-	c.chunkRefMapMtx.RLock()
-	defer c.chunkRefMapMtx.RUnlock()
+func (c *chunkWriteQueue) get(ref ChunkDiskMapperRef, seriesRef HeadSeriesRef) chunkenc.Chunk {
+	shard := c.chunkRefMapShard(seriesRef)
 
-	chk, ok := c.chunkRefMap[ref]
+	c.chunkRefMapMtx[shard].RLock()
+	defer c.chunkRefMapMtx[shard].RUnlock()
+
+	chk, ok := c.chunkRefMap[shard][ref]
 	if ok {
 		c.gets.Inc()
 	}
@@ -175,10 +193,16 @@ func (c *chunkWriteQueue) queueIsFull() bool {
 }
 
 func (c *chunkWriteQueue) queueSize() int {
-	c.chunkRefMapMtx.Lock()
-	defer c.chunkRefMapMtx.Unlock()
+	var size int
 
-	// Looking at chunkRefMap instead of jobCh because the job is popped from the chan before it has
-	// been fully processed, it remains in the chunkRefMap until the processing is complete.
-	return len(c.chunkRefMap)
+	for shard := 0; shard < chunkRefMapShards; shard++ {
+		c.chunkRefMapMtx[shard].Lock()
+		defer c.chunkRefMapMtx[shard].Unlock()
+
+		// Looking at chunkRefMap instead of jobCh because the job is popped from the chan before it has
+		// been fully processed, it remains in the chunkRefMap until the processing is complete.
+		size += len(c.chunkRefMap[shard])
+	}
+
+	return size
 }
