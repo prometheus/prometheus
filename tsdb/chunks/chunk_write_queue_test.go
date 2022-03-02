@@ -43,14 +43,16 @@ func TestChunkWriteQueue_GettingChunkFromQueue(t *testing.T) {
 
 	testChunk := chunkenc.NewXORChunk()
 	var ref ChunkDiskMapperRef
+	var seriesRef HeadSeriesRef
 	job := chunkWriteJob{
-		chk: testChunk,
-		ref: ref,
+		chk:       testChunk,
+		ref:       ref,
+		seriesRef: seriesRef,
 	}
 	require.NoError(t, q.addJob(job))
 
 	// Retrieve chunk from the queue.
-	gotChunk := q.get(ref, 0)
+	gotChunk := q.get(ref, seriesRef)
 	require.Equal(t, testChunk, gotChunk)
 }
 
@@ -243,7 +245,7 @@ func BenchmarkChunkWriteQueue_addJob(b *testing.B) {
 					go func() {
 						for range issueReadSignal {
 							// We don't care about the ID we're getting, we just want to grab the lock.
-							_ = q.get(ChunkDiskMapperRef(0), 0)
+							_ = q.get(ChunkDiskMapperRef(0), HeadSeriesRef(0))
 						}
 					}()
 

@@ -1302,7 +1302,7 @@ func TestMemSeries_append(t *testing.T) {
 
 	// All chunks but the first and last should now be moderately full.
 	for i, c := range s.mmappedChunks[1:] {
-		chk, err := chunkDiskMapper.Chunk(c.ref)
+		chk, err := chunkDiskMapper.Chunk(c.ref, s.ref)
 		require.NoError(t, err)
 		require.Greater(t, chk.NumSamples(), 100, "unexpected small chunk %d of length %d", i, chk.NumSamples())
 	}

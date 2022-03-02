@@ -591,7 +591,7 @@ func (cdm *ChunkDiskMapper) flushBuffer() error {
 }
 
 // Chunk returns a chunk from a given reference.
-func (cdm *ChunkDiskMapper) Chunk(ref ChunkDiskMapperRef) (chunkenc.Chunk, error) {
+func (cdm *ChunkDiskMapper) Chunk(ref ChunkDiskMapperRef, seriesRef HeadSeriesRef) (chunkenc.Chunk, error) {
 	cdm.readPathMtx.RLock()
 	// We hold this read lock for the entire duration because if Close()
 	// is called, the data in the byte slice will get corrupted as the mmapped
@@ -602,7 +602,7 @@ func (cdm *ChunkDiskMapper) Chunk(ref ChunkDiskMapperRef) (chunkenc.Chunk, error
 		return nil, ErrChunkDiskMapperClosed
 	}
 
-	chunk := cdm.writeQueue.get(ref, 0)
+	chunk := cdm.writeQueue.get(ref, seriesRef)
 	if chunk != nil {
 		return chunk, nil
 	}

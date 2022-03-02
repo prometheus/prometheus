@@ -314,7 +314,7 @@ func (s *memSeries) chunk(id chunks.HeadChunkID, chunkDiskMapper *chunks.ChunkDi
 		}
 		return s.headChunk, false, nil
 	}
-	chk, err := chunkDiskMapper.Chunk(s.mmappedChunks[ix].ref)
+	chk, err := chunkDiskMapper.Chunk(s.mmappedChunks[ix].ref, s.ref)
 	if err != nil {
 		if _, ok := err.(*chunks.CorruptionErr); ok {
 			panic(err)

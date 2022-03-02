@@ -121,7 +121,7 @@ func TestChunkDiskMapper_WriteChunk_Chunk_IterateChunks(t *testing.T) {
 
 	// Testing reading of chunks.
 	for _, exp := range expectedData {
-		actChunk, err := hrw.Chunk(exp.chunkRef)
+		actChunk, err := hrw.Chunk(exp.chunkRef, exp.seriesRef)
 		require.NoError(t, err)
 		require.Equal(t, exp.chunk.Bytes(), actChunk.Bytes())
 	}
@@ -142,7 +142,7 @@ func TestChunkDiskMapper_WriteChunk_Chunk_IterateChunks(t *testing.T) {
 		require.Equal(t, expData.maxt, maxt)
 		require.Equal(t, expData.numSamples, numSamples)
 
-		actChunk, err := hrw.Chunk(expData.chunkRef)
+		actChunk, err := hrw.Chunk(expData.chunkRef, expData.seriesRef)
 		require.NoError(t, err)
 		require.Equal(t, expData.chunk.Bytes(), actChunk.Bytes())
 
