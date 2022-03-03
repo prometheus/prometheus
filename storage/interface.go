@@ -191,7 +191,6 @@ type Appender interface {
 	// Rollback rolls back all modifications made in the appender so far.
 	// Appender has to be discarded after rollback.
 	Rollback() error
-
 	ExemplarAppender
 }
 
