@@ -269,100 +269,117 @@ func BenchmarkChunkWriteQueue_addJob(b *testing.B) {
 }
 
 func BenchmarkChunkWriteQueue_lockContentionOnChunkRefMap(b *testing.B) {
-	for _, concurrency := range []int{1, 10, 100} {
-		b.Run(fmt.Sprintf("read concurrency %d", concurrency), func(b *testing.B) {
-			for _, queueSize := range []int{1000, 1000000} {
-				b.Run(fmt.Sprintf("with queueSize %d", queueSize), func(b *testing.B) {
-					writeBlocker := make(chan struct{})
-					shutdown := make(chan struct{})
-					var writeCount uint64
+	readConcurrencies := []int{10, 100}
+	writeConcurrencies := []int{100, 1000}
+	queueSizes := []int{1000, 1000000}
 
-					q := newChunkWriteQueue(nil, queueSize, func(ref HeadSeriesRef, i, i2 int64, chunk chunkenc.Chunk, ref2 ChunkDiskMapperRef, b bool) error {
-						select {
-						// The blocking of writes is controlled by the writeBlocker chan.
-						case writeBlocker <- struct{}{}:
-							writeCount++
-						case <-shutdown:
-						}
-						return nil
-					})
-
-					jobs := make([]chunkWriteJob, queueSize)
-					for jobID := range jobs {
-						jobs[jobID] = chunkWriteJob{
-							seriesRef: HeadSeriesRef(jobID),
-							ref:       ChunkDiskMapperRef(jobID),
-						}
-
-						// Fill chunk write queue while the writeChunk callback is blocked.
-						q.addJob(jobs[jobID])
+	for _, readConcurrency := range readConcurrencies {
+		b.Run(fmt.Sprintf("read concurrency %d", readConcurrency), func(b *testing.B) {
+			for _, writeConcurrency := range writeConcurrencies {
+				b.Run(fmt.Sprintf("write concurrency %d", writeConcurrency), func(b *testing.B) {
+					for _, queueSize := range queueSizes {
+						b.Run(fmt.Sprintf("with queueSize %d", queueSize), func(b *testing.B) {
+							benchmarkChunkWriteQueue_lockContentionOnChunkRefMap(b, readConcurrency, writeConcurrency, queueSize)
+						})
 					}
-
-					var writerDoneWg, writerReadyWg sync.WaitGroup
-					writerDoneWg.Add(1)
-					writerReadyWg.Add(1)
-					go func() {
-						defer writerDoneWg.Done()
-						writerReadyWg.Done()
-
-						jobID := 0
-						for {
-							select {
-							// Allow one successful write.
-							case <-writeBlocker:
-							case <-shutdown:
-								return
-							}
-
-							err := q.addJob(jobs[jobID])
-							require.NoError(b, err)
-
-							jobID = (jobID + 1) % queueSize
-						}
-					}()
-
-					b.Cleanup(func() {
-						close(shutdown)
-						writerDoneWg.Wait()
-						b.Cleanup(q.stop)
-					})
-
-					var readersReadyWg, readersDoneWg sync.WaitGroup
-					readersReadyWg.Add(concurrency)
-					readersDoneWg.Add(concurrency)
-
-					startBenchmark := make(chan struct{})
-
-					for i := 0; i < concurrency; i++ {
-						go func() {
-							defer readersDoneWg.Done()
-							readersReadyWg.Done()
-
-							concurrencyAdjustedBN := b.N / concurrency
-							<-startBenchmark
-
-							for i := 0; i < concurrencyAdjustedBN; i++ {
-								jobID := i % queueSize
-								q.get(ChunkDiskMapperRef(jobID))
-							}
-						}()
-					}
-
-					// Wait until the writer and all reader routines are ready.
-					writerReadyWg.Wait()
-					readersReadyWg.Wait()
-
-					b.ResetTimer()
-
-					// Signal all reader routines to start the benchmark.
-					close(startBenchmark)
-
-					// Wait until all reader routines are done.
-					readersDoneWg.Wait()
-
-					b.Logf("Performed %d writes", writeCount)
 				})
 			}
 		})
 	}
+}
+
+func benchmarkChunkWriteQueue_lockContentionOnChunkRefMap(b *testing.B, readConcurrency, writeConcurrency, queueSize int) {
+	writeBlocker := make(chan struct{})
+	shutdown := make(chan struct{})
+	var writeCount uint64
+
+	q := newChunkWriteQueue(nil, queueSize, func(_ HeadSeriesRef, _, _ int64, _ chunkenc.Chunk, _ ChunkDiskMapperRef, _ bool) error {
+		select {
+		// The blocking of writes is controlled by the writeBlocker chan.
+		case writeBlocker <- struct{}{}:
+			writeCount++
+		case <-shutdown:
+		}
+		return nil
+	})
+
+	jobs := make([]chunkWriteJob, queueSize)
+	for jobID := range jobs {
+		jobs[jobID] = chunkWriteJob{
+			seriesRef: HeadSeriesRef(jobID),
+			ref:       ChunkDiskMapperRef(jobID),
+		}
+
+		// Fill chunk write queue while the writeChunk callback is blocked.
+		q.addJob(jobs[jobID])
+	}
+
+	var writersDoneWg, writersReadyWg sync.WaitGroup
+	writersDoneWg.Add(writeConcurrency)
+	writersReadyWg.Add(writeConcurrency)
+	var writerJobID atomic.Int32
+	for writerID := 0; writerID < writeConcurrency; writerID++ {
+		go func() {
+			defer writersDoneWg.Done()
+			writersReadyWg.Done()
+
+			for {
+				select {
+				// Allow one successful write.
+				case <-writeBlocker:
+				case <-shutdown:
+					return
+				}
+
+				jobID := int(writerJobID.Inc()) % queueSize
+				err := q.addJob(jobs[jobID])
+				require.NoError(b, err)
+			}
+		}()
+	}
+
+	b.Cleanup(func() {
+		close(shutdown)
+		writersDoneWg.Wait()
+		b.Cleanup(q.stop)
+	})
+
+	startBenchmark := make(chan struct{})
+
+	var readersReadyWg, readersDoneWg sync.WaitGroup
+	readersReadyWg.Add(readConcurrency)
+	readersDoneWg.Add(readConcurrency)
+
+	for readerID := 0; readerID < readConcurrency; readerID++ {
+		go func(readerID int) {
+			defer readersDoneWg.Done()
+			readersReadyWg.Done()
+
+			concurrencyAdjustedBN := b.N / readConcurrency
+
+			// Evenly distribute the start positions over the range from 0 to queueSize.
+			startPos := queueSize / readConcurrency * readerID
+
+			<-startBenchmark
+
+			for jobID := startPos; jobID < startPos+concurrencyAdjustedBN; jobID++ {
+				jobIDWrapped := jobID % queueSize
+				q.get(ChunkDiskMapperRef(jobIDWrapped))
+			}
+		}(readerID)
+	}
+
+	// Wait until the writer and all reader routines are ready.
+	writersReadyWg.Wait()
+	readersReadyWg.Wait()
+
+	b.ResetTimer()
+
+	// Signal all reader routines to start the benchmark.
+	close(startBenchmark)
+
+	// Wait until all reader routines are done.
+	readersDoneWg.Wait()
+
+	b.Logf("Performed %d writes", writeCount)
 }
