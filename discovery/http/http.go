@@ -50,7 +50,7 @@ var (
 	failuresCount = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "prometheus_sd_http_failures_total",
-			Help: "Number of refresh failures for an HTTP service discovery.",
+			Help: "Number of HTTP service discovery refresh failures.",
 		})
 )
 
