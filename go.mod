@@ -10,7 +10,7 @@ require (
 	github.com/Azure/go-autorest/autorest/validation v0.3.1 // indirect
 	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137
 	github.com/armon/go-metrics v0.3.3 // indirect
-	github.com/aws/aws-sdk-go v1.43.4
+	github.com/aws/aws-sdk-go v1.43.10
 	github.com/cespare/xxhash/v2 v2.1.2
 	github.com/containerd/containerd v1.5.9 // indirect
 	github.com/dennwc/varint v1.0.0
