@@ -63,7 +63,7 @@ func TestHTTPValidRefresh(t *testing.T) {
 		},
 	}
 	require.Equal(t, tgs, expectedTargets)
-	require.Equal(t, 0.0, getFailureCount(d))
+	require.Equal(t, 0.0, getFailureCount())
 }
 
 func TestHTTPInvalidCode(t *testing.T) {
@@ -85,7 +85,7 @@ func TestHTTPInvalidCode(t *testing.T) {
 	ctx := context.Background()
 	_, err = d.refresh(ctx)
 	require.EqualError(t, err, "server returned HTTP status 400 Bad Request")
-	require.Equal(t, 1.0, getFailureCount(d))
+	require.Equal(t, 1.0, getFailureCount())
 }
 
 func TestHTTPInvalidFormat(t *testing.T) {
@@ -107,14 +107,16 @@ func TestHTTPInvalidFormat(t *testing.T) {
 	ctx := context.Background()
 	_, err = d.refresh(ctx)
 	require.EqualError(t, err, `unsupported content type "text/plain; charset=utf-8"`)
-	require.Equal(t, 1.0, getFailureCount(d))
+	require.Equal(t, 1.0, getFailureCount())
 }
 
-func getFailureCount(d *Discovery) float64 {
+var lastFailureCount float64
+
+func getFailureCount() float64 {
 	failureChan := make(chan prometheus.Metric)
 
 	go func() {
-		d.failures.Collect(failureChan)
+		failuresCount.Collect(failureChan)
 		close(failureChan)
 	}()
 
@@ -127,7 +129,10 @@ func getFailureCount(d *Discovery) float64 {
 		metric.Write(&counter)
 	}
 
-	return *counter.Counter.Value
+	// account for failures in prior tests
+	count := *counter.Counter.Value - lastFailureCount
+	lastFailureCount = *counter.Counter.Value
+	return count
 }
 
 func TestContentTypeRegex(t *testing.T) {

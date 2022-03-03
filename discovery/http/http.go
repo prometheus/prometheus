@@ -47,13 +47,11 @@ var (
 	userAgent        = fmt.Sprintf("Prometheus/%s", version.Version)
 	matchContentType = regexp.MustCompile(`^(?i:application\/json(;\s*charset=("utf-8"|utf-8))?)$`)
 
-	failuresCount = prometheus.NewCounterVec(
+	failuresCount = prometheus.NewCounter(
 		prometheus.CounterOpts{
 			Name: "prometheus_sd_http_failures_total",
 			Help: "Number of refresh failures for an HTTP service discovery.",
-		},
-		[]string{"url"},
-	)
+		})
 )
 
 func init() {
@@ -115,8 +113,6 @@ type Discovery struct {
 	client          *http.Client
 	refreshInterval time.Duration
 	tgLastLength    int
-
-	failures prometheus.Counter
 }
 
 // NewDiscovery returns a new HTTP discovery for the given config.
@@ -135,7 +131,6 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 		url:             conf.URL,
 		client:          client,
 		refreshInterval: time.Duration(conf.RefreshInterval), // Stored to be sent as headers.
-		failures:        failuresCount.WithLabelValues(conf.URL),
 	}
 
 	d.Discovery = refresh.NewDiscovery(
@@ -158,7 +153,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 
 	resp, err := d.client.Do(req.WithContext(ctx))
 	if err != nil {
-		d.failures.Inc()
+		failuresCount.Inc()
 		return nil, err
 	}
 	defer func() {
@@ -167,31 +162,31 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	}()
 
 	if resp.StatusCode != http.StatusOK {
-		d.failures.Inc()
+		failuresCount.Inc()
 		return nil, errors.Errorf("server returned HTTP status %s", resp.Status)
 	}
 
 	if !matchContentType.MatchString(strings.TrimSpace(resp.Header.Get("Content-Type"))) {
-		d.failures.Inc()
+		failuresCount.Inc()
 		return nil, errors.Errorf("unsupported content type %q", resp.Header.Get("Content-Type"))
 	}
 
 	b, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		d.failures.Inc()
+		failuresCount.Inc()
 		return nil, err
 	}
 
 	var targetGroups []*targetgroup.Group
 
 	if err := json.Unmarshal(b, &targetGroups); err != nil {
-		d.failures.Inc()
+		failuresCount.Inc()
 		return nil, err
 	}
 
 	for i, tg := range targetGroups {
 		if tg == nil {
-			d.failures.Inc()
+			failuresCount.Inc()
 			err = errors.New("nil target group item found")
 			return nil, err
 		}
