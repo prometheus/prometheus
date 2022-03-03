@@ -8,7 +8,7 @@ jobs:
     name: lint and publish
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - uses: bufbuild/buf-setup-action@v1.1.0
       - uses: bufbuild/buf-lint-action@v1
         with:
