@@ -525,7 +525,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 		}
 	case RoleIngress:
 		// Check "networking.k8s.io/v1" availability with retries.
-		// If "v1" is not avaiable, use "networking.k8s.io/v1beta1" for backward compatibility
+		// If "v1" is not available, use "networking.k8s.io/v1beta1" for backward compatibility
 		var v1Supported bool
 		if retryOnError(ctx, 10*time.Second,
 			func() (err error) {

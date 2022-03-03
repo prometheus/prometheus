@@ -4,7 +4,7 @@
 * [CHANGE] Tracing: Migrate from Jaeger to OpenTelemetry based tracing. #9724, #10203, #10276
 * [ENHANCEMENT] Azure SD: Set Prometheus User-Agent on requests. #10209
 * [ENHANCEMENT] Uyuni SD: Reduce the number of logins to Uyuni. #10072
-* [ENHANCEMENT] Scrape: Log when an invalid media type is encounted during a scrape. #10186
+* [ENHANCEMENT] Scrape: Log when an invalid media type is encountered during a scrape. #10186
 * [ENHANCEMENT] Scrape: Accept application/openmetrics-text;version=1.0.0 in addition to version=0.0.1. #9431
 * [ENHANCEMENT] Remote-read: Add an option to not use external labels as selectors for remote read. #10254
 * [ENHANCEMENT] UI: Optimize the alerts page and add a search bar. #10142
