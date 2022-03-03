@@ -24,8 +24,11 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
-
+      - name: install golang
+        uses: actions/setup-go@v2
+        with:
+          go-version: 1.17.x
       - name: Lint
         uses: golangci/golangci-lint-action@v3.1.0
         with:
-          version: v1.42.0
+          version: v1.44.2
