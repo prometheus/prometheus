@@ -43,7 +43,7 @@ ui-build-module:
 
 .PHONY: ui-test
 ui-test:
-	cd $(UI_PATH) && npm run test:coverage
+	cd $(UI_PATH) && CI=true npm run test:coverage
 
 .PHONY: ui-lint
 ui-lint:
