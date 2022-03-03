@@ -32,7 +32,7 @@ type chunkWriteJob struct {
 	callback  func(error)
 }
 
-const chunkRefMapShards = 1024
+const chunkRefMapShards = 16384
 
 // chunkWriteQueue is a queue for writing chunks to disk in a non-blocking fashion.
 // Chunks that shall be written get added to the queue, which is consumed asynchronously.
