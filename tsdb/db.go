@@ -311,7 +311,7 @@ func newDBMetrics(db *DB, r prometheus.Registerer) *dbMetrics {
 	return m
 }
 
-// DBStats contains statistics about the DB seperated by component (eg. head).
+// DBStats contains statistics about the DB separated by component (eg. head).
 // They are available before the DB has finished initializing.
 type DBStats struct {
 	Head *HeadStats
