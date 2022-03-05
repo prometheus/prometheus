@@ -285,7 +285,7 @@ func (p *PromParser) Next() (Entry, error) {
 				p.text = []byte{}
 			}
 		default:
-			return EntryInvalid, fmt.Errorf("expected text in %s, got none", t.String())
+			return EntryInvalid, fmt.Errorf("expected text in %s", t.String())
 		}
 		switch t {
 		case tType:

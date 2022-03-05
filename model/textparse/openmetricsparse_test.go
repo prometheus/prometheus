@@ -342,7 +342,7 @@ func TestOpenMetricsParseErrors(t *testing.T) {
 		},
 		{
 			input: "# TYPE m\n#EOF\n",
-			err:   "expected text in TYPE, got none",
+			err:   "expected text in TYPE",
 		},
 		{
 			input: "# UNIT metric suffix\n#EOF\n",
@@ -362,7 +362,7 @@ func TestOpenMetricsParseErrors(t *testing.T) {
 		},
 		{
 			input: "# UNIT m\n#EOF\n",
-			err:   "expected text in UNIT, got none",
+			err:   "expected text in UNIT",
 		},
 		{
 			input: "# HELP \n#EOF\n",
@@ -370,7 +370,7 @@ func TestOpenMetricsParseErrors(t *testing.T) {
 		},
 		{
 			input: "# HELP m\n#EOF\n",
-			err:   "expected text in HELP, got none",
+			err:   "expected text in HELP",
 		},
 		{
 			input: "a\t1\n#EOF\n",
