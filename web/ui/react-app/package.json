@@ -38,7 +38,7 @@
     "react-router-dom": "^5.2.1",
     "react-test-renderer": "^17.0.2",
     "reactstrap": "^8.9.0",
-    "sanitize-html": "^2.6.0",
+    "sanitize-html": "^2.7.0",
     "sass": "1.44.0",
     "tempusdominus-bootstrap-4": "^5.1.2",
     "tempusdominus-core": "^5.0.3"
