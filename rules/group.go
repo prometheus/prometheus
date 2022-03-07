@@ -55,7 +55,6 @@ type Group struct {
 	mtx                  sync.Mutex
 	evaluationTime       time.Duration
 	lastEvaluation       time.Time // Wall-clock time of most recent evaluation.
-	evaluationDelay      EvaluationDelayFunc
 	lastEvalTimestamp    time.Time // Time slot used for most recent evaluation.
 
 	shouldRestore bool
@@ -84,6 +83,8 @@ type Group struct {
 // DefaultEvalIterationFunc is the default implementation.
 type GroupEvalIterationFunc func(ctx context.Context, g *Group, evalTimestamp time.Time)
 
+type EvaluationDelayFunc func(groupName string) time.Duration
+
 type GroupOptions struct {
 	Name, File        string
 	Interval          time.Duration
@@ -91,12 +92,9 @@ type GroupOptions struct {
 	Rules             []Rule
 	ShouldRestore     bool
 	Opts              *ManagerOptions
-	EvaluationDelay   EvaluationDelayFunc
 	done              chan struct{}
 	EvalIterationFunc GroupEvalIterationFunc
 }
-
-type EvaluationDelayFunc func(groupName string) time.Duration
 
 // NewGroup makes a new Group with the given name, options, and rules.
 func NewGroup(o GroupOptions) *Group {
@@ -134,7 +132,6 @@ func NewGroup(o GroupOptions) *Group {
 		rules:                 o.Rules,
 		shouldRestore:         o.ShouldRestore,
 		opts:                  o.Opts,
-		evaluationDelay:       o.EvaluationDelay,
 		seriesInPreviousEval:  make([]map[string]labels.Labels, len(o.Rules)),
 		done:                  make(chan struct{}),
 		managerDone:           o.done,
@@ -449,8 +446,8 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 	)
 
 	evaluationDelay := time.Duration(0)
-	if g.evaluationDelay != nil {
-		evaluationDelay = g.evaluationDelay(g.name)
+	if g.opts.EvaluationDelay != nil {
+		evaluationDelay = g.opts.EvaluationDelay(g.name)
 	}
 
 	for i, rule := range g.rules {
