@@ -1,10 +1,6 @@
 name: CIFuzz
 on:
   pull_request:
-    paths:
-      - "go.sum"
-      - "go.mod"
-      - "**.go"
 jobs:
   Fuzzing:
     runs-on: ubuntu-latest
