@@ -224,6 +224,7 @@ type scrapePool struct {
 	appendable storage.Appendable
 	logger     log.Logger
 	cancel     context.CancelFunc
+	dialFunc   config_util.DialContextFunc
 
 	// mtx must not be taken after targetMtx.
 	mtx    sync.Mutex
@@ -264,15 +265,15 @@ const maxAheadTime = 10 * time.Minute
 
 type labelsMutator func(labels.Labels) labels.Labels
 
-func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed uint64, logger log.Logger, reportExtraMetrics bool) (*scrapePool, error) {
+func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed uint64, logger log.Logger, reportExtraMetrics bool, dialFunc config_util.DialContextFunc) (*scrapePool, error) {
 	targetScrapePools.Inc()
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
 
 	var extraOptions []config_util.HTTPClientOption
-	if cfg.DialContextFunc != nil {
-		extraOptions = append(extraOptions, config_util.WithDialContextFunc(cfg.DialContextFunc))
+	if dialFunc != nil {
+		extraOptions = append(extraOptions, config_util.WithDialContextFunc(dialFunc))
 	}
 
 	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, cfg.JobName, extraOptions...)
@@ -292,6 +293,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed 
 		activeTargets: map[uint64]*Target{},
 		loops:         map[uint64]loop{},
 		logger:        logger,
+		dialFunc:      dialFunc,
 	}
 	sp.newLoop = func(opts scrapeLoopOptions) loop {
 		// Update the targets retrieval function for metadata to a new scrape cache.
@@ -387,8 +389,8 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 	start := time.Now()
 
 	var extraOptions []config_util.HTTPClientOption
-	if cfg.DialContextFunc != nil {
-		extraOptions = append(extraOptions, config_util.WithDialContextFunc(cfg.DialContextFunc))
+	if sp.dialFunc != nil {
+		extraOptions = append(extraOptions, config_util.WithDialContextFunc(sp.dialFunc))
 	}
 
 	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, cfg.JobName, extraOptions...)
