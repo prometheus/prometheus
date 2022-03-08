@@ -792,10 +792,10 @@ created using the `port` parameter defined in the SD configuration.
 
 Available meta labels:
 
+* `__meta_dockerswarm_container_label_<labelname>`: each label of the container
 * `__meta_dockerswarm_task_id`: the id of the task
 * `__meta_dockerswarm_task_container_id`: the container id of the task
 * `__meta_dockerswarm_task_desired_state`: the desired state of the task
-* `__meta_dockerswarm_task_label_<labelname>`: each label of the task
 * `__meta_dockerswarm_task_slot`: the slot of the task
 * `__meta_dockerswarm_task_state`: the state of the task
 * `__meta_dockerswarm_task_port_publish_mode`: the publish mode of the task port
@@ -1448,8 +1448,9 @@ Example response body:
 ]
 ```
 
-The endpoint is queried periodically at the specified
-refresh interval.
+The endpoint is queried periodically at the specified refresh interval.
+The `prometheus_sd_http_failures_total` counter metric tracks the number of 
+refresh failures. 
 
 Each target has a meta label `__meta_url` during the
 [relabeling phase](#relabel_config). Its value is set to the

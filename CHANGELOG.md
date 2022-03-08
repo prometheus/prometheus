@@ -1,10 +1,16 @@
+## 2.34.0-rc.1 / 2022-03-08
+
+* [ENHANCEMENT] HTTP SD: Add a failure counter. #10372
+* [BUGFIX] Parser: Specify type in metadata parser errors. #10269
+* [BUGFIX] Scrape: Fix label limit changes not applying. #10370
+
 ## 2.34.0-rc.0 / 2022-02-24
 
 * [CHANGE] UI: Classic UI removed. #10208
 * [CHANGE] Tracing: Migrate from Jaeger to OpenTelemetry based tracing. #9724, #10203, #10276
 * [ENHANCEMENT] Azure SD: Set Prometheus User-Agent on requests. #10209
 * [ENHANCEMENT] Uyuni SD: Reduce the number of logins to Uyuni. #10072
-* [ENHANCEMENT] Scrape: Log when an invalid media type is encounted during a scrape. #10186
+* [ENHANCEMENT] Scrape: Log when an invalid media type is encountered during a scrape. #10186
 * [ENHANCEMENT] Scrape: Accept application/openmetrics-text;version=1.0.0 in addition to version=0.0.1. #9431
 * [ENHANCEMENT] Remote-read: Add an option to not use external labels as selectors for remote read. #10254
 * [ENHANCEMENT] UI: Optimize the alerts page and add a search bar. #10142
@@ -13,6 +19,12 @@
 * [BUGFIX] PromQL: Properly return an error from histogram_quantile when metrics have the same labelset. #10140 
 * [BUGFIX] UI: Fix bug that sets the range input to the resolution. #10227
 * [BUGFIX] TSDB: Fix a query panic when `memory-snapshot-on-shutdown` is enabled. #10348
+
+## 2.33.5 / 2022-03-08
+
+The binaries published with this release are built with Go1.17.8 to avoid [CVE-2022-24921](https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2022-24921).
+
+* [BUGFIX] Remote-write: Fix deadlock between adding to queue and getting batch. #10395
 
 ## 2.33.4 / 2022-02-22
 

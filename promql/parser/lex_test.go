@@ -611,7 +611,6 @@ var tests = []struct {
 			{ // Nested Subquery.
 				input: `min_over_time(rate(foo{bar="baz"}[2s])[5m:])[4m:3s]`,
 				expected: []Item{
-
 					{IDENTIFIER, 0, `min_over_time`},
 					{LEFT_PAREN, 13, `(`},
 					{IDENTIFIER, 14, `rate`},
@@ -660,7 +659,6 @@ var tests = []struct {
 			{
 				input: `min_over_time(rate(foo{bar="baz"}[2s])[5m:] offset 6m)[4m:3s]`,
 				expected: []Item{
-
 					{IDENTIFIER, 0, `min_over_time`},
 					{LEFT_PAREN, 13, `(`},
 					{IDENTIFIER, 14, `rate`},

@@ -18,7 +18,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math"
 	"os"
 	"path/filepath"
@@ -70,7 +69,7 @@ func benchmarkWrite(outPath, samplesFile string, numMetrics, numScrapes int) err
 		logger:      log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr)),
 	}
 	if b.outPath == "" {
-		dir, err := ioutil.TempDir("", "tsdb_bench")
+		dir, err := os.MkdirTemp("", "tsdb_bench")
 		if err != nil {
 			return err
 		}

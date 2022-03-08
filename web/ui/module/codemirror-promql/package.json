@@ -65,7 +65,7 @@
     "ts-loader": "^7.0.5",
     "ts-mocha": "^8.0.0",
     "ts-node": "^10.4.0",
-    "typescript": "^4.5.2"
+    "typescript": "^4.6.2"
   },
   "peerDependencies": {
     "@codemirror/autocomplete": "^0.19.9",
