@@ -241,6 +241,55 @@ func TestIndexRW_Postings(t *testing.T) {
 		"b": {"1", "2", "3", "4"},
 	}, labelIndices)
 
+	t.Run("ShardedPostings()", func(t *testing.T) {
+		ir, err := NewFileReader(fn)
+		require.NoError(t, err)
+
+		// List all postings for a given label value. This is what we expect to get
+		// in output from all shards.
+		p, err = ir.Postings(ctx, "a", "1")
+		require.NoError(t, err)
+
+		var expected []storage.SeriesRef
+		for p.Next() {
+			expected = append(expected, p.At())
+		}
+		require.NoError(t, p.Err())
+		require.NotEmpty(t, expected)
+
+		// Query the same postings for each shard.
+		const shardCount = uint64(4)
+		actualShards := make(map[uint64][]storage.SeriesRef)
+		actualPostings := make([]storage.SeriesRef, 0, len(expected))
+
+		for shardIndex := uint64(0); shardIndex < shardCount; shardIndex++ {
+			p, err = ir.Postings(ctx, "a", "1")
+			require.NoError(t, err)
+
+			p = ir.ShardedPostings(p, shardIndex, shardCount)
+			for p.Next() {
+				ref := p.At()
+
+				actualShards[shardIndex] = append(actualShards[shardIndex], ref)
+				actualPostings = append(actualPostings, ref)
+			}
+			require.NoError(t, p.Err())
+		}
+
+		// We expect the postings merged out of shards is the exact same of the non sharded ones.
+		require.ElementsMatch(t, expected, actualPostings)
+
+		// We expect the series in each shard are the expected ones.
+		for shardIndex, ids := range actualShards {
+			for _, id := range ids {
+				var lbls labels.ScratchBuilder
+
+				require.NoError(t, ir.Series(id, &lbls, nil))
+				require.Equal(t, shardIndex, labels.StableHash(lbls.Labels())%shardCount)
+			}
+		}
+	})
+
 	require.NoError(t, ir.Close())
 }
 
@@ -563,6 +612,55 @@ func TestSymbols(t *testing.T) {
 		i++
 	}
 	require.NoError(t, iter.Err())
+}
+
+func BenchmarkReader_ShardedPostings(b *testing.B) {
+	const (
+		numSeries = 10000
+		numShards = 16
+	)
+
+	dir, err := os.MkdirTemp("", "benchmark_reader_sharded_postings")
+	require.NoError(b, err)
+	defer func() {
+		require.NoError(b, os.RemoveAll(dir))
+	}()
+
+	ctx := context.Background()
+
+	// Generate an index.
+	fn := filepath.Join(dir, indexFilename)
+
+	iw, err := NewWriter(ctx, fn)
+	require.NoError(b, err)
+
+	for i := 1; i <= numSeries; i++ {
+		require.NoError(b, iw.AddSymbol(fmt.Sprintf("%10d", i)))
+	}
+	require.NoError(b, iw.AddSymbol("const"))
+	require.NoError(b, iw.AddSymbol("unique"))
+
+	for i := 1; i <= numSeries; i++ {
+		require.NoError(b, iw.AddSeries(storage.SeriesRef(i),
+			labels.FromStrings("const", fmt.Sprintf("%10d", 1), "unique", fmt.Sprintf("%10d", i))))
+	}
+
+	require.NoError(b, iw.Close())
+
+	b.ResetTimer()
+
+	// Create a reader to read back all postings from the index.
+	ir, err := NewFileReader(fn)
+	require.NoError(b, err)
+
+	b.ResetTimer()
+
+	for n := 0; n < b.N; n++ {
+		allPostings, err := ir.Postings(ctx, "const", fmt.Sprintf("%10d", 1))
+		require.NoError(b, err)
+
+		ir.ShardedPostings(allPostings, uint64(n%numShards), numShards)
+	}
 }
 
 func TestDecoder_Postings_WrongInput(t *testing.T) {

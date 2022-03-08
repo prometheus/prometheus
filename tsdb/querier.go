@@ -131,10 +131,14 @@ func (q *blockQuerier) Select(ctx context.Context, sortSeries bool, hints *stora
 	mint := q.mint
 	maxt := q.maxt
 	disableTrimming := false
+	sharded := hints != nil && hints.ShardCount > 0
 
 	p, err := PostingsForMatchers(ctx, q.index, ms...)
 	if err != nil {
 		return storage.ErrSeriesSet(err)
+	}
+	if sharded {
+		p = q.index.ShardedPostings(p, hints.ShardIndex, hints.ShardCount)
 	}
 	if sortSeries {
 		p = q.index.SortedPostings(p)
@@ -171,6 +175,8 @@ func (q *blockChunkQuerier) Select(ctx context.Context, sortSeries bool, hints *
 	mint := q.mint
 	maxt := q.maxt
 	disableTrimming := false
+	sharded := hints != nil && hints.ShardCount > 0
+
 	if hints != nil {
 		mint = hints.Start
 		maxt = hints.End
@@ -179,6 +185,9 @@ func (q *blockChunkQuerier) Select(ctx context.Context, sortSeries bool, hints *
 	p, err := PostingsForMatchers(ctx, q.index, ms...)
 	if err != nil {
 		return storage.ErrChunkSeriesSet(err)
+	}
+	if sharded {
+		p = q.index.ShardedPostings(p, hints.ShardIndex, hints.ShardCount)
 	}
 	if sortSeries {
 		p = q.index.SortedPostings(p)
