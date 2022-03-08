@@ -445,6 +445,10 @@ type ScrapeConfig struct {
 	ServiceDiscoveryConfigs discovery.Configs       `yaml:"-"`
 	HTTPClientConfig        config.HTTPClientConfig `yaml:",inline"`
 
+	// Optional function to override dialing to scrape targets. Go's default dialer is
+	// used when not provided.
+	DialContextFunc config.DialContextFunc `yaml:"-"`
+
 	// List of target relabel configurations.
 	RelabelConfigs []*relabel.Config `yaml:"relabel_configs,omitempty"`
 	// List of metric relabel configurations.

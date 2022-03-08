@@ -270,7 +270,12 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed 
 		logger = log.NewNopLogger()
 	}
 
-	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, cfg.JobName)
+	var extraOptions []config_util.HTTPClientOption
+	if cfg.DialContextFunc != nil {
+		extraOptions = append(extraOptions, config_util.WithDialContextFunc(cfg.DialContextFunc))
+	}
+
+	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, cfg.JobName, extraOptions...)
 	if err != nil {
 		targetScrapePoolsFailed.Inc()
 		return nil, errors.Wrap(err, "error creating HTTP client")
@@ -381,7 +386,12 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 	targetScrapePoolReloads.Inc()
 	start := time.Now()
 
-	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, cfg.JobName)
+	var extraOptions []config_util.HTTPClientOption
+	if cfg.DialContextFunc != nil {
+		extraOptions = append(extraOptions, config_util.WithDialContextFunc(cfg.DialContextFunc))
+	}
+
+	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, cfg.JobName, extraOptions...)
 	if err != nil {
 		targetScrapePoolReloadsFailed.Inc()
 		return errors.Wrap(err, "error creating HTTP client")
