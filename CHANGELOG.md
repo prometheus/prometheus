@@ -14,6 +14,12 @@
 * [BUGFIX] UI: Fix bug that sets the range input to the resolution. #10227
 * [BUGFIX] TSDB: Fix a query panic when `memory-snapshot-on-shutdown` is enabled. #10348
 
+## 2.33.5 / 2022-03-08
+
+The binaries published with this release are built with Go1.17.8 to avoid [CVE-2022-24921](https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2022-24921).
+
+* [BUGFIX] Remote-write: Fix deadlock between adding to queue and getting batch. #10395
+
 ## 2.33.4 / 2022-02-22
 
 * [BUGFIX] TSDB: Fix panic when m-mapping head chunks onto the disk. #10316
