@@ -1,3 +1,9 @@
+## 2.34.0-rc.1 / 2022-03-08
+
+* [ENHANCEMENT] HTTP SD: Add a failure counter. #10372
+* [BUGFIX] Parser: Specify type in metadata parser errors. #10269
+* [BUGFIX] Scrape: Fix label limit changes not applying. #10370
+
 ## 2.34.0-rc.0 / 2022-02-24
 
 * [CHANGE] UI: Classic UI removed. #10208
