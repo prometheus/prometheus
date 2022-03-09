@@ -80,7 +80,8 @@ func Load(s string, expandExternalLabels bool, logger log.Logger) (*Config, erro
 		return cfg, nil
 	}
 
-	for i, v := range cfg.GlobalConfig.ExternalLabels {
+	b := labels.NewBuilder(cfg.GlobalConfig.ExternalLabels)
+	cfg.GlobalConfig.ExternalLabels.Range(func(v labels.Label) {
 		newV := os.Expand(v.Value, func(s string) string {
 			if s == "$" {
 				return "$"
@@ -93,10 +94,10 @@ func Load(s string, expandExternalLabels bool, logger log.Logger) (*Config, erro
 		})
 		if newV != v.Value {
 			level.Debug(logger).Log("msg", "External label replaced", "label", v.Name, "input", v.Value, "output", newV)
-			v.Value = newV
-			cfg.GlobalConfig.ExternalLabels[i] = v
+			b.SetAnyValue(v.Name, newV)
 		}
-	}
+	})
+	cfg.GlobalConfig.ExternalLabels = b.Labels(labels.EmptyLabels())
 	return cfg, nil
 }
 
@@ -361,13 +362,16 @@ func (c *GlobalConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 
-	for _, l := range gc.ExternalLabels {
+	if err := gc.ExternalLabels.RangeToError(func(l labels.Label) error {
 		if !model.LabelName(l.Name).IsValid() {
 			return fmt.Errorf("%q is not a valid label name", l.Name)
 		}
 		if !model.LabelValue(l.Value).IsValid() {
 			return fmt.Errorf("%q is not a valid label value", l.Value)
 		}
+		return nil
+	}); err != nil {
+		return err
 	}
 
 	// First set the correct scrape interval, then check that the timeout
@@ -394,7 +398,7 @@ func (c *GlobalConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 // isZero returns true iff the global config is the zero value.
 func (c *GlobalConfig) isZero() bool {
-	return c.ExternalLabels == nil &&
+	return c.ExternalLabels.IsEmpty() &&
 		c.ScrapeInterval == 0 &&
 		c.ScrapeTimeout == 0 &&
 		c.EvaluationInterval == 0 &&
