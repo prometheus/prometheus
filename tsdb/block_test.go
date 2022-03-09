@@ -202,10 +202,10 @@ func TestLabelValuesWithMatchers(t *testing.T) {
 
 	var seriesEntries []storage.Series
 	for i := 0; i < 100; i++ {
-		seriesEntries = append(seriesEntries, storage.NewListSeries(labels.Labels{
-			{Name: "tens", Value: fmt.Sprintf("value%d", i/10)},
-			{Name: "unique", Value: fmt.Sprintf("value%d", i)},
-		}, []tsdbutil.Sample{sample{100, 0}}))
+		seriesEntries = append(seriesEntries, storage.NewListSeries(labels.FromStrings(
+			"tens", fmt.Sprintf("value%d", i/10),
+			"unique", fmt.Sprintf("value%d", i),
+		), []tsdbutil.Sample{sample{100, 0}}))
 	}
 
 	blockDir := createBlock(t, tmpdir, seriesEntries)
@@ -357,13 +357,11 @@ func BenchmarkLabelValuesWithMatchers(b *testing.B) {
 	var seriesEntries []storage.Series
 	metricCount := 1000000
 	for i := 0; i < metricCount; i++ {
-		// Note these series are not created in sort order: 'value2' sorts after 'value10'.
-		// This makes a big difference to the benchmark timing.
-		seriesEntries = append(seriesEntries, storage.NewListSeries(labels.Labels{
-			{Name: "a_unique", Value: fmt.Sprintf("value%d", i)},
-			{Name: "b_tens", Value: fmt.Sprintf("value%d", i/(metricCount/10))},
-			{Name: "c_ninety", Value: fmt.Sprintf("value%d", i/(metricCount/10)/9)}, // "0" for the first 90%, then "1"
-		}, []tsdbutil.Sample{sample{100, 0}}))
+		seriesEntries = append(seriesEntries, storage.NewListSeries(labels.FromStrings(
+			"a_unique", fmt.Sprintf("value%d", i),
+			"b_tens", fmt.Sprintf("value%d", i/(metricCount/10)),
+			"c_ninety", fmt.Sprintf("value%d", i/(metricCount/10)/9), // "0" for the first 90%, then "1"
+		), []tsdbutil.Sample{sample{100, 0}}))
 	}
 
 	blockDir := createBlock(b, tmpdir, seriesEntries)
@@ -397,23 +395,23 @@ func TestLabelNamesWithMatchers(t *testing.T) {
 
 	var seriesEntries []storage.Series
 	for i := 0; i < 100; i++ {
-		seriesEntries = append(seriesEntries, storage.NewListSeries(labels.Labels{
-			{Name: "unique", Value: fmt.Sprintf("value%d", i)},
-		}, []tsdbutil.Sample{sample{100, 0}}))
+		seriesEntries = append(seriesEntries, storage.NewListSeries(labels.FromStrings(
+			"unique", fmt.Sprintf("value%d", i),
+		), []tsdbutil.Sample{sample{100, 0}}))
 
 		if i%10 == 0 {
-			seriesEntries = append(seriesEntries, storage.NewListSeries(labels.Labels{
-				{Name: "tens", Value: fmt.Sprintf("value%d", i/10)},
-				{Name: "unique", Value: fmt.Sprintf("value%d", i)},
-			}, []tsdbutil.Sample{sample{100, 0}}))
+			seriesEntries = append(seriesEntries, storage.NewListSeries(labels.FromStrings(
+				"tens", fmt.Sprintf("value%d", i/10),
+				"unique", fmt.Sprintf("value%d", i),
+			), []tsdbutil.Sample{sample{100, 0}}))
 		}
 
 		if i%20 == 0 {
-			seriesEntries = append(seriesEntries, storage.NewListSeries(labels.Labels{
-				{Name: "tens", Value: fmt.Sprintf("value%d", i/10)},
-				{Name: "twenties", Value: fmt.Sprintf("value%d", i/20)},
-				{Name: "unique", Value: fmt.Sprintf("value%d", i)},
-			}, []tsdbutil.Sample{sample{100, 0}}))
+			seriesEntries = append(seriesEntries, storage.NewListSeries(labels.FromStrings(
+				"tens", fmt.Sprintf("value%d", i/10),
+				"twenties", fmt.Sprintf("value%d", i/20),
+				"unique", fmt.Sprintf("value%d", i),
+			), []tsdbutil.Sample{sample{100, 0}}))
 		}
 
 	}

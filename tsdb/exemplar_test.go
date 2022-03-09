@@ -38,32 +38,20 @@ func TestValidateExemplar(t *testing.T) {
 	require.NoError(t, err)
 	es := exs.(*CircularExemplarStorage)
 
-	l := labels.Labels{
-		{Name: "service", Value: "asdf"},
-	}
+	l := labels.FromStrings("service", "asdf")
 	e := exemplar.Exemplar{
-		Labels: labels.Labels{
-			labels.Label{
-				Name:  "traceID",
-				Value: "qwerty",
-			},
-		},
-		Value: 0.1,
-		Ts:    1,
+		Labels: labels.FromStrings("traceID", "qwerty"),
+		Value:  0.1,
+		Ts:     1,
 	}
 
 	require.NoError(t, es.ValidateExemplar(l, e))
 	require.NoError(t, es.AddExemplar(l, e))
 
 	e2 := exemplar.Exemplar{
-		Labels: labels.Labels{
-			labels.Label{
-				Name:  "traceID",
-				Value: "zxcvb",
-			},
-		},
-		Value: 0.1,
-		Ts:    2,
+		Labels: labels.FromStrings("traceID", "zxcvb"),
+		Value:  0.1,
+		Ts:     2,
 	}
 
 	require.NoError(t, es.ValidateExemplar(l, e2))
@@ -80,14 +68,9 @@ func TestValidateExemplar(t *testing.T) {
 	require.Equal(t, es.ValidateExemplar(l, e3), storage.ErrOutOfOrderExemplar)
 
 	e4 := exemplar.Exemplar{
-		Labels: labels.Labels{
-			labels.Label{
-				Name:  "a",
-				Value: strings.Repeat("b", exemplar.ExemplarMaxLabelSetLength),
-			},
-		},
-		Value: 0.1,
-		Ts:    2,
+		Labels: labels.FromStrings("a", strings.Repeat("b", exemplar.ExemplarMaxLabelSetLength)),
+		Value:  0.1,
+		Ts:     2,
 	}
 	require.Equal(t, storage.ErrExemplarLabelLength, es.ValidateExemplar(l, e4))
 }
@@ -97,32 +80,20 @@ func TestAddExemplar(t *testing.T) {
 	require.NoError(t, err)
 	es := exs.(*CircularExemplarStorage)
 
-	l := labels.Labels{
-		{Name: "service", Value: "asdf"},
-	}
+	l := labels.FromStrings("service", "asdf")
 	e := exemplar.Exemplar{
-		Labels: labels.Labels{
-			labels.Label{
-				Name:  "traceID",
-				Value: "qwerty",
-			},
-		},
-		Value: 0.1,
-		Ts:    1,
+		Labels: labels.FromStrings("traceID", "qwerty"),
+		Value:  0.1,
+		Ts:     1,
 	}
 
 	require.NoError(t, es.AddExemplar(l, e))
 	require.Equal(t, es.index[string(l.Bytes(nil))].newest, 0, "exemplar was not stored correctly")
 
 	e2 := exemplar.Exemplar{
-		Labels: labels.Labels{
-			labels.Label{
-				Name:  "traceID",
-				Value: "zxcvb",
-			},
-		},
-		Value: 0.1,
-		Ts:    2,
+		Labels: labels.FromStrings("traceID", "zxcvb"),
+		Value:  0.1,
+		Ts:     2,
 	}
 
 	require.NoError(t, es.AddExemplar(l, e2))
@@ -140,14 +111,9 @@ func TestAddExemplar(t *testing.T) {
 	require.Equal(t, storage.ErrOutOfOrderExemplar, es.AddExemplar(l, e3))
 
 	e4 := exemplar.Exemplar{
-		Labels: labels.Labels{
-			labels.Label{
-				Name:  "a",
-				Value: strings.Repeat("b", exemplar.ExemplarMaxLabelSetLength),
-			},
-		},
-		Value: 0.1,
-		Ts:    2,
+		Labels: labels.FromStrings("a", strings.Repeat("b", exemplar.ExemplarMaxLabelSetLength)),
+		Value:  0.1,
+		Ts:     2,
 	}
 	require.Equal(t, storage.ErrExemplarLabelLength, es.AddExemplar(l, e4))
 }
@@ -160,28 +126,22 @@ func TestStorageOverflow(t *testing.T) {
 	require.NoError(t, err)
 	es := exs.(*CircularExemplarStorage)
 
-	l := labels.Labels{
-		{Name: "service", Value: "asdf"},
-	}
+	lName, lValue := "service", "asdf"
+	l := labels.FromStrings(lName, lValue)
 
 	var eList []exemplar.Exemplar
 	for i := 0; i < len(es.exemplars)+1; i++ {
 		e := exemplar.Exemplar{
-			Labels: labels.Labels{
-				labels.Label{
-					Name:  "traceID",
-					Value: "a",
-				},
-			},
-			Value: float64(i+1) / 10,
-			Ts:    int64(101 + i),
+			Labels: labels.FromStrings("traceID", "a"),
+			Value:  float64(i+1) / 10,
+			Ts:     int64(101 + i),
 		}
 		es.AddExemplar(l, e)
 		eList = append(eList, e)
 	}
 	require.True(t, (es.exemplars[0].exemplar.Ts == 106), "exemplar was not stored correctly")
 
-	m, err := labels.NewMatcher(labels.MatchEqual, l[0].Name, l[0].Value)
+	m, err := labels.NewMatcher(labels.MatchEqual, lName, lValue)
 	require.NoError(t, err, "error creating label matcher for exemplar query")
 	ret, err := es.Select(100, 110, []*labels.Matcher{m})
 	require.NoError(t, err)
@@ -195,23 +155,19 @@ func TestSelectExemplar(t *testing.T) {
 	require.NoError(t, err)
 	es := exs.(*CircularExemplarStorage)
 
-	l := labels.Labels{{Name: "service", Value: "asdf"}}
+	lName, lValue := "service", "asdf"
+	l := labels.FromStrings(lName, lValue)
 	e := exemplar.Exemplar{
-		Labels: labels.Labels{
-			labels.Label{
-				Name:  "traceID",
-				Value: "qwerty",
-			},
-		},
-		Value: 0.1,
-		Ts:    12,
+		Labels: labels.FromStrings("traceID", "querty"),
+		Value:  0.1,
+		Ts:     12,
 	}
 
 	err = es.AddExemplar(l, e)
 	require.NoError(t, err, "adding exemplar failed")
 	require.True(t, reflect.DeepEqual(es.exemplars[0].exemplar, e), "exemplar was not stored correctly")
 
-	m, err := labels.NewMatcher(labels.MatchEqual, l[0].Name, l[0].Value)
+	m, err := labels.NewMatcher(labels.MatchEqual, lName, lValue)
 	require.NoError(t, err, "error creating label matcher for exemplar query")
 	ret, err := es.Select(0, 100, []*labels.Matcher{m})
 	require.NoError(t, err)
@@ -226,51 +182,37 @@ func TestSelectExemplar_MultiSeries(t *testing.T) {
 	require.NoError(t, err)
 	es := exs.(*CircularExemplarStorage)
 
-	l1 := labels.Labels{
-		{Name: "__name__", Value: "test_metric"},
-		{Name: "service", Value: "asdf"},
-	}
-	l2 := labels.Labels{
-		{Name: "__name__", Value: "test_metric2"},
-		{Name: "service", Value: "qwer"},
-	}
+	l1Name := "test_metric"
+	l1 := labels.FromStrings(labels.MetricName, l1Name, "service", "asdf")
+	l2Name := "test_metric2"
+	l2 := labels.FromStrings(labels.MetricName, l2Name, "service", "qwer")
 
 	for i := 0; i < len(es.exemplars); i++ {
 		e1 := exemplar.Exemplar{
-			Labels: labels.Labels{
-				labels.Label{
-					Name:  "traceID",
-					Value: "a",
-				},
-			},
-			Value: float64(i+1) / 10,
-			Ts:    int64(101 + i),
+			Labels: labels.FromStrings("traceID", "a"),
+			Value:  float64(i+1) / 10,
+			Ts:     int64(101 + i),
 		}
 		err = es.AddExemplar(l1, e1)
 		require.NoError(t, err)
 
 		e2 := exemplar.Exemplar{
-			Labels: labels.Labels{
-				labels.Label{
-					Name:  "traceID",
-					Value: "b",
-				},
-			},
-			Value: float64(i+1) / 10,
-			Ts:    int64(101 + i),
+			Labels: labels.FromStrings("traceID", "b"),
+			Value:  float64(i+1) / 10,
+			Ts:     int64(101 + i),
 		}
 		err = es.AddExemplar(l2, e2)
 		require.NoError(t, err)
 	}
 
-	m, err := labels.NewMatcher(labels.MatchEqual, l2[0].Name, l2[0].Value)
+	m, err := labels.NewMatcher(labels.MatchEqual, labels.MetricName, l2Name)
 	require.NoError(t, err, "error creating label matcher for exemplar query")
 	ret, err := es.Select(100, 200, []*labels.Matcher{m})
 	require.NoError(t, err)
 	require.True(t, len(ret) == 1, "select should have returned samples for a single series only")
 	require.True(t, len(ret[0].Exemplars) == 3, "didn't get expected 8 exemplars, got %d", len(ret[0].Exemplars))
 
-	m, err = labels.NewMatcher(labels.MatchEqual, l1[0].Name, l1[0].Value)
+	m, err = labels.NewMatcher(labels.MatchEqual, labels.MetricName, l1Name)
 	require.NoError(t, err, "error creating label matcher for exemplar query")
 	ret, err = es.Select(100, 200, []*labels.Matcher{m})
 	require.NoError(t, err)
@@ -284,26 +226,20 @@ func TestSelectExemplar_TimeRange(t *testing.T) {
 	require.NoError(t, err)
 	es := exs.(*CircularExemplarStorage)
 
-	l := labels.Labels{
-		{Name: "service", Value: "asdf"},
-	}
+	lName, lValue := "service", "asdf"
+	l := labels.FromStrings(lName, lValue)
 
 	for i := 0; int64(i) < lenEs; i++ {
 		err := es.AddExemplar(l, exemplar.Exemplar{
-			Labels: labels.Labels{
-				labels.Label{
-					Name:  "traceID",
-					Value: strconv.Itoa(i),
-				},
-			},
-			Value: 0.1,
-			Ts:    int64(101 + i),
+			Labels: labels.FromStrings("traceID", strconv.Itoa(i)),
+			Value:  0.1,
+			Ts:     int64(101 + i),
 		})
 		require.NoError(t, err)
 		require.Equal(t, es.index[string(l.Bytes(nil))].newest, i, "exemplar was not stored correctly")
 	}
 
-	m, err := labels.NewMatcher(labels.MatchEqual, l[0].Name, l[0].Value)
+	m, err := labels.NewMatcher(labels.MatchEqual, lName, lValue)
 	require.NoError(t, err, "error creating label matcher for exemplar query")
 	ret, err := es.Select(102, 104, []*labels.Matcher{m})
 	require.NoError(t, err)
@@ -319,29 +255,23 @@ func TestSelectExemplar_DuplicateSeries(t *testing.T) {
 	es := exs.(*CircularExemplarStorage)
 
 	e := exemplar.Exemplar{
-		Labels: labels.Labels{
-			labels.Label{
-				Name:  "traceID",
-				Value: "qwerty",
-			},
-		},
-		Value: 0.1,
-		Ts:    12,
+		Labels: labels.FromStrings("traceID", "qwerty"),
+		Value:  0.1,
+		Ts:     12,
 	}
 
-	l := labels.Labels{
-		{Name: "cluster", Value: "us-central1"},
-		{Name: "service", Value: "asdf"},
-	}
+	lName0, lValue0 := "service", "asdf"
+	lName1, lValue1 := "cluster", "us-central1"
+	l := labels.FromStrings(lName0, lValue0, lName1, lValue1)
 
 	// Lets just assume somehow the PromQL expression generated two separate lists of matchers,
 	// both of which can select this particular series.
 	m := [][]*labels.Matcher{
 		{
-			labels.MustNewMatcher(labels.MatchEqual, l[0].Name, l[0].Value),
+			labels.MustNewMatcher(labels.MatchEqual, lName0, lValue0),
 		},
 		{
-			labels.MustNewMatcher(labels.MatchEqual, l[1].Name, l[1].Value),
+			labels.MustNewMatcher(labels.MatchEqual, lName1, lValue1),
 		},
 	}
 
@@ -359,13 +289,8 @@ func TestIndexOverwrite(t *testing.T) {
 	require.NoError(t, err)
 	es := exs.(*CircularExemplarStorage)
 
-	l1 := labels.Labels{
-		{Name: "service", Value: "asdf"},
-	}
-
-	l2 := labels.Labels{
-		{Name: "service", Value: "qwer"},
-	}
+	l1 := labels.FromStrings("service", "asdf")
+	l2 := labels.FromStrings("service", "qwer")
 
 	err = es.AddExemplar(l1, exemplar.Exemplar{Value: 1, Ts: 1})
 	require.NoError(t, err)
@@ -488,7 +413,7 @@ func TestResize(t *testing.T) {
 func BenchmarkAddExemplar(b *testing.B) {
 	// We need to include these labels since we do length calculation
 	// before adding.
-	exLabels := labels.Labels{{Name: "traceID", Value: "89620921"}}
+	exLabels := labels.FromStrings("traceID", "89620921")
 
 	for _, n := range []int{10000, 100000, 1000000} {
 		b.Run(fmt.Sprintf("%d", n), func(b *testing.B) {
@@ -497,12 +422,12 @@ func BenchmarkAddExemplar(b *testing.B) {
 				exs, err := NewCircularExemplarStorage(int64(n), eMetrics)
 				require.NoError(b, err)
 				es := exs.(*CircularExemplarStorage)
-				l := labels.Labels{{Name: "service", Value: strconv.Itoa(0)}}
+				var l labels.Labels
 				b.StartTimer()
 
 				for i := 0; i < n; i++ {
 					if i%100 == 0 {
-						l = labels.Labels{{Name: "service", Value: strconv.Itoa(i)}}
+						l = labels.FromStrings("service", strconv.Itoa(i))
 					}
 					err = es.AddExemplar(l, exemplar.Exemplar{Value: float64(i), Ts: int64(i), Labels: exLabels})
 					if err != nil {
