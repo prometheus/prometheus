@@ -91,7 +91,7 @@ func TestFilterExternalLabels(t *testing.T) {
 
 	require.NoError(t, s.ApplyConfig(conf))
 	require.Equal(t, 1, len(s.queryables))
-	require.Equal(t, 1, len(s.queryables[0].(*sampleAndChunkQueryableClient).externalLabels))
+	require.Equal(t, 1, s.queryables[0].(*sampleAndChunkQueryableClient).externalLabels.Len())
 
 	err := s.Close()
 	require.NoError(t, err)
@@ -118,7 +118,7 @@ func TestIgnoreExternalLabels(t *testing.T) {
 
 	require.NoError(t, s.ApplyConfig(conf))
 	require.Equal(t, 1, len(s.queryables))
-	require.Equal(t, 0, len(s.queryables[0].(*sampleAndChunkQueryableClient).externalLabels))
+	require.Equal(t, 0, s.queryables[0].(*sampleAndChunkQueryableClient).externalLabels.Len())
 
 	err := s.Close()
 	require.NoError(t, err)
