@@ -1002,7 +1002,7 @@ func (a dbAppender) GetRef(lset labels.Labels, hash uint64) (storage.SeriesRef, 
 	if g, ok := a.Appender.(storage.GetRef); ok {
 		return g.GetRef(lset, hash)
 	}
-	return 0, nil
+	return 0, labels.EmptyLabels()
 }
 
 func (a dbAppender) Commit() error {
