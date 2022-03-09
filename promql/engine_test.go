@@ -684,6 +684,7 @@ load 10s
 			Result: Matrix{
 				Series{
 					Points: []Point{{V: 1, T: 0}, {V: 1, T: 1000}, {V: 1, T: 2000}},
+					Metric: labels.EmptyLabels(),
 				},
 			},
 			Start:    time.Unix(0, 0),
@@ -4008,7 +4009,7 @@ func TestSparseHistogram_Sum_Count_AddOperator(t *testing.T) {
 			// sum().
 			queryString := fmt.Sprintf("sum(%s)", seriesName)
 			queryAndCheck(queryString, []Sample{
-				{Point{T: ts, H: &c.expected}, labels.Labels{}},
+				{Point{T: ts, H: &c.expected}, labels.EmptyLabels()},
 			})
 
 			// + operator.
@@ -4017,13 +4018,13 @@ func TestSparseHistogram_Sum_Count_AddOperator(t *testing.T) {
 				queryString += fmt.Sprintf(` + ignoring(idx) %s{idx="%d"}`, seriesName, idx)
 			}
 			queryAndCheck(queryString, []Sample{
-				{Point{T: ts, H: &c.expected}, labels.Labels{}},
+				{Point{T: ts, H: &c.expected}, labels.EmptyLabels()},
 			})
 
 			// count().
 			queryString = fmt.Sprintf("count(%s)", seriesName)
 			queryAndCheck(queryString, []Sample{
-				{Point{T: ts, V: 3}, labels.Labels{}},
+				{Point{T: ts, V: 3}, labels.EmptyLabels()},
 			})
 		})
 	}
