@@ -131,7 +131,7 @@ func TestTailSamples(t *testing.T) {
 				series := enc.Series([]record.RefSeries{
 					{
 						Ref:    chunks.HeadSeriesRef(ref),
-						Labels: labels.Labels{labels.Label{Name: "__name__", Value: fmt.Sprintf("metric_%d", i)}},
+						Labels: labels.FromStrings("__name__", fmt.Sprintf("metric_%d", i)),
 					},
 				}, nil)
 				require.NoError(t, w.Log(series))
@@ -221,7 +221,7 @@ func TestReadToEndNoCheckpoint(t *testing.T) {
 				series := enc.Series([]record.RefSeries{
 					{
 						Ref:    chunks.HeadSeriesRef(i),
-						Labels: labels.Labels{labels.Label{Name: "__name__", Value: fmt.Sprintf("metric_%d", i)}},
+						Labels: labels.FromStrings("__name__", fmt.Sprintf("metric_%d", i)),
 					},
 				}, nil)
 				recs = append(recs, series)
@@ -290,7 +290,7 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 				series := enc.Series([]record.RefSeries{
 					{
 						Ref:    chunks.HeadSeriesRef(ref),
-						Labels: labels.Labels{labels.Label{Name: "__name__", Value: fmt.Sprintf("metric_%d", i)}},
+						Labels: labels.FromStrings("__name__", fmt.Sprintf("metric_%d", i)),
 					},
 				}, nil)
 				require.NoError(t, w.Log(series))
@@ -318,7 +318,7 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 				series := enc.Series([]record.RefSeries{
 					{
 						Ref:    chunks.HeadSeriesRef(i),
-						Labels: labels.Labels{labels.Label{Name: "__name__", Value: fmt.Sprintf("metric_%d", i)}},
+						Labels: labels.FromStrings("__name__", fmt.Sprintf("metric_%d", i)),
 					},
 				}, nil)
 				require.NoError(t, w.Log(series))
@@ -379,7 +379,7 @@ func TestReadCheckpoint(t *testing.T) {
 				series := enc.Series([]record.RefSeries{
 					{
 						Ref:    chunks.HeadSeriesRef(ref),
-						Labels: labels.Labels{labels.Label{Name: "__name__", Value: fmt.Sprintf("metric_%d", i)}},
+						Labels: labels.FromStrings("__name__", fmt.Sprintf("metric_%d", i)),
 					},
 				}, nil)
 				require.NoError(t, w.Log(series))
@@ -443,7 +443,7 @@ func TestReadCheckpointMultipleSegments(t *testing.T) {
 					series := enc.Series([]record.RefSeries{
 						{
 							Ref:    chunks.HeadSeriesRef(ref),
-							Labels: labels.Labels{labels.Label{Name: "__name__", Value: fmt.Sprintf("metric_%d", j)}},
+							Labels: labels.FromStrings("__name__", fmt.Sprintf("metric_%d", i)),
 						},
 					}, nil)
 					require.NoError(t, w.Log(series))
@@ -523,7 +523,7 @@ func TestCheckpointSeriesReset(t *testing.T) {
 				series := enc.Series([]record.RefSeries{
 					{
 						Ref:    chunks.HeadSeriesRef(ref),
-						Labels: labels.Labels{labels.Label{Name: "__name__", Value: fmt.Sprintf("metric_%d", i)}},
+						Labels: labels.FromStrings("__name__", fmt.Sprintf("metric_%d", i)),
 					},
 				}, nil)
 				require.NoError(t, w.Log(series))
