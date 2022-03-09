@@ -155,7 +155,7 @@ func (h *headIndexReader) Series(ref storage.SeriesRef, builder *labels.SimpleBu
 		h.head.metrics.seriesNotFound.Inc()
 		return storage.ErrNotFound
 	}
-	*lbls = append((*lbls)[:0], s.lset...)
+	lbls.CopyFrom(s.lset)
 
 	s.Lock()
 	defer s.Unlock()
@@ -222,9 +222,9 @@ func (h *headIndexReader) LabelNamesFor(ids ...storage.SeriesRef) ([]string, err
 		if memSeries == nil {
 			return nil, storage.ErrNotFound
 		}
-		for _, lbl := range memSeries.lset {
+		memSeries.lset.Range(func(lbl labels.Label) {
 			namesMap[lbl.Name] = struct{}{}
-		}
+		})
 	}
 	names := make([]string, 0, len(namesMap))
 	for name := range namesMap {

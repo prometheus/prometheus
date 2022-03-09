@@ -102,7 +102,7 @@ func (a *initAppender) GetRef(lset labels.Labels, hash uint64) (storage.SeriesRe
 	if g, ok := a.app.(storage.GetRef); ok {
 		return g.GetRef(lset, hash)
 	}
-	return 0, nil
+	return 0, labels.EmptyLabels()
 }
 
 func (a *initAppender) Commit() error {
@@ -312,7 +312,7 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 	if s == nil {
 		// Ensure no empty labels have gotten through.
 		lset = lset.WithoutEmpty()
-		if len(lset) == 0 {
+		if lset.IsEmpty() {
 			return 0, errors.Wrap(ErrInvalidSample, "empty labelset")
 		}
 
@@ -650,7 +650,7 @@ var _ storage.GetRef = &headAppender{}
 func (a *headAppender) GetRef(lset labels.Labels, hash uint64) (storage.SeriesRef, labels.Labels) {
 	s := a.head.series.getByHash(hash, lset)
 	if s == nil {
-		return 0, nil
+		return 0, labels.EmptyLabels()
 	}
 	// returned labels must be suitable to pass to Append()
 	return storage.SeriesRef(s.ref), s.lset
