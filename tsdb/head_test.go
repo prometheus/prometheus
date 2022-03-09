@@ -388,7 +388,12 @@ func TestHead_HighConcurrencyReadAndWrite(t *testing.T) {
 
 				querySeriesRef = (querySeriesRef + 1) % seriesCnt
 				lbls := labelSets[querySeriesRef]
-				samples, err := queryHead(ts-qryRange, ts, lbls[0])
+				// lbls has a single entry; extract it so we can run a query.
+				var lbl labels.Label
+				lbls.Range(func(l labels.Label) {
+					lbl = l
+				})
+				samples, err := queryHead(ts-qryRange, ts, lbl)
 				if err != nil {
 					return false, err
 				}
@@ -1133,8 +1138,9 @@ func TestDelete_e2e(t *testing.T) {
 			require.NoError(t, hb.Delete(r.Mint, r.Maxt, del.ms...))
 		}
 		matched := labels.Slice{}
-		for _, ls := range lbls {
+		for _, l := range lbls {
 			s := labels.Selector(del.ms)
+			ls := labels.New(l...)
 			if s.Matches(ls) {
 				matched = append(matched, ls)
 			}
