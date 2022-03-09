@@ -7,7 +7,7 @@ import { Metric } from '../../types/types';
 
 import moment from 'moment';
 
-export interface QueryResult {
+export interface DataTableProps {
   data:
     | null
     | {
@@ -50,7 +50,7 @@ const limitSeries = <S extends InstantSample | RangeSamples>(series: S[]): S[] =
   return series;
 };
 
-const DataTable: FC<QueryResult> = ({ data, useLocalTime }) => {
+const DataTable: FC<DataTableProps> = ({ data, useLocalTime }) => {
   if (data === null) {
     return <Alert color="light">No data queried yet</Alert>;
   }

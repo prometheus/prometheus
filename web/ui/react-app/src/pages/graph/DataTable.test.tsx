@@ -1,13 +1,13 @@
 import * as React from 'react';
 import { shallow } from 'enzyme';
-import DataTable, { QueryResult } from './DataTable';
+import DataTable, { DataTableProps } from './DataTable';
 import { Alert, Table } from 'reactstrap';
 import SeriesName from './SeriesName';
 
 describe('DataTable', () => {
   describe('when data is null', () => {
     it('renders an alert', () => {
-      const table = shallow(<DataTable data={null} />);
+      const table = shallow(<DataTable useLocalTime={false} data={null} />);
       const alert = table.find(Alert);
       expect(Object.keys(alert.props())).toHaveLength(7);
       expect(alert.prop('color')).toEqual('light');
@@ -17,11 +17,12 @@ describe('DataTable', () => {
 
   describe('when data.result is empty', () => {
     it('renders an alert', () => {
-      const dataTableProps: QueryResult = {
+      const dataTableProps: DataTableProps = {
         data: {
           resultType: 'vector',
           result: [],
         },
+        useLocalTime: false,
       };
       const table = shallow(<DataTable {...dataTableProps} />);
       const alert = table.find(Alert);
@@ -32,7 +33,7 @@ describe('DataTable', () => {
   });
 
   describe('when resultType is a vector with values', () => {
-    const dataTableProps: QueryResult = {
+    const dataTableProps: DataTableProps = {
       data: {
         resultType: 'vector',
         result: [
@@ -54,6 +55,7 @@ describe('DataTable', () => {
           },
         ],
       },
+      useLocalTime: false,
     };
     const dataTable = shallow(<DataTable {...dataTableProps} />);
 
@@ -75,7 +77,7 @@ describe('DataTable', () => {
   });
 
   describe('when resultType is a vector with too many values', () => {
-    const dataTableProps: QueryResult = {
+    const dataTableProps: DataTableProps = {
       data: {
         resultType: 'vector',
         result: Array.from(Array(10001).keys()).map((i) => {
@@ -89,6 +91,7 @@ describe('DataTable', () => {
           };
         }),
       },
+      useLocalTime: false,
     };
     const dataTable = shallow(<DataTable {...dataTableProps} />);
 
@@ -104,7 +107,7 @@ describe('DataTable', () => {
   });
 
   describe('when resultType is vector and size is more than maximum limit of formatting', () => {
-    const dataTableProps: QueryResult = {
+    const dataTableProps: DataTableProps = {
       data: {
         resultType: 'vector',
         result: Array.from(Array(1001).keys()).map((i) => {
@@ -118,6 +121,7 @@ describe('DataTable', () => {
           };
         }),
       },
+      useLocalTime: false,
     };
     const dataTable = shallow(<DataTable {...dataTableProps} />);
 
@@ -130,7 +134,7 @@ describe('DataTable', () => {
   });
 
   describe('when result type is a matrix', () => {
-    const dataTableProps: QueryResult = {
+    const dataTableProps: DataTableProps = {
       data: {
         resultType: 'matrix',
         result: [
@@ -226,6 +230,7 @@ describe('DataTable', () => {
           },
         ],
       },
+      useLocalTime: false,
     };
     const dataTable = shallow(<DataTable {...dataTableProps} />);
     it('renders rows', () => {
@@ -240,11 +245,12 @@ describe('DataTable', () => {
   });
 
   describe('when resultType is a scalar', () => {
-    const dataTableProps: QueryResult = {
+    const dataTableProps: DataTableProps = {
       data: {
         resultType: 'scalar',
         result: [1572098246.599, '5'],
       },
+      useLocalTime: false,
     };
     const dataTable = shallow(<DataTable {...dataTableProps} />);
     it('renders a scalar row', () => {
@@ -255,11 +261,12 @@ describe('DataTable', () => {
   });
 
   describe('when resultType is a string', () => {
-    const dataTableProps: QueryResult = {
+    const dataTableProps: DataTableProps = {
       data: {
         resultType: 'string',
         result: 'string',
       },
+      useLocalTime: false,
     };
     const dataTable = shallow(<DataTable {...dataTableProps} />);
     it('renders a string row', () => {
