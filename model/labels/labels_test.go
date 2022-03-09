@@ -586,6 +586,36 @@ func BenchmarkLabels_Get(b *testing.B) {
 	}
 }
 
+func BenchmarkLabels_Equals(b *testing.B) {
+	for _, scenario := range []struct {
+		desc        string
+		base, other Labels
+	}{
+		{
+			"equal",
+			Labels{{"aaa", "111"}, {"bbb", "222"}},
+			Labels{{"aaa", "111"}, {"bbb", "222"}},
+		},
+		{
+			"not equal",
+			Labels{{"aaa", "111"}, {"bbb", "222"}},
+			Labels{{"aaa", "111"}, {"bbb", "333"}},
+		},
+		{
+			"different sizes",
+			Labels{{"aaa", "111"}, {"bbb", "222"}},
+			Labels{{"aaa", "111"}},
+		},
+	} {
+		b.Run(scenario.desc, func(b *testing.B) {
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				_ = Equal(scenario.base, scenario.other)
+			}
+		})
+	}
+}
+
 func TestLabels_Copy(t *testing.T) {
 	require.Equal(t, Labels{{"aaa", "111"}, {"bbb", "222"}}, Labels{{"aaa", "111"}, {"bbb", "222"}}.Copy())
 }
