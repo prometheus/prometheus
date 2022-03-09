@@ -539,6 +539,7 @@ func TestShouldReshard(t *testing.T) {
 func createTimeseries(numSamples, numSeries int, extraLabels ...labels.Label) ([]record.RefSample, []record.RefSeries) {
 	samples := make([]record.RefSample, 0, numSamples)
 	series := make([]record.RefSeries, 0, numSeries)
+	b := labels.SimpleBuilder{}
 	for i := 0; i < numSeries; i++ {
 		name := fmt.Sprintf("test_metric_%d", i)
 		for j := 0; j < numSamples; j++ {
@@ -548,9 +549,16 @@ func createTimeseries(numSamples, numSeries int, extraLabels ...labels.Label) ([
 				V:   float64(i),
 			})
 		}
+		// Create Labels that is name of series plus any extra labels supplied.
+		b.Reset()
+		b.Add(labels.MetricName, name)
+		for _, l := range extraLabels {
+			b.Add(l.Name, l.Value)
+		}
+		b.Sort()
 		series = append(series, record.RefSeries{
 			Ref:    chunks.HeadSeriesRef(i),
-			Labels: append(labels.Labels{{Name: "__name__", Value: name}}, extraLabels...),
+			Labels: b.Labels(),
 		})
 	}
 	return samples, series
@@ -815,7 +823,7 @@ func BenchmarkSampleSend(b *testing.B) {
 	const numSeries = 10000
 
 	// Extra labels to make a more realistic workload - taken from Kubernetes' embedded cAdvisor metrics.
-	extraLabels := labels.Labels{
+	extraLabels := []labels.Label{
 		{Name: "kubernetes_io_arch", Value: "amd64"},
 		{Name: "kubernetes_io_instance_type", Value: "c3.somesize"},
 		{Name: "kubernetes_io_os", Value: "linux"},
@@ -896,65 +904,6 @@ func BenchmarkStartup(b *testing.B) {
 		m.watcher.MaxSegment = segments[len(segments)-2]
 		err := m.watcher.Run()
 		require.NoError(b, err)
-	}
-}
-
-func TestProcessExternalLabels(t *testing.T) {
-	for _, tc := range []struct {
-		labels         labels.Labels
-		externalLabels labels.Labels
-		expected       labels.Labels
-	}{
-		// Test adding labels at the end.
-		{
-			labels:         labels.Labels{{Name: "a", Value: "b"}},
-			externalLabels: labels.Labels{{Name: "c", Value: "d"}},
-			expected:       labels.Labels{{Name: "a", Value: "b"}, {Name: "c", Value: "d"}},
-		},
-
-		// Test adding labels at the beginning.
-		{
-			labels:         labels.Labels{{Name: "c", Value: "d"}},
-			externalLabels: labels.Labels{{Name: "a", Value: "b"}},
-			expected:       labels.Labels{{Name: "a", Value: "b"}, {Name: "c", Value: "d"}},
-		},
-
-		// Test we don't override existing labels.
-		{
-			labels:         labels.Labels{{Name: "a", Value: "b"}},
-			externalLabels: labels.Labels{{Name: "a", Value: "c"}},
-			expected:       labels.Labels{{Name: "a", Value: "b"}},
-		},
-
-		// Test empty externalLabels.
-		{
-			labels:         labels.Labels{{Name: "a", Value: "b"}},
-			externalLabels: labels.Labels{},
-			expected:       labels.Labels{{Name: "a", Value: "b"}},
-		},
-
-		// Test empty labels.
-		{
-			labels:         labels.Labels{},
-			externalLabels: labels.Labels{{Name: "a", Value: "b"}},
-			expected:       labels.Labels{{Name: "a", Value: "b"}},
-		},
-
-		// Test labels is longer than externalLabels.
-		{
-			labels:         labels.Labels{{Name: "a", Value: "b"}, {Name: "c", Value: "d"}},
-			externalLabels: labels.Labels{{Name: "e", Value: "f"}},
-			expected:       labels.Labels{{Name: "a", Value: "b"}, {Name: "c", Value: "d"}, {Name: "e", Value: "f"}},
-		},
-
-		// Test externalLabels is longer than labels.
-		{
-			labels:         labels.Labels{{Name: "c", Value: "d"}},
-			externalLabels: labels.Labels{{Name: "a", Value: "b"}, {Name: "e", Value: "f"}},
-			expected:       labels.Labels{{Name: "a", Value: "b"}, {Name: "c", Value: "d"}, {Name: "e", Value: "f"}},
-		},
-	} {
-		require.Equal(t, tc.expected, processExternalLabels(tc.labels, tc.externalLabels))
 	}
 }
 

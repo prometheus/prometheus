@@ -71,86 +71,86 @@ var writeRequestFixture = &prompb.WriteRequest{
 
 func TestValidateLabelsAndMetricName(t *testing.T) {
 	tests := []struct {
-		input       labels.Labels
+		input       []prompb.Label
 		expectedErr string
 		description string
 	}{
 		{
-			input: labels.FromStrings(
-				"__name__", "name",
-				"labelName", "labelValue",
-			),
+			input: []prompb.Label{
+				{Name: "__name__", Value: "name"},
+				{Name: "labelName", Value: "labelValue"},
+			},
 			expectedErr: "",
 			description: "regular labels",
 		},
 		{
-			input: labels.FromStrings(
-				"__name__", "name",
-				"_labelName", "labelValue",
-			),
+			input: []prompb.Label{
+				{Name: "__name__", Value: "name"},
+				{Name: "_labelName", Value: "labelValue"},
+			},
 			expectedErr: "",
 			description: "label name with _",
 		},
 		{
-			input: labels.FromStrings(
-				"__name__", "name",
-				"@labelName", "labelValue",
-			),
+			input: []prompb.Label{
+				{Name: "__name__", Value: "name"},
+				{Name: "@labelName", Value: "labelValue"},
+			},
 			expectedErr: "invalid label name: @labelName",
 			description: "label name with @",
 		},
 		{
-			input: labels.FromStrings(
-				"__name__", "name",
-				"123labelName", "labelValue",
-			),
+			input: []prompb.Label{
+				{Name: "__name__", Value: "name"},
+				{Name: "123labelName", Value: "labelValue"},
+			},
 			expectedErr: "invalid label name: 123labelName",
 			description: "label name starts with numbers",
 		},
 		{
-			input: labels.FromStrings(
-				"__name__", "name",
-				"", "labelValue",
-			),
+			input: []prompb.Label{
+				{Name: "__name__", Value: "name"},
+				{Name: "", Value: "labelValue"},
+			},
 			expectedErr: "invalid label name: ",
 			description: "label name is empty string",
 		},
 		{
-			input: labels.FromStrings(
-				"__name__", "name",
-				"labelName", string([]byte{0xff}),
-			),
+			input: []prompb.Label{
+				{Name: "__name__", Value: "name"},
+				{Name: "labelName", Value: string([]byte{0xff})},
+			},
 			expectedErr: "invalid label value: " + string([]byte{0xff}),
 			description: "label value is an invalid UTF-8 value",
 		},
 		{
-			input: labels.FromStrings(
-				"__name__", "@invalid_name",
-			),
+			input: []prompb.Label{
+				{Name: "__name__", Value: "@invalid_name"},
+			},
 			expectedErr: "invalid metric name: @invalid_name",
 			description: "metric name starts with @",
 		},
 		{
-			input: labels.FromStrings(
-				"__name__", "name1",
-				"__name__", "name2",
-			),
+			input: []prompb.Label{
+				{Name: "__name__", Value: "name1"},
+				{Name: "__name__", Value: "name2"},
+			},
 			expectedErr: "duplicate label with name: __name__",
 			description: "duplicate label names",
 		},
 		{
-			input: labels.FromStrings(
-				"label1", "name",
-				"label2", "name",
-			),
+			input: []prompb.Label{
+				{Name: "label1", Value: "name"},
+				{Name: "label2", Value: "name"},
+			},
 			expectedErr: "",
 			description: "duplicate label values",
 		},
 		{
-			input: labels.FromStrings(
-				"", "name",
-				"label2", "name",
-			),
+			input: []prompb.Label{
+				{Name: "", Value: "name"},
+				{Name: "label2", Value: "name"},
+			},
 			expectedErr: "invalid label name: ",
 			description: "don't report as duplicate label name",
 		},
@@ -197,8 +197,7 @@ func TestConcreteSeriesClonesLabels(t *testing.T) {
 	gotLabels := cs.Labels()
 	require.Equal(t, lbls, gotLabels)
 
-	gotLabels[0].Value = "foo"
-	gotLabels[1].Value = "bar"
+	gotLabels.CopyFrom(labels.FromStrings("a", "foo", "c", "foo"))
 
 	gotLabels = cs.Labels()
 	require.Equal(t, lbls, gotLabels)
