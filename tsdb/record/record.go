@@ -183,14 +183,7 @@ func (d *Decoder) Series(rec []byte, series []RefSeries) ([]RefSeries, error) {
 	}
 	for len(dec.B) > 0 && dec.Err() == nil {
 		ref := storage.SeriesRef(dec.Be64())
-
-		lset := make(labels.Labels, dec.Uvarint())
-
-		for i := range lset {
-			lset[i].Name = dec.UvarintStr()
-			lset[i].Value = dec.UvarintStr()
-		}
-		sort.Sort(lset)
+		lset := d.DecodeLabels(&dec)
 
 		series = append(series, RefSeries{
 			Ref:    chunks.HeadSeriesRef(ref),
@@ -247,6 +240,18 @@ func (d *Decoder) Metadata(rec []byte, metadata []RefMetadata) ([]RefMetadata, e
 		return nil, errors.Errorf("unexpected %d bytes left in entry", len(dec.B))
 	}
 	return metadata, nil
+}
+
+// DecodeLabels decodes one set of labels from buf.
+func (d *Decoder) DecodeLabels(dec *encoding.Decbuf) labels.Labels {
+	lset := make(labels.Labels, dec.Uvarint())
+
+	for i := range lset {
+		lset[i].Name = dec.UvarintStr()
+		lset[i].Value = dec.UvarintStr()
+	}
+	sort.Sort(lset)
+	return lset
 }
 
 // Samples appends samples in rec to the given slice.
@@ -330,13 +335,7 @@ func (d *Decoder) ExemplarsFromBuffer(dec *encoding.Decbuf, exemplars []RefExemp
 		dref := dec.Varint64()
 		dtime := dec.Varint64()
 		val := dec.Be64()
-
-		lset := make(labels.Labels, dec.Uvarint())
-		for i := range lset {
-			lset[i].Name = dec.UvarintStr()
-			lset[i].Value = dec.UvarintStr()
-		}
-		sort.Sort(lset)
+		lset := d.DecodeLabels(dec)
 
 		exemplars = append(exemplars, RefExemplar{
 			Ref:    chunks.HeadSeriesRef(baseRef + uint64(dref)),
@@ -366,12 +365,7 @@ func (e *Encoder) Series(series []RefSeries, b []byte) []byte {
 
 	for _, s := range series {
 		buf.PutBE64(uint64(s.Ref))
-		buf.PutUvarint(len(s.Labels))
-
-		for _, l := range s.Labels {
-			buf.PutUvarintStr(l.Name)
-			buf.PutUvarintStr(l.Value)
-		}
+		EncodeLabels(&buf, s.Labels)
 	}
 	return buf.Get()
 }
@@ -394,6 +388,16 @@ func (e *Encoder) Metadata(metadata []RefMetadata, b []byte) []byte {
 	}
 
 	return buf.Get()
+}
+
+// EncodeLabels encodes the contents of labels into buf.
+func EncodeLabels(buf *encoding.Encbuf, lbls labels.Labels) {
+	buf.PutUvarint(len(lbls))
+
+	for _, l := range lbls {
+		buf.PutUvarintStr(l.Name)
+		buf.PutUvarintStr(l.Value)
+	}
 }
 
 // Samples appends the encoded samples to b and returns the resulting slice.
@@ -460,11 +464,6 @@ func (e *Encoder) EncodeExemplarsIntoBuffer(exemplars []RefExemplar, buf *encodi
 		buf.PutVarint64(int64(ex.Ref) - int64(first.Ref))
 		buf.PutVarint64(ex.T - first.T)
 		buf.PutBE64(math.Float64bits(ex.V))
-
-		buf.PutUvarint(len(ex.Labels))
-		for _, l := range ex.Labels {
-			buf.PutUvarintStr(l.Name)
-			buf.PutUvarintStr(l.Value)
-		}
+		EncodeLabels(buf, ex.Labels)
 	}
 }
