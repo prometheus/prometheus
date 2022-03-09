@@ -768,9 +768,9 @@ func (t *QueueManager) StoreSeries(series []record.RefSeries, index int) {
 		// Just make sure all the Refs of Series will insert into seriesSegmentIndexes map for tracking.
 		t.seriesSegmentIndexes[s.Ref] = index
 
-		ls := processExternalLabels(s.Labels, t.externalLabels)
-		lbls := relabel.Process(ls, t.relabelConfigs...)
-		if len(lbls) == 0 {
+		ls := s.Labels.Merge(t.externalLabels)
+		lbls, keep := relabel.Process(ls, t.relabelConfigs...)
+		if !keep || lbls.IsEmpty() {
 			t.droppedSeries[s.Ref] = struct{}{}
 			continue
 		}
@@ -831,44 +831,11 @@ func (t *QueueManager) client() WriteClient {
 }
 
 func (t *QueueManager) internLabels(lbls labels.Labels) {
-	for i, l := range lbls {
-		lbls[i].Name = t.interner.intern(l.Name)
-		lbls[i].Value = t.interner.intern(l.Value)
-	}
+	lbls.InternStrings(t.interner.intern)
 }
 
 func (t *QueueManager) releaseLabels(ls labels.Labels) {
-	for _, l := range ls {
-		t.interner.release(l.Name)
-		t.interner.release(l.Value)
-	}
-}
-
-// processExternalLabels merges externalLabels into ls. If ls contains
-// a label in externalLabels, the value in ls wins.
-func processExternalLabels(ls, externalLabels labels.Labels) labels.Labels {
-	i, j, result := 0, 0, make(labels.Labels, 0, len(ls)+len(externalLabels))
-	for i < len(ls) && j < len(externalLabels) {
-		if ls[i].Name < externalLabels[j].Name {
-			result = append(result, labels.Label{
-				Name:  ls[i].Name,
-				Value: ls[i].Value,
-			})
-			i++
-		} else if ls[i].Name > externalLabels[j].Name {
-			result = append(result, externalLabels[j])
-			j++
-		} else {
-			result = append(result, labels.Label{
-				Name:  ls[i].Name,
-				Value: ls[i].Value,
-			})
-			i++
-			j++
-		}
-	}
-
-	return append(append(result, ls[i:]...), externalLabels[j:]...)
+	ls.ReleaseStrings(t.interner.release)
 }
 
 func (t *QueueManager) updateShardsLoop() {

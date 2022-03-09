@@ -180,9 +180,11 @@ func (q *querier) Select(sortSeries bool, hints *storage.SelectHints, matchers .
 // We return the new set of matchers, along with a map of labels for which
 // matchers were added, so that these can later be removed from the result
 // time series again.
-func (q querier) addExternalLabels(ms []*labels.Matcher) ([]*labels.Matcher, labels.Labels) {
-	el := make(labels.Labels, len(q.externalLabels))
-	copy(el, q.externalLabels)
+func (q querier) addExternalLabels(ms []*labels.Matcher) ([]*labels.Matcher, []string) {
+	el := make([]labels.Label, 0, q.externalLabels.Len())
+	q.externalLabels.Range(func(l labels.Label) {
+		el = append(el, l)
+	})
 
 	// ms won't be sorted, so have to O(n^2) the search.
 	for _, m := range ms {
@@ -202,7 +204,11 @@ func (q querier) addExternalLabels(ms []*labels.Matcher) ([]*labels.Matcher, lab
 		}
 		ms = append(ms, m)
 	}
-	return ms, el
+	names := make([]string, len(el))
+	for i := range el {
+		names[i] = el[i].Name
+	}
+	return ms, names
 }
 
 // LabelValues implements storage.Querier and is a noop.
@@ -234,7 +240,8 @@ func (q *chunkQuerier) Select(sortSeries bool, hints *storage.SelectHints, match
 	return storage.NewSeriesSetToChunkSet(q.querier.Select(sortSeries, hints, matchers...))
 }
 
-func newSeriesSetFilter(ss storage.SeriesSet, toFilter labels.Labels) storage.SeriesSet {
+// Note strings in toFilter must be sorted.
+func newSeriesSetFilter(ss storage.SeriesSet, toFilter []string) storage.SeriesSet {
 	return &seriesSetFilter{
 		SeriesSet: ss,
 		toFilter:  toFilter,
@@ -243,7 +250,7 @@ func newSeriesSetFilter(ss storage.SeriesSet, toFilter labels.Labels) storage.Se
 
 type seriesSetFilter struct {
 	storage.SeriesSet
-	toFilter labels.Labels
+	toFilter []string // Label names to remove from result
 	querier  storage.Querier
 }
 
@@ -264,20 +271,12 @@ func (ssf seriesSetFilter) At() storage.Series {
 
 type seriesFilter struct {
 	storage.Series
-	toFilter labels.Labels
+	toFilter []string // Label names to remove from result
 }
 
 func (sf seriesFilter) Labels() labels.Labels {
-	labels := sf.Series.Labels()
-	for i, j := 0, 0; i < len(labels) && j < len(sf.toFilter); {
-		if labels[i].Name < sf.toFilter[j].Name {
-			i++
-		} else if labels[i].Name > sf.toFilter[j].Name {
-			j++
-		} else {
-			labels = labels[:i+copy(labels[i:], labels[i+1:])]
-			j++
-		}
-	}
-	return labels
+	b := labels.NewBuilder(sf.Series.Labels())
+	// todo: check if this is too inefficient.
+	b.Del(sf.toFilter...)
+	return b.Labels(labels.EmptyLabels())
 }
