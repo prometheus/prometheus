@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"sort"
 	"strings"
 	"unicode/utf8"
 
@@ -82,6 +81,7 @@ func (l *openMetricsLexer) Error(es string) {
 // This is based on the working draft https://docs.google.com/document/u/1/d/1KwV0mAXwwbvvifBvDKH_LU1YjyXE_wxCkHNoCGq1GX0/edit
 type OpenMetricsParser struct {
 	l       *openMetricsLexer
+	builder labels.SimpleBuilder
 	series  []byte
 	text    []byte
 	mtype   MetricType
@@ -158,14 +158,11 @@ func (p *OpenMetricsParser) Comment() []byte {
 // Metric writes the labels of the current sample into the passed labels.
 // It returns the string from which the metric was parsed.
 func (p *OpenMetricsParser) Metric(l *labels.Labels) string {
-	// Allocate the full immutable string immediately, so we just
-	// have to create references on it below.
+	// Copy the buffer to a string: this is only necessary for the return value.
 	s := string(p.series)
 
-	*l = append(*l, labels.Label{
-		Name:  labels.MetricName,
-		Value: s[:p.offsets[0]-p.start],
-	})
+	p.builder.Reset()
+	p.builder.Add(labels.MetricName, s[:p.offsets[0]-p.start])
 
 	for i := 1; i < len(p.offsets); i += 4 {
 		a := p.offsets[i] - p.start
@@ -173,16 +170,16 @@ func (p *OpenMetricsParser) Metric(l *labels.Labels) string {
 		c := p.offsets[i+2] - p.start
 		d := p.offsets[i+3] - p.start
 
+		value := s[c:d]
 		// Replacer causes allocations. Replace only when necessary.
 		if strings.IndexByte(s[c:d], byte('\\')) >= 0 {
-			*l = append(*l, labels.Label{Name: s[a:b], Value: lvalReplacer.Replace(s[c:d])})
-			continue
+			value = lvalReplacer.Replace(value)
 		}
-		*l = append(*l, labels.Label{Name: s[a:b], Value: s[c:d]})
+		p.builder.Add(s[a:b], value)
 	}
 
-	// Sort labels.
-	sort.Sort(*l)
+	p.builder.Sort()
+	*l = p.builder.Labels()
 
 	return s
 }
@@ -204,17 +201,18 @@ func (p *OpenMetricsParser) Exemplar(e *exemplar.Exemplar) bool {
 		e.Ts = p.exemplarTs
 	}
 
+	p.builder.Reset()
 	for i := 0; i < len(p.eOffsets); i += 4 {
 		a := p.eOffsets[i] - p.start
 		b := p.eOffsets[i+1] - p.start
 		c := p.eOffsets[i+2] - p.start
 		d := p.eOffsets[i+3] - p.start
 
-		e.Labels = append(e.Labels, labels.Label{Name: s[a:b], Value: s[c:d]})
+		p.builder.Add(s[a:b], s[c:d])
 	}
 
-	// Sort the labels.
-	sort.Sort(e.Labels)
+	p.builder.Sort()
+	e.Labels = p.builder.Labels()
 
 	return true
 }
