@@ -684,6 +684,7 @@ load 10s
 			Result: Matrix{
 				Series{
 					Points: []Point{{V: 1, T: 0}, {V: 1, T: 1000}, {V: 1, T: 2000}},
+					Metric: labels.EmptyLabels(),
 				},
 			},
 			Start:    time.Unix(0, 0),
