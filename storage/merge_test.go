@@ -696,7 +696,7 @@ var result []tsdbutil.Sample
 func makeSeriesSet(numSeries, numSamples int) SeriesSet {
 	series := []Series{}
 	for j := 0; j < numSeries; j++ {
-		labels := labels.Labels{{Name: "foo", Value: fmt.Sprintf("bar%d", j)}}
+		labels := labels.FromStrings("foo", fmt.Sprintf("bar%d", j))
 		samples := []tsdbutil.Sample{}
 		for k := 0; k < numSamples; k++ {
 			samples = append(samples, sample{t: int64(k), v: float64(k)})
