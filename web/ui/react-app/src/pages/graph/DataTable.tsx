@@ -78,18 +78,18 @@ const DataTable: FC<QueryResult> = ({ data, useLocalTime }) => {
       limited = rows.length !== data.result.length;
       break;
     case 'matrix':
-      rows = (limitSeries(data.result) as RangeSamples[]).map((s, index) => {
-        const valuesAndTimes = s.values.map((v) => {
+      rows = (limitSeries(data.result) as RangeSamples[]).map((s, seriesIdx) => {
+        const valuesAndTimes = s.values.map((v, valIdx) => {
           const printedDatetime = moment.unix(v[0]).toISOString(useLocalTime);
           return (
-            <React.Fragment>
+            <React.Fragment key={valIdx}>
               {v[1]} @{<span title={printedDatetime}>{v[0]}</span>}
               <br />
             </React.Fragment>
           );
         });
         return (
-          <tr style={{ whiteSpace: 'pre' }} key={index}>
+          <tr style={{ whiteSpace: 'pre' }} key={seriesIdx}>
             <td>
               <SeriesName labels={s.metric} format={doFormat} />
             </td>
