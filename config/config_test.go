@@ -74,10 +74,7 @@ var expectedConf = &Config{
 		EvaluationInterval: model.Duration(30 * time.Second),
 		QueryLogFile:       "",
 
-		ExternalLabels: labels.Labels{
-			{Name: "foo", Value: "bar"},
-			{Name: "monitor", Value: "codelab"},
-		},
+		ExternalLabels: labels.FromStrings("foo", "bar", "monitor", "codelab"),
 	},
 
 	RuleFiles: []string{
@@ -1655,28 +1652,16 @@ func TestExpandExternalLabels(t *testing.T) {
 
 	c, err := LoadFile("testdata/external_labels.good.yml", false, false, log.NewNopLogger())
 	require.NoError(t, err)
-	require.Equal(t, labels.Label{Name: "bar", Value: "foo"}, c.GlobalConfig.ExternalLabels[0])
-	require.Equal(t, labels.Label{Name: "baz", Value: "foo${TEST}bar"}, c.GlobalConfig.ExternalLabels[1])
-	require.Equal(t, labels.Label{Name: "foo", Value: "${TEST}"}, c.GlobalConfig.ExternalLabels[2])
-	require.Equal(t, labels.Label{Name: "qux", Value: "foo$${TEST}"}, c.GlobalConfig.ExternalLabels[3])
-	require.Equal(t, labels.Label{Name: "xyz", Value: "foo$$bar"}, c.GlobalConfig.ExternalLabels[4])
+	require.Equal(t, labels.FromStrings("bar", "foo", "baz", "foo${TEST}bar", "foo", "${TEST}", "qux", "foo$${TEST}", "xyz", "foo$$bar"), c.GlobalConfig.ExternalLabels)
 
 	c, err = LoadFile("testdata/external_labels.good.yml", false, true, log.NewNopLogger())
 	require.NoError(t, err)
-	require.Equal(t, labels.Label{Name: "bar", Value: "foo"}, c.GlobalConfig.ExternalLabels[0])
-	require.Equal(t, labels.Label{Name: "baz", Value: "foobar"}, c.GlobalConfig.ExternalLabels[1])
-	require.Equal(t, labels.Label{Name: "foo", Value: ""}, c.GlobalConfig.ExternalLabels[2])
-	require.Equal(t, labels.Label{Name: "qux", Value: "foo${TEST}"}, c.GlobalConfig.ExternalLabels[3])
-	require.Equal(t, labels.Label{Name: "xyz", Value: "foo$bar"}, c.GlobalConfig.ExternalLabels[4])
+	require.Equal(t, labels.FromStrings("bar", "foo", "baz", "foobar", "foo", "", "qux", "foo${TEST}", "xyz", "foo$bar"), c.GlobalConfig.ExternalLabels)
 
 	os.Setenv("TEST", "TestValue")
 	c, err = LoadFile("testdata/external_labels.good.yml", false, true, log.NewNopLogger())
 	require.NoError(t, err)
-	require.Equal(t, labels.Label{Name: "bar", Value: "foo"}, c.GlobalConfig.ExternalLabels[0])
-	require.Equal(t, labels.Label{Name: "baz", Value: "fooTestValuebar"}, c.GlobalConfig.ExternalLabels[1])
-	require.Equal(t, labels.Label{Name: "foo", Value: "TestValue"}, c.GlobalConfig.ExternalLabels[2])
-	require.Equal(t, labels.Label{Name: "qux", Value: "foo${TEST}"}, c.GlobalConfig.ExternalLabels[3])
-	require.Equal(t, labels.Label{Name: "xyz", Value: "foo$bar"}, c.GlobalConfig.ExternalLabels[4])
+	require.Equal(t, labels.FromStrings("bar", "foo", "baz", "fooTestValuebar", "foo", "TestValue", "qux", "foo${TEST}", "xyz", "foo$bar"), c.GlobalConfig.ExternalLabels)
 }
 
 func TestEmptyGlobalBlock(t *testing.T) {
