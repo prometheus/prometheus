@@ -47,6 +47,7 @@ type Group struct {
 	name                 string
 	file                 string
 	interval             time.Duration
+	evaluationDelay      *time.Duration
 	limit                int
 	rules                []Rule
 	seriesInPreviousEval []map[string]labels.Labels // One per Rule.
@@ -83,8 +84,6 @@ type Group struct {
 // DefaultEvalIterationFunc is the default implementation.
 type GroupEvalIterationFunc func(ctx context.Context, g *Group, evalTimestamp time.Time)
 
-type EvaluationDelayFunc func(groupName string) time.Duration
-
 type GroupOptions struct {
 	Name, File        string
 	Interval          time.Duration
@@ -92,6 +91,7 @@ type GroupOptions struct {
 	Rules             []Rule
 	ShouldRestore     bool
 	Opts              *ManagerOptions
+	EvaluationDelay   *time.Duration
 	done              chan struct{}
 	EvalIterationFunc GroupEvalIterationFunc
 }
@@ -128,6 +128,7 @@ func NewGroup(o GroupOptions) *Group {
 		name:                  o.Name,
 		file:                  o.File,
 		interval:              o.Interval,
+		evaluationDelay:       o.EvaluationDelay,
 		limit:                 o.Limit,
 		rules:                 o.Rules,
 		shouldRestore:         o.ShouldRestore,
@@ -445,10 +446,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 		wg           sync.WaitGroup
 	)
 
-	evaluationDelay := time.Duration(0)
-	if g.opts.EvaluationDelay != nil {
-		evaluationDelay = g.opts.EvaluationDelay(g.name)
-	}
+	evaluationDelay := g.EvaluationDelay()
 
 	for i, rule := range g.rules {
 		select {
@@ -606,6 +604,16 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 
 	g.metrics.GroupSamples.WithLabelValues(GroupKey(g.File(), g.Name())).Set(samplesTotal.Load())
 	g.cleanupStaleSeries(ctx, ts)
+}
+
+func (g *Group) EvaluationDelay() time.Duration {
+	evaluationDelay := time.Duration(0)
+	if g.evaluationDelay != nil {
+		evaluationDelay = *g.evaluationDelay
+	} else if g.opts.DefaultEvaluationDelay != nil {
+		evaluationDelay = g.opts.DefaultEvaluationDelay()
+	}
+	return evaluationDelay
 }
 
 func (g *Group) cleanupStaleSeries(ctx context.Context, ts time.Time) {

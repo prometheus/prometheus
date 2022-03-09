@@ -116,7 +116,7 @@ type ManagerOptions struct {
 	ForGracePeriod            time.Duration
 	ResendDelay               time.Duration
 	GroupLoader               GroupLoader
-	EvaluationDelay           EvaluationDelayFunc
+	DefaultEvaluationDelay    func() time.Duration
 	MaxConcurrentEvals        int64
 	ConcurrentEvalsEnabled    bool
 	RuleConcurrencyController RuleConcurrencyController
@@ -337,6 +337,7 @@ func (m *Manager) LoadGroups(
 				Rules:             rules,
 				ShouldRestore:     shouldRestore,
 				Opts:              m.opts,
+				EvaluationDelay:   (*time.Duration)(rg.EvaluationDelay),
 				done:              m.done,
 				EvalIterationFunc: groupEvalIterationFunc,
 			})
