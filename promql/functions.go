@@ -957,7 +957,7 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 		if !ok {
 			sample.Metric = labels.NewBuilder(sample.Metric).
 				Del(excludedLabels...).
-				Labels(nil)
+				Labels(labels.EmptyLabels())
 
 			mb = &metricWithBuckets{sample.Metric, nil}
 			enh.signatureToMetricWithBuckets[string(enh.lblBuf)] = mb
@@ -1077,7 +1077,7 @@ func funcLabelReplace(vals []parser.Value, args parser.Expressions, enh *EvalNod
 				if len(res) > 0 {
 					lb.Set(dst, string(res))
 				}
-				outMetric = lb.Labels(nil)
+				outMetric = lb.Labels(labels.EmptyLabels())
 				enh.Dmn[h] = outMetric
 			}
 		}
@@ -1145,7 +1145,7 @@ func funcLabelJoin(vals []parser.Value, args parser.Expressions, enh *EvalNodeHe
 				lb.Set(dst, strval)
 			}
 
-			outMetric = lb.Labels(nil)
+			outMetric = lb.Labels(labels.EmptyLabels())
 			enh.Dmn[h] = outMetric
 		}
 
@@ -1383,7 +1383,7 @@ func (s *vectorByReverseValueHeap) Pop() interface{} {
 // createLabelsForAbsentFunction returns the labels that are uniquely and exactly matched
 // in a given expression. It is used in the absent functions.
 func createLabelsForAbsentFunction(expr parser.Expr) labels.Labels {
-	m := labels.Labels{}
+	b := labels.NewBuilder(labels.EmptyLabels())
 
 	var lm []*labels.Matcher
 	switch n := expr.(type) {
@@ -1392,25 +1392,26 @@ func createLabelsForAbsentFunction(expr parser.Expr) labels.Labels {
 	case *parser.MatrixSelector:
 		lm = n.VectorSelector.(*parser.VectorSelector).LabelMatchers
 	default:
-		return m
+		return labels.EmptyLabels()
 	}
 
-	empty := []string{}
+	// The 'has' map implements backwards-compatibility for historic behaviour:
+	// e.g. in `absent(x{job="a",job="b",foo="bar"})` then `job` is removed from the output.
+	// Note this gives arguably wrong behaviour for `absent(x{job="a",job="a",foo="bar"})`.
+	has := make(map[string]bool, len(lm))
 	for _, ma := range lm {
 		if ma.Name == labels.MetricName {
 			continue
 		}
-		if ma.Type == labels.MatchEqual && !m.Has(ma.Name) {
-			m = labels.NewBuilder(m).Set(ma.Name, ma.Value).Labels(nil)
+		if ma.Type == labels.MatchEqual && !has[ma.Name] {
+			b.Set(ma.Name, ma.Value)
+			has[ma.Name] = true
 		} else {
-			empty = append(empty, ma.Name)
+			b.Del(ma.Name)
 		}
 	}
 
-	for _, v := range empty {
-		m = labels.NewBuilder(m).Del(v).Labels(nil)
-	}
-	return m
+	return b.Labels(labels.EmptyLabels())
 }
 
 func stringFromArg(e parser.Expr) string {

@@ -16,13 +16,13 @@ package parser
 
 import (
         "math"
-        "sort"
         "strconv"
         "time"
 
         "github.com/prometheus/prometheus/model/labels"
         "github.com/prometheus/prometheus/model/value"
 )
+
 %}
 
 %union {
@@ -32,6 +32,7 @@ import (
     matcher   *labels.Matcher
     label     labels.Label
     labels    labels.Labels
+    lblList   []labels.Label
     strings   []string
     series    []SequenceValue
     uint      uint64
@@ -138,10 +139,9 @@ START_METRIC_SELECTOR
 // Type definitions for grammar rules.
 %type <matchers> label_match_list
 %type <matcher> label_matcher
-
 %type <item> aggregate_op grouping_label match_op maybe_label metric_identifier unary_op at_modifier_preprocessors
-
-%type <labels> label_set label_set_list metric
+%type <labels> label_set metric
+%type <lblList> label_set_list
 %type <label> label_set_item
 %type <strings> grouping_label_list grouping_labels maybe_grouping_labels
 %type <series> series_item series_values
@@ -567,7 +567,7 @@ label_matcher   : IDENTIFIER match_op STRING
  */
 
 metric          : metric_identifier label_set
-                        { $$ = append($2, labels.Label{Name: labels.MetricName, Value: $1.Val}); sort.Sort($$) }
+                        { b := labels.NewBuilder($2); b.Set(labels.MetricName, $1.Val); $$ = b.Labels(labels.EmptyLabels()) }
                 | label_set
                         {$$ = $1}
                 ;
