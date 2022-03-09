@@ -142,14 +142,14 @@ func createIdxChkReaders(t *testing.T, tc []seriesSamples) (IndexReader, ChunkRe
 
 		postings.Add(storage.SeriesRef(i), ls)
 
-		for _, l := range ls {
+		ls.Range(func(l labels.Label) {
 			vs, present := lblIdx[l.Name]
 			if !present {
 				vs = map[string]struct{}{}
 				lblIdx[l.Name] = vs
 			}
 			vs[l.Value] = struct{}{}
-		}
+		})
 	}
 
 	require.NoError(t, postings.Iter(func(l labels.Label, p index.Postings) error {
@@ -1168,10 +1168,10 @@ func (m *mockIndex) AddSeries(ref storage.SeriesRef, l labels.Labels, chunks ...
 	if _, ok := m.series[ref]; ok {
 		return errors.Errorf("series with reference %d already added", ref)
 	}
-	for _, lbl := range l {
+	l.Range(func(lbl labels.Label) {
 		m.symbols[lbl.Name] = struct{}{}
 		m.symbols[lbl.Value] = struct{}{}
-	}
+	})
 
 	s := series{l: l}
 	// Actual chunk data is not stored in the index.
@@ -1238,9 +1238,9 @@ func (m mockIndex) LabelValueFor(id storage.SeriesRef, label string) (string, er
 func (m mockIndex) LabelNamesFor(ids ...storage.SeriesRef) ([]string, error) {
 	namesMap := make(map[string]bool)
 	for _, id := range ids {
-		for _, lbl := range m.series[id].l {
+		m.series[id].l.Range(func(lbl labels.Label) {
 			namesMap[lbl.Name] = true
-		}
+		})
 	}
 	names := make([]string, 0, len(namesMap))
 	for name := range namesMap {
@@ -1275,7 +1275,7 @@ func (m mockIndex) Series(ref storage.SeriesRef, builder *labels.ScratchBuilder,
 	if !ok {
 		return storage.ErrNotFound
 	}
-	*lset = append((*lset)[:0], s.l...)
+	lset.CopyFrom(s.l)
 	*chks = append((*chks)[:0], s.chunks...)
 
 	return nil
@@ -1297,9 +1297,9 @@ func (m mockIndex) LabelNames(matchers ...*labels.Matcher) ([]string, error) {
 				}
 			}
 			if matches {
-				for _, lbl := range series.l {
+				series.l.Range(func(lbl labels.Label) {
 					names[lbl.Name] = struct{}{}
-				}
+				})
 			}
 		}
 	}
@@ -1974,7 +1974,7 @@ func BenchmarkQueries(b *testing.B) {
 
 				// Add some common labels to make the matchers select these series.
 				{
-					var commonLbls labels.Labels
+					var commonLbls []labels.Label
 					for _, selector := range selectors {
 						switch selector.Type {
 						case labels.MatchEqual:
@@ -1985,8 +1985,11 @@ func BenchmarkQueries(b *testing.B) {
 					}
 					for i := range commonLbls {
 						s := series[i].(*storage.SeriesEntry)
-						allLabels := append(commonLbls, s.Labels()...)
-						newS := storage.NewListSeries(allLabels, nil)
+						allLabels := commonLbls
+						s.Labels().Range(func(l labels.Label) {
+							allLabels = append(allLabels, l)
+						})
+						newS := storage.NewListSeries(labels.New(allLabels...), nil)
 						newS.SampleIteratorFn = s.SampleIteratorFn
 
 						series[i] = newS
