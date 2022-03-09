@@ -283,16 +283,7 @@ func (r *AlertingRule) QueryforStateSeries(alert *Alert, q storage.Querier) (sto
 		}
 	}
 
-	if err := sset.Err(); err != nil {
-		// Querier Warnings are ignored. We do not care unless we have an error.
-		return nil, err
-	}
-
-	if s == nil {
-		return nil, nil
-	}
-
-	return s, nil
+	return s, sset.Err()
 }
 
 // SetEvaluationDuration updates evaluationDuration to the duration it took to evaluate the rule on its last evaluation.
