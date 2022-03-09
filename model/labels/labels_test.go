@@ -593,18 +593,18 @@ func BenchmarkLabels_Equals(b *testing.B) {
 	}{
 		{
 			"equal",
-			Labels{{"aaa", "111"}, {"bbb", "222"}},
-			Labels{{"aaa", "111"}, {"bbb", "222"}},
+			Labels{{"a_label_name", "a_label_value"}, {"another_label_name", "another_label_value"}},
+			Labels{{"a_label_name", "a_label_value"}, {"another_label_name", "another_label_value"}},
 		},
 		{
 			"not equal",
-			Labels{{"aaa", "111"}, {"bbb", "222"}},
-			Labels{{"aaa", "111"}, {"bbb", "333"}},
+			Labels{{"a_label_name", "a_label_value"}, {"another_label_name", "another_label_value"}},
+			Labels{{"a_label_name", "a_label_value"}, {"another_label_name", "a_different_label_value"}},
 		},
 		{
 			"different sizes",
-			Labels{{"aaa", "111"}, {"bbb", "222"}},
-			Labels{{"aaa", "111"}},
+			Labels{{"a_label_name", "a_label_value"}, {"another_label_name", "another_label_value"}},
+			Labels{{"a_label_name", "a_label_value"}},
 		},
 	} {
 		b.Run(scenario.desc, func(b *testing.B) {
