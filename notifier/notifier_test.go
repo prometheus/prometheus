@@ -243,7 +243,7 @@ func TestCustomDo(t *testing.T) {
 func TestExternalLabels(t *testing.T) {
 	h := NewManager(&Options{
 		QueueCapacity:  3 * maxBatchSize,
-		ExternalLabels: labels.Labels{{Name: "a", Value: "b"}},
+		ExternalLabels: labels.FromStrings("a", "b"),
 		RelabelConfigs: []*relabel.Config{
 			{
 				SourceLabels: model.LabelNames{"alertname"},
@@ -570,7 +570,7 @@ func makeInputTargetGroup() *targetgroup.Group {
 }
 
 func TestLabelsToOpenAPILabelSet(t *testing.T) {
-	require.Equal(t, models.LabelSet{"aaa": "111", "bbb": "222"}, labelsToOpenAPILabelSet(labels.Labels{{Name: "aaa", Value: "111"}, {Name: "bbb", Value: "222"}}))
+	require.Equal(t, models.LabelSet{"aaa": "111", "bbb": "222"}, labelsToOpenAPILabelSet(labels.FromStrings("aaa", "111", "bbb", "222")))
 }
 
 // TestHangingNotifier validates that targets updates happen even when there are
