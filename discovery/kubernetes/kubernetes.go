@@ -511,7 +511,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			}
 			pod := NewPod(
 				log.With(d.logger, "role", "pod"),
-				cache.NewSharedInformer(plw, &apiv1.Pod{}, resyncPeriod),
+				d.newPodsByNodeInformer(plw),
 				nodeInformer,
 			)
 			d.discoverers = append(d.discoverers, pod)
@@ -678,4 +678,19 @@ func (d *Discovery) newNodeInformer(ctx context.Context) cache.SharedInformer {
 		},
 	}
 	return cache.NewSharedInformer(nlw, &apiv1.Node{}, resyncPeriod)
+}
+
+func (d *Discovery) newPodsByNodeInformer(plw *cache.ListWatch) cache.SharedIndexInformer {
+	indexers := make(map[string]cache.IndexFunc)
+	if d.attachMetadata.Node {
+		indexers[nodeIndex] = func(obj interface{}) ([]string, error) {
+			pod, ok := obj.(*apiv1.Pod)
+			if !ok {
+				return nil, fmt.Errorf("object is not a pod")
+			}
+			return []string{pod.Spec.NodeName}, nil
+		}
+	}
+
+	return cache.NewSharedIndexInformer(plw, &apiv1.Pod{}, resyncPeriod, indexers)
 }

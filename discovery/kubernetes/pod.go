@@ -32,6 +32,8 @@ import (
 	"github.com/prometheus/prometheus/util/strutil"
 )
 
+const nodeIndex = "node"
+
 var (
 	podAddCount    = eventCount.WithLabelValues("pod", "add")
 	podUpdateCount = eventCount.WithLabelValues("pod", "update")
@@ -40,7 +42,7 @@ var (
 
 // Pod discovers new pod targets.
 type Pod struct {
-	podInf           cache.SharedInformer
+	podInf           cache.SharedIndexInformer
 	nodeInf          cache.SharedInformer
 	withNodeMetadata bool
 	store            cache.Store
@@ -49,10 +51,11 @@ type Pod struct {
 }
 
 // NewPod creates a new pod discovery.
-func NewPod(l log.Logger, pods, nodes cache.SharedInformer) *Pod {
+func NewPod(l log.Logger, pods cache.SharedIndexInformer, nodes cache.SharedInformer) *Pod {
 	if l == nil {
 		l = log.NewNopLogger()
 	}
+
 	p := &Pod{
 		podInf:           pods,
 		nodeInf:          nodes,
@@ -309,11 +312,14 @@ func (p *Pod) attachNodeMetadata(tg *targetgroup.Group, pod *apiv1.Pod) {
 }
 
 func (p *Pod) enqueuePodsForNode(nodeName string) {
-	for _, pod := range p.store.List() {
-		pod := pod.(*apiv1.Pod)
-		if pod.Spec.NodeName == nodeName {
-			p.enqueue(pod)
-		}
+	pods, err := p.podInf.GetIndexer().ByIndex(nodeIndex, nodeName)
+	if err != nil {
+		level.Error(p.logger).Log("msg", "Error getting pods for node", "node", nodeName, "err", err)
+		return
+	}
+
+	for _, pod := range pods {
+		p.enqueue(pod.(*apiv1.Pod))
 	}
 }
 
