@@ -18,10 +18,12 @@ import (
 	"hash/fnv"
 	"net"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/alecthomas/units"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 
@@ -274,24 +276,12 @@ func (t *Target) Health() TargetHealth {
 	return t.health
 }
 
-// intervalAndTimeout returns the interval and timeout derived from
-// the targets labels.
-func (t *Target) intervalAndTimeout(defaultInterval, defaultDuration time.Duration) (time.Duration, time.Duration, error) {
+// labelSettings returns various scrape settings derived from defaults
+// that may be overridden via target labels.
+func (t *Target) labelSettings(defaults *labelSettings) (*labelSettings, error) {
 	t.mtx.RLock()
 	defer t.mtx.RUnlock()
-
-	intervalLabel := t.labels.Get(model.ScrapeIntervalLabel)
-	interval, err := model.ParseDuration(intervalLabel)
-	if err != nil {
-		return defaultInterval, defaultDuration, errors.Errorf("Error parsing interval label %q: %v", intervalLabel, err)
-	}
-	timeoutLabel := t.labels.Get(model.ScrapeTimeoutLabel)
-	timeout, err := model.ParseDuration(timeoutLabel)
-	if err != nil {
-		return defaultInterval, defaultDuration, errors.Errorf("Error parsing timeout label %q: %v", timeoutLabel, err)
-	}
-
-	return time.Duration(interval), time.Duration(timeout), nil
+	return scrapeSettingsFromLabels(t.labels, defaults)
 }
 
 // GetValue gets a label value from the entire label set.
@@ -346,6 +336,95 @@ func (app *timeLimitAppender) Append(ref storage.SeriesRef, lset labels.Labels, 
 		return 0, err
 	}
 	return ref, nil
+}
+
+// scrapeSettingsFromLabels returns default labelSettings overridden by values derived from labels,
+// error only indicates label value parsing error.
+// Use validateLabelSettings for sanity checks.
+func scrapeSettingsFromLabels(labels labels.Labels, defaults *labelSettings) (*labelSettings, error) {
+	var (
+		ls  = defaults
+		d   model.Duration
+		i64 int64
+		b2b units.Base2Bytes
+		err error
+	)
+
+	for _, l := range labels {
+		switch l.Name {
+		case model.ScrapeIntervalLabel:
+			if d, err = model.ParseDuration(l.Value); err == nil {
+				ls.interval = time.Duration(d)
+			}
+		case model.ScrapeTimeoutLabel:
+			if d, err = model.ParseDuration(l.Value); err == nil {
+				ls.timeout = time.Duration(d)
+			}
+		case model.SampleLimitLabel:
+			if i64, err = strconv.ParseInt(l.Value, 10, 0); err == nil {
+				ls.samleLimit = int(i64)
+			}
+		case model.BodySizeLimitLabel:
+			if err = b2b.UnmarshalText([]byte(l.Value)); err == nil {
+				ls.bodySizeLimit = int64(b2b)
+			}
+		case model.LabelLimitLabel:
+			if i64, err = strconv.ParseInt(l.Value, 10, 0); err == nil {
+				ls.labelLimits.labelLimit = int(i64)
+			}
+		case model.LabelNameLengthLimitLabel:
+			if i64, err = strconv.ParseInt(l.Value, 10, 0); err == nil {
+				ls.labelLimits.labelNameLengthLimit = int(i64)
+			}
+		case model.LabelValueLengthLimitLabel:
+			if i64, err = strconv.ParseInt(l.Value, 10, 0); err == nil {
+				ls.labelLimits.labelValueLengthLimit = int(i64)
+			}
+		}
+		if err != nil {
+			return ls, errors.Errorf("error parsing label %q with value %q: %v", l.Name, l.Value, err)
+		}
+	}
+	return ls, nil
+}
+
+// validateLabelSettings validates if settings are logically sane.
+func validateLabelSettings(ls *labelSettings) error {
+	if ls.interval == 0 {
+		return errors.New("scrape interval cannot be 0")
+	}
+	if ls.timeout == 0 {
+		return errors.New("scrape timeout cannot be 0")
+	}
+	if ls.timeout > ls.interval {
+		return errors.Errorf(
+			"scrape timeout cannot be greater than scrape interval (%q > %q)",
+			ls.timeout,
+			ls.interval,
+		)
+	}
+	if ls.samleLimit < 0 {
+		return errors.Errorf("sample limit cannot be negative (%q < 0)", ls.labelLimits)
+	}
+	if ls.bodySizeLimit < 0 {
+		return errors.Errorf("body size limit cannot be negative (%q < 0)", ls.bodySizeLimit)
+	}
+	if ls.labelLimits.labelLimit < 0 {
+		return errors.Errorf("label limit cannot be negative (%q < 0)", ls.labelLimits.labelLimit)
+	}
+	if ls.labelLimits.labelNameLengthLimit < 0 {
+		return errors.Errorf(
+			"label name length limit cannot be negative (%q < 0)",
+			ls.labelLimits.labelNameLengthLimit,
+		)
+	}
+	if ls.labelLimits.labelValueLengthLimit < 0 {
+		return errors.Errorf(
+			"label value length limit cannot be negative (%q < 0)",
+			ls.labelLimits.labelValueLengthLimit,
+		)
+	}
+	return nil
 }
 
 // PopulateLabels builds a label set from the given label set and scrape configuration.
@@ -418,28 +497,6 @@ func PopulateLabels(lset labels.Labels, cfg *config.ScrapeConfig) (res, orig lab
 		return nil, nil, err
 	}
 
-	interval := lset.Get(model.ScrapeIntervalLabel)
-	intervalDuration, err := model.ParseDuration(interval)
-	if err != nil {
-		return nil, nil, errors.Errorf("error parsing scrape interval: %v", err)
-	}
-	if time.Duration(intervalDuration) == 0 {
-		return nil, nil, errors.New("scrape interval cannot be 0")
-	}
-
-	timeout := lset.Get(model.ScrapeTimeoutLabel)
-	timeoutDuration, err := model.ParseDuration(timeout)
-	if err != nil {
-		return nil, nil, errors.Errorf("error parsing scrape timeout: %v", err)
-	}
-	if time.Duration(timeoutDuration) == 0 {
-		return nil, nil, errors.New("scrape timeout cannot be 0")
-	}
-
-	if timeoutDuration > intervalDuration {
-		return nil, nil, errors.Errorf("scrape timeout cannot be greater than scrape interval (%q > %q)", timeout, interval)
-	}
-
 	// Meta labels are deleted after relabelling. Other internal labels propagate to
 	// the target which decides whether they will be part of their label set.
 	for _, l := range lset {
@@ -454,6 +511,14 @@ func PopulateLabels(lset labels.Labels, cfg *config.ScrapeConfig) (res, orig lab
 	}
 
 	res = lb.Labels()
+	ss, err := scrapeSettingsFromLabels(res, scrapeConfigDefaults(cfg))
+	if err != nil {
+		return nil, nil, errors.Wrap(err, "failed to parse labels")
+	}
+	if err = validateLabelSettings(ss); err != nil {
+		return nil, nil, errors.Wrap(err, "labels contain invalid settings")
+	}
+
 	for _, l := range res {
 		// Check label values are valid, drop the target if not.
 		if !model.LabelValue(l.Value).IsValid() {

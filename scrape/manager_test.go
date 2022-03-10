@@ -260,7 +260,7 @@ func TestPopulateLabels(t *testing.T) {
 			},
 			res:     nil,
 			resOrig: nil,
-			err:     "error parsing scrape interval: not a valid duration string: \"2notseconds\"",
+			err:     "failed to parse labels: error parsing label \"__scrape_interval__\" with value \"2notseconds\": not a valid duration string: \"2notseconds\"",
 		},
 		// Invalid duration in timeout label.
 		{
@@ -277,7 +277,7 @@ func TestPopulateLabels(t *testing.T) {
 			},
 			res:     nil,
 			resOrig: nil,
-			err:     "error parsing scrape timeout: not a valid duration string: \"2notseconds\"",
+			err:     "failed to parse labels: error parsing label \"__scrape_timeout__\" with value \"2notseconds\": not a valid duration string: \"2notseconds\"",
 		},
 		// 0 interval in timeout label.
 		{
@@ -294,7 +294,7 @@ func TestPopulateLabels(t *testing.T) {
 			},
 			res:     nil,
 			resOrig: nil,
-			err:     "scrape interval cannot be 0",
+			err:     "labels contain invalid settings: scrape interval cannot be 0",
 		},
 		// 0 duration in timeout label.
 		{
@@ -311,7 +311,7 @@ func TestPopulateLabels(t *testing.T) {
 			},
 			res:     nil,
 			resOrig: nil,
-			err:     "scrape timeout cannot be 0",
+			err:     "labels contain invalid settings: scrape timeout cannot be 0",
 		},
 		// Timeout less than interval.
 		{
@@ -329,7 +329,7 @@ func TestPopulateLabels(t *testing.T) {
 			},
 			res:     nil,
 			resOrig: nil,
-			err:     "scrape timeout cannot be greater than scrape interval (\"2s\" > \"1s\")",
+			err:     "labels contain invalid settings: scrape timeout cannot be greater than scrape interval (\"2s\" > \"1s\")",
 		},
 	}
 	for _, c := range cases {

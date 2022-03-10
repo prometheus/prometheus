@@ -248,6 +248,14 @@ type labelLimits struct {
 	labelValueLengthLimit int
 }
 
+type labelSettings struct {
+	interval      time.Duration
+	timeout       time.Duration
+	samleLimit    int
+	bodySizeLimit int64
+	labelLimits   *labelLimits
+}
+
 type scrapeLoopOptions struct {
 	target          *Target
 	scraper         scraper
@@ -510,44 +518,38 @@ func (sp *scrapePool) Sync(tgs []*targetgroup.Group) {
 // scrape loops for new targets, and stops scrape loops for disappeared targets.
 // It returns after all stopped scrape loops terminated.
 func (sp *scrapePool) sync(targets []*Target) {
-	var (
-		uniqueLoops   = make(map[uint64]loop)
-		interval      = time.Duration(sp.config.ScrapeInterval)
-		timeout       = time.Duration(sp.config.ScrapeTimeout)
-		bodySizeLimit = int64(sp.config.BodySizeLimit)
-		sampleLimit   = int(sp.config.SampleLimit)
-		labelLimits   = &labelLimits{
-			labelLimit:            int(sp.config.LabelLimit),
-			labelNameLengthLimit:  int(sp.config.LabelNameLengthLimit),
-			labelValueLengthLimit: int(sp.config.LabelValueLengthLimit),
-		}
-		honorLabels     = sp.config.HonorLabels
-		honorTimestamps = sp.config.HonorTimestamps
-		mrc             = sp.config.MetricRelabelConfigs
-	)
+	uniqueLoops := make(map[uint64]loop)
 
 	sp.targetMtx.Lock()
 	for _, t := range targets {
 		hash := t.hash()
 
 		if _, ok := sp.activeTargets[hash]; !ok {
-			// The scrape interval and timeout labels are set to the config's values initially,
-			// so whether changed via relabeling or not, they'll exist and hold the correct values
-			// for every target.
-			var err error
-			interval, timeout, err = t.intervalAndTimeout(interval, timeout)
+			var (
+				err error
+				// The scrape interval, timeout and various limits are set to the config's values initially,
+				// so whether changed via relabeling or not, they'll exist and hold the correct values
+				// for every target.
+				targetSettings *labelSettings
+			)
+			targetSettings, err = t.labelSettings(scrapeConfigDefaults(sp.config))
 
-			s := &targetScraper{Target: t, client: sp.client, timeout: timeout, bodySizeLimit: bodySizeLimit}
+			s := &targetScraper{
+				Target:        t,
+				client:        sp.client,
+				timeout:       targetSettings.timeout,
+				bodySizeLimit: targetSettings.bodySizeLimit,
+			}
 			l := sp.newLoop(scrapeLoopOptions{
 				target:          t,
 				scraper:         s,
-				sampleLimit:     sampleLimit,
-				labelLimits:     labelLimits,
-				honorLabels:     honorLabels,
-				honorTimestamps: honorTimestamps,
-				mrc:             mrc,
-				interval:        interval,
-				timeout:         timeout,
+				sampleLimit:     targetSettings.samleLimit,
+				labelLimits:     targetSettings.labelLimits,
+				honorLabels:     sp.config.HonorLabels,
+				honorTimestamps: sp.config.HonorTimestamps,
+				mrc:             sp.config.MetricRelabelConfigs,
+				interval:        targetSettings.interval,
+				timeout:         targetSettings.timeout,
 			})
 			if err != nil {
 				l.setForcedError(err)
@@ -601,6 +603,20 @@ func (sp *scrapePool) sync(targets []*Target) {
 	// may be active and tries to insert. The old scraper that didn't terminate yet could still
 	// be inserting a previous sample set.
 	wg.Wait()
+}
+
+func scrapeConfigDefaults(sc *config.ScrapeConfig) *labelSettings {
+	return &labelSettings{
+		interval:      time.Duration(sc.ScrapeInterval),
+		timeout:       time.Duration(sc.ScrapeTimeout),
+		samleLimit:    int(sc.SampleLimit),
+		bodySizeLimit: int64(sc.BodySizeLimit),
+		labelLimits: &labelLimits{
+			labelLimit:            int(sc.LabelLimit),
+			labelNameLengthLimit:  int(sc.LabelNameLengthLimit),
+			labelValueLengthLimit: int(sc.LabelValueLengthLimit),
+		},
+	}
 }
 
 // refreshTargetLimitErr returns an error that can be passed to the scrape loops
