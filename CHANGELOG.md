@@ -1,3 +1,7 @@
+## 2.34.0-rc.2 / 2022-03-11
+
+* [ENHANCEMENT] TSDB: Disable the chunk write queue by default and allow configuration with the experimental flag `--storage.tsdb.head-chunks-write-queue-size`. #10425
+
 ## 2.34.0-rc.1 / 2022-03-08
 
 * [ENHANCEMENT] HTTP SD: Add a failure counter. #10372
