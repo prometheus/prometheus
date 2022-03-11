@@ -305,7 +305,7 @@ func main() {
 	serverOnlyFlag(a, "storage.tsdb.wal-compression", "Compress the tsdb WAL.").
 		Hidden().Default("true").BoolVar(&cfg.tsdb.WALCompression)
 
-	serverOnlyFlag(a, "storage.tsdb.head-chunks-write-queue-size", "Size of the queue through which head chunks are written, 0 disables the queue completely. Experimental.").
+	serverOnlyFlag(a, "storage.tsdb.head-chunks-write-queue-size", "Size of the queue through which head chunks are written to the disk to be m-mapped, 0 disables the queue completely. Experimental.").
 		Default("0").IntVar(&cfg.tsdb.HeadChunksWriteQueueSize)
 
 	agentOnlyFlag(a, "storage.agent.path", "Base path for metrics storage.").
