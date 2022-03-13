@@ -758,15 +758,19 @@ func (g *Group) RestoreForState(ts time.Time) {
 
 			seriesFound := false
 			var s storage.Series
+		SeriesLoop:
 			for sset.Next() {
-				// Query assures that smpl.Metric is included in sset.At().Labels(),
-				// hence just checking the length would act like equality.
-				// (This is faster than calling labels.Compare again as we already have some info).
-				if len(sset.At().Labels()) == len(smpl.Metric) {
-					s = sset.At()
-					seriesFound = true
-					break
+				s = sset.At()
+				seriesLabels := s.Labels()
+				for _, label := range smpl.Metric {
+					if seriesLabels.Get(label.Name) != label.Value {
+						continue SeriesLoop
+					}
 				}
+
+				// Found the series.
+				seriesFound = true
+				break
 			}
 
 			if err := sset.Err(); err != nil {
