@@ -212,8 +212,9 @@ type Rule interface {
 	Name() string
 	// Labels of the rule.
 	Labels() labels.Labels
-	// eval evaluates the rule, including any associated recording or alerting actions.
-	Eval(context.Context, time.Time, QueryFunc, *url.URL, int) (promql.Vector, error)
+	// Eval evaluates the rule, including any associated recording or alerting actions.
+	// The duration passed is the evaluation delay.
+	Eval(context.Context, time.Duration, time.Time, QueryFunc, *url.URL, int) (promql.Vector, error)
 	// String returns a human-readable string representation of the rule.
 	String() string
 	// Query returns the rule query expression.
@@ -244,6 +245,7 @@ type Group struct {
 	name                 string
 	file                 string
 	interval             time.Duration
+	evaluationDelay      *time.Duration
 	limit                int
 	rules                []Rule
 	sourceTenants        []string
@@ -267,14 +269,15 @@ type Group struct {
 }
 
 type GroupOptions struct {
-	Name, File    string
-	Interval      time.Duration
-	Limit         int
-	Rules         []Rule
-	SourceTenants []string
-	ShouldRestore bool
-	Opts          *ManagerOptions
-	done          chan struct{}
+	Name, File      string
+	Interval        time.Duration
+	Limit           int
+	Rules           []Rule
+	SourceTenants   []string
+	ShouldRestore   bool
+	Opts            *ManagerOptions
+	EvaluationDelay *time.Duration
+	done            chan struct{}
 }
 
 // NewGroup makes a new Group with the given name, options, and rules.
@@ -299,6 +302,7 @@ func NewGroup(o GroupOptions) *Group {
 		name:                 o.Name,
 		file:                 o.File,
 		interval:             o.Interval,
+		evaluationDelay:      o.EvaluationDelay,
 		limit:                o.Limit,
 		rules:                o.Rules,
 		shouldRestore:        o.ShouldRestore,
@@ -583,6 +587,7 @@ func (g *Group) CopyState(from *Group) {
 // Eval runs a single evaluation cycle in which all rules are evaluated sequentially.
 func (g *Group) Eval(ctx context.Context, ts time.Time) {
 	var samplesTotal float64
+	evaluationDelay := g.EvaluationDelay()
 	for i, rule := range g.rules {
 		select {
 		case <-g.done:
@@ -604,7 +609,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 
 			g.metrics.EvalTotal.WithLabelValues(GroupKey(g.File(), g.Name())).Inc()
 
-			vector, err := rule.Eval(ctx, ts, g.opts.QueryFunc, g.opts.ExternalURL, g.Limit())
+			vector, err := rule.Eval(ctx, evaluationDelay, ts, g.opts.QueryFunc, g.opts.ExternalURL, g.Limit())
 			if err != nil {
 				rule.SetHealth(HealthBad)
 				rule.SetLastError(err)
@@ -673,7 +678,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 			for metric, lset := range g.seriesInPreviousEval[i] {
 				if _, ok := seriesReturned[metric]; !ok {
 					// Series no longer exposed, mark it stale.
-					_, err = app.Append(0, lset, timestamp.FromTime(ts), math.Float64frombits(value.StaleNaN))
+					_, err = app.Append(0, lset, timestamp.FromTime(ts.Add(-evaluationDelay)), math.Float64frombits(value.StaleNaN))
 					switch errors.Cause(err) {
 					case nil:
 					case storage.ErrOutOfOrderSample, storage.ErrDuplicateSampleForTimestamp:
@@ -692,14 +697,25 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 	g.cleanupStaleSeries(ctx, ts)
 }
 
+func (g *Group) EvaluationDelay() time.Duration {
+	if g.evaluationDelay != nil {
+		return *g.evaluationDelay
+	}
+	if g.opts.DefaultEvaluationDelay != nil {
+		return g.opts.DefaultEvaluationDelay()
+	}
+	return time.Duration(0)
+}
+
 func (g *Group) cleanupStaleSeries(ctx context.Context, ts time.Time) {
 	if len(g.staleSeries) == 0 {
 		return
 	}
 	app := g.opts.Appendable.Appender(ctx)
+	evaluationDelay := g.EvaluationDelay()
 	for _, s := range g.staleSeries {
 		// Rule that produced series no longer configured, mark it stale.
-		_, err := app.Append(0, s, timestamp.FromTime(ts), math.Float64frombits(value.StaleNaN))
+		_, err := app.Append(0, s, timestamp.FromTime(ts.Add(-evaluationDelay)), math.Float64frombits(value.StaleNaN))
 		switch errors.Cause(err) {
 		case nil:
 		case storage.ErrOutOfOrderSample, storage.ErrDuplicateSampleForTimestamp:
@@ -935,6 +951,7 @@ type ManagerOptions struct {
 	ForGracePeriod             time.Duration
 	ResendDelay                time.Duration
 	GroupLoader                GroupLoader
+	DefaultEvaluationDelay     func() time.Duration
 
 	Metrics *Metrics
 }
@@ -1131,15 +1148,16 @@ func (m *Manager) LoadGroups(
 			}
 
 			groups[GroupKey(fn, rg.Name)] = NewGroup(GroupOptions{
-				Name:          rg.Name,
-				File:          fn,
-				Interval:      itv,
-				Limit:         rg.Limit,
-				Rules:         rules,
-				SourceTenants: rg.SourceTenants,
-				ShouldRestore: shouldRestore,
-				Opts:          m.opts,
-				done:          m.done,
+				Name:            rg.Name,
+				File:            fn,
+				Interval:        itv,
+				Limit:           rg.Limit,
+				Rules:           rules,
+				SourceTenants:   rg.SourceTenants,
+				ShouldRestore:   shouldRestore,
+				Opts:            m.opts,
+				EvaluationDelay: (*time.Duration)(rg.EvaluationDelay),
+				done:            m.done,
 			})
 		}
 	}

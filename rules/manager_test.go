@@ -16,9 +16,11 @@ package rules
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"io/ioutil"
 	"math"
 	"os"
+	"path"
 	"sort"
 	"testing"
 	"time"
@@ -158,7 +160,7 @@ func TestAlertingRule(t *testing.T) {
 
 		evalTime := baseTime.Add(test.time)
 
-		res, err := rule.Eval(suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil, 0)
+		res, err := rule.Eval(suite.Context(), 0, evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil, 0)
 		require.NoError(t, err)
 
 		var filteredRes promql.Vector // After removing 'ALERTS_FOR_STATE' samples.
@@ -188,156 +190,160 @@ func TestAlertingRule(t *testing.T) {
 }
 
 func TestForStateAddSamples(t *testing.T) {
-	suite, err := promql.NewTest(t, `
+	for _, evalDelay := range []time.Duration{0, time.Minute} {
+		t.Run(fmt.Sprintf("evalDelay %s", evalDelay.String()), func(t *testing.T) {
+			suite, err := promql.NewTest(t, `
 		load 5m
 			http_requests{job="app-server", instance="0", group="canary", severity="overwrite-me"}	75 85  95 105 105  95  85
 			http_requests{job="app-server", instance="1", group="canary", severity="overwrite-me"}	80 90 100 110 120 130 140
 	`)
-	require.NoError(t, err)
-	defer suite.Close()
+			require.NoError(t, err)
+			defer suite.Close()
 
-	err = suite.Run()
-	require.NoError(t, err)
+			err = suite.Run()
+			require.NoError(t, err)
 
-	expr, err := parser.ParseExpr(`http_requests{group="canary", job="app-server"} < 100`)
-	require.NoError(t, err)
+			expr, err := parser.ParseExpr(`http_requests{group="canary", job="app-server"} < 100`)
+			require.NoError(t, err)
 
-	rule := NewAlertingRule(
-		"HTTPRequestRateLow",
-		expr,
-		time.Minute,
-		labels.FromStrings("severity", "{{\"c\"}}ritical"),
-		nil, nil, "", true, nil,
-	)
-	result := promql.Vector{
-		{
-			Metric: labels.FromStrings(
-				"__name__", "ALERTS_FOR_STATE",
-				"alertname", "HTTPRequestRateLow",
-				"group", "canary",
-				"instance", "0",
-				"job", "app-server",
-				"severity", "critical",
-			),
-			Point: promql.Point{V: 1},
-		},
-		{
-			Metric: labels.FromStrings(
-				"__name__", "ALERTS_FOR_STATE",
-				"alertname", "HTTPRequestRateLow",
-				"group", "canary",
-				"instance", "1",
-				"job", "app-server",
-				"severity", "critical",
-			),
-			Point: promql.Point{V: 1},
-		},
-		{
-			Metric: labels.FromStrings(
-				"__name__", "ALERTS_FOR_STATE",
-				"alertname", "HTTPRequestRateLow",
-				"group", "canary",
-				"instance", "0",
-				"job", "app-server",
-				"severity", "critical",
-			),
-			Point: promql.Point{V: 1},
-		},
-		{
-			Metric: labels.FromStrings(
-				"__name__", "ALERTS_FOR_STATE",
-				"alertname", "HTTPRequestRateLow",
-				"group", "canary",
-				"instance", "1",
-				"job", "app-server",
-				"severity", "critical",
-			),
-			Point: promql.Point{V: 1},
-		},
-	}
-
-	baseTime := time.Unix(0, 0)
-
-	tests := []struct {
-		time            time.Duration
-		result          promql.Vector
-		persistThisTime bool // If true, it means this 'time' is persisted for 'for'.
-	}{
-		{
-			time:            0,
-			result:          append(promql.Vector{}, result[:2]...),
-			persistThisTime: true,
-		},
-		{
-			time:   5 * time.Minute,
-			result: append(promql.Vector{}, result[2:]...),
-		},
-		{
-			time:   10 * time.Minute,
-			result: append(promql.Vector{}, result[2:3]...),
-		},
-		{
-			time:   15 * time.Minute,
-			result: nil,
-		},
-		{
-			time:   20 * time.Minute,
-			result: nil,
-		},
-		{
-			time:            25 * time.Minute,
-			result:          append(promql.Vector{}, result[:1]...),
-			persistThisTime: true,
-		},
-		{
-			time:   30 * time.Minute,
-			result: append(promql.Vector{}, result[2:3]...),
-		},
-	}
-
-	var forState float64
-	for i, test := range tests {
-		t.Logf("case %d", i)
-		evalTime := baseTime.Add(test.time)
-
-		if test.persistThisTime {
-			forState = float64(evalTime.Unix())
-		}
-		if test.result == nil {
-			forState = float64(value.StaleNaN)
-		}
-
-		res, err := rule.Eval(suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil, 0)
-		require.NoError(t, err)
-
-		var filteredRes promql.Vector // After removing 'ALERTS' samples.
-		for _, smpl := range res {
-			smplName := smpl.Metric.Get("__name__")
-			if smplName == "ALERTS_FOR_STATE" {
-				filteredRes = append(filteredRes, smpl)
-			} else {
-				// If not 'ALERTS_FOR_STATE', it has to be 'ALERTS'.
-				require.Equal(t, smplName, "ALERTS")
+			rule := NewAlertingRule(
+				"HTTPRequestRateLow",
+				expr,
+				time.Minute,
+				labels.FromStrings("severity", "{{\"c\"}}ritical"),
+				nil, nil, "", true, nil,
+			)
+			result := promql.Vector{
+				{
+					Metric: labels.FromStrings(
+						"__name__", "ALERTS_FOR_STATE",
+						"alertname", "HTTPRequestRateLow",
+						"group", "canary",
+						"instance", "0",
+						"job", "app-server",
+						"severity", "critical",
+					),
+					Point: promql.Point{V: 1},
+				},
+				{
+					Metric: labels.FromStrings(
+						"__name__", "ALERTS_FOR_STATE",
+						"alertname", "HTTPRequestRateLow",
+						"group", "canary",
+						"instance", "1",
+						"job", "app-server",
+						"severity", "critical",
+					),
+					Point: promql.Point{V: 1},
+				},
+				{
+					Metric: labels.FromStrings(
+						"__name__", "ALERTS_FOR_STATE",
+						"alertname", "HTTPRequestRateLow",
+						"group", "canary",
+						"instance", "0",
+						"job", "app-server",
+						"severity", "critical",
+					),
+					Point: promql.Point{V: 1},
+				},
+				{
+					Metric: labels.FromStrings(
+						"__name__", "ALERTS_FOR_STATE",
+						"alertname", "HTTPRequestRateLow",
+						"group", "canary",
+						"instance", "1",
+						"job", "app-server",
+						"severity", "critical",
+					),
+					Point: promql.Point{V: 1},
+				},
 			}
-		}
-		for i := range test.result {
-			test.result[i].T = timestamp.FromTime(evalTime)
-			// Updating the expected 'for' state.
-			if test.result[i].V >= 0 {
-				test.result[i].V = forState
-			}
-		}
-		require.Equal(t, len(test.result), len(filteredRes), "%d. Number of samples in expected and actual output don't match (%d vs. %d)", i, len(test.result), len(res))
 
-		sort.Slice(filteredRes, func(i, j int) bool {
-			return labels.Compare(filteredRes[i].Metric, filteredRes[j].Metric) < 0
+			baseTime := time.Unix(0, 0)
+
+			tests := []struct {
+				time            time.Duration
+				result          promql.Vector
+				persistThisTime bool // If true, it means this 'time' is persisted for 'for'.
+			}{
+				{
+					time:            0,
+					result:          append(promql.Vector{}, result[:2]...),
+					persistThisTime: true,
+				},
+				{
+					time:   5 * time.Minute,
+					result: append(promql.Vector{}, result[2:]...),
+				},
+				{
+					time:   10 * time.Minute,
+					result: append(promql.Vector{}, result[2:3]...),
+				},
+				{
+					time:   15 * time.Minute,
+					result: nil,
+				},
+				{
+					time:   20 * time.Minute,
+					result: nil,
+				},
+				{
+					time:            25 * time.Minute,
+					result:          append(promql.Vector{}, result[:1]...),
+					persistThisTime: true,
+				},
+				{
+					time:   30 * time.Minute,
+					result: append(promql.Vector{}, result[2:3]...),
+				},
+			}
+
+			var forState float64
+			for i, test := range tests {
+				t.Logf("case %d", i)
+				evalTime := baseTime.Add(test.time).Add(evalDelay)
+
+				if test.persistThisTime {
+					forState = float64(evalTime.Unix())
+				}
+				if test.result == nil {
+					forState = float64(value.StaleNaN)
+				}
+
+				res, err := rule.Eval(suite.Context(), evalDelay, evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil, 0)
+				require.NoError(t, err)
+
+				var filteredRes promql.Vector // After removing 'ALERTS' samples.
+				for _, smpl := range res {
+					smplName := smpl.Metric.Get("__name__")
+					if smplName == "ALERTS_FOR_STATE" {
+						filteredRes = append(filteredRes, smpl)
+					} else {
+						// If not 'ALERTS_FOR_STATE', it has to be 'ALERTS'.
+						require.Equal(t, smplName, "ALERTS")
+					}
+				}
+				for i := range test.result {
+					test.result[i].T = timestamp.FromTime(evalTime.Add(-evalDelay))
+					// Updating the expected 'for' state.
+					if test.result[i].V >= 0 {
+						test.result[i].V = forState
+					}
+				}
+				require.Equal(t, len(test.result), len(filteredRes), "%d. Number of samples in expected and actual output don't match (%d vs. %d)", i, len(test.result), len(res))
+
+				sort.Slice(filteredRes, func(i, j int) bool {
+					return labels.Compare(filteredRes[i].Metric, filteredRes[j].Metric) < 0
+				})
+				require.Equal(t, test.result, filteredRes)
+
+				for _, aa := range rule.ActiveAlerts() {
+					require.Zero(t, aa.Labels.Get(model.MetricNameLabel), "%s label set on active alert: %s", model.MetricNameLabel, aa.Labels)
+				}
+
+			}
 		})
-		require.Equal(t, test.result, filteredRes)
-
-		for _, aa := range rule.ActiveAlerts() {
-			require.Zero(t, aa.Labels.Get(model.MetricNameLabel), "%s label set on active alert: %s", model.MetricNameLabel, aa.Labels)
-		}
-
 	}
 }
 
@@ -441,7 +447,7 @@ func TestForStateRestore(t *testing.T) {
 		},
 	}
 
-	testFunc := func(tst testInput) {
+	testFunc := func(tst testInput, evalDelay time.Duration) {
 		newRule := NewAlertingRule(
 			"HTTPRequestRateLow",
 			expr,
@@ -450,17 +456,18 @@ func TestForStateRestore(t *testing.T) {
 			nil, nil, "", false, nil,
 		)
 		newGroup := NewGroup(GroupOptions{
-			Name:          "default",
-			Interval:      time.Second,
-			Rules:         []Rule{newRule},
-			ShouldRestore: true,
-			Opts:          opts,
+			Name:            "default",
+			Interval:        time.Second,
+			Rules:           []Rule{newRule},
+			ShouldRestore:   true,
+			Opts:            opts,
+			EvaluationDelay: &evalDelay,
 		})
 
 		newGroups := make(map[string]*Group)
 		newGroups["default;"] = newGroup
 
-		restoreTime := baseTime.Add(tst.restoreDuration)
+		restoreTime := baseTime.Add(tst.restoreDuration).Add(evalDelay)
 		// First eval before restoration.
 		newGroup.Eval(suite.Context(), restoreTime)
 		// Restore happens here.
@@ -495,14 +502,16 @@ func TestForStateRestore(t *testing.T) {
 
 				// Difference in time should be within 1e6 ns, i.e. 1ms
 				// (due to conversion between ns & ms, float64 & int64).
-				activeAtDiff := float64(e.ActiveAt.Unix() + int64(tst.downDuration/time.Second) - got[i].ActiveAt.Unix())
+				activeAtDiff := evalDelay.Seconds() + float64(e.ActiveAt.Unix()+int64(tst.downDuration/time.Second)-got[i].ActiveAt.Unix())
 				require.Equal(t, 0.0, math.Abs(activeAtDiff), "'for' state restored time is wrong")
 			}
 		}
 	}
 
-	for _, tst := range tests {
-		testFunc(tst)
+	for _, evalDelay := range []time.Duration{0, time.Minute} {
+		for _, tst := range tests {
+			testFunc(tst, evalDelay)
+		}
 	}
 
 	// Testing the grace period.
@@ -510,82 +519,88 @@ func TestForStateRestore(t *testing.T) {
 		evalTime := baseTime.Add(duration)
 		group.Eval(suite.Context(), evalTime)
 	}
-	testFunc(testInput{
-		restoreDuration: 25 * time.Minute,
-		alerts:          []*Alert{},
-		gracePeriod:     true,
-		num:             2,
-	})
+
+	for _, evalDelay := range []time.Duration{0, time.Minute} {
+		testFunc(testInput{
+			restoreDuration: 25 * time.Minute,
+			alerts:          []*Alert{},
+			gracePeriod:     true,
+			num:             2,
+		}, evalDelay)
+	}
 }
 
 func TestStaleness(t *testing.T) {
-	st := teststorage.New(t)
-	defer st.Close()
-	engineOpts := promql.EngineOpts{
-		Logger:     nil,
-		Reg:        nil,
-		MaxSamples: 10,
-		Timeout:    10 * time.Second,
+	for _, evalDelay := range []time.Duration{0, time.Minute} {
+		st := teststorage.New(t)
+		defer st.Close()
+		engineOpts := promql.EngineOpts{
+			Logger:     nil,
+			Reg:        nil,
+			MaxSamples: 10,
+			Timeout:    10 * time.Second,
+		}
+		engine := promql.NewEngine(engineOpts)
+		opts := &ManagerOptions{
+			QueryFunc:  EngineQueryFunc(engine, st),
+			Appendable: st,
+			Queryable:  st,
+			Context:    context.Background(),
+			Logger:     log.NewNopLogger(),
+		}
+
+		expr, err := parser.ParseExpr("a + 1")
+		require.NoError(t, err)
+		rule := NewRecordingRule("a_plus_one", expr, labels.Labels{})
+		group := NewGroup(GroupOptions{
+			Name:            "default",
+			Interval:        time.Second,
+			Rules:           []Rule{rule},
+			ShouldRestore:   true,
+			Opts:            opts,
+			EvaluationDelay: &evalDelay,
+		})
+
+		// A time series that has two samples and then goes stale.
+		app := st.Appender(context.Background())
+		app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 1)
+		app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 1000, 2)
+		app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 2000, math.Float64frombits(value.StaleNaN))
+
+		err = app.Commit()
+		require.NoError(t, err)
+
+		ctx := context.Background()
+
+		// Execute 3 times, 1 second apart.
+		group.Eval(ctx, time.Unix(0, 0).Add(evalDelay))
+		group.Eval(ctx, time.Unix(1, 0).Add(evalDelay))
+		group.Eval(ctx, time.Unix(2, 0).Add(evalDelay))
+
+		querier, err := st.Querier(context.Background(), 0, 2000)
+		require.NoError(t, err)
+		defer querier.Close()
+
+		matcher, err := labels.NewMatcher(labels.MatchEqual, model.MetricNameLabel, "a_plus_one")
+		require.NoError(t, err)
+
+		set := querier.Select(false, nil, matcher)
+		samples, err := readSeriesSet(set)
+		require.NoError(t, err)
+
+		metric := labels.FromStrings(model.MetricNameLabel, "a_plus_one").String()
+		metricSample, ok := samples[metric]
+
+		require.True(t, ok, "Series %s not returned.", metric)
+		require.True(t, value.IsStaleNaN(metricSample[2].V), "Appended second sample not as expected. Wanted: stale NaN Got: %x", math.Float64bits(metricSample[2].V))
+		metricSample[2].V = 42 // require.Equal cannot handle NaN.
+
+		want := map[string][]promql.Point{
+			metric: {{T: 0, V: 2}, {T: 1000, V: 3}, {T: 2000, V: 42}},
+		}
+
+		require.Equal(t, want, samples)
 	}
-	engine := promql.NewEngine(engineOpts)
-	opts := &ManagerOptions{
-		QueryFunc:  EngineQueryFunc(engine, st),
-		Appendable: st,
-		Queryable:  st,
-		Context:    context.Background(),
-		Logger:     log.NewNopLogger(),
-	}
-
-	expr, err := parser.ParseExpr("a + 1")
-	require.NoError(t, err)
-	rule := NewRecordingRule("a_plus_one", expr, labels.Labels{})
-	group := NewGroup(GroupOptions{
-		Name:          "default",
-		Interval:      time.Second,
-		Rules:         []Rule{rule},
-		ShouldRestore: true,
-		Opts:          opts,
-	})
-
-	// A time series that has two samples and then goes stale.
-	app := st.Appender(context.Background())
-	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 0, 1)
-	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 1000, 2)
-	app.Append(0, labels.FromStrings(model.MetricNameLabel, "a"), 2000, math.Float64frombits(value.StaleNaN))
-
-	err = app.Commit()
-	require.NoError(t, err)
-
-	ctx := context.Background()
-
-	// Execute 3 times, 1 second apart.
-	group.Eval(ctx, time.Unix(0, 0))
-	group.Eval(ctx, time.Unix(1, 0))
-	group.Eval(ctx, time.Unix(2, 0))
-
-	querier, err := st.Querier(context.Background(), 0, 2000)
-	require.NoError(t, err)
-	defer querier.Close()
-
-	matcher, err := labels.NewMatcher(labels.MatchEqual, model.MetricNameLabel, "a_plus_one")
-	require.NoError(t, err)
-
-	set := querier.Select(false, nil, matcher)
-	samples, err := readSeriesSet(set)
-	require.NoError(t, err)
-
-	metric := labels.FromStrings(model.MetricNameLabel, "a_plus_one").String()
-	metricSample, ok := samples[metric]
-
-	require.True(t, ok, "Series %s not returned.", metric)
-	require.True(t, value.IsStaleNaN(metricSample[2].V), "Appended second sample not as expected. Wanted: stale NaN Got: %x", math.Float64bits(metricSample[2].V))
-	metricSample[2].V = 42 // require.Equal cannot handle NaN.
-
-	want := map[string][]promql.Point{
-		metric: {{T: 0, V: 2}, {T: 1000, V: 3}, {T: 2000, V: 42}},
-	}
-
-	require.Equal(t, want, samples)
 }
 
 // Convert a SeriesSet into a form usable with require.Equal.
@@ -1511,4 +1526,44 @@ func TestGroup_Equals(t *testing.T) {
 			require.Equal(t, tt.areEqual, tt.groupTwo.Equals(tt.groupOne))
 		})
 	}
+}
+
+func TestGroup_EvaluationDelay(t *testing.T) {
+	config := `
+groups:
+  - name: group1
+    evaluation_delay: 2m
+  - name: group2
+    evaluation_delay: 0s
+  - name: group3
+`
+
+	dir := t.TempDir()
+	fname := path.Join(dir, "rules.yaml")
+	err := ioutil.WriteFile(fname, []byte(config), fs.ModePerm)
+	require.NoError(t, err)
+
+	m := NewManager(&ManagerOptions{
+		Logger: log.NewNopLogger(),
+		DefaultEvaluationDelay: func() time.Duration {
+			return time.Minute
+		},
+	})
+	m.start()
+	err = m.Update(time.Second, []string{fname}, nil, "")
+	require.NoError(t, err)
+
+	rgs := m.RuleGroups()
+	sort.Slice(rgs, func(i, j int) bool {
+		return rgs[i].Name() < rgs[j].Name()
+	})
+
+	// From config.
+	require.Equal(t, 2*time.Minute, rgs[0].EvaluationDelay())
+	// Setting 0 in config is detected.
+	require.Equal(t, time.Duration(0), rgs[1].EvaluationDelay())
+	// Default when nothing is set.
+	require.Equal(t, time.Minute, rgs[2].EvaluationDelay())
+
+	m.Stop()
 }

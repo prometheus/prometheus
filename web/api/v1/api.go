@@ -150,7 +150,6 @@ type TSDBAdminStats interface {
 	CleanTombstones() error
 	Delete(mint, maxt int64, ms ...*labels.Matcher) error
 	Snapshot(dir string, withHead bool) error
-
 	Stats(statsByLabelName string) (*tsdb.Stats, error)
 	WALReplayStatus() (tsdb.WALReplayStatus, error)
 }

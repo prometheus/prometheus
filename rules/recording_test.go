@@ -74,7 +74,7 @@ func TestRuleEval(t *testing.T) {
 
 	for _, test := range suite {
 		rule := NewRecordingRule(test.name, test.expr, test.labels)
-		result, err := rule.Eval(ctx, now, EngineQueryFunc(engine, storage), nil, 0)
+		result, err := rule.Eval(ctx, 0, now, EngineQueryFunc(engine, storage), nil, 0)
 		if test.err == "" {
 			require.NoError(t, err)
 		} else {
@@ -119,7 +119,7 @@ func TestRuleEvalDuplicate(t *testing.T) {
 
 	expr, _ := parser.ParseExpr(`vector(0) or label_replace(vector(0),"test","x","","")`)
 	rule := NewRecordingRule("foo", expr, labels.FromStrings("test", "test"))
-	_, err := rule.Eval(ctx, now, EngineQueryFunc(engine, storage), nil, 0)
+	_, err := rule.Eval(ctx, 0, now, EngineQueryFunc(engine, storage), nil, 0)
 	require.Error(t, err)
 	require.EqualError(t, err, "vector contains metrics with the same labelset after applying rule labels")
 }
@@ -164,7 +164,7 @@ func TestRecordingRuleLimit(t *testing.T) {
 	evalTime := time.Unix(0, 0)
 
 	for _, test := range tests {
-		_, err := rule.Eval(suite.Context(), evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil, test.limit)
+		_, err := rule.Eval(suite.Context(), 0, evalTime, EngineQueryFunc(suite.QueryEngine(), suite.Storage()), nil, test.limit)
 		if err != nil {
 			require.EqualError(t, err, test.err)
 		} else if test.err != "" {
