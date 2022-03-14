@@ -8,16 +8,16 @@ jobs:
     name: lint and publish
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - uses: bufbuild/buf-setup-action@v1.1.0
-      - uses: bufbuild/buf-lint-action@v1
+      - uses: actions/checkout@b0e28b5ac45a892f91e7d036f8200cf5ed489415 # v3
+      - uses: bufbuild/buf-setup-action@f739118bb90b0752c8e1b620e193b9625d6c094b # v1.1.0
+      - uses: bufbuild/buf-lint-action@f5029cc05a2a5d95c2edc7d203e4efce0a3b65ed # v1
         with:
           input: 'prompb'
-      - uses: bufbuild/buf-breaking-action@v1
+      - uses: bufbuild/buf-breaking-action@4280330ef4fe7f88fd94967c9ac496b3ac0d71c8 # v1
         with:
           input: 'prompb'
           against: 'https://github.com/prometheus/prometheus.git#branch=main,ref=HEAD~1,subdir=prompb'
-      - uses: bufbuild/buf-push-action@v1
+      - uses: bufbuild/buf-push-action@1b31b985d86807e150c3bef5c4ea451db812acd2 # v1
         with:
           input: 'prompb'
           buf_token: ${{ secrets.BUF_TOKEN }}
