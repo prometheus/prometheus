@@ -397,7 +397,7 @@ func TestReshardPartialBatch(t *testing.T) {
 	cfg.BatchSendDeadline = model.Duration(batchSendDeadline)
 
 	metrics := newQueueManagerMetrics(nil, "", "")
-	m := NewQueueManager(metrics, nil, nil, nil, t.TempDir(), newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, nil, nil, c, flushDeadline, newPool(), newHighestTimestampMetric(), nil, false)
+	m := NewQueueManager(metrics, nil, nil, nil, t.TempDir(), newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, nil, nil, c, flushDeadline, intern.New(nil), newHighestTimestampMetric(), nil, false)
 	m.StoreSeries(series, 0)
 
 	m.Start()
@@ -442,7 +442,7 @@ func TestQueueFilledDeadlock(t *testing.T) {
 
 	metrics := newQueueManagerMetrics(nil, "", "")
 
-	m := NewQueueManager(metrics, nil, nil, nil, t.TempDir(), newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, nil, nil, c, flushDeadline, newPool(), newHighestTimestampMetric(), nil, false)
+	m := NewQueueManager(metrics, nil, nil, nil, t.TempDir(), newEWMARate(ewmaWeight, shardUpdateDuration), cfg, mcfg, nil, nil, c, flushDeadline, intern.New(nil), newHighestTimestampMetric(), nil, false)
 	m.StoreSeries(series, 0)
 	m.Start()
 	defer m.Stop()
