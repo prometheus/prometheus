@@ -1,7 +1,9 @@
-## 2.34.0-rc.0 / 2022-02-24
+## 2.34.0 / 2022-03-15
 
 * [CHANGE] UI: Classic UI removed. #10208
 * [CHANGE] Tracing: Migrate from Jaeger to OpenTelemetry based tracing. #9724, #10203, #10276
+* [ENHANCEMENT] TSDB: Disable the chunk write queue by default and allow configuration with the experimental flag `--storage.tsdb.head-chunks-write-queue-size`. #10425
+* [ENHANCEMENT] HTTP SD: Add a failure counter. #10372
 * [ENHANCEMENT] Azure SD: Set Prometheus User-Agent on requests. #10209
 * [ENHANCEMENT] Uyuni SD: Reduce the number of logins to Uyuni. #10072
 * [ENHANCEMENT] Scrape: Log when an invalid media type is encountered during a scrape. #10186
@@ -13,6 +15,8 @@
 * [BUGFIX] PromQL: Properly return an error from histogram_quantile when metrics have the same labelset. #10140 
 * [BUGFIX] UI: Fix bug that sets the range input to the resolution. #10227
 * [BUGFIX] TSDB: Fix a query panic when `memory-snapshot-on-shutdown` is enabled. #10348
+* [BUGFIX] Parser: Specify type in metadata parser errors. #10269
+* [BUGFIX] Scrape: Fix label limit changes not applying. #10370
 
 ## 2.33.5 / 2022-03-08
 

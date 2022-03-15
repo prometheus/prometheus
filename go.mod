@@ -29,7 +29,7 @@ require (
 	github.com/golang/snappy v0.0.4
 	github.com/google/pprof v0.0.0-20220218203455-0368bd9e19a7
 	github.com/gophercloud/gophercloud v0.24.0
-	github.com/grafana/regexp v0.0.0-20220202152315-e74e38789280
+	github.com/grafana/regexp v0.0.0-20220304095617-2e8d9baf4ac2
 	github.com/grpc-ecosystem/grpc-gateway v1.16.0
 	github.com/hashicorp/consul/api v1.12.0
 	github.com/hashicorp/go-hclog v0.12.2 // indirect

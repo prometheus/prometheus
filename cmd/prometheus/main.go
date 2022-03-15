@@ -305,6 +305,9 @@ func main() {
 	serverOnlyFlag(a, "storage.tsdb.wal-compression", "Compress the tsdb WAL.").
 		Hidden().Default("true").BoolVar(&cfg.tsdb.WALCompression)
 
+	serverOnlyFlag(a, "storage.tsdb.head-chunks-write-queue-size", "Size of the queue through which head chunks are written to the disk to be m-mapped, 0 disables the queue completely. Experimental.").
+		Default("0").IntVar(&cfg.tsdb.HeadChunksWriteQueueSize)
+
 	agentOnlyFlag(a, "storage.agent.path", "Base path for metrics storage.").
 		Default("data-agent/").StringVar(&cfg.agentStoragePath)
 
@@ -1484,6 +1487,7 @@ type tsdbOptions struct {
 	NoLockfile                     bool
 	AllowOverlappingBlocks         bool
 	WALCompression                 bool
+	HeadChunksWriteQueueSize       int
 	StripeSize                     int
 	MinBlockDuration               model.Duration
 	MaxBlockDuration               model.Duration
@@ -1501,6 +1505,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		NoLockfile:                     opts.NoLockfile,
 		AllowOverlappingBlocks:         opts.AllowOverlappingBlocks,
 		WALCompression:                 opts.WALCompression,
+		HeadChunksWriteQueueSize:       opts.HeadChunksWriteQueueSize,
 		StripeSize:                     opts.StripeSize,
 		MinBlockDuration:               int64(time.Duration(opts.MinBlockDuration) / time.Millisecond),
 		MaxBlockDuration:               int64(time.Duration(opts.MaxBlockDuration) / time.Millisecond),
