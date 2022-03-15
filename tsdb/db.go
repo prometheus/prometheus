@@ -640,7 +640,7 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 		return nil, errors.Wrap(err, "migrate WAL")
 	}
 	for _, tmpDir := range []string{walDir, dir} {
-		// Remove garbage, tmp blocks.
+		// Remove tmp dirs.
 		if err := removeBestEffortTmpDirs(l, tmpDir); err != nil {
 			return nil, errors.Wrap(err, "remove tmp dirs")
 		}
@@ -1725,7 +1725,7 @@ func isBlockDir(fi os.FileInfo) bool {
 	return err == nil
 }
 
-// isTmpDir returns dir that consists of block dir ULID and tmp extension.
+// isTmpDir returns true if the given file-info contains a block ULID or checkpoint prefix and a tmp extension.
 func isTmpDir(fi os.FileInfo) bool {
 	if !fi.IsDir() {
 		return false
