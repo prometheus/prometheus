@@ -16,6 +16,7 @@ package rules
 import (
 	"context"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"math"
 	"os"
@@ -1248,7 +1249,7 @@ func BenchmarkGroupEvalWithNoSamples(b *testing.B) {
 		Appendable:  storage,
 		Queryable:   storage,
 		Context:     context.Background(),
-		Logger:      log.NewNopLogger(),
+		Logger:      log.NewLogfmtLogger(io.Discard),
 		NotifyFunc:  notifyFunc,
 		ResendDelay: 2 * time.Second,
 	}
