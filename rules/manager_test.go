@@ -1247,13 +1247,13 @@ func TestUpdateMissedEvalMetrics(t *testing.T) {
 
 	testValue := 1
 
-	overrideFunc := func(g *Group, a *Alert, ts time.Time) (bool, time.Time) {
+	overrideFunc := func(g *Group, alertRule *AlertingRule, log log.Logger) (map[uint64]bool, map[uint64]time.Time, error) {
 		testValue = 2
-		return false, time.Now()
+		return nil, nil, nil
 	}
 
 	type testInput struct {
-		overrideFunc  func(g *Group, a *Alert, ts time.Time) (bool, time.Time)
+		overrideFunc  func(g *Group, alertRule *AlertingRule, logger log.Logger) (map[uint64]bool, map[uint64]time.Time, error)
 		expectedValue int
 	}
 

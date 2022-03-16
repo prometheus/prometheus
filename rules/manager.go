@@ -24,11 +24,10 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
-	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
@@ -268,7 +267,13 @@ type Group struct {
 	alertsActiveAtOverrideFunc AlertsActiveAtOverrideFuncType
 }
 
-type AlertsActiveAtOverrideFuncType func(g *Group, a *Alert, ts time.Time) (bool, time.Time)
+type AlertsActiveAtOverride struct {
+	ShouldOverride             bool
+	OverrideValue              time.Time
+	error                      error
+}
+
+type AlertsActiveAtOverrideFuncType func(g *Group, alertRule *AlertingRule, log log.Logger) (map[uint64]bool, map[uint64]time.Time, error)
 
 type GroupOptions struct {
 	Name, File                 string
@@ -328,6 +333,9 @@ func (g *Group) Rules() []Rule { return g.rules }
 
 // Queryable returns the group's querable.
 func (g *Group) Queryable() storage.Queryable { return g.opts.Queryable }
+
+// Context returns the group's context.
+func (g *Group) Context() context.Context { return g.opts.Context }
 
 // Interval returns the group's interval.
 func (g *Group) Interval() time.Duration { return g.interval }
@@ -448,10 +456,17 @@ func useAlertsActiveAtOverrideFunc(g *Group) {
 			if !ok {
 				continue
 			}
+
+			alertIsOverrideMap, alertActiveOverrideValueMap, err := g.alertsActiveAtOverrideFunc(g, alertRule, g.logger)
+			if err != nil {
+				level.Warn(g.logger).Log("msg", "alertsActiveAtOverrideFunc failed", "rule", rule, "err", err)
+			}
 			alertRule.ForEachActiveAlert(func(a *Alert) {
-				shouldOveride, activeAt := g.alertsActiveAtOverrideFunc(g, a, time.Now())
+				lbs := a.Labels
+				h := lbs.Hash()
+				shouldOveride := alertIsOverrideMap[h]
 				if shouldOveride {
-					a.ActiveAt = activeAt
+					a.ActiveAt = alertActiveOverrideValueMap[h]
 				}
 			})
 		}
@@ -614,10 +629,10 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 		}
 
 		func(i int, rule Rule) {
-			ctx, sp := otel.Tracer("").Start(ctx, "rule")
-			sp.SetAttributes(attribute.String("name", rule.Name()))
+			sp, ctx := opentracing.StartSpanFromContext(ctx, "rule")
+			sp.SetTag("name", rule.Name())
 			defer func(t time.Time) {
-				sp.End()
+				sp.Finish()
 
 				since := time.Since(t)
 				g.metrics.EvalDuration.Observe(since.Seconds())
@@ -774,6 +789,7 @@ func (g *Group) RestoreForState(ts time.Time) {
 
 		alertRule.ForEachActiveAlert(func(a *Alert) {
 			var s storage.Series
+
 			s, err := alertRule.QueryforStateSeries(a, q)
 			if err != nil {
 				// Querier Warnings are ignored. We do not care unless we have an error.

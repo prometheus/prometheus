@@ -20,7 +20,6 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
-
 	"github.com/go-kit/log"
 	"github.com/stretchr/testify/require"
 
