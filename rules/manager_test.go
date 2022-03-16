@@ -1232,7 +1232,7 @@ func TestRuleHealthUpdates(t *testing.T) {
 	require.Equal(t, HealthBad, rules.Health())
 }
 
-func BenchmarkGroupEvalWithNoSamples(b *testing.B) {
+func BenchmarkGroupEvalWithNoSample(b *testing.B) {
 	storage := teststorage.New(b)
 	defer storage.Close()
 	engineOpts := promql.EngineOpts{
