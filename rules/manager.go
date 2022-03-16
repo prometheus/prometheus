@@ -24,10 +24,11 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
@@ -264,16 +265,10 @@ type Group struct {
 
 	metrics *Metrics
 
-	alertsActiveAtOverrideFunc AlertsActiveAtOverrideFuncType
+	ruleGroupPostProcessFunc RuleGroupPostProcessFuncType
 }
 
-type AlertsActiveAtOverride struct {
-	ShouldOverride             bool
-	OverrideValue              time.Time
-	error                      error
-}
-
-type AlertsActiveAtOverrideFuncType func(g *Group, alertRule *AlertingRule, log log.Logger) (map[uint64]bool, map[uint64]time.Time, error)
+type RuleGroupPostProcessFuncType func(g *Group, log log.Logger) error
 
 type GroupOptions struct {
 	Name, File                 string
@@ -283,7 +278,7 @@ type GroupOptions struct {
 	ShouldRestore              bool
 	Opts                       *ManagerOptions
 	done                       chan struct{}
-	AlertsActiveAtOverrideFunc AlertsActiveAtOverrideFuncType
+	RuleGroupPostProcessFunc RuleGroupPostProcessFuncType
 }
 
 // NewGroup makes a new Group with the given name, options, and rules.
@@ -318,7 +313,7 @@ func NewGroup(o GroupOptions) *Group {
 		terminated:                 make(chan struct{}),
 		logger:                     log.With(o.Opts.Logger, "group", o.Name),
 		metrics:                    metrics,
-		alertsActiveAtOverrideFunc: o.AlertsActiveAtOverrideFunc,
+		ruleGroupPostProcessFunc: 	o.RuleGroupPostProcessFunc,
 	}
 }
 
@@ -441,7 +436,7 @@ func (g *Group) run(ctx context.Context) {
 				}
 				evalTimestamp = evalTimestamp.Add((missed + 1) * g.interval)
 
-				useAlertsActiveAtOverrideFunc(g)
+				useRuleGroupPostProcessFunc(g)
 
 				iter()
 			}
@@ -449,26 +444,12 @@ func (g *Group) run(ctx context.Context) {
 	}
 }
 
-func useAlertsActiveAtOverrideFunc(g *Group) {
-	if g.alertsActiveAtOverrideFunc != nil {
-		for _, rule := range g.Rules() {
-			alertRule, ok := rule.(*AlertingRule)
-			if !ok {
-				continue
-			}
+func useRuleGroupPostProcessFunc(g *Group) {
+	if g.ruleGroupPostProcessFunc != nil {
+		err := g.ruleGroupPostProcessFunc(g, g.logger)
 
-			alertIsOverrideMap, alertActiveOverrideValueMap, err := g.alertsActiveAtOverrideFunc(g, alertRule, g.logger)
-			if err != nil {
-				level.Warn(g.logger).Log("msg", "alertsActiveAtOverrideFunc failed", "rule", rule, "err", err)
-			}
-			alertRule.ForEachActiveAlert(func(a *Alert) {
-				lbs := a.Labels
-				h := lbs.Hash()
-				shouldOveride := alertIsOverrideMap[h]
-				if shouldOveride {
-					a.ActiveAt = alertActiveOverrideValueMap[h]
-				}
-			})
+		if err != nil {
+			level.Warn(g.logger).Log("msg", "alertsActiveAtOverrideFunc failed", "err", err)
 		}
 	}
 }
@@ -629,10 +610,10 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 		}
 
 		func(i int, rule Rule) {
-			sp, ctx := opentracing.StartSpanFromContext(ctx, "rule")
-			sp.SetTag("name", rule.Name())
+			ctx, sp := otel.Tracer("").Start(ctx, "rule")
+			sp.SetAttributes(attribute.String("name", rule.Name()))
 			defer func(t time.Time) {
-				sp.Finish()
+				sp.End()
 
 				since := time.Since(t)
 				g.metrics.EvalDuration.Observe(since.Seconds())
@@ -980,11 +961,11 @@ func (m *Manager) Stop() {
 
 // Update the rule manager's state as the config requires. If
 // loading the new rules failed the old rule set is restored.
-func (m *Manager) Update(interval time.Duration, files []string, externalLabels labels.Labels, externalURL string, alertsActiveAtOverrideFunc AlertsActiveAtOverrideFuncType) error {
+func (m *Manager) Update(interval time.Duration, files []string, externalLabels labels.Labels, externalURL string, ruleGroupPostProcessFunc RuleGroupPostProcessFuncType) error {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
-	groups, errs := m.LoadGroups(interval, externalLabels, externalURL, alertsActiveAtOverrideFunc, files...)
+	groups, errs := m.LoadGroups(interval, externalLabels, externalURL, ruleGroupPostProcessFunc, files...)
 
 	if errs != nil {
 		for _, e := range errs {
@@ -1069,7 +1050,7 @@ func (FileLoader) Parse(query string) (parser.Expr, error) { return parser.Parse
 
 // LoadGroups reads groups from a list of files.
 func (m *Manager) LoadGroups(
-	interval time.Duration, externalLabels labels.Labels, externalURL string, alertsActiveAtOverrideFunc AlertsActiveAtOverrideFuncType, filenames ...string,
+	interval time.Duration, externalLabels labels.Labels, externalURL string, ruleGroupPostProcessFunc RuleGroupPostProcessFuncType, filenames ...string,
 ) (map[string]*Group, []error) {
 	groups := make(map[string]*Group)
 
@@ -1124,7 +1105,7 @@ func (m *Manager) LoadGroups(
 				ShouldRestore:              shouldRestore,
 				Opts:                       m.opts,
 				done:                       m.done,
-				AlertsActiveAtOverrideFunc: alertsActiveAtOverrideFunc,
+				RuleGroupPostProcessFunc: 	ruleGroupPostProcessFunc,
 			})
 		}
 	}
