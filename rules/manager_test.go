@@ -20,6 +20,7 @@ import (
 	"math"
 	"os"
 	"sort"
+	"strconv"
 	"testing"
 	"time"
 
@@ -1228,4 +1229,50 @@ func TestRuleHealthUpdates(t *testing.T) {
 	rules = group.Rules()[0]
 	require.EqualError(t, rules.LastError(), storage.ErrOutOfOrderSample.Error())
 	require.Equal(t, HealthBad, rules.Health())
+}
+
+func BenchmarkGroupEvalWithNoSamples(b *testing.B) {
+	storage := teststorage.New(b)
+	defer storage.Close()
+	engineOpts := promql.EngineOpts{
+		Logger:     nil,
+		Reg:        nil,
+		MaxSamples: 10,
+		Timeout:    10 * time.Second,
+	}
+	engine := promql.NewEngine(engineOpts)
+	notifyFunc := func(ctx context.Context, expr string, alerts ...*Alert) {
+	}
+	opts := &ManagerOptions{
+		QueryFunc:   EngineQueryFunc(engine, storage),
+		Appendable:  storage,
+		Queryable:   storage,
+		Context:     context.Background(),
+		Logger:      log.NewNopLogger(),
+		NotifyFunc:  notifyFunc,
+		ResendDelay: 2 * time.Second,
+	}
+
+	expr, err := parser.ParseExpr("a > 1")
+	require.NoError(b, err)
+
+	rules := []Rule{}
+
+	for i := 0; i < 200; i++ {
+		rule := NewAlertingRule("aTooHigh_"+strconv.Itoa(i), expr, 0, labels.Labels{}, labels.Labels{}, nil, "", true, log.NewNopLogger())
+		rules = append(rules, rule)
+	}
+
+	group := NewGroup(GroupOptions{
+		Name:          "alert",
+		Interval:      time.Second,
+		Rules:         rules,
+		ShouldRestore: true,
+		Opts:          opts,
+	})
+
+	for n := 0; n < b.N; n++ {
+		ctx := context.Background()
+		group.Eval(ctx, time.Unix(1, 0))
+	}
 }
