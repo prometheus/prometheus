@@ -313,7 +313,7 @@ func NewGroup(o GroupOptions) *Group {
 		terminated:                 make(chan struct{}),
 		logger:                     log.With(o.Opts.Logger, "group", o.Name),
 		metrics:                    metrics,
-		ruleGroupPostProcessFunc: 	o.RuleGroupPostProcessFunc,
+		ruleGroupPostProcessFunc:   o.RuleGroupPostProcessFunc,
 	}
 }
 
@@ -1105,7 +1105,7 @@ func (m *Manager) LoadGroups(
 				ShouldRestore:              shouldRestore,
 				Opts:                       m.opts,
 				done:                       m.done,
-				RuleGroupPostProcessFunc: 	ruleGroupPostProcessFunc,
+				RuleGroupPostProcessFunc:   ruleGroupPostProcessFunc,
 			})
 		}
 	}
