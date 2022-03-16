@@ -1305,11 +1305,11 @@ func TestUpdateMissedEvalMetrics(t *testing.T) {
 		}
 
 		group := NewGroup(GroupOptions{
-			Name:                       "default",
-			Interval:                   time.Second,
-			Rules:                      []Rule{rule},
-			ShouldRestore:              true,
-			Opts:                       opts,
+			Name:                     "default",
+			Interval:                 time.Second,
+			Rules:                    []Rule{rule},
+			ShouldRestore:            true,
+			Opts:                     opts,
 			RuleGroupPostProcessFunc: tst.overrideFunc,
 		})
 

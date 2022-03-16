@@ -271,13 +271,13 @@ type Group struct {
 type RuleGroupPostProcessFuncType func(g *Group, log log.Logger) error
 
 type GroupOptions struct {
-	Name, File                 string
-	Interval                   time.Duration
-	Limit                      int
-	Rules                      []Rule
-	ShouldRestore              bool
-	Opts                       *ManagerOptions
-	done                       chan struct{}
+	Name, File               string
+	Interval                 time.Duration
+	Limit                    int
+	Rules                    []Rule
+	ShouldRestore            bool
+	Opts                     *ManagerOptions
+	done                     chan struct{}
 	RuleGroupPostProcessFunc RuleGroupPostProcessFuncType
 }
 
@@ -300,20 +300,20 @@ func NewGroup(o GroupOptions) *Group {
 	metrics.GroupInterval.WithLabelValues(key).Set(o.Interval.Seconds())
 
 	return &Group{
-		name:                       o.Name,
-		file:                       o.File,
-		interval:                   o.Interval,
-		limit:                      o.Limit,
-		rules:                      o.Rules,
-		shouldRestore:              o.ShouldRestore,
-		opts:                       o.Opts,
-		seriesInPreviousEval:       make([]map[string]labels.Labels, len(o.Rules)),
-		done:                       make(chan struct{}),
-		managerDone:                o.done,
-		terminated:                 make(chan struct{}),
-		logger:                     log.With(o.Opts.Logger, "group", o.Name),
-		metrics:                    metrics,
-		ruleGroupPostProcessFunc:   o.RuleGroupPostProcessFunc,
+		name:                     o.Name,
+		file:                     o.File,
+		interval:                 o.Interval,
+		limit:                    o.Limit,
+		rules:                    o.Rules,
+		shouldRestore:            o.ShouldRestore,
+		opts:                     o.Opts,
+		seriesInPreviousEval:     make([]map[string]labels.Labels, len(o.Rules)),
+		done:                     make(chan struct{}),
+		managerDone:              o.done,
+		terminated:               make(chan struct{}),
+		logger:                   log.With(o.Opts.Logger, "group", o.Name),
+		metrics:                  metrics,
+		ruleGroupPostProcessFunc: o.RuleGroupPostProcessFunc,
 	}
 }
 
@@ -1097,15 +1097,15 @@ func (m *Manager) LoadGroups(
 			}
 
 			groups[GroupKey(fn, rg.Name)] = NewGroup(GroupOptions{
-				Name:                       rg.Name,
-				File:                       fn,
-				Interval:                   itv,
-				Limit:                      rg.Limit,
-				Rules:                      rules,
-				ShouldRestore:              shouldRestore,
-				Opts:                       m.opts,
-				done:                       m.done,
-				RuleGroupPostProcessFunc:   ruleGroupPostProcessFunc,
+				Name:                     rg.Name,
+				File:                     fn,
+				Interval:                 itv,
+				Limit:                    rg.Limit,
+				Rules:                    rules,
+				ShouldRestore:            shouldRestore,
+				Opts:                     m.opts,
+				done:                     m.done,
+				RuleGroupPostProcessFunc: ruleGroupPostProcessFunc,
 			})
 		}
 	}
