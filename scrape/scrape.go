@@ -305,6 +305,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed 
 
 		// Store the cache in the context.
 		loopCtx := ContextWithMetricMetadataStore(ctx, cache)
+		loopCtx = ContextWithTarget(loopCtx, opts.target)
 
 		return newScrapeLoop(
 			loopCtx,
@@ -1812,6 +1813,7 @@ type ctxKey int
 // Valid CtxKey values.
 const (
 	ctxKeyMetadata ctxKey = iota + 1
+	ctxKeyTarget
 )
 
 func ContextWithMetricMetadataStore(ctx context.Context, s MetricMetadataStore) context.Context {
@@ -1821,4 +1823,13 @@ func ContextWithMetricMetadataStore(ctx context.Context, s MetricMetadataStore) 
 func MetricMetadataStoreFromContext(ctx context.Context) (MetricMetadataStore, bool) {
 	s, ok := ctx.Value(ctxKeyMetadata).(MetricMetadataStore)
 	return s, ok
+}
+
+func ContextWithTarget(ctx context.Context, t *Target) context.Context {
+	return context.WithValue(ctx, ctxKeyTarget, t)
+}
+
+func TargetFromContext(ctx context.Context) (*Target, bool) {
+	t, ok := ctx.Value(ctxKeyTarget).(*Target)
+	return t, ok
 }
