@@ -447,7 +447,6 @@ func (g *Group) run(ctx context.Context) {
 func useRuleGroupPostProcessFunc(g *Group) {
 	if g.ruleGroupPostProcessFunc != nil {
 		err := g.ruleGroupPostProcessFunc(g, g.logger)
-
 		if err != nil {
 			level.Warn(g.logger).Log("msg", "alertsActiveAtOverrideFunc failed", "err", err)
 		}
