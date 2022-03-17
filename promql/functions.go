@@ -166,18 +166,19 @@ func histogramRate(points []Point, isCounter bool) *histogram.FloatHistogram {
 	prev := points[0].H // We already know that this is a histogram.
 	last := points[len(points)-1].H
 	if last == nil {
-		return nil // Last point in range is not a histogram.
+		return nil // Range contains a mix of histograms and floats.
 	}
-	if last.Schema != prev.Schema || last.ZeroThreshold != prev.ZeroThreshold {
-		return nil // TODO(beorn7): Handle schema changes properly.
+	minSchema := prev.Schema
+	if last.Schema < minSchema {
+		minSchema = last.Schema
 	}
-	h := last.Copy()
-	h.Sub(prev)
-	// We have to iterate through everything even in the non-counter case
-	// because we have to check that everything is a histogram.
-	// TODO(beorn7): Find a way to check that earlier, e.g. by handing in a
-	// []FloatPoint and a []HistogramPoint separately.
-	for _, currPoint := range points[1:] {
+
+	// First iteration to find out two things:
+	// - What's the smallest relevant schema?
+	// - Are all data points histograms?
+	//   TODO(beorn7): Find a way to check that earlier, e.g. by handing in a
+	//   []FloatPoint and a []HistogramPoint separately.
+	for _, currPoint := range points[1 : len(points)-1] {
 		curr := currPoint.H
 		if curr == nil {
 			return nil // Range contains a mix of histograms and floats.
@@ -185,13 +186,23 @@ func histogramRate(points []Point, isCounter bool) *histogram.FloatHistogram {
 		if !isCounter {
 			continue
 		}
-		if curr.Schema != prev.Schema || curr.ZeroThreshold != prev.ZeroThreshold {
-			return nil // TODO(beorn7): Handle schema changes properly.
+		if curr.Schema < minSchema {
+			minSchema = curr.Schema
 		}
-		if curr.DetectReset(prev) {
-			h.Add(prev)
+	}
+
+	h := last.CopyToSchema(minSchema)
+	h.Sub(prev)
+
+	if isCounter {
+		// Second iteration to deal with counter resets.
+		for _, currPoint := range points[1:] {
+			curr := currPoint.H
+			if curr.DetectReset(prev) {
+				h.Add(prev)
+			}
+			prev = curr
 		}
-		prev = curr
 	}
 	return h.Compact(3)
 }

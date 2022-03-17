@@ -2157,7 +2157,12 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram
 	switch op {
 	case parser.ADD:
 		if hlhs != nil && hrhs != nil {
-			return 0, hlhs.Copy().Add(hrhs), true
+			// The histogram being added must have the larger schema
+			// code (i.e. the higher resolution).
+			if hrhs.Schema >= hlhs.Schema {
+				return 0, hlhs.Copy().Add(hrhs), true
+			}
+			return 0, hrhs.Copy().Add(hlhs), true
 		}
 		return lhs + rhs, nil, true
 	case parser.SUB:
@@ -2322,7 +2327,15 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 			if s.H != nil {
 				group.hasHistogram = true
 				if group.histogramValue != nil {
-					group.histogramValue.Add(s.H)
+					// The histogram being added must have
+					// an equal or larger schema.
+					if s.H.Schema >= group.histogramValue.Schema {
+						group.histogramValue.Add(s.H)
+					} else {
+						h := s.H.Copy()
+						h.Add(group.histogramValue)
+						group.histogramValue = h
+					}
 				}
 				// Otherwise the aggregation contained floats
 				// previously and will be invalid anyway. No
