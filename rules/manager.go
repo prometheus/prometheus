@@ -18,7 +18,6 @@ import (
 	html_template "html/template"
 	"math"
 	"net/url"
-	"path/filepath"
 	"sort"
 	"sync"
 	"time"
@@ -307,7 +306,7 @@ func NewGroup(o GroupOptions) *Group {
 		done:                 make(chan struct{}),
 		managerDone:          o.done,
 		terminated:           make(chan struct{}),
-		logger:               log.With(o.Opts.Logger, "file", filepath.Base(o.File), "group", o.Name),
+		logger:               log.With(o.Opts.Logger, "file", o.File, "group", o.Name),
 		metrics:              metrics,
 	}
 }
