@@ -85,7 +85,7 @@ jobs:
             $env:GOARCH=""; $env:GOOS=""; cd web/ui; go generate
             cd ../..
             $TestTargets = go list ./... | Where-Object { $_ -NotMatch "(github.com/prometheus/prometheus/discovery.*|github.com/prometheus/prometheus/config|github.com/prometheus/prometheus/web)"}
-            go test $TestTargets -vet=off -v
+            $env:"GODEBUG=x509sha1=1"; go test $TestTargets -vet=off -v
           environment:
             GOGC: "20"
             GOOPTS: "-p 2"
