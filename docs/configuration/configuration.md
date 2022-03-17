@@ -1707,8 +1707,9 @@ namespaces:
 # Optional label and field selectors to limit the discovery process to a subset of available resources.
 # See https://kubernetes.io/docs/concepts/overview/working-with-objects/field-selectors/
 # and https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/ to learn more about the possible
-# filters that can be used. Endpoints role supports pod, service and endpoints selectors, other roles
-# only support selectors matching the role itself (e.g. node role can only contain node selectors).
+# filters that can be used. The endpoints role supports pod, service and endpoints selectors.
+# The pod role supports node selectors when configured with `attach_metadata: {node: true}`.
+# Other roles only support selectors matching the role itself (e.g. node role can only contain node selectors).
 
 # Note: When making decision about using field/label selector make sure that this
 # is the best approach - it will prevent Prometheus from reusing single list/watch
@@ -1720,6 +1721,12 @@ namespaces:
   [ - role: <string>
     [ label: <string> ]
     [ field: <string> ] ]]
+
+# Optional metadata to attach to discovered targets. If omitted, no additional metadata is attached.
+attach_metadata:
+# Attaches node metadata to discovered targets. Only valid for role: pod. 
+# When set to true, Prometheus must have permissions to get Nodes. 
+  [ node: <boolean> | default = false ]
 ```
 
 See [this example Prometheus configuration file](/documentation/examples/prometheus-kubernetes.yml)
