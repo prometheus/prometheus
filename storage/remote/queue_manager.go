@@ -380,7 +380,7 @@ func NewQueueManager(
 	watcherMetrics *wal.WatcherMetrics,
 	readerMetrics *wal.LiveReaderMetrics,
 	logger log.Logger,
-	walDir string,
+	dir string,
 	samplesIn *ewmaRate,
 	cfg config.QueueConfig,
 	mCfg config.MetadataConfig,
@@ -426,7 +426,7 @@ func NewQueueManager(
 		highestRecvTimestamp: highestRecvTimestamp,
 	}
 
-	t.watcher = wal.NewWatcher(watcherMetrics, readerMetrics, logger, client.Name(), t, walDir, enableExemplarRemoteWrite)
+	t.watcher = wal.NewWatcher(watcherMetrics, readerMetrics, logger, client.Name(), t, dir, enableExemplarRemoteWrite)
 	if t.mcfg.Send {
 		t.metadataWatcher = NewMetadataWatcher(logger, sm, client.Name(), t, t.mcfg.SendInterval, flushDeadline)
 	}
