@@ -122,6 +122,7 @@ type SDConfig struct {
 	HTTPClientConfig   config.HTTPClientConfig `yaml:",inline"`
 	NamespaceDiscovery NamespaceDiscovery      `yaml:"namespaces,omitempty"`
 	Selectors          []SelectorConfig        `yaml:"selectors,omitempty"`
+	AttachMetadata     AttachMetadataConfig    `yaml:"attach_metadata,omitempty"`
 }
 
 // Name returns the name of the Config.
@@ -156,6 +157,12 @@ type SelectorConfig struct {
 type resourceSelector struct {
 	label string
 	field string
+}
+
+// AttachMetadataConfig is the configuration for attaching additional metadata
+// coming from nodes on which the targets are scheduled.
+type AttachMetadataConfig struct {
+	Node bool `yaml:"node"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -259,6 +266,7 @@ type Discovery struct {
 	discoverers        []discovery.Discoverer
 	selectors          roleSelector
 	ownNamespace       string
+	attachMetadata     AttachMetadataConfig
 }
 
 func (d *Discovery) getNamespaces() []string {
@@ -337,6 +345,7 @@ func New(l log.Logger, conf *SDConfig) (*Discovery, error) {
 		discoverers:        make([]discovery.Discoverer, 0),
 		selectors:          mapSelector(conf.Selectors),
 		ownNamespace:       ownNamespace,
+		attachMetadata:     conf.AttachMetadata,
 	}, nil
 }
 
@@ -480,6 +489,12 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			go eps.podInf.Run(ctx.Done())
 		}
 	case RolePod:
+		var nodeInformer cache.SharedInformer
+		if d.attachMetadata.Node {
+			nodeInformer = d.newNodeInformer(ctx)
+			go nodeInformer.Run(ctx.Done())
+		}
+
 		for _, namespace := range namespaces {
 			p := d.client.CoreV1().Pods(namespace)
 			plw := &cache.ListWatch{
@@ -496,10 +511,11 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			}
 			pod := NewPod(
 				log.With(d.logger, "role", "pod"),
-				cache.NewSharedInformer(plw, &apiv1.Pod{}, resyncPeriod),
+				d.newPodsByNodeInformer(plw),
+				nodeInformer,
 			)
 			d.discoverers = append(d.discoverers, pod)
-			go pod.informer.Run(ctx.Done())
+			go pod.podInf.Run(ctx.Done())
 		}
 	case RoleService:
 		for _, namespace := range namespaces {
@@ -581,22 +597,8 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			go ingress.informer.Run(ctx.Done())
 		}
 	case RoleNode:
-		nlw := &cache.ListWatch{
-			ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
-				options.FieldSelector = d.selectors.node.field
-				options.LabelSelector = d.selectors.node.label
-				return d.client.CoreV1().Nodes().List(ctx, options)
-			},
-			WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
-				options.FieldSelector = d.selectors.node.field
-				options.LabelSelector = d.selectors.node.label
-				return d.client.CoreV1().Nodes().Watch(ctx, options)
-			},
-		}
-		node := NewNode(
-			log.With(d.logger, "role", "node"),
-			cache.NewSharedInformer(nlw, &apiv1.Node{}, resyncPeriod),
-		)
+		nodeInformer := d.newNodeInformer(ctx)
+		node := NewNode(log.With(d.logger, "role", "node"), nodeInformer)
 		d.discoverers = append(d.discoverers, node)
 		go node.informer.Run(ctx.Done())
 	default:
@@ -660,4 +662,35 @@ func checkNetworkingV1Supported(client kubernetes.Interface) (bool, error) {
 	// networking.k8s.io/v1 is available since Kubernetes v1.19
 	// https://github.com/kubernetes/kubernetes/blob/master/CHANGELOG/CHANGELOG-1.19.md
 	return semVer.Major() >= 1 && semVer.Minor() >= 19, nil
+}
+
+func (d *Discovery) newNodeInformer(ctx context.Context) cache.SharedInformer {
+	nlw := &cache.ListWatch{
+		ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+			options.FieldSelector = d.selectors.node.field
+			options.LabelSelector = d.selectors.node.label
+			return d.client.CoreV1().Nodes().List(ctx, options)
+		},
+		WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+			options.FieldSelector = d.selectors.node.field
+			options.LabelSelector = d.selectors.node.label
+			return d.client.CoreV1().Nodes().Watch(ctx, options)
+		},
+	}
+	return cache.NewSharedInformer(nlw, &apiv1.Node{}, resyncPeriod)
+}
+
+func (d *Discovery) newPodsByNodeInformer(plw *cache.ListWatch) cache.SharedIndexInformer {
+	indexers := make(map[string]cache.IndexFunc)
+	if d.attachMetadata.Node {
+		indexers[nodeIndex] = func(obj interface{}) ([]string, error) {
+			pod, ok := obj.(*apiv1.Pod)
+			if !ok {
+				return nil, fmt.Errorf("object is not a pod")
+			}
+			return []string{pod.Spec.NodeName}, nil
+		}
+	}
+
+	return cache.NewSharedIndexInformer(plw, &apiv1.Pod{}, resyncPeriod, indexers)
 }
