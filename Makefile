@@ -57,11 +57,6 @@ assets-compress:
 	@echo '>> compressing assets'
 	scripts/compress_assets.sh
 
-.PHONY: assets-decompress
-assets-decompress:
-	@echo '>> decompressing assets'
-	scripts/compress_assets.sh -d
-
 .PHONY: test
 # If we only want to only test go code we have to change the test target
 # which is called by all.
@@ -84,7 +79,7 @@ tarball: npm_licenses common-tarball
 docker: npm_licenses common-docker
 
 .PHONY: build
-build: assets assets-compress common-build assets-decompress
+build: assets assets-compress common-build
 
 .PHONY: bench_tsdb
 bench_tsdb: $(PROMU)
@@ -97,6 +92,3 @@ bench_tsdb: $(PROMU)
 	@$(GO) tool pprof --alloc_space -svg $(PROMTOOL) $(TSDB_BENCHMARK_OUTPUT_DIR)/mem.prof > $(TSDB_BENCHMARK_OUTPUT_DIR)/memprof.alloc.svg
 	@$(GO) tool pprof -svg $(PROMTOOL) $(TSDB_BENCHMARK_OUTPUT_DIR)/block.prof > $(TSDB_BENCHMARK_OUTPUT_DIR)/blockprof.svg
 	@$(GO) tool pprof -svg $(PROMTOOL) $(TSDB_BENCHMARK_OUTPUT_DIR)/mutex.prof > $(TSDB_BENCHMARK_OUTPUT_DIR)/mutexprof.svg
-
-.PHONY: clean
-clean: assets-decompress
