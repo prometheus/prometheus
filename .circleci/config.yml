@@ -114,7 +114,6 @@ jobs:
     steps:
       - checkout
       - run: ./scripts/sync_repo_files.sh
-      - run: ./scripts/sync_codemirror.sh
 
 workflows:
   version: 2
