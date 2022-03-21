@@ -40,6 +40,11 @@ type Node interface {
 	// as part of a valid query.
 	String() string
 
+	// Pretty returns the prettified representation of the node.
+	// It uses the level information to determine at which level/depth the current
+	// node is in the AST and uses this to apply indentation.
+	Pretty(level int) string
+
 	// PositionRange returns the position of the AST Node in the query string.
 	PositionRange() PositionRange
 }
