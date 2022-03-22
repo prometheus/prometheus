@@ -30,6 +30,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
@@ -70,10 +71,17 @@ var (
 		AuthenticationMethod: authMethodOAuth,
 		HTTPClientConfig:     config_util.DefaultHTTPClientConfig,
 	}
+
+	failuresCount = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "prometheus_sd_azure_failures_total",
+			Help: "Number of Azure service discovery refresh failures.",
+		})
 )
 
 func init() {
 	discovery.RegisterConfig(&SDConfig{})
+	prometheus.MustRegister(failuresCount)
 }
 
 // SDConfig is the configuration for Azure based service discovery.
@@ -317,8 +325,8 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	var wg sync.WaitGroup
 	wg.Add(len(machines))
 	ch := make(chan target, len(machines))
-	for i, vm := range machines {
-		go func(i int, vm virtualMachine) {
+	for _, vm := range machines {
+		go func(vm virtualMachine) {
 			defer wg.Done()
 			r, err := newAzureResourceFromID(vm.ID, d.logger)
 			if err != nil {
@@ -348,12 +356,15 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 
 			// Get the IP address information via separate call to the network provider.
 			for _, nicID := range vm.NetworkInterfaces {
-				networkInterface, err := client.getNetworkInterfaceByID(ctx, nicID)
-				if err != nil {
-					level.Error(d.logger).Log("msg", "Unable to get network interface", "name", nicID, "err", err)
-					ch <- target{labelSet: nil, err: err}
-					// Get out of this routine because we cannot continue without a network interface.
-					return
+				networkInterface, detailedErr := client.getNetworkInterfaceByID(ctx, nicID)
+				if detailedErr != nil {
+					if detailedErr.StatusCode == 404 {
+						level.Warn(d.logger).Log("msg", "Network interface does not exist", "name", nicID, "err", err)
+					} else {
+						ch <- target{labelSet: nil, err: detailedErr}
+						// Get out of this routine because we cannot continue without a network interface.
+						return
+					}
 				}
 
 				if networkInterface.InterfacePropertiesFormat == nil {
@@ -391,7 +402,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 					}
 				}
 			}
-		}(i, vm)
+		}(vm)
 	}
 
 	wg.Wait()
@@ -400,6 +411,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	var tg targetgroup.Group
 	for tgt := range ch {
 		if tgt.err != nil {
+			failuresCount.Inc()
 			return nil, errors.Wrap(tgt.err, "unable to complete Azure service discovery")
 		}
 		if tgt.labelSet != nil {
@@ -539,7 +551,7 @@ func mapFromVMScaleSetVM(vm compute.VirtualMachineScaleSetVM, scaleSetName strin
 	}
 }
 
-func (client *azureClient) getNetworkInterfaceByID(ctx context.Context, networkInterfaceID string) (*network.Interface, error) {
+func (client *azureClient) getNetworkInterfaceByID(ctx context.Context, networkInterfaceID string) (*network.Interface, *autorest.DetailedError) {
 	result := network.Interface{}
 	queryParameters := map[string]interface{}{
 		"api-version": "2018-10-01",
@@ -553,17 +565,20 @@ func (client *azureClient) getNetworkInterfaceByID(ctx context.Context, networkI
 		autorest.WithUserAgent(userAgent))
 	req, err := preparer.Prepare((&http.Request{}).WithContext(ctx))
 	if err != nil {
-		return nil, autorest.NewErrorWithError(err, "network.InterfacesClient", "Get", nil, "Failure preparing request")
+		detailError := autorest.NewErrorWithError(err, "network.InterfacesClient", "Get", nil, "Failure preparing request")
+		return nil, &detailError
 	}
 
 	resp, err := client.nic.GetSender(req)
 	if err != nil {
-		return nil, autorest.NewErrorWithError(err, "network.InterfacesClient", "Get", resp, "Failure sending request")
+		detailError := autorest.NewErrorWithError(err, "network.InterfacesClient", "Get", resp, "Failure sending request")
+		return nil, &detailError
 	}
 
 	result, err = client.nic.GetResponder(resp)
 	if err != nil {
-		return nil, autorest.NewErrorWithError(err, "network.InterfacesClient", "Get", resp, "Failure responding to request")
+		detailError := autorest.NewErrorWithError(err, "network.InterfacesClient", "Get", resp, "Failure responding to request")
+		return nil, &detailError
 	}
 
 	return &result, nil
