@@ -291,11 +291,13 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 
 	client, err := createAzureClient(*d.cfg)
 	if err != nil {
+		failuresCount.Inc()
 		return nil, errors.Wrap(err, "could not create Azure client")
 	}
 
 	machines, err := client.getVMs(ctx)
 	if err != nil {
+		failuresCount.Inc()
 		return nil, errors.Wrap(err, "could not get virtual machines")
 	}
 
@@ -304,12 +306,14 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	// Load the vms managed by scale sets.
 	scaleSets, err := client.getScaleSets(ctx)
 	if err != nil {
+		failuresCount.Inc()
 		return nil, errors.Wrap(err, "could not get virtual machine scale sets")
 	}
 
 	for _, scaleSet := range scaleSets {
 		scaleSetVms, err := client.getScaleSetVMs(ctx, scaleSet)
 		if err != nil {
+			failuresCount.Inc()
 			return nil, errors.Wrap(err, "could not get virtual machine scale set vms")
 		}
 		machines = append(machines, scaleSetVms...)
