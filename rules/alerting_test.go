@@ -531,7 +531,7 @@ func TestQueryForStateSeries(t *testing.T) {
 	}
 
 	tests := []testInput{
-		// test for empty series
+		// Test for empty series.
 		{
 			selectMockFunction: func(sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 				return storage.EmptySeriesSet()
@@ -539,7 +539,7 @@ func TestQueryForStateSeries(t *testing.T) {
 			expectedSeries: nil,
 			expectedError:  nil,
 		},
-		// test for error series
+		// Test for error series.
 		{
 			selectMockFunction: func(sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 				return storage.ErrSeriesSet(testError)
@@ -547,7 +547,7 @@ func TestQueryForStateSeries(t *testing.T) {
 			expectedSeries: nil,
 			expectedError:  testError,
 		},
-		// test for mock series
+		// Test for mock series.
 		{
 			selectMockFunction: func(sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 				return storage.TestSeriesSet(storage.MockSeries(

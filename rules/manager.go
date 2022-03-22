@@ -268,6 +268,8 @@ type Group struct {
 	ruleGroupPostProcessFunc RuleGroupPostProcessFuncType
 }
 
+// This function will be used before each rule group evaluation if not nil.
+// Use this function type if the rule group post processing is needed.
 type RuleGroupPostProcessFuncType func(g *Group, log log.Logger) error
 
 type GroupOptions struct {

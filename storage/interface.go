@@ -82,7 +82,7 @@ type Queryable interface {
 	Querier(ctx context.Context, mint, maxt int64) (Querier, error)
 }
 
-// A MockQueryable is used for testing purposes so that a mock Querier can be used
+// A MockQueryable is used for testing purposes so that a mock Querier can be used.
 type MockQueryable struct {
 	MockQuerier Querier
 }
@@ -101,7 +101,7 @@ type Querier interface {
 	Select(sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) SeriesSet
 }
 
-// MockQuerier is used for test purposes to mock the selected series that is returned
+// MockQuerier is used for test purposes to mock the selected series that is returned.
 type MockQuerier struct {
 	SelectMockFunction func(sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) SeriesSet
 }
@@ -340,7 +340,7 @@ func (s mockSeries) Iterator() chunkenc.Iterator {
 	return chunkenc.MockSeriesIterator(s.timestamps, s.values)
 }
 
-// MockSeries returns a series with custom timestamps, values and labelSet
+// MockSeries returns a series with custom timestamps, values and labelSet.
 func MockSeries(timestamps []int64, values []float64, labelSet []string) Series {
 	return mockSeries{
 		timestamps: timestamps,

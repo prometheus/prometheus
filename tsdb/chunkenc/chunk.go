@@ -89,7 +89,7 @@ type Iterator interface {
 	Err() error
 }
 
-// MockSeriesIterator returns an iterator for a mock series with custom timeStamps and values
+// MockSeriesIterator returns an iterator for a mock series with custom timeStamps and values.
 func MockSeriesIterator(timestamps []int64, values []float64) Iterator {
 	return &mockSeriesIterator{
 		timeStamps: timestamps,
