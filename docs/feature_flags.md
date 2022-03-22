@@ -88,3 +88,13 @@ statistics. Currently this is limited to totalQueryableSamples.
 
 When disabled in either the engine or the query, per-step statistics are not
 computed at all.
+
+## Service Discovery Plugins
+
+`--enable-feature=plugins`
+
+When enabled, plugins can be loaded using `--plugin=my-plugin.so`.
+Plugins provides extra service discoveries to your Prometheus instance.
+
+When disabled in either the engine or the query, per-step statistics are not
+computed at all.

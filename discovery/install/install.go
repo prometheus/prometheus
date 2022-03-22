@@ -17,7 +17,6 @@ package install
 
 import (
 	_ "github.com/prometheus/prometheus/discovery/aws"          // register aws
-	_ "github.com/prometheus/prometheus/discovery/azure"        // register azure
 	_ "github.com/prometheus/prometheus/discovery/consul"       // register consul
 	_ "github.com/prometheus/prometheus/discovery/digitalocean" // register digitalocean
 	_ "github.com/prometheus/prometheus/discovery/dns"          // register dns

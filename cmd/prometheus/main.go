@@ -16,6 +16,9 @@ package main
 
 import (
 	"context"
+	"crypto"
+	_ "embed"
+	"encoding/base64"
 	"fmt"
 	"math"
 	"math/bits"
@@ -26,6 +29,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"plugin"
 	"runtime"
 	"strings"
 	"sync"
@@ -46,6 +50,8 @@ import (
 	"github.com/prometheus/common/version"
 	toolkit_web "github.com/prometheus/exporter-toolkit/web"
 	toolkit_webflag "github.com/prometheus/exporter-toolkit/web/kingpinflag"
+	"github.com/sigstore/sigstore/pkg/cryptoutils"
+	"github.com/sigstore/sigstore/pkg/signature"
 	"go.uber.org/atomic"
 	kingpin "gopkg.in/alecthomas/kingpin.v2"
 	klog "k8s.io/klog"
@@ -91,6 +97,9 @@ var (
 
 	agentMode                       bool
 	agentOnlyFlags, serverOnlyFlags []string
+
+	//go:embed cosign.pub
+	cosignKey []byte
 )
 
 func init() {
@@ -150,6 +159,9 @@ type flagConfig struct {
 	enableNewSDManager         bool
 	enablePerStepStats         bool
 
+	enablePlugins bool
+	plugins       []string
+
 	prometheusURL   string
 	corsRegexString string
 
@@ -186,6 +198,9 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 			case "promql-per-step-stats":
 				c.enablePerStepStats = true
 				level.Info(logger).Log("msg", "Experimental per-step statistics reporting")
+			case "plugins":
+				c.enablePlugins = true
+				level.Info(logger).Log("msg", "Experimental Service Discovery plugins")
 			case "":
 				continue
 			case "promql-at-modifier", "promql-negative-offset":
@@ -237,6 +252,8 @@ func main() {
 	a.Flag("web.read-timeout",
 		"Maximum duration before timing out read of the request, and closing idle connections.").
 		Default("5m").SetValue(&cfg.webTimeout)
+
+	a.Flag("plugin", "Path to a plugin to load.").StringsVar(&cfg.plugins)
 
 	a.Flag("web.max-connections", "Maximum number of simultaneous connections.").
 		Default("512").IntVar(&cfg.web.MaxConnections)
@@ -399,6 +416,47 @@ func main() {
 	if err := cfg.setFeatureListOptions(logger); err != nil {
 		fmt.Fprintln(os.Stderr, errors.Wrapf(err, "Error parsing feature list"))
 		os.Exit(1)
+	}
+
+	if cfg.enablePlugins {
+		pubKey, err := cryptoutils.UnmarshalPEMToPublicKey(cosignKey)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, errors.Wrapf(err, "Error loading key"))
+			os.Exit(1)
+		}
+		verifier, err := signature.LoadVerifier(pubKey, crypto.SHA256)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, errors.Wrapf(err, "Error loading verifier"))
+			os.Exit(1)
+		}
+
+		for _, f := range cfg.plugins {
+			sigFile, err := os.Open(f + ".cosign")
+			if err != nil {
+				fmt.Fprintln(os.Stderr, errors.Wrapf(err, "Error loading signature"))
+				os.Exit(1)
+			}
+			soFile, err := os.Open(f)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, errors.Wrapf(err, "Error loading plugin"))
+				os.Exit(1)
+			}
+			err = verifier.VerifySignature(base64.NewDecoder(base64.StdEncoding, sigFile), soFile)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, errors.Wrapf(err, "Error verifying signature"))
+				os.Exit(1)
+			}
+			sigFile.Close()
+			soFile.Close()
+			level.Warn(logger).Log("msg", "Plugin Signature is valid.", "plugin", f)
+
+			_, err = plugin.Open(f)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, errors.Wrapf(err, fmt.Sprintf("Error opening plugin %s", f)))
+				os.Exit(1)
+			}
+			level.Warn(logger).Log("msg", "Plugin loaded.", "plugin", f)
+		}
 	}
 
 	if agentMode && len(serverOnlyFlags) > 0 {
