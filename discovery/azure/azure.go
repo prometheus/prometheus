@@ -366,9 +366,9 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 						level.Warn(d.logger).Log("msg", "Network interface does not exist", "name", nicID, "err", err)
 					} else {
 						ch <- target{labelSet: nil, err: detailedErr}
-						// Get out of this routine because we cannot continue without a network interface.
-						return
 					}
+					// Get out of this routine because we cannot continue without a network interface.
+					return
 				}
 
 				if networkInterface.InterfacePropertiesFormat == nil {
