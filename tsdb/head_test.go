@@ -35,6 +35,7 @@ import (
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/exemplar"
@@ -52,8 +53,7 @@ import (
 )
 
 func newTestHead(t testing.TB, chunkRange int64, compressWAL bool) (*Head, *wal.WAL) {
-	dir, err := ioutil.TempDir("", "test")
-	require.NoError(t, err)
+	dir := t.TempDir()
 	wlog, err := wal.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, compressWAL)
 	require.NoError(t, err)
 
@@ -68,9 +68,6 @@ func newTestHead(t testing.TB, chunkRange int64, compressWAL bool) (*Head, *wal.
 
 	require.NoError(t, h.chunkDiskMapper.IterateAllChunks(func(_ chunks.HeadSeriesRef, _ chunks.ChunkDiskMapperRef, _, _ int64, _ uint16) error { return nil }))
 
-	t.Cleanup(func() {
-		require.NoError(t, os.RemoveAll(dir))
-	})
 	return h, wlog
 }
 
@@ -184,11 +181,7 @@ func BenchmarkLoadWAL(b *testing.B) {
 			// fmt.Println("exemplars per series: ", exemplarsPerSeries)
 			b.Run(fmt.Sprintf("batches=%d,seriesPerBatch=%d,samplesPerSeries=%d,exemplarsPerSeries=%d,mmappedChunkT=%d", c.batches, c.seriesPerBatch, c.samplesPerSeries, exemplarsPerSeries, c.mmappedChunkT),
 				func(b *testing.B) {
-					dir, err := ioutil.TempDir("", "test_load_wal")
-					require.NoError(b, err)
-					defer func() {
-						require.NoError(b, os.RemoveAll(dir))
-					}()
+					dir := b.TempDir()
 
 					w, err := wal.New(nil, nil, dir, false)
 					require.NoError(b, err)
@@ -226,7 +219,7 @@ func BenchmarkLoadWAL(b *testing.B) {
 
 					// Write mmapped chunks.
 					if c.mmappedChunkT != 0 {
-						chunkDiskMapper, err := chunks.NewChunkDiskMapper(mmappedChunksDir(dir), chunkenc.NewPool(), chunks.DefaultWriteBufferSize)
+						chunkDiskMapper, err := chunks.NewChunkDiskMapper(nil, mmappedChunksDir(dir), chunkenc.NewPool(), chunks.DefaultWriteBufferSize, chunks.DefaultWriteQueueSize)
 						require.NoError(b, err)
 						for k := 0; k < c.batches*c.seriesPerBatch; k++ {
 							// Create one mmapped chunk per series, with one sample at the given time.
@@ -270,6 +263,195 @@ func BenchmarkLoadWAL(b *testing.B) {
 				})
 		}
 	}
+}
+
+// TestHead_HighConcurrencyReadAndWrite generates 1000 series with a step of 15s and fills a whole block with samples,
+// this means in total it generates 4000 chunks because with a step of 15s there are 4 chunks per block per series.
+// While appending the samples to the head it concurrently queries them from multiple go routines and verifies that the
+// returned results are correct.
+func TestHead_HighConcurrencyReadAndWrite(t *testing.T) {
+	head, _ := newTestHead(t, DefaultBlockDuration, false)
+	defer func() {
+		require.NoError(t, head.Close())
+	}()
+
+	seriesCnt := 1000
+	readConcurrency := 2
+	writeConcurrency := 10
+	startTs := uint64(DefaultBlockDuration) // start at the second block relative to the unix epoch.
+	qryRange := uint64(5 * time.Minute.Milliseconds())
+	step := uint64(15 * time.Second / time.Millisecond)
+	endTs := startTs + uint64(DefaultBlockDuration)
+
+	labelSets := make([]labels.Labels, seriesCnt)
+	for i := 0; i < seriesCnt; i++ {
+		labelSets[i] = labels.FromStrings("seriesId", strconv.Itoa(i))
+	}
+
+	head.Init(0)
+
+	g, ctx := errgroup.WithContext(context.Background())
+	whileNotCanceled := func(f func() (bool, error)) error {
+		for ctx.Err() == nil {
+			cont, err := f()
+			if err != nil {
+				return err
+			}
+			if !cont {
+				return nil
+			}
+		}
+		return nil
+	}
+
+	// Create one channel for each write worker, the channels will be used by the coordinator
+	// go routine to coordinate which timestamps each write worker has to write.
+	writerTsCh := make([]chan uint64, writeConcurrency)
+	for writerTsChIdx := range writerTsCh {
+		writerTsCh[writerTsChIdx] = make(chan uint64)
+	}
+
+	// workerReadyWg is used to synchronize the start of the test,
+	// we only start the test once all workers signal that they're ready.
+	var workerReadyWg sync.WaitGroup
+	workerReadyWg.Add(writeConcurrency + readConcurrency)
+
+	// Start the write workers.
+	for wid := 0; wid < writeConcurrency; wid++ {
+		// Create copy of workerID to be used by worker routine.
+		workerID := wid
+
+		g.Go(func() error {
+			// The label sets which this worker will write.
+			workerLabelSets := labelSets[(seriesCnt/writeConcurrency)*workerID : (seriesCnt/writeConcurrency)*(workerID+1)]
+
+			// Signal that this worker is ready.
+			workerReadyWg.Done()
+
+			return whileNotCanceled(func() (bool, error) {
+				ts, ok := <-writerTsCh[workerID]
+				if !ok {
+					return false, nil
+				}
+
+				app := head.Appender(ctx)
+				for i := 0; i < len(workerLabelSets); i++ {
+					// We also use the timestamp as the sample value.
+					_, err := app.Append(0, workerLabelSets[i], int64(ts), float64(ts))
+					if err != nil {
+						return false, fmt.Errorf("Error when appending to head: %w", err)
+					}
+				}
+
+				return true, app.Commit()
+			})
+		})
+	}
+
+	// queryHead is a helper to query the head for a given time range and labelset.
+	queryHead := func(mint, maxt uint64, label labels.Label) (map[string][]tsdbutil.Sample, error) {
+		q, err := NewBlockQuerier(head, int64(mint), int64(maxt))
+		if err != nil {
+			return nil, err
+		}
+		return query(t, q, labels.MustNewMatcher(labels.MatchEqual, label.Name, label.Value)), nil
+	}
+
+	// readerTsCh will be used by the coordinator go routine to coordinate which timestamps the reader should read.
+	readerTsCh := make(chan uint64)
+
+	// Start the read workers.
+	for wid := 0; wid < readConcurrency; wid++ {
+		// Create copy of threadID to be used by worker routine.
+		workerID := wid
+
+		g.Go(func() error {
+			querySeriesRef := (seriesCnt / readConcurrency) * workerID
+
+			// Signal that this worker is ready.
+			workerReadyWg.Done()
+
+			return whileNotCanceled(func() (bool, error) {
+				ts, ok := <-readerTsCh
+				if !ok {
+					return false, nil
+				}
+
+				querySeriesRef = (querySeriesRef + 1) % seriesCnt
+				lbls := labelSets[querySeriesRef]
+				samples, err := queryHead(ts-qryRange, ts, lbls[0])
+				if err != nil {
+					return false, err
+				}
+
+				if len(samples) != 1 {
+					return false, fmt.Errorf("expected 1 series, got %d", len(samples))
+				}
+
+				series := lbls.String()
+				expectSampleCnt := qryRange/step + 1
+				if expectSampleCnt != uint64(len(samples[series])) {
+					return false, fmt.Errorf("expected %d samples, got %d", expectSampleCnt, len(samples[series]))
+				}
+
+				for sampleIdx, sample := range samples[series] {
+					expectedValue := ts - qryRange + (uint64(sampleIdx) * step)
+					if sample.T() != int64(expectedValue) {
+						return false, fmt.Errorf("expected sample %d to have ts %d, got %d", sampleIdx, expectedValue, sample.T())
+					}
+					if sample.V() != float64(expectedValue) {
+						return false, fmt.Errorf("expected sample %d to have value %d, got %f", sampleIdx, expectedValue, sample.V())
+					}
+				}
+
+				return true, nil
+			})
+		})
+	}
+
+	// Start the coordinator go routine.
+	g.Go(func() error {
+		currTs := startTs
+
+		defer func() {
+			// End of the test, close all channels to stop the workers.
+			for _, ch := range writerTsCh {
+				close(ch)
+			}
+			close(readerTsCh)
+		}()
+
+		// Wait until all workers are ready to start the test.
+		workerReadyWg.Wait()
+		return whileNotCanceled(func() (bool, error) {
+			// Send the current timestamp to each of the writers.
+			for _, ch := range writerTsCh {
+				select {
+				case ch <- currTs:
+				case <-ctx.Done():
+					return false, nil
+				}
+			}
+
+			// Once data for at least <qryRange> has been ingested, send the current timestamp to the readers.
+			if currTs > startTs+qryRange {
+				select {
+				case readerTsCh <- currTs - step:
+				case <-ctx.Done():
+					return false, nil
+				}
+			}
+
+			currTs += step
+			if currTs > endTs {
+				return false, nil
+			}
+
+			return true, nil
+		})
+	})
+
+	require.NoError(t, g.Wait())
 }
 
 func TestHead_ReadWAL(t *testing.T) {
@@ -536,13 +718,9 @@ func TestHead_Truncate(t *testing.T) {
 // Validate various behaviors brought on by firstChunkID accounting for
 // garbage collected chunks.
 func TestMemSeries_truncateChunks(t *testing.T) {
-	dir, err := ioutil.TempDir("", "truncate_chunks")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 	// This is usually taken from the Head, but passing manually here.
-	chunkDiskMapper, err := chunks.NewChunkDiskMapper(dir, chunkenc.NewPool(), chunks.DefaultWriteBufferSize)
+	chunkDiskMapper, err := chunks.NewChunkDiskMapper(nil, dir, chunkenc.NewPool(), chunks.DefaultWriteBufferSize, chunks.DefaultWriteQueueSize)
 	require.NoError(t, err)
 	defer func() {
 		require.NoError(t, chunkDiskMapper.Close())
@@ -1080,13 +1258,9 @@ func TestComputeChunkEndTime(t *testing.T) {
 }
 
 func TestMemSeries_append(t *testing.T) {
-	dir, err := ioutil.TempDir("", "append")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 	// This is usually taken from the Head, but passing manually here.
-	chunkDiskMapper, err := chunks.NewChunkDiskMapper(dir, chunkenc.NewPool(), chunks.DefaultWriteBufferSize)
+	chunkDiskMapper, err := chunks.NewChunkDiskMapper(nil, dir, chunkenc.NewPool(), chunks.DefaultWriteBufferSize, chunks.DefaultWriteQueueSize)
 	require.NoError(t, err)
 	defer func() {
 		require.NoError(t, chunkDiskMapper.Close())
@@ -1368,11 +1542,7 @@ func TestWalRepair_DecodingError(t *testing.T) {
 	} {
 		for _, compress := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s,compress=%t", name, compress), func(t *testing.T) {
-				dir, err := ioutil.TempDir("", "wal_repair")
-				require.NoError(t, err)
-				defer func() {
-					require.NoError(t, os.RemoveAll(dir))
-				}()
+				dir := t.TempDir()
 
 				// Fill the wal and corrupt it.
 				{
@@ -1432,11 +1602,7 @@ func TestWalRepair_DecodingError(t *testing.T) {
 }
 
 func TestHeadReadWriterRepair(t *testing.T) {
-	dir, err := ioutil.TempDir("", "head_read_writer_repair")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 
 	const chunkRange = 1000
 
@@ -1464,14 +1630,16 @@ func TestHeadReadWriterRepair(t *testing.T) {
 			ok, chunkCreated = s.append(int64(i*chunkRange)+chunkRange-1, float64(i*chunkRange), 0, h.chunkDiskMapper)
 			require.True(t, ok, "series append failed")
 			require.False(t, chunkCreated, "chunk was created")
-			require.NoError(t, h.chunkDiskMapper.CutNewFile())
+			h.chunkDiskMapper.CutNewFile()
 		}
 		require.NoError(t, h.Close())
 
-		// Verify that there are 7 segment files.
+		// Verify that there are 6 segment files.
+		// It should only be 6 because the last call to .CutNewFile() won't
+		// take effect without another chunk being written.
 		files, err := ioutil.ReadDir(mmappedChunksDir(dir))
 		require.NoError(t, err)
-		require.Equal(t, 7, len(files))
+		require.Equal(t, 6, len(files))
 
 		// Corrupt the 4th file by writing a random byte to series ref.
 		f, err := os.OpenFile(filepath.Join(mmappedChunksDir(dir), files[3].Name()), os.O_WRONLY, 0o666)
@@ -1840,11 +2008,7 @@ func TestIsolationWithoutAdd(t *testing.T) {
 }
 
 func TestOutOfOrderSamplesMetric(t *testing.T) {
-	dir, err := ioutil.TempDir("", "test")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 
 	db, err := Open(dir, nil, nil, DefaultOptions(), nil)
 	require.NoError(t, err)
@@ -2266,13 +2430,9 @@ func BenchmarkHeadLabelValuesWithMatchers(b *testing.B) {
 }
 
 func TestMemSafeIteratorSeekIntoBuffer(t *testing.T) {
-	dir, err := ioutil.TempDir("", "iterator_seek")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 	// This is usually taken from the Head, but passing manually here.
-	chunkDiskMapper, err := chunks.NewChunkDiskMapper(dir, chunkenc.NewPool(), chunks.DefaultWriteBufferSize)
+	chunkDiskMapper, err := chunks.NewChunkDiskMapper(nil, dir, chunkenc.NewPool(), chunks.DefaultWriteBufferSize, chunks.DefaultWriteQueueSize)
 	require.NoError(t, err)
 	defer func() {
 		require.NoError(t, chunkDiskMapper.Close())
@@ -2905,7 +3065,7 @@ func TestSnapshotError(t *testing.T) {
 	}
 	head.tombstones.AddInterval(1, itvs...)
 
-	// Check existance of data.
+	// Check existence of data.
 	require.NotNil(t, head.series.getByHash(lbls.Hash(), lbls))
 	tm, err := head.tombstones.Get(1)
 	require.NoError(t, err)
@@ -3410,4 +3570,138 @@ func TestChunkSnapshotTakenAfterIncompleteSnapshot(t *testing.T) {
 	require.True(t, name != "")
 	require.Equal(t, 0, idx)
 	require.Greater(t, offset, 0)
+}
+
+// Tests https://github.com/prometheus/prometheus/issues/10277.
+func TestMmapPanicAfterMmapReplayCorruption(t *testing.T) {
+	dir := t.TempDir()
+	wlog, err := wal.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, false)
+	require.NoError(t, err)
+
+	opts := DefaultHeadOptions()
+	opts.ChunkRange = DefaultBlockDuration
+	opts.ChunkDirRoot = dir
+	opts.EnableExemplarStorage = true
+	opts.MaxExemplars.Store(config.DefaultExemplarsConfig.MaxExemplars)
+
+	h, err := NewHead(nil, nil, wlog, opts, nil)
+	require.NoError(t, err)
+	require.NoError(t, h.Init(0))
+
+	lastTs := int64(0)
+	var ref storage.SeriesRef
+	lbls := labels.FromStrings("__name__", "testing", "foo", "bar")
+	addChunks := func() {
+		interval := DefaultBlockDuration / (4 * 120)
+		app := h.Appender(context.Background())
+		for i := 0; i < 250; i++ {
+			ref, err = app.Append(ref, lbls, lastTs, float64(lastTs))
+			lastTs += interval
+			if i%10 == 0 {
+				require.NoError(t, app.Commit())
+				app = h.Appender(context.Background())
+			}
+		}
+		require.NoError(t, app.Commit())
+	}
+
+	addChunks()
+
+	require.NoError(t, h.Close())
+	wlog, err = wal.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, false)
+	require.NoError(t, err)
+
+	mmapFilePath := filepath.Join(dir, "chunks_head", "000001")
+	f, err := os.OpenFile(mmapFilePath, os.O_WRONLY, 0o666)
+	require.NoError(t, err)
+	_, err = f.WriteAt([]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}, 17)
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+
+	h, err = NewHead(nil, nil, wlog, opts, nil)
+	require.NoError(t, err)
+	require.NoError(t, h.Init(0))
+
+	addChunks()
+
+	require.NoError(t, h.Close())
+}
+
+// Tests https://github.com/prometheus/prometheus/issues/10277.
+func TestReplayAfterMmapReplayError(t *testing.T) {
+	dir := t.TempDir()
+	var h *Head
+	var err error
+
+	openHead := func() {
+		wlog, err := wal.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, false)
+		require.NoError(t, err)
+
+		opts := DefaultHeadOptions()
+		opts.ChunkRange = DefaultBlockDuration
+		opts.ChunkDirRoot = dir
+		opts.EnableMemorySnapshotOnShutdown = true
+		opts.MaxExemplars.Store(config.DefaultExemplarsConfig.MaxExemplars)
+
+		h, err = NewHead(nil, nil, wlog, opts, nil)
+		require.NoError(t, err)
+		require.NoError(t, h.Init(0))
+	}
+
+	openHead()
+
+	itvl := int64(15 * time.Second / time.Millisecond)
+	lastTs := int64(0)
+	lbls := labels.FromStrings("__name__", "testing", "foo", "bar")
+	var expSamples []tsdbutil.Sample
+	addSamples := func(numSamples int) {
+		app := h.Appender(context.Background())
+		var ref storage.SeriesRef
+		for i := 0; i < numSamples; i++ {
+			ref, err = app.Append(ref, lbls, lastTs, float64(lastTs))
+			expSamples = append(expSamples, sample{t: lastTs, v: float64(lastTs)})
+			require.NoError(t, err)
+			lastTs += itvl
+			if i%10 == 0 {
+				require.NoError(t, app.Commit())
+				app = h.Appender(context.Background())
+			}
+		}
+		require.NoError(t, app.Commit())
+	}
+
+	// Creating multiple m-map files.
+	for i := 0; i < 5; i++ {
+		addSamples(250)
+		require.NoError(t, h.Close())
+		if i != 4 {
+			// Don't open head for the last iteration.
+			openHead()
+		}
+	}
+
+	files, err := ioutil.ReadDir(filepath.Join(dir, "chunks_head"))
+	require.Equal(t, 5, len(files))
+
+	// Corrupt a m-map file.
+	mmapFilePath := filepath.Join(dir, "chunks_head", "000002")
+	f, err := os.OpenFile(mmapFilePath, os.O_WRONLY, 0o666)
+	require.NoError(t, err)
+	_, err = f.WriteAt([]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}, 17)
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+
+	openHead()
+
+	// There should be less m-map files due to corruption.
+	files, err = ioutil.ReadDir(filepath.Join(dir, "chunks_head"))
+	require.Equal(t, 2, len(files))
+
+	// Querying should not panic.
+	q, err := NewBlockQuerier(h, 0, lastTs)
+	require.NoError(t, err)
+	res := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "__name__", "testing"))
+	require.Equal(t, map[string][]tsdbutil.Sample{lbls.String(): expSamples}, res)
+
+	require.NoError(t, h.Close())
 }

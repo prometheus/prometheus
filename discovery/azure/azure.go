@@ -32,6 +32,7 @@ import (
 	"github.com/pkg/errors"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/version"
 
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/refresh"
@@ -58,14 +59,18 @@ const (
 	authMethodManagedIdentity = "ManagedIdentity"
 )
 
-// DefaultSDConfig is the default Azure SD configuration.
-var DefaultSDConfig = SDConfig{
-	Port:                 80,
-	RefreshInterval:      model.Duration(5 * time.Minute),
-	Environment:          azure.PublicCloud.Name,
-	AuthenticationMethod: authMethodOAuth,
-	HTTPClientConfig:     config_util.DefaultHTTPClientConfig,
-}
+var (
+	userAgent = fmt.Sprintf("Prometheus/%s", version.Version)
+
+	// DefaultSDConfig is the default Azure SD configuration.
+	DefaultSDConfig = SDConfig{
+		Port:                 80,
+		RefreshInterval:      model.Duration(5 * time.Minute),
+		Environment:          azure.PublicCloud.Name,
+		AuthenticationMethod: authMethodOAuth,
+		HTTPClientConfig:     config_util.DefaultHTTPClientConfig,
+	}
+)
 
 func init() {
 	discovery.RegisterConfig(&SDConfig{})
@@ -208,24 +213,29 @@ func createAzureClient(cfg SDConfig) (azureClient, error) {
 		return azureClient{}, err
 	}
 	sender := autorest.DecorateSender(client)
+	preparer := autorest.WithUserAgent(userAgent)
 
 	bearerAuthorizer := autorest.NewBearerAuthorizer(spt)
 
 	c.vm = compute.NewVirtualMachinesClientWithBaseURI(resourceManagerEndpoint, cfg.SubscriptionID)
 	c.vm.Authorizer = bearerAuthorizer
 	c.vm.Sender = sender
+	c.vm.RequestInspector = preparer
 
 	c.nic = network.NewInterfacesClientWithBaseURI(resourceManagerEndpoint, cfg.SubscriptionID)
 	c.nic.Authorizer = bearerAuthorizer
 	c.nic.Sender = sender
+	c.nic.RequestInspector = preparer
 
 	c.vmss = compute.NewVirtualMachineScaleSetsClientWithBaseURI(resourceManagerEndpoint, cfg.SubscriptionID)
 	c.vmss.Authorizer = bearerAuthorizer
-	c.vm.Sender = sender
+	c.vmss.Sender = sender
+	c.vmss.RequestInspector = preparer
 
 	c.vmssvm = compute.NewVirtualMachineScaleSetVMsClientWithBaseURI(resourceManagerEndpoint, cfg.SubscriptionID)
 	c.vmssvm.Authorizer = bearerAuthorizer
 	c.vmssvm.Sender = sender
+	c.vmssvm.RequestInspector = preparer
 
 	return c, nil
 }
@@ -361,7 +371,9 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 
 				if *networkInterface.Primary {
 					for _, ip := range *networkInterface.IPConfigurations {
-						if ip.PublicIPAddress != nil && ip.PublicIPAddress.PublicIPAddressPropertiesFormat != nil {
+						// IPAddress is a field defined in PublicIPAddressPropertiesFormat,
+						// therefore we need to validate that both are not nil.
+						if ip.PublicIPAddress != nil && ip.PublicIPAddress.PublicIPAddressPropertiesFormat != nil && ip.PublicIPAddress.IPAddress != nil {
 							labels[azureLabelMachinePublicIP] = model.LabelValue(*ip.PublicIPAddress.IPAddress)
 						}
 						if ip.PrivateIPAddress != nil {
@@ -537,7 +549,8 @@ func (client *azureClient) getNetworkInterfaceByID(ctx context.Context, networkI
 		autorest.AsGet(),
 		autorest.WithBaseURL(client.nic.BaseURI),
 		autorest.WithPath(networkInterfaceID),
-		autorest.WithQueryParameters(queryParameters))
+		autorest.WithQueryParameters(queryParameters),
+		autorest.WithUserAgent(userAgent))
 	req, err := preparer.Prepare((&http.Request{}).WithContext(ctx))
 	if err != nil {
 		return nil, autorest.NewErrorWithError(err, "network.InterfacesClient", "Get", nil, "Failure preparing request")

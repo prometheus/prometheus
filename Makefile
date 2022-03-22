@@ -43,7 +43,7 @@ ui-build-module:
 
 .PHONY: ui-test
 ui-test:
-	cd $(UI_PATH) && npm run test:coverage
+	cd $(UI_PATH) && CI=true npm run test:coverage
 
 .PHONY: ui-lint
 ui-lint:
@@ -51,12 +51,11 @@ ui-lint:
 
 .PHONY: assets
 assets: ui-install ui-build
-	@echo ">> writing assets"
-	# Un-setting GOOS and GOARCH here because the generated Go code is always the same,
-	# but the cached object code is incompatible between architectures and OSes (which
-	# breaks cross-building for different combinations on CI in the same container).
-	cd $(UI_PATH) && GO111MODULE=$(GO111MODULE) GOOS= GOARCH= $(GO) generate -x -v $(GOOPTS)
-	@$(GOFMT) -w ./$(UI_PATH)
+
+.PHONY: assets-compress
+assets-compress:
+	@echo '>> compressing assets'
+	scripts/compress_assets.sh
 
 .PHONY: test
 # If we only want to only test go code we have to change the test target
@@ -80,7 +79,7 @@ tarball: npm_licenses common-tarball
 docker: npm_licenses common-docker
 
 .PHONY: build
-build: assets common-build
+build: assets assets-compress common-build
 
 .PHONY: bench_tsdb
 bench_tsdb: $(PROMU)

@@ -21,13 +21,14 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/regexp"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
@@ -45,10 +46,17 @@ var (
 	}
 	userAgent        = fmt.Sprintf("Prometheus/%s", version.Version)
 	matchContentType = regexp.MustCompile(`^(?i:application\/json(;\s*charset=("utf-8"|utf-8))?)$`)
+
+	failuresCount = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "prometheus_sd_http_failures_total",
+			Help: "Number of HTTP service discovery refresh failures.",
+		})
 )
 
 func init() {
 	discovery.RegisterConfig(&SDConfig{})
+	prometheus.MustRegister(failuresCount)
 }
 
 // SDConfig is the configuration for HTTP based discovery.
@@ -145,6 +153,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 
 	resp, err := d.client.Do(req.WithContext(ctx))
 	if err != nil {
+		failuresCount.Inc()
 		return nil, err
 	}
 	defer func() {
@@ -153,26 +162,31 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	}()
 
 	if resp.StatusCode != http.StatusOK {
+		failuresCount.Inc()
 		return nil, errors.Errorf("server returned HTTP status %s", resp.Status)
 	}
 
 	if !matchContentType.MatchString(strings.TrimSpace(resp.Header.Get("Content-Type"))) {
+		failuresCount.Inc()
 		return nil, errors.Errorf("unsupported content type %q", resp.Header.Get("Content-Type"))
 	}
 
 	b, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
+		failuresCount.Inc()
 		return nil, err
 	}
 
 	var targetGroups []*targetgroup.Group
 
 	if err := json.Unmarshal(b, &targetGroups); err != nil {
+		failuresCount.Inc()
 		return nil, err
 	}
 
 	for i, tg := range targetGroups {
 		if tg == nil {
+			failuresCount.Inc()
 			err = errors.New("nil target group item found")
 			return nil, err
 		}

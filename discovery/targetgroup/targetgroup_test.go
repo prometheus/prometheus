@@ -22,7 +22,7 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-func TestTargetGroupStrictJsonUnmarshal(t *testing.T) {
+func TestTargetGroupStrictJSONUnmarshal(t *testing.T) {
 	tests := []struct {
 		json          string
 		expectedReply error
@@ -56,6 +56,39 @@ func TestTargetGroupStrictJsonUnmarshal(t *testing.T) {
 		actual := tg.UnmarshalJSON([]byte(test.json))
 		require.Equal(t, test.expectedReply, actual)
 		require.Equal(t, test.expectedGroup, tg)
+	}
+}
+
+func TestTargetGroupJSONMarshal(t *testing.T) {
+	tests := []struct {
+		expectedJSON string
+		expectedErr  error
+		group        Group
+	}{
+		{
+			// labels should be omitted if empty.
+			group:        Group{},
+			expectedJSON: `{"targets": []}`,
+			expectedErr:  nil,
+		},
+		{
+			// targets only exposes addresses.
+			group: Group{
+				Targets: []model.LabelSet{
+					{"__address__": "localhost:9090"},
+					{"__address__": "localhost:9091"},
+				},
+				Labels: model.LabelSet{"foo": "bar", "bar": "baz"},
+			},
+			expectedJSON: `{"targets": ["localhost:9090", "localhost:9091"], "labels": {"bar": "baz", "foo": "bar"}}`,
+			expectedErr:  nil,
+		},
+	}
+
+	for _, test := range tests {
+		actual, err := test.group.MarshalJSON()
+		require.Equal(t, test.expectedErr, err)
+		require.JSONEq(t, test.expectedJSON, string(actual))
 	}
 }
 
@@ -143,21 +176,19 @@ func TestTargetGroupYamlUnmarshal(t *testing.T) {
 
 func TestString(t *testing.T) {
 	// String() should return only the source, regardless of other attributes.
-	group1 :=
-		Group{
-			Targets: []model.LabelSet{
-				{"__address__": "localhost:9090"},
-				{"__address__": "localhost:9091"},
-			},
-			Source: "<source>",
-			Labels: model.LabelSet{"foo": "bar", "bar": "baz"},
-		}
-	group2 :=
-		Group{
-			Targets: []model.LabelSet{},
-			Source:  "<source>",
-			Labels:  model.LabelSet{},
-		}
+	group1 := Group{
+		Targets: []model.LabelSet{
+			{"__address__": "localhost:9090"},
+			{"__address__": "localhost:9091"},
+		},
+		Source: "<source>",
+		Labels: model.LabelSet{"foo": "bar", "bar": "baz"},
+	}
+	group2 := Group{
+		Targets: []model.LabelSet{},
+		Source:  "<source>",
+		Labels:  model.LabelSet{},
+	}
 	require.Equal(t, "<source>", group1.String())
 	require.Equal(t, "<source>", group2.String())
 	require.Equal(t, group1.String(), group2.String())

@@ -19,12 +19,12 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"regexp"
 	"testing"
 	"time"
 
 	"github.com/alecthomas/units"
 	"github.com/go-kit/log"
+	"github.com/grafana/regexp"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
@@ -130,11 +130,12 @@ var expectedConf = &Config{
 
 	RemoteReadConfigs: []*RemoteReadConfig{
 		{
-			URL:              mustParseURL("http://remote1/read"),
-			RemoteTimeout:    model.Duration(1 * time.Minute),
-			ReadRecent:       true,
-			Name:             "default",
-			HTTPClientConfig: config.DefaultHTTPClientConfig,
+			URL:                  mustParseURL("http://remote1/read"),
+			RemoteTimeout:        model.Duration(1 * time.Minute),
+			ReadRecent:           true,
+			Name:                 "default",
+			HTTPClientConfig:     config.DefaultHTTPClientConfig,
+			FilterExternalLabels: true,
 		},
 		{
 			URL:              mustParseURL("http://remote3/read"),
@@ -149,6 +150,7 @@ var expectedConf = &Config{
 				},
 				FollowRedirects: true,
 			},
+			FilterExternalLabels: true,
 		},
 	},
 
@@ -985,6 +987,19 @@ var expectedConf = &Config{
 			},
 		},
 	},
+	TracingConfig: TracingConfig{
+		Endpoint:    "localhost:4317",
+		ClientType:  TracingClientGRPC,
+		Insecure:    false,
+		Compression: "gzip",
+		Timeout:     model.Duration(5 * time.Second),
+		Headers:     map[string]string{"foo": "bar"},
+		TLSConfig: config.TLSConfig{
+			CertFile:           "testdata/valid_cert_file",
+			KeyFile:            "testdata/valid_key_file",
+			InsecureSkipVerify: true,
+		},
+	},
 }
 
 func TestYAMLRoundtrip(t *testing.T) {
@@ -1180,6 +1195,14 @@ var expectedErrors = []struct {
 	{
 		filename: "kubernetes_http_config_without_api_server.bad.yml",
 		errMsg:   "to use custom HTTP client configuration please provide the 'api_server' URL explicitly",
+	},
+	{
+		filename: "kubernetes_kubeconfig_with_own_namespace.bad.yml",
+		errMsg:   "cannot use 'kubeconfig_file' and 'namespaces.own_namespace' simultaneously",
+	},
+	{
+		filename: "kubernetes_api_server_with_own_namespace.bad.yml",
+		errMsg:   "cannot use 'api_server' and 'namespaces.own_namespace' simultaneously",
 	},
 	{
 		filename: "kubernetes_kubeconfig_with_apiserver.bad.yml",
@@ -1434,6 +1457,22 @@ var expectedErrors = []struct {
 		errMsg:   "relabel action cannot be empty",
 	},
 	{
+		filename: "tracing_missing_endpoint.bad.yml",
+		errMsg:   "tracing endpoint must be set",
+	},
+	{
+		filename: "tracing_invalid_header.bad.yml",
+		errMsg:   "x-prometheus-remote-write-version is a reserved header. It must not be changed",
+	},
+	{
+		filename: "tracing_invalid_authorization_header.bad.yml",
+		errMsg:   "authorization header configuration is not yet supported",
+	},
+	{
+		filename: "tracing_invalid_compression.bad.yml",
+		errMsg:   "invalid compression type foo provided, valid options: gzip",
+	},
+	{
 		filename: "uyuni_no_server.bad.yml",
 		errMsg:   "Uyuni SD configuration requires server host",
 	},
@@ -1480,12 +1519,16 @@ func TestExpandExternalLabels(t *testing.T) {
 	require.Equal(t, labels.Label{Name: "bar", Value: "foo"}, c.GlobalConfig.ExternalLabels[0])
 	require.Equal(t, labels.Label{Name: "baz", Value: "foo${TEST}bar"}, c.GlobalConfig.ExternalLabels[1])
 	require.Equal(t, labels.Label{Name: "foo", Value: "${TEST}"}, c.GlobalConfig.ExternalLabels[2])
+	require.Equal(t, labels.Label{Name: "qux", Value: "foo$${TEST}"}, c.GlobalConfig.ExternalLabels[3])
+	require.Equal(t, labels.Label{Name: "xyz", Value: "foo$$bar"}, c.GlobalConfig.ExternalLabels[4])
 
 	c, err = LoadFile("testdata/external_labels.good.yml", false, true, log.NewNopLogger())
 	require.NoError(t, err)
 	require.Equal(t, labels.Label{Name: "bar", Value: "foo"}, c.GlobalConfig.ExternalLabels[0])
 	require.Equal(t, labels.Label{Name: "baz", Value: "foobar"}, c.GlobalConfig.ExternalLabels[1])
 	require.Equal(t, labels.Label{Name: "foo", Value: ""}, c.GlobalConfig.ExternalLabels[2])
+	require.Equal(t, labels.Label{Name: "qux", Value: "foo${TEST}"}, c.GlobalConfig.ExternalLabels[3])
+	require.Equal(t, labels.Label{Name: "xyz", Value: "foo$bar"}, c.GlobalConfig.ExternalLabels[4])
 
 	os.Setenv("TEST", "TestValue")
 	c, err = LoadFile("testdata/external_labels.good.yml", false, true, log.NewNopLogger())
@@ -1493,6 +1536,8 @@ func TestExpandExternalLabels(t *testing.T) {
 	require.Equal(t, labels.Label{Name: "bar", Value: "foo"}, c.GlobalConfig.ExternalLabels[0])
 	require.Equal(t, labels.Label{Name: "baz", Value: "fooTestValuebar"}, c.GlobalConfig.ExternalLabels[1])
 	require.Equal(t, labels.Label{Name: "foo", Value: "TestValue"}, c.GlobalConfig.ExternalLabels[2])
+	require.Equal(t, labels.Label{Name: "qux", Value: "foo${TEST}"}, c.GlobalConfig.ExternalLabels[3])
+	require.Equal(t, labels.Label{Name: "xyz", Value: "foo$bar"}, c.GlobalConfig.ExternalLabels[4])
 }
 
 func TestEmptyGlobalBlock(t *testing.T) {

@@ -39,11 +39,7 @@ import (
 )
 
 func TestSegmentWAL_cut(t *testing.T) {
-	tmpdir, err := ioutil.TempDir("", "test_wal_cut")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(tmpdir))
-	}()
+	tmpdir := t.TempDir()
 
 	// This calls cut() implicitly the first time without a previous tail.
 	w, err := OpenSegmentWAL(tmpdir, nil, 0, nil)
@@ -89,11 +85,7 @@ func TestSegmentWAL_Truncate(t *testing.T) {
 	series, err := labels.ReadLabels(filepath.Join("testdata", "20kseries.json"), numMetrics)
 	require.NoError(t, err)
 
-	dir, err := ioutil.TempDir("", "test_wal_log_truncate")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 
 	w, err := OpenSegmentWAL(dir, nil, 0, nil)
 	require.NoError(t, err)
@@ -172,11 +164,7 @@ func TestSegmentWAL_Log_Restore(t *testing.T) {
 	series, err := labels.ReadLabels(filepath.Join("testdata", "20kseries.json"), numMetrics)
 	require.NoError(t, err)
 
-	dir, err := ioutil.TempDir("", "test_wal_log_restore")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 
 	var (
 		recordedSeries  [][]record.RefSeries
@@ -281,11 +269,7 @@ func TestSegmentWAL_Log_Restore(t *testing.T) {
 }
 
 func TestWALRestoreCorrupted_invalidSegment(t *testing.T) {
-	dir, err := ioutil.TempDir("", "test_wal_log_restore")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 
 	wal, err := OpenSegmentWAL(dir, nil, 0, nil)
 	require.NoError(t, err)
@@ -386,11 +370,7 @@ func TestWALRestoreCorrupted(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			// Generate testing data. It does not make semantic sense but
 			// for the purpose of this test.
-			dir, err := ioutil.TempDir("", "test_corrupted")
-			require.NoError(t, err)
-			defer func() {
-				require.NoError(t, os.RemoveAll(dir))
-			}()
+			dir := t.TempDir()
 
 			w, err := OpenSegmentWAL(dir, nil, 0, nil)
 			require.NoError(t, err)
@@ -466,11 +446,7 @@ func TestWALRestoreCorrupted(t *testing.T) {
 func TestMigrateWAL_Empty(t *testing.T) {
 	// The migration procedure must properly deal with a zero-length segment,
 	// which is valid in the new format.
-	dir, err := ioutil.TempDir("", "walmigrate")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 
 	wdir := path.Join(dir, "wal")
 
@@ -483,11 +459,7 @@ func TestMigrateWAL_Empty(t *testing.T) {
 }
 
 func TestMigrateWAL_Fuzz(t *testing.T) {
-	dir, err := ioutil.TempDir("", "walmigrate")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 
 	wdir := path.Join(dir, "wal")
 

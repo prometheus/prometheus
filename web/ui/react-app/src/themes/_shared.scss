@@ -104,6 +104,15 @@ button.execute-btn {
   margin-bottom: 20px;
 }
 
+.navbar-brand img {
+  padding-right: 1rem;
+  height: 1.9rem;
+}
+
+.navbar-brand {
+  margin-top: 4px;
+}
+
 input[type='checkbox']:checked + label {
   color: #286090;
 }

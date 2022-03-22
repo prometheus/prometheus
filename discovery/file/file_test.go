@@ -53,12 +53,9 @@ type testRunner struct {
 func newTestRunner(t *testing.T) *testRunner {
 	t.Helper()
 
-	tmpDir, err := ioutil.TempDir("", "prometheus-file-sd")
-	require.NoError(t, err)
-
 	return &testRunner{
 		T:       t,
-		dir:     tmpDir,
+		dir:     t.TempDir(),
 		ch:      make(chan []*targetgroup.Group),
 		done:    make(chan struct{}),
 		stopped: make(chan struct{}),

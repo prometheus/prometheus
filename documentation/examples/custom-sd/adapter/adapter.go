@@ -84,7 +84,6 @@ func generateTargetGroups(allTargetGroups map[string][]*targetgroup.Group) map[s
 			}
 
 			sdGroup := customSD{
-
 				Targets: newTargets,
 				Labels:  newLabels,
 			}

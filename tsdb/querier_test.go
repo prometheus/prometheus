@@ -16,10 +16,8 @@ package tsdb
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"math"
 	"math/rand"
-	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -1329,11 +1327,7 @@ func BenchmarkQueryIterator(b *testing.B) {
 				c.numBlocks, c.numSeries, c.numSamplesPerSeriesPerBlock, overlapPercentage)
 
 			b.Run(benchMsg, func(b *testing.B) {
-				dir, err := ioutil.TempDir("", "bench_query_iterator")
-				require.NoError(b, err)
-				defer func() {
-					require.NoError(b, os.RemoveAll(dir))
-				}()
+				dir := b.TempDir()
 
 				var (
 					blocks          []*Block
@@ -1396,11 +1390,7 @@ func BenchmarkQuerySeek(b *testing.B) {
 				c.numBlocks, c.numSeries, c.numSamplesPerSeriesPerBlock, overlapPercentage)
 
 			b.Run(benchMsg, func(b *testing.B) {
-				dir, err := ioutil.TempDir("", "bench_query_iterator")
-				require.NoError(b, err)
-				defer func() {
-					require.NoError(b, os.RemoveAll(dir))
-				}()
+				dir := b.TempDir()
 
 				var (
 					blocks          []*Block
@@ -1451,7 +1441,6 @@ func BenchmarkQuerySeek(b *testing.B) {
 					require.NoError(b, it.Err())
 				}
 				require.NoError(b, ss.Err())
-				require.NoError(b, err)
 				require.Equal(b, 0, len(ss.Warnings()))
 			})
 		}
@@ -1537,11 +1526,7 @@ func BenchmarkSetMatcher(b *testing.B) {
 	}
 
 	for _, c := range cases {
-		dir, err := ioutil.TempDir("", "bench_postings_for_matchers")
-		require.NoError(b, err)
-		defer func() {
-			require.NoError(b, os.RemoveAll(dir))
-		}()
+		dir := b.TempDir()
 
 		var (
 			blocks          []*Block
@@ -1654,11 +1639,7 @@ func TestFindSetMatches(t *testing.T) {
 }
 
 func TestPostingsForMatchers(t *testing.T) {
-	chunkDir, err := ioutil.TempDir("", "chunk_dir")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(chunkDir))
-	}()
+	chunkDir := t.TempDir()
 	opts := DefaultHeadOptions()
 	opts.ChunkRange = 1000
 	opts.ChunkDirRoot = chunkDir
@@ -1915,13 +1896,7 @@ func TestPostingsForMatchers(t *testing.T) {
 
 // TestClose ensures that calling Close more than once doesn't block and doesn't panic.
 func TestClose(t *testing.T) {
-	dir, err := ioutil.TempDir("", "test_storage")
-	if err != nil {
-		t.Fatalf("Opening test dir failed: %s", err)
-	}
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 
 	createBlock(t, dir, genSeries(1, 1, 0, 10))
 	createBlock(t, dir, genSeries(1, 1, 10, 20))
@@ -1982,11 +1957,7 @@ func BenchmarkQueries(b *testing.B) {
 	for title, selectors := range cases {
 		for _, nSeries := range []int{10} {
 			for _, nSamples := range []int64{1000, 10000, 100000} {
-				dir, err := ioutil.TempDir("", "test_persisted_query")
-				require.NoError(b, err)
-				defer func() {
-					require.NoError(b, os.RemoveAll(dir))
-				}()
+				dir := b.TempDir()
 
 				series := genSeries(nSeries, 5, 1, nSamples)
 
@@ -2024,11 +1995,7 @@ func BenchmarkQueries(b *testing.B) {
 				queryTypes["_3-Blocks"] = storage.NewMergeQuerier(qs[0:3], nil, storage.ChainedSeriesMerge)
 				queryTypes["_10-Blocks"] = storage.NewMergeQuerier(qs, nil, storage.ChainedSeriesMerge)
 
-				chunkDir, err := ioutil.TempDir("", "chunk_dir")
-				require.NoError(b, err)
-				defer func() {
-					require.NoError(b, os.RemoveAll(chunkDir))
-				}()
+				chunkDir := b.TempDir()
 				head := createHead(b, nil, series, chunkDir)
 				qHead, err := NewBlockQuerier(head, 1, nSamples)
 				require.NoError(b, err)

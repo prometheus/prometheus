@@ -16,10 +16,10 @@ package logging
 import (
 	"io/ioutil"
 	"os"
-	"regexp"
 	"strings"
 	"testing"
 
+	"github.com/grafana/regexp"
 	"github.com/stretchr/testify/require"
 )
 

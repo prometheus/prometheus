@@ -548,7 +548,7 @@ func TestLabels_Get(t *testing.T) {
 
 // BenchmarkLabels_Get was written to check whether a binary search can improve the performance vs the linear search implementation
 // The results have shown that binary search would only be better when searching last labels in scenarios with more than 10 labels.
-// In the following list, `old` is the linear search while `new` is the binary search implementaiton (without calling sort.Search, which performs even worse here)
+// In the following list, `old` is the linear search while `new` is the binary search implementation (without calling sort.Search, which performs even worse here)
 // name                                        old time/op    new time/op    delta
 // Labels_Get/with_5_labels/get_first_label      5.12ns ± 0%   14.24ns ± 0%   ~     (p=1.000 n=1+1)
 // Labels_Get/with_5_labels/get_middle_label     13.5ns ± 0%    18.5ns ± 0%   ~     (p=1.000 n=1+1)
@@ -581,6 +581,36 @@ func BenchmarkLabels_Get(b *testing.B) {
 						_ = labels.Get(scenario.label)
 					}
 				})
+			}
+		})
+	}
+}
+
+func BenchmarkLabels_Equals(b *testing.B) {
+	for _, scenario := range []struct {
+		desc        string
+		base, other Labels
+	}{
+		{
+			"equal",
+			Labels{{"a_label_name", "a_label_value"}, {"another_label_name", "another_label_value"}},
+			Labels{{"a_label_name", "a_label_value"}, {"another_label_name", "another_label_value"}},
+		},
+		{
+			"not equal",
+			Labels{{"a_label_name", "a_label_value"}, {"another_label_name", "another_label_value"}},
+			Labels{{"a_label_name", "a_label_value"}, {"another_label_name", "a_different_label_value"}},
+		},
+		{
+			"different sizes",
+			Labels{{"a_label_name", "a_label_value"}, {"another_label_name", "another_label_value"}},
+			Labels{{"a_label_name", "a_label_value"}},
+		},
+	} {
+		b.Run(scenario.desc, func(b *testing.B) {
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				_ = Equal(scenario.base, scenario.other)
 			}
 		})
 	}

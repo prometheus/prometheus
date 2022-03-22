@@ -24,10 +24,11 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
@@ -185,7 +186,7 @@ type QueryFunc func(ctx context.Context, q string, t time.Time) (promql.Vector, 
 // It converts scalar into vector results.
 func EngineQueryFunc(engine *promql.Engine, q storage.Queryable) QueryFunc {
 	return func(ctx context.Context, qs string, t time.Time) (promql.Vector, error) {
-		q, err := engine.NewInstantQuery(q, qs, t)
+		q, err := engine.NewInstantQuery(q, nil, qs, t)
 		if err != nil {
 			return nil, err
 		}
@@ -306,7 +307,7 @@ func NewGroup(o GroupOptions) *Group {
 		done:                 make(chan struct{}),
 		managerDone:          o.done,
 		terminated:           make(chan struct{}),
-		logger:               log.With(o.Opts.Logger, "group", o.Name),
+		logger:               log.With(o.Opts.Logger, "file", o.File, "group", o.Name),
 		metrics:              metrics,
 	}
 }
@@ -585,10 +586,10 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 		}
 
 		func(i int, rule Rule) {
-			sp, ctx := opentracing.StartSpanFromContext(ctx, "rule")
-			sp.SetTag("name", rule.Name())
+			ctx, sp := otel.Tracer("").Start(ctx, "rule")
+			sp.SetAttributes(attribute.String("name", rule.Name()))
 			defer func(t time.Time) {
-				sp.Finish()
+				sp.End()
 
 				since := time.Since(t)
 				g.metrics.EvalDuration.Observe(since.Seconds())
@@ -607,7 +608,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 				// Canceled queries are intentional termination of queries. This normally
 				// happens on shutdown and thus we skip logging of any errors here.
 				if _, ok := err.(promql.ErrQueryCanceled); !ok {
-					level.Warn(g.logger).Log("msg", "Evaluating rule failed", "rule", rule, "err", err)
+					level.Warn(g.logger).Log("name", rule.Name(), "index", i, "msg", "Evaluating rule failed", "rule", rule, "err", err)
 				}
 				return
 			}
@@ -631,7 +632,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 					rule.SetLastError(err)
 					g.metrics.EvalFailures.WithLabelValues(GroupKey(g.File(), g.Name())).Inc()
 
-					level.Warn(g.logger).Log("msg", "Rule sample appending failed", "err", err)
+					level.Warn(g.logger).Log("name", rule.Name(), "index", i, "msg", "Rule sample appending failed", "err", err)
 					return
 				}
 				g.seriesInPreviousEval[i] = seriesReturned
@@ -645,12 +646,12 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 					switch errors.Cause(err) {
 					case storage.ErrOutOfOrderSample:
 						numOutOfOrder++
-						level.Debug(g.logger).Log("msg", "Rule evaluation result discarded", "err", err, "sample", s)
+						level.Debug(g.logger).Log("name", rule.Name(), "index", i, "msg", "Rule evaluation result discarded", "err", err, "sample", s)
 					case storage.ErrDuplicateSampleForTimestamp:
 						numDuplicates++
-						level.Debug(g.logger).Log("msg", "Rule evaluation result discarded", "err", err, "sample", s)
+						level.Debug(g.logger).Log("name", rule.Name(), "index", i, "msg", "Rule evaluation result discarded", "err", err, "sample", s)
 					default:
-						level.Warn(g.logger).Log("msg", "Rule evaluation result discarded", "err", err, "sample", s)
+						level.Warn(g.logger).Log("name", rule.Name(), "index", i, "msg", "Rule evaluation result discarded", "err", err, "sample", s)
 					}
 				} else {
 					buf := [1024]byte{}
@@ -658,10 +659,10 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 				}
 			}
 			if numOutOfOrder > 0 {
-				level.Warn(g.logger).Log("msg", "Error on ingesting out-of-order result from rule evaluation", "numDropped", numOutOfOrder)
+				level.Warn(g.logger).Log("name", rule.Name(), "index", i, "msg", "Error on ingesting out-of-order result from rule evaluation", "numDropped", numOutOfOrder)
 			}
 			if numDuplicates > 0 {
-				level.Warn(g.logger).Log("msg", "Error on ingesting results from rule evaluation with different value but same timestamp", "numDropped", numDuplicates)
+				level.Warn(g.logger).Log("name", rule.Name(), "index", i, "msg", "Error on ingesting results from rule evaluation with different value but same timestamp", "numDropped", numDuplicates)
 			}
 
 			for metric, lset := range g.seriesInPreviousEval[i] {
@@ -674,7 +675,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 						// Do not count these in logging, as this is expected if series
 						// is exposed from a different rule.
 					default:
-						level.Warn(g.logger).Log("msg", "Adding stale sample failed", "sample", lset.String(), "err", err)
+						level.Warn(g.logger).Log("name", rule.Name(), "index", i, "msg", "Adding stale sample failed", "sample", lset.String(), "err", err)
 					}
 				}
 			}

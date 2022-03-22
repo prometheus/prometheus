@@ -2,7 +2,7 @@
 version: 2.1
 
 orbs:
-  prometheus: prometheus/prometheus@0.15.0
+  prometheus: prometheus/prometheus@0.16.0
   go: circleci/go@1.7.0
   win: circleci/windows@2.3.0
 
@@ -12,9 +12,9 @@ executors:
   golang:
     docker:
       - image: quay.io/prometheus/golang-builder:1.17-base
-  golang_115:
+  golang_oldest:
     docker:
-      - image: quay.io/prometheus/golang-builder:1.15-base
+      - image: quay.io/prometheus/golang-builder:1.16-base
 
 jobs:
   test_go:
@@ -37,6 +37,7 @@ jobs:
             GOMAXPROCS: "2"
             GO111MODULE: "on"
       - run: go test ./tsdb/ -test.tsdb-isolation=false
+      - run: make -C documentation/examples/remote_storage
       - prometheus/check_proto:
           version: "3.15.8"
       - prometheus/store_artifact:
@@ -81,18 +82,17 @@ jobs:
           command: refreshenv
       - run:
           command: |
-            $env:GOARCH=""; $env:GOOS=""; cd web/ui; go generate
-            cd ../..
             $TestTargets = go list ./... | Where-Object { $_ -NotMatch "(github.com/prometheus/prometheus/discovery.*|github.com/prometheus/prometheus/config|github.com/prometheus/prometheus/web)"}
             go test $TestTargets -vet=off -v
           environment:
             GOGC: "20"
             GOOPTS: "-p 2"
 
-  test_tsdb_go115:
-    executor: golang_115
+  test_golang_oldest:
+    executor: golang_oldest
     steps:
       - checkout
+      - run: make build
       - run: go test ./tsdb/...
       - run: go test ./tsdb/ -test.tsdb-isolation=false
 
@@ -114,7 +114,6 @@ jobs:
     steps:
       - checkout
       - run: ./scripts/sync_repo_files.sh
-      - run: ./scripts/sync_codemirror.sh
 
 workflows:
   version: 2
@@ -128,7 +127,7 @@ workflows:
           filters:
             tags:
               only: /.*/
-      - test_tsdb_go115:
+      - test_golang_oldest:
           filters:
             tags:
               only: /.*/
@@ -179,10 +178,10 @@ workflows:
             branches:
               ignore: /.*/
           image: circleci/golang:1-node
-  nightly:
+  daily:
     triggers:
       - schedule:
-          cron: "0 0 * * *"
+          cron: "49 19 * * *"
           filters:
             branches:
               only:

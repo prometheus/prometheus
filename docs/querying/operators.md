@@ -241,7 +241,7 @@ vector. `by` and `without` are only used to bucket the input vector.
 `quantile` calculates the φ-quantile, the value that ranks at number φ*N among
 the N metric values of the dimensions aggregated over. φ is provided as the
 aggregation parameter. For example, `quantile(0.5, ...)` calculates the median,
-`quantile(0.95, ...)` the 95th percentile.
+`quantile(0.95, ...)` the 95th percentile. For φ = `NaN`, `NaN` is returned. For φ < 0, `-Inf` is returned. For φ > 1, `+Inf` is returned.
 
 Example:
 

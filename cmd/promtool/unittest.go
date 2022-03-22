@@ -56,9 +56,9 @@ func RulesUnitTest(queryOpts promql.LazyLoaderOpts, files ...string) int {
 		fmt.Println()
 	}
 	if failed {
-		return 1
+		return failureExitCode
 	}
-	return 0
+	return successExitCode
 }
 
 func ruleUnitTest(filename string, queryOpts promql.LazyLoaderOpts) []error {
@@ -435,7 +435,7 @@ func (tg *testGroup) maxEvalTime() time.Duration {
 }
 
 func query(ctx context.Context, qs string, t time.Time, engine *promql.Engine, qu storage.Queryable) (promql.Vector, error) {
-	q, err := engine.NewInstantQuery(qu, qs, t)
+	q, err := engine.NewInstantQuery(qu, nil, qs, t)
 	if err != nil {
 		return nil, err
 	}
