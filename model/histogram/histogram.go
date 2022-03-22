@@ -33,7 +33,7 @@ import (
 //   Positive bucket indices →           |        |           |                          ...     -1         0      1    2    3
 //   Negative bucket indices →  3   2    1        0          -1       ...
 //
-// Wich bucket indices are actually used is determined by the spans.
+// Which bucket indices are actually used is determined by the spans.
 type Histogram struct {
 	// Currently valid schema numbers are -4 <= n <= 8.  They are all for
 	// base-2 bucket schemas, where 1 is a bucket boundary in each case, and

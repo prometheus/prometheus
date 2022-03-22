@@ -128,7 +128,7 @@ const (
 	ValNone           ValueType = iota // No value at the current position.
 	ValFloat                           // A simple float, retrieved with At.
 	ValHistogram                       // A histogram, retrieve with AtHistogram, but AtFloatHistogram works, too.
-	ValFloatHistogram                  // A floating-point histogram, retrive with AtFloatHistogram.
+	ValFloatHistogram                  // A floating-point histogram, retrieve with AtFloatHistogram.
 )
 
 func (v ValueType) String() string {
