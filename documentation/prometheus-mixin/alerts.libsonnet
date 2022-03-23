@@ -290,6 +290,20 @@
             },
           },
           {
+            alert: 'PrometheusScrapeSampleLimitHit',
+            expr: |||
+              increase(prometheus_target_scrapes_exceeded_sample_limit_total{%(prometheusSelector)s}[5m]) > 0
+            ||| % $._config,
+            'for': '15m',
+            labels: {
+              severity: 'warning',
+            },
+            annotations: {
+              summary: 'Prometheus has failed scrapes that have exceeded the configured sample limit.',
+              description: 'Prometheus %(prometheusName)s has failed {{ printf "%%.0f" $value }} scrapes because some targets exceeded the configured sample_limit.' % $._config,
+            },
+          },
+          {
             alert: 'PrometheusTargetSyncFailure',
             expr: |||
               increase(prometheus_target_sync_failed_total{%(prometheusSelector)s}[30m]) > 0
