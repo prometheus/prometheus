@@ -297,6 +297,9 @@ func main() {
 	}
 }
 
+// nolint:revive
+var lintError = fmt.Errorf("lint error")
+
 type lintConfig struct {
 	all            bool
 	duplicateRules bool
@@ -326,6 +329,7 @@ func (ls lintConfig) lintDuplicateRules() bool {
 // CheckConfig validates configuration files.
 func CheckConfig(agentMode, checkSyntaxOnly bool, lintSettings lintConfig, files ...string) int {
 	failed := false
+	hasLintErrors := false
 
 	for _, f := range files {
 		ruleFiles, err := checkConfig(agentMode, f, checkSyntaxOnly)
@@ -347,11 +351,17 @@ func CheckConfig(agentMode, checkSyntaxOnly bool, lintSettings lintConfig, files
 					fmt.Fprintln(os.Stderr, "    ", err)
 				}
 				failed = true
+				for _, err := range errs {
+					hasLintErrors = hasLintErrors || errors.Is(err, lintError)
+				}
 			} else {
 				fmt.Printf("  SUCCESS: %d rules found\n", n)
 			}
 			fmt.Println()
 		}
+	}
+	if failed && hasLintErrors {
+		return lintErrExitCode
 	}
 	if failed {
 		return failureExitCode
@@ -563,6 +573,7 @@ func checkSDFile(filename string) ([]*targetgroup.Group, error) {
 // CheckRules validates rule files.
 func CheckRules(ls lintConfig, files ...string) int {
 	failed := false
+	hasLintErrors := false
 
 	for _, f := range files {
 		if n, errs := checkRules(f, ls); errs != nil {
@@ -571,10 +582,16 @@ func CheckRules(ls lintConfig, files ...string) int {
 				fmt.Fprintln(os.Stderr, e.Error())
 			}
 			failed = true
+			for _, err := range errs {
+				hasLintErrors = hasLintErrors || errors.Is(err, lintError)
+			}
 		} else {
 			fmt.Printf("  SUCCESS: %d rules found\n", n)
 		}
 		fmt.Println()
+	}
+	if failed && hasLintErrors {
+		return lintErrExitCode
 	}
 	if failed {
 		return failureExitCode
@@ -606,7 +623,7 @@ func checkRules(filename string, lintSettings lintConfig) (int, []error) {
 				}
 			}
 			errMessage += "Might cause inconsistency while recording expressions"
-			return 0, []error{errors.New(errMessage)}
+			return 0, []error{fmt.Errorf("%w %s", lintError, errMessage)}
 		}
 	}
 
