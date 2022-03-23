@@ -61,7 +61,7 @@ func TestQueryStatsWithTimersAndSamples(t *testing.T) {
 	require.True(t, match, "Expected timings with one non-zero entry.")
 
 	require.Regexpf(t, `[,{]"totalQueryableSamples":10[,}]`, string(actual), "expected totalQueryableSamples")
-	require.Regexpf(t, `[,{]"totalQueryableSamplesPerStep":\[\[20001,"5"\],\[21001,"0"\],\[22001,"0"\],\[23001,"0"\],\[24001,"0"\],\[25001,"5"\]\]`, string(actual), "expected totalQueryableSamplesPerStep")
+	require.Regexpf(t, `[,{]"totalQueryableSamplesPerStep":\[\[20001,5\],\[21001,0\],\[22001,0\],\[23001,0\],\[24001,0\],\[25001,5\]\]`, string(actual), "expected totalQueryableSamplesPerStep")
 }
 
 func TestQueryStatsWithSpanTimers(t *testing.T) {
