@@ -71,7 +71,7 @@ func (*SDConfig) Name() string { return "http" }
 
 // NewDiscoverer returns a Discoverer for the Config.
 func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewDiscovery(c, opts.Logger)
+	return NewDiscovery(c, opts.Logger, opts.HTTPClientOptions)
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -116,12 +116,12 @@ type Discovery struct {
 }
 
 // NewDiscovery returns a new HTTP discovery for the given config.
-func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
+func NewDiscovery(conf *SDConfig, logger log.Logger, clientOpts []config.HTTPClientOption) (*Discovery, error) {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
 
-	client, err := config.NewClientFromConfig(conf.HTTPClientConfig, "http")
+	client, err := config.NewClientFromConfig(conf.HTTPClientConfig, "http", clientOpts...)
 	if err != nil {
 		return nil, err
 	}
