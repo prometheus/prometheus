@@ -42,8 +42,8 @@ type Discoverer interface {
 type DiscovererOptions struct {
 	Logger log.Logger
 
-	// Extra HTTP client options to expose to Discoverers. It is not guaranteed
-	// that Discoverers will use this field when provided.
+	// Extra HTTP client options to expose to Discoverers. This field may be
+	// ignored; Discoverer implementations must opt-in to reading it.
 	HTTPClientOptions []config.HTTPClientOption
 }
 
