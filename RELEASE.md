@@ -138,6 +138,14 @@ $ git tag -s "${tag}" -m "${tag}"
 $ git push origin "${tag}"
 ```
 
+Tag the new library release via the following commands:
+
+```bash
+$ tag="v$(sed s/2/0/ < VERSION)"
+$ git tag -s "${tag}" -m "${tag}"
+$ git push origin "${tag}"
+```
+
 Optionally, you can use this handy `.gitconfig` alias.
 
 ```ini
