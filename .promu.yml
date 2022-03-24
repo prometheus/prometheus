@@ -7,9 +7,9 @@ repository:
 build:
     binaries:
         - name: prometheus
-          path: ./cmd/prometheus
+          path: ./v2/cmd/prometheus
         - name: promtool
-          path: ./cmd/promtool
+          path: ./v2/cmd/promtool
     flags: -a -tags netgo,builtinassets
     ldflags: |
         -X github.com/prometheus/common/version.Version={{.Version}}

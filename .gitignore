@@ -12,8 +12,12 @@ benchmark.txt
 /cmd/prometheus/data
 /cmd/prometheus/data-agent
 /cmd/prometheus/debug
-/benchout
 /cmd/promtool/data
+/v2/cmd/prometheus/data
+/v2/cmd/prometheus/data-agent
+/v2/cmd/prometheus/debug
+/v2/cmd/promtool/data
+/benchout
 
 !/.travis.yml
 !/.promu.yml

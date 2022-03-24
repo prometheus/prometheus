@@ -39,8 +39,8 @@ import (
 
 var (
 	promPath    = os.Args[0]
-	promConfig  = filepath.Join("..", "..", "documentation", "examples", "prometheus.yml")
-	agentConfig = filepath.Join("..", "..", "documentation", "examples", "prometheus-agent.yml")
+	promConfig  = filepath.Join("..", "..", "..", "documentation", "examples", "prometheus.yml")
+	agentConfig = filepath.Join("..", "..", "..", "documentation", "examples", "prometheus-agent.yml")
 )
 
 func TestMain(m *testing.M) {
