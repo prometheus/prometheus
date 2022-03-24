@@ -2974,6 +2974,9 @@ func TestOpen_VariousBlockStates(t *testing.T) {
 		_, err = writeMetaFile(log.NewLogfmtLogger(os.Stderr), dir, m)
 		require.NoError(t, err)
 	}
+	tmpCheckpointDir := path.Join(tmpDir, "wal/checkpoint.00000001.tmp")
+	err := os.MkdirAll(tmpCheckpointDir, 0o777)
+	require.NoError(t, err)
 
 	opts := DefaultOptions()
 	opts.RetentionDuration = 0
@@ -3005,6 +3008,8 @@ func TestOpen_VariousBlockStates(t *testing.T) {
 		}
 	}
 	require.Equal(t, len(expectedIgnoredDirs), ignored)
+	_, err = os.Stat(tmpCheckpointDir)
+	require.True(t, os.IsNotExist(err))
 }
 
 func TestOneCheckpointPerCompactCall(t *testing.T) {
