@@ -306,6 +306,10 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed 
 		// Store the cache in the context.
 		loopCtx := ContextWithMetricMetadataStore(ctx, cache)
 
+		if len(cfg.AggregationRules) > 0 {
+			app = newRuleAppender(opts.target.Labels(), app, cfg.AggregationRules)
+		}
+
 		return newScrapeLoop(
 			loopCtx,
 			opts.scraper,

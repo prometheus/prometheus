@@ -46,6 +46,12 @@ type sample struct {
 	v      float64
 }
 
+type collectResultAppendable struct{}
+
+func (c collectResultAppendable) Appender(_ context.Context) storage.Appender {
+	return &collectResultAppender{}
+}
+
 // collectResultAppender records all samples that were added through the appender.
 // It can be used as its zero value or be backed by another appender it writes samples through.
 type collectResultAppender struct {

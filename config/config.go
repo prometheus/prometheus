@@ -447,8 +447,31 @@ type ScrapeConfig struct {
 
 	// List of target relabel configurations.
 	RelabelConfigs []*relabel.Config `yaml:"relabel_configs,omitempty"`
+
 	// List of metric relabel configurations.
 	MetricRelabelConfigs []*relabel.Config `yaml:"metric_relabel_configs,omitempty"`
+
+	// List of aggregation rules to execute at scrape time.
+	AggregationRules []*AggregationRuleConfig `yaml:"aggregation_rules,omitempty"`
+}
+
+// AggregationRuleConfig is the configuration for aggregation rules executed
+// at scrape time for each individual target.
+type AggregationRuleConfig struct {
+	Expr   string `yaml:"expr"`
+	Record string `yaml:"record"`
+}
+
+func (a *AggregationRuleConfig) Validate() error {
+	if a.Expr == "" {
+		return errors.New("aggregation rule expression must not be empty")
+	}
+
+	if a.Record == "" {
+		return errors.New("aggregation rule record must not be empty")
+	}
+
+	return nil
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -489,6 +512,12 @@ func (c *ScrapeConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	for _, rlcfg := range c.MetricRelabelConfigs {
 		if rlcfg == nil {
 			return errors.New("empty or null metric relabeling rule in scrape config")
+		}
+	}
+
+	for _, aggrRule := range c.AggregationRules {
+		if err := aggrRule.Validate(); err != nil {
+			return err
 		}
 	}
 
