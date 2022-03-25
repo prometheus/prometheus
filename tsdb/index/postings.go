@@ -238,9 +238,11 @@ func (p *MemPostings) EnsureOrder() {
 
 	for i := 0; i < n; i++ {
 		go func() {
+			var sortable seriesRefSlice
 			for job := range workc {
 				for _, l := range job {
-					sort.Sort(seriesRefSlice(l))
+					sortable = l
+					sort.Sort(&sortable)
 				}
 
 				job = job[:0]
