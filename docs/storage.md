@@ -24,8 +24,8 @@ of deleting the data immediately from the chunk segments).
 The current block for incoming samples is kept in memory and is not fully
 persisted. It is secured against crashes by a write-ahead log (WAL) that can be
 replayed when the Prometheus server restarts. Write-ahead log files are stored
-in the `wal` directory in 128MB segments. These files contain raw data that
-has not yet been compacted; thus they are significantly larger than regular block
+in the `wal` directory in 128MB segments. These files may contain raw data that
+has not yet been compacted (WAL compression enabled by default in 2.20.0); thus they are significantly larger than regular block
 files. Prometheus will retain a minimum of three write-ahead log files.
 High-traffic servers may retain more than three WAL files in order to keep at
 least two hours of raw data.
