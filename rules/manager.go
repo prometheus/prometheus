@@ -438,7 +438,7 @@ func (g *Group) run(ctx context.Context) {
 				}
 				evalTimestamp = evalTimestamp.Add((missed + 1) * g.interval)
 
-				useRuleGroupPostProcessFunc(g, evalTimestamp.Add(-(missed + 1) * g.interval))
+				useRuleGroupPostProcessFunc(g, evalTimestamp.Add(-(missed+1)*g.interval))
 
 				iter()
 			}
