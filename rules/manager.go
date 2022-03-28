@@ -265,12 +265,12 @@ type Group struct {
 
 	metrics *Metrics
 
-	ruleGroupPostProcessFunc RuleGroupPostProcessFuncType
+	ruleGroupPostProcessFunc RuleGroupPostProcessFunc
 }
 
 // This function will be used before each rule group evaluation if not nil.
 // Use this function type if the rule group post processing is needed.
-type RuleGroupPostProcessFuncType func(g *Group, lastEvalTimestamp time.Time, log log.Logger) error
+type RuleGroupPostProcessFunc func(g *Group, lastEvalTimestamp time.Time, log log.Logger) error
 
 type GroupOptions struct {
 	Name, File               string
@@ -280,7 +280,7 @@ type GroupOptions struct {
 	ShouldRestore            bool
 	Opts                     *ManagerOptions
 	done                     chan struct{}
-	RuleGroupPostProcessFunc RuleGroupPostProcessFuncType
+	RuleGroupPostProcessFunc RuleGroupPostProcessFunc
 }
 
 // NewGroup makes a new Group with the given name, options, and rules.
@@ -962,7 +962,7 @@ func (m *Manager) Stop() {
 
 // Update the rule manager's state as the config requires. If
 // loading the new rules failed the old rule set is restored.
-func (m *Manager) Update(interval time.Duration, files []string, externalLabels labels.Labels, externalURL string, ruleGroupPostProcessFunc RuleGroupPostProcessFuncType) error {
+func (m *Manager) Update(interval time.Duration, files []string, externalLabels labels.Labels, externalURL string, ruleGroupPostProcessFunc RuleGroupPostProcessFunc) error {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
@@ -1051,7 +1051,7 @@ func (FileLoader) Parse(query string) (parser.Expr, error) { return parser.Parse
 
 // LoadGroups reads groups from a list of files.
 func (m *Manager) LoadGroups(
-	interval time.Duration, externalLabels labels.Labels, externalURL string, ruleGroupPostProcessFunc RuleGroupPostProcessFuncType, filenames ...string,
+	interval time.Duration, externalLabels labels.Labels, externalURL string, ruleGroupPostProcessFunc RuleGroupPostProcessFunc, filenames ...string,
 ) (map[string]*Group, []error) {
 	groups := make(map[string]*Group)
 
