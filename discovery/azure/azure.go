@@ -363,7 +363,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 				networkInterface, detailedErr := client.getNetworkInterfaceByID(ctx, nicID)
 				if detailedErr != nil {
 					if detailedErr.StatusCode == 404 {
-						level.Warn(d.logger).Log("msg", "Network interface does not exist", "name", nicID, "err", err)
+						level.Warn(d.logger).Log("msg", "Network interface does not exist", "name", nicID, "err", detailedErr)
 					} else {
 						ch <- target{labelSet: nil, err: detailedErr}
 					}
