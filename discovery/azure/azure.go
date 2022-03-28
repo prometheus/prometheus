@@ -86,6 +86,7 @@ type SDConfig struct {
 	ClientSecret         config_util.Secret `yaml:"client_secret,omitempty"`
 	RefreshInterval      model.Duration     `yaml:"refresh_interval,omitempty"`
 	AuthenticationMethod string             `yaml:"authentication_method,omitempty"`
+	ResourceGroup        string             `yaml:"resource_group,omitempty"`
 
 	HTTPClientConfig config_util.HTTPClientConfig `yaml:",inline"`
 }
@@ -187,12 +188,7 @@ func createAzureClient(cfg SDConfig) (azureClient, error) {
 
 	switch cfg.AuthenticationMethod {
 	case authMethodManagedIdentity:
-		msiEndpoint, err := adal.GetMSIVMEndpoint()
-		if err != nil {
-			return azureClient{}, err
-		}
-
-		spt, err = adal.NewServicePrincipalTokenFromMSI(msiEndpoint, resourceManagerEndpoint)
+		spt, err = adal.NewServicePrincipalTokenFromManagedIdentity(resourceManagerEndpoint, &adal.ManagedIdentityOptions{ClientID: cfg.ClientID})
 		if err != nil {
 			return azureClient{}, err
 		}
@@ -286,7 +282,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		return nil, errors.Wrap(err, "could not create Azure client")
 	}
 
-	machines, err := client.getVMs(ctx)
+	machines, err := client.getVMs(ctx, d.cfg.ResourceGroup)
 	if err != nil {
 		return nil, errors.Wrap(err, "could not get virtual machines")
 	}
@@ -294,7 +290,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	level.Debug(d.logger).Log("msg", "Found virtual machines during Azure discovery.", "count", len(machines))
 
 	// Load the vms managed by scale sets.
-	scaleSets, err := client.getScaleSets(ctx)
+	scaleSets, err := client.getScaleSets(ctx, d.cfg.ResourceGroup)
 	if err != nil {
 		return nil, errors.Wrap(err, "could not get virtual machine scale sets")
 	}
@@ -410,9 +406,15 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	return []*targetgroup.Group{&tg}, nil
 }
 
-func (client *azureClient) getVMs(ctx context.Context) ([]virtualMachine, error) {
+func (client *azureClient) getVMs(ctx context.Context, resourceGroup string) ([]virtualMachine, error) {
 	var vms []virtualMachine
-	result, err := client.vm.ListAll(ctx)
+	var result compute.VirtualMachineListResultPage
+	var err error
+	if len(resourceGroup) == 0 {
+		result, err = client.vm.ListAll(ctx)
+	} else {
+		result, err = client.vm.List(ctx, resourceGroup)
+	}
 	if err != nil {
 		return nil, errors.Wrap(err, "could not list virtual machines")
 	}
@@ -429,12 +431,32 @@ func (client *azureClient) getVMs(ctx context.Context) ([]virtualMachine, error)
 	return vms, nil
 }
 
-func (client *azureClient) getScaleSets(ctx context.Context) ([]compute.VirtualMachineScaleSet, error) {
+type VmssListResultPage interface {
+	NextWithContext(ctx context.Context) (err error)
+	NotDone() bool
+	Values() []compute.VirtualMachineScaleSet
+}
+
+func (client *azureClient) getScaleSets(ctx context.Context, resourceGroup string) ([]compute.VirtualMachineScaleSet, error) {
 	var scaleSets []compute.VirtualMachineScaleSet
-	result, err := client.vmss.ListAll(ctx)
-	if err != nil {
-		return nil, errors.Wrap(err, "could not list virtual machine scale sets")
+	var result VmssListResultPage
+	var err error
+	if len(resourceGroup) == 0 {
+		var rtn compute.VirtualMachineScaleSetListWithLinkResultPage
+		rtn, err = client.vmss.ListAll(ctx)
+		if err != nil {
+			return nil, errors.Wrap(err, "could not list virtual machine scale sets")
+		}
+		result = &rtn
+	} else {
+		var rtn compute.VirtualMachineScaleSetListResultPage
+		rtn, err = client.vmss.List(ctx, resourceGroup)
+		if err != nil {
+			return nil, errors.Wrap(err, "could not list virtual machine scale sets")
+		}
+		result = &rtn
 	}
+
 	for result.NotDone() {
 		scaleSets = append(scaleSets, result.Values()...)
 		err = result.NextWithContext(ctx)
