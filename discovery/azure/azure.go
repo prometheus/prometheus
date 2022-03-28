@@ -444,15 +444,19 @@ func (client *azureClient) getScaleSets(ctx context.Context, resourceGroup strin
 	if len(resourceGroup) == 0 {
 		var rtn compute.VirtualMachineScaleSetListWithLinkResultPage
 		rtn, err = client.vmss.ListAll(ctx)
+		if err != nil {
+			return nil, errors.Wrap(err, "could not list virtual machine scale sets")
+		}
 		result = &rtn
 	} else {
 		var rtn compute.VirtualMachineScaleSetListResultPage
 		rtn, err = client.vmss.List(ctx, resourceGroup)
+		if err != nil {
+			return nil, errors.Wrap(err, "could not list virtual machine scale sets")
+		}
 		result = &rtn
 	}
-	if err != nil {
-		return nil, errors.Wrap(err, "could not list virtual machine scale sets")
-	}
+
 	for result.NotDone() {
 		scaleSets = append(scaleSets, result.Values()...)
 		err = result.NextWithContext(ctx)
