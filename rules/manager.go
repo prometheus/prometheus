@@ -270,7 +270,7 @@ type Group struct {
 
 // This function will be used before each rule group evaluation if not nil.
 // Use this function type if the rule group post processing is needed.
-type RuleGroupPostProcessFuncType func(g *Group, log log.Logger) error
+type RuleGroupPostProcessFuncType func(g *Group, lastEvalTimestamp time.Time, log log.Logger) error
 
 type GroupOptions struct {
 	Name, File               string
@@ -438,7 +438,7 @@ func (g *Group) run(ctx context.Context) {
 				}
 				evalTimestamp = evalTimestamp.Add((missed + 1) * g.interval)
 
-				useRuleGroupPostProcessFunc(g)
+				useRuleGroupPostProcessFunc(g, evalTimestamp.Add(-(missed + 1) * g.interval))
 
 				iter()
 			}
@@ -446,9 +446,9 @@ func (g *Group) run(ctx context.Context) {
 	}
 }
 
-func useRuleGroupPostProcessFunc(g *Group) {
+func useRuleGroupPostProcessFunc(g *Group, lastEvalTimestamp time.Time) {
 	if g.ruleGroupPostProcessFunc != nil {
-		err := g.ruleGroupPostProcessFunc(g, g.logger)
+		err := g.ruleGroupPostProcessFunc(g, lastEvalTimestamp, g.logger)
 		if err != nil {
 			level.Warn(g.logger).Log("msg", "ruleGroupPostProcessFunc failed", "err", err)
 		}
