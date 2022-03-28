@@ -1,4 +1,4 @@
-// Copyright 2018 The Prometheus Authors
+// Copyright 2022 The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -11,14 +11,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package ui provides the assets via a virtual filesystem.
+//go:build builtinassets
+// +build builtinassets
+
 package ui
 
-import (
-	// The blank import is to make Go modules happy.
-	_ "github.com/shurcooL/httpfs/filter"
-	_ "github.com/shurcooL/httpfs/union"
-	_ "github.com/shurcooL/vfsgen"
-)
+import "embed"
 
-//go:generate go run assets_generate.go

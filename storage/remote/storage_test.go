@@ -21,6 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/model/labels"
 )
 
 func TestStorageLifecycle(t *testing.T) {
@@ -76,6 +77,58 @@ func TestUpdateRemoteReadConfigs(t *testing.T) {
 	}
 	require.NoError(t, s.ApplyConfig(conf))
 	require.Equal(t, 1, len(s.queryables))
+
+	err := s.Close()
+	require.NoError(t, err)
+}
+
+func TestFilterExternalLabels(t *testing.T) {
+	dir := t.TempDir()
+
+	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil)
+
+	conf := &config.Config{
+		GlobalConfig: config.GlobalConfig{
+			ExternalLabels: labels.Labels{labels.Label{Name: "foo", Value: "bar"}},
+		},
+	}
+	require.NoError(t, s.ApplyConfig(conf))
+	require.Equal(t, 0, len(s.queryables))
+
+	conf.RemoteReadConfigs = []*config.RemoteReadConfig{
+		&config.DefaultRemoteReadConfig,
+	}
+
+	require.NoError(t, s.ApplyConfig(conf))
+	require.Equal(t, 1, len(s.queryables))
+	require.Equal(t, 1, len(s.queryables[0].(*sampleAndChunkQueryableClient).externalLabels))
+
+	err := s.Close()
+	require.NoError(t, err)
+}
+
+func TestIgnoreExternalLabels(t *testing.T) {
+	dir := t.TempDir()
+
+	s := NewStorage(nil, nil, nil, dir, defaultFlushDeadline, nil)
+
+	conf := &config.Config{
+		GlobalConfig: config.GlobalConfig{
+			ExternalLabels: labels.Labels{labels.Label{Name: "foo", Value: "bar"}},
+		},
+	}
+	require.NoError(t, s.ApplyConfig(conf))
+	require.Equal(t, 0, len(s.queryables))
+
+	conf.RemoteReadConfigs = []*config.RemoteReadConfig{
+		&config.DefaultRemoteReadConfig,
+	}
+
+	conf.RemoteReadConfigs[0].FilterExternalLabels = false
+
+	require.NoError(t, s.ApplyConfig(conf))
+	require.Equal(t, 1, len(s.queryables))
+	require.Equal(t, 0, len(s.queryables[0].(*sampleAndChunkQueryableClient).externalLabels))
 
 	err := s.Close()
 	require.NoError(t, err)

@@ -50,7 +50,6 @@ type WriteTo interface {
 	// Once returned, the WAL Watcher will not attempt to pass that data again.
 	Append([]record.RefSample) bool
 	AppendExemplars([]record.RefExemplar) bool
-
 	StoreSeries([]record.RefSeries, int)
 
 	// Next two methods are intended for garbage-collection: first we call

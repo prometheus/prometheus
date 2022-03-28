@@ -29,7 +29,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -39,6 +38,7 @@ import (
 	"github.com/alecthomas/units"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/regexp"
 	conntrack "github.com/mwitkow/go-conntrack"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -340,6 +340,7 @@ func New(logger log.Logger, o *Options) *Handler {
 		h.versionInfo,
 		o.Gatherer,
 		o.Registerer,
+		nil,
 	)
 
 	if o.RoutePrefix != "/" {

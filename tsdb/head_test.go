@@ -2969,7 +2969,7 @@ func TestSnapshotError(t *testing.T) {
 	}
 	head.tombstones.AddInterval(1, itvs...)
 
-	// Check existance of data.
+	// Check existence of data.
 	require.NotNil(t, head.series.getByHash(lbls.Hash(), lbls))
 	tm, err := head.tombstones.Get(1)
 	require.NoError(t, err)
@@ -3110,4 +3110,138 @@ func TestChunkSnapshotTakenAfterIncompleteSnapshot(t *testing.T) {
 	require.True(t, name != "")
 	require.Equal(t, 0, idx)
 	require.Greater(t, offset, 0)
+}
+
+// Tests https://github.com/prometheus/prometheus/issues/10277.
+func TestMmapPanicAfterMmapReplayCorruption(t *testing.T) {
+	dir := t.TempDir()
+	wlog, err := wal.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, false)
+	require.NoError(t, err)
+
+	opts := DefaultHeadOptions()
+	opts.ChunkRange = DefaultBlockDuration
+	opts.ChunkDirRoot = dir
+	opts.EnableExemplarStorage = true
+	opts.MaxExemplars.Store(config.DefaultExemplarsConfig.MaxExemplars)
+
+	h, err := NewHead(nil, nil, wlog, opts, nil)
+	require.NoError(t, err)
+	require.NoError(t, h.Init(0))
+
+	lastTs := int64(0)
+	var ref storage.SeriesRef
+	lbls := labels.FromStrings("__name__", "testing", "foo", "bar")
+	addChunks := func() {
+		interval := DefaultBlockDuration / (4 * 120)
+		app := h.Appender(context.Background())
+		for i := 0; i < 250; i++ {
+			ref, err = app.Append(ref, lbls, lastTs, float64(lastTs))
+			lastTs += interval
+			if i%10 == 0 {
+				require.NoError(t, app.Commit())
+				app = h.Appender(context.Background())
+			}
+		}
+		require.NoError(t, app.Commit())
+	}
+
+	addChunks()
+
+	require.NoError(t, h.Close())
+	wlog, err = wal.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, false)
+	require.NoError(t, err)
+
+	mmapFilePath := filepath.Join(dir, "chunks_head", "000001")
+	f, err := os.OpenFile(mmapFilePath, os.O_WRONLY, 0o666)
+	require.NoError(t, err)
+	_, err = f.WriteAt([]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}, 17)
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+
+	h, err = NewHead(nil, nil, wlog, opts, nil)
+	require.NoError(t, err)
+	require.NoError(t, h.Init(0))
+
+	addChunks()
+
+	require.NoError(t, h.Close())
+}
+
+// Tests https://github.com/prometheus/prometheus/issues/10277.
+func TestReplayAfterMmapReplayError(t *testing.T) {
+	dir := t.TempDir()
+	var h *Head
+	var err error
+
+	openHead := func() {
+		wlog, err := wal.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, false)
+		require.NoError(t, err)
+
+		opts := DefaultHeadOptions()
+		opts.ChunkRange = DefaultBlockDuration
+		opts.ChunkDirRoot = dir
+		opts.EnableMemorySnapshotOnShutdown = true
+		opts.MaxExemplars.Store(config.DefaultExemplarsConfig.MaxExemplars)
+
+		h, err = NewHead(nil, nil, wlog, opts, nil)
+		require.NoError(t, err)
+		require.NoError(t, h.Init(0))
+	}
+
+	openHead()
+
+	itvl := int64(15 * time.Second / time.Millisecond)
+	lastTs := int64(0)
+	lbls := labels.FromStrings("__name__", "testing", "foo", "bar")
+	var expSamples []tsdbutil.Sample
+	addSamples := func(numSamples int) {
+		app := h.Appender(context.Background())
+		var ref storage.SeriesRef
+		for i := 0; i < numSamples; i++ {
+			ref, err = app.Append(ref, lbls, lastTs, float64(lastTs))
+			expSamples = append(expSamples, sample{t: lastTs, v: float64(lastTs)})
+			require.NoError(t, err)
+			lastTs += itvl
+			if i%10 == 0 {
+				require.NoError(t, app.Commit())
+				app = h.Appender(context.Background())
+			}
+		}
+		require.NoError(t, app.Commit())
+	}
+
+	// Creating multiple m-map files.
+	for i := 0; i < 5; i++ {
+		addSamples(250)
+		require.NoError(t, h.Close())
+		if i != 4 {
+			// Don't open head for the last iteration.
+			openHead()
+		}
+	}
+
+	files, err := ioutil.ReadDir(filepath.Join(dir, "chunks_head"))
+	require.Equal(t, 5, len(files))
+
+	// Corrupt a m-map file.
+	mmapFilePath := filepath.Join(dir, "chunks_head", "000002")
+	f, err := os.OpenFile(mmapFilePath, os.O_WRONLY, 0o666)
+	require.NoError(t, err)
+	_, err = f.WriteAt([]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11}, 17)
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+
+	openHead()
+
+	// There should be less m-map files due to corruption.
+	files, err = ioutil.ReadDir(filepath.Join(dir, "chunks_head"))
+	require.Equal(t, 2, len(files))
+
+	// Querying should not panic.
+	q, err := NewBlockQuerier(h, 0, lastTs)
+	require.NoError(t, err)
+	res := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "__name__", "testing"))
+	require.Equal(t, map[string][]tsdbutil.Sample{lbls.String(): expSamples}, res)
+
+	require.NoError(t, h.Close())
 }

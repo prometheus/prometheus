@@ -13,7 +13,7 @@ interface CustomInfiniteScrollProps<T> {
 }
 
 // eslint-disable-next-line @typescript-eslint/explicit-module-boundary-types
-const CustomInfiniteScroll = <T extends unknown>({ allItems, child }: CustomInfiniteScrollProps<T>) => {
+const CustomInfiniteScroll = <T,>({ allItems, child }: CustomInfiniteScrollProps<T>) => {
   const [items, setItems] = useState<T[]>(allItems.slice(0, 50));
   const [index, setIndex] = useState<number>(initialNumberOfItemsDisplayed);
   const [hasMore, setHasMore] = useState<boolean>(allItems.length > initialNumberOfItemsDisplayed);

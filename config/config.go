@@ -19,13 +19,13 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"time"
 
 	"github.com/alecthomas/units"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/regexp"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -203,8 +203,9 @@ var (
 
 	// DefaultRemoteReadConfig is the default remote read configuration.
 	DefaultRemoteReadConfig = RemoteReadConfig{
-		RemoteTimeout:    model.Duration(1 * time.Minute),
-		HTTPClientConfig: config.DefaultHTTPClientConfig,
+		RemoteTimeout:        model.Duration(1 * time.Minute),
+		HTTPClientConfig:     config.DefaultHTTPClientConfig,
+		FilterExternalLabels: true,
 	}
 
 	// DefaultStorageConfig is the default TSDB/Exemplar storage configuration.
@@ -509,6 +510,8 @@ type TracingClientType string
 const (
 	TracingClientHTTP TracingClientType = "http"
 	TracingClientGRPC TracingClientType = "grpc"
+
+	GzipCompression = "gzip"
 )
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -535,6 +538,9 @@ type TracingConfig struct {
 	SamplingFraction float64           `yaml:"sampling_fraction,omitempty"`
 	Insecure         bool              `yaml:"insecure,omitempty"`
 	TLSConfig        config.TLSConfig  `yaml:"tls_config,omitempty"`
+	Headers          map[string]string `yaml:"headers,omitempty"`
+	Compression      string            `yaml:"compression,omitempty"`
+	Timeout          model.Duration    `yaml:"timeout,omitempty"`
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -546,15 +552,23 @@ func (t *TracingConfig) SetDirectory(dir string) {
 func (t *TracingConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	*t = TracingConfig{
 		ClientType: TracingClientGRPC,
-		Insecure:   true,
 	}
 	type plain TracingConfig
 	if err := unmarshal((*plain)(t)); err != nil {
 		return err
 	}
 
+	if err := validateHeadersForTracing(t.Headers); err != nil {
+		return err
+	}
+
 	if t.Endpoint == "" {
 		return errors.New("tracing endpoint must be set")
+	}
+
+	if t.Compression != "" && t.Compression != GzipCompression {
+		return fmt.Errorf("invalid compression type %s provided, valid options: %s",
+			t.Compression, GzipCompression)
 	}
 
 	return nil
@@ -791,6 +805,18 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 	return nil
 }
 
+func validateHeadersForTracing(headers map[string]string) error {
+	for header := range headers {
+		if strings.ToLower(header) == "authorization" {
+			return errors.New("custom authorization header configuration is not yet supported")
+		}
+		if _, ok := reservedHeaders[strings.ToLower(header)]; ok {
+			return errors.Errorf("%s is a reserved header. It must not be changed", header)
+		}
+	}
+	return nil
+}
+
 func validateHeaders(headers map[string]string) error {
 	for header := range headers {
 		if strings.ToLower(header) == "authorization" {
@@ -854,6 +880,9 @@ type RemoteReadConfig struct {
 	// RequiredMatchers is an optional list of equality matchers which have to
 	// be present in a selector to query the remote read endpoint.
 	RequiredMatchers model.LabelSet `yaml:"required_matchers,omitempty"`
+
+	// Whether to use the external labels as selectors for the remote read endpoint.
+	FilterExternalLabels bool `yaml:"filter_external_labels,omitempty"`
 }
 
 // SetDirectory joins any relative file paths with dir.

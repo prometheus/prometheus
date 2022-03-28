@@ -26,7 +26,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"strings"
 	"sync"
@@ -36,6 +35,7 @@ import (
 	"github.com/alecthomas/units"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/regexp"
 	conntrack "github.com/mwitkow/go-conntrack"
 	"github.com/oklog/run"
 	"github.com/pkg/errors"
@@ -148,6 +148,7 @@ type flagConfig struct {
 	// for ease of use.
 	enableExpandExternalLabels bool
 	enableNewSDManager         bool
+	enablePerStepStats         bool
 
 	prometheusURL   string
 	corsRegexString string
@@ -182,6 +183,9 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 			case "agent":
 				agentMode = true
 				level.Info(logger).Log("msg", "Experimental agent mode enabled.")
+			case "promql-per-step-stats":
+				c.enablePerStepStats = true
+				level.Info(logger).Log("msg", "Experimental per-step statistics reporting")
 			case "":
 				continue
 			case "promql-at-modifier", "promql-negative-offset":
@@ -305,6 +309,9 @@ func main() {
 	serverOnlyFlag(a, "storage.tsdb.wal-compression", "Compress the tsdb WAL.").
 		Hidden().Default("true").BoolVar(&cfg.tsdb.WALCompression)
 
+	serverOnlyFlag(a, "storage.tsdb.head-chunks-write-queue-size", "Size of the queue through which head chunks are written to the disk to be m-mapped, 0 disables the queue completely. Experimental.").
+		Default("0").IntVar(&cfg.tsdb.HeadChunksWriteQueueSize)
+
 	agentOnlyFlag(a, "storage.agent.path", "Base path for metrics storage.").
 		Default("data-agent/").StringVar(&cfg.agentStoragePath)
 
@@ -375,7 +382,7 @@ func main() {
 	serverOnlyFlag(a, "query.max-samples", "Maximum number of samples a single query can load into memory. Note that queries will fail if they try to load more samples than this into memory, so this also limits the number of samples a query can return.").
 		Default("50000000").IntVar(&cfg.queryMaxSamples)
 
-	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: agent, exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-at-modifier, promql-negative-offset, remote-write-receiver (DEPRECATED), extra-scrape-metrics, new-service-discovery-manager. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
+	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: agent, exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-at-modifier, promql-negative-offset, promql-per-step-stats, remote-write-receiver (DEPRECATED), extra-scrape-metrics, new-service-discovery-manager. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
 		Default("").StringsVar(&cfg.featureList)
 
 	promlogflag.AddFlags(a, &cfg.promlogConfig)
@@ -428,7 +435,11 @@ func main() {
 	// Throw error for invalid config before starting other components.
 	var cfgFile *config.Config
 	if cfgFile, err = config.LoadFile(cfg.configFile, agentMode, false, log.NewNopLogger()); err != nil {
-		level.Error(logger).Log("msg", fmt.Sprintf("Error loading config (--config.file=%s)", cfg.configFile), "err", err)
+		absPath, pathErr := filepath.Abs(cfg.configFile)
+		if pathErr != nil {
+			absPath = cfg.configFile
+		}
+		level.Error(logger).Log("msg", fmt.Sprintf("Error loading config (--config.file=%s)", cfg.configFile), "file", absPath, "err", err)
 		os.Exit(2)
 	}
 	if cfg.tsdb.EnableExemplarStorage {
@@ -566,6 +577,7 @@ func main() {
 			// always on for regular PromQL as of Prometheus v2.33.
 			EnableAtModifier:     true,
 			EnableNegativeOffset: true,
+			EnablePerStepStats:   cfg.enablePerStepStats,
 		}
 
 		queryEngine = promql.NewEngine(opts)
@@ -1481,6 +1493,7 @@ type tsdbOptions struct {
 	NoLockfile                     bool
 	AllowOverlappingBlocks         bool
 	WALCompression                 bool
+	HeadChunksWriteQueueSize       int
 	StripeSize                     int
 	MinBlockDuration               model.Duration
 	MaxBlockDuration               model.Duration
@@ -1498,6 +1511,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		NoLockfile:                     opts.NoLockfile,
 		AllowOverlappingBlocks:         opts.AllowOverlappingBlocks,
 		WALCompression:                 opts.WALCompression,
+		HeadChunksWriteQueueSize:       opts.HeadChunksWriteQueueSize,
 		StripeSize:                     opts.StripeSize,
 		MinBlockDuration:               int64(time.Duration(opts.MinBlockDuration) / time.Millisecond),
 		MaxBlockDuration:               int64(time.Duration(opts.MaxBlockDuration) / time.Millisecond),

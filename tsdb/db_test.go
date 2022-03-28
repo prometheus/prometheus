@@ -2974,6 +2974,9 @@ func TestOpen_VariousBlockStates(t *testing.T) {
 		_, err = writeMetaFile(log.NewLogfmtLogger(os.Stderr), dir, m)
 		require.NoError(t, err)
 	}
+	tmpCheckpointDir := path.Join(tmpDir, "wal/checkpoint.00000001.tmp")
+	err := os.MkdirAll(tmpCheckpointDir, 0o777)
+	require.NoError(t, err)
 
 	opts := DefaultOptions()
 	opts.RetentionDuration = 0
@@ -3005,6 +3008,8 @@ func TestOpen_VariousBlockStates(t *testing.T) {
 		}
 	}
 	require.Equal(t, len(expectedIgnoredDirs), ignored)
+	_, err = os.Stat(tmpCheckpointDir)
+	require.True(t, os.IsNotExist(err))
 }
 
 func TestOneCheckpointPerCompactCall(t *testing.T) {
@@ -3418,4 +3423,62 @@ func newTestDB(t *testing.T) *DB {
 		require.NoError(t, db.Close())
 	})
 	return db
+}
+
+// Tests https://github.com/prometheus/prometheus/issues/10291#issuecomment-1044373110.
+func TestDBPanicOnMmappingHeadChunk(t *testing.T) {
+	dir := t.TempDir()
+
+	db, err := Open(dir, nil, nil, DefaultOptions(), nil)
+	require.NoError(t, err)
+	db.DisableCompactions()
+
+	// Choosing scrape interval of 45s to have chunk larger than 1h.
+	itvl := int64(45 * time.Second / time.Millisecond)
+
+	lastTs := int64(0)
+	addSamples := func(numSamples int) {
+		app := db.Appender(context.Background())
+		var ref storage.SeriesRef
+		lbls := labels.FromStrings("__name__", "testing", "foo", "bar")
+		for i := 0; i < numSamples; i++ {
+			ref, err = app.Append(ref, lbls, lastTs, float64(lastTs))
+			require.NoError(t, err)
+			lastTs += itvl
+			if i%10 == 0 {
+				require.NoError(t, app.Commit())
+				app = db.Appender(context.Background())
+			}
+		}
+		require.NoError(t, app.Commit())
+	}
+
+	// Ingest samples upto 2h50m to make the head "about to compact".
+	numSamples := int(170*time.Minute/time.Millisecond) / int(itvl)
+	addSamples(numSamples)
+
+	require.Len(t, db.Blocks(), 0)
+	require.NoError(t, db.Compact())
+	require.Len(t, db.Blocks(), 0)
+
+	// Restarting.
+	require.NoError(t, db.Close())
+
+	db, err = Open(dir, nil, nil, DefaultOptions(), nil)
+	require.NoError(t, err)
+	db.DisableCompactions()
+
+	// Ingest samples upto 20m more to make the head compact.
+	numSamples = int(20*time.Minute/time.Millisecond) / int(itvl)
+	addSamples(numSamples)
+
+	require.Len(t, db.Blocks(), 0)
+	require.NoError(t, db.Compact())
+	require.Len(t, db.Blocks(), 1)
+
+	// More samples to m-map and panic.
+	numSamples = int(120*time.Minute/time.Millisecond) / int(itvl)
+	addSamples(numSamples)
+
+	require.NoError(t, db.Close())
 }

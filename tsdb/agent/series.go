@@ -189,7 +189,7 @@ func (s *stripeSeries) Set(hash uint64, series *memSeries) {
 	)
 
 	// We can't hold both locks at once otherwise we might deadlock with a
-	// simulatenous call to GC.
+	// simultaneous call to GC.
 	//
 	// We update s.series first because GC expects anything in s.hashes to
 	// already exist in s.series.

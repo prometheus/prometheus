@@ -8,8 +8,8 @@
     "build": "npm run build:grammar && npm run build:lib",
     "build:grammar": "npx lezer-generator src/grammar/promql.grammar -o src/grammar/parser",
     "build:lib": "bash ./build.sh",
-    "test": "npm run build:grammar && ts-mocha -p tsconfig.json ./**/*.test.ts",
-    "test:coverage": "npm run build:grammar && nyc ts-mocha -p ./tsconfig.json ./**/*.test.ts",
+    "test": "npm run build:grammar && ts-mocha -p tsconfig.json src/**/*.test.ts",
+    "test:coverage": "npm run build:grammar && nyc ts-mocha -p tsconfig.json src/**/*.test.ts",
     "codecov": "nyc report --reporter=text-lcov > coverage.lcov && codecov",
     "lint": "eslint src/ --ext .ts",
     "lint:fix": "eslint --fix src/ --ext .ts"
@@ -65,7 +65,7 @@
     "ts-loader": "^7.0.5",
     "ts-mocha": "^8.0.0",
     "ts-node": "^10.4.0",
-    "typescript": "^4.5.2"
+    "typescript": "^4.6.2"
   },
   "peerDependencies": {
     "@codemirror/autocomplete": "^0.19.9",

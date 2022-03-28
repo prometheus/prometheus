@@ -2,7 +2,7 @@
 version: 2.1
 
 orbs:
-  prometheus: prometheus/prometheus@0.15.0
+  prometheus: prometheus/prometheus@0.16.0
   go: circleci/go@1.7.0
   win: circleci/windows@2.3.0
 
@@ -82,8 +82,6 @@ jobs:
           command: refreshenv
       - run:
           command: |
-            $env:GOARCH=""; $env:GOOS=""; cd web/ui; go generate
-            cd ../..
             $TestTargets = go list ./... | Where-Object { $_ -NotMatch "(github.com/prometheus/prometheus/discovery.*|github.com/prometheus/prometheus/config|github.com/prometheus/prometheus/web)"}
             go test $TestTargets -vet=off -v
           environment:
@@ -116,7 +114,6 @@ jobs:
     steps:
       - checkout
       - run: ./scripts/sync_repo_files.sh
-      - run: ./scripts/sync_codemirror.sh
 
 workflows:
   version: 2

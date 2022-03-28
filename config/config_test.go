@@ -19,12 +19,12 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"regexp"
 	"testing"
 	"time"
 
 	"github.com/alecthomas/units"
 	"github.com/go-kit/log"
+	"github.com/grafana/regexp"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
@@ -130,11 +130,12 @@ var expectedConf = &Config{
 
 	RemoteReadConfigs: []*RemoteReadConfig{
 		{
-			URL:              mustParseURL("http://remote1/read"),
-			RemoteTimeout:    model.Duration(1 * time.Minute),
-			ReadRecent:       true,
-			Name:             "default",
-			HTTPClientConfig: config.DefaultHTTPClientConfig,
+			URL:                  mustParseURL("http://remote1/read"),
+			RemoteTimeout:        model.Duration(1 * time.Minute),
+			ReadRecent:           true,
+			Name:                 "default",
+			HTTPClientConfig:     config.DefaultHTTPClientConfig,
+			FilterExternalLabels: true,
 		},
 		{
 			URL:              mustParseURL("http://remote3/read"),
@@ -149,6 +150,7 @@ var expectedConf = &Config{
 				},
 				FollowRedirects: true,
 			},
+			FilterExternalLabels: true,
 		},
 	},
 
@@ -986,9 +988,17 @@ var expectedConf = &Config{
 		},
 	},
 	TracingConfig: TracingConfig{
-		Endpoint:   "localhost:4317",
-		ClientType: TracingClientGRPC,
-		Insecure:   true,
+		Endpoint:    "localhost:4317",
+		ClientType:  TracingClientGRPC,
+		Insecure:    false,
+		Compression: "gzip",
+		Timeout:     model.Duration(5 * time.Second),
+		Headers:     map[string]string{"foo": "bar"},
+		TLSConfig: config.TLSConfig{
+			CertFile:           "testdata/valid_cert_file",
+			KeyFile:            "testdata/valid_key_file",
+			InsecureSkipVerify: true,
+		},
 	},
 }
 
@@ -1447,8 +1457,20 @@ var expectedErrors = []struct {
 		errMsg:   "relabel action cannot be empty",
 	},
 	{
-		filename: "tracing.bad.yml",
+		filename: "tracing_missing_endpoint.bad.yml",
 		errMsg:   "tracing endpoint must be set",
+	},
+	{
+		filename: "tracing_invalid_header.bad.yml",
+		errMsg:   "x-prometheus-remote-write-version is a reserved header. It must not be changed",
+	},
+	{
+		filename: "tracing_invalid_authorization_header.bad.yml",
+		errMsg:   "authorization header configuration is not yet supported",
+	},
+	{
+		filename: "tracing_invalid_compression.bad.yml",
+		errMsg:   "invalid compression type foo provided, valid options: gzip",
 	},
 	{
 		filename: "uyuni_no_server.bad.yml",
