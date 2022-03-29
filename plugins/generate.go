@@ -30,7 +30,14 @@ import (
 //go:generate go run generate.go
 
 func main() {
-	data, err := ioutil.ReadFile(filepath.Join("..", "plugins.yml"))
+	file := filepath.Join("..", "plugins.yml")
+	if envFile := os.Getenv("PLUGINS_FILE"); envFile != "" {
+		file = envFile
+		if !filepath.IsAbs(file) {
+			file = filepath.Join("..", file)
+		}
+	}
+	data, err := ioutil.ReadFile(file)
 	if err != nil {
 		log.Fatal(err)
 	}

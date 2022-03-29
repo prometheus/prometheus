@@ -1,0 +1,2 @@
+- github.com/prometheus/prometheus/discovery/consul
+- github.com/prometheus/prometheus/discovery/kubernetes

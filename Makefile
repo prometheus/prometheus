@@ -25,6 +25,8 @@ TSDB_BENCHMARK_OUTPUT_DIR ?= ./benchout
 
 GOLANGCI_LINT_OPTS ?= --timeout 4m
 
+PLUGINS_FILE ?= plugins.yml
+
 include Makefile.common
 
 DOCKER_IMAGE_NAME       ?= prometheus
@@ -78,15 +80,13 @@ tarball: npm_licenses common-tarball
 .PHONY: docker
 docker: npm_licenses common-docker
 
-plugins/plugins.go: plugins.yml plugins/generate.go
-	@echo ">> creating plugins list"
-	$(GO) generate -tags plugins ./plugins
-
 .PHONY: plugins
-plugins: plugins/plugins.go
+plugins:
+	@echo ">> creating plugins list"
+	$(GO) generate -tags plugins ./plugins $(PLUGINS_FILE)
 
 .PHONY: build
-build: assets assets-compress common-build plugins
+build: assets assets-compress plugins common-build
 
 .PHONY: bench_tsdb
 bench_tsdb: $(PROMU)

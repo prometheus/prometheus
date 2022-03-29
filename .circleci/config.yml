@@ -149,7 +149,10 @@ workflows:
             branches:
               ignore: /^(main|release-.*|.*build-all.*)$/
       - prometheus/build:
-          name: build_all
+          name: build_all_slim
+          environment: &slim
+            PLUGINS_FILE: plugins-slim.yml
+            DOCKER_IMAGE_NAME: prometheus-slim
           parallelism: 12
           filters:
             branches:
@@ -162,6 +165,18 @@ workflows:
             - test_go
             - test_ui
             - build_all
+          filters:
+            branches:
+              only: main
+          image: circleci/golang:1-node
+      - prometheus/publish_main_slim:
+          name: publish_main_slim
+          context: org-context
+          environment: *slim
+          requires:
+            - test_go
+            - test_ui
+            - build_all_slim
           filters:
             branches:
               only: main
