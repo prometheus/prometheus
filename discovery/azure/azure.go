@@ -360,12 +360,12 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 
 			// Get the IP address information via separate call to the network provider.
 			for _, nicID := range vm.NetworkInterfaces {
-				networkInterface, detailedErr := client.getNetworkInterfaceByID(ctx, nicID)
-				if detailedErr != nil {
-					if detailedErr.StatusCode == 404 {
-						level.Warn(d.logger).Log("msg", "Network interface does not exist", "name", nicID, "err", detailedErr)
+				networkInterface, err := client.getNetworkInterfaceByID(ctx, nicID)
+				if err != nil {
+					if errors.Is(err, errorNotFound) {
+						level.Warn(d.logger).Log("msg", "Network interface does not exist", "name", nicID, "err", err)
 					} else {
-						ch <- target{labelSet: nil, err: detailedErr}
+						ch <- target{labelSet: nil, err: err}
 					}
 					// Get out of this routine because we cannot continue without a network interface.
 					return
@@ -555,7 +555,12 @@ func mapFromVMScaleSetVM(vm compute.VirtualMachineScaleSetVM, scaleSetName strin
 	}
 }
 
-func (client *azureClient) getNetworkInterfaceByID(ctx context.Context, networkInterfaceID string) (*network.Interface, *autorest.DetailedError) {
+var errorNotFound = errors.New("Network interface does not exist")
+
+// getNetworkInterfaceByID gets the network interface.
+// If a 404 is returned from the Azure API, `errorNotFound` is returned.
+// On all other errors, an autorest.DetailedError is returned.
+func (client *azureClient) getNetworkInterfaceByID(ctx context.Context, networkInterfaceID string) (*network.Interface, error) {
 	result := network.Interface{}
 	queryParameters := map[string]interface{}{
 		"api-version": "2018-10-01",
@@ -569,20 +574,20 @@ func (client *azureClient) getNetworkInterfaceByID(ctx context.Context, networkI
 		autorest.WithUserAgent(userAgent))
 	req, err := preparer.Prepare((&http.Request{}).WithContext(ctx))
 	if err != nil {
-		detailError := autorest.NewErrorWithError(err, "network.InterfacesClient", "Get", nil, "Failure preparing request")
-		return nil, &detailError
+		return nil, autorest.NewErrorWithError(err, "network.InterfacesClient", "Get", nil, "Failure preparing request")
 	}
 
 	resp, err := client.nic.GetSender(req)
 	if err != nil {
-		detailError := autorest.NewErrorWithError(err, "network.InterfacesClient", "Get", resp, "Failure sending request")
-		return nil, &detailError
+		return nil, autorest.NewErrorWithError(err, "network.InterfacesClient", "Get", resp, "Failure sending request")
 	}
 
 	result, err = client.nic.GetResponder(resp)
 	if err != nil {
-		detailError := autorest.NewErrorWithError(err, "network.InterfacesClient", "Get", resp, "Failure responding to request")
-		return nil, &detailError
+		if resp.StatusCode == http.StatusNotFound {
+			return nil, errorNotFound
+		}
+		return nil, autorest.NewErrorWithError(err, "network.InterfacesClient", "Get", resp, "Failure responding to request")
 	}
 
 	return &result, nil
