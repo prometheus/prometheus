@@ -264,16 +264,23 @@ type Group struct {
 	logger log.Logger
 
 	metrics *Metrics
+
+	ruleGroupPostProcessFunc RuleGroupPostProcessFunc
 }
 
+// This function will be used before each rule group evaluation if not nil.
+// Use this function type if the rule group post processing is needed.
+type RuleGroupPostProcessFunc func(g *Group, lastEvalTimestamp time.Time, log log.Logger) error
+
 type GroupOptions struct {
-	Name, File    string
-	Interval      time.Duration
-	Limit         int
-	Rules         []Rule
-	ShouldRestore bool
-	Opts          *ManagerOptions
-	done          chan struct{}
+	Name, File               string
+	Interval                 time.Duration
+	Limit                    int
+	Rules                    []Rule
+	ShouldRestore            bool
+	Opts                     *ManagerOptions
+	done                     chan struct{}
+	RuleGroupPostProcessFunc RuleGroupPostProcessFunc
 }
 
 // NewGroup makes a new Group with the given name, options, and rules.
@@ -295,19 +302,20 @@ func NewGroup(o GroupOptions) *Group {
 	metrics.GroupInterval.WithLabelValues(key).Set(o.Interval.Seconds())
 
 	return &Group{
-		name:                 o.Name,
-		file:                 o.File,
-		interval:             o.Interval,
-		limit:                o.Limit,
-		rules:                o.Rules,
-		shouldRestore:        o.ShouldRestore,
-		opts:                 o.Opts,
-		seriesInPreviousEval: make([]map[string]labels.Labels, len(o.Rules)),
-		done:                 make(chan struct{}),
-		managerDone:          o.done,
-		terminated:           make(chan struct{}),
-		logger:               log.With(o.Opts.Logger, "file", o.File, "group", o.Name),
-		metrics:              metrics,
+		name:                     o.Name,
+		file:                     o.File,
+		interval:                 o.Interval,
+		limit:                    o.Limit,
+		rules:                    o.Rules,
+		shouldRestore:            o.ShouldRestore,
+		opts:                     o.Opts,
+		seriesInPreviousEval:     make([]map[string]labels.Labels, len(o.Rules)),
+		done:                     make(chan struct{}),
+		managerDone:              o.done,
+		terminated:               make(chan struct{}),
+		logger:                   log.With(o.Opts.Logger, "file", o.File, "group", o.Name),
+		metrics:                  metrics,
+		ruleGroupPostProcessFunc: o.RuleGroupPostProcessFunc,
 	}
 }
 
@@ -319,6 +327,12 @@ func (g *Group) File() string { return g.file }
 
 // Rules returns the group's rules.
 func (g *Group) Rules() []Rule { return g.rules }
+
+// Queryable returns the group's querable.
+func (g *Group) Queryable() storage.Queryable { return g.opts.Queryable }
+
+// Context returns the group's context.
+func (g *Group) Context() context.Context { return g.opts.Context }
 
 // Interval returns the group's interval.
 func (g *Group) Interval() time.Duration { return g.interval }
@@ -423,8 +437,20 @@ func (g *Group) run(ctx context.Context) {
 					g.metrics.IterationsScheduled.WithLabelValues(GroupKey(g.file, g.name)).Add(float64(missed))
 				}
 				evalTimestamp = evalTimestamp.Add((missed + 1) * g.interval)
+
+				useRuleGroupPostProcessFunc(g, evalTimestamp.Add(-(missed+1)*g.interval))
+
 				iter()
 			}
+		}
+	}
+}
+
+func useRuleGroupPostProcessFunc(g *Group, lastEvalTimestamp time.Time) {
+	if g.ruleGroupPostProcessFunc != nil {
+		err := g.ruleGroupPostProcessFunc(g, lastEvalTimestamp, g.logger)
+		if err != nil {
+			level.Warn(g.logger).Log("msg", "ruleGroupPostProcessFunc failed", "err", err)
 		}
 	}
 }
@@ -744,32 +770,10 @@ func (g *Group) RestoreForState(ts time.Time) {
 		}
 
 		alertRule.ForEachActiveAlert(func(a *Alert) {
-			smpl := alertRule.forStateSample(a, time.Now(), 0)
-			var matchers []*labels.Matcher
-			for _, l := range smpl.Metric {
-				mt, err := labels.NewMatcher(labels.MatchEqual, l.Name, l.Value)
-				if err != nil {
-					panic(err)
-				}
-				matchers = append(matchers, mt)
-			}
-
-			sset := q.Select(false, nil, matchers...)
-
-			seriesFound := false
 			var s storage.Series
-			for sset.Next() {
-				// Query assures that smpl.Metric is included in sset.At().Labels(),
-				// hence just checking the length would act like equality.
-				// (This is faster than calling labels.Compare again as we already have some info).
-				if len(sset.At().Labels()) == len(smpl.Metric) {
-					s = sset.At()
-					seriesFound = true
-					break
-				}
-			}
 
-			if err := sset.Err(); err != nil {
+			s, err := alertRule.QueryforStateSeries(a, q)
+			if err != nil {
 				// Querier Warnings are ignored. We do not care unless we have an error.
 				level.Error(g.logger).Log(
 					"msg", "Failed to restore 'for' state",
@@ -780,7 +784,7 @@ func (g *Group) RestoreForState(ts time.Time) {
 				return
 			}
 
-			if !seriesFound {
+			if s == nil {
 				return
 			}
 
@@ -958,11 +962,12 @@ func (m *Manager) Stop() {
 
 // Update the rule manager's state as the config requires. If
 // loading the new rules failed the old rule set is restored.
-func (m *Manager) Update(interval time.Duration, files []string, externalLabels labels.Labels, externalURL string) error {
+func (m *Manager) Update(interval time.Duration, files []string, externalLabels labels.Labels, externalURL string, ruleGroupPostProcessFunc RuleGroupPostProcessFunc) error {
 	m.mtx.Lock()
 	defer m.mtx.Unlock()
 
-	groups, errs := m.LoadGroups(interval, externalLabels, externalURL, files...)
+	groups, errs := m.LoadGroups(interval, externalLabels, externalURL, ruleGroupPostProcessFunc, files...)
+
 	if errs != nil {
 		for _, e := range errs {
 			level.Error(m.logger).Log("msg", "loading groups failed", "err", e)
@@ -1046,7 +1051,7 @@ func (FileLoader) Parse(query string) (parser.Expr, error) { return parser.Parse
 
 // LoadGroups reads groups from a list of files.
 func (m *Manager) LoadGroups(
-	interval time.Duration, externalLabels labels.Labels, externalURL string, filenames ...string,
+	interval time.Duration, externalLabels labels.Labels, externalURL string, ruleGroupPostProcessFunc RuleGroupPostProcessFunc, filenames ...string,
 ) (map[string]*Group, []error) {
 	groups := make(map[string]*Group)
 
@@ -1093,14 +1098,15 @@ func (m *Manager) LoadGroups(
 			}
 
 			groups[GroupKey(fn, rg.Name)] = NewGroup(GroupOptions{
-				Name:          rg.Name,
-				File:          fn,
-				Interval:      itv,
-				Limit:         rg.Limit,
-				Rules:         rules,
-				ShouldRestore: shouldRestore,
-				Opts:          m.opts,
-				done:          m.done,
+				Name:                     rg.Name,
+				File:                     fn,
+				Interval:                 itv,
+				Limit:                    rg.Limit,
+				Rules:                    rules,
+				ShouldRestore:            shouldRestore,
+				Opts:                     m.opts,
+				done:                     m.done,
+				RuleGroupPostProcessFunc: ruleGroupPostProcessFunc,
 			})
 		}
 	}
