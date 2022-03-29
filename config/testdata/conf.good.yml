@@ -39,6 +39,7 @@ remote_read:
   - url: http://remote1/read
     read_recent: true
     name: default
+    enable_http2: false
   - url: http://remote3/read
     read_recent: false
     name: read_special
