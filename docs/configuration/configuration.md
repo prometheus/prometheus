@@ -198,6 +198,9 @@ oauth2:
 # Configure whether scrape requests follow HTTP 3xx redirects.
 [ follow_redirects: <boolean> | default = true ]
 
+# Whether to enable HTTP2.
+[ enable_http2: <bool> | default: true ]
+
 # Configures the scrape request's TLS settings.
 tls_config:
   [ <tls_config> ]
@@ -396,6 +399,9 @@ endpoint_params:
 # Configures the token request's TLS settings.
 tls_config:
   [ <tls_config> ]
+
+# Optional proxy URL.
+[ proxy_url: <string> ]
 ```
 
 ### `<azure_sd_config>`
@@ -477,6 +483,9 @@ oauth2:
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <boolean> | default = true ]
+
+# Whether to enable HTTP2.
+[ enable_http2: <bool> | default: true ]
 
 # TLS configuration.
 tls_config:
@@ -574,6 +583,9 @@ oauth2:
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <boolean> | default = true ]
 
+# Whether to enable HTTP2.
+[ enable_http2: <bool> | default: true ]
+
 # TLS configuration.
 tls_config:
   [ <tls_config> ]
@@ -648,6 +660,9 @@ oauth2:
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <boolean> | default = true ]
+
+# Whether to enable HTTP2.
+[ enable_http2: <bool> | default: true ]
 
 # TLS configuration.
 tls_config:
@@ -743,6 +758,9 @@ oauth2:
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <boolean> | default = true ]
+
+# Whether to enable HTTP2.
+[ enable_http2: <bool> | default: true ]
 
 ```
 
@@ -908,6 +926,9 @@ oauth2:
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <boolean> | default = true ]
+
+# Whether to enable HTTP2.
+[ enable_http2: <bool> | default: true ]
 
 ```
 
@@ -1211,6 +1232,9 @@ oauth2:
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <boolean> | default = true ]
+
+# Whether to enable HTTP2.
+[ enable_http2: <bool> | default: true ]
 ```
 
 See [this example Prometheus configuration file](/documentation/examples/prometheus-puppetdb.yml)
@@ -1416,6 +1440,9 @@ oauth2:
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <boolean> | default = true ]
 
+# Whether to enable HTTP2.
+[ enable_http2: <bool> | default: true ]
+
 # TLS configuration.
 tls_config:
   [ <tls_config> ]
@@ -1497,6 +1524,9 @@ oauth2:
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <boolean> | default = true ]
+
+# Whether to enable HTTP2.
+[ enable_http2: <bool> | default: true ]
 
 # TLS configuration.
 tls_config:
@@ -1697,6 +1727,9 @@ oauth2:
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <boolean> | default = true ]
 
+# Whether to enable HTTP2.
+[ enable_http2: <bool> | default: true ]
+
 # TLS configuration.
 tls_config:
   [ <tls_config> ]
@@ -1801,6 +1834,9 @@ oauth2:
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <boolean> | default = true ]
+
+# Whether to enable HTTP2.
+[ enable_http2: <bool> | default: true ]
 ```
 
 The [relabeling phase](#relabel_config) is the preferred and more powerful way
@@ -1918,6 +1954,9 @@ oauth2:
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <boolean> | default = true ]
 
+# Whether to enable HTTP2.
+[ enable_http2: <bool> | default: true ]
+
 # TLS configuration.
 tls_config:
   [ <tls_config> ]
@@ -2000,6 +2039,9 @@ oauth2:
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <boolean> | default = true ]
+
+# Whether to enable HTTP2.
+[ enable_http2: <bool> | default: true ]
 
 # TLS configuration for connecting to marathon servers
 tls_config:
@@ -2211,6 +2253,9 @@ tls_config:
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <boolean> | default = true ]
 
+# Whether to enable HTTP2.
+[ enable_http2: <bool> | default: true ]
+
 # Refresh interval to re-read the app instance list.
 [ refresh_interval: <duration> | default = 30s ]
 ```
@@ -2315,6 +2360,9 @@ tags_filter:
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <boolean> | default = true ]
 
+# Whether to enable HTTP2.
+[ enable_http2: <bool> | default: true ]
+
 # Optional proxy URL.
 [ proxy_url: <string> ]
 
@@ -2383,10 +2431,13 @@ oauth2:
   [ <oauth2> ]
 
 # Optional proxy URL.
-  [ proxy_url: <string> ]
+[ proxy_url: <string> ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
-  [ follow_redirects: <boolean> | default = true ]
+[ follow_redirects: <boolean> | default = true ]
+
+# Whether to enable HTTP2.
+[ enable_http2: <bool> | default: true ]
 
 # TLS configuration.
 tls_config:
@@ -2569,6 +2620,9 @@ tls_config:
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <boolean> | default = true ]
+
+# Whether to enable HTTP2.
+[ enable_http2: <bool> | default: true ]
 
 # List of Azure service discovery configurations.
 azure_sd_configs:
@@ -2789,6 +2843,9 @@ tls_config:
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <boolean> | default = true ]
 
+# Whether to enable HTTP2.
+[ enable_http2: <bool> | default: true ]
+
 # Configures the queue used to write to remote storage.
 queue_config:
   # Number of samples to buffer per shard before we block reading of more
@@ -2889,6 +2946,9 @@ tls_config:
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
 [ follow_redirects: <boolean> | default = true ]
+
+# Whether to enable HTTP2.
+[ enable_http2: <bool> | default: true ]
 
 # Whether to use the external labels as selectors for the remote read endpoint.
 [ filter_external_labels: <boolean> | default = true ]
