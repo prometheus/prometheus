@@ -374,7 +374,11 @@ type QueueManager struct {
 	highestRecvTimestamp *maxTimestamp
 }
 
-// NewQueueManager builds a new QueueManager.
+// NewQueueManager builds a new QueueManager and starts a new
+// WAL watcher with queue manager as the WriteTo destination.
+// The WAL watcher takes the dir parameter as the base directory
+// for where the WAL shall be located. Note that the full path to
+// the WAL directory will be constructed as <dir>/wal.
 func NewQueueManager(
 	metrics *queueManagerMetrics,
 	watcherMetrics *wal.WatcherMetrics,
