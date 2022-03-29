@@ -32,6 +32,8 @@ import (
 	"syscall"
 	"time"
 
+	_ "go.uber.org/automaxprocs"
+
 	"github.com/alecthomas/units"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
