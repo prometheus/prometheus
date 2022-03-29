@@ -571,11 +571,10 @@ func main() {
 	)
 
 	if cfg.enableAutoGOMAXPROCS {
-		undo, err := maxprocs.Set()
+		_, err := maxprocs.Set()
 
 		if err != nil {
 			level.Warn(logger).Log("failed to set GOMAXPROCS: %v", err)
-			undo()
 		}
 	}
 
