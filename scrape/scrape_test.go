@@ -57,7 +57,7 @@ func TestNewScrapePool(t *testing.T) {
 	var (
 		app   = &nopAppendable{}
 		cfg   = &config.ScrapeConfig{}
-		sp, _ = newScrapePool(cfg, app, 0, nil, false)
+		sp, _ = newScrapePool(cfg, app, 0, nil, false, nil)
 	)
 
 	if a, ok := sp.appendable.(*nopAppendable); !ok || a != app {
@@ -92,7 +92,7 @@ func TestDroppedTargetsList(t *testing.T) {
 				},
 			},
 		}
-		sp, _                  = newScrapePool(cfg, app, 0, nil, false)
+		sp, _                  = newScrapePool(cfg, app, 0, nil, false, nil)
 		expectedLabelSetString = "{__address__=\"127.0.0.1:9090\", __scrape_interval__=\"0s\", __scrape_timeout__=\"0s\", job=\"dropMe\"}"
 		expectedLength         = 1
 	)
@@ -455,7 +455,7 @@ func TestScrapePoolTargetLimit(t *testing.T) {
 func TestScrapePoolAppender(t *testing.T) {
 	cfg := &config.ScrapeConfig{}
 	app := &nopAppendable{}
-	sp, _ := newScrapePool(cfg, app, 0, nil, false)
+	sp, _ := newScrapePool(cfg, app, 0, nil, false, nil)
 
 	loop := sp.newLoop(scrapeLoopOptions{
 		target: &Target{},
@@ -463,7 +463,7 @@ func TestScrapePoolAppender(t *testing.T) {
 	appl, ok := loop.(*scrapeLoop)
 	require.True(t, ok, "Expected scrapeLoop but got %T", loop)
 
-	wrapped := appl.appender(context.Background())
+	wrapped := appender(appl.appender(context.Background()), 0)
 
 	tl, ok := wrapped.(*timeLimitAppender)
 	require.True(t, ok, "Expected timeLimitAppender but got %T", wrapped)
@@ -471,20 +471,21 @@ func TestScrapePoolAppender(t *testing.T) {
 	_, ok = tl.Appender.(nopAppender)
 	require.True(t, ok, "Expected base appender but got %T", tl.Appender)
 
+	sampleLimit := 100
 	loop = sp.newLoop(scrapeLoopOptions{
 		target:      &Target{},
-		sampleLimit: 100,
+		sampleLimit: sampleLimit,
 	})
 	appl, ok = loop.(*scrapeLoop)
 	require.True(t, ok, "Expected scrapeLoop but got %T", loop)
 
-	wrapped = appl.appender(context.Background())
+	wrapped = appender(appl.appender(context.Background()), sampleLimit)
 
 	sl, ok := wrapped.(*limitAppender)
 	require.True(t, ok, "Expected limitAppender but got %T", wrapped)
 
 	tl, ok = sl.Appender.(*timeLimitAppender)
-	require.True(t, ok, "Expected limitAppender but got %T", sl.Appender)
+	require.True(t, ok, "Expected timeLimitAppender but got %T", sl.Appender)
 
 	_, ok = tl.Appender.(nopAppender)
 	require.True(t, ok, "Expected base appender but got %T", tl.Appender)
@@ -496,7 +497,7 @@ func TestScrapePoolRaces(t *testing.T) {
 	newConfig := func() *config.ScrapeConfig {
 		return &config.ScrapeConfig{ScrapeInterval: interval, ScrapeTimeout: timeout}
 	}
-	sp, _ := newScrapePool(newConfig(), &nopAppendable{}, 0, nil, false)
+	sp, _ := newScrapePool(newConfig(), &nopAppendable{}, 0, nil, false, nil)
 	tgts := []*targetgroup.Group{
 		{
 			Targets: []model.LabelSet{
@@ -1478,7 +1479,8 @@ func TestScrapeLoopAppendCacheEntryButErrNotFound(t *testing.T) {
 	fakeRef := storage.SeriesRef(1)
 	expValue := float64(1)
 	metric := `metric{n="1"} 1`
-	p := textparse.New([]byte(metric), "")
+	p, warning := textparse.New([]byte(metric), "")
+	require.NoError(t, warning)
 
 	var lset labels.Labels
 	p.Next()
@@ -2510,12 +2512,20 @@ func TestReuseScrapeCache(t *testing.T) {
 			ScrapeInterval: model.Duration(5 * time.Second),
 			MetricsPath:    "/metrics",
 		}
-		sp, _ = newScrapePool(cfg, app, 0, nil, false)
+		sp, _ = newScrapePool(cfg, app, 0, nil, false, nil)
 		t1    = &Target{
 			discoveredLabels: labels.Labels{
 				labels.Label{
 					Name:  "labelNew",
 					Value: "nameNew",
+				},
+				labels.Label{
+					Name:  "labelNew1",
+					Value: "nameNew1",
+				},
+				labels.Label{
+					Name:  "labelNew2",
+					Value: "nameNew2",
 				},
 			},
 		}
@@ -2591,6 +2601,49 @@ func TestReuseScrapeCache(t *testing.T) {
 				ScrapeInterval:  model.Duration(5 * time.Second),
 				ScrapeTimeout:   model.Duration(15 * time.Second),
 				MetricsPath:     "/metrics2",
+			},
+		},
+		{
+			keep: false,
+			newConfig: &config.ScrapeConfig{
+				JobName:        "Prometheus",
+				ScrapeInterval: model.Duration(5 * time.Second),
+				ScrapeTimeout:  model.Duration(15 * time.Second),
+				MetricsPath:    "/metrics",
+				LabelLimit:     1,
+			},
+		},
+		{
+			keep: false,
+			newConfig: &config.ScrapeConfig{
+				JobName:        "Prometheus",
+				ScrapeInterval: model.Duration(5 * time.Second),
+				ScrapeTimeout:  model.Duration(15 * time.Second),
+				MetricsPath:    "/metrics",
+				LabelLimit:     15,
+			},
+		},
+		{
+			keep: false,
+			newConfig: &config.ScrapeConfig{
+				JobName:              "Prometheus",
+				ScrapeInterval:       model.Duration(5 * time.Second),
+				ScrapeTimeout:        model.Duration(15 * time.Second),
+				MetricsPath:          "/metrics",
+				LabelLimit:           15,
+				LabelNameLengthLimit: 5,
+			},
+		},
+		{
+			keep: false,
+			newConfig: &config.ScrapeConfig{
+				JobName:               "Prometheus",
+				ScrapeInterval:        model.Duration(5 * time.Second),
+				ScrapeTimeout:         model.Duration(15 * time.Second),
+				MetricsPath:           "/metrics",
+				LabelLimit:            15,
+				LabelNameLengthLimit:  5,
+				LabelValueLengthLimit: 7,
 			},
 		},
 	}
@@ -2669,7 +2722,7 @@ func TestReuseCacheRace(t *testing.T) {
 			ScrapeInterval: model.Duration(5 * time.Second),
 			MetricsPath:    "/metrics",
 		}
-		sp, _ = newScrapePool(cfg, app, 0, nil, false)
+		sp, _ = newScrapePool(cfg, app, 0, nil, false, nil)
 		t1    = &Target{
 			discoveredLabels: labels.Labels{
 				labels.Label{
@@ -2770,6 +2823,72 @@ func TestScrapeReportSingleAppender(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatalf("Scrape wasn't stopped.")
 	}
+}
+
+func TestScrapeReportLimit(t *testing.T) {
+	s := teststorage.New(t)
+	defer s.Close()
+
+	cfg := &config.ScrapeConfig{
+		JobName:        "test",
+		SampleLimit:    5,
+		Scheme:         "http",
+		ScrapeInterval: model.Duration(100 * time.Millisecond),
+		ScrapeTimeout:  model.Duration(100 * time.Millisecond),
+	}
+
+	var (
+		scrapes      int
+		scrapedTwice = make(chan bool)
+	)
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, "metric_a 44\nmetric_b 44\nmetric_c 44\nmetric_d 44\n")
+		scrapes++
+		if scrapes == 2 {
+			close(scrapedTwice)
+		}
+	}))
+	defer ts.Close()
+
+	sp, err := newScrapePool(cfg, s, 0, nil, false, nil)
+	require.NoError(t, err)
+	defer sp.stop()
+
+	testURL, err := url.Parse(ts.URL)
+	require.NoError(t, err)
+	sp.Sync([]*targetgroup.Group{
+		{
+			Targets: []model.LabelSet{{model.AddressLabel: model.LabelValue(testURL.Host)}},
+		},
+	})
+
+	select {
+	case <-time.After(5 * time.Second):
+		t.Fatalf("target was not scraped twice")
+	case <-scrapedTwice:
+		// If the target has been scraped twice, report samples from the first
+		// scrape have been inserted in the database.
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	q, err := s.Querier(ctx, time.Time{}.UnixNano(), time.Now().UnixNano())
+	require.NoError(t, err)
+	defer q.Close()
+	series := q.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", "up"))
+
+	var found bool
+	for series.Next() {
+		i := series.At().Iterator()
+		for i.Next() {
+			_, v := i.At()
+			require.Equal(t, 1.0, v)
+			found = true
+		}
+	}
+
+	require.True(t, found)
 }
 
 func TestScrapeLoopLabelLimit(t *testing.T) {
@@ -2899,7 +3018,7 @@ func TestTargetScrapeIntervalAndTimeoutRelabel(t *testing.T) {
 			},
 		},
 	}
-	sp, _ := newScrapePool(config, &nopAppendable{}, 0, nil, false)
+	sp, _ := newScrapePool(config, &nopAppendable{}, 0, nil, false, nil)
 	tgts := []*targetgroup.Group{
 		{
 			Targets: []model.LabelSet{{model.AddressLabel: "127.0.0.1:9090"}},

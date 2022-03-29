@@ -14,6 +14,8 @@
 package index
 
 import (
+	"container/heap"
+	"context"
 	"encoding/binary"
 	"fmt"
 	"math/rand"
@@ -21,6 +23,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -928,4 +931,143 @@ func TestMemPostings_Delete(t *testing.T) {
 	expanded, err = ExpandPostings(deleted)
 	require.NoError(t, err)
 	require.Equal(t, 0, len(expanded), "expected empty postings, got %v", expanded)
+}
+
+func TestFindIntersectingPostings(t *testing.T) {
+	t.Run("multiple intersections", func(t *testing.T) {
+		p := NewListPostings([]storage.SeriesRef{10, 15, 20, 25, 30, 35, 40, 45, 50})
+		candidates := []Postings{
+			0: NewListPostings([]storage.SeriesRef{7, 13, 14, 27}), // Does not intersect.
+			1: NewListPostings([]storage.SeriesRef{10, 20}),        // Does intersect.
+			2: NewListPostings([]storage.SeriesRef{29, 30, 31}),    // Does intersect.
+			3: NewListPostings([]storage.SeriesRef{29, 30, 31}),    // Does intersect (same again).
+			4: NewListPostings([]storage.SeriesRef{60}),            // Does not intersect.
+			5: NewListPostings([]storage.SeriesRef{45}),            // Does intersect.
+			6: EmptyPostings(),                                     // Does not intersect.
+		}
+
+		indexes, err := FindIntersectingPostings(p, candidates)
+		require.NoError(t, err)
+		sort.Ints(indexes)
+		require.Equal(t, []int{1, 2, 3, 5}, indexes)
+	})
+
+	t.Run("no intersections", func(t *testing.T) {
+		p := NewListPostings([]storage.SeriesRef{10, 15, 20, 25, 30, 35, 40, 45, 50})
+		candidates := []Postings{
+			0: NewListPostings([]storage.SeriesRef{7, 13, 14, 27}), // Does not intersect.
+			1: NewListPostings([]storage.SeriesRef{60}),            // Does not intersect.
+			2: EmptyPostings(),                                     // Does not intersect.
+		}
+
+		indexes, err := FindIntersectingPostings(p, candidates)
+		require.NoError(t, err)
+		require.Empty(t, indexes)
+	})
+
+	t.Run("p is ErrPostings", func(t *testing.T) {
+		p := ErrPostings(context.Canceled)
+		candidates := []Postings{NewListPostings([]storage.SeriesRef{1})}
+		_, err := FindIntersectingPostings(p, candidates)
+		require.Error(t, err)
+	})
+
+	t.Run("one of the candidates is ErrPostings", func(t *testing.T) {
+		p := NewListPostings([]storage.SeriesRef{1})
+		candidates := []Postings{
+			NewListPostings([]storage.SeriesRef{1}),
+			ErrPostings(context.Canceled),
+		}
+		_, err := FindIntersectingPostings(p, candidates)
+		require.Error(t, err)
+	})
+
+	t.Run("one of the candidates fails on nth call", func(t *testing.T) {
+		p := NewListPostings([]storage.SeriesRef{10, 20, 30, 40, 50, 60, 70})
+		candidates := []Postings{
+			NewListPostings([]storage.SeriesRef{7, 13, 14, 27}),
+			&postingsFailingAfterNthCall{2, NewListPostings([]storage.SeriesRef{29, 30, 31, 40})},
+		}
+		_, err := FindIntersectingPostings(p, candidates)
+		require.Error(t, err)
+	})
+
+	t.Run("p fails on the nth call", func(t *testing.T) {
+		p := &postingsFailingAfterNthCall{2, NewListPostings([]storage.SeriesRef{10, 20, 30, 40, 50, 60, 70})}
+		candidates := []Postings{
+			NewListPostings([]storage.SeriesRef{7, 13, 14, 27}),
+			NewListPostings([]storage.SeriesRef{29, 30, 31, 40}),
+		}
+		_, err := FindIntersectingPostings(p, candidates)
+		require.Error(t, err)
+	})
+}
+
+type postingsFailingAfterNthCall struct {
+	ttl int
+	Postings
+}
+
+func (p *postingsFailingAfterNthCall) Seek(v storage.SeriesRef) bool {
+	p.ttl--
+	if p.ttl <= 0 {
+		return false
+	}
+	return p.Postings.Seek(v)
+}
+
+func (p *postingsFailingAfterNthCall) Next() bool {
+	p.ttl--
+	if p.ttl <= 0 {
+		return false
+	}
+	return p.Postings.Next()
+}
+
+func (p *postingsFailingAfterNthCall) Err() error {
+	if p.ttl <= 0 {
+		return errors.New("ttl exceeded")
+	}
+	return p.Postings.Err()
+}
+
+func TestPostingsWithIndexHeap(t *testing.T) {
+	t.Run("iterate", func(t *testing.T) {
+		h := postingsWithIndexHeap{
+			{index: 0, p: NewListPostings([]storage.SeriesRef{10, 20, 30})},
+			{index: 1, p: NewListPostings([]storage.SeriesRef{1, 5})},
+			{index: 2, p: NewListPostings([]storage.SeriesRef{25, 50})},
+		}
+		for _, node := range h {
+			node.p.Next()
+		}
+		heap.Init(&h)
+
+		for _, expected := range []storage.SeriesRef{1, 5, 10, 20, 25, 30, 50} {
+			require.Equal(t, expected, h.at())
+			require.NoError(t, h.next())
+		}
+		require.True(t, h.empty())
+	})
+
+	t.Run("pop", func(t *testing.T) {
+		h := postingsWithIndexHeap{
+			{index: 0, p: NewListPostings([]storage.SeriesRef{10, 20, 30})},
+			{index: 1, p: NewListPostings([]storage.SeriesRef{1, 5})},
+			{index: 2, p: NewListPostings([]storage.SeriesRef{25, 50})},
+		}
+		for _, node := range h {
+			node.p.Next()
+		}
+		heap.Init(&h)
+
+		for _, expected := range []storage.SeriesRef{1, 5, 10, 20} {
+			require.Equal(t, expected, h.at())
+			require.NoError(t, h.next())
+		}
+		require.Equal(t, storage.SeriesRef(25), h.at())
+		node := heap.Pop(&h).(postingsWithIndex)
+		require.Equal(t, 2, node.index)
+		require.Equal(t, storage.SeriesRef(25), node.p.At())
+	})
 }

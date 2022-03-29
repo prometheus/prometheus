@@ -34,6 +34,7 @@ Generic placeholders are defined as follows:
 * `<boolean>`: a boolean that can take the values `true` or `false`
 * `<duration>`: a duration matching the regular expression `((([0-9]+)y)?(([0-9]+)w)?(([0-9]+)d)?(([0-9]+)h)?(([0-9]+)m)?(([0-9]+)s)?(([0-9]+)ms)?|0)`, e.g. `1d`, `1h30m`, `5m`, `10s`
 * `<filename>`: a valid path in the current working directory
+* `<float>`: a floating-point number
 * `<host>`: a valid string consisting of a hostname or IP followed by an optional port number
 * `<int>`: an integer value
 * `<labelname>`: a string matching the regular expression `[a-zA-Z_][a-zA-Z0-9_]*`
@@ -98,7 +99,11 @@ remote_read:
 
 # Storage related settings that are runtime reloadable.
 storage:
-  [ - <exemplars> ... ]  
+  [ - <exemplars> ... ]
+
+# Configures exporting traces.
+tracing:
+  [ <tracing_config> ]
 ```
 
 ### `<scrape_config>`
@@ -191,7 +196,7 @@ oauth2:
   [ <oauth2> ]
 
 # Configure whether scrape requests follow HTTP 3xx redirects.
-[ follow_redirects: <bool> | default = true ]
+[ follow_redirects: <boolean> | default = true ]
 
 # Configures the scrape request's TLS settings.
 tls_config:
@@ -431,6 +436,9 @@ subscription_id: <string>
 # Optional client secret. Only required with authentication_method OAuth.
 [ client_secret: <secret> ]
 
+# Optional resource group name. Limits discovery to this resource group. 
+[ resource_group: <string> ]
+
 # Refresh interval to re-read the instance list.
 [ refresh_interval: <duration> | default = 300s ]
 
@@ -438,7 +446,7 @@ subscription_id: <string>
 # instead be specified in the relabeling rule.
 [ port: <int> | default = 80 ]
 
-# Authentication information used to authenticate to the consul server.
+# Authentication information used to authenticate to the Azure API.
 # Note that `basic_auth`, `authorization` and `oauth2` options are
 # mutually exclusive.
 # `password` and `password_file` are mutually exclusive.
@@ -468,7 +476,7 @@ oauth2:
 [ proxy_url: <string> ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
-[ follow_redirects: <bool> | default = true ]
+[ follow_redirects: <boolean> | default = true ]
 
 # TLS configuration.
 tls_config:
@@ -564,7 +572,7 @@ oauth2:
 [ proxy_url: <string> ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
-[ follow_redirects: <bool> | default = true ]
+[ follow_redirects: <boolean> | default = true ]
 
 # TLS configuration.
 tls_config:
@@ -639,7 +647,7 @@ oauth2:
 [ proxy_url: <string> ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
-[ follow_redirects: <bool> | default = true ]
+[ follow_redirects: <boolean> | default = true ]
 
 # TLS configuration.
 tls_config:
@@ -698,9 +706,7 @@ tls_config:
 # Optional filters to limit the discovery process to a subset of available
 # resources.
 # The available filters are listed in the upstream documentation:
-# Services: https://docs.docker.com/engine/api/v1.40/#operation/ServiceList
-# Tasks: https://docs.docker.com/engine/api/v1.40/#operation/TaskList
-# Nodes: https://docs.docker.com/engine/api/v1.40/#operation/NodeList
+# https://docs.docker.com/engine/api/v1.40/#operation/ContainerList
 [ filters:
   [ - name: <string>
       values: <string>, [...] ]
@@ -736,7 +742,7 @@ oauth2:
   [ <oauth2> ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
-[ follow_redirects: <bool> | default = true ]
+[ follow_redirects: <boolean> | default = true ]
 
 ```
 
@@ -789,10 +795,10 @@ created using the `port` parameter defined in the SD configuration.
 
 Available meta labels:
 
+* `__meta_dockerswarm_container_label_<labelname>`: each label of the container
 * `__meta_dockerswarm_task_id`: the id of the task
 * `__meta_dockerswarm_task_container_id`: the container id of the task
 * `__meta_dockerswarm_task_desired_state`: the desired state of the task
-* `__meta_dockerswarm_task_label_<labelname>`: each label of the task
 * `__meta_dockerswarm_task_slot`: the slot of the task
 * `__meta_dockerswarm_task_state`: the state of the task
 * `__meta_dockerswarm_task_port_publish_mode`: the publish mode of the task port
@@ -863,7 +869,9 @@ role: <string>
 # Optional filters to limit the discovery process to a subset of available
 # resources.
 # The available filters are listed in the upstream documentation:
-# https://docs.docker.com/engine/api/v1.40/#operation/ContainerList
+# Services: https://docs.docker.com/engine/api/v1.40/#operation/ServiceList
+# Tasks: https://docs.docker.com/engine/api/v1.40/#operation/TaskList
+# Nodes: https://docs.docker.com/engine/api/v1.40/#operation/NodeList
 [ filters:
   [ - name: <string>
       values: <string>, [...] ]
@@ -899,7 +907,7 @@ oauth2:
   [ <oauth2> ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
-[ follow_redirects: <bool> | default = true ]
+[ follow_redirects: <boolean> | default = true ]
 
 ```
 
@@ -1202,7 +1210,7 @@ oauth2:
 [ proxy_url: <string> ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
-[ follow_redirects: <bool> | default = true ]
+[ follow_redirects: <boolean> | default = true ]
 ```
 
 See [this example Prometheus configuration file](/documentation/examples/prometheus-puppetdb.yml)
@@ -1406,7 +1414,7 @@ oauth2:
 [ proxy_url: <string> ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
-[ follow_redirects: <bool> | default = true ]
+[ follow_redirects: <boolean> | default = true ]
 
 # TLS configuration.
 tls_config:
@@ -1443,8 +1451,9 @@ Example response body:
 ]
 ```
 
-The endpoint is queried periodically at the specified
-refresh interval.
+The endpoint is queried periodically at the specified refresh interval.
+The `prometheus_sd_http_failures_total` counter metric tracks the number of 
+refresh failures. 
 
 Each target has a meta label `__meta_url` during the
 [relabeling phase](#relabel_config). Its value is set to the
@@ -1487,7 +1496,7 @@ oauth2:
 [ proxy_url: <string> ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
-[ follow_redirects: <bool> | default = true ]
+[ follow_redirects: <boolean> | default = true ]
 
 # TLS configuration.
 tls_config:
@@ -1513,6 +1522,7 @@ node object in the address type order of `NodeInternalIP`, `NodeExternalIP`,
 Available meta labels:
 
 * `__meta_kubernetes_node_name`: The name of the node object.
+* `__meta_kubernetes_node_provider_id`: The cloud provider's name for the node object.
 * `__meta_kubernetes_node_label_<labelname>`: Each label from the node object.
 * `__meta_kubernetes_node_labelpresent_<labelname>`: `true` for each label from the node object.
 * `__meta_kubernetes_node_annotation_<annotationname>`: Each annotation from the node object.
@@ -1606,15 +1616,15 @@ Available meta labels:
 * `__meta_kubernetes_endpointslice_name`: The name of endpointslice object.
 * For all targets discovered directly from the endpointslice list (those not additionally inferred
   from underlying pods), the following labels are attached:
-* `__meta_kubernetes_endpointslice_address_target_kind`: Kind of the referenced object.
-* `__meta_kubernetes_endpointslice_address_target_name`: Name of referenced object.
-* `__meta_kubernetes_endpointslice_address_type`: The ip protocol family of the address of the target.
-* `__meta_kubernetes_endpointslice_endpoint_conditions_ready`:  Set to `true` or `false` for the referenced endpoint's ready state.
-* `__meta_kubernetes_endpointslice_endpoint_topology_kubernetes_io_hostname`:  Name of the node hosting the referenced endpoint.
-* `__meta_kubernetes_endpointslice_endpoint_topology_present_kubernetes_io_hostname`: Flag that shows if the referenced object has a kubernetes.io/hostname annotation.
-* `__meta_kubernetes_endpointslice_port`: Port of the referenced endpoint.
-* `__meta_kubernetes_endpointslice_port_name`: Named port of the referenced endpoint.
-* `__meta_kubernetes_endpointslice_port_protocol`: Protocol of the referenced endpoint.
+  * `__meta_kubernetes_endpointslice_address_target_kind`: Kind of the referenced object.
+  * `__meta_kubernetes_endpointslice_address_target_name`: Name of referenced object.
+  * `__meta_kubernetes_endpointslice_address_type`: The ip protocol family of the address of the target.
+  * `__meta_kubernetes_endpointslice_endpoint_conditions_ready`:  Set to `true` or `false` for the referenced endpoint's ready state.
+  * `__meta_kubernetes_endpointslice_endpoint_topology_kubernetes_io_hostname`:  Name of the node hosting the referenced endpoint.
+  * `__meta_kubernetes_endpointslice_endpoint_topology_present_kubernetes_io_hostname`: Flag that shows if the referenced object has a kubernetes.io/hostname annotation.
+  * `__meta_kubernetes_endpointslice_port`: Port of the referenced endpoint.
+  * `__meta_kubernetes_endpointslice_port_name`: Named port of the referenced endpoint.
+  * `__meta_kubernetes_endpointslice_port_protocol`: Protocol of the referenced endpoint.
 * If the endpoints belong to a service, all labels of the `role: service` discovery are attached.
 * For all targets backed by a pod, all labels of the `role: pod` discovery are attached.
 
@@ -1648,7 +1658,7 @@ See below for the configuration options for Kubernetes discovery:
 [ api_server: <host> ]
 
 # The Kubernetes role of entities that should be discovered.
-# One of endpoints, service, pod, node, or ingress.
+# One of endpoints, endpointslice, service, pod, node, or ingress.
 role: <string>
 
 # Optional path to a kubeconfig file.
@@ -1685,7 +1695,7 @@ oauth2:
 [ proxy_url: <string> ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
-[ follow_redirects: <bool> | default = true ]
+[ follow_redirects: <boolean> | default = true ]
 
 # TLS configuration.
 tls_config:
@@ -1693,14 +1703,16 @@ tls_config:
 
 # Optional namespace discovery. If omitted, all namespaces are used.
 namespaces:
+  own_namespace: <boolean>
   names:
     [ - <string> ]
 
 # Optional label and field selectors to limit the discovery process to a subset of available resources.
 # See https://kubernetes.io/docs/concepts/overview/working-with-objects/field-selectors/
 # and https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/ to learn more about the possible
-# filters that can be used. Endpoints role supports pod, service and endpoints selectors, other roles
-# only support selectors matching the role itself (e.g. node role can only contain node selectors).
+# filters that can be used. The endpoints role supports pod, service and endpoints selectors.
+# The pod role supports node selectors when configured with `attach_metadata: {node: true}`.
+# Other roles only support selectors matching the role itself (e.g. node role can only contain node selectors).
 
 # Note: When making decision about using field/label selector make sure that this
 # is the best approach - it will prevent Prometheus from reusing single list/watch
@@ -1712,6 +1724,12 @@ namespaces:
   [ - role: <string>
     [ label: <string> ]
     [ field: <string> ] ]]
+
+# Optional metadata to attach to discovered targets. If omitted, no additional metadata is attached.
+attach_metadata:
+# Attaches node metadata to discovered targets. Only valid for role: pod. 
+# When set to true, Prometheus must have permissions to get Nodes. 
+  [ node: <boolean> | default = false ]
 ```
 
 See [this example Prometheus configuration file](/documentation/examples/prometheus-kubernetes.yml)
@@ -1782,7 +1800,7 @@ oauth2:
   [ <oauth2> ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
-[ follow_redirects: <bool> | default = true ]
+[ follow_redirects: <boolean> | default = true ]
 ```
 
 The [relabeling phase](#relabel_config) is the preferred and more powerful way
@@ -1898,7 +1916,7 @@ oauth2:
 [ proxy_url: <string> ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
-[ follow_redirects: <bool> | default = true ]
+[ follow_redirects: <boolean> | default = true ]
 
 # TLS configuration.
 tls_config:
@@ -1981,7 +1999,7 @@ oauth2:
   [ <oauth2> ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
-[ follow_redirects: <bool> | default = true ]
+[ follow_redirects: <boolean> | default = true ]
 
 # TLS configuration for connecting to marathon servers
 tls_config:
@@ -2191,7 +2209,7 @@ tls_config:
 [ proxy_url: <string> ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
-[ follow_redirects: <bool> | default = true ]
+[ follow_redirects: <boolean> | default = true ]
 
 # Refresh interval to re-read the app instance list.
 [ refresh_interval: <duration> | default = 30s ]
@@ -2295,7 +2313,7 @@ tags_filter:
 [ refresh_interval: <duration> | default = 60s ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
-[ follow_redirects: <bool> | default = true ]
+[ follow_redirects: <boolean> | default = true ]
 
 # Optional proxy URL.
 [ proxy_url: <string> ]
@@ -2368,7 +2386,7 @@ oauth2:
   [ proxy_url: <string> ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
-  [ follow_redirects: <bool> | default = true ]
+  [ follow_redirects: <boolean> | default = true ]
 
 # TLS configuration.
 tls_config:
@@ -2464,9 +2482,9 @@ anchored on both ends. To un-anchor the regex, use `.*<regex>.*`.
 * `keep`: Drop targets for which `regex` does not match the concatenated `source_labels`.
 * `drop`: Drop targets for which `regex` matches the concatenated `source_labels`.
 * `hashmod`: Set `target_label` to the `modulus` of a hash of the concatenated `source_labels`.
-* `labelmap`: Match `regex` against all label names. Then copy the values of the matching labels
-   to label names given by `replacement` with match group references
-  (`${1}`, `${2}`, ...) in `replacement` substituted by their value.
+* `labelmap`: Match `regex` against all source label names, not just those specified in `source_labels`. Then
+   copy the values of the matching labels  to label names given by `replacement` with match
+   group references (`${1}`, `${2}`, ...) in `replacement` substituted by their value.
 * `labeldrop`: Match `regex` against all label names. Any label that matches will be
   removed from the set of labels.
 * `labelkeep`: Match `regex` against all label names. Any label that does not match will be
@@ -2550,7 +2568,7 @@ tls_config:
 [ proxy_url: <string> ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
-[ follow_redirects: <bool> | default = true ]
+[ follow_redirects: <boolean> | default = true ]
 
 # List of Azure service discovery configurations.
 azure_sd_configs:
@@ -2653,6 +2671,38 @@ relabel_configs:
   [ - <relabel_config> ... ]
 ```
 
+### `<tracing_config>`
+
+`tracing_config` configures exporting traces from Prometheus to a tracing backend via the OTLP protocol. Tracing is currently an **experimental** feature and could change in the future.
+
+```yaml
+# Client used to export the traces. Options are 'http' or 'grpc'.
+[ client_type: <string> | default = grpc ]
+
+# Endpoint to send the traces to. Should be provided in format <host>:<port>.
+[ endpoint: <string> ]
+
+# Sets the probability a given trace will be sampled. Must be a float from 0 through 1.
+[ sampling_fraction: <float> | default = 0 ]
+
+# If disabled, the client will use a secure connection.
+[ insecure: <boolean> | default = false ]
+
+# Key-value pairs to be used as headers associated with gRPC or HTTP requests.
+headers:
+  [ <string>: <string> ... ]
+
+# Compression key for supported compression types. Supported compression: gzip.
+[ compression: <string> ]
+
+# Maximum time the exporter will wait for each batch export.
+[ timeout: <duration> | default = 10s ]
+
+# TLS configuration.
+tls_config:
+  [ <tls_config> ]
+```
+
 ### `<remote_write>`
 
 `write_relabel_configs` is relabeling applied to samples before sending them
@@ -2737,7 +2787,7 @@ tls_config:
 [ proxy_url: <string> ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
-[ follow_redirects: <bool> | default = true ]
+[ follow_redirects: <boolean> | default = true ]
 
 # Configures the queue used to write to remote storage.
 queue_config:
@@ -2838,7 +2888,10 @@ tls_config:
 [ proxy_url: <string> ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
-[ follow_redirects: <bool> | default = true ]
+[ follow_redirects: <boolean> | default = true ]
+
+# Whether to use the external labels as selectors for the remote read endpoint.
+[ filter_external_labels: <boolean> | default = true ]
 ```
 
 There is a list of

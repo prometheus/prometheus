@@ -192,7 +192,7 @@ bucket. Otherwise, the upper bound of the lowest bucket is returned
 for quantiles located in the lowest bucket.
 
 If `b` has 0 observations, `NaN` is returned. If `b` contains fewer than two buckets,
-`NaN` is returned. For φ < 0, `-Inf` is returned. For φ > 1, `+Inf` is returned.
+`NaN` is returned. For φ < 0, `-Inf` is returned. For φ > 1, `+Inf` is returned. For φ = `NaN`, `NaN` is returned.
 
 ## `holt_winters()`
 

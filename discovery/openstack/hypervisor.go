@@ -50,7 +50,8 @@ type HypervisorDiscovery struct {
 
 // newHypervisorDiscovery returns a new hypervisor discovery.
 func newHypervisorDiscovery(provider *gophercloud.ProviderClient, opts *gophercloud.AuthOptions,
-	port int, region string, availability gophercloud.Availability, l log.Logger) *HypervisorDiscovery {
+	port int, region string, availability gophercloud.Availability, l log.Logger,
+) *HypervisorDiscovery {
 	return &HypervisorDiscovery{
 		provider: provider, authOpts: opts,
 		region: region, port: port, availability: availability, logger: l,

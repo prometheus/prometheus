@@ -17,9 +17,9 @@ import (
 	"context"
 	"io/ioutil"
 	"os"
-	"regexp"
 	"testing"
 
+	"github.com/grafana/regexp"
 	"github.com/stretchr/testify/require"
 )
 

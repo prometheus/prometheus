@@ -149,6 +149,7 @@ func TestBufferedSeriesIterator(t *testing.T) {
 	bufferEq([]sample{{t: 99, v: 8}, {t: 100, v: 9}})
 
 	require.False(t, it.Next(), "next succeeded unexpectedly")
+	require.False(t, it.Seek(1024), "seek succeeded unexpectedly")
 }
 
 // At() should not be called once Next() returns false.

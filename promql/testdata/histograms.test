@@ -60,6 +60,11 @@ eval instant at 50m histogram_quantile(1.01, testhistogram_bucket)
 	{start="positive"} +Inf
 	{start="negative"} +Inf
 
+# Quantile invalid.
+eval instant at 50m histogram_quantile(NaN, testhistogram_bucket)
+	{start="positive"} NaN
+	{start="negative"} NaN
+
 # Quantile value in lowest bucket, which is positive.
 eval instant at 50m histogram_quantile(0, testhistogram_bucket{start="positive"})
 	{start="positive"} 0
@@ -219,3 +224,12 @@ load 5m
 
 eval instant at 50m histogram_quantile(0.2, rate(empty_bucket[5m]))
 	{instance="ins1", job="job1"} NaN
+
+# Load a duplicate histogram with a different name to test failure scenario on multiple histograms with the same label set
+# https://github.com/prometheus/prometheus/issues/9910
+load 5m
+	request_duration_seconds2_bucket{job="job1", instance="ins1", le="0.1"}	0+1x10
+	request_duration_seconds2_bucket{job="job1", instance="ins1", le="0.2"}	0+3x10
+	request_duration_seconds2_bucket{job="job1", instance="ins1", le="+Inf"}	0+4x10
+
+eval_fail instant at 50m histogram_quantile(0.99, {__name__=~"request_duration.*"})

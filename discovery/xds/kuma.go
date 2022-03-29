@@ -159,7 +159,7 @@ func convertKumaUserLabels(labels map[string]string) model.LabelSet {
 // kumaMadsV1ResourceParser is an xds.resourceParser.
 func kumaMadsV1ResourceParser(resources []*anypb.Any, typeURL string) ([]model.LabelSet, error) {
 	if typeURL != KumaMadsV1ResourceTypeURL {
-		return nil, errors.Errorf("recieved invalid typeURL for Kuma MADS v1 Resource: %s", typeURL)
+		return nil, errors.Errorf("received invalid typeURL for Kuma MADS v1 Resource: %s", typeURL)
 	}
 
 	var targets []model.LabelSet

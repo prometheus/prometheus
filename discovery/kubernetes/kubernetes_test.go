@@ -54,7 +54,15 @@ func makeDiscoveryWithVersion(role Role, nsDiscovery NamespaceDiscovery, k8sVer 
 		logger:             log.NewNopLogger(),
 		role:               role,
 		namespaceDiscovery: &nsDiscovery,
+		ownNamespace:       "own-ns",
 	}, clientset
+}
+
+// makeDiscoveryWithMetadata creates a kubernetes.Discovery instance with the specified metadata config.
+func makeDiscoveryWithMetadata(role Role, nsDiscovery NamespaceDiscovery, attachMetadata AttachMetadataConfig, objects ...runtime.Object) (*Discovery, kubernetes.Interface) {
+	d, k8s := makeDiscovery(role, nsDiscovery, objects...)
+	d.attachMetadata = attachMetadata
+	return d, k8s
 }
 
 type k8sDiscoveryTest struct {
@@ -214,7 +222,7 @@ func (i *Ingress) hasSynced() bool {
 }
 
 func (p *Pod) hasSynced() bool {
-	return p.informer.HasSynced()
+	return p.podInf.HasSynced()
 }
 
 func (s *Service) hasSynced() bool {

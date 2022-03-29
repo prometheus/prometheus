@@ -19,13 +19,13 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"time"
 
 	"github.com/alecthomas/units"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/regexp"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -83,6 +83,9 @@ func Load(s string, expandExternalLabels bool, logger log.Logger) (*Config, erro
 
 	for i, v := range cfg.GlobalConfig.ExternalLabels {
 		newV := os.Expand(v.Value, func(s string) string {
+			if s == "$" {
+				return "$"
+			}
 			if v := os.Getenv(s); v != "" {
 				return v
 			}
@@ -200,8 +203,9 @@ var (
 
 	// DefaultRemoteReadConfig is the default remote read configuration.
 	DefaultRemoteReadConfig = RemoteReadConfig{
-		RemoteTimeout:    model.Duration(1 * time.Minute),
-		HTTPClientConfig: config.DefaultHTTPClientConfig,
+		RemoteTimeout:        model.Duration(1 * time.Minute),
+		HTTPClientConfig:     config.DefaultHTTPClientConfig,
+		FilterExternalLabels: true,
 	}
 
 	// DefaultStorageConfig is the default TSDB/Exemplar storage configuration.
@@ -221,6 +225,7 @@ type Config struct {
 	RuleFiles      []string        `yaml:"rule_files,omitempty"`
 	ScrapeConfigs  []*ScrapeConfig `yaml:"scrape_configs,omitempty"`
 	StorageConfig  StorageConfig   `yaml:"storage,omitempty"`
+	TracingConfig  TracingConfig   `yaml:"tracing,omitempty"`
 
 	RemoteWriteConfigs []*RemoteWriteConfig `yaml:"remote_write,omitempty"`
 	RemoteReadConfigs  []*RemoteReadConfig  `yaml:"remote_read,omitempty"`
@@ -230,6 +235,7 @@ type Config struct {
 func (c *Config) SetDirectory(dir string) {
 	c.GlobalConfig.SetDirectory(dir)
 	c.AlertingConfig.SetDirectory(dir)
+	c.TracingConfig.SetDirectory(dir)
 	for i, file := range c.RuleFiles {
 		c.RuleFiles[i] = config.JoinDir(dir, file)
 	}
@@ -499,6 +505,75 @@ type StorageConfig struct {
 	ExemplarsConfig *ExemplarsConfig `yaml:"exemplars,omitempty"`
 }
 
+type TracingClientType string
+
+const (
+	TracingClientHTTP TracingClientType = "http"
+	TracingClientGRPC TracingClientType = "grpc"
+
+	GzipCompression = "gzip"
+)
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (t *TracingClientType) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*t = TracingClientType("")
+	type plain TracingClientType
+	if err := unmarshal((*plain)(t)); err != nil {
+		return err
+	}
+
+	if *t != TracingClientHTTP && *t != TracingClientGRPC {
+		return fmt.Errorf("expected tracing client type to be to be %s or %s, but got %s",
+			TracingClientHTTP, TracingClientGRPC, *t,
+		)
+	}
+
+	return nil
+}
+
+// TracingConfig configures the tracing options.
+type TracingConfig struct {
+	ClientType       TracingClientType `yaml:"client_type,omitempty"`
+	Endpoint         string            `yaml:"endpoint,omitempty"`
+	SamplingFraction float64           `yaml:"sampling_fraction,omitempty"`
+	Insecure         bool              `yaml:"insecure,omitempty"`
+	TLSConfig        config.TLSConfig  `yaml:"tls_config,omitempty"`
+	Headers          map[string]string `yaml:"headers,omitempty"`
+	Compression      string            `yaml:"compression,omitempty"`
+	Timeout          model.Duration    `yaml:"timeout,omitempty"`
+}
+
+// SetDirectory joins any relative file paths with dir.
+func (t *TracingConfig) SetDirectory(dir string) {
+	t.TLSConfig.SetDirectory(dir)
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (t *TracingConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*t = TracingConfig{
+		ClientType: TracingClientGRPC,
+	}
+	type plain TracingConfig
+	if err := unmarshal((*plain)(t)); err != nil {
+		return err
+	}
+
+	if err := validateHeadersForTracing(t.Headers); err != nil {
+		return err
+	}
+
+	if t.Endpoint == "" {
+		return errors.New("tracing endpoint must be set")
+	}
+
+	if t.Compression != "" && t.Compression != GzipCompression {
+		return fmt.Errorf("invalid compression type %s provided, valid options: %s",
+			t.Compression, GzipCompression)
+	}
+
+	return nil
+}
+
 // ExemplarsConfig configures runtime reloadable configuration options.
 type ExemplarsConfig struct {
 	// MaxExemplars sets the size, in # of exemplars stored, of the single circular buffer used to store exemplars in memory.
@@ -730,6 +805,18 @@ func (c *RemoteWriteConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 	return nil
 }
 
+func validateHeadersForTracing(headers map[string]string) error {
+	for header := range headers {
+		if strings.ToLower(header) == "authorization" {
+			return errors.New("custom authorization header configuration is not yet supported")
+		}
+		if _, ok := reservedHeaders[strings.ToLower(header)]; ok {
+			return errors.Errorf("%s is a reserved header. It must not be changed", header)
+		}
+	}
+	return nil
+}
+
 func validateHeaders(headers map[string]string) error {
 	for header := range headers {
 		if strings.ToLower(header) == "authorization" {
@@ -793,6 +880,9 @@ type RemoteReadConfig struct {
 	// RequiredMatchers is an optional list of equality matchers which have to
 	// be present in a selector to query the remote read endpoint.
 	RequiredMatchers model.LabelSet `yaml:"required_matchers,omitempty"`
+
+	// Whether to use the external labels as selectors for the remote read endpoint.
+	FilterExternalLabels bool `yaml:"filter_external_labels,omitempty"`
 }
 
 // SetDirectory joins any relative file paths with dir.

@@ -23,6 +23,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/config"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
@@ -124,13 +125,22 @@ func Name(n string) func(*Manager) {
 	}
 }
 
+// HTTPClientOptions sets the list of HTTP client options to expose to
+// Discoverers. It is up to Discoverers to choose to use the options provided.
+func HTTPClientOptions(opts ...config.HTTPClientOption) func(*Manager) {
+	return func(m *Manager) {
+		m.httpOpts = opts
+	}
+}
+
 // Manager maintains a set of discovery providers and sends each update to a map channel.
 // Targets are grouped by the target set name.
 type Manager struct {
-	logger log.Logger
-	name   string
-	mtx    sync.RWMutex
-	ctx    context.Context
+	logger   log.Logger
+	name     string
+	httpOpts []config.HTTPClientOption
+	mtx      sync.RWMutex
+	ctx      context.Context
 
 	// Some Discoverers(e.g. k8s) send only the updates for a given target group,
 	// so we use map[tg.Source]*targetgroup.Group to know which group to update.
@@ -404,7 +414,8 @@ func (m *Manager) registerProviders(cfgs Configs, setName string) int {
 		}
 		typ := cfg.Name()
 		d, err := cfg.NewDiscoverer(DiscovererOptions{
-			Logger: log.With(m.logger, "discovery", typ),
+			Logger:            log.With(m.logger, "discovery", typ),
+			HTTPClientOptions: m.httpOpts,
 		})
 		if err != nil {
 			level.Error(m.logger).Log("msg", "Cannot create service discovery", "err", err, "type", typ)

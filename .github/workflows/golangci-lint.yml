@@ -9,13 +9,6 @@ on:
       - ".github/workflows/golangci-lint.yml"
       - ".golangci.yml"
   pull_request:
-    paths:
-      - "go.sum"
-      - "go.mod"
-      - "**.go"
-      - "scripts/errcheck_excludes.txt"
-      - ".github/workflows/golangci-lint.yml"
-      - ".golangci.yml"
 
 jobs:
   golangci:
@@ -23,9 +16,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v2
-
-      - name: Lint
-        uses: golangci/golangci-lint-action@v2
+        uses: actions/checkout@v3
+      - name: install Go
+        uses: actions/setup-go@v2
         with:
-          version: v1.42.0
+          go-version: 1.17.x
+      - name: Lint
+        uses: golangci/golangci-lint-action@v3.1.0
+        with:
+          version: v1.44.2

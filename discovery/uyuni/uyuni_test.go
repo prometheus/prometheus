@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -52,6 +53,70 @@ func TestUyuniSDHandleError(t *testing.T) {
 		}
 	)
 	tgs, err := testUpdateServices(respHandler)
+
+	require.EqualError(t, err, errTesting)
+	require.Equal(t, len(tgs), 0)
+}
+
+func TestUyuniSDLogin(t *testing.T) {
+	var (
+		errTesting  = "unable to get the managed system groups information of monitored clients: request error: bad status code - 500"
+		call        = 0
+		respHandler = func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/xml")
+			switch call {
+			case 0:
+				w.WriteHeader(http.StatusOK)
+				io.WriteString(w, `<?xml version="1.0"?>
+<methodResponse>
+	<params>
+		<param>
+			<value>
+				a token
+			</value>
+		</param>
+	</params>
+</methodResponse>`)
+			case 1:
+				w.WriteHeader(http.StatusInternalServerError)
+				io.WriteString(w, ``)
+			}
+			call++
+		}
+	)
+	tgs, err := testUpdateServices(respHandler)
+
+	require.EqualError(t, err, errTesting)
+	require.Equal(t, len(tgs), 0)
+}
+
+func TestUyuniSDSkipLogin(t *testing.T) {
+	var (
+		errTesting  = "unable to get the managed system groups information of monitored clients: request error: bad status code - 500"
+		respHandler = func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Header().Set("Content-Type", "application/xml")
+			io.WriteString(w, ``)
+		}
+	)
+
+	// Create a test server with mock HTTP handler.
+	ts := httptest.NewServer(http.HandlerFunc(respHandler))
+	defer ts.Close()
+
+	conf := SDConfig{
+		Server: ts.URL,
+	}
+
+	md, err := NewDiscovery(&conf, nil)
+	if err != nil {
+		t.Error(err)
+	}
+	// simulate a cached token
+	md.token = `a token`
+	md.tokenExpiration = time.Now().Add(time.Minute)
+
+	tgs, err := md.refresh(context.Background())
 
 	require.EqualError(t, err, errTesting)
 	require.Equal(t, len(tgs), 0)

@@ -19,14 +19,15 @@ import (
 	"fmt"
 	html_template "html/template"
 	"math"
+	"net"
 	"net/url"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	text_template "text/template"
 	"time"
 
+	"github.com/grafana/regexp"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
@@ -183,6 +184,13 @@ func NewTemplateExpander(
 				sorter := queryResultByLabelSorter{v[:], label}
 				sort.Stable(sorter)
 				return v
+			},
+			"stripPort": func(hostPort string) string {
+				host, _, err := net.SplitHostPort(hostPort)
+				if err != nil {
+					return hostPort
+				}
+				return host
 			},
 			"humanize": func(i interface{}) (string, error) {
 				v, err := convertToFloat(i)

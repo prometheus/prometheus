@@ -49,54 +49,6 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func TestGlobalURL(t *testing.T) {
-	opts := &Options{
-		ListenAddress: ":9090",
-		ExternalURL: &url.URL{
-			Scheme: "https",
-			Host:   "externalhost:80",
-			Path:   "/path/prefix",
-		},
-	}
-
-	tests := []struct {
-		inURL  string
-		outURL string
-	}{
-		{
-			// Nothing should change if the input URL is not on localhost, even if the port is our listening port.
-			inURL:  "http://somehost:9090/metrics",
-			outURL: "http://somehost:9090/metrics",
-		},
-		{
-			// Port and host should change if target is on localhost and port is our listening port.
-			inURL:  "http://localhost:9090/metrics",
-			outURL: "https://externalhost:80/metrics",
-		},
-		{
-			// Only the host should change if the port is not our listening port, but the host is localhost.
-			inURL:  "http://localhost:8000/metrics",
-			outURL: "http://externalhost:8000/metrics",
-		},
-		{
-			// Alternative localhost representations should also work.
-			inURL:  "http://127.0.0.1:9090/metrics",
-			outURL: "https://externalhost:80/metrics",
-		},
-	}
-
-	for _, test := range tests {
-		inURL, err := url.Parse(test.inURL)
-
-		require.NoError(t, err)
-
-		globalURL := tmplFuncs("", opts)["globalURL"].(func(u *url.URL) *url.URL)
-		outURL := globalURL(inURL)
-
-		require.Equal(t, test.outURL, outURL.String())
-	}
-}
-
 type dbAdapter struct {
 	*tsdb.DB
 }
@@ -112,13 +64,13 @@ func (a *dbAdapter) WALReplayStatus() (tsdb.WALReplayStatus, error) {
 func TestReadyAndHealthy(t *testing.T) {
 	t.Parallel()
 
-	dbDir, err := ioutil.TempDir("", "tsdb-ready")
-	require.NoError(t, err)
-	defer func() { require.NoError(t, os.RemoveAll(dbDir)) }()
+	dbDir := t.TempDir()
 
 	db, err := tsdb.Open(dbDir, nil, nil, nil, nil)
 	require.NoError(t, err)
-
+	t.Cleanup(func() {
+		require.NoError(t, db.Close())
+	})
 	port := fmt.Sprintf(":%d", testutil.RandomUnprivilegedPort(t))
 
 	opts := &Options{
@@ -177,13 +129,6 @@ func TestReadyAndHealthy(t *testing.T) {
 
 	for _, u := range []string{
 		baseURL + "/-/ready",
-		baseURL + "/classic/graph",
-		baseURL + "/classic/flags",
-		baseURL + "/classic/rules",
-		baseURL + "/classic/service-discovery",
-		baseURL + "/classic/targets",
-		baseURL + "/classic/status",
-		baseURL + "/classic/config",
 	} {
 		resp, err = http.Get(u)
 		require.NoError(t, err)
@@ -207,13 +152,6 @@ func TestReadyAndHealthy(t *testing.T) {
 	for _, u := range []string{
 		baseURL + "/-/healthy",
 		baseURL + "/-/ready",
-		baseURL + "/classic/graph",
-		baseURL + "/classic/flags",
-		baseURL + "/classic/rules",
-		baseURL + "/classic/service-discovery",
-		baseURL + "/classic/targets",
-		baseURL + "/classic/status",
-		baseURL + "/classic/config",
 	} {
 		resp, err = http.Get(u)
 		require.NoError(t, err)
@@ -235,12 +173,13 @@ func TestReadyAndHealthy(t *testing.T) {
 
 func TestRoutePrefix(t *testing.T) {
 	t.Parallel()
-	dbDir, err := ioutil.TempDir("", "tsdb-ready")
-	require.NoError(t, err)
-	defer func() { require.NoError(t, os.RemoveAll(dbDir)) }()
+	dbDir := t.TempDir()
 
 	db, err := tsdb.Open(dbDir, nil, nil, nil, nil)
 	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, db.Close())
+	})
 
 	port := fmt.Sprintf(":%d", testutil.RandomUnprivilegedPort(t))
 
@@ -404,13 +343,13 @@ func TestHTTPMetrics(t *testing.T) {
 }
 
 func TestShutdownWithStaleConnection(t *testing.T) {
-	dbDir, err := ioutil.TempDir("", "tsdb-ready")
-	require.NoError(t, err)
-	defer func() { require.NoError(t, os.RemoveAll(dbDir)) }()
+	dbDir := t.TempDir()
 
 	db, err := tsdb.Open(dbDir, nil, nil, nil, nil)
 	require.NoError(t, err)
-
+	t.Cleanup(func() {
+		require.NoError(t, db.Close())
+	})
 	timeout := 10 * time.Second
 
 	port := fmt.Sprintf(":%d", testutil.RandomUnprivilegedPort(t))
@@ -573,39 +512,68 @@ func TestAgentAPIEndPoints(t *testing.T) {
 
 	webHandler := New(nil, opts)
 	webHandler.Ready()
-
-	baseURL := "http://localhost" + port
-
-	// Test for non-available endpoints in the Agent mode.
-	for _, u := range []string{
-		"/-/labels",
-		"/label",
-		"/series",
-		"/alertmanagers",
-		"/query",
-		"/query_range",
-		"/query_exemplars",
-		"/graph",
-		"/rules",
-	} {
-		w := httptest.NewRecorder()
-		req, err := http.NewRequest("GET", baseURL+u, nil)
-		require.NoError(t, err)
-		webHandler.router.ServeHTTP(w, req)
-		require.Equal(t, http.StatusNotFound, w.Code)
+	webHandler.config = &config.Config{}
+	webHandler.notifier = &notifier.Manager{}
+	l, err := webHandler.Listener()
+	if err != nil {
+		panic(fmt.Sprintf("Unable to start web listener: %s", err))
 	}
 
-	// Test for available endpoints in the Agent mode.
-	for _, u := range []string{
-		"/agent",
-		"/targets",
-		"/status",
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		err := webHandler.Run(ctx, l, "")
+		if err != nil {
+			panic(fmt.Sprintf("Can't start web handler:%s", err))
+		}
+	}()
+
+	// Give some time for the web goroutine to run since we need the server
+	// to be up before starting tests.
+	time.Sleep(5 * time.Second)
+	baseURL := "http://localhost" + port + "/api/v1"
+
+	// Test for non-available endpoints in the Agent mode.
+	for path, methods := range map[string][]string{
+		"/labels":                      {http.MethodGet, http.MethodPost},
+		"/label/:name/values":          {http.MethodGet},
+		"/series":                      {http.MethodGet, http.MethodPost, http.MethodDelete},
+		"/alertmanagers":               {http.MethodGet},
+		"/query":                       {http.MethodGet, http.MethodPost},
+		"/query_range":                 {http.MethodGet, http.MethodPost},
+		"/query_exemplars":             {http.MethodGet, http.MethodPost},
+		"/status/tsdb":                 {http.MethodGet},
+		"/alerts":                      {http.MethodGet},
+		"/rules":                       {http.MethodGet},
+		"/admin/tsdb/delete_series":    {http.MethodPost, http.MethodPut},
+		"/admin/tsdb/clean_tombstones": {http.MethodPost, http.MethodPut},
+		"/admin/tsdb/snapshot":         {http.MethodPost, http.MethodPut},
 	} {
-		w := httptest.NewRecorder()
-		req, err := http.NewRequest("GET", baseURL+u, nil)
-		require.NoError(t, err)
-		webHandler.router.ServeHTTP(w, req)
-		require.Equal(t, http.StatusOK, w.Code)
+		for _, m := range methods {
+			req, err := http.NewRequest(m, baseURL+path, nil)
+			require.NoError(t, err)
+			resp, err := http.DefaultClient.Do(req)
+			require.NoError(t, err)
+			require.Equal(t, http.StatusUnprocessableEntity, resp.StatusCode)
+		}
+	}
+
+	// Test for some of available endpoints in the Agent mode.
+	for path, methods := range map[string][]string{
+		"/targets":            {http.MethodGet},
+		"/targets/metadata":   {http.MethodGet},
+		"/metadata":           {http.MethodGet},
+		"/status/config":      {http.MethodGet},
+		"/status/runtimeinfo": {http.MethodGet},
+		"/status/flags":       {http.MethodGet},
+	} {
+		for _, m := range methods {
+			req, err := http.NewRequest(m, baseURL+path, nil)
+			require.NoError(t, err)
+			resp, err := http.DefaultClient.Do(req)
+			require.NoError(t, err)
+			require.Equal(t, http.StatusOK, resp.StatusCode)
+		}
 	}
 }
 
