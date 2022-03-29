@@ -440,7 +440,7 @@ func (ng *Engine) newQuery(q storage.Queryable, opts *QueryOpts, expr parser.Exp
 	}
 
 	lookbackDelta := opts.LookbackDelta
-	if lookbackDelta == 0 {
+	if lookbackDelta <= 0 {
 		lookbackDelta = ng.lookbackDelta
 	}
 

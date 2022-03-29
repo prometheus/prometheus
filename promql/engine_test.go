@@ -3162,6 +3162,13 @@ metric 0 1 2
 			queryLookback:  20 * time.Minute,
 			expectSamples:  false,
 		},
+		{
+			name:           "negative custom query lookback delta",
+			ts:             lastDatapointTs.Add(20 * time.Minute),
+			engineLookback: -10 * time.Minute,
+			queryLookback:  20 * time.Minute,
+			expectSamples:  true,
+		},
 	}
 
 	for _, c := range cases {
