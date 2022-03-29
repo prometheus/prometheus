@@ -109,6 +109,10 @@ func convertToFloat(i interface{}) (float64, error) {
 		return float64(v), nil
 	case uint:
 		return float64(v), nil
+	case int64:
+		return float64(v), nil
+	case uint64:
+		return float64(v), nil
 	default:
 		return 0, fmt.Errorf("can't convert %T to float", v)
 	}
