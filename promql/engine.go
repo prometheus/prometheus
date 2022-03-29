@@ -118,11 +118,16 @@ type Query interface {
 	// Statement returns the parsed statement of the query.
 	Statement() parser.Statement
 	// Stats returns statistics about the lifetime of the query.
-	Stats() *stats.QueryTimers
+	Stats() *stats.Statistics
 	// Cancel signals that a running query execution should be aborted.
 	Cancel()
 	// String returns the original query string.
 	String() string
+}
+
+type QueryOpts struct {
+	// Enables recording per-step statistics if the engine has it enabled as well. Disabled by default.
+	EnablePerStepStats bool
 }
 
 // query implements the Query interface.
@@ -135,6 +140,8 @@ type query struct {
 	stmt parser.Statement
 	// Timer stats for the query execution.
 	stats *stats.QueryTimers
+	// Sample stats for the query execution.
+	sampleStats *stats.QuerySamples
 	// Result matrix for reuse.
 	matrix Matrix
 	// Cancellation function for the query.
@@ -159,8 +166,11 @@ func (q *query) String() string {
 }
 
 // Stats implements the Query interface.
-func (q *query) Stats() *stats.QueryTimers {
-	return q.stats
+func (q *query) Stats() *stats.Statistics {
+	return &stats.Statistics{
+		Timers:  q.stats,
+		Samples: q.sampleStats,
+	}
 }
 
 // Cancel implements the Query interface.
@@ -254,6 +264,9 @@ type EngineOpts struct {
 	// is still provided here for those using the Engine outside of
 	// Prometheus.
 	EnableNegativeOffset bool
+
+	// EnablePerStepStats if true allows for per-step stats to be computed on request. Disabled otherwise.
+	EnablePerStepStats bool
 }
 
 // Engine handles the lifetime of queries from beginning to end.
@@ -270,6 +283,7 @@ type Engine struct {
 	noStepSubqueryIntervalFn func(rangeMillis int64) int64
 	enableAtModifier         bool
 	enableNegativeOffset     bool
+	enablePerStepStats       bool
 }
 
 // NewEngine returns a new engine.
@@ -352,6 +366,7 @@ func NewEngine(opts EngineOpts) *Engine {
 		noStepSubqueryIntervalFn: opts.NoStepSubqueryIntervalFn,
 		enableAtModifier:         opts.EnableAtModifier,
 		enableNegativeOffset:     opts.EnableNegativeOffset,
+		enablePerStepStats:       opts.EnablePerStepStats,
 	}
 }
 
@@ -379,12 +394,12 @@ func (ng *Engine) SetQueryLogger(l QueryLogger) {
 }
 
 // NewInstantQuery returns an evaluation query for the given expression at the given time.
-func (ng *Engine) NewInstantQuery(q storage.Queryable, qs string, ts time.Time) (Query, error) {
+func (ng *Engine) NewInstantQuery(q storage.Queryable, opts *QueryOpts, qs string, ts time.Time) (Query, error) {
 	expr, err := parser.ParseExpr(qs)
 	if err != nil {
 		return nil, err
 	}
-	qry, err := ng.newQuery(q, expr, ts, ts, 0)
+	qry, err := ng.newQuery(q, opts, expr, ts, ts, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -395,7 +410,7 @@ func (ng *Engine) NewInstantQuery(q storage.Queryable, qs string, ts time.Time) 
 
 // NewRangeQuery returns an evaluation query for the given time range and with
 // the resolution set by the interval.
-func (ng *Engine) NewRangeQuery(q storage.Queryable, qs string, start, end time.Time, interval time.Duration) (Query, error) {
+func (ng *Engine) NewRangeQuery(q storage.Queryable, opts *QueryOpts, qs string, start, end time.Time, interval time.Duration) (Query, error) {
 	expr, err := parser.ParseExpr(qs)
 	if err != nil {
 		return nil, err
@@ -403,7 +418,7 @@ func (ng *Engine) NewRangeQuery(q storage.Queryable, qs string, start, end time.
 	if expr.Type() != parser.ValueTypeVector && expr.Type() != parser.ValueTypeScalar {
 		return nil, errors.Errorf("invalid expression type %q for range query, must be Scalar or instant Vector", parser.DocumentedType(expr.Type()))
 	}
-	qry, err := ng.newQuery(q, expr, start, end, interval)
+	qry, err := ng.newQuery(q, opts, expr, start, end, interval)
 	if err != nil {
 		return nil, err
 	}
@@ -412,9 +427,14 @@ func (ng *Engine) NewRangeQuery(q storage.Queryable, qs string, start, end time.
 	return qry, nil
 }
 
-func (ng *Engine) newQuery(q storage.Queryable, expr parser.Expr, start, end time.Time, interval time.Duration) (*query, error) {
+func (ng *Engine) newQuery(q storage.Queryable, opts *QueryOpts, expr parser.Expr, start, end time.Time, interval time.Duration) (*query, error) {
 	if err := ng.validateOpts(expr); err != nil {
 		return nil, err
+	}
+
+	// Default to empty QueryOpts if not provided.
+	if opts == nil {
+		opts = &QueryOpts{}
 	}
 
 	es := &parser.EvalStmt{
@@ -424,10 +444,11 @@ func (ng *Engine) newQuery(q storage.Queryable, expr parser.Expr, start, end tim
 		Interval: interval,
 	}
 	qry := &query{
-		stmt:      es,
-		ng:        ng,
-		stats:     stats.NewQueryTimers(),
-		queryable: q,
+		stmt:        es,
+		ng:          ng,
+		stats:       stats.NewQueryTimers(),
+		sampleStats: stats.NewQuerySamples(ng.enablePerStepStats && opts.EnablePerStepStats),
+		queryable:   q,
 	}
 	return qry, nil
 }
@@ -490,10 +511,11 @@ func (ng *Engine) validateOpts(expr parser.Expr) error {
 
 func (ng *Engine) newTestQuery(f func(context.Context) error) Query {
 	qry := &query{
-		q:     "test statement",
-		stmt:  parser.TestStmt(f),
-		ng:    ng,
-		stats: stats.NewQueryTimers(),
+		q:           "test statement",
+		stmt:        parser.TestStmt(f),
+		ng:          ng,
+		stats:       stats.NewQueryTimers(),
+		sampleStats: stats.NewQuerySamples(ng.enablePerStepStats),
 	}
 	return qry
 }
@@ -615,8 +637,10 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 			maxSamples:               ng.maxSamplesPerQuery,
 			logger:                   ng.logger,
 			lookbackDelta:            ng.lookbackDelta,
+			samplesStats:             query.sampleStats,
 			noStepSubqueryIntervalFn: ng.noStepSubqueryIntervalFn,
 		}
+		query.sampleStats.InitStepTracking(start, start, 1)
 
 		val, warnings, err := evaluator.Eval(s.Expr)
 		if err != nil {
@@ -665,8 +689,10 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 		maxSamples:               ng.maxSamplesPerQuery,
 		logger:                   ng.logger,
 		lookbackDelta:            ng.lookbackDelta,
+		samplesStats:             query.sampleStats,
 		noStepSubqueryIntervalFn: ng.noStepSubqueryIntervalFn,
 	}
+	query.sampleStats.InitStepTracking(evaluator.startTimestamp, evaluator.endTimestamp, evaluator.interval)
 	val, warnings, err := evaluator.Eval(s.Expr)
 	if err != nil {
 		return nil, warnings, err
@@ -896,6 +922,7 @@ type evaluator struct {
 	currentSamples           int
 	logger                   log.Logger
 	lookbackDelta            time.Duration
+	samplesStats             *stats.QuerySamples
 	noStepSubqueryIntervalFn func(rangeMillis int64) int64
 }
 
@@ -1088,6 +1115,7 @@ func (ev *evaluator) rangeEval(prepSeries func(labels.Labels, *EvalSeriesHelper)
 				}
 			}
 			args[i] = vectors[i]
+			ev.samplesStats.UpdatePeak(ev.currentSamples)
 		}
 
 		// Make the function call.
@@ -1103,10 +1131,12 @@ func (ev *evaluator) rangeEval(prepSeries func(labels.Labels, *EvalSeriesHelper)
 		// When we reset currentSamples to tempNumSamples during the next iteration of the loop it also
 		// needs to include the samples from the result here, as they're still in memory.
 		tempNumSamples += len(result)
+		ev.samplesStats.UpdatePeak(ev.currentSamples)
 
 		if ev.currentSamples > ev.maxSamples {
 			ev.error(ErrTooManySamples(env))
 		}
+		ev.samplesStats.UpdatePeak(ev.currentSamples)
 
 		// If this could be an instant query, shortcut so as not to change sort order.
 		if ev.endTimestamp == ev.startTimestamp {
@@ -1116,6 +1146,7 @@ func (ev *evaluator) rangeEval(prepSeries func(labels.Labels, *EvalSeriesHelper)
 				mat[i] = Series{Metric: s.Metric, Points: []Point{s.Point}}
 			}
 			ev.currentSamples = originalNumSamples + mat.TotalSamples()
+			ev.samplesStats.UpdatePeak(ev.currentSamples)
 			return mat, warnings
 		}
 
@@ -1148,13 +1179,20 @@ func (ev *evaluator) rangeEval(prepSeries func(labels.Labels, *EvalSeriesHelper)
 		mat = append(mat, ss)
 	}
 	ev.currentSamples = originalNumSamples + mat.TotalSamples()
+	ev.samplesStats.UpdatePeak(ev.currentSamples)
 	return mat, warnings
 }
 
 // evalSubquery evaluates given SubqueryExpr and returns an equivalent
 // evaluated MatrixSelector in its place. Note that the Name and LabelMatchers are not set.
 func (ev *evaluator) evalSubquery(subq *parser.SubqueryExpr) (*parser.MatrixSelector, int, storage.Warnings) {
+	samplesStats := ev.samplesStats
+	// Avoid double counting samples when running a subquery, those samples will be counted in later stage.
+	ev.samplesStats = ev.samplesStats.NewChild()
 	val, ws := ev.eval(subq)
+	// But do incorporate the peak from the subquery
+	samplesStats.UpdatePeakFromSubquery(ev.samplesStats)
+	ev.samplesStats = samplesStats
 	mat := val.(Matrix)
 	vs := &parser.VectorSelector{
 		OriginalOffset: subq.OriginalOffset,
@@ -1360,6 +1398,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 				enh.Ts = ts
 				// Make the function call.
 				outVec := call(inArgs, e.Args, enh)
+				ev.samplesStats.IncrementSamplesAtStep(step, len(points))
 				enh.Out = outVec[:0]
 				if len(outVec) > 0 {
 					ss.Points = append(ss.Points, Point{V: outVec[0].Point.V, T: ts})
@@ -1377,7 +1416,9 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 			} else {
 				putPointSlice(ss.Points)
 			}
+			ev.samplesStats.UpdatePeak(ev.currentSamples)
 		}
+		ev.samplesStats.UpdatePeak(ev.currentSamples)
 
 		ev.currentSamples -= len(points)
 		putPointSlice(points)
@@ -1511,11 +1552,13 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 				Points: getPointSlice(numSteps),
 			}
 
-			for ts := ev.startTimestamp; ts <= ev.endTimestamp; ts += ev.interval {
+			for ts, step := ev.startTimestamp, -1; ts <= ev.endTimestamp; ts += ev.interval {
+				step++
 				_, v, ok := ev.vectorSelectorSingle(it, e, ts)
 				if ok {
 					if ev.currentSamples < ev.maxSamples {
 						ss.Points = append(ss.Points, Point{V: v, T: ts})
+						ev.samplesStats.IncrementSamplesAtStep(step, 1)
 						ev.currentSamples++
 					} else {
 						ev.error(ErrTooManySamples(env))
@@ -1529,6 +1572,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 				putPointSlice(ss.Points)
 			}
 		}
+		ev.samplesStats.UpdatePeak(ev.currentSamples)
 		return mat, ws
 
 	case *parser.MatrixSelector:
@@ -1547,6 +1591,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 			maxSamples:               ev.maxSamples,
 			logger:                   ev.logger,
 			lookbackDelta:            ev.lookbackDelta,
+			samplesStats:             ev.samplesStats.NewChild(),
 			noStepSubqueryIntervalFn: ev.noStepSubqueryIntervalFn,
 		}
 
@@ -1572,6 +1617,8 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 
 		res, ws := newEv.eval(e.Expr)
 		ev.currentSamples = newEv.currentSamples
+		ev.samplesStats.UpdatePeakFromSubquery(newEv.samplesStats)
+		ev.samplesStats.IncrementSamplesAtTimestamp(ev.endTimestamp, newEv.samplesStats.TotalSamples)
 		return res, ws
 	case *parser.StepInvariantExpr:
 		switch ce := e.Expr.(type) {
@@ -1588,10 +1635,16 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 			maxSamples:               ev.maxSamples,
 			logger:                   ev.logger,
 			lookbackDelta:            ev.lookbackDelta,
+			samplesStats:             ev.samplesStats.NewChild(),
 			noStepSubqueryIntervalFn: ev.noStepSubqueryIntervalFn,
 		}
 		res, ws := newEv.eval(e.Expr)
 		ev.currentSamples = newEv.currentSamples
+		ev.samplesStats.UpdatePeakFromSubquery(newEv.samplesStats)
+		for ts, step := ev.startTimestamp, -1; ts <= ev.endTimestamp; ts = ts + ev.interval {
+			step++
+			ev.samplesStats.IncrementSamplesAtStep(step, newEv.samplesStats.TotalSamples)
+		}
 		switch e.Expr.(type) {
 		case *parser.MatrixSelector, *parser.SubqueryExpr:
 			// We do not duplicate results for range selectors since result is a matrix
@@ -1621,6 +1674,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 				}
 			}
 		}
+		ev.samplesStats.UpdatePeak(ev.currentSamples)
 		return res, ws
 	}
 
@@ -1646,12 +1700,14 @@ func (ev *evaluator) vectorSelector(node *parser.VectorSelector, ts int64) (Vect
 			})
 
 			ev.currentSamples++
+			ev.samplesStats.IncrementSamplesAtTimestamp(ts, 1)
 			if ev.currentSamples > ev.maxSamples {
 				ev.error(ErrTooManySamples(env))
 			}
 		}
 
 	}
+	ev.samplesStats.UpdatePeak(ev.currentSamples)
 	return vec, ws
 }
 
@@ -1727,6 +1783,7 @@ func (ev *evaluator) matrixSelector(node *parser.MatrixSelector) (Matrix, storag
 		}
 
 		ss.Points = ev.matrixIterSlice(it, mint, maxt, getPointSlice(16))
+		ev.samplesStats.IncrementSamplesAtTimestamp(ev.startTimestamp, len(ss.Points))
 
 		if len(ss.Points) > 0 {
 			matrix = append(matrix, ss)
@@ -1798,6 +1855,7 @@ func (ev *evaluator) matrixIterSlice(it *storage.BufferedSeriesIterator, mint, m
 			ev.currentSamples++
 		}
 	}
+	ev.samplesStats.UpdatePeak(ev.currentSamples)
 	return out
 }
 

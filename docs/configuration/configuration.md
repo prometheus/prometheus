@@ -436,6 +436,9 @@ subscription_id: <string>
 # Optional client secret. Only required with authentication_method OAuth.
 [ client_secret: <secret> ]
 
+# Optional resource group name. Limits discovery to this resource group. 
+[ resource_group: <string> ]
+
 # Refresh interval to re-read the instance list.
 [ refresh_interval: <duration> | default = 300s ]
 
@@ -2479,9 +2482,9 @@ anchored on both ends. To un-anchor the regex, use `.*<regex>.*`.
 * `keep`: Drop targets for which `regex` does not match the concatenated `source_labels`.
 * `drop`: Drop targets for which `regex` matches the concatenated `source_labels`.
 * `hashmod`: Set `target_label` to the `modulus` of a hash of the concatenated `source_labels`.
-* `labelmap`: Match `regex` against all label names. Then copy the values of the matching labels
-   to label names given by `replacement` with match group references
-  (`${1}`, `${2}`, ...) in `replacement` substituted by their value.
+* `labelmap`: Match `regex` against all source label names, not just those specified in `source_labels`. Then
+   copy the values of the matching labels  to label names given by `replacement` with match
+   group references (`${1}`, `${2}`, ...) in `replacement` substituted by their value.
 * `labeldrop`: Match `regex` against all label names. Any label that matches will be
   removed from the set of labels.
 * `labelkeep`: Match `regex` against all label names. Any label that does not match will be

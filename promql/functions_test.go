@@ -55,7 +55,7 @@ func TestDeriv(t *testing.T) {
 
 	require.NoError(t, a.Commit())
 
-	query, err := engine.NewInstantQuery(storage, "deriv(foo[30m])", timestamp.Time(1493712846939))
+	query, err := engine.NewInstantQuery(storage, nil, "deriv(foo[30m])", timestamp.Time(1493712846939))
 	require.NoError(t, err)
 
 	result := query.Exec(context.Background())
