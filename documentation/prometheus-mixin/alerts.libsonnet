@@ -286,7 +286,21 @@
             },
             annotations: {
               summary: 'Prometheus has dropped some targets that exceeded body size limit.',
-              description: 'Prometheus %(prometheusName)s has dropped {{ printf "%%.0f" $value }} targets because some targets exceeded the configured body_size_limit.' % $._config,
+              description: 'Prometheus %(prometheusName)s has failed {{ printf "%%.0f" $value }} scrapes in the last 5m because some targets exceeded the configured body_size_limit.' % $._config,
+            },
+          },
+          {
+            alert: 'PrometheusScrapeSampleLimitHit',
+            expr: |||
+              increase(prometheus_target_scrapes_exceeded_sample_limit_total{%(prometheusSelector)s}[5m]) > 0
+            ||| % $._config,
+            'for': '15m',
+            labels: {
+              severity: 'warning',
+            },
+            annotations: {
+              summary: 'Prometheus has failed scrapes that have exceeded the configured sample limit.',
+              description: 'Prometheus %(prometheusName)s has failed {{ printf "%%.0f" $value }} scrapes in the last 5m because some targets exceeded the configured sample_limit.' % $._config,
             },
           },
           {
