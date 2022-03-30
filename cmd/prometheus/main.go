@@ -191,7 +191,7 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 				level.Info(logger).Log("msg", "Experimental per-step statistics reporting")
 			case "auto-gomaxprocs":
 				c.enableAutoGOMAXPROCS = true
-				level.Info(logger).Log("msg", "Automatically set GOMAXPROCS to cpu.limits when running in container")
+				level.Info(logger).Log("msg", "Automatically set GOMAXPROCS to match Linux container CPU quota")
 			case "":
 				continue
 			case "promql-at-modifier", "promql-negative-offset":
@@ -572,7 +572,7 @@ func main() {
 
 	if cfg.enableAutoGOMAXPROCS {
 		if _, err := maxprocs.Set(); err != nil {
-			level.Warn(logger).Log("auto_gomaxprocs", "failed", "err", err)
+			level.Warn(logger).Log("auto_gomaxprocs", "failed", "msg", "Failed to set GOMAXPROCS automatically", "err", err)
 		}
 	}
 
