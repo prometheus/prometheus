@@ -93,7 +93,4 @@ computed at all.
 
 `--enable-feature=auto-gomaxprocs`
 
-When enabled, GOMAXPROCS variable will be automatically set to match the container CPU limit.
-
-This means that Go runtime will operate as if it had only amount of CPU specified in the container
-CPU limit and not all CPUs on server where it's running.
+When enabled, GOMAXPROCS variable is automatically set to match Linux container CPU quota.
