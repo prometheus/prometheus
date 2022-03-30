@@ -88,3 +88,12 @@ statistics. Currently this is limited to totalQueryableSamples.
 
 When disabled in either the engine or the query, per-step statistics are not
 computed at all.
+
+## Auto GOMAXPROCS
+
+`--enable-feature=auto-gomaxprocs`
+
+When enabled, GOMAXPROCS variable will be automatically set to match the container CPU limit.
+
+This means that Go runtime will operate as if it had only amount of CPU specified in the container
+CPU limit and not all CPUs on server where it's running.

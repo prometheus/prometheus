@@ -47,6 +47,7 @@ import (
 	toolkit_web "github.com/prometheus/exporter-toolkit/web"
 	toolkit_webflag "github.com/prometheus/exporter-toolkit/web/kingpinflag"
 	"go.uber.org/atomic"
+	"go.uber.org/automaxprocs/maxprocs"
 	kingpin "gopkg.in/alecthomas/kingpin.v2"
 	klog "k8s.io/klog"
 	klogv2 "k8s.io/klog/v2"
@@ -149,6 +150,7 @@ type flagConfig struct {
 	enableExpandExternalLabels bool
 	enableNewSDManager         bool
 	enablePerStepStats         bool
+	enableAutoGOMAXPROCS       bool
 
 	prometheusURL   string
 	corsRegexString string
@@ -186,6 +188,9 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 			case "promql-per-step-stats":
 				c.enablePerStepStats = true
 				level.Info(logger).Log("msg", "Experimental per-step statistics reporting")
+			case "auto-gomaxprocs":
+				c.enableAutoGOMAXPROCS = true
+				level.Info(logger).Log("msg", "Automatically set GOMAXPROCS to match Linux container CPU quota")
 			case "":
 				continue
 			case "promql-at-modifier", "promql-negative-offset":
@@ -382,7 +387,7 @@ func main() {
 	serverOnlyFlag(a, "query.max-samples", "Maximum number of samples a single query can load into memory. Note that queries will fail if they try to load more samples than this into memory, so this also limits the number of samples a query can return.").
 		Default("50000000").IntVar(&cfg.queryMaxSamples)
 
-	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: agent, exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-at-modifier, promql-negative-offset, promql-per-step-stats, remote-write-receiver (DEPRECATED), extra-scrape-metrics, new-service-discovery-manager. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
+	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: agent, exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-at-modifier, promql-negative-offset, promql-per-step-stats, remote-write-receiver (DEPRECATED), extra-scrape-metrics, new-service-discovery-manager, auto-gomaxprocs. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
 		Default("").StringsVar(&cfg.featureList)
 
 	promlogflag.AddFlags(a, &cfg.promlogConfig)
@@ -563,6 +568,12 @@ func main() {
 		queryEngine *promql.Engine
 		ruleManager *rules.Manager
 	)
+
+	if cfg.enableAutoGOMAXPROCS {
+		if _, err := maxprocs.Set(); err != nil {
+			level.Warn(logger).Log("msg", "Failed to set GOMAXPROCS automatically", "err", err)
+		}
+	}
 
 	if !agentMode {
 		opts := promql.EngineOpts{
