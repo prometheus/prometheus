@@ -31,7 +31,7 @@ import (
 )
 
 var (
-	kumaConf KumaSDConfig = sdConf
+	kumaConf = sdConf
 
 	testKumaMadsV1Resources = []*MonitoringAssignment{
 		{
