@@ -72,6 +72,7 @@ func newServerDiscovery(conf *SDConfig, logger log.Logger) (*serverDiscovery, er
 		return nil, err
 	}
 
+	// username, password and token are set via http client config
 	cfg := ionoscloud.NewConfiguration("", "", "", conf.ionosEndpoint)
 	cfg.HTTPClient = &http.Client{
 		Transport: rt,
@@ -163,6 +164,7 @@ func (d *serverDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 	return []*targetgroup.Group{{Source: "ionos", Targets: targets}}, nil
 }
 
+// join returns strings.Join with additional separators at beginning and end.
 func join(elems []string, sep string) string {
 	return sep + strings.Join(elems, sep) + sep
 }

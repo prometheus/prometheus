@@ -26,7 +26,8 @@ import (
 )
 
 const (
-	// metaLabelPrefix is the meta prefix used for all meta labels in this discovery
+	// metaLabelPrefix is the meta prefix used for all meta labels in this
+	// discovery
 	metaLabelPrefix    = model.MetaLabelPrefix + "ionos_"
 	metaLabelSeparator = ","
 )
@@ -35,7 +36,7 @@ func init() {
 	discovery.RegisterConfig(&SDConfig{})
 }
 
-// Discovery periodically performs Scaleway requests. It implements
+// Discovery periodically performs IONOS Cloud target discovery. It implements
 // the Discoverer interface.
 type Discovery struct{}
 
@@ -57,6 +58,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*refresh.Discovery, error)
 	), nil
 }
 
+// DefaultSDConfig is the default IONOS Cloud Service Discovery configuration.
 var DefaultSDConfig = SDConfig{
 	HTTPClientConfig: config.DefaultHTTPClientConfig,
 	RefreshInterval:  model.Duration(60 * time.Second),
@@ -64,12 +66,13 @@ var DefaultSDConfig = SDConfig{
 }
 
 type SDConfig struct {
-	// DatacenterID to filter discovery on.
+	// DatacenterID: IONOS Cloud Datacenter ID used to discover targets.
 	DatacenterID string `yaml:"datacenter_id"`
 
 	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
-	RefreshInterval  model.Duration          `yaml:"refresh_interval"`
-	Port             int                     `yaml:"port"`
+
+	RefreshInterval model.Duration `yaml:"refresh_interval"`
+	Port            int            `yaml:"port"`
 
 	ionosEndpoint string // For tests only.
 }
