@@ -24,6 +24,9 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
+      - uses: actions/setup-go@v3
+        with:
+          go-version: '>=1.17 <1.18'
 
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v2
