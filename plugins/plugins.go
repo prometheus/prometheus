@@ -40,6 +40,9 @@ import (
 	// Register hetzner plugin.
 	_ "github.com/prometheus/prometheus/discovery/hetzner"
 
+	// Register ionos plugin.
+	_ "github.com/prometheus/prometheus/discovery/ionos"
+
 	// Register kubernetes plugin.
 	_ "github.com/prometheus/prometheus/discovery/kubernetes"
 
