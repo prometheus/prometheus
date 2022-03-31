@@ -39,7 +39,9 @@ Release cadence of first pre-releases being cut is 6 weeks.
 | v2.32          | 2021-12-01                                 | Julius Volz (GitHub: @juliusv)              |
 | v2.33          | 2022-01-12                                 | Björn Rabenstein (GitHub: @beorn7)          |
 | v2.34          | 2022-02-23                                 | Chris Marchbanks (GitHub: @csmarchbanks)    |
-| v2.35          | 2022-04-06                                 | **searching for volunteer**                 |
+| v2.35          | 2022-04-06                                 | Augustin Husson (GitHub: @nexucis)          |
+| v2.36          | 2022-05-18                                 | Matthias Loibl (GitHub: @metalmatze)        |
+| v2.37          | 2022-06-29                                 | **searching for volunteer**                 |
 
 If you are interested in volunteering please create a pull request against the [prometheus/prometheus](https://github.com/prometheus/prometheus) repository and propose yourself for the release series of your choice.
 
