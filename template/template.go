@@ -195,23 +195,17 @@ func NewTemplateExpander(
 			"stripDomain": func(hostPort string) (ret string) {
 				host, port, err := net.SplitHostPort(hostPort)
 				if err != nil {
-					// if hostPort does not contains port, then host equals to hostPort
 					host = hostPort
 				}
 				ip := net.ParseIP(host)
 				if ip != nil {
-					// if host part is ipv4 or v6, return the hostPort
 					ret = hostPort
 					return
 				}
 				ss := strings.Split(host, ".")
-				if len(ss) == 0 {
-					ret = hostPort
-					return
-				}
 				ret = ss[0]
 				if port != "" {
-					ret = ss[0] + ":" + port
+					ret = net.JoinHostPort(ss[0], port)
 				}
 				return
 			},
