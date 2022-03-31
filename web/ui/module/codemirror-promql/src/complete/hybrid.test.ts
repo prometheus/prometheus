@@ -11,9 +11,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import chai from 'chai';
 import { analyzeCompletion, computeStartCompletePosition, ContextKind } from './hybrid';
-import { createEditorState, mockedMetricsTerms, mockPrometheusServer } from '../test/utils.test';
+import { createEditorState, mockedMetricsTerms, mockPrometheusServer } from '../test/utils-test';
 import { Completion, CompletionContext } from '@codemirror/autocomplete';
 import {
   aggregateOpModifierTerms,
@@ -27,7 +26,7 @@ import {
   numberTerms,
   snippets,
 } from './promql.terms';
-import { EqlSingle, Neq } from '../grammar/parser.terms';
+import { EqlSingle, Neq } from 'lezer-promql';
 import { syntaxTree } from '@codemirror/language';
 import { newCompleteStrategy } from './index';
 
@@ -530,7 +529,7 @@ describe('analyzeCompletion test', () => {
       const state = createEditorState(value.expr);
       const node = syntaxTree(state).resolve(value.pos, -1);
       const result = analyzeCompletion(state, node);
-      chai.expect(value.expectedContext).to.deep.equal(result);
+      expect(value.expectedContext).toEqual(result);
     });
   });
 });
@@ -717,7 +716,7 @@ describe('computeStartCompletePosition test', () => {
       const state = createEditorState(value.expr);
       const node = syntaxTree(state).resolve(value.pos, -1);
       const result = computeStartCompletePosition(node, value.pos);
-      chai.expect(value.expectedStart).to.equal(result);
+      expect(value.expectedStart).toEqual(result);
     });
   });
 });
@@ -1285,7 +1284,7 @@ describe('autocomplete promQL test', () => {
       const context = new CompletionContext(state, value.pos, true);
       const completion = newCompleteStrategy(value.conf);
       const result = await completion.promQL(context);
-      chai.expect(value.expectedResult).to.deep.equal(result);
+      expect(value.expectedResult).toEqual(result);
     });
   });
 });

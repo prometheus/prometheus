@@ -78,7 +78,7 @@ import {
   Timestamp,
   Vector,
   Year,
-} from '../grammar/parser.terms';
+} from 'lezer-promql';
 
 export enum ValueType {
   none = 'none',

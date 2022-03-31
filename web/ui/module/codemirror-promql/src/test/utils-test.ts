@@ -11,15 +11,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { parser } from '../grammar/parser';
+import { parser } from 'lezer-promql';
 import { EditorState } from '@codemirror/state';
 import { LRLanguage } from '@codemirror/language';
 import nock from 'nock';
-
-// used to inject an implementation of fetch in NodeJS
-require('isomorphic-fetch');
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 const lightPromQLSyntax = LRLanguage.define({ parser: parser });
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export function createEditorState(expr: string): EditorState {
   return EditorState.create({

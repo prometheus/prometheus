@@ -26,7 +26,7 @@ import {
   SubqueryExpr,
   UnaryExpr,
   VectorSelector,
-} from '../grammar/parser.terms';
+} from 'lezer-promql';
 import { walkThrough } from './path-finder';
 import { getFunction, ValueType } from '../types';
 
