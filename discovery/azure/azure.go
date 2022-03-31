@@ -577,7 +577,7 @@ func mapFromVMScaleSetVM(vm compute.VirtualMachineScaleSetVM, scaleSetName strin
 	}
 }
 
-var errorNotFound = errors.New("Network interface does not exist")
+var errorNotFound = errors.New("network interface does not exist")
 
 // getNetworkInterfaceByID gets the network interface.
 // If a 404 is returned from the Azure API, `errorNotFound` is returned.
