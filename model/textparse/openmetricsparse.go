@@ -175,9 +175,8 @@ func (p *OpenMetricsParser) Metric(l *labels.Labels) string {
 		*l = append(*l, labels.Label{Name: s[a:b], Value: s[c:d]})
 	}
 
-	// Sort labels. We can skip the first entry since the metric name is
-	// already at the right place.
-	sort.Sort((*l)[1:])
+	// Sort labels.
+	sort.Sort(*l)
 
 	return s
 }
