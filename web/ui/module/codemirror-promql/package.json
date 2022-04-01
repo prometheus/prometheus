@@ -4,7 +4,7 @@
   "description": "a CodeMirror mode for the PromQL language",
   "types": "dist/esm/index.d.ts",
   "module": "dist/esm/index.js",
-  "type": "module",
+  "main": "dist/cjs/index.js",
   "scripts": {
     "build": "npm run build:lib",
     "build:lib": "bash ./build.sh",
