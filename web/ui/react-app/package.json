@@ -89,8 +89,12 @@
       "enzyme-to-json/serializer"
     ],
     "transformIgnorePatterns": [
-      "/node_modules/(?!codemirror-promql).+(js|jsx)$"
-    ]
+      "<rootDir>/../node_modules/(?!codemirror-promql)/",
+      "<rootDir>/../node_modules/(?!lezer-promql)/"
+    ],
+    "moduleNameMapper": {
+      "lezer-promql": "<rootDir>/../node_modules/lezer-promql/dist/index.cjs"
+    }
   },
   "optionalDependencies": {
     "fsevents": "^2.3.2"
