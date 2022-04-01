@@ -72,7 +72,7 @@ func newServerDiscovery(conf *SDConfig, logger log.Logger) (*serverDiscovery, er
 		return nil, err
 	}
 
-	// username, password and token are set via http client config
+	// Username, password and token are set via http client config.
 	cfg := ionoscloud.NewConfiguration("", "", "", conf.ionosEndpoint)
 	cfg.HTTPClient = &http.Client{
 		Transport: rt,
