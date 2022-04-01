@@ -10,7 +10,7 @@ for workspace in $(npm ls --production --depth 1 -json | jq -r '.dependencies[].
   cd "${workspace}"
   ncu "$1"
   cd ../
-done; \
+done
 
 ncu "$1"
 npm install
