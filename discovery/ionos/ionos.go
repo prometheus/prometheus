@@ -27,7 +27,7 @@ import (
 
 const (
 	// metaLabelPrefix is the meta prefix used for all meta labels in this
-	// discovery
+	// discovery.
 	metaLabelPrefix    = model.MetaLabelPrefix + "ionos_"
 	metaLabelSeparator = ","
 )
@@ -40,6 +40,7 @@ func init() {
 // the Discoverer interface.
 type Discovery struct{}
 
+// NewDiscovery returns a new refresh.Discovery for IONOS Cloud.
 func NewDiscovery(conf *SDConfig, logger log.Logger) (*refresh.Discovery, error) {
 	if conf.ionosEndpoint == "" {
 		conf.ionosEndpoint = "https://api.ionos.com"
@@ -58,13 +59,14 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*refresh.Discovery, error)
 	), nil
 }
 
-// DefaultSDConfig is the default IONOS Cloud Service Discovery configuration.
+// DefaultSDConfig is the default IONOS Cloud service discovery configuration.
 var DefaultSDConfig = SDConfig{
 	HTTPClientConfig: config.DefaultHTTPClientConfig,
 	RefreshInterval:  model.Duration(60 * time.Second),
 	Port:             80,
 }
 
+// SDConfig configuration to use for IONOS Cloud Discovery.
 type SDConfig struct {
 	// DatacenterID: IONOS Cloud Datacenter ID used to discover targets.
 	DatacenterID string `yaml:"datacenter_id"`
@@ -77,10 +79,12 @@ type SDConfig struct {
 	ionosEndpoint string // For tests only.
 }
 
+// Name returns the name of the IONOS Cloud service discovery.
 func (c SDConfig) Name() string {
 	return "ionos"
 }
 
+// NewDiscoverer returns a new discovery.Discoverer for IONOS Cloud.
 func (c SDConfig) NewDiscoverer(options discovery.DiscovererOptions) (discovery.Discoverer, error) {
 	return NewDiscovery(&c, options.Logger)
 }
