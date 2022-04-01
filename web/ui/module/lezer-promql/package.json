@@ -12,29 +12,28 @@
   "types": "dist/index.d.ts",
   "author": "Prometheus Authors <prometheus-developers@googlegroups.com>",
   "license": "Apache-2.0",
-  "devDependencies": {
-    "@lezer/generator": "^0.15.2",
-    "@lezer/lr": "^0.15.8",
-    "@rollup/plugin-node-resolve": "^9.0.0",
-    "rollup": "^2.27.1"
-  },
-  "peerDependencies": {
-    "@lezer/lr": "^0.15.8"
-  },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/prometheus/lezer-promql.git"
-  },
-  "scripts": {
-    "build": "bash ./build.sh",
-    "test": "mocha test/test-*.js"
+    "url": "git+https://github.com/prometheus/prometheus.git"
   },
   "keywords": [
     "lezer",
     "promql"
   ],
   "bugs": {
-    "url": "https://github.com/prometheus/lezer-promql/issues"
+    "url": "https://github.com/prometheus/prometheus/issues"
   },
-  "homepage": "https://github.com/prometheus/lezer-promql#readme"
+  "homepage": "https://github.com/prometheus/prometheus/blob/main/web/ui/module/lezer-promql/README.md",
+  "scripts": {
+    "build": "bash ./build.sh",
+    "lint": "echo 'nothing to do'",
+    "test": "NODE_OPTIONS=--experimental-vm-modules jest"
+  },
+  "devDependencies": {
+    "@lezer/generator": "^0.15.2",
+    "@lezer/lr": "^0.15.8"
+  },
+  "peerDependencies": {
+    "@lezer/lr": "^0.15.8"
+  }
 }
