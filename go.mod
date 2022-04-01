@@ -10,7 +10,7 @@ require (
 	github.com/Azure/go-autorest/autorest/validation v0.3.1 // indirect
 	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137
 	github.com/armon/go-metrics v0.3.3 // indirect
-	github.com/aws/aws-sdk-go v1.43.10
+	github.com/aws/aws-sdk-go v1.43.11
 	github.com/cespare/xxhash/v2 v2.1.2
 	github.com/containerd/containerd v1.6.1 // indirect
 	github.com/dennwc/varint v1.0.0
@@ -34,12 +34,10 @@ require (
 	github.com/hashicorp/consul/api v1.12.0
 	github.com/hashicorp/go-hclog v0.12.2 // indirect
 	github.com/hashicorp/go-immutable-radix v1.2.0 // indirect
-	github.com/hashicorp/golang-lru v0.5.4 // indirect
 	github.com/hetznercloud/hcloud-go v1.33.1
 	github.com/json-iterator/go v1.1.12
 	github.com/kolo/xmlrpc v0.0.0-20201022064351-38db28db192b
 	github.com/linode/linodego v1.3.0
-	github.com/mattn/go-colorable v0.1.8 // indirect
 	github.com/miekg/dns v1.1.46
 	github.com/moby/term v0.0.0-20210619224110-3f7ff695adc6 // indirect
 	github.com/mwitkow/go-conntrack v0.0.0-20190716064945-2f068394615f
@@ -47,7 +45,7 @@ require (
 	github.com/oklog/ulid v1.3.1
 	github.com/opencontainers/image-spec v1.0.2 // indirect
 	github.com/pkg/errors v0.9.1
-	github.com/prometheus/alertmanager v0.23.0
+	github.com/prometheus/alertmanager v0.24.0
 	github.com/prometheus/client_golang v1.12.1
 	github.com/prometheus/client_model v0.2.0
 	github.com/prometheus/common v0.33.0
