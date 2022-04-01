@@ -2765,6 +2765,10 @@ hetzner_sd_configs:
 http_sd_configs:
   [ - <http_sd_config> ... ]
 
+ # List of IONOS service discovery configurations.
+ionos_sd_configs:
+  [ - <ionos_sd_config> ... ]
+
 # List of Kubernetes service discovery configurations.
 kubernetes_sd_configs:
   [ - <kubernetes_sd_config> ... ]
