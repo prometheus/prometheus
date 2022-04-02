@@ -20,13 +20,22 @@ import (
 	"testing"
 
 	"github.com/grafana/regexp"
+	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/stretchr/testify/require"
 )
 
 func TestQueryLogging(t *testing.T) {
-	fileAsBytes := make([]byte, 4096)
+	file, err := ioutil.TempFile("", "mmapedFile")
+	require.NoError(t, err)
+
+	filename := file.Name()
+	defer os.Remove(filename)
+
+	mw, err := fileutil.NewMmapWriterWithSize(file, 4096)
+	require.NoError(t, err)
+
 	queryLogger := ActiveQueryTracker{
-		mmapedFile:   fileAsBytes,
+		mw:           mw,
 		logger:       nil,
 		getNextIndex: make(chan int, 4),
 	}
@@ -46,6 +55,7 @@ func TestQueryLogging(t *testing.T) {
 		`^{"query":"","timestamp_sec":\d+}\x00*,$`,
 		`^{"query":"SpecialCharQuery{host=\\"2132132\\", id=123123}","timestamp_sec":\d+}\x00*,$`,
 	}
+	fileAsBytes := mw.Bytes()
 
 	// Check for inserts of queries.
 	for i := 0; i < 4; i++ {
@@ -68,9 +78,17 @@ func TestQueryLogging(t *testing.T) {
 }
 
 func TestIndexReuse(t *testing.T) {
-	queryBytes := make([]byte, 1+3*entrySize)
+	file, err := ioutil.TempFile("", "mmapedFile")
+	require.NoError(t, err)
+
+	filename := file.Name()
+	defer os.Remove(filename)
+
+	mw, err := fileutil.NewMmapWriterWithSize(file, 1+3*entrySize)
+	require.NoError(t, err)
+
 	queryLogger := ActiveQueryTracker{
-		mmapedFile:   queryBytes,
+		mw:           mw,
 		logger:       nil,
 		getNextIndex: make(chan int, 3),
 	}
@@ -92,6 +110,7 @@ func TestIndexReuse(t *testing.T) {
 		`^{"query":"ThisShouldBeInsertedAtIndex2","timestamp_sec":\d+}\x00*,$`,
 		`^{"query":"TestQuery3","timestamp_sec":\d+}\x00*,$`,
 	}
+	queryBytes := mw.Bytes()
 
 	// Check all bytes and verify new query was inserted at index 2
 	for i := 0; i < 3; i++ {
@@ -111,10 +130,12 @@ func TestMMapFile(t *testing.T) {
 	filename := file.Name()
 	defer os.Remove(filename)
 
-	fileAsBytes, err := getMMapedFile(filename, 2, nil)
-
+	mw, err := getMMapedFile(filename, 2, nil)
 	require.NoError(t, err)
-	copy(fileAsBytes, "ab")
+
+	fileAsBytes := mw.Bytes()
+	_, err = mw.Write([]byte("ab"))
+	require.NoError(t, err)
 
 	f, err := os.Open(filename)
 	require.NoError(t, err)

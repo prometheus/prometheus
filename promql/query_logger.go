@@ -22,13 +22,13 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/edsrzf/mmap-go"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/prometheus/prometheus/tsdb/fileutil"
 )
 
 type ActiveQueryTracker struct {
-	mmapedFile    []byte
+	mw            *fileutil.MmapWriter
 	getNextIndex  chan int
 	logger        log.Logger
 	maxConcurrent int
@@ -80,7 +80,7 @@ func logUnfinishedQueries(filename string, filesize int, logger log.Logger) {
 	}
 }
 
-func getMMapedFile(filename string, filesize int, logger log.Logger) ([]byte, error) {
+func getMMapedFile(filename string, filesize int, logger log.Logger) (*fileutil.MmapWriter, error) {
 	file, err := os.OpenFile(filename, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0o666)
 	if err != nil {
 		absPath, pathErr := filepath.Abs(filename)
@@ -91,19 +91,13 @@ func getMMapedFile(filename string, filesize int, logger log.Logger) ([]byte, er
 		return nil, err
 	}
 
-	err = file.Truncate(int64(filesize))
-	if err != nil {
-		level.Error(logger).Log("msg", "Error setting filesize.", "filesize", filesize, "err", err)
-		return nil, err
-	}
-
-	fileAsBytes, err := mmap.Map(file, mmap.RDWR, 0)
+	mw, err := fileutil.NewMmapWriterWithSize(file, filesize)
 	if err != nil {
 		level.Error(logger).Log("msg", "Failed to mmap", "file", filename, "Attempted size", filesize, "err", err)
 		return nil, err
 	}
 
-	return fileAsBytes, err
+	return mw, err
 }
 
 func NewActiveQueryTracker(localStoragePath string, maxConcurrent int, logger log.Logger) *ActiveQueryTracker {
@@ -115,14 +109,17 @@ func NewActiveQueryTracker(localStoragePath string, maxConcurrent int, logger lo
 	filename, filesize := filepath.Join(localStoragePath, "queries.active"), 1+maxConcurrent*entrySize
 	logUnfinishedQueries(filename, filesize, logger)
 
-	fileAsBytes, err := getMMapedFile(filename, filesize, logger)
+	mw, err := getMMapedFile(filename, filesize, logger)
 	if err != nil {
 		panic("Unable to create mmap-ed active query log")
 	}
 
-	copy(fileAsBytes, "[")
+	_, err = mw.Write([]byte("["))
+	if err != nil {
+		panic("Unable to write mmap-ed active query log")
+	}
 	activeQueryTracker := ActiveQueryTracker{
-		mmapedFile:    fileAsBytes,
+		mw:            mw,
 		getNextIndex:  make(chan int, maxConcurrent),
 		logger:        logger,
 		maxConcurrent: maxConcurrent,
@@ -179,19 +176,27 @@ func (tracker ActiveQueryTracker) GetMaxConcurrent() int {
 }
 
 func (tracker ActiveQueryTracker) Delete(insertIndex int) {
-	copy(tracker.mmapedFile[insertIndex:], strings.Repeat("\x00", entrySize))
+	_, err := tracker.mw.WriteAt([]byte(strings.Repeat("\x00", entrySize)), int64(insertIndex))
+	if err != nil {
+		panic("Unable to write mmap-ed active query log")
+	}
 	tracker.getNextIndex <- insertIndex
 }
 
 func (tracker ActiveQueryTracker) Insert(ctx context.Context, query string) (int, error) {
 	select {
 	case i := <-tracker.getNextIndex:
-		fileBytes := tracker.mmapedFile
 		entry := newJSONEntry(query, tracker.logger)
 		start, end := i, i+entrySize
 
-		copy(fileBytes[start:], entry)
-		copy(fileBytes[end-1:], ",")
+		_, err := tracker.mw.WriteAt(entry, int64(start))
+		if err != nil {
+			return 0, err
+		}
+		_, err = tracker.mw.WriteAt([]byte(","), int64(end-1))
+		if err != nil {
+			return 0, err
+		}
 		return i, nil
 	case <-ctx.Done():
 		return 0, ctx.Err()
