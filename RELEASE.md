@@ -110,7 +110,8 @@ In case you want to update the UI dependencies, you can run the following comman
 make update-npm-deps
 ```
 
-Once it is done, please verify that you still have one folder `node_modules` in the folder `web/ui`, and then run `make ui-build` to verify it's still working.
+Once this step completes, please verify that no additional `node_modules` directory was created in any of the module subdirectories 
+(which could indicate conflicting dependency versions across modules). Then run `make ui-build` to verify that the build is still working.
 
 Note: Once in a while, the npm dependencies should also be updated to their latest release versions (major or minor) with `make upgrade-npm-deps`, 
 though this may be done at convenient times (e.g. by the UI maintainers) that are out-of-sync with Prometheus releases.
