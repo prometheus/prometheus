@@ -104,7 +104,7 @@ git commit -m "Update dependencies"
 The React application recently moved to a monorepo system with multiple internal npm packages. Dependency upgrades are
 quite sensitive for the time being.
 
-In case you want to update the ui dependencies, you can run the following command:
+In case you want to update the UI dependencies, you can run the following command:
 
 ```bash
 make update-npm-deps
@@ -112,7 +112,8 @@ make update-npm-deps
 
 Once it is done, please verify that you still have one folder `node_modules` in the folder `web/ui`, and then run `make ui-build` to verify it's still working.
 
-Note: in case you feel it, you can also upgrade the npm dependencies to their latest release (major or minor) with `make upgrade-npm-deps`
+Note: Once in a while, the npm dependencies should also be updated to their latest release versions (major or minor) with `make upgrade-npm-deps`, 
+though this may be done at convenient times (e.g. by the UI maintainers) that are out-of-sync with Prometheus releases.
 
 ### 1. Prepare your release
 
