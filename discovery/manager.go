@@ -339,7 +339,7 @@ func (m *Manager) sender() {
 			case <-m.triggerSend:
 				sentUpdates.WithLabelValues(m.name).Inc()
 				select {
-				case m.syncCh <- m.allGroups():
+				case m.syncCh <- m.AllGroups():
 				default:
 					delayedUpdates.WithLabelValues(m.name).Inc()
 					level.Debug(m.logger).Log("msg", "Discovery receiver's channel was full so will retry the next cycle")
@@ -378,7 +378,8 @@ func (m *Manager) updateGroup(poolKey poolKey, tgs []*targetgroup.Group) {
 	}
 }
 
-func (m *Manager) allGroups() map[string][]*targetgroup.Group {
+// AllGroups updates and returns all target groups of this manager.
+func (m *Manager) AllGroups() map[string][]*targetgroup.Group {
 	tSets := map[string][]*targetgroup.Group{}
 	n := map[string]int{}
 
