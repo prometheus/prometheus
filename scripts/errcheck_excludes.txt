@@ -1,4 +1,4 @@
-// Don't flag lines such as "io.Copy(ioutil.Discard, resp.Body)".
+// Don't flag lines such as "io.Copy(io.Discard, resp.Body)".
 io.Copy
 // The next two are used in HTTP handlers, any error is handled by the server itself.
 io.WriteString

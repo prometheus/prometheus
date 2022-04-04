@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"hash/crc32"
 	"io"
-	"io/ioutil"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -203,7 +202,7 @@ func TestReader_Live(t *testing.T) {
 
 	for i := range testReaderCases {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
-			writeFd, err := ioutil.TempFile("", "TestReader_Live")
+			writeFd, err := os.CreateTemp("", "TestReader_Live")
 			require.NoError(t, err)
 			defer os.Remove(writeFd.Name())
 

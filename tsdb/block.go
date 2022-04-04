@@ -17,7 +17,6 @@ package tsdb
 import (
 	"encoding/json"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"sort"
@@ -201,7 +200,7 @@ const (
 func chunkDir(dir string) string { return filepath.Join(dir, "chunks") }
 
 func readMetaFile(dir string) (*BlockMeta, int64, error) {
-	b, err := ioutil.ReadFile(filepath.Join(dir, metaFilename))
+	b, err := os.ReadFile(filepath.Join(dir, metaFilename))
 	if err != nil {
 		return nil, 0, err
 	}
@@ -636,7 +635,7 @@ func (pb *Block) Snapshot(dir string) error {
 
 	// Hardlink the chunks
 	curChunkDir := chunkDir(pb.dir)
-	files, err := ioutil.ReadDir(curChunkDir)
+	files, err := os.ReadDir(curChunkDir)
 	if err != nil {
 		return errors.Wrap(err, "ReadDir the current chunk dir")
 	}

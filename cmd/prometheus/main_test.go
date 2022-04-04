@@ -17,7 +17,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"math"
 	"os"
 	"os/exec"
@@ -211,7 +211,7 @@ func TestWALSegmentSizeBounds(t *testing.T) {
 		stderr, err := prom.StderrPipe()
 		require.NoError(t, err)
 		go func() {
-			slurp, _ := ioutil.ReadAll(stderr)
+			slurp, _ := io.ReadAll(stderr)
 			t.Log(string(slurp))
 		}()
 
@@ -256,7 +256,7 @@ func TestMaxBlockChunkSegmentSizeBounds(t *testing.T) {
 		stderr, err := prom.StderrPipe()
 		require.NoError(t, err)
 		go func() {
-			slurp, _ := ioutil.ReadAll(stderr)
+			slurp, _ := io.ReadAll(stderr)
 			t.Log(string(slurp))
 		}()
 
@@ -445,7 +445,7 @@ func TestModeSpecificFlags(t *testing.T) {
 			stderr, err := prom.StderrPipe()
 			require.NoError(t, err)
 			go func() {
-				slurp, _ := ioutil.ReadAll(stderr)
+				slurp, _ := io.ReadAll(stderr)
 				t.Log(string(slurp))
 			}()
 

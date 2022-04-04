@@ -15,7 +15,7 @@ package main
 
 import (
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 
 	"github.com/pkg/errors"
@@ -41,7 +41,7 @@ func debugWrite(cfg debugWriterConfig) error {
 			if err != nil {
 				return errors.Wrap(err, "error executing HTTP request")
 			}
-			body, err := ioutil.ReadAll(res.Body)
+			body, err := io.ReadAll(res.Body)
 			res.Body.Close()
 			if err != nil {
 				return errors.Wrap(err, "error reading the response body")

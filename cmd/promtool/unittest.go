@@ -16,7 +16,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -64,7 +63,7 @@ func RulesUnitTest(queryOpts promql.LazyLoaderOpts, files ...string) int {
 func ruleUnitTest(filename string, queryOpts promql.LazyLoaderOpts) []error {
 	fmt.Println("Unit Testing: ", filename)
 
-	b, err := ioutil.ReadFile(filename)
+	b, err := os.ReadFile(filename)
 	if err != nil {
 		return []error{err}
 	}

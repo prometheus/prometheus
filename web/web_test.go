@@ -18,7 +18,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -578,7 +577,7 @@ func TestAgentAPIEndPoints(t *testing.T) {
 }
 
 func cleanupTestResponse(t *testing.T, resp *http.Response) {
-	_, err := io.Copy(ioutil.Discard, resp.Body)
+	_, err := io.Copy(io.Discard, resp.Body)
 	require.NoError(t, err)
 	require.NoError(t, resp.Body.Close())
 }
@@ -589,7 +588,7 @@ func cleanupSnapshot(t *testing.T, dbDir string, resp *http.Response) {
 			Name string `json:"name"`
 		} `json:"data"`
 	}{}
-	b, err := ioutil.ReadAll(resp.Body)
+	b, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
 	require.NoError(t, json.Unmarshal(b, snapshot))
 	require.NotZero(t, snapshot.Data.Name, "snapshot directory not returned")

@@ -19,7 +19,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"strconv"
 	"strings"
@@ -213,7 +212,7 @@ func (c *Client) Store(ctx context.Context, req []byte) error {
 		return RecoverableError{err, defaultBackoff}
 	}
 	defer func() {
-		io.Copy(ioutil.Discard, httpResp.Body)
+		io.Copy(io.Discard, httpResp.Body)
 		httpResp.Body.Close()
 	}()
 
@@ -300,13 +299,13 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryRe
 		return nil, errors.Wrap(err, "error sending request")
 	}
 	defer func() {
-		io.Copy(ioutil.Discard, httpResp.Body)
+		io.Copy(io.Discard, httpResp.Body)
 		httpResp.Body.Close()
 	}()
 	c.readQueriesDuration.Observe(time.Since(start).Seconds())
 	c.readQueriesTotal.WithLabelValues(strconv.Itoa(httpResp.StatusCode)).Inc()
 
-	compressed, err = ioutil.ReadAll(httpResp.Body)
+	compressed, err = io.ReadAll(httpResp.Body)
 	if err != nil {
 		return nil, errors.Wrap(err, fmt.Sprintf("error reading response. HTTP status code: %s", httpResp.Status))
 	}

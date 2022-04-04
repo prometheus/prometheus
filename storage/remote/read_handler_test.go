@@ -16,7 +16,6 @@ package remote
 import (
 	"bytes"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -84,7 +83,7 @@ func TestSampledReadEndpoint(t *testing.T) {
 	require.Equal(t, "snappy", recorder.Result().Header.Get("Content-Encoding"))
 
 	// Decode the response.
-	compressed, err = ioutil.ReadAll(recorder.Result().Body)
+	compressed, err = io.ReadAll(recorder.Result().Body)
 	require.NoError(t, err)
 
 	uncompressed, err := snappy.Decode(nil, compressed)
