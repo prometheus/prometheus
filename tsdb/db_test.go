@@ -2887,11 +2887,7 @@ func deleteNonBlocks(dbDir string) error {
 		return err
 	}
 	for _, dir := range dirs {
-		di, err := dir.Info()
-		if err != nil {
-			return err
-		}
-		if ok := isBlockDir(di); !ok {
+		if ok := isBlockDir(dir); !ok {
 			if err := os.RemoveAll(filepath.Join(dbDir, dir.Name())); err != nil {
 				return err
 			}
@@ -2902,11 +2898,7 @@ func deleteNonBlocks(dbDir string) error {
 		return err
 	}
 	for _, dir := range dirs {
-		di, err := dir.Info()
-		if err != nil {
-			return err
-		}
-		if ok := isBlockDir(di); !ok {
+		if ok := isBlockDir(dir); !ok {
 			return errors.Errorf("root folder:%v still hase non block directory:%v", dbDir, dir.Name())
 		}
 	}

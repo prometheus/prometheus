@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"io/fs"
 	"math"
 	"os"
 	"path/filepath"
@@ -768,11 +769,7 @@ func removeBestEffortTmpDirs(l log.Logger, dir string) error {
 		return err
 	}
 	for _, f := range files {
-		fi, err := f.Info()
-		if err != nil {
-			return err
-		}
-		if isTmpDir(fi) {
+		if isTmpDir(f) {
 			if err := os.RemoveAll(filepath.Join(dir, f.Name())); err != nil {
 				level.Error(l).Log("msg", "failed to delete tmp block dir", "dir", filepath.Join(dir, f.Name()), "err", err)
 				continue
@@ -1720,7 +1717,7 @@ func (db *DB) CleanTombstones() (err error) {
 	return nil
 }
 
-func isBlockDir(fi os.FileInfo) bool {
+func isBlockDir(fi fs.DirEntry) bool {
 	if !fi.IsDir() {
 		return false
 	}
@@ -1729,7 +1726,7 @@ func isBlockDir(fi os.FileInfo) bool {
 }
 
 // isTmpDir returns true if the given file-info contains a block ULID or checkpoint prefix and a tmp extension.
-func isTmpDir(fi os.FileInfo) bool {
+func isTmpDir(fi fs.DirEntry) bool {
 	if !fi.IsDir() {
 		return false
 	}
@@ -1755,11 +1752,7 @@ func blockDirs(dir string) ([]string, error) {
 	var dirs []string
 
 	for _, f := range files {
-		fi, err := f.Info()
-		if err != nil {
-			return nil, err
-		}
-		if isBlockDir(fi) {
+		if isBlockDir(f) {
 			dirs = append(dirs, filepath.Join(dir, f.Name()))
 		}
 	}
