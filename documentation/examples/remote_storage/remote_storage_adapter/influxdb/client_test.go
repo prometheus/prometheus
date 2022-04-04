@@ -14,6 +14,7 @@
 package influxdb
 
 import (
+	"io"
 	"math"
 	"net/http"
 	"net/http/httptest"
