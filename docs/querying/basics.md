@@ -82,8 +82,8 @@ single sample value for each at a given timestamp (instant): in the simplest
 form, only a metric name is specified. This results in an instant vector
 containing elements for all time series that have this metric name.
 
-This example selects all time series that have the `http_requests_total` metric
-name:
+This example selects the sample at the current instant, for all time series
+that have the `http_requests_total` metric name:
 
     http_requests_total
 
