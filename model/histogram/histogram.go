@@ -257,7 +257,6 @@ type regularBucketIterator struct {
 	currCount            int64   // Count in the current bucket.
 	currIdx              int32   // The actual bucket index.
 	currLower, currUpper float64 // Limits of the current bucket.
-
 }
 
 func newRegularBucketIterator(h *Histogram, positive bool) *regularBucketIterator {
