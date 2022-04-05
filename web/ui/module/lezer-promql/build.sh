@@ -16,7 +16,7 @@
 
 set -ex
 
-lezer-generator src/promql.grammar -o src/parser
+npx lezer-generator src/promql.grammar -o src/parser
 
 cat src/parser.terms.js >> src/parser.js
 
