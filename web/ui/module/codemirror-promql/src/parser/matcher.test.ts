@@ -11,10 +11,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { EqlRegex, EqlSingle, Neq, NeqRegex } from '../grammar/parser.terms';
+import { EqlRegex, EqlSingle, Neq, NeqRegex } from 'lezer-promql';
 import { labelMatchersToString } from './matcher';
 import { Matcher } from '../types';
-import chai from 'chai';
 
 describe('labelMatchersToString test', () => {
   const testCases = [
@@ -131,7 +130,7 @@ describe('labelMatchersToString test', () => {
 
   testCases.forEach((value) => {
     it(value.title, () => {
-      chai.expect(labelMatchersToString(value.metricName, value.matchers, value.labelName)).to.equal(value.result);
+      expect(labelMatchersToString(value.metricName, value.matchers, value.labelName)).toEqual(value.result);
     });
   });
 });

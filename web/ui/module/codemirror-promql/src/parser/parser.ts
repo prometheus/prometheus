@@ -47,7 +47,7 @@ import {
   UnaryExpr,
   Unless,
   VectorSelector,
-} from '../grammar/parser.terms';
+} from 'lezer-promql';
 import { containsAtLeastOneChild, retrieveAllRecursiveNodes, walkThrough } from './path-finder';
 import { getType } from './type';
 import { buildLabelMatchers } from './matcher';
