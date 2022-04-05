@@ -200,8 +200,8 @@ While the following would be *incorrect*:
 
     sum(http_requests_total{method="GET"}) offset 5m // INVALID.
 
-The same works for range vectors. This returns the 5-minute rate that
-`http_requests_total` had a week ago:
+The same works for range vectors. This returns the 5-minute [rate](https://prometheus.io/docs/prometheus/latest/querying/functions/#rate)
+that `http_requests_total` had a week ago:
 
     rate(http_requests_total[5m] offset 1w)
 
