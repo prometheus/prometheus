@@ -17,7 +17,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strconv"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
@@ -81,18 +80,16 @@ func (s QueryTiming) SpanOperation() string {
 // stepStat represents a single statistic for a given step timestamp.
 type stepStat struct {
 	T int64
-	V float64
+	V int64
 }
 
 func (s stepStat) String() string {
-	v := strconv.FormatFloat(s.V, 'f', -1, 64)
-	return fmt.Sprintf("%v @[%v]", v, s.T)
+	return fmt.Sprintf("%v @[%v]", s.V, s.T)
 }
 
 // MarshalJSON implements json.Marshaler.
 func (s stepStat) MarshalJSON() ([]byte, error) {
-	v := strconv.FormatFloat(s.V, 'f', -1, 64)
-	return json.Marshal([...]interface{}{float64(s.T) / 1000, v})
+	return json.Marshal([...]interface{}{float64(s.T) / 1000, s.V})
 }
 
 // queryTimings with all query timers mapped to durations.
@@ -185,7 +182,7 @@ func (qs *QuerySamples) totalSamplesPerStepPoints() []stepStat {
 
 	ts := make([]stepStat, len(qs.TotalSamplesPerStep))
 	for i, c := range qs.TotalSamplesPerStep {
-		ts[i] = stepStat{T: qs.startTimestamp + int64(i)*qs.interval, V: float64(c)}
+		ts[i] = stepStat{T: qs.startTimestamp + int64(i)*qs.interval, V: int64(c)}
 	}
 	return ts
 }

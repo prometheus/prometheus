@@ -26,7 +26,7 @@ import {
   OnOrIgnoring,
   Or,
   Unless,
-} from '../grammar/parser.terms';
+} from 'lezer-promql';
 import { VectorMatchCardinality, VectorMatching } from '../types';
 import { containsAtLeastOneChild, retrieveAllRecursiveNodes } from './path-finder';
 

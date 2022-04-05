@@ -225,7 +225,7 @@ type scrapePool struct {
 	appendable storage.Appendable
 	logger     log.Logger
 	cancel     context.CancelFunc
-	dialFunc   config_util.DialContextFunc
+	httpOpts   []config_util.HTTPClientOption
 
 	// mtx must not be taken after targetMtx.
 	mtx    sync.Mutex
@@ -266,18 +266,13 @@ const maxAheadTime = 10 * time.Minute
 
 type labelsMutator func(labels.Labels) labels.Labels
 
-func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed uint64, logger log.Logger, reportExtraMetrics bool, dialFunc config_util.DialContextFunc) (*scrapePool, error) {
+func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed uint64, logger log.Logger, reportExtraMetrics bool, httpOpts []config_util.HTTPClientOption) (*scrapePool, error) {
 	targetScrapePools.Inc()
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
 
-	var extraOptions []config_util.HTTPClientOption
-	if dialFunc != nil {
-		extraOptions = append(extraOptions, config_util.WithDialContextFunc(dialFunc))
-	}
-
-	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, cfg.JobName, extraOptions...)
+	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, cfg.JobName, httpOpts...)
 	if err != nil {
 		targetScrapePoolsFailed.Inc()
 		return nil, errors.Wrap(err, "error creating HTTP client")
@@ -294,7 +289,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed 
 		activeTargets: map[uint64]*Target{},
 		loops:         map[uint64]loop{},
 		logger:        logger,
-		dialFunc:      dialFunc,
+		httpOpts:      httpOpts,
 	}
 	sp.newLoop = func(opts scrapeLoopOptions) loop {
 		// Update the targets retrieval function for metadata to a new scrape cache.
@@ -306,6 +301,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed 
 
 		// Store the cache in the context.
 		loopCtx := ContextWithMetricMetadataStore(ctx, cache)
+		loopCtx = ContextWithTarget(loopCtx, opts.target)
 
 		return newScrapeLoop(
 			loopCtx,
@@ -392,12 +388,7 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 	targetScrapePoolReloads.Inc()
 	start := time.Now()
 
-	var extraOptions []config_util.HTTPClientOption
-	if sp.dialFunc != nil {
-		extraOptions = append(extraOptions, config_util.WithDialContextFunc(sp.dialFunc))
-	}
-
-	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, cfg.JobName, extraOptions...)
+	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, cfg.JobName, sp.httpOpts...)
 	if err != nil {
 		targetScrapePoolReloadsFailed.Inc()
 		return errors.Wrap(err, "error creating HTTP client")
@@ -1827,6 +1818,7 @@ type ctxKey int
 // Valid CtxKey values.
 const (
 	ctxKeyMetadata ctxKey = iota + 1
+	ctxKeyTarget
 )
 
 func ContextWithMetricMetadataStore(ctx context.Context, s MetricMetadataStore) context.Context {
@@ -1836,4 +1828,13 @@ func ContextWithMetricMetadataStore(ctx context.Context, s MetricMetadataStore) 
 func MetricMetadataStoreFromContext(ctx context.Context) (MetricMetadataStore, bool) {
 	s, ok := ctx.Value(ctxKeyMetadata).(MetricMetadataStore)
 	return s, ok
+}
+
+func ContextWithTarget(ctx context.Context, t *Target) context.Context {
+	return context.WithValue(ctx, ctxKeyTarget, t)
+}
+
+func TargetFromContext(ctx context.Context) (*Target, bool) {
+	t, ok := ctx.Value(ctxKeyTarget).(*Target)
+	return t, ok
 }

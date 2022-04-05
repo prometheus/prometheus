@@ -29,6 +29,16 @@ include Makefile.common
 
 DOCKER_IMAGE_NAME       ?= prometheus
 
+.PHONY: update-npm-deps
+update-npm-deps:
+	@echo ">> updating npm dependencies"
+	./scripts/npm-deps.sh "minor"
+
+.PHONY: upgrade-npm-deps
+upgrade-npm-deps:
+	@echo ">> upgrading npm dependencies"
+	./scripts/npm-deps.sh "latest"
+
 .PHONY: ui-install
 ui-install:
 	cd $(UI_PATH) && npm install
@@ -43,7 +53,7 @@ ui-build-module:
 
 .PHONY: ui-test
 ui-test:
-	cd $(UI_PATH) && CI=true npm run test:coverage
+	cd $(UI_PATH) && CI=true npm run test
 
 .PHONY: ui-lint
 ui-lint:
@@ -78,8 +88,15 @@ tarball: npm_licenses common-tarball
 .PHONY: docker
 docker: npm_licenses common-docker
 
+plugins/plugins.go: plugins.yml plugins/generate.go
+	@echo ">> creating plugins list"
+	$(GO) generate -tags plugins ./plugins
+
+.PHONY: plugins
+plugins: plugins/plugins.go
+
 .PHONY: build
-build: assets assets-compress common-build
+build: assets assets-compress common-build plugins
 
 .PHONY: bench_tsdb
 bench_tsdb: $(PROMU)

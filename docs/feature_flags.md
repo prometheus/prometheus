@@ -88,3 +88,9 @@ statistics. Currently this is limited to totalQueryableSamples.
 
 When disabled in either the engine or the query, per-step statistics are not
 computed at all.
+
+## Auto GOMAXPROCS
+
+`--enable-feature=auto-gomaxprocs`
+
+When enabled, GOMAXPROCS variable is automatically set to match Linux container CPU quota.

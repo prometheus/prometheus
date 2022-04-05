@@ -91,7 +91,7 @@ Learn more about the Prometheus Agent in our [blog post](https://prometheus.io/b
 * [FEATURE] UI: Add search in metrics dropdown. #9629
 * [FEATURE] Templates: Add parseDuration to template functions. #8817
 * [ENHANCEMENT] Promtool: Improve test output. #8064
-* [ENHANCEMENT] Promtool: Use kahan summation for better numerical stability. #9588
+* [ENHANCEMENT] PromQL: Use kahan summation for better numerical stability. #9588
 * [ENHANCEMENT] Remote-write: Reuse memory for marshalling. #9412
 * [ENHANCEMENT] Scrape: Add `scrape_body_size_bytes` scrape metric behind the `--enable-feature=extra-scrape-metrics` flag. #9569
 * [ENHANCEMENT] TSDB: Add windows arm64 support. #9703

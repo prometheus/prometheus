@@ -69,9 +69,7 @@
     "@testing-library/react-hooks": "^7.0.1",
     "@types/enzyme": "^3.10.10",
     "@types/flot": "0.0.32",
-    "@types/jest": "^27.0.3",
     "@types/jquery": "^3.5.9",
-    "@types/node": "^16.11.12",
     "@types/react": "^17.0.39",
     "@types/react-copy-to-clipboard": "^5.0.2",
     "@types/react-dom": "^17.0.11",
@@ -82,16 +80,8 @@
     "@wojtekmaj/enzyme-adapter-react-17": "^0.6.6",
     "enzyme": "^3.11.0",
     "enzyme-to-json": "^3.6.2",
-    "eslint-config-prettier": "^8.5.0",
-    "eslint-config-react-app": "^7.0.0",
-    "eslint-plugin-prettier": "^4.0.0",
-    "jest-canvas-mock": "^2.3.1",
-    "jest-fetch-mock": "^3.0.3",
     "mutationobserver-shim": "^0.3.7",
-    "prettier": "^2.5.1",
-    "react-scripts": "5.0.0",
-    "sinon": "^12.0.1",
-    "typescript": "^4.6.2"
+    "sinon": "^12.0.1"
   },
   "proxy": "http://localhost:9090",
   "jest": {
@@ -99,8 +89,12 @@
       "enzyme-to-json/serializer"
     ],
     "transformIgnorePatterns": [
-      "/node_modules/(?!codemirror-promql).+(js|jsx)$"
-    ]
+      "<rootDir>/../node_modules/(?!codemirror-promql)/",
+      "<rootDir>/../node_modules/(?!lezer-promql)/"
+    ],
+    "moduleNameMapper": {
+      "lezer-promql": "<rootDir>/../node_modules/lezer-promql/dist/index.cjs"
+    }
   },
   "optionalDependencies": {
     "fsevents": "^2.3.2"

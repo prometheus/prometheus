@@ -4,8 +4,4 @@ node_modules/
 dist/
 lib/
 
-src/grammar/**.ts
-src/grammar/parser.js
-src/grammar/parser.terms.js
-
 /.nyc_output

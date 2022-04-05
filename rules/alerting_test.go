@@ -20,12 +20,14 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/teststorage"
 )
 
@@ -516,5 +518,85 @@ func TestAlertingRuleLimit(t *testing.T) {
 		} else if test.err != "" {
 			t.Errorf("Expected errror %s, got none", test.err)
 		}
+	}
+}
+
+func TestQueryForStateSeries(t *testing.T) {
+	testError := errors.New("test error")
+
+	type testInput struct {
+		selectMockFunction func(sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet
+		expectedSeries     storage.Series
+		expectedError      error
+	}
+
+	tests := []testInput{
+		// Test for empty series.
+		{
+			selectMockFunction: func(sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+				return storage.EmptySeriesSet()
+			},
+			expectedSeries: nil,
+			expectedError:  nil,
+		},
+		// Test for error series.
+		{
+			selectMockFunction: func(sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+				return storage.ErrSeriesSet(testError)
+			},
+			expectedSeries: nil,
+			expectedError:  testError,
+		},
+		// Test for mock series.
+		{
+			selectMockFunction: func(sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+				return storage.TestSeriesSet(storage.MockSeries(
+					[]int64{1, 2, 3},
+					[]float64{1, 2, 3},
+					[]string{"__name__", "ALERTS_FOR_STATE", "alertname", "TestRule", "severity", "critical"},
+				))
+			},
+			expectedSeries: storage.MockSeries(
+				[]int64{1, 2, 3},
+				[]float64{1, 2, 3},
+				[]string{"__name__", "ALERTS_FOR_STATE", "alertname", "TestRule", "severity", "critical"},
+			),
+			expectedError: nil,
+		},
+	}
+
+	testFunc := func(tst testInput) {
+		querier := &storage.MockQuerier{
+			SelectMockFunction: tst.selectMockFunction,
+		}
+
+		rule := NewAlertingRule(
+			"TestRule",
+			nil,
+			time.Minute,
+			labels.FromStrings("severity", "critical"),
+			nil, nil, "", true, nil,
+		)
+
+		alert := &Alert{
+			State:       0,
+			Labels:      nil,
+			Annotations: nil,
+			Value:       0,
+			ActiveAt:    time.Time{},
+			FiredAt:     time.Time{},
+			ResolvedAt:  time.Time{},
+			LastSentAt:  time.Time{},
+			ValidUntil:  time.Time{},
+		}
+
+		series, err := rule.QueryforStateSeries(alert, querier)
+
+		require.Equal(t, tst.expectedSeries, series)
+		require.Equal(t, tst.expectedError, err)
+	}
+
+	for _, tst := range tests {
+		testFunc(tst)
 	}
 }

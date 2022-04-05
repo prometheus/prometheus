@@ -20,8 +20,8 @@ jobs:
       - name: install Go
         uses: actions/setup-go@v2
         with:
-          go-version: 1.17.x
+          go-version: 1.18.x
       - name: Lint
         uses: golangci/golangci-lint-action@v3.1.0
         with:
-          version: v1.44.2
+          version: v1.45.2

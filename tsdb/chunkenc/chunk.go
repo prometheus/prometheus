@@ -146,6 +146,47 @@ func (v ValueType) String() string {
 	}
 }
 
+// MockSeriesIterator returns an iterator for a mock series with custom timeStamps and values.
+func MockSeriesIterator(timestamps []int64, values []float64) Iterator {
+	return &mockSeriesIterator{
+		timeStamps: timestamps,
+		values:     values,
+		currIndex:  0,
+	}
+}
+
+type mockSeriesIterator struct {
+	timeStamps []int64
+	values     []float64
+	currIndex  int
+}
+
+func (it *mockSeriesIterator) Seek(int64) ValueType { return ValNone }
+
+func (it *mockSeriesIterator) At() (int64, float64) {
+	return it.timeStamps[it.currIndex], it.values[it.currIndex]
+}
+
+func (it *mockSeriesIterator) AtHistogram() (int64, *histogram.Histogram) { return math.MinInt64, nil }
+
+func (it *mockSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+	return math.MinInt64, nil
+}
+
+func (it *mockSeriesIterator) AtT() int64 {
+	return it.timeStamps[it.currIndex]
+}
+
+func (it *mockSeriesIterator) Next() ValueType {
+	if it.currIndex < len(it.timeStamps)-1 {
+		it.currIndex++
+		return ValFloat
+	}
+
+	return ValNone
+}
+func (it *mockSeriesIterator) Err() error { return nil }
+
 // NewNopIterator returns a new chunk iterator that does not hold any data.
 func NewNopIterator() Iterator {
 	return nopIterator{}
