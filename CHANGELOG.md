@@ -1,7 +1,6 @@
 ## 2.35.0-rc0 / 2022-04-06
 
 * [CHANGE] TSDB: Delete *.tmp WAL files when Prometheus starts. #10317
-* [FEATURE] ServiceDiscovery have now a plugin system. #10495
 * [ENHANCEMENT] promtool: Add new flag `--lint`  for the commands `check rules` and `check config`. #10435
 * [ENHANCEMENT] Prometheus is built with Go 1.18. #10501
 * [ENHANCEMENT] Log gomaxprocs messages. #10506
