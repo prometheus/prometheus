@@ -53,15 +53,8 @@ func (e *AggregateExpr) Pretty(level int) string {
 		s += e.String()
 		return s
 	}
-	s += e.Op.String()
-	if e.Without {
-		s += fmt.Sprintf(" without(%s) ", strings.Join(e.Grouping, ", "))
-	} else {
-		if len(e.Grouping) > 0 {
-			s += fmt.Sprintf(" by(%s) ", strings.Join(e.Grouping, ", "))
-		}
-	}
 
+	s += e.getAggStr()
 	s += "(\n"
 
 	if e.Op.IsAggregatorWithParam() {
@@ -82,24 +75,7 @@ func (e *BinaryExpr) Pretty(level int) string {
 		returnBool = " bool"
 	}
 
-	matching := ""
-	vm := e.VectorMatching
-	if vm != nil && (len(vm.MatchingLabels) > 0 || vm.On) {
-		if vm.On {
-			matching = fmt.Sprintf(" on(%s)", strings.Join(vm.MatchingLabels, ", "))
-		} else {
-			matching = fmt.Sprintf(" ignoring(%s)", strings.Join(vm.MatchingLabels, ", "))
-		}
-		if vm.Card == CardManyToOne || vm.Card == CardOneToMany {
-			matching += " group_"
-			if vm.Card == CardManyToOne {
-				matching += "left"
-			} else {
-				matching += "right"
-			}
-			matching += fmt.Sprintf("(%s)", strings.Join(vm.Include, ", "))
-		}
-	}
+	matching := e.getMatchingStr()
 	return fmt.Sprintf("%s\n%s%s%s%s\n%s", e.LHS.Pretty(level+1), indent(level), e.Op, returnBool, matching, e.RHS.Pretty(level+1))
 }
 
@@ -182,9 +158,5 @@ const indentString = "  "
 
 // indent adds the indentString n number of times.
 func indent(n int) string {
-	s := ""
-	for i := 0; i < n; i++ {
-		s += indentString
-	}
-	return s
+	return strings.Repeat(indentString, n)
 }
