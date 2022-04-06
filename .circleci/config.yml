@@ -62,6 +62,9 @@ jobs:
       - run: make ui-lint
       - run: make ui-build-module
       - run: make ui-test
+      - run: make assets-tarball -o assets
+      - store_artifacts:
+          path: web/ui/static.tar.gz
       - save_cache:
           key: v3-npm-deps-{{ checksum "web/ui/package-lock.json" }}
           paths:
