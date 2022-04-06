@@ -10,6 +10,7 @@ import { API_PATH } from '../../constants/constants';
 import { KVSearch } from '@nexucis/kvsearch';
 import { Container } from 'reactstrap';
 import SearchBar from '../../components/SearchBar';
+import { encodeToQueryString } from '../../utils/index';
 
 interface ServiceMap {
   activeTargets: Target[];
@@ -89,16 +90,31 @@ export const processTargets = (activeTargets: Target[], droppedTargets: DroppedT
   return labels;
 };
 
+const updateURL = (expr: string): void => {
+  const query = encodeToQueryString(expr);
+  window.history.pushState({}, '', query);
+};
+
 export const ServiceDiscoveryContent: FC<ServiceMap> = ({ activeTargets, droppedTargets }) => {
+  useEffect(() => {
+    const search = window.location.search;
+    const params = new URLSearchParams(search);
+    const expr = params.get('expr');
+    setDefaultValue(expr || '');
+  }, []);
+
+  const [defaultValue, setDefaultValue] = useState('');
   const [activeTargetList, setActiveTargetList] = useState(activeTargets);
   const [targetList, setTargetList] = useState(processSummary(activeTargets, droppedTargets));
   const [labelList, setLabelList] = useState(processTargets(activeTargets, droppedTargets));
 
   const handleSearchChange = (e: ChangeEvent<HTMLTextAreaElement | HTMLInputElement>) => {
     if (e.target.value !== '') {
+      updateURL(e.target.value);
       const result = kvSearch.filter(e.target.value.trim(), activeTargets);
       setActiveTargetList(result.map((value) => value.original));
     } else {
+      updateURL(e.target.value);
       setActiveTargetList(activeTargets);
     }
   };
@@ -112,7 +128,7 @@ export const ServiceDiscoveryContent: FC<ServiceMap> = ({ activeTargets, dropped
     <>
       <h2>Service Discovery</h2>
       <Container>
-        <SearchBar handleChange={handleSearchChange} placeholder="Filter by labels" />
+        <SearchBar defaultValue={defaultValue} handleChange={handleSearchChange} placeholder="Filter by labels" />
       </Container>
       <ul>
         {mapObjEntries(targetList, ([k, v]) => (

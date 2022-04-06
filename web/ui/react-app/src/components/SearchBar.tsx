@@ -6,9 +6,10 @@ import { faSearch } from '@fortawesome/free-solid-svg-icons';
 export interface SearchBarProps {
   handleChange: (e: ChangeEvent<HTMLTextAreaElement | HTMLInputElement>) => void;
   placeholder: string;
+  defaultValue: string;
 }
 
-const SearchBar: FC<SearchBarProps> = ({ handleChange, placeholder }) => {
+const SearchBar: FC<SearchBarProps> = ({ handleChange, placeholder, defaultValue }) => {
   let filterTimeout: NodeJS.Timeout;
 
   const handleSearchChange = (e: ChangeEvent<HTMLTextAreaElement | HTMLInputElement>) => {
@@ -23,7 +24,7 @@ const SearchBar: FC<SearchBarProps> = ({ handleChange, placeholder }) => {
       <InputGroupAddon addonType="prepend">
         <InputGroupText>{<FontAwesomeIcon icon={faSearch} />}</InputGroupText>
       </InputGroupAddon>
-      <Input autoFocus onChange={handleSearchChange} placeholder={placeholder} />
+      <Input autoFocus onChange={handleSearchChange} placeholder={placeholder} defaultValue={defaultValue} />
     </InputGroup>
   );
 };
