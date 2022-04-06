@@ -63,9 +63,14 @@ ui-lint:
 assets: ui-install ui-build
 
 .PHONY: assets-compress
-assets-compress:
+assets-compress: assets
 	@echo '>> compressing assets'
 	scripts/compress_assets.sh
+
+.PHONY: assets-tarball
+assets-tarball: assets-compress
+	@echo '>> packaging assets'
+	scripts/package_assets.sh
 
 .PHONY: test
 # If we only want to only test go code we have to change the test target
