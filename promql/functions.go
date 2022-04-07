@@ -869,7 +869,6 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 	q := vals[0].(Vector)[0].V
 	inVec := vals[1].(Vector)
 	sigf := signatureFunc(false, enh.lblBuf, labels.BucketLabel)
-	ignoreSignature := make(map[string]bool) // For signatures having both new and old histograms.
 
 	if enh.signatureToMetricWithBuckets == nil {
 		enh.signatureToMetricWithBuckets = map[string]*metricWithBuckets{}
@@ -878,45 +877,19 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 			v.buckets = v.buckets[:0]
 		}
 	}
-	if enh.signatureToMetricWithHistograms == nil {
-		enh.signatureToMetricWithHistograms = map[string]*metricWithHistograms{}
-	} else {
-		for _, v := range enh.signatureToMetricWithHistograms {
-			v.histogram = nil
-		}
-	}
-	for _, el := range inVec {
-		l := sigf(el.Metric)
-		if ignoreSignature[l] {
-			continue
-		}
 
-		if el.H != nil { // It's a histogram type.
-			_, ok := enh.signatureToMetricWithBuckets[l]
-			if ok {
-				// This signature exists for both conventional
-				// and new histograms, which is not supported.
-				// TODO(beorn7): Issue a warning somehow.
-				delete(enh.signatureToMetricWithBuckets, l)
-				delete(enh.signatureToMetricWithHistograms, l)
-				ignoreSignature[l] = true
-				continue
-			}
+	var histogramSamples []Sample
 
-			_, ok = enh.signatureToMetricWithHistograms[l]
-			if ok {
-				panic(errors.New("histogram_quantile: vector cannot contain metrics with the same labelset"))
-			}
-			el.Metric = labels.NewBuilder(el.Metric).
-				Del(labels.BucketLabel, labels.MetricName).
-				Labels()
-
-			enh.signatureToMetricWithHistograms[l] = &metricWithHistograms{el.Metric, el.H}
+	for _, sample := range inVec {
+		// We are only looking for conventional buckets here. Remember
+		// the histograms for later treatment.
+		if sample.H != nil {
+			histogramSamples = append(histogramSamples, sample)
 			continue
 		}
 
 		upperBound, err := strconv.ParseFloat(
-			el.Metric.Get(model.BucketLabel), 64,
+			sample.Metric.Get(model.BucketLabel), 64,
 		)
 		if err != nil {
 			// Oops, no bucket label or malformed label value. Skip.
@@ -924,30 +897,47 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 			continue
 		}
 
-		_, ok := enh.signatureToMetricWithHistograms[l]
-		if ok {
-			// This signature exists for both conventional and new
-			// histograms, which is not supported.
-			// TODO(beorn7): Issue a warning somehow.
-			delete(enh.signatureToMetricWithBuckets, l)
-			delete(enh.signatureToMetricWithHistograms, l)
-			ignoreSignature[l] = true
-			continue
-		}
+		l := sigf(sample.Metric)
 		// Add the metric name (which is always removed) to the signature to prevent combining multiple histograms
 		// with the same label set. See https://github.com/prometheus/prometheus/issues/9910
-		l = l + el.Metric.Get(model.MetricNameLabel)
+		// TODO(beorn7): What's the performance impact? We might need to implement this more efficiently.
+		l = l + sample.Metric.Get(model.MetricNameLabel)
 
 		mb, ok := enh.signatureToMetricWithBuckets[l]
 		if !ok {
-			el.Metric = labels.NewBuilder(el.Metric).
+			sample.Metric = labels.NewBuilder(sample.Metric).
 				Del(excludedLabels...).
 				Labels()
 
-			mb = &metricWithBuckets{el.Metric, nil}
+			mb = &metricWithBuckets{sample.Metric, nil}
 			enh.signatureToMetricWithBuckets[l] = mb
 		}
-		mb.buckets = append(mb.buckets, bucket{upperBound, el.V})
+		mb.buckets = append(mb.buckets, bucket{upperBound, sample.V})
+
+	}
+
+	// Now deal with the histograms.
+	for _, sample := range histogramSamples {
+		// We have to reconstruct the exact same signature as above for
+		// a conventional histogram, just ignoring any le label.
+		// TODO(beorn7): This replicates the inefficient implementation
+		// from above and has to be improved under the same
+		// circumstances.
+		l := string(sample.Metric.WithoutLabels().Bytes(enh.lblBuf))
+		l = l + sample.Metric.Get(model.MetricNameLabel)
+		if mb, ok := enh.signatureToMetricWithBuckets[l]; ok && len(mb.buckets) > 0 {
+			// At this data point, we have conventional histogram
+			// buckets and a native histogram with the same name and
+			// labels. Do not evaluate anything.
+			// TODO(beorn7): Issue a warning somehow.
+			delete(enh.signatureToMetricWithBuckets, l)
+			continue
+		}
+
+		enh.Out = append(enh.Out, Sample{
+			Metric: enh.DropMetricName(sample.Metric),
+			Point:  Point{V: histogramQuantile(q, sample.H)},
+		})
 	}
 
 	for _, mb := range enh.signatureToMetricWithBuckets {
@@ -955,15 +945,6 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 			enh.Out = append(enh.Out, Sample{
 				Metric: mb.metric,
 				Point:  Point{V: bucketQuantile(q, mb.buckets)},
-			})
-		}
-	}
-
-	for _, mh := range enh.signatureToMetricWithHistograms {
-		if mh.histogram != nil {
-			enh.Out = append(enh.Out, Sample{
-				Metric: mh.metric,
-				Point:  Point{V: histogramQuantile(q, mh.histogram)},
 			})
 		}
 	}

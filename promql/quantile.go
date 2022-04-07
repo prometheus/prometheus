@@ -47,11 +47,6 @@ type metricWithBuckets struct {
 	buckets buckets
 }
 
-type metricWithHistograms struct {
-	metric    labels.Labels
-	histogram *histogram.FloatHistogram
-}
-
 // bucketQuantile calculates the quantile 'q' based on the given buckets. The
 // buckets will be sorted by upperBound by this function (i.e. no sorting
 // needed before calling this function). The quantile value is interpolated
