@@ -471,7 +471,7 @@ func compactBuckets(buckets []float64, spans []Span, maxEmptyBuckets int) ([]flo
 			iSpan++
 		}
 	}
-	if maxEmptyBuckets == 0 {
+	if maxEmptyBuckets == 0 || len(buckets) == 0 {
 		return buckets, spans
 	}
 
