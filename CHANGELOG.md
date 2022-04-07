@@ -1,9 +1,9 @@
-## 2.35.0-rc0 / 2022-04-06
+## 2.35.0-rc0 / 2022-04-07
 
 * [CHANGE] TSDB: Delete *.tmp WAL files when Prometheus starts. #10317
 * [CHANGE] promtool: Add new flag `--lint`  for the commands `check rules` and `check config`. #10435
+* [FEATURE] Support for automatically set the variable `GOMAXPROCS` with the container CPU limit. Enable with the flag `--enable-feature=auto-gomaxprocs` #10498
 * [ENHANCEMENT] Prometheus is built with Go 1.18. #10501
-* [ENHANCEMENT] Log gomaxprocs messages. #10506
 * [ENHANCEMENT] TSDB: more efficient sorting of postings read from WAL at startup. #10500
 * [ENHANCEMENT] Azure SD: Add metric to track Azure SD failures #10476
 * [ENHANCEMENT] Azure SD: Add an optional `resource_group` configuration. #10365
