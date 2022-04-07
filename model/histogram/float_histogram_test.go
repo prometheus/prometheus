@@ -889,6 +889,22 @@ func TestFloatHistogramCompact(t *testing.T) {
 				NegativeBuckets: []float64{3.1, 3, 0, 0, 0, 1.234e5, 1000, 0, 3, 4},
 			},
 		},
+		{
+			"only empty buckets and maxEmptyBuckets greater zero",
+			&FloatHistogram{
+				PositiveSpans:   []Span{{-4, 6}, {3, 3}},
+				PositiveBuckets: []float64{0, 0, 0, 0, 0, 0, 0, 0, 0},
+				NegativeSpans:   []Span{{0, 7}},
+				NegativeBuckets: []float64{0, 0, 0, 0, 0, 0, 0},
+			},
+			3,
+			&FloatHistogram{
+				PositiveSpans:   []Span{},
+				PositiveBuckets: []float64{},
+				NegativeSpans:   []Span{},
+				NegativeBuckets: []float64{},
+			},
+		},
 	}
 
 	for _, c := range cases {
