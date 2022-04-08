@@ -24,12 +24,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
 	conntrack "github.com/mwitkow/go-conntrack"
 	"github.com/pkg/errors"
-	config_util "github.com/prometheus/common/config"
+	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
+	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/refresh"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
@@ -52,17 +53,34 @@ var DefaultSDConfig = SDConfig{
 	Version:         1,
 }
 
+func init() {
+	discovery.RegisterConfig(&SDConfig{})
+}
+
 // SDConfig is the configuration for Triton based service discovery.
 type SDConfig struct {
-	Account         string                `yaml:"account"`
-	Role            string                `yaml:"role"`
-	DNSSuffix       string                `yaml:"dns_suffix"`
-	Endpoint        string                `yaml:"endpoint"`
-	Groups          []string              `yaml:"groups,omitempty"`
-	Port            int                   `yaml:"port"`
-	RefreshInterval model.Duration        `yaml:"refresh_interval,omitempty"`
-	TLSConfig       config_util.TLSConfig `yaml:"tls_config,omitempty"`
-	Version         int                   `yaml:"version"`
+	Account         string           `yaml:"account"`
+	Role            string           `yaml:"role"`
+	DNSSuffix       string           `yaml:"dns_suffix"`
+	Endpoint        string           `yaml:"endpoint"`
+	Groups          []string         `yaml:"groups,omitempty"`
+	Port            int              `yaml:"port"`
+	RefreshInterval model.Duration   `yaml:"refresh_interval,omitempty"`
+	TLSConfig       config.TLSConfig `yaml:"tls_config,omitempty"`
+	Version         int              `yaml:"version"`
+}
+
+// Name returns the name of the Config.
+func (*SDConfig) Name() string { return "triton" }
+
+// NewDiscoverer returns a Discoverer for the Config.
+func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
+	return New(opts.Logger, c)
+}
+
+// SetDirectory joins any relative file paths with dir.
+func (c *SDConfig) SetDirectory(dir string) {
+	c.TLSConfig.SetDirectory(dir)
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -122,7 +140,7 @@ type Discovery struct {
 
 // New returns a new Discovery which periodically refreshes its targets.
 func New(logger log.Logger, conf *SDConfig) (*Discovery, error) {
-	tls, err := config_util.NewTLSConfig(&conf.TLSConfig)
+	tls, err := config.NewTLSConfig(&conf.TLSConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -170,9 +188,9 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	case "cn":
 		endpointFormat = "https://%s:%d/v%d/gz/discover"
 	default:
-		return nil, errors.New(fmt.Sprintf("unknown role '%s' in configuration", d.sdConfig.Role))
+		return nil, fmt.Errorf("unknown role '%s' in configuration", d.sdConfig.Role)
 	}
-	var endpoint = fmt.Sprintf(endpointFormat, d.sdConfig.Endpoint, d.sdConfig.Port, d.sdConfig.Version)
+	endpoint := fmt.Sprintf(endpointFormat, d.sdConfig.Endpoint, d.sdConfig.Port, d.sdConfig.Version)
 	if len(d.sdConfig.Groups) > 0 {
 		groups := url.QueryEscape(strings.Join(d.sdConfig.Groups, ","))
 		endpoint = fmt.Sprintf("%s?groups=%s", endpoint, groups)
@@ -205,7 +223,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	case "cn":
 		return d.processComputeNodeResponse(data, endpoint)
 	default:
-		return nil, errors.New(fmt.Sprintf("unknown role '%s' in configuration", d.sdConfig.Role))
+		return nil, fmt.Errorf("unknown role '%s' in configuration", d.sdConfig.Role)
 	}
 }
 

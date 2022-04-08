@@ -104,14 +104,15 @@ against regular expressions. The following label matching operators exist:
 * `=~`: Select labels that regex-match the provided string.
 * `!~`: Select labels that do not regex-match the provided string.
 
+Regex matches are fully anchored. A match of `env=~"foo"` is treated as `env=~"^foo$"`.
+
 For example, this selects all `http_requests_total` time series for `staging`,
 `testing`, and `development` environments and HTTP methods other than `GET`.
 
     http_requests_total{environment=~"staging|testing|development",method!="GET"}
 
 Label matchers that match empty label values also select all time series that
-do not have the specific label set at all. Regex-matches are fully anchored. It
-is possible to have multiple matchers for the same label name.
+do not have the specific label set at all. It is possible to have multiple matchers for the same label name.
 
 Vector selectors must either specify a name or at least one label matcher
 that does not match the empty string. The following expression is illegal:
@@ -146,7 +147,7 @@ syntax](https://github.com/google/re2/wiki/Syntax).
 
 Range vector literals work like instant vector literals, except that they
 select a range of samples back from the current instant. Syntactically, a [time
-duration](#time_durations) is appended in square brackets (`[]`) at the end of a
+duration](#time-durations) is appended in square brackets (`[]`) at the end of a
 vector selector to specify how far back in time values should be fetched for
 each resulting range vector element.
 
@@ -204,11 +205,65 @@ The same works for range vectors. This returns the 5-minute rate that
 
     rate(http_requests_total[5m] offset 1w)
 
+For comparisons with temporal shifts forward in time, a negative offset
+can be specified:
+
+    rate(http_requests_total[5m] offset -1w)
+
+Note that this allows a query to look ahead of its evaluation time.
+
+### @ modifier
+
+The `@` modifier allows changing the evaluation time for individual instant
+and range vectors in a query. The time supplied to the `@` modifier
+is a unix timestamp and described with a float literal. 
+
+For example, the following expression returns the value of
+`http_requests_total` at `2021-01-04T07:40:00+00:00`:
+
+    http_requests_total @ 1609746000
+
+Note that the `@` modifier always needs to follow the selector
+immediately, i.e. the following would be correct:
+
+    sum(http_requests_total{method="GET"} @ 1609746000) // GOOD.
+
+While the following would be *incorrect*:
+
+    sum(http_requests_total{method="GET"}) @ 1609746000 // INVALID.
+
+The same works for range vectors. This returns the 5-minute rate that
+`http_requests_total` had at `2021-01-04T07:40:00+00:00`:
+
+    rate(http_requests_total[5m] @ 1609746000)
+
+The `@` modifier supports all representation of float literals described
+above within the limits of `int64`. It can also be used along
+with the `offset` modifier where the offset is applied relative to the `@`
+modifier time irrespective of which modifier is written first.
+These 2 queries will produce the same result.
+
+    # offset after @
+    http_requests_total @ 1609746000 offset 5m
+    # offset before @
+    http_requests_total offset 5m @ 1609746000
+
+Additionally, `start()` and `end()` can also be used as values for the `@` modifier as special values.
+
+For a range query, they resolve to the start and end of the range query respectively and remain the same for all steps.
+
+For an instant query, `start()` and `end()` both resolve to the evaluation time.
+
+    http_requests_total @ start()
+    rate(http_requests_total[5m] @ end())
+
+Note that the `@` modifier allows a query to look ahead of its evaluation time.
+
 ## Subquery
 
 Subquery allows you to run an instant query for a given range and resolution. The result of a subquery is a range vector.
 
-Syntax: `<instant_query> '[' <range> ':' [<resolution>] ']' [ offset <duration> ]`
+Syntax: `<instant_query> '[' <range> ':' [<resolution>] ']' [ @ <float_literal> ] [ offset <duration> ]`
 
 * `<resolution>` is optional. Default is the global evaluation interval.
 

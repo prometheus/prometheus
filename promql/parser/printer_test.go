@@ -16,7 +16,9 @@ package parser
 import (
 	"testing"
 
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/model/labels"
 )
 
 func TestExprString(t *testing.T) {
@@ -78,10 +80,16 @@ func TestExprString(t *testing.T) {
 			in: `a offset 1m`,
 		},
 		{
+			in: `a offset -7m`,
+		},
+		{
 			in: `a{c="d"}[5m] offset 1m`,
 		},
 		{
 			in: `a[5m] offset 1m`,
+		},
+		{
+			in: `a[12m] offset -3m`,
 		},
 		{
 			in: `a[1h:5m] offset 1m`,
@@ -98,17 +106,110 @@ func TestExprString(t *testing.T) {
 		{
 			in: `a{b!~"c"}[1m]`,
 		},
+		{
+			in:  `a @ 10`,
+			out: `a @ 10.000`,
+		},
+		{
+			in:  `a[1m] @ 10`,
+			out: `a[1m] @ 10.000`,
+		},
+		{
+			in: `a @ start()`,
+		},
+		{
+			in: `a @ end()`,
+		},
+		{
+			in: `a[1m] @ start()`,
+		},
+		{
+			in: `a[1m] @ end()`,
+		},
 	}
 
 	for _, test := range inputs {
 		expr, err := ParseExpr(test.in)
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 
 		exp := test.in
 		if test.out != "" {
 			exp = test.out
 		}
 
-		testutil.Equals(t, exp, expr.String())
+		require.Equal(t, exp, expr.String())
+	}
+}
+
+func TestVectorSelector_String(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		vs       VectorSelector
+		expected string
+	}{
+		{
+			name:     "empty value",
+			vs:       VectorSelector{},
+			expected: ``,
+		},
+		{
+			name:     "no matchers with name",
+			vs:       VectorSelector{Name: "foobar"},
+			expected: `foobar`,
+		},
+		{
+			name: "one matcher with name",
+			vs: VectorSelector{
+				Name: "foobar",
+				LabelMatchers: []*labels.Matcher{
+					labels.MustNewMatcher(labels.MatchEqual, "a", "x"),
+				},
+			},
+			expected: `foobar{a="x"}`,
+		},
+		{
+			name: "two matchers with name",
+			vs: VectorSelector{
+				Name: "foobar",
+				LabelMatchers: []*labels.Matcher{
+					labels.MustNewMatcher(labels.MatchEqual, "a", "x"),
+					labels.MustNewMatcher(labels.MatchEqual, "b", "y"),
+				},
+			},
+			expected: `foobar{a="x",b="y"}`,
+		},
+		{
+			name: "two matchers without name",
+			vs: VectorSelector{
+				LabelMatchers: []*labels.Matcher{
+					labels.MustNewMatcher(labels.MatchEqual, "a", "x"),
+					labels.MustNewMatcher(labels.MatchEqual, "b", "y"),
+				},
+			},
+			expected: `{a="x",b="y"}`,
+		},
+		{
+			name: "name matcher and name",
+			vs: VectorSelector{
+				Name: "foobar",
+				LabelMatchers: []*labels.Matcher{
+					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "foobar"),
+				},
+			},
+			expected: `foobar`,
+		},
+		{
+			name: "name matcher only",
+			vs: VectorSelector{
+				LabelMatchers: []*labels.Matcher{
+					labels.MustNewMatcher(labels.MatchEqual, labels.MetricName, "foobar"),
+				},
+			},
+			expected: `{__name__="foobar"}`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.expected, tc.vs.String())
+		})
 	}
 }

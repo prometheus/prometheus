@@ -14,17 +14,17 @@
 package tombstones
 
 import (
-	"io/ioutil"
 	"math"
 	"math/rand"
-	"os"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/go-kit/kit/log"
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/go-kit/log"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
+
+	"github.com/prometheus/prometheus/storage"
 )
 
 func TestMain(m *testing.M) {
@@ -32,10 +32,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestWriteAndReadbackTombstones(t *testing.T) {
-	tmpdir, _ := ioutil.TempDir("", "test")
-	defer func() {
-		testutil.Ok(t, os.RemoveAll(tmpdir))
-	}()
+	tmpdir := t.TempDir()
 
 	ref := uint64(0)
 
@@ -50,17 +47,77 @@ func TestWriteAndReadbackTombstones(t *testing.T) {
 			dranges = dranges.Add(Interval{mint, mint + rand.Int63n(1000)})
 			mint += rand.Int63n(1000) + 1
 		}
-		stones.AddInterval(ref, dranges...)
+		stones.AddInterval(storage.SeriesRef(ref), dranges...)
 	}
 
 	_, err := WriteFile(log.NewNopLogger(), tmpdir, stones)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	restr, _, err := ReadTombstones(tmpdir)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	// Compare the two readers.
-	testutil.Equals(t, stones, restr)
+	require.Equal(t, stones, restr)
+}
+
+func TestDeletingTombstones(t *testing.T) {
+	stones := NewMemTombstones()
+
+	ref := storage.SeriesRef(42)
+	mint := rand.Int63n(time.Now().UnixNano())
+	dranges := make(Intervals, 0, 1)
+	dranges = dranges.Add(Interval{mint, mint + rand.Int63n(1000)})
+	stones.AddInterval(ref, dranges...)
+	stones.AddInterval(storage.SeriesRef(43), dranges...)
+
+	intervals, err := stones.Get(ref)
+	require.NoError(t, err)
+	require.Equal(t, intervals, dranges)
+
+	stones.DeleteTombstones(map[storage.SeriesRef]struct{}{ref: {}})
+
+	intervals, err = stones.Get(ref)
+	require.NoError(t, err)
+	require.Empty(t, intervals)
+}
+
+func TestTruncateBefore(t *testing.T) {
+	cases := []struct {
+		before  Intervals
+		beforeT int64
+		after   Intervals
+	}{
+		{
+			before:  Intervals{{1, 2}, {4, 10}, {12, 100}},
+			beforeT: 3,
+			after:   Intervals{{4, 10}, {12, 100}},
+		},
+		{
+			before:  Intervals{{1, 2}, {4, 10}, {12, 100}, {200, 1000}},
+			beforeT: 900,
+			after:   Intervals{{200, 1000}},
+		},
+		{
+			before:  Intervals{{1, 2}, {4, 10}, {12, 100}, {200, 1000}},
+			beforeT: 2000,
+			after:   nil,
+		},
+		{
+			before:  Intervals{{1, 2}, {4, 10}, {12, 100}, {200, 1000}},
+			beforeT: 0,
+			after:   Intervals{{1, 2}, {4, 10}, {12, 100}, {200, 1000}},
+		},
+	}
+	for _, c := range cases {
+		ref := storage.SeriesRef(42)
+		stones := NewMemTombstones()
+		stones.AddInterval(ref, c.before...)
+
+		stones.TruncateBefore(c.beforeT)
+		ts, err := stones.Get(ref)
+		require.NoError(t, err)
+		require.Equal(t, c.after, ts)
+	}
 }
 
 func TestAddingNewIntervals(t *testing.T) {
@@ -157,7 +214,7 @@ func TestAddingNewIntervals(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run("", func(t *testing.T) {
-			testutil.Equals(t, c.exp, c.exist.Add(c.new))
+			require.Equal(t, c.exp, c.exist.Add(c.new))
 		})
 	}
 }
@@ -171,14 +228,14 @@ func TestMemTombstonesConcurrency(t *testing.T) {
 
 	go func() {
 		for x := 0; x < totalRuns; x++ {
-			tomb.AddInterval(uint64(x), Interval{int64(x), int64(x)})
+			tomb.AddInterval(storage.SeriesRef(x), Interval{int64(x), int64(x)})
 		}
 		wg.Done()
 	}()
 	go func() {
 		for x := 0; x < totalRuns; x++ {
-			_, err := tomb.Get(uint64(x))
-			testutil.Ok(t, err)
+			_, err := tomb.Get(storage.SeriesRef(x))
+			require.NoError(t, err)
 		}
 		wg.Done()
 	}()

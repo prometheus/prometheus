@@ -14,26 +14,24 @@
 package tsdb
 
 import (
-	"io/ioutil"
-	"os"
 	"strconv"
 	"testing"
 
+	"github.com/pkg/errors"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/prometheus/prometheus/model/labels"
 )
 
 func BenchmarkHeadStripeSeriesCreate(b *testing.B) {
-	chunkDir, err := ioutil.TempDir("", "chunk_dir")
-	testutil.Ok(b, err)
-	defer func() {
-		testutil.Ok(b, os.RemoveAll(chunkDir))
-	}()
+	chunkDir := b.TempDir()
 	// Put a series, select it. GC it and then access it.
-	h, err := NewHead(nil, nil, nil, 1000, chunkDir, nil, DefaultStripeSize, nil)
-	testutil.Ok(b, err)
+	opts := DefaultHeadOptions()
+	opts.ChunkRange = 1000
+	opts.ChunkDirRoot = chunkDir
+	h, err := NewHead(nil, nil, nil, opts, nil)
+	require.NoError(b, err)
 	defer h.Close()
 
 	for i := 0; i < b.N; i++ {
@@ -42,14 +40,13 @@ func BenchmarkHeadStripeSeriesCreate(b *testing.B) {
 }
 
 func BenchmarkHeadStripeSeriesCreateParallel(b *testing.B) {
-	chunkDir, err := ioutil.TempDir("", "chunk_dir")
-	testutil.Ok(b, err)
-	defer func() {
-		testutil.Ok(b, os.RemoveAll(chunkDir))
-	}()
+	chunkDir := b.TempDir()
 	// Put a series, select it. GC it and then access it.
-	h, err := NewHead(nil, nil, nil, 1000, chunkDir, nil, DefaultStripeSize, nil)
-	testutil.Ok(b, err)
+	opts := DefaultHeadOptions()
+	opts.ChunkRange = 1000
+	opts.ChunkDirRoot = chunkDir
+	h, err := NewHead(nil, nil, nil, opts, nil)
+	require.NoError(b, err)
 	defer h.Close()
 
 	var count atomic.Int64
@@ -61,3 +58,28 @@ func BenchmarkHeadStripeSeriesCreateParallel(b *testing.B) {
 		}
 	})
 }
+
+func BenchmarkHeadStripeSeriesCreate_PreCreationFailure(b *testing.B) {
+	chunkDir := b.TempDir()
+	// Put a series, select it. GC it and then access it.
+	opts := DefaultHeadOptions()
+	opts.ChunkRange = 1000
+	opts.ChunkDirRoot = chunkDir
+
+	// Mock the PreCreation() callback to fail on each series.
+	opts.SeriesCallback = failingSeriesLifecycleCallback{}
+
+	h, err := NewHead(nil, nil, nil, opts, nil)
+	require.NoError(b, err)
+	defer h.Close()
+
+	for i := 0; i < b.N; i++ {
+		h.getOrCreate(uint64(i), labels.FromStrings("a", strconv.Itoa(i)))
+	}
+}
+
+type failingSeriesLifecycleCallback struct{}
+
+func (failingSeriesLifecycleCallback) PreCreation(labels.Labels) error { return errors.New("failed") }
+func (failingSeriesLifecycleCallback) PostCreation(labels.Labels)      {}
+func (failingSeriesLifecycleCallback) PostDeletion(...labels.Labels)   {}

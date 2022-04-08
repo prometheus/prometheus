@@ -15,15 +15,16 @@ package promql
 
 import (
 	"context"
-	"fmt"
+	"math"
 	"testing"
 	"time"
 
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/timestamp"
+	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/util/teststorage"
-	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestDeriv(t *testing.T) {
@@ -42,32 +43,45 @@ func TestDeriv(t *testing.T) {
 
 	a := storage.Appender(context.Background())
 
+	var start, interval, i int64
 	metric := labels.FromStrings("__name__", "foo")
-	a.Add(metric, 1493712816939, 1.0)
-	a.Add(metric, 1493712846939, 1.0)
+	start = 1493712816939
+	interval = 30 * 1000
+	// Introduce some timestamp jitter to test 0 slope case.
+	// https://github.com/prometheus/prometheus/issues/7180
+	for i = 0; i < 15; i++ {
+		jitter := 12 * i % 2
+		a.Append(0, metric, int64(start+interval*i+jitter), 1)
+	}
 
-	testutil.Ok(t, a.Commit())
+	require.NoError(t, a.Commit())
 
-	query, err := engine.NewInstantQuery(storage, "deriv(foo[30m])", timestamp.Time(1493712846939))
-	testutil.Ok(t, err)
+	query, err := engine.NewInstantQuery(storage, nil, "deriv(foo[30m])", timestamp.Time(1493712846939))
+	require.NoError(t, err)
 
 	result := query.Exec(context.Background())
-	testutil.Ok(t, result.Err)
+	require.NoError(t, result.Err)
 
 	vec, _ := result.Vector()
-	testutil.Assert(t, len(vec) == 1, "Expected 1 result, got %d", len(vec))
-	testutil.Assert(t, vec[0].V == 0.0, "Expected 0.0 as value, got %f", vec[0].V)
+	require.Equal(t, 1, len(vec), "Expected 1 result, got %d", len(vec))
+	require.Equal(t, 0.0, vec[0].V, "Expected 0.0 as value, got %f", vec[0].V)
 }
 
 func TestFunctionList(t *testing.T) {
 	// Test that Functions and parser.Functions list the same functions.
 	for i := range FunctionCalls {
 		_, ok := parser.Functions[i]
-		testutil.Assert(t, ok, fmt.Sprintf("function %s exists in promql package, but not in parser package", i))
+		require.True(t, ok, "function %s exists in promql package, but not in parser package", i)
 	}
 
 	for i := range parser.Functions {
 		_, ok := FunctionCalls[i]
-		testutil.Assert(t, ok, (fmt.Sprintf("function %s exists in parser package, but not in promql package", i)))
+		require.True(t, ok, "function %s exists in parser package, but not in promql package", i)
 	}
+}
+
+func TestKahanSum(t *testing.T) {
+	vals := []float64{1.0, math.Pow(10, 100), 1.0, -1 * math.Pow(10, 100)}
+	expected := 2.0
+	require.Equal(t, expected, kahanSum(vals))
 }

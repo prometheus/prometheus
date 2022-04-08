@@ -1,6 +1,4 @@
-/* eslint @typescript-eslint/camelcase: 0 */
-
-import { ScrapePools } from '../target';
+import { ScrapePools, Target } from '../target';
 
 export const targetGroups: ScrapePools = Object.freeze({
   blackbox: {
@@ -25,6 +23,8 @@ export const targetGroups: ScrapePools = Object.freeze({
         lastScrape: '2019-11-04T11:52:14.759299-07:00',
         lastScrapeDuration: 36560147,
         health: 'up',
+        scrapeInterval: '15s',
+        scrapeTimeout: '500ms',
       },
       {
         discoveredLabels: {
@@ -45,6 +45,8 @@ export const targetGroups: ScrapePools = Object.freeze({
         lastScrape: '2019-11-04T11:52:24.731096-07:00',
         lastScrapeDuration: 49448763,
         health: 'up',
+        scrapeInterval: '15s',
+        scrapeTimeout: '500ms',
       },
       {
         discoveredLabels: {
@@ -65,8 +67,10 @@ export const targetGroups: ScrapePools = Object.freeze({
         lastScrape: '2019-11-04T11:52:13.516654-07:00',
         lastScrapeDuration: 120916592,
         health: 'down',
+        scrapeInterval: '15s',
+        scrapeTimeout: '500ms',
       },
-    ],
+    ] as Target[],
   },
   node_exporter: {
     upCount: 1,
@@ -89,8 +93,10 @@ export const targetGroups: ScrapePools = Object.freeze({
         lastScrape: '2019-11-04T11:52:14.145703-07:00',
         lastScrapeDuration: 3842307,
         health: 'up',
+        scrapeInterval: '15s',
+        scrapeTimeout: '500ms',
       },
-    ],
+    ] as Target[],
   },
   prometheus: {
     upCount: 1,
@@ -113,8 +119,10 @@ export const targetGroups: ScrapePools = Object.freeze({
         lastScrape: '2019-11-04T11:52:18.479731-07:00',
         lastScrapeDuration: 4050976,
         health: 'up',
+        scrapeInterval: '15s',
+        scrapeTimeout: '500ms',
       },
-    ],
+    ] as Target[],
   },
 });
 
@@ -140,6 +148,9 @@ export const sampleApiResponse = Object.freeze({
         lastScrape: '2019-11-04T11:52:14.759299-07:00',
         lastScrapeDuration: 36560147,
         health: 'up',
+        globalUrl: 'http://localhost.localdomain:9000/metrics',
+        scrapeInterval: '15s',
+        scrapeTimeout: '500ms',
       },
       {
         discoveredLabels: {
@@ -159,6 +170,9 @@ export const sampleApiResponse = Object.freeze({
         lastScrape: '2019-11-04T11:52:24.731096-07:00',
         lastScrapeDuration: 49448763,
         health: 'up',
+        globalUrl: 'http://localhost.localdomain:9000/metrics',
+        scrapeInterval: '15s',
+        scrapeTimeout: '500ms',
       },
       {
         discoveredLabels: {
@@ -178,6 +192,9 @@ export const sampleApiResponse = Object.freeze({
         lastScrape: '2019-11-04T11:52:13.516654-07:00',
         lastScrapeDuration: 120916592,
         health: 'up',
+        globalUrl: 'http://localhost.localdomain:9000/metrics',
+        scrapeInterval: '15s',
+        scrapeTimeout: '500ms',
       },
       {
         discoveredLabels: {
@@ -196,6 +213,9 @@ export const sampleApiResponse = Object.freeze({
         lastScrape: '2019-11-04T11:52:14.145703-07:00',
         lastScrapeDuration: 3842307,
         health: 'up',
+        globalUrl: 'http://localhost.localdomain:9000/metrics',
+        scrapeInterval: '15s',
+        scrapeTimeout: '500ms',
       },
       {
         discoveredLabels: {
@@ -214,7 +234,10 @@ export const sampleApiResponse = Object.freeze({
         lastScrape: '2019-11-04T11:52:18.479731-07:00',
         lastScrapeDuration: 4050976,
         health: 'up',
+        globalUrl: 'http://localhost.localdomain:9000/metrics',
+        scrapeInterval: '15s',
+        scrapeTimeout: '500ms',
       },
-    ],
+    ] as Target[],
   },
 });

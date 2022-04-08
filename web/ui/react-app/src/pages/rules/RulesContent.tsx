@@ -1,9 +1,8 @@
 import React, { FC } from 'react';
-import { RouteComponentProps } from '@reach/router';
 import { APIResponse } from '../../hooks/useFetch';
 import { Alert, Table, Badge } from 'reactstrap';
-import { Link } from '@reach/router';
-import { formatRelative, createExpressionLink, humanizeDuration, formatRange } from '../../utils';
+import { Link } from 'react-router-dom';
+import { formatRelative, createExpressionLink, humanizeDuration, formatDuration } from '../../utils';
 import { Rule } from '../../types/types';
 import { now } from 'moment';
 
@@ -23,7 +22,7 @@ export interface RulesMap {
   groups: RuleGroup[];
 }
 
-const GraphExpressionLink: FC<{ expr: string; text: string; title: string }> = props => {
+const GraphExpressionLink: FC<{ expr: string; text: string; title: string }> = (props) => {
   return (
     <>
       <strong>{props.title}:</strong>
@@ -35,7 +34,7 @@ const GraphExpressionLink: FC<{ expr: string; text: string; title: string }> = p
   );
 };
 
-export const RulesContent: FC<RouteComponentProps & RulesContentProps> = ({ response }) => {
+export const RulesContent: FC<RulesContentProps> = ({ response }) => {
   const getBadgeColor = (state: string) => {
     switch (state) {
       case 'ok':
@@ -61,14 +60,16 @@ export const RulesContent: FC<RouteComponentProps & RulesContentProps> = ({ resp
                 <tr>
                   <td colSpan={3}>
                     <a href={'#' + g.name}>
-                      <h2 id={g.name}>{g.name}</h2>
+                      <h4 id={g.name} className="text-break">
+                        {g.name}
+                      </h4>
                     </a>
                   </td>
                   <td>
-                    <h2>{formatRelative(g.lastEvaluation, now())} ago</h2>
+                    <h4>{formatRelative(g.lastEvaluation, now())}</h4>
                   </td>
                   <td>
-                    <h2>{humanizeDuration(parseFloat(g.evaluationTime) * 1000)}</h2>
+                    <h4>{humanizeDuration(parseFloat(g.evaluationTime) * 1000)}</h4>
                   </td>
                 </tr>
               </thead>
@@ -83,7 +84,7 @@ export const RulesContent: FC<RouteComponentProps & RulesContentProps> = ({ resp
                 {g.rules.map((r, i) => {
                   return (
                     <tr key={i}>
-                      <td style={{ backgroundColor: '#F5F5F5' }} className="rule_cell">
+                      <td className="rule-cell">
                         {r.alerts ? (
                           <GraphExpressionLink title="alert" text={r.name} expr={`ALERTS{alertname="${r.name}"}`} />
                         ) : (
@@ -92,7 +93,7 @@ export const RulesContent: FC<RouteComponentProps & RulesContentProps> = ({ resp
                         <GraphExpressionLink title="expr" text={r.query} expr={r.query} />
                         {r.duration > 0 && (
                           <div>
-                            <strong>for:</strong> {formatRange(r.duration)}
+                            <strong>for:</strong> {formatDuration(r.duration * 1000)}
                           </div>
                         )}
                         {r.labels && Object.keys(r.labels).length > 0 && (
@@ -120,7 +121,7 @@ export const RulesContent: FC<RouteComponentProps & RulesContentProps> = ({ resp
                         <Badge color={getBadgeColor(r.health)}>{r.health.toUpperCase()}</Badge>
                       </td>
                       <td>{r.lastError ? <Alert color="danger">{r.lastError}</Alert> : null}</td>
-                      <td>{formatRelative(r.lastEvaluation, now())} ago</td>
+                      <td>{formatRelative(r.lastEvaluation, now())}</td>
                       <td>{humanizeDuration(parseFloat(r.evaluationTime) * 1000)}</td>
                     </tr>
                   );

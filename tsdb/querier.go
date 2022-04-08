@@ -20,7 +20,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/pkg/errors"
-	"github.com/prometheus/prometheus/pkg/labels"
+
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -82,13 +83,13 @@ func newBlockBaseQuerier(b BlockReader, mint, maxt int64) (*blockBaseQuerier, er
 	}, nil
 }
 
-func (q *blockBaseQuerier) LabelValues(name string) ([]string, storage.Warnings, error) {
-	res, err := q.index.SortedLabelValues(name)
+func (q *blockBaseQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
+	res, err := q.index.SortedLabelValues(name, matchers...)
 	return res, nil, err
 }
 
-func (q *blockBaseQuerier) LabelNames() ([]string, storage.Warnings, error) {
-	res, err := q.index.LabelNames()
+func (q *blockBaseQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
+	res, err := q.index.LabelNames(matchers...)
 	return res, nil, err
 }
 
@@ -96,12 +97,14 @@ func (q *blockBaseQuerier) Close() error {
 	if q.closed {
 		return errors.New("block querier already closed")
 	}
-	var merr tsdb_errors.MultiError
-	merr.Add(q.index.Close())
-	merr.Add(q.chunks.Close())
-	merr.Add(q.tombstones.Close())
+
+	errs := tsdb_errors.NewMulti(
+		q.index.Close(),
+		q.chunks.Close(),
+		q.tombstones.Close(),
+	)
 	q.closed = true
-	return merr.Err()
+	return errs.Err()
 }
 
 type blockQuerier struct {
@@ -120,10 +123,7 @@ func NewBlockQuerier(b BlockReader, mint, maxt int64) (storage.Querier, error) {
 func (q *blockQuerier) Select(sortSeries bool, hints *storage.SelectHints, ms ...*labels.Matcher) storage.SeriesSet {
 	mint := q.mint
 	maxt := q.maxt
-	if hints != nil {
-		mint = hints.Start
-		maxt = hints.End
-	}
+	disableTrimming := false
 
 	p, err := PostingsForMatchers(q.index, ms...)
 	if err != nil {
@@ -132,7 +132,18 @@ func (q *blockQuerier) Select(sortSeries bool, hints *storage.SelectHints, ms ..
 	if sortSeries {
 		p = q.index.SortedPostings(p)
 	}
-	return newBlockSeriesSet(q.index, q.chunks, q.tombstones, p, mint, maxt)
+
+	if hints != nil {
+		mint = hints.Start
+		maxt = hints.End
+		disableTrimming = hints.DisableTrimming
+		if hints.Func == "series" {
+			// When you're only looking up metadata (for example series API), you don't need to load any chunks.
+			return newBlockSeriesSet(q.index, newNopChunkReader(), q.tombstones, p, mint, maxt, disableTrimming)
+		}
+	}
+
+	return newBlockSeriesSet(q.index, q.chunks, q.tombstones, p, mint, maxt, disableTrimming)
 }
 
 // blockChunkQuerier provides chunk querying access to a single block database.
@@ -152,9 +163,11 @@ func NewBlockChunkQuerier(b BlockReader, mint, maxt int64) (storage.ChunkQuerier
 func (q *blockChunkQuerier) Select(sortSeries bool, hints *storage.SelectHints, ms ...*labels.Matcher) storage.ChunkSeriesSet {
 	mint := q.mint
 	maxt := q.maxt
+	disableTrimming := false
 	if hints != nil {
 		mint = hints.Start
 		maxt = hints.End
+		disableTrimming = hints.DisableTrimming
 	}
 	p, err := PostingsForMatchers(q.index, ms...)
 	if err != nil {
@@ -163,7 +176,7 @@ func (q *blockChunkQuerier) Select(sortSeries bool, hints *storage.SelectHints, 
 	if sortSeries {
 		p = q.index.SortedPostings(p)
 	}
-	return newBlockChunkSeriesSet(q.index, q.chunks, q.tombstones, p, mint, maxt)
+	return newBlockChunkSeriesSet(q.index, q.chunks, q.tombstones, p, mint, maxt, disableTrimming)
 }
 
 func findSetMatches(pattern string) []string {
@@ -361,15 +374,63 @@ func inversePostingsForMatcher(ix IndexReader, m *labels.Matcher) (index.Posting
 	return ix.Postings(m.Name, res...)
 }
 
+func labelValuesWithMatchers(r IndexReader, name string, matchers ...*labels.Matcher) ([]string, error) {
+	p, err := PostingsForMatchers(r, matchers...)
+	if err != nil {
+		return nil, errors.Wrap(err, "fetching postings for matchers")
+	}
+
+	allValues, err := r.LabelValues(name)
+	if err != nil {
+		return nil, errors.Wrapf(err, "fetching values of label %s", name)
+	}
+	valuesPostings := make([]index.Postings, len(allValues))
+	for i, value := range allValues {
+		valuesPostings[i], err = r.Postings(name, value)
+		if err != nil {
+			return nil, errors.Wrapf(err, "fetching postings for %s=%q", name, value)
+		}
+	}
+	indexes, err := index.FindIntersectingPostings(p, valuesPostings)
+	if err != nil {
+		return nil, errors.Wrap(err, "intersecting postings")
+	}
+
+	values := make([]string, 0, len(indexes))
+	for _, idx := range indexes {
+		values = append(values, allValues[idx])
+	}
+
+	return values, nil
+}
+
+func labelNamesWithMatchers(r IndexReader, matchers ...*labels.Matcher) ([]string, error) {
+	p, err := PostingsForMatchers(r, matchers...)
+	if err != nil {
+		return nil, err
+	}
+
+	var postings []storage.SeriesRef
+	for p.Next() {
+		postings = append(postings, p.At())
+	}
+	if p.Err() != nil {
+		return nil, errors.Wrapf(p.Err(), "postings for label names with matchers")
+	}
+
+	return r.LabelNamesFor(postings...)
+}
+
 // blockBaseSeriesSet allows to iterate over all series in the single block.
 // Iterated series are trimmed with given min and max time as well as tombstones.
 // See newBlockSeriesSet and newBlockChunkSeriesSet to use it for either sample or chunk iterating.
 type blockBaseSeriesSet struct {
-	p          index.Postings
-	index      IndexReader
-	chunks     ChunkReader
-	tombstones tombstones.Reader
-	mint, maxt int64
+	p               index.Postings
+	index           IndexReader
+	chunks          ChunkReader
+	tombstones      tombstones.Reader
+	mint, maxt      int64
+	disableTrimming bool
 
 	currIterFn func() *populateWithDelGenericSeriesIterator
 	currLabels labels.Labels
@@ -407,7 +468,7 @@ func (b *blockBaseSeriesSet) Next() bool {
 
 		var trimFront, trimBack bool
 
-		// Copy chunks as iteratables are reusable.
+		// Copy chunks as iterables are reusable.
 		chks := make([]chunks.Meta, 0, len(b.bufChks))
 
 		// Prefilter chunks and pick those which are not entirely deleted or totally outside of the requested range.
@@ -424,11 +485,13 @@ func (b *blockBaseSeriesSet) Next() bool {
 			}
 
 			// If still not entirely deleted, check if trim is needed based on requested time range.
-			if chk.MinTime < b.mint {
-				trimFront = true
-			}
-			if chk.MaxTime > b.maxt {
-				trimBack = true
+			if !b.disableTrimming {
+				if chk.MinTime < b.mint {
+					trimFront = true
+				}
+				if chk.MaxTime > b.maxt {
+					trimBack = true
+				}
 			}
 		}
 
@@ -477,7 +540,7 @@ type populateWithDelGenericSeriesIterator struct {
 
 	i         int
 	err       error
-	bufIter   *deletedIterator
+	bufIter   *DeletedIterator
 	intervals tombstones.Intervals
 
 	currDelIter chunkenc.Iterator
@@ -493,7 +556,7 @@ func newPopulateWithDelGenericSeriesIterator(
 		chunks:    chunks,
 		chks:      chks,
 		i:         -1,
-		bufIter:   &deletedIterator{},
+		bufIter:   &DeletedIterator{},
 		intervals: intervals,
 	}
 }
@@ -512,10 +575,10 @@ func (p *populateWithDelGenericSeriesIterator) next() bool {
 		return false
 	}
 
-	p.bufIter.intervals = p.bufIter.intervals[:0]
+	p.bufIter.Intervals = p.bufIter.Intervals[:0]
 	for _, interval := range p.intervals {
 		if p.currChkMeta.OverlapsClosedInterval(interval.Mint, interval.Maxt) {
-			p.bufIter.intervals = p.bufIter.intervals.Add(interval)
+			p.bufIter.Intervals = p.bufIter.Intervals.Add(interval)
 		}
 	}
 
@@ -526,14 +589,14 @@ func (p *populateWithDelGenericSeriesIterator) next() bool {
 	//
 	// TODO think how to avoid the typecasting to verify when it is head block.
 	_, isSafeChunk := p.currChkMeta.Chunk.(*safeChunk)
-	if len(p.bufIter.intervals) == 0 && !(isSafeChunk && p.currChkMeta.MaxTime == math.MaxInt64) {
+	if len(p.bufIter.Intervals) == 0 && !(isSafeChunk && p.currChkMeta.MaxTime == math.MaxInt64) {
 		// If there are no overlap with deletion intervals AND it's NOT an "open" head chunk, we can take chunk as it is.
 		p.currDelIter = nil
 		return true
 	}
 
 	// We don't want full chunk or it's potentially still opened, take just part of it.
-	p.bufIter.it = p.currChkMeta.Chunk.Iterator(nil)
+	p.bufIter.Iter = p.currChkMeta.Chunk.Iterator(nil)
 	p.currDelIter = p.bufIter
 	return true
 }
@@ -543,6 +606,7 @@ func (p *populateWithDelGenericSeriesIterator) Err() error { return p.err }
 func (p *populateWithDelGenericSeriesIterator) toSeriesIterator() chunkenc.Iterator {
 	return &populateWithDelSeriesIterator{populateWithDelGenericSeriesIterator: p}
 }
+
 func (p *populateWithDelGenericSeriesIterator) toChunkSeriesIterator() chunks.Iterator {
 	return &populateWithDelChunkSeriesIterator{populateWithDelGenericSeriesIterator: p}
 }
@@ -658,16 +722,17 @@ type blockSeriesSet struct {
 	blockBaseSeriesSet
 }
 
-func newBlockSeriesSet(i IndexReader, c ChunkReader, t tombstones.Reader, p index.Postings, mint, maxt int64) storage.SeriesSet {
+func newBlockSeriesSet(i IndexReader, c ChunkReader, t tombstones.Reader, p index.Postings, mint, maxt int64, disableTrimming bool) storage.SeriesSet {
 	return &blockSeriesSet{
 		blockBaseSeriesSet{
-			index:      i,
-			chunks:     c,
-			tombstones: t,
-			p:          p,
-			mint:       mint,
-			maxt:       maxt,
-			bufLbls:    make(labels.Labels, 0, 10),
+			index:           i,
+			chunks:          c,
+			tombstones:      t,
+			p:               p,
+			mint:            mint,
+			maxt:            maxt,
+			disableTrimming: disableTrimming,
+			bufLbls:         make(labels.Labels, 0, 10),
 		},
 	}
 }
@@ -690,16 +755,17 @@ type blockChunkSeriesSet struct {
 	blockBaseSeriesSet
 }
 
-func newBlockChunkSeriesSet(i IndexReader, c ChunkReader, t tombstones.Reader, p index.Postings, mint, maxt int64) storage.ChunkSeriesSet {
+func newBlockChunkSeriesSet(i IndexReader, c ChunkReader, t tombstones.Reader, p index.Postings, mint, maxt int64, disableTrimming bool) storage.ChunkSeriesSet {
 	return &blockChunkSeriesSet{
 		blockBaseSeriesSet{
-			index:      i,
-			chunks:     c,
-			tombstones: t,
-			p:          p,
-			mint:       mint,
-			maxt:       maxt,
-			bufLbls:    make(labels.Labels, 0, 10),
+			index:           i,
+			chunks:          c,
+			tombstones:      t,
+			p:               p,
+			mint:            mint,
+			maxt:            maxt,
+			disableTrimming: disableTrimming,
+			bufLbls:         make(labels.Labels, 0, 10),
 		},
 	}
 }
@@ -715,7 +781,8 @@ func (b *blockChunkSeriesSet) At() storage.ChunkSeries {
 	}
 }
 
-func newMergedStringIter(a index.StringIter, b index.StringIter) index.StringIter {
+// NewMergedStringIter returns string iterator that allows to merge symbols on demand and stream result.
+func NewMergedStringIter(a, b index.StringIter) index.StringIter {
 	return &mergedStringIter{a: a, b: b, aok: a.Next(), bok: b.Next()}
 }
 
@@ -759,35 +826,35 @@ func (m mergedStringIter) Err() error {
 	return m.b.Err()
 }
 
-// deletedIterator wraps an Iterator and makes sure any deleted metrics are not
-// returned.
-type deletedIterator struct {
-	it chunkenc.Iterator
-
-	intervals tombstones.Intervals
+// DeletedIterator wraps chunk Iterator and makes sure any deleted metrics are not returned.
+type DeletedIterator struct {
+	// Iter is an Iterator to be wrapped.
+	Iter chunkenc.Iterator
+	// Intervals are the deletion intervals.
+	Intervals tombstones.Intervals
 }
 
-func (it *deletedIterator) At() (int64, float64) {
-	return it.it.At()
+func (it *DeletedIterator) At() (int64, float64) {
+	return it.Iter.At()
 }
 
-func (it *deletedIterator) Seek(t int64) bool {
-	if it.it.Err() != nil {
+func (it *DeletedIterator) Seek(t int64) bool {
+	if it.Iter.Err() != nil {
 		return false
 	}
-	if ok := it.it.Seek(t); !ok {
+	if ok := it.Iter.Seek(t); !ok {
 		return false
 	}
 
 	// Now double check if the entry falls into a deleted interval.
 	ts, _ := it.At()
-	for _, itv := range it.intervals {
+	for _, itv := range it.Intervals {
 		if ts < itv.Mint {
 			return true
 		}
 
 		if ts > itv.Maxt {
-			it.intervals = it.intervals[1:]
+			it.Intervals = it.Intervals[1:]
 			continue
 		}
 
@@ -799,25 +866,40 @@ func (it *deletedIterator) Seek(t int64) bool {
 	return true
 }
 
-func (it *deletedIterator) Next() bool {
+func (it *DeletedIterator) Next() bool {
 Outer:
-	for it.it.Next() {
-		ts, _ := it.it.At()
+	for it.Iter.Next() {
+		ts, _ := it.Iter.At()
 
-		for _, tr := range it.intervals {
+		for _, tr := range it.Intervals {
 			if tr.InBounds(ts) {
 				continue Outer
 			}
 
 			if ts <= tr.Maxt {
 				return true
-
 			}
-			it.intervals = it.intervals[1:]
+			it.Intervals = it.Intervals[1:]
 		}
 		return true
 	}
 	return false
 }
 
-func (it *deletedIterator) Err() error { return it.it.Err() }
+func (it *DeletedIterator) Err() error { return it.Iter.Err() }
+
+type nopChunkReader struct {
+	emptyChunk chunkenc.Chunk
+}
+
+func newNopChunkReader() ChunkReader {
+	return nopChunkReader{
+		emptyChunk: chunkenc.NewXORChunk(),
+	}
+}
+
+func (cr nopChunkReader) Chunk(ref chunks.ChunkRef) (chunkenc.Chunk, error) {
+	return cr.emptyChunk, nil
+}
+
+func (cr nopChunkReader) Close() error { return nil }

@@ -18,7 +18,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/ioutil"
+	"math"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -30,16 +30,19 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/go-kit/kit/log"
-	"github.com/pkg/errors"
-	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/index"
+
+	"github.com/alecthomas/units"
+	"github.com/go-kit/log"
+	"github.com/pkg/errors"
+
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
+	"github.com/prometheus/prometheus/tsdb/fileutil"
 )
-
-var merr tsdb_errors.MultiError
 
 const timeDelta = 30000
 
@@ -58,7 +61,7 @@ type writeBenchmark struct {
 	logger    log.Logger
 }
 
-func benchmarkWrite(outPath, samplesFile string, numMetrics int) error {
+func benchmarkWrite(outPath, samplesFile string, numMetrics, numScrapes int) error {
 	b := &writeBenchmark{
 		outPath:     outPath,
 		samplesFile: samplesFile,
@@ -66,7 +69,7 @@ func benchmarkWrite(outPath, samplesFile string, numMetrics int) error {
 		logger:      log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr)),
 	}
 	if b.outPath == "" {
-		dir, err := ioutil.TempDir("", "tsdb_bench")
+		dir, err := os.MkdirTemp("", "tsdb_bench")
 		if err != nil {
 			return err
 		}
@@ -76,7 +79,7 @@ func benchmarkWrite(outPath, samplesFile string, numMetrics int) error {
 	if err := os.RemoveAll(b.outPath); err != nil {
 		return err
 	}
-	if err := os.MkdirAll(b.outPath, 0777); err != nil {
+	if err := os.MkdirAll(b.outPath, 0o777); err != nil {
 		return err
 	}
 
@@ -87,7 +90,7 @@ func benchmarkWrite(outPath, samplesFile string, numMetrics int) error {
 	st, err := tsdb.Open(dir, l, nil, &tsdb.Options{
 		RetentionDuration: int64(15 * 24 * time.Hour / time.Millisecond),
 		MinBlockDuration:  int64(2 * time.Hour / time.Millisecond),
-	})
+	}, tsdb.NewDBStats())
 	if err != nil {
 		return err
 	}
@@ -118,7 +121,7 @@ func benchmarkWrite(outPath, samplesFile string, numMetrics int) error {
 		if err := b.startProfiling(); err != nil {
 			return err
 		}
-		total, err = b.ingestScrapes(lbs, 3000)
+		total, err = b.ingestScrapes(lbs, numScrapes)
 		if err != nil {
 			return err
 		}
@@ -185,7 +188,7 @@ func (b *writeBenchmark) ingestScrapesShard(lbls []labels.Labels, scrapeCount in
 	type sample struct {
 		labels labels.Labels
 		value  int64
-		ref    *uint64
+		ref    *storage.SeriesRef
 	}
 
 	scrape := make([]*sample, 0, len(lbls))
@@ -205,25 +208,19 @@ func (b *writeBenchmark) ingestScrapesShard(lbls []labels.Labels, scrapeCount in
 		for _, s := range scrape {
 			s.value += 1000
 
-			if s.ref == nil {
-				ref, err := app.Add(s.labels, ts, float64(s.value))
-				if err != nil {
-					panic(err)
-				}
-				s.ref = &ref
-			} else if err := app.AddFast(*s.ref, ts, float64(s.value)); err != nil {
-
-				if errors.Cause(err) != storage.ErrNotFound {
-					panic(err)
-				}
-
-				ref, err := app.Add(s.labels, ts, float64(s.value))
-				if err != nil {
-					panic(err)
-				}
-				s.ref = &ref
+			var ref storage.SeriesRef
+			if s.ref != nil {
+				ref = *s.ref
 			}
 
+			ref, err := app.Append(ref, s.labels, ts, float64(s.value))
+			if err != nil {
+				panic(err)
+			}
+
+			if s.ref == nil {
+				s.ref = &ref
+			}
 			total++
 		}
 		if err := app.Commit(); err != nil {
@@ -347,28 +344,29 @@ func listBlocks(path string, humanReadable bool) error {
 		return err
 	}
 	defer func() {
-		merr.Add(err)
-		merr.Add(db.Close())
-		err = merr.Err()
+		err = tsdb_errors.NewMulti(err, db.Close()).Err()
 	}()
 	blocks, err := db.Blocks()
 	if err != nil {
 		return err
 	}
-	printBlocks(blocks, humanReadable)
+	printBlocks(blocks, true, humanReadable)
 	return nil
 }
 
-func printBlocks(blocks []tsdb.BlockReader, humanReadable bool) {
-	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+func printBlocks(blocks []tsdb.BlockReader, writeHeader, humanReadable bool) {
+	tw := tabwriter.NewWriter(os.Stdout, 13, 0, 2, ' ', 0)
 	defer tw.Flush()
 
-	fmt.Fprintln(tw, "BLOCK ULID\tMIN TIME\tMAX TIME\tDURATION\tNUM SAMPLES\tNUM CHUNKS\tNUM SERIES")
+	if writeHeader {
+		fmt.Fprintln(tw, "BLOCK ULID\tMIN TIME\tMAX TIME\tDURATION\tNUM SAMPLES\tNUM CHUNKS\tNUM SERIES\tSIZE")
+	}
+
 	for _, b := range blocks {
 		meta := b.Meta()
 
 		fmt.Fprintf(tw,
-			"%v\t%v\t%v\t%v\t%v\t%v\t%v\n",
+			"%v\t%v\t%v\t%v\t%v\t%v\t%v\t%v\n",
 			meta.ULID,
 			getFormatedTime(meta.MinTime, humanReadable),
 			getFormatedTime(meta.MaxTime, humanReadable),
@@ -376,6 +374,7 @@ func printBlocks(blocks []tsdb.BlockReader, humanReadable bool) {
 			meta.Stats.NumSamples,
 			meta.Stats.NumChunks,
 			meta.Stats.NumSeries,
+			getFormatedBytes(b.Size(), humanReadable),
 		)
 	}
 }
@@ -385,6 +384,13 @@ func getFormatedTime(timestamp int64, humanReadable bool) string {
 		return time.Unix(timestamp/1000, 0).UTC().String()
 	}
 	return strconv.FormatInt(timestamp, 10)
+}
+
+func getFormatedBytes(bytes int64, humanReadable bool) string {
+	if humanReadable {
+		return units.Base2Bytes(bytes).String()
+	}
+	return strconv.FormatInt(bytes, 10)
 }
 
 func openBlock(path, blockID string) (*tsdb.DBReadOnly, tsdb.BlockReader, error) {
@@ -413,15 +419,13 @@ func openBlock(path, blockID string) (*tsdb.DBReadOnly, tsdb.BlockReader, error)
 	return db, block, nil
 }
 
-func analyzeBlock(path, blockID string, limit int) error {
+func analyzeBlock(path, blockID string, limit int, runExtended bool) error {
 	db, block, err := openBlock(path, blockID)
 	if err != nil {
 		return err
 	}
 	defer func() {
-		merr.Add(err)
-		merr.Add(db.Close())
-		err = merr.Err()
+		err = tsdb_errors.NewMulti(err, db.Close()).Err()
 	}()
 
 	meta := block.Meta()
@@ -560,6 +564,64 @@ func analyzeBlock(path, blockID string, limit int) error {
 	}
 	fmt.Printf("\nHighest cardinality metric names:\n")
 	printInfo(postingInfos)
+
+	if runExtended {
+		return analyzeCompaction(block, ir)
+	}
+
+	return nil
+}
+
+func analyzeCompaction(block tsdb.BlockReader, indexr tsdb.IndexReader) (err error) {
+	postingsr, err := indexr.Postings(index.AllPostingsKey())
+	if err != nil {
+		return err
+	}
+	chunkr, err := block.Chunks()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		err = tsdb_errors.NewMulti(err, chunkr.Close()).Err()
+	}()
+
+	const maxSamplesPerChunk = 120
+	nBuckets := 10
+	histogram := make([]int, nBuckets)
+	totalChunks := 0
+	for postingsr.Next() {
+		lbsl := labels.Labels{}
+		var chks []chunks.Meta
+		if err := indexr.Series(postingsr.At(), &lbsl, &chks); err != nil {
+			return err
+		}
+
+		for _, chk := range chks {
+			// Load the actual data of the chunk.
+			chk, err := chunkr.Chunk(chk.Ref)
+			if err != nil {
+				return err
+			}
+			chunkSize := math.Min(float64(chk.NumSamples()), maxSamplesPerChunk)
+			// Calculate the bucket for the chunk and increment it in the histogram.
+			bucket := int(math.Ceil(float64(nBuckets)*chunkSize/maxSamplesPerChunk)) - 1
+			histogram[bucket]++
+			totalChunks++
+		}
+	}
+
+	fmt.Printf("\nCompaction analysis:\n")
+	fmt.Println("Fullness: Amount of samples in chunks (100% is 120 samples)")
+	// Normalize absolute counts to percentages and print them out.
+	for bucket, count := range histogram {
+		percentage := 100.0 * count / totalChunks
+		fmt.Printf("%7d%%: ", (bucket+1)*10)
+		for j := 0; j < percentage; j++ {
+			fmt.Printf("#")
+		}
+		fmt.Println()
+	}
+
 	return nil
 }
 
@@ -569,9 +631,7 @@ func dumpSamples(path string, mint, maxt int64) (err error) {
 		return err
 	}
 	defer func() {
-		merr.Add(err)
-		merr.Add(db.Close())
-		err = merr.Err()
+		err = tsdb_errors.NewMulti(err, db.Close()).Err()
 	}()
 	q, err := db.Querier(context.TODO(), mint, maxt)
 	if err != nil {
@@ -595,11 +655,7 @@ func dumpSamples(path string, mint, maxt int64) (err error) {
 	}
 
 	if ws := ss.Warnings(); len(ws) > 0 {
-		var merr tsdb_errors.MultiError
-		for _, w := range ws {
-			merr.Add(w)
-		}
-		return merr.Err()
+		return tsdb_errors.NewMulti(ws...).Err()
 	}
 
 	if ss.Err() != nil {
@@ -614,4 +670,18 @@ func checkErr(err error) int {
 		return 1
 	}
 	return 0
+}
+
+func backfillOpenMetrics(path, outputDir string, humanReadable, quiet bool, maxBlockDuration time.Duration) int {
+	inputFile, err := fileutil.OpenMmapFile(path)
+	if err != nil {
+		return checkErr(err)
+	}
+	defer inputFile.Close()
+
+	if err := os.MkdirAll(outputDir, 0o777); err != nil {
+		return checkErr(errors.Wrap(err, "create output dir"))
+	}
+
+	return checkErr(backfill(5000, inputFile.Bytes(), outputDir, humanReadable, quiet, maxBlockDuration))
 }

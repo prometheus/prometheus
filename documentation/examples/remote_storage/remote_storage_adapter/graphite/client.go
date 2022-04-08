@@ -21,8 +21,8 @@ import (
 	"sort"
 	"time"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/common/model"
 )
 
@@ -37,7 +37,7 @@ type Client struct {
 }
 
 // NewClient creates a new Client.
-func NewClient(logger log.Logger, address string, transport string, timeout time.Duration, prefix string) *Client {
+func NewClient(logger log.Logger, address, transport string, timeout time.Duration, prefix string) *Client {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}

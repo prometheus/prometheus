@@ -9,6 +9,20 @@ describe('Graph', () => {
   beforeAll(() => {
     jest.spyOn(window, 'requestAnimationFrame').mockImplementation((cb: any) => cb());
   });
+
+  // Source: https://github.com/maslianok/react-resize-detector#testing-with-enzyme-and-jest
+  beforeEach(() => {
+    window.ResizeObserver = jest.fn().mockImplementation(() => ({
+      observe: jest.fn(),
+      unobserve: jest.fn(),
+      disconnect: jest.fn(),
+    }));
+  });
+
+  afterEach(() => {
+    window.ResizeObserver = ResizeObserver;
+  });
+
   describe('data is returned', () => {
     const props: any = {
       queryParams: {
@@ -54,13 +68,33 @@ describe('Graph', () => {
             ],
           },
         ],
+        exemplars: [
+          {
+            seriesLabels: {
+              code: '200',
+              handler: '/graph',
+              instance: 'localhost:9090',
+              job: 'prometheus',
+            },
+            exemplars: [
+              {
+                labels: {
+                  traceID: '12345',
+                },
+                timestamp: 1572130580,
+                value: '9',
+              },
+            ],
+          },
+        ],
       },
+      id: 'test',
     };
     it('renders a graph with props', () => {
       const graph = shallow(<Graph {...props} />);
-      const div = graph.find('div').filterWhere(elem => elem.prop('className') === 'graph');
+      const div = graph.find('div').filterWhere((elem) => elem.prop('className') === 'graph-test');
       const resize = div.find(ReactResizeDetector);
-      const innerdiv = div.find('div').filterWhere(elem => elem.prop('className') === 'graph-chart');
+      const innerdiv = div.find('div').filterWhere((elem) => elem.prop('className') === 'graph-chart');
       expect(resize.prop('handleWidth')).toBe(true);
       expect(div).toHaveLength(1);
       expect(innerdiv).toHaveLength(1);
@@ -101,14 +135,18 @@ describe('Graph', () => {
       graph.setProps({ data: { result: [{ values: [{}], metric: {} }] } });
       expect(spyState).toHaveBeenCalledWith(
         {
-          chartData: [
-            {
-              color: 'rgb(237,194,64)',
-              data: [[1572128592000, null]],
-              index: 0,
-              labels: {},
-            },
-          ],
+          chartData: {
+            exemplars: [],
+            series: [
+              {
+                color: '#008000',
+                data: [[1572128592000, null]],
+                index: 0,
+                labels: {},
+                stack: true,
+              },
+            ],
+          },
         },
         expect.anything()
       );
@@ -117,14 +155,18 @@ describe('Graph', () => {
       graph.setProps({ stacked: false });
       expect(spyState).toHaveBeenCalledWith(
         {
-          chartData: [
-            {
-              color: 'rgb(237,194,64)',
-              data: [[1572128592000, null]],
-              index: 0,
-              labels: {},
-            },
-          ],
+          chartData: {
+            exemplars: [],
+            series: [
+              {
+                color: '#008000',
+                data: [[1572128592000, null]],
+                index: 0,
+                labels: {},
+                stack: false,
+              },
+            ],
+          },
         },
         expect.anything()
       );
@@ -236,10 +278,7 @@ describe('Graph', () => {
       );
       (graph.instance() as any).plot(); // create chart
       const spyPlotSetAndDraw = jest.spyOn(graph.instance() as any, 'plotSetAndDraw');
-      graph
-        .find('.legend-item')
-        .at(0)
-        .simulate('mouseover');
+      graph.find('.legend-item').at(0).simulate('mouseover');
       expect(spyPlotSetAndDraw).toHaveBeenCalledTimes(1);
     });
     it('should call spyPlotSetAndDraw with chartDate from state as default value', () => {
@@ -267,7 +306,7 @@ describe('Graph', () => {
       );
       (graph.instance() as any).plot(); // create chart
       graph.find('.graph-legend').simulate('mouseout');
-      expect(mockSetData).toHaveBeenCalledWith(graph.state().chartData);
+      expect(mockSetData).toHaveBeenCalledWith(graph.state().chartData.series);
       spyPlot.mockReset();
     });
   });

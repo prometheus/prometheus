@@ -21,11 +21,10 @@ import (
 
 	"github.com/pkg/errors"
 
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
-
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
 func (Matrix) Type() parser.ValueType { return parser.ValueTypeMatrix }
@@ -89,6 +88,14 @@ func (p Point) String() string {
 }
 
 // MarshalJSON implements json.Marshaler.
+//
+// JSON marshaling is only needed for the HTTP API. Since Point is such a
+// frequently marshaled type, it gets an optimized treatment directly in
+// web/api/v1/api.go. Therefore, this method is unused within Prometheus. It is
+// still provided here as convenience for debugging and for other users of this
+// code. Also note that the different marshaling implementations might lead to
+// slightly different results in terms of formatting and rounding of the
+// timestamp.
 func (p Point) MarshalJSON() ([]byte, error) {
 	v := strconv.FormatFloat(p.V, 'f', -1, 64)
 	return json.Marshal([...]interface{}{float64(p.T) / 1000, v})
@@ -171,8 +178,8 @@ func (m Matrix) Len() int           { return len(m) }
 func (m Matrix) Less(i, j int) bool { return labels.Compare(m[i].Metric, m[j].Metric) < 0 }
 func (m Matrix) Swap(i, j int)      { m[i], m[j] = m[j], m[i] }
 
-// ContainsSameLabelset checks if a matrix has samples with the same labelset
-// Such a behavior is semantically undefined
+// ContainsSameLabelset checks if a matrix has samples with the same labelset.
+// Such a behavior is semantically undefined.
 // https://github.com/prometheus/prometheus/issues/4562
 func (m Matrix) ContainsSameLabelset() bool {
 	l := make(map[uint64]struct{}, len(m))

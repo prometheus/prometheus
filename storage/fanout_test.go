@@ -19,11 +19,11 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
+	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/teststorage"
-	"github.com/prometheus/prometheus/util/testutil"
 )
 
 func TestFanout_SelectSorted(t *testing.T) {
@@ -36,50 +36,50 @@ func TestFanout_SelectSorted(t *testing.T) {
 	priStorage := teststorage.New(t)
 	defer priStorage.Close()
 	app1 := priStorage.Appender(ctx)
-	app1.Add(inputLabel, 0, 0)
+	app1.Append(0, inputLabel, 0, 0)
 	inputTotalSize++
-	app1.Add(inputLabel, 1000, 1)
+	app1.Append(0, inputLabel, 1000, 1)
 	inputTotalSize++
-	app1.Add(inputLabel, 2000, 2)
+	app1.Append(0, inputLabel, 2000, 2)
 	inputTotalSize++
 	err := app1.Commit()
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	remoteStorage1 := teststorage.New(t)
 	defer remoteStorage1.Close()
 	app2 := remoteStorage1.Appender(ctx)
-	app2.Add(inputLabel, 3000, 3)
+	app2.Append(0, inputLabel, 3000, 3)
 	inputTotalSize++
-	app2.Add(inputLabel, 4000, 4)
+	app2.Append(0, inputLabel, 4000, 4)
 	inputTotalSize++
-	app2.Add(inputLabel, 5000, 5)
+	app2.Append(0, inputLabel, 5000, 5)
 	inputTotalSize++
 	err = app2.Commit()
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	remoteStorage2 := teststorage.New(t)
 	defer remoteStorage2.Close()
 
 	app3 := remoteStorage2.Appender(ctx)
-	app3.Add(inputLabel, 6000, 6)
+	app3.Append(0, inputLabel, 6000, 6)
 	inputTotalSize++
-	app3.Add(inputLabel, 7000, 7)
+	app3.Append(0, inputLabel, 7000, 7)
 	inputTotalSize++
-	app3.Add(inputLabel, 8000, 8)
+	app3.Append(0, inputLabel, 8000, 8)
 	inputTotalSize++
 
 	err = app3.Commit()
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	fanoutStorage := storage.NewFanout(nil, priStorage, remoteStorage1, remoteStorage2)
 
 	t.Run("querier", func(t *testing.T) {
 		querier, err := fanoutStorage.Querier(context.Background(), 0, 8000)
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 		defer querier.Close()
 
 		matcher, err := labels.NewMatcher(labels.MatchEqual, model.MetricNameLabel, "a")
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 
 		seriesSet := querier.Select(true, nil, matcher)
 
@@ -96,16 +96,16 @@ func TestFanout_SelectSorted(t *testing.T) {
 			}
 		}
 
-		testutil.Equals(t, labelsResult, outputLabel)
-		testutil.Equals(t, inputTotalSize, len(result))
+		require.Equal(t, labelsResult, outputLabel)
+		require.Equal(t, inputTotalSize, len(result))
 	})
 	t.Run("chunk querier", func(t *testing.T) {
 		querier, err := fanoutStorage.ChunkQuerier(ctx, 0, 8000)
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 		defer querier.Close()
 
 		matcher, err := labels.NewMatcher(labels.MatchEqual, model.MetricNameLabel, "a")
-		testutil.Ok(t, err)
+		require.NoError(t, err)
 
 		seriesSet := storage.NewSeriesSetFromChunkSeriesSet(querier.Select(true, nil, matcher))
 
@@ -122,9 +122,9 @@ func TestFanout_SelectSorted(t *testing.T) {
 			}
 		}
 
-		testutil.Ok(t, seriesSet.Err())
-		testutil.Equals(t, labelsResult, outputLabel)
-		testutil.Equals(t, inputTotalSize, len(result))
+		require.NoError(t, seriesSet.Err())
+		require.Equal(t, labelsResult, outputLabel)
+		require.Equal(t, inputTotalSize, len(result))
 	})
 }
 
@@ -157,7 +157,7 @@ func TestFanoutErrors(t *testing.T) {
 
 		t.Run("samples", func(t *testing.T) {
 			querier, err := fanoutStorage.Querier(context.Background(), 0, 8000)
-			testutil.Ok(t, err)
+			require.NoError(t, err)
 			defer querier.Close()
 
 			matcher := labels.MustNewMatcher(labels.MatchEqual, "a", "b")
@@ -169,20 +169,20 @@ func TestFanoutErrors(t *testing.T) {
 			}
 
 			if tc.err != nil {
-				testutil.NotOk(t, ss.Err())
-				testutil.Equals(t, tc.err.Error(), ss.Err().Error())
+				require.Error(t, ss.Err())
+				require.Equal(t, tc.err.Error(), ss.Err().Error())
 			}
 
 			if tc.warning != nil {
-				testutil.Assert(t, len(ss.Warnings()) > 0, "warnings expected")
-				testutil.NotOk(t, ss.Warnings()[0])
-				testutil.Equals(t, tc.warning.Error(), ss.Warnings()[0].Error())
+				require.Greater(t, len(ss.Warnings()), 0, "warnings expected")
+				require.Error(t, ss.Warnings()[0])
+				require.Equal(t, tc.warning.Error(), ss.Warnings()[0].Error())
 			}
 		})
 		t.Run("chunks", func(t *testing.T) {
 			t.Skip("enable once TestStorage and TSDB implements ChunkQuerier")
 			querier, err := fanoutStorage.ChunkQuerier(context.Background(), 0, 8000)
-			testutil.Ok(t, err)
+			require.NoError(t, err)
 			defer querier.Close()
 
 			matcher := labels.MustNewMatcher(labels.MatchEqual, "a", "b")
@@ -194,14 +194,14 @@ func TestFanoutErrors(t *testing.T) {
 			}
 
 			if tc.err != nil {
-				testutil.NotOk(t, ss.Err())
-				testutil.Equals(t, tc.err.Error(), ss.Err().Error())
+				require.Error(t, ss.Err())
+				require.Equal(t, tc.err.Error(), ss.Err().Error())
 			}
 
 			if tc.warning != nil {
-				testutil.Assert(t, len(ss.Warnings()) > 0, "warnings expected")
-				testutil.NotOk(t, ss.Warnings()[0])
-				testutil.Equals(t, tc.warning.Error(), ss.Warnings()[0].Error())
+				require.Greater(t, len(ss.Warnings()), 0, "warnings expected")
+				require.Error(t, ss.Warnings()[0])
+				require.Equal(t, tc.warning.Error(), ss.Warnings()[0].Error())
 			}
 		})
 	}
@@ -230,11 +230,11 @@ func (errQuerier) Select(bool, *storage.SelectHints, ...*labels.Matcher) storage
 	return storage.ErrSeriesSet(errSelect)
 }
 
-func (errQuerier) LabelValues(name string) ([]string, storage.Warnings, error) {
+func (errQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, storage.Warnings, error) {
 	return nil, nil, errors.New("label values error")
 }
 
-func (errQuerier) LabelNames() ([]string, storage.Warnings, error) {
+func (errQuerier) LabelNames(...*labels.Matcher) ([]string, storage.Warnings, error) {
 	return nil, nil, errors.New("label names error")
 }
 

@@ -21,15 +21,17 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/prometheus/common/model"
-
 	config_util "github.com/prometheus/common/config"
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/common/model"
+	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/model/labels"
 )
 
 const (
@@ -40,9 +42,7 @@ func TestTargetLabels(t *testing.T) {
 	target := newTestTarget("example.com:80", 0, labels.FromStrings("job", "some_job", "foo", "bar"))
 	want := labels.FromStrings(model.JobLabel, "some_job", "foo", "bar")
 	got := target.Labels()
-	if !reflect.DeepEqual(want, got) {
-		t.Errorf("want base labels %v, got %v", want, got)
-	}
+	require.Equal(t, want, got)
 }
 
 func TestTargetOffset(t *testing.T) {
@@ -113,16 +113,14 @@ func TestTargetURL(t *testing.T) {
 		"cde": []string{"huu"},
 		"xyz": []string{"hoo"},
 	}
-	expectedURL := url.URL{
+	expectedURL := &url.URL{
 		Scheme:   "https",
 		Host:     "example.com:1234",
 		Path:     "/metricz",
 		RawQuery: expectedParams.Encode(),
 	}
 
-	if u := target.URL(); !reflect.DeepEqual(u.String(), expectedURL.String()) {
-		t.Fatalf("Expected URL %q, but got %q", expectedURL.String(), u.String())
-	}
+	require.Equal(t, expectedURL, target.URL())
 }
 
 func newTestTarget(targetURL string, deadline time.Duration, lbls labels.Labels) *Target {
@@ -151,7 +149,7 @@ func TestNewHTTPBearerToken(t *testing.T) {
 	cfg := config_util.HTTPClientConfig{
 		BearerToken: "1234",
 	}
-	c, err := config_util.NewClientFromConfig(cfg, "test", false)
+	c, err := config_util.NewClientFromConfig(cfg, "test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,7 +176,7 @@ func TestNewHTTPBearerTokenFile(t *testing.T) {
 	cfg := config_util.HTTPClientConfig{
 		BearerTokenFile: "testdata/bearertoken.txt",
 	}
-	c, err := config_util.NewClientFromConfig(cfg, "test", false)
+	c, err := config_util.NewClientFromConfig(cfg, "test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,7 +205,7 @@ func TestNewHTTPBasicAuth(t *testing.T) {
 			Password: "password123",
 		},
 	}
-	c, err := config_util.NewClientFromConfig(cfg, "test", false)
+	c, err := config_util.NewClientFromConfig(cfg, "test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -235,7 +233,7 @@ func TestNewHTTPCACert(t *testing.T) {
 			CAFile: caCertPath,
 		},
 	}
-	c, err := config_util.NewClientFromConfig(cfg, "test", false)
+	c, err := config_util.NewClientFromConfig(cfg, "test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -268,7 +266,7 @@ func TestNewHTTPClientCert(t *testing.T) {
 			KeyFile:  "testdata/client.key",
 		},
 	}
-	c, err := config_util.NewClientFromConfig(cfg, "test", false)
+	c, err := config_util.NewClientFromConfig(cfg, "test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -297,7 +295,7 @@ func TestNewHTTPWithServerName(t *testing.T) {
 			ServerName: "prometheus.rocks",
 		},
 	}
-	c, err := config_util.NewClientFromConfig(cfg, "test", false)
+	c, err := config_util.NewClientFromConfig(cfg, "test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -326,7 +324,7 @@ func TestNewHTTPWithBadServerName(t *testing.T) {
 			ServerName: "badname",
 		},
 	}
-	c, err := config_util.NewClientFromConfig(cfg, "test", false)
+	c, err := config_util.NewClientFromConfig(cfg, "test")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -364,8 +362,27 @@ func TestNewClientWithBadTLSConfig(t *testing.T) {
 			KeyFile:  "testdata/nonexistent_client.key",
 		},
 	}
-	_, err := config_util.NewClientFromConfig(cfg, "test", false)
+	_, err := config_util.NewClientFromConfig(cfg, "test")
 	if err == nil {
 		t.Fatalf("Expected error, got nil.")
+	}
+}
+
+func TestTargetsFromGroup(t *testing.T) {
+	expectedError := "instance 0 in group : no address"
+
+	cfg := config.ScrapeConfig{
+		ScrapeTimeout:  model.Duration(10 * time.Second),
+		ScrapeInterval: model.Duration(1 * time.Minute),
+	}
+	targets, failures := TargetsFromGroup(&targetgroup.Group{Targets: []model.LabelSet{{}, {model.AddressLabel: "localhost:9090"}}}, &cfg)
+	if len(targets) != 1 {
+		t.Fatalf("Expected 1 target, got %v", len(targets))
+	}
+	if len(failures) != 1 {
+		t.Fatalf("Expected 1 failure, got %v", len(failures))
+	}
+	if failures[0].Error() != expectedError {
+		t.Fatalf("Expected error %s, got %s", expectedError, failures[0])
 	}
 }

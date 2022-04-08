@@ -18,16 +18,17 @@ import (
 	"fmt"
 	"hash"
 	"hash/crc32"
-	"io"
 	"io/ioutil"
 	"os"
 	"path/filepath"
 	"sort"
 	"sync"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
+
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/encoding"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
@@ -39,8 +40,10 @@ const (
 	// MagicTombstone is 4 bytes at the head of a tombstone file.
 	MagicTombstone = 0x0130BA30
 
-	tombstoneFormatV1    = 1
-	tombstonesHeaderSize = 5
+	tombstoneFormatV1          = 1
+	tombstoneFormatVersionSize = 1
+	tombstonesHeaderSize       = 5
+	tombstonesCRCSize          = 4
 )
 
 // The table gets initialized with sync.Once but may still cause a race
@@ -61,10 +64,10 @@ func newCRC32() hash.Hash32 {
 // Reader gives access to tombstone intervals by series reference.
 type Reader interface {
 	// Get returns deletion intervals for the series with the given reference.
-	Get(ref uint64) (Intervals, error)
+	Get(ref storage.SeriesRef) (Intervals, error)
 
 	// Iter calls the given function for each encountered interval.
-	Iter(func(uint64, Intervals) error) error
+	Iter(func(storage.SeriesRef, Intervals) error) error
 
 	// Total returns the total count of tombstones.
 	Total() uint64
@@ -98,33 +101,27 @@ func WriteFile(logger log.Logger, dir string, tr Reader) (int64, error) {
 	buf.Reset()
 	// Write the meta.
 	buf.PutBE32(MagicTombstone)
-	buf.PutByte(tombstoneFormatV1)
 	n, err := f.Write(buf.Get())
 	if err != nil {
 		return 0, err
 	}
 	size += n
 
-	mw := io.MultiWriter(f, hash)
-
-	if err := tr.Iter(func(ref uint64, ivs Intervals) error {
-		for _, iv := range ivs {
-			buf.Reset()
-
-			buf.PutUvarint64(ref)
-			buf.PutVarint64(iv.Mint)
-			buf.PutVarint64(iv.Maxt)
-
-			n, err = mw.Write(buf.Get())
-			if err != nil {
-				return err
-			}
-			size += n
-		}
-		return nil
-	}); err != nil {
-		return 0, fmt.Errorf("error writing tombstones: %v", err)
+	bytes, err := Encode(tr)
+	if err != nil {
+		return 0, errors.Wrap(err, "encoding tombstones")
 	}
+
+	// Ignore first byte which is the format type. We do this for compatibility.
+	if _, err := hash.Write(bytes[tombstoneFormatVersionSize:]); err != nil {
+		return 0, errors.Wrap(err, "calculating hash for tombstones")
+	}
+
+	n, err = f.Write(bytes)
+	if err != nil {
+		return 0, errors.Wrap(err, "writing tombstones")
+	}
+	size += n
 
 	n, err = f.Write(hash.Sum(nil))
 	if err != nil {
@@ -132,10 +129,8 @@ func WriteFile(logger log.Logger, dir string, tr Reader) (int64, error) {
 	}
 	size += n
 
-	var merr tsdb_errors.MultiError
-	if merr.Add(f.Sync()); merr.Err() != nil {
-		merr.Add(f.Close())
-		return 0, merr.Err()
+	if err := f.Sync(); err != nil {
+		return 0, tsdb_errors.NewMulti(err, f.Close()).Err()
 	}
 
 	if err = f.Close(); err != nil {
@@ -145,10 +140,52 @@ func WriteFile(logger log.Logger, dir string, tr Reader) (int64, error) {
 	return int64(size), fileutil.Replace(tmp, path)
 }
 
+// Encode encodes the tombstones from the reader.
+// It does not attach any magic number or checksum.
+func Encode(tr Reader) ([]byte, error) {
+	buf := encoding.Encbuf{}
+	buf.PutByte(tombstoneFormatV1)
+	err := tr.Iter(func(ref storage.SeriesRef, ivs Intervals) error {
+		for _, iv := range ivs {
+			buf.PutUvarint64(uint64(ref))
+			buf.PutVarint64(iv.Mint)
+			buf.PutVarint64(iv.Maxt)
+		}
+		return nil
+	})
+	return buf.Get(), err
+}
+
+// Decode decodes the tombstones from the bytes
+// which was encoded using the Encode method.
+func Decode(b []byte) (Reader, error) {
+	d := &encoding.Decbuf{B: b}
+	if flag := d.Byte(); flag != tombstoneFormatV1 {
+		return nil, errors.Errorf("invalid tombstone format %x", flag)
+	}
+
+	if d.Err() != nil {
+		return nil, d.Err()
+	}
+
+	stonesMap := NewMemTombstones()
+	for d.Len() > 0 {
+		k := storage.SeriesRef(d.Uvarint64())
+		mint := d.Varint64()
+		maxt := d.Varint64()
+		if d.Err() != nil {
+			return nil, d.Err()
+		}
+
+		stonesMap.AddInterval(k, Interval{mint, maxt})
+	}
+	return stonesMap, nil
+}
+
 // Stone holds the information on the posting and time-range
 // that is deleted.
 type Stone struct {
-	Ref       uint64
+	Ref       storage.SeriesRef
 	Intervals Intervals
 }
 
@@ -164,71 +201,89 @@ func ReadTombstones(dir string) (Reader, int64, error) {
 		return nil, 0, errors.Wrap(encoding.ErrInvalidSize, "tombstones header")
 	}
 
-	d := &encoding.Decbuf{B: b[:len(b)-4]} // 4 for the checksum.
+	d := &encoding.Decbuf{B: b[:len(b)-tombstonesCRCSize]}
 	if mg := d.Be32(); mg != MagicTombstone {
 		return nil, 0, fmt.Errorf("invalid magic number %x", mg)
 	}
-	if flag := d.Byte(); flag != tombstoneFormatV1 {
-		return nil, 0, fmt.Errorf("invalid tombstone format %x", flag)
+
+	// Verify checksum.
+	hash := newCRC32()
+	// Ignore first byte which is the format type.
+	if _, err := hash.Write(d.Get()[tombstoneFormatVersionSize:]); err != nil {
+		return nil, 0, errors.Wrap(err, "write to hash")
+	}
+	if binary.BigEndian.Uint32(b[len(b)-tombstonesCRCSize:]) != hash.Sum32() {
+		return nil, 0, errors.New("checksum did not match")
 	}
 
 	if d.Err() != nil {
 		return nil, 0, d.Err()
 	}
 
-	// Verify checksum.
-	hash := newCRC32()
-	if _, err := hash.Write(d.Get()); err != nil {
-		return nil, 0, errors.Wrap(err, "write to hash")
-	}
-	if binary.BigEndian.Uint32(b[len(b)-4:]) != hash.Sum32() {
-		return nil, 0, errors.New("checksum did not match")
-	}
-
-	stonesMap := NewMemTombstones()
-
-	for d.Len() > 0 {
-		k := d.Uvarint64()
-		mint := d.Varint64()
-		maxt := d.Varint64()
-		if d.Err() != nil {
-			return nil, 0, d.Err()
-		}
-
-		stonesMap.AddInterval(k, Interval{mint, maxt})
+	stonesMap, err := Decode(d.Get())
+	if err != nil {
+		return nil, 0, err
 	}
 
 	return stonesMap, int64(len(b)), nil
 }
 
 type MemTombstones struct {
-	intvlGroups map[uint64]Intervals
+	intvlGroups map[storage.SeriesRef]Intervals
 	mtx         sync.RWMutex
 }
 
 // NewMemTombstones creates new in memory Tombstone Reader
 // that allows adding new intervals.
 func NewMemTombstones() *MemTombstones {
-	return &MemTombstones{intvlGroups: make(map[uint64]Intervals)}
+	return &MemTombstones{intvlGroups: make(map[storage.SeriesRef]Intervals)}
 }
 
 func NewTestMemTombstones(intervals []Intervals) *MemTombstones {
 	ret := NewMemTombstones()
 	for i, intervalsGroup := range intervals {
 		for _, interval := range intervalsGroup {
-			ret.AddInterval(uint64(i+1), interval)
+			ret.AddInterval(storage.SeriesRef(i+1), interval)
 		}
 	}
 	return ret
 }
 
-func (t *MemTombstones) Get(ref uint64) (Intervals, error) {
+func (t *MemTombstones) Get(ref storage.SeriesRef) (Intervals, error) {
 	t.mtx.RLock()
 	defer t.mtx.RUnlock()
 	return t.intvlGroups[ref], nil
 }
 
-func (t *MemTombstones) Iter(f func(uint64, Intervals) error) error {
+func (t *MemTombstones) DeleteTombstones(refs map[storage.SeriesRef]struct{}) {
+	t.mtx.Lock()
+	defer t.mtx.Unlock()
+	for ref := range refs {
+		delete(t.intvlGroups, ref)
+	}
+}
+
+func (t *MemTombstones) TruncateBefore(beforeT int64) {
+	t.mtx.Lock()
+	defer t.mtx.Unlock()
+	for ref, ivs := range t.intvlGroups {
+		i := len(ivs) - 1
+		for ; i >= 0; i-- {
+			if beforeT > ivs[i].Maxt {
+				break
+			}
+		}
+		if len(ivs[i+1:]) == 0 {
+			delete(t.intvlGroups, ref)
+		} else {
+			newIvs := make(Intervals, len(ivs[i+1:]))
+			copy(newIvs, ivs[i+1:])
+			t.intvlGroups[ref] = newIvs
+		}
+	}
+}
+
+func (t *MemTombstones) Iter(f func(storage.SeriesRef, Intervals) error) error {
 	t.mtx.RLock()
 	defer t.mtx.RUnlock()
 	for ref, ivs := range t.intvlGroups {
@@ -251,7 +306,7 @@ func (t *MemTombstones) Total() uint64 {
 }
 
 // AddInterval to an existing memTombstones.
-func (t *MemTombstones) AddInterval(ref uint64, itvs ...Interval) {
+func (t *MemTombstones) AddInterval(ref storage.SeriesRef, itvs ...Interval) {
 	t.mtx.Lock()
 	defer t.mtx.Unlock()
 	for _, itv := range itvs {

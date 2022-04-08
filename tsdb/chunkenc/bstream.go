@@ -48,8 +48,8 @@ import (
 
 // bstream is a stream of bits.
 type bstream struct {
-	stream []byte // the data stream
-	count  uint8  // how many bits are valid in current byte
+	stream []byte // The data stream.
+	count  uint8  // How many right-most bits are available for writing in the current byte (the last byte of the stream).
 }
 
 func (b *bstream) bytes() []byte {
@@ -86,16 +86,19 @@ func (b *bstream) writeByte(byt byte) {
 
 	i := len(b.stream) - 1
 
-	// fill up b.b with b.count bits from byt
+	// Complete the last byte with the leftmost b.count bits from byt.
 	b.stream[i] |= byt >> (8 - b.count)
 
 	b.stream = append(b.stream, 0)
 	i++
+	// Write the remainder, if any.
 	b.stream[i] = byt << b.count
 }
 
+// writeBits writes the nbits right-most bits of u to the stream
+// in left-to-right order.
 func (b *bstream) writeBits(u uint64, nbits int) {
-	u <<= (64 - uint(nbits))
+	u <<= 64 - uint(nbits)
 	for nbits >= 8 {
 		byt := byte(u >> 56)
 		b.writeByte(byt)
@@ -115,7 +118,7 @@ type bstreamReader struct {
 	streamOffset int // The offset from which read the next byte from the stream.
 
 	buffer uint64 // The current buffer, filled from the stream, containing up to 8 bytes from which read bits.
-	valid  uint8  // The number of bits valid to read (from left) in the current buffer.
+	valid  uint8  // The number of right-most bits valid to read (from left) in the current 8 byte buffer.
 }
 
 func newBReader(b []byte) bstreamReader {
@@ -148,6 +151,8 @@ func (b *bstreamReader) readBitFast() (bit, error) {
 	return (b.buffer & bitmask) != 0, nil
 }
 
+// readBits constructs a uint64 with the nbits right-most bits
+// read from the stream, and any other bits 0.
 func (b *bstreamReader) readBits(nbits uint8) (uint64, error) {
 	if b.valid == 0 {
 		if !b.loadNextBuffer(nbits) {

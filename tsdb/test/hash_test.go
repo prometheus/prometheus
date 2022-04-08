@@ -19,7 +19,7 @@ import (
 	"hash/crc32"
 	"testing"
 
-	"github.com/cespare/xxhash"
+	"github.com/cespare/xxhash/v2"
 	sip13 "github.com/dgryski/go-sip13"
 )
 
@@ -81,7 +81,6 @@ func fnv64a(b []byte) uint64 {
 }
 
 func BenchmarkCRC32_diff(b *testing.B) {
-
 	data := [][]byte{}
 
 	for i := 0; i < 1000; i++ {

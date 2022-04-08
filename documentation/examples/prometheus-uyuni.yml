@@ -1,0 +1,36 @@
+# A example scrape configuration for running Prometheus with Uyuni.
+
+scrape_configs:
+
+  # Make Prometheus scrape itself for metrics.
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Discover Uyuni managed targets to scrape.
+  - job_name: 'uyuni'
+
+    # Scrape Uyuni itself to discover new services.
+    uyuni_sd_configs:
+      - server: http://uyuni-project.org
+        username: gopher
+        password: hole
+    relabel_configs:
+      - source_labels: [__meta_uyuni_exporter]
+        target_label: exporter
+      - source_labels: [__meta_uyuni_groups]
+        target_label: groups
+      - source_labels: [__meta_uyuni_minion_hostname]
+        target_label: hostname
+      - source_labels: [__meta_uyuni_primary_fqdn]
+        regex: (.+)
+        target_label: hostname
+      - source_labels: [hostname, __address__]
+        regex: (.*);.*:(.*)
+        replacement: ${1}:${2}
+        target_label: __address__
+      - source_labels: [__meta_uyuni_metrics_path]
+        regex: (.+)
+        target_label: __metrics_path__
+      - source_labels: [__meta_uyuni_proxy_module]
+        target_label: __param_module

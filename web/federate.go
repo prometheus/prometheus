@@ -18,21 +18,21 @@ import (
 	"net/http"
 	"sort"
 
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/tsdb"
 
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/timestamp"
-	"github.com/prometheus/prometheus/pkg/value"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb"
 )
 
 var (
@@ -95,7 +95,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 
 	var sets []storage.SeriesSet
 	for _, mset := range matcherSets {
-		s := q.Select(false, hints, mset...)
+		s := q.Select(true, hints, mset...)
 		sets = append(sets, s)
 	}
 
@@ -113,7 +113,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 
 		ok := it.Seek(maxt)
 		if ok {
-			t, v = it.Values()
+			t, v = it.At()
 		} else {
 			t, v, ok = it.PeekBack(1)
 			if !ok {

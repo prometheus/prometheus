@@ -1,9 +1,9 @@
 import React, { Fragment, FC } from 'react';
-import { RouteComponentProps } from '@reach/router';
 import { Table } from 'reactstrap';
 import { withStatusIndicator } from '../../components/withStatusIndicator';
 import { useFetch } from '../../hooks/useFetch';
-import PathPrefixProps from '../../types/PathPrefixProps';
+import { usePathPrefix } from '../../contexts/PathPrefixContext';
+import { API_PATH } from '../../constants/constants';
 
 interface StatusPageProps {
   data: Record<string, string>;
@@ -12,6 +12,7 @@ interface StatusPageProps {
 
 export const statusConfig: Record<
   string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   { title?: string; customizeValue?: (v: any, key: string) => any; customRow?: boolean; skip?: boolean }
 > = {
   startTime: { title: 'Start time', customizeValue: (v: string) => new Date(v).toUTCString() },
@@ -21,8 +22,6 @@ export const statusConfig: Record<
     customizeValue: (v: boolean) => (v ? 'Successful' : 'Unsuccessful'),
   },
   lastConfigTime: { title: 'Last successful configuration reload' },
-  chunkCount: { title: 'Head chunks' },
-  timeSeriesCount: { title: 'Head time series' },
   corruptionCount: { title: 'WAL corruptions' },
   goroutineCount: { title: 'Goroutines' },
   storageRetention: { title: 'Storage retention' },
@@ -59,7 +58,7 @@ export const StatusContent: FC<StatusPageProps> = ({ data, title }) => {
       <Table className="h-auto" size="sm" bordered striped>
         <tbody>
           {Object.entries(data).map(([k, v]) => {
-            const { title = k, customizeValue = (val: any) => val, customRow, skip } = statusConfig[k] || {};
+            const { title = k, customizeValue = (val: string) => val, customRow, skip } = statusConfig[k] || {};
             if (skip) {
               return null;
             }
@@ -84,26 +83,35 @@ const StatusWithStatusIndicator = withStatusIndicator(StatusContent);
 
 StatusContent.displayName = 'Status';
 
-const Status: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix = '' }) => {
-  const path = `${pathPrefix}/api/v1`;
+const StatusResult: FC<{ fetchPath: string; title: string }> = ({ fetchPath, title }) => {
+  const { response, isLoading, error } = useFetch(fetchPath);
+  return (
+    <StatusWithStatusIndicator
+      key={title}
+      data={response.data}
+      title={title}
+      isLoading={isLoading}
+      error={error}
+      componentTitle={title}
+    />
+  );
+};
+
+const Status: FC<{ agentMode: boolean }> = ({ agentMode }) => {
+  const pathPrefix = usePathPrefix();
+  const path = `${pathPrefix}/${API_PATH}`;
 
   return (
     <>
       {[
-        { fetchResult: useFetch<Record<string, string>>(`${path}/status/runtimeinfo`), title: 'Runtime Information' },
-        { fetchResult: useFetch<Record<string, string>>(`${path}/status/buildinfo`), title: 'Build Information' },
-        { fetchResult: useFetch<Record<string, string>>(`${path}/alertmanagers`), title: 'Alertmanagers' },
-      ].map(({ fetchResult, title }) => {
-        const { response, isLoading, error } = fetchResult;
-        return (
-          <StatusWithStatusIndicator
-            data={response.data}
-            title={title}
-            isLoading={isLoading}
-            error={error}
-            componentTitle={title}
-          />
-        );
+        { fetchPath: `${path}/status/runtimeinfo`, title: 'Runtime Information' },
+        { fetchPath: `${path}/status/buildinfo`, title: 'Build Information' },
+        { fetchPath: `${path}/alertmanagers`, title: 'Alertmanagers' },
+      ].map(({ fetchPath, title }) => {
+        if (agentMode && title === 'Alertmanagers') {
+          return null;
+        }
+        return <StatusResult fetchPath={fetchPath} title={title} />;
       })}
     </>
   );

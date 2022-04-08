@@ -21,6 +21,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -71,8 +73,8 @@ type (
 	// the test flags, which we do not want in non-test binaries even if
 	// they make use of these utilities for some reason).
 	T interface {
-		Fatal(args ...interface{})
-		Fatalf(format string, args ...interface{})
+		Errorf(format string, args ...interface{})
+		FailNow()
 	}
 )
 
@@ -103,9 +105,7 @@ func (t temporaryDirectory) Close() {
 			err = os.RemoveAll(t.path)
 		}
 	}
-	if err != nil {
-		t.tester.Fatal(err)
-	}
+	require.NoError(t.tester, err)
 }
 
 func (t temporaryDirectory) Path() string {
@@ -121,9 +121,7 @@ func NewTemporaryDirectory(name string, t T) (handler TemporaryDirectory) {
 	)
 
 	directory, err = ioutil.TempDir(defaultDirectory, name)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	handler = temporaryDirectory{
 		path:   directory,
@@ -137,32 +135,32 @@ func NewTemporaryDirectory(name string, t T) (handler TemporaryDirectory) {
 func DirHash(t *testing.T, path string) []byte {
 	hash := sha256.New()
 	err := filepath.Walk(path, func(path string, info os.FileInfo, err error) error {
-		Ok(t, err)
+		require.NoError(t, err)
 
 		if info.IsDir() {
 			return nil
 		}
 		f, err := os.Open(path)
-		Ok(t, err)
+		require.NoError(t, err)
 		defer f.Close()
 
 		_, err = io.Copy(hash, f)
-		Ok(t, err)
+		require.NoError(t, err)
 
 		_, err = io.WriteString(hash, strconv.Itoa(int(info.Size())))
-		Ok(t, err)
+		require.NoError(t, err)
 
 		_, err = io.WriteString(hash, info.Name())
-		Ok(t, err)
+		require.NoError(t, err)
 
 		modTime, err := info.ModTime().GobEncode()
-		Ok(t, err)
+		require.NoError(t, err)
 
 		_, err = io.WriteString(hash, string(modTime))
-		Ok(t, err)
+		require.NoError(t, err)
 		return nil
 	})
-	Ok(t, err)
+	require.NoError(t, err)
 
 	return hash.Sum(nil)
 }

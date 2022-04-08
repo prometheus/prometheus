@@ -73,6 +73,15 @@ For each input time series, `changes(v range-vector)` returns the number of
 times its value has changed within the provided time range as an instant
 vector.
 
+## `clamp()`
+
+`clamp(v instant-vector, min scalar, max scalar)`
+clamps the sample values of all elements in `v` to have a lower limit of `min` and an upper limit of `max`.
+
+Special cases:
+- Return an empty vector if `min > max`
+- Return `NaN` if `min` or `max` is `NaN`
+
 ## `clamp_max()`
 
 `clamp_max(v instant-vector, max scalar)` clamps the sample values of all
@@ -183,7 +192,7 @@ bucket. Otherwise, the upper bound of the lowest bucket is returned
 for quantiles located in the lowest bucket.
 
 If `b` has 0 observations, `NaN` is returned. If `b` contains fewer than two buckets,
-`NaN` is returned. For φ < 0, `-Inf` is returned. For φ > 1, `+Inf` is returned.
+`NaN` is returned. For φ < 0, `-Inf` is returned. For φ > 1, `+Inf` is returned. For φ = `NaN`, `NaN` is returned.
 
 ## `holt_winters()`
 
@@ -271,16 +280,14 @@ label_join(up{job="api-server",src1="a",src2="b",src3="c"}, "foo", ",", "src1", 
 
 ## `label_replace()`
 
-For each timeseries in `v`, `label_replace(v instant-vector, dst_label string,
-replacement string, src_label string, regex string)` matches the regular
-expression `regex` against the label `src_label`.  If it matches, then the
-timeseries is returned with the label `dst_label` replaced by the expansion of
-`replacement`. `$1` is replaced with the first matching subgroup, `$2` with the
-second etc. If the regular expression doesn't match then the timeseries is
-returned unchanged.
+For each timeseries in `v`, `label_replace(v instant-vector, dst_label string, replacement string, src_label string, regex string)`
+matches the regular expression `regex` against the value of the label `src_label`. If it
+matches, the value of the label `dst_label` in the returned timeseries will be the expansion
+of `replacement`, together with the original labels in the input. Capturing groups in the
+regular expression can be referenced with `$1`, `$2`, etc. If the regular expression doesn't
+match then the timeseries is returned unchanged.
 
-This example will return a vector with each time series having a `foo`
-label with the value `a` added to it:
+This example will return timeseries with the values `a:c` at label `service` and `a` at label `foo`:
 
 ```
 label_replace(up{job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")
@@ -370,6 +377,10 @@ Given a single-element input vector, `scalar(v instant-vector)` returns the
 sample value of that single element as a scalar. If the input vector does not
 have exactly one element, `scalar` will return `NaN`.
 
+## `sgn()`
+
+`sgn(v instant-vector)` returns a vector with all sample values converted to their sign, defined as this: 1 if v is positive, -1 if v is negative and 0 if v is equal to zero.
+
 ## `sort()`
 
 `sort(v instant-vector)` returns vector elements sorted by their sample values,
@@ -418,6 +429,31 @@ over time and return an instant vector with per-series aggregation results:
 * `quantile_over_time(scalar, range-vector)`: the φ-quantile (0 ≤ φ ≤ 1) of the values in the specified interval.
 * `stddev_over_time(range-vector)`: the population standard deviation of the values in the specified interval.
 * `stdvar_over_time(range-vector)`: the population standard variance of the values in the specified interval.
+* `last_over_time(range-vector)`: the most recent point value in specified interval.
+* `present_over_time(range-vector)`: the value 1 for any series in the specified interval.
 
 Note that all values in the specified interval have the same weight in the
 aggregation even if the values are not equally spaced throughout the interval.
+
+## Trigonometric Functions
+
+The trigonometric functions work in radians:
+
+- `acos(v instant-vector)`: calculates the arccosine of all elements in `v` ([special cases](https://pkg.go.dev/math#Acos)).
+- `acosh(v instant-vector)`: calculates the inverse hyperbolic cosine of all elements in `v` ([special cases](https://pkg.go.dev/math#Acosh)).
+- `asin(v instant-vector)`: calculates the arcsine of all elements in `v` ([special cases](https://pkg.go.dev/math#Asin)).
+- `asinh(v instant-vector)`: calculates the inverse hyperbolic sine of all elements in `v` ([special cases](https://pkg.go.dev/math#Asinh)).
+- `atan(v instant-vector)`: calculates the arctangent of all elements in `v` ([special cases](https://pkg.go.dev/math#Atan)).
+- `atanh(v instant-vector)`: calculates the inverse hyperbolic tangent of all elements in `v` ([special cases](https://pkg.go.dev/math#Atanh)).
+- `cos(v instant-vector)`: calculates the cosine of all elements in `v` ([special cases](https://pkg.go.dev/math#Cos)).
+- `cosh(v instant-vector)`: calculates the hyperbolic cosine of all elements in `v` ([special cases](https://pkg.go.dev/math#Cosh)).
+- `sin(v instant-vector)`: calculates the sine of all elements in `v` ([special cases](https://pkg.go.dev/math#Sin)).
+- `sinh(v instant-vector)`: calculates the hyperbolic sine of all elements in `v` ([special cases](https://pkg.go.dev/math#Sinh)).
+- `tan(v instant-vector)`: calculates the tangent of all elements in `v` ([special cases](https://pkg.go.dev/math#Tan)).
+- `tanh(v instant-vector)`: calculates the hyperbolic tangent of all elements in `v` ([special cases](https://pkg.go.dev/math#Tanh)).
+
+The following are useful for converting between degrees and radians:
+
+- `deg(v instant-vector)`: converts radians to degrees for all elements in `v`.
+- `pi()`: returns pi.
+- `rad(v instant-vector)`: converts degrees to radians for all elements in `v`.

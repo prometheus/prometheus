@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { shallow } from 'enzyme';
 import { FlagsContent } from './Flags';
-import { Table } from 'reactstrap';
+import { Input, Table } from 'reactstrap';
 import toJson from 'enzyme-to-json';
 
 const sampleFlagsResponse = {
@@ -55,11 +55,52 @@ describe('Flags', () => {
       striped: true,
     });
   });
+
   it('should not fail if data is missing', () => {
     expect(shallow(<FlagsContent />)).toHaveLength(1);
   });
+
   it('should match snapshot', () => {
     const w = shallow(<FlagsContent data={sampleFlagsResponse} />);
     expect(toJson(w)).toMatchSnapshot();
+  });
+
+  it('is sorted by flag by default', (): void => {
+    const w = shallow(<FlagsContent data={sampleFlagsResponse} />);
+    const td = w.find('tbody').find('td').find('span').first();
+    expect(td.html()).toBe('<span>--alertmanager.notification-queue-capacity</span>');
+  });
+
+  it('sorts', (): void => {
+    const w = shallow(<FlagsContent data={sampleFlagsResponse} />);
+    const th = w
+      .find('thead')
+      .find('td')
+      .filterWhere((td): boolean => td.hasClass('Flag'));
+    th.simulate('click');
+    const td = w.find('tbody').find('td').find('span').first();
+    expect(td.html()).toBe('<span>--web.user-assets</span>');
+  });
+
+  it('filters by flag name', (): void => {
+    const w = shallow(<FlagsContent data={sampleFlagsResponse} />);
+    const input = w.find(Input);
+    input.simulate('change', { target: { value: 'timeout' } });
+    const tds = w
+      .find('tbody')
+      .find('td')
+      .filterWhere((code) => code.hasClass('flag-item'));
+    expect(tds.length).toEqual(3);
+  });
+
+  it('filters by flag value', (): void => {
+    const w = shallow(<FlagsContent data={sampleFlagsResponse} />);
+    const input = w.find(Input);
+    input.simulate('change', { target: { value: '10s' } });
+    const tds = w
+      .find('tbody')
+      .find('td')
+      .filterWhere((code) => code.hasClass('flag-value'));
+    expect(tds.length).toEqual(1);
   });
 });

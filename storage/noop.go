@@ -14,7 +14,7 @@
 package storage
 
 import (
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 )
 
 type noopQuerier struct{}
@@ -28,11 +28,11 @@ func (noopQuerier) Select(bool, *SelectHints, ...*labels.Matcher) SeriesSet {
 	return NoopSeriesSet()
 }
 
-func (noopQuerier) LabelValues(string) ([]string, Warnings, error) {
+func (noopQuerier) LabelValues(string, ...*labels.Matcher) ([]string, Warnings, error) {
 	return nil, nil, nil
 }
 
-func (noopQuerier) LabelNames() ([]string, Warnings, error) {
+func (noopQuerier) LabelNames(...*labels.Matcher) ([]string, Warnings, error) {
 	return nil, nil, nil
 }
 
@@ -51,11 +51,11 @@ func (noopChunkQuerier) Select(bool, *SelectHints, ...*labels.Matcher) ChunkSeri
 	return NoopChunkedSeriesSet()
 }
 
-func (noopChunkQuerier) LabelValues(string) ([]string, Warnings, error) {
+func (noopChunkQuerier) LabelValues(string, ...*labels.Matcher) ([]string, Warnings, error) {
 	return nil, nil, nil
 }
 
-func (noopChunkQuerier) LabelNames() ([]string, Warnings, error) {
+func (noopChunkQuerier) LabelNames(...*labels.Matcher) ([]string, Warnings, error) {
 	return nil, nil, nil
 }
 

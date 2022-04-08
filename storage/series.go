@@ -17,7 +17,7 @@ import (
 	"math"
 	"sort"
 
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
@@ -99,8 +99,15 @@ func (it *listSeriesIterator) Seek(t int64) bool {
 	if it.idx == -1 {
 		it.idx = 0
 	}
+	if it.idx >= it.samples.Len() {
+		return false
+	}
+	// No-op check.
+	if s := it.samples.Get(it.idx); s.T() >= t {
+		return true
+	}
 	// Do binary search between current position and end.
-	it.idx = sort.Search(it.samples.Len()-it.idx, func(i int) bool {
+	it.idx += sort.Search(it.samples.Len()-it.idx, func(i int) bool {
 		s := it.samples.Get(i + it.idx)
 		return s.T() >= t
 	})
@@ -204,9 +211,7 @@ func (c *seriesSetToChunkSet) Next() bool {
 }
 
 func (c *seriesSetToChunkSet) At() ChunkSeries {
-	return &seriesToChunkEncoder{
-		Series: c.SeriesSet.At(),
-	}
+	return NewSeriesToChunkEncoder(c.SeriesSet.At())
 }
 
 func (c *seriesSetToChunkSet) Err() error {
@@ -217,7 +222,13 @@ type seriesToChunkEncoder struct {
 	Series
 }
 
-// TODO(bwplotka): Currently encoder will just naively build one chunk, without limit. Split it: https://github.com/prometheus/tsdb/issues/670
+const seriesToChunkEncoderSplit = 120
+
+// NewSeriesToChunkEncoder encodes samples to chunks with 120 samples limit.
+func NewSeriesToChunkEncoder(series Series) ChunkSeries {
+	return &seriesToChunkEncoder{series}
+}
+
 func (s *seriesToChunkEncoder) Iterator() chunks.Iterator {
 	chk := chunkenc.NewXORChunk()
 	app, err := chk.Appender()
@@ -227,8 +238,28 @@ func (s *seriesToChunkEncoder) Iterator() chunks.Iterator {
 	mint := int64(math.MaxInt64)
 	maxt := int64(math.MinInt64)
 
+	chks := []chunks.Meta{}
+
+	i := 0
 	seriesIter := s.Series.Iterator()
 	for seriesIter.Next() {
+		// Create a new chunk if too many samples in the current one.
+		if i >= seriesToChunkEncoderSplit {
+			chks = append(chks, chunks.Meta{
+				MinTime: mint,
+				MaxTime: maxt,
+				Chunk:   chk,
+			})
+			chk = chunkenc.NewXORChunk()
+			app, err = chk.Appender()
+			if err != nil {
+				return errChunksIterator{err: err}
+			}
+			mint = int64(math.MaxInt64)
+			// maxt is immediately overwritten below which is why setting it here won't make a difference.
+			i = 0
+		}
+
 		t, v := seriesIter.At()
 		app.Append(t, v)
 
@@ -236,16 +267,19 @@ func (s *seriesToChunkEncoder) Iterator() chunks.Iterator {
 		if mint == math.MaxInt64 {
 			mint = t
 		}
+		i++
 	}
 	if err := seriesIter.Err(); err != nil {
 		return errChunksIterator{err: err}
 	}
 
-	return NewListChunkSeriesIterator(chunks.Meta{
+	chks = append(chks, chunks.Meta{
 		MinTime: mint,
 		MaxTime: maxt,
 		Chunk:   chk,
 	})
+
+	return NewListChunkSeriesIterator(chks...)
 }
 
 type errChunksIterator struct {

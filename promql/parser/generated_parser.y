@@ -20,8 +20,8 @@ import (
         "strconv"
         "time"
 
-        "github.com/prometheus/prometheus/pkg/labels"
-        "github.com/prometheus/prometheus/pkg/value"
+        "github.com/prometheus/prometheus/model/labels"
+        "github.com/prometheus/prometheus/model/value"
 )
 %}
 
@@ -41,7 +41,7 @@ import (
 
 
 %token <item>
-ASSIGN
+EQL
 BLANK
 COLON
 COMMA
@@ -68,7 +68,7 @@ TIMES
 %token <item>
 ADD
 DIV
-EQL
+EQLC
 EQL_REGEX
 GTE
 GTR
@@ -83,6 +83,8 @@ NEQ
 NEQ_REGEX
 POW
 SUB
+AT
+ATAN2
 %token	operatorsEnd
 
 // Aggregators.
@@ -115,6 +117,13 @@ ON
 WITHOUT
 %token keywordsEnd
 
+// Preprocessors.
+%token preprocessorStart
+%token <item>
+START
+END
+%token preprocessorEnd
+
 
 // Start symbols for the generated parser.
 %token	startSymbolsStart
@@ -130,15 +139,15 @@ START_METRIC_SELECTOR
 %type <matchers> label_match_list
 %type <matcher> label_matcher
 
-%type <item> aggregate_op grouping_label match_op maybe_label metric_identifier unary_op
+%type <item> aggregate_op grouping_label match_op maybe_label metric_identifier unary_op at_modifier_preprocessors
 
 %type <labels> label_set label_set_list metric
 %type <label> label_set_item
 %type <strings> grouping_label_list grouping_labels maybe_grouping_labels
 %type <series> series_item series_values
 %type <uint> uint
-%type <float> number series_value signed_number
-%type <node> aggregate_expr aggregate_modifier bin_modifier binary_expr bool_modifier expr function_call function_call_args function_call_body group_modifiers label_matchers matrix_selector number_literal offset_expr on_or_ignoring paren_expr string_literal subquery_expr unary_expr vector_selector
+%type <float> number series_value signed_number signed_or_unsigned_number
+%type <node> step_invariant_expr aggregate_expr aggregate_modifier bin_modifier binary_expr bool_modifier expr function_call function_call_args function_call_body group_modifiers label_matchers matrix_selector number_literal offset_expr on_or_ignoring paren_expr string_literal subquery_expr unary_expr vector_selector
 %type <duration> duration maybe_duration
 
 %start start
@@ -146,9 +155,9 @@ START_METRIC_SELECTOR
 // Operators are listed with increasing precedence.
 %left LOR
 %left LAND LUNLESS
-%left EQL GTE GTR LSS LTE NEQ
+%left EQLC GTE GTR LSS LTE NEQ
 %left ADD SUB
-%left MUL DIV MOD
+%left MUL DIV MOD ATAN2
 %right POW
 
 // Offset modifiers do not have associativity.
@@ -187,6 +196,7 @@ expr            :
                 | subquery_expr
                 | unary_expr
                 | vector_selector
+                | step_invariant_expr
                 ;
 
 /*
@@ -200,8 +210,8 @@ aggregate_expr  : aggregate_op aggregate_modifier function_call_body
                 | aggregate_op function_call_body
                         { $$ = yylex.(*parser).newAggregateExpr($1, &AggregateExpr{}, $2) }
                 | aggregate_op error
-                        { 
-                        yylex.(*parser).unexpected("aggregation",""); 
+                        {
+                        yylex.(*parser).unexpected("aggregation","");
                         $$ = yylex.(*parser).newAggregateExpr($1, &AggregateExpr{}, Expressions{})
                         }
                 ;
@@ -228,8 +238,9 @@ aggregate_modifier:
 
 // Operator precedence only works if each of those is listed separately.
 binary_expr     : expr ADD     bin_modifier expr { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4) }
+                | expr ATAN2   bin_modifier expr { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4) }
                 | expr DIV     bin_modifier expr { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4) }
-                | expr EQL     bin_modifier expr { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4) }
+                | expr EQLC    bin_modifier expr { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4) }
                 | expr GTE     bin_modifier expr { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4) }
                 | expr GTR     bin_modifier expr { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4) }
                 | expr LAND    bin_modifier expr { $$ = yylex.(*parser).newBinaryExpression($1, $2, $3, $4) }
@@ -377,9 +388,33 @@ offset_expr: expr OFFSET duration
                         yylex.(*parser).addOffset($1, $3)
                         $$ = $1
                         }
+                | expr OFFSET SUB duration
+                        {
+                        yylex.(*parser).addOffset($1, -$4)
+                        $$ = $1
+                        }
                 | expr OFFSET error
                         { yylex.(*parser).unexpected("offset", "duration"); $$ = $1 }
                 ;
+/*
+ * @ modifiers.
+ */
+
+step_invariant_expr: expr AT signed_or_unsigned_number
+                        {
+                        yylex.(*parser).setTimestamp($1, $3)
+                        $$ = $1
+                        }
+                | expr AT at_modifier_preprocessors LEFT_PAREN RIGHT_PAREN
+                        {
+                        yylex.(*parser).setAtModifierPreprocessor($1, $3)
+                        $$ = $1
+                        }
+                | expr AT error
+                        { yylex.(*parser).unexpected("@", "timestamp"); $$ = $1 }
+                ;
+
+at_modifier_preprocessors: START | END;
 
 /*
  * Subquery and range selectors.
@@ -391,8 +426,10 @@ matrix_selector : expr LEFT_BRACKET duration RIGHT_BRACKET
                         vs, ok := $1.(*VectorSelector)
                         if !ok{
                                 errMsg = "ranges only allowed for vector selectors"
-                        } else if vs.Offset != 0{
+                        } else if vs.OriginalOffset != 0{
                                 errMsg = "no offset modifiers allowed before range"
+                        } else if vs.Timestamp != nil {
+                                errMsg = "no @ modifiers allowed before range"
                         }
 
                         if errMsg != ""{
@@ -536,7 +573,7 @@ metric          : metric_identifier label_set
                 ;
 
 
-metric_identifier: AVG | BOTTOMK | BY | COUNT | COUNT_VALUES | GROUP | IDENTIFIER |  LAND | LOR | LUNLESS | MAX | METRIC_IDENTIFIER | MIN | OFFSET | QUANTILE | STDDEV | STDVAR | SUM | TOPK | WITHOUT;
+metric_identifier: AVG | BOTTOMK | BY | COUNT | COUNT_VALUES | GROUP | IDENTIFIER |  LAND | LOR | LUNLESS | MAX | METRIC_IDENTIFIER | MIN | OFFSET | QUANTILE | STDDEV | STDVAR | SUM | TOPK | WITHOUT | START | END;
 
 label_set       : LEFT_BRACE label_set_list RIGHT_BRACE
                         { $$ = labels.New($2...) }
@@ -639,7 +676,7 @@ series_value    : IDENTIFIER
 aggregate_op    : AVG | BOTTOMK | COUNT | COUNT_VALUES | GROUP | MAX | MIN | QUANTILE | STDDEV | STDVAR | SUM | TOPK ;
 
 // inside of grouping options label names can be recognized as keywords by the lexer. This is a list of keywords that could also be a label name.
-maybe_label     : AVG | BOOL | BOTTOMK | BY | COUNT | COUNT_VALUES | GROUP | GROUP_LEFT | GROUP_RIGHT | IDENTIFIER | IGNORING | LAND | LOR | LUNLESS | MAX | METRIC_IDENTIFIER | MIN | OFFSET | ON | QUANTILE | STDDEV | STDVAR | SUM | TOPK;
+maybe_label     : AVG | BOOL | BOTTOMK | BY | COUNT | COUNT_VALUES | GROUP | GROUP_LEFT | GROUP_RIGHT | IDENTIFIER | IGNORING | LAND | LOR | LUNLESS | MAX | METRIC_IDENTIFIER | MIN | OFFSET | ON | QUANTILE | STDDEV | STDVAR | SUM | TOPK | START | END | ATAN2;
 
 unary_op        : ADD | SUB;
 
@@ -663,6 +700,8 @@ number          : NUMBER { $$ = yylex.(*parser).number($1.Val) } ;
 signed_number   : ADD number { $$ = $2 }
                 | SUB number { $$ = -$2 }
                 ;
+
+signed_or_unsigned_number: number | signed_number ;
 
 uint            : NUMBER
                         {

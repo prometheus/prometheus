@@ -21,15 +21,16 @@ import (
 	"sync"
 	"time"
 
-	"github.com/go-kit/kit/log"
-	"gopkg.in/yaml.v2"
-
+	"github.com/go-kit/log"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
+	"gopkg.in/yaml.v2"
+
 	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/logging"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/logging"
 )
 
 // String constants for instrumentation.
@@ -40,13 +41,17 @@ const (
 	endpoint   = "url"
 )
 
+type ReadyScrapeManager interface {
+	Get() (*scrape.Manager, error)
+}
+
 // startTimeCallback is a callback func that return the oldest timestamp stored in a storage.
 type startTimeCallback func() (int64, error)
 
 // Storage represents all the remote read and write endpoints.  It implements
 // storage.Storage.
 type Storage struct {
-	logger log.Logger
+	logger *logging.Deduper
 	mtx    sync.Mutex
 
 	rws *WriteStorage
@@ -57,16 +62,17 @@ type Storage struct {
 }
 
 // NewStorage returns a remote.Storage.
-func NewStorage(l log.Logger, reg prometheus.Registerer, stCallback startTimeCallback, walDir string, flushDeadline time.Duration) *Storage {
+func NewStorage(l log.Logger, reg prometheus.Registerer, stCallback startTimeCallback, walDir string, flushDeadline time.Duration, sm ReadyScrapeManager) *Storage {
 	if l == nil {
 		l = log.NewNopLogger()
 	}
+	logger := logging.Dedupe(l, 1*time.Minute)
 
 	s := &Storage{
-		logger:                 logging.Dedupe(l, 1*time.Minute),
+		logger:                 logger,
 		localStartTimeCallback: stCallback,
 	}
-	s.rws = NewWriteStorage(s.logger, reg, walDir, flushDeadline)
+	s.rws = NewWriteStorage(s.logger, reg, walDir, flushDeadline, sm)
 	return s
 }
 
@@ -102,18 +108,23 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 			name = rrConf.Name
 		}
 
-		c, err := newReadClient(name, &ClientConfig{
+		c, err := NewReadClient(name, &ClientConfig{
 			URL:              rrConf.URL,
 			Timeout:          rrConf.RemoteTimeout,
 			HTTPClientConfig: rrConf.HTTPClientConfig,
+			Headers:          rrConf.Headers,
 		})
 		if err != nil {
 			return err
 		}
 
+		externalLabels := conf.GlobalConfig.ExternalLabels
+		if !rrConf.FilterExternalLabels {
+			externalLabels = make(labels.Labels, 0)
+		}
 		queryables = append(queryables, NewSampleAndChunkQueryableClient(
 			c,
-			conf.GlobalConfig.ExternalLabels,
+			externalLabels,
 			labelsToEqualityMatchers(rrConf.RequiredMatchers),
 			rrConf.ReadRecent,
 			s.localStartTimeCallback,
@@ -173,8 +184,14 @@ func (s *Storage) Appender(ctx context.Context) storage.Appender {
 	return s.rws.Appender(ctx)
 }
 
+// LowestSentTimestamp returns the lowest sent timestamp across all queues.
+func (s *Storage) LowestSentTimestamp() int64 {
+	return s.rws.LowestSentTimestamp()
+}
+
 // Close the background processing of the storage queues.
 func (s *Storage) Close() error {
+	s.logger.Stop()
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 	return s.rws.Close()

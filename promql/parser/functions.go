@@ -39,6 +39,36 @@ var Functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeMatrix},
 		ReturnType: ValueTypeVector,
 	},
+	"acos": {
+		Name:       "acos",
+		ArgTypes:   []ValueType{ValueTypeVector},
+		ReturnType: ValueTypeVector,
+	},
+	"acosh": {
+		Name:       "acosh",
+		ArgTypes:   []ValueType{ValueTypeVector},
+		ReturnType: ValueTypeVector,
+	},
+	"asin": {
+		Name:       "asin",
+		ArgTypes:   []ValueType{ValueTypeVector},
+		ReturnType: ValueTypeVector,
+	},
+	"asinh": {
+		Name:       "asinh",
+		ArgTypes:   []ValueType{ValueTypeVector},
+		ReturnType: ValueTypeVector,
+	},
+	"atan": {
+		Name:       "atan",
+		ArgTypes:   []ValueType{ValueTypeVector},
+		ReturnType: ValueTypeVector,
+	},
+	"atanh": {
+		Name:       "atanh",
+		ArgTypes:   []ValueType{ValueTypeVector},
+		ReturnType: ValueTypeVector,
+	},
 	"avg_over_time": {
 		Name:       "avg_over_time",
 		ArgTypes:   []ValueType{ValueTypeMatrix},
@@ -54,6 +84,11 @@ var Functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeMatrix},
 		ReturnType: ValueTypeVector,
 	},
+	"clamp": {
+		Name:       "clamp",
+		ArgTypes:   []ValueType{ValueTypeVector, ValueTypeScalar, ValueTypeScalar},
+		ReturnType: ValueTypeVector,
+	},
 	"clamp_max": {
 		Name:       "clamp_max",
 		ArgTypes:   []ValueType{ValueTypeVector, ValueTypeScalar},
@@ -62,6 +97,16 @@ var Functions = map[string]*Function{
 	"clamp_min": {
 		Name:       "clamp_min",
 		ArgTypes:   []ValueType{ValueTypeVector, ValueTypeScalar},
+		ReturnType: ValueTypeVector,
+	},
+	"cos": {
+		Name:       "cos",
+		ArgTypes:   []ValueType{ValueTypeVector},
+		ReturnType: ValueTypeVector,
+	},
+	"cosh": {
+		Name:       "cosh",
+		ArgTypes:   []ValueType{ValueTypeVector},
 		ReturnType: ValueTypeVector,
 	},
 	"count_over_time": {
@@ -85,6 +130,11 @@ var Functions = map[string]*Function{
 		Name:       "day_of_week",
 		ArgTypes:   []ValueType{ValueTypeVector},
 		Variadic:   1,
+		ReturnType: ValueTypeVector,
+	},
+	"deg": {
+		Name:       "deg",
+		ArgTypes:   []ValueType{ValueTypeVector},
 		ReturnType: ValueTypeVector,
 	},
 	"delta": {
@@ -149,6 +199,11 @@ var Functions = map[string]*Function{
 		Variadic:   -1,
 		ReturnType: ValueTypeVector,
 	},
+	"last_over_time": {
+		Name:       "last_over_time",
+		ArgTypes:   []ValueType{ValueTypeMatrix},
+		ReturnType: ValueTypeVector,
+	},
 	"ln": {
 		Name:       "ln",
 		ArgTypes:   []ValueType{ValueTypeVector},
@@ -186,14 +241,29 @@ var Functions = map[string]*Function{
 		Variadic:   1,
 		ReturnType: ValueTypeVector,
 	},
+	"pi": {
+		Name:       "pi",
+		ArgTypes:   []ValueType{},
+		ReturnType: ValueTypeScalar,
+	},
 	"predict_linear": {
 		Name:       "predict_linear",
 		ArgTypes:   []ValueType{ValueTypeMatrix, ValueTypeScalar},
 		ReturnType: ValueTypeVector,
 	},
+	"present_over_time": {
+		Name:       "present_over_time",
+		ArgTypes:   []ValueType{ValueTypeMatrix},
+		ReturnType: ValueTypeVector,
+	},
 	"quantile_over_time": {
 		Name:       "quantile_over_time",
 		ArgTypes:   []ValueType{ValueTypeScalar, ValueTypeMatrix},
+		ReturnType: ValueTypeVector,
+	},
+	"rad": {
+		Name:       "rad",
+		ArgTypes:   []ValueType{ValueTypeVector},
 		ReturnType: ValueTypeVector,
 	},
 	"rate": {
@@ -216,6 +286,21 @@ var Functions = map[string]*Function{
 		Name:       "scalar",
 		ArgTypes:   []ValueType{ValueTypeVector},
 		ReturnType: ValueTypeScalar,
+	},
+	"sgn": {
+		Name:       "sgn",
+		ArgTypes:   []ValueType{ValueTypeVector},
+		ReturnType: ValueTypeVector,
+	},
+	"sin": {
+		Name:       "sin",
+		ArgTypes:   []ValueType{ValueTypeVector},
+		ReturnType: ValueTypeVector,
+	},
+	"sinh": {
+		Name:       "sinh",
+		ArgTypes:   []ValueType{ValueTypeVector},
+		ReturnType: ValueTypeVector,
 	},
 	"sort": {
 		Name:       "sort",
@@ -245,6 +330,16 @@ var Functions = map[string]*Function{
 	"sum_over_time": {
 		Name:       "sum_over_time",
 		ArgTypes:   []ValueType{ValueTypeMatrix},
+		ReturnType: ValueTypeVector,
+	},
+	"tan": {
+		Name:       "tan",
+		ArgTypes:   []ValueType{ValueTypeVector},
+		ReturnType: ValueTypeVector,
+	},
+	"tanh": {
+		Name:       "tanh",
+		ArgTypes:   []ValueType{ValueTypeVector},
 		ReturnType: ValueTypeVector,
 	},
 	"time": {

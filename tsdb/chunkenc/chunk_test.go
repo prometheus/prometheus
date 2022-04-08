@@ -19,7 +19,7 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/stretchr/testify/require"
 )
 
 type pair struct {
@@ -42,7 +42,7 @@ func TestChunk(t *testing.T) {
 
 func testChunk(t *testing.T, c Chunk) {
 	app, err := c.Appender()
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	var exp []pair
 	var (
@@ -61,7 +61,7 @@ func testChunk(t *testing.T, c Chunk) {
 		// appending to a partially filled chunk.
 		if i%10 == 0 {
 			app, err = c.Appender()
-			testutil.Ok(t, err)
+			require.NoError(t, err)
 		}
 
 		app.Append(ts, v)
@@ -75,8 +75,8 @@ func testChunk(t *testing.T, c Chunk) {
 		ts, v := it1.At()
 		res1 = append(res1, pair{t: ts, v: v})
 	}
-	testutil.Ok(t, it1.Err())
-	testutil.Equals(t, exp, res1)
+	require.NoError(t, it1.Err())
+	require.Equal(t, exp, res1)
 
 	// 2. Expand second iterator while reusing first one.
 	it2 := c.Iterator(it1)
@@ -85,18 +85,18 @@ func testChunk(t *testing.T, c Chunk) {
 		ts, v := it2.At()
 		res2 = append(res2, pair{t: ts, v: v})
 	}
-	testutil.Ok(t, it2.Err())
-	testutil.Equals(t, exp, res2)
+	require.NoError(t, it2.Err())
+	require.Equal(t, exp, res2)
 
 	// 3. Test iterator Seek.
 	mid := len(exp) / 2
 
 	it3 := c.Iterator(nil)
 	var res3 []pair
-	testutil.Equals(t, true, it3.Seek(exp[mid].t))
+	require.Equal(t, true, it3.Seek(exp[mid].t))
 	// Below ones should not matter.
-	testutil.Equals(t, true, it3.Seek(exp[mid].t))
-	testutil.Equals(t, true, it3.Seek(exp[mid].t))
+	require.Equal(t, true, it3.Seek(exp[mid].t))
+	require.Equal(t, true, it3.Seek(exp[mid].t))
 	ts, v = it3.At()
 	res3 = append(res3, pair{t: ts, v: v})
 
@@ -104,18 +104,19 @@ func testChunk(t *testing.T, c Chunk) {
 		ts, v := it3.At()
 		res3 = append(res3, pair{t: ts, v: v})
 	}
-	testutil.Ok(t, it3.Err())
-	testutil.Equals(t, exp[mid:], res3)
-	testutil.Equals(t, false, it3.Seek(exp[len(exp)-1].t+1))
+	require.NoError(t, it3.Err())
+	require.Equal(t, exp[mid:], res3)
+	require.Equal(t, false, it3.Seek(exp[len(exp)-1].t+1))
 }
 
 func benchmarkIterator(b *testing.B, newChunk func() Chunk) {
+	const samplesPerChunk = 250
 	var (
 		t   = int64(1234123324)
 		v   = 1243535.123
 		exp []pair
 	)
-	for i := 0; i < b.N; i++ {
+	for i := 0; i < samplesPerChunk; i++ {
 		// t += int64(rand.Intn(10000) + 1)
 		t += int64(1000)
 		// v = rand.Float64()
@@ -123,11 +124,9 @@ func benchmarkIterator(b *testing.B, newChunk func() Chunk) {
 		exp = append(exp, pair{t: t, v: v})
 	}
 
-	var chunks []Chunk
-	for i := 0; i < b.N; {
-		c := newChunk()
-
-		a, err := c.Appender()
+	chunk := newChunk()
+	{
+		a, err := chunk.Appender()
 		if err != nil {
 			b.Fatalf("get appender: %s", err)
 		}
@@ -137,32 +136,27 @@ func benchmarkIterator(b *testing.B, newChunk func() Chunk) {
 				break
 			}
 			a.Append(p.t, p.v)
-			i++
 			j++
 		}
-		chunks = append(chunks, c)
 	}
 
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	b.Log("num", b.N, "created chunks", len(chunks))
-
-	res := make([]float64, 0, 1024)
-
+	var res float64
 	var it Iterator
-	for i := 0; i < len(chunks); i++ {
-		c := chunks[i]
-		it := c.Iterator(it)
+	for i := 0; i < b.N; {
+		it := chunk.Iterator(it)
 
 		for it.Next() {
 			_, v := it.At()
-			res = append(res, v)
+			res = v
+			i++
 		}
 		if it.Err() != io.EOF {
-			testutil.Ok(b, it.Err())
+			require.NoError(b, it.Err())
 		}
-		res = res[:0]
+		_ = res
 	}
 }
 

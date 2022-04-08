@@ -18,8 +18,8 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/gophercloud/gophercloud"
 	"github.com/gophercloud/gophercloud/openstack"
 	"github.com/gophercloud/gophercloud/openstack/compute/v2/extensions/floatingips"
@@ -27,6 +27,7 @@ import (
 	"github.com/gophercloud/gophercloud/pagination"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
+
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/util/strutil"
 )
@@ -58,12 +59,15 @@ type InstanceDiscovery struct {
 
 // NewInstanceDiscovery returns a new instance discovery.
 func newInstanceDiscovery(provider *gophercloud.ProviderClient, opts *gophercloud.AuthOptions,
-	port int, region string, allTenants bool, availability gophercloud.Availability, l log.Logger) *InstanceDiscovery {
+	port int, region string, allTenants bool, availability gophercloud.Availability, l log.Logger,
+) *InstanceDiscovery {
 	if l == nil {
 		l = log.NewNopLogger()
 	}
-	return &InstanceDiscovery{provider: provider, authOpts: opts,
-		region: region, port: port, allTenants: allTenants, availability: availability, logger: l}
+	return &InstanceDiscovery{
+		provider: provider, authOpts: opts,
+		region: region, port: port, allTenants: allTenants, availability: availability, logger: l,
+	}
 }
 
 type floatingIPKey struct {

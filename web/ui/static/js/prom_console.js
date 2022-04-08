@@ -320,6 +320,8 @@ PromConsole.graphDefaults = {
   yTitle: "",     // The title of the y axis.
   // Number formatter for y axis.
   yAxisFormatter: PromConsole.NumberFormatter.humanize,
+  // Number of ticks (horizontal lines) for the y axis
+  yAxisTicks: null,
   // Number formatter for y values hover detail.
   yHoverFormatter: PromConsole.NumberFormatter.humanizeExact,
   // Color scheme to be used by the plots. Can be either a list of hex color
@@ -529,7 +531,8 @@ PromConsole.Graph.prototype._render = function(data) {
   });
   var yAxis = new Rickshaw.Graph.Axis.Y({
       graph: graph,
-      tickFormat: this.params.yAxisFormatter
+      tickFormat: this.params.yAxisFormatter,
+      ticks: this.params.yAxisTicks
   });
   var xAxis = new Rickshaw.Graph.Axis.Time({
       graph: graph,
@@ -612,7 +615,7 @@ PromConsole.Graph.prototype.dispatch = function() {
   }
 
   var loadingImg = document.createElement("img");
-  loadingImg.src = PATH_PREFIX + '/static/img/ajax-loader.gif';
+  loadingImg.src = PATH_PREFIX + '/classic/static/img/ajax-loader.gif';
   loadingImg.alt = 'Loading...';
   loadingImg.className = 'prom_graph_loading';
   this.graphTd.appendChild(loadingImg);
@@ -645,7 +648,7 @@ PromConsole._chooseNameFunction = function(data) {
     }
     return name + "}";
   };
-  
+
   // If only one label varies, use that value.
   var labelValues = {};
   for (var e = 0; e < data.length; e++) {
@@ -658,7 +661,7 @@ PromConsole._chooseNameFunction = function(data) {
       }
     }
   }
-  
+
   var multiValueLabels = [];
   for (var label in labelValues) {
     if (Object.keys(labelValues[label]).length > 1) {

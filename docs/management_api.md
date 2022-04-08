@@ -1,11 +1,11 @@
 ---
 title: Management API
-sort_rank: 7
+sort_rank: 8
 ---
 
 # Management API
 
-Prometheus provides a set of management API to ease automation and integrations.
+Prometheus provides a set of management APIs to facilitate automation and integration.
 
 
 ### Health check

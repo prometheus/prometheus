@@ -19,15 +19,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
+	"github.com/stretchr/testify/require"
 	yaml "gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/relabel"
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/relabel"
 )
 
 func TestPopulateLabels(t *testing.T) {
@@ -36,7 +35,7 @@ func TestPopulateLabels(t *testing.T) {
 		cfg     *config.ScrapeConfig
 		res     labels.Labels
 		resOrig labels.Labels
-		err     error
+		err     string
 	}{
 		// Regular population of scrape config options.
 		{
@@ -45,52 +44,66 @@ func TestPopulateLabels(t *testing.T) {
 				"custom":           "value",
 			}),
 			cfg: &config.ScrapeConfig{
-				Scheme:      "https",
-				MetricsPath: "/metrics",
-				JobName:     "job",
+				Scheme:         "https",
+				MetricsPath:    "/metrics",
+				JobName:        "job",
+				ScrapeInterval: model.Duration(time.Second),
+				ScrapeTimeout:  model.Duration(time.Second),
 			},
 			res: labels.FromMap(map[string]string{
-				model.AddressLabel:     "1.2.3.4:1000",
-				model.InstanceLabel:    "1.2.3.4:1000",
-				model.SchemeLabel:      "https",
-				model.MetricsPathLabel: "/metrics",
-				model.JobLabel:         "job",
-				"custom":               "value",
+				model.AddressLabel:        "1.2.3.4:1000",
+				model.InstanceLabel:       "1.2.3.4:1000",
+				model.SchemeLabel:         "https",
+				model.MetricsPathLabel:    "/metrics",
+				model.JobLabel:            "job",
+				model.ScrapeIntervalLabel: "1s",
+				model.ScrapeTimeoutLabel:  "1s",
+				"custom":                  "value",
 			}),
 			resOrig: labels.FromMap(map[string]string{
-				model.AddressLabel:     "1.2.3.4:1000",
-				model.SchemeLabel:      "https",
-				model.MetricsPathLabel: "/metrics",
-				model.JobLabel:         "job",
-				"custom":               "value",
+				model.AddressLabel:        "1.2.3.4:1000",
+				model.SchemeLabel:         "https",
+				model.MetricsPathLabel:    "/metrics",
+				model.JobLabel:            "job",
+				"custom":                  "value",
+				model.ScrapeIntervalLabel: "1s",
+				model.ScrapeTimeoutLabel:  "1s",
 			}),
 		},
 		// Pre-define/overwrite scrape config labels.
 		// Leave out port and expect it to be defaulted to scheme.
 		{
 			in: labels.FromMap(map[string]string{
-				model.AddressLabel:     "1.2.3.4",
-				model.SchemeLabel:      "http",
-				model.MetricsPathLabel: "/custom",
-				model.JobLabel:         "custom-job",
+				model.AddressLabel:        "1.2.3.4",
+				model.SchemeLabel:         "http",
+				model.MetricsPathLabel:    "/custom",
+				model.JobLabel:            "custom-job",
+				model.ScrapeIntervalLabel: "2s",
+				model.ScrapeTimeoutLabel:  "2s",
 			}),
 			cfg: &config.ScrapeConfig{
-				Scheme:      "https",
-				MetricsPath: "/metrics",
-				JobName:     "job",
+				Scheme:         "https",
+				MetricsPath:    "/metrics",
+				JobName:        "job",
+				ScrapeInterval: model.Duration(time.Second),
+				ScrapeTimeout:  model.Duration(time.Second),
 			},
 			res: labels.FromMap(map[string]string{
-				model.AddressLabel:     "1.2.3.4:80",
-				model.InstanceLabel:    "1.2.3.4:80",
-				model.SchemeLabel:      "http",
-				model.MetricsPathLabel: "/custom",
-				model.JobLabel:         "custom-job",
+				model.AddressLabel:        "1.2.3.4:80",
+				model.InstanceLabel:       "1.2.3.4:80",
+				model.SchemeLabel:         "http",
+				model.MetricsPathLabel:    "/custom",
+				model.JobLabel:            "custom-job",
+				model.ScrapeIntervalLabel: "2s",
+				model.ScrapeTimeoutLabel:  "2s",
 			}),
 			resOrig: labels.FromMap(map[string]string{
-				model.AddressLabel:     "1.2.3.4",
-				model.SchemeLabel:      "http",
-				model.MetricsPathLabel: "/custom",
-				model.JobLabel:         "custom-job",
+				model.AddressLabel:        "1.2.3.4",
+				model.SchemeLabel:         "http",
+				model.MetricsPathLabel:    "/custom",
+				model.JobLabel:            "custom-job",
+				model.ScrapeIntervalLabel: "2s",
+				model.ScrapeTimeoutLabel:  "2s",
 			}),
 		},
 		// Provide instance label. HTTPS port default for IPv6.
@@ -100,44 +113,54 @@ func TestPopulateLabels(t *testing.T) {
 				model.InstanceLabel: "custom-instance",
 			}),
 			cfg: &config.ScrapeConfig{
-				Scheme:      "https",
-				MetricsPath: "/metrics",
-				JobName:     "job",
+				Scheme:         "https",
+				MetricsPath:    "/metrics",
+				JobName:        "job",
+				ScrapeInterval: model.Duration(time.Second),
+				ScrapeTimeout:  model.Duration(time.Second),
 			},
 			res: labels.FromMap(map[string]string{
-				model.AddressLabel:     "[::1]:443",
-				model.InstanceLabel:    "custom-instance",
-				model.SchemeLabel:      "https",
-				model.MetricsPathLabel: "/metrics",
-				model.JobLabel:         "job",
+				model.AddressLabel:        "[::1]:443",
+				model.InstanceLabel:       "custom-instance",
+				model.SchemeLabel:         "https",
+				model.MetricsPathLabel:    "/metrics",
+				model.JobLabel:            "job",
+				model.ScrapeIntervalLabel: "1s",
+				model.ScrapeTimeoutLabel:  "1s",
 			}),
 			resOrig: labels.FromMap(map[string]string{
-				model.AddressLabel:     "[::1]",
-				model.InstanceLabel:    "custom-instance",
-				model.SchemeLabel:      "https",
-				model.MetricsPathLabel: "/metrics",
-				model.JobLabel:         "job",
+				model.AddressLabel:        "[::1]",
+				model.InstanceLabel:       "custom-instance",
+				model.SchemeLabel:         "https",
+				model.MetricsPathLabel:    "/metrics",
+				model.JobLabel:            "job",
+				model.ScrapeIntervalLabel: "1s",
+				model.ScrapeTimeoutLabel:  "1s",
 			}),
 		},
 		// Address label missing.
 		{
 			in: labels.FromStrings("custom", "value"),
 			cfg: &config.ScrapeConfig{
-				Scheme:      "https",
-				MetricsPath: "/metrics",
-				JobName:     "job",
+				Scheme:         "https",
+				MetricsPath:    "/metrics",
+				JobName:        "job",
+				ScrapeInterval: model.Duration(time.Second),
+				ScrapeTimeout:  model.Duration(time.Second),
 			},
 			res:     nil,
 			resOrig: nil,
-			err:     errors.New("no address"),
+			err:     "no address",
 		},
 		// Address label missing, but added in relabelling.
 		{
 			in: labels.FromStrings("custom", "host:1234"),
 			cfg: &config.ScrapeConfig{
-				Scheme:      "https",
-				MetricsPath: "/metrics",
-				JobName:     "job",
+				Scheme:         "https",
+				MetricsPath:    "/metrics",
+				JobName:        "job",
+				ScrapeInterval: model.Duration(time.Second),
+				ScrapeTimeout:  model.Duration(time.Second),
 				RelabelConfigs: []*relabel.Config{
 					{
 						Action:       relabel.Replace,
@@ -149,27 +172,33 @@ func TestPopulateLabels(t *testing.T) {
 				},
 			},
 			res: labels.FromMap(map[string]string{
-				model.AddressLabel:     "host:1234",
-				model.InstanceLabel:    "host:1234",
-				model.SchemeLabel:      "https",
-				model.MetricsPathLabel: "/metrics",
-				model.JobLabel:         "job",
-				"custom":               "host:1234",
+				model.AddressLabel:        "host:1234",
+				model.InstanceLabel:       "host:1234",
+				model.SchemeLabel:         "https",
+				model.MetricsPathLabel:    "/metrics",
+				model.JobLabel:            "job",
+				model.ScrapeIntervalLabel: "1s",
+				model.ScrapeTimeoutLabel:  "1s",
+				"custom":                  "host:1234",
 			}),
 			resOrig: labels.FromMap(map[string]string{
-				model.SchemeLabel:      "https",
-				model.MetricsPathLabel: "/metrics",
-				model.JobLabel:         "job",
-				"custom":               "host:1234",
+				model.SchemeLabel:         "https",
+				model.MetricsPathLabel:    "/metrics",
+				model.JobLabel:            "job",
+				model.ScrapeIntervalLabel: "1s",
+				model.ScrapeTimeoutLabel:  "1s",
+				"custom":                  "host:1234",
 			}),
 		},
 		// Address label missing, but added in relabelling.
 		{
 			in: labels.FromStrings("custom", "host:1234"),
 			cfg: &config.ScrapeConfig{
-				Scheme:      "https",
-				MetricsPath: "/metrics",
-				JobName:     "job",
+				Scheme:         "https",
+				MetricsPath:    "/metrics",
+				JobName:        "job",
+				ScrapeInterval: model.Duration(time.Second),
+				ScrapeTimeout:  model.Duration(time.Second),
 				RelabelConfigs: []*relabel.Config{
 					{
 						Action:       relabel.Replace,
@@ -181,18 +210,22 @@ func TestPopulateLabels(t *testing.T) {
 				},
 			},
 			res: labels.FromMap(map[string]string{
-				model.AddressLabel:     "host:1234",
-				model.InstanceLabel:    "host:1234",
-				model.SchemeLabel:      "https",
-				model.MetricsPathLabel: "/metrics",
-				model.JobLabel:         "job",
-				"custom":               "host:1234",
+				model.AddressLabel:        "host:1234",
+				model.InstanceLabel:       "host:1234",
+				model.SchemeLabel:         "https",
+				model.MetricsPathLabel:    "/metrics",
+				model.JobLabel:            "job",
+				model.ScrapeIntervalLabel: "1s",
+				model.ScrapeTimeoutLabel:  "1s",
+				"custom":                  "host:1234",
 			}),
 			resOrig: labels.FromMap(map[string]string{
-				model.SchemeLabel:      "https",
-				model.MetricsPathLabel: "/metrics",
-				model.JobLabel:         "job",
-				"custom":               "host:1234",
+				model.SchemeLabel:         "https",
+				model.MetricsPathLabel:    "/metrics",
+				model.JobLabel:            "job",
+				model.ScrapeIntervalLabel: "1s",
+				model.ScrapeTimeoutLabel:  "1s",
+				"custom":                  "host:1234",
 			}),
 		},
 		// Invalid UTF-8 in label.
@@ -202,23 +235,115 @@ func TestPopulateLabels(t *testing.T) {
 				"custom":           "\xbd",
 			}),
 			cfg: &config.ScrapeConfig{
-				Scheme:      "https",
-				MetricsPath: "/metrics",
-				JobName:     "job",
+				Scheme:         "https",
+				MetricsPath:    "/metrics",
+				JobName:        "job",
+				ScrapeInterval: model.Duration(time.Second),
+				ScrapeTimeout:  model.Duration(time.Second),
 			},
 			res:     nil,
 			resOrig: nil,
-			err:     errors.New("invalid label value for \"custom\": \"\\xbd\""),
+			err:     "invalid label value for \"custom\": \"\\xbd\"",
+		},
+		// Invalid duration in interval label.
+		{
+			in: labels.FromMap(map[string]string{
+				model.AddressLabel:        "1.2.3.4:1000",
+				model.ScrapeIntervalLabel: "2notseconds",
+			}),
+			cfg: &config.ScrapeConfig{
+				Scheme:         "https",
+				MetricsPath:    "/metrics",
+				JobName:        "job",
+				ScrapeInterval: model.Duration(time.Second),
+				ScrapeTimeout:  model.Duration(time.Second),
+			},
+			res:     nil,
+			resOrig: nil,
+			err:     "error parsing scrape interval: not a valid duration string: \"2notseconds\"",
+		},
+		// Invalid duration in timeout label.
+		{
+			in: labels.FromMap(map[string]string{
+				model.AddressLabel:       "1.2.3.4:1000",
+				model.ScrapeTimeoutLabel: "2notseconds",
+			}),
+			cfg: &config.ScrapeConfig{
+				Scheme:         "https",
+				MetricsPath:    "/metrics",
+				JobName:        "job",
+				ScrapeInterval: model.Duration(time.Second),
+				ScrapeTimeout:  model.Duration(time.Second),
+			},
+			res:     nil,
+			resOrig: nil,
+			err:     "error parsing scrape timeout: not a valid duration string: \"2notseconds\"",
+		},
+		// 0 interval in timeout label.
+		{
+			in: labels.FromMap(map[string]string{
+				model.AddressLabel:        "1.2.3.4:1000",
+				model.ScrapeIntervalLabel: "0s",
+			}),
+			cfg: &config.ScrapeConfig{
+				Scheme:         "https",
+				MetricsPath:    "/metrics",
+				JobName:        "job",
+				ScrapeInterval: model.Duration(time.Second),
+				ScrapeTimeout:  model.Duration(time.Second),
+			},
+			res:     nil,
+			resOrig: nil,
+			err:     "scrape interval cannot be 0",
+		},
+		// 0 duration in timeout label.
+		{
+			in: labels.FromMap(map[string]string{
+				model.AddressLabel:       "1.2.3.4:1000",
+				model.ScrapeTimeoutLabel: "0s",
+			}),
+			cfg: &config.ScrapeConfig{
+				Scheme:         "https",
+				MetricsPath:    "/metrics",
+				JobName:        "job",
+				ScrapeInterval: model.Duration(time.Second),
+				ScrapeTimeout:  model.Duration(time.Second),
+			},
+			res:     nil,
+			resOrig: nil,
+			err:     "scrape timeout cannot be 0",
+		},
+		// Timeout less than interval.
+		{
+			in: labels.FromMap(map[string]string{
+				model.AddressLabel:        "1.2.3.4:1000",
+				model.ScrapeIntervalLabel: "1s",
+				model.ScrapeTimeoutLabel:  "2s",
+			}),
+			cfg: &config.ScrapeConfig{
+				Scheme:         "https",
+				MetricsPath:    "/metrics",
+				JobName:        "job",
+				ScrapeInterval: model.Duration(time.Second),
+				ScrapeTimeout:  model.Duration(time.Second),
+			},
+			res:     nil,
+			resOrig: nil,
+			err:     "scrape timeout cannot be greater than scrape interval (\"2s\" > \"1s\")",
 		},
 	}
 	for _, c := range cases {
 		in := c.in.Copy()
 
-		res, orig, err := populateLabels(c.in, c.cfg)
-		testutil.ErrorEqual(t, c.err, err)
-		testutil.Equals(t, c.in, in)
-		testutil.Equals(t, c.res, res)
-		testutil.Equals(t, c.resOrig, orig)
+		res, orig, err := PopulateLabels(c.in, c.cfg)
+		if c.err != "" {
+			require.EqualError(t, err, c.err)
+		} else {
+			require.NoError(t, err)
+		}
+		require.Equal(t, c.in, in)
+		require.Equal(t, c.res, res)
+		require.Equal(t, c.resOrig, orig)
 	}
 }
 
@@ -273,7 +398,8 @@ scrape_configs:
 		ch = make(chan struct{}, 1)
 	)
 
-	scrapeManager := NewManager(nil, nil)
+	opts := Options{}
+	scrapeManager := NewManager(&opts, nil, nil)
 	newLoop := func(scrapeLoopOptions) loop {
 		ch <- struct{}{}
 		return noopLoop()
@@ -335,7 +461,8 @@ scrape_configs:
 }
 
 func TestManagerTargetsUpdates(t *testing.T) {
-	m := NewManager(nil, nil)
+	opts := Options{}
+	m := NewManager(&opts, nil, nil)
 
 	ts := make(chan map[string][]*targetgroup.Group)
 	go m.Run(ts)
@@ -362,7 +489,7 @@ func TestManagerTargetsUpdates(t *testing.T) {
 	m.mtxScrape.Unlock()
 
 	// Make sure all updates have been received.
-	testutil.Equals(t, tgSent, tsetActual)
+	require.Equal(t, tgSent, tsetActual)
 
 	select {
 	case <-m.triggerReload:
@@ -387,7 +514,8 @@ global:
 		return cfg
 	}
 
-	scrapeManager := NewManager(nil, nil)
+	opts := Options{}
+	scrapeManager := NewManager(&opts, nil, nil)
 
 	// Load the first config.
 	cfg1 := getConfig("ha1")

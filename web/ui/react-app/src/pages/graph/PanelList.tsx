@@ -1,33 +1,38 @@
 import React, { FC, useState, useEffect } from 'react';
-import { RouteComponentProps } from '@reach/router';
 import { Alert, Button } from 'reactstrap';
 
 import Panel, { PanelOptions, PanelDefaultOptions } from './Panel';
 import Checkbox from '../../components/Checkbox';
-import PathPrefixProps from '../../types/PathPrefixProps';
 import { generateID, decodePanelOptionsFromQueryString, encodePanelOptionsToQueryString, callAll } from '../../utils';
 import { useFetch } from '../../hooks/useFetch';
 import { useLocalStorage } from '../../hooks/useLocalStorage';
+import { usePathPrefix } from '../../contexts/PathPrefixContext';
+import { API_PATH } from '../../constants/constants';
 
 export type PanelMeta = { key: string; options: PanelOptions; id: string };
 
-export const updateURL = (nextPanels: PanelMeta[]) => {
+export const updateURL = (nextPanels: PanelMeta[]): void => {
   const query = encodePanelOptionsToQueryString(nextPanels);
   window.history.pushState({}, '', query);
 };
 
-interface PanelListProps extends PathPrefixProps, RouteComponentProps {
+interface PanelListContentProps {
   panels: PanelMeta[];
   metrics: string[];
   useLocalTime: boolean;
   queryHistoryEnabled: boolean;
+  enableAutocomplete: boolean;
+  enableHighlighting: boolean;
+  enableLinter: boolean;
 }
 
-export const PanelListContent: FC<PanelListProps> = ({
+export const PanelListContent: FC<PanelListContentProps> = ({
   metrics = [],
   useLocalTime,
-  pathPrefix,
   queryHistoryEnabled,
+  enableAutocomplete,
+  enableHighlighting,
+  enableLinter,
   ...rest
 }) => {
   const [panels, setPanels] = useState(rest.panels);
@@ -73,15 +78,19 @@ export const PanelListContent: FC<PanelListProps> = ({
     ]);
   };
 
+  const pathPrefix = usePathPrefix();
+
   return (
     <>
       {panels.map(({ id, options }) => (
         <Panel
+          pathPrefix={pathPrefix}
           onExecuteQuery={handleExecuteQuery}
           key={id}
+          id={id}
           options={options}
-          onOptionsChanged={opts =>
-            callAll(setPanels, updateURL)(panels.map(p => (id === p.id ? { ...p, options: opts } : p)))
+          onOptionsChanged={(opts) =>
+            callAll(setPanels, updateURL)(panels.map((p) => (id === p.id ? { ...p, options: opts } : p)))
           }
           removePanel={() =>
             callAll(
@@ -97,25 +106,33 @@ export const PanelListContent: FC<PanelListProps> = ({
           useLocalTime={useLocalTime}
           metricNames={metrics}
           pastQueries={queryHistoryEnabled ? historyItems : []}
-          pathPrefix={pathPrefix}
+          enableAutocomplete={enableAutocomplete}
+          enableHighlighting={enableHighlighting}
+          enableLinter={enableLinter}
         />
       ))}
-      <Button className="mb-3" color="primary" onClick={addPanel}>
+      <Button className="d-block mb-3" color="primary" onClick={addPanel}>
         Add Panel
       </Button>
     </>
   );
 };
 
-const PanelList: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix = '' }) => {
+const PanelList: FC = () => {
   const [delta, setDelta] = useState(0);
   const [useLocalTime, setUseLocalTime] = useLocalStorage('use-local-time', false);
   const [enableQueryHistory, setEnableQueryHistory] = useLocalStorage('enable-query-history', false);
+  const [enableAutocomplete, setEnableAutocomplete] = useLocalStorage('enable-metric-autocomplete', true);
+  const [enableHighlighting, setEnableHighlighting] = useLocalStorage('enable-syntax-highlighting', true);
+  const [enableLinter, setEnableLinter] = useLocalStorage('enable-linter', true);
 
-  const { response: metricsRes, error: metricsErr } = useFetch<string[]>(`${pathPrefix}/api/v1/label/__name__/values`);
+  const pathPrefix = usePathPrefix();
+  const { response: metricsRes, error: metricsErr } = useFetch<string[]>(`${pathPrefix}/${API_PATH}/label/__name__/values`);
 
   const browserTime = new Date().getTime() / 1000;
-  const { response: timeRes, error: timeErr } = useFetch<{ result: number[] }>(`${pathPrefix}/api/v1/query?query=time()`);
+  const { response: timeRes, error: timeErr } = useFetch<{ result: number[] }>(
+    `${pathPrefix}/${API_PATH}/query?query=time()`
+  );
 
   useEffect(() => {
     if (timeRes.data) {
@@ -132,22 +149,50 @@ const PanelList: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix = '' 
 
   return (
     <>
-      <Checkbox
-        wrapperStyles={{ marginLeft: 3, display: 'inline-block' }}
-        id="query-history-checkbox"
-        onChange={({ target }) => setEnableQueryHistory(target.checked)}
-        defaultChecked={enableQueryHistory}
-      >
-        Enable query history
-      </Checkbox>
-      <Checkbox
-        wrapperStyles={{ marginLeft: 20, display: 'inline-block' }}
-        id="use-local-time-checkbox"
-        onChange={({ target }) => setUseLocalTime(target.checked)}
-        defaultChecked={useLocalTime}
-      >
-        Use local time
-      </Checkbox>
+      <div className="clearfix">
+        <div className="float-left">
+          <Checkbox
+            wrapperStyles={{ display: 'inline-block' }}
+            id="use-local-time-checkbox"
+            onChange={({ target }) => setUseLocalTime(target.checked)}
+            defaultChecked={useLocalTime}
+          >
+            Use local time
+          </Checkbox>
+          <Checkbox
+            wrapperStyles={{ marginLeft: 20, display: 'inline-block' }}
+            id="query-history-checkbox"
+            onChange={({ target }) => setEnableQueryHistory(target.checked)}
+            defaultChecked={enableQueryHistory}
+          >
+            Enable query history
+          </Checkbox>
+          <Checkbox
+            wrapperStyles={{ marginLeft: 20, display: 'inline-block' }}
+            id="autocomplete-checkbox"
+            onChange={({ target }) => setEnableAutocomplete(target.checked)}
+            defaultChecked={enableAutocomplete}
+          >
+            Enable autocomplete
+          </Checkbox>
+        </div>
+        <Checkbox
+          wrapperStyles={{ marginLeft: 20, display: 'inline-block' }}
+          id="highlighting-checkbox"
+          onChange={({ target }) => setEnableHighlighting(target.checked)}
+          defaultChecked={enableHighlighting}
+        >
+          Enable highlighting
+        </Checkbox>
+        <Checkbox
+          wrapperStyles={{ marginLeft: 20, display: 'inline-block' }}
+          id="linter-checkbox"
+          onChange={({ target }) => setEnableLinter(target.checked)}
+          defaultChecked={enableLinter}
+        >
+          Enable linter
+        </Checkbox>
+      </div>
       {(delta > 30 || timeErr) && (
         <Alert color="danger">
           <strong>Warning: </strong>
@@ -164,10 +209,12 @@ const PanelList: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix = '' 
       )}
       <PanelListContent
         panels={decodePanelOptionsFromQueryString(window.location.search)}
-        pathPrefix={pathPrefix}
         useLocalTime={useLocalTime}
         metrics={metricsRes.data}
         queryHistoryEnabled={enableQueryHistory}
+        enableAutocomplete={enableAutocomplete}
+        enableHighlighting={enableHighlighting}
+        enableLinter={enableLinter}
       />
     </>
   );

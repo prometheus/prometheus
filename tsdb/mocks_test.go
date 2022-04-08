@@ -15,7 +15,9 @@ package tsdb
 
 import (
 	"github.com/pkg/errors"
-	"github.com/prometheus/prometheus/pkg/labels"
+
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
@@ -33,7 +35,7 @@ func copyChunk(c chunkenc.Chunk) (chunkenc.Chunk, error) {
 }
 
 func (mockIndexWriter) AddSymbol(string) error { return nil }
-func (m *mockIndexWriter) AddSeries(_ uint64, l labels.Labels, chks ...chunks.Meta) error {
+func (m *mockIndexWriter) AddSeries(_ storage.SeriesRef, l labels.Labels, chks ...chunks.Meta) error {
 	// Copy chunks as their bytes are pooled.
 	chksNew := make([]chunks.Meta, len(chks))
 	for i, chk := range chks {
@@ -65,3 +67,4 @@ func (r *mockBReader) Tombstones() (tombstones.Reader, error) {
 	return tombstones.NewMemTombstones(), nil
 }
 func (r *mockBReader) Meta() BlockMeta { return BlockMeta{MinTime: r.mint, MaxTime: r.maxt} }
+func (r *mockBReader) Size() int64     { return 0 }

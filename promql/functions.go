@@ -15,16 +15,16 @@ package promql
 
 import (
 	"math"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/grafana/regexp"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
@@ -36,7 +36,7 @@ import (
 //    value,and nil for strings.
 // args are the original arguments to the function, where you can access
 //    matrixSelectors, vectorSelectors, and StringLiterals.
-// enh.out is a pre-allocated empty vector that you may use to accumulate
+// enh.Out is a pre-allocated empty vector that you may use to accumulate
 //    output before returning it. The vectors in vals should not be returned.a
 // Range vector functions need only return a vector with the right value,
 //     the metric and timestamp are not needed.
@@ -48,7 +48,7 @@ type FunctionCall func(vals []parser.Value, args parser.Expressions, enh *EvalNo
 // === time() float64 ===
 func funcTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return Vector{Sample{Point: Point{
-		V: float64(enh.ts) / 1000,
+		V: float64(enh.Ts) / 1000,
 	}}}
 }
 
@@ -56,32 +56,31 @@ func funcTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper)
 // It calculates the rate (allowing for counter resets if isCounter is true),
 // extrapolates if the first/last sample is close to the boundary, and returns
 // the result as either per-second (if isRate is true) or overall.
-func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper, isCounter bool, isRate bool) Vector {
+func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper, isCounter, isRate bool) Vector {
 	ms := args[0].(*parser.MatrixSelector)
 	vs := ms.VectorSelector.(*parser.VectorSelector)
-
 	var (
 		samples    = vals[0].(Matrix)[0]
-		rangeStart = enh.ts - durationMilliseconds(ms.Range+vs.Offset)
-		rangeEnd   = enh.ts - durationMilliseconds(vs.Offset)
+		rangeStart = enh.Ts - durationMilliseconds(ms.Range+vs.Offset)
+		rangeEnd   = enh.Ts - durationMilliseconds(vs.Offset)
 	)
 
 	// No sense in trying to compute a rate without at least two points. Drop
 	// this Vector element.
 	if len(samples.Points) < 2 {
-		return enh.out
+		return enh.Out
 	}
-	var (
-		counterCorrection float64
-		lastValue         float64
-	)
-	for _, sample := range samples.Points {
-		if isCounter && sample.V < lastValue {
-			counterCorrection += lastValue
+
+	resultValue := samples.Points[len(samples.Points)-1].V - samples.Points[0].V
+	if isCounter {
+		var lastValue float64
+		for _, sample := range samples.Points {
+			if sample.V < lastValue {
+				resultValue += lastValue
+			}
+			lastValue = sample.V
 		}
-		lastValue = sample.V
 	}
-	resultValue := lastValue - samples.Points[0].V + counterCorrection
 
 	// Duration between first/last samples and boundary of range.
 	durationToStart := float64(samples.Points[0].T-rangeStart) / 1000
@@ -126,7 +125,7 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 		resultValue = resultValue / ms.Range.Seconds()
 	}
 
-	return append(enh.out, Sample{
+	return append(enh.Out, Sample{
 		Point: Point{V: resultValue},
 	})
 }
@@ -148,12 +147,12 @@ func funcIncrease(vals []parser.Value, args parser.Expressions, enh *EvalNodeHel
 
 // === irate(node parser.ValueTypeMatrix) Vector ===
 func funcIrate(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
-	return instantValue(vals, enh.out, true)
+	return instantValue(vals, enh.Out, true)
 }
 
 // === idelta(node model.ValMatrix) Vector ===
 func funcIdelta(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
-	return instantValue(vals, enh.out, false)
+	return instantValue(vals, enh.Out, false)
 }
 
 func instantValue(vals []parser.Value, out Vector, isRate bool) Vector {
@@ -234,7 +233,7 @@ func funcHoltWinters(vals []parser.Value, args parser.Expressions, enh *EvalNode
 
 	// Can't do the smoothing operation with less than two points.
 	if l < 2 {
-		return enh.out
+		return enh.Out
 	}
 
 	var s0, s1, b float64
@@ -256,7 +255,7 @@ func funcHoltWinters(vals []parser.Value, args parser.Expressions, enh *EvalNode
 		s0, s1 = s1, x+y
 	}
 
-	return append(enh.out, Sample{
+	return append(enh.Out, Sample{
 		Point: Point{V: s1},
 	})
 }
@@ -279,17 +278,34 @@ func funcSortDesc(vals []parser.Value, args parser.Expressions, enh *EvalNodeHel
 	return Vector(byValueSorter)
 }
 
+// === clamp(Vector parser.ValueTypeVector, min, max Scalar) Vector ===
+func funcClamp(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	vec := vals[0].(Vector)
+	min := vals[1].(Vector)[0].Point.V
+	max := vals[2].(Vector)[0].Point.V
+	if max < min {
+		return enh.Out
+	}
+	for _, el := range vec {
+		enh.Out = append(enh.Out, Sample{
+			Metric: enh.DropMetricName(el.Metric),
+			Point:  Point{V: math.Max(min, math.Min(max, el.V))},
+		})
+	}
+	return enh.Out
+}
+
 // === clamp_max(Vector parser.ValueTypeVector, max Scalar) Vector ===
 func funcClampMax(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	vec := vals[0].(Vector)
 	max := vals[1].(Vector)[0].Point.V
 	for _, el := range vec {
-		enh.out = append(enh.out, Sample{
-			Metric: enh.dropMetricName(el.Metric),
+		enh.Out = append(enh.Out, Sample{
+			Metric: enh.DropMetricName(el.Metric),
 			Point:  Point{V: math.Min(max, el.V)},
 		})
 	}
-	return enh.out
+	return enh.Out
 }
 
 // === clamp_min(Vector parser.ValueTypeVector, min Scalar) Vector ===
@@ -297,12 +313,12 @@ func funcClampMin(vals []parser.Value, args parser.Expressions, enh *EvalNodeHel
 	vec := vals[0].(Vector)
 	min := vals[1].(Vector)[0].Point.V
 	for _, el := range vec {
-		enh.out = append(enh.out, Sample{
-			Metric: enh.dropMetricName(el.Metric),
+		enh.Out = append(enh.Out, Sample{
+			Metric: enh.DropMetricName(el.Metric),
 			Point:  Point{V: math.Max(min, el.V)},
 		})
 	}
-	return enh.out
+	return enh.Out
 }
 
 // === round(Vector parser.ValueTypeVector, toNearest=1 Scalar) Vector ===
@@ -319,23 +335,23 @@ func funcRound(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper
 
 	for _, el := range vec {
 		v := math.Floor(el.V*toNearestInverse+0.5) / toNearestInverse
-		enh.out = append(enh.out, Sample{
-			Metric: enh.dropMetricName(el.Metric),
+		enh.Out = append(enh.Out, Sample{
+			Metric: enh.DropMetricName(el.Metric),
 			Point:  Point{V: v},
 		})
 	}
-	return enh.out
+	return enh.Out
 }
 
 // === Scalar(node parser.ValueTypeVector) Scalar ===
 func funcScalar(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	v := vals[0].(Vector)
 	if len(v) != 1 {
-		return append(enh.out, Sample{
+		return append(enh.Out, Sample{
 			Point: Point{V: math.NaN()},
 		})
 	}
-	return append(enh.out, Sample{
+	return append(enh.Out, Sample{
 		Point: Point{V: v[0].V},
 	})
 }
@@ -343,7 +359,7 @@ func funcScalar(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelpe
 func aggrOverTime(vals []parser.Value, enh *EvalNodeHelper, aggrFn func([]Point) float64) Vector {
 	el := vals[0].(Matrix)[0]
 
-	return append(enh.out, Sample{
+	return append(enh.Out, Sample{
 		Point: Point{V: aggrFn(el.Points)},
 	})
 }
@@ -351,7 +367,7 @@ func aggrOverTime(vals []parser.Value, enh *EvalNodeHelper, aggrFn func([]Point)
 // === avg_over_time(Matrix parser.ValueTypeMatrix) Vector ===
 func funcAvgOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return aggrOverTime(vals, enh, func(values []Point) float64 {
-		var mean, count float64
+		var mean, count, c float64
 		for _, v := range values {
 			count++
 			if math.IsInf(mean, 0) {
@@ -371,9 +387,13 @@ func funcAvgOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 					continue
 				}
 			}
-			mean += v.V/count - mean/count
+			mean, c = kahanSumInc(v.V/count-mean/count, mean, c)
 		}
-		return mean
+
+		if math.IsInf(mean, 0) {
+			return mean
+		}
+		return mean + c
 	})
 }
 
@@ -384,7 +404,16 @@ func funcCountOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNo
 	})
 }
 
-// === floor(Vector parser.ValueTypeVector) Vector ===
+// === last_over_time(Matrix parser.ValueTypeMatrix) Vector ===
+func funcLastOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	el := vals[0].(Matrix)[0]
+
+	return append(enh.Out, Sample{
+		Metric: el.Metric,
+		Point:  Point{V: el.Points[len(el.Points)-1].V},
+	})
+}
+
 // === max_over_time(Matrix parser.ValueTypeMatrix) Vector ===
 func funcMaxOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return aggrOverTime(vals, enh, func(values []Point) float64 {
@@ -414,11 +443,14 @@ func funcMinOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNode
 // === sum_over_time(Matrix parser.ValueTypeMatrix) Vector ===
 func funcSumOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return aggrOverTime(vals, enh, func(values []Point) float64 {
-		var sum float64
+		var sum, c float64
 		for _, v := range values {
-			sum += v.V
+			sum, c = kahanSumInc(v.V, sum, c)
 		}
-		return sum
+		if math.IsInf(sum, 0) {
+			return sum
+		}
+		return sum + c
 	})
 }
 
@@ -431,7 +463,7 @@ func funcQuantileOverTime(vals []parser.Value, args parser.Expressions, enh *Eva
 	for _, v := range el.Points {
 		values = append(values, Sample{Point: Point{V: v.V}})
 	}
-	return append(enh.out, Sample{
+	return append(enh.Out, Sample{
 		Point: Point{V: quantile(q, values)},
 	})
 }
@@ -439,37 +471,41 @@ func funcQuantileOverTime(vals []parser.Value, args parser.Expressions, enh *Eva
 // === stddev_over_time(Matrix parser.ValueTypeMatrix) Vector ===
 func funcStddevOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return aggrOverTime(vals, enh, func(values []Point) float64 {
-		var aux, count, mean float64
+		var count float64
+		var mean, cMean float64
+		var aux, cAux float64
 		for _, v := range values {
 			count++
-			delta := v.V - mean
-			mean += delta / count
-			aux += delta * (v.V - mean)
+			delta := v.V - (mean + cMean)
+			mean, cMean = kahanSumInc(delta/count, mean, cMean)
+			aux, cAux = kahanSumInc(delta*(v.V-(mean+cMean)), aux, cAux)
 		}
-		return math.Sqrt(aux / count)
+		return math.Sqrt((aux + cAux) / count)
 	})
 }
 
 // === stdvar_over_time(Matrix parser.ValueTypeMatrix) Vector ===
 func funcStdvarOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return aggrOverTime(vals, enh, func(values []Point) float64 {
-		var aux, count, mean float64
+		var count float64
+		var mean, cMean float64
+		var aux, cAux float64
 		for _, v := range values {
 			count++
-			delta := v.V - mean
-			mean += delta / count
-			aux += delta * (v.V - mean)
+			delta := v.V - (mean + cMean)
+			mean, cMean = kahanSumInc(delta/count, mean, cMean)
+			aux, cAux = kahanSumInc(delta*(v.V-(mean+cMean)), aux, cAux)
 		}
-		return aux / count
+		return (aux + cAux) / count
 	})
 }
 
 // === absent(Vector parser.ValueTypeVector) Vector ===
 func funcAbsent(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	if len(vals[0].(Vector)) > 0 {
-		return enh.out
+		return enh.Out
 	}
-	return append(enh.out,
+	return append(enh.Out,
 		Sample{
 			Metric: createLabelsForAbsentFunction(args[0]),
 			Point:  Point{V: 1},
@@ -482,20 +518,27 @@ func funcAbsent(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelpe
 // Due to engine optimization, this function is only called when this condition is true.
 // Then, the engine post-processes the results to get the expected output.
 func funcAbsentOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
-	return append(enh.out,
+	return append(enh.Out,
 		Sample{
 			Point: Point{V: 1},
 		})
 }
 
+// === present_over_time(Vector parser.ValueTypeMatrix) Vector ===
+func funcPresentOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	return aggrOverTime(vals, enh, func(values []Point) float64 {
+		return 1
+	})
+}
+
 func simpleFunc(vals []parser.Value, enh *EvalNodeHelper, f func(float64) float64) Vector {
 	for _, el := range vals[0].(Vector) {
-		enh.out = append(enh.out, Sample{
-			Metric: enh.dropMetricName(el.Metric),
+		enh.Out = append(enh.Out, Sample{
+			Metric: enh.DropMetricName(el.Metric),
 			Point:  Point{V: f(el.V)},
 		})
 	}
-	return enh.out
+	return enh.Out
 }
 
 // === abs(Vector parser.ValueTypeVector) Vector ===
@@ -538,16 +581,129 @@ func funcLog10(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper
 	return simpleFunc(vals, enh, math.Log10)
 }
 
+// === sin(Vector parser.ValueTypeVector) Vector ===
+func funcSin(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	return simpleFunc(vals, enh, math.Sin)
+}
+
+// === cos(Vector parser.ValueTypeVector) Vector ===
+func funcCos(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	return simpleFunc(vals, enh, math.Cos)
+}
+
+// === tan(Vector parser.ValueTypeVector) Vector ===
+func funcTan(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	return simpleFunc(vals, enh, math.Tan)
+}
+
+// == asin(Vector parser.ValueTypeVector) Vector ===
+func funcAsin(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	return simpleFunc(vals, enh, math.Asin)
+}
+
+// == acos(Vector parser.ValueTypeVector) Vector ===
+func funcAcos(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	return simpleFunc(vals, enh, math.Acos)
+}
+
+// == atan(Vector parser.ValueTypeVector) Vector ===
+func funcAtan(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	return simpleFunc(vals, enh, math.Atan)
+}
+
+// == sinh(Vector parser.ValueTypeVector) Vector ===
+func funcSinh(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	return simpleFunc(vals, enh, math.Sinh)
+}
+
+// == cosh(Vector parser.ValueTypeVector) Vector ===
+func funcCosh(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	return simpleFunc(vals, enh, math.Cosh)
+}
+
+// == tanh(Vector parser.ValueTypeVector) Vector ===
+func funcTanh(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	return simpleFunc(vals, enh, math.Tanh)
+}
+
+// == asinh(Vector parser.ValueTypeVector) Vector ===
+func funcAsinh(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	return simpleFunc(vals, enh, math.Asinh)
+}
+
+// == acosh(Vector parser.ValueTypeVector) Vector ===
+func funcAcosh(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	return simpleFunc(vals, enh, math.Acosh)
+}
+
+// == atanh(Vector parser.ValueTypeVector) Vector ===
+func funcAtanh(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	return simpleFunc(vals, enh, math.Atanh)
+}
+
+// === rad(Vector parser.ValueTypeVector) Vector ===
+func funcRad(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	return simpleFunc(vals, enh, func(v float64) float64 {
+		return v * math.Pi / 180
+	})
+}
+
+// === deg(Vector parser.ValueTypeVector) Vector ===
+func funcDeg(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	return simpleFunc(vals, enh, func(v float64) float64 {
+		return v * 180 / math.Pi
+	})
+}
+
+// === pi() Scalar ===
+func funcPi(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	return Vector{Sample{Point: Point{
+		V: math.Pi,
+	}}}
+}
+
+// === sgn(Vector parser.ValueTypeVector) Vector ===
+func funcSgn(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	return simpleFunc(vals, enh, func(v float64) float64 {
+		if v < 0 {
+			return -1
+		} else if v > 0 {
+			return 1
+		}
+		return v
+	})
+}
+
 // === timestamp(Vector parser.ValueTypeVector) Vector ===
 func funcTimestamp(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	vec := vals[0].(Vector)
 	for _, el := range vec {
-		enh.out = append(enh.out, Sample{
-			Metric: enh.dropMetricName(el.Metric),
+		enh.Out = append(enh.Out, Sample{
+			Metric: enh.DropMetricName(el.Metric),
 			Point:  Point{V: float64(el.T) / 1000},
 		})
 	}
-	return enh.out
+	return enh.Out
+}
+
+func kahanSum(samples []float64) float64 {
+	var sum, c float64
+
+	for _, v := range samples {
+		sum, c = kahanSumInc(v, sum, c)
+	}
+	return sum + c
+}
+
+func kahanSumInc(inc, sum, c float64) (newSum, newC float64) {
+	t := sum + inc
+	// Using Neumaier improvement, swap if next term larger than sum.
+	if math.Abs(sum) >= math.Abs(inc) {
+		c += (sum - t) + inc
+	} else {
+		c += (inc - t) + sum
+	}
+	return t, c
 }
 
 // linearRegression performs a least-square linear regression analysis on the
@@ -555,18 +711,39 @@ func funcTimestamp(vals []parser.Value, args parser.Expressions, enh *EvalNodeHe
 // provided time.
 func linearRegression(samples []Point, interceptTime int64) (slope, intercept float64) {
 	var (
-		n            float64
-		sumX, sumY   float64
-		sumXY, sumX2 float64
+		n          float64
+		sumX, cX   float64
+		sumY, cY   float64
+		sumXY, cXY float64
+		sumX2, cX2 float64
+		initY      float64
+		constY     bool
 	)
-	for _, sample := range samples {
-		x := float64(sample.T-interceptTime) / 1e3
+	initY = samples[0].V
+	constY = true
+	for i, sample := range samples {
+		// Set constY to false if any new y values are encountered.
+		if constY && i > 0 && sample.V != initY {
+			constY = false
+		}
 		n += 1.0
-		sumY += sample.V
-		sumX += x
-		sumXY += x * sample.V
-		sumX2 += x * x
+		x := float64(sample.T-interceptTime) / 1e3
+		sumX, cX = kahanSumInc(x, sumX, cX)
+		sumY, cY = kahanSumInc(sample.V, sumY, cY)
+		sumXY, cXY = kahanSumInc(x*sample.V, sumXY, cXY)
+		sumX2, cX2 = kahanSumInc(x*x, sumX2, cX2)
 	}
+	if constY {
+		if math.IsInf(initY, 0) {
+			return math.NaN(), math.NaN()
+		}
+		return 0, initY
+	}
+	sumX = sumX + cX
+	sumY = sumY + cY
+	sumXY = sumXY + cXY
+	sumX2 = sumX2 + cX2
+
 	covXY := sumXY - sumX*sumY/n
 	varX := sumX2 - sumX*sumX/n
 
@@ -582,14 +759,14 @@ func funcDeriv(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper
 	// No sense in trying to compute a derivative without at least two points.
 	// Drop this Vector element.
 	if len(samples.Points) < 2 {
-		return enh.out
+		return enh.Out
 	}
 
 	// We pass in an arbitrary timestamp that is near the values in use
 	// to avoid floating point accuracy issues, see
 	// https://github.com/prometheus/prometheus/issues/2674
 	slope, _ := linearRegression(samples.Points, samples.Points[0].T)
-	return append(enh.out, Sample{
+	return append(enh.Out, Sample{
 		Point: Point{V: slope},
 	})
 }
@@ -598,15 +775,14 @@ func funcDeriv(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper
 func funcPredictLinear(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	samples := vals[0].(Matrix)[0]
 	duration := vals[1].(Vector)[0].V
-
 	// No sense in trying to predict anything without at least two points.
 	// Drop this Vector element.
 	if len(samples.Points) < 2 {
-		return enh.out
+		return enh.Out
 	}
-	slope, intercept := linearRegression(samples.Points, enh.ts)
+	slope, intercept := linearRegression(samples.Points, enh.Ts)
 
-	return append(enh.out, Sample{
+	return append(enh.Out, Sample{
 		Point: Point{V: slope*duration + intercept},
 	})
 }
@@ -615,7 +791,7 @@ func funcPredictLinear(vals []parser.Value, args parser.Expressions, enh *EvalNo
 func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	q := vals[0].(Vector)[0].V
 	inVec := vals[1].(Vector)
-	sigf := signatureFunc(false, enh.lblBuf, excludedLabels...)
+	sigf := signatureFunc(false, enh.lblBuf, labels.BucketLabel)
 
 	if enh.signatureToMetricWithBuckets == nil {
 		enh.signatureToMetricWithBuckets = map[string]*metricWithBuckets{}
@@ -634,11 +810,14 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 			continue
 		}
 		l := sigf(el.Metric)
+		// Add the metric name (which is always removed) to the signature to prevent combining multiple histograms
+		// with the same label set. See https://github.com/prometheus/prometheus/issues/9910
+		l = l + el.Metric.Get(model.MetricNameLabel)
 
 		mb, ok := enh.signatureToMetricWithBuckets[l]
 		if !ok {
 			el.Metric = labels.NewBuilder(el.Metric).
-				Del(labels.BucketLabel, labels.MetricName).
+				Del(excludedLabels...).
 				Labels()
 
 			mb = &metricWithBuckets{el.Metric, nil}
@@ -649,14 +828,14 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 
 	for _, mb := range enh.signatureToMetricWithBuckets {
 		if len(mb.buckets) > 0 {
-			enh.out = append(enh.out, Sample{
+			enh.Out = append(enh.Out, Sample{
 				Metric: mb.metric,
 				Point:  Point{V: bucketQuantile(q, mb.buckets)},
 			})
 		}
 	}
 
-	return enh.out
+	return enh.Out
 }
 
 // === resets(Matrix parser.ValueTypeMatrix) Vector ===
@@ -673,7 +852,7 @@ func funcResets(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelpe
 		prev = current
 	}
 
-	return append(enh.out, Sample{
+	return append(enh.Out, Sample{
 		Point: Point{V: float64(resets)},
 	})
 }
@@ -692,7 +871,7 @@ func funcChanges(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelp
 		prev = current
 	}
 
-	return append(enh.out, Sample{
+	return append(enh.Out, Sample{
 		Point: Point{V: float64(changes)},
 	})
 }
@@ -701,10 +880,10 @@ func funcChanges(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelp
 func funcLabelReplace(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	var (
 		vector   = vals[0].(Vector)
-		dst      = args[1].(*parser.StringLiteral).Val
-		repl     = args[2].(*parser.StringLiteral).Val
-		src      = args[3].(*parser.StringLiteral).Val
-		regexStr = args[4].(*parser.StringLiteral).Val
+		dst      = stringFromArg(args[1])
+		repl     = stringFromArg(args[2])
+		src      = stringFromArg(args[3])
+		regexStr = stringFromArg(args[4])
 	)
 
 	if enh.regex == nil {
@@ -716,13 +895,13 @@ func funcLabelReplace(vals []parser.Value, args parser.Expressions, enh *EvalNod
 		if !model.LabelNameRE.MatchString(dst) {
 			panic(errors.Errorf("invalid destination label name in label_replace(): %s", dst))
 		}
-		enh.dmn = make(map[uint64]labels.Labels, len(enh.out))
+		enh.Dmn = make(map[uint64]labels.Labels, len(enh.Out))
 	}
 
 	for _, el := range vector {
 		h := el.Metric.Hash()
 		var outMetric labels.Labels
-		if l, ok := enh.dmn[h]; ok {
+		if l, ok := enh.Dmn[h]; ok {
 			outMetric = l
 		} else {
 			srcVal := el.Metric.Get(src)
@@ -730,7 +909,7 @@ func funcLabelReplace(vals []parser.Value, args parser.Expressions, enh *EvalNod
 			if indexes == nil {
 				// If there is no match, no replacement should take place.
 				outMetric = el.Metric
-				enh.dmn[h] = outMetric
+				enh.Dmn[h] = outMetric
 			} else {
 				res := enh.regex.ExpandString([]byte{}, repl, srcVal, indexes)
 
@@ -739,21 +918,21 @@ func funcLabelReplace(vals []parser.Value, args parser.Expressions, enh *EvalNod
 					lb.Set(dst, string(res))
 				}
 				outMetric = lb.Labels()
-				enh.dmn[h] = outMetric
+				enh.Dmn[h] = outMetric
 			}
 		}
 
-		enh.out = append(enh.out, Sample{
+		enh.Out = append(enh.Out, Sample{
 			Metric: outMetric,
 			Point:  Point{V: el.Point.V},
 		})
 	}
-	return enh.out
+	return enh.Out
 }
 
 // === Vector(s Scalar) Vector ===
 func funcVector(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
-	return append(enh.out,
+	return append(enh.Out,
 		Sample{
 			Metric: labels.Labels{},
 			Point:  Point{V: vals[0].(Vector)[0].V},
@@ -764,17 +943,17 @@ func funcVector(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelpe
 func funcLabelJoin(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	var (
 		vector    = vals[0].(Vector)
-		dst       = args[1].(*parser.StringLiteral).Val
-		sep       = args[2].(*parser.StringLiteral).Val
+		dst       = stringFromArg(args[1])
+		sep       = stringFromArg(args[2])
 		srcLabels = make([]string, len(args)-3)
 	)
 
-	if enh.dmn == nil {
-		enh.dmn = make(map[uint64]labels.Labels, len(enh.out))
+	if enh.Dmn == nil {
+		enh.Dmn = make(map[uint64]labels.Labels, len(enh.Out))
 	}
 
 	for i := 3; i < len(args); i++ {
-		src := args[i].(*parser.StringLiteral).Val
+		src := stringFromArg(args[i])
 		if !model.LabelName(src).IsValid() {
 			panic(errors.Errorf("invalid source label name in label_join(): %s", src))
 		}
@@ -789,7 +968,7 @@ func funcLabelJoin(vals []parser.Value, args parser.Expressions, enh *EvalNodeHe
 	for _, el := range vector {
 		h := el.Metric.Hash()
 		var outMetric labels.Labels
-		if l, ok := enh.dmn[h]; ok {
+		if l, ok := enh.Dmn[h]; ok {
 			outMetric = l
 		} else {
 
@@ -807,35 +986,35 @@ func funcLabelJoin(vals []parser.Value, args parser.Expressions, enh *EvalNodeHe
 			}
 
 			outMetric = lb.Labels()
-			enh.dmn[h] = outMetric
+			enh.Dmn[h] = outMetric
 		}
 
-		enh.out = append(enh.out, Sample{
+		enh.Out = append(enh.Out, Sample{
 			Metric: outMetric,
 			Point:  Point{V: el.Point.V},
 		})
 	}
-	return enh.out
+	return enh.Out
 }
 
 // Common code for date related functions.
 func dateWrapper(vals []parser.Value, enh *EvalNodeHelper, f func(time.Time) float64) Vector {
 	if len(vals) == 0 {
-		return append(enh.out,
+		return append(enh.Out,
 			Sample{
 				Metric: labels.Labels{},
-				Point:  Point{V: f(time.Unix(enh.ts/1000, 0).UTC())},
+				Point:  Point{V: f(time.Unix(enh.Ts/1000, 0).UTC())},
 			})
 	}
 
 	for _, el := range vals[0].(Vector) {
 		t := time.Unix(int64(el.V), 0).UTC()
-		enh.out = append(enh.out, Sample{
-			Metric: enh.dropMetricName(el.Metric),
+		enh.Out = append(enh.Out, Sample{
+			Metric: enh.DropMetricName(el.Metric),
 			Point:  Point{V: f(t)},
 		})
 	}
-	return enh.out
+	return enh.Out
 }
 
 // === days_in_month(v Vector) Scalar ===
@@ -892,15 +1071,25 @@ var FunctionCalls = map[string]FunctionCall{
 	"abs":                funcAbs,
 	"absent":             funcAbsent,
 	"absent_over_time":   funcAbsentOverTime,
+	"acos":               funcAcos,
+	"acosh":              funcAcosh,
+	"asin":               funcAsin,
+	"asinh":              funcAsinh,
+	"atan":               funcAtan,
+	"atanh":              funcAtanh,
 	"avg_over_time":      funcAvgOverTime,
 	"ceil":               funcCeil,
 	"changes":            funcChanges,
+	"clamp":              funcClamp,
 	"clamp_max":          funcClampMax,
 	"clamp_min":          funcClampMin,
+	"cos":                funcCos,
+	"cosh":               funcCosh,
 	"count_over_time":    funcCountOverTime,
 	"days_in_month":      funcDaysInMonth,
 	"day_of_month":       funcDayOfMonth,
 	"day_of_week":        funcDayOfWeek,
+	"deg":                funcDeg,
 	"delta":              funcDelta,
 	"deriv":              funcDeriv,
 	"exp":                funcExp,
@@ -916,26 +1105,50 @@ var FunctionCalls = map[string]FunctionCall{
 	"ln":                 funcLn,
 	"log10":              funcLog10,
 	"log2":               funcLog2,
+	"last_over_time":     funcLastOverTime,
 	"max_over_time":      funcMaxOverTime,
 	"min_over_time":      funcMinOverTime,
 	"minute":             funcMinute,
 	"month":              funcMonth,
+	"pi":                 funcPi,
 	"predict_linear":     funcPredictLinear,
+	"present_over_time":  funcPresentOverTime,
 	"quantile_over_time": funcQuantileOverTime,
+	"rad":                funcRad,
 	"rate":               funcRate,
 	"resets":             funcResets,
 	"round":              funcRound,
 	"scalar":             funcScalar,
+	"sgn":                funcSgn,
+	"sin":                funcSin,
+	"sinh":               funcSinh,
 	"sort":               funcSort,
 	"sort_desc":          funcSortDesc,
 	"sqrt":               funcSqrt,
 	"stddev_over_time":   funcStddevOverTime,
 	"stdvar_over_time":   funcStdvarOverTime,
 	"sum_over_time":      funcSumOverTime,
+	"tan":                funcTan,
+	"tanh":               funcTanh,
 	"time":               funcTime,
 	"timestamp":          funcTimestamp,
 	"vector":             funcVector,
 	"year":               funcYear,
+}
+
+// AtModifierUnsafeFunctions are the functions whose result
+// can vary if evaluation time is changed when the arguments are
+// step invariant. It also includes functions that use the timestamps
+// of the passed instant vector argument to calculate a result since
+// that can also change with change in eval time.
+var AtModifierUnsafeFunctions = map[string]struct{}{
+	// Step invariant functions.
+	"days_in_month": {}, "day_of_month": {}, "day_of_week": {},
+	"hour": {}, "minute": {}, "month": {}, "year": {},
+	"predict_linear": {}, "time": {},
+	// Uses timestamp of the argument for the result,
+	// hence unsafe to use with @ modifier.
+	"timestamp": {},
 }
 
 type vectorByValueHeap Vector
@@ -1027,4 +1240,10 @@ func createLabelsForAbsentFunction(expr parser.Expr) labels.Labels {
 		m = labels.NewBuilder(m).Del(v).Labels()
 	}
 	return m
+}
+
+func stringFromArg(e parser.Expr) string {
+	tmp := unwrapStepInvariantExpr(e) // Unwrap StepInvariant
+	unwrapParenExpr(&tmp)             // Optionally unwrap ParenExpr
+	return tmp.(*parser.StringLiteral).Val
 }

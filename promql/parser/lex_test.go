@@ -16,7 +16,7 @@ package parser
 import (
 	"testing"
 
-	"github.com/prometheus/prometheus/util/testutil"
+	"github.com/stretchr/testify/require"
 )
 
 type testCase struct {
@@ -225,14 +225,15 @@ var tests = []struct {
 		tests: []testCase{
 			{
 				input:    `=`,
-				expected: []Item{{ASSIGN, 0, `=`}},
+				expected: []Item{{EQL, 0, `=`}},
 			}, {
-				// Inside braces equality is a single '=' character.
+				// Inside braces equality is a single '=' character but in terms of a token
+				// it should be treated as ASSIGN.
 				input:    `{=}`,
 				expected: []Item{{LEFT_BRACE, 0, `{`}, {EQL, 1, `=`}, {RIGHT_BRACE, 2, `}`}},
 			}, {
 				input:    `==`,
-				expected: []Item{{EQL, 0, `==`}},
+				expected: []Item{{EQLC, 0, `==`}},
 			}, {
 				input:    `!=`,
 				expected: []Item{{NEQ, 0, `!=`}},
@@ -275,6 +276,9 @@ var tests = []struct {
 			}, {
 				input:    `unless`,
 				expected: []Item{{LUNLESS, 0, `unless`}},
+			}, {
+				input:    `@`,
+				expected: []Item{{AT, 0, `@`}},
 			},
 		},
 	},
@@ -314,27 +318,51 @@ var tests = []struct {
 			{
 				input:    "offset",
 				expected: []Item{{OFFSET, 0, "offset"}},
-			}, {
+			},
+			{
 				input:    "by",
 				expected: []Item{{BY, 0, "by"}},
-			}, {
+			},
+			{
 				input:    "without",
 				expected: []Item{{WITHOUT, 0, "without"}},
-			}, {
+			},
+			{
 				input:    "on",
 				expected: []Item{{ON, 0, "on"}},
-			}, {
+			},
+			{
 				input:    "ignoring",
 				expected: []Item{{IGNORING, 0, "ignoring"}},
-			}, {
+			},
+			{
 				input:    "group_left",
 				expected: []Item{{GROUP_LEFT, 0, "group_left"}},
-			}, {
+			},
+			{
 				input:    "group_right",
 				expected: []Item{{GROUP_RIGHT, 0, "group_right"}},
-			}, {
+			},
+			{
 				input:    "bool",
 				expected: []Item{{BOOL, 0, "bool"}},
+			},
+			{
+				input:    "atan2",
+				expected: []Item{{ATAN2, 0, "atan2"}},
+			},
+		},
+	},
+	{
+		name: "preprocessors",
+		tests: []testCase{
+			{
+				input:    `start`,
+				expected: []Item{{START, 0, `start`}},
+			},
+			{
+				input:    `end`,
+				expected: []Item{{END, 0, `end`}},
 			},
 		},
 	},
@@ -548,7 +576,8 @@ var tests = []struct {
 					{DURATION, 24, `4s`},
 					{RIGHT_BRACKET, 26, `]`},
 				},
-			}, {
+			},
+			{
 				input: `test:name{on!~"b:ar"}[4m:4s]`,
 				expected: []Item{
 					{METRIC_IDENTIFIER, 0, `test:name`},
@@ -563,7 +592,8 @@ var tests = []struct {
 					{DURATION, 25, `4s`},
 					{RIGHT_BRACKET, 27, `]`},
 				},
-			}, {
+			},
+			{
 				input: `test:name{on!~"b:ar"}[4m:]`,
 				expected: []Item{
 					{METRIC_IDENTIFIER, 0, `test:name`},
@@ -577,10 +607,10 @@ var tests = []struct {
 					{COLON, 24, `:`},
 					{RIGHT_BRACKET, 25, `]`},
 				},
-			}, { // Nested Subquery.
+			},
+			{ // Nested Subquery.
 				input: `min_over_time(rate(foo{bar="baz"}[2s])[5m:])[4m:3s]`,
 				expected: []Item{
-
 					{IDENTIFIER, 0, `min_over_time`},
 					{LEFT_PAREN, 13, `(`},
 					{IDENTIFIER, 14, `rate`},
@@ -625,10 +655,10 @@ var tests = []struct {
 					{OFFSET, 29, "offset"},
 					{DURATION, 36, "10m"},
 				},
-			}, {
+			},
+			{
 				input: `min_over_time(rate(foo{bar="baz"}[2s])[5m:] offset 6m)[4m:3s]`,
 				expected: []Item{
-
 					{IDENTIFIER, 0, `min_over_time`},
 					{LEFT_PAREN, 13, `(`},
 					{IDENTIFIER, 14, `rate`},
@@ -716,24 +746,23 @@ func TestLexer(t *testing.T) {
 						if item.Typ == ERROR {
 							hasError = true
 						}
-
 					}
 					if !hasError {
 						t.Logf("%d: input %q", i, test.input)
-						t.Fatalf("expected lexing error but did not fail")
+						require.Fail(t, "expected lexing error but did not fail")
 					}
 					continue
 				}
 				if lastItem.Typ == ERROR {
 					t.Logf("%d: input %q", i, test.input)
-					t.Fatalf("unexpected lexing error at position %d: %s", lastItem.Pos, lastItem)
+					require.Fail(t, "unexpected lexing error at position %d: %s", lastItem.Pos, lastItem)
 				}
 
 				eofItem := Item{EOF, Pos(len(test.input)), ""}
-				testutil.Equals(t, lastItem, eofItem, "%d: input %q", i, test.input)
+				require.Equal(t, lastItem, eofItem, "%d: input %q", i, test.input)
 
 				out = out[:len(out)-1]
-				testutil.Equals(t, test.expected, out, "%d: input %q", i, test.input)
+				require.Equal(t, test.expected, out, "%d: input %q", i, test.input)
 			}
 		})
 	}

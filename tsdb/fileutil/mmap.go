@@ -48,7 +48,7 @@ func OpenMmapFileWithSize(path string, size int) (mf *MmapFile, retErr error) {
 
 	b, err := mmap(f, size)
 	if err != nil {
-		return nil, errors.Wrap(err, "mmap")
+		return nil, errors.Wrapf(err, "mmap, size %d", size)
 	}
 
 	return &MmapFile{f: f, b: b}, nil

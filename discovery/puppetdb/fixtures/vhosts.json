@@ -1,0 +1,49 @@
+[
+   {
+      "certname": "edinburgh.example.com",
+      "environment": "prod",
+      "exported": false,
+      "file": "/etc/puppetlabs/code/environments/prod/modules/upstream/apache/manifests/init.pp",
+      "line": 384,
+      "parameters": {
+         "access_log": true,
+         "access_log_file": "ssl_access_log",
+         "additional_includes": [ ],
+         "directoryindex": "",
+         "docroot": "/var/www/html",
+         "ensure": "absent",
+         "options": [
+            "Indexes",
+            "FollowSymLinks",
+            "MultiViews"
+         ],
+         "php_flags": { },
+         "labels": {
+            "alias": "edinburgh"
+         },
+         "scriptaliases": [
+            {
+               "alias": "/cgi-bin",
+               "path": "/var/www/cgi-bin"
+            }
+         ]
+      },
+      "resource": "49af83866dc5a1518968b68e58a25319107afe11",
+      "tags": [
+         "roles::hypervisor",
+         "apache",
+         "apache::vhost",
+         "class",
+         "default-ssl",
+         "profile_hypervisor",
+         "vhost",
+         "profile_apache",
+         "hypervisor",
+         "__node_regexp__edinburgh",
+         "roles",
+         "node"
+      ],
+      "title": "default-ssl",
+      "type": "Apache::Vhost"
+   }
+]

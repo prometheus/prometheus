@@ -1,0 +1,34 @@
+{
+    "parser": "@typescript-eslint/parser",
+    "extends": [
+      "plugin:@typescript-eslint/recommended",
+      "plugin:prettier/recommended"
+    ],
+    "rules": {
+      "@typescript-eslint/explicit-function-return-type": ["off"],
+      "eol-last": [
+        "error",
+        "always"
+      ],
+      "object-curly-spacing": [
+        "error",
+        "always"
+      ],
+      "prefer-const": "warn",
+      "comma-dangle": [
+        "error",
+        {
+          "arrays": "always-multiline",
+          "objects": "always-multiline",
+          "imports": "always-multiline"
+        }
+      ]
+    },
+    "plugins": [
+      "prettier"
+    ],
+    "ignorePatterns": ["node_modules/"],
+    "parserOptions": {
+      "sourceType": "module"
+    }
+  }

@@ -1,14 +1,15 @@
 import React, { FC } from 'react';
-import { RouteComponentProps } from '@reach/router';
-import PathPrefixProps from '../../types/PathPrefixProps';
 import { useFetch } from '../../hooks/useFetch';
 import { withStatusIndicator } from '../../components/withStatusIndicator';
 import { RulesMap, RulesContent } from './RulesContent';
+import { usePathPrefix } from '../../contexts/PathPrefixContext';
+import { API_PATH } from '../../constants/constants';
 
 const RulesWithStatusIndicator = withStatusIndicator(RulesContent);
 
-const Rules: FC<RouteComponentProps & PathPrefixProps> = ({ pathPrefix }) => {
-  const { response, error, isLoading } = useFetch<RulesMap>(`${pathPrefix}/api/v1/rules`);
+const Rules: FC = () => {
+  const pathPrefix = usePathPrefix();
+  const { response, error, isLoading } = useFetch<RulesMap>(`${pathPrefix}/${API_PATH}/rules`);
 
   return <RulesWithStatusIndicator response={response} error={error} isLoading={isLoading} />;
 };

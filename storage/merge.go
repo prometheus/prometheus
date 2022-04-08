@@ -16,12 +16,13 @@ package storage
 import (
 	"bytes"
 	"container/heap"
+	"math"
 	"sort"
-	"strings"
 	"sync"
 
 	"github.com/pkg/errors"
-	"github.com/prometheus/prometheus/pkg/labels"
+
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
@@ -41,7 +42,7 @@ type mergeGenericQuerier struct {
 // See NewFanout commentary to learn more about primary vs secondary differences.
 //
 // In case of overlaps between the data given by primaries' and secondaries' Selects, merge function will be used.
-func NewMergeQuerier(primaries []Querier, secondaries []Querier, mergeFn VerticalSeriesMergeFunc) Querier {
+func NewMergeQuerier(primaries, secondaries []Querier, mergeFn VerticalSeriesMergeFunc) Querier {
 	queriers := make([]genericQuerier, 0, len(primaries)+len(secondaries))
 	for _, q := range primaries {
 		if _, ok := q.(noopQuerier); !ok && q != nil {
@@ -70,7 +71,7 @@ func NewMergeQuerier(primaries []Querier, secondaries []Querier, mergeFn Vertica
 //
 // In case of overlaps between the data given by primaries' and secondaries' Selects, merge function will be used.
 // TODO(bwplotka): Currently merge will compact overlapping chunks with bigger chunk, without limit. Split it: https://github.com/prometheus/tsdb/issues/670
-func NewMergeChunkQuerier(primaries []ChunkQuerier, secondaries []ChunkQuerier, mergeFn VerticalChunkSeriesMergeFunc) ChunkQuerier {
+func NewMergeChunkQuerier(primaries, secondaries []ChunkQuerier, mergeFn VerticalChunkSeriesMergeFunc) ChunkQuerier {
 	queriers := make([]genericQuerier, 0, len(primaries)+len(secondaries))
 	for _, q := range primaries {
 		if _, ok := q.(noopChunkQuerier); !ok && q != nil {
@@ -103,7 +104,7 @@ func (q *mergeGenericQuerier) Select(sortSeries bool, hints *SelectHints, matche
 		return q.queriers[0].Select(sortSeries, hints, matchers...)
 	}
 
-	var seriesSets = make([]genericSeriesSet, 0, len(q.queriers))
+	seriesSets := make([]genericSeriesSet, 0, len(q.queriers))
 	if !q.concurrentSelect {
 		for _, querier := range q.queriers {
 			// We need to sort for merge  to work.
@@ -153,8 +154,10 @@ func (l labelGenericQueriers) SplitByHalf() (labelGenericQueriers, labelGenericQ
 }
 
 // LabelValues returns all potential values for a label name.
-func (q *mergeGenericQuerier) LabelValues(name string) ([]string, Warnings, error) {
-	res, ws, err := q.lvals(q.queriers, name)
+// If matchers are specified the returned result set is reduced
+// to label values of metrics matching the matchers.
+func (q *mergeGenericQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, Warnings, error) {
+	res, ws, err := q.lvals(q.queriers, name, matchers...)
 	if err != nil {
 		return nil, nil, errors.Wrapf(err, "LabelValues() from merge generic querier for label %s", name)
 	}
@@ -162,22 +165,22 @@ func (q *mergeGenericQuerier) LabelValues(name string) ([]string, Warnings, erro
 }
 
 // lvals performs merge sort for LabelValues from multiple queriers.
-func (q *mergeGenericQuerier) lvals(lq labelGenericQueriers, n string) ([]string, Warnings, error) {
+func (q *mergeGenericQuerier) lvals(lq labelGenericQueriers, n string, matchers ...*labels.Matcher) ([]string, Warnings, error) {
 	if lq.Len() == 0 {
 		return nil, nil, nil
 	}
 	if lq.Len() == 1 {
-		return lq.Get(0).LabelValues(n)
+		return lq.Get(0).LabelValues(n, matchers...)
 	}
 	a, b := lq.SplitByHalf()
 
 	var ws Warnings
-	s1, w, err := q.lvals(a, n)
+	s1, w, err := q.lvals(a, n, matchers...)
 	ws = append(ws, w...)
 	if err != nil {
 		return nil, ws, err
 	}
-	s2, ws, err := q.lvals(b, n)
+	s2, ws, err := q.lvals(b, n, matchers...)
 	ws = append(ws, w...)
 	if err != nil {
 		return nil, ws, err
@@ -193,15 +196,13 @@ func mergeStrings(a, b []string) []string {
 	res := make([]string, 0, maxl*10/9)
 
 	for len(a) > 0 && len(b) > 0 {
-		d := strings.Compare(a[0], b[0])
-
-		if d == 0 {
+		if a[0] == b[0] {
 			res = append(res, a[0])
 			a, b = a[1:], b[1:]
-		} else if d < 0 {
+		} else if a[0] < b[0] {
 			res = append(res, a[0])
 			a = a[1:]
-		} else if d > 0 {
+		} else {
 			res = append(res, b[0])
 			b = b[1:]
 		}
@@ -214,13 +215,13 @@ func mergeStrings(a, b []string) []string {
 }
 
 // LabelNames returns all the unique label names present in all queriers in sorted order.
-func (q *mergeGenericQuerier) LabelNames() ([]string, Warnings, error) {
+func (q *mergeGenericQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, Warnings, error) {
 	var (
 		labelNamesMap = make(map[string]struct{})
 		warnings      Warnings
 	)
 	for _, querier := range q.queriers {
-		names, wrn, err := querier.LabelNames()
+		names, wrn, err := querier.LabelNames(matchers...)
 		if wrn != nil {
 			// TODO(bwplotka): We could potentially wrap warnings.
 			warnings = append(warnings, wrn...)
@@ -246,7 +247,7 @@ func (q *mergeGenericQuerier) LabelNames() ([]string, Warnings, error) {
 
 // Close releases the resources of the generic querier.
 func (q *mergeGenericQuerier) Close() error {
-	errs := tsdb_errors.MultiError{}
+	errs := tsdb_errors.NewMulti()
 	for _, querier := range q.queriers {
 		if err := querier.Close(); err != nil {
 			errs.Add(err)
@@ -264,7 +265,6 @@ func NewMergeSeriesSet(sets []SeriesSet, mergeFunc VerticalSeriesMergeFunc) Seri
 	genericSets := make([]genericSeriesSet, 0, len(sets))
 	for _, s := range sets {
 		genericSets = append(genericSets, &genericSeriesSetAdapter{s})
-
 	}
 	return &seriesSetAdapter{newGenericMergeSeriesSet(genericSets, (&seriesMergerAdapter{VerticalSeriesMergeFunc: mergeFunc}).Merge)}
 }
@@ -280,7 +280,6 @@ func NewMergeChunkSeriesSet(sets []ChunkSeriesSet, mergeFunc VerticalChunkSeries
 	genericSets := make([]genericSeriesSet, 0, len(sets))
 	for _, s := range sets {
 		genericSets = append(genericSets, &genericChunkSeriesSetAdapter{s})
-
 	}
 	return &chunkSeriesSetAdapter{newGenericMergeSeriesSet(genericSets, (&chunkSeriesMergerAdapter{VerticalChunkSeriesMergeFunc: mergeFunc}).Merge)}
 }
@@ -331,7 +330,7 @@ func (c *genericMergeSeriesSet) Next() bool {
 	// If, for the current label set, all the next series sets come from
 	// failed remote storage sources, we want to keep trying with the next label set.
 	for {
-		// Firstly advance all the current series sets. If any of them have run out
+		// Firstly advance all the current series sets. If any of them have run out,
 		// we can drop them, otherwise they should be inserted back into the heap.
 		for _, set := range c.currentSets {
 			if set.Next() {
@@ -418,8 +417,7 @@ func (h *genericSeriesSetHeap) Pop() interface{} {
 // with "almost" the same data, e.g. from 2 Prometheus HA replicas. This is fine, since from the Prometheus perspective
 // this never happens.
 //
-// NOTE: Use this merge function only when you see potentially overlapping series, as this introduces a small overhead
-// to handle overlaps between series.
+// It's optimized for non-overlap cases as well.
 func ChainedSeriesMerge(series ...Series) Series {
 	if len(series) == 0 {
 		return nil
@@ -431,82 +429,120 @@ func ChainedSeriesMerge(series ...Series) Series {
 			for _, s := range series {
 				iterators = append(iterators, s.Iterator())
 			}
-			return newChainSampleIterator(iterators)
+			return NewChainSampleIterator(iterators)
 		},
 	}
 }
 
 // chainSampleIterator is responsible to iterate over samples from different iterators of the same time series in timestamps
 // order. If one or more samples overlap, one sample from random overlapped ones is kept and all others with the same
-// timestamp are dropped.
+// timestamp are dropped. It's optimized for non-overlap cases as well.
 type chainSampleIterator struct {
 	iterators []chunkenc.Iterator
 	h         samplesIteratorHeap
+
+	curr  chunkenc.Iterator
+	lastt int64
 }
 
-func newChainSampleIterator(iterators []chunkenc.Iterator) chunkenc.Iterator {
+// NewChainSampleIterator returns a single iterator that iterates over the samples from the given iterators in a sorted
+// fashion. If samples overlap, one sample from overlapped ones is kept (randomly) and all others with the same
+// timestamp are dropped.
+func NewChainSampleIterator(iterators []chunkenc.Iterator) chunkenc.Iterator {
 	return &chainSampleIterator{
 		iterators: iterators,
 		h:         nil,
+		lastt:     math.MinInt64,
 	}
 }
 
 func (c *chainSampleIterator) Seek(t int64) bool {
+	// No-op check
+	if c.curr != nil && c.lastt >= t {
+		return true
+	}
+
 	c.h = samplesIteratorHeap{}
 	for _, iter := range c.iterators {
 		if iter.Seek(t) {
 			heap.Push(&c.h, iter)
 		}
 	}
-	return len(c.h) > 0
+	if len(c.h) > 0 {
+		c.curr = heap.Pop(&c.h).(chunkenc.Iterator)
+		c.lastt, _ = c.curr.At()
+		return true
+	}
+	c.curr = nil
+	return false
 }
 
 func (c *chainSampleIterator) At() (t int64, v float64) {
-	if len(c.h) == 0 {
-		panic("chainSampleIterator.At() called after .Next() returned false.")
+	if c.curr == nil {
+		panic("chainSampleIterator.At() called before first .Next() or after .Next() returned false.")
 	}
-
-	return c.h[0].At()
+	return c.curr.At()
 }
 
 func (c *chainSampleIterator) Next() bool {
 	if c.h == nil {
-		for _, iter := range c.iterators {
+		c.h = samplesIteratorHeap{}
+		// We call c.curr.Next() as the first thing below.
+		// So, we don't call Next() on it here.
+		c.curr = c.iterators[0]
+		for _, iter := range c.iterators[1:] {
 			if iter.Next() {
 				heap.Push(&c.h, iter)
 			}
 		}
-
-		return len(c.h) > 0
 	}
 
-	if len(c.h) == 0 {
+	if c.curr == nil {
 		return false
 	}
 
-	currt, _ := c.At()
-	for len(c.h) > 0 {
-		nextt, _ := c.h[0].At()
-		// All but one of the overlapping samples will be dropped.
-		if nextt != currt {
-			break
+	var currt int64
+	for {
+		if c.curr.Next() {
+			currt, _ = c.curr.At()
+			if currt == c.lastt {
+				// Ignoring sample for the same timestamp.
+				continue
+			}
+			if len(c.h) == 0 {
+				// curr is the only iterator remaining,
+				// no need to check with the heap.
+				break
+			}
+
+			// Check current iterator with the top of the heap.
+			if nextt, _ := c.h[0].At(); currt < nextt {
+				// Current iterator has smaller timestamp than the heap.
+				break
+			}
+			// Current iterator does not hold the smallest timestamp.
+			heap.Push(&c.h, c.curr)
+		} else if len(c.h) == 0 {
+			// No iterator left to iterate.
+			c.curr = nil
+			return false
 		}
 
-		iter := heap.Pop(&c.h).(chunkenc.Iterator)
-		if iter.Next() {
-			heap.Push(&c.h, iter)
+		c.curr = heap.Pop(&c.h).(chunkenc.Iterator)
+		currt, _ = c.curr.At()
+		if currt != c.lastt {
+			break
 		}
 	}
 
-	return len(c.h) > 0
+	c.lastt = currt
+	return true
 }
 
 func (c *chainSampleIterator) Err() error {
-	var errs tsdb_errors.MultiError
+	errs := tsdb_errors.NewMulti()
 	for _, iter := range c.iterators {
-		if err := iter.Err(); err != nil {
-			errs.Add(err)
-		}
+		errs.Add(iter.Err())
 	}
 	return errs.Err()
 }
@@ -634,7 +670,7 @@ func (c *compactChunkIterator) Next() bool {
 	}
 
 	// Add last as it's not yet included in overlap. We operate on same series, so labels does not matter here.
-	iter = (&seriesToChunkEncoder{Series: c.mergeFunc(append(overlapping, newChunkToSeriesDecoder(nil, c.curr))...)}).Iterator()
+	iter = NewSeriesToChunkEncoder(c.mergeFunc(append(overlapping, newChunkToSeriesDecoder(nil, c.curr))...)).Iterator()
 	if !iter.Next() {
 		if c.err = iter.Err(); c.err != nil {
 			return false
@@ -649,11 +685,9 @@ func (c *compactChunkIterator) Next() bool {
 }
 
 func (c *compactChunkIterator) Err() error {
-	var errs tsdb_errors.MultiError
+	errs := tsdb_errors.NewMulti()
 	for _, iter := range c.iterators {
-		if err := iter.Err(); err != nil {
-			errs.Add(err)
-		}
+		errs.Add(iter.Err())
 	}
 	errs.Add(c.err)
 	return errs.Err()

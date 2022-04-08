@@ -20,13 +20,16 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
-	"github.com/prometheus/prometheus/pkg/labels"
+
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
@@ -47,7 +50,7 @@ type IndexWriter interface {
 	// Implementations may require series to be insert in strictly increasing order by
 	// their labels. The reference numbers are used to resolve entries in postings lists
 	// that are added later.
-	AddSeries(ref uint64, l labels.Labels, chunks ...chunks.Meta) error
+	AddSeries(ref storage.SeriesRef, l labels.Labels, chunks ...chunks.Meta) error
 
 	// Close writes any finalization and closes the resources associated with
 	// the underlying writer.
@@ -62,10 +65,10 @@ type IndexReader interface {
 	Symbols() index.StringIter
 
 	// SortedLabelValues returns sorted possible label values.
-	SortedLabelValues(name string) ([]string, error)
+	SortedLabelValues(name string, matchers ...*labels.Matcher) ([]string, error)
 
 	// LabelValues returns possible label values which may not be sorted.
-	LabelValues(name string) ([]string, error)
+	LabelValues(name string, matchers ...*labels.Matcher) ([]string, error)
 
 	// Postings returns the postings list iterator for the label pairs.
 	// The Postings here contain the offsets to the series inside the index.
@@ -80,10 +83,19 @@ type IndexReader interface {
 	// Series populates the given labels and chunk metas for the series identified
 	// by the reference.
 	// Returns storage.ErrNotFound if the ref does not resolve to a known series.
-	Series(ref uint64, lset *labels.Labels, chks *[]chunks.Meta) error
+	Series(ref storage.SeriesRef, lset *labels.Labels, chks *[]chunks.Meta) error
 
 	// LabelNames returns all the unique label names present in the index in sorted order.
-	LabelNames() ([]string, error)
+	LabelNames(matchers ...*labels.Matcher) ([]string, error)
+
+	// LabelValueFor returns label value for the given label name in the series referred to by ID.
+	// If the series couldn't be found or the series doesn't have the requested label a
+	// storage.ErrNotFound is returned as error.
+	LabelValueFor(id storage.SeriesRef, label string) (string, error)
+
+	// LabelNamesFor returns all the label names for the series referred to by IDs.
+	// The names returned are sorted.
+	LabelNamesFor(ids ...storage.SeriesRef) ([]string, error)
 
 	// Close releases the underlying resources of the reader.
 	Close() error
@@ -105,7 +117,7 @@ type ChunkWriter interface {
 // ChunkReader provides reading access of serialized time series data.
 type ChunkReader interface {
 	// Chunk returns the series data chunk with the given reference.
-	Chunk(ref uint64) (chunkenc.Chunk, error)
+	Chunk(ref chunks.ChunkRef) (chunkenc.Chunk, error)
 
 	// Close releases all underlying resources of the reader.
 	Close() error
@@ -124,6 +136,9 @@ type BlockReader interface {
 
 	// Meta provides meta information about the block reader.
 	Meta() BlockMeta
+
+	// Size returns the number of bytes that the block takes up on disk.
+	Size() int64
 }
 
 // BlockMeta provides meta information about a block.
@@ -169,7 +184,7 @@ type BlockMetaCompaction struct {
 	// ULIDs of all source head blocks that went into the block.
 	Sources []ulid.ULID `json:"sources,omitempty"`
 	// Indicates that during compaction it resulted in a block without any samples
-	// so it should be deleted on the next reload.
+	// so it should be deleted on the next reloadBlocks.
 	Deletable bool `json:"deletable,omitempty"`
 	// Short descriptions of the direct blocks that were used to create
 	// this block.
@@ -177,9 +192,11 @@ type BlockMetaCompaction struct {
 	Failed  bool        `json:"failed,omitempty"`
 }
 
-const indexFilename = "index"
-const metaFilename = "meta.json"
-const metaVersion1 = 1
+const (
+	indexFilename = "index"
+	metaFilename  = "meta.json"
+	metaVersion1  = 1
+)
 
 func chunkDir(dir string) string { return filepath.Join(dir, "chunks") }
 
@@ -222,19 +239,14 @@ func writeMetaFile(logger log.Logger, dir string, meta *BlockMeta) (int64, error
 		return 0, err
 	}
 
-	var merr tsdb_errors.MultiError
 	n, err := f.Write(jsonMeta)
 	if err != nil {
-		merr.Add(err)
-		merr.Add(f.Close())
-		return 0, merr.Err()
+		return 0, tsdb_errors.NewMulti(err, f.Close()).Err()
 	}
 
 	// Force the kernel to persist the file on disk to avoid data loss if the host crashes.
 	if err := f.Sync(); err != nil {
-		merr.Add(err)
-		merr.Add(f.Close())
-		return 0, merr.Err()
+		return 0, tsdb_errors.NewMulti(err, f.Close()).Err()
 	}
 	if err := f.Close(); err != nil {
 		return 0, err
@@ -276,10 +288,7 @@ func OpenBlock(logger log.Logger, dir string, pool chunkenc.Pool) (pb *Block, er
 	var closers []io.Closer
 	defer func() {
 		if err != nil {
-			var merr tsdb_errors.MultiError
-			merr.Add(err)
-			merr.Add(closeAll(closers))
-			err = merr.Err()
+			err = tsdb_errors.NewMulti(err, tsdb_errors.CloseAll(closers)).Err()
 		}
 	}()
 	meta, sizeMeta, err := readMetaFile(dir)
@@ -329,13 +338,11 @@ func (pb *Block) Close() error {
 
 	pb.pendingReaders.Wait()
 
-	var merr tsdb_errors.MultiError
-
-	merr.Add(pb.chunkr.Close())
-	merr.Add(pb.indexr.Close())
-	merr.Add(pb.tombstones.Close())
-
-	return merr.Err()
+	return tsdb_errors.NewMulti(
+		pb.chunkr.Close(),
+		pb.indexr.Close(),
+		pb.tombstones.Close(),
+	).Err()
 }
 
 func (pb *Block) String() string {
@@ -421,14 +428,37 @@ func (r blockIndexReader) Symbols() index.StringIter {
 	return r.ir.Symbols()
 }
 
-func (r blockIndexReader) SortedLabelValues(name string) ([]string, error) {
-	st, err := r.ir.SortedLabelValues(name)
+func (r blockIndexReader) SortedLabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
+	var st []string
+	var err error
+
+	if len(matchers) == 0 {
+		st, err = r.ir.SortedLabelValues(name)
+	} else {
+		st, err = r.LabelValues(name, matchers...)
+		if err == nil {
+			sort.Strings(st)
+		}
+	}
+
 	return st, errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
 }
 
-func (r blockIndexReader) LabelValues(name string) ([]string, error) {
-	st, err := r.ir.LabelValues(name)
-	return st, errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
+func (r blockIndexReader) LabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
+	if len(matchers) == 0 {
+		st, err := r.ir.LabelValues(name)
+		return st, errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
+	}
+
+	return labelValuesWithMatchers(r.ir, name, matchers...)
+}
+
+func (r blockIndexReader) LabelNames(matchers ...*labels.Matcher) ([]string, error) {
+	if len(matchers) == 0 {
+		return r.b.LabelNames()
+	}
+
+	return labelNamesWithMatchers(r.ir, matchers...)
 }
 
 func (r blockIndexReader) Postings(name string, values ...string) (index.Postings, error) {
@@ -443,20 +473,27 @@ func (r blockIndexReader) SortedPostings(p index.Postings) index.Postings {
 	return r.ir.SortedPostings(p)
 }
 
-func (r blockIndexReader) Series(ref uint64, lset *labels.Labels, chks *[]chunks.Meta) error {
+func (r blockIndexReader) Series(ref storage.SeriesRef, lset *labels.Labels, chks *[]chunks.Meta) error {
 	if err := r.ir.Series(ref, lset, chks); err != nil {
 		return errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
 	}
 	return nil
 }
 
-func (r blockIndexReader) LabelNames() ([]string, error) {
-	return r.b.LabelNames()
-}
-
 func (r blockIndexReader) Close() error {
 	r.b.pendingReaders.Done()
 	return nil
+}
+
+// LabelValueFor returns label value for the given label name in the series referred to by ID.
+func (r blockIndexReader) LabelValueFor(id storage.SeriesRef, label string) (string, error) {
+	return r.ir.LabelValueFor(id, label)
+}
+
+// LabelNamesFor returns all the label names for the series referred to by IDs.
+// The names returned are sorted.
+func (r blockIndexReader) LabelNamesFor(ids ...storage.SeriesRef) ([]string, error) {
+	return r.ir.LabelNamesFor(ids...)
 }
 
 type blockTombstoneReader struct {
@@ -522,7 +559,7 @@ Outer:
 		return p.Err()
 	}
 
-	err = pb.tombstones.Iter(func(id uint64, ivs tombstones.Intervals) error {
+	err = pb.tombstones.Iter(func(id storage.SeriesRef, ivs tombstones.Intervals) error {
 		for _, iv := range ivs {
 			stones.AddInterval(id, iv)
 		}
@@ -549,10 +586,12 @@ Outer:
 
 // CleanTombstones will remove the tombstones and rewrite the block (only if there are any tombstones).
 // If there was a rewrite, then it returns the ULID of the new block written, else nil.
-func (pb *Block) CleanTombstones(dest string, c Compactor) (*ulid.ULID, error) {
+// If the resultant block is empty (tombstones covered the whole block), then it deletes the new block and return nil UID.
+// It returns a boolean indicating if the parent block can be deleted safely of not.
+func (pb *Block) CleanTombstones(dest string, c Compactor) (*ulid.ULID, bool, error) {
 	numStones := 0
 
-	if err := pb.tombstones.Iter(func(id uint64, ivs tombstones.Intervals) error {
+	if err := pb.tombstones.Iter(func(id storage.SeriesRef, ivs tombstones.Intervals) error {
 		numStones += len(ivs)
 		return nil
 	}); err != nil {
@@ -560,26 +599,27 @@ func (pb *Block) CleanTombstones(dest string, c Compactor) (*ulid.ULID, error) {
 		panic(err)
 	}
 	if numStones == 0 {
-		return nil, nil
+		return nil, false, nil
 	}
 
 	meta := pb.Meta()
 	uid, err := c.Write(dest, pb, pb.meta.MinTime, pb.meta.MaxTime, &meta)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
-	return &uid, nil
+
+	return &uid, true, nil
 }
 
 // Snapshot creates snapshot of the block into dir.
 func (pb *Block) Snapshot(dir string) error {
 	blockDir := filepath.Join(dir, pb.meta.ULID.String())
-	if err := os.MkdirAll(blockDir, 0777); err != nil {
+	if err := os.MkdirAll(blockDir, 0o777); err != nil {
 		return errors.Wrap(err, "create snapshot block dir")
 	}
 
 	chunksDir := chunkDir(blockDir)
-	if err := os.MkdirAll(chunksDir, 0777); err != nil {
+	if err := os.MkdirAll(chunksDir, 0o777); err != nil {
 		return errors.Wrap(err, "create snapshot chunk dir")
 	}
 

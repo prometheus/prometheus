@@ -25,12 +25,13 @@ import (
 
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
+	"github.com/stretchr/testify/require"
+
 	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
-	"github.com/prometheus/prometheus/util/testutil"
 )
 
 var scenarios = map[string]struct {
@@ -112,6 +113,14 @@ test_metric1{foo="bar",instance="i"} 10000 6000000
 test_metric1{foo="boo",instance="i"} 1 6000000
 # TYPE test_metric2 untyped
 test_metric2{foo="boo",instance="i"} 1 6000000
+`,
+	},
+	"two matchers with overlap": {
+		params: "match[]={__name__=~'test_metric1'}&match[]={foo='bar'}",
+		code:   200,
+		body: `# TYPE test_metric1 untyped
+test_metric1{foo="bar",instance="i"} 10000 6000000
+test_metric1{foo="boo",instance="i"} 1 6000000
 `,
 	},
 	"everything": {
@@ -220,8 +229,8 @@ func TestFederation(t *testing.T) {
 			res := httptest.NewRecorder()
 
 			h.federation(res, req)
-			testutil.Equals(t, scenario.code, res.Code)
-			testutil.Equals(t, scenario.body, normalizeBody(res.Body))
+			require.Equal(t, scenario.code, res.Code)
+			require.Equal(t, scenario.body, normalizeBody(res.Body))
 		})
 	}
 }
@@ -244,28 +253,29 @@ func (notReadyReadStorage) Stats(string) (*tsdb.Stats, error) {
 
 // Regression test for https://github.com/prometheus/prometheus/issues/7181.
 func TestFederation_NotReady(t *testing.T) {
-	h := &Handler{
-		localStorage:  notReadyReadStorage{},
-		lookbackDelta: 5 * time.Minute,
-		now:           func() model.Time { return 101 * 60 * 1000 }, // 101min after epoch.
-		config: &config.Config{
-			GlobalConfig: config.GlobalConfig{},
-		},
-	}
-
 	for name, scenario := range scenarios {
 		t.Run(name, func(t *testing.T) {
-			h.config.GlobalConfig.ExternalLabels = scenario.externalLabels
+			h := &Handler{
+				localStorage:  notReadyReadStorage{},
+				lookbackDelta: 5 * time.Minute,
+				now:           func() model.Time { return 101 * 60 * 1000 }, // 101min after epoch.
+				config: &config.Config{
+					GlobalConfig: config.GlobalConfig{
+						ExternalLabels: scenario.externalLabels,
+					},
+				},
+			}
+
 			req := httptest.NewRequest("GET", "http://example.org/federate?"+scenario.params, nil)
 			res := httptest.NewRecorder()
 
 			h.federation(res, req)
 			if scenario.code == http.StatusBadRequest {
 				// Request are expected to be checked before DB readiness.
-				testutil.Equals(t, http.StatusBadRequest, res.Code)
+				require.Equal(t, http.StatusBadRequest, res.Code)
 				return
 			}
-			testutil.Equals(t, http.StatusServiceUnavailable, res.Code)
+			require.Equal(t, http.StatusServiceUnavailable, res.Code)
 		})
 	}
 }

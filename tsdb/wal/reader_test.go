@@ -29,7 +29,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-kit/kit/log"
+	"github.com/go-kit/log"
+	"github.com/stretchr/testify/require"
+
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/util/testutil"
 )
@@ -57,100 +59,102 @@ var readerConstructors = map[string]func(io.Reader) reader{
 	},
 }
 
-var data = make([]byte, 100000)
-var testReaderCases = []struct {
-	t    []rec
-	exp  [][]byte
-	fail bool
-}{
-	// Sequence of valid records.
-	{
-		t: []rec{
-			{recFull, data[0:200]},
-			{recFirst, data[200:300]},
-			{recLast, data[300:400]},
-			{recFirst, data[400:800]},
-			{recMiddle, data[800:900]},
-			{recPageTerm, make([]byte, pageSize-900-recordHeaderSize*5-1)}, // exactly lines up with page boundary.
-			{recLast, data[900:900]},
-			{recFirst, data[900:1000]},
-			{recMiddle, data[1000:1200]},
-			{recMiddle, data[1200:30000]},
-			{recMiddle, data[30000:30001]},
-			{recMiddle, data[30001:30001]},
-			{recLast, data[30001:32000]},
+var (
+	data            = make([]byte, 100000)
+	testReaderCases = []struct {
+		t    []rec
+		exp  [][]byte
+		fail bool
+	}{
+		// Sequence of valid records.
+		{
+			t: []rec{
+				{recFull, data[0:200]},
+				{recFirst, data[200:300]},
+				{recLast, data[300:400]},
+				{recFirst, data[400:800]},
+				{recMiddle, data[800:900]},
+				{recPageTerm, make([]byte, pageSize-900-recordHeaderSize*5-1)}, // exactly lines up with page boundary.
+				{recLast, data[900:900]},
+				{recFirst, data[900:1000]},
+				{recMiddle, data[1000:1200]},
+				{recMiddle, data[1200:30000]},
+				{recMiddle, data[30000:30001]},
+				{recMiddle, data[30001:30001]},
+				{recLast, data[30001:32000]},
+			},
+			exp: [][]byte{
+				data[0:200],
+				data[200:400],
+				data[400:900],
+				data[900:32000],
+			},
 		},
-		exp: [][]byte{
-			data[0:200],
-			data[200:400],
-			data[400:900],
-			data[900:32000],
+		// Exactly at the limit of one page minus the header size
+		{
+			t: []rec{
+				{recFull, data[0 : pageSize-recordHeaderSize]},
+			},
+			exp: [][]byte{
+				data[:pageSize-recordHeaderSize],
+			},
 		},
-	},
-	// Exactly at the limit of one page minus the header size
-	{
-		t: []rec{
-			{recFull, data[0 : pageSize-recordHeaderSize]},
+		// More than a full page, this exceeds our buffer and can never happen
+		// when written by the WAL.
+		{
+			t: []rec{
+				{recFull, data[0 : pageSize+1]},
+			},
+			fail: true,
 		},
-		exp: [][]byte{
-			data[:pageSize-recordHeaderSize],
+		// Two records the together are too big for a page.
+		// NB currently the non-live reader succeeds on this. I think this is a bug.
+		// but we've seen it in production.
+		{
+			t: []rec{
+				{recFull, data[:pageSize/2]},
+				{recFull, data[:pageSize/2]},
+			},
+			exp: [][]byte{
+				data[:pageSize/2],
+				data[:pageSize/2],
+			},
 		},
-	},
-	// More than a full page, this exceeds our buffer and can never happen
-	// when written by the WAL.
-	{
-		t: []rec{
-			{recFull, data[0 : pageSize+1]},
+		// Invalid orders of record types.
+		{
+			t:    []rec{{recMiddle, data[:200]}},
+			fail: true,
 		},
-		fail: true,
-	},
-	// Two records the together are too big for a page.
-	// NB currently the non-live reader succeeds on this. I think this is a bug.
-	// but we've seen it in production.
-	{
-		t: []rec{
-			{recFull, data[:pageSize/2]},
-			{recFull, data[:pageSize/2]},
+		{
+			t:    []rec{{recLast, data[:200]}},
+			fail: true,
 		},
-		exp: [][]byte{
-			data[:pageSize/2],
-			data[:pageSize/2],
+		{
+			t: []rec{
+				{recFirst, data[:200]},
+				{recFull, data[200:400]},
+			},
+			fail: true,
 		},
-	},
-	// Invalid orders of record types.
-	{
-		t:    []rec{{recMiddle, data[:200]}},
-		fail: true,
-	},
-	{
-		t:    []rec{{recLast, data[:200]}},
-		fail: true,
-	},
-	{
-		t: []rec{
-			{recFirst, data[:200]},
-			{recFull, data[200:400]},
+		{
+			t: []rec{
+				{recFirst, data[:100]},
+				{recMiddle, data[100:200]},
+				{recFull, data[200:400]},
+			},
+			fail: true,
 		},
-		fail: true,
-	},
-	{
-		t: []rec{
-			{recFirst, data[:100]},
-			{recMiddle, data[100:200]},
-			{recFull, data[200:400]},
+		// Non-zero data after page termination.
+		{
+			t: []rec{
+				{recFull, data[:100]},
+				{recPageTerm, append(make([]byte, pageSize-recordHeaderSize-102), 1)},
+			},
+			exp:  [][]byte{data[:100]},
+			fail: true,
 		},
-		fail: true,
-	},
-	// Non-zero data after page termination.
-	{
-		t: []rec{
-			{recFull, data[:100]},
-			{recPageTerm, append(make([]byte, pageSize-recordHeaderSize-102), 1)},
-		},
-		exp:  [][]byte{data[:100]},
-		fail: true,
-	},
-}
+	}
+)
 
 func encodedRecord(t recType, b []byte) []byte {
 	if t == recPageTerm {
@@ -181,7 +185,7 @@ func TestReader(t *testing.T) {
 					if j >= len(c.exp) {
 						t.Fatal("received more records than expected")
 					}
-					testutil.Equals(t, c.exp[j], rec, "Bytes within record did not match expected Bytes")
+					require.Equal(t, c.exp[j], rec, "Bytes within record did not match expected Bytes")
 				}
 				if !c.fail && r.Err() != nil {
 					t.Fatalf("unexpected error: %s", r.Err())
@@ -200,14 +204,14 @@ func TestReader_Live(t *testing.T) {
 	for i := range testReaderCases {
 		t.Run(strconv.Itoa(i), func(t *testing.T) {
 			writeFd, err := ioutil.TempFile("", "TestReader_Live")
-			testutil.Ok(t, err)
+			require.NoError(t, err)
 			defer os.Remove(writeFd.Name())
 
 			go func(i int) {
 				for _, rec := range testReaderCases[i].t {
 					rec := encodedRecord(rec.t, rec.b)
 					_, err := writeFd.Write(rec)
-					testutil.Ok(t, err)
+					require.NoError(t, err)
 					runtime.Gosched()
 				}
 				writeFd.Close()
@@ -215,21 +219,21 @@ func TestReader_Live(t *testing.T) {
 
 			// Read from a second FD on the same file.
 			readFd, err := os.Open(writeFd.Name())
-			testutil.Ok(t, err)
+			require.NoError(t, err)
 			reader := NewLiveReader(logger, NewLiveReaderMetrics(nil), readFd)
 			for _, exp := range testReaderCases[i].exp {
 				for !reader.Next() {
-					testutil.Assert(t, reader.Err() == io.EOF, "expect EOF, got: %v", reader.Err())
+					require.Equal(t, io.EOF, reader.Err(), "expect EOF, got: %v", reader.Err())
 					runtime.Gosched()
 				}
 
 				actual := reader.Record()
-				testutil.Equals(t, exp, actual, "read wrong record")
+				require.Equal(t, exp, actual, "read wrong record")
 			}
 
-			testutil.Assert(t, !reader.Next(), "unexpected record")
+			require.False(t, reader.Next(), "unexpected record")
 			if testReaderCases[i].fail {
-				testutil.Assert(t, reader.Err() != nil, "expected error")
+				require.Error(t, reader.Err())
 			}
 		})
 	}
@@ -277,12 +281,9 @@ type multiReadCloser struct {
 func (m *multiReadCloser) Read(p []byte) (n int, err error) {
 	return m.reader.Read(p)
 }
+
 func (m *multiReadCloser) Close() error {
-	var merr tsdb_errors.MultiError
-	for _, closer := range m.closers {
-		merr.Add(closer.Close())
-	}
-	return merr.Err()
+	return tsdb_errors.NewMulti(tsdb_errors.CloseAll(m.closers)).Err()
 }
 
 func allSegments(dir string) (io.ReadCloser, error) {
@@ -312,34 +313,36 @@ func TestReaderFuzz(t *testing.T) {
 	for name, fn := range readerConstructors {
 		for _, compress := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s,compress=%t", name, compress), func(t *testing.T) {
-				dir, err := ioutil.TempDir("", "wal_fuzz_live")
-				testutil.Ok(t, err)
-				defer func() {
-					testutil.Ok(t, os.RemoveAll(dir))
-				}()
+				dir := t.TempDir()
 
 				w, err := NewSize(nil, nil, dir, 128*pageSize, compress)
-				testutil.Ok(t, err)
+				require.NoError(t, err)
 
 				// Buffering required as we're not reading concurrently.
 				input := make(chan []byte, fuzzLen)
 				err = generateRandomEntries(w, input)
-				testutil.Ok(t, err)
+				require.NoError(t, err)
 				close(input)
 
 				err = w.Close()
-				testutil.Ok(t, err)
+				require.NoError(t, err)
 
 				sr, err := allSegments(w.Dir())
-				testutil.Ok(t, err)
+				require.NoError(t, err)
 				defer sr.Close()
 
 				reader := fn(sr)
 				for expected := range input {
-					testutil.Assert(t, reader.Next(), "expected record: %v", reader.Err())
-					testutil.Equals(t, expected, reader.Record(), "read wrong record")
+					require.True(t, reader.Next(), "expected record: %v", reader.Err())
+					r := reader.Record()
+					// Expected value may come as nil or empty slice, so it requires special comparison.
+					if len(expected) == 0 {
+						require.Len(t, r, 0)
+					} else {
+						require.Equal(t, expected, r, "read wrong record")
+					}
 				}
-				testutil.Assert(t, !reader.Next(), "unexpected record")
+				require.False(t, reader.Next(), "unexpected record")
 			})
 		}
 	}
@@ -349,14 +352,10 @@ func TestReaderFuzz_Live(t *testing.T) {
 	logger := testutil.NewLogger(t)
 	for _, compress := range []bool{false, true} {
 		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
-			dir, err := ioutil.TempDir("", "wal_fuzz_live")
-			testutil.Ok(t, err)
-			defer func() {
-				testutil.Ok(t, os.RemoveAll(dir))
-			}()
+			dir := t.TempDir()
 
 			w, err := NewSize(nil, nil, dir, 128*pageSize, compress)
-			testutil.Ok(t, err)
+			require.NoError(t, err)
 			defer w.Close()
 
 			// In the background, generate a stream of random records and write them
@@ -365,17 +364,17 @@ func TestReaderFuzz_Live(t *testing.T) {
 			done := make(chan struct{})
 			go func() {
 				err := generateRandomEntries(w, input)
-				testutil.Ok(t, err)
+				require.NoError(t, err)
 				time.Sleep(100 * time.Millisecond)
 				close(done)
 			}()
 
 			// Tail the WAL and compare the results.
-			m, _, err := w.Segments()
-			testutil.Ok(t, err)
+			m, _, err := Segments(w.Dir())
+			require.NoError(t, err)
 
 			seg, err := OpenReadSegment(SegmentName(dir, m))
-			testutil.Ok(t, err)
+			require.NoError(t, err)
 			defer seg.Close()
 
 			r := NewLiveReader(logger, nil, seg)
@@ -386,10 +385,15 @@ func TestReaderFuzz_Live(t *testing.T) {
 				for r.Next() {
 					rec := r.Record()
 					expected, ok := <-input
-					testutil.Assert(t, ok, "unexpected record")
-					testutil.Equals(t, expected, rec, "record does not match expected")
+					require.True(t, ok, "unexpected record")
+					// Expected value may come as nil or empty slice, so it requires special comparison.
+					if len(expected) == 0 {
+						require.Len(t, rec, 0)
+					} else {
+						require.Equal(t, expected, rec, "record does not match expected")
+					}
 				}
-				testutil.Assert(t, r.Err() == io.EOF, "expected EOF, got: %v", r.Err())
+				require.Equal(t, io.EOF, r.Err(), "expected EOF, got: %v", r.Err())
 				return true
 			}
 
@@ -398,8 +402,8 @@ func TestReaderFuzz_Live(t *testing.T) {
 				select {
 				case <-segmentTicker.C:
 					// check if new segments exist
-					_, last, err := w.Segments()
-					testutil.Ok(t, err)
+					_, last, err := Segments(w.Dir())
+					require.NoError(t, err)
 					if last <= seg.i {
 						continue
 					}
@@ -408,11 +412,11 @@ func TestReaderFuzz_Live(t *testing.T) {
 					readSegment(r)
 
 					fi, err := os.Stat(SegmentName(dir, seg.i))
-					testutil.Ok(t, err)
-					testutil.Assert(t, r.Offset() == fi.Size(), "expected to have read whole segment, but read %d of %d", r.Offset(), fi.Size())
+					require.NoError(t, err)
+					require.Equal(t, r.Offset(), fi.Size(), "expected to have read whole segment, but read %d of %d", r.Offset(), fi.Size())
 
 					seg, err = OpenReadSegment(SegmentName(dir, seg.i+1))
-					testutil.Ok(t, err)
+					require.NoError(t, err)
 					defer seg.Close()
 					r = NewLiveReader(logger, nil, seg)
 
@@ -425,7 +429,7 @@ func TestReaderFuzz_Live(t *testing.T) {
 				}
 			}
 
-			testutil.Assert(t, r.Err() == io.EOF, "expected EOF")
+			require.Equal(t, io.EOF, r.Err(), "expected EOF")
 		})
 	}
 }
@@ -434,93 +438,85 @@ func TestLiveReaderCorrupt_ShortFile(t *testing.T) {
 	// Write a corrupt WAL segment, there is one record of pageSize in length,
 	// but the segment is only half written.
 	logger := testutil.NewLogger(t)
-	dir, err := ioutil.TempDir("", "wal_live_corrupt")
-	testutil.Ok(t, err)
-	defer func() {
-		testutil.Ok(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 
 	w, err := NewSize(nil, nil, dir, pageSize, false)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	rec := make([]byte, pageSize-recordHeaderSize)
 	_, err = rand.Read(rec)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	err = w.Log(rec)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	err = w.Close()
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
-	segmentFile, err := os.OpenFile(filepath.Join(dir, "00000000"), os.O_RDWR, 0666)
-	testutil.Ok(t, err)
+	segmentFile, err := os.OpenFile(filepath.Join(dir, "00000000"), os.O_RDWR, 0o666)
+	require.NoError(t, err)
 
 	err = segmentFile.Truncate(pageSize / 2)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	err = segmentFile.Close()
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	// Try and LiveReader it.
-	m, _, err := w.Segments()
-	testutil.Ok(t, err)
+	m, _, err := Segments(w.Dir())
+	require.NoError(t, err)
 
 	seg, err := OpenReadSegment(SegmentName(dir, m))
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 	defer seg.Close()
 
 	r := NewLiveReader(logger, nil, seg)
-	testutil.Assert(t, r.Next() == false, "expected no records")
-	testutil.Assert(t, r.Err() == io.EOF, "expected error, got: %v", r.Err())
+	require.False(t, r.Next(), "expected no records")
+	require.Equal(t, io.EOF, r.Err(), "expected error, got: %v", r.Err())
 }
 
 func TestLiveReaderCorrupt_RecordTooLongAndShort(t *testing.T) {
 	// Write a corrupt WAL segment, when record len > page size.
 	logger := testutil.NewLogger(t)
-	dir, err := ioutil.TempDir("", "wal_live_corrupt")
-	testutil.Ok(t, err)
-	defer func() {
-		testutil.Ok(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 
 	w, err := NewSize(nil, nil, dir, pageSize*2, false)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	rec := make([]byte, pageSize-recordHeaderSize)
 	_, err = rand.Read(rec)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	err = w.Log(rec)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	err = w.Close()
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
-	segmentFile, err := os.OpenFile(filepath.Join(dir, "00000000"), os.O_RDWR, 0666)
-	testutil.Ok(t, err)
+	segmentFile, err := os.OpenFile(filepath.Join(dir, "00000000"), os.O_RDWR, 0o666)
+	require.NoError(t, err)
 
 	// Override the record length
 	buf := make([]byte, 3)
 	buf[0] = byte(recFull)
 	binary.BigEndian.PutUint16(buf[1:], 0xFFFF)
 	_, err = segmentFile.WriteAt(buf, 0)
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	err = segmentFile.Close()
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 
 	// Try and LiveReader it.
-	m, _, err := w.Segments()
-	testutil.Ok(t, err)
+	m, _, err := Segments(w.Dir())
+	require.NoError(t, err)
 
 	seg, err := OpenReadSegment(SegmentName(dir, m))
-	testutil.Ok(t, err)
+	require.NoError(t, err)
 	defer seg.Close()
 
 	r := NewLiveReader(logger, NewLiveReaderMetrics(nil), seg)
-	testutil.Assert(t, r.Next() == false, "expected no records")
-	testutil.Assert(t, r.Err().Error() == "record length greater than a single page: 65542 > 32768", "expected error, got: %v", r.Err())
+	require.False(t, r.Next(), "expected no records")
+	require.EqualError(t, r.Err(), "record length greater than a single page: 65542 > 32768", "expected error, got: %v", r.Err())
 }
 
 func TestReaderData(t *testing.T) {
@@ -532,18 +528,18 @@ func TestReaderData(t *testing.T) {
 	for name, fn := range readerConstructors {
 		t.Run(name, func(t *testing.T) {
 			w, err := New(nil, nil, dir, true)
-			testutil.Ok(t, err)
+			require.NoError(t, err)
 
 			sr, err := allSegments(dir)
-			testutil.Ok(t, err)
+			require.NoError(t, err)
 
 			reader := fn(sr)
 			for reader.Next() {
 			}
-			testutil.Ok(t, reader.Err())
+			require.NoError(t, reader.Err())
 
 			err = w.Repair(reader.Err())
-			testutil.Ok(t, err)
+			require.NoError(t, err)
 		})
 	}
 }

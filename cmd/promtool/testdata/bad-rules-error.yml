@@ -1,0 +1,7 @@
+# This is the rules file for bad-rules-error-test.yml.
+
+groups:
+  - name: bad-example
+    rules:
+      - record: joined
+        expr: join_1 + on(a) join_2

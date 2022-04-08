@@ -24,9 +24,10 @@ import (
 	"reflect"
 	"sort"
 
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/log/level"
+	"github.com/go-kit/log"
+	"github.com/go-kit/log/level"
 	"github.com/prometheus/common/model"
+
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
@@ -83,7 +84,6 @@ func generateTargetGroups(allTargetGroups map[string][]*targetgroup.Group) map[s
 			}
 
 			sdGroup := customSD{
-
 				Targets: newTargets,
 				Labels:  newLabels,
 			}
@@ -162,7 +162,7 @@ func (a *Adapter) Run() {
 }
 
 // NewAdapter creates a new instance of Adapter.
-func NewAdapter(ctx context.Context, file string, name string, d discovery.Discoverer, logger log.Logger) *Adapter {
+func NewAdapter(ctx context.Context, file, name string, d discovery.Discoverer, logger log.Logger) *Adapter {
 	return &Adapter{
 		ctx:     ctx,
 		disc:    d,

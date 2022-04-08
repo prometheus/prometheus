@@ -14,7 +14,7 @@ export interface TargetLabelsProps {
   scrapePool: string;
 }
 
-const formatLabels = (labels: Labels): string[] => Object.keys(labels).map(key => `${key}="${labels[key]}"`);
+const formatLabels = (labels: Labels): string[] => Object.keys(labels).map((key) => `${key}="${labels[key]}"`);
 
 const TargetLabels: FC<TargetLabelsProps> = ({ discoveredLabels, labels, idx, scrapePool }) => {
   const [tooltipOpen, setTooltipOpen] = useState(false);
@@ -25,18 +25,24 @@ const TargetLabels: FC<TargetLabelsProps> = ({ discoveredLabels, labels, idx, sc
   return (
     <>
       <div id={id} className="series-labels-container">
-        {Object.keys(labels).map(labelName => {
+        {Object.keys(labels).map((labelName) => {
           return (
-            <Badge color="primary" className={`mr-1 ${labelName}`} key={labelName}>
+            <Badge color="primary" className="mr-1" key={labelName}>
               {`${labelName}="${labels[labelName]}"`}
             </Badge>
           );
         })}
       </div>
-      <Tooltip isOpen={tooltipOpen} target={CSS.escape(id)} toggle={toggle} style={{ maxWidth: 'none', textAlign: 'left' }}>
+      <Tooltip
+        isOpen={tooltipOpen}
+        target={CSS.escape(id)}
+        toggle={toggle}
+        placement={'right-end'}
+        style={{ maxWidth: 'none', textAlign: 'left' }}
+      >
         <b>Before relabeling:</b>
-        {formatLabels(discoveredLabels).map((s: string, idx: number) => (
-          <Fragment key={idx}>
+        {formatLabels(discoveredLabels).map((s: string, labelIndex: number) => (
+          <Fragment key={labelIndex}>
             <br />
             <span className={styles.discovered}>{s}</span>
           </Fragment>
