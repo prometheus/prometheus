@@ -101,7 +101,7 @@ plugins/plugins.go: plugins.yml plugins/generate.go
 plugins: plugins/plugins.go
 
 .PHONY: build
-build: assets assets-compress common-build plugins
+build: assets npm_licenses assets-compress common-build plugins
 
 .PHONY: bench_tsdb
 bench_tsdb: $(PROMU)
