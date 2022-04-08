@@ -1365,11 +1365,11 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 			points = points[:0]
 			it.Reset(s.Iterator())
 			metric := selVS.Series[i].Labels()
-			// The last_over_time function acts like offset; thus, it
+			// The [last/first]_over_time functions acts like offset; thus, it
 			// should keep the metric name.  For all the other range
 			// vector functions, the only change needed is to drop the
 			// metric name in the output.
-			if e.Func.Name != "last_over_time" {
+			if e.Func.Name != "last_over_time" && e.Func.Name != "first_over_time" {
 				metric = dropMetricName(metric)
 			}
 			ss := Series{

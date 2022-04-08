@@ -152,6 +152,11 @@ var Functions = map[string]*Function{
 		ArgTypes:   []ValueType{ValueTypeVector},
 		ReturnType: ValueTypeVector,
 	},
+	"first_over_time": {
+		Name:       "first_over_time",
+		ArgTypes:   []ValueType{ValueTypeMatrix},
+		ReturnType: ValueTypeVector,
+	},
 	"floor": {
 		Name:       "floor",
 		ArgTypes:   []ValueType{ValueTypeVector},

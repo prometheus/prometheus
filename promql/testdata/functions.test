@@ -787,6 +787,13 @@ eval instant at 1m last_over_time(data[1m])
 	data{type="some_nan3"} 1
 	data{type="only_nan"} NaN
 
+eval instant at 1m first_over_time(data[1m])
+	data{type="numbers"} 2
+	data{type="some_nan"} 2
+	data{type="some_nan2"} 2
+	data{type="some_nan3"} NaN
+	data{type="only_nan"} NaN
+
 clear
 
 # Test for absent()

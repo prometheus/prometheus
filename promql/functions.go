@@ -414,6 +414,16 @@ func funcLastOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNod
 	})
 }
 
+// === first_over_time(Matrix parser.ValueTypeMatrix) Vector ===
+func funcFirstOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	el := vals[0].(Matrix)[0]
+
+	return append(enh.Out, Sample{
+		Metric: el.Metric,
+		Point:  Point{V: el.Points[0].V},
+	})
+}
+
 // === max_over_time(Matrix parser.ValueTypeMatrix) Vector ===
 func funcMaxOverTime(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return aggrOverTime(vals, enh, func(values []Point) float64 {
@@ -1093,6 +1103,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"delta":              funcDelta,
 	"deriv":              funcDeriv,
 	"exp":                funcExp,
+	"first_over_time":    funcFirstOverTime,
 	"floor":              funcFloor,
 	"histogram_quantile": funcHistogramQuantile,
 	"holt_winters":       funcHoltWinters,
