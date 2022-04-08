@@ -3,7 +3,7 @@
 * [CHANGE] TSDB: Delete *.tmp WAL files when Prometheus starts. #10317
 * [CHANGE] promtool: Add new flag `--lint` (enabled by default) for the commands `check rules` and `check config`, resulting in a new exit code (`3`) for linter errors. #10435
 * [FEATURE] Support for automatically setting the variable `GOMAXPROCS` to the container CPU limit. Enable with the flag `--enable-feature=auto-gomaxprocs` #10498
-* [FEATURE] Web: Add a new value: `all` for the query parameter `stats`. When used it will return the total number of samples read out and the previous statistic tracked per step in a range query. 
+* [FEATURE] PromQL: Extend statistics with total and peak number of samples in a query. Additionally, per-step statistics are available with  --enable-feature=promql-per-step-stats and using `stats=all` in the query API. 
 Enable with the flag `--enable-feature=per-step-stats` #10369
 * [ENHANCEMENT] Prometheus is built with Go 1.18. #10501
 * [ENHANCEMENT] TSDB: more efficient sorting of postings read from WAL at startup. #10500
