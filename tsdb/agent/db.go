@@ -410,6 +410,7 @@ func (db *DB) loadWAL(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.He
 
 	go func() {
 		defer close(decoded)
+		var err error
 		for r.Next() {
 			rec := r.Record()
 			switch dec.Type(rec) {
