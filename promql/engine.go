@@ -1398,7 +1398,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 				enh.Ts = ts
 				// Make the function call.
 				outVec := call(inArgs, e.Args, enh)
-				ev.samplesStats.IncrementSamplesAtStep(step, len(points))
+				ev.samplesStats.IncrementSamplesAtStep(step, int64(len(points)))
 				enh.Out = outVec[:0]
 				if len(outVec) > 0 {
 					ss.Points = append(ss.Points, Point{V: outVec[0].Point.V, T: ts})
@@ -1783,7 +1783,7 @@ func (ev *evaluator) matrixSelector(node *parser.MatrixSelector) (Matrix, storag
 		}
 
 		ss.Points = ev.matrixIterSlice(it, mint, maxt, getPointSlice(16))
-		ev.samplesStats.IncrementSamplesAtTimestamp(ev.startTimestamp, len(ss.Points))
+		ev.samplesStats.IncrementSamplesAtTimestamp(ev.startTimestamp, int64(len(ss.Points)))
 
 		if len(ss.Points) > 0 {
 			matrix = append(matrix, ss)
