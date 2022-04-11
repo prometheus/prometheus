@@ -794,7 +794,7 @@ func TestFloatHistogramCompact(t *testing.T) {
 			},
 		},
 		{
-			"cut empty buckets at start or end of chunks, even in the middle",
+			"cut empty buckets at start or end of spans, even in the middle",
 			&FloatHistogram{
 				PositiveSpans:   []Span{{-4, 6}, {3, 6}},
 				PositiveBuckets: []float64{0, 0, 1, 3.3, 0, 0, 4.2, 0.1, 3.3, 0, 0, 0},
@@ -826,7 +826,7 @@ func TestFloatHistogramCompact(t *testing.T) {
 			},
 		},
 		{
-			"cut empty buckets from the middle of a chunk",
+			"cut empty buckets from the middle of a span",
 			&FloatHistogram{
 				PositiveSpans:   []Span{{-4, 6}, {3, 3}},
 				PositiveBuckets: []float64{0, 0, 1, 0, 0, 3.3, 4.2, 0.1, 3.3},
@@ -842,7 +842,19 @@ func TestFloatHistogramCompact(t *testing.T) {
 			},
 		},
 		{
-			"cut empty buckets from the middle of a chunk, avoiding some due to maxEmptyBuckets",
+			"cut out a span containing only empty buckets",
+			&FloatHistogram{
+				PositiveSpans:   []Span{{-4, 3}, {2, 2}, {3, 4}},
+				PositiveBuckets: []float64{0, 0, 1, 0, 0, 3.3, 4.2, 0.1, 3.3},
+			},
+			0,
+			&FloatHistogram{
+				PositiveSpans:   []Span{{-2, 1}, {7, 4}},
+				PositiveBuckets: []float64{1, 3.3, 4.2, 0.1, 3.3},
+			},
+		},
+		{
+			"cut empty buckets from the middle of a span, avoiding some due to maxEmptyBuckets",
 			&FloatHistogram{
 				PositiveSpans:   []Span{{-4, 6}, {3, 3}},
 				PositiveBuckets: []float64{0, 0, 1, 0, 0, 3.3, 4.2, 0.1, 3.3},
@@ -903,6 +915,22 @@ func TestFloatHistogramCompact(t *testing.T) {
 				PositiveBuckets: []float64{},
 				NegativeSpans:   []Span{},
 				NegativeBuckets: []float64{},
+			},
+		},
+		{
+			"multiple spans of only empty buckets",
+			&FloatHistogram{
+				PositiveSpans:   []Span{{-10, 2}, {2, 1}, {3, 3}},
+				PositiveBuckets: []float64{0, 0, 0, 0, 2, 3},
+				NegativeSpans:   []Span{{-10, 2}, {2, 1}, {3, 3}},
+				NegativeBuckets: []float64{2, 3, 0, 0, 0, 0},
+			},
+			0,
+			&FloatHistogram{
+				PositiveSpans:   []Span{{-1, 2}},
+				PositiveBuckets: []float64{2, 3},
+				NegativeSpans:   []Span{{-10, 2}},
+				NegativeBuckets: []float64{2, 3},
 			},
 		},
 	}

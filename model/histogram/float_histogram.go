@@ -430,7 +430,11 @@ func compactBuckets(buckets []float64, spans []Span, maxEmptyBuckets int) ([]flo
 				// Start of span.
 				if nEmpty == int(spans[iSpan].Length) {
 					// The whole span is empty.
+					offset := spans[iSpan].Offset
 					spans = append(spans[:iSpan], spans[iSpan+1:]...)
+					if len(spans) > iSpan {
+						spans[iSpan].Offset += offset + int32(nEmpty)
+					}
 					continue
 				}
 				spans[iSpan].Length -= uint32(nEmpty)
