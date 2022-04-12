@@ -5,20 +5,19 @@ import { API_PATH } from '../../constants/constants';
 import { groupTargets, ScrapePool, ScrapePools, Target } from './target';
 import { withStatusIndicator } from '../../components/withStatusIndicator';
 import { ChangeEvent, FC, useEffect, useState } from 'react';
-import { Col, Collapse, Input, InputGroup, InputGroupAddon, InputGroupText, Row } from 'reactstrap';
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faSearch } from '@fortawesome/free-solid-svg-icons';
+import { Col, Collapse, Row } from 'reactstrap';
 import { ScrapePoolContent } from './ScrapePoolContent';
 import Filter, { Expanded, FilterData } from './Filter';
 import { useLocalStorage } from '../../hooks/useLocalStorage';
 import styles from './ScrapePoolPanel.module.css';
 import { ToggleMoreLess } from '../../components/ToggleMoreLess';
+import SearchBar from '../../components/SearchBar';
 
 interface ScrapePoolListProps {
   activeTargets: Target[];
 }
 
-const kvSearch = new KVSearch({
+const kvSearch = new KVSearch<Target>({
   shouldSort: true,
   indexedKeys: ['labels', 'scrapePool', ['labels', /.*/]],
 });
@@ -76,11 +75,7 @@ const ScrapePoolListContent: FC<ScrapePoolListProps> = ({ activeTargets }) => {
   const handleSearchChange = (e: ChangeEvent<HTMLTextAreaElement | HTMLInputElement>) => {
     if (e.target.value !== '') {
       const result = kvSearch.filter(e.target.value.trim(), activeTargets);
-      setTargetList(
-        result.map((value) => {
-          return value.original as unknown as Target;
-        })
-      );
+      setTargetList(result.map((value) => value.original));
     } else {
       setTargetList(activeTargets);
     }
@@ -98,12 +93,7 @@ const ScrapePoolListContent: FC<ScrapePoolListProps> = ({ activeTargets }) => {
           <Filter filter={filter} setFilter={setFilter} expanded={expanded} setExpanded={setExpanded} />
         </Col>
         <Col xs="6">
-          <InputGroup>
-            <InputGroupAddon addonType="prepend">
-              <InputGroupText>{<FontAwesomeIcon icon={faSearch} />}</InputGroupText>
-            </InputGroupAddon>
-            <Input autoFocus onChange={handleSearchChange} placeholder="Filter by endpoint or labels" />
-          </InputGroup>
+          <SearchBar handleChange={handleSearchChange} placeholder="Filter by endpoint or labels" />
         </Col>
       </Row>
       {Object.keys(poolList)

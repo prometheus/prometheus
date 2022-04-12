@@ -170,7 +170,7 @@ func (tg *testGroup) test(evalInterval time.Duration, groupOrderMap map[string]i
 		Logger:     log.NewNopLogger(),
 	}
 	m := rules.NewManager(opts)
-	groupsMap, ers := m.LoadGroups(time.Duration(tg.Interval), tg.ExternalLabels, tg.ExternalURL, ruleFiles...)
+	groupsMap, ers := m.LoadGroups(time.Duration(tg.Interval), tg.ExternalLabels, tg.ExternalURL, nil, ruleFiles...)
 	if ers != nil {
 		return ers
 	}
@@ -435,7 +435,7 @@ func (tg *testGroup) maxEvalTime() time.Duration {
 }
 
 func query(ctx context.Context, qs string, t time.Time, engine *promql.Engine, qu storage.Queryable) (promql.Vector, error) {
-	q, err := engine.NewInstantQuery(qu, qs, t)
+	q, err := engine.NewInstantQuery(qu, nil, qs, t)
 	if err != nil {
 		return nil, err
 	}

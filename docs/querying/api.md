@@ -55,7 +55,7 @@ timestamps are always represented as Unix timestamps in seconds.
 * `<series_selector>`: Prometheus [time series
 selectors](basics.md#time-series-selectors) like `http_requests_total` or
 `http_requests_total{method=~"(GET|POST)"}` and need to be URL-encoded.
-* `<duration>`: [Prometheus duration strings](basics.md#time_durations).
+* `<duration>`: [Prometheus duration strings](basics.md#time-durations).
 For example, `5m` refers to a duration of 5 minutes.
 * `<bool>`: boolean values (strings `true` and `false`).
 
@@ -620,6 +620,7 @@ $ curl http://localhost:9090/api/v1/rules
                 ],
                 "file": "/rules.yaml",
                 "interval": 60,
+                "limit": 0,
                 "name": "example"
             }
         ]

@@ -2,6 +2,7 @@ import React, { FC, useState } from 'react';
 import { Badge, Table } from 'reactstrap';
 import { TargetLabels } from './Services';
 import { ToggleMoreLess } from '../../components/ToggleMoreLess';
+import CustomInfiniteScroll, { InfiniteScrollItemsProps } from '../../components/CustomInfiniteScroll';
 
 interface LabelProps {
   value: TargetLabels[];
@@ -20,6 +21,33 @@ const formatLabels = (labels: Record<string, string> | string) => {
   });
 };
 
+const LabelsTableContent: FC<InfiniteScrollItemsProps<TargetLabels>> = ({ items }) => {
+  return (
+    <Table size="sm" bordered hover striped>
+      <thead>
+        <tr>
+          <th>Discovered Labels</th>
+          <th>Target Labels</th>
+        </tr>
+      </thead>
+      <tbody>
+        {items.map((_, i) => {
+          return (
+            <tr key={i}>
+              <td>{formatLabels(items[i].discoveredLabels)}</td>
+              {items[i].isDropped ? (
+                <td style={{ fontWeight: 'bold' }}>Dropped</td>
+              ) : (
+                <td>{formatLabels(items[i].labels)}</td>
+              )}
+            </tr>
+          );
+        })}
+      </tbody>
+    </Table>
+  );
+};
+
 export const LabelsTable: FC<LabelProps> = ({ value, name }) => {
   const [showMore, setShowMore] = useState(false);
 
@@ -35,30 +63,7 @@ export const LabelsTable: FC<LabelProps> = ({ value, name }) => {
           <span className="target-head">{name}</span>
         </ToggleMoreLess>
       </div>
-      {showMore ? (
-        <Table size="sm" bordered hover striped>
-          <thead>
-            <tr>
-              <th>Discovered Labels</th>
-              <th>Target Labels</th>
-            </tr>
-          </thead>
-          <tbody>
-            {value.map((_, i) => {
-              return (
-                <tr key={i}>
-                  <td>{formatLabels(value[i].discoveredLabels)}</td>
-                  {value[i].isDropped ? (
-                    <td style={{ fontWeight: 'bold' }}>Dropped</td>
-                  ) : (
-                    <td>{formatLabels(value[i].labels)}</td>
-                  )}
-                </tr>
-              );
-            })}
-          </tbody>
-        </Table>
-      ) : null}
+      {showMore ? <CustomInfiniteScroll allItems={value} child={LabelsTableContent} /> : null}
     </>
   );
 };

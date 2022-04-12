@@ -12,8 +12,8 @@ import {
   DropdownMenu,
   DropdownItem,
 } from 'reactstrap';
-import { usePathPrefix } from './contexts/PathPrefixContext';
 import { ThemeToggle } from './Theme';
+import logo from './images/prometheus_logo_grey.svg';
 
 interface NavbarProps {
   consolesLink: string | null;
@@ -23,11 +23,11 @@ interface NavbarProps {
 const Navigation: FC<NavbarProps> = ({ consolesLink, agentMode }) => {
   const [isOpen, setIsOpen] = useState(false);
   const toggle = () => setIsOpen(!isOpen);
-  const pathPrefix = usePathPrefix();
   return (
     <Navbar className="mb-3" dark color="dark" expand="md" fixed="top">
       <NavbarToggler onClick={toggle} className="mr-2" />
       <Link className="pt-0 navbar-brand" to={agentMode ? '/agent' : '/graph'}>
+        <img src={logo} className="d-inline-block align-top" alt="Prometheus logo" title="Prometheus" />
         Prometheus{agentMode && ' Agent'}
       </Link>
       <Collapse isOpen={isOpen} navbar style={{ justifyContent: 'space-between' }}>
@@ -86,11 +86,6 @@ const Navigation: FC<NavbarProps> = ({ consolesLink, agentMode }) => {
           <NavItem>
             <NavLink href="https://prometheus.io/docs/prometheus/latest/getting_started/">Help</NavLink>
           </NavItem>
-          {!agentMode && (
-            <NavItem>
-              <NavLink href={`${pathPrefix}/classic/graph${window.location.search}`}>Classic UI</NavLink>
-            </NavItem>
-          )}
         </Nav>
       </Collapse>
       <ThemeToggle />

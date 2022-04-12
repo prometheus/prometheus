@@ -17,7 +17,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"io"
 	"math"
 	"math/bits"
 	"net"
@@ -27,7 +26,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"strings"
 	"sync"
@@ -37,9 +35,9 @@ import (
 	"github.com/alecthomas/units"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/regexp"
 	conntrack "github.com/mwitkow/go-conntrack"
 	"github.com/oklog/run"
-	"github.com/opentracing/opentracing-go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
@@ -48,27 +46,27 @@ import (
 	"github.com/prometheus/common/version"
 	toolkit_web "github.com/prometheus/exporter-toolkit/web"
 	toolkit_webflag "github.com/prometheus/exporter-toolkit/web/kingpinflag"
-	jcfg "github.com/uber/jaeger-client-go/config"
-	jprom "github.com/uber/jaeger-lib/metrics/prometheus"
 	"go.uber.org/atomic"
+	"go.uber.org/automaxprocs/maxprocs"
 	kingpin "gopkg.in/alecthomas/kingpin.v2"
 	klog "k8s.io/klog"
 	klogv2 "k8s.io/klog/v2"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
-	_ "github.com/prometheus/prometheus/discovery/install" // Register service discovery implementations.
 	"github.com/prometheus/prometheus/discovery/legacymanager"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/notifier"
+	_ "github.com/prometheus/prometheus/plugins" // Register plugins.
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
+	"github.com/prometheus/prometheus/tracing"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/agent"
 	"github.com/prometheus/prometheus/util/logging"
@@ -149,10 +147,10 @@ type flagConfig struct {
 	featureList []string
 	// These options are extracted from featureList
 	// for ease of use.
-	enablePromQLAtModifier     bool
-	enablePromQLNegativeOffset bool
 	enableExpandExternalLabels bool
 	enableNewSDManager         bool
+	enablePerStepStats         bool
+	enableAutoGOMAXPROCS       bool
 
 	prometheusURL   string
 	corsRegexString string
@@ -166,12 +164,6 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 		opts := strings.Split(f, ",")
 		for _, o := range opts {
 			switch o {
-			case "promql-at-modifier":
-				c.enablePromQLAtModifier = true
-				level.Info(logger).Log("msg", "Experimental promql-at-modifier enabled")
-			case "promql-negative-offset":
-				c.enablePromQLNegativeOffset = true
-				level.Info(logger).Log("msg", "Experimental promql-negative-offset enabled")
 			case "remote-write-receiver":
 				c.web.EnableRemoteWriteReceiver = true
 				level.Warn(logger).Log("msg", "Remote write receiver enabled via feature flag remote-write-receiver. This is DEPRECATED. Use --web.enable-remote-write-receiver.")
@@ -193,8 +185,16 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 			case "agent":
 				agentMode = true
 				level.Info(logger).Log("msg", "Experimental agent mode enabled.")
+			case "promql-per-step-stats":
+				c.enablePerStepStats = true
+				level.Info(logger).Log("msg", "Experimental per-step statistics reporting")
+			case "auto-gomaxprocs":
+				c.enableAutoGOMAXPROCS = true
+				level.Info(logger).Log("msg", "Automatically set GOMAXPROCS to match Linux container CPU quota")
 			case "":
 				continue
+			case "promql-at-modifier", "promql-negative-offset":
+				level.Warn(logger).Log("msg", "This option for --enable-feature is now permanently enabled and therefore a no-op.", "option", o)
 			default:
 				level.Warn(logger).Log("msg", "Unknown option for --enable-feature", "option", o)
 			}
@@ -302,7 +302,7 @@ func main() {
 	serverOnlyFlag(a, "storage.tsdb.retention.time", "How long to retain samples in storage. When this flag is set it overrides \"storage.tsdb.retention\". If neither this flag nor \"storage.tsdb.retention\" nor \"storage.tsdb.retention.size\" is set, the retention time defaults to "+defaultRetentionString+". Units Supported: y, w, d, h, m, s, ms.").
 		SetValue(&newFlagRetentionDuration)
 
-	serverOnlyFlag(a, "storage.tsdb.retention.size", "Maximum number of bytes that can be stored for blocks. A unit is required, supported units: B, KB, MB, GB, TB, PB, EB. Ex: \"512MB\".").
+	serverOnlyFlag(a, "storage.tsdb.retention.size", "Maximum number of bytes that can be stored for blocks. A unit is required, supported units: B, KB, MB, GB, TB, PB, EB. Ex: \"512MB\". Based on powers-of-2, so 1KB is 1024B.").
 		BytesVar(&cfg.tsdb.MaxBytes)
 
 	serverOnlyFlag(a, "storage.tsdb.no-lockfile", "Do not create lockfile in data directory.").
@@ -313,6 +313,9 @@ func main() {
 
 	serverOnlyFlag(a, "storage.tsdb.wal-compression", "Compress the tsdb WAL.").
 		Hidden().Default("true").BoolVar(&cfg.tsdb.WALCompression)
+
+	serverOnlyFlag(a, "storage.tsdb.head-chunks-write-queue-size", "Size of the queue through which head chunks are written to the disk to be m-mapped, 0 disables the queue completely. Experimental.").
+		Default("0").IntVar(&cfg.tsdb.HeadChunksWriteQueueSize)
 
 	agentOnlyFlag(a, "storage.agent.path", "Base path for metrics storage.").
 		Default("data-agent/").StringVar(&cfg.agentStoragePath)
@@ -384,7 +387,7 @@ func main() {
 	serverOnlyFlag(a, "query.max-samples", "Maximum number of samples a single query can load into memory. Note that queries will fail if they try to load more samples than this into memory, so this also limits the number of samples a query can return.").
 		Default("50000000").IntVar(&cfg.queryMaxSamples)
 
-	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: agent, exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-at-modifier, promql-negative-offset, remote-write-receiver (DEPRECATED), extra-scrape-metrics, new-service-discovery-manager. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
+	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: agent, exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-at-modifier, promql-negative-offset, promql-per-step-stats, remote-write-receiver (DEPRECATED), extra-scrape-metrics, new-service-discovery-manager, auto-gomaxprocs. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
 		Default("").StringsVar(&cfg.featureList)
 
 	promlogflag.AddFlags(a, &cfg.promlogConfig)
@@ -437,7 +440,11 @@ func main() {
 	// Throw error for invalid config before starting other components.
 	var cfgFile *config.Config
 	if cfgFile, err = config.LoadFile(cfg.configFile, agentMode, false, log.NewNopLogger()); err != nil {
-		level.Error(logger).Log("msg", fmt.Sprintf("Error loading config (--config.file=%s)", cfg.configFile), "err", err)
+		absPath, pathErr := filepath.Abs(cfg.configFile)
+		if pathErr != nil {
+			absPath = cfg.configFile
+		}
+		level.Error(logger).Log("msg", fmt.Sprintf("Error loading config (--config.file=%s)", cfg.configFile), "file", absPath, "err", err)
 		os.Exit(2)
 	}
 	if cfg.tsdb.EnableExemplarStorage {
@@ -555,11 +562,21 @@ func main() {
 	}
 
 	var (
-		scrapeManager = scrape.NewManager(&cfg.scrape, log.With(logger, "component", "scrape manager"), fanoutStorage)
+		scrapeManager  = scrape.NewManager(&cfg.scrape, log.With(logger, "component", "scrape manager"), fanoutStorage)
+		tracingManager = tracing.NewManager(logger)
 
 		queryEngine *promql.Engine
 		ruleManager *rules.Manager
 	)
+
+	if cfg.enableAutoGOMAXPROCS {
+		l := func(format string, a ...interface{}) {
+			level.Info(logger).Log("component", "automaxprocs", "msg", fmt.Sprintf(strings.TrimPrefix(format, "maxprocs: "), a...))
+		}
+		if _, err := maxprocs.Set(maxprocs.Logger(l)); err != nil {
+			level.Warn(logger).Log("component", "automaxprocs", "msg", "Failed to set GOMAXPROCS automatically", "err", err)
+		}
+	}
 
 	if !agentMode {
 		opts := promql.EngineOpts{
@@ -570,8 +587,11 @@ func main() {
 			ActiveQueryTracker:       promql.NewActiveQueryTracker(localStoragePath, cfg.queryConcurrency, log.With(logger, "component", "activeQueryTracker")),
 			LookbackDelta:            time.Duration(cfg.lookbackDelta),
 			NoStepSubqueryIntervalFn: noStepSubqueryInterval.Get,
-			EnableAtModifier:         cfg.enablePromQLAtModifier,
-			EnableNegativeOffset:     cfg.enablePromQLNegativeOffset,
+			// EnableAtModifier and EnableNegativeOffset have to be
+			// always on for regular PromQL as of Prometheus v2.33.
+			EnableAtModifier:     true,
+			EnableNegativeOffset: true,
+			EnablePerStepStats:   cfg.enablePerStepStats,
 		}
 
 		queryEngine = promql.NewEngine(opts)
@@ -718,8 +738,12 @@ func main() {
 					files,
 					cfg.GlobalConfig.ExternalLabels,
 					externalURL,
+					nil,
 				)
 			},
+		}, {
+			name:     "tracing",
+			reloader: tracingManager.ApplyConfig,
 		},
 	}
 
@@ -745,13 +769,6 @@ func main() {
 			close(reloadReady.C)
 		})
 	}
-
-	closer, err := initTracing(logger)
-	if err != nil {
-		level.Error(logger).Log("msg", "Unable to init tracing", "err", err)
-		os.Exit(2)
-	}
-	defer closer.Close()
 
 	listener, err := webHandler.Listener()
 	if err != nil {
@@ -837,6 +854,19 @@ func main() {
 				// so that it doesn't try to write samples to a closed storage.
 				level.Info(logger).Log("msg", "Stopping scrape manager...")
 				scrapeManager.Stop()
+			},
+		)
+	}
+	{
+		// Tracing manager.
+		g.Add(
+			func() error {
+				<-reloadReady.C
+				tracingManager.Run()
+				return nil
+			},
+			func(err error) {
+				tracingManager.Stop()
 			},
 		)
 	}
@@ -1477,6 +1507,7 @@ type tsdbOptions struct {
 	NoLockfile                     bool
 	AllowOverlappingBlocks         bool
 	WALCompression                 bool
+	HeadChunksWriteQueueSize       int
 	StripeSize                     int
 	MinBlockDuration               model.Duration
 	MaxBlockDuration               model.Duration
@@ -1494,6 +1525,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		NoLockfile:                     opts.NoLockfile,
 		AllowOverlappingBlocks:         opts.AllowOverlappingBlocks,
 		WALCompression:                 opts.WALCompression,
+		HeadChunksWriteQueueSize:       opts.HeadChunksWriteQueueSize,
 		StripeSize:                     opts.StripeSize,
 		MinBlockDuration:               int64(time.Duration(opts.MinBlockDuration) / time.Millisecond),
 		MaxBlockDuration:               int64(time.Duration(opts.MaxBlockDuration) / time.Millisecond),
@@ -1524,47 +1556,6 @@ func (opts agentOptions) ToAgentOptions() agent.Options {
 		MaxWALTime:        durationToInt64Millis(time.Duration(opts.MaxWALTime)),
 		NoLockfile:        opts.NoLockfile,
 	}
-}
-
-func initTracing(logger log.Logger) (io.Closer, error) {
-	// Set tracing configuration defaults.
-	cfg := &jcfg.Configuration{
-		ServiceName: "prometheus",
-		Disabled:    true,
-	}
-
-	// Available options can be seen here:
-	// https://github.com/jaegertracing/jaeger-client-go#environment-variables
-	cfg, err := cfg.FromEnv()
-	if err != nil {
-		return nil, errors.Wrap(err, "unable to get tracing config from environment")
-	}
-
-	jLogger := jaegerLogger{logger: log.With(logger, "component", "tracing")}
-
-	tracer, closer, err := cfg.NewTracer(
-		jcfg.Logger(jLogger),
-		jcfg.Metrics(jprom.New()),
-	)
-	if err != nil {
-		return nil, errors.Wrap(err, "unable to init tracing")
-	}
-
-	opentracing.SetGlobalTracer(tracer)
-	return closer, nil
-}
-
-type jaegerLogger struct {
-	logger log.Logger
-}
-
-func (l jaegerLogger) Error(msg string) {
-	level.Error(l.logger).Log("msg", msg)
-}
-
-func (l jaegerLogger) Infof(msg string, args ...interface{}) {
-	keyvals := []interface{}{"msg", fmt.Sprintf(msg, args...)}
-	level.Info(l.logger).Log(keyvals...)
 }
 
 // discoveryManager interfaces the discovery manager. This is used to keep using

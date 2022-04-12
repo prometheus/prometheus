@@ -13,6 +13,7 @@ linters:
     - gofumpt
     - goimports
     - revive
+    - misspell
 
 issues:
   exclude-rules:
@@ -24,13 +25,11 @@ linters-settings:
   depguard:
     list-type: blacklist
     include-go-root: true
-    packages:
-      - sync/atomic
-      - github.com/stretchr/testify/assert
     packages-with-error-message:
       - sync/atomic: "Use go.uber.org/atomic instead of sync/atomic"
       - github.com/stretchr/testify/assert: "Use github.com/stretchr/testify/require instead of github.com/stretchr/testify/assert"
       - github.com/go-kit/kit/log: "Use github.com/go-kit/log instead of github.com/go-kit/kit/log"
+      - regexp: "Use github.com/grafana/regexp instead of regexp"
   errcheck:
     exclude: scripts/errcheck_excludes.txt
   goimports:

@@ -417,6 +417,7 @@ func TestUnmarshalConfig(t *testing.T) {
 			Password: "1234",
 		},
 		FollowRedirects: true,
+		EnableHTTP2:     true,
 	}
 
 	cases := []struct {

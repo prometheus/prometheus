@@ -34,7 +34,7 @@ type chunkWriteJob struct {
 
 // chunkWriteQueue is a queue for writing chunks to disk in a non-blocking fashion.
 // Chunks that shall be written get added to the queue, which is consumed asynchronously.
-// Adding jobs to the job is non-blocking as long as the queue isn't full.
+// Adding jobs to the queue is non-blocking as long as the queue isn't full.
 type chunkWriteQueue struct {
 	jobs chan chunkWriteJob
 

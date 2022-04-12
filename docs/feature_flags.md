@@ -11,13 +11,6 @@ Their behaviour can change in future releases which will be communicated via the
 You can enable them using the `--enable-feature` flag with a comma separated list of features.
 They may be enabled by default in future versions.
 
-## `@` Modifier in PromQL
-
-`--enable-feature=promql-at-modifier`
-
-The `@` modifier lets you specify the evaluation time for instant vector selectors,
-range vector selectors, and subqueries. More details can be found [here](querying/basics.md#modifier).
-
 ## Expand environment variables in external labels
 
 `--enable-feature=expand-external-labels`
@@ -25,20 +18,7 @@ range vector selectors, and subqueries. More details can be found [here](queryin
 Replace `${var}` or `$var` in the [`external_labels`](configuration/configuration.md#configuration-file)
 values according to the values of the current environment variables. References
 to undefined variables are replaced by the empty string.
-
-## Negative offset in PromQL
-
-This negative offset is disabled by default since it breaks the invariant
-that PromQL does not look ahead of the evaluation time for samples.
-
-`--enable-feature=promql-negative-offset`
-
-In contrast to the positive offset modifier, the negative offset modifier lets
-one shift a vector selector into the future. An example in which one may want
-to use a negative offset is reviewing past data and making temporal comparisons
-with more recent data.
-
-More details can be found [here](querying/basics.md#offset-modifier).
+The `$` character can be escaped by using `$$`.
 
 ## Remote Write Receiver
 
@@ -98,3 +78,19 @@ discovery, scrape and remote write.
 
 This is useful when you do not need to query the Prometheus data locally, but
 only from a central [remote endpoint](https://prometheus.io/docs/operating/integrations/#remote-endpoints-and-storage).
+
+## Per-step stats
+
+`--enable-feature=promql-per-step-stats`
+
+When enabled, passing `stats=all` in a query request returns per-step
+statistics. Currently this is limited to totalQueryableSamples.
+
+When disabled in either the engine or the query, per-step statistics are not
+computed at all.
+
+## Auto GOMAXPROCS
+
+`--enable-feature=auto-gomaxprocs`
+
+When enabled, GOMAXPROCS variable is automatically set to match Linux container CPU quota.

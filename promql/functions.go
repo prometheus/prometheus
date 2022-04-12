@@ -15,12 +15,12 @@ package promql
 
 import (
 	"math"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/grafana/regexp"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 
@@ -791,7 +791,7 @@ func funcPredictLinear(vals []parser.Value, args parser.Expressions, enh *EvalNo
 func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	q := vals[0].(Vector)[0].V
 	inVec := vals[1].(Vector)
-	sigf := signatureFunc(false, enh.lblBuf, excludedLabels...)
+	sigf := signatureFunc(false, enh.lblBuf, labels.BucketLabel)
 
 	if enh.signatureToMetricWithBuckets == nil {
 		enh.signatureToMetricWithBuckets = map[string]*metricWithBuckets{}
@@ -810,11 +810,14 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 			continue
 		}
 		l := sigf(el.Metric)
+		// Add the metric name (which is always removed) to the signature to prevent combining multiple histograms
+		// with the same label set. See https://github.com/prometheus/prometheus/issues/9910
+		l = l + el.Metric.Get(model.MetricNameLabel)
 
 		mb, ok := enh.signatureToMetricWithBuckets[l]
 		if !ok {
 			el.Metric = labels.NewBuilder(el.Metric).
-				Del(labels.BucketLabel, labels.MetricName).
+				Del(excludedLabels...).
 				Labels()
 
 			mb = &metricWithBuckets{el.Metric, nil}

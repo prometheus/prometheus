@@ -30,8 +30,10 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
+	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/prometheus/common/version"
 
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/refresh"
@@ -58,17 +60,28 @@ const (
 	authMethodManagedIdentity = "ManagedIdentity"
 )
 
-// DefaultSDConfig is the default Azure SD configuration.
-var DefaultSDConfig = SDConfig{
-	Port:                 80,
-	RefreshInterval:      model.Duration(5 * time.Minute),
-	Environment:          azure.PublicCloud.Name,
-	AuthenticationMethod: authMethodOAuth,
-	HTTPClientConfig:     config_util.DefaultHTTPClientConfig,
-}
+var (
+	userAgent = fmt.Sprintf("Prometheus/%s", version.Version)
+
+	// DefaultSDConfig is the default Azure SD configuration.
+	DefaultSDConfig = SDConfig{
+		Port:                 80,
+		RefreshInterval:      model.Duration(5 * time.Minute),
+		Environment:          azure.PublicCloud.Name,
+		AuthenticationMethod: authMethodOAuth,
+		HTTPClientConfig:     config_util.DefaultHTTPClientConfig,
+	}
+
+	failuresCount = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "prometheus_sd_azure_failures_total",
+			Help: "Number of Azure service discovery refresh failures.",
+		})
+)
 
 func init() {
 	discovery.RegisterConfig(&SDConfig{})
+	prometheus.MustRegister(failuresCount)
 }
 
 // SDConfig is the configuration for Azure based service discovery.
@@ -81,6 +94,7 @@ type SDConfig struct {
 	ClientSecret         config_util.Secret `yaml:"client_secret,omitempty"`
 	RefreshInterval      model.Duration     `yaml:"refresh_interval,omitempty"`
 	AuthenticationMethod string             `yaml:"authentication_method,omitempty"`
+	ResourceGroup        string             `yaml:"resource_group,omitempty"`
 
 	HTTPClientConfig config_util.HTTPClientConfig `yaml:",inline"`
 }
@@ -182,12 +196,7 @@ func createAzureClient(cfg SDConfig) (azureClient, error) {
 
 	switch cfg.AuthenticationMethod {
 	case authMethodManagedIdentity:
-		msiEndpoint, err := adal.GetMSIVMEndpoint()
-		if err != nil {
-			return azureClient{}, err
-		}
-
-		spt, err = adal.NewServicePrincipalTokenFromMSI(msiEndpoint, resourceManagerEndpoint)
+		spt, err = adal.NewServicePrincipalTokenFromManagedIdentity(resourceManagerEndpoint, &adal.ManagedIdentityOptions{ClientID: cfg.ClientID})
 		if err != nil {
 			return azureClient{}, err
 		}
@@ -208,24 +217,29 @@ func createAzureClient(cfg SDConfig) (azureClient, error) {
 		return azureClient{}, err
 	}
 	sender := autorest.DecorateSender(client)
+	preparer := autorest.WithUserAgent(userAgent)
 
 	bearerAuthorizer := autorest.NewBearerAuthorizer(spt)
 
 	c.vm = compute.NewVirtualMachinesClientWithBaseURI(resourceManagerEndpoint, cfg.SubscriptionID)
 	c.vm.Authorizer = bearerAuthorizer
 	c.vm.Sender = sender
+	c.vm.RequestInspector = preparer
 
 	c.nic = network.NewInterfacesClientWithBaseURI(resourceManagerEndpoint, cfg.SubscriptionID)
 	c.nic.Authorizer = bearerAuthorizer
 	c.nic.Sender = sender
+	c.nic.RequestInspector = preparer
 
 	c.vmss = compute.NewVirtualMachineScaleSetsClientWithBaseURI(resourceManagerEndpoint, cfg.SubscriptionID)
 	c.vmss.Authorizer = bearerAuthorizer
-	c.vm.Sender = sender
+	c.vmss.Sender = sender
+	c.vmss.RequestInspector = preparer
 
 	c.vmssvm = compute.NewVirtualMachineScaleSetVMsClientWithBaseURI(resourceManagerEndpoint, cfg.SubscriptionID)
 	c.vmssvm.Authorizer = bearerAuthorizer
 	c.vmssvm.Sender = sender
+	c.vmssvm.RequestInspector = preparer
 
 	return c, nil
 }
@@ -273,25 +287,29 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 
 	client, err := createAzureClient(*d.cfg)
 	if err != nil {
+		failuresCount.Inc()
 		return nil, errors.Wrap(err, "could not create Azure client")
 	}
 
-	machines, err := client.getVMs(ctx)
+	machines, err := client.getVMs(ctx, d.cfg.ResourceGroup)
 	if err != nil {
+		failuresCount.Inc()
 		return nil, errors.Wrap(err, "could not get virtual machines")
 	}
 
 	level.Debug(d.logger).Log("msg", "Found virtual machines during Azure discovery.", "count", len(machines))
 
 	// Load the vms managed by scale sets.
-	scaleSets, err := client.getScaleSets(ctx)
+	scaleSets, err := client.getScaleSets(ctx, d.cfg.ResourceGroup)
 	if err != nil {
+		failuresCount.Inc()
 		return nil, errors.Wrap(err, "could not get virtual machine scale sets")
 	}
 
 	for _, scaleSet := range scaleSets {
 		scaleSetVms, err := client.getScaleSetVMs(ctx, scaleSet)
 		if err != nil {
+			failuresCount.Inc()
 			return nil, errors.Wrap(err, "could not get virtual machine scale set vms")
 		}
 		machines = append(machines, scaleSetVms...)
@@ -307,8 +325,8 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	var wg sync.WaitGroup
 	wg.Add(len(machines))
 	ch := make(chan target, len(machines))
-	for i, vm := range machines {
-		go func(i int, vm virtualMachine) {
+	for _, vm := range machines {
+		go func(vm virtualMachine) {
 			defer wg.Done()
 			r, err := newAzureResourceFromID(vm.ID, d.logger)
 			if err != nil {
@@ -340,8 +358,11 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 			for _, nicID := range vm.NetworkInterfaces {
 				networkInterface, err := client.getNetworkInterfaceByID(ctx, nicID)
 				if err != nil {
-					level.Error(d.logger).Log("msg", "Unable to get network interface", "name", nicID, "err", err)
-					ch <- target{labelSet: nil, err: err}
+					if errors.Is(err, errorNotFound) {
+						level.Warn(d.logger).Log("msg", "Network interface does not exist", "name", nicID, "err", err)
+					} else {
+						ch <- target{labelSet: nil, err: err}
+					}
 					// Get out of this routine because we cannot continue without a network interface.
 					return
 				}
@@ -361,7 +382,9 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 
 				if *networkInterface.Primary {
 					for _, ip := range *networkInterface.IPConfigurations {
-						if ip.PublicIPAddress != nil && ip.PublicIPAddress.PublicIPAddressPropertiesFormat != nil {
+						// IPAddress is a field defined in PublicIPAddressPropertiesFormat,
+						// therefore we need to validate that both are not nil.
+						if ip.PublicIPAddress != nil && ip.PublicIPAddress.PublicIPAddressPropertiesFormat != nil && ip.PublicIPAddress.IPAddress != nil {
 							labels[azureLabelMachinePublicIP] = model.LabelValue(*ip.PublicIPAddress.IPAddress)
 						}
 						if ip.PrivateIPAddress != nil {
@@ -379,7 +402,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 					}
 				}
 			}
-		}(i, vm)
+		}(vm)
 	}
 
 	wg.Wait()
@@ -388,6 +411,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	var tg targetgroup.Group
 	for tgt := range ch {
 		if tgt.err != nil {
+			failuresCount.Inc()
 			return nil, errors.Wrap(tgt.err, "unable to complete Azure service discovery")
 		}
 		if tgt.labelSet != nil {
@@ -398,9 +422,15 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	return []*targetgroup.Group{&tg}, nil
 }
 
-func (client *azureClient) getVMs(ctx context.Context) ([]virtualMachine, error) {
+func (client *azureClient) getVMs(ctx context.Context, resourceGroup string) ([]virtualMachine, error) {
 	var vms []virtualMachine
-	result, err := client.vm.ListAll(ctx)
+	var result compute.VirtualMachineListResultPage
+	var err error
+	if len(resourceGroup) == 0 {
+		result, err = client.vm.ListAll(ctx)
+	} else {
+		result, err = client.vm.List(ctx, resourceGroup)
+	}
 	if err != nil {
 		return nil, errors.Wrap(err, "could not list virtual machines")
 	}
@@ -417,12 +447,32 @@ func (client *azureClient) getVMs(ctx context.Context) ([]virtualMachine, error)
 	return vms, nil
 }
 
-func (client *azureClient) getScaleSets(ctx context.Context) ([]compute.VirtualMachineScaleSet, error) {
+type VmssListResultPage interface {
+	NextWithContext(ctx context.Context) (err error)
+	NotDone() bool
+	Values() []compute.VirtualMachineScaleSet
+}
+
+func (client *azureClient) getScaleSets(ctx context.Context, resourceGroup string) ([]compute.VirtualMachineScaleSet, error) {
 	var scaleSets []compute.VirtualMachineScaleSet
-	result, err := client.vmss.ListAll(ctx)
-	if err != nil {
-		return nil, errors.Wrap(err, "could not list virtual machine scale sets")
+	var result VmssListResultPage
+	var err error
+	if len(resourceGroup) == 0 {
+		var rtn compute.VirtualMachineScaleSetListWithLinkResultPage
+		rtn, err = client.vmss.ListAll(ctx)
+		if err != nil {
+			return nil, errors.Wrap(err, "could not list virtual machine scale sets")
+		}
+		result = &rtn
+	} else {
+		var rtn compute.VirtualMachineScaleSetListResultPage
+		rtn, err = client.vmss.List(ctx, resourceGroup)
+		if err != nil {
+			return nil, errors.Wrap(err, "could not list virtual machine scale sets")
+		}
+		result = &rtn
 	}
+
 	for result.NotDone() {
 		scaleSets = append(scaleSets, result.Values()...)
 		err = result.NextWithContext(ctx)
@@ -527,6 +577,11 @@ func mapFromVMScaleSetVM(vm compute.VirtualMachineScaleSetVM, scaleSetName strin
 	}
 }
 
+var errorNotFound = errors.New("network interface does not exist")
+
+// getNetworkInterfaceByID gets the network interface.
+// If a 404 is returned from the Azure API, `errorNotFound` is returned.
+// On all other errors, an autorest.DetailedError is returned.
 func (client *azureClient) getNetworkInterfaceByID(ctx context.Context, networkInterfaceID string) (*network.Interface, error) {
 	result := network.Interface{}
 	queryParameters := map[string]interface{}{
@@ -537,7 +592,8 @@ func (client *azureClient) getNetworkInterfaceByID(ctx context.Context, networkI
 		autorest.AsGet(),
 		autorest.WithBaseURL(client.nic.BaseURI),
 		autorest.WithPath(networkInterfaceID),
-		autorest.WithQueryParameters(queryParameters))
+		autorest.WithQueryParameters(queryParameters),
+		autorest.WithUserAgent(userAgent))
 	req, err := preparer.Prepare((&http.Request{}).WithContext(ctx))
 	if err != nil {
 		return nil, autorest.NewErrorWithError(err, "network.InterfacesClient", "Get", nil, "Failure preparing request")
@@ -550,6 +606,9 @@ func (client *azureClient) getNetworkInterfaceByID(ctx context.Context, networkI
 
 	result, err = client.nic.GetResponder(resp)
 	if err != nil {
+		if resp.StatusCode == http.StatusNotFound {
+			return nil, errorNotFound
+		}
 		return nil, autorest.NewErrorWithError(err, "network.InterfacesClient", "Get", resp, "Failure responding to request")
 	}
 

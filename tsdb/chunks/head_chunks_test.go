@@ -27,6 +27,22 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
+var writeQueueSize int
+
+func TestMain(m *testing.M) {
+	// Run all tests with the chunk write queue disabled.
+	writeQueueSize = 0
+	exitVal := m.Run()
+	if exitVal != 0 {
+		os.Exit(exitVal)
+	}
+
+	// Re-run all tests with the chunk write queue size of 1e6.
+	writeQueueSize = 1000000
+	exitVal = m.Run()
+	os.Exit(exitVal)
+}
+
 func TestChunkDiskMapper_WriteChunk_Chunk_IterateChunks(t *testing.T) {
 	hrw := createChunkDiskMapper(t, "")
 	defer func() {
@@ -488,15 +504,10 @@ func TestHeadReadWriter_ReadRepairOnEmptyLastFile(t *testing.T) {
 
 func createChunkDiskMapper(t *testing.T, dir string) *ChunkDiskMapper {
 	if dir == "" {
-		var err error
-		dir, err = ioutil.TempDir("", "data")
-		require.NoError(t, err)
-		t.Cleanup(func() {
-			require.NoError(t, os.RemoveAll(dir))
-		})
+		dir = t.TempDir()
 	}
 
-	hrw, err := NewChunkDiskMapper(nil, dir, chunkenc.NewPool(), DefaultWriteBufferSize, DefaultWriteQueueSize)
+	hrw, err := NewChunkDiskMapper(nil, dir, chunkenc.NewPool(), DefaultWriteBufferSize, writeQueueSize)
 	require.NoError(t, err)
 	require.False(t, hrw.fileMaxtSet)
 	require.NoError(t, hrw.IterateAllChunks(func(_ HeadSeriesRef, _ ChunkDiskMapperRef, _, _ int64, _ uint16, _ chunkenc.Encoding) error {

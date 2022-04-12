@@ -224,6 +224,7 @@ type scrapePool struct {
 	appendable storage.Appendable
 	logger     log.Logger
 	cancel     context.CancelFunc
+	httpOpts   []config_util.HTTPClientOption
 
 	// mtx must not be taken after targetMtx.
 	mtx    sync.Mutex
@@ -264,13 +265,13 @@ const maxAheadTime = 10 * time.Minute
 
 type labelsMutator func(labels.Labels) labels.Labels
 
-func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed uint64, logger log.Logger, reportExtraMetrics bool) (*scrapePool, error) {
+func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed uint64, logger log.Logger, reportExtraMetrics bool, httpOpts []config_util.HTTPClientOption) (*scrapePool, error) {
 	targetScrapePools.Inc()
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
 
-	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, cfg.JobName)
+	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, cfg.JobName, httpOpts...)
 	if err != nil {
 		targetScrapePoolsFailed.Inc()
 		return nil, errors.Wrap(err, "error creating HTTP client")
@@ -287,6 +288,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed 
 		activeTargets: map[uint64]*Target{},
 		loops:         map[uint64]loop{},
 		logger:        logger,
+		httpOpts:      httpOpts,
 	}
 	sp.newLoop = func(opts scrapeLoopOptions) loop {
 		// Update the targets retrieval function for metadata to a new scrape cache.
@@ -296,8 +298,12 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed 
 		}
 		opts.target.SetMetadataStore(cache)
 
+		// Store the cache in the context.
+		loopCtx := ContextWithMetricMetadataStore(ctx, cache)
+		loopCtx = ContextWithTarget(loopCtx, opts.target)
+
 		return newScrapeLoop(
-			ctx,
+			loopCtx,
 			opts.scraper,
 			log.With(logger, "target", opts.target),
 			buffers,
@@ -381,7 +387,7 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 	targetScrapePoolReloads.Inc()
 	start := time.Now()
 
-	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, cfg.JobName)
+	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, cfg.JobName, sp.httpOpts...)
 	if err != nil {
 		targetScrapePoolReloadsFailed.Inc()
 		return errors.Wrap(err, "error creating HTTP client")
@@ -748,7 +754,7 @@ type targetScraper struct {
 
 var errBodySizeLimit = errors.New("body size limit exceeded")
 
-const acceptHeader = `application/openmetrics-text; version=0.0.1,text/plain;version=0.0.4;q=0.5,*/*;q=0.1`
+const acceptHeader = `application/openmetrics-text;version=1.0.0,application/openmetrics-text;version=0.0.1;q=0.75,text/plain;version=0.0.4;q=0.5,*/*;q=0.1`
 
 var UserAgent = fmt.Sprintf("Prometheus/%s", version.Version)
 
@@ -1418,8 +1424,16 @@ type appendErrors struct {
 }
 
 func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string, ts time.Time) (total, added, seriesAdded int, err error) {
+	p, err := textparse.New(b, contentType)
+	if err != nil {
+		level.Debug(sl.l).Log(
+			"msg", "Invalid content type on scrape, using prometheus parser as fallback.",
+			"content_type", contentType,
+			"err", err,
+		)
+	}
+
 	var (
-		p              = textparse.New(b, contentType)
 		defTime        = timestamp.FromTime(ts)
 		appErrs        = appendErrors{}
 		sampleLimitErr error
@@ -1769,9 +1783,6 @@ func zeroConfig(c *config.ScrapeConfig) *config.ScrapeConfig {
 	z.ScrapeInterval = 0
 	z.ScrapeTimeout = 0
 	z.SampleLimit = 0
-	z.LabelLimit = 0
-	z.LabelNameLengthLimit = 0
-	z.LabelValueLengthLimit = 0
 	z.HTTPClientConfig = config_util.HTTPClientConfig{}
 	return &z
 }
@@ -1783,4 +1794,32 @@ func reusableCache(r, l *config.ScrapeConfig) bool {
 		return false
 	}
 	return reflect.DeepEqual(zeroConfig(r), zeroConfig(l))
+}
+
+// CtxKey is a dedicated type for keys of context-embedded values propagated
+// with the scrape context.
+type ctxKey int
+
+// Valid CtxKey values.
+const (
+	ctxKeyMetadata ctxKey = iota + 1
+	ctxKeyTarget
+)
+
+func ContextWithMetricMetadataStore(ctx context.Context, s MetricMetadataStore) context.Context {
+	return context.WithValue(ctx, ctxKeyMetadata, s)
+}
+
+func MetricMetadataStoreFromContext(ctx context.Context) (MetricMetadataStore, bool) {
+	s, ok := ctx.Value(ctxKeyMetadata).(MetricMetadataStore)
+	return s, ok
+}
+
+func ContextWithTarget(ctx context.Context, t *Target) context.Context {
+	return context.WithValue(ctx, ctxKeyTarget, t)
+}
+
+func TargetFromContext(ctx context.Context) (*Target, bool) {
+	t, ok := ctx.Value(ctxKeyTarget).(*Target)
+	return t, ok
 }

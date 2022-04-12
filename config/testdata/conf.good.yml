@@ -39,6 +39,7 @@ remote_read:
   - url: http://remote1/read
     read_recent: true
     name: default
+    enable_http2: false
   - url: http://remote3/read
     read_recent: false
     name: read_special
@@ -238,6 +239,7 @@ scrape_configs:
       - environment: AzurePublicCloud
         authentication_method: OAuth
         subscription_id: 11AAAA11-A11A-111A-A111-1111A1111A11
+        resource_group: my-resource-group
         tenant_id: BBBB222B-B2B2-2B22-B222-2BB2222BB2B2
         client_id: 333333CC-3C33-3333-CCC3-33C3CCCCC33C
         client_secret: mysecret
@@ -366,3 +368,15 @@ alerting:
             - "1.2.3.4:9093"
             - "1.2.3.5:9093"
             - "1.2.3.6:9093"
+
+tracing:
+  endpoint: "localhost:4317"
+  client_type: "grpc"
+  headers:
+    foo: "bar"
+  timeout: 5s
+  compression: "gzip"
+  tls_config:
+    cert_file: valid_cert_file
+    key_file: valid_key_file
+    insecure_skip_verify: true

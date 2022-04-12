@@ -57,7 +57,7 @@ func TestNewScrapePool(t *testing.T) {
 	var (
 		app   = &nopAppendable{}
 		cfg   = &config.ScrapeConfig{}
-		sp, _ = newScrapePool(cfg, app, 0, nil, false)
+		sp, _ = newScrapePool(cfg, app, 0, nil, false, nil)
 	)
 
 	if a, ok := sp.appendable.(*nopAppendable); !ok || a != app {
@@ -92,7 +92,7 @@ func TestDroppedTargetsList(t *testing.T) {
 				},
 			},
 		}
-		sp, _                  = newScrapePool(cfg, app, 0, nil, false)
+		sp, _                  = newScrapePool(cfg, app, 0, nil, false, nil)
 		expectedLabelSetString = "{__address__=\"127.0.0.1:9090\", __scrape_interval__=\"0s\", __scrape_timeout__=\"0s\", job=\"dropMe\"}"
 		expectedLength         = 1
 	)
@@ -455,7 +455,7 @@ func TestScrapePoolTargetLimit(t *testing.T) {
 func TestScrapePoolAppender(t *testing.T) {
 	cfg := &config.ScrapeConfig{}
 	app := &nopAppendable{}
-	sp, _ := newScrapePool(cfg, app, 0, nil, false)
+	sp, _ := newScrapePool(cfg, app, 0, nil, false, nil)
 
 	loop := sp.newLoop(scrapeLoopOptions{
 		target: &Target{},
@@ -497,7 +497,7 @@ func TestScrapePoolRaces(t *testing.T) {
 	newConfig := func() *config.ScrapeConfig {
 		return &config.ScrapeConfig{ScrapeInterval: interval, ScrapeTimeout: timeout}
 	}
-	sp, _ := newScrapePool(newConfig(), &nopAppendable{}, 0, nil, false)
+	sp, _ := newScrapePool(newConfig(), &nopAppendable{}, 0, nil, false, nil)
 	tgts := []*targetgroup.Group{
 		{
 			Targets: []model.LabelSet{
@@ -1479,7 +1479,8 @@ func TestScrapeLoopAppendCacheEntryButErrNotFound(t *testing.T) {
 	fakeRef := storage.SeriesRef(1)
 	expValue := float64(1)
 	metric := `metric{n="1"} 1`
-	p := textparse.New([]byte(metric), "")
+	p, warning := textparse.New([]byte(metric), "")
+	require.NoError(t, warning)
 
 	var lset labels.Labels
 	p.Next()
@@ -2511,12 +2512,20 @@ func TestReuseScrapeCache(t *testing.T) {
 			ScrapeInterval: model.Duration(5 * time.Second),
 			MetricsPath:    "/metrics",
 		}
-		sp, _ = newScrapePool(cfg, app, 0, nil, false)
+		sp, _ = newScrapePool(cfg, app, 0, nil, false, nil)
 		t1    = &Target{
 			discoveredLabels: labels.Labels{
 				labels.Label{
 					Name:  "labelNew",
 					Value: "nameNew",
+				},
+				labels.Label{
+					Name:  "labelNew1",
+					Value: "nameNew1",
+				},
+				labels.Label{
+					Name:  "labelNew2",
+					Value: "nameNew2",
 				},
 			},
 		}
@@ -2592,6 +2601,49 @@ func TestReuseScrapeCache(t *testing.T) {
 				ScrapeInterval:  model.Duration(5 * time.Second),
 				ScrapeTimeout:   model.Duration(15 * time.Second),
 				MetricsPath:     "/metrics2",
+			},
+		},
+		{
+			keep: false,
+			newConfig: &config.ScrapeConfig{
+				JobName:        "Prometheus",
+				ScrapeInterval: model.Duration(5 * time.Second),
+				ScrapeTimeout:  model.Duration(15 * time.Second),
+				MetricsPath:    "/metrics",
+				LabelLimit:     1,
+			},
+		},
+		{
+			keep: false,
+			newConfig: &config.ScrapeConfig{
+				JobName:        "Prometheus",
+				ScrapeInterval: model.Duration(5 * time.Second),
+				ScrapeTimeout:  model.Duration(15 * time.Second),
+				MetricsPath:    "/metrics",
+				LabelLimit:     15,
+			},
+		},
+		{
+			keep: false,
+			newConfig: &config.ScrapeConfig{
+				JobName:              "Prometheus",
+				ScrapeInterval:       model.Duration(5 * time.Second),
+				ScrapeTimeout:        model.Duration(15 * time.Second),
+				MetricsPath:          "/metrics",
+				LabelLimit:           15,
+				LabelNameLengthLimit: 5,
+			},
+		},
+		{
+			keep: false,
+			newConfig: &config.ScrapeConfig{
+				JobName:               "Prometheus",
+				ScrapeInterval:        model.Duration(5 * time.Second),
+				ScrapeTimeout:         model.Duration(15 * time.Second),
+				MetricsPath:           "/metrics",
+				LabelLimit:            15,
+				LabelNameLengthLimit:  5,
+				LabelValueLengthLimit: 7,
 			},
 		},
 	}
@@ -2670,7 +2722,7 @@ func TestReuseCacheRace(t *testing.T) {
 			ScrapeInterval: model.Duration(5 * time.Second),
 			MetricsPath:    "/metrics",
 		}
-		sp, _ = newScrapePool(cfg, app, 0, nil, false)
+		sp, _ = newScrapePool(cfg, app, 0, nil, false, nil)
 		t1    = &Target{
 			discoveredLabels: labels.Labels{
 				labels.Label{
@@ -2799,7 +2851,7 @@ func TestScrapeReportLimit(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	sp, err := newScrapePool(cfg, s, 0, nil, false)
+	sp, err := newScrapePool(cfg, s, 0, nil, false, nil)
 	require.NoError(t, err)
 	defer sp.stop()
 
@@ -2966,7 +3018,7 @@ func TestTargetScrapeIntervalAndTimeoutRelabel(t *testing.T) {
 			},
 		},
 	}
-	sp, _ := newScrapePool(config, &nopAppendable{}, 0, nil, false)
+	sp, _ := newScrapePool(config, &nopAppendable{}, 0, nil, false, nil)
 	tgts := []*targetgroup.Group{
 		{
 			Targets: []model.LabelSet{{model.AddressLabel: "127.0.0.1:9090"}},

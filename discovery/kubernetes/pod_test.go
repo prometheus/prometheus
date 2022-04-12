@@ -190,6 +190,19 @@ func expectedPodTargetGroups(ns string) map[string]*targetgroup.Group {
 	}
 }
 
+func expectedPodTargetGroupsWithNodeMeta(ns, nodeName string, nodeLabels map[string]string) map[string]*targetgroup.Group {
+	result := expectedPodTargetGroups(ns)
+	for _, tg := range result {
+		tg.Labels["__meta_kubernetes_node_name"] = lv(nodeName)
+		for k, v := range nodeLabels {
+			tg.Labels[model.LabelName("__meta_kubernetes_node_label_"+k)] = lv(v)
+			tg.Labels[model.LabelName("__meta_kubernetes_node_labelpresent_"+k)] = lv("true")
+		}
+	}
+
+	return result
+}
+
 func TestPodDiscoveryBeforeRun(t *testing.T) {
 	n, c := makeDiscovery(RolePod, NamespaceDiscovery{})
 
@@ -405,5 +418,48 @@ func TestPodDiscoveryOwnNamespace(t *testing.T) {
 		},
 		expectedMaxItems: 1,
 		expectedRes:      expected,
+	}.Run(t)
+}
+
+func TestPodDiscoveryWithNodeMetadata(t *testing.T) {
+	attachMetadata := AttachMetadataConfig{Node: true}
+	n, c := makeDiscoveryWithMetadata(RolePod, NamespaceDiscovery{}, attachMetadata)
+	nodeLbls := map[string]string{"l1": "v1"}
+
+	k8sDiscoveryTest{
+		discovery: n,
+		afterStart: func() {
+			nodes := makeNode("testnode", "", "", nodeLbls, nil)
+			c.CoreV1().Nodes().Create(context.Background(), nodes, metav1.CreateOptions{})
+
+			pods := makePods()
+			c.CoreV1().Pods(pods.Namespace).Create(context.Background(), pods, metav1.CreateOptions{})
+		},
+		expectedMaxItems: 2,
+		expectedRes:      expectedPodTargetGroupsWithNodeMeta("default", "testnode", nodeLbls),
+	}.Run(t)
+}
+
+func TestPodDiscoveryWithNodeMetadataUpdateNode(t *testing.T) {
+	nodeLbls := map[string]string{"l2": "v2"}
+	attachMetadata := AttachMetadataConfig{Node: true}
+	n, c := makeDiscoveryWithMetadata(RolePod, NamespaceDiscovery{}, attachMetadata)
+
+	k8sDiscoveryTest{
+		discovery: n,
+		beforeRun: func() {
+			oldNodeLbls := map[string]string{"l1": "v1"}
+			nodes := makeNode("testnode", "", "", oldNodeLbls, nil)
+			c.CoreV1().Nodes().Create(context.Background(), nodes, metav1.CreateOptions{})
+		},
+		afterStart: func() {
+			pods := makePods()
+			c.CoreV1().Pods(pods.Namespace).Create(context.Background(), pods, metav1.CreateOptions{})
+
+			nodes := makeNode("testnode", "", "", nodeLbls, nil)
+			c.CoreV1().Nodes().Update(context.Background(), nodes, metav1.UpdateOptions{})
+		},
+		expectedMaxItems: 2,
+		expectedRes:      expectedPodTargetGroupsWithNodeMeta("default", "testnode", nodeLbls),
 	}.Run(t)
 }

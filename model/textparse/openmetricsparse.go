@@ -175,9 +175,8 @@ func (p *OpenMetricsParser) Metric(l *labels.Labels) string {
 		*l = append(*l, labels.Label{Name: s[a:b], Value: s[c:d]})
 	}
 
-	// Sort labels. We can skip the first entry since the metric name is
-	// already at the right place.
-	sort.Sort((*l)[1:])
+	// Sort labels.
+	sort.Sort(*l)
 
 	return s
 }
@@ -241,13 +240,13 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 	case tEOF:
 		return EntryInvalid, errors.New("data does not end with # EOF")
 	case tHelp, tType, tUnit:
-		switch t := p.nextToken(); t {
+		switch t2 := p.nextToken(); t2 {
 		case tMName:
 			p.offsets = append(p.offsets, p.l.start, p.l.i)
 		default:
-			return EntryInvalid, parseError("expected metric name after HELP", t)
+			return EntryInvalid, parseError("expected metric name after "+t.String(), t2)
 		}
-		switch t := p.nextToken(); t {
+		switch t2 := p.nextToken(); t2 {
 		case tText:
 			if len(p.l.buf()) > 1 {
 				p.text = p.l.buf()[1 : len(p.l.buf())-1]
@@ -255,7 +254,7 @@ func (p *OpenMetricsParser) Next() (Entry, error) {
 				p.text = []byte{}
 			}
 		default:
-			return EntryInvalid, parseError("expected text in HELP", t)
+			return EntryInvalid, fmt.Errorf("expected text in %s", t.String())
 		}
 		switch t {
 		case tType:
