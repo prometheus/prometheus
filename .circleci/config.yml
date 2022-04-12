@@ -58,11 +58,9 @@ jobs:
           keys:
             - v3-npm-deps-{{ checksum "web/ui/package-lock.json" }}
             - v3-npm-deps-
-      - run: make ui-install
+      - run: make assets-tarball
       - run: make ui-lint
-      - run: make ui-build-module
       - run: make ui-test
-      - run: make assets-tarball -o assets
       - persist_to_workspace:
           root: .
           paths:
