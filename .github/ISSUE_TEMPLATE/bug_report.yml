@@ -1,0 +1,53 @@
+---
+name: Bug report
+description: Create a report to help us improve.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for opening a bug report towards Prometheus.
+
+        Please do *NOT* ask support questions in Github issues.
+
+        If your issue is not a feature request or bug report use our [community support](https://prometheus.io/community/).
+
+        There is also [commercial support](https://prometheus.io/support-training/) available.
+  - type: textarea
+    attributes:
+      label: What did you do?
+  - type: textarea
+    attributes:
+      label: What did you expect to see?
+  - type: textarea
+    attributes:
+      label: What did you see instead? Under which circumstances?
+  - type: markdown
+    attributes:
+      value: |
+        ## Environment
+  - type: input
+    attributes:
+      label: System information
+      description: insert output of `uname -srm` here, or operating system version
+  - type: textarea
+    attributes:
+      label: Prometheus version
+      description: Insert output of `prometheus --version` here.
+  - type: textarea
+    attributes:
+      label: Prometheus configuration file
+      description: Insert relevant configuration here. Don't forget to remove secrets.
+      render: yaml
+  - type: textarea
+    attributes:
+      label: Alertmanager version
+      description: Insert output of `alertmanager --version` here (if relevant to the issue).
+  - type: textarea
+    attributes:
+      label: Alertmanager configuration file
+      description: Insert relevant configuration here (if relevant to the issue). Don't forget to remove secrets.
+      render: yaml
+  - type: textarea
+    attributes:
+      label: Logs
+      description: Insert Prometheus and Alertmanager logs relevant to the issue here.
