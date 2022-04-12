@@ -19,8 +19,8 @@ jobs:
       - name: Upgrade golang
         run: |
           cd /tmp
-          wget https://dl.google.com/go/go1.16.8.linux-amd64.tar.gz
-          tar -zxvf go1.16.8.linux-amd64.tar.gz
+          wget https://dl.google.com/go/go1.17.7.linux-amd64.tar.gz
+          tar -zxvf go1.17.7.linux-amd64.tar.gz
           sudo rm -fr /usr/local/go
           sudo mv /tmp/go /usr/local/go
           cd -
