@@ -65,7 +65,9 @@ func newTestHead(t testing.TB, chunkRange int64, compressWAL bool) (*Head, *wal.
 	h, err := NewHead(nil, nil, wlog, opts, nil)
 	require.NoError(t, err)
 
-	require.NoError(t, h.chunkDiskMapper.IterateAllChunks(func(_ chunks.HeadSeriesRef, _ chunks.ChunkDiskMapperRef, _, _ int64, _ uint16) error { return nil }))
+	require.NoError(t, h.chunkDiskMapper.IterateAllChunks(func(_ chunks.HeadSeriesRef, _ chunks.ChunkDiskMapperRef, _, _ int64, _ uint16, _ chunkenc.Encoding) error {
+		return nil
+	}))
 
 	t.Cleanup(func() {
 		require.NoError(t, os.RemoveAll(dir))
@@ -3210,4 +3212,80 @@ func TestChunkSnapshotTakenAfterIncompleteSnapshot(t *testing.T) {
 	require.True(t, name != "")
 	require.Equal(t, 0, idx)
 	require.Greater(t, offset, 0)
+}
+
+func TestHeadInit_DiscardChunksWithUnsupportedEncoding(t *testing.T) {
+	h, _ := newTestHead(t, 1000, false)
+	defer func() {
+		require.NoError(t, h.Close())
+	}()
+
+	require.NoError(t, h.Init(0))
+
+	ctx := context.Background()
+	app := h.Appender(ctx)
+	seriesLabels := labels.FromStrings("a", "1")
+	var seriesRef storage.SeriesRef
+	var err error
+	for i := 0; i < 400; i++ {
+		seriesRef, err = app.Append(0, seriesLabels, int64(i), float64(i))
+		require.NoError(t, err)
+	}
+
+	require.NoError(t, app.Commit())
+	require.Greater(t, prom_testutil.ToFloat64(h.metrics.chunksCreated), 1.0)
+
+	uc := newUnsupportedChunk()
+	// Make this chunk not overlap with the previous and the next
+	h.chunkDiskMapper.WriteChunk(chunks.HeadSeriesRef(seriesRef), 500, 600, uc, func(err error) { require.NoError(t, err) })
+
+	app = h.Appender(ctx)
+	for i := 700; i < 1200; i++ {
+		_, err := app.Append(0, seriesLabels, int64(i), float64(i))
+		require.NoError(t, err)
+	}
+
+	require.NoError(t, app.Commit())
+	require.Greater(t, prom_testutil.ToFloat64(h.metrics.chunksCreated), 4.0)
+
+	series, created, err := h.getOrCreate(seriesLabels.Hash(), seriesLabels)
+	require.NoError(t, err)
+	require.False(t, created, "should already exist")
+	require.NotNil(t, series, "should return the series we created above")
+
+	expChunks := make([]*mmappedChunk, len(series.mmappedChunks))
+	copy(expChunks, series.mmappedChunks)
+
+	require.NoError(t, h.Close())
+
+	wlog, err := wal.NewSize(nil, nil, filepath.Join(h.opts.ChunkDirRoot, "wal"), 32768, false)
+	require.NoError(t, err)
+	h, err = NewHead(nil, nil, wlog, h.opts, nil)
+	require.NoError(t, err)
+	require.NoError(t, h.Init(0))
+
+	series, created, err = h.getOrCreate(seriesLabels.Hash(), seriesLabels)
+	require.NoError(t, err)
+	require.False(t, created, "should already exist")
+	require.NotNil(t, series, "should return the series we created above")
+
+	require.Equal(t, expChunks, series.mmappedChunks)
+}
+
+const (
+	UnsupportedMask   = 0b10000000
+	EncUnsupportedXOR = chunkenc.EncXOR | UnsupportedMask
+)
+
+// unsupportedChunk holds a XORChunk and overrides the Encoding() method.
+type unsupportedChunk struct {
+	*chunkenc.XORChunk
+}
+
+func newUnsupportedChunk() *unsupportedChunk {
+	return &unsupportedChunk{chunkenc.NewXORChunk()}
+}
+
+func (c *unsupportedChunk) Encoding() chunkenc.Encoding {
+	return EncUnsupportedXOR
 }

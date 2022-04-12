@@ -133,7 +133,7 @@ func TestOldChunkDiskMapper_WriteChunk_Chunk_IterateChunks(t *testing.T) {
 	require.NoError(t, err)
 
 	idx := 0
-	require.NoError(t, hrw.IterateAllChunks(func(seriesRef HeadSeriesRef, chunkRef ChunkDiskMapperRef, mint, maxt int64, numSamples uint16) error {
+	require.NoError(t, hrw.IterateAllChunks(func(seriesRef HeadSeriesRef, chunkRef ChunkDiskMapperRef, mint, maxt int64, numSamples uint16, encoding chunkenc.Encoding) error {
 		t.Helper()
 
 		expData := expectedData[idx]
@@ -151,6 +151,45 @@ func TestOldChunkDiskMapper_WriteChunk_Chunk_IterateChunks(t *testing.T) {
 		return nil
 	}))
 	require.Equal(t, len(expectedData), idx)
+}
+
+func TestOldChunkDiskMapper_WriteUnsupportedChunk_Chunk_IterateChunks(t *testing.T) {
+	hrw := testOldChunkDiskMapper(t)
+	defer func() {
+		require.NoError(t, hrw.Close())
+	}()
+
+	ucSeriesRef, ucChkRef, ucMint, ucMaxt, uchunk := writeUnsupportedChunk(t, 0, nil, hrw)
+
+	// Checking on-disk bytes for the first file.
+	require.Equal(t, 1, len(hrw.mmappedChunkFiles), "expected 1 mmapped file, got %d", len(hrw.mmappedChunkFiles))
+	require.Equal(t, len(hrw.mmappedChunkFiles), len(hrw.closers))
+
+	// Testing IterateAllChunks method.
+	dir := hrw.dir.Name()
+	require.NoError(t, hrw.Close())
+	hrw, err := NewOldChunkDiskMapper(dir, chunkenc.NewPool(), DefaultWriteBufferSize)
+	require.NoError(t, err)
+
+	require.NoError(t, hrw.IterateAllChunks(func(seriesRef HeadSeriesRef, chunkRef ChunkDiskMapperRef, mint, maxt int64, numSamples uint16, encoding chunkenc.Encoding) error {
+		t.Helper()
+
+		require.Equal(t, ucSeriesRef, seriesRef)
+		require.Equal(t, ucChkRef, chunkRef)
+		require.Equal(t, ucMint, mint)
+		require.Equal(t, ucMaxt, maxt)
+		require.Equal(t, uchunk.Encoding(), encoding) // Asserts that the encoding is EncUnsupportedXOR
+
+		actChunk, err := hrw.Chunk(chunkRef)
+		// The chunk encoding is unknown so Chunk() should fail but us the caller
+		// are ok with that. Above we asserted that the encoding we expected was
+		// EncUnsupportedXOR
+		require.NotNil(t, err)
+		require.Contains(t, err.Error(), "invalid chunk encoding \"<unknown>\"")
+		require.Nil(t, actChunk)
+
+		return nil
+	}))
 }
 
 // TestOldChunkDiskMapper_Truncate tests
@@ -222,7 +261,9 @@ func TestOldChunkDiskMapper_Truncate(t *testing.T) {
 	require.NoError(t, err)
 
 	require.False(t, hrw.fileMaxtSet)
-	require.NoError(t, hrw.IterateAllChunks(func(_ HeadSeriesRef, _ ChunkDiskMapperRef, _, _ int64, _ uint16) error { return nil }))
+	require.NoError(t, hrw.IterateAllChunks(func(_ HeadSeriesRef, _ ChunkDiskMapperRef, _, _ int64, _ uint16, _ chunkenc.Encoding) error {
+		return nil
+	}))
 	require.True(t, hrw.fileMaxtSet)
 
 	verifyFiles([]int{3, 4, 5, 6, 7, 8})
@@ -338,7 +379,7 @@ func TestOldChunkDiskMapper_TruncateAfterFailedIterateChunks(t *testing.T) {
 	require.NoError(t, err)
 
 	// Forcefully failing IterateAllChunks.
-	require.Error(t, hrw.IterateAllChunks(func(_ HeadSeriesRef, _ ChunkDiskMapperRef, _, _ int64, _ uint16) error {
+	require.Error(t, hrw.IterateAllChunks(func(_ HeadSeriesRef, _ ChunkDiskMapperRef, _, _ int64, _ uint16, _ chunkenc.Encoding) error {
 		return errors.New("random error")
 	}))
 
@@ -395,7 +436,9 @@ func TestOldChunkDiskMapper_ReadRepairOnEmptyLastFile(t *testing.T) {
 	hrw, err = NewOldChunkDiskMapper(dir, chunkenc.NewPool(), DefaultWriteBufferSize)
 	require.NoError(t, err)
 	require.False(t, hrw.fileMaxtSet)
-	require.NoError(t, hrw.IterateAllChunks(func(_ HeadSeriesRef, _ ChunkDiskMapperRef, _, _ int64, _ uint16) error { return nil }))
+	require.NoError(t, hrw.IterateAllChunks(func(_ HeadSeriesRef, _ ChunkDiskMapperRef, _, _ int64, _ uint16, _ chunkenc.Encoding) error {
+		return nil
+	}))
 	require.True(t, hrw.fileMaxtSet)
 
 	// Removed from memory.
@@ -425,7 +468,9 @@ func testOldChunkDiskMapper(t *testing.T) *OldChunkDiskMapper {
 	hrw, err := NewOldChunkDiskMapper(tmpdir, chunkenc.NewPool(), DefaultWriteBufferSize)
 	require.NoError(t, err)
 	require.False(t, hrw.fileMaxtSet)
-	require.NoError(t, hrw.IterateAllChunks(func(_ HeadSeriesRef, _ ChunkDiskMapperRef, _, _ int64, _ uint16) error { return nil }))
+	require.NoError(t, hrw.IterateAllChunks(func(_ HeadSeriesRef, _ ChunkDiskMapperRef, _, _ int64, _ uint16, _ chunkenc.Encoding) error {
+		return nil
+	}))
 	require.True(t, hrw.fileMaxtSet)
 	return hrw
 }

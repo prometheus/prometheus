@@ -61,7 +61,7 @@ var (
 // 0 size queue to queue based chunk disk mapper.
 type chunkDiskMapper interface {
 	CutNewFile() (returnErr error)
-	IterateAllChunks(f func(seriesRef chunks.HeadSeriesRef, chunkRef chunks.ChunkDiskMapperRef, mint, maxt int64, numSamples uint16) error) (err error)
+	IterateAllChunks(f func(seriesRef chunks.HeadSeriesRef, chunkRef chunks.ChunkDiskMapperRef, mint, maxt int64, numSamples uint16, encoding chunkenc.Encoding) error) (err error)
 	Truncate(mint int64) error
 	DeleteCorrupted(originalErr error) error
 	Size() (int64, error)
@@ -662,10 +662,16 @@ func (h *Head) Init(minValidTime int64) error {
 
 func (h *Head) loadMmappedChunks(refSeries map[chunks.HeadSeriesRef]*memSeries) (map[chunks.HeadSeriesRef][]*mmappedChunk, error) {
 	mmappedChunks := map[chunks.HeadSeriesRef][]*mmappedChunk{}
-	if err := h.chunkDiskMapper.IterateAllChunks(func(seriesRef chunks.HeadSeriesRef, chunkRef chunks.ChunkDiskMapperRef, mint, maxt int64, numSamples uint16) error {
+	if err := h.chunkDiskMapper.IterateAllChunks(func(seriesRef chunks.HeadSeriesRef, chunkRef chunks.ChunkDiskMapperRef, mint, maxt int64, numSamples uint16, encoding chunkenc.Encoding) error {
 		if maxt < h.minValidTime.Load() {
 			return nil
 		}
+
+		// We ignore any chunk that doesnt have a valid encoding
+		if encoding != chunkenc.EncXOR {
+			return nil
+		}
+
 		ms, ok := refSeries[seriesRef]
 		if !ok {
 			slice := mmappedChunks[seriesRef]
