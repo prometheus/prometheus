@@ -411,7 +411,7 @@ func TestLockfile(t *testing.T) {
 	})
 }
 
-func Test_ExistingWAL_RefID(t *testing.T) {
+func Test_ExistingWAL_NextRef(t *testing.T) {
 	dbDir := t.TempDir()
 	rs := remote.NewStorage(log.NewNopLogger(), nil, startTime, dbDir, time.Second*30, nil)
 	defer func() {
@@ -438,12 +438,12 @@ func Test_ExistingWAL_RefID(t *testing.T) {
 	require.NoError(t, db.truncate(0))
 	require.NoError(t, db.Close())
 
-	// Create a new storage and see what the ref ID is initialized to.
+	// Create a new storage and see what nextRef is initialized to.
 	db, err = Open(log.NewNopLogger(), nil, rs, dbDir, DefaultOptions())
 	require.NoError(t, err)
 	defer require.NoError(t, db.Close())
 
-	require.Equal(t, uint64(seriesCount), db.nextRef.Load(), "cached ref ID should be equal to the number of series written")
+	require.Equal(t, uint64(seriesCount), db.nextRef.Load(), "nextRef should be equal to the number of series written across the entire WAL")
 }
 
 func startTime() (int64, error) {
