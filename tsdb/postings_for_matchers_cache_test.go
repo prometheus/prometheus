@@ -247,7 +247,7 @@ func TestPostingsForMatchersCache(t *testing.T) {
 		require.NoError(t, err)
 		require.EqualError(t, p.Err(), "result from call 1")
 
-		// make first call agian, it's calculated again
+		// make first call again, it's calculated again
 		p, err = c.PostingsForMatchers(indexForPostingsMock{}, true, calls[0]...)
 		require.NoError(t, err)
 		require.EqualError(t, p.Err(), "result from call 2")

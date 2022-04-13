@@ -1618,6 +1618,7 @@ func TestHeadReadWriterRepair(t *testing.T) {
 		opts := DefaultHeadOptions()
 		opts.ChunkRange = chunkRange
 		opts.ChunkDirRoot = dir
+		opts.ChunkWriteQueueSize = 1 // We need to set this option so that we use the async queue. Upstream prometheus uses the queue directly.
 		h, err := NewHead(nil, nil, w, opts, nil)
 		require.NoError(t, err)
 		require.Equal(t, 0.0, prom_testutil.ToFloat64(h.metrics.mmapChunkCorruptionTotal))

@@ -15,11 +15,11 @@ package labels
 
 import (
 	"math/rand"
-	"regexp"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/grafana/regexp"
 	"github.com/grafana/regexp/syntax"
 	"github.com/stretchr/testify/require"
 )
@@ -201,7 +201,6 @@ func TestFindSetMatches(t *testing.T) {
 			require.NoError(t, err)
 			matches := findSetMatches(parsed, "")
 			require.Equal(t, c.exp, matches)
-
 		})
 	}
 }
