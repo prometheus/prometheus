@@ -71,3 +71,4 @@ body:
     attributes:
       label: Logs
       description: Insert Prometheus and Alertmanager logs relevant to the issue here.
+      render: text
