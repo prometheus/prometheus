@@ -15,6 +15,7 @@ body:
   - type: textarea
     attributes:
       label: What did you do?
+      description: Please provide steps for us to reproduce this issue.
     validations:
       required: true
   - type: textarea
@@ -23,6 +24,8 @@ body:
   - type: textarea
     attributes:
       label: What did you see instead? Under which circumstances?
+    validations:
+      required: true
   - type: markdown
     attributes:
       value: |
