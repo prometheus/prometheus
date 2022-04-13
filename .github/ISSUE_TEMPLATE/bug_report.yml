@@ -31,6 +31,7 @@ body:
     attributes:
       label: System information
       description: insert output of `uname -srm` here, or operating system version
+      placeholder: e.g. Linux 5.16.15 x86_64
   - type: textarea
     attributes:
       label: Prometheus version
