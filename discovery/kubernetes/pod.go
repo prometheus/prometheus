@@ -32,6 +32,8 @@ import (
 	"github.com/prometheus/prometheus/util/strutil"
 )
 
+const nodeIndex = "node"
+
 var (
 	podAddCount    = eventCount.WithLabelValues("pod", "add")
 	podUpdateCount = eventCount.WithLabelValues("pod", "update")
@@ -40,24 +42,29 @@ var (
 
 // Pod discovers new pod targets.
 type Pod struct {
-	informer cache.SharedInformer
-	store    cache.Store
-	logger   log.Logger
-	queue    *workqueue.Type
+	podInf           cache.SharedIndexInformer
+	nodeInf          cache.SharedInformer
+	withNodeMetadata bool
+	store            cache.Store
+	logger           log.Logger
+	queue            *workqueue.Type
 }
 
 // NewPod creates a new pod discovery.
-func NewPod(l log.Logger, pods cache.SharedInformer) *Pod {
+func NewPod(l log.Logger, pods cache.SharedIndexInformer, nodes cache.SharedInformer) *Pod {
 	if l == nil {
 		l = log.NewNopLogger()
 	}
+
 	p := &Pod{
-		informer: pods,
-		store:    pods.GetStore(),
-		logger:   l,
-		queue:    workqueue.NewNamed("pod"),
+		podInf:           pods,
+		nodeInf:          nodes,
+		withNodeMetadata: nodes != nil,
+		store:            pods.GetStore(),
+		logger:           l,
+		queue:            workqueue.NewNamed("pod"),
 	}
-	p.informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
+	p.podInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
 		AddFunc: func(o interface{}) {
 			podAddCount.Inc()
 			p.enqueue(o)
@@ -71,6 +78,24 @@ func NewPod(l log.Logger, pods cache.SharedInformer) *Pod {
 			p.enqueue(o)
 		},
 	})
+
+	if p.withNodeMetadata {
+		p.nodeInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc: func(o interface{}) {
+				node := o.(*apiv1.Node)
+				p.enqueuePodsForNode(node.Name)
+			},
+			UpdateFunc: func(_, o interface{}) {
+				node := o.(*apiv1.Node)
+				p.enqueuePodsForNode(node.Name)
+			},
+			DeleteFunc: func(o interface{}) {
+				node := o.(*apiv1.Node)
+				p.enqueuePodsForNode(node.Name)
+			},
+		})
+	}
+
 	return p
 }
 
@@ -87,7 +112,12 @@ func (p *Pod) enqueue(obj interface{}) {
 func (p *Pod) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	defer p.queue.ShutDown()
 
-	if !cache.WaitForCacheSync(ctx.Done(), p.informer.HasSynced) {
+	cacheSyncs := []cache.InformerSynced{p.podInf.HasSynced}
+	if p.withNodeMetadata {
+		cacheSyncs = append(cacheSyncs, p.nodeInf.HasSynced)
+	}
+
+	if !cache.WaitForCacheSync(ctx.Done(), cacheSyncs...) {
 		if ctx.Err() != context.Canceled {
 			level.Error(p.logger).Log("msg", "pod informer unable to sync cache")
 		}
@@ -221,6 +251,9 @@ func (p *Pod) buildPod(pod *apiv1.Pod) *targetgroup.Group {
 
 	tg.Labels = podLabels(pod)
 	tg.Labels[namespaceLabel] = lv(pod.Namespace)
+	if p.withNodeMetadata {
+		p.attachNodeMetadata(tg, pod)
+	}
 
 	containers := append(pod.Spec.Containers, pod.Spec.InitContainers...)
 	for i, c := range containers {
@@ -255,6 +288,39 @@ func (p *Pod) buildPod(pod *apiv1.Pod) *targetgroup.Group {
 	}
 
 	return tg
+}
+
+func (p *Pod) attachNodeMetadata(tg *targetgroup.Group, pod *apiv1.Pod) {
+	tg.Labels[nodeNameLabel] = lv(pod.Spec.NodeName)
+
+	obj, exists, err := p.nodeInf.GetStore().GetByKey(pod.Spec.NodeName)
+	if err != nil {
+		level.Error(p.logger).Log("msg", "Error getting node", "node", pod.Spec.NodeName, "err", err)
+		return
+	}
+
+	if !exists {
+		return
+	}
+
+	node := obj.(*apiv1.Node)
+	for k, v := range node.GetLabels() {
+		ln := strutil.SanitizeLabelName(k)
+		tg.Labels[model.LabelName(nodeLabelPrefix+ln)] = lv(v)
+		tg.Labels[model.LabelName(nodeLabelPresentPrefix+ln)] = presentValue
+	}
+}
+
+func (p *Pod) enqueuePodsForNode(nodeName string) {
+	pods, err := p.podInf.GetIndexer().ByIndex(nodeIndex, nodeName)
+	if err != nil {
+		level.Error(p.logger).Log("msg", "Error getting pods for node", "node", nodeName, "err", err)
+		return
+	}
+
+	for _, pod := range pods {
+		p.enqueue(pod.(*apiv1.Pod))
+	}
 }
 
 func podSource(pod *apiv1.Pod) string {

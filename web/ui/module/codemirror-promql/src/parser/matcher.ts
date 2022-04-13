@@ -12,7 +12,7 @@
 // limitations under the License.
 
 import { SyntaxNode } from '@lezer/common';
-import { EqlRegex, EqlSingle, LabelName, MatchOp, Neq, NeqRegex, StringLiteral } from '../grammar/parser.terms';
+import { EqlRegex, EqlSingle, LabelName, MatchOp, Neq, NeqRegex, StringLiteral } from 'lezer-promql';
 import { EditorState } from '@codemirror/state';
 import { Matcher } from '../types';
 

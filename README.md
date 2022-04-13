@@ -93,6 +93,23 @@ The Makefile provides several targets:
   * *vet*: check the source code for common errors
   * *assets*: build the new experimental React UI
 
+### Service discovery plugins
+
+Prometheus is bundled with many service discovery plugins.
+When building Prometheus from source, you can edit the [plugins.yml](./plugins.yml)
+file to disable some service discoveries. The file is a yaml-formated list of go
+import path that will be built into the Prometheus binary.
+
+After you have changed the file, you
+need to run `make build` again.
+
+If you are using another method to compile Prometheus, `make plugins` will
+generate the plugins file accordingly.
+
+If you add out-of-tree plugins, which we do not endorse at the moment,
+additional steps might be needed to adjust the `go.mod` and `go.sum` files. As
+always, be extra careful when loading third party code.
+
 ### Building the Docker image
 
 The `make docker` target is designed for use in our CI system.

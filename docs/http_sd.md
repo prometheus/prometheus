@@ -40,7 +40,8 @@ an empty list `[]`. Target lists are unordered.
 
 Prometheus caches target lists. If an error occurs while fetching an updated
 targets list, Prometheus keeps using the current targets list. The targets list
-is not saved across restart.
+is not saved across restart. The `prometheus_sd_http_failures_total` counter 
+metric tracks the number of refresh failures.
 
 The whole list of targets must be returned on every scrape. There is no support
 for incremental updates. A Prometheus instance does not send its hostname and it

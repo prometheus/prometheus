@@ -437,11 +437,7 @@ func TestCompactionFailWillCleanUpTempDir(t *testing.T) {
 	}, nil, nil)
 	require.NoError(t, err)
 
-	tmpdir, err := ioutil.TempDir("", "test")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(tmpdir))
-	}()
+	tmpdir := t.TempDir()
 
 	shardedBlocks := []shardedBlock{
 		{meta: &BlockMeta{ULID: ulid.MustNew(ulid.Now(), rand.Reader)}},
@@ -1250,11 +1246,7 @@ func BenchmarkCompaction(b *testing.B) {
 	for _, c := range cases {
 		nBlocks := len(c.ranges)
 		b.Run(fmt.Sprintf("type=%s,blocks=%d,series=%d,samplesPerSeriesPerBlock=%d", c.compactionType, nBlocks, nSeries, c.ranges[0][1]-c.ranges[0][0]+1), func(b *testing.B) {
-			dir, err := ioutil.TempDir("", "bench_compaction")
-			require.NoError(b, err)
-			defer func() {
-				require.NoError(b, os.RemoveAll(dir))
-			}()
+			dir := b.TempDir()
 			blockDirs := make([]string, 0, len(c.ranges))
 			var blocks []*Block
 			for _, r := range c.ranges {
@@ -1281,20 +1273,12 @@ func BenchmarkCompaction(b *testing.B) {
 }
 
 func BenchmarkCompactionFromHead(b *testing.B) {
-	dir, err := ioutil.TempDir("", "bench_compaction_from_head")
-	require.NoError(b, err)
-	defer func() {
-		require.NoError(b, os.RemoveAll(dir))
-	}()
+	dir := b.TempDir()
 	totalSeries := 100000
 	for labelNames := 1; labelNames < totalSeries; labelNames *= 10 {
 		labelValues := totalSeries / labelNames
 		b.Run(fmt.Sprintf("labelnames=%d,labelvalues=%d", labelNames, labelValues), func(b *testing.B) {
-			chunkDir, err := ioutil.TempDir("", "chunk_dir")
-			require.NoError(b, err)
-			defer func() {
-				require.NoError(b, os.RemoveAll(chunkDir))
-			}()
+			chunkDir := b.TempDir()
 			opts := DefaultHeadOptions()
 			opts.ChunkRange = 1000
 			opts.ChunkDirRoot = chunkDir
@@ -1376,11 +1360,7 @@ func TestDisableAutoCompactions(t *testing.T) {
 // TestCancelCompactions ensures that when the db is closed
 // any running compaction is cancelled to unblock closing the db.
 func TestCancelCompactions(t *testing.T) {
-	tmpdir, err := ioutil.TempDir("", "testCancelCompaction")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(tmpdir))
-	}()
+	tmpdir := t.TempDir()
 
 	// Create some blocks to fall within the compaction range.
 	createBlock(t, tmpdir, genSeries(1, 10000, 0, 1000))
@@ -1389,7 +1369,7 @@ func TestCancelCompactions(t *testing.T) {
 
 	// Copy the db so we have an exact copy to compare compaction times.
 	tmpdirCopy := tmpdir + "Copy"
-	err = fileutil.CopyDirs(tmpdir, tmpdirCopy)
+	err := fileutil.CopyDirs(tmpdir, tmpdirCopy)
 	require.NoError(t, err)
 	defer func() {
 		require.NoError(t, os.RemoveAll(tmpdirCopy))

@@ -19,7 +19,6 @@ import (
 	"errors"
 	"fmt"
 	"hash/crc32"
-	"io/ioutil"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -42,13 +41,9 @@ import (
 // to 2. We had a migration in place resetting it to 1 but we should move immediately to
 // version 3 next time to avoid confusion and issues.
 func TestBlockMetaMustNeverBeVersion2(t *testing.T) {
-	dir, err := ioutil.TempDir("", "metaversion")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 
-	_, err = writeMetaFile(log.NewNopLogger(), dir, &BlockMeta{})
+	_, err := writeMetaFile(log.NewNopLogger(), dir, &BlockMeta{})
 	require.NoError(t, err)
 
 	meta, _, err := readMetaFile(dir)
@@ -57,11 +52,7 @@ func TestBlockMetaMustNeverBeVersion2(t *testing.T) {
 }
 
 func TestSetCompactionFailed(t *testing.T) {
-	tmpdir, err := ioutil.TempDir("", "test")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(tmpdir))
-	}()
+	tmpdir := t.TempDir()
 
 	blockDir := createBlock(t, tmpdir, genSeries(1, 1, 0, 1))
 	b, err := OpenBlock(nil, blockDir, nil)
@@ -78,11 +69,7 @@ func TestSetCompactionFailed(t *testing.T) {
 }
 
 func TestCreateBlock(t *testing.T) {
-	tmpdir, err := ioutil.TempDir("", "test")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(tmpdir))
-	}()
+	tmpdir := t.TempDir()
 	b, err := OpenBlock(nil, createBlock(t, tmpdir, genSeries(1, 1, 0, 10)), nil)
 	if err == nil {
 		require.NoError(t, b.Close())
@@ -173,11 +160,7 @@ func TestCorruptedChunk(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			tmpdir, err := ioutil.TempDir("", "test_open_block_chunk_corrupted")
-			require.NoError(t, err)
-			defer func() {
-				require.NoError(t, os.RemoveAll(tmpdir))
-			}()
+			tmpdir := t.TempDir()
 
 			series := storage.NewListSeries(labels.FromStrings("a", "b"), []tsdbutil.Sample{sample{1, 1}})
 			blockDir := createBlock(t, tmpdir, []storage.Series{series})
@@ -215,11 +198,7 @@ func TestCorruptedChunk(t *testing.T) {
 }
 
 func TestLabelValuesWithMatchers(t *testing.T) {
-	tmpdir, err := ioutil.TempDir("", "test_block_label_values_with_matchers")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(tmpdir))
-	}()
+	tmpdir := t.TempDir()
 
 	var seriesEntries []storage.Series
 	for i := 0; i < 100; i++ {
@@ -288,16 +267,13 @@ func TestLabelValuesWithMatchers(t *testing.T) {
 
 // TestBlockSize ensures that the block size is calculated correctly.
 func TestBlockSize(t *testing.T) {
-	tmpdir, err := ioutil.TempDir("", "test_blockSize")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(tmpdir))
-	}()
+	tmpdir := t.TempDir()
 
 	var (
 		blockInit    *Block
 		expSizeInit  int64
 		blockDirInit string
+		err          error
 	)
 
 	// Create a block and compare the reported size vs actual disk size.
@@ -379,11 +355,7 @@ func TestReadIndexFormatV1(t *testing.T) {
 }
 
 func BenchmarkLabelValuesWithMatchers(b *testing.B) {
-	tmpdir, err := ioutil.TempDir("", "bench_block_label_values_with_matchers")
-	require.NoError(b, err)
-	defer func() {
-		require.NoError(b, os.RemoveAll(tmpdir))
-	}()
+	tmpdir := b.TempDir()
 
 	var seriesEntries []storage.Series
 	metricCount := 1000000
@@ -422,9 +394,7 @@ func BenchmarkLabelValuesWithMatchers(b *testing.B) {
 }
 
 func TestLabelNamesWithMatchers(t *testing.T) {
-	tmpdir, err := ioutil.TempDir("", "test_block_label_names_with_matchers")
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, os.RemoveAll(tmpdir)) })
+	tmpdir := t.TempDir()
 
 	var seriesEntries []storage.Series
 	for i := 0; i < 100; i++ {

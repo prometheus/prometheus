@@ -52,6 +52,7 @@ ii{foo="bar"} 1
 # TYPE ss stateset
 ss{ss="foo"} 1
 ss{ss="bar"} 0
+ss{A="a"} 0
 # TYPE un unknown
 _metric_starting_with_underscore 1
 testmetric{_label_starting_with_underscore="foo"} 1
@@ -177,6 +178,10 @@ foo_total 17.0 1520879607.789 # {xx="yy"} 5`
 			m:    `ss{ss="bar"}`,
 			v:    0,
 			lset: labels.FromStrings("__name__", "ss", "ss", "bar"),
+		}, {
+			m:    `ss{A="a"}`,
+			v:    0,
+			lset: labels.FromStrings("A", "a", "__name__", "ss"),
 		}, {
 			m:   "un",
 			typ: MetricTypeUnknown,
@@ -337,6 +342,14 @@ func TestOpenMetricsParseErrors(t *testing.T) {
 			err:   "\"INVALID\" \" \" is not a valid start token",
 		},
 		{
+			input: "# TYPE \n#EOF\n",
+			err:   "expected metric name after TYPE, got \"INVALID\"",
+		},
+		{
+			input: "# TYPE m\n#EOF\n",
+			err:   "expected text in TYPE",
+		},
+		{
 			input: "# UNIT metric suffix\n#EOF\n",
 			err:   "unit not a suffix of metric \"metric\"",
 		},
@@ -349,8 +362,20 @@ func TestOpenMetricsParseErrors(t *testing.T) {
 			err:   "unit not a suffix of metric \"m\"",
 		},
 		{
+			input: "# UNIT \n#EOF\n",
+			err:   "expected metric name after UNIT, got \"INVALID\"",
+		},
+		{
+			input: "# UNIT m\n#EOF\n",
+			err:   "expected text in UNIT",
+		},
+		{
+			input: "# HELP \n#EOF\n",
+			err:   "expected metric name after HELP, got \"INVALID\"",
+		},
+		{
 			input: "# HELP m\n#EOF\n",
-			err:   "expected text in HELP, got \"INVALID\"",
+			err:   "expected text in HELP",
 		},
 		{
 			input: "a\t1\n#EOF\n",

@@ -1,4 +1,4 @@
-import React, { FC } from 'react';
+import React, { ChangeEvent, FC, useEffect, useState } from 'react';
 import { useFetch } from '../../hooks/useFetch';
 import { LabelsTable } from './LabelsTable';
 import { DroppedTarget, Labels, Target } from '../targets/target';
@@ -7,6 +7,9 @@ import { withStatusIndicator } from '../../components/withStatusIndicator';
 import { mapObjEntries } from '../../utils';
 import { usePathPrefix } from '../../contexts/PathPrefixContext';
 import { API_PATH } from '../../constants/constants';
+import { KVSearch } from '@nexucis/kvsearch';
+import { Container } from 'reactstrap';
+import SearchBar from '../../components/SearchBar';
 
 interface ServiceMap {
   activeTargets: Target[];
@@ -18,6 +21,11 @@ export interface TargetLabels {
   labels: Labels;
   isDropped: boolean;
 }
+
+const kvSearch = new KVSearch<Target>({
+  shouldSort: true,
+  indexedKeys: ['labels', 'discoveredLabels', ['discoveredLabels', /.*/], ['labels', /.*/]],
+});
 
 export const processSummary = (
   activeTargets: Target[],
@@ -82,14 +90,32 @@ export const processTargets = (activeTargets: Target[], droppedTargets: DroppedT
 };
 
 export const ServiceDiscoveryContent: FC<ServiceMap> = ({ activeTargets, droppedTargets }) => {
-  const targets = processSummary(activeTargets, droppedTargets);
-  const labels = processTargets(activeTargets, droppedTargets);
+  const [activeTargetList, setActiveTargetList] = useState(activeTargets);
+  const [targetList, setTargetList] = useState(processSummary(activeTargets, droppedTargets));
+  const [labelList, setLabelList] = useState(processTargets(activeTargets, droppedTargets));
+
+  const handleSearchChange = (e: ChangeEvent<HTMLTextAreaElement | HTMLInputElement>) => {
+    if (e.target.value !== '') {
+      const result = kvSearch.filter(e.target.value.trim(), activeTargets);
+      setActiveTargetList(result.map((value) => value.original));
+    } else {
+      setActiveTargetList(activeTargets);
+    }
+  };
+
+  useEffect(() => {
+    setTargetList(processSummary(activeTargetList, droppedTargets));
+    setLabelList(processTargets(activeTargetList, droppedTargets));
+  }, [activeTargetList, droppedTargets]);
 
   return (
     <>
       <h2>Service Discovery</h2>
+      <Container>
+        <SearchBar handleChange={handleSearchChange} placeholder="Filter by labels" />
+      </Container>
       <ul>
-        {mapObjEntries(targets, ([k, v]) => (
+        {mapObjEntries(targetList, ([k, v]) => (
           <li key={k}>
             <a href={'#' + k}>
               {k} ({v.active} / {v.total} active targets)
@@ -98,7 +124,7 @@ export const ServiceDiscoveryContent: FC<ServiceMap> = ({ activeTargets, dropped
         ))}
       </ul>
       <hr />
-      {mapObjEntries(labels, ([k, v]) => {
+      {mapObjEntries(labelList, ([k, v]) => {
         return <LabelsTable value={v} name={k} key={k} />;
       })}
     </>

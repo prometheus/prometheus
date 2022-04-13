@@ -1,3 +1,75 @@
+## 2.34.0 / 2022-03-15
+
+* [CHANGE] UI: Classic UI removed. #10208
+* [CHANGE] Tracing: Migrate from Jaeger to OpenTelemetry based tracing. #9724, #10203, #10276
+* [ENHANCEMENT] TSDB: Disable the chunk write queue by default and allow configuration with the experimental flag `--storage.tsdb.head-chunks-write-queue-size`. #10425
+* [ENHANCEMENT] HTTP SD: Add a failure counter. #10372
+* [ENHANCEMENT] Azure SD: Set Prometheus User-Agent on requests. #10209
+* [ENHANCEMENT] Uyuni SD: Reduce the number of logins to Uyuni. #10072
+* [ENHANCEMENT] Scrape: Log when an invalid media type is encountered during a scrape. #10186
+* [ENHANCEMENT] Scrape: Accept application/openmetrics-text;version=1.0.0 in addition to version=0.0.1. #9431
+* [ENHANCEMENT] Remote-read: Add an option to not use external labels as selectors for remote read. #10254
+* [ENHANCEMENT] UI: Optimize the alerts page and add a search bar. #10142
+* [ENHANCEMENT] UI: Improve graph colors that were hard to see. #10179
+* [ENHANCEMENT] Config: Allow escaping of `$` with `$$` when using environment variables with external labels. #10129
+* [BUGFIX] PromQL: Properly return an error from histogram_quantile when metrics have the same labelset. #10140 
+* [BUGFIX] UI: Fix bug that sets the range input to the resolution. #10227
+* [BUGFIX] TSDB: Fix a query panic when `memory-snapshot-on-shutdown` is enabled. #10348
+* [BUGFIX] Parser: Specify type in metadata parser errors. #10269
+* [BUGFIX] Scrape: Fix label limit changes not applying. #10370
+
+## 2.33.5 / 2022-03-08
+
+The binaries published with this release are built with Go1.17.8 to avoid [CVE-2022-24921](https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2022-24921).
+
+* [BUGFIX] Remote-write: Fix deadlock between adding to queue and getting batch. #10395
+
+## 2.33.4 / 2022-02-22
+
+* [BUGFIX] TSDB: Fix panic when m-mapping head chunks onto the disk. #10316
+
+## 2.33.3 / 2022-02-11
+
+* [BUGFIX] Azure SD: Fix a regression when public IP Address isn't set. #10289
+
+## 2.33.2 / 2022-02-11
+
+* [BUGFIX] Azure SD: Fix panic when public IP Address isn't set. #10280
+* [BUGFIX] Remote-write: Fix deadlock when stopping a shard. #10279
+
+## 2.33.1 / 2022-02-02
+
+* [BUGFIX] SD: Fix _no such file or directory_ in K8s SD when not running inside K8s. #10235
+
+## 2.33.0 / 2022-01-29
+
+* [CHANGE] PromQL: Promote negative offset and `@` modifer to stable features. #10121
+* [CHANGE] Web: Promote remote-write-receiver to stable. #10119
+* [FEATURE] Config: Add `stripPort` template function. #10002
+* [FEATURE] Promtool: Add cardinality analysis to `check metrics`, enabled by flag `--extended`. #10045
+* [FEATURE] SD: Enable target discovery in own K8s namespace. #9881
+* [FEATURE] SD: Add provider ID label in K8s SD. #9603
+* [FEATURE] Web: Add limit field to the rules API. #10152
+* [ENHANCEMENT] Remote-write: Avoid allocations by buffering concrete structs instead of interfaces. #9934
+* [ENHANCEMENT] Remote-write: Log time series details for out-of-order samples in remote write receiver. #9894
+* [ENHANCEMENT] Remote-write: Shard up more when backlogged. #9274
+* [ENHANCEMENT] TSDB: Use simpler map key to improve exemplar ingest performance. #10111
+* [ENHANCEMENT] TSDB: Avoid allocations when popping from the intersected postings heap. #10092
+* [ENHANCEMENT] TSDB: Make chunk writing non-blocking, avoiding latency spikes in remote-write. #10051
+* [ENHANCEMENT] TSDB: Improve label matching performance. #9907
+* [ENHANCEMENT] UI: Optimize the service discovery page and add a search bar. #10131
+* [ENHANCEMENT] UI: Optimize the target page and add a search bar. #10103
+* [BUGFIX] Promtool: Make exit codes more consistent. #9861
+* [BUGFIX] Promtool: Fix flakiness of rule testing. #8818
+* [BUGFIX] Remote-write: Update `prometheus_remote_storage_queue_highest_sent_timestamp_seconds` metric when write irrecoverably fails. #10102
+* [BUGFIX] Storage: Avoid panic in `BufferedSeriesIterator`. #9945
+* [BUGFIX] TSDB: CompactBlockMetas should produce correct mint/maxt for overlapping blocks. #10108
+* [BUGFIX] TSDB: Fix logging of exemplar storage size. #9938
+* [BUGFIX] UI: Fix overlapping click targets for the alert state checkboxes. #10136
+* [BUGFIX] UI: Fix _Unhealthy_ filter on target page to actually display only _Unhealthy_ targets. #10103
+* [BUGFIX] UI: Fix autocompletion when expression is empty. #10053
+* [BUGFIX] TSDB: Fix deadlock from simultaneous GC and write. #10166
+
 ## 2.32.1 / 2021-12-17
 
 * [BUGFIX] Scrape: Fix reporting metrics when sample limit is reached during the report. #9996
@@ -13,13 +85,13 @@ Enable with `--enable-feature=agent`.
 
 Learn more about the Prometheus Agent in our [blog post](https://prometheus.io/blog/2021/11/16/agent/).
 
-* [CHANGE] remote-write: Change default max retry time from 100ms to 5 seconds. #9634
+* [CHANGE] Remote-write: Change default max retry time from 100ms to 5 seconds. #9634
 * [FEATURE] Agent: New mode of operation optimized for remote-write only scenarios, without local storage. Enable with `--enable-feature=agent`. #8785 #9851 #9664 #9939 #9941 #9943
 * [FEATURE] Promtool: Add `promtool check service-discovery` command. #8970
 * [FEATURE] UI: Add search in metrics dropdown. #9629
 * [FEATURE] Templates: Add parseDuration to template functions. #8817
 * [ENHANCEMENT] Promtool: Improve test output. #8064
-* [ENHANCEMENT] Promtool: Use kahan summation for better numerical stability. #9588
+* [ENHANCEMENT] PromQL: Use kahan summation for better numerical stability. #9588
 * [ENHANCEMENT] Remote-write: Reuse memory for marshalling. #9412
 * [ENHANCEMENT] Scrape: Add `scrape_body_size_bytes` scrape metric behind the `--enable-feature=extra-scrape-metrics` flag. #9569
 * [ENHANCEMENT] TSDB: Add windows arm64 support. #9703

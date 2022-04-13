@@ -23,7 +23,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -32,6 +31,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/grafana/regexp"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -104,6 +104,15 @@ type RulesRetriever interface {
 	AlertingRules() []*rules.AlertingRule
 }
 
+type StatsRenderer func(context.Context, *stats.Statistics, string) stats.QueryStats
+
+func defaultStatsRenderer(ctx context.Context, s *stats.Statistics, param string) stats.QueryStats {
+	if param != "" {
+		return stats.NewQueryStats(s)
+	}
+	return nil
+}
+
 // PrometheusVersion contains build information about Prometheus.
 type PrometheusVersion struct {
 	Version   string `json:"version"`
@@ -157,8 +166,8 @@ type TSDBAdminStats interface {
 // QueryEngine defines the interface for the *promql.Engine, so it can be replaced, wrapped or mocked.
 type QueryEngine interface {
 	SetQueryLogger(l promql.QueryLogger)
-	NewInstantQuery(q storage.Queryable, qs string, ts time.Time) (promql.Query, error)
-	NewRangeQuery(q storage.Queryable, qs string, start, end time.Time, interval time.Duration) (promql.Query, error)
+	NewInstantQuery(q storage.Queryable, opts *promql.QueryOpts, qs string, ts time.Time) (promql.Query, error)
+	NewRangeQuery(q storage.Queryable, opts *promql.QueryOpts, qs string, start, end time.Time, interval time.Duration) (promql.Query, error)
 }
 
 // API can register a set of endpoints in a router and handle
@@ -177,15 +186,16 @@ type API struct {
 	ready                 func(http.HandlerFunc) http.HandlerFunc
 	globalURLOptions      GlobalURLOptions
 
-	db          TSDBAdminStats
-	dbDir       string
-	enableAdmin bool
-	logger      log.Logger
-	CORSOrigin  *regexp.Regexp
-	buildInfo   *PrometheusVersion
-	runtimeInfo func() (RuntimeInfo, error)
-	gatherer    prometheus.Gatherer
-	isAgent     bool
+	db            TSDBAdminStats
+	dbDir         string
+	enableAdmin   bool
+	logger        log.Logger
+	CORSOrigin    *regexp.Regexp
+	buildInfo     *PrometheusVersion
+	runtimeInfo   func() (RuntimeInfo, error)
+	gatherer      prometheus.Gatherer
+	isAgent       bool
+	statsRenderer StatsRenderer
 
 	remoteWriteHandler http.Handler
 	remoteReadHandler  http.Handler
@@ -222,6 +232,7 @@ func NewAPI(
 	buildInfo *PrometheusVersion,
 	gatherer prometheus.Gatherer,
 	registerer prometheus.Registerer,
+	statsRenderer StatsRenderer,
 ) *API {
 	a := &API{
 		QueryEngine:       qe,
@@ -246,8 +257,13 @@ func NewAPI(
 		buildInfo:        buildInfo,
 		gatherer:         gatherer,
 		isAgent:          isAgent,
+		statsRenderer:    defaultStatsRenderer,
 
 		remoteReadHandler: remote.NewReadHandler(logger, registerer, q, configFunc, remoteReadSampleLimit, remoteReadConcurrencyLimit, remoteReadMaxBytesInFrame),
+	}
+
+	if statsRenderer != nil {
+		a.statsRenderer = statsRenderer
 	}
 
 	if ap != nil {
@@ -344,9 +360,9 @@ func (api *API) Register(r *route.Router) {
 }
 
 type queryData struct {
-	ResultType parser.ValueType  `json:"resultType"`
-	Result     parser.Value      `json:"result"`
-	Stats      *stats.QueryStats `json:"stats,omitempty"`
+	ResultType parser.ValueType `json:"resultType"`
+	Result     parser.Value     `json:"result"`
+	Stats      stats.QueryStats `json:"stats,omitempty"`
 }
 
 func invalidParamError(err error, parameter string) apiFuncResult {
@@ -376,12 +392,8 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 		defer cancel()
 	}
 
-	qry, err := api.QueryEngine.NewInstantQuery(api.Queryable, r.FormValue("query"), ts)
-	if err == promql.ErrValidationAtModifierDisabled {
-		err = errors.New("@ modifier is disabled, use --enable-feature=promql-at-modifier to enable it")
-	} else if err == promql.ErrValidationNegativeOffsetDisabled {
-		err = errors.New("negative offset is disabled, use --enable-feature=promql-negative-offset to enable it")
-	}
+	opts := extractQueryOpts(r)
+	qry, err := api.QueryEngine.NewInstantQuery(api.Queryable, opts, r.FormValue("query"), ts)
 	if err != nil {
 		return invalidParamError(err, "query")
 	}
@@ -403,16 +415,23 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 	}
 
 	// Optional stats field in response if parameter "stats" is not empty.
-	var qs *stats.QueryStats
-	if r.FormValue("stats") != "" {
-		qs = stats.NewQueryStats(qry.Stats())
+	sr := api.statsRenderer
+	if sr == nil {
+		sr = defaultStatsRenderer
 	}
+	qs := sr(ctx, qry.Stats(), r.FormValue("stats"))
 
 	return apiFuncResult{&queryData{
 		ResultType: res.Value.Type(),
 		Result:     res.Value,
 		Stats:      qs,
 	}, nil, res.Warnings, qry.Close}
+}
+
+func extractQueryOpts(r *http.Request) *promql.QueryOpts {
+	return &promql.QueryOpts{
+		EnablePerStepStats: r.FormValue("stats") == "all",
+	}
 }
 
 func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
@@ -456,12 +475,8 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 		defer cancel()
 	}
 
-	qry, err := api.QueryEngine.NewRangeQuery(api.Queryable, r.FormValue("query"), start, end, step)
-	if err == promql.ErrValidationAtModifierDisabled {
-		err = errors.New("@ modifier is disabled, use --enable-feature=promql-at-modifier to enable it")
-	} else if err == promql.ErrValidationNegativeOffsetDisabled {
-		err = errors.New("negative offset is disabled, use --enable-feature=promql-negative-offset to enable it")
-	}
+	opts := extractQueryOpts(r)
+	qry, err := api.QueryEngine.NewRangeQuery(api.Queryable, opts, r.FormValue("query"), start, end, step)
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
@@ -482,10 +497,11 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 	}
 
 	// Optional stats field in response if parameter "stats" is not empty.
-	var qs *stats.QueryStats
-	if r.FormValue("stats") != "" {
-		qs = stats.NewQueryStats(qry.Stats())
+	sr := api.statsRenderer
+	if sr == nil {
+		sr = defaultStatsRenderer
 	}
+	qs := sr(ctx, qry.Stats(), r.FormValue("stats"))
 
 	return apiFuncResult{&queryData{
 		ResultType: res.Value.Type(),
@@ -1163,6 +1179,7 @@ type RuleGroup struct {
 	// same array.
 	Rules          []Rule    `json:"rules"`
 	Interval       float64   `json:"interval"`
+	Limit          int       `json:"limit"`
 	EvaluationTime float64   `json:"evaluationTime"`
 	LastEvaluation time.Time `json:"lastEvaluation"`
 }
@@ -1215,6 +1232,7 @@ func (api *API) rules(r *http.Request) apiFuncResult {
 			Name:           grp.Name(),
 			File:           grp.File(),
 			Interval:       grp.Interval().Seconds(),
+			Limit:          grp.Limit(),
 			Rules:          []Rule{},
 			EvaluationTime: grp.GetEvaluationTime().Seconds(),
 			LastEvaluation: grp.GetLastEvaluation(),

@@ -14,9 +14,10 @@
 package labels
 
 import (
-	"regexp"
-	"regexp/syntax"
 	"strings"
+
+	"github.com/grafana/regexp"
+	"github.com/grafana/regexp/syntax"
 )
 
 const maxSetMatches = 256

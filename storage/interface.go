@@ -82,6 +82,15 @@ type Queryable interface {
 	Querier(ctx context.Context, mint, maxt int64) (Querier, error)
 }
 
+// A MockQueryable is used for testing purposes so that a mock Querier can be used.
+type MockQueryable struct {
+	MockQuerier Querier
+}
+
+func (q *MockQueryable) Querier(ctx context.Context, mint, maxt int64) (Querier, error) {
+	return q.MockQuerier, nil
+}
+
 // Querier provides querying access over time series data of a fixed time range.
 type Querier interface {
 	LabelQuerier
@@ -90,6 +99,27 @@ type Querier interface {
 	// Caller can specify if it requires returned series to be sorted. Prefer not requiring sorting for better performance.
 	// It allows passing hints that can help in optimising select, but it's up to implementation how this is used if used at all.
 	Select(sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) SeriesSet
+}
+
+// MockQuerier is used for test purposes to mock the selected series that is returned.
+type MockQuerier struct {
+	SelectMockFunction func(sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) SeriesSet
+}
+
+func (q *MockQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, Warnings, error) {
+	return nil, nil, nil
+}
+
+func (q *MockQuerier) LabelNames(matchers ...*labels.Matcher) ([]string, Warnings, error) {
+	return nil, nil, nil
+}
+
+func (q *MockQuerier) Close() error {
+	return nil
+}
+
+func (q *MockQuerier) Select(sortSeries bool, hints *SelectHints, matchers ...*labels.Matcher) SeriesSet {
+	return q.SelectMockFunction(sortSeries, hints, matchers...)
 }
 
 // A ChunkQueryable handles queries against a storage.
@@ -194,7 +224,6 @@ type Appender interface {
 	// Rollback rolls back all modifications made in the appender so far.
 	// Appender has to be discarded after rollback.
 	Rollback() error
-
 	ExemplarAppender
 }
 
@@ -244,6 +273,20 @@ func EmptySeriesSet() SeriesSet {
 	return emptySeriesSet
 }
 
+type testSeriesSet struct {
+	series Series
+}
+
+func (s testSeriesSet) Next() bool         { return true }
+func (s testSeriesSet) At() Series         { return s.series }
+func (s testSeriesSet) Err() error         { return nil }
+func (s testSeriesSet) Warnings() Warnings { return nil }
+
+// TestSeriesSet returns a mock series set
+func TestSeriesSet(series Series) SeriesSet {
+	return testSeriesSet{series: series}
+}
+
 type errSeriesSet struct {
 	err error
 }
@@ -283,6 +326,29 @@ func ErrChunkSeriesSet(err error) ChunkSeriesSet {
 type Series interface {
 	Labels
 	SampleIterable
+}
+
+type mockSeries struct {
+	timestamps []int64
+	values     []float64
+	labelSet   []string
+}
+
+func (s mockSeries) Labels() labels.Labels {
+	return labels.FromStrings(s.labelSet...)
+}
+
+func (s mockSeries) Iterator() chunkenc.Iterator {
+	return chunkenc.MockSeriesIterator(s.timestamps, s.values)
+}
+
+// MockSeries returns a series with custom timestamps, values and labelSet.
+func MockSeries(timestamps []int64, values []float64, labelSet []string) Series {
+	return mockSeries{
+		timestamps: timestamps,
+		values:     values,
+		labelSet:   labelSet,
+	}
 }
 
 // ChunkSeriesSet contains a set of chunked series.

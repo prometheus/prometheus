@@ -51,12 +51,12 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/file"
-	_ "github.com/prometheus/prometheus/discovery/install" // Register service discovery implementations.
 	"github.com/prometheus/prometheus/discovery/kubernetes"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/notifier"
+	_ "github.com/prometheus/prometheus/plugins" // Register plugins.
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/scrape"
 )
@@ -66,7 +66,13 @@ const (
 	failureExitCode = 1
 	// Exit code 3 is used for "one or more lint issues detected".
 	lintErrExitCode = 3
+
+	lintOptionAll            = "all"
+	lintOptionDuplicateRules = "duplicate-rules"
+	lintOptionNone           = "none"
 )
+
+var lintOptions = []string{lintOptionAll, lintOptionDuplicateRules, lintOptionNone}
 
 func main() {
 	app := kingpin.New(filepath.Base(os.Args[0]), "Tooling for the Prometheus monitoring system.").UsageWriter(os.Stdout)
@@ -86,6 +92,10 @@ func main() {
 		"The config files to check.",
 	).Required().ExistingFiles()
 	checkConfigSyntaxOnly := checkConfigCmd.Flag("syntax-only", "Only check the config file syntax, ignoring file and content validation referenced in the config").Bool()
+	checkConfigLint := checkConfigCmd.Flag(
+		"lint",
+		"Linting checks to apply to the rules specified in the config. Available options are: "+strings.Join(lintOptions, ", ")+". Use --lint=none to disable linting",
+	).Default(lintOptionDuplicateRules).String()
 
 	checkWebConfigCmd := checkCmd.Command("web-config", "Check if the web config files are valid or not.")
 	webConfigFiles := checkWebConfigCmd.Arg(
@@ -98,6 +108,10 @@ func main() {
 		"rule-files",
 		"The rule files to check.",
 	).Required().ExistingFiles()
+	checkRulesLint := checkRulesCmd.Flag(
+		"lint",
+		"Linting checks to apply. Available options are: "+strings.Join(lintOptions, ", ")+". Use --lint=none to disable linting",
+	).Default(lintOptionDuplicateRules).String()
 
 	checkMetricsCmd := checkCmd.Command("metrics", checkMetricsUsage)
 	checkMetricsExtended := checkCmd.Flag("extended", "Print extended information related to the cardinality of the metrics.").Bool()
@@ -203,17 +217,14 @@ func main() {
 		p = &promqlPrinter{}
 	}
 
-	var queryOpts promql.LazyLoaderOpts
 	for _, f := range *featureList {
 		opts := strings.Split(f, ",")
 		for _, o := range opts {
 			switch o {
-			case "promql-at-modifier":
-				queryOpts.EnableAtModifier = true
-			case "promql-negative-offset":
-				queryOpts.EnableNegativeOffset = true
 			case "":
 				continue
+			case "promql-at-modifier", "promql-negative-offset":
+				fmt.Printf("  WARNING: Option for --enable-feature is a no-op after promotion to a stable feature: %q\n", o)
 			default:
 				fmt.Printf("  WARNING: Unknown option for --enable-feature: %q\n", o)
 			}
@@ -225,13 +236,13 @@ func main() {
 		os.Exit(CheckSD(*sdConfigFile, *sdJobName, *sdTimeout))
 
 	case checkConfigCmd.FullCommand():
-		os.Exit(CheckConfig(*agentMode, *checkConfigSyntaxOnly, *configFiles...))
+		os.Exit(CheckConfig(*agentMode, *checkConfigSyntaxOnly, newLintConfig(*checkConfigLint), *configFiles...))
 
 	case checkWebConfigCmd.FullCommand():
 		os.Exit(CheckWebConfig(*webConfigFiles...))
 
 	case checkRulesCmd.FullCommand():
-		os.Exit(CheckRules(*ruleFiles...))
+		os.Exit(CheckRules(newLintConfig(*checkRulesLint), *ruleFiles...))
 
 	case checkMetricsCmd.FullCommand():
 		os.Exit(CheckMetrics(*checkMetricsExtended))
@@ -258,7 +269,13 @@ func main() {
 		os.Exit(QueryLabels(*queryLabelsServer, *queryLabelsName, *queryLabelsBegin, *queryLabelsEnd, p))
 
 	case testRulesCmd.FullCommand():
-		os.Exit(RulesUnitTest(queryOpts, *testRulesFiles...))
+		os.Exit(RulesUnitTest(
+			promql.LazyLoaderOpts{
+				EnableAtModifier:     true,
+				EnableNegativeOffset: true,
+			},
+			*testRulesFiles...),
+		)
 
 	case tsdbBenchWriteCmd.FullCommand():
 		os.Exit(checkErr(benchmarkWrite(*benchWriteOutPath, *benchSamplesFile, *benchWriteNumMetrics, *benchWriteNumScrapes)))
@@ -280,9 +297,39 @@ func main() {
 	}
 }
 
+// nolint:revive
+var lintError = fmt.Errorf("lint error")
+
+type lintConfig struct {
+	all            bool
+	duplicateRules bool
+}
+
+func newLintConfig(stringVal string) lintConfig {
+	items := strings.Split(stringVal, ",")
+	ls := lintConfig{}
+	for _, setting := range items {
+		switch setting {
+		case lintOptionAll:
+			ls.all = true
+		case lintOptionDuplicateRules:
+			ls.duplicateRules = true
+		case lintOptionNone:
+		default:
+			fmt.Printf("WARNING: unknown lint option %s\n", setting)
+		}
+	}
+	return ls
+}
+
+func (ls lintConfig) lintDuplicateRules() bool {
+	return ls.all || ls.duplicateRules
+}
+
 // CheckConfig validates configuration files.
-func CheckConfig(agentMode, checkSyntaxOnly bool, files ...string) int {
+func CheckConfig(agentMode, checkSyntaxOnly bool, lintSettings lintConfig, files ...string) int {
 	failed := false
+	hasLintErrors := false
 
 	for _, f := range files {
 		ruleFiles, err := checkConfig(agentMode, f, checkSyntaxOnly)
@@ -298,17 +345,23 @@ func CheckConfig(agentMode, checkSyntaxOnly bool, files ...string) int {
 		fmt.Println()
 
 		for _, rf := range ruleFiles {
-			if n, errs := checkRules(rf); len(errs) > 0 {
+			if n, errs := checkRules(rf, lintSettings); len(errs) > 0 {
 				fmt.Fprintln(os.Stderr, "  FAILED:")
 				for _, err := range errs {
 					fmt.Fprintln(os.Stderr, "    ", err)
 				}
 				failed = true
+				for _, err := range errs {
+					hasLintErrors = hasLintErrors || errors.Is(err, lintError)
+				}
 			} else {
 				fmt.Printf("  SUCCESS: %d rules found\n", n)
 			}
 			fmt.Println()
 		}
+	}
+	if failed && hasLintErrors {
+		return lintErrExitCode
 	}
 	if failed {
 		return failureExitCode
@@ -518,20 +571,27 @@ func checkSDFile(filename string) ([]*targetgroup.Group, error) {
 }
 
 // CheckRules validates rule files.
-func CheckRules(files ...string) int {
+func CheckRules(ls lintConfig, files ...string) int {
 	failed := false
+	hasLintErrors := false
 
 	for _, f := range files {
-		if n, errs := checkRules(f); errs != nil {
+		if n, errs := checkRules(f, ls); errs != nil {
 			fmt.Fprintln(os.Stderr, "  FAILED:")
 			for _, e := range errs {
 				fmt.Fprintln(os.Stderr, e.Error())
 			}
 			failed = true
+			for _, err := range errs {
+				hasLintErrors = hasLintErrors || errors.Is(err, lintError)
+			}
 		} else {
 			fmt.Printf("  SUCCESS: %d rules found\n", n)
 		}
 		fmt.Println()
+	}
+	if failed && hasLintErrors {
+		return lintErrExitCode
 	}
 	if failed {
 		return failureExitCode
@@ -539,7 +599,7 @@ func CheckRules(files ...string) int {
 	return successExitCode
 }
 
-func checkRules(filename string) (int, []error) {
+func checkRules(filename string, lintSettings lintConfig) (int, []error) {
 	fmt.Println("Checking", filename)
 
 	rgs, errs := rulefmt.ParseFile(filename)
@@ -552,16 +612,19 @@ func checkRules(filename string) (int, []error) {
 		numRules += len(rg.Rules)
 	}
 
-	dRules := checkDuplicates(rgs.Groups)
-	if len(dRules) != 0 {
-		fmt.Printf("%d duplicate rule(s) found.\n", len(dRules))
-		for _, n := range dRules {
-			fmt.Printf("Metric: %s\nLabel(s):\n", n.metric)
-			for _, l := range n.label {
-				fmt.Printf("\t%s: %s\n", l.Name, l.Value)
+	if lintSettings.lintDuplicateRules() {
+		dRules := checkDuplicates(rgs.Groups)
+		if len(dRules) != 0 {
+			errMessage := fmt.Sprintf("%d duplicate rule(s) found.\n", len(dRules))
+			for _, n := range dRules {
+				errMessage += fmt.Sprintf("Metric: %s\nLabel(s):\n", n.metric)
+				for _, l := range n.label {
+					errMessage += fmt.Sprintf("\t%s: %s\n", l.Name, l.Value)
+				}
 			}
+			errMessage += "Might cause inconsistency while recording expressions"
+			return 0, []error{fmt.Errorf("%w %s", lintError, errMessage)}
 		}
-		fmt.Println("Might cause inconsistency while recording expressions.")
 	}
 
 	return numRules, nil

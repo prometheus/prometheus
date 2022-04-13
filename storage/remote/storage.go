@@ -118,9 +118,13 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 			return err
 		}
 
+		externalLabels := conf.GlobalConfig.ExternalLabels
+		if !rrConf.FilterExternalLabels {
+			externalLabels = make(labels.Labels, 0)
+		}
 		queryables = append(queryables, NewSampleAndChunkQueryableClient(
 			c,
-			conf.GlobalConfig.ExternalLabels,
+			externalLabels,
 			labelsToEqualityMatchers(rrConf.RequiredMatchers),
 			rrConf.ReadRecent,
 			s.localStartTimeCallback,

@@ -11,7 +11,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import chai from 'chai';
 import {
   Add,
   AggregateExpr,
@@ -32,8 +31,8 @@ import {
   NumberLiteral,
   Sub,
   VectorSelector,
-} from '../grammar/parser.terms';
-import { createEditorState } from '../test/utils.test';
+} from 'lezer-promql';
+import { createEditorState } from '../test/utils-test';
 import { containsAtLeastOneChild, containsChild, retrieveAllRecursiveNodes, walkBackward, walkThrough } from './path-finder';
 import { SyntaxNode } from '@lezer/common';
 import { syntaxTree } from '@codemirror/language';
@@ -86,12 +85,12 @@ describe('walkThrough test', () => {
       const subTree = syntaxTree(state).resolve(value.pos, -1);
       const node = walkThrough(subTree, ...value.path);
       if (typeof value.expectedNode === 'number') {
-        chai.expect(value.expectedNode).to.equal(node?.type.id);
+        expect(value.expectedNode).toEqual(node?.type.id);
       } else {
-        chai.expect(value.expectedNode).to.equal(node?.type.name);
+        expect(value.expectedNode).toEqual(node?.type.name);
       }
       if (node) {
-        chai.expect(value.expectedDoc).to.equal(state.sliceDoc(node.from, node.to));
+        expect(value.expectedDoc).toEqual(state.sliceDoc(node.from, node.to));
       }
     });
   });
@@ -129,9 +128,9 @@ describe('containsAtLeastOneChild test', () => {
       const state = createEditorState(value.expr);
       const subTree = syntaxTree(state).resolve(value.pos, -1);
       const node = walkThrough(subTree, ...value.walkThrough);
-      chai.expect(node).to.not.null;
+      expect(node).toBeTruthy();
       if (node) {
-        chai.expect(value.expectedResult).to.equal(containsAtLeastOneChild(node, ...value.child));
+        expect(value.expectedResult).toEqual(containsAtLeastOneChild(node, ...value.child));
       }
     });
   });
@@ -162,9 +161,9 @@ describe('containsChild test', () => {
       const subTree = syntaxTree(state).resolve(value.pos, -1);
       const node: SyntaxNode | null = walkThrough(subTree, ...value.walkThrough);
 
-      chai.expect(node).to.not.null;
+      expect(node).toBeTruthy();
       if (node) {
-        chai.expect(value.expectedResult).to.equal(containsChild(node, ...value.child));
+        expect(value.expectedResult).toEqual(containsChild(node, ...value.child));
       }
     });
   });
@@ -174,9 +173,9 @@ describe('retrieveAllRecursiveNodes test', () => {
   it('should find every occurrence', () => {
     const state = createEditorState('rate(1,2,3)');
     const tree = syntaxTree(state).topNode.firstChild;
-    chai.expect(tree).to.not.null;
+    expect(tree).toBeTruthy();
     if (tree) {
-      chai.expect(3).to.equal(retrieveAllRecursiveNodes(walkThrough(tree, FunctionCall, FunctionCallBody), FunctionCallArgs, Expr).length);
+      expect(3).toEqual(retrieveAllRecursiveNodes(walkThrough(tree, FunctionCall, FunctionCallBody), FunctionCallArgs, Expr).length);
     }
   });
 });
@@ -195,7 +194,7 @@ describe('walkbackward test', () => {
     it(value.title, () => {
       const state = createEditorState(value.expr);
       const tree = syntaxTree(state).resolve(value.pos, -1);
-      chai.expect(value.expectedResult).to.equal(walkBackward(tree, value.exit)?.type.id);
+      expect(value.expectedResult).toEqual(walkBackward(tree, value.exit)?.type.id);
     });
   });
 });

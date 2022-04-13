@@ -1,10 +1,13 @@
-import React, { FC, Fragment } from 'react';
-import { Badge } from 'reactstrap';
+import React, { ChangeEvent, FC, Fragment, useEffect, useState } from 'react';
+import { Badge, Col, Row } from 'reactstrap';
 import CollapsibleAlertPanel from './CollapsibleAlertPanel';
 import Checkbox from '../../components/Checkbox';
 import { isPresent } from '../../utils';
 import { Rule } from '../../types/types';
 import { useLocalStorage } from '../../hooks/useLocalStorage';
+import CustomInfiniteScroll, { InfiniteScrollItemsProps } from '../../components/CustomInfiniteScroll';
+import { KVSearch } from '@nexucis/kvsearch';
+import SearchBar from '../../components/SearchBar';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type RuleState = keyof RuleStatus<any>;
@@ -35,13 +38,33 @@ interface RuleGroup {
   interval: number;
 }
 
+const kvSearchRule = new KVSearch<Rule>({
+  shouldSort: true,
+  indexedKeys: ['name', 'labels', ['labels', /.*/]],
+});
+
 const stateColorTuples: Array<[RuleState, 'success' | 'warning' | 'danger']> = [
   ['inactive', 'success'],
   ['pending', 'warning'],
   ['firing', 'danger'],
 ];
 
+function GroupContent(showAnnotations: boolean) {
+  const Content: FC<InfiniteScrollItemsProps<Rule>> = ({ items }) => {
+    return (
+      <>
+        {items.map((rule, j) => (
+          <CollapsibleAlertPanel key={rule.name + j} showAnnotations={showAnnotations} rule={rule} />
+        ))}
+      </>
+    );
+  };
+  return Content;
+}
+
 const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
+  const [groupList, setGroupList] = useState(groups);
+  const [filteredList, setFilteredList] = useState(groups);
   const [filter, setFilter] = useLocalStorage('alerts-status-filter', {
     firing: true,
     pending: true,
@@ -56,50 +79,80 @@ const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
     });
   };
 
+  const handleSearchChange = (e: ChangeEvent<HTMLTextAreaElement | HTMLInputElement>) => {
+    if (e.target.value !== '') {
+      const pattern = e.target.value.trim();
+      const result: RuleGroup[] = [];
+      for (const group of groups) {
+        const ruleFilterList = kvSearchRule.filter(pattern, group.rules);
+        if (ruleFilterList.length > 0) {
+          result.push({
+            file: group.file,
+            name: group.name,
+            interval: group.interval,
+            rules: ruleFilterList.map((value) => value.original),
+          });
+        }
+      }
+      setGroupList(result);
+    } else {
+      setGroupList(groups);
+    }
+  };
+
+  useEffect(() => {
+    const result: RuleGroup[] = [];
+    for (const group of groupList) {
+      const newGroup = {
+        file: group.file,
+        name: group.name,
+        interval: group.interval,
+        rules: group.rules.filter((value) => filter[value.state]),
+      };
+      if (newGroup.rules.length > 0) {
+        result.push(newGroup);
+      }
+    }
+    setFilteredList(result);
+  }, [groupList, filter]);
+
   return (
     <>
-      <div className="d-flex togglers-wrapper">
-        {stateColorTuples.map(([state, color]) => {
-          return (
-            <Checkbox
-              key={state}
-              wrapperStyles={{ marginRight: 20 }}
-              checked={filter[state]}
-              id={`${state}-toggler`}
-              onChange={toggleFilter(state)}
-            >
-              <Badge color={color} className="text-capitalize">
-                {state} ({statsCount[state]})
-              </Badge>
-            </Checkbox>
-          );
-        })}
-        <Checkbox
-          wrapperStyles={{ marginLeft: 'auto' }}
-          checked={showAnnotations.checked}
-          id="show-annotations-toggler"
-          onChange={({ target }) => setShowAnnotations({ checked: target.checked })}
-        >
-          <span style={{ fontSize: '0.9rem', lineHeight: 1.9 }}>Show annotations</span>
-        </Checkbox>
-      </div>
-      {groups.map((group, i) => {
-        const hasFilterOn = group.rules.some((rule) => filter[rule.state]);
-        return hasFilterOn ? (
-          <Fragment key={i}>
-            <GroupInfo rules={group.rules}>
-              {group.file} &gt; {group.name}
-            </GroupInfo>
-            {group.rules.map((rule, j) => {
-              return (
-                filter[rule.state] && (
-                  <CollapsibleAlertPanel key={rule.name + j} showAnnotations={showAnnotations.checked} rule={rule} />
-                )
-              );
-            })}
-          </Fragment>
-        ) : null;
-      })}
+      <Row className="align-items-center">
+        <Col className="d-flex" lg="4" md="5">
+          {stateColorTuples.map(([state, color]) => {
+            return (
+              <Checkbox key={state} checked={filter[state]} id={`${state}-toggler`} onChange={toggleFilter(state)}>
+                <Badge color={color} className="text-capitalize">
+                  {state} ({statsCount[state]})
+                </Badge>
+              </Checkbox>
+            );
+          })}
+        </Col>
+        <Col lg="5" md="4">
+          <SearchBar handleChange={handleSearchChange} placeholder="Filter by name or labels" />
+        </Col>
+        <Col className="d-flex flex-row-reverse" md="3">
+          <Checkbox
+            checked={showAnnotations.checked}
+            id="show-annotations-toggler"
+            onChange={({ target }) => setShowAnnotations({ checked: target.checked })}
+          >
+            <span style={{ fontSize: '0.9rem', lineHeight: 1.9, display: 'inline-block', whiteSpace: 'nowrap' }}>
+              Show annotations
+            </span>
+          </Checkbox>
+        </Col>
+      </Row>
+      {filteredList.map((group, i) => (
+        <Fragment key={i}>
+          <GroupInfo rules={group.rules}>
+            {group.file} &gt; {group.name}
+          </GroupInfo>
+          <CustomInfiniteScroll allItems={group.rules} child={GroupContent(showAnnotations.checked)} />
+        </Fragment>
+      ))}
     </>
   );
 };

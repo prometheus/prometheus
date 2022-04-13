@@ -16,9 +16,9 @@ package relabel
 import (
 	"crypto/md5"
 	"fmt"
-	"regexp"
 	"strings"
 
+	"github.com/grafana/regexp"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 

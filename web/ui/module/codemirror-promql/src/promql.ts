@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { parser } from './grammar/parser';
+import { parser } from 'lezer-promql';
 import { styleTags, tags } from '@codemirror/highlight';
 import { Extension } from '@codemirror/state';
 import { CompleteConfiguration, CompleteStrategy, newCompleteStrategy } from './complete';

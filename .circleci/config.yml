@@ -2,7 +2,7 @@
 version: 2.1
 
 orbs:
-  prometheus: prometheus/prometheus@0.15.0
+  prometheus: prometheus/prometheus@0.16.0
   go: circleci/go@1.7.0
   win: circleci/windows@2.3.0
 
@@ -11,10 +11,10 @@ executors:
   # should also be updated.
   golang:
     docker:
-      - image: quay.io/prometheus/golang-builder:1.17-base
+      - image: quay.io/prometheus/golang-builder:1.18-base
   golang_oldest:
     docker:
-      - image: quay.io/prometheus/golang-builder:1.16-base
+      - image: quay.io/prometheus/golang-builder:1.17-base
 
 jobs:
   test_go:
@@ -37,6 +37,7 @@ jobs:
             GOMAXPROCS: "2"
             GO111MODULE: "on"
       - run: go test ./tsdb/ -test.tsdb-isolation=false
+      - run: make -C documentation/examples/remote_storage
       - prometheus/check_proto:
           version: "3.15.8"
       - prometheus/store_artifact:
@@ -61,6 +62,9 @@ jobs:
       - run: make ui-lint
       - run: make ui-build-module
       - run: make ui-test
+      - run: make assets-tarball -o assets
+      - store_artifacts:
+          path: web/ui/static.tar.gz
       - save_cache:
           key: v3-npm-deps-{{ checksum "web/ui/package-lock.json" }}
           paths:
@@ -81,8 +85,6 @@ jobs:
           command: refreshenv
       - run:
           command: |
-            $env:GOARCH=""; $env:GOOS=""; cd web/ui; go generate
-            cd ../..
             $TestTargets = go list ./... | Where-Object { $_ -NotMatch "(github.com/prometheus/prometheus/discovery.*|github.com/prometheus/prometheus/config|github.com/prometheus/prometheus/web)"}
             go test $TestTargets -vet=off -v
           environment:
@@ -115,7 +117,6 @@ jobs:
     steps:
       - checkout
       - run: ./scripts/sync_repo_files.sh
-      - run: ./scripts/sync_codemirror.sh
 
 workflows:
   version: 2
@@ -180,10 +181,10 @@ workflows:
             branches:
               ignore: /.*/
           image: circleci/golang:1-node
-  nightly:
+  daily:
     triggers:
       - schedule:
-          cron: "0 0 * * *"
+          cron: "49 19 * * *"
           filters:
             branches:
               only:

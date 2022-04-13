@@ -21,13 +21,13 @@ import (
 	"math"
 	"net"
 	"net/url"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	text_template "text/template"
 	"time"
 
+	"github.com/grafana/regexp"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
@@ -109,6 +109,10 @@ func convertToFloat(i interface{}) (float64, error) {
 		return float64(v), nil
 	case uint:
 		return float64(v), nil
+	case int64:
+		return float64(v), nil
+	case uint64:
+		return float64(v), nil
 	default:
 		return 0, fmt.Errorf("can't convert %T to float", v)
 	}
@@ -175,7 +179,7 @@ func NewTemplateExpander(
 				return html_template.HTML(text)
 			},
 			"match":     regexp.MatchString,
-			"title":     strings.Title, //nolint:staticcheck
+			"title":     strings.Title, // nolint:staticcheck
 			"toUpper":   strings.ToUpper,
 			"toLower":   strings.ToLower,
 			"graphLink": strutil.GraphLinkForExpression,

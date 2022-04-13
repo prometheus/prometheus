@@ -27,16 +27,7 @@ import (
 )
 
 func TestTemplateExpansion(t *testing.T) {
-	scenarios := []struct {
-		text        string
-		output      string
-		input       interface{}
-		options     []string
-		queryResult promql.Vector
-		shouldFail  bool
-		html        bool
-		errorMsg    string
-	}{
+	testTemplateExpansion(t, []scenario{
 		{
 			// No template.
 			text:   "plain text",
@@ -281,13 +272,13 @@ func TestTemplateExpansion(t *testing.T) {
 		{
 			// Humanize - int.
 			text:   "{{ range . }}{{ humanize . }}:{{ end }}",
-			input:  []int{0, -1, 1, 1234567, math.MaxInt64},
+			input:  []int64{0, -1, 1, 1234567, math.MaxInt64},
 			output: "0:-1:1:1.235M:9.223E:",
 		},
 		{
 			// Humanize - uint.
 			text:   "{{ range . }}{{ humanize . }}:{{ end }}",
-			input:  []uint{0, 1, 1234567, math.MaxUint64},
+			input:  []uint64{0, 1, 1234567, math.MaxUint64},
 			output: "0:1:1.235M:18.45E:",
 		},
 		{
@@ -311,13 +302,13 @@ func TestTemplateExpansion(t *testing.T) {
 		{
 			// Humanize1024 - int.
 			text:   "{{ range . }}{{ humanize1024 . }}:{{ end }}",
-			input:  []int{0, -1, 1, 1234567, math.MaxInt64},
+			input:  []int64{0, -1, 1, 1234567, math.MaxInt64},
 			output: "0:-1:1:1.177Mi:8Ei:",
 		},
 		{
 			// Humanize1024 - uint.
 			text:   "{{ range . }}{{ humanize1024 . }}:{{ end }}",
-			input:  []uint{0, 1, 1234567, math.MaxUint64},
+			input:  []uint64{0, 1, 1234567, math.MaxUint64},
 			output: "0:1:1.177Mi:16Ei:",
 		},
 		{
@@ -353,14 +344,14 @@ func TestTemplateExpansion(t *testing.T) {
 		{
 			// HumanizeDuration - int.
 			text:   "{{ range . }}{{ humanizeDuration . }}:{{ end }}",
-			input:  []int{0, -1, 1, 1234567, math.MaxInt64},
-			output: "0s:-1s:1s:14d 6h 56m 7s:-106751991167300d -15h -30m -8s:",
+			input:  []int{0, -1, 1, 1234567},
+			output: "0s:-1s:1s:14d 6h 56m 7s:",
 		},
 		{
 			// HumanizeDuration - uint.
 			text:   "{{ range . }}{{ humanizeDuration . }}:{{ end }}",
-			input:  []uint{0, 1, 1234567, math.MaxUint64},
-			output: "0s:1s:14d 6h 56m 7s:-106751991167300d -15h -30m -8s:",
+			input:  []uint{0, 1, 1234567},
+			output: "0s:1s:14d 6h 56m 7s:",
 		},
 		{
 			// Humanize* Inf and NaN - float64.
@@ -382,13 +373,13 @@ func TestTemplateExpansion(t *testing.T) {
 		{
 			// HumanizePercentage - int.
 			text:   "{{ range . }}{{ humanizePercentage . }}:{{ end }}",
-			input:  []int{0, -1, 1, 1234567, math.MaxInt64},
+			input:  []int64{0, -1, 1, 1234567, math.MaxInt64},
 			output: "0%:-100%:100%:1.235e+08%:9.223e+20%:",
 		},
 		{
 			// HumanizePercentage - uint.
 			text:   "{{ range . }}{{ humanizePercentage . }}:{{ end }}",
-			input:  []uint{0, 1, 1234567, math.MaxUint64},
+			input:  []uint64{0, 1, 1234567, math.MaxUint64},
 			output: "0%:100%:1.235e+08%:1.845e+21%:",
 		},
 		{
@@ -405,26 +396,26 @@ func TestTemplateExpansion(t *testing.T) {
 		{
 			// HumanizeTimestamp - int.
 			text:   "{{ range . }}{{ humanizeTimestamp . }}:{{ end }}",
-			input:  []int{0, -1, 1, 1234567, 9223372036},
+			input:  []int64{0, -1, 1, 1234567, 9223372036},
 			output: "1970-01-01 00:00:00 +0000 UTC:1969-12-31 23:59:59 +0000 UTC:1970-01-01 00:00:01 +0000 UTC:1970-01-15 06:56:07 +0000 UTC:2262-04-11 23:47:16 +0000 UTC:",
 		},
 		{
 			// HumanizeTimestamp - uint.
 			text:   "{{ range . }}{{ humanizeTimestamp . }}:{{ end }}",
-			input:  []uint{0, 1, 1234567, 9223372036},
+			input:  []uint64{0, 1, 1234567, 9223372036},
 			output: "1970-01-01 00:00:00 +0000 UTC:1970-01-01 00:00:01 +0000 UTC:1970-01-15 06:56:07 +0000 UTC:2262-04-11 23:47:16 +0000 UTC:",
 		},
 		{
 			// HumanizeTimestamp - int with error.
 			text:       "{{ range . }}{{ humanizeTimestamp . }}:{{ end }}",
-			input:      []int{math.MinInt64, math.MaxInt64},
+			input:      []int64{math.MinInt64, math.MaxInt64},
 			shouldFail: true,
 			errorMsg:   `error executing template test: template: test:1:16: executing "test" at <humanizeTimestamp .>: error calling humanizeTimestamp: -9.223372036854776e+18 cannot be represented as a nanoseconds timestamp since it overflows int64`,
 		},
 		{
 			// HumanizeTimestamp - uint with error.
 			text:       "{{ range . }}{{ humanizeTimestamp . }}:{{ end }}",
-			input:      []uint{math.MaxUint64},
+			input:      []uint64{math.MaxUint64},
 			shouldFail: true,
 			errorMsg:   `error executing template test: template: test:1:16: executing "test" at <humanizeTimestamp .>: error calling humanizeTimestamp: 1.8446744073709552e+19 cannot be represented as a nanoseconds timestamp since it overflows int64`,
 		},
@@ -489,8 +480,21 @@ func TestTemplateExpansion(t *testing.T) {
 			text:   "{{ printf \"%0.2f\" (parseDuration \"1h2m10ms\") }}",
 			output: "3720.01",
 		},
-	}
+	})
+}
 
+type scenario struct {
+	text        string
+	output      string
+	input       interface{}
+	options     []string
+	queryResult promql.Vector
+	shouldFail  bool
+	html        bool
+	errorMsg    string
+}
+
+func testTemplateExpansion(t *testing.T, scenarios []scenario) {
 	extURL, err := url.Parse("http://testhost:9090/path/prefix")
 	if err != nil {
 		panic(err)

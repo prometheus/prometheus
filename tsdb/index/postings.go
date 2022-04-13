@@ -39,7 +39,8 @@ const ensureOrderBatchSize = 1024
 // ensureOrderBatchPool is a pool used to recycle batches passed to workers in MemPostings.EnsureOrder().
 var ensureOrderBatchPool = sync.Pool{
 	New: func() interface{} {
-		return make([][]storage.SeriesRef, 0, ensureOrderBatchSize)
+		x := make([][]storage.SeriesRef, 0, ensureOrderBatchSize)
+		return &x // Return pointer type as preferred by Pool.
 	},
 }
 
@@ -231,39 +232,41 @@ func (p *MemPostings) EnsureOrder() {
 	}
 
 	n := runtime.GOMAXPROCS(0)
-	workc := make(chan [][]storage.SeriesRef)
+	workc := make(chan *[][]storage.SeriesRef)
 
 	var wg sync.WaitGroup
 	wg.Add(n)
 
 	for i := 0; i < n; i++ {
 		go func() {
+			var sortable seriesRefSlice
 			for job := range workc {
-				for _, l := range job {
-					sort.Sort(seriesRefSlice(l))
+				for _, l := range *job {
+					sortable = l
+					sort.Sort(&sortable)
 				}
 
-				job = job[:0]
-				ensureOrderBatchPool.Put(job) //nolint:staticcheck // Ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
+				*job = (*job)[:0]
+				ensureOrderBatchPool.Put(job)
 			}
 			wg.Done()
 		}()
 	}
 
-	nextJob := ensureOrderBatchPool.Get().([][]storage.SeriesRef)
+	nextJob := ensureOrderBatchPool.Get().(*[][]storage.SeriesRef)
 	for _, e := range p.m {
 		for _, l := range e {
-			nextJob = append(nextJob, l)
+			*nextJob = append(*nextJob, l)
 
-			if len(nextJob) >= ensureOrderBatchSize {
+			if len(*nextJob) >= ensureOrderBatchSize {
 				workc <- nextJob
-				nextJob = ensureOrderBatchPool.Get().([][]storage.SeriesRef)
+				nextJob = ensureOrderBatchPool.Get().(*[][]storage.SeriesRef)
 			}
 		}
 	}
 
 	// If the last job was partially filled, we need to push it to workers too.
-	if len(nextJob) > 0 {
+	if len(*nextJob) > 0 {
 		workc <- nextJob
 	}
 

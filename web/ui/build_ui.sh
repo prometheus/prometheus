@@ -16,7 +16,7 @@
 set -e
 current=$(pwd)
 
-buildOrder=(module/codemirror-promql)
+buildOrder=(module/lezer-promql module/codemirror-promql)
 
 function buildModule() {
   for module in "${buildOrder[@]}"; do
