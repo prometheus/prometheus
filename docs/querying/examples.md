@@ -17,7 +17,7 @@ Return all time series with the metric `http_requests_total` and the given
 
     http_requests_total{job="apiserver", handler="/api/comments"}
 
-Return a whole range of time (in this case 5 minutes up to the current instant)
+Return a whole range of time (in this case 5 minutes up to the query time)
 for the same vector, making it a [range vector](https://prometheus.io/docs/prometheus/latest/querying/basics/#range-vector-selectors):
 
     http_requests_total{job="apiserver", handler="/api/comments"}[5m]
