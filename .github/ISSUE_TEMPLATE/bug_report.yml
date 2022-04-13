@@ -35,6 +35,7 @@ body:
     attributes:
       label: Prometheus version
       description: Insert output of `prometheus --version` here.
+      render: text
   - type: textarea
     attributes:
       label: Prometheus configuration file
@@ -44,6 +45,7 @@ body:
     attributes:
       label: Alertmanager version
       description: Insert output of `alertmanager --version` here (if relevant to the issue).
+      render: text
   - type: textarea
     attributes:
       label: Alertmanager configuration file
