@@ -14,7 +14,9 @@
 package promql
 
 import (
+	"fmt"
 	"math"
+	"os"
 	"regexp"
 	"sort"
 	"strconv"
@@ -130,6 +132,73 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 	})
 }
 
+// extendedRate is a utility function for xrate/xincrease/xdelta.
+// It calculates the rate (allowing for counter resets if isCounter is true),
+// taking into account the last sample before the range start, and returns
+// the result as either per-second (if isRate is true) or overall.
+func extendedRate(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper, isCounter bool, isRate bool) Vector {
+	ms := args[0].(*parser.MatrixSelector)
+	vs := ms.VectorSelector.(*parser.VectorSelector)
+
+	var (
+		samples    = vals[0].(Matrix)[0]
+		rangeStart = enh.Ts - durationMilliseconds(ms.Range+vs.Offset)
+		rangeEnd   = enh.Ts - durationMilliseconds(vs.Offset)
+	)
+
+	points := samples.Points
+	if len(points) < 2 {
+		return enh.Out
+	}
+	sampledRange := float64(points[len(points)-1].T - points[0].T)
+	averageInterval := sampledRange / float64(len(points)-1)
+
+	firstPoint := 0
+	// If the point before the range is too far from rangeStart, drop it.
+	if float64(rangeStart-points[0].T) > averageInterval {
+		if len(points) < 3 {
+			return enh.Out
+		}
+		firstPoint = 1
+		sampledRange = float64(points[len(points)-1].T - points[1].T)
+		averageInterval = sampledRange / float64(len(points)-2)
+	}
+
+	var (
+		counterCorrection float64
+		lastValue         float64
+	)
+	if isCounter {
+		for i := firstPoint; i < len(points); i++ {
+			sample := points[i]
+			if sample.V < lastValue {
+				counterCorrection += lastValue
+			}
+			lastValue = sample.V
+		}
+	}
+	resultValue := points[len(points)-1].V - points[firstPoint].V + counterCorrection
+
+	// Duration between last sample and boundary of range.
+	durationToEnd := float64(rangeEnd - points[len(points)-1].T)
+
+	// If the points cover the whole range (i.e. they start just before the
+	// range start and end just before the range end) adjust the value from
+	// the sampled range to the requested range.
+	if points[firstPoint].T <= rangeStart && durationToEnd < averageInterval {
+		adjustToRange := float64(durationMilliseconds(ms.Range))
+		resultValue = resultValue * (adjustToRange / sampledRange)
+	}
+
+	if isRate {
+		resultValue = resultValue / ms.Range.Seconds()
+	}
+
+	return append(enh.Out, Sample{
+		Point: Point{V: resultValue},
+	})
+}
+
 // === delta(Matrix parser.ValueTypeMatrix) Vector ===
 func funcDelta(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return extrapolatedRate(vals, args, enh, false, false)
@@ -143,6 +212,21 @@ func funcRate(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper)
 // === increase(node parser.ValueTypeMatrix) Vector ===
 func funcIncrease(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return extrapolatedRate(vals, args, enh, true, false)
+}
+
+// === xdelta(Matrix parser.ValueTypeMatrix) Vector ===
+func funcXdelta(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	return extendedRate(vals, args, enh, false, false)
+}
+
+// === xrate(node parser.ValueTypeMatrix) Vector ===
+func funcXrate(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	return extendedRate(vals, args, enh, true, true)
+}
+
+// === xincrease(node parser.ValueTypeMatrix) Vector ===
+func funcXincrease(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	return extendedRate(vals, args, enh, true, false)
 }
 
 // === irate(node parser.ValueTypeMatrix) Vector ===
@@ -1130,6 +1214,9 @@ var FunctionCalls = map[string]FunctionCall{
 	"time":               funcTime,
 	"timestamp":          funcTimestamp,
 	"vector":             funcVector,
+	"xdelta":             funcXdelta,
+	"xincrease":          funcXincrease,
+	"xrate":              funcXrate,
 	"year":               funcYear,
 }
 
@@ -1146,6 +1233,31 @@ var AtModifierUnsafeFunctions = map[string]struct{}{
 	// Uses timestamp of the argument for the result,
 	// hence unsafe to use with @ modifier.
 	"timestamp": {},
+}
+
+func init() {
+	// REPLACE_RATE_FUNCS replaces the default rate extrapolation functions
+	// with xrate functions. This allows for a drop-in replacement and Grafana
+	// auto-completion, Prometheus tooling, Thanos, etc. should still work as expected.
+	if os.Getenv("REPLACE_RATE_FUNCS") == "1" {
+		FunctionCalls["delta"] = FunctionCalls["xdelta"]
+		FunctionCalls["increase"] = FunctionCalls["xincrease"]
+		FunctionCalls["rate"] = FunctionCalls["xrate"]
+		delete(FunctionCalls, "xdelta")
+		delete(FunctionCalls, "xincrease")
+		delete(FunctionCalls, "xrate")
+
+		parser.Functions["delta"] = parser.Functions["xdelta"]
+		parser.Functions["increase"] = parser.Functions["xincrease"]
+		parser.Functions["rate"] = parser.Functions["xrate"]
+		parser.Functions["delta"].Name = "delta"
+		parser.Functions["increase"].Name = "increase"
+		parser.Functions["rate"].Name = "rate"
+		delete(parser.Functions, "xdelta")
+		delete(parser.Functions, "xincrease")
+		delete(parser.Functions, "xrate")
+		fmt.Println("Successfully replaced rate & friends with xrate & friends (and removed xrate & friends function keys).")
+	}
 }
 
 type vectorByValueHeap Vector
