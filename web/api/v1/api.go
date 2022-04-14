@@ -40,6 +40,7 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -202,6 +203,7 @@ type API struct {
 }
 
 func init() {
+	// TODO(beorn7): Need this for promql.Series and promql.Sample, too.
 	jsoniter.RegisterTypeEncoderFunc("promql.Point", marshalPointJSON, marshalPointJSONIsEmpty)
 	jsoniter.RegisterTypeEncoderFunc("exemplar.Exemplar", marshalExemplarJSON, marshalExemplarJSONEmpty)
 }
@@ -1819,12 +1821,21 @@ func marshalPointJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
 	stream.WriteArrayStart()
 	marshalTimestamp(p.T, stream)
 	stream.WriteMore()
-	marshalValue(p.V, stream)
+	if p.H == nil {
+		marshalValue(p.V, stream)
+	} else {
+		marshalHistogram(p.H, stream)
+	}
 	stream.WriteArrayEnd()
 }
 
 func marshalPointJSONIsEmpty(ptr unsafe.Pointer) bool {
 	return false
+}
+
+func marshalHistogram(h *histogram.FloatHistogram, stream *jsoniter.Stream) {
+	// TODO(beorn7): Implement.
+	stream.WriteString("TODO render histogram")
 }
 
 // marshalExemplarJSON writes.
