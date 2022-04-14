@@ -35,6 +35,7 @@ retract (
 	v2.0.0-alpha.2+incompatible
 	v2.0.0-alpha.1+incompatible
 	v2.0.0-alpha.0+incompatible
+	v1.99.0
 	v1.99.0-retract
 	v1.8.2
 	v1.8.1
