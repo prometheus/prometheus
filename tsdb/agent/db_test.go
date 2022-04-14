@@ -445,3 +445,55 @@ func gatherFamily(t *testing.T, reg prometheus.Gatherer, familyName string) *dto
 
 	return nil
 }
+
+func TestStorage_DuplicateExemplarsIgnored(t *testing.T) {
+	s := createTestAgentDB(t, nil, DefaultOptions())
+	app := s.Appender(context.Background())
+
+	sRef, err := app.Append(0, labels.Labels{{Name: "a", Value: "1"}}, 0, 0)
+	require.NoError(t, err, "should not reject valid series")
+
+	// Write a few exemplars to our appender and call Commit().
+	// If the Labels, Value or Timestamp are different than the last exemplar,
+	// then a new one should be appended; Otherwise, it should be skipped.
+	e := exemplar.Exemplar{Labels: labels.Labels{{Name: "a", Value: "1"}}, Value: 20, Ts: 10, HasTs: true}
+	_, _ = app.AppendExemplar(sRef, nil, e)
+	_, _ = app.AppendExemplar(sRef, nil, e)
+
+	e.Labels = labels.Labels{{Name: "b", Value: "2"}}
+	_, _ = app.AppendExemplar(sRef, nil, e)
+	_, _ = app.AppendExemplar(sRef, nil, e)
+	_, _ = app.AppendExemplar(sRef, nil, e)
+
+	e.Value = 42
+	_, _ = app.AppendExemplar(sRef, nil, e)
+	_, _ = app.AppendExemplar(sRef, nil, e)
+
+	e.Ts = 25
+	_, _ = app.AppendExemplar(sRef, nil, e)
+	_, _ = app.AppendExemplar(sRef, nil, e)
+
+	require.NoError(t, app.Commit())
+	require.NoError(t, s.Close())
+
+	// Read back what was written to the WAL.
+	var walExemplarsCount int
+	sr, err := wal.NewSegmentsReader(s.wal.Dir())
+	require.NoError(t, err)
+	r := wal.NewReader(sr)
+
+	var dec record.Decoder
+	for r.Next() {
+		rec := r.Record()
+		switch dec.Type(rec) {
+		case record.Exemplars:
+			var exemplars []record.RefExemplar
+			exemplars, err = dec.Exemplars(rec, exemplars)
+			require.NoError(t, err)
+			walExemplarsCount += len(exemplars)
+		}
+	}
+
+	// We had 9 calls to AppendExemplar but only 4 of those should have gotten through
+	require.Equal(t, 4, walExemplarsCount)
+}
