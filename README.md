@@ -149,7 +149,7 @@ Therefore, a user that would want to use Prometheus v2.35.0 as a library could d
 $ go get github.com/prometheus/prometheus@v0.35.0
 ```
 
-This solution makes it clear that we might break our internal go APIs between
+This solution makes it clear that we might break our internal Go APIs between
 minor user-facing releases, as [breaking changes are allowed in major version
 zero](https://semver.org/#spec-item-4).
 
