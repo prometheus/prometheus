@@ -127,7 +127,7 @@ func TestCommit(t *testing.T) {
 
 			e := exemplar.Exemplar{
 				Labels: lset,
-				Ts:     sample[0].T(),
+				Ts:     sample[0].T() + int64(i),
 				Value:  sample[0].V(),
 				HasTs:  true,
 			}
