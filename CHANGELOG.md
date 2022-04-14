@@ -1,15 +1,17 @@
+# Changelog
+
 ## 2.35.0 / 2022-04-21
 
 This Prometheus release is built with go1.18, which contains two noticeable changes related to TLS:
 
-1. [TLS 1.0 and 1.1 disabled by default client-side](https://go.dev/doc/go1.18#tls10). 
+1. [TLS 1.0 and 1.1 disabled by default client-side](https://go.dev/doc/go1.18#tls10).
 Prometheus users can override this with the `min_version` parameter of [tls_config](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#tls_config).
 2. [Certificates signed with the SHA-1 hash function are rejected](https://go.dev/doc/go1.18#sha1). This doesn't apply to self-signed root certificates.
 
 * [CHANGE] TSDB: Delete `*.tmp` WAL files when Prometheus starts. #10317
 * [CHANGE] promtool: Add new flag `--lint` (enabled by default) for the commands `check rules` and `check config`, resulting in a new exit code (`3`) for linter errors. #10435
 * [FEATURE] Support for automatically setting the variable `GOMAXPROCS` to the container CPU limit. Enable with the flag `--enable-feature=auto-gomaxprocs`. #10498
-* [FEATURE] PromQL: Extend statistics with total and peak number of samples in a query. Additionally, per-step statistics are available with  --enable-feature=promql-per-step-stats and using `stats=all` in the query API. 
+* [FEATURE] PromQL: Extend statistics with total and peak number of samples in a query. Additionally, per-step statistics are available with  --enable-feature=promql-per-step-stats and using `stats=all` in the query API.
 Enable with the flag `--enable-feature=per-step-stats`. #10369
 * [ENHANCEMENT] Prometheus is built with Go 1.18. #10501
 * [ENHANCEMENT] TSDB: more efficient sorting of postings read from WAL at startup. #10500
@@ -41,7 +43,7 @@ Enable with the flag `--enable-feature=per-step-stats`. #10369
 * [ENHANCEMENT] UI: Optimize the alerts page and add a search bar. #10142
 * [ENHANCEMENT] UI: Improve graph colors that were hard to see. #10179
 * [ENHANCEMENT] Config: Allow escaping of `$` with `$$` when using environment variables with external labels. #10129
-* [BUGFIX] PromQL: Properly return an error from histogram_quantile when metrics have the same labelset. #10140 
+* [BUGFIX] PromQL: Properly return an error from histogram_quantile when metrics have the same labelset. #10140
 * [BUGFIX] UI: Fix bug that sets the range input to the resolution. #10227
 * [BUGFIX] TSDB: Fix a query panic when `memory-snapshot-on-shutdown` is enabled. #10348
 * [BUGFIX] Parser: Specify type in metadata parser errors. #10269
@@ -360,7 +362,7 @@ Alertmanager API v2 was released in Alertmanager v0.16.0 (released in January
 2019).
 
 * [FEATURE] **experimental** API: Accept remote_write requests. Behind the --enable-feature=remote-write-receiver flag. #8424
-* [FEATURE] **experimental** PromQL: Add '@ <timestamp>' modifier. Behind the --enable-feature=promql-at-modifier flag. #8121 #8436 #8425
+* [FEATURE] **experimental** PromQL: Add `@ <timestamp>` modifier. Behind the --enable-feature=promql-at-modifier flag. #8121 #8436 #8425
 * [ENHANCEMENT] Add optional name property to testgroup for better test failure output. #8440
 * [ENHANCEMENT] Add warnings into React Panel on the Graph page. #8427
 * [ENHANCEMENT] TSDB: Increase the number of buckets for the compaction duration metric. #8342
@@ -405,12 +407,12 @@ Alertmanager API v2 was released in Alertmanager v0.16.0 (released in January
 
 * [CHANGE] UI: Make the React UI default. #8142
 * [CHANGE] Remote write: The following metrics were removed/renamed in remote write. #6815
-     - `prometheus_remote_storage_succeeded_samples_total` was removed and `prometheus_remote_storage_samples_total` was introduced for all the samples attempted to send.
-     - `prometheus_remote_storage_sent_bytes_total` was removed and replaced with `prometheus_remote_storage_samples_bytes_total` and `prometheus_remote_storage_metadata_bytes_total`.
-     - `prometheus_remote_storage_failed_samples_total` -> `prometheus_remote_storage_samples_failed_total` .
-     - `prometheus_remote_storage_retried_samples_total` -> `prometheus_remote_storage_samples_retried_total`.
-     - `prometheus_remote_storage_dropped_samples_total` -> `prometheus_remote_storage_samples_dropped_total`.
-     - `prometheus_remote_storage_pending_samples` -> `prometheus_remote_storage_samples_pending`.
+  * `prometheus_remote_storage_succeeded_samples_total` was removed and `prometheus_remote_storage_samples_total` was introduced for all the samples attempted to send.
+  * `prometheus_remote_storage_sent_bytes_total` was removed and replaced with `prometheus_remote_storage_samples_bytes_total` and `prometheus_remote_storage_metadata_bytes_total`.
+  * `prometheus_remote_storage_failed_samples_total` -> `prometheus_remote_storage_samples_failed_total` .
+  * `prometheus_remote_storage_retried_samples_total` -> `prometheus_remote_storage_samples_retried_total`.
+  * `prometheus_remote_storage_dropped_samples_total` -> `prometheus_remote_storage_samples_dropped_total`.
+  * `prometheus_remote_storage_pending_samples` -> `prometheus_remote_storage_samples_pending`.
 * [CHANGE] Remote: Do not collect non-initialized timestamp metrics. #8060
 * [FEATURE] [EXPERIMENTAL] Remote write: Allow metric metadata to be propagated via remote write. The following new metrics were introduced: `prometheus_remote_storage_metadata_total`, `prometheus_remote_storage_metadata_failed_total`, `prometheus_remote_storage_metadata_retried_total`, `prometheus_remote_storage_metadata_bytes_total`. #6815
 * [ENHANCEMENT] Remote write: Added a metric `prometheus_remote_storage_max_samples_per_send` for remote write. #8102
@@ -585,7 +587,6 @@ This release changes WAL compression from opt-in to default. WAL compression wil
 * [BUGFIX] React UI: Fixed multiselect legend on OSX. #6880
 * [BUGFIX] Remote Write: Fixed blocked resharding edge case. #7122
 * [BUGFIX] Remote Write: Fixed remote write not updating on relabel configs change. #7073
-
 
 ## 2.17.2 / 2020-04-20
 
@@ -1002,10 +1003,10 @@ We're rolling back the Dockerfile changes introduced in 2.6.0. If you made chang
 
 ## 2.4.2 / 2018-09-21
 
- The last release didn't have bugfix included due to a vendoring error.
+The last release didn't have bugfix included due to a vendoring error.
 
- * [BUGFIX] Handle WAL corruptions properly prometheus/tsdb#389
- * [BUGFIX] Handle WAL migrations correctly on Windows prometheus/tsdb#392
+* [BUGFIX] Handle WAL corruptions properly prometheus/tsdb#389
+* [BUGFIX] Handle WAL migrations correctly on Windows prometheus/tsdb#392
 
 ## 2.4.1 / 2018-09-19
 
@@ -1152,15 +1153,14 @@ This release includes multiple bugfixes and features. Further, the WAL implement
 * [BUGFIX] tsdb: Cleanup and do not retry failing compactions.
 * [BUGFIX] tsdb: Close WAL while shutting down.
 
-
 ## 2.0.0 / 2017-11-08
 
 This release includes a completely rewritten storage, huge performance
 improvements, but also many backwards incompatible changes. For more
 information, read the announcement blog post and migration guide.
 
-https://prometheus.io/blog/2017/11/08/announcing-prometheus-2-0/
-https://prometheus.io/docs/prometheus/2.0/migration/
+<https://prometheus.io/blog/2017/11/08/announcing-prometheus-2-0/>
+<https://prometheus.io/docs/prometheus/2.0/migration/>
 
 * [CHANGE] Completely rewritten storage layer, with WAL. This is not backwards compatible with 1.x storage, and many flags have changed/disappeared.
 * [CHANGE] New staleness behavior. Series now marked stale after target scrapes no longer return them, and soon after targets disappear from service discovery.
@@ -1570,7 +1570,7 @@ This release contains multiple breaking changes to the configuration schema.
 This version contains a breaking change to the query language. Please read
 the documentation on the grouping behavior of vector matching:
 
-https://prometheus.io/docs/querying/operators/#vector-matching
+<https://prometheus.io/docs/querying/operators/#vector-matching>
 
 * [FEATURE] Add experimental Microsoft Azure service discovery
 * [FEATURE] Add `ignoring` modifier for binary operations
@@ -1696,7 +1696,7 @@ BREAKING CHANGES:
   with InfluxDB 0.9.x. 0.8.x versions of InfluxDB are not supported anymore.
 * Escape sequences in double- and single-quoted string literals in rules or query
   expressions are now interpreted like escape sequences in Go string literals
-  (https://golang.org/ref/spec#String_literals).
+  (<https://golang.org/ref/spec#String_literals>).
 
 Future breaking changes / deprecated features:
 
@@ -1832,6 +1832,7 @@ All changes:
 * [CLEANUP] Resolve relative paths during configuration loading.
 
 ## 0.15.1 / 2015-07-27
+
 * [BUGFIX] Fix vector matching behavior when there is a mix of equality and
   non-equality matchers in a vector selector and one matcher matches no series.
 * [ENHANCEMENT] Allow overriding `GOARCH` and `GOOS` in Makefile.INCLUDE.
@@ -1949,6 +1950,7 @@ All changes:
 * [CLEANUP] Use new v1 HTTP API for querying and graphing.
 
 ## 0.14.0 / 2015-06-01
+
 * [CHANGE] Configuration format changed and switched to YAML.
   (See the provided [migration tool](https://github.com/prometheus/migrate/releases).)
 * [ENHANCEMENT] Redesign of state-preserving target discovery.
@@ -1974,9 +1976,11 @@ All changes:
 * [ENHANCEMENT] Limit retrievable samples to the storage's retention window.
 
 ## 0.13.4 / 2015-05-23
+
 * [BUGFIX] Fix a race while checkpointing fingerprint mappings.
 
 ## 0.13.3 / 2015-05-11
+
 * [BUGFIX] Handle fingerprint collisions properly.
 * [CHANGE] Comments in rules file must start with `#`. (The undocumented `//`
   and `/*...*/` comment styles are no longer supported.)
@@ -1987,6 +1991,7 @@ All changes:
 * [ENHANCEMENT] Terminate running queries during shutdown.
 
 ## 0.13.2 / 2015-05-05
+
 * [MAINTENANCE] Updated vendored dependencies to their newest versions.
 * [MAINTENANCE] Include rule_checker and console templates in release tarball.
 * [BUGFIX] Sort NaN as the lowest value.
@@ -1997,10 +2002,12 @@ All changes:
 * [BUGFIX] Show correct error on wrong DNS response.
 
 ## 0.13.1 / 2015-04-09
+
 * [BUGFIX] Treat memory series with zero chunks correctly in series maintenance.
 * [ENHANCEMENT] Improve readability of usage text even more.
 
 ## 0.13.0 / 2015-04-08
+
 * [ENHANCEMENT] Double-delta encoding for chunks, saving typically 40% of
   space, both in RAM and on disk.
 * [ENHANCEMENT] Redesign of chunk persistence queuing, increasing performance
@@ -2028,6 +2035,7 @@ All changes:
 * [MAINTENANCE] Updated vendored dependencies to their newest versions.
 
 ## 0.12.0 / 2015-03-04
+
 * [CHANGE] Use client_golang v0.3.1. THIS CHANGES FINGERPRINTING AND INVALIDATES
   ALL PERSISTED FINGERPRINTS. You have to wipe your storage to use this or
   later versions. There is a version guard in place that will prevent you to
@@ -2043,6 +2051,7 @@ All changes:
 * [CHANGE] Makefile uses Go 1.4.2.
 
 ## 0.11.1 / 2015-02-27
+
 * [BUGFIX] Make series maintenance complete again. (Ever since 0.9.0rc4,
   or commit 0851945, series would not be archived, chunk descriptors would
   not be evicted, and stale head chunks would never be closed. This happened
@@ -2055,6 +2064,7 @@ All changes:
 * [ENHANCEMENT] Limit the number of 'dirty' series counted during checkpointing.
 
 ## 0.11.0 / 2015-02-23
+
 * [FEATURE] Introduce new metric type Histogram with server-side aggregation.
 * [FEATURE] Add offset operator.
 * [FEATURE] Add floor, ceil and round functions.
@@ -2079,18 +2089,20 @@ All changes:
 * [CLEANUP] Various code cleanups.
 
 ## 0.10.0 / 2015-01-26
+
 * [CHANGE] More efficient JSON result format in query API. This requires
   up-to-date versions of PromDash and prometheus_cli, too.
 * [ENHANCEMENT] Excluded non-minified Bootstrap assets and the Bootstrap maps
   from embedding into the binary. Those files are only used for debugging,
   and then you can use -web.use-local-assets. By including fewer files, the
   RAM usage during compilation is much more manageable.
-* [ENHANCEMENT] Help link points to https://prometheus.github.io now.
+* [ENHANCEMENT] Help link points to <https://prometheus.github.io> now.
 * [FEATURE] Consoles for haproxy and cloudwatch.
 * [BUGFIX] Several fixes to graphs in consoles.
 * [CLEANUP] Removed a file size check that did not check anything.
 
 ## 0.9.0 / 2015-01-23
+
 * [CHANGE] Reworked command line flags, now more consistent and taking into
   account needs of the new storage backend (see below).
 * [CHANGE] Metric names are dropped after certain transformations.
@@ -2132,10 +2144,12 @@ All changes:
 * [CLEANUP] Removed dead code.
 
 ## 0.8.0 / 2014-09-04
+
 * [ENHANCEMENT] Stagger scrapes to spread out load.
 * [BUGFIX] Correctly quote HTTP Accept header.
 
 ## 0.7.0 / 2014-08-06
+
 * [FEATURE] Added new functions: abs(), topk(), bottomk(), drop_common_labels().
 * [FEATURE] Let console templates get graph links from expressions.
 * [FEATURE] Allow console templates to dynamically include other templates.
@@ -2150,6 +2164,7 @@ All changes:
 * [ENHANCEMENT] Dockerfile also builds Prometheus support tools now.
 
 ## 0.6.0 / 2014-06-30
+
 * [FEATURE] Added console and alert templates support, along with various template functions.
 * [PERFORMANCE] Much faster and more memory-efficient flushing to disk.
 * [ENHANCEMENT] Query results are now only logged when debugging.
