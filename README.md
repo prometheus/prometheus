@@ -126,7 +126,7 @@ You can build a docker image locally with the following commands:
 
 ### Remote Write
 
-We are publishing our Remote Write proto independently at
+We are publishing our Remote Write protobuf independently at
 [buf.build](https://buf.build/prometheus/prometheus/assets).
 
 You can use that as a library:
@@ -139,13 +139,9 @@ This is experimental.
 
 ### Prometheus code base
 
-We try to minimize the amount of code in our codebase that is not relevant to
-our purpose. However, we appreciate other projects building up on our code and
-reusing our codebase as libraries.
-
 In order to comply with [go mod](https://go.dev/ref/mod#versions) rules,
-Prometheus release number do not exactly match library releases. For the
-Prometheus v2.y.z releases, we are publishing an equivalent v0.y.z tag.
+Prometheus release number do not exactly match Go module releases. For the
+Prometheus v2.y.z releases, we are publishing equivalent v0.y.z tags.
 
 Therefore, a user that would want to use Prometheus v2.35.0 as a library could do:
 
@@ -153,7 +149,7 @@ Therefore, a user that would want to use Prometheus v2.35.0 as a library could d
 $ go get github.com/prometheus/prometheus@v0.35.0
 ```
 
-This solution makes it clear that we might break our internal go API's between
+This solution makes it clear that we might break our internal go APIs between
 minor user-facing releases, as [breaking changes are allowed in major version
 zero](https://semver.org/#spec-item-4).
 
