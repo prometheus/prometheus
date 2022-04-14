@@ -298,12 +298,8 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed 
 		}
 		opts.target.SetMetadataStore(cache)
 
-		// Store the cache in the context.
-		loopCtx := ContextWithMetricMetadataStore(ctx, cache)
-		loopCtx = ContextWithTarget(loopCtx, opts.target)
-
 		return newScrapeLoop(
-			loopCtx,
+			ctx,
 			opts.scraper,
 			log.With(logger, "target", opts.target),
 			buffers,
@@ -1794,32 +1790,4 @@ func reusableCache(r, l *config.ScrapeConfig) bool {
 		return false
 	}
 	return reflect.DeepEqual(zeroConfig(r), zeroConfig(l))
-}
-
-// CtxKey is a dedicated type for keys of context-embedded values propagated
-// with the scrape context.
-type ctxKey int
-
-// Valid CtxKey values.
-const (
-	ctxKeyMetadata ctxKey = iota + 1
-	ctxKeyTarget
-)
-
-func ContextWithMetricMetadataStore(ctx context.Context, s MetricMetadataStore) context.Context {
-	return context.WithValue(ctx, ctxKeyMetadata, s)
-}
-
-func MetricMetadataStoreFromContext(ctx context.Context) (MetricMetadataStore, bool) {
-	s, ok := ctx.Value(ctxKeyMetadata).(MetricMetadataStore)
-	return s, ok
-}
-
-func ContextWithTarget(ctx context.Context, t *Target) context.Context {
-	return context.WithValue(ctx, ctxKeyTarget, t)
-}
-
-func TargetFromContext(ctx context.Context) (*Target, bool) {
-	t, ok := ctx.Value(ctxKeyTarget).(*Target)
-	return t, ok
 }
