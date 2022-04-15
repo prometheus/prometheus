@@ -298,12 +298,8 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed 
 		}
 		opts.target.SetMetadataStore(cache)
 
-		// Store the cache in the context.
-		loopCtx := ContextWithMetricMetadataStore(ctx, cache)
-		loopCtx = ContextWithTarget(loopCtx, opts.target)
-
 		return newScrapeLoop(
-			loopCtx,
+			ctx,
 			opts.scraper,
 			log.With(logger, "target", opts.target),
 			buffers,
@@ -619,7 +615,7 @@ func verifyLabelLimits(lset labels.Labels, limits *labelLimits) error {
 	if limits.labelLimit > 0 {
 		nbLabels := len(lset)
 		if nbLabels > int(limits.labelLimit) {
-			return fmt.Errorf("label_limit exceeded (metric: %.50s, number of label: %d, limit: %d)", met, nbLabels, limits.labelLimit)
+			return fmt.Errorf("label_limit exceeded (metric: %.50s, number of labels: %d, limit: %d)", met, nbLabels, limits.labelLimit)
 		}
 	}
 
@@ -631,14 +627,14 @@ func verifyLabelLimits(lset labels.Labels, limits *labelLimits) error {
 		if limits.labelNameLengthLimit > 0 {
 			nameLength := len(l.Name)
 			if nameLength > int(limits.labelNameLengthLimit) {
-				return fmt.Errorf("label_name_length_limit exceeded (metric: %.50s, label: %.50v, name length: %d, limit: %d)", met, l, nameLength, limits.labelNameLengthLimit)
+				return fmt.Errorf("label_name_length_limit exceeded (metric: %.50s, label name: %.50s, length: %d, limit: %d)", met, l.Name, nameLength, limits.labelNameLengthLimit)
 			}
 		}
 
 		if limits.labelValueLengthLimit > 0 {
 			valueLength := len(l.Value)
 			if valueLength > int(limits.labelValueLengthLimit) {
-				return fmt.Errorf("label_value_length_limit exceeded (metric: %.50s, label: %.50v, value length: %d, limit: %d)", met, l, valueLength, limits.labelValueLengthLimit)
+				return fmt.Errorf("label_value_length_limit exceeded (metric: %.50s, label name: %.50s, value: %.50q, length: %d, limit: %d)", met, l.Name, l.Value, valueLength, limits.labelValueLengthLimit)
 			}
 		}
 	}
@@ -1379,7 +1375,8 @@ func (sl *scrapeLoop) endOfRunStaleness(last time.Time, ticker *time.Ticker, int
 	// Call sl.append again with an empty scrape to trigger stale markers.
 	// If the target has since been recreated and scraped, the
 	// stale markers will be out of order and ignored.
-	app := sl.appender(sl.ctx)
+	// sl.context would have been cancelled, hence using sl.parentCtx.
+	app := sl.appender(sl.parentCtx)
 	var err error
 	defer func() {
 		if err != nil {
@@ -1393,7 +1390,7 @@ func (sl *scrapeLoop) endOfRunStaleness(last time.Time, ticker *time.Ticker, int
 	}()
 	if _, _, _, err = sl.append(app, []byte{}, "", staleTime); err != nil {
 		app.Rollback()
-		app = sl.appender(sl.ctx)
+		app = sl.appender(sl.parentCtx)
 		level.Warn(sl.l).Log("msg", "Stale append failed", "err", err)
 	}
 	if err = sl.reportStale(app, staleTime); err != nil {
@@ -1794,32 +1791,4 @@ func reusableCache(r, l *config.ScrapeConfig) bool {
 		return false
 	}
 	return reflect.DeepEqual(zeroConfig(r), zeroConfig(l))
-}
-
-// CtxKey is a dedicated type for keys of context-embedded values propagated
-// with the scrape context.
-type ctxKey int
-
-// Valid CtxKey values.
-const (
-	ctxKeyMetadata ctxKey = iota + 1
-	ctxKeyTarget
-)
-
-func ContextWithMetricMetadataStore(ctx context.Context, s MetricMetadataStore) context.Context {
-	return context.WithValue(ctx, ctxKeyMetadata, s)
-}
-
-func MetricMetadataStoreFromContext(ctx context.Context) (MetricMetadataStore, bool) {
-	s, ok := ctx.Value(ctxKeyMetadata).(MetricMetadataStore)
-	return s, ok
-}
-
-func ContextWithTarget(ctx context.Context, t *Target) context.Context {
-	return context.WithValue(ctx, ctxKeyTarget, t)
-}
-
-func TargetFromContext(ctx context.Context) (*Target, bool) {
-	t, ok := ctx.Value(ctxKeyTarget).(*Target)
-	return t, ok
 }
