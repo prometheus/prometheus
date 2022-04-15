@@ -193,22 +193,19 @@ func NewTemplateExpander(
 				return host
 			},
 			"stripDomain": func(hostPort string) string {
-				ret := ""
 				host, port, err := net.SplitHostPort(hostPort)
 				if err != nil {
 					host = hostPort
 				}
 				ip := net.ParseIP(host)
 				if ip != nil {
-					ret = hostPort
-					return ret
+					return hostPort
 				}
-				ss := strings.Split(host, ".")
-				ret = ss[0]
+				host = strings.Split(host, ".")[0]
 				if port != "" {
-					ret = net.JoinHostPort(ss[0], port)
+					return net.JoinHostPort(host, port)
 				}
-				return ret
+				return host
 			},
 			"humanize": func(i interface{}) (string, error) {
 				v, err := convertToFloat(i)
