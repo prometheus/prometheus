@@ -449,6 +449,7 @@ func gatherFamily(t *testing.T, reg prometheus.Gatherer, familyName string) *dto
 func TestStorage_DuplicateExemplarsIgnored(t *testing.T) {
 	s := createTestAgentDB(t, nil, DefaultOptions())
 	app := s.Appender(context.Background())
+	defer s.Close()
 
 	sRef, err := app.Append(0, labels.Labels{{Name: "a", Value: "1"}}, 0, 0)
 	require.NoError(t, err, "should not reject valid series")
@@ -474,12 +475,12 @@ func TestStorage_DuplicateExemplarsIgnored(t *testing.T) {
 	_, _ = app.AppendExemplar(sRef, nil, e)
 
 	require.NoError(t, app.Commit())
-	require.NoError(t, s.Close())
 
 	// Read back what was written to the WAL.
 	var walExemplarsCount int
 	sr, err := wal.NewSegmentsReader(s.wal.Dir())
 	require.NoError(t, err)
+	defer sr.Close()
 	r := wal.NewReader(sr)
 
 	var dec record.Decoder
