@@ -1,0 +1,26 @@
+name: go-test
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+# Lifted from https://github.com/airbnb/prometheus/blob/main/.circleci/config.yml
+jobs:
+  test:
+    name: go test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: prometheus/setup-environment
+        run: make promu
+      - name: run make
+        run: make GO_ONLY=1 test
+        env:
+          GOGC: 20
+          GOOPTS: "-p 2"
+          GOMAXPROCS: "2"
+          GO111MODULE: "on"
+      - name: test tsdb
+        run: go test ./tsdb/ -test.tsdb-isolation=false
