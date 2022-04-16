@@ -27,7 +27,9 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 
+	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
+	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -341,6 +343,108 @@ func TestClose(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, w.Close())
 	require.Error(t, w.Close())
+}
+
+func TestReset(t *testing.T) {
+	dir, err := ioutil.TempDir("", "wal_reset")
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, os.RemoveAll(dir))
+	}()
+
+	logger := testutil.NewLogger(t)
+
+	// Append some records to the WAL and make sure to generate 3 segments.
+	w, err := NewSize(logger, nil, dir, pageSize, false)
+	require.NoError(t, err)
+
+	var (
+		enc record.Encoder
+		i   int
+	)
+	for {
+		i++
+		b := enc.Series(
+			[]record.RefSeries{
+				{Ref: uint64(i), Labels: labels.FromStrings("lbl", fmt.Sprintf("val%d", i))},
+			},
+			nil,
+		)
+		require.NoError(t, w.Log(b, nil))
+		segs, err := listSegments(w.Dir())
+		require.NoError(t, err)
+		if len(segs) >= 3 {
+			break
+		}
+	}
+
+	// Generate a checkpoint and truncate the WAL.
+	_, err = Checkpoint(logger, w, 0, 0, func(uint64) bool { return true }, 1)
+	require.NoError(t, err)
+
+	require.NoError(t, w.Truncate(1))
+
+	// Confirm there's a checkpoint directory and 2 segments left.
+	_, _, err = LastCheckpoint(dir)
+	require.NoError(t, err)
+
+	segs, err := listSegments(w.Dir())
+	require.NoError(t, err)
+	require.Equal(t, 2, len(segs))
+
+	// Reset the WAL.
+	require.NoError(t, w.Reset())
+
+	// Check that there is only one empty segment.
+	segs, err = listSegments(w.Dir())
+	require.NoError(t, err)
+	require.Equal(t, 1, len(segs))
+
+	_, _, err = LastCheckpoint(dir)
+	require.ErrorIs(t, err, record.ErrNotFound)
+
+	sgr, err := NewSegmentsReader(dir)
+	require.NoError(t, err)
+	r := NewReader(sgr)
+	for r.Next() {
+		t.Fatal("expected no record in the WAL")
+	}
+	require.NoError(t, r.Err())
+
+	// Close the segment so we don't break things on Windows.
+	require.NoError(t, sgr.Close())
+
+	// Write a record to the WAL.
+	b := enc.Series(
+		[]record.RefSeries{
+			{Ref: uint64(0), Labels: labels.FromStrings("lbl", "sentinel")},
+		},
+		nil,
+	)
+	require.NoError(t, w.Log(b))
+
+	// Reopen the WAL and make sure that no error happens.
+	require.NoError(t, w.Close())
+
+	w, err = NewSize(logger, nil, dir, pageSize, false)
+	require.NoError(t, err)
+
+	require.NoError(t, w.Close())
+
+	// Make sure that the record has been persisted.
+	sgr, err = NewSegmentsReader(dir)
+	require.NoError(t, err)
+
+	i = 0
+	r = NewReader(sgr)
+	for r.Next() {
+		i++
+	}
+	require.NoError(t, r.Err())
+	require.Equal(t, 1, i)
+
+	// Close the segment so we don't break things on Windows.
+	require.NoError(t, sgr.Close())
 }
 
 func TestSegmentMetric(t *testing.T) {
