@@ -2784,6 +2784,7 @@ func TestRespond(t *testing.T) {
 				Result: promql.Matrix{
 					promql.Series{
 						Points: []promql.Point{{V: 1, T: 1000}},
+						// TODO(beorn7): Add histogram points.
 						Metric: labels.FromStrings("__name__", "foo"),
 					},
 				},

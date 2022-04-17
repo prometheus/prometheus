@@ -77,6 +77,9 @@ func (s Series) String() string {
 	return fmt.Sprintf("%s =>\n%s", s.Metric, strings.Join(vals, "\n"))
 }
 
+// MarshalJSON is mirrored in web/api/v1/api.go for efficiency reasons.
+// This implementation is still provided for debug purposes and usage
+// without jsoniter.
 func (s Series) MarshalJSON() ([]byte, error) {
 	// Note that this is rather inefficient because it re-creates the whole
 	// series, just separated by Histogram Points and Value Points. For API
@@ -177,6 +180,8 @@ func (s Sample) String() string {
 	return fmt.Sprintf("%s => %s", s.Metric, s.Point)
 }
 
+// MarshalJSON is mirrored in web/api/v1/api.go with jsoniter because Point
+// wouldn't be marshaled with jsoniter in all cases otherwise.
 func (s Sample) MarshalJSON() ([]byte, error) {
 	if s.Point.H == nil {
 		v := struct {
