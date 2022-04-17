@@ -193,7 +193,7 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 				level.Info(logger).Log("msg", "Automatically set GOMAXPROCS to match Linux container CPU quota")
 			case "no-default-scrape-port":
 				c.scrape.NoDefaultPort = true
-				level.Info(logger).Log("msg", "Experimental no default scrape port enabled")
+				level.Info(logger).Log("msg", "No default port will be appended to scrape targets' addresses.")
 			case "":
 				continue
 			case "promql-at-modifier", "promql-negative-offset":
