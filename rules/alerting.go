@@ -432,8 +432,7 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 			// retention time so it is reported as resolved to the AlertManager.
 			if a.State == StatePending || (!a.ResolvedAt.IsZero() && ts.Sub(a.ResolvedAt) > resolvedRetention) {
 				delete(r.active, fp)
-			}
-			if a.State != StateInactive {
+			} else if a.State != StateInactive {
 				a.State = StateInactive
 				a.ResolvedAt = ts
 			}
