@@ -519,7 +519,9 @@ func (s *memSeries) append(t int64, v float64, appendID uint64, chunkDiskMapper 
 	if numSamples == samplesPerChunk/4 {
 		s.nextAt = computeChunkEndTime(c.minTime, c.maxTime, s.nextAt)
 	}
-	if t >= s.nextAt {
+	// If numSamples > samplesPerChunk*2 then our previous prediction was invalid
+	// (most likely because samples rate has changed and now they are arriving more frequently).
+	if t >= s.nextAt || numSamples > samplesPerChunk*2 {
 		c = s.cutNewHeadChunk(t, chunkDiskMapper)
 		chunkCreated = true
 	}
