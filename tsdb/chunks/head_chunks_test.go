@@ -116,7 +116,7 @@ func TestChunkDiskMapper_WriteChunk_Chunk_IterateChunks(t *testing.T) {
 			}
 		}
 		addChunks(100)
-		hrw.CutNewFile()
+		require.NoError(t, hrw.CutNewFile())
 		addChunks(10) // For chunks in in-memory buffer.
 	}
 
@@ -254,7 +254,7 @@ func TestChunkDiskMapper_Truncate(t *testing.T) {
 
 	// Create segments 1 to 7.
 	for i := 1; i <= 7; i++ {
-		hrw.CutNewFile()
+		require.NoError(t, hrw.CutNewFile())
 		mint := int64(addChunk())
 		if i == 3 {
 			thirdFileMinT = mint
@@ -453,7 +453,7 @@ func TestHeadReadWriter_ReadRepairOnEmptyLastFile(t *testing.T) {
 	nonEmptyFile := func() {
 		t.Helper()
 
-		hrw.CutNewFile()
+		require.NoError(t, hrw.CutNewFile())
 		addChunk()
 	}
 

@@ -489,7 +489,6 @@ func (cdm *ChunkDiskMapper) CutNewFile() error {
 	defer cdm.evtlPosMtx.Unlock()
 
 	cdm.evtlPos.cutFileOnNextChunk()
-
 	return nil
 }
 
@@ -801,7 +800,6 @@ func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef HeadSeriesRef, chu
 			if seriesRef == 0 && mint == 0 && maxt == 0 {
 				break
 			}
-
 			// Encoding.
 			chkEnc := chunkenc.Encoding(mmapFile.byteSlice.Range(idx, idx+ChunkEncodingSize)[0])
 			idx += ChunkEncodingSize
