@@ -908,17 +908,15 @@ type scrapeCache struct {
 
 // metaEntry holds meta information about a metric.
 type metaEntry struct {
+	metadata.Metadata
+
 	lastIter       uint64 // Last scrape iteration the entry was observed at.
 	lastIterChange uint64 // Last scrape iteration the entry was changed at.
-
-	typ  textparse.MetricType
-	help string
-	unit string
 }
 
 func (m *metaEntry) size() int {
 	// The attribute lastIter although part of the struct it is not metadata.
-	return len(m.help) + len(m.unit) + len(m.typ)
+	return len(m.Help) + len(m.Unit) + len(m.Type)
 }
 
 func newScrapeCache() *scrapeCache {
@@ -1031,11 +1029,11 @@ func (c *scrapeCache) setType(metric []byte, t textparse.MetricType) {
 
 	e, ok := c.metadata[yoloString(metric)]
 	if !ok {
-		e = &metaEntry{typ: textparse.MetricTypeUnknown}
+		e = &metaEntry{Metadata: metadata.Metadata{Type: textparse.MetricTypeUnknown}}
 		c.metadata[string(metric)] = e
 	}
-	if e.typ != t {
-		e.typ = t
+	if e.Type != t {
+		e.Type = t
 		e.lastIterChange = c.iter
 	}
 	e.lastIter = c.iter
@@ -1048,11 +1046,11 @@ func (c *scrapeCache) setHelp(metric, help []byte) {
 
 	e, ok := c.metadata[yoloString(metric)]
 	if !ok {
-		e = &metaEntry{typ: textparse.MetricTypeUnknown}
+		e = &metaEntry{Metadata: metadata.Metadata{Type: textparse.MetricTypeUnknown}}
 		c.metadata[string(metric)] = e
 	}
-	if e.help != yoloString(help) {
-		e.help = string(help)
+	if e.Help != yoloString(help) {
+		e.Help = string(help)
 		e.lastIterChange = c.iter
 	}
 	e.lastIter = c.iter
@@ -1065,11 +1063,11 @@ func (c *scrapeCache) setUnit(metric, unit []byte) {
 
 	e, ok := c.metadata[yoloString(metric)]
 	if !ok {
-		e = &metaEntry{typ: textparse.MetricTypeUnknown}
+		e = &metaEntry{Metadata: metadata.Metadata{Type: textparse.MetricTypeUnknown}}
 		c.metadata[string(metric)] = e
 	}
-	if e.unit != yoloString(unit) {
-		e.unit = string(unit)
+	if e.Unit != yoloString(unit) {
+		e.Unit = string(unit)
 		e.lastIterChange = c.iter
 	}
 	e.lastIter = c.iter
@@ -1087,9 +1085,9 @@ func (c *scrapeCache) GetMetadata(metric string) (MetricMetadata, bool) {
 	}
 	return MetricMetadata{
 		Metric: metric,
-		Type:   m.typ,
-		Help:   m.help,
-		Unit:   m.unit,
+		Type:   m.Type,
+		Help:   m.Help,
+		Unit:   m.Unit,
 	}, true
 }
 
@@ -1102,9 +1100,9 @@ func (c *scrapeCache) ListMetadata() []MetricMetadata {
 	for m, e := range c.metadata {
 		res = append(res, MetricMetadata{
 			Metric: m,
-			Type:   e.typ,
-			Help:   e.help,
-			Unit:   e.unit,
+			Type:   e.Type,
+			Help:   e.Help,
+			Unit:   e.Unit,
 		})
 	}
 	return res
@@ -1541,14 +1539,14 @@ loop:
 			ref = ce.ref
 			lset = ce.lset
 
-			// Update metadata only if it's changed in the current iteration.
+			// Update metadata only if it changed in the current iteration.
 			sl.cache.metaMtx.Lock()
 			metaEntry, metaOk := sl.cache.metadata[yoloString(met)]
 			if metaOk && metaEntry.lastIterChange == sl.cache.iter {
 				shouldAppendMetadata = true
-				meta.Type = metaEntry.typ
-				meta.Unit = metaEntry.unit
-				meta.Help = metaEntry.help
+				meta.Type = metaEntry.Type
+				meta.Unit = metaEntry.Unit
+				meta.Help = metaEntry.Help
 			}
 			sl.cache.metaMtx.Unlock()
 		} else {
@@ -1580,9 +1578,9 @@ loop:
 			metaEntry, metaOk := sl.cache.metadata[yoloString(met)]
 			if metaOk {
 				shouldAppendMetadata = true
-				meta.Type = metaEntry.typ
-				meta.Unit = metaEntry.unit
-				meta.Help = metaEntry.help
+				meta.Type = metaEntry.Type
+				meta.Unit = metaEntry.Unit
+				meta.Help = metaEntry.Help
 			}
 			sl.cache.metaMtx.Unlock()
 		}
@@ -1625,10 +1623,9 @@ loop:
 		}
 
 		if shouldAppendMetadata {
-			_, metadataErr := app.AppendMetadata(ref, lset, meta)
-			if metadataErr != nil {
+			if _, merr := app.AppendMetadata(ref, lset, meta); merr != nil {
 				// No need to fail the scrape on errors appending metadata.
-				level.Debug(sl.l).Log("msg", "Error when appending metadata in scrape loop", "ref", fmt.Sprintf("%d", ref), "metadata", fmt.Sprintf("%+v", meta), "err", metadataErr)
+				level.Debug(sl.l).Log("msg", "Error when appending metadata in scrape loop", "ref", fmt.Sprintf("%d", ref), "metadata", fmt.Sprintf("%+v", meta), "err", merr)
 			}
 		}
 	}
