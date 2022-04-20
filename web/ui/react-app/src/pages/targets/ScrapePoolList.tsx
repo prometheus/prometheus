@@ -113,7 +113,7 @@ const ScrapePoolListContent: FC<ScrapePoolListProps> = ({ activeTargets }) => {
             defaultValue={defaultValue}
             handleChange={handleSearchChange}
             placeholder="Filter by endpoint or labels"
-         />
+          />
         </Col>
       </Row>
       {Object.keys(poolList)
