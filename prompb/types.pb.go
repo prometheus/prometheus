@@ -127,7 +127,7 @@ func (Chunk_Encoding) EnumDescriptor() ([]byte, []int) {
 
 type MetricMetadata struct {
 	// Represents the metric type, these match the set from Prometheus.
-	// Refer to pkg/textparse/interface.go for details.
+	// Refer to model/textparse/interface.go for details.
 	Type                 MetricMetadata_MetricType `protobuf:"varint,1,opt,name=type,proto3,enum=prometheus.MetricMetadata_MetricType" json:"type,omitempty"`
 	MetricFamilyName     string                    `protobuf:"bytes,2,opt,name=metric_family_name,json=metricFamilyName,proto3" json:"metric_family_name,omitempty"`
 	Help                 string                    `protobuf:"bytes,4,opt,name=help,proto3" json:"help,omitempty"`
@@ -200,7 +200,7 @@ func (m *MetricMetadata) GetUnit() string {
 
 type Sample struct {
 	Value float64 `protobuf:"fixed64,1,opt,name=value,proto3" json:"value,omitempty"`
-	// timestamp is in ms format, see pkg/timestamp/timestamp.go for
+	// timestamp is in ms format, see model/timestamp/timestamp.go for
 	// conversion from time.Time to Prometheus timestamp.
 	Timestamp            int64    `protobuf:"varint,2,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
@@ -259,7 +259,7 @@ type Exemplar struct {
 	// Optional, can be empty.
 	Labels []Label `protobuf:"bytes,1,rep,name=labels,proto3" json:"labels"`
 	Value  float64 `protobuf:"fixed64,2,opt,name=value,proto3" json:"value,omitempty"`
-	// timestamp is in ms format, see pkg/timestamp/timestamp.go for
+	// timestamp is in ms format, see model/timestamp/timestamp.go for
 	// conversion from time.Time to Prometheus timestamp.
 	Timestamp            int64    `protobuf:"varint,3,opt,name=timestamp,proto3" json:"timestamp,omitempty"`
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
