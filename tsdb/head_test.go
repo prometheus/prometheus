@@ -1323,7 +1323,8 @@ func TestMemSeries_append_atVariableRate(t *testing.T) {
 		require.NoError(t, chunkDiskMapper.Close())
 	})
 
-	s := newMemSeries(labels.Labels{}, 1, DefaultBlockDuration, nil, defaultIsolationDisabled)
+	lbls := labels.Labels{}
+	s := newMemSeries(lbls, 1, lbls.Hash(), DefaultBlockDuration, 0, nil, defaultIsolationDisabled)
 
 	// At this slow rate, we will fill the chunk in two block durations.
 	slowRate := (DefaultBlockDuration * 2) / samplesPerChunk
@@ -1331,7 +1332,7 @@ func TestMemSeries_append_atVariableRate(t *testing.T) {
 	var nextTs int64
 	var totalAppendedSamples int
 	for i := 0; i < samplesPerChunk/4; i++ {
-		ok, _ := s.append(nextTs, float64(i), 0, chunkDiskMapper)
+		_, ok, _ := s.append(nextTs, float64(i), 0, chunkDiskMapper)
 		require.Truef(t, ok, "slow sample %d was not appended", i)
 		nextTs += slowRate
 		totalAppendedSamples++
@@ -1340,12 +1341,12 @@ func TestMemSeries_append_atVariableRate(t *testing.T) {
 
 	// Suddenly, the rate increases and we receive a sample every millisecond.
 	for i := 0; i < math.MaxUint16; i++ {
-		ok, _ := s.append(nextTs, float64(i), 0, chunkDiskMapper)
+		_, ok, _ := s.append(nextTs, float64(i), 0, chunkDiskMapper)
 		require.Truef(t, ok, "quick sample %d was not appended", i)
 		nextTs++
 		totalAppendedSamples++
 	}
-	ok, chunkCreated := s.append(DefaultBlockDuration, float64(0), 0, chunkDiskMapper)
+	_, ok, chunkCreated := s.append(DefaultBlockDuration, float64(0), 0, chunkDiskMapper)
 	require.True(t, ok, "new chunk sample was not appended")
 	require.True(t, chunkCreated, "sample at block duration timestamp should create a new chunk")
 
