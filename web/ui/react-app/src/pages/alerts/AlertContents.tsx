@@ -8,6 +8,7 @@ import { useLocalStorage } from '../../hooks/useLocalStorage';
 import CustomInfiniteScroll, { InfiniteScrollItemsProps } from '../../components/CustomInfiniteScroll';
 import { KVSearch } from '@nexucis/kvsearch';
 import SearchBar from '../../components/SearchBar';
+import { encodeToQueryString } from '../../utils/index';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type RuleState = keyof RuleStatus<any>;
@@ -63,6 +64,13 @@ function GroupContent(showAnnotations: boolean) {
 }
 
 const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
+  useEffect(() => {
+    const search = window.location.search;
+    const params = new URLSearchParams(search);
+    const expr = params.get('expr');
+    setDefaultValue(expr || '');
+  }, []);
+
   const [groupList, setGroupList] = useState(groups);
   const [filteredList, setFilteredList] = useState(groups);
   const [filter, setFilter] = useLocalStorage('alerts-status-filter', {
@@ -71,7 +79,7 @@ const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
     inactive: true,
   });
   const [showAnnotations, setShowAnnotations] = useLocalStorage('alerts-annotations-status', { checked: false });
-
+  const [defaultValue, setDefaultValue] = useState('');
   const toggleFilter = (ruleState: RuleState) => () => {
     setFilter({
       ...filter,
@@ -79,8 +87,14 @@ const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
     });
   };
 
+  const updateURL = (expr: string): void => {
+    const query = encodeToQueryString(expr);
+    window.history.pushState({}, '', query);
+  };
+
   const handleSearchChange = (e: ChangeEvent<HTMLTextAreaElement | HTMLInputElement>) => {
     if (e.target.value !== '') {
+      updateURL(e.target.value);
       const pattern = e.target.value.trim();
       const result: RuleGroup[] = [];
       for (const group of groups) {
@@ -96,6 +110,7 @@ const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
       }
       setGroupList(result);
     } else {
+      updateURL(e.target.value);
       setGroupList(groups);
     }
   };
@@ -131,7 +146,7 @@ const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
           })}
         </Col>
         <Col lg="5" md="4">
-          <SearchBar handleChange={handleSearchChange} placeholder="Filter by name or labels" />
+          <SearchBar defaultValue={defaultValue} handleChange={handleSearchChange} placeholder="Filter by name or labels" />
         </Col>
         <Col className="d-flex flex-row-reverse" md="3">
           <Checkbox

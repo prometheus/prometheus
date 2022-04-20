@@ -12,6 +12,7 @@ import { useLocalStorage } from '../../hooks/useLocalStorage';
 import styles from './ScrapePoolPanel.module.css';
 import { ToggleMoreLess } from '../../components/ToggleMoreLess';
 import SearchBar from '../../components/SearchBar';
+import { encodeToQueryString } from '../../utils/index';
 
 interface ScrapePoolListProps {
   activeTargets: Target[];
@@ -56,6 +57,13 @@ const ScrapePoolListContent: FC<ScrapePoolListProps> = ({ activeTargets }) => {
   const [poolList, setPoolList] = useState<ScrapePools>(initialPoolList);
   const [targetList, setTargetList] = useState(activeTargets);
 
+  useEffect(() => {
+    const search = window.location.search;
+    const params = new URLSearchParams(search);
+    const expr = params.get('expr');
+    setDefaultValue(expr || '');
+  }, []);
+
   const initialFilter: FilterData = {
     showHealthy: true,
     showUnhealthy: true,
@@ -71,12 +79,20 @@ const ScrapePoolListContent: FC<ScrapePoolListProps> = ({ activeTargets }) => {
   );
   const [expanded, setExpanded] = useLocalStorage('targets-page-expansion-state', initialExpanded);
   const { showHealthy, showUnhealthy } = filter;
+  const [defaultValue, setDefaultValue] = useState('');
+
+  const updateURL = (expr: string): void => {
+    const query = encodeToQueryString(expr);
+    window.history.pushState({}, '', query);
+  };
 
   const handleSearchChange = (e: ChangeEvent<HTMLTextAreaElement | HTMLInputElement>) => {
     if (e.target.value !== '') {
+      updateURL(e.target.value);
       const result = kvSearch.filter(e.target.value.trim(), activeTargets);
       setTargetList(result.map((value) => value.original));
     } else {
+      updateURL(e.target.value);
       setTargetList(activeTargets);
     }
   };
@@ -93,7 +109,10 @@ const ScrapePoolListContent: FC<ScrapePoolListProps> = ({ activeTargets }) => {
           <Filter filter={filter} setFilter={setFilter} expanded={expanded} setExpanded={setExpanded} />
         </Col>
         <Col xs="6">
-          <SearchBar handleChange={handleSearchChange} placeholder="Filter by endpoint or labels" />
+          <SearchBar 
+            defaultValue={defaultValue} 
+            handleChange={handleSearchChange} 
+            placeholder="Filter by endpoint or labels" />
         </Col>
       </Row>
       {Object.keys(poolList)
