@@ -99,7 +99,7 @@ remote_read:
 
 # Storage related settings that are runtime reloadable.
 storage:
-  [ - <exemplars> ... ]
+  [ exemplars: <exemplars> ]
 
 # Configures exporting traces.
 tracing:
