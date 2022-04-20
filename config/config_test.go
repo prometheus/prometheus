@@ -14,6 +14,7 @@
 package config
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"io/ioutil"
 	"net/url"
@@ -179,6 +180,9 @@ var expectedConf = &Config{
 				},
 				FollowRedirects: true,
 				EnableHTTP2:     true,
+				TLSConfig: config.TLSConfig{
+					MinVersion: config.TLSVersion(tls.VersionTLS10),
+				},
 			},
 
 			ServiceDiscoveryConfigs: discovery.Configs{
