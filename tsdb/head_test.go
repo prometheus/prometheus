@@ -1345,8 +1345,9 @@ func TestMemSeries_append_atVariableRate(t *testing.T) {
 	require.True(t, chunkCreated, "sample at block duration timestamp should create a new chunk")
 
 	var totalSamplesInChunks int
-	for _, c := range s.mmappedChunks {
+	for i, c := range s.mmappedChunks {
 		totalSamplesInChunks += int(c.numSamples)
+		require.LessOrEqualf(t, c.numSamples, uint16(2*samplesPerChunk), "mmapped chunk %d has more than %d samples", i, 2*samplesPerChunk)
 	}
 	require.Equal(t, totalAppendedSamples, totalSamplesInChunks, "wrong number of samples in %d mmapped chunks", len(s.mmappedChunks))
 }

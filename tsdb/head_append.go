@@ -524,7 +524,7 @@ func (s *memSeries) append(t int64, v float64, appendID uint64, chunkDiskMapper 
 	// Since we assume that the rate is higher, we're being conservative and cutting at 2*samplesPerChunk
 	// as we expect more chunks to come.
 	// Note that next chunk will have its nextAt recalculated for the new rate.
-	if t >= s.nextAt || numSamples > samplesPerChunk*2 {
+	if t >= s.nextAt || numSamples >= samplesPerChunk*2 {
 		c = s.cutNewHeadChunk(t, chunkDiskMapper)
 		chunkCreated = true
 	}
