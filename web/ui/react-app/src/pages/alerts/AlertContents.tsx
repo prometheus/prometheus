@@ -93,7 +93,6 @@ const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
   };
 
   const handleSearchChange = (e: ChangeEvent<HTMLTextAreaElement | HTMLInputElement>) => {
-    console.log('e:', e);
     if (e.target.value !== '') {
       updateURL(e.target.value);
       const pattern = e.target.value.trim();
