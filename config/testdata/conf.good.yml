@@ -91,6 +91,9 @@ scrape_configs:
     authorization:
       credentials_file: valid_token_file
 
+    tls_config:
+      min_version: TLS10
+
   - job_name: service-x
 
     basic_auth:

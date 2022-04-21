@@ -369,6 +369,12 @@ A `tls_config` allows configuring TLS connections.
 
 # Disable validation of the server certificate.
 [ insecure_skip_verify: <boolean> ]
+
+# Minimum acceptable TLS version. Accepted values: TLS10 (TLS 1.0), TLS11 (TLS
+# 1.1), TLS12 (TLS 1.2), TLS13 (TLS 1.3).
+# If unset, Prometheus will use Go default minimum version, which is TLS 1.2.
+# See MinVersion in https://pkg.go.dev/crypto/tls#Config.
+[ min_version: <string> ]
 ```
 
 ### `<oauth2>`
