@@ -1,5 +1,11 @@
 ## 2.35.0 / 2022-04-21
 
+This Prometheus release is built with go1.18, which contains two noticeable changes related to TLS:
+
+* [TLS 1.0 and 1.1 disabled by default client-side](https://go.dev/doc/go1.18#tls10). 
+Prometheus users can override this with the `min_version` parameter of [tls_config](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#tls_config).
+* [Certificates signed with the SHA-1 hash function are rejected](https://go.dev/doc/go1.18#sha1). This doesn't apply to self-signed root certificates.
+
 * [CHANGE] TSDB: Delete `*.tmp` WAL files when Prometheus starts. #10317
 * [CHANGE] promtool: Add new flag `--lint` (enabled by default) for the commands `check rules` and `check config`, resulting in a new exit code (`3`) for linter errors. #10435
 * [FEATURE] Support for automatically setting the variable `GOMAXPROCS` to the container CPU limit. Enable with the flag `--enable-feature=auto-gomaxprocs`. #10498
@@ -13,7 +19,7 @@ Enable with the flag `--enable-feature=per-step-stats`. #10369
 * [ENHANCEMENT] Kubernetes SD: Allow attaching node metadata to discovered pods. #10080
 * [ENHANCEMENT] OAuth2: Support for using a proxy URL to fetch OAuth2 tokens. #10492
 * [ENHANCEMENT] Configuration: Add the ability to disable HTTP2. #10492
-* [ENHANCEMENT] Config: Support overriding minimum TLS version #10610
+* [ENHANCEMENT] Config: Support overriding minimum TLS version. #10610
 * [BUGFIX] Kubernetes SD: Explicitly include gcp auth from k8s.io. #10516
 * [BUGFIX] Fix OpenMetrics parser to sort uppercase labels correctly. #10510
 * [BUGFIX] UI: Fix scrape interval and duration tooltip not showing on target page. #10545
