@@ -1,4 +1,4 @@
-import React, { ChangeEvent, FC, useEffect, useState } from 'react';
+import React, { FC, useEffect, useMemo, useState } from 'react';
 import { useFetch } from '../../hooks/useFetch';
 import { LabelsTable } from './LabelsTable';
 import { DroppedTarget, Labels, Target } from '../targets/target';
@@ -96,28 +96,27 @@ const updateURL = (expr: string): void => {
 };
 
 export const ServiceDiscoveryContent: FC<ServiceMap> = ({ activeTargets, droppedTargets }) => {
-  useEffect(() => {
-    const search = window.location.search;
-    const params = new URLSearchParams(search);
-    const expr = params.get('expr');
-    setDefaultValue(expr || '');
-  }, []);
-
-  const [defaultValue, setDefaultValue] = useState('');
   const [activeTargetList, setActiveTargetList] = useState(activeTargets);
   const [targetList, setTargetList] = useState(processSummary(activeTargets, droppedTargets));
   const [labelList, setLabelList] = useState(processTargets(activeTargets, droppedTargets));
 
-  const handleSearchChange = (e: ChangeEvent<HTMLTextAreaElement | HTMLInputElement>) => {
-    if (e.target.value !== '') {
-      updateURL(e.target.value);
-      const result = kvSearch.filter(e.target.value.trim(), activeTargets);
+  const handleSearchChange = (value: string) => {
+    updateURL(value);
+    if (value !== '') {
+      const result = kvSearch.filter(value.trim(), activeTargets);
       setActiveTargetList(result.map((value) => value.original));
     } else {
-      updateURL(e.target.value);
       setActiveTargetList(activeTargets);
     }
   };
+
+  const defaultValue = useMemo(() => {
+    const locationSearch = window.location.search;
+    const params = new URLSearchParams(locationSearch);
+    const search = params.get('expr') || '';
+    handleSearchChange(search);
+    return search;
+  }, []);
 
   useEffect(() => {
     setTargetList(processSummary(activeTargetList, droppedTargets));

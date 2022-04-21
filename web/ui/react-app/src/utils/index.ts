@@ -251,18 +251,6 @@ export const createExpressionLink = (expr: string): string => {
   return `../graph?g0.expr=${encodeURIComponent(expr)}&g0.tab=1&g0.stacked=0&g0.show_exemplars=0.g0.range_input=1h.`;
 };
 
-export const createExpressionLinkAlert = (expr: string): string => {
-  return `../alerts?expr=${encodeURIComponent(expr)}`;
-};
-
-export const createExpressionLinkTarget = (expr: string): string => {
-  return `../targets?expr=${encodeURIComponent(expr)}`;
-};
-
-export const createExpressionLinkServiceDiscovery = (expr: string): string => {
-  return `../service-discovery?expr=${encodeURIComponent(expr)}`;
-};
-
 export const mapObjEntries = <T, key extends keyof T, Z>(
   o: T,
   cb: ([k, v]: [string, T[key]], i: number, arr: [string, T[key]][]) => Z

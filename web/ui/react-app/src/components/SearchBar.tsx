@@ -4,7 +4,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faSearch } from '@fortawesome/free-solid-svg-icons';
 
 export interface SearchBarProps {
-  handleChange: (e: ChangeEvent<HTMLTextAreaElement | HTMLInputElement>) => void;
+  handleChange: (e: string) => void;
   placeholder: string;
   defaultValue: string;
 }
@@ -15,7 +15,7 @@ const SearchBar: FC<SearchBarProps> = ({ handleChange, placeholder, defaultValue
   const handleSearchChange = (e: ChangeEvent<HTMLTextAreaElement | HTMLInputElement>) => {
     clearTimeout(filterTimeout);
     filterTimeout = setTimeout(() => {
-      handleChange(e);
+      handleChange(e.target.value);
     }, 300);
   };
 

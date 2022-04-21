@@ -1,4 +1,4 @@
-import React, { ChangeEvent, FC, Fragment, useEffect, useState } from 'react';
+import React, { FC, Fragment, useEffect, useMemo, useState } from 'react';
 import { Badge, Col, Row } from 'reactstrap';
 import CollapsibleAlertPanel from './CollapsibleAlertPanel';
 import Checkbox from '../../components/Checkbox';
@@ -64,13 +64,6 @@ function GroupContent(showAnnotations: boolean) {
 }
 
 const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
-  useEffect(() => {
-    const search = window.location.search;
-    const params = new URLSearchParams(search);
-    const expr = params.get('expr');
-    setDefaultValue(expr || '');
-  }, []);
-
   const [groupList, setGroupList] = useState(groups);
   const [filteredList, setFilteredList] = useState(groups);
   const [filter, setFilter] = useLocalStorage('alerts-status-filter', {
@@ -79,7 +72,6 @@ const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
     inactive: true,
   });
   const [showAnnotations, setShowAnnotations] = useLocalStorage('alerts-annotations-status', { checked: false });
-  const [defaultValue, setDefaultValue] = useState('');
   const toggleFilter = (ruleState: RuleState) => () => {
     setFilter({
       ...filter,
@@ -92,10 +84,10 @@ const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
     window.history.pushState({}, '', query);
   };
 
-  const handleSearchChange = (e: ChangeEvent<HTMLTextAreaElement | HTMLInputElement>) => {
-    if (e.target.value !== '') {
-      updateURL(e.target.value);
-      const pattern = e.target.value.trim();
+  const handleSearchChange = (value: string) => {
+    updateURL(value);
+    if (value !== '') {
+      const pattern = value.trim();
       const result: RuleGroup[] = [];
       for (const group of groups) {
         const ruleFilterList = kvSearchRule.filter(pattern, group.rules);
@@ -110,10 +102,17 @@ const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
       }
       setGroupList(result);
     } else {
-      updateURL(e.target.value);
       setGroupList(groups);
     }
   };
+
+  const defaultValue = useMemo(() => {
+    const locationSearch = window.location.search;
+    const params = new URLSearchParams(locationSearch);
+    const search = params.get('expr') || '';
+    handleSearchChange(search);
+    return search;
+  }, []);
 
   useEffect(() => {
     const result: RuleGroup[] = [];

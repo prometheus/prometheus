@@ -4,7 +4,7 @@ import { useFetch } from '../../hooks/useFetch';
 import { API_PATH } from '../../constants/constants';
 import { groupTargets, ScrapePool, ScrapePools, Target } from './target';
 import { withStatusIndicator } from '../../components/withStatusIndicator';
-import { ChangeEvent, FC, useEffect, useState } from 'react';
+import { FC, useEffect, useMemo, useState } from 'react';
 import { Col, Collapse, Row } from 'reactstrap';
 import { ScrapePoolContent } from './ScrapePoolContent';
 import Filter, { Expanded, FilterData } from './Filter';
@@ -57,13 +57,6 @@ const ScrapePoolListContent: FC<ScrapePoolListProps> = ({ activeTargets }) => {
   const [poolList, setPoolList] = useState<ScrapePools>(initialPoolList);
   const [targetList, setTargetList] = useState(activeTargets);
 
-  useEffect(() => {
-    const search = window.location.search;
-    const params = new URLSearchParams(search);
-    const expr = params.get('expr');
-    setDefaultValue(expr || '');
-  }, []);
-
   const initialFilter: FilterData = {
     showHealthy: true,
     showUnhealthy: true,
@@ -79,23 +72,29 @@ const ScrapePoolListContent: FC<ScrapePoolListProps> = ({ activeTargets }) => {
   );
   const [expanded, setExpanded] = useLocalStorage('targets-page-expansion-state', initialExpanded);
   const { showHealthy, showUnhealthy } = filter;
-  const [defaultValue, setDefaultValue] = useState('');
 
   const updateURL = (expr: string): void => {
     const query = encodeToQueryString(expr);
     window.history.pushState({}, '', query);
   };
 
-  const handleSearchChange = (e: ChangeEvent<HTMLTextAreaElement | HTMLInputElement>) => {
-    if (e.target.value !== '') {
-      updateURL(e.target.value);
-      const result = kvSearch.filter(e.target.value.trim(), activeTargets);
+  const handleSearchChange = (value: string) => {
+    updateURL(value);
+    if (value !== '') {
+      const result = kvSearch.filter(value.trim(), activeTargets);
       setTargetList(result.map((value) => value.original));
     } else {
-      updateURL(e.target.value);
       setTargetList(activeTargets);
     }
   };
+
+  const defaultValue = useMemo(() => {
+    const locationSearch = window.location.search;
+    const params = new URLSearchParams(locationSearch);
+    const search = params.get('expr') || '';
+    handleSearchChange(search);
+    return search;
+  }, []);
 
   useEffect(() => {
     const list = targetList.filter((t) => showHealthy || t.health.toLowerCase() !== 'up');
