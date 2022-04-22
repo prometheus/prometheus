@@ -1,4 +1,4 @@
-import React, { ChangeEvent, FC } from 'react';
+import React, { ChangeEvent, FC, useEffect } from 'react';
 import { Input, InputGroup, InputGroupAddon, InputGroupText } from 'reactstrap';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faSearch } from '@fortawesome/free-solid-svg-icons';
@@ -18,6 +18,10 @@ const SearchBar: FC<SearchBarProps> = ({ handleChange, placeholder, defaultValue
       handleChange(e.target.value);
     }, 300);
   };
+
+  useEffect(() => {
+    handleChange(defaultValue);
+  }, []);
 
   return (
     <InputGroup>

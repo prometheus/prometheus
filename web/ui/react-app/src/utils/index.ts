@@ -243,8 +243,15 @@ export const encodePanelOptionsToQueryString = (panels: PanelMeta[]): string => 
   return `?${panels.map(toQueryString).join('&')}`;
 };
 
-export const encodeToQueryString = (expr: string): string => {
-  return `?expr=${expr}`;
+export const setQuerySearchFilter = (expr: string) => {
+  window.history.pushState({}, '', `?expr=${expr}`);
+};
+
+export const getQuerySearchFilter = (): string => {
+  const locationSearch = window.location.search;
+  const params = new URLSearchParams(locationSearch);
+  const search = params.get('expr') || '';
+  return search;
 };
 
 export const createExpressionLink = (expr: string): string => {

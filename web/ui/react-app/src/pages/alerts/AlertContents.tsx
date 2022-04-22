@@ -2,13 +2,12 @@ import React, { FC, Fragment, useEffect, useMemo, useState } from 'react';
 import { Badge, Col, Row } from 'reactstrap';
 import CollapsibleAlertPanel from './CollapsibleAlertPanel';
 import Checkbox from '../../components/Checkbox';
-import { isPresent } from '../../utils';
+import { getQuerySearchFilter, isPresent, setQuerySearchFilter } from '../../utils';
 import { Rule } from '../../types/types';
 import { useLocalStorage } from '../../hooks/useLocalStorage';
 import CustomInfiniteScroll, { InfiniteScrollItemsProps } from '../../components/CustomInfiniteScroll';
 import { KVSearch } from '@nexucis/kvsearch';
 import SearchBar from '../../components/SearchBar';
-import { encodeToQueryString } from '../../utils/index';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type RuleState = keyof RuleStatus<any>;
@@ -79,13 +78,8 @@ const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
     });
   };
 
-  const updateURL = (expr: string): void => {
-    const query = encodeToQueryString(expr);
-    window.history.pushState({}, '', query);
-  };
-
   const handleSearchChange = (value: string) => {
-    updateURL(value);
+    setQuerySearchFilter(value);
     if (value !== '') {
       const pattern = value.trim();
       const result: RuleGroup[] = [];
@@ -106,13 +100,7 @@ const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
     }
   };
 
-  const defaultValue = useMemo(() => {
-    const locationSearch = window.location.search;
-    const params = new URLSearchParams(locationSearch);
-    const search = params.get('expr') || '';
-    handleSearchChange(search);
-    return search;
-  }, []);
+  const defaultValue = useMemo(getQuerySearchFilter, []);
 
   useEffect(() => {
     const result: RuleGroup[] = [];

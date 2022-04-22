@@ -100,6 +100,7 @@ exports[`AlertsContent matches a snapshot 1`] = `
       }
     >
       <SearchBar
+        defaultValue=""
         handleChange={[Function]}
         placeholder="Filter by name or labels"
       />

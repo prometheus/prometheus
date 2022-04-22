@@ -12,7 +12,7 @@ import { useLocalStorage } from '../../hooks/useLocalStorage';
 import styles from './ScrapePoolPanel.module.css';
 import { ToggleMoreLess } from '../../components/ToggleMoreLess';
 import SearchBar from '../../components/SearchBar';
-import { encodeToQueryString } from '../../utils/index';
+import { setQuerySearchFilter, getQuerySearchFilter } from '../../utils/index';
 
 interface ScrapePoolListProps {
   activeTargets: Target[];
@@ -73,13 +73,8 @@ const ScrapePoolListContent: FC<ScrapePoolListProps> = ({ activeTargets }) => {
   const [expanded, setExpanded] = useLocalStorage('targets-page-expansion-state', initialExpanded);
   const { showHealthy, showUnhealthy } = filter;
 
-  const updateURL = (expr: string): void => {
-    const query = encodeToQueryString(expr);
-    window.history.pushState({}, '', query);
-  };
-
   const handleSearchChange = (value: string) => {
-    updateURL(value);
+    setQuerySearchFilter(value);
     if (value !== '') {
       const result = kvSearch.filter(value.trim(), activeTargets);
       setTargetList(result.map((value) => value.original));
@@ -88,13 +83,7 @@ const ScrapePoolListContent: FC<ScrapePoolListProps> = ({ activeTargets }) => {
     }
   };
 
-  const defaultValue = useMemo(() => {
-    const locationSearch = window.location.search;
-    const params = new URLSearchParams(locationSearch);
-    const search = params.get('expr') || '';
-    handleSearchChange(search);
-    return search;
-  }, []);
+  const defaultValue = useMemo(getQuerySearchFilter, []);
 
   useEffect(() => {
     const list = targetList.filter((t) => showHealthy || t.health.toLowerCase() !== 'up');

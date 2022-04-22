@@ -4,13 +4,12 @@ import { LabelsTable } from './LabelsTable';
 import { DroppedTarget, Labels, Target } from '../targets/target';
 
 import { withStatusIndicator } from '../../components/withStatusIndicator';
-import { mapObjEntries } from '../../utils';
+import { setQuerySearchFilter, mapObjEntries, getQuerySearchFilter } from '../../utils';
 import { usePathPrefix } from '../../contexts/PathPrefixContext';
 import { API_PATH } from '../../constants/constants';
 import { KVSearch } from '@nexucis/kvsearch';
 import { Container } from 'reactstrap';
 import SearchBar from '../../components/SearchBar';
-import { encodeToQueryString } from '../../utils/index';
 
 interface ServiceMap {
   activeTargets: Target[];
@@ -90,18 +89,13 @@ export const processTargets = (activeTargets: Target[], droppedTargets: DroppedT
   return labels;
 };
 
-const updateURL = (expr: string): void => {
-  const query = encodeToQueryString(expr);
-  window.history.pushState({}, '', query);
-};
-
 export const ServiceDiscoveryContent: FC<ServiceMap> = ({ activeTargets, droppedTargets }) => {
   const [activeTargetList, setActiveTargetList] = useState(activeTargets);
   const [targetList, setTargetList] = useState(processSummary(activeTargets, droppedTargets));
   const [labelList, setLabelList] = useState(processTargets(activeTargets, droppedTargets));
 
   const handleSearchChange = (value: string) => {
-    updateURL(value);
+    setQuerySearchFilter(value);
     if (value !== '') {
       const result = kvSearch.filter(value.trim(), activeTargets);
       setActiveTargetList(result.map((value) => value.original));
@@ -110,13 +104,7 @@ export const ServiceDiscoveryContent: FC<ServiceMap> = ({ activeTargets, dropped
     }
   };
 
-  const defaultValue = useMemo(() => {
-    const locationSearch = window.location.search;
-    const params = new URLSearchParams(locationSearch);
-    const search = params.get('expr') || '';
-    handleSearchChange(search);
-    return search;
-  }, []);
+  const defaultValue = useMemo(getQuerySearchFilter, []);
 
   useEffect(() => {
     setTargetList(processSummary(activeTargetList, droppedTargets));
