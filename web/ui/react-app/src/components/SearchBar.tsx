@@ -21,7 +21,7 @@ const SearchBar: FC<SearchBarProps> = ({ handleChange, placeholder, defaultValue
 
   useEffect(() => {
     handleChange(defaultValue);
-  }, []);
+  }, [defaultValue]);
 
   return (
     <InputGroup>
