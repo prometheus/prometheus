@@ -1393,6 +1393,9 @@ func (s *stripeSeries) gc(mint int64) (map[storage.SeriesRef]struct{}, int, int6
 					continue
 				}
 
+				// Mark the series as deleted inside the lock to prevent reusing this object
+				series.deleted = true
+
 				// The series is gone entirely. We need to keep the series lock
 				// and make sure we have acquired the stripe locks for hash and ID of the
 				// series alike.
@@ -1532,6 +1535,8 @@ type memSeries struct {
 	sampleBuf [4]sample
 
 	pendingCommit bool // Whether there are samples waiting to be committed to this series.
+
+	deleted bool // Whether the series as GC'ed
 
 	// Current appender for the head chunk. Set when a new head chunk is cut.
 	// It is nil only if headChunk is nil. E.g. if there was an appender that created a new series, but rolled back the commit

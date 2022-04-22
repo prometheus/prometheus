@@ -274,7 +274,7 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 	}
 
 	s.Lock()
-	if err := s.appendable(t, v); err != nil {
+	if err := s.appendable(t, v); err != nil || s.deleted {
 		s.Unlock()
 		if err == storage.ErrOutOfOrderSample {
 			a.head.metrics.outOfOrderSamples.Inc()

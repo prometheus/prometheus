@@ -62,15 +62,15 @@ func TestMain(m *testing.M) {
 	goleak.VerifyTestMain(m, goleak.IgnoreTopFunction("github.com/prometheus/prometheus/tsdb.(*SegmentWAL).cut.func1"), goleak.IgnoreTopFunction("github.com/prometheus/prometheus/tsdb.(*SegmentWAL).cut.func2"))
 }
 
-func openTestDB(t testing.TB, opts *Options, rngs []int64) (db *DB) {
+func openTestDB(t testing.TB, opts *Options, rngs []int64, r prometheus.Registerer) (db *DB) {
 	tmpdir := t.TempDir()
 	var err error
 
 	if len(rngs) == 0 {
-		db, err = Open(tmpdir, nil, nil, opts, nil)
+		db, err = Open(tmpdir, nil, r, opts, nil)
 	} else {
 		opts, rngs = validateOpts(opts, rngs)
-		db, err = open(tmpdir, nil, nil, opts, rngs, nil)
+		db, err = open(tmpdir, nil, r, opts, rngs, nil)
 	}
 	require.NoError(t, err)
 
@@ -140,10 +140,52 @@ func queryChunks(t testing.TB, q storage.ChunkQuerier, matchers ...*labels.Match
 	return result
 }
 
+func TestDB_appendAndCompactHeadConcurrently(t *testing.T) {
+	r := prometheus.NewRegistry()
+	db := openTestDB(t, nil, []int64{100}, r)
+	defer func() {
+		require.NoError(t, db.Close())
+	}()
+
+	var wg sync.WaitGroup
+	push := func(i, j int, w *sync.WaitGroup) {
+		app := db.Appender(context.Background())
+		lset := labels.FromStrings("foo2", fmt.Sprintf("int%d", i))
+		app.Append(0, lset, int64(j), rand.Float64())
+		app.Commit()
+		w.Done()
+	}
+	for j := 0; j < 5000; j++ {
+		picked := map[int]struct{}{}
+		for i := 0; i < 20; i++ {
+			wg.Add(2)
+			s := rand.Int() % 400000
+			for {
+				if _, ok := picked[s]; !ok {
+					picked[s] = struct{}{}
+					break
+				}
+				s = rand.Int() % 400000
+			}
+			go push(s, j, &wg)
+			go push(s, j, &wg)
+		}
+		wg.Wait()
+		err := prom_testutil.GatherAndCompare(r, strings.NewReader(fmt.Sprintf(`
+        	            	# HELP prometheus_tsdb_head_samples_appended_total Total number of appended samples.
+        	            	# TYPE prometheus_tsdb_head_samples_appended_total counter
+        	            	prometheus_tsdb_head_samples_appended_total %d
+		`, (j+1)*20)), "prometheus_tsdb_head_samples_appended_total")
+		require.NoError(t, err)
+	}
+
+	wg.Wait()
+}
+
 // Ensure that blocks are held in memory in their time order
 // and not in ULID order as they are read from the directory.
 func TestDB_reloadOrder(t *testing.T) {
-	db := openTestDB(t, nil, nil)
+	db := openTestDB(t, nil, nil, nil)
 	defer func() {
 		require.NoError(t, db.Close())
 	}()
@@ -169,7 +211,7 @@ func TestDB_reloadOrder(t *testing.T) {
 }
 
 func TestDataAvailableOnlyAfterCommit(t *testing.T) {
-	db := openTestDB(t, nil, nil)
+	db := openTestDB(t, nil, nil, nil)
 	defer func() {
 		require.NoError(t, db.Close())
 	}()
@@ -200,7 +242,7 @@ func TestDataAvailableOnlyAfterCommit(t *testing.T) {
 // TestNoPanicAfterWALCorruption ensures that querying the db after a WAL corruption doesn't cause a panic.
 // https://github.com/prometheus/prometheus/issues/7548
 func TestNoPanicAfterWALCorruption(t *testing.T) {
-	db := openTestDB(t, &Options{WALSegmentSize: 32 * 1024}, nil)
+	db := openTestDB(t, &Options{WALSegmentSize: 32 * 1024}, nil, nil)
 
 	// Append until the first mmaped head chunk.
 	// This is to ensure that all samples can be read from the mmaped chunks when the WAL is corrupted.
@@ -255,7 +297,7 @@ func TestNoPanicAfterWALCorruption(t *testing.T) {
 }
 
 func TestDataNotAvailableAfterRollback(t *testing.T) {
-	db := openTestDB(t, nil, nil)
+	db := openTestDB(t, nil, nil, nil)
 	defer func() {
 		require.NoError(t, db.Close())
 	}()
@@ -277,7 +319,7 @@ func TestDataNotAvailableAfterRollback(t *testing.T) {
 }
 
 func TestDBAppenderAddRef(t *testing.T) {
-	db := openTestDB(t, nil, nil)
+	db := openTestDB(t, nil, nil, nil)
 	defer func() {
 		require.NoError(t, db.Close())
 	}()
@@ -335,7 +377,7 @@ func TestDBAppenderAddRef(t *testing.T) {
 }
 
 func TestAppendEmptyLabelsIgnored(t *testing.T) {
-	db := openTestDB(t, nil, nil)
+	db := openTestDB(t, nil, nil, nil)
 	defer func() {
 		require.NoError(t, db.Close())
 	}()
@@ -388,7 +430,7 @@ func TestDeleteSimple(t *testing.T) {
 
 Outer:
 	for _, c := range cases {
-		db := openTestDB(t, nil, nil)
+		db := openTestDB(t, nil, nil, nil)
 		defer func() {
 			require.NoError(t, db.Close())
 		}()
@@ -448,7 +490,7 @@ Outer:
 }
 
 func TestAmendDatapointCausesError(t *testing.T) {
-	db := openTestDB(t, nil, nil)
+	db := openTestDB(t, nil, nil, nil)
 	defer func() {
 		require.NoError(t, db.Close())
 	}()
@@ -466,7 +508,7 @@ func TestAmendDatapointCausesError(t *testing.T) {
 }
 
 func TestDuplicateNaNDatapointNoAmendError(t *testing.T) {
-	db := openTestDB(t, nil, nil)
+	db := openTestDB(t, nil, nil, nil)
 	defer func() {
 		require.NoError(t, db.Close())
 	}()
@@ -483,7 +525,7 @@ func TestDuplicateNaNDatapointNoAmendError(t *testing.T) {
 }
 
 func TestNonDuplicateNaNDatapointsCausesAmendError(t *testing.T) {
-	db := openTestDB(t, nil, nil)
+	db := openTestDB(t, nil, nil, nil)
 	defer func() {
 		require.NoError(t, db.Close())
 	}()
@@ -500,7 +542,7 @@ func TestNonDuplicateNaNDatapointsCausesAmendError(t *testing.T) {
 }
 
 func TestEmptyLabelsetCausesError(t *testing.T) {
-	db := openTestDB(t, nil, nil)
+	db := openTestDB(t, nil, nil, nil)
 	defer func() {
 		require.NoError(t, db.Close())
 	}()
@@ -513,7 +555,7 @@ func TestEmptyLabelsetCausesError(t *testing.T) {
 }
 
 func TestSkippingInvalidValuesInSameTxn(t *testing.T) {
-	db := openTestDB(t, nil, nil)
+	db := openTestDB(t, nil, nil, nil)
 	defer func() {
 		require.NoError(t, db.Close())
 	}()
@@ -556,7 +598,7 @@ func TestSkippingInvalidValuesInSameTxn(t *testing.T) {
 }
 
 func TestDB_Snapshot(t *testing.T) {
-	db := openTestDB(t, nil, nil)
+	db := openTestDB(t, nil, nil, nil)
 
 	// append data
 	ctx := context.Background()
@@ -602,7 +644,7 @@ func TestDB_Snapshot(t *testing.T) {
 // that are outside the set block time range.
 // See https://github.com/prometheus/prometheus/issues/5105
 func TestDB_Snapshot_ChunksOutsideOfCompactedRange(t *testing.T) {
-	db := openTestDB(t, nil, nil)
+	db := openTestDB(t, nil, nil, nil)
 
 	ctx := context.Background()
 	app := db.Appender(ctx)
@@ -651,7 +693,7 @@ func TestDB_Snapshot_ChunksOutsideOfCompactedRange(t *testing.T) {
 func TestDB_SnapshotWithDelete(t *testing.T) {
 	numSamples := int64(10)
 
-	db := openTestDB(t, nil, nil)
+	db := openTestDB(t, nil, nil, nil)
 	defer func() { require.NoError(t, db.Close()) }()
 
 	ctx := context.Background()
@@ -790,7 +832,7 @@ func TestDB_e2e(t *testing.T) {
 		seriesMap[labels.New(l...).String()] = []tsdbutil.Sample{}
 	}
 
-	db := openTestDB(t, nil, nil)
+	db := openTestDB(t, nil, nil, nil)
 	defer func() {
 		require.NoError(t, db.Close())
 	}()
@@ -894,7 +936,7 @@ func TestDB_e2e(t *testing.T) {
 }
 
 func TestWALFlushedOnDBClose(t *testing.T) {
-	db := openTestDB(t, nil, nil)
+	db := openTestDB(t, nil, nil, nil)
 
 	dirDb := db.Dir()
 
@@ -976,7 +1018,7 @@ func TestWALSegmentSizeOptions(t *testing.T) {
 		t.Run(fmt.Sprintf("WALSegmentSize %d test", segmentSize), func(t *testing.T) {
 			opts := DefaultOptions()
 			opts.WALSegmentSize = segmentSize
-			db := openTestDB(t, opts, nil)
+			db := openTestDB(t, opts, nil, nil)
 
 			for i := int64(0); i < 155; i++ {
 				app := db.Appender(context.Background())
@@ -1018,7 +1060,7 @@ func TestWALReplayRaceOnSamplesLoggedBeforeSeries(t *testing.T) {
 func testWALReplayRaceOnSamplesLoggedBeforeSeries(t *testing.T, numSamplesBeforeSeriesCreation, numSamplesAfterSeriesCreation int) {
 	const numSeries = 1000
 
-	db := openTestDB(t, nil, nil)
+	db := openTestDB(t, nil, nil, nil)
 	db.DisableCompactions()
 
 	for seriesRef := 1; seriesRef <= numSeries; seriesRef++ {
@@ -1085,7 +1127,7 @@ func testWALReplayRaceOnSamplesLoggedBeforeSeries(t *testing.T, numSamplesBefore
 func TestTombstoneClean(t *testing.T) {
 	numSamples := int64(10)
 
-	db := openTestDB(t, nil, nil)
+	db := openTestDB(t, nil, nil, nil)
 
 	ctx := context.Background()
 	app := db.Appender(ctx)
@@ -1179,7 +1221,7 @@ func TestTombstoneClean(t *testing.T) {
 func TestTombstoneCleanResultEmptyBlock(t *testing.T) {
 	numSamples := int64(10)
 
-	db := openTestDB(t, nil, nil)
+	db := openTestDB(t, nil, nil, nil)
 
 	ctx := context.Background()
 	app := db.Appender(ctx)
@@ -1221,7 +1263,7 @@ func TestTombstoneCleanResultEmptyBlock(t *testing.T) {
 // When TombstoneClean errors the original block that should be rebuilt doesn't get deleted so
 // if TombstoneClean leaves any blocks behind these will overlap.
 func TestTombstoneCleanFail(t *testing.T) {
-	db := openTestDB(t, nil, nil)
+	db := openTestDB(t, nil, nil, nil)
 	defer func() {
 		require.NoError(t, db.Close())
 	}()
@@ -1282,7 +1324,7 @@ func TestTombstoneCleanRetentionLimitsRace(t *testing.T) {
 	// That is something tricky to trigger, so let's try several times just to make sure.
 	for i := 0; i < 20; i++ {
 		t.Run(fmt.Sprintf("iteration%d", i), func(t *testing.T) {
-			db := openTestDB(t, opts, nil)
+			db := openTestDB(t, opts, nil, nil)
 			totalBlocks := 20
 			dbDir := db.Dir()
 			// Generate some blocks with old mint (near epoch).
@@ -1372,7 +1414,7 @@ func (*mockCompactorFailing) Compact(string, []string, []*Block) (ulid.ULID, err
 }
 
 func TestTimeRetention(t *testing.T) {
-	db := openTestDB(t, nil, []int64{1000})
+	db := openTestDB(t, nil, []int64{1000}, nil)
 	defer func() {
 		require.NoError(t, db.Close())
 	}()
@@ -1403,7 +1445,7 @@ func TestTimeRetention(t *testing.T) {
 }
 
 func TestSizeRetention(t *testing.T) {
-	db := openTestDB(t, nil, []int64{100})
+	db := openTestDB(t, nil, []int64{100}, nil)
 	defer func() {
 		require.NoError(t, db.Close())
 	}()
@@ -1528,7 +1570,7 @@ func TestSizeRetentionMetric(t *testing.T) {
 	for _, c := range cases {
 		db := openTestDB(t, &Options{
 			MaxBytes: c.maxBytes,
-		}, []int64{100})
+		}, []int64{100}, nil)
 		defer func() {
 			require.NoError(t, db.Close())
 		}()
@@ -1539,7 +1581,7 @@ func TestSizeRetentionMetric(t *testing.T) {
 }
 
 func TestNotMatcherSelectsLabelsUnsetSeries(t *testing.T) {
-	db := openTestDB(t, nil, nil)
+	db := openTestDB(t, nil, nil, nil)
 	defer func() {
 		require.NoError(t, db.Close())
 	}()
@@ -1725,7 +1767,7 @@ func TestOverlappingBlocksDetectsAllOverlaps(t *testing.T) {
 
 // Regression test for https://github.com/prometheus/tsdb/issues/347
 func TestChunkAtBlockBoundary(t *testing.T) {
-	db := openTestDB(t, nil, nil)
+	db := openTestDB(t, nil, nil, nil)
 	defer func() {
 		require.NoError(t, db.Close())
 	}()
@@ -1782,7 +1824,7 @@ func TestChunkAtBlockBoundary(t *testing.T) {
 }
 
 func TestQuerierWithBoundaryChunks(t *testing.T) {
-	db := openTestDB(t, nil, nil)
+	db := openTestDB(t, nil, nil, nil)
 	defer func() {
 		require.NoError(t, db.Close())
 	}()
@@ -1922,7 +1964,7 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 }
 
 func TestNoEmptyBlocks(t *testing.T) {
-	db := openTestDB(t, nil, []int64{100})
+	db := openTestDB(t, nil, []int64{100}, nil)
 	ctx := context.Background()
 	defer func() {
 		require.NoError(t, db.Close())
@@ -2081,7 +2123,7 @@ func TestDB_LabelNames(t *testing.T) {
 		require.NoError(t, err)
 	}
 	for _, tst := range tests {
-		db := openTestDB(t, nil, nil)
+		db := openTestDB(t, nil, nil, nil)
 		defer func() {
 			require.NoError(t, db.Close())
 		}()
@@ -2127,7 +2169,7 @@ func TestDB_LabelNames(t *testing.T) {
 }
 
 func TestCorrectNumTombstones(t *testing.T) {
-	db := openTestDB(t, nil, nil)
+	db := openTestDB(t, nil, nil, nil)
 	defer func() {
 		require.NoError(t, db.Close())
 	}()
@@ -3185,7 +3227,7 @@ func testQuerierShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChunks(t 
 		maxStressAllocationBytes = 512 * 1024
 	)
 
-	db := openTestDB(t, nil, nil)
+	db := openTestDB(t, nil, nil, nil)
 	defer func() {
 		require.NoError(t, db.Close())
 	}()
@@ -3321,7 +3363,7 @@ func testChunkQuerierShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChun
 		maxStressAllocationBytes = 512 * 1024
 	)
 
-	db := openTestDB(t, nil, nil)
+	db := openTestDB(t, nil, nil, nil)
 	defer func() {
 		require.NoError(t, db.Close())
 	}()
