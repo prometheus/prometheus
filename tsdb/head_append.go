@@ -247,42 +247,51 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 		return 0, storage.ErrOutOfBounds
 	}
 
-	s := a.head.series.getByID(chunks.HeadSeriesRef(ref))
-	if s == nil {
-		// Ensure no empty labels have gotten through.
-		lset = lset.WithoutEmpty()
-		if len(lset) == 0 {
-			return 0, errors.Wrap(ErrInvalidSample, "empty labelset")
-		}
+	var s *memSeries
 
-		if l, dup := lset.HasDuplicateLabelNames(); dup {
-			return 0, errors.Wrap(ErrInvalidSample, fmt.Sprintf(`label name "%s" is not unique`, l))
-		}
+	for s == nil {
+		s = a.head.series.getByID(chunks.HeadSeriesRef(ref))
+		if s == nil {
+			// Ensure no empty labels have gotten through.
+			lset = lset.WithoutEmpty()
+			if len(lset) == 0 {
+				return 0, errors.Wrap(ErrInvalidSample, "empty labelset")
+			}
 
-		var created bool
-		var err error
-		s, created, err = a.head.getOrCreate(lset.Hash(), lset)
-		if err != nil {
+			if l, dup := lset.HasDuplicateLabelNames(); dup {
+				return 0, errors.Wrap(ErrInvalidSample, fmt.Sprintf(`label name "%s" is not unique`, l))
+			}
+
+			var created bool
+			var err error
+			s, created, err = a.head.getOrCreate(lset.Hash(), lset)
+			if err != nil {
+				return 0, err
+			}
+			if created {
+				a.series = append(a.series, record.RefSeries{
+					Ref:    s.ref,
+					Labels: lset,
+				})
+			}
+		}
+		s.Lock()
+		// This series got gce'd, getting the next one
+		if s.deleted {
+			s.Unlock()
+			s = nil
+			continue
+		}
+		if err := s.appendable(t, v); err != nil {
+			s.Unlock()
+			if err == storage.ErrOutOfOrderSample {
+				a.head.metrics.outOfOrderSamples.Inc()
+			}
 			return 0, err
 		}
-		if created {
-			a.series = append(a.series, record.RefSeries{
-				Ref:    s.ref,
-				Labels: lset,
-			})
-		}
-	}
-
-	s.Lock()
-	if err := s.appendable(t, v); err != nil || s.deleted {
+		s.pendingCommit = true
 		s.Unlock()
-		if err == storage.ErrOutOfOrderSample {
-			a.head.metrics.outOfOrderSamples.Inc()
-		}
-		return 0, err
 	}
-	s.pendingCommit = true
-	s.Unlock()
 
 	if t < a.mint {
 		a.mint = t
