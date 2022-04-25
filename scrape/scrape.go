@@ -316,6 +316,8 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed 
 			opts.interval,
 			opts.timeout,
 			reportExtraMetrics,
+			opts.target,
+			cache,
 		)
 	}
 
@@ -857,6 +859,7 @@ type scrapeLoop struct {
 	reportSampleMutator labelsMutator
 
 	parentCtx context.Context
+	appCtx    context.Context
 	ctx       context.Context
 	cancel    func()
 	stopped   chan struct{}
@@ -1125,6 +1128,8 @@ func newScrapeLoop(ctx context.Context,
 	interval time.Duration,
 	timeout time.Duration,
 	reportExtraMetrics bool,
+	target *Target,
+	metricMetadataStore MetricMetadataStore,
 ) *scrapeLoop {
 	if l == nil {
 		l = log.NewNopLogger()
@@ -1135,6 +1140,11 @@ func newScrapeLoop(ctx context.Context,
 	if cache == nil {
 		cache = newScrapeCache()
 	}
+
+	// Store the cache in the context.
+	appCtx := ContextWithMetricMetadataStore(ctx, cache)
+	appCtx = ContextWithTarget(appCtx, target)
+
 	sl := &scrapeLoop{
 		scraper:             sc,
 		buffers:             buffers,
@@ -1146,6 +1156,7 @@ func newScrapeLoop(ctx context.Context,
 		jitterSeed:          jitterSeed,
 		l:                   l,
 		parentCtx:           ctx,
+		appCtx:              appCtx,
 		honorTimestamps:     honorTimestamps,
 		sampleLimit:         sampleLimit,
 		labelLimits:         labelLimits,
@@ -1243,7 +1254,7 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 	var total, added, seriesAdded, bytes int
 	var err, appErr, scrapeErr error
 
-	app := sl.appender(sl.parentCtx)
+	app := sl.appender(sl.appCtx)
 	defer func() {
 		if err != nil {
 			app.Rollback()
@@ -1266,7 +1277,7 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 		// Add stale markers.
 		if _, _, _, err := sl.append(app, []byte{}, "", appendTime); err != nil {
 			app.Rollback()
-			app = sl.appender(sl.parentCtx)
+			app = sl.appender(sl.appCtx)
 			level.Warn(sl.l).Log("msg", "Append failed", "err", err)
 		}
 		if errc != nil {
@@ -1305,13 +1316,13 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 	total, added, seriesAdded, appErr = sl.append(app, b, contentType, appendTime)
 	if appErr != nil {
 		app.Rollback()
-		app = sl.appender(sl.parentCtx)
+		app = sl.appender(sl.appCtx)
 		level.Debug(sl.l).Log("msg", "Append failed", "err", appErr)
 		// The append failed, probably due to a parse error or sample limit.
 		// Call sl.append again with an empty scrape to trigger stale markers.
 		if _, _, _, err := sl.append(app, []byte{}, "", appendTime); err != nil {
 			app.Rollback()
-			app = sl.appender(sl.parentCtx)
+			app = sl.appender(sl.appCtx)
 			level.Warn(sl.l).Log("msg", "Append failed", "err", err)
 		}
 	}
@@ -1376,7 +1387,7 @@ func (sl *scrapeLoop) endOfRunStaleness(last time.Time, ticker *time.Ticker, int
 	// If the target has since been recreated and scraped, the
 	// stale markers will be out of order and ignored.
 	// sl.context would have been cancelled, hence using sl.parentCtx.
-	app := sl.appender(sl.parentCtx)
+	app := sl.appender(sl.appCtx)
 	var err error
 	defer func() {
 		if err != nil {
@@ -1390,7 +1401,7 @@ func (sl *scrapeLoop) endOfRunStaleness(last time.Time, ticker *time.Ticker, int
 	}()
 	if _, _, _, err = sl.append(app, []byte{}, "", staleTime); err != nil {
 		app.Rollback()
-		app = sl.appender(sl.parentCtx)
+		app = sl.appender(sl.appCtx)
 		level.Warn(sl.l).Log("msg", "Stale append failed", "err", err)
 	}
 	if err = sl.reportStale(app, staleTime); err != nil {
@@ -1791,4 +1802,32 @@ func reusableCache(r, l *config.ScrapeConfig) bool {
 		return false
 	}
 	return reflect.DeepEqual(zeroConfig(r), zeroConfig(l))
+}
+
+// CtxKey is a dedicated type for keys of context-embedded values propagated
+// with the scrape context.
+type ctxKey int
+
+// Valid CtxKey values.
+const (
+	ctxKeyMetadata ctxKey = iota + 1
+	ctxKeyTarget
+)
+
+func ContextWithMetricMetadataStore(ctx context.Context, s MetricMetadataStore) context.Context {
+	return context.WithValue(ctx, ctxKeyMetadata, s)
+}
+
+func MetricMetadataStoreFromContext(ctx context.Context) (MetricMetadataStore, bool) {
+	s, ok := ctx.Value(ctxKeyMetadata).(MetricMetadataStore)
+	return s, ok
+}
+
+func ContextWithTarget(ctx context.Context, t *Target) context.Context {
+	return context.WithValue(ctx, ctxKeyTarget, t)
+}
+
+func TargetFromContext(ctx context.Context) (*Target, bool) {
+	t, ok := ctx.Value(ctxKeyTarget).(*Target)
+	return t, ok
 }
