@@ -155,7 +155,8 @@ type HeadOptions struct {
 
 	IsolationDisabled bool
 
-	// Temporary flag which we use to select whether we want to use the new or the old chunk disk mapper.
+	// Temporary flag which we use to select whether to use the new (used in upstream
+	// Prometheus) or the old (legacy) chunk disk mapper.
 	NewChunkDiskMapper bool
 }
 
