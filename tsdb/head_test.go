@@ -1663,7 +1663,6 @@ func TestHeadReadWriterRepair(t *testing.T) {
 		opts := DefaultHeadOptions()
 		opts.ChunkRange = chunkRange
 		opts.ChunkDirRoot = dir
-		opts.ChunkWriteQueueSize = 1 // We need to set this option so that we use the async queue. Upstream prometheus uses the queue directly.
 		h, err := NewHead(nil, nil, w, opts, nil)
 		require.NoError(t, err)
 		require.Equal(t, 0.0, prom_testutil.ToFloat64(h.metrics.mmapChunkCorruptionTotal))
@@ -1688,7 +1687,14 @@ func TestHeadReadWriterRepair(t *testing.T) {
 		// take effect without another chunk being written.
 		files, err := ioutil.ReadDir(mmappedChunksDir(dir))
 		require.NoError(t, err)
-		require.Equal(t, 6, len(files))
+
+		// With the new chunk disk mapper we only expect 6 files, because the last call to "CutNewFile()" won't
+		// take effect until the next chunk is being written.
+		if opts.NewChunkDiskMapper {
+			require.Equal(t, 6, len(files))
+		} else {
+			require.Equal(t, 7, len(files))
+		}
 
 		// Corrupt the 4th file by writing a random byte to series ref.
 		f, err := os.OpenFile(filepath.Join(mmappedChunksDir(dir), files[3].Name()), os.O_WRONLY, 0o666)

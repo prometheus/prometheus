@@ -171,6 +171,9 @@ type Options struct {
 	// SeriesHashCache specifies the series hash cache used when querying shards via Querier.Select().
 	// If nil, the cache won't be used.
 	SeriesHashCache *hashcache.SeriesHashCache
+
+	// Temporary flag which we use to select whether we want to use the new or the old chunk disk mapper.
+	NewChunkDiskMapper bool
 }
 
 type BlocksToDeleteFunc func(blocks []*Block) map[ulid.ULID]struct{}
@@ -734,6 +737,7 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	headOpts.EnableExemplarStorage = opts.EnableExemplarStorage
 	headOpts.MaxExemplars.Store(opts.MaxExemplars)
 	headOpts.EnableMemorySnapshotOnShutdown = opts.EnableMemorySnapshotOnShutdown
+	headOpts.NewChunkDiskMapper = opts.NewChunkDiskMapper
 	if opts.IsolationDisabled {
 		// We only override this flag if isolation is disabled at DB level. We use the default otherwise.
 		headOpts.IsolationDisabled = opts.IsolationDisabled
