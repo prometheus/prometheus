@@ -30,7 +30,7 @@ The features that distinguish Prometheus from other metrics and monitoring syste
 
 ![](https://cdn.jsdelivr.net/gh/prometheus/prometheus@c34257d069c630685da35bcef084632ffd5d6209/documentation/images/architecture.svg)
 
-## Install
+## Install Prometheus
 
 There are various ways of installing Prometheus.
 
