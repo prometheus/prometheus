@@ -127,22 +127,23 @@ func agentOnlyFlag(app *kingpin.Application, name, help string) *kingpin.FlagCla
 type flagConfig struct {
 	configFile string
 
-	agentStoragePath    string
-	serverStoragePath   string
-	notifier            notifier.Options
-	forGracePeriod      model.Duration
-	outageTolerance     model.Duration
-	resendDelay         model.Duration
-	web                 web.Options
-	scrape              scrape.Options
-	tsdb                tsdbOptions
-	agent               agentOptions
-	lookbackDelta       model.Duration
-	webTimeout          model.Duration
-	queryTimeout        model.Duration
-	queryConcurrency    int
-	queryMaxSamples     int
-	RemoteFlushDeadline model.Duration
+	agentStoragePath        string
+	serverStoragePath       string
+	notifier                notifier.Options
+	forGracePeriod          model.Duration
+	outageTolerance         model.Duration
+	resendDelay             model.Duration
+	web                     web.Options
+	scrape                  scrape.Options
+	tsdb                    tsdbOptions
+	agent                   agentOptions
+	lookbackDelta           model.Duration
+	webTimeout              model.Duration
+	queryTimeout            model.Duration
+	queryConcurrency        int
+	queryMaxSamples         int
+	RemoteFlushDeadline     model.Duration
+	DiscoveryReloadInterval model.Duration
 
 	featureList []string
 	// These options are extracted from featureList
@@ -386,6 +387,9 @@ func main() {
 
 	serverOnlyFlag(a, "query.max-samples", "Maximum number of samples a single query can load into memory. Note that queries will fail if they try to load more samples than this into memory, so this also limits the number of samples a query can return.").
 		Default("50000000").IntVar(&cfg.queryMaxSamples)
+
+	a.Flag("discovery.reload.interval", "Reloading interval to refresh target groups (default 5s).").
+		Hidden().Default("5s").SetValue(&cfg.scrape.DiscoveryReloadInterval)
 
 	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: agent, exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-at-modifier, promql-negative-offset, promql-per-step-stats, remote-write-receiver (DEPRECATED), extra-scrape-metrics, new-service-discovery-manager, auto-gomaxprocs. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
 		Default("").StringsVar(&cfg.featureList)
