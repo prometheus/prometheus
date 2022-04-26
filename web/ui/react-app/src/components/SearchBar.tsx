@@ -21,7 +21,8 @@ const SearchBar: FC<SearchBarProps> = ({ handleChange, placeholder, defaultValue
 
   useEffect(() => {
     handleChange(defaultValue);
-  }, [defaultValue]); //eslint-disable-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [defaultValue]);
 
   return (
     <InputGroup>
