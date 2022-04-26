@@ -1,4 +1,4 @@
-import React, { FC, useEffect, useMemo, useState } from 'react';
+import React, { FC, useCallback, useEffect, useMemo, useState } from 'react';
 import { useFetch } from '../../hooks/useFetch';
 import { LabelsTable } from './LabelsTable';
 import { DroppedTarget, Labels, Target } from '../targets/target';
@@ -94,15 +94,18 @@ export const ServiceDiscoveryContent: FC<ServiceMap> = ({ activeTargets, dropped
   const [targetList, setTargetList] = useState(processSummary(activeTargets, droppedTargets));
   const [labelList, setLabelList] = useState(processTargets(activeTargets, droppedTargets));
 
-  const handleSearchChange = (value: string) => {
-    setQuerySearchFilter(value);
-    if (value !== '') {
-      const result = kvSearch.filter(value.trim(), activeTargets);
-      setActiveTargetList(result.map((value) => value.original));
-    } else {
-      setActiveTargetList(activeTargets);
-    }
-  };
+  const handleSearchChange = useCallback(
+    (value: string) => {
+      setQuerySearchFilter(value);
+      if (value !== '') {
+        const result = kvSearch.filter(value.trim(), activeTargets);
+        setActiveTargetList(result.map((value) => value.original));
+      } else {
+        setActiveTargetList(activeTargets);
+      }
+    },
+    [activeTargets]
+  );
 
   const defaultValue = useMemo(getQuerySearchFilter, []);
 

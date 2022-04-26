@@ -4,7 +4,7 @@ import { useFetch } from '../../hooks/useFetch';
 import { API_PATH } from '../../constants/constants';
 import { groupTargets, ScrapePool, ScrapePools, Target } from './target';
 import { withStatusIndicator } from '../../components/withStatusIndicator';
-import { FC, useEffect, useMemo, useState } from 'react';
+import { FC, useCallback, useEffect, useMemo, useState } from 'react';
 import { Col, Collapse, Row } from 'reactstrap';
 import { ScrapePoolContent } from './ScrapePoolContent';
 import Filter, { Expanded, FilterData } from './Filter';
@@ -73,15 +73,18 @@ const ScrapePoolListContent: FC<ScrapePoolListProps> = ({ activeTargets }) => {
   const [expanded, setExpanded] = useLocalStorage('targets-page-expansion-state', initialExpanded);
   const { showHealthy, showUnhealthy } = filter;
 
-  const handleSearchChange = (value: string) => {
-    setQuerySearchFilter(value);
-    if (value !== '') {
-      const result = kvSearch.filter(value.trim(), activeTargets);
-      setTargetList(result.map((value) => value.original));
-    } else {
-      setTargetList(activeTargets);
-    }
-  };
+  const handleSearchChange = useCallback(
+    (value: string) => {
+      setQuerySearchFilter(value);
+      if (value !== '') {
+        const result = kvSearch.filter(value.trim(), activeTargets);
+        setTargetList(result.map((value) => value.original));
+      } else {
+        setTargetList(activeTargets);
+      }
+    },
+    [activeTargets]
+  );
 
   const defaultValue = useMemo(getQuerySearchFilter, []);
 

@@ -1,4 +1,4 @@
-import React, { FC, Fragment, useEffect, useMemo, useState } from 'react';
+import React, { FC, Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { Badge, Col, Row } from 'reactstrap';
 import CollapsibleAlertPanel from './CollapsibleAlertPanel';
 import Checkbox from '../../components/Checkbox';
@@ -78,27 +78,30 @@ const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
     });
   };
 
-  const handleSearchChange = (value: string) => {
-    setQuerySearchFilter(value);
-    if (value !== '') {
-      const pattern = value.trim();
-      const result: RuleGroup[] = [];
-      for (const group of groups) {
-        const ruleFilterList = kvSearchRule.filter(pattern, group.rules);
-        if (ruleFilterList.length > 0) {
-          result.push({
-            file: group.file,
-            name: group.name,
-            interval: group.interval,
-            rules: ruleFilterList.map((value) => value.original),
-          });
+  const handleSearchChange = useCallback(
+    (value: string) => {
+      setQuerySearchFilter(value);
+      if (value !== '') {
+        const pattern = value.trim();
+        const result: RuleGroup[] = [];
+        for (const group of groups) {
+          const ruleFilterList = kvSearchRule.filter(pattern, group.rules);
+          if (ruleFilterList.length > 0) {
+            result.push({
+              file: group.file,
+              name: group.name,
+              interval: group.interval,
+              rules: ruleFilterList.map((value) => value.original),
+            });
+          }
         }
+        setGroupList(result);
+      } else {
+        setGroupList(groups);
       }
-      setGroupList(result);
-    } else {
-      setGroupList(groups);
-    }
-  };
+    },
+    [groups]
+  );
 
   const defaultValue = useMemo(getQuerySearchFilter, []);
 
