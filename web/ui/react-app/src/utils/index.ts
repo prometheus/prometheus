@@ -243,14 +243,14 @@ export const encodePanelOptionsToQueryString = (panels: PanelMeta[]): string => 
   return `?${panels.map(toQueryString).join('&')}`;
 };
 
-export const setQuerySearchFilter = (expr: string) => {
-  window.history.pushState({}, '', `?expr=${expr}`);
+export const setQuerySearchFilter = (search: string) => {
+  window.history.pushState({}, '', `?search=${search}`);
 };
 
 export const getQuerySearchFilter = (): string => {
   const locationSearch = window.location.search;
   const params = new URLSearchParams(locationSearch);
-  const search = params.get('expr') || '';
+  const search = params.get('search') || '';
   return search;
 };
 
