@@ -2,9 +2,9 @@
 
 This Prometheus release is built with go1.18, which contains two noticeable changes related to TLS:
 
-* [TLS 1.0 and 1.1 disabled by default client-side](https://go.dev/doc/go1.18#tls10). 
+1. [TLS 1.0 and 1.1 disabled by default client-side](https://go.dev/doc/go1.18#tls10). 
 Prometheus users can override this with the `min_version` parameter of [tls_config](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#tls_config).
-* [Certificates signed with the SHA-1 hash function are rejected](https://go.dev/doc/go1.18#sha1). This doesn't apply to self-signed root certificates.
+2. [Certificates signed with the SHA-1 hash function are rejected](https://go.dev/doc/go1.18#sha1). This doesn't apply to self-signed root certificates.
 
 * [CHANGE] TSDB: Delete `*.tmp` WAL files when Prometheus starts. #10317
 * [CHANGE] promtool: Add new flag `--lint` (enabled by default) for the commands `check rules` and `check config`, resulting in a new exit code (`3`) for linter errors. #10435
