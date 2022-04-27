@@ -70,7 +70,7 @@ and `promtool` binaries into your `GOPATH`:
 read its web assets from local filesystem directories under `web/ui/static` and
 `web/ui/templates`. In order for these assets to be found, you will have to run Prometheus
 from the root of the cloned repository. Note also that these directories do not include the
-new experimental React UI unless it has been built explicitly using `make assets` or `make build`.
+React UI unless it has been built explicitly using `make assets` or `make build`.
 
 An example of the above configuration file can be found [here.](https://github.com/prometheus/prometheus/blob/main/documentation/examples/prometheus.yml)
 
@@ -91,7 +91,7 @@ The Makefile provides several targets:
   * *test-short*: run the short tests
   * *format*: format the source code
   * *vet*: check the source code for common errors
-  * *assets*: build the new experimental React UI
+  * *assets*: build the React UI
 
 ### Service discovery plugins
 
@@ -155,7 +155,7 @@ zero](https://semver.org/#spec-item-4).
 
 ## React UI Development
 
-For more information on building, running, and developing on the new React-based UI, see the React app's [README.md](web/ui/README.md).
+For more information on building, running, and developing on the React-based UI, see the React app's [README.md](web/ui/README.md).
 
 ## More information
 
