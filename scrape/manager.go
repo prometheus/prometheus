@@ -173,7 +173,13 @@ func (m *Manager) Run(tsets <-chan map[string][]*targetgroup.Group) error {
 }
 
 func (m *Manager) reloader() {
-	ticker := time.NewTicker(time.Duration(m.opts.DiscoveryReloadInterval))
+	reloadIntervalDuration := m.opts.DiscoveryReloadInterval
+	if reloadIntervalDuration < model.Duration(5*time.Second) {
+		reloadIntervalDuration = model.Duration(5 * time.Second)
+	}
+
+	ticker := time.NewTicker(time.Duration(reloadIntervalDuration))
+
 	defer ticker.Stop()
 
 	for {
