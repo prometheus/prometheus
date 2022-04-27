@@ -1288,7 +1288,7 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 	}
 
 	var contentType string
-	scrapeCtx, cancel := context.WithTimeout(sl.parentCtx, sl.timeout)
+	scrapeCtx, cancel := context.WithTimeout(sl.appCtx, sl.timeout)
 	contentType, scrapeErr = sl.scraper.scrape(scrapeCtx, buf)
 	cancel()
 
