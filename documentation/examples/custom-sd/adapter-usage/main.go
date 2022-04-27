@@ -18,7 +18,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"os"
@@ -101,11 +100,11 @@ func (d *discovery) parseServiceNodes(resp *http.Response, name string) (*target
 	}
 
 	defer func() {
-		io.Copy(ioutil.Discard, resp.Body)
+		io.Copy(io.Discard, resp.Body)
 		resp.Body.Close()
 	}()
 
-	b, err := ioutil.ReadAll(resp.Body)
+	b, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}
@@ -168,8 +167,8 @@ func (d *discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			continue
 		}
 
-		b, err := ioutil.ReadAll(resp.Body)
-		io.Copy(ioutil.Discard, resp.Body)
+		b, err := io.ReadAll(resp.Body)
+		io.Copy(io.Discard, resp.Body)
 		resp.Body.Close()
 		if err != nil {
 			level.Error(d.logger).Log("msg", "Error reading services list", "err", err)

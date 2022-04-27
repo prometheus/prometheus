@@ -16,7 +16,6 @@ package rules
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"math"
 	"os"
 	"sort"
@@ -752,7 +751,7 @@ func TestUpdate(t *testing.T) {
 	rgs, errs := rulefmt.ParseFile("fixtures/rules.yaml")
 	require.Equal(t, 0, len(errs), "file parsing failures")
 
-	tmpFile, err := ioutil.TempFile("", "rules.test.*.yaml")
+	tmpFile, err := os.CreateTemp("", "rules.test.*.yaml")
 	require.NoError(t, err)
 	defer os.Remove(tmpFile.Name())
 	defer tmpFile.Close()

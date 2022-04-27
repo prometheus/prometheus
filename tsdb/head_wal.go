@@ -15,7 +15,6 @@ package tsdb
 
 import (
 	"fmt"
-	"io/ioutil"
 	"math"
 	"os"
 	"path/filepath"
@@ -760,7 +759,7 @@ type ChunkSnapshotStats struct {
 // LastChunkSnapshot returns the directory name and index of the most recent chunk snapshot.
 // If dir does not contain any chunk snapshots, ErrNotFound is returned.
 func LastChunkSnapshot(dir string) (string, int, int, error) {
-	files, err := ioutil.ReadDir(dir)
+	files, err := os.ReadDir(dir)
 	if err != nil {
 		return "", 0, 0, err
 	}
@@ -805,7 +804,7 @@ func LastChunkSnapshot(dir string) (string, int, int, error) {
 
 // DeleteChunkSnapshots deletes all chunk snapshots in a directory below a given index.
 func DeleteChunkSnapshots(dir string, maxIndex, maxOffset int) error {
-	files, err := ioutil.ReadDir(dir)
+	files, err := os.ReadDir(dir)
 	if err != nil {
 		return err
 	}

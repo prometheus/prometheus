@@ -17,7 +17,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net"
 	"net/http"
 	"net/url"
@@ -235,10 +235,10 @@ func (p *queryLogTest) run(t *testing.T) {
 	p.skip(t)
 
 	// Setup temporary files for this test.
-	queryLogFile, err := ioutil.TempFile("", "query")
+	queryLogFile, err := os.CreateTemp("", "query")
 	require.NoError(t, err)
 	defer os.Remove(queryLogFile.Name())
-	p.configFile, err = ioutil.TempFile("", "config")
+	p.configFile, err = os.CreateTemp("", "config")
 	require.NoError(t, err)
 	defer os.Remove(p.configFile.Name())
 
@@ -269,7 +269,7 @@ func (p *queryLogTest) run(t *testing.T) {
 	wg.Add(1)
 	defer wg.Wait()
 	go func() {
-		slurp, _ := ioutil.ReadAll(stderr)
+		slurp, _ := io.ReadAll(stderr)
 		t.Log(string(slurp))
 		wg.Done()
 	}()
@@ -333,7 +333,7 @@ func (p *queryLogTest) run(t *testing.T) {
 		return
 	}
 	// Move the file, Prometheus should still write to the old file.
-	newFile, err := ioutil.TempFile("", "newLoc")
+	newFile, err := os.CreateTemp("", "newLoc")
 	require.NoError(t, err)
 	require.NoError(t, newFile.Close())
 	defer os.Remove(newFile.Name())

@@ -17,7 +17,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math"
 	"math/rand"
 	"os"
@@ -1679,7 +1678,7 @@ func TestHeadReadWriterRepair(t *testing.T) {
 		// Verify that there are 6 segment files.
 		// It should only be 6 because the last call to .CutNewFile() won't
 		// take effect without another chunk being written.
-		files, err := ioutil.ReadDir(mmappedChunksDir(dir))
+		files, err := os.ReadDir(mmappedChunksDir(dir))
 		require.NoError(t, err)
 		require.Equal(t, 6, len(files))
 
@@ -1705,7 +1704,7 @@ func TestHeadReadWriterRepair(t *testing.T) {
 	// Verify that there are 3 segment files after the repair.
 	// The segments from the corrupt segment should be removed.
 	{
-		files, err := ioutil.ReadDir(mmappedChunksDir(dir))
+		files, err := os.ReadDir(mmappedChunksDir(dir))
 		require.NoError(t, err)
 		require.Equal(t, 3, len(files))
 	}
@@ -2965,7 +2964,7 @@ func TestChunkSnapshot(t *testing.T) {
 		closeHeadAndCheckSnapshot()
 
 		// Verify that there is only 1 snapshot.
-		files, err := ioutil.ReadDir(head.opts.ChunkDirRoot)
+		files, err := os.ReadDir(head.opts.ChunkDirRoot)
 		require.NoError(t, err)
 		snapshots := 0
 		for i := len(files) - 1; i >= 0; i-- {
@@ -3028,7 +3027,7 @@ func TestSnapshotError(t *testing.T) {
 	// Corrupt the snapshot.
 	snapDir, _, _, err := LastChunkSnapshot(head.opts.ChunkDirRoot)
 	require.NoError(t, err)
-	files, err := ioutil.ReadDir(snapDir)
+	files, err := os.ReadDir(snapDir)
 	require.NoError(t, err)
 	f, err := os.OpenFile(path.Join(snapDir, files[0].Name()), os.O_RDWR, 0)
 	require.NoError(t, err)
@@ -3093,7 +3092,7 @@ func TestChunkSnapshotReplayBug(t *testing.T) {
 	cpdir := filepath.Join(dir, snapshotName)
 	require.NoError(t, os.MkdirAll(cpdir, 0o777))
 
-	err = ioutil.WriteFile(filepath.Join(cpdir, "00000000"), []byte{1, 5, 3, 5, 6, 7, 4, 2, 2}, 0o777)
+	err = os.WriteFile(filepath.Join(cpdir, "00000000"), []byte{1, 5, 3, 5, 6, 7, 4, 2, 2}, 0o777)
 	require.NoError(t, err)
 
 	opts := DefaultHeadOptions()
@@ -3264,7 +3263,7 @@ func TestReplayAfterMmapReplayError(t *testing.T) {
 		}
 	}
 
-	files, err := ioutil.ReadDir(filepath.Join(dir, "chunks_head"))
+	files, err := os.ReadDir(filepath.Join(dir, "chunks_head"))
 	require.Equal(t, 5, len(files))
 
 	// Corrupt a m-map file.
@@ -3278,7 +3277,7 @@ func TestReplayAfterMmapReplayError(t *testing.T) {
 	openHead()
 
 	// There should be less m-map files due to corruption.
-	files, err = ioutil.ReadDir(filepath.Join(dir, "chunks_head"))
+	files, err = os.ReadDir(filepath.Join(dir, "chunks_head"))
 	require.Equal(t, 2, len(files))
 
 	// Querying should not panic.

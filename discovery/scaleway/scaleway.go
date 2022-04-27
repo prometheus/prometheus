@@ -15,8 +15,8 @@ package scaleway
 
 import (
 	"context"
-	"io/ioutil"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -226,7 +226,7 @@ type authTokenFileRoundTripper struct {
 // newAuthTokenFileRoundTripper adds the auth token read from the file to a request.
 func newAuthTokenFileRoundTripper(tokenFile string, rt http.RoundTripper) (http.RoundTripper, error) {
 	// fail-fast if we can't read the file.
-	_, err := ioutil.ReadFile(tokenFile)
+	_, err := os.ReadFile(tokenFile)
 	if err != nil {
 		return nil, errors.Wrapf(err, "unable to read auth token file %s", tokenFile)
 	}
@@ -234,7 +234,7 @@ func newAuthTokenFileRoundTripper(tokenFile string, rt http.RoundTripper) (http.
 }
 
 func (rt *authTokenFileRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {
-	b, err := ioutil.ReadFile(rt.authTokenFile)
+	b, err := os.ReadFile(rt.authTokenFile)
 	if err != nil {
 		return nil, errors.Wrapf(err, "unable to read auth token file %s", rt.authTokenFile)
 	}

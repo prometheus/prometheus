@@ -16,7 +16,6 @@ package config
 import (
 	"crypto/tls"
 	"encoding/json"
-	"io/ioutil"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -1510,7 +1509,7 @@ func TestBadConfigs(t *testing.T) {
 }
 
 func TestBadStaticConfigsJSON(t *testing.T) {
-	content, err := ioutil.ReadFile("testdata/static_config.bad.json")
+	content, err := os.ReadFile("testdata/static_config.bad.json")
 	require.NoError(t, err)
 	var tg targetgroup.Group
 	err = json.Unmarshal(content, &tg)
@@ -1518,7 +1517,7 @@ func TestBadStaticConfigsJSON(t *testing.T) {
 }
 
 func TestBadStaticConfigsYML(t *testing.T) {
-	content, err := ioutil.ReadFile("testdata/static_config.bad.yml")
+	content, err := os.ReadFile("testdata/static_config.bad.yml")
 	require.NoError(t, err)
 	var tg targetgroup.Group
 	err = yaml.UnmarshalStrict(content, &tg)

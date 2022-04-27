@@ -19,7 +19,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -2129,7 +2128,7 @@ func TestTargetScrapeScrapeCancel(t *testing.T) {
 	}()
 
 	go func() {
-		_, err := ts.scrape(ctx, ioutil.Discard)
+		_, err := ts.scrape(ctx, io.Discard)
 		if err == nil {
 			errc <- errors.New("Expected error but got nil")
 		} else if ctx.Err() != context.Canceled {
@@ -2173,7 +2172,7 @@ func TestTargetScrapeScrapeNotFound(t *testing.T) {
 		client: http.DefaultClient,
 	}
 
-	_, err = ts.scrape(context.Background(), ioutil.Discard)
+	_, err = ts.scrape(context.Background(), io.Discard)
 	require.Contains(t, err.Error(), "404", "Expected \"404 NotFound\" error but got: %s", err)
 }
 

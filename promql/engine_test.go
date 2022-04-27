@@ -16,7 +16,6 @@ package promql
 import (
 	"context"
 	"errors"
-	"io/ioutil"
 	"os"
 	"sort"
 	"testing"
@@ -42,7 +41,7 @@ func TestMain(m *testing.M) {
 func TestQueryConcurrency(t *testing.T) {
 	maxConcurrency := 10
 
-	dir, err := ioutil.TempDir("", "test_concurrency")
+	dir, err := os.MkdirTemp("", "test_concurrency")
 	require.NoError(t, err)
 	defer os.RemoveAll(dir)
 	queryTracker := NewActiveQueryTracker(dir, maxConcurrency, nil)

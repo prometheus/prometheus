@@ -16,7 +16,6 @@ package remote
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"math"
 	"net/url"
 	"os"
@@ -824,7 +823,7 @@ func BenchmarkStartup(b *testing.B) {
 
 	// Find the second largest segment; we will replay up to this.
 	// (Second largest as WALWatcher will start tailing the largest).
-	dirents, err := ioutil.ReadDir(dir)
+	dirents, err := os.ReadDir(dir)
 	require.NoError(b, err)
 
 	var segments []int

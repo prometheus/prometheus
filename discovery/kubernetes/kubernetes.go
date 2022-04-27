@@ -16,7 +16,7 @@ package kubernetes
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
+	"os"
 	"reflect"
 	"strings"
 	"sync"
@@ -312,7 +312,7 @@ func New(l log.Logger, conf *SDConfig) (*Discovery, error) {
 		}
 
 		if conf.NamespaceDiscovery.IncludeOwnNamespace {
-			ownNamespaceContents, err := ioutil.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
+			ownNamespaceContents, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
 			if err != nil {
 				return nil, fmt.Errorf("could not determine the pod's namespace: %w", err)
 			}
