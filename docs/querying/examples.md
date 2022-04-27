@@ -17,8 +17,8 @@ Return all time series with the metric `http_requests_total` and the given
 
     http_requests_total{job="apiserver", handler="/api/comments"}
 
-Return a whole range of time (in this case 5 minutes) for the same vector,
-making it a range vector:
+Return a whole range of time (in this case 5 minutes up to the query time)
+for the same vector, making it a [range vector](../basics/#range-vector-selectors):
 
     http_requests_total{job="apiserver", handler="/api/comments"}[5m]
 
