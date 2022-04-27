@@ -76,6 +76,7 @@ versions.
 | graphLink  | expr | string | Returns path to graph view in the [expression browser](https://prometheus.io/docs/visualization/browser/) for the expression. |
 | tableLink  | expr | string | Returns path to tabular ("Table") view in the [expression browser](https://prometheus.io/docs/visualization/browser/) for the expression. |
 | parseDuration | string | float | Parses a duration string such as "1h" into the number of seconds it represents. |
+| stripDomain | string | string | Removes the domain part of a FQDN. Leaves port untouched. |
 
 ### Others
 

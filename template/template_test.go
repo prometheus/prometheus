@@ -480,6 +480,41 @@ func TestTemplateExpansion(t *testing.T) {
 			text:   "{{ printf \"%0.2f\" (parseDuration \"1h2m10ms\") }}",
 			output: "3720.01",
 		},
+		{
+			// Simple hostname.
+			text:   "{{ \"foo.example.com\" | stripDomain }}",
+			output: "foo",
+		},
+		{
+			// Hostname with port.
+			text:   "{{ \"foo.example.com:12345\" | stripDomain }}",
+			output: "foo:12345",
+		},
+		{
+			// Simple IPv4 address.
+			text:   "{{ \"192.0.2.1\" | stripDomain }}",
+			output: "192.0.2.1",
+		},
+		{
+			// IPv4 address with port.
+			text:   "{{ \"192.0.2.1:12345\" | stripDomain }}",
+			output: "192.0.2.1:12345",
+		},
+		{
+			// Simple IPv6 address.
+			text:   "{{ \"2001:0DB8::1\" | stripDomain }}",
+			output: "2001:0DB8::1",
+		},
+		{
+			// IPv6 address with port.
+			text:   "{{ \"[2001:0DB8::1]:12345\" | stripDomain }}",
+			output: "[2001:0DB8::1]:12345",
+		},
+		{
+			// Value can't be split into host and port.
+			text:   "{{ \"[2001:0DB8::1]::12345\" | stripDomain }}",
+			output: "[2001:0DB8::1]::12345",
+		},
 	})
 }
 
