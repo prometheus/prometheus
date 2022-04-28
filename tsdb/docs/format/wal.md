@@ -52,7 +52,7 @@ Series records encode the labels that identifies a series and its unique ID.
 
 ### Metadata records
 
-Metadata records encode the metadata associated with a series.
+Metadata records encode the immutable metadata updates associated with a series.
 
 ```
 ┌────────────────────────────────────────────┐
@@ -63,7 +63,7 @@ Metadata records encode the metadata associated with a series.
 │ ├────────────────────────────────────────┤ │
 │ │ size <uvarint>                         │ │
 │ ├────────────────────────────────────────┤ │
-│ │ type <1b>                              │ │
+│ │ metric_type <1b>                       │ │
 │ ├─────────────────────┬──────────────────┤ │
 │ │ len(unit) <uvarint> │ unit <bytes>     │ │
 │ ├─────────────────────┴──────────────────┤ │
