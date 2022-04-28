@@ -75,8 +75,8 @@ type poolKey struct {
 	provider string
 }
 
-// provider holds a Discoverer instance, its configuration, cancel func and its subscribers.
-type provider struct {
+// Provider holds a Discoverer instance, its configuration, cancel func and its subscribers.
+type Provider struct {
 	name   string
 	d      Discoverer
 	config interface{}
@@ -92,8 +92,13 @@ type provider struct {
 	newSubs map[string]struct{}
 }
 
+// Discoverer return the Discoverer of the provider
+func (p *Provider) Discoverer() Discoverer {
+	return p.d
+}
+
 // IsStarted return true if Discoverer is started.
-func (p *provider) IsStarted() bool {
+func (p *Provider) IsStarted() bool {
 	return p.cancel != nil
 }
 
@@ -148,7 +153,7 @@ type Manager struct {
 	targetsMtx sync.Mutex
 
 	// providers keeps track of SD providers.
-	providers []*provider
+	providers []*Provider
 	// The sync channel sends the updates as a map where the key is the job value from the scrape config.
 	syncCh chan map[string][]*targetgroup.Group
 
@@ -161,6 +166,11 @@ type Manager struct {
 
 	// lastProvider counts providers registered during Manager's lifetime.
 	lastProvider uint
+}
+
+// Providers returns the currently configured SD providers
+func (m *Manager) Providers() []*Provider {
+	return m.providers
 }
 
 // Run starts the background processing.
@@ -194,7 +204,7 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 		wg sync.WaitGroup
 		// keep shows if we keep any providers after reload.
 		keep         bool
-		newProviders []*provider
+		newProviders []*Provider
 	)
 	for _, prov := range m.providers {
 		// Cancel obsolete providers.
@@ -260,7 +270,7 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 
 // StartCustomProvider is used for sdtool. Only use this if you know what you're doing.
 func (m *Manager) StartCustomProvider(ctx context.Context, name string, worker Discoverer) {
-	p := &provider{
+	p := &Provider{
 		name: name,
 		d:    worker,
 		subs: map[string]struct{}{
@@ -271,7 +281,7 @@ func (m *Manager) StartCustomProvider(ctx context.Context, name string, worker D
 	m.startProvider(ctx, p)
 }
 
-func (m *Manager) startProvider(ctx context.Context, p *provider) {
+func (m *Manager) startProvider(ctx context.Context, p *Provider) {
 	level.Debug(m.logger).Log("msg", "Starting provider", "provider", p.name, "subs", fmt.Sprintf("%v", p.subs))
 	ctx, cancel := context.WithCancel(ctx)
 	updates := make(chan []*targetgroup.Group)
@@ -283,7 +293,7 @@ func (m *Manager) startProvider(ctx context.Context, p *provider) {
 }
 
 // cleaner cleans resources associated with provider.
-func (m *Manager) cleaner(p *provider) {
+func (m *Manager) cleaner(p *Provider) {
 	m.targetsMtx.Lock()
 	p.mu.RLock()
 	for s := range p.subs {
@@ -296,7 +306,7 @@ func (m *Manager) cleaner(p *provider) {
 	}
 }
 
-func (m *Manager) updater(ctx context.Context, p *provider, updates chan []*targetgroup.Group) {
+func (m *Manager) updater(ctx context.Context, p *Provider, updates chan []*targetgroup.Group) {
 	// Ensure targets from this provider are cleaned up.
 	defer m.cleaner(p)
 	for {
@@ -339,7 +349,7 @@ func (m *Manager) sender() {
 			case <-m.triggerSend:
 				sentUpdates.WithLabelValues(m.name).Inc()
 				select {
-				case m.syncCh <- m.AllGroups():
+				case m.syncCh <- m.allGroups():
 				default:
 					delayedUpdates.WithLabelValues(m.name).Inc()
 					level.Debug(m.logger).Log("msg", "Discovery receiver's channel was full so will retry the next cycle")
@@ -378,8 +388,7 @@ func (m *Manager) updateGroup(poolKey poolKey, tgs []*targetgroup.Group) {
 	}
 }
 
-// AllGroups updates and returns all target groups of this manager.
-func (m *Manager) AllGroups() map[string][]*targetgroup.Group {
+func (m *Manager) allGroups() map[string][]*targetgroup.Group {
 	tSets := map[string][]*targetgroup.Group{}
 	n := map[string]int{}
 
@@ -423,7 +432,7 @@ func (m *Manager) registerProviders(cfgs Configs, setName string) int {
 			failed++
 			return
 		}
-		m.providers = append(m.providers, &provider{
+		m.providers = append(m.providers, &Provider{
 			name:   fmt.Sprintf("%s/%d", typ, m.lastProvider),
 			d:      d,
 			config: cfg,

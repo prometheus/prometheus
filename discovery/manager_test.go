@@ -685,7 +685,7 @@ func TestTargetUpdatesOrder(t *testing.T) {
 					t.Fatalf("%d: no update arrived within the timeout limit", x)
 				case tgs := <-provUpdates:
 					discoveryManager.updateGroup(poolKey{setName: strconv.Itoa(i), provider: tc.title}, tgs)
-					for _, got := range discoveryManager.AllGroups() {
+					for _, got := range discoveryManager.allGroups() {
 						assertEqualGroups(t, got, tc.expectedTargets[x], func(got, expected string) string {
 							return fmt.Sprintf("%d: \ntargets mismatch \ngot: %v \nexpected: %v",
 								x,
