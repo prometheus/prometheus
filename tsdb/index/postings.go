@@ -16,11 +16,10 @@ package index
 import (
 	"container/heap"
 	"encoding/binary"
+	"fmt"
 	"runtime"
 	"sort"
 	"sync"
-
-	"github.com/pkg/errors"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -916,7 +915,7 @@ func (h *postingsWithIndexHeap) next() error {
 	}
 
 	if err := pi.p.Err(); err != nil {
-		return errors.Wrapf(err, "postings %d", pi.index)
+		return fmt.Errorf("postings %d %w", pi.index, err)
 	}
 	h.popIndex()
 	return nil

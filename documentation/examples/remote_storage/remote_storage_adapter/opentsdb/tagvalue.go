@@ -15,9 +15,9 @@ package opentsdb
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 )
 
@@ -98,13 +98,13 @@ func (tv *TagValue) UnmarshalJSON(json []byte) error {
 	for i, b := range json {
 		if i == 0 {
 			if b != '"' {
-				return errors.Errorf("expected '\"', got %q", b)
+				return fmt.Errorf("expected '\"', got %q", b)
 			}
 			continue
 		}
 		if i == len(json)-1 {
 			if b != '"' {
-				return errors.Errorf("expected '\"', got %q", b)
+				return fmt.Errorf("expected '\"', got %q", b)
 			}
 			break
 		}
@@ -130,7 +130,7 @@ func (tv *TagValue) UnmarshalJSON(json []byte) error {
 				parsedByte = (b - 55) << 4
 				escapeLevel = 2
 			default:
-				return errors.Errorf(
+				return fmt.Errorf(
 					"illegal escape sequence at byte %d (%c)",
 					i, b,
 				)
@@ -142,7 +142,7 @@ func (tv *TagValue) UnmarshalJSON(json []byte) error {
 			case b >= 'A' && b <= 'F': // A-F
 				parsedByte += b - 55
 			default:
-				return errors.Errorf(
+				return fmt.Errorf(
 					"illegal escape sequence at byte %d (%c)",
 					i, b,
 				)

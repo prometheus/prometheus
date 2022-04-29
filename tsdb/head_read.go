@@ -15,11 +15,12 @@ package tsdb
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"math"
 	"sort"
 
 	"github.com/go-kit/log/level"
-	"github.com/pkg/errors"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -130,7 +131,7 @@ func (h *headIndexReader) SortedPostings(p index.Postings) index.Postings {
 		}
 	}
 	if err := p.Err(); err != nil {
-		return index.ErrPostings(errors.Wrap(err, "expand postings"))
+		return index.ErrPostings(fmt.Errorf("expand postings %w", err))
 	}
 
 	sort.Slice(series, func(i, j int) bool {
@@ -316,7 +317,8 @@ func (s *memSeries) chunk(id chunks.HeadChunkID, chunkDiskMapper *chunks.ChunkDi
 	}
 	chk, err := chunkDiskMapper.Chunk(s.mmappedChunks[ix].ref)
 	if err != nil {
-		if _, ok := err.(*chunks.CorruptionErr); ok {
+		var ce *chunks.CorruptionErr
+		if errors.As(err, &ce) {
 			panic(err)
 		}
 		return nil, false, err

@@ -15,6 +15,7 @@ package index
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"hash/crc32"
 	"math/rand"
@@ -23,7 +24,6 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 
@@ -66,7 +66,7 @@ func (m mockIndex) Symbols() (map[string]struct{}, error) {
 
 func (m mockIndex) AddSeries(ref storage.SeriesRef, l labels.Labels, chunks ...chunks.Meta) error {
 	if _, ok := m.series[ref]; ok {
-		return errors.Errorf("series with reference %d already added", ref)
+		return fmt.Errorf("series with reference %d already added", ref)
 	}
 	for _, lbl := range l {
 		m.symbols[lbl.Name] = struct{}{}
@@ -115,7 +115,7 @@ func (m mockIndex) Postings(name string, values ...string) (Postings, error) {
 func (m mockIndex) SortedPostings(p Postings) Postings {
 	ep, err := ExpandPostings(p)
 	if err != nil {
-		return ErrPostings(errors.Wrap(err, "expand postings"))
+		return ErrPostings(fmt.Errorf("expand postings %w", err))
 	}
 
 	sort.Slice(ep, func(i, j int) bool {
@@ -213,14 +213,14 @@ func TestIndexRW_Postings(t *testing.T) {
 	labelIndices := map[string][]string{}
 	require.NoError(t, ReadOffsetTable(ir.b, ir.toc.LabelIndicesTable, func(key []string, off uint64, _ int) error {
 		if len(key) != 1 {
-			return errors.Errorf("unexpected key length for label indices table %d", len(key))
+			return fmt.Errorf("unexpected key length for label indices table %d", len(key))
 		}
 
 		d := encoding.NewDecbufAt(ir.b, int(off), castagnoliTable)
 		vals := []string{}
 		nc := d.Be32int()
 		if nc != 1 {
-			return errors.Errorf("unexpected number of label indices table names %d", nc)
+			return fmt.Errorf("unexpected number of label indices table names %d", nc)
 		}
 		for i := d.Be32(); i > 0; i-- {
 			v, err := ir.lookupSymbol(d.Be32())

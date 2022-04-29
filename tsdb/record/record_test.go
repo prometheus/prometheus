@@ -15,9 +15,9 @@
 package record
 
 import (
+	"errors"
 	"testing"
 
-	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -111,7 +111,7 @@ func TestRecord_Corrupted(t *testing.T) {
 
 		corrupted := enc.Samples(samples, nil)[:8]
 		_, err := dec.Samples(corrupted, nil)
-		require.Equal(t, errors.Cause(err), encoding.ErrInvalidSize)
+		require.Equal(t, errors.Unwrap(err), encoding.ErrInvalidSize)
 	})
 
 	t.Run("Test corrupted tombstone record", func(t *testing.T) {
@@ -134,7 +134,7 @@ func TestRecord_Corrupted(t *testing.T) {
 
 		corrupted := enc.Exemplars(exemplars, nil)[:8]
 		_, err := dec.Exemplars(corrupted, nil)
-		require.Equal(t, errors.Cause(err), encoding.ErrInvalidSize)
+		require.Equal(t, errors.Unwrap(err), encoding.ErrInvalidSize)
 	})
 }
 

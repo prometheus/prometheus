@@ -16,10 +16,10 @@
 package record
 
 import (
+	"errors"
+	"fmt"
 	"math"
 	"sort"
-
-	"github.com/pkg/errors"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -112,7 +112,7 @@ func (d *Decoder) Series(rec []byte, series []RefSeries) ([]RefSeries, error) {
 		return nil, dec.Err()
 	}
 	if len(dec.B) > 0 {
-		return nil, errors.Errorf("unexpected %d bytes left in entry", len(dec.B))
+		return nil, fmt.Errorf("unexpected %d bytes left in entry", len(dec.B))
 	}
 	return series, nil
 }
@@ -144,10 +144,10 @@ func (d *Decoder) Samples(rec []byte, samples []RefSample) ([]RefSample, error) 
 	}
 
 	if dec.Err() != nil {
-		return nil, errors.Wrapf(dec.Err(), "decode error after %d samples", len(samples))
+		return nil, fmt.Errorf("decode error after %d samples %w", len(samples), dec.Err())
 	}
 	if len(dec.B) > 0 {
-		return nil, errors.Errorf("unexpected %d bytes left in entry", len(dec.B))
+		return nil, fmt.Errorf("unexpected %d bytes left in entry", len(dec.B))
 	}
 	return samples, nil
 }
@@ -171,7 +171,7 @@ func (d *Decoder) Tombstones(rec []byte, tstones []tombstones.Stone) ([]tombston
 		return nil, dec.Err()
 	}
 	if len(dec.B) > 0 {
-		return nil, errors.Errorf("unexpected %d bytes left in entry", len(dec.B))
+		return nil, fmt.Errorf("unexpected %d bytes left in entry", len(dec.B))
 	}
 	return tstones, nil
 }
@@ -215,10 +215,10 @@ func (d *Decoder) ExemplarsFromBuffer(dec *encoding.Decbuf, exemplars []RefExemp
 	}
 
 	if dec.Err() != nil {
-		return nil, errors.Wrapf(dec.Err(), "decode error after %d exemplars", len(exemplars))
+		return nil, fmt.Errorf("decode error after %d exemplars %w", len(exemplars), dec.Err())
 	}
 	if len(dec.B) > 0 {
-		return nil, errors.Errorf("unexpected %d bytes left in entry", len(dec.B))
+		return nil, fmt.Errorf("unexpected %d bytes left in entry", len(dec.B))
 	}
 	return exemplars, nil
 }

@@ -15,6 +15,7 @@ package tsdb
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"math/rand"
@@ -24,7 +25,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -630,7 +630,7 @@ func createFakeReaderAndNotPopulatedChunks(s ...[]tsdbutil.Sample) (*fakeChunksR
 func (r *fakeChunksReader) Chunk(ref chunks.ChunkRef) (chunkenc.Chunk, error) {
 	chk, ok := r.chks[ref]
 	if !ok {
-		return nil, errors.Errorf("chunk not found at ref %v", ref)
+		return nil, fmt.Errorf("chunk not found at ref %v", ref)
 	}
 	return chk, nil
 }
@@ -1161,7 +1161,7 @@ func (m mockIndex) Symbols() index.StringIter {
 
 func (m *mockIndex) AddSeries(ref storage.SeriesRef, l labels.Labels, chunks ...chunks.Meta) error {
 	if _, ok := m.series[ref]; ok {
-		return errors.Errorf("series with reference %d already added", ref)
+		return fmt.Errorf("series with reference %d already added", ref)
 	}
 	for _, lbl := range l {
 		m.symbols[lbl.Name] = struct{}{}
@@ -1182,7 +1182,7 @@ func (m *mockIndex) AddSeries(ref storage.SeriesRef, l labels.Labels, chunks ...
 func (m mockIndex) WritePostings(name, value string, it index.Postings) error {
 	l := labels.Label{Name: name, Value: value}
 	if _, ok := m.postings[l]; ok {
-		return errors.Errorf("postings for %s already added", l)
+		return fmt.Errorf("postings for %s already added", l)
 	}
 	ep, err := index.ExpandPostings(it)
 	if err != nil {
@@ -1256,7 +1256,7 @@ func (m mockIndex) Postings(name string, values ...string) (index.Postings, erro
 func (m mockIndex) SortedPostings(p index.Postings) index.Postings {
 	ep, err := index.ExpandPostings(p)
 	if err != nil {
-		return index.ErrPostings(errors.Wrap(err, "expand postings"))
+		return index.ErrPostings(fmt.Errorf("expand postings %w", err))
 	}
 
 	sort.Slice(ep, func(i, j int) bool {

@@ -15,12 +15,12 @@ package rules
 
 import (
 	"context"
+	"errors"
 	"html/template"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"

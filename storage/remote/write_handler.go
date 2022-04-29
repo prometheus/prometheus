@@ -15,12 +15,12 @@ package remote
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/pkg/errors"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/prompb"
@@ -50,9 +50,9 @@ func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	err = h.write(r.Context(), req)
-	switch err {
-	case nil:
-	case storage.ErrOutOfOrderSample, storage.ErrOutOfBounds, storage.ErrDuplicateSampleForTimestamp:
+	switch {
+	case err == nil:
+	case errors.Is(err, storage.ErrOutOfOrderSample), errors.Is(err, storage.ErrOutOfBounds), errors.Is(err, storage.ErrDuplicateSampleForTimestamp):
 		// Indicated an out of order sample is a bad request to prevent retries.
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -67,10 +67,10 @@ func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // checkAppendExemplarError modifies the AppendExamplar's returned error based on the error cause.
 func (h *writeHandler) checkAppendExemplarError(err error, e exemplar.Exemplar, outOfOrderErrs *int) error {
-	switch errors.Cause(err) {
-	case storage.ErrNotFound:
+	switch {
+	case errors.Is(errors.Unwrap(err), storage.ErrNotFound):
 		return storage.ErrNotFound
-	case storage.ErrOutOfOrderExemplar:
+	case errors.Is(errors.Unwrap(err), storage.ErrOutOfOrderExemplar):
 		*outOfOrderErrs++
 		level.Debug(h.logger).Log("msg", "Out of order exemplar", "exemplar", fmt.Sprintf("%+v", e))
 		return nil
@@ -97,8 +97,8 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 		for _, s := range ts.Samples {
 			_, err = app.Append(0, labels, s.Timestamp, s.Value)
 			if err != nil {
-				switch errors.Cause(err) {
-				case storage.ErrOutOfOrderSample, storage.ErrOutOfBounds, storage.ErrDuplicateSampleForTimestamp:
+				switch {
+				case errors.Is(errors.Unwrap(err), storage.ErrOutOfOrderSample), errors.Is(errors.Unwrap(err), storage.ErrOutOfBounds), errors.Is(errors.Unwrap(err), storage.ErrDuplicateSampleForTimestamp):
 					level.Error(h.logger).Log("msg", "Out of order sample from remote write", "err", err.Error(), "series", labels.String(), "timestamp", s.Timestamp)
 				}
 				return err

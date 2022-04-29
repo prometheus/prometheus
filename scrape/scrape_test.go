@@ -17,6 +17,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -29,7 +30,6 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/pkg/errors"
 	dto "github.com/prometheus/client_model/go"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -792,7 +792,7 @@ func TestScrapeLoopRun(t *testing.T) {
 
 	select {
 	case err := <-errc:
-		if err != context.DeadlineExceeded {
+		if !errors.Is(err, context.DeadlineExceeded) {
 			t.Fatalf("Expected timeout error but got: %s", err)
 		}
 	case <-time.After(3 * time.Second):
@@ -856,7 +856,7 @@ func TestScrapeLoopForcedErr(t *testing.T) {
 
 	select {
 	case err := <-errc:
-		if err != forcedErr {
+		if !errors.Is(err, forcedErr) {
 			t.Fatalf("Expected forced error but got: %s", err)
 		}
 	case <-time.After(3 * time.Second):
@@ -1540,7 +1540,7 @@ func TestScrapeLoopAppendSampleLimit(t *testing.T) {
 	now := time.Now()
 	slApp := sl.appender(context.Background())
 	total, added, seriesAdded, err := sl.append(app, []byte("metric_a 1\nmetric_b 1\nmetric_c 1\n"), "", now)
-	if err != errSampleLimit {
+	if !errors.Is(err, errSampleLimit) {
 		t.Fatalf("Did not see expected sample limit error: %s", err)
 	}
 	require.NoError(t, slApp.Rollback())
@@ -1571,7 +1571,7 @@ func TestScrapeLoopAppendSampleLimit(t *testing.T) {
 	now = time.Now()
 	slApp = sl.appender(context.Background())
 	total, added, seriesAdded, err = sl.append(slApp, []byte("metric_a 1\nmetric_b 1\nmetric_c{deleteme=\"yes\"} 1\nmetric_d 1\nmetric_e 1\nmetric_f 1\nmetric_g 1\nmetric_h{deleteme=\"yes\"} 1\nmetric_i{deleteme=\"yes\"} 1\n"), "", now)
-	if err != errSampleLimit {
+	if !errors.Is(err, errSampleLimit) {
 		t.Fatalf("Did not see expected sample limit error: %s", err)
 	}
 	require.NoError(t, slApp.Rollback())
@@ -2131,8 +2131,8 @@ func TestTargetScrapeScrapeCancel(t *testing.T) {
 		_, err := ts.scrape(ctx, io.Discard)
 		if err == nil {
 			errc <- errors.New("Expected error but got nil")
-		} else if ctx.Err() != context.Canceled {
-			errc <- errors.Errorf("Expected context cancellation error but got: %s", ctx.Err())
+		} else if !errors.Is(ctx.Err(), context.Canceled) {
+			errc <- fmt.Errorf("Expected context cancellation error but got: %w", ctx.Err())
 		} else {
 			close(errc)
 		}

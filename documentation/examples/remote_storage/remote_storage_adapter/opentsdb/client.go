@@ -17,6 +17,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"math"
 	"net/http"
@@ -25,7 +27,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 )
 
@@ -136,7 +137,7 @@ func (c *Client) Write(samples model.Samples) error {
 	if err := json.Unmarshal(buf, &r); err != nil {
 		return err
 	}
-	return errors.Errorf("failed to write %d samples to OpenTSDB, %d succeeded", r["failed"], r["success"])
+	return fmt.Errorf("failed to write %d samples to OpenTSDB, %d succeeded", r["failed"], r["success"])
 }
 
 // Name identifies the client as an OpenTSDB client.

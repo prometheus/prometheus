@@ -17,6 +17,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/binary"
+	"errors"
 	"flag"
 	"fmt"
 	"hash/crc32"
@@ -34,7 +35,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/oklog/ulid"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
@@ -314,7 +314,7 @@ func TestDBAppenderAddRef(t *testing.T) {
 
 	// Missing labels & invalid refs should fail.
 	_, err = app2.Append(9999999, nil, 1, 1)
-	require.Equal(t, ErrInvalidSample, errors.Cause(err))
+	require.Equal(t, ErrInvalidSample, errors.Unwrap(err))
 
 	require.NoError(t, app2.Commit())
 
@@ -2899,7 +2899,7 @@ func deleteNonBlocks(dbDir string) error {
 	}
 	for _, dir := range dirs {
 		if ok := isBlockDir(dir); !ok {
-			return errors.Errorf("root folder:%v still hase non block directory:%v", dbDir, dir.Name())
+			return fmt.Errorf("root folder:%v still hase non block directory:%v", dbDir, dir.Name())
 		}
 	}
 	return nil

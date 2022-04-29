@@ -15,9 +15,9 @@ package storage_test
 
 import (
 	"context"
+	"errors"
 	"testing"
 
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 

@@ -15,12 +15,13 @@ package kubernetes
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net"
 	"strconv"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	apiv1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/discovery/v1"
@@ -137,7 +138,7 @@ func (e *EndpointSlice) Run(ctx context.Context, ch chan<- []*targetgroup.Group)
 	defer e.queue.ShutDown()
 
 	if !cache.WaitForCacheSync(ctx.Done(), e.endpointSliceInf.HasSynced, e.serviceInf.HasSynced, e.podInf.HasSynced) {
-		if ctx.Err() != context.Canceled {
+		if !errors.Is(ctx.Err(), context.Canceled) {
 			level.Error(e.logger).Log("msg", "endpointslice informer unable to sync cache")
 		}
 		return
@@ -193,7 +194,7 @@ func (e *EndpointSlice) getEndpointSliceAdaptor(o interface{}) (endpointSliceAda
 	case *v1beta1.EndpointSlice:
 		return newEndpointSliceAdaptorFromV1beta1(endpointSlice), nil
 	default:
-		return nil, errors.Errorf("received unexpected object: %v", o)
+		return nil, fmt.Errorf("received unexpected object: %v", o)
 	}
 }
 

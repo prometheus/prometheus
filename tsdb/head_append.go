@@ -15,11 +15,11 @@ package tsdb
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 
 	"github.com/go-kit/log/level"
-	"github.com/pkg/errors"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
@@ -252,11 +252,11 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 		// Ensure no empty labels have gotten through.
 		lset = lset.WithoutEmpty()
 		if len(lset) == 0 {
-			return 0, errors.Wrap(ErrInvalidSample, "empty labelset")
+			return 0, fmt.Errorf("empty labelset %w", ErrInvalidSample)
 		}
 
 		if l, dup := lset.HasDuplicateLabelNames(); dup {
-			return 0, errors.Wrap(ErrInvalidSample, fmt.Sprintf(`label name "%s" is not unique`, l))
+			return 0, fmt.Errorf(`label name "%s" is not unique %w`, l, ErrInvalidSample)
 		}
 
 		var created bool
@@ -276,7 +276,7 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 	s.Lock()
 	if err := s.appendable(t, v); err != nil {
 		s.Unlock()
-		if err == storage.ErrOutOfOrderSample {
+		if errors.Is(err, storage.ErrOutOfOrderSample) {
 			a.head.metrics.outOfOrderSamples.Inc()
 		}
 		return 0, err
@@ -346,7 +346,7 @@ func (a *headAppender) AppendExemplar(ref storage.SeriesRef, lset labels.Labels,
 
 	err := a.head.exemplars.ValidateExemplar(s.lset, e)
 	if err != nil {
-		if err == storage.ErrDuplicateExemplar || err == storage.ErrExemplarsDisabled {
+		if errors.Is(err, storage.ErrDuplicateExemplar) || errors.Is(err, storage.ErrExemplarsDisabled) {
 			// Duplicate, don't return an error but don't accept the exemplar.
 			return 0, nil
 		}
@@ -386,7 +386,7 @@ func (a *headAppender) log() error {
 		buf = rec[:0]
 
 		if err := a.head.wal.Log(rec); err != nil {
-			return errors.Wrap(err, "log series")
+			return fmt.Errorf("log series %w", err)
 		}
 	}
 	if len(a.samples) > 0 {
@@ -394,7 +394,7 @@ func (a *headAppender) log() error {
 		buf = rec[:0]
 
 		if err := a.head.wal.Log(rec); err != nil {
-			return errors.Wrap(err, "log samples")
+			return fmt.Errorf("log samples %w", err)
 		}
 	}
 	if len(a.exemplars) > 0 {
@@ -402,7 +402,7 @@ func (a *headAppender) log() error {
 		buf = rec[:0]
 
 		if err := a.head.wal.Log(rec); err != nil {
-			return errors.Wrap(err, "log exemplars")
+			return fmt.Errorf("log exemplars %w", err)
 		}
 	}
 	return nil
@@ -430,7 +430,7 @@ func (a *headAppender) Commit() (err error) {
 
 	if err := a.log(); err != nil {
 		_ = a.Rollback() // Most likely the same error will happen again.
-		return errors.Wrap(err, "write to WAL")
+		return fmt.Errorf("write to WAL %w", err)
 	}
 
 	// No errors logging to WAL, so pass the exemplars along to the in memory storage.
@@ -438,7 +438,7 @@ func (a *headAppender) Commit() (err error) {
 		s := a.head.series.getByID(chunks.HeadSeriesRef(e.ref))
 		// We don't instrument exemplar appends here, all is instrumented by storage.
 		if err := a.head.exemplars.AddExemplar(s.lset, e.exemplar); err != nil {
-			if err == storage.ErrOutOfOrderExemplar {
+			if errors.Is(err, storage.ErrOutOfOrderExemplar) {
 				continue
 			}
 			level.Debug(a.head.logger).Log("msg", "Unknown error while adding exemplar", "err", err)
@@ -594,7 +594,7 @@ func (s *memSeries) mmapCurrentHeadChunk(chunkDiskMapper *chunks.ChunkDiskMapper
 }
 
 func handleChunkWriteError(err error) {
-	if err != nil && err != chunks.ErrChunkDiskMapperClosed {
+	if err != nil && !errors.Is(err, chunks.ErrChunkDiskMapperClosed) {
 		panic(err)
 	}
 }

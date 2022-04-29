@@ -25,7 +25,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/pkg/errors"
 
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/encoding"
@@ -108,17 +107,17 @@ func WriteFile(logger log.Logger, dir string, tr Reader) (int64, error) {
 
 	bytes, err := Encode(tr)
 	if err != nil {
-		return 0, errors.Wrap(err, "encoding tombstones")
+		return 0, fmt.Errorf("encoding tombstones %w", err)
 	}
 
 	// Ignore first byte which is the format type. We do this for compatibility.
 	if _, err := hash.Write(bytes[tombstoneFormatVersionSize:]); err != nil {
-		return 0, errors.Wrap(err, "calculating hash for tombstones")
+		return 0, fmt.Errorf("calculating hash for tombstones %w", err)
 	}
 
 	n, err = f.Write(bytes)
 	if err != nil {
-		return 0, errors.Wrap(err, "writing tombstones")
+		return 0, fmt.Errorf("writing tombstones %w", err)
 	}
 	size += n
 
@@ -160,7 +159,7 @@ func Encode(tr Reader) ([]byte, error) {
 func Decode(b []byte) (Reader, error) {
 	d := &encoding.Decbuf{B: b}
 	if flag := d.Byte(); flag != tombstoneFormatV1 {
-		return nil, errors.Errorf("invalid tombstone format %x", flag)
+		return nil, fmt.Errorf("invalid tombstone format %x", flag)
 	}
 
 	if d.Err() != nil {
@@ -197,7 +196,7 @@ func ReadTombstones(dir string) (Reader, int64, error) {
 	}
 
 	if len(b) < tombstonesHeaderSize {
-		return nil, 0, errors.Wrap(encoding.ErrInvalidSize, "tombstones header")
+		return nil, 0, fmt.Errorf("tombstones header %w", encoding.ErrInvalidSize)
 	}
 
 	d := &encoding.Decbuf{B: b[:len(b)-tombstonesCRCSize]}
@@ -209,10 +208,10 @@ func ReadTombstones(dir string) (Reader, int64, error) {
 	hash := newCRC32()
 	// Ignore first byte which is the format type.
 	if _, err := hash.Write(d.Get()[tombstoneFormatVersionSize:]); err != nil {
-		return nil, 0, errors.Wrap(err, "write to hash")
+		return nil, 0, fmt.Errorf("write to hash %w", err)
 	}
 	if binary.BigEndian.Uint32(b[len(b)-tombstonesCRCSize:]) != hash.Sum32() {
-		return nil, 0, errors.New("checksum did not match")
+		return nil, 0, fmt.Errorf("checksum did not match %w", err)
 	}
 
 	if d.Err() != nil {

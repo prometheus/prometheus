@@ -15,6 +15,7 @@ package tsdb
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -29,7 +30,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
@@ -1607,9 +1607,10 @@ func TestWalRepair_DecodingError(t *testing.T) {
 					require.Equal(t, 0.0, prom_testutil.ToFloat64(h.metrics.walCorruptionsTotal))
 					initErr := h.Init(math.MinInt64)
 
-					err = errors.Cause(initErr) // So that we can pick up errors even if wrapped.
-					_, corrErr := err.(*wal.CorruptionErr)
-					require.True(t, corrErr, "reading the wal didn't return corruption error")
+					err = errors.Unwrap(initErr) // So that we can pick up errors even if wrapped.
+					var corrErr *wal.CorruptionErr
+					ok := errors.As(err, &corrErr)
+					require.True(t, ok, "reading the wal didn't return corruption error")
 					require.NoError(t, h.Close()) // Head will close the wal as well.
 				}
 

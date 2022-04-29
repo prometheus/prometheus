@@ -16,6 +16,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -120,8 +121,8 @@ func TestFailedStartupExitCode(t *testing.T) {
 	prom := exec.Command(promPath, "-test.main", "--config.file="+fakeInputFile)
 	err := prom.Run()
 	require.Error(t, err)
-
-	if exitError, ok := err.(*exec.ExitError); ok {
+	var exitError *exec.ExitError
+	if errors.As(err, &exitError) {
 		status := exitError.Sys().(syscall.WaitStatus)
 		require.Equal(t, expectedExitStatus, status.ExitStatus())
 	} else {
@@ -233,7 +234,8 @@ func TestWALSegmentSizeBounds(t *testing.T) {
 
 		err = prom.Wait()
 		require.Error(t, err)
-		if exitError, ok := err.(*exec.ExitError); ok {
+		var exitError *exec.ExitError
+		if errors.As(err, &exitError) {
 			status := exitError.Sys().(syscall.WaitStatus)
 			require.Equal(t, expectedExitStatus, status.ExitStatus())
 		} else {
@@ -278,7 +280,8 @@ func TestMaxBlockChunkSegmentSizeBounds(t *testing.T) {
 
 		err = prom.Wait()
 		require.Error(t, err)
-		if exitError, ok := err.(*exec.ExitError); ok {
+		var exitError *exec.ExitError
+		if errors.As(err, &exitError) {
 			status := exitError.Sys().(syscall.WaitStatus)
 			require.Equal(t, expectedExitStatus, status.ExitStatus())
 		} else {
@@ -467,7 +470,8 @@ func TestModeSpecificFlags(t *testing.T) {
 
 			err = prom.Wait()
 			require.Error(t, err)
-			if exitError, ok := err.(*exec.ExitError); ok {
+			var exitError *exec.ExitError
+			if errors.As(err, &exitError) {
 				status := exitError.Sys().(syscall.WaitStatus)
 				require.Equal(t, tc.exitStatus, status.ExitStatus())
 			} else {

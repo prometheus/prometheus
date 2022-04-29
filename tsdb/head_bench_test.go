@@ -14,10 +14,10 @@
 package tsdb
 
 import (
+	"errors"
 	"strconv"
 	"testing"
 
-	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 

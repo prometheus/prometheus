@@ -25,7 +25,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pkg/errors"
 	"github.com/prometheus/alertmanager/api/v2/models"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -88,11 +87,11 @@ func TestHandlerNextBatch(t *testing.T) {
 
 func alertsEqual(a, b []*Alert) error {
 	if len(a) != len(b) {
-		return errors.Errorf("length mismatch: %v != %v", a, b)
+		return fmt.Errorf("length mismatch: %v != %v", a, b)
 	}
 	for i, alert := range a {
 		if !labels.Equal(alert.Labels, b[i].Labels) {
-			return errors.Errorf("label mismatch at index %d: %s != %s", i, alert.Labels, b[i].Labels)
+			return fmt.Errorf("label mismatch at index %d: %s != %s", i, alert.Labels, b[i].Labels)
 		}
 	}
 	return nil
@@ -121,14 +120,14 @@ func TestHandlerSendAll(t *testing.T) {
 			}()
 			user, pass, _ := r.BasicAuth()
 			if user != u || pass != p {
-				err = errors.Errorf("unexpected user/password: %s/%s != %s/%s", user, pass, u, p)
+				err = fmt.Errorf("unexpected user/password: %s/%s != %s/%s", user, pass, u, p)
 				w.WriteHeader(http.StatusInternalServerError)
 				return
 			}
 
 			b, err := io.ReadAll(r.Body)
 			if err != nil {
-				err = errors.Errorf("error reading body: %v", err)
+				err = fmt.Errorf("error reading body: %w", err)
 				w.WriteHeader(http.StatusInternalServerError)
 				return
 			}

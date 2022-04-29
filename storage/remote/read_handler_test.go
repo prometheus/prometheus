@@ -15,6 +15,7 @@ package remote
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -194,7 +195,7 @@ func TestStreamReadEndpoint(t *testing.T) {
 	for {
 		res := &prompb.ChunkedReadResponse{}
 		err := stream.NextProto(res)
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		require.NoError(t, err)

@@ -22,7 +22,6 @@ import (
 	"testing"
 
 	"github.com/go-kit/log"
-	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -251,7 +250,7 @@ func TestCheckpointNoTmpFolderAfterError(t *testing.T) {
 	// Walk the wal dir to make sure there are no tmp folder left behind after the error.
 	err = filepath.Walk(w.Dir(), func(path string, info os.FileInfo, err error) error {
 		if err != nil {
-			return errors.Wrapf(err, "access err %q: %v", path, err)
+			return fmt.Errorf("access err %q: %w", path, err)
 		}
 		if info.IsDir() && strings.HasSuffix(info.Name(), ".tmp") {
 			return fmt.Errorf("wal dir contains temporary folder:%s", info.Name())

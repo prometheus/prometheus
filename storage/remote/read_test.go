@@ -15,11 +15,11 @@ package remote
 
 import (
 	"context"
+	"fmt"
 	"net/url"
 	"sort"
 	"testing"
 
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/stretchr/testify/require"
@@ -209,7 +209,7 @@ type mockedRemoteClient struct {
 
 func (c *mockedRemoteClient) Read(_ context.Context, query *prompb.Query) (*prompb.QueryResult, error) {
 	if c.got != nil {
-		return nil, errors.Errorf("expected only one call to remote client got: %v", query)
+		return nil, fmt.Errorf("expected only one call to remote client got: %v", query)
 	}
 	c.got = query
 

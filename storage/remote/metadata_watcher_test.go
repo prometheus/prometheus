@@ -15,10 +15,10 @@ package remote
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 

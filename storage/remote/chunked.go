@@ -16,13 +16,14 @@ package remote
 import (
 	"bufio"
 	"encoding/binary"
+	"errors"
+	"fmt"
 	"hash"
 	"hash/crc32"
 	"io"
 	"net/http"
 
 	"github.com/gogo/protobuf/proto"
-	"github.com/pkg/errors"
 )
 
 // DefaultChunkedReadLimit is the default value for the maximum size of the protobuf frame client allows.
@@ -119,7 +120,7 @@ func (r *ChunkedReader) Next() ([]byte, error) {
 	}
 
 	if size > r.sizeLimit {
-		return nil, errors.Errorf("chunkedReader: message size exceeded the limit %v bytes; got: %v bytes", r.sizeLimit, size)
+		return nil, fmt.Errorf("chunkedReader: message size exceeded the limit %v bytes; got: %v bytes", r.sizeLimit, size)
 	}
 
 	if cap(r.data) < int(size) {
