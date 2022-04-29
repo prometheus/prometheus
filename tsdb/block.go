@@ -440,14 +440,19 @@ func (r blockIndexReader) SortedLabelValues(name string, matchers ...*labels.Mat
 			sort.Strings(st)
 		}
 	}
-
-	return st, fmt.Errorf("block: %s: %w", r.b.Meta().ULID, err)
+	if err != nil {
+		return st, fmt.Errorf("block: %s: %w", r.b.Meta().ULID, err)
+	}
+	return st, nil
 }
 
 func (r blockIndexReader) LabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
 	if len(matchers) == 0 {
 		st, err := r.ir.LabelValues(name)
-		return st, fmt.Errorf("block: %s: %w", r.b.Meta().ULID, err)
+		if err != nil {
+			return st, fmt.Errorf("block: %s: %w", r.b.Meta().ULID, err)
+		}
+		return st, nil
 	}
 
 	return labelValuesWithMatchers(r.ir, name, matchers...)
