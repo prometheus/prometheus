@@ -220,7 +220,7 @@ func backfill(maxSamplesInAppender int, input []byte, outputDir string, humanRea
 	maxt, mint, err := getMinAndMaxTimestamps(p)
 	if err != nil {
 		return fmt.Errorf("getting min and max timestamp: %w", err)
-	}	
+	}
 	if err = createBlocks(input, mint, maxt, int64(maxBlockDuration/time.Millisecond), maxSamplesInAppender, outputDir, humanReadable, quiet); err != nil {
 		return fmt.Errorf("block creation: %w", err)
 	}
