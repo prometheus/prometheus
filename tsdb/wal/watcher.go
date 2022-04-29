@@ -542,7 +542,10 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 			w.recordDecodeFailsMetric.Inc()
 		}
 	}
-	return fmt.Errorf("segment %d: %w", segmentNum, r.Err())
+	if r.Err() != nil {
+		return fmt.Errorf("segment %d: %w", segmentNum, r.Err())
+	}
+	return nil
 }
 
 // Go through all series in a segment updating the segmentNum, so we can delete older series.
@@ -575,7 +578,10 @@ func (w *Watcher) readSegmentForGC(r *LiveReader, segmentNum int, _ bool) error 
 			w.recordDecodeFailsMetric.Inc()
 		}
 	}
-	return fmt.Errorf("segment %d: %w", segmentNum, r.Err())
+	if r.Err() != nil {
+		return fmt.Errorf("segment %d: %w", segmentNum, r.Err())
+	}
+	return nil
 }
 
 func (w *Watcher) SetStartTime(t time.Time) {

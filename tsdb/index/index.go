@@ -1612,7 +1612,10 @@ func (r *Reader) Series(id storage.SeriesRef, lbls *labels.Labels, chks *[]chunk
 	if d.Err() != nil {
 		return d.Err()
 	}
-	return fmt.Errorf("read series: %w", r.dec.Series(d.Get(), lbls, chks))
+	if err := r.dec.Series(d.Get(), lbls, chks); err != nil {
+		return fmt.Errorf("read series: %w", err)
+	}
+	return nil
 }
 
 func (r *Reader) Postings(name string, values ...string) (Postings, error) {

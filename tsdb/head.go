@@ -674,7 +674,7 @@ func (h *Head) loadMmappedChunks(refSeries map[chunks.HeadSeriesRef]*memSeries) 
 		}
 		return nil
 	}); err != nil {
-		return nil, fmt.Errorf("iterate on on-disk chunks")
+		return nil, fmt.Errorf("iterate on on-disk chunks: %w", err)
 	}
 	return mmappedChunks, nil
 }
