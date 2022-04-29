@@ -858,6 +858,17 @@ var expectedConf = &Config{
 			Scheme:           DefaultScrapeConfig.Scheme,
 			HTTPClientConfig: config.DefaultHTTPClientConfig,
 
+			RelabelConfigs: []*relabel.Config{
+				{
+					Action:       relabel.Uppercase,
+					Regex:        relabel.DefaultRelabelConfig.Regex,
+					Replacement:  relabel.DefaultRelabelConfig.Replacement,
+					Separator:    relabel.DefaultRelabelConfig.Separator,
+					SourceLabels: model.LabelNames{"instance"},
+					TargetLabel:  "instance",
+				},
+			},
+
 			ServiceDiscoveryConfigs: discovery.Configs{
 				&hetzner.SDConfig{
 					HTTPClientConfig: config.HTTPClientConfig{
@@ -1196,6 +1207,30 @@ var expectedErrors = []struct {
 	{
 		filename: "labelmap.bad.yml",
 		errMsg:   "\"l-$1\" is invalid 'replacement' for labelmap action",
+	},
+	{
+		filename: "lowercase.bad.yml",
+		errMsg:   "relabel configuration for lowercase action requires 'target_label' value",
+	},
+	{
+		filename: "lowercase2.bad.yml",
+		errMsg:   "\"42lab\" is invalid 'target_label' for lowercase action",
+	},
+	{
+		filename: "lowercase3.bad.yml",
+		errMsg:   "'replacement' can not be set for lowercase action",
+	},
+	{
+		filename: "uppercase.bad.yml",
+		errMsg:   "relabel configuration for uppercase action requires 'target_label' value",
+	},
+	{
+		filename: "uppercase2.bad.yml",
+		errMsg:   "\"42lab\" is invalid 'target_label' for uppercase action",
+	},
+	{
+		filename: "uppercase3.bad.yml",
+		errMsg:   "'replacement' can not be set for uppercase action",
 	},
 	{
 		filename: "rules.bad.yml",
