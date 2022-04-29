@@ -155,8 +155,8 @@ func (h *headIndexReader) Series(ref storage.SeriesRef, lbls *labels.Labels, chk
 	}
 	*lbls = append((*lbls)[:0], s.lset...)
 
-	s.Lock()
-	defer s.Unlock()
+	s.RLock()
+	defer s.RUnlock()
 
 	*chks = (*chks)[:0]
 
@@ -266,10 +266,10 @@ func (h *headChunkReader) Chunk(ref chunks.ChunkRef) (chunkenc.Chunk, error) {
 		return nil, storage.ErrNotFound
 	}
 
-	s.Lock()
+	s.RLock()
 	c, garbageCollect, err := s.chunk(cid, h.head.chunkDiskMapper)
 	if err != nil {
-		s.Unlock()
+		s.RUnlock()
 		return nil, err
 	}
 	defer func() {
@@ -282,10 +282,10 @@ func (h *headChunkReader) Chunk(ref chunks.ChunkRef) (chunkenc.Chunk, error) {
 
 	// This means that the chunk is outside the specified range.
 	if !c.OverlapsClosedInterval(h.mint, h.maxt) {
-		s.Unlock()
+		s.RUnlock()
 		return nil, storage.ErrNotFound
 	}
-	s.Unlock()
+	s.RUnlock()
 
 	return &safeChunk{
 		Chunk:           c.chunk,
@@ -337,9 +337,9 @@ type safeChunk struct {
 }
 
 func (c *safeChunk) Iterator(reuseIter chunkenc.Iterator) chunkenc.Iterator {
-	c.s.Lock()
+	c.s.RLock()
 	it := c.s.iterator(c.cid, c.isoState, c.chunkDiskMapper, reuseIter)
-	c.s.Unlock()
+	c.s.RUnlock()
 	return it
 }
 
