@@ -108,7 +108,7 @@ func LoadFile(filename string, agentMode, expandExternalLabels bool, logger log.
 	}
 	cfg, err := Load(string(content), expandExternalLabels, logger)
 	if err != nil {
-		return nil, fmt.Errorf("parsing YAML file %s %w", filename, err)
+		return nil, fmt.Errorf("parsing YAML file %s: %w", filename, err)
 	}
 
 	if agentMode {

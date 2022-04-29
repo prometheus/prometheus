@@ -78,14 +78,14 @@ func (i *InstanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 	i.provider.Context = ctx
 	err := openstack.Authenticate(i.provider, *i.authOpts)
 	if err != nil {
-		return nil, fmt.Errorf("could not authenticate to OpenStack %w", err)
+		return nil, fmt.Errorf("could not authenticate to OpenStack: %w", err)
 	}
 
 	client, err := openstack.NewComputeV2(i.provider, gophercloud.EndpointOpts{
 		Region: i.region, Availability: i.availability,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("could not create OpenStack compute session %w", err)
+		return nil, fmt.Errorf("could not create OpenStack compute session: %w", err)
 	}
 
 	// OpenStack API reference
@@ -96,7 +96,7 @@ func (i *InstanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 	err = pagerFIP.EachPage(func(page pagination.Page) (bool, error) {
 		result, err := floatingips.ExtractFloatingIPs(page)
 		if err != nil {
-			return false, fmt.Errorf("could not extract floatingips %w", err)
+			return false, fmt.Errorf("could not extract floatingips: %w", err)
 		}
 		for _, ip := range result {
 			// Skip not associated ips
@@ -123,11 +123,11 @@ func (i *InstanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 	}
 	err = pager.EachPage(func(page pagination.Page) (bool, error) {
 		if ctx.Err() != nil {
-			return false, fmt.Errorf("could not extract instances %w", ctx.Err())
+			return false, fmt.Errorf("could not extract instances: %w", ctx.Err())
 		}
 		instanceList, err := servers.ExtractServers(page)
 		if err != nil {
-			return false, fmt.Errorf("could not extract instances %w", err)
+			return false, fmt.Errorf("could not extract instances: %w", err)
 		}
 
 		for _, s := range instanceList {

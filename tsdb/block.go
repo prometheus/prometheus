@@ -441,13 +441,13 @@ func (r blockIndexReader) SortedLabelValues(name string, matchers ...*labels.Mat
 		}
 	}
 
-	return st, fmt.Errorf("block: %s %w", r.b.Meta().ULID, err)
+	return st, fmt.Errorf("block: %s: %w", r.b.Meta().ULID, err)
 }
 
 func (r blockIndexReader) LabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
 	if len(matchers) == 0 {
 		st, err := r.ir.LabelValues(name)
-		return st, fmt.Errorf("block: %s %w", r.b.Meta().ULID, err)
+		return st, fmt.Errorf("block: %s: %w", r.b.Meta().ULID, err)
 	}
 
 	return labelValuesWithMatchers(r.ir, name, matchers...)
@@ -464,7 +464,7 @@ func (r blockIndexReader) LabelNames(matchers ...*labels.Matcher) ([]string, err
 func (r blockIndexReader) Postings(name string, values ...string) (index.Postings, error) {
 	p, err := r.ir.Postings(name, values...)
 	if err != nil {
-		return p, fmt.Errorf("block: %s %w", r.b.Meta().ULID, err)
+		return p, fmt.Errorf("block: %s: %w", r.b.Meta().ULID, err)
 	}
 	return p, nil
 }
@@ -475,7 +475,7 @@ func (r blockIndexReader) SortedPostings(p index.Postings) index.Postings {
 
 func (r blockIndexReader) Series(ref storage.SeriesRef, lset *labels.Labels, chks *[]chunks.Meta) error {
 	if err := r.ir.Series(ref, lset, chks); err != nil {
-		return fmt.Errorf("block: %s %w", r.b.Meta().ULID, err)
+		return fmt.Errorf("block: %s: %w", r.b.Meta().ULID, err)
 	}
 	return nil
 }
@@ -527,7 +527,7 @@ func (pb *Block) Delete(mint, maxt int64, ms ...*labels.Matcher) error {
 
 	p, err := PostingsForMatchers(pb.indexr, ms...)
 	if err != nil {
-		return fmt.Errorf("select series %w", err)
+		return fmt.Errorf("select series: %w", err)
 	}
 
 	ir := pb.indexr
@@ -615,12 +615,12 @@ func (pb *Block) CleanTombstones(dest string, c Compactor) (*ulid.ULID, bool, er
 func (pb *Block) Snapshot(dir string) error {
 	blockDir := filepath.Join(dir, pb.meta.ULID.String())
 	if err := os.MkdirAll(blockDir, 0o777); err != nil {
-		return fmt.Errorf("create snapshot block dir %w", err)
+		return fmt.Errorf("create snapshot block dir: %w", err)
 	}
 
 	chunksDir := chunkDir(blockDir)
 	if err := os.MkdirAll(chunksDir, 0o777); err != nil {
-		return fmt.Errorf("create snapshot chunk dir %w", err)
+		return fmt.Errorf("create snapshot chunk dir: %w", err)
 	}
 
 	// Hardlink meta, index and tombstones
@@ -630,7 +630,7 @@ func (pb *Block) Snapshot(dir string) error {
 		tombstones.TombstonesFilename,
 	} {
 		if err := os.Link(filepath.Join(pb.dir, fname), filepath.Join(blockDir, fname)); err != nil {
-			return fmt.Errorf("create snapshot %s %w", fname, err)
+			return fmt.Errorf("create snapshot %s: %w", fname, err)
 		}
 	}
 
@@ -638,13 +638,13 @@ func (pb *Block) Snapshot(dir string) error {
 	curChunkDir := chunkDir(pb.dir)
 	files, err := os.ReadDir(curChunkDir)
 	if err != nil {
-		return fmt.Errorf("ReadDir the current chunk dir %w", err)
+		return fmt.Errorf("ReadDir the current chunk dir: %w", err)
 	}
 
 	for _, f := range files {
 		err := os.Link(filepath.Join(curChunkDir, f.Name()), filepath.Join(chunksDir, f.Name()))
 		if err != nil {
-			return fmt.Errorf("hardlink a chunk %w", err)
+			return fmt.Errorf("hardlink a chunk: %w", err)
 		}
 	}
 

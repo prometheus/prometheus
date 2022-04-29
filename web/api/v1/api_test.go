@@ -2309,7 +2309,7 @@ func (f *fakeDB) WALReplayStatus() (tsdb.WALReplayStatus, error) {
 }
 
 func TestAdminEndpoints(t *testing.T) {
-	tsdb, tsdbWithError, tsdbNotReady := &fakeDB{}, &fakeDB{err: errors.New("some error")}, &fakeDB{err: fmt.Errorf("wrap %w", tsdb.ErrNotReady)}
+	tsdb, tsdbWithError, tsdbNotReady := &fakeDB{}, &fakeDB{err: errors.New("some error")}, &fakeDB{err: fmt.Errorf("wrap: %w", tsdb.ErrNotReady)}
 	snapshotAPI := func(api *API) apiFunc { return api.snapshot }
 	cleanAPI := func(api *API) apiFunc { return api.cleanTombstones }
 	deleteAPI := func(api *API) apiFunc { return api.deleteSeries }
@@ -2605,7 +2605,7 @@ func TestParseTimeParam(t *testing.T) {
 				asTime: time.Time{},
 				asError: func() error {
 					_, err := parseTime("baz")
-					return fmt.Errorf("Invalid time value for '%s' %w", "foo", err)
+					return fmt.Errorf("Invalid time value for '%s': %w", "foo", err)
 				},
 			},
 		},
@@ -2948,19 +2948,19 @@ func TestReturnAPIError(t *testing.T) {
 			err:      promql.ErrStorage{Err: errors.New("storage error")},
 			expected: errorInternal,
 		}, {
-			err:      fmt.Errorf("wrapped %w", promql.ErrStorage{Err: errors.New("storage error")}),
+			err:      fmt.Errorf("wrapped: %w", promql.ErrStorage{Err: errors.New("storage error")}),
 			expected: errorInternal,
 		}, {
 			err:      promql.ErrQueryTimeout("timeout error"),
 			expected: errorTimeout,
 		}, {
-			err:      fmt.Errorf("wrapped %w", promql.ErrQueryTimeout("timeout error")),
+			err:      fmt.Errorf("wrapped: %w", promql.ErrQueryTimeout("timeout error")),
 			expected: errorTimeout,
 		}, {
 			err:      promql.ErrQueryCanceled("canceled error"),
 			expected: errorCanceled,
 		}, {
-			err:      fmt.Errorf("wrapped %w", promql.ErrQueryCanceled("canceled error")),
+			err:      fmt.Errorf("wrapped: %w", promql.ErrQueryCanceled("canceled error")),
 			expected: errorCanceled,
 		}, {
 			err:      errors.New("exec error"),

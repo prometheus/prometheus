@@ -679,7 +679,7 @@ func backfillOpenMetrics(path, outputDir string, humanReadable, quiet bool, maxB
 	defer inputFile.Close()
 
 	if err := os.MkdirAll(outputDir, 0o777); err != nil {
-		return checkErr(fmt.Errorf("create output dir %w", err))
+		return checkErr(fmt.Errorf("create output dir: %w", err))
 	}
 
 	return checkErr(backfill(5000, inputFile.Bytes(), outputDir, humanReadable, quiet, maxBlockDuration))

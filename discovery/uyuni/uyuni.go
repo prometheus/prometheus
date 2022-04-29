@@ -131,7 +131,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 	_, err = url.Parse(c.Server)
 	if err != nil {
-		return fmt.Errorf("Uyuni Server URL is not valid %w", err)
+		return fmt.Errorf("Uyuni Server URL is not valid: %w", err)
 	}
 
 	if c.Username == "" {
@@ -276,7 +276,7 @@ func (d *Discovery) getTargetsForSystems(
 
 	systemGroupIDsBySystemID, err := getSystemGroupsInfoOfMonitoredClients(rpcClient, d.token, entitlement)
 	if err != nil {
-		return nil, fmt.Errorf("unable to get the managed system groups information of monitored clients %w", err)
+		return nil, fmt.Errorf("unable to get the managed system groups information of monitored clients: %w", err)
 	}
 
 	systemIDs := make([]int, 0, len(systemGroupIDsBySystemID))
@@ -286,12 +286,12 @@ func (d *Discovery) getTargetsForSystems(
 
 	endpointInfos, err := getEndpointInfoForSystems(rpcClient, d.token, systemIDs)
 	if err != nil {
-		return nil, fmt.Errorf("unable to get endpoints information %w", err)
+		return nil, fmt.Errorf("unable to get endpoints information: %w", err)
 	}
 
 	networkInfoBySystemID, err := getNetworkInformationForSystems(rpcClient, d.token, systemIDs)
 	if err != nil {
-		return nil, fmt.Errorf("unable to get the systems network information %w", err)
+		return nil, fmt.Errorf("unable to get the systems network information: %w", err)
 	}
 
 	for _, endpoint := range endpointInfos {
@@ -317,7 +317,7 @@ func (d *Discovery) refresh(_ context.Context) ([]*targetgroup.Group, error) {
 		// Uyuni API takes duration in seconds.
 		d.token, err = login(rpcClient, d.username, d.password, int(tokenDuration.Seconds()))
 		if err != nil {
-			return nil, fmt.Errorf("unable to login to Uyuni API %w", err)
+			return nil, fmt.Errorf("unable to login to Uyuni API: %w", err)
 		}
 		// Login again at half the token lifetime.
 		d.tokenExpiration = time.Now().Add(tokenDuration / 2)

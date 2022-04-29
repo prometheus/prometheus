@@ -104,7 +104,7 @@ func fetchApps(ctx context.Context, server string, client *http.Client) (*Applic
 	var apps Applications
 	err = xml.NewDecoder(resp.Body).Decode(&apps)
 	if err != nil {
-		return nil, fmt.Errorf("%q %w", url, err)
+		return nil, fmt.Errorf("%q: %w", url, err)
 	}
 	return &apps, nil
 }

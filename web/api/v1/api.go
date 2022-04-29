@@ -367,7 +367,7 @@ type queryData struct {
 
 func invalidParamError(err error, parameter string) apiFuncResult {
 	return apiFuncResult{nil, &apiError{
-		errorBadData, fmt.Errorf("invalid parameter %q %w", parameter, err),
+		errorBadData, fmt.Errorf("invalid parameter %q: %w", parameter, err),
 	}, nil, nil}
 }
 
@@ -712,7 +712,7 @@ var (
 
 func (api *API) series(r *http.Request) (result apiFuncResult) {
 	if err := r.ParseForm(); err != nil {
-		return apiFuncResult{nil, &apiError{errorBadData, fmt.Errorf("error parsing form values %w", err)}, nil, nil}
+		return apiFuncResult{nil, &apiError{errorBadData, fmt.Errorf("error parsing form values: %w", err)}, nil, nil}
 	}
 	if len(r.Form["match[]"]) == 0 {
 		return apiFuncResult{nil, &apiError{errorBadData, errors.New("no match[] parameter provided")}, nil, nil}
@@ -929,7 +929,7 @@ func (api *API) targets(r *http.Request) apiFuncResult {
 						if err == nil && lastErrStr == "" {
 							return ""
 						} else if err != nil {
-							return fmt.Errorf("%s %w", lastErrStr, err).Error()
+							return fmt.Errorf("%s: %w", lastErrStr, err).Error()
 						}
 						return lastErrStr
 					}(),
@@ -1427,7 +1427,7 @@ func (api *API) deleteSeries(r *http.Request) apiFuncResult {
 		return apiFuncResult{nil, &apiError{errorUnavailable, errors.New("admin APIs disabled")}, nil, nil}
 	}
 	if err := r.ParseForm(); err != nil {
-		return apiFuncResult{nil, &apiError{errorBadData, fmt.Errorf("error parsing form values %w", err)}, nil, nil}
+		return apiFuncResult{nil, &apiError{errorBadData, fmt.Errorf("error parsing form values: %w", err)}, nil, nil}
 	}
 	if len(r.Form["match[]"]) == 0 {
 		return apiFuncResult{nil, &apiError{errorBadData, errors.New("no match[] parameter provided")}, nil, nil}
@@ -1466,7 +1466,7 @@ func (api *API) snapshot(r *http.Request) apiFuncResult {
 	if r.FormValue("skip_head") != "" {
 		skipHead, err = strconv.ParseBool(r.FormValue("skip_head"))
 		if err != nil {
-			return invalidParamError(fmt.Errorf("unable to parse boolean %w", err), "skip_head")
+			return invalidParamError(fmt.Errorf("unable to parse boolean: %w", err), "skip_head")
 		}
 	}
 
@@ -1478,10 +1478,10 @@ func (api *API) snapshot(r *http.Request) apiFuncResult {
 		dir = filepath.Join(snapdir, name)
 	)
 	if err := os.MkdirAll(dir, 0o777); err != nil {
-		return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("create snapshot directory %w", err)}, nil, nil}
+		return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("create snapshot directory: %w", err)}, nil, nil}
 	}
 	if err := api.db.Snapshot(dir, !skipHead); err != nil {
-		return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("create snapshot %w", err)}, nil, nil}
+		return apiFuncResult{nil, &apiError{errorInternal, fmt.Errorf("create snapshot: %w", err)}, nil, nil}
 	}
 
 	return apiFuncResult{struct {
@@ -1569,7 +1569,7 @@ func parseTimeParam(r *http.Request, paramName string, defaultValue time.Time) (
 	}
 	result, err := parseTime(val)
 	if err != nil {
-		return time.Time{}, fmt.Errorf("Invalid time value for '%s' %w", paramName, err)
+		return time.Time{}, fmt.Errorf("Invalid time value for '%s': %w", paramName, err)
 	}
 	return result, nil
 }

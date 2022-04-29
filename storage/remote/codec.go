@@ -239,11 +239,11 @@ func StreamChunkedReadResponses(
 				QueryIndex: queryIndex,
 			})
 			if err != nil {
-				return ss.Warnings(), fmt.Errorf("marshal ChunkedReadResponse %w", err)
+				return ss.Warnings(), fmt.Errorf("marshal ChunkedReadResponse: %w", err)
 			}
 
 			if _, err := stream.Write(b); err != nil {
-				return ss.Warnings(), fmt.Errorf("write to stream %w", err)
+				return ss.Warnings(), fmt.Errorf("write to stream: %w", err)
 			}
 			chks = chks[:0]
 		}

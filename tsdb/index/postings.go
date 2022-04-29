@@ -915,7 +915,7 @@ func (h *postingsWithIndexHeap) next() error {
 	}
 
 	if err := pi.p.Err(); err != nil {
-		return fmt.Errorf("postings %d %w", pi.index, err)
+		return fmt.Errorf("postings %d: %w", pi.index, err)
 	}
 	h.popIndex()
 	return nil

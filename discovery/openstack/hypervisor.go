@@ -61,14 +61,14 @@ func (h *HypervisorDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group
 	h.provider.Context = ctx
 	err := openstack.Authenticate(h.provider, *h.authOpts)
 	if err != nil {
-		return nil, fmt.Errorf("could not authenticate to OpenStack %w", err)
+		return nil, fmt.Errorf("could not authenticate to OpenStack: %w", err)
 	}
 
 	client, err := openstack.NewComputeV2(h.provider, gophercloud.EndpointOpts{
 		Region: h.region, Availability: h.availability,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("could not create OpenStack compute session %w", err)
+		return nil, fmt.Errorf("could not create OpenStack compute session: %w", err)
 	}
 
 	tg := &targetgroup.Group{
@@ -80,7 +80,7 @@ func (h *HypervisorDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group
 	err = pagerHypervisors.EachPage(func(page pagination.Page) (bool, error) {
 		hypervisorList, err := hypervisors.ExtractHypervisors(page)
 		if err != nil {
-			return false, fmt.Errorf("could not extract hypervisors %w", err)
+			return false, fmt.Errorf("could not extract hypervisors: %w", err)
 		}
 		for _, hypervisor := range hypervisorList {
 			labels := model.LabelSet{}

@@ -31,7 +31,7 @@ type tarGzFileWriter struct {
 func newTarGzFileWriter(archiveName string) (*tarGzFileWriter, error) {
 	file, err := os.Create(archiveName)
 	if err != nil {
-		return nil, fmt.Errorf("error creating archive %q %w", archiveName, err)
+		return nil, fmt.Errorf("error creating archive %q: %w", archiveName, err)
 	}
 	gzw := gzip.NewWriter(file)
 	tw := tar.NewWriter(gzw)

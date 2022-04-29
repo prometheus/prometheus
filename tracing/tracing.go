@@ -79,7 +79,7 @@ func (m *Manager) ApplyConfig(cfg *config.Config) error {
 
 	if m.shutdownFunc != nil {
 		if err := m.shutdownFunc(); err != nil {
-			return fmt.Errorf("failed to shut down the tracer provider %w", err)
+			return fmt.Errorf("failed to shut down the tracer provider: %w", err)
 		}
 	}
 
@@ -94,7 +94,7 @@ func (m *Manager) ApplyConfig(cfg *config.Config) error {
 
 	tp, shutdownFunc, err := buildTracerProvider(context.Background(), cfg.TracingConfig)
 	if err != nil {
-		return fmt.Errorf("failed to install a new tracer provider %w", err)
+		return fmt.Errorf("failed to install a new tracer provider: %w", err)
 	}
 
 	m.shutdownFunc = shutdownFunc

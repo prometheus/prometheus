@@ -96,7 +96,7 @@ type CorruptionErr struct {
 }
 
 func (e *CorruptionErr) Error() string {
-	return fmt.Errorf("corruption in head chunk file %s %w", segmentFile(e.Dir, e.FileIndex), e.Err).Error()
+	return fmt.Errorf("corruption in head chunk file %s: %w", segmentFile(e.Dir, e.FileIndex), e.Err).Error()
 }
 
 // chunkPos keeps track of the position in the head chunk files.
@@ -289,7 +289,7 @@ func (cdm *ChunkDiskMapper) openMMapFiles() (returnErr error) {
 	for seq, fn := range files {
 		f, err := fileutil.OpenMmapFile(fn)
 		if err != nil {
-			return fmt.Errorf("mmap files, file: %s %w", fn, err)
+			return fmt.Errorf("mmap files, file: %s: %w", fn, err)
 		}
 		cdm.closers[seq] = f
 		cdm.mmappedChunkFiles[seq] = &mmappedChunkFile{byteSlice: realByteSlice(f.Bytes())}
@@ -311,7 +311,7 @@ func (cdm *ChunkDiskMapper) openMMapFiles() (returnErr error) {
 
 	for i, b := range cdm.mmappedChunkFiles {
 		if b.byteSlice.Len() < HeadChunkFileHeaderSize {
-			return fmt.Errorf("%s: invalid head chunk file header %w", files[i], errInvalidSize)
+			return fmt.Errorf("%s: invalid head chunk file header: %w", files[i], errInvalidSize)
 		}
 		// Verify magic number.
 		if m := binary.BigEndian.Uint32(b.byteSlice.Range(0, MagicChunksSize)); m != MagicHeadChunks {
@@ -363,12 +363,12 @@ func repairLastChunkFile(files map[int]string) (_ map[int]string, returnErr erro
 
 	info, err := os.Stat(files[lastFile])
 	if err != nil {
-		return files, fmt.Errorf("file stat during last head chunk file repair %w", err)
+		return files, fmt.Errorf("file stat during last head chunk file repair: %w", err)
 	}
 	if info.Size() == 0 {
 		// Corrupt file, hence remove it.
 		if err := os.RemoveAll(files[lastFile]); err != nil {
-			return files, fmt.Errorf("delete corrupted, empty head chunk file during last file repair %w", err)
+			return files, fmt.Errorf("delete corrupted, empty head chunk file during last file repair: %w", err)
 		}
 		delete(files, lastFile)
 	}
@@ -943,7 +943,7 @@ func (cdm *ChunkDiskMapper) DeleteCorrupted(originalErr error) error {
 	err := errors.Unwrap(originalErr) // So that we can pick up errors even if wrapped.
 	var cerr *CorruptionErr
 	if !errors.As(err, &cerr) {
-		return fmt.Errorf("cannot handle error %w", originalErr)
+		return fmt.Errorf("cannot handle error: %w", originalErr)
 	}
 
 	// Delete all the head chunk files following the corrupt head chunk file.

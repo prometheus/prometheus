@@ -100,7 +100,7 @@ func Checkpoint(logger log.Logger, w *WAL, from, to int, keep func(id chunks.Hea
 		var sgmRange []SegmentRange
 		dir, idx, err := LastCheckpoint(w.Dir())
 		if err != nil && !errors.Is(err, record.ErrNotFound) {
-			return nil, fmt.Errorf("find last checkpoint %w", err)
+			return nil, fmt.Errorf("find last checkpoint: %w", err)
 		}
 		last := idx + 1
 		if err == nil {
@@ -116,7 +116,7 @@ func Checkpoint(logger log.Logger, w *WAL, from, to int, keep func(id chunks.Hea
 		sgmRange = append(sgmRange, SegmentRange{Dir: w.Dir(), First: from, Last: to})
 		sgmReader, err = NewSegmentsRangeReader(sgmRange...)
 		if err != nil {
-			return nil, fmt.Errorf("create segment reader %w", err)
+			return nil, fmt.Errorf("create segment reader: %w", err)
 		}
 		defer sgmReader.Close()
 	}
@@ -125,15 +125,15 @@ func Checkpoint(logger log.Logger, w *WAL, from, to int, keep func(id chunks.Hea
 	cpdirtmp := cpdir + ".tmp"
 
 	if err := os.RemoveAll(cpdirtmp); err != nil {
-		return nil, fmt.Errorf("remove previous temporary checkpoint dir %w", err)
+		return nil, fmt.Errorf("remove previous temporary checkpoint dir: %w", err)
 	}
 
 	if err := os.MkdirAll(cpdirtmp, 0o777); err != nil {
-		return nil, fmt.Errorf("create checkpoint dir %w", err)
+		return nil, fmt.Errorf("create checkpoint dir: %w", err)
 	}
 	cp, err := New(nil, nil, cpdirtmp, w.CompressionEnabled())
 	if err != nil {
-		return nil, fmt.Errorf("open checkpoint %w", err)
+		return nil, fmt.Errorf("open checkpoint: %w", err)
 	}
 
 	// Ensures that an early return caused by an error doesn't leave any tmp files.
@@ -167,7 +167,7 @@ func Checkpoint(logger log.Logger, w *WAL, from, to int, keep func(id chunks.Hea
 		case record.Series:
 			series, err = dec.Series(rec, series)
 			if err != nil {
-				return nil, fmt.Errorf("decode series %w", err)
+				return nil, fmt.Errorf("decode series: %w", err)
 			}
 			// Drop irrelevant series in place.
 			repl := series[:0]
@@ -185,7 +185,7 @@ func Checkpoint(logger log.Logger, w *WAL, from, to int, keep func(id chunks.Hea
 		case record.Samples:
 			samples, err = dec.Samples(rec, samples)
 			if err != nil {
-				return nil, fmt.Errorf("decode samples %w", err)
+				return nil, fmt.Errorf("decode samples: %w", err)
 			}
 			// Drop irrelevant samples in place.
 			repl := samples[:0]
@@ -203,7 +203,7 @@ func Checkpoint(logger log.Logger, w *WAL, from, to int, keep func(id chunks.Hea
 		case record.Tombstones:
 			tstones, err = dec.Tombstones(rec, tstones)
 			if err != nil {
-				return nil, fmt.Errorf("decode deletes %w", err)
+				return nil, fmt.Errorf("decode deletes: %w", err)
 			}
 			// Drop irrelevant tombstones in place.
 			repl := tstones[:0]
@@ -224,7 +224,7 @@ func Checkpoint(logger log.Logger, w *WAL, from, to int, keep func(id chunks.Hea
 		case record.Exemplars:
 			exemplars, err = dec.Exemplars(rec, exemplars)
 			if err != nil {
-				return nil, fmt.Errorf("decode exemplars %w", err)
+				return nil, fmt.Errorf("decode exemplars: %w", err)
 			}
 			// Drop irrelevant exemplars in place.
 			repl := exemplars[:0]
@@ -250,7 +250,7 @@ func Checkpoint(logger log.Logger, w *WAL, from, to int, keep func(id chunks.Hea
 		// Flush records in 1 MB increments.
 		if len(buf) > 1*1024*1024 {
 			if err := cp.Log(recs...); err != nil {
-				return nil, fmt.Errorf("flush records %w", err)
+				return nil, fmt.Errorf("flush records: %w", err)
 			}
 			buf, recs = buf[:0], recs[:0]
 		}
@@ -258,32 +258,32 @@ func Checkpoint(logger log.Logger, w *WAL, from, to int, keep func(id chunks.Hea
 	// If we hit any corruption during checkpointing, repairing is not an option.
 	// The head won't know which series records are lost.
 	if r.Err() != nil {
-		return nil, fmt.Errorf("read segments %w", r.Err())
+		return nil, fmt.Errorf("read segments: %w", r.Err())
 	}
 
 	// Flush remaining records.
 	if err := cp.Log(recs...); err != nil {
-		return nil, fmt.Errorf("flush records %w", err)
+		return nil, fmt.Errorf("flush records: %w", err)
 	}
 	if err := cp.Close(); err != nil {
-		return nil, fmt.Errorf("close checkpoint %w", err)
+		return nil, fmt.Errorf("close checkpoint: %w", err)
 	}
 
 	// Sync temporary directory before rename.
 	df, err := fileutil.OpenDir(cpdirtmp)
 	if err != nil {
-		return nil, fmt.Errorf("open temporary checkpoint directory %w", err)
+		return nil, fmt.Errorf("open temporary checkpoint directory: %w", err)
 	}
 	if err := df.Sync(); err != nil {
 		df.Close()
-		return nil, fmt.Errorf("sync temporary checkpoint directory %w", err)
+		return nil, fmt.Errorf("sync temporary checkpoint directory: %w", err)
 	}
 	if err = df.Close(); err != nil {
-		return nil, fmt.Errorf("close temporary checkpoint directory %w", err)
+		return nil, fmt.Errorf("close temporary checkpoint directory: %w", err)
 	}
 
 	if err := fileutil.Replace(cpdirtmp, cpdir); err != nil {
-		return nil, fmt.Errorf("rename checkpoint directory %w", err)
+		return nil, fmt.Errorf("rename checkpoint directory: %w", err)
 	}
 
 	return stats, nil

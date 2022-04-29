@@ -179,7 +179,7 @@ func (d *EC2Discovery) ec2Client(ctx context.Context) (*ec2.EC2, error) {
 		Profile: d.cfg.Profile,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("could not create aws session %w", err)
+		return nil, fmt.Errorf("could not create aws session: %w", err)
 	}
 
 	if d.cfg.RoleARN != "" {
@@ -332,7 +332,7 @@ func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 		if errors.As(err, &awsErr) && (awsErr.Code() == "AuthFailure" || awsErr.Code() == "UnauthorizedOperation") {
 			d.ec2 = nil
 		}
-		return nil, fmt.Errorf("could not describe instances %w", err)
+		return nil, fmt.Errorf("could not describe instances: %w", err)
 	}
 	return []*targetgroup.Group{tg}, nil
 }

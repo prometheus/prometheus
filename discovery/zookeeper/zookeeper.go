@@ -263,7 +263,7 @@ func parseServersetMember(data []byte, path string) (model.LabelSet, error) {
 	member := serversetMember{}
 
 	if err := json.Unmarshal(data, &member); err != nil {
-		return nil, fmt.Errorf("error unmarshaling serverset member %q %w", path, err)
+		return nil, fmt.Errorf("error unmarshaling serverset member %q: %w", path, err)
 	}
 
 	labels := model.LabelSet{}
@@ -305,7 +305,7 @@ func parseNerveMember(data []byte, path string) (model.LabelSet, error) {
 	member := nerveMember{}
 	err := json.Unmarshal(data, &member)
 	if err != nil {
-		return nil, fmt.Errorf("error unmarshaling nerve member %q %w", path, err)
+		return nil, fmt.Errorf("error unmarshaling nerve member %q: %w", path, err)
 	}
 
 	labels := model.LabelSet{}

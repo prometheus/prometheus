@@ -389,12 +389,12 @@ func (te Expander) Expand() (result string, resultErr error) {
 	tmpl.Option(te.options...)
 	tmpl, err := tmpl.Parse(te.text)
 	if err != nil {
-		return "", fmt.Errorf("error parsing template %v %w", te.name, err)
+		return "", fmt.Errorf("error parsing template %v: %w", te.name, err)
 	}
 	var buffer bytes.Buffer
 	err = tmpl.Execute(&buffer, te.data)
 	if err != nil {
-		return "", fmt.Errorf("error executing template %v %w", te.name, err)
+		return "", fmt.Errorf("error executing template %v: %w", te.name, err)
 	}
 	return buffer.String(), nil
 }
@@ -422,18 +422,18 @@ func (te Expander) ExpandHTML(templateFiles []string) (result string, resultErr 
 	})
 	tmpl, err := tmpl.Parse(te.text)
 	if err != nil {
-		return "", fmt.Errorf("error parsing template %v %w", te.name, err)
+		return "", fmt.Errorf("error parsing template %v: %w", te.name, err)
 	}
 	if len(templateFiles) > 0 {
 		_, err = tmpl.ParseFiles(templateFiles...)
 		if err != nil {
-			return "", fmt.Errorf("error parsing template files for %v %w", te.name, err)
+			return "", fmt.Errorf("error parsing template files for %v: %w", te.name, err)
 		}
 	}
 	var buffer bytes.Buffer
 	err = tmpl.Execute(&buffer, te.data)
 	if err != nil {
-		return "", fmt.Errorf("error executing template %v %w", te.name, err)
+		return "", fmt.Errorf("error executing template %v: %w", te.name, err)
 	}
 	return buffer.String(), nil
 }

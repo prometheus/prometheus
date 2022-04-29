@@ -42,11 +42,11 @@ type Error struct {
 // Error prints the error message in a formatted string.
 func (err *Error) Error() string {
 	if err.Err.nodeAlt != nil {
-		return fmt.Errorf("%d:%d: %d:%d: group %q, rule %d, %q %w", err.Err.node.Line, err.Err.node.Column, err.Err.nodeAlt.Line, err.Err.nodeAlt.Column, err.Group, err.Rule, err.RuleName, err.Err.err).Error()
+		return fmt.Errorf("%d:%d: %d:%d: group %q, rule %d, %q: %w", err.Err.node.Line, err.Err.node.Column, err.Err.nodeAlt.Line, err.Err.nodeAlt.Column, err.Group, err.Rule, err.RuleName, err.Err.err).Error()
 	} else if err.Err.node != nil {
-		return fmt.Errorf("%d:%d: group %q, rule %d, %q %w", err.Err.node.Line, err.Err.node.Column, err.Group, err.Rule, err.RuleName, err.Err.err).Error()
+		return fmt.Errorf("%d:%d: group %q, rule %d, %q: %w", err.Err.node.Line, err.Err.node.Column, err.Group, err.Rule, err.RuleName, err.Err.err).Error()
 	}
-	return fmt.Errorf("group %q, rule %d, %q %w", err.Group, err.Rule, err.RuleName, err.Err.err).Error()
+	return fmt.Errorf("group %q, rule %d, %q: %w", err.Group, err.Rule, err.RuleName, err.Err.err).Error()
 }
 
 // WrappedError wraps error with the yaml node which can be used to represent
@@ -60,9 +60,9 @@ type WrappedError struct {
 // Error prints the error message in a formatted string.
 func (we *WrappedError) Error() string {
 	if we.nodeAlt != nil {
-		return fmt.Errorf("%d:%d: %d:%d %w", we.node.Line, we.node.Column, we.nodeAlt.Line, we.nodeAlt.Column, we.err).Error()
+		return fmt.Errorf("%d:%d: %d:%d: %w", we.node.Line, we.node.Column, we.nodeAlt.Line, we.nodeAlt.Column, we.err).Error()
 	} else if we.node != nil {
-		return fmt.Errorf("%d:%d %w", we.node.Line, we.node.Column, we.err).Error()
+		return fmt.Errorf("%d:%d: %w", we.node.Line, we.node.Column, we.err).Error()
 	}
 	return we.err.Error()
 }
@@ -173,7 +173,7 @@ func (r *RuleNode) Validate() (nodes []WrappedError) {
 		})
 	} else if _, err := parser.ParseExpr(r.Expr.Value); err != nil {
 		nodes = append(nodes, WrappedError{
-			err:  fmt.Errorf("could not parse expression %w", err),
+			err:  fmt.Errorf("could not parse expression: %w", err),
 			node: &r.Expr,
 		})
 	}
@@ -261,7 +261,7 @@ func testTemplateParsing(rl *RuleNode) (errs []error) {
 	for k, val := range rl.Labels {
 		err := parseTest(val)
 		if err != nil {
-			errs = append(errs, fmt.Errorf("label %q %w", k, err))
+			errs = append(errs, fmt.Errorf("label %q: %w", k, err))
 		}
 	}
 
@@ -269,7 +269,7 @@ func testTemplateParsing(rl *RuleNode) (errs []error) {
 	for k, val := range rl.Annotations {
 		err := parseTest(val)
 		if err != nil {
-			errs = append(errs, fmt.Errorf("annotation %q %w", k, err))
+			errs = append(errs, fmt.Errorf("annotation %q: %w", k, err))
 		}
 	}
 
@@ -307,11 +307,11 @@ func Parse(content []byte) (*RuleGroups, []error) {
 func ParseFile(file string) (*RuleGroups, []error) {
 	b, err := os.ReadFile(file)
 	if err != nil {
-		return nil, []error{fmt.Errorf("%s %w", file, err)}
+		return nil, []error{fmt.Errorf("%s: %w", file, err)}
 	}
 	rgs, errs := Parse(b)
 	for i := range errs {
-		errs[i] = fmt.Errorf("%s %w", file, errs[i])
+		errs[i] = fmt.Errorf("%s: %w", file, errs[i])
 	}
 	return rgs, errs
 }

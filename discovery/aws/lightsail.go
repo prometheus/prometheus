@@ -152,7 +152,7 @@ func (d *LightsailDiscovery) lightsailClient() (*lightsail.Lightsail, error) {
 		Profile: d.cfg.Profile,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("could not create aws session %w", err)
+		return nil, fmt.Errorf("could not create aws session: %w", err)
 	}
 
 	if d.cfg.RoleARN != "" {
@@ -183,7 +183,7 @@ func (d *LightsailDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group,
 		if errors.As(err, &awsErr) && (awsErr.Code() == "AuthFailure" || awsErr.Code() == "UnauthorizedOperation") {
 			d.lightsail = nil
 		}
-		return nil, fmt.Errorf("could not get instances %w", err)
+		return nil, fmt.Errorf("could not get instances: %w", err)
 	}
 
 	for _, inst := range output.Instances {

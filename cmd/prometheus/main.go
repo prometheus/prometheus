@@ -394,7 +394,7 @@ func main() {
 
 	_, err := a.Parse(os.Args[1:])
 	if err != nil {
-		fmt.Fprintln(os.Stderr, fmt.Errorf("Error parsing commandline arguments %w", err))
+		fmt.Fprintln(os.Stderr, fmt.Errorf("Error parsing commandline arguments: %w", err))
 		a.Usage(os.Args[1:])
 		os.Exit(2)
 	}
@@ -402,7 +402,7 @@ func main() {
 	logger := promlog.New(&cfg.promlogConfig)
 
 	if err := cfg.setFeatureListOptions(logger); err != nil {
-		fmt.Fprintln(os.Stderr, fmt.Errorf("Error parsing feature list %w", err))
+		fmt.Fprintln(os.Stderr, fmt.Errorf("Error parsing feature list: %w", err))
 		os.Exit(1)
 	}
 
@@ -423,13 +423,13 @@ func main() {
 
 	cfg.web.ExternalURL, err = computeExternalURL(cfg.prometheusURL, cfg.web.ListenAddress)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, fmt.Errorf("parse external URL %q %w", cfg.prometheusURL, err))
+		fmt.Fprintln(os.Stderr, fmt.Errorf("parse external URL %q: %w", cfg.prometheusURL, err))
 		os.Exit(2)
 	}
 
 	cfg.web.CORSOrigin, err = compileCORSRegexString(cfg.corsRegexString)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, fmt.Errorf("could not compile CORS regex string %q %w", cfg.corsRegexString, err))
+		fmt.Fprintln(os.Stderr, fmt.Errorf("could not compile CORS regex string %q: %w", cfg.corsRegexString, err))
 		os.Exit(2)
 	}
 
@@ -729,7 +729,7 @@ func main() {
 					fs, err := filepath.Glob(pat)
 					if err != nil {
 						// The only error can be a bad pattern.
-						return fmt.Errorf("error retrieving rule files for %s %w", pat, err)
+						return fmt.Errorf("error retrieving rule files for %s: %w", pat, err)
 					}
 					files = append(files, fs...)
 				}
@@ -921,7 +921,7 @@ func main() {
 				}
 
 				if err := reloadConfig(cfg.configFile, cfg.enableExpandExternalLabels, cfg.tsdb.EnableExemplarStorage, logger, noStepSubqueryInterval, reloaders...); err != nil {
-					return fmt.Errorf("error loading config from %q %w", cfg.configFile, err)
+					return fmt.Errorf("error loading config from %q: %w", cfg.configFile, err)
 				}
 
 				reloadReady.Close()
@@ -968,7 +968,7 @@ func main() {
 
 				db, err := openDBWithMetrics(localStoragePath, logger, prometheus.DefaultRegisterer, &opts, localStorage.getStats())
 				if err != nil {
-					return fmt.Errorf("opening storage failed %w", err)
+					return fmt.Errorf("opening storage failed: %w", err)
 				}
 
 				switch fsType := prom_runtime.Statfs(localStoragePath); fsType {
@@ -1024,7 +1024,7 @@ func main() {
 					&opts,
 				)
 				if err != nil {
-					return fmt.Errorf("opening storage failed %w", err)
+					return fmt.Errorf("opening storage failed: %w", err)
 				}
 
 				switch fsType := prom_runtime.Statfs(localStoragePath); fsType {
@@ -1062,7 +1062,7 @@ func main() {
 		g.Add(
 			func() error {
 				if err := webHandler.Run(ctxWeb, listener, *webConfig); err != nil {
-					return fmt.Errorf("error starting web server %w", err)
+					return fmt.Errorf("error starting web server: %w", err)
 				}
 				return nil
 			},
@@ -1172,7 +1172,7 @@ func reloadConfig(filename string, expandExternalLabels, enableExemplarStorage b
 
 	conf, err := config.LoadFile(filename, agentMode, expandExternalLabels, logger)
 	if err != nil {
-		return fmt.Errorf("couldn't load configuration (--config.file=%q) %w", filename, err)
+		return fmt.Errorf("couldn't load configuration (--config.file=%q): %w", filename, err)
 	}
 
 	if enableExemplarStorage {

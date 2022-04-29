@@ -144,7 +144,7 @@ func (d *Decoder) Samples(rec []byte, samples []RefSample) ([]RefSample, error) 
 	}
 
 	if dec.Err() != nil {
-		return nil, fmt.Errorf("decode error after %d samples %w", len(samples), dec.Err())
+		return nil, fmt.Errorf("decode error after %d samples: %w", len(samples), dec.Err())
 	}
 	if len(dec.B) > 0 {
 		return nil, fmt.Errorf("unexpected %d bytes left in entry", len(dec.B))
@@ -215,7 +215,7 @@ func (d *Decoder) ExemplarsFromBuffer(dec *encoding.Decbuf, exemplars []RefExemp
 	}
 
 	if dec.Err() != nil {
-		return nil, fmt.Errorf("decode error after %d exemplars %w", len(exemplars), dec.Err())
+		return nil, fmt.Errorf("decode error after %d exemplars: %w", len(exemplars), dec.Err())
 	}
 	if len(dec.B) > 0 {
 		return nil, fmt.Errorf("unexpected %d bytes left in entry", len(dec.B))

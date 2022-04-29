@@ -255,7 +255,7 @@ func Open(l log.Logger, reg prometheus.Registerer, rs *remote.Storage, dir strin
 
 	w, err := wal.NewSize(l, reg, dir, opts.WALSegmentSize, opts.WALCompression)
 	if err != nil {
-		return nil, fmt.Errorf("creating WAL %w", err)
+		return nil, fmt.Errorf("creating WAL: %w", err)
 	}
 
 	db := &DB{
@@ -292,7 +292,7 @@ func Open(l log.Logger, reg prometheus.Registerer, rs *remote.Storage, dir strin
 	if err := db.replayWAL(); err != nil {
 		level.Warn(db.logger).Log("msg", "encountered WAL read error, attempting repair", "err", err)
 		if err := w.Repair(err); err != nil {
-			return nil, fmt.Errorf("repair corrupted WAL %w", err)
+			return nil, fmt.Errorf("repair corrupted WAL: %w", err)
 		}
 	}
 
@@ -334,7 +334,7 @@ func (db *DB) replayWAL() error {
 
 	dir, startFrom, err := wal.LastCheckpoint(db.wal.Dir())
 	if err != nil && !errors.Is(err, record.ErrNotFound) {
-		return fmt.Errorf("find last checkpoint %w", err)
+		return fmt.Errorf("find last checkpoint: %w", err)
 	}
 
 	multiRef := map[chunks.HeadSeriesRef]chunks.HeadSeriesRef{}
@@ -342,7 +342,7 @@ func (db *DB) replayWAL() error {
 	if err == nil {
 		sr, err := wal.NewSegmentsReader(dir)
 		if err != nil {
-			return fmt.Errorf("open checkpoint %w", err)
+			return fmt.Errorf("open checkpoint: %w", err)
 		}
 		defer func() {
 			if err := sr.Close(); err != nil {
@@ -353,7 +353,7 @@ func (db *DB) replayWAL() error {
 		// A corrupted checkpoint is a hard error for now and requires user
 		// intervention. There's likely little data that can be recovered anyway.
 		if err := db.loadWAL(wal.NewReader(sr), multiRef); err != nil {
-			return fmt.Errorf("backfill checkpoint %w", err)
+			return fmt.Errorf("backfill checkpoint: %w", err)
 		}
 		startFrom++
 		level.Info(db.logger).Log("msg", "WAL checkpoint loaded")
@@ -362,14 +362,14 @@ func (db *DB) replayWAL() error {
 	// Find the last segment.
 	_, last, err := wal.Segments(db.wal.Dir())
 	if err != nil {
-		return fmt.Errorf("finding WAL segments %w", err)
+		return fmt.Errorf("finding WAL segments: %w", err)
 	}
 
 	// Backfil segments from the most recent checkpoint onwards.
 	for i := startFrom; i <= last; i++ {
 		seg, err := wal.OpenReadSegment(wal.SegmentName(db.wal.Dir(), i))
 		if err != nil {
-			return fmt.Errorf("open WAL segment: %d %w", i, err)
+			return fmt.Errorf("open WAL segment: %d: %w", i, err)
 		}
 
 		sr := wal.NewSegmentBufReader(seg)
@@ -419,7 +419,7 @@ func (db *DB) loadWAL(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.He
 				series, err = dec.Series(rec, series)
 				if err != nil {
 					errCh <- &wal.CorruptionErr{
-						Err:     fmt.Errorf("decode series %w", err),
+						Err:     fmt.Errorf("decode series: %w", err),
 						Segment: r.Segment(),
 						Offset:  r.Offset(),
 					}
@@ -431,7 +431,7 @@ func (db *DB) loadWAL(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.He
 				samples, err = dec.Samples(rec, samples)
 				if err != nil {
 					errCh <- &wal.CorruptionErr{
-						Err:     fmt.Errorf("decode samples %w", err),
+						Err:     fmt.Errorf("decode samples: %w", err),
 						Segment: r.Segment(),
 						Offset:  r.Offset(),
 					}
@@ -507,7 +507,7 @@ func (db *DB) loadWAL(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.He
 		return err
 	default:
 		if r.Err() != nil {
-			return fmt.Errorf("read records %w", r.Err())
+			return fmt.Errorf("read records: %w", r.Err())
 		}
 		return nil
 	}
@@ -561,14 +561,14 @@ func (db *DB) truncate(mint int64) error {
 
 	first, last, err := wal.Segments(db.wal.Dir())
 	if err != nil {
-		return fmt.Errorf("get segment range %w", err)
+		return fmt.Errorf("get segment range: %w", err)
 	}
 
 	// Start a new segment so low ingestion volume instances don't have more WAL
 	// than needed.
 	err = db.wal.NextSegment()
 	if err != nil {
-		return fmt.Errorf("next segment %w", err)
+		return fmt.Errorf("next segment: %w", err)
 	}
 
 	last-- // Never consider most recent segment for checkpoint
@@ -600,7 +600,7 @@ func (db *DB) truncate(mint int64) error {
 		if errors.As(errors.Unwrap(err), &ce) {
 			db.metrics.walCorruptionsTotal.Inc()
 		}
-		return fmt.Errorf("create checkpoint %w", err)
+		return fmt.Errorf("create checkpoint: %w", err)
 	}
 	if err := db.wal.Truncate(last + 1); err != nil {
 		// If truncating fails, we'll just try it again at the next checkpoint.
@@ -711,7 +711,7 @@ func (a *appender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v flo
 		// equivalent validation code in the TSDB's headAppender.
 		l = l.WithoutEmpty()
 		if len(l) == 0 {
-			return 0, fmt.Errorf("empty labelset %w", tsdb.ErrInvalidSample)
+			return 0, fmt.Errorf("empty labelset: %w", tsdb.ErrInvalidSample)
 		}
 
 		if lbl, dup := l.HasDuplicateLabelNames(); dup {

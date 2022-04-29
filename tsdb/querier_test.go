@@ -1256,7 +1256,7 @@ func (m mockIndex) Postings(name string, values ...string) (index.Postings, erro
 func (m mockIndex) SortedPostings(p index.Postings) index.Postings {
 	ep, err := index.ExpandPostings(p)
 	if err != nil {
-		return index.ErrPostings(fmt.Errorf("expand postings %w", err))
+		return index.ErrPostings(fmt.Errorf("expand postings: %w", err))
 	}
 
 	sort.Slice(ep, func(i, j int) bool {

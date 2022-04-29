@@ -240,15 +240,15 @@ type notReadyReadStorage struct {
 }
 
 func (notReadyReadStorage) Querier(context.Context, int64, int64) (storage.Querier, error) {
-	return nil, fmt.Errorf("wrap %w", tsdb.ErrNotReady)
+	return nil, fmt.Errorf("wrap: %w", tsdb.ErrNotReady)
 }
 
 func (notReadyReadStorage) StartTime() (int64, error) {
-	return 0, fmt.Errorf("wrap %w", tsdb.ErrNotReady)
+	return 0, fmt.Errorf("wrap: %w", tsdb.ErrNotReady)
 }
 
 func (notReadyReadStorage) Stats(string) (*tsdb.Stats, error) {
-	return nil, fmt.Errorf("wrap %w", tsdb.ErrNotReady)
+	return nil, fmt.Errorf("wrap: %w", tsdb.ErrNotReady)
 }
 
 // Regression test for https://github.com/prometheus/prometheus/issues/7181.

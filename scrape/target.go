@@ -484,7 +484,7 @@ func TargetsFromGroup(tg *targetgroup.Group, cfg *config.ScrapeConfig) ([]*Targe
 
 		lbls, origLabels, err := PopulateLabels(lset, cfg)
 		if err != nil {
-			failures = append(failures, fmt.Errorf("instance %d in group %s %w", i, tg, err))
+			failures = append(failures, fmt.Errorf("instance %d in group %s: %w", i, tg, err))
 		}
 		if lbls != nil || origLabels != nil {
 			targets = append(targets, NewTarget(lbls, origLabels, cfg.Params))

@@ -1075,7 +1075,7 @@ func (m *Manager) LoadGroups(
 			for _, r := range rg.Rules {
 				expr, err := m.opts.GroupLoader.Parse(r.Expr.Value)
 				if err != nil {
-					return nil, []error{fmt.Errorf("%s %w", fn, err)}
+					return nil, []error{fmt.Errorf("%s: %w", fn, err)}
 				}
 
 				if r.Alert.Value != "" {

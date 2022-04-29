@@ -141,7 +141,7 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 				series, err = dec.Series(rec, series)
 				if err != nil {
 					decodeErr = &wal.CorruptionErr{
-						Err:     fmt.Errorf("decode series %w", err),
+						Err:     fmt.Errorf("decode series: %w", err),
 						Segment: r.Segment(),
 						Offset:  r.Offset(),
 					}
@@ -153,7 +153,7 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 				samples, err = dec.Samples(rec, samples)
 				if err != nil {
 					decodeErr = &wal.CorruptionErr{
-						Err:     fmt.Errorf("decode samples %w", err),
+						Err:     fmt.Errorf("decode samples: %w", err),
 						Segment: r.Segment(),
 						Offset:  r.Offset(),
 					}
@@ -165,7 +165,7 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 				tstones, err = dec.Tombstones(rec, tstones)
 				if err != nil {
 					decodeErr = &wal.CorruptionErr{
-						Err:     fmt.Errorf("decode tombstones %w", err),
+						Err:     fmt.Errorf("decode tombstones: %w", err),
 						Segment: r.Segment(),
 						Offset:  r.Offset(),
 					}
@@ -177,7 +177,7 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 				exemplars, err = dec.Exemplars(rec, exemplars)
 				if err != nil {
 					decodeErr = &wal.CorruptionErr{
-						Err:     fmt.Errorf("decode exemplars %w", err),
+						Err:     fmt.Errorf("decode exemplars: %w", err),
 						Segment: r.Segment(),
 						Offset:  r.Offset(),
 					}
@@ -330,7 +330,7 @@ Outer:
 	wg.Wait()
 
 	if r.Err() != nil {
-		return fmt.Errorf("read records %w", r.Err())
+		return fmt.Errorf("read records: %w", r.Err())
 	}
 
 	if unknownRefs.Load() > 0 || unknownExemplarRefs.Load() > 0 {
@@ -525,7 +525,7 @@ func decodeSeriesFromChunkSnapshot(b []byte) (csr chunkSnapshotRecord, err error
 
 	chk, err := chunkenc.FromData(enc, chunkBytesCopy)
 	if err != nil {
-		return csr, fmt.Errorf("chunk from data %w", err)
+		return csr, fmt.Errorf("chunk from data: %w", err)
 	}
 	csr.mc.chunk = chk
 
@@ -548,7 +548,7 @@ func encodeTombstonesToSnapshotRecord(tr tombstones.Reader) ([]byte, error) {
 	buf.PutByte(chunkSnapshotRecordTypeTombstones)
 	b, err := tombstones.Encode(tr)
 	if err != nil {
-		return nil, fmt.Errorf("encode tombstones %w", err)
+		return nil, fmt.Errorf("encode tombstones: %w", err)
 	}
 	buf.PutUvarintBytes(b)
 
@@ -563,7 +563,7 @@ func decodeTombstonesSnapshotRecord(b []byte) (tombstones.Reader, error) {
 	}
 
 	tr, err := tombstones.Decode(dec.UvarintBytes())
-	return tr, fmt.Errorf("decode tombstones %w", err)
+	return tr, fmt.Errorf("decode tombstones: %w", err)
 }
 
 const chunkSnapshotPrefix = "chunk_snapshot."
@@ -591,12 +591,12 @@ func (h *Head) ChunkSnapshot() (*ChunkSnapshotStats, error) {
 
 	wlast, woffset, err := h.wal.LastSegmentAndOffset()
 	if err != nil && !errors.Is(err, record.ErrNotFound) {
-		return stats, fmt.Errorf("get last wal segment and offset %w", err)
+		return stats, fmt.Errorf("get last wal segment and offset: %w", err)
 	}
 
 	_, cslast, csoffset, err := LastChunkSnapshot(h.opts.ChunkDirRoot)
 	if err != nil && !errors.Is(err, record.ErrNotFound) {
-		return stats, fmt.Errorf("find last chunk snapshot %w", err)
+		return stats, fmt.Errorf("find last chunk snapshot: %w", err)
 	}
 
 	if wlast == cslast && woffset == csoffset {
@@ -611,11 +611,11 @@ func (h *Head) ChunkSnapshot() (*ChunkSnapshotStats, error) {
 	stats.Dir = cpdir
 
 	if err := os.MkdirAll(cpdirtmp, 0o777); err != nil {
-		return stats, fmt.Errorf("create chunk snapshot dir %w", err)
+		return stats, fmt.Errorf("create chunk snapshot dir: %w", err)
 	}
 	cp, err := wal.New(nil, nil, cpdirtmp, h.wal.CompressionEnabled())
 	if err != nil {
-		return stats, fmt.Errorf("open chunk snapshot %w", err)
+		return stats, fmt.Errorf("open chunk snapshot: %w", err)
 	}
 
 	// Ensures that an early return caused by an error doesn't leave any tmp files.
@@ -644,7 +644,7 @@ func (h *Head) ChunkSnapshot() (*ChunkSnapshotStats, error) {
 			if len(buf) > 10*1024*1024 {
 				if err := cp.Log(recs...); err != nil {
 					h.series.locks[i].RUnlock()
-					return stats, fmt.Errorf("flush records %w", err)
+					return stats, fmt.Errorf("flush records: %w", err)
 				}
 				buf, recs = buf[:0], recs[:0]
 			}
@@ -657,16 +657,16 @@ func (h *Head) ChunkSnapshot() (*ChunkSnapshotStats, error) {
 	// Add tombstones to the snapshot.
 	tombstonesReader, err := h.Tombstones()
 	if err != nil {
-		return stats, fmt.Errorf("get tombstones %w", err)
+		return stats, fmt.Errorf("get tombstones: %w", err)
 	}
 	rec, err := encodeTombstonesToSnapshotRecord(tombstonesReader)
 	if err != nil {
-		return stats, fmt.Errorf("encode tombstones %w", err)
+		return stats, fmt.Errorf("encode tombstones: %w", err)
 	}
 	recs = append(recs, rec)
 	// Flush remaining series records and tombstones.
 	if err := cp.Log(recs...); err != nil {
-		return stats, fmt.Errorf("flush records %w", err)
+		return stats, fmt.Errorf("flush records: %w", err)
 	}
 	buf = buf[:0]
 
@@ -685,7 +685,7 @@ func (h *Head) ChunkSnapshot() (*ChunkSnapshotStats, error) {
 		encbuf.PutByte(chunkSnapshotRecordTypeExemplars)
 		enc.EncodeExemplarsIntoBuffer(batch, &encbuf)
 		if err := cp.Log(encbuf.Get()); err != nil {
-			return fmt.Errorf("log exemplars %w", err)
+			return fmt.Errorf("log exemplars: %w", err)
 		}
 		buf, batch = buf[:0], batch[:0]
 		return nil
@@ -693,7 +693,7 @@ func (h *Head) ChunkSnapshot() (*ChunkSnapshotStats, error) {
 	err = h.exemplars.IterateExemplars(func(seriesLabels labels.Labels, e exemplar.Exemplar) error {
 		if len(batch) >= maxExemplarsPerRecord {
 			if err := flushExemplars(); err != nil {
-				return fmt.Errorf("flush exemplars %w", err)
+				return fmt.Errorf("flush exemplars: %w", err)
 			}
 		}
 
@@ -711,19 +711,19 @@ func (h *Head) ChunkSnapshot() (*ChunkSnapshotStats, error) {
 		return nil
 	})
 	if err != nil {
-		return stats, fmt.Errorf("iterate exemplars %w", err)
+		return stats, fmt.Errorf("iterate exemplars: %w", err)
 	}
 
 	// Flush remaining exemplars.
 	if err := flushExemplars(); err != nil {
-		return stats, fmt.Errorf("flush exemplars at the end %w", err)
+		return stats, fmt.Errorf("flush exemplars at the end: %w", err)
 	}
 
 	if err := cp.Close(); err != nil {
-		return stats, fmt.Errorf("close chunk snapshot %w", err)
+		return stats, fmt.Errorf("close chunk snapshot: %w", err)
 	}
 	if err := fileutil.Replace(cpdirtmp, cpdir); err != nil {
-		return stats, fmt.Errorf("rename chunk snapshot directory %w", err)
+		return stats, fmt.Errorf("rename chunk snapshot directory: %w", err)
 	}
 
 	if err := DeleteChunkSnapshots(h.opts.ChunkDirRoot, wlast, woffset); err != nil {
@@ -747,7 +747,7 @@ func (h *Head) performChunkSnapshot() error {
 	if err == nil {
 		level.Info(h.logger).Log("msg", "chunk snapshot complete", "duration", elapsed.String(), "num_series", stats.TotalSeries, "dir", stats.Dir)
 	}
-	return fmt.Errorf("chunk snapshot %w", err)
+	return fmt.Errorf("chunk snapshot: %w", err)
 }
 
 // ChunkSnapshotStats returns stats about a created chunk snapshot.
@@ -848,13 +848,13 @@ func (h *Head) loadChunkSnapshot() (int, int, map[chunks.HeadSeriesRef]*memSerie
 		if errors.Is(err, record.ErrNotFound) {
 			return snapIdx, snapOffset, nil, nil
 		}
-		return snapIdx, snapOffset, nil, fmt.Errorf("find last chunk snapshot %w", err)
+		return snapIdx, snapOffset, nil, fmt.Errorf("find last chunk snapshot: %w", err)
 	}
 
 	start := time.Now()
 	sr, err := wal.NewSegmentsReader(dir)
 	if err != nil {
-		return snapIdx, snapOffset, nil, fmt.Errorf("open chunk snapshot %w", err)
+		return snapIdx, snapOffset, nil, fmt.Errorf("open chunk snapshot: %w", err)
 	}
 	defer func() {
 		if err := sr.Close(); err != nil {
@@ -940,7 +940,7 @@ Outer:
 			numSeries++
 			csr, err := decodeSeriesFromChunkSnapshot(rec)
 			if err != nil {
-				loopErr = fmt.Errorf("decode series record %w", err)
+				loopErr = fmt.Errorf("decode series record: %w", err)
 				break Outer
 			}
 			recordChan <- csr
@@ -948,7 +948,7 @@ Outer:
 		case chunkSnapshotRecordTypeTombstones:
 			tr, err := decodeTombstonesSnapshotRecord(rec)
 			if err != nil {
-				loopErr = fmt.Errorf("decode tombstones %w", err)
+				loopErr = fmt.Errorf("decode tombstones: %w", err)
 				break Outer
 			}
 
@@ -956,7 +956,7 @@ Outer:
 				h.tombstones.AddInterval(ref, ivs...)
 				return nil
 			}); err != nil {
-				loopErr = fmt.Errorf("iterate tombstones %w", err)
+				loopErr = fmt.Errorf("iterate tombstones: %w", err)
 				break Outer
 			}
 
@@ -984,7 +984,7 @@ Outer:
 			exemplarBuf = exemplarBuf[:0]
 			exemplarBuf, err = dec.ExemplarsFromBuffer(&decbuf, exemplarBuf)
 			if err != nil {
-				loopErr = fmt.Errorf("exemplars from buffer %w", err)
+				loopErr = fmt.Errorf("exemplars from buffer: %w", err)
 				break Outer
 			}
 
@@ -1000,7 +1000,7 @@ Outer:
 					Value:  e.V,
 					Ts:     e.T,
 				}); err != nil {
-					loopErr = fmt.Errorf("add exemplar %w", err)
+					loopErr = fmt.Errorf("add exemplar: %w", err)
 					break Outer
 				}
 			}
@@ -1018,16 +1018,16 @@ Outer:
 	}
 
 	close(errChan)
-	merr := tsdb_errors.NewMulti(fmt.Errorf("decode loop %w", loopErr))
+	merr := tsdb_errors.NewMulti(fmt.Errorf("decode loop: %w", loopErr))
 	for err := range errChan {
-		merr.Add(fmt.Errorf("record processing %w", err))
+		merr.Add(fmt.Errorf("record processing: %w", err))
 	}
 	if err := merr.Err(); err != nil {
 		return -1, -1, nil, err
 	}
 
 	if r.Err() != nil {
-		return -1, -1, nil, fmt.Errorf("read records %w", r.Err())
+		return -1, -1, nil, fmt.Errorf("read records: %w", r.Err())
 	}
 
 	if len(refSeries) == 0 {

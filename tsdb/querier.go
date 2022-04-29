@@ -57,18 +57,18 @@ type blockBaseQuerier struct {
 func newBlockBaseQuerier(b BlockReader, mint, maxt int64) (*blockBaseQuerier, error) {
 	indexr, err := b.Index()
 	if err != nil {
-		return nil, fmt.Errorf("open index reader %w", err)
+		return nil, fmt.Errorf("open index reader: %w", err)
 	}
 	chunkr, err := b.Chunks()
 	if err != nil {
 		indexr.Close()
-		return nil, fmt.Errorf("open chunk reader %w", err)
+		return nil, fmt.Errorf("open chunk reader: %w", err)
 	}
 	tombsr, err := b.Tombstones()
 	if err != nil {
 		indexr.Close()
 		chunkr.Close()
-		return nil, fmt.Errorf("open tombstone reader %w", err)
+		return nil, fmt.Errorf("open tombstone reader: %w", err)
 	}
 
 	if tombsr == nil {
@@ -377,23 +377,23 @@ func inversePostingsForMatcher(ix IndexReader, m *labels.Matcher) (index.Posting
 func labelValuesWithMatchers(r IndexReader, name string, matchers ...*labels.Matcher) ([]string, error) {
 	p, err := PostingsForMatchers(r, matchers...)
 	if err != nil {
-		return nil, fmt.Errorf("fetching postings for matchers %w", err)
+		return nil, fmt.Errorf("fetching postings for matchers: %w", err)
 	}
 
 	allValues, err := r.LabelValues(name)
 	if err != nil {
-		return nil, fmt.Errorf("fetching values of label %s %w", name, err)
+		return nil, fmt.Errorf("fetching values of label %s: %w", name, err)
 	}
 	valuesPostings := make([]index.Postings, len(allValues))
 	for i, value := range allValues {
 		valuesPostings[i], err = r.Postings(name, value)
 		if err != nil {
-			return nil, fmt.Errorf("fetching postings for %s=%q %w", name, value, err)
+			return nil, fmt.Errorf("fetching postings for %s=%q: %w", name, value, err)
 		}
 	}
 	indexes, err := index.FindIntersectingPostings(p, valuesPostings)
 	if err != nil {
-		return nil, fmt.Errorf("intersecting postings %w", err)
+		return nil, fmt.Errorf("intersecting postings: %w", err)
 	}
 
 	values := make([]string, 0, len(indexes))
@@ -415,7 +415,7 @@ func labelNamesWithMatchers(r IndexReader, matchers ...*labels.Matcher) ([]strin
 		postings = append(postings, p.At())
 	}
 	if p.Err() != nil {
-		return nil, fmt.Errorf("postings for label names with matches %w", p.Err())
+		return nil, fmt.Errorf("postings for label names with matches: %w", p.Err())
 	}
 
 	return r.LabelNamesFor(postings...)
@@ -447,7 +447,7 @@ func (b *blockBaseSeriesSet) Next() bool {
 			if errors.Is(errors.Unwrap(err), storage.ErrNotFound) {
 				continue
 			}
-			b.err = fmt.Errorf("get series %d %w", b.p.At(), err)
+			b.err = fmt.Errorf("get series %d: %w", b.p.At(), err)
 			return false
 		}
 
@@ -457,7 +457,7 @@ func (b *blockBaseSeriesSet) Next() bool {
 
 		intervals, err := b.tombstones.Get(b.p.At())
 		if err != nil {
-			b.err = fmt.Errorf("get tombstones %w", err)
+			b.err = fmt.Errorf("get tombstones: %w", err)
 			return false
 		}
 
@@ -571,7 +571,7 @@ func (p *populateWithDelGenericSeriesIterator) next() bool {
 
 	p.currChkMeta.Chunk, p.err = p.chunks.Chunk(p.currChkMeta.Ref)
 	if p.err != nil {
-		p.err = fmt.Errorf("cannot populate chunk %d %w", p.currChkMeta.Ref, p.err)
+		p.err = fmt.Errorf("cannot populate chunk %d: %w", p.currChkMeta.Ref, p.err)
 		return false
 	}
 
@@ -686,12 +686,12 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 
 	if !p.currDelIter.Next() {
 		if err := p.currDelIter.Err(); err != nil {
-			p.err = fmt.Errorf("iterate chunk while re-encoding %w", err)
+			p.err = fmt.Errorf("iterate chunk while re-encoding: %w", err)
 			return false
 		}
 
 		// Empty chunk, this should not happen, as we assume full deletions being filtered before this iterator.
-		p.err = fmt.Errorf("populateWithDelChunkSeriesIterator: unexpected empty chunk found while rewriting chunk %w", err)
+		p.err = fmt.Errorf("populateWithDelChunkSeriesIterator: unexpected empty chunk found while rewriting chunk: %w", err)
 		return false
 	}
 
@@ -704,7 +704,7 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 		app.Append(t, v)
 	}
 	if err := p.currDelIter.Err(); err != nil {
-		p.err = fmt.Errorf("iterate chunk while re-encoding %w", err)
+		p.err = fmt.Errorf("iterate chunk while re-encoding: %w", err)
 		return false
 	}
 

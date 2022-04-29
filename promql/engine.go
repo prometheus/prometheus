@@ -950,7 +950,7 @@ func (ev *evaluator) recover(ws *storage.Warnings, errp *error) {
 		buf = buf[:runtime.Stack(buf, false)]
 
 		level.Error(ev.logger).Log("msg", "runtime panic in parser", "err", e, "stacktrace", string(buf))
-		*errp = fmt.Errorf("unexpected error %w", err)
+		*errp = fmt.Errorf("unexpected error: %w", err)
 	case errWithWarnings:
 		*errp = err.err
 		*ws = append(*ws, err.warnings...)
@@ -1344,7 +1344,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 		ws, err := checkAndExpandSeriesSet(ev.ctx, sel)
 		warnings = append(warnings, ws...)
 		if err != nil {
-			ev.error(errWithWarnings{fmt.Errorf("expanding series %w", err), warnings})
+			ev.error(errWithWarnings{fmt.Errorf("expanding series: %w", err), warnings})
 		}
 		mat := make(Matrix, 0, len(selVS.Series)) // Output matrix.
 		offset := durationMilliseconds(selVS.Offset)
@@ -1541,7 +1541,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 	case *parser.VectorSelector:
 		ws, err := checkAndExpandSeriesSet(ev.ctx, e)
 		if err != nil {
-			ev.error(errWithWarnings{fmt.Errorf("expanding series %w", err), ws})
+			ev.error(errWithWarnings{fmt.Errorf("expanding series: %w", err), ws})
 		}
 		mat := make(Matrix, 0, len(e.Series))
 		it := storage.NewMemoizedEmptyIterator(durationMilliseconds(ev.lookbackDelta))
@@ -1685,7 +1685,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 func (ev *evaluator) vectorSelector(node *parser.VectorSelector, ts int64) (Vector, storage.Warnings) {
 	ws, err := checkAndExpandSeriesSet(ev.ctx, node)
 	if err != nil {
-		ev.error(errWithWarnings{fmt.Errorf("expanding series %w", err), ws})
+		ev.error(errWithWarnings{fmt.Errorf("expanding series: %w", err), ws})
 	}
 	vec := make(Vector, 0, len(node.Series))
 	it := storage.NewMemoizedEmptyIterator(durationMilliseconds(ev.lookbackDelta))
@@ -1769,7 +1769,7 @@ func (ev *evaluator) matrixSelector(node *parser.MatrixSelector) (Matrix, storag
 	)
 	ws, err := checkAndExpandSeriesSet(ev.ctx, node)
 	if err != nil {
-		ev.error(errWithWarnings{fmt.Errorf("expanding series %w", err), ws})
+		ev.error(errWithWarnings{fmt.Errorf("expanding series: %w", err), ws})
 	}
 
 	series := vs.Series

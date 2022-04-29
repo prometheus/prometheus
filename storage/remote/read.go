@@ -164,12 +164,12 @@ func (q *querier) Select(sortSeries bool, hints *storage.SelectHints, matchers .
 	m, added := q.addExternalLabels(matchers)
 	query, err := ToQuery(q.mint, q.maxt, m, hints)
 	if err != nil {
-		return storage.ErrSeriesSet(fmt.Errorf("toQuery %w", err))
+		return storage.ErrSeriesSet(fmt.Errorf("toQuery: %w", err))
 	}
 
 	res, err := q.client.Read(q.ctx, query)
 	if err != nil {
-		return storage.ErrSeriesSet(fmt.Errorf("remote_read %w", err))
+		return storage.ErrSeriesSet(fmt.Errorf("remote_read: %w", err))
 	}
 	return newSeriesSetFilter(FromQueryResult(sortSeries, res), added)
 }

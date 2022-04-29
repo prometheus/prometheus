@@ -38,7 +38,7 @@ func getMinAndMaxTimestamps(p textparse.Parser) (int64, int64, error) {
 			break
 		}
 		if err != nil {
-			return 0, 0, fmt.Errorf("next %w", err)
+			return 0, 0, fmt.Errorf("next: %w", err)
 		}
 
 		if entry != textparse.EntrySeries {
@@ -119,7 +119,7 @@ func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesIn
 			// original interval later.
 			w, err := tsdb.NewBlockWriter(log.NewNopLogger(), outputDir, 2*blockDuration)
 			if err != nil {
-				return fmt.Errorf("block writer %w", err)
+				return fmt.Errorf("block writer: %w", err)
 			}
 			defer func() {
 				err = tsdb_errors.NewMulti(err, w.Close()).Err()
@@ -135,7 +135,7 @@ func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesIn
 					break
 				}
 				if err != nil {
-					return fmt.Errorf("parse %w", err)
+					return fmt.Errorf("parse: %w", err)
 				}
 				if e != textparse.EntrySeries {
 					continue
@@ -161,7 +161,7 @@ func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesIn
 				p.Metric(&l)
 
 				if _, err := app.Append(0, l, *ts, v); err != nil {
-					return fmt.Errorf("add sample %w", err)
+					return fmt.Errorf("add sample: %w", err)
 				}
 
 				samplesCount++
@@ -173,7 +173,7 @@ func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesIn
 				// Therefore the old appender is committed and a new one is created.
 				// This prevents keeping too many samples lined up in an appender and thus in RAM.
 				if err := app.Commit(); err != nil {
-					return fmt.Errorf("commit %w", err)
+					return fmt.Errorf("commit: %w", err)
 				}
 
 				app = w.Appender(ctx)
@@ -181,7 +181,7 @@ func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesIn
 			}
 
 			if err := app.Commit(); err != nil {
-				return fmt.Errorf("commit %w", err)
+				return fmt.Errorf("commit: %w", err)
 			}
 
 			block, err := w.Flush(ctx)
@@ -192,7 +192,7 @@ func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesIn
 				}
 				blocks, err := db.Blocks()
 				if err != nil {
-					return fmt.Errorf("get blocks %w", err)
+					return fmt.Errorf("get blocks: %w", err)
 				}
 				for _, b := range blocks {
 					if b.Meta().ULID == block {
@@ -203,13 +203,13 @@ func createBlocks(input []byte, mint, maxt, maxBlockDuration int64, maxSamplesIn
 				}
 			case errors.Is(err, tsdb.ErrNoSeriesAppended):
 			default:
-				return fmt.Errorf("flush %w", err)
+				return fmt.Errorf("flush: %w", err)
 			}
 
 			return nil
 		}()
 		if err != nil {
-			return fmt.Errorf("process blocks %w", err)
+			return fmt.Errorf("process blocks: %w", err)
 		}
 	}
 	return nil
@@ -219,7 +219,7 @@ func backfill(maxSamplesInAppender int, input []byte, outputDir string, humanRea
 	p := textparse.NewOpenMetricsParser(input)
 	maxt, mint, err := getMinAndMaxTimestamps(p)
 	if err != nil {
-		return fmt.Errorf("getting min and max timestamp %w", err)
+		return fmt.Errorf("getting min and max timestamp: %w", err)
 	}
-	return fmt.Errorf("block creation %w", createBlocks(input, mint, maxt, int64(maxBlockDuration/time.Millisecond), maxSamplesInAppender, outputDir, humanReadable, quiet))
+	return fmt.Errorf("block creation: %w", createBlocks(input, mint, maxt, int64(maxBlockDuration/time.Millisecond), maxSamplesInAppender, outputDir, humanReadable, quiet))
 }

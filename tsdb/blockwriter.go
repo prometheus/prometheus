@@ -66,7 +66,7 @@ func NewBlockWriter(logger log.Logger, dir string, blockSize int64) (*BlockWrite
 func (w *BlockWriter) initHead() error {
 	chunkDir, err := os.MkdirTemp(os.TempDir(), "head")
 	if err != nil {
-		return fmt.Errorf("create temp dir %w", err)
+		return fmt.Errorf("create temp dir: %w", err)
 	}
 	w.chunkDir = chunkDir
 	opts := DefaultHeadOptions()
@@ -74,7 +74,7 @@ func (w *BlockWriter) initHead() error {
 	opts.ChunkDirRoot = w.chunkDir
 	h, err := NewHead(nil, w.logger, nil, opts, NewHeadStats())
 	if err != nil {
-		return fmt.Errorf("tsdb.NewHead %w", err)
+		return fmt.Errorf("tsdb.NewHead: %w", err)
 	}
 
 	w.head = h
@@ -102,11 +102,11 @@ func (w *BlockWriter) Flush(ctx context.Context) (ulid.ULID, error) {
 		[]int64{w.blockSize},
 		chunkenc.NewPool(), nil)
 	if err != nil {
-		return ulid.ULID{}, fmt.Errorf("create leveled compactor %w", err)
+		return ulid.ULID{}, fmt.Errorf("create leveled compactor: %w", err)
 	}
 	id, err := compactor.Write(w.destinationDir, w.head, mint, maxt, nil)
 	if err != nil {
-		return ulid.ULID{}, fmt.Errorf("compactor write %w", err)
+		return ulid.ULID{}, fmt.Errorf("compactor write: %w", err)
 	}
 
 	return id, nil

@@ -268,12 +268,12 @@ func valuesToSamples(values [][]interface{}) ([]prompb.Sample, error) {
 
 		timestamp, err := jsonTimestamp.Int64()
 		if err != nil {
-			return nil, fmt.Errorf("unable to convert sample timestamp to int64 %w", err)
+			return nil, fmt.Errorf("unable to convert sample timestamp to int64: %w", err)
 		}
 
 		value, err := jsonValue.Float64()
 		if err != nil {
-			return nil, fmt.Errorf("unable to convert sample value to float64 %w", err)
+			return nil, fmt.Errorf("unable to convert sample value to float64: %w", err)
 		}
 
 		samples = append(samples, prompb.Sample{

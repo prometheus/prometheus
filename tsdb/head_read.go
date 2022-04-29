@@ -131,7 +131,7 @@ func (h *headIndexReader) SortedPostings(p index.Postings) index.Postings {
 		}
 	}
 	if err := p.Err(); err != nil {
-		return index.ErrPostings(fmt.Errorf("expand postings %w", err))
+		return index.ErrPostings(fmt.Errorf("expand postings: %w", err))
 	}
 
 	sort.Slice(series, func(i, j int) bool {

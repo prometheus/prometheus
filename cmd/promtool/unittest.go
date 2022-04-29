@@ -355,7 +355,7 @@ Outer:
 		for _, s := range testCase.ExpSamples {
 			lb, err := parser.ParseMetric(s.Labels)
 			if err != nil {
-				err = fmt.Errorf("labels %q %w", s.Labels, err)
+				err = fmt.Errorf("labels %q: %w", s.Labels, err)
 				errs = append(errs, fmt.Errorf("    expr: %q, time: %s, err: %w", testCase.Expr,
 					testCase.EvalTime.String(), err))
 				continue Outer

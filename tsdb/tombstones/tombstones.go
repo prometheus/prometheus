@@ -107,17 +107,17 @@ func WriteFile(logger log.Logger, dir string, tr Reader) (int64, error) {
 
 	bytes, err := Encode(tr)
 	if err != nil {
-		return 0, fmt.Errorf("encoding tombstones %w", err)
+		return 0, fmt.Errorf("encoding tombstones: %w", err)
 	}
 
 	// Ignore first byte which is the format type. We do this for compatibility.
 	if _, err := hash.Write(bytes[tombstoneFormatVersionSize:]); err != nil {
-		return 0, fmt.Errorf("calculating hash for tombstones %w", err)
+		return 0, fmt.Errorf("calculating hash for tombstones: %w", err)
 	}
 
 	n, err = f.Write(bytes)
 	if err != nil {
-		return 0, fmt.Errorf("writing tombstones %w", err)
+		return 0, fmt.Errorf("writing tombstones: %w", err)
 	}
 	size += n
 
@@ -196,7 +196,7 @@ func ReadTombstones(dir string) (Reader, int64, error) {
 	}
 
 	if len(b) < tombstonesHeaderSize {
-		return nil, 0, fmt.Errorf("tombstones header %w", encoding.ErrInvalidSize)
+		return nil, 0, fmt.Errorf("tombstones header: %w", encoding.ErrInvalidSize)
 	}
 
 	d := &encoding.Decbuf{B: b[:len(b)-tombstonesCRCSize]}
@@ -208,10 +208,10 @@ func ReadTombstones(dir string) (Reader, int64, error) {
 	hash := newCRC32()
 	// Ignore first byte which is the format type.
 	if _, err := hash.Write(d.Get()[tombstoneFormatVersionSize:]); err != nil {
-		return nil, 0, fmt.Errorf("write to hash %w", err)
+		return nil, 0, fmt.Errorf("write to hash: %w", err)
 	}
 	if binary.BigEndian.Uint32(b[len(b)-tombstonesCRCSize:]) != hash.Sum32() {
-		return nil, 0, fmt.Errorf("checksum did not match %w", err)
+		return nil, 0, fmt.Errorf("checksum did not match: %w", err)
 	}
 
 	if d.Err() != nil {

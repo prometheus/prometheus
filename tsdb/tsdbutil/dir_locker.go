@@ -83,7 +83,7 @@ func (l *DirLocker) Lock() error {
 
 	lockf, _, err := fileutil.Flock(l.path)
 	if err != nil {
-		return fmt.Errorf("lock DB directory %w", err)
+		return fmt.Errorf("lock DB directory: %w", err)
 	}
 	l.releaser = lockf
 	return nil

@@ -41,7 +41,7 @@ func (m *mockIndexWriter) AddSeries(_ storage.SeriesRef, l labels.Labels, chks .
 	for i, chk := range chks {
 		c, err := copyChunk(chk.Chunk)
 		if err != nil {
-			return fmt.Errorf("mockIndexWriter: copy chunk %w", err)
+			return fmt.Errorf("mockIndexWriter: copy chunk: %w", err)
 		}
 		chksNew[i] = chunks.Meta{MaxTime: chk.MaxTime, MinTime: chk.MinTime, Chunk: c}
 	}

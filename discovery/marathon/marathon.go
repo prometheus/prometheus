@@ -188,7 +188,7 @@ func newAuthTokenFileRoundTripper(tokenFile string, rt http.RoundTripper) (http.
 	// fail-fast if we can't read the file.
 	_, err := os.ReadFile(tokenFile)
 	if err != nil {
-		return nil, fmt.Errorf("unable to read auth token file %s %w", tokenFile, err)
+		return nil, fmt.Errorf("unable to read auth token file %s: %w", tokenFile, err)
 	}
 	return &authTokenFileRoundTripper{tokenFile, rt}, nil
 }
@@ -196,7 +196,7 @@ func newAuthTokenFileRoundTripper(tokenFile string, rt http.RoundTripper) (http.
 func (rt *authTokenFileRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {
 	b, err := os.ReadFile(rt.authTokenFile)
 	if err != nil {
-		return nil, fmt.Errorf("unable to read auth token file %s %w", rt.authTokenFile, err)
+		return nil, fmt.Errorf("unable to read auth token file %s: %w", rt.authTokenFile, err)
 	}
 	authToken := strings.TrimSpace(string(b))
 
@@ -347,7 +347,7 @@ func fetchApps(ctx context.Context, client *http.Client, url string) (*appList, 
 	var apps appList
 	err = json.Unmarshal(b, &apps)
 	if err != nil {
-		return nil, fmt.Errorf("%q %w", url, err)
+		return nil, fmt.Errorf("%q: %w", url, err)
 	}
 	return &apps, nil
 }

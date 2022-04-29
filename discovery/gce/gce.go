@@ -132,11 +132,11 @@ func NewDiscovery(conf SDConfig, logger log.Logger) (*Discovery, error) {
 	var err error
 	d.client, err = google.DefaultClient(context.Background(), compute.ComputeReadonlyScope)
 	if err != nil {
-		return nil, fmt.Errorf("error setting up communication with GCE service %w", err)
+		return nil, fmt.Errorf("error setting up communication with GCE service: %w", err)
 	}
 	d.svc, err = compute.NewService(context.Background(), option.WithHTTPClient(d.client))
 	if err != nil {
-		return nil, fmt.Errorf("error setting up communication with GCE service %w", err)
+		return nil, fmt.Errorf("error setting up communication with GCE service: %w", err)
 	}
 	d.isvc = compute.NewInstancesService(d.svc)
 
@@ -221,7 +221,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("error retrieving refresh targets from gce %w", err)
+		return nil, fmt.Errorf("error retrieving refresh targets from gce: %w", err)
 	}
 	return []*targetgroup.Group{tg}, nil
 }

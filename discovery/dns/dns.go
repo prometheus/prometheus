@@ -265,7 +265,7 @@ func (d *Discovery) refreshOne(ctx context.Context, name string, ch chan<- *targ
 func lookupWithSearchPath(name string, qtype uint16, logger log.Logger) (*dns.Msg, error) {
 	conf, err := dns.ClientConfigFromFile(resolvConf)
 	if err != nil {
-		return nil, fmt.Errorf("could not load resolv.conf %w", err)
+		return nil, fmt.Errorf("could not load resolv.conf: %w", err)
 	}
 
 	allResponsesValid := true

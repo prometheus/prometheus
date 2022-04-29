@@ -546,14 +546,14 @@ func (t *Test) exec(tc testCommand) error {
 				if cmd.fail {
 					continue
 				}
-				return fmt.Errorf("error evaluating query %q (line %d) %w", iq.expr, cmd.line, res.Err)
+				return fmt.Errorf("error evaluating query %q (line %d): %w", iq.expr, cmd.line, res.Err)
 			}
 			if res.Err == nil && cmd.fail {
 				return fmt.Errorf("expected error evaluating query %q (line %d) but got none", iq.expr, cmd.line)
 			}
 			err = cmd.compareResult(res.Value)
 			if err != nil {
-				return fmt.Errorf("error in %s %s %w", cmd, iq.expr, err)
+				return fmt.Errorf("error in %s %s: %w", cmd, iq.expr, err)
 			}
 
 			// Check query returns same result in range mode,
@@ -564,7 +564,7 @@ func (t *Test) exec(tc testCommand) error {
 			}
 			rangeRes := q.Exec(t.context)
 			if rangeRes.Err != nil {
-				return fmt.Errorf("error evaluating query %q (line %d) in range mode %w", iq.expr, cmd.line, rangeRes.Err)
+				return fmt.Errorf("error evaluating query %q (line %d) in range mode: %w", iq.expr, cmd.line, rangeRes.Err)
 			}
 			defer q.Close()
 			if cmd.ordered {
@@ -587,7 +587,7 @@ func (t *Test) exec(tc testCommand) error {
 				err = cmd.compareResult(vec)
 			}
 			if err != nil {
-				return fmt.Errorf("error in %s %s (line %d) range mode %w", cmd, iq.expr, cmd.line, err)
+				return fmt.Errorf("error in %s %s (line %d) range mode: %w", cmd, iq.expr, cmd.line, err)
 			}
 
 		}
@@ -661,7 +661,7 @@ func parseNumber(s string) (float64, error) {
 		f, err = strconv.ParseFloat(s, 64)
 	}
 	if err != nil {
-		return 0, fmt.Errorf("error parsing number %w", err)
+		return 0, fmt.Errorf("error parsing number: %w", err)
 	}
 	return f, nil
 }

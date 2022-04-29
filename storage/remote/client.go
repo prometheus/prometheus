@@ -272,13 +272,13 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryRe
 	}
 	data, err := proto.Marshal(req)
 	if err != nil {
-		return nil, fmt.Errorf("unable to marshal read request %w", err)
+		return nil, fmt.Errorf("unable to marshal read request: %w", err)
 	}
 
 	compressed := snappy.Encode(nil, data)
 	httpReq, err := http.NewRequest("POST", c.url.String(), bytes.NewReader(compressed))
 	if err != nil {
-		return nil, fmt.Errorf("unable to create request %w", err)
+		return nil, fmt.Errorf("unable to create request: %w", err)
 	}
 	httpReq.Header.Add("Content-Encoding", "snappy")
 	httpReq.Header.Add("Accept-Encoding", "snappy")
@@ -295,7 +295,7 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryRe
 	start := time.Now()
 	httpResp, err := c.Client.Do(httpReq.WithContext(ctx))
 	if err != nil {
-		return nil, fmt.Errorf("error sending request %w", err)
+		return nil, fmt.Errorf("error sending request: %w", err)
 	}
 	defer func() {
 		io.Copy(io.Discard, httpResp.Body)
@@ -306,7 +306,7 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryRe
 
 	compressed, err = io.ReadAll(httpResp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("error reading response. HTTP status code: %s %w", httpResp.Status, err)
+		return nil, fmt.Errorf("error reading response. HTTP status code: %s: %w", httpResp.Status, err)
 	}
 
 	if httpResp.StatusCode/100 != 2 {
@@ -315,13 +315,13 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryRe
 
 	uncompressed, err := snappy.Decode(nil, compressed)
 	if err != nil {
-		return nil, fmt.Errorf("error reading response %w", err)
+		return nil, fmt.Errorf("error reading response: %w", err)
 	}
 
 	var resp prompb.ReadResponse
 	err = proto.Unmarshal(uncompressed, &resp)
 	if err != nil {
-		return nil, fmt.Errorf("unable to unmarshal response body %w", err)
+		return nil, fmt.Errorf("unable to unmarshal response body: %w", err)
 	}
 
 	if len(resp.Results) != len(req.Queries) {

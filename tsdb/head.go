@@ -546,13 +546,13 @@ func (h *Head) Init(minValidTime int64) error {
 	// Backfill the checkpoint first if it exists.
 	dir, startFrom, err := wal.LastCheckpoint(h.wal.Dir())
 	if err != nil && !errors.Is(err, record.ErrNotFound) {
-		return fmt.Errorf("find last checkpoint %w", err)
+		return fmt.Errorf("find last checkpoint: %w", err)
 	}
 
 	// Find the last segment.
 	_, endAt, e := wal.Segments(h.wal.Dir())
 	if e != nil {
-		return fmt.Errorf("finding WAL segments %w", e)
+		return fmt.Errorf("finding WAL segments: %w", e)
 	}
 
 	h.startWALReplayStatus(startFrom, endAt)
@@ -561,7 +561,7 @@ func (h *Head) Init(minValidTime int64) error {
 	if err == nil && startFrom >= snapIdx {
 		sr, err := wal.NewSegmentsReader(dir)
 		if err != nil {
-			return fmt.Errorf("open checkpoint %w", err)
+			return fmt.Errorf("open checkpoint: %w", err)
 		}
 		defer func() {
 			if err := sr.Close(); err != nil {
@@ -572,7 +572,7 @@ func (h *Head) Init(minValidTime int64) error {
 		// A corrupted checkpoint is a hard error for now and requires user
 		// intervention. There's likely little data that can be recovered anyway.
 		if err := h.loadWAL(wal.NewReader(sr), multiRef, mmappedChunks); err != nil {
-			return fmt.Errorf("backfill checkpoint %w", err)
+			return fmt.Errorf("backfill checkpoint: %w", err)
 		}
 		h.updateWALReplayStatusRead(startFrom)
 		startFrom++
@@ -589,7 +589,7 @@ func (h *Head) Init(minValidTime int64) error {
 	for i := startFrom; i <= endAt; i++ {
 		s, err := wal.OpenReadSegment(wal.SegmentName(h.wal.Dir(), i))
 		if err != nil {
-			return fmt.Errorf("open WAL segment: %d %w", i, err)
+			return fmt.Errorf("open WAL segment: %d: %w", i, err)
 		}
 
 		offset := 0
@@ -602,7 +602,7 @@ func (h *Head) Init(minValidTime int64) error {
 			continue
 		}
 		if err != nil {
-			return fmt.Errorf("segment reader (offset=%d) %w", offset, err)
+			return fmt.Errorf("segment reader (offset=%d): %w", offset, err)
 		}
 		err = h.loadWAL(wal.NewReader(sr), multiRef, mmappedChunks)
 		if err := sr.Close(); err != nil {
@@ -856,7 +856,7 @@ func (h *Head) truncateMemory(mint int64) (err error) {
 
 	// Truncate the chunk m-mapper.
 	if err := h.chunkDiskMapper.Truncate(mint); err != nil {
-		return fmt.Errorf("truncate chunks.HeadReadWriter %w", err)
+		return fmt.Errorf("truncate chunks.HeadReadWriter: %w", err)
 	}
 	return nil
 }
@@ -943,12 +943,12 @@ func (h *Head) truncateWAL(mint int64) error {
 
 	first, last, err := wal.Segments(h.wal.Dir())
 	if err != nil {
-		return fmt.Errorf("get segment range %w", err)
+		return fmt.Errorf("get segment range: %w", err)
 	}
 	// Start a new segment, so low ingestion volume TSDB don't have more WAL than
 	// needed.
 	if err := h.wal.NextSegment(); err != nil {
-		return fmt.Errorf("next segment %w", err)
+		return fmt.Errorf("next segment: %w", err)
 	}
 	last-- // Never consider last segment for checkpoint.
 	if last < 0 {
@@ -979,7 +979,7 @@ func (h *Head) truncateWAL(mint int64) error {
 		if errors.As(errors.Unwrap(err), &ce) {
 			h.metrics.walCorruptionsTotal.Inc()
 		}
-		return fmt.Errorf("create checkpoint %w", err)
+		return fmt.Errorf("create checkpoint: %w", err)
 	}
 	if err := h.wal.Truncate(last + 1); err != nil {
 		// If truncating fails, we'll just try again at the next checkpoint.
@@ -1109,7 +1109,7 @@ func (h *Head) Delete(mint, maxt int64, ms ...*labels.Matcher) error {
 
 	p, err := PostingsForMatchers(ir, ms...)
 	if err != nil {
-		return fmt.Errorf("select series %w", err)
+		return fmt.Errorf("select series: %w", err)
 	}
 
 	var stones []tombstones.Stone

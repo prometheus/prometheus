@@ -252,7 +252,7 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 		// Ensure no empty labels have gotten through.
 		lset = lset.WithoutEmpty()
 		if len(lset) == 0 {
-			return 0, fmt.Errorf("empty labelset %w", ErrInvalidSample)
+			return 0, fmt.Errorf("empty labelset: %w", ErrInvalidSample)
 		}
 
 		if l, dup := lset.HasDuplicateLabelNames(); dup {
@@ -386,7 +386,7 @@ func (a *headAppender) log() error {
 		buf = rec[:0]
 
 		if err := a.head.wal.Log(rec); err != nil {
-			return fmt.Errorf("log series %w", err)
+			return fmt.Errorf("log series: %w", err)
 		}
 	}
 	if len(a.samples) > 0 {
@@ -394,7 +394,7 @@ func (a *headAppender) log() error {
 		buf = rec[:0]
 
 		if err := a.head.wal.Log(rec); err != nil {
-			return fmt.Errorf("log samples %w", err)
+			return fmt.Errorf("log samples: %w", err)
 		}
 	}
 	if len(a.exemplars) > 0 {
@@ -402,7 +402,7 @@ func (a *headAppender) log() error {
 		buf = rec[:0]
 
 		if err := a.head.wal.Log(rec); err != nil {
-			return fmt.Errorf("log exemplars %w", err)
+			return fmt.Errorf("log exemplars: %w", err)
 		}
 	}
 	return nil
@@ -430,7 +430,7 @@ func (a *headAppender) Commit() (err error) {
 
 	if err := a.log(); err != nil {
 		_ = a.Rollback() // Most likely the same error will happen again.
-		return fmt.Errorf("write to WAL %w", err)
+		return fmt.Errorf("write to WAL: %w", err)
 	}
 
 	// No errors logging to WAL, so pass the exemplars along to the in memory storage.

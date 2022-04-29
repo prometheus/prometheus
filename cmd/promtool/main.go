@@ -416,7 +416,7 @@ func checkConfig(agentMode bool, filename string, checkSyntaxOnly bool) ([]strin
 					return nil, fmt.Errorf("%q does not point to an existing file", rf)
 				}
 				if err := checkFileExists(rfs[0]); err != nil {
-					return nil, fmt.Errorf("error checking rule file %q %w", rfs[0], err)
+					return nil, fmt.Errorf("error checking rule file %q: %w", rfs[0], err)
 				}
 			}
 			ruleFiles = append(ruleFiles, rfs...)
@@ -426,7 +426,7 @@ func checkConfig(agentMode bool, filename string, checkSyntaxOnly bool) ([]strin
 	for _, scfg := range cfg.ScrapeConfigs {
 		if !checkSyntaxOnly && scfg.HTTPClientConfig.Authorization != nil {
 			if err := checkFileExists(scfg.HTTPClientConfig.Authorization.CredentialsFile); err != nil {
-				return nil, fmt.Errorf("error checking authorization credentials or bearer token file %q %w", scfg.HTTPClientConfig.Authorization.CredentialsFile, err)
+				return nil, fmt.Errorf("error checking authorization credentials or bearer token file %q: %w", scfg.HTTPClientConfig.Authorization.CredentialsFile, err)
 			}
 		}
 
@@ -524,10 +524,10 @@ func checkTLSConfig(tlsConfig config_util.TLSConfig, checkSyntaxOnly bool) error
 	}
 
 	if err := checkFileExists(tlsConfig.CertFile); err != nil {
-		return fmt.Errorf("error checking client cert file %q %w", tlsConfig.CertFile, err)
+		return fmt.Errorf("error checking client cert file %q: %w", tlsConfig.CertFile, err)
 	}
 	if err := checkFileExists(tlsConfig.KeyFile); err != nil {
-		return fmt.Errorf("error checking client key file %q %w", tlsConfig.KeyFile, err)
+		return fmt.Errorf("error checking client key file %q: %w", tlsConfig.KeyFile, err)
 	}
 
 	return nil
@@ -991,14 +991,14 @@ func parseStartTimeAndEndTime(start, end string) (time.Time, time.Time, error) {
 	if start != "" {
 		stime, err = parseTime(start)
 		if err != nil {
-			return stime, etime, fmt.Errorf("error parsing start time %w", err)
+			return stime, etime, fmt.Errorf("error parsing start time: %w", err)
 		}
 	}
 
 	if end != "" {
 		etime, err = parseTime(end)
 		if err != nil {
-			return stime, etime, fmt.Errorf("error parsing end time %w", err)
+			return stime, etime, fmt.Errorf("error parsing end time: %w", err)
 		}
 	}
 	return stime, etime, nil
@@ -1038,7 +1038,7 @@ var (
 				}
 				var buf bytes.Buffer
 				if err := p.WriteUncompressed(&buf); err != nil {
-					return nil, fmt.Errorf("writing the profile to the buffer %w", err)
+					return nil, fmt.Errorf("writing the profile to the buffer: %w", err)
 				}
 
 				return buf.Bytes(), nil

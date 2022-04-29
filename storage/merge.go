@@ -158,7 +158,7 @@ func (l labelGenericQueriers) SplitByHalf() (labelGenericQueriers, labelGenericQ
 func (q *mergeGenericQuerier) LabelValues(name string, matchers ...*labels.Matcher) ([]string, Warnings, error) {
 	res, ws, err := q.lvals(q.queriers, name, matchers...)
 	if err != nil {
-		return nil, nil, fmt.Errorf("LabelValues() from merge generic querier for label %s %w", name, err)
+		return nil, nil, fmt.Errorf("LabelValues() from merge generic querier for label %s: %w", name, err)
 	}
 	return res, ws, nil
 }
@@ -226,7 +226,7 @@ func (q *mergeGenericQuerier) LabelNames(matchers ...*labels.Matcher) ([]string,
 			warnings = append(warnings, wrn...)
 		}
 		if err != nil {
-			return nil, nil, fmt.Errorf("LabelNames() from merge generic querier %w", err)
+			return nil, nil, fmt.Errorf("LabelNames() from merge generic querier: %w", err)
 		}
 		for _, name := range names {
 			labelNamesMap[name] = struct{}{}
