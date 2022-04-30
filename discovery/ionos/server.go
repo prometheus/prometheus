@@ -30,6 +30,7 @@ import (
 
 	"github.com/prometheus/prometheus/discovery/refresh"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/util/strutil"
 )
 
 const (
@@ -43,9 +44,9 @@ const (
 	serverIDLabel               = serverLabelPrefix + "id"
 	serverIPLabel               = serverLabelPrefix + "ip"
 	serverLANIDLabel            = serverLabelPrefix + "lan_id"
-	serverLANIPLabelPrefix      = serverLabelPrefix + "lan_ip_"
 	serverLifecycleLabel        = serverLabelPrefix + "lifecycle"
 	serverNameLabel             = serverLabelPrefix + "name"
+	serverNICIPLabelPrefix      = serverLabelPrefix + "nic_ip_"
 	serverPrimaryIPLabel        = serverLabelPrefix + "primary_ip"
 	serverPrimaryLANIDLabel     = serverLabelPrefix + "primary_lan_id"
 	serverServersIDLabel        = serverLabelPrefix + "servers_id"
@@ -122,14 +123,12 @@ func (d *serverDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 			)
 
 			for _, nic := range *server.Entities.Nics.Items {
-				lan := strconv.Itoa(int(*nic.Properties.Lan))
 				lanIPs := *nic.Properties.Ips
-
 				ips = append(ips, lanIPs...)
-				lans = append(lans, lan)
+				lans = append(lans, strconv.Itoa(int(*nic.Properties.Lan)))
 
-				name := model.LabelName(serverLANIPLabelPrefix + lan)
-				labels[name] = model.LabelValue(join(lanIPs, metaLabelSeparator))
+				name := serverNICIPLabelPrefix + strutil.SanitizeLabelName(*nic.Id)
+				labels[model.LabelName(name)] = model.LabelValue(join(lanIPs, metaLabelSeparator))
 			}
 
 			if len(ips) > 0 {
