@@ -16,9 +16,9 @@ package ionos
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 
 	ionoscloud "github.com/ionos-cloud/sdk-go/v6"
@@ -107,7 +107,7 @@ func mockIONOSServers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	server, err := ioutil.ReadFile("testdata/servers.json")
+	server, err := os.ReadFile("testdata/servers.json")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
