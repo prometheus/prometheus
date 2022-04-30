@@ -41,12 +41,15 @@ type Error struct {
 
 // Error prints the error message in a formatted string.
 func (err *Error) Error() string {
-	if err.Err.nodeAlt != nil {
-		return fmt.Errorf("%d:%d: %d:%d: group %q, rule %d, %q: %w", err.Err.node.Line, err.Err.node.Column, err.Err.nodeAlt.Line, err.Err.nodeAlt.Column, err.Group, err.Rule, err.RuleName, err.Err.err).Error()
-	} else if err.Err.node != nil {
-		return fmt.Errorf("%d:%d: group %q, rule %d, %q: %w", err.Err.node.Line, err.Err.node.Column, err.Group, err.Rule, err.RuleName, err.Err.err).Error()
+	if err.Err.err != nil {
+		if err.Err.nodeAlt != nil {
+			return fmt.Errorf("%d:%d: %d:%d: group %q, rule %d, %q: %w", err.Err.node.Line, err.Err.node.Column, err.Err.nodeAlt.Line, err.Err.nodeAlt.Column, err.Group, err.Rule, err.RuleName, err.Err.err).Error()
+		} else if err.Err.node != nil {
+			return fmt.Errorf("%d:%d: group %q, rule %d, %q: %w", err.Err.node.Line, err.Err.node.Column, err.Group, err.Rule, err.RuleName, err.Err.err).Error()
+		}
+		return fmt.Errorf("group %q, rule %d, %q: %w", err.Group, err.Rule, err.RuleName, err.Err.err).Error()
 	}
-	return fmt.Errorf("group %q, rule %d, %q: %w", err.Group, err.Rule, err.RuleName, err.Err.err).Error()
+	return nil
 }
 
 // WrappedError wraps error with the yaml node which can be used to represent
@@ -59,12 +62,15 @@ type WrappedError struct {
 
 // Error prints the error message in a formatted string.
 func (we *WrappedError) Error() string {
-	if we.nodeAlt != nil {
-		return fmt.Errorf("%d:%d: %d:%d: %w", we.node.Line, we.node.Column, we.nodeAlt.Line, we.nodeAlt.Column, we.err).Error()
-	} else if we.node != nil {
-		return fmt.Errorf("%d:%d: %w", we.node.Line, we.node.Column, we.err).Error()
+	if we.err != nil {
+		if we.nodeAlt != nil {
+			return fmt.Errorf("%d:%d: %d:%d: %w", we.node.Line, we.node.Column, we.nodeAlt.Line, we.nodeAlt.Column, we.err).Error()
+		} else if we.node != nil {
+			return fmt.Errorf("%d:%d: %w", we.node.Line, we.node.Column, we.err).Error()
+		}
+		return we.err.Error()
 	}
-	return we.err.Error()
+	return nil
 }
 
 // RuleGroups is a set of rule groups that are typically exposed in a file.
