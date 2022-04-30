@@ -3,11 +3,11 @@ scrape_configs:
   - job_name: "node"
     ionos_sd_configs:
       - basic_auth:
-          # Replace with IONOS Cloud API Username
+          # Replace with your username
           username: username
-          # Replace with IONOS Cloud API Password
+          # Replace with your password
           password: password
-        # You can find you datacenter ID here: https://dcd.ionos.com/latest/
+        # You can find your data center unique ID here: https://dcd.ionos.com/latest/
         datacenter_id: 11111111-1111-1111-1111-111111111111
         port: 9100
     relabel_configs:

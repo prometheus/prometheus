@@ -1547,6 +1547,11 @@ following meta labels are available on all targets during
 [relabeling](#relabel_config):
 
 * `__meta_ionos_server_availability_zone`: the availability zone of the server
+* `__meta_ionos_server_boot_cdrom_id`: the ID of the CD-ROM the server is booted 
+  from
+* `__meta_ionos_server_boot_image_id`: the ID of the boot image or snapshot the
+  server is booted from
+* `__meta_ionos_server_boot_volume_id`: the ID of the boot volume
 * `__meta_ionos_server_cpu_family`: the CPU family of the server
 * `__meta_ionos_server_datacenter_id`: the datacenter ID the server is deployed
   to
@@ -1559,22 +1564,13 @@ following meta labels are available on all targets during
 * `__meta_ionos_server_nic_id`: comma seperated list of the NIC IDs attached to
   the server
 * `__meta_ionos_server_primary_ip`: the primary IP address of the server
-* `__meta_ionos_server_primary_lan_id`: the primary LAN's ID of the server
-* `__meta_ionos_server_primary_nic_id`: the primary NIC's ID of the server
+* `__meta_ionos_server_primary_lan_id`: the ID of the primary LAN
+* `__meta_ionos_server_primary_nic_id`: the ID of the primary NIC
 * `__meta_ionos_server_state`: the execution state of the server
 * `__meta_ionos_server_type`: the type of the server
 
-The labels below depend on the targets boot medium and are mutually exclusive:
-
-* `__meta_ionos_server_boot_cdrom_id`: the CD-ROM's ID the server is booted
-  from
-* `__meta_ionos_server_boot_image_id`: the ID of the image or snapshot the
-  server is booted from
-* `__meta_ionos_server_boot_volume_id`: the volume's ID the server is booted
-  from
-
 ```yaml
-# The IONOS datacenter ID in which entities should be discovered.
+# The unique ID of the data center.
 datacenter_id: <string>
 
 # Authentication information used to authenticate to the API server.

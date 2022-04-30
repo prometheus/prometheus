@@ -68,7 +68,7 @@ var DefaultSDConfig = SDConfig{
 
 // SDConfig configuration to use for IONOS Cloud Discovery.
 type SDConfig struct {
-	// DatacenterID: IONOS Cloud Datacenter ID used to discover targets.
+	// DatacenterID: IONOS Cloud data center ID used to discover targets.
 	DatacenterID string `yaml:"datacenter_id"`
 
 	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
