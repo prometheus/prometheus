@@ -1553,7 +1553,6 @@ following meta labels are available on all targets during
   server is booted from
 * `__meta_ionos_server_boot_volume_id`: the ID of the boot volume
 * `__meta_ionos_server_cpu_family`: the CPU family of the server
-* `__meta_ionos_server_datacenter_id`: the datacenter ID the server is deployed
   to
 * `__meta_ionos_server_id`: the ID of the server
 * `__meta_ionos_server_ip`: comma seperated list of IPs assigned to the server
@@ -1565,6 +1564,7 @@ following meta labels are available on all targets during
 * `__meta_ionos_server_name`: the name of the server
 * `__meta_ionos_server_primary_ip`: the primary IP address of the server
 * `__meta_ionos_server_primary_lan_id`: the ID of the primary LAN
+* `__meta_ionos_server_servers_id`: the ID of the servers the server belongs to
 * `__meta_ionos_server_state`: the execution state of the server
 * `__meta_ionos_server_type`: the type of the server
 

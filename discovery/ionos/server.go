@@ -40,7 +40,6 @@ const (
 	serverBootImageIDLabel      = serverLabelPrefix + "boot_image_id"
 	serverBootVolumeIDLabel     = serverLabelPrefix + "boot_volume_id"
 	serverCPUFamilyLabel        = serverLabelPrefix + "cpu_family"
-	serverDatacenterIDLabel     = serverLabelPrefix + "datacenter_id"
 	serverIDLabel               = serverLabelPrefix + "id"
 	serverIPLabel               = serverLabelPrefix + "ip"
 	serverLANIDLabel            = serverLabelPrefix + "lan_id"
@@ -49,6 +48,7 @@ const (
 	serverNameLabel             = serverLabelPrefix + "name"
 	serverPrimaryIPLabel        = serverLabelPrefix + "primary_ip"
 	serverPrimaryLANIDLabel     = serverLabelPrefix + "primary_lan_id"
+	serverServersIDLabel        = serverLabelPrefix + "servers_id"
 	serverStateLabel            = serverLabelPrefix + "state"
 	serverTypeLabel             = serverLabelPrefix + "type"
 )
@@ -99,7 +99,7 @@ func (d *serverDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 		labels := model.LabelSet{
 			serverAvailabilityZoneLabel: model.LabelValue(*server.Properties.AvailabilityZone),
 			serverCPUFamilyLabel:        model.LabelValue(*server.Properties.CpuFamily),
-			serverDatacenterIDLabel:     model.LabelValue(*servers.Id),
+			serverServersIDLabel:        model.LabelValue(*servers.Id),
 			serverIDLabel:               model.LabelValue(*server.Id),
 			serverLifecycleLabel:        model.LabelValue(*server.Metadata.State),
 			serverNameLabel:             model.LabelValue(*server.Properties.Name),
