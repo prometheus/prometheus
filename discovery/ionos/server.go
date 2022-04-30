@@ -99,7 +99,7 @@ func (d *serverDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 		labels := model.LabelSet{
 			serverAvailabilityZoneLabel: model.LabelValue(*server.Properties.AvailabilityZone),
 			serverCPUFamilyLabel:        model.LabelValue(*server.Properties.CpuFamily),
-			serverDatacenterIDLabel:     model.LabelValue(d.datacenterID),
+			serverDatacenterIDLabel:     model.LabelValue(*servers.Id),
 			serverIDLabel:               model.LabelValue(*server.Id),
 			serverLifecycleLabel:        model.LabelValue(*server.Metadata.State),
 			serverNameLabel:             model.LabelValue(*server.Properties.Name),
