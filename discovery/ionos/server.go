@@ -44,12 +44,11 @@ const (
 	serverIDLabel               = serverLabelPrefix + "id"
 	serverIPLabel               = serverLabelPrefix + "ip"
 	serverLANIDLabel            = serverLabelPrefix + "lan_id"
+	serverLANIPLabelPrefix      = serverLabelPrefix + "lan_ip_"
 	serverLifecycleLabel        = serverLabelPrefix + "lifecycle"
 	serverNameLabel             = serverLabelPrefix + "name"
-	serverNICIDLabel            = serverLabelPrefix + "nic_id"
 	serverPrimaryIPLabel        = serverLabelPrefix + "primary_ip"
 	serverPrimaryLANIDLabel     = serverLabelPrefix + "primary_lan_id"
-	serverPrimaryNICIDLabel     = serverLabelPrefix + "primary_nic_id"
 	serverStateLabel            = serverLabelPrefix + "state"
 	serverTypeLabel             = serverLabelPrefix + "type"
 )
@@ -118,20 +117,19 @@ func (d *serverDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 
 		if server.Entities != nil && server.Entities.Nics != nil {
 			var (
-				nicIDs []string
-				ips    []string
-				lans   []string
+				ips  []string
+				lans []string
 			)
 
 			for _, nic := range *server.Entities.Nics.Items {
-				nicIDs = append(nicIDs, *nic.Id)
-				ips = append(ips, *nic.Properties.Ips...)
-				lans = append(lans, strconv.Itoa(int(*nic.Properties.Lan)))
-			}
+				lan := strconv.Itoa(int(*nic.Properties.Lan))
+				lanIPs := *nic.Properties.Ips
 
-			if len(nicIDs) > 0 {
-				labels[serverPrimaryNICIDLabel] = model.LabelValue(nicIDs[0])
-				labels[serverNICIDLabel] = model.LabelValue(join(nicIDs, metaLabelSeparator))
+				ips = append(ips, lanIPs...)
+				lans = append(lans, lan)
+
+				name := model.LabelName(serverLANIPLabelPrefix + lan)
+				labels[name] = model.LabelValue(join(lanIPs, metaLabelSeparator))
 			}
 
 			if len(ips) > 0 {
