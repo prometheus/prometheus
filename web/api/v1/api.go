@@ -557,11 +557,11 @@ func returnAPIError(err error) *apiError {
 	var eqt promql.ErrQueryTimeout
 	var es promql.ErrStorage
 	switch {
-	case errors.As(errors.Unwrap(err), &eqc):
+	case errors.As(err, &eqc):
 		return &apiError{errorCanceled, err}
-	case errors.As(errors.Unwrap(err), &eqt):
+	case errors.As(err, &eqt):
 		return &apiError{errorTimeout, err}
-	case errors.As(errors.Unwrap(err), &es):
+	case errors.As(err, &es):
 		return &apiError{errorInternal, err}
 	}
 
