@@ -264,7 +264,7 @@ const maxAheadTime = 10 * time.Minute
 
 type labelsMutator func(labels.Labels) labels.Labels
 
-func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed uint64, logger log.Logger, reportExtraMetrics bool, httpOpts []config_util.HTTPClientOption) (*scrapePool, error) {
+func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed uint64, logger log.Logger, reportExtraMetrics, passMetadataInContext bool, httpOpts []config_util.HTTPClientOption) (*scrapePool, error) {
 	targetScrapePools.Inc()
 	if logger == nil {
 		logger = log.NewNopLogger()
@@ -317,6 +317,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed 
 			reportExtraMetrics,
 			opts.target,
 			cache,
+			passMetadataInContext,
 		)
 	}
 
@@ -1129,6 +1130,7 @@ func newScrapeLoop(ctx context.Context,
 	reportExtraMetrics bool,
 	target *Target,
 	metricMetadataStore MetricMetadataStore,
+	passMetadataInContext bool,
 ) *scrapeLoop {
 	if l == nil {
 		l = log.NewNopLogger()
@@ -1140,12 +1142,16 @@ func newScrapeLoop(ctx context.Context,
 		cache = newScrapeCache()
 	}
 
-	// Store the cache and target in the context. This is then used by downstream OTel Collector
-	// to lookup the metadata required to process the samples. Not used by Prometheus itself.
-	// TODO(gouthamve) We're using a dedicated context because using the parentCtx caused a memory
-	// leak. We should ideally fix the main leak. See: https://github.com/prometheus/prometheus/pull/10590
-	appenderCtx := ContextWithMetricMetadataStore(ctx, cache)
-	appenderCtx = ContextWithTarget(appenderCtx, target)
+	appenderCtx := ctx
+
+	if passMetadataInContext {
+		// Store the cache and target in the context. This is then used by downstream OTel Collector
+		// to lookup the metadata required to process the samples. Not used by Prometheus itself.
+		// TODO(gouthamve) We're using a dedicated context because using the parentCtx caused a memory
+		// leak. We should ideally fix the main leak. See: https://github.com/prometheus/prometheus/pull/10590
+		appenderCtx = ContextWithMetricMetadataStore(appenderCtx, cache)
+		appenderCtx = ContextWithTarget(appenderCtx, target)
+	}
 
 	sl := &scrapeLoop{
 		scraper:             sc,
