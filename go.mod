@@ -37,7 +37,7 @@ require (
 	github.com/hetznercloud/hcloud-go v1.33.1
 	github.com/json-iterator/go v1.1.12
 	github.com/kolo/xmlrpc v0.0.0-20201022064351-38db28db192b
-	github.com/linode/linodego v1.4.0
+	github.com/linode/linodego v1.4.1
 	github.com/miekg/dns v1.1.48
 	github.com/moby/term v0.0.0-20210619224110-3f7ff695adc6 // indirect
 	github.com/mwitkow/go-conntrack v0.0.0-20190716064945-2f068394615f
@@ -56,12 +56,12 @@ require (
 	github.com/shurcooL/httpfs v0.0.0-20190707220628-8d4bc4ba7749
 	github.com/stretchr/testify v1.7.1
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.31.0
-	go.opentelemetry.io/otel v1.6.1
+	go.opentelemetry.io/otel v1.7.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.6.1
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.6.1
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.6.1
 	go.opentelemetry.io/otel/sdk v1.6.1
-	go.opentelemetry.io/otel/trace v1.6.1
+	go.opentelemetry.io/otel/trace v1.7.0
 	go.uber.org/atomic v1.9.0
 	go.uber.org/automaxprocs v1.5.1
 	go.uber.org/goleak v1.1.12
@@ -78,8 +78,8 @@ require (
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
-	k8s.io/api v0.23.5
-	k8s.io/apimachinery v0.23.5
+	k8s.io/api v0.23.6
+	k8s.io/apimachinery v0.23.6
 	k8s.io/client-go v0.23.5
 	k8s.io/klog v1.0.0
 	k8s.io/klog/v2 v2.40.1
