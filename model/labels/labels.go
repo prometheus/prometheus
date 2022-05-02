@@ -436,6 +436,20 @@ func (b *Builder) Del(ns ...string) *Builder {
 	return b
 }
 
+// Keep removes all labels from the base except those with the given names.
+func (b *Builder) Keep(ns ...string) *Builder {
+Outer:
+	for _, l := range b.base {
+		for _, n := range ns {
+			if l.Name == n {
+				continue Outer
+			}
+		}
+		b.del = append(b.del, l.Name)
+	}
+	return b
+}
+
 // Set the name/value pair as a label.
 func (b *Builder) Set(n, v string) *Builder {
 	if v == "" {
@@ -477,8 +491,9 @@ Outer:
 		}
 		res = append(res, l)
 	}
-	res = append(res, b.add...)
-	sort.Sort(res)
-
+	if len(b.add) > 0 { // Base is already in order, so we only need to sort if we add to it.
+		res = append(res, b.add...)
+		sort.Sort(res)
+	}
 	return res
 }

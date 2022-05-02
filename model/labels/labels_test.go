@@ -638,6 +638,7 @@ func TestBuilder(t *testing.T) {
 	for i, tcase := range []struct {
 		base Labels
 		del  []string
+		keep []string
 		set  []Label
 		want Labels
 	}{
@@ -681,11 +682,31 @@ func TestBuilder(t *testing.T) {
 			set:  []Label{{"bbb", ""}},
 			want: FromStrings("aaa", "111", "ccc", "333"),
 		},
+		{
+			base: FromStrings("aaa", "111", "bbb", "222", "ccc", "333"),
+			keep: []string{"bbb"},
+			want: FromStrings("bbb", "222"),
+		},
+		{
+			base: FromStrings("aaa", "111", "bbb", "222", "ccc", "333"),
+			keep: []string{"aaa", "ccc"},
+			want: FromStrings("aaa", "111", "ccc", "333"),
+		},
+		{
+			base: FromStrings("aaa", "111", "bbb", "222", "ccc", "333"),
+			del:  []string{"bbb"},
+			set:  []Label{{"ddd", "444"}},
+			keep: []string{"aaa", "ddd"},
+			want: FromStrings("aaa", "111", "ddd", "444"),
+		},
 	} {
 		t.Run(fmt.Sprint(i), func(t *testing.T) {
 			b := NewBuilder(tcase.base)
 			for _, lbl := range tcase.set {
 				b.Set(lbl.Name, lbl.Value)
+			}
+			if len(tcase.keep) > 0 {
+				b.Keep(tcase.keep...)
 			}
 			b.Del(tcase.del...)
 			require.Equal(t, tcase.want, b.Labels())
