@@ -14,13 +14,13 @@
 package web
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"sort"
 
 	"github.com/go-kit/log/level"
 	"github.com/gogo/protobuf/proto"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
@@ -80,7 +80,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 	q, err := h.localStorage.Querier(req.Context(), mint, maxt)
 	if err != nil {
 		federationErrors.Inc()
-		if errors.Cause(err) == tsdb.ErrNotReady {
+		if errors.Is(errors.Unwrap(err), tsdb.ErrNotReady) {
 			http.Error(w, err.Error(), http.StatusServiceUnavailable)
 			return
 		}

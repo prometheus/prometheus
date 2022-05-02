@@ -16,6 +16,7 @@ package web
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"sort"
@@ -23,7 +24,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
@@ -240,15 +240,15 @@ type notReadyReadStorage struct {
 }
 
 func (notReadyReadStorage) Querier(context.Context, int64, int64) (storage.Querier, error) {
-	return nil, errors.Wrap(tsdb.ErrNotReady, "wrap")
+	return nil, fmt.Errorf("wrap: %w", tsdb.ErrNotReady)
 }
 
 func (notReadyReadStorage) StartTime() (int64, error) {
-	return 0, errors.Wrap(tsdb.ErrNotReady, "wrap")
+	return 0, fmt.Errorf("wrap: %w", tsdb.ErrNotReady)
 }
 
 func (notReadyReadStorage) Stats(string) (*tsdb.Stats, error) {
-	return nil, errors.Wrap(tsdb.ErrNotReady, "wrap")
+	return nil, fmt.Errorf("wrap: %w", tsdb.ErrNotReady)
 }
 
 // Regression test for https://github.com/prometheus/prometheus/issues/7181.
