@@ -2050,14 +2050,16 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 }
 
 func signatureFunc(on bool, b []byte, names ...string) func(labels.Labels) string {
-	sort.Strings(names)
 	if on {
+	sort.Strings(names)
 		return func(lset labels.Labels) string {
-			return string(lset.WithLabels(names...).Bytes(b))
+			return string(lset.BytesWithLabels(b, names...))
 		}
 	}
+	names = append([]string{labels.MetricName}, names...)
+	sort.Strings(names)
 	return func(lset labels.Labels) string {
-		return string(lset.WithoutLabels(names...).Bytes(b))
+		return string(lset.BytesWithoutLabels(b, names...))
 	}
 }
 

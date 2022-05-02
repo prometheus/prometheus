@@ -624,13 +624,14 @@ func TestLabels_Map(t *testing.T) {
 	require.Equal(t, map[string]string{"aaa": "111", "bbb": "222"}, Labels{{"aaa", "111"}, {"bbb", "222"}}.Map())
 }
 
-func TestLabels_WithLabels(t *testing.T) {
-	require.Equal(t, Labels{{"aaa", "111"}, {"bbb", "222"}}, Labels{{"aaa", "111"}, {"bbb", "222"}, {"ccc", "333"}}.WithLabels("aaa", "bbb"))
+func TestLabels_BytesWithLabels(t *testing.T) {
+	require.Equal(t, Labels{{"aaa", "111"}, {"bbb", "222"}}.Bytes(nil), Labels{{"aaa", "111"}, {"bbb", "222"}, {"ccc", "333"}}.BytesWithLabels(nil, "aaa", "bbb"))
+	require.Equal(t, Labels{}.Bytes(nil), Labels{{"aaa", "111"}, {"bbb", "222"}, {"ccc", "333"}}.BytesWithLabels(nil))
 }
 
-func TestLabels_WithoutLabels(t *testing.T) {
-	require.Equal(t, Labels{{"aaa", "111"}}, Labels{{"aaa", "111"}, {"bbb", "222"}, {"ccc", "333"}}.WithoutLabels("bbb", "ccc"))
-	require.Equal(t, Labels{{"aaa", "111"}}, Labels{{"aaa", "111"}, {"bbb", "222"}, {MetricName, "333"}}.WithoutLabels("bbb"))
+func TestLabels_BytesWithoutLabels(t *testing.T) {
+	require.Equal(t, Labels{{"aaa", "111"}}.Bytes(nil), Labels{{"aaa", "111"}, {"bbb", "222"}, {"ccc", "333"}}.BytesWithoutLabels(nil, "bbb", "ccc"))
+	require.Equal(t, Labels{{"aaa", "111"}}.Bytes(nil), Labels{{MetricName, "333"}, {"aaa", "111"}, {"bbb", "222"}}.BytesWithoutLabels(nil, MetricName, "bbb"))
 }
 
 func TestBulider_NewBulider(t *testing.T) {
