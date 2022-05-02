@@ -634,72 +634,63 @@ func TestLabels_BytesWithoutLabels(t *testing.T) {
 	require.Equal(t, Labels{{"aaa", "111"}}.Bytes(nil), Labels{{MetricName, "333"}, {"aaa", "111"}, {"bbb", "222"}}.BytesWithoutLabels(nil, MetricName, "bbb"))
 }
 
-func TestBulider_NewBulider(t *testing.T) {
-	require.Equal(
-		t,
-		&Builder{
-			base: Labels{{"aaa", "111"}},
-			del:  []string{},
-			add:  []Label{},
+func TestBuilder(t *testing.T) {
+	for i, tcase := range []struct {
+		base Labels
+		del  []string
+		set  []Label
+		want Labels
+	}{
+		{
+			base: FromStrings("aaa", "111"),
+			want: FromStrings("aaa", "111"),
 		},
-		NewBuilder(Labels{{"aaa", "111"}}),
-	)
-}
-
-func TestBuilder_Del(t *testing.T) {
-	require.Equal(
-		t,
-		&Builder{
-			del: []string{"bbb"},
-			add: []Label{{"aaa", "111"}, {"ccc", "333"}},
-		},
-		(&Builder{
-			del: []string{},
-			add: []Label{{"aaa", "111"}, {"bbb", "222"}, {"ccc", "333"}},
-		}).Del("bbb"),
-	)
-}
-
-func TestBuilder_Set(t *testing.T) {
-	require.Equal(
-		t,
-		&Builder{
-			base: Labels{{"aaa", "111"}},
-			del:  []string{},
-			add:  []Label{{"bbb", "222"}},
-		},
-		(&Builder{
-			base: Labels{{"aaa", "111"}},
-			del:  []string{},
-			add:  []Label{},
-		}).Set("bbb", "222"),
-	)
-
-	require.Equal(
-		t,
-		&Builder{
-			base: Labels{{"aaa", "111"}},
-			del:  []string{},
-			add:  []Label{{"bbb", "333"}},
-		},
-		(&Builder{
-			base: Labels{{"aaa", "111"}},
-			del:  []string{},
-			add:  []Label{{"bbb", "222"}},
-		}).Set("bbb", "333"),
-	)
-}
-
-func TestBuilder_Labels(t *testing.T) {
-	require.Equal(
-		t,
-		Labels{{"aaa", "111"}, {"ccc", "333"}, {"ddd", "444"}},
-		(&Builder{
-			base: Labels{{"aaa", "111"}, {"bbb", "222"}, {"ccc", "333"}},
+		{
+			base: FromStrings("aaa", "111", "bbb", "222", "ccc", "333"),
 			del:  []string{"bbb"},
-			add:  []Label{{"ddd", "444"}},
-		}).Labels(),
-	)
+			want: FromStrings("aaa", "111", "ccc", "333"),
+		},
+		{
+			base: nil,
+			set:  []Label{{"aaa", "111"}, {"bbb", "222"}, {"ccc", "333"}},
+			del:  []string{"bbb"},
+			want: FromStrings("aaa", "111", "ccc", "333"),
+		},
+		{
+			base: FromStrings("aaa", "111"),
+			set:  []Label{{"bbb", "222"}},
+			want: FromStrings("aaa", "111", "bbb", "222"),
+		},
+		{
+			base: FromStrings("aaa", "111"),
+			set:  []Label{{"bbb", "222"}, {"bbb", "333"}},
+			want: FromStrings("aaa", "111", "bbb", "333"),
+		},
+		{
+			base: FromStrings("aaa", "111", "bbb", "222", "ccc", "333"),
+			del:  []string{"bbb"},
+			set:  []Label{{"ddd", "444"}},
+			want: FromStrings("aaa", "111", "ccc", "333", "ddd", "444"),
+		},
+		{ // Blank value is interpreted as delete.
+			base: FromStrings("aaa", "111", "bbb", "", "ccc", "333"),
+			want: FromStrings("aaa", "111", "ccc", "333"),
+		},
+		{
+			base: FromStrings("aaa", "111", "bbb", "222", "ccc", "333"),
+			set:  []Label{{"bbb", ""}},
+			want: FromStrings("aaa", "111", "ccc", "333"),
+		},
+	} {
+		t.Run(fmt.Sprint(i), func(t *testing.T) {
+			b := NewBuilder(tcase.base)
+			for _, lbl := range tcase.set {
+				b.Set(lbl.Name, lbl.Value)
+			}
+			b.Del(tcase.del...)
+			require.Equal(t, tcase.want, b.Labels())
+		})
+	}
 }
 
 func TestLabels_Hash(t *testing.T) {
