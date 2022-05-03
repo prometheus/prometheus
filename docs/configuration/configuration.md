@@ -2536,6 +2536,8 @@ anchored on both ends. To un-anchor the regex, use `.*<regex>.*`.
   `target_label` to `replacement`, with match group references
   (`${1}`, `${2}`, ...) in `replacement` substituted by their value. If `regex`
   does not match, no replacement takes place.
+* `lowercase`: Maps the concatenated `source_labels` to their lower case.
+* `uppercase`: Maps the concatenated `source_labels` to their upper case.
 * `keep`: Drop targets for which `regex` does not match the concatenated `source_labels`.
 * `drop`: Drop targets for which `regex` matches the concatenated `source_labels`.
 * `hashmod`: Set `target_label` to the `modulus` of a hash of the concatenated `source_labels`.
