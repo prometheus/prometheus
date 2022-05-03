@@ -31,6 +31,7 @@ require (
 	github.com/gophercloud/gophercloud v0.24.0
 	github.com/grafana/regexp v0.0.0-20220304095617-2e8d9baf4ac2
 	github.com/grpc-ecosystem/grpc-gateway v1.16.0
+	github.com/grpc-ecosystem/grpc-gateway/v2 v2.10.0 // indirect
 	github.com/hashicorp/consul/api v1.12.0
 	github.com/hashicorp/go-hclog v0.12.2 // indirect
 	github.com/hashicorp/go-immutable-radix v1.2.0 // indirect
@@ -57,22 +58,22 @@ require (
 	github.com/stretchr/testify v1.7.1
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.31.0
 	go.opentelemetry.io/otel v1.7.0
-	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.6.1
-	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.6.1
-	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.6.1
-	go.opentelemetry.io/otel/sdk v1.6.1
+	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.7.0
+	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.7.0
+	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.7.0
+	go.opentelemetry.io/otel/sdk v1.7.0
 	go.opentelemetry.io/otel/trace v1.7.0
 	go.uber.org/atomic v1.9.0
 	go.uber.org/automaxprocs v1.5.1
 	go.uber.org/goleak v1.1.12
-	golang.org/x/net v0.0.0-20220412020605-290c469a71a5
+	golang.org/x/net v0.0.0-20220425223048-2871e0cb64e4
 	golang.org/x/oauth2 v0.0.0-20220411215720-9780585627b5
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
-	golang.org/x/sys v0.0.0-20220412211240-33da011f77ad
+	golang.org/x/sys v0.0.0-20220502124256-b6088ccd6cba
 	golang.org/x/time v0.0.0-20220224211638-0e9765cccd65
 	golang.org/x/tools v0.1.10
 	google.golang.org/api v0.77.0
-	google.golang.org/genproto v0.0.0-20220414192740-2d67ff6cf2b4
+	google.golang.org/genproto v0.0.0-20220502173005-c8bf987b8c21
 	google.golang.org/grpc v1.46.0
 	google.golang.org/protobuf v1.28.0
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
