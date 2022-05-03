@@ -1802,13 +1802,16 @@ func marshalHistogram(h *histogram.FloatHistogram, stream *jsoniter.Stream) {
 	bucketFound := false
 	it := h.AllBucketIterator()
 	for it.Next() {
+		bucket := it.At()
+		if bucket.Count == 0 {
+			continue // No need to expose empty buckets in JSON.
+		}
 		stream.WriteMore()
 		if !bucketFound {
 			stream.WriteObjectField(`buckets`)
 			stream.WriteArrayStart()
 		}
 		bucketFound = true
-		bucket := it.At()
 		boundaries := 2 // Exclusive on both sides AKA open interval.
 		if bucket.LowerInclusive {
 			if bucket.UpperInclusive {
