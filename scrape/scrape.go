@@ -234,8 +234,10 @@ type scrapePool struct {
 	targetMtx sync.Mutex
 	// activeTargets and loops must always be synchronized to have the same
 	// set of hashes.
-	activeTargets  map[uint64]*Target
-	droppedTargets []*Target
+	activeTargets map[uint64]*Target
+	// Targets which was dropped on prev sync
+	// it is used to skip heavy target processing.
+	droppedTargets map[uint64]*Target
 
 	// Constructor for new scrape loops. This is settable for testing convenience.
 	newLoop func(scrapeLoopOptions) loop
@@ -280,14 +282,15 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed 
 
 	ctx, cancel := context.WithCancel(context.Background())
 	sp := &scrapePool{
-		cancel:        cancel,
-		appendable:    app,
-		config:        cfg,
-		client:        client,
-		activeTargets: map[uint64]*Target{},
-		loops:         map[uint64]loop{},
-		logger:        logger,
-		httpOpts:      httpOpts,
+		cancel:         cancel,
+		appendable:     app,
+		config:         cfg,
+		client:         client,
+		activeTargets:  map[uint64]*Target{},
+		droppedTargets: map[uint64]*Target{},
+		loops:          map[uint64]loop{},
+		logger:         logger,
+		httpOpts:       httpOpts,
 	}
 	sp.newLoop = func(opts scrapeLoopOptions) loop {
 		// Update the targets retrieval function for metadata to a new scrape cache.
@@ -328,7 +331,7 @@ func (sp *scrapePool) ActiveTargets() []*Target {
 	sp.targetMtx.Lock()
 	defer sp.targetMtx.Unlock()
 
-	var tActive []*Target
+	tActive := make([]*Target, 0, len(sp.activeTargets))
 	for _, t := range sp.activeTargets {
 		tActive = append(tActive, t)
 	}
@@ -338,7 +341,12 @@ func (sp *scrapePool) ActiveTargets() []*Target {
 func (sp *scrapePool) DroppedTargets() []*Target {
 	sp.targetMtx.Lock()
 	defer sp.targetMtx.Unlock()
-	return sp.droppedTargets
+
+	tDropped := make([]*Target, 0, len(sp.droppedTargets))
+	for _, t := range sp.droppedTargets {
+		tDropped = append(tDropped, t)
+	}
+	return tDropped
 }
 
 // stop terminates all scrape loops and returns after they all terminated.
@@ -474,21 +482,34 @@ func (sp *scrapePool) Sync(tgs []*targetgroup.Group) {
 
 	sp.targetMtx.Lock()
 	var all []*Target
-	sp.droppedTargets = []*Target{}
+	dropped := make(map[uint64]*Target)
 	for _, tg := range tgs {
-		targets, failures := TargetsFromGroup(tg, sp.config)
-		for _, err := range failures {
-			level.Error(sp.logger).Log("msg", "Creating target failed", "err", err)
-		}
-		targetSyncFailed.WithLabelValues(sp.config.JobName).Add(float64(len(failures)))
-		for _, t := range targets {
-			if t.Labels().Len() > 0 {
-				all = append(all, t)
-			} else if t.DiscoveredLabels().Len() > 0 {
-				sp.droppedTargets = append(sp.droppedTargets, t)
+		for _, targetLabelSet := range tg.Targets {
+			origLabels := buildTargetLabels(targetLabelSet, tg.Labels, sp.config)
+			// Skips compute-heavy relabeling if the target was previously dropped.
+			hash := origLabels.Hash()
+			if _, ok := sp.droppedTargets[hash]; ok {
+				dropped[hash] = sp.droppedTargets[hash]
+				continue
 			}
+
+			reLabels, err := applyRelabeling(origLabels, sp.config)
+			if err != nil {
+				level.Error(sp.logger).Log("msg", "creating target failed", "lset", targetLabelSet, "group lset", tg.Labels)
+				targetSyncFailed.WithLabelValues(sp.config.JobName).Inc()
+				continue
+			}
+
+			target := NewTarget(reLabels, origLabels, sp.config.Params)
+			if reLabels == nil || reLabels.Len() == 0 {
+				dropped[hash] = target
+				continue
+			}
+
+			all = append(all, target)
 		}
 	}
+	sp.droppedTargets = dropped
 	sp.targetMtx.Unlock()
 	sp.sync(all)
 

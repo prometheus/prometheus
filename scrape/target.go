@@ -374,18 +374,28 @@ func PopulateLabels(lset labels.Labels, cfg *config.ScrapeConfig) (res, orig lab
 		}
 	}
 
-	preRelabelLabels := lb.Labels()
-	lset = relabel.Process(preRelabelLabels, cfg.RelabelConfigs...)
+	orig = lb.Labels()
+	res, err = applyRelabeling(orig, cfg)
+	if err != nil {
+		return nil, nil, err
+	}
+	return
+}
+
+// applyRelabeling takes the original label set and runs relabeling against it.
+// It also does some processing like removing all meta labels.
+func applyRelabeling(origLabels labels.Labels, cfg *config.ScrapeConfig) (labels.Labels, error) {
+	lset := relabel.Process(origLabels, cfg.RelabelConfigs...)
 
 	// Check if the target was dropped.
 	if lset == nil {
-		return nil, preRelabelLabels, nil
+		return nil, nil
 	}
 	if v := lset.Get(model.AddressLabel); v == "" {
-		return nil, nil, errors.New("no address")
+		return nil, errors.New("no address")
 	}
 
-	lb = labels.NewBuilder(lset)
+	labelsBuilder := labels.NewBuilder(lset)
 
 	// addPort checks whether we should add a default port to the address.
 	// If the address is not valid, we don't append a port either.
@@ -409,58 +419,58 @@ func PopulateLabels(lset labels.Labels, cfg *config.ScrapeConfig) (res, orig lab
 		case "https":
 			addr = addr + ":443"
 		default:
-			return nil, nil, errors.Errorf("invalid scheme: %q", cfg.Scheme)
+			return nil, errors.Errorf("invalid scheme: %q", cfg.Scheme)
 		}
-		lb.Set(model.AddressLabel, addr)
+		labelsBuilder.Set(model.AddressLabel, addr)
 	}
 
 	if err := config.CheckTargetAddress(model.LabelValue(addr)); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	interval := lset.Get(model.ScrapeIntervalLabel)
 	intervalDuration, err := model.ParseDuration(interval)
 	if err != nil {
-		return nil, nil, errors.Errorf("error parsing scrape interval: %v", err)
+		return nil, errors.Errorf("error parsing scrape interval: %v", err)
 	}
 	if time.Duration(intervalDuration) == 0 {
-		return nil, nil, errors.New("scrape interval cannot be 0")
+		return nil, errors.New("scrape interval cannot be 0")
 	}
 
 	timeout := lset.Get(model.ScrapeTimeoutLabel)
 	timeoutDuration, err := model.ParseDuration(timeout)
 	if err != nil {
-		return nil, nil, errors.Errorf("error parsing scrape timeout: %v", err)
+		return nil, errors.Errorf("error parsing scrape timeout: %v", err)
 	}
 	if time.Duration(timeoutDuration) == 0 {
-		return nil, nil, errors.New("scrape timeout cannot be 0")
+		return nil, errors.New("scrape timeout cannot be 0")
 	}
 
 	if timeoutDuration > intervalDuration {
-		return nil, nil, errors.Errorf("scrape timeout cannot be greater than scrape interval (%q > %q)", timeout, interval)
+		return nil, errors.Errorf("scrape timeout cannot be greater than scrape interval (%q > %q)", timeout, interval)
 	}
 
 	// Meta labels are deleted after relabelling. Other internal labels propagate to
 	// the target which decides whether they will be part of their label set.
 	for _, l := range lset {
 		if strings.HasPrefix(l.Name, model.MetaLabelPrefix) {
-			lb.Del(l.Name)
+			labelsBuilder.Del(l.Name)
 		}
 	}
 
 	// Default the instance label to the target address.
 	if v := lset.Get(model.InstanceLabel); v == "" {
-		lb.Set(model.InstanceLabel, addr)
+		labelsBuilder.Set(model.InstanceLabel, addr)
 	}
 
-	res = lb.Labels()
+	res := labelsBuilder.Labels()
 	for _, l := range res {
 		// Check label values are valid, drop the target if not.
 		if !model.LabelValue(l.Value).IsValid() {
-			return nil, nil, errors.Errorf("invalid label value for %q: %q", l.Name, l.Value)
+			return nil, errors.Errorf("invalid label value for %q: %q", l.Name, l.Value)
 		}
 	}
-	return res, preRelabelLabels, nil
+	return res, nil
 }
 
 // TargetsFromGroup builds targets based on the given TargetGroup and config.
@@ -491,4 +501,37 @@ func TargetsFromGroup(tg *targetgroup.Group, cfg *config.ScrapeConfig) ([]*Targe
 		}
 	}
 	return targets, failures
+}
+
+// buildTargetLabels builds final target labels based on the given target label set, target group label set and scrape config.
+func buildTargetLabels(targetLSet, targetGroupLSet model.LabelSet, cfg *config.ScrapeConfig) labels.Labels {
+	labelsBuilder := labels.NewBuilder(make([]labels.Label, 0, len(targetLSet)+len(targetGroupLSet)))
+	// Labels from scrape config.
+	scrapeLabels := []labels.Label{
+		{Name: model.JobLabel, Value: cfg.JobName},
+		{Name: model.ScrapeIntervalLabel, Value: cfg.ScrapeInterval.String()},
+		{Name: model.ScrapeTimeoutLabel, Value: cfg.ScrapeTimeout.String()},
+		{Name: model.MetricsPathLabel, Value: cfg.MetricsPath},
+		{Name: model.SchemeLabel, Value: cfg.Scheme},
+	}
+	for _, l := range scrapeLabels {
+		labelsBuilder.Set(l.Name, l.Value)
+	}
+	// Target group labels.
+	for ln, lv := range targetGroupLSet {
+		labelsBuilder.Set(string(ln), string(lv))
+	}
+
+	// Target labels.
+	for ln, lv := range targetLSet {
+		labelsBuilder.Set(string(ln), string(lv))
+	}
+
+	// Labels from config query params.
+	for k, v := range cfg.Params {
+		if len(v) > 0 {
+			labelsBuilder.Set(model.ParamLabelPrefix+k, v[0])
+		}
+	}
+	return labelsBuilder.Labels()
 }
