@@ -146,6 +146,9 @@ func (p Point) MarshalJSON() ([]byte, error) {
 	it := p.H.AllBucketIterator()
 	for it.Next() {
 		bucket := it.At()
+		if bucket.Count == 0 {
+			continue // No need to expose empty buckets in JSON.
+		}
 		boundaries := 2 // Exclusive on both sides AKA open interval.
 		if bucket.LowerInclusive {
 			if bucket.UpperInclusive {
