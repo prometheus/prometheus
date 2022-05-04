@@ -16,7 +16,6 @@ package wal
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -86,7 +85,7 @@ func TestDeleteCheckpoints(t *testing.T) {
 
 	require.NoError(t, DeleteCheckpoints(dir, 2))
 
-	files, err := ioutil.ReadDir(dir)
+	files, err := os.ReadDir(dir)
 	require.NoError(t, err)
 	fns := []string{}
 	for _, f := range files {
@@ -100,7 +99,7 @@ func TestDeleteCheckpoints(t *testing.T) {
 
 	require.NoError(t, DeleteCheckpoints(dir, 100000000))
 
-	files, err = ioutil.ReadDir(dir)
+	files, err = os.ReadDir(dir)
 	require.NoError(t, err)
 	fns = []string{}
 	for _, f := range files {
@@ -183,7 +182,7 @@ func TestCheckpoint(t *testing.T) {
 			require.NoError(t, DeleteCheckpoints(w.Dir(), 106))
 
 			// Only the new checkpoint should be left.
-			files, err := ioutil.ReadDir(dir)
+			files, err := os.ReadDir(dir)
 			require.NoError(t, err)
 			require.Equal(t, 1, len(files))
 			require.Equal(t, "checkpoint.00000106", files[0].Name())

@@ -19,7 +19,6 @@ import (
 	"encoding/binary"
 	"hash"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"sort"
@@ -330,7 +329,7 @@ func (cdm *ChunkDiskMapper) openMMapFiles() (returnErr error) {
 }
 
 func listChunkFiles(dir string) (map[int]string, error) {
-	files, err := ioutil.ReadDir(dir)
+	files, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, err
 	}

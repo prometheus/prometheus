@@ -15,7 +15,6 @@ package adapter
 
 import (
 	"context"
-	"io/ioutil"
 	"os"
 	"testing"
 
@@ -223,7 +222,7 @@ func TestGenerateTargetGroups(t *testing.T) {
 // TestWriteOutput checks the adapter can write a file to disk.
 func TestWriteOutput(t *testing.T) {
 	ctx := context.Background()
-	tmpfile, err := ioutil.TempFile("", "sd_adapter_test")
+	tmpfile, err := os.CreateTemp("", "sd_adapter_test")
 	require.NoError(t, err)
 	defer os.Remove(tmpfile.Name())
 	tmpfile.Close()

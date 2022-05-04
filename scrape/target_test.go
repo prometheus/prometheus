@@ -17,10 +17,10 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -337,7 +337,7 @@ func TestNewHTTPWithBadServerName(t *testing.T) {
 func newTLSConfig(certName string, t *testing.T) *tls.Config {
 	tlsConfig := &tls.Config{}
 	caCertPool := x509.NewCertPool()
-	caCert, err := ioutil.ReadFile(caCertPath)
+	caCert, err := os.ReadFile(caCertPath)
 	if err != nil {
 		t.Fatalf("Couldn't set up TLS server: %v", err)
 	}

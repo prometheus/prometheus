@@ -104,7 +104,7 @@ type queryTimings struct {
 
 type querySamples struct {
 	TotalQueryableSamplesPerStep []stepStat `json:"totalQueryableSamplesPerStep,omitempty"`
-	TotalQueryableSamples        int        `json:"totalQueryableSamples"`
+	TotalQueryableSamples        int64      `json:"totalQueryableSamples"`
 	PeakSamples                  int        `json:"peakSamples"`
 }
 
@@ -182,7 +182,7 @@ func (qs *QuerySamples) totalSamplesPerStepPoints() []stepStat {
 
 	ts := make([]stepStat, len(qs.TotalSamplesPerStep))
 	for i, c := range qs.TotalSamplesPerStep {
-		ts[i] = stepStat{T: qs.startTimestamp + int64(i)*qs.interval, V: int64(c)}
+		ts[i] = stepStat{T: qs.startTimestamp + int64(i)*qs.interval, V: c}
 	}
 	return ts
 }
@@ -236,14 +236,14 @@ type QuerySamples struct {
 
 	// TotalSamples represents the total number of samples scanned
 	// while evaluating a query.
-	TotalSamples int
+	TotalSamples int64
 
 	// TotalSamplesPerStep represents the total number of samples scanned
 	// per step while evaluating a query. Each step should be identical to the
 	// TotalSamples when a step is run as an instant query, which means
 	// we intentionally do not account for optimizations that happen inside the
 	// range query engine that reduce the actual work that happens.
-	TotalSamplesPerStep []int
+	TotalSamplesPerStep []int64
 
 	EnablePerStepStats bool
 	startTimestamp     int64
@@ -261,13 +261,13 @@ func (qs *QuerySamples) InitStepTracking(start, end, interval int64) {
 	}
 
 	numSteps := int((end-start)/interval) + 1
-	qs.TotalSamplesPerStep = make([]int, numSteps)
+	qs.TotalSamplesPerStep = make([]int64, numSteps)
 	qs.startTimestamp = start
 	qs.interval = interval
 }
 
 // IncrementSamplesAtStep increments the total samples count. Use this if you know the step index.
-func (qs *QuerySamples) IncrementSamplesAtStep(i, samples int) {
+func (qs *QuerySamples) IncrementSamplesAtStep(i int, samples int64) {
 	if qs == nil {
 		return
 	}
@@ -280,7 +280,7 @@ func (qs *QuerySamples) IncrementSamplesAtStep(i, samples int) {
 
 // IncrementSamplesAtTimestamp increments the total samples count. Use this if you only have the corresponding step
 // timestamp.
-func (qs *QuerySamples) IncrementSamplesAtTimestamp(t int64, samples int) {
+func (qs *QuerySamples) IncrementSamplesAtTimestamp(t, samples int64) {
 	if qs == nil {
 		return
 	}

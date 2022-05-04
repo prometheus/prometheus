@@ -63,9 +63,14 @@ ui-lint:
 assets: ui-install ui-build
 
 .PHONY: assets-compress
-assets-compress:
+assets-compress: assets
 	@echo '>> compressing assets'
 	scripts/compress_assets.sh
+
+.PHONY: assets-tarball
+assets-tarball: assets
+	@echo '>> packaging assets'
+	scripts/package_assets.sh
 
 .PHONY: test
 # If we only want to only test go code we have to change the test target
@@ -96,7 +101,7 @@ plugins/plugins.go: plugins.yml plugins/generate.go
 plugins: plugins/plugins.go
 
 .PHONY: build
-build: assets assets-compress common-build plugins
+build: assets npm_licenses assets-compress common-build plugins
 
 .PHONY: bench_tsdb
 bench_tsdb: $(PROMU)

@@ -17,7 +17,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"math"
 	"os"
 	"sort"
@@ -46,7 +45,7 @@ func TestMain(m *testing.M) {
 func TestQueryConcurrency(t *testing.T) {
 	maxConcurrency := 10
 
-	dir, err := ioutil.TempDir("", "test_concurrency")
+	dir, err := os.MkdirTemp("", "test_concurrency")
 	require.NoError(t, err)
 	defer os.RemoveAll(dir)
 	queryTracker := NewActiveQueryTracker(dir, maxConcurrency, nil)
@@ -751,7 +750,6 @@ load 10s
   metricWith3SampleEvery10Seconds{a="2",b="2"} 1+1x100
   metricWith3SampleEvery10Seconds{a="3",b="2"} 1+1x100
 `)
-
 	require.NoError(t, err)
 	defer test.Close()
 
@@ -761,7 +759,7 @@ load 10s
 	cases := []struct {
 		Query               string
 		SkipMaxCheck        bool
-		TotalSamples        int
+		TotalSamples        int64
 		TotalSamplesPerStep stats.TotalSamplesPerStep
 		PeakSamples         int
 		Start               time.Time

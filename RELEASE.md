@@ -41,7 +41,9 @@ Release cadence of first pre-releases being cut is 6 weeks.
 | v2.34          | 2022-02-23                                 | Chris Marchbanks (GitHub: @csmarchbanks)    |
 | v2.35          | 2022-04-06                                 | Augustin Husson (GitHub: @nexucis)          |
 | v2.36          | 2022-05-18                                 | Matthias Loibl (GitHub: @metalmatze)        |
-| v2.37          | 2022-06-29                                 | **searching for volunteer**                 |
+| v2.37 LTS      | 2022-06-29                                 | Julien Pivotto (GitHub: @roidelapluie)      |
+| v2.38          | 2022-08-10                                 | **searching for volunteer**                 |
+| v2.39          | 2022-09-21                                 | **searching for volunteer**                 |
 
 If you are interested in volunteering please create a pull request against the [prometheus/prometheus](https://github.com/prometheus/prometheus) repository and propose yourself for the release series of your choice.
 
@@ -95,7 +97,7 @@ of these in pull requests, one per feature.
 
 #### Updating Go dependencies
 
-```
+```bash
 make update-go-deps
 git add go.mod go.sum
 git commit -m "Update dependencies"
@@ -112,10 +114,10 @@ In case you want to update the UI dependencies, you can run the following comman
 make update-npm-deps
 ```
 
-Once this step completes, please verify that no additional `node_modules` directory was created in any of the module subdirectories 
+Once this step completes, please verify that no additional `node_modules` directory was created in any of the module subdirectories
 (which could indicate conflicting dependency versions across modules). Then run `make ui-build` to verify that the build is still working.
 
-Note: Once in a while, the npm dependencies should also be updated to their latest release versions (major or minor) with `make upgrade-npm-deps`, 
+Note: Once in a while, the npm dependencies should also be updated to their latest release versions (major or minor) with `make upgrade-npm-deps`,
 though this may be done at convenient times (e.g. by the UI maintainers) that are out-of-sync with Prometheus releases.
 
 ### 1. Prepare your release
@@ -142,9 +144,21 @@ Entries in the `CHANGELOG.md` are meant to be in this order:
 Tag the new release via the following commands:
 
 ```bash
-$ tag="v$(< VERSION)"
-$ git tag -s "${tag}" -m "${tag}"
-$ git push origin "${tag}"
+tag="v$(< VERSION)"
+git tag -s "${tag}" -m "${tag}"
+git push origin "${tag}"
+```
+
+Go modules versioning requires strict use of semver. Because we do not commit to
+avoid code-level breaking changes for the libraries between minor releases of
+the Prometheus server, we use major version zero releases for the libraries.
+
+Tag the new library release via the following commands:
+
+```bash
+tag="v$(sed s/2/0/ < VERSION)"
+git tag -s "${tag}" -m "${tag}"
+git push origin "${tag}"
 ```
 
 Optionally, you can use this handy `.gitconfig` alias.

@@ -183,6 +183,14 @@ func getClient(tracingCfg config.TracingConfig) (otlptrace.Client, error) {
 		opts := []otlptracegrpc.Option{otlptracegrpc.WithEndpoint(tracingCfg.Endpoint)}
 		if tracingCfg.Insecure {
 			opts = append(opts, otlptracegrpc.WithInsecure())
+		} else {
+			// Use of TLS Credentials forces the use of TLS. Therefore it can
+			// only be set when `insecure` is set to false.
+			tlsConf, err := config_util.NewTLSConfig(&tracingCfg.TLSConfig)
+			if err != nil {
+				return nil, err
+			}
+			opts = append(opts, otlptracegrpc.WithTLSCredentials(credentials.NewTLS(tlsConf)))
 		}
 		if tracingCfg.Compression != "" {
 			opts = append(opts, otlptracegrpc.WithCompressor(tracingCfg.Compression))
@@ -193,12 +201,6 @@ func getClient(tracingCfg config.TracingConfig) (otlptrace.Client, error) {
 		if tracingCfg.Timeout != 0 {
 			opts = append(opts, otlptracegrpc.WithTimeout(time.Duration(tracingCfg.Timeout)))
 		}
-
-		tlsConf, err := config_util.NewTLSConfig(&tracingCfg.TLSConfig)
-		if err != nil {
-			return nil, err
-		}
-		opts = append(opts, otlptracegrpc.WithTLSCredentials(credentials.NewTLS(tlsConf)))
 
 		client = otlptracegrpc.NewClient(opts...)
 	case config.TracingClientHTTP:

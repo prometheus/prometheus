@@ -16,8 +16,8 @@ package promql
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"math"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -78,7 +78,7 @@ func NewTest(t testutil.T, input string) (*Test, error) {
 }
 
 func newTestFromFile(t testutil.T, filename string) (*Test, error) {
-	content, err := ioutil.ReadFile(filename)
+	content, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, err
 	}

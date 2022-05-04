@@ -54,6 +54,10 @@ const (
 	LabelDrop Action = "labeldrop"
 	// LabelKeep drops any label not matching the regex.
 	LabelKeep Action = "labelkeep"
+	// Lowercase maps input letters to their lower case.
+	Lowercase Action = "lowercase"
+	// Uppercase maps input letters to their upper case.
+	Uppercase Action = "uppercase"
 )
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -63,7 +67,7 @@ func (a *Action) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 	switch act := Action(strings.ToLower(s)); act {
-	case Replace, Keep, Drop, HashMod, LabelMap, LabelDrop, LabelKeep:
+	case Replace, Keep, Drop, HashMod, LabelMap, LabelDrop, LabelKeep, Lowercase, Uppercase:
 		*a = act
 		return nil
 	}
@@ -106,11 +110,14 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if c.Modulus == 0 && c.Action == HashMod {
 		return errors.Errorf("relabel configuration for hashmod requires non-zero modulus")
 	}
-	if (c.Action == Replace || c.Action == HashMod) && c.TargetLabel == "" {
+	if (c.Action == Replace || c.Action == HashMod || c.Action == Lowercase || c.Action == Uppercase) && c.TargetLabel == "" {
 		return errors.Errorf("relabel configuration for %s action requires 'target_label' value", c.Action)
 	}
-	if c.Action == Replace && !relabelTarget.MatchString(c.TargetLabel) {
+	if (c.Action == Replace || c.Action == Lowercase || c.Action == Uppercase) && !relabelTarget.MatchString(c.TargetLabel) {
 		return errors.Errorf("%q is invalid 'target_label' for %s action", c.TargetLabel, c.Action)
+	}
+	if (c.Action == Lowercase || c.Action == Uppercase) && c.Replacement != DefaultRelabelConfig.Replacement {
+		return errors.Errorf("'replacement' can not be set for %s action", c.Action)
 	}
 	if c.Action == LabelMap && !relabelTarget.MatchString(c.Replacement) {
 		return errors.Errorf("%q is invalid 'replacement' for %s action", c.Replacement, c.Action)
@@ -228,6 +235,10 @@ func relabel(lset labels.Labels, cfg *Config) labels.Labels {
 			break
 		}
 		lb.Set(string(target), string(res))
+	case Lowercase:
+		lb.Set(cfg.TargetLabel, strings.ToLower(val))
+	case Uppercase:
+		lb.Set(cfg.TargetLabel, strings.ToUpper(val))
 	case HashMod:
 		mod := sum64(md5.Sum([]byte(val))) % cfg.Modulus
 		lb.Set(cfg.TargetLabel, fmt.Sprintf("%d", mod))

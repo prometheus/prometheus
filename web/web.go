@@ -19,7 +19,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	stdlog "log"
 	"math"
 	"net"
@@ -386,7 +385,7 @@ func New(logger log.Logger, o *Options) *Handler {
 			return
 		}
 		defer func() { _ = f.Close() }()
-		idx, err := ioutil.ReadAll(f)
+		idx, err := io.ReadAll(f)
 		if err != nil {
 			w.WriteHeader(http.StatusInternalServerError)
 			fmt.Fprintf(w, "Error reading React index.html: %v", err)
@@ -615,7 +614,7 @@ func (h *Handler) consoles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer file.Close()
-	text, err := ioutil.ReadAll(file)
+	text, err := io.ReadAll(file)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

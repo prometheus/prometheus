@@ -14,8 +14,8 @@
 package config
 
 import (
+	"crypto/tls"
 	"encoding/json"
-	"io/ioutil"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -179,6 +179,9 @@ var expectedConf = &Config{
 				},
 				FollowRedirects: true,
 				EnableHTTP2:     true,
+				TLSConfig: config.TLSConfig{
+					MinVersion: config.TLSVersion(tls.VersionTLS10),
+				},
 			},
 
 			ServiceDiscoveryConfigs: discovery.Configs{
@@ -855,6 +858,17 @@ var expectedConf = &Config{
 			Scheme:           DefaultScrapeConfig.Scheme,
 			HTTPClientConfig: config.DefaultHTTPClientConfig,
 
+			RelabelConfigs: []*relabel.Config{
+				{
+					Action:       relabel.Uppercase,
+					Regex:        relabel.DefaultRelabelConfig.Regex,
+					Replacement:  relabel.DefaultRelabelConfig.Replacement,
+					Separator:    relabel.DefaultRelabelConfig.Separator,
+					SourceLabels: model.LabelNames{"instance"},
+					TargetLabel:  "instance",
+				},
+			},
+
 			ServiceDiscoveryConfigs: discovery.Configs{
 				&hetzner.SDConfig{
 					HTTPClientConfig: config.HTTPClientConfig{
@@ -1195,6 +1209,30 @@ var expectedErrors = []struct {
 		errMsg:   "\"l-$1\" is invalid 'replacement' for labelmap action",
 	},
 	{
+		filename: "lowercase.bad.yml",
+		errMsg:   "relabel configuration for lowercase action requires 'target_label' value",
+	},
+	{
+		filename: "lowercase2.bad.yml",
+		errMsg:   "\"42lab\" is invalid 'target_label' for lowercase action",
+	},
+	{
+		filename: "lowercase3.bad.yml",
+		errMsg:   "'replacement' can not be set for lowercase action",
+	},
+	{
+		filename: "uppercase.bad.yml",
+		errMsg:   "relabel configuration for uppercase action requires 'target_label' value",
+	},
+	{
+		filename: "uppercase2.bad.yml",
+		errMsg:   "\"42lab\" is invalid 'target_label' for uppercase action",
+	},
+	{
+		filename: "uppercase3.bad.yml",
+		errMsg:   "'replacement' can not be set for uppercase action",
+	},
+	{
 		filename: "rules.bad.yml",
 		errMsg:   "invalid rule file path",
 	},
@@ -1506,7 +1544,7 @@ func TestBadConfigs(t *testing.T) {
 }
 
 func TestBadStaticConfigsJSON(t *testing.T) {
-	content, err := ioutil.ReadFile("testdata/static_config.bad.json")
+	content, err := os.ReadFile("testdata/static_config.bad.json")
 	require.NoError(t, err)
 	var tg targetgroup.Group
 	err = json.Unmarshal(content, &tg)
@@ -1514,7 +1552,7 @@ func TestBadStaticConfigsJSON(t *testing.T) {
 }
 
 func TestBadStaticConfigsYML(t *testing.T) {
-	content, err := ioutil.ReadFile("testdata/static_config.bad.yml")
+	content, err := os.ReadFile("testdata/static_config.bad.yml")
 	require.NoError(t, err)
 	var tg targetgroup.Group
 	err = yaml.UnmarshalStrict(content, &tg)

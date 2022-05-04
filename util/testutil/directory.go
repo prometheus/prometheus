@@ -16,7 +16,6 @@ package testutil
 import (
 	"crypto/sha256"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -120,7 +119,7 @@ func NewTemporaryDirectory(name string, t T) (handler TemporaryDirectory) {
 		err       error
 	)
 
-	directory, err = ioutil.TempDir(defaultDirectory, name)
+	directory, err = os.MkdirTemp(defaultDirectory, name)
 	require.NoError(t, err)
 
 	handler = temporaryDirectory{
