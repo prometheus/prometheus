@@ -169,10 +169,12 @@ export const HistogramString: FC<HistogramStringProps> = ({ h }) => {
   }
   const buckets: string[] = [];
 
-  for (const bucket of h.buckets) {
-    const left = bucket[0] === 3 || bucket[0] === 1 ? '[' : '(';
-    const right = bucket[0] === 3 || bucket[0] === 0 ? ']' : ')';
-    buckets.push(left + bucket[1] + ',' + bucket[2] + right + ':' + bucket[3] + ' ');
+  if (h.buckets) {
+    for (const bucket of h.buckets) {
+      const left = bucket[0] === 3 || bucket[0] === 1 ? '[' : '(';
+      const right = bucket[0] === 3 || bucket[0] === 0 ? ']' : ')';
+      buckets.push(left + bucket[1] + ',' + bucket[2] + right + ':' + bucket[3] + ' ');
+    }
   }
 
   return (
