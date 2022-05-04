@@ -17,12 +17,9 @@
 package ui
 
 import (
-	"embed"
-	"github.com/prometheus/common/assets"
 	"net/http"
-)
 
-//go:embed static
-var EmbedFS embed.FS
+	"github.com/prometheus/common/assets"
+)
 
 var Assets = http.FS(assets.New(EmbedFS))

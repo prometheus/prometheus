@@ -16,9 +16,9 @@ package scaleway
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 
 	"github.com/prometheus/common/model"
@@ -127,7 +127,7 @@ func mockScalewayInstance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	instance, err := ioutil.ReadFile("testdata/instance.json")
+	instance, err := os.ReadFile("testdata/instance.json")
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

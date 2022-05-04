@@ -14,7 +14,7 @@
 package influxdb
 
 import (
-	"io/ioutil"
+	"io"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -76,7 +76,7 @@ testmetric,test_label=test_label_value2 value=5.1234 123456789123
 		func(w http.ResponseWriter, r *http.Request) {
 			require.Equal(t, "POST", r.Method, "Unexpected method.")
 			require.Equal(t, "/write", r.URL.Path, "Unexpected path.")
-			b, err := ioutil.ReadAll(r.Body)
+			b, err := io.ReadAll(r.Body)
 			require.NoError(t, err, "Error reading body.")
 			require.Equal(t, expectedBody, string(b), "Unexpected request body.")
 		},

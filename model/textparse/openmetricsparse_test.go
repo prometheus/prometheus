@@ -52,6 +52,7 @@ ii{foo="bar"} 1
 # TYPE ss stateset
 ss{ss="foo"} 1
 ss{ss="bar"} 0
+ss{A="a"} 0
 # TYPE un unknown
 _metric_starting_with_underscore 1
 testmetric{_label_starting_with_underscore="foo"} 1
@@ -177,6 +178,10 @@ foo_total 17.0 1520879607.789 # {xx="yy"} 5`
 			m:    `ss{ss="bar"}`,
 			v:    0,
 			lset: labels.FromStrings("__name__", "ss", "ss", "bar"),
+		}, {
+			m:    `ss{A="a"}`,
+			v:    0,
+			lset: labels.FromStrings("A", "a", "__name__", "ss"),
 		}, {
 			m:   "un",
 			typ: MetricTypeUnknown,

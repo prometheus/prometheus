@@ -20,7 +20,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math"
 	"net/http"
 	"reflect"
@@ -224,7 +223,7 @@ type scrapePool struct {
 	appendable storage.Appendable
 	logger     log.Logger
 	cancel     context.CancelFunc
-	dialFunc   config_util.DialContextFunc
+	httpOpts   []config_util.HTTPClientOption
 
 	// mtx must not be taken after targetMtx.
 	mtx    sync.Mutex
@@ -265,18 +264,13 @@ const maxAheadTime = 10 * time.Minute
 
 type labelsMutator func(labels.Labels) labels.Labels
 
-func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed uint64, logger log.Logger, reportExtraMetrics bool, dialFunc config_util.DialContextFunc) (*scrapePool, error) {
+func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed uint64, logger log.Logger, reportExtraMetrics, passMetadataInContext bool, httpOpts []config_util.HTTPClientOption) (*scrapePool, error) {
 	targetScrapePools.Inc()
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
 
-	var extraOptions []config_util.HTTPClientOption
-	if dialFunc != nil {
-		extraOptions = append(extraOptions, config_util.WithDialContextFunc(dialFunc))
-	}
-
-	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, cfg.JobName, extraOptions...)
+	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, cfg.JobName, httpOpts...)
 	if err != nil {
 		targetScrapePoolsFailed.Inc()
 		return nil, errors.Wrap(err, "error creating HTTP client")
@@ -293,7 +287,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed 
 		activeTargets: map[uint64]*Target{},
 		loops:         map[uint64]loop{},
 		logger:        logger,
-		dialFunc:      dialFunc,
+		httpOpts:      httpOpts,
 	}
 	sp.newLoop = func(opts scrapeLoopOptions) loop {
 		// Update the targets retrieval function for metadata to a new scrape cache.
@@ -321,6 +315,9 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed 
 			opts.interval,
 			opts.timeout,
 			reportExtraMetrics,
+			opts.target,
+			cache,
+			passMetadataInContext,
 		)
 	}
 
@@ -388,12 +385,7 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 	targetScrapePoolReloads.Inc()
 	start := time.Now()
 
-	var extraOptions []config_util.HTTPClientOption
-	if sp.dialFunc != nil {
-		extraOptions = append(extraOptions, config_util.WithDialContextFunc(sp.dialFunc))
-	}
-
-	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, cfg.JobName, extraOptions...)
+	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, cfg.JobName, sp.httpOpts...)
 	if err != nil {
 		targetScrapePoolReloadsFailed.Inc()
 		return errors.Wrap(err, "error creating HTTP client")
@@ -625,7 +617,7 @@ func verifyLabelLimits(lset labels.Labels, limits *labelLimits) error {
 	if limits.labelLimit > 0 {
 		nbLabels := len(lset)
 		if nbLabels > int(limits.labelLimit) {
-			return fmt.Errorf("label_limit exceeded (metric: %.50s, number of label: %d, limit: %d)", met, nbLabels, limits.labelLimit)
+			return fmt.Errorf("label_limit exceeded (metric: %.50s, number of labels: %d, limit: %d)", met, nbLabels, limits.labelLimit)
 		}
 	}
 
@@ -637,14 +629,14 @@ func verifyLabelLimits(lset labels.Labels, limits *labelLimits) error {
 		if limits.labelNameLengthLimit > 0 {
 			nameLength := len(l.Name)
 			if nameLength > int(limits.labelNameLengthLimit) {
-				return fmt.Errorf("label_name_length_limit exceeded (metric: %.50s, label: %.50v, name length: %d, limit: %d)", met, l, nameLength, limits.labelNameLengthLimit)
+				return fmt.Errorf("label_name_length_limit exceeded (metric: %.50s, label name: %.50s, length: %d, limit: %d)", met, l.Name, nameLength, limits.labelNameLengthLimit)
 			}
 		}
 
 		if limits.labelValueLengthLimit > 0 {
 			valueLength := len(l.Value)
 			if valueLength > int(limits.labelValueLengthLimit) {
-				return fmt.Errorf("label_value_length_limit exceeded (metric: %.50s, label: %.50v, value length: %d, limit: %d)", met, l, valueLength, limits.labelValueLengthLimit)
+				return fmt.Errorf("label_value_length_limit exceeded (metric: %.50s, label name: %.50s, value: %.50q, length: %d, limit: %d)", met, l.Name, l.Value, valueLength, limits.labelValueLengthLimit)
 			}
 		}
 	}
@@ -783,7 +775,7 @@ func (s *targetScraper) scrape(ctx context.Context, w io.Writer) (string, error)
 		return "", err
 	}
 	defer func() {
-		io.Copy(ioutil.Discard, resp.Body)
+		io.Copy(io.Discard, resp.Body)
 		resp.Body.Close()
 	}()
 
@@ -866,10 +858,11 @@ type scrapeLoop struct {
 	sampleMutator       labelsMutator
 	reportSampleMutator labelsMutator
 
-	parentCtx context.Context
-	ctx       context.Context
-	cancel    func()
-	stopped   chan struct{}
+	parentCtx   context.Context
+	appenderCtx context.Context
+	ctx         context.Context
+	cancel      func()
+	stopped     chan struct{}
 
 	disabledEndOfRunStalenessMarkers bool
 
@@ -1135,6 +1128,9 @@ func newScrapeLoop(ctx context.Context,
 	interval time.Duration,
 	timeout time.Duration,
 	reportExtraMetrics bool,
+	target *Target,
+	metricMetadataStore MetricMetadataStore,
+	passMetadataInContext bool,
 ) *scrapeLoop {
 	if l == nil {
 		l = log.NewNopLogger()
@@ -1145,6 +1141,18 @@ func newScrapeLoop(ctx context.Context,
 	if cache == nil {
 		cache = newScrapeCache()
 	}
+
+	appenderCtx := ctx
+
+	if passMetadataInContext {
+		// Store the cache and target in the context. This is then used by downstream OTel Collector
+		// to lookup the metadata required to process the samples. Not used by Prometheus itself.
+		// TODO(gouthamve) We're using a dedicated context because using the parentCtx caused a memory
+		// leak. We should ideally fix the main leak. See: https://github.com/prometheus/prometheus/pull/10590
+		appenderCtx = ContextWithMetricMetadataStore(appenderCtx, cache)
+		appenderCtx = ContextWithTarget(appenderCtx, target)
+	}
+
 	sl := &scrapeLoop{
 		scraper:             sc,
 		buffers:             buffers,
@@ -1156,6 +1164,7 @@ func newScrapeLoop(ctx context.Context,
 		jitterSeed:          jitterSeed,
 		l:                   l,
 		parentCtx:           ctx,
+		appenderCtx:         appenderCtx,
 		honorTimestamps:     honorTimestamps,
 		sampleLimit:         sampleLimit,
 		labelLimits:         labelLimits,
@@ -1234,7 +1243,7 @@ mainLoop:
 // scrapeAndReport performs a scrape and then appends the result to the storage
 // together with reporting metrics, by using as few appenders as possible.
 // In the happy scenario, a single appender is used.
-// This function uses sl.parentCtx instead of sl.ctx on purpose. A scrape should
+// This function uses sl.appenderCtx instead of sl.ctx on purpose. A scrape should
 // only be cancelled on shutdown, not on reloads.
 func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- error) time.Time {
 	start := time.Now()
@@ -1253,7 +1262,7 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 	var total, added, seriesAdded, bytes int
 	var err, appErr, scrapeErr error
 
-	app := sl.appender(sl.parentCtx)
+	app := sl.appender(sl.appenderCtx)
 	defer func() {
 		if err != nil {
 			app.Rollback()
@@ -1276,7 +1285,7 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 		// Add stale markers.
 		if _, _, _, err := sl.append(app, []byte{}, "", appendTime); err != nil {
 			app.Rollback()
-			app = sl.appender(sl.parentCtx)
+			app = sl.appender(sl.appenderCtx)
 			level.Warn(sl.l).Log("msg", "Append failed", "err", err)
 		}
 		if errc != nil {
@@ -1315,13 +1324,13 @@ func (sl *scrapeLoop) scrapeAndReport(last, appendTime time.Time, errc chan<- er
 	total, added, seriesAdded, appErr = sl.append(app, b, contentType, appendTime)
 	if appErr != nil {
 		app.Rollback()
-		app = sl.appender(sl.parentCtx)
+		app = sl.appender(sl.appenderCtx)
 		level.Debug(sl.l).Log("msg", "Append failed", "err", appErr)
 		// The append failed, probably due to a parse error or sample limit.
 		// Call sl.append again with an empty scrape to trigger stale markers.
 		if _, _, _, err := sl.append(app, []byte{}, "", appendTime); err != nil {
 			app.Rollback()
-			app = sl.appender(sl.parentCtx)
+			app = sl.appender(sl.appenderCtx)
 			level.Warn(sl.l).Log("msg", "Append failed", "err", err)
 		}
 	}
@@ -1385,7 +1394,8 @@ func (sl *scrapeLoop) endOfRunStaleness(last time.Time, ticker *time.Ticker, int
 	// Call sl.append again with an empty scrape to trigger stale markers.
 	// If the target has since been recreated and scraped, the
 	// stale markers will be out of order and ignored.
-	app := sl.appender(sl.ctx)
+	// sl.context would have been cancelled, hence using sl.appenderCtx.
+	app := sl.appender(sl.appenderCtx)
 	var err error
 	defer func() {
 		if err != nil {
@@ -1399,7 +1409,7 @@ func (sl *scrapeLoop) endOfRunStaleness(last time.Time, ticker *time.Ticker, int
 	}()
 	if _, _, _, err = sl.append(app, []byte{}, "", staleTime); err != nil {
 		app.Rollback()
-		app = sl.appender(sl.ctx)
+		app = sl.appender(sl.appenderCtx)
 		level.Warn(sl.l).Log("msg", "Stale append failed", "err", err)
 	}
 	if err = sl.reportStale(app, staleTime); err != nil {
@@ -1800,4 +1810,32 @@ func reusableCache(r, l *config.ScrapeConfig) bool {
 		return false
 	}
 	return reflect.DeepEqual(zeroConfig(r), zeroConfig(l))
+}
+
+// CtxKey is a dedicated type for keys of context-embedded values propagated
+// with the scrape context.
+type ctxKey int
+
+// Valid CtxKey values.
+const (
+	ctxKeyMetadata ctxKey = iota + 1
+	ctxKeyTarget
+)
+
+func ContextWithMetricMetadataStore(ctx context.Context, s MetricMetadataStore) context.Context {
+	return context.WithValue(ctx, ctxKeyMetadata, s)
+}
+
+func MetricMetadataStoreFromContext(ctx context.Context) (MetricMetadataStore, bool) {
+	s, ok := ctx.Value(ctxKeyMetadata).(MetricMetadataStore)
+	return s, ok
+}
+
+func ContextWithTarget(ctx context.Context, t *Target) context.Context {
+	return context.WithValue(ctx, ctxKeyTarget, t)
+}
+
+func TargetFromContext(ctx context.Context) (*Target, bool) {
+	t, ok := ctx.Value(ctxKeyTarget).(*Target)
+	return t, ok
 }

@@ -141,8 +141,8 @@ func TestExternalLabelsQuerierAddExternalLabels(t *testing.T) {
 		},
 		{
 			el: labels.Labels{
-				{Name: "region", Value: "europe"},
 				{Name: "dc", Value: "berlin-01"},
+				{Name: "region", Value: "europe"},
 			},
 			inMatchers: []*labels.Matcher{
 				labels.MustNewMatcher(labels.MatchEqual, "job", "api-server"),

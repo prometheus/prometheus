@@ -1,10 +1,10 @@
-import React, { ChangeEvent, FC, useEffect, useState } from 'react';
+import React, { FC, useCallback, useEffect, useMemo, useState } from 'react';
 import { useFetch } from '../../hooks/useFetch';
 import { LabelsTable } from './LabelsTable';
 import { DroppedTarget, Labels, Target } from '../targets/target';
 
 import { withStatusIndicator } from '../../components/withStatusIndicator';
-import { mapObjEntries } from '../../utils';
+import { setQuerySearchFilter, mapObjEntries, getQuerySearchFilter } from '../../utils';
 import { usePathPrefix } from '../../contexts/PathPrefixContext';
 import { API_PATH } from '../../constants/constants';
 import { KVSearch } from '@nexucis/kvsearch';
@@ -22,9 +22,14 @@ export interface TargetLabels {
   isDropped: boolean;
 }
 
-const kvSearch = new KVSearch<Target>({
+const activeTargetKVSearch = new KVSearch<Target>({
   shouldSort: true,
   indexedKeys: ['labels', 'discoveredLabels', ['discoveredLabels', /.*/], ['labels', /.*/]],
+});
+
+const droppedTargetKVSearch = new KVSearch<DroppedTarget>({
+  shouldSort: true,
+  indexedKeys: ['discoveredLabels', ['discoveredLabels', /.*/]],
 });
 
 export const processSummary = (
@@ -91,28 +96,37 @@ export const processTargets = (activeTargets: Target[], droppedTargets: DroppedT
 
 export const ServiceDiscoveryContent: FC<ServiceMap> = ({ activeTargets, droppedTargets }) => {
   const [activeTargetList, setActiveTargetList] = useState(activeTargets);
+  const [droppedTargetList, setDroppedTargetList] = useState(droppedTargets);
   const [targetList, setTargetList] = useState(processSummary(activeTargets, droppedTargets));
   const [labelList, setLabelList] = useState(processTargets(activeTargets, droppedTargets));
 
-  const handleSearchChange = (e: ChangeEvent<HTMLTextAreaElement | HTMLInputElement>) => {
-    if (e.target.value !== '') {
-      const result = kvSearch.filter(e.target.value.trim(), activeTargets);
-      setActiveTargetList(result.map((value) => value.original));
-    } else {
-      setActiveTargetList(activeTargets);
-    }
-  };
+  const handleSearchChange = useCallback(
+    (value: string) => {
+      setQuerySearchFilter(value);
+      if (value !== '') {
+        const activeTargetResult = activeTargetKVSearch.filter(value.trim(), activeTargets);
+        const droppedTargetResult = droppedTargetKVSearch.filter(value.trim(), droppedTargets);
+        setActiveTargetList(activeTargetResult.map((value) => value.original));
+        setDroppedTargetList(droppedTargetResult.map((value) => value.original));
+      } else {
+        setActiveTargetList(activeTargets);
+      }
+    },
+    [activeTargets, droppedTargets]
+  );
+
+  const defaultValue = useMemo(getQuerySearchFilter, []);
 
   useEffect(() => {
-    setTargetList(processSummary(activeTargetList, droppedTargets));
-    setLabelList(processTargets(activeTargetList, droppedTargets));
-  }, [activeTargetList, droppedTargets]);
+    setTargetList(processSummary(activeTargetList, droppedTargetList));
+    setLabelList(processTargets(activeTargetList, droppedTargetList));
+  }, [activeTargetList, droppedTargetList]);
 
   return (
     <>
       <h2>Service Discovery</h2>
       <Container>
-        <SearchBar handleChange={handleSearchChange} placeholder="Filter by labels" />
+        <SearchBar defaultValue={defaultValue} handleChange={handleSearchChange} placeholder="Filter by labels" />
       </Container>
       <ul>
         {mapObjEntries(targetList, ([k, v]) => (

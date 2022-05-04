@@ -17,7 +17,6 @@ package wal
 import (
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math"
 	"os"
 	"path/filepath"
@@ -300,7 +299,7 @@ type checkpointRef struct {
 }
 
 func listCheckpoints(dir string) (refs []checkpointRef, err error) {
-	files, err := ioutil.ReadDir(dir)
+	files, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, err
 	}

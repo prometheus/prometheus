@@ -47,19 +47,20 @@ import (
 	toolkit_web "github.com/prometheus/exporter-toolkit/web"
 	toolkit_webflag "github.com/prometheus/exporter-toolkit/web/kingpinflag"
 	"go.uber.org/atomic"
+	"go.uber.org/automaxprocs/maxprocs"
 	kingpin "gopkg.in/alecthomas/kingpin.v2"
 	klog "k8s.io/klog"
 	klogv2 "k8s.io/klog/v2"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
-	_ "github.com/prometheus/prometheus/discovery/install" // Register service discovery implementations.
 	"github.com/prometheus/prometheus/discovery/legacymanager"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/notifier"
+	_ "github.com/prometheus/prometheus/plugins" // Register plugins.
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/scrape"
@@ -148,6 +149,8 @@ type flagConfig struct {
 	// for ease of use.
 	enableExpandExternalLabels bool
 	enableNewSDManager         bool
+	enablePerStepStats         bool
+	enableAutoGOMAXPROCS       bool
 
 	prometheusURL   string
 	corsRegexString string
@@ -182,6 +185,12 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 			case "agent":
 				agentMode = true
 				level.Info(logger).Log("msg", "Experimental agent mode enabled.")
+			case "promql-per-step-stats":
+				c.enablePerStepStats = true
+				level.Info(logger).Log("msg", "Experimental per-step statistics reporting")
+			case "auto-gomaxprocs":
+				c.enableAutoGOMAXPROCS = true
+				level.Info(logger).Log("msg", "Automatically set GOMAXPROCS to match Linux container CPU quota")
 			case "":
 				continue
 			case "promql-at-modifier", "promql-negative-offset":
@@ -305,6 +314,9 @@ func main() {
 	serverOnlyFlag(a, "storage.tsdb.wal-compression", "Compress the tsdb WAL.").
 		Hidden().Default("true").BoolVar(&cfg.tsdb.WALCompression)
 
+	serverOnlyFlag(a, "storage.tsdb.head-chunks-write-queue-size", "Size of the queue through which head chunks are written to the disk to be m-mapped, 0 disables the queue completely. Experimental.").
+		Default("0").IntVar(&cfg.tsdb.HeadChunksWriteQueueSize)
+
 	agentOnlyFlag(a, "storage.agent.path", "Base path for metrics storage.").
 		Default("data-agent/").StringVar(&cfg.agentStoragePath)
 
@@ -375,7 +387,7 @@ func main() {
 	serverOnlyFlag(a, "query.max-samples", "Maximum number of samples a single query can load into memory. Note that queries will fail if they try to load more samples than this into memory, so this also limits the number of samples a query can return.").
 		Default("50000000").IntVar(&cfg.queryMaxSamples)
 
-	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: agent, exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-at-modifier, promql-negative-offset, remote-write-receiver (DEPRECATED), extra-scrape-metrics, new-service-discovery-manager. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
+	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: agent, exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-at-modifier, promql-negative-offset, promql-per-step-stats, remote-write-receiver (DEPRECATED), extra-scrape-metrics, new-service-discovery-manager, auto-gomaxprocs. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
 		Default("").StringsVar(&cfg.featureList)
 
 	promlogflag.AddFlags(a, &cfg.promlogConfig)
@@ -557,6 +569,15 @@ func main() {
 		ruleManager *rules.Manager
 	)
 
+	if cfg.enableAutoGOMAXPROCS {
+		l := func(format string, a ...interface{}) {
+			level.Info(logger).Log("component", "automaxprocs", "msg", fmt.Sprintf(strings.TrimPrefix(format, "maxprocs: "), a...))
+		}
+		if _, err := maxprocs.Set(maxprocs.Logger(l)); err != nil {
+			level.Warn(logger).Log("component", "automaxprocs", "msg", "Failed to set GOMAXPROCS automatically", "err", err)
+		}
+	}
+
 	if !agentMode {
 		opts := promql.EngineOpts{
 			Logger:                   log.With(logger, "component", "query engine"),
@@ -570,6 +591,7 @@ func main() {
 			// always on for regular PromQL as of Prometheus v2.33.
 			EnableAtModifier:     true,
 			EnableNegativeOffset: true,
+			EnablePerStepStats:   cfg.enablePerStepStats,
 		}
 
 		queryEngine = promql.NewEngine(opts)
@@ -716,6 +738,7 @@ func main() {
 					files,
 					cfg.GlobalConfig.ExternalLabels,
 					externalURL,
+					nil,
 				)
 			},
 		}, {
@@ -1484,6 +1507,7 @@ type tsdbOptions struct {
 	NoLockfile                     bool
 	AllowOverlappingBlocks         bool
 	WALCompression                 bool
+	HeadChunksWriteQueueSize       int
 	StripeSize                     int
 	MinBlockDuration               model.Duration
 	MaxBlockDuration               model.Duration
@@ -1501,6 +1525,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		NoLockfile:                     opts.NoLockfile,
 		AllowOverlappingBlocks:         opts.AllowOverlappingBlocks,
 		WALCompression:                 opts.WALCompression,
+		HeadChunksWriteQueueSize:       opts.HeadChunksWriteQueueSize,
 		StripeSize:                     opts.StripeSize,
 		MinBlockDuration:               int64(time.Duration(opts.MinBlockDuration) / time.Millisecond),
 		MaxBlockDuration:               int64(time.Duration(opts.MaxBlockDuration) / time.Millisecond),

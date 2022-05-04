@@ -392,7 +392,7 @@ func (db *DB) replayWAL() error {
 func (db *DB) loadWAL(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef) (err error) {
 	var (
 		dec     record.Decoder
-		lastRef chunks.HeadSeriesRef
+		lastRef = chunks.HeadSeriesRef(db.nextRef.Load())
 
 		decoded    = make(chan interface{}, 10)
 		errCh      = make(chan error, 1)
@@ -410,6 +410,7 @@ func (db *DB) loadWAL(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.He
 
 	go func() {
 		defer close(decoded)
+		var err error
 		for r.Next() {
 			rec := r.Record()
 			switch dec.Type(rec) {
@@ -439,6 +440,8 @@ func (db *DB) loadWAL(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.He
 				decoded <- samples
 			case record.Tombstones, record.Exemplars:
 				// We don't care about tombstones or exemplars during replay.
+				// TODO: If decide to decode exemplars, we should make sure to prepopulate
+				// stripeSeries.exemplars in the next block by using setLatestExemplar.
 				continue
 			default:
 				errCh <- &wal.CorruptionErr{
@@ -788,6 +791,16 @@ func (a *appender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exem
 		}
 	}
 
+	// Check for duplicate vs last stored exemplar for this series, and discard those.
+	// Otherwise, record the current exemplar as the latest.
+	// Prometheus' TSDB returns 0 when encountering duplicates, so we do the same here.
+	prevExemplar := a.series.GetLatestExemplar(s.ref)
+	if prevExemplar != nil && prevExemplar.Equals(e) {
+		// Duplicate, don't return an error but don't accept the exemplar.
+		return 0, nil
+	}
+	a.series.SetLatestExemplar(s.ref, &e)
+
 	a.pendingExamplars = append(a.pendingExamplars, record.RefExemplar{
 		Ref:    s.ref,
 		T:      e.Ts,
@@ -795,6 +808,7 @@ func (a *appender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exem
 		Labels: e.Labels,
 	})
 
+	a.metrics.totalAppendedExemplars.Inc()
 	return storage.SeriesRef(s.ref), nil
 }
 

@@ -19,7 +19,6 @@ package tsdb
 import (
 	"encoding/binary"
 	"io"
-	"io/ioutil"
 	"math/rand"
 	"os"
 	"path"
@@ -294,7 +293,7 @@ func TestWALRestoreCorrupted_invalidSegment(t *testing.T) {
 	require.NoError(t, err)
 	defer func(wal *SegmentWAL) { require.NoError(t, wal.Close()) }(wal)
 
-	files, err := ioutil.ReadDir(dir)
+	files, err := os.ReadDir(dir)
 	require.NoError(t, err)
 	fns := []string{}
 	for _, f := range files {

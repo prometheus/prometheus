@@ -17,7 +17,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -29,6 +29,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/prometheus/prometheus/util/stats"
 
 	"github.com/go-kit/log"
 	"github.com/pkg/errors"
@@ -517,6 +519,130 @@ func TestLabelNames(t *testing.T) {
 				res := api.labelNames(req.WithContext(ctx))
 				assertAPIError(t, res.err, "")
 				assertAPIResponse(t, res.data, tc.expected)
+			}
+		})
+	}
+}
+
+type testStats struct {
+	Custom string `json:"custom"`
+}
+
+func (testStats) Builtin() (_ stats.BuiltinStats) {
+	return
+}
+
+func TestStats(t *testing.T) {
+	suite, err := promql.NewTest(t, ``)
+	require.NoError(t, err)
+	defer suite.Close()
+	require.NoError(t, suite.Run())
+
+	api := &API{
+		Queryable:   suite.Storage(),
+		QueryEngine: suite.QueryEngine(),
+		now: func() time.Time {
+			return time.Unix(123, 0)
+		},
+	}
+	request := func(method, param string) (*http.Request, error) {
+		u, err := url.Parse("http://example.com")
+		require.NoError(t, err)
+		q := u.Query()
+		q.Add("stats", param)
+		q.Add("query", "up")
+		q.Add("start", "0")
+		q.Add("end", "100")
+		q.Add("step", "10")
+		u.RawQuery = q.Encode()
+
+		r, err := http.NewRequest(method, u.String(), nil)
+		if method == http.MethodPost {
+			r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		}
+		return r, err
+	}
+
+	for _, tc := range []struct {
+		name     string
+		renderer StatsRenderer
+		param    string
+		expected func(*testing.T, interface{})
+	}{
+		{
+			name:  "stats is blank",
+			param: "",
+			expected: func(t *testing.T, i interface{}) {
+				require.IsType(t, i, &queryData{})
+				qd := i.(*queryData)
+				require.Nil(t, qd.Stats)
+			},
+		},
+		{
+			name:  "stats is true",
+			param: "true",
+			expected: func(t *testing.T, i interface{}) {
+				require.IsType(t, i, &queryData{})
+				qd := i.(*queryData)
+				require.NotNil(t, qd.Stats)
+				qs := qd.Stats.Builtin()
+				require.NotNil(t, qs.Timings)
+				require.Greater(t, qs.Timings.EvalTotalTime, float64(0))
+				require.NotNil(t, qs.Samples)
+				require.NotNil(t, qs.Samples.TotalQueryableSamples)
+				require.Nil(t, qs.Samples.TotalQueryableSamplesPerStep)
+			},
+		},
+		{
+			name:  "stats is all",
+			param: "all",
+			expected: func(t *testing.T, i interface{}) {
+				require.IsType(t, i, &queryData{})
+				qd := i.(*queryData)
+				require.NotNil(t, qd.Stats)
+				qs := qd.Stats.Builtin()
+				require.NotNil(t, qs.Timings)
+				require.Greater(t, qs.Timings.EvalTotalTime, float64(0))
+				require.NotNil(t, qs.Samples)
+				require.NotNil(t, qs.Samples.TotalQueryableSamples)
+				require.NotNil(t, qs.Samples.TotalQueryableSamplesPerStep)
+			},
+		},
+		{
+			name: "custom handler with known value",
+			renderer: func(ctx context.Context, s *stats.Statistics, p string) stats.QueryStats {
+				if p == "known" {
+					return testStats{"Custom Value"}
+				}
+				return nil
+			},
+			param: "known",
+			expected: func(t *testing.T, i interface{}) {
+				require.IsType(t, i, &queryData{})
+				qd := i.(*queryData)
+				require.NotNil(t, qd.Stats)
+				j, err := json.Marshal(qd.Stats)
+				require.NoError(t, err)
+				require.JSONEq(t, string(j), `{"custom":"Custom Value"}`)
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			before := api.statsRenderer
+			defer func() { api.statsRenderer = before }()
+			api.statsRenderer = tc.renderer
+
+			for _, method := range []string{http.MethodGet, http.MethodPost} {
+				ctx := context.Background()
+				req, err := request(method, tc.param)
+				require.NoError(t, err)
+				res := api.query(req.WithContext(ctx))
+				assertAPIError(t, res.err, "")
+				tc.expected(t, res.data)
+
+				res = api.queryRange(req.WithContext(ctx))
+				assertAPIError(t, res.err, "")
+				tc.expected(t, res.data)
 			}
 		})
 	}
@@ -2162,7 +2288,7 @@ func (f *fakeDB) CleanTombstones() error                               { return 
 func (f *fakeDB) Delete(mint, maxt int64, ms ...*labels.Matcher) error { return f.err }
 func (f *fakeDB) Snapshot(dir string, withHead bool) error             { return f.err }
 func (f *fakeDB) Stats(statsByLabelName string) (_ *tsdb.Stats, retErr error) {
-	dbDir, err := ioutil.TempDir("", "tsdb-api-ready")
+	dbDir, err := os.MkdirTemp("", "tsdb-api-ready")
 	if err != nil {
 		return nil, err
 	}
@@ -2375,7 +2501,7 @@ func TestRespondSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error on test request: %s", err)
 	}
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	defer resp.Body.Close()
 	if err != nil {
 		t.Fatalf("Error reading response body: %s", err)
@@ -2411,7 +2537,7 @@ func TestRespondError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error on test request: %s", err)
 	}
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	defer resp.Body.Close()
 	if err != nil {
 		t.Fatalf("Error reading response body: %s", err)
@@ -2767,7 +2893,7 @@ func TestRespond(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Error on test request: %s", err)
 		}
-		body, err := ioutil.ReadAll(resp.Body)
+		body, err := io.ReadAll(resp.Body)
 		defer resp.Body.Close()
 		if err != nil {
 			t.Fatalf("Error reading response body: %s", err)

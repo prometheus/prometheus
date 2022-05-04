@@ -18,7 +18,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -71,7 +70,7 @@ func (*SDConfig) Name() string { return "http" }
 
 // NewDiscoverer returns a Discoverer for the Config.
 func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewDiscovery(c, opts.Logger)
+	return NewDiscovery(c, opts.Logger, opts.HTTPClientOptions)
 }
 
 // SetDirectory joins any relative file paths with dir.
@@ -116,12 +115,12 @@ type Discovery struct {
 }
 
 // NewDiscovery returns a new HTTP discovery for the given config.
-func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
+func NewDiscovery(conf *SDConfig, logger log.Logger, clientOpts []config.HTTPClientOption) (*Discovery, error) {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
 
-	client, err := config.NewClientFromConfig(conf.HTTPClientConfig, "http")
+	client, err := config.NewClientFromConfig(conf.HTTPClientConfig, "http", clientOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -157,7 +156,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		return nil, err
 	}
 	defer func() {
-		io.Copy(ioutil.Discard, resp.Body)
+		io.Copy(io.Discard, resp.Body)
 		resp.Body.Close()
 	}()
 
@@ -171,7 +170,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		return nil, errors.Errorf("unsupported content type %q", resp.Header.Get("Content-Type"))
 	}
 
-	b, err := ioutil.ReadAll(resp.Body)
+	b, err := io.ReadAll(resp.Body)
 	if err != nil {
 		failuresCount.Inc()
 		return nil, err

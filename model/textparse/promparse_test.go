@@ -17,7 +17,6 @@ import (
 	"bytes"
 	"compress/gzip"
 	"io"
-	"io/ioutil"
 	"os"
 	"testing"
 
@@ -361,7 +360,7 @@ func BenchmarkParse(b *testing.B) {
 			require.NoError(b, err)
 			defer f.Close()
 
-			buf, err := ioutil.ReadAll(f)
+			buf, err := io.ReadAll(f)
 			require.NoError(b, err)
 
 			b.Run(parserName+"/no-decode-metric/"+fn, func(b *testing.B) {
@@ -501,7 +500,7 @@ func BenchmarkGzip(b *testing.B) {
 			require.NoError(b, err)
 			require.NoError(b, gw.Close())
 
-			gbuf, err := ioutil.ReadAll(&buf)
+			gbuf, err := io.ReadAll(&buf)
 			require.NoError(b, err)
 
 			k := b.N / promtestdataSampleCount
@@ -516,7 +515,7 @@ func BenchmarkGzip(b *testing.B) {
 				gr, err := gzip.NewReader(bytes.NewReader(gbuf))
 				require.NoError(b, err)
 
-				d, err := ioutil.ReadAll(gr)
+				d, err := io.ReadAll(gr)
 				require.NoError(b, err)
 				require.NoError(b, gr.Close())
 

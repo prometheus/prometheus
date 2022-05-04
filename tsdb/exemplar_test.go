@@ -330,8 +330,8 @@ func TestSelectExemplar_DuplicateSeries(t *testing.T) {
 	}
 
 	l := labels.Labels{
-		{Name: "service", Value: "asdf"},
 		{Name: "cluster", Value: "us-central1"},
+		{Name: "service", Value: "asdf"},
 	}
 
 	// Lets just assume somehow the PromQL expression generated two separate lists of matchers,

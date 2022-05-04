@@ -15,7 +15,6 @@ package config
 
 import (
 	"fmt"
-	"io/ioutil"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -103,7 +102,7 @@ func Load(s string, expandExternalLabels bool, logger log.Logger) (*Config, erro
 
 // LoadFile parses the given YAML file into a Config.
 func LoadFile(filename string, agentMode, expandExternalLabels bool, logger log.Logger) (*Config, error) {
-	content, err := ioutil.ReadFile(filename)
+	content, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, err
 	}

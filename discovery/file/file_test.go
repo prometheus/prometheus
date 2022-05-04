@@ -17,7 +17,6 @@ import (
 	"context"
 	"encoding/json"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"sort"
@@ -73,7 +72,7 @@ func (t *testRunner) copyFile(src string) string {
 func (t *testRunner) copyFileTo(src, name string) string {
 	t.Helper()
 
-	newf, err := ioutil.TempFile(t.dir, "")
+	newf, err := os.CreateTemp(t.dir, "")
 	require.NoError(t, err)
 
 	f, err := os.Open(src)
@@ -95,7 +94,7 @@ func (t *testRunner) copyFileTo(src, name string) string {
 func (t *testRunner) writeString(file, data string) {
 	t.Helper()
 
-	newf, err := ioutil.TempFile(t.dir, "")
+	newf, err := os.CreateTemp(t.dir, "")
 	require.NoError(t, err)
 
 	_, err = newf.WriteString(data)

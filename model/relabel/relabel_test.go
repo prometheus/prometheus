@@ -428,6 +428,28 @@ func TestRelabel(t *testing.T) {
 				"a": "foo",
 			}),
 		},
+		{
+			input: labels.FromMap(map[string]string{
+				"foo": "bAr123Foo",
+			}),
+			relabel: []*Config{
+				{
+					SourceLabels: model.LabelNames{"foo"},
+					Action:       Uppercase,
+					TargetLabel:  "foo_uppercase",
+				},
+				{
+					SourceLabels: model.LabelNames{"foo"},
+					Action:       Lowercase,
+					TargetLabel:  "foo_lowercase",
+				},
+			},
+			output: labels.FromMap(map[string]string{
+				"foo":           "bAr123Foo",
+				"foo_lowercase": "bar123foo",
+				"foo_uppercase": "BAR123FOO",
+			}),
+		},
 	}
 
 	for _, test := range tests {

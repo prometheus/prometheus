@@ -4,7 +4,7 @@ import { useFetch } from '../../hooks/useFetch';
 import { API_PATH } from '../../constants/constants';
 import { groupTargets, ScrapePool, ScrapePools, Target } from './target';
 import { withStatusIndicator } from '../../components/withStatusIndicator';
-import { ChangeEvent, FC, useEffect, useState } from 'react';
+import { FC, useCallback, useEffect, useMemo, useState } from 'react';
 import { Col, Collapse, Row } from 'reactstrap';
 import { ScrapePoolContent } from './ScrapePoolContent';
 import Filter, { Expanded, FilterData } from './Filter';
@@ -12,6 +12,7 @@ import { useLocalStorage } from '../../hooks/useLocalStorage';
 import styles from './ScrapePoolPanel.module.css';
 import { ToggleMoreLess } from '../../components/ToggleMoreLess';
 import SearchBar from '../../components/SearchBar';
+import { setQuerySearchFilter, getQuerySearchFilter } from '../../utils/index';
 
 interface ScrapePoolListProps {
   activeTargets: Target[];
@@ -72,14 +73,20 @@ const ScrapePoolListContent: FC<ScrapePoolListProps> = ({ activeTargets }) => {
   const [expanded, setExpanded] = useLocalStorage('targets-page-expansion-state', initialExpanded);
   const { showHealthy, showUnhealthy } = filter;
 
-  const handleSearchChange = (e: ChangeEvent<HTMLTextAreaElement | HTMLInputElement>) => {
-    if (e.target.value !== '') {
-      const result = kvSearch.filter(e.target.value.trim(), activeTargets);
-      setTargetList(result.map((value) => value.original));
-    } else {
-      setTargetList(activeTargets);
-    }
-  };
+  const handleSearchChange = useCallback(
+    (value: string) => {
+      setQuerySearchFilter(value);
+      if (value !== '') {
+        const result = kvSearch.filter(value.trim(), activeTargets);
+        setTargetList(result.map((value) => value.original));
+      } else {
+        setTargetList(activeTargets);
+      }
+    },
+    [activeTargets]
+  );
+
+  const defaultValue = useMemo(getQuerySearchFilter, []);
 
   useEffect(() => {
     const list = targetList.filter((t) => showHealthy || t.health.toLowerCase() !== 'up');
@@ -93,7 +100,11 @@ const ScrapePoolListContent: FC<ScrapePoolListProps> = ({ activeTargets }) => {
           <Filter filter={filter} setFilter={setFilter} expanded={expanded} setExpanded={setExpanded} />
         </Col>
         <Col xs="6">
-          <SearchBar handleChange={handleSearchChange} placeholder="Filter by endpoint or labels" />
+          <SearchBar
+            defaultValue={defaultValue}
+            handleChange={handleSearchChange}
+            placeholder="Filter by endpoint or labels"
+          />
         </Col>
       </Row>
       {Object.keys(poolList)

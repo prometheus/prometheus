@@ -18,7 +18,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -117,7 +116,7 @@ func (a *Adapter) writeOutput() error {
 	b, _ := json.MarshalIndent(arr, "", "    ")
 
 	dir, _ := filepath.Split(a.output)
-	tmpfile, err := ioutil.TempFile(dir, "sd-adapter")
+	tmpfile, err := os.CreateTemp(dir, "sd-adapter")
 	if err != nil {
 		return err
 	}

@@ -22,7 +22,6 @@ import (
 	"hash"
 	"hash/crc32"
 	"io"
-	"io/ioutil"
 	"math"
 	"os"
 	"path/filepath"
@@ -1109,7 +1108,7 @@ func (b realByteSlice) Sub(start, end int) ByteSlice {
 // NewReader returns a new index reader on the given byte slice. It automatically
 // handles different format versions.
 func NewReader(b ByteSlice) (*Reader, error) {
-	return newReader(b, ioutil.NopCloser(nil))
+	return newReader(b, io.NopCloser(nil))
 }
 
 // NewFileReader returns a new index reader against the given index file.

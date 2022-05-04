@@ -18,10 +18,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math/rand"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -186,7 +186,7 @@ type authTokenFileRoundTripper struct {
 // newAuthTokenFileRoundTripper adds the auth token read from the file to a request.
 func newAuthTokenFileRoundTripper(tokenFile string, rt http.RoundTripper) (http.RoundTripper, error) {
 	// fail-fast if we can't read the file.
-	_, err := ioutil.ReadFile(tokenFile)
+	_, err := os.ReadFile(tokenFile)
 	if err != nil {
 		return nil, errors.Wrapf(err, "unable to read auth token file %s", tokenFile)
 	}
@@ -194,7 +194,7 @@ func newAuthTokenFileRoundTripper(tokenFile string, rt http.RoundTripper) (http.
 }
 
 func (rt *authTokenFileRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {
-	b, err := ioutil.ReadFile(rt.authTokenFile)
+	b, err := os.ReadFile(rt.authTokenFile)
 	if err != nil {
 		return nil, errors.Wrapf(err, "unable to read auth token file %s", rt.authTokenFile)
 	}
@@ -331,7 +331,7 @@ func fetchApps(ctx context.Context, client *http.Client, url string) (*appList, 
 		return nil, err
 	}
 	defer func() {
-		io.Copy(ioutil.Discard, resp.Body)
+		io.Copy(io.Discard, resp.Body)
 		resp.Body.Close()
 	}()
 
@@ -339,7 +339,7 @@ func fetchApps(ctx context.Context, client *http.Client, url string) (*appList, 
 		return nil, errors.Errorf("non 2xx status '%v' response during marathon service discovery", resp.StatusCode)
 	}
 
-	b, err := ioutil.ReadAll(resp.Body)
+	b, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}

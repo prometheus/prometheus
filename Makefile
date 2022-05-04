@@ -29,6 +29,16 @@ include Makefile.common
 
 DOCKER_IMAGE_NAME       ?= prometheus
 
+.PHONY: update-npm-deps
+update-npm-deps:
+	@echo ">> updating npm dependencies"
+	./scripts/npm-deps.sh "minor"
+
+.PHONY: upgrade-npm-deps
+upgrade-npm-deps:
+	@echo ">> upgrading npm dependencies"
+	./scripts/npm-deps.sh "latest"
+
 .PHONY: ui-install
 ui-install:
 	cd $(UI_PATH) && npm install
@@ -43,7 +53,7 @@ ui-build-module:
 
 .PHONY: ui-test
 ui-test:
-	cd $(UI_PATH) && CI=true npm run test:coverage
+	cd $(UI_PATH) && CI=true npm run test
 
 .PHONY: ui-lint
 ui-lint:
@@ -53,14 +63,14 @@ ui-lint:
 assets: ui-install ui-build
 
 .PHONY: assets-compress
-assets-compress:
+assets-compress: assets
 	@echo '>> compressing assets'
 	scripts/compress_assets.sh
 
-.PHONY: assets-decompress
-assets-decompress:
-	@echo '>> decompressing assets'
-	scripts/compress_assets.sh -d
+.PHONY: assets-tarball
+assets-tarball: assets
+	@echo '>> packaging assets'
+	scripts/package_assets.sh
 
 .PHONY: test
 # If we only want to only test go code we have to change the test target
@@ -83,8 +93,15 @@ tarball: npm_licenses common-tarball
 .PHONY: docker
 docker: npm_licenses common-docker
 
+plugins/plugins.go: plugins.yml plugins/generate.go
+	@echo ">> creating plugins list"
+	$(GO) generate -tags plugins ./plugins
+
+.PHONY: plugins
+plugins: plugins/plugins.go
+
 .PHONY: build
-build: assets assets-compress common-build assets-decompress
+build: assets npm_licenses assets-compress common-build plugins
 
 .PHONY: bench_tsdb
 bench_tsdb: $(PROMU)
@@ -97,6 +114,3 @@ bench_tsdb: $(PROMU)
 	@$(GO) tool pprof --alloc_space -svg $(PROMTOOL) $(TSDB_BENCHMARK_OUTPUT_DIR)/mem.prof > $(TSDB_BENCHMARK_OUTPUT_DIR)/memprof.alloc.svg
 	@$(GO) tool pprof -svg $(PROMTOOL) $(TSDB_BENCHMARK_OUTPUT_DIR)/block.prof > $(TSDB_BENCHMARK_OUTPUT_DIR)/blockprof.svg
 	@$(GO) tool pprof -svg $(PROMTOOL) $(TSDB_BENCHMARK_OUTPUT_DIR)/mutex.prof > $(TSDB_BENCHMARK_OUTPUT_DIR)/mutexprof.svg
-
-.PHONY: clean
-clean: assets-decompress

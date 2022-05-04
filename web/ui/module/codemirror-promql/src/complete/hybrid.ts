@@ -58,7 +58,7 @@ import {
   SubqueryExpr,
   Unless,
   VectorSelector,
-} from '../grammar/parser.terms';
+} from 'lezer-promql';
 import { Completion, CompletionContext, CompletionResult } from '@codemirror/autocomplete';
 import { EditorState } from '@codemirror/state';
 import { buildLabelMatchers, containsAtLeastOneChild, containsChild, retrieveAllRecursiveNodes, walkBackward, walkThrough } from '../parser';
