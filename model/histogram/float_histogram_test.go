@@ -1729,6 +1729,66 @@ func TestAllFloatBucketIterator(t *testing.T) {
 			includeZero: false,
 			includePos:  true,
 		},
+		{
+			h: FloatHistogram{
+				Count:         447,
+				ZeroCount:     42,
+				ZeroThreshold: 0.5, // Coinciding with bucket boundary.
+				Sum:           1008.4,
+				Schema:        0,
+				PositiveSpans: []Span{
+					{Offset: 0, Length: 4},
+					{Offset: 1, Length: 0},
+					{Offset: 3, Length: 3},
+					{Offset: 3, Length: 0},
+					{Offset: 2, Length: 0},
+					{Offset: 5, Length: 3},
+				},
+				PositiveBuckets: []float64{100, 344, 123, 55, 3, 63, 2, 54, 235, 33},
+				NegativeSpans: []Span{
+					{Offset: 0, Length: 3},
+					{Offset: 1, Length: 0},
+					{Offset: 3, Length: 0},
+					{Offset: 3, Length: 4},
+					{Offset: 2, Length: 0},
+					{Offset: 5, Length: 3},
+				},
+				NegativeBuckets: []float64{10, 34, 1230, 54, 67, 63, 2, 554, 235, 33},
+			},
+			includeNeg:  true,
+			includeZero: true,
+			includePos:  true,
+		},
+		{
+			h: FloatHistogram{
+				Count:         447,
+				ZeroCount:     42,
+				ZeroThreshold: 0.6, // Within the bucket closest to zero.
+				Sum:           1008.4,
+				Schema:        0,
+				PositiveSpans: []Span{
+					{Offset: 0, Length: 4},
+					{Offset: 1, Length: 0},
+					{Offset: 3, Length: 3},
+					{Offset: 3, Length: 0},
+					{Offset: 2, Length: 0},
+					{Offset: 5, Length: 3},
+				},
+				PositiveBuckets: []float64{100, 344, 123, 55, 3, 63, 2, 54, 235, 33},
+				NegativeSpans: []Span{
+					{Offset: 0, Length: 3},
+					{Offset: 1, Length: 0},
+					{Offset: 3, Length: 0},
+					{Offset: 3, Length: 4},
+					{Offset: 2, Length: 0},
+					{Offset: 5, Length: 3},
+				},
+				NegativeBuckets: []float64{10, 34, 1230, 54, 67, 63, 2, 554, 235, 33},
+			},
+			includeNeg:  true,
+			includeZero: true,
+			includePos:  true,
+		},
 	}
 
 	for i, c := range cases {
@@ -1738,7 +1798,11 @@ func TestAllFloatBucketIterator(t *testing.T) {
 			if c.includeNeg {
 				it := c.h.NegativeReverseBucketIterator()
 				for it.Next() {
-					expBuckets = append(expBuckets, it.At())
+					b := it.At()
+					if c.includeZero && b.Upper > -c.h.ZeroThreshold {
+						b.Upper = -c.h.ZeroThreshold
+					}
+					expBuckets = append(expBuckets, b)
 				}
 			}
 			if c.includeZero {
@@ -1753,7 +1817,11 @@ func TestAllFloatBucketIterator(t *testing.T) {
 			if c.includePos {
 				it := c.h.PositiveBucketIterator()
 				for it.Next() {
-					expBuckets = append(expBuckets, it.At())
+					b := it.At()
+					if c.includeZero && b.Lower < c.h.ZeroThreshold {
+						b.Lower = c.h.ZeroThreshold
+					}
+					expBuckets = append(expBuckets, b)
 				}
 			}
 

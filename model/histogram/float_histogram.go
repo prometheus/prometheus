@@ -655,7 +655,9 @@ func (h *FloatHistogram) NegativeReverseBucketIterator() FloatBucketIterator {
 
 // AllBucketIterator returns a FloatBucketIterator to iterate over all negative,
 // zero, and positive buckets in ascending order (starting at the lowest bucket
-// and going up).
+// and going up). If the highest negative bucket or the lowest positive bucket
+// overlap with the zero bucket, their upper or lower boundary, respectively, is
+// set to the zero threshold.
 func (h *FloatHistogram) AllBucketIterator() FloatBucketIterator {
 	return &allFloatBucketIterator{
 		h:       h,
@@ -1071,6 +1073,9 @@ func (r *allFloatBucketIterator) Next() bool {
 	case -1:
 		if r.negIter.Next() {
 			r.currBucket = r.negIter.At()
+			if r.currBucket.Upper > -r.h.ZeroThreshold {
+				r.currBucket.Upper = -r.h.ZeroThreshold
+			}
 			return true
 		}
 		r.state = 0
@@ -1092,6 +1097,9 @@ func (r *allFloatBucketIterator) Next() bool {
 	case 1:
 		if r.posIter.Next() {
 			r.currBucket = r.posIter.At()
+			if r.currBucket.Lower < r.h.ZeroThreshold {
+				r.currBucket.Lower = r.h.ZeroThreshold
+			}
 			return true
 		}
 		r.state = 42
