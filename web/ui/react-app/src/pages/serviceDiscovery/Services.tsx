@@ -22,9 +22,14 @@ export interface TargetLabels {
   isDropped: boolean;
 }
 
-const kvSearch = new KVSearch<Target>({
+const activeTargetKVSearch = new KVSearch<Target>({
   shouldSort: true,
   indexedKeys: ['labels', 'discoveredLabels', ['discoveredLabels', /.*/], ['labels', /.*/]],
+});
+
+const droppedTargetKVSearch = new KVSearch<DroppedTarget>({
+  shouldSort: true,
+  indexedKeys: ['discoveredLabels', ['discoveredLabels', /.*/]],
 });
 
 export const processSummary = (
@@ -91,6 +96,7 @@ export const processTargets = (activeTargets: Target[], droppedTargets: DroppedT
 
 export const ServiceDiscoveryContent: FC<ServiceMap> = ({ activeTargets, droppedTargets }) => {
   const [activeTargetList, setActiveTargetList] = useState(activeTargets);
+  const [droppedTargetList, setDroppedTargetList] = useState(droppedTargets);
   const [targetList, setTargetList] = useState(processSummary(activeTargets, droppedTargets));
   const [labelList, setLabelList] = useState(processTargets(activeTargets, droppedTargets));
 
@@ -98,21 +104,23 @@ export const ServiceDiscoveryContent: FC<ServiceMap> = ({ activeTargets, dropped
     (value: string) => {
       setQuerySearchFilter(value);
       if (value !== '') {
-        const result = kvSearch.filter(value.trim(), activeTargets);
-        setActiveTargetList(result.map((value) => value.original));
+        const activeTargetResult = activeTargetKVSearch.filter(value.trim(), activeTargets);
+        const droppedTargetResult = droppedTargetKVSearch.filter(value.trim(), droppedTargets);
+        setActiveTargetList(activeTargetResult.map((value) => value.original));
+        setDroppedTargetList(droppedTargetResult.map((value) => value.original));
       } else {
         setActiveTargetList(activeTargets);
       }
     },
-    [activeTargets]
+    [activeTargets, droppedTargets]
   );
 
   const defaultValue = useMemo(getQuerySearchFilter, []);
 
   useEffect(() => {
-    setTargetList(processSummary(activeTargetList, droppedTargets));
-    setLabelList(processTargets(activeTargetList, droppedTargets));
-  }, [activeTargetList, droppedTargets]);
+    setTargetList(processSummary(activeTargetList, droppedTargetList));
+    setLabelList(processTargets(activeTargetList, droppedTargetList));
+  }, [activeTargetList, droppedTargetList]);
 
   return (
     <>
