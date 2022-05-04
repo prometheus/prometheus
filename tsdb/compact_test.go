@@ -16,7 +16,6 @@ package tsdb
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"math"
 	"math/rand"
 	"os"
@@ -1673,8 +1672,7 @@ func generateCustomHistograms(numHists, numBuckets, numSpans, gapBetweenSpans, s
 }
 
 func TestSparseHistogramCompactionAndQuery(t *testing.T) {
-	dir, err := ioutil.TempDir("", "test")
-	require.NoError(t, err)
+	dir := t.TempDir()
 	t.Cleanup(func() {
 		require.NoError(t, os.RemoveAll(dir))
 	})
