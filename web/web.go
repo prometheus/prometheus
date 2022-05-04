@@ -253,7 +253,6 @@ type Options struct {
 	RemoteReadBytesInFrame     int
 	EnableRemoteWriteReceiver  bool
 	IsAgent                    bool
-	DiscoveryReloadInterval    string
 
 	Gatherer   prometheus.Gatherer
 	Registerer prometheus.Registerer
