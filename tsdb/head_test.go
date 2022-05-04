@@ -2228,8 +2228,8 @@ func TestHeadLabelValuesWithMatchers(t *testing.T) {
 	app := head.Appender(context.Background())
 	for i := 0; i < 100; i++ {
 		_, err := app.Append(0, labels.Labels{
-			{Name: "unique", Value: fmt.Sprintf("value%d", i)},
 			{Name: "tens", Value: fmt.Sprintf("value%d", i/10)},
+			{Name: "unique", Value: fmt.Sprintf("value%d", i)},
 		}, 100, 0)
 		require.NoError(t, err)
 	}
@@ -2295,17 +2295,17 @@ func TestHeadLabelNamesWithMatchers(t *testing.T) {
 
 		if i%10 == 0 {
 			_, err := app.Append(0, labels.Labels{
-				{Name: "unique", Value: fmt.Sprintf("value%d", i)},
 				{Name: "tens", Value: fmt.Sprintf("value%d", i/10)},
+				{Name: "unique", Value: fmt.Sprintf("value%d", i)},
 			}, 100, 0)
 			require.NoError(t, err)
 		}
 
 		if i%20 == 0 {
 			_, err := app.Append(0, labels.Labels{
-				{Name: "unique", Value: fmt.Sprintf("value%d", i)},
 				{Name: "tens", Value: fmt.Sprintf("value%d", i/10)},
 				{Name: "twenties", Value: fmt.Sprintf("value%d", i/20)},
+				{Name: "unique", Value: fmt.Sprintf("value%d", i)},
 			}, 100, 0)
 			require.NoError(t, err)
 		}
@@ -2448,23 +2448,25 @@ func BenchmarkHeadLabelValuesWithMatchers(b *testing.B) {
 
 	metricCount := 1000000
 	for i := 0; i < metricCount; i++ {
+		// Note these series are not created in sort order: 'value2' sorts after 'value10'.
+		// This makes a big difference to the benchmark timing.
 		_, err := app.Append(0, labels.Labels{
-			{Name: "unique", Value: fmt.Sprintf("value%d", i)},
-			{Name: "tens", Value: fmt.Sprintf("value%d", i/(metricCount/10))},
-			{Name: "ninety", Value: fmt.Sprintf("value%d", i/(metricCount/10)/9)}, // "0" for the first 90%, then "1"
+			{Name: "a_unique", Value: fmt.Sprintf("value%d", i)},
+			{Name: "b_tens", Value: fmt.Sprintf("value%d", i/(metricCount/10))},
+			{Name: "c_ninety", Value: fmt.Sprintf("value%d", i/(metricCount/10)/9)}, // "0" for the first 90%, then "1"
 		}, 100, 0)
 		require.NoError(b, err)
 	}
 	require.NoError(b, app.Commit())
 
 	headIdxReader := head.indexRange(0, 200)
-	matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "ninety", "value0")}
+	matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "c_ninety", "value0")}
 
 	b.ResetTimer()
 	b.ReportAllocs()
 
 	for benchIdx := 0; benchIdx < b.N; benchIdx++ {
-		actualValues, err := headIdxReader.LabelValues("tens", matchers...)
+		actualValues, err := headIdxReader.LabelValues("b_tens", matchers...)
 		require.NoError(b, err)
 		require.Equal(b, 9, len(actualValues))
 	}
