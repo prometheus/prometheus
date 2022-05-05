@@ -57,12 +57,13 @@ func TestIONOSServerRefresh(t *testing.T) {
 
 	for i, lbls := range []model.LabelSet{
 		{
-			"__address__":                                                     "85.215.233.222:80",
+			"__address__":                                                     "85.215.216.92:80",
 			"__meta_ionos_server_availability_zone":                           "ZONE_2",
 			"__meta_ionos_server_boot_cdrom_id":                               "0e4d57f9-cd78-11e9-b88c-525400f64d8d",
 			"__meta_ionos_server_cpu_family":                                  "INTEL_SKYLAKE",
 			"__meta_ionos_server_id":                                          "b501942c-4e08-43e6-8ec1-00e59c64e0e4",
-			"__meta_ionos_server_ip":                                          ",85.215.233.222,",
+			"__meta_ionos_server_ip":                                          ",85.215.216.92,85.215.233.222,",
+			"__meta_ionos_server_nic_ip_17ecc866_4a08_4ada_858f_7b726a5f5070": ",85.215.216.92,",
 			"__meta_ionos_server_nic_ip_206e9a88_097c_4c87_8544_1f5fe0b6b0f1": ",85.215.233.222,",
 			"__meta_ionos_server_lifecycle":                                   "AVAILABLE",
 			"__meta_ionos_server_name":                                        "prometheus-2",

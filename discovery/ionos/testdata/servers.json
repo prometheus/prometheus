@@ -286,6 +286,46 @@
           "href": "https://api.ionos.com/cloudapi/v6/datacenters/8feda53f-15f0-447f-badf-ebe32dad2fc0/servers/b501942c-4e08-43e6-8ec1-00e59c64e0e4/nics",
           "items": [
             {
+              "id": "17ecc866-4a08-4ada-858f-7b726a5f5070",
+              "type": "nic",
+              "href": "https://api.ionos.com/cloudapi/v6/datacenters/8feda53f-15f0-447f-badf-ebe32dad2fc0/servers/b501942c-4e08-43e6-8ec1-00e59c64e0e4/nics/17ecc866-4a08-4ada-858f-7b726a5f5070",
+              "metadata": {
+                "etag": "f6a82276c6fdb460811d3789e54e0054",
+                "createdDate": "2019-09-02T11:51:53Z",
+                "createdBy": "System",
+                "createdByUserId": "[UNKNOWN]",
+                "lastModifiedDate": "2019-09-02T11:51:53Z",
+                "lastModifiedBy": "System",
+                "lastModifiedByUserId": "[UNKNOWN]",
+                "state": "AVAILABLE"
+              },
+              "properties": {
+                "name": "metrics",
+                "mac": "02:01:93:80:fa:a4",
+                "ips": [
+                  "85.215.216.92"
+                ],
+                "dhcp": true,
+                "lan": 1,
+                "firewallActive": false,
+                "firewallType": "INGRESS",
+                "deviceNumber": 2,
+                "pciSlot": 7
+              },
+              "entities": {
+                "firewallrules": {
+                  "id": "17ecc866-4a08-4ada-858f-7b726a5f5070/firewallrules",
+                  "type": "collection",
+                  "href": "https://api.ionos.com/cloudapi/v6/datacenters/8feda53f-15f0-447f-badf-ebe32dad2fc0/servers/b501942c-4e08-43e6-8ec1-00e59c64e0e4/nics/17ecc866-4a08-4ada-858f-7b726a5f5070/firewallrules"
+                },
+                "flowlogs": {
+                  "id": "17ecc866-4a08-4ada-858f-7b726a5f5070/flowlogs",
+                  "type": "collection",
+                  "href": "https://api.ionos.com/cloudapi/v6/datacenters/8feda53f-15f0-447f-badf-ebe32dad2fc0/servers/b501942c-4e08-43e6-8ec1-00e59c64e0e4/nics/17ecc866-4a08-4ada-858f-7b726a5f5070/flowlogs"
+                }
+              }
+            },
+            {
               "id": "206e9a88-097c-4c87-8544-1f5fe0b6b0f1",
               "type": "nic",
               "href": "https://api.ionos.com/cloudapi/v6/datacenters/8feda53f-15f0-447f-badf-ebe32dad2fc0/servers/b501942c-4e08-43e6-8ec1-00e59c64e0e4/nics/206e9a88-097c-4c87-8544-1f5fe0b6b0f1",
