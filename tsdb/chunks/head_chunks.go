@@ -656,7 +656,7 @@ func (cdm *ChunkDiskMapper) Chunk(ref ChunkDiskMapperRef) (chunkenc.Chunk, error
 		return nil, &CorruptionErr{
 			Dir:       cdm.dir.Name(),
 			FileIndex: sgmIndex,
-			Err:       errors.New("head chunk file index %d does not exist on disk"),
+			Err:       errors.Errorf("head chunk file index %d does not exist on disk", sgmIndex),
 		}
 	}
 
