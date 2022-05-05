@@ -4,6 +4,130 @@
   "href": "https://api.ionos.com/cloudapi/v6/datacenters/8feda53f-15f0-447f-badf-ebe32dad2fc0/servers",
   "items": [
     {
+      "id": "d6bf44ee-f7e8-4e19-8716-96fdd18cc697",
+      "type": "server",
+      "href": "https://api.ionos.com/cloudapi/v6/datacenters/8feda53f-15f0-447f-badf-ebe32dad2fc0/servers/d6bf44ee-f7e8-4e19-8716-96fdd18cc697",
+      "metadata": {
+        "etag": "3bd2cf1f190fdba8502ba8c0cc79433e",
+        "createdDate": "2019-09-02T11:51:53Z",
+        "createdBy": "System",
+        "createdByUserId": "[UNKNOWN]",
+        "lastModifiedDate": "2019-09-02T11:51:53Z",
+        "lastModifiedBy": "System",
+        "lastModifiedByUserId": "[UNKNOWN]",
+        "state": "AVAILABLE"
+      },
+      "properties": {
+        "name": "prometheus-3",
+        "cores": 2,
+        "ram": 4096,
+        "availabilityZone": "AUTO",
+        "vmState": "RUNNING",
+        "bootCdrom": {
+          "id": "0e4d57f9-cd78-11e9-b88c-525400f64d8d",
+          "type": "image",
+          "href": "https://api.ionos.com/cloudapi/v6/images/0e4d57f9-cd78-11e9-b88c-525400f64d8d",
+          "metadata": {
+            "etag": "ca643281fd2a5b68002bc00ac0ecd920",
+            "createdDate": "2019-09-02T11:51:53Z",
+            "createdBy": "System",
+            "createdByUserId": "[UNKNOWN]",
+            "lastModifiedDate": "2019-09-02T11:51:53Z",
+            "lastModifiedBy": "System",
+            "lastModifiedByUserId": "[UNKNOWN]",
+            "state": "AVAILABLE"
+          },
+          "properties": {
+            "name": "debian-10.0.0-amd64-netinst.iso",
+            "description": null,
+            "location": "de/txl",
+            "size": 0.33,
+            "cpuHotPlug": true,
+            "cpuHotUnplug": false,
+            "ramHotPlug": true,
+            "ramHotUnplug": false,
+            "nicHotPlug": true,
+            "nicHotUnplug": true,
+            "discVirtioHotPlug": true,
+            "discVirtioHotUnplug": true,
+            "discScsiHotPlug": false,
+            "discScsiHotUnplug": false,
+            "licenceType": "LINUX",
+            "imageType": "CDROM",
+            "imageAliases": [
+              "debian:latest_iso",
+              "debian:10_iso"
+            ],
+            "cloudInit": "NONE",
+            "public": true
+          }
+        },
+        "bootVolume": null,
+        "cpuFamily": "INTEL_SKYLAKE",
+        "type": "ENTERPRISE"
+      },
+      "entities": {
+        "cdroms": {
+          "id": "d6bf44ee-f7e8-4e19-8716-96fdd18cc697/cdroms",
+          "type": "collection",
+          "href": "https://api.ionos.com/cloudapi/v6/datacenters/8feda53f-15f0-447f-badf-ebe32dad2fc0/servers/d6bf44ee-f7e8-4e19-8716-96fdd18cc697/cdroms",
+          "items": [
+            {
+              "id": "0e4d57f9-cd78-11e9-b88c-525400f64d8d",
+              "type": "image",
+              "href": "https://api.ionos.com/cloudapi/v6/images/0e4d57f9-cd78-11e9-b88c-525400f64d8d",
+              "metadata": {
+                "etag": "ca643281fd2a5b68002bc00ac0ecd920",
+                "createdDate": "2019-09-02T11:51:53Z",
+                "createdBy": "System",
+                "createdByUserId": "[UNKNOWN]",
+                "lastModifiedDate": "2019-09-02T11:51:53Z",
+                "lastModifiedBy": "System",
+                "lastModifiedByUserId": "[UNKNOWN]",
+                "state": "AVAILABLE"
+              },
+              "properties": {
+                "name": "debian-10.0.0-amd64-netinst.iso",
+                "description": null,
+                "location": "de/txl",
+                "size": 0.33,
+                "cpuHotPlug": true,
+                "cpuHotUnplug": false,
+                "ramHotPlug": true,
+                "ramHotUnplug": false,
+                "nicHotPlug": true,
+                "nicHotUnplug": true,
+                "discVirtioHotPlug": true,
+                "discVirtioHotUnplug": true,
+                "discScsiHotPlug": false,
+                "discScsiHotUnplug": false,
+                "licenceType": "LINUX",
+                "imageType": "CDROM",
+                "imageAliases": [
+                  "debian:10_iso",
+                  "debian:latest_iso"
+                ],
+                "cloudInit": "NONE",
+                "public": true
+              }
+            }
+          ]
+        },
+        "volumes": {
+          "id": "d6bf44ee-f7e8-4e19-8716-96fdd18cc697/volumes",
+          "type": "collection",
+          "href": "https://api.ionos.com/cloudapi/v6/datacenters/8feda53f-15f0-447f-badf-ebe32dad2fc0/servers/d6bf44ee-f7e8-4e19-8716-96fdd18cc697/volumes",
+          "items": []
+        },
+        "nics": {
+          "id": "d6bf44ee-f7e8-4e19-8716-96fdd18cc697/nics",
+          "type": "collection",
+          "href": "https://api.ionos.com/cloudapi/v6/datacenters/8feda53f-15f0-447f-badf-ebe32dad2fc0/servers/d6bf44ee-f7e8-4e19-8716-96fdd18cc697/nics",
+          "items": []
+        }
+      }
+    },
+    {
       "id": "b501942c-4e08-43e6-8ec1-00e59c64e0e4",
       "type": "server",
       "href": "https://api.ionos.com/cloudapi/v6/datacenters/8feda53f-15f0-447f-badf-ebe32dad2fc0/servers/b501942c-4e08-43e6-8ec1-00e59c64e0e4",

@@ -105,17 +105,8 @@ func (d *serverDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 			serverTypeLabel:             model.LabelValue(*server.Properties.Type),
 		}
 
-		if server.Properties.BootCdrom != nil {
-			labels[serverBootCDROMIDLabel] = model.LabelValue(*server.Properties.BootCdrom.Id)
-		}
-
-		if server.Properties.BootVolume != nil {
-			labels[serverBootVolumeIDLabel] = model.LabelValue(*server.Properties.BootVolume.Id)
-		}
-
+		var ips  []string
 		if server.Entities != nil && server.Entities.Nics != nil {
-			var ips  []string
-
 			for _, nic := range *server.Entities.Nics.Items {
 				lanIPs := *nic.Properties.Ips
 				ips = append(ips, lanIPs...)
@@ -123,12 +114,23 @@ func (d *serverDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 				name := serverNICIPLabelPrefix + strutil.SanitizeLabelName(*nic.Id)
 				labels[model.LabelName(name)] = model.LabelValue(join(lanIPs, metaLabelSeparator))
 			}
+		}
 
-			if len(ips) > 0 {
-				addr := net.JoinHostPort(ips[0], strconv.FormatUint(uint64(d.port), 10))
-				labels[model.AddressLabel] = model.LabelValue(addr)
-				labels[serverIPLabel] = model.LabelValue(join(ips, metaLabelSeparator))
-			}
+		if len(ips) > 0 {
+			addr := net.JoinHostPort(ips[0], strconv.FormatUint(uint64(d.port), 10))
+			labels[model.AddressLabel] = model.LabelValue(addr)
+			labels[serverIPLabel] = model.LabelValue(join(ips, metaLabelSeparator))
+		} else {
+			// If a server has no IP addresses, it's being dropped from the targets.
+			continue
+		}
+
+		if server.Properties.BootCdrom != nil {
+			labels[serverBootCDROMIDLabel] = model.LabelValue(*server.Properties.BootCdrom.Id)
+		}
+
+		if server.Properties.BootVolume != nil {
+			labels[serverBootVolumeIDLabel] = model.LabelValue(*server.Properties.BootVolume.Id)
 		}
 
 		if server.Entities != nil && server.Entities.Volumes != nil {
