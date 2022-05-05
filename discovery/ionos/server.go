@@ -43,12 +43,10 @@ const (
 	serverCPUFamilyLabel        = serverLabelPrefix + "cpu_family"
 	serverIDLabel               = serverLabelPrefix + "id"
 	serverIPLabel               = serverLabelPrefix + "ip"
-	serverLANIDLabel            = serverLabelPrefix + "lan_id"
 	serverLifecycleLabel        = serverLabelPrefix + "lifecycle"
 	serverNameLabel             = serverLabelPrefix + "name"
 	serverNICIPLabelPrefix      = serverLabelPrefix + "nic_ip_"
 	serverPrimaryIPLabel        = serverLabelPrefix + "primary_ip"
-	serverPrimaryLANIDLabel     = serverLabelPrefix + "primary_lan_id"
 	serverServersIDLabel        = serverLabelPrefix + "servers_id"
 	serverStateLabel            = serverLabelPrefix + "state"
 	serverTypeLabel             = serverLabelPrefix + "type"
@@ -117,15 +115,11 @@ func (d *serverDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 		}
 
 		if server.Entities != nil && server.Entities.Nics != nil {
-			var (
-				ips  []string
-				lans []string
-			)
+			var ips  []string
 
 			for _, nic := range *server.Entities.Nics.Items {
 				lanIPs := *nic.Properties.Ips
 				ips = append(ips, lanIPs...)
-				lans = append(lans, strconv.Itoa(int(*nic.Properties.Lan)))
 
 				name := serverNICIPLabelPrefix + strutil.SanitizeLabelName(*nic.Id)
 				labels[model.LabelName(name)] = model.LabelValue(join(lanIPs, metaLabelSeparator))
@@ -137,11 +131,6 @@ func (d *serverDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 
 				addr := net.JoinHostPort(ips[0], strconv.FormatUint(uint64(d.port), 10))
 				labels[model.AddressLabel] = model.LabelValue(addr)
-			}
-
-			if len(lans) > 0 {
-				labels[serverPrimaryLANIDLabel] = model.LabelValue(lans[0])
-				labels[serverLANIDLabel] = model.LabelValue(join(lans, metaLabelSeparator))
 			}
 		}
 
