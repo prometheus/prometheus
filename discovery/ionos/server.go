@@ -46,7 +46,6 @@ const (
 	serverLifecycleLabel        = serverLabelPrefix + "lifecycle"
 	serverNameLabel             = serverLabelPrefix + "name"
 	serverNICIPLabelPrefix      = serverLabelPrefix + "nic_ip_"
-	serverPrimaryIPLabel        = serverLabelPrefix + "primary_ip"
 	serverServersIDLabel        = serverLabelPrefix + "servers_id"
 	serverStateLabel            = serverLabelPrefix + "state"
 	serverTypeLabel             = serverLabelPrefix + "type"
@@ -126,11 +125,9 @@ func (d *serverDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 			}
 
 			if len(ips) > 0 {
-				labels[serverPrimaryIPLabel] = model.LabelValue(ips[0])
-				labels[serverIPLabel] = model.LabelValue(join(ips, metaLabelSeparator))
-
 				addr := net.JoinHostPort(ips[0], strconv.FormatUint(uint64(d.port), 10))
 				labels[model.AddressLabel] = model.LabelValue(addr)
+				labels[serverIPLabel] = model.LabelValue(join(ips, metaLabelSeparator))
 			}
 		}
 

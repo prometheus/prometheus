@@ -1561,7 +1561,6 @@ following meta labels are available on all targets during
 * `__meta_ionos_server_name`: the name of the server
 * `__meta_ionos_server_nic_ip_<lan_id>`: comma seperated list of IPs of each NIC
   attached to the server
-* `__meta_ionos_server_primary_ip`: the primary IP address of the server
 * `__meta_ionos_server_servers_id`: the ID of the servers the server belongs to
 * `__meta_ionos_server_state`: the execution state of the server
 * `__meta_ionos_server_type`: the type of the server
