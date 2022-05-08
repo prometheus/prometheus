@@ -105,14 +105,14 @@ func (d *serverDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 			serverTypeLabel:             model.LabelValue(*server.Properties.Type),
 		}
 
-		var ips  []string
+		var ips []string
 		if server.Entities != nil && server.Entities.Nics != nil {
 			for _, nic := range *server.Entities.Nics.Items {
-				lanIPs := *nic.Properties.Ips
-				ips = append(ips, lanIPs...)
+				nicIPs := *nic.Properties.Ips
+				ips = append(nicIPs, ips...)
 
 				name := serverNICIPLabelPrefix + strutil.SanitizeLabelName(*nic.Id)
-				labels[model.LabelName(name)] = model.LabelValue(join(lanIPs, metaLabelSeparator))
+				labels[model.LabelName(name)] = model.LabelValue(join(nicIPs, metaLabelSeparator))
 			}
 		}
 
