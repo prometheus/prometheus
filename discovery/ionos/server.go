@@ -49,6 +49,8 @@ const (
 	serverServersIDLabel        = serverLabelPrefix + "servers_id"
 	serverStateLabel            = serverLabelPrefix + "state"
 	serverTypeLabel             = serverLabelPrefix + "type"
+
+	nicDefaultName = "unnamed"
 )
 
 type serverDiscovery struct {
@@ -94,35 +96,44 @@ func (d *serverDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 
 	var targets []model.LabelSet
 	for _, server := range *servers.Items {
+		var ips []string
+		ipsByNICName := make(map[string][]string)
+
+		if server.Entities != nil && server.Entities.Nics != nil {
+			for _, nic := range *server.Entities.Nics.Items {
+				nicName := nicDefaultName
+				if name := nic.Properties.Name; name != nil {
+					nicName = *name
+				}
+
+				nicIPs := *nic.Properties.Ips
+				ips = append(nicIPs, ips...)
+				ipsByNICName[nicName] = append(nicIPs, ipsByNICName[nicName]...)
+			}
+		}
+
+		// If a server has no IP addresses, it's being dropped from the targets.
+		if len(ips) == 0 {
+			continue
+		}
+
+		addr := net.JoinHostPort(ips[0], strconv.FormatUint(uint64(d.port), 10))
 		labels := model.LabelSet{
+			model.AddressLabel:          model.LabelValue(addr),
 			serverAvailabilityZoneLabel: model.LabelValue(*server.Properties.AvailabilityZone),
 			serverCPUFamilyLabel:        model.LabelValue(*server.Properties.CpuFamily),
 			serverServersIDLabel:        model.LabelValue(*servers.Id),
 			serverIDLabel:               model.LabelValue(*server.Id),
+			serverIPLabel:               model.LabelValue(join(ips, metaLabelSeparator)),
 			serverLifecycleLabel:        model.LabelValue(*server.Metadata.State),
 			serverNameLabel:             model.LabelValue(*server.Properties.Name),
 			serverStateLabel:            model.LabelValue(*server.Properties.VmState),
 			serverTypeLabel:             model.LabelValue(*server.Properties.Type),
 		}
 
-		var ips []string
-		if server.Entities != nil && server.Entities.Nics != nil {
-			for _, nic := range *server.Entities.Nics.Items {
-				nicIPs := *nic.Properties.Ips
-				ips = append(nicIPs, ips...)
-
-				name := serverNICIPLabelPrefix + strutil.SanitizeLabelName(*nic.Id)
-				labels[model.LabelName(name)] = model.LabelValue(join(nicIPs, metaLabelSeparator))
-			}
-		}
-
-		if len(ips) > 0 {
-			addr := net.JoinHostPort(ips[0], strconv.FormatUint(uint64(d.port), 10))
-			labels[model.AddressLabel] = model.LabelValue(addr)
-			labels[serverIPLabel] = model.LabelValue(join(ips, metaLabelSeparator))
-		} else {
-			// If a server has no IP addresses, it's being dropped from the targets.
-			continue
+		for nicName, nicIPs := range ipsByNICName {
+			name := serverNICIPLabelPrefix + strutil.SanitizeLabelName(nicName)
+			labels[model.LabelName(name)] = model.LabelValue(join(nicIPs, metaLabelSeparator))
 		}
 
 		if server.Properties.BootCdrom != nil {
