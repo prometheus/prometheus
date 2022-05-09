@@ -505,7 +505,7 @@ func TargetsFromGroup(tg *targetgroup.Group, cfg *config.ScrapeConfig) ([]*Targe
 
 // buildTargetLabels builds final target labels based on the given target label set, target group label set and scrape config.
 func buildTargetLabels(targetLSet, targetGroupLSet model.LabelSet, cfg *config.ScrapeConfig) labels.Labels {
-	labelsBuilder := labels.NewBuilder(make([]labels.Label, 0, len(targetLSet)+len(targetGroupLSet)))
+	labelsMap := make(map[string]string, len(targetLSet)+len(targetGroupLSet))
 	// Labels from scrape config.
 	scrapeLabels := []labels.Label{
 		{Name: model.JobLabel, Value: cfg.JobName},
@@ -515,23 +515,31 @@ func buildTargetLabels(targetLSet, targetGroupLSet model.LabelSet, cfg *config.S
 		{Name: model.SchemeLabel, Value: cfg.Scheme},
 	}
 	for _, l := range scrapeLabels {
-		labelsBuilder.Set(l.Name, l.Value)
+		labelsMap[l.Name] = l.Value
 	}
 	// Target group labels.
 	for ln, lv := range targetGroupLSet {
-		labelsBuilder.Set(string(ln), string(lv))
+		labelsMap[string(ln)] = string(lv)
 	}
 
 	// Target labels.
 	for ln, lv := range targetLSet {
-		labelsBuilder.Set(string(ln), string(lv))
+		labelsMap[string(ln)] = string(lv)
 	}
 
 	// Labels from config query params.
 	for k, v := range cfg.Params {
 		if len(v) > 0 {
-			labelsBuilder.Set(model.ParamLabelPrefix+k, v[0])
+			labelsMap[model.ParamLabelPrefix+k] = v[0]
 		}
 	}
-	return labelsBuilder.Labels()
+	return buildLabels(labelsMap)
+}
+
+func buildLabels(ls map[string]string) labels.Labels {
+	var result labels.Labels = make([]labels.Label, 0, len(ls))
+	for k, v := range ls {
+		result = append(result, labels.Label{Name: k, Value: v})
+	}
+	return result
 }
