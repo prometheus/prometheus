@@ -519,18 +519,30 @@ func buildTargetLabels(targetLSet, targetGroupLSet model.LabelSet, cfg *config.S
 	}
 	// Target group labels.
 	for ln, lv := range targetGroupLSet {
-		labelsMap[string(ln)] = string(lv)
+		if len(lv) == 0 {
+			delete(labelsMap, string(ln))
+		} else {
+			labelsMap[string(ln)] = string(lv)
+		}
 	}
 
 	// Target labels.
 	for ln, lv := range targetLSet {
-		labelsMap[string(ln)] = string(lv)
+		if len(lv) == 0 {
+			delete(labelsMap, string(ln))
+		} else {
+			labelsMap[string(ln)] = string(lv)
+		}
 	}
 
 	// Labels from config query params.
 	for k, v := range cfg.Params {
 		if len(v) > 0 {
-			labelsMap[model.ParamLabelPrefix+k] = v[0]
+			if len(v[0]) == 0 {
+				delete(labelsMap, model.ParamLabelPrefix+k)
+			} else {
+				labelsMap[model.ParamLabelPrefix+k] = v[0]
+			}
 		}
 	}
 	return buildLabels(labelsMap)
