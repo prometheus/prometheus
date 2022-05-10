@@ -18,6 +18,7 @@ import (
 	"hash/fnv"
 	"net"
 	"net/url"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -519,30 +520,18 @@ func buildTargetLabels(targetLSet, targetGroupLSet model.LabelSet, cfg *config.S
 	}
 	// Target group labels.
 	for ln, lv := range targetGroupLSet {
-		if len(lv) == 0 {
-			delete(labelsMap, string(ln))
-		} else {
-			labelsMap[string(ln)] = string(lv)
-		}
+		set(labelsMap, string(ln), string(lv))
 	}
 
 	// Target labels.
 	for ln, lv := range targetLSet {
-		if len(lv) == 0 {
-			delete(labelsMap, string(ln))
-		} else {
-			labelsMap[string(ln)] = string(lv)
-		}
+		set(labelsMap, string(ln), string(lv))
 	}
 
 	// Labels from config query params.
 	for k, v := range cfg.Params {
 		if len(v) > 0 {
-			if len(v[0]) == 0 {
-				delete(labelsMap, model.ParamLabelPrefix+k)
-			} else {
-				labelsMap[model.ParamLabelPrefix+k] = v[0]
-			}
+			set(labelsMap, model.ParamLabelPrefix+k, v[0])
 		}
 	}
 	return buildLabels(labelsMap)
@@ -553,5 +542,14 @@ func buildLabels(ls map[string]string) labels.Labels {
 	for k, v := range ls {
 		result = append(result, labels.Label{Name: k, Value: v})
 	}
+	sort.Sort(result)
 	return result
+}
+
+func set(ls map[string]string, k, v string) {
+	if len(v) == 0 {
+		delete(ls, k)
+	} else {
+		ls[k] = v
+	}
 }
