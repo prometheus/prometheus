@@ -838,6 +838,19 @@ func main() {
 			},
 		)
 	}
+	if !agentMode {
+		// Rule manager.
+		g.Add(
+			func() error {
+				<-reloadReady.C
+				ruleManager.Run()
+				return nil
+			},
+			func(err error) {
+				ruleManager.Stop()
+			},
+		)
+	}
 	{
 		// Scrape manager.
 		g.Add(
@@ -855,6 +868,8 @@ func main() {
 			func(err error) {
 				// Scrape manager needs to be stopped before closing the local TSDB
 				// so that it doesn't try to write samples to a closed storage.
+				// We should also wait for rule manager to be fully stopped to ensure
+				// we don't trigger any false positive alerts for rules using absent().
 				level.Info(logger).Log("msg", "Stopping scrape manager...")
 				scrapeManager.Stop()
 			},
@@ -940,18 +955,6 @@ func main() {
 		)
 	}
 	if !agentMode {
-		// Rule manager.
-		g.Add(
-			func() error {
-				<-reloadReady.C
-				ruleManager.Run()
-				return nil
-			},
-			func(err error) {
-				ruleManager.Stop()
-			},
-		)
-
 		// TSDB.
 		opts := cfg.tsdb.ToTSDBOptions()
 		cancel := make(chan struct{})

@@ -934,6 +934,7 @@ func NewManager(o *ManagerOptions) *Manager {
 
 // Run starts processing of the rule manager. It is blocking.
 func (m *Manager) Run() {
+	level.Info(m.logger).Log("msg", "Starting rule manager...")
 	m.start()
 	<-m.done
 }
