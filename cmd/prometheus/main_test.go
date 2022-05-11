@@ -287,7 +287,7 @@ func TestTimeMetrics(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	reg := prometheus.NewRegistry()
-	db, err := openDBWithMetrics(tmpDir, log.NewNopLogger(), reg, nil, nil)
+	db, err := openDBWithMetrics(context.Background(), tmpDir, log.NewNopLogger(), reg, nil, nil)
 	require.NoError(t, err)
 	defer func() {
 		require.NoError(t, db.Close())

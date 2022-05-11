@@ -214,7 +214,7 @@ func BenchmarkRemoteWriteOOOSamples(b *testing.B) {
 	opts.OutOfOrderCapMax = 30
 	opts.OutOfOrderTimeWindow = 120 * time.Minute.Milliseconds()
 
-	db, err := tsdb.Open(dir, nil, nil, opts, nil)
+	db, err := tsdb.Open(context.Background(), dir, nil, nil, opts, nil)
 	require.NoError(b, err)
 
 	b.Cleanup(func() {

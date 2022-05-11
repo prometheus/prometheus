@@ -31,7 +31,7 @@ func Example() {
 	noErr(err)
 
 	// Open a TSDB for reading and/or writing.
-	db, err := Open(dir, nil, nil, DefaultOptions(), nil)
+	db, err := Open(context.Background(), dir, nil, nil, DefaultOptions(), nil)
 	noErr(err)
 
 	// Open an appender for writing.

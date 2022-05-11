@@ -58,6 +58,10 @@ var (
 	// ErrAppenderClosed is returned if an appender has already be successfully
 	// rolled back or committed.
 	ErrAppenderClosed = errors.New("appender closed")
+	// ErrWALReplayAborted is returned if WAL replay was aborted because parent
+	// context was cancelled. This usually happens if a restart is requested
+	// soon after startup, while WAL is still being processed.
+	ErrWALReplayAborted = errors.New("WAL replay aborted")
 
 	// defaultIsolationDisabled is true if isolation is disabled by default.
 	defaultIsolationDisabled = false
@@ -596,7 +600,7 @@ const cardinalityCacheExpirationTime = time.Duration(30) * time.Second
 // Init loads data from the write ahead log and prepares the head for writes.
 // It should be called before using an appender so that it
 // limits the ingested samples to the head min valid time.
-func (h *Head) Init(minValidTime int64) error {
+func (h *Head) Init(ctx context.Context, minValidTime int64) error {
 	h.minValidTime.Store(minValidTime)
 	defer func() {
 		h.postings.EnsureOrder(h.opts.WALReplayConcurrency)
@@ -732,7 +736,7 @@ func (h *Head) Init(minValidTime int64) error {
 
 		// A corrupted checkpoint is a hard error for now and requires user
 		// intervention. There's likely little data that can be recovered anyway.
-		if err := h.loadWAL(wlog.NewReader(sr), syms, multiRef, mmappedChunks, oooMmappedChunks); err != nil {
+		if err := h.loadWAL(ctx, wlog.NewReader(sr), syms, multiRef, mmappedChunks, oooMmappedChunks); err != nil {
 			return fmt.Errorf("backfill checkpoint: %w", err)
 		}
 		h.updateWALReplayStatusRead(startFrom)
@@ -748,6 +752,13 @@ func (h *Head) Init(minValidTime int64) error {
 	}
 	// Backfill segments from the most recent checkpoint onwards.
 	for i := startFrom; i <= endAt; i++ {
+		select {
+		case <-ctx.Done():
+			level.Info(h.logger).Log("msg", "Aborting WAL replay")
+			return ErrWALReplayAborted
+		default:
+		}
+
 		s, err := wlog.OpenReadSegment(wlog.SegmentName(h.wal.Dir(), i))
 		if err != nil {
 			return fmt.Errorf("open WAL segment: %d: %w", i, err)
@@ -765,7 +776,7 @@ func (h *Head) Init(minValidTime int64) error {
 		if err != nil {
 			return fmt.Errorf("segment reader (offset=%d): %w", offset, err)
 		}
-		err = h.loadWAL(wlog.NewReader(sr), syms, multiRef, mmappedChunks, oooMmappedChunks)
+		err = h.loadWAL(ctx, wlog.NewReader(sr), syms, multiRef, mmappedChunks, oooMmappedChunks)
 		if err := sr.Close(); err != nil {
 			level.Warn(h.logger).Log("msg", "Error while closing the wal segments reader", "err", err)
 		}

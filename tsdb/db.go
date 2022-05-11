@@ -444,7 +444,7 @@ func (db *DBReadOnly) FlushWAL(dir string) (returnErr error) {
 	}()
 	// Set the min valid time for the ingested wal samples
 	// to be no lower than the maxt of the last block.
-	if err := head.Init(maxBlockTime); err != nil {
+	if err := head.Init(context.Background(), maxBlockTime); err != nil {
 		return fmt.Errorf("read WAL: %w", err)
 	}
 	mint := head.MinTime()
@@ -524,7 +524,7 @@ func (db *DBReadOnly) loadDataAsQueryable(maxt int64) (storage.SampleAndChunkQue
 		}
 		// Set the min valid time for the ingested wal samples
 		// to be no lower than the maxt of the last block.
-		if err := head.Init(maxBlockTime); err != nil {
+		if err := head.Init(context.Background(), maxBlockTime); err != nil {
 			return nil, fmt.Errorf("read WAL: %w", err)
 		}
 		// Set the wal to nil to disable all wal operations.
@@ -700,11 +700,14 @@ func (db *DBReadOnly) Close() error {
 }
 
 // Open returns a new DB in the given directory. If options are empty, DefaultOptions will be used.
-func Open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, stats *DBStats) (db *DB, err error) {
+// Passed context is used to allow aborting WAL replay as it might take a long time.
+// You can safely pass context.Background() here if you don't need to allow for quick bailing out of
+// in-progress WAL replay.
+func Open(ctx context.Context, dir string, l log.Logger, r prometheus.Registerer, opts *Options, stats *DBStats) (db *DB, err error) {
 	var rngs []int64
 	opts, rngs = validateOpts(opts, nil)
 
-	return open(dir, l, r, opts, rngs, stats)
+	return open(ctx, dir, l, r, opts, rngs, stats)
 }
 
 func validateOpts(opts *Options, rngs []int64) (*Options, []int64) {
@@ -750,7 +753,7 @@ func validateOpts(opts *Options, rngs []int64) (*Options, []int64) {
 // open returns a new DB in the given directory.
 // It initializes the lockfile, WAL, compactor, and Head (by replaying the WAL), and runs the database.
 // It is not safe to open more than one DB in the same directory.
-func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs []int64, stats *DBStats) (_ *DB, returnedErr error) {
+func open(ctx context.Context, dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs []int64, stats *DBStats) (_ *DB, returnedErr error) {
 	if err := os.MkdirAll(dir, 0o777); err != nil {
 		return nil, err
 	}
@@ -828,8 +831,8 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 		}
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	db.compactor, err = NewLeveledCompactorWithOptions(ctx, r, l, rngs, db.chunkPool, LeveledCompactorOptions{
+	compactorCtx, cancel := context.WithCancel(ctx)
+	db.compactor, err = NewLeveledCompactorWithOptions(compactorCtx, r, l, rngs, db.chunkPool, LeveledCompactorOptions{
 		MaxBlockChunkSegmentSize:    opts.MaxBlockChunkSegmentSize,
 		EnableOverlappingCompaction: opts.EnableOverlappingCompaction,
 	})
@@ -916,7 +919,10 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 		minValidTime = inOrderMaxTime
 	}
 
-	if initErr := db.head.Init(minValidTime); initErr != nil {
+	if initErr := db.head.Init(ctx, minValidTime); initErr != nil {
+		if errors.Is(initErr, ErrWALReplayAborted) {
+			return nil, initErr
+		}
 		db.head.metrics.walCorruptionsTotal.Inc()
 		var e *errLoadWbl
 		if errors.As(initErr, &e) {

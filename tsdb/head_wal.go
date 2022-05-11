@@ -14,6 +14,7 @@
 package tsdb
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"math"
@@ -52,7 +53,7 @@ type histogramRecord struct {
 	fh  *histogram.FloatHistogram
 }
 
-func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef, mmappedChunks, oooMmappedChunks map[chunks.HeadSeriesRef][]*mmappedChunk) (err error) {
+func (h *Head) loadWAL(ctx context.Context, r *wlog.Reader, syms *labels.SymbolTable, multiRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef, mmappedChunks, oooMmappedChunks map[chunks.HeadSeriesRef][]*mmappedChunk) (err error) {
 	// Track number of samples that referenced a series we don't know about
 	// for error reporting.
 	var unknownRefs atomic.Uint64
@@ -74,6 +75,8 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 
 		decoded                      = make(chan interface{}, 10)
 		decodeErr, seriesCreationErr error
+
+		cancelReadErr, cancelDecodeErr error
 
 		seriesPool          zeropool.Pool[[]record.RefSeries]
 		samplesPool         zeropool.Pool[[]record.RefSample]
@@ -138,6 +141,16 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 		var err error
 		dec := record.NewDecoder(syms)
 		for r.Next() {
+			select {
+			case <-ctx.Done():
+				// We cannot re-use decodeErr here because we could end
+				// up with a race to set decodeErr between this code
+				// and the switch below.
+				cancelReadErr = ErrWALReplayAborted
+				return
+			default:
+			}
+
 			rec := r.Record()
 			switch dec.Type(rec) {
 			case record.Series:
@@ -233,6 +246,12 @@ func (h *Head) loadWAL(r *wlog.Reader, syms *labels.SymbolTable, multiRef map[ch
 	// The records are always replayed from the oldest to the newest.
 Outer:
 	for d := range decoded {
+		select {
+		case <-ctx.Done():
+			cancelDecodeErr = ErrWALReplayAborted
+			break Outer
+		default:
+		}
 		switch v := d.(type) {
 		case []record.RefSeries:
 			for _, walSeries := range v {
@@ -415,6 +434,13 @@ Outer:
 	}
 	close(exemplarsInput)
 	wg.Wait()
+
+	if cancelReadErr != nil {
+		return cancelReadErr
+	}
+	if cancelDecodeErr != nil {
+		return cancelDecodeErr
+	}
 
 	if err := r.Err(); err != nil {
 		return fmt.Errorf("read records: %w", err)

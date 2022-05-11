@@ -1257,7 +1257,7 @@ func TestCancelCompactions(t *testing.T) {
 	// Measure the compaction time without interrupting it.
 	var timeCompactionUninterrupted time.Duration
 	{
-		db, err := open(tmpdir, log.NewNopLogger(), nil, DefaultOptions(), []int64{1, 2000}, nil)
+		db, err := open(context.Background(), tmpdir, log.NewNopLogger(), nil, DefaultOptions(), []int64{1, 2000}, nil)
 		require.NoError(t, err)
 		require.Len(t, db.Blocks(), 3, "initial block count mismatch")
 		require.Equal(t, 0.0, prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.Ran), "initial compaction counter mismatch")
@@ -1276,7 +1276,7 @@ func TestCancelCompactions(t *testing.T) {
 	}
 	// Measure the compaction time when closing the db in the middle of compaction.
 	{
-		db, err := open(tmpdirCopy, log.NewNopLogger(), nil, DefaultOptions(), []int64{1, 2000}, nil)
+		db, err := open(context.Background(), tmpdirCopy, log.NewNopLogger(), nil, DefaultOptions(), []int64{1, 2000}, nil)
 		require.NoError(t, err)
 		require.Len(t, db.Blocks(), 3, "initial block count mismatch")
 		require.Equal(t, 0.0, prom_testutil.ToFloat64(db.compactor.(*LeveledCompactor).metrics.Ran), "initial compaction counter mismatch")
@@ -1387,7 +1387,7 @@ func TestHeadCompactionWithHistograms(t *testing.T) {
 	for _, floatTest := range []bool{true, false} {
 		t.Run(fmt.Sprintf("float=%t", floatTest), func(t *testing.T) {
 			head, _ := newTestHead(t, DefaultBlockDuration, wlog.CompressionNone, false)
-			require.NoError(t, head.Init(0))
+			require.NoError(t, head.Init(context.Background(), 0))
 			t.Cleanup(func() {
 				require.NoError(t, head.Close())
 			})

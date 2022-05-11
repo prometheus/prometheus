@@ -949,6 +949,7 @@ func main() {
 		os.Exit(1)
 	}
 
+	ctx, ctxCancel := context.WithCancel(context.Background())
 	var g run.Group
 	{
 		// Termination handler.
@@ -962,10 +963,12 @@ func main() {
 				case <-term:
 					level.Warn(logger).Log("msg", "Received SIGTERM, exiting gracefully...")
 					reloadReady.Close()
+					ctxCancel()
 				case <-webHandler.Quit():
 					level.Warn(logger).Log("msg", "Received termination request via web service, exiting gracefully...")
 				case <-cancel:
 					reloadReady.Close()
+					ctxCancel()
 				}
 				return nil
 			},
@@ -1137,7 +1140,7 @@ func main() {
 					}
 				}
 
-				db, err := openDBWithMetrics(localStoragePath, logger, prometheus.DefaultRegisterer, &opts, localStorage.getStats())
+				db, err := openDBWithMetrics(ctx, localStoragePath, logger, prometheus.DefaultRegisterer, &opts, localStorage.getStats())
 				if err != nil {
 					return fmt.Errorf("opening storage failed: %w", err)
 				}
@@ -1272,8 +1275,9 @@ func main() {
 	level.Info(logger).Log("msg", "See you next time!")
 }
 
-func openDBWithMetrics(dir string, logger log.Logger, reg prometheus.Registerer, opts *tsdb.Options, stats *tsdb.DBStats) (*tsdb.DB, error) {
+func openDBWithMetrics(ctx context.Context, dir string, logger log.Logger, reg prometheus.Registerer, opts *tsdb.Options, stats *tsdb.DBStats) (*tsdb.DB, error) {
 	db, err := tsdb.Open(
+		ctx,
 		dir,
 		log.With(logger, "component", "tsdb"),
 		reg,

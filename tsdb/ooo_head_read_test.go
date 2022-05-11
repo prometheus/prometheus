@@ -299,7 +299,7 @@ func TestOOOHeadIndexReader_Series(t *testing.T) {
 					defer func() {
 						require.NoError(t, h.Close())
 					}()
-					require.NoError(t, h.Init(0))
+					require.NoError(t, h.Init(context.Background(), 0))
 
 					s1, _, _ := h.getOrCreate(s1ID, s1Lset)
 					s1.ooo = &memSeriesOOOFields{}
@@ -1198,7 +1198,7 @@ func TestSortMetaByMinTimeAndMinRef(t *testing.T) {
 func newTestDBWithOpts(t *testing.T, opts *Options) *DB {
 	dir := t.TempDir()
 
-	db, err := Open(dir, nil, nil, opts, nil)
+	db, err := Open(context.Background(), dir, nil, nil, opts, nil)
 	require.NoError(t, err)
 
 	t.Cleanup(func() {

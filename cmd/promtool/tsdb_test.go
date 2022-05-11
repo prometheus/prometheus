@@ -180,7 +180,7 @@ func TestTSDBDumpOpenMetricsRoundTrip(t *testing.T) {
 	// Import samples from OM format
 	err = backfill(5000, initialMetrics, dbDir, false, false, 2*time.Hour)
 	require.NoError(t, err)
-	db, err := tsdb.Open(dbDir, nil, nil, tsdb.DefaultOptions(), nil)
+	db, err := tsdb.Open(context.Background(), dbDir, nil, nil, tsdb.DefaultOptions(), nil)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		require.NoError(t, db.Close())

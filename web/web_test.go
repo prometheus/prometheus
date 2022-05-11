@@ -65,7 +65,7 @@ func TestReadyAndHealthy(t *testing.T) {
 
 	dbDir := t.TempDir()
 
-	db, err := tsdb.Open(dbDir, nil, nil, nil, nil)
+	db, err := tsdb.Open(context.Background(), dbDir, nil, nil, nil, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		require.NoError(t, db.Close())
@@ -189,7 +189,7 @@ func TestRoutePrefix(t *testing.T) {
 	t.Parallel()
 	dbDir := t.TempDir()
 
-	db, err := tsdb.Open(dbDir, nil, nil, nil, nil)
+	db, err := tsdb.Open(context.Background(), dbDir, nil, nil, nil, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		require.NoError(t, db.Close())
@@ -371,7 +371,7 @@ func TestHTTPMetrics(t *testing.T) {
 func TestShutdownWithStaleConnection(t *testing.T) {
 	dbDir := t.TempDir()
 
-	db, err := tsdb.Open(dbDir, nil, nil, nil, nil)
+	db, err := tsdb.Open(context.Background(), dbDir, nil, nil, nil, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		require.NoError(t, db.Close())
