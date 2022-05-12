@@ -47,6 +47,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/moby"
 	"github.com/prometheus/prometheus/discovery/nomad"
 	"github.com/prometheus/prometheus/discovery/openstack"
+	"github.com/prometheus/prometheus/discovery/ovhcloud"
 	"github.com/prometheus/prometheus/discovery/puppetdb"
 	"github.com/prometheus/prometheus/discovery/scaleway"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -940,6 +941,39 @@ var expectedConf = &Config{
 					Server:           "http://eureka.example.com:8761/eureka",
 					RefreshInterval:  model.Duration(30 * time.Second),
 					HTTPClientConfig: config.DefaultHTTPClientConfig,
+				},
+			},
+		},
+		{
+			JobName: "ovhcloud",
+
+			HonorTimestamps:  true,
+			ScrapeInterval:   model.Duration(15 * time.Second),
+			ScrapeTimeout:    DefaultGlobalConfig.ScrapeTimeout,
+			HTTPClientConfig: config.DefaultHTTPClientConfig,
+			MetricsPath:      DefaultScrapeConfig.MetricsPath,
+			Scheme:           DefaultScrapeConfig.Scheme,
+
+			ServiceDiscoveryConfigs: discovery.Configs{
+				&ovhcloud.SDConfig{
+					Endpoint:          "ovh-eu",
+					ApplicationKey:    "testAppKey",
+					ApplicationSecret: "testAppSecret",
+					ConsumerKey:       "testConsumerKey",
+					RefreshInterval:   model.Duration(60 * time.Second),
+					SourcesToDisable:  []string{"ovhcloud_dedicated_server"},
+					DisabledSources:   map[string]bool{"ovhcloud_dedicated_server": true},
+					NoAuthTest:        true,
+				},
+				&ovhcloud.SDConfig{
+					Endpoint:          "ovh-eu",
+					ApplicationKey:    "testAppKey",
+					ApplicationSecret: "testAppSecret",
+					ConsumerKey:       "testConsumerKey",
+					RefreshInterval:   model.Duration(60 * time.Second),
+					SourcesToDisable:  nil,
+					DisabledSources:   map[string]bool{},
+					NoAuthTest:        true,
 				},
 			},
 		},

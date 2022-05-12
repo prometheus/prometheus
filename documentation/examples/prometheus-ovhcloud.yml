@@ -1,0 +1,11 @@
+# An example scrape configuration for running Prometheus with Ovhcloud.
+scrape_configs:
+  - job_name: 'ovhcloud'
+    ovhcloud_sd_configs:
+      - application_key: XXX
+        application_secret: XXX
+        consumer_key: XXX
+        endpoint: ovh-eu
+        refresh_interval: 1m
+        ### only for tests to remove
+        no_auth_test: true
