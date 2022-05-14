@@ -40,7 +40,7 @@ import (
 // IndexWriter serializes the index for a block of series data.
 // The methods must be called in the order they are specified in.
 type IndexWriter interface {
-	// AddSymbols registers all string symbols that are encountered in series
+	// AddSymbol registers all string symbols that are encountered in series
 	// and other indices. Symbols must be added in sorted order.
 	AddSymbol(sym string) error
 
