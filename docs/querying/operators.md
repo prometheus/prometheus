@@ -114,6 +114,37 @@ Operations between vectors attempt to find a matching element in the right-hand 
 vector for each entry in the left-hand side. There are two basic types of
 matching behavior: One-to-one and many-to-one/one-to-many.
 
+### Vector matching keywords
+
+These vector matching keywords allow for matching between series with different label sets
+providing:
+
+* `on`
+* `ignoring`
+
+Label lists provided to matching keywords will determine how vectors are combined. Examples
+can be found in [One-to-one vector matches](#one-to-one-vector-matches) and in
+[Many-to-one and one-to-many vector matches](#many-to-one-and-one-to-many-vector-matches)
+
+### Group modifiers
+
+These group modifiers enable many-to-one/one-to-many vector matching:
+
+* `group_left`
+* `group_right`
+
+Label lists can be provided to the group modifier which contain labels from the "one"-side to
+be included in the result metrics.
+
+_Many-to-one and one-to-many matching are advanced use cases that should be carefully considered.
+Often a proper use of `ignoring(<labels>)` provides the desired outcome._
+
+_Grouping modifiers can only be used for
+[comparison](#comparison-binary-operators) and
+[arithmetic](#arithmetic-binary-operators). Operations as `and`, `unless` and
+`or` operations match with all possible entries in the right vector by
+default._
+
 ### One-to-one vector matches
 
 **One-to-one** finds a unique pair of entries from each side of the operation.
@@ -153,7 +184,7 @@ The entries with methods `put` and `del` have no match and will not show up in t
 
 **Many-to-one** and **one-to-many** matchings refer to the case where each vector element on
 the "one"-side can match with multiple elements on the "many"-side. This has to
-be explicitly requested using the `group_left` or `group_right` modifier, where
+be explicitly requested using the `group_left` or `group_right` [modifiers](#group-modifiers), where
 left/right determines which vector has the higher cardinality.
 
     <vector expr> <bin-op> ignoring(<label list>) group_left(<label list>) <vector expr>
@@ -161,16 +192,10 @@ left/right determines which vector has the higher cardinality.
     <vector expr> <bin-op> on(<label list>) group_left(<label list>) <vector expr>
     <vector expr> <bin-op> on(<label list>) group_right(<label list>) <vector expr>
 
-The label list provided with the group modifier contains additional labels from
+The label list provided with the [group modifier](#group-modifiers) contains additional labels from
 the "one"-side to be included in the result metrics. For `on` a label can only
 appear in one of the lists. Every time series of the result vector must be
 uniquely identifiable.
-
-_Grouping modifiers can only be used for
-[comparison](#comparison-binary-operators) and
-[arithmetic](#arithmetic-binary-operators). Operations as `and`, `unless` and
-`or` operations match with all possible entries in the right vector by
-default._
 
 Example query:
 
@@ -186,8 +211,6 @@ left:
     {method="post", code="500"} 0.05            //   6 / 120
     {method="post", code="404"} 0.175           //  21 / 120
 
-_Many-to-one and one-to-many matching are advanced use cases that should be carefully considered.
-Often a proper use of `ignoring(<labels>)` provides the desired outcome._
 
 ## Aggregation operators
 
