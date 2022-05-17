@@ -10,6 +10,8 @@ import { API_PATH } from '../../constants/constants';
 import { KVSearch } from '@nexucis/kvsearch';
 import { Container } from 'reactstrap';
 import SearchBar from '../../components/SearchBar';
+import { EditorState } from '@codemirror/state';
+import { translate } from '@nexucis/codemirror-kvsearch';
 
 interface ServiceMap {
   activeTargets: Target[];
@@ -101,11 +103,19 @@ export const ServiceDiscoveryContent: FC<ServiceMap> = ({ activeTargets, dropped
   const [labelList, setLabelList] = useState(processTargets(activeTargets, droppedTargets));
 
   const handleSearchChange = useCallback(
-    (value: string) => {
-      setQuerySearchFilter(value);
-      if (value !== '') {
-        const activeTargetResult = activeTargetKVSearch.filter(value.trim(), activeTargets);
-        const droppedTargetResult = droppedTargetKVSearch.filter(value.trim(), droppedTargets);
+    (state: EditorState) => {
+      const pattern = state.doc.toString().trim();
+      setQuerySearchFilter(pattern);
+      if (pattern !== '') {
+        const query = translate(state);
+        const activeTargetResult =
+          query !== null
+            ? activeTargetKVSearch.filterWithQuery(query, activeTargets)
+            : activeTargetKVSearch.filter(pattern, activeTargets);
+        const droppedTargetResult =
+          query !== null
+            ? droppedTargetKVSearch.filterWithQuery(query, droppedTargets)
+            : droppedTargetKVSearch.filter(pattern, droppedTargets);
         setActiveTargetList(activeTargetResult.map((value) => value.original));
         setDroppedTargetList(droppedTargetResult.map((value) => value.original));
       } else {
@@ -126,7 +136,12 @@ export const ServiceDiscoveryContent: FC<ServiceMap> = ({ activeTargets, dropped
     <>
       <h2>Service Discovery</h2>
       <Container>
-        <SearchBar defaultValue={defaultValue} handleChange={handleSearchChange} placeholder="Filter by labels" />
+        <SearchBar
+          defaultValue={defaultValue}
+          handleChange={handleSearchChange}
+          placeholder="Filter by labels"
+          objects={activeTargets}
+        />
       </Container>
       <ul>
         {mapObjEntries(targetList, ([k, v]) => (

@@ -8,6 +8,8 @@ import { useLocalStorage } from '../../hooks/useLocalStorage';
 import CustomInfiniteScroll, { InfiniteScrollItemsProps } from '../../components/CustomInfiniteScroll';
 import { KVSearch } from '@nexucis/kvsearch';
 import SearchBar from '../../components/SearchBar';
+import { EditorState } from '@codemirror/state';
+import { translate } from '@nexucis/codemirror-kvsearch';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type RuleState = keyof RuleStatus<any>;
@@ -79,13 +81,15 @@ const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
   };
 
   const handleSearchChange = useCallback(
-    (value: string) => {
-      setQuerySearchFilter(value);
-      if (value !== '') {
-        const pattern = value.trim();
+    (state: EditorState) => {
+      const pattern = state.doc.toString().trim();
+      setQuerySearchFilter(pattern);
+      if (pattern !== '') {
+        const query = translate(state);
         const result: RuleGroup[] = [];
         for (const group of groups) {
-          const ruleFilterList = kvSearchRule.filter(pattern, group.rules);
+          const ruleFilterList =
+            query !== null ? kvSearchRule.filterWithQuery(query, group.rules) : kvSearchRule.filter(pattern, group.rules);
           if (ruleFilterList.length > 0) {
             result.push({
               file: group.file,

@@ -13,6 +13,8 @@ import styles from './ScrapePoolPanel.module.css';
 import { ToggleMoreLess } from '../../components/ToggleMoreLess';
 import SearchBar from '../../components/SearchBar';
 import { setQuerySearchFilter, getQuerySearchFilter } from '../../utils/index';
+import { EditorState } from '@codemirror/state';
+import { translate } from '@nexucis/codemirror-kvsearch';
 
 interface ScrapePoolListProps {
   activeTargets: Target[];
@@ -74,10 +76,13 @@ const ScrapePoolListContent: FC<ScrapePoolListProps> = ({ activeTargets }) => {
   const { showHealthy, showUnhealthy } = filter;
 
   const handleSearchChange = useCallback(
-    (value: string) => {
-      setQuerySearchFilter(value);
-      if (value !== '') {
-        const result = kvSearch.filter(value.trim(), activeTargets);
+    (state: EditorState) => {
+      const pattern = state.doc.toString().trim();
+      setQuerySearchFilter(pattern);
+      if (pattern !== '') {
+        const query = translate(state);
+        const result =
+          query !== null ? kvSearch.filterWithQuery(query, activeTargets) : kvSearch.filter(pattern, activeTargets);
         setTargetList(result.map((value) => value.original));
       } else {
         setTargetList(activeTargets);
@@ -104,6 +109,7 @@ const ScrapePoolListContent: FC<ScrapePoolListProps> = ({ activeTargets }) => {
             defaultValue={defaultValue}
             handleChange={handleSearchChange}
             placeholder="Filter by endpoint or labels"
+            objects={activeTargets}
           />
         </Col>
       </Row>
