@@ -25,6 +25,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
+	"go.uber.org/atomic"
 	yaml "gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -122,17 +123,17 @@ type AlertingRule struct {
 	externalURL string
 	// true if old state has been restored. We start persisting samples for ALERT_FOR_STATE
 	// only after the restoration.
-	restored bool
+	restored *atomic.Bool
 	// Protects the below.
 	mtx sync.Mutex
 	// Time in seconds taken to evaluate rule.
-	evaluationDuration time.Duration
+	evaluationDuration *atomic.Duration
 	// Timestamp of last evaluation of rule.
-	evaluationTimestamp time.Time
+	evaluationTimestamp *atomic.Time
 	// The health of the alerting rule.
-	health RuleHealth
+	health *atomic.String
 	// The last error seen by the alerting rule.
-	lastError error
+	lastError *atomic.Error
 	// A map of alerts which are currently active (Pending or Firing), keyed by
 	// the fingerprint of the labelset they correspond to.
 	active map[uint64]*Alert
@@ -152,17 +153,20 @@ func NewAlertingRule(
 	}
 
 	return &AlertingRule{
-		name:           name,
-		vector:         vec,
-		holdDuration:   hold,
-		labels:         labels,
-		annotations:    annotations,
-		externalLabels: el,
-		externalURL:    externalURL,
-		health:         HealthUnknown,
-		active:         map[uint64]*Alert{},
-		logger:         logger,
-		restored:       restored,
+		name:                name,
+		vector:              vec,
+		holdDuration:        hold,
+		labels:              labels,
+		annotations:         annotations,
+		externalLabels:      el,
+		externalURL:         externalURL,
+		active:              map[uint64]*Alert{},
+		logger:              logger,
+		restored:            atomic.NewBool(restored),
+		health:              atomic.NewString(string(HealthUnknown)),
+		evaluationTimestamp: atomic.NewTime(time.Time{}),
+		evaluationDuration:  atomic.NewDuration(0),
+		lastError:           atomic.NewError(nil),
 	}
 }
 
@@ -173,30 +177,22 @@ func (r *AlertingRule) Name() string {
 
 // SetLastError sets the current error seen by the alerting rule.
 func (r *AlertingRule) SetLastError(err error) {
-	r.mtx.Lock()
-	defer r.mtx.Unlock()
-	r.lastError = err
+	r.lastError.Store(err)
 }
 
 // LastError returns the last error seen by the alerting rule.
 func (r *AlertingRule) LastError() error {
-	r.mtx.Lock()
-	defer r.mtx.Unlock()
-	return r.lastError
+	return r.lastError.Load()
 }
 
 // SetHealth sets the current health of the alerting rule.
 func (r *AlertingRule) SetHealth(health RuleHealth) {
-	r.mtx.Lock()
-	defer r.mtx.Unlock()
-	r.health = health
+	r.health.Store(string(health))
 }
 
 // Health returns the current health of the alerting rule.
 func (r *AlertingRule) Health() RuleHealth {
-	r.mtx.Lock()
-	defer r.mtx.Unlock()
-	return r.health
+	return RuleHealth(r.health.String())
 }
 
 // Query returns the query expression of the alerting rule.
@@ -284,42 +280,32 @@ func (r *AlertingRule) QueryforStateSeries(alert *Alert, q storage.Querier) (sto
 
 // SetEvaluationDuration updates evaluationDuration to the duration it took to evaluate the rule on its last evaluation.
 func (r *AlertingRule) SetEvaluationDuration(dur time.Duration) {
-	r.mtx.Lock()
-	defer r.mtx.Unlock()
-	r.evaluationDuration = dur
+	r.evaluationDuration.Store(dur)
 }
 
 // GetEvaluationDuration returns the time in seconds it took to evaluate the alerting rule.
 func (r *AlertingRule) GetEvaluationDuration() time.Duration {
-	r.mtx.Lock()
-	defer r.mtx.Unlock()
-	return r.evaluationDuration
+	return r.evaluationDuration.Load()
 }
 
 // SetEvaluationTimestamp updates evaluationTimestamp to the timestamp of when the rule was last evaluated.
 func (r *AlertingRule) SetEvaluationTimestamp(ts time.Time) {
-	r.mtx.Lock()
-	defer r.mtx.Unlock()
-	r.evaluationTimestamp = ts
+	r.evaluationTimestamp.Store(ts)
 }
 
 // GetEvaluationTimestamp returns the time the evaluation took place.
 func (r *AlertingRule) GetEvaluationTimestamp() time.Time {
-	r.mtx.Lock()
-	defer r.mtx.Unlock()
-	return r.evaluationTimestamp
+	return r.evaluationTimestamp.Load()
 }
 
 // SetRestored updates the restoration state of the alerting rule.
 func (r *AlertingRule) SetRestored(restored bool) {
-	r.restored = restored
+	r.restored.Store(restored)
 }
 
 // Restored returns the restoration state of the alerting rule.
 func (r *AlertingRule) Restored() bool {
-	r.mtx.Lock()
-	defer r.mtx.Unlock()
-	return r.restored
+	return r.restored.Load()
 }
 
 // resolvedRetention is the duration for which a resolved alert instance
@@ -333,9 +319,6 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 	if err != nil {
 		return nil, err
 	}
-
-	r.mtx.Lock()
-	defer r.mtx.Unlock()
 
 	// Create pending alerts for any new vector elements in the alert expression
 	// or update the expression value for existing elements.
@@ -408,6 +391,9 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 		}
 	}
 
+	r.mtx.Lock()
+	defer r.mtx.Unlock()
+
 	for h, a := range alerts {
 		// Check whether we already have alerting state for the identifying label set.
 		// Update the last value and annotations if so, create a new alert entry otherwise.
@@ -442,7 +428,7 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 			a.FiredAt = ts
 		}
 
-		if r.restored {
+		if r.restored.Load() {
 			vec = append(vec, r.sample(a, ts))
 			vec = append(vec, r.forStateSample(a, ts, float64(a.ActiveAt.Unix())))
 		}

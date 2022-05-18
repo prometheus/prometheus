@@ -416,6 +416,65 @@ func TestAlertingRuleEmptyLabelFromTemplate(t *testing.T) {
 	require.Equal(t, result, filteredRes)
 }
 
+func TestAlertingRuleQueryInTemplate(t *testing.T) {
+	suite, err := promql.NewTest(t, `
+		load 1m
+			http_requests{job="app-server", instance="0"}	70 85 70 70
+	`)
+	require.NoError(t, err)
+	defer suite.Close()
+
+	require.NoError(t, suite.Run())
+
+	expr, err := parser.ParseExpr(`sum(http_requests) < 100`)
+	require.NoError(t, err)
+
+	ruleWithQueryInTemplate := NewAlertingRule(
+		"ruleWithQueryInTemplate",
+		expr,
+		time.Minute,
+		labels.FromStrings("label", "value"),
+		labels.FromStrings("templated_label", `{{- with "sort(sum(http_requests) by (instance))" | query -}}
+{{- range $i,$v := . -}}
+instance: {{ $v.Labels.instance }}, value: {{ printf "%.0f" $v.Value }};
+{{- end -}}
+{{- end -}}
+`),
+		nil,
+		"",
+		true, log.NewNopLogger(),
+	)
+	evalTime := time.Unix(0, 0)
+
+	startQueryCh := make(chan struct{})
+	getDoneCh := make(chan struct{})
+	slowQueryFunc := func(ctx context.Context, q string, ts time.Time) (promql.Vector, error) {
+		if q == "sort(sum(http_requests) by (instance))" {
+			// This is minimum produce for issue 10703, expand template with query.
+			t.Logf("q:%s", q)
+			close(startQueryCh)
+			time.Sleep(time.Millisecond * 10)
+		}
+		return EngineQueryFunc(suite.QueryEngine(), suite.Storage())(ctx, q, ts)
+	}
+	go func() {
+		<-startQueryCh
+		start := time.Now()
+		_ = ruleWithQueryInTemplate.Health()
+		_ = ruleWithQueryInTemplate.LastError()
+		_ = ruleWithQueryInTemplate.GetEvaluationDuration()
+		_ = ruleWithQueryInTemplate.GetEvaluationTimestamp()
+		t.Logf("rule get cost:%s", time.Since(start))
+		close(getDoneCh)
+	}()
+	start := time.Now()
+	_, _ = ruleWithQueryInTemplate.Eval(
+		suite.Context(), evalTime, slowQueryFunc, nil, 0,
+	)
+	t.Logf("rule eval cost:%s", time.Since(start))
+	<-getDoneCh
+}
+
 func TestAlertingRuleDuplicate(t *testing.T) {
 	storage := teststorage.New(t)
 	defer storage.Close()
