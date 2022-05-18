@@ -16,13 +16,13 @@ package textparse
 import (
 	"bytes"
 	"compress/gzip"
-	"io"
-	"os"
-	"testing"
 	"fmt"
 	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
+	"io"
+	"os"
+	"testing"
 
 	"github.com/prometheus/prometheus/model/labels"
 )
@@ -214,99 +214,99 @@ testmetric{label="\"bar\""} 1`
 
 func TestPromParseErrors(t *testing.T) {
 	cases := []struct {
-		input string
-		err   string
-		line int
+		input  string
+		err    string
+		line   int
 		column int
 	}{
 		{
-			input: "a",
-			err:   "expected value after metric, got \"MNAME\"",
-			line: 1,
+			input:  "a",
+			err:    "expected value after metric, got \"MNAME\"",
+			line:   1,
 			column: 2,
 		},
 		{
-			input: "a{b='c'} 1\n",
-			err:   "expected label value, got \"INVALID\"",
-			line: 1,
+			input:  "a{b='c'} 1\n",
+			err:    "expected label value, got \"INVALID\"",
+			line:   1,
 			column: 5,
 		},
 		{
-			input: "a{b=\n",
-			err:   "expected label value, got \"INVALID\"",
-			line: 1,
+			input:  "a{b=\n",
+			err:    "expected label value, got \"INVALID\"",
+			line:   1,
 			column: 5,
 		},
 		{
-			input: "a{\xff=\"foo\"} 1\n",
-			err:   "expected label name, got \"INVALID\"",
-			line: 1,
+			input:  "a{\xff=\"foo\"} 1\n",
+			err:    "expected label name, got \"INVALID\"",
+			line:   1,
 			column: 3,
 		},
 		{
-			input: "a{b=\"\xff\"} 1\n",
-			err:   "invalid UTF-8 label value",
-			line: 1,
+			input:  "a{b=\"\xff\"} 1\n",
+			err:    "invalid UTF-8 label value",
+			line:   1,
 			column: 8,
 		},
 		{
-			input: "a true\n",
-			err:   "strconv.ParseFloat: parsing \"true\": invalid syntax",
-			line: 1,
+			input:  "a true\n",
+			err:    "strconv.ParseFloat: parsing \"true\": invalid syntax",
+			line:   1,
 			column: 7,
 		},
 		{
-			input: "something_weird{problem=\"",
-			err:   "expected label value, got \"INVALID\"",
-			line: 2,
+			input:  "something_weird{problem=\"",
+			err:    "expected label value, got \"INVALID\"",
+			line:   2,
 			column: 1,
 		},
 		{
-			input: "empty_label_name{=\"\"} 0",
-			err:   "expected label name, got \"EQUAL\"",
-			line: 1,
+			input:  "empty_label_name{=\"\"} 0",
+			err:    "expected label name, got \"EQUAL\"",
+			line:   1,
 			column: 19,
 		},
 		{
-			input: "foo 1_2\n",
-			err:   "unsupported character in float",
-			line: 1,
+			input:  "foo 1_2\n",
+			err:    "unsupported character in float",
+			line:   1,
 			column: 8,
 		},
 		{
-			input: "foo 0x1p-3\n",
-			err:   "unsupported character in float",
-			line: 1,
+			input:  "foo 0x1p-3\n",
+			err:    "unsupported character in float",
+			line:   1,
 			column: 11,
 		},
 		{
-			input: "foo 0x1P-3\n",
-			err:   "unsupported character in float",
-			line: 1,
+			input:  "foo 0x1P-3\n",
+			err:    "unsupported character in float",
+			line:   1,
 			column: 11,
 		},
 		{
-			input: "foo 0 1_2\n",
-			err:   "expected next entry after timestamp, got \"MNAME\"",
-			line: 1,
+			input:  "foo 0 1_2\n",
+			err:    "expected next entry after timestamp, got \"MNAME\"",
+			line:   1,
 			column: 8,
 		},
 		{
-			input: `{a="ok"} 1`,
-			err:   `"INVALID" is not a valid start token`,
-			line: 1,
+			input:  `{a="ok"} 1`,
+			err:    `"INVALID" is not a valid start token`,
+			line:   1,
 			column: 1,
 		},
 		{
-			input: "# TYPE #\n#EOF\n",
-			err:   "expected metric name after TYPE, got \"INVALID\"",
-			line: 1,
+			input:  "# TYPE #\n#EOF\n",
+			err:    "expected metric name after TYPE, got \"INVALID\"",
+			line:   1,
 			column: 8,
 		},
 		{
-			input: "# HELP #\n#EOF\n",
-			err:   "expected metric name after HELP, got \"INVALID\"",
-			line: 1,
+			input:  "# HELP #\n#EOF\n",
+			err:    "expected metric name after HELP, got \"INVALID\"",
+			line:   1,
 			column: 8,
 		},
 	}
@@ -317,7 +317,7 @@ func TestPromParseErrors(t *testing.T) {
 		for err == nil {
 			_, err = p.Next()
 		}
-		expectedErr := fmt.Sprintf(c.err + " Line %d, Column %d", c.line, c.column)
+		expectedErr := fmt.Sprintf(c.err+" Line %d, Column %d", c.line, c.column)
 		require.Error(t, err)
 		require.Equal(t, expectedErr, err.Error(), "test %d", i)
 	}
@@ -325,9 +325,9 @@ func TestPromParseErrors(t *testing.T) {
 
 func TestPromNullByteHandling(t *testing.T) {
 	cases := []struct {
-		input string
-		err   string
-		line int
+		input  string
+		err    string
+		line   int
 		column int
 	}{
 		{
@@ -347,27 +347,27 @@ func TestPromNullByteHandling(t *testing.T) {
 			err:   "",
 		},
 		{
-			input: "a{b=\x00\"ssss\"} 1\n",
-			err:   "expected label value, got \"INVALID\"",
-			line: 1,
+			input:  "a{b=\x00\"ssss\"} 1\n",
+			err:    "expected label value, got \"INVALID\"",
+			line:   1,
 			column: 5,
 		},
 		{
-			input: "a{b=\"\x00",
-			err:   "expected label value, got \"INVALID\"",
-			line: 2,
+			input:  "a{b=\"\x00",
+			err:    "expected label value, got \"INVALID\"",
+			line:   2,
 			column: 1,
 		},
 		{
 			input: "a{b\x00=\"hiih\"}	1",
-			err: "expected equal, got \"INVALID\"",
-			line: 1,
+			err:    "expected equal, got \"INVALID\"",
+			line:   1,
 			column: 4,
 		},
 		{
-			input: "a\x00{b=\"ddd\"} 1",
-			err:   "expected value after metric, got \"MNAME\"",
-			line: 1,
+			input:  "a\x00{b=\"ddd\"} 1",
+			err:    "expected value after metric, got \"MNAME\"",
+			line:   1,
 			column: 2,
 		},
 	}
@@ -384,7 +384,7 @@ func TestPromNullByteHandling(t *testing.T) {
 			continue
 		}
 
-		expectedErr := fmt.Sprintf(c.err + " Line %d, Column %d", c.line, c.column)
+		expectedErr := fmt.Sprintf(c.err+" Line %d, Column %d", c.line, c.column)
 		require.Error(t, err)
 		require.Equal(t, expectedErr, err.Error(), "test %d", i)
 	}

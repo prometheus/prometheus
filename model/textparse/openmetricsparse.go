@@ -223,7 +223,7 @@ func (p *OpenMetricsParser) ParseError(err error) error {
 	str := string(p.l.b[:p.l.i])
 	line := 1 + strings.Count(str, "\n")
 	column := 1 + p.l.i - (strings.LastIndex(str, "\n") + len("\n"))
-	return errors.Errorf(err.Error() + " Line %d, Column %d", line,column)
+	return errors.Errorf(err.Error()+" Line %d, Column %d", line, column)
 }
 
 // Next advances the parser to the next sample. It returns false if no
