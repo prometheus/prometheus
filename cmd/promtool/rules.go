@@ -105,7 +105,7 @@ func (importer *ruleImporter) importRule(ctx context.Context, ruleExpr, ruleName
 		endOfBlock := startOfBlock + blockDuration - 1
 
 		currStart := max(startOfBlock/int64(time.Second/time.Millisecond), start.Unix())
-		startWithAlignment := grp.EvalTimestamp(time.Unix(currStart, 0).UTC().UnixNano())
+		startWithAlignment := grp.EvalTimestamp(time.Unix(currStart, 0).UTC())
 		for startWithAlignment.Unix() < currStart {
 			startWithAlignment = startWithAlignment.Add(grp.Interval())
 		}

@@ -344,7 +344,7 @@ func (g *Group) run(ctx context.Context) {
 	defer close(g.terminated)
 
 	// Wait an initial amount to have consistently slotted intervals.
-	evalTimestamp := g.EvalTimestamp(time.Now().UnixNano()).Add(g.interval)
+	evalTimestamp := g.EvalTimestamp(time.Now()).Add(g.interval)
 	select {
 	case <-time.After(time.Until(evalTimestamp)):
 	case <-g.done:
@@ -533,14 +533,13 @@ func (g *Group) setLastEvaluation(ts time.Time) {
 }
 
 // EvalTimestamp returns the immediately preceding consistently slotted evaluation time.
-func (g *Group) EvalTimestamp(startTime int64) time.Time {
+func (g *Group) EvalTimestamp(startTime time.Time) time.Time {
 	var (
-		offset = int64(g.hash() % uint64(g.interval))
-		adjNow = startTime - offset
-		base   = adjNow - (adjNow % int64(g.interval))
+		offset = time.Duration((g.hash() % uint64(g.interval)))
+		adjNow = startTime.Add(-offset)
+		base   = adjNow.Add(-time.Duration(adjNow.UnixNano() % int64(g.interval)))
 	)
-
-	return time.Unix(0, base+offset).UTC()
+	return base.Add(offset)
 }
 
 func nameAndLabels(rule Rule) string {
