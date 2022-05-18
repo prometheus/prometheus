@@ -554,7 +554,7 @@ func TestAgentAPIEndPoints(t *testing.T) {
 			resp, err := http.DefaultClient.Do(req)
 			require.NoError(t, err)
 			require.Equal(t, http.StatusUnprocessableEntity, resp.StatusCode)
-			t.Cleanup(func(){
+			t.Cleanup(func() {
 				require.NoError(t, resp.Body.Close())
 			})
 		}
@@ -575,7 +575,7 @@ func TestAgentAPIEndPoints(t *testing.T) {
 			resp, err := http.DefaultClient.Do(req)
 			require.NoError(t, err)
 			require.Equal(t, http.StatusOK, resp.StatusCode)
-			t.Cleanup(func(){
+			t.Cleanup(func() {
 				require.NoError(t, resp.Body.Close())
 			})
 		}
