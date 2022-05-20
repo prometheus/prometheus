@@ -40,6 +40,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/file"
 	"github.com/prometheus/prometheus/discovery/hetzner"
 	"github.com/prometheus/prometheus/discovery/http"
+	"github.com/prometheus/prometheus/discovery/ionos"
 	"github.com/prometheus/prometheus/discovery/kubernetes"
 	"github.com/prometheus/prometheus/discovery/linode"
 	"github.com/prometheus/prometheus/discovery/marathon"
@@ -996,6 +997,29 @@ var expectedConf = &Config{
 				},
 			},
 		},
+		{
+			JobName:         "ionos",
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
+
+			MetricsPath:      DefaultScrapeConfig.MetricsPath,
+			Scheme:           DefaultScrapeConfig.Scheme,
+			HTTPClientConfig: config.DefaultHTTPClientConfig,
+
+			ServiceDiscoveryConfigs: discovery.Configs{
+				&ionos.SDConfig{
+					DatacenterID: "8feda53f-15f0-447f-badf-ebe32dad2fc0",
+					HTTPClientConfig: config.HTTPClientConfig{
+						Authorization:   &config.Authorization{Type: "Bearer", Credentials: "abcdef"},
+						FollowRedirects: true,
+						EnableHTTP2:     true,
+					},
+					Port:            80,
+					RefreshInterval: model.Duration(60 * time.Second),
+				},
+			},
+		},
 	},
 	AlertingConfig: AlertingConfig{
 		AlertmanagerConfigs: []*AlertmanagerConfig{
@@ -1093,7 +1117,7 @@ func TestElideSecrets(t *testing.T) {
 	yamlConfig := string(config)
 
 	matches := secretRe.FindAllStringIndex(yamlConfig, -1)
-	require.Equal(t, 16, len(matches), "wrong number of secret matches found")
+	require.Equal(t, 17, len(matches), "wrong number of secret matches found")
 	require.NotContains(t, yamlConfig, "mysecret",
 		"yaml marshal reveals authentication credentials.")
 }
@@ -1531,6 +1555,10 @@ var expectedErrors = []struct {
 	{
 		filename: "uyuni_no_server.bad.yml",
 		errMsg:   "Uyuni SD configuration requires server host",
+	},
+	{
+		filename: "ionos_datacenter.bad.yml",
+		errMsg:   "datacenter id can't be empty",
 	},
 }
 

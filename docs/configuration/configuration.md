@@ -256,6 +256,11 @@ hetzner_sd_configs:
 http_sd_configs:
   [ - <http_sd_config> ... ]
 
+
+# List of IONOS service discovery configurations.
+ionos_sd_configs:
+  [ - <ionos_sd_config> ... ]
+
 # List of Kubernetes service discovery configurations.
 kubernetes_sd_configs:
   [ - <kubernetes_sd_config> ... ]
@@ -1539,6 +1544,86 @@ tls_config:
   [ <tls_config> ]
 ```
 
+### `<ionos_sd_config>`
+
+IONOS SD configurations allows retrieving scrape targets from
+[IONOS Cloud](https://cloud.ionos.com/) API. This service discovery uses the
+first NICs IP address by default, but that can be changed with relabeling. The
+following meta labels are available on all targets during
+[relabeling](#relabel_config):
+
+* `__meta_ionos_server_availability_zone`: the availability zone of the server
+* `__meta_ionos_server_boot_cdrom_id`: the ID of the CD-ROM the server is booted 
+  from
+* `__meta_ionos_server_boot_image_id`: the ID of the boot image or snapshot the
+  server is booted from
+* `__meta_ionos_server_boot_volume_id`: the ID of the boot volume
+* `__meta_ionos_server_cpu_family`: the CPU family of the server
+  to
+* `__meta_ionos_server_id`: the ID of the server
+* `__meta_ionos_server_ip`: comma seperated list of all IPs assigned to the
+  server
+* `__meta_ionos_server_lifecycle`: the lifecycle state of the server resource
+* `__meta_ionos_server_name`: the name of the server
+* `__meta_ionos_server_nic_ip_<nic_name>`: comma seperated list of IPs, grouped
+  by the name of each NIC attached to the server
+* `__meta_ionos_server_servers_id`: the ID of the servers the server belongs to
+* `__meta_ionos_server_state`: the execution state of the server
+* `__meta_ionos_server_type`: the type of the server
+
+```yaml
+# The unique ID of the data center.
+datacenter_id: <string>
+
+# Authentication information used to authenticate to the API server.
+# Note that `basic_auth` and `authorization` options are
+# mutually exclusive.
+# password and password_file are mutually exclusive.
+
+# Optional HTTP basic authentication information, required when using IONOS
+# Cloud username and password as authentication method.
+basic_auth:
+  [ username: <string> ]
+  [ password: <secret> ]
+  [ password_file: <string> ]
+
+# Optional `Authorization` header configuration, required when using IONOS
+# Cloud token as authentication method.
+authorization:
+  # Sets the authentication type.
+  [ type: <string> | default: Bearer ]
+  # Sets the credentials. It is mutually exclusive with
+  # `credentials_file`.
+  [ credentials: <secret> ]
+  # Sets the credentials to the credentials read from the configured file.
+  # It is mutually exclusive with `credentials`.
+  [ credentials_file: <filename> ]
+
+# Optional OAuth 2.0 configuration.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2:
+  [ <oauth2> ]
+
+# Optional proxy URL.
+[ proxy_url: <string> ]
+
+# Configure whether HTTP requests follow HTTP 3xx redirects.
+[ follow_redirects: <boolean> | default = true ]
+
+# Whether to enable HTTP2.
+[ enable_http2: <bool> | default: true ]
+
+# TLS configuration.
+tls_config:
+  [ <tls_config> ]
+
+# The port to scrape metrics from.
+[ port: <int> | default = 80 ]
+
+# The time after which the servers are refreshed.
+[ refresh_interval: <duration> | default = 60s ]
+```
+
 ### `<kubernetes_sd_config>`
 
 Kubernetes SD configurations allow retrieving scrape targets from
@@ -2679,6 +2764,10 @@ hetzner_sd_configs:
 # List of HTTP service discovery configurations.
 http_sd_configs:
   [ - <http_sd_config> ... ]
+
+ # List of IONOS service discovery configurations.
+ionos_sd_configs:
+  [ - <ionos_sd_config> ... ]
 
 # List of Kubernetes service discovery configurations.
 kubernetes_sd_configs:

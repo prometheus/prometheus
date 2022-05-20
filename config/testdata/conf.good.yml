@@ -367,6 +367,12 @@ scrape_configs:
         username: gopher
         password: hole
 
+  - job_name: ionos
+    ionos_sd_configs:
+      - datacenter_id: 8feda53f-15f0-447f-badf-ebe32dad2fc0
+        authorization:
+          credentials: abcdef
+
 alerting:
   alertmanagers:
     - scheme: https

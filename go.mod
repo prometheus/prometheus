@@ -35,6 +35,7 @@ require (
 	github.com/hashicorp/go-hclog v0.12.2 // indirect
 	github.com/hashicorp/go-immutable-radix v1.2.0 // indirect
 	github.com/hetznercloud/hcloud-go v1.33.1
+	github.com/ionos-cloud/sdk-go/v6 v6.0.5851
 	github.com/json-iterator/go v1.1.12
 	github.com/kolo/xmlrpc v0.0.0-20201022064351-38db28db192b
 	github.com/linode/linodego v1.4.1
