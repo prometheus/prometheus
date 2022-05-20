@@ -103,6 +103,12 @@ for each of the given times in UTC. Returned values are from 1 to 31.
 each of the given times in UTC. Returned values are from 0 to 6, where 0 means
 Sunday etc.
 
+## `day_of_year()`
+
+`day_of_year(v=vector(time()) instant-vector)` returns the day of the year for
+each of the given times in UTC. Returned values are from 1 to 365 for non-leap years,
+and 1 to 366 in leap years.
+
 ## `days_in_month()`
 
 `days_in_month(v=vector(time()) instant-vector)` returns number of days in the
