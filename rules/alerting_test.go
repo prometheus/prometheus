@@ -15,7 +15,6 @@ package rules
 
 import (
 	"context"
-	"html/template"
 	"testing"
 	"time"
 
@@ -30,23 +29,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/teststorage"
 )
-
-func TestAlertingRuleHTMLSnippet(t *testing.T) {
-	expr, err := parser.ParseExpr(`foo{html="<b>BOLD<b>"}`)
-	require.NoError(t, err)
-	rule := NewAlertingRule("testrule", expr, 0, labels.FromStrings("html", "<b>BOLD</b>"), labels.FromStrings("html", "<b>BOLD</b>"), nil, "", false, nil)
-
-	const want = template.HTML(`alert: <a href="/test/prefix/graph?g0.expr=ALERTS%7Balertname%3D%22testrule%22%7D&g0.tab=1">testrule</a>
-expr: <a href="/test/prefix/graph?g0.expr=foo%7Bhtml%3D%22%3Cb%3EBOLD%3Cb%3E%22%7D&g0.tab=1">foo{html=&#34;&lt;b&gt;BOLD&lt;b&gt;&#34;}</a>
-labels:
-  html: '&lt;b&gt;BOLD&lt;/b&gt;'
-annotations:
-  html: '&lt;b&gt;BOLD&lt;/b&gt;'
-`)
-
-	got := rule.HTMLSnippet("/test/prefix")
-	require.Equal(t, want, got, "incorrect HTML snippet; want:\n\n|%v|\n\ngot:\n\n|%v|", want, got)
-}
 
 func TestAlertingRuleState(t *testing.T) {
 	tests := []struct {

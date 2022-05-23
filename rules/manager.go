@@ -15,7 +15,6 @@ package rules
 
 import (
 	"context"
-	html_template "html/template"
 	"math"
 	"net/url"
 	"sort"
@@ -235,9 +234,6 @@ type Rule interface {
 	// GetEvaluationTimestamp returns last evaluation timestamp.
 	// NOTE: Used dynamically by rules.html template.
 	GetEvaluationTimestamp() time.Time
-	// HTMLSnippet returns a human-readable string representation of the rule,
-	// decorated with HTML elements for use the web frontend.
-	HTMLSnippet(pathPrefix string) html_template.HTML
 }
 
 // Group is a set of rules that have a logical relation.
