@@ -1541,7 +1541,7 @@ loop:
 
 			// Update metadata only if it changed in the current iteration.
 			sl.cache.metaMtx.Lock()
-			metaEntry, metaOk := sl.cache.metadata[yoloString(met)]
+			metaEntry, metaOk := sl.cache.metadata[yoloString([]byte(lset.Get(labels.MetricName)))]
 			if metaOk && metaEntry.lastIterChange == sl.cache.iter {
 				shouldAppendMetadata = true
 				meta.Type = metaEntry.Type
@@ -1575,7 +1575,7 @@ loop:
 			}
 
 			sl.cache.metaMtx.Lock()
-			metaEntry, metaOk := sl.cache.metadata[yoloString(met)]
+			metaEntry, metaOk := sl.cache.metadata[yoloString([]byte(lset.Get(labels.MetricName)))]
 			if metaOk {
 				shouldAppendMetadata = true
 				meta.Type = metaEntry.Type
