@@ -151,6 +151,7 @@ func main() {
 	queryLabelsName := queryLabelsCmd.Arg("name", "Label name to provide label values for.").Required().String()
 	queryLabelsBegin := queryLabelsCmd.Flag("start", "Start time (RFC3339 or Unix timestamp).").String()
 	queryLabelsEnd := queryLabelsCmd.Flag("end", "End time (RFC3339 or Unix timestamp).").String()
+	queryLabelsMatch := queryLabelsCmd.Flag("match", "Series selector. Can be specified multiple times.").Strings()
 
 	testCmd := app.Command("test", "Unit testing.")
 	testRulesCmd := testCmd.Command("rules", "Unit tests for rules.")
@@ -265,7 +266,7 @@ func main() {
 		os.Exit(debugAll(*debugAllServer))
 
 	case queryLabelsCmd.FullCommand():
-		os.Exit(QueryLabels(*queryLabelsServer, *queryLabelsName, *queryLabelsBegin, *queryLabelsEnd, p))
+		os.Exit(QueryLabels(*queryLabelsServer, *queryLabelsMatch, *queryLabelsName, *queryLabelsBegin, *queryLabelsEnd, p))
 
 	case testRulesCmd.FullCommand():
 		os.Exit(RulesUnitTest(
@@ -929,7 +930,7 @@ func QuerySeries(url *url.URL, matchers []string, start, end string, p printer) 
 }
 
 // QueryLabels queries for label values against a Prometheus server.
-func QueryLabels(url *url.URL, name, start, end string, p printer) int {
+func QueryLabels(url *url.URL, matchers []string, name, start, end string, p printer) int {
 	if url.Scheme == "" {
 		url.Scheme = "http"
 	}
@@ -953,7 +954,7 @@ func QueryLabels(url *url.URL, name, start, end string, p printer) int {
 	// Run query against client.
 	api := v1.NewAPI(c)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	val, warn, err := api.LabelValues(ctx, name, []string{}, stime, etime)
+	val, warn, err := api.LabelValues(ctx, name, matchers, stime, etime)
 	cancel()
 
 	for _, v := range warn {
