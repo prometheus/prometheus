@@ -373,6 +373,11 @@ scrape_configs:
         authorization:
           credentials: abcdef
 
+  - job_name: vultr
+    vultr_sd_configs:
+      - authorization:
+          credentials: abcdef
+
 alerting:
   alertmanagers:
     - scheme: https
