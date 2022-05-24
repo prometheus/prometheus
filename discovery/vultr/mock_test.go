@@ -27,25 +27,25 @@ type SDMock struct {
 	Mux    *http.ServeMux
 }
 
-// NewSDMock returns a new SDMock.
+// NewSDMock returns a new Vultr mock server.
 func NewSDMock(t *testing.T) *SDMock {
 	return &SDMock{
 		t: t,
 	}
 }
 
-// Endpoint returns the URI to the mock server
+// Endpoint returns the URI to the mock server.
 func (m *SDMock) Endpoint() string {
 	return m.Server.URL + "/"
 }
 
-// Setup creates the mock server
+// Setup creates the mock server.
 func (m *SDMock) Setup() {
 	m.Mux = http.NewServeMux()
 	m.Server = httptest.NewServer(m.Mux)
 }
 
-// ShutdownServer creates the mock server
+// ShutdownServer shuts down the mock server.
 func (m *SDMock) ShutdownServer() {
 	m.Server.Close()
 }
