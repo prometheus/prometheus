@@ -102,6 +102,10 @@ func (p *Provider) IsStarted() bool {
 	return p.cancel != nil
 }
 
+func (p *Provider) Config() interface{} {
+	return p.config
+}
+
 // NewManager is the Discovery Manager constructor.
 func NewManager(ctx context.Context, logger log.Logger, options ...func(*Manager)) *Manager {
 	if logger == nil {
