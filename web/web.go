@@ -258,6 +258,7 @@ type Options struct {
 	RemoteReadBytesInFrame     int
 	EnableRemoteWriteReceiver  bool
 	IsAgent                    bool
+	AppName                    string
 
 	Gatherer   prometheus.Gatherer
 	Registerer prometheus.Registerer
@@ -468,11 +469,11 @@ func New(logger log.Logger, o *Options) *Handler {
 
 	router.Get("/-/healthy", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, "Prometheus is Healthy.\n")
+		fmt.Fprintf(w, o.AppName+" is Healthy.\n")
 	})
 	router.Get("/-/ready", readyf(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, "Prometheus is Ready.\n")
+		fmt.Fprintf(w, o.AppName+" is Ready.\n")
 	}))
 
 	return h
