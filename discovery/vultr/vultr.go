@@ -49,7 +49,7 @@ const (
 	vultrInstanceLabelHostname     = vultrInstanceLabel + "hostname"
 	vultrInstanceLabelServerStatus = vultrInstanceLabel + "server_status"
 	vultrInstanceLabelVCPU         = vultrInstanceLabel + "vcpu_count"
-	vultrInstanceLabelMemory       = vultrInstanceLabel + "ram_bytes"
+	vultrInstanceLabelMemory       = vultrInstanceLabel + "ram_mb"
 	vultrInstanceLabelBandwidth    = vultrInstanceLabel + "allowed_bandwidth_gb"
 	vultrInstanceLabelDisk         = vultrInstanceLabel + "disk_gb"
 	separator                      = ","
