@@ -182,8 +182,12 @@ groups:
 `
 	_, errs := Parse([]byte(group))
 	require.Len(t, errs, 2, "Expected two errors")
-	err0 := errs[0].(*Error).Err.node
-	err1 := errs[1].(*Error).Err.node
+	var err00 *Error
+	require.True(t, errors.As(errs[0], &err00))
+	err0 := err00.Err.node
+	var err01 *Error
+	require.True(t, errors.As(errs[1], &err01))
+	err1 := err01.Err.node
 	require.NotEqual(t, err0, err1, "Error nodes should not be the same")
 }
 
