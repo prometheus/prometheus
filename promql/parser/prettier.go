@@ -54,7 +54,7 @@ func (e *AggregateExpr) Pretty(level int) string {
 		return s
 	}
 
-	s += e.getAggStr()
+	s += e.getAggOpStr()
 	s += "(\n"
 
 	if e.Op.IsAggregatorWithParam() {
@@ -113,10 +113,15 @@ func (e *ParenExpr) Pretty(level int) string {
 	return fmt.Sprintf("%s(\n%s\n%s)", s, e.Expr.Pretty(level+1), indent(level))
 }
 
+func (e *StepInvariantExpr) Pretty(level int) string {
+	return e.Expr.Pretty(level)
+}
+
 func (e *MatrixSelector) Pretty(level int) string {
 	return getCommonPrefixIndent(level, e)
 }
 
+// todo(harkishen) after we deciding its format
 func (e *SubqueryExpr) Pretty(level int) string {
 	return getCommonPrefixIndent(level, e)
 }
@@ -134,10 +139,6 @@ func (e *StringLiteral) Pretty(level int) string {
 }
 
 func (e *UnaryExpr) Pretty(level int) string {
-	return getCommonPrefixIndent(level, e)
-}
-
-func (e *StepInvariantExpr) Pretty(level int) string {
 	return getCommonPrefixIndent(level, e)
 }
 

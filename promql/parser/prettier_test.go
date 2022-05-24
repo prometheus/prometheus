@@ -35,6 +35,18 @@ func TestAggregateExprPretty(t *testing.T) {
 )`,
 		},
 		{
+			in: `sum without(job,foo) (task:errors:rate10s{job="s"})`,
+			out: `sum without(job, foo) (
+  task:errors:rate10s{job="s"}
+)`,
+		},
+		{
+			in: `sum(task:errors:rate10s{job="s"}) without(job,foo)`,
+			out: `sum without(job, foo) (
+  task:errors:rate10s{job="s"}
+)`,
+		},
+		{
 			in: `sum by(job,foo) (task:errors:rate10s{job="s"})`,
 			out: `sum by(job, foo) (
   task:errors:rate10s{job="s"}
@@ -80,7 +92,15 @@ func TestAggregateExprPretty(t *testing.T) {
   )
 )`,
 		},
-
+		{
+			in: `sum by(job,foo)
+(sum(task:errors:rate10s{job="s"}) without(job,foo))`,
+			out: `sum by(job, foo) (
+  sum without(job, foo) (
+    task:errors:rate10s{job="s"}
+  )
+)`,
+		},
 		{
 			in: `sum by(job,foo) # Comment 1.
 (sum by(job,foo) ( # Comment 2.
@@ -110,6 +130,18 @@ func TestBinaryExprPretty(t *testing.T) {
 			out: `a + b`,
 		},
 		{
+			in: `a == bool 1`,
+			out: `  a
+== bool
+  1`,
+		},
+		{
+			in: `a + ignoring(job) b`,
+			out: `  a
++ ignoring(job)
+  b`,
+		},
+		{
 			in: `foo_1 + foo_2`,
 			out: `  foo_1
 +
@@ -137,6 +169,16 @@ func TestBinaryExprPretty(t *testing.T) {
   +
     foo_3
 +
+  foo_4`,
+		},
+		{
+			in: `foo_1 + ignoring(foo) foo_2 + ignoring(job) group_left foo_3 + on(instance) group_right foo_4`,
+			out: `      foo_1
+    + ignoring(foo)
+      foo_2
+  + ignoring(job) group_left()
+    foo_3
++ on(instance) group_right()
   foo_4`,
 		},
 	}
@@ -249,6 +291,32 @@ func TestParenExprPretty(t *testing.T) {
 	}
 }
 
+func TestStepInvariantExpr(t *testing.T) {
+	maxCharactersPerLine = 10
+	inputs := []struct {
+		in, out string
+	}{
+		{
+			in:  `a @ 1`,
+			out: `a @ 1.000`,
+		},
+		{
+			in:  `a @ start()`,
+			out: `a @ start()`,
+		},
+		{
+			in:  `vector_selector @ start()`,
+			out: `vector_selector @ start()`,
+		},
+	}
+	for _, test := range inputs {
+		expr, err := ParseExpr(test.in)
+		require.NoError(t, err)
+
+		require.Equal(t, test.out, Prettify(expr))
+	}
+}
+
 func TestExprPretty(t *testing.T) {
 	maxCharactersPerLine = 10
 	inputs := []struct {
@@ -306,6 +374,13 @@ func TestExprPretty(t *testing.T) {
 			in: `(sum_over_time(foo[1m]))`,
 			out: `(
   sum_over_time(foo[1m])
+)`,
+		},
+		{
+			in: `histogram_quantile(0.9, rate(foo[1m] @ start()))`,
+			out: `histogram_quantile(
+  0.9,
+  rate(foo[1m] @ start())
 )`,
 		},
 		{

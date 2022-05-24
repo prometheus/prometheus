@@ -62,7 +62,7 @@ func (es Expressions) String() (s string) {
 }
 
 func (node *AggregateExpr) String() string {
-	aggrString := node.getAggStr()
+	aggrString := node.getAggOpStr()
 	aggrString += "("
 	if node.Op.IsAggregatorWithParam() {
 		aggrString += fmt.Sprintf("%s, ", node.Param)
@@ -72,7 +72,7 @@ func (node *AggregateExpr) String() string {
 	return aggrString
 }
 
-func (node *AggregateExpr) getAggStr() string {
+func (node *AggregateExpr) getAggOpStr() string {
 	aggrString := node.Op.String()
 
 	switch {
