@@ -172,7 +172,7 @@ type Manager struct {
 	lastProvider uint
 }
 
-// Providers returns the currently configured SD providers
+// Providers returns the currently configured SD providers.
 func (m *Manager) Providers() []*Provider {
 	return m.providers
 }
