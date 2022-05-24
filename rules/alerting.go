@@ -124,8 +124,6 @@ type AlertingRule struct {
 	// true if old state has been restored. We start persisting samples for ALERT_FOR_STATE
 	// only after the restoration.
 	restored *atomic.Bool
-	// Protects the below.
-	mtx sync.Mutex
 	// Time in seconds taken to evaluate rule.
 	evaluationDuration *atomic.Duration
 	// Timestamp of last evaluation of rule.
@@ -134,6 +132,8 @@ type AlertingRule struct {
 	health *atomic.String
 	// The last error seen by the alerting rule.
 	lastError *atomic.Error
+	// activeMtx Protects the `active` map.
+	activeMtx sync.Mutex
 	// A map of alerts which are currently active (Pending or Firing), keyed by
 	// the fingerprint of the labelset they correspond to.
 	active map[uint64]*Alert
@@ -391,8 +391,8 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 		}
 	}
 
-	r.mtx.Lock()
-	defer r.mtx.Unlock()
+	r.activeMtx.Lock()
+	defer r.activeMtx.Unlock()
 
 	for h, a := range alerts {
 		// Check whether we already have alerting state for the identifying label set.
@@ -445,8 +445,8 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 // State returns the maximum state of alert instances for this rule.
 // StateFiring > StatePending > StateInactive
 func (r *AlertingRule) State() AlertState {
-	r.mtx.Lock()
-	defer r.mtx.Unlock()
+	r.activeMtx.Lock()
+	defer r.activeMtx.Unlock()
 
 	maxState := StateInactive
 	for _, a := range r.active {
@@ -471,8 +471,8 @@ func (r *AlertingRule) ActiveAlerts() []*Alert {
 // currentAlerts returns all instances of alerts for this rule. This may include
 // inactive alerts that were previously firing.
 func (r *AlertingRule) currentAlerts() []*Alert {
-	r.mtx.Lock()
-	defer r.mtx.Unlock()
+	r.activeMtx.Lock()
+	defer r.activeMtx.Unlock()
 
 	alerts := make([]*Alert, 0, len(r.active))
 
@@ -488,8 +488,8 @@ func (r *AlertingRule) currentAlerts() []*Alert {
 // and not on its copy.
 // If you want to run on a copy of alerts then don't use this, get the alerts from 'ActiveAlerts()'.
 func (r *AlertingRule) ForEachActiveAlert(f func(*Alert)) {
-	r.mtx.Lock()
-	defer r.mtx.Unlock()
+	r.activeMtx.Lock()
+	defer r.activeMtx.Unlock()
 
 	for _, a := range r.active {
 		f(a)
