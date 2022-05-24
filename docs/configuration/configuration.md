@@ -2595,23 +2595,23 @@ oauth2:
   [ <oauth2> ]
 
 # Optional proxy URL.
-  [ proxy_url: <string> ]
+[ proxy_url: <string> ]
 
 # Configure whether HTTP requests follow HTTP 3xx redirects.
-  [ follow_redirects: <boolean> | default = true ]
+[ follow_redirects: <boolean> | default = true ]
 
 # Whether to enable HTTP2.
-  [ enable_http2: <bool> | default: true ]
+[ enable_http2: <bool> | default: true ]
 
 # TLS configuration.
 tls_config:
   [ <tls_config> ]
 
 # The port to scrape metrics from.
-  [ port: <int> | default = 80 ]
+[ port: <int> | default = 80 ]
 
 # The time after which the instances are refreshed.
-  [ refresh_interval: <duration> | default = 60s ]
+[ refresh_interval: <duration> | default = 60s ]
 ```
 
 
