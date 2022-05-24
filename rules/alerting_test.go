@@ -448,12 +448,12 @@ instance: {{ $v.Labels.instance }}, value: {{ printf "%.0f" $v.Value }};
 
 	startQueryCh := make(chan struct{})
 	getDoneCh := make(chan struct{})
+	slowQueryDuration := time.Millisecond * 10
 	slowQueryFunc := func(ctx context.Context, q string, ts time.Time) (promql.Vector, error) {
 		if q == "sort(sum(http_requests) by (instance))" {
-			// This is minimum produce for issue 10703, expand template with query.
-			t.Logf("q:%s", q)
+			// This is a minimum reproduction of issue 10703, expand template with slow query.
 			close(startQueryCh)
-			time.Sleep(time.Millisecond * 10)
+			time.Sleep(slowQueryDuration)
 		}
 		return EngineQueryFunc(suite.QueryEngine(), suite.Storage())(ctx, q, ts)
 	}
@@ -464,14 +464,14 @@ instance: {{ $v.Labels.instance }}, value: {{ printf "%.0f" $v.Value }};
 		_ = ruleWithQueryInTemplate.LastError()
 		_ = ruleWithQueryInTemplate.GetEvaluationDuration()
 		_ = ruleWithQueryInTemplate.GetEvaluationTimestamp()
-		t.Logf("rule get cost:%s", time.Since(start))
 		close(getDoneCh)
+		// Assert not block when template expanding.
+		require.True(t, time.Since(start) < slowQueryDuration)
 	}()
-	start := time.Now()
-	_, _ = ruleWithQueryInTemplate.Eval(
+	_, err = ruleWithQueryInTemplate.Eval(
 		suite.Context(), evalTime, slowQueryFunc, nil, 0,
 	)
-	t.Logf("rule eval cost:%s", time.Since(start))
+	require.NoError(t, err)
 	<-getDoneCh
 }
 
