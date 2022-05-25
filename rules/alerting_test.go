@@ -448,31 +448,31 @@ instance: {{ $v.Labels.instance }}, value: {{ printf "%.0f" $v.Value }};
 
 	startQueryCh := make(chan struct{})
 	getDoneCh := make(chan struct{})
-	slowQueryDuration := time.Millisecond * 10
 	slowQueryFunc := func(ctx context.Context, q string, ts time.Time) (promql.Vector, error) {
 		if q == "sort(sum(http_requests) by (instance))" {
-			// This is a minimum reproduction of issue 10703, expand template with slow query.
+			// This is a minimum reproduction of issue 10703, expand template with query.
 			close(startQueryCh)
-			time.Sleep(slowQueryDuration)
+			select {
+			case <-getDoneCh:
+			case <-time.After(time.Millisecond * 10):
+				// Assert no blocking when template expanding.
+				require.Fail(t, "unexpected blocking when template expanding.")
+			}
 		}
 		return EngineQueryFunc(suite.QueryEngine(), suite.Storage())(ctx, q, ts)
 	}
 	go func() {
 		<-startQueryCh
-		start := time.Now()
 		_ = ruleWithQueryInTemplate.Health()
 		_ = ruleWithQueryInTemplate.LastError()
 		_ = ruleWithQueryInTemplate.GetEvaluationDuration()
 		_ = ruleWithQueryInTemplate.GetEvaluationTimestamp()
 		close(getDoneCh)
-		// Assert not block when template expanding.
-		require.True(t, time.Since(start) < slowQueryDuration)
 	}()
 	_, err = ruleWithQueryInTemplate.Eval(
 		suite.Context(), evalTime, slowQueryFunc, nil, 0,
 	)
 	require.NoError(t, err)
-	<-getDoneCh
 }
 
 func TestAlertingRuleDuplicate(t *testing.T) {
