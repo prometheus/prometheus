@@ -28,6 +28,7 @@ import (
 	"github.com/prometheus/common/model"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
@@ -624,6 +625,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 			if err != nil {
 				rule.SetHealth(HealthBad)
 				rule.SetLastError(err)
+				sp.SetStatus(codes.Error, err.Error())
 				g.metrics.EvalFailures.WithLabelValues(GroupKey(g.File(), g.Name())).Inc()
 
 				// Canceled queries are intentional termination of queries. This normally
@@ -651,6 +653,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 				if err := app.Commit(); err != nil {
 					rule.SetHealth(HealthBad)
 					rule.SetLastError(err)
+					sp.SetStatus(codes.Error, err.Error())
 					g.metrics.EvalFailures.WithLabelValues(GroupKey(g.File(), g.Name())).Inc()
 
 					level.Warn(g.logger).Log("name", rule.Name(), "index", i, "msg", "Rule sample appending failed", "err", err)
@@ -663,6 +666,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 				if _, err := app.Append(0, s.Metric, s.T, s.V); err != nil {
 					rule.SetHealth(HealthBad)
 					rule.SetLastError(err)
+					sp.SetStatus(codes.Error, err.Error())
 
 					switch errors.Cause(err) {
 					case storage.ErrOutOfOrderSample:
