@@ -41,7 +41,7 @@ import (
 // The methods must be called in the order they are specified in.
 type IndexWriter interface {
 	// AddSymbol registers a single symbol.
-	// Symbols must be registered in sorted order
+	// Symbols must be registered in sorted order.
 	AddSymbol(sym string) error
 
 	// AddSeries populates the index writer with a series and its offsets
