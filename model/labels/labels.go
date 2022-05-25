@@ -349,7 +349,7 @@ func FromStrings(ss ...string) Labels {
 	if len(ss)%2 != 0 {
 		panic("invalid number of strings")
 	}
-	var res Labels
+	res := make(Labels, 0, len(ss)/2)
 	for i := 0; i < len(ss); i += 2 {
 		res = append(res, Label{Name: ss[i], Value: ss[i+1]})
 	}
@@ -452,7 +452,7 @@ func (b *Builder) Labels() Labels {
 
 	// In the general case, labels are removed, modified or moved
 	// rather than added.
-	res := make(Labels, 0, len(b.base))
+	res := make(Labels, 0, len(b.base)+len(b.add))
 Outer:
 	for _, l := range b.base {
 		for _, n := range b.del {
