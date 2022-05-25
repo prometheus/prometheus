@@ -16,6 +16,7 @@ package promql
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"sort"
 	"testing"
@@ -680,7 +681,6 @@ load 10s
 			Result: Matrix{
 				Series{
 					Points: []Point{{V: 1, T: 0}, {V: 1, T: 1000}, {V: 1, T: 2000}},
-					Metric: labels.FromStrings(),
 				},
 			},
 			Start:    time.Unix(0, 0),
@@ -717,24 +717,26 @@ load 10s
 		},
 	}
 
-	for _, c := range cases {
-		var err error
-		var qry Query
-		if c.Interval == 0 {
-			qry, err = test.QueryEngine().NewInstantQuery(test.Queryable(), nil, c.Query, c.Start)
-		} else {
-			qry, err = test.QueryEngine().NewRangeQuery(test.Queryable(), nil, c.Query, c.Start, c.End, c.Interval)
-		}
-		require.NoError(t, err)
+	for i, c := range cases {
+		t.Run(fmt.Sprintf("%d query=%s", i, c.Query), func(t *testing.T) {
+			var err error
+			var qry Query
+			if c.Interval == 0 {
+				qry, err = test.QueryEngine().NewInstantQuery(test.Queryable(), nil, c.Query, c.Start)
+			} else {
+				qry, err = test.QueryEngine().NewRangeQuery(test.Queryable(), nil, c.Query, c.Start, c.End, c.Interval)
+			}
+			require.NoError(t, err)
 
-		res := qry.Exec(test.Context())
-		if c.ShouldError {
-			require.Error(t, res.Err, "expected error for the query %q", c.Query)
-			continue
-		}
+			res := qry.Exec(test.Context())
+			if c.ShouldError {
+				require.Error(t, res.Err, "expected error for the query %q", c.Query)
+				return
+			}
 
-		require.NoError(t, res.Err)
-		require.Equal(t, c.Result, res.Value, "query %q failed", c.Query)
+			require.NoError(t, res.Err)
+			require.Equal(t, c.Result, res.Value, "query %q failed", c.Query)
+		})
 	}
 }
 
