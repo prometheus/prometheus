@@ -15,12 +15,14 @@ package rules
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/atomic"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -473,6 +475,47 @@ instance: {{ $v.Labels.instance }}, value: {{ printf "%.0f" $v.Value }};
 		suite.Context(), evalTime, slowQueryFunc, nil, 0,
 	)
 	require.NoError(t, err)
+}
+
+func BenchmarkAlertingRuleAtomic(b *testing.B) {
+	b.ReportAllocs()
+	t := atomic.NewTime(time.Time{})
+	done := make(chan struct{})
+	go func() {
+		for i := 0; i < b.N; i++ {
+			t.Load()
+		}
+		close(done)
+	}()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			t.Store(time.Now())
+		}
+	})
+	<-done
+}
+
+func BenchmarkAlertingRuleMutex(b *testing.B) {
+	b.ReportAllocs()
+	t := time.Time{}
+	mtx := sync.Mutex{}
+	done := make(chan struct{})
+	go func() {
+		for i := 0; i < b.N; i++ {
+			mtx.Lock()
+			_ = t
+			mtx.Unlock()
+		}
+		close(done)
+	}()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			mtx.Lock()
+			t = time.Now()
+			mtx.Unlock()
+		}
+	})
+	<-done
 }
 
 func TestAlertingRuleDuplicate(t *testing.T) {
