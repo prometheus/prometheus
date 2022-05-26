@@ -180,6 +180,9 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 			case "extra-scrape-metrics":
 				c.scrape.ExtraMetrics = true
 				level.Info(logger).Log("msg", "Experimental additional scrape metrics")
+			case "metadata-in-wal":
+				c.scrape.AppendMetadataToWAL = true
+				level.Info(logger).Log("msg", "Experimental appending of series metadata to the WAL")
 			case "new-service-discovery-manager":
 				c.enableNewSDManager = true
 				level.Info(logger).Log("msg", "Experimental service discovery manager")
