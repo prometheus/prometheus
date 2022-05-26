@@ -36,10 +36,6 @@ func TestLabels_String(t *testing.T) {
 			lables:   Labels{},
 			expected: "{}",
 		},
-		{
-			lables:   nil,
-			expected: "{}",
-		},
 	}
 	for _, c := range cases {
 		str := c.lables.String()
@@ -316,7 +312,8 @@ func TestLabels_Equal(t *testing.T) {
 
 func TestLabels_FromStrings(t *testing.T) {
 	labels := FromStrings("aaa", "111", "bbb", "222")
-	expected := Labels{
+	// We can't use FromStrings here to check itself, so drop down to the underlying data structure
+	expected := Labels{[]Label{
 		{
 			Name:  "aaa",
 			Value: "111",
@@ -325,7 +322,7 @@ func TestLabels_FromStrings(t *testing.T) {
 			Name:  "bbb",
 			Value: "222",
 		},
-	}
+	}}
 
 	require.Equal(t, expected, labels, "unexpected labelset")
 
@@ -539,7 +536,6 @@ func TestBuilder(t *testing.T) {
 			want: FromStrings("aaa", "111", "ccc", "333"),
 		},
 		{
-			base: nil,
 			set:  []Label{{"aaa", "111"}, {"bbb", "222"}, {"ccc", "333"}},
 			del:  []string{"bbb"},
 			want: FromStrings("aaa", "111", "ccc", "333"),
@@ -604,8 +600,7 @@ func TestBuilder(t *testing.T) {
 func TestLabels_Hash(t *testing.T) {
 	lbls := FromStrings("foo", "bar", "baz", "qux")
 	require.Equal(t, lbls.Hash(), lbls.Hash())
-	require.NotEqual(t, lbls.Hash(), Labels{lbls[1], lbls[0]}.Hash(), "unordered labels match.")
-	require.NotEqual(t, lbls.Hash(), Labels{lbls[0]}.Hash(), "different labels match.")
+	require.NotEqual(t, lbls.Hash(), FromStrings("foo", "bar").Hash(), "different labels match.")
 }
 
 var benchmarkLabelsResult uint64
@@ -623,7 +618,7 @@ func BenchmarkLabels_Hash(b *testing.B) {
 					// Label ~20B name, 50B value.
 					b.Set(fmt.Sprintf("abcdefghijabcdefghijabcdefghij%d", i), fmt.Sprintf("abcdefghijabcdefghijabcdefghijabcdefghijabcdefghij%d", i))
 				}
-				return b.Labels(nil)
+				return b.Labels(EmptyLabels())
 			}(),
 		},
 		{
@@ -634,7 +629,7 @@ func BenchmarkLabels_Hash(b *testing.B) {
 					// Label ~50B name, 50B value.
 					b.Set(fmt.Sprintf("abcdefghijabcdefghijabcdefghijabcdefghijabcdefghij%d", i), fmt.Sprintf("abcdefghijabcdefghijabcdefghijabcdefghijabcdefghij%d", i))
 				}
-				return b.Labels(nil)
+				return b.Labels(EmptyLabels())
 			}(),
 		},
 		{
@@ -710,4 +705,70 @@ func TestMarshaling(t *testing.T) {
 	err = yaml.Unmarshal(b, &gotFY)
 	require.NoError(t, err)
 	require.Equal(t, f, gotFY)
+}
+
+func TestMerge(t *testing.T) {
+	for i, tc := range []struct {
+		labels         Labels
+		externalLabels Labels
+		expected       Labels
+	}{
+		// Test adding labels at the end.
+		{
+			labels:         FromStrings("a", "b"),
+			externalLabels: FromStrings("c", "d"),
+			expected:       FromStrings("a", "b", "c", "d"),
+		},
+
+		// Test adding labels at the beginning.
+		{
+			labels:         FromStrings("c", "d"),
+			externalLabels: FromStrings("a", "b"),
+			expected:       FromStrings("a", "b", "c", "d"),
+		},
+
+		// Test we don't override existing labels.
+		{
+			labels:         FromStrings("a", "b"),
+			externalLabels: FromStrings("a", "c"),
+			expected:       FromStrings("a", "b"),
+		},
+
+		// Test empty externalLabels.
+		{
+			labels:         FromStrings("a", "b"),
+			externalLabels: Labels{},
+			expected:       FromStrings("a", "b"),
+		},
+
+		// Test empty labels.
+		{
+			labels:         Labels{},
+			externalLabels: FromStrings("a", "b"),
+			expected:       FromStrings("a", "b"),
+		},
+
+		// Test labels is longer than externalLabels.
+		{
+			labels:         FromStrings("a", "b", "c", "d"),
+			externalLabels: FromStrings("e", "f"),
+			expected:       FromStrings("a", "b", "c", "d", "e", "f"),
+		},
+
+		// Test externalLabels is longer than labels.
+		{
+			labels:         FromStrings("c", "d"),
+			externalLabels: FromStrings("a", "b", "e", "f"),
+			expected:       FromStrings("a", "b", "c", "d", "e", "f"),
+		},
+
+		// Adding with and without clashing labels.
+		{
+			labels:         FromStrings("a", "b", "c", "d"),
+			externalLabels: FromStrings("a", "xxx", "c", "yyy", "e", "f"),
+			expected:       FromStrings("a", "b", "c", "d", "e", "f"),
+		},
+	} {
+		require.Equalf(t, tc.expected, tc.labels.Merge(tc.externalLabels), "test %d", i)
+	}
 }
