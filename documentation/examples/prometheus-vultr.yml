@@ -11,7 +11,7 @@ scrape_configs:
   - job_name: "node"
     vultr_sd_configs:
       - authorization:
-        credentials: "<replace with a Personal Access Token>"
+          credentials: "<replace with a Personal Access Token>"
     relabel_configs:
       # Only scrape targets that have a tag 'monitoring'.
       - source_labels: [__meta_vultr_instance_tags]
