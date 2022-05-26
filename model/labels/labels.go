@@ -412,6 +412,49 @@ func Compare(a, b Labels) int {
 	return len(a) - len(b)
 }
 
+// Copy labels from b on top of whatever was in ls previously, reusing memory or expanding if needed.
+func (ls *Labels) CopyFrom(b Labels) {
+	(*ls) = append((*ls)[:0], b...)
+}
+
+// IsEmpty returns true if ls represents an empty set of labels.
+func (ls Labels) IsEmpty() bool {
+	return len(ls) == 0
+}
+
+// Range calls f on each label.
+func (ls Labels) Range(f func(l Label)) {
+	for _, l := range ls {
+		f(l)
+	}
+}
+
+// Validate calls f on each label. If f returns a non-nil error, then it returns that error cancelling the iteration.
+func (ls Labels) Validate(f func(l Label) error) error {
+	for _, l := range ls {
+		if err := f(l); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// InternStrings calls intern on every string value inside ls, replacing them with what it returns.
+func (ls *Labels) InternStrings(intern func(string) string) {
+	for i, l := range *ls {
+		(*ls)[i].Name = intern(l.Name)
+		(*ls)[i].Value = intern(l.Value)
+	}
+}
+
+// ReleaseStrings calls release on every string value inside ls.
+func (ls Labels) ReleaseStrings(release func(string)) {
+	for _, l := range ls {
+		release(l.Name)
+		release(l.Value)
+	}
+}
+
 // Builder allows modifying Labels.
 type Builder struct {
 	base Labels
@@ -522,4 +565,42 @@ Outer:
 		sort.Sort(res)
 	}
 	return res
+}
+
+// ScratchBuilder allows efficient construction of a Labels from scratch.
+type ScratchBuilder struct {
+	add Labels
+}
+
+// NewScratchBuilder creates a ScratchBuilder initialized for Labels with n entries.
+func NewScratchBuilder(n int) ScratchBuilder {
+	return ScratchBuilder{add: make([]Label, 0, n)}
+}
+
+func (b *ScratchBuilder) Reset() {
+	b.add = b.add[:0]
+}
+
+// Add a name/value pair.
+// Note if you Add the same name twice you will get a duplicate label, which is invalid.
+func (b *ScratchBuilder) Add(name, value string) {
+	b.add = append(b.add, Label{Name: name, Value: value})
+}
+
+// Sort the labels added so far by name.
+func (b *ScratchBuilder) Sort() {
+	sort.Sort(b.add)
+}
+
+// Return the name/value pairs added so far as a Labels object.
+// Note: if you want them sorted, call Sort() first.
+func (b *ScratchBuilder) Labels() Labels {
+	// Copy the slice, so the next use of ScratchBuilder doesn't overwrite.
+	return append([]Label{}, b.add...)
+}
+
+// Write the newly-built Labels out to ls, reusing its buffer if long enough.
+// Callers must ensure that there are no other references to ls.
+func (b *ScratchBuilder) Overwrite(ls *Labels) {
+	(*ls) = append((*ls)[:0], b.add...)
 }
