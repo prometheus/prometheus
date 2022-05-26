@@ -419,6 +419,90 @@ func Compare(a, b Labels) int {
 	return len(a.lbls) - len(b.lbls)
 }
 
+// Copy labels from b on top of whatever was in ls previously, reusing memory or expanding if needed.
+func (ls *Labels) CopyFrom(b Labels) {
+	ls.lbls = append(ls.lbls[:0], b.lbls...)
+}
+
+// IsEmpty returns true if ls represents an empty set of labels.
+func (ls Labels) IsEmpty() bool {
+	return len(ls.lbls) == 0
+}
+
+// Call f on each label.
+func (ls Labels) Range(f func(l Label)) {
+	for _, l := range ls.lbls {
+		f(l)
+	}
+}
+
+// Call f on each label; if f returns non-nil then return that error.
+func (ls Labels) RangeToError(f func(l Label) error) error {
+	for _, l := range ls.lbls {
+		err := f(l)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// InternStrings calls intern on every string value inside ls, replacing them with what it returns.
+func (ls *Labels) InternStrings(intern func(string) string) {
+	for i, l := range ls.lbls {
+		ls.lbls[i].Name = intern(l.Name)
+		ls.lbls[i].Value = intern(l.Value)
+	}
+}
+
+// InternStrings calls release on every string value inside ls.
+func (ls Labels) ReleaseStrings(release func(string)) {
+	for _, l := range ls.lbls {
+		release(l.Name)
+		release(l.Value)
+	}
+}
+
+// Call f on each label; return a new Labels of those where f returns true.
+func (ls Labels) Filter(f func(l Label) bool) Labels {
+	var ret Labels
+	ret.lbls = make([]Label, 0, len(ls.lbls))
+	for _, l := range ls.lbls {
+		ok := f(l)
+		if ok {
+			ret.lbls = append(ret.lbls, l)
+		}
+	}
+	return ret
+}
+
+// Merge externalLabels into ls. If ls contains
+// a label in externalLabels, the value in ls wins.
+func (ls Labels) Merge(externalLabels Labels) Labels {
+	i, j, result := 0, 0, make([]Label, 0, ls.Len()+externalLabels.Len())
+	for i < len(ls.lbls) && j < len(externalLabels.lbls) {
+		if ls.lbls[i].Name < externalLabels.lbls[j].Name {
+			result = append(result, Label{
+				Name:  ls.lbls[i].Name,
+				Value: ls.lbls[i].Value,
+			})
+			i++
+		} else if ls.lbls[i].Name > externalLabels.lbls[j].Name {
+			result = append(result, externalLabels.lbls[j])
+			j++
+		} else {
+			result = append(result, Label{
+				Name:  ls.lbls[i].Name,
+				Value: ls.lbls[i].Value,
+			})
+			i++
+			j++
+		}
+	}
+
+	return Labels{lbls: append(append(result, ls.lbls[i:]...), externalLabels.lbls[j:]...)}
+}
+
 // Builder allows modifying Labels.
 type Builder struct {
 	base Labels
