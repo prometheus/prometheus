@@ -11,9 +11,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+.PHONY: all
+all: check-examples-syntax
 
-include ../../Makefile.common
-
-build: prometheus-*.yml
-	@echo ">> testing example configurations"
+.PHONY: check-examples-syntax
+check-examples-syntax: prometheus-*.yml
+	@echo ">> check example configurations syntax"
 	@set -e; for file in $^; do ../../promtool check config --syntax-only $$file; done
