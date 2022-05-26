@@ -333,6 +333,11 @@ func (ls Labels) Map() map[string]string {
 	return m
 }
 
+// EmptyLabels returns n empty Labels value, for convenience.
+func EmptyLabels() Labels {
+	return Labels{}
+}
+
 // New returns a sorted Labels from the given labels.
 // The caller has to guarantee that all label names are unique.
 func New(ls ...Label) Labels {
