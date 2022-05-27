@@ -644,10 +644,16 @@ func TestEndpointSliceDiscoveryWithServiceUpdate(t *testing.T) {
 				Targets: []model.LabelSet{
 					{
 						"__address__": "1.2.3.4:9000",
-						"__meta_kubernetes_endpointslice_endpoint_hostname": "testendpoint1",
-						"__meta_kubernetes_endpointslice_port":              "9000",
-						"__meta_kubernetes_endpointslice_port_name":         "testport",
-						"__meta_kubernetes_endpointslice_port_protocol":     "TCP",
+						"__meta_kubernetes_endpointslice_address_target_kind":                "",
+						"__meta_kubernetes_endpointslice_address_target_name":                "",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_ready":          "true",
+						"__meta_kubernetes_endpointslice_endpoint_hostname":                  "testendpoint1",
+						"__meta_kubernetes_endpointslice_endpoint_topology_present_topology": "true",
+						"__meta_kubernetes_endpointslice_endpoint_topology_topology":         "value",
+						"__meta_kubernetes_endpointslice_port":                               "9000",
+						"__meta_kubernetes_endpointslice_port_app_protocol":                  "http",
+						"__meta_kubernetes_endpointslice_port_name":                          "testport",
+						"__meta_kubernetes_endpointslice_port_protocol":                      "TCP",
 					},
 					{
 						"__address__": "2.3.4.5:9000",
@@ -655,6 +661,7 @@ func TestEndpointSliceDiscoveryWithServiceUpdate(t *testing.T) {
 						"__meta_kubernetes_endpointslice_port":                      "9000",
 						"__meta_kubernetes_endpointslice_port_name":                 "testport",
 						"__meta_kubernetes_endpointslice_port_protocol":             "TCP",
+						"__meta_kubernetes_endpointslice_port_app_protocol":         "http",
 					},
 					{
 						"__address__": "3.4.5.6:9000",
@@ -662,6 +669,7 @@ func TestEndpointSliceDiscoveryWithServiceUpdate(t *testing.T) {
 						"__meta_kubernetes_endpointslice_port":                      "9000",
 						"__meta_kubernetes_endpointslice_port_name":                 "testport",
 						"__meta_kubernetes_endpointslice_port_protocol":             "TCP",
+						"__meta_kubernetes_endpointslice_port_app_protocol":         "http",
 					},
 				},
 				Labels: model.LabelSet{
@@ -755,10 +763,16 @@ func TestEndpointSliceDiscoveryNamespaces(t *testing.T) {
 				Targets: []model.LabelSet{
 					{
 						"__address__": "1.2.3.4:9000",
-						"__meta_kubernetes_endpointslice_endpoint_hostname": "testendpoint1",
-						"__meta_kubernetes_endpointslice_port":              "9000",
-						"__meta_kubernetes_endpointslice_port_name":         "testport",
-						"__meta_kubernetes_endpointslice_port_protocol":     "TCP",
+						"__meta_kubernetes_endpointslice_address_target_kind":                "",
+						"__meta_kubernetes_endpointslice_address_target_name":                "",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_ready":          "true",
+						"__meta_kubernetes_endpointslice_endpoint_hostname":                  "testendpoint1",
+						"__meta_kubernetes_endpointslice_endpoint_topology_present_topology": "true",
+						"__meta_kubernetes_endpointslice_endpoint_topology_topology":         "value",
+						"__meta_kubernetes_endpointslice_port":                               "9000",
+						"__meta_kubernetes_endpointslice_port_app_protocol":                  "http",
+						"__meta_kubernetes_endpointslice_port_name":                          "testport",
+						"__meta_kubernetes_endpointslice_port_protocol":                      "TCP",
 					},
 					{
 						"__address__": "2.3.4.5:9000",
@@ -766,6 +780,7 @@ func TestEndpointSliceDiscoveryNamespaces(t *testing.T) {
 						"__meta_kubernetes_endpointslice_port":                      "9000",
 						"__meta_kubernetes_endpointslice_port_name":                 "testport",
 						"__meta_kubernetes_endpointslice_port_protocol":             "TCP",
+						"__meta_kubernetes_endpointslice_port_app_protocol":         "http",
 					},
 					{
 						"__address__": "3.4.5.6:9000",
@@ -773,6 +788,7 @@ func TestEndpointSliceDiscoveryNamespaces(t *testing.T) {
 						"__meta_kubernetes_endpointslice_port":                      "9000",
 						"__meta_kubernetes_endpointslice_port_name":                 "testport",
 						"__meta_kubernetes_endpointslice_port_protocol":             "TCP",
+						"__meta_kubernetes_endpointslice_port_app_protocol":         "http",
 					},
 				},
 				Labels: model.LabelSet{
@@ -871,10 +887,16 @@ func TestEndpointSliceDiscoveryOwnNamespace(t *testing.T) {
 				Targets: []model.LabelSet{
 					{
 						"__address__": "1.2.3.4:9000",
-						"__meta_kubernetes_endpointslice_endpoint_hostname": "testendpoint1",
-						"__meta_kubernetes_endpointslice_port":              "9000",
-						"__meta_kubernetes_endpointslice_port_name":         "testport",
-						"__meta_kubernetes_endpointslice_port_protocol":     "TCP",
+						"__meta_kubernetes_endpointslice_address_target_kind":                "",
+						"__meta_kubernetes_endpointslice_address_target_name":                "",
+						"__meta_kubernetes_endpointslice_endpoint_conditions_ready":          "true",
+						"__meta_kubernetes_endpointslice_endpoint_hostname":                  "testendpoint1",
+						"__meta_kubernetes_endpointslice_endpoint_topology_present_topology": "true",
+						"__meta_kubernetes_endpointslice_endpoint_topology_topology":         "value",
+						"__meta_kubernetes_endpointslice_port":                               "9000",
+						"__meta_kubernetes_endpointslice_port_app_protocol":                  "http",
+						"__meta_kubernetes_endpointslice_port_name":                          "testport",
+						"__meta_kubernetes_endpointslice_port_protocol":                      "TCP",
 					},
 					{
 						"__address__": "2.3.4.5:9000",
@@ -882,6 +904,7 @@ func TestEndpointSliceDiscoveryOwnNamespace(t *testing.T) {
 						"__meta_kubernetes_endpointslice_port":                      "9000",
 						"__meta_kubernetes_endpointslice_port_name":                 "testport",
 						"__meta_kubernetes_endpointslice_port_protocol":             "TCP",
+						"__meta_kubernetes_endpointslice_port_app_protocol":         "http",
 					},
 					{
 						"__address__": "3.4.5.6:9000",
@@ -889,6 +912,7 @@ func TestEndpointSliceDiscoveryOwnNamespace(t *testing.T) {
 						"__meta_kubernetes_endpointslice_port":                      "9000",
 						"__meta_kubernetes_endpointslice_port_name":                 "testport",
 						"__meta_kubernetes_endpointslice_port_protocol":             "TCP",
+						"__meta_kubernetes_endpointslice_port_app_protocol":         "http",
 					},
 				},
 				Labels: model.LabelSet{
