@@ -146,6 +146,7 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 	sort.Sort(byName(vec))
 
 	externalLabels := h.config.GlobalConfig.ExternalLabels.Map()
+	internalLabels := h.config.GlobalConfig.InternalLabels
 	if _, ok := externalLabels[model.InstanceLabel]; !ok {
 		externalLabels[model.InstanceLabel] = ""
 	}
@@ -195,10 +196,18 @@ func (h *Handler) federation(w http.ResponseWriter, req *http.Request) {
 				lastMetricName = l.Value
 				continue
 			}
-			protMetric.Label = append(protMetric.Label, &dto.LabelPair{
-				Name:  proto.String(l.Name),
-				Value: proto.String(l.Value),
-			})
+			shouldWriteLabel := true
+			for _, ln := range internalLabels {
+				if ln.MatchString(l.Name) {
+					shouldWriteLabel = false
+				}
+			}
+			if shouldWriteLabel {
+				protMetric.Label = append(protMetric.Label, &dto.LabelPair{
+					Name:  proto.String(l.Name),
+					Value: proto.String(l.Value),
+				})
+			}
 			if _, ok := externalLabels[l.Name]; ok {
 				globalUsed[l.Name] = struct{}{}
 			}

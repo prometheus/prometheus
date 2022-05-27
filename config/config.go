@@ -344,6 +344,8 @@ type GlobalConfig struct {
 	QueryLogFile string `yaml:"query_log_file,omitempty"`
 	// The labels to add to any timeseries that this Prometheus instance scrapes.
 	ExternalLabels labels.Labels `yaml:"external_labels,omitempty"`
+	// The labels to remove for any external systems: remote_write, federation, alerting
+	InternalLabels []relabel.Regexp `yaml:"internal_labels,omitempty"`
 }
 
 // SetDirectory joins any relative file paths with dir.

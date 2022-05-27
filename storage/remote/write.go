@@ -16,6 +16,7 @@ package remote
 import (
 	"context"
 	"fmt"
+	"github.com/prometheus/prometheus/model/relabel"
 	"math"
 	"sync"
 	"time"
@@ -55,6 +56,7 @@ type WriteStorage struct {
 	watcherMetrics    *wal.WatcherMetrics
 	liveReaderMetrics *wal.LiveReaderMetrics
 	externalLabels    labels.Labels
+	internalLabels    []relabel.Regexp
 	walDir            string
 	queues            map[string]*QueueManager
 	samplesIn         *ewmaRate
@@ -113,6 +115,22 @@ func (rws *WriteStorage) run() {
 	}
 }
 
+// finalWriteRelabelConfig returns the write_relabel_config from the config
+// and append a label drop for all internal label
+func finalWriteRelabelConfig(conf *config.Config, rwConf *config.RemoteWriteConfig) []*relabel.Config {
+	rc := make([]*relabel.Config, len(rwConf.WriteRelabelConfigs), len(rwConf.WriteRelabelConfigs)+len(conf.GlobalConfig.InternalLabels))
+	copy(rc, rwConf.WriteRelabelConfigs)
+
+	for _, label := range conf.GlobalConfig.InternalLabels {
+		rc = append(rc, &relabel.Config{
+			SourceLabels: relabel.DefaultRelabelConfig.SourceLabels,
+			Regex:        label,
+			Action:       relabel.LabelDrop,
+		})
+	}
+	return rc
+}
+
 // ApplyConfig updates the state as the new config requires.
 // Only stop & create queues which have changes.
 func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
@@ -123,6 +141,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 	// external labels change.
 	externalLabelUnchanged := labels.Equal(conf.GlobalConfig.ExternalLabels, rws.externalLabels)
 	rws.externalLabels = conf.GlobalConfig.ExternalLabels
+	rws.internalLabels = conf.GlobalConfig.InternalLabels
 
 	newQueues := make(map[string]*QueueManager)
 	newHashes := []string{}
@@ -180,7 +199,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			rwConf.QueueConfig,
 			rwConf.MetadataConfig,
 			conf.GlobalConfig.ExternalLabels,
-			rwConf.WriteRelabelConfigs,
+			finalWriteRelabelConfig(conf, rwConf),
 			c,
 			rws.flushDeadline,
 			rws.interner,
