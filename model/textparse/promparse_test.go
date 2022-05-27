@@ -17,12 +17,13 @@ import (
 	"bytes"
 	"compress/gzip"
 	"fmt"
-	"github.com/prometheus/common/expfmt"
-	"github.com/prometheus/common/model"
-	"github.com/stretchr/testify/require"
 	"io"
 	"os"
 	"testing"
+
+	"github.com/prometheus/common/expfmt"
+	"github.com/prometheus/common/model"
+	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"
 )
