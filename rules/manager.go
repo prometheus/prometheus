@@ -407,7 +407,14 @@ func (g *Group) run(ctx context.Context) {
 		case <-g.done:
 			return
 		case <-tick.C:
-			missed := (time.Since(evalTimestamp) / g.interval) - 1
+			delta := time.Since(evalTimestamp)
+			if delta < g.interval {
+				delta = delta.Round(g.interval)
+				if delta >= g.interval {
+					evalTimestamp = evalTimestamp.Add(-time.Millisecond)
+				}
+			}
+			missed := (delta / g.interval) - 1
 			if missed > 0 {
 				g.metrics.IterationsMissed.WithLabelValues(GroupKey(g.file, g.name)).Add(float64(missed))
 				g.metrics.IterationsScheduled.WithLabelValues(GroupKey(g.file, g.name)).Add(float64(missed))
@@ -429,7 +436,14 @@ func (g *Group) run(ctx context.Context) {
 			case <-g.done:
 				return
 			case <-tick.C:
-				missed := (time.Since(evalTimestamp) / g.interval) - 1
+				delta := time.Since(evalTimestamp)
+				if delta < g.interval {
+					delta = delta.Round(g.interval)
+					if delta >= g.interval {
+						evalTimestamp = evalTimestamp.Add(-time.Millisecond)
+					}
+				}
+				missed := (delta / g.interval) - 1
 				if missed > 0 {
 					g.metrics.IterationsMissed.WithLabelValues(GroupKey(g.file, g.name)).Add(float64(missed))
 					g.metrics.IterationsScheduled.WithLabelValues(GroupKey(g.file, g.name)).Add(float64(missed))
