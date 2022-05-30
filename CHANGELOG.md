@@ -2,8 +2,6 @@
 
 ## 2.36.0 / 2022-05-30
 
-This Prometheus release uses go 1.18 and needs at least go1.17 going forward.
-
 * [FEATURE] Add lowercase and uppercase relabel action. #10641
 * [FEATURE] SD: Add IONOS Cloud integration. #10514
 * [FEATURE] SD: Add Vultr integration. #10714
