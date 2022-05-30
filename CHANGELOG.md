@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.36.0-rc0 / 2022-05-25
+## 2.36.0 / 2022-05-30
 
 This Prometheus release uses go 1.18 and needs at least go1.17 going forward.
 
