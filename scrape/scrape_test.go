@@ -117,22 +117,12 @@ func TestDiscoveredLabelsUpdate(t *testing.T) {
 	}
 	sp.activeTargets = make(map[uint64]*Target)
 	t1 := &Target{
-		discoveredLabels: labels.Labels{
-			labels.Label{
-				Name:  "label",
-				Value: "name",
-			},
-		},
+		discoveredLabels: labels.FromStrings("label", "name"),
 	}
 	sp.activeTargets[t1.hash()] = t1
 
 	t2 := &Target{
-		discoveredLabels: labels.Labels{
-			labels.Label{
-				Name:  "labelNew",
-				Value: "nameNew",
-			},
-		},
+		discoveredLabels: labels.FromStrings("labelNew", "nameNew"),
 	}
 	sp.sync([]*Target{t2})
 
@@ -1602,7 +1592,7 @@ func TestScrapeLoopAppendSampleLimit(t *testing.T) {
 		nil, nil, nil,
 		func(l labels.Labels) labels.Labels {
 			if l.Has("deleteme") {
-				return nil
+				return labels.EmptyLabels()
 			}
 			return l
 		},
@@ -2545,7 +2535,7 @@ func TestScrapeLoopDiscardUnnamedMetrics(t *testing.T) {
 		nil, nil,
 		func(l labels.Labels) labels.Labels {
 			if l.Has("drop") {
-				return labels.Labels{}
+				return labels.FromStrings("no", "name") // This label set will trigger an error.
 			}
 			return l
 		},
@@ -2657,20 +2647,7 @@ func TestReuseScrapeCache(t *testing.T) {
 		}
 		sp, _ = newScrapePool(cfg, app, 0, nil, &Options{})
 		t1    = &Target{
-			discoveredLabels: labels.Labels{
-				labels.Label{
-					Name:  "labelNew",
-					Value: "nameNew",
-				},
-				labels.Label{
-					Name:  "labelNew1",
-					Value: "nameNew1",
-				},
-				labels.Label{
-					Name:  "labelNew2",
-					Value: "nameNew2",
-				},
-			},
+			discoveredLabels: labels.FromStrings("labelNew", "nameNew", "labelNew1", "nameNew1", "labelNew2", "nameNew2"),
 		}
 		proxyURL, _ = url.Parse("http://localhost:2128")
 	)
@@ -2871,12 +2848,7 @@ func TestReuseCacheRace(t *testing.T) {
 		}
 		sp, _ = newScrapePool(cfg, app, 0, nil, &Options{})
 		t1    = &Target{
-			discoveredLabels: labels.Labels{
-				labels.Label{
-					Name:  "labelNew",
-					Value: "nameNew",
-				},
-			},
+			discoveredLabels: labels.FromStrings("labelNew", "nameNew"),
 		}
 	)
 	defer sp.stop()
