@@ -1561,11 +1561,11 @@ following meta labels are available on all targets during
 * `__meta_ionos_server_cpu_family`: the CPU family of the server
   to
 * `__meta_ionos_server_id`: the ID of the server
-* `__meta_ionos_server_ip`: comma seperated list of all IPs assigned to the
+* `__meta_ionos_server_ip`: comma separated list of all IPs assigned to the
   server
 * `__meta_ionos_server_lifecycle`: the lifecycle state of the server resource
 * `__meta_ionos_server_name`: the name of the server
-* `__meta_ionos_server_nic_ip_<nic_name>`: comma seperated list of IPs, grouped
+* `__meta_ionos_server_nic_ip_<nic_name>`: comma separated list of IPs, grouped
   by the name of each NIC attached to the server
 * `__meta_ionos_server_servers_id`: the ID of the servers the server belongs to
 * `__meta_ionos_server_state`: the execution state of the server
