@@ -15,13 +15,13 @@ package httputil
 
 import (
 	"bytes"
-	"compress/gzip"
-	"compress/zlib"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	"github.com/klauspost/compress/gzip"
+	"github.com/klauspost/compress/zlib"
 	"github.com/stretchr/testify/require"
 )
 

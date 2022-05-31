@@ -15,15 +15,16 @@ package textparse
 
 import (
 	"bytes"
-	"compress/gzip"
 	"errors"
 	"io"
 	"os"
 	"testing"
 
+	"github.com/klauspost/compress/gzip"
+	"github.com/stretchr/testify/require"
+
 	"github.com/prometheus/common/expfmt"
 	"github.com/prometheus/common/model"
-	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/util/testutil"
