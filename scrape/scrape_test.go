@@ -25,6 +25,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -3516,5 +3517,78 @@ func TestPickSchema(t *testing.T) {
 	for _, tc := range tcs {
 		schema := pickSchema(tc.factor)
 		require.Equal(t, tc.schema, schema)
+	}
+}
+
+func BenchmarkTargetScraperGzip(b *testing.B) {
+	scenarios := []struct {
+		metricsCount int
+		body         []byte
+	}{
+		{metricsCount: 1},
+		{metricsCount: 100},
+		{metricsCount: 1000},
+		{metricsCount: 10000},
+		{metricsCount: 100000},
+	}
+
+	for i := 0; i < len(scenarios); i++ {
+		var buf bytes.Buffer
+		var name string
+		gw := gzip.NewWriter(&buf)
+		for j := 0; j < scenarios[i].metricsCount; j++ {
+			name = fmt.Sprintf("go_memstats_alloc_bytes_total_%d", j)
+			fmt.Fprintf(gw, "# HELP %s Total number of bytes allocated, even if freed.\n", name)
+			fmt.Fprintf(gw, "# TYPE %s counter\n", name)
+			fmt.Fprintf(gw, "%s %d\n", name, i*j)
+		}
+		gw.Close()
+		scenarios[i].body = buf.Bytes()
+	}
+
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", `text/plain; version=0.0.4`)
+		w.Header().Set("Content-Encoding", "gzip")
+		for _, scenario := range scenarios {
+			if strconv.Itoa(scenario.metricsCount) == r.URL.Query()["count"][0] {
+				w.Write(scenario.body)
+				return
+			}
+		}
+		w.WriteHeader(http.StatusBadRequest)
+	})
+
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	serverURL, err := url.Parse(server.URL)
+	if err != nil {
+		panic(err)
+	}
+
+	client, err := config_util.NewClientFromConfig(config_util.DefaultHTTPClientConfig, "test_job")
+	if err != nil {
+		panic(err)
+	}
+
+	for _, scenario := range scenarios {
+		b.Run(fmt.Sprintf("metrics=%d", scenario.metricsCount), func(b *testing.B) {
+			ts := &targetScraper{
+				Target: &Target{
+					labels: labels.FromStrings(
+						model.SchemeLabel, serverURL.Scheme,
+						model.AddressLabel, serverURL.Host,
+					),
+					params: url.Values{"count": []string{strconv.Itoa(scenario.metricsCount)}},
+				},
+				client:  client,
+				timeout: time.Second,
+			}
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				_, err = ts.scrape(context.Background())
+				require.NoError(b, err)
+			}
+		})
 	}
 }
