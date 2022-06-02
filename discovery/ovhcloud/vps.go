@@ -108,8 +108,12 @@ func getVpsList(client *ovh.Client) ([]string, error) {
 	return vpsListName, nil
 }
 
+func (d *vpsDiscovery) getService() string {
+	return "vps"
+}
+
 func (d *vpsDiscovery) getSource() string {
-	return "ovhcloud_vps"
+	return fmt.Sprintf("%s_%s", d.config.Name(), d.getService())
 }
 
 func (d *vpsDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {

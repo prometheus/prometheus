@@ -19,7 +19,6 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/h2non/gock.v1"
 	"gopkg.in/yaml.v2"
@@ -38,14 +37,15 @@ const (
 	mockURL = "https://localhost:1234"
 )
 
-func getMockConf() (SDConfig, error) {
+func getMockConf(service string) (SDConfig, error) {
 	confString := fmt.Sprintf(`
 endpoint: %s
 application_key: %s
 application_secret: %s
 consumer_key: %s
 refresh_interval: 1m
-`, mockURL, testApplicationKey, testApplicationSecret, testConsumerKey)
+service: %s
+`, mockURL, testApplicationKey, testApplicationSecret, testConsumerKey, service)
 
 	return getMockConfFromString(confString)
 }
@@ -85,139 +85,8 @@ func TestErrorCallAuthDetails(t *testing.T) {
 	errTest := errors.New("There is an error on get /auth/details")
 	initErrorMockAuthDetails(errTest)
 
-	_, err := getMockConf()
+	_, err := getMockConf("vps")
 	require.ErrorIs(t, err, errTest)
-	require.Equal(t, gock.IsDone(), true)
-}
-
-func TestOvhcloudRefresh(t *testing.T) {
-	defer gock.Off()
-
-	initMockAuthDetails(12345, map[string]string{"name": "test_name"})
-
-	modelV := Model{
-		Name:                "vps 2019 v1",
-		Disk:                40,
-		MaximumAdditionalIP: 1,
-		Memory:              2048,
-		Offer:               "VPS abc",
-		Version:             "2019v1",
-		Vcore:               1,
-	}
-
-	vps := Vps{
-		Model:       modelV,
-		Zone:        "zone",
-		Cluster:     "cluster_test",
-		DisplayName: "test_name",
-		Name:        "abc",
-		NetbootMode: "local",
-		State:       "running",
-		MemoryLimit: 2048,
-		OfferType:   "ssd",
-	}
-
-	vpsMap := map[string]VpsData{"abc": {Vps: vps, IPs: []string{"192.0.2.1", "2001:0db8:0000:0000:0000:0000:0000:0001"}}}
-	initMockVps(vpsMap)
-
-	dedicatedIPs := IPs{
-		IPV4: "192.0.2.2",
-		IPV6: "2001:0db8:0000:0000:0000:0000:0000:0001",
-	}
-	dedicatedServer := DedicatedServer{
-		State:           "test",
-		IPs:             dedicatedIPs,
-		CommercialRange: "Advance-1 Gen 2",
-		LinkSpeed:       123,
-		Rack:            "TESTRACK",
-		NoIntervention:  false,
-		Os:              "debian11_64",
-		SupportLevel:    "pro",
-		ServerID:        1234,
-		Reverse:         "abcde-rev",
-		Datacenter:      "gra3",
-		Name:            "abcde",
-	}
-
-	initMockDedicatedServer(map[string]DedicatedServerData{"abcde": {DedicatedServer: dedicatedServer, IPs: []string{"192.0.2.2", "2001:0db8:0000:0000:0000:0000:0000:0001"}}})
-
-	conf, err := getMockConf()
-	require.NoError(t, err)
-
-	//	conf.Endpoint = mockURL
-	logger := testutil.NewLogger(t)
-	d := newOvhCloudDiscovery(&conf, logger)
-
-	ctx := context.Background()
-	tgs, err := d.refresh(ctx)
-	require.NoError(t, err)
-
-	// 2 tgs, one for VPS and one for dedicatedServer
-	require.Equal(t, 2, len(tgs))
-
-	tgVps := tgs[0]
-	require.NotNil(t, tgVps)
-	require.NotNil(t, tgVps.Targets)
-	require.Equal(t, 1, len(tgVps.Targets))
-
-	for i, lbls := range []model.LabelSet{
-		{
-			"__address__":                             "192.0.2.1",
-			"__meta_ovhcloud_vps_ipv4":                "192.0.2.1",
-			"__meta_ovhcloud_vps_ipv6":                "2001:0db8:0000:0000:0000:0000:0000:0001",
-			"__meta_ovhcloud_vps_cluster":             "cluster_test",
-			"__meta_ovhcloud_vps_datacenter":          "[]",
-			"__meta_ovhcloud_vps_disk":                "40",
-			"__meta_ovhcloud_vps_displayName":         "test_name",
-			"__meta_ovhcloud_vps_maximumAdditionalIp": "1",
-			"__meta_ovhcloud_vps_memory":              "2048",
-			"__meta_ovhcloud_vps_memoryLimit":         "2048",
-			"__meta_ovhcloud_vps_name":                "abc",
-			"__meta_ovhcloud_vps_model_name":          "vps 2019 v1",
-			"__meta_ovhcloud_vps_netbootMode":         "local",
-			"__meta_ovhcloud_vps_offer":               "VPS abc",
-			"__meta_ovhcloud_vps_offerType":           "ssd",
-			"__meta_ovhcloud_vps_state":               "running",
-			"__meta_ovhcloud_vps_vcore":               "1",
-			"__meta_ovhcloud_vps_version":             "2019v1",
-			"__meta_ovhcloud_vps_zone":                "zone",
-			"instance":                                "abc",
-		},
-	} {
-		t.Run(fmt.Sprintf("item %d", i), func(t *testing.T) {
-			require.Equal(t, lbls, tgVps.Targets[i])
-		})
-	}
-
-	tgDedicatedServer := tgs[1]
-	require.NotNil(t, tgDedicatedServer)
-	require.NotNil(t, tgDedicatedServer.Targets)
-	require.Equal(t, 1, len(tgDedicatedServer.Targets))
-
-	for i, lbls := range []model.LabelSet{
-		{
-			"__address__": "192.0.2.2",
-			"__meta_ovhcloud_dedicatedServer_commercialRange": "Advance-1 Gen 2",
-			"__meta_ovhcloud_dedicatedServer_datacenter":      "gra3",
-			"__meta_ovhcloud_dedicatedServer_ipv4":            "192.0.2.2",
-			"__meta_ovhcloud_dedicatedServer_ipv6":            "2001:0db8:0000:0000:0000:0000:0000:0001",
-			"__meta_ovhcloud_dedicatedServer_linkSpeed":       "123",
-			"__meta_ovhcloud_dedicatedServer_name":            "abcde",
-			"__meta_ovhcloud_dedicatedServer_noIntervention":  "false",
-			"__meta_ovhcloud_dedicatedServer_os":              "debian11_64",
-			"__meta_ovhcloud_dedicatedServer_rack":            "TESTRACK",
-			"__meta_ovhcloud_dedicatedServer_reverse":         "abcde-rev",
-			"__meta_ovhcloud_dedicatedServer_serverId":        "1234",
-			"__meta_ovhcloud_dedicatedServer_state":           "test",
-			"__meta_ovhcloud_dedicatedServer_supportLevel":    "pro",
-			"instance": "abcde",
-		},
-	} {
-		t.Run(fmt.Sprintf("item %d", i), func(t *testing.T) {
-			require.Equal(t, lbls, tgDedicatedServer.Targets[i])
-		})
-	}
-	// Verify that we don't have pending mocks
 	require.Equal(t, gock.IsDone(), true)
 }
 
@@ -226,35 +95,20 @@ func TestOvhcloudRefreshFailedOnDedicatedServer(t *testing.T) {
 
 	initMockAuthDetails(12345, map[string]string{"name": "test_name"})
 
-	vps := Vps{}
-
-	vpsMap := map[string]VpsData{"abc": {Vps: vps, IPs: []string{"192.0.2.1", "2001:0db8:0000:0000:0000:0000:0000:0001"}}}
-	initMockVps(vpsMap)
-
 	errTest := errors.New("error on get dedicated server list")
 	initMockErrorDedicatedServerList(errTest)
 
-	conf, err := getMockConf()
+	conf, err := getMockConf("dedicated_server")
 	require.NoError(t, err)
 
 	//	conf.Endpoint = mockURL
 	logger := testutil.NewLogger(t)
-	d := newOvhCloudDiscovery(&conf, logger)
-
-	ctx := context.Background()
-	tgs, err := d.refresh(ctx)
+	d, err := newRefresher(&conf, logger)
 	require.NoError(t, err)
 
-	// 1 tgs, for VPS only because error on dedicatedServer
-	require.Equal(t, 1, len(tgs))
-
-	tgVps := tgs[0]
-	require.NotNil(t, tgVps)
-	require.NotNil(t, tgVps.Targets)
-	require.Equal(t, 1, len(tgVps.Targets))
-
-	// Verify that we don't have pending mocks
-	require.Equal(t, gock.IsDone(), true)
+	ctx := context.Background()
+	_, err = d.refresh(ctx)
+	require.ErrorContains(t, err, "error on get dedicated server list")
 }
 
 func TestOvhcloudMissingAuthArguments(t *testing.T) {
@@ -285,7 +139,7 @@ refresh_interval: 30
 
 func TestOvhcloudAllArgumentsOk(t *testing.T) {
 	initMockAuthDetails(132456, map[string]string{"name": "test_name"})
-	_, err := getMockConf()
+	_, err := getMockConf("vps")
 
 	require.NoError(t, err)
 
@@ -293,31 +147,28 @@ func TestOvhcloudAllArgumentsOk(t *testing.T) {
 	require.Equal(t, gock.IsDone(), true)
 }
 
-func TestDisabledDedicatedServer(t *testing.T) {
-	defer gock.Off()
-
+func TestBadService(t *testing.T) {
 	initMockAuthDetails(1235234, map[string]string{"name": "test_name"})
+	_, err := getMockConf("test")
+	require.ErrorContains(t, err, "Error:Field validation for 'Service' failed on the 'oneof' tag")
+}
+
+func TestVps(t *testing.T) {
+	defer gock.Off()
 
 	vps := Vps{}
 
 	vpsMap := map[string]VpsData{"abc": {Vps: vps, IPs: []string{"192.0.2.1", "2001:0db8:0000:0000:0000:0000:0000:0001"}}}
 	initMockVps(vpsMap)
 
-	confString := fmt.Sprintf(`
-endpoint: %s
-application_key: %s
-application_secret: %s
-consumer_key: %s
-refresh_interval: 1m
-sources_to_disable: [ovhcloud_dedicated_server]
-`, mockURL, testApplicationKey, testApplicationSecret, testConsumerKey)
+	conf, err := getMockConf("vps")
 
-	conf, err := getMockConfFromString(confString)
 	require.NoError(t, err)
 
 	//  conf.Endpoint = mockURL
 	logger := testutil.NewLogger(t)
-	d := newOvhCloudDiscovery(&conf, logger)
+	d, err := newRefresher(&conf, logger)
+	require.NoError(t, err)
 
 	ctx := context.Background()
 	tgs, err := d.refresh(ctx)
@@ -334,7 +185,7 @@ sources_to_disable: [ovhcloud_dedicated_server]
 	require.Equal(t, gock.IsDone(), true)
 }
 
-func TestDisabledVps(t *testing.T) {
+func TestDedicatedServer(t *testing.T) {
 	defer gock.Off()
 
 	initMockAuthDetails(12352354, map[string]string{"name": "test_name"})
@@ -344,22 +195,13 @@ func TestDisabledVps(t *testing.T) {
 	dedicatedServerMap := map[string]DedicatedServerData{"abc": {DedicatedServer: dedicatedServer, IPs: []string{"192.0.2.2"}}}
 	initMockDedicatedServer(dedicatedServerMap)
 
-	confString := fmt.Sprintf(`
-endpoint: %s
-application_key: %s
-application_secret: %s
-consumer_key: %s
-refresh_interval: 1m
-sources_to_disable: [ovhcloud_vps]
-`, mockURL, testApplicationKey, testApplicationSecret, testConsumerKey)
-
-	conf, err := getMockConfFromString(confString)
+	conf, err := getMockConf("dedicated_server")
 	require.NoError(t, err)
 
 	//  conf.Endpoint = mockURL
 	logger := testutil.NewLogger(t)
-	d := newOvhCloudDiscovery(&conf, logger)
-
+	d, err := newRefresher(&conf, logger)
+	require.NoError(t, err)
 	ctx := context.Background()
 	tgs, err := d.refresh(ctx)
 	require.NoError(t, err)
@@ -439,7 +281,7 @@ func TestParseIPv4MaskOk(t *testing.T) {
 }
 
 func TestDiscoverer(t *testing.T) {
-	conf, _ := getMockConf()
+	conf, _ := getMockConf("vps")
 	logger := testutil.NewLogger(t)
 	_, err := conf.NewDiscoverer(discovery.DiscovererOptions{
 		Logger: logger,

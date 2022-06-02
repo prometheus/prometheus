@@ -92,8 +92,12 @@ func getDedicatedServerDetails(client *ovh.Client, serverName string) (*Dedicate
 	return &dedicatedServerDetails, nil
 }
 
+func (d *dedicatedServerDiscovery) getService() string {
+	return "dedicated_server"
+}
+
 func (d *dedicatedServerDiscovery) getSource() string {
-	return "ovhcloud_dedicated_server"
+	return fmt.Sprintf("%s_%s", d.config.Name(), d.getService())
 }
 
 func (d *dedicatedServerDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {

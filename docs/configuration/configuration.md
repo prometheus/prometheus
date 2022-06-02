@@ -1222,7 +1222,8 @@ application_secret: <string>
 consumer_key: <string>
 # API endpoint. https://github.com/ovh/go-ovh#supported-apis
 endpoint: <string>
-
+# Service of the targets to retrieve. Must be `vps` or `dedicated_server`.
+service: <string>
 # Refresh interval to re-read the resources list.
 refresh_interval: <duration>
 ```

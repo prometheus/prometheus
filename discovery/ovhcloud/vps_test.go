@@ -91,7 +91,7 @@ func TestVpsErrorOnList(t *testing.T) {
 	errTest := errors.New("error on get list")
 	initMockErrorVpsList(errTest)
 
-	conf, err := getMockConf()
+	conf, err := getMockConf("vps")
 	require.NoError(t, err)
 
 	logger := testutil.NewLogger(t)
@@ -110,7 +110,7 @@ func TestVpsWithBadConf(t *testing.T) {
 
 	initMockAuthDetails(12345, map[string]string{"name": "test_name"})
 
-	conf, err := getMockConf()
+	conf, err := getMockConf("vps")
 	require.NoError(t, err)
 
 	conf.ApplicationKey = ""
@@ -156,7 +156,7 @@ func TestVpsErrorOnDetail(t *testing.T) {
 	vpsMap := map[string]VpsData{"abc": {Vps: vps, IPs: []string{"192.0.2.1", "2001:0db8:0000:0000:0000:0000:0000:0001"}}, "def": {Err: errTest}}
 	initMockVps(vpsMap)
 
-	conf, err := getMockConf()
+	conf, err := getMockConf("vps")
 	require.NoError(t, err)
 
 	logger := testutil.NewLogger(t)
@@ -210,7 +210,7 @@ func TestVpsErrorOnIps(t *testing.T) {
 	vpsMap := map[string]VpsData{"abc": {Vps: vps, IPs: []string{"192.0.2.1", "2001:0db8:0000:0000:0000:0000:0000:0001"}}, "def": {Vps: vps, IPsErr: errTest}}
 	initMockVps(vpsMap)
 
-	conf, err := getMockConf()
+	conf, err := getMockConf("vps")
 	require.NoError(t, err)
 
 	logger := testutil.NewLogger(t)
@@ -263,7 +263,7 @@ func TestBadIpVps(t *testing.T) {
 	vpsMap := map[string]VpsData{"abc": {Vps: vps, IPs: []string{"192.0.2.1.6"}}}
 	initMockVps(vpsMap)
 
-	conf, err := getMockConf()
+	conf, err := getMockConf("vps")
 	require.NoError(t, err)
 
 	//  conf.Endpoint = mockURL
@@ -313,7 +313,7 @@ func TestVpsRefreshWithoutIPv4(t *testing.T) {
 	vpsMap := map[string]VpsData{"abc": {Vps: vps, IPs: []string{"2001:0db8:0000:0000:0000:0000:0000:0001"}}}
 	initMockVps(vpsMap)
 
-	conf, err := getMockConf()
+	conf, err := getMockConf("vps")
 	require.NoError(t, err)
 
 	//  conf.Endpoint = mockURL
@@ -394,7 +394,7 @@ func TestVpsRefresh(t *testing.T) {
 	vpsMap := map[string]VpsData{"abc": {Vps: vps, IPs: []string{"192.0.2.1", "2001:0db8:0000:0000:0000:0000:0000:0001"}}}
 	initMockVps(vpsMap)
 
-	conf, err := getMockConf()
+	conf, err := getMockConf("vps")
 	require.NoError(t, err)
 
 	//	conf.Endpoint = mockURL

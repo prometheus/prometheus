@@ -357,12 +357,13 @@ scrape_configs:
         consumer_key: testConsumerKey
         refresh_interval: 1m
         no_auth_test: true
-        sources_to_disable: [ovhcloud_dedicated_server]
+        service: vps
       - endpoint: ovh-eu
         application_key: testAppKey
         application_secret: testAppSecret
         consumer_key: testConsumerKey
         refresh_interval: 1m
+        service: dedicated_server
         no_auth_test: true
 
   - job_name: scaleway
