@@ -2,10 +2,19 @@
 scrape_configs:
   - job_name: 'ovhcloud'
     ovhcloud_sd_configs:
-      - application_key: XXX
+      - service: vps
+        endpoint: ovh-eu
+        application_key: XXX
         application_secret: XXX
         consumer_key: XXX
+        refresh_interval: 1m
+        ### only for tests to remove
+        no_auth_test: true
+      - service: dedicated_server
         endpoint: ovh-eu
+        application_key: XXX
+        application_secret: XXX
+        consumer_key: XXX
         refresh_interval: 1m
         ### only for tests to remove
         no_auth_test: true
