@@ -88,7 +88,7 @@ func TestDedicatedServerWithBadConf(t *testing.T) {
 
 	initMockAuthDetails(12345, map[string]string{"name": "test_name"})
 
-	conf, err := getMockConf()
+	conf, err := getMockConf("dedicated_server")
 	require.NoError(t, err)
 
 	conf.ApplicationKey = ""
@@ -110,7 +110,7 @@ func TestErrorDedicatedServerList(t *testing.T) {
 	errTest := errors.New("error on get dedicated server list")
 	initMockErrorDedicatedServerList(errTest)
 
-	conf, err := getMockConf()
+	conf, err := getMockConf("dedicated_server")
 	require.NoError(t, err)
 
 	//  conf.Endpoint = mockURL
@@ -135,7 +135,7 @@ func TestErrorDedicatedServerDetail(t *testing.T) {
 
 	errTest := errors.New("error on get dedicated server detail")
 	initMockDedicatedServer(map[string]DedicatedServerData{"abcde": {DedicatedServer: dedicatedServer, IPs: []string{"1.2.3.5", "2001:0db8:0000:0000:0000:0000:0000:0001"}}, "errorTest": {Err: errTest}})
-	conf, err := getMockConf()
+	conf, err := getMockConf("dedicated_server")
 	require.NoError(t, err)
 
 	//  conf.Endpoint = mockURL
@@ -167,7 +167,7 @@ func TestBadIpDedicatedServer(t *testing.T) {
 	}
 
 	initMockDedicatedServer(map[string]DedicatedServerData{"abcde": {DedicatedServer: dedicatedServer, IPs: []string{"1.2.3.5.6"}}})
-	conf, err := getMockConf()
+	conf, err := getMockConf("dedicated_server")
 	require.NoError(t, err)
 
 	//  conf.Endpoint = mockURL
@@ -205,7 +205,7 @@ func TestDedicatedServerCallWithoutIPv4(t *testing.T) {
 	}
 
 	initMockDedicatedServer(map[string]DedicatedServerData{"abcde": {DedicatedServer: dedicatedServer, IPs: []string{"2001:0db8:0000:0000:0000:0000:0000:0001"}}})
-	conf, err := getMockConf()
+	conf, err := getMockConf("dedicated_server")
 	require.NoError(t, err)
 
 	//  conf.Endpoint = mockURL
@@ -270,7 +270,7 @@ func TestDedicatedServerCall(t *testing.T) {
 	}
 
 	initMockDedicatedServer(map[string]DedicatedServerData{"abcde": {DedicatedServer: dedicatedServer, IPs: []string{"1.2.3.5", "2001:0db8:0000:0000:0000:0000:0000:0001"}}})
-	conf, err := getMockConf()
+	conf, err := getMockConf("dedicated_server")
 	require.NoError(t, err)
 
 	//  conf.Endpoint = mockURL
