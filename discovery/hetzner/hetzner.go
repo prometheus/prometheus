@@ -115,6 +115,11 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	return c.HTTPClientConfig.Validate()
 }
 
+// SetDirectory joins any relative file paths with dir.
+func (c *SDConfig) SetDirectory(dir string) {
+	c.HTTPClientConfig.SetDirectory(dir)
+}
+
 // Discovery periodically performs Hetzner requests. It implements
 // the Discoverer interface.
 type Discovery struct {
