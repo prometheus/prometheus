@@ -15,6 +15,7 @@ package gce
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -22,7 +23,6 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"golang.org/x/oauth2/google"
 	compute "google.golang.org/api/compute/v1"
@@ -132,11 +132,11 @@ func NewDiscovery(conf SDConfig, logger log.Logger) (*Discovery, error) {
 	var err error
 	d.client, err = google.DefaultClient(context.Background(), compute.ComputeReadonlyScope)
 	if err != nil {
-		return nil, errors.Wrap(err, "error setting up communication with GCE service")
+		return nil, fmt.Errorf("error setting up communication with GCE service: %w", err)
 	}
 	d.svc, err = compute.NewService(context.Background(), option.WithHTTPClient(d.client))
 	if err != nil {
-		return nil, errors.Wrap(err, "error setting up communication with GCE service")
+		return nil, fmt.Errorf("error setting up communication with GCE service: %w", err)
 	}
 	d.isvc = compute.NewInstancesService(d.svc)
 
@@ -221,7 +221,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		return nil
 	})
 	if err != nil {
-		return nil, errors.Wrap(err, "error retrieving refresh targets from gce")
+		return nil, fmt.Errorf("error retrieving refresh targets from gce: %w", err)
 	}
 	return []*targetgroup.Group{tg}, nil
 }
