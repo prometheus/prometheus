@@ -52,9 +52,10 @@ const (
 
 // DefaultSDConfig is the default Uyuni SD configuration.
 var DefaultSDConfig = SDConfig{
-	Entitlement:     "monitoring_entitled",
-	Separator:       ",",
-	RefreshInterval: model.Duration(1 * time.Minute),
+	Entitlement:      "monitoring_entitled",
+	Separator:        ",",
+	RefreshInterval:  model.Duration(1 * time.Minute),
+	HTTPClientConfig: config.DefaultHTTPClientConfig,
 }
 
 func init() {
@@ -115,6 +116,11 @@ func (*SDConfig) Name() string { return "uyuni" }
 // NewDiscoverer returns a Discoverer for the Config.
 func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Discoverer, error) {
 	return NewDiscovery(c, opts.Logger)
+}
+
+// SetDirectory joins any relative file paths with dir.
+func (c *SDConfig) SetDirectory(dir string) {
+	c.HTTPClientConfig.SetDirectory(dir)
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
