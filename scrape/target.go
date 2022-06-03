@@ -516,7 +516,7 @@ func buildTargetLabels(targetLSet, targetGroupLSet model.LabelSet, cfg *config.S
 		{Name: model.SchemeLabel, Value: cfg.Scheme},
 	}
 	for _, l := range scrapeLabels {
-		labelsMap[l.Name] = l.Value
+		set(labelsMap, l.Name, l.Value)
 	}
 	// Target group labels.
 	for ln, lv := range targetGroupLSet {
