@@ -3120,3 +3120,37 @@ func TestTargetScrapeIntervalAndTimeoutRelabel(t *testing.T) {
 	require.Equal(t, "3s", sp.ActiveTargets()[0].labels.Get(model.ScrapeIntervalLabel))
 	require.Equal(t, "750ms", sp.ActiveTargets()[0].labels.Get(model.ScrapeTimeoutLabel))
 }
+
+func BenchmarkScrapePool_Sync(b *testing.B) {
+	cfg := &config.ScrapeConfig{
+		JobName:        "K8sPod",
+		ScrapeTimeout:  model.Duration(5 * time.Second),
+		ScrapeInterval: model.Duration(5 * time.Second),
+		MetricsPath:    "/metrics",
+		RelabelConfigs: []*relabel.Config{
+			{
+				SourceLabels: []model.LabelName{"__meta_kubernetes_namespace"},
+				Separator:    ";",
+				Regex:        relabel.MustNewRegexp("(.*)"),
+				TargetLabel:  "namespace",
+				Replacement:  "$1",
+				Action:       relabel.Replace,
+			},
+		},
+	}
+	sp, _ := newScrapePool(cfg, &nopAppendable{}, 0, nil, false, false, nil)
+	var targets []model.LabelSet
+	for i := 0; i < 1000; i++ {
+		targets = append(targets, model.LabelSet{
+			"__meta_kubernetes_namespace": model.LabelValue(fmt.Sprintf("namespace_%d", i)),
+			"__meta_kubernetes_pod_name":  model.LabelValue(fmt.Sprintf("pod_name_%d", i)),
+		})
+	}
+	for n := 0; n < b.N; n++ {
+		sp.Sync([]*targetgroup.Group{{
+			Targets: targets,
+			Labels:  nil,
+			Source:  "K8s",
+		}})
+	}
+}
