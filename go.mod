@@ -27,12 +27,12 @@ require (
 	github.com/gophercloud/gophercloud v0.24.0
 	github.com/grafana/regexp v0.0.0-20220304095617-2e8d9baf4ac2
 	github.com/grpc-ecosystem/grpc-gateway v1.16.0
-	github.com/hashicorp/consul/api v1.12.0
+	github.com/hashicorp/consul/api v1.13.0
 	github.com/hetznercloud/hcloud-go v1.33.2
 	github.com/ionos-cloud/sdk-go/v6 v6.0.5851
 	github.com/json-iterator/go v1.1.12
 	github.com/kolo/xmlrpc v0.0.0-20201022064351-38db28db192b
-	github.com/linode/linodego v1.5.0
+	github.com/linode/linodego v1.6.0
 	github.com/miekg/dns v1.1.49
 	github.com/mwitkow/go-conntrack v0.0.0-20190716064945-2f068394615f
 	github.com/oklog/run v1.1.0
@@ -73,7 +73,7 @@ require (
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.1
 	k8s.io/api v0.24.0
-	k8s.io/apimachinery v0.24.0
+	k8s.io/apimachinery v0.24.1
 	k8s.io/client-go v0.24.0
 	k8s.io/klog v1.0.0
 	k8s.io/klog/v2 v2.60.1
