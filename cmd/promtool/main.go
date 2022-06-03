@@ -94,7 +94,7 @@ func main() {
 	checkConfigLint := checkConfigCmd.Flag(
 		"lint",
 		"Linting checks to apply to the rules specified in the config. Available options are: "+strings.Join(lintOptions, ", ")+". Use --lint=none to disable linting",
-	).Default(lintOptionDuplicateRules).String()
+	).Default(lintOptionNone).String()
 
 	checkWebConfigCmd := checkCmd.Command("web-config", "Check if the web config files are valid or not.")
 	webConfigFiles := checkWebConfigCmd.Arg(
