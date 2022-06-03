@@ -15,6 +15,7 @@ package azure
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -29,7 +30,6 @@ import (
 	"github.com/Azure/go-autorest/autorest/azure"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -109,7 +109,7 @@ func (c *SDConfig) NewDiscoverer(opts discovery.DiscovererOptions) (discovery.Di
 
 func validateAuthParam(param, name string) error {
 	if len(param) == 0 {
-		return errors.Errorf("azure SD configuration requires a %s", name)
+		return fmt.Errorf("azure SD configuration requires a %s", name)
 	}
 	return nil
 }
@@ -140,7 +140,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}
 
 	if c.AuthenticationMethod != authMethodOAuth && c.AuthenticationMethod != authMethodManagedIdentity {
-		return errors.Errorf("unknown authentication_type %q. Supported types are %q or %q", c.AuthenticationMethod, authMethodOAuth, authMethodManagedIdentity)
+		return fmt.Errorf("unknown authentication_type %q. Supported types are %q or %q", c.AuthenticationMethod, authMethodOAuth, authMethodManagedIdentity)
 	}
 
 	return nil
@@ -271,7 +271,7 @@ func newAzureResourceFromID(id string, logger log.Logger) (azureResource, error)
 	// /subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/providers/PROVIDER/TYPE/NAME/TYPE/NAME
 	s := strings.Split(id, "/")
 	if len(s) != 9 && len(s) != 11 {
-		err := errors.Errorf("invalid ID '%s'. Refusing to create azureResource", id)
+		err := fmt.Errorf("invalid ID '%s'. Refusing to create azureResource", id)
 		level.Error(logger).Log("err", err)
 		return azureResource{}, err
 	}
@@ -288,13 +288,13 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	client, err := createAzureClient(*d.cfg)
 	if err != nil {
 		failuresCount.Inc()
-		return nil, errors.Wrap(err, "could not create Azure client")
+		return nil, fmt.Errorf("could not create Azure client: %w", err)
 	}
 
 	machines, err := client.getVMs(ctx, d.cfg.ResourceGroup)
 	if err != nil {
 		failuresCount.Inc()
-		return nil, errors.Wrap(err, "could not get virtual machines")
+		return nil, fmt.Errorf("could not get virtual machines: %w", err)
 	}
 
 	level.Debug(d.logger).Log("msg", "Found virtual machines during Azure discovery.", "count", len(machines))
@@ -303,14 +303,14 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	scaleSets, err := client.getScaleSets(ctx, d.cfg.ResourceGroup)
 	if err != nil {
 		failuresCount.Inc()
-		return nil, errors.Wrap(err, "could not get virtual machine scale sets")
+		return nil, fmt.Errorf("could not get virtual machine scale sets: %w", err)
 	}
 
 	for _, scaleSet := range scaleSets {
 		scaleSetVms, err := client.getScaleSetVMs(ctx, scaleSet)
 		if err != nil {
 			failuresCount.Inc()
-			return nil, errors.Wrap(err, "could not get virtual machine scale set vms")
+			return nil, fmt.Errorf("could not get virtual machine scale set vms: %w", err)
 		}
 		machines = append(machines, scaleSetVms...)
 	}
@@ -396,7 +396,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 						}
 						// If we made it here, we don't have a private IP which should be impossible.
 						// Return an empty target and error to ensure an all or nothing situation.
-						err = errors.Errorf("unable to find a private IP for VM %s", vm.Name)
+						err = fmt.Errorf("unable to find a private IP for VM %s", vm.Name)
 						ch <- target{labelSet: nil, err: err}
 						return
 					}
@@ -412,7 +412,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	for tgt := range ch {
 		if tgt.err != nil {
 			failuresCount.Inc()
-			return nil, errors.Wrap(tgt.err, "unable to complete Azure service discovery")
+			return nil, fmt.Errorf("unable to complete Azure service discovery: %w", tgt.err)
 		}
 		if tgt.labelSet != nil {
 			tg.Targets = append(tg.Targets, tgt.labelSet)
@@ -432,7 +432,7 @@ func (client *azureClient) getVMs(ctx context.Context, resourceGroup string) ([]
 		result, err = client.vm.List(ctx, resourceGroup)
 	}
 	if err != nil {
-		return nil, errors.Wrap(err, "could not list virtual machines")
+		return nil, fmt.Errorf("could not list virtual machines: %w", err)
 	}
 	for result.NotDone() {
 		for _, vm := range result.Values() {
@@ -440,7 +440,7 @@ func (client *azureClient) getVMs(ctx context.Context, resourceGroup string) ([]
 		}
 		err = result.NextWithContext(ctx)
 		if err != nil {
-			return nil, errors.Wrap(err, "could not list virtual machines")
+			return nil, fmt.Errorf("could not list virtual machines: %w", err)
 		}
 	}
 
@@ -461,14 +461,14 @@ func (client *azureClient) getScaleSets(ctx context.Context, resourceGroup strin
 		var rtn compute.VirtualMachineScaleSetListWithLinkResultPage
 		rtn, err = client.vmss.ListAll(ctx)
 		if err != nil {
-			return nil, errors.Wrap(err, "could not list virtual machine scale sets")
+			return nil, fmt.Errorf("could not list virtual machine scale sets: %w", err)
 		}
 		result = &rtn
 	} else {
 		var rtn compute.VirtualMachineScaleSetListResultPage
 		rtn, err = client.vmss.List(ctx, resourceGroup)
 		if err != nil {
-			return nil, errors.Wrap(err, "could not list virtual machine scale sets")
+			return nil, fmt.Errorf("could not list virtual machine scale sets: %w", err)
 		}
 		result = &rtn
 	}
@@ -477,7 +477,7 @@ func (client *azureClient) getScaleSets(ctx context.Context, resourceGroup strin
 		scaleSets = append(scaleSets, result.Values()...)
 		err = result.NextWithContext(ctx)
 		if err != nil {
-			return nil, errors.Wrap(err, "could not list virtual machine scale sets")
+			return nil, fmt.Errorf("could not list virtual machine scale sets: %w", err)
 		}
 	}
 
@@ -489,12 +489,12 @@ func (client *azureClient) getScaleSetVMs(ctx context.Context, scaleSet compute.
 	// TODO do we really need to fetch the resourcegroup this way?
 	r, err := newAzureResourceFromID(*scaleSet.ID, nil)
 	if err != nil {
-		return nil, errors.Wrap(err, "could not parse scale set ID")
+		return nil, fmt.Errorf("could not parse scale set ID: %w", err)
 	}
 
 	result, err := client.vmssvm.List(ctx, r.ResourceGroup, *(scaleSet.Name), "", "", "")
 	if err != nil {
-		return nil, errors.Wrap(err, "could not list virtual machine scale set vms")
+		return nil, fmt.Errorf("could not list virtual machine scale set vms: %w", err)
 	}
 	for result.NotDone() {
 		for _, vm := range result.Values() {
@@ -502,7 +502,7 @@ func (client *azureClient) getScaleSetVMs(ctx context.Context, scaleSet compute.
 		}
 		err = result.NextWithContext(ctx)
 		if err != nil {
-			return nil, errors.Wrap(err, "could not list virtual machine scale set vms")
+			return nil, fmt.Errorf("could not list virtual machine scale set vms: %w", err)
 		}
 	}
 

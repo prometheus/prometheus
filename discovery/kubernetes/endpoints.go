@@ -15,12 +15,13 @@ package kubernetes
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net"
 	"strconv"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	apiv1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/tools/cache"
@@ -135,7 +136,7 @@ func (e *Endpoints) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	defer e.queue.ShutDown()
 
 	if !cache.WaitForCacheSync(ctx.Done(), e.endpointsInf.HasSynced, e.serviceInf.HasSynced, e.podInf.HasSynced) {
-		if ctx.Err() != context.Canceled {
+		if !errors.Is(ctx.Err(), context.Canceled) {
 			level.Error(e.logger).Log("msg", "endpoints informer unable to sync cache")
 		}
 		return
@@ -188,7 +189,7 @@ func convertToEndpoints(o interface{}) (*apiv1.Endpoints, error) {
 		return endpoints, nil
 	}
 
-	return nil, errors.Errorf("received unexpected object: %v", o)
+	return nil, fmt.Errorf("received unexpected object: %v", o)
 }
 
 func endpointsSource(ep *apiv1.Endpoints) string {
