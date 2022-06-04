@@ -452,7 +452,7 @@ func (b *Builder) Labels() Labels {
 
 	// In the general case, labels are removed, modified or moved
 	// rather than added.
-	res := make(Labels, 0, len(b.base)+len(b.add))
+	res := make(Labels, 0, len(b.base))
 Outer:
 	for _, l := range b.base {
 		for _, n := range b.del {
