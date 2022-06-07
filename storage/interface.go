@@ -254,12 +254,12 @@ type ExemplarAppender interface {
 
 // MetadataAppender provides an interface for associating metadata to stored series.
 type MetadataAppender interface {
-	// AppendMetadata appends a metadata for the given series and labels.
+	// AppendMetadata appends a metadata entry for the given series and labels.
 	// A series reference number is returned which can be used to modify the
 	// metadata of the given series in the same or later transactions.
 	// Returned reference numbers are ephemeral and may be rejected in calls
-	// to Append() at any point. Adding the sample via Append() returns a new
-	// reference number.
+	// to AppendMetadata() at any point. If the series does not exist, AppendMetadata
+	// returns an error.
 	// If the reference is 0 it must not be used for caching.
 	AppendMetadata(ref SeriesRef, l labels.Labels, m metadata.Metadata) (SeriesRef, error)
 }
