@@ -3138,19 +3138,40 @@ func BenchmarkScrapePool_Sync(b *testing.B) {
 			},
 		},
 	}
-	sp, _ := newScrapePool(cfg, &nopAppendable{}, 0, nil, false, false, nil)
-	var targets []model.LabelSet
-	for i := 0; i < 1000; i++ {
-		targets = append(targets, model.LabelSet{
-			"__meta_kubernetes_namespace": model.LabelValue(fmt.Sprintf("namespace_%d", i)),
-			"__meta_kubernetes_pod_name":  model.LabelValue(fmt.Sprintf("pod_name_%d", i)),
-		})
+	testSuite := []struct {
+		title           string
+		numberOfTargets int
+	}{
+		{
+			title:           "1k targets",
+			numberOfTargets: 1000,
+		},
+		{
+			title:           "10k",
+			numberOfTargets: 10 * 1000,
+		},
+		{
+			title:           "100k",
+			numberOfTargets: 100 * 1000,
+		},
 	}
-	for n := 0; n < b.N; n++ {
-		sp.Sync([]*targetgroup.Group{{
-			Targets: targets,
-			Labels:  nil,
-			Source:  "K8s",
-		}})
+	for _, test := range testSuite {
+		b.Run(test.title, func(b *testing.B) {
+			var targets []model.LabelSet
+			for i := 0; i < test.numberOfTargets; i++ {
+				targets = append(targets, model.LabelSet{
+					"__meta_kubernetes_namespace": model.LabelValue(fmt.Sprintf("namespace_%d", i)),
+					"__meta_kubernetes_pod_name":  model.LabelValue(fmt.Sprintf("pod_name_%d", i)),
+				})
+			}
+			sp, _ := newScrapePool(cfg, &nopAppendable{}, 0, nil, false, false, nil)
+			for n := 0; n < b.N; n++ {
+				sp.Sync([]*targetgroup.Group{{
+					Targets: targets,
+					Labels:  nil,
+					Source:  "K8s",
+				}})
+			}
+		})
 	}
 }
