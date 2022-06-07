@@ -392,7 +392,7 @@ func (a *headAppender) AppendMetadata(ref storage.SeriesRef, lset labels.Labels,
 		}
 	}
 	if s == nil {
-		return 0, fmt.Errorf("unknown HeadSeriesRef when trying to add metadata: %d", ref)
+		return 0, fmt.Errorf("unknown series when trying to add metadata with HeadSeriesRef: %d and labels: %s", ref, lset)
 	}
 
 	s.RLock()
@@ -406,9 +406,9 @@ func (a *headAppender) AppendMetadata(ref storage.SeriesRef, lset labels.Labels,
 
 		a.metadata = append(a.metadata, record.RefMetadata{
 			Ref:  s.ref,
-			Type: record.GetMetricType(s.meta.Type),
-			Unit: s.meta.Unit,
-			Help: s.meta.Help,
+			Type: record.GetMetricType(meta.Type),
+			Unit: meta.Unit,
+			Help: meta.Help,
 		})
 	}
 
