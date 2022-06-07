@@ -163,16 +163,32 @@ Loop:
 
 func requireTargetGroups(t *testing.T, expected, res map[string]*targetgroup.Group) {
 	t.Helper()
-	b1, err := json.Marshal(expected)
+	b1, err := marshalTargetGroups(expected)
 	if err != nil {
 		panic(err)
 	}
-	b2, err := json.Marshal(res)
+	b2, err := marshalTargetGroups(res)
 	if err != nil {
 		panic(err)
 	}
 
 	require.Equal(t, string(b1), string(b2))
+}
+
+// marshalTargetGroups serializes a set of target groups to JSON, ignoring the
+// custom MarshalJSON function defined on the targetgroup.Group struct.
+// marshalTargetGroups can be used for making exact comparisons between target groups
+// as it will serialize all target labels.
+func marshalTargetGroups(tgs map[string]*targetgroup.Group) ([]byte, error) {
+	type targetGroupAlias targetgroup.Group
+
+	aliases := make(map[string]*targetGroupAlias, len(tgs))
+	for k, v := range tgs {
+		tg := targetGroupAlias(*v)
+		aliases[k] = &tg
+	}
+
+	return json.Marshal(aliases)
 }
 
 type hasSynced interface {
