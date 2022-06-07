@@ -14,6 +14,7 @@
 package parser
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -196,18 +197,38 @@ func TestCallExprPretty(t *testing.T) {
 		in, out string
 	}{
 		{
-			in:  `rate(foo[1m])`,
-			out: `rate(foo[1m])`,
+			in: `rate(foo[1m])`,
+			out: `rate(
+  foo[1m]
+)`,
 		},
 		{
-			in:  `sum_over_time(foo[1m])`,
-			out: `sum_over_time(foo[1m])`,
+			in: `sum_over_time(foo[1m])`,
+			out: `sum_over_time(
+  foo[1m]
+)`,
+		},
+		{
+			in: `rate(long_vector_selector[10m:1m] @ start() offset 1m)`,
+			out: `rate(
+  long_vector_selector[10m:1m] @ start() offset 1m
+)`,
 		},
 		{
 			in: `histogram_quantile(0.9, rate(foo[1m]))`,
 			out: `histogram_quantile(
   0.9,
-  rate(foo[1m])
+  rate(
+    foo[1m]
+  )
+)`,
+		},
+		{
+			in: `max_over_time(rate(demo_api_request_duration_seconds_count[1m])[1m:] @ start() offset 1m)`,
+			out: `max_over_time(
+  rate(
+    demo_api_request_duration_seconds_count[1m]
+  )[1m:] @ start() offset 1m
 )`,
 		},
 		{
@@ -241,6 +262,7 @@ func TestCallExprPretty(t *testing.T) {
 		expr, err := ParseExpr(test.in)
 		require.NoError(t, err)
 
+		fmt.Println("=>", expr.String())
 		require.Equal(t, test.out, Prettify(expr))
 	}
 }
@@ -373,14 +395,18 @@ func TestExprPretty(t *testing.T) {
 		{
 			in: `(sum_over_time(foo[1m]))`,
 			out: `(
-  sum_over_time(foo[1m])
+  sum_over_time(
+    foo[1m]
+  )
 )`,
 		},
 		{
 			in: `histogram_quantile(0.9, rate(foo[1m] @ start()))`,
 			out: `histogram_quantile(
   0.9,
-  rate(foo[1m] @ start())
+  rate(
+    foo[1m] @ start()
+  )
 )`,
 		},
 		{
@@ -491,7 +517,9 @@ func TestExprPretty(t *testing.T) {
       >
         0.05
     and
-        deriv(node_timex_offset_seconds[5m])
+        deriv(
+          node_timex_offset_seconds[5m]
+        )
       >=
         0
   )
@@ -501,7 +529,9 @@ or
       <
         -0.05
     and
-        deriv(node_timex_offset_seconds[5m])
+        deriv(
+          node_timex_offset_seconds[5m]
+        )
       <=
         0
   )`,
@@ -531,9 +561,13 @@ or
 		{
 			in: `min by (job, integration) (rate(alertmanager_notifications_failed_total{job="alertmanager", integration=~".*"}[5m]) / rate(alertmanager_notifications_total{job="alertmanager", integration="~.*"}[5m])) > 0.01`,
 			out: `  min by(job, integration) (
-      rate(alertmanager_notifications_failed_total{integration=~".*",job="alertmanager"}[5m])
+      rate(
+        alertmanager_notifications_failed_total{integration=~".*",job="alertmanager"}[5m]
+      )
     /
-      rate(alertmanager_notifications_total{integration="~.*",job="alertmanager"}[5m])
+      rate(
+        alertmanager_notifications_total{integration="~.*",job="alertmanager"}[5m]
+      )
   )
 >
   0.01`,
@@ -542,7 +576,9 @@ or
 			in: `(count by (job) (changes(process_start_time_seconds{job="alertmanager"}[10m]) > 4) / count by (job) (up{job="alertmanager"})) >= 0.5`,
 			out: `  (
       count by(job) (
-          changes(process_start_time_seconds{job="alertmanager"}[10m])
+          changes(
+            process_start_time_seconds{job="alertmanager"}[10m]
+          )
         >
           4
       )
@@ -553,6 +589,73 @@ or
   )
 >=
   0.5`,
+		},
+	}
+	for _, test := range inputs {
+		expr, err := ParseExpr(test.in)
+		require.NoError(t, err)
+		require.Equal(t, test.out, Prettify(expr))
+	}
+}
+
+func TestUnaryPretty(t *testing.T) {
+	maxCharactersPerLine = 10
+	inputs := []struct {
+		in, out string
+	}{
+		{
+			in:  `-1`,
+			out: `-1`,
+		},
+		{
+			in:  `-vector_selector`,
+			out: `-vector_selector`,
+		},
+		{
+			in: `(-vector_selector)`,
+			out: `(
+  -vector_selector
+)`,
+		},
+		{
+			in: `-histogram_quantile(0.9,rate(foo[1m]))`,
+			out: `-histogram_quantile(
+  0.9,
+  rate(
+    foo[1m]
+  )
+)`,
+		},
+		{
+			in: `-histogram_quantile(0.99, sum by (le) (rate(foo[1m])))`,
+			out: `-histogram_quantile(
+  0.99,
+  sum by(le) (
+    rate(
+      foo[1m]
+    )
+  )
+)`,
+		},
+		{
+			in: `-histogram_quantile(0.9, -rate(foo[1m] @ start()))`,
+			out: `-histogram_quantile(
+  0.9,
+  -rate(
+    foo[1m] @ start()
+  )
+)`,
+		},
+		{
+			in: `(-histogram_quantile(0.9, -rate(foo[1m] @ start())))`,
+			out: `(
+  -histogram_quantile(
+    0.9,
+    -rate(
+      foo[1m] @ start()
+    )
+  )
+)`,
 		},
 	}
 	for _, test := range inputs {

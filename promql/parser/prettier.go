@@ -81,7 +81,7 @@ func (e *BinaryExpr) Pretty(level int) string {
 
 func (e *Call) Pretty(level int) string {
 	s := indent(level)
-	if !needsSplit(e) || len(e.Args) == 1 {
+	if !needsSplit(e) {
 		s += e.String()
 		return s
 	}
@@ -94,9 +94,7 @@ func (e *EvalStmt) Pretty(_ int) string {
 }
 
 func (e Expressions) Pretty(level int) string {
-	if !needsSplit(e) {
-		return e.String()
-	}
+	// Do not prefix the indent since respective nodes will indent itself.
 	s := ""
 	for i := range e {
 		s += fmt.Sprintf("%s,\n", e[i].Pretty(level))
@@ -121,9 +119,11 @@ func (e *MatrixSelector) Pretty(level int) string {
 	return getCommonPrefixIndent(level, e)
 }
 
-// todo(harkishen) after we deciding its format
 func (e *SubqueryExpr) Pretty(level int) string {
-	return getCommonPrefixIndent(level, e)
+	if !needsSplit(e) {
+		return e.String()
+	}
+	return fmt.Sprintf("%s%s", e.Expr.Pretty(level), e.getSubqueryTimeSuffix())
 }
 
 func (e *VectorSelector) Pretty(level int) string {
@@ -139,7 +139,10 @@ func (e *StringLiteral) Pretty(level int) string {
 }
 
 func (e *UnaryExpr) Pretty(level int) string {
-	return getCommonPrefixIndent(level, e)
+	child := e.Expr.Pretty(level)
+	// Remove the indent prefix from child since we attach the prefix indent before Op.
+	child = strings.TrimSpace(child)
+	return fmt.Sprintf("%s%s%s", indent(level), e.Op, child)
 }
 
 func getCommonPrefixIndent(level int, current Node) string {

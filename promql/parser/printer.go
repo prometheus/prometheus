@@ -152,6 +152,11 @@ func (node *MatrixSelector) String() string {
 }
 
 func (node *SubqueryExpr) String() string {
+	return fmt.Sprintf("%s%s", node.Expr.String(), node.getSubqueryTimeSuffix())
+}
+
+// getSubqueryTimeSuffix returns the '[<range>:<step>] @ <timestamp> offset <offset>' suffix of the subquery.
+func (node *SubqueryExpr) getSubqueryTimeSuffix() string {
 	step := ""
 	if node.Step != 0 {
 		step = model.Duration(node.Step).String()
@@ -170,7 +175,7 @@ func (node *SubqueryExpr) String() string {
 	} else if node.StartOrEnd == END {
 		at = " @ end()"
 	}
-	return fmt.Sprintf("%s[%s:%s]%s%s", node.Expr.String(), model.Duration(node.Range), step, at, offset)
+	return fmt.Sprintf("[%s:%s]%s%s", model.Duration(node.Range), step, at, offset)
 }
 
 func (node *NumberLiteral) String() string {
