@@ -50,29 +50,6 @@ Series records encode the labels that identifies a series and its unique ID.
 └────────────────────────────────────────────┘
 ```
 
-### Metadata records
-
-Metadata records encode the immutable metadata updates associated with a series.
-
-```
-┌────────────────────────────────────────────┐
-│ type = 1 <1b>                              │
-├────────────────────────────────────────────┤
-│ ┌────────────────────────────────────────┐ │
-│ │ id <uvarint>                           │ │
-│ ├────────────────────────────────────────┤ │
-│ │ size <uvarint>                         │ │
-│ ├────────────────────────────────────────┤ │
-│ │ metric_type <1b>                       │ │
-│ ├─────────────────────┬──────────────────┤ │
-│ │ len(unit) <uvarint> │ unit <bytes>     │ │
-│ ├─────────────────────┴──────────────────┤ │
-│ │ len(help) <uvarint> │ help <bytes>     │ │
-│ └─────────────────────┴──────────────────┘ │
-│                  . . .                     │
-└────────────────────────────────────────────┘
-```
-
 ### Sample records
 
 Sample records encode samples as a list of triples `(series_id, timestamp, value)`.
