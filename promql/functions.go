@@ -14,6 +14,7 @@
 package promql
 
 import (
+	"fmt"
 	"math"
 	"sort"
 	"strconv"
@@ -21,7 +22,6 @@ import (
 	"time"
 
 	"github.com/grafana/regexp"
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -223,10 +223,10 @@ func funcHoltWinters(vals []parser.Value, args parser.Expressions, enh *EvalNode
 
 	// Sanity check the input.
 	if sf <= 0 || sf >= 1 {
-		panic(errors.Errorf("invalid smoothing factor. Expected: 0 < sf < 1, got: %f", sf))
+		panic(fmt.Errorf("invalid smoothing factor. Expected: 0 < sf < 1, got: %f", sf))
 	}
 	if tf <= 0 || tf >= 1 {
-		panic(errors.Errorf("invalid trend factor. Expected: 0 < tf < 1, got: %f", tf))
+		panic(fmt.Errorf("invalid trend factor. Expected: 0 < tf < 1, got: %f", tf))
 	}
 
 	l := len(samples.Points)
@@ -885,10 +885,10 @@ func funcLabelReplace(vals []parser.Value, args parser.Expressions, enh *EvalNod
 		var err error
 		enh.regex, err = regexp.Compile("^(?:" + regexStr + ")$")
 		if err != nil {
-			panic(errors.Errorf("invalid regular expression in label_replace(): %s", regexStr))
+			panic(fmt.Errorf("invalid regular expression in label_replace(): %s", regexStr))
 		}
 		if !model.LabelNameRE.MatchString(dst) {
-			panic(errors.Errorf("invalid destination label name in label_replace(): %s", dst))
+			panic(fmt.Errorf("invalid destination label name in label_replace(): %s", dst))
 		}
 		enh.Dmn = make(map[uint64]labels.Labels, len(enh.Out))
 	}
@@ -950,13 +950,13 @@ func funcLabelJoin(vals []parser.Value, args parser.Expressions, enh *EvalNodeHe
 	for i := 3; i < len(args); i++ {
 		src := stringFromArg(args[i])
 		if !model.LabelName(src).IsValid() {
-			panic(errors.Errorf("invalid source label name in label_join(): %s", src))
+			panic(fmt.Errorf("invalid source label name in label_join(): %s", src))
 		}
 		srcLabels[i-3] = src
 	}
 
 	if !model.LabelName(dst).IsValid() {
-		panic(errors.Errorf("invalid destination label name in label_join(): %s", dst))
+		panic(fmt.Errorf("invalid destination label name in label_join(): %s", dst))
 	}
 
 	srcVals := make([]string, len(srcLabels))

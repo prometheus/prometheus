@@ -14,13 +14,13 @@
 package parser
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
@@ -3570,7 +3570,8 @@ func TestParseExpressions(t *testing.T) {
 				require.Error(t, err)
 				require.Contains(t, err.Error(), test.errMsg, "unexpected error on input '%s', expected '%s', got '%s'", test.input, test.errMsg, err.Error())
 
-				errorList, ok := err.(ParseErrors)
+				var errorList ParseErrors
+				ok := errors.As(err, &errorList)
 
 				require.True(t, ok, "unexpected error type")
 
