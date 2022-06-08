@@ -3,7 +3,7 @@ module github.com/prometheus/prometheus/documentation/examples/remote_storage
 go 1.17
 
 require (
-	github.com/go-kit/log v0.2.0
+	github.com/go-kit/log v0.2.1
 	github.com/gogo/protobuf v1.3.2
 	github.com/golang/snappy v0.0.4
 	github.com/influxdata/influxdb v1.9.5
