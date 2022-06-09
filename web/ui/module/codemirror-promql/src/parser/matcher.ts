@@ -18,7 +18,7 @@ import { Matcher } from '../types';
 
 function createMatcher(labelMatcher: SyntaxNode, state: EditorState): Matcher {
   const matcher = new Matcher(0, '', '');
-  const cursor = labelMatcher.cursor;
+  const cursor = labelMatcher.cursor();
   if (!cursor.next()) {
     // weird case, that would mean the labelMatcher doesn't have any child.
     return matcher;

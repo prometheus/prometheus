@@ -357,6 +357,8 @@ NumberLiteral  {
   End
 }
 
+@external propSource promQLHighLight from "./highlight"
+
   // FunctionIdentifier definitions
   Abs { condFn<"abs"> }
   Absent { condFn<"absent"> }
