@@ -25,6 +25,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
+	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -127,6 +128,8 @@ type Options struct {
 	// Option used by downstream scraper users like OpenTelemetry Collector
 	// to help lookup metric metadata. Should be false for Prometheus.
 	PassMetadataInContext bool
+	// Option to increase the interval used by scrape manager to throttle target groups updates.
+	DiscoveryReloadInterval model.Duration
 
 	// Optional HTTP client options to use when scraping.
 	HTTPClientOptions []config_util.HTTPClientOption
@@ -170,7 +173,13 @@ func (m *Manager) Run(tsets <-chan map[string][]*targetgroup.Group) error {
 }
 
 func (m *Manager) reloader() {
-	ticker := time.NewTicker(5 * time.Second)
+	reloadIntervalDuration := m.opts.DiscoveryReloadInterval
+	if reloadIntervalDuration < model.Duration(5*time.Second) {
+		reloadIntervalDuration = model.Duration(5 * time.Second)
+	}
+
+	ticker := time.NewTicker(time.Duration(reloadIntervalDuration))
+
 	defer ticker.Stop()
 
 	for {

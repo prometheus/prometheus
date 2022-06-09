@@ -48,8 +48,8 @@ func TestSampledReadEndpoint(t *testing.T) {
 			GlobalConfig: config.GlobalConfig{
 				ExternalLabels: labels.Labels{
 					// We expect external labels to be added, with the source labels honored.
-					{Name: "baz", Value: "a"},
 					{Name: "b", Value: "c"},
+					{Name: "baz", Value: "a"},
 					{Name: "d", Value: "e"},
 				},
 			},

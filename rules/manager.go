@@ -15,7 +15,6 @@ package rules
 
 import (
 	"context"
-	html_template "html/template"
 	"math"
 	"net/url"
 	"sort"
@@ -29,6 +28,7 @@ import (
 	"github.com/prometheus/common/model"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
@@ -236,9 +236,6 @@ type Rule interface {
 	// GetEvaluationTimestamp returns last evaluation timestamp.
 	// NOTE: Used dynamically by rules.html template.
 	GetEvaluationTimestamp() time.Time
-	// HTMLSnippet returns a human-readable string representation of the rule,
-	// decorated with HTML elements for use the web frontend.
-	HTMLSnippet(pathPrefix string) html_template.HTML
 }
 
 // Group is a set of rules that have a logical relation.
@@ -629,6 +626,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 			if err != nil {
 				rule.SetHealth(HealthBad)
 				rule.SetLastError(err)
+				sp.SetStatus(codes.Error, err.Error())
 				g.metrics.EvalFailures.WithLabelValues(GroupKey(g.File(), g.Name())).Inc()
 
 				// Canceled queries are intentional termination of queries. This normally
@@ -656,6 +654,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 				if err := app.Commit(); err != nil {
 					rule.SetHealth(HealthBad)
 					rule.SetLastError(err)
+					sp.SetStatus(codes.Error, err.Error())
 					g.metrics.EvalFailures.WithLabelValues(GroupKey(g.File(), g.Name())).Inc()
 
 					level.Warn(g.logger).Log("name", rule.Name(), "index", i, "msg", "Rule sample appending failed", "err", err)
@@ -668,6 +667,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 				if _, err := app.Append(0, s.Metric, s.T, s.V); err != nil {
 					rule.SetHealth(HealthBad)
 					rule.SetLastError(err)
+					sp.SetStatus(codes.Error, err.Error())
 
 					switch errors.Cause(err) {
 					case storage.ErrOutOfOrderSample:
@@ -935,6 +935,7 @@ func NewManager(o *ManagerOptions) *Manager {
 
 // Run starts processing of the rule manager. It is blocking.
 func (m *Manager) Run() {
+	level.Info(m.logger).Log("msg", "Starting rule manager...")
 	m.start()
 	<-m.done
 }

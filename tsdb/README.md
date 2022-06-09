@@ -1,12 +1,9 @@
 # TSDB 
 
-[![GoPkg](https://pkg.go.dev/badge/github.com/prometheus/prometheus/tsdb.svg)](https://pkg.go.dev/github.com/prometheus/prometheus@v1.8.2-0.20211105201321-411021ada9ab/tsdb)
+[![GoPkg](https://pkg.go.dev/badge/github.com/prometheus/prometheus/tsdb.svg)](https://pkg.go.dev/github.com/prometheus/prometheus/tsdb)
 
 This directory contains the Prometheus TSDB (Time Series DataBase) library,
 which handles storage and querying of all Prometheus v2 data.
-
-Due to an issue with versioning, the "latest" docs shown on Godoc are outdated.
-Instead you may use [the docs for v2.31.1](https://pkg.go.dev/github.com/prometheus/prometheus@v1.8.2-0.20211105201321-411021ada9ab)
 
 ## Documentation
 

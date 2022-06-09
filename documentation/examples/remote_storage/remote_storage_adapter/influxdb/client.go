@@ -15,6 +15,7 @@ package influxdb
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -23,7 +24,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	influx "github.com/influxdata/influxdb/client/v2"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 
@@ -174,7 +174,7 @@ func (c *Client) buildCommand(q *prompb.Query) (string, error) {
 		case prompb.LabelMatcher_NRE:
 			matchers = append(matchers, fmt.Sprintf("%q !~ /^%s$/", m.Name, escapeSlashes(m.Value)))
 		default:
-			return "", errors.Errorf("unknown match type %v", m.Type)
+			return "", fmt.Errorf("unknown match type %v", m.Type)
 		}
 	}
 	matchers = append(matchers, fmt.Sprintf("time >= %vms", q.StartTimestampMs))
@@ -253,27 +253,27 @@ func valuesToSamples(values [][]interface{}) ([]prompb.Sample, error) {
 	samples := make([]prompb.Sample, 0, len(values))
 	for _, v := range values {
 		if len(v) != 2 {
-			return nil, errors.Errorf("bad sample tuple length, expected [<timestamp>, <value>], got %v", v)
+			return nil, fmt.Errorf("bad sample tuple length, expected [<timestamp>, <value>], got %v", v)
 		}
 
 		jsonTimestamp, ok := v[0].(json.Number)
 		if !ok {
-			return nil, errors.Errorf("bad timestamp: %v", v[0])
+			return nil, fmt.Errorf("bad timestamp: %v", v[0])
 		}
 
 		jsonValue, ok := v[1].(json.Number)
 		if !ok {
-			return nil, errors.Errorf("bad sample value: %v", v[1])
+			return nil, fmt.Errorf("bad sample value: %v", v[1])
 		}
 
 		timestamp, err := jsonTimestamp.Int64()
 		if err != nil {
-			return nil, errors.Wrap(err, "unable to convert sample timestamp to int64")
+			return nil, fmt.Errorf("unable to convert sample timestamp to int64: %w", err)
 		}
 
 		value, err := jsonValue.Float64()
 		if err != nil {
-			return nil, errors.Wrap(err, "unable to convert sample value to float64")
+			return nil, fmt.Errorf("unable to convert sample value to float64: %w", err)
 		}
 
 		samples = append(samples, prompb.Sample{
