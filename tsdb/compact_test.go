@@ -17,7 +17,6 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
-	"io/ioutil"
 	"math"
 	"os"
 	"path"
@@ -503,7 +502,7 @@ func TestCompaction_CompactWithSplitting(t *testing.T) {
 	shardCounts := []uint64{1, 13}
 
 	for _, series := range seriesCounts {
-		dir, err := ioutil.TempDir("", "compact")
+		dir, err := os.MkdirTemp("", "compact")
 		require.NoError(t, err)
 		defer func() {
 			require.NoError(t, os.RemoveAll(dir))
@@ -623,7 +622,7 @@ func TestCompaction_CompactWithSplitting(t *testing.T) {
 }
 
 func TestCompaction_CompactEmptyBlocks(t *testing.T) {
-	dir, err := ioutil.TempDir("", "compact")
+	dir, err := os.MkdirTemp("", "compact")
 	require.NoError(t, err)
 	defer func() {
 		require.NoError(t, os.RemoveAll(dir))

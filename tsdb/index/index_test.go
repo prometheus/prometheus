@@ -608,7 +608,7 @@ func BenchmarkReader_ShardedPostings(b *testing.B) {
 		numShards = 16
 	)
 
-	dir, err := ioutil.TempDir("", "benchmark_reader_sharded_postings")
+	dir, err := os.MkdirTemp("", "benchmark_reader_sharded_postings")
 	require.NoError(b, err)
 	defer func() {
 		require.NoError(b, os.RemoveAll(dir))
