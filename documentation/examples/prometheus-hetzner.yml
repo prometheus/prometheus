@@ -13,7 +13,7 @@ scrape_configs:
     hetzner_sd_configs:
       - authorization:
           credentials: "<replace with a Hetzner Cloud API Token>"
-        platform: "hcloud"
+        role: "hcloud"
     relabel_configs:
       # Use the public IPv4 and port 9100 to scrape the target.
       - source_labels: [__meta_hetzner_public_ipv4]
@@ -26,7 +26,7 @@ scrape_configs:
     hetzner_sd_configs:
       - authorization:
           credentials: "<replace with a Hetzner Cloud API Token>"
-        platform: "hcloud"
+        role: "hcloud"
     relabel_configs:
       # Use the private IPv4 within the Hetzner Cloud Network and port 9100 to scrape the target.
       - source_labels: [__meta_hetzner_hcloud_private_ipv4_mynet]
@@ -40,7 +40,7 @@ scrape_configs:
       - basic_auth:
           username: "<replace with a Hetzner Robot API username>"
           password: "<replace with a Hetzner Robot API password>"
-        platform: "robot"
+        role: "robot"
     relabel_configs:
       # Use the public IPv4 and port 9100 to scrape the target.
       - source_labels: [__meta_hetzner_public_ipv4]

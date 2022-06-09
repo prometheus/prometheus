@@ -15,12 +15,12 @@ package tracing
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/pkg/errors"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/version"
 	"go.opentelemetry.io/otel"
@@ -30,7 +30,7 @@ import (
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	tracesdk "go.opentelemetry.io/otel/sdk/trace"
-	semconv "go.opentelemetry.io/otel/semconv/v1.7.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.10.0"
 	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc/credentials"
 
@@ -79,7 +79,7 @@ func (m *Manager) ApplyConfig(cfg *config.Config) error {
 
 	if m.shutdownFunc != nil {
 		if err := m.shutdownFunc(); err != nil {
-			return errors.Wrap(err, "failed to shut down the tracer provider")
+			return fmt.Errorf("failed to shut down the tracer provider: %w", err)
 		}
 	}
 
@@ -94,7 +94,7 @@ func (m *Manager) ApplyConfig(cfg *config.Config) error {
 
 	tp, shutdownFunc, err := buildTracerProvider(context.Background(), cfg.TracingConfig)
 	if err != nil {
-		return errors.Wrap(err, "failed to install a new tracer provider")
+		return fmt.Errorf("failed to install a new tracer provider: %w", err)
 	}
 
 	m.shutdownFunc = shutdownFunc

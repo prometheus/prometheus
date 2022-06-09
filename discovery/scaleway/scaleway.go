@@ -15,13 +15,14 @@ package scaleway
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net/http"
 	"os"
 	"strings"
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/scaleway/scaleway-sdk-go/scw"
@@ -61,7 +62,7 @@ func (c *role) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	case roleInstance, roleBaremetal:
 		return nil
 	default:
-		return errors.Errorf("unknown role %q", *c)
+		return fmt.Errorf("unknown role %q", *c)
 	}
 }
 
@@ -228,7 +229,7 @@ func newAuthTokenFileRoundTripper(tokenFile string, rt http.RoundTripper) (http.
 	// fail-fast if we can't read the file.
 	_, err := os.ReadFile(tokenFile)
 	if err != nil {
-		return nil, errors.Wrapf(err, "unable to read auth token file %s", tokenFile)
+		return nil, fmt.Errorf("unable to read auth token file %s: %w", tokenFile, err)
 	}
 	return &authTokenFileRoundTripper{tokenFile, rt}, nil
 }
@@ -236,7 +237,7 @@ func newAuthTokenFileRoundTripper(tokenFile string, rt http.RoundTripper) (http.
 func (rt *authTokenFileRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {
 	b, err := os.ReadFile(rt.authTokenFile)
 	if err != nil {
-		return nil, errors.Wrapf(err, "unable to read auth token file %s", rt.authTokenFile)
+		return nil, fmt.Errorf("unable to read auth token file %s: %w", rt.authTokenFile, err)
 	}
 	authToken := strings.TrimSpace(string(b))
 

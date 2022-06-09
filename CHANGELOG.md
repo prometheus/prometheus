@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.36.0 / 2022-05-30
+
+* [FEATURE] Add lowercase and uppercase relabel action. #10641
+* [FEATURE] SD: Add IONOS Cloud integration. #10514
+* [FEATURE] SD: Add Vultr integration. #10714
+* [FEATURE] SD: Add Linode SD failure count metric. #10673
+* [FEATURE] Add prometheus_ready metric. #10682
+* [ENHANCEMENT] Add stripDomain to template function. #10475
+* [ENHANCEMENT] UI: Enable active search through dropped targets. #10668
+* [ENHANCEMENT] promtool: support matchers when querying label values. #10727
+* [ENHANCEMENT] Add agent mode identifier. #9638
+* [BUGFIX] Changing TotalQueryableSamples from int to int64. #10549
+* [BUGFIX] tsdb/agent: Ignore duplicate exemplars. #10595
+* [BUGFIX] TSDB: Fix chunk overflow appending samples at a variable rate. #10607
+* [BUGFIX] Stop rule manager before TSDB is stopped. #10680
+
 ## 2.35.0 / 2022-04-21
 
 This Prometheus release is built with go1.18, which contains two noticeable changes related to TLS:
