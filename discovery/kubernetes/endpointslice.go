@@ -15,12 +15,12 @@ package kubernetes
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"strconv"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	apiv1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/discovery/v1"
@@ -193,7 +193,7 @@ func (e *EndpointSlice) getEndpointSliceAdaptor(o interface{}) (endpointSliceAda
 	case *v1beta1.EndpointSlice:
 		return newEndpointSliceAdaptorFromV1beta1(endpointSlice), nil
 	default:
-		return nil, errors.Errorf("received unexpected object: %v", o)
+		return nil, fmt.Errorf("received unexpected object: %v", o)
 	}
 }
 

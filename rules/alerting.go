@@ -16,7 +16,6 @@ package rules
 import (
 	"context"
 	"fmt"
-	html_template "html/template"
 	"net/url"
 	"strings"
 	"sync"
@@ -35,7 +34,6 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/template"
-	"github.com/prometheus/prometheus/util/strutil"
 )
 
 const (
@@ -44,8 +42,6 @@ const (
 	// AlertForStateMetricName is the metric name for 'for' state of alert.
 	alertForStateMetricName = "ALERTS_FOR_STATE"
 
-	// AlertNameLabel is the label name indicating the name of an alert.
-	alertNameLabel = "alertname"
 	// AlertStateLabel is the label name indicating the state of an alert.
 	alertStateLabel = "alertstate"
 )
@@ -547,38 +543,4 @@ func (r *AlertingRule) String() string {
 	}
 
 	return string(byt)
-}
-
-// HTMLSnippet returns an HTML snippet representing this alerting rule. The
-// resulting snippet is expected to be presented in a <pre> element, so that
-// line breaks and other returned whitespace is respected.
-func (r *AlertingRule) HTMLSnippet(pathPrefix string) html_template.HTML {
-	alertMetric := model.Metric{
-		model.MetricNameLabel: alertMetricName,
-		alertNameLabel:        model.LabelValue(r.name),
-	}
-
-	labelsMap := make(map[string]string, len(r.labels))
-	for _, l := range r.labels {
-		labelsMap[l.Name] = html_template.HTMLEscapeString(l.Value)
-	}
-
-	annotationsMap := make(map[string]string, len(r.annotations))
-	for _, l := range r.annotations {
-		annotationsMap[l.Name] = html_template.HTMLEscapeString(l.Value)
-	}
-
-	ar := rulefmt.Rule{
-		Alert:       fmt.Sprintf("<a href=%q>%s</a>", pathPrefix+strutil.TableLinkForExpression(alertMetric.String()), r.name),
-		Expr:        fmt.Sprintf("<a href=%q>%s</a>", pathPrefix+strutil.TableLinkForExpression(r.vector.String()), html_template.HTMLEscapeString(r.vector.String())),
-		For:         model.Duration(r.holdDuration),
-		Labels:      labelsMap,
-		Annotations: annotationsMap,
-	}
-
-	byt, err := yaml.Marshal(ar)
-	if err != nil {
-		return html_template.HTML(fmt.Sprintf("error marshaling alerting rule: %q", html_template.HTMLEscapeString(err.Error())))
-	}
-	return html_template.HTML(byt)
 }

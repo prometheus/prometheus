@@ -17,6 +17,7 @@ import (
 	"bytes"
 	"container/heap"
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"reflect"
@@ -29,7 +30,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/regexp"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"go.opentelemetry.io/otel"
@@ -208,10 +208,10 @@ func contextDone(ctx context.Context, env string) error {
 }
 
 func contextErr(err error, env string) error {
-	switch err {
-	case context.Canceled:
+	switch {
+	case errors.Is(err, context.Canceled):
 		return ErrQueryCanceled(env)
-	case context.DeadlineExceeded:
+	case errors.Is(err, context.DeadlineExceeded):
 		return ErrQueryTimeout(env)
 	default:
 		return err
@@ -416,7 +416,7 @@ func (ng *Engine) NewRangeQuery(q storage.Queryable, opts *QueryOpts, qs string,
 		return nil, err
 	}
 	if expr.Type() != parser.ValueTypeVector && expr.Type() != parser.ValueTypeScalar {
-		return nil, errors.Errorf("invalid expression type %q for range query, must be Scalar or instant Vector", parser.DocumentedType(expr.Type()))
+		return nil, fmt.Errorf("invalid expression type %q for range query, must be Scalar or instant Vector", parser.DocumentedType(expr.Type()))
 	}
 	qry, err := ng.newQuery(q, opts, expr, start, end, interval)
 	if err != nil {
@@ -597,7 +597,7 @@ func (ng *Engine) exec(ctx context.Context, q *query) (v parser.Value, ws storag
 		return nil, nil, s(ctx)
 	}
 
-	panic(errors.Errorf("promql.Engine.exec: unhandled statement of type %T", q.Statement()))
+	panic(fmt.Errorf("promql.Engine.exec: unhandled statement of type %T", q.Statement()))
 }
 
 func timeMilliseconds(t time.Time) int64 {
@@ -657,7 +657,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 		case String:
 			return result, warnings, nil
 		default:
-			panic(errors.Errorf("promql.Engine.exec: invalid expression type %q", val.Type()))
+			panic(fmt.Errorf("promql.Engine.exec: invalid expression type %q", val.Type()))
 		}
 
 		query.matrix = mat
@@ -676,7 +676,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 		case parser.ValueTypeMatrix:
 			return mat, warnings, nil
 		default:
-			panic(errors.Errorf("promql.Engine.exec: unexpected expression type %q", s.Expr.Type()))
+			panic(fmt.Errorf("promql.Engine.exec: unexpected expression type %q", s.Expr.Type()))
 		}
 	}
 
@@ -701,7 +701,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 
 	mat, ok := val.(Matrix)
 	if !ok {
-		panic(errors.Errorf("promql.Engine.exec: invalid expression type %q", val.Type()))
+		panic(fmt.Errorf("promql.Engine.exec: invalid expression type %q", val.Type()))
 	}
 	query.matrix = mat
 
@@ -928,7 +928,7 @@ type evaluator struct {
 
 // errorf causes a panic with the input formatted into an error.
 func (ev *evaluator) errorf(format string, args ...interface{}) {
-	ev.error(errors.Errorf(format, args...))
+	ev.error(fmt.Errorf(format, args...))
 }
 
 // error causes a panic with the given error.
@@ -950,7 +950,7 @@ func (ev *evaluator) recover(ws *storage.Warnings, errp *error) {
 		buf = buf[:runtime.Stack(buf, false)]
 
 		level.Error(ev.logger).Log("msg", "runtime panic in parser", "err", e, "stacktrace", string(buf))
-		*errp = errors.Wrap(err, "unexpected error")
+		*errp = fmt.Errorf("unexpected error: %w", err)
 	case errWithWarnings:
 		*errp = err.err
 		*ws = append(*ws, err.warnings...)
@@ -1344,7 +1344,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 		ws, err := checkAndExpandSeriesSet(ev.ctx, sel)
 		warnings = append(warnings, ws...)
 		if err != nil {
-			ev.error(errWithWarnings{errors.Wrap(err, "expanding series"), warnings})
+			ev.error(errWithWarnings{fmt.Errorf("expanding series: %w", err), warnings})
 		}
 		mat := make(Matrix, 0, len(selVS.Series)) // Output matrix.
 		offset := durationMilliseconds(selVS.Offset)
@@ -1541,7 +1541,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 	case *parser.VectorSelector:
 		ws, err := checkAndExpandSeriesSet(ev.ctx, e)
 		if err != nil {
-			ev.error(errWithWarnings{errors.Wrap(err, "expanding series"), ws})
+			ev.error(errWithWarnings{fmt.Errorf("expanding series: %w", err), ws})
 		}
 		mat := make(Matrix, 0, len(e.Series))
 		it := storage.NewMemoizedEmptyIterator(durationMilliseconds(ev.lookbackDelta))
@@ -1657,11 +1657,11 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 		// with changed timestamps.
 		mat, ok := res.(Matrix)
 		if !ok {
-			panic(errors.Errorf("unexpected result in StepInvariantExpr evaluation: %T", expr))
+			panic(fmt.Errorf("unexpected result in StepInvariantExpr evaluation: %T", expr))
 		}
 		for i := range mat {
 			if len(mat[i].Points) != 1 {
-				panic(errors.Errorf("unexpected number of samples"))
+				panic(fmt.Errorf("unexpected number of samples"))
 			}
 			for ts := ev.startTimestamp + ev.interval; ts <= ev.endTimestamp; ts = ts + ev.interval {
 				mat[i].Points = append(mat[i].Points, Point{
@@ -1678,14 +1678,14 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 		return res, ws
 	}
 
-	panic(errors.Errorf("unhandled expression of type: %T", expr))
+	panic(fmt.Errorf("unhandled expression of type: %T", expr))
 }
 
 // vectorSelector evaluates a *parser.VectorSelector expression.
 func (ev *evaluator) vectorSelector(node *parser.VectorSelector, ts int64) (Vector, storage.Warnings) {
 	ws, err := checkAndExpandSeriesSet(ev.ctx, node)
 	if err != nil {
-		ev.error(errWithWarnings{errors.Wrap(err, "expanding series"), ws})
+		ev.error(errWithWarnings{fmt.Errorf("expanding series: %w", err), ws})
 	}
 	vec := make(Vector, 0, len(node.Series))
 	it := storage.NewMemoizedEmptyIterator(durationMilliseconds(ev.lookbackDelta))
@@ -1769,7 +1769,7 @@ func (ev *evaluator) matrixSelector(node *parser.MatrixSelector) (Matrix, storag
 	)
 	ws, err := checkAndExpandSeriesSet(ev.ctx, node)
 	if err != nil {
-		ev.error(errWithWarnings{errors.Wrap(err, "expanding series"), ws})
+		ev.error(errWithWarnings{fmt.Errorf("expanding series: %w", err), ws})
 	}
 
 	series := vs.Series
@@ -2050,14 +2050,16 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 }
 
 func signatureFunc(on bool, b []byte, names ...string) func(labels.Labels) string {
-	sort.Strings(names)
 	if on {
+		sort.Strings(names)
 		return func(lset labels.Labels) string {
-			return string(lset.WithLabels(names...).Bytes(b))
+			return string(lset.BytesWithLabels(b, names...))
 		}
 	}
+	names = append([]string{labels.MetricName}, names...)
+	sort.Strings(names)
 	return func(lset labels.Labels) string {
-		return string(lset.WithoutLabels(names...).Bytes(b))
+		return string(lset.BytesWithoutLabels(b, names...))
 	}
 }
 
@@ -2092,15 +2094,7 @@ func resultMetric(lhs, rhs labels.Labels, op parser.ItemType, matching *parser.V
 
 	if matching.Card == parser.CardOneToOne {
 		if matching.On {
-		Outer:
-			for _, l := range lhs {
-				for _, n := range matching.MatchingLabels {
-					if l.Name == n {
-						continue Outer
-					}
-				}
-				enh.lb.Del(l.Name)
-			}
+			enh.lb.Keep(matching.MatchingLabels...)
 		} else {
 			enh.lb.Del(matching.MatchingLabels...)
 		}
@@ -2187,7 +2181,7 @@ func scalarBinop(op parser.ItemType, lhs, rhs float64) float64 {
 	case parser.ATAN2:
 		return math.Atan2(lhs, rhs)
 	}
-	panic(errors.Errorf("operator %q not allowed for Scalar operations", op))
+	panic(fmt.Errorf("operator %q not allowed for Scalar operations", op))
 }
 
 // vectorElemBinop evaluates a binary operation between two Vector elements.
@@ -2220,7 +2214,7 @@ func vectorElemBinop(op parser.ItemType, lhs, rhs float64) (float64, bool) {
 	case parser.ATAN2:
 		return math.Atan2(lhs, rhs), true
 	}
-	panic(errors.Errorf("operator %q not allowed for operations between Vectors", op))
+	panic(fmt.Errorf("operator %q not allowed for operations between Vectors", op))
 }
 
 type groupedAggregation struct {
@@ -2295,16 +2289,14 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 		group, ok := result[groupingKey]
 		// Add a new group if it doesn't exist.
 		if !ok {
-			var m labels.Labels
-
+			lb.Reset(metric)
 			if without {
-				lb.Reset(metric)
 				lb.Del(grouping...)
 				lb.Del(labels.MetricName)
-				m = lb.Labels()
 			} else {
-				m = metric.WithLabels(grouping...)
+				lb.Keep(grouping...)
 			}
+			m := lb.Labels()
 			newAgg := &groupedAggregation{
 				labels:     m,
 				value:      s.V,
@@ -2431,7 +2423,7 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 			group.heap = append(group.heap, s)
 
 		default:
-			panic(errors.Errorf("expected aggregation operator but got %q", op))
+			panic(fmt.Errorf("expected aggregation operator but got %q", op))
 		}
 	}
 

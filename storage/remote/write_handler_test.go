@@ -17,7 +17,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -128,7 +128,7 @@ func TestCommitErr(t *testing.T) {
 	handler.ServeHTTP(recorder, req)
 
 	resp := recorder.Result()
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	require.NoError(t, err)
 	require.Equal(t, http.StatusInternalServerError, resp.StatusCode)
 	require.Equal(t, "commit error\n", string(body))

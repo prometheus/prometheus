@@ -20,7 +20,6 @@ import (
 	"flag"
 	"fmt"
 	"hash/crc32"
-	"io/ioutil"
 	"math"
 	"math/rand"
 	"os"
@@ -225,7 +224,7 @@ func TestNoPanicAfterWALCorruption(t *testing.T) {
 	// it is not garbage collected.
 	// The repair deletes all WAL records after the corrupted record and these are read from the mmaped chunk.
 	{
-		walFiles, err := ioutil.ReadDir(path.Join(db.Dir(), "wal"))
+		walFiles, err := os.ReadDir(path.Join(db.Dir(), "wal"))
 		require.NoError(t, err)
 		f, err := os.OpenFile(path.Join(db.Dir(), "wal", walFiles[0].Name()), os.O_RDWR, 0o666)
 		require.NoError(t, err)
@@ -926,12 +925,14 @@ func TestWALSegmentSizeOptions(t *testing.T) {
 	tests := map[int]func(dbdir string, segmentSize int){
 		// Default Wal Size.
 		0: func(dbDir string, segmentSize int) {
-			filesAndDir, err := ioutil.ReadDir(filepath.Join(dbDir, "wal"))
+			filesAndDir, err := os.ReadDir(filepath.Join(dbDir, "wal"))
 			require.NoError(t, err)
 			files := []os.FileInfo{}
 			for _, f := range filesAndDir {
 				if !f.IsDir() {
-					files = append(files, f)
+					fi, err := f.Info()
+					require.NoError(t, err)
+					files = append(files, fi)
 				}
 			}
 			// All the full segment files (all but the last) should match the segment size option.
@@ -943,12 +944,14 @@ func TestWALSegmentSizeOptions(t *testing.T) {
 		},
 		// Custom Wal Size.
 		2 * 32 * 1024: func(dbDir string, segmentSize int) {
-			filesAndDir, err := ioutil.ReadDir(filepath.Join(dbDir, "wal"))
+			filesAndDir, err := os.ReadDir(filepath.Join(dbDir, "wal"))
 			require.NoError(t, err)
 			files := []os.FileInfo{}
 			for _, f := range filesAndDir {
 				if !f.IsDir() {
-					files = append(files, f)
+					fi, err := f.Info()
+					require.NoError(t, err)
+					files = append(files, fi)
 				}
 			}
 			require.Greater(t, len(files), 1, "current WALSegmentSize should result in more than a single WAL file.")
@@ -1278,38 +1281,40 @@ func TestTombstoneCleanRetentionLimitsRace(t *testing.T) {
 	//
 	// That is something tricky to trigger, so let's try several times just to make sure.
 	for i := 0; i < 20; i++ {
-		db := openTestDB(t, opts, nil)
-		totalBlocks := 20
-		dbDir := db.Dir()
-		// Generate some blocks with old mint (near epoch).
-		for j := 0; j < totalBlocks; j++ {
-			blockDir := createBlock(t, dbDir, genSeries(10, 1, int64(j), int64(j)+1))
-			block, err := OpenBlock(nil, blockDir, nil)
-			require.NoError(t, err)
-			// Cover block with tombstones so it can be deleted with CleanTombstones() as well.
-			tomb := tombstones.NewMemTombstones()
-			tomb.AddInterval(0, tombstones.Interval{Mint: int64(j), Maxt: int64(j) + 1})
-			block.tombstones = tomb
+		t.Run(fmt.Sprintf("iteration%d", i), func(t *testing.T) {
+			db := openTestDB(t, opts, nil)
+			totalBlocks := 20
+			dbDir := db.Dir()
+			// Generate some blocks with old mint (near epoch).
+			for j := 0; j < totalBlocks; j++ {
+				blockDir := createBlock(t, dbDir, genSeries(10, 1, int64(j), int64(j)+1))
+				block, err := OpenBlock(nil, blockDir, nil)
+				require.NoError(t, err)
+				// Cover block with tombstones so it can be deleted with CleanTombstones() as well.
+				tomb := tombstones.NewMemTombstones()
+				tomb.AddInterval(0, tombstones.Interval{Mint: int64(j), Maxt: int64(j) + 1})
+				block.tombstones = tomb
 
-			db.blocks = append(db.blocks, block)
-		}
+				db.blocks = append(db.blocks, block)
+			}
 
-		wg.Add(2)
-		// Run reload and CleanTombstones together, with a small time window randomization
-		go func() {
-			defer wg.Done()
-			time.Sleep(time.Duration(rand.Float64() * 100 * float64(time.Millisecond)))
-			require.NoError(t, db.reloadBlocks())
-		}()
-		go func() {
-			defer wg.Done()
-			time.Sleep(time.Duration(rand.Float64() * 100 * float64(time.Millisecond)))
-			require.NoError(t, db.CleanTombstones())
-		}()
+			wg.Add(2)
+			// Run reload and CleanTombstones together, with a small time window randomization
+			go func() {
+				defer wg.Done()
+				time.Sleep(time.Duration(rand.Float64() * 100 * float64(time.Millisecond)))
+				require.NoError(t, db.reloadBlocks())
+			}()
+			go func() {
+				defer wg.Done()
+				time.Sleep(time.Duration(rand.Float64() * 100 * float64(time.Millisecond)))
+				require.NoError(t, db.CleanTombstones())
+			}()
 
-		wg.Wait()
+			wg.Wait()
 
-		require.NoError(t, db.Close())
+			require.NoError(t, db.Close())
+		})
 	}
 }
 
@@ -2706,7 +2711,7 @@ func TestChunkWriter_ReadAfterWrite(t *testing.T) {
 			}
 			require.NoError(t, chunkw.Close())
 
-			files, err := ioutil.ReadDir(tempDir)
+			files, err := os.ReadDir(tempDir)
 			require.NoError(t, err)
 			require.Equal(t, test.expSegmentsCount, len(files), "expected segments count mismatch")
 
@@ -2726,7 +2731,9 @@ func TestChunkWriter_ReadAfterWrite(t *testing.T) {
 			sizeExp += test.expSegmentsCount * chunks.SegmentHeaderSize // The segment header bytes.
 
 			for i, f := range files {
-				size := int(f.Size())
+				fi, err := f.Info()
+				require.NoError(t, err)
+				size := int(fi.Size())
 				// Verify that the segment is the same or smaller than the expected size.
 				require.GreaterOrEqual(t, chunks.SegmentHeaderSize+test.expSegmentSizes[i], size, "Segment:%v should NOT be bigger than:%v actual:%v", i, chunks.SegmentHeaderSize+test.expSegmentSizes[i], size)
 
@@ -2877,7 +2884,7 @@ func TestCompactHead(t *testing.T) {
 }
 
 func deleteNonBlocks(dbDir string) error {
-	dirs, err := ioutil.ReadDir(dbDir)
+	dirs, err := os.ReadDir(dbDir)
 	if err != nil {
 		return err
 	}
@@ -2888,7 +2895,7 @@ func deleteNonBlocks(dbDir string) error {
 			}
 		}
 	}
-	dirs, err = ioutil.ReadDir(dbDir)
+	dirs, err = os.ReadDir(dbDir)
 	if err != nil {
 		return err
 	}
@@ -2995,7 +3002,7 @@ func TestOpen_VariousBlockStates(t *testing.T) {
 	require.Equal(t, len(expectedLoadedDirs), loaded)
 	require.NoError(t, db.Close())
 
-	files, err := ioutil.ReadDir(tmpDir)
+	files, err := os.ReadDir(tmpDir)
 	require.NoError(t, err)
 
 	var ignored int

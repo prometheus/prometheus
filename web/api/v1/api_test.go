@@ -17,7 +17,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -2288,7 +2288,7 @@ func (f *fakeDB) CleanTombstones() error                               { return 
 func (f *fakeDB) Delete(mint, maxt int64, ms ...*labels.Matcher) error { return f.err }
 func (f *fakeDB) Snapshot(dir string, withHead bool) error             { return f.err }
 func (f *fakeDB) Stats(statsByLabelName string) (_ *tsdb.Stats, retErr error) {
-	dbDir, err := ioutil.TempDir("", "tsdb-api-ready")
+	dbDir, err := os.MkdirTemp("", "tsdb-api-ready")
 	if err != nil {
 		return nil, err
 	}
@@ -2501,7 +2501,7 @@ func TestRespondSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error on test request: %s", err)
 	}
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	defer resp.Body.Close()
 	if err != nil {
 		t.Fatalf("Error reading response body: %s", err)
@@ -2537,7 +2537,7 @@ func TestRespondError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error on test request: %s", err)
 	}
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	defer resp.Body.Close()
 	if err != nil {
 		t.Fatalf("Error reading response body: %s", err)
@@ -2893,7 +2893,7 @@ func TestRespond(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Error on test request: %s", err)
 		}
-		body, err := ioutil.ReadAll(resp.Body)
+		body, err := io.ReadAll(resp.Body)
 		defer resp.Body.Close()
 		if err != nil {
 			t.Fatalf("Error reading response body: %s", err)

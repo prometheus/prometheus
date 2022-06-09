@@ -14,6 +14,7 @@
 package parser
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -23,7 +24,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -224,7 +224,7 @@ func ParseSeriesDesc(input string) (labels labels.Labels, values []SequenceValue
 
 // addParseErrf formats the error and appends it to the list of parsing errors.
 func (p *parser) addParseErrf(positionRange PositionRange, format string, args ...interface{}) {
-	p.addParseErr(positionRange, errors.Errorf(format, args...))
+	p.addParseErr(positionRange, fmt.Errorf(format, args...))
 }
 
 // addParseErr appends the provided error to the list of parsing errors.
@@ -801,7 +801,7 @@ func MustLabelMatcher(mt labels.MatchType, name, val string) *labels.Matcher {
 func MustGetFunction(name string) *Function {
 	f, ok := getFunction(name)
 	if !ok {
-		panic(errors.Errorf("function %q does not exist", name))
+		panic(fmt.Errorf("function %q does not exist", name))
 	}
 	return f
 }

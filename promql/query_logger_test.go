@@ -15,7 +15,6 @@ package promql
 
 import (
 	"context"
-	"io/ioutil"
 	"os"
 	"testing"
 
@@ -105,7 +104,7 @@ func TestIndexReuse(t *testing.T) {
 }
 
 func TestMMapFile(t *testing.T) {
-	file, err := ioutil.TempFile("", "mmapedFile")
+	file, err := os.CreateTemp("", "mmapedFile")
 	require.NoError(t, err)
 
 	filename := file.Name()

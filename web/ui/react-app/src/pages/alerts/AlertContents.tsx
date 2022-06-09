@@ -1,8 +1,8 @@
-import React, { ChangeEvent, FC, Fragment, useEffect, useState } from 'react';
+import React, { FC, Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { Badge, Col, Row } from 'reactstrap';
 import CollapsibleAlertPanel from './CollapsibleAlertPanel';
 import Checkbox from '../../components/Checkbox';
-import { isPresent } from '../../utils';
+import { getQuerySearchFilter, isPresent, setQuerySearchFilter } from '../../utils';
 import { Rule } from '../../types/types';
 import { useLocalStorage } from '../../hooks/useLocalStorage';
 import CustomInfiniteScroll, { InfiniteScrollItemsProps } from '../../components/CustomInfiniteScroll';
@@ -71,7 +71,6 @@ const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
     inactive: true,
   });
   const [showAnnotations, setShowAnnotations] = useLocalStorage('alerts-annotations-status', { checked: false });
-
   const toggleFilter = (ruleState: RuleState) => () => {
     setFilter({
       ...filter,
@@ -79,26 +78,32 @@ const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
     });
   };
 
-  const handleSearchChange = (e: ChangeEvent<HTMLTextAreaElement | HTMLInputElement>) => {
-    if (e.target.value !== '') {
-      const pattern = e.target.value.trim();
-      const result: RuleGroup[] = [];
-      for (const group of groups) {
-        const ruleFilterList = kvSearchRule.filter(pattern, group.rules);
-        if (ruleFilterList.length > 0) {
-          result.push({
-            file: group.file,
-            name: group.name,
-            interval: group.interval,
-            rules: ruleFilterList.map((value) => value.original),
-          });
+  const handleSearchChange = useCallback(
+    (value: string) => {
+      setQuerySearchFilter(value);
+      if (value !== '') {
+        const pattern = value.trim();
+        const result: RuleGroup[] = [];
+        for (const group of groups) {
+          const ruleFilterList = kvSearchRule.filter(pattern, group.rules);
+          if (ruleFilterList.length > 0) {
+            result.push({
+              file: group.file,
+              name: group.name,
+              interval: group.interval,
+              rules: ruleFilterList.map((value) => value.original),
+            });
+          }
         }
+        setGroupList(result);
+      } else {
+        setGroupList(groups);
       }
-      setGroupList(result);
-    } else {
-      setGroupList(groups);
-    }
-  };
+    },
+    [groups]
+  );
+
+  const defaultValue = useMemo(getQuerySearchFilter, []);
 
   useEffect(() => {
     const result: RuleGroup[] = [];
@@ -131,7 +136,7 @@ const AlertsContent: FC<AlertsProps> = ({ groups = [], statsCount }) => {
           })}
         </Col>
         <Col lg="5" md="4">
-          <SearchBar handleChange={handleSearchChange} placeholder="Filter by name or labels" />
+          <SearchBar defaultValue={defaultValue} handleChange={handleSearchChange} placeholder="Filter by name or labels" />
         </Col>
         <Col className="d-flex flex-row-reverse" md="3">
           <Checkbox

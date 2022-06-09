@@ -16,18 +16,18 @@ package marathon
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math/rand"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
@@ -186,17 +186,17 @@ type authTokenFileRoundTripper struct {
 // newAuthTokenFileRoundTripper adds the auth token read from the file to a request.
 func newAuthTokenFileRoundTripper(tokenFile string, rt http.RoundTripper) (http.RoundTripper, error) {
 	// fail-fast if we can't read the file.
-	_, err := ioutil.ReadFile(tokenFile)
+	_, err := os.ReadFile(tokenFile)
 	if err != nil {
-		return nil, errors.Wrapf(err, "unable to read auth token file %s", tokenFile)
+		return nil, fmt.Errorf("unable to read auth token file %s: %w", tokenFile, err)
 	}
 	return &authTokenFileRoundTripper{tokenFile, rt}, nil
 }
 
 func (rt *authTokenFileRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {
-	b, err := ioutil.ReadFile(rt.authTokenFile)
+	b, err := os.ReadFile(rt.authTokenFile)
 	if err != nil {
-		return nil, errors.Wrapf(err, "unable to read auth token file %s", rt.authTokenFile)
+		return nil, fmt.Errorf("unable to read auth token file %s: %w", rt.authTokenFile, err)
 	}
 	authToken := strings.TrimSpace(string(b))
 
@@ -331,15 +331,15 @@ func fetchApps(ctx context.Context, client *http.Client, url string) (*appList, 
 		return nil, err
 	}
 	defer func() {
-		io.Copy(ioutil.Discard, resp.Body)
+		io.Copy(io.Discard, resp.Body)
 		resp.Body.Close()
 	}()
 
 	if (resp.StatusCode < 200) || (resp.StatusCode >= 300) {
-		return nil, errors.Errorf("non 2xx status '%v' response during marathon service discovery", resp.StatusCode)
+		return nil, fmt.Errorf("non 2xx status '%v' response during marathon service discovery", resp.StatusCode)
 	}
 
-	b, err := ioutil.ReadAll(resp.Body)
+	b, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}
@@ -347,7 +347,7 @@ func fetchApps(ctx context.Context, client *http.Client, url string) (*appList, 
 	var apps appList
 	err = json.Unmarshal(b, &apps)
 	if err != nil {
-		return nil, errors.Wrapf(err, "%q", url)
+		return nil, fmt.Errorf("%q: %w", url, err)
 	}
 	return &apps, nil
 }

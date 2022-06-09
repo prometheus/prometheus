@@ -18,7 +18,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"strconv"
@@ -26,7 +25,6 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
@@ -85,15 +83,15 @@ func (d *robotDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, err
 	}
 
 	defer func() {
-		io.Copy(ioutil.Discard, resp.Body)
+		io.Copy(io.Discard, resp.Body)
 		resp.Body.Close()
 	}()
 
 	if resp.StatusCode/100 != 2 {
-		return nil, errors.Errorf("non 2xx status '%d' response during hetzner service discovery with role robot", resp.StatusCode)
+		return nil, fmt.Errorf("non 2xx status '%d' response during hetzner service discovery with role robot", resp.StatusCode)
 	}
 
-	b, err := ioutil.ReadAll(resp.Body)
+	b, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}

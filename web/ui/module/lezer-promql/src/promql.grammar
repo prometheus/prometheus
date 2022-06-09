@@ -140,6 +140,7 @@ FunctionIdentifier {
   DaysInMonth |
   DayOfMonth |
   DayOfWeek |
+  DayOfYear |
   Deg |
   Delta |
   Deriv |
@@ -378,6 +379,7 @@ NumberLiteral  {
   DaysInMonth { condFn<"days_in_month"> }
   DayOfMonth { condFn<"day_of_month"> }
   DayOfWeek { condFn<"day_of_week"> }
+  DayOfYear { condFn<"day_of_year"> }
   Deg { condFn<"deg"> }
   Delta { condFn<"delta"> }
   Deriv { condFn<"deriv"> }

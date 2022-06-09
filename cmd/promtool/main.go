@@ -17,9 +17,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math"
 	"net/http"
 	"net/url"
@@ -33,7 +33,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/google/pprof/profile"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/api"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -96,6 +95,9 @@ func main() {
 		"lint",
 		"Linting checks to apply to the rules specified in the config. Available options are: "+strings.Join(lintOptions, ", ")+". Use --lint=none to disable linting",
 	).Default(lintOptionDuplicateRules).String()
+	checkConfigLintFatal := checkConfigCmd.Flag(
+		"lint-fatal",
+		"Make lint errors exit with exit code 3.").Default("false").Bool()
 
 	checkWebConfigCmd := checkCmd.Command("web-config", "Check if the web config files are valid or not.")
 	webConfigFiles := checkWebConfigCmd.Arg(
@@ -112,6 +114,9 @@ func main() {
 		"lint",
 		"Linting checks to apply. Available options are: "+strings.Join(lintOptions, ", ")+". Use --lint=none to disable linting",
 	).Default(lintOptionDuplicateRules).String()
+	checkRulesLintFatal := checkRulesCmd.Flag(
+		"lint-fatal",
+		"Make lint errors exit with exit code 3.").Default("false").Bool()
 
 	checkMetricsCmd := checkCmd.Command("metrics", checkMetricsUsage)
 	checkMetricsExtended := checkCmd.Flag("extended", "Print extended information related to the cardinality of the metrics.").Bool()
@@ -152,6 +157,7 @@ func main() {
 	queryLabelsName := queryLabelsCmd.Arg("name", "Label name to provide label values for.").Required().String()
 	queryLabelsBegin := queryLabelsCmd.Flag("start", "Start time (RFC3339 or Unix timestamp).").String()
 	queryLabelsEnd := queryLabelsCmd.Flag("end", "End time (RFC3339 or Unix timestamp).").String()
+	queryLabelsMatch := queryLabelsCmd.Flag("match", "Series selector. Can be specified multiple times.").Strings()
 
 	testCmd := app.Command("test", "Unit testing.")
 	testRulesCmd := testCmd.Command("rules", "Unit tests for rules.")
@@ -236,13 +242,13 @@ func main() {
 		os.Exit(CheckSD(*sdConfigFile, *sdJobName, *sdTimeout))
 
 	case checkConfigCmd.FullCommand():
-		os.Exit(CheckConfig(*agentMode, *checkConfigSyntaxOnly, newLintConfig(*checkConfigLint), *configFiles...))
+		os.Exit(CheckConfig(*agentMode, *checkConfigSyntaxOnly, newLintConfig(*checkConfigLint, *checkConfigLintFatal), *configFiles...))
 
 	case checkWebConfigCmd.FullCommand():
 		os.Exit(CheckWebConfig(*webConfigFiles...))
 
 	case checkRulesCmd.FullCommand():
-		os.Exit(CheckRules(newLintConfig(*checkRulesLint), *ruleFiles...))
+		os.Exit(CheckRules(newLintConfig(*checkRulesLint, *checkRulesLintFatal), *ruleFiles...))
 
 	case checkMetricsCmd.FullCommand():
 		os.Exit(CheckMetrics(*checkMetricsExtended))
@@ -266,7 +272,7 @@ func main() {
 		os.Exit(debugAll(*debugAllServer))
 
 	case queryLabelsCmd.FullCommand():
-		os.Exit(QueryLabels(*queryLabelsServer, *queryLabelsName, *queryLabelsBegin, *queryLabelsEnd, p))
+		os.Exit(QueryLabels(*queryLabelsServer, *queryLabelsMatch, *queryLabelsName, *queryLabelsBegin, *queryLabelsEnd, p))
 
 	case testRulesCmd.FullCommand():
 		os.Exit(RulesUnitTest(
@@ -303,11 +309,14 @@ var lintError = fmt.Errorf("lint error")
 type lintConfig struct {
 	all            bool
 	duplicateRules bool
+	fatal          bool
 }
 
-func newLintConfig(stringVal string) lintConfig {
+func newLintConfig(stringVal string, fatal bool) lintConfig {
 	items := strings.Split(stringVal, ",")
-	ls := lintConfig{}
+	ls := lintConfig{
+		fatal: fatal,
+	}
 	for _, setting := range items {
 		switch setting {
 		case lintOptionAll:
@@ -329,7 +338,7 @@ func (ls lintConfig) lintDuplicateRules() bool {
 // CheckConfig validates configuration files.
 func CheckConfig(agentMode, checkSyntaxOnly bool, lintSettings lintConfig, files ...string) int {
 	failed := false
-	hasLintErrors := false
+	hasErrors := false
 
 	for _, f := range files {
 		ruleFiles, err := checkConfig(agentMode, f, checkSyntaxOnly)
@@ -352,7 +361,7 @@ func CheckConfig(agentMode, checkSyntaxOnly bool, lintSettings lintConfig, files
 				}
 				failed = true
 				for _, err := range errs {
-					hasLintErrors = hasLintErrors || errors.Is(err, lintError)
+					hasErrors = hasErrors || !errors.Is(err, lintError)
 				}
 			} else {
 				fmt.Printf("  SUCCESS: %d rules found\n", n)
@@ -360,11 +369,11 @@ func CheckConfig(agentMode, checkSyntaxOnly bool, lintSettings lintConfig, files
 			fmt.Println()
 		}
 	}
-	if failed && hasLintErrors {
-		return lintErrExitCode
-	}
-	if failed {
+	if failed && hasErrors {
 		return failureExitCode
+	}
+	if failed && lintSettings.fatal {
+		return lintErrExitCode
 	}
 	return successExitCode
 }
@@ -414,10 +423,10 @@ func checkConfig(agentMode bool, filename string, checkSyntaxOnly bool) ([]strin
 			// If an explicit file was given, error if it is not accessible.
 			if !strings.Contains(rf, "*") {
 				if len(rfs) == 0 {
-					return nil, errors.Errorf("%q does not point to an existing file", rf)
+					return nil, fmt.Errorf("%q does not point to an existing file", rf)
 				}
 				if err := checkFileExists(rfs[0]); err != nil {
-					return nil, errors.Wrapf(err, "error checking rule file %q", rfs[0])
+					return nil, fmt.Errorf("error checking rule file %q: %w", rfs[0], err)
 				}
 			}
 			ruleFiles = append(ruleFiles, rfs...)
@@ -427,7 +436,7 @@ func checkConfig(agentMode bool, filename string, checkSyntaxOnly bool) ([]strin
 	for _, scfg := range cfg.ScrapeConfigs {
 		if !checkSyntaxOnly && scfg.HTTPClientConfig.Authorization != nil {
 			if err := checkFileExists(scfg.HTTPClientConfig.Authorization.CredentialsFile); err != nil {
-				return nil, errors.Wrapf(err, "error checking authorization credentials or bearer token file %q", scfg.HTTPClientConfig.Authorization.CredentialsFile)
+				return nil, fmt.Errorf("error checking authorization credentials or bearer token file %q: %w", scfg.HTTPClientConfig.Authorization.CredentialsFile, err)
 			}
 		}
 
@@ -455,7 +464,7 @@ func checkConfig(agentMode bool, filename string, checkSyntaxOnly bool) ([]strin
 							var targetGroups []*targetgroup.Group
 							targetGroups, err = checkSDFile(f)
 							if err != nil {
-								return nil, errors.Errorf("checking SD file %q: %v", file, err)
+								return nil, fmt.Errorf("checking SD file %q: %w", file, err)
 							}
 							if err := checkTargetGroupsForScrapeConfig(targetGroups, scfg); err != nil {
 								return nil, err
@@ -491,7 +500,7 @@ func checkConfig(agentMode bool, filename string, checkSyntaxOnly bool) ([]strin
 							var targetGroups []*targetgroup.Group
 							targetGroups, err = checkSDFile(f)
 							if err != nil {
-								return nil, errors.Errorf("checking SD file %q: %v", file, err)
+								return nil, fmt.Errorf("checking SD file %q: %w", file, err)
 							}
 
 							if err := checkTargetGroupsForAlertmanager(targetGroups, amcfg); err != nil {
@@ -514,10 +523,10 @@ func checkConfig(agentMode bool, filename string, checkSyntaxOnly bool) ([]strin
 
 func checkTLSConfig(tlsConfig config_util.TLSConfig, checkSyntaxOnly bool) error {
 	if len(tlsConfig.CertFile) > 0 && len(tlsConfig.KeyFile) == 0 {
-		return errors.Errorf("client cert file %q specified without client key file", tlsConfig.CertFile)
+		return fmt.Errorf("client cert file %q specified without client key file", tlsConfig.CertFile)
 	}
 	if len(tlsConfig.KeyFile) > 0 && len(tlsConfig.CertFile) == 0 {
-		return errors.Errorf("client key file %q specified without client cert file", tlsConfig.KeyFile)
+		return fmt.Errorf("client key file %q specified without client cert file", tlsConfig.KeyFile)
 	}
 
 	if checkSyntaxOnly {
@@ -525,10 +534,10 @@ func checkTLSConfig(tlsConfig config_util.TLSConfig, checkSyntaxOnly bool) error
 	}
 
 	if err := checkFileExists(tlsConfig.CertFile); err != nil {
-		return errors.Wrapf(err, "error checking client cert file %q", tlsConfig.CertFile)
+		return fmt.Errorf("error checking client cert file %q: %w", tlsConfig.CertFile, err)
 	}
 	if err := checkFileExists(tlsConfig.KeyFile); err != nil {
-		return errors.Wrapf(err, "error checking client key file %q", tlsConfig.KeyFile)
+		return fmt.Errorf("error checking client key file %q: %w", tlsConfig.KeyFile, err)
 	}
 
 	return nil
@@ -541,7 +550,7 @@ func checkSDFile(filename string) ([]*targetgroup.Group, error) {
 	}
 	defer fd.Close()
 
-	content, err := ioutil.ReadAll(fd)
+	content, err := io.ReadAll(fd)
 	if err != nil {
 		return nil, err
 	}
@@ -558,12 +567,12 @@ func checkSDFile(filename string) ([]*targetgroup.Group, error) {
 			return nil, err
 		}
 	default:
-		return nil, errors.Errorf("invalid file extension: %q", ext)
+		return nil, fmt.Errorf("invalid file extension: %q", ext)
 	}
 
 	for i, tg := range targetGroups {
 		if tg == nil {
-			return nil, errors.Errorf("nil target group item found (index %d)", i)
+			return nil, fmt.Errorf("nil target group item found (index %d)", i)
 		}
 	}
 
@@ -573,7 +582,7 @@ func checkSDFile(filename string) ([]*targetgroup.Group, error) {
 // CheckRules validates rule files.
 func CheckRules(ls lintConfig, files ...string) int {
 	failed := false
-	hasLintErrors := false
+	hasErrors := false
 
 	for _, f := range files {
 		if n, errs := checkRules(f, ls); errs != nil {
@@ -583,18 +592,18 @@ func CheckRules(ls lintConfig, files ...string) int {
 			}
 			failed = true
 			for _, err := range errs {
-				hasLintErrors = hasLintErrors || errors.Is(err, lintError)
+				hasErrors = hasErrors || !errors.Is(err, lintError)
 			}
 		} else {
 			fmt.Printf("  SUCCESS: %d rules found\n", n)
 		}
 		fmt.Println()
 	}
-	if failed && hasLintErrors {
-		return lintErrExitCode
-	}
-	if failed {
+	if failed && hasErrors {
 		return failureExitCode
+	}
+	if failed && ls.fatal {
+		return lintErrExitCode
 	}
 	return successExitCode
 }
@@ -930,7 +939,7 @@ func QuerySeries(url *url.URL, matchers []string, start, end string, p printer) 
 }
 
 // QueryLabels queries for label values against a Prometheus server.
-func QueryLabels(url *url.URL, name, start, end string, p printer) int {
+func QueryLabels(url *url.URL, matchers []string, name, start, end string, p printer) int {
 	if url.Scheme == "" {
 		url.Scheme = "http"
 	}
@@ -954,7 +963,7 @@ func QueryLabels(url *url.URL, name, start, end string, p printer) int {
 	// Run query against client.
 	api := v1.NewAPI(c)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	val, warn, err := api.LabelValues(ctx, name, []string{}, stime, etime)
+	val, warn, err := api.LabelValues(ctx, name, matchers, stime, etime)
 	cancel()
 
 	for _, v := range warn {
@@ -992,14 +1001,14 @@ func parseStartTimeAndEndTime(start, end string) (time.Time, time.Time, error) {
 	if start != "" {
 		stime, err = parseTime(start)
 		if err != nil {
-			return stime, etime, errors.Wrap(err, "error parsing start time")
+			return stime, etime, fmt.Errorf("error parsing start time: %w", err)
 		}
 	}
 
 	if end != "" {
 		etime, err = parseTime(end)
 		if err != nil {
-			return stime, etime, errors.Wrap(err, "error parsing end time")
+			return stime, etime, fmt.Errorf("error parsing end time: %w", err)
 		}
 	}
 	return stime, etime, nil
@@ -1013,7 +1022,7 @@ func parseTime(s string) (time.Time, error) {
 	if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
 		return t, nil
 	}
-	return time.Time{}, errors.Errorf("cannot parse %q to a valid timestamp", s)
+	return time.Time{}, fmt.Errorf("cannot parse %q to a valid timestamp", s)
 }
 
 type endpointsGroup struct {
@@ -1039,7 +1048,7 @@ var (
 				}
 				var buf bytes.Buffer
 				if err := p.WriteUncompressed(&buf); err != nil {
-					return nil, errors.Wrap(err, "writing the profile to the buffer")
+					return nil, fmt.Errorf("writing the profile to the buffer: %w", err)
 				}
 
 				return buf.Bytes(), nil
@@ -1149,13 +1158,13 @@ func importRules(url *url.URL, start, end, outputDir string, evalInterval, maxBl
 	} else {
 		etime, err = parseTime(end)
 		if err != nil {
-			return fmt.Errorf("error parsing end time: %v", err)
+			return fmt.Errorf("error parsing end time: %w", err)
 		}
 	}
 
 	stime, err = parseTime(start)
 	if err != nil {
-		return fmt.Errorf("error parsing start time: %v", err)
+		return fmt.Errorf("error parsing start time: %w", err)
 	}
 
 	if !stime.Before(etime) {
@@ -1173,14 +1182,14 @@ func importRules(url *url.URL, start, end, outputDir string, evalInterval, maxBl
 		Address: url.String(),
 	})
 	if err != nil {
-		return fmt.Errorf("new api client error: %v", err)
+		return fmt.Errorf("new api client error: %w", err)
 	}
 
 	ruleImporter := newRuleImporter(log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr)), cfg, v1.NewAPI(client))
 	errs := ruleImporter.loadGroups(ctx, files)
 	for _, err := range errs {
 		if err != nil {
-			return fmt.Errorf("rule importer parse error: %v", err)
+			return fmt.Errorf("rule importer parse error: %w", err)
 		}
 	}
 

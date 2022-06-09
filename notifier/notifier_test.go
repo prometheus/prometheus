@@ -18,7 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -126,7 +126,7 @@ func TestHandlerSendAll(t *testing.T) {
 				return
 			}
 
-			b, err := ioutil.ReadAll(r.Body)
+			b, err := io.ReadAll(r.Body)
 			if err != nil {
 				err = errors.Errorf("error reading body: %v", err)
 				w.WriteHeader(http.StatusInternalServerError)
@@ -221,7 +221,7 @@ func TestCustomDo(t *testing.T) {
 	h := NewManager(&Options{
 		Do: func(_ context.Context, client *http.Client, req *http.Request) (*http.Response, error) {
 			received = true
-			body, err := ioutil.ReadAll(req.Body)
+			body, err := io.ReadAll(req.Body)
 
 			require.NoError(t, err)
 
@@ -230,7 +230,7 @@ func TestCustomDo(t *testing.T) {
 			require.Equal(t, testURL, req.URL.String())
 
 			return &http.Response{
-				Body: ioutil.NopCloser(bytes.NewBuffer(nil)),
+				Body: io.NopCloser(bytes.NewBuffer(nil)),
 			}, nil
 		},
 	}, nil)
@@ -331,7 +331,7 @@ func TestHandlerQueuing(t *testing.T) {
 		case expected := <-expectedc:
 			var alerts []*Alert
 
-			b, err := ioutil.ReadAll(r.Body)
+			b, err := io.ReadAll(r.Body)
 			if err != nil {
 				panic(err)
 			}

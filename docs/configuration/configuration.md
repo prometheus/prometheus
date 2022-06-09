@@ -99,7 +99,7 @@ remote_read:
 
 # Storage related settings that are runtime reloadable.
 storage:
-  [ - <exemplars> ... ]
+  [ exemplars: <exemplars> ]
 
 # Configures exporting traces.
 tracing:
@@ -256,6 +256,11 @@ hetzner_sd_configs:
 http_sd_configs:
   [ - <http_sd_config> ... ]
 
+
+# List of IONOS service discovery configurations.
+ionos_sd_configs:
+  [ - <ionos_sd_config> ... ]
+
 # List of Kubernetes service discovery configurations.
 kubernetes_sd_configs:
   [ - <kubernetes_sd_config> ... ]
@@ -369,6 +374,12 @@ A `tls_config` allows configuring TLS connections.
 
 # Disable validation of the server certificate.
 [ insecure_skip_verify: <boolean> ]
+
+# Minimum acceptable TLS version. Accepted values: TLS10 (TLS 1.0), TLS11 (TLS
+# 1.1), TLS12 (TLS 1.2), TLS13 (TLS 1.3).
+# If unset, Prometheus will use Go default minimum version, which is TLS 1.2.
+# See MinVersion in https://pkg.go.dev/crypto/tls#Config.
+[ min_version: <string> ]
 ```
 
 ### `<oauth2>`
@@ -1533,6 +1544,86 @@ tls_config:
   [ <tls_config> ]
 ```
 
+### `<ionos_sd_config>`
+
+IONOS SD configurations allows retrieving scrape targets from
+[IONOS Cloud](https://cloud.ionos.com/) API. This service discovery uses the
+first NICs IP address by default, but that can be changed with relabeling. The
+following meta labels are available on all targets during
+[relabeling](#relabel_config):
+
+* `__meta_ionos_server_availability_zone`: the availability zone of the server
+* `__meta_ionos_server_boot_cdrom_id`: the ID of the CD-ROM the server is booted 
+  from
+* `__meta_ionos_server_boot_image_id`: the ID of the boot image or snapshot the
+  server is booted from
+* `__meta_ionos_server_boot_volume_id`: the ID of the boot volume
+* `__meta_ionos_server_cpu_family`: the CPU family of the server
+  to
+* `__meta_ionos_server_id`: the ID of the server
+* `__meta_ionos_server_ip`: comma separated list of all IPs assigned to the
+  server
+* `__meta_ionos_server_lifecycle`: the lifecycle state of the server resource
+* `__meta_ionos_server_name`: the name of the server
+* `__meta_ionos_server_nic_ip_<nic_name>`: comma separated list of IPs, grouped
+  by the name of each NIC attached to the server
+* `__meta_ionos_server_servers_id`: the ID of the servers the server belongs to
+* `__meta_ionos_server_state`: the execution state of the server
+* `__meta_ionos_server_type`: the type of the server
+
+```yaml
+# The unique ID of the data center.
+datacenter_id: <string>
+
+# Authentication information used to authenticate to the API server.
+# Note that `basic_auth` and `authorization` options are
+# mutually exclusive.
+# password and password_file are mutually exclusive.
+
+# Optional HTTP basic authentication information, required when using IONOS
+# Cloud username and password as authentication method.
+basic_auth:
+  [ username: <string> ]
+  [ password: <secret> ]
+  [ password_file: <string> ]
+
+# Optional `Authorization` header configuration, required when using IONOS
+# Cloud token as authentication method.
+authorization:
+  # Sets the authentication type.
+  [ type: <string> | default: Bearer ]
+  # Sets the credentials. It is mutually exclusive with
+  # `credentials_file`.
+  [ credentials: <secret> ]
+  # Sets the credentials to the credentials read from the configured file.
+  # It is mutually exclusive with `credentials`.
+  [ credentials_file: <filename> ]
+
+# Optional OAuth 2.0 configuration.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2:
+  [ <oauth2> ]
+
+# Optional proxy URL.
+[ proxy_url: <string> ]
+
+# Configure whether HTTP requests follow HTTP 3xx redirects.
+[ follow_redirects: <boolean> | default = true ]
+
+# Whether to enable HTTP2.
+[ enable_http2: <bool> | default: true ]
+
+# TLS configuration.
+tls_config:
+  [ <tls_config> ]
+
+# The port to scrape metrics from.
+[ port: <int> | default = 80 ]
+
+# The time after which the servers are refreshed.
+[ refresh_interval: <duration> | default = 60s ]
+```
+
 ### `<kubernetes_sd_config>`
 
 Kubernetes SD configurations allow retrieving scrape targets from
@@ -2447,6 +2538,83 @@ tls_config:
 See [the Prometheus uyuni-sd configuration file](/documentation/examples/prometheus-uyuni.yml)
 for a practical example on how to set up Uyuni Prometheus configuration.
 
+### `<vultr_sd_config>`
+
+Vultr SD configurations allow retrieving scrape targets from [Vultr](https://www.vultr.com/).
+
+This service discovery uses the main IPv4 address by default, which that be
+changed with relabelling, as demonstrated in [the Prometheus vultr-sd
+configuration file](/documentation/examples/prometheus-vultr.yml).
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_vultr_instance_id` : A unique ID for the vultr Instance.
+* `__meta_vultr_instance_label` : The user-supplied label for this instance.
+* `__meta_vultr_instance_os` : The Operating System name.
+* `__meta_vultr_instance_os_id` : The Operating System id used by this instance.
+* `__meta_vultr_instance_region` : The Region id where the Instance is located.
+* `__meta_vultr_instance_plan` : A unique ID for the Plan.
+* `__meta_vultr_instance_main_ip` : The main IPv4 address.
+* `__meta_vultr_instance_internal_ip` : The private IP address.
+* `__meta_vultr_instance_main_ipv6` : The main IPv6 address.
+* `__meta_vultr_instance_features` : List of features that are available to the instance.
+* `__meta_vultr_instance_tags` : List of tags associated with the instance.
+* `__meta_vultr_instance_hostname` : The hostname for this instance.
+* `__meta_vultr_instance_server_status` : The server health status.
+* `__meta_vultr_instance_vcpu_count` : Number of vCPUs.
+* `__meta_vultr_instance_ram_mb` : The amount of RAM in MB.
+* `__meta_vultr_instance_disk_gb` : The size of the disk in GB.
+* `__meta_vultr_instance_allowed_bandwidth_gb` : Monthly bandwidth quota in GB.
+
+```yaml
+# Authentication information used to authenticate to the API server.
+# Note that `basic_auth` and `authorization` options are
+# mutually exclusive.
+# password and password_file are mutually exclusive.
+
+# Optional HTTP basic authentication information, not currently supported by Vultr.
+basic_auth:
+  [ username: <string> ]
+  [ password: <secret> ]
+  [ password_file: <string> ]
+
+# Optional `Authorization` header configuration.
+authorization:
+  # Sets the authentication type.
+  [ type: <string> | default: Bearer ]
+  # Sets the credentials. It is mutually exclusive with
+  # `credentials_file`.
+  [ credentials: <secret> ]
+  # Sets the credentials to the credentials read from the configured file.
+  # It is mutually exclusive with `credentials`.
+  [ credentials_file: <filename> ]
+
+# Optional OAuth 2.0 configuration.
+# Cannot be used at the same time as basic_auth or authorization.
+oauth2:
+  [ <oauth2> ]
+
+# Optional proxy URL.
+[ proxy_url: <string> ]
+
+# Configure whether HTTP requests follow HTTP 3xx redirects.
+[ follow_redirects: <boolean> | default = true ]
+
+# Whether to enable HTTP2.
+[ enable_http2: <bool> | default: true ]
+
+# TLS configuration.
+tls_config:
+  [ <tls_config> ]
+
+# The port to scrape metrics from.
+[ port: <int> | default = 80 ]
+
+# The time after which the instances are refreshed.
+[ refresh_interval: <duration> | default = 60s ]
+```
+
+
 ### `<static_config>`
 
 A `static_config` allows specifying a list of targets and a common label set
@@ -2530,6 +2698,8 @@ anchored on both ends. To un-anchor the regex, use `.*<regex>.*`.
   `target_label` to `replacement`, with match group references
   (`${1}`, `${2}`, ...) in `replacement` substituted by their value. If `regex`
   does not match, no replacement takes place.
+* `lowercase`: Maps the concatenated `source_labels` to their lower case.
+* `uppercase`: Maps the concatenated `source_labels` to their upper case.
 * `keep`: Drop targets for which `regex` does not match the concatenated `source_labels`.
 * `drop`: Drop targets for which `regex` matches the concatenated `source_labels`.
 * `hashmod`: Set `target_label` to the `modulus` of a hash of the concatenated `source_labels`.
@@ -2672,6 +2842,10 @@ hetzner_sd_configs:
 http_sd_configs:
   [ - <http_sd_config> ... ]
 
+ # List of IONOS service discovery configurations.
+ionos_sd_configs:
+  [ - <ionos_sd_config> ... ]
+
 # List of Kubernetes service discovery configurations.
 kubernetes_sd_configs:
   [ - <kubernetes_sd_config> ... ]
@@ -2715,6 +2889,10 @@ triton_sd_configs:
 # List of Uyuni service discovery configurations.
 uyuni_sd_configs:
   [ - <uyuni_sd_config> ... ]
+
+# List of Vultr service discovery configurations.
+vultr_sd_configs:
+  [ - <vultr_sd_config> ... ]
 
 # List of labeled statically configured Alertmanagers.
 static_configs:

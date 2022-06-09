@@ -25,6 +25,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
+	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
@@ -124,6 +125,11 @@ func NewManager(o *Options, logger log.Logger, app storage.Appendable) *Manager 
 // Options are the configuration parameters to the scrape manager.
 type Options struct {
 	ExtraMetrics bool
+	// Option used by downstream scraper users like OpenTelemetry Collector
+	// to help lookup metric metadata. Should be false for Prometheus.
+	PassMetadataInContext bool
+	// Option to increase the interval used by scrape manager to throttle target groups updates.
+	DiscoveryReloadInterval model.Duration
 
 	// Optional HTTP client options to use when scraping.
 	HTTPClientOptions []config_util.HTTPClientOption
@@ -167,7 +173,13 @@ func (m *Manager) Run(tsets <-chan map[string][]*targetgroup.Group) error {
 }
 
 func (m *Manager) reloader() {
-	ticker := time.NewTicker(5 * time.Second)
+	reloadIntervalDuration := m.opts.DiscoveryReloadInterval
+	if reloadIntervalDuration < model.Duration(5*time.Second) {
+		reloadIntervalDuration = model.Duration(5 * time.Second)
+	}
+
+	ticker := time.NewTicker(time.Duration(reloadIntervalDuration))
+
 	defer ticker.Stop()
 
 	for {
@@ -195,7 +207,7 @@ func (m *Manager) reload() {
 				level.Error(m.logger).Log("msg", "error reloading target set", "err", "invalid config id:"+setName)
 				continue
 			}
-			sp, err := newScrapePool(scrapeConfig, m.append, m.jitterSeed, log.With(m.logger, "scrape_pool", setName), m.opts.ExtraMetrics, m.opts.HTTPClientOptions)
+			sp, err := newScrapePool(scrapeConfig, m.append, m.jitterSeed, log.With(m.logger, "scrape_pool", setName), m.opts.ExtraMetrics, m.opts.PassMetadataInContext, m.opts.HTTPClientOptions)
 			if err != nil {
 				level.Error(m.logger).Log("msg", "error creating new scrape pool", "err", err, "scrape_pool", setName)
 				continue

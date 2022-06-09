@@ -14,8 +14,8 @@
 package config
 
 import (
+	"errors"
 	"fmt"
-	"io/ioutil"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -26,7 +26,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/regexp"
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/sigv4"
@@ -103,13 +102,13 @@ func Load(s string, expandExternalLabels bool, logger log.Logger) (*Config, erro
 
 // LoadFile parses the given YAML file into a Config.
 func LoadFile(filename string, agentMode, expandExternalLabels bool, logger log.Logger) (*Config, error) {
-	content, err := ioutil.ReadFile(filename)
+	content, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, err
 	}
 	cfg, err := Load(string(content), expandExternalLabels, logger)
 	if err != nil {
-		return nil, errors.Wrapf(err, "parsing YAML file %s", filename)
+		return nil, fmt.Errorf("parsing YAML file %s: %w", filename, err)
 	}
 
 	if agentMode {
@@ -277,7 +276,7 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 	for _, rf := range c.RuleFiles {
 		if !patRulePath.MatchString(rf) {
-			return errors.Errorf("invalid rule file path %q", rf)
+			return fmt.Errorf("invalid rule file path %q", rf)
 		}
 	}
 	// Do global overrides and validate unique names.
@@ -292,7 +291,7 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 			scfg.ScrapeInterval = c.GlobalConfig.ScrapeInterval
 		}
 		if scfg.ScrapeTimeout > scfg.ScrapeInterval {
-			return errors.Errorf("scrape timeout greater than scrape interval for scrape config with job name %q", scfg.JobName)
+			return fmt.Errorf("scrape timeout greater than scrape interval for scrape config with job name %q", scfg.JobName)
 		}
 		if scfg.ScrapeTimeout == 0 {
 			if c.GlobalConfig.ScrapeTimeout > scfg.ScrapeInterval {
@@ -303,7 +302,7 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		}
 
 		if _, ok := jobNames[scfg.JobName]; ok {
-			return errors.Errorf("found multiple scrape configs with job name %q", scfg.JobName)
+			return fmt.Errorf("found multiple scrape configs with job name %q", scfg.JobName)
 		}
 		jobNames[scfg.JobName] = struct{}{}
 	}
@@ -314,7 +313,7 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		}
 		// Skip empty names, we fill their name with their config hash in remote write code.
 		if _, ok := rwNames[rwcfg.Name]; ok && rwcfg.Name != "" {
-			return errors.Errorf("found multiple remote write configs with job name %q", rwcfg.Name)
+			return fmt.Errorf("found multiple remote write configs with job name %q", rwcfg.Name)
 		}
 		rwNames[rwcfg.Name] = struct{}{}
 	}
@@ -325,7 +324,7 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		}
 		// Skip empty names, we fill their name with their config hash in remote read code.
 		if _, ok := rrNames[rrcfg.Name]; ok && rrcfg.Name != "" {
-			return errors.Errorf("found multiple remote read configs with job name %q", rrcfg.Name)
+			return fmt.Errorf("found multiple remote read configs with job name %q", rrcfg.Name)
 		}
 		rrNames[rrcfg.Name] = struct{}{}
 	}
@@ -364,10 +363,10 @@ func (c *GlobalConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 	for _, l := range gc.ExternalLabels {
 		if !model.LabelName(l.Name).IsValid() {
-			return errors.Errorf("%q is not a valid label name", l.Name)
+			return fmt.Errorf("%q is not a valid label name", l.Name)
 		}
 		if !model.LabelValue(l.Value).IsValid() {
-			return errors.Errorf("%q is not a valid label value", l.Value)
+			return fmt.Errorf("%q is not a valid label value", l.Value)
 		}
 	}
 
@@ -742,7 +741,7 @@ func checkStaticTargets(configs discovery.Configs) error {
 func CheckTargetAddress(address model.LabelValue) error {
 	// For now check for a URL, we may want to expand this later.
 	if strings.Contains(string(address), "/") {
-		return errors.Errorf("%q is not a valid hostname", address)
+		return fmt.Errorf("%q is not a valid hostname", address)
 	}
 	return nil
 }
@@ -811,7 +810,7 @@ func validateHeadersForTracing(headers map[string]string) error {
 			return errors.New("custom authorization header configuration is not yet supported")
 		}
 		if _, ok := reservedHeaders[strings.ToLower(header)]; ok {
-			return errors.Errorf("%s is a reserved header. It must not be changed", header)
+			return fmt.Errorf("%s is a reserved header. It must not be changed", header)
 		}
 	}
 	return nil
@@ -823,7 +822,7 @@ func validateHeaders(headers map[string]string) error {
 			return errors.New("authorization header must be changed via the basic_auth, authorization, oauth2, or sigv4 parameter")
 		}
 		if _, ok := reservedHeaders[strings.ToLower(header)]; ok {
-			return errors.Errorf("%s is a reserved header. It must not be changed", header)
+			return fmt.Errorf("%s is a reserved header. It must not be changed", header)
 		}
 	}
 	return nil

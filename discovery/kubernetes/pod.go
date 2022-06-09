@@ -15,13 +15,14 @@ package kubernetes
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net"
 	"strconv"
 	"strings"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -118,7 +119,7 @@ func (p *Pod) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	}
 
 	if !cache.WaitForCacheSync(ctx.Done(), cacheSyncs...) {
-		if ctx.Err() != context.Canceled {
+		if !errors.Is(ctx.Err(), context.Canceled) {
 			level.Error(p.logger).Log("msg", "pod informer unable to sync cache")
 		}
 		return
@@ -169,7 +170,7 @@ func convertToPod(o interface{}) (*apiv1.Pod, error) {
 		return pod, nil
 	}
 
-	return nil, errors.Errorf("received unexpected object: %v", o)
+	return nil, fmt.Errorf("received unexpected object: %v", o)
 }
 
 const (
