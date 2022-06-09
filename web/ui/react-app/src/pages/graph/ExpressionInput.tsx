@@ -19,8 +19,8 @@ import { faSearch, faSpinner, faGlobeEurope } from '@fortawesome/free-solid-svg-
 import MetricsExplorer from './MetricsExplorer';
 import { usePathPrefix } from '../../contexts/PathPrefixContext';
 import { useTheme } from '../../contexts/ThemeContext';
-import { CompleteStrategy, PromQLExtension } from 'codemirror-promql';
-import { newCompleteStrategy } from 'codemirror-promql/dist/esm/complete';
+import { CompleteStrategy, PromQLExtension } from '@prometheus-io/codemirror-promql';
+import { newCompleteStrategy } from '@prometheus-io/codemirror-promql/dist/esm/complete';
 
 const promqlExtension = new PromQLExtension();
 
