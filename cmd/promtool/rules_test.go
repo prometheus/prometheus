@@ -117,7 +117,8 @@ func TestBackfillRuleIntegration(t *testing.T) {
 				}
 
 				opts := tsdb.DefaultOptions()
-				opts.AllowOverlappingBlocks = true
+				opts.AllowOverlappingQueries = true
+				opts.AllowOverlappingCompaction = true
 				db, err := tsdb.Open(tmpDir, nil, nil, opts, nil)
 				require.NoError(t, err)
 
@@ -248,7 +249,8 @@ func TestBackfillLabels(t *testing.T) {
 	}
 
 	opts := tsdb.DefaultOptions()
-	opts.AllowOverlappingBlocks = true
+	opts.AllowOverlappingQueries = true
+	opts.AllowOverlappingCompaction = true
 	db, err := tsdb.Open(tmpDir, nil, nil, opts, nil)
 	require.NoError(t, err)
 
