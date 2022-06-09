@@ -696,7 +696,7 @@ func TestOpenMetricsParseErrors(t *testing.T) {
 		for err == nil {
 			_, err = p.Next()
 		}
-		expectedErr := fmt.Sprintf(c.err+" Line %d, Column %d", c.line, c.column)
+		expectedErr := fmt.Sprintf(c.err+" line %d, column %d", c.line, c.column)
 		if c.err != "EOF" {
 			require.Equal(t, expectedErr, err.Error(), "test %d: %s", i, c.input)
 		} else {
@@ -789,7 +789,7 @@ func TestOMNullByteHandling(t *testing.T) {
 			require.Equal(t, io.EOF, err, "test %d", i)
 			continue
 		}
-		expectedErr := fmt.Sprintf(c.err+" Line %d, Column %d", c.line, c.column)
+		expectedErr := fmt.Sprintf(c.err+" line %d, column %d", c.line, c.column)
 		require.Equal(t, expectedErr, err.Error(), "test %d: %s", i, c.input)
 	}
 }

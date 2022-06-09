@@ -318,7 +318,7 @@ func TestPromParseErrors(t *testing.T) {
 		for err == nil {
 			_, err = p.Next()
 		}
-		expectedErr := fmt.Sprintf(c.err+" Line %d, Column %d", c.line, c.column)
+		expectedErr := fmt.Sprintf(c.err+" line %d, column %d", c.line, c.column)
 		require.Error(t, err)
 		require.Equal(t, expectedErr, err.Error(), "test %d", i)
 	}
@@ -385,7 +385,7 @@ func TestPromNullByteHandling(t *testing.T) {
 			continue
 		}
 
-		expectedErr := fmt.Sprintf(c.err+" Line %d, Column %d", c.line, c.column)
+		expectedErr := fmt.Sprintf(c.err+" line %d, column %d", c.line, c.column)
 		require.Error(t, err)
 		require.Equal(t, expectedErr, err.Error(), "test %d", i)
 	}
