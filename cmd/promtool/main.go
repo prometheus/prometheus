@@ -95,6 +95,9 @@ func main() {
 		"lint",
 		"Linting checks to apply to the rules specified in the config. Available options are: "+strings.Join(lintOptions, ", ")+". Use --lint=none to disable linting",
 	).Default(lintOptionDuplicateRules).String()
+	checkConfigLintFatal := checkConfigCmd.Flag(
+		"lint-fatal",
+		"Make lint errors exit with exit code 3.").Default("false").Bool()
 
 	checkWebConfigCmd := checkCmd.Command("web-config", "Check if the web config files are valid or not.")
 	webConfigFiles := checkWebConfigCmd.Arg(
@@ -111,6 +114,9 @@ func main() {
 		"lint",
 		"Linting checks to apply. Available options are: "+strings.Join(lintOptions, ", ")+". Use --lint=none to disable linting",
 	).Default(lintOptionDuplicateRules).String()
+	checkRulesLintFatal := checkRulesCmd.Flag(
+		"lint-fatal",
+		"Make lint errors exit with exit code 3.").Default("false").Bool()
 
 	checkMetricsCmd := checkCmd.Command("metrics", checkMetricsUsage)
 	checkMetricsExtended := checkCmd.Flag("extended", "Print extended information related to the cardinality of the metrics.").Bool()
@@ -236,13 +242,13 @@ func main() {
 		os.Exit(CheckSD(*sdConfigFile, *sdJobName, *sdTimeout))
 
 	case checkConfigCmd.FullCommand():
-		os.Exit(CheckConfig(*agentMode, *checkConfigSyntaxOnly, newLintConfig(*checkConfigLint), *configFiles...))
+		os.Exit(CheckConfig(*agentMode, *checkConfigSyntaxOnly, newLintConfig(*checkConfigLint, *checkConfigLintFatal), *configFiles...))
 
 	case checkWebConfigCmd.FullCommand():
 		os.Exit(CheckWebConfig(*webConfigFiles...))
 
 	case checkRulesCmd.FullCommand():
-		os.Exit(CheckRules(newLintConfig(*checkRulesLint), *ruleFiles...))
+		os.Exit(CheckRules(newLintConfig(*checkRulesLint, *checkRulesLintFatal), *ruleFiles...))
 
 	case checkMetricsCmd.FullCommand():
 		os.Exit(CheckMetrics(*checkMetricsExtended))
@@ -303,11 +309,14 @@ var lintError = fmt.Errorf("lint error")
 type lintConfig struct {
 	all            bool
 	duplicateRules bool
+	fatal          bool
 }
 
-func newLintConfig(stringVal string) lintConfig {
+func newLintConfig(stringVal string, fatal bool) lintConfig {
 	items := strings.Split(stringVal, ",")
-	ls := lintConfig{}
+	ls := lintConfig{
+		fatal: fatal,
+	}
 	for _, setting := range items {
 		switch setting {
 		case lintOptionAll:
@@ -329,7 +338,7 @@ func (ls lintConfig) lintDuplicateRules() bool {
 // CheckConfig validates configuration files.
 func CheckConfig(agentMode, checkSyntaxOnly bool, lintSettings lintConfig, files ...string) int {
 	failed := false
-	hasLintErrors := false
+	hasErrors := false
 
 	for _, f := range files {
 		ruleFiles, err := checkConfig(agentMode, f, checkSyntaxOnly)
@@ -352,7 +361,7 @@ func CheckConfig(agentMode, checkSyntaxOnly bool, lintSettings lintConfig, files
 				}
 				failed = true
 				for _, err := range errs {
-					hasLintErrors = hasLintErrors || errors.Is(err, lintError)
+					hasErrors = hasErrors || !errors.Is(err, lintError)
 				}
 			} else {
 				fmt.Printf("  SUCCESS: %d rules found\n", n)
@@ -360,11 +369,11 @@ func CheckConfig(agentMode, checkSyntaxOnly bool, lintSettings lintConfig, files
 			fmt.Println()
 		}
 	}
-	if failed && hasLintErrors {
-		return lintErrExitCode
-	}
-	if failed {
+	if failed && hasErrors {
 		return failureExitCode
+	}
+	if failed && lintSettings.fatal {
+		return lintErrExitCode
 	}
 	return successExitCode
 }
@@ -573,7 +582,7 @@ func checkSDFile(filename string) ([]*targetgroup.Group, error) {
 // CheckRules validates rule files.
 func CheckRules(ls lintConfig, files ...string) int {
 	failed := false
-	hasLintErrors := false
+	hasErrors := false
 
 	for _, f := range files {
 		if n, errs := checkRules(f, ls); errs != nil {
@@ -583,18 +592,18 @@ func CheckRules(ls lintConfig, files ...string) int {
 			}
 			failed = true
 			for _, err := range errs {
-				hasLintErrors = hasLintErrors || errors.Is(err, lintError)
+				hasErrors = hasErrors || !errors.Is(err, lintError)
 			}
 		} else {
 			fmt.Printf("  SUCCESS: %d rules found\n", n)
 		}
 		fmt.Println()
 	}
-	if failed && hasLintErrors {
-		return lintErrExitCode
-	}
-	if failed {
+	if failed && hasErrors {
 		return failureExitCode
+	}
+	if failed && ls.fatal {
+		return lintErrExitCode
 	}
 	return successExitCode
 }
