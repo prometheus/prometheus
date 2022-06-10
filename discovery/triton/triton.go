@@ -16,9 +16,9 @@ package triton
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/url"
 	"strings"
@@ -26,7 +26,6 @@ import (
 
 	"github.com/go-kit/log"
 	conntrack "github.com/mwitkow/go-conntrack"
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
@@ -203,17 +202,17 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	req = req.WithContext(ctx)
 	resp, err := d.client.Do(req)
 	if err != nil {
-		return nil, errors.Wrap(err, "an error occurred when requesting targets from the discovery endpoint")
+		return nil, fmt.Errorf("an error occurred when requesting targets from the discovery endpoint: %w", err)
 	}
 
 	defer func() {
-		io.Copy(ioutil.Discard, resp.Body)
+		io.Copy(io.Discard, resp.Body)
 		resp.Body.Close()
 	}()
 
-	data, err := ioutil.ReadAll(resp.Body)
+	data, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, errors.Wrap(err, "an error occurred when reading the response body")
+		return nil, fmt.Errorf("an error occurred when reading the response body: %w", err)
 	}
 
 	// The JSON response body is different so it needs to be processed/mapped separately.
@@ -235,7 +234,7 @@ func (d *Discovery) processContainerResponse(data []byte, endpoint string) ([]*t
 	dr := DiscoveryResponse{}
 	err := json.Unmarshal(data, &dr)
 	if err != nil {
-		return nil, errors.Wrap(err, "an error occurred unmarshaling the discovery response json")
+		return nil, fmt.Errorf("an error occurred unmarshaling the discovery response json: %w", err)
 	}
 
 	for _, container := range dr.Containers {
@@ -268,7 +267,7 @@ func (d *Discovery) processComputeNodeResponse(data []byte, endpoint string) ([]
 	dr := ComputeNodeDiscoveryResponse{}
 	err := json.Unmarshal(data, &dr)
 	if err != nil {
-		return nil, errors.Wrap(err, "an error occurred unmarshaling the compute node discovery response json")
+		return nil, fmt.Errorf("an error occurred unmarshaling the compute node discovery response json: %w", err)
 	}
 
 	for _, cn := range dr.ComputeNodes {

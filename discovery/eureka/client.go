@@ -18,10 +18,8 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/version"
 )
 
@@ -95,18 +93,18 @@ func fetchApps(ctx context.Context, server string, client *http.Client) (*Applic
 		return nil, err
 	}
 	defer func() {
-		io.Copy(ioutil.Discard, resp.Body)
+		io.Copy(io.Discard, resp.Body)
 		resp.Body.Close()
 	}()
 
 	if resp.StatusCode/100 != 2 {
-		return nil, errors.Errorf("non 2xx status '%d' response during eureka service discovery", resp.StatusCode)
+		return nil, fmt.Errorf("non 2xx status '%d' response during eureka service discovery", resp.StatusCode)
 	}
 
 	var apps Applications
 	err = xml.NewDecoder(resp.Body).Decode(&apps)
 	if err != nil {
-		return nil, errors.Wrapf(err, "%q", url)
+		return nil, fmt.Errorf("%q: %w", url, err)
 	}
 	return &apps, nil
 }

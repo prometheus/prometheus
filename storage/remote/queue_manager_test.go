@@ -16,7 +16,6 @@ package remote
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"math"
 	"net/url"
 	"os"
@@ -824,7 +823,7 @@ func BenchmarkStartup(b *testing.B) {
 
 	// Find the second largest segment; we will replay up to this.
 	// (Second largest as WALWatcher will start tailing the largest).
-	dirents, err := ioutil.ReadDir(dir)
+	dirents, err := os.ReadDir(dir)
 	require.NoError(b, err)
 
 	var segments []int
@@ -1182,4 +1181,30 @@ func TestQueueManagerMetrics(t *testing.T) {
 	metrics.unregister()
 	err = client_testutil.GatherAndCompare(reg, strings.NewReader(""))
 	require.NoError(t, err)
+}
+
+func TestQueue_FlushAndShutdownDoesNotDeadlock(t *testing.T) {
+	capacity := 100
+	batchSize := 10
+	queue := newQueue(batchSize, capacity)
+	for i := 0; i < capacity+batchSize; i++ {
+		queue.Append(sampleOrExemplar{})
+	}
+
+	done := make(chan struct{})
+	go queue.FlushAndShutdown(done)
+	go func() {
+		// Give enough time for FlushAndShutdown to acquire the lock. queue.Batch()
+		// should not block forever even if the lock is acquired.
+		time.Sleep(10 * time.Millisecond)
+		queue.Batch()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Error("Deadlock in FlushAndShutdown detected")
+		pprof.Lookup("goroutine").WriteTo(os.Stdout, 1)
+		t.FailNow()
+	}
 }

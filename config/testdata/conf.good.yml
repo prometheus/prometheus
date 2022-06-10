@@ -91,6 +91,9 @@ scrape_configs:
     authorization:
       credentials_file: valid_token_file
 
+    tls_config:
+      min_version: TLS10
+
   - job_name: service-x
 
     basic_auth:
@@ -325,6 +328,10 @@ scrape_configs:
           key_file: valid_key_file
 
   - job_name: hetzner
+    relabel_configs:
+      - action: uppercase
+        source_labels: [instance]
+        target_label: instance
     hetzner_sd_configs:
       - role: hcloud
         authorization:
@@ -359,6 +366,17 @@ scrape_configs:
       - server: https://localhost:1234
         username: gopher
         password: hole
+
+  - job_name: ionos
+    ionos_sd_configs:
+      - datacenter_id: 8feda53f-15f0-447f-badf-ebe32dad2fc0
+        authorization:
+          credentials: abcdef
+
+  - job_name: vultr
+    vultr_sd_configs:
+      - authorization:
+          credentials: abcdef
 
 alerting:
   alertmanagers:

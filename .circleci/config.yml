@@ -38,6 +38,7 @@ jobs:
             GO111MODULE: "on"
       - run: go test ./tsdb/ -test.tsdb-isolation=false
       - run: make -C documentation/examples/remote_storage
+      - run: make -C documentation/examples
       - prometheus/check_proto:
           version: "3.15.8"
       - prometheus/store_artifact:

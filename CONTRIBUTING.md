@@ -21,7 +21,6 @@ Prometheus uses GitHub to manage reviews of pull requests.
 
 * Be sure to sign off on the [DCO](https://github.com/probot/dco#how-it-works).
 
-
 ## Steps to Contribute
 
 Should you wish to work on an issue, please claim it first by commenting on the GitHub issue that you want to work on it. This is to prevent duplicated efforts from contributors on the same issue.
@@ -33,7 +32,8 @@ You can [spin up a prebuilt dev environment](https://gitpod.io/#https://github.c
 For complete instructions on how to compile see: [Building From Source](https://github.com/prometheus/prometheus#building-from-source)
 
 For quickly compiling and testing your changes do:
-```
+
+```bash
 # For building.
 go build ./cmd/prometheus/
 ./prometheus

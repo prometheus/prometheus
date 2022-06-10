@@ -374,13 +374,17 @@ type QueueManager struct {
 	highestRecvTimestamp *maxTimestamp
 }
 
-// NewQueueManager builds a new QueueManager.
+// NewQueueManager builds a new QueueManager and starts a new
+// WAL watcher with queue manager as the WriteTo destination.
+// The WAL watcher takes the dir parameter as the base directory
+// for where the WAL shall be located. Note that the full path to
+// the WAL directory will be constructed as <dir>/wal.
 func NewQueueManager(
 	metrics *queueManagerMetrics,
 	watcherMetrics *wal.WatcherMetrics,
 	readerMetrics *wal.LiveReaderMetrics,
 	logger log.Logger,
-	walDir string,
+	dir string,
 	samplesIn *ewmaRate,
 	cfg config.QueueConfig,
 	mCfg config.MetadataConfig,
@@ -426,7 +430,7 @@ func NewQueueManager(
 		highestRecvTimestamp: highestRecvTimestamp,
 	}
 
-	t.watcher = wal.NewWatcher(watcherMetrics, readerMetrics, logger, client.Name(), t, walDir, enableExemplarRemoteWrite)
+	t.watcher = wal.NewWatcher(watcherMetrics, readerMetrics, logger, client.Name(), t, dir, enableExemplarRemoteWrite)
 	if t.mcfg.Send {
 		t.metadataWatcher = NewMetadataWatcher(logger, sm, client.Name(), t, t.mcfg.SendInterval, flushDeadline)
 	}
@@ -1116,19 +1120,33 @@ func (q *queue) ReturnForReuse(batch []sampleOrExemplar) {
 // FlushAndShutdown stops the queue and flushes any samples. No appends can be
 // made after this is called.
 func (q *queue) FlushAndShutdown(done <-chan struct{}) {
-	q.batchMtx.Lock()
-	defer q.batchMtx.Unlock()
-
-	if len(q.batch) > 0 {
-		select {
-		case q.batchQueue <- q.batch:
-		case <-done:
-			// The shard has been hard shut down, so no more samples can be
-			// sent. Drop everything left in the queue.
-		}
+	for q.tryEnqueueingBatch(done) {
+		time.Sleep(time.Second)
 	}
 	q.batch = nil
 	close(q.batchQueue)
+}
+
+// tryEnqueueingBatch tries to send a batch if necessary. If sending needs to
+// be retried it will return true.
+func (q *queue) tryEnqueueingBatch(done <-chan struct{}) bool {
+	q.batchMtx.Lock()
+	defer q.batchMtx.Unlock()
+	if len(q.batch) == 0 {
+		return false
+	}
+
+	select {
+	case q.batchQueue <- q.batch:
+		return false
+	case <-done:
+		// The shard has been hard shut down, so no more samples can be sent.
+		// No need to try again as we will drop everything left in the queue.
+		return false
+	default:
+		// The batchQueue is full, so we need to try again later.
+		return true
+	}
 }
 
 func (q *queue) newBatch(capacity int) []sampleOrExemplar {

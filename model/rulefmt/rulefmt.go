@@ -17,7 +17,7 @@ import (
 	"bytes"
 	"context"
 	"io"
-	"io/ioutil"
+	"os"
 	"strings"
 	"time"
 
@@ -306,7 +306,7 @@ func Parse(content []byte) (*RuleGroups, []error) {
 
 // ParseFile reads and parses rules from a file.
 func ParseFile(file string) (*RuleGroups, []error) {
-	b, err := ioutil.ReadFile(file)
+	b, err := os.ReadFile(file)
 	if err != nil {
 		return nil, []error{errors.Wrap(err, file)}
 	}

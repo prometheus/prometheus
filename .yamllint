@@ -14,6 +14,7 @@ rules:
   document-start: disable
   indentation:
     spaces: consistent
+    indent-sequences: consistent
   key-duplicates:
     ignore: |
       config/testdata/section_key_dup.bad.yml

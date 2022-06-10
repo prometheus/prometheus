@@ -14,8 +14,8 @@
 package config
 
 import (
+	"crypto/tls"
 	"encoding/json"
-	"io/ioutil"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -40,6 +40,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/file"
 	"github.com/prometheus/prometheus/discovery/hetzner"
 	"github.com/prometheus/prometheus/discovery/http"
+	"github.com/prometheus/prometheus/discovery/ionos"
 	"github.com/prometheus/prometheus/discovery/kubernetes"
 	"github.com/prometheus/prometheus/discovery/linode"
 	"github.com/prometheus/prometheus/discovery/marathon"
@@ -50,6 +51,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/discovery/triton"
 	"github.com/prometheus/prometheus/discovery/uyuni"
+	"github.com/prometheus/prometheus/discovery/vultr"
 	"github.com/prometheus/prometheus/discovery/xds"
 	"github.com/prometheus/prometheus/discovery/zookeeper"
 	"github.com/prometheus/prometheus/model/labels"
@@ -179,6 +181,9 @@ var expectedConf = &Config{
 				},
 				FollowRedirects: true,
 				EnableHTTP2:     true,
+				TLSConfig: config.TLSConfig{
+					MinVersion: config.TLSVersion(tls.VersionTLS10),
+				},
 			},
 
 			ServiceDiscoveryConfigs: discovery.Configs{
@@ -855,6 +860,17 @@ var expectedConf = &Config{
 			Scheme:           DefaultScrapeConfig.Scheme,
 			HTTPClientConfig: config.DefaultHTTPClientConfig,
 
+			RelabelConfigs: []*relabel.Config{
+				{
+					Action:       relabel.Uppercase,
+					Regex:        relabel.DefaultRelabelConfig.Regex,
+					Replacement:  relabel.DefaultRelabelConfig.Replacement,
+					Separator:    relabel.DefaultRelabelConfig.Separator,
+					SourceLabels: model.LabelNames{"instance"},
+					TargetLabel:  "instance",
+				},
+			},
+
 			ServiceDiscoveryConfigs: discovery.Configs{
 				&hetzner.SDConfig{
 					HTTPClientConfig: config.HTTPClientConfig{
@@ -973,11 +989,61 @@ var expectedConf = &Config{
 			Scheme:           DefaultScrapeConfig.Scheme,
 			ServiceDiscoveryConfigs: discovery.Configs{
 				&uyuni.SDConfig{
-					Server:          "https://localhost:1234",
-					Username:        "gopher",
-					Password:        "hole",
-					Entitlement:     "monitoring_entitled",
-					Separator:       ",",
+					Server:           "https://localhost:1234",
+					Username:         "gopher",
+					Password:         "hole",
+					Entitlement:      "monitoring_entitled",
+					Separator:        ",",
+					RefreshInterval:  model.Duration(60 * time.Second),
+					HTTPClientConfig: config.DefaultHTTPClientConfig,
+				},
+			},
+		},
+		{
+			JobName:         "ionos",
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
+
+			MetricsPath:      DefaultScrapeConfig.MetricsPath,
+			Scheme:           DefaultScrapeConfig.Scheme,
+			HTTPClientConfig: config.DefaultHTTPClientConfig,
+
+			ServiceDiscoveryConfigs: discovery.Configs{
+				&ionos.SDConfig{
+					DatacenterID: "8feda53f-15f0-447f-badf-ebe32dad2fc0",
+					HTTPClientConfig: config.HTTPClientConfig{
+						Authorization:   &config.Authorization{Type: "Bearer", Credentials: "abcdef"},
+						FollowRedirects: true,
+						EnableHTTP2:     true,
+					},
+					Port:            80,
+					RefreshInterval: model.Duration(60 * time.Second),
+				},
+			},
+		},
+		{
+			JobName: "vultr",
+
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
+
+			MetricsPath:      DefaultScrapeConfig.MetricsPath,
+			Scheme:           DefaultScrapeConfig.Scheme,
+			HTTPClientConfig: config.DefaultHTTPClientConfig,
+
+			ServiceDiscoveryConfigs: discovery.Configs{
+				&vultr.SDConfig{
+					HTTPClientConfig: config.HTTPClientConfig{
+						Authorization: &config.Authorization{
+							Type:        "Bearer",
+							Credentials: "abcdef",
+						},
+						FollowRedirects: true,
+						EnableHTTP2:     true,
+					},
+					Port:            80,
 					RefreshInterval: model.Duration(60 * time.Second),
 				},
 			},
@@ -1079,7 +1145,7 @@ func TestElideSecrets(t *testing.T) {
 	yamlConfig := string(config)
 
 	matches := secretRe.FindAllStringIndex(yamlConfig, -1)
-	require.Equal(t, 16, len(matches), "wrong number of secret matches found")
+	require.Equal(t, 18, len(matches), "wrong number of secret matches found")
 	require.NotContains(t, yamlConfig, "mysecret",
 		"yaml marshal reveals authentication credentials.")
 }
@@ -1193,6 +1259,30 @@ var expectedErrors = []struct {
 	{
 		filename: "labelmap.bad.yml",
 		errMsg:   "\"l-$1\" is invalid 'replacement' for labelmap action",
+	},
+	{
+		filename: "lowercase.bad.yml",
+		errMsg:   "relabel configuration for lowercase action requires 'target_label' value",
+	},
+	{
+		filename: "lowercase2.bad.yml",
+		errMsg:   "\"42lab\" is invalid 'target_label' for lowercase action",
+	},
+	{
+		filename: "lowercase3.bad.yml",
+		errMsg:   "'replacement' can not be set for lowercase action",
+	},
+	{
+		filename: "uppercase.bad.yml",
+		errMsg:   "relabel configuration for uppercase action requires 'target_label' value",
+	},
+	{
+		filename: "uppercase2.bad.yml",
+		errMsg:   "\"42lab\" is invalid 'target_label' for uppercase action",
+	},
+	{
+		filename: "uppercase3.bad.yml",
+		errMsg:   "'replacement' can not be set for uppercase action",
 	},
 	{
 		filename: "rules.bad.yml",
@@ -1494,6 +1584,10 @@ var expectedErrors = []struct {
 		filename: "uyuni_no_server.bad.yml",
 		errMsg:   "Uyuni SD configuration requires server host",
 	},
+	{
+		filename: "ionos_datacenter.bad.yml",
+		errMsg:   "datacenter id can't be empty",
+	},
 }
 
 func TestBadConfigs(t *testing.T) {
@@ -1506,7 +1600,7 @@ func TestBadConfigs(t *testing.T) {
 }
 
 func TestBadStaticConfigsJSON(t *testing.T) {
-	content, err := ioutil.ReadFile("testdata/static_config.bad.json")
+	content, err := os.ReadFile("testdata/static_config.bad.json")
 	require.NoError(t, err)
 	var tg targetgroup.Group
 	err = json.Unmarshal(content, &tg)
@@ -1514,7 +1608,7 @@ func TestBadStaticConfigsJSON(t *testing.T) {
 }
 
 func TestBadStaticConfigsYML(t *testing.T) {
-	content, err := ioutil.ReadFile("testdata/static_config.bad.yml")
+	content, err := os.ReadFile("testdata/static_config.bad.yml")
 	require.NoError(t, err)
 	var tg targetgroup.Group
 	err = yaml.UnmarshalStrict(content, &tg)

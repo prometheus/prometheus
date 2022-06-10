@@ -55,7 +55,7 @@ type WriteStorage struct {
 	watcherMetrics    *wal.WatcherMetrics
 	liveReaderMetrics *wal.LiveReaderMetrics
 	externalLabels    labels.Labels
-	walDir            string
+	dir               string
 	queues            map[string]*QueueManager
 	samplesIn         *ewmaRate
 	flushDeadline     time.Duration
@@ -68,7 +68,7 @@ type WriteStorage struct {
 }
 
 // NewWriteStorage creates and runs a WriteStorage.
-func NewWriteStorage(logger log.Logger, reg prometheus.Registerer, walDir string, flushDeadline time.Duration, sm ReadyScrapeManager) *WriteStorage {
+func NewWriteStorage(logger log.Logger, reg prometheus.Registerer, dir string, flushDeadline time.Duration, sm ReadyScrapeManager) *WriteStorage {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
@@ -80,7 +80,7 @@ func NewWriteStorage(logger log.Logger, reg prometheus.Registerer, walDir string
 		reg:               reg,
 		flushDeadline:     flushDeadline,
 		samplesIn:         newEWMARate(ewmaWeight, shardUpdateDuration),
-		walDir:            walDir,
+		dir:               dir,
 		interner:          newPool(),
 		scraper:           sm,
 		quit:              make(chan struct{}),
@@ -175,7 +175,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			rws.watcherMetrics,
 			rws.liveReaderMetrics,
 			rws.logger,
-			rws.walDir,
+			rws.dir,
 			rws.samplesIn,
 			rwConf.QueueConfig,
 			rwConf.MetadataConfig,

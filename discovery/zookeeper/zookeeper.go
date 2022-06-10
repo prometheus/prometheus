@@ -16,6 +16,7 @@ package zookeeper
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"strconv"
@@ -24,7 +25,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-zookeeper/zk"
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/discovery"
@@ -80,7 +80,7 @@ func (c *ServersetSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) err
 	}
 	for _, path := range c.Paths {
 		if !strings.HasPrefix(path, "/") {
-			return errors.Errorf("serverset SD config paths must begin with '/': %s", path)
+			return fmt.Errorf("serverset SD config paths must begin with '/': %s", path)
 		}
 	}
 	return nil
@@ -117,7 +117,7 @@ func (c *NerveSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}
 	for _, path := range c.Paths {
 		if !strings.HasPrefix(path, "/") {
-			return errors.Errorf("nerve SD config paths must begin with '/': %s", path)
+			return fmt.Errorf("nerve SD config paths must begin with '/': %s", path)
 		}
 	}
 	return nil
@@ -263,7 +263,7 @@ func parseServersetMember(data []byte, path string) (model.LabelSet, error) {
 	member := serversetMember{}
 
 	if err := json.Unmarshal(data, &member); err != nil {
-		return nil, errors.Wrapf(err, "error unmarshaling serverset member %q", path)
+		return nil, fmt.Errorf("error unmarshaling serverset member %q: %w", path, err)
 	}
 
 	labels := model.LabelSet{}
@@ -305,7 +305,7 @@ func parseNerveMember(data []byte, path string) (model.LabelSet, error) {
 	member := nerveMember{}
 	err := json.Unmarshal(data, &member)
 	if err != nil {
-		return nil, errors.Wrapf(err, "error unmarshaling nerve member %q", path)
+		return nil, fmt.Errorf("error unmarshaling nerve member %q: %w", path, err)
 	}
 
 	labels := model.LabelSet{}

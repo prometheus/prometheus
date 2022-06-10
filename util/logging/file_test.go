@@ -14,7 +14,6 @@
 package logging
 
 import (
-	"io/ioutil"
 	"os"
 	"strings"
 	"testing"
@@ -24,7 +23,7 @@ import (
 )
 
 func TestJSONFileLogger_basic(t *testing.T) {
-	f, err := ioutil.TempFile("", "logging")
+	f, err := os.CreateTemp("", "logging")
 	require.NoError(t, err)
 	defer func() {
 		require.NoError(t, f.Close())
@@ -53,7 +52,7 @@ func TestJSONFileLogger_basic(t *testing.T) {
 }
 
 func TestJSONFileLogger_parallel(t *testing.T) {
-	f, err := ioutil.TempFile("", "logging")
+	f, err := os.CreateTemp("", "logging")
 	require.NoError(t, err)
 	defer func() {
 		require.NoError(t, f.Close())

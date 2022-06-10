@@ -19,7 +19,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net"
 	"net/http"
 	"net/url"
@@ -30,7 +29,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/regexp"
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
@@ -187,19 +185,19 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		return nil, err
 	}
 	defer func() {
-		io.Copy(ioutil.Discard, resp.Body)
+		io.Copy(io.Discard, resp.Body)
 		resp.Body.Close()
 	}()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, errors.Errorf("server returned HTTP status %s", resp.Status)
+		return nil, fmt.Errorf("server returned HTTP status %s", resp.Status)
 	}
 
 	if ct := resp.Header.Get("Content-Type"); !matchContentType.MatchString(ct) {
-		return nil, errors.Errorf("unsupported content type %s", resp.Header.Get("Content-Type"))
+		return nil, fmt.Errorf("unsupported content type %s", resp.Header.Get("Content-Type"))
 	}
 
-	b, err := ioutil.ReadAll(resp.Body)
+	b, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
 	}

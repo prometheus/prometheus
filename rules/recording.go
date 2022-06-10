@@ -16,7 +16,6 @@ package rules
 import (
 	"context"
 	"fmt"
-	"html/template"
 	"net/url"
 	"sync"
 	"time"
@@ -27,7 +26,6 @@ import (
 	"github.com/prometheus/prometheus/model/rulefmt"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
-	"github.com/prometheus/prometheus/util/strutil"
 )
 
 // A RecordingRule records its vector expression into new timeseries.
@@ -178,26 +176,4 @@ func (rule *RecordingRule) GetEvaluationTimestamp() time.Time {
 	rule.mtx.Lock()
 	defer rule.mtx.Unlock()
 	return rule.evaluationTimestamp
-}
-
-// HTMLSnippet returns an HTML snippet representing this rule.
-func (rule *RecordingRule) HTMLSnippet(pathPrefix string) template.HTML {
-	ruleExpr := rule.vector.String()
-	labels := make(map[string]string, len(rule.labels))
-	for _, l := range rule.labels {
-		labels[l.Name] = template.HTMLEscapeString(l.Value)
-	}
-
-	r := rulefmt.Rule{
-		Record: fmt.Sprintf(`<a href="%s">%s</a>`, pathPrefix+strutil.TableLinkForExpression(rule.name), rule.name),
-		Expr:   fmt.Sprintf(`<a href="%s">%s</a>`, pathPrefix+strutil.TableLinkForExpression(ruleExpr), template.HTMLEscapeString(ruleExpr)),
-		Labels: labels,
-	}
-
-	byt, err := yaml.Marshal(r)
-	if err != nil {
-		return template.HTML(fmt.Sprintf("error marshaling recording rule: %q", template.HTMLEscapeString(err.Error())))
-	}
-
-	return template.HTML(byt)
 }

@@ -16,7 +16,6 @@ package chunks
 import (
 	"encoding/binary"
 	"errors"
-	"io/ioutil"
 	"math/rand"
 	"os"
 	"strconv"
@@ -108,7 +107,7 @@ func TestOldChunkDiskMapper_WriteChunk_Chunk_IterateChunks(t *testing.T) {
 	require.Equal(t, 3, len(hrw.mmappedChunkFiles), "expected 3 mmapped files, got %d", len(hrw.mmappedChunkFiles))
 	require.Equal(t, len(hrw.mmappedChunkFiles), len(hrw.closers))
 
-	actualBytes, err := ioutil.ReadFile(firstFileName)
+	actualBytes, err := os.ReadFile(firstFileName)
 	require.NoError(t, err)
 
 	// Check header of the segment file.
@@ -224,7 +223,7 @@ func TestOldChunkDiskMapper_Truncate(t *testing.T) {
 	verifyFiles := func(remainingFiles []int) {
 		t.Helper()
 
-		files, err := ioutil.ReadDir(hrw.dir.Name())
+		files, err := os.ReadDir(hrw.dir.Name())
 		require.NoError(t, err)
 		require.Equal(t, len(remainingFiles), len(files), "files on disk")
 		require.Equal(t, len(remainingFiles), len(hrw.mmappedChunkFiles), "hrw.mmappedChunkFiles")
@@ -322,7 +321,7 @@ func TestOldChunkDiskMapper_Truncate_PreservesFileSequence(t *testing.T) {
 	verifyFiles := func(remainingFiles []int) {
 		t.Helper()
 
-		files, err := ioutil.ReadDir(hrw.dir.Name())
+		files, err := os.ReadDir(hrw.dir.Name())
 		require.NoError(t, err)
 		require.Equal(t, len(remainingFiles), len(files), "files on disk")
 		require.Equal(t, len(remainingFiles), len(hrw.mmappedChunkFiles), "hrw.mmappedChunkFiles")
@@ -448,7 +447,7 @@ func TestOldChunkDiskMapper_ReadRepairOnEmptyLastFile(t *testing.T) {
 	}
 
 	// Removed even from disk.
-	files, err := ioutil.ReadDir(dir)
+	files, err := os.ReadDir(dir)
 	require.NoError(t, err)
 	require.Equal(t, 3, len(files))
 	for _, fi := range files {
@@ -459,11 +458,7 @@ func TestOldChunkDiskMapper_ReadRepairOnEmptyLastFile(t *testing.T) {
 }
 
 func testOldChunkDiskMapper(t *testing.T) *OldChunkDiskMapper {
-	tmpdir, err := ioutil.TempDir("", "data")
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, os.RemoveAll(tmpdir))
-	})
+	tmpdir := t.TempDir()
 
 	hrw, err := NewOldChunkDiskMapper(tmpdir, chunkenc.NewPool(), DefaultWriteBufferSize)
 	require.NoError(t, err)

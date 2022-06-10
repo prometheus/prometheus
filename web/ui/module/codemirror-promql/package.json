@@ -8,7 +8,7 @@
   "scripts": {
     "build": "npm run build:lib",
     "build:lib": "bash ./build.sh",
-    "test": "NODE_OPTIONS=--experimental-vm-modules jest",
+    "test": "NODE_OPTIONS=--experimental-vm-modules jest --runInBand",
     "lint": "eslint src/ --ext .ts",
     "lint:fix": "eslint --fix src/ --ext .ts"
   },

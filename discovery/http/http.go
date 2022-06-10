@@ -16,9 +16,9 @@ package http
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -27,7 +27,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/regexp"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -157,21 +156,21 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		return nil, err
 	}
 	defer func() {
-		io.Copy(ioutil.Discard, resp.Body)
+		io.Copy(io.Discard, resp.Body)
 		resp.Body.Close()
 	}()
 
 	if resp.StatusCode != http.StatusOK {
 		failuresCount.Inc()
-		return nil, errors.Errorf("server returned HTTP status %s", resp.Status)
+		return nil, fmt.Errorf("server returned HTTP status %s", resp.Status)
 	}
 
 	if !matchContentType.MatchString(strings.TrimSpace(resp.Header.Get("Content-Type"))) {
 		failuresCount.Inc()
-		return nil, errors.Errorf("unsupported content type %q", resp.Header.Get("Content-Type"))
+		return nil, fmt.Errorf("unsupported content type %q", resp.Header.Get("Content-Type"))
 	}
 
-	b, err := ioutil.ReadAll(resp.Body)
+	b, err := io.ReadAll(resp.Body)
 	if err != nil {
 		failuresCount.Inc()
 		return nil, err

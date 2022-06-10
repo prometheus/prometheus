@@ -15,6 +15,7 @@ package aws
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"strings"
@@ -28,7 +29,6 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/lightsail"
 	"github.com/go-kit/log"
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
@@ -152,7 +152,7 @@ func (d *LightsailDiscovery) lightsailClient() (*lightsail.Lightsail, error) {
 		Profile: d.cfg.Profile,
 	})
 	if err != nil {
-		return nil, errors.Wrap(err, "could not create aws session")
+		return nil, fmt.Errorf("could not create aws session: %w", err)
 	}
 
 	if d.cfg.RoleARN != "" {
@@ -179,10 +179,11 @@ func (d *LightsailDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group,
 
 	output, err := lightsailClient.GetInstancesWithContext(ctx, input)
 	if err != nil {
-		if awsErr, ok := err.(awserr.Error); ok && (awsErr.Code() == "AuthFailure" || awsErr.Code() == "UnauthorizedOperation") {
+		var awsErr awserr.Error
+		if errors.As(err, &awsErr) && (awsErr.Code() == "AuthFailure" || awsErr.Code() == "UnauthorizedOperation") {
 			d.lightsail = nil
 		}
-		return nil, errors.Wrap(err, "could not get instances")
+		return nil, fmt.Errorf("could not get instances: %w", err)
 	}
 
 	for _, inst := range output.Instances {

@@ -15,9 +15,8 @@ package parser
 
 import (
 	"context"
+	"fmt"
 	"time"
-
-	"github.com/pkg/errors"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -394,7 +393,7 @@ func Children(node Node) []Node {
 		// nothing to do
 		return []Node{}
 	default:
-		panic(errors.Errorf("promql.Children: unhandled node type %T", node))
+		panic(fmt.Errorf("promql.Children: unhandled node type %T", node))
 	}
 }
 

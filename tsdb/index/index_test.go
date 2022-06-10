@@ -17,7 +17,6 @@ import (
 	"context"
 	"fmt"
 	"hash/crc32"
-	"io/ioutil"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -546,7 +545,7 @@ func TestNewFileReaderErrorNoOpenFiles(t *testing.T) {
 	dir := testutil.NewTemporaryDirectory("block", t)
 
 	idxName := filepath.Join(dir.Path(), "index")
-	err := ioutil.WriteFile(idxName, []byte("corrupted contents"), 0o666)
+	err := os.WriteFile(idxName, []byte("corrupted contents"), 0o666)
 	require.NoError(t, err)
 
 	_, err = NewFileReader(idxName)
@@ -609,7 +608,7 @@ func BenchmarkReader_ShardedPostings(b *testing.B) {
 		numShards = 16
 	)
 
-	dir, err := ioutil.TempDir("", "benchmark_reader_sharded_postings")
+	dir, err := os.MkdirTemp("", "benchmark_reader_sharded_postings")
 	require.NoError(b, err)
 	defer func() {
 		require.NoError(b, os.RemoveAll(dir))

@@ -15,8 +15,8 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -26,7 +26,6 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	yaml "gopkg.in/yaml.v2"
 
@@ -64,7 +63,7 @@ func RulesUnitTest(queryOpts promql.LazyLoaderOpts, files ...string) int {
 func ruleUnitTest(filename string, queryOpts promql.LazyLoaderOpts) []error {
 	fmt.Println("Unit Testing: ", filename)
 
-	b, err := ioutil.ReadFile(filename)
+	b, err := os.ReadFile(filename)
 	if err != nil {
 		return []error{err}
 	}
@@ -88,7 +87,7 @@ func ruleUnitTest(filename string, queryOpts promql.LazyLoaderOpts) []error {
 	groupOrderMap := make(map[string]int)
 	for i, gn := range unitTestInp.GroupEvalOrder {
 		if _, ok := groupOrderMap[gn]; ok {
-			return []error{errors.Errorf("group name repeated in evaluation order: %s", gn)}
+			return []error{fmt.Errorf("group name repeated in evaluation order: %s", gn)}
 		}
 		groupOrderMap[gn] = i
 	}
@@ -196,7 +195,7 @@ func (tg *testGroup) test(evalInterval time.Duration, groupOrderMap map[string]i
 			if tg.TestGroupName != "" {
 				testGroupLog = fmt.Sprintf(" (in TestGroup %s)", tg.TestGroupName)
 			}
-			return []error{errors.Errorf("an item under alert_rule_test misses required attribute alertname at eval_time %v%s", alert.EvalTime, testGroupLog)}
+			return []error{fmt.Errorf("an item under alert_rule_test misses required attribute alertname at eval_time %v%s", alert.EvalTime, testGroupLog)}
 		}
 		alertEvalTimesMap[alert.EvalTime] = struct{}{}
 
@@ -241,7 +240,7 @@ func (tg *testGroup) test(evalInterval time.Duration, groupOrderMap map[string]i
 				g.Eval(suite.Context(), ts)
 				for _, r := range g.Rules() {
 					if r.LastError() != nil {
-						evalErrs = append(evalErrs, errors.Errorf("    rule: %s, time: %s, err: %v",
+						evalErrs = append(evalErrs, fmt.Errorf("    rule: %s, time: %s, err: %v",
 							r.Name(), ts.Sub(time.Unix(0, 0).UTC()), r.LastError()))
 					}
 				}
@@ -324,7 +323,7 @@ func (tg *testGroup) test(evalInterval time.Duration, groupOrderMap map[string]i
 					}
 					expString := indentLines(expAlerts.String(), "            ")
 					gotString := indentLines(gotAlerts.String(), "            ")
-					errs = append(errs, errors.Errorf("%s    alertname: %s, time: %s, \n        exp:%v, \n        got:%v",
+					errs = append(errs, fmt.Errorf("%s    alertname: %s, time: %s, \n        exp:%v, \n        got:%v",
 						testName, testcase.Alertname, testcase.EvalTime.String(), expString, gotString))
 				}
 			}
@@ -339,7 +338,7 @@ Outer:
 		got, err := query(suite.Context(), testCase.Expr, mint.Add(time.Duration(testCase.EvalTime)),
 			suite.QueryEngine(), suite.Queryable())
 		if err != nil {
-			errs = append(errs, errors.Errorf("    expr: %q, time: %s, err: %s", testCase.Expr,
+			errs = append(errs, fmt.Errorf("    expr: %q, time: %s, err: %s", testCase.Expr,
 				testCase.EvalTime.String(), err.Error()))
 			continue
 		}
@@ -356,9 +355,9 @@ Outer:
 		for _, s := range testCase.ExpSamples {
 			lb, err := parser.ParseMetric(s.Labels)
 			if err != nil {
-				err = errors.Wrapf(err, "labels %q", s.Labels)
-				errs = append(errs, errors.Errorf("    expr: %q, time: %s, err: %s", testCase.Expr,
-					testCase.EvalTime.String(), err.Error()))
+				err = fmt.Errorf("labels %q: %w", s.Labels, err)
+				errs = append(errs, fmt.Errorf("    expr: %q, time: %s, err: %w", testCase.Expr,
+					testCase.EvalTime.String(), err))
 				continue Outer
 			}
 			expSamples = append(expSamples, parsedSample{
@@ -374,7 +373,7 @@ Outer:
 			return labels.Compare(gotSamples[i].Labels, gotSamples[j].Labels) <= 0
 		})
 		if !reflect.DeepEqual(expSamples, gotSamples) {
-			errs = append(errs, errors.Errorf("    expr: %q, time: %s,\n        exp: %v\n        got: %v", testCase.Expr,
+			errs = append(errs, fmt.Errorf("    expr: %q, time: %s,\n        exp: %v\n        got: %v", testCase.Expr,
 				testCase.EvalTime.String(), parsedSamplesString(expSamples), parsedSamplesString(gotSamples)))
 		}
 	}

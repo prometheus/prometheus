@@ -15,8 +15,9 @@ package kubernetes
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"io/ioutil"
+	"os"
 	"reflect"
 	"strings"
 	"sync"
@@ -24,7 +25,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -114,7 +114,7 @@ func (c *Role) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	case RoleNode, RolePod, RoleService, RoleEndpoint, RoleEndpointSlice, RoleIngress:
 		return nil
 	default:
-		return errors.Errorf("unknown Kubernetes SD role %q", *c)
+		return fmt.Errorf("unknown Kubernetes SD role %q", *c)
 	}
 }
 
@@ -178,7 +178,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 	if c.Role == "" {
-		return errors.Errorf("role missing (one of: pod, service, endpoints, endpointslice, node, ingress)")
+		return fmt.Errorf("role missing (one of: pod, service, endpoints, endpointslice, node, ingress)")
 	}
 	err = c.HTTPClientConfig.Validate()
 	if err != nil {
@@ -186,20 +186,20 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}
 	if c.APIServer.URL != nil && c.KubeConfig != "" {
 		// Api-server and kubeconfig_file are mutually exclusive
-		return errors.Errorf("cannot use 'kubeconfig_file' and 'api_server' simultaneously")
+		return fmt.Errorf("cannot use 'kubeconfig_file' and 'api_server' simultaneously")
 	}
 	if c.KubeConfig != "" && !reflect.DeepEqual(c.HTTPClientConfig, config.DefaultHTTPClientConfig) {
 		// Kubeconfig_file and custom http config are mutually exclusive
-		return errors.Errorf("cannot use a custom HTTP client configuration together with 'kubeconfig_file'")
+		return fmt.Errorf("cannot use a custom HTTP client configuration together with 'kubeconfig_file'")
 	}
 	if c.APIServer.URL == nil && !reflect.DeepEqual(c.HTTPClientConfig, config.DefaultHTTPClientConfig) {
-		return errors.Errorf("to use custom HTTP client configuration please provide the 'api_server' URL explicitly")
+		return fmt.Errorf("to use custom HTTP client configuration please provide the 'api_server' URL explicitly")
 	}
 	if c.APIServer.URL != nil && c.NamespaceDiscovery.IncludeOwnNamespace {
-		return errors.Errorf("cannot use 'api_server' and 'namespaces.own_namespace' simultaneously")
+		return fmt.Errorf("cannot use 'api_server' and 'namespaces.own_namespace' simultaneously")
 	}
 	if c.KubeConfig != "" && c.NamespaceDiscovery.IncludeOwnNamespace {
-		return errors.Errorf("cannot use 'kubeconfig_file' and 'namespaces.own_namespace' simultaneously")
+		return fmt.Errorf("cannot use 'kubeconfig_file' and 'namespaces.own_namespace' simultaneously")
 	}
 
 	foundSelectorRoles := make(map[Role]struct{})
@@ -214,12 +214,12 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 	for _, selector := range c.Selectors {
 		if _, ok := foundSelectorRoles[selector.Role]; ok {
-			return errors.Errorf("duplicated selector role: %s", selector.Role)
+			return fmt.Errorf("duplicated selector role: %s", selector.Role)
 		}
 		foundSelectorRoles[selector.Role] = struct{}{}
 
 		if _, ok := allowedSelectors[c.Role]; !ok {
-			return errors.Errorf("invalid role: %q, expecting one of: pod, service, endpoints, endpointslice, node or ingress", c.Role)
+			return fmt.Errorf("invalid role: %q, expecting one of: pod, service, endpoints, endpointslice, node or ingress", c.Role)
 		}
 		var allowed bool
 		for _, role := range allowedSelectors[c.Role] {
@@ -230,7 +230,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		}
 
 		if !allowed {
-			return errors.Errorf("%s role supports only %s selectors", c.Role, strings.Join(allowedSelectors[c.Role], ", "))
+			return fmt.Errorf("%s role supports only %s selectors", c.Role, strings.Join(allowedSelectors[c.Role], ", "))
 		}
 
 		_, err := fields.ParseSelector(selector.Field)
@@ -312,7 +312,7 @@ func New(l log.Logger, conf *SDConfig) (*Discovery, error) {
 		}
 
 		if conf.NamespaceDiscovery.IncludeOwnNamespace {
-			ownNamespaceContents, err := ioutil.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
+			ownNamespaceContents, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
 			if err != nil {
 				return nil, fmt.Errorf("could not determine the pod's namespace: %w", err)
 			}

@@ -243,9 +243,21 @@ export const encodePanelOptionsToQueryString = (panels: PanelMeta[]): string => 
   return `?${panels.map(toQueryString).join('&')}`;
 };
 
+export const setQuerySearchFilter = (search: string) => {
+  window.history.pushState({}, '', `?search=${search}`);
+};
+
+export const getQuerySearchFilter = (): string => {
+  const locationSearch = window.location.search;
+  const params = new URLSearchParams(locationSearch);
+  const search = params.get('search') || '';
+  return search;
+};
+
 export const createExpressionLink = (expr: string): string => {
   return `../graph?g0.expr=${encodeURIComponent(expr)}&g0.tab=1&g0.stacked=0&g0.show_exemplars=0.g0.range_input=1h.`;
 };
+
 export const mapObjEntries = <T, key extends keyof T, Z>(
   o: T,
   cb: ([k, v]: [string, T[key]], i: number, arr: [string, T[key]][]) => Z

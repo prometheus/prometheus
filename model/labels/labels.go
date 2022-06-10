@@ -119,7 +119,7 @@ func (ls *Labels) UnmarshalYAML(unmarshal func(interface{}) error) error {
 func (ls Labels) MatchLabels(on bool, names ...string) Labels {
 	matchedLabels := Labels{}
 
-	nameSet := map[string]struct{}{}
+	nameSet := make(map[string]struct{}, len(names))
 	for _, n := range names {
 		nameSet[n] = struct{}{}
 	}
@@ -202,11 +202,11 @@ func (ls Labels) HashWithoutLabels(b []byte, names ...string) (uint64, []byte) {
 	return xxhash.Sum64(b), b
 }
 
-// WithLabels returns a new labels.Labels from ls that only contains labels matching names.
+// BytesWithLabels is just as Bytes(), but only for labels matching names.
 // 'names' have to be sorted in ascending order.
-func (ls Labels) WithLabels(names ...string) Labels {
-	ret := make([]Label, 0, len(ls))
-
+func (ls Labels) BytesWithLabels(buf []byte, names ...string) []byte {
+	b := bytes.NewBuffer(buf[:0])
+	b.WriteByte(labelSep)
 	i, j := 0, 0
 	for i < len(ls) && j < len(names) {
 		if names[j] < ls[i].Name {
@@ -214,30 +214,40 @@ func (ls Labels) WithLabels(names ...string) Labels {
 		} else if ls[i].Name < names[j] {
 			i++
 		} else {
-			ret = append(ret, ls[i])
+			if b.Len() > 1 {
+				b.WriteByte(seps[0])
+			}
+			b.WriteString(ls[i].Name)
+			b.WriteByte(seps[0])
+			b.WriteString(ls[i].Value)
 			i++
 			j++
 		}
 	}
-	return ret
+	return b.Bytes()
 }
 
-// WithoutLabels returns a new labels.Labels from ls that contains labels not matching names.
+// BytesWithoutLabels is just as Bytes(), but only for labels not matching names.
 // 'names' have to be sorted in ascending order.
-func (ls Labels) WithoutLabels(names ...string) Labels {
-	ret := make([]Label, 0, len(ls))
-
+func (ls Labels) BytesWithoutLabels(buf []byte, names ...string) []byte {
+	b := bytes.NewBuffer(buf[:0])
+	b.WriteByte(labelSep)
 	j := 0
 	for i := range ls {
 		for j < len(names) && names[j] < ls[i].Name {
 			j++
 		}
-		if ls[i].Name == MetricName || (j < len(names) && ls[i].Name == names[j]) {
+		if j < len(names) && ls[i].Name == names[j] {
 			continue
 		}
-		ret = append(ret, ls[i])
+		if b.Len() > 1 {
+			b.WriteByte(seps[0])
+		}
+		b.WriteString(ls[i].Name)
+		b.WriteByte(seps[0])
+		b.WriteString(ls[i].Value)
 	}
-	return ret
+	return b.Bytes()
 }
 
 // Copy returns a copy of the labels.
@@ -349,7 +359,7 @@ func FromStrings(ss ...string) Labels {
 	if len(ss)%2 != 0 {
 		panic("invalid number of strings")
 	}
-	var res Labels
+	res := make(Labels, 0, len(ss)/2)
 	for i := 0; i < len(ss); i += 2 {
 		res = append(res, Label{Name: ss[i], Value: ss[i+1]})
 	}
@@ -426,6 +436,20 @@ func (b *Builder) Del(ns ...string) *Builder {
 	return b
 }
 
+// Keep removes all labels from the base except those with the given names.
+func (b *Builder) Keep(ns ...string) *Builder {
+Outer:
+	for _, l := range b.base {
+		for _, n := range ns {
+			if l.Name == n {
+				continue Outer
+			}
+		}
+		b.del = append(b.del, l.Name)
+	}
+	return b
+}
+
 // Set the name/value pair as a label.
 func (b *Builder) Set(n, v string) *Builder {
 	if v == "" {
@@ -467,8 +491,9 @@ Outer:
 		}
 		res = append(res, l)
 	}
-	res = append(res, b.add...)
-	sort.Sort(res)
-
+	if len(b.add) > 0 { // Base is already in order, so we only need to sort if we add to it.
+		res = append(res, b.add...)
+		sort.Sort(res)
+	}
 	return res
 }

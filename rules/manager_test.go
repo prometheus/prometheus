@@ -17,7 +17,6 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
-	"io/ioutil"
 	"math"
 	"os"
 	"path"
@@ -767,7 +766,7 @@ func TestUpdate(t *testing.T) {
 	rgs, errs := rulefmt.ParseFile("fixtures/rules.yaml")
 	require.Equal(t, 0, len(errs), "file parsing failures")
 
-	tmpFile, err := ioutil.TempFile("", "rules.test.*.yaml")
+	tmpFile, err := os.CreateTemp("", "rules.test.*.yaml")
 	require.NoError(t, err)
 	defer os.Remove(tmpFile.Name())
 	defer tmpFile.Close()
@@ -834,7 +833,7 @@ func TestUpdateSetsSourceTenants(t *testing.T) {
 	rgs, errs := rulefmt.ParseFile("fixtures/rules_with_source_tenants.yaml")
 	require.Empty(t, errs, "file parsing failures")
 
-	tmpFile, err := ioutil.TempFile("", "rules.test.*.yaml")
+	tmpFile, err := os.CreateTemp("", "rules.test.*.yaml")
 	require.NoError(t, err)
 	defer os.Remove(tmpFile.Name())
 	defer tmpFile.Close()
@@ -882,7 +881,7 @@ func TestGroupEvaluationContextFuncIsCalledWhenSupplied(t *testing.T) {
 	rgs, errs := rulefmt.ParseFile("fixtures/rules_with_source_tenants.yaml")
 	require.Empty(t, errs, "file parsing failures")
 
-	tmpFile, err := ioutil.TempFile("", "rules.test.*.yaml")
+	tmpFile, err := os.CreateTemp("", "rules.test.*.yaml")
 	require.NoError(t, err)
 	defer os.Remove(tmpFile.Name())
 	defer tmpFile.Close()
@@ -1540,7 +1539,7 @@ groups:
 
 	dir := t.TempDir()
 	fname := path.Join(dir, "rules.yaml")
-	err := ioutil.WriteFile(fname, []byte(config), fs.ModePerm)
+	err := os.WriteFile(fname, []byte(config), fs.ModePerm)
 	require.NoError(t, err)
 
 	m := NewManager(&ManagerOptions{

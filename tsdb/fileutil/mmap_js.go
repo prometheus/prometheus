@@ -1,4 +1,4 @@
-// Copyright 2018 The Prometheus Authors
+// Copyright 2022 The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -11,29 +11,20 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build ignore
-// +build ignore
+//go:build js
+// +build js
 
-package main
+package fileutil
 
 import (
-	"log"
-	"time"
-
-	"github.com/shurcooL/vfsgen"
-
-	"github.com/prometheus/prometheus/util/modtimevfs"
-	"github.com/prometheus/prometheus/web/ui"
+	"errors"
+	"os"
 )
 
-func main() {
-	fs := modtimevfs.New(ui.Assets, time.Unix(1, 0))
-	err := vfsgen.Generate(fs, vfsgen.Options{
-		PackageName:  "ui",
-		BuildTags:    "builtinassets",
-		VariableName: "Assets",
-	})
-	if err != nil {
-		log.Fatalln(err)
-	}
+func mmap(f *os.File, length int) ([]byte, error) {
+	return nil, errors.New("unsupported")
+}
+
+func munmap(b []byte) (err error) {
+	return errors.New("unsupported")
 }

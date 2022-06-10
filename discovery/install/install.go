@@ -26,6 +26,7 @@ import (
 	_ "github.com/prometheus/prometheus/discovery/gce"          // register gce
 	_ "github.com/prometheus/prometheus/discovery/hetzner"      // register hetzner
 	_ "github.com/prometheus/prometheus/discovery/http"         // register http
+	_ "github.com/prometheus/prometheus/discovery/ionos"        // register ionos
 	_ "github.com/prometheus/prometheus/discovery/kubernetes"   // register kubernetes
 	_ "github.com/prometheus/prometheus/discovery/linode"       // register linode
 	_ "github.com/prometheus/prometheus/discovery/marathon"     // register marathon
@@ -35,6 +36,7 @@ import (
 	_ "github.com/prometheus/prometheus/discovery/scaleway"     // register scaleway
 	_ "github.com/prometheus/prometheus/discovery/triton"       // register triton
 	_ "github.com/prometheus/prometheus/discovery/uyuni"        // register uyuni
+	_ "github.com/prometheus/prometheus/discovery/vultr"        // register vultr
 	_ "github.com/prometheus/prometheus/discovery/xds"          // register xds
 	_ "github.com/prometheus/prometheus/discovery/zookeeper"    // register zookeeper
 )

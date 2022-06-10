@@ -15,12 +15,12 @@ package xds
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
 
 	v3 "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v3"
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"

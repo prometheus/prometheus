@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"hash"
 	"hash/crc32"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"sort"
@@ -190,7 +189,7 @@ type Stone struct {
 }
 
 func ReadTombstones(dir string) (Reader, int64, error) {
-	b, err := ioutil.ReadFile(filepath.Join(dir, TombstonesFilename))
+	b, err := os.ReadFile(filepath.Join(dir, TombstonesFilename))
 	if os.IsNotExist(err) {
 		return NewMemTombstones(), 0, nil
 	} else if err != nil {
