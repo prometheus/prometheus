@@ -354,12 +354,14 @@ func (e *Encoder) Metadata(metadata []RefMetadata, b []byte) []byte {
 	buf := encoding.Encbuf{B: b}
 	buf.PutByte(byte(Metadata))
 
+	tmpBuf := make([]byte, 0, 50)
+
 	for _, m := range metadata {
 		buf.PutUvarint64(uint64(m.Ref))
 
 		// Use a temporary buffer to get the size of the fields
 		// that we're going to encode before writing the fields themselves.
-		tmp := encoding.Encbuf{B: []byte{}}
+		tmp := encoding.Encbuf{B: tmpBuf[:0]}
 		tmp.PutByte(m.Type)
 		tmp.PutUvarintStr(string(m.Unit))
 		tmp.PutUvarintStr(string(m.Help))
@@ -367,6 +369,7 @@ func (e *Encoder) Metadata(metadata []RefMetadata, b []byte) []byte {
 		// Write the size of the temporary buffer and copy back the encoded fields into place.
 		buf.PutUvarint(tmp.Len())
 		buf.B = append(buf.B, tmp.B...)
+		tmpBuf = tmp.B[:0]
 	}
 
 	return buf.Get()
