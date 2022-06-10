@@ -49,25 +49,25 @@ func TestApiStatusCodes(t *testing.T) {
 			expectedCode:   http.StatusUnprocessableEntity,
 		},
 
-		"ErrTooManySamples": {
+		"promql.ErrTooManySamples": {
 			err:            promql.ErrTooManySamples("some error"),
 			expectedString: "too many samples",
 			expectedCode:   http.StatusUnprocessableEntity,
 		},
 
-		"ErrQueryCanceled": {
+		"promql.ErrQueryCanceled": {
 			err:            promql.ErrQueryCanceled("some error"),
 			expectedString: "query was canceled",
 			expectedCode:   http.StatusServiceUnavailable,
 		},
 
-		"ErrQueryTimeout": {
+		"promql.ErrQueryTimeout": {
 			err:            promql.ErrQueryTimeout("some error"),
 			expectedString: "query timed out",
 			expectedCode:   http.StatusServiceUnavailable,
 		},
 
-		"DeadlineExceeded": {
+		"context.DeadlineExceeded": {
 			err:            context.DeadlineExceeded,
 			expectedString: "context deadline exceeded",
 			expectedCode:   http.StatusUnprocessableEntity,
