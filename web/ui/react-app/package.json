@@ -19,12 +19,13 @@
     "@fortawesome/fontawesome-svg-core": "6.1.1",
     "@fortawesome/free-solid-svg-icons": "6.1.1",
     "@fortawesome/react-fontawesome": "0.1.17",
-    "@nexucis/fuzzy": "^0.3.0",
-    "@nexucis/kvsearch": "^0.5.0",
+    "@nexucis/fuzzy": "^0.4.0",
+    "@nexucis/kvsearch": "^0.7.0",
     "bootstrap": "^4.6.1",
     "codemirror-promql": "0.19.0",
     "css.escape": "^1.5.1",
     "downshift": "^6.1.7",
+    "http-proxy-middleware": "^2.0.6",
     "jquery": "^3.5.1",
     "jquery.flot.tooltip": "^0.9.0",
     "moment": "^2.29.2",
@@ -83,7 +84,6 @@
     "mutationobserver-shim": "^0.3.7",
     "sinon": "^13.0.1"
   },
-  "proxy": "http://localhost:9090",
   "jest": {
     "snapshotSerializers": [
       "enzyme-to-json/serializer"

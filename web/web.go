@@ -109,6 +109,7 @@ type metrics struct {
 	requestCounter  *prometheus.CounterVec
 	requestDuration *prometheus.HistogramVec
 	responseSize    *prometheus.HistogramVec
+	readyStatus     prometheus.Gauge
 }
 
 func newMetrics(r prometheus.Registerer) *metrics {
@@ -136,10 +137,14 @@ func newMetrics(r prometheus.Registerer) *metrics {
 			},
 			[]string{"handler"},
 		),
+		readyStatus: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "prometheus_ready",
+			Help: "Whether Prometheus startup was fully completed and the server is ready for normal operation.",
+		}),
 	}
 
 	if r != nil {
-		r.MustRegister(m.requestCounter, m.requestDuration, m.responseSize)
+		r.MustRegister(m.requestCounter, m.requestDuration, m.responseSize, m.readyStatus)
 		registerFederationMetrics(r)
 	}
 	return m
@@ -253,6 +258,7 @@ type Options struct {
 	RemoteReadBytesInFrame     int
 	EnableRemoteWriteReceiver  bool
 	IsAgent                    bool
+	AppName                    string
 
 	Gatherer   prometheus.Gatherer
 	Registerer prometheus.Registerer
@@ -301,7 +307,7 @@ func New(logger log.Logger, o *Options) *Handler {
 
 		now: model.Now,
 	}
-	h.ready.Store(0)
+	h.SetReady(false)
 
 	factoryTr := func(_ context.Context) api_v1.TargetRetriever { return h.scrapeManager }
 	factoryAr := func(_ context.Context) api_v1.AlertmanagerRetriever { return h.notifier }
@@ -463,11 +469,11 @@ func New(logger log.Logger, o *Options) *Handler {
 
 	router.Get("/-/healthy", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, "Prometheus is Healthy.\n")
+		fmt.Fprintf(w, o.AppName+" is Healthy.\n")
 	})
 	router.Get("/-/ready", readyf(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprintf(w, "Prometheus is Ready.\n")
+		fmt.Fprintf(w, o.AppName+" is Ready.\n")
 	}))
 
 	return h
@@ -503,9 +509,16 @@ func serveDebug(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
-// Ready sets Handler to be ready.
-func (h *Handler) Ready() {
-	h.ready.Store(1)
+// SetReady sets the ready status of our web Handler
+func (h *Handler) SetReady(v bool) {
+	if v {
+		h.ready.Store(1)
+		h.metrics.readyStatus.Set(1)
+		return
+	}
+
+	h.ready.Store(0)
+	h.metrics.readyStatus.Set(0)
 }
 
 // Verifies whether the server is ready or not.

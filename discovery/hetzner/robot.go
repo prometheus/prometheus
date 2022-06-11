@@ -25,7 +25,6 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
@@ -89,7 +88,7 @@ func (d *robotDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, err
 	}()
 
 	if resp.StatusCode/100 != 2 {
-		return nil, errors.Errorf("non 2xx status '%d' response during hetzner service discovery with role robot", resp.StatusCode)
+		return nil, fmt.Errorf("non 2xx status '%d' response during hetzner service discovery with role robot", resp.StatusCode)
 	}
 
 	b, err := io.ReadAll(resp.Body)
