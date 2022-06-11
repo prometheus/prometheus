@@ -15,6 +15,10 @@
 
 set -e
 current=$(pwd)
+if ! [[ -w  $HOME ]]
+then
+  export npm_config_cache=$(mktemp -d)
+fi
 
 buildOrder=(module/lezer-promql module/codemirror-promql)
 

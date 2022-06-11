@@ -54,7 +54,7 @@ func TestMarathonSDHandleError(t *testing.T) {
 		}
 	)
 	tgs, err := testUpdateServices(client)
-	if err != errTesting {
+	if !errors.Is(err, errTesting) {
 		t.Fatalf("Expected error: %s", err)
 	}
 	if len(tgs) != 0 {

@@ -146,7 +146,7 @@ func TestReadyAndHealthy(t *testing.T) {
 	cleanupTestResponse(t, resp)
 
 	// Set to ready.
-	webHandler.Ready()
+	webHandler.SetReady(true)
 
 	for _, u := range []string{
 		baseURL + "/-/healthy",
@@ -245,7 +245,7 @@ func TestRoutePrefix(t *testing.T) {
 	cleanupTestResponse(t, resp)
 
 	// Set to ready.
-	webHandler.Ready()
+	webHandler.SetReady(true)
 
 	resp, err = http.Get(baseURL + opts.RoutePrefix + "/-/healthy")
 	require.NoError(t, err)
@@ -292,7 +292,7 @@ func TestDebugHandler(t *testing.T) {
 			},
 		}
 		handler := New(nil, opts)
-		handler.Ready()
+		handler.SetReady(true)
 
 		w := httptest.NewRecorder()
 
@@ -329,16 +329,28 @@ func TestHTTPMetrics(t *testing.T) {
 
 	code := getReady()
 	require.Equal(t, http.StatusServiceUnavailable, code)
+	ready := handler.metrics.readyStatus
+	require.Equal(t, 0, int(prom_testutil.ToFloat64(ready)))
 	counter := handler.metrics.requestCounter
 	require.Equal(t, 1, int(prom_testutil.ToFloat64(counter.WithLabelValues("/-/ready", strconv.Itoa(http.StatusServiceUnavailable)))))
 
-	handler.Ready()
+	handler.SetReady(true)
 	for range [2]int{} {
 		code = getReady()
 		require.Equal(t, http.StatusOK, code)
 	}
+	require.Equal(t, 1, int(prom_testutil.ToFloat64(ready)))
 	require.Equal(t, 2, int(prom_testutil.ToFloat64(counter.WithLabelValues("/-/ready", strconv.Itoa(http.StatusOK)))))
 	require.Equal(t, 1, int(prom_testutil.ToFloat64(counter.WithLabelValues("/-/ready", strconv.Itoa(http.StatusServiceUnavailable)))))
+
+	handler.SetReady(false)
+	for range [2]int{} {
+		code = getReady()
+		require.Equal(t, http.StatusServiceUnavailable, code)
+	}
+	require.Equal(t, 0, int(prom_testutil.ToFloat64(ready)))
+	require.Equal(t, 2, int(prom_testutil.ToFloat64(counter.WithLabelValues("/-/ready", strconv.Itoa(http.StatusOK)))))
+	require.Equal(t, 3, int(prom_testutil.ToFloat64(counter.WithLabelValues("/-/ready", strconv.Itoa(http.StatusServiceUnavailable)))))
 }
 
 func TestShutdownWithStaleConnection(t *testing.T) {
@@ -510,7 +522,7 @@ func TestAgentAPIEndPoints(t *testing.T) {
 	opts.Flags = map[string]string{}
 
 	webHandler := New(nil, opts)
-	webHandler.Ready()
+	webHandler.SetReady(true)
 	webHandler.config = &config.Config{}
 	webHandler.notifier = &notifier.Manager{}
 	l, err := webHandler.Listener()

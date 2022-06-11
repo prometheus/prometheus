@@ -59,7 +59,7 @@ Prometheus will now be reachable at <http://localhost:9090/>.
 
 To build Prometheus from source code, You need:
 
-* Go [version 1.16 or greater](https://golang.org/doc/install).
+* Go [version 1.17 or greater](https://golang.org/doc/install).
 * NodeJS [version 16 or greater](https://nodejs.org/).
 * npm [version 7 or greater](https://www.npmjs.com/).
 

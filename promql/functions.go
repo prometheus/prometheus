@@ -14,6 +14,7 @@
 package promql
 
 import (
+	"fmt"
 	"math"
 	"sort"
 	"strconv"
@@ -21,7 +22,6 @@ import (
 	"time"
 
 	"github.com/grafana/regexp"
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -223,10 +223,10 @@ func funcHoltWinters(vals []parser.Value, args parser.Expressions, enh *EvalNode
 
 	// Sanity check the input.
 	if sf <= 0 || sf >= 1 {
-		panic(errors.Errorf("invalid smoothing factor. Expected: 0 < sf < 1, got: %f", sf))
+		panic(fmt.Errorf("invalid smoothing factor. Expected: 0 < sf < 1, got: %f", sf))
 	}
 	if tf <= 0 || tf >= 1 {
-		panic(errors.Errorf("invalid trend factor. Expected: 0 < tf < 1, got: %f", tf))
+		panic(fmt.Errorf("invalid trend factor. Expected: 0 < tf < 1, got: %f", tf))
 	}
 
 	l := len(samples.Points)
@@ -791,7 +791,6 @@ func funcPredictLinear(vals []parser.Value, args parser.Expressions, enh *EvalNo
 func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	q := vals[0].(Vector)[0].V
 	inVec := vals[1].(Vector)
-	sigf := signatureFunc(false, enh.lblBuf, labels.BucketLabel)
 
 	if enh.signatureToMetricWithBuckets == nil {
 		enh.signatureToMetricWithBuckets = map[string]*metricWithBuckets{}
@@ -809,19 +808,15 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 			// TODO(beorn7): Issue a warning somehow.
 			continue
 		}
-		l := sigf(el.Metric)
-		// Add the metric name (which is always removed) to the signature to prevent combining multiple histograms
-		// with the same label set. See https://github.com/prometheus/prometheus/issues/9910
-		l = l + el.Metric.Get(model.MetricNameLabel)
-
-		mb, ok := enh.signatureToMetricWithBuckets[l]
+		enh.lblBuf = el.Metric.BytesWithoutLabels(enh.lblBuf, labels.BucketLabel)
+		mb, ok := enh.signatureToMetricWithBuckets[string(enh.lblBuf)]
 		if !ok {
 			el.Metric = labels.NewBuilder(el.Metric).
 				Del(excludedLabels...).
 				Labels()
 
 			mb = &metricWithBuckets{el.Metric, nil}
-			enh.signatureToMetricWithBuckets[l] = mb
+			enh.signatureToMetricWithBuckets[string(enh.lblBuf)] = mb
 		}
 		mb.buckets = append(mb.buckets, bucket{upperBound, el.V})
 	}
@@ -890,10 +885,10 @@ func funcLabelReplace(vals []parser.Value, args parser.Expressions, enh *EvalNod
 		var err error
 		enh.regex, err = regexp.Compile("^(?:" + regexStr + ")$")
 		if err != nil {
-			panic(errors.Errorf("invalid regular expression in label_replace(): %s", regexStr))
+			panic(fmt.Errorf("invalid regular expression in label_replace(): %s", regexStr))
 		}
 		if !model.LabelNameRE.MatchString(dst) {
-			panic(errors.Errorf("invalid destination label name in label_replace(): %s", dst))
+			panic(fmt.Errorf("invalid destination label name in label_replace(): %s", dst))
 		}
 		enh.Dmn = make(map[uint64]labels.Labels, len(enh.Out))
 	}
@@ -955,13 +950,13 @@ func funcLabelJoin(vals []parser.Value, args parser.Expressions, enh *EvalNodeHe
 	for i := 3; i < len(args); i++ {
 		src := stringFromArg(args[i])
 		if !model.LabelName(src).IsValid() {
-			panic(errors.Errorf("invalid source label name in label_join(): %s", src))
+			panic(fmt.Errorf("invalid source label name in label_join(): %s", src))
 		}
 		srcLabels[i-3] = src
 	}
 
 	if !model.LabelName(dst).IsValid() {
-		panic(errors.Errorf("invalid destination label name in label_join(): %s", dst))
+		panic(fmt.Errorf("invalid destination label name in label_join(): %s", dst))
 	}
 
 	srcVals := make([]string, len(srcLabels))
@@ -1038,6 +1033,13 @@ func funcDayOfWeek(vals []parser.Value, args parser.Expressions, enh *EvalNodeHe
 	})
 }
 
+// === day_of_year(v Vector) Scalar ===
+func funcDayOfYear(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	return dateWrapper(vals, enh, func(t time.Time) float64 {
+		return float64(t.YearDay())
+	})
+}
+
 // === hour(v Vector) Scalar ===
 func funcHour(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return dateWrapper(vals, enh, func(t time.Time) float64 {
@@ -1089,6 +1091,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"days_in_month":      funcDaysInMonth,
 	"day_of_month":       funcDayOfMonth,
 	"day_of_week":        funcDayOfWeek,
+	"day_of_year":        funcDayOfYear,
 	"deg":                funcDeg,
 	"delta":              funcDelta,
 	"deriv":              funcDeriv,
@@ -1143,7 +1146,7 @@ var FunctionCalls = map[string]FunctionCall{
 // that can also change with change in eval time.
 var AtModifierUnsafeFunctions = map[string]struct{}{
 	// Step invariant functions.
-	"days_in_month": {}, "day_of_month": {}, "day_of_week": {},
+	"days_in_month": {}, "day_of_month": {}, "day_of_week": {}, "day_of_year": {},
 	"hour": {}, "minute": {}, "month": {}, "year": {},
 	"predict_linear": {}, "time": {},
 	// Uses timestamp of the argument for the result,
