@@ -175,18 +175,15 @@ func NewTOCFromByteSlice(bs ByteSlice) (*TOC, error) {
 		return nil, errors.Wrap(encoding.ErrInvalidChecksum, "read TOC")
 	}
 
-	if err := d.Err(); err != nil {
-		return nil, err
-	}
-
-	return &TOC{
+	toc := &TOC{
 		Symbols:           d.Be64(),
 		Series:            d.Be64(),
 		LabelIndices:      d.Be64(),
 		LabelIndicesTable: d.Be64(),
 		Postings:          d.Be64(),
 		PostingsTable:     d.Be64(),
-	}, nil
+	}
+	return toc, d.Err()
 }
 
 // NewWriter returns a new Writer to the given filename. It serializes data in format version 2.
