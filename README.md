@@ -66,8 +66,6 @@ To build Prometheus from source code, You need:
 Start by cloning the repository:
 
 ```bash
-mkdir -p $GOPATH/src/github.com/prometheus
-cd $GOPATH/src/github.com/prometheus
 git clone https://github.com/prometheus/prometheus.git
 cd prometheus
 ```
