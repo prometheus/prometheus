@@ -42,7 +42,7 @@
     "sanitize-html": "^2.6.0",
     "sass": "1.49.11",
     "tempusdominus-bootstrap-4": "^5.1.2",
-    "tempusdominus-core": "^5.0.3"
+    "tempusdominus-core": "^5.19.3"
   },
   "scripts": {
     "start": "react-scripts start",
