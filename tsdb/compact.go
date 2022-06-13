@@ -79,13 +79,14 @@ type Compactor interface {
 
 // LeveledCompactor implements the Compactor interface.
 type LeveledCompactor struct {
-	metrics                  *compactorMetrics
-	logger                   log.Logger
-	ranges                   []int64
-	chunkPool                chunkenc.Pool
-	ctx                      context.Context
-	maxBlockChunkSegmentSize int64
-	mergeFunc                storage.VerticalChunkSeriesMergeFunc
+	metrics                     *compactorMetrics
+	logger                      log.Logger
+	ranges                      []int64
+	chunkPool                   chunkenc.Pool
+	ctx                         context.Context
+	maxBlockChunkSegmentSize    int64
+	mergeFunc                   storage.VerticalChunkSeriesMergeFunc
+	enableOverlappingCompaction bool
 
 	concurrencyOpts LeveledCompactorConcurrencyOptions
 }
@@ -151,11 +152,11 @@ func newCompactorMetrics(r prometheus.Registerer) *compactorMetrics {
 }
 
 // NewLeveledCompactor returns a LeveledCompactor.
-func NewLeveledCompactor(ctx context.Context, r prometheus.Registerer, l log.Logger, ranges []int64, pool chunkenc.Pool, mergeFunc storage.VerticalChunkSeriesMergeFunc) (*LeveledCompactor, error) {
-	return NewLeveledCompactorWithChunkSize(ctx, r, l, ranges, pool, chunks.DefaultChunkSegmentSize, mergeFunc)
+func NewLeveledCompactor(ctx context.Context, r prometheus.Registerer, l log.Logger, ranges []int64, pool chunkenc.Pool, mergeFunc storage.VerticalChunkSeriesMergeFunc, enableOverlappingCompaction bool) (*LeveledCompactor, error) {
+	return NewLeveledCompactorWithChunkSize(ctx, r, l, ranges, pool, chunks.DefaultChunkSegmentSize, mergeFunc, enableOverlappingCompaction)
 }
 
-func NewLeveledCompactorWithChunkSize(ctx context.Context, r prometheus.Registerer, l log.Logger, ranges []int64, pool chunkenc.Pool, maxBlockChunkSegmentSize int64, mergeFunc storage.VerticalChunkSeriesMergeFunc) (*LeveledCompactor, error) {
+func NewLeveledCompactorWithChunkSize(ctx context.Context, r prometheus.Registerer, l log.Logger, ranges []int64, pool chunkenc.Pool, maxBlockChunkSegmentSize int64, mergeFunc storage.VerticalChunkSeriesMergeFunc, enableOverlappingCompaction bool) (*LeveledCompactor, error) {
 	if len(ranges) == 0 {
 		return nil, errors.Errorf("at least one range must be provided")
 	}
@@ -169,14 +170,15 @@ func NewLeveledCompactorWithChunkSize(ctx context.Context, r prometheus.Register
 		mergeFunc = storage.NewCompactingChunkSeriesMerger(storage.ChainedSeriesMerge)
 	}
 	return &LeveledCompactor{
-		ranges:                   ranges,
-		chunkPool:                pool,
-		logger:                   l,
-		metrics:                  newCompactorMetrics(r),
-		ctx:                      ctx,
-		maxBlockChunkSegmentSize: maxBlockChunkSegmentSize,
-		mergeFunc:                mergeFunc,
-		concurrencyOpts:          DefaultLeveledCompactorConcurrencyOptions(),
+		ranges:                      ranges,
+		chunkPool:                   pool,
+		logger:                      l,
+		metrics:                     newCompactorMetrics(r),
+		ctx:                         ctx,
+		maxBlockChunkSegmentSize:    maxBlockChunkSegmentSize,
+		mergeFunc:                   mergeFunc,
+		concurrencyOpts:             DefaultLeveledCompactorConcurrencyOptions(),
+		enableOverlappingCompaction: enableOverlappingCompaction,
 	}, nil
 }
 
@@ -234,7 +236,7 @@ func (c *LeveledCompactor) plan(dms []dirMeta) ([]string, error) {
 	if len(res) > 0 {
 		return res, nil
 	}
-	// No overlapping blocks, do compaction the usual way.
+	// No overlapping blocks or overlapping block compaction not allowed, do compaction the usual way.
 	// We do not include a recently created block with max(minTime), so the block which was just created from WAL.
 	// This gives users a window of a full block size to piece-wise backup new data without having to care about data overlap.
 	dms = dms[:len(dms)-1]
@@ -307,6 +309,9 @@ func (c *LeveledCompactor) selectDirs(ds []dirMeta) []dirMeta {
 // selectOverlappingDirs returns all dirs with overlapping time ranges.
 // It expects sorted input by mint and returns the overlapping dirs in the same order as received.
 func (c *LeveledCompactor) selectOverlappingDirs(ds []dirMeta) []string {
+	if !c.enableOverlappingCompaction {
+		return nil
+	}
 	if len(ds) < 2 {
 		return nil
 	}
