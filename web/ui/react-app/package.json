@@ -1,5 +1,5 @@
 {
-  "name": "graph",
+  "name": "@prometheus-io/app",
   "version": "0.1.0",
   "private": true,
   "dependencies": {
@@ -21,8 +21,8 @@
     "@fortawesome/react-fontawesome": "0.1.17",
     "@nexucis/fuzzy": "^0.4.0",
     "@nexucis/kvsearch": "^0.7.0",
+    "@prometheus-io/codemirror-promql": "0.19.0",
     "bootstrap": "^4.6.1",
-    "codemirror-promql": "0.19.0",
     "css.escape": "^1.5.1",
     "downshift": "^6.1.7",
     "http-proxy-middleware": "^2.0.6",
@@ -89,11 +89,11 @@
       "enzyme-to-json/serializer"
     ],
     "transformIgnorePatterns": [
-      "<rootDir>/../node_modules/(?!codemirror-promql)/",
-      "<rootDir>/../node_modules/(?!lezer-promql)/"
+      "<rootDir>/../node_modules/(?!@prometheus-io/codemirror-promql)/",
+      "<rootDir>/../node_modules/(?!@prometheus-io/lezer-promql)/"
     ],
     "moduleNameMapper": {
-      "lezer-promql": "<rootDir>/../node_modules/lezer-promql/dist/index.cjs"
+      "lezer-promql": "<rootDir>/../node_modules/@prometheus-io/lezer-promql/dist/index.cjs"
     }
   },
   "optionalDependencies": {

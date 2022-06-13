@@ -26,7 +26,7 @@ import {
   SubqueryExpr,
   UnaryExpr,
   VectorSelector,
-} from 'lezer-promql';
+} from '@prometheus-io/lezer-promql';
 import { walkThrough } from './path-finder';
 import { getFunction, ValueType } from '../types';
 
