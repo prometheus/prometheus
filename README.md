@@ -70,7 +70,7 @@ git clone https://github.com/prometheus/prometheus.git
 cd prometheus
 ```
 
-You can directly use the `go` tool to download and install the `prometheus`
+You can use the `go` tool to build and install the `prometheus`
 and `promtool` binaries into your `GOPATH`:
 
 ```bash
