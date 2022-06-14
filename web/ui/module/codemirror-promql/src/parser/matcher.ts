@@ -12,13 +12,13 @@
 // limitations under the License.
 
 import { SyntaxNode } from '@lezer/common';
-import { EqlRegex, EqlSingle, LabelName, MatchOp, Neq, NeqRegex, StringLiteral } from 'lezer-promql';
+import { EqlRegex, EqlSingle, LabelName, MatchOp, Neq, NeqRegex, StringLiteral } from '@prometheus-io/lezer-promql';
 import { EditorState } from '@codemirror/state';
 import { Matcher } from '../types';
 
 function createMatcher(labelMatcher: SyntaxNode, state: EditorState): Matcher {
   const matcher = new Matcher(0, '', '');
-  const cursor = labelMatcher.cursor;
+  const cursor = labelMatcher.cursor();
   if (!cursor.next()) {
     // weird case, that would mean the labelMatcher doesn't have any child.
     return matcher;

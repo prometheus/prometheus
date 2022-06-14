@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { parser } from 'lezer-promql';
+import { parser } from '@prometheus-io/lezer-promql';
 import { EditorState } from '@codemirror/state';
 import { LRLanguage } from '@codemirror/language';
 import nock from 'nock';

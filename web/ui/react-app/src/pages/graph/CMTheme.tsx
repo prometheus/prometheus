@@ -1,5 +1,6 @@
-import { HighlightStyle, tags } from '@codemirror/highlight';
 import { EditorView } from '@codemirror/view';
+import { HighlightStyle } from '@codemirror/language';
+import { tags } from '@lezer/highlight';
 
 export const baseTheme = EditorView.theme({
   '&.cm-editor': {
