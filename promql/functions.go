@@ -14,6 +14,7 @@
 package promql
 
 import (
+	"fmt"
 	"math"
 	"sort"
 	"strconv"
@@ -21,7 +22,6 @@ import (
 	"time"
 
 	"github.com/grafana/regexp"
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -300,10 +300,10 @@ func funcHoltWinters(vals []parser.Value, args parser.Expressions, enh *EvalNode
 
 	// Sanity check the input.
 	if sf <= 0 || sf >= 1 {
-		panic(errors.Errorf("invalid smoothing factor. Expected: 0 < sf < 1, got: %f", sf))
+		panic(fmt.Errorf("invalid smoothing factor. Expected: 0 < sf < 1, got: %f", sf))
 	}
 	if tf <= 0 || tf >= 1 {
-		panic(errors.Errorf("invalid trend factor. Expected: 0 < tf < 1, got: %f", tf))
+		panic(fmt.Errorf("invalid trend factor. Expected: 0 < tf < 1, got: %f", tf))
 	}
 
 	l := len(samples.Points)
@@ -868,7 +868,6 @@ func funcPredictLinear(vals []parser.Value, args parser.Expressions, enh *EvalNo
 func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	q := vals[0].(Vector)[0].V
 	inVec := vals[1].(Vector)
-	sigf := signatureFunc(false, enh.lblBuf, labels.BucketLabel)
 
 	if enh.signatureToMetricWithBuckets == nil {
 		enh.signatureToMetricWithBuckets = map[string]*metricWithBuckets{}
@@ -896,21 +895,15 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 			// TODO(beorn7): Issue a warning somehow.
 			continue
 		}
-
-		l := sigf(sample.Metric)
-		// Add the metric name (which is always removed) to the signature to prevent combining multiple histograms
-		// with the same label set. See https://github.com/prometheus/prometheus/issues/9910
-		// TODO(beorn7): What's the performance impact? We might need to implement this more efficiently.
-		l = l + sample.Metric.Get(model.MetricNameLabel)
-
-		mb, ok := enh.signatureToMetricWithBuckets[l]
+		enh.lblBuf = sample.Metric.BytesWithoutLabels(enh.lblBuf, labels.BucketLabel)
+		mb, ok := enh.signatureToMetricWithBuckets[string(enh.lblBuf)]
 		if !ok {
 			sample.Metric = labels.NewBuilder(sample.Metric).
 				Del(excludedLabels...).
 				Labels()
 
 			mb = &metricWithBuckets{sample.Metric, nil}
-			enh.signatureToMetricWithBuckets[l] = mb
+			enh.signatureToMetricWithBuckets[string(enh.lblBuf)] = mb
 		}
 		mb.buckets = append(mb.buckets, bucket{upperBound, sample.V})
 
@@ -920,17 +913,13 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 	for _, sample := range histogramSamples {
 		// We have to reconstruct the exact same signature as above for
 		// a conventional histogram, just ignoring any le label.
-		// TODO(beorn7): This replicates the inefficient implementation
-		// from above and has to be improved under the same
-		// circumstances.
-		l := string(sample.Metric.WithoutLabels().Bytes(enh.lblBuf))
-		l = l + sample.Metric.Get(model.MetricNameLabel)
-		if mb, ok := enh.signatureToMetricWithBuckets[l]; ok && len(mb.buckets) > 0 {
+		enh.lblBuf = sample.Metric.Bytes(enh.lblBuf)
+		if mb, ok := enh.signatureToMetricWithBuckets[string(enh.lblBuf)]; ok && len(mb.buckets) > 0 {
 			// At this data point, we have conventional histogram
 			// buckets and a native histogram with the same name and
 			// labels. Do not evaluate anything.
 			// TODO(beorn7): Issue a warning somehow.
-			delete(enh.signatureToMetricWithBuckets, l)
+			delete(enh.signatureToMetricWithBuckets, string(enh.lblBuf))
 			continue
 		}
 
@@ -1004,10 +993,10 @@ func funcLabelReplace(vals []parser.Value, args parser.Expressions, enh *EvalNod
 		var err error
 		enh.regex, err = regexp.Compile("^(?:" + regexStr + ")$")
 		if err != nil {
-			panic(errors.Errorf("invalid regular expression in label_replace(): %s", regexStr))
+			panic(fmt.Errorf("invalid regular expression in label_replace(): %s", regexStr))
 		}
 		if !model.LabelNameRE.MatchString(dst) {
-			panic(errors.Errorf("invalid destination label name in label_replace(): %s", dst))
+			panic(fmt.Errorf("invalid destination label name in label_replace(): %s", dst))
 		}
 		enh.Dmn = make(map[uint64]labels.Labels, len(enh.Out))
 	}
@@ -1069,13 +1058,13 @@ func funcLabelJoin(vals []parser.Value, args parser.Expressions, enh *EvalNodeHe
 	for i := 3; i < len(args); i++ {
 		src := stringFromArg(args[i])
 		if !model.LabelName(src).IsValid() {
-			panic(errors.Errorf("invalid source label name in label_join(): %s", src))
+			panic(fmt.Errorf("invalid source label name in label_join(): %s", src))
 		}
 		srcLabels[i-3] = src
 	}
 
 	if !model.LabelName(dst).IsValid() {
-		panic(errors.Errorf("invalid destination label name in label_join(): %s", dst))
+		panic(fmt.Errorf("invalid destination label name in label_join(): %s", dst))
 	}
 
 	srcVals := make([]string, len(srcLabels))
@@ -1152,6 +1141,13 @@ func funcDayOfWeek(vals []parser.Value, args parser.Expressions, enh *EvalNodeHe
 	})
 }
 
+// === day_of_year(v Vector) Scalar ===
+func funcDayOfYear(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	return dateWrapper(vals, enh, func(t time.Time) float64 {
+		return float64(t.YearDay())
+	})
+}
+
 // === hour(v Vector) Scalar ===
 func funcHour(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	return dateWrapper(vals, enh, func(t time.Time) float64 {
@@ -1203,6 +1199,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"days_in_month":      funcDaysInMonth,
 	"day_of_month":       funcDayOfMonth,
 	"day_of_week":        funcDayOfWeek,
+	"day_of_year":        funcDayOfYear,
 	"deg":                funcDeg,
 	"delta":              funcDelta,
 	"deriv":              funcDeriv,
@@ -1257,7 +1254,7 @@ var FunctionCalls = map[string]FunctionCall{
 // that can also change with change in eval time.
 var AtModifierUnsafeFunctions = map[string]struct{}{
 	// Step invariant functions.
-	"days_in_month": {}, "day_of_month": {}, "day_of_week": {},
+	"days_in_month": {}, "day_of_month": {}, "day_of_week": {}, "day_of_year": {},
 	"hour": {}, "minute": {}, "month": {}, "year": {},
 	"predict_linear": {}, "time": {},
 	// Uses timestamp of the argument for the result,

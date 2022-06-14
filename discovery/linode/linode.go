@@ -25,6 +25,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/linode/linodego"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
@@ -65,15 +66,24 @@ const (
 )
 
 // DefaultSDConfig is the default Linode SD configuration.
-var DefaultSDConfig = SDConfig{
-	TagSeparator:     ",",
-	Port:             80,
-	RefreshInterval:  model.Duration(60 * time.Second),
-	HTTPClientConfig: config.DefaultHTTPClientConfig,
-}
+var (
+	DefaultSDConfig = SDConfig{
+		TagSeparator:     ",",
+		Port:             80,
+		RefreshInterval:  model.Duration(60 * time.Second),
+		HTTPClientConfig: config.DefaultHTTPClientConfig,
+	}
+
+	failuresCount = prometheus.NewCounter(
+		prometheus.CounterOpts{
+			Name: "prometheus_sd_linode_failures_total",
+			Help: "Number of Linode service discovery refresh failures.",
+		})
+)
 
 func init() {
 	discovery.RegisterConfig(&SDConfig{})
+	prometheus.MustRegister(failuresCount)
 }
 
 // SDConfig is the configuration for Linode based service discovery.
@@ -211,12 +221,14 @@ func (d *Discovery) refreshData(ctx context.Context) ([]*targetgroup.Group, erro
 	// Gather all linode instances.
 	instances, err := d.client.ListInstances(ctx, &linodego.ListOptions{PageSize: 500})
 	if err != nil {
+		failuresCount.Inc()
 		return nil, err
 	}
 
 	// Gather detailed IP address info for all IPs on all linode instances.
 	detailedIPs, err := d.client.ListIPAddresses(ctx, &linodego.ListOptions{PageSize: 500})
 	if err != nil {
+		failuresCount.Inc()
 		return nil, err
 	}
 

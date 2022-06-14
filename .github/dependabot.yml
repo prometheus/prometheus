@@ -4,6 +4,10 @@ updates:
     directory: "/"
     schedule:
       interval: "monthly"
+  - package-ecosystem: "gomod"
+    directory: "/documentation/examples/remote_storage"
+    schedule:
+      interval: "monthly"
   - package-ecosystem: "npm"
     directory: "/web/ui"
     schedule:

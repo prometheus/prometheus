@@ -457,8 +457,8 @@ func labelsForTest(lName string, seriesCount int) []labels.Labels {
 	for i := 0; i < seriesCount; i++ {
 		lset := labels.Labels{
 			{Name: "a", Value: lName},
-			{Name: "job", Value: "prometheus"},
 			{Name: "instance", Value: "localhost" + strconv.Itoa(i)},
+			{Name: "job", Value: "prometheus"},
 		}
 		series = append(series, lset)
 	}

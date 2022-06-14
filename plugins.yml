@@ -6,6 +6,7 @@
 - github.com/prometheus/prometheus/discovery/eureka
 - github.com/prometheus/prometheus/discovery/gce
 - github.com/prometheus/prometheus/discovery/hetzner
+- github.com/prometheus/prometheus/discovery/ionos
 - github.com/prometheus/prometheus/discovery/kubernetes
 - github.com/prometheus/prometheus/discovery/linode
 - github.com/prometheus/prometheus/discovery/marathon
