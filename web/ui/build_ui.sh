@@ -14,24 +14,24 @@
 # limitations under the License.
 
 set -e
-current=$(pwd)
 
-buildOrder=(module/lezer-promql module/codemirror-promql)
+if ! [[ -w  $HOME ]]
+then
+  export npm_config_cache=$(mktemp -d)
+fi
+
+buildOrder=(lezer-promql codemirror-promql)
 
 function buildModule() {
   for module in "${buildOrder[@]}"; do
-    cd "${module}"
     echo "build ${module}"
-    npm run build
-    cd "${current}"
+    npm run build -w "@prometheus-io/${module}"
   done
 }
 
 function buildReactApp() {
-  cd react-app
   echo "build react-app"
-  npm run build
-  cd "${current}"
+  npm run build -w @prometheus-io/app
   rm -rf ./static/react
   mv ./react-app/build ./static/react
 }

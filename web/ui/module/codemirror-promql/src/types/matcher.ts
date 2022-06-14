@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { EqlSingle, Neq } from 'lezer-promql';
+import { EqlSingle, Neq } from '@prometheus-io/lezer-promql';
 
 export class Matcher {
   type: number;
