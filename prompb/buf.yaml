@@ -5,14 +5,17 @@ lint:
     ENUM_VALUE_PREFIX:
       - remote.proto
       - types.proto
+      - io/prometheus/client/metrics.proto
     ENUM_ZERO_VALUE_SUFFIX:
       - remote.proto
       - types.proto
+      - io/prometheus/client/metrics.proto
     PACKAGE_DIRECTORY_MATCH:
       - remote.proto
       - types.proto
     PACKAGE_VERSION_SUFFIX:
       - remote.proto
       - types.proto
+      - io/prometheus/client/metrics.proto
 deps:
   - buf.build/gogo/protobuf
