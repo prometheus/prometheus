@@ -1,28 +1,26 @@
 {
-  "name": "graph",
+  "name": "@prometheus-io/app",
   "version": "0.1.0",
   "private": true,
   "dependencies": {
-    "@codemirror/autocomplete": "^0.19.9",
-    "@codemirror/closebrackets": "^0.19.0",
-    "@codemirror/commands": "^0.19.5",
-    "@codemirror/comment": "^0.19.0",
-    "@codemirror/highlight": "^0.19.6",
-    "@codemirror/history": "^0.19.2",
-    "@codemirror/language": "^0.19.7",
-    "@codemirror/lint": "^0.19.3",
-    "@codemirror/matchbrackets": "^0.19.3",
-    "@codemirror/search": "^0.19.3",
-    "@codemirror/state": "^0.19.6",
-    "@codemirror/view": "^0.19.27",
+    "@codemirror/autocomplete": "^6.0.0",
+    "@codemirror/commands": "^6.0.0",
+    "@codemirror/language": "^6.0.0",
+    "@codemirror/lint": "^6.0.0",
+    "@codemirror/search": "^6.0.0",
+    "@codemirror/state": "^6.0.0",
+    "@codemirror/view": "^6.0.0",
     "@forevolve/bootstrap-dark": "^1.0.0",
     "@fortawesome/fontawesome-svg-core": "6.1.1",
     "@fortawesome/free-solid-svg-icons": "6.1.1",
     "@fortawesome/react-fontawesome": "0.1.17",
+    "@lezer/lr": "^1.0.0",
+    "@lezer/highlight": "^1.0.0",
+    "@lezer/common": "^1.0.0",
     "@nexucis/fuzzy": "^0.4.0",
     "@nexucis/kvsearch": "^0.7.0",
+    "@prometheus-io/codemirror-promql": "0.19.0",
     "bootstrap": "^4.6.1",
-    "codemirror-promql": "0.19.0",
     "css.escape": "^1.5.1",
     "downshift": "^6.1.7",
     "http-proxy-middleware": "^2.0.6",
@@ -89,11 +87,11 @@
       "enzyme-to-json/serializer"
     ],
     "transformIgnorePatterns": [
-      "<rootDir>/../node_modules/(?!codemirror-promql)/",
-      "<rootDir>/../node_modules/(?!lezer-promql)/"
+      "<rootDir>/../node_modules/(?!@prometheus-io/codemirror-promql)/",
+      "<rootDir>/../node_modules/(?!@prometheus-io/lezer-promql)/"
     ],
     "moduleNameMapper": {
-      "lezer-promql": "<rootDir>/../node_modules/lezer-promql/dist/index.cjs"
+      "lezer-promql": "<rootDir>/../node_modules/@prometheus-io/lezer-promql/dist/index.cjs"
     }
   },
   "optionalDependencies": {

@@ -58,7 +58,7 @@ import {
   SubqueryExpr,
   Unless,
   VectorSelector,
-} from 'lezer-promql';
+} from '@prometheus-io/lezer-promql';
 import { Completion, CompletionContext, CompletionResult } from '@codemirror/autocomplete';
 import { EditorState } from '@codemirror/state';
 import { buildLabelMatchers, containsAtLeastOneChild, containsChild, retrieveAllRecursiveNodes, walkBackward, walkThrough } from '../parser';
@@ -140,7 +140,7 @@ function arrayToCompletionResult(data: Completion[], from: number, to: number, i
     from: from,
     to: to,
     options: options,
-    span: span ? /^[a-zA-Z0-9_:]+$/ : undefined,
+    validFor: span ? /^[a-zA-Z0-9_:]+$/ : undefined,
   } as CompletionResult;
 }
 
