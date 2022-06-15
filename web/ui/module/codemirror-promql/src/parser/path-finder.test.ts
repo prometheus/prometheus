@@ -31,7 +31,7 @@ import {
   NumberLiteral,
   Sub,
   VectorSelector,
-} from 'lezer-promql';
+} from '@prometheus-io/lezer-promql';
 import { createEditorState } from '../test/utils-test';
 import { containsAtLeastOneChild, containsChild, retrieveAllRecursiveNodes, walkBackward, walkThrough } from './path-finder';
 import { SyntaxNode } from '@lezer/common';
