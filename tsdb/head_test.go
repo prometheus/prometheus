@@ -123,6 +123,10 @@ func readTestWAL(t testing.TB, dir string) (recs []interface{}) {
 			tstones, err := dec.Tombstones(rec, nil)
 			require.NoError(t, err)
 			recs = append(recs, tstones)
+		case record.Metadata:
+			meta, err := dec.Metadata(rec, nil)
+			require.NoError(t, err)
+			recs = append(recs, meta)
 		default:
 			t.Fatalf("unknown record type")
 		}
@@ -1004,7 +1008,7 @@ func TestDeletedSamplesAndSeriesStillInWALAfterCheckpoint(t *testing.T) {
 	recs := readTestWAL(t, cdir)
 	recs = append(recs, readTestWAL(t, w.Dir())...)
 
-	var series, samples, stones int
+	var series, samples, stones, metadata int
 	for _, rec := range recs {
 		switch rec.(type) {
 		case []record.RefSeries:
@@ -1013,6 +1017,8 @@ func TestDeletedSamplesAndSeriesStillInWALAfterCheckpoint(t *testing.T) {
 			samples++
 		case []tombstones.Stone:
 			stones++
+		case []record.RefMetadata:
+			metadata++
 		default:
 			t.Fatalf("unknown record type")
 		}
@@ -1020,6 +1026,7 @@ func TestDeletedSamplesAndSeriesStillInWALAfterCheckpoint(t *testing.T) {
 	require.Equal(t, 1, series)
 	require.Equal(t, 9999, samples)
 	require.Equal(t, 1, stones)
+	require.Equal(t, 1, metadata)
 }
 
 func TestDelete_e2e(t *testing.T) {
