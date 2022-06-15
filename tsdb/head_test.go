@@ -1026,7 +1026,7 @@ func TestDeletedSamplesAndSeriesStillInWALAfterCheckpoint(t *testing.T) {
 	require.Equal(t, 1, series)
 	require.Equal(t, 9999, samples)
 	require.Equal(t, 1, stones)
-	require.Equal(t, 1, metadata)
+	require.Equal(t, 0, metadata)
 }
 
 func TestDelete_e2e(t *testing.T) {
