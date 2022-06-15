@@ -160,6 +160,16 @@ func TestRecord_Corrupted(t *testing.T) {
 		_, err := dec.Exemplars(corrupted, nil)
 		require.Equal(t, errors.Cause(err), encoding.ErrInvalidSize)
 	})
+
+	t.Run("Test corrupted metadata record", func(t *testing.T) {
+		meta := []RefMetadata{
+			{Ref: 147, Type: uint8(Counter), Unit: "unit", Help: "help"},
+		}
+
+		corrupted := enc.Metadata(meta, nil)[:8]
+		_, err := dec.Metadata(corrupted, nil)
+		require.Equal(t, errors.Cause(err), encoding.ErrInvalidSize)
+	})
 }
 
 func TestRecord_Type(t *testing.T) {
@@ -177,6 +187,10 @@ func TestRecord_Type(t *testing.T) {
 	tstones := []tombstones.Stone{{Ref: 1, Intervals: tombstones.Intervals{{Mint: 1, Maxt: 2}}}}
 	recordType = dec.Type(enc.Tombstones(tstones, nil))
 	require.Equal(t, Tombstones, recordType)
+
+	metadata := []RefMetadata{{Ref: 147, Type: uint8(Counter), Unit: "unit", Help: "help"}}
+	recordType = dec.Type(enc.Metadata(metadata, nil))
+	require.Equal(t, Metadata, recordType)
 
 	recordType = dec.Type(nil)
 	require.Equal(t, Unknown, recordType)
