@@ -461,7 +461,7 @@ func TestRelabel(t *testing.T) {
 			if cfg.Separator == "" {
 				cfg.Separator = DefaultRelabelConfig.Separator
 			}
-			if cfg.Regex.original == "" {
+			if cfg.Regex.Regexp == nil || cfg.Regex.String() == "" {
 				cfg.Regex = DefaultRelabelConfig.Regex
 			}
 			if cfg.Replacement == "" {

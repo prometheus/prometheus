@@ -12,7 +12,7 @@ module.exports = {
         },
     },
     moduleNameMapper: {
-        'lezer-promql': '<rootDir>/../../node_modules/lezer-promql/dist/index.es.js'
+        'lezer-promql': '<rootDir>/../../node_modules/@prometheus-io/lezer-promql/dist/index.cjs'
     },
-    transformIgnorePatterns: ["<rootDir>/../../node_modules/(?!lezer-promql)/"]
+    transformIgnorePatterns: ["<rootDir>/../../node_modules/(?!@prometheus-io/lezer-promql)/"]
 };
