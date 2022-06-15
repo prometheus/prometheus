@@ -254,8 +254,12 @@ func (p *PromParser) nextToken() token {
 func (p *PromParser) errorPosition(err error) error {
 	str := string(p.l.b[:p.l.i])
 	line := 1 + strings.Count(str, "\n")
-	column := 1 + p.l.i - (strings.LastIndex(str, "\n") + len("\n"))
-	return errors.Errorf(err.Error()+" line %d, column %d", line, column)
+	lineStart := (strings.LastIndex(str, "\n") + len("\n"))
+	column := 1 + p.l.start - lineStart
+	if column < 1 {
+		column = 1 + p.l.i - lineStart
+	}
+	return errors.Errorf(err.Error()+" (line %d, column %d)", line, column)
 }
 
 func parseError(exp string, got token) error {

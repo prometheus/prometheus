@@ -248,13 +248,13 @@ func TestPromParseErrors(t *testing.T) {
 			input:  "a{b=\"\xff\"} 1\n",
 			err:    "invalid UTF-8 label value",
 			line:   1,
-			column: 8,
+			column: 5,
 		},
 		{
 			input:  "a true\n",
 			err:    "strconv.ParseFloat: parsing \"true\": invalid syntax",
 			line:   1,
-			column: 7,
+			column: 3,
 		},
 		{
 			input:  "something_weird{problem=\"",
@@ -266,25 +266,25 @@ func TestPromParseErrors(t *testing.T) {
 			input:  "empty_label_name{=\"\"} 0",
 			err:    "expected label name, got \"EQUAL\"",
 			line:   1,
-			column: 19,
+			column: 18,
 		},
 		{
 			input:  "foo 1_2\n",
 			err:    "unsupported character in float",
 			line:   1,
-			column: 8,
+			column: 5,
 		},
 		{
 			input:  "foo 0x1p-3\n",
 			err:    "unsupported character in float",
 			line:   1,
-			column: 11,
+			column: 5,
 		},
 		{
 			input:  "foo 0x1P-3\n",
 			err:    "unsupported character in float",
 			line:   1,
-			column: 11,
+			column: 5,
 		},
 		{
 			input:  "foo 0 1_2\n",
@@ -318,7 +318,7 @@ func TestPromParseErrors(t *testing.T) {
 		for err == nil {
 			_, err = p.Next()
 		}
-		expectedErr := fmt.Sprintf(c.err+" line %d, column %d", c.line, c.column)
+		expectedErr := fmt.Sprintf(c.err+" (line %d, column %d)", c.line, c.column)
 		require.Error(t, err)
 		require.Equal(t, expectedErr, err.Error(), "test %d", i)
 	}
@@ -385,7 +385,7 @@ func TestPromNullByteHandling(t *testing.T) {
 			continue
 		}
 
-		expectedErr := fmt.Sprintf(c.err+" line %d, column %d", c.line, c.column)
+		expectedErr := fmt.Sprintf(c.err+" (line %d, column %d)", c.line, c.column)
 		require.Error(t, err)
 		require.Equal(t, expectedErr, err.Error(), "test %d", i)
 	}
