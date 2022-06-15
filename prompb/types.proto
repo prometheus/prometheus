@@ -54,6 +54,65 @@ message Exemplar {
   int64 timestamp = 3;
 }
 
+// A native histogram, also known as a sparse histogram.
+// Original design doc:
+// https://docs.google.com/document/d/1cLNv3aufPZb3fNfaJgdaRBZsInZKKIHo9E6HinJVbpM/edit
+// The appendix of this design doc also explains the concept of float
+// histograms. This Histogram message can represent both, the usual
+// integer histogram as well as a float histogram.
+message Histogram {
+  enum ResetHint {
+    UNKNOWN = 0; // Need to test for a counter reset explicitly.
+    YES     = 1; // This is the 1st histogram after a counter reset.
+    NO      = 2; // There was no counter reset between this and the previous Histogram.
+    GAUGE   = 3; // This is a gauge histogram where counter resets don't happen.
+  }
+
+  oneof count { // Count of observations in the histogram.
+    uint64 count_int   = 1;
+    double count_float = 2;
+  }
+  double sum = 3; // Sum of observations in the histogram.
+  // The schema defines the bucket schema. Currently, valid numbers
+  // are -4 <= n <= 8. They are all for base-2 bucket schemas, where 1
+  // is a bucket boundary in each case, and then each power of two is
+  // divided into 2^n logarithmic buckets. Or in other words, each
+  // bucket boundary is the previous boundary times 2^(2^-n). In the
+  // future, more bucket schemas may be added using numbers < -4 or >
+  // 8.
+  sint32 schema             = 4;
+  double zero_threshold     = 5; // Breadth of the zero bucket.
+  oneof zero_count { // Count in zero bucket.
+    uint64 zero_count_int     = 6;
+    double zero_count_float   = 7;
+  }
+  Buckets negative_buckets  = 8;
+  Buckets positive_buckets  = 9;
+  ResetHint reset_hint      = 10;
+  // timestamp is in ms format, see model/timestamp/timestamp.go for
+  // conversion from time.Time to Prometheus timestamp.
+  int64 timestamp = 11;
+} 
+
+// Sparse buckets.
+message Buckets {
+  // A Span is a given number of consecutive buckets at a given
+  // offset. Logically, it would be more straightforward to include
+  // the bucket counts in the Span. However, the protobuf
+  // representation is more compact in the way the data is structured
+  // here (with all the buckets in a single array separate from the
+  // Spans).
+  message Span {
+    sint32 offset = 1; // Gap to previous span, or starting point for 1st span (which can be negative).
+    uint32 length = 2; // Length of consecutive buckets.
+  }
+  repeated Span span = 1;
+  // Only one of "delta" or "count" may be used, the former for regular
+  // histograms with integer counts, the latter for float histograms.
+  repeated sint64 delta = 2; // Count delta of each bucket compared to previous one (or to zero for 1st bucket).
+  repeated double count = 3; // Absolute count of each bucket.
+}
+
 // TimeSeries represents samples and labels for a single time series.
 message TimeSeries {
   // For a timeseries to be valid, and for the samples and exemplars
@@ -61,6 +120,7 @@ message TimeSeries {
   repeated Label labels   = 1 [(gogoproto.nullable) = false];
   repeated Sample samples = 2 [(gogoproto.nullable) = false];
   repeated Exemplar exemplars = 3 [(gogoproto.nullable) = false];
+  repeated Histogram histograms = 4 [(gogoproto.nullable) = false];
 }
 
 message Label {
@@ -103,8 +163,9 @@ message Chunk {
 
   // We require this to match chunkenc.Encoding.
   enum Encoding {
-    UNKNOWN = 0;
-    XOR     = 1;
+    UNKNOWN   = 0;
+    XOR       = 1;
+    HISTOGRAM = 2;
   }
   Encoding type  = 3;
   bytes data     = 4;
