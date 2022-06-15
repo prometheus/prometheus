@@ -15,6 +15,7 @@ package consul
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"strconv"
@@ -24,7 +25,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	consul "github.com/hashicorp/consul/api"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -291,7 +291,7 @@ func (d *Discovery) getDatacenter() error {
 
 	dc, ok := info["Config"]["Datacenter"].(string)
 	if !ok {
-		err := errors.Errorf("invalid value '%v' for Config.Datacenter", info["Config"]["Datacenter"])
+		err := fmt.Errorf("invalid value '%v' for Config.Datacenter", info["Config"]["Datacenter"])
 		level.Error(d.logger).Log("msg", "Error retrieving datacenter name", "err", err)
 		return err
 	}

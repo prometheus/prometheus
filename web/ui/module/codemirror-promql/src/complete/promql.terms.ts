@@ -178,6 +178,12 @@ export const functionIdentifierTerms = [
     type: 'function',
   },
   {
+    label: 'day_of_year',
+    detail: 'function',
+    info: 'Return the day of the year for provided timestamps',
+    type: 'function',
+  },
+  {
     label: 'deg',
     detail: 'function',
     info: 'Convert radians to degrees for input series',

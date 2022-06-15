@@ -1,0 +1,3 @@
+scrape_configs:
+  - ionos_sd_configs:
+      - datacenter_id: ""
