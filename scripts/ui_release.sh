@@ -10,7 +10,7 @@ root_ui_folder=${current}/web/ui
 
 cd "${root_ui_folder}"
 
-files=("../../LICENSE")
+files=("../../LICENSE" "../../CHANGELOG.md")
 workspaces=$(jq -r '.workspaces[]' < package.json)
 
 function copy() {
