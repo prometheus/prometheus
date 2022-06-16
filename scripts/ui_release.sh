@@ -77,7 +77,7 @@ function bumpVersion() {
   fi
   # increase the version on all packages
   npm version "${version}" --workspaces
-  # upgrade the @perses-dev/* dependencies on all packages
+  # upgrade the @prometheus-io/* dependencies on all packages
   for workspace in ${workspaces}; do
     sed -E -i "" "s|(\"@prometheus-io/.+\": )\".+\"|\1\"\^${version}\"|" "${workspace}"/package.json
   done
