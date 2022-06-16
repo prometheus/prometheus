@@ -146,6 +146,7 @@ FunctionIdentifier {
   Deriv |
   Exp |
   Floor |
+  HistogramFraction |
   HistogramQuantile |
   HoltWinters |
   Hour |
@@ -387,6 +388,7 @@ NumberLiteral  {
   Deriv { condFn<"deriv"> }
   Exp { condFn<"exp"> }
   Floor { condFn<"floor"> }
+  HistogramFraction { condFn<"histogram_fraction"> }
   HistogramQuantile { condFn<"histogram_quantile"> }
   HoltWinters { condFn<"holt_winters"> }
   Hour { condFn<"hour"> }

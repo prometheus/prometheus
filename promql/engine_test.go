@@ -3394,6 +3394,434 @@ func TestSparseHistogram_HistogramQuantile(t *testing.T) {
 	}
 }
 
+func TestSparseHistogram_HistogramFraction(t *testing.T) {
+	// TODO(codesome): Integrate histograms into the PromQL testing framework
+	// and write more tests there.
+	type subCase struct {
+		lower, upper string
+		value        float64
+	}
+
+	invariantCases := []subCase{
+		{
+			lower: "42",
+			upper: "3.1415",
+			value: 0,
+		},
+		{
+			lower: "0",
+			upper: "0",
+			value: 0,
+		},
+		{
+			lower: "0.000001",
+			upper: "0.000001",
+			value: 0,
+		},
+		{
+			lower: "42",
+			upper: "42",
+			value: 0,
+		},
+		{
+			lower: "-3.1",
+			upper: "-3.1",
+			value: 0,
+		},
+		{
+			lower: "3.1415",
+			upper: "NaN",
+			value: math.NaN(),
+		},
+		{
+			lower: "NaN",
+			upper: "42",
+			value: math.NaN(),
+		},
+		{
+			lower: "NaN",
+			upper: "NaN",
+			value: math.NaN(),
+		},
+		{
+			lower: "-Inf",
+			upper: "+Inf",
+			value: 1,
+		},
+	}
+
+	cases := []struct {
+		text string
+		// Histogram to test.
+		h *histogram.Histogram
+		// Different ranges to test for this histogram.
+		subCases []subCase
+	}{
+		{
+			text: "empty histogram",
+			h:    &histogram.Histogram{},
+			subCases: []subCase{
+				{
+					lower: "3.1415",
+					upper: "42",
+					value: math.NaN(),
+				},
+			},
+		},
+		{
+			text: "all positive buckets with zero bucket",
+			h: &histogram.Histogram{
+				Count:         12,
+				ZeroCount:     2,
+				ZeroThreshold: 0.001,
+				Sum:           100, // Does not matter.
+				Schema:        0,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				PositiveBuckets: []int64{2, 1, -2, 3}, // Abs: 2, 3, 1, 4
+			},
+			subCases: append([]subCase{
+				{
+					lower: "0",
+					upper: "+Inf",
+					value: 1,
+				},
+				{
+					lower: "-Inf",
+					upper: "0",
+					value: 0,
+				},
+				{
+					lower: "-0.001",
+					upper: "0",
+					value: 0,
+				},
+				{
+					lower: "0",
+					upper: "0.001",
+					value: 2. / 12.,
+				},
+				{
+					lower: "0",
+					upper: "0.0005",
+					value: 1. / 12.,
+				},
+				{
+					lower: "0.001",
+					upper: "inf",
+					value: 10. / 12.,
+				},
+				{
+					lower: "-inf",
+					upper: "-0.001",
+					value: 0,
+				},
+				{
+					lower: "1",
+					upper: "2",
+					value: 3. / 12.,
+				},
+				{
+					lower: "1.5",
+					upper: "2",
+					value: 1.5 / 12.,
+				},
+				{
+					lower: "1",
+					upper: "8",
+					value: 4. / 12.,
+				},
+				{
+					lower: "1",
+					upper: "6",
+					value: 3.5 / 12.,
+				},
+				{
+					lower: "1.5",
+					upper: "6",
+					value: 2. / 12.,
+				},
+				{
+					lower: "-2",
+					upper: "-1",
+					value: 0,
+				},
+				{
+					lower: "-2",
+					upper: "-1.5",
+					value: 0,
+				},
+				{
+					lower: "-8",
+					upper: "-1",
+					value: 0,
+				},
+				{
+					lower: "-6",
+					upper: "-1",
+					value: 0,
+				},
+				{
+					lower: "-6",
+					upper: "-1.5",
+					value: 0,
+				},
+			}, invariantCases...),
+		},
+		{
+			text: "all negative buckets with zero bucket",
+			h: &histogram.Histogram{
+				Count:         12,
+				ZeroCount:     2,
+				ZeroThreshold: 0.001,
+				Sum:           100, // Does not matter.
+				Schema:        0,
+				NegativeSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				NegativeBuckets: []int64{2, 1, -2, 3},
+			},
+			subCases: append([]subCase{
+				{
+					lower: "0",
+					upper: "+Inf",
+					value: 0,
+				},
+				{
+					lower: "-Inf",
+					upper: "0",
+					value: 1,
+				},
+				{
+					lower: "-0.001",
+					upper: "0",
+					value: 2. / 12.,
+				},
+				{
+					lower: "0",
+					upper: "0.001",
+					value: 0,
+				},
+				{
+					lower: "-0.0005",
+					upper: "0",
+					value: 1. / 12.,
+				},
+				{
+					lower: "0.001",
+					upper: "inf",
+					value: 0,
+				},
+				{
+					lower: "-inf",
+					upper: "-0.001",
+					value: 10. / 12.,
+				},
+				{
+					lower: "1",
+					upper: "2",
+					value: 0,
+				},
+				{
+					lower: "1.5",
+					upper: "2",
+					value: 0,
+				},
+				{
+					lower: "1",
+					upper: "8",
+					value: 0,
+				},
+				{
+					lower: "1",
+					upper: "6",
+					value: 0,
+				},
+				{
+					lower: "1.5",
+					upper: "6",
+					value: 0,
+				},
+				{
+					lower: "-2",
+					upper: "-1",
+					value: 3. / 12.,
+				},
+				{
+					lower: "-2",
+					upper: "-1.5",
+					value: 1.5 / 12.,
+				},
+				{
+					lower: "-8",
+					upper: "-1",
+					value: 4. / 12.,
+				},
+				{
+					lower: "-6",
+					upper: "-1",
+					value: 3.5 / 12.,
+				},
+				{
+					lower: "-6",
+					upper: "-1.5",
+					value: 2. / 12.,
+				},
+			}, invariantCases...),
+		},
+		{
+			text: "both positive and negative buckets with zero bucket",
+			h: &histogram.Histogram{
+				Count:         24,
+				ZeroCount:     4,
+				ZeroThreshold: 0.001,
+				Sum:           100, // Does not matter.
+				Schema:        0,
+				PositiveSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				PositiveBuckets: []int64{2, 1, -2, 3},
+				NegativeSpans: []histogram.Span{
+					{Offset: 0, Length: 2},
+					{Offset: 1, Length: 2},
+				},
+				NegativeBuckets: []int64{2, 1, -2, 3},
+			},
+			subCases: append([]subCase{
+				{
+					lower: "0",
+					upper: "+Inf",
+					value: 0.5,
+				},
+				{
+					lower: "-Inf",
+					upper: "0",
+					value: 0.5,
+				},
+				{
+					lower: "-0.001",
+					upper: "0",
+					value: 2. / 24,
+				},
+				{
+					lower: "0",
+					upper: "0.001",
+					value: 2. / 24.,
+				},
+				{
+					lower: "-0.0005",
+					upper: "0.0005",
+					value: 2. / 24.,
+				},
+				{
+					lower: "0.001",
+					upper: "inf",
+					value: 10. / 24.,
+				},
+				{
+					lower: "-inf",
+					upper: "-0.001",
+					value: 10. / 24.,
+				},
+				{
+					lower: "1",
+					upper: "2",
+					value: 3. / 24.,
+				},
+				{
+					lower: "1.5",
+					upper: "2",
+					value: 1.5 / 24.,
+				},
+				{
+					lower: "1",
+					upper: "8",
+					value: 4. / 24.,
+				},
+				{
+					lower: "1",
+					upper: "6",
+					value: 3.5 / 24.,
+				},
+				{
+					lower: "1.5",
+					upper: "6",
+					value: 2. / 24.,
+				},
+				{
+					lower: "-2",
+					upper: "-1",
+					value: 3. / 24.,
+				},
+				{
+					lower: "-2",
+					upper: "-1.5",
+					value: 1.5 / 24.,
+				},
+				{
+					lower: "-8",
+					upper: "-1",
+					value: 4. / 24.,
+				},
+				{
+					lower: "-6",
+					upper: "-1",
+					value: 3.5 / 24.,
+				},
+				{
+					lower: "-6",
+					upper: "-1.5",
+					value: 2. / 24.,
+				},
+			}, invariantCases...),
+		},
+	}
+
+	for i, c := range cases {
+		t.Run(c.text, func(t *testing.T) {
+			test, err := NewTest(t, "")
+			require.NoError(t, err)
+			t.Cleanup(test.Close)
+
+			seriesName := "sparse_histogram_series"
+			lbls := labels.FromStrings("__name__", seriesName)
+			engine := test.QueryEngine()
+
+			ts := int64(i+1) * int64(10*time.Minute/time.Millisecond)
+			app := test.Storage().Appender(context.TODO())
+			_, err = app.AppendHistogram(0, lbls, ts, c.h)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+
+			for j, sc := range c.subCases {
+				t.Run(fmt.Sprintf("%d %s %s", j, sc.lower, sc.upper), func(t *testing.T) {
+					queryString := fmt.Sprintf("histogram_fraction(%s, %s, %s)", sc.lower, sc.upper, seriesName)
+					qry, err := engine.NewInstantQuery(test.Queryable(), nil, queryString, timestamp.Time(ts))
+					require.NoError(t, err)
+
+					res := qry.Exec(test.Context())
+					require.NoError(t, res.Err)
+
+					vector, err := res.Vector()
+					require.NoError(t, err)
+
+					require.Len(t, vector, 1)
+					require.Nil(t, vector[0].H)
+					if math.IsNaN(sc.value) {
+						require.True(t, math.IsNaN(vector[0].V))
+						return
+					}
+					require.Equal(t, sc.value, vector[0].V)
+				})
+			}
+		})
+	}
+}
+
 func TestSparseHistogram_Sum_AddOperator(t *testing.T) {
 	// TODO(codesome): Integrate histograms into the PromQL testing framework
 	// and write more tests there.
