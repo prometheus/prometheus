@@ -3244,15 +3244,15 @@ func TestSparseHistogram_HistogramQuantile(t *testing.T) {
 				},
 				{ // Zero bucket.
 					quantile: "1",
-					value:    0.001,
+					value:    0,
 				},
 				{ // Zero bucket.
 					quantile: "0.99",
-					value:    0.0008799999999999991,
+					value:    -6.000000000000048e-05,
 				},
 				{ // Zero bucket.
 					quantile: "0.9",
-					value:    -0.00019999999999999933,
+					value:    -0.0005999999999999996,
 				},
 				{
 					quantile: "0.5",

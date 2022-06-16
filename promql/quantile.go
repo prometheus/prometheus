@@ -127,7 +127,10 @@ func bucketQuantile(q float64, buckets buckets) float64 {
 // TODO(beorn7): Find an interpolation method that is a better fit for
 // exponential buckets (and think about configurable interpolation).
 //
-// A natural lower bound of 0 is assumed if the histogram has no negative buckets.
+// A natural lower bound of 0 is assumed if the histogram has only positive
+// buckets. Likewise, a natural upper bound of 0 is assumed if the histogram has
+// only negative buckets.
+// TODO(beorn7): Come to terms if we want that.
 //
 // There are a number of special cases (once we have a way to report errors
 // happening during evaluations of AST functions, we should report those
@@ -163,10 +166,16 @@ func histogramQuantile(q float64, h *histogram.FloatHistogram) float64 {
 			break
 		}
 	}
-	if bucket.Lower < 0 && bucket.Upper > 0 && len(h.NegativeBuckets) == 0 {
-		// The result is in the zero bucket and the histogram has no
-		// negative buckets. So we consider 0 to be the lower bound.
-		bucket.Lower = 0
+	if bucket.Lower < 0 && bucket.Upper > 0 {
+		if len(h.NegativeBuckets) == 0 && len(h.PositiveBuckets) > 0 {
+			// The result is in the zero bucket and the histogram has only
+			// positive buckets. So we consider 0 to be the lower bound.
+			bucket.Lower = 0
+		} else if len(h.PositiveBuckets) == 0 && len(h.NegativeBuckets) > 0 {
+			// The result is in the zero bucket and the histogram has only
+			// negative buckets. So we consider 0 to be the upper bound.
+			bucket.Upper = 0
+		}
 	}
 	// Due to numerical inaccuracies, we could end up with a higher count
 	// than h.Count. Thus, make sure count is never higher than h.Count.
