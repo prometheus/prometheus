@@ -1,0 +1,44 @@
+name: ui_build_and_release
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+    tags:
+      - "v0.[0-9]+.[0-9]+*"
+jobs:
+  release:
+    name: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Install nodejs
+        uses: actions/setup-node@v3
+        with:
+          node-version-file: "web/ui/.nvmrc"
+      - uses: actions/cache@v3.0.4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
+      - name: Check libraries version
+        ## This step is verifying that the version of each package is matching the tag
+        if: ${{ github.event_name == 'push' && startsWith(github.ref_name, 'v') }}
+        run: ./scripts/ui_release.sh --check-package "${{ github.ref_name }}"
+      - name: build
+        run: make assets
+      - name: Copy files before publishing libs
+        run: ./scripts/ui_release.sh --copy
+      - name: Publish dry-run libraries
+        if: ${{ github.event_name == 'pull_request' || github.ref_name == 'main' }}
+        run: ./scripts/ui_release.sh --publish dry-run
+      - name: Publish libraries
+        if: ${{ github.event_name == 'push' && startsWith(github.ref_name, 'v') }}
+        run: ./scripts/ui_release.sh --publish
+        env:
+          # The setup-node action writes an .npmrc file with this env variable
+          # as the placeholder for the auth token
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
