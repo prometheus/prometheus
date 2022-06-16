@@ -144,7 +144,7 @@ Entries in the `CHANGELOG.md` are meant to be in this order:
 * `[ENHANCEMENT]`
 * `[BUGFIX]`
 
-Then bump the UI module version
+Then bump the UI module version:
 
 ```bash
 make ui-bump-version
