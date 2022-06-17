@@ -184,12 +184,3 @@ require (
 	sigs.k8s.io/structured-merge-diff/v4 v4.2.1 // indirect
 	sigs.k8s.io/yaml v1.3.0 // indirect
 )
-
-// Exclude linodego v1.0.0 as it is no longer published on github.
-exclude github.com/linode/linodego v1.0.0
-
-// Exclude grpc v1.30.0 because of breaking changes. See #7621.
-exclude (
-	github.com/grpc-ecosystem/grpc-gateway v1.14.7
-	google.golang.org/api v0.30.0
-)
