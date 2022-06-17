@@ -669,12 +669,12 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 					rule.SetHealth(HealthBad)
 					rule.SetLastError(err)
 					sp.SetStatus(codes.Error, err.Error())
-
+					unwrappedErr := errors.Unwrap(err)
 					switch {
-					case errors.Is(err, storage.ErrOutOfOrderSample):
+					case errors.Is(unwrappedErr, storage.ErrOutOfOrderSample):
 						numOutOfOrder++
 						level.Debug(g.logger).Log("name", rule.Name(), "index", i, "msg", "Rule evaluation result discarded", "err", err, "sample", s)
-					case errors.Is(err, storage.ErrDuplicateSampleForTimestamp):
+					case errors.Is(unwrappedErr, storage.ErrDuplicateSampleForTimestamp):
 						numDuplicates++
 						level.Debug(g.logger).Log("name", rule.Name(), "index", i, "msg", "Rule evaluation result discarded", "err", err, "sample", s)
 					default:
@@ -696,9 +696,10 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 				if _, ok := seriesReturned[metric]; !ok {
 					// Series no longer exposed, mark it stale.
 					_, err = app.Append(0, lset, timestamp.FromTime(ts), math.Float64frombits(value.StaleNaN))
+					unwrappedErr := errors.Unwrap(err)
 					switch {
-					case err == nil:
-					case errors.Is(err, storage.ErrOutOfOrderSample), errors.Is(err, storage.ErrDuplicateSampleForTimestamp):
+					case unwrappedErr == nil:
+					case errors.Is(unwrappedErr, storage.ErrOutOfOrderSample), errors.Is(unwrappedErr, storage.ErrDuplicateSampleForTimestamp):
 						// Do not count these in logging, as this is expected if series
 						// is exposed from a different rule.
 					default:
@@ -722,9 +723,10 @@ func (g *Group) cleanupStaleSeries(ctx context.Context, ts time.Time) {
 	for _, s := range g.staleSeries {
 		// Rule that produced series no longer configured, mark it stale.
 		_, err := app.Append(0, s, timestamp.FromTime(ts), math.Float64frombits(value.StaleNaN))
+		unwrappedErr := errors.Unwrap(err)
 		switch {
-		case err == nil:
-		case errors.Is(err, storage.ErrOutOfOrderSample), errors.Is(err, storage.ErrDuplicateSampleForTimestamp):
+		case unwrappedErr == nil:
+		case errors.Is(unwrappedErr, storage.ErrOutOfOrderSample), errors.Is(unwrappedErr, storage.ErrDuplicateSampleForTimestamp):
 			// Do not count these in logging, as this is expected if series
 			// is exposed from a different rule.
 		default:
