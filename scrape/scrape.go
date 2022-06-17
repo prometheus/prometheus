@@ -1487,9 +1487,9 @@ func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string,
 loop:
 	for {
 		var (
-			et                   textparse.Entry
-			sampleAdded          bool
-			shouldAppendMetadata bool
+			et              textparse.Entry
+			sampleAdded     bool
+			metadataChanged bool
 		)
 		if et, err = p.Next(); err != nil {
 			if err == io.EOF {
@@ -1545,7 +1545,7 @@ loop:
 				sl.cache.metaMtx.Lock()
 				metaEntry, metaOk := sl.cache.metadata[yoloString([]byte(lset.Get(labels.MetricName)))]
 				if metaOk && metaEntry.lastIterChange == sl.cache.iter {
-					shouldAppendMetadata = true
+					metadataChanged = true
 					meta.Type = metaEntry.Type
 					meta.Unit = metaEntry.Unit
 					meta.Help = metaEntry.Help
@@ -1581,7 +1581,7 @@ loop:
 				sl.cache.metaMtx.Lock()
 				metaEntry, metaOk := sl.cache.metadata[yoloString([]byte(lset.Get(labels.MetricName)))]
 				if metaOk {
-					shouldAppendMetadata = true
+					metadataChanged = true
 					meta.Type = metaEntry.Type
 					meta.Unit = metaEntry.Unit
 					meta.Help = metaEntry.Help
@@ -1627,7 +1627,7 @@ loop:
 			e = exemplar.Exemplar{} // reset for next time round loop
 		}
 
-		if sl.appendMetadataToWAL && shouldAppendMetadata {
+		if sl.appendMetadataToWAL && metadataChanged {
 			if _, merr := app.AppendMetadata(ref, lset, meta); merr != nil {
 				// No need to fail the scrape on errors appending metadata.
 				level.Debug(sl.l).Log("msg", "Error when appending metadata in scrape loop", "ref", fmt.Sprintf("%d", ref), "metadata", fmt.Sprintf("%+v", meta), "err", merr)

@@ -383,6 +383,8 @@ func (a *headAppender) AppendExemplar(ref storage.SeriesRef, lset labels.Labels,
 	return storage.SeriesRef(s.ref), nil
 }
 
+// AppendMetadata for headAppender assumes the series ref already exists, and so it doesn't
+// use getOrCreate or make any of the lset sanity checks that Append does.
 func (a *headAppender) AppendMetadata(ref storage.SeriesRef, lset labels.Labels, meta metadata.Metadata) (storage.SeriesRef, error) {
 	s := a.head.series.getByID(chunks.HeadSeriesRef(ref))
 	if s == nil {
