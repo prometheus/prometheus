@@ -1,4 +1,4 @@
-module github.com/prometheus/prometheus
+module github.com/douglascamata/prometheus
 
 go 1.17
 
