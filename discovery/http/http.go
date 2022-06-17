@@ -16,6 +16,7 @@ package http
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -26,7 +27,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/grafana/regexp"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -136,12 +136,12 @@ func NewDiscovery(conf *SDConfig, logger log.Logger, clientOpts []config.HTTPCli
 		logger,
 		"http",
 		time.Duration(conf.RefreshInterval),
-		d.refresh,
+		d.Refresh,
 	)
 	return d, nil
 }
 
-func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
+func (d *Discovery) Refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	req, err := http.NewRequest("GET", d.url, nil)
 	if err != nil {
 		return nil, err
@@ -162,12 +162,12 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 
 	if resp.StatusCode != http.StatusOK {
 		failuresCount.Inc()
-		return nil, errors.Errorf("server returned HTTP status %s", resp.Status)
+		return nil, fmt.Errorf("server returned HTTP status %s", resp.Status)
 	}
 
 	if !matchContentType.MatchString(strings.TrimSpace(resp.Header.Get("Content-Type"))) {
 		failuresCount.Inc()
-		return nil, errors.Errorf("unsupported content type %q", resp.Header.Get("Content-Type"))
+		return nil, fmt.Errorf("unsupported content type %q", resp.Header.Get("Content-Type"))
 	}
 
 	b, err := io.ReadAll(resp.Body)

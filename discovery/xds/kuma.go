@@ -20,7 +20,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -92,7 +91,7 @@ func (c *KumaSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}
 
 	if len(c.Server) == 0 {
-		return errors.Errorf("kuma SD server must not be empty: %s", c.Server)
+		return fmt.Errorf("kuma SD server must not be empty: %s", c.Server)
 	}
 	parsedURL, err := url.Parse(c.Server)
 	if err != nil {
@@ -100,7 +99,7 @@ func (c *KumaSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}
 
 	if len(parsedURL.Scheme) == 0 || len(parsedURL.Host) == 0 {
-		return errors.Errorf("kuma SD server must not be empty and have a scheme: %s", c.Server)
+		return fmt.Errorf("kuma SD server must not be empty and have a scheme: %s", c.Server)
 	}
 
 	return c.HTTPClientConfig.Validate()
@@ -159,7 +158,7 @@ func convertKumaUserLabels(labels map[string]string) model.LabelSet {
 // kumaMadsV1ResourceParser is an xds.resourceParser.
 func kumaMadsV1ResourceParser(resources []*anypb.Any, typeURL string) ([]model.LabelSet, error) {
 	if typeURL != KumaMadsV1ResourceTypeURL {
-		return nil, errors.Errorf("received invalid typeURL for Kuma MADS v1 Resource: %s", typeURL)
+		return nil, fmt.Errorf("received invalid typeURL for Kuma MADS v1 Resource: %s", typeURL)
 	}
 
 	var targets []model.LabelSet

@@ -15,6 +15,7 @@ package kubernetes
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"reflect"
@@ -22,16 +23,16 @@ import (
 	"sync"
 	"time"
 
+	disv1beta1 "k8s.io/api/discovery/v1beta1"
+
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
 	apiv1 "k8s.io/api/core/v1"
 	disv1 "k8s.io/api/discovery/v1"
-	disv1beta1 "k8s.io/api/discovery/v1beta1"
 	networkv1 "k8s.io/api/networking/v1"
 	"k8s.io/api/networking/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -114,7 +115,7 @@ func (c *Role) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	case RoleNode, RolePod, RoleService, RoleEndpoint, RoleEndpointSlice, RoleIngress:
 		return nil
 	default:
-		return errors.Errorf("unknown Kubernetes SD role %q", *c)
+		return fmt.Errorf("unknown Kubernetes SD role %q", *c)
 	}
 }
 
@@ -178,7 +179,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 	if c.Role == "" {
-		return errors.Errorf("role missing (one of: pod, service, endpoints, endpointslice, node, ingress)")
+		return fmt.Errorf("role missing (one of: pod, service, endpoints, endpointslice, node, ingress)")
 	}
 	err = c.HTTPClientConfig.Validate()
 	if err != nil {
@@ -186,20 +187,20 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}
 	if c.APIServer.URL != nil && c.KubeConfig != "" {
 		// Api-server and kubeconfig_file are mutually exclusive
-		return errors.Errorf("cannot use 'kubeconfig_file' and 'api_server' simultaneously")
+		return fmt.Errorf("cannot use 'kubeconfig_file' and 'api_server' simultaneously")
 	}
 	if c.KubeConfig != "" && !reflect.DeepEqual(c.HTTPClientConfig, config.DefaultHTTPClientConfig) {
 		// Kubeconfig_file and custom http config are mutually exclusive
-		return errors.Errorf("cannot use a custom HTTP client configuration together with 'kubeconfig_file'")
+		return fmt.Errorf("cannot use a custom HTTP client configuration together with 'kubeconfig_file'")
 	}
 	if c.APIServer.URL == nil && !reflect.DeepEqual(c.HTTPClientConfig, config.DefaultHTTPClientConfig) {
-		return errors.Errorf("to use custom HTTP client configuration please provide the 'api_server' URL explicitly")
+		return fmt.Errorf("to use custom HTTP client configuration please provide the 'api_server' URL explicitly")
 	}
 	if c.APIServer.URL != nil && c.NamespaceDiscovery.IncludeOwnNamespace {
-		return errors.Errorf("cannot use 'api_server' and 'namespaces.own_namespace' simultaneously")
+		return fmt.Errorf("cannot use 'api_server' and 'namespaces.own_namespace' simultaneously")
 	}
 	if c.KubeConfig != "" && c.NamespaceDiscovery.IncludeOwnNamespace {
-		return errors.Errorf("cannot use 'kubeconfig_file' and 'namespaces.own_namespace' simultaneously")
+		return fmt.Errorf("cannot use 'kubeconfig_file' and 'namespaces.own_namespace' simultaneously")
 	}
 
 	foundSelectorRoles := make(map[Role]struct{})
@@ -214,12 +215,12 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 	for _, selector := range c.Selectors {
 		if _, ok := foundSelectorRoles[selector.Role]; ok {
-			return errors.Errorf("duplicated selector role: %s", selector.Role)
+			return fmt.Errorf("duplicated selector role: %s", selector.Role)
 		}
 		foundSelectorRoles[selector.Role] = struct{}{}
 
 		if _, ok := allowedSelectors[c.Role]; !ok {
-			return errors.Errorf("invalid role: %q, expecting one of: pod, service, endpoints, endpointslice, node or ingress", c.Role)
+			return fmt.Errorf("invalid role: %q, expecting one of: pod, service, endpoints, endpointslice, node or ingress", c.Role)
 		}
 		var allowed bool
 		for _, role := range allowedSelectors[c.Role] {
@@ -230,7 +231,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		}
 
 		if !allowed {
-			return errors.Errorf("%s role supports only %s selectors", c.Role, strings.Join(allowedSelectors[c.Role], ", "))
+			return fmt.Errorf("%s role supports only %s selectors", c.Role, strings.Join(allowedSelectors[c.Role], ", "))
 		}
 
 		_, err := fields.ParseSelector(selector.Field)
@@ -406,7 +407,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 		}
 
 		for _, namespace := range namespaces {
-			var informer cache.SharedInformer
+			var informer cache.SharedIndexInformer
 			if v1Supported {
 				e := d.client.DiscoveryV1().EndpointSlices(namespace)
 				elw := &cache.ListWatch{
@@ -421,7 +422,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 						return e.Watch(ctx, options)
 					},
 				}
-				informer = cache.NewSharedInformer(elw, &disv1.EndpointSlice{}, resyncPeriod)
+				informer = d.newEndpointSlicesByNodeInformer(elw, &disv1.EndpointSlice{})
 			} else {
 				e := d.client.DiscoveryV1beta1().EndpointSlices(namespace)
 				elw := &cache.ListWatch{
@@ -436,7 +437,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 						return e.Watch(ctx, options)
 					},
 				}
-				informer = cache.NewSharedInformer(elw, &disv1beta1.EndpointSlice{}, resyncPeriod)
+				informer = d.newEndpointSlicesByNodeInformer(elw, &disv1beta1.EndpointSlice{})
 			}
 
 			s := d.client.CoreV1().Services(namespace)
@@ -465,11 +466,17 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 					return p.Watch(ctx, options)
 				},
 			}
+			var nodeInf cache.SharedInformer
+			if d.attachMetadata.Node {
+				nodeInf = d.newNodeInformer(context.Background())
+				go nodeInf.Run(ctx.Done())
+			}
 			eps := NewEndpointSlice(
 				log.With(d.logger, "role", "endpointslice"),
-				cache.NewSharedInformer(slw, &apiv1.Service{}, resyncPeriod),
 				informer,
+				cache.NewSharedInformer(slw, &apiv1.Service{}, resyncPeriod),
 				cache.NewSharedInformer(plw, &apiv1.Pod{}, resyncPeriod),
+				nodeInf,
 			)
 			d.discoverers = append(d.discoverers, eps)
 			go eps.endpointSliceInf.Run(ctx.Done())
@@ -517,11 +524,18 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 					return p.Watch(ctx, options)
 				},
 			}
+			var nodeInf cache.SharedInformer
+			if d.attachMetadata.Node {
+				nodeInf = d.newNodeInformer(ctx)
+				go nodeInf.Run(ctx.Done())
+			}
+
 			eps := NewEndpoints(
 				log.With(d.logger, "role", "endpoint"),
+				d.newEndpointsByNodeInformer(elw),
 				cache.NewSharedInformer(slw, &apiv1.Service{}, resyncPeriod),
-				cache.NewSharedInformer(elw, &apiv1.Endpoints{}, resyncPeriod),
 				cache.NewSharedInformer(plw, &apiv1.Pod{}, resyncPeriod),
+				nodeInf,
 			)
 			d.discoverers = append(d.discoverers, eps)
 			go eps.endpointsInf.Run(ctx.Done())
@@ -733,6 +747,65 @@ func (d *Discovery) newPodsByNodeInformer(plw *cache.ListWatch) cache.SharedInde
 	}
 
 	return cache.NewSharedIndexInformer(plw, &apiv1.Pod{}, resyncPeriod, indexers)
+}
+
+func (d *Discovery) newEndpointsByNodeInformer(plw *cache.ListWatch) cache.SharedIndexInformer {
+	indexers := make(map[string]cache.IndexFunc)
+	if !d.attachMetadata.Node {
+		return cache.NewSharedIndexInformer(plw, &apiv1.Endpoints{}, resyncPeriod, indexers)
+	}
+
+	indexers[nodeIndex] = func(obj interface{}) ([]string, error) {
+		e, ok := obj.(*apiv1.Endpoints)
+		if !ok {
+			return nil, fmt.Errorf("object is not a pod")
+		}
+		var nodes []string
+		for _, target := range e.Subsets {
+			for _, addr := range target.Addresses {
+				if addr.NodeName == nil {
+					continue
+				}
+				nodes = append(nodes, *addr.NodeName)
+			}
+		}
+		return nodes, nil
+	}
+
+	return cache.NewSharedIndexInformer(plw, &apiv1.Endpoints{}, resyncPeriod, indexers)
+}
+
+func (d *Discovery) newEndpointSlicesByNodeInformer(plw *cache.ListWatch, object runtime.Object) cache.SharedIndexInformer {
+	indexers := make(map[string]cache.IndexFunc)
+	if !d.attachMetadata.Node {
+		cache.NewSharedIndexInformer(plw, &disv1.EndpointSlice{}, resyncPeriod, indexers)
+	}
+
+	indexers[nodeIndex] = func(obj interface{}) ([]string, error) {
+		var nodes []string
+		switch e := obj.(type) {
+		case *disv1.EndpointSlice:
+			for _, target := range e.Endpoints {
+				if target.NodeName == nil {
+					continue
+				}
+				nodes = append(nodes, *target.NodeName)
+			}
+		case *disv1beta1.EndpointSlice:
+			for _, target := range e.Endpoints {
+				if target.NodeName == nil {
+					continue
+				}
+				nodes = append(nodes, *target.NodeName)
+			}
+		default:
+			return nil, fmt.Errorf("object is not an endpointslice")
+		}
+
+		return nodes, nil
+	}
+
+	return cache.NewSharedIndexInformer(plw, object, resyncPeriod, indexers)
 }
 
 func checkDiscoveryV1Supported(client kubernetes.Interface) (bool, error) {

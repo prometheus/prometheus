@@ -59,11 +59,18 @@ Prometheus will now be reachable at <http://localhost:9090/>.
 
 To build Prometheus from source code, You need:
 
-* Go [version 1.16 or greater](https://golang.org/doc/install).
+* Go [version 1.17 or greater](https://golang.org/doc/install).
 * NodeJS [version 16 or greater](https://nodejs.org/).
 * npm [version 7 or greater](https://www.npmjs.com/).
 
-You can directly use the `go` tool to download and install the `prometheus`
+Start by cloning the repository:
+
+```bash
+git clone https://github.com/prometheus/prometheus.git
+cd prometheus
+```
+
+You can use the `go` tool to build and install the `prometheus`
 and `promtool` binaries into your `GOPATH`:
 
 ```bash
@@ -79,14 +86,10 @@ React UI unless it has been built explicitly using `make assets` or `make build`
 
 An example of the above configuration file can be found [here.](https://github.com/prometheus/prometheus/blob/main/documentation/examples/prometheus.yml)
 
-You can also clone the repository yourself and build using `make build`, which will compile in
-the web assets so that Prometheus can be run from anywhere:
+You can also build using `make build`, which will compile in the web assets so that
+Prometheus can be run from anywhere:
 
 ```bash
-mkdir -p $GOPATH/src/github.com/prometheus
-cd $GOPATH/src/github.com/prometheus
-git clone https://github.com/prometheus/prometheus.git
-cd prometheus
 make build
 ./prometheus --config.file=your_config.yml
 ```

@@ -15,13 +15,14 @@ package kubernetes
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"net"
 	"strconv"
 	"strings"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	apiv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -118,7 +119,7 @@ func (p *Pod) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	}
 
 	if !cache.WaitForCacheSync(ctx.Done(), cacheSyncs...) {
-		if ctx.Err() != context.Canceled {
+		if !errors.Is(ctx.Err(), context.Canceled) {
 			level.Error(p.logger).Log("msg", "pod informer unable to sync cache")
 		}
 		return
@@ -169,7 +170,7 @@ func convertToPod(o interface{}) (*apiv1.Pod, error) {
 		return pod, nil
 	}
 
-	return nil, errors.Errorf("received unexpected object: %v", o)
+	return nil, fmt.Errorf("received unexpected object: %v", o)
 }
 
 const (
@@ -252,7 +253,7 @@ func (p *Pod) buildPod(pod *apiv1.Pod) *targetgroup.Group {
 	tg.Labels = podLabels(pod)
 	tg.Labels[namespaceLabel] = lv(pod.Namespace)
 	if p.withNodeMetadata {
-		p.attachNodeMetadata(tg, pod)
+		tg.Labels = addNodeLabels(tg.Labels, p.nodeInf, p.logger, &pod.Spec.NodeName)
 	}
 
 	containers := append(pod.Spec.Containers, pod.Spec.InitContainers...)
@@ -288,27 +289,6 @@ func (p *Pod) buildPod(pod *apiv1.Pod) *targetgroup.Group {
 	}
 
 	return tg
-}
-
-func (p *Pod) attachNodeMetadata(tg *targetgroup.Group, pod *apiv1.Pod) {
-	tg.Labels[nodeNameLabel] = lv(pod.Spec.NodeName)
-
-	obj, exists, err := p.nodeInf.GetStore().GetByKey(pod.Spec.NodeName)
-	if err != nil {
-		level.Error(p.logger).Log("msg", "Error getting node", "node", pod.Spec.NodeName, "err", err)
-		return
-	}
-
-	if !exists {
-		return
-	}
-
-	node := obj.(*apiv1.Node)
-	for k, v := range node.GetLabels() {
-		ln := strutil.SanitizeLabelName(k)
-		tg.Labels[model.LabelName(nodeLabelPrefix+ln)] = lv(v)
-		tg.Labels[model.LabelName(nodeLabelPresentPrefix+ln)] = presentValue
-	}
 }
 
 func (p *Pod) enqueuePodsForNode(nodeName string) {

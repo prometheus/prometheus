@@ -45,7 +45,7 @@ ui-install:
 
 .PHONY: ui-build
 ui-build:
-	cd $(UI_PATH) && npm run build
+	cd $(UI_PATH) && CI="" npm run build
 
 .PHONY: ui-build-module
 ui-build-module:

@@ -51,6 +51,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/discovery/triton"
 	"github.com/prometheus/prometheus/discovery/uyuni"
+	"github.com/prometheus/prometheus/discovery/vultr"
 	"github.com/prometheus/prometheus/discovery/xds"
 	"github.com/prometheus/prometheus/discovery/zookeeper"
 	"github.com/prometheus/prometheus/model/labels"
@@ -988,12 +989,13 @@ var expectedConf = &Config{
 			Scheme:           DefaultScrapeConfig.Scheme,
 			ServiceDiscoveryConfigs: discovery.Configs{
 				&uyuni.SDConfig{
-					Server:          "https://localhost:1234",
-					Username:        "gopher",
-					Password:        "hole",
-					Entitlement:     "monitoring_entitled",
-					Separator:       ",",
-					RefreshInterval: model.Duration(60 * time.Second),
+					Server:           "https://localhost:1234",
+					Username:         "gopher",
+					Password:         "hole",
+					Entitlement:      "monitoring_entitled",
+					Separator:        ",",
+					RefreshInterval:  model.Duration(60 * time.Second),
+					HTTPClientConfig: config.DefaultHTTPClientConfig,
 				},
 			},
 		},
@@ -1012,6 +1014,32 @@ var expectedConf = &Config{
 					DatacenterID: "8feda53f-15f0-447f-badf-ebe32dad2fc0",
 					HTTPClientConfig: config.HTTPClientConfig{
 						Authorization:   &config.Authorization{Type: "Bearer", Credentials: "abcdef"},
+						FollowRedirects: true,
+						EnableHTTP2:     true,
+					},
+					Port:            80,
+					RefreshInterval: model.Duration(60 * time.Second),
+				},
+			},
+		},
+		{
+			JobName: "vultr",
+
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
+
+			MetricsPath:      DefaultScrapeConfig.MetricsPath,
+			Scheme:           DefaultScrapeConfig.Scheme,
+			HTTPClientConfig: config.DefaultHTTPClientConfig,
+
+			ServiceDiscoveryConfigs: discovery.Configs{
+				&vultr.SDConfig{
+					HTTPClientConfig: config.HTTPClientConfig{
+						Authorization: &config.Authorization{
+							Type:        "Bearer",
+							Credentials: "abcdef",
+						},
 						FollowRedirects: true,
 						EnableHTTP2:     true,
 					},
@@ -1117,7 +1145,7 @@ func TestElideSecrets(t *testing.T) {
 	yamlConfig := string(config)
 
 	matches := secretRe.FindAllStringIndex(yamlConfig, -1)
-	require.Equal(t, 17, len(matches), "wrong number of secret matches found")
+	require.Equal(t, 18, len(matches), "wrong number of secret matches found")
 	require.NotContains(t, yamlConfig, "mysecret",
 		"yaml marshal reveals authentication credentials.")
 }

@@ -47,7 +47,7 @@ import {
   UnaryExpr,
   Unless,
   VectorSelector,
-} from 'lezer-promql';
+} from '@prometheus-io/lezer-promql';
 import { containsAtLeastOneChild, retrieveAllRecursiveNodes, walkThrough } from './path-finder';
 import { getType } from './type';
 import { buildLabelMatchers } from './matcher';

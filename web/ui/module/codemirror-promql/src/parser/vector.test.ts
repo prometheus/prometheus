@@ -14,7 +14,7 @@
 import { buildVectorMatching } from './vector';
 import { createEditorState } from '../test/utils-test';
 import { walkThrough } from './path-finder';
-import { BinaryExpr, Expr } from 'lezer-promql';
+import { BinaryExpr, Expr } from '@prometheus-io/lezer-promql';
 import { syntaxTree } from '@codemirror/language';
 import { VectorMatchCardinality } from '../types';
 
