@@ -160,6 +160,11 @@ func GetMetricType(t textparse.MetricType) uint8 {
 	}
 }
 
+var (
+	unitMetaName = "UNIT"
+	helpMetaName = "HELP"
+)
+
 // ErrNotFound is returned if a looked up resource was not found. Duplicate ErrNotFound from head.go.
 var ErrNotFound = errors.New("not found")
 
