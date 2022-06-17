@@ -235,8 +235,8 @@ type scrapePool struct {
 	// activeTargets and loops must always be synchronized to have the same
 	// set of hashes.
 	activeTargets map[uint64]*Target
-	// Targets which was dropped on prev sync
-	// it is used to skip heavy target processing.
+	// Targets which were dropped on previous sync.
+	// Used to skip heavy target processing.
 	droppedTargets map[uint64]*Target
 
 	// Constructor for new scrape loops. This is settable for testing convenience.
