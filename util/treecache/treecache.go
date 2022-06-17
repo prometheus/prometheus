@@ -15,6 +15,7 @@ package treecache
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -23,7 +24,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/go-zookeeper/zk"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -214,10 +214,10 @@ func (tc *ZookeeperTreeCache) loop(path string) {
 
 func (tc *ZookeeperTreeCache) recursiveNodeUpdate(path string, node *zookeeperTreeCacheNode) error {
 	data, _, dataWatcher, err := tc.conn.GetW(path)
-	if err == zk.ErrNoNode {
+	if errors.Is(err, zk.ErrNoNode) {
 		tc.recursiveDelete(path, node)
 		if node == tc.head {
-			return errors.Errorf("path %s does not exist", path)
+			return fmt.Errorf("path %s does not exist", path)
 		}
 		return nil
 	} else if err != nil {
@@ -230,7 +230,7 @@ func (tc *ZookeeperTreeCache) recursiveNodeUpdate(path string, node *zookeeperTr
 	}
 
 	children, _, childWatcher, err := tc.conn.ChildrenW(path)
-	if err == zk.ErrNoNode {
+	if errors.Is(err, zk.ErrNoNode) {
 		tc.recursiveDelete(path, node)
 		return nil
 	} else if err != nil {
