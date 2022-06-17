@@ -199,9 +199,8 @@ func TestRecord_Type(t *testing.T) {
 	require.Equal(t, Unknown, recordType)
 }
 
-func TestRecord_MetadataDecodeUnknownFields(t *testing.T) {
+func TestRecord_MetadataDecodeUnknownExtraFields(t *testing.T) {
 	var enc encoding.Encbuf
-	var encFields encoding.Encbuf
 	var dec Decoder
 
 	// Write record type.
@@ -209,38 +208,38 @@ func TestRecord_MetadataDecodeUnknownFields(t *testing.T) {
 
 	// Write first metadata entry, all known fields.
 	enc.PutUvarint64(101)
-	encFields.Reset()
-	encFields.PutByte(byte(Counter))
-	encFields.PutUvarintStr("")
-	encFields.PutUvarintStr("some magic counter")
-	// Write size of encoded fields then the encoded fields.
-	enc.PutUvarint(encFields.Len())
-	enc.B = append(enc.B, encFields.B...)
+	enc.PutByte(byte(Counter))
+	enc.PutUvarint(2)
+	enc.PutUvarintStr(unitMetaName)
+	enc.PutUvarintStr("")
+	enc.PutUvarintStr(helpMetaName)
+	enc.PutUvarintStr("some magic counter")
 
 	// Write second metadata entry, known fields + unknown fields.
 	enc.PutUvarint64(99)
-	encFields.Reset()
+	enc.PutByte(byte(Counter))
+	enc.PutUvarint(3)
 	// Known fields.
-	encFields.PutByte(byte(Counter))
-	encFields.PutUvarintStr("seconds")
-	encFields.PutUvarintStr("CPU time counter")
+	enc.PutUvarintStr(unitMetaName)
+	enc.PutUvarintStr("seconds")
+	enc.PutUvarintStr(helpMetaName)
+	enc.PutUvarintStr("CPU time counter")
 	// Unknown fields.
-	encFields.PutUvarintStr("some unknown field")
-	encFields.PutByte('a')
-	encFields.PutUvarint64(42)
-	// Write size of encoded fields then the encoded fields.
-	enc.PutUvarint(encFields.Len())
-	enc.B = append(enc.B, encFields.B...)
+	enc.PutUvarintStr("an extra field name to be skipped")
+	enc.PutUvarintStr("with its value")
 
-	// Write third metadata entry, all known fields.
+	// Write third metadata entry, with unknown fields and different order.
 	enc.PutUvarint64(47250)
-	encFields.Reset()
-	encFields.PutByte(byte(Gauge))
-	encFields.PutUvarintStr("percentage")
-	encFields.PutUvarintStr("current memory usage")
-	// Write size of encoded fields then the encoded fields.
-	enc.PutUvarint(encFields.Len())
-	enc.B = append(enc.B, encFields.B...)
+	enc.PutByte(byte(Gauge))
+	enc.PutUvarint(4)
+	enc.PutUvarintStr("extra name one")
+	enc.PutUvarintStr("extra value one")
+	enc.PutUvarintStr(helpMetaName)
+	enc.PutUvarintStr("current memory usage")
+	enc.PutUvarintStr("extra name two")
+	enc.PutUvarintStr("extra value two")
+	enc.PutUvarintStr(unitMetaName)
+	enc.PutUvarintStr("percentage")
 
 	// Should yield known fields for all entries and skip over unknown fields.
 	expectedMetadata := []RefMetadata{

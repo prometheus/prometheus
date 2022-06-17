@@ -99,6 +99,11 @@ func GetMetricType(t textparse.MetricType) uint8 {
 	}
 }
 
+var (
+	unitMetaName = "UNIT"
+	helpMetaName = "HELP"
+)
+
 // ErrNotFound is returned if a looked up resource was not found. Duplicate ErrNotFound from head.go.
 var ErrNotFound = errors.New("not found")
 
@@ -189,21 +194,22 @@ func (d *Decoder) Metadata(rec []byte, metadata []RefMetadata) ([]RefMetadata, e
 	}
 	for len(dec.B) > 0 && dec.Err() == nil {
 		ref := dec.Uvarint64()
-		size := dec.Uvarint()
-
-		remainingBeforeReadFields := dec.Len()
-
 		typ := dec.Byte()
-		unit := dec.UvarintStr()
-		help := dec.UvarintStr()
+		numFields := dec.Uvarint()
 
-		// The bytes consumed will have shrunk, therefore delta between
-		// bytes unread before and bytes unread after is how much we consumed.
-		remainingAfterReadFields := dec.Len()
-		sizeFieldsRead := remainingBeforeReadFields - remainingAfterReadFields
-		if sizeFieldsUnread := size - sizeFieldsRead; sizeFieldsUnread > 0 {
-			// Need to skip fields that we didn't read and don't know about.
-			dec.Skip(sizeFieldsUnread)
+		// We're currently aware of two more metadata fields other than TYPE; that is UNIT and HELP.
+		// We can skip the rest of the fields (if we encounter any), but we must decode them anyway
+		// so we can correctly align with the start with the next metadata record.
+		var unit, help string
+		for i := 0; i < numFields; i++ {
+			fieldName := dec.UvarintStr()
+			fieldValue := dec.UvarintStr()
+			if fieldName == unitMetaName {
+				unit = fieldValue
+			}
+			if fieldName == helpMetaName {
+				help = fieldValue
+			}
 		}
 
 		metadata = append(metadata, RefMetadata{
@@ -354,22 +360,16 @@ func (e *Encoder) Metadata(metadata []RefMetadata, b []byte) []byte {
 	buf := encoding.Encbuf{B: b}
 	buf.PutByte(byte(Metadata))
 
-	tmpBuf := make([]byte, 0, 50)
-
 	for _, m := range metadata {
 		buf.PutUvarint64(uint64(m.Ref))
 
-		// Use a temporary buffer to get the size of the fields
-		// that we're going to encode before writing the fields themselves.
-		tmp := encoding.Encbuf{B: tmpBuf[:0]}
-		tmp.PutByte(m.Type)
-		tmp.PutUvarintStr(string(m.Unit))
-		tmp.PutUvarintStr(string(m.Help))
+		buf.PutByte(m.Type)
 
-		// Write the size of the temporary buffer and copy back the encoded fields into place.
-		buf.PutUvarint(tmp.Len())
-		buf.B = append(buf.B, tmp.B...)
-		tmpBuf = tmp.B[:0]
+		buf.PutUvarint(2) // num_fields: We currently have two more metadata fields, UNIT and HELP
+		buf.PutUvarintStr(unitMetaName)
+		buf.PutUvarintStr(m.Unit)
+		buf.PutUvarintStr(helpMetaName)
+		buf.PutUvarintStr(m.Help)
 	}
 
 	return buf.Get()
