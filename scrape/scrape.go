@@ -1468,12 +1468,27 @@ func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string,
 	}
 
 	var (
-		defTime        = timestamp.FromTime(ts)
-		appErrs        = appendErrors{}
-		sampleLimitErr error
-		e              exemplar.Exemplar // escapes to heap so hoisted out of loop
-		meta           metadata.Metadata
+		defTime         = timestamp.FromTime(ts)
+		appErrs         = appendErrors{}
+		sampleLimitErr  error
+		e               exemplar.Exemplar // escapes to heap so hoisted out of loop
+		meta            metadata.Metadata
+		metadataChanged bool
 	)
+
+	checkMetadataUpdates := func(lset labels.Labels, isNewSeries bool) {
+		if sl.appendMetadataToWAL {
+			sl.cache.metaMtx.Lock()
+			metaEntry, metaOk := sl.cache.metadata[yoloString([]byte(lset.Get(labels.MetricName)))]
+			if metaOk && (isNewSeries || metaEntry.lastIterChange == sl.cache.iter) {
+				metadataChanged = true
+				meta.Type = metaEntry.Type
+				meta.Unit = metaEntry.Unit
+				meta.Help = metaEntry.Help
+			}
+			sl.cache.metaMtx.Unlock()
+		}
+	}
 
 	// Take an appender with limits.
 	app = appender(app, sl.sampleLimit)
@@ -1490,9 +1505,8 @@ func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string,
 loop:
 	for {
 		var (
-			et              textparse.Entry
-			sampleAdded     bool
-			metadataChanged bool
+			et          textparse.Entry
+			sampleAdded bool
 		)
 		if et, err = p.Next(); err != nil {
 			if err == io.EOF {
@@ -1527,6 +1541,7 @@ loop:
 
 		// Zero metadata out for current iteration until it's resolved.
 		meta = metadata.Metadata{}
+		metadataChanged = false
 
 		if sl.cache.getDropped(yoloString(met)) {
 			continue
@@ -1544,17 +1559,7 @@ loop:
 			lset = ce.lset
 
 			// Update metadata only if it changed in the current iteration.
-			if sl.appendMetadataToWAL {
-				sl.cache.metaMtx.Lock()
-				metaEntry, metaOk := sl.cache.metadata[yoloString([]byte(lset.Get(labels.MetricName)))]
-				if metaOk && metaEntry.lastIterChange == sl.cache.iter {
-					metadataChanged = true
-					meta.Type = metaEntry.Type
-					meta.Unit = metaEntry.Unit
-					meta.Help = metaEntry.Help
-				}
-				sl.cache.metaMtx.Unlock()
-			}
+			checkMetadataUpdates(lset, false)
 		} else {
 			mets = p.Metric(&lset)
 			hash = lset.Hash()
@@ -1580,17 +1585,8 @@ loop:
 				break loop
 			}
 
-			if sl.appendMetadataToWAL {
-				sl.cache.metaMtx.Lock()
-				metaEntry, metaOk := sl.cache.metadata[yoloString([]byte(lset.Get(labels.MetricName)))]
-				if metaOk {
-					metadataChanged = true
-					meta.Type = metaEntry.Type
-					meta.Unit = metaEntry.Unit
-					meta.Help = metaEntry.Help
-				}
-				sl.cache.metaMtx.Unlock()
-			}
+			// Append metadata for new series if they were present.
+			checkMetadataUpdates(lset, true)
 		}
 
 		ref, err = app.Append(ref, lset, t, v)
