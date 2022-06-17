@@ -75,9 +75,9 @@ require (
 	k8s.io/api v0.24.1
 	k8s.io/apimachinery v0.24.1
 	k8s.io/client-go v0.24.1
-	k8s.io/klog v1.0.0
-	k8s.io/klog/v2 v2.60.1
 )
+
+require k8s.io/klog/v2 v2.60.1 // indirect
 
 require (
 	cloud.google.com/go/compute v1.6.1 // indirect
@@ -159,6 +159,8 @@ require (
 	github.com/opencontainers/image-spec v1.0.2 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/prometheus/procfs v0.7.3 // indirect
+	github.com/simonpasquier/klog-gokit v0.3.0
+	github.com/simonpasquier/klog-gokit/v3 v3.0.0
 	github.com/sirupsen/logrus v1.8.1 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/stretchr/objx v0.2.0 // indirect
@@ -181,11 +183,6 @@ require (
 	sigs.k8s.io/json v0.0.0-20211208200746-9f7c6b3444d2 // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.2.1 // indirect
 	sigs.k8s.io/yaml v1.3.0 // indirect
-)
-
-replace (
-	k8s.io/klog => github.com/simonpasquier/klog-gokit v0.3.0
-	k8s.io/klog/v2 => github.com/simonpasquier/klog-gokit/v3 v3.0.0
 )
 
 // Exclude linodego v1.0.0 as it is no longer published on github.

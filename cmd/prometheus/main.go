@@ -46,11 +46,11 @@ import (
 	"github.com/prometheus/common/version"
 	toolkit_web "github.com/prometheus/exporter-toolkit/web"
 	toolkit_webflag "github.com/prometheus/exporter-toolkit/web/kingpinflag"
+	klog "github.com/simonpasquier/klog-gokit"
+	klogv2 "github.com/simonpasquier/klog-gokit/v3"
 	"go.uber.org/atomic"
 	"go.uber.org/automaxprocs/maxprocs"
 	kingpin "gopkg.in/alecthomas/kingpin.v2"
-	klog "k8s.io/klog"
-	klogv2 "k8s.io/klog/v2"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/discovery"
