@@ -1851,7 +1851,7 @@ namespaces:
 
 # Optional metadata to attach to discovered targets. If omitted, no additional metadata is attached.
 attach_metadata:
-# Attaches node metadata to discovered targets. Only valid for role: pod. 
+# Attaches node metadata to discovered targets. Valid for roles: pod, endpoints, endpointslice. 
 # When set to true, Prometheus must have permissions to get Nodes. 
   [ node: <boolean> | default = false ]
 ```
