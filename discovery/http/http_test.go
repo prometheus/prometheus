@@ -45,7 +45,7 @@ func TestHTTPValidRefresh(t *testing.T) {
 	require.NoError(t, err)
 
 	ctx := context.Background()
-	tgs, err := d.refresh(ctx)
+	tgs, err := d.Refresh(ctx)
 	require.NoError(t, err)
 
 	expectedTargets := []*targetgroup.Group{
@@ -83,7 +83,7 @@ func TestHTTPInvalidCode(t *testing.T) {
 	require.NoError(t, err)
 
 	ctx := context.Background()
-	_, err = d.refresh(ctx)
+	_, err = d.Refresh(ctx)
 	require.EqualError(t, err, "server returned HTTP status 400 Bad Request")
 	require.Equal(t, 1.0, getFailureCount())
 }
@@ -105,7 +105,7 @@ func TestHTTPInvalidFormat(t *testing.T) {
 	require.NoError(t, err)
 
 	ctx := context.Background()
-	_, err = d.refresh(ctx)
+	_, err = d.Refresh(ctx)
 	require.EqualError(t, err, `unsupported content type "text/plain; charset=utf-8"`)
 	require.Equal(t, 1.0, getFailureCount())
 }
@@ -423,7 +423,7 @@ func TestSourceDisappeared(t *testing.T) {
 		ctx := context.Background()
 		for i, res := range test.responses {
 			stubResponse = res
-			tgs, err := d.refresh(ctx)
+			tgs, err := d.Refresh(ctx)
 			require.NoError(t, err)
 			require.Equal(t, test.expectedTargets[i], tgs)
 		}

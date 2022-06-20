@@ -1,5 +1,5 @@
 {
-  "name": "prometheus",
+  "name": "prometheus-io",
   "private": true,
   "scripts": {
     "build": "bash build_ui.sh --all",

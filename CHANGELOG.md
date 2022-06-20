@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.36.1 / 2022-06-09
+
+* [BUGFIX] promtool: Add --lint-fatal option #10840
+
 ## 2.36.0 / 2022-05-30
 
 * [FEATURE] Add lowercase and uppercase relabel action. #10641

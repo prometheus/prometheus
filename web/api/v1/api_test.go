@@ -2948,19 +2948,19 @@ func TestReturnAPIError(t *testing.T) {
 			err:      promql.ErrStorage{Err: errors.New("storage error")},
 			expected: errorInternal,
 		}, {
-			err:      errors.Wrap(promql.ErrStorage{Err: errors.New("storage error")}, "wrapped"),
+			err:      fmt.Errorf("wrapped: %w", promql.ErrStorage{Err: errors.New("storage error")}),
 			expected: errorInternal,
 		}, {
 			err:      promql.ErrQueryTimeout("timeout error"),
 			expected: errorTimeout,
 		}, {
-			err:      errors.Wrap(promql.ErrQueryTimeout("timeout error"), "wrapped"),
+			err:      fmt.Errorf("wrapped: %w", promql.ErrQueryTimeout("timeout error")),
 			expected: errorTimeout,
 		}, {
 			err:      promql.ErrQueryCanceled("canceled error"),
 			expected: errorCanceled,
 		}, {
-			err:      errors.Wrap(promql.ErrQueryCanceled("canceled error"), "wrapped"),
+			err:      fmt.Errorf("wrapped: %w", promql.ErrQueryCanceled("canceled error")),
 			expected: errorCanceled,
 		}, {
 			err:      errors.New("exec error"),
@@ -2968,10 +2968,10 @@ func TestReturnAPIError(t *testing.T) {
 		},
 	}
 
-	for _, c := range cases {
+	for ix, c := range cases {
 		actual := returnAPIError(c.err)
-		require.Error(t, actual)
-		require.Equal(t, c.expected, actual.typ)
+		require.Error(t, actual, ix)
+		require.Equal(t, c.expected, actual.typ, ix)
 	}
 }
 

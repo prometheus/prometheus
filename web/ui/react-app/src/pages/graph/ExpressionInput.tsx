@@ -3,15 +3,18 @@ import { Button, InputGroup, InputGroupAddon, InputGroupText } from 'reactstrap'
 
 import { EditorView, highlightSpecialChars, keymap, ViewUpdate, placeholder } from '@codemirror/view';
 import { EditorState, Prec, Compartment } from '@codemirror/state';
-import { indentOnInput, syntaxTree } from '@codemirror/language';
-import { history, historyKeymap } from '@codemirror/history';
-import { defaultKeymap, insertNewlineAndIndent } from '@codemirror/commands';
-import { bracketMatching } from '@codemirror/matchbrackets';
-import { closeBrackets, closeBracketsKeymap } from '@codemirror/closebrackets';
+import { bracketMatching, indentOnInput, syntaxHighlighting, syntaxTree } from '@codemirror/language';
+import { defaultKeymap, history, historyKeymap, insertNewlineAndIndent } from '@codemirror/commands';
 import { highlightSelectionMatches } from '@codemirror/search';
-import { commentKeymap } from '@codemirror/comment';
 import { lintKeymap } from '@codemirror/lint';
-import { autocompletion, completionKeymap, CompletionContext, CompletionResult } from '@codemirror/autocomplete';
+import {
+  autocompletion,
+  completionKeymap,
+  CompletionContext,
+  CompletionResult,
+  closeBrackets,
+  closeBracketsKeymap,
+} from '@codemirror/autocomplete';
 import { baseTheme, lightTheme, darkTheme, promqlHighlighter } from './CMTheme';
 
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
@@ -19,8 +22,8 @@ import { faSearch, faSpinner, faGlobeEurope } from '@fortawesome/free-solid-svg-
 import MetricsExplorer from './MetricsExplorer';
 import { usePathPrefix } from '../../contexts/PathPrefixContext';
 import { useTheme } from '../../contexts/ThemeContext';
-import { CompleteStrategy, PromQLExtension } from 'codemirror-promql';
-import { newCompleteStrategy } from 'codemirror-promql/dist/esm/complete';
+import { CompleteStrategy, PromQLExtension } from '@prometheus-io/codemirror-promql';
+import { newCompleteStrategy } from '@prometheus-io/codemirror-promql/dist/esm/complete';
 
 const promqlExtension = new PromQLExtension();
 
@@ -67,7 +70,7 @@ export class HistoryCompleteStrategy implements CompleteStrategy {
           apply: q,
           info: q.length < 80 ? undefined : q,
         })),
-        span: /^[a-zA-Z0-9_:]+$/,
+        validFor: /^[a-zA-Z0-9_:]+$/,
       };
 
       if (res !== null) {
@@ -110,7 +113,7 @@ const ExpressionInput: FC<CMExpressionInputProps> = ({
         ),
       });
     const dynamicConfig = [
-      enableHighlighting ? promqlHighlighter : [],
+      enableHighlighting ? syntaxHighlighting(promqlHighlighter) : [],
       promqlExtension.asExtension(),
       theme === 'dark' ? darkTheme : lightTheme,
     ];
@@ -136,14 +139,7 @@ const ExpressionInput: FC<CMExpressionInputProps> = ({
           autocompletion(),
           highlightSelectionMatches(),
           EditorView.lineWrapping,
-          keymap.of([
-            ...closeBracketsKeymap,
-            ...defaultKeymap,
-            ...historyKeymap,
-            ...commentKeymap,
-            ...completionKeymap,
-            ...lintKeymap,
-          ]),
+          keymap.of([...closeBracketsKeymap, ...defaultKeymap, ...historyKeymap, ...completionKeymap, ...lintKeymap]),
           placeholder('Expression (press Shift+Enter for newlines)'),
           dynamicConfigCompartment.of(dynamicConfig),
           // This keymap is added without precedence so that closing the autocomplete dropdown
@@ -157,7 +153,7 @@ const ExpressionInput: FC<CMExpressionInputProps> = ({
               },
             },
           ]),
-          Prec.override(
+          Prec.highest(
             keymap.of([
               {
                 key: 'Enter',
