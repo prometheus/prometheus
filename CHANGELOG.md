@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.36.2 / 2022-06-20
+
+* [BUGFIX] Fix serving of static assets like fonts and favicon. #10888
+
 ## 2.36.1 / 2022-06-09
 
 * [BUGFIX] promtool: Add --lint-fatal option #10840
