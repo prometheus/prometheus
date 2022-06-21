@@ -54,6 +54,9 @@ tls_server_config:
   # Go default cipher suites are used. Available cipher suites are documented
   # in the go documentation:
   # https://golang.org/pkg/crypto/tls/#pkg-constants
+  #
+  # Note that only the cipher returned by the following function are supported:
+  # https://pkg.go.dev/crypto/tls#CipherSuites
   [ cipher_suites:
     [ - <string> ] ]
 
