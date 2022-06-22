@@ -99,6 +99,27 @@ func GetMetricType(t textparse.MetricType) uint8 {
 	}
 }
 
+func ToTextparseMetricType(m uint8) textparse.MetricType {
+	switch m {
+	case uint8(Counter):
+		return textparse.MetricTypeCounter
+	case uint8(Gauge):
+		return textparse.MetricTypeGauge
+	case uint8(Histogram):
+		return textparse.MetricTypeHistogram
+	case uint8(GaugeHistogram):
+		return textparse.MetricTypeGaugeHistogram
+	case uint8(Summary):
+		return textparse.MetricTypeSummary
+	case uint8(Info):
+		return textparse.MetricTypeInfo
+	case uint8(Stateset):
+		return textparse.MetricTypeStateset
+	default:
+		return textparse.MetricTypeUnknown
+	}
+}
+
 const (
 	unitMetaName = "UNIT"
 	helpMetaName = "HELP"

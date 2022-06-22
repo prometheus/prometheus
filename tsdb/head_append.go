@@ -256,11 +256,12 @@ type headAppender struct {
 	minValidTime int64 // No samples below this timestamp are allowed.
 	mint, maxt   int64
 
-	series       []record.RefSeries      // New series held by this appender.
-	metadata     []record.RefMetadata    // New metadata held by this appender.
-	samples      []record.RefSample      // New samples held by this appender.
-	exemplars    []exemplarWithSeriesRef // New exemplars held by this appender.
-	sampleSeries []*memSeries            // Series corresponding to the samples held by this appender (using corresponding slice indices - same series may appear more than once).
+	series         []record.RefSeries      // New series held by this appender.
+	metadata       []record.RefMetadata    // New metadata held by this appender.
+	samples        []record.RefSample      // New samples held by this appender.
+	exemplars      []exemplarWithSeriesRef // New exemplars held by this appender.
+	sampleSeries   []*memSeries            // Series corresponding to the samples held by this appender (using corresponding slice indices - same series may appear more than once).
+	metadataSeries []*memSeries            // Series corresponding to the metadata held by this appender.
 
 	appendID, cleanupAppendIDsBelow uint64
 	closed                          bool
@@ -402,16 +403,13 @@ func (a *headAppender) AppendMetadata(ref storage.SeriesRef, lset labels.Labels,
 	s.RUnlock()
 
 	if hasNewMetadata {
-		s.Lock()
-		s.meta = meta
-		s.Unlock()
-
 		a.metadata = append(a.metadata, record.RefMetadata{
 			Ref:  s.ref,
 			Type: record.GetMetricType(meta.Type),
 			Unit: meta.Unit,
 			Help: meta.Help,
 		})
+		a.metadataSeries = append(a.metadataSeries, s)
 	}
 
 	return ref, nil
@@ -537,6 +535,13 @@ func (a *headAppender) Commit() (err error) {
 			a.head.metrics.chunks.Inc()
 			a.head.metrics.chunksCreated.Inc()
 		}
+	}
+
+	for i, m := range a.metadata {
+		series = a.metadataSeries[i]
+		series.Lock()
+		series.meta = metadata.Metadata{Type: record.ToTextparseMetricType(m.Type), Unit: m.Unit, Help: m.Help}
+		series.Unlock()
 	}
 
 	a.head.metrics.samplesAppended.Add(float64(total))
