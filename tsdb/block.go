@@ -116,7 +116,7 @@ type ChunkWriter interface {
 // ChunkReader provides reading access of serialized time series data.
 type ChunkReader interface {
 	// Chunk returns the series data chunk with the given reference.
-	Chunk(ref chunks.ChunkRef) (chunkenc.Chunk, error)
+	Chunk(meta chunks.Meta) (chunkenc.Chunk, error)
 
 	// Close releases all underlying resources of the reader.
 	Close() error
@@ -158,6 +158,9 @@ type BlockMeta struct {
 
 	// Version of the index format.
 	Version int `json:"version"`
+
+	// OutOfOrder is true if the block was directly created from out-of-order samples.
+	OutOfOrder bool `json:"out_of_order"`
 }
 
 // BlockStats contains stats about contents of a block.

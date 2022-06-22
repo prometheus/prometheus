@@ -39,6 +39,21 @@ const (
 	EncXOR
 )
 
+// Chunk encodings for out-of-order chunks.
+// These encodings must be only used by the Head block for its internal bookkeeping.
+const (
+	OutOfOrderMask = 0b10000000
+	EncOOOXOR      = EncXOR | OutOfOrderMask
+)
+
+func IsOutOfOrderChunk(e Encoding) bool {
+	return (e & OutOfOrderMask) != 0
+}
+
+func IsValidEncoding(e Encoding) bool {
+	return e == EncXOR || e == EncOOOXOR
+}
+
 // Chunk holds a sequence of sample pairs that can be iterated over and appended to.
 type Chunk interface {
 	// Bytes returns the underlying byte slice of the chunk.
@@ -155,7 +170,7 @@ func NewPool() Pool {
 
 func (p *pool) Get(e Encoding, b []byte) (Chunk, error) {
 	switch e {
-	case EncXOR:
+	case EncXOR, EncOOOXOR:
 		c := p.xor.Get().(*XORChunk)
 		c.b.stream = b
 		c.b.count = 0
@@ -166,7 +181,7 @@ func (p *pool) Get(e Encoding, b []byte) (Chunk, error) {
 
 func (p *pool) Put(c Chunk) error {
 	switch c.Encoding() {
-	case EncXOR:
+	case EncXOR, EncOOOXOR:
 		xc, ok := c.(*XORChunk)
 		// This may happen often with wrapped chunks. Nothing we can really do about
 		// it but returning an error would cause a lot of allocations again. Thus,
@@ -188,7 +203,7 @@ func (p *pool) Put(c Chunk) error {
 // bytes.
 func FromData(e Encoding, d []byte) (Chunk, error) {
 	switch e {
-	case EncXOR:
+	case EncXOR, EncOOOXOR:
 		return &XORChunk{b: bstream{count: 0, stream: d}}, nil
 	}
 	return nil, errors.Errorf("invalid chunk encoding %q", e)

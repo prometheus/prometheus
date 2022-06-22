@@ -43,6 +43,8 @@ const (
 	Tombstones Type = 3
 	// Exemplars is used to match WAL records of type Exemplars.
 	Exemplars Type = 4
+	// MmapMarkers is used to match OOO WBL records of type MmapMarkers.
+	MmapMarkers Type = 5
 	// Metadata is used to match WAL records of type Metadata.
 	Metadata Type = 6
 )
@@ -57,6 +59,8 @@ func (rt Type) String() string {
 		return "exemplars"
 	case Tombstones:
 		return "tombstones"
+	case MmapMarkers:
+		return "mmapmarkers"
 	case Metadata:
 		return "metadata"
 	default:
@@ -157,6 +161,12 @@ type RefExemplar struct {
 	Labels labels.Labels
 }
 
+// RefMmapMarker marks that the all the samples of the given series until now have been m-mapped to disk.
+type RefMmapMarker struct {
+	Ref     chunks.HeadSeriesRef
+	MmapRef chunks.ChunkDiskMapperRef
+}
+
 // Decoder decodes series, sample, metadata and tombstone records.
 // The zero value is ready to use.
 type Decoder struct{}
@@ -168,7 +178,7 @@ func (d *Decoder) Type(rec []byte) Type {
 		return Unknown
 	}
 	switch t := Type(rec[0]); t {
-	case Series, Samples, Tombstones, Exemplars, Metadata:
+	case Series, Samples, Tombstones, Exemplars, MmapMarkers, Metadata:
 		return t
 	}
 	return Unknown
@@ -354,6 +364,34 @@ func (d *Decoder) ExemplarsFromBuffer(dec *encoding.Decbuf, exemplars []RefExemp
 	return exemplars, nil
 }
 
+func (d *Decoder) MmapMarkers(rec []byte, markers []RefMmapMarker) ([]RefMmapMarker, error) {
+	dec := encoding.Decbuf{B: rec}
+	t := Type(dec.Byte())
+	if t != MmapMarkers {
+		return nil, errors.New("invalid record type")
+	}
+
+	if dec.Len() == 0 {
+		return markers, nil
+	}
+	for len(dec.B) > 0 && dec.Err() == nil {
+		ref := chunks.HeadSeriesRef(dec.Be64())
+		mmapRef := chunks.ChunkDiskMapperRef(dec.Be64())
+		markers = append(markers, RefMmapMarker{
+			Ref:     ref,
+			MmapRef: mmapRef,
+		})
+	}
+
+	if dec.Err() != nil {
+		return nil, errors.Wrapf(dec.Err(), "decode error after %d mmap markers", len(markers))
+	}
+	if len(dec.B) > 0 {
+		return nil, errors.Errorf("unexpected %d bytes left in entry", len(dec.B))
+	}
+	return markers, nil
+}
+
 // Encoder encodes series, sample, and tombstones records.
 // The zero value is ready to use.
 type Encoder struct{}
@@ -466,4 +504,16 @@ func (e *Encoder) EncodeExemplarsIntoBuffer(exemplars []RefExemplar, buf *encodi
 		buf.PutBE64(math.Float64bits(ex.V))
 		EncodeLabels(buf, ex.Labels)
 	}
+}
+
+func (e *Encoder) MmapMarkers(markers []RefMmapMarker, b []byte) []byte {
+	buf := encoding.Encbuf{B: b}
+	buf.PutByte(byte(MmapMarkers))
+
+	for _, s := range markers {
+		buf.PutBE64(uint64(s.Ref))
+		buf.PutBE64(uint64(s.MmapRef))
+	}
+
+	return buf.Get()
 }

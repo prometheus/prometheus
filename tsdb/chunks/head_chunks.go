@@ -87,6 +87,18 @@ func (ref ChunkDiskMapperRef) Unpack() (seq, offset int) {
 	return seq, offset
 }
 
+func (ref ChunkDiskMapperRef) GreaterThanOrEqualTo(r ChunkDiskMapperRef) bool {
+	s1, o1 := ref.Unpack()
+	s2, o2 := r.Unpack()
+	return s1 > s2 || (s1 == s2 && o1 >= o2)
+}
+
+func (ref ChunkDiskMapperRef) GreaterThan(r ChunkDiskMapperRef) bool {
+	s1, o1 := ref.Unpack()
+	s2, o2 := r.Unpack()
+	return s1 > s2 || (s1 == s2 && o1 > o2)
+}
+
 // CorruptionErr is an error that's returned when corruption is encountered.
 type CorruptionErr struct {
 	Dir       string
@@ -736,7 +748,7 @@ func (cdm *ChunkDiskMapper) Chunk(ref ChunkDiskMapperRef) (chunkenc.Chunk, error
 // and runs the provided function with information about each chunk. It returns on the first error encountered.
 // NOTE: This method needs to be called at least once after creating ChunkDiskMapper
 // to set the maxt of all the file.
-func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef HeadSeriesRef, chunkRef ChunkDiskMapperRef, mint, maxt int64, numSamples uint16) error) (err error) {
+func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef HeadSeriesRef, chunkRef ChunkDiskMapperRef, mint, maxt int64, numSamples uint16, encoding chunkenc.Encoding) error) (err error) {
 	cdm.writePathMtx.Lock()
 	defer cdm.writePathMtx.Unlock()
 
@@ -799,7 +811,8 @@ func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef HeadSeriesRef, chu
 				break
 			}
 
-			idx += ChunkEncodingSize // Skip encoding.
+			chkEnc := chunkenc.Encoding(mmapFile.byteSlice.Range(idx, idx+ChunkEncodingSize)[0])
+			idx += ChunkEncodingSize
 			dataLen, n := binary.Uvarint(mmapFile.byteSlice.Range(idx, idx+MaxChunkLengthFieldSize))
 			idx += n
 
@@ -834,7 +847,7 @@ func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef HeadSeriesRef, chu
 				mmapFile.maxt = maxt
 			}
 
-			if err := f(seriesRef, chunkRef, mint, maxt, numSamples); err != nil {
+			if err := f(seriesRef, chunkRef, mint, maxt, numSamples, chkEnc); err != nil {
 				if cerr, ok := err.(*CorruptionErr); ok {
 					cerr.Dir = cdm.dir.Name()
 					cerr.FileIndex = segID
@@ -857,9 +870,8 @@ func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef HeadSeriesRef, chu
 	return nil
 }
 
-// Truncate deletes the head chunk files which are strictly below the mint.
-// mint should be in milliseconds.
-func (cdm *ChunkDiskMapper) Truncate(mint int64) error {
+// Truncate deletes the head chunk files whose file number is less than given fileNo.
+func (cdm *ChunkDiskMapper) Truncate(fileNo int) error {
 	if !cdm.fileMaxtSet {
 		return errors.New("maxt of the files are not set")
 	}
@@ -875,12 +887,10 @@ func (cdm *ChunkDiskMapper) Truncate(mint int64) error {
 
 	var removedFiles []int
 	for _, seq := range chkFileIndices {
-		if seq == cdm.curFileSequence || cdm.mmappedChunkFiles[seq].maxt >= mint {
+		if seq == cdm.curFileSequence || seq >= fileNo {
 			break
 		}
-		if cdm.mmappedChunkFiles[seq].maxt < mint {
-			removedFiles = append(removedFiles, seq)
-		}
+		removedFiles = append(removedFiles, seq)
 	}
 	cdm.readPathMtx.RUnlock()
 

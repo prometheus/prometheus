@@ -463,6 +463,9 @@ func main() {
 		}
 		cfg.tsdb.MaxExemplars = int64(cfgFile.StorageConfig.ExemplarsConfig.MaxExemplars)
 	}
+	if cfgFile.StorageConfig.TSDBConfig != nil {
+		cfg.tsdb.OutOfOrderTimeWindow = cfgFile.StorageConfig.TSDBConfig.OutOfOrderTimeWindow
+	}
 
 	// Now that the validity of the config is established, set the config
 	// success metrics accordingly, although the config isn't really loaded
@@ -1537,6 +1540,7 @@ type tsdbOptions struct {
 	StripeSize                     int
 	MinBlockDuration               model.Duration
 	MaxBlockDuration               model.Duration
+	OutOfOrderTimeWindow           int64
 	EnableExemplarStorage          bool
 	MaxExemplars                   int64
 	EnableMemorySnapshotOnShutdown bool
@@ -1549,7 +1553,8 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		RetentionDuration:              int64(time.Duration(opts.RetentionDuration) / time.Millisecond),
 		MaxBytes:                       int64(opts.MaxBytes),
 		NoLockfile:                     opts.NoLockfile,
-		AllowOverlappingBlocks:         opts.AllowOverlappingBlocks,
+		AllowOverlappingCompaction:     opts.AllowOverlappingBlocks,
+		AllowOverlappingQueries:        opts.AllowOverlappingBlocks,
 		WALCompression:                 opts.WALCompression,
 		HeadChunksWriteQueueSize:       opts.HeadChunksWriteQueueSize,
 		StripeSize:                     opts.StripeSize,
@@ -1558,6 +1563,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		EnableExemplarStorage:          opts.EnableExemplarStorage,
 		MaxExemplars:                   opts.MaxExemplars,
 		EnableMemorySnapshotOnShutdown: opts.EnableMemorySnapshotOnShutdown,
+		OutOfOrderTimeWindow:           opts.OutOfOrderTimeWindow,
 	}
 }
 
