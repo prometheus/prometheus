@@ -1473,7 +1473,12 @@ func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string,
 		metadataChanged bool
 	)
 
-	checkMetadataUpdates := func(lset labels.Labels, isNewSeries bool) {
+	// updateMetadata updates the current iteration's metadata object and the
+	// metadataChanged value if we have metadata in the scrape cache AND the
+	// labelset is for a new series or the metadata for this series has just
+	// changed. It returns a boolean based on whether the metadata was updated.
+	updateMetadata := func(lset labels.Labels, isNewSeries bool) bool {
+		var wasMetaUpdated bool
 		if sl.appendMetadataToWAL {
 			sl.cache.metaMtx.Lock()
 			metaEntry, metaOk := sl.cache.metadata[yoloString([]byte(lset.Get(labels.MetricName)))]
@@ -1482,9 +1487,11 @@ func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string,
 				meta.Type = metaEntry.Type
 				meta.Unit = metaEntry.Unit
 				meta.Help = metaEntry.Help
+				wasMetaUpdated = true
 			}
 			sl.cache.metaMtx.Unlock()
 		}
+		return wasMetaUpdated
 	}
 
 	// Take an appender with limits.
@@ -1556,7 +1563,7 @@ loop:
 			lset = ce.lset
 
 			// Update metadata only if it changed in the current iteration.
-			checkMetadataUpdates(lset, false)
+			updateMetadata(lset, false)
 		} else {
 			mets = p.Metric(&lset)
 			hash = lset.Hash()
@@ -1583,7 +1590,7 @@ loop:
 			}
 
 			// Append metadata for new series if they were present.
-			checkMetadataUpdates(lset, true)
+			updateMetadata(lset, true)
 		}
 
 		ref, err = app.Append(ref, lset, t, v)
