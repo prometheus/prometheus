@@ -2300,7 +2300,7 @@ func (f *fakeDB) Stats(statsByLabelName string) (_ *tsdb.Stats, retErr error) {
 	}()
 	opts := tsdb.DefaultHeadOptions()
 	opts.ChunkRange = 1000
-	h, _ := tsdb.NewHead(nil, nil, nil, opts, nil)
+	h, _ := tsdb.NewHead(nil, nil, nil, nil, opts, nil)
 	return h.Stats(statsByLabelName), nil
 }
 

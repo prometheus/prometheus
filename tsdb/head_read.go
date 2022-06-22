@@ -212,9 +212,18 @@ func (h *headIndexReader) Series(ref storage.SeriesRef, lbls *labels.Labels, chk
 	return nil
 }
 
-// headChunkID returns the HeadChunkID corresponding to .mmappedChunks[pos]
+// headChunkID returns the HeadChunkID referred to by the given position.
+// * 0 <= pos < len(s.mmappedChunks) refer to s.mmappedChunks[pos]
+// * pos == len(s.mmappedChunks) refers to s.headChunk
 func (s *memSeries) headChunkID(pos int) chunks.HeadChunkID {
 	return chunks.HeadChunkID(pos) + s.firstChunkID
+}
+
+// oooHeadChunkID returns the HeadChunkID referred to by the given position.
+// * 0 <= pos < len(s.oooMmappedChunks) refer to s.oooMmappedChunks[pos]
+// * pos == len(s.oooMmappedChunks) refers to s.oooHeadChunk
+func (s *memSeries) oooHeadChunkID(pos int) chunks.HeadChunkID {
+	return chunks.HeadChunkID(pos) + s.firstOOOChunkID
 }
 
 // LabelValueFor returns label value for the given label name in the series referred to by ID.
@@ -287,8 +296,8 @@ func (h *headChunkReader) Close() error {
 }
 
 // Chunk returns the chunk for the reference number.
-func (h *headChunkReader) Chunk(ref chunks.ChunkRef) (chunkenc.Chunk, error) {
-	sid, cid := chunks.HeadChunkRef(ref).Unpack()
+func (h *headChunkReader) Chunk(meta chunks.Meta) (chunkenc.Chunk, error) {
+	sid, cid := chunks.HeadChunkRef(meta.Ref).Unpack()
 
 	s := h.head.series.getByID(sid)
 	// This means that the series has been garbage collected.
@@ -358,6 +367,258 @@ func (s *memSeries) chunk(id chunks.HeadChunkID, cdm chunkDiskMapper) (chunk *me
 	return mc, true, nil
 }
 
+// oooMergedChunk returns the requested chunk based on the given chunks.Meta
+// reference from memory or by m-mapping it from the disk. The returned chunk
+// might be a merge of all the overlapping chunks, if any, amongst all the
+// chunks in the OOOHead.
+// This function is not thread safe unless the caller holds a lock.
+func (s *memSeries) oooMergedChunk(meta chunks.Meta, cdm chunkDiskMapper, mint, maxt int64) (chunk *mergedOOOChunks, err error) {
+	_, cid := chunks.HeadChunkRef(meta.Ref).Unpack()
+
+	// ix represents the index of chunk in the s.mmappedChunks slice. The chunk meta's are
+	// incremented by 1 when new chunk is created, hence (meta - firstChunkID) gives the slice index.
+	// The max index for the s.mmappedChunks slice can be len(s.mmappedChunks)-1, hence if the ix
+	// is len(s.mmappedChunks), it represents the next chunk, which is the head chunk.
+	ix := int(cid) - int(s.firstOOOChunkID)
+	if ix < 0 || ix > len(s.oooMmappedChunks) {
+		return nil, storage.ErrNotFound
+	}
+
+	if ix == len(s.oooMmappedChunks) {
+		if s.oooHeadChunk == nil {
+			return nil, errors.New("invalid ooo head chunk")
+		}
+	}
+
+	// We create a temporary slice of chunk metas to hold the information of all
+	// possible chunks that may overlap with the requested chunk.
+	tmpChks := make([]chunkMetaAndChunkDiskMapperRef, 0, len(s.oooMmappedChunks))
+
+	oooHeadRef := chunks.ChunkRef(chunks.NewHeadChunkRef(s.ref, s.oooHeadChunkID(len(s.oooMmappedChunks))))
+	if s.oooHeadChunk != nil && s.oooHeadChunk.OverlapsClosedInterval(mint, maxt) {
+		// We only want to append the head chunk if this chunk existed when
+		// Series() was called. This brings consistency in case new data
+		// is added in between Series() and Chunk() calls
+		if oooHeadRef == meta.OOOLastRef {
+			tmpChks = append(tmpChks, chunkMetaAndChunkDiskMapperRef{
+				meta: chunks.Meta{
+					MinTime: meta.OOOLastMinTime, // we want to ignore samples that were added before last known min time
+					MaxTime: meta.OOOLastMaxTime, // we want to ignore samples that were added after last known max time
+					Ref:     oooHeadRef,
+				},
+			})
+		}
+	}
+
+	for i, c := range s.oooMmappedChunks {
+		chunkRef := chunks.ChunkRef(chunks.NewHeadChunkRef(s.ref, s.oooHeadChunkID(i)))
+		// We can skip chunks that came in later than the last known OOOLastRef
+		if chunkRef > meta.OOOLastRef {
+			break
+		}
+
+		if chunkRef == meta.OOOLastRef {
+			tmpChks = append(tmpChks, chunkMetaAndChunkDiskMapperRef{
+				meta: chunks.Meta{
+					MinTime: meta.OOOLastMinTime,
+					MaxTime: meta.OOOLastMaxTime,
+					Ref:     chunkRef,
+				},
+				ref:      c.ref,
+				origMinT: c.minTime,
+				origMaxT: c.maxTime,
+			})
+		} else if c.OverlapsClosedInterval(mint, maxt) {
+			tmpChks = append(tmpChks, chunkMetaAndChunkDiskMapperRef{
+				meta: chunks.Meta{
+					MinTime: c.minTime,
+					MaxTime: c.maxTime,
+					Ref:     chunkRef,
+				},
+				ref: c.ref,
+			})
+		}
+	}
+
+	// Next we want to sort all the collected chunks by min time so we can find
+	// those that overlap and stop when we know the rest don't.
+	sort.Sort(byMinTimeAndMinRef(tmpChks))
+
+	mc := &mergedOOOChunks{}
+	absoluteMax := int64(math.MinInt64)
+	for _, c := range tmpChks {
+		if c.meta.Ref == meta.Ref || len(mc.chunks) > 0 && c.meta.MinTime <= absoluteMax {
+			if c.meta.Ref == oooHeadRef {
+				var xor *chunkenc.XORChunk
+				// If head chunk min and max time match the meta OOO markers
+				// that means that the chunk has not expanded so we can append
+				// it as it is.
+				if s.oooHeadChunk.minTime == meta.OOOLastMinTime && s.oooHeadChunk.maxTime == meta.OOOLastMaxTime {
+					xor, err = s.oooHeadChunk.chunk.ToXor() // TODO(jesus.vazquez) (This is an optimization idea that has no priority and might not be that useful) See if we could use a copy of the underlying slice. That would leave the more expensive ToXor() function only for the usecase where Bytes() is called.
+				} else {
+					// We need to remove samples that are outside of the markers
+					xor, err = s.oooHeadChunk.chunk.ToXorBetweenTimestamps(meta.OOOLastMinTime, meta.OOOLastMaxTime)
+				}
+				if err != nil {
+					return nil, errors.Wrap(err, "failed to convert ooo head chunk to xor chunk")
+				}
+				c.meta.Chunk = xor
+			} else {
+				chk, err := cdm.Chunk(c.ref)
+				if err != nil {
+					if _, ok := err.(*chunks.CorruptionErr); ok {
+						return nil, errors.Wrap(err, "invalid ooo mmapped chunk")
+					}
+					return nil, err
+				}
+				if c.meta.Ref == meta.OOOLastRef &&
+					(c.origMinT != meta.OOOLastMinTime || c.origMaxT != meta.OOOLastMaxTime) {
+					// The head expanded and was memory mapped so now we need to
+					// wrap the chunk within a chunk that doesnt allows us to iterate
+					// through samples out of the OOOLastMinT and OOOLastMaxT
+					// markers.
+					c.meta.Chunk = boundedChunk{chk, meta.OOOLastMinTime, meta.OOOLastMaxTime}
+				} else {
+					c.meta.Chunk = chk
+				}
+			}
+			mc.chunks = append(mc.chunks, c.meta)
+			if c.meta.MaxTime > absoluteMax {
+				absoluteMax = c.meta.MaxTime
+			}
+		}
+	}
+
+	return mc, nil
+}
+
+var _ chunkenc.Chunk = &mergedOOOChunks{}
+
+// mergedOOOChunks holds the list of overlapping chunks. This struct satisfies
+// chunkenc.Chunk.
+type mergedOOOChunks struct {
+	chunks []chunks.Meta
+}
+
+// Bytes is a very expensive method because its calling the iterator of all the
+// chunks in the mergedOOOChunk and building a new chunk with the samples.
+func (o mergedOOOChunks) Bytes() []byte {
+	xc := chunkenc.NewXORChunk()
+	app, err := xc.Appender()
+	if err != nil {
+		panic(err)
+	}
+	it := o.Iterator(nil)
+	for it.Next() {
+		t, v := it.At()
+		app.Append(t, v)
+	}
+
+	return xc.Bytes()
+}
+
+func (o mergedOOOChunks) Encoding() chunkenc.Encoding {
+	return chunkenc.EncXOR
+}
+
+func (o mergedOOOChunks) Appender() (chunkenc.Appender, error) {
+	return nil, errors.New("can't append to mergedOOOChunks")
+}
+
+func (o mergedOOOChunks) Iterator(iterator chunkenc.Iterator) chunkenc.Iterator {
+	iterators := make([]chunkenc.Iterator, 0, len(o.chunks))
+	for _, c := range o.chunks {
+		iterators = append(iterators, c.Chunk.Iterator(nil))
+	}
+	return storage.NewChainSampleIterator(iterators)
+}
+
+func (o mergedOOOChunks) NumSamples() int {
+	samples := 0
+	for _, c := range o.chunks {
+		samples += c.Chunk.NumSamples()
+	}
+	return samples
+}
+
+func (o mergedOOOChunks) Compact() {}
+
+var _ chunkenc.Chunk = &boundedChunk{}
+
+// boundedChunk is an implementation of chunkenc.Chunk that uses a
+// boundedIterator that only iterates through samples which timestamps are
+// >= minT and <= maxT
+type boundedChunk struct {
+	chunkenc.Chunk
+	minT int64
+	maxT int64
+}
+
+func (b boundedChunk) Bytes() []byte {
+	xor := chunkenc.NewXORChunk()
+	a, _ := xor.Appender()
+	it := b.Iterator(nil)
+	for it.Next() {
+		t, v := it.At()
+		a.Append(t, v)
+	}
+	return xor.Bytes()
+}
+
+func (b boundedChunk) Iterator(iterator chunkenc.Iterator) chunkenc.Iterator {
+	it := b.Chunk.Iterator(iterator)
+	if it == nil {
+		panic("iterator shouldn't be nil")
+	}
+	return boundedIterator{it, b.minT, b.maxT}
+}
+
+var _ chunkenc.Iterator = &boundedIterator{}
+
+// boundedIterator is an implementation of Iterator that only iterates through
+// samples which timestamps are >= minT and <= maxT
+type boundedIterator struct {
+	chunkenc.Iterator
+	minT int64
+	maxT int64
+}
+
+// Next the first time its called it will advance as many positions as necessary
+// until its able to find a sample within the bounds minT and maxT.
+// If there are samples within bounds it will advance one by one amongst them.
+// If there are no samples within bounds it will return false.
+func (b boundedIterator) Next() bool {
+	for b.Iterator.Next() {
+		t, _ := b.Iterator.At()
+		if t < b.minT {
+			continue
+		} else if t > b.maxT {
+			return false
+		}
+		return true
+	}
+	return false
+}
+
+func (b boundedIterator) Seek(t int64) bool {
+	if t < b.minT {
+		// We must seek at least up to b.minT if it is asked for something before that.
+		ok := b.Iterator.Seek(b.minT)
+		if !ok {
+			return false
+		}
+		t, _ := b.Iterator.At()
+		return t <= b.maxT
+	}
+	if t > b.maxT {
+		// We seek anyway so that the subsequent Next() calls will also return false.
+		b.Iterator.Seek(t)
+		return false
+	}
+	return b.Iterator.Seek(t)
+}
+
+// safeChunk makes sure that the chunk can be accessed without a race condition
 type safeChunk struct {
 	chunkenc.Chunk
 	s               *memSeries

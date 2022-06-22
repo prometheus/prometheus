@@ -127,7 +127,7 @@ type ChunkWriter interface {
 // ChunkReader provides reading access of serialized time series data.
 type ChunkReader interface {
 	// Chunk returns the series data chunk with the given reference.
-	Chunk(ref chunks.ChunkRef) (chunkenc.Chunk, error)
+	Chunk(ref chunks.Meta) (chunkenc.Chunk, error)
 
 	// Close releases all underlying resources of the reader.
 	Close() error

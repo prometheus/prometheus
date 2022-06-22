@@ -596,9 +596,8 @@ func (cdm *OldChunkDiskMapper) IterateAllChunks(f func(seriesRef HeadSeriesRef, 
 	return nil
 }
 
-// Truncate deletes the head chunk files which are strictly below the mint.
-// mint should be in milliseconds.
-func (cdm *OldChunkDiskMapper) Truncate(mint int64) error {
+// Truncate deletes the head chunk files whose file number is less than given fileNo.
+func (cdm *OldChunkDiskMapper) Truncate(fileNo int) error {
 	if !cdm.fileMaxtSet {
 		return errors.New("maxt of the files are not set")
 	}
@@ -614,12 +613,10 @@ func (cdm *OldChunkDiskMapper) Truncate(mint int64) error {
 
 	var removedFiles []int
 	for _, seq := range chkFileIndices {
-		if seq == cdm.curFileSequence || cdm.mmappedChunkFiles[seq].maxt >= mint {
+		if seq == cdm.curFileSequence || seq >= fileNo {
 			break
 		}
-		if cdm.mmappedChunkFiles[seq].maxt < mint {
-			removedFiles = append(removedFiles, seq)
-		}
+		removedFiles = append(removedFiles, seq)
 	}
 	cdm.readPathMtx.RUnlock()
 

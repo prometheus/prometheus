@@ -23,6 +23,6 @@ func TestReaderWithInvalidBuffer(t *testing.T) {
 	b := realByteSlice([]byte{0x81, 0x81, 0x81, 0x81, 0x81, 0x81})
 	r := &Reader{bs: []ByteSlice{b}}
 
-	_, err := r.Chunk(0)
+	_, err := r.Chunk(Meta{Ref: 0})
 	require.Error(t, err)
 }

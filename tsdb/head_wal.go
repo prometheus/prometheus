@@ -41,7 +41,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/wal"
 )
 
-func (h *Head) loadWAL(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef, mmappedChunks map[chunks.HeadSeriesRef][]*mmappedChunk) (err error) {
+func (h *Head) loadWAL(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef, mmappedChunks, oooMmappedChunks map[chunks.HeadSeriesRef][]*mmappedChunk) (err error) {
 	// Track number of samples that referenced a series we don't know about
 	// for error reporting.
 	var unknownRefs atomic.Uint64
@@ -215,10 +215,11 @@ Outer:
 				processors[idx].mx.Lock()
 
 				mmc := mmappedChunks[walSeries.Ref]
+				oooMmc := oooMmappedChunks[walSeries.Ref]
 
 				if created {
 					// This is the first WAL series record for this series.
-					h.resetSeriesWithMMappedChunks(mSeries, mmc)
+					h.resetSeriesWithMMappedChunks(mSeries, mmc, oooMmc)
 					processors[idx].mx.Unlock()
 					continue
 				}
@@ -252,7 +253,7 @@ Outer:
 				}
 
 				// Replacing m-mapped chunks with the new ones (could be empty).
-				h.resetSeriesWithMMappedChunks(mSeries, mmc)
+				h.resetSeriesWithMMappedChunks(mSeries, mmc, oooMmc)
 
 				processors[idx].mx.Unlock()
 			}
@@ -343,11 +344,12 @@ Outer:
 }
 
 // resetSeriesWithMMappedChunks is only used during the WAL replay.
-func (h *Head) resetSeriesWithMMappedChunks(mSeries *memSeries, mmc []*mmappedChunk) {
-	h.metrics.chunksCreated.Add(float64(len(mmc)))
-	h.metrics.chunksRemoved.Add(float64(len(mSeries.mmappedChunks)))
-	h.metrics.chunks.Add(float64(len(mmc) - len(mSeries.mmappedChunks)))
+func (h *Head) resetSeriesWithMMappedChunks(mSeries *memSeries, mmc, oooMmc []*mmappedChunk) {
+	h.metrics.chunksCreated.Add(float64(len(mmc) + len(oooMmc)))
+	h.metrics.chunksRemoved.Add(float64(len(mSeries.mmappedChunks) + len(mSeries.oooMmappedChunks)))
+	h.metrics.chunks.Add(float64(len(mmc) + len(oooMmc) - len(mSeries.mmappedChunks) - len(mSeries.oooMmappedChunks)))
 	mSeries.mmappedChunks = mmc
+	mSeries.oooMmappedChunks = oooMmc
 	// Cache the last mmapped chunk time, so we can skip calling append() for samples it will reject.
 	if len(mmc) == 0 {
 		mSeries.mmMaxTime = math.MinInt64
@@ -357,6 +359,8 @@ func (h *Head) resetSeriesWithMMappedChunks(mSeries *memSeries, mmc []*mmappedCh
 	}
 
 	// Any samples replayed till now would already be compacted. Resetting the head chunk.
+	// We do not reset oooHeadChunk because that is being replayed from a different WAL
+	// and has not been replayed here.
 	mSeries.nextAt = 0
 	mSeries.headChunk = nil
 	mSeries.app = nil
@@ -432,6 +436,278 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head) (unknownRefs uint64) {
 }
 
 func (wp *walSubsetProcessor) waitUntilIdle() {
+	select {
+	case <-wp.output: // Allow output side to drain to avoid deadlock.
+	default:
+	}
+	wp.input <- []record.RefSample{}
+	for len(wp.input) != 0 {
+		time.Sleep(10 * time.Microsecond)
+		select {
+		case <-wp.output: // Allow output side to drain to avoid deadlock.
+		default:
+		}
+	}
+}
+
+func (h *Head) loadWbl(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef, lastMmapRef chunks.ChunkDiskMapperRef) (err error) {
+	// Track number of samples that referenced a series we don't know about
+	// for error reporting.
+	var unknownRefs atomic.Uint64
+
+	lastSeq, lastOff := lastMmapRef.Unpack()
+	// Start workers that each process samples for a partition of the series ID space.
+	var (
+		wg         sync.WaitGroup
+		n          = runtime.GOMAXPROCS(0)
+		processors = make([]wblSubsetProcessor, n)
+
+		dec    record.Decoder
+		shards = make([][]record.RefSample, n)
+
+		decoded     = make(chan interface{}, 10)
+		decodeErr   error
+		samplesPool = sync.Pool{
+			New: func() interface{} {
+				return []record.RefSample{}
+			},
+		}
+		markersPool = sync.Pool{
+			New: func() interface{} {
+				return []record.RefMmapMarker{}
+			},
+		}
+	)
+
+	defer func() {
+		// For CorruptionErr ensure to terminate all workers before exiting.
+		// We also wrap it to identify OOO WBL corruption.
+		_, ok := err.(*wal.CorruptionErr)
+		if ok {
+			err = &errLoadWbl{err: err}
+			for i := 0; i < n; i++ {
+				processors[i].closeAndDrain()
+			}
+			wg.Wait()
+		}
+	}()
+
+	wg.Add(n)
+	for i := 0; i < n; i++ {
+		processors[i].setup()
+
+		go func(wp *wblSubsetProcessor) {
+			unknown := wp.processWALSamples(h)
+			unknownRefs.Add(unknown)
+			wg.Done()
+		}(&processors[i])
+	}
+
+	go func() {
+		defer close(decoded)
+		for r.Next() {
+			rec := r.Record()
+			switch dec.Type(rec) {
+			case record.Samples:
+				samples := samplesPool.Get().([]record.RefSample)[:0]
+				samples, err = dec.Samples(rec, samples)
+				if err != nil {
+					decodeErr = &wal.CorruptionErr{
+						Err:     errors.Wrap(err, "decode samples"),
+						Segment: r.Segment(),
+						Offset:  r.Offset(),
+					}
+					return
+				}
+				decoded <- samples
+			case record.MmapMarkers:
+				markers := markersPool.Get().([]record.RefMmapMarker)[:0]
+				markers, err = dec.MmapMarkers(rec, markers)
+				if err != nil {
+					decodeErr = &wal.CorruptionErr{
+						Err:     errors.Wrap(err, "decode mmap markers"),
+						Segment: r.Segment(),
+						Offset:  r.Offset(),
+					}
+					return
+				}
+				decoded <- markers
+			default:
+				// Noop.
+			}
+		}
+	}()
+
+	// The records are always replayed from the oldest to the newest.
+	for d := range decoded {
+		switch v := d.(type) {
+		case []record.RefSample:
+			samples := v
+			// We split up the samples into parts of 5000 samples or less.
+			// With O(300 * #cores) in-flight sample batches, large scrapes could otherwise
+			// cause thousands of very large in flight buffers occupying large amounts
+			// of unused memory.
+			for len(samples) > 0 {
+				m := 5000
+				if len(samples) < m {
+					m = len(samples)
+				}
+				for i := 0; i < n; i++ {
+					shards[i] = processors[i].reuseBuf()
+				}
+				for _, sam := range samples[:m] {
+					if r, ok := multiRef[sam.Ref]; ok {
+						sam.Ref = r
+					}
+					mod := uint64(sam.Ref) % uint64(n)
+					shards[mod] = append(shards[mod], sam)
+				}
+				for i := 0; i < n; i++ {
+					processors[i].input <- shards[i]
+				}
+				samples = samples[m:]
+			}
+			//nolint:staticcheck // Ignore SA6002 relax staticcheck verification.
+			samplesPool.Put(d)
+		case []record.RefMmapMarker:
+			markers := v
+			for _, rm := range markers {
+				seq, off := rm.MmapRef.Unpack()
+				if seq > lastSeq || (seq == lastSeq && off > lastOff) {
+					// This m-map chunk from markers was not present during
+					// the load of mmapped chunks that happened in the head
+					// initialization.
+					continue
+				}
+
+				ms := h.series.getByID(rm.Ref)
+				if ms == nil {
+					unknownRefs.Inc()
+					continue
+				}
+
+				idx := uint64(ms.ref) % uint64(n)
+				// It is possible that some old sample is being processed in processWALSamples that
+				// could cause race below. So we wait for the goroutine to empty input the buffer and finish
+				// processing all old samples after emptying the buffer.
+				processors[idx].waitUntilIdle()
+				// Lock the subset so we can modify the series object
+				processors[idx].mx.Lock()
+
+				// All samples till now have been m-mapped. Hence clear out the headChunk.
+				// In case some samples slipped through and went into m-map chunks because of changed
+				// chunk size parameters, we are not taking care of that here.
+				// TODO(codesome): see if there is a way to avoid duplicate m-map chunks if
+				// the size of ooo chunk was reduced between restart.
+				ms.oooHeadChunk = nil
+
+				processors[idx].mx.Unlock()
+			}
+		default:
+			panic(fmt.Errorf("unexpected decoded type: %T", d))
+		}
+	}
+
+	if decodeErr != nil {
+		return decodeErr
+	}
+
+	// Signal termination to each worker and wait for it to close its output channel.
+	for i := 0; i < n; i++ {
+		processors[i].closeAndDrain()
+	}
+	wg.Wait()
+
+	if r.Err() != nil {
+		return errors.Wrap(r.Err(), "read records")
+	}
+
+	if unknownRefs.Load() > 0 {
+		level.Warn(h.logger).Log("msg", "Unknown series references for ooo WAL replay", "samples", unknownRefs.Load())
+	}
+	return nil
+}
+
+type errLoadWbl struct {
+	err error
+}
+
+func (e errLoadWbl) Error() string {
+	return e.err.Error()
+}
+
+// To support errors.Cause().
+func (e errLoadWbl) Cause() error {
+	return e.err
+}
+
+// To support errors.Unwrap().
+func (e errLoadWbl) Unwrap() error {
+	return e.err
+}
+
+// isErrLoadOOOWal returns a boolean if the error is errLoadWbl.
+func isErrLoadOOOWal(err error) bool {
+	_, ok := err.(*errLoadWbl)
+	return ok
+}
+
+type wblSubsetProcessor struct {
+	mx     sync.Mutex // Take this lock while modifying series in the subset.
+	input  chan []record.RefSample
+	output chan []record.RefSample
+}
+
+func (wp *wblSubsetProcessor) setup() {
+	wp.output = make(chan []record.RefSample, 300)
+	wp.input = make(chan []record.RefSample, 300)
+}
+
+func (wp *wblSubsetProcessor) closeAndDrain() {
+	close(wp.input)
+	for range wp.output {
+	}
+}
+
+// If there is a buffer in the output chan, return it for reuse, otherwise return nil.
+func (wp *wblSubsetProcessor) reuseBuf() []record.RefSample {
+	select {
+	case buf := <-wp.output:
+		return buf[:0]
+	default:
+	}
+	return nil
+}
+
+// processWALSamples adds the samples it receives to the head and passes
+// the buffer received to an output channel for reuse.
+// Samples before the minValidTime timestamp are discarded.
+func (wp *wblSubsetProcessor) processWALSamples(h *Head) (unknownRefs uint64) {
+	defer close(wp.output)
+
+	// We don't check for minValidTime for ooo samples.
+
+	for samples := range wp.input {
+		wp.mx.Lock()
+		for _, s := range samples {
+			ms := h.series.getByID(s.Ref)
+			if ms == nil {
+				unknownRefs++
+				continue
+			}
+			if _, chunkCreated, _ := ms.insert(s.T, s.V, h.chunkDiskMapper); chunkCreated {
+				h.metrics.chunksCreated.Inc()
+				h.metrics.chunks.Inc()
+			}
+		}
+		wp.mx.Unlock()
+		wp.output <- samples
+	}
+
+	return unknownRefs
+}
+
+func (wp *wblSubsetProcessor) waitUntilIdle() {
 	select {
 	case <-wp.output: // Allow output side to drain to avoid deadlock.
 	default:

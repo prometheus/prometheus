@@ -458,7 +458,7 @@ func TestBlockQuerier_AgainstHeadWithOpenChunks(t *testing.T) {
 		t.Run("", func(t *testing.T) {
 			opts := DefaultHeadOptions()
 			opts.ChunkRange = 2 * time.Hour.Milliseconds()
-			h, err := NewHead(nil, nil, nil, opts, nil)
+			h, err := NewHead(nil, nil, nil, nil, opts, nil)
 			require.NoError(t, err)
 			defer h.Close()
 
@@ -627,10 +627,10 @@ func createFakeReaderAndNotPopulatedChunks(s ...[]tsdbutil.Sample) (*fakeChunksR
 	return f, chks
 }
 
-func (r *fakeChunksReader) Chunk(ref chunks.ChunkRef) (chunkenc.Chunk, error) {
-	chk, ok := r.chks[ref]
+func (r *fakeChunksReader) Chunk(meta chunks.Meta) (chunkenc.Chunk, error) {
+	chk, ok := r.chks[meta.Ref]
 	if !ok {
-		return nil, errors.Errorf("chunk not found at ref %v", ref)
+		return nil, errors.Errorf("chunk not found at ref %v", meta.Ref)
 	}
 	return chk, nil
 }
@@ -1016,8 +1016,8 @@ func BenchmarkMergedSeriesSet(b *testing.B) {
 
 type mockChunkReader map[chunks.ChunkRef]chunkenc.Chunk
 
-func (cr mockChunkReader) Chunk(id chunks.ChunkRef) (chunkenc.Chunk, error) {
-	chk, ok := cr[id]
+func (cr mockChunkReader) Chunk(meta chunks.Meta) (chunkenc.Chunk, error) {
+	chk, ok := cr[meta.Ref]
 	if ok {
 		return chk, nil
 	}
@@ -1622,7 +1622,7 @@ func TestPostingsForMatchers(t *testing.T) {
 	opts := DefaultHeadOptions()
 	opts.ChunkRange = 1000
 	opts.ChunkDirRoot = chunkDir
-	h, err := NewHead(nil, nil, nil, opts, nil)
+	h, err := NewHead(nil, nil, nil, nil, opts, nil)
 	require.NoError(t, err)
 	defer func() {
 		require.NoError(t, h.Close())

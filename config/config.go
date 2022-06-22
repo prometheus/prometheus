@@ -501,7 +501,34 @@ func (c *ScrapeConfig) MarshalYAML() (interface{}, error) {
 
 // StorageConfig configures runtime reloadable configuration options.
 type StorageConfig struct {
+	TSDBConfig      *TSDBConfig      `yaml:"tsdb,omitempty"`
 	ExemplarsConfig *ExemplarsConfig `yaml:"exemplars,omitempty"`
+}
+
+// TSDBConfig configures runtime reloadable configuration options.
+type TSDBConfig struct {
+	// OutOfOrderAllowance sets how long back in time an out-of-order sample can be inserted
+	// into the TSDB. This is the one finally used by the TSDB and should be in the same unit
+	// as other timestamps in the TSDB.
+	OutOfOrderAllowance int64
+
+	// OutOfOrderAllowanceFlag holds the parsed duration from the config file.
+	// During unmarshall, this is converted into milliseconds and stored in OutOfOrderAllowance.
+	// This should not be used directly and must be converted into OutOfOrderAllowance.
+	OutOfOrderAllowanceFlag model.Duration `yaml:"out_of_order_allowance,omitempty"`
+}
+
+// UnmarshalYAML implements the yaml.Unmarshaler interface.
+func (t *TSDBConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*t = TSDBConfig{}
+	type plain TSDBConfig
+	if err := unmarshal((*plain)(t)); err != nil {
+		return err
+	}
+
+	t.OutOfOrderAllowance = time.Duration(t.OutOfOrderAllowanceFlag).Milliseconds()
+
+	return nil
 }
 
 type TracingClientType string

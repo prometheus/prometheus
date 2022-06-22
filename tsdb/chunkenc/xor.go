@@ -457,3 +457,12 @@ func (it *xorIterator) readValue() bool {
 	it.numRead++
 	return true
 }
+
+// OOOXORChunk holds a XORChunk and overrides the Encoding() method.
+type OOOXORChunk struct {
+	*XORChunk
+}
+
+func (c *OOOXORChunk) Encoding() Encoding {
+	return EncOOOXOR
+}
