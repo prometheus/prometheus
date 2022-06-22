@@ -403,10 +403,6 @@ func (a *headAppender) UpdateMetadata(ref storage.SeriesRef, lset labels.Labels,
 	s.RUnlock()
 
 	if hasNewMetadata {
-		s.Lock()
-		s.meta = meta
-		s.Unlock()
-
 		a.metadata = append(a.metadata, record.RefMetadata{
 			Ref:  s.ref,
 			Type: record.GetMetricType(meta.Type),
