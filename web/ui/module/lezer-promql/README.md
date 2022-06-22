@@ -10,8 +10,8 @@ This library is stable but doesn't provide any guideline of how to use it as it 
 into [codemirror-promql](https://github.com/prometheus/prometheus/blob/main/web/ui/module/codemirror-promql). If you
 want to use this library, you perhaps want to actually use **@prometheus-io/codemirror-promql** instead.
 
-**Note**: This library is following the changes of the upstream grammar (i.e. coming from Prometheus) as closely as
-possible
+**Note**: This library is a lezer-based implementation of the [authoritative, goyacc-based PromQL grammar](https://github.com/prometheus/prometheus/blob/main/promql/parser/generated_parser.y). 
+Any changes to the authoritative grammar need to be reflected in this package as well.
 
 ## Installation
 
