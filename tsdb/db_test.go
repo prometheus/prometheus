@@ -3527,6 +3527,7 @@ func TestMetadataFormatOnDisk(t *testing.T) {
 	require.NoError(t, err)
 	f, err := os.OpenFile(path.Join(db.Dir(), "wal", walFiles[0].Name()), os.O_RDWR, 0o666)
 	require.NoError(t, err)
+	defer f.Close()
 
 	// The first two blocks will correspond to the encoded Series' and Samples' blocks.
 	r := wal.NewReader(bufio.NewReader(f))
