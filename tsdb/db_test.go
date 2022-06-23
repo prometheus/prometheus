@@ -3548,11 +3548,13 @@ func TestMetadataFormatOnDisk(t *testing.T) {
 	mr = r.Record()
 	require.Equal(t, mr[0], byte(record.Metadata))
 	mb1, err = dec.Metadata(mr, mb1)
+	require.NoError(t, err)
 
 	require.True(t, r.Next(), "reading the fourth WAL record, it should be of type 'Metadata'")
 	mr = r.Record()
 	require.Equal(t, mr[0], byte(record.Metadata))
 	mb2, err = dec.Metadata(mr, mb2)
+	require.NoError(t, err)
 
 	expectedMetadata := []record.RefMetadata{
 		{Ref: 1, Type: record.GetMetricType(m1.Type), Unit: m1.Unit, Help: m1.Help},
