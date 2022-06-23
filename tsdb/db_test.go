@@ -3538,7 +3538,7 @@ func TestMetadataFormatOnDisk(t *testing.T) {
 	mr = r.Record()
 	require.Equal(t, mr[0], byte(record.Samples))
 
-	// The next two blocks will contain the commited metadata entries.
+	// The next two blocks will contain the committed metadata entries.
 	// Let's decode them to see that they're correctly written.
 	var dec record.Decoder
 	var mb1 []record.RefMetadata
@@ -3628,7 +3628,7 @@ func TestMetadataCheckpointingOnlyKeepsLatestEntry(t *testing.T) {
 	}
 
 	// There should only be 1 metadata block present, with only the latest metadata kept around.
-	var wantMetadata = []record.RefMetadata{
+	wantMetadata := []record.RefMetadata{
 		{Ref: 1, Type: record.GetMetricType(m2.Type), Unit: m2.Unit, Help: m2.Help},
 		{Ref: 2, Type: record.GetMetricType(m1.Type), Unit: m1.Unit, Help: m1.Help},
 		{Ref: 3, Type: record.GetMetricType(m1.Type), Unit: m1.Unit, Help: m1.Help},
