@@ -41,6 +41,7 @@ import (
 	"go.uber.org/goleak"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -3488,4 +3489,207 @@ func TestDBPanicOnMmappingHeadChunk(t *testing.T) {
 	addSamples(numSamples)
 
 	require.NoError(t, db.Close())
+}
+
+func TestMetadataFormatOnDisk(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	// Add some series so we can append metadata to them.
+	app := db.Appender(ctx)
+	app.Append(1, labels.FromStrings("a", "b"), 0, 0)
+	app.Append(2, labels.FromStrings("c", "d"), 0, 0)
+	app.Append(3, labels.FromStrings("e", "f"), 0, 0)
+	app.Append(4, labels.FromStrings("g", "h"), 0, 0)
+	app.Commit()
+
+	// Add a first round of metadata to the first three series.
+	// Re-take the Appender, as the previous Commit will have it closed.
+	app = db.Appender(ctx)
+	m1 := metadata.Metadata{Type: "gauge", Unit: "unit_1", Help: "help_1"}
+	m2 := metadata.Metadata{Type: "counter", Unit: "unit_2", Help: "help_2"}
+	app.AppendMetadata(1, labels.FromStrings("a", "b"), m1)
+	app.AppendMetadata(2, labels.FromStrings("c", "d"), m1)
+	app.AppendMetadata(3, labels.FromStrings("e", "f"), m1)
+	app.Commit()
+
+	// Add a replicated metadata entry to the first series,
+	// a changed metadata entry to the second series,
+	// and a completely new metadata entry for the fourth series.
+	app = db.Appender(ctx)
+	app.AppendMetadata(1, labels.FromStrings("a", "b"), m1)
+	app.AppendMetadata(2, labels.FromStrings("c", "d"), m2)
+	app.AppendMetadata(4, labels.FromStrings("g", "h"), m2)
+	app.Commit()
+
+	// Read the WAL to see if the disk storage format is correct.
+	walFiles, err := os.ReadDir(path.Join(db.Dir(), "wal"))
+	require.NoError(t, err)
+	f, err := os.OpenFile(path.Join(db.Dir(), "wal", walFiles[0].Name()), os.O_RDWR, 0o666)
+	require.NoError(t, err)
+
+	// The first two blocks will correspond to the encoded Series' and Samples' blocks.
+	r := wal.NewReader(bufio.NewReader(f))
+	require.True(t, r.Next(), "reading the first WAL record, it should be of type 'Series'")
+	mr := r.Record()
+	require.Equal(t, mr[0], byte(record.Series))
+
+	require.True(t, r.Next(), "reading the second WAL record, it should be of type 'Samples'")
+	mr = r.Record()
+	require.Equal(t, mr[0], byte(record.Samples))
+
+	// The next two blocks will contain the commited metadata entries.
+	// Let's decode them to see that they're correctly written.
+	var dec record.Decoder
+	var mb1 []record.RefMetadata
+	var mb2 []record.RefMetadata
+
+	require.True(t, r.Next(), "reading the third WAL record, it should be of type 'Metadata'")
+	mr = r.Record()
+	require.Equal(t, mr[0], byte(record.Metadata))
+	mb1, err = dec.Metadata(mr, mb1)
+
+	require.True(t, r.Next(), "reading the fourth WAL record, it should be of type 'Metadata'")
+	mr = r.Record()
+	require.Equal(t, mr[0], byte(record.Metadata))
+	mb2, err = dec.Metadata(mr, mb2)
+
+	expectedMetadata := []record.RefMetadata{
+		{Ref: 1, Type: record.GetMetricType(m1.Type), Unit: m1.Unit, Help: m1.Help},
+		{Ref: 2, Type: record.GetMetricType(m1.Type), Unit: m1.Unit, Help: m1.Help},
+		{Ref: 3, Type: record.GetMetricType(m1.Type), Unit: m1.Unit, Help: m1.Help},
+		{Ref: 2, Type: record.GetMetricType(m2.Type), Unit: m2.Unit, Help: m2.Help},
+		{Ref: 4, Type: record.GetMetricType(m2.Type), Unit: m2.Unit, Help: m2.Help},
+	}
+	require.Len(t, mb1, 3)
+	require.Len(t, mb2, 2)
+	require.Equal(t, expectedMetadata[:3], mb1)
+	require.Equal(t, expectedMetadata[3:], mb2)
+
+	require.False(t, r.Next(), "the WAL shouldn't contain any more records")
+}
+
+func TestMetadataCheckpointingOnlyKeepsLatestEntry(t *testing.T) {
+	ctx := context.Background()
+	numSamples := 10000
+	hb, w := newTestHead(t, int64(numSamples)*10, false)
+
+	// Add some series so we can append metadata to them.
+	app := hb.Appender(ctx)
+	app.Append(9001, labels.FromStrings("a", "b"), 0, 0)
+	app.Append(9002, labels.FromStrings("c", "d"), 0, 0)
+	app.Append(9002, labels.FromStrings("e", "f"), 0, 0)
+	app.Commit()
+
+	// Add a first round of metadata to the first three series.
+	// Re-take the Appender, as the previous Commit will have it closed.
+	app = hb.Appender(ctx)
+	m1 := metadata.Metadata{Type: "gauge", Unit: "unit_1", Help: "help_1"}
+	m2 := metadata.Metadata{Type: "counter", Unit: "unit_2", Help: "help_2"}
+	app.AppendMetadata(9001, labels.FromStrings("a", "b"), m1)
+	app.AppendMetadata(9002, labels.FromStrings("c", "d"), m1)
+	app.AppendMetadata(9003, labels.FromStrings("e", "f"), m1)
+
+	// Update metadata for first series.
+	app.AppendMetadata(9001, labels.FromStrings("a", "b"), m2)
+
+	// Switch back-and-forth metadata for second series.
+	// Since it ended on the same metadata record, we don't expect a new addition here.
+	app.AppendMetadata(9002, labels.FromStrings("c", "d"), m1)
+	app.AppendMetadata(9002, labels.FromStrings("c", "d"), m2)
+	app.AppendMetadata(9002, labels.FromStrings("c", "d"), m1)
+	app.AppendMetadata(9002, labels.FromStrings("c", "d"), m2)
+	app.AppendMetadata(9002, labels.FromStrings("c", "d"), m1)
+	app.Commit()
+
+	// Add enough samples after the metadata to cause a checkpoint.
+	for i := 0; i < numSamples; i++ {
+		app := hb.Appender(context.Background())
+		_, err := app.Append(0, labels.Labels{{Name: "a", Value: "b"}}, int64(i), 0)
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+	}
+	require.NoError(t, hb.Delete(0, int64(numSamples), labels.MustNewMatcher(labels.MatchEqual, "a", "b")))
+	require.NoError(t, hb.Truncate(1))
+	require.NoError(t, hb.Close())
+
+	// Confirm there's been a checkpoint.
+	cdir, _, err := wal.LastCheckpoint(w.Dir())
+	require.NoError(t, err)
+
+	// Read in checkpoint and WAL.
+	recs := readTestWAL(t, cdir)
+	recs = append(recs, readTestWAL(t, w.Dir())...)
+	var gotMetadataBlocks [][]record.RefMetadata
+	for _, rec := range recs {
+		if _, ok := rec.([]record.RefMetadata); ok {
+			gotMetadataBlocks = append(gotMetadataBlocks, rec.([]record.RefMetadata))
+		}
+	}
+
+	// There should only be 1 metadata block present, with only the latest metadata kept around.
+	var wantMetadata = []record.RefMetadata{
+		{Ref: 1, Type: record.GetMetricType(m2.Type), Unit: m2.Unit, Help: m2.Help},
+		{Ref: 2, Type: record.GetMetricType(m1.Type), Unit: m1.Unit, Help: m1.Help},
+		{Ref: 3, Type: record.GetMetricType(m1.Type), Unit: m1.Unit, Help: m1.Help},
+	}
+	require.Len(t, gotMetadataBlocks, 1)
+
+	// The usage of a map in Checkpointing means that the metadata may have been written out-of-order,
+	// that's why we're not explicitly comparing the two slices.
+	for _, m := range gotMetadataBlocks[0] {
+		require.Contains(t, wantMetadata, m)
+	}
+}
+
+func TestMetadataAssertInMemoryData(t *testing.T) {
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	// Add some series so we can append metadata to them.
+	app := db.Appender(ctx)
+	app.Append(1, labels.FromStrings("a", "b"), 0, 0)
+	app.Append(2, labels.FromStrings("c", "d"), 0, 0)
+	app.Append(3, labels.FromStrings("e", "f"), 0, 0)
+	app.Append(4, labels.FromStrings("g", "h"), 0, 0)
+	app.Commit()
+
+	// Add a first round of metadata to the first three series.
+	// The in-memory data held in the db Head should hold the metadata.
+	// Re-take the Appender, as the previous Commit will have it closed.
+	app = db.Appender(ctx)
+	m1 := metadata.Metadata{Type: "gauge", Unit: "unit_1", Help: "help_1"}
+	m2 := metadata.Metadata{Type: "counter", Unit: "unit_2", Help: "help_2"}
+	app.AppendMetadata(1, labels.FromStrings("a", "b"), m1)
+	app.AppendMetadata(2, labels.FromStrings("c", "d"), m1)
+	app.AppendMetadata(3, labels.FromStrings("e", "f"), m1)
+	app.Commit()
+
+	s1 := db.head.series.getByID(1)
+	s2 := db.head.series.getByID(2)
+	s3 := db.head.series.getByID(3)
+	s4 := db.head.series.getByID(4)
+	require.Equal(t, s1.meta, m1)
+	require.Equal(t, s2.meta, m1)
+	require.Equal(t, s3.meta, m1)
+	require.Equal(t, s4.meta, metadata.Metadata{})
+
+	// Add a replicated metadata entry to the first series,
+	// a changed metadata entry to the second series,
+	// and a completely new metadata entry for the fourth series.
+	// The in-memory data held in the db Head should be correctly updated.
+	app = db.Appender(ctx)
+	app.AppendMetadata(1, labels.FromStrings("a", "b"), m1)
+	app.AppendMetadata(2, labels.FromStrings("c", "d"), m2)
+	app.AppendMetadata(4, labels.FromStrings("g", "h"), m2)
+	app.Commit()
+
+	s1 = db.head.series.getByID(1)
+	s2 = db.head.series.getByID(2)
+	s3 = db.head.series.getByID(3)
+	s4 = db.head.series.getByID(4)
+	require.Equal(t, s1.meta, m1)
+	require.Equal(t, s2.meta, m2)
+	require.Equal(t, s3.meta, m1)
+	require.Equal(t, s4.meta, m2)
 }

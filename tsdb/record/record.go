@@ -157,7 +157,7 @@ type RefExemplar struct {
 	Labels labels.Labels
 }
 
-// Decoder decodes series, sample, and tombstone records.
+// Decoder decodes series, sample, metadata and tombstone records.
 // The zero value is ready to use.
 type Decoder struct{}
 
