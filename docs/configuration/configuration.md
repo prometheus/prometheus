@@ -1713,6 +1713,8 @@ Available meta labels:
 
 * `__meta_kubernetes_namespace`: The namespace of the endpoints object.
 * `__meta_kubernetes_endpoints_name`: The names of the endpoints object.
+* `__meta_kubernetes_endpoints_label_<labelname>`: Each label from the endpoints object.
+* `__meta_kubernetes_endpoints_labelpresent_<labelname>`: `true`for each label from the endpoints object.
 * For all targets discovered directly from the endpoints list (those not additionally inferred
   from underlying pods), the following labels are attached:
   * `__meta_kubernetes_endpoint_hostname`: Hostname of the endpoint.
