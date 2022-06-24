@@ -1410,7 +1410,7 @@ func TestTimeRetention(t *testing.T) {
 
 func TestSizeRetention(t *testing.T) {
 	opts := DefaultOptions()
-	opts.OutOfOrderAllowance = 100
+	opts.OutOfOrderTimeWindow = 100
 	db := openTestDB(t, opts, []int64{100})
 	defer func() {
 		require.NoError(t, db.Close())
@@ -3469,7 +3469,7 @@ func TestOOOWALWrite(t *testing.T) {
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMin = 2
 	opts.OutOfOrderCapMax = 2
-	opts.OutOfOrderAllowance = 30 * time.Minute.Milliseconds()
+	opts.OutOfOrderTimeWindow = 30 * time.Minute.Milliseconds()
 
 	db, err := Open(dir, nil, nil, opts, nil)
 	require.NoError(t, err)
@@ -3720,7 +3720,7 @@ func TestOOOCompaction(t *testing.T) {
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMin = 2
 	opts.OutOfOrderCapMax = 30
-	opts.OutOfOrderAllowance = 300 * time.Minute.Milliseconds()
+	opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
 	opts.AllowOverlappingQueries = true
 	opts.AllowOverlappingCompaction = true
 
@@ -3903,7 +3903,7 @@ func TestOOOCompactionWithNormalCompaction(t *testing.T) {
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMin = 2
 	opts.OutOfOrderCapMax = 30
-	opts.OutOfOrderAllowance = 300 * time.Minute.Milliseconds()
+	opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
 	opts.AllowOverlappingQueries = true
 	opts.AllowOverlappingCompaction = true
 
@@ -4001,7 +4001,7 @@ func Test_Querier_OOOQuery(t *testing.T) {
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMin = 2
 	opts.OutOfOrderCapMax = 30
-	opts.OutOfOrderAllowance = 24 * time.Hour.Milliseconds()
+	opts.OutOfOrderTimeWindow = 24 * time.Hour.Milliseconds()
 	opts.AllowOverlappingQueries = true
 	opts.AllowOverlappingCompaction = false
 
@@ -4088,7 +4088,7 @@ func Test_ChunkQuerier_OOOQuery(t *testing.T) {
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMin = 2
 	opts.OutOfOrderCapMax = 30
-	opts.OutOfOrderAllowance = 24 * time.Hour.Milliseconds()
+	opts.OutOfOrderTimeWindow = 24 * time.Hour.Milliseconds()
 	opts.AllowOverlappingQueries = true
 	opts.AllowOverlappingCompaction = false
 
@@ -4183,7 +4183,7 @@ func TestOOOAppendAndQuery(t *testing.T) {
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMin = 2
 	opts.OutOfOrderCapMax = 30
-	opts.OutOfOrderAllowance = 4 * time.Hour.Milliseconds()
+	opts.OutOfOrderTimeWindow = 4 * time.Hour.Milliseconds()
 	opts.AllowOverlappingQueries = true
 
 	db := openTestDB(t, opts, nil)
@@ -4253,19 +4253,19 @@ func TestOOOAppendAndQuery(t *testing.T) {
 	verifyOOOMinMaxTimes(250, 265)
 	testQuery()
 
-	// Out of allowance.
+	// Out of time window.
 	addSample(s1, 59, 59, true)
 	addSample(s2, 49, 49, true)
 	verifyOOOMinMaxTimes(250, 265)
 	testQuery()
 
-	// At the edge of allowance, also it would be "out of bound" without the ooo support.
+	// At the edge of time window, also it would be "out of bound" without the ooo support.
 	addSample(s1, 60, 65, false)
 	addSample(s2, 50, 55, false)
 	verifyOOOMinMaxTimes(50, 265)
 	testQuery()
 
-	// Out of allowance again.
+	// Out of time window again.
 	addSample(s1, 59, 59, true)
 	addSample(s2, 49, 49, true)
 	testQuery()
@@ -4282,7 +4282,7 @@ func TestOOOAppendAndQuery(t *testing.T) {
 
 func TestOOODisabled(t *testing.T) {
 	opts := DefaultOptions()
-	opts.OutOfOrderAllowance = 0
+	opts.OutOfOrderTimeWindow = 0
 	db := openTestDB(t, opts, nil)
 	db.DisableCompactions()
 	t.Cleanup(func() {
@@ -4319,9 +4319,9 @@ func TestOOODisabled(t *testing.T) {
 
 	addSample(s1, 300, 300, false) // In-order samples.
 	addSample(s1, 250, 260, true)  // Some ooo samples.
-	addSample(s1, 59, 59, true)    // Out of allowance.
-	addSample(s1, 60, 65, true)    // At the edge of allowance, also it would be "out of bound" without the ooo support.
-	addSample(s1, 59, 59, true)    // Out of allowance again.
+	addSample(s1, 59, 59, true)    // Out of time window.
+	addSample(s1, 60, 65, true)    // At the edge of time window, also it would be "out of bound" without the ooo support.
+	addSample(s1, 59, 59, true)    // Out of time window again.
 	addSample(s1, 301, 310, false) // More in-order samples.
 
 	querier, err := db.Querier(context.TODO(), math.MinInt64, math.MaxInt64)
@@ -4350,7 +4350,7 @@ func TestWBLAndMmapReplay(t *testing.T) {
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMin = 2
 	opts.OutOfOrderCapMax = 30
-	opts.OutOfOrderAllowance = 4 * time.Hour.Milliseconds()
+	opts.OutOfOrderTimeWindow = 4 * time.Hour.Milliseconds()
 	opts.AllowOverlappingQueries = true
 
 	db := openTestDB(t, opts, nil)
@@ -4555,7 +4555,7 @@ func TestOOOCompactionFailure(t *testing.T) {
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMin = 2
 	opts.OutOfOrderCapMax = 30
-	opts.OutOfOrderAllowance = 300 * time.Minute.Milliseconds()
+	opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
 	opts.AllowOverlappingQueries = true
 	opts.AllowOverlappingCompaction = true
 
@@ -4697,7 +4697,7 @@ func TestWBLCorruption(t *testing.T) {
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMin = 2
 	opts.OutOfOrderCapMax = 30
-	opts.OutOfOrderAllowance = 300 * time.Minute.Milliseconds()
+	opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
 	opts.AllowOverlappingQueries = true
 	opts.AllowOverlappingCompaction = true
 
@@ -4844,7 +4844,7 @@ func TestOOOMmapCorruption(t *testing.T) {
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMin = 2
 	opts.OutOfOrderCapMax = 10
-	opts.OutOfOrderAllowance = 300 * time.Minute.Milliseconds()
+	opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
 	opts.AllowOverlappingQueries = true
 	opts.AllowOverlappingCompaction = true
 
@@ -4965,11 +4965,11 @@ func TestOOOMmapCorruption(t *testing.T) {
 }
 
 func TestOutOfOrderRuntimeConfig(t *testing.T) {
-	getDB := func(oooAllowance int64) *DB {
+	getDB := func(oooTimeWindow int64) *DB {
 		dir := t.TempDir()
 
 		opts := DefaultOptions()
-		opts.OutOfOrderAllowance = oooAllowance
+		opts.OutOfOrderTimeWindow = oooTimeWindow
 
 		db, err := Open(dir, nil, nil, opts, nil)
 		require.NoError(t, err)
@@ -4981,11 +4981,11 @@ func TestOutOfOrderRuntimeConfig(t *testing.T) {
 		return db
 	}
 
-	makeConfig := func(oooAllowanceMins int) *config.Config {
+	makeConfig := func(oooTimeWindow int) *config.Config {
 		return &config.Config{
 			StorageConfig: config.StorageConfig{
 				TSDBConfig: &config.TSDBConfig{
-					OutOfOrderAllowance: int64(oooAllowanceMins) * time.Minute.Milliseconds(),
+					OutOfOrderTimeWindow: int64(oooTimeWindow) * time.Minute.Milliseconds(),
 				},
 			},
 		}
@@ -5040,7 +5040,7 @@ func TestOutOfOrderRuntimeConfig(t *testing.T) {
 		require.Equal(t, int64(0), size)
 	}
 
-	t.Run("increase allowance", func(t *testing.T) {
+	t.Run("increase time window", func(t *testing.T) {
 		var allSamples []tsdbutil.Sample
 		db := getDB(30 * time.Minute.Milliseconds())
 
@@ -5057,7 +5057,7 @@ func TestOutOfOrderRuntimeConfig(t *testing.T) {
 
 		oldWblPtr := fmt.Sprintf("%p", db.head.wbl)
 
-		// Increase allowance and try adding again.
+		// Increase time window and try adding again.
 		err := db.ApplyConfig(makeConfig(60))
 		require.NoError(t, err)
 		allSamples = addSamples(t, db, 251, 260, true, allSamples)
@@ -5070,7 +5070,7 @@ func TestOutOfOrderRuntimeConfig(t *testing.T) {
 		verifySamples(t, db, allSamples)
 	})
 
-	t.Run("decrease allowance and increase again", func(t *testing.T) {
+	t.Run("decrease time window and increase again", func(t *testing.T) {
 		var allSamples []tsdbutil.Sample
 		db := getDB(60 * time.Minute.Milliseconds())
 
@@ -5081,7 +5081,7 @@ func TestOutOfOrderRuntimeConfig(t *testing.T) {
 		allSamples = addSamples(t, db, 251, 260, true, allSamples)
 
 		oldWblPtr := fmt.Sprintf("%p", db.head.wbl)
-		// Decrease allowance.
+		// Decrease time window.
 		err := db.ApplyConfig(makeConfig(30))
 		require.NoError(t, err)
 
@@ -5095,7 +5095,7 @@ func TestOutOfOrderRuntimeConfig(t *testing.T) {
 
 		verifySamples(t, db, allSamples)
 
-		// Increase allowance again and check
+		// Increase time window again and check
 		err = db.ApplyConfig(makeConfig(60))
 		require.NoError(t, err)
 		allSamples = addSamples(t, db, 261, 270, true, allSamples)
@@ -5123,7 +5123,7 @@ func TestOutOfOrderRuntimeConfig(t *testing.T) {
 
 		require.Nil(t, db.head.wbl)
 
-		// Increase allowance and try adding again.
+		// Increase time window and try adding again.
 		err := db.ApplyConfig(makeConfig(60))
 		require.NoError(t, err)
 		allSamples = addSamples(t, db, 251, 260, true, allSamples)
@@ -5149,11 +5149,11 @@ func TestOutOfOrderRuntimeConfig(t *testing.T) {
 		allSamples = addSamples(t, db, 251, 260, true, allSamples)
 
 		oldWblPtr := fmt.Sprintf("%p", db.head.wbl)
-		// Allowance to 0, hence disabled.
+		// Time Window to 0, hence disabled.
 		err := db.ApplyConfig(makeConfig(0))
 		require.NoError(t, err)
 
-		// OOO within old allowance fails.
+		// OOO within old time window fails.
 		s := addSamples(t, db, 290, 309, false, nil)
 		require.Len(t, s, 0)
 
@@ -5181,7 +5181,7 @@ func TestOutOfOrderRuntimeConfig(t *testing.T) {
 		verifySamples(t, db, allSamples)
 		require.Nil(t, db.head.wbl)
 
-		// Allowance to 0.
+		// Time window to 0.
 		err := db.ApplyConfig(makeConfig(0))
 		require.NoError(t, err)
 

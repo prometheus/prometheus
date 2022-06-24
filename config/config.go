@@ -507,15 +507,15 @@ type StorageConfig struct {
 
 // TSDBConfig configures runtime reloadable configuration options.
 type TSDBConfig struct {
-	// OutOfOrderAllowance sets how long back in time an out-of-order sample can be inserted
+	// OutOfOrderTimeWindow sets how long back in time an out-of-order sample can be inserted
 	// into the TSDB. This is the one finally used by the TSDB and should be in the same unit
 	// as other timestamps in the TSDB.
-	OutOfOrderAllowance int64
+	OutOfOrderTimeWindow int64
 
-	// OutOfOrderAllowanceFlag holds the parsed duration from the config file.
-	// During unmarshall, this is converted into milliseconds and stored in OutOfOrderAllowance.
-	// This should not be used directly and must be converted into OutOfOrderAllowance.
-	OutOfOrderAllowanceFlag model.Duration `yaml:"out_of_order_allowance,omitempty"`
+	// OutOfOrderTimeWindowFlag holds the parsed duration from the config file.
+	// During unmarshall, this is converted into milliseconds and stored in OutOfOrderTimeWindow.
+	// This should not be used directly and must be converted into OutOfOrderTimeWindow.
+	OutOfOrderTimeWindowFlag model.Duration `yaml:"out_of_order_time_window,omitempty"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -526,7 +526,7 @@ func (t *TSDBConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 
-	t.OutOfOrderAllowance = time.Duration(t.OutOfOrderAllowanceFlag).Milliseconds()
+	t.OutOfOrderTimeWindow = time.Duration(t.OutOfOrderTimeWindowFlag).Milliseconds()
 
 	return nil
 }

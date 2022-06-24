@@ -364,7 +364,7 @@ func TestOOOHeadChunkReader_Chunk(t *testing.T) {
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMin = 1
 	opts.OutOfOrderCapMax = 5
-	opts.OutOfOrderAllowance = 120 * time.Minute.Milliseconds()
+	opts.OutOfOrderTimeWindow = 120 * time.Minute.Milliseconds()
 
 	s1 := labels.FromStrings("l", "v1")
 	minutes := func(m int64) int64 { return m * time.Minute.Milliseconds() }
@@ -772,7 +772,7 @@ func TestOOOHeadChunkReader_Chunk_ConsistentQueryResponseDespiteOfHeadExpanding(
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMin = 1
 	opts.OutOfOrderCapMax = 5
-	opts.OutOfOrderAllowance = 120 * time.Minute.Milliseconds()
+	opts.OutOfOrderTimeWindow = 120 * time.Minute.Milliseconds()
 
 	s1 := labels.FromStrings("l", "v1")
 	minutes := func(m int64) int64 { return m * time.Minute.Milliseconds() }

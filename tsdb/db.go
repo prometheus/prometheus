@@ -182,10 +182,10 @@ type Options struct {
 	// If nil, the cache won't be used.
 	SeriesHashCache *hashcache.SeriesHashCache
 
-	// OutOfOrderAllowance specifies how much out of order is allowed, if any.
+	// OutOfOrderTimeWindow specifies how much out of order is allowed, if any.
 	// This can change during run-time, so this value from here should only be used
 	// while initialising.
-	OutOfOrderAllowance int64
+	OutOfOrderTimeWindow int64
 
 	// OutOfOrderCapMin minimum capacity for OOO chunks (in samples).
 	// If it is <=0, the default value is assumed.
@@ -662,7 +662,7 @@ func validateOpts(opts *Options, rngs []int64) (*Options, []int64) {
 	if opts.MinBlockDuration > opts.MaxBlockDuration {
 		opts.MaxBlockDuration = opts.MinBlockDuration
 	}
-	if opts.OutOfOrderAllowance > 0 {
+	if opts.OutOfOrderTimeWindow > 0 {
 		opts.AllowOverlappingQueries = true
 	}
 	if opts.OutOfOrderCapMin <= 0 {
@@ -671,8 +671,8 @@ func validateOpts(opts *Options, rngs []int64) (*Options, []int64) {
 	if opts.OutOfOrderCapMax <= 0 {
 		opts.OutOfOrderCapMax = DefaultOutOfOrderCapMax
 	}
-	if opts.OutOfOrderAllowance < 0 {
-		opts.OutOfOrderAllowance = 0
+	if opts.OutOfOrderTimeWindow < 0 {
+		opts.OutOfOrderTimeWindow = 0
 	}
 
 	if len(rngs) == 0 {
@@ -792,14 +792,14 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 		if err != nil {
 			return nil, err
 		}
-		if opts.OutOfOrderAllowance > 0 {
+		if opts.OutOfOrderTimeWindow > 0 {
 			wblog, err = wal.NewSize(l, r, wblDir, segmentSize, opts.WALCompression)
 			if err != nil {
 				return nil, err
 			}
 		}
 	}
-	db.oooWasEnabled.Store(opts.OutOfOrderAllowance > 0)
+	db.oooWasEnabled.Store(opts.OutOfOrderTimeWindow > 0)
 	headOpts := DefaultHeadOptions()
 	headOpts.ChunkRange = rngs[0]
 	headOpts.ChunkDirRoot = dir
@@ -812,7 +812,7 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	headOpts.EnableExemplarStorage = opts.EnableExemplarStorage
 	headOpts.MaxExemplars.Store(opts.MaxExemplars)
 	headOpts.EnableMemorySnapshotOnShutdown = opts.EnableMemorySnapshotOnShutdown
-	headOpts.OutOfOrderAllowance.Store(opts.OutOfOrderAllowance)
+	headOpts.OutOfOrderTimeWindow.Store(opts.OutOfOrderTimeWindow)
 	headOpts.OutOfOrderCapMin.Store(opts.OutOfOrderCapMin)
 	headOpts.OutOfOrderCapMax.Store(opts.OutOfOrderCapMax)
 	headOpts.NewChunkDiskMapper = opts.NewChunkDiskMapper
@@ -953,32 +953,32 @@ func (db *DB) Appender(ctx context.Context) storage.Appender {
 }
 
 // ApplyConfig applies a new config to the DB.
-// Behaviour of 'OutOfOrderAllowance' is as follows:
-// OOO enabled = oooAllowance > 0. OOO disabled = oooAllowance is 0.
+// Behaviour of 'OutOfOrderTimeWindow' is as follows:
+// OOO enabled = oooTimeWindow > 0. OOO disabled = oooTimeWindow is 0.
 // 1) Before: OOO disabled, Now: OOO enabled =>
 //    * A new WBL is created for the head block.
 //    * OOO compaction is enabled.
 //    * Overlapping queries are enabled.
 // 2) Before: OOO enabled, Now: OOO enabled =>
-//    * Only the allowance is updated.
+//    * Only the time window is updated.
 // 3) Before: OOO enabled, Now: OOO disabled =>
-//    * Allowance set to 0. So no new OOO samples will be allowed.
+//    * Time Window set to 0. So no new OOO samples will be allowed.
 //    * OOO WBL will stay and follow the usual cleanup until a restart.
 //    * OOO Compaction and overlapping queries will remain enabled until a restart.
 // 4) Before: OOO disabled, Now: OOO disabled => no-op.
 func (db *DB) ApplyConfig(conf *config.Config) error {
-	oooAllowance := int64(0)
+	oooTimeWindow := int64(0)
 	if conf.StorageConfig.TSDBConfig != nil {
-		oooAllowance = conf.StorageConfig.TSDBConfig.OutOfOrderAllowance
+		oooTimeWindow = conf.StorageConfig.TSDBConfig.OutOfOrderTimeWindow
 	}
-	if oooAllowance < 0 {
-		oooAllowance = 0
+	if oooTimeWindow < 0 {
+		oooTimeWindow = 0
 	}
 
 	// Create WBL if it was not present and if OOO is enabled with WAL enabled.
 	var wblog *wal.WAL
 	var err error
-	if !db.oooWasEnabled.Load() && oooAllowance > 0 && db.opts.WALSegmentSize >= 0 {
+	if !db.oooWasEnabled.Load() && oooTimeWindow > 0 && db.opts.WALSegmentSize >= 0 {
 		segmentSize := wal.DefaultSegmentSize
 		// Wal is set to a custom size.
 		if db.opts.WALSegmentSize > 0 {
@@ -994,7 +994,7 @@ func (db *DB) ApplyConfig(conf *config.Config) error {
 	db.head.ApplyConfig(conf, wblog)
 
 	if !db.oooWasEnabled.Load() {
-		db.oooWasEnabled.Store(oooAllowance > 0)
+		db.oooWasEnabled.Store(oooTimeWindow > 0)
 	}
 	return nil
 }

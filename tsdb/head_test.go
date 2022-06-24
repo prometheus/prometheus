@@ -3249,7 +3249,7 @@ func TestOOOWalReplay(t *testing.T) {
 	opts := DefaultHeadOptions()
 	opts.ChunkRange = 1000
 	opts.ChunkDirRoot = dir
-	opts.OutOfOrderAllowance.Store(30 * time.Minute.Milliseconds())
+	opts.OutOfOrderTimeWindow.Store(30 * time.Minute.Milliseconds())
 
 	h, err := NewHead(nil, nil, wlog, oooWlog, opts, nil)
 	require.NoError(t, err)
@@ -3334,7 +3334,7 @@ func TestOOOMmapReplay(t *testing.T) {
 	opts.ChunkRange = 1000
 	opts.ChunkDirRoot = dir
 	opts.OutOfOrderCapMax.Store(30)
-	opts.OutOfOrderAllowance.Store(1000 * time.Minute.Milliseconds())
+	opts.OutOfOrderTimeWindow.Store(1000 * time.Minute.Milliseconds())
 
 	h, err := NewHead(nil, nil, wlog, oooWlog, opts, nil)
 	require.NoError(t, err)
@@ -3626,7 +3626,7 @@ func TestOOOAppendWithNoSeries(t *testing.T) {
 	opts := DefaultHeadOptions()
 	opts.ChunkDirRoot = dir
 	opts.OutOfOrderCapMax.Store(30)
-	opts.OutOfOrderAllowance.Store(120 * time.Minute.Milliseconds())
+	opts.OutOfOrderTimeWindow.Store(120 * time.Minute.Milliseconds())
 
 	h, err := NewHead(nil, nil, wlog, oooWlog, opts, nil)
 	require.NoError(t, err)
