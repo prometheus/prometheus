@@ -357,6 +357,19 @@ func (h *Head) resetSeriesWithMMappedChunks(mSeries *memSeries, mmc, oooMmc []*m
 		mSeries.mmMaxTime = mmc[len(mmc)-1].maxTime
 		h.updateMinMaxTime(mmc[0].minTime, mSeries.mmMaxTime)
 	}
+	if len(oooMmc) != 0 {
+		// mint and maxt can be in any chunk, they are not sorted.
+		mint, maxt := int64(math.MaxInt64), int64(math.MinInt64)
+		for _, ch := range oooMmc {
+			if ch.minTime < mint {
+				mint = ch.minTime
+			}
+			if ch.maxTime > maxt {
+				maxt = ch.maxTime
+			}
+		}
+		h.updateMinOOOMaxOOOTime(mint, maxt)
+	}
 
 	// Any samples replayed till now would already be compacted. Resetting the head chunk.
 	// We do not reset oooHeadChunk because that is being replayed from a different WAL
@@ -497,7 +510,7 @@ func (h *Head) loadWbl(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 		processors[i].setup()
 
 		go func(wp *wblSubsetProcessor) {
-			unknown := wp.processWALSamples(h)
+			unknown := wp.processWBLSamples(h)
 			unknownRefs.Add(unknown)
 			wg.Done()
 		}(&processors[i])
@@ -679,14 +692,14 @@ func (wp *wblSubsetProcessor) reuseBuf() []record.RefSample {
 	return nil
 }
 
-// processWALSamples adds the samples it receives to the head and passes
+// processWBLSamples adds the samples it receives to the head and passes
 // the buffer received to an output channel for reuse.
 // Samples before the minValidTime timestamp are discarded.
-func (wp *wblSubsetProcessor) processWALSamples(h *Head) (unknownRefs uint64) {
+func (wp *wblSubsetProcessor) processWBLSamples(h *Head) (unknownRefs uint64) {
 	defer close(wp.output)
 
 	// We don't check for minValidTime for ooo samples.
-
+	mint, maxt := int64(math.MaxInt64), int64(math.MinInt64)
 	for samples := range wp.input {
 		wp.mx.Lock()
 		for _, s := range samples {
@@ -695,14 +708,25 @@ func (wp *wblSubsetProcessor) processWALSamples(h *Head) (unknownRefs uint64) {
 				unknownRefs++
 				continue
 			}
-			if _, chunkCreated, _ := ms.insert(s.T, s.V, h.chunkDiskMapper); chunkCreated {
+			ok, chunkCreated, _ := ms.insert(s.T, s.V, h.chunkDiskMapper)
+			if chunkCreated {
 				h.metrics.chunksCreated.Inc()
 				h.metrics.chunks.Inc()
+			}
+			if ok {
+				if s.T < mint {
+					mint = s.T
+				}
+				if s.T > maxt {
+					maxt = s.T
+				}
 			}
 		}
 		wp.mx.Unlock()
 		wp.output <- samples
 	}
+
+	h.updateMinOOOMaxOOOTime(mint, maxt)
 
 	return unknownRefs
 }
