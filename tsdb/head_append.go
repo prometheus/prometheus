@@ -253,8 +253,8 @@ type headAppender struct {
 func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
 	// For OOO inserts, this restriction is irrelevant and will be checked later once we confirm the sample is an in-order append.
 	// If OOO inserts are disabled, we may as well as check this as early as we can and avoid more work.
-	oooAllowance := a.head.opts.OutOfOrderAllowance.Load()
-	if oooAllowance == 0 && t < a.minValidTime {
+	oooTimeWindow := a.head.opts.OutOfOrderTimeWindow.Load()
+	if oooTimeWindow == 0 && t < a.minValidTime {
 		a.head.metrics.outOfBoundSamples.Inc()
 		return 0, storage.ErrOutOfBounds
 	}
@@ -288,7 +288,7 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 	s.Lock()
 	// TODO: if we definitely know at this point that the sample is ooo, then optimise
 	// to skip that sample from the WAL and write only in the WBL.
-	_, delta, err := s.appendable(t, v, a.headMaxt, a.minValidTime, oooAllowance)
+	_, delta, err := s.appendable(t, v, a.headMaxt, a.minValidTime, oooTimeWindow)
 	if err == nil {
 		s.pendingCommit = true
 	}
@@ -325,7 +325,7 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 // appendable checks whether the given sample is valid for appending to the series. (if we return false and no error)
 // The sample belongs to the out of order chunk if we return true and no error.
 // An error signifies the sample cannot be handled.
-func (s *memSeries) appendable(t int64, v float64, headMaxt, minValidTime, oooAllowance int64) (isOutOfOrder bool, delta int64, err error) {
+func (s *memSeries) appendable(t int64, v float64, headMaxt, minValidTime, oooTimeWindow int64) (isOutOfOrder bool, delta int64, err error) {
 	msMaxt := s.maxTime()
 	if msMaxt == math.MinInt64 {
 		// The series has no sample and was freshly created.
@@ -334,7 +334,7 @@ func (s *memSeries) appendable(t int64, v float64, headMaxt, minValidTime, oooAl
 			return false, 0, nil
 		}
 
-		// We cannot append it in the in-order head. So we check the oooAllowance
+		// We cannot append it in the in-order head. So we check the oooTimeWindow
 		// w.r.t. the head's maxt.
 		// -1 because for the first sample in the Head, headMaxt will be equal to t.
 		msMaxt = headMaxt - 1
@@ -344,8 +344,8 @@ func (s *memSeries) appendable(t int64, v float64, headMaxt, minValidTime, oooAl
 		return false, 0, nil
 	}
 
-	if t < msMaxt-oooAllowance {
-		if oooAllowance > 0 {
+	if t < msMaxt-oooTimeWindow {
+		if oooTimeWindow > 0 {
 			return true, msMaxt - t, storage.ErrTooOldSample
 		}
 		if t < minValidTime {
@@ -355,7 +355,7 @@ func (s *memSeries) appendable(t int64, v float64, headMaxt, minValidTime, oooAl
 	}
 
 	if t != msMaxt || s.head() == nil {
-		// Sample is ooo and within allowance OR series has no active chunk to check for duplicate sample.
+		// Sample is ooo and within time window OR series has no active chunk to check for duplicate sample.
 		return true, msMaxt - t, nil
 	}
 
@@ -503,9 +503,9 @@ func (a *headAppender) Commit() (err error) {
 
 	var (
 		samplesAppended = len(a.samples)
-		oooAccepted     int   // number of samples out of order but accepted: with ooo enabled and within allowance
+		oooAccepted     int   // number of samples out of order but accepted: with ooo enabled and within time window
 		oooRejected     int   // number of samples rejected due to: out of order but OOO support disabled.
-		tooOldRejected  int   // number of samples rejected due to: that are out of order but too old (OOO support enabled, but outside allowance)
+		tooOldRejected  int   // number of samples rejected due to: that are out of order but too old (OOO support enabled, but outside time window)
 		oobRejected     int   // number of samples rejected due to: out of bounds: with t < minValidTime (OOO support disabled)
 		inOrderMint     int64 = math.MaxInt64
 		inOrderMaxt     int64 = math.MinInt64
@@ -554,12 +554,12 @@ func (a *headAppender) Commit() (err error) {
 		wblSamples = nil
 		oooMmapMarkers = nil
 	}
-	oooAllowance := a.head.opts.OutOfOrderAllowance.Load()
+	oooTimeWindow := a.head.opts.OutOfOrderTimeWindow.Load()
 	for i, s := range a.samples {
 		series = a.sampleSeries[i]
 		series.Lock()
 
-		oooSample, delta, err := series.appendable(s.T, s.V, a.headMaxt, a.minValidTime, oooAllowance)
+		oooSample, delta, err := series.appendable(s.T, s.V, a.headMaxt, a.minValidTime, oooTimeWindow)
 		switch err {
 		case storage.ErrOutOfOrderSample:
 			samplesAppended--

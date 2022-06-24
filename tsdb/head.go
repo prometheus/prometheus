@@ -150,7 +150,7 @@ type HeadOptions struct {
 	ChunkWriteBufferSize int
 	ChunkEndTimeVariance float64
 	ChunkWriteQueueSize  int
-	OutOfOrderAllowance  atomic.Int64
+	OutOfOrderTimeWindow atomic.Int64
 	OutOfOrderCapMin     atomic.Int64
 	OutOfOrderCapMax     atomic.Int64
 
@@ -214,11 +214,11 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal, wbl *wal.WAL, opts *Hea
 		l = log.NewNopLogger()
 	}
 
-	if opts.OutOfOrderAllowance.Load() < 0 {
-		opts.OutOfOrderAllowance.Store(0)
+	if opts.OutOfOrderTimeWindow.Load() < 0 {
+		opts.OutOfOrderTimeWindow.Store(0)
 	}
 
-	// Allowance can be set on runtime. So the capMin and capMax should be valid
+	// Time window can be set on runtime. So the capMin and capMax should be valid
 	// even if ooo is not enabled yet.
 	capMin, capMax := opts.OutOfOrderCapMin.Load(), opts.OutOfOrderCapMax.Load()
 	if capMin > 255 {
@@ -429,7 +429,7 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 		}),
 		tooOldSamples: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_too_old_samples_total",
-			Help: "Total number of out of order samples ingestion failed attempts with out of support enabled, but sample outside of allowance.",
+			Help: "Total number of out of order samples ingestion failed attempts with out of support enabled, but sample outside of time window.",
 		}),
 		headTruncateFail: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_head_truncations_failed_total",
@@ -465,7 +465,7 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 		}),
 		oooHistogram: prometheus.NewHistogram(prometheus.HistogramOpts{
 			Name: "prometheus_tsdb_sample_ooo_delta",
-			Help: "Delta in seconds by which a sample is considered out of order (reported regardless of OOO allowance and whether sample is accepted or not).",
+			Help: "Delta in seconds by which a sample is considered out of order (reported regardless of OOO time window and whether sample is accepted or not).",
 			Buckets: []float64{
 				// Note that mimir distributor only gives us a range of wallclock-12h to wallclock+15min
 				60 * 10,      // 10 min
@@ -882,15 +882,15 @@ func (h *Head) removeCorruptedMmappedChunks(err error) (map[chunks.HeadSeriesRef
 }
 
 func (h *Head) ApplyConfig(cfg *config.Config, wbl *wal.WAL) {
-	oooAllowance := int64(0)
+	oooTimeWindow := int64(0)
 	if cfg.StorageConfig.TSDBConfig != nil {
-		oooAllowance = cfg.StorageConfig.TSDBConfig.OutOfOrderAllowance
+		oooTimeWindow = cfg.StorageConfig.TSDBConfig.OutOfOrderTimeWindow
 	}
-	if oooAllowance < 0 {
-		oooAllowance = 0
+	if oooTimeWindow < 0 {
+		oooTimeWindow = 0
 	}
 
-	h.SetOutOfOrderAllowance(oooAllowance, wbl)
+	h.SetOutOfOrderTimeWindow(oooTimeWindow, wbl)
 
 	if !h.opts.EnableExemplarStorage {
 		return
@@ -911,14 +911,14 @@ func (h *Head) ApplyConfig(cfg *config.Config, wbl *wal.WAL) {
 	level.Info(h.logger).Log("msg", "Exemplar storage resized", "from", prevSize, "to", newSize, "migrated", migrated)
 }
 
-// SetOutOfOrderAllowance updates the out of order related parameters.
+// SetOutOfOrderTimeWindow updates the out of order related parameters.
 // If the Head already has a WBL set, then the wbl will be ignored.
-func (h *Head) SetOutOfOrderAllowance(oooAllowance int64, wbl *wal.WAL) {
-	if oooAllowance > 0 && h.wbl == nil {
+func (h *Head) SetOutOfOrderTimeWindow(oooTimeWindow int64, wbl *wal.WAL) {
+	if oooTimeWindow > 0 && h.wbl == nil {
 		h.wbl = wbl
 	}
 
-	h.opts.OutOfOrderAllowance.Store(oooAllowance)
+	h.opts.OutOfOrderTimeWindow.Store(oooTimeWindow)
 }
 
 // PostingsCardinalityStats returns top 10 highest cardinality stats By label and value names.

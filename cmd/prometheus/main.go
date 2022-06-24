@@ -463,7 +463,7 @@ func main() {
 		cfg.tsdb.MaxExemplars = int64(cfgFile.StorageConfig.ExemplarsConfig.MaxExemplars)
 	}
 	if cfgFile.StorageConfig.TSDBConfig != nil {
-		cfg.tsdb.OutOfOrderAllowance = cfgFile.StorageConfig.TSDBConfig.OutOfOrderAllowance
+		cfg.tsdb.OutOfOrderTimeWindow = cfgFile.StorageConfig.TSDBConfig.OutOfOrderTimeWindow
 	}
 
 	// Now that the validity of the config is established, set the config
@@ -1535,7 +1535,7 @@ type tsdbOptions struct {
 	StripeSize                     int
 	MinBlockDuration               model.Duration
 	MaxBlockDuration               model.Duration
-	OutOfOrderAllowance            int64
+	OutOfOrderTimeWindow           int64
 	OutOfOrderCapMin               int
 	OutOfOrderCapMax               int
 	EnableExemplarStorage          bool
@@ -1560,7 +1560,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		EnableExemplarStorage:          opts.EnableExemplarStorage,
 		MaxExemplars:                   opts.MaxExemplars,
 		EnableMemorySnapshotOnShutdown: opts.EnableMemorySnapshotOnShutdown,
-		OutOfOrderAllowance:            opts.OutOfOrderAllowance,
+		OutOfOrderTimeWindow:           opts.OutOfOrderTimeWindow,
 		OutOfOrderCapMin:               int64(opts.OutOfOrderCapMin),
 		OutOfOrderCapMax:               int64(opts.OutOfOrderCapMax),
 	}
