@@ -250,10 +250,10 @@ func TestScrapePoolReload(t *testing.T) {
 	// On starting to run, new loops created on reload check whether their preceding
 	// equivalents have been stopped.
 	newLoop := func(opts scrapeLoopOptions) loop {
-		l := &testLoop{interval: time.Duration(reloadCfg.ScrapeInterval), timeout: time.Duration(reloadCfg.ScrapeTimeout)}
+		l := &testLoop{interval: time.Duration(opts.interval), timeout: time.Duration(opts.timeout)}
 		l.startFunc = func(interval, timeout time.Duration, errc chan<- error) {
-			require.Equal(t, 3*time.Second, interval, "Unexpected scrape interval")
-			require.Equal(t, 2*time.Second, timeout, "Unexpected scrape timeout")
+			require.Equal(t, 5*time.Second, interval, "Unexpected scrape interval")
+			require.Equal(t, 3*time.Second, timeout, "Unexpected scrape timeout")
 
 			mtx.Lock()
 			targetScraper := opts.scraper.(*targetScraper)
@@ -276,7 +276,11 @@ func TestScrapePoolReload(t *testing.T) {
 	// one terminated.
 
 	for i := 0; i < numTargets; i++ {
-		labels := labels.FromStrings(model.AddressLabel, fmt.Sprintf("example.com:%d", i))
+		labels := labels.FromStrings(
+			model.AddressLabel, fmt.Sprintf("example.com:%d", i),
+			model.ScrapeIntervalLabel, "5s",
+			model.ScrapeTimeoutLabel, "3s",
+		)
 		t := &Target{
 			labels:           labels,
 			discoveredLabels: labels,
