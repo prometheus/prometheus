@@ -17,12 +17,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/prometheus/prometheus/util/strutil"
 	"os"
 	"reflect"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/prometheus/prometheus/util/strutil"
 
 	disv1beta1 "k8s.io/api/discovery/v1beta1"
 

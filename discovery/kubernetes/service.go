@@ -146,18 +146,13 @@ func serviceSourceFromNamespaceAndName(namespace, name string) string {
 }
 
 const (
-	serviceNameLabel               = metaLabelPrefix + "service_name"
-	serviceLabelPrefix             = metaLabelPrefix + "service_label_"
-	serviceLabelPresentPrefix      = metaLabelPrefix + "service_labelpresent_"
-	serviceAnnotationPrefix        = metaLabelPrefix + "service_annotation_"
-	serviceAnnotationPresentPrefix = metaLabelPrefix + "service_annotationpresent_"
-	servicePortNameLabel           = metaLabelPrefix + "service_port_name"
-	servicePortNumberLabel         = metaLabelPrefix + "service_port_number"
-	servicePortProtocolLabel       = metaLabelPrefix + "service_port_protocol"
-	serviceClusterIPLabel          = metaLabelPrefix + "service_cluster_ip"
-	serviceLoadBalancerIP          = metaLabelPrefix + "service_loadbalancer_ip"
-	serviceExternalNameLabel       = metaLabelPrefix + "service_external_name"
-	serviceType                    = metaLabelPrefix + "service_type"
+	servicePortNameLabel     = metaLabelPrefix + "service_port_name"
+	servicePortNumberLabel   = metaLabelPrefix + "service_port_number"
+	servicePortProtocolLabel = metaLabelPrefix + "service_port_protocol"
+	serviceClusterIPLabel    = metaLabelPrefix + "service_cluster_ip"
+	serviceLoadBalancerIP    = metaLabelPrefix + "service_loadbalancer_ip"
+	serviceExternalNameLabel = metaLabelPrefix + "service_external_name"
+	serviceType              = metaLabelPrefix + "service_type"
 )
 
 func serviceLabels(svc *apiv1.Service) model.LabelSet {

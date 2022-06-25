@@ -252,7 +252,6 @@ func endpointSliceSourceFromNamespaceAndName(namespace, name string) string {
 }
 
 const (
-	endpointSliceNameLabel                          = metaLabelPrefix + "endpointslice_name"
 	endpointSliceAddressTypeLabel                   = metaLabelPrefix + "endpointslice_address_type"
 	endpointSlicePortNameLabel                      = metaLabelPrefix + "endpointslice_port_name"
 	endpointSlicePortProtocolLabel                  = metaLabelPrefix + "endpointslice_port_protocol"
