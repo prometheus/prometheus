@@ -405,8 +405,10 @@ scrape_configs:
 		return noopLoop()
 	}
 	sp := &scrapePool{
-		appendable:    &nopAppendable{},
-		activeTargets: map[uint64]*Target{},
+		appendable: &nopAppendable{},
+		activeTargets: map[uint64]*Target{
+			1: {},
+		},
 		loops: map[uint64]loop{
 			1: noopLoop(),
 		},
