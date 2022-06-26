@@ -312,19 +312,18 @@ func TestLabels_Equal(t *testing.T) {
 
 func TestLabels_FromStrings(t *testing.T) {
 	labels := FromStrings("aaa", "111", "bbb", "222")
-	// We can't use FromStrings here to check itself, so drop down to the underlying data structure
-	expected := Labels{[]Label{
-		{
-			Name:  "aaa",
-			Value: "111",
-		},
-		{
-			Name:  "bbb",
-			Value: "222",
-		},
-	}}
-
-	require.Equal(t, expected, labels, "unexpected labelset")
+	x := 0
+	labels.Range(func(l Label) {
+		switch x {
+		case 0:
+			require.Equal(t, Label{Name: "aaa", Value: "111"}, l, "unexpected value")
+		case 1:
+			require.Equal(t, Label{Name: "bbb", Value: "222"}, l, "unexpected value")
+		default:
+			t.Fatalf("unexpected labelset value %d: %v", x, l)
+		}
+		x++
+	})
 
 	require.Panics(t, func() { FromStrings("aaa", "111", "bbb") }) //nolint:staticcheck // Ignore SA5012, error is intentional test.
 }
