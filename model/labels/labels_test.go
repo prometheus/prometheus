@@ -571,19 +571,19 @@ func TestLabels_Get(t *testing.T) {
 // Labels_Get/with_30_labels/get_last_label       169ns ± 0%      29ns ± 0%   ~     (p=1.000 n=1+1)
 func BenchmarkLabels_Get(b *testing.B) {
 	maxLabels := 30
-	allLabels := make(Labels, maxLabels)
+	allLabels := make([]Label, maxLabels)
 	for i := 0; i < maxLabels; i++ {
 		allLabels[i] = Label{Name: strings.Repeat(string('a'+byte(i)), 5)}
 	}
 	for _, size := range []int{5, 10, maxLabels} {
 		b.Run(fmt.Sprintf("with %d labels", size), func(b *testing.B) {
-			labels := allLabels[:size]
+			labels := New(allLabels[:size]...)
 			for _, scenario := range []struct {
 				desc, label string
 			}{
-				{"get first label", labels[0].Name},
-				{"get middle label", labels[size/2].Name},
-				{"get last label", labels[size-1].Name},
+				{"get first label", allLabels[0].Name},
+				{"get middle label", allLabels[size/2].Name},
+				{"get last label", allLabels[size-1].Name},
 			} {
 				b.Run(scenario.desc, func(b *testing.B) {
 					b.ResetTimer()
