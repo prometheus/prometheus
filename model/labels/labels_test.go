@@ -641,6 +641,7 @@ func TestLabels_BytesWithLabels(t *testing.T) {
 
 func TestLabels_BytesWithoutLabels(t *testing.T) {
 	require.Equal(t, Labels{{"aaa", "111"}}.Bytes(nil), Labels{{"aaa", "111"}, {"bbb", "222"}, {"ccc", "333"}}.BytesWithoutLabels(nil, "bbb", "ccc"))
+	require.Equal(t, Labels{{MetricName, "333"}, {"aaa", "111"}}.Bytes(nil), Labels{{MetricName, "333"}, {"aaa", "111"}, {"bbb", "222"}}.BytesWithoutLabels(nil, "bbb"))
 	require.Equal(t, Labels{{"aaa", "111"}}.Bytes(nil), Labels{{MetricName, "333"}, {"aaa", "111"}, {"bbb", "222"}}.BytesWithoutLabels(nil, MetricName, "bbb"))
 }
 
