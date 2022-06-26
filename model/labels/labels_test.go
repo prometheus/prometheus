@@ -730,7 +730,6 @@ func TestLabels_Hash(t *testing.T) {
 		{Name: "baz", Value: "qux"},
 	}
 	require.Equal(t, lbls.Hash(), lbls.Hash())
-	require.NotEqual(t, lbls.Hash(), Labels{lbls[1], lbls[0]}.Hash(), "unordered labels match.")
 	require.NotEqual(t, lbls.Hash(), Labels{lbls[0]}.Hash(), "different labels match.")
 }
 
