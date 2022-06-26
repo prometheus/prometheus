@@ -747,6 +747,40 @@ func TestMarshaling(t *testing.T) {
 	require.Equal(t, f, gotFY)
 }
 
+func TestFilter(t *testing.T) {
+	labels := FromStrings("aaa", "111", "bbb", "2222", "ccc", "33333")
+	for i, tc := range []struct {
+		f        func(l Label) bool
+		expected Labels
+	}{
+		{ // 0: No-op.
+			f:        func(l Label) bool { return true },
+			expected: labels,
+		},
+		{ // 0: Remove everything.
+			f:        func(l Label) bool { return false },
+			expected: EmptyLabels(),
+		},
+		{ // 2: Remove first label.
+			f:        func(l Label) bool { return l.Name != "aaa" },
+			expected: FromStrings("bbb", "2222", "ccc", "33333"),
+		},
+		{ // 3: Remove second label.
+			f:        func(l Label) bool { return l.Name != "bbb" },
+			expected: FromStrings("aaa", "111", "ccc", "33333"),
+		},
+		{ // 4: Remove all except one label.
+			f:        func(l Label) bool { return l.Name == "bbb" },
+			expected: FromStrings("bbb", "2222"),
+		},
+	} {
+		t.Run(fmt.Sprint(i), func(t *testing.T) {
+			got := labels.Filter(tc.f)
+			require.Equal(t, tc.expected, got)
+		})
+	}
+}
+
 func TestMerge(t *testing.T) {
 	for i, tc := range []struct {
 		labels         Labels
