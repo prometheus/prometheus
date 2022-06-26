@@ -503,9 +503,19 @@ func TestLabels_Compare(t *testing.T) {
 		},
 	}
 
+	sign := func(a int) int {
+		switch {
+		case a < 0:
+			return -1
+		case a > 0:
+			return 1
+		}
+		return 0
+	}
+
 	for i, test := range tests {
 		got := Compare(labels, test.compared)
-		require.Equal(t, test.expected, got, "unexpected comparison result for test case %d", i)
+		require.Equal(t, sign(test.expected), sign(got), "unexpected comparison result for test case %d", i)
 	}
 }
 
