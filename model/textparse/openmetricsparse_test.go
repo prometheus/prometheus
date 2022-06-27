@@ -14,6 +14,7 @@
 package textparse
 
 import (
+	"errors"
 	"io"
 	"testing"
 
@@ -223,7 +224,7 @@ foo_total 17.0 1520879607.789 # {xx="yy"} 5`
 
 	for {
 		et, err := p.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		require.NoError(t, err)
