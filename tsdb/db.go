@@ -838,10 +838,13 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	}
 	// Set the min valid time for the ingested samples
 	// to be no lower than the maxt of the last block.
-	blocks := db.Blocks()
 	minValidTime := int64(math.MinInt64)
-	if len(blocks) > 0 {
-		minValidTime = blocks[len(blocks)-1].Meta().MaxTime
+	// We do not consider blocks created from out-of-order samples for Head's minValidTime
+	// since minValidTime is only for the in-order data and we do not want to discard unnecessary
+	// samples from the Head.
+	inOrderMaxTime, ok := db.inOrderBlocksMaxTime()
+	if ok {
+		minValidTime = inOrderMaxTime
 	}
 
 	if initErr := db.head.Init(minValidTime); initErr != nil {
@@ -858,7 +861,6 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 				return nil, errors.Wrap(err, "repair corrupted WAL")
 			}
 		}
-
 	}
 
 	go db.run()
@@ -991,6 +993,7 @@ func (db *DB) ApplyConfig(conf *config.Config) error {
 		}
 	}
 
+	db.opts.OutOfOrderTimeWindow = oooTimeWindow
 	db.head.ApplyConfig(conf, wblog)
 
 	if !db.oooWasEnabled.Load() {
@@ -1237,10 +1240,11 @@ func (db *DB) reload() error {
 	if err := db.reloadBlocks(); err != nil {
 		return errors.Wrap(err, "reloadBlocks")
 	}
-	if len(db.blocks) == 0 {
+	maxt, ok := db.inOrderBlocksMaxTime()
+	if !ok {
 		return nil
 	}
-	if err := db.head.Truncate(db.blocks[len(db.blocks)-1].MaxTime()); err != nil {
+	if err := db.head.Truncate(maxt); err != nil {
 		return errors.Wrap(err, "head truncate")
 	}
 	return nil
@@ -1634,6 +1638,30 @@ func (db *DB) Blocks() []*Block {
 	defer db.mtx.RUnlock()
 
 	return db.blocks
+}
+
+// inOrderBlocksMaxTime returns the max time among the blocks that were not totally created
+// out of out-of-order data. If the returned boolean is true, it means there is at least
+// one such block.
+func (db *DB) inOrderBlocksMaxTime() (maxt int64, ok bool) {
+	maxt, ok, hasOOO := int64(math.MinInt64), false, false
+	// If blocks are overlapping, last block might not have the max time. So check all blocks.
+	for _, b := range db.Blocks() {
+		hasOOO = hasOOO || b.meta.OutOfOrder
+		if !b.meta.OutOfOrder && b.meta.MaxTime > maxt {
+			ok = true
+			maxt = b.meta.MaxTime
+		}
+	}
+	if !hasOOO && ok && db.opts.OutOfOrderTimeWindow > 0 {
+		// Temporary patch. To be removed by mid July 2022.
+		// Before this patch, blocks did not have "out_of_order" in their meta, so we cannot
+		// say which block has the out_of_order data. In that case the out-of-order block can be
+		// up to 2 block ranges ahead of the latest in-order block.
+		// Note: if hasOOO was true, it means the latest block has the new meta and is taken care in inOrderBlocksMaxTime().
+		maxt -= 2 * db.opts.MinBlockDuration
+	}
+	return maxt, ok
 }
 
 // Head returns the databases's head.

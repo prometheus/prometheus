@@ -608,9 +608,10 @@ func (c *LeveledCompactor) compactOOO(dest string, oooHead *OOOCompactionHead, s
 		for jx := range outBlocks[ix] {
 			uid := ulid.MustNew(outBlocksTime, rand.Reader)
 			meta := &BlockMeta{
-				ULID:    uid,
-				MinTime: mint,
-				MaxTime: maxt,
+				ULID:       uid,
+				MinTime:    mint,
+				MaxTime:    maxt,
+				OutOfOrder: true,
 			}
 			meta.Compaction.Level = 1
 			meta.Compaction.Sources = []ulid.ULID{uid}

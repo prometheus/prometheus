@@ -5192,3 +5192,133 @@ func TestOutOfOrderRuntimeConfig(t *testing.T) {
 		require.Nil(t, db.head.wbl)
 	})
 }
+
+func TestNoGapAfterRestartWithOOO(t *testing.T) {
+	series1 := labels.FromStrings("foo", "bar1")
+	addSamples := func(t *testing.T, db *DB, fromMins, toMins int64, success bool) {
+		app := db.Appender(context.Background())
+		for min := fromMins; min <= toMins; min++ {
+			ts := min * time.Minute.Milliseconds()
+			_, err := app.Append(0, series1, ts, float64(ts))
+			if success {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+			}
+		}
+		require.NoError(t, app.Commit())
+	}
+
+	verifySamples := func(t *testing.T, db *DB, fromMins, toMins int64) {
+		var expSamples []tsdbutil.Sample
+		for min := fromMins; min <= toMins; min++ {
+			ts := min * time.Minute.Milliseconds()
+			expSamples = append(expSamples, sample{t: ts, v: float64(ts)})
+		}
+
+		expRes := map[string][]tsdbutil.Sample{
+			series1.String(): expSamples,
+		}
+
+		q, err := db.Querier(context.Background(), math.MinInt64, math.MaxInt64)
+		require.NoError(t, err)
+
+		actRes := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.*"))
+		require.Equal(t, expRes, actRes)
+	}
+
+	cases := []struct {
+		inOrderMint, inOrderMaxt int64
+		oooMint, oooMaxt         int64
+		// After compaction.
+		blockRanges        [][2]int64
+		headMint, headMaxt int64
+		// Head time ranges after restart for old blocks.
+		legacyHeadMint, legacyHeadMaxt int64
+	}{
+		{
+			300, 490,
+			489, 489,
+			[][2]int64{{300, 360}, {480, 600}},
+			360, 490,
+			360, 490, // OOO blocks is already 2 ranges ahead of the in-order block.
+		},
+		{
+			300, 490,
+			479, 479,
+			[][2]int64{{300, 360}, {360, 480}},
+			360, 490,
+			240, 490, // OOO block was only 1 range ahead of in-order block.
+		},
+	}
+
+	for i, c := range cases {
+		// legacy = true means the out-of-order blocks don't have the `out_of_order: true` metadata.
+		for _, legacy := range []bool{false, true} {
+			t.Run(fmt.Sprintf("case=%d,legacy=%t", i, legacy), func(t *testing.T) {
+				dir := t.TempDir()
+
+				opts := DefaultOptions()
+				opts.OutOfOrderTimeWindow = 30 * time.Minute.Milliseconds()
+
+				db, err := Open(dir, nil, nil, opts, nil)
+				require.NoError(t, err)
+				db.DisableCompactions()
+				t.Cleanup(func() {
+					require.NoError(t, db.Close())
+				})
+
+				// 3h10m=190m worth in-order data.
+				addSamples(t, db, c.inOrderMint, c.inOrderMaxt, true)
+				verifySamples(t, db, c.inOrderMint, c.inOrderMaxt)
+
+				// One ooo samples.
+				addSamples(t, db, c.oooMint, c.oooMaxt, true)
+				verifySamples(t, db, c.inOrderMint, c.inOrderMaxt)
+
+				// We get 2 blocks. 1 from OOO, 1 from in-order.
+				require.NoError(t, db.Compact())
+				verifyBlockRanges := func() {
+					blocks := db.Blocks()
+					require.Equal(t, len(c.blockRanges), len(blocks))
+					for j, br := range c.blockRanges {
+						require.Equal(t, br[0]*time.Minute.Milliseconds(), blocks[j].MinTime())
+						require.Equal(t, br[1]*time.Minute.Milliseconds(), blocks[j].MaxTime())
+					}
+				}
+				verifyBlockRanges()
+				require.Equal(t, c.headMint*time.Minute.Milliseconds(), db.head.MinTime())
+				require.Equal(t, c.headMaxt*time.Minute.Milliseconds(), db.head.MaxTime())
+
+				if legacy {
+					// In the legacy version, the blocks from out-of-order data did not write a
+					// "out_of_order: true" to the meta. So we remove it here.
+					for _, b := range db.Blocks() {
+						m, _, err := readMetaFile(b.Dir())
+						require.NoError(t, err)
+						m.OutOfOrder = false
+						_, err = writeMetaFile(log.NewNopLogger(), b.Dir(), m)
+						require.NoError(t, err)
+					}
+				}
+
+				// Restart and expect all samples to be present.
+				require.NoError(t, db.Close())
+
+				db, err = Open(dir, nil, nil, opts, nil)
+				require.NoError(t, err)
+				db.DisableCompactions()
+
+				verifyBlockRanges()
+				if legacy {
+					require.Equal(t, c.legacyHeadMint*time.Minute.Milliseconds(), db.head.MinTime())
+					require.Equal(t, c.legacyHeadMaxt*time.Minute.Milliseconds(), db.head.MaxTime())
+				} else {
+					require.Equal(t, c.headMint*time.Minute.Milliseconds(), db.head.MinTime())
+					require.Equal(t, c.headMaxt*time.Minute.Milliseconds(), db.head.MaxTime())
+				}
+				verifySamples(t, db, c.inOrderMint, c.inOrderMaxt)
+			})
+		}
+	}
+}

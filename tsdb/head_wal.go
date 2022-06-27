@@ -464,9 +464,9 @@ func (wp *walSubsetProcessor) waitUntilIdle() {
 }
 
 func (h *Head) loadWbl(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef, lastMmapRef chunks.ChunkDiskMapperRef) (err error) {
-	// Track number of samples that referenced a series we don't know about
+	// Track number of samples, m-map markers, that referenced a series we don't know about
 	// for error reporting.
-	var unknownRefs atomic.Uint64
+	var unknownRefs, mmapMarkerUnknownRefs atomic.Uint64
 
 	lastSeq, lastOff := lastMmapRef.Unpack()
 	// Start workers that each process samples for a partition of the series ID space.
@@ -593,9 +593,13 @@ func (h *Head) loadWbl(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 					continue
 				}
 
+				if r, ok := multiRef[rm.Ref]; ok {
+					rm.Ref = r
+				}
+
 				ms := h.series.getByID(rm.Ref)
 				if ms == nil {
-					unknownRefs.Inc()
+					mmapMarkerUnknownRefs.Inc()
 					continue
 				}
 
@@ -635,8 +639,8 @@ func (h *Head) loadWbl(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 		return errors.Wrap(r.Err(), "read records")
 	}
 
-	if unknownRefs.Load() > 0 {
-		level.Warn(h.logger).Log("msg", "Unknown series references for ooo WAL replay", "samples", unknownRefs.Load())
+	if unknownRefs.Load() > 0 || mmapMarkerUnknownRefs.Load() > 0 {
+		level.Warn(h.logger).Log("msg", "Unknown series references for ooo WAL replay", "samples", unknownRefs.Load(), "mmap_markers", mmapMarkerUnknownRefs.Load())
 	}
 	return nil
 }

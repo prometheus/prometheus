@@ -169,6 +169,9 @@ type BlockMeta struct {
 
 	// Version of the index format.
 	Version int `json:"version"`
+
+	// OutOfOrder is true if the block was directly created from out-of-order samples.
+	OutOfOrder bool `json:"out_of_order"`
 }
 
 // BlockStats contains stats about contents of a block.
