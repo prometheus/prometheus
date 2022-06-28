@@ -216,9 +216,15 @@ export const functionIdentifierTerms = [
     type: 'function',
   },
   {
+    label: 'histogram_fraction',
+    detail: 'function',
+    info: 'Calculate fractions of observations within an interval from a native histogram',
+    type: 'function',
+  },
+  {
     label: 'histogram_quantile',
     detail: 'function',
-    info: 'Calculate quantiles from histogram buckets',
+    info: 'Calculate quantiles from native histograms and from legacy histogram buckets',
     type: 'function',
   },
   {

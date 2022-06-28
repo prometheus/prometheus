@@ -152,7 +152,13 @@ Special cases are:
 `floor(v instant-vector)` rounds the sample values of all elements in `v` down
 to the nearest integer.
 
+## `histogram_fraction()`
+
+TODO(beorn7): Add documentation.
+
 ## `histogram_quantile()`
+
+TODO(beorn7): This needs a lot of updates for Histograms as sample value types.
 
 `histogram_quantile(φ scalar, b instant-vector)` calculates the φ-quantile (0 ≤ φ
 ≤ 1) from the buckets `b` of a

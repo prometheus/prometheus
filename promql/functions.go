@@ -864,6 +864,25 @@ func funcPredictLinear(vals []parser.Value, args parser.Expressions, enh *EvalNo
 	})
 }
 
+// === histogram_fraction(lower, upper parser.ValueTypeScalar, Vector parser.ValueTypeVector) Vector ===
+func funcHistogramFraction(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	lower := vals[0].(Vector)[0].V
+	upper := vals[1].(Vector)[0].V
+	inVec := vals[2].(Vector)
+
+	for _, sample := range inVec {
+		// Skip non-histogram samples.
+		if sample.H == nil {
+			continue
+		}
+		enh.Out = append(enh.Out, Sample{
+			Metric: enh.DropMetricName(sample.Metric),
+			Point:  Point{V: histogramFraction(lower, upper, sample.H)},
+		})
+	}
+	return enh.Out
+}
+
 // === histogram_quantile(k parser.ValueTypeScalar, Vector parser.ValueTypeVector) Vector ===
 func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	q := vals[0].(Vector)[0].V
@@ -1205,6 +1224,7 @@ var FunctionCalls = map[string]FunctionCall{
 	"deriv":              funcDeriv,
 	"exp":                funcExp,
 	"floor":              funcFloor,
+	"histogram_fraction": funcHistogramFraction,
 	"histogram_quantile": funcHistogramQuantile,
 	"holt_winters":       funcHoltWinters,
 	"hour":               funcHour,
