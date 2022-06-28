@@ -124,7 +124,7 @@ func (m mockIndex) SortedPostings(p Postings) Postings {
 	return NewListPostings(ep)
 }
 
-func (m mockIndex) Series(ref storage.SeriesRef, lset *labels.Labels, chks *[]chunks.Meta) error {
+func (m mockIndex) Series(ref storage.SeriesRef, builder *labels.SimpleBuilder, lset *labels.Labels, chks *[]chunks.Meta) error {
 	s, ok := m.series[ref]
 	if !ok {
 		return errors.New("not found")
@@ -199,9 +199,10 @@ func TestIndexRW_Postings(t *testing.T) {
 
 	var l labels.Labels
 	var c []chunks.Meta
+	var builder labels.SimpleBuilder
 
 	for i := 0; p.Next(); i++ {
-		err := ir.Series(p.At(), &l, &c)
+		err := ir.Series(p.At(), &builder, &l, &c)
 
 		require.NoError(t, err)
 		require.Equal(t, 0, len(c))
@@ -311,6 +312,7 @@ func TestPostingsMany(t *testing.T) {
 		{in: []string{"126a", "126b", "127", "127a", "127b", "128", "128a", "128b", "129", "129a", "129b"}},
 	}
 
+	var builder labels.SimpleBuilder
 	for _, c := range cases {
 		it, err := ir.Postings("i", c.in...)
 		require.NoError(t, err)
@@ -319,7 +321,7 @@ func TestPostingsMany(t *testing.T) {
 		var lbls labels.Labels
 		var metas []chunks.Meta
 		for it.Next() {
-			require.NoError(t, ir.Series(it.At(), &lbls, &metas))
+			require.NoError(t, ir.Series(it.At(), &builder, &lbls, &metas))
 			got = append(got, lbls.Get("i"))
 		}
 		require.NoError(t, it.Err())
@@ -421,16 +423,17 @@ func TestPersistence_index_e2e(t *testing.T) {
 
 		var lset, explset labels.Labels
 		var chks, expchks []chunks.Meta
+		var builder labels.SimpleBuilder
 
 		for gotp.Next() {
 			require.True(t, expp.Next())
 
 			ref := gotp.At()
 
-			err := ir.Series(ref, &lset, &chks)
+			err := ir.Series(ref, &builder, &lset, &chks)
 			require.NoError(t, err)
 
-			err = mi.Series(expp.At(), &explset, &expchks)
+			err = mi.Series(expp.At(), &builder, &explset, &expchks)
 			require.NoError(t, err)
 			require.Equal(t, explset, lset)
 			require.Equal(t, expchks, chks)

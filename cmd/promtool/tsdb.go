@@ -472,8 +472,9 @@ func analyzeBlock(path, blockID string, limit int, runExtended bool) error {
 	}
 	lbls := labels.Labels{}
 	chks := []chunks.Meta{}
+	builder := labels.SimpleBuilder{}
 	for p.Next() {
-		if err = ir.Series(p.At(), &lbls, &chks); err != nil {
+		if err = ir.Series(p.At(), &builder, &lbls, &chks); err != nil {
 			return err
 		}
 		// Amount of the block time range not covered by this series.
@@ -589,10 +590,11 @@ func analyzeCompaction(block tsdb.BlockReader, indexr tsdb.IndexReader) (err err
 	nBuckets := 10
 	histogram := make([]int, nBuckets)
 	totalChunks := 0
+	var builder labels.SimpleBuilder
 	for postingsr.Next() {
 		lbsl := labels.Labels{}
 		var chks []chunks.Meta
-		if err := indexr.Series(postingsr.At(), &lbsl, &chks); err != nil {
+		if err := indexr.Series(postingsr.At(), &builder, &lbsl, &chks); err != nil {
 			return err
 		}
 

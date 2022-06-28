@@ -82,7 +82,7 @@ type IndexReader interface {
 	// Series populates the given labels and chunk metas for the series identified
 	// by the reference.
 	// Returns storage.ErrNotFound if the ref does not resolve to a known series.
-	Series(ref storage.SeriesRef, lset *labels.Labels, chks *[]chunks.Meta) error
+	Series(ref storage.SeriesRef, builder *labels.SimpleBuilder, lset *labels.Labels, chks *[]chunks.Meta) error
 
 	// LabelNames returns all the unique label names present in the index in sorted order.
 	LabelNames(matchers ...*labels.Matcher) ([]string, error)
@@ -499,8 +499,8 @@ func (r blockIndexReader) SortedPostings(p index.Postings) index.Postings {
 	return r.ir.SortedPostings(p)
 }
 
-func (r blockIndexReader) Series(ref storage.SeriesRef, lset *labels.Labels, chks *[]chunks.Meta) error {
-	if err := r.ir.Series(ref, lset, chks); err != nil {
+func (r blockIndexReader) Series(ref storage.SeriesRef, builder *labels.SimpleBuilder, lset *labels.Labels, chks *[]chunks.Meta) error {
+	if err := r.ir.Series(ref, builder, lset, chks); err != nil {
 		return errors.Wrapf(err, "block: %s", r.b.Meta().ULID)
 	}
 	return nil
@@ -563,10 +563,11 @@ func (pb *Block) Delete(mint, maxt int64, ms ...*labels.Matcher) error {
 
 	var lset labels.Labels
 	var chks []chunks.Meta
+	var builder labels.SimpleBuilder
 
 Outer:
 	for p.Next() {
-		err := ir.Series(p.At(), &lset, &chks)
+		err := ir.Series(p.At(), &builder, &lset, &chks)
 		if err != nil {
 			return err
 		}
