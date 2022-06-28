@@ -1830,6 +1830,8 @@ func TestChunkAtBlockBoundary(t *testing.T) {
 	err = db.Compact()
 	require.NoError(t, err)
 
+	var builder labels.ScratchBuilder
+
 	for _, block := range db.Blocks() {
 		r, err := block.Index()
 		require.NoError(t, err)
@@ -1849,7 +1851,7 @@ func TestChunkAtBlockBoundary(t *testing.T) {
 		chunkCount := 0
 
 		for p.Next() {
-			err = r.Series(p.At(), &lset, &chks)
+			err = r.Series(p.At(), &builder, &lset, &chks)
 			require.NoError(t, err)
 			for _, c := range chks {
 				require.True(t, meta.MinTime <= c.MinTime && c.MaxTime <= meta.MaxTime,
