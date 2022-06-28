@@ -39,8 +39,10 @@ import {
   Deriv,
   Exp,
   Floor,
+  HistogramCount,
   HistogramFraction,
   HistogramQuantile,
+  HistogramSum,
   HoltWinters,
   Hour,
   Idelta,
@@ -262,6 +264,12 @@ const promqlFunctions: { [key: number]: PromQLFunction } = {
     variadic: 0,
     returnType: ValueType.vector,
   },
+  [HistogramCount]: {
+    name: 'histogram_count',
+    argTypes: [ValueType.vector],
+    variadic: 0,
+    returnType: ValueType.vector,
+  },
   [HistogramFraction]: {
     name: 'histogram_fraction',
     argTypes: [ValueType.scalar, ValueType.scalar, ValueType.vector],
@@ -271,6 +279,12 @@ const promqlFunctions: { [key: number]: PromQLFunction } = {
   [HistogramQuantile]: {
     name: 'histogram_quantile',
     argTypes: [ValueType.scalar, ValueType.vector],
+    variadic: 0,
+    returnType: ValueType.vector,
+  },
+  [HistogramSum]: {
+    name: 'histogram_sum',
+    argTypes: [ValueType.vector],
     variadic: 0,
     returnType: ValueType.vector,
   },

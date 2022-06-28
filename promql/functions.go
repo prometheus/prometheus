@@ -864,6 +864,40 @@ func funcPredictLinear(vals []parser.Value, args parser.Expressions, enh *EvalNo
 	})
 }
 
+// === histogram_count(Vector parser.ValueTypeVector) Vector ===
+func funcHistogramCount(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	inVec := vals[0].(Vector)
+
+	for _, sample := range inVec {
+		// Skip non-histogram samples.
+		if sample.H == nil {
+			continue
+		}
+		enh.Out = append(enh.Out, Sample{
+			Metric: enh.DropMetricName(sample.Metric),
+			Point:  Point{V: sample.H.Count},
+		})
+	}
+	return enh.Out
+}
+
+// === histogram_sum(Vector parser.ValueTypeVector) Vector ===
+func funcHistogramSum(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
+	inVec := vals[0].(Vector)
+
+	for _, sample := range inVec {
+		// Skip non-histogram samples.
+		if sample.H == nil {
+			continue
+		}
+		enh.Out = append(enh.Out, Sample{
+			Metric: enh.DropMetricName(sample.Metric),
+			Point:  Point{V: sample.H.Sum},
+		})
+	}
+	return enh.Out
+}
+
 // === histogram_fraction(lower, upper parser.ValueTypeScalar, Vector parser.ValueTypeVector) Vector ===
 func funcHistogramFraction(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector {
 	lower := vals[0].(Vector)[0].V
@@ -1224,8 +1258,10 @@ var FunctionCalls = map[string]FunctionCall{
 	"deriv":              funcDeriv,
 	"exp":                funcExp,
 	"floor":              funcFloor,
+	"histogram_count":    funcHistogramCount,
 	"histogram_fraction": funcHistogramFraction,
 	"histogram_quantile": funcHistogramQuantile,
+	"histogram_sum":      funcHistogramSum,
 	"holt_winters":       funcHoltWinters,
 	"hour":               funcHour,
 	"idelta":             funcIdelta,

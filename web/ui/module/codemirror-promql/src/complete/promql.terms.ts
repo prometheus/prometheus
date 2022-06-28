@@ -216,6 +216,12 @@ export const functionIdentifierTerms = [
     type: 'function',
   },
   {
+    label: 'histogram_count',
+    detail: 'function',
+    info: 'Return the count of observations from a native histogram',
+    type: 'function',
+  },
+  {
     label: 'histogram_fraction',
     detail: 'function',
     info: 'Calculate fractions of observations within an interval from a native histogram',
@@ -225,6 +231,12 @@ export const functionIdentifierTerms = [
     label: 'histogram_quantile',
     detail: 'function',
     info: 'Calculate quantiles from native histograms and from legacy histogram buckets',
+    type: 'function',
+  },
+  {
+    label: 'histogram_sum',
+    detail: 'function',
+    info: 'Return the sum of observations from a native histogram',
     type: 'function',
   },
   {
