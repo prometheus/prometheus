@@ -17,7 +17,6 @@ package record
 
 import (
 	"math"
-	"sort"
 
 	"github.com/pkg/errors"
 
@@ -182,7 +181,9 @@ type RefMmapMarker struct {
 
 // Decoder decodes series, sample, metadata and tombstone records.
 // The zero value is ready to use.
-type Decoder struct{}
+type Decoder struct {
+	builder labels.SimpleBuilder
+}
 
 // Type returns the type of the record.
 // Returns RecordUnknown if no valid record type is found.
@@ -267,14 +268,15 @@ func (d *Decoder) Metadata(rec []byte, metadata []RefMetadata) ([]RefMetadata, e
 
 // DecodeLabels decodes one set of labels from buf.
 func (d *Decoder) DecodeLabels(dec *encoding.Decbuf) labels.Labels {
-	lset := make(labels.Labels, dec.Uvarint())
-
-	for i := range lset {
-		lset[i].Name = dec.UvarintStr()
-		lset[i].Value = dec.UvarintStr()
+	// TODO: reconsider if this function could be pushed down into labels.Labels to be more efficient.
+	d.builder.Reset()
+	nLabels := dec.Uvarint()
+	for i := 0; i < nLabels; i++ {
+		lName := dec.UvarintStr()
+		lValue := dec.UvarintStr()
+		d.builder.Add(lName, lValue)
 	}
-	sort.Sort(lset)
-	return lset
+	return d.builder.Labels()
 }
 
 // Samples appends samples in rec to the given slice.
@@ -525,12 +527,13 @@ func (e *Encoder) Metadata(metadata []RefMetadata, b []byte) []byte {
 
 // EncodeLabels encodes the contents of labels into buf.
 func EncodeLabels(buf *encoding.Encbuf, lbls labels.Labels) {
-	buf.PutUvarint(len(lbls))
+	// TODO: reconsider if this function could be pushed down into labels.Labels to be more efficient.
+	buf.PutUvarint(lbls.Len())
 
-	for _, l := range lbls {
+	lbls.Range(func(l labels.Label) {
 		buf.PutUvarintStr(l.Name)
 		buf.PutUvarintStr(l.Value)
-	}
+	})
 }
 
 // Samples appends the encoded samples to b and returns the resulting slice.
