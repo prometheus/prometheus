@@ -893,8 +893,8 @@ type scrapeCache struct {
 	// string in addDropped().
 	droppedSeries map[string]*uint64
 
-	// seriesCur and seriesPrev store the ref of series that were seen
-	// in the current and previous scrape based on the hash.
+	// seriesCur and seriesPrev store the labels of series that were seen
+	// in the current and previous scrape.
 	// We hold two maps and swap them out to save allocations.
 	seriesCur  map[uint64]labels.Labels
 	seriesPrev map[uint64]labels.Labels
@@ -920,7 +920,7 @@ func (m *metaEntry) size() int {
 }
 
 func newScrapeCache(useInterner bool, interner intern.Interner) *scrapeCache {
-	if interner == nil {
+	if useInterner && interner == nil {
 		interner = intern.Global
 	}
 	return &scrapeCache{

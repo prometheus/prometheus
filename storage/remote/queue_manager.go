@@ -673,7 +673,7 @@ func (t *QueueManager) StoreSeries(series []record.RefSeries, index int) {
 			t.droppedSeries[s.Ref] = struct{}{}
 			continue
 		}
-		intern.Intern(intern.Global, lbls)
+		intern.Intern(t.interner, lbls)
 
 		// We should not ever be replacing a series labels in the map, but just
 		// in case we do we need to ensure we do not leak the replaced interned
