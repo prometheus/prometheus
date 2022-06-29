@@ -225,10 +225,10 @@ func (d *Decoder) Metadata(rec []byte, metadata []RefMetadata) ([]RefMetadata, e
 		for i := 0; i < numFields; i++ {
 			fieldName := dec.UvarintStr()
 			fieldValue := dec.UvarintStr()
-			if fieldName == unitMetaName {
+			switch fieldName {
+			case unitMetaName:
 				unit = fieldValue
-			}
-			if fieldName == helpMetaName {
+			case helpMetaName:
 				help = fieldValue
 			}
 		}
