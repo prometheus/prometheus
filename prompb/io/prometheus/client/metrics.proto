@@ -29,11 +29,18 @@ message LabelPair {
 }
 
 enum MetricType {
-  COUNTER    = 0;
-  GAUGE      = 1;
-  SUMMARY    = 2;
-  UNTYPED    = 3;
-  HISTOGRAM  = 4;
+  // COUNTER must use the Metric field "counter".
+  COUNTER = 0;
+  // GAUGE must use the Metric field "gauge".
+  GAUGE = 1;
+  // SUMMARY must use the Metric field "summary".
+  SUMMARY = 2;
+  // UNTYPED must use the Metric field "untyped".
+  UNTYPED = 3;
+  // HISTOGRAM must use the Metric field "histogram".
+  HISTOGRAM = 4;
+  // GAUGE_HISTOGRAM must use the Metric field "histogram".
+  GAUGE_HISTOGRAM = 5;
 }
 
 message Gauge {
@@ -62,6 +69,7 @@ message Untyped {
 
 message Histogram {
   uint64 sample_count = 1;
+  double sample_count_float = 9; // Overrides sample_count if > 0.
   double sample_sum   = 2;
   repeated Bucket bucket       = 3; // Ordered in increasing order of upper_bound, +Inf bucket is optional.
   // Sparse bucket (sb) stuff:
@@ -70,26 +78,37 @@ message Histogram {
   // then each power of two is divided into 2^n logarithmic buckets.
   // Or in other words, each bucket boundary is the previous boundary times 2^(2^-n).
   // In the future, more bucket schemas may be added using numbers < -4 or > 8.
-  sint32 sb_schema          = 4;
-  double sb_zero_threshold  = 5; // Breadth of the zero bucket.
-  uint64 sb_zero_count      = 6; // Count in zero bucket.
-  SparseBuckets sb_negative = 7; // Negative sparse buckets.
-  SparseBuckets sb_positive = 8; // Positive sparse buckets.
+  sint32 sb_schema           = 4;
+  double sb_zero_threshold   = 5;  // Breadth of the zero bucket.
+  uint64 sb_zero_count       = 6;  // Count in zero bucket.
+  double sb_zero_count_float = 10; // Overrides sb_zero_count if > 0.
+  SparseBuckets sb_negative  = 7;  // Negative sparse buckets.
+  SparseBuckets sb_positive  = 8;  // Positive sparse buckets.
 }
 
 message Bucket {
-  uint64   cumulative_count = 1; // Cumulative in increasing order.
-  double   upper_bound      = 2; // Inclusive.
-  Exemplar exemplar         = 3;
+  uint64   cumulative_count       = 1; // Cumulative in increasing order.
+  double   cumulative_count_float = 4; // Overrides cumulative_count if > 0.
+  double   upper_bound            = 2; // Inclusive.
+  Exemplar exemplar               = 3;
 }
 
 message SparseBuckets {
+  // A Span is a given number of consecutive buckets at a given
+  // offset. Logically, it would be more straightforward to include
+  // the bucket counts in the Span. However, the protobuf
+  // representation is more compact in the way the data is structured
+  // here (with all the buckets in a single array separate from the
+  // Spans).
   message Span {
     sint32 offset = 1; // Gap to previous span, or starting point for 1st span (which can be negative).
     uint32 length = 2; // Length of consecutive buckets.
   }
-  repeated Span span    = 1;
+  repeated Span span = 1;
+  // Only one of "delta" or "count" may be used, the former for regular
+  // histograms with integer counts, the latter for float histograms.
   repeated sint64 delta = 2; // Count delta of each bucket compared to previous one (or to zero for 1st bucket).
+  repeated double count = 3; // Absolute count of each bucket.
 }
 
 message Exemplar {
@@ -99,18 +118,18 @@ message Exemplar {
 }
 
 message Metric {
-  repeated LabelPair label        = 1;
-  Gauge     gauge        = 2;
-  Counter   counter      = 3;
-  Summary   summary      = 4;
-  Untyped   untyped      = 5;
-  Histogram histogram    = 7;
-  int64     timestamp_ms = 6;
+  repeated LabelPair label = 1;
+  Gauge     gauge          = 2;
+  Counter   counter        = 3;
+  Summary   summary        = 4;
+  Untyped   untyped        = 5;
+  Histogram histogram      = 7;
+  int64     timestamp_ms   = 6;
 }
 
 message MetricFamily {
-  string     name   = 1;
-  string     help   = 2;
-  MetricType type   = 3;
-  repeated Metric     metric = 4;
+  string          name   = 1;
+  string          help   = 2;
+  MetricType      type   = 3;
+  repeated Metric metric = 4;
 }
