@@ -379,23 +379,15 @@ func TestOOOHeadChunkReader_LabelValues(t *testing.T) {
 	app := head.Appender(context.Background())
 
 	// Add in-order samples
-	_, err := app.Append(0, labels.Labels{
-		{Name: "foo", Value: "bar1"},
-	}, 100, 1)
+	_, err := app.Append(0, labels.FromStrings("foo", "bar1"), 100, 1)
 	require.NoError(t, err)
-	_, err = app.Append(0, labels.Labels{
-		{Name: "foo", Value: "bar2"},
-	}, 100, 2)
+	_, err = app.Append(0, labels.FromStrings("foo", "bar2"), 100, 2)
 	require.NoError(t, err)
 
 	// Add ooo samples for those series
-	_, err = app.Append(0, labels.Labels{
-		{Name: "foo", Value: "bar1"},
-	}, 90, 1)
+	_, err = app.Append(0, labels.FromStrings("foo", "bar1"), 90, 1)
 	require.NoError(t, err)
-	_, err = app.Append(0, labels.Labels{
-		{Name: "foo", Value: "bar2"},
-	}, 90, 2)
+	_, err = app.Append(0, labels.FromStrings("foo", "bar2"), 90, 2)
 	require.NoError(t, err)
 
 	require.NoError(t, app.Commit())
