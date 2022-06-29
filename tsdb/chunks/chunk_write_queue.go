@@ -205,8 +205,7 @@ func (c *chunkWriteQueue) addJob(job chunkWriteJob) (err error) {
 	}
 	c.chunkRefMapMtx.Unlock()
 
-	ok := c.jobs.push(job)
-	if !ok {
+	if ok := c.jobs.push(job); !ok {
 		c.chunkRefMapMtx.Lock()
 		delete(c.chunkRefMap, job.ref)
 		c.chunkRefMapMtx.Unlock()

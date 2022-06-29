@@ -57,7 +57,7 @@ func (q *writeJobQueue) close() {
 
 	q.closed = true
 
-	// unblock all blocked goroutines
+	// Unblock all blocked goroutines.
 	q.pushed.Broadcast()
 	q.popped.Broadcast()
 }
@@ -68,7 +68,7 @@ func (q *writeJobQueue) push(job chunkWriteJob) bool {
 	q.mtx.Lock()
 	defer q.mtx.Unlock()
 
-	// wait until queue has more space or is closed
+	// Wait until queue has more space or is closed.
 	for !q.closed && q.size >= q.maxSize {
 		q.popped.Wait()
 	}
@@ -100,7 +100,7 @@ func (q *writeJobQueue) push(job chunkWriteJob) bool {
 }
 
 // pop returns first job from the queue, and true.
-// if queue is empty, pop blocks until there is a job (returns true), or until queue is closed (returns false).
+// If queue is empty, pop blocks until there is a job (returns true), or until queue is closed (returns false).
 // If queue was already closed, pop first returns all remaining elements from the queue (with true value), and only then returns false.
 func (q *writeJobQueue) pop() (chunkWriteJob, bool) {
 	q.mtx.Lock()
@@ -132,6 +132,7 @@ func (q *writeJobQueue) pop() (chunkWriteJob, bool) {
 	return res, true
 }
 
+// length returns number of all jobs in the queue.
 func (q *writeJobQueue) length() int {
 	q.mtx.Lock()
 	defer q.mtx.Unlock()
