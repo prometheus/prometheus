@@ -24,11 +24,15 @@ import (
 )
 
 const (
-	// Minimum recorded peak since since the last shrinking of chunkWriteQueue.chunkrefMap to shrink it again.
+	// Minimum recorded peak since the last shrinking of chunkWriteQueue.chunkrefMap to shrink it again.
 	chunkRefMapShrinkThreshold = 1000
 
 	// Minimum interval between shrinking of chunkWriteQueue.chunkRefMap.
 	chunkRefMapMinShrinkInterval = 10 * time.Minute
+
+	// Maximum size of segment used by job queue (number of elements). With chunkWriteJob being 64 bytes,
+	// this will use ~512 KiB for empty queue.
+	maxChunkQueueSegmentSize = 8192
 )
 
 type chunkWriteJob struct {
@@ -45,7 +49,7 @@ type chunkWriteJob struct {
 // Chunks that shall be written get added to the queue, which is consumed asynchronously.
 // Adding jobs to the queue is non-blocking as long as the queue isn't full.
 type chunkWriteQueue struct {
-	jobs chan chunkWriteJob
+	jobs *writeJobQueue
 
 	chunkRefMapMtx        sync.RWMutex
 	chunkRefMap           map[ChunkDiskMapperRef]chunkenc.Chunk
@@ -83,8 +87,13 @@ func newChunkWriteQueue(reg prometheus.Registerer, size int, writeChunk writeChu
 		[]string{"operation"},
 	)
 
+	segmentSize := size
+	if segmentSize > maxChunkQueueSegmentSize {
+		segmentSize = maxChunkQueueSegmentSize
+	}
+
 	q := &chunkWriteQueue{
-		jobs:                  make(chan chunkWriteJob, size),
+		jobs:                  newWriteJobQueue(size, segmentSize),
 		chunkRefMap:           make(map[ChunkDiskMapperRef]chunkenc.Chunk),
 		chunkRefMapLastShrink: time.Now(),
 		writeChunk:            writeChunk,
@@ -108,7 +117,12 @@ func (c *chunkWriteQueue) start() {
 	go func() {
 		defer c.workerWg.Done()
 
-		for job := range c.jobs {
+		for {
+			job, ok := c.jobs.pop()
+			if !ok {
+				return
+			}
+
 			c.processJob(job)
 		}
 	}()
@@ -191,7 +205,13 @@ func (c *chunkWriteQueue) addJob(job chunkWriteJob) (err error) {
 	}
 	c.chunkRefMapMtx.Unlock()
 
-	c.jobs <- job
+	if ok := c.jobs.push(job); !ok {
+		c.chunkRefMapMtx.Lock()
+		delete(c.chunkRefMap, job.ref)
+		c.chunkRefMapMtx.Unlock()
+
+		return errors.New("queue is closed")
+	}
 
 	return nil
 }
@@ -218,7 +238,7 @@ func (c *chunkWriteQueue) stop() {
 
 	c.isRunning = false
 
-	close(c.jobs)
+	c.jobs.close()
 
 	c.workerWg.Wait()
 }
@@ -230,7 +250,7 @@ func (c *chunkWriteQueue) queueIsEmpty() bool {
 func (c *chunkWriteQueue) queueIsFull() bool {
 	// When the queue is full and blocked on the writer the chunkRefMap has one more job than the cap of the jobCh
 	// because one job is currently being processed and blocked in the writer.
-	return c.queueSize() == cap(c.jobs)+1
+	return c.queueSize() == c.jobs.maxSize+1
 }
 
 func (c *chunkWriteQueue) queueSize() int {
