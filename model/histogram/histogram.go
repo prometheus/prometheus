@@ -40,30 +40,32 @@ type Histogram struct {
 	// then each power of two is divided into 2^n logarithmic buckets.  Or
 	// in other words, each bucket boundary is the previous boundary times
 	// 2^(2^-n).
-	Schema int32
+	Schema int32 `json:"schema"`
 	// Width of the zero bucket.
-	ZeroThreshold float64
+	ZeroThreshold float64 `json:"zero_threshold"`
 	// Observations falling into the zero bucket.
-	ZeroCount uint64
+	ZeroCount uint64 `json:"zero_count"`
 	// Total number of observations.
-	Count uint64
+	Count uint64 `json:"count"`
 	// Sum of observations. This is also used as the stale marker.
-	Sum float64
+	Sum float64 `json:"sum"`
 	// Spans for positive and negative buckets (see Span below).
-	PositiveSpans, NegativeSpans []Span
+	PositiveSpans []Span `json:"positive_spans,omitempty"`
+	NegativeSpans []Span `json:"negative_spans,omitempty"`
 	// Observation counts in buckets. The first element is an absolute
 	// count. All following ones are deltas relative to the previous
 	// element.
-	PositiveBuckets, NegativeBuckets []int64
+	PositiveBuckets []int64 `json:"positive_buckets,omitempty"`
+	NegativeBuckets []int64 `json:"negative_buckets,omitempty"`
 }
 
 // A Span defines a continuous sequence of buckets.
 type Span struct {
 	// Gap to previous span (always positive), or starting index for the 1st
 	// span (which can be negative).
-	Offset int32
+	Offset int32 `json:"offset"`
 	// Length of the span.
-	Length uint32
+	Length uint32 `json:"length"`
 }
 
 // Copy returns a deep copy of the Histogram.
