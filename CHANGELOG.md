@@ -94,7 +94,7 @@ The binaries published with this release are built with Go1.17.8 to avoid [CVE-2
 
 ## 2.33.0 / 2022-01-29
 
-* [CHANGE] PromQL: Promote negative offset and `@` modifer to stable features. #10121
+* [CHANGE] PromQL: Promote negative offset and `@` modifier to stable features. #10121
 * [CHANGE] Web: Promote remote-write-receiver to stable. #10119
 * [FEATURE] Config: Add `stripPort` template function. #10002
 * [FEATURE] Promtool: Add cardinality analysis to `check metrics`, enabled by flag `--extended`. #10045
@@ -331,7 +331,7 @@ This vulnerability has been reported by Aaron Devaney from MDSec.
 * [ENHANCEMENT] Templating: Enable parsing strings in `humanize` functions. #8682
 * [BUGFIX] UI: Provide errors instead of blank page on TSDB Status Page. #8654 #8659
 * [BUGFIX] TSDB: Do not panic when writing very large records to the WAL. #8790
-* [BUGFIX] TSDB: Avoid panic when mmaped memory is referenced after the file is closed. #8723
+* [BUGFIX] TSDB: Avoid panic when mapped memory is referenced after the file is closed. #8723
 * [BUGFIX] Scaleway Discovery: Fix nil pointer dereference. #8737
 * [BUGFIX] Consul Discovery: Restart no longer required after config update with no targets. #8766
 
@@ -1464,7 +1464,7 @@ This is a breaking change to the Kubernetes service discovery.
 * [FEATURE] EC2 service discovery: Expose `ec2_instance_state`.
 * [ENHANCEMENT] Various performance improvements in local storage.
 * [BUGFIX] Zookeeper service discovery: Remove deleted nodes.
-* [BUGFIX] Zookeeper service discovery: Resync state after Zookeeper failure.
+* [BUGFIX] Zookeeper service discovery: Rsync state after Zookeeper failure.
 * [BUGFIX] Remove JSON from HTTP Accept header.
 * [BUGFIX] Fix flag validation of Alertmanager URL.
 * [BUGFIX] Fix race condition on shutdown.
@@ -1513,7 +1513,7 @@ This is a breaking change to the Kubernetes service discovery.
 * [ENHANCEMENT] Message on empty Alerts page.
 * [ENHANCEMENT] Various internal code refactorings and clean-ups.
 * [ENHANCEMENT] Various improvements in the build system.
-* [BUGFIX] Catch errors when unmarshaling delta/doubleDelta encoded chunks.
+* [BUGFIX] Catch errors when unmarshalling delta/doubleDelta encoded chunks.
 * [BUGFIX] Fix data race in lexer and lexer test.
 * [BUGFIX] Trim stray whitespace from bearer token file.
 * [BUGFIX] Avoid divide-by-zero panic on query_range?step=0.
