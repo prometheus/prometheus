@@ -2160,7 +2160,7 @@ func TestBlockBaseSeriesSet(t *testing.T) {
 		{
 			series: []refdSeries{
 				{
-					lset: labels.New([]labels.Label{{Name: "a", Value: "a"}}...),
+					lset: labels.FromStrings("a", "a"),
 					chunks: []chunks.Meta{
 						{Ref: 29},
 						{Ref: 45},
@@ -2173,19 +2173,19 @@ func TestBlockBaseSeriesSet(t *testing.T) {
 					ref: 12,
 				},
 				{
-					lset: labels.New([]labels.Label{{Name: "a", Value: "a"}, {Name: "b", Value: "b"}}...),
+					lset: labels.FromStrings("a", "a", "b", "b"),
 					chunks: []chunks.Meta{
 						{Ref: 82}, {Ref: 23}, {Ref: 234}, {Ref: 65}, {Ref: 26},
 					},
 					ref: 10,
 				},
 				{
-					lset:   labels.New([]labels.Label{{Name: "b", Value: "c"}}...),
+					lset:   labels.FromStrings("b", "c"),
 					chunks: []chunks.Meta{{Ref: 8282}},
 					ref:    1,
 				},
 				{
-					lset: labels.New([]labels.Label{{Name: "b", Value: "b"}}...),
+					lset: labels.FromStrings("b", "b"),
 					chunks: []chunks.Meta{
 						{Ref: 829}, {Ref: 239}, {Ref: 2349}, {Ref: 659}, {Ref: 269},
 					},
@@ -2198,14 +2198,14 @@ func TestBlockBaseSeriesSet(t *testing.T) {
 		{
 			series: []refdSeries{
 				{
-					lset: labels.New([]labels.Label{{Name: "a", Value: "a"}, {Name: "b", Value: "b"}}...),
+					lset: labels.FromStrings("a", "a", "b", "b"),
 					chunks: []chunks.Meta{
 						{Ref: 82}, {Ref: 23}, {Ref: 234}, {Ref: 65}, {Ref: 26},
 					},
 					ref: 10,
 				},
 				{
-					lset:   labels.New([]labels.Label{{Name: "b", Value: "c"}}...),
+					lset:   labels.FromStrings("b", "c"),
 					chunks: []chunks.Meta{{Ref: 8282}},
 					ref:    3,
 				},
