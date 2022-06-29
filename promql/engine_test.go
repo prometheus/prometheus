@@ -3155,6 +3155,70 @@ func TestSparseHistogramRate(t *testing.T) {
 	require.Equal(t, expectedHistogram, actualHistogram)
 }
 
+func TestSparseHistogram_HistogramCountAndSum(t *testing.T) {
+	// TODO(codesome): Integrate histograms into the PromQL testing framework
+	// and write more tests there.
+	h := &histogram.Histogram{
+		Count:         24,
+		ZeroCount:     4,
+		ZeroThreshold: 0.001,
+		Sum:           100,
+		Schema:        0,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 1, Length: 2},
+		},
+		PositiveBuckets: []int64{2, 1, -2, 3},
+		NegativeSpans: []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 1, Length: 2},
+		},
+		NegativeBuckets: []int64{2, 1, -2, 3},
+	}
+
+	test, err := NewTest(t, "")
+	require.NoError(t, err)
+	t.Cleanup(test.Close)
+
+	seriesName := "sparse_histogram_series"
+	lbls := labels.FromStrings("__name__", seriesName)
+	engine := test.QueryEngine()
+
+	ts := int64(10 * time.Minute / time.Millisecond)
+	app := test.Storage().Appender(context.TODO())
+	_, err = app.AppendHistogram(0, lbls, ts, h)
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	queryString := fmt.Sprintf("histogram_count(%s)", seriesName)
+	qry, err := engine.NewInstantQuery(test.Queryable(), nil, queryString, timestamp.Time(ts))
+	require.NoError(t, err)
+
+	res := qry.Exec(test.Context())
+	require.NoError(t, res.Err)
+
+	vector, err := res.Vector()
+	require.NoError(t, err)
+
+	require.Len(t, vector, 1)
+	require.Nil(t, vector[0].H)
+	require.Equal(t, float64(h.Count), vector[0].V)
+
+	queryString = fmt.Sprintf("histogram_sum(%s)", seriesName)
+	qry, err = engine.NewInstantQuery(test.Queryable(), nil, queryString, timestamp.Time(ts))
+	require.NoError(t, err)
+
+	res = qry.Exec(test.Context())
+	require.NoError(t, res.Err)
+
+	vector, err = res.Vector()
+	require.NoError(t, err)
+
+	require.Len(t, vector, 1)
+	require.Nil(t, vector[0].H)
+	require.Equal(t, h.Sum, vector[0].V)
+}
+
 func TestSparseHistogram_HistogramQuantile(t *testing.T) {
 	// TODO(codesome): Integrate histograms into the PromQL testing framework
 	// and write more tests there.

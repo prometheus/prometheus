@@ -729,6 +729,30 @@ describe('promql operations', () => {
       expectedDiag: [],
     },
     {
+      expr:
+        'histogram_count(                                         # Root of the query, final result, returns the count of observations.\n' +
+        '  sum by(method, path) (                                 # Argument to histogram_count(), an aggregated histogram.\n' +
+        '    rate(                                                # Argument to sum(), the per-second increase of a histogram over 5m.\n' +
+        '      demo_api_request_duration_seconds{job="demo"}[5m]  # Argument to rate(), a vector of sparse histogram series over the last 5m.\n' +
+        '    )\n' +
+        '  )\n' +
+        ')',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
+    {
+      expr:
+        'histogram_sum(                                           # Root of the query, final result, returns the sum of observations.\n' +
+        '  sum by(method, path) (                                 # Argument to histogram_sum(), an aggregated histogram.\n' +
+        '    rate(                                                # Argument to sum(), the per-second increase of a histogram over 5m.\n' +
+        '      demo_api_request_duration_seconds{job="demo"}[5m]  # Argument to rate(), a vector of sparse histogram series over the last 5m.\n' +
+        '    )\n' +
+        '  )\n' +
+        ')',
+      expectedValueType: ValueType.vector,
+      expectedDiag: [],
+    },
+    {
       expr: '1 @ start()',
       expectedValueType: ValueType.scalar,
       expectedDiag: [
