@@ -1115,6 +1115,10 @@ func (h *Head) Delete(mint, maxt int64, ms ...*labels.Matcher) error {
 	var stones []tombstones.Stone
 	for p.Next() {
 		series := h.series.getByID(chunks.HeadSeriesRef(p.At()))
+		if series == nil {
+			level.Debug(h.logger).Log("msg", "Series not found in Head.Delete")
+			continue
+		}
 
 		series.RLock()
 		t0, t1 := series.minTime(), series.maxTime()
