@@ -1686,7 +1686,7 @@ Available meta labels:
 * `__meta_kubernetes_pod_name`: The name of the pod object.
 * `__meta_kubernetes_pod_ip`: The pod IP of the pod object.
 * `__meta_kubernetes_pod_label_<labelname>`: Each label from the pod object.
-* `__meta_kubernetes_pod_labelpresent_<labelname>`: `true`for each label from the pod object.
+* `__meta_kubernetes_pod_labelpresent_<labelname>`: `true` for each label from the pod object.
 * `__meta_kubernetes_pod_annotation_<annotationname>`: Each annotation from the pod object.
 * `__meta_kubernetes_pod_annotationpresent_<annotationname>`: `true` for each annotation from the pod object.
 * `__meta_kubernetes_pod_container_init`: `true` if the container is an [InitContainer](https://kubernetes.io/docs/concepts/workloads/pods/init-containers/)
@@ -1714,7 +1714,7 @@ Available meta labels:
 * `__meta_kubernetes_namespace`: The namespace of the endpoints object.
 * `__meta_kubernetes_endpoints_name`: The names of the endpoints object.
 * `__meta_kubernetes_endpoints_label_<labelname>`: Each label from the endpoints object.
-* `__meta_kubernetes_endpoints_labelpresent_<labelname>`: `true`for each label from the endpoints object.
+* `__meta_kubernetes_endpoints_labelpresent_<labelname>`: `true` for each label from the endpoints object.
 * For all targets discovered directly from the endpoints list (those not additionally inferred
   from underlying pods), the following labels are attached:
   * `__meta_kubernetes_endpoint_hostname`: Hostname of the endpoint.
