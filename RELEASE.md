@@ -86,7 +86,7 @@ Check the [dependencies GitHub label](https://github.com/prometheus/prometheus/l
 This bot currently does not manage `+incompatible` and `v0.0.0` in the version specifier for Go modules.
 
 Note that after a dependency update, you should look out for any weirdness that
-might have happened. Such weirdnesses include but are not limited to: flaky
+might have happened. Such weirdness include but are not limited to: flaky
 tests, differences in resource usage, panic.
 
 In case of doubt or issues that can't be solved in a reasonable amount of time,
