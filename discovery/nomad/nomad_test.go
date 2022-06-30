@@ -1,4 +1,4 @@
-// Copyright 2015 The Prometheus Authors
+// Copyright 2022 The Prometheus Authors
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
@@ -44,18 +44,18 @@ func NewSDMock(t *testing.T) *SDMock {
 	}
 }
 
-// Endpoint returns the URI to the mock server
+// Endpoint returns the URI to the mock server.
 func (m *SDMock) Endpoint() string {
 	return m.Server.URL + "/"
 }
 
-// Setup creates the mock server
+// Setup creates the mock server.
 func (m *SDMock) Setup() {
 	m.Mux = http.NewServeMux()
 	m.Server = httptest.NewServer(m.Mux)
 }
 
-// ShutdownServer creates the mock server
+// ShutdownServer creates the mock server.
 func (m *SDMock) ShutdownServer() {
 	m.Server.Close()
 }
@@ -128,9 +128,7 @@ func TestConfiguredService(t *testing.T) {
 		Server: "http://localhost:4646",
 	}
 	_, err := NewDiscovery(conf, nil)
-	if err != nil {
-		t.Errorf("Unexpected error when initializing discovery %v", err)
-	}
+	require.NoError(t, err)
 }
 
 func TestNomadSDRefresh(t *testing.T) {

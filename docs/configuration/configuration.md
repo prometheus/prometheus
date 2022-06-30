@@ -2188,7 +2188,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_nomad_address`: the service address of the target
 * `__meta_nomad_dc`: the datacenter name for the target
 * `__meta_nomad_namespace`: the namespace of the target
-* `__meta_nomad_node`: the node name defined for the target
+* `__meta_nomad_node_id`: the node name defined for the target
 * `__meta_nomad_service`: the name of the service the target belongs to
 * `__meta_nomad_service_address`: the service address of the target
 * `__meta_nomad_service_id`: the service ID of the target
