@@ -39,6 +39,12 @@ upgrade-npm-deps:
 	@echo ">> upgrading npm dependencies"
 	./scripts/npm-deps.sh "latest"
 
+.PHONY: ui-bump-version
+ui-bump-version:
+	version=$$(sed s/2/0/ < VERSION) && ./scripts/ui_release.sh --bump-version "$${version}"
+	cd web/ui && npm install
+	git add "./web/ui/package-lock.json" "./**/package.json"
+
 .PHONY: ui-install
 ui-install:
 	cd $(UI_PATH) && npm install

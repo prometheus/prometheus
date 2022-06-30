@@ -144,6 +144,12 @@ Entries in the `CHANGELOG.md` are meant to be in this order:
 * `[ENHANCEMENT]`
 * `[BUGFIX]`
 
+Then bump the UI module version:
+
+```bash
+make ui-bump-version
+```
+
 ### 2. Draft the new release
 
 Tag the new release via the following commands:
