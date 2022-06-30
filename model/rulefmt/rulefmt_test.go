@@ -15,6 +15,7 @@ package rulefmt
 
 import (
 	"errors"
+	"io"
 	"path/filepath"
 	"testing"
 
@@ -300,6 +301,30 @@ func TestWrappedError(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			got := tt.wrappedError.Error()
 			require.Equal(t, tt.want, got)
+		})
+	}
+}
+
+func TestErrorUnwrap(t *testing.T) {
+	err1 := errors.New("test error")
+
+	tests := []struct {
+		wrappedError   *Error
+		unwrappedError error
+	}{
+		{
+			wrappedError:   &Error{Err: WrappedError{err: err1}},
+			unwrappedError: err1,
+		},
+		{
+			wrappedError:   &Error{Err: WrappedError{err: io.ErrClosedPipe}},
+			unwrappedError: io.ErrClosedPipe,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.wrappedError.Error(), func(t *testing.T) {
+			require.ErrorIs(t, tt.wrappedError, tt.unwrappedError)
 		})
 	}
 }

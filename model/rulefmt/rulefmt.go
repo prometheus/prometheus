@@ -53,6 +53,11 @@ func (err *Error) Error() string {
 	return fmt.Sprintf("group %q, rule %d, %q: %v", err.Group, err.Rule, err.RuleName, err.Err.err)
 }
 
+// Unwrap unpacks wrapped error for use in errors.Is & errors.As.
+func (err *Error) Unwrap() error {
+	return &err.Err
+}
+
 // WrappedError wraps error with the yaml node which can be used to represent
 // the line and column numbers of the error.
 type WrappedError struct {
@@ -73,6 +78,11 @@ func (we *WrappedError) Error() string {
 		return fmt.Sprintf("%d:%d: %v", we.node.Line, we.node.Column, we.err)
 	}
 	return we.err.Error()
+}
+
+// Unwrap unpacks wrapped error for use in errors.Is & errors.As.
+func (we *WrappedError) Unwrap() error {
+	return we.err
 }
 
 // RuleGroups is a set of rule groups that are typically exposed in a file.
