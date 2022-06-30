@@ -127,30 +127,23 @@ func TestIgnoreExternalLabels(t *testing.T) {
 // baseRemoteWriteConfig copy values from global Default Write config
 // to avoid change global state and cross impact test execution
 func baseRemoteWriteConfig(host string) *config.RemoteWriteConfig {
-	return &config.RemoteWriteConfig{
-		RemoteTimeout:    config.DefaultRemoteWriteConfig.RemoteTimeout,
-		QueueConfig:      config.DefaultRemoteWriteConfig.QueueConfig,
-		MetadataConfig:   config.DefaultRemoteWriteConfig.MetadataConfig,
-		HTTPClientConfig: config.DefaultRemoteWriteConfig.HTTPClientConfig,
-		URL: &common_config.URL{
-			URL: &url.URL{
-				Host: host,
-			},
+	cfg := config.DefaultRemoteWriteConfig
+	cfg.URL = &common_config.URL{
+		URL: &url.URL{
+			Host: host,
 		},
 	}
+	return &cfg
 }
 
 // baseRemoteReadConfig copy values from global Default Read config
 // to avoid change global state and cross impact test execution
 func baseRemoteReadConfig(host string) *config.RemoteReadConfig {
-	return &config.RemoteReadConfig{
-		RemoteTimeout:        config.DefaultRemoteReadConfig.RemoteTimeout,
-		HTTPClientConfig:     config.DefaultRemoteReadConfig.HTTPClientConfig,
-		FilterExternalLabels: config.DefaultRemoteReadConfig.FilterExternalLabels,
-		URL: &common_config.URL{
-			URL: &url.URL{
-				Host: host,
-			},
+	cfg := config.DefaultRemoteReadConfig
+	cfg.URL = &common_config.URL{
+		URL: &url.URL{
+			Host: host,
 		},
 	}
+	return &cfg
 }
