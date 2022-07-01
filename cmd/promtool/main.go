@@ -344,6 +344,7 @@ func CheckConfig(agentMode, checkSyntaxOnly bool, lintSettings lintConfig, files
 		ruleFiles, err := checkConfig(agentMode, f, checkSyntaxOnly)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "  FAILED:", err)
+			hasErrors = true
 			failed = true
 		} else {
 			if len(ruleFiles) > 0 {
