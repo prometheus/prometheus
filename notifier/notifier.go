@@ -302,12 +302,22 @@ func (n *Manager) nextBatch() []*Alert {
 // Run dispatches notifications continuously.
 func (n *Manager) Run(tsets <-chan map[string][]*targetgroup.Group) {
 	for {
+		// The select is split in two parts, such as we will first try to read
+		// new alertmanager targets if they are available, before sending new
+		// alerts.
 		select {
 		case <-n.ctx.Done():
 			return
 		case ts := <-tsets:
 			n.reload(ts)
-		case <-n.more:
+		default:
+			select {
+			case <-n.ctx.Done():
+				return
+			case ts := <-tsets:
+				n.reload(ts)
+			case <-n.more:
+			}
 		}
 		alerts := n.nextBatch()
 
