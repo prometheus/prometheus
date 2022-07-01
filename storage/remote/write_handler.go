@@ -15,12 +15,12 @@ package remote
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/pkg/errors"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/prompb"
@@ -67,10 +67,11 @@ func (h *writeHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // checkAppendExemplarError modifies the AppendExamplar's returned error based on the error cause.
 func (h *writeHandler) checkAppendExemplarError(err error, e exemplar.Exemplar, outOfOrderErrs *int) error {
-	switch errors.Cause(err) {
-	case storage.ErrNotFound:
+	unwrapedErr := errors.Unwrap(err)
+	switch {
+	case errors.Is(unwrapedErr, storage.ErrNotFound):
 		return storage.ErrNotFound
-	case storage.ErrOutOfOrderExemplar:
+	case errors.Is(unwrapedErr, storage.ErrOutOfOrderExemplar):
 		*outOfOrderErrs++
 		level.Debug(h.logger).Log("msg", "Out of order exemplar", "exemplar", fmt.Sprintf("%+v", e))
 		return nil
@@ -97,8 +98,8 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 		for _, s := range ts.Samples {
 			_, err = app.Append(0, labels, s.Timestamp, s.Value)
 			if err != nil {
-				switch errors.Cause(err) {
-				case storage.ErrOutOfOrderSample, storage.ErrOutOfBounds, storage.ErrDuplicateSampleForTimestamp:
+				unwrapedErr := errors.Unwrap(err)
+				if errors.Is(unwrapedErr, storage.ErrOutOfOrderSample) || errors.Is(unwrapedErr, storage.ErrOutOfBounds) || errors.Is(unwrapedErr, storage.ErrDuplicateSampleForTimestamp) {
 					level.Error(h.logger).Log("msg", "Out of order sample from remote write", "err", err.Error(), "series", labels.String(), "timestamp", s.Timestamp)
 				}
 				return err
