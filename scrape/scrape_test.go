@@ -1125,7 +1125,7 @@ func TestScrapeLoopRunCreatesStaleMarkersOnFailedScrape(t *testing.T) {
 
 	// 1 successfully scraped sample, 1 stale marker after first fail, 5 report samples for
 	// each scrape successful or not.
-	require.Equal(t, 27, len(appender.result), "Appended samples not as expected")
+	require.Equal(t, 27, len(appender.result), "Appended samples not as expected:\n%s", appender)
 	require.Equal(t, 42.0, appender.result[0].v, "Appended first sample not as expected")
 	require.True(t, value.IsStaleNaN(appender.result[6].v),
 		"Appended second sample not as expected. Wanted: stale NaN Got: %x", math.Float64bits(appender.result[6].v))
@@ -1189,7 +1189,7 @@ func TestScrapeLoopRunCreatesStaleMarkersOnParseFailure(t *testing.T) {
 
 	// 1 successfully scraped sample, 1 stale marker after first fail, 5 report samples for
 	// each scrape successful or not.
-	require.Equal(t, 17, len(appender.result), "Appended samples not as expected")
+	require.Equal(t, 17, len(appender.result), "Appended samples not as expected:\n%s", appender)
 	require.Equal(t, 42.0, appender.result[0].v, "Appended first sample not as expected")
 	require.True(t, value.IsStaleNaN(appender.result[6].v),
 		"Appended second sample not as expected. Wanted: stale NaN Got: %x", math.Float64bits(appender.result[6].v))
@@ -1272,7 +1272,7 @@ func TestScrapeLoopCache(t *testing.T) {
 
 	// 1 successfully scraped sample, 1 stale marker after first fail, 5 report samples for
 	// each scrape successful or not.
-	require.Equal(t, 26, len(appender.result), "Appended samples not as expected")
+	require.Equal(t, 26, len(appender.result), "Appended samples not as expected:\n%s", appender)
 }
 
 func TestScrapeLoopCacheMemoryExhaustionProtection(t *testing.T) {
@@ -1642,7 +1642,7 @@ func TestScrapeLoopAppendSampleLimit(t *testing.T) {
 			v:      1,
 		},
 	}
-	require.Equal(t, want, resApp.rolledbackResult, "Appended samples not as expected")
+	require.Equal(t, want, resApp.rolledbackResult, "Appended samples not as expected:\n%s", appender)
 
 	now = time.Now()
 	slApp = sl.appender(context.Background())
@@ -1707,7 +1707,7 @@ func TestScrapeLoop_ChangingMetricString(t *testing.T) {
 			v:      2,
 		},
 	}
-	require.Equal(t, want, capp.result, "Appended samples not as expected")
+	require.Equal(t, want, capp.result, "Appended samples not as expected:\n%s", appender)
 }
 
 func TestScrapeLoopAppendStaleness(t *testing.T) {
@@ -1759,7 +1759,7 @@ func TestScrapeLoopAppendStaleness(t *testing.T) {
 			v:      42,
 		},
 	}
-	require.Equal(t, want, app.result, "Appended samples not as expected")
+	require.Equal(t, want, app.result, "Appended samples not as expected:\n%s", appender)
 }
 
 func TestScrapeLoopAppendNoStalenessIfTimestamp(t *testing.T) {
@@ -1800,7 +1800,7 @@ func TestScrapeLoopAppendNoStalenessIfTimestamp(t *testing.T) {
 			v:      1,
 		},
 	}
-	require.Equal(t, want, app.result, "Appended samples not as expected")
+	require.Equal(t, want, app.result, "Appended samples not as expected:\n%s", appender)
 }
 
 func TestScrapeLoopAppendExemplar(t *testing.T) {
@@ -2108,7 +2108,7 @@ func TestScrapeLoopAppendGracefullyIfAmendOrOutOfOrderOrOutOfBounds(t *testing.T
 			v:      1,
 		},
 	}
-	require.Equal(t, want, app.result, "Appended samples not as expected")
+	require.Equal(t, want, app.result, "Appended samples not as expected:\n%s", appender)
 	require.Equal(t, 4, total)
 	require.Equal(t, 4, added)
 	require.Equal(t, 1, seriesAdded)
@@ -2410,7 +2410,7 @@ func TestScrapeLoop_RespectTimestamps(t *testing.T) {
 			v:      1,
 		},
 	}
-	require.Equal(t, want, capp.result, "Appended samples not as expected")
+	require.Equal(t, want, capp.result, "Appended samples not as expected:\n%s", appender)
 }
 
 func TestScrapeLoop_DiscardTimestamps(t *testing.T) {
@@ -2451,7 +2451,7 @@ func TestScrapeLoop_DiscardTimestamps(t *testing.T) {
 			v:      1,
 		},
 	}
-	require.Equal(t, want, capp.result, "Appended samples not as expected")
+	require.Equal(t, want, capp.result, "Appended samples not as expected:\n%s", appender)
 }
 
 func TestScrapeLoopDiscardDuplicateLabels(t *testing.T) {
