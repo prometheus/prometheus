@@ -17,6 +17,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -29,7 +30,6 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/pkg/errors"
 	dto "github.com/prometheus/client_model/go"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -2235,7 +2235,7 @@ func TestTargetScrapeScrapeCancel(t *testing.T) {
 		if err == nil {
 			errc <- errors.New("Expected error but got nil")
 		} else if ctx.Err() != context.Canceled {
-			errc <- errors.Errorf("Expected context cancellation error but got: %s", ctx.Err())
+			errc <- fmt.Errorf("Expected context cancellation error but got: %s", ctx.Err())
 		} else {
 			close(errc)
 		}

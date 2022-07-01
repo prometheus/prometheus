@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -31,7 +32,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	config_util "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -273,7 +273,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed 
 	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, cfg.JobName, httpOpts...)
 	if err != nil {
 		targetScrapePoolsFailed.Inc()
-		return nil, errors.Wrap(err, "error creating HTTP client")
+		return nil, fmt.Errorf("error creating HTTP client: %w", err)
 	}
 
 	buffers := pool.New(1e3, 100e6, 3, func(sz int) interface{} { return make([]byte, 0, sz) })
@@ -388,7 +388,7 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 	client, err := config_util.NewClientFromConfig(cfg.HTTPClientConfig, cfg.JobName, sp.httpOpts...)
 	if err != nil {
 		targetScrapePoolReloadsFailed.Inc()
-		return errors.Wrap(err, "error creating HTTP client")
+		return fmt.Errorf("error creating HTTP client: %w", err)
 	}
 
 	reuseCache := reusableCache(sp.config, cfg)
@@ -784,7 +784,7 @@ func (s *targetScraper) scrape(ctx context.Context, w io.Writer) (string, error)
 	}()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", errors.Errorf("server returned HTTP status %s", resp.Status)
+		return "", fmt.Errorf("server returned HTTP status %s: %w", resp.Status, err)
 	}
 
 	if s.bodySizeLimit <= 0 {
@@ -1610,8 +1610,8 @@ loop:
 		sl.cache.forEachStale(func(lset labels.Labels) bool {
 			// Series no longer exposed, mark it stale.
 			_, err = app.Append(0, lset, defTime, math.Float64frombits(value.StaleNaN))
-			switch errors.Cause(err) {
-			case storage.ErrOutOfOrderSample, storage.ErrDuplicateSampleForTimestamp:
+			unwrapedErr := errors.Unwrap(err)
+			if errors.Is(unwrapedErr, storage.ErrOutOfOrderSample) || errors.Is(unwrapedErr, storage.ErrDuplicateSampleForTimestamp) {
 				// Do not count these in logging, as this is expected if a target
 				// goes away and comes back again with a new scrape loop.
 				err = nil
@@ -1629,30 +1629,31 @@ func yoloString(b []byte) string {
 // Adds samples to the appender, checking the error, and then returns the # of samples added,
 // whether the caller should continue to process more samples, and any sample limit errors.
 func (sl *scrapeLoop) checkAddError(ce *cacheEntry, met []byte, tp *int64, err error, sampleLimitErr *error, appErrs *appendErrors) (bool, error) {
-	switch errors.Cause(err) {
-	case nil:
+	unwrapedErr := errors.Unwrap(err)
+	switch {
+	case unwrapedErr == nil:
 		if tp == nil && ce != nil {
 			sl.cache.trackStaleness(ce.hash, ce.lset)
 		}
 		return true, nil
-	case storage.ErrNotFound:
+	case errors.Is(unwrapedErr, storage.ErrNotFound):
 		return false, storage.ErrNotFound
-	case storage.ErrOutOfOrderSample:
+	case errors.Is(unwrapedErr, storage.ErrOutOfOrderSample):
 		appErrs.numOutOfOrder++
 		level.Debug(sl.l).Log("msg", "Out of order sample", "series", string(met))
 		targetScrapeSampleOutOfOrder.Inc()
 		return false, nil
-	case storage.ErrDuplicateSampleForTimestamp:
+	case errors.Is(unwrapedErr, storage.ErrDuplicateSampleForTimestamp):
 		appErrs.numDuplicates++
 		level.Debug(sl.l).Log("msg", "Duplicate sample for timestamp", "series", string(met))
 		targetScrapeSampleDuplicate.Inc()
 		return false, nil
-	case storage.ErrOutOfBounds:
+	case errors.Is(unwrapedErr, storage.ErrOutOfBounds):
 		appErrs.numOutOfBounds++
 		level.Debug(sl.l).Log("msg", "Out of bounds metric", "series", string(met))
 		targetScrapeSampleOutOfBounds.Inc()
 		return false, nil
-	case errSampleLimit:
+	case errors.Is(unwrapedErr, errSampleLimit):
 		// Keep on parsing output if we hit the limit, so we report the correct
 		// total number of samples scraped.
 		*sampleLimitErr = err
@@ -1663,10 +1664,11 @@ func (sl *scrapeLoop) checkAddError(ce *cacheEntry, met []byte, tp *int64, err e
 }
 
 func (sl *scrapeLoop) checkAddExemplarError(err error, e exemplar.Exemplar, appErrs *appendErrors) error {
-	switch errors.Cause(err) {
-	case storage.ErrNotFound:
+	unwrapedErr := errors.Unwrap(err)
+	switch {
+	case errors.Is(unwrapedErr, storage.ErrNotFound):
 		return storage.ErrNotFound
-	case storage.ErrOutOfOrderExemplar:
+	case errors.Is(unwrapedErr, storage.ErrOutOfOrderExemplar):
 		appErrs.numExemplarOutOfOrder++
 		level.Debug(sl.l).Log("msg", "Out of order exemplar", "exemplar", fmt.Sprintf("%+v", e))
 		targetScrapeExemplarOutOfOrder.Inc()
@@ -1780,13 +1782,14 @@ func (sl *scrapeLoop) addReportSample(app storage.Appender, s string, t int64, v
 	}
 
 	ref, err := app.Append(ref, lset, t, v)
-	switch errors.Cause(err) {
-	case nil:
+	unwrapedErr := errors.Unwrap(err)
+	switch {
+	case unwrapedErr == nil:
 		if !ok {
 			sl.cache.addRef(s, ref, lset, lset.Hash())
 		}
 		return nil
-	case storage.ErrOutOfOrderSample, storage.ErrDuplicateSampleForTimestamp:
+	case errors.Is(unwrapedErr, storage.ErrOutOfOrderSample), errors.Is(unwrapedErr, storage.ErrDuplicateSampleForTimestamp):
 		// Do not log here, as this is expected if a target goes away and comes back
 		// again with a new scrape loop.
 		return nil

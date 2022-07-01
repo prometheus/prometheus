@@ -14,6 +14,7 @@
 package scrape
 
 import (
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"net"
@@ -22,7 +23,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/config"
@@ -283,12 +283,12 @@ func (t *Target) intervalAndTimeout(defaultInterval, defaultDuration time.Durati
 	intervalLabel := t.labels.Get(model.ScrapeIntervalLabel)
 	interval, err := model.ParseDuration(intervalLabel)
 	if err != nil {
-		return defaultInterval, defaultDuration, errors.Errorf("Error parsing interval label %q: %v", intervalLabel, err)
+		return defaultInterval, defaultDuration, fmt.Errorf("Error parsing interval label %q: %w", intervalLabel, err)
 	}
 	timeoutLabel := t.labels.Get(model.ScrapeTimeoutLabel)
 	timeout, err := model.ParseDuration(timeoutLabel)
 	if err != nil {
-		return defaultInterval, defaultDuration, errors.Errorf("Error parsing timeout label %q: %v", timeoutLabel, err)
+		return defaultInterval, defaultDuration, fmt.Errorf("Error parsing timeout label %q: %w", timeoutLabel, err)
 	}
 
 	return time.Duration(interval), time.Duration(timeout), nil
@@ -409,7 +409,7 @@ func PopulateLabels(lset labels.Labels, cfg *config.ScrapeConfig) (res, orig lab
 		case "https":
 			addr = addr + ":443"
 		default:
-			return nil, nil, errors.Errorf("invalid scheme: %q", cfg.Scheme)
+			return nil, nil, fmt.Errorf("invalid scheme: %q", cfg.Scheme)
 		}
 		lb.Set(model.AddressLabel, addr)
 	}
@@ -421,7 +421,7 @@ func PopulateLabels(lset labels.Labels, cfg *config.ScrapeConfig) (res, orig lab
 	interval := lset.Get(model.ScrapeIntervalLabel)
 	intervalDuration, err := model.ParseDuration(interval)
 	if err != nil {
-		return nil, nil, errors.Errorf("error parsing scrape interval: %v", err)
+		return nil, nil, fmt.Errorf("error parsing scrape interval: %w", err)
 	}
 	if time.Duration(intervalDuration) == 0 {
 		return nil, nil, errors.New("scrape interval cannot be 0")
@@ -430,14 +430,14 @@ func PopulateLabels(lset labels.Labels, cfg *config.ScrapeConfig) (res, orig lab
 	timeout := lset.Get(model.ScrapeTimeoutLabel)
 	timeoutDuration, err := model.ParseDuration(timeout)
 	if err != nil {
-		return nil, nil, errors.Errorf("error parsing scrape timeout: %v", err)
+		return nil, nil, fmt.Errorf("error parsing scrape timeout: %w", err)
 	}
 	if time.Duration(timeoutDuration) == 0 {
 		return nil, nil, errors.New("scrape timeout cannot be 0")
 	}
 
 	if timeoutDuration > intervalDuration {
-		return nil, nil, errors.Errorf("scrape timeout cannot be greater than scrape interval (%q > %q)", timeout, interval)
+		return nil, nil, fmt.Errorf("scrape timeout cannot be greater than scrape interval (%q > %q)", timeout, interval)
 	}
 
 	// Meta labels are deleted after relabelling. Other internal labels propagate to
@@ -457,7 +457,7 @@ func PopulateLabels(lset labels.Labels, cfg *config.ScrapeConfig) (res, orig lab
 	for _, l := range res {
 		// Check label values are valid, drop the target if not.
 		if !model.LabelValue(l.Value).IsValid() {
-			return nil, nil, errors.Errorf("invalid label value for %q: %q", l.Name, l.Value)
+			return nil, nil, fmt.Errorf("invalid label value for %q: %q", l.Name, l.Value)
 		}
 	}
 	return res, preRelabelLabels, nil
@@ -484,7 +484,7 @@ func TargetsFromGroup(tg *targetgroup.Group, cfg *config.ScrapeConfig) ([]*Targe
 
 		lbls, origLabels, err := PopulateLabels(lset, cfg)
 		if err != nil {
-			failures = append(failures, errors.Wrapf(err, "instance %d in group %s", i, tg))
+			failures = append(failures, fmt.Errorf("instance %d in group %s: %w", i, tg, err))
 		}
 		if lbls != nil || origLabels != nil {
 			targets = append(targets, NewTarget(lbls, origLabels, cfg.Params))
