@@ -711,14 +711,6 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 
 	walDir := filepath.Join(dir, "wal")
 	wblDir := filepath.Join(dir, wal.WblDirName)
-	// TODO(jesus.vazquez) Remove the block of code below, only necessary until all ooo_wbl dirs in prod have been replaced with wbl
-	oldWblDir := filepath.Join(dir, "ooo_wbl")
-	if _, err := os.Stat(oldWblDir); err == nil {
-		err = fileutil.Rename(oldWblDir, wblDir)
-		if err != nil {
-			return nil, errors.Wrap(err, "failed to move old wbl dir to new wbl dir")
-		}
-	}
 
 	// Migrate old WAL if one exists.
 	if err := MigrateWAL(l, walDir); err != nil {
@@ -1652,14 +1644,6 @@ func (db *DB) inOrderBlocksMaxTime() (maxt int64, ok bool) {
 			ok = true
 			maxt = b.meta.MaxTime
 		}
-	}
-	if !hasOOO && ok && db.opts.OutOfOrderTimeWindow > 0 {
-		// Temporary patch. To be removed by mid July 2022.
-		// Before this patch, blocks did not have "out_of_order" in their meta, so we cannot
-		// say which block has the out_of_order data. In that case the out-of-order block can be
-		// up to 2 block ranges ahead of the latest in-order block.
-		// Note: if hasOOO was true, it means the latest block has the new meta and is taken care in inOrderBlocksMaxTime().
-		maxt -= 2 * db.opts.MinBlockDuration
 	}
 	return maxt, ok
 }
