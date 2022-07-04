@@ -373,7 +373,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 
 				// Unfortunately Azure does not return information on whether a VM is deallocated.
 				// This information is available via another API call however the Go SDK does not
-				// yet support this. On deallocated machines, this value happens to be nil so it
+				// yet support this. On deallocated machines, this value happens to be nil, so it
 				// is a cheap and easy way to determine if a machine is allocated or not.
 				if networkInterface.Primary == nil {
 					level.Debug(d.logger).Log("msg", "Skipping deallocated virtual machine", "machine", vm.Name)
