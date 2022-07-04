@@ -3686,6 +3686,8 @@ func TestMetadataAssertInMemoryData(t *testing.T) {
 
 	// Add a first round of metadata to the first three series.
 	// The in-memory data held in the db Head should hold the metadata.
+	// Re-take the Appender, as the previous Commit will have it closed.
+	app = db.Appender(ctx)
 	m1 := metadata.Metadata{Type: "gauge", Unit: "unit_1", Help: "help_1"}
 	m2 := metadata.Metadata{Type: "gauge", Unit: "unit_2", Help: "help_2"}
 	m3 := metadata.Metadata{Type: "gauge", Unit: "unit_3", Help: "help_3"}
