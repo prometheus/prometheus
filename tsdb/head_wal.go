@@ -30,6 +30,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -46,6 +47,7 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 	// for error reporting.
 	var unknownRefs atomic.Uint64
 	var unknownExemplarRefs atomic.Uint64
+	var unknownMetadataRefs atomic.Uint64
 	// Track number of series records that had overlapping m-map chunks.
 	var mmapOverlappingChunks uint64
 
@@ -79,6 +81,11 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 		exemplarsPool = sync.Pool{
 			New: func() interface{} {
 				return []record.RefExemplar{}
+			},
+		}
+		metadataPool = sync.Pool{
+			New: func() interface{} {
+				return []record.RefMetadata{}
 			},
 		}
 	)
@@ -184,6 +191,18 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 					return
 				}
 				decoded <- exemplars
+			case record.Metadata:
+				meta := metadataPool.Get().([]record.RefMetadata)[:0]
+				meta, err := dec.Metadata(rec, meta)
+				if err != nil {
+					decodeErr = &wal.CorruptionErr{
+						Err:     errors.Wrap(err, "decode metadata"),
+						Segment: r.Segment(),
+						Offset:  r.Offset(),
+					}
+					return
+				}
+				decoded <- meta
 			default:
 				// Noop.
 			}
@@ -307,6 +326,21 @@ Outer:
 			}
 			//nolint:staticcheck // Ignore SA6002 relax staticcheck verification.
 			exemplarsPool.Put(v)
+		case []record.RefMetadata:
+			for _, m := range v {
+				if s := h.series.getByID(chunks.HeadSeriesRef(m.Ref)); s == nil {
+					unknownMetadataRefs.Inc()
+					continue
+				} else {
+					s.meta = metadata.Metadata{
+						Type: record.ToTextparseMetricType(m.Type),
+						Unit: m.Unit,
+						Help: m.Help,
+					}
+				}
+			}
+			//nolint:staticcheck // Ignore SA6002 relax staticcheck verification.
+			metadataPool.Put(v)
 		default:
 			panic(fmt.Errorf("unexpected decoded type: %T", d))
 		}
@@ -333,8 +367,8 @@ Outer:
 		return errors.Wrap(r.Err(), "read records")
 	}
 
-	if unknownRefs.Load() > 0 || unknownExemplarRefs.Load() > 0 {
-		level.Warn(h.logger).Log("msg", "Unknown series references", "samples", unknownRefs.Load(), "exemplars", unknownExemplarRefs.Load())
+	if unknownRefs.Load() > 0 || unknownExemplarRefs.Load() > 0 || unknownMetadataRefs.Load() > 0 {
+		level.Warn(h.logger).Log("msg", "Unknown series references", "samples", unknownRefs.Load(), "exemplars", unknownExemplarRefs.Load(), "metadata", unknownMetadataRefs.Load())
 	}
 	if mmapOverlappingChunks > 0 {
 		level.Info(h.logger).Log("msg", "Overlapping m-map chunks on duplicate series records", "count", mmapOverlappingChunks)

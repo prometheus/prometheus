@@ -3633,7 +3633,7 @@ func TestMetadataCheckpointingOnlyKeepsLatestEntry(t *testing.T) {
 }
 
 func TestMetadataAssertInMemoryData(t *testing.T) {
-	db := newTestDB(t)
+	db := openTestDB(t, nil, nil)
 	ctx := context.Background()
 
 	// Add some series so we can append metadata to them.
@@ -3689,4 +3689,23 @@ func TestMetadataAssertInMemoryData(t *testing.T) {
 	require.Equal(t, series2.meta, m5)
 	require.Equal(t, series3.meta, m3)
 	require.Equal(t, series4.meta, m4)
+
+	require.NoError(t, db.Close())
+
+	// Reopen the DB, replaying the WAL. The Head must have been replayed
+	// correctly in memory.
+	reopenDB, err := Open(db.Dir(), nil, nil, nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, reopenDB.Close())
+	})
+
+	size, err := reopenDB.head.wal.Size()
+	require.NoError(t, err)
+	require.NotEqual(t, 0, size)
+
+	require.Equal(t, reopenDB.head.series.getByHash(s1.Hash(), s1).meta, m1)
+	require.Equal(t, reopenDB.head.series.getByHash(s2.Hash(), s2).meta, m5)
+	require.Equal(t, reopenDB.head.series.getByHash(s3.Hash(), s3).meta, m3)
+	require.Equal(t, reopenDB.head.series.getByHash(s4.Hash(), s4).meta, m4)
 }
