@@ -18,7 +18,6 @@ import (
 	"hash/fnv"
 	"net"
 	"net/url"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -534,16 +533,7 @@ func buildTargetLabels(targetLSet, targetGroupLSet model.LabelSet, cfg *config.S
 			set(labelsMap, model.ParamLabelPrefix+k, v[0])
 		}
 	}
-	return buildLabels(labelsMap)
-}
-
-func buildLabels(ls map[string]string) labels.Labels {
-	var result labels.Labels = make([]labels.Label, 0, len(ls))
-	for k, v := range ls {
-		result = append(result, labels.Label{Name: k, Value: v})
-	}
-	sort.Sort(result)
-	return result
+	return labels.FromMap(labelsMap)
 }
 
 func set(ls map[string]string, k, v string) {
