@@ -41,7 +41,6 @@ import (
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -265,7 +264,7 @@ const maxAheadTime = 10 * time.Minute
 
 type labelsMutator func(labels.Labels) labels.Labels
 
-func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed uint64, logger log.Logger, reportExtraMetrics, passMetadataInContext, appendMetadataToWAL bool, httpOpts []config_util.HTTPClientOption) (*scrapePool, error) {
+func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed uint64, logger log.Logger, reportExtraMetrics, passMetadataInContext bool, httpOpts []config_util.HTTPClientOption) (*scrapePool, error) {
 	targetScrapePools.Inc()
 	if logger == nil {
 		logger = log.NewNopLogger()
@@ -316,7 +315,6 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed 
 			opts.interval,
 			opts.timeout,
 			reportExtraMetrics,
-			appendMetadataToWAL,
 			opts.target,
 			cache,
 			passMetadataInContext,
@@ -843,7 +841,6 @@ type cacheEntry struct {
 	lastIter uint64
 	hash     uint64
 	lset     labels.Labels
-	meta     metadata.Metadata
 }
 
 type scrapeLoop struct {
@@ -873,8 +870,7 @@ type scrapeLoop struct {
 
 	disabledEndOfRunStalenessMarkers bool
 
-	reportExtraMetrics  bool
-	appendMetadataToWAL bool
+	reportExtraMetrics bool
 }
 
 // scrapeCache tracks mappings of exposed metric strings to label sets and
@@ -907,15 +903,15 @@ type scrapeCache struct {
 
 // metaEntry holds meta information about a metric.
 type metaEntry struct {
-	metadata.Metadata
-
-	lastIter       uint64 // Last scrape iteration the entry was observed at.
-	lastIterChange uint64 // Last scrape iteration the entry was changed at.
+	lastIter uint64 // Last scrape iteration the entry was observed at.
+	typ      textparse.MetricType
+	help     string
+	unit     string
 }
 
 func (m *metaEntry) size() int {
 	// The attribute lastIter although part of the struct it is not metadata.
-	return len(m.Help) + len(m.Unit) + len(m.Type)
+	return len(m.help) + len(m.unit) + len(m.typ)
 }
 
 func newScrapeCache() *scrapeCache {
@@ -989,11 +985,11 @@ func (c *scrapeCache) get(met string) (*cacheEntry, bool) {
 	return e, true
 }
 
-func (c *scrapeCache) addRef(met string, ref storage.SeriesRef, lset labels.Labels, meta metadata.Metadata, hash uint64) {
+func (c *scrapeCache) addRef(met string, ref storage.SeriesRef, lset labels.Labels, hash uint64) {
 	if ref == 0 {
 		return
 	}
-	c.series[met] = &cacheEntry{ref: ref, lastIter: c.iter, lset: lset, meta: meta, hash: hash}
+	c.series[met] = &cacheEntry{ref: ref, lastIter: c.iter, lset: lset, hash: hash}
 }
 
 func (c *scrapeCache) addDropped(met string) {
@@ -1028,13 +1024,10 @@ func (c *scrapeCache) setType(metric []byte, t textparse.MetricType) {
 
 	e, ok := c.metadata[yoloString(metric)]
 	if !ok {
-		e = &metaEntry{Metadata: metadata.Metadata{Type: textparse.MetricTypeUnknown}}
+		e = &metaEntry{typ: textparse.MetricTypeUnknown}
 		c.metadata[string(metric)] = e
 	}
-	if e.Type != t {
-		e.Type = t
-		e.lastIterChange = c.iter
-	}
+	e.typ = t
 	e.lastIter = c.iter
 
 	c.metaMtx.Unlock()
@@ -1045,12 +1038,11 @@ func (c *scrapeCache) setHelp(metric, help []byte) {
 
 	e, ok := c.metadata[yoloString(metric)]
 	if !ok {
-		e = &metaEntry{Metadata: metadata.Metadata{Type: textparse.MetricTypeUnknown}}
+		e = &metaEntry{typ: textparse.MetricTypeUnknown}
 		c.metadata[string(metric)] = e
 	}
-	if e.Help != yoloString(help) {
-		e.Help = string(help)
-		e.lastIterChange = c.iter
+	if e.help != yoloString(help) {
+		e.help = string(help)
 	}
 	e.lastIter = c.iter
 
@@ -1062,12 +1054,11 @@ func (c *scrapeCache) setUnit(metric, unit []byte) {
 
 	e, ok := c.metadata[yoloString(metric)]
 	if !ok {
-		e = &metaEntry{Metadata: metadata.Metadata{Type: textparse.MetricTypeUnknown}}
+		e = &metaEntry{typ: textparse.MetricTypeUnknown}
 		c.metadata[string(metric)] = e
 	}
-	if e.Unit != yoloString(unit) {
-		e.Unit = string(unit)
-		e.lastIterChange = c.iter
+	if e.unit != yoloString(unit) {
+		e.unit = string(unit)
 	}
 	e.lastIter = c.iter
 
@@ -1084,9 +1075,9 @@ func (c *scrapeCache) GetMetadata(metric string) (MetricMetadata, bool) {
 	}
 	return MetricMetadata{
 		Metric: metric,
-		Type:   m.Type,
-		Help:   m.Help,
-		Unit:   m.Unit,
+		Type:   m.typ,
+		Help:   m.help,
+		Unit:   m.unit,
 	}, true
 }
 
@@ -1099,9 +1090,9 @@ func (c *scrapeCache) ListMetadata() []MetricMetadata {
 	for m, e := range c.metadata {
 		res = append(res, MetricMetadata{
 			Metric: m,
-			Type:   e.Type,
-			Help:   e.Help,
-			Unit:   e.Unit,
+			Type:   e.typ,
+			Help:   e.help,
+			Unit:   e.unit,
 		})
 	}
 	return res
@@ -1141,7 +1132,6 @@ func newScrapeLoop(ctx context.Context,
 	interval time.Duration,
 	timeout time.Duration,
 	reportExtraMetrics bool,
-	appendMetadataToWAL bool,
 	target *Target,
 	metricMetadataStore MetricMetadataStore,
 	passMetadataInContext bool,
@@ -1185,7 +1175,6 @@ func newScrapeLoop(ctx context.Context,
 		interval:            interval,
 		timeout:             timeout,
 		reportExtraMetrics:  reportExtraMetrics,
-		appendMetadataToWAL: appendMetadataToWAL,
 	}
 	sl.ctx, sl.cancel = context.WithCancel(ctx)
 
@@ -1465,34 +1454,11 @@ func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string,
 	}
 
 	var (
-		defTime         = timestamp.FromTime(ts)
-		appErrs         = appendErrors{}
-		sampleLimitErr  error
-		e               exemplar.Exemplar // escapes to heap so hoisted out of loop
-		meta            metadata.Metadata
-		metadataChanged bool
+		defTime        = timestamp.FromTime(ts)
+		appErrs        = appendErrors{}
+		sampleLimitErr error
+		e              exemplar.Exemplar // escapes to heap so hoisted out of loop
 	)
-
-	// updateMetadata updates the current iteration's metadata object and the
-	// metadataChanged value if we have metadata in the scrape cache AND the
-	// labelset is for a new series or the metadata for this series has just
-	// changed. It returns a boolean based on whether the metadata was updated.
-	updateMetadata := func(lset labels.Labels, isNewSeries bool) bool {
-		var wasMetaUpdated bool
-		if sl.appendMetadataToWAL {
-			sl.cache.metaMtx.Lock()
-			metaEntry, metaOk := sl.cache.metadata[yoloString([]byte(lset.Get(labels.MetricName)))]
-			if metaOk && (isNewSeries || metaEntry.lastIterChange == sl.cache.iter) {
-				metadataChanged = true
-				meta.Type = metaEntry.Type
-				meta.Unit = metaEntry.Unit
-				meta.Help = metaEntry.Help
-				wasMetaUpdated = true
-			}
-			sl.cache.metaMtx.Unlock()
-		}
-		return wasMetaUpdated
-	}
 
 	// Take an appender with limits.
 	app = appender(app, sl.sampleLimit)
@@ -1543,10 +1509,6 @@ loop:
 			t = *tp
 		}
 
-		// Zero metadata out for current iteration until it's resolved.
-		meta = metadata.Metadata{}
-		metadataChanged = false
-
 		if sl.cache.getDropped(yoloString(met)) {
 			continue
 		}
@@ -1561,9 +1523,6 @@ loop:
 		if ok {
 			ref = ce.ref
 			lset = ce.lset
-
-			// Update metadata only if it changed in the current iteration.
-			updateMetadata(lset, false)
 		} else {
 			mets = p.Metric(&lset)
 			hash = lset.Hash()
@@ -1588,9 +1547,6 @@ loop:
 				targetScrapePoolExceededLabelLimits.Inc()
 				break loop
 			}
-
-			// Append metadata for new series if they were present.
-			updateMetadata(lset, true)
 		}
 
 		ref, err = app.Append(ref, lset, t, v)
@@ -1607,7 +1563,7 @@ loop:
 				// Bypass staleness logic if there is an explicit timestamp.
 				sl.cache.trackStaleness(hash, lset)
 			}
-			sl.cache.addRef(mets, ref, lset, meta, hash)
+			sl.cache.addRef(mets, ref, lset, hash)
 			if sampleAdded && sampleLimitErr == nil {
 				seriesAdded++
 			}
@@ -1630,12 +1586,6 @@ loop:
 			e = exemplar.Exemplar{} // reset for next time round loop
 		}
 
-		if sl.appendMetadataToWAL && metadataChanged {
-			if _, merr := app.AppendMetadata(ref, lset, meta); merr != nil {
-				// No need to fail the scrape on errors appending metadata.
-				level.Debug(sl.l).Log("msg", "Error when appending metadata in scrape loop", "ref", fmt.Sprintf("%d", ref), "metadata", fmt.Sprintf("%+v", meta), "err", merr)
-			}
-		}
 	}
 	if sampleLimitErr != nil {
 		if err == nil {
@@ -1656,7 +1606,6 @@ loop:
 	if appErrs.numExemplarOutOfOrder > 0 {
 		level.Warn(sl.l).Log("msg", "Error on ingesting out-of-order exemplars", "num_dropped", appErrs.numExemplarOutOfOrder)
 	}
-
 	if err == nil {
 		sl.cache.forEachStale(func(lset labels.Labels) bool {
 			// Series no longer exposed, mark it stale.
@@ -1834,7 +1783,7 @@ func (sl *scrapeLoop) addReportSample(app storage.Appender, s string, t int64, v
 	switch errors.Cause(err) {
 	case nil:
 		if !ok {
-			sl.cache.addRef(s, ref, lset, metadata.Metadata{}, lset.Hash())
+			sl.cache.addRef(s, ref, lset, lset.Hash())
 		}
 		return nil
 	case storage.ErrOutOfOrderSample, storage.ErrDuplicateSampleForTimestamp:
