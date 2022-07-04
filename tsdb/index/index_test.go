@@ -322,7 +322,7 @@ func TestPostingsMany(t *testing.T) {
 		var metas []chunks.Meta
 		for it.Next() {
 			require.NoError(t, ir.Series(it.At(), &builder, &lbls, &metas))
-			got = append(got, lbls.Get("i"))
+			got = append(got, lbls.Copy().Get("i"))
 		}
 		require.NoError(t, it.Err())
 		exp := []string{}
