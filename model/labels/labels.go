@@ -619,3 +619,36 @@ Outer:
 	}
 	return res
 }
+
+// SimpleBuilder allows efficient construction of a Labels from scratch.
+type SimpleBuilder struct {
+	add Labels
+}
+
+func (b *SimpleBuilder) Reset() {
+	b.add.lbls = b.add.lbls[:0]
+}
+
+// Add a name/value pair.
+// Note if you Add the same name twice you will get a duplicate label, which is invalid.
+func (b *SimpleBuilder) Add(name, value string) {
+	b.add.lbls = append(b.add.lbls, Label{Name: name, Value: value})
+}
+
+// Sort the labels added so far by name.
+func (b *SimpleBuilder) Sort() {
+	sort.Sort(b.add)
+}
+
+// Return the name/value pairs added so far as a Labels object.
+// Note: if you want them sorted, call Sort() first.
+func (b *SimpleBuilder) Labels() Labels {
+	// Copy the slice, so the next use of SimpleBuilder doesn't overwrite.
+	return Labels{lbls: append([]Label{}, b.add.lbls...)}
+}
+
+// Write the newly-built Labels out to ls, reusing its buffer if long enough.
+// Callers must ensure that there are no other references to ls.
+func (b *SimpleBuilder) Overwrite(ls *Labels) {
+	ls.lbls = append(ls.lbls[:0], b.add.lbls...)
+}
