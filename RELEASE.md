@@ -139,6 +139,7 @@ For release candidates still update `CHANGELOG.md`, but when you cut the final r
 
 Entries in the `CHANGELOG.md` are meant to be in this order:
 
+* `[SECURITY]` - A bugfix that specifically fixes a security issue.
 * `[CHANGE]`
 * `[FEATURE]`
 * `[ENHANCEMENT]`
