@@ -590,8 +590,13 @@ func TestHangingNotifier(t *testing.T) {
 				close(done)
 			}()
 
+			var calledOnce bool
 			// Setting up a bad server. This server hangs for 2 seconds.
 			badServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if calledOnce {
+					t.Fatal("hanging server called multiple times")
+				}
+				calledOnce = true
 				select {
 				case <-done:
 				case <-time.After(2 * time.Second):
@@ -672,8 +677,8 @@ func TestHangingNotifier(t *testing.T) {
 			}()
 
 			select {
-			case <-time.After(300 * time.Millisecond):
-				t.Fatalf("Timeout after 300 milliseconds, targets not synced in time.")
+			case <-time.After(1 * time.Second):
+				t.Fatalf("Timeout after 1 second, targets not synced in time.")
 			case <-changed:
 				// The good server has been hit in less than 3 seconds, therefore
 				// targets have been updated before a second call could be made to the
