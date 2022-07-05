@@ -498,11 +498,7 @@ func (s *memSeries) encodeToSnapshotRecord(b []byte) []byte {
 
 	buf.PutByte(chunkSnapshotRecordTypeSeries)
 	buf.PutBE64(uint64(s.ref))
-	buf.PutUvarint(len(s.lset))
-	for _, l := range s.lset {
-		buf.PutUvarintStr(l.Name)
-		buf.PutUvarintStr(l.Value)
-	}
+	record.EncodeLabels(&buf, s.lset)
 	buf.PutBE64int64(s.chunkRange)
 
 	s.Lock()
@@ -525,7 +521,7 @@ func (s *memSeries) encodeToSnapshotRecord(b []byte) []byte {
 	return buf.Get()
 }
 
-func decodeSeriesFromChunkSnapshot(b []byte) (csr chunkSnapshotRecord, err error) {
+func decodeSeriesFromChunkSnapshot(d *record.Decoder, b []byte) (csr chunkSnapshotRecord, err error) {
 	dec := encoding.Decbuf{B: b}
 
 	if flag := dec.Byte(); flag != chunkSnapshotRecordTypeSeries {
@@ -533,13 +529,9 @@ func decodeSeriesFromChunkSnapshot(b []byte) (csr chunkSnapshotRecord, err error
 	}
 
 	csr.ref = chunks.HeadSeriesRef(dec.Be64())
-
 	// The label set written to the disk is already sorted.
-	csr.lset = make(labels.Labels, dec.Uvarint())
-	for i := range csr.lset {
-		csr.lset[i].Name = dec.UvarintStr()
-		csr.lset[i].Value = dec.UvarintStr()
-	}
+	// TODO: figure out why DecodeLabels calls Sort(), and perhaps remove it.
+	csr.lset = d.DecodeLabels(&dec)
 
 	csr.chunkRange = dec.Be64int64()
 	if dec.Uvarint() == 0 {
@@ -971,7 +963,7 @@ Outer:
 		switch rec[0] {
 		case chunkSnapshotRecordTypeSeries:
 			numSeries++
-			csr, err := decodeSeriesFromChunkSnapshot(rec)
+			csr, err := decodeSeriesFromChunkSnapshot(&dec, rec)
 			if err != nil {
 				loopErr = errors.Wrap(err, "decode series record")
 				break Outer

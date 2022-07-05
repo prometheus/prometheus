@@ -23,7 +23,6 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"sort"
 	"sync"
 	"time"
 
@@ -32,7 +31,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/encoding"
@@ -790,12 +788,7 @@ const (
 func (w *SegmentWAL) encodeSeries(buf *encoding.Encbuf, series []record.RefSeries) uint8 {
 	for _, s := range series {
 		buf.PutBE64(uint64(s.Ref))
-		buf.PutUvarint(len(s.Labels))
-
-		for _, l := range s.Labels {
-			buf.PutUvarintStr(l.Name)
-			buf.PutUvarintStr(l.Value)
-		}
+		record.EncodeLabels(buf, s.Labels)
 	}
 	return walSeriesSimple
 }
@@ -840,6 +833,7 @@ type walReader struct {
 	cur   int
 	buf   []byte
 	crc32 hash.Hash32
+	dec   record.Decoder
 
 	curType    WALEntryType
 	curFlag    byte
@@ -1123,14 +1117,7 @@ func (r *walReader) decodeSeries(flag byte, b []byte, res *[]record.RefSeries) e
 
 	for len(dec.B) > 0 && dec.Err() == nil {
 		ref := chunks.HeadSeriesRef(dec.Be64())
-
-		lset := make(labels.Labels, dec.Uvarint())
-
-		for i := range lset {
-			lset[i].Name = dec.UvarintStr()
-			lset[i].Value = dec.UvarintStr()
-		}
-		sort.Sort(lset)
+		lset := r.dec.DecodeLabels(&dec)
 
 		*res = append(*res, record.RefSeries{
 			Ref:    ref,
