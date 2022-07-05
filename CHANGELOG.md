@@ -4,16 +4,16 @@
 
 Following data loss by users due to lack of unified buffer cache in OpenBSD, we
 will no longer release Prometheus upstream for OpenBSD until a proper solution is
-found.
+found. #8799
 
 * [FEATURE] Nomad SD: New service discovery for Nomad built-in service discovery. #10915
 * [ENHANCEMENT] Kubernetes SD: Allow attaching node labels for endpoint role. #10759
 * [ENHANCEMENT] PromQL: Optimise creation of signature with/without labels. #10667
 * [ENHANCEMENT] TSDB: Memory optimizations. #10873 #10874
 * [ENHANCEMENT] TSDB: Reduce sleep time when reading WAL. #10859 #10878
-* [BUGFIX] Alerting: Fix alertmanager targets not being picked when alerts where queued. #10948
+* [BUGFIX] Alerting: Fix Alertmanager targets not being updated when alerts were queued. #10948
 * [BUGFIX] Hetzner SD: Make authentication files relative to Prometheus config file. #10813
-* [BUGFIX] Promtool: Fix promtool check config not erroring properly on failures. #10952
+* [BUGFIX] Promtool: Fix `promtool check config` not erroring properly on failures. #10952
 * [BUGFIX] Scrape: Keep relabeled scrape interval and timeout on reloads. #10916
 * [BUGFIX] TSDB: Don't increment `prometheus_tsdb_compactions_failed_total` when context is canceled. #10772
 * [BUGFIX] TSDB: Fix panic if series is not found when deleting series. #10907
