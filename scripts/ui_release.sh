@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 ## /!\ This file must be used at the root of the prometheus project
 ## This script provides utils method to help to release and verify the readiness of each libs under the folder ui/
@@ -79,7 +79,7 @@ function bumpVersion() {
   npm version "${version}" --workspaces
   # upgrade the @prometheus-io/* dependencies on all packages
   for workspace in ${workspaces}; do
-    sed -E -i "" "s|(\"@prometheus-io/.+\": )\".+\"|\1\"\^${version}\"|" "${workspace}"/package.json
+    sed -E -i "s|(\"@prometheus-io/.+\": )\".+\"|\1\"\^${version}\"|" "${workspace}"/package.json
   done
 }
 
