@@ -528,16 +528,20 @@ func (b *blockBaseSeriesSet) Err() error {
 
 func (b *blockBaseSeriesSet) Warnings() storage.Warnings { return nil }
 
-// populateWithDelGenericSeriesIterator allows to iterate over given chunk metas. In each iteration it ensures
-// that chunks are trimmed based on given tombstones interval if any.
+// populateWithDelGenericSeriesIterator allows to iterate over given chunk
+// metas. In each iteration it ensures that chunks are trimmed based on given
+// tombstones interval if any.
 //
-// populateWithDelGenericSeriesIterator assumes that chunks that would be fully removed by intervals are filtered out in previous phase.
+// populateWithDelGenericSeriesIterator assumes that chunks that would be fully
+// removed by intervals are filtered out in previous phase.
 //
-// On each iteration currChkMeta is available. If currDelIter is not nil, it means that chunk iterator in currChkMeta
-// is invalid and chunk rewrite is needed, currDelIter should be used.
+// On each iteration currChkMeta is available. If currDelIter is not nil, it
+// means that the chunk iterator in currChkMeta is invalid and a chunk rewrite
+// is needed, for which currDelIter should be used.
 type populateWithDelGenericSeriesIterator struct {
 	chunks ChunkReader
-	// chks are expected to be sorted by minTime and should be related to the same, single series.
+	// chks are expected to be sorted by minTime and should be related to
+	// the same, single series.
 	chks []chunks.Meta
 
 	i         int
@@ -589,15 +593,17 @@ func (p *populateWithDelGenericSeriesIterator) next() bool {
 	// The chunk.Bytes() method is not safe for open chunks hence the re-encoding.
 	// This happens when snapshotting the head block or just fetching chunks from TSDB.
 	//
-	// TODO think how to avoid the typecasting to verify when it is head block.
+	// TODO(codesome): think how to avoid the typecasting to verify when it is head block.
 	_, isSafeChunk := p.currChkMeta.Chunk.(*safeChunk)
 	if len(p.bufIter.Intervals) == 0 && !(isSafeChunk && p.currChkMeta.MaxTime == math.MaxInt64) {
-		// If there are no overlap with deletion intervals AND it's NOT an "open" head chunk, we can take chunk as it is.
+		// If there is no overlap with deletion intervals AND it's NOT
+		// an "open" head chunk, we can take chunk as it is.
 		p.currDelIter = nil
 		return true
 	}
 
-	// We don't want full chunk or it's potentially still opened, take just part of it.
+	// We don't want the full chunk, or it's potentially still opened, take
+	// just a part of it.
 	p.bufIter.Iter = p.currChkMeta.Chunk.Iterator(nil)
 	p.currDelIter = p.bufIter
 	return true
@@ -703,12 +709,14 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 			return false
 		}
 
-		// Empty chunk, this should not happen, as we assume full deletions being filtered before this iterator.
+		// Empty chunk, this should not happen, as we assume full
+		// deletions being filtered before this iterator.
 		p.err = errors.New("populateWithDelChunkSeriesIterator: unexpected empty chunk found while rewriting chunk")
 		return false
 	}
 
-	// Re-encode the chunk if iterator is provider. This means that it has some samples to be deleted or chunk is opened.
+	// Re-encode the chunk if iterator is provider. This means that it has
+	// some samples to be deleted or chunk is opened.
 	var (
 		newChunk chunkenc.Chunk
 		app      chunkenc.Appender
@@ -727,10 +735,33 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 		var h *histogram.Histogram
 		t, h = p.currDelIter.AtHistogram()
 		p.curr.MinTime = t
+
 		app.AppendHistogram(t, h)
-		for p.currDelIter.Next() == chunkenc.ValHistogram {
-			// TODO(beorn7): Is it possible that the value type changes during iteration?
+		for vt := p.currDelIter.Next(); vt != chunkenc.ValNone; vt = p.currDelIter.Next() {
+			if vt != chunkenc.ValHistogram {
+				err = fmt.Errorf("found value type %v in histogram chunk", vt)
+				break
+			}
 			t, h = p.currDelIter.AtHistogram()
+
+			// Defend against corrupted chunks.
+			pI, nI, okToAppend, counterReset := app.(*chunkenc.HistogramAppender).Appendable(h)
+			if len(pI)+len(nI) > 0 {
+				err = fmt.Errorf(
+					"bucket layout has changed unexpectedly: %d positive and %d negative bucket interjections required",
+					len(pI), len(nI),
+				)
+				break
+			}
+			if counterReset {
+				err = errors.New("detected unexpected counter reset in histogram")
+				break
+			}
+			if !okToAppend {
+				err = errors.New("unable to append histogram due to unexpected schema change")
+				break
+			}
+
 			app.AppendHistogram(t, h)
 		}
 	case chunkenc.ValFloat:
@@ -742,8 +773,11 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 		t, v = p.currDelIter.At()
 		p.curr.MinTime = t
 		app.Append(t, v)
-		for p.currDelIter.Next() == chunkenc.ValFloat {
-			// TODO(beorn7): Is it possible that the value type changes during iteration?
+		for vt := p.currDelIter.Next(); vt != chunkenc.ValNone; vt = p.currDelIter.Next() {
+			if vt != chunkenc.ValFloat {
+				err = fmt.Errorf("found value type %v in float chunk", vt)
+				break
+			}
 			t, v = p.currDelIter.At()
 			app.Append(t, v)
 		}

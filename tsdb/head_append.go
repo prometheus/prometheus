@@ -634,28 +634,31 @@ func (s *memSeries) append(t int64, v float64, appendID uint64, chunkDiskMapper 
 // appendHistogram adds the histogram.
 // It is unsafe to call this concurrently with s.iterator(...) without holding the series lock.
 func (s *memSeries) appendHistogram(t int64, h *histogram.Histogram, appendID uint64, chunkDiskMapper *chunks.ChunkDiskMapper) (sampleInOrder, chunkCreated bool) {
-	// Head controls the execution of recoding, so that we own the proper chunk reference afterwards.
-	// We check for Appendable before appendPreprocessor because in case it ends up creating a new chunk,
-	// we need to know if there was also a counter reset or not to set the meta properly.
+	// Head controls the execution of recoding, so that we own the proper
+	// chunk reference afterwards.  We check for Appendable before
+	// appendPreprocessor because in case it ends up creating a new chunk,
+	// we need to know if there was also a counter reset or not to set the
+	// meta properly.
 	app, _ := s.app.(*chunkenc.HistogramAppender)
 	var (
 		positiveInterjections, negativeInterjections []chunkenc.Interjection
 		okToAppend, counterReset                     bool
 	)
-	if app != nil {
-		positiveInterjections, negativeInterjections, okToAppend, counterReset = app.Appendable(h)
-	}
-
 	c, sampleInOrder, chunkCreated := s.appendPreprocessor(t, chunkenc.EncHistogram, chunkDiskMapper)
 	if !sampleInOrder {
 		return sampleInOrder, chunkCreated
 	}
 
+	if app != nil {
+		positiveInterjections, negativeInterjections, okToAppend, counterReset = app.Appendable(h)
+	}
+
 	if !chunkCreated {
 		// We have 3 cases here
 		// - !okToAppend -> We need to cut a new chunk.
-		// - okToAppend but we have interjections -> Existing chunk needs recoding before we can append our histogram.
-		// - okToAppend and no interjections -> Chunk is ready to support our histogram.
+		// - okToAppend but we have interjections → Existing chunk needs
+		//   recoding before we can append our histogram.
+		// - okToAppend and no interjections → Chunk is ready to support our histogram.
 		if !okToAppend || counterReset {
 			c = s.cutNewHeadChunk(t, chunkenc.EncHistogram, chunkDiskMapper)
 			chunkCreated = true
@@ -663,12 +666,11 @@ func (s *memSeries) appendHistogram(t int64, h *histogram.Histogram, appendID ui
 			// New buckets have appeared. We need to recode all
 			// prior histogram samples within the chunk before we
 			// can process this one.
-			chunk, app := app.Recode(positiveInterjections, negativeInterjections, h.PositiveSpans, h.NegativeSpans)
-			s.headChunk = &memChunk{
-				minTime: s.headChunk.minTime,
-				maxTime: s.headChunk.maxTime,
-				chunk:   chunk,
-			}
+			chunk, app := app.Recode(
+				positiveInterjections, negativeInterjections,
+				h.PositiveSpans, h.NegativeSpans,
+			)
+			c.chunk = chunk
 			s.app = app
 		}
 	}
@@ -704,7 +706,9 @@ func (s *memSeries) appendHistogram(t int64, h *histogram.Histogram, appendID ui
 // appendPreprocessor takes care of cutting new chunks and m-mapping old chunks.
 // It is unsafe to call this concurrently with s.iterator(...) without holding the series lock.
 // This should be called only when appending data.
-func (s *memSeries) appendPreprocessor(t int64, e chunkenc.Encoding, chunkDiskMapper *chunks.ChunkDiskMapper) (c *memChunk, sampleInOrder, chunkCreated bool) {
+func (s *memSeries) appendPreprocessor(
+	t int64, e chunkenc.Encoding, chunkDiskMapper *chunks.ChunkDiskMapper,
+) (c *memChunk, sampleInOrder, chunkCreated bool) {
 	// Based on Gorilla white papers this offers near-optimal compression ratio
 	// so anything bigger that this has diminishing returns and increases
 	// the time range within which we have to decompress all samples.
@@ -774,7 +778,9 @@ func computeChunkEndTime(start, cur, max int64) int64 {
 	return start + (max-start)/n
 }
 
-func (s *memSeries) cutNewHeadChunk(mint int64, e chunkenc.Encoding, chunkDiskMapper *chunks.ChunkDiskMapper) *memChunk {
+func (s *memSeries) cutNewHeadChunk(
+	mint int64, e chunkenc.Encoding, chunkDiskMapper *chunks.ChunkDiskMapper,
+) *memChunk {
 	s.mmapCurrentHeadChunk(chunkDiskMapper)
 
 	s.headChunk = &memChunk{
