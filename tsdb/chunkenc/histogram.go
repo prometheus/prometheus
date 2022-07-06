@@ -473,14 +473,14 @@ func (a *HistogramAppender) AppendHistogram(t int64, h *histogram.Histogram) {
 
 		a.writeSumDelta(h.Sum)
 
-		for i, buck := range h.PositiveBuckets {
-			delta := buck - a.pBuckets[i]
+		for i, b := range h.PositiveBuckets {
+			delta := b - a.pBuckets[i]
 			dod := delta - a.pBucketsDelta[i]
 			putVarbitInt(a.b, dod)
 			a.pBucketsDelta[i] = delta
 		}
-		for i, buck := range h.NegativeBuckets {
-			delta := buck - a.nBuckets[i]
+		for i, b := range h.NegativeBuckets {
+			delta := b - a.nBuckets[i]
 			dod := delta - a.nBucketsDelta[i]
 			putVarbitInt(a.b, dod)
 			a.nBucketsDelta[i] = delta
@@ -505,7 +505,8 @@ func (a *HistogramAppender) AppendHistogram(t int64, h *histogram.Histogram) {
 // Recode converts the current chunk to accommodate an expansion of the set of
 // (positive and/or negative) buckets used, according to the provided
 // interjections, resulting in the honoring of the provided new positive and
-// negative spans.
+// negative spans. To continue appending, use the returned Appender rather than
+// the receiver of this method.
 func (a *HistogramAppender) Recode(
 	positiveInterjections, negativeInterjections []Interjection,
 	positiveSpans, negativeSpans []histogram.Span,
@@ -513,7 +514,7 @@ func (a *HistogramAppender) Recode(
 	// TODO(beorn7): This currently just decodes everything and then encodes
 	// it again with the new span layout. This can probably be done in-place
 	// by editing the chunk. But let's first see how expensive it is in the
-	// big picture.
+	// big picture. Also, in-place editing might create concurrency issues.
 	byts := a.b.bytes()
 	it := newHistogramIterator(byts)
 	hc := NewHistogramChunk()
