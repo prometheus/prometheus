@@ -1641,17 +1641,27 @@ load 1ms
 }
 
 func TestRecoverEvaluatorRuntime(t *testing.T) {
-	ev := &evaluator{logger: log.NewNopLogger()}
+	var output []interface{}
+	logger := log.Logger(log.LoggerFunc(func(keyvals ...interface{}) error {
+		output = append(output, keyvals...)
+		return nil
+	}))
+	ev := &evaluator{logger: logger}
+
+	expr, _ := parser.ParseExpr("sum(up)")
 
 	var err error
-	defer ev.recover(nil, &err)
+
+	defer func() {
+		require.EqualError(t, err, "unexpected error: runtime error: index out of range [123] with length 0")
+		require.Contains(t, output, "sum(up)")
+	}()
+	defer ev.recover(expr, nil, &err)
 
 	// Cause a runtime panic.
 	var a []int
 	//nolint:govet
 	a[123] = 1
-
-	require.EqualError(t, err, "unexpected error")
 }
 
 func TestRecoverEvaluatorError(t *testing.T) {
@@ -1663,7 +1673,7 @@ func TestRecoverEvaluatorError(t *testing.T) {
 	defer func() {
 		require.EqualError(t, err, e.Error())
 	}()
-	defer ev.recover(nil, &err)
+	defer ev.recover(nil, nil, &err)
 
 	panic(e)
 }
@@ -1683,7 +1693,7 @@ func TestRecoverEvaluatorErrorWithWarnings(t *testing.T) {
 		require.EqualError(t, err, e.Error())
 		require.Equal(t, warnings, ws, "wrong warning message")
 	}()
-	defer ev.recover(&ws, &err)
+	defer ev.recover(nil, &ws, &err)
 
 	panic(e)
 }
