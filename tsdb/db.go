@@ -671,6 +671,9 @@ func validateOpts(opts *Options, rngs []int64) (*Options, []int64) {
 	if opts.OutOfOrderCapMax <= 0 {
 		opts.OutOfOrderCapMax = DefaultOutOfOrderCapMax
 	}
+	if opts.OutOfOrderCapMin > opts.OutOfOrderCapMax {
+		opts.OutOfOrderCapMax = opts.OutOfOrderCapMin
+	}
 	if opts.OutOfOrderTimeWindow < 0 {
 		opts.OutOfOrderTimeWindow = 0
 	}

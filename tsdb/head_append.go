@@ -326,49 +326,42 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 // The sample belongs to the out of order chunk if we return true and no error.
 // An error signifies the sample cannot be handled.
 func (s *memSeries) appendable(t int64, v float64, headMaxt, minValidTime, oooTimeWindow int64) (isOutOfOrder bool, delta int64, err error) {
-	msMaxt := s.maxTime()
-	if msMaxt == math.MinInt64 {
-		// The series has no sample and was freshly created.
-		if t >= minValidTime {
-			// We can append it in the in-order chunk.
+	// Check if we can append in the in-order chunk.
+	if t >= minValidTime {
+		if s.head() == nil {
+			// The series has no sample and was freshly created.
 			return false, 0, nil
 		}
-
-		// We cannot append it in the in-order head. So we check the oooTimeWindow
-		// w.r.t. the head's maxt.
-		// -1 because for the first sample in the Head, headMaxt will be equal to t.
-		msMaxt = headMaxt - 1
-	}
-
-	if t > msMaxt {
-		return false, 0, nil
-	}
-
-	if t < msMaxt-oooTimeWindow {
-		if oooTimeWindow > 0 {
-			return true, msMaxt - t, storage.ErrTooOldSample
+		msMaxt := s.maxTime()
+		if t > msMaxt {
+			return false, 0, nil
 		}
-		if t < minValidTime {
-			return false, msMaxt - t, storage.ErrOutOfBounds
+		if t == msMaxt {
+			// We are allowing exact duplicates as we can encounter them in valid cases
+			// like federation and erroring out at that time would be extremely noisy.
+			// This only checks against the latest in-order sample.
+			// The OOO headchunk has its own method to detect these duplicates
+			if math.Float64bits(s.sampleBuf[3].v) != math.Float64bits(v) {
+				return false, 0, storage.ErrDuplicateSampleForTimestamp
+			}
+			// Sample is identical (ts + value) with most current (highest ts) sample in sampleBuf.
+			return false, 0, nil
 		}
-		return false, msMaxt - t, storage.ErrOutOfOrderSample
 	}
 
-	if t != msMaxt || s.head() == nil {
-		// Sample is ooo and within time window OR series has no active chunk to check for duplicate sample.
-		return true, msMaxt - t, nil
+	// The sample cannot go in the in-order chunk. Check if it can go in the out-of-order chunk.
+	if oooTimeWindow > 0 && t >= headMaxt-oooTimeWindow {
+		return true, headMaxt - t, nil
 	}
 
-	// We are allowing exact duplicates as we can encounter them in valid cases
-	// like federation and erroring out at that time would be extremely noisy.
-	// this only checks against the latest in-order sample.
-	// the OOO headchunk has its own method to detect these duplicates
-	if math.Float64bits(s.sampleBuf[3].v) != math.Float64bits(v) {
-		return false, 0, storage.ErrDuplicateSampleForTimestamp
+	// The sample cannot go in both in-order and out-of-order chunk.
+	if oooTimeWindow > 0 {
+		return true, headMaxt - t, storage.ErrTooOldSample
 	}
-
-	// sample is identical (ts + value) with most current (highest ts) sample in sampleBuf
-	return false, 0, nil
+	if t < minValidTime {
+		return false, headMaxt - t, storage.ErrOutOfBounds
+	}
+	return false, headMaxt - t, storage.ErrOutOfOrderSample
 }
 
 // AppendExemplar for headAppender assumes the series ref already exists, and so it doesn't

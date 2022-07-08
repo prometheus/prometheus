@@ -4261,8 +4261,18 @@ func TestOOOAppendAndQuery(t *testing.T) {
 
 	// At the edge of time window, also it would be "out of bound" without the ooo support.
 	addSample(s1, 60, 65, false)
-	addSample(s2, 50, 55, false)
-	verifyOOOMinMaxTimes(50, 265)
+	verifyOOOMinMaxTimes(60, 265)
+	testQuery()
+
+	// This sample is not within the time window w.r.t. the head's maxt, but it is within the window
+	// w.r.t. the series' maxt. But we consider only head's maxt.
+	addSample(s2, 59, 59, true)
+	verifyOOOMinMaxTimes(60, 265)
+	testQuery()
+
+	// Now the sample is within time window w.r.t. the head's maxt.
+	addSample(s2, 60, 65, false)
+	verifyOOOMinMaxTimes(60, 265)
 	testQuery()
 
 	// Out of time window again.
@@ -4276,7 +4286,7 @@ func TestOOOAppendAndQuery(t *testing.T) {
 	require.Equal(t, float64(4), prom_testutil.ToFloat64(db.head.metrics.chunksCreated))
 	addSample(s1, 180, 249, false)
 	require.Equal(t, float64(6), prom_testutil.ToFloat64(db.head.metrics.chunksCreated))
-	verifyOOOMinMaxTimes(50, 265)
+	verifyOOOMinMaxTimes(60, 265)
 	testQuery()
 }
 

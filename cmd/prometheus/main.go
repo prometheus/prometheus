@@ -314,12 +314,6 @@ func main() {
 	serverOnlyFlag(a, "storage.tsdb.wal-compression", "Compress the tsdb WAL.").
 		Hidden().Default("true").BoolVar(&cfg.tsdb.WALCompression)
 
-	serverOnlyFlag(a, "storage.tsdb.out-of-order-cap-min", "Minimum capacity for out of order chunks (in samples. between 0 and 255.)").
-		Hidden().Default("4").IntVar(&cfg.tsdb.OutOfOrderCapMin)
-
-	serverOnlyFlag(a, "storage.tsdb.out-of-order-cap-max", "Maximum capacity for out of order chunks (in samples. between 1 and 255.)").
-		Hidden().Default("32").IntVar(&cfg.tsdb.OutOfOrderCapMax)
-
 	serverOnlyFlag(a, "storage.tsdb.head-chunks-write-queue-size", "Size of the queue through which head chunks are written to the disk to be m-mapped, 0 disables the queue completely. Experimental.").
 		Default("0").IntVar(&cfg.tsdb.HeadChunksWriteQueueSize)
 
@@ -1536,8 +1530,6 @@ type tsdbOptions struct {
 	MinBlockDuration               model.Duration
 	MaxBlockDuration               model.Duration
 	OutOfOrderTimeWindow           int64
-	OutOfOrderCapMin               int
-	OutOfOrderCapMax               int
 	EnableExemplarStorage          bool
 	MaxExemplars                   int64
 	EnableMemorySnapshotOnShutdown bool
@@ -1561,8 +1553,6 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		MaxExemplars:                   opts.MaxExemplars,
 		EnableMemorySnapshotOnShutdown: opts.EnableMemorySnapshotOnShutdown,
 		OutOfOrderTimeWindow:           opts.OutOfOrderTimeWindow,
-		OutOfOrderCapMin:               int64(opts.OutOfOrderCapMin),
-		OutOfOrderCapMax:               int64(opts.OutOfOrderCapMax),
 	}
 }
 
