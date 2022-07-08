@@ -181,15 +181,22 @@ func (m Matrix) Swap(i, j int)      { m[i], m[j] = m[j], m[i] }
 // Such a behavior is semantically undefined.
 // https://github.com/prometheus/prometheus/issues/4562
 func (m Matrix) ContainsSameLabelset() bool {
-	l := make(map[uint64]struct{}, len(m))
-	for _, ss := range m {
-		hash := ss.Metric.Hash()
-		if _, ok := l[hash]; ok {
-			return true
+	switch len(m) {
+	case 0, 1:
+		return false
+	case 2:
+		return m[0].Metric.Hash() == m[1].Metric.Hash()
+	default:
+		l := make(map[uint64]struct{}, len(m))
+		for _, ss := range m {
+			hash := ss.Metric.Hash()
+			if _, ok := l[hash]; ok {
+				return true
+			}
+			l[hash] = struct{}{}
 		}
-		l[hash] = struct{}{}
+		return false
 	}
-	return false
 }
 
 // Result holds the resulting value of an execution or an error
