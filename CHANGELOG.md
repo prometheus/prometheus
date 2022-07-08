@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.37.0-rc.1 / 2022-07-11
+
+This release candidate addresses an issue with the publishing of the Prometheus
+UI libraries to NPM registry.
+
 ## 2.37.0-rc.0 / 2022-07-05
 
 Following data loss by users due to lack of unified buffer cache in OpenBSD, we
