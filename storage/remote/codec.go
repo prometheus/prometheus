@@ -502,6 +502,29 @@ func exemplarProtoToExemplar(ep prompb.Exemplar) exemplar.Exemplar {
 	}
 }
 
+func histogramProtoToHistogram(hp prompb.Histogram) histogram.Histogram {
+	return histogram.Histogram{
+		Schema:          hp.Schema,
+		ZeroThreshold:   hp.ZeroThreshold,
+		ZeroCount:       hp.GetZeroCountInt(),
+		Count:           hp.GetCountInt(),
+		Sum:             hp.Sum,
+		PositiveSpans:   spansProtoToSpans(hp.PositiveBuckets.Span),
+		NegativeSpans:   spansProtoToSpans(hp.NegativeBuckets.Span),
+		PositiveBuckets: hp.PositiveBuckets.GetDelta(),
+		NegativeBuckets: hp.NegativeBuckets.GetDelta(),
+	}
+}
+
+func spansProtoToSpans(s []*prompb.Buckets_Span) []histogram.Span {
+	var spans = make([]histogram.Span, len(s))
+	for i := 0; i < len(s); i++ {
+		spans[i] = histogram.Span{Offset: s[i].Offset, Length: s[i].Length}
+	}
+
+	return spans
+}
+
 // LabelProtosToMetric unpack a []*prompb.Label to a model.Metric
 func LabelProtosToMetric(labelPairs []*prompb.Label) model.Metric {
 	metric := make(model.Metric, len(labelPairs))

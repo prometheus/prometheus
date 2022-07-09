@@ -754,6 +754,7 @@ type RemoteWriteConfig struct {
 	WriteRelabelConfigs []*relabel.Config `yaml:"write_relabel_configs,omitempty"`
 	Name                string            `yaml:"name,omitempty"`
 	SendExemplars       bool              `yaml:"send_exemplars,omitempty"`
+	SendHistograms      bool              `yaml:"send_histograms,omitempty"`
 
 	// We cannot do proper Go type embedding below as the parser will then parse
 	// values arbitrarily into the overflow maps of further-down types.
