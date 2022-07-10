@@ -596,6 +596,46 @@ func TestBuilder(t *testing.T) {
 	}
 }
 
+func TestScratchBuilder(t *testing.T) {
+	for i, tcase := range []struct {
+		add  []Label
+		want Labels
+	}{
+		{
+			add:  []Label{},
+			want: EmptyLabels(),
+		},
+		{
+			add:  []Label{{"aaa", "111"}},
+			want: FromStrings("aaa", "111"),
+		},
+		{
+			add:  []Label{{"aaa", "111"}, {"bbb", "222"}, {"ccc", "333"}},
+			want: FromStrings("aaa", "111", "bbb", "222", "ccc", "333"),
+		},
+		{
+			add:  []Label{{"bbb", "222"}, {"aaa", "111"}, {"ccc", "333"}},
+			want: FromStrings("aaa", "111", "bbb", "222", "ccc", "333"),
+		},
+		{
+			add:  []Label{{"ddd", "444"}},
+			want: FromStrings("ddd", "444"),
+		},
+	} {
+		overwriteTarget := EmptyLabels()
+		t.Run(fmt.Sprint(i), func(t *testing.T) {
+			b := ScratchBuilder{}
+			for _, lbl := range tcase.add {
+				b.Add(lbl.Name, lbl.Value)
+			}
+			b.Sort()
+			require.Equal(t, tcase.want, b.Labels())
+			b.Overwrite(&overwriteTarget)
+			require.Equal(t, tcase.want, overwriteTarget)
+		})
+	}
+}
+
 func TestLabels_Hash(t *testing.T) {
 	lbls := FromStrings("foo", "bar", "baz", "qux")
 	require.Equal(t, lbls.Hash(), lbls.Hash())
