@@ -259,7 +259,6 @@ type timestampTracker struct {
 	samples              int64
 	exemplars            int64
 	histograms           int64
-	histogramBuckets     int64
 	highestTimestamp     int64
 	highestRecvTimestamp *maxTimestamp
 }
@@ -280,7 +279,6 @@ func (t *timestampTracker) AppendExemplar(_ storage.SeriesRef, _ labels.Labels, 
 
 func (t *timestampTracker) AppendHistogram(_ storage.SeriesRef, _ labels.Labels, ts int64, h *histogram.Histogram) (storage.SeriesRef, error) {
 	t.histograms++
-	t.histogramBuckets += int64(len(h.NegativeBuckets) + len(h.PositiveBuckets))
 	if ts > t.highestTimestamp {
 		t.highestTimestamp = ts
 	}
