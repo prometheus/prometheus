@@ -171,7 +171,7 @@ func TestTailSamples(t *testing.T) {
 
 				for j := 0; j < histogramsCount; j++ {
 					inner := rand.Intn(ref + 1)
-					histogram := enc.Histograms([]record.RefHistogram{record.RefHistogram{
+					histogram := enc.Histograms([]record.RefHistogram{{
 						Ref: chunks.HeadSeriesRef(inner),
 						T:   now.UnixNano() + 1,
 						H: &histogram.Histogram{

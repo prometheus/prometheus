@@ -608,7 +608,7 @@ func createHistograms(numSamples, numSeries int) ([]record.RefHistogram, []recor
 		}
 		series = append(series, record.RefSeries{
 			Ref:    chunks.HeadSeriesRef(i),
-			Labels: append(labels.Labels{{Name: "__name__", Value: name}}),
+			Labels: labels.Labels{{Name: "__name__", Value: name}},
 		})
 	}
 	return histograms, series
