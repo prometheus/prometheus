@@ -503,17 +503,26 @@ func exemplarProtoToExemplar(ep prompb.Exemplar) exemplar.Exemplar {
 }
 
 func histogramProtoToHistogram(hp prompb.Histogram) histogram.Histogram {
-	return histogram.Histogram{
+	h := histogram.Histogram{
 		Schema:          hp.Schema,
 		ZeroThreshold:   hp.ZeroThreshold,
 		ZeroCount:       hp.GetZeroCountInt(),
 		Count:           hp.GetCountInt(),
 		Sum:             hp.Sum,
-		PositiveSpans:   spansProtoToSpans(hp.PositiveBuckets.Span),
-		NegativeSpans:   spansProtoToSpans(hp.NegativeBuckets.Span),
 		PositiveBuckets: hp.PositiveBuckets.GetDelta(),
 		NegativeBuckets: hp.NegativeBuckets.GetDelta(),
 	}
+
+	// The following values can be nil and will cause a panic if accessed
+	// without being checked.
+	if hp.PositiveBuckets != nil {
+		h.PositiveSpans = spansProtoToSpans(hp.PositiveBuckets.Span)
+	}
+	if hp.NegativeBuckets != nil {
+		h.NegativeSpans = spansProtoToSpans(hp.NegativeBuckets.Span)
+	}
+
+	return h
 }
 
 func spansProtoToSpans(s []*prompb.Buckets_Span) []histogram.Span {
