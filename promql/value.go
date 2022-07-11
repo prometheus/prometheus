@@ -138,15 +138,22 @@ func (vec Vector) String() string {
 // Such a behavior is semantically undefined
 // https://github.com/prometheus/prometheus/issues/4562
 func (vec Vector) ContainsSameLabelset() bool {
-	l := make(map[uint64]struct{}, len(vec))
-	for _, s := range vec {
-		hash := s.Metric.Hash()
-		if _, ok := l[hash]; ok {
-			return true
+	switch len(vec) {
+	case 0, 1:
+		return false
+	case 2:
+		return vec[0].Metric.Hash() == vec[1].Metric.Hash()
+	default:
+		l := make(map[uint64]struct{}, len(vec))
+		for _, ss := range vec {
+			hash := ss.Metric.Hash()
+			if _, ok := l[hash]; ok {
+				return true
+			}
+			l[hash] = struct{}{}
 		}
-		l[hash] = struct{}{}
+		return false
 	}
-	return false
 }
 
 // Matrix is a slice of Series that implements sort.Interface and

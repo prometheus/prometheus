@@ -21,6 +21,50 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 )
 
+func TestVector_ContainsSameLabelset(t *testing.T) {
+	for name, tc := range map[string]struct {
+		vector   Vector
+		expected bool
+	}{
+		"empty vector": {
+			vector:   Vector{},
+			expected: false,
+		},
+		"vector with one series": {
+			vector: Vector{
+				{Metric: labels.FromStrings("lbl", "a")},
+			},
+			expected: false,
+		},
+		"vector with two different series": {
+			vector: Vector{
+				{Metric: labels.FromStrings("lbl", "a")},
+				{Metric: labels.FromStrings("lbl", "b")},
+			},
+			expected: false,
+		},
+		"vector with two equal series": {
+			vector: Vector{
+				{Metric: labels.FromStrings("lbl", "a")},
+				{Metric: labels.FromStrings("lbl", "a")},
+			},
+			expected: true,
+		},
+		"vector with three series, two equal": {
+			vector: Vector{
+				{Metric: labels.FromStrings("lbl", "a")},
+				{Metric: labels.FromStrings("lbl", "b")},
+				{Metric: labels.FromStrings("lbl", "a")},
+			},
+			expected: true,
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			require.Equal(t, tc.expected, tc.vector.ContainsSameLabelset())
+		})
+	}
+}
+
 func TestMatrix_ContainsSameLabelset(t *testing.T) {
 	for name, tc := range map[string]struct {
 		matrix   Matrix
