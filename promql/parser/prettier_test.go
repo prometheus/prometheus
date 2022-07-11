@@ -37,25 +37,25 @@ func TestAggregateExprPretty(t *testing.T) {
 		},
 		{
 			in: `sum without(job,foo) (task:errors:rate10s{job="s"})`,
-			out: `sum without(job, foo) (
+			out: `sum without (job, foo) (
   task:errors:rate10s{job="s"}
 )`,
 		},
 		{
 			in: `sum(task:errors:rate10s{job="s"}) without(job,foo)`,
-			out: `sum without(job, foo) (
+			out: `sum without (job, foo) (
   task:errors:rate10s{job="s"}
 )`,
 		},
 		{
 			in: `sum by(job,foo) (task:errors:rate10s{job="s"})`,
-			out: `sum by(job, foo) (
+			out: `sum by (job, foo) (
   task:errors:rate10s{job="s"}
 )`,
 		},
 		{
 			in: `sum (task:errors:rate10s{job="s"}) by(job,foo)`,
-			out: `sum by(job, foo) (
+			out: `sum by (job, foo) (
   task:errors:rate10s{job="s"}
 )`,
 		},
@@ -68,17 +68,17 @@ func TestAggregateExprPretty(t *testing.T) {
 		},
 		{
 			in: `sum by(job,foo) (sum by(job,foo) (task:errors:rate10s{job="s"}))`,
-			out: `sum by(job, foo) (
-  sum by(job, foo) (
+			out: `sum by (job, foo) (
+  sum by (job, foo) (
     task:errors:rate10s{job="s"}
   )
 )`,
 		},
 		{
 			in: `sum by(job,foo) (sum by(job,foo) (sum by(job,foo) (task:errors:rate10s{job="s"})))`,
-			out: `sum by(job, foo) (
-  sum by(job, foo) (
-    sum by(job, foo) (
+			out: `sum by (job, foo) (
+  sum by (job, foo) (
+    sum by (job, foo) (
       task:errors:rate10s{job="s"}
     )
   )
@@ -87,8 +87,8 @@ func TestAggregateExprPretty(t *testing.T) {
 		{
 			in: `sum by(job,foo)
 (sum by(job,foo) (task:errors:rate10s{job="s"}))`,
-			out: `sum by(job, foo) (
-  sum by(job, foo) (
+			out: `sum by (job, foo) (
+  sum by (job, foo) (
     task:errors:rate10s{job="s"}
   )
 )`,
@@ -96,8 +96,8 @@ func TestAggregateExprPretty(t *testing.T) {
 		{
 			in: `sum by(job,foo)
 (sum(task:errors:rate10s{job="s"}) without(job,foo))`,
-			out: `sum by(job, foo) (
-  sum without(job, foo) (
+			out: `sum by (job, foo) (
+  sum without (job, foo) (
     task:errors:rate10s{job="s"}
   )
 )`,
@@ -106,8 +106,8 @@ func TestAggregateExprPretty(t *testing.T) {
 			in: `sum by(job,foo) # Comment 1.
 (sum by(job,foo) ( # Comment 2.
 task:errors:rate10s{job="s"}))`,
-			out: `sum by(job, foo) (
-  sum by(job, foo) (
+			out: `sum by (job, foo) (
+  sum by (job, foo) (
     task:errors:rate10s{job="s"}
   )
 )`,
@@ -139,7 +139,7 @@ func TestBinaryExprPretty(t *testing.T) {
 		{
 			in: `a + ignoring(job) b`,
 			out: `  a
-+ ignoring(job)
++ ignoring (job)
   b`,
 		},
 		{
@@ -175,19 +175,21 @@ func TestBinaryExprPretty(t *testing.T) {
 		{
 			in: `foo_1 + ignoring(foo) foo_2 + ignoring(job) group_left foo_3 + on(instance) group_right foo_4`,
 			out: `      foo_1
-    + ignoring(foo)
+    + ignoring (foo)
       foo_2
-  + ignoring(job) group_left()
+  + ignoring (job) group_left ()
     foo_3
-+ on(instance) group_right()
++ on (instance) group_right ()
   foo_4`,
 		},
 	}
 	for _, test := range inputs {
-		expr, err := ParseExpr(test.in)
-		require.NoError(t, err)
+		t.Run(test.in, func(t *testing.T) {
+			expr, err := ParseExpr(test.in)
+			require.NoError(t, err)
 
-		require.Equal(t, test.out, Prettify(expr))
+			require.Equal(t, test.out, Prettify(expr))
+		})
 	}
 }
 
@@ -560,7 +562,7 @@ or
 		},
 		{
 			in: `min by (job, integration) (rate(alertmanager_notifications_failed_total{job="alertmanager", integration=~".*"}[5m]) / rate(alertmanager_notifications_total{job="alertmanager", integration="~.*"}[5m])) > 0.01`,
-			out: `  min by(job, integration) (
+			out: `  min by (job, integration) (
       rate(
         alertmanager_notifications_failed_total{integration=~".*",job="alertmanager"}[5m]
       )
@@ -575,7 +577,7 @@ or
 		{
 			in: `(count by (job) (changes(process_start_time_seconds{job="alertmanager"}[10m]) > 4) / count by (job) (up{job="alertmanager"})) >= 0.5`,
 			out: `  (
-      count by(job) (
+      count by (job) (
           changes(
             process_start_time_seconds{job="alertmanager"}[10m]
           )
@@ -583,7 +585,7 @@ or
           4
       )
     /
-      count by(job) (
+      count by (job) (
         up{job="alertmanager"}
       )
   )
@@ -630,7 +632,7 @@ func TestUnaryPretty(t *testing.T) {
 			in: `-histogram_quantile(0.99, sum by (le) (rate(foo[1m])))`,
 			out: `-histogram_quantile(
   0.99,
-  sum by(le) (
+  sum by (le) (
     rate(
       foo[1m]
     )
@@ -659,8 +661,10 @@ func TestUnaryPretty(t *testing.T) {
 		},
 	}
 	for _, test := range inputs {
-		expr, err := ParseExpr(test.in)
-		require.NoError(t, err)
-		require.Equal(t, test.out, Prettify(expr))
+		t.Run(test.in, func(t *testing.T) {
+			expr, err := ParseExpr(test.in)
+			require.NoError(t, err)
+			require.Equal(t, test.out, Prettify(expr))
+		})
 	}
 }
