@@ -595,13 +595,13 @@ func createHistograms(numSamples, numSeries int) ([]record.RefHistogram, []recor
 				H: &histogram.Histogram{
 					Schema:          2,
 					ZeroThreshold:   1e-128,
-					ZeroCount:       uint64(i),
-					Count:           uint64(5 * i),
-					Sum:             float64(20 * i),
+					ZeroCount:       0,
+					Count:           2,
+					Sum:             0,
 					PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
-					PositiveBuckets: []int64{int64(i)},
+					PositiveBuckets: []int64{int64(i) + 1},
 					NegativeSpans:   []histogram.Span{{Offset: 0, Length: 1}},
-					NegativeBuckets: []int64{int64(i)},
+					NegativeBuckets: []int64{int64(-i) - 1},
 				},
 			}
 			histograms = append(histograms, h)
@@ -701,22 +701,7 @@ func (c *TestWriteClient) expectHistograms(hh []record.RefHistogram, series []re
 
 	for _, h := range hh {
 		seriesName := getSeriesNameFromRef(series[h.Ref])
-		c.expectedHistograms[seriesName] = append(c.expectedHistograms[seriesName], prompb.Histogram{
-			Count:         &prompb.Histogram_CountInt{CountInt: h.H.Count},
-			Sum:           h.H.Sum,
-			Schema:        h.H.Schema,
-			ZeroThreshold: h.H.ZeroThreshold,
-			ZeroCount:     &prompb.Histogram_ZeroCountInt{ZeroCountInt: h.H.ZeroCount},
-			NegativeBuckets: &prompb.Buckets{
-				Span:  spansToSpansProto(h.H.NegativeSpans),
-				Delta: h.H.NegativeBuckets,
-			},
-			PositiveBuckets: &prompb.Buckets{
-				Span:  spansToSpansProto(h.H.PositiveSpans),
-				Delta: h.H.PositiveBuckets,
-			},
-			Timestamp: h.T,
-		})
+		c.expectedHistograms[seriesName] = append(c.expectedHistograms[seriesName], histogramToHistogramProto(h.T, h.H))
 	}
 	c.wg.Add(len(hh))
 }

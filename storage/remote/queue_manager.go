@@ -1397,22 +1397,7 @@ func (s *shards) populateTimeSeries(batch []timeSeries, pendingData []prompb.Tim
 			})
 			nPendingExemplars++
 		case tHistogram:
-			pendingData[nPending].Histograms = append(pendingData[nPending].Histograms, prompb.Histogram{
-				Count:         &prompb.Histogram_CountInt{CountInt: d.histogram.Count},
-				Sum:           d.histogram.Sum,
-				Schema:        d.histogram.Schema,
-				ZeroThreshold: d.histogram.ZeroThreshold,
-				ZeroCount:     &prompb.Histogram_ZeroCountInt{ZeroCountInt: d.histogram.ZeroCount},
-				NegativeBuckets: &prompb.Buckets{
-					Span:  spansToSpansProto(d.histogram.NegativeSpans),
-					Delta: d.histogram.NegativeBuckets,
-				},
-				PositiveBuckets: &prompb.Buckets{
-					Span:  spansToSpansProto(d.histogram.PositiveSpans),
-					Delta: d.histogram.PositiveBuckets,
-				},
-				Timestamp: d.timestamp,
-			})
+			pendingData[nPending].Histograms = append(pendingData[nPending].Histograms, histogramToHistogramProto(d.timestamp, d.histogram))
 			nPendingHistograms++
 		}
 	}
@@ -1601,13 +1586,4 @@ func buildWriteRequest(samples []prompb.TimeSeries, metadata []prompb.MetricMeta
 	}
 	compressed := snappy.Encode(buf, pBuf.Bytes())
 	return compressed, highest, nil
-}
-
-func spansToSpansProto(s []histogram.Span) []*prompb.Buckets_Span {
-	spans := make([]*prompb.Buckets_Span, len(s))
-	for i := 0; i < len(s); i++ {
-		spans[i] = &prompb.Buckets_Span{Offset: s[i].Offset, Length: s[i].Length}
-	}
-
-	return spans
 }

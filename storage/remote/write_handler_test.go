@@ -66,7 +66,7 @@ func TestRemoteWriteHandler(t *testing.T) {
 
 		for _, hp := range ts.Histograms {
 			h := histogramProtoToHistogram(hp)
-			require.Equal(t, mockHistogram{labels, hp.Timestamp, &h}, appendable.histograms[i])
+			require.Equal(t, mockHistogram{labels, hp.Timestamp, &h}, appendable.histograms[k])
 			k++
 		}
 	}
@@ -123,7 +123,7 @@ func TestOutOfOrderExemplar(t *testing.T) {
 func TestOutOfOrderHistogram(t *testing.T) {
 	buf, _, err := buildWriteRequest([]prompb.TimeSeries{{
 		Labels:     []prompb.Label{{Name: "__name__", Value: "test_metric"}},
-		Histograms: []prompb.Histogram{{Timestamp: 0}},
+		Histograms: []prompb.Histogram{histogramToHistogramProto(0, &testHistogram)},
 	}}, nil, nil, nil)
 	require.NoError(t, err)
 
@@ -232,6 +232,5 @@ func (m *mockAppendable) AppendHistogram(ref storage.SeriesRef, l labels.Labels,
 
 	m.latestHistogram = t
 	m.histograms = append(m.histograms, mockHistogram{l, t, h})
-
 	return 0, nil
 }

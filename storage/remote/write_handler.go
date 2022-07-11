@@ -126,8 +126,8 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 			// a note indicating its inclusion in the future.
 			case storage.ErrOutOfOrderSample, storage.ErrOutOfBounds, storage.ErrDuplicateSampleForTimestamp:
 				level.Error(h.logger).Log("msg", "Out of order histogram from remote write", "err", err.Error(), "series", labels.String(), "timestamp", hp.Timestamp)
+				return err
 			}
-			return err
 		}
 	}
 

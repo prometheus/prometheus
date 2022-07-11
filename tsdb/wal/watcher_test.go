@@ -177,13 +177,13 @@ func TestTailSamples(t *testing.T) {
 						H: &histogram.Histogram{
 							Schema:          2,
 							ZeroThreshold:   1e-128,
-							ZeroCount:       uint64(i),
-							Count:           uint64(5 * i),
-							Sum:             float64(20 * i),
+							ZeroCount:       0,
+							Count:           2,
+							Sum:             0,
 							PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
-							PositiveBuckets: []int64{int64(i)},
+							PositiveBuckets: []int64{int64(i) + 1},
 							NegativeSpans:   []histogram.Span{{Offset: 0, Length: 1}},
-							NegativeBuckets: []int64{int64(i)},
+							NegativeBuckets: []int64{int64(-i) - 1},
 						},
 					}}, nil)
 					require.NoError(t, w.Log(histogram))
