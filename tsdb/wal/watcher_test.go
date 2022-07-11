@@ -171,26 +171,21 @@ func TestTailSamples(t *testing.T) {
 
 				for j := 0; j < histogramsCount; j++ {
 					inner := rand.Intn(ref + 1)
-					h := record.RefHistogram{
+					histogram := enc.Histograms([]record.RefHistogram{record.RefHistogram{
 						Ref: chunks.HeadSeriesRef(inner),
 						T:   now.UnixNano() + 1,
 						H: &histogram.Histogram{
-							Schema:        2,
-							ZeroThreshold: 1e-128,
-							ZeroCount:     uint64(i),
-							Count:         uint64(5 * i),
-							Sum:           float64(20 * i),
+							Schema:          2,
+							ZeroThreshold:   1e-128,
+							ZeroCount:       uint64(i),
+							Count:           uint64(5 * i),
+							Sum:             float64(20 * i),
+							PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+							PositiveBuckets: []int64{int64(i)},
+							NegativeSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+							NegativeBuckets: []int64{int64(i)},
 						},
-					}
-
-					for k := 0; k < i; k++ {
-						h.H.PositiveSpans = append(h.H.PositiveSpans, histogram.Span{Offset: int32(3 * k), Length: uint32(3*k + 2)})
-						h.H.PositiveBuckets = append(h.H.PositiveBuckets, int64(i+k), int64(i+k+1))
-						h.H.NegativeSpans = append(h.H.NegativeSpans, histogram.Span{Offset: int32(-3 * k), Length: uint32(3*k + 2)})
-						h.H.NegativeBuckets = append(h.H.NegativeBuckets, int64(i+k), int64(i+k+1))
-					}
-
-					histogram := enc.Histograms([]record.RefHistogram{h}, nil)
+					}}, nil)
 					require.NoError(t, w.Log(histogram))
 				}
 			}

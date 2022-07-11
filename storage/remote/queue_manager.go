@@ -1347,7 +1347,7 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 			}
 			nPendingSamples, nPendingExemplars, nPendingHistograms := s.populateTimeSeries(batch, pendingData)
 			queue.ReturnForReuse(batch)
-			n := nPendingSamples + nPendingExemplars
+			n := nPendingSamples + nPendingExemplars + nPendingHistograms
 			s.sendSamples(ctx, pendingData[:n], nPendingSamples, nPendingExemplars, nPendingHistograms, pBuf, &buf)
 
 			stop()
@@ -1357,7 +1357,7 @@ func (s *shards) runShard(ctx context.Context, shardID int, queue *queue) {
 			batch := queue.Batch()
 			if len(batch) > 0 {
 				nPendingSamples, nPendingExemplars, nPendingHistograms := s.populateTimeSeries(batch, pendingData)
-				n := nPendingSamples + nPendingExemplars
+				n := nPendingSamples + nPendingExemplars + nPendingHistograms
 				level.Debug(s.qm.logger).Log("msg", "runShard timer ticked, sending buffered data", "samples", nPendingSamples, "exemplars", nPendingExemplars, "shard", shardNum)
 				s.sendSamples(ctx, pendingData[:n], nPendingSamples, nPendingExemplars, nPendingHistograms, pBuf, &buf)
 			}
@@ -1434,7 +1434,7 @@ func (s *shards) sendSamples(ctx context.Context, samples []prompb.TimeSeries, s
 	s.qm.dataOut.incr(int64(len(samples)))
 	s.qm.dataOutDuration.incr(int64(time.Since(begin)))
 	s.qm.lastSendTimestamp.Store(time.Now().Unix())
-	// Pending samples/exemplars also should be subtracted as an error means
+	// Pending samples/exemplars/histograms also should be subtracted as an error means
 	// they will not be retried.
 	s.qm.metrics.pendingSamples.Sub(float64(sampleCount))
 	s.qm.metrics.pendingExemplars.Sub(float64(exemplarCount))
@@ -1573,6 +1573,9 @@ func buildWriteRequest(samples []prompb.TimeSeries, metadata []prompb.MetricMeta
 		}
 		if len(ts.Exemplars) > 0 && ts.Exemplars[0].Timestamp > highest {
 			highest = ts.Exemplars[0].Timestamp
+		}
+		if len(ts.Histograms) > 0 && ts.Histograms[0].Timestamp > highest {
+			highest = ts.Histograms[0].Timestamp
 		}
 	}
 
