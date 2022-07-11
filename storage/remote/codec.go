@@ -517,7 +517,7 @@ func histogramProtoToHistogram(hp prompb.Histogram) histogram.Histogram {
 }
 
 func spansProtoToSpans(s []*prompb.Buckets_Span) []histogram.Span {
-	var spans = make([]histogram.Span, len(s))
+	spans := make([]histogram.Span, len(s))
 	for i := 0; i < len(s); i++ {
 		spans[i] = histogram.Span{Offset: s[i].Offset, Length: s[i].Length}
 	}

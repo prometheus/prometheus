@@ -1601,7 +1601,7 @@ func buildWriteRequest(samples []prompb.TimeSeries, metadata []prompb.MetricMeta
 }
 
 func spansToSpansProto(s []histogram.Span) []*prompb.Buckets_Span {
-	var spans = make([]*prompb.Buckets_Span, len(s))
+	spans := make([]*prompb.Buckets_Span, len(s))
 	for i := 0; i < len(s); i++ {
 		spans[i] = &prompb.Buckets_Span{Offset: s[i].Offset, Length: s[i].Length}
 	}
