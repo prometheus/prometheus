@@ -589,6 +589,8 @@ func recordType(rt record.Type) string {
 		return "series"
 	case record.Samples:
 		return "samples"
+	case record.Exemplars:
+		return "exemplars"
 	case record.Tombstones:
 		return "tombstones"
 	default:
