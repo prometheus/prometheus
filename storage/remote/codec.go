@@ -502,7 +502,7 @@ func exemplarProtoToExemplar(ep prompb.Exemplar) exemplar.Exemplar {
 	}
 }
 
-func histogramProtoToHistogram(hp prompb.Histogram) histogram.Histogram {
+func HistogramProtoToHistogram(hp prompb.Histogram) histogram.Histogram {
 	h := histogram.Histogram{
 		Schema:          hp.Schema,
 		ZeroThreshold:   hp.ZeroThreshold,

@@ -20,7 +20,6 @@ import (
 
 	"github.com/prometheus/common/model"
 
-	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage/remote"
 )
 
@@ -51,35 +50,9 @@ func main() {
 				fmt.Printf("\tExemplar:  %+v %f %d\n", m, e.Value, e.Timestamp)
 			}
 
-			for _, h := range ts.Histograms {
-				formatBucket := func(bucket *prompb.Buckets) string {
-					var result string
-					if bucket != nil {
-						bucketNum := 0
-						for i := 0; i < len(bucket.Span); i++ {
-							span := bucket.Span[i]
-							result = result + fmt.Sprintf(
-								"\n\t\tSpan %v:\n\t\tOffset: %d\n\t\tLength: %d\n\t\tValues: %+v",
-								i+1, span.Offset, span.Length, bucket.Delta[bucketNum:bucketNum+int(span.Length)],
-							)
-							bucketNum += int(span.Length)
-						}
-					}
-					return result
-				}
-
-				fmt.Printf(`	Histogram:
-	Count: %d
-	Sum: %f
-	Schema: %d
-	Zero threshold: %e
-	Count in zero bucket: %d
-	Negative buckets:%s
-	Positive buckets:%s
-	Timestamp: %d`,
-					h.GetCountInt(), h.Sum, h.Schema, h.ZeroThreshold, h.GetZeroCountInt(),
-					formatBucket(h.NegativeBuckets), formatBucket(h.PositiveBuckets), h.Timestamp,
-				)
+			for _, hp := range ts.Histograms {
+				h := remote.HistogramProtoToHistogram(hp)
+				fmt.Printf("\tHistogram:  %s\n", (&h).String())
 			}
 		}
 	})

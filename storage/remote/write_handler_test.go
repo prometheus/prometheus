@@ -65,7 +65,7 @@ func TestRemoteWriteHandler(t *testing.T) {
 		}
 
 		for _, hp := range ts.Histograms {
-			h := histogramProtoToHistogram(hp)
+			h := HistogramProtoToHistogram(hp)
 			require.Equal(t, mockHistogram{labels, hp.Timestamp, &h}, appendable.histograms[k])
 			k++
 		}

@@ -366,5 +366,5 @@ func TestDecodeWriteRequest(t *testing.T) {
 }
 
 func TestNilHistogramProto(t *testing.T) {
-	histogramProtoToHistogram(prompb.Histogram{})
+	HistogramProtoToHistogram(prompb.Histogram{})
 }
