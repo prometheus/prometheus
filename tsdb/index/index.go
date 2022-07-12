@@ -105,9 +105,9 @@ func newCRC32() hash.Hash32 {
 }
 
 type symbolCacheEntry struct {
-	index          uint32
 	lastValue      string
 	lastValueIndex uint32
+	index          uint32
 }
 
 // Writer implements the IndexWriter interface for the standard
