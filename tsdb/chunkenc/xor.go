@@ -242,18 +242,19 @@ func (a *xorAppender) writeVDelta(v float64) {
 }
 
 type xorIterator struct {
-	br       bstreamReader
-	numTotal uint16
-	numRead  uint16
+	br  bstreamReader
+	err error
 
 	t   int64
 	val float64
 
+	tDelta uint64
+
+	numTotal uint16
+	numRead  uint16
+
 	leading  uint8
 	trailing uint8
-
-	tDelta uint64
-	err    error
 }
 
 func (it *xorIterator) Seek(t int64) bool {
