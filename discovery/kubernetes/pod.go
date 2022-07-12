@@ -253,7 +253,7 @@ func (p *Pod) buildPod(pod *apiv1.Pod) *targetgroup.Group {
 	tg.Labels = podLabels(pod)
 	tg.Labels[namespaceLabel] = lv(pod.Namespace)
 	if p.withNodeMetadata {
-		p.attachNodeMetadata(tg, pod)
+		tg.Labels = addNodeLabels(tg.Labels, p.nodeInf, p.logger, &pod.Spec.NodeName)
 	}
 
 	containers := append(pod.Spec.Containers, pod.Spec.InitContainers...)
@@ -289,27 +289,6 @@ func (p *Pod) buildPod(pod *apiv1.Pod) *targetgroup.Group {
 	}
 
 	return tg
-}
-
-func (p *Pod) attachNodeMetadata(tg *targetgroup.Group, pod *apiv1.Pod) {
-	tg.Labels[nodeNameLabel] = lv(pod.Spec.NodeName)
-
-	obj, exists, err := p.nodeInf.GetStore().GetByKey(pod.Spec.NodeName)
-	if err != nil {
-		level.Error(p.logger).Log("msg", "Error getting node", "node", pod.Spec.NodeName, "err", err)
-		return
-	}
-
-	if !exists {
-		return
-	}
-
-	node := obj.(*apiv1.Node)
-	for k, v := range node.GetLabels() {
-		ln := strutil.SanitizeLabelName(k)
-		tg.Labels[model.LabelName(nodeLabelPrefix+ln)] = lv(v)
-		tg.Labels[model.LabelName(nodeLabelPresentPrefix+ln)] = presentValue
-	}
 }
 
 func (p *Pod) enqueuePodsForNode(nodeName string) {

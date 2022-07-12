@@ -285,6 +285,10 @@ marathon_sd_configs:
 nerve_sd_configs:
   [ - <nerve_sd_config> ... ]
 
+# List of Nomad service discovery configurations.
+nomad_sd_configs:
+  [ - <nomad_sd_config> ... ]
+
 # List of OpenStack service discovery configurations.
 openstack_sd_configs:
   [ - <openstack_sd_config> ... ]
@@ -1686,7 +1690,7 @@ Available meta labels:
 * `__meta_kubernetes_pod_name`: The name of the pod object.
 * `__meta_kubernetes_pod_ip`: The pod IP of the pod object.
 * `__meta_kubernetes_pod_label_<labelname>`: Each label from the pod object.
-* `__meta_kubernetes_pod_labelpresent_<labelname>`: `true`for each label from the pod object.
+* `__meta_kubernetes_pod_labelpresent_<labelname>`: `true` for each label from the pod object.
 * `__meta_kubernetes_pod_annotation_<annotationname>`: Each annotation from the pod object.
 * `__meta_kubernetes_pod_annotationpresent_<annotationname>`: `true` for each annotation from the pod object.
 * `__meta_kubernetes_pod_container_init`: `true` if the container is an [InitContainer](https://kubernetes.io/docs/concepts/workloads/pods/init-containers/)
@@ -1713,6 +1717,8 @@ Available meta labels:
 
 * `__meta_kubernetes_namespace`: The namespace of the endpoints object.
 * `__meta_kubernetes_endpoints_name`: The names of the endpoints object.
+* `__meta_kubernetes_endpoints_label_<labelname>`: Each label from the endpoints object.
+* `__meta_kubernetes_endpoints_labelpresent_<labelname>`: `true` for each label from the endpoints object.
 * For all targets discovered directly from the endpoints list (those not additionally inferred
   from underlying pods), the following labels are attached:
   * `__meta_kubernetes_endpoint_hostname`: Hostname of the endpoint.
@@ -1851,7 +1857,7 @@ namespaces:
 
 # Optional metadata to attach to discovered targets. If omitted, no additional metadata is attached.
 attach_metadata:
-# Attaches node metadata to discovered targets. Only valid for role: pod. 
+# Attaches node metadata to discovered targets. Valid for roles: pod, endpoints, endpointslice. 
 # When set to true, Prometheus must have permissions to get Nodes. 
   [ node: <boolean> | default = false ]
 ```
@@ -2173,6 +2179,73 @@ servers:
 paths:
   - <string>
 [ timeout: <duration> | default = 10s ]
+```
+### `<nomad_sd_config>`
+
+Nomad SD configurations allow retrieving scrape targets from [Nomad's](https://www.nomadproject.io/)
+Service API.
+
+The following meta labels are available on targets during [relabeling](#relabel_config):
+
+* `__meta_nomad_address`: the service address of the target
+* `__meta_nomad_dc`: the datacenter name for the target
+* `__meta_nomad_namespace`: the namespace of the target
+* `__meta_nomad_node_id`: the node name defined for the target
+* `__meta_nomad_service`: the name of the service the target belongs to
+* `__meta_nomad_service_address`: the service address of the target
+* `__meta_nomad_service_id`: the service ID of the target
+* `__meta_nomad_service_port`: the service port of the target
+* `__meta_nomad_tags`: the list of tags of the target joined by the tag separator
+
+```yaml
+# The information to access the Nomad API. It is to be defined
+# as the Nomad documentation requires.
+[ allow_stale: <boolean> | default = true ]
+[ datacenter: <string> ]
+[ namespace: <string> | default = default ]
+[ refresh_interval: <duration> | default = 60s ]
+[ region: <string> | default = global ]
+[ server: <host> ]
+[ tag_separator: <string> | default = ,]
+
+# Authentication information used to authenticate to the nomad server.
+# Note that `basic_auth`, `authorization` and `oauth2` options are
+# mutually exclusive.
+# `password` and `password_file` are mutually exclusive.
+
+# Optional HTTP basic authentication information.
+basic_auth:
+  [ username: <string> ]
+  [ password: <secret> ]
+  [ password_file: <string> ]
+
+# Optional `Authorization` header configuration.
+authorization:
+  # Sets the authentication type.
+  [ type: <string> | default: Bearer ]
+  # Sets the credentials. It is mutually exclusive with
+  # `credentials_file`.
+  [ credentials: <secret> ]
+  # Sets the credentials to the credentials read from the configured file.
+  # It is mutually exclusive with `credentials`.
+  [ credentials_file: <filename> ]
+
+# Optional OAuth 2.0 configuration.
+oauth2:
+  [ <oauth2> ]
+
+# Optional proxy URL.
+[ proxy_url: <string> ]
+
+# Configure whether HTTP requests follow HTTP 3xx redirects.
+[ follow_redirects: <boolean> | default = true ]
+
+# Whether to enable HTTP2.
+[ enable_http2: <bool> | default: true ]
+
+# TLS configuration.
+tls_config:
+  [ <tls_config> ]
 ```
 
 ### `<serverset_sd_config>`
@@ -2865,6 +2938,10 @@ marathon_sd_configs:
 # List of AirBnB's Nerve service discovery configurations.
 nerve_sd_configs:
   [ - <nerve_sd_config> ... ]
+
+# List of Nomad service discovery configurations.
+nomad_sd_configs:
+  [ - <nomad_sd_config> ... ]
 
 # List of OpenStack service discovery configurations.
 openstack_sd_configs:

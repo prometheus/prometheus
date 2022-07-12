@@ -23,6 +23,8 @@ import (
 	"sync"
 	"time"
 
+	disv1beta1 "k8s.io/api/discovery/v1beta1"
+
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
@@ -31,7 +33,6 @@ import (
 	"github.com/prometheus/common/version"
 	apiv1 "k8s.io/api/core/v1"
 	disv1 "k8s.io/api/discovery/v1"
-	disv1beta1 "k8s.io/api/discovery/v1beta1"
 	networkv1 "k8s.io/api/networking/v1"
 	"k8s.io/api/networking/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -406,7 +407,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 		}
 
 		for _, namespace := range namespaces {
-			var informer cache.SharedInformer
+			var informer cache.SharedIndexInformer
 			if v1Supported {
 				e := d.client.DiscoveryV1().EndpointSlices(namespace)
 				elw := &cache.ListWatch{
@@ -421,7 +422,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 						return e.Watch(ctx, options)
 					},
 				}
-				informer = cache.NewSharedInformer(elw, &disv1.EndpointSlice{}, resyncPeriod)
+				informer = d.newEndpointSlicesByNodeInformer(elw, &disv1.EndpointSlice{})
 			} else {
 				e := d.client.DiscoveryV1beta1().EndpointSlices(namespace)
 				elw := &cache.ListWatch{
@@ -436,7 +437,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 						return e.Watch(ctx, options)
 					},
 				}
-				informer = cache.NewSharedInformer(elw, &disv1beta1.EndpointSlice{}, resyncPeriod)
+				informer = d.newEndpointSlicesByNodeInformer(elw, &disv1beta1.EndpointSlice{})
 			}
 
 			s := d.client.CoreV1().Services(namespace)
@@ -465,11 +466,17 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 					return p.Watch(ctx, options)
 				},
 			}
+			var nodeInf cache.SharedInformer
+			if d.attachMetadata.Node {
+				nodeInf = d.newNodeInformer(context.Background())
+				go nodeInf.Run(ctx.Done())
+			}
 			eps := NewEndpointSlice(
 				log.With(d.logger, "role", "endpointslice"),
-				cache.NewSharedInformer(slw, &apiv1.Service{}, resyncPeriod),
 				informer,
+				cache.NewSharedInformer(slw, &apiv1.Service{}, resyncPeriod),
 				cache.NewSharedInformer(plw, &apiv1.Pod{}, resyncPeriod),
+				nodeInf,
 			)
 			d.discoverers = append(d.discoverers, eps)
 			go eps.endpointSliceInf.Run(ctx.Done())
@@ -517,11 +524,18 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 					return p.Watch(ctx, options)
 				},
 			}
+			var nodeInf cache.SharedInformer
+			if d.attachMetadata.Node {
+				nodeInf = d.newNodeInformer(ctx)
+				go nodeInf.Run(ctx.Done())
+			}
+
 			eps := NewEndpoints(
 				log.With(d.logger, "role", "endpoint"),
+				d.newEndpointsByNodeInformer(elw),
 				cache.NewSharedInformer(slw, &apiv1.Service{}, resyncPeriod),
-				cache.NewSharedInformer(elw, &apiv1.Endpoints{}, resyncPeriod),
 				cache.NewSharedInformer(plw, &apiv1.Pod{}, resyncPeriod),
+				nodeInf,
 			)
 			d.discoverers = append(d.discoverers, eps)
 			go eps.endpointsInf.Run(ctx.Done())
@@ -733,6 +747,65 @@ func (d *Discovery) newPodsByNodeInformer(plw *cache.ListWatch) cache.SharedInde
 	}
 
 	return cache.NewSharedIndexInformer(plw, &apiv1.Pod{}, resyncPeriod, indexers)
+}
+
+func (d *Discovery) newEndpointsByNodeInformer(plw *cache.ListWatch) cache.SharedIndexInformer {
+	indexers := make(map[string]cache.IndexFunc)
+	if !d.attachMetadata.Node {
+		return cache.NewSharedIndexInformer(plw, &apiv1.Endpoints{}, resyncPeriod, indexers)
+	}
+
+	indexers[nodeIndex] = func(obj interface{}) ([]string, error) {
+		e, ok := obj.(*apiv1.Endpoints)
+		if !ok {
+			return nil, fmt.Errorf("object is not a pod")
+		}
+		var nodes []string
+		for _, target := range e.Subsets {
+			for _, addr := range target.Addresses {
+				if addr.NodeName == nil {
+					continue
+				}
+				nodes = append(nodes, *addr.NodeName)
+			}
+		}
+		return nodes, nil
+	}
+
+	return cache.NewSharedIndexInformer(plw, &apiv1.Endpoints{}, resyncPeriod, indexers)
+}
+
+func (d *Discovery) newEndpointSlicesByNodeInformer(plw *cache.ListWatch, object runtime.Object) cache.SharedIndexInformer {
+	indexers := make(map[string]cache.IndexFunc)
+	if !d.attachMetadata.Node {
+		cache.NewSharedIndexInformer(plw, &disv1.EndpointSlice{}, resyncPeriod, indexers)
+	}
+
+	indexers[nodeIndex] = func(obj interface{}) ([]string, error) {
+		var nodes []string
+		switch e := obj.(type) {
+		case *disv1.EndpointSlice:
+			for _, target := range e.Endpoints {
+				if target.NodeName == nil {
+					continue
+				}
+				nodes = append(nodes, *target.NodeName)
+			}
+		case *disv1beta1.EndpointSlice:
+			for _, target := range e.Endpoints {
+				if target.NodeName == nil {
+					continue
+				}
+				nodes = append(nodes, *target.NodeName)
+			}
+		default:
+			return nil, fmt.Errorf("object is not an endpointslice")
+		}
+
+		return nodes, nil
+	}
+
+	return cache.NewSharedIndexInformer(plw, object, resyncPeriod, indexers)
 }
 
 func checkDiscoveryV1Supported(client kubernetes.Interface) (bool, error) {

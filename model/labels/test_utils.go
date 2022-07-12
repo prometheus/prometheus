@@ -15,11 +15,10 @@ package labels
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 	"sort"
 	"strings"
-
-	"github.com/pkg/errors"
 )
 
 // Slice is a sortable slice of label sets.
@@ -81,7 +80,7 @@ func ReadLabels(fn string, n int) ([]Labels, error) {
 	}
 
 	if i != n {
-		return mets, errors.Errorf("requested %d metrics but found %d", n, i)
+		return mets, fmt.Errorf("requested %d metrics but found %d", n, i)
 	}
 	return mets, nil
 }

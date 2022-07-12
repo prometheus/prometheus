@@ -58,8 +58,6 @@ yystate0:
 		goto yystart61
 	}
 
-	goto yystate0 // silence unused label error
-	goto yystate1 // silence unused label error
 yystate1:
 	c = l.next()
 yystart1:
@@ -94,7 +92,6 @@ yystate4:
 		goto yystate4
 	}
 
-	goto yystate5 // silence unused label error
 yystate5:
 	c = l.next()
 yystart5:
@@ -262,7 +259,6 @@ yystate24:
 	c = l.next()
 	goto yyrule4
 
-	goto yystate25 // silence unused label error
 yystate25:
 	c = l.next()
 yystart25:
@@ -282,7 +278,6 @@ yystate26:
 		goto yystate26
 	}
 
-	goto yystate27 // silence unused label error
 yystate27:
 	c = l.next()
 yystart27:
@@ -308,7 +303,6 @@ yystate29:
 	c = l.next()
 	goto yyrule7
 
-	goto yystate30 // silence unused label error
 yystate30:
 	c = l.next()
 yystart30:
@@ -346,7 +340,6 @@ yystate34:
 	c = l.next()
 	goto yyrule11
 
-	goto yystate35 // silence unused label error
 yystate35:
 	c = l.next()
 yystart35:
@@ -383,7 +376,6 @@ yystate38:
 		goto yystate36
 	}
 
-	goto yystate39 // silence unused label error
 yystate39:
 	c = l.next()
 yystart39:
@@ -418,7 +410,6 @@ yystate42:
 	c = l.next()
 	goto yyrule9
 
-	goto yystate43 // silence unused label error
 yystate43:
 	c = l.next()
 yystart43:
@@ -479,7 +470,6 @@ yystate49:
 	c = l.next()
 	goto yyrule18
 
-	goto yystate50 // silence unused label error
 yystate50:
 	c = l.next()
 yystart50:
@@ -517,7 +507,6 @@ yystate54:
 	c = l.next()
 	goto yyrule20
 
-	goto yystate55 // silence unused label error
 yystate55:
 	c = l.next()
 yystart55:
@@ -574,7 +563,6 @@ yystate60:
 		goto yystate58
 	}
 
-	goto yystate61 // silence unused label error
 yystate61:
 	c = l.next()
 yystart61:
@@ -747,16 +735,58 @@ yyrule25: // {S}[^ \n]+
 		return tTimestamp
 	}
 yyrule26: // \n
-	{
+	if true { // avoid go vet determining the below panic will not be reached
 		l.state = sInit
 		return tLinebreak
 		goto yystate0
 	}
 	panic("unreachable")
 
-	goto yyabort // silence unused label error
-
 yyabort: // no lexem recognized
+	//
+	// silence unused label errors for build and satisfy go vet reachability analysis
+	//
+	{
+		if false {
+			goto yyabort
+		}
+		if false {
+			goto yystate0
+		}
+		if false {
+			goto yystate1
+		}
+		if false {
+			goto yystate5
+		}
+		if false {
+			goto yystate25
+		}
+		if false {
+			goto yystate27
+		}
+		if false {
+			goto yystate30
+		}
+		if false {
+			goto yystate35
+		}
+		if false {
+			goto yystate39
+		}
+		if false {
+			goto yystate43
+		}
+		if false {
+			goto yystate50
+		}
+		if false {
+			goto yystate55
+		}
+		if false {
+			goto yystate61
+		}
+	}
 
 	return tInvalid
 }

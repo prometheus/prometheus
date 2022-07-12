@@ -14,11 +14,11 @@
 package logging
 
 import (
+	"fmt"
 	"os"
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/pkg/errors"
 )
 
 var timestampFormat = log.TimestampFormat(
@@ -40,7 +40,7 @@ func NewJSONFileLogger(s string) (*JSONFileLogger, error) {
 
 	f, err := os.OpenFile(s, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o666)
 	if err != nil {
-		return nil, errors.Wrap(err, "can't create json logger")
+		return nil, fmt.Errorf("can't create json logger: %w", err)
 	}
 
 	return &JSONFileLogger{

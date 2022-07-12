@@ -15,7 +15,9 @@ package scrape
 
 import (
 	"context"
+	"fmt"
 	"math/rand"
+	"strings"
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -131,4 +133,18 @@ func (a *collectResultAppender) Rollback() error {
 		return nil
 	}
 	return a.next.Rollback()
+}
+
+func (a *collectResultAppender) String() string {
+	var sb strings.Builder
+	for _, s := range a.result {
+		sb.WriteString(fmt.Sprintf("committed: %s %f %d\n", s.metric, s.v, s.t))
+	}
+	for _, s := range a.pendingResult {
+		sb.WriteString(fmt.Sprintf("pending: %s %f %d\n", s.metric, s.v, s.t))
+	}
+	for _, s := range a.rolledbackResult {
+		sb.WriteString(fmt.Sprintf("rolledback: %s %f %d\n", s.metric, s.v, s.t))
+	}
+	return sb.String()
 }
