@@ -513,8 +513,6 @@ func HistogramProtoToHistogram(hp prompb.Histogram) histogram.Histogram {
 		NegativeBuckets: hp.NegativeBuckets.GetDelta(),
 	}
 
-	// The following values can be nil and will cause a panic if accessed
-	// without being checked.
 	if hp.PositiveBuckets != nil {
 		h.PositiveSpans = spansProtoToSpans(hp.PositiveBuckets.Span)
 	}

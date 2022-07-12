@@ -366,5 +366,7 @@ func TestDecodeWriteRequest(t *testing.T) {
 }
 
 func TestNilHistogramProto(t *testing.T) {
+	// This function will panic if it impromperly handles nil
+	// values, causing the test to fail.
 	HistogramProtoToHistogram(prompb.Histogram{})
 }
