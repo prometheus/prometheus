@@ -133,7 +133,6 @@ func NewDecbufAt(bs ByteSlice, off int, castagnoliTable *crc32.Table) Decbuf {
 	dec := Decbuf{B: b[:len(b)-4]}
 
 	if castagnoliTable != nil {
-
 		if exp := binary.BigEndian.Uint32(b[len(b)-4:]); dec.Crc32(castagnoliTable) != exp {
 			return Decbuf{E: ErrInvalidChecksum}
 		}

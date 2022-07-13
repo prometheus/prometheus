@@ -2,7 +2,7 @@
 version: 2.1
 
 orbs:
-  prometheus: prometheus/prometheus@0.11.0
+  prometheus: prometheus/prometheus@0.16.0
   go: circleci/go@1.7.0
   win: circleci/windows@2.3.0
 
@@ -11,10 +11,10 @@ executors:
   # should also be updated.
   golang:
     docker:
-      - image: quay.io/prometheus/golang-builder:1.17-base
-  golang_115:
+      - image: quay.io/prometheus/golang-builder:1.18-base
+  golang_oldest:
     docker:
-      - image: quay.io/prometheus/golang-builder:1.15-base
+      - image: quay.io/prometheus/golang-builder:1.17-base
 
 jobs:
   test_go:
@@ -36,6 +36,9 @@ jobs:
             GOOPTS: "-p 2"
             GOMAXPROCS: "2"
             GO111MODULE: "on"
+      - run: go test ./tsdb/ -test.tsdb-isolation=false
+      - run: make -C documentation/examples/remote_storage
+      - run: make -C documentation/examples
       - prometheus/check_proto:
           version: "3.15.8"
       - prometheus/store_artifact:
@@ -56,10 +59,13 @@ jobs:
           keys:
             - v3-npm-deps-{{ checksum "web/ui/package-lock.json" }}
             - v3-npm-deps-
-      - run: make ui-install
+      - run: make assets-tarball
       - run: make ui-lint
-      - run: make ui-build-module
       - run: make ui-test
+      - persist_to_workspace:
+          root: .
+          paths:
+            - .tarballs
       - save_cache:
           key: v3-npm-deps-{{ checksum "web/ui/package-lock.json" }}
           paths:
@@ -80,47 +86,38 @@ jobs:
           command: refreshenv
       - run:
           command: |
-            $env:GOARCH=""; $env:GOOS=""; cd web/ui; go generate
-            cd ../..
             $TestTargets = go list ./... | Where-Object { $_ -NotMatch "(github.com/prometheus/prometheus/discovery.*|github.com/prometheus/prometheus/config|github.com/prometheus/prometheus/web)"}
             go test $TestTargets -vet=off -v
           environment:
             GOGC: "20"
             GOOPTS: "-p 2"
 
-  test_tsdb_go115:
-    executor: golang_115
+  test_golang_oldest:
+    executor: golang_oldest
     steps:
       - checkout
+      - run: make build
       - run: go test ./tsdb/...
+      - run: go test ./tsdb/ -test.tsdb-isolation=false
 
   test_mixins:
     executor: golang
     steps:
       - checkout
       - run: go install ./cmd/promtool/.
-      - run:
-          command: go install -mod=readonly github.com/google/go-jsonnet/cmd/jsonnet github.com/google/go-jsonnet/cmd/jsonnetfmt github.com/jsonnet-bundler/jsonnet-bundler/cmd/jb
-          working_directory: ~/project/documentation/prometheus-mixin
-      - run:
-          command: make clean
-          working_directory: ~/project/documentation/prometheus-mixin
-      - run:
-          command: jb install
-          working_directory: ~/project/documentation/prometheus-mixin
-      - run:
-          command: make
-          working_directory: ~/project/documentation/prometheus-mixin
-      - run:
-          command: git diff --exit-code
-          working_directory: ~/project/documentation/prometheus-mixin
+      - run: go install github.com/google/go-jsonnet/cmd/jsonnet@latest
+      - run: go install github.com/google/go-jsonnet/cmd/jsonnetfmt@latest
+      - run: go install github.com/jsonnet-bundler/jsonnet-bundler/cmd/jb@latest
+      - run: make -C documentation/prometheus-mixin clean
+      - run: make -C documentation/prometheus-mixin jb_install
+      - run: make -C documentation/prometheus-mixin
+      - run: git diff --exit-code
 
   repo_sync:
     executor: golang
     steps:
       - checkout
       - run: ./scripts/sync_repo_files.sh
-      - run: ./scripts/sync_codemirror.sh
 
 workflows:
   version: 2
@@ -134,7 +131,7 @@ workflows:
           filters:
             tags:
               only: /.*/
-      - test_tsdb_go115:
+      - test_golang_oldest:
           filters:
             tags:
               only: /.*/
@@ -148,16 +145,27 @@ workflows:
               only: /.*/
       - prometheus/build:
           name: build
-          parallelism: 12
+          parallelism: 3
+          promu_opts: "-p linux/amd64 -p windows/amd64 -p linux/arm64 -p darwin/amd64 -p darwin/arm64 -p linux/386"
           filters:
             tags:
-              only: /^v[0-9]+(\.[0-9]+){2}(-.+|[^-.]*)$/
+              ignore: /^v2(\.[0-9]+){2}(-.+|[^-.]*)$/
+            branches:
+              ignore: /^(main|release-.*|.*build-all.*)$/
+      - prometheus/build:
+          name: build_all
+          parallelism: 12
+          filters:
+            branches:
+              only: /^(main|release-.*|.*build-all.*)$/
+            tags:
+              only: /^v2(\.[0-9]+){2}(-.+|[^-.]*)$/
       - prometheus/publish_main:
           context: org-context
           requires:
             - test_go
             - test_ui
-            - build
+            - build_all
           filters:
             branches:
               only: main
@@ -167,17 +175,17 @@ workflows:
           requires:
             - test_go
             - test_ui
-            - build
+            - build_all
           filters:
             tags:
-              only: /^v[0-9]+(\.[0-9]+){2}(-.+|[^-.]*)$/
+              only: /^v2(\.[0-9]+){2}(-.+|[^-.]*)$/
             branches:
               ignore: /.*/
           image: circleci/golang:1-node
-  nightly:
+  daily:
     triggers:
       - schedule:
-          cron: "0 0 * * *"
+          cron: "49 19 * * *"
           filters:
             branches:
               only:

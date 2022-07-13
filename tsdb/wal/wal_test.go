@@ -18,7 +18,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -119,11 +118,7 @@ func TestWALRepair_ReadingError(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			dir, err := ioutil.TempDir("", "wal_repair")
-			require.NoError(t, err)
-			defer func() {
-				require.NoError(t, os.RemoveAll(dir))
-			}()
+			dir := t.TempDir()
 
 			// We create 3 segments with 3 records each and
 			// then corrupt a given record in a given segment.
@@ -146,7 +141,7 @@ func TestWALRepair_ReadingError(t *testing.T) {
 
 			require.NoError(t, w.Close())
 
-			f, err := os.OpenFile(SegmentName(dir, test.corrSgm), os.O_RDWR, 0666)
+			f, err := os.OpenFile(SegmentName(dir, test.corrSgm), os.O_RDWR, 0o666)
 			require.NoError(t, err)
 
 			// Apply corruption function.
@@ -172,7 +167,7 @@ func TestWALRepair_ReadingError(t *testing.T) {
 				for r.Next() {
 				}
 
-				//Close the segment so we don't break things on Windows.
+				// Close the segment so we don't break things on Windows.
 				s.Close()
 
 				// No corruption in this segment.
@@ -217,11 +212,7 @@ func TestWALRepair_ReadingError(t *testing.T) {
 // ensures that an error during reading that segment are correctly repaired before
 // moving to write more records to the WAL.
 func TestCorruptAndCarryOn(t *testing.T) {
-	dir, err := ioutil.TempDir("", "wal_repair")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 
 	var (
 		logger      = testutil.NewLogger(t)
@@ -253,7 +244,7 @@ func TestCorruptAndCarryOn(t *testing.T) {
 		segments, err := listSegments(dir)
 		require.NoError(t, err)
 		for _, segment := range segments {
-			f, err := os.OpenFile(filepath.Join(dir, fmt.Sprintf("%08d", segment.index)), os.O_RDONLY, 0666)
+			f, err := os.OpenFile(filepath.Join(dir, fmt.Sprintf("%08d", segment.index)), os.O_RDONLY, 0o666)
 			require.NoError(t, err)
 
 			fi, err := f.Stat()
@@ -270,7 +261,7 @@ func TestCorruptAndCarryOn(t *testing.T) {
 	// Truncate the first file, splitting the middle record in the second
 	// page in half, leaving 4 valid records.
 	{
-		f, err := os.OpenFile(filepath.Join(dir, fmt.Sprintf("%08d", 0)), os.O_RDWR, 0666)
+		f, err := os.OpenFile(filepath.Join(dir, fmt.Sprintf("%08d", 0)), os.O_RDWR, 0o666)
 		require.NoError(t, err)
 
 		fi, err := f.Stat()
@@ -345,11 +336,7 @@ func TestCorruptAndCarryOn(t *testing.T) {
 
 // TestClose ensures that calling Close more than once doesn't panic and doesn't block.
 func TestClose(t *testing.T) {
-	dir, err := ioutil.TempDir("", "wal_repair")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 	w, err := NewSize(nil, nil, dir, pageSize, false)
 	require.NoError(t, err)
 	require.NoError(t, w.Close())
@@ -362,11 +349,7 @@ func TestSegmentMetric(t *testing.T) {
 		recordSize  = (pageSize / 2) - recordHeaderSize
 	)
 
-	dir, err := ioutil.TempDir("", "segment_metric")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 	w, err := NewSize(nil, nil, dir, segmentSize, false)
 	require.NoError(t, err)
 
@@ -393,8 +376,7 @@ func TestCompression(t *testing.T) {
 			records     = 100
 		)
 
-		dirPath, err := ioutil.TempDir("", fmt.Sprintf("TestCompression_%t", compressed))
-		require.NoError(t, err)
+		dirPath := t.TempDir()
 
 		w, err := NewSize(nil, nil, dirPath, segmentSize, compressed)
 		require.NoError(t, err)
@@ -454,9 +436,7 @@ func TestLogPartialWrite(t *testing.T) {
 
 	for testName, testData := range tests {
 		t.Run(testName, func(t *testing.T) {
-			dirPath, err := ioutil.TempDir("", "logpartialwrite")
-			require.NoError(t, err)
-			defer func() { require.NoError(t, os.RemoveAll(dirPath)) }()
+			dirPath := t.TempDir()
 
 			w, err := NewSize(nil, nil, dirPath, segmentSize, false)
 			require.NoError(t, err)
@@ -527,11 +507,7 @@ func (f *faultySegmentFile) Write(p []byte) (int, error) {
 func BenchmarkWAL_LogBatched(b *testing.B) {
 	for _, compress := range []bool{true, false} {
 		b.Run(fmt.Sprintf("compress=%t", compress), func(b *testing.B) {
-			dir, err := ioutil.TempDir("", "bench_logbatch")
-			require.NoError(b, err)
-			defer func() {
-				require.NoError(b, os.RemoveAll(dir))
-			}()
+			dir := b.TempDir()
 
 			w, err := New(nil, nil, dir, compress)
 			require.NoError(b, err)
@@ -561,11 +537,7 @@ func BenchmarkWAL_LogBatched(b *testing.B) {
 func BenchmarkWAL_Log(b *testing.B) {
 	for _, compress := range []bool{true, false} {
 		b.Run(fmt.Sprintf("compress=%t", compress), func(b *testing.B) {
-			dir, err := ioutil.TempDir("", "bench_logsingle")
-			require.NoError(b, err)
-			defer func() {
-				require.NoError(b, os.RemoveAll(dir))
-			}()
+			dir := b.TempDir()
 
 			w, err := New(nil, nil, dir, compress)
 			require.NoError(b, err)

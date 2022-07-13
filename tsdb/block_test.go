@@ -19,7 +19,6 @@ import (
 	"errors"
 	"fmt"
 	"hash/crc32"
-	"io/ioutil"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -30,7 +29,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
@@ -42,13 +41,9 @@ import (
 // to 2. We had a migration in place resetting it to 1 but we should move immediately to
 // version 3 next time to avoid confusion and issues.
 func TestBlockMetaMustNeverBeVersion2(t *testing.T) {
-	dir, err := ioutil.TempDir("", "metaversion")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 
-	_, err = writeMetaFile(log.NewNopLogger(), dir, &BlockMeta{})
+	_, err := writeMetaFile(log.NewNopLogger(), dir, &BlockMeta{})
 	require.NoError(t, err)
 
 	meta, _, err := readMetaFile(dir)
@@ -57,11 +52,7 @@ func TestBlockMetaMustNeverBeVersion2(t *testing.T) {
 }
 
 func TestSetCompactionFailed(t *testing.T) {
-	tmpdir, err := ioutil.TempDir("", "test")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(tmpdir))
-	}()
+	tmpdir := t.TempDir()
 
 	blockDir := createBlock(t, tmpdir, genSeries(1, 1, 0, 1))
 	b, err := OpenBlock(nil, blockDir, nil)
@@ -78,11 +69,7 @@ func TestSetCompactionFailed(t *testing.T) {
 }
 
 func TestCreateBlock(t *testing.T) {
-	tmpdir, err := ioutil.TempDir("", "test")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(tmpdir))
-	}()
+	tmpdir := t.TempDir()
 	b, err := OpenBlock(nil, createBlock(t, tmpdir, genSeries(1, 1, 0, 10)), nil)
 	if err == nil {
 		require.NoError(t, b.Close())
@@ -173,11 +160,7 @@ func TestCorruptedChunk(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			tmpdir, err := ioutil.TempDir("", "test_open_block_chunk_corrupted")
-			require.NoError(t, err)
-			defer func() {
-				require.NoError(t, os.RemoveAll(tmpdir))
-			}()
+			tmpdir := t.TempDir()
 
 			series := storage.NewListSeries(labels.FromStrings("a", "b"), []tsdbutil.Sample{sample{1, 1}})
 			blockDir := createBlock(t, tmpdir, []storage.Series{series})
@@ -185,7 +168,7 @@ func TestCorruptedChunk(t *testing.T) {
 			require.NoError(t, err)
 			require.Greater(t, len(files), 0, "No chunk created.")
 
-			f, err := os.OpenFile(files[0], os.O_RDWR, 0666)
+			f, err := os.OpenFile(files[0], os.O_RDWR, 0o666)
 			require.NoError(t, err)
 
 			// Apply corruption function.
@@ -215,17 +198,13 @@ func TestCorruptedChunk(t *testing.T) {
 }
 
 func TestLabelValuesWithMatchers(t *testing.T) {
-	tmpdir, err := ioutil.TempDir("", "test_block_label_values_with_matchers")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(tmpdir))
-	}()
+	tmpdir := t.TempDir()
 
 	var seriesEntries []storage.Series
 	for i := 0; i < 100; i++ {
 		seriesEntries = append(seriesEntries, storage.NewListSeries(labels.Labels{
-			{Name: "unique", Value: fmt.Sprintf("value%d", i)},
 			{Name: "tens", Value: fmt.Sprintf("value%d", i/10)},
+			{Name: "unique", Value: fmt.Sprintf("value%d", i)},
 		}, []tsdbutil.Sample{sample{100, 0}}))
 	}
 
@@ -288,16 +267,13 @@ func TestLabelValuesWithMatchers(t *testing.T) {
 
 // TestBlockSize ensures that the block size is calculated correctly.
 func TestBlockSize(t *testing.T) {
-	tmpdir, err := ioutil.TempDir("", "test_blockSize")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(tmpdir))
-	}()
+	tmpdir := t.TempDir()
 
 	var (
 		blockInit    *Block
 		expSizeInit  int64
 		blockDirInit string
+		err          error
 	)
 
 	// Create a block and compare the reported size vs actual disk size.
@@ -376,19 +352,17 @@ func TestReadIndexFormatV1(t *testing.T) {
 }
 
 func BenchmarkLabelValuesWithMatchers(b *testing.B) {
-	tmpdir, err := ioutil.TempDir("", "bench_block_label_values_with_matchers")
-	require.NoError(b, err)
-	defer func() {
-		require.NoError(b, os.RemoveAll(tmpdir))
-	}()
+	tmpdir := b.TempDir()
 
 	var seriesEntries []storage.Series
 	metricCount := 1000000
 	for i := 0; i < metricCount; i++ {
+		// Note these series are not created in sort order: 'value2' sorts after 'value10'.
+		// This makes a big difference to the benchmark timing.
 		seriesEntries = append(seriesEntries, storage.NewListSeries(labels.Labels{
-			{Name: "unique", Value: fmt.Sprintf("value%d", i)},
-			{Name: "tens", Value: fmt.Sprintf("value%d", i/(metricCount/10))},
-			{Name: "ninety", Value: fmt.Sprintf("value%d", i/(metricCount/10)/9)}, // "0" for the first 90%, then "1"
+			{Name: "a_unique", Value: fmt.Sprintf("value%d", i)},
+			{Name: "b_tens", Value: fmt.Sprintf("value%d", i/(metricCount/10))},
+			{Name: "c_ninety", Value: fmt.Sprintf("value%d", i/(metricCount/10)/9)}, // "0" for the first 90%, then "1"
 		}, []tsdbutil.Sample{sample{100, 0}}))
 	}
 
@@ -406,22 +380,20 @@ func BenchmarkLabelValuesWithMatchers(b *testing.B) {
 	require.NoError(b, err)
 	defer func() { require.NoError(b, indexReader.Close()) }()
 
-	matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "ninety", "value0")}
+	matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "c_ninety", "value0")}
 
 	b.ResetTimer()
 	b.ReportAllocs()
 
 	for benchIdx := 0; benchIdx < b.N; benchIdx++ {
-		actualValues, err := indexReader.LabelValues("tens", matchers...)
+		actualValues, err := indexReader.LabelValues("b_tens", matchers...)
 		require.NoError(b, err)
 		require.Equal(b, 9, len(actualValues))
 	}
 }
 
 func TestLabelNamesWithMatchers(t *testing.T) {
-	tmpdir, err := ioutil.TempDir("", "test_block_label_names_with_matchers")
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, os.RemoveAll(tmpdir)) })
+	tmpdir := t.TempDir()
 
 	var seriesEntries []storage.Series
 	for i := 0; i < 100; i++ {
@@ -431,16 +403,16 @@ func TestLabelNamesWithMatchers(t *testing.T) {
 
 		if i%10 == 0 {
 			seriesEntries = append(seriesEntries, storage.NewListSeries(labels.Labels{
-				{Name: "unique", Value: fmt.Sprintf("value%d", i)},
 				{Name: "tens", Value: fmt.Sprintf("value%d", i/10)},
+				{Name: "unique", Value: fmt.Sprintf("value%d", i)},
 			}, []tsdbutil.Sample{sample{100, 0}}))
 		}
 
 		if i%20 == 0 {
 			seriesEntries = append(seriesEntries, storage.NewListSeries(labels.Labels{
-				{Name: "unique", Value: fmt.Sprintf("value%d", i)},
 				{Name: "tens", Value: fmt.Sprintf("value%d", i/10)},
 				{Name: "twenties", Value: fmt.Sprintf("value%d", i/20)},
+				{Name: "unique", Value: fmt.Sprintf("value%d", i)},
 			}, []tsdbutil.Sample{sample{100, 0}}))
 		}
 
@@ -505,7 +477,7 @@ func createBlockFromHead(tb testing.TB, dir string, head *Head) string {
 	compactor, err := NewLeveledCompactor(context.Background(), nil, log.NewNopLogger(), []int64{1000000}, nil, nil)
 	require.NoError(tb, err)
 
-	require.NoError(tb, os.MkdirAll(dir, 0777))
+	require.NoError(tb, os.MkdirAll(dir, 0o777))
 
 	// Add +1 millisecond to block maxt because block intervals are half-open: [b.MinTime, b.MaxTime).
 	// Because of this block intervals are always +1 than the total samples it includes.
@@ -522,7 +494,7 @@ func createHead(tb testing.TB, w *wal.WAL, series []storage.Series, chunkDir str
 
 	app := head.Appender(context.Background())
 	for _, s := range series {
-		ref := uint64(0)
+		ref := storage.SeriesRef(0)
 		it := s.Iterator()
 		lset := s.Labels()
 		for it.Next() {

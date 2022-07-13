@@ -16,7 +16,7 @@ export interface QueryParams {
   resolution: number;
 }
 
-export interface Rule {
+export type Rule = {
   alerts: Alert[];
   annotations: Record<string, string>;
   duration: number;
@@ -29,7 +29,7 @@ export interface Rule {
   query: string;
   state: RuleState;
   type: string;
-}
+};
 
 export interface WALReplayData {
   min: number;

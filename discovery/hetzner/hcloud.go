@@ -78,6 +78,7 @@ func newHcloudDiscovery(conf *SDConfig, logger log.Logger) (*hcloudDiscovery, er
 	)
 	return d, nil
 }
+
 func (d *hcloudDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	servers, err := d.client.Server.All(ctx)
 	if err != nil {

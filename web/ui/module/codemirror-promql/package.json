@@ -1,22 +1,20 @@
 {
-  "name": "codemirror-promql",
-  "version": "0.18.0",
+  "name": "@prometheus-io/codemirror-promql",
+  "version": "0.37.0-rc.0",
   "description": "a CodeMirror mode for the PromQL language",
-  "main": "dist/cjs/index.js",
+  "types": "dist/esm/index.d.ts",
   "module": "dist/esm/index.js",
+  "main": "dist/cjs/index.js",
   "scripts": {
-    "build": "npm run build:grammar && npm run build:lib",
-    "build:grammar": "lezer-generator src/grammar/promql.grammar -o src/grammar/parser",
+    "build": "npm run build:lib",
     "build:lib": "bash ./build.sh",
-    "test": "npm run build:grammar && ts-mocha -p tsconfig.json ./**/*.test.ts",
-    "test:coverage": "npm run build:grammar && nyc ts-mocha -p ./tsconfig.json ./**/*.test.ts",
-    "codecov": "nyc report --reporter=text-lcov > coverage.lcov && codecov",
+    "test": "NODE_OPTIONS=--experimental-vm-modules jest --runInBand",
     "lint": "eslint src/ --ext .ts",
     "lint:fix": "eslint --fix src/ --ext .ts"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/prometheus-community/codemirror-promql.git"
+    "url": "git+https://github.com/prometheus/prometheus.git"
   },
   "keywords": [
     "promql",
@@ -27,53 +25,33 @@
   "author": "Prometheus Authors <prometheus-developers@googlegroups.com>",
   "license": "Apache-2.0",
   "bugs": {
-    "url": "https://github.com/prometheus-community/codemirror-promql/issues"
+    "url": "https://github.com/prometheus/prometheus/issues"
   },
-  "homepage": "https://github.com/prometheus-community/codemirror-promql/blob/master/README.md",
+  "homepage": "https://github.com/prometheus/prometheus/blob/main/web/ui/module/codemirror-promql/README.md",
   "dependencies": {
+    "@prometheus-io/lezer-promql": "^0.37.0-rc.0",
     "lru-cache": "^6.0.0"
   },
   "devDependencies": {
-    "@codemirror/autocomplete": "^0.19.3",
-    "@codemirror/basic-setup": "^0.19.0",
-    "@codemirror/highlight": "^0.19.5",
-    "@codemirror/language": "^0.19.3",
-    "@codemirror/lint": "^0.19.1",
-    "@codemirror/state": "^0.19.2",
-    "@codemirror/view": "^0.19.7",
-    "@lezer/common": "^0.15.5",
-    "@lezer/generator": "^0.15.1",
-    "@types/chai": "^4.2.12",
-    "@types/lru-cache": "^5.1.0",
-    "@types/mocha": "^8.0.3",
-    "@types/node": "^16.7.6",
-    "@typescript-eslint/eslint-plugin": "^4.31.0",
-    "@typescript-eslint/parser": "^4.31.0",
-    "chai": "^4.2.0",
-    "codecov": "^3.8.1",
-    "eslint": "^7.32.0",
-    "eslint-config-prettier": "^8.3.0",
-    "eslint-plugin-flowtype": "^5.9.2",
-    "eslint-plugin-import": "^2.24.2",
-    "eslint-plugin-prettier": "^4.0.0",
+    "@codemirror/autocomplete": "^6.0.0",
+    "@codemirror/language": "^6.0.0",
+    "@codemirror/lint": "^6.0.0",
+    "@codemirror/state": "^6.0.0",
+    "@codemirror/view": "^6.0.0",
+    "@lezer/common": "^1.0.0",
+    "@lezer/lr": "^1.0.0",
+    "@lezer/highlight": "^1.0.0",
+    "@types/lru-cache": "^5.1.1",
     "isomorphic-fetch": "^3.0.0",
-    "mocha": "^8.1.2",
-    "nock": "^13.0.11",
-    "nyc": "^15.1.0",
-    "prettier": "^2.3.2",
-    "ts-loader": "^7.0.4",
-    "ts-mocha": "^8.0.0",
-    "ts-node": "^9.0.0",
-    "typescript": "^4.2.3"
+    "nock": "^13.2.4"
   },
   "peerDependencies": {
-    "@codemirror/autocomplete": "^0.19.3",
-    "@codemirror/highlight": "^0.19.5",
-    "@codemirror/language": "^0.19.3",
-    "@codemirror/lint": "^0.19.1",
-    "@codemirror/state": "^0.19.2",
-    "@codemirror/view": "^0.19.7",
-    "@lezer/common": "^0.15.5"
+    "@codemirror/autocomplete": "^6.0.0",
+    "@codemirror/language": "^6.0.0",
+    "@codemirror/lint": "^6.0.0",
+    "@codemirror/state": "^6.0.0",
+    "@codemirror/view": "^6.0.0",
+    "@lezer/common": "^1.0.0"
   },
   "prettier": {
     "singleQuote": true,

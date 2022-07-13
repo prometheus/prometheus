@@ -81,10 +81,13 @@ func logUnfinishedQueries(filename string, filesize int, logger log.Logger) {
 }
 
 func getMMapedFile(filename string, filesize int, logger log.Logger) ([]byte, error) {
-
-	file, err := os.OpenFile(filename, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0666)
+	file, err := os.OpenFile(filename, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0o666)
 	if err != nil {
-		level.Error(logger).Log("msg", "Error opening query log file", "file", filename, "err", err)
+		absPath, pathErr := filepath.Abs(filename)
+		if pathErr != nil {
+			absPath = filename
+		}
+		level.Error(logger).Log("msg", "Error opening query log file", "file", absPath, "err", err)
 		return nil, err
 	}
 
@@ -104,7 +107,7 @@ func getMMapedFile(filename string, filesize int, logger log.Logger) ([]byte, er
 }
 
 func NewActiveQueryTracker(localStoragePath string, maxConcurrent int, logger log.Logger) *ActiveQueryTracker {
-	err := os.MkdirAll(localStoragePath, 0777)
+	err := os.MkdirAll(localStoragePath, 0o777)
 	if err != nil {
 		level.Error(logger).Log("msg", "Failed to create directory for logging active queries")
 	}
@@ -147,7 +150,6 @@ func trimStringByBytes(str string, size int) string {
 func _newJSONEntry(query string, timestamp int64, logger log.Logger) []byte {
 	entry := Entry{query, timestamp}
 	jsonEntry, err := json.Marshal(entry)
-
 	if err != nil {
 		level.Error(logger).Log("msg", "Cannot create json of query", "query", query)
 		return []byte{}

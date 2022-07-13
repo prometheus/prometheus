@@ -1,13 +1,13 @@
 import * as React from 'react';
 import { shallow } from 'enzyme';
-import DataTable, { QueryResult } from './DataTable';
+import DataTable, { DataTableProps } from './DataTable';
 import { Alert, Table } from 'reactstrap';
 import SeriesName from './SeriesName';
 
 describe('DataTable', () => {
   describe('when data is null', () => {
     it('renders an alert', () => {
-      const table = shallow(<DataTable data={null} />);
+      const table = shallow(<DataTable useLocalTime={false} data={null} />);
       const alert = table.find(Alert);
       expect(Object.keys(alert.props())).toHaveLength(7);
       expect(alert.prop('color')).toEqual('light');
@@ -17,11 +17,12 @@ describe('DataTable', () => {
 
   describe('when data.result is empty', () => {
     it('renders an alert', () => {
-      const dataTableProps: QueryResult = {
+      const dataTableProps: DataTableProps = {
         data: {
           resultType: 'vector',
           result: [],
         },
+        useLocalTime: false,
       };
       const table = shallow(<DataTable {...dataTableProps} />);
       const alert = table.find(Alert);
@@ -32,7 +33,7 @@ describe('DataTable', () => {
   });
 
   describe('when resultType is a vector with values', () => {
-    const dataTableProps: QueryResult = {
+    const dataTableProps: DataTableProps = {
       data: {
         resultType: 'vector',
         result: [
@@ -54,6 +55,7 @@ describe('DataTable', () => {
           },
         ],
       },
+      useLocalTime: false,
     };
     const dataTable = shallow(<DataTable {...dataTableProps} />);
 
@@ -75,7 +77,7 @@ describe('DataTable', () => {
   });
 
   describe('when resultType is a vector with too many values', () => {
-    const dataTableProps: QueryResult = {
+    const dataTableProps: DataTableProps = {
       data: {
         resultType: 'vector',
         result: Array.from(Array(10001).keys()).map((i) => {
@@ -89,6 +91,7 @@ describe('DataTable', () => {
           };
         }),
       },
+      useLocalTime: false,
     };
     const dataTable = shallow(<DataTable {...dataTableProps} />);
 
@@ -104,7 +107,7 @@ describe('DataTable', () => {
   });
 
   describe('when resultType is vector and size is more than maximum limit of formatting', () => {
-    const dataTableProps: QueryResult = {
+    const dataTableProps: DataTableProps = {
       data: {
         resultType: 'vector',
         result: Array.from(Array(1001).keys()).map((i) => {
@@ -118,6 +121,7 @@ describe('DataTable', () => {
           };
         }),
       },
+      useLocalTime: false,
     };
     const dataTable = shallow(<DataTable {...dataTableProps} />);
 
@@ -130,7 +134,7 @@ describe('DataTable', () => {
   });
 
   describe('when result type is a matrix', () => {
-    const dataTableProps: QueryResult = {
+    const dataTableProps: DataTableProps = {
       data: {
         resultType: 'matrix',
         result: [
@@ -226,6 +230,7 @@ describe('DataTable', () => {
           },
         ],
       },
+      useLocalTime: false,
     };
     const dataTable = shallow(<DataTable {...dataTableProps} />);
     it('renders rows', () => {
@@ -233,35 +238,19 @@ describe('DataTable', () => {
       const rows = table.find('tr');
       expect(table.find('tr')).toHaveLength(3);
       const row = rows.at(0);
-      expect(row.text()).toEqual(`<SeriesName />9 @1572097950.93
-10 @1572097965.931
-11 @1572097980.929
-12 @1572097995.931
-13 @1572098010.932
-14 @1572098025.933
-15 @1572098040.93
-16 @1572098055.93
-17 @1572098070.93
-18 @1572098085.936
-19 @1572098100.936
-20 @1572098115.933
-21 @1572098130.932
-22 @1572098145.932
-23 @1572098160.933
-24 @1572098175.934
-25 @1572098190.937
-26 @1572098205.934
-27 @1572098220.933
-28 @1572098235.934`);
+      expect(row.text()).toEqual(
+        `<SeriesName />9 @1572097950.9310 @1572097965.93111 @1572097980.92912 @1572097995.93113 @1572098010.93214 @1572098025.93315 @1572098040.9316 @1572098055.9317 @1572098070.9318 @1572098085.93619 @1572098100.93620 @1572098115.93321 @1572098130.93222 @1572098145.93223 @1572098160.93324 @1572098175.93425 @1572098190.93726 @1572098205.93427 @1572098220.93328 @1572098235.934`
+      );
     });
   });
 
   describe('when resultType is a scalar', () => {
-    const dataTableProps: QueryResult = {
+    const dataTableProps: DataTableProps = {
       data: {
         resultType: 'scalar',
         result: [1572098246.599, '5'],
       },
+      useLocalTime: false,
     };
     const dataTable = shallow(<DataTable {...dataTableProps} />);
     it('renders a scalar row', () => {
@@ -272,11 +261,12 @@ describe('DataTable', () => {
   });
 
   describe('when resultType is a string', () => {
-    const dataTableProps: QueryResult = {
+    const dataTableProps: DataTableProps = {
       data: {
         resultType: 'string',
         result: 'string',
       },
+      useLocalTime: false,
     };
     const dataTable = shallow(<DataTable {...dataTableProps} />);
     it('renders a string row', () => {

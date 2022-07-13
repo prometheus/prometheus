@@ -15,7 +15,6 @@ package main
 
 import (
 	"context"
-	"io/ioutil"
 	"math"
 	"os"
 	"path/filepath"
@@ -25,9 +24,10 @@ import (
 	"github.com/go-kit/log"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/tsdb"
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/tsdb"
 )
 
 type mockQueryRangeAPI struct {
@@ -54,7 +54,7 @@ func TestBackfillRuleIntegration(t *testing.T) {
 		twentyFourHourDuration, _ = time.ParseDuration("24h")
 	)
 
-	var testCases = []struct {
+	testCases := []struct {
 		name                string
 		runcount            int
 		maxBlockDuration    time.Duration
@@ -71,11 +71,7 @@ func TestBackfillRuleIntegration(t *testing.T) {
 	}
 	for _, tt := range testCases {
 		t.Run(tt.name, func(t *testing.T) {
-			tmpDir, err := ioutil.TempDir("", "backfilldata")
-			require.NoError(t, err)
-			defer func() {
-				require.NoError(t, os.RemoveAll(tmpDir))
-			}()
+			tmpDir := t.TempDir()
 			ctx := context.Background()
 
 			// Execute the test more than once to simulate running the rule importer twice with the same data.
@@ -192,7 +188,7 @@ func createSingleRuleTestFiles(path string) error {
     labels:
         testlabel11: testlabelvalue11
 `
-	return ioutil.WriteFile(path, []byte(recordingRules), 0777)
+	return os.WriteFile(path, []byte(recordingRules), 0o777)
 }
 
 func createMultiRuleTestFiles(path string) error {
@@ -212,17 +208,13 @@ func createMultiRuleTestFiles(path string) error {
     labels:
         testlabel11: testlabelvalue13
 `
-	return ioutil.WriteFile(path, []byte(recordingRules), 0777)
+	return os.WriteFile(path, []byte(recordingRules), 0o777)
 }
 
 // TestBackfillLabels confirms that the labels in the rule file override the labels from the metrics
 // received from Prometheus Query API, including the __name__ label.
 func TestBackfillLabels(t *testing.T) {
-	tmpDir, err := ioutil.TempDir("", "backfilldata")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(tmpDir))
-	}()
+	tmpDir := t.TempDir()
 	ctx := context.Background()
 
 	start := time.Date(2009, time.November, 10, 6, 34, 0, 0, time.UTC)
@@ -244,7 +236,7 @@ func TestBackfillLabels(t *testing.T) {
     labels:
         name1: value-from-rule
 `
-	require.NoError(t, ioutil.WriteFile(path, []byte(recordingRules), 0777))
+	require.NoError(t, os.WriteFile(path, []byte(recordingRules), 0o777))
 	errs := ruleImporter.loadGroups(ctx, []string{path})
 	for _, err := range errs {
 		require.NoError(t, err)

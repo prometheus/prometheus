@@ -17,7 +17,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"compress/zlib"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -64,7 +64,7 @@ func TestCompressionHandler_PlainText(t *testing.T) {
 	resp, err := client.Get(server.URL + "/foo_endpoint")
 	require.NoError(t, err, "client get failed with unexpected error")
 	defer resp.Body.Close()
-	contents, err := ioutil.ReadAll(resp.Body)
+	contents, err := io.ReadAll(resp.Body)
 	require.NoError(t, err, "unexpected error while creating the response body reader")
 
 	expected := "Hello World!"

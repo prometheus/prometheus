@@ -1,7 +1,9 @@
+# Maintainers
+
 Julien Pivotto (<roidelapluie@prometheus.io> / @roidelapluie) and Levi Harrison (<levi@leviharrison.dev> / @LeviHarrison) are the main/default maintainers, some parts of the codebase have other maintainers:
 
 * `cmd`
-  * `promtool`: David Leadbeater (<dgl@dgl.cx> / @dgl), Jessica Grebenschikov (<jessica.greben1@gmail.com> / @jessicagreben)
+  * `promtool`: David Leadbeater (<dgl@dgl.cx> / @dgl)
 * `discovery`
   * `k8s`: Frederic Branczyk (<fbranczyk@gmail.com> / @brancz)
 * `documentation`
@@ -9,6 +11,7 @@ Julien Pivotto (<roidelapluie@prometheus.io> / @roidelapluie) and Levi Harrison 
 * `storage`
   * `remote`: Chris Marchbanks (<csmarchbanks@gmail.com> / @csmarchbanks), Callum Styan (<callumstyan@gmail.com> / @cstyan), Bartłomiej Płotka (<bwplotka@gmail.com> / @bwplotka), Tom Wilkie (<tom.wilkie@gmail.com> / @tomwilkie)
 * `tsdb`: Ganesh Vernekar (<ganesh@grafana.com> / @codesome), Bartłomiej Płotka (<bwplotka@gmail.com> / @bwplotka)
+  * `agent`: Robert Fratto (<robert.fratto@grafana.com> / @rfratto)
 * `web`
   * `ui`: Julius Volz (<julius.volz@gmail.com> / @juliusv)
     * `module`: Augustin Husson (<husson.augustin@gmail.com> @nexucis)

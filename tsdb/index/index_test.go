@@ -17,7 +17,6 @@ import (
 	"context"
 	"fmt"
 	"hash/crc32"
-	"io/ioutil"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -28,7 +27,8 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/encoding"
@@ -45,18 +45,18 @@ type series struct {
 }
 
 type mockIndex struct {
-	series   map[uint64]series
-	postings map[labels.Label][]uint64
+	series   map[storage.SeriesRef]series
+	postings map[labels.Label][]storage.SeriesRef
 	symbols  map[string]struct{}
 }
 
 func newMockIndex() mockIndex {
 	ix := mockIndex{
-		series:   make(map[uint64]series),
-		postings: make(map[labels.Label][]uint64),
+		series:   make(map[storage.SeriesRef]series),
+		postings: make(map[labels.Label][]storage.SeriesRef),
 		symbols:  make(map[string]struct{}),
 	}
-	ix.postings[allPostingsKey] = []uint64{}
+	ix.postings[allPostingsKey] = []storage.SeriesRef{}
 	return ix
 }
 
@@ -64,7 +64,7 @@ func (m mockIndex) Symbols() (map[string]struct{}, error) {
 	return m.symbols, nil
 }
 
-func (m mockIndex) AddSeries(ref uint64, l labels.Labels, chunks ...chunks.Meta) error {
+func (m mockIndex) AddSeries(ref storage.SeriesRef, l labels.Labels, chunks ...chunks.Meta) error {
 	if _, ok := m.series[ref]; ok {
 		return errors.Errorf("series with reference %d already added", ref)
 	}
@@ -72,7 +72,7 @@ func (m mockIndex) AddSeries(ref uint64, l labels.Labels, chunks ...chunks.Meta)
 		m.symbols[lbl.Name] = struct{}{}
 		m.symbols[lbl.Value] = struct{}{}
 		if _, ok := m.postings[lbl]; !ok {
-			m.postings[lbl] = []uint64{}
+			m.postings[lbl] = []storage.SeriesRef{}
 		}
 		m.postings[lbl] = append(m.postings[lbl], ref)
 	}
@@ -124,7 +124,7 @@ func (m mockIndex) SortedPostings(p Postings) Postings {
 	return NewListPostings(ep)
 }
 
-func (m mockIndex) Series(ref uint64, lset *labels.Labels, chks *[]chunks.Meta) error {
+func (m mockIndex) Series(ref storage.SeriesRef, lset *labels.Labels, chks *[]chunks.Meta) error {
 	s, ok := m.series[ref]
 	if !ok {
 		return errors.New("not found")
@@ -136,11 +136,7 @@ func (m mockIndex) Series(ref uint64, lset *labels.Labels, chks *[]chunks.Meta) 
 }
 
 func TestIndexRW_Create_Open(t *testing.T) {
-	dir, err := ioutil.TempDir("", "test_index_create")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 
 	fn := filepath.Join(dir, indexFilename)
 
@@ -154,7 +150,7 @@ func TestIndexRW_Create_Open(t *testing.T) {
 	require.NoError(t, ir.Close())
 
 	// Modify magic header must cause open to fail.
-	f, err := os.OpenFile(fn, os.O_WRONLY, 0666)
+	f, err := os.OpenFile(fn, os.O_WRONLY, 0o666)
 	require.NoError(t, err)
 	_, err = f.WriteAt([]byte{0, 0}, 0)
 	require.NoError(t, err)
@@ -165,11 +161,7 @@ func TestIndexRW_Create_Open(t *testing.T) {
 }
 
 func TestIndexRW_Postings(t *testing.T) {
-	dir, err := ioutil.TempDir("", "test_index_postings")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 
 	fn := filepath.Join(dir, indexFilename)
 
@@ -249,11 +241,7 @@ func TestIndexRW_Postings(t *testing.T) {
 }
 
 func TestPostingsMany(t *testing.T) {
-	dir, err := ioutil.TempDir("", "test_postings_many")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 
 	fn := filepath.Join(dir, indexFilename)
 
@@ -281,7 +269,7 @@ func TestPostingsMany(t *testing.T) {
 	}
 
 	for i, s := range series {
-		require.NoError(t, iw.AddSeries(uint64(i), s))
+		require.NoError(t, iw.AddSeries(storage.SeriesRef(i), s))
 	}
 	require.NoError(t, iw.Close())
 
@@ -340,15 +328,10 @@ func TestPostingsMany(t *testing.T) {
 		}
 		require.Equal(t, exp, got, fmt.Sprintf("input: %v", c.in))
 	}
-
 }
 
 func TestPersistence_index_e2e(t *testing.T) {
-	dir, err := ioutil.TempDir("", "test_persistence_e2e")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 
 	lbls, err := labels.ReadLabels(filepath.Join("..", "testdata", "20kseries.json"), 20000)
 	require.NoError(t, err)
@@ -374,7 +357,7 @@ func TestPersistence_index_e2e(t *testing.T) {
 			metas = append(metas, chunks.Meta{
 				MinTime: int64(j * 10000),
 				MaxTime: int64((j + 1) * 10000),
-				Ref:     rand.Uint64(),
+				Ref:     chunks.ChunkRef(rand.Uint64()),
 				Chunk:   chunkenc.NewXORChunk(),
 			})
 		}
@@ -405,9 +388,9 @@ func TestPersistence_index_e2e(t *testing.T) {
 	mi := newMockIndex()
 
 	for i, s := range input {
-		err = iw.AddSeries(uint64(i), s.labels, s.chunks...)
+		err = iw.AddSeries(storage.SeriesRef(i), s.labels, s.chunks...)
 		require.NoError(t, err)
-		require.NoError(t, mi.AddSeries(uint64(i), s.labels, s.chunks...))
+		require.NoError(t, mi.AddSeries(storage.SeriesRef(i), s.labels, s.chunks...))
 
 		for _, l := range s.labels {
 			valset, ok := values[l.Name]
@@ -417,7 +400,7 @@ func TestPersistence_index_e2e(t *testing.T) {
 			}
 			valset[l.Value] = struct{}{}
 		}
-		postings.Add(uint64(i), s.labels)
+		postings.Add(storage.SeriesRef(i), s.labels)
 	}
 
 	err = iw.Close()
@@ -504,7 +487,7 @@ func TestNewFileReaderErrorNoOpenFiles(t *testing.T) {
 	dir := testutil.NewTemporaryDirectory("block", t)
 
 	idxName := filepath.Join(dir.Path(), "index")
-	err := ioutil.WriteFile(idxName, []byte("corrupted contents"), 0666)
+	err := os.WriteFile(idxName, []byte("corrupted contents"), 0o666)
 	require.NoError(t, err)
 
 	_, err = NewFileReader(idxName)
@@ -559,4 +542,9 @@ func TestSymbols(t *testing.T) {
 		i++
 	}
 	require.NoError(t, iter.Err())
+}
+
+func TestDecoder_Postings_WrongInput(t *testing.T) {
+	_, _, err := (&Decoder{}).Postings([]byte("the cake is a lie"))
+	require.Error(t, err)
 }

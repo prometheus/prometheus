@@ -15,10 +15,10 @@ package stats
 
 import (
 	"encoding/json"
-	"regexp"
 	"testing"
 	"time"
 
+	"github.com/grafana/regexp"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 
@@ -41,30 +41,38 @@ func TestTimerGroupNewTimer(t *testing.T) {
 		"Expected elapsed time to be greater than time slept.")
 }
 
-func TestQueryStatsWithTimers(t *testing.T) {
+func TestQueryStatsWithTimersAndSamples(t *testing.T) {
 	qt := NewQueryTimers()
+	qs := NewQuerySamples(true)
+	qs.InitStepTracking(20001000, 25001000, 1000000)
 	timer := qt.GetTimer(ExecTotalTime)
 	timer.Start()
 	time.Sleep(2 * time.Millisecond)
 	timer.Stop()
+	qs.IncrementSamplesAtTimestamp(20001000, 5)
+	qs.IncrementSamplesAtTimestamp(25001000, 5)
 
-	qs := NewQueryStats(qt)
-	actual, err := json.Marshal(qs)
+	qstats := NewQueryStats(&Statistics{Timers: qt, Samples: qs})
+	actual, err := json.Marshal(qstats)
 	require.NoError(t, err, "unexpected error during serialization")
 	// Timing value is one of multiple fields, unit is seconds (float).
 	match, err := regexp.MatchString(`[,{]"execTotalTime":\d+\.\d+[,}]`, string(actual))
 	require.NoError(t, err, "unexpected error while matching string")
 	require.True(t, match, "Expected timings with one non-zero entry.")
+
+	require.Regexpf(t, `[,{]"totalQueryableSamples":10[,}]`, string(actual), "expected totalQueryableSamples")
+	require.Regexpf(t, `[,{]"totalQueryableSamplesPerStep":\[\[20001,5\],\[21001,0\],\[22001,0\],\[23001,0\],\[24001,0\],\[25001,5\]\]`, string(actual), "expected totalQueryableSamplesPerStep")
 }
 
 func TestQueryStatsWithSpanTimers(t *testing.T) {
 	qt := NewQueryTimers()
+	qs := NewQuerySamples(false)
 	ctx := &testutil.MockContext{DoneCh: make(chan struct{})}
 	qst, _ := qt.GetSpanTimer(ctx, ExecQueueTime, prometheus.NewSummary(prometheus.SummaryOpts{}))
 	time.Sleep(5 * time.Millisecond)
 	qst.Finish()
-	qs := NewQueryStats(qt)
-	actual, err := json.Marshal(qs)
+	qstats := NewQueryStats(&Statistics{Timers: qt, Samples: qs})
+	actual, err := json.Marshal(qstats)
 	require.NoError(t, err, "unexpected error during serialization")
 	// Timing value is one of multiple fields, unit is seconds (float).
 	match, err := regexp.MatchString(`[,{]"execQueueTime":\d+\.\d+[,}]`, string(actual))

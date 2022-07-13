@@ -15,21 +15,24 @@ package kubernetes
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
 	"reflect"
 	"strings"
 	"sync"
 	"time"
 
+	disv1beta1 "k8s.io/api/discovery/v1beta1"
+
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
 	apiv1 "k8s.io/api/core/v1"
-	disv1beta1 "k8s.io/api/discovery/v1beta1"
+	disv1 "k8s.io/api/discovery/v1"
 	networkv1 "k8s.io/api/networking/v1"
 	"k8s.io/api/networking/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -43,12 +46,15 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/clientcmd"
 
+	// Required to get the GCP auth provider working.
+	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
+
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
 const (
-	// kubernetesMetaLabelPrefix is the meta prefix used for all meta labels.
+	// metaLabelPrefix is the meta prefix used for all meta labels.
 	// in this discovery.
 	metaLabelPrefix  = model.MetaLabelPrefix + "kubernetes_"
 	namespaceLabel   = metaLabelPrefix + "namespace"
@@ -109,7 +115,7 @@ func (c *Role) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	case RoleNode, RolePod, RoleService, RoleEndpoint, RoleEndpointSlice, RoleIngress:
 		return nil
 	default:
-		return errors.Errorf("unknown Kubernetes SD role %q", *c)
+		return fmt.Errorf("unknown Kubernetes SD role %q", *c)
 	}
 }
 
@@ -121,6 +127,7 @@ type SDConfig struct {
 	HTTPClientConfig   config.HTTPClientConfig `yaml:",inline"`
 	NamespaceDiscovery NamespaceDiscovery      `yaml:"namespaces,omitempty"`
 	Selectors          []SelectorConfig        `yaml:"selectors,omitempty"`
+	AttachMetadata     AttachMetadataConfig    `yaml:"attach_metadata,omitempty"`
 }
 
 // Name returns the name of the Config.
@@ -157,6 +164,12 @@ type resourceSelector struct {
 	field string
 }
 
+// AttachMetadataConfig is the configuration for attaching additional metadata
+// coming from nodes on which the targets are scheduled.
+type AttachMetadataConfig struct {
+	Node bool `yaml:"node"`
+}
+
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
 func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	*c = DefaultSDConfig
@@ -166,7 +179,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 	if c.Role == "" {
-		return errors.Errorf("role missing (one of: pod, service, endpoints, endpointslice, node, ingress)")
+		return fmt.Errorf("role missing (one of: pod, service, endpoints, endpointslice, node, ingress)")
 	}
 	err = c.HTTPClientConfig.Validate()
 	if err != nil {
@@ -174,14 +187,20 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}
 	if c.APIServer.URL != nil && c.KubeConfig != "" {
 		// Api-server and kubeconfig_file are mutually exclusive
-		return errors.Errorf("cannot use 'kubeconfig_file' and 'api_server' simultaneously")
+		return fmt.Errorf("cannot use 'kubeconfig_file' and 'api_server' simultaneously")
 	}
 	if c.KubeConfig != "" && !reflect.DeepEqual(c.HTTPClientConfig, config.DefaultHTTPClientConfig) {
 		// Kubeconfig_file and custom http config are mutually exclusive
-		return errors.Errorf("cannot use a custom HTTP client configuration together with 'kubeconfig_file'")
+		return fmt.Errorf("cannot use a custom HTTP client configuration together with 'kubeconfig_file'")
 	}
 	if c.APIServer.URL == nil && !reflect.DeepEqual(c.HTTPClientConfig, config.DefaultHTTPClientConfig) {
-		return errors.Errorf("to use custom HTTP client configuration please provide the 'api_server' URL explicitly")
+		return fmt.Errorf("to use custom HTTP client configuration please provide the 'api_server' URL explicitly")
+	}
+	if c.APIServer.URL != nil && c.NamespaceDiscovery.IncludeOwnNamespace {
+		return fmt.Errorf("cannot use 'api_server' and 'namespaces.own_namespace' simultaneously")
+	}
+	if c.KubeConfig != "" && c.NamespaceDiscovery.IncludeOwnNamespace {
+		return fmt.Errorf("cannot use 'kubeconfig_file' and 'namespaces.own_namespace' simultaneously")
 	}
 
 	foundSelectorRoles := make(map[Role]struct{})
@@ -196,12 +215,12 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 	for _, selector := range c.Selectors {
 		if _, ok := foundSelectorRoles[selector.Role]; ok {
-			return errors.Errorf("duplicated selector role: %s", selector.Role)
+			return fmt.Errorf("duplicated selector role: %s", selector.Role)
 		}
 		foundSelectorRoles[selector.Role] = struct{}{}
 
 		if _, ok := allowedSelectors[c.Role]; !ok {
-			return errors.Errorf("invalid role: %q, expecting one of: pod, service, endpoints, endpointslice, node or ingress", c.Role)
+			return fmt.Errorf("invalid role: %q, expecting one of: pod, service, endpoints, endpointslice, node or ingress", c.Role)
 		}
 		var allowed bool
 		for _, role := range allowedSelectors[c.Role] {
@@ -212,7 +231,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		}
 
 		if !allowed {
-			return errors.Errorf("%s role supports only %s selectors", c.Role, strings.Join(allowedSelectors[c.Role], ", "))
+			return fmt.Errorf("%s role supports only %s selectors", c.Role, strings.Join(allowedSelectors[c.Role], ", "))
 		}
 
 		_, err := fields.ParseSelector(selector.Field)
@@ -230,7 +249,8 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 // NamespaceDiscovery is the configuration for discovering
 // Kubernetes namespaces.
 type NamespaceDiscovery struct {
-	Names []string `yaml:"names"`
+	IncludeOwnNamespace bool     `yaml:"own_namespace"`
+	Names               []string `yaml:"names"`
 }
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
@@ -250,13 +270,22 @@ type Discovery struct {
 	namespaceDiscovery *NamespaceDiscovery
 	discoverers        []discovery.Discoverer
 	selectors          roleSelector
+	ownNamespace       string
+	attachMetadata     AttachMetadataConfig
 }
 
 func (d *Discovery) getNamespaces() []string {
 	namespaces := d.namespaceDiscovery.Names
-	if len(namespaces) == 0 {
-		namespaces = []string{apiv1.NamespaceAll}
+	includeOwnNamespace := d.namespaceDiscovery.IncludeOwnNamespace
+
+	if len(namespaces) == 0 && !includeOwnNamespace {
+		return []string{apiv1.NamespaceAll}
 	}
+
+	if includeOwnNamespace && d.ownNamespace != "" {
+		return append(namespaces, d.ownNamespace)
+	}
+
 	return namespaces
 }
 
@@ -266,8 +295,9 @@ func New(l log.Logger, conf *SDConfig) (*Discovery, error) {
 		l = log.NewNopLogger()
 	}
 	var (
-		kcfg *rest.Config
-		err  error
+		kcfg         *rest.Config
+		err          error
+		ownNamespace string
 	)
 	if conf.KubeConfig != "" {
 		kcfg, err = clientcmd.BuildConfigFromFlags("", conf.KubeConfig)
@@ -281,6 +311,18 @@ func New(l log.Logger, conf *SDConfig) (*Discovery, error) {
 		if err != nil {
 			return nil, err
 		}
+
+		if conf.NamespaceDiscovery.IncludeOwnNamespace {
+			ownNamespaceContents, err := os.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace")
+			if err != nil {
+				return nil, fmt.Errorf("could not determine the pod's namespace: %w", err)
+			}
+			if len(ownNamespaceContents) == 0 {
+				return nil, errors.New("could not read own namespace name (empty file)")
+			}
+			ownNamespace = string(ownNamespaceContents)
+		}
+
 		level.Info(l).Log("msg", "Using pod service account via in-cluster config")
 	} else {
 		rt, err := config.NewRoundTripperFromConfig(conf.HTTPClientConfig, "kubernetes_sd")
@@ -299,6 +341,7 @@ func New(l log.Logger, conf *SDConfig) (*Discovery, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	return &Discovery{
 		client:             c,
 		logger:             l,
@@ -306,6 +349,8 @@ func New(l log.Logger, conf *SDConfig) (*Discovery, error) {
 		namespaceDiscovery: &conf.NamespaceDiscovery,
 		discoverers:        make([]discovery.Discoverer, 0),
 		selectors:          mapSelector(conf.Selectors),
+		ownNamespace:       ownNamespace,
+		attachMetadata:     conf.AttachMetadata,
 	}, nil
 }
 
@@ -345,20 +390,56 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 
 	switch d.role {
 	case RoleEndpointSlice:
+		// Check "networking.k8s.io/v1" availability with retries.
+		// If "v1" is not available, use "networking.k8s.io/v1beta1" for backward compatibility
+		var v1Supported bool
+		if retryOnError(ctx, 10*time.Second,
+			func() (err error) {
+				v1Supported, err = checkDiscoveryV1Supported(d.client)
+				if err != nil {
+					level.Error(d.logger).Log("msg", "Failed to check networking.k8s.io/v1 availability", "err", err)
+				}
+				return err
+			},
+		) {
+			d.Unlock()
+			return
+		}
+
 		for _, namespace := range namespaces {
-			e := d.client.DiscoveryV1beta1().EndpointSlices(namespace)
-			elw := &cache.ListWatch{
-				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
-					options.FieldSelector = d.selectors.endpointslice.field
-					options.LabelSelector = d.selectors.endpointslice.label
-					return e.List(ctx, options)
-				},
-				WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
-					options.FieldSelector = d.selectors.endpointslice.field
-					options.LabelSelector = d.selectors.endpointslice.label
-					return e.Watch(ctx, options)
-				},
+			var informer cache.SharedIndexInformer
+			if v1Supported {
+				e := d.client.DiscoveryV1().EndpointSlices(namespace)
+				elw := &cache.ListWatch{
+					ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+						options.FieldSelector = d.selectors.endpointslice.field
+						options.LabelSelector = d.selectors.endpointslice.label
+						return e.List(ctx, options)
+					},
+					WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+						options.FieldSelector = d.selectors.endpointslice.field
+						options.LabelSelector = d.selectors.endpointslice.label
+						return e.Watch(ctx, options)
+					},
+				}
+				informer = d.newEndpointSlicesByNodeInformer(elw, &disv1.EndpointSlice{})
+			} else {
+				e := d.client.DiscoveryV1beta1().EndpointSlices(namespace)
+				elw := &cache.ListWatch{
+					ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+						options.FieldSelector = d.selectors.endpointslice.field
+						options.LabelSelector = d.selectors.endpointslice.label
+						return e.List(ctx, options)
+					},
+					WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+						options.FieldSelector = d.selectors.endpointslice.field
+						options.LabelSelector = d.selectors.endpointslice.label
+						return e.Watch(ctx, options)
+					},
+				}
+				informer = d.newEndpointSlicesByNodeInformer(elw, &disv1beta1.EndpointSlice{})
 			}
+
 			s := d.client.CoreV1().Services(namespace)
 			slw := &cache.ListWatch{
 				ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
@@ -385,11 +466,17 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 					return p.Watch(ctx, options)
 				},
 			}
+			var nodeInf cache.SharedInformer
+			if d.attachMetadata.Node {
+				nodeInf = d.newNodeInformer(context.Background())
+				go nodeInf.Run(ctx.Done())
+			}
 			eps := NewEndpointSlice(
 				log.With(d.logger, "role", "endpointslice"),
+				informer,
 				cache.NewSharedInformer(slw, &apiv1.Service{}, resyncPeriod),
-				cache.NewSharedInformer(elw, &disv1beta1.EndpointSlice{}, resyncPeriod),
 				cache.NewSharedInformer(plw, &apiv1.Pod{}, resyncPeriod),
+				nodeInf,
 			)
 			d.discoverers = append(d.discoverers, eps)
 			go eps.endpointSliceInf.Run(ctx.Done())
@@ -437,11 +524,18 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 					return p.Watch(ctx, options)
 				},
 			}
+			var nodeInf cache.SharedInformer
+			if d.attachMetadata.Node {
+				nodeInf = d.newNodeInformer(ctx)
+				go nodeInf.Run(ctx.Done())
+			}
+
 			eps := NewEndpoints(
 				log.With(d.logger, "role", "endpoint"),
+				d.newEndpointsByNodeInformer(elw),
 				cache.NewSharedInformer(slw, &apiv1.Service{}, resyncPeriod),
-				cache.NewSharedInformer(elw, &apiv1.Endpoints{}, resyncPeriod),
 				cache.NewSharedInformer(plw, &apiv1.Pod{}, resyncPeriod),
+				nodeInf,
 			)
 			d.discoverers = append(d.discoverers, eps)
 			go eps.endpointsInf.Run(ctx.Done())
@@ -449,6 +543,12 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			go eps.podInf.Run(ctx.Done())
 		}
 	case RolePod:
+		var nodeInformer cache.SharedInformer
+		if d.attachMetadata.Node {
+			nodeInformer = d.newNodeInformer(ctx)
+			go nodeInformer.Run(ctx.Done())
+		}
+
 		for _, namespace := range namespaces {
 			p := d.client.CoreV1().Pods(namespace)
 			plw := &cache.ListWatch{
@@ -465,10 +565,11 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			}
 			pod := NewPod(
 				log.With(d.logger, "role", "pod"),
-				cache.NewSharedInformer(plw, &apiv1.Pod{}, resyncPeriod),
+				d.newPodsByNodeInformer(plw),
+				nodeInformer,
 			)
 			d.discoverers = append(d.discoverers, pod)
-			go pod.informer.Run(ctx.Done())
+			go pod.podInf.Run(ctx.Done())
 		}
 	case RoleService:
 		for _, namespace := range namespaces {
@@ -494,7 +595,7 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 		}
 	case RoleIngress:
 		// Check "networking.k8s.io/v1" availability with retries.
-		// If "v1" is not avaiable, use "networking.k8s.io/v1beta1" for backward compatibility
+		// If "v1" is not available, use "networking.k8s.io/v1beta1" for backward compatibility
 		var v1Supported bool
 		if retryOnError(ctx, 10*time.Second,
 			func() (err error) {
@@ -550,22 +651,8 @@ func (d *Discovery) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 			go ingress.informer.Run(ctx.Done())
 		}
 	case RoleNode:
-		nlw := &cache.ListWatch{
-			ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
-				options.FieldSelector = d.selectors.node.field
-				options.LabelSelector = d.selectors.node.label
-				return d.client.CoreV1().Nodes().List(ctx, options)
-			},
-			WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
-				options.FieldSelector = d.selectors.node.field
-				options.LabelSelector = d.selectors.node.label
-				return d.client.CoreV1().Nodes().Watch(ctx, options)
-			},
-		}
-		node := NewNode(
-			log.With(d.logger, "role", "node"),
-			cache.NewSharedInformer(nlw, &apiv1.Node{}, resyncPeriod),
-		)
+		nodeInformer := d.newNodeInformer(ctx)
+		node := NewNode(log.With(d.logger, "role", "node"), nodeInformer)
 		d.discoverers = append(d.discoverers, node)
 		go node.informer.Run(ctx.Done())
 	default:
@@ -629,4 +716,109 @@ func checkNetworkingV1Supported(client kubernetes.Interface) (bool, error) {
 	// networking.k8s.io/v1 is available since Kubernetes v1.19
 	// https://github.com/kubernetes/kubernetes/blob/master/CHANGELOG/CHANGELOG-1.19.md
 	return semVer.Major() >= 1 && semVer.Minor() >= 19, nil
+}
+
+func (d *Discovery) newNodeInformer(ctx context.Context) cache.SharedInformer {
+	nlw := &cache.ListWatch{
+		ListFunc: func(options metav1.ListOptions) (runtime.Object, error) {
+			options.FieldSelector = d.selectors.node.field
+			options.LabelSelector = d.selectors.node.label
+			return d.client.CoreV1().Nodes().List(ctx, options)
+		},
+		WatchFunc: func(options metav1.ListOptions) (watch.Interface, error) {
+			options.FieldSelector = d.selectors.node.field
+			options.LabelSelector = d.selectors.node.label
+			return d.client.CoreV1().Nodes().Watch(ctx, options)
+		},
+	}
+	return cache.NewSharedInformer(nlw, &apiv1.Node{}, resyncPeriod)
+}
+
+func (d *Discovery) newPodsByNodeInformer(plw *cache.ListWatch) cache.SharedIndexInformer {
+	indexers := make(map[string]cache.IndexFunc)
+	if d.attachMetadata.Node {
+		indexers[nodeIndex] = func(obj interface{}) ([]string, error) {
+			pod, ok := obj.(*apiv1.Pod)
+			if !ok {
+				return nil, fmt.Errorf("object is not a pod")
+			}
+			return []string{pod.Spec.NodeName}, nil
+		}
+	}
+
+	return cache.NewSharedIndexInformer(plw, &apiv1.Pod{}, resyncPeriod, indexers)
+}
+
+func (d *Discovery) newEndpointsByNodeInformer(plw *cache.ListWatch) cache.SharedIndexInformer {
+	indexers := make(map[string]cache.IndexFunc)
+	if !d.attachMetadata.Node {
+		return cache.NewSharedIndexInformer(plw, &apiv1.Endpoints{}, resyncPeriod, indexers)
+	}
+
+	indexers[nodeIndex] = func(obj interface{}) ([]string, error) {
+		e, ok := obj.(*apiv1.Endpoints)
+		if !ok {
+			return nil, fmt.Errorf("object is not a pod")
+		}
+		var nodes []string
+		for _, target := range e.Subsets {
+			for _, addr := range target.Addresses {
+				if addr.NodeName == nil {
+					continue
+				}
+				nodes = append(nodes, *addr.NodeName)
+			}
+		}
+		return nodes, nil
+	}
+
+	return cache.NewSharedIndexInformer(plw, &apiv1.Endpoints{}, resyncPeriod, indexers)
+}
+
+func (d *Discovery) newEndpointSlicesByNodeInformer(plw *cache.ListWatch, object runtime.Object) cache.SharedIndexInformer {
+	indexers := make(map[string]cache.IndexFunc)
+	if !d.attachMetadata.Node {
+		cache.NewSharedIndexInformer(plw, &disv1.EndpointSlice{}, resyncPeriod, indexers)
+	}
+
+	indexers[nodeIndex] = func(obj interface{}) ([]string, error) {
+		var nodes []string
+		switch e := obj.(type) {
+		case *disv1.EndpointSlice:
+			for _, target := range e.Endpoints {
+				if target.NodeName == nil {
+					continue
+				}
+				nodes = append(nodes, *target.NodeName)
+			}
+		case *disv1beta1.EndpointSlice:
+			for _, target := range e.Endpoints {
+				if target.NodeName == nil {
+					continue
+				}
+				nodes = append(nodes, *target.NodeName)
+			}
+		default:
+			return nil, fmt.Errorf("object is not an endpointslice")
+		}
+
+		return nodes, nil
+	}
+
+	return cache.NewSharedIndexInformer(plw, object, resyncPeriod, indexers)
+}
+
+func checkDiscoveryV1Supported(client kubernetes.Interface) (bool, error) {
+	k8sVer, err := client.Discovery().ServerVersion()
+	if err != nil {
+		return false, err
+	}
+	semVer, err := utilversion.ParseSemantic(k8sVer.String())
+	if err != nil {
+		return false, err
+	}
+	// The discovery.k8s.io/v1beta1 API version of EndpointSlice will no longer be served in v1.25.
+	// discovery.k8s.io/v1 is available since Kubernetes v1.21
+	// https://kubernetes.io/docs/reference/using-api/deprecation-guide/#v1-25
+	return semVer.Major() >= 1 && semVer.Minor() >= 21, nil
 }

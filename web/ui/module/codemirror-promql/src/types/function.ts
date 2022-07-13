@@ -32,6 +32,7 @@ import {
   CountOverTime,
   DayOfMonth,
   DayOfWeek,
+  DayOfYear,
   DaysInMonth,
   Deg,
   Delta,
@@ -78,7 +79,7 @@ import {
   Timestamp,
   Vector,
   Year,
-} from '../grammar/parser.terms';
+} from '@prometheus-io/lezer-promql';
 
 export enum ValueType {
   none = 'none',
@@ -220,6 +221,12 @@ const promqlFunctions: { [key: number]: PromQLFunction } = {
   },
   [DayOfWeek]: {
     name: 'day_of_week',
+    argTypes: [ValueType.vector],
+    variadic: 1,
+    returnType: ValueType.vector,
+  },
+  [DayOfYear]: {
+    name: 'day_of_year',
     argTypes: [ValueType.vector],
     variadic: 1,
     returnType: ValueType.vector,

@@ -15,11 +15,12 @@ package hetzner
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/hetznercloud/hcloud-go/hcloud"
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
@@ -95,7 +96,7 @@ func (c *role) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	case hetznerRoleRobot, hetznerRoleHcloud:
 		return nil
 	default:
-		return errors.Errorf("unknown role %q", *c)
+		return fmt.Errorf("unknown role %q", *c)
 	}
 }
 
@@ -112,6 +113,11 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return errors.New("role missing (one of: robot, hcloud)")
 	}
 	return c.HTTPClientConfig.Validate()
+}
+
+// SetDirectory joins any relative file paths with dir.
+func (c *SDConfig) SetDirectory(dir string) {
+	c.HTTPClientConfig.SetDirectory(dir)
 }
 
 // Discovery periodically performs Hetzner requests. It implements

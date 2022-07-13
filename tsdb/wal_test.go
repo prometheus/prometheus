@@ -19,7 +19,6 @@ package tsdb
 import (
 	"encoding/binary"
 	"io"
-	"io/ioutil"
 	"math/rand"
 	"os"
 	"path"
@@ -30,18 +29,16 @@ import (
 	"github.com/go-kit/log"
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/wal"
 )
 
 func TestSegmentWAL_cut(t *testing.T) {
-	tmpdir, err := ioutil.TempDir("", "test_wal_cut")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(tmpdir))
-	}()
+	tmpdir := t.TempDir()
 
 	// This calls cut() implicitly the first time without a previous tail.
 	w, err := OpenSegmentWAL(tmpdir, nil, 0, nil)
@@ -87,11 +84,7 @@ func TestSegmentWAL_Truncate(t *testing.T) {
 	series, err := labels.ReadLabels(filepath.Join("testdata", "20kseries.json"), numMetrics)
 	require.NoError(t, err)
 
-	dir, err := ioutil.TempDir("", "test_wal_log_truncate")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 
 	w, err := OpenSegmentWAL(dir, nil, 0, nil)
 	require.NoError(t, err)
@@ -102,7 +95,7 @@ func TestSegmentWAL_Truncate(t *testing.T) {
 		var rs []record.RefSeries
 
 		for j, s := range series[i : i+batch] {
-			rs = append(rs, record.RefSeries{Labels: s, Ref: uint64(i+j) + 1})
+			rs = append(rs, record.RefSeries{Labels: s, Ref: chunks.HeadSeriesRef(i+j) + 1})
 		}
 		err := w.LogSeries(rs)
 		require.NoError(t, err)
@@ -117,11 +110,11 @@ func TestSegmentWAL_Truncate(t *testing.T) {
 	boundarySeries := w.files[len(w.files)/2].minSeries
 
 	// We truncate while keeping every 2nd series.
-	keep := map[uint64]struct{}{}
+	keep := map[chunks.HeadSeriesRef]struct{}{}
 	for i := 1; i <= numMetrics; i += 2 {
-		keep[uint64(i)] = struct{}{}
+		keep[chunks.HeadSeriesRef(i)] = struct{}{}
 	}
-	keepf := func(id uint64) bool {
+	keepf := func(id chunks.HeadSeriesRef) bool {
 		_, ok := keep[id]
 		return ok
 	}
@@ -132,8 +125,8 @@ func TestSegmentWAL_Truncate(t *testing.T) {
 	var expected []record.RefSeries
 
 	for i := 1; i <= numMetrics; i++ {
-		if i%2 == 1 || uint64(i) >= boundarySeries {
-			expected = append(expected, record.RefSeries{Ref: uint64(i), Labels: series[i-1]})
+		if i%2 == 1 || chunks.HeadSeriesRef(i) >= boundarySeries {
+			expected = append(expected, record.RefSeries{Ref: chunks.HeadSeriesRef(i), Labels: series[i-1]})
 		}
 	}
 
@@ -170,11 +163,7 @@ func TestSegmentWAL_Log_Restore(t *testing.T) {
 	series, err := labels.ReadLabels(filepath.Join("testdata", "20kseries.json"), numMetrics)
 	require.NoError(t, err)
 
-	dir, err := ioutil.TempDir("", "test_wal_log_restore")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 
 	var (
 		recordedSeries  [][]record.RefSeries
@@ -238,7 +227,7 @@ func TestSegmentWAL_Log_Restore(t *testing.T) {
 
 			for j := 0; j < i*10; j++ {
 				samples = append(samples, record.RefSample{
-					Ref: uint64(j % 10000),
+					Ref: chunks.HeadSeriesRef(j % 10000),
 					T:   int64(j * 2),
 					V:   rand.Float64(),
 				})
@@ -246,14 +235,14 @@ func TestSegmentWAL_Log_Restore(t *testing.T) {
 
 			for j := 0; j < i*20; j++ {
 				ts := rand.Int63()
-				stones = append(stones, tombstones.Stone{Ref: rand.Uint64(), Intervals: tombstones.Intervals{{Mint: ts, Maxt: ts + rand.Int63n(10000)}}})
+				stones = append(stones, tombstones.Stone{Ref: storage.SeriesRef(rand.Uint64()), Intervals: tombstones.Intervals{{Mint: ts, Maxt: ts + rand.Int63n(10000)}}})
 			}
 
 			lbls := series[i : i+stepSize]
 			series := make([]record.RefSeries, 0, len(series))
 			for j, l := range lbls {
 				series = append(series, record.RefSeries{
-					Ref:    uint64(i + j),
+					Ref:    chunks.HeadSeriesRef(i + j),
 					Labels: l,
 				})
 			}
@@ -279,11 +268,7 @@ func TestSegmentWAL_Log_Restore(t *testing.T) {
 }
 
 func TestWALRestoreCorrupted_invalidSegment(t *testing.T) {
-	dir, err := ioutil.TempDir("", "test_wal_log_restore")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 
 	wal, err := OpenSegmentWAL(dir, nil, 0, nil)
 	require.NoError(t, err)
@@ -308,7 +293,7 @@ func TestWALRestoreCorrupted_invalidSegment(t *testing.T) {
 	require.NoError(t, err)
 	defer func(wal *SegmentWAL) { require.NoError(t, wal.Close()) }(wal)
 
-	files, err := ioutil.ReadDir(dir)
+	files, err := os.ReadDir(dir)
 	require.NoError(t, err)
 	fns := []string{}
 	for _, f := range files {
@@ -326,7 +311,7 @@ func TestWALRestoreCorrupted(t *testing.T) {
 		{
 			name: "truncate_checksum",
 			f: func(t *testing.T, w *SegmentWAL) {
-				f, err := os.OpenFile(w.files[0].Name(), os.O_WRONLY, 0666)
+				f, err := os.OpenFile(w.files[0].Name(), os.O_WRONLY, 0o666)
 				require.NoError(t, err)
 				defer f.Close()
 
@@ -339,7 +324,7 @@ func TestWALRestoreCorrupted(t *testing.T) {
 		{
 			name: "truncate_body",
 			f: func(t *testing.T, w *SegmentWAL) {
-				f, err := os.OpenFile(w.files[0].Name(), os.O_WRONLY, 0666)
+				f, err := os.OpenFile(w.files[0].Name(), os.O_WRONLY, 0o666)
 				require.NoError(t, err)
 				defer f.Close()
 
@@ -352,7 +337,7 @@ func TestWALRestoreCorrupted(t *testing.T) {
 		{
 			name: "body_content",
 			f: func(t *testing.T, w *SegmentWAL) {
-				f, err := os.OpenFile(w.files[0].Name(), os.O_WRONLY, 0666)
+				f, err := os.OpenFile(w.files[0].Name(), os.O_WRONLY, 0o666)
 				require.NoError(t, err)
 				defer f.Close()
 
@@ -367,7 +352,7 @@ func TestWALRestoreCorrupted(t *testing.T) {
 		{
 			name: "checksum",
 			f: func(t *testing.T, w *SegmentWAL) {
-				f, err := os.OpenFile(w.files[0].Name(), os.O_WRONLY, 0666)
+				f, err := os.OpenFile(w.files[0].Name(), os.O_WRONLY, 0o666)
 				require.NoError(t, err)
 				defer f.Close()
 
@@ -384,11 +369,7 @@ func TestWALRestoreCorrupted(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			// Generate testing data. It does not make semantic sense but
 			// for the purpose of this test.
-			dir, err := ioutil.TempDir("", "test_corrupted")
-			require.NoError(t, err)
-			defer func() {
-				require.NoError(t, os.RemoveAll(dir))
-			}()
+			dir := t.TempDir()
 
 			w, err := OpenSegmentWAL(dir, nil, 0, nil)
 			require.NoError(t, err)
@@ -464,11 +445,7 @@ func TestWALRestoreCorrupted(t *testing.T) {
 func TestMigrateWAL_Empty(t *testing.T) {
 	// The migration procedure must properly deal with a zero-length segment,
 	// which is valid in the new format.
-	dir, err := ioutil.TempDir("", "walmigrate")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 
 	wdir := path.Join(dir, "wal")
 
@@ -481,11 +458,7 @@ func TestMigrateWAL_Empty(t *testing.T) {
 }
 
 func TestMigrateWAL_Fuzz(t *testing.T) {
-	dir, err := ioutil.TempDir("", "walmigrate")
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, os.RemoveAll(dir))
-	}()
+	dir := t.TempDir()
 
 	wdir := path.Join(dir, "wal")
 

@@ -23,7 +23,7 @@ import (
 func BenchmarkIsolation(b *testing.B) {
 	for _, goroutines := range []int{10, 100, 1000, 10000} {
 		b.Run(strconv.Itoa(goroutines), func(b *testing.B) {
-			iso := newIsolation()
+			iso := newIsolation(false)
 
 			wg := sync.WaitGroup{}
 			start := make(chan struct{})
@@ -53,7 +53,7 @@ func BenchmarkIsolation(b *testing.B) {
 func BenchmarkIsolationWithState(b *testing.B) {
 	for _, goroutines := range []int{10, 100, 1000, 10000} {
 		b.Run(strconv.Itoa(goroutines), func(b *testing.B) {
-			iso := newIsolation()
+			iso := newIsolation(false)
 
 			wg := sync.WaitGroup{}
 			start := make(chan struct{})

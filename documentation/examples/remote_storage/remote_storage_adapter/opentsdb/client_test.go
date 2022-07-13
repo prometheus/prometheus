@@ -21,13 +21,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var (
-	metric = model.Metric{
-		model.MetricNameLabel: "test:metric",
-		"testlabel":           "test:value",
-		"many_chars":          "abc!ABC:012-3!45ö67~89./",
-	}
-)
+var metric = model.Metric{
+	model.MetricNameLabel: "test:metric",
+	"testlabel":           "test:value",
+	"many_chars":          "abc!ABC:012-3!45ö67~89./",
+}
 
 func TestTagsFromMetric(t *testing.T) {
 	expected := map[string]TagValue{

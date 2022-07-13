@@ -29,13 +29,29 @@ include Makefile.common
 
 DOCKER_IMAGE_NAME       ?= prometheus
 
+.PHONY: update-npm-deps
+update-npm-deps:
+	@echo ">> updating npm dependencies"
+	./scripts/npm-deps.sh "minor"
+
+.PHONY: upgrade-npm-deps
+upgrade-npm-deps:
+	@echo ">> upgrading npm dependencies"
+	./scripts/npm-deps.sh "latest"
+
+.PHONY: ui-bump-version
+ui-bump-version:
+	version=$$(sed s/2/0/ < VERSION) && ./scripts/ui_release.sh --bump-version "$${version}"
+	cd web/ui && npm install
+	git add "./web/ui/package-lock.json" "./**/package.json"
+
 .PHONY: ui-install
 ui-install:
 	cd $(UI_PATH) && npm install
 
 .PHONY: ui-build
 ui-build:
-	cd $(UI_PATH) && npm run build
+	cd $(UI_PATH) && CI="" npm run build
 
 .PHONY: ui-build-module
 ui-build-module:
@@ -43,7 +59,7 @@ ui-build-module:
 
 .PHONY: ui-test
 ui-test:
-	cd $(UI_PATH) && npm run test:coverage
+	cd $(UI_PATH) && CI=true npm run test
 
 .PHONY: ui-lint
 ui-lint:
@@ -51,12 +67,16 @@ ui-lint:
 
 .PHONY: assets
 assets: ui-install ui-build
-	@echo ">> writing assets"
-	# Un-setting GOOS and GOARCH here because the generated Go code is always the same,
-	# but the cached object code is incompatible between architectures and OSes (which
-	# breaks cross-building for different combinations on CI in the same container).
-	cd web/ui && GO111MODULE=$(GO111MODULE) GOOS= GOARCH= $(GO) generate -x -v $(GOOPTS)
-	@$(GOFMT) -w ./web/ui
+
+.PHONY: assets-compress
+assets-compress: assets
+	@echo '>> compressing assets'
+	scripts/compress_assets.sh
+
+.PHONY: assets-tarball
+assets-tarball: assets
+	@echo '>> packaging assets'
+	scripts/package_assets.sh
 
 .PHONY: test
 # If we only want to only test go code we have to change the test target
@@ -79,8 +99,15 @@ tarball: npm_licenses common-tarball
 .PHONY: docker
 docker: npm_licenses common-docker
 
+plugins/plugins.go: plugins.yml plugins/generate.go
+	@echo ">> creating plugins list"
+	$(GO) generate -tags plugins ./plugins
+
+.PHONY: plugins
+plugins: plugins/plugins.go
+
 .PHONY: build
-build: assets common-build
+build: assets npm_licenses assets-compress common-build plugins
 
 .PHONY: bench_tsdb
 bench_tsdb: $(PROMU)

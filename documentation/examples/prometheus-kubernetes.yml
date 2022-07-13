@@ -185,10 +185,10 @@ scrape_configs:
         regex: __meta_kubernetes_service_label_(.+)
       - source_labels: [__meta_kubernetes_namespace]
         action: replace
-        target_label: kubernetes_namespace
+        target_label: namespace
       - source_labels: [__meta_kubernetes_service_name]
         action: replace
-        target_label: kubernetes_name
+        target_label: service
 
   # Example scrape config for probing services via the Blackbox Exporter.
   #
@@ -217,9 +217,9 @@ scrape_configs:
       - action: labelmap
         regex: __meta_kubernetes_service_label_(.+)
       - source_labels: [__meta_kubernetes_namespace]
-        target_label: kubernetes_namespace
+        target_label: namespace
       - source_labels: [__meta_kubernetes_service_name]
-        target_label: kubernetes_name
+        target_label: service
 
   # Example scrape config for probing ingresses via the Blackbox Exporter.
   #
@@ -255,9 +255,9 @@ scrape_configs:
       - action: labelmap
         regex: __meta_kubernetes_ingress_label_(.+)
       - source_labels: [__meta_kubernetes_namespace]
-        target_label: kubernetes_namespace
+        target_label: namespace
       - source_labels: [__meta_kubernetes_ingress_name]
-        target_label: kubernetes_name
+        target_label: ingress
 
   # Example scrape config for pods
   #
@@ -294,7 +294,7 @@ scrape_configs:
         regex: __meta_kubernetes_pod_label_(.+)
       - source_labels: [__meta_kubernetes_namespace]
         action: replace
-        target_label: kubernetes_namespace
+        target_label: namespace
       - source_labels: [__meta_kubernetes_pod_name]
         action: replace
-        target_label: kubernetes_pod_name
+        target_label: pod

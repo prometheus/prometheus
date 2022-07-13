@@ -32,7 +32,16 @@ export interface CompleteConfiguration {
 }
 
 function isPrometheusConfig(remoteConfig: PrometheusConfig | PrometheusClient): remoteConfig is PrometheusConfig {
-  return (remoteConfig as PrometheusConfig).url !== undefined;
+  const cfg = remoteConfig as PrometheusConfig;
+  return (
+    cfg.url !== undefined ||
+    cfg.lookbackInterval !== undefined ||
+    cfg.httpErrorHandler !== undefined ||
+    cfg.fetchFn !== undefined ||
+    cfg.cache !== undefined ||
+    cfg.httpMethod !== undefined ||
+    cfg.apiPrefix !== undefined
+  );
 }
 
 export function newCompleteStrategy(conf?: CompleteConfiguration): CompleteStrategy {

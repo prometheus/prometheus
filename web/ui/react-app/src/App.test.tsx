@@ -5,6 +5,7 @@ import Navigation from './Navbar';
 import { Container } from 'reactstrap';
 import { Route } from 'react-router-dom';
 import {
+  AgentPage,
   AlertsPage,
   ConfigPage,
   FlagsPage,
@@ -17,13 +18,14 @@ import {
 } from './pages';
 
 describe('App', () => {
-  const app = shallow(<App />);
+  const app = shallow(<App consolesLink={null} agentMode={false} />);
 
   it('navigates', () => {
     expect(app.find(Navigation)).toHaveLength(1);
   });
   it('routes', () => {
     [
+      AgentPage,
       AlertsPage,
       ConfigPage,
       FlagsPage,
@@ -37,7 +39,7 @@ describe('App', () => {
       const c = app.find(component);
       expect(c).toHaveLength(1);
     });
-    expect(app.find(Route)).toHaveLength(9);
+    expect(app.find(Route)).toHaveLength(10);
     expect(app.find(Container)).toHaveLength(1);
   });
 });

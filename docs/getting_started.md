@@ -81,7 +81,7 @@ navigating to its metrics endpoint:
 
 Let us explore data that Prometheus has collected about itself. To
 use Prometheus's built-in expression browser, navigate to
-http://localhost:9090/graph and choose the "Console" view within the "Graph" tab.
+http://localhost:9090/graph and choose the "Table" view within the "Graph" tab.
 
 As you can gather from [localhost:9090/metrics](http://localhost:9090/metrics),
 one metric that Prometheus exports about itself is named

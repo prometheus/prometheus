@@ -37,7 +37,7 @@ type Client struct {
 }
 
 // NewClient creates a new Client.
-func NewClient(logger log.Logger, address string, transport string, timeout time.Duration, prefix string) *Client {
+func NewClient(logger log.Logger, address, transport string, timeout time.Duration, prefix string) *Client {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}

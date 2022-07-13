@@ -1,0 +1,12 @@
+scrape_configs:
+  - job_name: prometheus
+    file_sd_configs:
+      - files:
+          - nonexistent_file.yml
+alerting:
+  alertmanagers:
+    - scheme: http
+      api_version: v1
+      file_sd_configs:
+        - files:
+            - nonexistent_file.yml

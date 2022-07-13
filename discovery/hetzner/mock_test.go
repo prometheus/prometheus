@@ -489,8 +489,10 @@ func (m *SDMock) HandleHcloudNetworks() {
 	})
 }
 
-const robotTestUsername = "my-hetzner"
-const robotTestPassword = "my-password"
+const (
+	robotTestUsername = "my-hetzner"
+	robotTestPassword = "my-password"
+)
 
 // HandleRobotServers mocks the robot servers list endpoint.
 func (m *SDMock) HandleRobotServers() {

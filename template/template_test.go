@@ -22,21 +22,12 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 )
 
 func TestTemplateExpansion(t *testing.T) {
-	scenarios := []struct {
-		text        string
-		output      string
-		input       interface{}
-		options     []string
-		queryResult promql.Vector
-		shouldFail  bool
-		html        bool
-		errorMsg    string
-	}{
+	testTemplateExpansion(t, []scenario{
 		{
 			// No template.
 			text:   "plain text",
@@ -87,7 +78,8 @@ func TestTemplateExpansion(t *testing.T) {
 				{
 					Metric: labels.FromStrings(labels.MetricName, "metric", "instance", "a"),
 					Point:  promql.Point{T: 0, V: 11},
-				}},
+				},
+			},
 			output: "11",
 		},
 		{
@@ -98,7 +90,8 @@ func TestTemplateExpansion(t *testing.T) {
 				{
 					Metric: labels.FromStrings(labels.MetricName, "metric", "instance", "a"),
 					Point:  promql.Point{T: 0, V: 11},
-				}},
+				},
+			},
 			output: "a",
 		},
 		{
@@ -108,7 +101,8 @@ func TestTemplateExpansion(t *testing.T) {
 				{
 					Metric: labels.FromStrings(labels.MetricName, "metric", "__value__", "a"),
 					Point:  promql.Point{T: 0, V: 11},
-				}},
+				},
+			},
 			output: "a",
 		},
 		{
@@ -118,7 +112,8 @@ func TestTemplateExpansion(t *testing.T) {
 				{
 					Metric: labels.FromStrings(labels.MetricName, "metric", "instance", "a"),
 					Point:  promql.Point{T: 0, V: 11},
-				}},
+				},
+			},
 			output: "",
 		},
 		{
@@ -128,7 +123,8 @@ func TestTemplateExpansion(t *testing.T) {
 				{
 					Metric: labels.FromStrings(labels.MetricName, "metric", "instance", "a"),
 					Point:  promql.Point{T: 0, V: 11},
-				}},
+				},
+			},
 			output: "",
 		},
 		{
@@ -137,7 +133,8 @@ func TestTemplateExpansion(t *testing.T) {
 				{
 					Metric: labels.FromStrings(labels.MetricName, "metric", "instance", "a"),
 					Point:  promql.Point{T: 0, V: 11},
-				}},
+				},
+			},
 			output: "",
 			html:   true,
 		},
@@ -151,8 +148,44 @@ func TestTemplateExpansion(t *testing.T) {
 				}, {
 					Metric: labels.FromStrings(labels.MetricName, "metric", "instance", "a"),
 					Point:  promql.Point{T: 0, V: 11},
-				}},
+				},
+			},
 			output: "a:11: b:21: ",
+		},
+		{
+			// Simple hostname.
+			text:   "{{ \"foo.example.com\" | stripPort }}",
+			output: "foo.example.com",
+		},
+		{
+			// Hostname with port.
+			text:   "{{ \"foo.example.com:12345\" | stripPort }}",
+			output: "foo.example.com",
+		},
+		{
+			// Simple IPv4 address.
+			text:   "{{ \"192.0.2.1\" | stripPort }}",
+			output: "192.0.2.1",
+		},
+		{
+			// IPv4 address with port.
+			text:   "{{ \"192.0.2.1:12345\" | stripPort }}",
+			output: "192.0.2.1",
+		},
+		{
+			// Simple IPv6 address.
+			text:   "{{ \"2001:0DB8::1\" | stripPort }}",
+			output: "2001:0DB8::1",
+		},
+		{
+			// IPv6 address with port.
+			text:   "{{ \"[2001:0DB8::1]:12345\" | stripPort }}",
+			output: "2001:0DB8::1",
+		},
+		{
+			// Value can't be split into host and port.
+			text:   "{{ \"[2001:0DB8::1]::12345\" | stripPort }}",
+			output: "[2001:0DB8::1]::12345",
 		},
 		{
 			// Missing value is no value for nil options.
@@ -237,6 +270,18 @@ func TestTemplateExpansion(t *testing.T) {
 			errorMsg:   `error executing template test: template: test:1:3: executing "test" at <humanize "one">: error calling humanize: strconv.ParseFloat: parsing "one": invalid syntax`,
 		},
 		{
+			// Humanize - int.
+			text:   "{{ range . }}{{ humanize . }}:{{ end }}",
+			input:  []int64{0, -1, 1, 1234567, math.MaxInt64},
+			output: "0:-1:1:1.235M:9.223E:",
+		},
+		{
+			// Humanize - uint.
+			text:   "{{ range . }}{{ humanize . }}:{{ end }}",
+			input:  []uint64{0, 1, 1234567, math.MaxUint64},
+			output: "0:1:1.235M:18.45E:",
+		},
+		{
 			// Humanize1024 - float64.
 			text:   "{{ range . }}{{ humanize1024 . }}:{{ end }}",
 			input:  []float64{0.0, 1.0, 1048576.0, .12},
@@ -253,6 +298,18 @@ func TestTemplateExpansion(t *testing.T) {
 			text:       `{{ humanize1024 "one" }}`,
 			shouldFail: true,
 			errorMsg:   `error executing template test: template: test:1:3: executing "test" at <humanize1024 "one">: error calling humanize1024: strconv.ParseFloat: parsing "one": invalid syntax`,
+		},
+		{
+			// Humanize1024 - int.
+			text:   "{{ range . }}{{ humanize1024 . }}:{{ end }}",
+			input:  []int64{0, -1, 1, 1234567, math.MaxInt64},
+			output: "0:-1:1:1.177Mi:8Ei:",
+		},
+		{
+			// Humanize1024 - uint.
+			text:   "{{ range . }}{{ humanize1024 . }}:{{ end }}",
+			input:  []uint64{0, 1, 1234567, math.MaxUint64},
+			output: "0:1:1.177Mi:16Ei:",
 		},
 		{
 			// HumanizeDuration - seconds - float64.
@@ -285,6 +342,18 @@ func TestTemplateExpansion(t *testing.T) {
 			errorMsg:   `error executing template test: template: test:1:3: executing "test" at <humanizeDuration "one">: error calling humanizeDuration: strconv.ParseFloat: parsing "one": invalid syntax`,
 		},
 		{
+			// HumanizeDuration - int.
+			text:   "{{ range . }}{{ humanizeDuration . }}:{{ end }}",
+			input:  []int{0, -1, 1, 1234567},
+			output: "0s:-1s:1s:14d 6h 56m 7s:",
+		},
+		{
+			// HumanizeDuration - uint.
+			text:   "{{ range . }}{{ humanizeDuration . }}:{{ end }}",
+			input:  []uint{0, 1, 1234567},
+			output: "0s:1s:14d 6h 56m 7s:",
+		},
+		{
 			// Humanize* Inf and NaN - float64.
 			text:   "{{ range . }}{{ humanize . }}:{{ humanize1024 . }}:{{ humanizeDuration . }}:{{humanizeTimestamp .}}:{{ end }}",
 			input:  []float64{math.Inf(1), math.Inf(-1), math.NaN()},
@@ -302,6 +371,18 @@ func TestTemplateExpansion(t *testing.T) {
 			output: "-22.22%:0%:12.35%:123.5%",
 		},
 		{
+			// HumanizePercentage - int.
+			text:   "{{ range . }}{{ humanizePercentage . }}:{{ end }}",
+			input:  []int64{0, -1, 1, 1234567, math.MaxInt64},
+			output: "0%:-100%:100%:1.235e+08%:9.223e+20%:",
+		},
+		{
+			// HumanizePercentage - uint.
+			text:   "{{ range . }}{{ humanizePercentage . }}:{{ end }}",
+			input:  []uint64{0, 1, 1234567, math.MaxUint64},
+			output: "0%:100%:1.235e+08%:1.845e+21%:",
+		},
+		{
 			// HumanizePercentage - model.SampleValue input - string.
 			text:   `{{ "-0.22222" | humanizePercentage }}:{{ "0.0" | humanizePercentage }}:{{ "0.1234567" | humanizePercentage }}:{{ "1.23456" | humanizePercentage }}`,
 			output: "-22.22%:0%:12.35%:123.5%",
@@ -311,6 +392,32 @@ func TestTemplateExpansion(t *testing.T) {
 			text:       `{{ "one" | humanizePercentage }}`,
 			shouldFail: true,
 			errorMsg:   `error executing template test: template: test:1:11: executing "test" at <humanizePercentage>: error calling humanizePercentage: strconv.ParseFloat: parsing "one": invalid syntax`,
+		},
+		{
+			// HumanizeTimestamp - int.
+			text:   "{{ range . }}{{ humanizeTimestamp . }}:{{ end }}",
+			input:  []int64{0, -1, 1, 1234567, 9223372036},
+			output: "1970-01-01 00:00:00 +0000 UTC:1969-12-31 23:59:59 +0000 UTC:1970-01-01 00:00:01 +0000 UTC:1970-01-15 06:56:07 +0000 UTC:2262-04-11 23:47:16 +0000 UTC:",
+		},
+		{
+			// HumanizeTimestamp - uint.
+			text:   "{{ range . }}{{ humanizeTimestamp . }}:{{ end }}",
+			input:  []uint64{0, 1, 1234567, 9223372036},
+			output: "1970-01-01 00:00:00 +0000 UTC:1970-01-01 00:00:01 +0000 UTC:1970-01-15 06:56:07 +0000 UTC:2262-04-11 23:47:16 +0000 UTC:",
+		},
+		{
+			// HumanizeTimestamp - int with error.
+			text:       "{{ range . }}{{ humanizeTimestamp . }}:{{ end }}",
+			input:      []int64{math.MinInt64, math.MaxInt64},
+			shouldFail: true,
+			errorMsg:   `error executing template test: template: test:1:16: executing "test" at <humanizeTimestamp .>: error calling humanizeTimestamp: -9.223372036854776e+18 cannot be represented as a nanoseconds timestamp since it overflows int64`,
+		},
+		{
+			// HumanizeTimestamp - uint with error.
+			text:       "{{ range . }}{{ humanizeTimestamp . }}:{{ end }}",
+			input:      []uint64{math.MaxUint64},
+			shouldFail: true,
+			errorMsg:   `error executing template test: template: test:1:16: executing "test" at <humanizeTimestamp .>: error calling humanizeTimestamp: 1.8446744073709552e+19 cannot be represented as a nanoseconds timestamp since it overflows int64`,
 		},
 		{
 			// HumanizeTimestamp - model.SampleValue input - float64.
@@ -368,8 +475,61 @@ func TestTemplateExpansion(t *testing.T) {
 			text:   "{{ externalURL }}",
 			output: "http://testhost:9090/path/prefix",
 		},
-	}
+		{
+			// parseDuration (using printf to ensure the return is a string).
+			text:   "{{ printf \"%0.2f\" (parseDuration \"1h2m10ms\") }}",
+			output: "3720.01",
+		},
+		{
+			// Simple hostname.
+			text:   "{{ \"foo.example.com\" | stripDomain }}",
+			output: "foo",
+		},
+		{
+			// Hostname with port.
+			text:   "{{ \"foo.example.com:12345\" | stripDomain }}",
+			output: "foo:12345",
+		},
+		{
+			// Simple IPv4 address.
+			text:   "{{ \"192.0.2.1\" | stripDomain }}",
+			output: "192.0.2.1",
+		},
+		{
+			// IPv4 address with port.
+			text:   "{{ \"192.0.2.1:12345\" | stripDomain }}",
+			output: "192.0.2.1:12345",
+		},
+		{
+			// Simple IPv6 address.
+			text:   "{{ \"2001:0DB8::1\" | stripDomain }}",
+			output: "2001:0DB8::1",
+		},
+		{
+			// IPv6 address with port.
+			text:   "{{ \"[2001:0DB8::1]:12345\" | stripDomain }}",
+			output: "[2001:0DB8::1]:12345",
+		},
+		{
+			// Value can't be split into host and port.
+			text:   "{{ \"[2001:0DB8::1]::12345\" | stripDomain }}",
+			output: "[2001:0DB8::1]::12345",
+		},
+	})
+}
 
+type scenario struct {
+	text        string
+	output      string
+	input       interface{}
+	options     []string
+	queryResult promql.Vector
+	shouldFail  bool
+	html        bool
+	errorMsg    string
+}
+
+func testTemplateExpansion(t *testing.T, scenarios []scenario) {
 	extURL, err := url.Parse("http://testhost:9090/path/prefix")
 	if err != nil {
 		panic(err)

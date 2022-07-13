@@ -16,7 +16,6 @@ package remote
 import (
 	"bytes"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -26,7 +25,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
@@ -49,8 +48,8 @@ func TestSampledReadEndpoint(t *testing.T) {
 			GlobalConfig: config.GlobalConfig{
 				ExternalLabels: labels.Labels{
 					// We expect external labels to be added, with the source labels honored.
-					{Name: "baz", Value: "a"},
 					{Name: "b", Value: "c"},
+					{Name: "baz", Value: "a"},
 					{Name: "d", Value: "e"},
 				},
 			},
@@ -84,7 +83,7 @@ func TestSampledReadEndpoint(t *testing.T) {
 	require.Equal(t, "snappy", recorder.Result().Header.Get("Content-Encoding"))
 
 	// Decode the response.
-	compressed, err = ioutil.ReadAll(recorder.Result().Body)
+	compressed, err = io.ReadAll(recorder.Result().Body)
 	require.NoError(t, err)
 
 	uncompressed, err := snappy.Decode(nil, compressed)

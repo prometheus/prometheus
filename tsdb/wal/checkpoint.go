@@ -17,7 +17,6 @@ package wal
 import (
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math"
 	"os"
 	"path/filepath"
@@ -29,6 +28,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
 
+	"github.com/prometheus/prometheus/tsdb/chunks"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/record"
@@ -82,22 +82,21 @@ func DeleteCheckpoints(dir string, maxIndex int) error {
 
 const checkpointPrefix = "checkpoint."
 
-// Checkpoint creates a compacted checkpoint of segments in range [first, last] in the given WAL.
+// Checkpoint creates a compacted checkpoint of segments in range [from, to] in the given WAL.
 // It includes the most recent checkpoint if it exists.
-// All series not satisfying keep and samples below mint are dropped.
+// All series not satisfying keep and samples/tombstones/exemplars below mint are dropped.
 //
 // The checkpoint is stored in a directory named checkpoint.N in the same
 // segmented format as the original WAL itself.
 // This makes it easy to read it through the WAL package and concatenate
 // it with the original WAL.
-func Checkpoint(logger log.Logger, w *WAL, from, to int, keep func(id uint64) bool, mint int64) (*CheckpointStats, error) {
+func Checkpoint(logger log.Logger, w *WAL, from, to int, keep func(id chunks.HeadSeriesRef) bool, mint int64) (*CheckpointStats, error) {
 	stats := &CheckpointStats{}
 	var sgmReader io.ReadCloser
 
 	level.Info(logger).Log("msg", "Creating checkpoint", "from_segment", from, "to_segment", to, "mint", mint)
 
 	{
-
 		var sgmRange []SegmentRange
 		dir, idx, err := LastCheckpoint(w.Dir())
 		if err != nil && err != record.ErrNotFound {
@@ -129,7 +128,7 @@ func Checkpoint(logger log.Logger, w *WAL, from, to int, keep func(id uint64) bo
 		return nil, errors.Wrap(err, "remove previous temporary checkpoint dir")
 	}
 
-	if err := os.MkdirAll(cpdirtmp, 0777); err != nil {
+	if err := os.MkdirAll(cpdirtmp, 0o777); err != nil {
 		return nil, errors.Wrap(err, "create checkpoint dir")
 	}
 	cp, err := New(nil, nil, cpdirtmp, w.CompressionEnabled())
@@ -300,7 +299,7 @@ type checkpointRef struct {
 }
 
 func listCheckpoints(dir string) (refs []checkpointRef, err error) {
-	files, err := ioutil.ReadDir(dir)
+	files, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, err
 	}

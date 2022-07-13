@@ -39,6 +39,7 @@ remote_read:
   - url: http://remote1/read
     read_recent: true
     name: default
+    enable_http2: false
   - url: http://remote3/read
     read_recent: false
     name: read_special
@@ -89,6 +90,9 @@ scrape_configs:
 
     authorization:
       credentials_file: valid_token_file
+
+    tls_config:
+      min_version: TLS10
 
   - job_name: service-x
 
@@ -210,6 +214,10 @@ scrape_configs:
           cert_file: valid_cert_file
           key_file: valid_key_file
 
+  - job_name: service-nomad
+    nomad_sd_configs:
+      - server: 'http://localhost:4646'
+
   - job_name: service-ec2
     ec2_sd_configs:
       - region: us-east-1
@@ -238,6 +246,7 @@ scrape_configs:
       - environment: AzurePublicCloud
         authentication_method: OAuth
         subscription_id: 11AAAA11-A11A-111A-A111-1111A1111A11
+        resource_group: my-resource-group
         tenant_id: BBBB222B-B2B2-2B22-B222-2BB2222BB2B2
         client_id: 333333CC-3C33-3333-CCC3-33C3CCCCC33C
         client_secret: mysecret
@@ -323,6 +332,10 @@ scrape_configs:
           key_file: valid_key_file
 
   - job_name: hetzner
+    relabel_configs:
+      - action: uppercase
+        source_labels: [instance]
+        target_label: instance
     hetzner_sd_configs:
       - role: hcloud
         authorization:
@@ -358,6 +371,17 @@ scrape_configs:
         username: gopher
         password: hole
 
+  - job_name: ionos
+    ionos_sd_configs:
+      - datacenter_id: 8feda53f-15f0-447f-badf-ebe32dad2fc0
+        authorization:
+          credentials: abcdef
+
+  - job_name: vultr
+    vultr_sd_configs:
+      - authorization:
+          credentials: abcdef
+
 alerting:
   alertmanagers:
     - scheme: https
@@ -366,3 +390,15 @@ alerting:
             - "1.2.3.4:9093"
             - "1.2.3.5:9093"
             - "1.2.3.6:9093"
+
+tracing:
+  endpoint: "localhost:4317"
+  client_type: "grpc"
+  headers:
+    foo: "bar"
+  timeout: 5s
+  compression: "gzip"
+  tls_config:
+    cert_file: valid_cert_file
+    key_file: valid_key_file
+    insecure_skip_verify: true

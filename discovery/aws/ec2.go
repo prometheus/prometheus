@@ -15,6 +15,7 @@ package aws
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"strings"
@@ -29,7 +30,6 @@ import (
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
@@ -63,13 +63,11 @@ const (
 	ec2LabelSeparator         = ","
 )
 
-var (
-	// DefaultEC2SDConfig is the default EC2 SD configuration.
-	DefaultEC2SDConfig = EC2SDConfig{
-		Port:            80,
-		RefreshInterval: model.Duration(60 * time.Second),
-	}
-)
+// DefaultEC2SDConfig is the default EC2 SD configuration.
+var DefaultEC2SDConfig = EC2SDConfig{
+	Port:            80,
+	RefreshInterval: model.Duration(60 * time.Second),
+}
 
 func init() {
 	discovery.RegisterConfig(&EC2SDConfig{})
@@ -181,7 +179,7 @@ func (d *EC2Discovery) ec2Client(ctx context.Context) (*ec2.EC2, error) {
 		Profile: d.cfg.Profile,
 	})
 	if err != nil {
-		return nil, errors.Wrap(err, "could not create aws session")
+		return nil, fmt.Errorf("could not create aws session: %w", err)
 	}
 
 	if d.cfg.RoleARN != "" {
@@ -330,10 +328,11 @@ func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 		}
 		return true
 	}); err != nil {
-		if awsErr, ok := err.(awserr.Error); ok && (awsErr.Code() == "AuthFailure" || awsErr.Code() == "UnauthorizedOperation") {
+		var awsErr awserr.Error
+		if errors.As(err, &awsErr) && (awsErr.Code() == "AuthFailure" || awsErr.Code() == "UnauthorizedOperation") {
 			d.ec2 = nil
 		}
-		return nil, errors.Wrap(err, "could not describe instances")
+		return nil, fmt.Errorf("could not describe instances: %w", err)
 	}
 	return []*targetgroup.Group{tg}, nil
 }

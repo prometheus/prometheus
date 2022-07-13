@@ -20,11 +20,11 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/pkg/errors"
 	v1 "github.com/prometheus/client_golang/api/prometheus/v1"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/timestamp"
+
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/rules"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
@@ -69,7 +69,7 @@ func newRuleImporter(logger log.Logger, config ruleImporterConfig, apiClient que
 
 // loadGroups parses groups from a list of recording rule files.
 func (importer *ruleImporter) loadGroups(ctx context.Context, filenames []string) (errs []error) {
-	groups, errs := importer.ruleManager.LoadGroups(importer.config.evalInterval, labels.Labels{}, "", filenames...)
+	groups, errs := importer.ruleManager.LoadGroups(importer.config.evalInterval, labels.Labels{}, "", nil, filenames...)
 	if errs != nil {
 		return errs
 	}
@@ -94,7 +94,8 @@ func (importer *ruleImporter) importAll(ctx context.Context) (errs []error) {
 
 // importRule queries a prometheus API to evaluate rules at times in the past.
 func (importer *ruleImporter) importRule(ctx context.Context, ruleExpr, ruleName string, ruleLabels labels.Labels, start, end time.Time,
-	maxBlockDuration int64, grp *rules.Group) (err error) {
+	maxBlockDuration int64, grp *rules.Group,
+) (err error) {
 	blockDuration := getCompatibleBlockDuration(maxBlockDuration)
 	startInMs := start.Unix() * int64(time.Second/time.Millisecond)
 	endInMs := end.Unix() * int64(time.Second/time.Millisecond)
@@ -120,7 +121,7 @@ func (importer *ruleImporter) importRule(ctx context.Context, ruleExpr, ruleName
 			},
 		)
 		if err != nil {
-			return errors.Wrap(err, "query range")
+			return fmt.Errorf("query range: %w", err)
 		}
 		if warnings != nil {
 			level.Warn(importer.logger).Log("msg", "Range query returned warnings.", "warnings", warnings)
@@ -134,7 +135,7 @@ func (importer *ruleImporter) importRule(ctx context.Context, ruleExpr, ruleName
 		// original interval later.
 		w, err := tsdb.NewBlockWriter(log.NewNopLogger(), importer.config.outputDir, 2*blockDuration)
 		if err != nil {
-			return errors.Wrap(err, "new block writer")
+			return fmt.Errorf("new block writer: %w", err)
 		}
 		var closed bool
 		defer func() {
@@ -165,7 +166,7 @@ func (importer *ruleImporter) importRule(ctx context.Context, ruleExpr, ruleName
 
 				for _, value := range sample.Values {
 					if err := app.add(ctx, lb.Labels(), timestamp.FromTime(value.Timestamp.Time()), float64(value.Value)); err != nil {
-						return errors.Wrap(err, "add")
+						return fmt.Errorf("add: %w", err)
 					}
 				}
 			}
@@ -174,7 +175,7 @@ func (importer *ruleImporter) importRule(ctx context.Context, ruleExpr, ruleName
 		}
 
 		if err := app.flushAndCommit(ctx); err != nil {
-			return errors.Wrap(err, "flush and commit")
+			return fmt.Errorf("flush and commit: %w", err)
 		}
 		err = tsdb_errors.NewMulti(err, w.Close()).Err()
 		closed = true
@@ -202,7 +203,7 @@ type multipleAppender struct {
 
 func (m *multipleAppender) add(ctx context.Context, l labels.Labels, t int64, v float64) error {
 	if _, err := m.appender.Append(0, l, t, v); err != nil {
-		return errors.Wrap(err, "multiappender append")
+		return fmt.Errorf("multiappender append: %w", err)
 	}
 	m.currentSampleCount++
 	if m.currentSampleCount >= m.maxSamplesInMemory {
@@ -216,7 +217,7 @@ func (m *multipleAppender) commit(ctx context.Context) error {
 		return nil
 	}
 	if err := m.appender.Commit(); err != nil {
-		return errors.Wrap(err, "multiappender commit")
+		return fmt.Errorf("multiappender commit: %w", err)
 	}
 	m.appender = m.writer.Appender(ctx)
 	m.currentSampleCount = 0
@@ -228,7 +229,7 @@ func (m *multipleAppender) flushAndCommit(ctx context.Context) error {
 		return err
 	}
 	if _, err := m.writer.Flush(ctx); err != nil {
-		return errors.Wrap(err, "multiappender flush")
+		return fmt.Errorf("multiappender flush: %w", err)
 	}
 	return nil
 }

@@ -11,10 +11,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import chai from 'chai';
 import { Parser } from './parser';
 import { Diagnostic } from '@codemirror/lint';
-import { createEditorState } from '../test/utils.test';
+import { createEditorState } from '../test/utils-test';
 import { syntaxTree } from '@codemirror/language';
 import { ValueType } from '../types';
 
@@ -752,8 +751,8 @@ describe('promql operations', () => {
     const state = createEditorState(value.expr);
     const parser = new Parser(state);
     it(value.expr, () => {
-      chai.expect(parser.checkAST(syntaxTree(state).topNode.firstChild)).to.equal(value.expectedValueType);
-      chai.expect(parser.getDiagnostics()).to.deep.equal(value.expectedDiag);
+      expect(parser.checkAST(syntaxTree(state).topNode.firstChild)).toEqual(value.expectedValueType);
+      expect(parser.getDiagnostics()).toEqual(value.expectedDiag);
     });
   });
 });

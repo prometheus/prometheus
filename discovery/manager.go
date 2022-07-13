@@ -23,6 +23,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/common/config"
 
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
@@ -74,8 +75,8 @@ type poolKey struct {
 	provider string
 }
 
-// provider holds a Discoverer instance, its configuration, cancel func and its subscribers.
-type provider struct {
+// Provider holds a Discoverer instance, its configuration, cancel func and its subscribers.
+type Provider struct {
 	name   string
 	d      Discoverer
 	config interface{}
@@ -91,9 +92,18 @@ type provider struct {
 	newSubs map[string]struct{}
 }
 
+// Discoverer return the Discoverer of the provider
+func (p *Provider) Discoverer() Discoverer {
+	return p.d
+}
+
 // IsStarted return true if Discoverer is started.
-func (p *provider) IsStarted() bool {
+func (p *Provider) IsStarted() bool {
 	return p.cancel != nil
+}
+
+func (p *Provider) Config() interface{} {
+	return p.config
 }
 
 // NewManager is the Discovery Manager constructor.
@@ -124,13 +134,22 @@ func Name(n string) func(*Manager) {
 	}
 }
 
+// HTTPClientOptions sets the list of HTTP client options to expose to
+// Discoverers. It is up to Discoverers to choose to use the options provided.
+func HTTPClientOptions(opts ...config.HTTPClientOption) func(*Manager) {
+	return func(m *Manager) {
+		m.httpOpts = opts
+	}
+}
+
 // Manager maintains a set of discovery providers and sends each update to a map channel.
 // Targets are grouped by the target set name.
 type Manager struct {
-	logger log.Logger
-	name   string
-	mtx    sync.RWMutex
-	ctx    context.Context
+	logger   log.Logger
+	name     string
+	httpOpts []config.HTTPClientOption
+	mtx      sync.RWMutex
+	ctx      context.Context
 
 	// Some Discoverers(e.g. k8s) send only the updates for a given target group,
 	// so we use map[tg.Source]*targetgroup.Group to know which group to update.
@@ -138,7 +157,7 @@ type Manager struct {
 	targetsMtx sync.Mutex
 
 	// providers keeps track of SD providers.
-	providers []*provider
+	providers []*Provider
 	// The sync channel sends the updates as a map where the key is the job value from the scrape config.
 	syncCh chan map[string][]*targetgroup.Group
 
@@ -151,6 +170,11 @@ type Manager struct {
 
 	// lastProvider counts providers registered during Manager's lifetime.
 	lastProvider uint
+}
+
+// Providers returns the currently configured SD providers.
+func (m *Manager) Providers() []*Provider {
+	return m.providers
 }
 
 // Run starts the background processing.
@@ -184,7 +208,7 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 		wg sync.WaitGroup
 		// keep shows if we keep any providers after reload.
 		keep         bool
-		newProviders []*provider
+		newProviders []*Provider
 	)
 	for _, prov := range m.providers {
 		// Cancel obsolete providers.
@@ -200,14 +224,14 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 		// refTargets keeps reference targets used to populate new subs' targets
 		var refTargets map[string]*targetgroup.Group
 		prov.mu.Lock()
+
+		m.targetsMtx.Lock()
 		for s := range prov.subs {
 			keep = true
 			refTargets = m.targets[poolKey{s, prov.name}]
 			// Remove obsolete subs' targets.
 			if _, ok := prov.newSubs[s]; !ok {
-				m.targetsMtx.Lock()
 				delete(m.targets, poolKey{s, prov.name})
-				m.targetsMtx.Unlock()
 				discoveredTargets.DeleteLabelValues(m.name, s)
 			}
 		}
@@ -223,6 +247,8 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 				}
 			}
 		}
+		m.targetsMtx.Unlock()
+
 		prov.subs = prov.newSubs
 		prov.newSubs = map[string]struct{}{}
 		prov.mu.Unlock()
@@ -248,7 +274,7 @@ func (m *Manager) ApplyConfig(cfg map[string]Configs) error {
 
 // StartCustomProvider is used for sdtool. Only use this if you know what you're doing.
 func (m *Manager) StartCustomProvider(ctx context.Context, name string, worker Discoverer) {
-	p := &provider{
+	p := &Provider{
 		name: name,
 		d:    worker,
 		subs: map[string]struct{}{
@@ -259,7 +285,7 @@ func (m *Manager) StartCustomProvider(ctx context.Context, name string, worker D
 	m.startProvider(ctx, p)
 }
 
-func (m *Manager) startProvider(ctx context.Context, p *provider) {
+func (m *Manager) startProvider(ctx context.Context, p *Provider) {
 	level.Debug(m.logger).Log("msg", "Starting provider", "provider", p.name, "subs", fmt.Sprintf("%v", p.subs))
 	ctx, cancel := context.WithCancel(ctx)
 	updates := make(chan []*targetgroup.Group)
@@ -271,7 +297,7 @@ func (m *Manager) startProvider(ctx context.Context, p *provider) {
 }
 
 // cleaner cleans resources associated with provider.
-func (m *Manager) cleaner(p *provider) {
+func (m *Manager) cleaner(p *Provider) {
 	m.targetsMtx.Lock()
 	p.mu.RLock()
 	for s := range p.subs {
@@ -284,7 +310,7 @@ func (m *Manager) cleaner(p *provider) {
 	}
 }
 
-func (m *Manager) updater(ctx context.Context, p *provider, updates chan []*targetgroup.Group) {
+func (m *Manager) updater(ctx context.Context, p *Provider, updates chan []*targetgroup.Group) {
 	// Ensure targets from this provider are cleaned up.
 	defer m.cleaner(p)
 	for {
@@ -402,14 +428,15 @@ func (m *Manager) registerProviders(cfgs Configs, setName string) int {
 		}
 		typ := cfg.Name()
 		d, err := cfg.NewDiscoverer(DiscovererOptions{
-			Logger: log.With(m.logger, "discovery", typ),
+			Logger:            log.With(m.logger, "discovery", typ),
+			HTTPClientOptions: m.httpOpts,
 		})
 		if err != nil {
 			level.Error(m.logger).Log("msg", "Cannot create service discovery", "err", err, "type", typ)
 			failed++
 			return
 		}
-		m.providers = append(m.providers, &provider{
+		m.providers = append(m.providers, &Provider{
 			name:   fmt.Sprintf("%s/%d", typ, m.lastProvider),
 			d:      d,
 			config: cfg,

@@ -14,17 +14,39 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
+	"os/exec"
+	"runtime"
+	"strings"
+	"syscall"
 	"testing"
 	"time"
 
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/rulefmt"
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/rulefmt"
 )
+
+var promtoolPath = os.Args[0]
+
+func TestMain(m *testing.M) {
+	for i, arg := range os.Args {
+		if arg == "-test.main" {
+			os.Args = append(os.Args[:i], os.Args[i+1:]...)
+			main()
+			return
+		}
+	}
+
+	exitCode := m.Run()
+	os.Exit(exitCode)
+}
 
 func TestQueryRange(t *testing.T) {
 	s, getRequest := mockServer(200, `{"status": "success", "data": {"resultType": "matrix", "result": []}}`)
@@ -111,7 +133,7 @@ func TestCheckSDFile(t *testing.T) {
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
-			err := checkSDFile(test.file)
+			_, err := checkSDFile(test.file)
 			if test.err != "" {
 				require.Equalf(t, test.err, err.Error(), "Expected error %q, got %q", test.err, err.Error())
 				return
@@ -161,5 +183,253 @@ func BenchmarkCheckDuplicates(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		checkDuplicates(rgs.Groups)
+	}
+}
+
+func TestCheckTargetConfig(t *testing.T) {
+	cases := []struct {
+		name string
+		file string
+		err  string
+	}{
+		{
+			name: "url_in_scrape_targetgroup_with_relabel_config.good",
+			file: "url_in_scrape_targetgroup_with_relabel_config.good.yml",
+			err:  "",
+		},
+		{
+			name: "url_in_alert_targetgroup_with_relabel_config.good",
+			file: "url_in_alert_targetgroup_with_relabel_config.good.yml",
+			err:  "",
+		},
+		{
+			name: "url_in_scrape_targetgroup_with_relabel_config.bad",
+			file: "url_in_scrape_targetgroup_with_relabel_config.bad.yml",
+			err:  "instance 0 in group 0: \"http://bad\" is not a valid hostname",
+		},
+		{
+			name: "url_in_alert_targetgroup_with_relabel_config.bad",
+			file: "url_in_alert_targetgroup_with_relabel_config.bad.yml",
+			err:  "\"http://bad\" is not a valid hostname",
+		},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := checkConfig(false, "testdata/"+test.file, false)
+			if test.err != "" {
+				require.Equalf(t, test.err, err.Error(), "Expected error %q, got %q", test.err, err.Error())
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+}
+
+func TestCheckConfigSyntax(t *testing.T) {
+	cases := []struct {
+		name       string
+		file       string
+		syntaxOnly bool
+		err        string
+		errWindows string
+	}{
+		{
+			name:       "check with syntax only succeeds with nonexistent rule files",
+			file:       "config_with_rule_files.yml",
+			syntaxOnly: true,
+			err:        "",
+			errWindows: "",
+		},
+		{
+			name:       "check without syntax only fails with nonexistent rule files",
+			file:       "config_with_rule_files.yml",
+			syntaxOnly: false,
+			err:        "\"testdata/non-existent-file.yml\" does not point to an existing file",
+			errWindows: "\"testdata\\\\non-existent-file.yml\" does not point to an existing file",
+		},
+		{
+			name:       "check with syntax only succeeds with nonexistent service discovery files",
+			file:       "config_with_service_discovery_files.yml",
+			syntaxOnly: true,
+			err:        "",
+			errWindows: "",
+		},
+		// The test below doesn't fail because the file verification for ServiceDiscoveryConfigs doesn't fail the check if
+		// file isn't found; it only outputs a warning message.
+		{
+			name:       "check without syntax only succeeds with nonexistent service discovery files",
+			file:       "config_with_service_discovery_files.yml",
+			syntaxOnly: false,
+			err:        "",
+			errWindows: "",
+		},
+		{
+			name:       "check with syntax only succeeds with nonexistent TLS files",
+			file:       "config_with_tls_files.yml",
+			syntaxOnly: true,
+			err:        "",
+			errWindows: "",
+		},
+		{
+			name:       "check without syntax only fails with nonexistent TLS files",
+			file:       "config_with_tls_files.yml",
+			syntaxOnly: false,
+			err: "error checking client cert file \"testdata/nonexistent_cert_file.yml\": " +
+				"stat testdata/nonexistent_cert_file.yml: no such file or directory",
+			errWindows: "error checking client cert file \"testdata\\\\nonexistent_cert_file.yml\": " +
+				"CreateFile testdata\\nonexistent_cert_file.yml: The system cannot find the file specified.",
+		},
+		{
+			name:       "check with syntax only succeeds with nonexistent credentials file",
+			file:       "authorization_credentials_file.bad.yml",
+			syntaxOnly: true,
+			err:        "",
+			errWindows: "",
+		},
+		{
+			name:       "check without syntax only fails with nonexistent credentials file",
+			file:       "authorization_credentials_file.bad.yml",
+			syntaxOnly: false,
+			err: "error checking authorization credentials or bearer token file \"/random/file/which/does/not/exist.yml\": " +
+				"stat /random/file/which/does/not/exist.yml: no such file or directory",
+			errWindows: "error checking authorization credentials or bearer token file \"testdata\\\\random\\\\file\\\\which\\\\does\\\\not\\\\exist.yml\": " +
+				"CreateFile testdata\\random\\file\\which\\does\\not\\exist.yml: The system cannot find the path specified.",
+		},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := checkConfig(false, "testdata/"+test.file, test.syntaxOnly)
+			expectedErrMsg := test.err
+			if strings.Contains(runtime.GOOS, "windows") {
+				expectedErrMsg = test.errWindows
+			}
+			if expectedErrMsg != "" {
+				require.Equalf(t, expectedErrMsg, err.Error(), "Expected error %q, got %q", test.err, err.Error())
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+}
+
+func TestAuthorizationConfig(t *testing.T) {
+	cases := []struct {
+		name string
+		file string
+		err  string
+	}{
+		{
+			name: "authorization_credentials_file.bad",
+			file: "authorization_credentials_file.bad.yml",
+			err:  "error checking authorization credentials or bearer token file",
+		},
+		{
+			name: "authorization_credentials_file.good",
+			file: "authorization_credentials_file.good.yml",
+			err:  "",
+		},
+	}
+
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := checkConfig(false, "testdata/"+test.file, false)
+			if test.err != "" {
+				require.Contains(t, err.Error(), test.err, "Expected error to contain %q, got %q", test.err, err.Error())
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+}
+
+func TestCheckMetricsExtended(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping on windows")
+	}
+
+	f, err := os.Open("testdata/metrics-test.prom")
+	require.NoError(t, err)
+	defer f.Close()
+
+	stats, total, err := checkMetricsExtended(f)
+	require.NoError(t, err)
+	require.Equal(t, 27, total)
+	require.Equal(t, []metricStat{
+		{
+			name:        "prometheus_tsdb_compaction_chunk_size_bytes",
+			cardinality: 15,
+			percentage:  float64(15) / float64(27),
+		},
+		{
+			name:        "go_gc_duration_seconds",
+			cardinality: 7,
+			percentage:  float64(7) / float64(27),
+		},
+		{
+			name:        "net_conntrack_dialer_conn_attempted_total",
+			cardinality: 4,
+			percentage:  float64(4) / float64(27),
+		},
+		{
+			name:        "go_info",
+			cardinality: 1,
+			percentage:  float64(1) / float64(27),
+		},
+	}, stats)
+}
+
+func TestExitCodes(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode.")
+	}
+
+	for _, c := range []struct {
+		file      string
+		exitCode  int
+		lintIssue bool
+	}{
+		{
+			file: "prometheus-config.good.yml",
+		},
+		{
+			file:     "prometheus-config.bad.yml",
+			exitCode: 1,
+		},
+		{
+			file:     "prometheus-config.nonexistent.yml",
+			exitCode: 1,
+		},
+		{
+			file:      "prometheus-config.lint.yml",
+			lintIssue: true,
+			exitCode:  3,
+		},
+	} {
+		t.Run(c.file, func(t *testing.T) {
+			for _, lintFatal := range []bool{true, false} {
+				t.Run(fmt.Sprintf("%t", lintFatal), func(t *testing.T) {
+					args := []string{"-test.main", "check", "config", "testdata/" + c.file}
+					if lintFatal {
+						args = append(args, "--lint-fatal")
+					}
+					tool := exec.Command(promtoolPath, args...)
+					err := tool.Run()
+					if c.exitCode == 0 || (c.lintIssue && !lintFatal) {
+						require.NoError(t, err)
+						return
+					}
+
+					require.Error(t, err)
+
+					var exitError *exec.ExitError
+					if errors.As(err, &exitError) {
+						status := exitError.Sys().(syscall.WaitStatus)
+						require.Equal(t, c.exitCode, status.ExitStatus())
+					} else {
+						t.Errorf("unable to retrieve the exit status for promtool: %v", err)
+					}
+				})
+			}
+		})
 	}
 }

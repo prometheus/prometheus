@@ -15,12 +15,12 @@ package xds
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
 
 	v3 "github.com/envoyproxy/go-control-plane/envoy/service/discovery/v3"
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
@@ -31,7 +31,7 @@ import (
 )
 
 var (
-	kumaConf KumaSDConfig = sdConf
+	kumaConf = sdConf
 
 	testKumaMadsV1Resources = []*MonitoringAssignment{
 		{
@@ -91,7 +91,6 @@ func getKumaMadsV1DiscoveryResponse(resources ...*MonitoringAssignment) (*v3.Dis
 	serialized := make([]*anypb.Any, len(resources))
 	for i, res := range resources {
 		data, err := proto.Marshal(res)
-
 		if err != nil {
 			return nil, err
 		}

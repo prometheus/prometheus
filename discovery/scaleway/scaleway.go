@@ -15,19 +15,21 @@ package scaleway
 
 import (
 	"context"
-	"io/ioutil"
+	"errors"
+	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
+	"github.com/scaleway/scaleway-sdk-go/scw"
+
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/refresh"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
-	"github.com/scaleway/scaleway-sdk-go/scw"
 )
 
 // metaLabelPrefix is the meta prefix used for all meta labels.
@@ -60,7 +62,7 @@ func (c *role) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	case roleInstance, roleBaremetal:
 		return nil
 	default:
-		return errors.Errorf("unknown role %q", *c)
+		return fmt.Errorf("unknown role %q", *c)
 	}
 }
 
@@ -173,8 +175,7 @@ func init() {
 
 // Discovery periodically performs Scaleway requests. It implements
 // the Discoverer interface.
-type Discovery struct {
-}
+type Discovery struct{}
 
 func NewDiscovery(conf *SDConfig, logger log.Logger) (*refresh.Discovery, error) {
 	r, err := newRefresher(conf)
@@ -226,17 +227,17 @@ type authTokenFileRoundTripper struct {
 // newAuthTokenFileRoundTripper adds the auth token read from the file to a request.
 func newAuthTokenFileRoundTripper(tokenFile string, rt http.RoundTripper) (http.RoundTripper, error) {
 	// fail-fast if we can't read the file.
-	_, err := ioutil.ReadFile(tokenFile)
+	_, err := os.ReadFile(tokenFile)
 	if err != nil {
-		return nil, errors.Wrapf(err, "unable to read auth token file %s", tokenFile)
+		return nil, fmt.Errorf("unable to read auth token file %s: %w", tokenFile, err)
 	}
 	return &authTokenFileRoundTripper{tokenFile, rt}, nil
 }
 
 func (rt *authTokenFileRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {
-	b, err := ioutil.ReadFile(rt.authTokenFile)
+	b, err := os.ReadFile(rt.authTokenFile)
 	if err != nil {
-		return nil, errors.Wrapf(err, "unable to read auth token file %s", rt.authTokenFile)
+		return nil, fmt.Errorf("unable to read auth token file %s: %w", rt.authTokenFile, err)
 	}
 	authToken := strings.TrimSpace(string(b))
 

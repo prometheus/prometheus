@@ -14,6 +14,7 @@
 package parser
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -23,11 +24,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/model"
 
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/timestamp"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/util/strutil"
 )
 
@@ -224,7 +224,7 @@ func ParseSeriesDesc(input string) (labels labels.Labels, values []SequenceValue
 
 // addParseErrf formats the error and appends it to the list of parsing errors.
 func (p *parser) addParseErrf(positionRange PositionRange, format string, args ...interface{}) {
-	p.addParseErr(positionRange, errors.Errorf(format, args...))
+	p.addParseErr(positionRange, fmt.Errorf(format, args...))
 }
 
 // addParseErr appends the provided error to the list of parsing errors.
@@ -241,7 +241,7 @@ func (p *parser) addParseErr(positionRange PositionRange, err error) {
 // unexpected creates a parser error complaining about an unexpected lexer item.
 // The item that is presented as unexpected is always the last item produced
 // by the lexer.
-func (p *parser) unexpected(context string, expected string) {
+func (p *parser) unexpected(context, expected string) {
 	var errMsg strings.Builder
 
 	// Do not report lexer errors twice
@@ -354,7 +354,8 @@ func (p *parser) InjectItem(typ ItemType) {
 	p.inject = typ
 	p.injecting = true
 }
-func (p *parser) newBinaryExpression(lhs Node, op Item, modifiers Node, rhs Node) *BinaryExpr {
+
+func (p *parser) newBinaryExpression(lhs Node, op Item, modifiers, rhs Node) *BinaryExpr {
 	ret := modifiers.(*BinaryExpr)
 
 	ret.LHS = lhs.(Expr)
@@ -374,7 +375,7 @@ func (p *parser) assembleVectorSelector(vs *VectorSelector) {
 	}
 }
 
-func (p *parser) newAggregateExpr(op Item, modifier Node, args Node) (ret *AggregateExpr) {
+func (p *parser) newAggregateExpr(op Item, modifier, args Node) (ret *AggregateExpr) {
 	ret = modifier.(*AggregateExpr)
 	arguments := args.(Expressions)
 
@@ -650,10 +651,9 @@ func (p *parser) parseGenerated(startSymbol ItemType) interface{} {
 	p.yyParser.Parse(p)
 
 	return p.generatedParserResult
-
 }
 
-func (p *parser) newLabelMatcher(label Item, operator Item, value Item) *labels.Matcher {
+func (p *parser) newLabelMatcher(label, operator, value Item) *labels.Matcher {
 	op := operator.Typ
 	val := p.unquoteString(value.Val)
 
@@ -801,7 +801,7 @@ func MustLabelMatcher(mt labels.MatchType, name, val string) *labels.Matcher {
 func MustGetFunction(name string) *Function {
 	f, ok := getFunction(name)
 	if !ok {
-		panic(errors.Errorf("function %q does not exist", name))
+		panic(fmt.Errorf("function %q does not exist", name))
 	}
 	return f
 }

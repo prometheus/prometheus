@@ -276,6 +276,34 @@
             },
           },
           {
+            alert: 'PrometheusScrapeBodySizeLimitHit',
+            expr: |||
+              increase(prometheus_target_scrapes_exceeded_body_size_limit_total{%(prometheusSelector)s}[5m]) > 0
+            ||| % $._config,
+            'for': '15m',
+            labels: {
+              severity: 'warning',
+            },
+            annotations: {
+              summary: 'Prometheus has dropped some targets that exceeded body size limit.',
+              description: 'Prometheus %(prometheusName)s has failed {{ printf "%%.0f" $value }} scrapes in the last 5m because some targets exceeded the configured body_size_limit.' % $._config,
+            },
+          },
+          {
+            alert: 'PrometheusScrapeSampleLimitHit',
+            expr: |||
+              increase(prometheus_target_scrapes_exceeded_sample_limit_total{%(prometheusSelector)s}[5m]) > 0
+            ||| % $._config,
+            'for': '15m',
+            labels: {
+              severity: 'warning',
+            },
+            annotations: {
+              summary: 'Prometheus has failed scrapes that have exceeded the configured sample limit.',
+              description: 'Prometheus %(prometheusName)s has failed {{ printf "%%.0f" $value }} scrapes in the last 5m because some targets exceeded the configured sample_limit.' % $._config,
+            },
+          },
+          {
             alert: 'PrometheusTargetSyncFailure',
             expr: |||
               increase(prometheus_target_sync_failed_total{%(prometheusSelector)s}[30m]) > 0
@@ -389,11 +417,11 @@
               (
                   prometheus_tsdb_clean_start{%(prometheusSelector)s} == 0
                 and
-                  ( 
+                  (
                     count by (%(prometheusHAGroupLabels)s) (
-                      changes(process_start_time_seconds{%(prometheusSelector)s}[30m]) > 1
-                    ) 
-                    / 
+                      changes(process_start_time_seconds{%(prometheusSelector)s}[1h]) > 1
+                    )
+                    /
                     count by (%(prometheusHAGroupLabels)s) (
                       up{%(prometheusSelector)s}
                     )
@@ -418,7 +446,7 @@
             },
             annotations: {
               summary: 'More than half of the Prometheus instances within the same HA group are crashlooping.',
-              description: '{{ $value | humanizePercentage }} of Prometheus instances within the %(prometheusHAGroupName)s HA group have had at least 5 total restarts or 2 unclean restarts in the last 30m.' % $._config,
+              description: '{{ $value | humanizePercentage }} of Prometheus instances within the %(prometheusHAGroupName)s HA group have had at least 5 total restarts in the last 30m or 2 unclean restarts in the last 1h.' % $._config,
             },
           },
         ],

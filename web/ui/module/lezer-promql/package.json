@@ -1,0 +1,41 @@
+{
+  "name": "@prometheus-io/lezer-promql",
+  "version": "0.37.0-rc.0",
+  "description": "lezer-based PromQL grammar",
+  "main": "index.cjs",
+  "type": "module",
+  "exports": {
+    "import": "./dist/index.es.js",
+    "require": "./dist/index.cjs"
+  },
+  "module": "dist/index.es.js",
+  "types": "dist/index.d.ts",
+  "author": "Prometheus Authors <prometheus-developers@googlegroups.com>",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/prometheus/prometheus.git"
+  },
+  "keywords": [
+    "lezer",
+    "promql"
+  ],
+  "bugs": {
+    "url": "https://github.com/prometheus/prometheus/issues"
+  },
+  "homepage": "https://github.com/prometheus/prometheus/blob/main/web/ui/module/lezer-promql/README.md",
+  "scripts": {
+    "build": "bash ./build.sh",
+    "lint": "echo 'nothing to do'",
+    "test": "NODE_OPTIONS=--experimental-vm-modules jest"
+  },
+  "devDependencies": {
+    "@lezer/generator": "^1.0.0",
+    "@lezer/lr": "^1.0.0",
+    "@lezer/highlight": "^1.0.0"
+  },
+  "peerDependencies": {
+    "@lezer/lr": "^1.0.0",
+    "@lezer/highlight": "^1.0.0"
+  }
+}

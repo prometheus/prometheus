@@ -18,7 +18,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -84,7 +83,6 @@ func generateTargetGroups(allTargetGroups map[string][]*targetgroup.Group) map[s
 			}
 
 			sdGroup := customSD{
-
 				Targets: newTargets,
 				Labels:  newLabels,
 			}
@@ -118,7 +116,7 @@ func (a *Adapter) writeOutput() error {
 	b, _ := json.MarshalIndent(arr, "", "    ")
 
 	dir, _ := filepath.Split(a.output)
-	tmpfile, err := ioutil.TempFile(dir, "sd-adapter")
+	tmpfile, err := os.CreateTemp(dir, "sd-adapter")
 	if err != nil {
 		return err
 	}
@@ -157,13 +155,14 @@ func (a *Adapter) runCustomSD(ctx context.Context) {
 
 // Run starts a Discovery Manager and the custom service discovery implementation.
 func (a *Adapter) Run() {
+	//nolint:errcheck
 	go a.manager.Run()
 	a.manager.StartCustomProvider(a.ctx, a.name, a.disc)
 	go a.runCustomSD(a.ctx)
 }
 
 // NewAdapter creates a new instance of Adapter.
-func NewAdapter(ctx context.Context, file string, name string, d discovery.Discoverer, logger log.Logger) *Adapter {
+func NewAdapter(ctx context.Context, file, name string, d discovery.Discoverer, logger log.Logger) *Adapter {
 	return &Adapter{
 		ctx:     ctx,
 		disc:    d,

@@ -15,24 +15,20 @@ package tsdb
 
 import (
 	"context"
-	"io/ioutil"
 	"math"
-	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/go-kit/log"
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 )
 
 func TestBlockWriter(t *testing.T) {
 	ctx := context.Background()
-	outputDir, err := ioutil.TempDir(os.TempDir(), "output")
-	require.NoError(t, err)
-	defer func() { require.NoError(t, os.RemoveAll(outputDir)) }()
+	outputDir := t.TempDir()
 	w, err := NewBlockWriter(log.NewNopLogger(), outputDir, DefaultBlockDuration)
 	require.NoError(t, err)
 

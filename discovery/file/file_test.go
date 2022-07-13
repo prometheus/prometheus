@@ -17,7 +17,6 @@ import (
 	"context"
 	"encoding/json"
 	"io"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"sort"
@@ -53,12 +52,9 @@ type testRunner struct {
 func newTestRunner(t *testing.T) *testRunner {
 	t.Helper()
 
-	tmpDir, err := ioutil.TempDir("", "prometheus-file-sd")
-	require.NoError(t, err)
-
 	return &testRunner{
 		T:       t,
-		dir:     tmpDir,
+		dir:     t.TempDir(),
 		ch:      make(chan []*targetgroup.Group),
 		done:    make(chan struct{}),
 		stopped: make(chan struct{}),
@@ -73,10 +69,10 @@ func (t *testRunner) copyFile(src string) string {
 }
 
 // copyFileTo atomically copies a file with a different name to the runner's directory.
-func (t *testRunner) copyFileTo(src string, name string) string {
+func (t *testRunner) copyFileTo(src, name string) string {
 	t.Helper()
 
-	newf, err := ioutil.TempFile(t.dir, "")
+	newf, err := os.CreateTemp(t.dir, "")
 	require.NoError(t, err)
 
 	f, err := os.Open(src)
@@ -95,10 +91,10 @@ func (t *testRunner) copyFileTo(src string, name string) string {
 }
 
 // writeString writes atomically a string to a file.
-func (t *testRunner) writeString(file string, data string) {
+func (t *testRunner) writeString(file, data string) {
 	t.Helper()
 
-	newf, err := ioutil.TempFile(t.dir, "")
+	newf, err := os.CreateTemp(t.dir, "")
 	require.NoError(t, err)
 
 	_, err = newf.WriteString(data)
@@ -477,6 +473,7 @@ func TestRemoveFile(t *testing.T) {
 			},
 			{
 				Source: fileSource(sdFile, 1),
-			}},
+			},
+		},
 	)
 }

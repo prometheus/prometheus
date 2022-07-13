@@ -138,7 +138,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 		Source: "DigitalOcean",
 	}
 
-	droplets, err := d.listDroplets()
+	droplets, err := d.listDroplets(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -196,13 +196,13 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	return []*targetgroup.Group{tg}, nil
 }
 
-func (d *Discovery) listDroplets() ([]godo.Droplet, error) {
+func (d *Discovery) listDroplets(ctx context.Context) ([]godo.Droplet, error) {
 	var (
 		droplets []godo.Droplet
 		opts     = &godo.ListOptions{}
 	)
 	for {
-		paginatedDroplets, resp, err := d.client.Droplets.List(context.Background(), opts)
+		paginatedDroplets, resp, err := d.client.Droplets.List(ctx, opts)
 		if err != nil {
 			return nil, fmt.Errorf("error while listing droplets page %d: %w", opts.Page, err)
 		}

@@ -1,10 +1,6 @@
 name: CIFuzz
 on:
   pull_request:
-    paths:
-      - "go.sum"
-      - "go.mod"
-      - "**.go"
 jobs:
   Fuzzing:
     runs-on: ubuntu-latest
@@ -22,7 +18,7 @@ jobs:
           fuzz-seconds: 600
           dry-run: false
       - name: Upload Crash
-        uses: actions/upload-artifact@v1
+        uses: actions/upload-artifact@v3
         if: failure() && steps.build.outcome == 'success'
         with:
           name: artifacts

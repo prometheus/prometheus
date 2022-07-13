@@ -1,26 +1,69 @@
-import React, { FC } from 'react';
-import Filter, { Expanded, FilterData } from './Filter';
-import { useFetch } from '../../hooks/useFetch';
-import { groupTargets, Target } from './target';
-import ScrapePoolPanel from './ScrapePoolPanel';
-import { withStatusIndicator } from '../../components/withStatusIndicator';
+import { KVSearch } from '@nexucis/kvsearch';
 import { usePathPrefix } from '../../contexts/PathPrefixContext';
+import { useFetch } from '../../hooks/useFetch';
 import { API_PATH } from '../../constants/constants';
+import { groupTargets, ScrapePool, ScrapePools, Target } from './target';
+import { withStatusIndicator } from '../../components/withStatusIndicator';
+import { FC, useCallback, useEffect, useMemo, useState } from 'react';
+import { Col, Collapse, Row } from 'reactstrap';
+import { ScrapePoolContent } from './ScrapePoolContent';
+import Filter, { Expanded, FilterData } from './Filter';
 import { useLocalStorage } from '../../hooks/useLocalStorage';
+import styles from './ScrapePoolPanel.module.css';
+import { ToggleMoreLess } from '../../components/ToggleMoreLess';
+import SearchBar from '../../components/SearchBar';
+import { setQuerySearchFilter, getQuerySearchFilter } from '../../utils/index';
 
 interface ScrapePoolListProps {
   activeTargets: Target[];
 }
 
-export const ScrapePoolContent: FC<ScrapePoolListProps> = ({ activeTargets }) => {
-  const targetGroups = groupTargets(activeTargets);
+const kvSearch = new KVSearch<Target>({
+  shouldSort: true,
+  indexedKeys: ['labels', 'scrapePool', ['labels', /.*/]],
+});
+
+interface PanelProps {
+  scrapePool: string;
+  targetGroup: ScrapePool;
+  expanded: boolean;
+  toggleExpanded: () => void;
+}
+
+export const ScrapePoolPanel: FC<PanelProps> = (props: PanelProps) => {
+  const modifier = props.targetGroup.upCount < props.targetGroup.targets.length ? 'danger' : 'normal';
+  const id = `pool-${props.scrapePool}`;
+  const anchorProps = {
+    href: `#${id}`,
+    id,
+  };
+  return (
+    <div>
+      <ToggleMoreLess event={props.toggleExpanded} showMore={props.expanded}>
+        <a className={styles[modifier]} {...anchorProps}>
+          {`${props.scrapePool} (${props.targetGroup.upCount}/${props.targetGroup.targets.length} up)`}
+        </a>
+      </ToggleMoreLess>
+      <Collapse isOpen={props.expanded}>
+        <ScrapePoolContent targets={props.targetGroup.targets} />
+      </Collapse>
+    </div>
+  );
+};
+
+// ScrapePoolListContent is taking care of every possible filter
+const ScrapePoolListContent: FC<ScrapePoolListProps> = ({ activeTargets }) => {
+  const initialPoolList = groupTargets(activeTargets);
+  const [poolList, setPoolList] = useState<ScrapePools>(initialPoolList);
+  const [targetList, setTargetList] = useState(activeTargets);
+
   const initialFilter: FilterData = {
     showHealthy: true,
     showUnhealthy: true,
   };
   const [filter, setFilter] = useLocalStorage('targets-page-filter', initialFilter);
 
-  const initialExpanded: Expanded = Object.keys(targetGroups).reduce(
+  const initialExpanded: Expanded = Object.keys(initialPoolList).reduce(
     (acc: { [scrapePool: string]: boolean }, scrapePool: string) => ({
       ...acc,
       [scrapePool]: true,
@@ -28,14 +71,45 @@ export const ScrapePoolContent: FC<ScrapePoolListProps> = ({ activeTargets }) =>
     {}
   );
   const [expanded, setExpanded] = useLocalStorage('targets-page-expansion-state', initialExpanded);
-
   const { showHealthy, showUnhealthy } = filter;
+
+  const handleSearchChange = useCallback(
+    (value: string) => {
+      setQuerySearchFilter(value);
+      if (value !== '') {
+        const result = kvSearch.filter(value.trim(), activeTargets);
+        setTargetList(result.map((value) => value.original));
+      } else {
+        setTargetList(activeTargets);
+      }
+    },
+    [activeTargets]
+  );
+
+  const defaultValue = useMemo(getQuerySearchFilter, []);
+
+  useEffect(() => {
+    const list = targetList.filter((t) => showHealthy || t.health.toLowerCase() !== 'up');
+    setPoolList(groupTargets(list));
+  }, [showHealthy, targetList]);
+
   return (
     <>
-      <Filter filter={filter} setFilter={setFilter} expanded={expanded} setExpanded={setExpanded} />
-      {Object.keys(targetGroups)
+      <Row xs="4" className="align-items-center">
+        <Col>
+          <Filter filter={filter} setFilter={setFilter} expanded={expanded} setExpanded={setExpanded} />
+        </Col>
+        <Col xs="6">
+          <SearchBar
+            defaultValue={defaultValue}
+            handleChange={handleSearchChange}
+            placeholder="Filter by endpoint or labels"
+          />
+        </Col>
+      </Row>
+      {Object.keys(poolList)
         .filter((scrapePool) => {
-          const targetGroup = targetGroups[scrapePool];
+          const targetGroup = poolList[scrapePool];
           const isHealthy = targetGroup.upCount === targetGroup.targets.length;
           return (isHealthy && showHealthy) || (!isHealthy && showUnhealthy);
         })
@@ -43,7 +117,7 @@ export const ScrapePoolContent: FC<ScrapePoolListProps> = ({ activeTargets }) =>
           <ScrapePoolPanel
             key={scrapePool}
             scrapePool={scrapePool}
-            targetGroup={targetGroups[scrapePool]}
+            targetGroup={poolList[scrapePool]}
             expanded={expanded[scrapePool]}
             toggleExpanded={(): void => setExpanded({ ...expanded, [scrapePool]: !expanded[scrapePool] })}
           />
@@ -51,11 +125,10 @@ export const ScrapePoolContent: FC<ScrapePoolListProps> = ({ activeTargets }) =>
     </>
   );
 };
-ScrapePoolContent.displayName = 'ScrapePoolContent';
 
-const ScrapePoolListWithStatusIndicator = withStatusIndicator(ScrapePoolContent);
+const ScrapePoolListWithStatusIndicator = withStatusIndicator(ScrapePoolListContent);
 
-const ScrapePoolList: FC = () => {
+export const ScrapePoolList: FC = () => {
   const pathPrefix = usePathPrefix();
   const { response, error, isLoading } = useFetch<ScrapePoolListProps>(`${pathPrefix}/${API_PATH}/targets?state=active`);
   const { status: responseStatus } = response;

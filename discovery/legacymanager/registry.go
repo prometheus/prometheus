@@ -14,6 +14,7 @@
 package legacymanager
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"sort"
@@ -248,7 +249,8 @@ func writeConfigs(structVal reflect.Value, configs discovery.Configs) error {
 }
 
 func replaceYAMLTypeError(err error, oldTyp, newTyp reflect.Type) error {
-	if e, ok := err.(*yaml.TypeError); ok {
+	var e *yaml.TypeError
+	if errors.As(err, &e) {
 		oldStr := oldTyp.String()
 		newStr := newTyp.String()
 		for i, s := range e.Errors {

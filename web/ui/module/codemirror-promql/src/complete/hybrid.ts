@@ -58,7 +58,7 @@ import {
   SubqueryExpr,
   Unless,
   VectorSelector,
-} from '../grammar/parser.terms';
+} from '@prometheus-io/lezer-promql';
 import { Completion, CompletionContext, CompletionResult } from '@codemirror/autocomplete';
 import { EditorState } from '@codemirror/state';
 import { buildLabelMatchers, containsAtLeastOneChild, containsChild, retrieveAllRecursiveNodes, walkBackward, walkThrough } from '../parser';
@@ -140,7 +140,7 @@ function arrayToCompletionResult(data: Completion[], from: number, to: number, i
     from: from,
     to: to,
     options: options,
-    span: span ? /^[a-zA-Z0-9_:]+$/ : undefined,
+    validFor: span ? /^[a-zA-Z0-9_:]+$/ : undefined,
   } as CompletionResult;
 }
 
@@ -342,7 +342,7 @@ export function analyzeCompletion(state: EditorState, node: SyntaxNode): Context
       }
       break;
     case PromQL:
-      if (!node.firstChild) {
+      if (node.firstChild !== null && node.firstChild.type.id === 0) {
         // this situation can happen when there is nothing in the text area and the user is explicitly triggering the autocompletion (with ctrl + space)
         result.push(
           { kind: ContextKind.MetricName, metricName: '' },

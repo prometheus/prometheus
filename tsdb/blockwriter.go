@@ -15,7 +15,6 @@ package tsdb
 
 import (
 	"context"
-	"io/ioutil"
 	"math"
 	"os"
 
@@ -24,7 +23,7 @@ import (
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
 
-	"github.com/prometheus/prometheus/pkg/timestamp"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
@@ -64,7 +63,7 @@ func NewBlockWriter(logger log.Logger, dir string, blockSize int64) (*BlockWrite
 
 // initHead creates and initialises a new TSDB head.
 func (w *BlockWriter) initHead() error {
-	chunkDir, err := ioutil.TempDir(os.TempDir(), "head")
+	chunkDir, err := os.MkdirTemp(os.TempDir(), "head")
 	if err != nil {
 		return errors.Wrap(err, "create temp dir")
 	}

@@ -37,9 +37,9 @@ func TestMain(m *testing.M) {
 
 func TestConfiguredService(t *testing.T) {
 	conf := &SDConfig{
-		Services: []string{"configuredServiceName"}}
+		Services: []string{"configuredServiceName"},
+	}
 	consulDiscovery, err := NewDiscovery(conf, nil)
-
 	if err != nil {
 		t.Errorf("Unexpected error when initializing discovery %v", err)
 	}
@@ -57,7 +57,6 @@ func TestConfiguredServiceWithTag(t *testing.T) {
 		ServiceTags: []string{"http"},
 	}
 	consulDiscovery, err := NewDiscovery(conf, nil)
-
 	if err != nil {
 		t.Errorf("Unexpected error when initializing discovery %v", err)
 	}
@@ -153,7 +152,6 @@ func TestConfiguredServiceWithTags(t *testing.T) {
 
 	for _, tc := range cases {
 		consulDiscovery, err := NewDiscovery(tc.conf, nil)
-
 		if err != nil {
 			t.Errorf("Unexpected error when initializing discovery %v", err)
 		}
@@ -168,7 +166,6 @@ func TestConfiguredServiceWithTags(t *testing.T) {
 func TestNonConfiguredService(t *testing.T) {
 	conf := &SDConfig{}
 	consulDiscovery, err := NewDiscovery(conf, nil)
-
 	if err != nil {
 		t.Errorf("Unexpected error when initializing discovery %v", err)
 	}
@@ -310,11 +307,15 @@ func TestNoTargets(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	ch := make(chan []*targetgroup.Group)
-	go d.Run(ctx, ch)
+	go func() {
+		d.Run(ctx, ch)
+		close(ch)
+	}()
 
 	targets := (<-ch)[0].Targets
 	require.Equal(t, 0, len(targets))
 	cancel()
+	<-ch
 }
 
 // Watch only the test service.
@@ -416,6 +417,7 @@ func TestUnmarshalConfig(t *testing.T) {
 			Password: "1234",
 		},
 		FollowRedirects: true,
+		EnableHTTP2:     true,
 	}
 
 	cases := []struct {

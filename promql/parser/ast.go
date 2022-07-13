@@ -15,11 +15,10 @@ package parser
 
 import (
 	"context"
+	"fmt"
 	"time"
 
-	"github.com/pkg/errors"
-
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 )
 
@@ -40,6 +39,11 @@ type Node interface {
 	// String representation of the node that returns the given node when parsed
 	// as part of a valid query.
 	String() string
+
+	// Pretty returns the prettified representation of the node.
+	// It uses the level information to determine at which level/depth the current
+	// node is in the AST and uses this to apply indentation.
+	Pretty(level int) string
 
 	// PositionRange returns the position of the AST Node in the query string.
 	PositionRange() PositionRange
@@ -206,8 +210,9 @@ type VectorSelector struct {
 // of an arbitrary function during handling. It is used to test the Engine.
 type TestStmt func(context.Context) error
 
-func (TestStmt) String() string { return "test statement" }
-func (TestStmt) PromQLStmt()    {}
+func (TestStmt) String() string      { return "test statement" }
+func (TestStmt) PromQLStmt()         {}
+func (t TestStmt) Pretty(int) string { return t.String() }
 
 func (TestStmt) PositionRange() PositionRange {
 	return PositionRange{
@@ -394,7 +399,7 @@ func Children(node Node) []Node {
 		// nothing to do
 		return []Node{}
 	default:
-		panic(errors.Errorf("promql.Children: unhandled node type %T", node))
+		panic(fmt.Errorf("promql.Children: unhandled node type %T", node))
 	}
 }
 
@@ -407,7 +412,7 @@ type PositionRange struct {
 // mergeRanges is a helper function to merge the PositionRanges of two Nodes.
 // Note that the arguments must be in the same order as they
 // occur in the input string.
-func mergeRanges(first Node, last Node) PositionRange {
+func mergeRanges(first, last Node) PositionRange {
 	return PositionRange{
 		Start: first.PositionRange().Start,
 		End:   last.PositionRange().End,
@@ -426,15 +431,19 @@ func (i *Item) PositionRange() PositionRange {
 func (e *AggregateExpr) PositionRange() PositionRange {
 	return e.PosRange
 }
+
 func (e *BinaryExpr) PositionRange() PositionRange {
 	return mergeRanges(e.LHS, e.RHS)
 }
+
 func (e *Call) PositionRange() PositionRange {
 	return e.PosRange
 }
+
 func (e *EvalStmt) PositionRange() PositionRange {
 	return e.Expr.PositionRange()
 }
+
 func (e Expressions) PositionRange() PositionRange {
 	if len(e) == 0 {
 		// Position undefined.
@@ -445,33 +454,40 @@ func (e Expressions) PositionRange() PositionRange {
 	}
 	return mergeRanges(e[0], e[len(e)-1])
 }
+
 func (e *MatrixSelector) PositionRange() PositionRange {
 	return PositionRange{
 		Start: e.VectorSelector.PositionRange().Start,
 		End:   e.EndPos,
 	}
 }
+
 func (e *SubqueryExpr) PositionRange() PositionRange {
 	return PositionRange{
 		Start: e.Expr.PositionRange().Start,
 		End:   e.EndPos,
 	}
 }
+
 func (e *NumberLiteral) PositionRange() PositionRange {
 	return e.PosRange
 }
+
 func (e *ParenExpr) PositionRange() PositionRange {
 	return e.PosRange
 }
+
 func (e *StringLiteral) PositionRange() PositionRange {
 	return e.PosRange
 }
+
 func (e *UnaryExpr) PositionRange() PositionRange {
 	return PositionRange{
 		Start: e.StartPos,
 		End:   e.Expr.PositionRange().End,
 	}
 }
+
 func (e *VectorSelector) PositionRange() PositionRange {
 	return e.PosRange
 }

@@ -142,12 +142,16 @@ export const functionIdentifierTerms = [
     detail: 'function',
     info: 'Calculate the cosine, in radians, for input series',
     type: 'function',
+    // Avoid ranking higher than `count`.
+    boost: -1,
   },
   {
     label: 'cosh',
     detail: 'function',
     info: 'Calculate the hyperbolic cosine, in radians, for input series',
     type: 'function',
+    // Avoid ranking higher than `count`.
+    boost: -1,
   },
   {
     label: 'count_over_time',
@@ -174,10 +178,18 @@ export const functionIdentifierTerms = [
     type: 'function',
   },
   {
+    label: 'day_of_year',
+    detail: 'function',
+    info: 'Return the day of the year for provided timestamps',
+    type: 'function',
+  },
+  {
     label: 'deg',
     detail: 'function',
     info: 'Convert radians to degrees for input series',
     type: 'function',
+    // Avoid ranking higher than `delta`.
+    boost: -1,
   },
   {
     label: 'delta',
@@ -328,6 +340,8 @@ export const functionIdentifierTerms = [
     detail: 'function',
     info: 'Convert degrees to radians for input series',
     type: 'function',
+    // Avoid ranking higher than `rate`.
+    boost: -1,
   },
   {
     label: 'rate',

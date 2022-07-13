@@ -16,7 +16,6 @@ package xds
 import (
 	"context"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -60,9 +59,9 @@ func createTestHTTPServer(t *testing.T, responder discoveryResponder) *httptest.
 		require.Equal(t, "application/json", r.Header.Get("Content-Type"))
 		require.Equal(t, "application/json", r.Header.Get("Accept"))
 
-		body, err := ioutil.ReadAll(r.Body)
+		body, err := io.ReadAll(r.Body)
 		defer func() {
-			_, _ = io.Copy(ioutil.Discard, r.Body)
+			_, _ = io.Copy(io.Discard, r.Body)
 			_ = r.Body.Close()
 		}()
 		require.NotEmpty(t, body)

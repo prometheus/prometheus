@@ -17,7 +17,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -30,6 +30,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/prometheus/util/stats"
+
 	"github.com/go-kit/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -40,10 +42,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/config"
-	"github.com/prometheus/prometheus/pkg/exemplar"
-	"github.com/prometheus/prometheus/pkg/labels"
-	"github.com/prometheus/prometheus/pkg/textparse"
-	"github.com/prometheus/prometheus/pkg/timestamp"
+	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/textparse"
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -126,9 +128,7 @@ func newTestTargetRetriever(targetsInfo []*testTargetParams) *testTargetRetrieve
 	}
 }
 
-var (
-	scrapeStart = time.Now().Add(-11 * time.Second)
-)
+var scrapeStart = time.Now().Add(-11 * time.Second)
 
 func (t testTargetRetriever) TargetsActive() map[string][]*scrape.Target {
 	return t.activeTargets
@@ -409,9 +409,7 @@ func TestEndpoints(t *testing.T) {
 			Format: &af,
 		}
 
-		dbDir, err := ioutil.TempDir("", "tsdb-api-ready")
-		require.NoError(t, err)
-		defer os.RemoveAll(dbDir)
+		dbDir := t.TempDir()
 
 		remote := remote.NewStorage(promlog.New(&promlogConfig), prometheus.DefaultRegisterer, func() (int64, error) {
 			return 0, nil
@@ -452,7 +450,6 @@ func TestEndpoints(t *testing.T) {
 
 		testEndpoints(t, api, testTargetRetriever, suite.ExemplarStorage(), false)
 	})
-
 }
 
 func TestLabelNames(t *testing.T) {
@@ -522,6 +519,130 @@ func TestLabelNames(t *testing.T) {
 				res := api.labelNames(req.WithContext(ctx))
 				assertAPIError(t, res.err, "")
 				assertAPIResponse(t, res.data, tc.expected)
+			}
+		})
+	}
+}
+
+type testStats struct {
+	Custom string `json:"custom"`
+}
+
+func (testStats) Builtin() (_ stats.BuiltinStats) {
+	return
+}
+
+func TestStats(t *testing.T) {
+	suite, err := promql.NewTest(t, ``)
+	require.NoError(t, err)
+	defer suite.Close()
+	require.NoError(t, suite.Run())
+
+	api := &API{
+		Queryable:   suite.Storage(),
+		QueryEngine: suite.QueryEngine(),
+		now: func() time.Time {
+			return time.Unix(123, 0)
+		},
+	}
+	request := func(method, param string) (*http.Request, error) {
+		u, err := url.Parse("http://example.com")
+		require.NoError(t, err)
+		q := u.Query()
+		q.Add("stats", param)
+		q.Add("query", "up")
+		q.Add("start", "0")
+		q.Add("end", "100")
+		q.Add("step", "10")
+		u.RawQuery = q.Encode()
+
+		r, err := http.NewRequest(method, u.String(), nil)
+		if method == http.MethodPost {
+			r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		}
+		return r, err
+	}
+
+	for _, tc := range []struct {
+		name     string
+		renderer StatsRenderer
+		param    string
+		expected func(*testing.T, interface{})
+	}{
+		{
+			name:  "stats is blank",
+			param: "",
+			expected: func(t *testing.T, i interface{}) {
+				require.IsType(t, i, &queryData{})
+				qd := i.(*queryData)
+				require.Nil(t, qd.Stats)
+			},
+		},
+		{
+			name:  "stats is true",
+			param: "true",
+			expected: func(t *testing.T, i interface{}) {
+				require.IsType(t, i, &queryData{})
+				qd := i.(*queryData)
+				require.NotNil(t, qd.Stats)
+				qs := qd.Stats.Builtin()
+				require.NotNil(t, qs.Timings)
+				require.Greater(t, qs.Timings.EvalTotalTime, float64(0))
+				require.NotNil(t, qs.Samples)
+				require.NotNil(t, qs.Samples.TotalQueryableSamples)
+				require.Nil(t, qs.Samples.TotalQueryableSamplesPerStep)
+			},
+		},
+		{
+			name:  "stats is all",
+			param: "all",
+			expected: func(t *testing.T, i interface{}) {
+				require.IsType(t, i, &queryData{})
+				qd := i.(*queryData)
+				require.NotNil(t, qd.Stats)
+				qs := qd.Stats.Builtin()
+				require.NotNil(t, qs.Timings)
+				require.Greater(t, qs.Timings.EvalTotalTime, float64(0))
+				require.NotNil(t, qs.Samples)
+				require.NotNil(t, qs.Samples.TotalQueryableSamples)
+				require.NotNil(t, qs.Samples.TotalQueryableSamplesPerStep)
+			},
+		},
+		{
+			name: "custom handler with known value",
+			renderer: func(ctx context.Context, s *stats.Statistics, p string) stats.QueryStats {
+				if p == "known" {
+					return testStats{"Custom Value"}
+				}
+				return nil
+			},
+			param: "known",
+			expected: func(t *testing.T, i interface{}) {
+				require.IsType(t, i, &queryData{})
+				qd := i.(*queryData)
+				require.NotNil(t, qd.Stats)
+				j, err := json.Marshal(qd.Stats)
+				require.NoError(t, err)
+				require.JSONEq(t, string(j), `{"custom":"Custom Value"}`)
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			before := api.statsRenderer
+			defer func() { api.statsRenderer = before }()
+			api.statsRenderer = tc.renderer
+
+			for _, method := range []string{http.MethodGet, http.MethodPost} {
+				ctx := context.Background()
+				req, err := request(method, tc.param)
+				require.NoError(t, err)
+				res := api.query(req.WithContext(ctx))
+				assertAPIError(t, res.err, "")
+				tc.expected(t, res.data)
+
+				res = api.queryRange(req.WithContext(ctx))
+				assertAPIError(t, res.err, "")
+				tc.expected(t, res.data)
 			}
 		})
 	}
@@ -651,7 +772,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 		exemplars   []exemplar.QueryResult
 	}
 
-	var tests = []test{
+	tests := []test{
 		{
 			endpoint: api.query,
 			query: url.Values{
@@ -1475,8 +1596,9 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 						Name:     "grp",
 						File:     "/path/to/file",
 						Interval: 1,
-						Rules: []rule{
-							alertingRule{
+						Limit:    0,
+						Rules: []Rule{
+							AlertingRule{
 								State:       "inactive",
 								Name:        "test_metric3",
 								Query:       "absent(test_metric3) != 1",
@@ -1487,7 +1609,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 								Health:      "unknown",
 								Type:        "alerting",
 							},
-							alertingRule{
+							AlertingRule{
 								State:       "inactive",
 								Name:        "test_metric4",
 								Query:       "up == 1",
@@ -1498,7 +1620,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 								Health:      "unknown",
 								Type:        "alerting",
 							},
-							recordingRule{
+							RecordingRule{
 								Name:   "recording-rule-1",
 								Query:  "vector(1)",
 								Labels: labels.Labels{},
@@ -1521,8 +1643,9 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 						Name:     "grp",
 						File:     "/path/to/file",
 						Interval: 1,
-						Rules: []rule{
-							alertingRule{
+						Limit:    0,
+						Rules: []Rule{
+							AlertingRule{
 								State:       "inactive",
 								Name:        "test_metric3",
 								Query:       "absent(test_metric3) != 1",
@@ -1533,7 +1656,7 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 								Health:      "unknown",
 								Type:        "alerting",
 							},
-							alertingRule{
+							AlertingRule{
 								State:       "inactive",
 								Name:        "test_metric4",
 								Query:       "up == 1",
@@ -1560,8 +1683,9 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 						Name:     "grp",
 						File:     "/path/to/file",
 						Interval: 1,
-						Rules: []rule{
-							recordingRule{
+						Limit:    0,
+						Rules: []Rule{
+							RecordingRule{
 								Name:   "recording-rule-1",
 								Query:  "vector(1)",
 								Labels: labels.Labels{},
@@ -2137,7 +2261,7 @@ func assertAPIError(t *testing.T, got *apiError, exp errorType) {
 	}
 }
 
-func assertAPIResponse(t *testing.T, got interface{}, exp interface{}) {
+func assertAPIResponse(t *testing.T, got, exp interface{}) {
 	t.Helper()
 
 	require.Equal(t, exp, got)
@@ -2164,7 +2288,7 @@ func (f *fakeDB) CleanTombstones() error                               { return 
 func (f *fakeDB) Delete(mint, maxt int64, ms ...*labels.Matcher) error { return f.err }
 func (f *fakeDB) Snapshot(dir string, withHead bool) error             { return f.err }
 func (f *fakeDB) Stats(statsByLabelName string) (_ *tsdb.Stats, retErr error) {
-	dbDir, err := ioutil.TempDir("", "tsdb-api-ready")
+	dbDir, err := os.MkdirTemp("", "tsdb-api-ready")
 	if err != nil {
 		return nil, err
 	}
@@ -2179,6 +2303,7 @@ func (f *fakeDB) Stats(statsByLabelName string) (_ *tsdb.Stats, retErr error) {
 	h, _ := tsdb.NewHead(nil, nil, nil, opts, nil)
 	return h.Stats(statsByLabelName), nil
 }
+
 func (f *fakeDB) WALReplayStatus() (tsdb.WALReplayStatus, error) {
 	return tsdb.WALReplayStatus{}, nil
 }
@@ -2346,8 +2471,7 @@ func TestAdminEndpoints(t *testing.T) {
 	} {
 		tc := tc
 		t.Run("", func(t *testing.T) {
-			dir, _ := ioutil.TempDir("", "fakeDB")
-			defer func() { require.NoError(t, os.RemoveAll(dir)) }()
+			dir := t.TempDir()
 
 			api := &API{
 				db:          tc.db,
@@ -2377,7 +2501,7 @@ func TestRespondSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error on test request: %s", err)
 	}
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	defer resp.Body.Close()
 	if err != nil {
 		t.Fatalf("Error reading response body: %s", err)
@@ -2413,7 +2537,7 @@ func TestRespondError(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error on test request: %s", err)
 	}
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	defer resp.Body.Close()
 	if err != nil {
 		t.Fatalf("Error reading response body: %s", err)
@@ -2449,7 +2573,7 @@ func TestParseTimeParam(t *testing.T) {
 	ts, err := parseTime("1582468023986")
 	require.NoError(t, err)
 
-	var tests = []struct {
+	tests := []struct {
 		paramName    string
 		paramValue   string
 		defaultValue time.Time
@@ -2508,7 +2632,7 @@ func TestParseTime(t *testing.T) {
 		panic(err)
 	}
 
-	var tests = []struct {
+	tests := []struct {
 		input  string
 		fail   bool
 		result time.Time
@@ -2516,25 +2640,32 @@ func TestParseTime(t *testing.T) {
 		{
 			input: "",
 			fail:  true,
-		}, {
+		},
+		{
 			input: "abc",
 			fail:  true,
-		}, {
+		},
+		{
 			input: "30s",
 			fail:  true,
-		}, {
+		},
+		{
 			input:  "123",
 			result: time.Unix(123, 0),
-		}, {
+		},
+		{
 			input:  "123.123",
 			result: time.Unix(123, 123000000),
-		}, {
+		},
+		{
 			input:  "2015-06-03T13:21:58.555Z",
 			result: ts,
-		}, {
+		},
+		{
 			input:  "2015-06-03T14:21:58.555+01:00",
 			result: ts,
-		}, {
+		},
+		{
 			// Test float rounding.
 			input:  "1543578564.705",
 			result: time.Unix(1543578564, 705*1e6),
@@ -2566,7 +2697,7 @@ func TestParseTime(t *testing.T) {
 }
 
 func TestParseDuration(t *testing.T) {
-	var tests = []struct {
+	tests := []struct {
 		input  string
 		fail   bool
 		result time.Duration
@@ -2762,7 +2893,7 @@ func TestRespond(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Error on test request: %s", err)
 		}
-		body, err := ioutil.ReadAll(resp.Body)
+		body, err := io.ReadAll(resp.Body)
 		defer resp.Body.Close()
 		if err != nil {
 			t.Fatalf("Error reading response body: %s", err)
@@ -2817,19 +2948,19 @@ func TestReturnAPIError(t *testing.T) {
 			err:      promql.ErrStorage{Err: errors.New("storage error")},
 			expected: errorInternal,
 		}, {
-			err:      errors.Wrap(promql.ErrStorage{Err: errors.New("storage error")}, "wrapped"),
+			err:      fmt.Errorf("wrapped: %w", promql.ErrStorage{Err: errors.New("storage error")}),
 			expected: errorInternal,
 		}, {
 			err:      promql.ErrQueryTimeout("timeout error"),
 			expected: errorTimeout,
 		}, {
-			err:      errors.Wrap(promql.ErrQueryTimeout("timeout error"), "wrapped"),
+			err:      fmt.Errorf("wrapped: %w", promql.ErrQueryTimeout("timeout error")),
 			expected: errorTimeout,
 		}, {
 			err:      promql.ErrQueryCanceled("canceled error"),
 			expected: errorCanceled,
 		}, {
-			err:      errors.Wrap(promql.ErrQueryCanceled("canceled error"), "wrapped"),
+			err:      fmt.Errorf("wrapped: %w", promql.ErrQueryCanceled("canceled error")),
 			expected: errorCanceled,
 		}, {
 			err:      errors.New("exec error"),
@@ -2837,10 +2968,10 @@ func TestReturnAPIError(t *testing.T) {
 		},
 	}
 
-	for _, c := range cases {
+	for ix, c := range cases {
 		actual := returnAPIError(c.err)
-		require.Error(t, actual)
-		require.Equal(t, c.expected, actual.typ)
+		require.Error(t, actual, ix)
+		require.Equal(t, c.expected, actual.typ, ix)
 	}
 }
 

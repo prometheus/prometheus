@@ -15,17 +15,16 @@ package main
 
 import (
 	"context"
-	"io/ioutil"
 	"math"
-	"os"
 	"sort"
 	"testing"
 	"time"
 
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb"
-	"github.com/stretchr/testify/require"
 )
 
 type backfillSample struct {
@@ -686,13 +685,9 @@ after_eof 1 2
 		t.Run(test.Description, func(t *testing.T) {
 			t.Logf("Test:%s", test.Description)
 
-			outputDir, err := ioutil.TempDir("", "myDir")
-			require.NoError(t, err)
-			defer func() {
-				require.NoError(t, os.RemoveAll(outputDir))
-			}()
+			outputDir := t.TempDir()
 
-			err = backfill(test.MaxSamplesInAppender, []byte(test.ToParse), outputDir, false, false, test.MaxBlockDuration)
+			err := backfill(test.MaxSamplesInAppender, []byte(test.ToParse), outputDir, false, false, test.MaxBlockDuration)
 
 			if !test.IsOk {
 				require.Error(t, err, test.Description)

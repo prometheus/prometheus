@@ -2,7 +2,7 @@ export interface Labels {
   [key: string]: string;
 }
 
-export interface Target {
+export type Target = {
   discoveredLabels: Labels;
   labels: Labels;
   scrapePool: string;
@@ -14,7 +14,7 @@ export interface Target {
   health: string;
   scrapeInterval: string;
   scrapeTimeout: string;
-}
+};
 
 export interface DroppedTarget {
   discoveredLabels: Labels;

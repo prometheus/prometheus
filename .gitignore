@@ -8,7 +8,9 @@
 /promtool
 benchmark.txt
 /data
+/data-agent
 /cmd/prometheus/data
+/cmd/prometheus/data-agent
 /cmd/prometheus/debug
 /benchout
 /cmd/promtool/data
@@ -21,7 +23,6 @@ benchmark.txt
 
 npm_licenses.tar.bz2
 /web/ui/static/react
-/web/ui/assets_vfsdata.go
 
 /vendor
 /.build

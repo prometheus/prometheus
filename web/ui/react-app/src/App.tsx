@@ -4,6 +4,7 @@ import { Container } from 'reactstrap';
 
 import { BrowserRouter as Router, Redirect, Switch, Route } from 'react-router-dom';
 import {
+  AgentPage,
   AlertsPage,
   ConfigPage,
   FlagsPage,
@@ -22,14 +23,16 @@ import useMedia from './hooks/useMedia';
 
 interface AppProps {
   consolesLink: string | null;
+  agentMode: boolean;
 }
 
-const App: FC<AppProps> = ({ consolesLink }) => {
+const App: FC<AppProps> = ({ consolesLink, agentMode }) => {
   // This dynamically/generically determines the pathPrefix by stripping the first known
   // endpoint suffix from the window location path. It works out of the box for both direct
   // hosting and reverse proxy deployments with no additional configurations required.
   let basePath = window.location.pathname;
   const paths = [
+    '/agent',
     '/graph',
     '/alerts',
     '/status',
@@ -70,14 +73,17 @@ const App: FC<AppProps> = ({ consolesLink }) => {
       <Theme />
       <PathPrefixContext.Provider value={basePath}>
         <Router basename={basePath}>
-          <Navigation consolesLink={consolesLink} />
+          <Navigation consolesLink={consolesLink} agentMode={agentMode} />
           <Container fluid style={{ paddingTop: 70 }}>
             <Switch>
-              <Redirect exact from="/" to={`graph`} />
+              <Redirect exact from="/" to={agentMode ? '/agent' : '/graph'} />
               {/*
               NOTE: Any route added here needs to also be added to the list of
               React-handled router paths ("reactRouterPaths") in /web/web.go.
             */}
+              <Route path="/agent">
+                <AgentPage />
+              </Route>
               <Route path="/graph">
                 <PanelListPage />
               </Route>
@@ -97,7 +103,7 @@ const App: FC<AppProps> = ({ consolesLink }) => {
                 <ServiceDiscoveryPage />
               </Route>
               <Route path="/status">
-                <StatusPage />
+                <StatusPage agentMode={agentMode} />
               </Route>
               <Route path="/tsdb-status">
                 <TSDBStatusPage />

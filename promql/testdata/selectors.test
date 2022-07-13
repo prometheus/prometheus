@@ -29,6 +29,12 @@ eval instant at 18000s rate(http_requests{instance!="3"}[1m] offset 10000s)
 	{job="api-server", instance="0", group="canary"} 3
 	{job="api-server", instance="1", group="canary"} 4
 
+eval instant at 4000s rate(http_requests{instance!="3"}[1m] offset -4000s)
+	{job="api-server", instance="0", group="production"} 1
+	{job="api-server", instance="1", group="production"} 2
+	{job="api-server", instance="0", group="canary"} 3
+	{job="api-server", instance="1", group="canary"} 4
+
 eval instant at 18000s rate(http_requests[40s]) - rate(http_requests[1m] offset 10000s)
 	{job="api-server", instance="0", group="production"} 2
 	{job="api-server", instance="1", group="production"} 1

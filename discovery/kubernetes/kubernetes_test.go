@@ -16,11 +16,11 @@ package kubernetes
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/version"
@@ -54,7 +54,15 @@ func makeDiscoveryWithVersion(role Role, nsDiscovery NamespaceDiscovery, k8sVer 
 		logger:             log.NewNopLogger(),
 		role:               role,
 		namespaceDiscovery: &nsDiscovery,
+		ownNamespace:       "own-ns",
 	}, clientset
+}
+
+// makeDiscoveryWithMetadata creates a kubernetes.Discovery instance with the specified metadata config.
+func makeDiscoveryWithMetadata(role Role, nsDiscovery NamespaceDiscovery, attachMetadata AttachMetadataConfig, objects ...runtime.Object) (*Discovery, kubernetes.Interface) {
+	d, k8s := makeDiscovery(role, nsDiscovery, objects...)
+	d.attachMetadata = attachMetadata
+	return d, k8s
 }
 
 type k8sDiscoveryTest struct {
@@ -86,15 +94,18 @@ func (d k8sDiscoveryTest) Run(t *testing.T) {
 	// Ensure that discovery has a discoverer set. This prevents a race
 	// condition where the above go routine may or may not have set a
 	// discoverer yet.
+	lastDiscoverersCount := 0
+	dis := d.discovery.(*Discovery)
 	for {
-		dis := d.discovery.(*Discovery)
 		dis.RLock()
 		l := len(dis.discoverers)
 		dis.RUnlock()
-		if l > 0 {
+		if l > 0 && l == lastDiscoverersCount {
 			break
 		}
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
+
+		lastDiscoverersCount = l
 	}
 
 	resChan := make(chan map[string]*targetgroup.Group)
@@ -152,16 +163,32 @@ Loop:
 
 func requireTargetGroups(t *testing.T, expected, res map[string]*targetgroup.Group) {
 	t.Helper()
-	b1, err := json.Marshal(expected)
+	b1, err := marshalTargetGroups(expected)
 	if err != nil {
 		panic(err)
 	}
-	b2, err := json.Marshal(res)
+	b2, err := marshalTargetGroups(res)
 	if err != nil {
 		panic(err)
 	}
 
 	require.Equal(t, string(b1), string(b2))
+}
+
+// marshalTargetGroups serializes a set of target groups to JSON, ignoring the
+// custom MarshalJSON function defined on the targetgroup.Group struct.
+// marshalTargetGroups can be used for making exact comparisons between target groups
+// as it will serialize all target labels.
+func marshalTargetGroups(tgs map[string]*targetgroup.Group) ([]byte, error) {
+	type targetGroupAlias targetgroup.Group
+
+	aliases := make(map[string]*targetGroupAlias, len(tgs))
+	for k, v := range tgs {
+		tg := targetGroupAlias(*v)
+		aliases[k] = &tg
+	}
+
+	return json.Marshal(aliases)
 }
 
 type hasSynced interface {
@@ -171,13 +198,15 @@ type hasSynced interface {
 	hasSynced() bool
 }
 
-var _ hasSynced = &Discovery{}
-var _ hasSynced = &Node{}
-var _ hasSynced = &Endpoints{}
-var _ hasSynced = &EndpointSlice{}
-var _ hasSynced = &Ingress{}
-var _ hasSynced = &Pod{}
-var _ hasSynced = &Service{}
+var (
+	_ hasSynced = &Discovery{}
+	_ hasSynced = &Node{}
+	_ hasSynced = &Endpoints{}
+	_ hasSynced = &EndpointSlice{}
+	_ hasSynced = &Ingress{}
+	_ hasSynced = &Pod{}
+	_ hasSynced = &Service{}
+)
 
 func (d *Discovery) hasSynced() bool {
 	d.RLock()
@@ -209,7 +238,7 @@ func (i *Ingress) hasSynced() bool {
 }
 
 func (p *Pod) hasSynced() bool {
-	return p.informer.HasSynced()
+	return p.podInf.HasSynced()
 }
 
 func (s *Service) hasSynced() bool {

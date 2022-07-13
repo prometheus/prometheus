@@ -1,3 +1,4 @@
+import Agent from './agent/Agent';
 import Alerts from './alerts/Alerts';
 import Config from './config/Config';
 import Flags from './flags/Flags';
@@ -9,6 +10,7 @@ import PanelList from './graph/PanelList';
 import TSDBStatus from './tsdbStatus/TSDBStatus';
 import { withStartingIndicator } from '../components/withStartingIndicator';
 
+const AgentPage = withStartingIndicator(Agent);
 const AlertsPage = withStartingIndicator(Alerts);
 const ConfigPage = withStartingIndicator(Config);
 const FlagsPage = withStartingIndicator(Flags);
@@ -21,6 +23,7 @@ const PanelListPage = withStartingIndicator(PanelList);
 
 // prettier-ignore
 export {
+  AgentPage,
   AlertsPage,
   ConfigPage,
   FlagsPage,

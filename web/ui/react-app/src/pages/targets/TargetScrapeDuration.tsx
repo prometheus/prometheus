@@ -24,6 +24,7 @@ const TargetScrapeDuration: FC<TargetScrapeDurationProps> = ({ duration, interva
         isOpen={scrapeTooltipOpen}
         toggle={() => setScrapeTooltipOpen(!scrapeTooltipOpen)}
         target={CSS.escape(id)}
+        placement={'right-end'}
         style={{ maxWidth: 'none', textAlign: 'left' }}
       >
         <Fragment>

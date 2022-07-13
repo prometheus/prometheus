@@ -99,7 +99,7 @@ func TestBufferedSeriesIterator(t *testing.T) {
 		require.Equal(t, exp, b, "buffer mismatch")
 	}
 	sampleEq := func(ets int64, ev float64) {
-		ts, v := it.Values()
+		ts, v := it.At()
 		require.Equal(t, ets, ts, "timestamp mismatch")
 		require.Equal(t, ev, v, "value mismatch")
 	}
@@ -149,6 +149,7 @@ func TestBufferedSeriesIterator(t *testing.T) {
 	bufferEq([]sample{{t: 99, v: 8}, {t: 100, v: 9}})
 
 	require.False(t, it.Next(), "next succeeded unexpectedly")
+	require.False(t, it.Seek(1024), "seek succeeded unexpectedly")
 }
 
 // At() should not be called once Next() returns false.

@@ -15,6 +15,7 @@ package dns
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"strings"
@@ -24,7 +25,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/miekg/dns"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 
@@ -105,7 +105,7 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 			return errors.New("a port is required in DNS-SD configs for all record types except SRV")
 		}
 	default:
-		return errors.Errorf("invalid DNS-SD records type %s", c.Type)
+		return fmt.Errorf("invalid DNS-SD records type %s", c.Type)
 	}
 	return nil
 }
@@ -163,7 +163,7 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	wg.Add(len(d.names))
 	for _, name := range d.names {
 		go func(n string) {
-			if err := d.refreshOne(ctx, n, ch); err != nil && err != context.Canceled {
+			if err := d.refreshOne(ctx, n, ch); err != nil && !errors.Is(err, context.Canceled) {
 				level.Error(d.logger).Log("msg", "Error refreshing DNS targets", "err", err)
 			}
 			wg.Done()
@@ -265,7 +265,7 @@ func (d *Discovery) refreshOne(ctx context.Context, name string, ch chan<- *targ
 func lookupWithSearchPath(name string, qtype uint16, logger log.Logger) (*dns.Msg, error) {
 	conf, err := dns.ClientConfigFromFile(resolvConf)
 	if err != nil {
-		return nil, errors.Wrap(err, "could not load resolv.conf")
+		return nil, fmt.Errorf("could not load resolv.conf: %w", err)
 	}
 
 	allResponsesValid := true
@@ -291,7 +291,7 @@ func lookupWithSearchPath(name string, qtype uint16, logger log.Logger) (*dns.Ms
 		return &dns.Msg{}, nil
 	}
 	// Outcome 3: boned.
-	return nil, errors.Errorf("could not resolve %q: all servers responded with errors to at least one search domain", name)
+	return nil, fmt.Errorf("could not resolve %q: all servers responded with errors to at least one search domain", name)
 }
 
 // lookupFromAnyServer uses all configured servers to try and resolve a specific
@@ -327,7 +327,7 @@ func lookupFromAnyServer(name string, qtype uint16, conf *dns.ClientConfig, logg
 		}
 	}
 
-	return nil, errors.Errorf("could not resolve %s: no servers returned a viable answer", name)
+	return nil, fmt.Errorf("could not resolve %s: no servers returned a viable answer", name)
 }
 
 // askServerForName makes a request to a specific DNS server for a specific

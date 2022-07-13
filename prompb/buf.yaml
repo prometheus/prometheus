@@ -1,0 +1,18 @@
+version: v1
+name: buf.build/prometheus/prometheus
+lint:
+  ignore_only:
+    ENUM_VALUE_PREFIX:
+      - remote.proto
+      - types.proto
+    ENUM_ZERO_VALUE_SUFFIX:
+      - remote.proto
+      - types.proto
+    PACKAGE_DIRECTORY_MATCH:
+      - remote.proto
+      - types.proto
+    PACKAGE_VERSION_SUFFIX:
+      - remote.proto
+      - types.proto
+deps:
+  - buf.build/gogo/protobuf

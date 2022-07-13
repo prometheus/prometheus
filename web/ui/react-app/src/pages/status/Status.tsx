@@ -83,28 +83,35 @@ const StatusWithStatusIndicator = withStatusIndicator(StatusContent);
 
 StatusContent.displayName = 'Status';
 
-const Status: FC = () => {
+const StatusResult: FC<{ fetchPath: string; title: string }> = ({ fetchPath, title }) => {
+  const { response, isLoading, error } = useFetch(fetchPath);
+  return (
+    <StatusWithStatusIndicator
+      key={title}
+      data={response.data}
+      title={title}
+      isLoading={isLoading}
+      error={error}
+      componentTitle={title}
+    />
+  );
+};
+
+const Status: FC<{ agentMode: boolean }> = ({ agentMode }) => {
   const pathPrefix = usePathPrefix();
   const path = `${pathPrefix}/${API_PATH}`;
 
   return (
     <>
       {[
-        { fetchResult: useFetch<Record<string, string>>(`${path}/status/runtimeinfo`), title: 'Runtime Information' },
-        { fetchResult: useFetch<Record<string, string>>(`${path}/status/buildinfo`), title: 'Build Information' },
-        { fetchResult: useFetch<Record<string, string>>(`${path}/alertmanagers`), title: 'Alertmanagers' },
-      ].map(({ fetchResult, title }) => {
-        const { response, isLoading, error } = fetchResult;
-        return (
-          <StatusWithStatusIndicator
-            key={title}
-            data={response.data}
-            title={title}
-            isLoading={isLoading}
-            error={error}
-            componentTitle={title}
-          />
-        );
+        { fetchPath: `${path}/status/runtimeinfo`, title: 'Runtime Information' },
+        { fetchPath: `${path}/status/buildinfo`, title: 'Build Information' },
+        { fetchPath: `${path}/alertmanagers`, title: 'Alertmanagers' },
+      ].map(({ fetchPath, title }) => {
+        if (agentMode && title === 'Alertmanagers') {
+          return null;
+        }
+        return <StatusResult fetchPath={fetchPath} title={title} />;
       })}
     </>
   );

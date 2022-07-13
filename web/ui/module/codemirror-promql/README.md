@@ -1,27 +1,17 @@
 CodeMirror-promql
 =================
-[![CircleCI](https://circleci.com/gh/prometheus-community/codemirror-promql.svg?style=shield)](https://circleci.com/gh/prometheus-community/codemirror-promql) [![GitHub license](https://img.shields.io/badge/license-Apache-blue.svg)](./LICENSE)
-[![NPM version](https://img.shields.io/npm/v/codemirror-promql.svg)](https://www.npmjs.org/package/codemirror-promql) [![codecov](https://codecov.io/gh/prometheus-community/codemirror-promql/branch/master/graph/badge.svg?token=1OSVPBDKZC)](https://codecov.io/gh/prometheus-community/codemirror-promql)
-
-## Overview
 
 This project provides a mode for [CodeMirror Next](https://codemirror.net/6) that handles syntax highlighting, linting
 and autocompletion for PromQL ([Prometheus Query Language](https://prometheus.io/docs/introduction/overview/)).
 
 ![preview](https://user-images.githubusercontent.com/4548045/95660829-d5e4b680-0b2a-11eb-9ecb-41dca6396273.gif)
 
-## Where does it come from?
-
-The authoritative copy of this code lives in `prometheus/prometheus` and is synced to 
-`prometheus-community/codemirror-promql` on a regular basis by a bot. Please contribute any code changes to the code 
-in https://github.com/prometheus/prometheus/tree/main/web/ui/module/codemirror-promql.
-
-### Installation
+## Installation
 
 This mode is available as a npm package:
 
 ```bash
-npm install --save codemirror-promql
+npm install --save @prometheus-io/codemirror-promql
 ```
 
 **Note:** You will have to manually install different packages that are part
@@ -29,14 +19,14 @@ of [CodeMirror Next](https://codemirror.net/6), as they are a peer dependency to
 packages you need to install:
 
 * **@codemirror/autocomplete**
-* **@codemirror/highlight**
 * **@codemirror/language**
 * **@codemirror/lint**
 * **@codemirror/state**
 * **@codemirror/view**
+* **@lezer/common**
 
 ```bash
-npm install --save @codemirror/autocomplete @codemirror/highlight @codemirror/language @codemirror/lint @codemirror/state @codemirror/view
+npm install --save @codemirror/autocomplete @codemirror/language @codemirror/lint @codemirror/state @codemirror/view @lezer/common
 ```
 
 **Note 2**: that's the minimum required to install the lib. You would probably need to install as well the dependency
@@ -57,10 +47,10 @@ If you want to enjoy about the different features provided without taking too mu
 them, then the easiest way is this one:
 
 ```typescript
-import { PromQLExtension } from 'codemirror-promql';
-import { basicSetup } from '@codemirror/basic-setup';
-import { EditorState } from '@codemirror/state';
-import { EditorView } from '@codemirror/view';
+import {PromQLExtension} from '@prometheus-io/codemirror-promql';
+import {basicSetup} from '@codemirror/basic-setup';
+import {EditorState} from '@codemirror/state';
+import {EditorView} from '@codemirror/view';
 
 const promQL = new PromQLExtension()
 new EditorView({
@@ -108,7 +98,7 @@ By default, the limit is 10 000 metrics.
 Use it cautiously. A high value of this limit can cause a crash of your browser due to too many data fetched.
 
 ```typescript
-const promQL = new PromQLExtension().setComplete({ maxMetricsMetadata: 10000 })
+const promQL = new PromQLExtension().setComplete({maxMetricsMetadata: 10000})
 ```
 
 #### Connect the autocompletion extension to a remote Prometheus server
@@ -127,7 +117,7 @@ Note: this is the only mandatory parameter in case you want to use the default P
 parameter, the rest of the config will be ignored, and the Prometheus client won't be initialized.
 
 ```typescript
-const promQL = new PromQLExtension().setComplete({ remote: { url: 'https://prometheus.land' } })
+const promQL = new PromQLExtension().setComplete({remote: {url: 'https://prometheus.land'}})
 ```
 
 ###### Override FetchFn
@@ -136,7 +126,7 @@ In case your Prometheus server is protected and requires a special HTTP client, 
 that is used to perform any required HTTP request.
 
 ```typescript
-const promQL = new PromQLExtension().setComplete({ remote: { fetchFn: myHTTPClient } })
+const promQL = new PromQLExtension().setComplete({remote: {fetchFn: myHTTPClient}})
 ```
 
 ###### Duration to use for looking back when retrieving metrics / labels
@@ -148,7 +138,7 @@ In case you would like to provide your own duration, you can override the variab
 value is `12 * 60 * 60 * 1000` (12h). The value must be defined in **milliseconds**.
 
 ```typescript
-const promQL = new PromQLExtension().setComplete({ remote: { lookbackInterval: 12 * 60 * 60 * 1000 } })
+const promQL = new PromQLExtension().setComplete({remote: {lookbackInterval: 12 * 60 * 60 * 1000}})
 ```
 
 ###### Error Handling
@@ -157,7 +147,7 @@ You can set up your own error handler to catch any HTTP error that can occur whe
 Prometheus.
 
 ```typescript
-const promQL = new PromQLExtension().setComplete({ remote: { httpErrorHandler: (error: any) => console.error(error) } })
+const promQL = new PromQLExtension().setComplete({remote: {httpErrorHandler: (error: any) => console.error(error)}})
 ```
 
 ###### HTTP method used
@@ -168,17 +158,18 @@ endpoints `/api/v1/labels` and `/api/v1/series`.
 You can change it to use the HTTP method `GET` if you prefer.
 
 ```typescript
-const promQL = new PromQLExtension().setComplete({ remote: { httpMethod: 'GET' } })
+const promQL = new PromQLExtension().setComplete({remote: {httpMethod: 'GET'}})
 ```
 
 ###### Override the API Prefix
 
-The default Prometheus Client, when building the query to get data from Prometheus, is using an API prefix which is by default `/api/v1`.
+The default Prometheus Client, when building the query to get data from Prometheus, is using an API prefix which is by
+default `/api/v1`.
 
 You can override this value like this:
 
 ```typescript
-const promql = new PromQLExtension().setComplete({ remote: { apiPrefix: '/my/api/prefix' } })
+const promql = new PromQLExtension().setComplete({remote: {apiPrefix: '/my/api/prefix'}})
 ```
 
 ###### Cache
@@ -192,7 +183,7 @@ The data are stored in the cache for a limited amount of time defined by the var
 minutes. The value must be defined in **milliseconds**.
 
 ```typescript
-const promQL = new PromQLExtension().setComplete({ remote: { cache: { maxAge: 5 * 60 * 1000 } } })
+const promQL = new PromQLExtension().setComplete({remote: {cache: {maxAge: 5 * 60 * 1000}}})
 ```
 
 ###### Initial Metric List
@@ -222,11 +213,11 @@ const promQL = new PromQLExtension().setComplete({
 ##### Override the default Prometheus client
 
 In case you are not satisfied by our default Prometheus client, you can still provide your own. It has to implement the
-interface [PrometheusClient](https://github.com/prometheus-community/codemirror-promql/blob/master/src/lang-promql/client/prometheus.ts#L111-L117)
+interface [PrometheusClient](https://github.com/prometheus/codemirror-promql/blob/main/src/client/prometheus.ts#L24-L39)
 .
 
 ```typescript
-const promQL = new PromQLExtension().setComplete({ remote: { prometheusClient: MyPrometheusClient } })
+const promQL = new PromQLExtension().setComplete({remote: {prometheusClient: MyPrometheusClient}})
 ```
 
 #### Provide your own implementation of the autocompletion
@@ -234,7 +225,7 @@ const promQL = new PromQLExtension().setComplete({ remote: { prometheusClient: M
 In case you would like to provide you own implementation of the autocompletion, you can simply do it like that:
 
 ```typescript
-const promQL = new PromQLExtension().setComplete({ completeStrategy: myCustomImpl })
+const promQL = new PromQLExtension().setComplete({completeStrategy: myCustomImpl})
 ```
 
 Note: In case this parameter is provided, then the rest of the configuration is ignored.
@@ -246,4 +237,4 @@ Note: In case this parameter is provided, then the rest of the configuration is 
 
 ## License
 
-Apache License 2.0, see [LICENSE](https://github.com/prometheus-community/codemirror-promql/blob/master/LICENSE).
+The code is licensed under an [Apache 2.0](https://github.com/prometheus/prometheus/blob/main/LICENSE) license.

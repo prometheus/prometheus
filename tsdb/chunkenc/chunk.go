@@ -89,6 +89,36 @@ type Iterator interface {
 	Err() error
 }
 
+// MockSeriesIterator returns an iterator for a mock series with custom timeStamps and values.
+func MockSeriesIterator(timestamps []int64, values []float64) Iterator {
+	return &mockSeriesIterator{
+		timeStamps: timestamps,
+		values:     values,
+		currIndex:  0,
+	}
+}
+
+type mockSeriesIterator struct {
+	timeStamps []int64
+	values     []float64
+	currIndex  int
+}
+
+func (it *mockSeriesIterator) Seek(int64) bool { return false }
+func (it *mockSeriesIterator) At() (int64, float64) {
+	return it.timeStamps[it.currIndex], it.values[it.currIndex]
+}
+
+func (it *mockSeriesIterator) Next() bool {
+	if it.currIndex < len(it.timeStamps)-1 {
+		it.currIndex++
+		return true
+	}
+
+	return false
+}
+func (it *mockSeriesIterator) Err() error { return nil }
+
 // NewNopIterator returns a new chunk iterator that does not hold any data.
 func NewNopIterator() Iterator {
 	return nopIterator{}

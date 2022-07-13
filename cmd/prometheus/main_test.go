@@ -14,13 +14,16 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -30,14 +33,16 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/notifier"
-	"github.com/prometheus/prometheus/pkg/labels"
 	"github.com/prometheus/prometheus/rules"
 )
 
-var promPath = os.Args[0]
-var promConfig = filepath.Join("..", "..", "documentation", "examples", "prometheus.yml")
-var promData = filepath.Join(os.TempDir(), "data")
+var (
+	promPath    = os.Args[0]
+	promConfig  = filepath.Join("..", "..", "documentation", "examples", "prometheus.yml")
+	agentConfig = filepath.Join("..", "..", "documentation", "examples", "prometheus-agent.yml")
+)
 
 func TestMain(m *testing.M) {
 	for i, arg := range os.Args {
@@ -52,7 +57,6 @@ func TestMain(m *testing.M) {
 	os.Setenv("no_proxy", "localhost,127.0.0.1,0.0.0.0,:")
 
 	exitCode := m.Run()
-	os.RemoveAll(promData)
 	os.Exit(exitCode)
 }
 
@@ -118,7 +122,8 @@ func TestFailedStartupExitCode(t *testing.T) {
 	err := prom.Run()
 	require.Error(t, err)
 
-	if exitError, ok := err.(*exec.ExitError); ok {
+	var exitError *exec.ExitError
+	if errors.As(err, &exitError) {
 		status := exitError.Sys().(syscall.WaitStatus)
 		require.Equal(t, expectedExitStatus, status.ExitStatus())
 	} else {
@@ -202,13 +207,13 @@ func TestWALSegmentSizeBounds(t *testing.T) {
 	}
 
 	for size, expectedExitStatus := range map[string]int{"9MB": 1, "257MB": 1, "10": 2, "1GB": 1, "12MB": 0} {
-		prom := exec.Command(promPath, "-test.main", "--storage.tsdb.wal-segment-size="+size, "--web.listen-address=0.0.0.0:0", "--config.file="+promConfig)
+		prom := exec.Command(promPath, "-test.main", "--storage.tsdb.wal-segment-size="+size, "--web.listen-address=0.0.0.0:0", "--config.file="+promConfig, "--storage.tsdb.path="+filepath.Join(t.TempDir(), "data"))
 
 		// Log stderr in case of failure.
 		stderr, err := prom.StderrPipe()
 		require.NoError(t, err)
 		go func() {
-			slurp, _ := ioutil.ReadAll(stderr)
+			slurp, _ := io.ReadAll(stderr)
 			t.Log(string(slurp))
 		}()
 
@@ -223,13 +228,15 @@ func TestWALSegmentSizeBounds(t *testing.T) {
 				t.Errorf("prometheus should be still running: %v", err)
 			case <-time.After(5 * time.Second):
 				prom.Process.Kill()
+				<-done
 			}
 			continue
 		}
 
 		err = prom.Wait()
 		require.Error(t, err)
-		if exitError, ok := err.(*exec.ExitError); ok {
+		var exitError *exec.ExitError
+		if errors.As(err, &exitError) {
 			status := exitError.Sys().(syscall.WaitStatus)
 			require.Equal(t, expectedExitStatus, status.ExitStatus())
 		} else {
@@ -239,18 +246,20 @@ func TestWALSegmentSizeBounds(t *testing.T) {
 }
 
 func TestMaxBlockChunkSegmentSizeBounds(t *testing.T) {
+	t.Parallel()
+
 	if testing.Short() {
 		t.Skip("skipping test in short mode.")
 	}
 
 	for size, expectedExitStatus := range map[string]int{"512KB": 1, "1MB": 0} {
-		prom := exec.Command(promPath, "-test.main", "--storage.tsdb.max-block-chunk-segment-size="+size, "--web.listen-address=0.0.0.0:0", "--config.file="+promConfig)
+		prom := exec.Command(promPath, "-test.main", "--storage.tsdb.max-block-chunk-segment-size="+size, "--web.listen-address=0.0.0.0:0", "--config.file="+promConfig, "--storage.tsdb.path="+filepath.Join(t.TempDir(), "data"))
 
 		// Log stderr in case of failure.
 		stderr, err := prom.StderrPipe()
 		require.NoError(t, err)
 		go func() {
-			slurp, _ := ioutil.ReadAll(stderr)
+			slurp, _ := io.ReadAll(stderr)
 			t.Log(string(slurp))
 		}()
 
@@ -265,13 +274,15 @@ func TestMaxBlockChunkSegmentSizeBounds(t *testing.T) {
 				t.Errorf("prometheus should be still running: %v", err)
 			case <-time.After(5 * time.Second):
 				prom.Process.Kill()
+				<-done
 			}
 			continue
 		}
 
 		err = prom.Wait()
 		require.Error(t, err)
-		if exitError, ok := err.(*exec.ExitError); ok {
+		var exitError *exec.ExitError
+		if errors.As(err, &exitError) {
 			status := exitError.Sys().(syscall.WaitStatus)
 			require.Equal(t, expectedExitStatus, status.ExitStatus())
 		} else {
@@ -281,12 +292,7 @@ func TestMaxBlockChunkSegmentSizeBounds(t *testing.T) {
 }
 
 func TestTimeMetrics(t *testing.T) {
-	tmpDir, err := ioutil.TempDir("", "time_metrics_e2e")
-	require.NoError(t, err)
-
-	defer func() {
-		require.NoError(t, os.RemoveAll(tmpDir))
-	}()
+	tmpDir := t.TempDir()
 
 	reg := prometheus.NewRegistry()
 	db, err := openDBWithMetrics(tmpDir, log.NewNopLogger(), reg, nil, nil)
@@ -346,4 +352,132 @@ func getCurrentGaugeValuesFor(t *testing.T, reg prometheus.Gatherer, metricNames
 		}
 	}
 	return res
+}
+
+func TestAgentSuccessfulStartup(t *testing.T) {
+	prom := exec.Command(promPath, "-test.main", "--enable-feature=agent", "--config.file="+agentConfig)
+	require.NoError(t, prom.Start())
+
+	actualExitStatus := 0
+	done := make(chan error, 1)
+
+	go func() { done <- prom.Wait() }()
+	select {
+	case err := <-done:
+		t.Logf("prometheus agent should be still running: %v", err)
+		actualExitStatus = prom.ProcessState.ExitCode()
+	case <-time.After(5 * time.Second):
+		prom.Process.Kill()
+	}
+	require.Equal(t, 0, actualExitStatus)
+}
+
+func TestAgentFailedStartupWithServerFlag(t *testing.T) {
+	prom := exec.Command(promPath, "-test.main", "--enable-feature=agent", "--storage.tsdb.path=.", "--config.file="+promConfig)
+
+	output := bytes.Buffer{}
+	prom.Stderr = &output
+	require.NoError(t, prom.Start())
+
+	actualExitStatus := 0
+	done := make(chan error, 1)
+
+	go func() { done <- prom.Wait() }()
+	select {
+	case err := <-done:
+		t.Logf("prometheus agent should not be running: %v", err)
+		actualExitStatus = prom.ProcessState.ExitCode()
+	case <-time.After(5 * time.Second):
+		prom.Process.Kill()
+	}
+
+	require.Equal(t, 3, actualExitStatus)
+
+	// Assert on last line.
+	lines := strings.Split(output.String(), "\n")
+	last := lines[len(lines)-1]
+	require.Equal(t, "The following flag(s) can not be used in agent mode: [\"--storage.tsdb.path\"]", last)
+}
+
+func TestAgentFailedStartupWithInvalidConfig(t *testing.T) {
+	prom := exec.Command(promPath, "-test.main", "--enable-feature=agent", "--config.file="+promConfig)
+	require.NoError(t, prom.Start())
+
+	actualExitStatus := 0
+	done := make(chan error, 1)
+
+	go func() { done <- prom.Wait() }()
+	select {
+	case err := <-done:
+		t.Logf("prometheus agent should not be running: %v", err)
+		actualExitStatus = prom.ProcessState.ExitCode()
+	case <-time.After(5 * time.Second):
+		prom.Process.Kill()
+	}
+	require.Equal(t, 2, actualExitStatus)
+}
+
+func TestModeSpecificFlags(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode.")
+	}
+
+	testcases := []struct {
+		mode       string
+		arg        string
+		exitStatus int
+	}{
+		{"agent", "--storage.agent.path", 0},
+		{"server", "--storage.tsdb.path", 0},
+		{"server", "--storage.agent.path", 3},
+		{"agent", "--storage.tsdb.path", 3},
+	}
+
+	for _, tc := range testcases {
+		t.Run(fmt.Sprintf("%s mode with option %s", tc.mode, tc.arg), func(t *testing.T) {
+			args := []string{"-test.main", tc.arg, t.TempDir()}
+
+			if tc.mode == "agent" {
+				args = append(args, "--enable-feature=agent", "--config.file="+agentConfig)
+			} else {
+				args = append(args, "--config.file="+promConfig)
+			}
+
+			prom := exec.Command(promPath, args...)
+
+			// Log stderr in case of failure.
+			stderr, err := prom.StderrPipe()
+			require.NoError(t, err)
+			go func() {
+				slurp, _ := io.ReadAll(stderr)
+				t.Log(string(slurp))
+			}()
+
+			err = prom.Start()
+			require.NoError(t, err)
+
+			if tc.exitStatus == 0 {
+				done := make(chan error, 1)
+				go func() { done <- prom.Wait() }()
+				select {
+				case err := <-done:
+					t.Errorf("prometheus should be still running: %v", err)
+				case <-time.After(5 * time.Second):
+					prom.Process.Kill()
+					<-done
+				}
+				return
+			}
+
+			err = prom.Wait()
+			require.Error(t, err)
+			var exitError *exec.ExitError
+			if errors.As(err, &exitError) {
+				status := exitError.Sys().(syscall.WaitStatus)
+				require.Equal(t, tc.exitStatus, status.ExitStatus())
+			} else {
+				t.Errorf("unable to retrieve the exit status for prometheus: %v", err)
+			}
+		})
+	}
 }

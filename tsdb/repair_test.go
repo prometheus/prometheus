@@ -14,25 +14,20 @@
 package tsdb
 
 import (
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/index"
 )
 
 func TestRepairBadIndexVersion(t *testing.T) {
-	tmpDir, err := ioutil.TempDir("", "test")
-	require.NoError(t, err)
-	t.Cleanup(func() {
-		require.NoError(t, os.RemoveAll(tmpDir))
-	})
+	tmpDir := t.TempDir()
 
 	// The broken index used in this test was written by the following script
 	// at a broken revision.
@@ -74,11 +69,11 @@ func TestRepairBadIndexVersion(t *testing.T) {
 
 	// Check the current db.
 	// In its current state, lookups should fail with the fixed code.
-	_, _, err = readMetaFile(tmpDbDir)
+	_, _, err := readMetaFile(tmpDbDir)
 	require.Error(t, err)
 
 	// Touch chunks dir in block to imitate them.
-	require.NoError(t, os.MkdirAll(filepath.Join(tmpDbDir, "chunks"), 0777))
+	require.NoError(t, os.MkdirAll(filepath.Join(tmpDbDir, "chunks"), 0o777))
 
 	// Read current index to check integrity.
 	r, err := index.NewFileReader(filepath.Join(tmpDbDir, indexFilename))

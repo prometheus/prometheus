@@ -5,7 +5,9 @@ import { Alert, Table } from 'reactstrap';
 import SeriesName from './SeriesName';
 import { Metric } from '../../types/types';
 
-export interface QueryResult {
+import moment from 'moment';
+
+export interface DataTableProps {
   data:
     | null
     | {
@@ -24,6 +26,7 @@ export interface QueryResult {
         resultType: 'string';
         result: string;
       };
+  useLocalTime: boolean;
 }
 
 interface InstantSample {
@@ -47,7 +50,7 @@ const limitSeries = <S extends InstantSample | RangeSamples>(series: S[]): S[] =
   return series;
 };
 
-const DataTable: FC<QueryResult> = ({ data }) => {
+const DataTable: FC<DataTableProps> = ({ data, useLocalTime }) => {
   if (data === null) {
     return <Alert color="light">No data queried yet</Alert>;
   }
@@ -75,18 +78,22 @@ const DataTable: FC<QueryResult> = ({ data }) => {
       limited = rows.length !== data.result.length;
       break;
     case 'matrix':
-      rows = (limitSeries(data.result) as RangeSamples[]).map((s, index) => {
-        const valueText = s.values
-          .map((v) => {
-            return v[1] + ' @' + v[0];
-          })
-          .join('\n');
+      rows = (limitSeries(data.result) as RangeSamples[]).map((s, seriesIdx) => {
+        const valuesAndTimes = s.values.map((v, valIdx) => {
+          const printedDatetime = moment.unix(v[0]).toISOString(useLocalTime);
+          return (
+            <React.Fragment key={valIdx}>
+              {v[1]} @{<span title={printedDatetime}>{v[0]}</span>}
+              <br />
+            </React.Fragment>
+          );
+        });
         return (
-          <tr style={{ whiteSpace: 'pre' }} key={index}>
+          <tr style={{ whiteSpace: 'pre' }} key={seriesIdx}>
             <td>
               <SeriesName labels={s.metric} format={doFormat} />
             </td>
-            <td>{valueText}</td>
+            <td>{valuesAndTimes}</td>
           </tr>
         );
       });
