@@ -24,7 +24,7 @@ import (
 )
 
 const (
-	// Minimum recorded peak since since the last shrinking of chunkWriteQueue.chunkrefMap to shrink it again.
+	// Minimum recorded peak since the last shrinking of chunkWriteQueue.chunkrefMap to shrink it again.
 	chunkRefMapShrinkThreshold = 1000
 
 	// Minimum interval between shrinking of chunkWriteQueue.chunkRefMap.
@@ -205,8 +205,7 @@ func (c *chunkWriteQueue) addJob(job chunkWriteJob) (err error) {
 	}
 	c.chunkRefMapMtx.Unlock()
 
-	ok := c.jobs.push(job)
-	if !ok {
+	if ok := c.jobs.push(job); !ok {
 		c.chunkRefMapMtx.Lock()
 		delete(c.chunkRefMap, job.ref)
 		c.chunkRefMapMtx.Unlock()

@@ -14,13 +14,16 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"os/exec"
 	"runtime"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -29,6 +32,21 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
 )
+
+var promtoolPath = os.Args[0]
+
+func TestMain(m *testing.M) {
+	for i, arg := range os.Args {
+		if arg == "-test.main" {
+			os.Args = append(os.Args[:i], os.Args[i+1:]...)
+			main()
+			return
+		}
+	}
+
+	exitCode := m.Run()
+	os.Exit(exitCode)
+}
 
 func TestQueryRange(t *testing.T) {
 	s, getRequest := mockServer(200, `{"status": "success", "data": {"resultType": "matrix", "result": []}}`)
@@ -358,4 +376,60 @@ func TestCheckMetricsExtended(t *testing.T) {
 			percentage:  float64(1) / float64(27),
 		},
 	}, stats)
+}
+
+func TestExitCodes(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode.")
+	}
+
+	for _, c := range []struct {
+		file      string
+		exitCode  int
+		lintIssue bool
+	}{
+		{
+			file: "prometheus-config.good.yml",
+		},
+		{
+			file:     "prometheus-config.bad.yml",
+			exitCode: 1,
+		},
+		{
+			file:     "prometheus-config.nonexistent.yml",
+			exitCode: 1,
+		},
+		{
+			file:      "prometheus-config.lint.yml",
+			lintIssue: true,
+			exitCode:  3,
+		},
+	} {
+		t.Run(c.file, func(t *testing.T) {
+			for _, lintFatal := range []bool{true, false} {
+				t.Run(fmt.Sprintf("%t", lintFatal), func(t *testing.T) {
+					args := []string{"-test.main", "check", "config", "testdata/" + c.file}
+					if lintFatal {
+						args = append(args, "--lint-fatal")
+					}
+					tool := exec.Command(promtoolPath, args...)
+					err := tool.Run()
+					if c.exitCode == 0 || (c.lintIssue && !lintFatal) {
+						require.NoError(t, err)
+						return
+					}
+
+					require.Error(t, err)
+
+					var exitError *exec.ExitError
+					if errors.As(err, &exitError) {
+						status := exitError.Sys().(syscall.WaitStatus)
+						require.Equal(t, c.exitCode, status.ExitStatus())
+					} else {
+						t.Errorf("unable to retrieve the exit status for promtool: %v", err)
+					}
+				})
+			}
+		})
+	}
 }

@@ -31,21 +31,11 @@ func TestStorageLifecycle(t *testing.T) {
 	conf := &config.Config{
 		GlobalConfig: config.DefaultGlobalConfig,
 		RemoteWriteConfigs: []*config.RemoteWriteConfig{
-			&config.DefaultRemoteWriteConfig,
+			// We need to set URL's so that metric creation doesn't panic.
+			baseRemoteWriteConfig("http://test-storage.com"),
 		},
 		RemoteReadConfigs: []*config.RemoteReadConfig{
-			&config.DefaultRemoteReadConfig,
-		},
-	}
-	// We need to set URL's so that metric creation doesn't panic.
-	conf.RemoteWriteConfigs[0].URL = &common_config.URL{
-		URL: &url.URL{
-			Host: "http://test-storage.com",
-		},
-	}
-	conf.RemoteReadConfigs[0].URL = &common_config.URL{
-		URL: &url.URL{
-			Host: "http://test-storage.com",
+			baseRemoteReadConfig("http://test-storage.com"),
 		},
 	}
 
@@ -73,7 +63,7 @@ func TestUpdateRemoteReadConfigs(t *testing.T) {
 	require.Equal(t, 0, len(s.queryables))
 
 	conf.RemoteReadConfigs = []*config.RemoteReadConfig{
-		&config.DefaultRemoteReadConfig,
+		baseRemoteReadConfig("http://test-storage.com"),
 	}
 	require.NoError(t, s.ApplyConfig(conf))
 	require.Equal(t, 1, len(s.queryables))
@@ -96,7 +86,7 @@ func TestFilterExternalLabels(t *testing.T) {
 	require.Equal(t, 0, len(s.queryables))
 
 	conf.RemoteReadConfigs = []*config.RemoteReadConfig{
-		&config.DefaultRemoteReadConfig,
+		baseRemoteReadConfig("http://test-storage.com"),
 	}
 
 	require.NoError(t, s.ApplyConfig(conf))
@@ -121,7 +111,7 @@ func TestIgnoreExternalLabels(t *testing.T) {
 	require.Equal(t, 0, len(s.queryables))
 
 	conf.RemoteReadConfigs = []*config.RemoteReadConfig{
-		&config.DefaultRemoteReadConfig,
+		baseRemoteReadConfig("http://test-storage.com"),
 	}
 
 	conf.RemoteReadConfigs[0].FilterExternalLabels = false
@@ -132,4 +122,28 @@ func TestIgnoreExternalLabels(t *testing.T) {
 
 	err := s.Close()
 	require.NoError(t, err)
+}
+
+// baseRemoteWriteConfig copy values from global Default Write config
+// to avoid change global state and cross impact test execution
+func baseRemoteWriteConfig(host string) *config.RemoteWriteConfig {
+	cfg := config.DefaultRemoteWriteConfig
+	cfg.URL = &common_config.URL{
+		URL: &url.URL{
+			Host: host,
+		},
+	}
+	return &cfg
+}
+
+// baseRemoteReadConfig copy values from global Default Read config
+// to avoid change global state and cross impact test execution
+func baseRemoteReadConfig(host string) *config.RemoteReadConfig {
+	cfg := config.DefaultRemoteReadConfig
+	cfg.URL = &common_config.URL{
+		URL: &url.URL{
+			Host: host,
+		},
+	}
+	return &cfg
 }

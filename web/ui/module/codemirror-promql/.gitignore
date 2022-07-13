@@ -5,3 +5,6 @@ dist/
 lib/
 
 /.nyc_output
+
+LICENSE
+CHANGELOG.md

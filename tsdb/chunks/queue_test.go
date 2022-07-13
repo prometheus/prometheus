@@ -1,3 +1,16 @@
+// Copyright 2022 The Prometheus Authors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package chunks
 
 import (
@@ -111,13 +124,13 @@ func TestQueuePushBlocksOnFullQueue(t *testing.T) {
 		require.True(t, queue.push(chunkWriteJob{seriesRef: 3}))
 		require.True(t, queue.push(chunkWriteJob{seriesRef: 4}))
 		require.True(t, queue.push(chunkWriteJob{seriesRef: 5}))
-		// This will block
 		pushTime <- time.Now()
+		// This will block
 		require.True(t, queue.push(chunkWriteJob{seriesRef: 6}))
 		pushTime <- time.Now()
 	}()
 
-	before := <-pushTime
+	timeBeforePush := <-pushTime
 
 	delay := 100 * time.Millisecond
 	select {
@@ -132,10 +145,10 @@ func TestQueuePushBlocksOnFullQueue(t *testing.T) {
 	require.True(t, b)
 	require.Equal(t, HeadSeriesRef(1), j.seriesRef)
 
-	after := <-pushTime
+	timeAfterPush := <-pushTime
 
-	require.True(t, after.After(popTime))
-	require.True(t, after.Sub(before) > delay)
+	require.GreaterOrEqual(t, timeAfterPush.Sub(popTime), time.Duration(0))
+	require.GreaterOrEqual(t, timeAfterPush.Sub(timeBeforePush), delay)
 }
 
 func TestQueuePopBlocksOnEmptyQueue(t *testing.T) {
@@ -159,7 +172,7 @@ func TestQueuePopBlocksOnEmptyQueue(t *testing.T) {
 
 	queue.push(chunkWriteJob{seriesRef: 1})
 
-	before := <-popTime
+	timeBeforePop := <-popTime
 
 	delay := 100 * time.Millisecond
 	select {
@@ -172,10 +185,10 @@ func TestQueuePopBlocksOnEmptyQueue(t *testing.T) {
 	pushTime := time.Now()
 	require.True(t, queue.push(chunkWriteJob{seriesRef: 2}))
 
-	after := <-popTime
+	timeAfterPop := <-popTime
 
-	require.True(t, after.After(pushTime))
-	require.True(t, after.Sub(before) > delay)
+	require.GreaterOrEqual(t, timeAfterPop.Sub(pushTime), time.Duration(0))
+	require.Greater(t, timeAfterPop.Sub(timeBeforePop), delay)
 }
 
 func TestQueuePopUnblocksOnClose(t *testing.T) {
@@ -198,7 +211,7 @@ func TestQueuePopUnblocksOnClose(t *testing.T) {
 
 	queue.push(chunkWriteJob{seriesRef: 1})
 
-	before := <-popTime
+	timeBeforePop := <-popTime
 
 	delay := 100 * time.Millisecond
 	select {
@@ -211,10 +224,10 @@ func TestQueuePopUnblocksOnClose(t *testing.T) {
 	closeTime := time.Now()
 	queue.close()
 
-	after := <-popTime
+	timeAfterPop := <-popTime
 
-	require.True(t, after.After(closeTime))
-	require.True(t, after.Sub(before) > delay)
+	require.GreaterOrEqual(t, timeAfterPop.Sub(closeTime), time.Duration(0))
+	require.GreaterOrEqual(t, timeAfterPop.Sub(timeBeforePop), delay)
 }
 
 func TestQueuePopAfterCloseReturnsAllElements(t *testing.T) {

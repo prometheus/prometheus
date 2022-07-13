@@ -202,7 +202,7 @@ func TestWriteStorageLifecycle(t *testing.T) {
 	conf := &config.Config{
 		GlobalConfig: config.DefaultGlobalConfig,
 		RemoteWriteConfigs: []*config.RemoteWriteConfig{
-			&config.DefaultRemoteWriteConfig,
+			baseRemoteWriteConfig("http://test-storage.com"),
 		},
 	}
 	require.NoError(t, s.ApplyConfig(conf))
@@ -249,18 +249,7 @@ func TestWriteStorageApplyConfigsIdempotent(t *testing.T) {
 	conf := &config.Config{
 		GlobalConfig: config.GlobalConfig{},
 		RemoteWriteConfigs: []*config.RemoteWriteConfig{
-			{
-				RemoteTimeout:    config.DefaultRemoteWriteConfig.RemoteTimeout,
-				QueueConfig:      config.DefaultRemoteWriteConfig.QueueConfig,
-				MetadataConfig:   config.DefaultRemoteWriteConfig.MetadataConfig,
-				HTTPClientConfig: config.DefaultRemoteWriteConfig.HTTPClientConfig,
-				// We need to set URL's so that metric creation doesn't panic.
-				URL: &common_config.URL{
-					URL: &url.URL{
-						Host: "http://test-storage.com",
-					},
-				},
-			},
+			baseRemoteWriteConfig("http://test-storage.com"),
 		},
 	}
 	hash, err := toHash(conf.RemoteWriteConfigs[0])
