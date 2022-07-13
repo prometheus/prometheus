@@ -735,12 +735,33 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 		var h *histogram.Histogram
 		t, h = p.currDelIter.AtHistogram()
 		p.curr.MinTime = t
+
 		app.AppendHistogram(t, h)
 		for vt := p.currDelIter.Next(); vt != chunkenc.ValNone; vt = p.currDelIter.Next() {
 			if vt != chunkenc.ValHistogram {
-				panic(fmt.Errorf("found value type %v in histogram chunk", vt))
+				err = fmt.Errorf("found value type %v in histogram chunk", vt)
+				break
 			}
 			t, h = p.currDelIter.AtHistogram()
+
+			// Defend against corrupted chunks.
+			pI, nI, okToAppend, counterReset := app.(*chunkenc.HistogramAppender).Appendable(h)
+			if len(pI)+len(nI) > 0 {
+				err = fmt.Errorf(
+					"bucket layout has changed unexpectedly: %d positive and %d negative bucket interjections required",
+					len(pI), len(nI),
+				)
+				break
+			}
+			if counterReset {
+				err = errors.New("detected unexpected counter reset in histogram")
+				break
+			}
+			if !okToAppend {
+				err = errors.New("unable to append histogram due to unexpected schema change")
+				break
+			}
+
 			app.AppendHistogram(t, h)
 		}
 	case chunkenc.ValFloat:
@@ -754,7 +775,8 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 		app.Append(t, v)
 		for vt := p.currDelIter.Next(); vt != chunkenc.ValNone; vt = p.currDelIter.Next() {
 			if vt != chunkenc.ValFloat {
-				panic(fmt.Errorf("found value type %v in float chunk", vt))
+				err = fmt.Errorf("found value type %v in float chunk", vt)
+				break
 			}
 			t, v = p.currDelIter.At()
 			app.Append(t, v)

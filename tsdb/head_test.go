@@ -1309,6 +1309,60 @@ func TestMemSeries_append(t *testing.T) {
 	}
 }
 
+func TestMemSeries_appendHistogram(t *testing.T) {
+	dir := t.TempDir()
+	// This is usually taken from the Head, but passing manually here.
+	chunkDiskMapper, err := chunks.NewChunkDiskMapper(nil, dir, chunkenc.NewPool(), chunks.DefaultWriteBufferSize, chunks.DefaultWriteQueueSize)
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, chunkDiskMapper.Close())
+	}()
+
+	s := newMemSeries(labels.Labels{}, 1, 500, nil, defaultIsolationDisabled)
+
+	histograms := GenerateTestHistograms(4)
+	histogramWithOneMoreBucket := histograms[3].Copy()
+	histogramWithOneMoreBucket.Count++
+	histogramWithOneMoreBucket.Sum += 1.23
+	histogramWithOneMoreBucket.PositiveSpans[1].Length = 3
+	histogramWithOneMoreBucket.PositiveBuckets = append(histogramWithOneMoreBucket.PositiveBuckets, 1)
+
+	// Add first two samples at the very end of a chunk range and the next two
+	// on and after it.
+	// New chunk must correctly be cut at 1000.
+	ok, chunkCreated := s.appendHistogram(998, histograms[0], 0, chunkDiskMapper)
+	require.True(t, ok, "append failed")
+	require.True(t, chunkCreated, "first sample created chunk")
+
+	ok, chunkCreated = s.appendHistogram(999, histograms[1], 0, chunkDiskMapper)
+	require.True(t, ok, "append failed")
+	require.False(t, chunkCreated, "second sample should use same chunk")
+
+	ok, chunkCreated = s.appendHistogram(1000, histograms[2], 0, chunkDiskMapper)
+	require.True(t, ok, "append failed")
+	require.True(t, chunkCreated, "expected new chunk on boundary")
+
+	ok, chunkCreated = s.appendHistogram(1001, histograms[3], 0, chunkDiskMapper)
+	require.True(t, ok, "append failed")
+	require.False(t, chunkCreated, "second sample should use same chunk")
+
+	require.Equal(t, 1, len(s.mmappedChunks), "there should be only 1 mmapped chunk")
+	require.Equal(t, int64(998), s.mmappedChunks[0].minTime, "wrong chunk range")
+	require.Equal(t, int64(999), s.mmappedChunks[0].maxTime, "wrong chunk range")
+	require.Equal(t, int64(1000), s.headChunk.minTime, "wrong chunk range")
+	require.Equal(t, int64(1001), s.headChunk.maxTime, "wrong chunk range")
+
+	ok, chunkCreated = s.appendHistogram(1002, histogramWithOneMoreBucket, 0, chunkDiskMapper)
+	require.True(t, ok, "append failed")
+	require.False(t, chunkCreated, "third sample should trigger a re-encoded chunk")
+
+	require.Equal(t, 1, len(s.mmappedChunks), "there should be only 1 mmapped chunk")
+	require.Equal(t, int64(998), s.mmappedChunks[0].minTime, "wrong chunk range")
+	require.Equal(t, int64(999), s.mmappedChunks[0].maxTime, "wrong chunk range")
+	require.Equal(t, int64(1000), s.headChunk.minTime, "wrong chunk range")
+	require.Equal(t, int64(1002), s.headChunk.maxTime, "wrong chunk range")
+}
+
 func TestMemSeries_append_atVariableRate(t *testing.T) {
 	const samplesPerChunk = 120
 	dir := t.TempDir()
