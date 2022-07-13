@@ -194,7 +194,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			rws.highestTimestamp,
 			rws.scraper,
 			rwConf.SendExemplars,
-			rwConf.SendHistograms,
+			rwConf.SendNativeHistograms,
 		)
 		// Keep track of which queues are new so we know which to start.
 		newHashes = append(newHashes, hash)

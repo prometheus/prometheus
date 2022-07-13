@@ -89,7 +89,7 @@ func TestSampleDelivery(t *testing.T) {
 	writeConfig := baseRemoteWriteConfig("http://test-storage.com")
 	writeConfig.QueueConfig = queueConfig
 	writeConfig.SendExemplars = true
-	writeConfig.SendHistograms = true
+	writeConfig.SendNativeHistograms = true
 
 	conf := &config.Config{
 		GlobalConfig: config.DefaultGlobalConfig,

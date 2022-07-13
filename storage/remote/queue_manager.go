@@ -399,7 +399,7 @@ type QueueManager struct {
 	externalLabels  labels.Labels
 	relabelConfigs  []*relabel.Config
 	sendExemplars   bool
-	sendHistograms  bool
+	sendNativeHistograms  bool
 	watcher         *wal.Watcher
 	metadataWatcher *MetadataWatcher
 
@@ -448,7 +448,7 @@ func NewQueueManager(
 	highestRecvTimestamp *maxTimestamp,
 	sm ReadyScrapeManager,
 	enableExemplarRemoteWrite bool,
-	enableHistogramRemoteWrite bool,
+	enableNativeHistogramRemoteWrite bool,
 ) *QueueManager {
 	if logger == nil {
 		logger = log.NewNopLogger()
@@ -464,7 +464,7 @@ func NewQueueManager(
 		relabelConfigs: relabelConfigs,
 		storeClient:    client,
 		sendExemplars:  enableExemplarRemoteWrite,
-		sendHistograms: enableHistogramRemoteWrite,
+		sendNativeHistograms: enableNativeHistogramRemoteWrite,
 
 		seriesLabels:         make(map[chunks.HeadSeriesRef]labels.Labels),
 		seriesSegmentIndexes: make(map[chunks.HeadSeriesRef]int),
@@ -484,7 +484,7 @@ func NewQueueManager(
 		highestRecvTimestamp: highestRecvTimestamp,
 	}
 
-	t.watcher = wal.NewWatcher(watcherMetrics, readerMetrics, logger, client.Name(), t, dir, enableExemplarRemoteWrite, enableHistogramRemoteWrite)
+	t.watcher = wal.NewWatcher(watcherMetrics, readerMetrics, logger, client.Name(), t, dir, enableExemplarRemoteWrite, enableNativeHistogramRemoteWrite)
 	if t.mcfg.Send {
 		t.metadataWatcher = NewMetadataWatcher(logger, sm, client.Name(), t, t.mcfg.SendInterval, flushDeadline)
 	}
@@ -664,7 +664,7 @@ outer:
 }
 
 func (t *QueueManager) AppendHistograms(histograms []record.RefHistogram) bool {
-	if !t.sendHistograms {
+	if !t.sendNativeHistograms {
 		return true
 	}
 
@@ -1374,7 +1374,7 @@ func (s *shards) populateTimeSeries(batch []timeSeries, pendingData []prompb.Tim
 		if s.qm.sendExemplars {
 			pendingData[nPending].Exemplars = pendingData[nPending].Exemplars[:0]
 		}
-		if s.qm.sendHistograms {
+		if s.qm.sendNativeHistograms {
 			pendingData[nPending].Histograms = pendingData[nPending].Histograms[:0]
 		}
 
