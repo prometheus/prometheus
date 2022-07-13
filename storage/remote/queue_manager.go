@@ -392,16 +392,16 @@ type WriteClient interface {
 type QueueManager struct {
 	lastSendTimestamp atomic.Int64
 
-	logger          log.Logger
-	flushDeadline   time.Duration
-	cfg             config.QueueConfig
-	mcfg            config.MetadataConfig
-	externalLabels  labels.Labels
-	relabelConfigs  []*relabel.Config
-	sendExemplars   bool
-	sendNativeHistograms  bool
-	watcher         *wal.Watcher
-	metadataWatcher *MetadataWatcher
+	logger               log.Logger
+	flushDeadline        time.Duration
+	cfg                  config.QueueConfig
+	mcfg                 config.MetadataConfig
+	externalLabels       labels.Labels
+	relabelConfigs       []*relabel.Config
+	sendExemplars        bool
+	sendNativeHistograms bool
+	watcher              *wal.Watcher
+	metadataWatcher      *MetadataWatcher
 
 	clientMtx   sync.RWMutex
 	storeClient WriteClient
@@ -456,14 +456,14 @@ func NewQueueManager(
 
 	logger = log.With(logger, remoteName, client.Name(), endpoint, client.Endpoint())
 	t := &QueueManager{
-		logger:         logger,
-		flushDeadline:  flushDeadline,
-		cfg:            cfg,
-		mcfg:           mCfg,
-		externalLabels: externalLabels,
-		relabelConfigs: relabelConfigs,
-		storeClient:    client,
-		sendExemplars:  enableExemplarRemoteWrite,
+		logger:               logger,
+		flushDeadline:        flushDeadline,
+		cfg:                  cfg,
+		mcfg:                 mCfg,
+		externalLabels:       externalLabels,
+		relabelConfigs:       relabelConfigs,
+		storeClient:          client,
+		sendExemplars:        enableExemplarRemoteWrite,
 		sendNativeHistograms: enableNativeHistogramRemoteWrite,
 
 		seriesLabels:         make(map[chunks.HeadSeriesRef]labels.Labels),
