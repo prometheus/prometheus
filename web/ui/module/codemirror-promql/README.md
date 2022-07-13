@@ -217,7 +217,7 @@ interface [PrometheusClient](https://github.com/prometheus/codemirror-promql/blo
 .
 
 ```typescript
-const promQL = new PromQLExtension().setComplete({remote: {prometheusClient: MyPrometheusClient}})
+const promQL = new PromQLExtension().setComplete({remote: MyPrometheusClient})
 ```
 
 #### Provide your own implementation of the autocompletion
