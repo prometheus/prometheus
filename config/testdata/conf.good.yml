@@ -214,6 +214,10 @@ scrape_configs:
           cert_file: valid_cert_file
           key_file: valid_key_file
 
+  - job_name: service-nomad
+    nomad_sd_configs:
+      - server: 'http://localhost:4646'
+
   - job_name: service-ec2
     ec2_sd_configs:
       - region: us-east-1

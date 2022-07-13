@@ -646,6 +646,7 @@ func (h *Head) loadMmappedChunks(refSeries map[chunks.HeadSeriesRef]*memSeries) 
 		if !ok {
 			slice := mmappedChunks[seriesRef]
 			if len(slice) > 0 && slice[len(slice)-1].maxTime >= mint {
+				h.metrics.mmapChunkCorruptionTotal.Inc()
 				return errors.Errorf("out of sequence m-mapped chunk for series ref %d, last chunk: [%d, %d], new: [%d, %d]",
 					seriesRef, slice[len(slice)-1].minTime, slice[len(slice)-1].maxTime, mint, maxt)
 			}
@@ -660,6 +661,7 @@ func (h *Head) loadMmappedChunks(refSeries map[chunks.HeadSeriesRef]*memSeries) 
 		}
 
 		if len(ms.mmappedChunks) > 0 && ms.mmappedChunks[len(ms.mmappedChunks)-1].maxTime >= mint {
+			h.metrics.mmapChunkCorruptionTotal.Inc()
 			return errors.Errorf("out of sequence m-mapped chunk for series ref %d, last chunk: [%d, %d], new: [%d, %d]",
 				seriesRef, ms.mmappedChunks[len(ms.mmappedChunks)-1].minTime, ms.mmappedChunks[len(ms.mmappedChunks)-1].maxTime,
 				mint, maxt)
@@ -1123,6 +1125,10 @@ func (h *Head) Delete(mint, maxt int64, ms ...*labels.Matcher) error {
 	var stones []tombstones.Stone
 	for p.Next() {
 		series := h.series.getByID(chunks.HeadSeriesRef(p.At()))
+		if series == nil {
+			level.Debug(h.logger).Log("msg", "Series not found in Head.Delete")
+			continue
+		}
 
 		series.RLock()
 		t0, t1 := series.minTime(), series.maxTime()

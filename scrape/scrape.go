@@ -427,8 +427,9 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 			cache = newScrapeCache()
 		}
 
+		t := sp.activeTargets[fp]
+		interval, timeout, err := t.intervalAndTimeout(interval, timeout)
 		var (
-			t       = sp.activeTargets[fp]
 			s       = &targetScraper{Target: t, client: sp.client, timeout: timeout, bodySizeLimit: bodySizeLimit}
 			newLoop = sp.newLoop(scrapeLoopOptions{
 				target:          t,
@@ -443,6 +444,9 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 				timeout:         timeout,
 			})
 		)
+		if err != nil {
+			newLoop.setForcedError(err)
+		}
 		wg.Add(1)
 
 		go func(oldLoop, newLoop loop) {

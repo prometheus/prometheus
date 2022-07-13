@@ -17,7 +17,6 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"net/url"
 	"os"
 	"runtime/pprof"
 	"sort"
@@ -32,7 +31,6 @@ import (
 	"github.com/golang/snappy"
 	"github.com/prometheus/client_golang/prometheus"
 	client_testutil "github.com/prometheus/client_golang/prometheus/testutil"
-	common_config "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
@@ -84,20 +82,15 @@ func TestSampleDelivery(t *testing.T) {
 	queueConfig.BatchSendDeadline = model.Duration(100 * time.Millisecond)
 	queueConfig.MaxShards = 1
 
-	writeConfig := config.DefaultRemoteWriteConfig
 	// We need to set URL's so that metric creation doesn't panic.
-	writeConfig.URL = &common_config.URL{
-		URL: &url.URL{
-			Host: "http://test-storage.com",
-		},
-	}
+	writeConfig := baseRemoteWriteConfig("http://test-storage.com")
 	writeConfig.QueueConfig = queueConfig
 	writeConfig.SendExemplars = true
 
 	conf := &config.Config{
 		GlobalConfig: config.DefaultGlobalConfig,
 		RemoteWriteConfigs: []*config.RemoteWriteConfig{
-			&writeConfig,
+			writeConfig,
 		},
 	}
 

@@ -16,6 +16,7 @@ package textparse
 import (
 	"bytes"
 	"compress/gzip"
+	"errors"
 	"io"
 	"os"
 	"testing"
@@ -176,7 +177,7 @@ testmetric{label="\"bar\""} 1`
 
 	for {
 		et, err := p.Next()
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		}
 		require.NoError(t, err)
@@ -378,7 +379,7 @@ func BenchmarkParse(b *testing.B) {
 						t, err := p.Next()
 						switch t {
 						case EntryInvalid:
-							if err == io.EOF {
+							if errors.Is(err, io.EOF) {
 								break Outer
 							}
 							b.Fatal(err)
@@ -406,7 +407,7 @@ func BenchmarkParse(b *testing.B) {
 						t, err := p.Next()
 						switch t {
 						case EntryInvalid:
-							if err == io.EOF {
+							if errors.Is(err, io.EOF) {
 								break Outer
 							}
 							b.Fatal(err)
@@ -439,7 +440,7 @@ func BenchmarkParse(b *testing.B) {
 						t, err := p.Next()
 						switch t {
 						case EntryInvalid:
-							if err == io.EOF {
+							if errors.Is(err, io.EOF) {
 								break Outer
 							}
 							b.Fatal(err)

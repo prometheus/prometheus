@@ -48,6 +48,10 @@ func (i Item) String() string {
 	return fmt.Sprintf("%q", i.Val)
 }
 
+// Pretty returns the prettified form of an item.
+// This is same as the item's stringified format.
+func (i Item) Pretty(int) string { return i.String() }
+
 // IsOperator returns true if the Item corresponds to a arithmetic or set operator.
 // Returns false otherwise.
 func (i ItemType) IsOperator() bool { return i > operatorsStart && i < operatorsEnd }
