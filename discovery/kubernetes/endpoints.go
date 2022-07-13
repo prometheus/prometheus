@@ -41,9 +41,11 @@ var (
 type Endpoints struct {
 	logger log.Logger
 
-	endpointsInf cache.SharedInformer
-	serviceInf   cache.SharedInformer
-	podInf       cache.SharedInformer
+	endpointsInf     cache.SharedIndexInformer
+	serviceInf       cache.SharedInformer
+	podInf           cache.SharedInformer
+	nodeInf          cache.SharedInformer
+	withNodeMetadata bool
 
 	podStore       cache.Store
 	endpointsStore cache.Store
@@ -53,19 +55,21 @@ type Endpoints struct {
 }
 
 // NewEndpoints returns a new endpoints discovery.
-func NewEndpoints(l log.Logger, svc, eps, pod cache.SharedInformer) *Endpoints {
+func NewEndpoints(l log.Logger, eps cache.SharedIndexInformer, svc, pod, node cache.SharedInformer) *Endpoints {
 	if l == nil {
 		l = log.NewNopLogger()
 	}
 	e := &Endpoints{
-		logger:         l,
-		endpointsInf:   eps,
-		endpointsStore: eps.GetStore(),
-		serviceInf:     svc,
-		serviceStore:   svc.GetStore(),
-		podInf:         pod,
-		podStore:       pod.GetStore(),
-		queue:          workqueue.NewNamed("endpoints"),
+		logger:           l,
+		endpointsInf:     eps,
+		endpointsStore:   eps.GetStore(),
+		serviceInf:       svc,
+		serviceStore:     svc.GetStore(),
+		podInf:           pod,
+		podStore:         pod.GetStore(),
+		nodeInf:          node,
+		withNodeMetadata: node != nil,
+		queue:            workqueue.NewNamed("endpoints"),
 	}
 
 	e.endpointsInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -118,8 +122,36 @@ func NewEndpoints(l log.Logger, svc, eps, pod cache.SharedInformer) *Endpoints {
 			serviceUpdate(o)
 		},
 	})
+	if e.withNodeMetadata {
+		e.nodeInf.AddEventHandler(cache.ResourceEventHandlerFuncs{
+			AddFunc: func(o interface{}) {
+				node := o.(*apiv1.Node)
+				e.enqueueNode(node.Name)
+			},
+			UpdateFunc: func(_, o interface{}) {
+				node := o.(*apiv1.Node)
+				e.enqueueNode(node.Name)
+			},
+			DeleteFunc: func(o interface{}) {
+				node := o.(*apiv1.Node)
+				e.enqueueNode(node.Name)
+			},
+		})
+	}
 
 	return e
+}
+
+func (e *Endpoints) enqueueNode(nodeName string) {
+	endpoints, err := e.endpointsInf.GetIndexer().ByIndex(nodeIndex, nodeName)
+	if err != nil {
+		level.Error(e.logger).Log("msg", "Error getting endpoints for node", "node", nodeName, "err", err)
+		return
+	}
+
+	for _, endpoint := range endpoints {
+		e.enqueue(endpoint)
+	}
 }
 
 func (e *Endpoints) enqueue(obj interface{}) {
@@ -135,7 +167,12 @@ func (e *Endpoints) enqueue(obj interface{}) {
 func (e *Endpoints) Run(ctx context.Context, ch chan<- []*targetgroup.Group) {
 	defer e.queue.ShutDown()
 
-	if !cache.WaitForCacheSync(ctx.Done(), e.endpointsInf.HasSynced, e.serviceInf.HasSynced, e.podInf.HasSynced) {
+	cacheSyncs := []cache.InformerSynced{e.endpointsInf.HasSynced, e.serviceInf.HasSynced, e.podInf.HasSynced}
+	if e.withNodeMetadata {
+		cacheSyncs = append(cacheSyncs, e.nodeInf.HasSynced)
+	}
+
+	if !cache.WaitForCacheSync(ctx.Done(), cacheSyncs...) {
 		if !errors.Is(ctx.Err(), context.Canceled) {
 			level.Error(e.logger).Log("msg", "endpoints informer unable to sync cache")
 		}
@@ -255,6 +292,10 @@ func (e *Endpoints) buildEndpoints(eps *apiv1.Endpoints) *targetgroup.Group {
 		}
 		if addr.Hostname != "" {
 			target[model.LabelName(endpointHostname)] = lv(addr.Hostname)
+		}
+
+		if e.withNodeMetadata {
+			target = addNodeLabels(target, e.nodeInf, e.logger, addr.NodeName)
 		}
 
 		pod := e.resolvePodRef(addr.TargetRef)
@@ -386,4 +427,32 @@ func (e *Endpoints) addServiceLabels(ns, name string, tg *targetgroup.Group) {
 	svc = obj.(*apiv1.Service)
 
 	tg.Labels = tg.Labels.Merge(serviceLabels(svc))
+}
+
+func addNodeLabels(tg model.LabelSet, nodeInf cache.SharedInformer, logger log.Logger, nodeName *string) model.LabelSet {
+	if nodeName == nil {
+		return tg
+	}
+
+	obj, exists, err := nodeInf.GetStore().GetByKey(*nodeName)
+	if err != nil {
+		level.Error(logger).Log("msg", "Error getting node", "node", *nodeName, "err", err)
+		return tg
+	}
+
+	if !exists {
+		return tg
+	}
+
+	node := obj.(*apiv1.Node)
+	// Allocate one target label for the node name,
+	// and two target labels for each node label.
+	nodeLabelset := make(model.LabelSet, 1+2*len(node.GetLabels()))
+	nodeLabelset[nodeNameLabel] = lv(*nodeName)
+	for k, v := range node.GetLabels() {
+		ln := strutil.SanitizeLabelName(k)
+		nodeLabelset[model.LabelName(nodeLabelPrefix+ln)] = lv(v)
+		nodeLabelset[model.LabelName(nodeLabelPresentPrefix+ln)] = presentValue
+	}
+	return tg.Merge(nodeLabelset)
 }

@@ -14,13 +14,13 @@
 package storage
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"sort"
 	"sync"
 	"testing"
 
-	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"

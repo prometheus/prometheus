@@ -1,3 +1,16 @@
+// Copyright 2022 The Prometheus Authors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package chunks
 
 import "sync"
@@ -44,7 +57,7 @@ func (q *writeJobQueue) close() {
 
 	q.closed = true
 
-	// unblock all blocked goroutines
+	// Unblock all blocked goroutines.
 	q.pushed.Broadcast()
 	q.popped.Broadcast()
 }
@@ -55,7 +68,7 @@ func (q *writeJobQueue) push(job chunkWriteJob) bool {
 	q.mtx.Lock()
 	defer q.mtx.Unlock()
 
-	// wait until queue has more space or is closed
+	// Wait until queue has more space or is closed.
 	for !q.closed && q.size >= q.maxSize {
 		q.popped.Wait()
 	}
@@ -87,7 +100,7 @@ func (q *writeJobQueue) push(job chunkWriteJob) bool {
 }
 
 // pop returns first job from the queue, and true.
-// if queue is empty, pop blocks until there is a job (returns true), or until queue is closed (returns false).
+// If queue is empty, pop blocks until there is a job (returns true), or until queue is closed (returns false).
 // If queue was already closed, pop first returns all remaining elements from the queue (with true value), and only then returns false.
 func (q *writeJobQueue) pop() (chunkWriteJob, bool) {
 	q.mtx.Lock()
@@ -119,6 +132,7 @@ func (q *writeJobQueue) pop() (chunkWriteJob, bool) {
 	return res, true
 }
 
+// length returns number of all jobs in the queue.
 func (q *writeJobQueue) length() int {
 	q.mtx.Lock()
 	defer q.mtx.Unlock()

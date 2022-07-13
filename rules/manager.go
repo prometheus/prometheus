@@ -15,6 +15,8 @@ package rules
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"math"
 	"net/url"
 	"sort"
@@ -23,7 +25,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"go.opentelemetry.io/otel"
@@ -642,7 +643,8 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 
 				// Canceled queries are intentional termination of queries. This normally
 				// happens on shutdown and thus we skip logging of any errors here.
-				if _, ok := err.(promql.ErrQueryCanceled); !ok {
+				var eqc promql.ErrQueryCanceled
+				if !errors.As(err, &eqc) {
 					level.Warn(g.logger).Log("name", rule.Name(), "index", i, "msg", "Evaluating rule failed", "rule", rule, "err", err)
 				}
 				return
@@ -679,12 +681,12 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 					rule.SetHealth(HealthBad)
 					rule.SetLastError(err)
 					sp.SetStatus(codes.Error, err.Error())
-
-					switch errors.Cause(err) {
-					case storage.ErrOutOfOrderSample:
+					unwrappedErr := errors.Unwrap(err)
+					switch {
+					case errors.Is(unwrappedErr, storage.ErrOutOfOrderSample):
 						numOutOfOrder++
 						level.Debug(g.logger).Log("name", rule.Name(), "index", i, "msg", "Rule evaluation result discarded", "err", err, "sample", s)
-					case storage.ErrDuplicateSampleForTimestamp:
+					case errors.Is(unwrappedErr, storage.ErrDuplicateSampleForTimestamp):
 						numDuplicates++
 						level.Debug(g.logger).Log("name", rule.Name(), "index", i, "msg", "Rule evaluation result discarded", "err", err, "sample", s)
 					default:
@@ -706,9 +708,10 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 				if _, ok := seriesReturned[metric]; !ok {
 					// Series no longer exposed, mark it stale.
 					_, err = app.Append(0, lset, timestamp.FromTime(ts.Add(-evaluationDelay)), math.Float64frombits(value.StaleNaN))
-					switch errors.Cause(err) {
-					case nil:
-					case storage.ErrOutOfOrderSample, storage.ErrDuplicateSampleForTimestamp:
+					unwrappedErr := errors.Unwrap(err)
+					switch {
+					case unwrappedErr == nil:
+					case errors.Is(unwrappedErr, storage.ErrOutOfOrderSample), errors.Is(unwrappedErr, storage.ErrDuplicateSampleForTimestamp):
 						// Do not count these in logging, as this is expected if series
 						// is exposed from a different rule.
 					default:
@@ -743,9 +746,10 @@ func (g *Group) cleanupStaleSeries(ctx context.Context, ts time.Time) {
 	for _, s := range g.staleSeries {
 		// Rule that produced series no longer configured, mark it stale.
 		_, err := app.Append(0, s, timestamp.FromTime(ts.Add(-evaluationDelay)), math.Float64frombits(value.StaleNaN))
-		switch errors.Cause(err) {
-		case nil:
-		case storage.ErrOutOfOrderSample, storage.ErrDuplicateSampleForTimestamp:
+		unwrappedErr := errors.Unwrap(err)
+		switch {
+		case unwrappedErr == nil:
+		case errors.Is(unwrappedErr, storage.ErrOutOfOrderSample), errors.Is(unwrappedErr, storage.ErrDuplicateSampleForTimestamp):
 			// Do not count these in logging, as this is expected if series
 			// is exposed from a different rule.
 		default:
@@ -1130,7 +1134,7 @@ func (m *Manager) LoadGroups(
 			for _, r := range rg.Rules {
 				expr, err := m.opts.GroupLoader.Parse(r.Expr.Value)
 				if err != nil {
-					return nil, []error{errors.Wrap(err, fn)}
+					return nil, []error{fmt.Errorf("%s: %w", fn, err)}
 				}
 
 				if r.Alert.Value != "" {

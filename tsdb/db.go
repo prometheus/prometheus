@@ -1035,7 +1035,9 @@ func (db *DB) Compact() (returnErr error) {
 	db.cmtx.Lock()
 	defer db.cmtx.Unlock()
 	defer func() {
-		if returnErr != nil {
+		if returnErr != nil && !errors.Is(returnErr, context.Canceled) {
+			// If we got an error because context was canceled then we're most likely
+			// shutting down TSDB and we don't need to report this on metrics
 			db.metrics.compactionsFailed.Inc()
 		}
 	}()

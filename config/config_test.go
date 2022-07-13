@@ -45,6 +45,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/linode"
 	"github.com/prometheus/prometheus/discovery/marathon"
 	"github.com/prometheus/prometheus/discovery/moby"
+	"github.com/prometheus/prometheus/discovery/nomad"
 	"github.com/prometheus/prometheus/discovery/openstack"
 	"github.com/prometheus/prometheus/discovery/puppetdb"
 	"github.com/prometheus/prometheus/discovery/scaleway"
@@ -507,6 +508,32 @@ var expectedConf = &Config{
 							CertFile: filepath.FromSlash("testdata/valid_cert_file"),
 							KeyFile:  filepath.FromSlash("testdata/valid_key_file"),
 						},
+						FollowRedirects: true,
+						EnableHTTP2:     true,
+					},
+				},
+			},
+		},
+		{
+			JobName: "service-nomad",
+
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
+
+			MetricsPath:      DefaultScrapeConfig.MetricsPath,
+			Scheme:           DefaultScrapeConfig.Scheme,
+			HTTPClientConfig: config.DefaultHTTPClientConfig,
+
+			ServiceDiscoveryConfigs: discovery.Configs{
+				&nomad.SDConfig{
+					AllowStale:      true,
+					Namespace:       "default",
+					RefreshInterval: model.Duration(60 * time.Second),
+					Region:          "global",
+					Server:          "http://localhost:4646",
+					TagSeparator:    ",",
+					HTTPClientConfig: config.HTTPClientConfig{
 						FollowRedirects: true,
 						EnableHTTP2:     true,
 					},
