@@ -20,12 +20,25 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
+
+var testHistogram = histogram.Histogram{
+	Schema:          2,
+	ZeroThreshold:   1e-128,
+	ZeroCount:       0,
+	Count:           0,
+	Sum:             20,
+	PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+	PositiveBuckets: []int64{1},
+	NegativeSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+	NegativeBuckets: []int64{-1},
+}
 
 var writeRequestFixture = &prompb.WriteRequest{
 	Timeseries: []prompb.TimeSeries{
@@ -37,8 +50,9 @@ var writeRequestFixture = &prompb.WriteRequest{
 				{Name: "d", Value: "e"},
 				{Name: "foo", Value: "bar"},
 			},
-			Samples:   []prompb.Sample{{Value: 1, Timestamp: 0}},
-			Exemplars: []prompb.Exemplar{{Labels: []prompb.Label{{Name: "f", Value: "g"}}, Value: 1, Timestamp: 0}},
+			Samples:    []prompb.Sample{{Value: 1, Timestamp: 0}},
+			Exemplars:  []prompb.Exemplar{{Labels: []prompb.Label{{Name: "f", Value: "g"}}, Value: 1, Timestamp: 0}},
+			Histograms: []prompb.Histogram{histogramToHistogramProto(0, &testHistogram)},
 		},
 		{
 			Labels: []prompb.Label{
@@ -48,8 +62,9 @@ var writeRequestFixture = &prompb.WriteRequest{
 				{Name: "d", Value: "e"},
 				{Name: "foo", Value: "bar"},
 			},
-			Samples:   []prompb.Sample{{Value: 2, Timestamp: 1}},
-			Exemplars: []prompb.Exemplar{{Labels: []prompb.Label{{Name: "h", Value: "i"}}, Value: 2, Timestamp: 1}},
+			Samples:    []prompb.Sample{{Value: 2, Timestamp: 1}},
+			Exemplars:  []prompb.Exemplar{{Labels: []prompb.Label{{Name: "h", Value: "i"}}, Value: 2, Timestamp: 1}},
+			Histograms: []prompb.Histogram{histogramToHistogramProto(1, &testHistogram)},
 		},
 	},
 }
@@ -348,4 +363,10 @@ func TestDecodeWriteRequest(t *testing.T) {
 	actual, err := DecodeWriteRequest(bytes.NewReader(buf))
 	require.NoError(t, err)
 	require.Equal(t, writeRequestFixture, actual)
+}
+
+func TestNilHistogramProto(t *testing.T) {
+	// This function will panic if it impromperly handles nil
+	// values, causing the test to fail.
+	HistogramProtoToHistogram(prompb.Histogram{})
 }

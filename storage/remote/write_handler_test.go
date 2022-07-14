@@ -50,6 +50,7 @@ func TestRemoteWriteHandler(t *testing.T) {
 
 	i := 0
 	j := 0
+	k := 0
 	for _, ts := range writeRequestFixture.Timeseries {
 		labels := labelProtosToLabels(ts.Labels)
 		for _, s := range ts.Samples {
@@ -61,6 +62,12 @@ func TestRemoteWriteHandler(t *testing.T) {
 			exemplarLabels := labelProtosToLabels(e.Labels)
 			require.Equal(t, mockExemplar{labels, exemplarLabels, e.Timestamp, e.Value}, appendable.exemplars[j])
 			j++
+		}
+
+		for _, hp := range ts.Histograms {
+			h := HistogramProtoToHistogram(hp)
+			require.Equal(t, mockHistogram{labels, hp.Timestamp, &h}, appendable.histograms[k])
+			k++
 		}
 	}
 }
@@ -113,6 +120,28 @@ func TestOutOfOrderExemplar(t *testing.T) {
 	require.Equal(t, http.StatusNoContent, resp.StatusCode)
 }
 
+func TestOutOfOrderHistogram(t *testing.T) {
+	buf, _, err := buildWriteRequest([]prompb.TimeSeries{{
+		Labels:     []prompb.Label{{Name: "__name__", Value: "test_metric"}},
+		Histograms: []prompb.Histogram{histogramToHistogramProto(0, &testHistogram)},
+	}}, nil, nil, nil)
+	require.NoError(t, err)
+
+	req, err := http.NewRequest("", "", bytes.NewReader(buf))
+	require.NoError(t, err)
+
+	appendable := &mockAppendable{
+		latestHistogram: 100,
+	}
+	handler := NewWriteHandler(log.NewNopLogger(), appendable)
+
+	recorder := httptest.NewRecorder()
+	handler.ServeHTTP(recorder, req)
+
+	resp := recorder.Result()
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+}
+
 func TestCommitErr(t *testing.T) {
 	buf, _, err := buildWriteRequest(writeRequestFixture.Timeseries, nil, nil, nil)
 	require.NoError(t, err)
@@ -136,11 +165,13 @@ func TestCommitErr(t *testing.T) {
 }
 
 type mockAppendable struct {
-	latestSample   int64
-	samples        []mockSample
-	latestExemplar int64
-	exemplars      []mockExemplar
-	commitErr      error
+	latestSample    int64
+	samples         []mockSample
+	latestExemplar  int64
+	exemplars       []mockExemplar
+	latestHistogram int64
+	histograms      []mockHistogram
+	commitErr       error
 }
 
 type mockSample struct {
@@ -154,6 +185,12 @@ type mockExemplar struct {
 	el labels.Labels
 	t  int64
 	v  float64
+}
+
+type mockHistogram struct {
+	l labels.Labels
+	t int64
+	h *histogram.Histogram
 }
 
 func (m *mockAppendable) Appender(_ context.Context) storage.Appender {
@@ -188,7 +225,12 @@ func (m *mockAppendable) AppendExemplar(_ storage.SeriesRef, l labels.Labels, e 
 	return 0, nil
 }
 
-func (*mockAppendable) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram) (storage.SeriesRef, error) {
-	// TODO(beorn7): Noop until we implement sparse histograms over remote write.
+func (m *mockAppendable) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram) (storage.SeriesRef, error) {
+	if t < m.latestHistogram {
+		return 0, storage.ErrOutOfOrderSample
+	}
+
+	m.latestHistogram = t
+	m.histograms = append(m.histograms, mockHistogram{l, t, h})
 	return 0, nil
 }

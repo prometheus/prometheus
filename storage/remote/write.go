@@ -45,6 +45,12 @@ var (
 		Name:      "exemplars_in_total",
 		Help:      "Exemplars in to remote storage, compare to exemplars out for queue managers.",
 	})
+	histogramsIn = promauto.NewCounter(prometheus.CounterOpts{
+		Namespace: namespace,
+		Subsystem: subsystem,
+		Name:      "histograms_in_total",
+		Help:      "Histograms in to remote storage, compare to histograms out for queue managers.",
+	})
 )
 
 // WriteStorage represents all the remote write storage.
@@ -188,6 +194,7 @@ func (rws *WriteStorage) ApplyConfig(conf *config.Config) error {
 			rws.highestTimestamp,
 			rws.scraper,
 			rwConf.SendExemplars,
+			rwConf.SendNativeHistograms,
 		)
 		// Keep track of which queues are new so we know which to start.
 		newHashes = append(newHashes, hash)
@@ -270,7 +277,7 @@ func (t *timestampTracker) AppendExemplar(_ storage.SeriesRef, _ labels.Labels, 
 	return 0, nil
 }
 
-func (t *timestampTracker) AppendHistogram(_ storage.SeriesRef, _ labels.Labels, ts int64, _ *histogram.Histogram) (storage.SeriesRef, error) {
+func (t *timestampTracker) AppendHistogram(_ storage.SeriesRef, _ labels.Labels, ts int64, h *histogram.Histogram) (storage.SeriesRef, error) {
 	t.histograms++
 	if ts > t.highestTimestamp {
 		t.highestTimestamp = ts
@@ -280,10 +287,11 @@ func (t *timestampTracker) AppendHistogram(_ storage.SeriesRef, _ labels.Labels,
 
 // Commit implements storage.Appender.
 func (t *timestampTracker) Commit() error {
-	t.writeStorage.samplesIn.incr(t.samples + t.exemplars)
+	t.writeStorage.samplesIn.incr(t.samples + t.exemplars + t.histograms)
 
 	samplesIn.Add(float64(t.samples))
 	exemplarsIn.Add(float64(t.exemplars))
+	histogramsIn.Add(float64(t.histograms))
 	t.highestRecvTimestamp.Set(float64(t.highestTimestamp / 1000))
 	return nil
 }

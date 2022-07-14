@@ -502,6 +502,64 @@ func exemplarProtoToExemplar(ep prompb.Exemplar) exemplar.Exemplar {
 	}
 }
 
+func HistogramProtoToHistogram(hp prompb.Histogram) histogram.Histogram {
+	h := histogram.Histogram{
+		Schema:          hp.Schema,
+		ZeroThreshold:   hp.ZeroThreshold,
+		ZeroCount:       hp.GetZeroCountInt(),
+		Count:           hp.GetCountInt(),
+		Sum:             hp.Sum,
+		PositiveBuckets: hp.PositiveBuckets.GetDelta(),
+		NegativeBuckets: hp.NegativeBuckets.GetDelta(),
+	}
+
+	if hp.PositiveBuckets != nil {
+		h.PositiveSpans = spansProtoToSpans(hp.PositiveBuckets.Span)
+	}
+	if hp.NegativeBuckets != nil {
+		h.NegativeSpans = spansProtoToSpans(hp.NegativeBuckets.Span)
+	}
+
+	return h
+}
+
+func spansProtoToSpans(s []*prompb.Buckets_Span) []histogram.Span {
+	spans := make([]histogram.Span, len(s))
+	for i := 0; i < len(s); i++ {
+		spans[i] = histogram.Span{Offset: s[i].Offset, Length: s[i].Length}
+	}
+
+	return spans
+}
+
+func histogramToHistogramProto(timestamp int64, h *histogram.Histogram) prompb.Histogram {
+	return prompb.Histogram{
+		Count:         &prompb.Histogram_CountInt{CountInt: h.Count},
+		Sum:           h.Sum,
+		Schema:        h.Schema,
+		ZeroThreshold: h.ZeroThreshold,
+		ZeroCount:     &prompb.Histogram_ZeroCountInt{ZeroCountInt: h.ZeroCount},
+		NegativeBuckets: &prompb.Buckets{
+			Span:  spansToSpansProto(h.NegativeSpans),
+			Delta: h.NegativeBuckets,
+		},
+		PositiveBuckets: &prompb.Buckets{
+			Span:  spansToSpansProto(h.PositiveSpans),
+			Delta: h.PositiveBuckets,
+		},
+		Timestamp: timestamp,
+	}
+}
+
+func spansToSpansProto(s []histogram.Span) []*prompb.Buckets_Span {
+	spans := make([]*prompb.Buckets_Span, len(s))
+	for i := 0; i < len(s); i++ {
+		spans[i] = &prompb.Buckets_Span{Offset: s[i].Offset, Length: s[i].Length}
+	}
+
+	return spans
+}
+
 // LabelProtosToMetric unpack a []*prompb.Label to a model.Metric
 func LabelProtosToMetric(labelPairs []*prompb.Label) model.Metric {
 	metric := make(model.Metric, len(labelPairs))

@@ -25,6 +25,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
@@ -53,6 +54,7 @@ func retry(t *testing.T, interval time.Duration, n int, f func() bool) {
 type writeToMock struct {
 	samplesAppended      int
 	exemplarsAppended    int
+	histogramsAppended   int
 	seriesLock           sync.Mutex
 	seriesSegmentIndexes map[chunks.HeadSeriesRef]int
 }
@@ -64,6 +66,11 @@ func (wtm *writeToMock) Append(s []record.RefSample) bool {
 
 func (wtm *writeToMock) AppendExemplars(e []record.RefExemplar) bool {
 	wtm.exemplarsAppended += len(e)
+	return true
+}
+
+func (wtm *writeToMock) AppendHistograms(h []record.RefHistogram) bool {
+	wtm.histogramsAppended += len(h)
 	return true
 }
 
@@ -108,6 +115,7 @@ func TestTailSamples(t *testing.T) {
 	const seriesCount = 10
 	const samplesCount = 250
 	const exemplarsCount = 25
+	const histogramsCount = 50
 	for _, compress := range []bool{false, true} {
 		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
 			now := time.Now()
@@ -160,6 +168,26 @@ func TestTailSamples(t *testing.T) {
 					}, nil)
 					require.NoError(t, w.Log(exemplar))
 				}
+
+				for j := 0; j < histogramsCount; j++ {
+					inner := rand.Intn(ref + 1)
+					histogram := enc.Histograms([]record.RefHistogram{{
+						Ref: chunks.HeadSeriesRef(inner),
+						T:   now.UnixNano() + 1,
+						H: &histogram.Histogram{
+							Schema:          2,
+							ZeroThreshold:   1e-128,
+							ZeroCount:       0,
+							Count:           2,
+							Sum:             0,
+							PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+							PositiveBuckets: []int64{int64(i) + 1},
+							NegativeSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+							NegativeBuckets: []int64{int64(-i) - 1},
+						},
+					}}, nil)
+					require.NoError(t, w.Log(histogram))
+				}
 			}
 
 			// Start read after checkpoint, no more data written.
@@ -167,7 +195,7 @@ func TestTailSamples(t *testing.T) {
 			require.NoError(t, err)
 
 			wt := newWriteToMock()
-			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, true)
+			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, true, true)
 			watcher.SetStartTime(now)
 
 			// Set the Watcher's metrics so they're not nil pointers.
@@ -185,12 +213,14 @@ func TestTailSamples(t *testing.T) {
 			expectedSeries := seriesCount
 			expectedSamples := seriesCount * samplesCount
 			expectedExemplars := seriesCount * exemplarsCount
+			expectedHistograms := seriesCount * histogramsCount
 			retry(t, defaultRetryInterval, defaultRetries, func() bool {
 				return wt.checkNumLabels() >= expectedSeries
 			})
 			require.Equal(t, expectedSeries, wt.checkNumLabels(), "did not receive the expected number of series")
 			require.Equal(t, expectedSamples, wt.samplesAppended, "did not receive the expected number of samples")
 			require.Equal(t, expectedExemplars, wt.exemplarsAppended, "did not receive the expected number of exemplars")
+			require.Equal(t, expectedHistograms, wt.histogramsAppended, "did not receive the expected number of histograms")
 		})
 	}
 }
@@ -249,7 +279,7 @@ func TestReadToEndNoCheckpoint(t *testing.T) {
 			require.NoError(t, err)
 
 			wt := newWriteToMock()
-			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false)
+			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false)
 			go watcher.Start()
 
 			expected := seriesCount
@@ -338,7 +368,7 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 			_, _, err = Segments(w.Dir())
 			require.NoError(t, err)
 			wt := newWriteToMock()
-			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false)
+			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false)
 			go watcher.Start()
 
 			expected := seriesCount * 2
@@ -404,7 +434,7 @@ func TestReadCheckpoint(t *testing.T) {
 			require.NoError(t, err)
 
 			wt := newWriteToMock()
-			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false)
+			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false)
 			go watcher.Start()
 
 			expectedSeries := seriesCount
@@ -473,7 +503,7 @@ func TestReadCheckpointMultipleSegments(t *testing.T) {
 			}
 
 			wt := newWriteToMock()
-			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false)
+			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false)
 			watcher.MaxSegment = -1
 
 			// Set the Watcher's metrics so they're not nil pointers.
@@ -545,7 +575,7 @@ func TestCheckpointSeriesReset(t *testing.T) {
 			require.NoError(t, err)
 
 			wt := newWriteToMock()
-			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false)
+			watcher := NewWatcher(wMetrics, nil, nil, "", wt, dir, false, false)
 			watcher.MaxSegment = -1
 			go watcher.Start()
 
