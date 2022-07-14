@@ -937,7 +937,7 @@ func (ev *evaluator) error(err error) {
 }
 
 // recover is the handler that turns panics into returns from the top level of evaluation.
-func (ev *evaluator) recover(ws *storage.Warnings, errp *error) {
+func (ev *evaluator) recover(expr parser.Expr, ws *storage.Warnings, errp *error) {
 	e := recover()
 	if e == nil {
 		return
@@ -949,7 +949,7 @@ func (ev *evaluator) recover(ws *storage.Warnings, errp *error) {
 		buf := make([]byte, 64<<10)
 		buf = buf[:runtime.Stack(buf, false)]
 
-		level.Error(ev.logger).Log("msg", "runtime panic in parser", "err", e, "stacktrace", string(buf))
+		level.Error(ev.logger).Log("msg", "runtime panic in parser", "expr", expr.String(), "err", e, "stacktrace", string(buf))
 		*errp = fmt.Errorf("unexpected error: %w", err)
 	case errWithWarnings:
 		*errp = err.err
@@ -960,7 +960,7 @@ func (ev *evaluator) recover(ws *storage.Warnings, errp *error) {
 }
 
 func (ev *evaluator) Eval(expr parser.Expr) (v parser.Value, ws storage.Warnings, err error) {
-	defer ev.recover(&ws, &err)
+	defer ev.recover(expr, &ws, &err)
 
 	v, ws = ev.eval(expr)
 	return v, ws, nil
