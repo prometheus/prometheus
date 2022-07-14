@@ -120,7 +120,7 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 
 		for _, hp := range ts.Histograms {
 			hs := HistogramProtoToHistogram(hp)
-			_, err = app.AppendHistogram(0, labels, hp.Timestamp, &hs)
+			_, err = app.AppendHistogram(0, labels, hp.Timestamp, hs)
 			if err != nil {
 				unwrappedErr := errors.Unwrap(err)
 				// Althogh AppendHistogram does not currently return ErrDuplicateSampleForTimestamp there is

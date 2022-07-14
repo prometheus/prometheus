@@ -52,7 +52,7 @@ func main() {
 
 			for _, hp := range ts.Histograms {
 				h := remote.HistogramProtoToHistogram(hp)
-				fmt.Printf("\tHistogram:  %s\n", (&h).String())
+				fmt.Printf("\tHistogram:  %s\n", h.String())
 			}
 		}
 	})

@@ -86,40 +86,46 @@ message Histogram {
     uint64 zero_count_int     = 6;
     double zero_count_float   = 7;
   }
-  Buckets negative_buckets  = 8;
-  Buckets positive_buckets  = 9;
-  ResetHint reset_hint      = 10;
+  
+  // Negative Buckets.
+  repeated BucketSpan negative_spans =  8;
+  // Use either "negative_deltas" or "negative_counts", the former for
+  // regular histograms with integer counts, the latter for float
+  // histograms.
+  repeated sint64 negative_deltas    =  9; // Count delta of each bucket compared to previous one (or to zero for 1st bucket).
+  repeated double negative_counts    = 10; // Absolute count of each bucket.
+
+  // Positive Buckets.
+  repeated BucketSpan positive_spans = 11;
+  // Use either "positive_deltas" or "positive_counts", the former for
+  // regular histograms with integer counts, the latter for float
+  // histograms.
+  repeated sint64 positive_deltas    = 12; // Count delta of each bucket compared to previous one (or to zero for 1st bucket).
+  repeated double positive_counts    = 13; // Absolute count of each bucket.
+
+  ResetHint reset_hint               = 14;
   // timestamp is in ms format, see model/timestamp/timestamp.go for
   // conversion from time.Time to Prometheus timestamp.
-  int64 timestamp = 11;
+  int64 timestamp = 15;
 } 
 
-// Sparse buckets.
-message Buckets {
-  // A Span is a given number of consecutive buckets at a given
-  // offset. Logically, it would be more straightforward to include
-  // the bucket counts in the Span. However, the protobuf
-  // representation is more compact in the way the data is structured
-  // here (with all the buckets in a single array separate from the
-  // Spans).
-  message Span {
-    sint32 offset = 1; // Gap to previous span, or starting point for 1st span (which can be negative).
-    uint32 length = 2; // Length of consecutive buckets.
-  }
-  repeated Span span = 1;
-  // Only one of "delta" or "count" may be used, the former for regular
-  // histograms with integer counts, the latter for float histograms.
-  repeated sint64 delta = 2; // Count delta of each bucket compared to previous one (or to zero for 1st bucket).
-  repeated double count = 3; // Absolute count of each bucket.
+// A BucketSpan defines a number of consecutive buckets with their
+// offset. Logically, it would be more straightforward to include the
+// bucket counts in the Span. However, the protobuf representation is
+// more compact in the way the data is structured here (with all the
+// buckets in a single array separate from the Spans).
+message BucketSpan {
+  sint32 offset = 1; // Gap to previous span, or starting point for 1st span (which can be negative).
+  uint32 length = 2; // Length of consecutive buckets.
 }
 
 // TimeSeries represents samples and labels for a single time series.
 message TimeSeries {
   // For a timeseries to be valid, and for the samples and exemplars
   // to be ingested by the remote system properly, the labels field is required.
-  repeated Label labels   = 1 [(gogoproto.nullable) = false];
-  repeated Sample samples = 2 [(gogoproto.nullable) = false];
-  repeated Exemplar exemplars = 3 [(gogoproto.nullable) = false];
+  repeated Label labels         = 1 [(gogoproto.nullable) = false];
+  repeated Sample samples       = 2 [(gogoproto.nullable) = false];
+  repeated Exemplar exemplars   = 3 [(gogoproto.nullable) = false];
   repeated Histogram histograms = 4 [(gogoproto.nullable) = false];
 }
 
