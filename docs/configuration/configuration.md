@@ -1269,6 +1269,7 @@ changes resulting in well-formed target groups are applied.
 Files must contain a list of static configs, using these formats:
 
 **JSON**
+
 ```json
 [
   {
@@ -1282,6 +1283,7 @@ Files must contain a list of static configs, using these formats:
 ```
 
 **YAML**
+
 ```yaml
 - targets:
   [ - '<host>' ]
