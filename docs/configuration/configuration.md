@@ -623,7 +623,7 @@ metadata and a single tag).
 DigitalOcean SD configurations allow retrieving scrape targets from [DigitalOcean's](https://www.digitalocean.com/)
 Droplets API.
 This service discovery uses the public IPv4 address by default, by that can be
-changed with relabelling, as demonstrated in [the Prometheus digitalocean-sd
+changed with relabeling, as demonstrated in [the Prometheus digitalocean-sd
 configuration file](/documentation/examples/prometheus-digitalocean.yml).
 
 The following meta labels are available on targets during [relabeling](#relabel_config):
@@ -1992,7 +1992,7 @@ See below for the configuration options for Lightsail discovery:
 Linode SD configurations allow retrieving scrape targets from [Linode's](https://www.linode.com/)
 Linode APIv4.
 This service discovery uses the public IPv4 address by default, by that can be
-changed with relabelling, as demonstrated in [the Prometheus linode-sd
+changed with relabeling, as demonstrated in [the Prometheus linode-sd
 configuration file](/documentation/examples/prometheus-linode.yml).
 
 The following meta labels are available on targets during [relabeling](#relabel_config):
@@ -2461,7 +2461,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_scaleway_instance_zone`: the zone of the server (ex: `fr-par-1`, complete list [here](https://developers.scaleway.com/en/products/instance/api/#introduction))
 
 This role uses the private IPv4 address by default. This can be
-changed with relabelling, as demonstrated in [the Prometheus scaleway-sd
+changed with relabeling, as demonstrated in [the Prometheus scaleway-sd
 configuration file](/documentation/examples/prometheus-scaleway.yml).
 
 #### Baremetal role
@@ -2479,7 +2479,7 @@ configuration file](/documentation/examples/prometheus-scaleway.yml).
 * `__meta_scaleway_baremetal_zone`: the zone of the server (ex: `fr-par-1`, complete list [here](https://developers.scaleway.com/en/products/instance/api/#introduction))
 
 This role uses the public IPv4 address by default. This can be
-changed with relabelling, as demonstrated in [the Prometheus scaleway-sd
+changed with relabeling, as demonstrated in [the Prometheus scaleway-sd
 configuration file](/documentation/examples/prometheus-scaleway.yml).
 
 See below for the configuration options for Scaleway discovery:
@@ -2616,7 +2616,7 @@ for a practical example on how to set up Uyuni Prometheus configuration.
 Vultr SD configurations allow retrieving scrape targets from [Vultr](https://www.vultr.com/).
 
 This service discovery uses the main IPv4 address by default, which that be
-changed with relabelling, as demonstrated in [the Prometheus vultr-sd
+changed with relabeling, as demonstrated in [the Prometheus vultr-sd
 configuration file](/documentation/examples/prometheus-vultr.yml).
 
 The following meta labels are available on targets during [relabeling](#relabel_config):
