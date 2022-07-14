@@ -38,6 +38,8 @@ import (
 	"github.com/prometheus/prometheus/rules"
 )
 
+const startupTime = 10 * time.Second
+
 var (
 	promPath    = os.Args[0]
 	promConfig  = filepath.Join("..", "..", "documentation", "examples", "prometheus.yml")
@@ -226,7 +228,7 @@ func TestWALSegmentSizeBounds(t *testing.T) {
 			select {
 			case err := <-done:
 				t.Errorf("prometheus should be still running: %v", err)
-			case <-time.After(5 * time.Second):
+			case <-time.After(startupTime):
 				prom.Process.Kill()
 				<-done
 			}
@@ -272,7 +274,7 @@ func TestMaxBlockChunkSegmentSizeBounds(t *testing.T) {
 			select {
 			case err := <-done:
 				t.Errorf("prometheus should be still running: %v", err)
-			case <-time.After(5 * time.Second):
+			case <-time.After(startupTime):
 				prom.Process.Kill()
 				<-done
 			}
@@ -366,7 +368,7 @@ func TestAgentSuccessfulStartup(t *testing.T) {
 	case err := <-done:
 		t.Logf("prometheus agent should be still running: %v", err)
 		actualExitStatus = prom.ProcessState.ExitCode()
-	case <-time.After(5 * time.Second):
+	case <-time.After(startupTime):
 		prom.Process.Kill()
 	}
 	require.Equal(t, 0, actualExitStatus)
@@ -387,7 +389,7 @@ func TestAgentFailedStartupWithServerFlag(t *testing.T) {
 	case err := <-done:
 		t.Logf("prometheus agent should not be running: %v", err)
 		actualExitStatus = prom.ProcessState.ExitCode()
-	case <-time.After(5 * time.Second):
+	case <-time.After(startupTime):
 		prom.Process.Kill()
 	}
 
@@ -411,7 +413,7 @@ func TestAgentFailedStartupWithInvalidConfig(t *testing.T) {
 	case err := <-done:
 		t.Logf("prometheus agent should not be running: %v", err)
 		actualExitStatus = prom.ProcessState.ExitCode()
-	case <-time.After(5 * time.Second):
+	case <-time.After(startupTime):
 		prom.Process.Kill()
 	}
 	require.Equal(t, 2, actualExitStatus)
@@ -462,7 +464,7 @@ func TestModeSpecificFlags(t *testing.T) {
 				select {
 				case err := <-done:
 					t.Errorf("prometheus should be still running: %v", err)
-				case <-time.After(5 * time.Second):
+				case <-time.After(startupTime):
 					prom.Process.Kill()
 					<-done
 				}
