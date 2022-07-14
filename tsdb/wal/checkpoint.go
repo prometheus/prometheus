@@ -253,8 +253,10 @@ func Checkpoint(logger log.Logger, w *WAL, from, to int, keep func(id chunks.Hea
 			repl := 0
 			for _, m := range metadata {
 				if keep(m.Ref) {
+					if _, ok := latestMetadataMap[m.Ref]; !ok {
+						repl++
+					}
 					latestMetadataMap[m.Ref] = m
-					repl++
 				}
 			}
 			stats.TotalMetadata += len(metadata)
