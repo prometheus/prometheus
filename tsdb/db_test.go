@@ -3579,22 +3579,23 @@ func TestMetadataCheckpointingOnlyKeepsLatestEntry(t *testing.T) {
 	app.AppendMetadata(0, s2, m2)
 	app.AppendMetadata(0, s3, m3)
 	app.AppendMetadata(0, s4, m4)
+	app.Commit()
 
 	// Update metadata for first series.
+	app = hb.Appender(ctx)
 	m5 := metadata.Metadata{Type: "counter", Unit: "unit_5", Help: "help_5"}
 	app.AppendMetadata(0, s1, m5)
+	app.Commit()
 
 	// Switch back-and-forth metadata for second series.
-	// Since it ended on the same metadata record, we don't expect a new
-	// addition here.
+	// Since it ended on a new metadata record, we expect a single new entry.
+	app = hb.Appender(ctx)
 	m6 := metadata.Metadata{Type: "counter", Unit: "unit_6", Help: "help_6"}
 	app.AppendMetadata(0, s2, m6)
 	app.AppendMetadata(0, s2, m2)
 	app.AppendMetadata(0, s2, m6)
 	app.AppendMetadata(0, s2, m2)
 	app.AppendMetadata(0, s2, m6)
-	app.AppendMetadata(0, s2, m2)
-
 	app.Commit()
 
 	// Let's create a checkpoint.
@@ -3626,7 +3627,7 @@ func TestMetadataCheckpointingOnlyKeepsLatestEntry(t *testing.T) {
 	// metadata kept around.
 	wantMetadata := []record.RefMetadata{
 		{Ref: 1, Type: record.GetMetricType(m5.Type), Unit: m5.Unit, Help: m5.Help},
-		{Ref: 2, Type: record.GetMetricType(m2.Type), Unit: m2.Unit, Help: m2.Help},
+		{Ref: 2, Type: record.GetMetricType(m6.Type), Unit: m6.Unit, Help: m6.Help},
 		{Ref: 4, Type: record.GetMetricType(m4.Type), Unit: m4.Unit, Help: m4.Help},
 	}
 	require.Len(t, gotMetadataBlocks, 1)
