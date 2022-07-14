@@ -3561,9 +3561,11 @@ func TestMetadataCheckpointingOnlyKeepsLatestEntry(t *testing.T) {
 	s1 := labels.FromStrings("a", "b")
 	s2 := labels.FromStrings("c", "d")
 	s3 := labels.FromStrings("e", "f")
+	s4 := labels.FromStrings("g", "h")
 	app.Append(0, s1, 0, 0)
 	app.Append(0, s2, 0, 0)
 	app.Append(0, s3, 0, 0)
+	app.Append(0, s4, 0, 0)
 	app.Commit()
 
 	// Add a first round of metadata to the first three series.
@@ -3572,23 +3574,25 @@ func TestMetadataCheckpointingOnlyKeepsLatestEntry(t *testing.T) {
 	m1 := metadata.Metadata{Type: "gauge", Unit: "unit_1", Help: "help_1"}
 	m2 := metadata.Metadata{Type: "gauge", Unit: "unit_2", Help: "help_2"}
 	m3 := metadata.Metadata{Type: "gauge", Unit: "unit_3", Help: "help_3"}
+	m4 := metadata.Metadata{Type: "gauge", Unit: "unit_4", Help: "help_4"}
 	app.AppendMetadata(0, s1, m1)
 	app.AppendMetadata(0, s2, m2)
 	app.AppendMetadata(0, s3, m3)
+	app.AppendMetadata(0, s4, m4)
 
 	// Update metadata for first series.
-	m4 := metadata.Metadata{Type: "counter", Unit: "unit_4", Help: "help_4"}
-	app.AppendMetadata(0, s1, m4)
+	m5 := metadata.Metadata{Type: "counter", Unit: "unit_5", Help: "help_5"}
+	app.AppendMetadata(0, s1, m5)
 
 	// Switch back-and-forth metadata for second series.
 	// Since it ended on the same metadata record, we don't expect a new
 	// addition here.
-	m5 := metadata.Metadata{Type: "counter", Unit: "unit_5", Help: "help_5"}
-	app.AppendMetadata(0, s2, m5)
+	m6 := metadata.Metadata{Type: "counter", Unit: "unit_6", Help: "help_6"}
+	app.AppendMetadata(0, s2, m6)
 	app.AppendMetadata(0, s2, m2)
-	app.AppendMetadata(0, s2, m5)
+	app.AppendMetadata(0, s2, m6)
 	app.AppendMetadata(0, s2, m2)
-	app.AppendMetadata(0, s2, m5)
+	app.AppendMetadata(0, s2, m6)
 	app.AppendMetadata(0, s2, m2)
 
 	app.Commit()
@@ -3596,7 +3600,13 @@ func TestMetadataCheckpointingOnlyKeepsLatestEntry(t *testing.T) {
 	// Let's create a checkpoint.
 	first, last, err := wal.Segments(w.Dir())
 	require.NoError(t, err)
-	_, err = wal.Checkpoint(log.NewNopLogger(), w, first, last-1, func(id chunks.HeadSeriesRef) bool { return true }, 0)
+	keep := func(id chunks.HeadSeriesRef) bool {
+		if id == 3 {
+			return false
+		}
+		return true
+	}
+	_, err = wal.Checkpoint(log.NewNopLogger(), w, first, last-1, keep, 0)
 	require.NoError(t, err)
 
 	// Confirm there's been a checkpoint.
@@ -3615,20 +3625,16 @@ func TestMetadataCheckpointingOnlyKeepsLatestEntry(t *testing.T) {
 	// There should only be 1 metadata block present, with only the latest
 	// metadata kept around.
 	wantMetadata := []record.RefMetadata{
-		{Ref: 1, Type: record.GetMetricType(m4.Type), Unit: m4.Unit, Help: m4.Help},
+		{Ref: 1, Type: record.GetMetricType(m5.Type), Unit: m5.Unit, Help: m5.Help},
 		{Ref: 2, Type: record.GetMetricType(m2.Type), Unit: m2.Unit, Help: m2.Help},
-		{Ref: 3, Type: record.GetMetricType(m3.Type), Unit: m3.Unit, Help: m3.Help},
+		{Ref: 4, Type: record.GetMetricType(m4.Type), Unit: m4.Unit, Help: m4.Help},
 	}
 	require.Len(t, gotMetadataBlocks, 1)
 	require.Len(t, gotMetadataBlocks[0], 3)
+	gotMetadataBlock := gotMetadataBlocks[0]
 
-	// The usage of a map during checkpointing means that the metadata may have
-	// been written out-of-order, that's why we're not explicitly comparing the
-	// two slices.
-	for _, m := range gotMetadataBlocks[0] {
-		require.Contains(t, wantMetadata, m)
-	}
-
+	sort.Slice(gotMetadataBlock, func(i, j int) bool { return gotMetadataBlock[i].Ref < gotMetadataBlock[j].Ref })
+	require.Equal(t, wantMetadata, gotMetadataBlock)
 	require.NoError(t, hb.Close())
 }
 

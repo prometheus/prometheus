@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
@@ -252,10 +253,8 @@ func TestCheckpoint(t *testing.T) {
 				{Ref: 2, Unit: fmt.Sprintf("%d", last-100), Help: fmt.Sprintf("%d", last-100)},
 				{Ref: 4, Unit: "unit", Help: "help"},
 			}
-			require.Equal(t, len(series), len(metadata))
-			for _, m := range expectedRefMetadata {
-				require.Contains(t, metadata, m)
-			}
+			sort.Slice(metadata, func(i, j int) bool { return metadata[i].Ref < metadata[j].Ref })
+			require.Equal(t, expectedRefMetadata, metadata)
 		})
 	}
 }
