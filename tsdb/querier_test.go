@@ -1923,13 +1923,17 @@ func BenchmarkQueries(b *testing.B) {
 		},
 	}
 
-	queryTypes := make(map[string]storage.Querier)
+	type qt struct {
+		typ     string
+		querier storage.Querier
+	}
+	var queryTypes []qt // We use a slice instead of map to keep the order of test cases consistent.
 	defer func() {
 		for _, q := range queryTypes {
 			// Can't run a check for error here as some of these will fail as
 			// queryTypes is using the same slice for the different block queriers
 			// and would have been closed in the previous iteration.
-			q.Close()
+			q.querier.Close()
 		}
 	}()
 
@@ -1970,21 +1974,38 @@ func BenchmarkQueries(b *testing.B) {
 					qs = append(qs, q)
 				}
 
-				queryTypes["_1-Block"] = storage.NewMergeQuerier(qs[:1], nil, storage.ChainedSeriesMerge)
-				queryTypes["_3-Blocks"] = storage.NewMergeQuerier(qs[0:3], nil, storage.ChainedSeriesMerge)
-				queryTypes["_10-Blocks"] = storage.NewMergeQuerier(qs, nil, storage.ChainedSeriesMerge)
+				queryTypes = append(queryTypes, qt{"_1-Block", storage.NewMergeQuerier(qs[:1], nil, storage.ChainedSeriesMerge)})
+				queryTypes = append(queryTypes, qt{"_3-Blocks", storage.NewMergeQuerier(qs[0:3], nil, storage.ChainedSeriesMerge)})
+				queryTypes = append(queryTypes, qt{"_10-Blocks", storage.NewMergeQuerier(qs, nil, storage.ChainedSeriesMerge)})
 
 				chunkDir := b.TempDir()
 				head := createHead(b, nil, series, chunkDir)
-				qHead, err := NewBlockQuerier(head, 1, nSamples)
+				qHead, err := NewBlockQuerier(NewRangeHead(head, 1, nSamples), 1, nSamples)
 				require.NoError(b, err)
-				queryTypes["_Head"] = qHead
+				queryTypes = append(queryTypes, qt{"_Head", qHead})
 
-				for qtype, querier := range queryTypes {
-					b.Run(title+qtype+"_nSeries:"+strconv.Itoa(nSeries)+"_nSamples:"+strconv.Itoa(int(nSamples)), func(b *testing.B) {
+				for _, oooPercentage := range []int{1, 3, 5, 10} {
+					chunkDir := b.TempDir()
+					totalOOOSamples := oooPercentage * int(nSamples) / 100
+					oooSampleFrequency := int(nSamples) / totalOOOSamples
+					head := createHeadWithOOOSamples(b, nil, series, chunkDir, oooSampleFrequency)
+
+					qHead, err := NewBlockQuerier(NewRangeHead(head, 1, nSamples), 1, nSamples)
+					require.NoError(b, err)
+					qOOOHead, err := NewBlockQuerier(NewOOORangeHead(head, 1, nSamples), 1, nSamples)
+					require.NoError(b, err)
+
+					queryTypes = append(queryTypes, qt{
+						fmt.Sprintf("_Head_oooPercent:%d", oooPercentage),
+						storage.NewMergeQuerier([]storage.Querier{qHead, qOOOHead}, nil, storage.ChainedSeriesMerge),
+					})
+				}
+
+				for _, q := range queryTypes {
+					b.Run(title+q.typ+"_nSeries:"+strconv.Itoa(nSeries)+"_nSamples:"+strconv.Itoa(int(nSamples)), func(b *testing.B) {
 						expExpansions, err := strconv.Atoi(string(title[len(title)-1]))
 						require.NoError(b, err)
-						benchQuery(b, expExpansions, querier, selectors)
+						benchQuery(b, expExpansions, q.querier, selectors)
 					})
 				}
 				require.NoError(b, head.Close())
@@ -2004,6 +2025,7 @@ func benchQuery(b *testing.B, expExpansions int, q storage.Querier, selectors la
 			s.Labels()
 			it := s.Iterator()
 			for it.Next() {
+				_, _ = it.At()
 			}
 			actualExpansions++
 		}

@@ -27,6 +27,7 @@ import (
 	"testing"
 
 	"github.com/go-kit/log"
+	prom_testutil "github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -508,6 +509,66 @@ func createHead(tb testing.TB, w *wal.WAL, series []storage.Series, chunkDir str
 		require.NoError(tb, it.Err())
 	}
 	require.NoError(tb, app.Commit())
+	return head
+}
+
+func createHeadWithOOOSamples(tb testing.TB, w *wal.WAL, series []storage.Series, chunkDir string, oooSampleFrequency int) *Head {
+	opts := DefaultHeadOptions()
+	opts.ChunkDirRoot = chunkDir
+	opts.OutOfOrderTimeWindow.Store(10000000000)
+	head, err := NewHead(nil, nil, w, nil, opts, nil)
+	require.NoError(tb, err)
+
+	oooSampleLabels := make([]labels.Labels, 0, len(series))
+	oooSamples := make([]tsdbutil.SampleSlice, 0, len(series))
+
+	totalSamples := 0
+	app := head.Appender(context.Background())
+	for _, s := range series {
+		ref := storage.SeriesRef(0)
+		it := s.Iterator()
+		lset := s.Labels()
+		os := tsdbutil.SampleSlice{}
+		count := 0
+		for it.Next() {
+			totalSamples++
+			count++
+			t, v := it.At()
+			if count%oooSampleFrequency == 0 {
+				os = append(os, sample{t: t, v: v})
+				continue
+			}
+			ref, err = app.Append(ref, lset, t, v)
+			require.NoError(tb, err)
+		}
+		require.NoError(tb, it.Err())
+		if len(os) > 0 {
+			oooSampleLabels = append(oooSampleLabels, lset)
+			oooSamples = append(oooSamples, os)
+		}
+	}
+	require.NoError(tb, app.Commit())
+
+	oooSamplesAppended := 0
+	require.Equal(tb, float64(0), prom_testutil.ToFloat64(head.metrics.outOfOrderSamplesAppended))
+
+	app = head.Appender(context.Background())
+	for i, lset := range oooSampleLabels {
+		ref := storage.SeriesRef(0)
+		for _, sample := range oooSamples[i] {
+			ref, err = app.Append(ref, lset, sample.T(), sample.V())
+			require.NoError(tb, err)
+			oooSamplesAppended++
+		}
+	}
+	require.NoError(tb, app.Commit())
+
+	actOOOAppended := prom_testutil.ToFloat64(head.metrics.outOfOrderSamplesAppended)
+	require.GreaterOrEqual(tb, actOOOAppended, float64(oooSamplesAppended-len(series)))
+	require.LessOrEqual(tb, actOOOAppended, float64(oooSamplesAppended))
+
+	require.Equal(tb, float64(totalSamples), prom_testutil.ToFloat64(head.metrics.samplesAppended))
+
 	return head
 }
 
