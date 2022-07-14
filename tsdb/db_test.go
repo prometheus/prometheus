@@ -3602,10 +3602,7 @@ func TestMetadataCheckpointingOnlyKeepsLatestEntry(t *testing.T) {
 	first, last, err := wal.Segments(w.Dir())
 	require.NoError(t, err)
 	keep := func(id chunks.HeadSeriesRef) bool {
-		if id == 3 {
-			return false
-		}
-		return true
+		return id != 3
 	}
 	_, err = wal.Checkpoint(log.NewNopLogger(), w, first, last-1, keep, 0)
 	require.NoError(t, err)
