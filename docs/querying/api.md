@@ -476,8 +476,8 @@ GET /api/v1/targets
 ```
 
 Both the active and dropped targets are part of the response by default.
-`labels` represents the label set after relabelling has occurred.
-`discoveredLabels` represent the unmodified labels retrieved during service discovery before relabelling has occurred.
+`labels` represents the label set after relabeling has occurred.
+`discoveredLabels` represent the unmodified labels retrieved during service discovery before relabeling has occurred.
 
 ```json
 $ curl http://localhost:9090/api/v1/targets
