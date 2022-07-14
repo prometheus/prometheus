@@ -386,7 +386,7 @@ func (e *Encoder) Metadata(metadata []RefMetadata, b []byte) []byte {
 
 		buf.PutByte(m.Type)
 
-		buf.PutUvarint(2) // num_fields: We currently have two more metadata fields, UNIT and HELP
+		buf.PutUvarint(2) // num_fields: We currently have two more metadata fields, UNIT and HELP.
 		buf.PutUvarintStr(unitMetaName)
 		buf.PutUvarintStr(m.Unit)
 		buf.PutUvarintStr(helpMetaName)

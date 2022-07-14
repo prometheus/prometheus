@@ -328,15 +328,15 @@ Outer:
 			exemplarsPool.Put(v)
 		case []record.RefMetadata:
 			for _, m := range v {
-				if s := h.series.getByID(chunks.HeadSeriesRef(m.Ref)); s == nil {
+				s := h.series.getByID(chunks.HeadSeriesRef(m.Ref))
+				if s == nil {
 					unknownMetadataRefs.Inc()
 					continue
-				} else {
-					s.meta = metadata.Metadata{
-						Type: record.ToTextparseMetricType(m.Type),
-						Unit: m.Unit,
-						Help: m.Help,
-					}
+				}
+				s.meta = metadata.Metadata{
+					Type: record.ToTextparseMetricType(m.Type),
+					Unit: m.Unit,
+					Help: m.Help,
 				}
 			}
 			//nolint:staticcheck // Ignore SA6002 relax staticcheck verification.

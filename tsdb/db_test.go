@@ -3593,7 +3593,7 @@ func TestMetadataCheckpointingOnlyKeepsLatestEntry(t *testing.T) {
 
 	app.Commit()
 
-	// Let's cause a checkpoint.
+	// Let's create a checkpoint.
 	first, last, err := wal.Segments(w.Dir())
 	require.NoError(t, err)
 	_, err = wal.Checkpoint(log.NewNopLogger(), w, first, last-1, func(id chunks.HeadSeriesRef) bool { return true }, 0)
@@ -3700,9 +3700,8 @@ func TestMetadataAssertInMemoryData(t *testing.T) {
 		require.NoError(t, reopenDB.Close())
 	})
 
-	size, err := reopenDB.head.wal.Size()
+	_, err = reopenDB.head.wal.Size()
 	require.NoError(t, err)
-	require.NotEqual(t, 0, size)
 
 	require.Equal(t, reopenDB.head.series.getByHash(s1.Hash(), s1).meta, m1)
 	require.Equal(t, reopenDB.head.series.getByHash(s2.Hash(), s2).meta, m5)

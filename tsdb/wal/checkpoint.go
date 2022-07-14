@@ -86,7 +86,8 @@ const checkpointPrefix = "checkpoint."
 
 // Checkpoint creates a compacted checkpoint of segments in range [from, to] in the given WAL.
 // It includes the most recent checkpoint if it exists.
-// All series not satisfying keep and samples/tombstones/exemplars/metadata below mint are dropped.
+// All series not satisfying keep, samples/tombstones/exemplars below mint and
+// metadata that are not the latest are dropped.
 //
 // The checkpoint is stored in a directory named checkpoint.N in the same
 // segmented format as the original WAL itself.

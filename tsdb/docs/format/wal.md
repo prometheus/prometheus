@@ -121,7 +121,7 @@ See: https://github.com/OpenObservability/OpenMetrics/blob/main/specification/Op
 
 ### Metadata records
 
-Metadata records encode the immutable metadata updates associated with a series.
+Metadata records encode the metadata updates associated with a series.
 
 ```
 ┌────────────────────────────────────────────┐
