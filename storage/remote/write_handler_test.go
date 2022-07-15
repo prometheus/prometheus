@@ -188,8 +188,8 @@ func (m *mockAppendable) AppendExemplar(_ storage.SeriesRef, l labels.Labels, e 
 	return 0, nil
 }
 
-func (m *mockAppendable) AppendMetadata(_ storage.SeriesRef, _ labels.Labels, _ metadata.Metadata) (storage.SeriesRef, error) {
+func (m *mockAppendable) UpdateMetadata(_ storage.SeriesRef, _ labels.Labels, _ metadata.Metadata) (storage.SeriesRef, error) {
 	// TODO: Wire metadata in a mockAppendable field when we get around to handling metadata in remote_write.
-	// AppendMetadata is no-op for remote write (where mockAppendable is being used to test) for now.
+	// UpdateMetadata is no-op for remote write (where mockAppendable is being used to test) for now.
 	return 0, nil
 }

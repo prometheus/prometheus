@@ -66,13 +66,13 @@ func (a *initAppender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e 
 	return a.app.AppendExemplar(ref, l, e)
 }
 
-func (a *initAppender) AppendMetadata(ref storage.SeriesRef, l labels.Labels, m metadata.Metadata) (storage.SeriesRef, error) {
+func (a *initAppender) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, m metadata.Metadata) (storage.SeriesRef, error) {
 	if a.app != nil {
-		return a.app.AppendMetadata(ref, l, m)
+		return a.app.UpdateMetadata(ref, l, m)
 	}
 
 	a.app = a.head.appender()
-	return a.app.AppendMetadata(ref, l, m)
+	return a.app.UpdateMetadata(ref, l, m)
 }
 
 // initTime initializes a head with the first timestamp. This only needs to be called
@@ -384,9 +384,9 @@ func (a *headAppender) AppendExemplar(ref storage.SeriesRef, lset labels.Labels,
 	return storage.SeriesRef(s.ref), nil
 }
 
-// AppendMetadata for headAppender assumes the series ref already exists, and so it doesn't
+// UpdateMetadata for headAppender assumes the series ref already exists, and so it doesn't
 // use getOrCreate or make any of the lset sanity checks that Append does.
-func (a *headAppender) AppendMetadata(ref storage.SeriesRef, lset labels.Labels, meta metadata.Metadata) (storage.SeriesRef, error) {
+func (a *headAppender) UpdateMetadata(ref storage.SeriesRef, lset labels.Labels, meta metadata.Metadata) (storage.SeriesRef, error) {
 	s := a.head.series.getByID(chunks.HeadSeriesRef(ref))
 	if s == nil {
 		s = a.head.series.getByHash(lset.Hash(), lset)

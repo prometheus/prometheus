@@ -173,14 +173,14 @@ func (f *fanoutAppender) AppendExemplar(ref SeriesRef, l labels.Labels, e exempl
 	return ref, nil
 }
 
-func (f *fanoutAppender) AppendMetadata(ref SeriesRef, l labels.Labels, m metadata.Metadata) (SeriesRef, error) {
-	ref, err := f.primary.AppendMetadata(ref, l, m)
+func (f *fanoutAppender) UpdateMetadata(ref SeriesRef, l labels.Labels, m metadata.Metadata) (SeriesRef, error) {
+	ref, err := f.primary.UpdateMetadata(ref, l, m)
 	if err != nil {
 		return ref, err
 	}
 
 	for _, appender := range f.secondaries {
-		if _, err := appender.AppendMetadata(ref, l, m); err != nil {
+		if _, err := appender.UpdateMetadata(ref, l, m); err != nil {
 			return 0, err
 		}
 	}

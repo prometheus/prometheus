@@ -3514,9 +3514,9 @@ func TestMetadataInWAL(t *testing.T) {
 	m1 := metadata.Metadata{Type: "gauge", Unit: "unit_1", Help: "help_1"}
 	m2 := metadata.Metadata{Type: "gauge", Unit: "unit_2", Help: "help_2"}
 	m3 := metadata.Metadata{Type: "gauge", Unit: "unit_3", Help: "help_3"}
-	app.AppendMetadata(0, s1, m1)
-	app.AppendMetadata(0, s2, m2)
-	app.AppendMetadata(0, s3, m3)
+	app.UpdateMetadata(0, s1, m1)
+	app.UpdateMetadata(0, s2, m2)
+	app.UpdateMetadata(0, s3, m3)
 	app.Commit()
 
 	// Add a replicated metadata entry to the first series,
@@ -3525,9 +3525,9 @@ func TestMetadataInWAL(t *testing.T) {
 	m4 := metadata.Metadata{Type: "counter", Unit: "unit_4", Help: "help_4"}
 	m5 := metadata.Metadata{Type: "counter", Unit: "unit_5", Help: "help_5"}
 	app = db.Appender(ctx)
-	app.AppendMetadata(0, s1, m1)
-	app.AppendMetadata(0, s4, m4)
-	app.AppendMetadata(0, s2, m5)
+	app.UpdateMetadata(0, s1, m1)
+	app.UpdateMetadata(0, s4, m4)
+	app.UpdateMetadata(0, s2, m5)
 	app.Commit()
 
 	// Read the WAL to see if the disk storage format is correct.
@@ -3575,27 +3575,27 @@ func TestMetadataCheckpointingOnlyKeepsLatestEntry(t *testing.T) {
 	m2 := metadata.Metadata{Type: "gauge", Unit: "unit_2", Help: "help_2"}
 	m3 := metadata.Metadata{Type: "gauge", Unit: "unit_3", Help: "help_3"}
 	m4 := metadata.Metadata{Type: "gauge", Unit: "unit_4", Help: "help_4"}
-	app.AppendMetadata(0, s1, m1)
-	app.AppendMetadata(0, s2, m2)
-	app.AppendMetadata(0, s3, m3)
-	app.AppendMetadata(0, s4, m4)
+	app.UpdateMetadata(0, s1, m1)
+	app.UpdateMetadata(0, s2, m2)
+	app.UpdateMetadata(0, s3, m3)
+	app.UpdateMetadata(0, s4, m4)
 	app.Commit()
 
 	// Update metadata for first series.
 	app = hb.Appender(ctx)
 	m5 := metadata.Metadata{Type: "counter", Unit: "unit_5", Help: "help_5"}
-	app.AppendMetadata(0, s1, m5)
+	app.UpdateMetadata(0, s1, m5)
 	app.Commit()
 
 	// Switch back-and-forth metadata for second series.
 	// Since it ended on a new metadata record, we expect a single new entry.
 	app = hb.Appender(ctx)
 	m6 := metadata.Metadata{Type: "counter", Unit: "unit_6", Help: "help_6"}
-	app.AppendMetadata(0, s2, m6)
-	app.AppendMetadata(0, s2, m2)
-	app.AppendMetadata(0, s2, m6)
-	app.AppendMetadata(0, s2, m2)
-	app.AppendMetadata(0, s2, m6)
+	app.UpdateMetadata(0, s2, m6)
+	app.UpdateMetadata(0, s2, m2)
+	app.UpdateMetadata(0, s2, m6)
+	app.UpdateMetadata(0, s2, m2)
+	app.UpdateMetadata(0, s2, m6)
 	app.Commit()
 
 	// Let's create a checkpoint.
@@ -3659,9 +3659,9 @@ func TestMetadataAssertInMemoryData(t *testing.T) {
 	m1 := metadata.Metadata{Type: "gauge", Unit: "unit_1", Help: "help_1"}
 	m2 := metadata.Metadata{Type: "gauge", Unit: "unit_2", Help: "help_2"}
 	m3 := metadata.Metadata{Type: "gauge", Unit: "unit_3", Help: "help_3"}
-	app.AppendMetadata(0, s1, m1)
-	app.AppendMetadata(0, s2, m2)
-	app.AppendMetadata(0, s3, m3)
+	app.UpdateMetadata(0, s1, m1)
+	app.UpdateMetadata(0, s2, m2)
+	app.UpdateMetadata(0, s3, m3)
 	app.Commit()
 
 	series1 := db.head.series.getByHash(s1.Hash(), s1)
@@ -3680,9 +3680,9 @@ func TestMetadataAssertInMemoryData(t *testing.T) {
 	app = db.Appender(ctx)
 	m4 := metadata.Metadata{Type: "counter", Unit: "unit_4", Help: "help_4"}
 	m5 := metadata.Metadata{Type: "counter", Unit: "unit_5", Help: "help_5"}
-	app.AppendMetadata(0, s1, m1)
-	app.AppendMetadata(0, s4, m4)
-	app.AppendMetadata(0, s2, m5)
+	app.UpdateMetadata(0, s1, m1)
+	app.UpdateMetadata(0, s4, m4)
+	app.UpdateMetadata(0, s2, m5)
 	app.Commit()
 
 	series1 = db.head.series.getByHash(s1.Hash(), s1)

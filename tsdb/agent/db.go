@@ -813,7 +813,7 @@ func (a *appender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exem
 	return storage.SeriesRef(s.ref), nil
 }
 
-func (a *appender) AppendMetadata(ref storage.SeriesRef, l labels.Labels, m metadata.Metadata) (storage.SeriesRef, error) {
+func (a *appender) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, m metadata.Metadata) (storage.SeriesRef, error) {
 	// TODO: Wire metadata in the Agent's appender.
 	return 0, nil
 }

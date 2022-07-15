@@ -223,7 +223,7 @@ type Appender interface {
 	// Appender has to be discarded after rollback.
 	Rollback() error
 	ExemplarAppender
-	MetadataAppender
+	MetadataUpdater
 }
 
 // GetRef is an extra interface on Appenders used by downstream projects
@@ -252,16 +252,16 @@ type ExemplarAppender interface {
 	AppendExemplar(ref SeriesRef, l labels.Labels, e exemplar.Exemplar) (SeriesRef, error)
 }
 
-// MetadataAppender provides an interface for associating metadata to stored series.
-type MetadataAppender interface {
-	// AppendMetadata appends a metadata entry for the given series and labels.
+// MetadataUpdater provides an interface for associating metadata to stored series.
+type MetadataUpdater interface {
+	// UpdateMetadata appends a metadata entry for the given series and labels.
 	// A series reference number is returned which can be used to modify the
 	// metadata of the given series in the same or later transactions.
 	// Returned reference numbers are ephemeral and may be rejected in calls
-	// to AppendMetadata() at any point. If the series does not exist, AppendMetadata
+	// to UpdateMetadata() at any point. If the series does not exist, UpdateMetadata
 	// returns an error.
 	// If the reference is 0 it must not be used for caching.
-	AppendMetadata(ref SeriesRef, l labels.Labels, m metadata.Metadata) (SeriesRef, error)
+	UpdateMetadata(ref SeriesRef, l labels.Labels, m metadata.Metadata) (SeriesRef, error)
 }
 
 // SeriesSet contains a set of series.

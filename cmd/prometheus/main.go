@@ -1404,7 +1404,7 @@ func (n notReadyAppender) AppendExemplar(ref storage.SeriesRef, l labels.Labels,
 	return 0, tsdb.ErrNotReady
 }
 
-func (n notReadyAppender) AppendMetadata(ref storage.SeriesRef, l labels.Labels, m metadata.Metadata) (storage.SeriesRef, error) {
+func (n notReadyAppender) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, m metadata.Metadata) (storage.SeriesRef, error) {
 	return 0, tsdb.ErrNotReady
 }
 
