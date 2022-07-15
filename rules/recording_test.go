@@ -15,6 +15,7 @@ package rules
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -45,35 +46,48 @@ func TestRuleEval(t *testing.T) {
 	now := time.Now()
 
 	suite := []struct {
-		name   string
-		expr   parser.Expr
-		labels labels.Labels
-		result promql.Vector
-		err    string
+		name      string
+		expr      parser.Expr
+		labels    labels.Labels
+		queryFunc QueryFunc
+		result    promql.Vector
+		err       string
 	}{
 		{
-			name:   "nolabels",
-			expr:   &parser.NumberLiteral{Val: 1},
-			labels: labels.Labels{},
+			name:      "nolabels",
+			expr:      &parser.NumberLiteral{Val: 1},
+			labels:    labels.Labels{},
+			queryFunc: EngineQueryFunc(engine, storage),
 			result: promql.Vector{promql.Sample{
 				Metric: labels.FromStrings("__name__", "nolabels"),
 				Point:  promql.Point{V: 1, T: timestamp.FromTime(now)},
 			}},
 		},
 		{
-			name:   "labels",
-			expr:   &parser.NumberLiteral{Val: 1},
-			labels: labels.FromStrings("foo", "bar"),
+			name:      "labels",
+			expr:      &parser.NumberLiteral{Val: 1},
+			labels:    labels.FromStrings("foo", "bar"),
+			queryFunc: EngineQueryFunc(engine, storage),
 			result: promql.Vector{promql.Sample{
 				Metric: labels.FromStrings("__name__", "labels", "foo", "bar"),
 				Point:  promql.Point{V: 1, T: timestamp.FromTime(now)},
 			}},
 		},
+		{
+			name:   "query processing error",
+			expr:   &parser.NumberLiteral{Val: 1},
+			labels: labels.FromStrings("foo", "bar"),
+			queryFunc: func(ctx context.Context, q string, t time.Time) (promql.Vector, error) {
+				return nil, fmt.Errorf("dummy")
+			},
+			result: nil,
+			err:    "dummy",
+		},
 	}
 
 	for _, test := range suite {
 		rule := NewRecordingRule(test.name, test.expr, test.labels)
-		result, err := rule.Eval(ctx, now, EngineQueryFunc(engine, storage), nil, 0)
+		result, err := rule.Eval(ctx, now, test.queryFunc, nil, 0)
 		if test.err == "" {
 			require.NoError(t, err)
 		} else {
@@ -101,9 +115,10 @@ func TestRuleEvalDuplicate(t *testing.T) {
 
 	now := time.Now()
 
-	expr, _ := parser.ParseExpr(`vector(0) or label_replace(vector(0),"test","x","","")`)
+	expr, err := parser.ParseExpr(`vector(0) or label_replace(vector(0),"test","x","","")`)
+	require.NoError(t, err)
 	rule := NewRecordingRule("foo", expr, labels.FromStrings("test", "test"))
-	_, err := rule.Eval(ctx, now, EngineQueryFunc(engine, storage), nil, 0)
+	_, err = rule.Eval(ctx, now, EngineQueryFunc(engine, storage), nil, 0)
 	require.Error(t, err)
 	require.EqualError(t, err, "vector contains metrics with the same labelset after applying rule labels")
 }
@@ -138,7 +153,8 @@ func TestRecordingRuleLimit(t *testing.T) {
 		},
 	}
 
-	expr, _ := parser.ParseExpr(`metric > 0`)
+	expr, err := parser.ParseExpr(`metric > 0`)
+	require.NoError(t, err)
 	rule := NewRecordingRule(
 		"foo",
 		expr,
@@ -155,4 +171,34 @@ func TestRecordingRuleLimit(t *testing.T) {
 			t.Errorf("Expected error %s, got none", test.err)
 		}
 	}
+}
+
+func TestNewRecordingRule(t *testing.T) {
+	name := "name"
+	labels := labels.FromStrings("test", "test")
+	query, err := parser.ParseExpr(`metric > 0`)
+	require.NoError(t, err)
+
+	recordingRule := NewRecordingRule(name, query, labels)
+	require.NotNil(t, recordingRule)
+
+	require.Equal(t, name, recordingRule.Name())
+	require.Equal(t, labels, recordingRule.Labels())
+	require.Equal(t, query, recordingRule.Query())
+	require.Equal(t, "record: name\nexpr: metric > 0\nlabels:\n  test: test\n", recordingRule.String())
+
+	ts := time.Now()
+	recordingRule.SetEvaluationTimestamp(ts)
+	require.Equal(t, ts, recordingRule.GetEvaluationTimestamp())
+
+	duration := time.Second
+	recordingRule.SetEvaluationDuration(duration)
+	require.Equal(t, duration, recordingRule.GetEvaluationDuration())
+
+	recordingRule.SetHealth(HealthGood)
+	require.Equal(t, HealthGood, recordingRule.Health())
+
+	testError := fmt.Errorf("dummy")
+	recordingRule.SetLastError(testError)
+	require.Equal(t, testError, recordingRule.LastError())
 }
