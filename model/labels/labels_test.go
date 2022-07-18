@@ -14,11 +14,13 @@
 package labels
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	yaml "gopkg.in/yaml.v2"
 )
 
 func TestLabels_String(t *testing.T) {
@@ -787,4 +789,53 @@ func BenchmarkLabels_Hash(b *testing.B) {
 			benchmarkLabelsResult = h
 		})
 	}
+}
+
+func TestMarshaling(t *testing.T) {
+	lbls := FromStrings("aaa", "111", "bbb", "2222", "ccc", "33333")
+	expectedJSON := "{\"aaa\":\"111\",\"bbb\":\"2222\",\"ccc\":\"33333\"}"
+	b, err := json.Marshal(lbls)
+	require.NoError(t, err)
+	require.Equal(t, expectedJSON, string(b))
+
+	var gotJ Labels
+	err = json.Unmarshal(b, &gotJ)
+	require.NoError(t, err)
+	require.Equal(t, lbls, gotJ)
+
+	expectedYAML := "aaa: \"111\"\nbbb: \"2222\"\nccc: \"33333\"\n"
+	b, err = yaml.Marshal(lbls)
+	require.NoError(t, err)
+	require.Equal(t, expectedYAML, string(b))
+
+	var gotY Labels
+	err = yaml.Unmarshal(b, &gotY)
+	require.NoError(t, err)
+	require.Equal(t, lbls, gotY)
+
+	// Now in a struct with a tag
+	type foo struct {
+		ALabels Labels `json:"a_labels,omitempty" yaml:"a_labels,omitempty"`
+	}
+
+	f := foo{ALabels: lbls}
+	b, err = json.Marshal(f)
+	require.NoError(t, err)
+	expectedJSONFromStruct := "{\"a_labels\":" + expectedJSON + "}"
+	require.Equal(t, expectedJSONFromStruct, string(b))
+
+	var gotFJ foo
+	err = json.Unmarshal(b, &gotFJ)
+	require.NoError(t, err)
+	require.Equal(t, f, gotFJ)
+
+	b, err = yaml.Marshal(f)
+	require.NoError(t, err)
+	expectedYAMLFromStruct := "a_labels:\n  aaa: \"111\"\n  bbb: \"2222\"\n  ccc: \"33333\"\n"
+	require.Equal(t, expectedYAMLFromStruct, string(b))
+
+	var gotFY foo
+	err = yaml.Unmarshal(b, &gotFY)
+	require.NoError(t, err)
+	require.Equal(t, f, gotFY)
 }
