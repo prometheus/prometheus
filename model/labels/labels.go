@@ -470,12 +470,17 @@ Outer:
 	return b
 }
 
-// Set the name/value pair as a label.
+// Set the name/value pair as a label. A value of "" means delete that label.
 func (b *Builder) Set(n, v string) *Builder {
 	if v == "" {
 		// Empty labels are the same as missing labels.
 		return b.Del(n)
 	}
+	return b.SetAnyValue(n, v)
+}
+
+// SetAnyValue sets the name/value pair as a label. Any value including "" is allowed.
+func (b *Builder) SetAnyValue(n, v string) *Builder {
 	for i, a := range b.add {
 		if a.Name == n {
 			b.add[i].Value = v
