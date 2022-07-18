@@ -27,7 +27,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/common/model"
-	yaml "gopkg.in/yaml.v2"
+	yaml "gopkg.in/yaml.v3"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
@@ -63,13 +63,15 @@ func RulesUnitTest(queryOpts promql.LazyLoaderOpts, files ...string) int {
 func ruleUnitTest(filename string, queryOpts promql.LazyLoaderOpts) []error {
 	fmt.Println("Unit Testing: ", filename)
 
-	b, err := os.ReadFile(filename)
+	b, err := os.Open(filename)
 	if err != nil {
 		return []error{err}
 	}
 
 	var unitTestInp unitTestFile
-	if err := yaml.UnmarshalStrict(b, &unitTestInp); err != nil {
+	decoder := yaml.NewDecoder(b)
+	decoder.KnownFields(true)
+	if err := decoder.Decode(&unitTestInp); err != nil {
 		return []error{err}
 	}
 	if err := resolveAndGlobFilepaths(filepath.Dir(filename), &unitTestInp); err != nil {

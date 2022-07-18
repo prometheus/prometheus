@@ -44,6 +44,13 @@ func TestRulesUnitTest(t *testing.T) {
 			want: 0,
 		},
 		{
+			name: "Bad fields",
+			args: args{
+				files: []string{"./testdata/bad-fields.yaml"},
+			},
+			want: 1,
+		},
+		{
 			name: "Bad input series",
 			args: args{
 				files: []string{"./testdata/bad-input-series.yml"},
