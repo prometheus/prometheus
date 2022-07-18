@@ -44,6 +44,21 @@ const (
 	Exemplars Type = 4
 )
 
+func (rt Type) String() string {
+	switch rt {
+	case Series:
+		return "series"
+	case Samples:
+		return "samples"
+	case Exemplars:
+		return "exemplars"
+	case Tombstones:
+		return "tombstones"
+	default:
+		return "unknown"
+	}
+}
+
 // ErrNotFound is returned if a looked up resource was not found. Duplicate ErrNotFound from head.go.
 var ErrNotFound = errors.New("not found")
 

@@ -481,7 +481,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 	)
 	for r.Next() && !isClosed(w.quit) {
 		rec := r.Record()
-		w.recordsReadMetric.WithLabelValues(recordType(dec.Type(rec))).Inc()
+		w.recordsReadMetric.WithLabelValues(dec.Type(rec).String()).Inc()
 
 		switch dec.Type(rec) {
 		case record.Series:
@@ -554,7 +554,7 @@ func (w *Watcher) readSegmentForGC(r *LiveReader, segmentNum int, _ bool) error 
 	)
 	for r.Next() && !isClosed(w.quit) {
 		rec := r.Record()
-		w.recordsReadMetric.WithLabelValues(recordType(dec.Type(rec))).Inc()
+		w.recordsReadMetric.WithLabelValues(dec.Type(rec).String()).Inc()
 
 		switch dec.Type(rec) {
 		case record.Series:
@@ -581,19 +581,6 @@ func (w *Watcher) readSegmentForGC(r *LiveReader, segmentNum int, _ bool) error 
 func (w *Watcher) SetStartTime(t time.Time) {
 	w.startTime = t
 	w.startTimestamp = timestamp.FromTime(t)
-}
-
-func recordType(rt record.Type) string {
-	switch rt {
-	case record.Series:
-		return "series"
-	case record.Samples:
-		return "samples"
-	case record.Tombstones:
-		return "tombstones"
-	default:
-		return "unknown"
-	}
 }
 
 type segmentReadFn func(w *Watcher, r *LiveReader, segmentNum int, tail bool) error
