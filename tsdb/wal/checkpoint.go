@@ -295,10 +295,9 @@ func Checkpoint(logger log.Logger, w *WAL, from, to int, keep func(id chunks.Hea
 		for _, m := range latestMetadataMap {
 			latestMetadata = append(latestMetadata, m)
 		}
-		if err := cp.Log(enc.Metadata(latestMetadata, nil)); err != nil {
+		if err := cp.Log(enc.Metadata(latestMetadata, buf[:0])); err != nil {
 			return nil, errors.Wrap(err, "flush metadata records")
 		}
-		buf, recs = buf[:0], recs[:0]
 	}
 
 	if err := cp.Close(); err != nil {
