@@ -102,8 +102,26 @@ tests:
               instance: localhost:9090
               job: prometheus
             exp_annotations:
-              summary: "Instance localhost:9090 down"
-              description: "localhost:9090 of job prometheus has been down for more than 5 minutes."
+              summary:
+                match: regexp
+                value: "Instance localhost:9090 .*"
+              description:
+                match: equal
+                value: "localhost:9090 of job prometheus has been down for more than 5 minutes."
+
+      - eval_time: 1d
+        alertname: InstanceDown
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              instance: localhost:9090
+              job: prometheus
+            exp_annotations:
+              summary: Instance localhost:9090 down
+              description:
+                match: regexp
+                value: "localhost:9090 of job prometheus has been down for more than 5 minutes."
+
 
       - eval_time: 0
         alertname: AlwaysFiring

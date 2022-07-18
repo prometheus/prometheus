@@ -287,7 +287,7 @@ func (tg *testGroup) test(evalInterval time.Duration, groupOrderMap map[string]i
 						if a.State == rules.StateFiring {
 							alerts = append(alerts, labelAndAnnotation{
 								Labels:      append(labels.Labels{}, a.Labels...),
-								Annotations: append(labels.Labels{}, a.Annotations...),
+								Annotations: annotationSetFromLabels(a.Annotations),
 							})
 						}
 					}
@@ -309,16 +309,20 @@ func (tg *testGroup) test(evalInterval time.Duration, groupOrderMap map[string]i
 					}
 					a.ExpLabels[labels.AlertName] = testcase.Alertname
 
+					if a.ExpAnnotations == nil {
+						a.ExpAnnotations = annotationSetFromLabels(labels.Labels{})
+					}
+
 					expAlerts = append(expAlerts, labelAndAnnotation{
 						Labels:      labels.FromMap(a.ExpLabels),
-						Annotations: labels.FromMap(a.ExpAnnotations),
+						Annotations: a.ExpAnnotations,
 					})
 				}
 
 				sort.Sort(gotAlerts)
 				sort.Sort(expAlerts)
 
-				if !reflect.DeepEqual(expAlerts, gotAlerts) {
+				if !expAlerts.Match(gotAlerts) {
 					var testName string
 					if tg.TestGroupName != "" {
 						testName = fmt.Sprintf("    name: %s,\n", tg.TestGroupName)
@@ -476,6 +480,22 @@ func indentLines(lines, indent string) string {
 
 type labelsAndAnnotations []labelAndAnnotation
 
+// Match returns true if the two sets match, must be sorted first.
+func (la labelsAndAnnotations) Match(other labelsAndAnnotations) bool {
+	if len(la) != len(other) {
+		return false
+	}
+	for i := 0; i < len(la); i++ {
+		if labels.Compare(la[i].Labels, other[i].Labels) != 0 {
+			return false
+		}
+		if !la[i].Annotations.Match(other[i].Annotations) {
+			return false
+		}
+	}
+	return true
+}
+
 func (la labelsAndAnnotations) Len() int      { return len(la) }
 func (la labelsAndAnnotations) Swap(i, j int) { la[i], la[j] = la[j], la[i] }
 func (la labelsAndAnnotations) Less(i, j int) bool {
@@ -483,7 +503,7 @@ func (la labelsAndAnnotations) Less(i, j int) bool {
 	if diff != 0 {
 		return diff < 0
 	}
-	return labels.Compare(la[i].Annotations, la[j].Annotations) < 0
+	return la[i].Annotations.Compare(la[j].Annotations) < 0
 }
 
 func (la labelsAndAnnotations) String() string {
@@ -501,11 +521,152 @@ func (la labelsAndAnnotations) String() string {
 
 type labelAndAnnotation struct {
 	Labels      labels.Labels
-	Annotations labels.Labels
+	Annotations *annotationSet
 }
 
 func (la *labelAndAnnotation) String() string {
 	return "Labels:" + la.Labels.String() + "\nAnnotations:" + la.Annotations.String()
+}
+
+type annotationSet struct {
+	// matchers contains either annotations, or a set of matchers to match against them.
+	matchers []*labels.Matcher
+}
+
+type annotationMatch struct {
+	Match string            `yaml:"match"`
+	Value string            `yaml:"value"`
+	Other map[string]string `yaml:",inline"`
+}
+
+func annotationSetFromLabels(ls labels.Labels) *annotationSet {
+	a := []*labels.Matcher{}
+	for _, l := range ls {
+		m, err := labels.NewMatcher(labels.MatchEqual, l.Name, l.Value)
+		if err != nil {
+			// This was already represented as a label, so we don't expect this to fail.
+			panic(err)
+		}
+		a = append(a, m)
+	}
+	as := &annotationSet{matchers: a}
+	return as
+}
+
+func (as *annotationSet) UnmarshalYAML(node *yaml.Node) error {
+	if node.Kind != yaml.MappingNode {
+		return fmt.Errorf("Expected annotations to be a mapping at line %d char %d", node.Line, node.Column)
+	}
+	a := []*labels.Matcher{}
+	if len(node.Content)%2 != 0 {
+		return fmt.Errorf("Unexpected number of items for mapping at line %d char %d", node.Line, node.Column)
+	}
+	for i := 0; i < len(node.Content); i += 2 {
+		var key string
+		err := node.Content[i].Decode(&key)
+		if err != nil {
+			return fmt.Errorf("Expected key to be a string at line %d: %w", node.Line, err)
+		}
+		valueNode := node.Content[i+1]
+		matchType := labels.MatchEqual
+		var value string
+		if valueNode.Kind == yaml.MappingNode {
+			var am annotationMatch
+			err := valueNode.Decode(&am)
+			if err != nil {
+				return err
+			}
+			if len(am.Other) > 0 {
+				return fmt.Errorf("Unknown fields in map at line %d", valueNode.Line)
+			}
+
+			value = am.Value
+
+			switch am.Match {
+			case "regexp":
+				matchType = labels.MatchRegexp
+			case "equal":
+				matchType = labels.MatchEqual
+			default:
+				return fmt.Errorf("Unexpected value %q for annotation match at line %d", am.Match, valueNode.Content[0].Line)
+			}
+		} else {
+			err := valueNode.Decode(&value)
+			if err != nil {
+				return err
+			}
+		}
+		m, err := labels.NewMatcher(matchType, key, value)
+		if err != nil {
+			return err
+		}
+		a = append(a, m)
+	}
+	sort.Slice(a, func(i, j int) bool {
+		return a[i].Name < a[j].Name
+	})
+	as.matchers = a
+	return nil
+}
+
+// Match matches two annotationSets, matching is only done on the left hand
+// side (i.e. the receiver). This allows the user to specify regexps in the
+// test file only.
+func (as *annotationSet) Match(other *annotationSet) bool {
+	if len(as.matchers) != len(other.matchers) {
+		return false
+	}
+
+	for i := 0; i < len(as.matchers); i++ {
+		if as.matchers[i].Name != other.matchers[i].Name {
+			return false
+		}
+
+		if !as.matchers[i].Matches(other.matchers[i].Value) {
+			return false
+		}
+	}
+	return true
+}
+
+func (as *annotationSet) Compare(other *annotationSet) int {
+	l := len(as.matchers)
+	if len(other.matchers) < l {
+		l = len(other.matchers)
+	}
+
+	for i := 0; i < l; i++ {
+		if as.matchers[i].Name != other.matchers[i].Name {
+			if as.matchers[i].Name < other.matchers[i].Name {
+				return -1
+			}
+			return 1
+		}
+		// Compare ignores the type of the matcher to simply provide a stable
+		// ordering. This works because the set of labels identifies the alert in
+		// Prometheus.
+		if as.matchers[i].Value != other.matchers[i].Value {
+			if as.matchers[i].Value < other.matchers[i].Value {
+				return -1
+			}
+			return 1
+		}
+	}
+	// If all annotations so far were in common, the set with fewer annotations comes first.
+	return len(as.matchers) - len(other.matchers)
+}
+
+func (as *annotationSet) String() string {
+	b := strings.Builder{}
+	b.WriteRune('{')
+	for i, m := range as.matchers {
+		b.WriteString(m.String())
+		if i < len(as.matchers)-1 {
+			b.WriteString(", ")
+		}
+	}
+	b.WriteRune('}')
+	return b.String()
 }
 
 type series struct {
@@ -521,7 +682,7 @@ type alertTestCase struct {
 
 type alert struct {
 	ExpLabels      map[string]string `yaml:"exp_labels"`
-	ExpAnnotations map[string]string `yaml:"exp_annotations"`
+	ExpAnnotations *annotationSet    `yaml:"exp_annotations"`
 }
 
 type promqlTestCase struct {
