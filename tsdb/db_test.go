@@ -3491,6 +3491,19 @@ func TestDBPanicOnMmappingHeadChunk(t *testing.T) {
 	require.NoError(t, db.Close())
 }
 
+var initializeSeries = func(t *testing.T, app storage.Appender, series ...labels.Labels) {
+	for _, s := range series {
+		_, err := app.Append(0, s, 0, 0)
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+}
+
+var updateMetadata = func(t *testing.T, app storage.Appender, s labels.Labels, m metadata.Metadata) {
+	_, err := app.UpdateMetadata(0, s, m)
+	require.NoError(t, err)
+}
+
 func TestMetadataInWAL(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()
@@ -3502,22 +3515,18 @@ func TestMetadataInWAL(t *testing.T) {
 	s3 := labels.FromStrings("e", "f")
 	s4 := labels.FromStrings("g", "h")
 
-	app.Append(0, s1, 0, 0)
-	app.Append(0, s2, 0, 0)
-	app.Append(0, s3, 0, 0)
-	app.Append(0, s4, 0, 0)
-	app.Commit()
+	initializeSeries(t, app, s1, s2, s3, s4)
 
 	// Add a first round of metadata to the first three series.
 	// Re-take the Appender, as the previous Commit will have it closed.
-	app = db.Appender(ctx)
 	m1 := metadata.Metadata{Type: "gauge", Unit: "unit_1", Help: "help_1"}
 	m2 := metadata.Metadata{Type: "gauge", Unit: "unit_2", Help: "help_2"}
 	m3 := metadata.Metadata{Type: "gauge", Unit: "unit_3", Help: "help_3"}
-	app.UpdateMetadata(0, s1, m1)
-	app.UpdateMetadata(0, s2, m2)
-	app.UpdateMetadata(0, s3, m3)
-	app.Commit()
+	app = db.Appender(ctx)
+	updateMetadata(t, app, s1, m1)
+	updateMetadata(t, app, s2, m2)
+	updateMetadata(t, app, s3, m3)
+	require.NoError(t, app.Commit())
 
 	// Add a replicated metadata entry to the first series,
 	// a completely new metadata entry for the fourth series,
@@ -3525,10 +3534,10 @@ func TestMetadataInWAL(t *testing.T) {
 	m4 := metadata.Metadata{Type: "counter", Unit: "unit_4", Help: "help_4"}
 	m5 := metadata.Metadata{Type: "counter", Unit: "unit_5", Help: "help_5"}
 	app = db.Appender(ctx)
-	app.UpdateMetadata(0, s1, m1)
-	app.UpdateMetadata(0, s4, m4)
-	app.UpdateMetadata(0, s2, m5)
-	app.Commit()
+	updateMetadata(t, app, s1, m1)
+	updateMetadata(t, app, s4, m4)
+	updateMetadata(t, app, s2, m5)
+	require.NoError(t, app.Commit())
 
 	// Read the WAL to see if the disk storage format is correct.
 	recs := readTestWAL(t, path.Join(db.Dir(), "wal"))
@@ -3562,41 +3571,51 @@ func TestMetadataCheckpointingOnlyKeepsLatestEntry(t *testing.T) {
 	s2 := labels.FromStrings("c", "d")
 	s3 := labels.FromStrings("e", "f")
 	s4 := labels.FromStrings("g", "h")
-	app.Append(0, s1, 0, 0)
-	app.Append(0, s2, 0, 0)
-	app.Append(0, s3, 0, 0)
-	app.Append(0, s4, 0, 0)
-	app.Commit()
+
+	initializeSeries(t, app, s1, s2, s3, s4)
 
 	// Add a first round of metadata to the first three series.
 	// Re-take the Appender, as the previous Commit will have it closed.
-	app = hb.Appender(ctx)
 	m1 := metadata.Metadata{Type: "gauge", Unit: "unit_1", Help: "help_1"}
 	m2 := metadata.Metadata{Type: "gauge", Unit: "unit_2", Help: "help_2"}
 	m3 := metadata.Metadata{Type: "gauge", Unit: "unit_3", Help: "help_3"}
 	m4 := metadata.Metadata{Type: "gauge", Unit: "unit_4", Help: "help_4"}
-	app.UpdateMetadata(0, s1, m1)
-	app.UpdateMetadata(0, s2, m2)
-	app.UpdateMetadata(0, s3, m3)
-	app.UpdateMetadata(0, s4, m4)
-	app.Commit()
+	app = hb.Appender(ctx)
+	updateMetadata(t, app, s1, m1)
+	updateMetadata(t, app, s2, m2)
+	updateMetadata(t, app, s3, m3)
+	updateMetadata(t, app, s4, m4)
+	require.NoError(t, app.Commit())
 
 	// Update metadata for first series.
-	app = hb.Appender(ctx)
 	m5 := metadata.Metadata{Type: "counter", Unit: "unit_5", Help: "help_5"}
-	app.UpdateMetadata(0, s1, m5)
-	app.Commit()
+	app = hb.Appender(ctx)
+	updateMetadata(t, app, s1, m5)
+	require.NoError(t, app.Commit())
 
 	// Switch back-and-forth metadata for second series.
 	// Since it ended on a new metadata record, we expect a single new entry.
-	app = hb.Appender(ctx)
 	m6 := metadata.Metadata{Type: "counter", Unit: "unit_6", Help: "help_6"}
-	app.UpdateMetadata(0, s2, m6)
-	app.UpdateMetadata(0, s2, m2)
-	app.UpdateMetadata(0, s2, m6)
-	app.UpdateMetadata(0, s2, m2)
-	app.UpdateMetadata(0, s2, m6)
-	app.Commit()
+
+	app = hb.Appender(ctx)
+	updateMetadata(t, app, s2, m6)
+	require.NoError(t, app.Commit())
+
+	app = hb.Appender(ctx)
+	updateMetadata(t, app, s2, m2)
+	require.NoError(t, app.Commit())
+
+	app = hb.Appender(ctx)
+	updateMetadata(t, app, s2, m6)
+	require.NoError(t, app.Commit())
+
+	app = hb.Appender(ctx)
+	updateMetadata(t, app, s2, m2)
+	require.NoError(t, app.Commit())
+
+	app = hb.Appender(ctx)
+	updateMetadata(t, app, s2, m6)
+	require.NoError(t, app.Commit())
 
 	// Let's create a checkpoint.
 	first, last, err := wal.Segments(w.Dir())
@@ -3647,22 +3666,18 @@ func TestMetadataAssertInMemoryData(t *testing.T) {
 	s3 := labels.FromStrings("e", "f")
 	s4 := labels.FromStrings("g", "h")
 
-	app.Append(0, s1, 0, 0)
-	app.Append(0, s2, 0, 0)
-	app.Append(0, s3, 0, 0)
-	app.Append(0, s4, 0, 0)
-	app.Commit()
+	initializeSeries(t, app, s1, s2, s3, s4)
 
 	// Add a first round of metadata to the first three series.
 	// The in-memory data held in the db Head should hold the metadata.
-	app = db.Appender(ctx)
 	m1 := metadata.Metadata{Type: "gauge", Unit: "unit_1", Help: "help_1"}
 	m2 := metadata.Metadata{Type: "gauge", Unit: "unit_2", Help: "help_2"}
 	m3 := metadata.Metadata{Type: "gauge", Unit: "unit_3", Help: "help_3"}
-	app.UpdateMetadata(0, s1, m1)
-	app.UpdateMetadata(0, s2, m2)
-	app.UpdateMetadata(0, s3, m3)
-	app.Commit()
+	app = db.Appender(ctx)
+	updateMetadata(t, app, s1, m1)
+	updateMetadata(t, app, s2, m2)
+	updateMetadata(t, app, s3, m3)
+	require.NoError(t, app.Commit())
 
 	series1 := db.head.series.getByHash(s1.Hash(), s1)
 	series2 := db.head.series.getByHash(s2.Hash(), s2)
@@ -3677,13 +3692,13 @@ func TestMetadataAssertInMemoryData(t *testing.T) {
 	// a changed metadata entry to the second series,
 	// and a completely new metadata entry for the fourth series.
 	// The in-memory data held in the db Head should be correctly updated.
-	app = db.Appender(ctx)
 	m4 := metadata.Metadata{Type: "counter", Unit: "unit_4", Help: "help_4"}
 	m5 := metadata.Metadata{Type: "counter", Unit: "unit_5", Help: "help_5"}
-	app.UpdateMetadata(0, s1, m1)
-	app.UpdateMetadata(0, s4, m4)
-	app.UpdateMetadata(0, s2, m5)
-	app.Commit()
+	app = db.Appender(ctx)
+	updateMetadata(t, app, s1, m1)
+	updateMetadata(t, app, s4, m4)
+	updateMetadata(t, app, s2, m5)
+	require.NoError(t, app.Commit())
 
 	series1 = db.head.series.getByHash(s1.Hash(), s1)
 	series2 = db.head.series.getByHash(s2.Hash(), s2)

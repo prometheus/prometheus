@@ -254,12 +254,12 @@ type ExemplarAppender interface {
 
 // MetadataUpdater provides an interface for associating metadata to stored series.
 type MetadataUpdater interface {
-	// UpdateMetadata appends a metadata entry for the given series and labels.
+	// UpdateMetadata updates a metadata entry for the given series and labels.
 	// A series reference number is returned which can be used to modify the
 	// metadata of the given series in the same or later transactions.
 	// Returned reference numbers are ephemeral and may be rejected in calls
-	// to UpdateMetadata() at any point. If the series does not exist, UpdateMetadata
-	// returns an error.
+	// to UpdateMetadata() at any point. If the series does not exist,
+	// UpdateMetadata returns an error.
 	// If the reference is 0 it must not be used for caching.
 	UpdateMetadata(ref SeriesRef, l labels.Labels, m metadata.Metadata) (SeriesRef, error)
 }
