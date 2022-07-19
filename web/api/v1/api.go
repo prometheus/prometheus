@@ -323,6 +323,9 @@ func (api *API) Register(r *route.Router) {
 	r.Get("/query_exemplars", wrapAgent(api.queryExemplars))
 	r.Post("/query_exemplars", wrapAgent(api.queryExemplars))
 
+	r.Get("/format_query", wrapAgent(api.formatQuery))
+	r.Post("/format_query", wrapAgent(api.formatQuery))
+
 	r.Get("/labels", wrapAgent(api.labelNames))
 	r.Post("/labels", wrapAgent(api.labelNames))
 	r.Get("/label/:name/values", wrapAgent(api.labelValues))
@@ -426,6 +429,15 @@ func (api *API) query(r *http.Request) (result apiFuncResult) {
 		Result:     res.Value,
 		Stats:      qs,
 	}, nil, res.Warnings, qry.Close}
+}
+
+func (api *API) formatQuery(r *http.Request) (result apiFuncResult) {
+	expr, err := parser.ParseExpr(r.FormValue("query"))
+	if err != nil {
+		return invalidParamError(err, "query")
+	}
+
+	return apiFuncResult{expr.Pretty(0), nil, nil, nil}
 }
 
 func extractQueryOpts(r *http.Request) *promql.QueryOpts {
