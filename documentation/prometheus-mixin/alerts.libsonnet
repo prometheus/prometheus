@@ -320,7 +320,7 @@
           {
             alert: 'PrometheusHighQueryLoad',
             expr: |||
-              avg_over_time(prometheus_engine_queries{job="prometheus-k8s"}[5m]) / max_over_time(prometheus_engine_queries_concurrent_max{job="prometheus-k8s"}[5m]) > 0.8
+              avg_over_time(prometheus_engine_queries{%(prometheusSelector)s}[5m]) / max_over_time(prometheus_engine_queries_concurrent_max{%(prometheusSelector)s}[5m]) > 0.8
             ||| % $._config,
             'for': '15m',
             labels: {
