@@ -125,67 +125,6 @@ const (
 	helpMetaName = "HELP"
 )
 
-// MetricType represents the type of a series.
-type MetricType uint8
-
-const (
-	UnknownMT      MetricType = 0
-	Counter        MetricType = 1
-	Gauge          MetricType = 2
-	Histogram      MetricType = 3
-	GaugeHistogram MetricType = 4
-	Summary        MetricType = 5
-	Info           MetricType = 6
-	Stateset       MetricType = 7
-)
-
-func GetMetricType(t textparse.MetricType) uint8 {
-	switch t {
-	case textparse.MetricTypeCounter:
-		return uint8(Counter)
-	case textparse.MetricTypeGauge:
-		return uint8(Gauge)
-	case textparse.MetricTypeHistogram:
-		return uint8(Histogram)
-	case textparse.MetricTypeGaugeHistogram:
-		return uint8(GaugeHistogram)
-	case textparse.MetricTypeSummary:
-		return uint8(Summary)
-	case textparse.MetricTypeInfo:
-		return uint8(Info)
-	case textparse.MetricTypeStateset:
-		return uint8(Stateset)
-	default:
-		return uint8(UnknownMT)
-	}
-}
-
-func ToTextparseMetricType(m uint8) textparse.MetricType {
-	switch m {
-	case uint8(Counter):
-		return textparse.MetricTypeCounter
-	case uint8(Gauge):
-		return textparse.MetricTypeGauge
-	case uint8(Histogram):
-		return textparse.MetricTypeHistogram
-	case uint8(GaugeHistogram):
-		return textparse.MetricTypeGaugeHistogram
-	case uint8(Summary):
-		return textparse.MetricTypeSummary
-	case uint8(Info):
-		return textparse.MetricTypeInfo
-	case uint8(Stateset):
-		return textparse.MetricTypeStateset
-	default:
-		return textparse.MetricTypeUnknown
-	}
-}
-
-const (
-	unitMetaName = "UNIT"
-	helpMetaName = "HELP"
-)
-
 // ErrNotFound is returned if a looked up resource was not found. Duplicate ErrNotFound from head.go.
 var ErrNotFound = errors.New("not found")
 

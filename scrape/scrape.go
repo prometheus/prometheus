@@ -1634,7 +1634,7 @@ loop:
 		}
 
 		if sl.appendMetadataToWAL && metadataChanged {
-			if _, merr := app.AppendMetadata(ref, lset, meta); merr != nil {
+			if _, merr := app.UpdateMetadata(ref, lset, meta); merr != nil {
 				// No need to fail the scrape on errors appending metadata.
 				level.Debug(sl.l).Log("msg", "Error when appending metadata in scrape loop", "ref", fmt.Sprintf("%d", ref), "metadata", fmt.Sprintf("%+v", meta), "err", merr)
 			}
