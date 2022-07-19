@@ -223,7 +223,7 @@ You can URL-encode these parameters directly in the request body by using the `P
 `Content-Type: application/x-www-form-urlencoded` header. This is useful when specifying a large
 query that may breach server-side URL character limits.
 
-The `data` section of the query result is a string containing the formatted query expression.
+The `data` section of the query result is a string containing the formatted query expression. Note that any comments are removed in the formatted string.
 
 The following example formats the expression `foo/bar`:
 
