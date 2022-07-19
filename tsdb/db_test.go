@@ -3492,7 +3492,7 @@ func TestDBPanicOnMmappingHeadChunk(t *testing.T) {
 }
 
 func TestMetadataInWAL(t *testing.T) {
-	var updateMetadata = func(t *testing.T, app storage.Appender, s labels.Labels, m metadata.Metadata) {
+	updateMetadata := func(t *testing.T, app storage.Appender, s labels.Labels, m metadata.Metadata) {
 		_, err := app.UpdateMetadata(0, s, m)
 		require.NoError(t, err)
 	}
@@ -3557,7 +3557,7 @@ func TestMetadataInWAL(t *testing.T) {
 }
 
 func TestMetadataCheckpointingOnlyKeepsLatestEntry(t *testing.T) {
-	var updateMetadata = func(t *testing.T, app storage.Appender, s labels.Labels, m metadata.Metadata) {
+	updateMetadata := func(t *testing.T, app storage.Appender, s labels.Labels, m metadata.Metadata) {
 		_, err := app.UpdateMetadata(0, s, m)
 		require.NoError(t, err)
 	}
@@ -3661,7 +3661,7 @@ func TestMetadataCheckpointingOnlyKeepsLatestEntry(t *testing.T) {
 }
 
 func TestMetadataAssertInMemoryData(t *testing.T) {
-	var updateMetadata = func(t *testing.T, app storage.Appender, s labels.Labels, m metadata.Metadata) {
+	updateMetadata := func(t *testing.T, app storage.Appender, s labels.Labels, m metadata.Metadata) {
 		_, err := app.UpdateMetadata(0, s, m)
 		require.NoError(t, err)
 	}
