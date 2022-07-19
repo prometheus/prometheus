@@ -125,7 +125,7 @@ Metadata records encode the metadata updates associated with a series.
 
 ```
 ┌────────────────────────────────────────────┐
-│ type = 5 <1b>                              │
+│ type = 6 <1b>                              │
 ├────────────────────────────────────────────┤
 │ ┌────────────────────────────────────────┐ │
 │ │ series_id <uvarint>                    │ │
