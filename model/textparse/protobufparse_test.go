@@ -122,38 +122,34 @@ metric: <
         value: -0.00029
       >
     >
-    sb_schema: 3
-    sb_zero_threshold: 2.938735877055719e-39
-    sb_zero_count: 2
-    sb_negative: <
-      span: <
-        offset: -162
-        length: 1
-      >
-      span: <
-        offset: 23
-        length: 4
-      >
-      delta: 1
-      delta: 3
-      delta: -2
-      delta: -1
-      delta: 1
+    schema: 3
+    zero_threshold: 2.938735877055719e-39
+    zero_count: 2
+    negative_span: <
+      offset: -162
+      length: 1
     >
-    sb_positive: <
-      span: <
-        offset: -161
-        length: 1
-      >
-      span: <
-        offset: 8
-        length: 3
-      >
-      delta: 1
-      delta: 2
-      delta: -1
-      delta: -1
+    negative_span: <
+      offset: 23
+      length: 4
     >
+    negative_delta: 1
+    negative_delta: 3
+    negative_delta: -2
+    negative_delta: -1
+    negative_delta: 1
+    positive_span: <
+      offset: -161
+      length: 1
+    >
+    positive_span: <
+      offset: 8
+      length: 3
+    >
+    positive_delta: 1
+    positive_delta: 2
+    positive_delta: -1
+    positive_delta: -1
   >
   timestamp_ms: 1234568
 >
@@ -196,8 +192,8 @@ metric: <
         value: -0.000295
       >
     >
-    sb_schema: 0
-    sb_zero_threshold: 0
+    schema: 0
+    zero_threshold: 0
   >
 >
 
