@@ -23,6 +23,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -63,6 +64,15 @@ func (a *initAppender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e 
 	a.app = a.head.appender()
 
 	return a.app.AppendExemplar(ref, l, e)
+}
+
+func (a *initAppender) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, m metadata.Metadata) (storage.SeriesRef, error) {
+	if a.app != nil {
+		return a.app.UpdateMetadata(ref, l, m)
+	}
+
+	a.app = a.head.appender()
+	return a.app.UpdateMetadata(ref, l, m)
 }
 
 // initTime initializes a head with the first timestamp. This only needs to be called
@@ -130,6 +140,7 @@ func (h *Head) appender() *headAppender {
 		samples:               h.getAppendBuffer(),
 		sampleSeries:          h.getSeriesBuffer(),
 		exemplars:             exemplarsBuf,
+		metadata:              h.getMetadataBuffer(),
 		appendID:              appendID,
 		cleanupAppendIDsBelow: cleanupAppendIDsBelow,
 	}
@@ -196,6 +207,19 @@ func (h *Head) putExemplarBuffer(b []exemplarWithSeriesRef) {
 	h.exemplarsPool.Put(b[:0])
 }
 
+func (h *Head) getMetadataBuffer() []record.RefMetadata {
+	b := h.metadataPool.Get()
+	if b == nil {
+		return make([]record.RefMetadata, 0, 512)
+	}
+	return b.([]record.RefMetadata)
+}
+
+func (h *Head) putMetadataBuffer(b []record.RefMetadata) {
+	//nolint:staticcheck // Ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
+	h.metadataPool.Put(b[:0])
+}
+
 func (h *Head) getSeriesBuffer() []*memSeries {
 	b := h.seriesPool.Get()
 	if b == nil {
@@ -232,10 +256,12 @@ type headAppender struct {
 	minValidTime int64 // No samples below this timestamp are allowed.
 	mint, maxt   int64
 
-	series       []record.RefSeries      // New series held by this appender.
-	samples      []record.RefSample      // New samples held by this appender.
-	exemplars    []exemplarWithSeriesRef // New exemplars held by this appender.
-	sampleSeries []*memSeries            // Series corresponding to the samples held by this appender (using corresponding slice indices - same series may appear more than once).
+	series         []record.RefSeries      // New series held by this appender.
+	metadata       []record.RefMetadata    // New metadata held by this appender.
+	samples        []record.RefSample      // New samples held by this appender.
+	exemplars      []exemplarWithSeriesRef // New exemplars held by this appender.
+	sampleSeries   []*memSeries            // Series corresponding to the samples held by this appender (using corresponding slice indices - same series may appear more than once).
+	metadataSeries []*memSeries            // Series corresponding to the metadata held by this appender.
 
 	appendID, cleanupAppendIDsBelow uint64
 	closed                          bool
@@ -358,6 +384,37 @@ func (a *headAppender) AppendExemplar(ref storage.SeriesRef, lset labels.Labels,
 	return storage.SeriesRef(s.ref), nil
 }
 
+// UpdateMetadata for headAppender assumes the series ref already exists, and so it doesn't
+// use getOrCreate or make any of the lset sanity checks that Append does.
+func (a *headAppender) UpdateMetadata(ref storage.SeriesRef, lset labels.Labels, meta metadata.Metadata) (storage.SeriesRef, error) {
+	s := a.head.series.getByID(chunks.HeadSeriesRef(ref))
+	if s == nil {
+		s = a.head.series.getByHash(lset.Hash(), lset)
+		if s != nil {
+			ref = storage.SeriesRef(s.ref)
+		}
+	}
+	if s == nil {
+		return 0, fmt.Errorf("unknown series when trying to add metadata with HeadSeriesRef: %d and labels: %s", ref, lset)
+	}
+
+	s.RLock()
+	hasNewMetadata := s.meta != meta
+	s.RUnlock()
+
+	if hasNewMetadata {
+		a.metadata = append(a.metadata, record.RefMetadata{
+			Ref:  s.ref,
+			Type: record.GetMetricType(meta.Type),
+			Unit: meta.Unit,
+			Help: meta.Help,
+		})
+		a.metadataSeries = append(a.metadataSeries, s)
+	}
+
+	return ref, nil
+}
+
 var _ storage.GetRef = &headAppender{}
 
 func (a *headAppender) GetRef(lset labels.Labels) (storage.SeriesRef, labels.Labels) {
@@ -387,6 +444,14 @@ func (a *headAppender) log() error {
 
 		if err := a.head.wal.Log(rec); err != nil {
 			return errors.Wrap(err, "log series")
+		}
+	}
+	if len(a.metadata) > 0 {
+		rec = enc.Metadata(a.metadata, buf)
+		buf = rec[:0]
+
+		if err := a.head.wal.Log(rec); err != nil {
+			return errors.Wrap(err, "log metadata")
 		}
 	}
 	if len(a.samples) > 0 {
@@ -449,6 +514,7 @@ func (a *headAppender) Commit() (err error) {
 	defer a.head.putAppendBuffer(a.samples)
 	defer a.head.putSeriesBuffer(a.sampleSeries)
 	defer a.head.putExemplarBuffer(a.exemplars)
+	defer a.head.putMetadataBuffer(a.metadata)
 	defer a.head.iso.closeAppend(a.appendID)
 
 	total := len(a.samples)
@@ -469,6 +535,13 @@ func (a *headAppender) Commit() (err error) {
 			a.head.metrics.chunks.Inc()
 			a.head.metrics.chunksCreated.Inc()
 		}
+	}
+
+	for i, m := range a.metadata {
+		series = a.metadataSeries[i]
+		series.Lock()
+		series.meta = metadata.Metadata{Type: record.ToTextparseMetricType(m.Type), Unit: m.Unit, Help: m.Help}
+		series.Unlock()
 	}
 
 	a.head.metrics.samplesAppended.Add(float64(total))
@@ -619,8 +692,10 @@ func (a *headAppender) Rollback() (err error) {
 	}
 	a.head.putAppendBuffer(a.samples)
 	a.head.putExemplarBuffer(a.exemplars)
+	a.head.putMetadataBuffer(a.metadata)
 	a.samples = nil
 	a.exemplars = nil
+	a.metadata = nil
 
 	// Series are created in the head memory regardless of rollback. Thus we have
 	// to log them to the WAL in any case.

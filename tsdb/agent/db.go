@@ -31,6 +31,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
@@ -810,6 +811,11 @@ func (a *appender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exem
 
 	a.metrics.totalAppendedExemplars.Inc()
 	return storage.SeriesRef(s.ref), nil
+}
+
+func (a *appender) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, m metadata.Metadata) (storage.SeriesRef, error) {
+	// TODO: Wire metadata in the Agent's appender.
+	return 0, nil
 }
 
 // Commit submits the collected samples and purges the batch.

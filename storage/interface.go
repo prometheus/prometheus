@@ -20,6 +20,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 )
@@ -222,6 +223,7 @@ type Appender interface {
 	// Appender has to be discarded after rollback.
 	Rollback() error
 	ExemplarAppender
+	MetadataUpdater
 }
 
 // GetRef is an extra interface on Appenders used by downstream projects
@@ -248,6 +250,18 @@ type ExemplarAppender interface {
 	// calls to Append should generate the reference numbers, AppendExemplar
 	// generating a new reference number should be considered possible erroneous behaviour and be logged.
 	AppendExemplar(ref SeriesRef, l labels.Labels, e exemplar.Exemplar) (SeriesRef, error)
+}
+
+// MetadataUpdater provides an interface for associating metadata to stored series.
+type MetadataUpdater interface {
+	// UpdateMetadata updates a metadata entry for the given series and labels.
+	// A series reference number is returned which can be used to modify the
+	// metadata of the given series in the same or later transactions.
+	// Returned reference numbers are ephemeral and may be rejected in calls
+	// to UpdateMetadata() at any point. If the series does not exist,
+	// UpdateMetadata returns an error.
+	// If the reference is 0 it must not be used for caching.
+	UpdateMetadata(ref SeriesRef, l labels.Labels, m metadata.Metadata) (SeriesRef, error)
 }
 
 // SeriesSet contains a set of series.

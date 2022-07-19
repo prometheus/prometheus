@@ -31,6 +31,7 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -75,6 +76,7 @@ type Head struct {
 	logger          log.Logger
 	appendPool      sync.Pool
 	exemplarsPool   sync.Pool
+	metadataPool    sync.Pool
 	seriesPool      sync.Pool
 	bytesPool       sync.Pool
 	memChunkPool    sync.Pool
@@ -1514,6 +1516,7 @@ type memSeries struct {
 
 	ref  chunks.HeadSeriesRef
 	lset labels.Labels
+	meta metadata.Metadata
 
 	// Immutable chunks on disk that have not yet gone into a block, in order of ascending time stamps.
 	// When compaction runs, chunks get moved into a block and all pointers are shifted like so:
