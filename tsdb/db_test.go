@@ -3491,20 +3491,12 @@ func TestDBPanicOnMmappingHeadChunk(t *testing.T) {
 	require.NoError(t, db.Close())
 }
 
-var initializeSeries = func(t *testing.T, app storage.Appender, series ...labels.Labels) {
-	for _, s := range series {
-		_, err := app.Append(0, s, 0, 0)
+func TestMetadataInWAL(t *testing.T) {
+	var updateMetadata = func(t *testing.T, app storage.Appender, s labels.Labels, m metadata.Metadata) {
+		_, err := app.UpdateMetadata(0, s, m)
 		require.NoError(t, err)
 	}
-	require.NoError(t, app.Commit())
-}
 
-var updateMetadata = func(t *testing.T, app storage.Appender, s labels.Labels, m metadata.Metadata) {
-	_, err := app.UpdateMetadata(0, s, m)
-	require.NoError(t, err)
-}
-
-func TestMetadataInWAL(t *testing.T) {
 	db := newTestDB(t)
 	ctx := context.Background()
 
@@ -3515,7 +3507,11 @@ func TestMetadataInWAL(t *testing.T) {
 	s3 := labels.FromStrings("e", "f")
 	s4 := labels.FromStrings("g", "h")
 
-	initializeSeries(t, app, s1, s2, s3, s4)
+	for _, s := range []labels.Labels{s1, s2, s3, s4} {
+		_, err := app.Append(0, s, 0, 0)
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
 
 	// Add a first round of metadata to the first three series.
 	// Re-take the Appender, as the previous Commit will have it closed.
@@ -3561,6 +3557,11 @@ func TestMetadataInWAL(t *testing.T) {
 }
 
 func TestMetadataCheckpointingOnlyKeepsLatestEntry(t *testing.T) {
+	var updateMetadata = func(t *testing.T, app storage.Appender, s labels.Labels, m metadata.Metadata) {
+		_, err := app.UpdateMetadata(0, s, m)
+		require.NoError(t, err)
+	}
+
 	ctx := context.Background()
 	numSamples := 10000
 	hb, w := newTestHead(t, int64(numSamples)*10, false)
@@ -3572,7 +3573,11 @@ func TestMetadataCheckpointingOnlyKeepsLatestEntry(t *testing.T) {
 	s3 := labels.FromStrings("e", "f")
 	s4 := labels.FromStrings("g", "h")
 
-	initializeSeries(t, app, s1, s2, s3, s4)
+	for _, s := range []labels.Labels{s1, s2, s3, s4} {
+		_, err := app.Append(0, s, 0, 0)
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
 
 	// Add a first round of metadata to the first three series.
 	// Re-take the Appender, as the previous Commit will have it closed.
@@ -3656,6 +3661,11 @@ func TestMetadataCheckpointingOnlyKeepsLatestEntry(t *testing.T) {
 }
 
 func TestMetadataAssertInMemoryData(t *testing.T) {
+	var updateMetadata = func(t *testing.T, app storage.Appender, s labels.Labels, m metadata.Metadata) {
+		_, err := app.UpdateMetadata(0, s, m)
+		require.NoError(t, err)
+	}
+
 	db := openTestDB(t, nil, nil)
 	ctx := context.Background()
 
@@ -3666,7 +3676,11 @@ func TestMetadataAssertInMemoryData(t *testing.T) {
 	s3 := labels.FromStrings("e", "f")
 	s4 := labels.FromStrings("g", "h")
 
-	initializeSeries(t, app, s1, s2, s3, s4)
+	for _, s := range []labels.Labels{s1, s2, s3, s4} {
+		_, err := app.Append(0, s, 0, 0)
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
 
 	// Add a first round of metadata to the first three series.
 	// The in-memory data held in the db Head should hold the metadata.
