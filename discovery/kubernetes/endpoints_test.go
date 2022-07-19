@@ -128,7 +128,8 @@ func TestEndpointsDiscoveryAdd(t *testing.T) {
 			NodeName: "testnode",
 			Containers: []v1.Container{
 				{
-					Name: "c1",
+					Name:  "c1",
+					Image: "c1:latest",
 					Ports: []v1.ContainerPort{
 						{
 							Name:          "mainport",
@@ -138,7 +139,8 @@ func TestEndpointsDiscoveryAdd(t *testing.T) {
 					},
 				},
 				{
-					Name: "c2",
+					Name:  "c2",
+					Image: "c2:latest",
 					Ports: []v1.ContainerPort{
 						{
 							Name:          "sideport",
@@ -206,6 +208,7 @@ func TestEndpointsDiscoveryAdd(t *testing.T) {
 						"__meta_kubernetes_pod_node_name":                "testnode",
 						"__meta_kubernetes_pod_host_ip":                  "2.3.4.5",
 						"__meta_kubernetes_pod_container_name":           "c1",
+						"__meta_kubernetes_pod_container_image":          "c1:latest",
 						"__meta_kubernetes_pod_container_port_name":      "mainport",
 						"__meta_kubernetes_pod_container_port_number":    "9000",
 						"__meta_kubernetes_pod_container_port_protocol":  "TCP",
@@ -220,6 +223,7 @@ func TestEndpointsDiscoveryAdd(t *testing.T) {
 						"__meta_kubernetes_pod_node_name":               "testnode",
 						"__meta_kubernetes_pod_host_ip":                 "2.3.4.5",
 						"__meta_kubernetes_pod_container_name":          "c2",
+						"__meta_kubernetes_pod_container_image":         "c2:latest",
 						"__meta_kubernetes_pod_container_port_name":     "sideport",
 						"__meta_kubernetes_pod_container_port_number":   "9001",
 						"__meta_kubernetes_pod_container_port_protocol": "TCP",
@@ -649,7 +653,8 @@ func TestEndpointsDiscoveryNamespaces(t *testing.T) {
 				NodeName: "testnode",
 				Containers: []v1.Container{
 					{
-						Name: "c1",
+						Name:  "c1",
+						Image: "c1:latest",
 						Ports: []v1.ContainerPort{
 							{
 								Name:          "mainport",
@@ -720,6 +725,7 @@ func TestEndpointsDiscoveryNamespaces(t *testing.T) {
 						"__meta_kubernetes_pod_node_name":                "testnode",
 						"__meta_kubernetes_pod_host_ip":                  "2.3.4.5",
 						"__meta_kubernetes_pod_container_name":           "c1",
+						"__meta_kubernetes_pod_container_image":          "c1:latest",
 						"__meta_kubernetes_pod_container_port_name":      "mainport",
 						"__meta_kubernetes_pod_container_port_number":    "9000",
 						"__meta_kubernetes_pod_container_port_protocol":  "TCP",
@@ -753,7 +759,8 @@ func TestEndpointsDiscoveryOwnNamespace(t *testing.T) {
 			NodeName: "testnode",
 			Containers: []v1.Container{
 				{
-					Name: "p1",
+					Name:  "p1",
+					Image: "p1:latest",
 					Ports: []v1.ContainerPort{
 						{
 							Name:          "mainport",
