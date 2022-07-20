@@ -225,21 +225,32 @@ const ExpressionInput: FC<CMExpressionInputProps> = ({
         cache: 'no-store',
         credentials: 'same-origin',
       }
-    ).then((resp) => resp.json());
+    )
+      .then((resp) => {
+        if (!resp.ok && resp.status !== 400) {
+          throw new Error(`format HTTP request failed: ${resp.statusText}`);
+        }
 
-    setIsFormatting(false);
+        return resp.json();
+      })
+      .then((json) => {
+        if (json.status !== 'success') {
+          throw new Error(json.error || 'invalid response JSON');
+        }
 
-    if (query.status !== 'success') {
-      setFormatError(query.error || 'invalid response JSON');
-      return;
-    }
+        const view = viewRef.current;
+        if (view === null) {
+          return;
+        }
 
-    const view = viewRef.current;
-    if (view === null) {
-      return;
-    }
-
-    view.dispatch(view.state.update({ changes: { from: 0, to: view.state.doc.length, insert: query.data } }));
+        view.dispatch(view.state.update({ changes: { from: 0, to: view.state.doc.length, insert: json.data } }));
+      })
+      .catch((err) => {
+        setFormatError(err.message);
+      })
+      .finally(() => {
+        setIsFormatting(false);
+      });
   };
 
   return (
