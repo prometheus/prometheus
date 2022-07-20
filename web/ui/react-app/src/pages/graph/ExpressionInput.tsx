@@ -213,11 +213,11 @@ const ExpressionInput: FC<CMExpressionInputProps> = ({
     );
   };
 
-  const formatExpression = async () => {
+  const formatExpression = () => {
     setFormatError(null);
     setIsFormatting(true);
 
-    const query = await fetch(
+    fetch(
       `${pathPrefix}/${API_PATH}/format_query?${new URLSearchParams({
         query: value,
       })}`,
