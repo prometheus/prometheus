@@ -38,7 +38,7 @@ import (
 // protobuf format and then present it as it if were parsed by a
 // Prometheus-2-style text parser. This is only done so that we can easily plug
 // in the protobuf format into Prometheus 2. For future use (with the final
-// format that will be used for sparse histograms), we have to revisit the
+// format that will be used for native histograms), we have to revisit the
 // parsing. A lot of the efficiency tricks of the Prometheus-2-style parsing
 // could be used in a similar fashion (byte-slice pointers into the raw
 // payload), which requires some hand-coded protobuf handling. But the current
@@ -132,8 +132,8 @@ func (p *ProtobufParser) Series() ([]byte, *int64, float64) {
 	return p.metricBytes.Bytes(), nil, v
 }
 
-// Histogram returns the bytes of a series with a sparse histogram as a
-// value, the timestamp if set, and the sparse histogram in the current
+// Histogram returns the bytes of a series with a native histogram as a
+// value, the timestamp if set, and the native histogram in the current
 // sample.
 func (p *ProtobufParser) Histogram() ([]byte, *int64, *histogram.Histogram) {
 	var (
@@ -144,19 +144,19 @@ func (p *ProtobufParser) Histogram() ([]byte, *int64, *histogram.Histogram) {
 	sh := histogram.Histogram{
 		Count:           h.GetSampleCount(),
 		Sum:             h.GetSampleSum(),
-		ZeroThreshold:   h.GetSbZeroThreshold(),
-		ZeroCount:       h.GetSbZeroCount(),
-		Schema:          h.GetSbSchema(),
-		PositiveSpans:   make([]histogram.Span, len(h.GetSbPositive().GetSpan())),
-		PositiveBuckets: h.GetSbPositive().GetDelta(),
-		NegativeSpans:   make([]histogram.Span, len(h.GetSbNegative().GetSpan())),
-		NegativeBuckets: h.GetSbNegative().GetDelta(),
+		ZeroThreshold:   h.GetZeroThreshold(),
+		ZeroCount:       h.GetZeroCount(),
+		Schema:          h.GetSchema(),
+		PositiveSpans:   make([]histogram.Span, len(h.GetPositiveSpan())),
+		PositiveBuckets: h.GetPositiveDelta(),
+		NegativeSpans:   make([]histogram.Span, len(h.GetNegativeSpan())),
+		NegativeBuckets: h.GetNegativeDelta(),
 	}
-	for i, span := range h.GetSbPositive().GetSpan() {
+	for i, span := range h.GetPositiveSpan() {
 		sh.PositiveSpans[i].Offset = span.GetOffset()
 		sh.PositiveSpans[i].Length = span.GetLength()
 	}
-	for i, span := range h.GetSbNegative().GetSpan() {
+	for i, span := range h.GetNegativeSpan() {
 		sh.NegativeSpans[i].Offset = span.GetOffset()
 		sh.NegativeSpans[i].Length = span.GetLength()
 	}
@@ -231,7 +231,7 @@ func (p *ProtobufParser) Metric(l *labels.Labels) string {
 }
 
 // Exemplar writes the exemplar of the current sample into the passed
-// exemplar. It returns if an exemplar exists or not. In case of a sparse
+// exemplar. It returns if an exemplar exists or not. In case of a native
 // histogram, the legacy bucket section is still used for exemplars. To ingest
 // all examplars, call the Exemplar method repeatedly until it returns false.
 func (p *ProtobufParser) Exemplar(ex *exemplar.Exemplar) bool {
@@ -246,7 +246,7 @@ func (p *ProtobufParser) Exemplar(ex *exemplar.Exemplar) bool {
 			if p.state == EntrySeries {
 				return false // At _count or _sum.
 			}
-			p.fieldPos = 0 // Start at 1st bucket for sparse histograms.
+			p.fieldPos = 0 // Start at 1st bucket for native histograms.
 		}
 		for p.fieldPos < len(bb) {
 			exProto = bb[p.fieldPos].GetExemplar()
@@ -314,7 +314,7 @@ func (p *ProtobufParser) Next() (Entry, error) {
 		p.state = EntryType
 	case EntryType:
 		if p.mf.GetType() == dto.MetricType_HISTOGRAM &&
-			isSparseHistogram(p.mf.GetMetric()[0].GetHistogram()) {
+			isNativeHistogram(p.mf.GetMetric()[0].GetHistogram()) {
 			p.state = EntryHistogram
 		} else {
 			p.state = EntrySeries
@@ -465,18 +465,18 @@ func formatOpenMetricsFloat(f float64) string {
 	return s + ".0"
 }
 
-// isSparseHistogram returns false iff the provided histograms has no
-// SparseBuckets and a zero threshold of 0 and a zero count of 0. In principle,
-// this could still be meant to be a sparse histgram (with a zero threshold of 0
-// and no observations yet), but for now, we'll treat this case as a conventional
+// isNativeHistogram returns false iff the provided histograms has no sparse
+// buckets and a zero threshold of 0 and a zero count of 0. In principle, this
+// could still be meant to be a native histogram (with a zero threshold of 0 and
+// no observations yet), but for now, we'll treat this case as a conventional
 // histogram.
 //
 // TODO(beorn7): In the final format, there should be an unambiguous way of
-// deciding if a histogram should be ingested as a conventional one or a sparse
+// deciding if a histogram should be ingested as a conventional one or a native
 // one.
-func isSparseHistogram(h *dto.Histogram) bool {
-	return len(h.GetSbNegative().GetDelta()) > 0 ||
-		len(h.GetSbPositive().GetDelta()) > 0 ||
-		h.GetSbZeroCount() > 0 ||
-		h.GetSbZeroThreshold() > 0
+func isNativeHistogram(h *dto.Histogram) bool {
+	return len(h.GetNegativeDelta()) > 0 ||
+		len(h.GetPositiveDelta()) > 0 ||
+		h.GetZeroCount() > 0 ||
+		h.GetZeroThreshold() > 0
 }
