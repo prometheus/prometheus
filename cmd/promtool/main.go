@@ -211,7 +211,7 @@ func main() {
 		"A list of one or more files containing recording rules to be backfilled. All recording rules listed in the files will be backfilled. Alerting rules are not evaluated.",
 	).Required().ExistingFiles()
 
-	featureList := app.Flag("enable-feature", "Comma separated feature names to enable (only PromQL related). See https://prometheus.io/docs/prometheus/latest/feature_flags/ for the options and more details.").Default("").Strings()
+	featureList := app.Flag("enable-feature", "Comma separated feature names to enable (only PromQL related and no-default-scrape-port). See https://prometheus.io/docs/prometheus/latest/feature_flags/ for the options and more details.").Default("").Strings()
 
 	parsedCmd := kingpin.MustParse(app.Parse(os.Args[1:]))
 
@@ -223,10 +223,13 @@ func main() {
 		p = &promqlPrinter{}
 	}
 
+	var noDefaultScrapePort bool
 	for _, f := range *featureList {
 		opts := strings.Split(f, ",")
 		for _, o := range opts {
 			switch o {
+			case "no-default-scrape-port":
+				noDefaultScrapePort = true
 			case "":
 				continue
 			case "promql-at-modifier", "promql-negative-offset":
@@ -239,7 +242,7 @@ func main() {
 
 	switch parsedCmd {
 	case sdCheckCmd.FullCommand():
-		os.Exit(CheckSD(*sdConfigFile, *sdJobName, *sdTimeout))
+		os.Exit(CheckSD(*sdConfigFile, *sdJobName, *sdTimeout, noDefaultScrapePort))
 
 	case checkConfigCmd.FullCommand():
 		os.Exit(CheckConfig(*agentMode, *checkConfigSyntaxOnly, newLintConfig(*checkConfigLint, *checkConfigLintFatal), *configFiles...))
@@ -1217,7 +1220,7 @@ func checkTargetGroupsForAlertmanager(targetGroups []*targetgroup.Group, amcfg *
 
 func checkTargetGroupsForScrapeConfig(targetGroups []*targetgroup.Group, scfg *config.ScrapeConfig) error {
 	for _, tg := range targetGroups {
-		_, failures := scrape.TargetsFromGroup(tg, scfg)
+		_, failures := scrape.TargetsFromGroup(tg, scfg, false)
 		if len(failures) > 0 {
 			first := failures[0]
 			return first
