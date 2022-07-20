@@ -564,7 +564,7 @@ func TestSelectHintsSetCorrectly(t *testing.T) {
 			if tc.end == 0 {
 				query, err = engine.NewInstantQuery(hintsRecorder, nil, tc.query, timestamp.Time(tc.start))
 			} else {
-				query, err = engine.NewRangeQuery(hintsRecorder, nil, tc.query, timestamp.Time(tc.start), timestamp.Time(tc.end), time.Second)
+				query, err = engine.NewRangeQuery(hintsRecorder, nil, tc.query, timestamp.Time(tc.start), timestamp.Time(tc.end), time.Second, 0)
 			}
 			require.NoError(t, err)
 

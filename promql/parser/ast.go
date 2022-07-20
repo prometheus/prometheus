@@ -68,6 +68,8 @@ type EvalStmt struct {
 	Start, End time.Time
 	// Time between two evaluated instants for the range [Start:End].
 	Interval time.Duration
+	// Look back delta
+	LookbackDelta time.Duration
 }
 
 func (*EvalStmt) PromQLStmt() {}

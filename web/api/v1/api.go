@@ -167,7 +167,7 @@ type TSDBAdminStats interface {
 type QueryEngine interface {
 	SetQueryLogger(l promql.QueryLogger)
 	NewInstantQuery(q storage.Queryable, opts *promql.QueryOpts, qs string, ts time.Time) (promql.Query, error)
-	NewRangeQuery(q storage.Queryable, opts *promql.QueryOpts, qs string, start, end time.Time, interval time.Duration) (promql.Query, error)
+	NewRangeQuery(q storage.Queryable, opts *promql.QueryOpts, qs string, start, end time.Time, interval time.Duration, delta time.Duration) (promql.Query, error)
 }
 
 // API can register a set of endpoints in a router and handle
@@ -456,6 +456,16 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 		return invalidParamError(errors.New("zero or negative query resolution step widths are not accepted. Try a positive integer"), "step")
 	}
 
+	var lookbackDelta time.Duration
+	if ld := r.FormValue("lookbackDelta"); ld != "" {
+		lookbackDelta, err = parseDuration(ld)
+		if err != nil {
+			return invalidParamError(err, "lookbackDelta")
+		}
+	} else {
+		lookbackDelta = time.Duration(0)
+	}
+
 	// For safety, limit the number of returned points per timeseries.
 	// This is sufficient for 60s resolution for a week or 1h resolution for a year.
 	if end.Sub(start)/step > 11000 {
@@ -476,7 +486,7 @@ func (api *API) queryRange(r *http.Request) (result apiFuncResult) {
 	}
 
 	opts := extractQueryOpts(r)
-	qry, err := api.QueryEngine.NewRangeQuery(api.Queryable, opts, r.FormValue("query"), start, end, step)
+	qry, err := api.QueryEngine.NewRangeQuery(api.Queryable, opts, r.FormValue("query"), start, end, step, lookbackDelta)
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorBadData, err}, nil, nil}
 	}
