@@ -6,7 +6,7 @@ import { EditorState, Prec, Compartment } from '@codemirror/state';
 import { bracketMatching, indentOnInput, syntaxHighlighting, syntaxTree } from '@codemirror/language';
 import { defaultKeymap, history, historyKeymap, insertNewlineAndIndent } from '@codemirror/commands';
 import { highlightSelectionMatches } from '@codemirror/search';
-import { lintKeymap } from '@codemirror/lint';
+import { diagnosticCount, lintKeymap } from '@codemirror/lint';
 import {
   autocompletion,
   completionKeymap,
@@ -102,6 +102,7 @@ const ExpressionInput: FC<CMExpressionInputProps> = ({
   const [formatError, setFormatError] = useState<string | null>(null);
   const [isFormatting, setIsFormatting] = useState<boolean>(false);
   const [exprFormatted, setExprFormatted] = useState<boolean>(false);
+  const [hasLinterErrors, setHasLinterErrors] = useState<boolean>(false);
 
   // (Re)initialize editor based on settings / setting changes.
   useEffect(() => {
@@ -174,9 +175,14 @@ const ExpressionInput: FC<CMExpressionInputProps> = ({
             ])
           ),
           EditorView.updateListener.of((update: ViewUpdate): void => {
+            setHasLinterErrors(diagnosticCount(view.state) > 0);
+
             if (update.docChanged) {
               onExpressionChange(update.state.doc.toString());
-              setExprFormatted(false);
+
+              if (exprFormatted) {
+                setExprFormatted(false);
+              }
             }
           }),
         ],
@@ -270,9 +276,17 @@ const ExpressionInput: FC<CMExpressionInputProps> = ({
         <InputGroupAddon addonType="append">
           <Button
             className="expression-input-action-btn"
-            title={isFormatting ? 'Formatting expression' : exprFormatted ? 'Expression formatted' : 'Format expression'}
+            title={
+              isFormatting
+                ? 'Formatting expression'
+                : exprFormatted
+                ? 'Expression formatted'
+                : hasLinterErrors
+                ? 'Cannot format invalid expression'
+                : 'Format expression'
+            }
             onClick={formatExpression}
-            disabled={isFormatting || exprFormatted}
+            disabled={isFormatting || exprFormatted || hasLinterErrors}
           >
             {isFormatting ? (
               <FontAwesomeIcon icon={faSpinner} spin />
