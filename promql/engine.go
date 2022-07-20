@@ -411,10 +411,6 @@ func (ng *Engine) NewInstantQuery(q storage.Queryable, opts *QueryOpts, qs strin
 // NewRangeQuery returns an evaluation query for the given time range and with
 // the resolution set by the interval.
 func (ng *Engine) NewRangeQuery(q storage.Queryable, opts *QueryOpts, qs string, start, end time.Time, interval time.Duration, delta time.Duration) (Query, error) {
-	if delta == 0 {
-		delta = ng.lookbackDelta
-	}
-
 	expr, err := parser.ParseExpr(qs)
 	if err != nil {
 		return nil, err
@@ -432,6 +428,10 @@ func (ng *Engine) NewRangeQuery(q storage.Queryable, opts *QueryOpts, qs string,
 }
 
 func (ng *Engine) newQuery(q storage.Queryable, opts *QueryOpts, expr parser.Expr, start, end time.Time, interval time.Duration, delta time.Duration) (*query, error) {
+	if delta == 0 {
+		delta = ng.lookbackDelta
+	}
+	
 	if err := ng.validateOpts(expr); err != nil {
 		return nil, err
 	}
