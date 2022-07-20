@@ -431,7 +431,7 @@ func (ng *Engine) newQuery(q storage.Queryable, opts *QueryOpts, expr parser.Exp
 	if delta == 0 {
 		delta = ng.lookbackDelta
 	}
-	
+
 	if err := ng.validateOpts(expr); err != nil {
 		return nil, err
 	}
