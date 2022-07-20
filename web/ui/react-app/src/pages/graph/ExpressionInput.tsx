@@ -1,5 +1,5 @@
 import React, { FC, useState, useEffect, useRef } from 'react';
-import { Button, InputGroup, InputGroupAddon, InputGroupText } from 'reactstrap';
+import { Alert, Button, InputGroup, InputGroupAddon, InputGroupText } from 'reactstrap';
 
 import { EditorView, highlightSpecialChars, keymap, ViewUpdate, placeholder } from '@codemirror/view';
 import { EditorState, Prec, Compartment } from '@codemirror/state';
@@ -18,12 +18,13 @@ import {
 import { baseTheme, lightTheme, darkTheme, promqlHighlighter } from './CMTheme';
 
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faSearch, faSpinner, faGlobeEurope } from '@fortawesome/free-solid-svg-icons';
+import { faSearch, faSpinner, faGlobeEurope, faIndent } from '@fortawesome/free-solid-svg-icons';
 import MetricsExplorer from './MetricsExplorer';
 import { usePathPrefix } from '../../contexts/PathPrefixContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { CompleteStrategy, PromQLExtension } from '@prometheus-io/codemirror-promql';
 import { newCompleteStrategy } from '@prometheus-io/codemirror-promql/dist/esm/complete';
+import { API_PATH } from '../../constants/constants';
 
 const promqlExtension = new PromQLExtension();
 
@@ -97,6 +98,9 @@ const ExpressionInput: FC<CMExpressionInputProps> = ({
   const [showMetricsExplorer, setShowMetricsExplorer] = useState<boolean>(false);
   const pathPrefix = usePathPrefix();
   const { theme } = useTheme();
+
+  const [formatError, setFormatError] = useState<string | null>(null);
+  const [isFormatting, setIsFormatting] = useState<boolean>(false);
 
   // (Re)initialize editor based on settings / setting changes.
   useEffect(() => {
@@ -209,6 +213,35 @@ const ExpressionInput: FC<CMExpressionInputProps> = ({
     );
   };
 
+  const formatExpression = async () => {
+    setFormatError(null);
+    setIsFormatting(true);
+
+    const query = await fetch(
+      `${pathPrefix}/${API_PATH}/format_query?${new URLSearchParams({
+        query: value,
+      })}`,
+      {
+        cache: 'no-store',
+        credentials: 'same-origin',
+      }
+    ).then((resp) => resp.json());
+
+    setIsFormatting(false);
+
+    if (query.status !== 'success') {
+      setFormatError(query.error || 'invalid response JSON');
+      return;
+    }
+
+    const view = viewRef.current;
+    if (view === null) {
+      return;
+    }
+
+    view.dispatch(view.state.update({ changes: { from: 0, to: view.state.doc.length, insert: query.data } }));
+  };
+
   return (
     <>
       <InputGroup className="expression-input">
@@ -220,7 +253,15 @@ const ExpressionInput: FC<CMExpressionInputProps> = ({
         <div ref={containerRef} className="cm-expression-input" />
         <InputGroupAddon addonType="append">
           <Button
-            className="metrics-explorer-btn"
+            className="expression-input-action-btn"
+            title="Format expression"
+            onClick={formatExpression}
+            disabled={isFormatting}
+          >
+            {isFormatting ? <FontAwesomeIcon icon={faSpinner} spin /> : <FontAwesomeIcon icon={faIndent} />}
+          </Button>
+          <Button
+            className="expression-input-action-btn"
             title="Open metrics explorer"
             onClick={() => setShowMetricsExplorer(true)}
           >
@@ -231,6 +272,8 @@ const ExpressionInput: FC<CMExpressionInputProps> = ({
           </Button>
         </InputGroupAddon>
       </InputGroup>
+
+      {formatError && <Alert color="danger">Error formatting expression: {formatError}</Alert>}
 
       <MetricsExplorer
         show={showMetricsExplorer}
