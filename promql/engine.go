@@ -414,7 +414,7 @@ func (ng *Engine) NewRangeQuery(q storage.Queryable, opts *QueryOpts, qs string,
 	if delta == 0 {
 		delta = ng.lookbackDelta
 	}
-	
+
 	expr, err := parser.ParseExpr(qs)
 	if err != nil {
 		return nil, err
@@ -442,10 +442,10 @@ func (ng *Engine) newQuery(q storage.Queryable, opts *QueryOpts, expr parser.Exp
 	}
 
 	es := &parser.EvalStmt{
-		Expr:     PreprocessExpr(expr, start, end),
-		Start:    start,
-		End:      end,
-		Interval: interval,
+		Expr:          PreprocessExpr(expr, start, end),
+		Start:         start,
+		End:           end,
+		Interval:      interval,
 		LookbackDelta: delta,
 	}
 	qry := &query{
