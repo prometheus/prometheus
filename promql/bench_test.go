@@ -219,7 +219,8 @@ func BenchmarkRangeQuery(b *testing.B) {
 				qry, err := engine.NewRangeQuery(
 					stor, nil, c.expr,
 					time.Unix(int64((numIntervals-c.steps)*10), 0),
-					time.Unix(int64(numIntervals*10), 0), time.Second*10)
+					time.Unix(int64(numIntervals*10), 0), time.Second*10,
+					0)
 				if err != nil {
 					b.Fatal(err)
 				}

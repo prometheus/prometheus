@@ -724,7 +724,7 @@ load 10s
 			if c.Interval == 0 {
 				qry, err = test.QueryEngine().NewInstantQuery(test.Queryable(), nil, c.Query, c.Start)
 			} else {
-				qry, err = test.QueryEngine().NewRangeQuery(test.Queryable(), nil, c.Query, c.Start, c.End, c.Interval)
+				qry, err = test.QueryEngine().NewRangeQuery(test.Queryable(), nil, c.Query, c.Start, c.End, c.Interval, 0)
 			}
 			require.NoError(t, err)
 
@@ -1201,7 +1201,7 @@ load 10s
 				if c.Interval == 0 {
 					qry, err = engine.NewInstantQuery(test.Queryable(), opts, c.Query, c.Start)
 				} else {
-					qry, err = engine.NewRangeQuery(test.Queryable(), opts, c.Query, c.Start, c.End, c.Interval)
+					qry, err = engine.NewRangeQuery(test.Queryable(), opts, c.Query, c.Start, c.End, c.Interval, 0)
 				}
 				require.NoError(t, err)
 
@@ -1384,7 +1384,7 @@ load 10s
 				if c.Interval == 0 {
 					qry, err = engine.NewInstantQuery(test.Queryable(), nil, c.Query, c.Start)
 				} else {
-					qry, err = engine.NewRangeQuery(test.Queryable(), nil, c.Query, c.Start, c.End, c.Interval)
+					qry, err = engine.NewRangeQuery(test.Queryable(), nil, c.Query, c.Start, c.End, c.Interval, 0)
 				}
 				require.NoError(t, err)
 
@@ -1625,7 +1625,7 @@ load 1ms
 			if c.end == 0 {
 				qry, err = test.QueryEngine().NewInstantQuery(test.Queryable(), nil, c.query, start)
 			} else {
-				qry, err = test.QueryEngine().NewRangeQuery(test.Queryable(), nil, c.query, start, end, interval)
+				qry, err = test.QueryEngine().NewRangeQuery(test.Queryable(), nil, c.query, start, end, interval, 0)
 			}
 			require.NoError(t, err)
 
@@ -2964,7 +2964,7 @@ func TestEngineOptsValidation(t *testing.T) {
 	for _, c := range cases {
 		eng := NewEngine(c.opts)
 		_, err1 := eng.NewInstantQuery(nil, nil, c.query, time.Unix(10, 0))
-		_, err2 := eng.NewRangeQuery(nil, nil, c.query, time.Unix(0, 0), time.Unix(10, 0), time.Second)
+		_, err2 := eng.NewRangeQuery(nil, nil, c.query, time.Unix(0, 0), time.Unix(10, 0), time.Second, 0)
 		if c.fail {
 			require.Equal(t, c.expError, err1)
 			require.Equal(t, c.expError, err2)
@@ -3111,7 +3111,7 @@ func TestRangeQuery(t *testing.T) {
 			err = test.Run()
 			require.NoError(t, err)
 
-			qry, err := test.QueryEngine().NewRangeQuery(test.Queryable(), nil, c.Query, c.Start, c.End, c.Interval)
+			qry, err := test.QueryEngine().NewRangeQuery(test.Queryable(), nil, c.Query, c.Start, c.End, c.Interval, 0)
 			require.NoError(t, err)
 
 			res := qry.Exec(test.Context())
