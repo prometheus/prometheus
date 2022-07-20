@@ -18,7 +18,7 @@ import {
 import { baseTheme, lightTheme, darkTheme, promqlHighlighter } from './CMTheme';
 
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faSearch, faSpinner, faGlobeEurope, faIndent } from '@fortawesome/free-solid-svg-icons';
+import { faSearch, faSpinner, faGlobeEurope, faIndent, faCheck } from '@fortawesome/free-solid-svg-icons';
 import MetricsExplorer from './MetricsExplorer';
 import { usePathPrefix } from '../../contexts/PathPrefixContext';
 import { useTheme } from '../../contexts/ThemeContext';
@@ -101,6 +101,7 @@ const ExpressionInput: FC<CMExpressionInputProps> = ({
 
   const [formatError, setFormatError] = useState<string | null>(null);
   const [isFormatting, setIsFormatting] = useState<boolean>(false);
+  const [exprFormatted, setExprFormatted] = useState<boolean>(false);
 
   // (Re)initialize editor based on settings / setting changes.
   useEffect(() => {
@@ -173,7 +174,10 @@ const ExpressionInput: FC<CMExpressionInputProps> = ({
             ])
           ),
           EditorView.updateListener.of((update: ViewUpdate): void => {
-            onExpressionChange(update.state.doc.toString());
+            if (update.docChanged) {
+              onExpressionChange(update.state.doc.toString());
+              setExprFormatted(false);
+            }
           }),
         ],
       });
@@ -244,6 +248,7 @@ const ExpressionInput: FC<CMExpressionInputProps> = ({
         }
 
         view.dispatch(view.state.update({ changes: { from: 0, to: view.state.doc.length, insert: json.data } }));
+        setExprFormatted(true);
       })
       .catch((err) => {
         setFormatError(err.message);
@@ -265,11 +270,17 @@ const ExpressionInput: FC<CMExpressionInputProps> = ({
         <InputGroupAddon addonType="append">
           <Button
             className="expression-input-action-btn"
-            title="Format expression"
+            title={isFormatting ? 'Formatting expression' : exprFormatted ? 'Expression formatted' : 'Format expression'}
             onClick={formatExpression}
-            disabled={isFormatting}
+            disabled={isFormatting || exprFormatted}
           >
-            {isFormatting ? <FontAwesomeIcon icon={faSpinner} spin /> : <FontAwesomeIcon icon={faIndent} />}
+            {isFormatting ? (
+              <FontAwesomeIcon icon={faSpinner} spin />
+            ) : exprFormatted ? (
+              <FontAwesomeIcon icon={faCheck} />
+            ) : (
+              <FontAwesomeIcon icon={faIndent} />
+            )}
           </Button>
           <Button
             className="expression-input-action-btn"
