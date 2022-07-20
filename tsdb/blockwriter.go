@@ -39,7 +39,7 @@ type BlockWriter struct {
 }
 
 // ErrNoSeriesAppended is returned if the series count is zero while flushing blocks.
-var ErrNoSeriesAppended error = errors.New("no series appended, aborting")
+var ErrNoSeriesAppended = errors.New("no series appended, aborting")
 
 // NewBlockWriter create a new block writer.
 //
