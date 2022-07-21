@@ -1439,7 +1439,7 @@ load 1ms
 	ref, err := app.Append(0, lblsneg, -1000000, 1000)
 	require.NoError(t, err)
 	for ts := int64(-1000000 + 1000); ts <= 0; ts += 1000 {
-		_, err := app.Append(ref, nil, ts, -float64(ts/1000)+1)
+		_, err := app.Append(ref, labels.EmptyLabels(), ts, -float64(ts/1000)+1)
 		require.NoError(t, err)
 	}
 
@@ -1608,7 +1608,7 @@ load 1ms
 						{V: 3600, T: 6 * 60 * 1000},
 						{V: 3600, T: 7 * 60 * 1000},
 					},
-					Metric: labels.Labels{},
+					Metric: labels.EmptyLabels(),
 				},
 			},
 		},
@@ -1909,7 +1909,7 @@ func TestSubquerySelector(t *testing.T) {
 						Matrix{
 							Series{
 								Points: []Point{{V: 270, T: 90000}, {V: 300, T: 100000}, {V: 330, T: 110000}, {V: 360, T: 120000}},
-								Metric: labels.Labels{},
+								Metric: labels.EmptyLabels(),
 							},
 						},
 						nil,
@@ -1923,7 +1923,7 @@ func TestSubquerySelector(t *testing.T) {
 						Matrix{
 							Series{
 								Points: []Point{{V: 800, T: 80000}, {V: 900, T: 90000}, {V: 1000, T: 100000}, {V: 1100, T: 110000}, {V: 1200, T: 120000}},
-								Metric: labels.Labels{},
+								Metric: labels.EmptyLabels(),
 							},
 						},
 						nil,
@@ -1937,7 +1937,7 @@ func TestSubquerySelector(t *testing.T) {
 						Matrix{
 							Series{
 								Points: []Point{{V: 1000, T: 100000}, {V: 1000, T: 105000}, {V: 1100, T: 110000}, {V: 1100, T: 115000}, {V: 1200, T: 120000}},
-								Metric: labels.Labels{},
+								Metric: labels.EmptyLabels(),
 							},
 						},
 						nil,
@@ -2993,7 +2993,7 @@ func TestRangeQuery(t *testing.T) {
 			Result: Matrix{
 				Series{
 					Points: []Point{{V: 0, T: 0}, {V: 11, T: 60000}, {V: 1100, T: 120000}},
-					Metric: labels.Labels{},
+					Metric: labels.EmptyLabels(),
 				},
 			},
 			Start:    time.Unix(0, 0),
@@ -3008,7 +3008,7 @@ func TestRangeQuery(t *testing.T) {
 			Result: Matrix{
 				Series{
 					Points: []Point{{V: 0, T: 0}, {V: 11, T: 60000}, {V: 1100, T: 120000}},
-					Metric: labels.Labels{},
+					Metric: labels.EmptyLabels(),
 				},
 			},
 			Start:    time.Unix(0, 0),
@@ -3023,7 +3023,7 @@ func TestRangeQuery(t *testing.T) {
 			Result: Matrix{
 				Series{
 					Points: []Point{{V: 0, T: 0}, {V: 11, T: 60000}, {V: 1100, T: 120000}, {V: 110000, T: 180000}, {V: 11000000, T: 240000}},
-					Metric: labels.Labels{},
+					Metric: labels.EmptyLabels(),
 				},
 			},
 			Start:    time.Unix(0, 0),
@@ -3038,7 +3038,7 @@ func TestRangeQuery(t *testing.T) {
 			Result: Matrix{
 				Series{
 					Points: []Point{{V: 5, T: 0}, {V: 59, T: 60000}, {V: 9, T: 120000}, {V: 956, T: 180000}},
-					Metric: labels.Labels{},
+					Metric: labels.EmptyLabels(),
 				},
 			},
 			Start:    time.Unix(0, 0),
@@ -3053,7 +3053,7 @@ func TestRangeQuery(t *testing.T) {
 			Result: Matrix{
 				Series{
 					Points: []Point{{V: 1, T: 0}, {V: 3, T: 60000}, {V: 5, T: 120000}},
-					Metric: labels.Labels{labels.Label{Name: "__name__", Value: "metric"}},
+					Metric: labels.FromStrings("__name__", "metric"),
 				},
 			},
 			Start:    time.Unix(0, 0),
@@ -3068,7 +3068,7 @@ func TestRangeQuery(t *testing.T) {
 			Result: Matrix{
 				Series{
 					Points: []Point{{V: 1, T: 0}, {V: 3, T: 60000}, {V: 5, T: 120000}},
-					Metric: labels.Labels{labels.Label{Name: "__name__", Value: "metric"}},
+					Metric: labels.FromStrings("__name__", "metric"),
 				},
 			},
 			Start:    time.Unix(0, 0),
@@ -3084,17 +3084,17 @@ func TestRangeQuery(t *testing.T) {
 			Result: Matrix{
 				Series{
 					Points: []Point{{V: 1, T: 0}, {V: 3, T: 60000}, {V: 5, T: 120000}},
-					Metric: labels.Labels{
-						labels.Label{Name: "__name__", Value: "bar"},
-						labels.Label{Name: "job", Value: "2"},
-					},
+					Metric: labels.FromStrings(
+						"__name__", "bar",
+						"job", "2",
+					),
 				},
 				Series{
 					Points: []Point{{V: 3, T: 60000}, {V: 5, T: 120000}},
-					Metric: labels.Labels{
-						labels.Label{Name: "__name__", Value: "foo"},
-						labels.Label{Name: "job", Value: "1"},
-					},
+					Metric: labels.FromStrings(
+						"__name__", "foo",
+						"job", "1",
+					),
 				},
 			},
 			Start:    time.Unix(0, 0),
