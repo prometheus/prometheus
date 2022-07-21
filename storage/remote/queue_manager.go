@@ -1397,7 +1397,7 @@ func (s *shards) populateTimeSeries(batch []timeSeries, pendingData []prompb.Tim
 			})
 			nPendingExemplars++
 		case tHistogram:
-			pendingData[nPending].Histograms = append(pendingData[nPending].Histograms, histogramToHistogramProto(d.timestamp, d.histogram))
+			pendingData[nPending].Histograms = append(pendingData[nPending].Histograms, HistogramToHistogramProto(d.timestamp, d.histogram))
 			nPendingHistograms++
 		}
 	}

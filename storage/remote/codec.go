@@ -528,7 +528,7 @@ func spansProtoToSpans(s []*prompb.BucketSpan) []histogram.Span {
 	return spans
 }
 
-func histogramToHistogramProto(timestamp int64, h *histogram.Histogram) prompb.Histogram {
+func HistogramToHistogramProto(timestamp int64, h *histogram.Histogram) prompb.Histogram {
 	return prompb.Histogram{
 		Count:          &prompb.Histogram_CountInt{CountInt: h.Count},
 		Sum:            h.Sum,
