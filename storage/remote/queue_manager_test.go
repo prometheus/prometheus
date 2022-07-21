@@ -701,7 +701,7 @@ func (c *TestWriteClient) expectHistograms(hh []record.RefHistogram, series []re
 
 	for _, h := range hh {
 		seriesName := getSeriesNameFromRef(series[h.Ref])
-		c.expectedHistograms[seriesName] = append(c.expectedHistograms[seriesName], histogramToHistogramProto(h.T, h.H))
+		c.expectedHistograms[seriesName] = append(c.expectedHistograms[seriesName], HistogramToHistogramProto(h.T, h.H))
 	}
 	c.wg.Add(len(hh))
 }

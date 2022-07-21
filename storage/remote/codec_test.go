@@ -52,7 +52,7 @@ var writeRequestFixture = &prompb.WriteRequest{
 			},
 			Samples:    []prompb.Sample{{Value: 1, Timestamp: 0}},
 			Exemplars:  []prompb.Exemplar{{Labels: []prompb.Label{{Name: "f", Value: "g"}}, Value: 1, Timestamp: 0}},
-			Histograms: []prompb.Histogram{histogramToHistogramProto(0, &testHistogram)},
+			Histograms: []prompb.Histogram{HistogramToHistogramProto(0, &testHistogram)},
 		},
 		{
 			Labels: []prompb.Label{
@@ -64,7 +64,7 @@ var writeRequestFixture = &prompb.WriteRequest{
 			},
 			Samples:    []prompb.Sample{{Value: 2, Timestamp: 1}},
 			Exemplars:  []prompb.Exemplar{{Labels: []prompb.Label{{Name: "h", Value: "i"}}, Value: 2, Timestamp: 1}},
-			Histograms: []prompb.Histogram{histogramToHistogramProto(1, &testHistogram)},
+			Histograms: []prompb.Histogram{HistogramToHistogramProto(1, &testHistogram)},
 		},
 	},
 }
