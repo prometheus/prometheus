@@ -431,6 +431,10 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 		}
 	}
 
+	if err := validateHistogram(h); err != nil {
+		return 0, err
+	}
+
 	s.Lock()
 	if err := s.appendableHistogram(t, h); err != nil {
 		s.Unlock()
@@ -456,6 +460,33 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 	})
 	a.histogramSeries = append(a.histogramSeries, s)
 	return storage.SeriesRef(s.ref), nil
+}
+
+func validateHistogram(h *histogram.Histogram) error {
+	checkSpans := func(sign string, spans []histogram.Span, buckets []int64) error {
+		var spanBuckets uint32
+		for n, span := range spans {
+			if span.Offset < 0 {
+				return errors.Wrap(
+					storage.ErrHistogramSpanNegativeOffset,
+					fmt.Sprintf("%s span number %d with offset %d", sign, n+1, span.Offset),
+				)
+			}
+			spanBuckets += span.Length
+		}
+		if l := uint32(len(buckets)); spanBuckets != l {
+			return errors.Wrap(
+				storage.ErrHistogramDifferentNumberSpansBuckets,
+				fmt.Sprintf("%s spans need %d buckets, have %d %s buckets", sign, spanBuckets, l, sign),
+			)
+		}
+		return nil
+	}
+
+	if err := checkSpans("negative", h.NegativeSpans, h.NegativeBuckets); err != nil {
+		return err
+	}
+	return checkSpans("positive", h.PositiveSpans, h.PositiveBuckets)
 }
 
 var _ storage.GetRef = &headAppender{}

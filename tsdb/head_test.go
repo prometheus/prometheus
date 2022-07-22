@@ -3804,3 +3804,67 @@ func TestReplayAfterMmapReplayError(t *testing.T) {
 
 	require.NoError(t, h.Close())
 }
+
+func TestDistributor_Push_HistogramValidation(t *testing.T) {
+	tests := map[string]struct {
+		h      *histogram.Histogram
+		errMsg string
+	}{
+		"valid histogram": {
+			h: GenerateTestHistograms(1)[0],
+		},
+		"rejects histogram who has too few negative buckets": {
+			h: &histogram.Histogram{
+				NegativeSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+				NegativeBuckets: []int64{},
+			},
+			errMsg: `negative spans need 1 buckets, have 0 negative buckets`,
+		},
+		"rejects histogram who has too few positive buckets": {
+			h: &histogram.Histogram{
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+				PositiveBuckets: []int64{},
+			},
+			errMsg: `positive spans need 1 buckets, have 0 positive buckets`,
+		},
+		"rejects histogram who has too many negative buckets": {
+			h: &histogram.Histogram{
+				NegativeSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+				NegativeBuckets: []int64{1, 2},
+			},
+			errMsg: `negative spans need 1 buckets, have 2 negative buckets`,
+		},
+		"rejects histogram who has too many positive buckets": {
+			h: &histogram.Histogram{
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+				PositiveBuckets: []int64{1, 2},
+			},
+			errMsg: `positive spans need 1 buckets, have 2 positive buckets`,
+		},
+		"rejects a histogram which has a negative span with a negative offset": {
+			h: &histogram.Histogram{
+				NegativeSpans:   []histogram.Span{{Offset: -1, Length: 1}},
+				NegativeBuckets: []int64{1},
+			},
+			errMsg: `negative span number 1 with offset -1`,
+		},
+		"rejects a histogram which has a positive span with a negative offset": {
+			h: &histogram.Histogram{
+				PositiveSpans:   []histogram.Span{{Offset: -1, Length: 1}},
+				PositiveBuckets: []int64{1},
+			},
+			errMsg: `positive span number 1 with offset -1`,
+		},
+	}
+
+	for testName, tc := range tests {
+		t.Run(testName, func(t *testing.T) {
+			err := validateHistogram(tc.h)
+			if tc.errMsg != "" {
+				require.ErrorContains(t, err, tc.errMsg)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
