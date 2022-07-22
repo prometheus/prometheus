@@ -552,7 +552,7 @@ func (a *headAppender) Commit() (err error) {
 		series = a.sampleSeries[i]
 		series.Lock()
 
-		oooSample, delta, err := series.appendable(s.T, s.V, a.headMaxt, a.minValidTime, oooTimeWindow)
+		oooSample, _, err := series.appendable(s.T, s.V, a.headMaxt, a.minValidTime, oooTimeWindow)
 		switch err {
 		case storage.ErrOutOfOrderSample:
 			samplesAppended--
@@ -615,7 +615,7 @@ func (a *headAppender) Commit() (err error) {
 			// - the sample.t is beyond any previously ingested timestamp
 			// - the sample is an exact duplicate of the 'head sample'
 
-			delta, ok, chunkCreated = series.append(s.T, s.V, a.appendID, a.head.chunkDiskMapper)
+			_, ok, chunkCreated = series.append(s.T, s.V, a.appendID, a.head.chunkDiskMapper)
 
 			// TODO: handle overwrite.
 			// this would be storage.ErrDuplicateSampleForTimestamp, it has no attached counter
@@ -634,9 +634,6 @@ func (a *headAppender) Commit() (err error) {
 			}
 		}
 
-		if delta > 0 {
-			a.head.metrics.oooHistogram.Observe(float64(delta) / 1000)
-		}
 		if chunkCreated {
 			a.head.metrics.chunks.Inc()
 			a.head.metrics.chunksCreated.Inc()
