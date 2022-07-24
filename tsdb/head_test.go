@@ -3843,17 +3843,17 @@ func TestDistributor_Push_HistogramValidation(t *testing.T) {
 		},
 		"rejects a histogram which has a negative span with a negative offset": {
 			h: &histogram.Histogram{
-				NegativeSpans:   []histogram.Span{{Offset: -1, Length: 1}},
-				NegativeBuckets: []int64{1},
+				NegativeSpans:   []histogram.Span{{Offset: -1, Length: 1}, {Offset: -1, Length: 1}},
+				NegativeBuckets: []int64{1, 2},
 			},
-			errMsg: `negative span number 1 with offset -1`,
+			errMsg: `negative span number 2 with offset -1`,
 		},
 		"rejects a histogram which has a positive span with a negative offset": {
 			h: &histogram.Histogram{
-				PositiveSpans:   []histogram.Span{{Offset: -1, Length: 1}},
-				PositiveBuckets: []int64{1},
+				PositiveSpans:   []histogram.Span{{Offset: -1, Length: 1}, {Offset: -1, Length: 1}},
+				PositiveBuckets: []int64{1, 2},
 			},
-			errMsg: `positive span number 1 with offset -1`,
+			errMsg: `positive span number 2 with offset -1`,
 		},
 	}
 

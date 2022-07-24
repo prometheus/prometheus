@@ -466,7 +466,7 @@ func validateHistogram(h *histogram.Histogram) error {
 	checkSpans := func(sign string, spans []histogram.Span, buckets []int64) error {
 		var spanBuckets uint32
 		for n, span := range spans {
-			if span.Offset < 0 {
+			if n > 0 && span.Offset < 0 {
 				return errors.Wrap(
 					storage.ErrHistogramSpanNegativeOffset,
 					fmt.Sprintf("%s span number %d with offset %d", sign, n+1, span.Offset),
