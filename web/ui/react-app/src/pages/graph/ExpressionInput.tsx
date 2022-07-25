@@ -15,7 +15,7 @@ import {
   closeBrackets,
   closeBracketsKeymap,
 } from '@codemirror/autocomplete';
-import { baseTheme, lightTheme, darkTheme, promqlHighlighter } from './CMTheme';
+import { baseTheme, lightTheme, darkTheme, promqlHighlighter, darkPromqlHighlighter } from './CMTheme';
 
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faSearch, faSpinner, faGlobeEurope, faIndent, faCheck } from '@fortawesome/free-solid-svg-icons';
@@ -117,8 +117,14 @@ const ExpressionInput: FC<CMExpressionInputProps> = ({
           queryHistory
         ),
       });
+
+    let highlighter = syntaxHighlighting(promqlHighlighter);
+    if (theme === 'dark') {
+      highlighter = syntaxHighlighting(darkPromqlHighlighter);
+    }
+
     const dynamicConfig = [
-      enableHighlighting ? syntaxHighlighting(promqlHighlighter) : [],
+      enableHighlighting ? highlighter : [],
       promqlExtension.asExtension(),
       theme === 'dark' ? darkTheme : lightTheme,
     ];

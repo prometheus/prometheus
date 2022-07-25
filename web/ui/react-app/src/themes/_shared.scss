@@ -114,7 +114,7 @@ button.execute-btn {
 }
 
 input[type='checkbox']:checked + label {
-  color: #286090;
+  color: $checked-checkbox-color;
 }
 
 .custom-control-label {
