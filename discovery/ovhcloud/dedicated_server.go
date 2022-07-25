@@ -101,7 +101,7 @@ func (d *dedicatedServerDiscovery) getSource() string {
 }
 
 func (d *dedicatedServerDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
-	client, err := (d.config).CreateClient()
+	client, err := CreateClient(d.config)
 	if err != nil {
 		return nil, err
 	}

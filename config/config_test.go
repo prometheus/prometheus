@@ -962,7 +962,6 @@ var expectedConf = &Config{
 					ConsumerKey:       "testConsumerKey",
 					RefreshInterval:   model.Duration(60 * time.Second),
 					Service:           "vps",
-					NoAuthTest:        true,
 				},
 				&ovhcloud.SDConfig{
 					Endpoint:          "ovh-eu",
@@ -971,7 +970,6 @@ var expectedConf = &Config{
 					ConsumerKey:       "testConsumerKey",
 					RefreshInterval:   model.Duration(60 * time.Second),
 					Service:           "dedicated_server",
-					NoAuthTest:        true,
 				},
 			},
 		},
@@ -1204,7 +1202,7 @@ func TestElideSecrets(t *testing.T) {
 	yamlConfig := string(config)
 
 	matches := secretRe.FindAllStringIndex(yamlConfig, -1)
-	require.Equal(t, 18, len(matches), "wrong number of secret matches found")
+	require.Equal(t, 20, len(matches), "wrong number of secret matches found")
 	require.NotContains(t, yamlConfig, "mysecret",
 		"yaml marshal reveals authentication credentials.")
 }
@@ -1646,6 +1644,14 @@ var expectedErrors = []struct {
 	{
 		filename: "ionos_datacenter.bad.yml",
 		errMsg:   "datacenter id can't be empty",
+	},
+	{
+		filename: "ovhcloud_no_secret.bad.yml",
+		errMsg:   "application secret can not be empty",
+	},
+	{
+		filename: "ovhcloud_bad_service.bad.yml",
+		errMsg:   "unknown service: fakeservice",
 	},
 }
 

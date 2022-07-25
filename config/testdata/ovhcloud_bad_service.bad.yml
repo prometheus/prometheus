@@ -1,7 +1,8 @@
 scrape_configs:
   - ovhcloud_sd_configs:
-      - service: dedicated_server
+      - service: fakeservice
         endpoint: ovh-eu
         application_key: testAppKey
+        application_secret: testAppSecret
         consumer_key: testConsumerKey
         refresh_interval: 1m

@@ -22,10 +22,10 @@ import (
 
 	"github.com/fatih/structs"
 	"github.com/go-kit/log"
-	"github.com/go-playground/validator/v10"
 	"github.com/grafana/regexp"
 	"github.com/ovh/go-ovh/ovh"
 	"github.com/pkg/errors"
+	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/discovery"
@@ -37,6 +37,12 @@ import (
 // in this discovery.
 const (
 	metaLabelPrefix = model.MetaLabelPrefix + "ovhcloud_"
+)
+
+var (
+	ovhCloudApplicationKeyTest    = "TDPKJdwZwAQPwKX2"
+	ovhCloudApplicationSecretTest = config.Secret("9ufkBmLaTQ9nz5yMUlg79taH0GNnzDjk")
+	ovhCloudConsumerKeyTest       = "5mBuy6SUQcRw2ZUxg0cG68BoDKpED4KY"
 )
 
 func addFieldsOnLabels(fields []*structs.Field, labels model.LabelSet, prefix string) {
@@ -58,24 +64,21 @@ func addFieldsOnLabels(fields []*structs.Field, labels model.LabelSet, prefix st
 
 type refresher interface {
 	refresh(context.Context) ([]*targetgroup.Group, error)
-	getSource() string
-	getService() string
 }
 
-// AuthDetails partial
-type AuthDetails struct {
-	User string `json:"user"`
+var DefaultSDConfig = SDConfig{
+	Endpoint:        "ovh-eu",
+	RefreshInterval: model.Duration(60 * time.Second),
 }
 
 // SDConfig sd config
 type SDConfig struct {
-	Endpoint          string         `yaml:"endpoint" validate:"required"`
-	ApplicationKey    string         `yaml:"application_key" validate:"required"`
-	ApplicationSecret string         `yaml:"application_secret" validate:"required"`
-	ConsumerKey       string         `yaml:"consumer_key" validate:"required"`
-	RefreshInterval   model.Duration `yaml:"refresh_interval" validate:"required"`
-	Service           string         `yaml:"service" validate:"required,oneof=dedicated_server vps"`
-	NoAuthTest        bool           `yaml:"no_auth_test"`
+	Endpoint          string         `yaml:"endpoint"`
+	ApplicationKey    string         `yaml:"application_key"`
+	ApplicationSecret config.Secret  `yaml:"application_secret"`
+	ConsumerKey       string         `yaml:"consumer_key"`
+	RefreshInterval   model.Duration `yaml:"refresh_interval"`
+	Service           string         `yaml:"service"`
 }
 
 // IPs struct to store IPV4 and IPV6
@@ -91,40 +94,41 @@ func (c SDConfig) Name() string {
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface.
 func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*c = DefaultSDConfig
 	type plain SDConfig
 	err := unmarshal((*plain)(c))
 	if err != nil {
 		return err
 	}
 
-	validate := validator.New()
-
-	if err := validate.Struct(c); err != nil {
-		return fmt.Errorf("failed to validate SDConfig err: %w", err)
+	if c.Endpoint == "" {
+		return errors.New("endpoint can not be empty")
 	}
-
-	client, err := c.CreateClient()
-	if err != nil {
-		return err
+	if c.ApplicationKey == "" {
+		return errors.New("application key can not be empty")
 	}
-
-	if !c.NoAuthTest {
-		var authDetails AuthDetails
-		fmt.Print("Test auth/details\n")
-		return client.Get("/auth/details", &authDetails)
+	if c.ApplicationSecret == "" {
+		return errors.New("application secret can not be empty")
 	}
-
-	return nil
+	if c.ConsumerKey == "" {
+		return errors.New("consumer key can not be empty")
+	}
+	switch c.Service {
+	case "dedicated_server", "vps":
+		return nil
+	default:
+		return errors.Errorf("unknown service: %v", c.Service)
+	}
 }
 
 // CreateClient get client
-func (c SDConfig) CreateClient() (*ovh.Client, error) {
-	return ovh.NewClient(c.Endpoint, c.ApplicationKey, c.ApplicationSecret, c.ConsumerKey)
+func CreateClient(config *SDConfig) (*ovh.Client, error) {
+	return ovh.NewClient(config.Endpoint, config.ApplicationKey, string(config.ApplicationSecret), config.ConsumerKey)
 }
 
 // NewDiscoverer new discoverer
-func (c SDConfig) NewDiscoverer(options discovery.DiscovererOptions) (discovery.Discoverer, error) {
-	return NewDiscovery(&c, options.Logger)
+func (c *SDConfig) NewDiscoverer(options discovery.DiscovererOptions) (discovery.Discoverer, error) {
+	return NewDiscovery(c, options.Logger)
 }
 
 func init() {
@@ -171,7 +175,7 @@ func newRefresher(conf *SDConfig, logger log.Logger) (refresher, error) {
 	return nil, fmt.Errorf("unknown OVHcloud discovery service '%s'", conf.Service)
 }
 
-// NewDiscovery ovhcloud create a discovery with good refresher
+// NewDiscovery ovhcloud creates a discovery with refresher
 func NewDiscovery(conf *SDConfig, logger log.Logger) (*refresh.Discovery, error) {
 	r, err := newRefresher(conf, logger)
 	if err != nil {

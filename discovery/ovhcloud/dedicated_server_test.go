@@ -15,303 +15,109 @@ package ovhcloud
 
 import (
 	"context"
-	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
 	"testing"
 
+	"github.com/go-kit/log"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/h2non/gock.v1"
-
-	"github.com/prometheus/prometheus/util/testutil"
+	"gopkg.in/yaml.v2"
 )
 
-type DedicatedServerData struct {
-	DedicatedServer DedicatedServer
-	Err             error
-	IPs             []string
-	IPsErr          error
-}
+func TestOvhcloudDedicatedServerRefresh(t *testing.T) {
+	var cfg SDConfig
 
-func initMockErrorDedicatedServerList(err error) {
-	initMockAuth(123456)
-	gock.New(mockURL).
-		MatchHeader("Accept", "application/json").
-		Get("/dedicated/server").
-		ReplyError(err)
-}
+	mock := httptest.NewServer(http.HandlerFunc(MockDedicatedAPI))
+	defer mock.Close()
+	cfgString := fmt.Sprintf(`
+---
+service: dedicated_server
+endpoint: %s
+application_key: %s
+application_secret: %s
+consumer_key: %s`, mock.URL, ovhCloudApplicationKeyTest, ovhCloudApplicationSecretTest, ovhCloudConsumerKeyTest)
 
-func initMockDedicatedServer(dedicatedServerList map[string]DedicatedServerData) {
-	initMockAuth(123456)
+	require.NoError(t, yaml.UnmarshalStrict([]byte(cfgString), &cfg))
+	d, err := newRefresher(&cfg, log.NewNopLogger())
+	require.NoError(t, err)
+	ctx := context.Background()
+	targetGroups, err := d.refresh(ctx)
+	require.NoError(t, err)
 
-	var dedicatedServerListName []string
-	for dedicatedServerName := range dedicatedServerList {
-		dedicatedServerListName = append(dedicatedServerListName, dedicatedServerName)
+	require.Equal(t, 1, len(targetGroups))
+	targetGroup := targetGroups[0]
+	require.NotNil(t, targetGroup)
+	require.NotNil(t, targetGroup.Targets)
+	require.Equal(t, 1, len(targetGroup.Targets))
+
+	for i, lbls := range []model.LabelSet{
+		{
+			"__address__": "1.2.3.4",
+			"__meta_ovhcloud_dedicatedServer_commercialRange": "Advance-1 Gen 2",
+			"__meta_ovhcloud_dedicatedServer_datacenter":      "gra3",
+			"__meta_ovhcloud_dedicatedServer_ipv4":            "1.2.3.4",
+			"__meta_ovhcloud_dedicatedServer_ipv6":            "",
+			"__meta_ovhcloud_dedicatedServer_linkSpeed":       "123",
+			"__meta_ovhcloud_dedicatedServer_name":            "abcde",
+			"__meta_ovhcloud_dedicatedServer_noIntervention":  "false",
+			"__meta_ovhcloud_dedicatedServer_os":              "debian11_64",
+			"__meta_ovhcloud_dedicatedServer_rack":            "TESTRACK",
+			"__meta_ovhcloud_dedicatedServer_reverse":         "abcde-rev",
+			"__meta_ovhcloud_dedicatedServer_serverId":        "1234",
+			"__meta_ovhcloud_dedicatedServer_state":           "test",
+			"__meta_ovhcloud_dedicatedServer_supportLevel":    "pro",
+			"instance": "abcde",
+		},
+	} {
+		t.Run(fmt.Sprintf("item %d", i), func(t *testing.T) {
+			require.Equal(t, lbls, targetGroup.Targets[i])
+		})
 	}
+}
 
-	gock.New(mockURL).
-		MatchHeader("Accept", "application/json").
-		Get("/dedicated/server").
-		Reply(200).
-		JSON(dedicatedServerListName)
-
-	for dedicatedServerName := range dedicatedServerList {
-		if dedicatedServerList[dedicatedServerName].Err != nil {
-			gock.New(mockURL).
-				MatchHeader("Accept", "application/json").
-				Get(fmt.Sprintf("/dedicated/server/%s", dedicatedServerName)).
-				ReplyError(dedicatedServerList[dedicatedServerName].Err)
-		} else {
-			gock.New(mockURL).
-				MatchHeader("Accept", "application/json").
-				Get(fmt.Sprintf("/dedicated/server/%s", dedicatedServerName)).
-				Reply(200).
-				JSON(dedicatedServerList[dedicatedServerName].DedicatedServer)
-			if dedicatedServerList[dedicatedServerName].IPsErr != nil {
-				gock.New(mockURL).
-					MatchHeader("Accept", "application/json").
-					Get(fmt.Sprintf("/dedicated/server/%s/ips", dedicatedServerName)).
-					ReplyError(dedicatedServerList[dedicatedServerName].IPsErr)
-			} else {
-				gock.New(mockURL).
-					MatchHeader("Accept", "application/json").
-					Get(fmt.Sprintf("/dedicated/server/%s/ips", dedicatedServerName)).
-					Reply(200).
-					JSON(dedicatedServerList[dedicatedServerName].IPs)
-			}
+func MockDedicatedAPI(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("X-Ovh-Application") != ovhCloudApplicationKeyTest {
+		http.Error(w, "bad application key", http.StatusBadRequest)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	if string(r.URL.Path) == "/dedicated/server" {
+		dedicatedServersList, err := os.ReadFile("testdata/dedicated_server/dedicated_servers.json")
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		_, err = w.Write(dedicatedServersList)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
 	}
-}
-
-func TestDedicatedServerWithBadConf(t *testing.T) {
-	defer gock.Off()
-
-	initMockAuthDetails(12345, map[string]string{"name": "test_name"})
-
-	conf, err := getMockConf("dedicated_server")
-	require.NoError(t, err)
-
-	conf.ApplicationKey = ""
-	logger := testutil.NewLogger(t)
-	d := newDedicatedServerDiscovery(&conf, logger)
-
-	ctx := context.Background()
-	_, err = d.refresh(ctx)
-	require.ErrorContains(t, err, "missing application key")
-
-	// Verify that we don't have pending mocks
-	require.Equal(t, gock.IsDone(), true)
-}
-
-func TestErrorDedicatedServerList(t *testing.T) {
-	defer gock.Off()
-
-	initMockAuthDetails(12345, map[string]string{"name": "test_name"})
-	errTest := errors.New("error on get dedicated server list")
-	initMockErrorDedicatedServerList(errTest)
-
-	conf, err := getMockConf("dedicated_server")
-	require.NoError(t, err)
-
-	//  conf.Endpoint = mockURL
-	logger := testutil.NewLogger(t)
-	d := newDedicatedServerDiscovery(&conf, logger)
-
-	ctx := context.Background()
-	_, err = d.refresh(ctx)
-	require.ErrorIs(t, err, errTest)
-	// Verify that we don't have pending mocks
-	require.Equal(t, gock.IsDone(), true)
-}
-
-func TestErrorDedicatedServerDetail(t *testing.T) {
-	defer gock.Off()
-
-	initMockAuthDetails(12345, map[string]string{"name": "test_name"})
-
-	dedicatedServer := DedicatedServer{
-		State: "test",
+	if string(r.URL.Path) == "/dedicated/server/abcde" {
+		dedicatedServer, err := os.ReadFile("testdata/dedicated_server/dedicated_servers_details.json")
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		_, err = w.Write(dedicatedServer)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	}
-
-	errTest := errors.New("error on get dedicated server detail")
-	initMockDedicatedServer(map[string]DedicatedServerData{"abcde": {DedicatedServer: dedicatedServer, IPs: []string{"1.2.3.5", "2001:0db8:0000:0000:0000:0000:0000:0001"}}, "errorTest": {Err: errTest}})
-	conf, err := getMockConf("dedicated_server")
-	require.NoError(t, err)
-
-	//  conf.Endpoint = mockURL
-	logger := testutil.NewLogger(t)
-	d := newDedicatedServerDiscovery(&conf, logger)
-
-	ctx := context.Background()
-	tgs, err := d.refresh(ctx)
-	require.NoError(t, err)
-
-	require.Equal(t, 1, len(tgs))
-
-	tgDedicatedServer := tgs[0]
-	require.NotNil(t, tgDedicatedServer)
-	require.NotNil(t, tgDedicatedServer.Targets)
-	require.Equal(t, 1, len(tgDedicatedServer.Targets))
-
-	// Verify that we don't have pending mocks
-	require.Equal(t, gock.IsDone(), true)
-}
-
-func TestBadIpDedicatedServer(t *testing.T) {
-	defer gock.Off()
-
-	initMockAuthDetails(12345, map[string]string{"name": "test_name"})
-
-	dedicatedServer := DedicatedServer{
-		State: "test",
+	if string(r.URL.Path) == "/dedicated/server/abcde/ips" {
+		dedicatedServerIPs, err := os.ReadFile("testdata/dedicated_server/dedicated_servers_abcde_ips.json")
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		_, err = w.Write(dedicatedServerIPs)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	}
-
-	initMockDedicatedServer(map[string]DedicatedServerData{"abcde": {DedicatedServer: dedicatedServer, IPs: []string{"1.2.3.5.6"}}})
-	conf, err := getMockConf("dedicated_server")
-	require.NoError(t, err)
-
-	//  conf.Endpoint = mockURL
-	logger := testutil.NewLogger(t)
-	d := newDedicatedServerDiscovery(&conf, logger)
-
-	ctx := context.Background()
-	tgs, err := d.refresh(ctx)
-	require.NoError(t, err)
-
-	require.Equal(t, 1, len(tgs))
-
-	tgDedicatedServer := tgs[0]
-	require.NotNil(t, tgDedicatedServer)
-	require.Nil(t, tgDedicatedServer.Targets)
-}
-
-func TestDedicatedServerCallWithoutIPv4(t *testing.T) {
-	defer gock.Off()
-
-	initMockAuthDetails(12345, map[string]string{"name": "test_name"})
-
-	dedicatedServer := DedicatedServer{
-		State:           "test",
-		CommercialRange: "Advance-1 Gen 2",
-		LinkSpeed:       123,
-		Rack:            "TESTRACK",
-		NoIntervention:  false,
-		Os:              "debian11_64",
-		SupportLevel:    "pro",
-		ServerID:        1234,
-		Reverse:         "abcde-rev",
-		Datacenter:      "gra3",
-		Name:            "abcde",
-	}
-
-	initMockDedicatedServer(map[string]DedicatedServerData{"abcde": {DedicatedServer: dedicatedServer, IPs: []string{"2001:0db8:0000:0000:0000:0000:0000:0001"}}})
-	conf, err := getMockConf("dedicated_server")
-	require.NoError(t, err)
-
-	//  conf.Endpoint = mockURL
-	logger := testutil.NewLogger(t)
-	d := newDedicatedServerDiscovery(&conf, logger)
-
-	ctx := context.Background()
-	tgs, err := d.refresh(ctx)
-	require.NoError(t, err)
-	require.Equal(t, 1, len(tgs))
-
-	tgDedicatedServer := tgs[0]
-	require.NotNil(t, tgDedicatedServer)
-	require.NotNil(t, tgDedicatedServer.Targets)
-	require.Equal(t, 1, len(tgDedicatedServer.Targets))
-
-	for i, lbls := range []model.LabelSet{
-		{
-			"__address__": "2001:0db8:0000:0000:0000:0000:0000:0001",
-			"__meta_ovhcloud_dedicatedServer_commercialRange": "Advance-1 Gen 2",
-			"__meta_ovhcloud_dedicatedServer_datacenter":      "gra3",
-			"__meta_ovhcloud_dedicatedServer_ipv4":            "",
-			"__meta_ovhcloud_dedicatedServer_ipv6":            "2001:0db8:0000:0000:0000:0000:0000:0001",
-			"__meta_ovhcloud_dedicatedServer_linkSpeed":       "123",
-			"__meta_ovhcloud_dedicatedServer_name":            "abcde",
-			"__meta_ovhcloud_dedicatedServer_noIntervention":  "false",
-			"__meta_ovhcloud_dedicatedServer_os":              "debian11_64",
-			"__meta_ovhcloud_dedicatedServer_rack":            "TESTRACK",
-			"__meta_ovhcloud_dedicatedServer_reverse":         "abcde-rev",
-			"__meta_ovhcloud_dedicatedServer_serverId":        "1234",
-			"__meta_ovhcloud_dedicatedServer_state":           "test",
-			"__meta_ovhcloud_dedicatedServer_supportLevel":    "pro",
-			"instance": "abcde",
-		},
-	} {
-		t.Run(fmt.Sprintf("item %d", i), func(t *testing.T) {
-			require.Equal(t, lbls, tgDedicatedServer.Targets[i])
-		})
-	}
-
-	// Verify that we don't have pending mocks
-	require.Equal(t, gock.IsDone(), true)
-}
-
-func TestDedicatedServerCall(t *testing.T) {
-	defer gock.Off()
-
-	initMockAuthDetails(12345, map[string]string{"name": "test_name"})
-
-	dedicatedServer := DedicatedServer{
-		State:           "test",
-		CommercialRange: "Advance-1 Gen 2",
-		LinkSpeed:       123,
-		Rack:            "TESTRACK",
-		NoIntervention:  false,
-		Os:              "debian11_64",
-		SupportLevel:    "pro",
-		ServerID:        1234,
-		Reverse:         "abcde-rev",
-		Datacenter:      "gra3",
-		Name:            "abcde",
-	}
-
-	initMockDedicatedServer(map[string]DedicatedServerData{"abcde": {DedicatedServer: dedicatedServer, IPs: []string{"1.2.3.5", "2001:0db8:0000:0000:0000:0000:0000:0001"}}})
-	conf, err := getMockConf("dedicated_server")
-	require.NoError(t, err)
-
-	//  conf.Endpoint = mockURL
-	logger := testutil.NewLogger(t)
-	d := newDedicatedServerDiscovery(&conf, logger)
-
-	ctx := context.Background()
-	tgs, err := d.refresh(ctx)
-	require.NoError(t, err)
-
-	require.Equal(t, 1, len(tgs))
-
-	tgDedicatedServer := tgs[0]
-	require.NotNil(t, tgDedicatedServer)
-	require.NotNil(t, tgDedicatedServer.Targets)
-	require.Equal(t, 1, len(tgDedicatedServer.Targets))
-
-	for i, lbls := range []model.LabelSet{
-		{
-			"__address__": "1.2.3.5",
-			"__meta_ovhcloud_dedicatedServer_commercialRange": "Advance-1 Gen 2",
-			"__meta_ovhcloud_dedicatedServer_datacenter":      "gra3",
-			"__meta_ovhcloud_dedicatedServer_ipv4":            "1.2.3.5",
-			"__meta_ovhcloud_dedicatedServer_ipv6":            "2001:0db8:0000:0000:0000:0000:0000:0001",
-			"__meta_ovhcloud_dedicatedServer_linkSpeed":       "123",
-			"__meta_ovhcloud_dedicatedServer_name":            "abcde",
-			"__meta_ovhcloud_dedicatedServer_noIntervention":  "false",
-			"__meta_ovhcloud_dedicatedServer_os":              "debian11_64",
-			"__meta_ovhcloud_dedicatedServer_rack":            "TESTRACK",
-			"__meta_ovhcloud_dedicatedServer_reverse":         "abcde-rev",
-			"__meta_ovhcloud_dedicatedServer_serverId":        "1234",
-			"__meta_ovhcloud_dedicatedServer_state":           "test",
-			"__meta_ovhcloud_dedicatedServer_supportLevel":    "pro",
-			"instance": "abcde",
-		},
-	} {
-		t.Run(fmt.Sprintf("item %d", i), func(t *testing.T) {
-			require.Equal(t, lbls, tgDedicatedServer.Targets[i])
-		})
-	}
-
-	// Verify that we don't have pending mocks
-	require.Equal(t, gock.IsDone(), true)
 }

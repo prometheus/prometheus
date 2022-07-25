@@ -117,7 +117,7 @@ func (d *vpsDiscovery) getSource() string {
 }
 
 func (d *vpsDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
-	client, err := (d.config).CreateClient()
+	client, err := CreateClient(d.config)
 	if err != nil {
 		return nil, err
 	}

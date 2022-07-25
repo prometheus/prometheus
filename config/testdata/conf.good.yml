@@ -351,20 +351,18 @@ scrape_configs:
 
   - job_name: ovhcloud
     ovhcloud_sd_configs:
-      - endpoint: ovh-eu
+      - service: vps
+        endpoint: ovh-eu
         application_key: testAppKey
         application_secret: testAppSecret
         consumer_key: testConsumerKey
         refresh_interval: 1m
-        no_auth_test: true
-        service: vps
-      - endpoint: ovh-eu
+      - service: dedicated_server
+        endpoint: ovh-eu
         application_key: testAppKey
         application_secret: testAppSecret
         consumer_key: testConsumerKey
         refresh_interval: 1m
-        service: dedicated_server
-        no_auth_test: true
 
   - job_name: scaleway
     scaleway_sd_configs:
