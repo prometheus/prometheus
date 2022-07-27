@@ -733,6 +733,10 @@ tls_config:
 # The host to use if the container is in host networking mode.
 [ host_networking_host: <string> | default = "localhost" ]
 
+# Skip network labels scraping so containers without network can be discovered.
+# Enabling this flag can yield targets without network related labels.
+[ scrape_empty_networks: <boolean> | default = "false" ]
+
 # Optional filters to limit the discovery process to a subset of available
 # resources.
 # The available filters are listed in the upstream documentation:

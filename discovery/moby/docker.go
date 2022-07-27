@@ -67,10 +67,11 @@ func init() {
 type DockerSDConfig struct {
 	HTTPClientConfig config.HTTPClientConfig `yaml:",inline"`
 
-	Host               string   `yaml:"host"`
-	Port               int      `yaml:"port"`
-	Filters            []Filter `yaml:"filters"`
-	HostNetworkingHost string   `yaml:"host_networking_host"`
+	Host                            string   `yaml:"host"`
+	Port                            int      `yaml:"port"`
+	Filters                         []Filter `yaml:"filters"`
+	HostNetworkingHost              string   `yaml:"host_networking_host"`
+	ScrapeContainersWithoutNetworks bool     `yaml:"scrape_empty_networks"`
 
 	RefreshInterval model.Duration `yaml:"refresh_interval"`
 }
@@ -107,10 +108,11 @@ func (c *DockerSDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error 
 
 type DockerDiscovery struct {
 	*refresh.Discovery
-	client             *client.Client
-	port               int
-	hostNetworkingHost string
-	filters            filters.Args
+	client                          *client.Client
+	port                            int
+	hostNetworkingHost              string
+	scrapeContainersWithoutNetworks bool
+	filters                         filters.Args
 }
 
 // NewDockerDiscovery returns a new DockerDiscovery which periodically refreshes its targets.
@@ -118,8 +120,9 @@ func NewDockerDiscovery(conf *DockerSDConfig, logger log.Logger) (*DockerDiscove
 	var err error
 
 	d := &DockerDiscovery{
-		port:               conf.Port,
-		hostNetworkingHost: conf.HostNetworkingHost,
+		port:                            conf.Port,
+		hostNetworkingHost:              conf.HostNetworkingHost,
+		scrapeContainersWithoutNetworks: conf.ScrapeContainersWithoutNetworks,
 	}
 
 	hostURL, err := url.Parse(conf.Host)
@@ -204,8 +207,8 @@ func (d *DockerDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 			commonLabels[dockerLabelContainerLabelPrefix+ln] = v
 		}
 
+		var added bool
 		for _, n := range c.NetworkSettings.Networks {
-			var added bool
 
 			for _, p := range c.Ports {
 				if p.Type != "tcp" {
@@ -261,7 +264,15 @@ func (d *DockerDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, er
 
 				labels[model.AddressLabel] = model.LabelValue(addr)
 				tg.Targets = append(tg.Targets, labels)
+				added = true
 			}
+		}
+		if !added && d.scrapeContainersWithoutNetworks {
+			labels := model.LabelSet{}
+			for k, v := range commonLabels {
+				labels[model.LabelName(k)] = model.LabelValue(v)
+			}
+			tg.Targets = append(tg.Targets, labels)
 		}
 	}
 
