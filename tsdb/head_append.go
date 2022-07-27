@@ -404,6 +404,10 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 		return 0, storage.ErrOutOfBounds
 	}
 
+	if err := ValidateHistogram(h); err != nil {
+		return 0, err
+	}
+
 	s := a.head.series.getByID(chunks.HeadSeriesRef(ref))
 	if s == nil {
 		// Ensure no empty labels have gotten through.
@@ -429,10 +433,6 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 				Labels: lset,
 			})
 		}
-	}
-
-	if err := validateHistogram(h); err != nil {
-		return 0, err
 	}
 
 	s.Lock()
@@ -462,31 +462,31 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 	return storage.SeriesRef(s.ref), nil
 }
 
-func validateHistogram(h *histogram.Histogram) error {
-	checkSpans := func(sign string, spans []histogram.Span, buckets []int64) error {
-		var spanBuckets uint32
-		for n, span := range spans {
-			if n > 0 && span.Offset < 0 {
-				return errors.Wrap(
-					storage.ErrHistogramSpanNegativeOffset,
-					fmt.Sprintf("%s span number %d with offset %d", sign, n+1, span.Offset),
-				)
-			}
-			spanBuckets += span.Length
-		}
-		if l := uint32(len(buckets)); spanBuckets != l {
+func ValidateHistogram(h *histogram.Histogram) error {
+	if err := checkHistogramSpans(h.NegativeSpans, h.NegativeBuckets); err != nil {
+		return errors.Wrap(err, "negative side")
+	}
+	return errors.Wrap(checkHistogramSpans(h.PositiveSpans, h.PositiveBuckets), "positive side")
+}
+
+func checkHistogramSpans(spans []histogram.Span, buckets []int64) error {
+	var spanBuckets int
+	for n, span := range spans {
+		if n > 0 && span.Offset < 0 {
 			return errors.Wrap(
-				storage.ErrHistogramDifferentNumberSpansBuckets,
-				fmt.Sprintf("%s spans need %d buckets, have %d %s buckets", sign, spanBuckets, l, sign),
+				storage.ErrHistogramSpanNegativeOffset,
+				fmt.Sprintf("span number %d with offset %d", n+1, span.Offset),
 			)
 		}
-		return nil
+		spanBuckets += int(span.Length)
 	}
-
-	if err := checkSpans("negative", h.NegativeSpans, h.NegativeBuckets); err != nil {
-		return err
+	if l := len(buckets); spanBuckets != l {
+		return errors.Wrap(
+			storage.ErrHistogramSpansBucketsMismatch,
+			fmt.Sprintf("spans need %d buckets, have %d buckets", spanBuckets, l),
+		)
 	}
-	return checkSpans("positive", h.PositiveSpans, h.PositiveBuckets)
+	return nil
 }
 
 var _ storage.GetRef = &headAppender{}
