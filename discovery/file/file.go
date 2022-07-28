@@ -53,8 +53,8 @@ var (
 	fileSDTimeStamp        = NewTimestampCollector()
 	fileWatcherErrorsCount = prometheus.NewCounter(
 		prometheus.CounterOpts{
-			Name: "prometheus_inotify_errors_total",
-			Help: "The number of File-SD errors caused by inotify.",
+			Name: "prometheus_sd_file_watcher_errors_total",
+			Help: "The number of File-SD errors caused by filesystem watch failures.",
 		})
 
 	patFileSDName = regexp.MustCompile(`^[^*]*(\*[^/]*)?\.(json|yml|yaml|JSON|YML|YAML)$`)
