@@ -565,8 +565,5 @@ metric: <
 
 		i++
 	}
-	// TODO(beorn7): Once supported by the parser, test exemplars for
-	// counters, exemplars for sparse histograms, legacy histograms including exemplars,
-	// summaries.
 	require.Equal(t, len(exp), i)
 }
