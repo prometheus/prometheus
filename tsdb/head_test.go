@@ -2865,6 +2865,7 @@ func TestHistogramInWAL(t *testing.T) {
 	}
 	expHistograms := make([]timedHistogram, 0, numHistograms)
 	for i, h := range GenerateTestHistograms(numHistograms) {
+		h.Count = h.Count * 2
 		h.NegativeSpans = h.PositiveSpans
 		h.NegativeBuckets = h.PositiveBuckets
 		_, err := app.AppendHistogram(0, l, int64(i), h)
@@ -3369,8 +3370,9 @@ func TestHistogramCounterResetHeader(t *testing.T) {
 		h.NegativeSpans = append([]histogram.Span{}, h.PositiveSpans...)
 		h.NegativeBuckets = append([]int64{}, h.PositiveBuckets...)
 	}
-	h.PositiveBuckets[0] = 100
-	h.NegativeBuckets[0] = 100
+	h.PositiveBuckets = []int64{100, 1, 1, 1}
+	h.NegativeBuckets = []int64{100, 1, 1, 1}
+	h.Count = 1000
 
 	// First histogram is UnknownCounterReset.
 	appendHistogram(h)
