@@ -37,6 +37,8 @@ var (
 	ErrExemplarsDisabled             = fmt.Errorf("exemplar storage is disabled or max exemplars is less than or equal to 0")
 	ErrHistogramSpanNegativeOffset   = errors.New("histogram has a span whose offset is negative")
 	ErrHistogramSpansBucketsMismatch = errors.New("histogram spans specify different number of buckets than provided")
+	ErrHistogramNegativeBucketCount  = errors.New("histogram has a bucket whose observation count is negative")
+	ErrHistogramCountNotBigEnough    = errors.New("histogram's observation count should be at least the number of observations found in the buckets")
 )
 
 // SeriesRef is a generic series reference. In prometheus it is either a

@@ -3855,6 +3855,30 @@ func TestHistogramValidation(t *testing.T) {
 			},
 			errMsg: `positive side: span number 2 with offset -1`,
 		},
+		"rejects a histogram which has a negative bucket with a negative count": {
+			h: &histogram.Histogram{
+				NegativeSpans:   []histogram.Span{{Offset: -1, Length: 1}},
+				NegativeBuckets: []int64{-1},
+			},
+			errMsg: `negative side: bucket number 1 has observation count of -1`,
+		},
+		"rejects a histogram which has a positive bucket with a negative count": {
+			h: &histogram.Histogram{
+				PositiveSpans:   []histogram.Span{{Offset: -1, Length: 1}},
+				PositiveBuckets: []int64{-1},
+			},
+			errMsg: `positive side: bucket number 1 has observation count of -1`,
+		},
+		"rejects a histogram which which has a lower count than count in buckets": {
+			h: &histogram.Histogram{
+				Count:           0,
+				NegativeSpans:   []histogram.Span{{Offset: -1, Length: 1}},
+				PositiveSpans:   []histogram.Span{{Offset: -1, Length: 1}},
+				NegativeBuckets: []int64{1},
+				PositiveBuckets: []int64{1},
+			},
+			errMsg: `2 observations found in buckets, but overall count is 0`,
+		},
 	}
 
 	for testName, tc := range tests {

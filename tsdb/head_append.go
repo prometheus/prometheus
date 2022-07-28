@@ -463,13 +463,33 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 }
 
 func ValidateHistogram(h *histogram.Histogram) error {
-	if err := checkHistogramSpans(h.NegativeSpans, h.NegativeBuckets); err != nil {
+	if err := checkHistogramSpans(h.NegativeSpans, len(h.NegativeBuckets)); err != nil {
 		return errors.Wrap(err, "negative side")
 	}
-	return errors.Wrap(checkHistogramSpans(h.PositiveSpans, h.PositiveBuckets), "positive side")
+	if err := checkHistogramSpans(h.PositiveSpans, len(h.PositiveBuckets)); err != nil {
+		return errors.Wrap(err, "positive side")
+	}
+
+	negativeCount, err := checkHistogramBuckets(h.NegativeBuckets)
+	if err != nil {
+		return errors.Wrap(err, "negative side")
+	}
+	positiveCount, err := checkHistogramBuckets(h.PositiveBuckets)
+	if err != nil {
+		return errors.Wrap(err, "positive side")
+	}
+
+	if c := negativeCount + positiveCount; c > h.Count {
+		return errors.Wrap(
+			storage.ErrHistogramCountNotBigEnough,
+			fmt.Sprintf("%d observations found in buckets, but overall count is %d", c, h.Count),
+		)
+	}
+
+	return nil
 }
 
-func checkHistogramSpans(spans []histogram.Span, buckets []int64) error {
+func checkHistogramSpans(spans []histogram.Span, numBuckets int) error {
 	var spanBuckets int
 	for n, span := range spans {
 		if n > 0 && span.Offset < 0 {
@@ -480,13 +500,40 @@ func checkHistogramSpans(spans []histogram.Span, buckets []int64) error {
 		}
 		spanBuckets += int(span.Length)
 	}
-	if l := len(buckets); spanBuckets != l {
+	if spanBuckets != numBuckets {
 		return errors.Wrap(
 			storage.ErrHistogramSpansBucketsMismatch,
-			fmt.Sprintf("spans need %d buckets, have %d buckets", spanBuckets, l),
+			fmt.Sprintf("spans need %d buckets, have %d buckets", spanBuckets, numBuckets),
 		)
 	}
 	return nil
+}
+
+func checkHistogramBuckets(buckets []int64) (uint64, error) {
+	if len(buckets) == 0 {
+		return 0, nil
+	}
+
+	var count uint64
+	var last int64
+
+	for i := 0; i < len(buckets); i++ {
+		c := last + buckets[i]
+		if c < 0 {
+			return 0, checkBucketsErr(i+1, c)
+		}
+		last = c
+		count += uint64(c)
+	}
+
+	return count, nil
+}
+
+func checkBucketsErr(n int, c int64) error {
+	return errors.Wrap(
+		storage.ErrHistogramNegativeBucketCount,
+		fmt.Sprintf("bucket number %d has observation count of %d", n, c),
+	)
 }
 
 var _ storage.GetRef = &headAppender{}
