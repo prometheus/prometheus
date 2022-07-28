@@ -3868,3 +3868,48 @@ func TestHistogramValidation(t *testing.T) {
 		})
 	}
 }
+
+func BenchmarkHistogramValidation(b *testing.B) {
+	histograms := generateBigTestHistograms(b.N)
+	for _, h := range histograms {
+		require.NoError(b, ValidateHistogram(h))
+	}
+}
+
+func generateBigTestHistograms(n int) []*histogram.Histogram {
+	const numBuckets = 500
+	numSpans := numBuckets / 10
+	bucketsPerSide := numBuckets / 2
+	spanLength := uint32(bucketsPerSide / numSpans)
+	// Given all bucket deltas are 1, sum n + 1.
+	observationCount := numBuckets / 2 * (1 + numBuckets)
+
+	var histograms []*histogram.Histogram
+	for i := 0; i < n; i++ {
+		h := &histogram.Histogram{
+			Count:           uint64(i + observationCount),
+			ZeroCount:       uint64(i),
+			ZeroThreshold:   1e-128,
+			Sum:             18.4 * float64(i+1),
+			Schema:          2,
+			NegativeSpans:   make([]histogram.Span, numSpans),
+			PositiveSpans:   make([]histogram.Span, numSpans),
+			NegativeBuckets: make([]int64, bucketsPerSide),
+			PositiveBuckets: make([]int64, bucketsPerSide),
+		}
+
+		for j := 0; j < numSpans; j++ {
+			s := histogram.Span{Offset: 1 + int32(i), Length: spanLength}
+			h.NegativeSpans[j] = s
+			h.PositiveSpans[j] = s
+		}
+
+		for j := 0; j < bucketsPerSide; j++ {
+			h.NegativeBuckets[j] = 1
+			h.PositiveBuckets[j] = 1
+		}
+
+		histograms = append(histograms, h)
+	}
+	return histograms
+}
