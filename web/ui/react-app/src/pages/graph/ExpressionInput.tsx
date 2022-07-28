@@ -118,7 +118,7 @@ const ExpressionInput: FC<CMExpressionInputProps> = ({
         ),
       });
 
-    let highlighter = syntaxHighlighting(promqlHighlighter);
+    let highlighter = syntaxHighlighting(theme === 'dark' ? darkPromqlHighlighter : promqlHighlighter);
     if (theme === 'dark') {
       highlighter = syntaxHighlighting(darkPromqlHighlighter);
     }
