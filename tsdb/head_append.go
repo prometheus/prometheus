@@ -520,20 +520,16 @@ func checkHistogramBuckets(buckets []int64) (uint64, error) {
 	for i := 0; i < len(buckets); i++ {
 		c := last + buckets[i]
 		if c < 0 {
-			return 0, checkBucketsErr(i+1, c)
+			return 0, errors.Wrap(
+				storage.ErrHistogramNegativeBucketCount,
+				fmt.Sprintf("bucket number %d has observation count of %d", i+1, c),
+			)
 		}
 		last = c
 		count += uint64(c)
 	}
 
 	return count, nil
-}
-
-func checkBucketsErr(n int, c int64) error {
-	return errors.Wrap(
-		storage.ErrHistogramNegativeBucketCount,
-		fmt.Sprintf("bucket number %d has observation count of %d", n, c),
-	)
 }
 
 var _ storage.GetRef = &headAppender{}
