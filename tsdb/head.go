@@ -76,6 +76,7 @@ type Head struct {
 	logger          log.Logger
 	appendPool      sync.Pool
 	exemplarsPool   sync.Pool
+	histogramsPool  sync.Pool
 	seriesPool      sync.Pool
 	bytesPool       sync.Pool
 	memChunkPool    sync.Pool
