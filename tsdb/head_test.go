@@ -2865,6 +2865,7 @@ func TestHistogramInWAL(t *testing.T) {
 	}
 	expHistograms := make([]timedHistogram, 0, numHistograms)
 	for i, h := range GenerateTestHistograms(numHistograms) {
+		h.Count = h.Count * 2
 		h.NegativeSpans = h.PositiveSpans
 		h.NegativeBuckets = h.PositiveBuckets
 		_, err := app.AppendHistogram(0, l, int64(i), h)
@@ -3369,8 +3370,9 @@ func TestHistogramCounterResetHeader(t *testing.T) {
 		h.NegativeSpans = append([]histogram.Span{}, h.PositiveSpans...)
 		h.NegativeBuckets = append([]int64{}, h.PositiveBuckets...)
 	}
-	h.PositiveBuckets[0] = 100
-	h.NegativeBuckets[0] = 100
+	h.PositiveBuckets = []int64{100, 1, 1, 1}
+	h.NegativeBuckets = []int64{100, 1, 1, 1}
+	h.Count = 1000
 
 	// First histogram is UnknownCounterReset.
 	appendHistogram(h)
@@ -3803,4 +3805,137 @@ func TestReplayAfterMmapReplayError(t *testing.T) {
 	require.Equal(t, map[string][]tsdbutil.Sample{lbls.String(): expSamples}, res)
 
 	require.NoError(t, h.Close())
+}
+
+func TestHistogramValidation(t *testing.T) {
+	tests := map[string]struct {
+		h      *histogram.Histogram
+		errMsg string
+	}{
+		"valid histogram": {
+			h: GenerateTestHistograms(1)[0],
+		},
+		"rejects histogram who has too few negative buckets": {
+			h: &histogram.Histogram{
+				NegativeSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+				NegativeBuckets: []int64{},
+			},
+			errMsg: `negative side: spans need 1 buckets, have 0 buckets`,
+		},
+		"rejects histogram who has too few positive buckets": {
+			h: &histogram.Histogram{
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+				PositiveBuckets: []int64{},
+			},
+			errMsg: `positive side: spans need 1 buckets, have 0 buckets`,
+		},
+		"rejects histogram who has too many negative buckets": {
+			h: &histogram.Histogram{
+				NegativeSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+				NegativeBuckets: []int64{1, 2},
+			},
+			errMsg: `negative side: spans need 1 buckets, have 2 buckets`,
+		},
+		"rejects histogram who has too many positive buckets": {
+			h: &histogram.Histogram{
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+				PositiveBuckets: []int64{1, 2},
+			},
+			errMsg: `positive side: spans need 1 buckets, have 2 buckets`,
+		},
+		"rejects a histogram which has a negative span with a negative offset": {
+			h: &histogram.Histogram{
+				NegativeSpans:   []histogram.Span{{Offset: -1, Length: 1}, {Offset: -1, Length: 1}},
+				NegativeBuckets: []int64{1, 2},
+			},
+			errMsg: `negative side: span number 2 with offset -1`,
+		},
+		"rejects a histogram which has a positive span with a negative offset": {
+			h: &histogram.Histogram{
+				PositiveSpans:   []histogram.Span{{Offset: -1, Length: 1}, {Offset: -1, Length: 1}},
+				PositiveBuckets: []int64{1, 2},
+			},
+			errMsg: `positive side: span number 2 with offset -1`,
+		},
+		"rejects a histogram which has a negative bucket with a negative count": {
+			h: &histogram.Histogram{
+				NegativeSpans:   []histogram.Span{{Offset: -1, Length: 1}},
+				NegativeBuckets: []int64{-1},
+			},
+			errMsg: `negative side: bucket number 1 has observation count of -1`,
+		},
+		"rejects a histogram which has a positive bucket with a negative count": {
+			h: &histogram.Histogram{
+				PositiveSpans:   []histogram.Span{{Offset: -1, Length: 1}},
+				PositiveBuckets: []int64{-1},
+			},
+			errMsg: `positive side: bucket number 1 has observation count of -1`,
+		},
+		"rejects a histogram which which has a lower count than count in buckets": {
+			h: &histogram.Histogram{
+				Count:           0,
+				NegativeSpans:   []histogram.Span{{Offset: -1, Length: 1}},
+				PositiveSpans:   []histogram.Span{{Offset: -1, Length: 1}},
+				NegativeBuckets: []int64{1},
+				PositiveBuckets: []int64{1},
+			},
+			errMsg: `2 observations found in buckets, but overall count is 0`,
+		},
+	}
+
+	for testName, tc := range tests {
+		t.Run(testName, func(t *testing.T) {
+			err := ValidateHistogram(tc.h)
+			if tc.errMsg != "" {
+				require.ErrorContains(t, err, tc.errMsg)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func BenchmarkHistogramValidation(b *testing.B) {
+	histograms := generateBigTestHistograms(b.N)
+	for _, h := range histograms {
+		require.NoError(b, ValidateHistogram(h))
+	}
+}
+
+func generateBigTestHistograms(n int) []*histogram.Histogram {
+	const numBuckets = 500
+	numSpans := numBuckets / 10
+	bucketsPerSide := numBuckets / 2
+	spanLength := uint32(bucketsPerSide / numSpans)
+	// Given all bucket deltas are 1, sum n + 1.
+	observationCount := numBuckets / 2 * (1 + numBuckets)
+
+	var histograms []*histogram.Histogram
+	for i := 0; i < n; i++ {
+		h := &histogram.Histogram{
+			Count:           uint64(i + observationCount),
+			ZeroCount:       uint64(i),
+			ZeroThreshold:   1e-128,
+			Sum:             18.4 * float64(i+1),
+			Schema:          2,
+			NegativeSpans:   make([]histogram.Span, numSpans),
+			PositiveSpans:   make([]histogram.Span, numSpans),
+			NegativeBuckets: make([]int64, bucketsPerSide),
+			PositiveBuckets: make([]int64, bucketsPerSide),
+		}
+
+		for j := 0; j < numSpans; j++ {
+			s := histogram.Span{Offset: 1 + int32(i), Length: spanLength}
+			h.NegativeSpans[j] = s
+			h.PositiveSpans[j] = s
+		}
+
+		for j := 0; j < bucketsPerSide; j++ {
+			h.NegativeBuckets[j] = 1
+			h.PositiveBuckets[j] = 1
+		}
+
+		histograms = append(histograms, h)
+	}
+	return histograms
 }
