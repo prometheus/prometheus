@@ -142,6 +142,7 @@ func (h *Head) appender() *headAppender {
 		samples:               h.getAppendBuffer(),
 		sampleSeries:          h.getSeriesBuffer(),
 		exemplars:             exemplarsBuf,
+		histograms:            h.getHistogramBuffer(),
 		appendID:              appendID,
 		cleanupAppendIDsBelow: cleanupAppendIDsBelow,
 	}
@@ -206,6 +207,19 @@ func (h *Head) putExemplarBuffer(b []exemplarWithSeriesRef) {
 
 	//nolint:staticcheck // Ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
 	h.exemplarsPool.Put(b[:0])
+}
+
+func (h *Head) getHistogramBuffer() []record.RefHistogram {
+	b := h.histogramsPool.Get()
+	if b == nil {
+		return make([]record.RefHistogram, 0, 512)
+	}
+	return b.([]record.RefHistogram)
+}
+
+func (h *Head) putHistogramBuffer(b []record.RefHistogram) {
+	//nolint:staticcheck // Ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
+	h.histogramsPool.Put(b[:0])
 }
 
 func (h *Head) getSeriesBuffer() []*memSeries {
@@ -556,6 +570,7 @@ func (a *headAppender) Commit() (err error) {
 	defer a.head.putAppendBuffer(a.samples)
 	defer a.head.putSeriesBuffer(a.sampleSeries)
 	defer a.head.putExemplarBuffer(a.exemplars)
+	defer a.head.putHistogramBuffer(a.histograms)
 	defer a.head.iso.closeAppend(a.appendID)
 
 	total := len(a.samples)
@@ -849,10 +864,19 @@ func (a *headAppender) Rollback() (err error) {
 		series.pendingCommit = false
 		series.Unlock()
 	}
+	for i := range a.histograms {
+		series = a.histogramSeries[i]
+		series.Lock()
+		series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
+		series.pendingCommit = false
+		series.Unlock()
+	}
 	a.head.putAppendBuffer(a.samples)
 	a.head.putExemplarBuffer(a.exemplars)
+	a.head.putHistogramBuffer(a.histograms)
 	a.samples = nil
 	a.exemplars = nil
+	a.histograms = nil
 
 	// Series are created in the head memory regardless of rollback. Thus we have
 	// to log them to the WAL in any case.
