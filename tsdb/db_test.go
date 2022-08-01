@@ -4117,12 +4117,11 @@ func TestOOOCompaction(t *testing.T) {
 	verifySamples(db.Blocks()[1], 120, 239)
 	verifySamples(db.Blocks()[2], 240, 310)
 
-	// Because of OOO compaction, we already have 2 m-map files.
-	// All the chunks are only in the first file.
+	// There should be a single m-map file.
 	mmapDir := mmappedChunksDir(db.head.opts.ChunkDirRoot)
 	files, err = os.ReadDir(mmapDir)
 	require.NoError(t, err)
-	require.Len(t, files, 2)
+	require.Len(t, files, 1)
 
 	// Compact the in-order head and expect another block.
 	// Since this is a forced compaction, this block is not aligned with 2h.
@@ -4138,7 +4137,7 @@ func TestOOOCompaction(t *testing.T) {
 	files, err = os.ReadDir(mmapDir)
 	require.NoError(t, err)
 	require.Len(t, files, 1)
-	require.Equal(t, "000002", files[0].Name())
+	require.Equal(t, "000001", files[0].Name())
 
 	// This will merge overlapping block.
 	require.NoError(t, db.Compact())
@@ -4892,9 +4891,8 @@ func TestOOOCompactionFailure(t *testing.T) {
 	require.Equal(t, len(db.Blocks()), 3)
 	require.Equal(t, oldBlocks, db.Blocks())
 
-	// Because of OOO compaction, we have a second m-map file now
-	// All the chunks are only in the first file.
-	verifyMmapFiles("000001", "000002")
+	// There should be a single m-map file
+	verifyMmapFiles("000001")
 
 	// All but last WBL file will be deleted.
 	// 8 files in total (starting at 0) because of 7 compaction calls.
@@ -4937,7 +4935,7 @@ func TestOOOCompactionFailure(t *testing.T) {
 
 	// The compaction also clears out the old m-map files. Including
 	// the file that has ooo chunks.
-	verifyMmapFiles("000002")
+	verifyMmapFiles("000001")
 }
 
 func TestWBLCorruption(t *testing.T) {
