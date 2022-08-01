@@ -240,8 +240,7 @@ export const darkTheme = EditorView.theme(
     },
 
     '.cm-matchingBracket, &.cm-focused .cm-matchingBracket': {
-      color: '#1e293b',
-      backgroundColor: '#cbd5e1',
+      backgroundColor: '#616161',
     },
 
     '.cm-completionMatchedText': {
