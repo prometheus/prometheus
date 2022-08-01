@@ -552,7 +552,7 @@ func (c *LeveledCompactor) compactOOO(dest string, oooHead *OOOCompactionHead) (
 	}
 
 	noOOOBlock := true
-	for ix, _ := range outBlocksMetas {
+	for ix := range outBlocksMetas {
 		meta := outBlocksMetas[ix]
 		if meta.Stats.NumSamples != 0 {
 			noOOOBlock = false
