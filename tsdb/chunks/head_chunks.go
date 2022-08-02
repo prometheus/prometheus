@@ -871,10 +871,7 @@ func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef HeadSeriesRef, chu
 }
 
 // Truncate deletes the head chunk files whose file number is less than given fileNo.
-func (cdm *ChunkDiskMapper) Truncate(fileNo int) error {
-	if !cdm.fileMaxtSet {
-		return errors.New("maxt of the files are not set")
-	}
+func (cdm *ChunkDiskMapper) Truncate(fileNo uint32) error {
 	cdm.readPathMtx.RLock()
 
 	// Sort the file indices, else if files deletion fails in between,
@@ -887,7 +884,7 @@ func (cdm *ChunkDiskMapper) Truncate(fileNo int) error {
 
 	var removedFiles []int
 	for _, seq := range chkFileIndices {
-		if seq == cdm.curFileSequence || seq >= fileNo {
+		if seq == cdm.curFileSequence || uint32(seq) >= fileNo {
 			break
 		}
 		removedFiles = append(removedFiles, seq)

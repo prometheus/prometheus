@@ -833,7 +833,7 @@ func (h *Head) removeCorruptedMmappedChunks(err error) (map[chunks.HeadSeriesRef
 
 	if err := h.chunkDiskMapper.DeleteCorrupted(err); err != nil {
 		level.Info(h.logger).Log("msg", "Deletion of corrupted mmap chunk files failed, discarding chunk files completely", "err", err)
-		if err := h.chunkDiskMapper.Truncate(math.MaxInt64); err != nil {
+		if err := h.chunkDiskMapper.Truncate(math.MaxUint32); err != nil {
 			level.Error(h.logger).Log("msg", "Deletion of all mmap chunk files failed", "err", err)
 		}
 		return map[chunks.HeadSeriesRef][]*mmappedChunk{}, map[chunks.HeadSeriesRef][]*mmappedChunk{}, 0, nil
@@ -843,7 +843,7 @@ func (h *Head) removeCorruptedMmappedChunks(err error) (map[chunks.HeadSeriesRef
 	mmappedChunks, oooMmappedChunks, lastRef, err := h.loadMmappedChunks(make(map[chunks.HeadSeriesRef]*memSeries))
 	if err != nil {
 		level.Error(h.logger).Log("msg", "Loading on-disk chunks failed, discarding chunk files completely", "err", err)
-		if err := h.chunkDiskMapper.Truncate(math.MaxInt64); err != nil {
+		if err := h.chunkDiskMapper.Truncate(math.MaxUint32); err != nil {
 			level.Error(h.logger).Log("msg", "Deletion of all mmap chunk files failed after failed loading", "err", err)
 		}
 		mmappedChunks = map[chunks.HeadSeriesRef][]*mmappedChunk{}
@@ -1037,7 +1037,7 @@ func (h *Head) truncateMemory(mint int64) (err error) {
 	}
 
 	// Truncate the chunk m-mapper.
-	if err := h.chunkDiskMapper.Truncate(minMmapFile); err != nil {
+	if err := h.chunkDiskMapper.Truncate(uint32(minMmapFile)); err != nil {
 		return errors.Wrap(err, "truncate chunks.HeadReadWriter by file number")
 	}
 	return nil
@@ -1222,7 +1222,7 @@ func (h *Head) truncateOOO(lastWBLFile int, minOOOMmapRef chunks.ChunkDiskMapper
 		}
 
 		// Truncate the chunk m-mapper.
-		if err := h.chunkDiskMapper.Truncate(minMmapFile); err != nil {
+		if err := h.chunkDiskMapper.Truncate(uint32(minMmapFile)); err != nil {
 			return errors.Wrap(err, "truncate chunks.HeadReadWriter by file number in truncateOOO")
 		}
 	}
