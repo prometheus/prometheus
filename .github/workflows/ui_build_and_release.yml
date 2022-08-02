@@ -18,7 +18,7 @@ jobs:
         with:
           node-version-file: "web/ui/.nvmrc"
           registry-url: "https://registry.npmjs.org"
-      - uses: actions/cache@v3.0.4
+      - uses: actions/cache@v3.0.5
         with:
           path: ~/.npm
           key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
