@@ -4889,7 +4889,6 @@ func TestOOOCompactionFailure(t *testing.T) {
 
 	// The failed compaction should not have left the ooo Head corrupted.
 	// Hence, expect no new blocks with another OOO compaction call.
-	require.NoError(t, db.head.wbl.Sync()) // syncing to make sure wbl is flushed in windows
 	require.NoError(t, db.CompactOOOHead())
 	require.Equal(t, len(db.Blocks()), 3)
 	require.Equal(t, oldBlocks, db.Blocks())
