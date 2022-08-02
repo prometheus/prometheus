@@ -1017,30 +1017,7 @@ func (h *Head) truncateMemory(mint int64) (err error) {
 	}
 
 	h.metrics.headTruncateTotal.Inc()
-	start := time.Now()
-
-	actualMint, minMmapFile := h.gc()
-	level.Info(h.logger).Log("msg", "Head GC completed", "duration", time.Since(start))
-	h.metrics.gcDuration.Observe(time.Since(start).Seconds())
-	if actualMint > h.minTime.Load() {
-		// The actual mint of the Head is higher than the one asked to truncate.
-		appendableMinValidTime := h.appendableMinValidTime()
-		if actualMint < appendableMinValidTime {
-			h.minTime.Store(actualMint)
-			h.minValidTime.Store(actualMint)
-		} else {
-			// The actual min time is in the appendable window.
-			// So we set the mint to the appendableMinValidTime.
-			h.minTime.Store(appendableMinValidTime)
-			h.minValidTime.Store(appendableMinValidTime)
-		}
-	}
-
-	// Truncate the chunk m-mapper.
-	if err := h.chunkDiskMapper.Truncate(uint32(minMmapFile)); err != nil {
-		return errors.Wrap(err, "truncate chunks.HeadReadWriter by file number")
-	}
-	return nil
+	return h.truncateSeriesAndChunkDiskMapper("truncateMemory")
 }
 
 // WaitForPendingReadersInTimeRange waits for queries overlapping with given range to finish querying.
@@ -1203,31 +1180,48 @@ func (h *Head) truncateOOO(lastWBLFile int, minOOOMmapRef chunks.ChunkDiskMapper
 	curMinOOOMmapRef := chunks.ChunkDiskMapperRef(h.minOOOMmapRef.Load())
 	if minOOOMmapRef.GreaterThan(curMinOOOMmapRef) {
 		h.minOOOMmapRef.Store(uint64(minOOOMmapRef))
-		start := time.Now()
-		actualMint, minMmapFile := h.gc()
-		level.Info(h.logger).Log("msg", "Head GC completed in truncateOOO", "duration", time.Since(start))
-		h.metrics.gcDuration.Observe(time.Since(start).Seconds())
-		if actualMint > h.minTime.Load() {
-			// The actual mint of the Head is higher than the one asked to truncate.
-			appendableMinValidTime := h.appendableMinValidTime()
-			if actualMint < appendableMinValidTime {
-				h.minTime.Store(actualMint)
-				h.minValidTime.Store(actualMint)
-			} else {
-				// The actual min time is in the appendable window.
-				// So we set the mint to the appendableMinValidTime.
-				h.minTime.Store(appendableMinValidTime)
-				h.minValidTime.Store(appendableMinValidTime)
-			}
-		}
-
-		// Truncate the chunk m-mapper.
-		if err := h.chunkDiskMapper.Truncate(uint32(minMmapFile)); err != nil {
-			return errors.Wrap(err, "truncate chunks.HeadReadWriter by file number in truncateOOO")
+		if err := h.truncateSeriesAndChunkDiskMapper("truncateOOO"); err != nil {
+			return err
 		}
 	}
 
 	return h.wbl.Truncate(lastWBLFile)
+}
+
+// truncateSeriesAndChunkDiskMapper is a helper function for truncateMemory and truncateOOO.
+// It runs GC on the Head and truncates the ChunkDiskMapper accordingly.
+func (h *Head) truncateSeriesAndChunkDiskMapper(caller string) error {
+	start := time.Now()
+	headMaxt := h.MaxTime()
+	actualMint, minOOOTime, minMmapFile := h.gc()
+	level.Info(h.logger).Log("msg", "Head GC completed", "caller", caller, "duration", time.Since(start))
+	h.metrics.gcDuration.Observe(time.Since(start).Seconds())
+	if actualMint > h.minTime.Load() {
+		// The actual mint of the Head is higher than the one asked to truncate.
+		appendableMinValidTime := h.appendableMinValidTime()
+		if actualMint < appendableMinValidTime {
+			h.minTime.Store(actualMint)
+			h.minValidTime.Store(actualMint)
+		} else {
+			// The actual min time is in the appendable window.
+			// So we set the mint to the appendableMinValidTime.
+			h.minTime.Store(appendableMinValidTime)
+			h.minValidTime.Store(appendableMinValidTime)
+		}
+	}
+	if headMaxt-h.opts.OutOfOrderTimeWindow.Load() < minOOOTime {
+		// The allowed OOO window is lower than the min OOO time seen during GC.
+		// So it is possible that some OOO sample was inserted that was less that minOOOTime.
+		// So we play safe and set it to the min that was possible.
+		minOOOTime = headMaxt - h.opts.OutOfOrderTimeWindow.Load()
+	}
+	h.minOOOTime.Store(minOOOTime)
+
+	// Truncate the chunk m-mapper.
+	if err := h.chunkDiskMapper.Truncate(uint32(minMmapFile)); err != nil {
+		return errors.Wrap(err, "truncate chunks.HeadReadWriter by file number")
+	}
+	return nil
 }
 
 type Stats struct {
@@ -1365,8 +1359,9 @@ func (h *Head) Delete(mint, maxt int64, ms ...*labels.Matcher) error {
 // gc removes data before the minimum timestamp from the head.
 // It returns
 // * The actual min times of the chunks present in the Head.
+// * The min OOO time seen during the GC.
 // * Min mmap file number seen in the series (in-order and out-of-order) after gc'ing the series.
-func (h *Head) gc() (int64, int) {
+func (h *Head) gc() (int64, int64, int) {
 	// Only data strictly lower than this timestamp must be deleted.
 	mint := h.MinTime()
 	// Only ooo m-map chunks strictly lower than or equal to this ref
@@ -1375,7 +1370,7 @@ func (h *Head) gc() (int64, int) {
 
 	// Drop old chunks and remember series IDs and hashes if they can be
 	// deleted entirely.
-	deleted, chunksRemoved, actualMint, minMmapFile := h.series.gc(mint, minOOOMmapRef)
+	deleted, chunksRemoved, actualMint, minOOOTime, minMmapFile := h.series.gc(mint, minOOOMmapRef)
 	seriesRemoved := len(deleted)
 
 	h.metrics.seriesRemoved.Add(float64(seriesRemoved))
@@ -1405,7 +1400,7 @@ func (h *Head) gc() (int64, int) {
 		h.deletedMtx.Unlock()
 	}
 
-	return actualMint, minMmapFile
+	return actualMint, minOOOTime, minMmapFile
 }
 
 // Tombstones returns a new reader over the head's tombstones
@@ -1612,12 +1607,13 @@ func newStripeSeries(stripeSize int, seriesCallback SeriesLifecycleCallback) *st
 // but the returned map goes into postings.Delete() which expects a map[storage.SeriesRef]struct
 // and there's no easy way to cast maps.
 // minMmapFile is the min mmap file number seen in the series (in-order and out-of-order) after gc'ing the series.
-func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (_ map[storage.SeriesRef]struct{}, _ int, _ int64, minMmapFile int) {
+func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (_ map[storage.SeriesRef]struct{}, _ int, _, _ int64, minMmapFile int) {
 	var (
 		deleted                  = map[storage.SeriesRef]struct{}{}
 		deletedForCallback       = []labels.Labels{}
 		rmChunks                 = 0
 		actualMint         int64 = math.MaxInt64
+		minOOOTime         int64 = math.MaxInt64
 	)
 	minMmapFile = math.MaxInt32
 	// Run through all series and truncate old chunks. Mark those with no
@@ -1640,6 +1636,16 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 					seq, _ := series.oooMmappedChunks[0].ref.Unpack()
 					if seq < minMmapFile {
 						minMmapFile = seq
+					}
+					for _, ch := range series.oooMmappedChunks {
+						if ch.minTime < minOOOTime {
+							minOOOTime = ch.minTime
+						}
+					}
+				}
+				if series.oooHeadChunk != nil {
+					if series.oooHeadChunk.minTime < minOOOTime {
+						minOOOTime = series.oooHeadChunk.minTime
 					}
 				}
 				if len(series.mmappedChunks) > 0 || len(series.oooMmappedChunks) > 0 ||
@@ -1686,7 +1692,7 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 		actualMint = mint
 	}
 
-	return deleted, rmChunks, actualMint, minMmapFile
+	return deleted, rmChunks, actualMint, minOOOTime, minMmapFile
 }
 
 func (s *stripeSeries) getByID(id chunks.HeadSeriesRef) *memSeries {
