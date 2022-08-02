@@ -3696,3 +3696,50 @@ func TestOOOAppendWithNoSeries(t *testing.T) {
 	appendSample(s5, 240)
 	verifyInOrderSamples(s5, 1)
 }
+
+func TestHeadMinOOOTimeUpdate(t *testing.T) {
+	dir := t.TempDir()
+	wlog, err := wal.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, true)
+	require.NoError(t, err)
+	oooWlog, err := wal.NewSize(nil, nil, filepath.Join(dir, wal.WblDirName), 32768, true)
+	require.NoError(t, err)
+
+	opts := DefaultHeadOptions()
+	opts.ChunkDirRoot = dir
+	opts.OutOfOrderTimeWindow.Store(10 * time.Minute.Milliseconds())
+
+	h, err := NewHead(nil, nil, wlog, oooWlog, opts, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, h.Close())
+	})
+	require.NoError(t, h.Init(0))
+
+	appendSample := func(ts int64) {
+		lbls := labels.FromStrings("foo", "bar")
+		app := h.Appender(context.Background())
+		_, err := app.Append(0, lbls, ts*time.Minute.Milliseconds(), float64(ts))
+		require.NoError(t, err)
+		require.NoError(t, app.Commit())
+	}
+
+	appendSample(300) // In-order sample.
+
+	require.Equal(t, int64(math.MaxInt64), h.MinOOOTime())
+
+	appendSample(295) // OOO sample.
+	require.Equal(t, 295*time.Minute.Milliseconds(), h.MinOOOTime())
+
+	// Allowed window for OOO is >=290, which is before the earliest ooo sample 295, so it gets set to the lower value.
+	require.NoError(t, h.truncateOOO(1, 1))
+	require.Equal(t, 290*time.Minute.Milliseconds(), h.MinOOOTime())
+
+	appendSample(310) // In-order sample.
+	appendSample(305) // OOO sample.
+	require.Equal(t, 290*time.Minute.Milliseconds(), h.MinOOOTime())
+
+	// Now the OOO sample 295 was not gc'ed yet. And allowed window for OOO is now >=300.
+	// So the lowest among them, 295, is set as minOOOTime.
+	require.NoError(t, h.truncateOOO(2, 2))
+	require.Equal(t, 295*time.Minute.Milliseconds(), h.MinOOOTime())
+}
