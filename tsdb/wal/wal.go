@@ -758,6 +758,13 @@ func (w *WAL) fsync(f *Segment) error {
 	return err
 }
 
+// Sync forces a file sync on the current wal segment. This function is meant
+// to be used only on tests due to different behaviour on Operating Systems
+// like windows and linux
+func (w *WAL) Sync() error {
+	return w.fsync(w.segment)
+}
+
 // Close flushes all writes and closes active segment.
 func (w *WAL) Close() (err error) {
 	w.mtx.Lock()

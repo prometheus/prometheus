@@ -4063,6 +4063,7 @@ func TestOOOCompaction(t *testing.T) {
 	require.Equal(t, len(db.Blocks()), 0)
 
 	// There is a 0th WBL file.
+	require.NoError(t, db.head.wbl.Sync()) // syncing to make sure wbl is flushed in windows
 	files, err := os.ReadDir(db.head.wbl.Dir())
 	require.NoError(t, err)
 	require.Len(t, files, 1)
@@ -4837,6 +4838,7 @@ func TestOOOCompactionFailure(t *testing.T) {
 
 	// There is a 0th WBL file.
 	verifyFirstWBLFileIs0 := func(count int) {
+		require.NoError(t, db.head.wbl.Sync()) // syncing to make sure wbl is flushed in windows
 		files, err := os.ReadDir(db.head.wbl.Dir())
 		require.NoError(t, err)
 		require.Len(t, files, count)
@@ -4887,6 +4889,7 @@ func TestOOOCompactionFailure(t *testing.T) {
 
 	// The failed compaction should not have left the ooo Head corrupted.
 	// Hence, expect no new blocks with another OOO compaction call.
+	require.NoError(t, db.head.wbl.Sync()) // syncing to make sure wbl is flushed in windows
 	require.NoError(t, db.CompactOOOHead())
 	require.Equal(t, len(db.Blocks()), 3)
 	require.Equal(t, oldBlocks, db.Blocks())
@@ -4991,6 +4994,7 @@ func TestWBLCorruption(t *testing.T) {
 	// should be deleted after replay.
 
 	// Checking where we corrupt it.
+	require.NoError(t, db.head.wbl.Sync()) // syncing to make sure wbl is flushed in windows
 	files, err := os.ReadDir(db.head.wbl.Dir())
 	require.NoError(t, err)
 	require.Len(t, files, 2)
@@ -5013,6 +5017,7 @@ func TestWBLCorruption(t *testing.T) {
 	addSamples(310, 320, false)
 
 	// Verifying that we have data after corruption point.
+	require.NoError(t, db.head.wbl.Sync()) // syncing to make sure wbl is flushed in windows
 	files, err = os.ReadDir(db.head.wbl.Dir())
 	require.NoError(t, err)
 	require.Len(t, files, 3)
