@@ -128,6 +128,8 @@ type Query interface {
 type QueryOpts struct {
 	// Enables recording per-step statistics if the engine has it enabled as well. Disabled by default.
 	EnablePerStepStats bool
+	// Lookback delta duration for this query.
+	LookbackDelta time.Duration
 }
 
 // query implements the Query interface.
@@ -437,11 +439,17 @@ func (ng *Engine) newQuery(q storage.Queryable, opts *QueryOpts, expr parser.Exp
 		opts = &QueryOpts{}
 	}
 
+	lookbackDelta := opts.LookbackDelta
+	if lookbackDelta <= 0 {
+		lookbackDelta = ng.lookbackDelta
+	}
+
 	es := &parser.EvalStmt{
-		Expr:     PreprocessExpr(expr, start, end),
-		Start:    start,
-		End:      end,
-		Interval: interval,
+		Expr:          PreprocessExpr(expr, start, end),
+		Start:         start,
+		End:           end,
+		Interval:      interval,
+		LookbackDelta: lookbackDelta,
 	}
 	qry := &query{
 		stmt:        es,
@@ -636,7 +644,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 			ctx:                      ctxInnerEval,
 			maxSamples:               ng.maxSamplesPerQuery,
 			logger:                   ng.logger,
-			lookbackDelta:            ng.lookbackDelta,
+			lookbackDelta:            s.LookbackDelta,
 			samplesStats:             query.sampleStats,
 			noStepSubqueryIntervalFn: ng.noStepSubqueryIntervalFn,
 		}
@@ -688,7 +696,7 @@ func (ng *Engine) execEvalStmt(ctx context.Context, query *query, s *parser.Eval
 		ctx:                      ctxInnerEval,
 		maxSamples:               ng.maxSamplesPerQuery,
 		logger:                   ng.logger,
-		lookbackDelta:            ng.lookbackDelta,
+		lookbackDelta:            s.LookbackDelta,
 		samplesStats:             query.sampleStats,
 		noStepSubqueryIntervalFn: ng.noStepSubqueryIntervalFn,
 	}
@@ -801,7 +809,7 @@ func (ng *Engine) getTimeRangesForSelector(s *parser.EvalStmt, n *parser.VectorS
 	}
 
 	if evalRange == 0 {
-		start = start - durationMilliseconds(ng.lookbackDelta)
+		start = start - durationMilliseconds(s.LookbackDelta)
 	} else {
 		// For all matrix queries we want to ensure that we have (end-start) + range selected
 		// this way we have `range` data before the start time

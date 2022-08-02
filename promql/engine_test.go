@@ -3120,3 +3120,96 @@ func TestRangeQuery(t *testing.T) {
 		})
 	}
 }
+
+func TestQueryLookbackDelta(t *testing.T) {
+	var (
+		load = `load 5m
+metric 0 1 2
+`
+		query           = "metric"
+		lastDatapointTs = time.Unix(600, 0)
+	)
+
+	cases := []struct {
+		name                          string
+		ts                            time.Time
+		engineLookback, queryLookback time.Duration
+		expectSamples                 bool
+	}{
+		{
+			name:          "default lookback delta",
+			ts:            lastDatapointTs.Add(defaultLookbackDelta),
+			expectSamples: true,
+		},
+		{
+			name:          "outside default lookback delta",
+			ts:            lastDatapointTs.Add(defaultLookbackDelta + time.Millisecond),
+			expectSamples: false,
+		},
+		{
+			name:           "custom engine lookback delta",
+			ts:             lastDatapointTs.Add(10 * time.Minute),
+			engineLookback: 10 * time.Minute,
+			expectSamples:  true,
+		},
+		{
+			name:           "outside custom engine lookback delta",
+			ts:             lastDatapointTs.Add(10*time.Minute + time.Millisecond),
+			engineLookback: 10 * time.Minute,
+			expectSamples:  false,
+		},
+		{
+			name:           "custom query lookback delta",
+			ts:             lastDatapointTs.Add(20 * time.Minute),
+			engineLookback: 10 * time.Minute,
+			queryLookback:  20 * time.Minute,
+			expectSamples:  true,
+		},
+		{
+			name:           "outside custom query lookback delta",
+			ts:             lastDatapointTs.Add(20*time.Minute + time.Millisecond),
+			engineLookback: 10 * time.Minute,
+			queryLookback:  20 * time.Minute,
+			expectSamples:  false,
+		},
+		{
+			name:           "negative custom query lookback delta",
+			ts:             lastDatapointTs.Add(20 * time.Minute),
+			engineLookback: -10 * time.Minute,
+			queryLookback:  20 * time.Minute,
+			expectSamples:  true,
+		},
+	}
+
+	for _, c := range cases {
+		c := c
+		t.Run(c.name, func(t *testing.T) {
+			test, err := NewTest(t, load)
+			require.NoError(t, err)
+			defer test.Close()
+
+			err = test.Run()
+			require.NoError(t, err)
+
+			eng := test.QueryEngine()
+			if c.engineLookback != 0 {
+				eng.lookbackDelta = c.engineLookback
+			}
+			opts := &QueryOpts{
+				LookbackDelta: c.queryLookback,
+			}
+			qry, err := eng.NewInstantQuery(test.Queryable(), opts, query, c.ts)
+			require.NoError(t, err)
+
+			res := qry.Exec(test.Context())
+			require.NoError(t, res.Err)
+			vec, ok := res.Value.(Vector)
+			require.True(t, ok)
+			if c.expectSamples {
+				require.NotEmpty(t, vec)
+			} else {
+				require.Empty(t, vec)
+			}
+		})
+	}
+}
