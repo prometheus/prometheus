@@ -50,26 +50,26 @@ require (
 	github.com/shurcooL/httpfs v0.0.0-20190707220628-8d4bc4ba7749
 	github.com/stretchr/testify v1.8.0
 	github.com/vultr/govultr/v2 v2.17.2
-	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.32.0
-	go.opentelemetry.io/otel v1.8.0
-	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.7.0
-	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.7.0
-	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.7.0
-	go.opentelemetry.io/otel/sdk v1.7.0
-	go.opentelemetry.io/otel/trace v1.8.0
+	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.34.0
+	go.opentelemetry.io/otel v1.9.0
+	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.9.0
+	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.9.0
+	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.9.0
+	go.opentelemetry.io/otel/sdk v1.9.0
+	go.opentelemetry.io/otel/trace v1.9.0
 	go.uber.org/atomic v1.9.0
 	go.uber.org/automaxprocs v1.5.1
 	go.uber.org/goleak v1.1.12
-	golang.org/x/net v0.0.0-20220624214902-1bab6f366d9e
-	golang.org/x/oauth2 v0.0.0-20220628200809-02e64fa58f26
+	golang.org/x/net v0.0.0-20220802222814-0bcc04d9c69b
+	golang.org/x/oauth2 v0.0.0-20220722155238-128564f6959c
 	golang.org/x/sync v0.0.0-20220601150217-0de741cfad7f
-	golang.org/x/sys v0.0.0-20220627191245-f75cf1eec38b
+	golang.org/x/sys v0.0.0-20220731174439-a90be440212d
 	golang.org/x/time v0.0.0-20220609170525-579cf78fd858
 	golang.org/x/tools v0.1.11
 	google.golang.org/api v0.90.0
-	google.golang.org/genproto v0.0.0-20220628213854-d9e0b6570c03
+	google.golang.org/genproto v0.0.0-20220802133213-ce4fa296bf78
 	google.golang.org/grpc v1.48.0
-	google.golang.org/protobuf v1.28.0
+	google.golang.org/protobuf v1.28.1
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.1
@@ -131,7 +131,7 @@ require (
 	github.com/googleapis/enterprise-certificate-proxy v0.1.0 // indirect
 	github.com/googleapis/gax-go/v2 v2.4.0 // indirect
 	github.com/gorilla/websocket v1.4.2 // indirect
-	github.com/grpc-ecosystem/grpc-gateway/v2 v2.10.2 // indirect
+	github.com/grpc-ecosystem/grpc-gateway/v2 v2.11.1 // indirect
 	github.com/hashicorp/cronexpr v1.1.1 // indirect
 	github.com/hashicorp/go-cleanhttp v0.5.2 // indirect
 	github.com/hashicorp/go-hclog v0.12.2 // indirect
@@ -167,9 +167,9 @@ require (
 	github.com/spf13/pflag v1.0.5 // indirect
 	go.mongodb.org/mongo-driver v1.8.3 // indirect
 	go.opencensus.io v0.23.0 // indirect
-	go.opentelemetry.io/otel/exporters/otlp/internal/retry v1.7.0 // indirect
-	go.opentelemetry.io/otel/metric v0.30.0 // indirect
-	go.opentelemetry.io/proto/otlp v0.16.0 // indirect
+	go.opentelemetry.io/otel/exporters/otlp/internal/retry v1.9.0 // indirect
+	go.opentelemetry.io/otel/metric v0.31.0 // indirect
+	go.opentelemetry.io/proto/otlp v0.18.0 // indirect
 	golang.org/x/crypto v0.0.0-20220511200225-c6db032c6c88 // indirect
 	golang.org/x/mod v0.6.0-dev.0.20220419223038-86c51ed26bb4 // indirect
 	golang.org/x/term v0.0.0-20210927222741-03fcf44c2211 // indirect
