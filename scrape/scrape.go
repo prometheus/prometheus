@@ -300,6 +300,11 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed 
 		}
 		opts.target.SetMetadataStore(cache)
 
+		sampleLimit := opts.sampleLimit
+		if len(opts.target.labels.Get("__sample_limit__")) > 0 {
+			sampleLimit, _ = strconv.Atoi(opts.target.labels.Get("__sample_limit__"))
+		}
+
 		return newScrapeLoop(
 			ctx,
 			opts.scraper,
@@ -313,7 +318,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed 
 			cache,
 			jitterSeed,
 			opts.honorTimestamps,
-			opts.sampleLimit,
+			sampleLimit,
 			opts.labelLimits,
 			opts.interval,
 			opts.timeout,
