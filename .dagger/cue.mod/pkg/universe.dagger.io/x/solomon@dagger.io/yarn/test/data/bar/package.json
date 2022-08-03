@@ -1,0 +1,12 @@
+{
+	"name": "test",
+	"main": "index.js",
+	"license": {
+	  "type": "Apache-2.0",
+	  "url": "https://opensource.org/licenses/apache2.0.php"
+	},
+	"scripts": {
+		"build": "mkdir -p ./build && cp /.env ./build/env"
+	}
+  }
+  

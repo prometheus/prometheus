@@ -1,0 +1,12 @@
+{
+  "license": "Apache-2.0",
+  "scripts": {
+    "test": "bats --report-formatter junit --print-output-on-failure --jobs 4 $(find ${TESTDIR:-.} -type f -name '*.bats' -not -path '*/node_modules/*' -not -path '*/x/*')",
+    "test-experimental": "bats --report-formatter junit --print-output-on-failure --jobs 4 $(find ${TESTDIR:-./x} -type f -name '*.bats' -not -path '*/node_modules/*')"
+  },
+  "devDependencies": {
+    "bats": "^1.5.0",
+    "bats-assert": "^2.0.0",
+    "bats-support": "^0.3.0"
+  }
+}

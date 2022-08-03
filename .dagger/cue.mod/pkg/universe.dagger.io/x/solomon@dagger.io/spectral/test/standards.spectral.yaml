@@ -1,0 +1,148 @@
+extends:
+  - - spectral:oas
+    - all
+rules:
+  info-license: off
+  license-url: off
+  headers-hyphenated-pascal-case:
+    description: HTTP headers MUST follow Hyphenated-Pascal-Case notation
+    severity: error
+    recommended: true
+    message: "{{property}} is not in Hyphenated-Pascal-Case"
+    given:
+      - $..parameters[?(@.in == 'header')].name
+      - $..headers[*~]
+    then:
+      function: casing
+      functionOptions:
+        type: pascal
+        separator:
+          allowLeading: false
+          char: "-"
+  identifiers-lower-camel-case:
+    description: Identifiers other than HTTP headers MUST follow lowerCamelCase notation
+    severity: error
+    recommended: true
+    message: "{{property}} is not in lowerCamelCase"
+    given: $..parameters[?(@.in != 'header')].name
+    then:
+      function: casing
+      functionOptions:
+        type: camel
+  core-api-minimal-server-specify-domain-only:
+    message: Only specify the fully qualified domain name for the servers and not
+      extended URI paths
+    severity: error
+    given: $.servers..url
+    then:
+      function: pattern
+      functionOptions:
+        match: ^https://([a-z0-9-])+\.([a-z0-9-\.])+$
+  core-api-minimal-versioning-paths:
+    message: All `URI paths` must contain at least and at most one mention of a version
+    severity: error
+    given: $.paths[*]~
+    then:
+      function: pattern
+      functionOptions:
+        match: ^(?!.*(/v[0-9]+/).*(/v[0-9]+/)).*(/v[0-9]+/?).*$
+  semver:
+    message: Please follow semantic versioning. {{value}} is not a valid version.
+    severity: error
+    given: $.info.version
+    then:
+      function: pattern
+      functionOptions:
+        match: ^([0-9]+.[0-9]+.[0-9]+)$
+  status-code-1xx:
+    message: Informational status codes (100-199) **MUST NOT** be used.
+    severity: error
+    given: $.paths.*.*.responses
+    then:
+      field: "@key"
+      function: pattern
+      functionOptions:
+        notMatch: ^1
+  status-code-203:
+    message: Status code 203 (Non-Authoritative Information) **MUST NOT** be used.
+    severity: error
+    given: $.paths.*.*.responses.203
+    then:
+      function: undefined
+  status-code-204-delete:
+    message: DELETE requests **MUST** return status code 204 (No Content) upon success.
+    severity: error
+    given: $.paths.*.delete
+    then:
+      field: responses.204
+      function: defined
+  status-code-204-put:
+    message: PUT requests **MUST** return status code 204 (No Content) upon success.
+    given: $.paths.*.put
+    severity: error
+    then:
+      field: responses.204
+      function: defined
+  status-code-204-response-body:
+    message: Responses with status code 204 **MUST NOT** have a response body.
+    severity: error
+    given: $.paths.*.*.responses.204.content
+    then:
+      function: undefined
+  status-code-205:
+    message: Status code 205 (Reset Content) **SHOULD NOT** be used by APIs
+    severity: warn
+    given: $.paths.*.*.responses.205
+    then:
+      function: undefined
+  status-code-300:
+    message: Status code 300 (Multiple Choices) **SHOULD NOT** be used
+    severity: warn
+    given: $.paths.*.*.responses.300
+    then:
+      function: undefined
+  status-code-305:
+    message: Status code 305 (Proxy) **MUST NOT** be used
+    severity: error
+    given: $.paths.*.*.responses.305
+    then:
+      function: undefined
+  status-code-306:
+    message: Status code 306 (Switch Proxy) **MUST NOT** be used
+    severity: error
+    given: $.paths.*.*.responses.306
+    then:
+      function: undefined
+  apis-should-define-security-schemes:
+    message:  API specifications should define security schemes
+    severity: error
+    given: $.components
+    then:
+      field: securitySchemes
+      function: truthy
+  api-security-scheme-should-be-present:
+    message: No API security scheme has been configured.  APIs SHOULD use API
+      keys to identify calling applications.
+    severity: warn
+    given: $.components.securitySchemes[*]
+    then:
+      field: type
+      function: pattern
+      functionOptions:
+        match: /apiKey/
+  api-security-scheme-should-be-applied:
+    message: API security schemes have not been applied to any endpoints.  APIs
+      SHOULD use API keys to identify calling applications.
+    severity: warn
+    given:
+      - $.security[*]
+    then:
+      function: defined
+  core-api-minimal-server-protocol-https-only:
+    message: Servers MUST support https:// and no other protocol made available
+    severity: error
+    given: $.servers..url
+    then:
+      function: pattern
+      functionOptions:
+        match: /^https:/

@@ -1,0 +1,15 @@
+kind: Service
+apiVersion: v1
+metadata:
+  name: dagger-nginx-service
+  labels:
+    dagger-test: dagger-test
+spec:
+  selector:
+    app: dagger-nginx
+  ports:
+    - name: http
+      protocol: TCP
+      port: 80
+      targetPort: 80
+  type: ClusterIP

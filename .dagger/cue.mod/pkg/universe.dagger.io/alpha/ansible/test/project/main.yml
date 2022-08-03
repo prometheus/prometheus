@@ -1,0 +1,15 @@
+- hosts: localhost
+  connection: local 
+  remote_user: root
+  vars_files:
+    - "variables/hello.yml"
+  handlers:
+    - name: Install dependencies
+      import_tasks: "tasks/init.yml"
+  tasks:
+    - command: "true"
+      notify: Install dependencies
+    - local_action:
+        module: copy
+        content: 'Hello {{ person1 }}, here is {{ person2 }}!'
+        dest: "/tmp/output.yml"

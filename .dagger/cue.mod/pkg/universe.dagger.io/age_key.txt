@@ -1,0 +1,6 @@
+# To manually use this AGE key with sops, run
+#   export SOPS_AGE_KEY_FILE="$(git rev-parse --show-toplevel)/tests/age_key.txt"
+# Dagger CI
+# created: 2021-05-26T17:10:52-07:00
+# public key: age1gxwmtwahzwdmrskhf90ppwlnze30lgpm056kuesrxzeuyclrwvpsupwtpk
+AGE-SECRET-KEY-1R8RRCL7NXA5SHW6HEZCJ5FJG2JJECSNVDHCF533W3CNDJGQL0AVQEA0JK7

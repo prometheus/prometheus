@@ -1,0 +1,21 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dagger-nginx
+  labels:
+    dagger-test: dagger-test
+spec:
+  selector:
+    matchLabels:
+      app: dagger-nginx
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: dagger-nginx
+    spec:
+      containers:
+        - name: dagger-nginx
+          image: nginx:alpine
+          ports:
+            - containerPort: 80

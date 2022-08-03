@@ -1,0 +1,8 @@
+
+- name: Install dependencies
+  apk: 
+    update_cache: yes 
+    state: latest
+    name:
+      - git
+      - gcc

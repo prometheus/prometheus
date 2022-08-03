@@ -1,0 +1,32 @@
+name: dagger
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      -
+        name: Checkout
+        uses: actions/checkout@v3
+      -
+        name: Dagger
+        uses: dagger/dagger-for-github@v3
+        with:
+          workdir: .dagger
+          cmds: do test
+  ui:
+    runs-on: ubuntu-latest
+    steps:
+      -
+        name: Checkout
+        uses: actions/checkout@v3
+      -
+        name: Dagger
+        uses: dagger/dagger-for-github@v3
+        with:
+          workdir: .dagger
+          cmds: do ui

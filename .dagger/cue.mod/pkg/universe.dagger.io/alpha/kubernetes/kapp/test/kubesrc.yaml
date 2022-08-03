@@ -1,0 +1,9 @@
+apiVersion: "v1"
+kind:       "Pod"
+metadata: 
+  name: "kapp-test"
+spec: 
+    restartPolicy: "Never"
+    containers:
+      - name:  "test"
+        image: "hello-world"

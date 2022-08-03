@@ -1,0 +1,9 @@
+resources:
+- deployment.yaml
+- pod.yaml
+images:
+  - name: "nginx"
+    newTag: "v1"
+replicas:
+  - name: "nginx-deployment"
+    count: 2
