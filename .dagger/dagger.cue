@@ -14,7 +14,7 @@ dagger.#Plan & {
 
 	actions: {
 		test: promci.#Build & {
-			cmd: "make test GO_ONLY=1", source: client.filesystem."..".read.contents
+			cmd: "make GO_ONLY=1", source: client.filesystem."..".read.contents
 		}
 		ui: promci.#Build & {
 			cmd: "make assets-tarball ui-lint ui-test", source: client.filesystem."..".read.contents
