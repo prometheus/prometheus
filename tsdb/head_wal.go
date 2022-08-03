@@ -921,8 +921,12 @@ func (h *Head) loadChunkSnapshot() (int, int, map[chunks.HeadSeriesRef]*memSerie
 					return
 				}
 				localRefSeries[csr.ref] = series
-				if chunks.HeadSeriesRef(h.lastSeriesID.Load()) < series.ref {
-					h.lastSeriesID.Store(uint64(series.ref))
+				for {
+					seriesID := uint64(series.ref)
+					lastSeriesID := h.lastSeriesID.Load()
+					if lastSeriesID >= seriesID || h.lastSeriesID.CAS(lastSeriesID, seriesID) {
+						break
+					}
 				}
 
 				series.chunkRange = csr.chunkRange
