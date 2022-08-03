@@ -2,8 +2,7 @@ name: dagger
 
 on:
   push:
-    branches:
-      - main
+  pull_request:
 
 jobs:
   test:
