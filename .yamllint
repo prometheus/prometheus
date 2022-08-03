@@ -1,6 +1,8 @@
 ---
 extends: default
 
+ignore: ./.dagger/cue.mod/pkg
+
 rules:
   braces:
     max-spaces-inside: 1
