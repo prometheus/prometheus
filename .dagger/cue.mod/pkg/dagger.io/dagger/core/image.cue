@@ -71,6 +71,8 @@ import (
 	source: #Ref
 
 	// Authentication
+	// You can alternatively set DOCKERHUB_AUTH_USER and DOCKERHUB_AUTH_PASSWORD env vars on your host
+	// However, these global env vars only work for the "docker.io" registry
 	auth?: {
 		username: string
 		secret:   dagger.#Secret

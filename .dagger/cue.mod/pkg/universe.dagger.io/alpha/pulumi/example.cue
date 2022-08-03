@@ -2,7 +2,7 @@ package rawkode_pulumi_example
 
 import (
 	"dagger.io/dagger"
-	"universe.dagger.io/x/david@rawkode.dev/pulumi"
+	"universe.dagger.io/alpha/pulumi"
 )
 
 dagger.#Plan & {

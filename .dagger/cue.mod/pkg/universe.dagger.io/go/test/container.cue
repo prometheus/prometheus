@@ -24,7 +24,7 @@ dagger.#Plan & {
 			}
 
 			command: go.#Container & {
-				input:  base.output
+				image:  base.output
 				source: _source
 				command: {
 					name: "go"

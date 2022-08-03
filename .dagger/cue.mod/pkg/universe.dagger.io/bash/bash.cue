@@ -2,12 +2,28 @@
 package bash
 
 import (
+	"list"
+
 	"dagger.io/dagger"
 	"dagger.io/dagger/core"
 
 	"universe.dagger.io/docker"
-	"list"
+	"universe.dagger.io/alpine"
 )
+
+// Like #Run, but with a pre-configured container image.
+#RunSimple: #Run & {
+	_simpleImage: #Image
+	input:        _simpleImage.output
+}
+
+// Default simple container image which can run bash
+#Image: alpine.#Build & {
+	packages: bash: _
+}
+
+// DEPRECATED: Use bash.#Image instead
+#SimpleImage: #Image
 
 // Run a bash script in a Docker container
 //  Since this is a thin wrapper over docker.#Run, we embed it.

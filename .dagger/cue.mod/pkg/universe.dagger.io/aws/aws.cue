@@ -41,7 +41,7 @@ import (
 	}
 
 	_scripts: core.#Source & {
-		path: "_scripts"
+		path: "scripts"
 	}
 
 	// The version of the AWS CLI to install
@@ -58,6 +58,12 @@ import (
 
 	// AWS session token (provided with temporary credentials)
 	sessionToken?: dagger.#Secret
+
+	// AWS SSO profile
+	profile?: string
+
+	// AWS Container credentials relative uri (used to automatically retrieve credentials from within AWS)
+	containerCredentialsRelativeUri?: dagger.#Secret
 }
 
 // Region provides a schema to validate acceptable region value.
@@ -70,6 +76,9 @@ import (
 
 	// configFile provides access to a config file, typically found in ~/.aws/config
 	configFile?: dagger.#FS
+
+	// configFolder provides access to the aws config folder, typically found in ~/.aws
+	configFolder?: dagger.#FS
 
 	// credentials provides long or short-term credentials
 	credentials: #Credentials
@@ -90,11 +99,28 @@ import (
 			if credentials.sessionToken != _|_ {
 				AWS_SESSION_TOKEN: credentials.sessionToken
 			}
+
+			if credentials.profile != _|_ {
+				AWS_PROFILE: credentials.profile
+			}
+
+			if credentials.containerCredentialsRelativeUri != _|_ {
+				AWS_CONTAINER_CREDENTIALS_RELATIVE_URI: credentials.containerCredentialsRelativeUri
+			}
 		}
 
-		if configFile != _|_ {
-			mounts: aws: {
+		if configFile != _|_ && configFolder == _|_ {
+			mounts: awsConfigFile: {
 				contents: configFile
+				dest:     "/aws"
+				ro:       true
+			}
+			env: AWS_CONFIG_FILE: "/aws/config"
+		}
+
+		if configFolder != _|_ {
+			mounts: awsConfigFolder: {
+				contents: configFolder
 				dest:     "/aws"
 				ro:       true
 			}

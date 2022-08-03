@@ -118,7 +118,7 @@ import (
 		}
 
 		export: {
-			rootfs: dagger.#FS & _exec.output
+			rootfs: _exec.output
 			files: [path=string]: string
 			_files: {
 				for path, _ in files {

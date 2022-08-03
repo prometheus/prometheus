@@ -16,6 +16,16 @@ dagger.#Plan & {
 		}
 		_image: _pull.output
 
+		runSimple: {
+			run: bash.#RunSimple & {
+				script: contents: """
+					echo "hello, there!" > /out.txt
+					"""
+				export: files: "/out.txt": string
+			}
+			output: run.export.files."/out.txt" & "hello, there!\n"
+		}
+
 		// Run a script from source directory + filename
 		runFile: {
 

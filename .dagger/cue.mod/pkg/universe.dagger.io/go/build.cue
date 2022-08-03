@@ -10,8 +10,11 @@ import (
 	// Source code
 	source: dagger.#FS
 
+	// DEPRECATED: use packages instead
+	package: string | *null
+
 	// Target package to build
-	package: *"." | string
+	packages: [...string]
 
 	// Target architecture
 	arch?: string
@@ -35,7 +38,7 @@ import (
 
 	container: #Container & {
 		"source": source
-		input:    image
+		"image":  image
 		"env": {
 			env
 			if os != _|_ {
@@ -46,8 +49,24 @@ import (
 			}
 		}
 		command: {
+			//FIXME: find a better workaround with disjunction
+			//FIXME: factor with the part from test.cue
+			_packages: [...string]
+			if package == null && len(packages) == 0 {
+				_packages: ["."]
+			}
+			if package != null && len(packages) == 0 {
+				_packages: [package]
+			}
+			if package == null && len(packages) > 0 {
+				_packages: packages
+			}
+			if package != null && len(packages) > 0 {
+				_packages: [package] + packages
+			}
+
 			name: "go"
-			args: [package]
+			args: _packages
 			flags: {
 				build:      true
 				"-v":       true

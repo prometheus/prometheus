@@ -5,7 +5,7 @@ import (
 	"universe.dagger.io/docker"
 )
 
-_#DefaultVersion: "1.23.5"
+_#DefaultVersion: "1.23.7"
 
 // Kubectl client
 #Kubectl: {

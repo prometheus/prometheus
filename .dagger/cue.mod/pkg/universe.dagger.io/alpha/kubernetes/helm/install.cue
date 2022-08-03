@@ -5,13 +5,17 @@ import (
 	"universe.dagger.io/docker"
 )
 
-_#DefaultNamespace: "default"
+_#defaultNamespace: "default"
 
 #Install: {
+	// The image to use when running the action.
+	// Must contain the helm binary. Defaults to alpine/helm
+	image: *#Image | docker.#Image
+
 	// Name of your release
 	name:       string | *""
 	kubeconfig: dagger.#Secret
-	namespace:  *_#DefaultNamespace | string
+	namespace:  *_#defaultNamespace | string
 	source:     *"repository" | "URL"
 	{
 		source:     "repository"
@@ -41,9 +45,8 @@ _#DefaultNamespace: "default"
 		}
 	}
 
-	_base: #Image
-	run:   docker.#Run & {
-		input: _base.output
+	run: docker.#Run & {
+		input: image.output
 		env: {
 			NAME:          name
 			GENERATE_NAME: _generateName

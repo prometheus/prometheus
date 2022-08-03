@@ -1,77 +1,39 @@
-// Composer is a package manager for PHP applications
 package composer
 
 import (
 	"dagger.io/dagger"
-	"dagger.io/dagger/core"
-
-	"universe.dagger.io/alpine"
-	"universe.dagger.io/bash"
-	"universe.dagger.io/docker"
 )
 
-// Run a composer install command
+// Composer command
 #Run: {
-	// Custom name for this command.
-	// Assign an app-specific name if there are multiple apps in the same plan.
-	name: string | *""
-
-	// App source code
+	// Source code
 	source: dagger.#FS
 
-	// Optional arguments for the script
+	env: [string]: string
+
+	// Arguments for composer
 	args: [...string]
 
-	_args: args
-
-	_container: #Build: alpine.#Build & {
-		packages: {
-			bash: {}
-			composer: {}
-			php8: {}
+	container: #Container & {
+		"source": source
+		"env":    env
+		command: {
+			name:   "composer"
+			"args": args
+		}
+		export: {
+			directories: "/output/vendor": _
+			files: {
+				"/output/composer.json": _
+				"/output/composer.lock": _
+			}
 		}
 	}
 
-	_run: docker.#Build & {
-		steps: [
-			_container.#Build,
-
-			docker.#Copy & {
-				dest:     "/src"
-				contents: source
-			},
-
-			bash.#Run & {
-				input:   _container.#Build.output
-				workdir: "/src"
-				args:    _args
-
-				mounts: "composer cache": {
-					dest:     "/cache/composer"
-					contents: core.#CacheDir & {
-						id: "universe.dagger.io/composer.#Run \(name)"
-					}
-				}
-
-				script: {
-					_load: core.#Source & {
-						path: "."
-						include: ["*.sh"]
-					}
-					directory: _load.output
-					filename:  "composer.sh"
-				}
-
-				env: COMPOSER_CACHE_DIR: "/cache/composer"
-			},
-		]
+	// Export packages and composer files
+	output: {
+		vendor: container.export.directories."/output/vendor"
+		json:   container.export.files."/output/composer.json"
+		lock:   container.export.files."/output/composer.lock"
 	}
-
-	// The final contents of the package after run
-	_output: core.#Subdir & {
-		input: _run.output.rootfs
-		path:  "/src"
-	}
-
-	output: _output.output
 }

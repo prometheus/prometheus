@@ -4,20 +4,12 @@ import (
 	"universe.dagger.io/docker"
 )
 
-// Go image default name
-_#DefaultName: "golang"
-
-// Go image default repository
-_#DefaultRepository: "index.docker.io"
-
 // Go image default version
 _#DefaultVersion: "1.18"
 
 // Build a go base image
 #Image: {
-	name:       *_#DefaultName | string
-	repository: *_#DefaultRepository | string
-	version:    *_#DefaultVersion | string
+	version: *_#DefaultVersion | string
 
 	packages: [pkgName=string]: version: string | *""
 	// FIXME Remove once golang image include 1.18 *or* go compiler is smart with -buildvcs
@@ -32,7 +24,7 @@ _#DefaultVersion: "1.18"
 	docker.#Build & {
 		steps: [
 			docker.#Pull & {
-				source: "\(repository)/\(name):\(version)-alpine"
+				source: "index.docker.io/golang:\(version)-alpine"
 			},
 			for pkgName, pkg in packages {
 				docker.#Run & {

@@ -4,12 +4,17 @@ import (
 	"dagger.io/dagger"
 	"dagger.io/dagger/core"
 
-	"universe.dagger.io/docker"
 	"universe.dagger.io/go"
 )
 
+// Like #LintBase, but with a pre-configured container image.
+#Lint: #LintBase & {
+	_image: #Image
+	image:  _image.output
+}
+
 // Lint using golangci-lint
-#Lint: {
+#LintBase: {
 	// Source code
 	source: dagger.#FS
 
@@ -19,16 +24,11 @@ import (
 	// Timeout
 	timeout: *"5m" | string
 
-	_image: docker.#Pull & {
-		source: "index.docker.io/golangci/golangci-lint:v\(version)"
-	}
-
 	_cachePath: "/root/.cache/golangci-lint"
 
 	go.#Container & {
 		name:     "golangci_lint"
 		"source": source
-		input:    _image.output
 		command: {
 			name: "golangci-lint"
 			flags: {
