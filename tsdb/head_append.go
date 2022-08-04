@@ -322,15 +322,25 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 
 		var created bool
 		var err error
-		s, created, err = a.head.getOrCreate(lset.Hash(), lset)
-		if err != nil {
-			return 0, err
-		}
-		if created {
-			a.series = append(a.series, record.RefSeries{
-				Ref:    s.ref,
-				Labels: lset,
-			})
+		lhash := lset.Hash()
+
+		s = a.head.series.getByHash(lhash, lset)
+		if s == nil {
+			if a.head.opts.MaxSeries > 0 && a.head.numSeries.Load() >= a.head.opts.MaxSeries {
+				a.head.metrics.seriesOverLimit.Inc()
+				return 0, storage.ErrCapacityExhaused
+			}
+
+			s, created, err = a.head.getOrCreate(lhash, lset)
+			if err != nil {
+				return 0, err
+			}
+			if created {
+				a.series = append(a.series, record.RefSeries{
+					Ref:    s.ref,
+					Labels: lset,
+				})
+			}
 		}
 	}
 

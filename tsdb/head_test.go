@@ -4353,3 +4353,67 @@ func TestHeadMinOOOTimeUpdate(t *testing.T) {
 	require.NoError(t, h.truncateOOO(0, 2))
 	require.Equal(t, 295*time.Minute.Milliseconds(), h.MinOOOTime())
 }
+
+func TestHead_MaxSeries_Disabled(t *testing.T) {
+	head, _ := newTestHead(t, 1000, false, false)
+	defer head.Close()
+
+	head.opts.MaxSeries = 0
+
+	require.NoError(t, head.Init(0))
+
+	// append 100 samples
+	for i := 1; i <= 100; i++ {
+		app := head.Appender(context.Background())
+		_, err := app.Append(0, labels.FromStrings("index", strconv.Itoa(i)), 100, 1)
+		require.NoError(t, err)
+	}
+
+	// append 101 sample
+	app := head.Appender(context.Background())
+	_, err := app.Append(0, labels.FromStrings("foo", "bar"), 100, 1)
+	require.NoError(t, err)
+
+	// already appended samples should still accept new values
+	for i := 1; i <= 100; i++ {
+		app := head.Appender(context.Background())
+		_, err := app.Append(0, labels.FromStrings("index", strconv.Itoa(i)), 100, 1)
+		require.NoError(t, err)
+	}
+}
+
+func TestHead_MaxSeries_100(t *testing.T) {
+	head, _ := newTestHead(t, 1000, false, false)
+	defer head.Close()
+
+	head.opts.MaxSeries = 100
+
+	require.NoError(t, head.Init(0))
+
+	require.Equal(t, head.numSeries.Load(), uint64(0))
+
+	// append 100 samples
+	app := head.Appender(context.Background())
+	for i := 1; i <= 100; i++ {
+		_, err := app.Append(0, labels.FromStrings("index", strconv.Itoa(i)), 100, 1)
+		require.NoError(t, err)
+		require.Equal(t, head.numSeries.Load(), uint64(i))
+	}
+	require.NoError(t, app.Commit())
+	require.Equal(t, head.numSeries.Load(), uint64(100))
+
+	// append 101 sample
+	app = head.Appender(context.Background())
+	_, err := app.Append(0, labels.FromStrings("foo", "bar"), 100, 1)
+	require.ErrorIs(t, err, storage.ErrCapacityExhaused)
+	require.NoError(t, app.Rollback())
+	require.Equal(t, head.numSeries.Load(), uint64(100))
+
+	// already appended samples should still accept new values
+	app = head.Appender(context.Background())
+	for i := 1; i <= 100; i++ {
+		_, err := app.Append(0, labels.FromStrings("index", strconv.Itoa(i)), 100, 1)
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+}
