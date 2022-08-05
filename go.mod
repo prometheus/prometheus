@@ -11,7 +11,7 @@ require (
 	github.com/cespare/xxhash/v2 v2.1.2
 	github.com/dennwc/varint v1.0.0
 	github.com/dgryski/go-sip13 v0.0.0-20200911182023-62edffca9245
-	github.com/digitalocean/godo v1.81.0
+	github.com/digitalocean/godo v1.82.0
 	github.com/docker/docker v20.10.17+incompatible
 	github.com/edsrzf/mmap-go v1.1.0
 	github.com/envoyproxy/go-control-plane v0.10.3
@@ -30,7 +30,7 @@ require (
 	github.com/hashicorp/consul/api v1.13.1
 	github.com/hashicorp/nomad/api v0.0.0-20220629141207-c2428e1673ec
 	github.com/hetznercloud/hcloud-go v1.35.0
-	github.com/ionos-cloud/sdk-go/v6 v6.1.1
+	github.com/ionos-cloud/sdk-go/v6 v6.1.2
 	github.com/json-iterator/go v1.1.12
 	github.com/kolo/xmlrpc v0.0.0-20201022064351-38db28db192b
 	github.com/linode/linodego v1.8.0
