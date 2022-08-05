@@ -993,6 +993,11 @@ EC2 SD configurations allow retrieving scrape targets from AWS EC2
 instances. The private IP address is used by default, but may be changed to
 the public IP address with relabeling.
 
+The IAM credentials used must have the `ec2:DescribeInstances` permission to
+discover scrape targets, and may optionally have the
+`ec2:DescribeAvailabilityZones` permission if you want the availability zone ID
+available as a label (see below).
+
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
 * `__meta_ec2_ami`: the EC2 Amazon Machine Image
