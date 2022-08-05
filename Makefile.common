@@ -38,6 +38,8 @@ PRE_GO_111        ?= $(shell echo $(GO_VERSION_NUMBER) | grep -E 'go1\.(10|[0-9]
 
 PROMU        := $(FIRST_GOPATH)/bin/promu
 pkgs          = ./...
+MKFILE_PATH  := $(abspath $(lastword $(MAKEFILE_LIST)))
+ROOT_DIR := $(dir $(MKFILE_PATH))
 
 ifeq (arm, $(GOHOSTARCH))
 	GOHOSTARM ?= $(shell GOARM= $(GO) env GOARM)
@@ -57,10 +59,15 @@ endif
 
 PROMU_VERSION ?= 0.13.0
 PROMU_URL     := https://github.com/prometheus/promu/releases/download/v$(PROMU_VERSION)/promu-$(PROMU_VERSION).$(GO_BUILD_PLATFORM).tar.gz
+# To update download from https://github.com/prometheus/promu/releases/
+PROMU_CHECKSUM_FILE := $(ROOT_DIR)/scripts/checksums/promu_sha256sums.txt
 
 GOLANGCI_LINT :=
 GOLANGCI_LINT_OPTS ?=
 GOLANGCI_LINT_VERSION ?= v1.45.2
+# To update download from https://raw.githubusercontent.com/golangci/golangci-lint/$(GOLANGCI_LINT_VERSION)/install.sh
+# and run `shasum -a 256 install.sh`
+GOLANGCI_CHECKSUM_FILE := $(ROOT_DIR)/scripts/checksums/golangci-lint_install_sha256sums.txt
 # golangci-lint only supports linux, darwin and windows platforms on i386/amd64.
 # windows isn't included here because of the path separator being different.
 ifeq ($(GOHOSTOS),$(filter $(GOHOSTOS),linux darwin))
@@ -230,7 +237,12 @@ promu: $(PROMU)
 
 $(PROMU):
 	$(eval PROMU_TMP := $(shell mktemp -d))
-	curl -s -L $(PROMU_URL) | tar -xvzf - -C $(PROMU_TMP)
+	$(eval PROMU_DOWNLOAD_FAILURE := "1")
+	if ! $(ROOT_DIR)/scripts/download_and_checksum.sh $(PROMU_URL) $(PROMU_TMP) $(PROMU_CHECKSUM_FILE) ; then \
+	    rm -rf $(PROMU_TMP); \
+		exit 1; \
+	fi
+	tar -xvzf $(PROMU_TMP)/$$(basename $(PROMU_URL)) -C $(PROMU_TMP)
 	mkdir -p $(FIRST_GOPATH)/bin
 	cp $(PROMU_TMP)/promu-$(PROMU_VERSION).$(GO_BUILD_PLATFORM)/promu $(FIRST_GOPATH)/bin/promu
 	rm -r $(PROMU_TMP)
@@ -243,7 +255,11 @@ proto:
 ifdef GOLANGCI_LINT
 $(GOLANGCI_LINT):
 	mkdir -p $(FIRST_GOPATH)/bin
-	curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/$(GOLANGCI_LINT_VERSION)/install.sh \
+	if ! $(ROOT_DIR)/scripts/download_and_checksum.sh "https://raw.githubusercontent.com/golangci/golangci-lint/$(GOLANGCI_LINT_VERSION)/install.sh" $(FIRST_GOPATH) $(GOLANGCI_CHECKSUM_FILE) ; then \
+	    rm -f $(FIRST_GOPATH)/install.sh; \
+		exit 1; \
+	fi
+	cat $(FIRST_GOPATH)/install.sh \
 		| sed -e '/install -d/d' \
 		| sh -s -- -b $(FIRST_GOPATH)/bin $(GOLANGCI_LINT_VERSION)
 endif
