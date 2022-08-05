@@ -30,7 +30,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
-// FunctionCall is the type of a PromQL function implementation
+// FunctionCall is the type of a PromQL function implementation.
 //
 // vals is a list of the evaluated arguments for the function call.
 //    For range vectors it will be a Matrix with one series, instant vectors a
