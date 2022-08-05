@@ -650,6 +650,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 			var (
 				numOutOfOrder = 0
 				numDuplicates = 0
+				numOverLimit  = 0
 			)
 
 			app := g.opts.Appendable.Appender(ctx)
@@ -680,6 +681,9 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 					case errors.Is(unwrappedErr, storage.ErrDuplicateSampleForTimestamp):
 						numDuplicates++
 						level.Debug(g.logger).Log("name", rule.Name(), "index", i, "msg", "Rule evaluation result discarded", "err", err, "sample", s)
+					case errors.Is(err, storage.ErrCapacityExhaused):
+						numOverLimit++
+						rule.SetLastError(fmt.Errorf("%w, number of results discarded: %d", err, numOverLimit))
 					default:
 						level.Warn(g.logger).Log("name", rule.Name(), "index", i, "msg", "Rule evaluation result discarded", "err", err, "sample", s)
 					}
@@ -694,6 +698,10 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 			if numDuplicates > 0 {
 				level.Warn(g.logger).Log("name", rule.Name(), "index", i, "msg", "Error on ingesting results from rule evaluation with different value but same timestamp", "numDropped", numDuplicates)
 			}
+			if numOverLimit > 0 {
+				level.Warn(g.logger).Log("name", rule.Name(), "index", i, "msg", "Cannot ingest all results from rule evaluation due to capacity limits", "numDropped", numOverLimit)
+				g.metrics.EvalFailures.WithLabelValues(GroupKey(g.File(), g.Name())).Inc()
+			}
 
 			for metric, lset := range g.seriesInPreviousEval[i] {
 				if _, ok := seriesReturned[metric]; !ok {
@@ -705,6 +713,8 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 					case errors.Is(unwrappedErr, storage.ErrOutOfOrderSample), errors.Is(unwrappedErr, storage.ErrDuplicateSampleForTimestamp):
 						// Do not count these in logging, as this is expected if series
 						// is exposed from a different rule.
+					case errors.Is(err, storage.ErrCapacityExhaused):
+						// Ignore HEAD limit errors
 					default:
 						level.Warn(g.logger).Log("name", rule.Name(), "index", i, "msg", "Adding stale sample failed", "sample", lset.String(), "err", err)
 					}
