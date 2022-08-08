@@ -231,7 +231,7 @@ func (t *Target) Report(start time.Time, dur time.Duration, err error) {
 	t.mtx.Lock()
 	defer t.mtx.Unlock()
 
-	if err == nil {
+	if err == nil || errors.Is(err, storage.ErrCapacityExhaused) {
 		t.health = HealthGood
 	} else {
 		t.health = HealthBad

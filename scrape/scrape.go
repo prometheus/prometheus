@@ -1799,7 +1799,7 @@ func (sl *scrapeLoop) report(app storage.Appender, start time.Time, duration tim
 	ts := timestamp.FromTime(start)
 
 	var health float64
-	if scrapeErr == nil {
+	if scrapeErr == nil || errors.Is(scrapeErr, storage.ErrCapacityExhaused) {
 		health = 1
 	}
 
