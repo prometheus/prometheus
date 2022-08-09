@@ -5352,3 +5352,52 @@ func TestWblReplayAfterOOODisableAndRestart(t *testing.T) {
 	// We can still query OOO samples when OOO is disabled.
 	verifySamples(allSamples)
 }
+
+func TestPanicOnApplyConfig(t *testing.T) {
+	dir := t.TempDir()
+
+	opts := DefaultOptions()
+	opts.OutOfOrderTimeWindow = 60 * time.Minute.Milliseconds()
+	opts.AllowOverlappingQueries = true
+
+	db, err := Open(dir, nil, nil, opts, nil)
+	require.NoError(t, err)
+	db.DisableCompactions()
+	t.Cleanup(func() {
+		require.NoError(t, db.Close())
+	})
+
+	series1 := labels.FromStrings("foo", "bar1")
+	var allSamples []tsdbutil.Sample
+	addSamples := func(fromMins, toMins int64) {
+		app := db.Appender(context.Background())
+		for min := fromMins; min <= toMins; min++ {
+			ts := min * time.Minute.Milliseconds()
+			_, err := app.Append(0, series1, ts, float64(ts))
+			require.NoError(t, err)
+			allSamples = append(allSamples, sample{t: ts, v: float64(ts)})
+		}
+		require.NoError(t, app.Commit())
+	}
+
+	// In-order samples.
+	addSamples(290, 300)
+	// OOO samples.
+	addSamples(250, 260)
+
+	// Restart DB with OOO disabled.
+	require.NoError(t, db.Close())
+	opts.OutOfOrderTimeWindow = 0
+	db, err = Open(db.dir, nil, prometheus.NewRegistry(), opts, nil)
+	require.NoError(t, err)
+
+	// ApplyConfig with OOO enabled and expect no panic.
+	err = db.ApplyConfig(&config.Config{
+		StorageConfig: config.StorageConfig{
+			TSDBConfig: &config.TSDBConfig{
+				OutOfOrderTimeWindow: 60 * time.Minute.Milliseconds(),
+			},
+		},
+	})
+	require.NoError(t, err)
+}
