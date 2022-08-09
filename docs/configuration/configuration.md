@@ -2803,6 +2803,9 @@ has the same configuration format and actions as target relabeling. Metric
 relabeling does not apply to automatically generated timeseries such as `up`.
 
 One use for this is to exclude time series that are too expensive to ingest.
+Another use is to be able to apply some relabeling even when `honor_labels`
+is set to true and the general `relabel_config` has no effect (for instance,
+when adding a new label to a metric coming from a blackbox exporter).
 
 ### `<alert_relabel_configs>`
 
