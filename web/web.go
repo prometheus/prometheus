@@ -309,6 +309,7 @@ func New(logger log.Logger, o *Options) *Handler {
 	}
 	h.SetReady(false)
 
+	factorySPr := func(_ context.Context) api_v1.ScrapePoolsRetriever { return h.scrapeManager }
 	factoryTr := func(_ context.Context) api_v1.TargetRetriever { return h.scrapeManager }
 	factoryAr := func(_ context.Context) api_v1.AlertmanagerRetriever { return h.notifier }
 	FactoryRr := func(_ context.Context) api_v1.RulesRetriever { return h.ruleManager }
@@ -318,7 +319,7 @@ func New(logger log.Logger, o *Options) *Handler {
 		app = h.storage
 	}
 
-	h.apiV1 = api_v1.NewAPI(h.queryEngine, h.storage, app, h.exemplarStorage, factoryTr, factoryAr,
+	h.apiV1 = api_v1.NewAPI(h.queryEngine, h.storage, app, h.exemplarStorage, factorySPr, factoryTr, factoryAr,
 		func() config.Config {
 			h.mtx.RLock()
 			defer h.mtx.RUnlock()

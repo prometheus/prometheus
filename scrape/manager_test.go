@@ -14,6 +14,7 @@
 package scrape
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 	"testing"
@@ -24,6 +25,7 @@ import (
 	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/config"
+	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/relabel"
@@ -634,4 +636,70 @@ global:
 	if jitter1 == jitter2 {
 		t.Error("Jitter should not be the same on different set of external labels")
 	}
+}
+
+func TestManagerScrapePools(t *testing.T) {
+	cfgText1 := `
+scrape_configs:
+- job_name: job1
+  static_configs:
+  - targets: ["foo:9090"]
+- job_name: job2
+  static_configs:
+  - targets: ["foo:9091", "foo:9092"]
+`
+	cfgText2 := `
+scrape_configs:
+- job_name: job1
+  static_configs:
+  - targets: ["foo:9090", "foo:9094"]
+- job_name: job3
+  static_configs:
+  - targets: ["foo:9093"]
+`
+	var (
+		cfg1 = loadConfiguration(t, cfgText1)
+		cfg2 = loadConfiguration(t, cfgText2)
+	)
+
+	reload := func(scrapeManager *Manager, cfg *config.Config) {
+		newLoop := func(scrapeLoopOptions) loop {
+			return noopLoop()
+		}
+		scrapeManager.scrapePools = map[string]*scrapePool{}
+		for _, sc := range cfg.ScrapeConfigs {
+			_, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			sp := &scrapePool{
+				appendable:    &nopAppendable{},
+				activeTargets: map[uint64]*Target{},
+				loops: map[uint64]loop{
+					1: noopLoop(),
+				},
+				newLoop: newLoop,
+				logger:  nil,
+				config:  sc,
+				client:  http.DefaultClient,
+				cancel:  cancel,
+			}
+			for _, c := range sc.ServiceDiscoveryConfigs {
+				staticConfig := c.(discovery.StaticConfig)
+				for _, group := range staticConfig {
+					for i := range group.Targets {
+						sp.activeTargets[uint64(i)] = &Target{}
+					}
+				}
+			}
+			scrapeManager.scrapePools[sc.JobName] = sp
+		}
+	}
+
+	opts := Options{}
+	scrapeManager := NewManager(&opts, nil, nil)
+
+	reload(scrapeManager, cfg1)
+	require.ElementsMatch(t, []string{"job1", "job2"}, scrapeManager.ScrapePools())
+
+	reload(scrapeManager, cfg2)
+	require.ElementsMatch(t, []string{"job1", "job3"}, scrapeManager.ScrapePools())
 }
