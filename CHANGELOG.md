@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.38.0-rc.0 / 2022-08-11
+
+* [FEATURE]: Web: Add a `/api/v1/format_query` HTTP API endpoint that allows pretty-formatting PromQL expressions. #11036 #10544 #11005
+* [FEATURE]: UI: Add support for formatting PromQL expressions in the UI. #11039
+* [FEATURE]: DNS SD: Support MX records for discovering targets. #10099
+* [FEATURE]: Templates: Add `toTime()` template function that allows converting sample timestamps to Go `time.Time` values. #10993
+* [ENHANCEMENT]: Kubernetes SD: Add `__meta_kubernetes_service_port_number` meta label indicating the service port number. #11002
+* [ENHANCEMENT]: Kubernetes SD: Add `__meta_kubernetes_pod_container_image` meta label indicating the container image. #11034
+* [ENHANCEMENT]: PromQL: When a query panics, also log the query itself alongside the panic message. #10995
+* [ENHANCEMENT]: UI: Tweak colors in the dark theme to improve the contrast ratio. #11068
+* [ENHANCEMENT]: Web: Speed up calls to `/api/v1/rules` by avoiding locks and using atomic types instead. #10858
+* [ENHANCEMENT]: Add a `no-default-scrape-port` feature flag, which omits or removes any default HTTP (`:80`) or HTTPS (`:443`) ports in the target's scrape address. #9523
+* [BUGFIX]: TSDB: In the WAL watcher metrics, expose the `type="exemplar"` label instead of `type="unknown"` for exemplar records. #11008
+* [BUGFIX]: TSDB: Fix race condition around allocating series IDs during chunk snapshot loading. #11099
+
 ## 2.37.0 / 2022-07-14
 
 This release is a LTS (Long-Term Support) release of Prometheus and will
