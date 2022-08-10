@@ -3,6 +3,7 @@ package tsdb
 import (
 	"context"
 	"fmt"
+	"math"
 	"sort"
 	"testing"
 	"time"
@@ -280,7 +281,7 @@ func TestOOOHeadIndexReader_Series(t *testing.T) {
 		for perm, intervals := range permutations {
 			for _, headChunk := range []bool{false, true} {
 				t.Run(fmt.Sprintf("name=%s, permutation=%d, headChunk=%t", tc.name, perm, headChunk), func(t *testing.T) {
-					h, _ := newTestHead(t, 1000, false)
+					h, _ := newTestHead(t, 1000, false, true)
 					defer func() {
 						require.NoError(t, h.Close())
 					}()
@@ -355,6 +356,41 @@ func TestOOOHeadIndexReader_Series(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestOOOHeadChunkReader_LabelValues(t *testing.T) {
+	chunkRange := int64(2000)
+	head, _ := newTestHead(t, chunkRange, false, true)
+	t.Cleanup(func() { require.NoError(t, head.Close()) })
+
+	app := head.Appender(context.Background())
+
+	metricCount := 100
+	for i := 0; i < metricCount; i++ {
+		_, err := app.Append(0, labels.Labels{
+			{Name: "a_unique", Value: fmt.Sprintf("value%d", i)},
+			{Name: "b_tens", Value: fmt.Sprintf("value%d", i/(metricCount/10))},
+		}, 100, 0) // TODO change timestamp to have some in order and some out of order up to 10 minutes
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+
+	oh := NewOOOHeadIndexReader(head, math.MinInt64, math.MaxInt64)
+
+	matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "a_unique", "value0")}
+	values, err := oh.LabelValues("a_unique", matchers...)
+	require.NoError(t, err)
+	require.Equal(t, []string{"value0"}, values)
+
+	matchers = []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotRegexp, "a_unique", "^value.*")}
+	values, err = oh.LabelValues("a_unique", matchers...)
+	require.NoError(t, err)
+	require.Equal(t, []string{}, values)
+
+	matchers = []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "b_tens", "value.")}
+	values, err = oh.LabelValues("b_tens", matchers...)
+	require.NoError(t, err)
+	require.Equal(t, []string{"value0", "value1", "value2", "value3", "value4", "value5", "value6", "value7", "value8", "value9"}, values)
 }
 
 // TestOOOHeadChunkReader_Chunk tests that the Chunk method works as expected.
