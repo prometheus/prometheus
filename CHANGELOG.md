@@ -1,6 +1,11 @@
 # Changelog
 
-## 2.37.0-rc.0 / 2022-07-05
+## 2.37.0 / 2022-07-14
+
+This release is a LTS (Long-Term Support) release of Prometheus and will
+receive security, documentation and bugfix patches for at least 6 months.
+Please read more about our LTS release cycle at
+<https://prometheus.io/docs/introduction/release-cycle/>.
 
 Following data loss by users due to lack of unified buffer cache in OpenBSD, we
 will no longer release Prometheus upstream for OpenBSD until a proper solution is
@@ -11,6 +16,7 @@ found. #8799
 * [ENHANCEMENT] PromQL: Optimise creation of signature with/without labels. #10667
 * [ENHANCEMENT] TSDB: Memory optimizations. #10873 #10874
 * [ENHANCEMENT] TSDB: Reduce sleep time when reading WAL. #10859 #10878
+* [ENHANCEMENT] OAuth2: Add appropriate timeouts and User-Agent header. #11020
 * [BUGFIX] Alerting: Fix Alertmanager targets not being updated when alerts were queued. #10948
 * [BUGFIX] Hetzner SD: Make authentication files relative to Prometheus config file. #10813
 * [BUGFIX] Promtool: Fix `promtool check config` not erroring properly on failures. #10952

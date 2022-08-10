@@ -32,6 +32,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
@@ -814,7 +815,12 @@ func (a *appender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exem
 }
 
 func (a *appender) AppendHistogram(ref storage.SeriesRef, l labels.Labels, t int64, h *histogram.Histogram) (storage.SeriesRef, error) {
-	// remote_write doesn't support histograms yet, so do nothing here.
+	// TODO: Add histogram support.
+	return 0, nil
+}
+
+func (a *appender) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, m metadata.Metadata) (storage.SeriesRef, error) {
+	// TODO: Wire metadata in the Agent's appender.
 	return 0, nil
 }
 

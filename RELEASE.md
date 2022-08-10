@@ -42,7 +42,7 @@ Release cadence of first pre-releases being cut is 6 weeks.
 | v2.35          | 2022-04-06                                 | Augustin Husson (GitHub: @nexucis)          |
 | v2.36          | 2022-05-18                                 | Matthias Loibl (GitHub: @metalmatze)        |
 | v2.37 LTS      | 2022-06-29                                 | Julien Pivotto (GitHub: @roidelapluie)      |
-| v2.38          | 2022-08-10                                 | **searching for volunteer**                 |
+| v2.38          | 2022-08-10                                 | Julius Volz (GitHub: @juliusv)              |
 | v2.39          | 2022-09-21                                 | **searching for volunteer**                 |
 
 If you are interested in volunteering please create a pull request against the [prometheus/prometheus](https://github.com/prometheus/prometheus) repository and propose yourself for the release series of your choice.
@@ -139,6 +139,7 @@ For release candidates still update `CHANGELOG.md`, but when you cut the final r
 
 Entries in the `CHANGELOG.md` are meant to be in this order:
 
+* `[SECURITY]` - A bugfix that specifically fixes a security issue.
 * `[CHANGE]`
 * `[FEATURE]`
 * `[ENHANCEMENT]`

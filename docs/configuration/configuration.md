@@ -623,7 +623,7 @@ metadata and a single tag).
 DigitalOcean SD configurations allow retrieving scrape targets from [DigitalOcean's](https://www.digitalocean.com/)
 Droplets API.
 This service discovery uses the public IPv4 address by default, by that can be
-changed with relabelling, as demonstrated in [the Prometheus digitalocean-sd
+changed with relabeling, as demonstrated in [the Prometheus digitalocean-sd
 configuration file](/documentation/examples/prometheus-digitalocean.yml).
 
 The following meta labels are available on targets during [relabeling](#relabel_config):
@@ -961,8 +961,8 @@ A DNS-based service discovery configuration allows specifying a set of DNS
 domain names which are periodically queried to discover a list of targets. The
 DNS servers to be contacted are read from `/etc/resolv.conf`.
 
-This service discovery method only supports basic DNS A, AAAA and SRV record
-queries, but not the advanced DNS-SD approach specified in
+This service discovery method only supports basic DNS A, AAAA, MX and SRV
+record queries, but not the advanced DNS-SD approach specified in
 [RFC6763](https://tools.ietf.org/html/rfc6763).
 
 The following meta labels are available on targets during [relabeling](#relabel_config):
@@ -970,13 +970,14 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_dns_name`: the record name that produced the discovered target.
 * `__meta_dns_srv_record_target`: the target field of the SRV record
 * `__meta_dns_srv_record_port`: the port field of the SRV record
+* `__meta_dns_mx_record_target`: the target field of the MX record
 
 ```yaml
 # A list of DNS domain names to be queried.
 names:
   [ - <string> ]
 
-# The type of DNS query to perform. One of SRV, A, or AAAA.
+# The type of DNS query to perform. One of SRV, A, AAAA or MX.
 [ type: <string> | default = 'SRV' ]
 
 # The port number used if the query type is not SRV.
@@ -991,6 +992,11 @@ names:
 EC2 SD configurations allow retrieving scrape targets from AWS EC2
 instances. The private IP address is used by default, but may be changed to
 the public IP address with relabeling.
+
+The IAM credentials used must have the `ec2:DescribeInstances` permission to
+discover scrape targets, and may optionally have the
+`ec2:DescribeAvailabilityZones` permission if you want the availability zone ID
+available as a label (see below).
 
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
@@ -1269,6 +1275,7 @@ changes resulting in well-formed target groups are applied.
 Files must contain a list of static configs, using these formats:
 
 **JSON**
+
 ```json
 [
   {
@@ -1282,6 +1289,7 @@ Files must contain a list of static configs, using these formats:
 ```
 
 **YAML**
+
 ```yaml
 - targets:
   [ - '<host>' ]
@@ -1675,6 +1683,7 @@ Available meta labels:
 * `__meta_kubernetes_service_labelpresent_<labelname>`: `true` for each label of the service object.
 * `__meta_kubernetes_service_name`: The name of the service object.
 * `__meta_kubernetes_service_port_name`: Name of the service port for the target.
+* `__meta_kubernetes_service_port_number`: Number of the service port for the target.
 * `__meta_kubernetes_service_port_protocol`: Protocol of the service port for the target.
 * `__meta_kubernetes_service_type`: The type of the service.
 
@@ -1992,7 +2001,7 @@ See below for the configuration options for Lightsail discovery:
 Linode SD configurations allow retrieving scrape targets from [Linode's](https://www.linode.com/)
 Linode APIv4.
 This service discovery uses the public IPv4 address by default, by that can be
-changed with relabelling, as demonstrated in [the Prometheus linode-sd
+changed with relabeling, as demonstrated in [the Prometheus linode-sd
 configuration file](/documentation/examples/prometheus-linode.yml).
 
 The following meta labels are available on targets during [relabeling](#relabel_config):
@@ -2461,7 +2470,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_scaleway_instance_zone`: the zone of the server (ex: `fr-par-1`, complete list [here](https://developers.scaleway.com/en/products/instance/api/#introduction))
 
 This role uses the private IPv4 address by default. This can be
-changed with relabelling, as demonstrated in [the Prometheus scaleway-sd
+changed with relabeling, as demonstrated in [the Prometheus scaleway-sd
 configuration file](/documentation/examples/prometheus-scaleway.yml).
 
 #### Baremetal role
@@ -2479,7 +2488,7 @@ configuration file](/documentation/examples/prometheus-scaleway.yml).
 * `__meta_scaleway_baremetal_zone`: the zone of the server (ex: `fr-par-1`, complete list [here](https://developers.scaleway.com/en/products/instance/api/#introduction))
 
 This role uses the public IPv4 address by default. This can be
-changed with relabelling, as demonstrated in [the Prometheus scaleway-sd
+changed with relabeling, as demonstrated in [the Prometheus scaleway-sd
 configuration file](/documentation/examples/prometheus-scaleway.yml).
 
 See below for the configuration options for Scaleway discovery:
@@ -2616,7 +2625,7 @@ for a practical example on how to set up Uyuni Prometheus configuration.
 Vultr SD configurations allow retrieving scrape targets from [Vultr](https://www.vultr.com/).
 
 This service discovery uses the main IPv4 address by default, which that be
-changed with relabelling, as demonstrated in [the Prometheus vultr-sd
+changed with relabeling, as demonstrated in [the Prometheus vultr-sd
 configuration file](/documentation/examples/prometheus-vultr.yml).
 
 The following meta labels are available on targets during [relabeling](#relabel_config):

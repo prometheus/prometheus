@@ -14,11 +14,13 @@
 package labels
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	yaml "gopkg.in/yaml.v2"
 )
 
 func TestLabels_String(t *testing.T) {
@@ -503,9 +505,19 @@ func TestLabels_Compare(t *testing.T) {
 		},
 	}
 
+	sign := func(a int) int {
+		switch {
+		case a < 0:
+			return -1
+		case a > 0:
+			return 1
+		}
+		return 0
+	}
+
 	for i, test := range tests {
 		got := Compare(labels, test.compared)
-		require.Equal(t, test.expected, got, "unexpected comparison result for test case %d", i)
+		require.Equal(t, sign(test.expected), sign(got), "unexpected comparison result for test case %d", i)
 	}
 }
 
@@ -561,19 +573,19 @@ func TestLabels_Get(t *testing.T) {
 // Labels_Get/with_30_labels/get_last_label       169ns ± 0%      29ns ± 0%   ~     (p=1.000 n=1+1)
 func BenchmarkLabels_Get(b *testing.B) {
 	maxLabels := 30
-	allLabels := make(Labels, maxLabels)
+	allLabels := make([]Label, maxLabels)
 	for i := 0; i < maxLabels; i++ {
 		allLabels[i] = Label{Name: strings.Repeat(string('a'+byte(i)), 5)}
 	}
 	for _, size := range []int{5, 10, maxLabels} {
 		b.Run(fmt.Sprintf("with %d labels", size), func(b *testing.B) {
-			labels := allLabels[:size]
+			labels := New(allLabels[:size]...)
 			for _, scenario := range []struct {
 				desc, label string
 			}{
-				{"get first label", labels[0].Name},
-				{"get middle label", labels[size/2].Name},
-				{"get last label", labels[size-1].Name},
+				{"get first label", allLabels[0].Name},
+				{"get middle label", allLabels[size/2].Name},
+				{"get last label", allLabels[size-1].Name},
 			} {
 				b.Run(scenario.desc, func(b *testing.B) {
 					b.ResetTimer()
@@ -631,6 +643,7 @@ func TestLabels_BytesWithLabels(t *testing.T) {
 
 func TestLabels_BytesWithoutLabels(t *testing.T) {
 	require.Equal(t, Labels{{"aaa", "111"}}.Bytes(nil), Labels{{"aaa", "111"}, {"bbb", "222"}, {"ccc", "333"}}.BytesWithoutLabels(nil, "bbb", "ccc"))
+	require.Equal(t, Labels{{MetricName, "333"}, {"aaa", "111"}}.Bytes(nil), Labels{{MetricName, "333"}, {"aaa", "111"}, {"bbb", "222"}}.BytesWithoutLabels(nil, "bbb"))
 	require.Equal(t, Labels{{"aaa", "111"}}.Bytes(nil), Labels{{MetricName, "333"}, {"aaa", "111"}, {"bbb", "222"}}.BytesWithoutLabels(nil, MetricName, "bbb"))
 }
 
@@ -720,7 +733,6 @@ func TestLabels_Hash(t *testing.T) {
 		{Name: "baz", Value: "qux"},
 	}
 	require.Equal(t, lbls.Hash(), lbls.Hash())
-	require.NotEqual(t, lbls.Hash(), Labels{lbls[1], lbls[0]}.Hash(), "unordered labels match.")
 	require.NotEqual(t, lbls.Hash(), Labels{lbls[0]}.Hash(), "different labels match.")
 }
 
@@ -777,4 +789,53 @@ func BenchmarkLabels_Hash(b *testing.B) {
 			benchmarkLabelsResult = h
 		})
 	}
+}
+
+func TestMarshaling(t *testing.T) {
+	lbls := FromStrings("aaa", "111", "bbb", "2222", "ccc", "33333")
+	expectedJSON := "{\"aaa\":\"111\",\"bbb\":\"2222\",\"ccc\":\"33333\"}"
+	b, err := json.Marshal(lbls)
+	require.NoError(t, err)
+	require.Equal(t, expectedJSON, string(b))
+
+	var gotJ Labels
+	err = json.Unmarshal(b, &gotJ)
+	require.NoError(t, err)
+	require.Equal(t, lbls, gotJ)
+
+	expectedYAML := "aaa: \"111\"\nbbb: \"2222\"\nccc: \"33333\"\n"
+	b, err = yaml.Marshal(lbls)
+	require.NoError(t, err)
+	require.Equal(t, expectedYAML, string(b))
+
+	var gotY Labels
+	err = yaml.Unmarshal(b, &gotY)
+	require.NoError(t, err)
+	require.Equal(t, lbls, gotY)
+
+	// Now in a struct with a tag
+	type foo struct {
+		ALabels Labels `json:"a_labels,omitempty" yaml:"a_labels,omitempty"`
+	}
+
+	f := foo{ALabels: lbls}
+	b, err = json.Marshal(f)
+	require.NoError(t, err)
+	expectedJSONFromStruct := "{\"a_labels\":" + expectedJSON + "}"
+	require.Equal(t, expectedJSONFromStruct, string(b))
+
+	var gotFJ foo
+	err = json.Unmarshal(b, &gotFJ)
+	require.NoError(t, err)
+	require.Equal(t, f, gotFJ)
+
+	b, err = yaml.Marshal(f)
+	require.NoError(t, err)
+	expectedYAMLFromStruct := "a_labels:\n  aaa: \"111\"\n  bbb: \"2222\"\n  ccc: \"33333\"\n"
+	require.Equal(t, expectedYAMLFromStruct, string(b))
+
+	var gotFY foo
+	err = yaml.Unmarshal(b, &gotFY)
+	require.NoError(t, err)
+	require.Equal(t, f, gotFY)
 }

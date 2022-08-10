@@ -1644,17 +1644,27 @@ load 1ms
 }
 
 func TestRecoverEvaluatorRuntime(t *testing.T) {
-	ev := &evaluator{logger: log.NewNopLogger()}
+	var output []interface{}
+	logger := log.Logger(log.LoggerFunc(func(keyvals ...interface{}) error {
+		output = append(output, keyvals...)
+		return nil
+	}))
+	ev := &evaluator{logger: logger}
+
+	expr, _ := parser.ParseExpr("sum(up)")
 
 	var err error
-	defer ev.recover(nil, &err)
+
+	defer func() {
+		require.EqualError(t, err, "unexpected error: runtime error: index out of range [123] with length 0")
+		require.Contains(t, output, "sum(up)")
+	}()
+	defer ev.recover(expr, nil, &err)
 
 	// Cause a runtime panic.
 	var a []int
 	//nolint:govet
 	a[123] = 1
-
-	require.EqualError(t, err, "unexpected error")
 }
 
 func TestRecoverEvaluatorError(t *testing.T) {
@@ -1666,7 +1676,7 @@ func TestRecoverEvaluatorError(t *testing.T) {
 	defer func() {
 		require.EqualError(t, err, e.Error())
 	}()
-	defer ev.recover(nil, &err)
+	defer ev.recover(nil, nil, &err)
 
 	panic(e)
 }
@@ -1686,7 +1696,7 @@ func TestRecoverEvaluatorErrorWithWarnings(t *testing.T) {
 		require.EqualError(t, err, e.Error())
 		require.Equal(t, warnings, ws, "wrong warning message")
 	}()
-	defer ev.recover(&ws, &err)
+	defer ev.recover(nil, &ws, &err)
 
 	panic(e)
 }
@@ -4016,6 +4026,99 @@ func TestSparseHistogram_Sum_AddOperator(t *testing.T) {
 				queryString += fmt.Sprintf(` + ignoring(idx) %s{idx="%d"}`, seriesName, idx)
 			}
 			queryAndCheck(queryString)
+		})
+	}
+}
+
+func TestQueryLookbackDelta(t *testing.T) {
+	var (
+		load = `load 5m
+metric 0 1 2
+`
+		query           = "metric"
+		lastDatapointTs = time.Unix(600, 0)
+	)
+
+	cases := []struct {
+		name                          string
+		ts                            time.Time
+		engineLookback, queryLookback time.Duration
+		expectSamples                 bool
+	}{
+		{
+			name:          "default lookback delta",
+			ts:            lastDatapointTs.Add(defaultLookbackDelta),
+			expectSamples: true,
+		},
+		{
+			name:          "outside default lookback delta",
+			ts:            lastDatapointTs.Add(defaultLookbackDelta + time.Millisecond),
+			expectSamples: false,
+		},
+		{
+			name:           "custom engine lookback delta",
+			ts:             lastDatapointTs.Add(10 * time.Minute),
+			engineLookback: 10 * time.Minute,
+			expectSamples:  true,
+		},
+		{
+			name:           "outside custom engine lookback delta",
+			ts:             lastDatapointTs.Add(10*time.Minute + time.Millisecond),
+			engineLookback: 10 * time.Minute,
+			expectSamples:  false,
+		},
+		{
+			name:           "custom query lookback delta",
+			ts:             lastDatapointTs.Add(20 * time.Minute),
+			engineLookback: 10 * time.Minute,
+			queryLookback:  20 * time.Minute,
+			expectSamples:  true,
+		},
+		{
+			name:           "outside custom query lookback delta",
+			ts:             lastDatapointTs.Add(20*time.Minute + time.Millisecond),
+			engineLookback: 10 * time.Minute,
+			queryLookback:  20 * time.Minute,
+			expectSamples:  false,
+		},
+		{
+			name:           "negative custom query lookback delta",
+			ts:             lastDatapointTs.Add(20 * time.Minute),
+			engineLookback: -10 * time.Minute,
+			queryLookback:  20 * time.Minute,
+			expectSamples:  true,
+		},
+	}
+
+	for _, c := range cases {
+		c := c
+		t.Run(c.name, func(t *testing.T) {
+			test, err := NewTest(t, load)
+			require.NoError(t, err)
+			defer test.Close()
+
+			err = test.Run()
+			require.NoError(t, err)
+
+			eng := test.QueryEngine()
+			if c.engineLookback != 0 {
+				eng.lookbackDelta = c.engineLookback
+			}
+			opts := &QueryOpts{
+				LookbackDelta: c.queryLookback,
+			}
+			qry, err := eng.NewInstantQuery(test.Queryable(), opts, query, c.ts)
+			require.NoError(t, err)
+
+			res := qry.Exec(test.Context())
+			require.NoError(t, res.Err)
+			vec, ok := res.Value.(Vector)
+			require.True(t, ok)
+			if c.expectSamples {
+				require.NotEmpty(t, vec)
+			} else {
+				require.Empty(t, vec)
+			}
 		})
 	}
 }

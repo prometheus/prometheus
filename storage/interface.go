@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 )
@@ -229,8 +230,10 @@ type Appender interface {
 	// Rollback rolls back all modifications made in the appender so far.
 	// Appender has to be discarded after rollback.
 	Rollback() error
+
 	ExemplarAppender
 	HistogramAppender
+	MetadataUpdater
 }
 
 // GetRef is an extra interface on Appenders used by downstream projects
@@ -273,6 +276,18 @@ type HistogramAppender interface {
 	// pointer. AppendHistogram won't mutate the histogram, but in turn
 	// depends on the caller to not mutate it either.
 	AppendHistogram(ref SeriesRef, l labels.Labels, t int64, h *histogram.Histogram) (SeriesRef, error)
+}
+
+// MetadataUpdater provides an interface for associating metadata to stored series.
+type MetadataUpdater interface {
+	// UpdateMetadata updates a metadata entry for the given series and labels.
+	// A series reference number is returned which can be used to modify the
+	// metadata of the given series in the same or later transactions.
+	// Returned reference numbers are ephemeral and may be rejected in calls
+	// to UpdateMetadata() at any point. If the series does not exist,
+	// UpdateMetadata returns an error.
+	// If the reference is 0 it must not be used for caching.
+	UpdateMetadata(ref SeriesRef, l labels.Labels, m metadata.Metadata) (SeriesRef, error)
 }
 
 // SeriesSet contains a set of series.

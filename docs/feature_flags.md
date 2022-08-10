@@ -94,3 +94,12 @@ computed at all.
 `--enable-feature=auto-gomaxprocs`
 
 When enabled, GOMAXPROCS variable is automatically set to match Linux container CPU quota.
+
+## No default scrape port
+
+`--enable-feature=no-default-scrape-port`
+
+When enabled, the default ports for HTTP (`:80`) or HTTPS (`:443`) will _not_ be added to
+the address used to scrape a target (the value of the `__address_` label), contrary to the default behavior.
+In addition, if a default HTTP or HTTPS port has already been added either in a static configuration or
+by a service discovery mechanism and the respective scheme is specified (`http` or `https`), that port will be removed.

@@ -28,6 +28,7 @@ import (
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/storage"
 )
@@ -232,5 +233,11 @@ func (m *mockAppendable) AppendHistogram(ref storage.SeriesRef, l labels.Labels,
 
 	m.latestHistogram = t
 	m.histograms = append(m.histograms, mockHistogram{l, t, h})
+	return 0, nil
+}
+
+func (m *mockAppendable) UpdateMetadata(_ storage.SeriesRef, _ labels.Labels, _ metadata.Metadata) (storage.SeriesRef, error) {
+	// TODO: Wire metadata in a mockAppendable field when we get around to handling metadata in remote_write.
+	// UpdateMetadata is no-op for remote write (where mockAppendable is being used to test) for now.
 	return 0, nil
 }

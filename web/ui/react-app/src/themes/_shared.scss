@@ -7,7 +7,7 @@
       Example:
 
       $foo = '#000';
- 
+
    2. Add a style rule in _shared.scss (this file) that uses new variable.
       Example:
 
@@ -58,7 +58,7 @@
 .metrics-explorer .metric:hover {
   background: $metrics-explorer-bg;
 }
-button.metrics-explorer-btn {
+button.expression-input-action-btn {
   color: $input-group-addon-color;
   background-color: $input-group-addon-bg;
   border: $input-border-width solid $input-group-addon-border-color;
@@ -114,7 +114,7 @@ button.execute-btn {
 }
 
 input[type='checkbox']:checked + label {
-  color: #286090;
+  color: $checked-checkbox-color;
 }
 
 .custom-control-label {

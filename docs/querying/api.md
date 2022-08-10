@@ -206,6 +206,35 @@ $ curl 'http://localhost:9090/api/v1/query_range?query=up&start=2015-07-01T20:10
 }
 ```
 
+## Formatting query expressions
+
+The following endpoint formats a PromQL expression in a prettified way:
+
+```
+GET /api/v1/format_query
+POST /api/v1/format_query
+```
+
+URL query parameters:
+
+- `query=<string>`: Prometheus expression query string.
+
+You can URL-encode these parameters directly in the request body by using the `POST` method and
+`Content-Type: application/x-www-form-urlencoded` header. This is useful when specifying a large
+query that may breach server-side URL character limits.
+
+The `data` section of the query result is a string containing the formatted query expression. Note that any comments are removed in the formatted string.
+
+The following example formats the expression `foo/bar`:
+
+```json
+$ curl 'http://localhost:9090/api/v1/format_query?query=foo/bar'
+{
+   "status" : "success",
+   "data" : "foo / bar"
+}
+```
+
 ## Querying metadata
 
 Prometheus offers a set of API endpoints to query metadata about series and their labels.
@@ -476,8 +505,8 @@ GET /api/v1/targets
 ```
 
 Both the active and dropped targets are part of the response by default.
-`labels` represents the label set after relabelling has occurred.
-`discoveredLabels` represent the unmodified labels retrieved during service discovery before relabelling has occurred.
+`labels` represents the label set after relabeling has occurred.
+`discoveredLabels` represent the unmodified labels retrieved during service discovery before relabeling has occurred.
 
 ```json
 $ curl http://localhost:9090/api/v1/targets
