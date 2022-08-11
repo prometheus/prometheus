@@ -365,32 +365,43 @@ func TestOOOHeadChunkReader_LabelValues(t *testing.T) {
 
 	app := head.Appender(context.Background())
 
-	metricCount := 100
-	for i := 0; i < metricCount; i++ {
-		_, err := app.Append(0, labels.Labels{
-			{Name: "a_unique", Value: fmt.Sprintf("value%d", i)},
-			{Name: "b_tens", Value: fmt.Sprintf("value%d", i/(metricCount/10))},
-		}, 100, 0) // TODO change timestamp to have some in order and some out of order up to 10 minutes
-		require.NoError(t, err)
-	}
+	// Add in-order samples
+	_, err := app.Append(0, labels.Labels{
+		{Name: "foo", Value: fmt.Sprintf("bar1")},
+	}, 100, 1)
+	require.NoError(t, err)
+	_, err = app.Append(0, labels.Labels{
+		{Name: "foo", Value: fmt.Sprintf("bar2")},
+	}, 100, 2)
+	require.NoError(t, err)
+
+	// Add ooo samples for those series
+	_, err = app.Append(0, labels.Labels{
+		{Name: "foo", Value: fmt.Sprintf("bar1")},
+	}, 90, 1)
+	require.NoError(t, err)
+	_, err = app.Append(0, labels.Labels{
+		{Name: "foo", Value: fmt.Sprintf("bar2")},
+	}, 90, 2)
+	require.NoError(t, err)
+
 	require.NoError(t, app.Commit())
 
 	oh := NewOOOHeadIndexReader(head, math.MinInt64, math.MaxInt64)
-
-	matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "a_unique", "value0")}
-	values, err := oh.LabelValues("a_unique", matchers...)
+	matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "foo", "bar1")}
+	values, err := oh.LabelValues("foo", matchers...)
 	require.NoError(t, err)
-	require.Equal(t, []string{"value0"}, values)
+	require.Equal(t, []string{"bar1"}, values)
 
-	matchers = []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotRegexp, "a_unique", "^value.*")}
-	values, err = oh.LabelValues("a_unique", matchers...)
+	matchers = []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotRegexp, "foo", "^bar.")}
+	values, err = oh.LabelValues("foo", matchers...)
 	require.NoError(t, err)
 	require.Equal(t, []string{}, values)
 
-	matchers = []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "b_tens", "value.")}
-	values, err = oh.LabelValues("b_tens", matchers...)
+	matchers = []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.")}
+	values, err = oh.LabelValues("foo", matchers...)
 	require.NoError(t, err)
-	require.Equal(t, []string{"value0", "value1", "value2", "value3", "value4", "value5", "value6", "value7", "value8", "value9"}, values)
+	require.Equal(t, []string{"bar1", "bar2"}, values)
 }
 
 // TestOOOHeadChunkReader_Chunk tests that the Chunk method works as expected.
