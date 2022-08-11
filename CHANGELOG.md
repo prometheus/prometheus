@@ -6,8 +6,8 @@
 * [FEATURE]: UI: Add support for formatting PromQL expressions in the UI. #11039
 * [FEATURE]: DNS SD: Support MX records for discovering targets. #10099
 * [FEATURE]: Templates: Add `toTime()` template function that allows converting sample timestamps to Go `time.Time` values. #10993
-* [ENHANCEMENT]: Kubernetes SD: Add `__meta_kubernetes_service_port_number` meta label indicating the service port number. #11002
-* [ENHANCEMENT]: Kubernetes SD: Add `__meta_kubernetes_pod_container_image` meta label indicating the container image. #11034
+* [ENHANCEMENT]: Kubernetes SD: Add `__meta_kubernetes_service_port_number` meta label indicating the service port number. #11002 #11053
+* [ENHANCEMENT]: Kubernetes SD: Add `__meta_kubernetes_pod_container_image` meta label indicating the container image. #11034 #11146
 * [ENHANCEMENT]: PromQL: When a query panics, also log the query itself alongside the panic message. #10995
 * [ENHANCEMENT]: UI: Tweak colors in the dark theme to improve the contrast ratio. #11068
 * [ENHANCEMENT]: Web: Speed up calls to `/api/v1/rules` by avoiding locks and using atomic types instead. #10858
