@@ -268,7 +268,7 @@ func relabel(lset labels.Labels, cfg *Config, lb *labels.Builder) labels.Labels 
 		panic(fmt.Errorf("relabel: unknown relabel action type %q", cfg.Action))
 	}
 
-	return lb.Labels()
+	return lb.Labels(lset)
 }
 
 // sum64 sums the md5 hash to an uint64.
