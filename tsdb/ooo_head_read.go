@@ -147,6 +147,21 @@ func (oh *OOOHeadIndexReader) series(ref storage.SeriesRef, lbls *labels.Labels,
 	return nil
 }
 
+// LabelValues needs to be overridden from the headIndexReader implementation due
+// to the check that happens at the beginning where we make sure that the query
+// interval overlaps with the head minooot and maxooot.
+func (oh *OOOHeadIndexReader) LabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
+	if oh.maxt < oh.head.MinOOOTime() || oh.mint > oh.head.MaxOOOTime() {
+		return []string{}, nil
+	}
+
+	if len(matchers) == 0 {
+		return oh.head.postings.LabelValues(name), nil
+	}
+
+	return labelValuesWithMatchers(oh, name, matchers...)
+}
+
 type chunkMetaAndChunkDiskMapperRef struct {
 	meta     chunks.Meta
 	ref      chunks.ChunkDiskMapperRef

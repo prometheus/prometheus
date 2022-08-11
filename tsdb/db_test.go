@@ -3790,7 +3790,7 @@ func TestMetadataCheckpointingOnlyKeepsLatestEntry(t *testing.T) {
 
 	ctx := context.Background()
 	numSamples := 10000
-	hb, w := newTestHead(t, int64(numSamples)*10, false)
+	hb, w := newTestHead(t, int64(numSamples)*10, false, false)
 
 	// Add some series so we can append metadata to them.
 	app := hb.Appender(ctx)
@@ -4452,7 +4452,7 @@ func TestOOOAppendAndQuery(t *testing.T) {
 	s2 := labels.FromStrings("foo", "bar2")
 
 	minutes := func(m int64) int64 { return m * time.Minute.Milliseconds() }
-	expSamples := make(map[string][]tsdbutil.Sample)
+	appendedSamples := make(map[string][]tsdbutil.Sample)
 	totalSamples := 0
 	addSample := func(lbls labels.Labels, fromMins, toMins int64, faceError bool) {
 		app := db.Appender(context.Background())
@@ -4465,7 +4465,7 @@ func TestOOOAppendAndQuery(t *testing.T) {
 				require.Error(t, err)
 			} else {
 				require.NoError(t, err)
-				expSamples[key] = append(expSamples[key], sample{t: min, v: val})
+				appendedSamples[key] = append(appendedSamples[key], sample{t: min, v: val})
 				totalSamples++
 			}
 		}
@@ -4476,17 +4476,30 @@ func TestOOOAppendAndQuery(t *testing.T) {
 		}
 	}
 
-	testQuery := func() {
-		querier, err := db.Querier(context.TODO(), math.MinInt64, math.MaxInt64)
+	testQuery := func(from, to int64) {
+		querier, err := db.Querier(context.TODO(), from, to)
 		require.NoError(t, err)
 
 		seriesSet := query(t, querier, labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar."))
 
-		for k, v := range expSamples {
+		for k, v := range appendedSamples {
 			sort.Slice(v, func(i, j int) bool {
 				return v[i].T() < v[j].T()
 			})
-			expSamples[k] = v
+			appendedSamples[k] = v
+		}
+
+		expSamples := make(map[string][]tsdbutil.Sample)
+		for k, samples := range appendedSamples {
+			for _, s := range samples {
+				if s.T() < from {
+					continue
+				}
+				if s.T() > to {
+					continue
+				}
+				expSamples[k] = append(expSamples[k], s)
+			}
 		}
 		require.Equal(t, expSamples, seriesSet)
 		require.Equal(t, float64(totalSamples-2), prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamplesAppended), "number of ooo appended samples mismatch")
@@ -4501,40 +4514,43 @@ func TestOOOAppendAndQuery(t *testing.T) {
 	addSample(s1, 300, 300, false)
 	addSample(s2, 290, 290, false)
 	require.Equal(t, float64(2), prom_testutil.ToFloat64(db.head.metrics.chunksCreated))
-	testQuery()
+	testQuery(math.MinInt64, math.MaxInt64)
 
 	// Some ooo samples.
 	addSample(s1, 250, 260, false)
 	addSample(s2, 255, 265, false)
 	verifyOOOMinMaxTimes(250, 265)
-	testQuery()
+	testQuery(math.MinInt64, math.MaxInt64)
+	testQuery(minutes(250), minutes(265)) // Test querying ono data time range
+	testQuery(minutes(290), minutes(300)) // Test querying in-order data time range
+	testQuery(minutes(250), minutes(300)) // Test querying the entire range
 
 	// Out of time window.
 	addSample(s1, 59, 59, true)
 	addSample(s2, 49, 49, true)
 	verifyOOOMinMaxTimes(250, 265)
-	testQuery()
+	testQuery(math.MinInt64, math.MaxInt64)
 
 	// At the edge of time window, also it would be "out of bound" without the ooo support.
 	addSample(s1, 60, 65, false)
 	verifyOOOMinMaxTimes(60, 265)
-	testQuery()
+	testQuery(math.MinInt64, math.MaxInt64)
 
 	// This sample is not within the time window w.r.t. the head's maxt, but it is within the window
 	// w.r.t. the series' maxt. But we consider only head's maxt.
 	addSample(s2, 59, 59, true)
 	verifyOOOMinMaxTimes(60, 265)
-	testQuery()
+	testQuery(math.MinInt64, math.MaxInt64)
 
 	// Now the sample is within time window w.r.t. the head's maxt.
 	addSample(s2, 60, 65, false)
 	verifyOOOMinMaxTimes(60, 265)
-	testQuery()
+	testQuery(math.MinInt64, math.MaxInt64)
 
 	// Out of time window again.
 	addSample(s1, 59, 59, true)
 	addSample(s2, 49, 49, true)
-	testQuery()
+	testQuery(math.MinInt64, math.MaxInt64)
 
 	// Generating some m-map chunks. The m-map chunks here are in such a way
 	// that when sorted w.r.t. mint, the last chunk's maxt is not the overall maxt
@@ -4543,7 +4559,7 @@ func TestOOOAppendAndQuery(t *testing.T) {
 	addSample(s1, 180, 249, false)
 	require.Equal(t, float64(6), prom_testutil.ToFloat64(db.head.metrics.chunksCreated))
 	verifyOOOMinMaxTimes(60, 265)
-	testQuery()
+	testQuery(math.MinInt64, math.MaxInt64)
 }
 
 func TestOOODisabled(t *testing.T) {

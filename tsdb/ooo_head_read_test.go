@@ -16,6 +16,7 @@ package tsdb
 import (
 	"context"
 	"fmt"
+	"math"
 	"sort"
 	"testing"
 	"time"
@@ -293,7 +294,7 @@ func TestOOOHeadIndexReader_Series(t *testing.T) {
 		for perm, intervals := range permutations {
 			for _, headChunk := range []bool{false, true} {
 				t.Run(fmt.Sprintf("name=%s, permutation=%d, headChunk=%t", tc.name, perm, headChunk), func(t *testing.T) {
-					h, _ := newTestHead(t, 1000, false)
+					h, _ := newTestHead(t, 1000, false, true)
 					defer func() {
 						require.NoError(t, h.Close())
 					}()
@@ -367,6 +368,103 @@ func TestOOOHeadIndexReader_Series(t *testing.T) {
 				})
 			}
 		}
+	}
+}
+
+func TestOOOHeadChunkReader_LabelValues(t *testing.T) {
+	chunkRange := int64(2000)
+	head, _ := newTestHead(t, chunkRange, false, true)
+	t.Cleanup(func() { require.NoError(t, head.Close()) })
+
+	app := head.Appender(context.Background())
+
+	// Add in-order samples
+	_, err := app.Append(0, labels.Labels{
+		{Name: "foo", Value: "bar1"},
+	}, 100, 1)
+	require.NoError(t, err)
+	_, err = app.Append(0, labels.Labels{
+		{Name: "foo", Value: "bar2"},
+	}, 100, 2)
+	require.NoError(t, err)
+
+	// Add ooo samples for those series
+	_, err = app.Append(0, labels.Labels{
+		{Name: "foo", Value: "bar1"},
+	}, 90, 1)
+	require.NoError(t, err)
+	_, err = app.Append(0, labels.Labels{
+		{Name: "foo", Value: "bar2"},
+	}, 90, 2)
+	require.NoError(t, err)
+
+	require.NoError(t, app.Commit())
+
+	cases := []struct {
+		name       string
+		queryMinT  int64
+		queryMaxT  int64
+		expValues1 []string
+		expValues2 []string
+		expValues3 []string
+		expValues4 []string
+	}{
+		{
+			name:       "LabelValues calls when ooo head has max query range",
+			queryMinT:  math.MinInt64,
+			queryMaxT:  math.MaxInt64,
+			expValues1: []string{"bar1"},
+			expValues2: []string{},
+			expValues3: []string{"bar1", "bar2"},
+			expValues4: []string{"bar1", "bar2"},
+		},
+		{
+			name:       "LabelValues calls with ooo head query range not overlapping in-order data",
+			queryMinT:  90,
+			queryMaxT:  90,
+			expValues1: []string{"bar1"},
+			expValues2: []string{},
+			expValues3: []string{"bar1", "bar2"},
+			expValues4: []string{"bar1", "bar2"},
+		},
+		{
+			name:       "LabelValues calls with ooo head query range not overlapping out-of-order data",
+			queryMinT:  100,
+			queryMaxT:  100,
+			expValues1: []string{},
+			expValues2: []string{},
+			expValues3: []string{},
+			expValues4: []string{},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			// We first want to test using a head index reader that covers the biggest query interval
+			oh := NewOOOHeadIndexReader(head, tc.queryMinT, tc.queryMaxT)
+			matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "foo", "bar1")}
+			values, err := oh.LabelValues("foo", matchers...)
+			sort.Strings(values)
+			require.NoError(t, err)
+			require.Equal(t, tc.expValues1, values)
+
+			matchers = []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotRegexp, "foo", "^bar.")}
+			values, err = oh.LabelValues("foo", matchers...)
+			sort.Strings(values)
+			require.NoError(t, err)
+			require.Equal(t, tc.expValues2, values)
+
+			matchers = []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.")}
+			values, err = oh.LabelValues("foo", matchers...)
+			sort.Strings(values)
+			require.NoError(t, err)
+			require.Equal(t, tc.expValues3, values)
+
+			values, err = oh.LabelValues("foo")
+			sort.Strings(values)
+			require.NoError(t, err)
+			require.Equal(t, tc.expValues4, values)
+		})
 	}
 }
 
