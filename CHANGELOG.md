@@ -11,7 +11,7 @@
 * [ENHANCEMENT]: PromQL: When a query panics, also log the query itself alongside the panic message. #10995
 * [ENHANCEMENT]: UI: Tweak colors in the dark theme to improve the contrast ratio. #11068
 * [ENHANCEMENT]: Web: Speed up calls to `/api/v1/rules` by avoiding locks and using atomic types instead. #10858
-* [ENHANCEMENT]: Add a `no-default-scrape-port` feature flag, which omits or removes any default HTTP (`:80`) or HTTPS (`:443`) ports in the target's scrape address. #9523
+* [ENHANCEMENT]: Scrape: Add a `no-default-scrape-port` feature flag, which omits or removes any default HTTP (`:80`) or HTTPS (`:443`) ports in the target's scrape address. #9523
 * [BUGFIX]: TSDB: In the WAL watcher metrics, expose the `type="exemplar"` label instead of `type="unknown"` for exemplar records. #11008
 * [BUGFIX]: TSDB: Fix race condition around allocating series IDs during chunk snapshot loading. #11099
 
