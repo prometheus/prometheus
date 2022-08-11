@@ -192,24 +192,25 @@ func (re Regexp) String() string {
 // are applied in order of input.
 // If a label set is dropped, nil is returned.
 // May return the input labelSet modified.
-func Process(labels labels.Labels, cfgs ...*Config) labels.Labels {
+func Process(lbls labels.Labels, cfgs ...*Config) labels.Labels {
+	lb := labels.NewBuilder(nil)
 	for _, cfg := range cfgs {
-		labels = relabel(labels, cfg)
-		if labels == nil {
+		lbls = relabel(lbls, cfg, lb)
+		if lbls == nil {
 			return nil
 		}
 	}
-	return labels
+	return lbls
 }
 
-func relabel(lset labels.Labels, cfg *Config) labels.Labels {
+func relabel(lset labels.Labels, cfg *Config, lb *labels.Builder) labels.Labels {
 	values := make([]string, 0, len(cfg.SourceLabels))
 	for _, ln := range cfg.SourceLabels {
 		values = append(values, lset.Get(string(ln)))
 	}
 	val := strings.Join(values, cfg.Separator)
 
-	lb := labels.NewBuilder(lset)
+	lb.Reset(lset)
 
 	switch cfg.Action {
 	case Drop:
