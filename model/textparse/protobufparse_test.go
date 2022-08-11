@@ -155,6 +155,78 @@ metric: <
 >
 
 `,
+
+		`name: "test_float_histogram"
+help: "Test float histogram with many buckets removed to keep it manageable in size."
+type: HISTOGRAM
+metric: <
+  histogram: <
+    sample_count: 175
+	sample_count_float: 175.0
+    sample_sum: 0.0008280461746287094
+    bucket: <
+      cumulative_count_float: 2.0
+      upper_bound: -0.0004899999999999998
+    >
+    bucket: <
+      cumulative_count_float: 4.0
+      upper_bound: -0.0003899999999999998
+      exemplar: <
+        label: <
+          name: "dummyID"
+          value: "59727"
+        >
+        value: -0.00039
+        timestamp: <
+          seconds: 1625851155
+          nanos: 146848499
+        >
+      >
+    >
+    bucket: <
+      cumulative_count_float: 16
+      upper_bound: -0.0002899999999999998
+      exemplar: <
+        label: <
+          name: "dummyID"
+          value: "5617"
+        >
+        value: -0.00029
+      >
+    >
+    schema: 3
+    zero_threshold: 2.938735877055719e-39
+    zero_count_float: 2.0
+    negative_span: <
+      offset: -162
+      length: 1
+    >
+    negative_span: <
+      offset: 23
+      length: 4
+    >
+    negative_delta: 1
+    negative_delta: 3
+    negative_delta: -2
+    negative_delta: -1
+    negative_delta: 1
+    positive_span: <
+      offset: -161
+      length: 1
+    >
+    positive_span: <
+      offset: 8
+      length: 3
+    >
+    positive_delta: 1
+    positive_delta: 2
+    positive_delta: -1
+    positive_delta: -1
+  >
+  timestamp_ms: 1234568
+>
+
+`,
 		`name: "test_histogram2"
 help: "Similar histogram as before but now without sparse buckets."
 type: HISTOGRAM
@@ -263,6 +335,7 @@ metric: <
 		unit    string
 		comment string
 		shs     *histogram.Histogram
+		fhs     *histogram.FloatHistogram
 		e       []exemplar.Exemplar
 	}{
 		{
@@ -347,6 +420,42 @@ metric: <
 			},
 			lset: labels.FromStrings(
 				"__name__", "test_histogram",
+			),
+			e: []exemplar.Exemplar{
+				{Labels: labels.FromStrings("dummyID", "59727"), Value: -0.00039, HasTs: true, Ts: 1625851155146},
+				{Labels: labels.FromStrings("dummyID", "5617"), Value: -0.00029, HasTs: false},
+			},
+		},
+		{
+			m:    "test_float_histogram",
+			help: "Test float histogram with many buckets removed to keep it manageable in size.",
+		},
+		{
+			m:   "test_float_histogram",
+			typ: MetricTypeHistogram,
+		},
+		{
+			m: "test_float_histogram",
+			t: 1234568,
+			fhs: &histogram.FloatHistogram{
+				Count:         175.0,
+				ZeroCount:     2.0,
+				Sum:           0.0008280461746287094,
+				ZeroThreshold: 2.938735877055719e-39,
+				Schema:        3,
+				PositiveSpans: []histogram.Span{
+					{Offset: -161, Length: 1},
+					{Offset: 8, Length: 3},
+				},
+				NegativeSpans: []histogram.Span{
+					{Offset: -162, Length: 1},
+					{Offset: 23, Length: 4},
+				},
+				PositiveBuckets: []float64{1.0, 2.0, -1.0, -1.0},
+				NegativeBuckets: []float64{1.0, 3.0, -2.0, -1.0, 1.0},
+			},
+			lset: labels.FromStrings(
+				"__name__", "test_float_histogram",
 			),
 			e: []exemplar.Exemplar{
 				{Labels: labels.FromStrings("dummyID", "59727"), Value: -0.00039, HasTs: true, Ts: 1625851155146},
@@ -524,8 +633,7 @@ metric: <
 			res = res[:0]
 
 		case EntryHistogram:
-			m, ts, shs := p.Histogram()
-
+			m, ts, shs, fhs := p.Histogram()
 			p.Metric(&res)
 			require.Equal(t, exp[i].m, string(m))
 			if ts != nil {
@@ -536,7 +644,11 @@ metric: <
 			require.Equal(t, exp[i].lset, res)
 			res = res[:0]
 			require.Equal(t, exp[i].m, string(m))
-			require.Equal(t, exp[i].shs, shs)
+			if shs != nil {
+				require.Equal(t, exp[i].shs, shs)
+			} else {
+				require.Equal(t, exp[i].fhs, fhs)
+			}
 			j := 0
 			for e := (exemplar.Exemplar{}); p.Exemplar(&e); j++ {
 				require.Equal(t, exp[i].e[j], e)

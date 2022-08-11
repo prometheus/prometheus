@@ -135,7 +135,7 @@ func (p *ProtobufParser) Series() ([]byte, *int64, float64) {
 // Histogram returns the bytes of a series with a native histogram as a
 // value, the timestamp if set, and the native histogram in the current
 // sample.
-func (p *ProtobufParser) Histogram() ([]byte, *int64, *histogram.Histogram) {
+func (p *ProtobufParser) Histogram() ([]byte, *int64, *histogram.Histogram, *histogram.FloatHistogram) {
 	var (
 		m  = p.mf.GetMetric()[p.metricPos]
 		ts = m.GetTimestampMs()
@@ -160,13 +160,41 @@ func (p *ProtobufParser) Histogram() ([]byte, *int64, *histogram.Histogram) {
 		sh.NegativeSpans[i].Offset = span.GetOffset()
 		sh.NegativeSpans[i].Length = span.GetLength()
 	}
-	if ts != 0 {
-		return p.metricBytes.Bytes(), &ts, &sh
+
+	if isFloatHistogram(h) {
+		fh := histogram.FloatHistogram{
+			Count:           h.GetSampleCountFloat(),
+			Sum:             sh.Sum,
+			ZeroThreshold:   sh.ZeroThreshold,
+			ZeroCount:       h.GetZeroCountFloat(),
+			Schema:          sh.Schema,
+			PositiveSpans:   sh.Copy().PositiveSpans,
+			PositiveBuckets: castInt64ToFloat64(sh.PositiveBuckets),
+			NegativeSpans:   sh.Copy().NegativeSpans,
+			NegativeBuckets: castInt64ToFloat64(sh.NegativeBuckets),
+		}
+		if ts != 0 {
+			return p.metricBytes.Bytes(), &ts, nil, &fh
+		}
+		// Nasty hack: Assume that ts==0 means no timestamp. That's not true in
+		// general, but proto3 has no distinction between unset and
+		// default. Need to avoid in the final format.
+		return p.metricBytes.Bytes(), nil, nil, &fh
 	}
-	// Nasty hack: Assume that ts==0 means no timestamp. That's not true in
-	// general, but proto3 has no distinction between unset and
-	// default. Need to avoid in the final format.
-	return p.metricBytes.Bytes(), nil, &sh
+
+	if ts != 0 {
+		return p.metricBytes.Bytes(), &ts, &sh, nil
+	}
+	return p.metricBytes.Bytes(), nil, &sh, nil
+}
+
+// cast array of int64 to array of float64
+func castInt64ToFloat64(a []int64) []float64 {
+	b := make([]float64, len(a))
+	for i, v := range a {
+		b[i] = float64(v)
+	}
+	return b
 }
 
 // Help returns the metric name and help text in the current entry.
@@ -479,4 +507,19 @@ func isNativeHistogram(h *dto.Histogram) bool {
 		len(h.GetPositiveDelta()) > 0 ||
 		h.GetZeroCount() > 0 ||
 		h.GetZeroThreshold() > 0
+}
+
+// isFloatHistogram checks that processed histogram is a float histogram if it
+// some of the histogram defined with float values
+func isFloatHistogram(h *dto.Histogram) bool {
+	floatBuckets := false
+	for _, b := range h.Bucket {
+		if b.CumulativeCountFloat > 0 {
+			floatBuckets = true
+			break
+		}
+	}
+	return h.GetSampleCountFloat() > 0 ||
+		h.GetZeroCountFloat() > 0 ||
+		floatBuckets
 }

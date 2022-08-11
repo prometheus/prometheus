@@ -113,10 +113,10 @@ func (p *OpenMetricsParser) Series() ([]byte, *int64, float64) {
 	return p.series, nil, p.val
 }
 
-// Histogram always returns (nil, nil, nil) because OpenMetrics does not support
+// Histogram always returns (nil, nil, nil, nil) because OpenMetrics does not support
 // sparse histograms.
-func (p *OpenMetricsParser) Histogram() ([]byte, *int64, *histogram.Histogram) {
-	return nil, nil, nil
+func (p *OpenMetricsParser) Histogram() ([]byte, *int64, *histogram.Histogram, *histogram.FloatHistogram) {
+	return nil, nil, nil, nil
 }
 
 // Help returns the metric name and help text in the current entry.
