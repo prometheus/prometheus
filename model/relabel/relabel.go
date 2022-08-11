@@ -194,8 +194,15 @@ func (re Regexp) String() string {
 // May return the input labelSet modified.
 func Process(lbls labels.Labels, cfgs ...*Config) labels.Labels {
 	lb := labels.NewBuilder(nil)
+	max := 0
 	for _, cfg := range cfgs {
-		lbls = relabel(lbls, cfg, lb)
+		if len(cfg.SourceLabels) > max {
+			max = len(cfg.SourceLabels)
+		}
+	}
+	values := make([]string, 0, max)
+	for _, cfg := range cfgs {
+		lbls = relabel(lbls, cfg, lb, values[:0])
 		if lbls == nil {
 			return nil
 		}
@@ -203,8 +210,7 @@ func Process(lbls labels.Labels, cfgs ...*Config) labels.Labels {
 	return lbls
 }
 
-func relabel(lset labels.Labels, cfg *Config, lb *labels.Builder) labels.Labels {
-	values := make([]string, 0, len(cfg.SourceLabels))
+func relabel(lset labels.Labels, cfg *Config, lb *labels.Builder, values []string) labels.Labels {
 	for _, ln := range cfg.SourceLabels {
 		values = append(values, lset.Get(string(ln)))
 	}
