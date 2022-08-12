@@ -1516,7 +1516,7 @@ type memSeries struct {
 
 	ref  chunks.HeadSeriesRef
 	lset labels.Labels
-	meta metadata.Metadata
+	meta *metadata.Metadata
 
 	// Immutable chunks on disk that have not yet gone into a block, in order of ascending time stamps.
 	// When compaction runs, chunks get moved into a block and all pointers are shifted like so:
@@ -1540,8 +1540,6 @@ type memSeries struct {
 	// Even the most compact encoding of a sample takes 2 bits, so the last byte is not contended.
 	sampleBuf [4]sample
 
-	pendingCommit bool // Whether there are samples waiting to be committed to this series.
-
 	// Current appender for the head chunk. Set when a new head chunk is cut.
 	// It is nil only if headChunk is nil. E.g. if there was an appender that created a new series, but rolled back the commit
 	// (the first sample would create a headChunk, hence appender, but rollback skipped it while the Append() call would create a series).
@@ -1551,6 +1549,8 @@ type memSeries struct {
 
 	// txs is nil if isolation is disabled.
 	txs *txRing
+
+	pendingCommit bool // Whether there are samples waiting to be committed to this series.
 }
 
 func newMemSeries(lset labels.Labels, id chunks.HeadSeriesRef, chunkRange int64, memChunkPool *sync.Pool, isolationDisabled bool) *memSeries {

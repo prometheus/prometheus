@@ -399,7 +399,7 @@ func (a *headAppender) UpdateMetadata(ref storage.SeriesRef, lset labels.Labels,
 	}
 
 	s.RLock()
-	hasNewMetadata := s.meta != meta
+	hasNewMetadata := s.meta == nil || *s.meta != meta
 	s.RUnlock()
 
 	if hasNewMetadata {
@@ -540,7 +540,7 @@ func (a *headAppender) Commit() (err error) {
 	for i, m := range a.metadata {
 		series = a.metadataSeries[i]
 		series.Lock()
-		series.meta = metadata.Metadata{Type: record.ToTextparseMetricType(m.Type), Unit: m.Unit, Help: m.Help}
+		series.meta = &metadata.Metadata{Type: record.ToTextparseMetricType(m.Type), Unit: m.Unit, Help: m.Help}
 		series.Unlock()
 	}
 
