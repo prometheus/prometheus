@@ -472,7 +472,7 @@ func PopulateLabels(lset labels.Labels, cfg *config.ScrapeConfig, noDefaultPort 
 		lb.Set(model.InstanceLabel, addr)
 	}
 
-	res = lb.Labels(lset)
+	res = lb.Labels(nil)
 	for _, l := range res {
 		// Check label values are valid, drop the target if not.
 		if !model.LabelValue(l.Value).IsValid() {
