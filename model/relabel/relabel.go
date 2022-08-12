@@ -205,7 +205,7 @@ func Process(lbls labels.Labels, cfgs ...*Config) labels.Labels {
 
 func relabel(lset labels.Labels, cfg *Config, lb *labels.Builder) labels.Labels {
 	var va [16]string
-	var values []string = va[:0]
+	values := va[:0]
 	if len(cfg.SourceLabels) > cap(values) {
 		values = make([]string, 0, len(cfg.SourceLabels))
 	}
