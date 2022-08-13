@@ -71,27 +71,6 @@ jobs:
           paths:
             - ~/.npm
 
-  test_windows:
-    executor:
-      name: win/default
-      shell: powershell
-    working_directory: /go/src/github.com/prometheus/prometheus
-    steps:
-      - checkout
-      - run:
-          # Temporary workaround until circleci updates go.
-          command: |
-            choco upgrade -y golang
-      - run:
-          command: refreshenv
-      - run:
-          command: |
-            $TestTargets = go list ./... | Where-Object { $_ -NotMatch "(github.com/prometheus/prometheus/discovery.*|github.com/prometheus/prometheus/config|github.com/prometheus/prometheus/web)"}
-            go test $TestTargets -vet=off -v
-          environment:
-            GOGC: "20"
-            GOOPTS: "-p 2"
-
   test_golang_oldest:
     executor: golang_oldest
     steps:
@@ -136,10 +115,6 @@ workflows:
             tags:
               only: /.*/
       - test_mixins:
-          filters:
-            tags:
-              only: /.*/
-      - test_windows:
           filters:
             tags:
               only: /.*/
