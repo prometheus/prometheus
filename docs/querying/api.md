@@ -779,7 +779,7 @@ curl -G http://localhost:9091/api/v1/targets/metadata \
 
 ## Querying metric metadata
 
-It returns metadata about metrics currently scrapped from targets. However, it does not provide any target information.
+It returns metadata about metrics currently scraped from targets. However, it does not provide any target information.
 This is considered **experimental** and might change in the future.
 
 ```
