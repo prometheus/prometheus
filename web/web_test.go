@@ -126,10 +126,20 @@ func TestReadyAndHealthy(t *testing.T) {
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 	cleanupTestResponse(t, resp)
 
+	resp, err = http.Head(baseURL + "/-/healthy")
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	cleanupTestResponse(t, resp)
+
 	for _, u := range []string{
 		baseURL + "/-/ready",
 	} {
 		resp, err = http.Get(u)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+		cleanupTestResponse(t, resp)
+
+		resp, err = http.Head(u)
 		require.NoError(t, err)
 		require.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
 		cleanupTestResponse(t, resp)
@@ -153,6 +163,11 @@ func TestReadyAndHealthy(t *testing.T) {
 		baseURL + "/-/ready",
 	} {
 		resp, err = http.Get(u)
+		require.NoError(t, err)
+		require.Equal(t, http.StatusOK, resp.StatusCode)
+		cleanupTestResponse(t, resp)
+
+		resp, err = http.Head(u)
 		require.NoError(t, err)
 		require.Equal(t, http.StatusOK, resp.StatusCode)
 		cleanupTestResponse(t, resp)
