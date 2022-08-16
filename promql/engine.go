@@ -823,6 +823,20 @@ func (ng *Engine) getTimeRangesForSelector(s *parser.EvalStmt, n *parser.VectorS
 	return start, end
 }
 
+func (ng *Engine) getLastSubqueryInterval(path []parser.Node) time.Duration {
+	var interval time.Duration
+	for _, node := range path {
+		switch n := node.(type) {
+		case *parser.SubqueryExpr:
+			interval = n.Step
+			if n.Step == 0 {
+				interval = time.Duration(ng.noStepSubqueryIntervalFn(durationMilliseconds(n.Range))) * time.Millisecond
+			}
+		}
+	}
+	return interval
+}
+
 func (ng *Engine) populateSeries(querier storage.Querier, s *parser.EvalStmt) {
 	// Whenever a MatrixSelector is evaluated, evalRange is set to the corresponding range.
 	// The evaluation of the VectorSelector inside then evaluates the given range and unsets
@@ -833,10 +847,14 @@ func (ng *Engine) populateSeries(querier storage.Querier, s *parser.EvalStmt) {
 		switch n := node.(type) {
 		case *parser.VectorSelector:
 			start, end := ng.getTimeRangesForSelector(s, n, path, evalRange)
+			interval := s.Interval
+			if interval == 0 {
+				interval = ng.getLastSubqueryInterval(path)
+			}
 			hints := &storage.SelectHints{
 				Start: start,
 				End:   end,
-				Step:  durationMilliseconds(s.Interval),
+				Step:  durationMilliseconds(interval),
 				Range: durationMilliseconds(evalRange),
 				Func:  extractFuncFromPath(path),
 			}
