@@ -230,7 +230,7 @@ Outer:
 				}
 
 				idx := uint64(mSeries.ref) % uint64(n)
-				processors[idx].input <- walSubsetProcessorInputItem{newSeriesRef: walSeries.Ref, oldSeriesRef: mSeries.ref}
+				processors[idx].input <- walSubsetProcessorInputItem{walSeriesRef: walSeries.Ref, existingSeries: mSeries}
 			}
 			//nolint:staticcheck // Ignore SA6002 relax staticcheck verification.
 			seriesPool.Put(v)
@@ -334,8 +334,8 @@ Outer:
 }
 
 // resetSeriesWithMMappedChunks is only used during the WAL replay.
-func (h *Head) resetSeriesWithMMappedChunks(mSeries *memSeries, mmc []*mmappedChunk, maybeOverlappedSeriesRef chunks.HeadSeriesRef) (overlapped bool) {
-	if maybeOverlappedSeriesRef != 0 && mSeries.ref != maybeOverlappedSeriesRef {
+func (h *Head) resetSeriesWithMMappedChunks(mSeries *memSeries, mmc []*mmappedChunk, walSeriesRef chunks.HeadSeriesRef) (overlapped bool) {
+	if mSeries.ref != walSeriesRef {
 		// Checking if the new m-mapped chunks overlap with the already existing ones.
 		if len(mSeries.mmappedChunks) > 0 && len(mmc) > 0 {
 			if overlapsClosedInterval(
@@ -350,7 +350,7 @@ func (h *Head) resetSeriesWithMMappedChunks(mSeries *memSeries, mmc []*mmappedCh
 					"oldref", mSeries.ref,
 					"oldmint", mSeries.mmappedChunks[0].minTime,
 					"oldmaxt", mSeries.mmappedChunks[len(mSeries.mmappedChunks)-1].maxTime,
-					"newref", maybeOverlappedSeriesRef,
+					"newref", walSeriesRef,
 					"newmint", mmc[0].minTime,
 					"newmaxt", mmc[len(mmc)-1].maxTime,
 				)
@@ -384,9 +384,9 @@ type walSubsetProcessor struct {
 }
 
 type walSubsetProcessorInputItem struct {
-	samples      []record.RefSample
-	oldSeriesRef chunks.HeadSeriesRef
-	newSeriesRef chunks.HeadSeriesRef
+	samples        []record.RefSample
+	existingSeries *memSeries
+	walSeriesRef   chunks.HeadSeriesRef
 }
 
 func (wp *walSubsetProcessor) setup() {
@@ -420,10 +420,9 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks map[chunk
 	mint, maxt := int64(math.MaxInt64), int64(math.MinInt64)
 
 	for in := range wp.input {
-		if in.oldSeriesRef != 0 && in.newSeriesRef != 0 {
-			mSeries := h.series.getByID(in.oldSeriesRef)
-			mmc := mmappedChunks[in.newSeriesRef]
-			if h.resetSeriesWithMMappedChunks(mSeries, mmc, in.newSeriesRef) {
+		if in.existingSeries != nil {
+			mmc := mmappedChunks[in.walSeriesRef]
+			if h.resetSeriesWithMMappedChunks(in.existingSeries, mmc, in.walSeriesRef) {
 				mmapOverlappingChunks++
 			}
 			continue
