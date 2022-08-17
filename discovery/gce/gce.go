@@ -25,7 +25,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/prometheus/common/model"
 	"golang.org/x/oauth2/google"
-	compute "google.golang.org/api/compute/v1"
+	"google.golang.org/api/compute/v1"
 	"google.golang.org/api/option"
 
 	"github.com/prometheus/prometheus/discovery"

@@ -38,7 +38,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/regexp"
-	conntrack "github.com/mwitkow/go-conntrack"
+	"github.com/mwitkow/go-conntrack"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
