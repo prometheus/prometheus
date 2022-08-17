@@ -1821,10 +1821,10 @@ func TestQuerierWithBoundaryChunks(t *testing.T) {
 }
 
 // TestInitializeHeadTimestamp ensures that the h.minTime is set properly.
-// 	- no blocks no WAL: set to the time of the first  appended sample
-// 	- no blocks with WAL: set to the smallest sample from the WAL
-//	- with blocks no WAL: set to the last block maxT
-// 	- with blocks with WAL: same as above
+//   - no blocks no WAL: set to the time of the first  appended sample
+//   - no blocks with WAL: set to the smallest sample from the WAL
+//   - with blocks no WAL: set to the last block maxT
+//   - with blocks with WAL: same as above
 func TestInitializeHeadTimestamp(t *testing.T) {
 	t.Run("clean", func(t *testing.T) {
 		dir := t.TempDir()
@@ -2166,10 +2166,12 @@ func TestCorrectNumTombstones(t *testing.T) {
 }
 
 // TestBlockRanges checks the following use cases:
-//  - No samples can be added with timestamps lower than the last block maxt.
-//  - The compactor doesn't create overlapping blocks
+//   - No samples can be added with timestamps lower than the last block maxt.
+//   - The compactor doesn't create overlapping blocks
+//
 // even when the last blocks is not within the default boundaries.
-//	- Lower boundary is based on the smallest sample in the head and
+//   - Lower boundary is based on the smallest sample in the head and
+//
 // upper boundary is rounded to the configured block range.
 //
 // This ensures that a snapshot that includes the head and creates a block with a custom time range
@@ -3697,10 +3699,10 @@ func TestMetadataAssertInMemoryData(t *testing.T) {
 	series2 := db.head.series.getByHash(s2.Hash(), s2)
 	series3 := db.head.series.getByHash(s3.Hash(), s3)
 	series4 := db.head.series.getByHash(s4.Hash(), s4)
-	require.Equal(t, series1.meta, m1)
-	require.Equal(t, series2.meta, m2)
-	require.Equal(t, series3.meta, m3)
-	require.Equal(t, series4.meta, metadata.Metadata{})
+	require.Equal(t, *series1.meta, m1)
+	require.Equal(t, *series2.meta, m2)
+	require.Equal(t, *series3.meta, m3)
+	require.Nil(t, series4.meta)
 
 	// Add a replicated metadata entry to the first series,
 	// a changed metadata entry to the second series,
@@ -3718,10 +3720,10 @@ func TestMetadataAssertInMemoryData(t *testing.T) {
 	series2 = db.head.series.getByHash(s2.Hash(), s2)
 	series3 = db.head.series.getByHash(s3.Hash(), s3)
 	series4 = db.head.series.getByHash(s4.Hash(), s4)
-	require.Equal(t, series1.meta, m1)
-	require.Equal(t, series2.meta, m5)
-	require.Equal(t, series3.meta, m3)
-	require.Equal(t, series4.meta, m4)
+	require.Equal(t, *series1.meta, m1)
+	require.Equal(t, *series2.meta, m5)
+	require.Equal(t, *series3.meta, m3)
+	require.Equal(t, *series4.meta, m4)
 
 	require.NoError(t, db.Close())
 
@@ -3736,8 +3738,8 @@ func TestMetadataAssertInMemoryData(t *testing.T) {
 	_, err = reopenDB.head.wal.Size()
 	require.NoError(t, err)
 
-	require.Equal(t, reopenDB.head.series.getByHash(s1.Hash(), s1).meta, m1)
-	require.Equal(t, reopenDB.head.series.getByHash(s2.Hash(), s2).meta, m5)
-	require.Equal(t, reopenDB.head.series.getByHash(s3.Hash(), s3).meta, m3)
-	require.Equal(t, reopenDB.head.series.getByHash(s4.Hash(), s4).meta, m4)
+	require.Equal(t, *reopenDB.head.series.getByHash(s1.Hash(), s1).meta, m1)
+	require.Equal(t, *reopenDB.head.series.getByHash(s2.Hash(), s2).meta, m5)
+	require.Equal(t, *reopenDB.head.series.getByHash(s3.Hash(), s3).meta, m3)
+	require.Equal(t, *reopenDB.head.series.getByHash(s4.Hash(), s4).meta, m4)
 }

@@ -333,7 +333,7 @@ Outer:
 					unknownMetadataRefs.Inc()
 					continue
 				}
-				s.meta = metadata.Metadata{
+				s.meta = &metadata.Metadata{
 					Type: record.ToTextparseMetricType(m.Type),
 					Unit: m.Unit,
 					Help: m.Help,
