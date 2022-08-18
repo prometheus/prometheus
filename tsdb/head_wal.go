@@ -107,7 +107,7 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 		processors[i].setup()
 
 		go func(wp *walSubsetProcessor) {
-			unknown, overlapping := wp.processWALSamples(h, mmappedChunks)
+			unknown, overlapping := wp.processWALSamples(h, mmappedChunks, oooMmappedChunks)
 			unknownRefs.Add(unknown)
 			mmapOverlappingChunks.Add(overlapping)
 			wg.Done()
@@ -334,7 +334,7 @@ Outer:
 }
 
 // resetSeriesWithMMappedChunks is only used during the WAL replay.
-func (h *Head) resetSeriesWithMMappedChunks(mSeries *memSeries, mmc []*mmappedChunk, walSeriesRef chunks.HeadSeriesRef) (overlapped bool) {
+func (h *Head) resetSeriesWithMMappedChunks(mSeries *memSeries, mmc, oooMmc []*mmappedChunk, walSeriesRef chunks.HeadSeriesRef) (overlapped bool) {
 	if mSeries.ref != walSeriesRef {
 		// Checking if the new m-mapped chunks overlap with the already existing ones.
 		if len(mSeries.mmappedChunks) > 0 && len(mmc) > 0 {
@@ -359,16 +359,30 @@ func (h *Head) resetSeriesWithMMappedChunks(mSeries *memSeries, mmc []*mmappedCh
 		}
 	}
 
-	h.metrics.chunksCreated.Add(float64(len(mmc)))
+	h.metrics.chunksCreated.Add(float64(len(mmc) + len(oooMmc)))
 	h.metrics.chunksRemoved.Add(float64(len(mSeries.mmappedChunks)))
-	h.metrics.chunks.Add(float64(len(mmc) - len(mSeries.mmappedChunks)))
+	h.metrics.chunks.Add(float64(len(mmc) + len(oooMmc) - len(mSeries.mmappedChunks)))
 	mSeries.mmappedChunks = mmc
+	mSeries.oooMmappedChunks = oooMmc
 	// Cache the last mmapped chunk time, so we can skip calling append() for samples it will reject.
 	if len(mmc) == 0 {
 		mSeries.mmMaxTime = math.MinInt64
 	} else {
 		mSeries.mmMaxTime = mmc[len(mmc)-1].maxTime
 		h.updateMinMaxTime(mmc[0].minTime, mSeries.mmMaxTime)
+	}
+	if len(oooMmc) != 0 {
+		// mint and maxt can be in any chunk, they are not sorted.
+		mint, maxt := int64(math.MaxInt64), int64(math.MinInt64)
+		for _, ch := range oooMmc {
+			if ch.minTime < mint {
+				mint = ch.minTime
+			}
+			if ch.maxTime > maxt {
+				maxt = ch.maxTime
+			}
+		}
+		h.updateMinOOOMaxOOOTime(mint, maxt)
 	}
 
 	// Any samples replayed till now would already be compacted. Resetting the head chunk.
@@ -413,7 +427,7 @@ func (wp *walSubsetProcessor) reuseBuf() []record.RefSample {
 // processWALSamples adds the samples it receives to the head and passes
 // the buffer received to an output channel for reuse.
 // Samples before the minValidTime timestamp are discarded.
-func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks map[chunks.HeadSeriesRef][]*mmappedChunk) (unknownRefs, mmapOverlappingChunks uint64) {
+func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmappedChunks map[chunks.HeadSeriesRef][]*mmappedChunk) (unknownRefs, mmapOverlappingChunks uint64) {
 	defer close(wp.output)
 
 	minValidTime := h.minValidTime.Load()
@@ -422,7 +436,8 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks map[chunk
 	for in := range wp.input {
 		if in.existingSeries != nil {
 			mmc := mmappedChunks[in.walSeriesRef]
-			if h.resetSeriesWithMMappedChunks(in.existingSeries, mmc, in.walSeriesRef) {
+			oooMmc := oooMmappedChunks[in.walSeriesRef]
+			if h.resetSeriesWithMMappedChunks(in.existingSeries, mmc, oooMmc, in.walSeriesRef) {
 				mmapOverlappingChunks++
 			}
 			continue
@@ -600,7 +615,6 @@ func (h *Head) loadWbl(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 					mmapMarkerUnknownRefs.Inc()
 					continue
 				}
-
 				idx := uint64(ms.ref) % uint64(n)
 				// It is possible that some old sample is being processed in processWALSamples that
 				// could cause race below. So we wait for the goroutine to empty input the buffer and finish
