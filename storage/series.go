@@ -14,6 +14,7 @@
 package storage
 
 import (
+	"fmt"
 	"math"
 	"sort"
 
@@ -252,28 +253,32 @@ func NewSeriesToChunkEncoder(series Series) ChunkSeries {
 }
 
 func (s *seriesToChunkEncoder) Iterator() chunks.Iterator {
-	// TODO(beorn7): Add Histogram support.
-	chk := chunkenc.NewXORChunk()
-	app, err := chk.Appender()
-	if err != nil {
-		return errChunksIterator{err: err}
-	}
+	var (
+		chk chunkenc.Chunk
+		app chunkenc.Appender
+		err error
+	)
 	mint := int64(math.MaxInt64)
 	maxt := int64(math.MinInt64)
 
 	chks := []chunks.Meta{}
-
 	i := 0
 	seriesIter := s.Series.Iterator()
-	for seriesIter.Next() == chunkenc.ValFloat {
-		// Create a new chunk if too many samples in the current one.
-		if i >= seriesToChunkEncoderSplit {
-			chks = append(chks, chunks.Meta{
-				MinTime: mint,
-				MaxTime: maxt,
-				Chunk:   chk,
-			})
-			chk = chunkenc.NewXORChunk()
+	lastType := chunkenc.ValNone
+	for typ := seriesIter.Next(); typ != chunkenc.ValNone; typ = seriesIter.Next() {
+		if typ != lastType || i >= seriesToChunkEncoderSplit {
+			// Create a new chunk if the sample type changed or too many samples in the current one.
+			if chk != nil {
+				chks = append(chks, chunks.Meta{
+					MinTime: mint,
+					MaxTime: maxt,
+					Chunk:   chk,
+				})
+			}
+			chk, err = chunkenc.NewEmptyChunk(typ.ChunkEncoding())
+			if err != nil {
+				return errChunksIterator{err: err}
+			}
 			app, err = chk.Appender()
 			if err != nil {
 				return errChunksIterator{err: err}
@@ -282,9 +287,23 @@ func (s *seriesToChunkEncoder) Iterator() chunks.Iterator {
 			// maxt is immediately overwritten below which is why setting it here won't make a difference.
 			i = 0
 		}
+		lastType = typ
 
-		t, v := seriesIter.At()
-		app.Append(t, v)
+		var (
+			t int64
+			v float64
+			h *histogram.Histogram
+		)
+		switch typ {
+		case chunkenc.ValFloat:
+			t, v = seriesIter.At()
+			app.Append(t, v)
+		case chunkenc.ValHistogram:
+			t, h = seriesIter.AtHistogram()
+			app.AppendHistogram(t, h)
+		default:
+			return errChunksIterator{err: fmt.Errorf("unknown sample type %s", typ.String())}
+		}
 
 		maxt = t
 		if mint == math.MaxInt64 {
@@ -296,11 +315,13 @@ func (s *seriesToChunkEncoder) Iterator() chunks.Iterator {
 		return errChunksIterator{err: err}
 	}
 
-	chks = append(chks, chunks.Meta{
-		MinTime: mint,
-		MaxTime: maxt,
-		Chunk:   chk,
-	})
+	if chk != nil {
+		chks = append(chks, chunks.Meta{
+			MinTime: mint,
+			MaxTime: maxt,
+			Chunk:   chk,
+		})
+	}
 
 	return NewListChunkSeriesIterator(chks...)
 }
