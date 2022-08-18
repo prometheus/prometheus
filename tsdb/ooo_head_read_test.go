@@ -432,20 +432,24 @@ func TestOOOHeadChunkReader_LabelValues(t *testing.T) {
 			matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "foo", "bar1")}
 			values, err := oh.LabelValues("foo", matchers...)
 			require.NoError(t, err)
+			sort.Strings(values)
 			require.Equal(t, tc.expValues1, values)
 
 			matchers = []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotRegexp, "foo", "^bar.")}
 			values, err = oh.LabelValues("foo", matchers...)
 			require.NoError(t, err)
+			sort.Strings(values)
 			require.Equal(t, tc.expValues2, values)
 
 			matchers = []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.")}
 			values, err = oh.LabelValues("foo", matchers...)
 			require.NoError(t, err)
+			sort.Strings(values)
 			require.Equal(t, tc.expValues3, values)
 
 			values, err = oh.LabelValues("foo")
 			require.NoError(t, err)
+			sort.Strings(values)
 			require.Equal(t, tc.expValues4, values)
 		})
 	}

@@ -815,7 +815,6 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	headOpts.OutOfOrderTimeWindow.Store(opts.OutOfOrderTimeWindow)
 	headOpts.OutOfOrderCapMin.Store(opts.OutOfOrderCapMin)
 	headOpts.OutOfOrderCapMax.Store(opts.OutOfOrderCapMax)
-	headOpts.NewChunkDiskMapper = opts.NewChunkDiskMapper
 	if opts.IsolationDisabled {
 		// We only override this flag if isolation is disabled at DB level. We use the default otherwise.
 		headOpts.IsolationDisabled = opts.IsolationDisabled

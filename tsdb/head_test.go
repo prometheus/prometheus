@@ -1691,14 +1691,7 @@ func TestHeadReadWriterRepair(t *testing.T) {
 		// take effect without another chunk being written.
 		files, err := os.ReadDir(mmappedChunksDir(dir))
 		require.NoError(t, err)
-
-		// With the new chunk disk mapper we only expect 6 files, because the last call to "CutNewFile()" won't
-		// take effect until the next chunk is being written.
-		if opts.NewChunkDiskMapper {
-			require.Equal(t, 6, len(files))
-		} else {
-			require.Equal(t, 7, len(files))
-		}
+		require.Equal(t, 6, len(files))
 
 		// Corrupt the 4th file by writing a random byte to series ref.
 		f, err := os.OpenFile(filepath.Join(mmappedChunksDir(dir), files[3].Name()), os.O_WRONLY, 0o666)

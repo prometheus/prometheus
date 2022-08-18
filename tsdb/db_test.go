@@ -3861,9 +3861,19 @@ func TestOOOCompaction(t *testing.T) {
 	verifySamples(db.Blocks()[1], 120, 239)
 	verifySamples(db.Blocks()[2], 240, 310)
 
-	// Because of OOO compaction, we already have 2 m-map files.
+	// Because of OOO compaction, the current mmap file will end.
 	// All the chunks are only in the first file.
+	// Add a dummy mmap chunk to create a new mmap file.
 	mmapDir := mmappedChunksDir(db.head.opts.ChunkDirRoot)
+	files, err = os.ReadDir(mmapDir)
+	require.NoError(t, err)
+	require.Len(t, files, 1)
+	waitC := make(chan struct{})
+	db.head.chunkDiskMapper.WriteChunk(100, 0, 0, chunkenc.NewXORChunk(), func(err error) {
+		require.NoError(t, err)
+		close(waitC)
+	})
+	<-waitC
 	files, err = os.ReadDir(mmapDir)
 	require.NoError(t, err)
 	require.Len(t, files, 2)
@@ -4652,8 +4662,16 @@ func TestOOOCompactionFailure(t *testing.T) {
 	require.Equal(t, len(db.Blocks()), 3)
 	require.Equal(t, oldBlocks, db.Blocks())
 
-	// Because of OOO compaction, we have a second m-map file now
+	// Because of OOO compaction, the current mmap file will end.
 	// All the chunks are only in the first file.
+	// Add a dummy mmap chunk to create a new mmap file.
+	verifyMmapFiles("000001")
+	waitC := make(chan struct{})
+	db.head.chunkDiskMapper.WriteChunk(100, 0, 0, chunkenc.NewXORChunk(), func(err error) {
+		require.NoError(t, err)
+		close(waitC)
+	})
+	<-waitC
 	verifyMmapFiles("000001", "000002")
 
 	// All but last WBL file will be deleted.
