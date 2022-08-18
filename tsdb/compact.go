@@ -512,10 +512,6 @@ func (c *LeveledCompactor) CompactOOO(dest string, oooHead *OOOCompactionHead) (
 func (c *LeveledCompactor) compactOOO(dest string, oooHead *OOOCompactionHead) (_ []ulid.ULID, err error) {
 	start := time.Now()
 
-	if err != nil {
-		return nil, err
-	}
-
 	outBlocksMetas := make([]*BlockMeta, 0)
 	outBlocksTime := ulid.Now() // Make all out blocks share the same timestamp in the ULID.
 	blockSize := oooHead.ChunkRange()
