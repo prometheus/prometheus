@@ -3422,21 +3422,11 @@ func TestSparseHistogram_HistogramQuantile(t *testing.T) {
 		},
 	}
 
+	test, err := NewTest(t, "")
+	require.NoError(t, err)
+	t.Cleanup(test.Close)
 	for i, c := range cases {
 		t.Run(c.text, func(t *testing.T) {
-			// TODO(codesome): Check if TSDB is handling these histograms properly.
-			// When testing, the 3rd case of both positive and
-			// negative buckets did not get any histograms in the
-			// query engine when the storage was shared, even with a
-			// good time gap between all histograms.  It is possible
-			// that the recode is failing. It was fine between the
-			// first two cases where there is a change of bucket
-			// layout.
-
-			test, err := NewTest(t, "")
-			require.NoError(t, err)
-			t.Cleanup(test.Close)
-
 			seriesName := "sparse_histogram_series"
 			lbls := labels.FromStrings("__name__", seriesName)
 			engine := test.QueryEngine()
@@ -3461,7 +3451,7 @@ func TestSparseHistogram_HistogramQuantile(t *testing.T) {
 
 					require.Len(t, vector, 1)
 					require.Nil(t, vector[0].H)
-					require.Equal(t, sc.value, vector[0].V)
+					require.True(t, almostEqual(sc.value, vector[0].V))
 				})
 			}
 		})
