@@ -581,10 +581,6 @@ func (c *LeveledCompactor) compactOOO(dest string, oooHead *OOOCompactionHead, s
 
 	start := time.Now()
 
-	if err != nil {
-		return nil, err
-	}
-
 	// The first dimension of outBlocks determines the time based splitting (i.e. outBlocks[i] has blocks all for the same time range).
 	// The second dimension of outBlocks determines the label based shard (i.e. outBlocks[i][j] is the (j+1)th shard.
 	// During ingestion of samples we can identify which ooo blocks will exists so that
