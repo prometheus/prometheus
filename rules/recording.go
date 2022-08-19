@@ -89,7 +89,7 @@ func (rule *RecordingRule) Eval(ctx context.Context, ts time.Time, query QueryFu
 			lb.Set(l.Name, l.Value)
 		}
 
-		sample.Metric = lb.Labels()
+		sample.Metric = lb.Labels(nil)
 	}
 
 	// Check that the rule does not produce identical metrics after applying

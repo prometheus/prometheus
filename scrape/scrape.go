@@ -676,7 +676,7 @@ func mutateSampleLabels(lset labels.Labels, target *Target, honor bool, rc []*re
 		}
 	}
 
-	res := lb.Labels()
+	res := lb.Labels(nil)
 
 	if len(rc) > 0 {
 		res = relabel.Process(res, rc...)
@@ -716,7 +716,7 @@ func mutateReportSampleLabels(lset labels.Labels, target *Target) labels.Labels 
 		lb.Set(l.Name, l.Value)
 	}
 
-	return lb.Labels()
+	return lb.Labels(nil)
 }
 
 // appender returns an appender for ingested samples from the target.

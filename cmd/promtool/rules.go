@@ -165,7 +165,7 @@ func (importer *ruleImporter) importRule(ctx context.Context, ruleExpr, ruleName
 				lb.Set(labels.MetricName, ruleName)
 
 				for _, value := range sample.Values {
-					if err := app.add(ctx, lb.Labels(), timestamp.FromTime(value.Timestamp.Time()), float64(value.Value)); err != nil {
+					if err := app.add(ctx, lb.Labels(nil), timestamp.FromTime(value.Timestamp.Time()), float64(value.Value)); err != nil {
 						return fmt.Errorf("add: %w", err)
 					}
 				}

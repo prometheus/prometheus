@@ -813,7 +813,7 @@ func funcHistogramQuantile(vals []parser.Value, args parser.Expressions, enh *Ev
 		if !ok {
 			el.Metric = labels.NewBuilder(el.Metric).
 				Del(excludedLabels...).
-				Labels()
+				Labels(nil)
 
 			mb = &metricWithBuckets{el.Metric, nil}
 			enh.signatureToMetricWithBuckets[string(enh.lblBuf)] = mb
@@ -912,7 +912,7 @@ func funcLabelReplace(vals []parser.Value, args parser.Expressions, enh *EvalNod
 				if len(res) > 0 {
 					lb.Set(dst, string(res))
 				}
-				outMetric = lb.Labels()
+				outMetric = lb.Labels(nil)
 				enh.Dmn[h] = outMetric
 			}
 		}
@@ -980,7 +980,7 @@ func funcLabelJoin(vals []parser.Value, args parser.Expressions, enh *EvalNodeHe
 				lb.Set(dst, strval)
 			}
 
-			outMetric = lb.Labels()
+			outMetric = lb.Labels(nil)
 			enh.Dmn[h] = outMetric
 		}
 
@@ -1233,14 +1233,14 @@ func createLabelsForAbsentFunction(expr parser.Expr) labels.Labels {
 			continue
 		}
 		if ma.Type == labels.MatchEqual && !m.Has(ma.Name) {
-			m = labels.NewBuilder(m).Set(ma.Name, ma.Value).Labels()
+			m = labels.NewBuilder(m).Set(ma.Name, ma.Value).Labels(nil)
 		} else {
 			empty = append(empty, ma.Name)
 		}
 	}
 
 	for _, v := range empty {
-		m = labels.NewBuilder(m).Del(v).Labels()
+		m = labels.NewBuilder(m).Del(v).Labels(nil)
 	}
 	return m
 }

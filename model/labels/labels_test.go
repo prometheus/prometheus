@@ -722,7 +722,7 @@ func TestBuilder(t *testing.T) {
 				b.Keep(tcase.keep...)
 			}
 			b.Del(tcase.del...)
-			require.Equal(t, tcase.want, b.Labels())
+			require.Equal(t, tcase.want, b.Labels(tcase.base))
 		})
 	}
 }
