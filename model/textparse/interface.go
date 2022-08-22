@@ -30,7 +30,8 @@ type Parser interface {
 
 	// Histogram returns the bytes of a series with a sparse histogram as a
 	// value, the timestamp if set, and the histogram in the current sample.
-	// Depending of the value of the fields, the histogram could be a float histogram.
+	// Depending on the parsed input, the function returns an (integer) Histogram
+	// or a FloatHistogram, with the respective other return value being nil.
 	Histogram() ([]byte, *int64, *histogram.Histogram, *histogram.FloatHistogram)
 
 	// Help returns the metric name and help text in the current entry.
