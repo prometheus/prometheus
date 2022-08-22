@@ -39,12 +39,12 @@ type SampleSlice []Sample
 func (s SampleSlice) Get(i int) Sample { return s[i] }
 func (s SampleSlice) Len() int         { return len(s) }
 
-// ChunkFromSamples requires sll samples to have the same type.
+// ChunkFromSamples requires all samples to have the same type.
 func ChunkFromSamples(s []Sample) chunks.Meta {
 	return ChunkFromSamplesGeneric(SampleSlice(s))
 }
 
-// ChunkFromSamplesGeneric requires sll samples to have the same type.
+// ChunkFromSamplesGeneric requires all samples to have the same type.
 func ChunkFromSamplesGeneric(s Samples) chunks.Meta {
 	mint, maxt := int64(0), int64(0)
 
