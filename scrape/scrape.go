@@ -319,7 +319,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed 
 			opts.interval,
 			opts.timeout,
 			options.ExtraMetrics,
-			options.AppendMetadataToWAL,
+			options.EnableMetadataStorage,
 			opts.target,
 			cache,
 			options.PassMetadataInContext,

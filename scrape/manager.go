@@ -129,8 +129,9 @@ type Options struct {
 	// Option used by downstream scraper users like OpenTelemetry Collector
 	// to help lookup metric metadata. Should be false for Prometheus.
 	PassMetadataInContext bool
-	// Option to experimentally append metadata to the WAL.
-	AppendMetadataToWAL bool
+	// Option to enable the experimental in-memory metadata storage and append
+	// metadata to the WAL.
+	EnableMetadataStorage bool
 	// Option to increase the interval used by scrape manager to throttle target groups updates.
 	DiscoveryReloadInterval model.Duration
 
