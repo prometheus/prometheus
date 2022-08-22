@@ -141,6 +141,35 @@ func (p *ProtobufParser) Histogram() ([]byte, *int64, *histogram.Histogram, *his
 		ts = m.GetTimestampMs()
 		h  = m.GetHistogram()
 	)
+	if isFloatHistogram(h) {
+		fh := histogram.FloatHistogram{
+			Count:           h.GetSampleCountFloat(),
+			Sum:             h.GetSampleSum(),
+			ZeroThreshold:   h.GetZeroThreshold(),
+			ZeroCount:       h.GetZeroCountFloat(),
+			Schema:          h.GetSchema(),
+			PositiveSpans:   make([]histogram.Span, len(h.GetPositiveSpan())),
+			PositiveBuckets: h.GetPositiveCount(),
+			NegativeSpans:   make([]histogram.Span, len(h.GetNegativeSpan())),
+			NegativeBuckets: h.GetNegativeCount(),
+		}
+		for i, span := range h.GetPositiveSpan() {
+			fh.PositiveSpans[i].Offset = span.GetOffset()
+			fh.PositiveSpans[i].Length = span.GetLength()
+		}
+		for i, span := range h.GetNegativeSpan() {
+			fh.NegativeSpans[i].Offset = span.GetOffset()
+			fh.NegativeSpans[i].Length = span.GetLength()
+		}
+		if ts != 0 {
+			return p.metricBytes.Bytes(), &ts, nil, &fh
+		}
+		// Nasty hack: Assume that ts==0 means no timestamp. That's not true in
+		// general, but proto3 has no distinction between unset and
+		// default. Need to avoid in the final format.
+		return p.metricBytes.Bytes(), nil, nil, &fh
+	}
+
 	sh := histogram.Histogram{
 		Count:           h.GetSampleCount(),
 		Sum:             h.GetSampleSum(),
@@ -161,40 +190,10 @@ func (p *ProtobufParser) Histogram() ([]byte, *int64, *histogram.Histogram, *his
 		sh.NegativeSpans[i].Length = span.GetLength()
 	}
 
-	if isFloatHistogram(h) {
-		fh := histogram.FloatHistogram{
-			Count:           h.GetSampleCountFloat(),
-			Sum:             sh.Sum,
-			ZeroThreshold:   sh.ZeroThreshold,
-			ZeroCount:       h.GetZeroCountFloat(),
-			Schema:          sh.Schema,
-			PositiveSpans:   sh.Copy().PositiveSpans,
-			PositiveBuckets: castInt64ToFloat64(sh.PositiveBuckets),
-			NegativeSpans:   sh.Copy().NegativeSpans,
-			NegativeBuckets: castInt64ToFloat64(sh.NegativeBuckets),
-		}
-		if ts != 0 {
-			return p.metricBytes.Bytes(), &ts, nil, &fh
-		}
-		// Nasty hack: Assume that ts==0 means no timestamp. That's not true in
-		// general, but proto3 has no distinction between unset and
-		// default. Need to avoid in the final format.
-		return p.metricBytes.Bytes(), nil, nil, &fh
-	}
-
 	if ts != 0 {
 		return p.metricBytes.Bytes(), &ts, &sh, nil
 	}
 	return p.metricBytes.Bytes(), nil, &sh, nil
-}
-
-// cast array of int64 to array of float64
-func castInt64ToFloat64(a []int64) []float64 {
-	b := make([]float64, len(a))
-	for i, v := range a {
-		b[i] = float64(v)
-	}
-	return b
 }
 
 // Help returns the metric name and help text in the current entry.
