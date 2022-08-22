@@ -1481,20 +1481,22 @@ func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string,
 	// labelset is for a new series or the metadata for this series has just
 	// changed. It returns a boolean based on whether the metadata was updated.
 	updateMetadata := func(lset labels.Labels, isNewSeries bool) bool {
-		var wasMetaUpdated bool
-		if sl.appendMetadataToWAL {
-			sl.cache.metaMtx.Lock()
-			metaEntry, metaOk := sl.cache.metadata[yoloString([]byte(lset.Get(labels.MetricName)))]
-			if metaOk && (isNewSeries || metaEntry.lastIterChange == sl.cache.iter) {
-				metadataChanged = true
-				meta.Type = metaEntry.Type
-				meta.Unit = metaEntry.Unit
-				meta.Help = metaEntry.Help
-				wasMetaUpdated = true
-			}
-			sl.cache.metaMtx.Unlock()
+		if !sl.appendMetadataToWAL {
+			return false
 		}
-		return wasMetaUpdated
+
+		sl.cache.metaMtx.Lock()
+		defer sl.cache.metaMtx.Unlock()
+		metaEntry, metaOk := sl.cache.metadata[yoloString([]byte(lset.Get(labels.MetricName)))]
+		if metaOk && (isNewSeries || metaEntry.lastIterChange == sl.cache.iter) {
+			metadataChanged = true
+			meta.Type = metaEntry.Type
+			meta.Unit = metaEntry.Unit
+			meta.Help = metaEntry.Help
+			return true
+		}
+		sl.cache.metaMtx.Unlock()
+		return false
 	}
 
 	// Take an appender with limits.
