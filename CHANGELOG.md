@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.38.0-rc.0 / 2022-08-11
+## 2.38.0 / 2022-08-16
 
 * [FEATURE]: Web: Add a `/api/v1/format_query` HTTP API endpoint that allows pretty-formatting PromQL expressions. #11036 #10544 #11005
 * [FEATURE]: UI: Add support for formatting PromQL expressions in the UI. #11039
