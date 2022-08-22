@@ -14,6 +14,8 @@
 package tsdbutil
 
 import (
+	"fmt"
+
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -37,10 +39,12 @@ type SampleSlice []Sample
 func (s SampleSlice) Get(i int) Sample { return s[i] }
 func (s SampleSlice) Len() int         { return len(s) }
 
+// ChunkFromSamples requires all samples to have the same type.
 func ChunkFromSamples(s []Sample) chunks.Meta {
 	return ChunkFromSamplesGeneric(SampleSlice(s))
 }
 
+// ChunkFromSamplesGeneric requires all samples to have the same type.
 func ChunkFromSamplesGeneric(s Samples) chunks.Meta {
 	mint, maxt := int64(0), int64(0)
 
@@ -48,11 +52,29 @@ func ChunkFromSamplesGeneric(s Samples) chunks.Meta {
 		mint, maxt = s.Get(0).T(), s.Get(s.Len()-1).T()
 	}
 
-	c := chunkenc.NewXORChunk()
+	if s.Len() == 0 {
+		return chunks.Meta{
+			Chunk: chunkenc.NewXORChunk(),
+		}
+	}
+
+	sampleType := s.Get(0).Type()
+	c, err := chunkenc.NewEmptyChunk(sampleType.ChunkEncoding())
+	if err != nil {
+		panic(err) // TODO(codesome): dont panic.
+	}
+
 	ca, _ := c.Appender()
 
 	for i := 0; i < s.Len(); i++ {
-		ca.Append(s.Get(i).T(), s.Get(i).V())
+		switch sampleType {
+		case chunkenc.ValFloat:
+			ca.Append(s.Get(i).T(), s.Get(i).V())
+		case chunkenc.ValHistogram:
+			ca.AppendHistogram(s.Get(i).T(), s.Get(i).H())
+		default:
+			panic(fmt.Sprintf("unknown sample type %s", sampleType.String()))
+		}
 	}
 	return chunks.Meta{
 		MinTime: mint,

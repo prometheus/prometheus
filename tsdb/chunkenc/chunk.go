@@ -146,6 +146,17 @@ func (v ValueType) String() string {
 	}
 }
 
+func (v ValueType) ChunkEncoding() Encoding {
+	switch v {
+	case ValFloat:
+		return EncXOR
+	case ValHistogram:
+		return EncHistogram
+	default:
+		return EncNone
+	}
+}
+
 // MockSeriesIterator returns an iterator for a mock series with custom timeStamps and values.
 func MockSeriesIterator(timestamps []int64, values []float64) Iterator {
 	return &mockSeriesIterator{

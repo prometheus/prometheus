@@ -23,6 +23,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
@@ -384,6 +385,22 @@ func TestMergeChunkQuerierWithNoVerticalChunkSeriesMerger(t *testing.T) {
 func TestCompactingChunkSeriesMerger(t *testing.T) {
 	m := NewCompactingChunkSeriesMerger(ChainedSeriesMerge)
 
+	// histogramSample returns a histogram that is unique to the ts.
+	histogramSample := func(ts int64) sample {
+		idx := ts + 1
+		return sample{t: ts, h: &histogram.Histogram{
+			Schema:          2,
+			ZeroThreshold:   0.001,
+			ZeroCount:       2 * uint64(idx),
+			Count:           5 * uint64(idx),
+			Sum:             12.34 * float64(idx),
+			PositiveSpans:   []histogram.Span{{Offset: 1, Length: 2}, {Offset: 2, Length: 1}},
+			NegativeSpans:   []histogram.Span{{Offset: 2, Length: 1}, {Offset: 1, Length: 2}},
+			PositiveBuckets: []int64{1 * idx, -1 * idx, 3 * idx},
+			NegativeBuckets: []int64{1 * idx, 2 * idx, 3 * idx},
+		}}
+	}
+
 	for _, tc := range []struct {
 		name     string
 		input    []ChunkSeries
@@ -484,6 +501,32 @@ func TestCompactingChunkSeriesMerger(t *testing.T) {
 			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
 				tsdbutil.GenerateSamples(0, 120),
 				tsdbutil.GenerateSamples(120, 30),
+			),
+		},
+		{
+			name: "histogram chunks overlapping",
+			input: []ChunkSeries{
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{histogramSample(0), histogramSample(5)}, []tsdbutil.Sample{histogramSample(10), histogramSample(15)}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{histogramSample(2), histogramSample(20)}, []tsdbutil.Sample{histogramSample(25), histogramSample(30)}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{histogramSample(18), histogramSample(26)}, []tsdbutil.Sample{histogramSample(31), histogramSample(35)}),
+			},
+			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+				[]tsdbutil.Sample{histogramSample(0), histogramSample(2), histogramSample(5), histogramSample(10), histogramSample(15), histogramSample(18), histogramSample(20), histogramSample(25), histogramSample(26), histogramSample(30)},
+				[]tsdbutil.Sample{histogramSample(31), histogramSample(35)},
+			),
+		},
+		{
+			name: "histogram chunks overlapping with float chunks",
+			input: []ChunkSeries{
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{histogramSample(0), histogramSample(5)}, []tsdbutil.Sample{histogramSample(10), histogramSample(15)}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{1, 1, nil, nil}, sample{12, 12, nil, nil}}, []tsdbutil.Sample{sample{14, 14, nil, nil}}),
+			},
+			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+				[]tsdbutil.Sample{histogramSample(0)},
+				[]tsdbutil.Sample{sample{1, 1, nil, nil}},
+				[]tsdbutil.Sample{histogramSample(5), histogramSample(10)},
+				[]tsdbutil.Sample{sample{12, 12, nil, nil}, sample{14, 14, nil, nil}},
+				[]tsdbutil.Sample{histogramSample(15)},
 			),
 		},
 	} {
