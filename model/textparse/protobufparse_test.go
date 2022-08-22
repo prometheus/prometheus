@@ -205,11 +205,11 @@ metric: <
       offset: 23
       length: 4
     >
-    negative_delta: 1
-    negative_delta: 3
-    negative_delta: -2
-    negative_delta: -1
-    negative_delta: 1
+    negative_count: 1.0
+    negative_count: 3.0
+    negative_count: -2.0
+    negative_count: -1.0
+    negative_count: 1.0
     positive_span: <
       offset: -161
       length: 1
@@ -218,10 +218,10 @@ metric: <
       offset: 8
       length: 3
     >
-    positive_delta: 1
-    positive_delta: 2
-    positive_delta: -1
-    positive_delta: -1
+    positive_count: 1.0
+    positive_count: 2.0
+    positive_count: -1.0
+    positive_count: -1.0
   >
   timestamp_ms: 1234568
 >
