@@ -512,14 +512,6 @@ func isNativeHistogram(h *dto.Histogram) bool {
 // isFloatHistogram checks that processed histogram is a float histogram if it
 // some of the histogram defined with float values
 func isFloatHistogram(h *dto.Histogram) bool {
-	floatBuckets := false
-	for _, b := range h.Bucket {
-		if b.CumulativeCountFloat > 0 {
-			floatBuckets = true
-			break
-		}
-	}
 	return h.GetSampleCountFloat() > 0 ||
-		h.GetZeroCountFloat() > 0 ||
-		floatBuckets
+		h.GetZeroCountFloat() > 0
 }
