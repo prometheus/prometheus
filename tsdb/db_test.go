@@ -4020,5 +4020,4 @@ func TestQueryHistogramFromBlocks(t *testing.T) {
 			genHistogramAndFloatSeries(10, 5, minute(89), minute(140), minute(3)),
 		)
 	})
-
 }
