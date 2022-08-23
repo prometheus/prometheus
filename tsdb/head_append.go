@@ -553,7 +553,7 @@ func ValidateHistogram(h *histogram.Histogram) error {
 	if c := negativeCount + positiveCount; c > h.Count {
 		return errors.Wrap(
 			storage.ErrHistogramCountNotBigEnough,
-			fmt.Sprintf("%d observations found in buckets, but overall count is %d", c, h.Count),
+			fmt.Sprintf("%d observations found in buckets, but the Count field is %d", c, h.Count),
 		)
 	}
 
@@ -712,7 +712,6 @@ func (a *headAppender) Commit() (err error) {
 	defer a.head.putHistogramBuffer(a.histograms)
 	defer a.head.putMetadataBuffer(a.metadata)
 	defer a.head.iso.closeAppend(a.appendID)
-
 	total := len(a.samples)
 	var series *memSeries
 	for i, s := range a.samples {
