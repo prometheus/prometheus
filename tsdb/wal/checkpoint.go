@@ -38,12 +38,12 @@ import (
 // CheckpointStats returns stats about a created checkpoint.
 type CheckpointStats struct {
 	DroppedSeries     int
-	DroppedSamples    int
+	DroppedSamples    int // Includes histograms.
 	DroppedTombstones int
 	DroppedExemplars  int
 	DroppedMetadata   int
 	TotalSeries       int // Processed series including dropped ones.
-	TotalSamples      int // Processed samples including dropped ones.
+	TotalSamples      int // Processed samples and histograms including dropped ones.
 	TotalTombstones   int // Processed tombstones including dropped ones.
 	TotalExemplars    int // Processed exemplars including dropped ones.
 	TotalMetadata     int // Processed metadata including dropped ones.
@@ -148,20 +148,21 @@ func Checkpoint(logger log.Logger, w *WAL, from, to int, keep func(id chunks.Hea
 	r := NewReader(sgmReader)
 
 	var (
-		series    []record.RefSeries
-		samples   []record.RefSample
-		tstones   []tombstones.Stone
-		exemplars []record.RefExemplar
-		metadata  []record.RefMetadata
-		dec       record.Decoder
-		enc       record.Encoder
-		buf       []byte
-		recs      [][]byte
+		series     []record.RefSeries
+		samples    []record.RefSample
+		histograms []record.RefHistogram
+		tstones    []tombstones.Stone
+		exemplars  []record.RefExemplar
+		metadata   []record.RefMetadata
+		dec        record.Decoder
+		enc        record.Encoder
+		buf        []byte
+		recs       [][]byte
 
 		latestMetadataMap = make(map[chunks.HeadSeriesRef]record.RefMetadata)
 	)
 	for r.Next() {
-		series, samples, tstones, exemplars, metadata = series[:0], samples[:0], tstones[:0], exemplars[:0], metadata[:0]
+		series, samples, histograms, tstones, exemplars, metadata = series[:0], samples[:0], histograms[:0], tstones[:0], exemplars[:0], metadata[:0]
 
 		// We don't reset the buffer since we batch up multiple records
 		// before writing them to the checkpoint.
@@ -202,6 +203,24 @@ func Checkpoint(logger log.Logger, w *WAL, from, to int, keep func(id chunks.Hea
 			}
 			if len(repl) > 0 {
 				buf = enc.Samples(repl, buf)
+			}
+			stats.TotalSamples += len(samples)
+			stats.DroppedSamples += len(samples) - len(repl)
+
+		case record.Histograms:
+			histograms, err = dec.Histograms(rec, histograms)
+			if err != nil {
+				return nil, errors.Wrap(err, "decode samples")
+			}
+			// Drop irrelevant histograms in place.
+			repl := histograms[:0]
+			for _, h := range histograms {
+				if h.T >= mint {
+					repl = append(repl, h)
+				}
+			}
+			if len(repl) > 0 {
+				buf = enc.Histograms(repl, buf)
 			}
 			stats.TotalSamples += len(samples)
 			stats.DroppedSamples += len(samples) - len(repl)

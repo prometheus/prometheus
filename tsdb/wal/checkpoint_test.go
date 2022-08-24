@@ -26,6 +26,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/stretchr/testify/require"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
@@ -110,6 +111,21 @@ func TestDeleteCheckpoints(t *testing.T) {
 }
 
 func TestCheckpoint(t *testing.T) {
+	makeHistogram := func(i int) *histogram.Histogram {
+		return &histogram.Histogram{
+			Count:         5 + uint64(i*4),
+			ZeroCount:     2 + uint64(i),
+			ZeroThreshold: 0.001,
+			Sum:           18.4 * float64(i+1),
+			Schema:        1,
+			PositiveSpans: []histogram.Span{
+				{Offset: 0, Length: 2},
+				{Offset: 1, Length: 2},
+			},
+			PositiveBuckets: []int64{int64(i + 1), 1, -1, 0},
+		}
+	}
+
 	for _, compress := range []bool{false, true} {
 		t.Run(fmt.Sprintf("compress=%t", compress), func(t *testing.T) {
 			dir := t.TempDir()
@@ -138,6 +154,7 @@ func TestCheckpoint(t *testing.T) {
 			w, err = NewSize(nil, nil, dir, 64*1024, compress)
 			require.NoError(t, err)
 
+			samplesInWAL, histogramsInWAL := 0, 0
 			var last int64
 			for i := 0; ; i++ {
 				_, n, err := Segments(w.Dir())
@@ -173,6 +190,16 @@ func TestCheckpoint(t *testing.T) {
 					{Ref: 3, T: last + 30000, V: float64(i)},
 				}, nil)
 				require.NoError(t, w.Log(b))
+				samplesInWAL += 4
+				h := makeHistogram(i)
+				b = enc.Histograms([]record.RefHistogram{
+					{Ref: 0, T: last, H: h},
+					{Ref: 1, T: last + 10000, H: h},
+					{Ref: 2, T: last + 20000, H: h},
+					{Ref: 3, T: last + 30000, H: h},
+				}, nil)
+				require.NoError(t, w.Log(b))
+				histogramsInWAL += 4
 
 				b = enc.Exemplars([]record.RefExemplar{
 					{Ref: 1, T: last, V: float64(i), Labels: labels.FromStrings("traceID", fmt.Sprintf("trace-%d", i))},
@@ -215,6 +242,7 @@ func TestCheckpoint(t *testing.T) {
 			var metadata []record.RefMetadata
 			r := NewReader(sr)
 
+			samplesInCheckpoint, histogramsInCheckpoint := 0, 0
 			for r.Next() {
 				rec := r.Record()
 
@@ -228,6 +256,14 @@ func TestCheckpoint(t *testing.T) {
 					for _, s := range samples {
 						require.GreaterOrEqual(t, s.T, last/2, "sample with wrong timestamp")
 					}
+					samplesInCheckpoint += len(samples)
+				case record.Histograms:
+					histograms, err := dec.Histograms(rec, nil)
+					require.NoError(t, err)
+					for _, h := range histograms {
+						require.GreaterOrEqual(t, h.T, last/2, "histogram with wrong timestamp")
+					}
+					histogramsInCheckpoint += len(histograms)
 				case record.Exemplars:
 					exemplars, err := dec.Exemplars(rec, nil)
 					require.NoError(t, err)
@@ -240,6 +276,11 @@ func TestCheckpoint(t *testing.T) {
 				}
 			}
 			require.NoError(t, r.Err())
+			// Making sure we replayed some samples. We expect >50% samples to be still present.
+			require.Greater(t, float64(samplesInCheckpoint)/float64(samplesInWAL), 0.5)
+			require.Less(t, float64(samplesInCheckpoint)/float64(samplesInWAL), 0.8)
+			require.Greater(t, float64(histogramsInCheckpoint)/float64(histogramsInWAL), 0.5)
+			require.Less(t, float64(histogramsInCheckpoint)/float64(histogramsInWAL), 0.8)
 
 			expectedRefSeries := []record.RefSeries{
 				{Ref: 0, Labels: labels.FromStrings("a", "b", "c", "0")},
