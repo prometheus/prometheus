@@ -44,10 +44,10 @@ const (
 	Tombstones Type = 3
 	// Exemplars is used to match WAL records of type Exemplars.
 	Exemplars Type = 4
-	// Histograms is used to match WAL records of type Histograms.
-	Histograms Type = 5
 	// Metadata is used to match WAL records of type Metadata.
 	Metadata Type = 6
+	// Histograms is used to match WAL records of type Histograms.
+	Histograms Type = 7
 )
 
 func (rt Type) String() string {
