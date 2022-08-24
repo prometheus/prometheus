@@ -1,0 +1,26 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "refresh",
+    srcs = ["refresh.go"],
+    importpath = "github.com/example/project/discovery/refresh",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_go_kit_log//:log",
+        "@com_github_go_kit_log//level",
+        "@com_github_prometheus_client_golang//prometheus",
+        "@com_github_prometheus_prometheus//discovery/targetgroup:go_default_library",
+    ],
+)
+
+go_test(
+    name = "refresh_test",
+    srcs = ["refresh_test.go"],
+    embed = [":refresh"],
+    deps = [
+        "@com_github_prometheus_common//model",
+        "@com_github_prometheus_prometheus//discovery/targetgroup:go_default_library",
+        "@com_github_stretchr_testify//require",
+        "@org_uber_go_goleak//:goleak",
+    ],
+)

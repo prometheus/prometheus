@@ -1,0 +1,55 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "agent",
+    srcs = [
+        "db.go",
+        "series.go",
+    ],
+    importpath = "github.com/example/project/tsdb/agent",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_go_kit_log//:log",
+        "@com_github_go_kit_log//level",
+        "@com_github_pkg_errors//:errors",
+        "@com_github_prometheus_client_golang//prometheus",
+        "@com_github_prometheus_common//model",
+        "@com_github_prometheus_prometheus//model/exemplar:go_default_library",
+        "@com_github_prometheus_prometheus//model/labels:go_default_library",
+        "@com_github_prometheus_prometheus//model/timestamp:go_default_library",
+        "@com_github_prometheus_prometheus//storage:go_default_library",
+        "@com_github_prometheus_prometheus//storage/remote:go_default_library",
+        "@com_github_prometheus_prometheus//tsdb:go_default_library",
+        "@com_github_prometheus_prometheus//tsdb/chunks:go_default_library",
+        "@com_github_prometheus_prometheus//tsdb/errors:go_default_library",
+        "@com_github_prometheus_prometheus//tsdb/record:go_default_library",
+        "@com_github_prometheus_prometheus//tsdb/tsdbutil:go_default_library",
+        "@com_github_prometheus_prometheus//tsdb/wal:go_default_library",
+        "@org_uber_go_atomic//:atomic",
+    ],
+)
+
+go_test(
+    name = "agent_test",
+    srcs = [
+        "db_test.go",
+        "series_test.go",
+    ],
+    embed = [":agent"],
+    deps = [
+        "@com_github_go_kit_log//:log",
+        "@com_github_prometheus_client_golang//prometheus",
+        "@com_github_prometheus_client_model//go",
+        "@com_github_prometheus_prometheus//model/exemplar:go_default_library",
+        "@com_github_prometheus_prometheus//model/labels:go_default_library",
+        "@com_github_prometheus_prometheus//storage:go_default_library",
+        "@com_github_prometheus_prometheus//storage/remote:go_default_library",
+        "@com_github_prometheus_prometheus//tsdb:go_default_library",
+        "@com_github_prometheus_prometheus//tsdb/chunks:go_default_library",
+        "@com_github_prometheus_prometheus//tsdb/record:go_default_library",
+        "@com_github_prometheus_prometheus//tsdb/tsdbutil:go_default_library",
+        "@com_github_prometheus_prometheus//tsdb/wal:go_default_library",
+        "@com_github_prometheus_prometheus//util/testutil:go_default_library",
+        "@com_github_stretchr_testify//require",
+    ],
+)

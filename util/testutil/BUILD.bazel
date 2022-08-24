@@ -1,0 +1,20 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "testutil",
+    srcs = [
+        "context.go",
+        "directory.go",
+        "logging.go",
+        "port.go",
+        "roundtrip.go",
+        "testing.go",
+    ],
+    importpath = "github.com/example/project/util/testutil",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_go_kit_log//:log",
+        "@com_github_stretchr_testify//require",
+        "@org_uber_go_goleak//:goleak",
+    ],
+)

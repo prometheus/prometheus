@@ -1,0 +1,28 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "runtime",
+    srcs = [
+        "limits_default.go",
+        "limits_windows.go",
+        "statfs.go",
+        "statfs_default.go",
+        "statfs_linux_386.go",
+        "statfs_uint32.go",
+        "uname_default.go",
+        "uname_linux.go",
+        "vmlimits_default.go",
+        "vmlimits_openbsd.go",
+    ],
+    importpath = "github.com/example/project/util/runtime",
+    visibility = ["//visibility:public"],
+    deps = select({
+        "@io_bazel_rules_go//go/platform:android": [
+            "@org_golang_x_sys//unix",
+        ],
+        "@io_bazel_rules_go//go/platform:linux": [
+            "@org_golang_x_sys//unix",
+        ],
+        "//conditions:default": [],
+    }),
+)

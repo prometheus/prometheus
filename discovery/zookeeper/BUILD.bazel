@@ -1,0 +1,28 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "zookeeper",
+    srcs = ["zookeeper.go"],
+    importpath = "github.com/example/project/discovery/zookeeper",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_go_kit_log//:log",
+        "@com_github_go_zookeeper_zk//:zk",
+        "@com_github_pkg_errors//:errors",
+        "@com_github_prometheus_common//model",
+        "@com_github_prometheus_prometheus//discovery:go_default_library",
+        "@com_github_prometheus_prometheus//discovery/targetgroup:go_default_library",
+        "@com_github_prometheus_prometheus//util/strutil:go_default_library",
+        "@com_github_prometheus_prometheus//util/treecache:go_default_library",
+    ],
+)
+
+go_test(
+    name = "zookeeper_test",
+    srcs = ["zookeeper_test.go"],
+    embed = [":zookeeper"],
+    deps = [
+        "@com_github_prometheus_common//model",
+        "@org_uber_go_goleak//:goleak",
+    ],
+)

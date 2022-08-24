@@ -1,0 +1,37 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "scaleway",
+    srcs = [
+        "baremetal.go",
+        "instance.go",
+        "scaleway.go",
+    ],
+    importpath = "github.com/example/project/discovery/scaleway",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_go_kit_log//:log",
+        "@com_github_pkg_errors//:errors",
+        "@com_github_prometheus_common//config",
+        "@com_github_prometheus_common//model",
+        "@com_github_prometheus_common//version",
+        "@com_github_prometheus_prometheus//discovery:go_default_library",
+        "@com_github_prometheus_prometheus//discovery/refresh:go_default_library",
+        "@com_github_prometheus_prometheus//discovery/targetgroup:go_default_library",
+        "@com_github_scaleway_scaleway_sdk_go//api/baremetal/v1:baremetal",
+        "@com_github_scaleway_scaleway_sdk_go//api/instance/v1:instance",
+        "@com_github_scaleway_scaleway_sdk_go//scw",
+    ],
+)
+
+go_test(
+    name = "scaleway_test",
+    srcs = ["instance_test.go"],
+    data = glob(["testdata/**"]),
+    embed = [":scaleway"],
+    deps = [
+        "@com_github_prometheus_common//model",
+        "@com_github_stretchr_testify//require",
+        "@in_gopkg_yaml_v2//:yaml_v2",
+    ],
+)

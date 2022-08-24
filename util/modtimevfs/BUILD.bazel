@@ -1,0 +1,8 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "modtimevfs",
+    srcs = ["modtimevfs.go"],
+    importpath = "github.com/example/project/util/modtimevfs",
+    visibility = ["//visibility:public"],
+)

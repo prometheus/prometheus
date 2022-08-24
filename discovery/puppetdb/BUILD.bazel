@@ -1,0 +1,36 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "puppetdb",
+    srcs = [
+        "puppetdb.go",
+        "resources.go",
+    ],
+    importpath = "github.com/example/project/discovery/puppetdb",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_go_kit_log//:log",
+        "@com_github_grafana_regexp//:regexp",
+        "@com_github_pkg_errors//:errors",
+        "@com_github_prometheus_common//config",
+        "@com_github_prometheus_common//model",
+        "@com_github_prometheus_common//version",
+        "@com_github_prometheus_prometheus//discovery:go_default_library",
+        "@com_github_prometheus_prometheus//discovery/refresh:go_default_library",
+        "@com_github_prometheus_prometheus//discovery/targetgroup:go_default_library",
+        "@com_github_prometheus_prometheus//util/strutil:go_default_library",
+    ],
+)
+
+go_test(
+    name = "puppetdb_test",
+    srcs = ["puppetdb_test.go"],
+    embed = [":puppetdb"],
+    deps = [
+        "@com_github_go_kit_log//:log",
+        "@com_github_prometheus_common//config",
+        "@com_github_prometheus_common//model",
+        "@com_github_prometheus_prometheus//discovery/targetgroup:go_default_library",
+        "@com_github_stretchr_testify//require",
+    ],
+)

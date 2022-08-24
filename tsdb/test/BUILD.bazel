@@ -1,0 +1,15 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_test")
+
+go_test(
+    name = "test_test",
+    srcs = [
+        "conv_test.go",
+        "hash_test.go",
+        "labels_test.go",
+    ],
+    deps = [
+        "@com_github_cespare_xxhash_v2//:xxhash",
+        "@com_github_dgryski_go_sip13//:go-sip13",
+        "@com_github_prometheus_prometheus//model/labels:go_default_library",
+    ],
+)

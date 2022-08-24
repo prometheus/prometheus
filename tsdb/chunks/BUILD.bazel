@@ -1,0 +1,38 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "chunks",
+    srcs = [
+        "chunk_write_queue.go",
+        "chunks.go",
+        "head_chunks.go",
+        "head_chunks_other.go",
+        "head_chunks_windows.go",
+    ],
+    importpath = "github.com/example/project/tsdb/chunks",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_dennwc_varint//:varint",
+        "@com_github_pkg_errors//:errors",
+        "@com_github_prometheus_client_golang//prometheus",
+        "@com_github_prometheus_prometheus//tsdb/chunkenc:go_default_library",
+        "@com_github_prometheus_prometheus//tsdb/errors:go_default_library",
+        "@com_github_prometheus_prometheus//tsdb/fileutil:go_default_library",
+        "@org_uber_go_atomic//:atomic",
+    ],
+)
+
+go_test(
+    name = "chunks_test",
+    srcs = [
+        "chunk_write_queue_test.go",
+        "chunks_test.go",
+        "head_chunks_test.go",
+    ],
+    embed = [":chunks"],
+    deps = [
+        "@com_github_prometheus_prometheus//tsdb/chunkenc:go_default_library",
+        "@com_github_stretchr_testify//require",
+        "@org_uber_go_atomic//:atomic",
+    ],
+)

@@ -1,0 +1,30 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "template",
+    srcs = ["template.go"],
+    importpath = "github.com/example/project/template",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_grafana_regexp//:regexp",
+        "@com_github_pkg_errors//:errors",
+        "@com_github_prometheus_client_golang//prometheus",
+        "@com_github_prometheus_common//model",
+        "@com_github_prometheus_prometheus//promql:go_default_library",
+        "@com_github_prometheus_prometheus//util/strutil:go_default_library",
+    ],
+)
+
+go_test(
+    name = "template_test",
+    srcs = [
+        "template_amd64_test.go",
+        "template_test.go",
+    ],
+    embed = [":template"],
+    deps = [
+        "@com_github_prometheus_prometheus//model/labels:go_default_library",
+        "@com_github_prometheus_prometheus//promql:go_default_library",
+        "@com_github_stretchr_testify//require",
+    ],
+)

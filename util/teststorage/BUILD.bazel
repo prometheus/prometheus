@@ -1,0 +1,17 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "teststorage",
+    srcs = ["storage.go"],
+    importpath = "github.com/example/project/util/teststorage",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_prometheus_client_golang//prometheus",
+        "@com_github_prometheus_prometheus//model/exemplar:go_default_library",
+        "@com_github_prometheus_prometheus//model/labels:go_default_library",
+        "@com_github_prometheus_prometheus//storage:go_default_library",
+        "@com_github_prometheus_prometheus//tsdb:go_default_library",
+        "@com_github_prometheus_prometheus//util/testutil:go_default_library",
+        "@com_github_stretchr_testify//require",
+    ],
+)

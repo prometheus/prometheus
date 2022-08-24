@@ -1,0 +1,29 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "httputil",
+    srcs = [
+        "compression.go",
+        "context.go",
+        "cors.go",
+    ],
+    importpath = "github.com/example/project/util/httputil",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_grafana_regexp//:regexp",
+        "@com_github_prometheus_prometheus//promql:go_default_library",
+    ],
+)
+
+go_test(
+    name = "httputil_test",
+    srcs = [
+        "compression_test.go",
+        "cors_test.go",
+    ],
+    embed = [":httputil"],
+    deps = [
+        "@com_github_grafana_regexp//:regexp",
+        "@com_github_stretchr_testify//require",
+    ],
+)

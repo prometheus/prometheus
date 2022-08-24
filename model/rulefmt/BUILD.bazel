@@ -1,0 +1,27 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "rulefmt",
+    srcs = ["rulefmt.go"],
+    importpath = "github.com/example/project/model/rulefmt",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_pkg_errors//:errors",
+        "@com_github_prometheus_common//model",
+        "@com_github_prometheus_prometheus//model/timestamp:go_default_library",
+        "@com_github_prometheus_prometheus//promql/parser:go_default_library",
+        "@com_github_prometheus_prometheus//template:go_default_library",
+        "@in_gopkg_yaml_v3//:yaml_v3",
+    ],
+)
+
+go_test(
+    name = "rulefmt_test",
+    srcs = ["rulefmt_test.go"],
+    data = glob(["testdata/**"]),
+    embed = [":rulefmt"],
+    deps = [
+        "@com_github_stretchr_testify//require",
+        "@in_gopkg_yaml_v3//:yaml_v3",
+    ],
+)

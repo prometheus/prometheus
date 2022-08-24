@@ -1,0 +1,28 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "marathon",
+    srcs = ["marathon.go"],
+    importpath = "github.com/example/project/discovery/marathon",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_go_kit_log//:log",
+        "@com_github_pkg_errors//:errors",
+        "@com_github_prometheus_common//config",
+        "@com_github_prometheus_common//model",
+        "@com_github_prometheus_prometheus//discovery:go_default_library",
+        "@com_github_prometheus_prometheus//discovery/refresh:go_default_library",
+        "@com_github_prometheus_prometheus//discovery/targetgroup:go_default_library",
+        "@com_github_prometheus_prometheus//util/strutil:go_default_library",
+    ],
+)
+
+go_test(
+    name = "marathon_test",
+    srcs = ["marathon_test.go"],
+    embed = [":marathon"],
+    deps = [
+        "@com_github_prometheus_common//model",
+        "@com_github_prometheus_prometheus//discovery/targetgroup:go_default_library",
+    ],
+)

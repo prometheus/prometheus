@@ -1,0 +1,28 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "stats",
+    srcs = [
+        "query_stats.go",
+        "timer.go",
+    ],
+    importpath = "github.com/example/project/util/stats",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_prometheus_client_golang//prometheus",
+        "@io_opentelemetry_go_otel//:otel",
+        "@io_opentelemetry_go_otel_trace//:trace",
+    ],
+)
+
+go_test(
+    name = "stats_test",
+    srcs = ["stats_test.go"],
+    embed = [":stats"],
+    deps = [
+        "@com_github_grafana_regexp//:regexp",
+        "@com_github_prometheus_client_golang//prometheus",
+        "@com_github_prometheus_prometheus//util/testutil:go_default_library",
+        "@com_github_stretchr_testify//require",
+    ],
+)

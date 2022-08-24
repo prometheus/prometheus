@@ -1,0 +1,52 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "wal",
+    srcs = [
+        "checkpoint.go",
+        "live_reader.go",
+        "reader.go",
+        "wal.go",
+        "watcher.go",
+    ],
+    importpath = "github.com/example/project/tsdb/wal",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_go_kit_log//:log",
+        "@com_github_go_kit_log//level",
+        "@com_github_golang_snappy//:snappy",
+        "@com_github_pkg_errors//:errors",
+        "@com_github_prometheus_client_golang//prometheus",
+        "@com_github_prometheus_prometheus//model/timestamp:go_default_library",
+        "@com_github_prometheus_prometheus//tsdb/chunks:go_default_library",
+        "@com_github_prometheus_prometheus//tsdb/errors:go_default_library",
+        "@com_github_prometheus_prometheus//tsdb/fileutil:go_default_library",
+        "@com_github_prometheus_prometheus//tsdb/record:go_default_library",
+        "@com_github_prometheus_prometheus//tsdb/tombstones:go_default_library",
+    ],
+)
+
+go_test(
+    name = "wal_test",
+    srcs = [
+        "checkpoint_test.go",
+        "reader_test.go",
+        "wal_test.go",
+        "watcher_test.go",
+    ],
+    embed = [":wal"],
+    deps = [
+        "@com_github_go_kit_log//:log",
+        "@com_github_pkg_errors//:errors",
+        "@com_github_prometheus_client_golang//prometheus",
+        "@com_github_prometheus_client_golang//prometheus/testutil",
+        "@com_github_prometheus_prometheus//model/labels:go_default_library",
+        "@com_github_prometheus_prometheus//tsdb/chunks:go_default_library",
+        "@com_github_prometheus_prometheus//tsdb/errors:go_default_library",
+        "@com_github_prometheus_prometheus//tsdb/fileutil:go_default_library",
+        "@com_github_prometheus_prometheus//tsdb/record:go_default_library",
+        "@com_github_prometheus_prometheus//util/testutil:go_default_library",
+        "@com_github_stretchr_testify//require",
+        "@org_uber_go_goleak//:goleak",
+    ],
+)

@@ -1,0 +1,49 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "moby",
+    srcs = [
+        "docker.go",
+        "dockerswarm.go",
+        "network.go",
+        "nodes.go",
+        "services.go",
+        "tasks.go",
+    ],
+    importpath = "github.com/example/project/discovery/moby",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_docker_docker//api/types",
+        "@com_github_docker_docker//api/types/filters",
+        "@com_github_docker_docker//api/types/swarm",
+        "@com_github_docker_docker//client",
+        "@com_github_go_kit_log//:log",
+        "@com_github_prometheus_common//config",
+        "@com_github_prometheus_common//model",
+        "@com_github_prometheus_common//version",
+        "@com_github_prometheus_prometheus//discovery:go_default_library",
+        "@com_github_prometheus_prometheus//discovery/refresh:go_default_library",
+        "@com_github_prometheus_prometheus//discovery/targetgroup:go_default_library",
+        "@com_github_prometheus_prometheus//util/strutil:go_default_library",
+    ],
+)
+
+go_test(
+    name = "moby_test",
+    srcs = [
+        "docker_test.go",
+        "mock_test.go",
+        "nodes_test.go",
+        "services_test.go",
+        "tasks_test.go",
+    ],
+    data = glob(["testdata/**"]),
+    embed = [":moby"],
+    deps = [
+        "@com_github_go_kit_log//:log",
+        "@com_github_prometheus_common//model",
+        "@com_github_prometheus_prometheus//util/strutil:go_default_library",
+        "@com_github_stretchr_testify//require",
+        "@in_gopkg_yaml_v2//:yaml_v2",
+    ],
+)

@@ -1,0 +1,29 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "tombstones",
+    srcs = ["tombstones.go"],
+    importpath = "github.com/example/project/tsdb/tombstones",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_go_kit_log//:log",
+        "@com_github_go_kit_log//level",
+        "@com_github_pkg_errors//:errors",
+        "@com_github_prometheus_prometheus//storage:go_default_library",
+        "@com_github_prometheus_prometheus//tsdb/encoding:go_default_library",
+        "@com_github_prometheus_prometheus//tsdb/errors:go_default_library",
+        "@com_github_prometheus_prometheus//tsdb/fileutil:go_default_library",
+    ],
+)
+
+go_test(
+    name = "tombstones_test",
+    srcs = ["tombstones_test.go"],
+    embed = [":tombstones"],
+    deps = [
+        "@com_github_go_kit_log//:log",
+        "@com_github_prometheus_prometheus//storage:go_default_library",
+        "@com_github_stretchr_testify//require",
+        "@org_uber_go_goleak//:goleak",
+    ],
+)

@@ -1,0 +1,31 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "logging",
+    srcs = [
+        "dedupe.go",
+        "file.go",
+        "ratelimit.go",
+    ],
+    importpath = "github.com/example/project/util/logging",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_go_kit_log//:log",
+        "@com_github_go_logfmt_logfmt//:logfmt",
+        "@com_github_pkg_errors//:errors",
+        "@org_golang_x_time//rate",
+    ],
+)
+
+go_test(
+    name = "logging_test",
+    srcs = [
+        "dedupe_test.go",
+        "file_test.go",
+    ],
+    embed = [":logging"],
+    deps = [
+        "@com_github_grafana_regexp//:regexp",
+        "@com_github_stretchr_testify//require",
+    ],
+)

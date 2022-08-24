@@ -1,0 +1,78 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "fileutil",
+    srcs = [
+        "dir.go",
+        "dir_unix.go",
+        "dir_windows.go",
+        "fileutil.go",
+        "flock.go",
+        "flock_plan9.go",
+        "flock_solaris.go",
+        "flock_unix.go",
+        "flock_windows.go",
+        "mmap.go",
+        "mmap_386.go",
+        "mmap_amd64.go",
+        "mmap_unix.go",
+        "mmap_windows.go",
+        "preallocate.go",
+        "preallocate_darwin.go",
+        "preallocate_linux.go",
+        "preallocate_other.go",
+        "sync.go",
+        "sync_darwin.go",
+        "sync_linux.go",
+    ],
+    importpath = "github.com/example/project/tsdb/fileutil",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_pkg_errors//:errors",
+    ] + select({
+        "@io_bazel_rules_go//go/platform:aix": [
+            "@org_golang_x_sys//unix",
+        ],
+        "@io_bazel_rules_go//go/platform:android": [
+            "@org_golang_x_sys//unix",
+        ],
+        "@io_bazel_rules_go//go/platform:darwin": [
+            "@org_golang_x_sys//unix",
+        ],
+        "@io_bazel_rules_go//go/platform:dragonfly": [
+            "@org_golang_x_sys//unix",
+        ],
+        "@io_bazel_rules_go//go/platform:freebsd": [
+            "@org_golang_x_sys//unix",
+        ],
+        "@io_bazel_rules_go//go/platform:illumos": [
+            "@org_golang_x_sys//unix",
+        ],
+        "@io_bazel_rules_go//go/platform:ios": [
+            "@org_golang_x_sys//unix",
+        ],
+        "@io_bazel_rules_go//go/platform:js": [
+            "@org_golang_x_sys//unix",
+        ],
+        "@io_bazel_rules_go//go/platform:linux": [
+            "@org_golang_x_sys//unix",
+        ],
+        "@io_bazel_rules_go//go/platform:netbsd": [
+            "@org_golang_x_sys//unix",
+        ],
+        "@io_bazel_rules_go//go/platform:openbsd": [
+            "@org_golang_x_sys//unix",
+        ],
+        "@io_bazel_rules_go//go/platform:solaris": [
+            "@org_golang_x_sys//unix",
+        ],
+        "//conditions:default": [],
+    }),
+)
+
+go_test(
+    name = "fileutil_test",
+    srcs = ["flock_test.go"],
+    embed = [":fileutil"],
+    deps = ["@com_github_prometheus_prometheus//util/testutil:go_default_library"],
+)

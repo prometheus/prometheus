@@ -1,0 +1,23 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "chunkenc",
+    srcs = [
+        "bstream.go",
+        "chunk.go",
+        "xor.go",
+    ],
+    importpath = "github.com/example/project/tsdb/chunkenc",
+    visibility = ["//visibility:public"],
+    deps = ["@com_github_pkg_errors//:errors"],
+)
+
+go_test(
+    name = "chunkenc_test",
+    srcs = [
+        "bstream_test.go",
+        "chunk_test.go",
+    ],
+    embed = [":chunkenc"],
+    deps = ["@com_github_stretchr_testify//require"],
+)

@@ -1,0 +1,44 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "openstack",
+    srcs = [
+        "hypervisor.go",
+        "instance.go",
+        "openstack.go",
+    ],
+    importpath = "github.com/example/project/discovery/openstack",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_go_kit_log//:log",
+        "@com_github_go_kit_log//level",
+        "@com_github_gophercloud_gophercloud//:gophercloud",
+        "@com_github_gophercloud_gophercloud//openstack",
+        "@com_github_gophercloud_gophercloud//openstack/compute/v2/extensions/floatingips",
+        "@com_github_gophercloud_gophercloud//openstack/compute/v2/extensions/hypervisors",
+        "@com_github_gophercloud_gophercloud//openstack/compute/v2/servers",
+        "@com_github_gophercloud_gophercloud//pagination",
+        "@com_github_mwitkow_go_conntrack//:go-conntrack",
+        "@com_github_pkg_errors//:errors",
+        "@com_github_prometheus_common//config",
+        "@com_github_prometheus_common//model",
+        "@com_github_prometheus_prometheus//discovery:go_default_library",
+        "@com_github_prometheus_prometheus//discovery/refresh:go_default_library",
+        "@com_github_prometheus_prometheus//discovery/targetgroup:go_default_library",
+        "@com_github_prometheus_prometheus//util/strutil:go_default_library",
+    ],
+)
+
+go_test(
+    name = "openstack_test",
+    srcs = [
+        "hypervisor_test.go",
+        "instance_test.go",
+        "mock_test.go",
+    ],
+    embed = [":openstack"],
+    deps = [
+        "@com_github_prometheus_common//model",
+        "@com_github_stretchr_testify//require",
+    ],
+)

@@ -1,0 +1,20 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "targetgroup",
+    srcs = ["targetgroup.go"],
+    importpath = "github.com/example/project/discovery/targetgroup",
+    visibility = ["//visibility:public"],
+    deps = ["@com_github_prometheus_common//model"],
+)
+
+go_test(
+    name = "targetgroup_test",
+    srcs = ["targetgroup_test.go"],
+    embed = [":targetgroup"],
+    deps = [
+        "@com_github_prometheus_common//model",
+        "@com_github_stretchr_testify//require",
+        "@in_gopkg_yaml_v2//:yaml_v2",
+    ],
+)

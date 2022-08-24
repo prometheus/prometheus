@@ -1,0 +1,53 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "storage",
+    srcs = [
+        "buffer.go",
+        "fanout.go",
+        "generic.go",
+        "interface.go",
+        "lazy.go",
+        "memoized_iterator.go",
+        "merge.go",
+        "noop.go",
+        "secondary.go",
+        "series.go",
+    ],
+    importpath = "github.com/example/project/storage",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_go_kit_log//:log",
+        "@com_github_go_kit_log//level",
+        "@com_github_pkg_errors//:errors",
+        "@com_github_prometheus_common//model",
+        "@com_github_prometheus_prometheus//model/exemplar:go_default_library",
+        "@com_github_prometheus_prometheus//model/labels:go_default_library",
+        "@com_github_prometheus_prometheus//tsdb/chunkenc:go_default_library",
+        "@com_github_prometheus_prometheus//tsdb/chunks:go_default_library",
+        "@com_github_prometheus_prometheus//tsdb/errors:go_default_library",
+        "@com_github_prometheus_prometheus//tsdb/tsdbutil:go_default_library",
+    ],
+)
+
+go_test(
+    name = "storage_test",
+    srcs = [
+        "buffer_test.go",
+        "fanout_test.go",
+        "memoized_iterator_test.go",
+        "merge_test.go",
+        "series_test.go",
+    ],
+    embed = [":storage"],
+    deps = [
+        "@com_github_pkg_errors//:errors",
+        "@com_github_prometheus_common//model",
+        "@com_github_prometheus_prometheus//model/labels:go_default_library",
+        "@com_github_prometheus_prometheus//storage:go_default_library",
+        "@com_github_prometheus_prometheus//tsdb/chunkenc:go_default_library",
+        "@com_github_prometheus_prometheus//tsdb/tsdbutil:go_default_library",
+        "@com_github_prometheus_prometheus//util/teststorage:go_default_library",
+        "@com_github_stretchr_testify//require",
+    ],
+)

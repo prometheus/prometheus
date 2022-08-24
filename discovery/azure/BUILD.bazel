@@ -1,0 +1,36 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "azure",
+    srcs = ["azure.go"],
+    importpath = "github.com/example/project/discovery/azure",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_azure_azure_sdk_for_go//services/compute/mgmt/2018-10-01/compute",
+        "@com_github_azure_azure_sdk_for_go//services/network/mgmt/2018-10-01/network",
+        "@com_github_azure_go_autorest_autorest//:autorest",
+        "@com_github_azure_go_autorest_autorest//azure",
+        "@com_github_azure_go_autorest_autorest_adal//:adal",
+        "@com_github_go_kit_log//:log",
+        "@com_github_go_kit_log//level",
+        "@com_github_pkg_errors//:errors",
+        "@com_github_prometheus_common//config",
+        "@com_github_prometheus_common//model",
+        "@com_github_prometheus_common//version",
+        "@com_github_prometheus_prometheus//discovery:go_default_library",
+        "@com_github_prometheus_prometheus//discovery/refresh:go_default_library",
+        "@com_github_prometheus_prometheus//discovery/targetgroup:go_default_library",
+        "@com_github_prometheus_prometheus//util/strutil:go_default_library",
+    ],
+)
+
+go_test(
+    name = "azure_test",
+    srcs = ["azure_test.go"],
+    embed = [":azure"],
+    deps = [
+        "@com_github_azure_azure_sdk_for_go//services/compute/mgmt/2018-10-01/compute",
+        "@com_github_stretchr_testify//require",
+        "@org_uber_go_goleak//:goleak",
+    ],
+)

@@ -1,0 +1,57 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "rules",
+    srcs = [
+        "alerting.go",
+        "manager.go",
+        "recording.go",
+    ],
+    importpath = "github.com/example/project/rules",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_go_kit_log//:log",
+        "@com_github_go_kit_log//level",
+        "@com_github_pkg_errors//:errors",
+        "@com_github_prometheus_client_golang//prometheus",
+        "@com_github_prometheus_common//model",
+        "@com_github_prometheus_prometheus//model/labels:go_default_library",
+        "@com_github_prometheus_prometheus//model/rulefmt:go_default_library",
+        "@com_github_prometheus_prometheus//model/timestamp:go_default_library",
+        "@com_github_prometheus_prometheus//model/value:go_default_library",
+        "@com_github_prometheus_prometheus//promql:go_default_library",
+        "@com_github_prometheus_prometheus//promql/parser:go_default_library",
+        "@com_github_prometheus_prometheus//storage:go_default_library",
+        "@com_github_prometheus_prometheus//template:go_default_library",
+        "@com_github_prometheus_prometheus//util/strutil:go_default_library",
+        "@in_gopkg_yaml_v2//:yaml_v2",
+        "@io_opentelemetry_go_otel//:otel",
+        "@io_opentelemetry_go_otel//attribute",
+    ],
+)
+
+go_test(
+    name = "rules_test",
+    srcs = [
+        "alerting_test.go",
+        "manager_test.go",
+        "recording_test.go",
+    ],
+    embed = [":rules"],
+    deps = [
+        "@com_github_go_kit_log//:log",
+        "@com_github_prometheus_client_golang//prometheus",
+        "@com_github_prometheus_common//model",
+        "@com_github_prometheus_prometheus//model/labels:go_default_library",
+        "@com_github_prometheus_prometheus//model/rulefmt:go_default_library",
+        "@com_github_prometheus_prometheus//model/timestamp:go_default_library",
+        "@com_github_prometheus_prometheus//model/value:go_default_library",
+        "@com_github_prometheus_prometheus//promql:go_default_library",
+        "@com_github_prometheus_prometheus//promql/parser:go_default_library",
+        "@com_github_prometheus_prometheus//storage:go_default_library",
+        "@com_github_prometheus_prometheus//util/teststorage:go_default_library",
+        "@com_github_stretchr_testify//require",
+        "@in_gopkg_yaml_v2//:yaml_v2",
+        "@org_uber_go_goleak//:goleak",
+    ],
+)

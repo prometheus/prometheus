@@ -1,0 +1,43 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "notifier",
+    srcs = ["notifier.go"],
+    importpath = "github.com/example/project/notifier",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_go_kit_log//:log",
+        "@com_github_go_kit_log//level",
+        "@com_github_go_openapi_strfmt//:strfmt",
+        "@com_github_pkg_errors//:errors",
+        "@com_github_prometheus_alertmanager//api/v2/models",
+        "@com_github_prometheus_client_golang//prometheus",
+        "@com_github_prometheus_common//config",
+        "@com_github_prometheus_common//model",
+        "@com_github_prometheus_common//version",
+        "@com_github_prometheus_prometheus//config:go_default_library",
+        "@com_github_prometheus_prometheus//discovery/targetgroup:go_default_library",
+        "@com_github_prometheus_prometheus//model/labels:go_default_library",
+        "@com_github_prometheus_prometheus//model/relabel:go_default_library",
+        "@org_uber_go_atomic//:atomic",
+    ],
+)
+
+go_test(
+    name = "notifier_test",
+    srcs = ["notifier_test.go"],
+    embed = [":notifier"],
+    deps = [
+        "@com_github_pkg_errors//:errors",
+        "@com_github_prometheus_alertmanager//api/v2/models",
+        "@com_github_prometheus_common//config",
+        "@com_github_prometheus_common//model",
+        "@com_github_prometheus_prometheus//config:go_default_library",
+        "@com_github_prometheus_prometheus//discovery/targetgroup:go_default_library",
+        "@com_github_prometheus_prometheus//model/labels:go_default_library",
+        "@com_github_prometheus_prometheus//model/relabel:go_default_library",
+        "@com_github_stretchr_testify//require",
+        "@in_gopkg_yaml_v2//:yaml_v2",
+        "@org_uber_go_atomic//:atomic",
+    ],
+)

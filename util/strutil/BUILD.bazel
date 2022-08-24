@@ -1,0 +1,22 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "strutil",
+    srcs = [
+        "quote.go",
+        "strconv.go",
+    ],
+    importpath = "github.com/example/project/util/strutil",
+    visibility = ["//visibility:public"],
+    deps = ["@com_github_grafana_regexp//:regexp"],
+)
+
+go_test(
+    name = "strutil_test",
+    srcs = [
+        "quote_test.go",
+        "strconv_test.go",
+    ],
+    embed = [":strutil"],
+    deps = ["@com_github_stretchr_testify//require"],
+)

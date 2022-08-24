@@ -1,0 +1,33 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
+
+go_library(
+    name = "remote_storage_adapter_lib",
+    srcs = ["main.go"],
+    importpath = "github.com/example/project/documentation/examples/remote_storage/remote_storage_adapter",
+    visibility = ["//visibility:private"],
+    deps = [
+        "@com_github_go_kit_log//:log",
+        "@com_github_go_kit_log//level",
+        "@com_github_gogo_protobuf//proto",
+        "@com_github_golang_snappy//:snappy",
+        "@com_github_influxdata_influxdb//client/v2:go_default_library",
+        "@com_github_pkg_errors//:errors",
+        "@com_github_prometheus_client_golang//prometheus",
+        "@com_github_prometheus_client_golang//prometheus/promhttp",
+        "@com_github_prometheus_common//model",
+        "@com_github_prometheus_common//promlog",
+        "@com_github_prometheus_common//promlog/flag",
+        "@com_github_prometheus_prometheus//prompb:go_default_library",
+        "@com_github_prometheus_prometheus//storage/remote:go_default_library",
+        "@com_github_prometheus_prometheus_documentation_examples_remote_storage//remote_storage_adapter/graphite:go_default_library",
+        "@com_github_prometheus_prometheus_documentation_examples_remote_storage//remote_storage_adapter/influxdb:go_default_library",
+        "@com_github_prometheus_prometheus_documentation_examples_remote_storage//remote_storage_adapter/opentsdb:go_default_library",
+        "@in_gopkg_alecthomas_kingpin_v2//:kingpin_v2",
+    ],
+)
+
+go_binary(
+    name = "remote_storage_adapter",
+    embed = [":remote_storage_adapter_lib"],
+    visibility = ["//visibility:public"],
+)

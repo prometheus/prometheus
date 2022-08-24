@@ -1,0 +1,15 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "pool",
+    srcs = ["pool.go"],
+    importpath = "github.com/example/project/util/pool",
+    visibility = ["//visibility:public"],
+)
+
+go_test(
+    name = "pool_test",
+    srcs = ["pool_test.go"],
+    embed = [":pool"],
+    deps = ["@com_github_stretchr_testify//require"],
+)

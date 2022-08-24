@@ -1,0 +1,26 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "adapter",
+    srcs = ["adapter.go"],
+    importpath = "github.com/example/project/documentation/examples/custom-sd/adapter",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_go_kit_log//:log",
+        "@com_github_go_kit_log//level",
+        "@com_github_prometheus_common//model",
+        "@com_github_prometheus_prometheus//discovery:go_default_library",
+        "@com_github_prometheus_prometheus//discovery/targetgroup:go_default_library",
+    ],
+)
+
+go_test(
+    name = "adapter_test",
+    srcs = ["adapter_test.go"],
+    embed = [":adapter"],
+    deps = [
+        "@com_github_prometheus_common//model",
+        "@com_github_prometheus_prometheus//discovery/targetgroup:go_default_library",
+        "@com_github_stretchr_testify//require",
+    ],
+)

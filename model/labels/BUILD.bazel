@@ -1,0 +1,33 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "labels",
+    srcs = [
+        "labels.go",
+        "matcher.go",
+        "regexp.go",
+        "test_utils.go",
+    ],
+    importpath = "github.com/example/project/model/labels",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_cespare_xxhash_v2//:xxhash",
+        "@com_github_grafana_regexp//:regexp",
+        "@com_github_grafana_regexp//syntax",
+        "@com_github_pkg_errors//:errors",
+    ],
+)
+
+go_test(
+    name = "labels_test",
+    srcs = [
+        "labels_test.go",
+        "matcher_test.go",
+        "regexp_test.go",
+    ],
+    embed = [":labels"],
+    deps = [
+        "@com_github_grafana_regexp//syntax",
+        "@com_github_stretchr_testify//require",
+    ],
+)

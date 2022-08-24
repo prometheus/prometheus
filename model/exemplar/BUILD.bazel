@@ -1,0 +1,9 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library")
+
+go_library(
+    name = "exemplar",
+    srcs = ["exemplar.go"],
+    importpath = "github.com/example/project/model/exemplar",
+    visibility = ["//visibility:public"],
+    deps = ["@com_github_prometheus_prometheus//model/labels:go_default_library"],
+)

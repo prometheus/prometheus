@@ -1,0 +1,26 @@
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+
+go_library(
+    name = "graphite",
+    srcs = [
+        "client.go",
+        "escape.go",
+    ],
+    importpath = "github.com/example/project/documentation/examples/remote_storage/remote_storage_adapter/graphite",
+    visibility = ["//visibility:public"],
+    deps = [
+        "@com_github_go_kit_log//:log",
+        "@com_github_go_kit_log//level",
+        "@com_github_prometheus_common//model",
+    ],
+)
+
+go_test(
+    name = "graphite_test",
+    srcs = ["client_test.go"],
+    embed = [":graphite"],
+    deps = [
+        "@com_github_prometheus_common//model",
+        "@com_github_stretchr_testify//require",
+    ],
+)
