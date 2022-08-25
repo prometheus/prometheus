@@ -141,7 +141,8 @@ func (p *ProtobufParser) Histogram() ([]byte, *int64, *histogram.Histogram, *his
 		ts = m.GetTimestampMs()
 		h  = m.GetHistogram()
 	)
-	if isFloatHistogram(h) {
+	if h.GetSampleCountFloat() > 0 || h.GetZeroCountFloat() > 0 {
+		// It is a float histogram.
 		fh := histogram.FloatHistogram{
 			Count:           h.GetSampleCountFloat(),
 			Sum:             h.GetSampleSum(),
