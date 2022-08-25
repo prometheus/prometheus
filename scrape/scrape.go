@@ -1513,7 +1513,7 @@ loop:
 		t := defTime
 		if isHistogram {
 			met, parsedTimestamp, h, _ = p.Histogram()
-			// TODO: ingest float histograms in tsdb
+			// TODO: ingest float histograms in tsdb.
 		} else {
 			met, parsedTimestamp, val = p.Series()
 		}
