@@ -1512,7 +1512,8 @@ loop:
 
 		t := defTime
 		if isHistogram {
-			met, parsedTimestamp, h = p.Histogram()
+			met, parsedTimestamp, h, _ = p.Histogram()
+			// TODO: ingest float histograms in tsdb.
 		} else {
 			met, parsedTimestamp, val = p.Series()
 		}
@@ -1564,7 +1565,9 @@ loop:
 		}
 
 		if isHistogram {
-			ref, err = app.AppendHistogram(ref, lset, t, h)
+			if h != nil {
+				ref, err = app.AppendHistogram(ref, lset, t, h)
+			}
 		} else {
 			ref, err = app.Append(ref, lset, t, val)
 		}
