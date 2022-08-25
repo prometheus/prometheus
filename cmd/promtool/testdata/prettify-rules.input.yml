@@ -1,0 +1,9 @@
+groups:
+  - name: Test
+    # Comment.
+    rules:
+      - record: service:prometheus_http_requests_total:joined # Comment.
+        # Comment.
+        expr: sum ( prometheus_http_requests_total ) by ( handler ) # Comment.
+      - alert: NodeClockSkewDetected # Comment.
+        expr: (node_timex_offset_seconds > 0.05 and deriv(node_timex_offset_seconds[5m]) >= 0) or (node_timex_offset_seconds < -0.05 and deriv(node_timex_offset_seconds[5m]) <= 0)

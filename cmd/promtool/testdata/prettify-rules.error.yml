@@ -1,0 +1,5 @@
+groups:
+  - name: Test
+    rules:
+      - record: error:rule
+        expr: sum ( prometheus_http_requests_total  by ( handler )
