@@ -508,10 +508,3 @@ func isNativeHistogram(h *dto.Histogram) bool {
 		h.GetZeroCount() > 0 ||
 		h.GetZeroThreshold() > 0
 }
-
-// isFloatHistogram checks that processed histogram is a float histogram if it
-// some of the histogram defined with float values
-func isFloatHistogram(h *dto.Histogram) bool {
-	return h.GetSampleCountFloat() > 0 ||
-		h.GetZeroCountFloat() > 0
-}
