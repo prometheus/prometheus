@@ -79,7 +79,7 @@ func (e *Encbuf) PutUvarintStr(s string) {
 	e.PutString(s)
 }
 
-// PutUvarintBytes writes a a variable length byte buffer.
+// PutUvarintBytes writes a variable length byte buffer.
 func (e *Encbuf) PutUvarintBytes(b []byte) {
 	e.PutUvarint(len(b))
 	e.PutBytes(b)
