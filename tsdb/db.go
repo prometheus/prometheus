@@ -318,7 +318,7 @@ type DBStats struct {
 }
 
 // NewDBStats returns a new DBStats object initialized using the
-// the new function from each component.
+// new function from each component.
 func NewDBStats() *DBStats {
 	return &DBStats{
 		Head: NewHeadStats(),
