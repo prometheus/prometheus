@@ -1661,7 +1661,6 @@ loop:
 	if appErrs.numExemplarOutOfOrder > 0 {
 		level.Warn(sl.l).Log("msg", "Error on ingesting out-of-order exemplars", "num_dropped", appErrs.numExemplarOutOfOrder)
 	}
-
 	if err == nil {
 		sl.cache.forEachStale(func(lset labels.Labels) bool {
 			// Series no longer exposed, mark it stale.
