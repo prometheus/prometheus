@@ -110,7 +110,7 @@ func TestRecord_EncodeDecode(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, exemplars, decExemplars)
 
-	histograms := []RefHistogram{
+	histograms := []RefHistogramSample{
 		{
 			Ref: 56,
 			T:   1234,
@@ -150,7 +150,7 @@ func TestRecord_EncodeDecode(t *testing.T) {
 		},
 	}
 
-	decHistograms, err := dec.Histograms(enc.Histograms(histograms, nil), nil)
+	decHistograms, err := dec.HistogramSamples(enc.HistogramSamples(histograms, nil), nil)
 	require.NoError(t, err)
 	require.Equal(t, histograms, decHistograms)
 }
@@ -218,7 +218,7 @@ func TestRecord_Corrupted(t *testing.T) {
 	})
 
 	t.Run("Test corrupted histogram record", func(t *testing.T) {
-		histograms := []RefHistogram{
+		histograms := []RefHistogramSample{
 			{
 				Ref: 56,
 				T:   1234,
@@ -237,8 +237,8 @@ func TestRecord_Corrupted(t *testing.T) {
 			},
 		}
 
-		corrupted := enc.Histograms(histograms, nil)[:8]
-		_, err := dec.Histograms(corrupted, nil)
+		corrupted := enc.HistogramSamples(histograms, nil)[:8]
+		_, err := dec.HistogramSamples(corrupted, nil)
 		require.Equal(t, errors.Cause(err), encoding.ErrInvalidSize)
 	})
 }
@@ -263,7 +263,7 @@ func TestRecord_Type(t *testing.T) {
 	recordType = dec.Type(enc.Metadata(metadata, nil))
 	require.Equal(t, Metadata, recordType)
 
-	histograms := []RefHistogram{
+	histograms := []RefHistogramSample{
 		{
 			Ref: 56,
 			T:   1234,
@@ -281,8 +281,8 @@ func TestRecord_Type(t *testing.T) {
 			},
 		},
 	}
-	recordType = dec.Type(enc.Histograms(histograms, nil))
-	require.Equal(t, Histograms, recordType)
+	recordType = dec.Type(enc.HistogramSamples(histograms, nil))
+	require.Equal(t, HistogramSamples, recordType)
 
 	recordType = dec.Type(nil)
 	require.Equal(t, Unknown, recordType)
