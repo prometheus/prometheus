@@ -192,7 +192,7 @@ func TestCheckpoint(t *testing.T) {
 				require.NoError(t, w.Log(b))
 				samplesInWAL += 4
 				h := makeHistogram(i)
-				b = enc.Histograms([]record.RefHistogram{
+				b = enc.HistogramSamples([]record.RefHistogramSample{
 					{Ref: 0, T: last, H: h},
 					{Ref: 1, T: last + 10000, H: h},
 					{Ref: 2, T: last + 20000, H: h},
@@ -257,8 +257,8 @@ func TestCheckpoint(t *testing.T) {
 						require.GreaterOrEqual(t, s.T, last/2, "sample with wrong timestamp")
 					}
 					samplesInCheckpoint += len(samples)
-				case record.Histograms:
-					histograms, err := dec.Histograms(rec, nil)
+				case record.HistogramSamples:
+					histograms, err := dec.HistogramSamples(rec, nil)
 					require.NoError(t, err)
 					for _, h := range histograms {
 						require.GreaterOrEqual(t, h.T, last/2, "histogram with wrong timestamp")

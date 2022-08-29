@@ -69,7 +69,7 @@ func (wtm *writeToMock) AppendExemplars(e []record.RefExemplar) bool {
 	return true
 }
 
-func (wtm *writeToMock) AppendHistograms(h []record.RefHistogram) bool {
+func (wtm *writeToMock) AppendHistograms(h []record.RefHistogramSample) bool {
 	wtm.histogramsAppended += len(h)
 	return true
 }
@@ -171,7 +171,7 @@ func TestTailSamples(t *testing.T) {
 
 				for j := 0; j < histogramsCount; j++ {
 					inner := rand.Intn(ref + 1)
-					histogram := enc.Histograms([]record.RefHistogram{{
+					histogram := enc.HistogramSamples([]record.RefHistogramSample{{
 						Ref: chunks.HeadSeriesRef(inner),
 						T:   now.UnixNano() + 1,
 						H: &histogram.Histogram{

@@ -104,7 +104,7 @@ func TestSampleDelivery(t *testing.T) {
 				series     []record.RefSeries
 				samples    []record.RefSample
 				exemplars  []record.RefExemplar
-				histograms []record.RefHistogram
+				histograms []record.RefHistogramSample
 			)
 
 			// Generates same series in both cases.
@@ -583,13 +583,13 @@ func createExemplars(numExemplars, numSeries int) ([]record.RefExemplar, []recor
 	return exemplars, series
 }
 
-func createHistograms(numSamples, numSeries int) ([]record.RefHistogram, []record.RefSeries) {
-	histograms := make([]record.RefHistogram, 0, numSamples)
+func createHistograms(numSamples, numSeries int) ([]record.RefHistogramSample, []record.RefSeries) {
+	histograms := make([]record.RefHistogramSample, 0, numSamples)
 	series := make([]record.RefSeries, 0, numSeries)
 	for i := 0; i < numSeries; i++ {
 		name := fmt.Sprintf("test_metric_%d", i)
 		for j := 0; j < numSamples; j++ {
-			h := record.RefHistogram{
+			h := record.RefHistogramSample{
 				Ref: chunks.HeadSeriesRef(i),
 				T:   int64(j),
 				H: &histogram.Histogram{
@@ -689,7 +689,7 @@ func (c *TestWriteClient) expectExemplars(ss []record.RefExemplar, series []reco
 	c.wg.Add(len(ss))
 }
 
-func (c *TestWriteClient) expectHistograms(hh []record.RefHistogram, series []record.RefSeries) {
+func (c *TestWriteClient) expectHistograms(hh []record.RefHistogramSample, series []record.RefSeries) {
 	if !c.withWaitGroup {
 		return
 	}

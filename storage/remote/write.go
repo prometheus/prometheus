@@ -50,7 +50,7 @@ var (
 		Namespace: namespace,
 		Subsystem: subsystem,
 		Name:      "histograms_in_total",
-		Help:      "Histograms in to remote storage, compare to histograms out for queue managers.",
+		Help:      "HistogramSamples in to remote storage, compare to histograms out for queue managers.",
 	})
 )
 

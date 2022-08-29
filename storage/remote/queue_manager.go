@@ -663,7 +663,7 @@ outer:
 	return true
 }
 
-func (t *QueueManager) AppendHistograms(histograms []record.RefHistogram) bool {
+func (t *QueueManager) AppendHistograms(histograms []record.RefHistogramSample) bool {
 	if !t.sendNativeHistograms {
 		return true
 	}
