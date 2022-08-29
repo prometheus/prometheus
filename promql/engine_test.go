@@ -3886,7 +3886,7 @@ func TestSparseHistogram_HistogramFraction(t *testing.T) {
 	}
 }
 
-func TestSparseHistogram_Sum_AddOperator(t *testing.T) {
+func TestSparseHistogram_Sum_Count_AddOperator(t *testing.T) {
 	// TODO(codesome): Integrate histograms into the PromQL testing framework
 	// and write more tests there.
 	cases := []struct {
@@ -3992,7 +3992,7 @@ func TestSparseHistogram_Sum_AddOperator(t *testing.T) {
 			}
 			require.NoError(t, app.Commit())
 
-			queryAndCheck := func(queryString string) {
+			queryAndCheck := func(queryString string, exp Vector) {
 				qry, err := engine.NewInstantQuery(test.Queryable(), nil, queryString, timestamp.Time(ts))
 				require.NoError(t, err)
 
@@ -4002,20 +4002,29 @@ func TestSparseHistogram_Sum_AddOperator(t *testing.T) {
 				vector, err := res.Vector()
 				require.NoError(t, err)
 
-				require.Len(t, vector, 1)
-				require.Equal(t, &c.expected, vector[0].H)
+				require.Equal(t, exp, vector)
 			}
 
 			// sum().
 			queryString := fmt.Sprintf("sum(%s)", seriesName)
-			queryAndCheck(queryString)
+			queryAndCheck(queryString, []Sample{
+				{Point{T: ts, H: &c.expected}, labels.Labels{}},
+			})
 
 			// + operator.
 			queryString = fmt.Sprintf(`%s{idx="0"}`, seriesName)
 			for idx := 1; idx < len(c.histograms); idx++ {
 				queryString += fmt.Sprintf(` + ignoring(idx) %s{idx="%d"}`, seriesName, idx)
 			}
-			queryAndCheck(queryString)
+			queryAndCheck(queryString, []Sample{
+				{Point{T: ts, H: &c.expected}, labels.Labels{}},
+			})
+
+			// count().
+			queryString = fmt.Sprintf("count(%s)", seriesName)
+			queryAndCheck(queryString, []Sample{
+				{Point{T: ts, V: 3}, labels.Labels{}},
+			})
 		})
 	}
 }
