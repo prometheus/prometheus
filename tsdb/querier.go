@@ -696,7 +696,6 @@ func (p *populateWithDelChunkSeriesIterator) Next() bool {
 	if !p.next() {
 		return false
 	}
-
 	p.curr = p.currChkMeta
 	if p.currDelIter == nil {
 		return true

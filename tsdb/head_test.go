@@ -3886,7 +3886,7 @@ func TestHistogramValidation(t *testing.T) {
 				NegativeBuckets: []int64{1},
 				PositiveBuckets: []int64{1},
 			},
-			errMsg: `2 observations found in buckets, but overall count is 0`,
+			errMsg: `2 observations found in buckets, but the Count field is 0`,
 		},
 	}
 
