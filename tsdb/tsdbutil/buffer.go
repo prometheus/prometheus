@@ -25,7 +25,7 @@ import (
 
 // BufferedSeriesIterator wraps an iterator with a look-back buffer.
 //
-// TODO(beorn7): BufferedSeriesIterator does not support Histograms or
+// TODO(beorn7): BufferedSeriesIterator does not support HistogramSamples or
 // FloatHistograms. Either add support or remove BufferedSeriesIterator
 // altogether (it seems unused).
 type BufferedSeriesIterator struct {

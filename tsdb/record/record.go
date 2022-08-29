@@ -47,7 +47,7 @@ const (
 	// Metadata is used to match WAL records of type Metadata.
 	Metadata Type = 6
 	// Histograms is used to match WAL records of type Histograms.
-	Histograms Type = 7
+	HistogramSamples Type = 7
 )
 
 func (rt Type) String() string {
@@ -60,8 +60,8 @@ func (rt Type) String() string {
 		return "tombstones"
 	case Exemplars:
 		return "exemplars"
-	case Histograms:
-		return "histograms"
+	case HistogramSamples:
+		return "histogram_samples"
 	case Metadata:
 		return "metadata"
 	default:
@@ -73,14 +73,14 @@ func (rt Type) String() string {
 type MetricType uint8
 
 const (
-	UnknownMT      MetricType = 0
-	Counter        MetricType = 1
-	Gauge          MetricType = 2
-	Histogram      MetricType = 3
-	GaugeHistogram MetricType = 4
-	Summary        MetricType = 5
-	Info           MetricType = 6
-	Stateset       MetricType = 7
+	UnknownMT       MetricType = 0
+	Counter         MetricType = 1
+	Gauge           MetricType = 2
+	HistogramSample MetricType = 3
+	GaugeHistogram  MetricType = 4
+	Summary         MetricType = 5
+	Info            MetricType = 6
+	Stateset        MetricType = 7
 )
 
 func GetMetricType(t textparse.MetricType) uint8 {
@@ -90,7 +90,7 @@ func GetMetricType(t textparse.MetricType) uint8 {
 	case textparse.MetricTypeGauge:
 		return uint8(Gauge)
 	case textparse.MetricTypeHistogram:
-		return uint8(Histogram)
+		return uint8(HistogramSample)
 	case textparse.MetricTypeGaugeHistogram:
 		return uint8(GaugeHistogram)
 	case textparse.MetricTypeSummary:
@@ -110,7 +110,7 @@ func ToTextparseMetricType(m uint8) textparse.MetricType {
 		return textparse.MetricTypeCounter
 	case uint8(Gauge):
 		return textparse.MetricTypeGauge
-	case uint8(Histogram):
+	case uint8(HistogramSample):
 		return textparse.MetricTypeHistogram
 	case uint8(GaugeHistogram):
 		return textparse.MetricTypeGaugeHistogram
@@ -140,7 +140,7 @@ type RefSeries struct {
 }
 
 // RefSample is a timestamp/value pair associated with a reference to a series.
-// TODO(beorn7): Perhaps make this "polymorphic", including histogram and float-histogram pointers? Then get rid of RefHistogram.
+// TODO(beorn7): Perhaps make this "polymorphic", including histogram and float-histogram pointers? Then get rid of RefHistogramSample.
 type RefSample struct {
 	Ref chunks.HeadSeriesRef
 	T   int64
@@ -163,8 +163,8 @@ type RefExemplar struct {
 	Labels labels.Labels
 }
 
-// RefHistogram is a histogram.
-type RefHistogram struct {
+// RefHistogramSample is a histogram.
+type RefHistogramSample struct {
 	Ref chunks.HeadSeriesRef
 	T   int64
 	H   *histogram.Histogram
@@ -181,7 +181,7 @@ func (d *Decoder) Type(rec []byte) Type {
 		return Unknown
 	}
 	switch t := Type(rec[0]); t {
-	case Series, Samples, Tombstones, Exemplars, Histograms, Metadata:
+	case Series, Samples, Tombstones, Exemplars, HistogramSamples, Metadata:
 		return t
 	}
 	return Unknown
@@ -367,10 +367,10 @@ func (d *Decoder) ExemplarsFromBuffer(dec *encoding.Decbuf, exemplars []RefExemp
 	return exemplars, nil
 }
 
-func (d *Decoder) Histograms(rec []byte, histograms []RefHistogram) ([]RefHistogram, error) {
+func (d *Decoder) HistogramSamples(rec []byte, histograms []RefHistogramSample) ([]RefHistogramSample, error) {
 	dec := encoding.Decbuf{B: rec}
 	t := Type(dec.Byte())
-	if t != Histograms {
+	if t != HistogramSamples {
 		return nil, errors.New("invalid record type")
 	}
 	if dec.Len() == 0 {
@@ -384,7 +384,7 @@ func (d *Decoder) Histograms(rec []byte, histograms []RefHistogram) ([]RefHistog
 		dref := dec.Varint64()
 		dtime := dec.Varint64()
 
-		rh := RefHistogram{
+		rh := RefHistogramSample{
 			Ref: chunks.HeadSeriesRef(baseRef + uint64(dref)),
 			T:   baseTime + dtime,
 			H: &histogram.Histogram{
@@ -563,9 +563,9 @@ func (e *Encoder) EncodeExemplarsIntoBuffer(exemplars []RefExemplar, buf *encodi
 	}
 }
 
-func (e *Encoder) Histograms(histograms []RefHistogram, b []byte) []byte {
+func (e *Encoder) HistogramSamples(histograms []RefHistogramSample, b []byte) []byte {
 	buf := encoding.Encbuf{B: b}
-	buf.PutByte(byte(Histograms))
+	buf.PutByte(byte(HistogramSamples))
 
 	if len(histograms) == 0 {
 		return buf.Get()

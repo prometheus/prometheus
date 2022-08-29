@@ -220,15 +220,15 @@ func (h *Head) putExemplarBuffer(b []exemplarWithSeriesRef) {
 	h.exemplarsPool.Put(b[:0])
 }
 
-func (h *Head) getHistogramBuffer() []record.RefHistogram {
+func (h *Head) getHistogramBuffer() []record.RefHistogramSample {
 	b := h.histogramsPool.Get()
 	if b == nil {
-		return make([]record.RefHistogram, 0, 512)
+		return make([]record.RefHistogramSample, 0, 512)
 	}
-	return b.([]record.RefHistogram)
+	return b.([]record.RefHistogramSample)
 }
 
-func (h *Head) putHistogramBuffer(b []record.RefHistogram) {
+func (h *Head) putHistogramBuffer(b []record.RefHistogramSample) {
 	//nolint:staticcheck // Ignore SA6002 safe to ignore and actually fixing it has some performance penalty.
 	h.histogramsPool.Put(b[:0])
 }
@@ -282,14 +282,14 @@ type headAppender struct {
 	minValidTime int64 // No samples below this timestamp are allowed.
 	mint, maxt   int64
 
-	series          []record.RefSeries      // New series held by this appender.
-	samples         []record.RefSample      // New float samples held by this appender.
-	exemplars       []exemplarWithSeriesRef // New exemplars held by this appender.
-	sampleSeries    []*memSeries            // Float series corresponding to the samples held by this appender (using corresponding slice indices - same series may appear more than once).
-	histograms      []record.RefHistogram   // New histogram samples held by this appender.
-	histogramSeries []*memSeries            // Histogram series corresponding to the samples held by this appender (using corresponding slice indices - same series may appear more than once).
-	metadata        []record.RefMetadata    // New metadata held by this appender.
-	metadataSeries  []*memSeries            // Series corresponding to the metadata held by this appender.
+	series          []record.RefSeries          // New series held by this appender.
+	samples         []record.RefSample          // New float samples held by this appender.
+	exemplars       []exemplarWithSeriesRef     // New exemplars held by this appender.
+	sampleSeries    []*memSeries                // Float series corresponding to the samples held by this appender (using corresponding slice indices - same series may appear more than once).
+	histograms      []record.RefHistogramSample // New histogram samples held by this appender.
+	histogramSeries []*memSeries                // HistogramSamples series corresponding to the samples held by this appender (using corresponding slice indices - same series may appear more than once).
+	metadata        []record.RefMetadata        // New metadata held by this appender.
+	metadataSeries  []*memSeries                // Series corresponding to the metadata held by this appender.
 
 	appendID, cleanupAppendIDsBelow uint64
 	closed                          bool
@@ -493,7 +493,7 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 		a.maxt = t
 	}
 
-	a.histograms = append(a.histograms, record.RefHistogram{
+	a.histograms = append(a.histograms, record.RefHistogramSample{
 		Ref: s.ref,
 		T:   t,
 		H:   h,
@@ -659,7 +659,7 @@ func (a *headAppender) log() error {
 		}
 	}
 	if len(a.histograms) > 0 {
-		rec = enc.Histograms(a.histograms, buf)
+		rec = enc.HistogramSamples(a.histograms, buf)
 		buf = rec[:0]
 		if err := a.head.wal.Log(rec); err != nil {
 			return errors.Wrap(err, "log histograms")

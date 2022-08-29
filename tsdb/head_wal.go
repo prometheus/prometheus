@@ -59,7 +59,7 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 
 		dec             record.Decoder
 		shards          = make([][]record.RefSample, n)
-		histogramShards = make([][]record.RefHistogram, n)
+		histogramShards = make([][]record.RefHistogramSample, n)
 
 		decoded                      = make(chan interface{}, 10)
 		decodeErr, seriesCreationErr error
@@ -85,7 +85,7 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 		}
 		histogramsPool = sync.Pool{
 			New: func() interface{} {
-				return []record.RefHistogram{}
+				return []record.RefHistogramSample{}
 			},
 		}
 		metadataPool = sync.Pool{
@@ -197,9 +197,9 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 					return
 				}
 				decoded <- exemplars
-			case record.Histograms:
-				hists := histogramsPool.Get().([]record.RefHistogram)[:0]
-				hists, err = dec.Histograms(rec, hists)
+			case record.HistogramSamples:
+				hists := histogramsPool.Get().([]record.RefHistogramSample)[:0]
+				hists, err = dec.HistogramSamples(rec, hists)
 				if err != nil {
 					decodeErr = &wal.CorruptionErr{
 						Err:     errors.Wrap(err, "decode histograms"),
@@ -344,7 +344,7 @@ Outer:
 			}
 			//nolint:staticcheck // Ignore SA6002 relax staticcheck verification.
 			exemplarsPool.Put(v)
-		case []record.RefHistogram:
+		case []record.RefHistogramSample:
 			samples := v
 			// We split up the samples into chunks of 5000 samples or less.
 			// With O(300 * #cores) in-flight sample batches, large scrapes could otherwise
@@ -450,15 +450,15 @@ func (h *Head) resetSeriesWithMMappedChunks(mSeries *memSeries, mmc []*mmappedCh
 
 type walSubsetProcessor struct {
 	mx               sync.Mutex       // Take this lock while modifying series in the subset.
-	input            chan interface{} // Either []record.RefSample or []record.RefHistogram.
+	input            chan interface{} // Either []record.RefSample or []record.RefHistogramSample.
 	output           chan []record.RefSample
-	histogramsOutput chan []record.RefHistogram
+	histogramsOutput chan []record.RefHistogramSample
 }
 
 func (wp *walSubsetProcessor) setup() {
 	wp.output = make(chan []record.RefSample, 300)
 	wp.input = make(chan interface{}, 300)
-	wp.histogramsOutput = make(chan []record.RefHistogram, 300)
+	wp.histogramsOutput = make(chan []record.RefHistogramSample, 300)
 }
 
 func (wp *walSubsetProcessor) closeAndDrain() {
@@ -480,7 +480,7 @@ func (wp *walSubsetProcessor) reuseBuf() []record.RefSample {
 }
 
 // If there is a buffer in the output chan, return it for reuse, otherwise return nil.
-func (wp *walSubsetProcessor) reuseHistogramBuf() []record.RefHistogram {
+func (wp *walSubsetProcessor) reuseHistogramBuf() []record.RefHistogramSample {
 	select {
 	case buf := <-wp.histogramsOutput:
 		return buf[:0]
@@ -528,7 +528,7 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head) (unknownRefs, unknownHi
 				}
 			}
 			wp.output <- samples
-		case []record.RefHistogram:
+		case []record.RefHistogramSample:
 			for _, s := range samples {
 				if s.T < minValidTime {
 					continue

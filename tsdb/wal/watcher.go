@@ -49,7 +49,7 @@ type WriteTo interface {
 	// Once returned, the WAL Watcher will not attempt to pass that data again.
 	Append([]record.RefSample) bool
 	AppendExemplars([]record.RefExemplar) bool
-	AppendHistograms([]record.RefHistogram) bool
+	AppendHistograms([]record.RefHistogramSample) bool
 	StoreSeries([]record.RefSeries, int)
 
 	// Next two methods are intended for garbage-collection: first we call
@@ -481,8 +481,8 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 		samples          []record.RefSample
 		samplesToSend    []record.RefSample
 		exemplars        []record.RefExemplar
-		histograms       []record.RefHistogram
-		histogramsToSend []record.RefHistogram
+		histograms       []record.RefHistogramSample
+		histogramsToSend []record.RefHistogramSample
 	)
 	for r.Next() && !isClosed(w.quit) {
 		rec := r.Record()
@@ -540,7 +540,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 			}
 			w.writer.AppendExemplars(exemplars)
 
-		case record.Histograms:
+		case record.HistogramSamples:
 			// Skip if experimental "histograms over remote write" is not enabled.
 			if !w.sendHistograms {
 				break
@@ -548,7 +548,7 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 			if !tail {
 				break
 			}
-			histograms, err := dec.Histograms(rec, histograms[:0])
+			histograms, err := dec.HistogramSamples(rec, histograms[:0])
 			if err != nil {
 				w.recordDecodeFailsMetric.Inc()
 				return err
