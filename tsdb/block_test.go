@@ -523,7 +523,7 @@ func genSeries(totalSeries, labelCount int, mint, maxt int64) []storage.Series {
 	})
 }
 
-// genHistogramSeries generates series of histogram with a given number of labels and values.
+// genHistogramSeries generates series of histogram samples with a given number of labels and values.
 func genHistogramSeries(totalSeries, labelCount int, mint, maxt, step int64) []storage.Series {
 	return genSeriesFromSampleGenerator(totalSeries, labelCount, mint, maxt, step, func(ts int64) tsdbutil.Sample {
 		h := &histogram.Histogram{
@@ -542,7 +542,7 @@ func genHistogramSeries(totalSeries, labelCount int, mint, maxt, step int64) []s
 	})
 }
 
-// genHistogramAndFloatSeries generates series with mix of histogram and float64 with a given number of labels and values.
+// genHistogramAndFloatSeries generates series of mixed histogram and float64 samples with a given number of labels and values.
 func genHistogramAndFloatSeries(totalSeries, labelCount int, mint, maxt, step int64) []storage.Series {
 	floatSample := false
 	count := 0

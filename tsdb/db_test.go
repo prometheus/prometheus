@@ -96,11 +96,13 @@ func query(t testing.TB, q storage.Querier, matchers ...*labels.Matcher) map[str
 		for typ := it.Next(); typ != chunkenc.ValNone; typ = it.Next() {
 			switch typ {
 			case chunkenc.ValFloat:
-				t, v := it.At()
-				samples = append(samples, sample{t: t, v: v})
+				ts, v := it.At()
+				samples = append(samples, sample{t: ts, v: v})
 			case chunkenc.ValHistogram:
-				t, h := it.AtHistogram()
-				samples = append(samples, sample{t: t, h: h})
+				ts, h := it.AtHistogram()
+				samples = append(samples, sample{t: ts, h: h})
+			default:
+				t.Fatalf("unknown sample type in query %s", typ.String())
 			}
 		}
 		require.NoError(t, it.Err())
