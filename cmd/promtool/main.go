@@ -43,6 +43,7 @@ import (
 	"github.com/prometheus/exporter-toolkit/web"
 	"gopkg.in/alecthomas/kingpin.v2"
 	yaml "gopkg.in/yaml.v2"
+	yaml_v3 "gopkg.in/yaml.v3"
 
 	dto "github.com/prometheus/client_model/go"
 	"github.com/prometheus/common/expfmt"
@@ -57,6 +58,7 @@ import (
 	"github.com/prometheus/prometheus/notifier"
 	_ "github.com/prometheus/prometheus/plugins" // Register plugins.
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/scrape"
 )
 
@@ -211,6 +213,12 @@ func main() {
 		"A list of one or more files containing recording rules to be backfilled. All recording rules listed in the files will be backfilled. Alerting rules are not evaluated.",
 	).Required().ExistingFiles()
 
+	prettifyCmd := app.Command("prettify", "Prettify PromQL expressions. Note: At present, preserving comments is not supported. You may loose comments in PromQL expression or in rules file.")
+	prettifyRulesCmd := prettifyCmd.Command("rules", "Pretty PromQL expressions in recording and alerting rules.")
+	prettifyRulesFiles := prettifyRulesCmd.Arg("files", "A list of one or more files containing recording or alerting rules to be prettified.").Required().ExistingFiles()
+	prettifyExprCmd := prettifyCmd.Command("query", "Prettify a single PromQL query.")
+	prettifyPromQLExpr := prettifyExprCmd.Arg("promql-expr", "PromQL expression.").Required().String()
+
 	featureList := app.Flag("enable-feature", "Comma separated feature names to enable (only PromQL related and no-default-scrape-port). See https://prometheus.io/docs/prometheus/latest/feature_flags/ for the options and more details.").Default("").Strings()
 
 	parsedCmd := kingpin.MustParse(app.Parse(os.Args[1:]))
@@ -303,6 +311,18 @@ func main() {
 
 	case importRulesCmd.FullCommand():
 		os.Exit(checkErr(importRules(*importRulesURL, *importRulesStart, *importRulesEnd, *importRulesOutputDir, *importRulesEvalInterval, *maxBlockDuration, *importRulesFiles...)))
+
+	case prettifyRulesCmd.FullCommand():
+		os.Exit(prettifyFiles(*prettifyRulesFiles))
+
+	case prettifyExprCmd.FullCommand():
+		prettyExpr, err := prettifyExpr(*prettifyPromQLExpr)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error prettifying PromQL expression:", err)
+			os.Exit(failureExitCode)
+		}
+		fmt.Println(prettyExpr)
+		os.Exit(successExitCode)
 	}
 }
 
@@ -791,6 +811,70 @@ func checkMetricsExtended(r io.Reader) ([]metricStat, int, error) {
 	})
 
 	return stats, total, nil
+}
+
+func prettifyFiles(files []string) int {
+	for _, f := range files {
+		prettifiedContent, err := prettifyFile(f)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "error prettifying file:", err)
+			return failureExitCode
+		}
+		if err = os.WriteFile(f, prettifiedContent, 0o666); err != nil {
+			fmt.Fprintln(os.Stderr, "error writing file:", err)
+			return failureExitCode
+		}
+	}
+	return successExitCode
+}
+
+func prettifyFile(name string) ([]byte, error) {
+	b, err := os.Open(name)
+	if err != nil {
+		return nil, fmt.Errorf("opening file: %w", err)
+	}
+	decoder := yaml_v3.NewDecoder(b)
+	decoder.KnownFields(true)
+
+	var rgs rulefmt.RuleGroups
+	if err = decoder.Decode(&rgs); err != nil {
+		return nil, fmt.Errorf("decoding: %w", err)
+	}
+
+	for i := range rgs.Groups {
+		for j := range rgs.Groups[i].Rules {
+			rule := &rgs.Groups[i].Rules[j].Expr
+			if rule.Value != "" {
+				expr, err := prettifyExpr(rule.Value)
+				if err != nil {
+					return nil, fmt.Errorf("prettifying rule: %w", err)
+				}
+				rule.SetString(expr)
+			}
+			alert := &rgs.Groups[i].Rules[j].Alert
+			if alert.Value != "" {
+				expr, err := prettifyExpr(alert.Value)
+				if err != nil {
+					return nil, fmt.Errorf("prettifying alert: %w", err)
+				}
+				alert.SetString(expr)
+			}
+		}
+	}
+	out := &bytes.Buffer{}
+	encoder := yaml_v3.NewEncoder(out)
+	if err = encoder.Encode(rgs); err != nil {
+		return nil, fmt.Errorf("encoding: %w", err)
+	}
+	return out.Bytes(), nil
+}
+
+func prettifyExpr(query string) (string, error) {
+	expr, err := parser.ParseExpr(query)
+	if err != nil {
+		return "", fmt.Errorf("error parsing expression: %w", err)
+	}
+	return parser.Prettify(expr), nil
 }
 
 // QueryInstant performs an instant query against a Prometheus server.

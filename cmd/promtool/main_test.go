@@ -378,6 +378,41 @@ func TestCheckMetricsExtended(t *testing.T) {
 	}, stats)
 }
 
+func TestPrettifyRules(t *testing.T) {
+	cases := []struct {
+		name         string
+		inputFile    string
+		expectedFile string
+		shouldErr    bool
+	}{
+		{
+			name:         "prettify good rules file",
+			inputFile:    "./testdata/prettify-rules.input.yml",
+			expectedFile: "./testdata/prettify-rules.output.yml",
+		},
+		{
+			name:      "prettify bad rules file",
+			inputFile: "./testdata/prettify-rules.error.yml",
+			shouldErr: true,
+		},
+	}
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
+			prettifiedContent, err := prettifyFile(test.inputFile)
+			if test.shouldErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+
+			expectedContent, err := os.ReadFile(test.expectedFile)
+			require.NoError(t, err)
+
+			require.Equal(t, string(expectedContent), string(prettifiedContent))
+		})
+	}
+}
+
 func TestExitCodes(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode.")
