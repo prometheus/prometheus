@@ -1,4 +1,5 @@
 import React, { FC } from 'react';
+import toast from 'react-hot-toast';
 import { metricToSeriesName } from '../../utils';
 
 interface SeriesNameProps {
@@ -7,6 +8,23 @@ interface SeriesNameProps {
 }
 
 const SeriesName: FC<SeriesNameProps> = ({ labels, format }) => {
+  const toClipboard = (e: React.MouseEvent<HTMLSpanElement>) => {
+    let copyText = e.currentTarget.innerText || '';
+    if (copyText[0] === ',') {
+      copyText = copyText.slice(1);
+    }
+    navigator.clipboard
+      .writeText(copyText)
+      .then(() => {
+        toast.success('label selector   copied to clipboard', {
+          id: 'series-clipboard-toast',
+        });
+      })
+      .catch((reason) => {
+        console.error(`unable to copy text: ${reason}`);
+      });
+  };
+
   const renderFormatted = (): React.ReactElement => {
     const labelNodes: React.ReactElement[] = [];
     let first = true;
@@ -16,7 +34,7 @@ const SeriesName: FC<SeriesNameProps> = ({ labels, format }) => {
       }
 
       labelNodes.push(
-        <span key={label}>
+        <span className="legend-label-container" onClick={toClipboard} key={label}>
           {!first && ', '}
           <span className="legend-label-name">{label}</span>=<span className="legend-label-value">"{labels[label]}"</span>
         </span>

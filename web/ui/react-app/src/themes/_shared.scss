@@ -275,6 +275,10 @@ input[type='checkbox']:checked + label {
   margin-right: 1px;
 }
 
+.legend-label-container:hover {
+  cursor: pointer;
+}
+
 .legend-label-name {
   font-weight: bold;
 }
