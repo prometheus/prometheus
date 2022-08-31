@@ -39,6 +39,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -624,6 +625,7 @@ func TestScrapeLoopStopBeforeRun(t *testing.T) {
 		1,
 		0,
 		false,
+		false,
 		nil,
 		nil,
 		false,
@@ -695,6 +697,7 @@ func TestScrapeLoopStop(t *testing.T) {
 		nil,
 		10*time.Millisecond,
 		time.Hour,
+		false,
 		false,
 		nil,
 		nil,
@@ -771,6 +774,7 @@ func TestScrapeLoopRun(t *testing.T) {
 		time.Second,
 		time.Hour,
 		false,
+		false,
 		nil,
 		nil,
 		false,
@@ -825,6 +829,7 @@ func TestScrapeLoopRun(t *testing.T) {
 		nil,
 		time.Second,
 		100*time.Millisecond,
+		false,
 		false,
 		nil,
 		nil,
@@ -885,6 +890,7 @@ func TestScrapeLoopForcedErr(t *testing.T) {
 		time.Second,
 		time.Hour,
 		false,
+		false,
 		nil,
 		nil,
 		false,
@@ -943,6 +949,7 @@ func TestScrapeLoopMetadata(t *testing.T) {
 		0,
 		0,
 		false,
+		false,
 		nil,
 		nil,
 		false,
@@ -999,6 +1006,7 @@ func simpleTestScrapeLoop(t testing.TB) (context.Context, *scrapeLoop) {
 		nil,
 		0,
 		0,
+		false,
 		false,
 		nil,
 		nil,
@@ -1093,6 +1101,7 @@ func TestScrapeLoopRunCreatesStaleMarkersOnFailedScrape(t *testing.T) {
 		10*time.Millisecond,
 		time.Hour,
 		false,
+		false,
 		nil,
 		nil,
 		false,
@@ -1154,6 +1163,7 @@ func TestScrapeLoopRunCreatesStaleMarkersOnParseFailure(t *testing.T) {
 		nil,
 		10*time.Millisecond,
 		time.Hour,
+		false,
 		false,
 		nil,
 		nil,
@@ -1220,6 +1230,7 @@ func TestScrapeLoopCache(t *testing.T) {
 		nil,
 		10*time.Millisecond,
 		time.Hour,
+		false,
 		false,
 		nil,
 		nil,
@@ -1302,6 +1313,7 @@ func TestScrapeLoopCacheMemoryExhaustionProtection(t *testing.T) {
 		nil,
 		10*time.Millisecond,
 		time.Hour,
+		false,
 		false,
 		nil,
 		nil,
@@ -1417,6 +1429,7 @@ func TestScrapeLoopAppend(t *testing.T) {
 			0,
 			0,
 			false,
+			false,
 			nil,
 			nil,
 			false,
@@ -1507,7 +1520,7 @@ func TestScrapeLoopAppendForConflictingPrefixedLabels(t *testing.T) {
 					return mutateSampleLabels(l, &Target{labels: labels.FromStrings(tc.targetLabels...)}, false, nil)
 				},
 				nil,
-				func(ctx context.Context) storage.Appender { return app }, nil, 0, true, 0, nil, 0, 0, false, nil, nil, false,
+				func(ctx context.Context) storage.Appender { return app }, nil, 0, true, 0, nil, 0, 0, false, false, nil, nil, false,
 			)
 			slApp := sl.appender(context.Background())
 			_, _, _, err := sl.append(slApp, []byte(tc.exposedLabels), "", time.Date(2000, 1, 1, 1, 0, 0, 0, time.UTC))
@@ -1543,6 +1556,7 @@ func TestScrapeLoopAppendCacheEntryButErrNotFound(t *testing.T) {
 		0,
 		0,
 		false,
+		false,
 		nil,
 		nil,
 		false,
@@ -1555,12 +1569,13 @@ func TestScrapeLoopAppendCacheEntryButErrNotFound(t *testing.T) {
 	require.NoError(t, warning)
 
 	var lset labels.Labels
+	var meta metadata.Metadata
 	p.Next()
 	mets := p.Metric(&lset)
 	hash := lset.Hash()
 
 	// Create a fake entry in the cache
-	sl.cache.addRef(mets, fakeRef, lset, hash)
+	sl.cache.addRef(mets, fakeRef, lset, meta, hash)
 	now := time.Now()
 
 	slApp := sl.appender(context.Background())
@@ -1600,6 +1615,7 @@ func TestScrapeLoopAppendSampleLimit(t *testing.T) {
 		nil,
 		0,
 		0,
+		false,
 		false,
 		nil,
 		nil,
@@ -1678,6 +1694,7 @@ func TestScrapeLoop_ChangingMetricString(t *testing.T) {
 		0,
 		0,
 		false,
+		false,
 		nil,
 		nil,
 		false,
@@ -1725,6 +1742,7 @@ func TestScrapeLoopAppendStaleness(t *testing.T) {
 		nil,
 		0,
 		0,
+		false,
 		false,
 		nil,
 		nil,
@@ -1776,6 +1794,7 @@ func TestScrapeLoopAppendNoStalenessIfTimestamp(t *testing.T) {
 		nil,
 		0,
 		0,
+		false,
 		false,
 		nil,
 		nil,
@@ -1888,6 +1907,7 @@ metric_total{n="2"} 2 # {t="2"} 2.0 20000
 				0,
 				0,
 				false,
+				false,
 				nil,
 				nil,
 				false,
@@ -1953,6 +1973,7 @@ func TestScrapeLoopAppendExemplarSeries(t *testing.T) {
 		0,
 		0,
 		false,
+		false,
 		nil,
 		nil,
 		false,
@@ -2005,6 +2026,7 @@ func TestScrapeLoopRunReportsTargetDownOnScrapeError(t *testing.T) {
 		10*time.Millisecond,
 		time.Hour,
 		false,
+		false,
 		nil,
 		nil,
 		false,
@@ -2040,6 +2062,7 @@ func TestScrapeLoopRunReportsTargetDownOnInvalidUTF8(t *testing.T) {
 		nil,
 		10*time.Millisecond,
 		time.Hour,
+		false,
 		false,
 		nil,
 		nil,
@@ -2090,6 +2113,7 @@ func TestScrapeLoopAppendGracefullyIfAmendOrOutOfOrderOrOutOfBounds(t *testing.T
 		0,
 		0,
 		false,
+		false,
 		nil,
 		nil,
 		false,
@@ -2134,6 +2158,7 @@ func TestScrapeLoopOutOfBoundsTimeError(t *testing.T) {
 		nil,
 		0,
 		0,
+		false,
 		false,
 		nil,
 		nil,
@@ -2392,6 +2417,7 @@ func TestScrapeLoop_RespectTimestamps(t *testing.T) {
 		0,
 		0,
 		false,
+		false,
 		nil,
 		nil,
 		false,
@@ -2433,6 +2459,7 @@ func TestScrapeLoop_DiscardTimestamps(t *testing.T) {
 		0,
 		0,
 		false,
+		false,
 		nil,
 		nil,
 		false,
@@ -2472,6 +2499,7 @@ func TestScrapeLoopDiscardDuplicateLabels(t *testing.T) {
 		nil,
 		0,
 		0,
+		false,
 		false,
 		nil,
 		nil,
@@ -2530,6 +2558,7 @@ func TestScrapeLoopDiscardUnnamedMetrics(t *testing.T) {
 		nil,
 		0,
 		0,
+		false,
 		false,
 		nil,
 		nil,
@@ -2807,6 +2836,7 @@ func TestScrapeAddFast(t *testing.T) {
 		0,
 		0,
 		false,
+		false,
 		nil,
 		nil,
 		false,
@@ -2897,6 +2927,7 @@ func TestScrapeReportSingleAppender(t *testing.T) {
 		nil,
 		10*time.Millisecond,
 		time.Hour,
+		false,
 		false,
 		nil,
 		nil,
@@ -3099,6 +3130,7 @@ func TestScrapeLoopLabelLimit(t *testing.T) {
 			&test.labelLimits,
 			0,
 			0,
+			false,
 			false,
 			nil,
 			nil,
