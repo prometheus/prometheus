@@ -1184,6 +1184,7 @@ The resource address is the `certname` of the resource and can be changed during
 
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
+* `__meta_puppetdb_query`: the Puppet Query Language (PQL) query
 * `__meta_puppetdb_certname`: the name of the node associated with the resource
 * `__meta_puppetdb_resource`: a SHA-1 hash of the resource’s type, title, and parameters, for identification
 * `__meta_puppetdb_type`: the resource type
