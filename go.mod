@@ -61,12 +61,12 @@ require (
 	go.uber.org/automaxprocs v1.5.1
 	go.uber.org/goleak v1.1.12
 	golang.org/x/net v0.0.0-20220809184613-07c6da5e1ced
-	golang.org/x/oauth2 v0.0.0-20220808172628-8227340efae7
+	golang.org/x/oauth2 v0.0.0-20220822191816-0ebed06d0094
 	golang.org/x/sync v0.0.0-20220722155255-886fb9371eb4
 	golang.org/x/sys v0.0.0-20220808155132-1c4a2a72c664
 	golang.org/x/time v0.0.0-20220722155302-e5dcc9cfc0b9
 	golang.org/x/tools v0.1.12
-	google.golang.org/api v0.91.0
+	google.golang.org/api v0.94.0
 	google.golang.org/genproto v0.0.0-20220808204814-fd01256a5276
 	google.golang.org/grpc v1.48.0
 	google.golang.org/protobuf v1.28.1
