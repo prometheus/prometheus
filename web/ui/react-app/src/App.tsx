@@ -1,5 +1,4 @@
 import { FC } from 'react';
-import { Toaster } from 'react-hot-toast';
 import { Container } from 'reactstrap';
 import Navigation from './Navbar';
 
@@ -115,7 +114,6 @@ const App: FC<AppProps> = ({ consolesLink, agentMode }) => {
             </Switch>
           </Container>
         </Router>
-        <Toaster />
       </PathPrefixContext.Provider>
     </ThemeContext.Provider>
   );

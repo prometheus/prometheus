@@ -276,6 +276,10 @@ input[type='checkbox']:checked + label {
 }
 
 .legend-label-container:hover {
+  background-color: #add6ff;
+  border-radius: 3px;
+  padding-bottom: 1px;
+  color: #495057;
   cursor: pointer;
 }
 
