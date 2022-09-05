@@ -30,12 +30,15 @@ runs:
     - name: Download all workflow run artifacts
       uses: actions/download-artifact@v3
     - uses: ./.github/actions/setup_environment
-    - if: inputs.dockerfile_path != ""
+    - if: "inputs.dockerfile_path != ''"
       run: echo "export DOCKERFILE_PATH=${{ inputs.dockerfile_path }}" }} /tmp/tmp-profile
-    - if: inputs.container_image_name != ""
+      shell: bash
+    - if: "inputs.container_image_name != ''"
       run: echo "export DOCKER_IMAGE_NAME=${{ inputs.container_image_name }}" }} /tmp/tmp-profile
-    - if: inputs.dockerbuild_context != ""
+      shell: bash
+    - if: "inputs.dockerbuild_context != ''"
       run: echo "export DOCKERBUILD_CONTEXT=${{ inputs.dockerbuild_context }}" }} /tmp/tmp-profile
+      shell: bash
     - run: |
         current_tag=${GITHUB_REF#refs/*/}
         touch /tmp/tmp-profile
@@ -50,3 +53,4 @@ runs:
           make docker-publish DOCKER_IMAGE_TAG="latest" DOCKER_REPO=${{ input.registry }}/${{ input.organization }}
           make docker-manifest DOCKER_IMAGE_TAG="latest" DOCKER_REPO=${{ input.registry }}/${{ input.organization }}
         fi
+      shell: bash
