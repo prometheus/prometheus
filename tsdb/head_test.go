@@ -61,6 +61,7 @@ func newTestHead(t testing.TB, chunkRange int64, compressWAL bool) (*Head, *wal.
 	opts.ChunkDirRoot = dir
 	opts.EnableExemplarStorage = true
 	opts.MaxExemplars.Store(config.DefaultExemplarsConfig.MaxExemplars)
+	opts.EnableNativeHistograms.Store(true)
 
 	h, err := NewHead(nil, nil, wlog, opts, nil)
 	require.NoError(t, err)
@@ -3476,7 +3477,9 @@ func TestHistogramCounterResetHeader(t *testing.T) {
 
 func TestAppendingDifferentEncodingToSameSeries(t *testing.T) {
 	dir := t.TempDir()
-	db, err := Open(dir, nil, nil, DefaultOptions(), nil)
+	opts := DefaultOptions()
+	opts.EnableNativeHistograms = true
+	db, err := Open(dir, nil, nil, opts, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		require.NoError(t, db.Close())

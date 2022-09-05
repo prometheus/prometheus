@@ -126,6 +126,9 @@ type HeadOptions struct {
 	// https://pkg.go.dev/sync/atomic#pkg-note-BUG
 	MaxExemplars atomic.Int64
 
+	// EnableNativeHistograms enables the ingestion of native histograms.
+	EnableNativeHistograms atomic.Bool
+
 	ChunkRange int64
 	// ChunkDirRoot is the parent directory of the chunks directory.
 	ChunkDirRoot         string
@@ -725,6 +728,8 @@ func (h *Head) removeCorruptedMmappedChunks(err error) (map[chunks.HeadSeriesRef
 }
 
 func (h *Head) ApplyConfig(cfg *config.Config) error {
+	h.opts.EnableNativeHistograms.Store(cfg.ExperimentalConfig != nil && cfg.ExperimentalConfig.EnableNativeHistograms)
+
 	if !h.opts.EnableExemplarStorage {
 		return nil
 	}

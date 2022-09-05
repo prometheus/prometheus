@@ -1677,6 +1677,7 @@ func TestSparseHistogramCompactionAndQuery(t *testing.T) {
 		require.NoError(t, os.RemoveAll(dir))
 	})
 	opts := DefaultOptions()
+	opts.EnableNativeHistograms = true
 	// Exactly 3 times so that level 2 of compaction happens and tombstone
 	// deletion and compaction considers the level 2 blocks to be big enough.
 	opts.MaxBlockDuration = 3 * opts.MinBlockDuration
