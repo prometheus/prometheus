@@ -425,34 +425,6 @@ func (a *HistogramAppender) AppendHistogram(t int64, h *histogram.Histogram) {
 		for _, b := range h.NegativeBuckets {
 			putVarbitInt(a.b, b)
 		}
-	case 1:
-		tDelta = t - a.t
-		if tDelta < 0 {
-			panic("out of order timestamp")
-		}
-		cntDelta = int64(h.Count) - int64(a.cnt)
-		zCntDelta = int64(h.ZeroCount) - int64(a.zCnt)
-
-		if value.IsStaleNaN(h.Sum) {
-			cntDelta, zCntDelta = 0, 0
-		}
-
-		putVarbitUint(a.b, uint64(tDelta))
-		putVarbitInt(a.b, cntDelta)
-		putVarbitInt(a.b, zCntDelta)
-
-		a.writeSumDelta(h.Sum)
-
-		for i, b := range h.PositiveBuckets {
-			delta := b - a.pBuckets[i]
-			putVarbitInt(a.b, delta)
-			a.pBucketsDelta[i] = delta
-		}
-		for i, b := range h.NegativeBuckets {
-			delta := b - a.nBuckets[i]
-			putVarbitInt(a.b, delta)
-			a.nBucketsDelta[i] = delta
-		}
 
 	default:
 		tDelta = t - a.t
@@ -820,71 +792,6 @@ func (it *histogramIterator) Next() ValueType {
 		} else {
 			it.nFloatBuckets = nil
 		}
-	}
-
-	if it.numRead == 1 {
-		tDelta, err := readVarbitUint(&it.br)
-		if err != nil {
-			it.err = err
-			return ValNone
-		}
-		it.tDelta = int64(tDelta)
-		it.t += it.tDelta
-
-		cntDelta, err := readVarbitInt(&it.br)
-		if err != nil {
-			it.err = err
-			return ValNone
-		}
-		it.cntDelta = cntDelta
-		it.cnt = uint64(int64(it.cnt) + it.cntDelta)
-
-		zcntDelta, err := readVarbitInt(&it.br)
-		if err != nil {
-			it.err = err
-			return ValNone
-		}
-		it.zCntDelta = zcntDelta
-		it.zCnt = uint64(int64(it.zCnt) + it.zCntDelta)
-
-		ok := it.readSum()
-		if !ok {
-			return ValNone
-		}
-
-		if value.IsStaleNaN(it.sum) {
-			it.numRead++
-			return ValHistogram
-		}
-
-		var current int64
-		for i := range it.pBuckets {
-			delta, err := readVarbitInt(&it.br)
-			if err != nil {
-				it.err = err
-				return ValNone
-			}
-			it.pBucketsDelta[i] = delta
-			it.pBuckets[i] += delta
-			current += it.pBuckets[i]
-			it.pFloatBuckets[i] = float64(current)
-		}
-
-		current = 0
-		for i := range it.nBuckets {
-			delta, err := readVarbitInt(&it.br)
-			if err != nil {
-				it.err = err
-				return ValNone
-			}
-			it.nBucketsDelta[i] = delta
-			it.nBuckets[i] += delta
-			current += it.nBuckets[i]
-			it.nFloatBuckets[i] = float64(current)
-		}
-
-		it.numRead++
-		return ValHistogram
 	}
 
 	tDod, err := readVarbitInt(&it.br)
