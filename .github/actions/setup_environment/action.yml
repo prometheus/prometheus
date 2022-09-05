@@ -1,0 +1,33 @@
+name: Setup environment
+inputs:
+  enable_go:
+    type: boolean
+    description: Whether to enable go specific features, such as caching.
+    default: true
+  enable_npm:
+    type: boolean
+    description: Whether to enable npm specific features, such as caching.
+    default: true
+runs:
+  using: composite
+  steps:
+    - uses: actions/cache@v3
+      if: ${{ inputs.enable_go }}
+      with:
+        path: |
+          ~/.cache/go-build
+          ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+    - uses: actions/cache@v3
+      if: ${{ inputs.enable_npm }}
+      with:
+        path: |
+          ~/.npm
+        key: ${{ runner.os }}-npm-${{ hashFiles('web/ui/package-lock.json') }}
+        restore-keys: |
+          ${{ runner.os }}-npm-
+    - run: make promu
+      shell: bash
+      if: ${{ inputs.enable_go }}
