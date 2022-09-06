@@ -24,6 +24,8 @@ runs:
   using: composite
   steps:
     - uses: ./.github/actions/setup_environment
+      with:
+        enable_docker_multibuild: true
     - uses: ./.github/actions/publish_images
       if: inputs.docker_hub_organization != '' && inputs.docker_hub_login != ''
       with:

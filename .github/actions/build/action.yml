@@ -18,7 +18,6 @@ runs:
     - uses: ./.github/actions/setup_environment
     - run: ~/go/bin/promu crossbuild -v --parallelism ${{ inputs.parallelism }} --parallelism-thread ${{ inputs.thread }} ${{ inputs.promu_opts }}
       shell: bash
-    - uses: actions/upload-artifact@v3
+    - uses: ./.github/actions/save_artefacts
       with:
-        path: |
-          .build
+        directory: .build

@@ -37,10 +37,9 @@ jobs:
       - run: make assets-tarball
       - run: make ui-lint
       - run: make ui-test
-      - uses: actions/upload-artifact@v3
+      - uses: ./.github/actions/save_artefacts
         with:
-          path: |
-            .tarballs
+          directory: .tarballs
 
   test_windows:
     runs-on: windows-latest
