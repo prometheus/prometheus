@@ -26,6 +26,10 @@ runs:
     - uses: ./.github/actions/setup_environment
       with:
         enable_docker_multibuild: true
+    - name: Download all workflow run artifacts
+      uses: actions/download-artifact@v3
+      with:
+        name: artifact
     - run: promu crossbuild tarballs
       shell: bash
     - run: promu checksum .tarballs
