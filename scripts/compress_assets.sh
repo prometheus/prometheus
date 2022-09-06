@@ -7,7 +7,7 @@ set -euo pipefail
 cd web/ui
 cp embed.go.tmpl embed.go
 
-# gzip option '-k' may not always exist in the latest gzip available on different distros
+# gzip option '-k' may not always exist in the latest gzip available on different distros.
 GZIP_OPTS="-fk" && [[ ! $(gzip -k -h 2>/dev/null) ]] && GZIP_OPTS="-f"
 
 find static -type f -name '*.gz' -delete
