@@ -8,7 +8,9 @@ cd web/ui
 cp embed.go.tmpl embed.go
 
 # gzip option '-k' may not always exist in the latest gzip available on different distros.
-GZIP_OPTS="-fk" && [[ ! $(gzip -k -h 2>/dev/null) ]] && GZIP_OPTS="-f"
+GZIP_OPTS="-fk"
+# gzip option '-k' may not always exist in the latest gzip available on different distros.
+if ! gzip -k -h &>/dev/null; then GZIP_OPTS="-f"; fi
 
 find static -type f -name '*.gz' -delete
 find static -type f -exec gzip $GZIP_OPTS '{}' \; -print0 | xargs -0 -I % echo %.gz | xargs echo //go:embed >> embed.go
