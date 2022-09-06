@@ -27,11 +27,6 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Download all workflow run artifacts
-      uses: actions/download-artifact@v3
-      with:
-        name: artifact
-    - uses: ./.github/actions/setup_environment
     - if: inputs.dockerfile_path != ''
       run: echo "export DOCKERFILE_PATH=${{ inputs.dockerfile_path }}" >> /tmp/tmp-profile
       shell: bash
