@@ -1,0 +1,18 @@
+# To preserve the directory structure, save an additional empty file at
+# the root of the working directory. GitHub action uses the least common
+# ancestor of all the search paths as the root directory for artefacts.
+name: Save artefacts
+inputs:
+  directory:
+    type: string
+    description: Path of the directory to save
+runs:
+  using: composite
+  steps:
+    - run: touch .keep
+      shell: bash
+    - uses: actions/upload-artifact@v3
+      with:
+        path: |
+          ${{ inputs.directory }}
+          .keep

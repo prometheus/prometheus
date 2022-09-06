@@ -24,6 +24,8 @@ runs:
   using: composite
   steps:
     - uses: ./.github/actions/setup_environment
+      with:
+        enable_docker_multibuild: true
     - run: promu crossbuild tarballs
       shell: bash
     - run: promu checksum .tarballs
