@@ -846,7 +846,6 @@ type cacheEntry struct {
 	lastIter uint64
 	hash     uint64
 	lset     labels.Labels
-	meta     metadata.Metadata
 }
 
 type scrapeLoop struct {
@@ -992,11 +991,11 @@ func (c *scrapeCache) get(met string) (*cacheEntry, bool) {
 	return e, true
 }
 
-func (c *scrapeCache) addRef(met string, ref storage.SeriesRef, lset labels.Labels, meta metadata.Metadata, hash uint64) {
+func (c *scrapeCache) addRef(met string, ref storage.SeriesRef, lset labels.Labels, hash uint64) {
 	if ref == 0 {
 		return
 	}
-	c.series[met] = &cacheEntry{ref: ref, lastIter: c.iter, lset: lset, meta: meta, hash: hash}
+	c.series[met] = &cacheEntry{ref: ref, lastIter: c.iter, lset: lset, hash: hash}
 }
 
 func (c *scrapeCache) addDropped(met string) {
@@ -1612,7 +1611,7 @@ loop:
 				// Bypass staleness logic if there is an explicit timestamp.
 				sl.cache.trackStaleness(hash, lset)
 			}
-			sl.cache.addRef(mets, ref, lset, meta, hash)
+			sl.cache.addRef(mets, ref, lset, hash)
 			if sampleAdded && sampleLimitErr == nil {
 				seriesAdded++
 			}
@@ -1838,7 +1837,7 @@ func (sl *scrapeLoop) addReportSample(app storage.Appender, s string, t int64, v
 	switch errors.Cause(err) {
 	case nil:
 		if !ok {
-			sl.cache.addRef(s, ref, lset, metadata.Metadata{}, lset.Hash())
+			sl.cache.addRef(s, ref, lset, lset.Hash())
 		}
 		return nil
 	case storage.ErrOutOfOrderSample, storage.ErrDuplicateSampleForTimestamp:
