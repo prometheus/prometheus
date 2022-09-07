@@ -1664,11 +1664,12 @@ func marshalPointJSONIsEmpty(ptr unsafe.Pointer) bool {
 }
 
 // marshalExemplarJSON writes.
-// {
-//    labels: <labels>,
-//    value: "<string>",
-//    timestamp: <float>
-// }
+//
+//	{
+//	   labels: <labels>,
+//	   value: "<string>",
+//	   timestamp: <float>
+//	}
 func marshalExemplarJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
 	p := *((*exemplar.Exemplar)(ptr))
 	stream.WriteObjectStart()
