@@ -1493,7 +1493,6 @@ func (sl *scrapeLoop) append(app storage.Appender, b []byte, contentType string,
 			meta.Help = metaEntry.Help
 			return true
 		}
-		sl.cache.metaMtx.Unlock()
 		return false
 	}
 
