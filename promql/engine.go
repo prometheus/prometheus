@@ -2366,11 +2366,11 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 				mean:       s.V,
 				groupCount: 1,
 			}
-			if s.H != nil {
+			if s.H == nil {
+				newAgg.hasFloat = true
+			} else if op == parser.SUM {
 				newAgg.histogramValue = s.H.Copy()
 				newAgg.hasHistogram = true
-			} else {
-				newAgg.hasFloat = true
 			}
 
 			result[groupingKey] = newAgg
