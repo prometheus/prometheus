@@ -81,9 +81,10 @@ func (p HeadChunkRef) Unpack() (HeadSeriesRef, HeadChunkID) {
 // HeadChunkID refers to a specific chunk in a series (memSeries) in the Head.
 // Each memSeries has its own monotonically increasing number to refer to its chunks.
 // If the HeadChunkID value is...
-// * memSeries.firstChunkID+len(memSeries.mmappedChunks), it's the head chunk.
-// * less than the above, but >= memSeries.firstID, then it's
-//   memSeries.mmappedChunks[i] where i = HeadChunkID - memSeries.firstID.
+//   - memSeries.firstChunkID+len(memSeries.mmappedChunks), it's the head chunk.
+//   - less than the above, but >= memSeries.firstID, then it's
+//     memSeries.mmappedChunks[i] where i = HeadChunkID - memSeries.firstID.
+//
 // Example:
 // assume a memSeries.firstChunkID=7 and memSeries.mmappedChunks=[p5,p6,p7,p8,p9].
 // | HeadChunkID value | refers to ...                                                                          |
