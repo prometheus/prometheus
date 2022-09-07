@@ -494,16 +494,34 @@ func createHead(tb testing.TB, w *wal.WAL, series []storage.Series, chunkDir str
 	head, err := NewHead(nil, nil, w, opts, nil)
 	require.NoError(tb, err)
 
-	app := head.Appender(context.Background())
+	ctx := context.Background()
+	app := head.Appender(ctx)
 	for _, s := range series {
 		ref := storage.SeriesRef(0)
 		it := s.Iterator()
 		lset := s.Labels()
-		for it.Next() == chunkenc.ValFloat {
-			// TODO(beorn7): Also treat histograms.
-			t, v := it.At()
-			ref, err = app.Append(ref, lset, t, v)
+		typ := it.Next()
+		lastTyp := typ
+		for ; typ != chunkenc.ValNone; typ = it.Next() {
+			if lastTyp != typ {
+				// The behaviour of appender is undefined if samples of different types
+				// are appended to the same series in a single Commit().
+				require.NoError(tb, app.Commit())
+				app = head.Appender(ctx)
+			}
+
+			switch typ {
+			case chunkenc.ValFloat:
+				t, v := it.At()
+				ref, err = app.Append(ref, lset, t, v)
+			case chunkenc.ValHistogram:
+				t, h := it.AtHistogram()
+				ref, err = app.AppendHistogram(ref, lset, t, h)
+			default:
+				err = fmt.Errorf("unknown sample type %s", typ.String())
+			}
 			require.NoError(tb, err)
+			lastTyp = typ
 		}
 		require.NoError(tb, it.Err())
 	}
