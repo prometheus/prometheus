@@ -321,7 +321,6 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed 
 			options.ExtraMetrics,
 			options.EnableMetadataStorage,
 			opts.target,
-			cache,
 			options.PassMetadataInContext,
 		)
 	}
@@ -1146,7 +1145,6 @@ func newScrapeLoop(ctx context.Context,
 	reportExtraMetrics bool,
 	appendMetadataToWAL bool,
 	target *Target,
-	metricMetadataStore MetricMetadataStore,
 	passMetadataInContext bool,
 ) *scrapeLoop {
 	if l == nil {
