@@ -18,6 +18,6 @@ runs:
     - uses: ./.github/actions/setup_environment
     - run: ~/go/bin/promu crossbuild -v --parallelism ${{ inputs.parallelism }} --parallelism-thread ${{ inputs.thread }} ${{ inputs.promu_opts }}
       shell: bash
-    - uses: ./.github/actions/save_artefacts
+    - uses: ./.github/actions/save_artifacts
       with:
         directory: .build
