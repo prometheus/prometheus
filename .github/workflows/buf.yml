@@ -3,6 +3,9 @@ on:
   push:
     branches:
       - main
+permissions:
+  contents: read
+
 jobs:
   buf:
     name: lint and publish

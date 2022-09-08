@@ -2,6 +2,9 @@
 on:
   schedule:
     - cron: '44 17 * * *'
+permissions:
+  contents: read
+
 jobs:
   repo_sync:
     runs-on: ubuntu-latest

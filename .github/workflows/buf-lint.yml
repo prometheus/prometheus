@@ -4,6 +4,9 @@ on:
     paths:
       - ".github/workflows/buf-lint.yml"
       - "**.proto"
+permissions:
+  contents: read
+
 jobs:
   buf:
     name: lint
