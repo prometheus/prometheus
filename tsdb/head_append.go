@@ -568,6 +568,7 @@ func (a *headAppender) Commit() (err error) {
 		wblSamples      []record.RefSample
 		oooMmapMarkers  map[chunks.HeadSeriesRef]chunks.ChunkDiskMapperRef
 		oooRecords      [][]byte
+		chunkRange      = a.head.chunkRange.Load()
 		series          *memSeries
 		enc             record.Encoder
 	)
@@ -670,7 +671,7 @@ func (a *headAppender) Commit() (err error) {
 				samplesAppended--
 			}
 		} else if err == nil {
-			ok, chunkCreated = series.append(s.T, s.V, a.appendID, a.head.chunkDiskMapper)
+			ok, chunkCreated = series.append(s.T, s.V, a.appendID, a.head.chunkDiskMapper, chunkRange)
 			if ok {
 				if s.T < inOrderMint {
 					inOrderMint = s.T
@@ -747,7 +748,7 @@ func (s *memSeries) insert(t int64, v float64, chunkDiskMapper *chunks.ChunkDisk
 // the appendID for isolation. (The appendID can be zero, which results in no
 // isolation for this append.)
 // It is unsafe to call this concurrently with s.iterator(...) without holding the series lock.
-func (s *memSeries) append(t int64, v float64, appendID uint64, chunkDiskMapper *chunks.ChunkDiskMapper) (sampleInOrder, chunkCreated bool) {
+func (s *memSeries) append(t int64, v float64, appendID uint64, chunkDiskMapper *chunks.ChunkDiskMapper, chunkRange int64) (sampleInOrder, chunkCreated bool) {
 	// Based on Gorilla white papers this offers near-optimal compression ratio
 	// so anything bigger that this has diminishing returns and increases
 	// the time range within which we have to decompress all samples.
@@ -761,7 +762,7 @@ func (s *memSeries) append(t int64, v float64, appendID uint64, chunkDiskMapper 
 			return false, false
 		}
 		// There is no head chunk in this series yet, create the first chunk for the sample.
-		c = s.cutNewHeadChunk(t, chunkDiskMapper)
+		c = s.cutNewHeadChunk(t, chunkDiskMapper, chunkRange)
 		chunkCreated = true
 	}
 
@@ -775,7 +776,7 @@ func (s *memSeries) append(t int64, v float64, appendID uint64, chunkDiskMapper 
 		// It could be the new chunk created after reading the chunk snapshot,
 		// hence we fix the minTime of the chunk here.
 		c.minTime = t
-		s.nextAt = rangeForTimestamp(c.minTime, s.chunkRange)
+		s.nextAt = rangeForTimestamp(c.minTime, chunkRange)
 	}
 
 	// If we reach 25% of a chunk's desired sample count, predict an end time
@@ -791,7 +792,7 @@ func (s *memSeries) append(t int64, v float64, appendID uint64, chunkDiskMapper 
 	// as we expect more chunks to come.
 	// Note that next chunk will have its nextAt recalculated for the new rate.
 	if t >= s.nextAt || numSamples >= samplesPerChunk*2 {
-		c = s.cutNewHeadChunk(t, chunkDiskMapper)
+		c = s.cutNewHeadChunk(t, chunkDiskMapper, chunkRange)
 		chunkCreated = true
 	}
 	s.app.Append(t, v)
@@ -823,7 +824,7 @@ func computeChunkEndTime(start, cur, max int64) int64 {
 	return start + (max-start)/n
 }
 
-func (s *memSeries) cutNewHeadChunk(mint int64, chunkDiskMapper *chunks.ChunkDiskMapper) *memChunk {
+func (s *memSeries) cutNewHeadChunk(mint int64, chunkDiskMapper *chunks.ChunkDiskMapper, chunkRange int64) *memChunk {
 	s.mmapCurrentHeadChunk(chunkDiskMapper)
 
 	s.headChunk = &memChunk{
@@ -834,7 +835,7 @@ func (s *memSeries) cutNewHeadChunk(mint int64, chunkDiskMapper *chunks.ChunkDis
 
 	// Set upper bound on when the next chunk must be started. An earlier timestamp
 	// may be chosen dynamically at a later point.
-	s.nextAt = rangeForTimestamp(mint, s.chunkRange)
+	s.nextAt = rangeForTimestamp(mint, chunkRange)
 
 	app, err := s.headChunk.chunk.Appender()
 	if err != nil {
