@@ -906,7 +906,7 @@ func (h *Head) loadChunkSnapshot() (int, int, map[chunks.HeadSeriesRef]*memSerie
 				for {
 					seriesID := uint64(series.ref)
 					lastSeriesID := h.lastSeriesID.Load()
-					if lastSeriesID >= seriesID || h.lastSeriesID.CAS(lastSeriesID, seriesID) {
+					if lastSeriesID >= seriesID || h.lastSeriesID.CompareAndSwap(lastSeriesID, seriesID) {
 						break
 					}
 				}

@@ -758,7 +758,7 @@ func (h *Head) updateMinMaxTime(mint, maxt int64) {
 		if mint >= lt {
 			break
 		}
-		if h.minTime.CAS(lt, mint) {
+		if h.minTime.CompareAndSwap(lt, mint) {
 			break
 		}
 	}
@@ -767,7 +767,7 @@ func (h *Head) updateMinMaxTime(mint, maxt int64) {
 		if maxt <= ht {
 			break
 		}
-		if h.maxTime.CAS(ht, maxt) {
+		if h.maxTime.CompareAndSwap(ht, maxt) {
 			break
 		}
 	}
@@ -828,7 +828,7 @@ func (h *Head) truncateMemory(mint int64) (err error) {
 
 	// Ensure that max time is at least as high as min time.
 	for h.MaxTime() < mint {
-		h.maxTime.CAS(h.MaxTime(), mint)
+		h.maxTime.CompareAndSwap(h.MaxTime(), mint)
 	}
 
 	// This was an initial call to Truncate after loading blocks on startup.
