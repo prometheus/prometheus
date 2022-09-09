@@ -962,7 +962,7 @@ type ManagerOptions struct {
 	GroupLoader                GroupLoader
 	DefaultEvaluationDelay     func() time.Duration
 
-	// AlwaysRestoreAlertState forces all new groups added via LoadGroups to restore their state.
+	// AlwaysRestoreAlertState forces all new or changed groups in calls to Update to restore.
 	// Useful when you know you will be adding alerting rules after the manager has already started.
 	AlwaysRestoreAlertState bool
 
