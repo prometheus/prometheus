@@ -532,13 +532,9 @@ func (g *Group) setLastEvaluation(ts time.Time) {
 
 // EvalTimestamp returns the immediately preceding consistently slotted evaluation time.
 func (g *Group) EvalTimestamp(startTime int64) time.Time {
-	var (
-		offset = int64(g.hash() % uint64(g.interval))
-		adjNow = startTime - offset
-		base   = adjNow - (adjNow % int64(g.interval))
-	)
+	offset := (uint64(startTime) - g.hash()) % uint64(g.interval)
 
-	return time.Unix(0, base+offset).UTC()
+	return time.Unix(0, startTime-int64(offset)).UTC()
 }
 
 func nameAndLabels(rule Rule) string {
