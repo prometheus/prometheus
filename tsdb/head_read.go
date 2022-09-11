@@ -692,70 +692,17 @@ func (s *memSeries) iterator(id chunks.HeadChunkID, isoState *isolationState, ch
 			stopAfter: stopAfter,
 		}
 	}
-	// Serve the last 4 samples for the last chunk from the sample buffer
-	// as their compressed bytes may be mutated by added samples.
-	if msIter, ok := it.(*memSafeIterator); ok {
-		msIter.Iterator = c.chunk.Iterator(msIter.Iterator)
-		msIter.i = -1
-		msIter.total = numSamples
-		msIter.stopAfter = stopAfter
-		msIter.buf = s.sampleBuf
-		return msIter
+	if stopIter, ok := it.(*stopIterator); ok {
+		stopIter.Iterator = c.chunk.Iterator(stopIter.Iterator)
+		stopIter.i = -1
+		stopIter.stopAfter = stopAfter
+		return stopIter
 	}
-	return &memSafeIterator{
-		stopIterator: stopIterator{
-			Iterator:  c.chunk.Iterator(it),
-			i:         -1,
-			stopAfter: stopAfter,
-		},
-		total: numSamples,
-		buf:   s.sampleBuf,
+	return &stopIterator{
+		Iterator:  c.chunk.Iterator(it),
+		i:         -1,
+		stopAfter: stopAfter,
 	}
-}
-
-// memSafeIterator returns values from the wrapped stopIterator
-// except the last 4, which come from buf.
-type memSafeIterator struct {
-	stopIterator
-
-	total int
-	buf   [4]sample
-}
-
-func (it *memSafeIterator) Seek(t int64) bool {
-	if it.Err() != nil {
-		return false
-	}
-
-	ts, _ := it.At()
-
-	for t > ts || it.i == -1 {
-		if !it.Next() {
-			return false
-		}
-		ts, _ = it.At()
-	}
-
-	return true
-}
-
-func (it *memSafeIterator) Next() bool {
-	if it.i+1 >= it.stopAfter {
-		return false
-	}
-	it.i++
-	if it.total-it.i > 4 {
-		return it.Iterator.Next()
-	}
-	return true
-}
-
-func (it *memSafeIterator) At() (int64, float64) {
-	if it.total-it.i > 4 {
-		return it.Iterator.At()
-	}
-	s := it.buf[4-(it.total-it.i)]
-	return s.t, s.v
 }
 
 // stopIterator wraps an Iterator, but only returns the first

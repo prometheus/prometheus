@@ -770,12 +770,12 @@ func TestMemSeries_truncateChunks(t *testing.T) {
 	// Validate that the series' sample buffer is applied correctly to the last chunk
 	// after truncation.
 	it1 := s.iterator(s.headChunkID(len(s.mmappedChunks)), nil, chunkDiskMapper, &memChunkPool, nil)
-	_, ok := it1.(*memSafeIterator)
+	_, ok := it1.(*stopIterator)
 	require.True(t, ok)
 
 	it2 := s.iterator(s.headChunkID(len(s.mmappedChunks)-1), nil, chunkDiskMapper, &memChunkPool, nil)
-	_, ok = it2.(*memSafeIterator)
-	require.False(t, ok, "non-last chunk incorrectly wrapped with sample buffer")
+	_, ok = it2.(*stopIterator)
+	require.False(t, ok, "non-last chunk incorrectly wrapped")
 }
 
 func TestHeadDeleteSeriesWithoutSamples(t *testing.T) {
@@ -2498,7 +2498,7 @@ func TestMemSafeIteratorSeekIntoBuffer(t *testing.T) {
 	}
 
 	it := s.iterator(s.headChunkID(len(s.mmappedChunks)), nil, chunkDiskMapper, nil, nil)
-	_, ok := it.(*memSafeIterator)
+	_, ok := it.(*stopIterator)
 	require.True(t, ok)
 
 	// First point.

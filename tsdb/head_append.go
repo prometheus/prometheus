@@ -361,7 +361,7 @@ func (s *memSeries) appendable(t int64, v float64, headMaxt, minValidTime, oooTi
 			// like federation and erroring out at that time would be extremely noisy.
 			// This only checks against the latest in-order sample.
 			// The OOO headchunk has its own method to detect these duplicates.
-			if math.Float64bits(s.sampleBuf[3].v) != math.Float64bits(v) {
+			if math.Float64bits(s.lastValue) != math.Float64bits(v) {
 				return false, 0, storage.ErrDuplicateSampleForTimestamp
 			}
 			// Sample is identical (ts + value) with most current (highest ts) sample in sampleBuf.
@@ -797,11 +797,7 @@ func (s *memSeries) append(t int64, v float64, appendID uint64, chunkDiskMapper 
 	s.app.Append(t, v)
 
 	c.maxTime = t
-
-	s.sampleBuf[0] = s.sampleBuf[1]
-	s.sampleBuf[1] = s.sampleBuf[2]
-	s.sampleBuf[2] = s.sampleBuf[3]
-	s.sampleBuf[3] = sample{t: t, v: v}
+	s.lastValue = v
 
 	if appendID > 0 && s.txs != nil {
 		s.txs.add(appendID)
