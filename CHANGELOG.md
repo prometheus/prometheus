@@ -1,5 +1,11 @@
 # Changelog
 
+## 2.37.1 / 2022-09-12
+
+* [BUGFIX] Properly close file descriptor when logging unfinished queries. #11148
+* [BUGFIX] TSDB: In the WAL watcher metrics, expose the type="exemplar" label
+  instead of type="unknown" for exemplar records. #11008
+
 ## 2.37.0 / 2022-07-14
 
 This release is a LTS (Long-Term Support) release of Prometheus and will
