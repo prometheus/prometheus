@@ -3,7 +3,7 @@ import { Alert, Button, Toast, ToastBody } from 'reactstrap';
 
 import Checkbox from '../../components/Checkbox';
 import { API_PATH } from '../../constants/constants';
-import { ClipboardContext } from '../../contexts/ClipBoardContext';
+import { ToastContext } from '../../contexts/ToastContext';
 import { usePathPrefix } from '../../contexts/PathPrefixContext';
 import { useFetch } from '../../hooks/useFetch';
 import { useLocalStorage } from '../../hooks/useLocalStorage';
@@ -158,7 +158,7 @@ const PanelList: FC = () => {
 
   return (
     <>
-      <ClipboardContext.Provider value={onClipboardMsg}>
+      <ToastContext.Provider value={onClipboardMsg}>
         <div className="clearfix">
           <Toast
             isOpen={clipboardMsg != null}
@@ -232,7 +232,7 @@ const PanelList: FC = () => {
           enableHighlighting={enableHighlighting}
           enableLinter={enableLinter}
         />
-      </ClipboardContext.Provider>
+      </ToastContext.Provider>
     </>
   );
 };
