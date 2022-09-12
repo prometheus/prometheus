@@ -219,13 +219,12 @@ var (
 
 // Config is the top-level configuration for Prometheus's config files.
 type Config struct {
-	GlobalConfig       GlobalConfig        `yaml:"global"`
-	AlertingConfig     AlertingConfig      `yaml:"alerting,omitempty"`
-	RuleFiles          []string            `yaml:"rule_files,omitempty"`
-	ScrapeConfigs      []*ScrapeConfig     `yaml:"scrape_configs,omitempty"`
-	StorageConfig      StorageConfig       `yaml:"storage,omitempty"`
-	TracingConfig      TracingConfig       `yaml:"tracing,omitempty"`
-	ExperimentalConfig *ExperimentalConfig `yaml:"experimental,omitempty"`
+	GlobalConfig   GlobalConfig    `yaml:"global"`
+	AlertingConfig AlertingConfig  `yaml:"alerting,omitempty"`
+	RuleFiles      []string        `yaml:"rule_files,omitempty"`
+	ScrapeConfigs  []*ScrapeConfig `yaml:"scrape_configs,omitempty"`
+	StorageConfig  StorageConfig   `yaml:"storage,omitempty"`
+	TracingConfig  TracingConfig   `yaml:"tracing,omitempty"`
 
 	RemoteWriteConfigs []*RemoteWriteConfig `yaml:"remote_write,omitempty"`
 	RemoteReadConfigs  []*RemoteReadConfig  `yaml:"remote_read,omitempty"`
@@ -503,11 +502,6 @@ func (c *ScrapeConfig) MarshalYAML() (interface{}, error) {
 // StorageConfig configures runtime reloadable configuration options.
 type StorageConfig struct {
 	ExemplarsConfig *ExemplarsConfig `yaml:"exemplars,omitempty"`
-}
-
-// ExperimentalConfig configures runtime reloadable experimental configuration options.
-type ExperimentalConfig struct {
-	EnableNativeHistograms bool `yaml:"enable_native_histograms,omitempty"`
 }
 
 type TracingClientType string

@@ -854,6 +854,16 @@ func (db *DB) ApplyConfig(conf *config.Config) error {
 	return db.head.ApplyConfig(conf)
 }
 
+// EnableNativeHistograms enables the native histogram feature.
+func (db *DB) EnableNativeHistograms() {
+	db.head.EnableNativeHistograms()
+}
+
+// DisableNativeHistograms disables the native histogram feature.
+func (db *DB) DisableNativeHistograms() {
+	db.head.DisableNativeHistograms()
+}
+
 // dbAppender wraps the DB's head appender and triggers compactions on commit
 // if necessary.
 type dbAppender struct {

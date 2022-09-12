@@ -728,8 +728,6 @@ func (h *Head) removeCorruptedMmappedChunks(err error) (map[chunks.HeadSeriesRef
 }
 
 func (h *Head) ApplyConfig(cfg *config.Config) error {
-	h.opts.EnableNativeHistograms.Store(cfg.ExperimentalConfig != nil && cfg.ExperimentalConfig.EnableNativeHistograms)
-
 	if !h.opts.EnableExemplarStorage {
 		return nil
 	}
@@ -748,6 +746,16 @@ func (h *Head) ApplyConfig(cfg *config.Config) error {
 	migrated := h.exemplars.(*CircularExemplarStorage).Resize(newSize)
 	level.Info(h.logger).Log("msg", "Exemplar storage resized", "from", prevSize, "to", newSize, "migrated", migrated)
 	return nil
+}
+
+// EnableNativeHistograms enables the native histogram feature.
+func (h *Head) EnableNativeHistograms() {
+	h.opts.EnableNativeHistograms.Store(true)
+}
+
+// DisableNativeHistograms disables the native histogram feature.
+func (h *Head) DisableNativeHistograms() {
+	h.opts.EnableNativeHistograms.Store(false)
 }
 
 // PostingsCardinalityStats returns top 10 highest cardinality stats By label and value names.

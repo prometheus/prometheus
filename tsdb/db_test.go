@@ -40,7 +40,6 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 
-	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
@@ -4059,12 +4058,13 @@ func TestNativeHistogramFlag(t *testing.T) {
 	require.Equal(t, storage.ErrNativeHistogramsDisabled, err)
 
 	// Enable and append.
-	err = db.ApplyConfig(&config.Config{
-		ExperimentalConfig: &config.ExperimentalConfig{EnableNativeHistograms: true},
-	})
-	require.NoError(t, err)
+	db.EnableNativeHistograms()
 	_, err = app.AppendHistogram(0, l, 200, h)
 	require.NoError(t, err)
+
+	db.DisableNativeHistograms()
+	_, err = app.AppendHistogram(0, l, 300, h)
+	require.Equal(t, storage.ErrNativeHistogramsDisabled, err)
 
 	require.NoError(t, app.Commit())
 
