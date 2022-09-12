@@ -1131,7 +1131,7 @@ func (db *DB) compactOOOHead() error {
 		return errors.Wrap(err, "get ooo compaction head")
 	}
 
-	ulids, err := db.compactor.CompactOOO(db.dir, oooHead)
+	ulids, err := db.CompactOOO(db.dir, oooHead)
 	if err != nil {
 		return errors.Wrap(err, "compact ooo head")
 	}
@@ -1153,6 +1153,68 @@ func (db *DB) compactOOOHead() error {
 	}
 
 	return nil
+}
+
+// CompactOOO creates a new block per possible block range in the compactor's directory from the OOO Head given.
+// Each ULID in the result corresponds to a block in a unique time range.
+func (db *DB) CompactOOO(dest string, oooHead *OOOCompactionHead) (_ []ulid.ULID, err error) {
+	start := time.Now()
+
+	blockSize := oooHead.ChunkRange()
+	oooHeadMint, oooHeadMaxt := oooHead.MinTime(), oooHead.MaxTime()
+	ulids := make([]ulid.ULID, 0)
+	defer func() {
+		if err != nil {
+			// Best effort removal of created block on any error.
+			for _, uid := range ulids {
+				_ = os.RemoveAll(filepath.Join(db.dir, uid.String()))
+			}
+		}
+	}()
+
+	for t := blockSize * (oooHeadMint / blockSize); t <= oooHeadMaxt; t = t + blockSize {
+		mint, maxt := t, t+blockSize
+		// Block intervals are half-open: [b.MinTime, b.MaxTime). Block intervals are always +1 than the total samples it includes.
+		uid, err := db.compactor.Write(dest, oooHead.CloneForTimeRange(mint, maxt-1), mint, maxt, nil)
+		if err != nil {
+			level.Error(db.logger).Log(
+				"msg", "failure compacting out of order block",
+				"mint", mint,
+				"maxt", maxt,
+				"ulid", uid,
+				"err", err,
+			)
+			return nil, err
+		}
+		if uid.Compare(ulid.ULID{}) != 0 {
+			ulids = append(ulids, uid)
+			blockDir := filepath.Join(dest, uid.String())
+			meta, _, err := readMetaFile(blockDir)
+			if err != nil {
+				return ulids, errors.Wrap(err, "read meta")
+			}
+			meta.OutOfOrder = true
+			_, err = writeMetaFile(db.logger, blockDir, meta)
+			if err != nil {
+				return ulids, errors.Wrap(err, "write meta")
+			}
+		}
+	}
+
+	if len(ulids) == 0 {
+		level.Info(db.logger).Log(
+			"msg", "compact ooo head resulted in no blocks",
+			"duration", time.Since(start),
+		)
+		return nil, nil
+	}
+
+	level.Info(db.logger).Log(
+		"msg", "out-of-order compaction completed",
+		"duration", time.Since(start),
+		"ulids", fmt.Sprintf("%v", ulids),
+	)
+	return ulids, nil
 }
 
 // compactHead compacts the given RangeHead.

@@ -71,10 +71,6 @@ type Compactor interface {
 	//  * The source dirs are marked Deletable.
 	//  * Returns empty ulid.ULID{}.
 	Compact(dest string, dirs []string, open []*Block) (ulid.ULID, error)
-
-	// CompactOOO creates a new block per possible block range in the compactor's directory from the OOO Head given.
-	// Each ULID in the result corresponds to a block in a unique time range.
-	CompactOOO(dest string, oooHead *OOOCompactionHead) (result []ulid.ULID, err error)
 }
 
 // LeveledCompactor implements the Compactor interface.
@@ -484,96 +480,6 @@ func (c *LeveledCompactor) Compact(dest string, dirs []string, open []*Block) (u
 	}
 
 	return uid, errs.Err()
-}
-
-// CompactOOOWithSplitting splits the input OOO Head into shardCount number of output blocks
-// per possible block range, and returns slice of block IDs. In result[i][j],
-// 'i' corresponds to a single time range of blocks while 'j' corresponds to the shard index.
-// If given output block has no series, corresponding block ID will be zero ULID value.
-func (c *LeveledCompactor) CompactOOOWithSplitting(dest string, oooHead *OOOCompactionHead) (result []ulid.ULID, _ error) {
-	return c.compactOOO(dest, oooHead)
-}
-
-// CompactOOO creates a new block per possible block range in the compactor's directory from the OOO Head given.
-// Each ULID in the result corresponds to a block in a unique time range.
-func (c *LeveledCompactor) CompactOOO(dest string, oooHead *OOOCompactionHead) (result []ulid.ULID, err error) {
-	ulids, err := c.compactOOO(dest, oooHead)
-	if err != nil {
-		return nil, err
-	}
-	for _, s := range ulids {
-		if s.Compare(ulid.ULID{}) != 0 {
-			result = append(result, s)
-		}
-	}
-	return result, err
-}
-
-func (c *LeveledCompactor) compactOOO(dest string, oooHead *OOOCompactionHead) (_ []ulid.ULID, err error) {
-	start := time.Now()
-
-	outBlocksMetas := make([]*BlockMeta, 0)
-	outBlocksTime := ulid.Now() // Make all out blocks share the same timestamp in the ULID.
-	blockSize := oooHead.ChunkRange()
-	oooHeadMint, oooHeadMaxt := oooHead.MinTime(), oooHead.MaxTime()
-	ulids := make([]ulid.ULID, 0)
-	for t := blockSize * (oooHeadMint / blockSize); t <= oooHeadMaxt; t = t + blockSize {
-		mint, maxt := t, t+blockSize
-
-		uid := ulid.MustNew(outBlocksTime, rand.Reader)
-		meta := &BlockMeta{
-			ULID:       uid,
-			MinTime:    mint,
-			MaxTime:    maxt,
-			OutOfOrder: true,
-		}
-		meta.Compaction.Level = 1
-		meta.Compaction.Sources = []ulid.ULID{uid}
-
-		outBlocksMetas = append(outBlocksMetas, meta)
-		ulids = append(ulids, meta.ULID)
-
-		// Block intervals are half-open: [b.MinTime, b.MaxTime). Block intervals are always +1 than the total samples it includes.
-		err := c.write(dest, meta, oooHead.CloneForTimeRange(mint, maxt-1))
-		if err != nil {
-			level.Error(c.logger).Log(
-				"msg", "failure compacting out of order block",
-				"mint", meta.MinTime,
-				"maxt", meta.MaxTime,
-				"ulid", meta.ULID,
-				"err", err,
-			)
-			return nil, err
-		}
-	}
-
-	noOOOBlock := true
-	for ix := range outBlocksMetas {
-		meta := outBlocksMetas[ix]
-		if meta.Stats.NumSamples != 0 {
-			noOOOBlock = false
-			level.Info(c.logger).Log(
-				"msg", "compact ooo head",
-				"mint", meta.MinTime,
-				"maxt", meta.MaxTime,
-				"ulid", meta.ULID,
-				"duration", time.Since(start),
-			)
-		} else {
-			// This block did not get any data. So clear out the ulid to signal this.
-			ulids[ix] = ulid.ULID{}
-		}
-	}
-
-	if noOOOBlock {
-		level.Info(c.logger).Log(
-			"msg", "compact ooo head resulted in no blocks",
-			"duration", time.Since(start),
-		)
-		return nil, nil
-	}
-
-	return ulids, nil
 }
 
 func (c *LeveledCompactor) Write(dest string, b BlockReader, mint, maxt int64, parent *BlockMeta) (ulid.ULID, error) {
