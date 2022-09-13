@@ -937,7 +937,7 @@ func (h *Head) updateMinOOOMaxOOOTime(mint, maxt int64) {
 		if mint >= lt {
 			break
 		}
-		if h.minOOOTime.CAS(lt, mint) {
+		if h.minOOOTime.CompareAndSwap(lt, mint) {
 			break
 		}
 	}
@@ -946,7 +946,7 @@ func (h *Head) updateMinOOOMaxOOOTime(mint, maxt int64) {
 		if maxt <= ht {
 			break
 		}
-		if h.maxOOOTime.CAS(ht, maxt) {
+		if h.maxOOOTime.CompareAndSwap(ht, maxt) {
 			break
 		}
 	}
@@ -1173,9 +1173,9 @@ func (h *Head) truncateWAL(mint int64) error {
 }
 
 // truncateOOO
-// * truncates the OOO WBL files whose index is strictly less than lastWBLFile
-// * garbage collects all the m-map chunks from the memory that are less than or equal to minOOOMmapRef
-//   and then deletes the series that do not have any data anymore.
+//   - truncates the OOO WBL files whose index is strictly less than lastWBLFile
+//   - garbage collects all the m-map chunks from the memory that are less than or equal to minOOOMmapRef
+//     and then deletes the series that do not have any data anymore.
 func (h *Head) truncateOOO(lastWBLFile int, minOOOMmapRef chunks.ChunkDiskMapperRef) error {
 	curMinOOOMmapRef := chunks.ChunkDiskMapperRef(h.minOOOMmapRef.Load())
 	if minOOOMmapRef.GreaterThan(curMinOOOMmapRef) {

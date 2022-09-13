@@ -946,15 +946,18 @@ func (db *DB) Appender(ctx context.Context) storage.Appender {
 // Behaviour of 'OutOfOrderTimeWindow' is as follows:
 // OOO enabled = oooTimeWindow > 0. OOO disabled = oooTimeWindow is 0.
 // 1) Before: OOO disabled, Now: OOO enabled =>
-//    * A new WBL is created for the head block.
-//    * OOO compaction is enabled.
-//    * Overlapping queries are enabled.
+//   - A new WBL is created for the head block.
+//   - OOO compaction is enabled.
+//   - Overlapping queries are enabled.
+//
 // 2) Before: OOO enabled, Now: OOO enabled =>
-//    * Only the time window is updated.
+//   - Only the time window is updated.
+//
 // 3) Before: OOO enabled, Now: OOO disabled =>
-//    * Time Window set to 0. So no new OOO samples will be allowed.
-//    * OOO WBL will stay and follow the usual cleanup until a restart.
-//    * OOO Compaction and overlapping queries will remain enabled until a restart.
+//   - Time Window set to 0. So no new OOO samples will be allowed.
+//   - OOO WBL will stay and follow the usual cleanup until a restart.
+//   - OOO Compaction and overlapping queries will remain enabled until a restart.
+//
 // 4) Before: OOO disabled, Now: OOO disabled => no-op.
 func (db *DB) ApplyConfig(conf *config.Config) error {
 	oooTimeWindow := int64(0)
