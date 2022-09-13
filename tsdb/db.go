@@ -123,6 +123,10 @@ type Options struct {
 
 	// Compaction of overlapping blocks are allowed if AllowOverlappingCompaction is true.
 	// This is an optional flag for overlapping blocks.
+	// The reason why this flag exists is because there are various users of the TSDB
+	// that do not want vertical compaction happening on ingest time. Instead
+	// they'd rather store uncompacted overlapping blocks and let another component
+	// go through the blocks compacting them later.
 	AllowOverlappingCompaction bool
 
 	// WALCompression will turn on Snappy compression for records on the WAL.
@@ -1064,9 +1068,6 @@ func (db *DB) Compact() (returnErr error) {
 		// so in order to make sure that overlaps are evaluated
 		// consistently, we explicitly remove the last value
 		// from the block interval here.
-		// TODO(jesus.vazquez) Once we have the OOORangeHead we need to update
-		// TODO(jesus.vazquez) this method to accept a second parameter with an OOORangeHead to
-		// TODO(jesus.vazquez) compact the OOO Samples.
 		if err := db.compactHead(NewRangeHead(db.head, mint, maxt-1)); err != nil {
 			return errors.Wrap(err, "compact head")
 		}

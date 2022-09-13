@@ -306,7 +306,7 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 	}
 
 	s.Lock()
-	// TODO: if we definitely know at this point that the sample is ooo, then optimise
+	// TODO(codesome): if we definitely know at this point that the sample is ooo, then optimise
 	// to skip that sample from the WAL and write only in the WBL.
 	_, delta, err := s.appendable(t, v, a.headMaxt, a.minValidTime, a.oooTimeWindow)
 	if err == nil {
@@ -718,7 +718,7 @@ func (a *headAppender) Commit() (err error) {
 	a.head.updateMinMaxTime(inOrderMint, inOrderMaxt)
 	a.head.updateMinOOOMaxOOOTime(ooomint, ooomaxt)
 
-	// TODO: currently WBL logging of ooo samples is best effort here since we cannot try logging
+	// TODO(codesome): currently WBL logging of ooo samples is best effort here since we cannot try logging
 	// until we have found what samples become OOO. We can try having a metric for this failure.
 	// Returning the error here is not correct because we have already put the samples into the memory,
 	// hence the append/insert was a success.
