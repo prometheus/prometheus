@@ -122,7 +122,8 @@ func (i *isolation) State(mint, maxt int64) *isolationState {
 	i.appendMtx.RLock() // Take append mutex before read mutex.
 	defer i.appendMtx.RUnlock()
 
-	// We need to track the reads even when isolation is disabled.
+	// We need to track reads even when isolation is disabled, so that head
+	// truncation can wait till reads overlapping that range have finished.
 	isoState := &isolationState{
 		maxAppendID:       i.appendsOpenList.appendID,
 		lowWatermark:      i.appendsOpenList.next.appendID, // Lowest appendID from appenders, or lastAppendId.
