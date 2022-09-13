@@ -377,8 +377,7 @@ func (a *HistogramAppender) AppendHistogram(t int64, h *histogram.Histogram) {
 		h = &histogram.Histogram{Sum: h.Sum}
 	}
 
-	switch num {
-	case 0:
+	if num == 0 {
 		// The first append gets the privilege to dictate the layout
 		// but it's also responsible for encoding it into the chunk!
 		writeHistogramChunkLayout(a.b, h.Schema, h.ZeroThreshold, h.PositiveSpans, h.NegativeSpans)
@@ -425,8 +424,10 @@ func (a *HistogramAppender) AppendHistogram(t int64, h *histogram.Histogram) {
 		for _, b := range h.NegativeBuckets {
 			putVarbitInt(a.b, b)
 		}
+	} else {
+		// The case for the 2nd sample with single deltas is implicitly handled correctly with the double delta code,
+		// so we don't need a separate single delta logic for the 2nd sample.
 
-	default:
 		tDelta = t - a.t
 		cntDelta = int64(h.Count) - int64(a.cnt)
 		zCntDelta = int64(h.ZeroCount) - int64(a.zCnt)
@@ -759,6 +760,9 @@ func (it *histogramIterator) Next() ValueType {
 		it.numRead++
 		return ValHistogram
 	}
+
+	// The case for the 2nd sample with single deltas is implicitly handled correctly with the double delta code,
+	// so we don't need a separate single delta logic for the 2nd sample.
 
 	// Recycle bucket slices that have not been returned yet. Otherwise,
 	// copy them.
