@@ -475,7 +475,35 @@ func TestAmendDatapointCausesError(t *testing.T) {
 	require.NoError(t, app.Commit())
 
 	app = db.Appender(ctx)
+	_, err = app.Append(0, labels.Labels{{Name: "a", Value: "b"}}, 0, 0)
+	require.NoError(t, err)
 	_, err = app.Append(0, labels.Labels{{Name: "a", Value: "b"}}, 0, 1)
+	require.Equal(t, storage.ErrDuplicateSampleForTimestamp, err)
+	require.NoError(t, app.Rollback())
+
+	h := histogram.Histogram{
+		Schema:        3,
+		Count:         61,
+		Sum:           2.7,
+		ZeroThreshold: 0.1,
+		ZeroCount:     42,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 4},
+			{Offset: 10, Length: 3},
+		},
+		PositiveBuckets: []int64{1, 2, -2, 1, -1, 0, 0},
+	}
+
+	app = db.Appender(ctx)
+	_, err = app.AppendHistogram(0, labels.Labels{{Name: "a", Value: "c"}}, 0, h.Copy())
+	require.NoError(t, err)
+	require.NoError(t, app.Commit())
+
+	app = db.Appender(ctx)
+	_, err = app.AppendHistogram(0, labels.Labels{{Name: "a", Value: "c"}}, 0, h.Copy())
+	require.NoError(t, err)
+	h.Schema = 2
+	_, err = app.AppendHistogram(0, labels.Labels{{Name: "a", Value: "c"}}, 0, h.Copy())
 	require.Equal(t, storage.ErrDuplicateSampleForTimestamp, err)
 	require.NoError(t, app.Rollback())
 }

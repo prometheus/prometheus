@@ -155,6 +155,113 @@ func (h *Histogram) CumulativeBucketIterator() BucketIterator {
 	return &cumulativeBucketIterator{h: h, posSpansIdx: -1}
 }
 
+// Matches returns true if the given histogram matches exactly.
+// Exact match is when there are no new buckets (even empty) and no missing buckets,
+// and all the bucket values match. Spans can have different empty length spans in between,
+// but they must represent the same bucket layout to match.
+func (h *Histogram) Matches(h2 *Histogram) bool {
+	if h2 == nil {
+		return false
+	}
+
+	if h.Schema != h2.Schema || h.ZeroThreshold != h2.ZeroThreshold ||
+		h.ZeroCount != h2.ZeroCount || h.Count != h2.Count || h.Sum != h2.Sum {
+		return false
+	}
+
+	if !spansMatch(h.PositiveSpans, h2.PositiveSpans) {
+		return false
+	}
+	if !spansMatch(h.NegativeSpans, h2.NegativeSpans) {
+		return false
+	}
+
+	if !bucketsMatch(h.PositiveBuckets, h2.PositiveBuckets) {
+		return false
+	}
+	if !bucketsMatch(h.NegativeBuckets, h2.NegativeBuckets) {
+		return false
+	}
+
+	return true
+}
+
+// spansMatch returns true if both spans represent the same bucket layout
+// after combining zero length spans with the next non-zero length span.
+func spansMatch(s1, s2 []Span) bool {
+	if len(s1) == 0 && len(s2) == 0 {
+		return true
+	}
+
+	s1idx, s2idx := 0, 0
+	for {
+		if s1idx >= len(s1) {
+			return allEmptySpans(s2[s2idx:])
+		}
+		if s2idx >= len(s2) {
+			return allEmptySpans(s1[s1idx:])
+		}
+
+		currS1, currS2 := s1[s1idx], s2[s2idx]
+		s1idx++
+		s2idx++
+		if currS1.Length == 0 {
+			// This span is zero length, so we add consecutive such spans
+			// until we find a non-zero span.
+			for ; s1idx < len(s1) && s1[s1idx].Length == 0; s1idx++ {
+				currS1.Offset += s1[s1idx].Offset
+			}
+			if s1idx < len(s1) {
+				currS1.Offset += s1[s1idx].Offset
+				currS1.Length = s1[s1idx].Length
+				s1idx++
+			}
+		}
+		if currS2.Length == 0 {
+			// This span is zero length, so we add consecutive such spans
+			// until we find a non-zero span.
+			for ; s2idx < len(s2) && s2[s2idx].Length == 0; s2idx++ {
+				currS2.Offset += s2[s2idx].Offset
+			}
+			if s2idx < len(s2) {
+				currS2.Offset += s2[s2idx].Offset
+				currS2.Length = s2[s2idx].Length
+				s2idx++
+			}
+		}
+
+		if currS1.Length == 0 && currS2.Length == 0 {
+			// The last spans of both set are zero length. Previous spans match.
+			return true
+		}
+
+		if currS1.Offset != currS2.Offset || currS1.Length != currS2.Length {
+			return false
+		}
+	}
+}
+
+func allEmptySpans(s []Span) bool {
+	for _, ss := range s {
+		if ss.Length > 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func bucketsMatch(b1, b2 []int64) bool {
+	if len(b1) != len(b2) {
+		return false
+	}
+	for i, b := range b1 {
+		if b != b2[i] {
+			return false
+		}
+	}
+	return true
+}
+
 // ToFloat returns a FloatHistogram representation of the Histogram. It is a
 // deep copy (e.g. spans are not shared).
 func (h *Histogram) ToFloat() *FloatHistogram {

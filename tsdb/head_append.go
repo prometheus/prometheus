@@ -392,12 +392,12 @@ func (s *memSeries) appendableHistogram(t int64, h *histogram.Histogram) error {
 	if t < c.maxTime {
 		return storage.ErrOutOfOrderSample
 	}
-	// TODO(beorn7): do it for histogram.
+
 	// We are allowing exact duplicates as we can encounter them in valid cases
 	// like federation and erroring out at that time would be extremely noisy.
-	//if math.Float64bits(s.sampleBuf[3].v) != math.Float64bits(v) {
-	//	return storage.ErrDuplicateSampleForTimestamp
-	//}
+	if !h.Matches(s.sampleBuf[3].h) {
+		return storage.ErrDuplicateSampleForTimestamp
+	}
 	return nil
 }
 
