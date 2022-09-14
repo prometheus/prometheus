@@ -3472,7 +3472,6 @@ func TestOOOWALWrite(t *testing.T) {
 	dir := t.TempDir()
 
 	opts := DefaultOptions()
-	opts.OutOfOrderCapMin = 2
 	opts.OutOfOrderCapMax = 2
 	opts.OutOfOrderTimeWindow = 30 * time.Minute.Milliseconds()
 
@@ -3975,7 +3974,6 @@ func TestOOOCompaction(t *testing.T) {
 	dir := t.TempDir()
 
 	opts := DefaultOptions()
-	opts.OutOfOrderCapMin = 2
 	opts.OutOfOrderCapMax = 30
 	opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
 	opts.AllowOverlappingQueries = true
@@ -4158,7 +4156,6 @@ func TestOOOCompactionWithNormalCompaction(t *testing.T) {
 	dir := t.TempDir()
 
 	opts := DefaultOptions()
-	opts.OutOfOrderCapMin = 2
 	opts.OutOfOrderCapMax = 30
 	opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
 	opts.AllowOverlappingQueries = true
@@ -4256,7 +4253,6 @@ func TestOOOCompactionWithNormalCompaction(t *testing.T) {
 
 func Test_Querier_OOOQuery(t *testing.T) {
 	opts := DefaultOptions()
-	opts.OutOfOrderCapMin = 2
 	opts.OutOfOrderCapMax = 30
 	opts.OutOfOrderTimeWindow = 24 * time.Hour.Milliseconds()
 	opts.AllowOverlappingQueries = true
@@ -4343,7 +4339,6 @@ func Test_Querier_OOOQuery(t *testing.T) {
 
 func Test_ChunkQuerier_OOOQuery(t *testing.T) {
 	opts := DefaultOptions()
-	opts.OutOfOrderCapMin = 2
 	opts.OutOfOrderCapMax = 30
 	opts.OutOfOrderTimeWindow = 24 * time.Hour.Milliseconds()
 	opts.AllowOverlappingQueries = true
@@ -4438,7 +4433,6 @@ func Test_ChunkQuerier_OOOQuery(t *testing.T) {
 
 func TestOOOAppendAndQuery(t *testing.T) {
 	opts := DefaultOptions()
-	opts.OutOfOrderCapMin = 2
 	opts.OutOfOrderCapMax = 30
 	opts.OutOfOrderTimeWindow = 4 * time.Hour.Milliseconds()
 	opts.AllowOverlappingQueries = true
@@ -4631,7 +4625,6 @@ func TestOOODisabled(t *testing.T) {
 
 func TestWBLAndMmapReplay(t *testing.T) {
 	opts := DefaultOptions()
-	opts.OutOfOrderCapMin = 2
 	opts.OutOfOrderCapMax = 30
 	opts.OutOfOrderTimeWindow = 4 * time.Hour.Milliseconds()
 	opts.AllowOverlappingQueries = true
@@ -4819,7 +4812,6 @@ func TestOOOCompactionFailure(t *testing.T) {
 	dir := t.TempDir()
 
 	opts := DefaultOptions()
-	opts.OutOfOrderCapMin = 2
 	opts.OutOfOrderCapMax = 30
 	opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
 	opts.AllowOverlappingQueries = true
@@ -4961,7 +4953,6 @@ func TestWBLCorruption(t *testing.T) {
 	dir := t.TempDir()
 
 	opts := DefaultOptions()
-	opts.OutOfOrderCapMin = 2
 	opts.OutOfOrderCapMax = 30
 	opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
 	opts.AllowOverlappingQueries = true
@@ -5110,7 +5101,6 @@ func TestOOOMmapCorruption(t *testing.T) {
 	dir := t.TempDir()
 
 	opts := DefaultOptions()
-	opts.OutOfOrderCapMin = 2
 	opts.OutOfOrderCapMax = 10
 	opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
 	opts.AllowOverlappingQueries = true

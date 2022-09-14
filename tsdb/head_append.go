@@ -314,7 +314,7 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 	}
 	s.Unlock()
 	if delta > 0 {
-		a.head.metrics.oooHistogram.Observe(float64(delta) / 1000)
+		a.head.metrics.oooHistogram.Observe(float64(delta))
 	}
 	if err != nil {
 		if err == storage.ErrOutOfOrderSample {
@@ -857,7 +857,7 @@ func (s *memSeries) cutNewOOOHeadChunk(mint int64, chunkDiskMapper *chunks.Chunk
 	ref := s.mmapCurrentOOOHeadChunk(chunkDiskMapper)
 
 	s.oooHeadChunk = &oooHeadChunk{
-		chunk:   chunkenc.NewOOOChunk(int(s.oooCapMin)),
+		chunk:   NewOOOChunk(),
 		minTime: mint,
 		maxTime: math.MinInt64,
 	}

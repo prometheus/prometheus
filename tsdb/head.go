@@ -137,7 +137,6 @@ type HeadOptions struct {
 	ChunkWriteBufferSize int
 	ChunkWriteQueueSize  int
 	OutOfOrderTimeWindow atomic.Int64
-	OutOfOrderCapMin     atomic.Int64
 	OutOfOrderCapMax     atomic.Int64
 
 	// StripeSize sets the number of entries in the hash map, it must be a power of 2.
@@ -152,7 +151,6 @@ type HeadOptions struct {
 }
 
 const (
-	DefaultOutOfOrderCapMin int64 = 4
 	DefaultOutOfOrderCapMax int64 = 32
 )
 
@@ -167,7 +165,6 @@ func DefaultHeadOptions() *HeadOptions {
 		SeriesCallback:       &noopSeriesLifecycleCallback{},
 		IsolationDisabled:    defaultIsolationDisabled,
 	}
-	ho.OutOfOrderCapMin.Store(DefaultOutOfOrderCapMin)
 	ho.OutOfOrderCapMax.Store(DefaultOutOfOrderCapMax)
 	return ho
 }
@@ -200,18 +197,9 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal, wbl *wal.WAL, opts *Hea
 
 	// Time window can be set on runtime. So the capMin and capMax should be valid
 	// even if ooo is not enabled yet.
-	capMin, capMax := opts.OutOfOrderCapMin.Load(), opts.OutOfOrderCapMax.Load()
-	if capMin > 255 {
-		return nil, errors.Errorf("OOOCapMin invalid %d. must be <= 255", capMin)
-	}
-	if capMax > 255 {
-		return nil, errors.Errorf("OOOCapMax invalid %d. must be <= 255", capMin)
-	}
-	if capMin < 0 {
-		return nil, errors.Errorf("OOOCapMin invalid %d. must be >= 0", capMin)
-	}
-	if capMax <= 0 || capMax < capMin {
-		return nil, errors.Errorf("OOOCapMax invalid %d. must be > 0 and >= OOOCapMin", capMax)
+	capMax := opts.OutOfOrderCapMax.Load()
+	if capMax < 4 || capMax > 255 {
+		return nil, errors.Errorf("OOOCapMax of %d is invalid. must be >= 4 and <= 255", capMax)
 	}
 
 	if opts.ChunkRange < 1 {
@@ -1500,8 +1488,7 @@ func (h *Head) getOrCreate(hash uint64, lset labels.Labels) (*memSeries, bool, e
 
 func (h *Head) getOrCreateWithID(id chunks.HeadSeriesRef, hash uint64, lset labels.Labels) (*memSeries, bool, error) {
 	s, created, err := h.series.getOrSet(hash, lset, func() *memSeries {
-		return newMemSeries(lset, id, h.chunkRange.Load(),
-			h.opts.OutOfOrderCapMin.Load(), h.opts.OutOfOrderCapMax.Load(),
+		return newMemSeries(lset, id, h.chunkRange.Load(), h.opts.OutOfOrderCapMax.Load(),
 			&h.memChunkPool, h.opts.IsolationDisabled)
 	})
 	if err != nil {
@@ -1794,7 +1781,6 @@ type memSeries struct {
 
 	mmMaxTime  int64 // Max time of any mmapped chunk, only used during WAL replay.
 	chunkRange int64
-	oooCapMin  uint8
 	oooCapMax  uint8
 
 	nextAt int64 // Timestamp at which to cut the next chunk.
@@ -1816,14 +1802,13 @@ type memSeries struct {
 	pendingCommit bool // Whether there are samples waiting to be committed to this series.
 }
 
-func newMemSeries(lset labels.Labels, id chunks.HeadSeriesRef, chunkRange, oooCapMin, oooCapMax int64, memChunkPool *sync.Pool, isolationDisabled bool) *memSeries {
+func newMemSeries(lset labels.Labels, id chunks.HeadSeriesRef, chunkRange, oooCapMax int64, memChunkPool *sync.Pool, isolationDisabled bool) *memSeries {
 	s := &memSeries{
 		lset:         lset,
 		ref:          id,
 		chunkRange:   chunkRange,
 		nextAt:       math.MinInt64,
 		memChunkPool: memChunkPool,
-		oooCapMin:    uint8(oooCapMin),
 		oooCapMax:    uint8(oooCapMax),
 	}
 	if !isolationDisabled {
@@ -1910,7 +1895,7 @@ type memChunk struct {
 }
 
 type oooHeadChunk struct {
-	chunk            *chunkenc.OOOChunk
+	chunk            *OOOChunk
 	minTime, maxTime int64 // can probably be removed and pulled out of the chunk instead
 }
 

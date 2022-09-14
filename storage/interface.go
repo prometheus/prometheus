@@ -27,11 +27,15 @@ import (
 
 // The errors exposed.
 var (
-	ErrNotFound                    = errors.New("not found")
-	ErrOutOfOrderSample            = errors.New("out of order sample")            // OOO support disabled and sample is OOO.
-	ErrTooOldSample                = errors.New("too old sample")                 // OOO support enabled, but sample outside of tolerance
-	ErrDuplicateSampleForTimestamp = errors.New("duplicate sample for timestamp") // WARNING: this is only reported if value differs. equal values get silently dropped
-	ErrOutOfBounds                 = errors.New("out of bounds")                  // OOO support disabled and t < minValidTime.
+	ErrNotFound = errors.New("not found")
+	// ErrOutOfOrderSample is when out of order support is disabled and the sample is out of order.
+	ErrOutOfOrderSample = errors.New("out of order sample")
+	// ErrOutOfBounds is when out of order support is disabled and the sample is older than the min valid time for the append.
+	ErrOutOfBounds = errors.New("out of bounds")
+	// ErrTooOldSample is when out of order support is enabled but the sample is outside the time window allowed.
+	ErrTooOldSample = errors.New("too old sample")
+	// ErrDuplicateSampleForTimestamp is when the sample has same timestamp but different value.
+	ErrDuplicateSampleForTimestamp = errors.New("duplicate sample for timestamp")
 	ErrOutOfOrderExemplar          = errors.New("out of order exemplar")
 	ErrDuplicateExemplar           = errors.New("duplicate exemplar")
 	ErrExemplarLabelLength         = fmt.Errorf("label length for exemplar exceeds maximum of %d UTF-8 characters", exemplar.ExemplarMaxLabelSetLength)

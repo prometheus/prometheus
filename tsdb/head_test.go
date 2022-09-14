@@ -230,7 +230,7 @@ func BenchmarkLoadWAL(b *testing.B) {
 						for k := 0; k < c.batches*c.seriesPerBatch; k++ {
 							// Create one mmapped chunk per series, with one sample at the given time.
 							lbls := labels.Labels{}
-							s := newMemSeries(lbls, chunks.HeadSeriesRef(k)*101, c.mmappedChunkT, 0, 1, nil, defaultIsolationDisabled)
+							s := newMemSeries(lbls, chunks.HeadSeriesRef(k)*101, c.mmappedChunkT, 1, nil, defaultIsolationDisabled)
 							s.append(c.mmappedChunkT, 42, 0, chunkDiskMapper)
 							s.mmapCurrentHeadChunk(chunkDiskMapper)
 						}
@@ -740,7 +740,7 @@ func TestMemSeries_truncateChunks(t *testing.T) {
 	}
 
 	lbls := labels.FromStrings("a", "b")
-	s := newMemSeries(lbls, 1, 2000, 0, 1, &memChunkPool, defaultIsolationDisabled)
+	s := newMemSeries(lbls, 1, 2000, 1, &memChunkPool, defaultIsolationDisabled)
 
 	for i := 0; i < 4000; i += 5 {
 		ok, _ := s.append(int64(i), float64(i), 0, chunkDiskMapper)
@@ -1280,7 +1280,7 @@ func TestMemSeries_append(t *testing.T) {
 	}()
 
 	lbls := labels.Labels{}
-	s := newMemSeries(lbls, 1, 500, 0, 1, nil, defaultIsolationDisabled)
+	s := newMemSeries(lbls, 1, 500, 1, nil, defaultIsolationDisabled)
 
 	// Add first two samples at the very end of a chunk range and the next two
 	// on and after it.
@@ -1335,7 +1335,7 @@ func TestMemSeries_append_atVariableRate(t *testing.T) {
 	})
 
 	lbls := labels.Labels{}
-	s := newMemSeries(lbls, 1, DefaultBlockDuration, 0, 0, nil, defaultIsolationDisabled)
+	s := newMemSeries(lbls, 1, DefaultBlockDuration, 0, nil, defaultIsolationDisabled)
 
 	// At this slow rate, we will fill the chunk in two block durations.
 	slowRate := (DefaultBlockDuration * 2) / samplesPerChunk
@@ -2495,7 +2495,7 @@ func TestMemSafeIteratorSeekIntoBuffer(t *testing.T) {
 	}()
 
 	lbls := labels.Labels{}
-	s := newMemSeries(lbls, 1, 500, 0, 1, nil, defaultIsolationDisabled)
+	s := newMemSeries(lbls, 1, 500, 1, nil, defaultIsolationDisabled)
 
 	for i := 0; i < 7; i++ {
 		ok, _ := s.append(int64(i), float64(i), 0, chunkDiskMapper)

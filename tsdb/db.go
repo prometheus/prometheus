@@ -82,7 +82,6 @@ func DefaultOptions() *Options {
 		StripeSize:                 DefaultStripeSize,
 		HeadChunksWriteBufferSize:  chunks.DefaultWriteBufferSize,
 		IsolationDisabled:          defaultIsolationDisabled,
-		OutOfOrderCapMin:           DefaultOutOfOrderCapMin,
 		OutOfOrderCapMax:           DefaultOutOfOrderCapMax,
 	}
 }
@@ -124,9 +123,9 @@ type Options struct {
 	// Compaction of overlapping blocks are allowed if AllowOverlappingCompaction is true.
 	// This is an optional flag for overlapping blocks.
 	// The reason why this flag exists is because there are various users of the TSDB
-	// that do not want vertical compaction happening on ingest time. Instead
-	// they'd rather store uncompacted overlapping blocks and let another component
-	// go through the blocks compacting them later.
+	// that do not want vertical compaction happening on ingest time. Instead,
+	// they'd rather keep overlapping blocks and let another component do the overlapping compaction later.
+	// For Prometheus, this will always be enabled if overlapping queries is enabled.
 	AllowOverlappingCompaction bool
 
 	// WALCompression will turn on Snappy compression for records on the WAL.
@@ -178,10 +177,6 @@ type Options struct {
 	// This can change during run-time, so this value from here should only be used
 	// while initialising.
 	OutOfOrderTimeWindow int64
-
-	// OutOfOrderCapMin minimum capacity for OOO chunks (in samples).
-	// If it is <=0, the default value is assumed.
-	OutOfOrderCapMin int64
 
 	// OutOfOrderCapMax is maximum capacity for OOO chunks (in samples).
 	// If it is <=0, the default value is assumed.
@@ -650,14 +645,8 @@ func validateOpts(opts *Options, rngs []int64) (*Options, []int64) {
 	if opts.OutOfOrderTimeWindow > 0 {
 		opts.AllowOverlappingQueries = true
 	}
-	if opts.OutOfOrderCapMin <= 0 {
-		opts.OutOfOrderCapMin = DefaultOutOfOrderCapMin
-	}
 	if opts.OutOfOrderCapMax <= 0 {
 		opts.OutOfOrderCapMax = DefaultOutOfOrderCapMax
-	}
-	if opts.OutOfOrderCapMin > opts.OutOfOrderCapMax {
-		opts.OutOfOrderCapMax = opts.OutOfOrderCapMin
 	}
 	if opts.OutOfOrderTimeWindow < 0 {
 		opts.OutOfOrderTimeWindow = 0
@@ -797,7 +786,6 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	headOpts.MaxExemplars.Store(opts.MaxExemplars)
 	headOpts.EnableMemorySnapshotOnShutdown = opts.EnableMemorySnapshotOnShutdown
 	headOpts.OutOfOrderTimeWindow.Store(opts.OutOfOrderTimeWindow)
-	headOpts.OutOfOrderCapMin.Store(opts.OutOfOrderCapMin)
 	headOpts.OutOfOrderCapMax.Store(opts.OutOfOrderCapMax)
 	if opts.IsolationDisabled {
 		// We only override this flag if isolation is disabled at DB level. We use the default otherwise.
@@ -955,8 +943,8 @@ func (db *DB) Appender(ctx context.Context) storage.Appender {
 //
 // 3) Before: OOO enabled, Now: OOO disabled =>
 //   - Time Window set to 0. So no new OOO samples will be allowed.
-//   - OOO WBL will stay and follow the usual cleanup until a restart.
-//   - OOO Compaction and overlapping queries will remain enabled until a restart.
+//   - OOO WBL will stay and will be eventually cleaned up.
+//   - OOO Compaction and overlapping queries will remain enabled until a restart or until all OOO samples are compacted.
 //
 // 4) Before: OOO disabled, Now: OOO disabled => no-op.
 func (db *DB) ApplyConfig(conf *config.Config) error {
@@ -1181,13 +1169,6 @@ func (db *DB) CompactOOO(dest string, oooHead *OOOCompactionHead) (_ []ulid.ULID
 		// Block intervals are half-open: [b.MinTime, b.MaxTime). Block intervals are always +1 than the total samples it includes.
 		uid, err := db.compactor.Write(dest, oooHead.CloneForTimeRange(mint, maxt-1), mint, maxt, nil)
 		if err != nil {
-			level.Error(db.logger).Log(
-				"msg", "failure compacting out of order block",
-				"mint", mint,
-				"maxt", maxt,
-				"ulid", uid,
-				"err", err,
-			)
 			return nil, err
 		}
 		if uid.Compare(ulid.ULID{}) != 0 {

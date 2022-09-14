@@ -473,7 +473,6 @@ func TestOOOHeadChunkReader_LabelValues(t *testing.T) {
 // an OOOHeadChunkReader to read chunks from it.
 func TestOOOHeadChunkReader_Chunk(t *testing.T) {
 	opts := DefaultOptions()
-	opts.OutOfOrderCapMin = 1
 	opts.OutOfOrderCapMax = 5
 	opts.OutOfOrderTimeWindow = 120 * time.Minute.Milliseconds()
 
@@ -881,7 +880,6 @@ func TestOOOHeadChunkReader_Chunk(t *testing.T) {
 // - A == B
 func TestOOOHeadChunkReader_Chunk_ConsistentQueryResponseDespiteOfHeadExpanding(t *testing.T) {
 	opts := DefaultOptions()
-	opts.OutOfOrderCapMin = 1
 	opts.OutOfOrderCapMax = 5
 	opts.OutOfOrderTimeWindow = 120 * time.Minute.Milliseconds()
 
