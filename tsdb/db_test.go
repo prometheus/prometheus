@@ -68,6 +68,11 @@ func openTestDB(t testing.TB, opts *Options, rngs []int64) (db *DB) {
 	tmpdir := t.TempDir()
 	var err error
 
+	if opts == nil {
+		opts = DefaultOptions()
+	}
+	opts.EnableNativeHistograms = true
+
 	if len(rngs) == 0 {
 		db, err = Open(tmpdir, nil, nil, opts, nil)
 	} else {
@@ -4022,4 +4027,49 @@ func TestQueryHistogramFromBlocks(t *testing.T) {
 			genHistogramAndFloatSeries(10, 5, minute(89), minute(140), minute(3)),
 		)
 	})
+}
+
+func TestNativeHistogramFlag(t *testing.T) {
+	dir := t.TempDir()
+	db, err := Open(dir, nil, nil, nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, db.Close())
+	})
+	h := &histogram.Histogram{
+		Count:         6,
+		ZeroCount:     4,
+		ZeroThreshold: 0.001,
+		Sum:           35.5,
+		Schema:        1,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 2, Length: 2},
+		},
+		PositiveBuckets: []int64{1, 1, -1, 0},
+	}
+
+	l := labels.FromStrings("foo", "bar")
+
+	app := db.Appender(context.Background())
+
+	// Disabled by default.
+	_, err = app.AppendHistogram(0, l, 100, h)
+	require.Equal(t, storage.ErrNativeHistogramsDisabled, err)
+
+	// Enable and append.
+	db.EnableNativeHistograms()
+	_, err = app.AppendHistogram(0, l, 200, h)
+	require.NoError(t, err)
+
+	db.DisableNativeHistograms()
+	_, err = app.AppendHistogram(0, l, 300, h)
+	require.Equal(t, storage.ErrNativeHistogramsDisabled, err)
+
+	require.NoError(t, app.Commit())
+
+	q, err := db.Querier(context.Background(), math.MinInt, math.MaxInt64)
+	require.NoError(t, err)
+	act := query(t, q, labels.MustNewMatcher(labels.MatchEqual, "foo", "bar"))
+	require.Equal(t, map[string][]tsdbutil.Sample{l.String(): {sample{t: 200, h: h}}}, act)
 }

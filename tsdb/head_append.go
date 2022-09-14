@@ -439,6 +439,10 @@ func (a *headAppender) AppendExemplar(ref storage.SeriesRef, lset labels.Labels,
 }
 
 func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels, t int64, h *histogram.Histogram) (storage.SeriesRef, error) {
+	if !a.head.opts.EnableNativeHistograms.Load() {
+		return 0, storage.ErrNativeHistogramsDisabled
+	}
+
 	if t < a.minValidTime {
 		a.head.metrics.outOfBoundSamples.Inc()
 		return 0, storage.ErrOutOfBounds

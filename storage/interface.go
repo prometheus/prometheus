@@ -36,6 +36,7 @@ var (
 	ErrDuplicateExemplar             = errors.New("duplicate exemplar")
 	ErrExemplarLabelLength           = fmt.Errorf("label length for exemplar exceeds maximum of %d UTF-8 characters", exemplar.ExemplarMaxLabelSetLength)
 	ErrExemplarsDisabled             = fmt.Errorf("exemplar storage is disabled or max exemplars is less than or equal to 0")
+	ErrNativeHistogramsDisabled      = fmt.Errorf("native histograms are disabled")
 	ErrHistogramSpanNegativeOffset   = errors.New("histogram has a span whose offset is negative")
 	ErrHistogramSpansBucketsMismatch = errors.New("histogram spans specify different number of buckets than provided")
 	ErrHistogramNegativeBucketCount  = errors.New("histogram has a bucket whose observation count is negative")

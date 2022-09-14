@@ -160,6 +160,9 @@ type Options struct {
 
 	// Disables isolation between reads and in-flight appends.
 	IsolationDisabled bool
+
+	// EnableNativeHistograms enables the ingestion of native histograms.
+	EnableNativeHistograms bool
 }
 
 type BlocksToDeleteFunc func(blocks []*Block) map[ulid.ULID]struct{}
@@ -719,6 +722,7 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	headOpts.EnableExemplarStorage = opts.EnableExemplarStorage
 	headOpts.MaxExemplars.Store(opts.MaxExemplars)
 	headOpts.EnableMemorySnapshotOnShutdown = opts.EnableMemorySnapshotOnShutdown
+	headOpts.EnableNativeHistograms.Store(opts.EnableNativeHistograms)
 	if opts.IsolationDisabled {
 		// We only override this flag if isolation is disabled at DB level. We use the default otherwise.
 		headOpts.IsolationDisabled = opts.IsolationDisabled
@@ -848,6 +852,16 @@ func (db *DB) Appender(ctx context.Context) storage.Appender {
 
 func (db *DB) ApplyConfig(conf *config.Config) error {
 	return db.head.ApplyConfig(conf)
+}
+
+// EnableNativeHistograms enables the native histogram feature.
+func (db *DB) EnableNativeHistograms() {
+	db.head.EnableNativeHistograms()
+}
+
+// DisableNativeHistograms disables the native histogram feature.
+func (db *DB) DisableNativeHistograms() {
+	db.head.DisableNativeHistograms()
 }
 
 // dbAppender wraps the DB's head appender and triggers compactions on commit

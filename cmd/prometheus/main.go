@@ -196,6 +196,9 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 			case "no-default-scrape-port":
 				c.scrape.NoDefaultPort = true
 				level.Info(logger).Log("msg", "No default port will be appended to scrape targets' addresses.")
+			case "native-histograms":
+				c.tsdb.EnableNativeHistograms = true
+				level.Info(logger).Log("msg", "Experimental native histogram support enabled.")
 			case "":
 				continue
 			case "promql-at-modifier", "promql-negative-offset":
@@ -1542,6 +1545,7 @@ type tsdbOptions struct {
 	EnableExemplarStorage          bool
 	MaxExemplars                   int64
 	EnableMemorySnapshotOnShutdown bool
+	EnableNativeHistograms         bool
 }
 
 func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
@@ -1560,6 +1564,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		EnableExemplarStorage:          opts.EnableExemplarStorage,
 		MaxExemplars:                   opts.MaxExemplars,
 		EnableMemorySnapshotOnShutdown: opts.EnableMemorySnapshotOnShutdown,
+		EnableNativeHistograms:         opts.EnableNativeHistograms,
 	}
 }
 

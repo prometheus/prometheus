@@ -126,6 +126,9 @@ type HeadOptions struct {
 	// https://pkg.go.dev/sync/atomic#pkg-note-BUG
 	MaxExemplars atomic.Int64
 
+	// EnableNativeHistograms enables the ingestion of native histograms.
+	EnableNativeHistograms atomic.Bool
+
 	ChunkRange int64
 	// ChunkDirRoot is the parent directory of the chunks directory.
 	ChunkDirRoot         string
@@ -743,6 +746,16 @@ func (h *Head) ApplyConfig(cfg *config.Config) error {
 	migrated := h.exemplars.(*CircularExemplarStorage).Resize(newSize)
 	level.Info(h.logger).Log("msg", "Exemplar storage resized", "from", prevSize, "to", newSize, "migrated", migrated)
 	return nil
+}
+
+// EnableNativeHistograms enables the native histogram feature.
+func (h *Head) EnableNativeHistograms() {
+	h.opts.EnableNativeHistograms.Store(true)
+}
+
+// DisableNativeHistograms disables the native histogram feature.
+func (h *Head) DisableNativeHistograms() {
+	h.opts.EnableNativeHistograms.Store(false)
 }
 
 // PostingsCardinalityStats returns top 10 highest cardinality stats By label and value names.
