@@ -198,8 +198,8 @@ func NewHead(r prometheus.Registerer, l log.Logger, wal, wbl *wal.WAL, opts *Hea
 	// Time window can be set on runtime. So the capMin and capMax should be valid
 	// even if ooo is not enabled yet.
 	capMax := opts.OutOfOrderCapMax.Load()
-	if capMax < 4 || capMax > 255 {
-		return nil, errors.Errorf("OOOCapMax of %d is invalid. must be >= 4 and <= 255", capMax)
+	if capMax <= 0 || capMax > 255 {
+		return nil, errors.Errorf("OOOCapMax of %d is invalid. must be > 0 and <= 255", capMax)
 	}
 
 	if opts.ChunkRange < 1 {

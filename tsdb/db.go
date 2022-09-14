@@ -1123,7 +1123,7 @@ func (db *DB) compactOOOHead() error {
 		return errors.Wrap(err, "get ooo compaction head")
 	}
 
-	ulids, err := db.CompactOOO(db.dir, oooHead)
+	ulids, err := db.compactOOO(db.dir, oooHead)
 	if err != nil {
 		return errors.Wrap(err, "compact ooo head")
 	}
@@ -1147,9 +1147,9 @@ func (db *DB) compactOOOHead() error {
 	return nil
 }
 
-// CompactOOO creates a new block per possible block range in the compactor's directory from the OOO Head given.
+// compactOOO creates a new block per possible block range in the compactor's directory from the OOO Head given.
 // Each ULID in the result corresponds to a block in a unique time range.
-func (db *DB) CompactOOO(dest string, oooHead *OOOCompactionHead) (_ []ulid.ULID, err error) {
+func (db *DB) compactOOO(dest string, oooHead *OOOCompactionHead) (_ []ulid.ULID, err error) {
 	start := time.Now()
 
 	blockSize := oooHead.ChunkRange()

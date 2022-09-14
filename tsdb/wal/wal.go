@@ -470,17 +470,25 @@ func SegmentName(dir string, i int) string {
 	return filepath.Join(dir, fmt.Sprintf("%08d", i))
 }
 
-// NextSegment creates the next segment and closes the previous one.
+// NextSegment creates the next segment and closes the previous one asynchronously.
 // It returns the file number of the new file.
 func (w *WAL) NextSegment() (int, error) {
 	w.mtx.Lock()
 	defer w.mtx.Unlock()
-	return w.nextSegment()
+	return w.nextSegment(true)
+}
+
+// NextSegmentSync creates the next segment and closes the previous one in sync.
+// It returns the file number of the new file.
+func (w *WAL) NextSegmentSync() (int, error) {
+	w.mtx.Lock()
+	defer w.mtx.Unlock()
+	return w.nextSegment(false)
 }
 
 // nextSegment creates the next segment and closes the previous one.
 // It returns the file number of the new file.
-func (w *WAL) nextSegment() (int, error) {
+func (w *WAL) nextSegment(async bool) (int, error) {
 	if w.closed {
 		return 0, errors.New("wal is closed")
 	}
@@ -501,13 +509,18 @@ func (w *WAL) nextSegment() (int, error) {
 	}
 
 	// Don't block further writes by fsyncing the last segment.
-	w.actorc <- func() {
+	f := func() {
 		if err := w.fsync(prev); err != nil {
 			level.Error(w.logger).Log("msg", "sync previous segment", "err", err)
 		}
 		if err := prev.Close(); err != nil {
 			level.Error(w.logger).Log("msg", "close previous segment", "err", err)
 		}
+	}
+	if async {
+		w.actorc <- f
+	} else {
+		f()
 	}
 	return next.Index(), nil
 }
@@ -651,7 +664,7 @@ func (w *WAL) log(rec []byte, final bool) error {
 	left += (pageSize - recordHeaderSize) * (w.pagesPerSegment() - w.donePages - 1) // Free pages in the active segment.
 
 	if len(rec) > left {
-		if _, err := w.nextSegment(); err != nil {
+		if _, err := w.nextSegment(true); err != nil {
 			return err
 		}
 	}
