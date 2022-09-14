@@ -4796,6 +4796,7 @@ func TestWBLAndMmapReplay(t *testing.T) {
 		require.Greater(t, markers, 0)
 		require.Greater(t, addedRecs, 0)
 		require.NoError(t, newWbl.Close())
+		require.NoError(t, sr.Close())
 		require.NoError(t, os.RemoveAll(wblDir))
 		require.NoError(t, os.Rename(newWbl.Dir(), wblDir))
 
