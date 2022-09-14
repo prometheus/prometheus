@@ -3665,7 +3665,7 @@ func TestHeadMinOOOTimeUpdate(t *testing.T) {
 	require.Equal(t, 295*time.Minute.Milliseconds(), h.MinOOOTime())
 
 	// Allowed window for OOO is >=290, which is before the earliest ooo sample 295, so it gets set to the lower value.
-	require.NoError(t, h.truncateOOO(1, 1))
+	require.NoError(t, h.truncateOOO(0, 1))
 	require.Equal(t, 290*time.Minute.Milliseconds(), h.MinOOOTime())
 
 	appendSample(310) // In-order sample.
@@ -3674,6 +3674,6 @@ func TestHeadMinOOOTimeUpdate(t *testing.T) {
 
 	// Now the OOO sample 295 was not gc'ed yet. And allowed window for OOO is now >=300.
 	// So the lowest among them, 295, is set as minOOOTime.
-	require.NoError(t, h.truncateOOO(2, 2))
+	require.NoError(t, h.truncateOOO(0, 2))
 	require.Equal(t, 295*time.Minute.Milliseconds(), h.MinOOOTime())
 }
