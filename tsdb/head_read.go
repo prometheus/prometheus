@@ -17,6 +17,7 @@ import (
 	"context"
 	"math"
 	"sort"
+	"sync"
 
 	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
@@ -276,7 +277,7 @@ func (h *headChunkReader) Chunk(meta chunks.Meta) (chunkenc.Chunk, error) {
 	}
 
 	s.Lock()
-	c, garbageCollect, err := s.chunk(cid, h.head.chunkDiskMapper)
+	c, garbageCollect, err := s.chunk(cid, h.head.chunkDiskMapper, &h.head.memChunkPool)
 	if err != nil {
 		s.Unlock()
 		return nil, err
@@ -285,7 +286,7 @@ func (h *headChunkReader) Chunk(meta chunks.Meta) (chunkenc.Chunk, error) {
 		if garbageCollect {
 			// Set this to nil so that Go GC can collect it after it has been used.
 			c.chunk = nil
-			s.memChunkPool.Put(c)
+			h.head.memChunkPool.Put(c)
 		}
 	}()
 
@@ -302,13 +303,14 @@ func (h *headChunkReader) Chunk(meta chunks.Meta) (chunkenc.Chunk, error) {
 		cid:             cid,
 		isoState:        h.isoState,
 		chunkDiskMapper: h.head.chunkDiskMapper,
+		memChunkPool:    &h.head.memChunkPool,
 	}, nil
 }
 
 // chunk returns the chunk for the HeadChunkID from memory or by m-mapping it from the disk.
 // If garbageCollect is true, it means that the returned *memChunk
 // (and not the chunkenc.Chunk inside it) can be garbage collected after its usage.
-func (s *memSeries) chunk(id chunks.HeadChunkID, chunkDiskMapper *chunks.ChunkDiskMapper) (chunk *memChunk, garbageCollect bool, err error) {
+func (s *memSeries) chunk(id chunks.HeadChunkID, chunkDiskMapper *chunks.ChunkDiskMapper, memChunkPool *sync.Pool) (chunk *memChunk, garbageCollect bool, err error) {
 	// ix represents the index of chunk in the s.mmappedChunks slice. The chunk id's are
 	// incremented by 1 when new chunk is created, hence (id - firstChunkID) gives the slice index.
 	// The max index for the s.mmappedChunks slice can be len(s.mmappedChunks)-1, hence if the ix
@@ -330,7 +332,7 @@ func (s *memSeries) chunk(id chunks.HeadChunkID, chunkDiskMapper *chunks.ChunkDi
 		}
 		return nil, false, err
 	}
-	mc := s.memChunkPool.Get().(*memChunk)
+	mc := memChunkPool.Get().(*memChunk)
 	mc.chunk = chk
 	mc.minTime = s.mmappedChunks[ix].minTime
 	mc.maxTime = s.mmappedChunks[ix].maxTime
@@ -595,19 +597,20 @@ type safeChunk struct {
 	cid             chunks.HeadChunkID
 	isoState        *isolationState
 	chunkDiskMapper *chunks.ChunkDiskMapper
+	memChunkPool    *sync.Pool
 }
 
 func (c *safeChunk) Iterator(reuseIter chunkenc.Iterator) chunkenc.Iterator {
 	c.s.Lock()
-	it := c.s.iterator(c.cid, c.isoState, c.chunkDiskMapper, reuseIter)
+	it := c.s.iterator(c.cid, c.isoState, c.chunkDiskMapper, c.memChunkPool, reuseIter)
 	c.s.Unlock()
 	return it
 }
 
 // iterator returns a chunk iterator for the requested chunkID, or a NopIterator if the requested ID is out of range.
 // It is unsafe to call this concurrently with s.append(...) without holding the series lock.
-func (s *memSeries) iterator(id chunks.HeadChunkID, isoState *isolationState, chunkDiskMapper *chunks.ChunkDiskMapper, it chunkenc.Iterator) chunkenc.Iterator {
-	c, garbageCollect, err := s.chunk(id, chunkDiskMapper)
+func (s *memSeries) iterator(id chunks.HeadChunkID, isoState *isolationState, chunkDiskMapper *chunks.ChunkDiskMapper, memChunkPool *sync.Pool, it chunkenc.Iterator) chunkenc.Iterator {
+	c, garbageCollect, err := s.chunk(id, chunkDiskMapper, memChunkPool)
 	// TODO(fabxc): Work around! An error will be returns when a querier have retrieved a pointer to a
 	// series's chunk, which got then garbage collected before it got
 	// accessed.  We must ensure to not garbage collect as long as any
@@ -620,7 +623,7 @@ func (s *memSeries) iterator(id chunks.HeadChunkID, isoState *isolationState, ch
 			// Set this to nil so that Go GC can collect it after it has been used.
 			// This should be done always at the end.
 			c.chunk = nil
-			s.memChunkPool.Put(c)
+			memChunkPool.Put(c)
 		}
 	}()
 
