@@ -10,3 +10,5 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - run: ./scripts/sync_repo_files.sh
+        env:
+          GITHUB_TOKEN: ${{ secrets.PROMBOT_GITHUB_TOKEN }}
