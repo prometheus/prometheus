@@ -168,12 +168,12 @@ process_repo() {
     needs_update+=("${source_file}")
   done
 
-  local circleci
-  circleci="$(check_circleci_orb "${org_repo}" "${default_branch}")"
-  if [[ -n "${circleci}" ]]; then
-    echo "${circleci} needs updating."
-    needs_update+=("${circleci}")
-  fi
+  #local circleci
+  #circleci="$(check_circleci_orb "${org_repo}" "${default_branch}")"
+  #if [[ -n "${circleci}" ]]; then
+  #  echo "${circleci} needs updating."
+  #  needs_update+=("${circleci}")
+  #fi
 
   if [[ "${#needs_update[@]}" -eq 0 ]] ; then
     echo "No files need sync."
