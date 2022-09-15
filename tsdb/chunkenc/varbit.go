@@ -23,11 +23,14 @@ import (
 // optimized for the dod's observed in histogram buckets, plus a few additional
 // buckets for large numbers.
 //
-// TODO(Dieterbe): We could improve this further: Each branch doesn't need to
-// support any values of any of the prior branches. So we can expand the range
-// of each branch. Do more with fewer bits. It comes at the price of more
-// expensive encoding and decoding (cutting out and later adding back that
-// center-piece we skip).
+// For optimal space utilization, each branch didn't need to support any values
+// of any of the prior branches. So we could expand the range of each branch. Do
+// more with fewer bits. It would come at the price of more expensive encoding
+// and decoding (cutting out and later adding back that center-piece we
+// skip). With the distributions of values we see in practice, we would reduce
+// the size by around 1%. A more detailed study would be needed for precise
+// values, but it's appears quite certain that we would end up far below 10%,
+// which would maybe convince us to invest the increased coding/decoding cost.
 func putVarbitInt(b *bstream, val int64) {
 	switch {
 	case val == 0: // Precisely 0, needs 1 bit.
