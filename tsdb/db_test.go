@@ -3946,7 +3946,7 @@ func TestHistogramAppendAndQuery(t *testing.T) {
 	})
 }
 
-func TestQueryHistogramFromBlocks(t *testing.T) {
+func TestQueryHistogramFromBlocksWithCompaction(t *testing.T) {
 	minute := func(m int) int64 { return int64(m) * time.Minute.Milliseconds() }
 
 	testBlockQuerying := func(t *testing.T, blockSeries ...[]storage.Series) {
@@ -3994,6 +3994,23 @@ func TestQueryHistogramFromBlocks(t *testing.T) {
 		require.NoError(t, err)
 		res := query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".*"))
 		require.Equal(t, exp, res)
+
+		// Compact all the blocks together and query again.
+		blocks := db.Blocks()
+		blockDirs := make([]string, 0, len(blocks))
+		for _, b := range blocks {
+			blockDirs = append(blockDirs, b.Dir())
+		}
+		id, err := db.compactor.Compact(db.Dir(), blockDirs, blocks)
+		require.NoError(t, err)
+		require.NotEqual(t, ulid.ULID{}, id)
+		require.NoError(t, db.reload())
+		require.Len(t, db.Blocks(), 1)
+
+		q, err = db.Querier(ctx, math.MinInt64, math.MaxInt64)
+		require.NoError(t, err)
+		res = query(t, q, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".*"))
+		require.Equal(t, exp, res)
 	}
 
 	t.Run("serial blocks with only histograms", func(t *testing.T) {
@@ -4001,6 +4018,27 @@ func TestQueryHistogramFromBlocks(t *testing.T) {
 			genHistogramSeries(10, 5, minute(0), minute(119), minute(1)),
 			genHistogramSeries(10, 5, minute(120), minute(239), minute(1)),
 			genHistogramSeries(10, 5, minute(240), minute(359), minute(1)),
+		)
+	})
+
+	t.Run("serial blocks with either histograms or floats in a block and not both", func(t *testing.T) {
+		testBlockQuerying(t,
+			genHistogramSeries(10, 5, minute(0), minute(119), minute(1)),
+			genSeriesFromSampleGenerator(10, 5, minute(120), minute(239), minute(1), func(ts int64) tsdbutil.Sample {
+				return sample{t: ts, v: rand.Float64()}
+			}),
+			genHistogramSeries(10, 5, minute(240), minute(359), minute(1)),
+		)
+	})
+
+	t.Run("serial blocks with mix of histograms and float64", func(t *testing.T) {
+		testBlockQuerying(t,
+			genHistogramAndFloatSeries(10, 5, minute(0), minute(60), minute(1)),
+			genHistogramSeries(10, 5, minute(61), minute(120), minute(1)),
+			genHistogramAndFloatSeries(10, 5, minute(121), minute(180), minute(1)),
+			genSeriesFromSampleGenerator(10, 5, minute(181), minute(240), minute(1), func(ts int64) tsdbutil.Sample {
+				return sample{t: ts, v: rand.Float64()}
+			}),
 		)
 	})
 
@@ -4012,11 +4050,13 @@ func TestQueryHistogramFromBlocks(t *testing.T) {
 		)
 	})
 
-	t.Run("serial blocks with mix of histograms and float64", func(t *testing.T) {
+	t.Run("overlapping blocks with only histograms and only float in a series", func(t *testing.T) {
 		testBlockQuerying(t,
-			genHistogramAndFloatSeries(10, 5, minute(0), minute(60), minute(1)),
-			genHistogramSeries(10, 5, minute(61), minute(120), minute(1)),
-			genHistogramAndFloatSeries(10, 5, minute(121), minute(180), minute(1)),
+			genHistogramSeries(10, 5, minute(0), minute(120), minute(3)),
+			genSeriesFromSampleGenerator(10, 5, minute(1), minute(120), minute(3), func(ts int64) tsdbutil.Sample {
+				return sample{t: ts, v: rand.Float64()}
+			}),
+			genHistogramSeries(10, 5, minute(2), minute(120), minute(3)),
 		)
 	})
 
@@ -4025,6 +4065,9 @@ func TestQueryHistogramFromBlocks(t *testing.T) {
 			genHistogramAndFloatSeries(10, 5, minute(0), minute(60), minute(3)),
 			genHistogramSeries(10, 5, minute(46), minute(100), minute(3)),
 			genHistogramAndFloatSeries(10, 5, minute(89), minute(140), minute(3)),
+			genSeriesFromSampleGenerator(10, 5, minute(126), minute(200), minute(3), func(ts int64) tsdbutil.Sample {
+				return sample{t: ts, v: rand.Float64()}
+			}),
 		)
 	})
 }
