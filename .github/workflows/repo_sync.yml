@@ -1,4 +1,5 @@
 ---
+name: Sync repo files
 on:
   schedule:
     - cron: '44 17 * * *'
