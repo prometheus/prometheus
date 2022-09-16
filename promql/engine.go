@@ -1139,7 +1139,6 @@ func (ev *evaluator) rangeEval(prepSeries func(labels.Labels, *EvalSeriesHelper)
 		// When we reset currentSamples to tempNumSamples during the next iteration of the loop it also
 		// needs to include the samples from the result here, as they're still in memory.
 		tempNumSamples += len(result)
-		ev.samplesStats.UpdatePeak(ev.currentSamples)
 
 		if ev.currentSamples > ev.maxSamples {
 			ev.error(ErrTooManySamples(env))
@@ -1206,8 +1205,6 @@ type groupPoints struct {
 	used bool
 }
 
-// TODO in this experiment, the checking of ev.currentSamples is currently skipped (but easy to do).
-// TODO update ev.samplesStats.UpdatePeak(ev.currentSamples)
 func (ev *evaluator) rangeEvalAggregation(op parser.ItemType, grouping []string, without bool, exprs ...parser.Expr) (Matrix, storage.Warnings) {
 	// The aggregation expects only 1 expression.
 	if len(exprs) != 1 {
@@ -1226,6 +1223,8 @@ func (ev *evaluator) rangeEvalAggregation(op parser.ItemType, grouping []string,
 		val, ws := ev.eval(expr)
 		warnings = append(warnings, ws...)
 		matrix = val.(Matrix)
+	} else {
+		ev.error(fmt.Errorf("passed expression %v is nil or not a string", expr))
 	}
 
 	// Create an output vector that is as big as the input matrix (only one)
@@ -1248,7 +1247,7 @@ func (ev *evaluator) rangeEvalAggregation(op parser.ItemType, grouping []string,
 
 		// Compute the grouping key.
 		var groupingKey uint64
-		groupingKey, buf = generateGroupingKey(series.Metric, grouping, without, buf)
+		groupingKey, buf = generateGroupingKey(metric, grouping, without, buf)
 
 		out, ok := outSeriess[groupingKey]
 
@@ -1283,6 +1282,12 @@ func (ev *evaluator) rangeEvalAggregation(op parser.ItemType, grouping []string,
 				points[idx].value = math.NaN()
 			}
 
+			ev.currentSamples += numSteps
+			if ev.currentSamples > ev.maxSamples {
+				ev.error(ErrTooManySamples(env))
+			}
+			ev.samplesStats.UpdatePeak(ev.currentSamples)
+
 			out = group{
 				metric: groupingMetric,
 				points: points,
@@ -1294,9 +1299,17 @@ func (ev *evaluator) rangeEvalAggregation(op parser.ItemType, grouping []string,
 		outIdx := 0
 		for _, point := range series.Points {
 			// Advance the output index until we hit the point with the same timestamp.
-			// TODO protect from out of bound (if hit, we need to error out)
 			for pointsTimestamp[outIdx] != point.T {
 				outIdx++
+				if outIdx >= numSteps {
+					ev.error(fmt.Errorf("went out of bounds for pointsTimestamp with index %d", outIdx))
+				}
+			}
+
+			if ev.currentSamples < ev.maxSamples {
+				ev.currentSamples++
+			} else {
+				ev.error(ErrTooManySamples(env))
 			}
 
 			first := !out.points[outIdx].used
@@ -1330,6 +1343,7 @@ func (ev *evaluator) rangeEvalAggregation(op parser.ItemType, grouping []string,
 				}
 			}
 		}
+		ev.samplesStats.UpdatePeak(ev.currentSamples)
 	}
 
 	// Reuse the original point slices.
@@ -1340,7 +1354,7 @@ func (ev *evaluator) rangeEvalAggregation(op parser.ItemType, grouping []string,
 	// Assemble the output matrix. By the time we get here we know we don't have too many samples.
 	mat := make(Matrix, 0, len(outSeriess))
 	for _, ss := range outSeriess {
-		points := getPointSlice(len(ss.points))
+		points := getPointSlice(numSteps)
 
 		for idx, point := range ss.points {
 			// Filter out unused points.
@@ -1371,6 +1385,7 @@ func (ev *evaluator) rangeEvalAggregation(op parser.ItemType, grouping []string,
 		})
 	}
 	ev.currentSamples = originalNumSamples + mat.TotalSamples()
+	ev.samplesStats.UpdatePeak(ev.currentSamples)
 	return mat, warnings
 }
 
