@@ -1038,6 +1038,8 @@ func (h *Head) Stats(statsByLabelName string) *Stats {
 type RangeHead struct {
 	head       *Head
 	mint, maxt int64
+
+	isolationOff bool
 }
 
 // NewRangeHead returns a *RangeHead.
@@ -1050,12 +1052,23 @@ func NewRangeHead(head *Head, mint, maxt int64) *RangeHead {
 	}
 }
 
+// NewRangeHeadWithIsolationDisabled returns a *RangeHead that does not create an isolationState.
+func NewRangeHeadWithIsolationDisabled(head *Head, mint, maxt int64) *RangeHead {
+	rh := NewRangeHead(head, mint, maxt)
+	rh.isolationOff = true
+	return rh
+}
+
 func (h *RangeHead) Index() (IndexReader, error) {
 	return h.head.indexRange(h.mint, h.maxt), nil
 }
 
 func (h *RangeHead) Chunks() (ChunkReader, error) {
-	return h.head.chunksRange(h.mint, h.maxt, h.head.iso.State(h.mint, h.maxt))
+	var isoState *isolationState
+	if !h.isolationOff {
+		isoState = h.head.iso.State(h.mint, h.maxt)
+	}
+	return h.head.chunksRange(h.mint, h.maxt, isoState)
 }
 
 func (h *RangeHead) Tombstones() (tombstones.Reader, error) {

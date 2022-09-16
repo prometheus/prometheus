@@ -253,7 +253,9 @@ type headChunkReader struct {
 }
 
 func (h *headChunkReader) Close() error {
-	h.isoState.Close()
+	if h.isoState != nil {
+		h.isoState.Close()
+	}
 	return nil
 }
 
