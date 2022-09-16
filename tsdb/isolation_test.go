@@ -18,7 +18,62 @@ import (
 	"strconv"
 	"sync"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
+
+func TestIsolation(t *testing.T) {
+	type result struct {
+		id           uint64
+		lowWatermark uint64
+	}
+	var appendA, appendB result
+	iso := newIsolation(false)
+
+	// Low watermark starts at 1.
+	require.Equal(t, uint64(0), iso.lowWatermark())
+
+	// Pretend we are starting to append.
+	appendA.id, appendA.lowWatermark = iso.newAppendID()
+	require.Equal(t, result{1, 1}, appendA)
+	require.Equal(t, uint64(1), iso.lowWatermark())
+
+	require.Equal(t, 0, countOpenReads(iso))
+
+	// Now we start a read.
+	stateA := iso.State(10, 20)
+	require.Equal(t, 1, countOpenReads(iso))
+
+	// Second appender.
+	appendB.id, appendB.lowWatermark = iso.newAppendID()
+	require.Equal(t, result{2, 1}, appendB)
+	require.Equal(t, uint64(1), iso.lowWatermark())
+
+	iso.closeAppend(appendA.id)
+	// Low watermark remains at 1 because stateA is still open
+	require.Equal(t, uint64(1), iso.lowWatermark())
+
+	require.Equal(t, 1, countOpenReads(iso))
+
+	// Finish the read and low watermark should rise.
+	stateA.Close()
+	require.Equal(t, uint64(2), iso.lowWatermark())
+
+	require.Equal(t, 0, countOpenReads(iso))
+
+	iso.closeAppend(appendB.id)
+	require.Equal(t, uint64(2), iso.lowWatermark())
+
+}
+
+func countOpenReads(iso *isolation) int {
+	count := 0
+	iso.TraverseOpenReads(func(s *isolationState) bool {
+		count++
+		return true
+	})
+	return count
+}
 
 func BenchmarkIsolation(b *testing.B) {
 	for _, goroutines := range []int{10, 100, 1000, 10000} {
