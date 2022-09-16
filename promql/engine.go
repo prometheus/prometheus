@@ -1271,7 +1271,7 @@ func (ev *evaluator) rangeEvalAggregation(op parser.ItemType, grouping []string,
 				lb.Reset(metric)
 				lb.Del(grouping...)
 				lb.Del(labels.MetricName)
-				groupingMetric = lb.Labels()
+				groupingMetric = lb.Labels(nil)
 			} else {
 				groupingMetric = make(labels.Labels, 0, len(grouping))
 				for _, l := range metric {
