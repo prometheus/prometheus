@@ -21,6 +21,7 @@ import (
 
 	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
+	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -65,7 +66,7 @@ func (h *headIndexReader) Symbols() index.StringIter {
 func (h *headIndexReader) SortedLabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
 	values, err := h.LabelValues(name, matchers...)
 	if err == nil {
-		sort.Strings(values)
+		slices.Sort(values)
 	}
 	return values, err
 }
@@ -95,7 +96,7 @@ func (h *headIndexReader) LabelNames(matchers ...*labels.Matcher) ([]string, err
 
 	if len(matchers) == 0 {
 		labelNames := h.head.postings.LabelNames()
-		sort.Strings(labelNames)
+		slices.Sort(labelNames)
 		return labelNames, nil
 	}
 
@@ -220,7 +221,7 @@ func (h *headIndexReader) LabelNamesFor(ids ...storage.SeriesRef) ([]string, err
 	for name := range namesMap {
 		names = append(names, name)
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 	return names, nil
 }
 
