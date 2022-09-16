@@ -1353,6 +1353,38 @@ func (ev *evaluator) rangeEvalAggregation(op parser.ItemType, grouping []string,
 						out.points[outIdx].mean += delta / float64(out.points[outIdx].count)
 						out.points[outIdx].value += delta * (point.V - out.points[outIdx].mean)
 					}
+				case parser.COUNT:
+					if first {
+						out.points[outIdx].value = 1
+					} else {
+						out.points[outIdx].value++
+					}
+				case parser.AVG:
+					if first {
+						out.points[outIdx].count = 1
+						out.points[outIdx].value = point.V
+					} else {
+						out.points[outIdx].count++
+						if math.IsInf(out.points[outIdx].value, 0) {
+							if math.IsInf(point.V, 0) && (out.points[outIdx].value > 0) == (point.V > 0) {
+								// The `mean` and `s.V` values are `Inf` of the same sign.  They
+								// can't be subtracted, but the value of `mean` is correct
+								// already.
+								break
+							}
+							if !math.IsInf(point.V, 0) && !math.IsNaN(point.V) {
+								// At this stage, the mean is an infinite. If the added
+								// value is neither an Inf or a Nan, we can keep that mean
+								// value.
+								// This is required because our calculation below removes
+								// the mean value, which would look like Inf += x - Inf and
+								// end up as a NaN.
+								break
+							}
+						}
+						// Divide each side of the `-` by `group.groupCount` to avoid float64 overflows.
+						out.points[outIdx].value += point.V/float64(out.points[outIdx].count) - out.points[outIdx].value/float64(out.points[outIdx].count)
+					}
 				}
 			}
 			ev.samplesStats.UpdatePeak(ev.currentSamples)
@@ -1463,7 +1495,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 		}
 
 		// Experiment to optimize the SUM aggregation.
-		if e.Op == parser.SUM || e.Op == parser.MIN || e.Op == parser.MAX || e.Op == parser.STDDEV || e.Op == parser.STDVAR {
+		if e.Op == parser.SUM || e.Op == parser.MIN || e.Op == parser.MAX || e.Op == parser.STDDEV || e.Op == parser.STDVAR || e.Op == parser.COUNT || e.Op == parser.AVG {
 			return ev.rangeEvalAggregation(e.Op, sortedGrouping, e.Without, e.Expr)
 		}
 
