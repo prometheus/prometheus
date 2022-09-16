@@ -205,3 +205,11 @@ eval instant at 0h testmetric
 	testmetric{a="abb"} 2
 
 clear
+
+# Tests for NaN.
+clear
+load 5m
+  http_requests     NaN
+
+eval instant at 0m sum(http_requests)
+  {} NaN
