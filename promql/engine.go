@@ -1209,38 +1209,27 @@ type groupPoints struct {
 // TODO in this experiment, the checking of ev.currentSamples is currently skipped (but easy to do).
 // TODO update ev.samplesStats.UpdatePeak(ev.currentSamples)
 func (ev *evaluator) rangeEvalAggregation(op parser.ItemType, grouping []string, without bool, exprs ...parser.Expr) (Matrix, storage.Warnings) {
-	numSteps := int((ev.endTimestamp-ev.startTimestamp)/ev.interval) + 1
-	matrixes := make([]Matrix, len(exprs))
-	originalNumSamples := ev.currentSamples
-
-	var warnings storage.Warnings
-	for i, e := range exprs {
-		// Functions will take string arguments from the expressions, not the values.
-		if e != nil && e.Type() != parser.ValueTypeString {
-			// ev.currentSamples will be updated to the correct value within the ev.eval call.
-			val, ws := ev.eval(e)
-			warnings = append(warnings, ws...)
-			matrixes[i] = val.(Matrix)
-		}
-	}
-
-	vectors := make([]Vector, len(exprs)) // Input vectors for the function.
-	// Create an output vector that is as big as the input matrix with
-	// the most time series.
-	// TODO can be simplified. We expect only 1 expression.
-	biggestLen := 1
-	for i := range exprs {
-		vectors[i] = make(Vector, 0, len(matrixes[i]))
-		if len(matrixes[i]) > biggestLen {
-			biggestLen = len(matrixes[i])
-		}
-	}
-	outSeriess := make(map[uint64]group, biggestLen) // Output series by series hash.
-
 	// The aggregation expects only 1 expression.
 	if len(exprs) != 1 {
 		ev.error(fmt.Errorf("unexpected number of expressions (actual: %d)", len(exprs)))
 	}
+	expr := exprs[0]
+
+	numSteps := int((ev.endTimestamp-ev.startTimestamp)/ev.interval) + 1
+	originalNumSamples := ev.currentSamples
+
+	var warnings storage.Warnings
+	var matrix Matrix
+	// Functions will take string arguments from the expressions, not the values.
+	if expr != nil && expr.Type() != parser.ValueTypeString {
+		// ev.currentSamples will be updated to the correct value within the ev.eval call.
+		val, ws := ev.eval(expr)
+		warnings = append(warnings, ws...)
+		matrix = val.(Matrix)
+	}
+
+	// Create an output vector that is as big as the input matrix (only one)
+	outSeriess := make(map[uint64]group, len(matrix)) // Output series by series hash.
 
 	// The timestamps of each resulting series points are always the exact same for every series so,
 	// instead of keeping it in-memory for each series, we only keep 1 global slice shared across
@@ -1254,7 +1243,7 @@ func (ev *evaluator) rangeEvalAggregation(op parser.ItemType, grouping []string,
 	lb := labels.NewBuilder(nil)
 	var buf []byte
 
-	for _, series := range matrixes[0] {
+	for _, series := range matrix {
 		metric := series.Metric
 
 		// Compute the grouping key.
@@ -1344,10 +1333,8 @@ func (ev *evaluator) rangeEvalAggregation(op parser.ItemType, grouping []string,
 	}
 
 	// Reuse the original point slices.
-	for _, m := range matrixes {
-		for _, s := range m {
-			putPointSlice(s.Points)
-		}
+	for _, s := range matrix {
+		putPointSlice(s.Points)
 	}
 
 	// Assemble the output matrix. By the time we get here we know we don't have too many samples.
