@@ -675,31 +675,22 @@ func (s *memSeries) iterator(id chunks.HeadChunkID, isoState *isolationState, ch
 	if stopAfter == 0 {
 		return chunkenc.NewNopIterator()
 	}
-
-	if int(id)-int(s.firstChunkID) < len(s.mmappedChunks) {
-		if stopAfter == numSamples {
-			return c.chunk.Iterator(it)
-		}
-		if msIter, ok := it.(*stopIterator); ok {
-			msIter.Iterator = c.chunk.Iterator(msIter.Iterator)
-			msIter.i = -1
-			msIter.stopAfter = stopAfter
-			return msIter
-		}
-		return &stopIterator{
-			Iterator:  c.chunk.Iterator(it),
-			i:         -1,
-			stopAfter: stopAfter,
-		}
+	if stopAfter == numSamples {
+		return c.chunk.Iterator(it)
 	}
+	return makeStopIterator(c.chunk, it, stopAfter)
+}
+
+func makeStopIterator(c chunkenc.Chunk, it chunkenc.Iterator, stopAfter int) chunkenc.Iterator {
+	// Re-use the Iterator object if it is a stopIterator.
 	if stopIter, ok := it.(*stopIterator); ok {
-		stopIter.Iterator = c.chunk.Iterator(stopIter.Iterator)
+		stopIter.Iterator = c.Iterator(stopIter.Iterator)
 		stopIter.i = -1
 		stopIter.stopAfter = stopAfter
 		return stopIter
 	}
 	return &stopIterator{
-		Iterator:  c.chunk.Iterator(it),
+		Iterator:  c.Iterator(it),
 		i:         -1,
 		stopAfter: stopAfter,
 	}
