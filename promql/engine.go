@@ -1242,153 +1242,140 @@ func (ev *evaluator) rangeEvalAggregation(op parser.ItemType, grouping []string,
 	lb := labels.NewBuilder(nil)
 	var buf []byte
 
-	groupingKeySeries := make(map[uint64][]int, 0)
-	for mi, series := range matrix {
+	for _, series := range matrix {
+		metric := series.Metric
+
 		// Compute the grouping key.
 		var groupingKey uint64
-		groupingKey, buf = generateGroupingKey(series.Metric, grouping, without, buf)
+		groupingKey, buf = generateGroupingKey(metric, grouping, without, buf)
 
-		gks, ok := groupingKeySeries[groupingKey]
+		out, ok := outSeriess[groupingKey]
+
+		// Initialise a new resulting series.
 		if !ok {
-			gks = make([]int, 0)
-		}
-		gks = append(gks, mi)
-		groupingKeySeries[groupingKey] = gks
-	}
+			var groupingMetric labels.Labels
 
-	for groupingKey, gks := range groupingKeySeries {
-		for _, mi := range gks {
-			series := matrix[mi]
-			metric := series.Metric
-
-			out, ok := outSeriess[groupingKey]
-
-			// Initialise a new resulting series.
-			if !ok {
-				var groupingMetric labels.Labels
-
-				if without {
-					lb.Reset(metric)
-					lb.Del(grouping...)
-					lb.Del(labels.MetricName)
-					groupingMetric = lb.Labels(nil)
-				} else {
-					groupingMetric = make(labels.Labels, 0, len(grouping))
-					for _, l := range metric {
-						for _, n := range grouping {
-							if l.Name == n {
-								groupingMetric = append(groupingMetric, l)
-								break
-							}
+			if without {
+				lb.Reset(metric)
+				lb.Del(grouping...)
+				lb.Del(labels.MetricName)
+				groupingMetric = lb.Labels(nil)
+			} else {
+				groupingMetric = make(labels.Labels, 0, len(grouping))
+				for _, l := range metric {
+					for _, n := range grouping {
+						if l.Name == n {
+							groupingMetric = append(groupingMetric, l)
+							break
 						}
 					}
-					sort.Sort(groupingMetric)
 				}
-
-				// Initialize output points.
-				// TODO define a custom pool for this.
-				points := make([]groupPoints, numSteps)
-				for idx := 0; idx < numSteps; idx++ {
-					// Initialize to NaN to be able to find out which points have not been
-					// used at all at the end of the series iteration.
-					points[idx].value = math.NaN()
-				}
-
-				ev.currentSamples += numSteps
-				if ev.currentSamples > ev.maxSamples {
-					ev.error(ErrTooManySamples(env))
-				}
-				ev.samplesStats.UpdatePeak(ev.currentSamples)
-
-				out = group{
-					metric: groupingMetric,
-					points: points,
-				}
-				outSeriess[groupingKey] = out
+				sort.Sort(groupingMetric)
 			}
 
-			// Run the aggregation.
-			outIdx := 0
-			for _, point := range series.Points {
-				// Advance the output index until we hit the point with the same timestamp.
-				for pointsTimestamp[outIdx] != point.T {
-					outIdx++
-					if outIdx >= numSteps {
-						ev.error(fmt.Errorf("went out of bounds for pointsTimestamp with index %d", outIdx))
-					}
-				}
+			// Initialize output points.
+			// TODO define a custom pool for this.
+			points := make([]groupPoints, numSteps)
+			for idx := 0; idx < numSteps; idx++ {
+				// Initialize to NaN to be able to find out which points have not been
+				// used at all at the end of the series iteration.
+				points[idx].value = math.NaN()
+			}
 
-				if ev.currentSamples < ev.maxSamples {
-					ev.currentSamples++
-				} else {
-					ev.error(ErrTooManySamples(env))
-				}
-
-				first := !out.points[outIdx].used
-				out.points[outIdx].used = true
-
-				switch op {
-				case parser.SUM:
-					if first {
-						out.points[outIdx].value = point.V
-					} else {
-						out.points[outIdx].value += point.V
-					}
-				case parser.MIN:
-					if out.points[outIdx].value > point.V || math.IsNaN(out.points[outIdx].value) || first {
-						out.points[outIdx].value = point.V
-					}
-				case parser.MAX:
-					if out.points[outIdx].value < point.V || math.IsNaN(out.points[outIdx].value) || first {
-						out.points[outIdx].value = point.V
-					}
-				case parser.STDVAR, parser.STDDEV:
-					if first {
-						out.points[outIdx].value = 0
-						out.points[outIdx].mean = point.V
-						out.points[outIdx].count = 1
-					} else {
-						out.points[outIdx].count++
-						delta := point.V - out.points[outIdx].mean
-						out.points[outIdx].mean += delta / float64(out.points[outIdx].count)
-						out.points[outIdx].value += delta * (point.V - out.points[outIdx].mean)
-					}
-				case parser.COUNT:
-					if first {
-						out.points[outIdx].value = 1
-					} else {
-						out.points[outIdx].value++
-					}
-				case parser.AVG:
-					if first {
-						out.points[outIdx].count = 1
-						out.points[outIdx].value = point.V
-					} else {
-						out.points[outIdx].count++
-						if math.IsInf(out.points[outIdx].value, 0) {
-							if math.IsInf(point.V, 0) && (out.points[outIdx].value > 0) == (point.V > 0) {
-								// The `mean` and `s.V` values are `Inf` of the same sign.  They
-								// can't be subtracted, but the value of `mean` is correct
-								// already.
-								break
-							}
-							if !math.IsInf(point.V, 0) && !math.IsNaN(point.V) {
-								// At this stage, the mean is an infinite. If the added
-								// value is neither an Inf or a Nan, we can keep that mean
-								// value.
-								// This is required because our calculation below removes
-								// the mean value, which would look like Inf += x - Inf and
-								// end up as a NaN.
-								break
-							}
-						}
-						// Divide each side of the `-` by `group.groupCount` to avoid float64 overflows.
-						out.points[outIdx].value += point.V/float64(out.points[outIdx].count) - out.points[outIdx].value/float64(out.points[outIdx].count)
-					}
-				}
+			ev.currentSamples += numSteps
+			if ev.currentSamples > ev.maxSamples {
+				ev.error(ErrTooManySamples(env))
 			}
 			ev.samplesStats.UpdatePeak(ev.currentSamples)
+
+			out = group{
+				metric: groupingMetric,
+				points: points,
+			}
+			outSeriess[groupingKey] = out
 		}
+
+		// Run the aggregation.
+		outIdx := 0
+		for _, point := range series.Points {
+			// Advance the output index until we hit the point with the same timestamp.
+			for pointsTimestamp[outIdx] != point.T {
+				outIdx++
+				if outIdx >= numSteps {
+					ev.error(fmt.Errorf("went out of bounds for pointsTimestamp with index %d", outIdx))
+				}
+			}
+
+			if ev.currentSamples < ev.maxSamples {
+				ev.currentSamples++
+			} else {
+				ev.error(ErrTooManySamples(env))
+			}
+
+			first := !out.points[outIdx].used
+			out.points[outIdx].used = true
+
+			switch op {
+			case parser.SUM:
+				if first {
+					out.points[outIdx].value = point.V
+				} else {
+					out.points[outIdx].value += point.V
+				}
+			case parser.MIN:
+				if out.points[outIdx].value > point.V || math.IsNaN(out.points[outIdx].value) || first {
+					out.points[outIdx].value = point.V
+				}
+			case parser.MAX:
+				if out.points[outIdx].value < point.V || math.IsNaN(out.points[outIdx].value) || first {
+					out.points[outIdx].value = point.V
+				}
+			case parser.STDVAR, parser.STDDEV:
+				if first {
+					out.points[outIdx].value = 0
+					out.points[outIdx].mean = point.V
+					out.points[outIdx].count = 1
+				} else {
+					out.points[outIdx].count++
+					delta := point.V - out.points[outIdx].mean
+					out.points[outIdx].mean += delta / float64(out.points[outIdx].count)
+					out.points[outIdx].value += delta * (point.V - out.points[outIdx].mean)
+				}
+			case parser.COUNT:
+				if first {
+					out.points[outIdx].value = 1
+				} else {
+					out.points[outIdx].value++
+				}
+			case parser.AVG:
+				if first {
+					out.points[outIdx].count = 1
+					out.points[outIdx].value = point.V
+				} else {
+					out.points[outIdx].count++
+					if math.IsInf(out.points[outIdx].value, 0) {
+						if math.IsInf(point.V, 0) && (out.points[outIdx].value > 0) == (point.V > 0) {
+							// The `mean` and `s.V` values are `Inf` of the same sign.  They
+							// can't be subtracted, but the value of `mean` is correct
+							// already.
+							break
+						}
+						if !math.IsInf(point.V, 0) && !math.IsNaN(point.V) {
+							// At this stage, the mean is an infinite. If the added
+							// value is neither an Inf or a Nan, we can keep that mean
+							// value.
+							// This is required because our calculation below removes
+							// the mean value, which would look like Inf += x - Inf and
+							// end up as a NaN.
+							break
+						}
+					}
+					// Divide each side of the `-` by `group.groupCount` to avoid float64 overflows.
+					out.points[outIdx].value += point.V/float64(out.points[outIdx].count) - out.points[outIdx].value/float64(out.points[outIdx].count)
+				}
+			}
+		}
+		ev.samplesStats.UpdatePeak(ev.currentSamples)
 	}
 
 	// Reuse the original point slices.
