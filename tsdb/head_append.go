@@ -395,7 +395,7 @@ func (s *memSeries) appendableHistogram(t int64, h *histogram.Histogram) error {
 
 	// We are allowing exact duplicates as we can encounter them in valid cases
 	// like federation and erroring out at that time would be extremely noisy.
-	if !h.Matches(s.sampleBuf[3].h) {
+	if !h.Equals(s.sampleBuf[3].h) {
 		return storage.ErrDuplicateSampleForTimestamp
 	}
 	return nil

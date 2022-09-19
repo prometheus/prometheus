@@ -155,11 +155,11 @@ func (h *Histogram) CumulativeBucketIterator() BucketIterator {
 	return &cumulativeBucketIterator{h: h, posSpansIdx: -1}
 }
 
-// Matches returns true if the given histogram matches exactly.
+// Equals returns true if the given histogram matches exactly.
 // Exact match is when there are no new buckets (even empty) and no missing buckets,
 // and all the bucket values match. Spans can have different empty length spans in between,
 // but they must represent the same bucket layout to match.
-func (h *Histogram) Matches(h2 *Histogram) bool {
+func (h *Histogram) Equals(h2 *Histogram) bool {
 	if h2 == nil {
 		return false
 	}
