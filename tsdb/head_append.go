@@ -306,7 +306,7 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 	}
 
 	s.Lock()
-	// TODO(codesome): if we definitely know at this point that the sample is ooo, then optimise
+	// TODO(codesome): If we definitely know at this point that the sample is ooo, then optimise
 	// to skip that sample from the WAL and write only in the WBL.
 	_, delta, err := s.appendable(t, v, a.headMaxt, a.minValidTime, a.oooTimeWindow)
 	if err == nil {
@@ -524,6 +524,7 @@ func exemplarsForEncoding(es []exemplarWithSeriesRef) []record.RefExemplar {
 }
 
 // Commit writes to the WAL and adds the data to the Head.
+// TODO(codesome): Refactor this method to reduce indentation and make it more readable.
 func (a *headAppender) Commit() (err error) {
 	if a.closed {
 		return ErrAppenderClosed
@@ -662,17 +663,14 @@ func (a *headAppender) Commit() (err error) {
 				}
 				oooAccepted++
 			} else {
-				// exact duplicate of last sample.
-				// the sample was an attempted update.
-				// note that we can only detect updates if they clash with a sample in the OOOHeadChunk,
+				// Sample is an exact duplicate of the last sample.
+				// NOTE: We can only detect updates if they clash with a sample in the OOOHeadChunk,
 				// not with samples in already flushed OOO chunks.
-				// TODO: error reporting? depends on addressing https://github.com/prometheus/prometheus/discussions/10305
+				// TODO(codesome): Add error reporting? It depends on addressing https://github.com/prometheus/prometheus/discussions/10305.
 				samplesAppended--
 			}
 		} else if err == nil {
-			// if we're here, either of these is true:
-			// - the sample.t is beyond any previously ingested timestamp
-			// - the sample is an exact duplicate of the 'head sample'
+			// The sample is in-order or a duplicate of the last sample.
 
 			ok, chunkCreated = series.append(s.T, s.V, a.appendID, a.head.chunkDiskMapper)
 
@@ -718,7 +716,7 @@ func (a *headAppender) Commit() (err error) {
 	a.head.updateMinMaxTime(inOrderMint, inOrderMaxt)
 	a.head.updateMinOOOMaxOOOTime(ooomint, ooomaxt)
 
-	// TODO(codesome): currently WBL logging of ooo samples is best effort here since we cannot try logging
+	// TODO(codesome): Currently WBL logging of ooo samples is best effort here since we cannot try logging
 	// until we have found what samples become OOO. We can try having a metric for this failure.
 	// Returning the error here is not correct because we have already put the samples into the memory,
 	// hence the append/insert was a success.
@@ -731,7 +729,7 @@ func (a *headAppender) Commit() (err error) {
 	return nil
 }
 
-// insert is like append, except it inserts. used for Out Of Order samples.
+// insert is like append, except it inserts. Used for OOO samples.
 func (s *memSeries) insert(t int64, v float64, chunkDiskMapper *chunks.ChunkDiskMapper) (inserted, chunkCreated bool, mmapRef chunks.ChunkDiskMapperRef) {
 	c := s.oooHeadChunk
 	if c == nil || c.chunk.NumSamples() == int(s.oooCapMax) {
@@ -870,7 +868,7 @@ func (s *memSeries) mmapCurrentOOOHeadChunk(chunkDiskMapper *chunks.ChunkDiskMap
 		// There is no head chunk, so nothing to m-map here.
 		return 0
 	}
-	xor, _ := s.oooHeadChunk.chunk.ToXor() // encode to XorChunk which is more compact and implements all of the needed functionality to be encoded
+	xor, _ := s.oooHeadChunk.chunk.ToXOR() // Encode to XorChunk which is more compact and implements all of the needed functionality.
 	oooXor := &chunkenc.OOOXORChunk{XORChunk: xor}
 	chunkRef := chunkDiskMapper.WriteChunk(s.ref, s.oooHeadChunk.minTime, s.oooHeadChunk.maxTime, oooXor, handleChunkWriteError)
 	s.oooMmappedChunks = append(s.oooMmappedChunks, &mmappedChunk{

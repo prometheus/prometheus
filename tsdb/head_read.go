@@ -374,8 +374,9 @@ func (s *memSeries) oooMergedChunk(meta chunks.Meta, cdm *chunks.ChunkDiskMapper
 		if oooHeadRef == meta.OOOLastRef {
 			tmpChks = append(tmpChks, chunkMetaAndChunkDiskMapperRef{
 				meta: chunks.Meta{
-					MinTime: meta.OOOLastMinTime, // we want to ignore samples that were added before last known min time
-					MaxTime: meta.OOOLastMaxTime, // we want to ignore samples that were added after last known max time
+					// Ignoring samples added before and after the last known min and max time for this chunk.
+					MinTime: meta.OOOLastMinTime,
+					MaxTime: meta.OOOLastMaxTime,
 					Ref:     oooHeadRef,
 				},
 			})
@@ -419,45 +420,46 @@ func (s *memSeries) oooMergedChunk(meta chunks.Meta, cdm *chunks.ChunkDiskMapper
 	mc := &mergedOOOChunks{}
 	absoluteMax := int64(math.MinInt64)
 	for _, c := range tmpChks {
-		if c.meta.Ref == meta.Ref || len(mc.chunks) > 0 && c.meta.MinTime <= absoluteMax {
-			if c.meta.Ref == oooHeadRef {
-				var xor *chunkenc.XORChunk
-				// If head chunk min and max time match the meta OOO markers
-				// that means that the chunk has not expanded so we can append
-				// it as it is.
-				if s.oooHeadChunk.minTime == meta.OOOLastMinTime && s.oooHeadChunk.maxTime == meta.OOOLastMaxTime {
-					xor, err = s.oooHeadChunk.chunk.ToXor() // TODO(jesus.vazquez) (This is an optimization idea that has no priority and might not be that useful) See if we could use a copy of the underlying slice. That would leave the more expensive ToXor() function only for the usecase where Bytes() is called.
-				} else {
-					// We need to remove samples that are outside of the markers
-					xor, err = s.oooHeadChunk.chunk.ToXorBetweenTimestamps(meta.OOOLastMinTime, meta.OOOLastMaxTime)
-				}
-				if err != nil {
-					return nil, errors.Wrap(err, "failed to convert ooo head chunk to xor chunk")
-				}
-				c.meta.Chunk = xor
+		if c.meta.Ref != meta.Ref && (len(mc.chunks) == 0 || c.meta.MinTime > absoluteMax) {
+			continue
+		}
+		if c.meta.Ref == oooHeadRef {
+			var xor *chunkenc.XORChunk
+			// If head chunk min and max time match the meta OOO markers
+			// that means that the chunk has not expanded so we can append
+			// it as it is.
+			if s.oooHeadChunk.minTime == meta.OOOLastMinTime && s.oooHeadChunk.maxTime == meta.OOOLastMaxTime {
+				xor, err = s.oooHeadChunk.chunk.ToXOR() // TODO(jesus.vazquez) (This is an optimization idea that has no priority and might not be that useful) See if we could use a copy of the underlying slice. That would leave the more expensive ToXOR() function only for the usecase where Bytes() is called.
 			} else {
-				chk, err := cdm.Chunk(c.ref)
-				if err != nil {
-					if _, ok := err.(*chunks.CorruptionErr); ok {
-						return nil, errors.Wrap(err, "invalid ooo mmapped chunk")
-					}
-					return nil, err
-				}
-				if c.meta.Ref == meta.OOOLastRef &&
-					(c.origMinT != meta.OOOLastMinTime || c.origMaxT != meta.OOOLastMaxTime) {
-					// The head expanded and was memory mapped so now we need to
-					// wrap the chunk within a chunk that doesnt allows us to iterate
-					// through samples out of the OOOLastMinT and OOOLastMaxT
-					// markers.
-					c.meta.Chunk = boundedChunk{chk, meta.OOOLastMinTime, meta.OOOLastMaxTime}
-				} else {
-					c.meta.Chunk = chk
-				}
+				// We need to remove samples that are outside of the markers
+				xor, err = s.oooHeadChunk.chunk.ToXORBetweenTimestamps(meta.OOOLastMinTime, meta.OOOLastMaxTime)
 			}
-			mc.chunks = append(mc.chunks, c.meta)
-			if c.meta.MaxTime > absoluteMax {
-				absoluteMax = c.meta.MaxTime
+			if err != nil {
+				return nil, errors.Wrap(err, "failed to convert ooo head chunk to xor chunk")
 			}
+			c.meta.Chunk = xor
+		} else {
+			chk, err := cdm.Chunk(c.ref)
+			if err != nil {
+				if _, ok := err.(*chunks.CorruptionErr); ok {
+					return nil, errors.Wrap(err, "invalid ooo mmapped chunk")
+				}
+				return nil, err
+			}
+			if c.meta.Ref == meta.OOOLastRef &&
+				(c.origMinT != meta.OOOLastMinTime || c.origMaxT != meta.OOOLastMaxTime) {
+				// The head expanded and was memory mapped so now we need to
+				// wrap the chunk within a chunk that doesnt allows us to iterate
+				// through samples out of the OOOLastMinT and OOOLastMaxT
+				// markers.
+				c.meta.Chunk = boundedChunk{chk, meta.OOOLastMinTime, meta.OOOLastMaxTime}
+			} else {
+				c.meta.Chunk = chk
+			}
+		}
+		mc.chunks = append(mc.chunks, c.meta)
+		if c.meta.MaxTime > absoluteMax {
+			absoluteMax = c.meta.MaxTime
 		}
 	}
 

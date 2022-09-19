@@ -3231,7 +3231,7 @@ func TestOOOWalReplay(t *testing.T) {
 	require.False(t, ok)
 	require.NotNil(t, ms)
 
-	xor, err := ms.oooHeadChunk.chunk.ToXor()
+	xor, err := ms.oooHeadChunk.chunk.ToXOR()
 	require.NoError(t, err)
 
 	it := xor.Iterator(nil)

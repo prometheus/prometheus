@@ -1675,10 +1675,9 @@ func (db *DB) Blocks() []*Block {
 // out of out-of-order data. If the returned boolean is true, it means there is at least
 // one such block.
 func (db *DB) inOrderBlocksMaxTime() (maxt int64, ok bool) {
-	maxt, ok, hasOOO := int64(math.MinInt64), false, false
+	maxt, ok = int64(math.MinInt64), false
 	// If blocks are overlapping, last block might not have the max time. So check all blocks.
 	for _, b := range db.Blocks() {
-		hasOOO = hasOOO || b.meta.OutOfOrder
 		if !b.meta.OutOfOrder && b.meta.MaxTime > maxt {
 			ok = true
 			maxt = b.meta.MaxTime

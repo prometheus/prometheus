@@ -21,52 +21,52 @@ import (
 
 const testMaxSize int = 32
 
-// formulas chosen to make testing easy:
-func valPre(pos int) int { return pos*2 + 2 } // s[0]=2, s[1]=4, s[2]=6, ..., s[31]=64 // predictable pre-existing values
-func valNew(pos int) int { return pos*2 + 1 } // s[0]=1, s[1]=3, s[2]=5, ..., s[31]=63 // new values will interject at chosen position because they sort before the pre-existing vals
+// Formulas chosen to make testing easy:
+func valEven(pos int) int { return pos*2 + 2 } // s[0]=2, s[1]=4, s[2]=6, ..., s[31]=64 - Predictable pre-existing values
+func valOdd(pos int) int  { return pos*2 + 1 } // s[0]=1, s[1]=3, s[2]=5, ..., s[31]=63 - New values will interject at chosen position because they sort before the pre-existing vals.
 
 func samplify(v int) sample { return sample{int64(v), float64(v)} }
 
-func makePre(n int) []sample {
+func makeEvenSampleSlice(n int) []sample {
 	s := make([]sample, n)
 	for i := 0; i < n; i++ {
-		s[i] = samplify(valPre(i))
+		s[i] = samplify(valEven(i))
 	}
 	return s
 }
 
 // TestOOOInsert tests the following cases:
-// number of pre-existing samples anywhere from 0 to testMaxSize-1
-// insert new sample before first pre-existing samples, after the last, and anywhere in between
-// with a chunk initial capacity of testMaxSize/8 and testMaxSize, which lets us test non-full and full chunks, and chunks that need to expand themselves.
-// Note: in all samples used, t always equals v in numeric value. when we talk about 'value' we just refer to a value that will be used for both sample.t and sample.v
+// - Number of pre-existing samples anywhere from 0 to testMaxSize-1.
+// - Insert new sample before first pre-existing samples, after the last, and anywhere in between.
+// - With a chunk initial capacity of testMaxSize/8 and testMaxSize, which lets us test non-full and full chunks, and chunks that need to expand themselves.
+// Note: In all samples used, t always equals v in numeric value. when we talk about 'value' we just refer to a value that will be used for both sample.t and sample.v.
 func TestOOOInsert(t *testing.T) {
-	for numPre := 0; numPre <= testMaxSize; numPre++ {
-		// for example, if we have numPre 2, then:
+	for numPreExisting := 0; numPreExisting <= testMaxSize; numPreExisting++ {
+		// For example, if we have numPreExisting 2, then:
 		// chunk.samples indexes filled        0   1
-		// chunk.samples with these values     2   4     // valPre
-		// we want to test inserting at index  0   1   2 // insertPos=0..numPre
-		// we can do this by using values      1,  3   5 // valNew(insertPos)
+		// chunk.samples with these values     2   4     // valEven
+		// we want to test inserting at index  0   1   2 // insertPos=0..numPreExisting
+		// we can do this by using values      1,  3   5 // valOdd(insertPos)
 
-		for insertPos := 0; insertPos <= numPre; insertPos++ {
+		for insertPos := 0; insertPos <= numPreExisting; insertPos++ {
 			chunk := NewOOOChunk()
-			chunk.samples = makePre(numPre)
-			newSample := samplify(valNew(insertPos))
+			chunk.samples = makeEvenSampleSlice(numPreExisting)
+			newSample := samplify(valOdd(insertPos))
 			chunk.Insert(newSample.t, newSample.v)
 
 			var expSamples []sample
-			// our expected new samples slice, will be first the original samples...
+			// Our expected new samples slice, will be first the original samples.
 			for i := 0; i < insertPos; i++ {
-				expSamples = append(expSamples, samplify(valPre(i)))
+				expSamples = append(expSamples, samplify(valEven(i)))
 			}
-			// ... then the new sample ...
+			// Then the new sample.
 			expSamples = append(expSamples, newSample)
-			// ... followed by any original samples that were pushed back by the new one
-			for i := insertPos; i < numPre; i++ {
-				expSamples = append(expSamples, samplify(valPre(i)))
+			// Followed by any original samples that were pushed back by the new one.
+			for i := insertPos; i < numPreExisting; i++ {
+				expSamples = append(expSamples, samplify(valEven(i)))
 			}
 
-			require.Equal(t, expSamples, chunk.samples, "numPre %d, insertPos %d", numPre, insertPos)
+			require.Equal(t, expSamples, chunk.samples, "numPreExisting %d, insertPos %d", numPreExisting, insertPos)
 		}
 	}
 }
@@ -75,19 +75,19 @@ func TestOOOInsert(t *testing.T) {
 // pre-existing samples, with between 1 and testMaxSize pre-existing samples and
 // with a chunk initial capacity of testMaxSize/8 and testMaxSize, which lets us test non-full and full chunks, and chunks that need to expand themselves.
 func TestOOOInsertDuplicate(t *testing.T) {
-	for numPre := 1; numPre <= testMaxSize; numPre++ {
-		for dupPos := 0; dupPos < numPre; dupPos++ {
+	for num := 1; num <= testMaxSize; num++ {
+		for dupPos := 0; dupPos < num; dupPos++ {
 			chunk := NewOOOChunk()
-			chunk.samples = makePre(numPre)
+			chunk.samples = makeEvenSampleSlice(num)
 
 			dupSample := chunk.samples[dupPos]
-			dupSample.v = 0.123 // unmistakeably different from any of the pre-existing values, so we can properly detect the correct value below
+			dupSample.v = 0.123
 
 			ok := chunk.Insert(dupSample.t, dupSample.v)
 
-			expSamples := makePre(numPre) // we expect no change
+			expSamples := makeEvenSampleSlice(num) // We expect no change.
 			require.False(t, ok)
-			require.Equal(t, expSamples, chunk.samples, "numPre %d, dupPos %d", numPre, dupPos)
+			require.Equal(t, expSamples, chunk.samples, "num %d, dupPos %d", num, dupPos)
 		}
 	}
 }

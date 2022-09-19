@@ -376,7 +376,7 @@ func (h *Head) resetSeriesWithMMappedChunks(mSeries *memSeries, mmc, oooMmc []*m
 		h.updateMinMaxTime(mmc[0].minTime, mSeries.mmMaxTime)
 	}
 	if len(oooMmc) != 0 {
-		// mint and maxt can be in any chunk, they are not sorted.
+		// Mint and maxt can be in any chunk, they are not sorted.
 		mint, maxt := int64(math.MaxInt64), int64(math.MinInt64)
 		for _, ch := range oooMmc {
 			if ch.minTime < mint {
@@ -475,7 +475,7 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 	return unknownRefs, mmapOverlappingChunks
 }
 
-func (h *Head) loadWbl(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef, lastMmapRef chunks.ChunkDiskMapperRef) (err error) {
+func (h *Head) loadWBL(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef, lastMmapRef chunks.ChunkDiskMapperRef) (err error) {
 	// Track number of samples, m-map markers, that referenced a series we don't know about
 	// for error reporting.
 	var unknownRefs, mmapMarkerUnknownRefs atomic.Uint64
@@ -490,7 +490,7 @@ func (h *Head) loadWbl(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 		dec    record.Decoder
 		shards = make([][]record.RefSample, n)
 
-		decoded     = make(chan interface{}, 10)
+		decodedCh   = make(chan interface{}, 10)
 		decodeErr   error
 		samplesPool = sync.Pool{
 			New: func() interface{} {
@@ -529,7 +529,7 @@ func (h *Head) loadWbl(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 	}
 
 	go func() {
-		defer close(decoded)
+		defer close(decodedCh)
 		for r.Next() {
 			rec := r.Record()
 			switch dec.Type(rec) {
@@ -544,7 +544,7 @@ func (h *Head) loadWbl(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 					}
 					return
 				}
-				decoded <- samples
+				decodedCh <- samples
 			case record.MmapMarkers:
 				markers := markersPool.Get().([]record.RefMmapMarker)[:0]
 				markers, err = dec.MmapMarkers(rec, markers)
@@ -556,7 +556,7 @@ func (h *Head) loadWbl(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 					}
 					return
 				}
-				decoded <- markers
+				decodedCh <- markers
 			default:
 				// Noop.
 			}
@@ -564,7 +564,7 @@ func (h *Head) loadWbl(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 	}()
 
 	// The records are always replayed from the oldest to the newest.
-	for d := range decoded {
+	for d := range decodedCh {
 		switch v := d.(type) {
 		case []record.RefSample:
 			samples := v
@@ -632,7 +632,7 @@ func (h *Head) loadWbl(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 				processors[idx].mx.Unlock()
 			}
 		default:
-			panic(fmt.Errorf("unexpected decoded type: %T", d))
+			panic(fmt.Errorf("unexpected decodedCh type: %T", d))
 		}
 	}
 

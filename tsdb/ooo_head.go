@@ -61,7 +61,7 @@ func (o *OOOChunk) NumSamples() int {
 	return len(o.samples)
 }
 
-func (o *OOOChunk) ToXor() (*chunkenc.XORChunk, error) {
+func (o *OOOChunk) ToXOR() (*chunkenc.XORChunk, error) {
 	x := chunkenc.NewXORChunk()
 	app, err := x.Appender()
 	if err != nil {
@@ -73,7 +73,7 @@ func (o *OOOChunk) ToXor() (*chunkenc.XORChunk, error) {
 	return x, nil
 }
 
-func (o *OOOChunk) ToXorBetweenTimestamps(mint, maxt int64) (*chunkenc.XORChunk, error) {
+func (o *OOOChunk) ToXORBetweenTimestamps(mint, maxt int64) (*chunkenc.XORChunk, error) {
 	x := chunkenc.NewXORChunk()
 	app, err := x.Appender()
 	if err != nil {

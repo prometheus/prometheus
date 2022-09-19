@@ -63,8 +63,8 @@ var (
 type Head struct {
 	chunkRange               atomic.Int64
 	numSeries                atomic.Uint64
-	minOOOTime, maxOOOTime   atomic.Int64 // TODO(jesus) These should be updated after garbage collection
-	minTime, maxTime         atomic.Int64 // Current min and max of the samples included in the head. // TODO(jesus.vazquez) Ensure these are properly tracked.
+	minOOOTime, maxOOOTime   atomic.Int64 // TODO(jesusvazquez) These should be updated after garbage collection.
+	minTime, maxTime         atomic.Int64 // Current min and max of the samples included in the head. TODO(jesusvazquez) Ensure these are properly tracked.
 	minValidTime             atomic.Int64 // Mint allowed to be added to the head. It shouldn't be lower than the maxt of the last persisted block.
 	lastWALTruncationTime    atomic.Int64
 	lastMemoryTruncationTime atomic.Int64
@@ -92,7 +92,7 @@ type Head struct {
 	deletedMtx sync.Mutex
 	deleted    map[chunks.HeadSeriesRef]int // Deleted series, and what WAL segment they must be kept until.
 
-	// TODO(ganesh) extend MemPostings to return only OOOPostings, Set OOOStatus, ... Like an additional map of ooo postings.
+	// TODO(codesome): Extend MemPostings to return only OOOPostings, Set OOOStatus, ... Like an additional map of ooo postings.
 	postings *index.MemPostings // Postings lists for terms.
 
 	tombstones *tombstones.MemTombstones
@@ -151,6 +151,7 @@ type HeadOptions struct {
 }
 
 const (
+	// DefaultOutOfOrderCapMax is the default maximum size of an in-memory out-of-order chunk.
 	DefaultOutOfOrderCapMax int64 = 32
 )
 
@@ -690,7 +691,7 @@ func (h *Head) Init(minValidTime int64) error {
 			}
 
 			sr := wal.NewSegmentBufReader(s)
-			err = h.loadWbl(wal.NewReader(sr), multiRef, lastMmapRef)
+			err = h.loadWBL(wal.NewReader(sr), multiRef, lastMmapRef)
 			if err := sr.Close(); err != nil {
 				level.Warn(h.logger).Log("msg", "Error while closing the wbl segments reader", "err", err)
 			}
@@ -729,7 +730,7 @@ func (h *Head) loadMmappedChunks(refSeries map[chunks.HeadSeriesRef]*memSeries) 
 			return nil
 		}
 
-		// We ignore any chunk that doesnt have a valid encoding
+		// We ignore any chunk that doesn't have a valid encoding
 		if !chunkenc.IsValidEncoding(encoding) {
 			return nil
 		}
@@ -1161,7 +1162,7 @@ func (h *Head) truncateWAL(mint int64) error {
 }
 
 // truncateOOO
-//   - truncates the OOO WBL files whose index is strictly less than lastWBLFile
+//   - truncates the OOO WBL files whose index is strictly less than lastWBLFile.
 //   - garbage collects all the m-map chunks from the memory that are less than or equal to minOOOMmapRef
 //     and then deletes the series that do not have any data anymore.
 func (h *Head) truncateOOO(lastWBLFile int, minOOOMmapRef chunks.ChunkDiskMapperRef) error {
@@ -1349,7 +1350,7 @@ func (h *Head) Delete(mint, maxt int64, ms ...*labels.Matcher) error {
 // * The actual min times of the chunks present in the Head.
 // * The min OOO time seen during the GC.
 // * Min mmap file number seen in the series (in-order and out-of-order) after gc'ing the series.
-func (h *Head) gc() (int64, int64, int) {
+func (h *Head) gc() (actualInOrderMint, minOOOTime int64, minMmapFile int) {
 	// Only data strictly lower than this timestamp must be deleted.
 	mint := h.MinTime()
 	// Only ooo m-map chunks strictly lower than or equal to this ref
@@ -1358,7 +1359,7 @@ func (h *Head) gc() (int64, int64, int) {
 
 	// Drop old chunks and remember series IDs and hashes if they can be
 	// deleted entirely.
-	deleted, chunksRemoved, actualMint, minOOOTime, minMmapFile := h.series.gc(mint, minOOOMmapRef)
+	deleted, chunksRemoved, actualInOrderMint, minOOOTime, minMmapFile := h.series.gc(mint, minOOOMmapRef)
 	seriesRemoved := len(deleted)
 
 	h.metrics.seriesRemoved.Add(float64(seriesRemoved))
@@ -1388,7 +1389,7 @@ func (h *Head) gc() (int64, int64, int) {
 		h.deletedMtx.Unlock()
 	}
 
-	return actualMint, minOOOTime, minMmapFile
+	return actualInOrderMint, minOOOTime, minMmapFile
 }
 
 // Tombstones returns a new reader over the head's tombstones
