@@ -1016,6 +1016,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_ec2_private_ip`: the private IP address of the instance, if present
 * `__meta_ec2_public_dns_name`: the public DNS name of the instance, if available
 * `__meta_ec2_public_ip`: the public IP address of the instance, if available
+* `__meta_ec2_region`: the region of the instance
 * `__meta_ec2_subnet_id`: comma separated list of subnets IDs in which the instance is running, if available
 * `__meta_ec2_tag_<tagkey>`: each tag value of the instance
 * `__meta_ec2_vpc_id`: the ID of the VPC in which the instance is running, if available
@@ -1968,6 +1969,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_lightsail_ipv6_addresses`: comma separated list of IPv6 addresses assigned to the instance's network interfaces, if present
 * `__meta_lightsail_private_ip`: the private IP address of the instance
 * `__meta_lightsail_public_ip`: the public IP address of the instance, if available
+* `__meta_lightsail_region`: the region of the instance
 * `__meta_lightsail_tag_<tagkey>`: each tag value of the instance
 
 See below for the configuration options for Lightsail discovery:
