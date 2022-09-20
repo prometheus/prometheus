@@ -116,7 +116,7 @@ type ChunkWriter interface {
 // ChunkReader provides reading access of serialized time series data.
 type ChunkReader interface {
 	// Chunk returns the series data chunk with the given reference.
-	Chunk(ref chunks.ChunkRef) (chunkenc.Chunk, error)
+	Chunk(meta chunks.Meta) (chunkenc.Chunk, error)
 
 	// Close releases all underlying resources of the reader.
 	Close() error
@@ -189,12 +189,39 @@ type BlockMetaCompaction struct {
 	// this block.
 	Parents []BlockDesc `json:"parents,omitempty"`
 	Failed  bool        `json:"failed,omitempty"`
+	// Additional information about the compaction, for example, block created from out-of-order chunks.
+	Hints []string `json:"hints,omitempty"`
+}
+
+func (bm *BlockMetaCompaction) SetOutOfOrder() {
+	if bm.containsHint(CompactionHintFromOutOfOrder) {
+		return
+	}
+	bm.Hints = append(bm.Hints, CompactionHintFromOutOfOrder)
+	sort.Strings(bm.Hints)
+}
+
+func (bm *BlockMetaCompaction) FromOutOfOrder() bool {
+	return bm.containsHint(CompactionHintFromOutOfOrder)
+}
+
+func (bm *BlockMetaCompaction) containsHint(hint string) bool {
+	for _, h := range bm.Hints {
+		if h == hint {
+			return true
+		}
+	}
+	return false
 }
 
 const (
 	indexFilename = "index"
 	metaFilename  = "meta.json"
 	metaVersion1  = 1
+
+	// CompactionHintFromOutOfOrder is a hint noting that the block
+	// was created from out-of-order chunks.
+	CompactionHintFromOutOfOrder = "from-out-of-order"
 )
 
 func chunkDir(dir string) string { return filepath.Join(dir, "chunks") }

@@ -597,7 +597,7 @@ func analyzeCompaction(block tsdb.BlockReader, indexr tsdb.IndexReader) (err err
 
 		for _, chk := range chks {
 			// Load the actual data of the chunk.
-			chk, err := chunkr.Chunk(chk.Ref)
+			chk, err := chunkr.Chunk(chk)
 			if err != nil {
 				return err
 			}

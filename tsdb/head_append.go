@@ -137,6 +137,8 @@ func (h *Head) appender() *headAppender {
 		minValidTime:          h.appendableMinValidTime(),
 		mint:                  math.MaxInt64,
 		maxt:                  math.MinInt64,
+		headMaxt:              h.MaxTime(),
+		oooTimeWindow:         h.opts.OutOfOrderTimeWindow.Load(),
 		samples:               h.getAppendBuffer(),
 		sampleSeries:          h.getSeriesBuffer(),
 		exemplars:             exemplarsBuf,
@@ -252,9 +254,11 @@ type exemplarWithSeriesRef struct {
 }
 
 type headAppender struct {
-	head         *Head
-	minValidTime int64 // No samples below this timestamp are allowed.
-	mint, maxt   int64
+	head          *Head
+	minValidTime  int64 // No samples below this timestamp are allowed.
+	mint, maxt    int64
+	headMaxt      int64 // We track it here to not take the lock for every sample appended.
+	oooTimeWindow int64 // Use the same for the entire append, and don't load the atomic for each sample.
 
 	series         []record.RefSeries      // New series held by this appender.
 	metadata       []record.RefMetadata    // New metadata held by this appender.
@@ -268,7 +272,9 @@ type headAppender struct {
 }
 
 func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
-	if t < a.minValidTime {
+	// For OOO inserts, this restriction is irrelevant and will be checked later once we confirm the sample is an in-order append.
+	// If OOO inserts are disabled, we may as well as check this as early as we can and avoid more work.
+	if a.oooTimeWindow == 0 && t < a.minValidTime {
 		a.head.metrics.outOfBoundSamples.Inc()
 		return 0, storage.ErrOutOfBounds
 	}
@@ -300,15 +306,25 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 	}
 
 	s.Lock()
-	if err := s.appendable(t, v); err != nil {
-		s.Unlock()
-		if err == storage.ErrOutOfOrderSample {
+	// TODO(codesome): If we definitely know at this point that the sample is ooo, then optimise
+	// to skip that sample from the WAL and write only in the WBL.
+	_, delta, err := s.appendable(t, v, a.headMaxt, a.minValidTime, a.oooTimeWindow)
+	if err == nil {
+		s.pendingCommit = true
+	}
+	s.Unlock()
+	if delta > 0 {
+		a.head.metrics.oooHistogram.Observe(float64(delta))
+	}
+	if err != nil {
+		switch err {
+		case storage.ErrOutOfOrderSample:
 			a.head.metrics.outOfOrderSamples.Inc()
+		case storage.ErrTooOldSample:
+			a.head.metrics.tooOldSamples.Inc()
 		}
 		return 0, err
 	}
-	s.pendingCommit = true
-	s.Unlock()
 
 	if t < a.mint {
 		a.mint = t
@@ -326,25 +342,46 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 	return storage.SeriesRef(s.ref), nil
 }
 
-// appendable checks whether the given sample is valid for appending to the series.
-func (s *memSeries) appendable(t int64, v float64) error {
-	c := s.head()
-	if c == nil {
-		return nil
+// appendable checks whether the given sample is valid for appending to the series. (if we return false and no error)
+// The sample belongs to the out of order chunk if we return true and no error.
+// An error signifies the sample cannot be handled.
+func (s *memSeries) appendable(t int64, v float64, headMaxt, minValidTime, oooTimeWindow int64) (isOOO bool, oooDelta int64, err error) {
+	// Check if we can append in the in-order chunk.
+	if t >= minValidTime {
+		if s.head() == nil {
+			// The series has no sample and was freshly created.
+			return false, 0, nil
+		}
+		msMaxt := s.maxTime()
+		if t > msMaxt {
+			return false, 0, nil
+		}
+		if t == msMaxt {
+			// We are allowing exact duplicates as we can encounter them in valid cases
+			// like federation and erroring out at that time would be extremely noisy.
+			// This only checks against the latest in-order sample.
+			// The OOO headchunk has its own method to detect these duplicates.
+			if math.Float64bits(s.sampleBuf[3].v) != math.Float64bits(v) {
+				return false, 0, storage.ErrDuplicateSampleForTimestamp
+			}
+			// Sample is identical (ts + value) with most current (highest ts) sample in sampleBuf.
+			return false, 0, nil
+		}
 	}
 
-	if t > c.maxTime {
-		return nil
+	// The sample cannot go in the in-order chunk. Check if it can go in the out-of-order chunk.
+	if oooTimeWindow > 0 && t >= headMaxt-oooTimeWindow {
+		return true, headMaxt - t, nil
 	}
-	if t < c.maxTime {
-		return storage.ErrOutOfOrderSample
+
+	// The sample cannot go in both in-order and out-of-order chunk.
+	if oooTimeWindow > 0 {
+		return true, headMaxt - t, storage.ErrTooOldSample
 	}
-	// We are allowing exact duplicates as we can encounter them in valid cases
-	// like federation and erroring out at that time would be extremely noisy.
-	if math.Float64bits(s.sampleBuf[3].v) != math.Float64bits(v) {
-		return storage.ErrDuplicateSampleForTimestamp
+	if t < minValidTime {
+		return false, headMaxt - t, storage.ErrOutOfBounds
 	}
-	return nil
+	return false, headMaxt - t, storage.ErrOutOfOrderSample
 }
 
 // AppendExemplar for headAppender assumes the series ref already exists, and so it doesn't
@@ -487,6 +524,7 @@ func exemplarsForEncoding(es []exemplarWithSeriesRef) []record.RefExemplar {
 }
 
 // Commit writes to the WAL and adds the data to the Head.
+// TODO(codesome): Refactor this method to reduce indentation and make it more readable.
 func (a *headAppender) Commit() (err error) {
 	if a.closed {
 		return ErrAppenderClosed
@@ -517,24 +555,143 @@ func (a *headAppender) Commit() (err error) {
 	defer a.head.putMetadataBuffer(a.metadata)
 	defer a.head.iso.closeAppend(a.appendID)
 
-	total := len(a.samples)
-	var series *memSeries
+	var (
+		samplesAppended = len(a.samples)
+		oooAccepted     int   // number of samples out of order but accepted: with ooo enabled and within time window
+		oooRejected     int   // number of samples rejected due to: out of order but OOO support disabled.
+		tooOldRejected  int   // number of samples rejected due to: that are out of order but too old (OOO support enabled, but outside time window)
+		oobRejected     int   // number of samples rejected due to: out of bounds: with t < minValidTime (OOO support disabled)
+		inOrderMint     int64 = math.MaxInt64
+		inOrderMaxt     int64 = math.MinInt64
+		ooomint         int64 = math.MaxInt64
+		ooomaxt         int64 = math.MinInt64
+		wblSamples      []record.RefSample
+		oooMmapMarkers  map[chunks.HeadSeriesRef]chunks.ChunkDiskMapperRef
+		oooRecords      [][]byte
+		series          *memSeries
+		enc             record.Encoder
+	)
+	defer func() {
+		for i := range oooRecords {
+			a.head.putBytesBuffer(oooRecords[i][:0])
+		}
+	}()
+	collectOOORecords := func() {
+		if a.head.wbl == nil {
+			// WBL is not enabled. So no need to collect.
+			wblSamples = nil
+			oooMmapMarkers = nil
+			return
+		}
+		// The m-map happens before adding a new sample. So we collect
+		// the m-map markers first, and then samples.
+		// WBL Graphically:
+		//   WBL Before this Commit(): [old samples before this commit for chunk 1]
+		//   WBL After this Commit():  [old samples before this commit for chunk 1][new samples in this commit for chunk 1]mmapmarker1[samples for chunk 2]mmapmarker2[samples for chunk 3]
+		if oooMmapMarkers != nil {
+			markers := make([]record.RefMmapMarker, 0, len(oooMmapMarkers))
+			for ref, mmapRef := range oooMmapMarkers {
+				markers = append(markers, record.RefMmapMarker{
+					Ref:     ref,
+					MmapRef: mmapRef,
+				})
+			}
+			r := enc.MmapMarkers(markers, a.head.getBytesBuffer())
+			oooRecords = append(oooRecords, r)
+		}
+
+		if len(wblSamples) > 0 {
+			r := enc.Samples(wblSamples, a.head.getBytesBuffer())
+			oooRecords = append(oooRecords, r)
+		}
+
+		wblSamples = nil
+		oooMmapMarkers = nil
+	}
 	for i, s := range a.samples {
 		series = a.sampleSeries[i]
 		series.Lock()
-		ok, chunkCreated := series.append(s.T, s.V, a.appendID, a.head.chunkDiskMapper)
-		series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
-		series.pendingCommit = false
-		series.Unlock()
 
-		if !ok {
-			total--
-			a.head.metrics.outOfOrderSamples.Inc()
+		oooSample, _, err := series.appendable(s.T, s.V, a.headMaxt, a.minValidTime, a.oooTimeWindow)
+		switch err {
+		case storage.ErrOutOfOrderSample:
+			samplesAppended--
+			oooRejected++
+		case storage.ErrOutOfBounds:
+			samplesAppended--
+			oobRejected++
+		case storage.ErrTooOldSample:
+			samplesAppended--
+			tooOldRejected++
+		case nil:
+			// Do nothing.
+		default:
+			samplesAppended--
 		}
+
+		var ok, chunkCreated bool
+
+		if err == nil && oooSample {
+			// Sample is OOO and OOO handling is enabled
+			// and the delta is within the OOO tolerance.
+			var mmapRef chunks.ChunkDiskMapperRef
+			ok, chunkCreated, mmapRef = series.insert(s.T, s.V, a.head.chunkDiskMapper)
+			if chunkCreated {
+				r, ok := oooMmapMarkers[series.ref]
+				if !ok || r != 0 {
+					// !ok means there are no markers collected for these samples yet. So we first flush the samples
+					// before setting this m-map marker.
+
+					// r != 0 means we have already m-mapped a chunk for this series in the same Commit().
+					// Hence, before we m-map again, we should add the samples and m-map markers
+					// seen till now to the WBL records.
+					collectOOORecords()
+				}
+
+				if oooMmapMarkers == nil {
+					oooMmapMarkers = make(map[chunks.HeadSeriesRef]chunks.ChunkDiskMapperRef)
+				}
+				oooMmapMarkers[series.ref] = mmapRef
+			}
+			if ok {
+				wblSamples = append(wblSamples, s)
+				if s.T < ooomint {
+					ooomint = s.T
+				}
+				if s.T > ooomaxt {
+					ooomaxt = s.T
+				}
+				oooAccepted++
+			} else {
+				// Sample is an exact duplicate of the last sample.
+				// NOTE: We can only detect updates if they clash with a sample in the OOOHeadChunk,
+				// not with samples in already flushed OOO chunks.
+				// TODO(codesome): Add error reporting? It depends on addressing https://github.com/prometheus/prometheus/discussions/10305.
+				samplesAppended--
+			}
+		} else if err == nil {
+			ok, chunkCreated = series.append(s.T, s.V, a.appendID, a.head.chunkDiskMapper)
+			if ok {
+				if s.T < inOrderMint {
+					inOrderMint = s.T
+				}
+				if s.T > inOrderMaxt {
+					inOrderMaxt = s.T
+				}
+			} else {
+				// The sample is an exact duplicate, and should be silently dropped.
+				samplesAppended--
+			}
+		}
+
 		if chunkCreated {
 			a.head.metrics.chunks.Inc()
 			a.head.metrics.chunksCreated.Inc()
 		}
+
+		series.cleanupAppendIDsBelow(a.cleanupAppendIDsBelow)
+		series.pendingCommit = false
+		series.Unlock()
 	}
 
 	for i, m := range a.metadata {
@@ -544,10 +701,46 @@ func (a *headAppender) Commit() (err error) {
 		series.Unlock()
 	}
 
-	a.head.metrics.samplesAppended.Add(float64(total))
-	a.head.updateMinMaxTime(a.mint, a.maxt)
+	a.head.metrics.outOfOrderSamples.Add(float64(oooRejected))
+	a.head.metrics.outOfBoundSamples.Add(float64(oobRejected))
+	a.head.metrics.tooOldSamples.Add(float64(tooOldRejected))
+	a.head.metrics.samplesAppended.Add(float64(samplesAppended))
+	a.head.metrics.outOfOrderSamplesAppended.Add(float64(oooAccepted))
+	a.head.updateMinMaxTime(inOrderMint, inOrderMaxt)
+	a.head.updateMinOOOMaxOOOTime(ooomint, ooomaxt)
 
+	collectOOORecords()
+	if a.head.wbl != nil {
+		if err := a.head.wbl.Log(oooRecords...); err != nil {
+			// TODO(codesome): Currently WBL logging of ooo samples is best effort here since we cannot try logging
+			// until we have found what samples become OOO. We can try having a metric for this failure.
+			// Returning the error here is not correct because we have already put the samples into the memory,
+			// hence the append/insert was a success.
+			level.Error(a.head.logger).Log("msg", "Failed to log out of order samples into the WAL", "err", err)
+		}
+	}
 	return nil
+}
+
+// insert is like append, except it inserts. Used for OOO samples.
+func (s *memSeries) insert(t int64, v float64, chunkDiskMapper *chunks.ChunkDiskMapper) (inserted, chunkCreated bool, mmapRef chunks.ChunkDiskMapperRef) {
+	c := s.oooHeadChunk
+	if c == nil || c.chunk.NumSamples() == int(s.oooCapMax) {
+		// Note: If no new samples come in then we rely on compaction to clean up stale in-memory OOO chunks.
+		c, mmapRef = s.cutNewOOOHeadChunk(t, chunkDiskMapper)
+		chunkCreated = true
+	}
+
+	ok := c.chunk.Insert(t, v)
+	if ok {
+		if chunkCreated || t < c.minTime {
+			c.minTime = t
+		}
+		if chunkCreated || t > c.maxTime {
+			c.maxTime = t
+		}
+	}
+	return ok, chunkCreated, mmapRef
 }
 
 // append adds the sample (t, v) to the series. The caller also has to provide
@@ -567,7 +760,7 @@ func (s *memSeries) append(t int64, v float64, appendID uint64, chunkDiskMapper 
 			// Out of order sample. Sample timestamp is already in the mmapped chunks, so ignore it.
 			return false, false
 		}
-		// There is no chunk in this series yet, create the first chunk for the sample.
+		// There is no head chunk in this series yet, create the first chunk for the sample.
 		c = s.cutNewHeadChunk(t, chunkDiskMapper)
 		chunkCreated = true
 	}
@@ -649,6 +842,36 @@ func (s *memSeries) cutNewHeadChunk(mint int64, chunkDiskMapper *chunks.ChunkDis
 	}
 	s.app = app
 	return s.headChunk
+}
+
+func (s *memSeries) cutNewOOOHeadChunk(mint int64, chunkDiskMapper *chunks.ChunkDiskMapper) (*oooHeadChunk, chunks.ChunkDiskMapperRef) {
+	ref := s.mmapCurrentOOOHeadChunk(chunkDiskMapper)
+
+	s.oooHeadChunk = &oooHeadChunk{
+		chunk:   NewOOOChunk(),
+		minTime: mint,
+		maxTime: math.MinInt64,
+	}
+
+	return s.oooHeadChunk, ref
+}
+
+func (s *memSeries) mmapCurrentOOOHeadChunk(chunkDiskMapper *chunks.ChunkDiskMapper) chunks.ChunkDiskMapperRef {
+	if s.oooHeadChunk == nil {
+		// There is no head chunk, so nothing to m-map here.
+		return 0
+	}
+	xor, _ := s.oooHeadChunk.chunk.ToXOR() // Encode to XorChunk which is more compact and implements all of the needed functionality.
+	oooXor := &chunkenc.OOOXORChunk{XORChunk: xor}
+	chunkRef := chunkDiskMapper.WriteChunk(s.ref, s.oooHeadChunk.minTime, s.oooHeadChunk.maxTime, oooXor, handleChunkWriteError)
+	s.oooMmappedChunks = append(s.oooMmappedChunks, &mmappedChunk{
+		ref:        chunkRef,
+		numSamples: uint16(xor.NumSamples()),
+		minTime:    s.oooHeadChunk.minTime,
+		maxTime:    s.oooHeadChunk.maxTime,
+	})
+	s.oooHeadChunk = nil
+	return chunkRef
 }
 
 func (s *memSeries) mmapCurrentHeadChunk(chunkDiskMapper *chunks.ChunkDiskMapper) {

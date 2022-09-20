@@ -567,8 +567,7 @@ func (db *DB) truncate(mint int64) error {
 
 	// Start a new segment so low ingestion volume instances don't have more WAL
 	// than needed.
-	err = db.wal.NextSegment()
-	if err != nil {
+	if _, err := db.wal.NextSegment(); err != nil {
 		return errors.Wrap(err, "next segment")
 	}
 
