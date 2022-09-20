@@ -1929,16 +1929,6 @@ func (db *DB) ChunkQuerier(_ context.Context, mint, maxt int64) (storage.ChunkQu
 	return storage.NewMergeChunkQuerier(blockQueriers, nil, storage.NewCompactingChunkSeriesMerger(storage.ChainedSeriesMerge)), nil
 }
 
-// UnorderedChunkQuerier returns a new chunk querier over the data partition for the given time range.
-// The chunks can be overlapping and not sorted.
-func (db *DB) UnorderedChunkQuerier(_ context.Context, mint, maxt int64) (storage.ChunkQuerier, error) {
-	blockQueriers, err := db.blockChunkQuerierForRange(mint, maxt)
-	if err != nil {
-		return nil, err
-	}
-	return storage.NewMergeChunkQuerier(blockQueriers, nil, storage.NewConcatenatingChunkSeriesMerger()), nil
-}
-
 func (db *DB) ExemplarQuerier(ctx context.Context) (storage.ExemplarQuerier, error) {
 	return db.head.exemplars.ExemplarQuerier(ctx)
 }

@@ -426,7 +426,6 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			Name: "prometheus_tsdb_sample_ooo_delta",
 			Help: "Delta in seconds by which a sample is considered out of order (reported regardless of OOO time window and whether sample is accepted or not).",
 			Buckets: []float64{
-				// Note that mimir distributor only gives us a range of wallclock-12h to wallclock+15min
 				60 * 10,      // 10 min
 				60 * 30,      // 30 min
 				60 * 60,      // 60 min
@@ -1185,8 +1184,9 @@ func (h *Head) truncateSeriesAndChunkDiskMapper(caller string) error {
 	actualMint, minOOOTime, minMmapFile := h.gc()
 	level.Info(h.logger).Log("msg", "Head GC completed", "caller", caller, "duration", time.Since(start))
 	h.metrics.gcDuration.Observe(time.Since(start).Seconds())
+
 	if actualMint > h.minTime.Load() {
-		// The actual mint of the Head is higher than the one asked to truncate.
+		// The actual mint of the head is higher than the one asked to truncate.
 		appendableMinValidTime := h.appendableMinValidTime()
 		if actualMint < appendableMinValidTime {
 			h.minTime.Store(actualMint)

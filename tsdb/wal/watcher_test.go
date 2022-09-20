@@ -371,9 +371,9 @@ func TestReadCheckpoint(t *testing.T) {
 			enc := record.Encoder{}
 			w, err := NewSize(nil, nil, wdir, 128*pageSize, compress)
 			require.NoError(t, err)
-			defer func() {
+			t.Cleanup(func() {
 				require.NoError(t, w.Close())
-			}()
+			})
 
 			// Write to the initial segment then checkpoint.
 			for i := 0; i < seriesCount; i++ {
@@ -398,6 +398,8 @@ func TestReadCheckpoint(t *testing.T) {
 					require.NoError(t, w.Log(sample))
 				}
 			}
+			_, err = w.NextSegmentSync()
+			require.NoError(t, err)
 			_, err = Checkpoint(log.NewNopLogger(), w, 30, 31, func(x chunks.HeadSeriesRef) bool { return true }, 0)
 			require.NoError(t, err)
 			require.NoError(t, w.Truncate(32))

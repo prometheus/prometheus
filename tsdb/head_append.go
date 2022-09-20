@@ -317,10 +317,10 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 		a.head.metrics.oooHistogram.Observe(float64(delta))
 	}
 	if err != nil {
-		if err == storage.ErrOutOfOrderSample {
+		switch err {
+		case storage.ErrOutOfOrderSample:
 			a.head.metrics.outOfOrderSamples.Inc()
-		}
-		if err == storage.ErrTooOldSample {
+		case storage.ErrTooOldSample:
 			a.head.metrics.tooOldSamples.Inc()
 		}
 		return 0, err
@@ -345,7 +345,7 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 // appendable checks whether the given sample is valid for appending to the series. (if we return false and no error)
 // The sample belongs to the out of order chunk if we return true and no error.
 // An error signifies the sample cannot be handled.
-func (s *memSeries) appendable(t int64, v float64, headMaxt, minValidTime, oooTimeWindow int64) (isOutOfOrder bool, delta int64, err error) {
+func (s *memSeries) appendable(t int64, v float64, headMaxt, minValidTime, oooTimeWindow int64) (isOOO bool, oooDelta int64, err error) {
 	// Check if we can append in the in-order chunk.
 	if t >= minValidTime {
 		if s.head() == nil {
@@ -360,7 +360,7 @@ func (s *memSeries) appendable(t int64, v float64, headMaxt, minValidTime, oooTi
 			// We are allowing exact duplicates as we can encounter them in valid cases
 			// like federation and erroring out at that time would be extremely noisy.
 			// This only checks against the latest in-order sample.
-			// The OOO headchunk has its own method to detect these duplicates
+			// The OOO headchunk has its own method to detect these duplicates.
 			if math.Float64bits(s.sampleBuf[3].v) != math.Float64bits(v) {
 				return false, 0, storage.ErrDuplicateSampleForTimestamp
 			}
@@ -670,23 +670,16 @@ func (a *headAppender) Commit() (err error) {
 				samplesAppended--
 			}
 		} else if err == nil {
-			// The sample is in-order or a duplicate of the last sample.
-
 			ok, chunkCreated = series.append(s.T, s.V, a.appendID, a.head.chunkDiskMapper)
-
-			// TODO: handle overwrite.
-			// this would be storage.ErrDuplicateSampleForTimestamp, it has no attached counter
-			// in case of identical timestamp and value, we should drop silently
 			if ok {
-				// sample timestamp is beyond any previously ingested timestamp
-				if s.T < inOrderMint { // TODO(ganesh): dieter thinks this never applies and can be removed because we know we're in order.
+				if s.T < inOrderMint {
 					inOrderMint = s.T
 				}
 				if s.T > inOrderMaxt {
 					inOrderMaxt = s.T
 				}
 			} else {
-				// ... therefore, in this case, we know the sample is an exact duplicate, and should be silently dropped.
+				// The sample is an exact duplicate, and should be silently dropped.
 				samplesAppended--
 			}
 		}
@@ -716,13 +709,13 @@ func (a *headAppender) Commit() (err error) {
 	a.head.updateMinMaxTime(inOrderMint, inOrderMaxt)
 	a.head.updateMinOOOMaxOOOTime(ooomint, ooomaxt)
 
-	// TODO(codesome): Currently WBL logging of ooo samples is best effort here since we cannot try logging
-	// until we have found what samples become OOO. We can try having a metric for this failure.
-	// Returning the error here is not correct because we have already put the samples into the memory,
-	// hence the append/insert was a success.
 	collectOOORecords()
 	if a.head.wbl != nil {
 		if err := a.head.wbl.Log(oooRecords...); err != nil {
+			// TODO(codesome): Currently WBL logging of ooo samples is best effort here since we cannot try logging
+			// until we have found what samples become OOO. We can try having a metric for this failure.
+			// Returning the error here is not correct because we have already put the samples into the memory,
+			// hence the append/insert was a success.
 			level.Error(a.head.logger).Log("msg", "Failed to log out of order samples into the WAL", "err", err)
 		}
 	}

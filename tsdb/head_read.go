@@ -370,7 +370,7 @@ func (s *memSeries) oooMergedChunk(meta chunks.Meta, cdm *chunks.ChunkDiskMapper
 	if s.oooHeadChunk != nil && s.oooHeadChunk.OverlapsClosedInterval(mint, maxt) {
 		// We only want to append the head chunk if this chunk existed when
 		// Series() was called. This brings consistency in case new data
-		// is added in between Series() and Chunk() calls
+		// is added in between Series() and Chunk() calls.
 		if oooHeadRef == meta.OOOLastRef {
 			tmpChks = append(tmpChks, chunkMetaAndChunkDiskMapperRef{
 				meta: chunks.Meta{
@@ -385,7 +385,7 @@ func (s *memSeries) oooMergedChunk(meta chunks.Meta, cdm *chunks.ChunkDiskMapper
 
 	for i, c := range s.oooMmappedChunks {
 		chunkRef := chunks.ChunkRef(chunks.NewHeadChunkRef(s.ref, s.oooHeadChunkID(i)))
-		// We can skip chunks that came in later than the last known OOOLastRef
+		// We can skip chunks that came in later than the last known OOOLastRef.
 		if chunkRef > meta.OOOLastRef {
 			break
 		}
