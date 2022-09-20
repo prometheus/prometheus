@@ -809,7 +809,7 @@ func TestChainSampleIterator(t *testing.T) {
 			expected: []tsdbutil.Sample{sample{0, 0, nil, nil}, sample{1, 1, nil, nil}, sample{2, 2, nil, nil}, sample{3, 3, nil, nil}},
 		},
 	} {
-		merged := NewChainSampleIterator(tc.input)
+		merged := ChainSampleIteratorFromIterators(nil, tc.input)
 		actual, err := ExpandSamples(merged, nil)
 		require.NoError(t, err)
 		require.Equal(t, tc.expected, actual)
@@ -855,7 +855,7 @@ func TestChainSampleIteratorSeek(t *testing.T) {
 			expected: []tsdbutil.Sample{sample{0, 0, nil, nil}, sample{1, 1, nil, nil}, sample{2, 2, nil, nil}, sample{3, 3, nil, nil}},
 		},
 	} {
-		merged := NewChainSampleIterator(tc.input)
+		merged := ChainSampleIteratorFromIterators(nil, tc.input)
 		actual := []tsdbutil.Sample{}
 		if merged.Seek(tc.seek) == chunkenc.ValFloat {
 			t, v := merged.At()

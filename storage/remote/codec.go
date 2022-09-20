@@ -350,6 +350,10 @@ func (c *concreteSeries) Labels() labels.Labels {
 }
 
 func (c *concreteSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator {
+	if csi, ok := it.(*concreteSeriesIterator); ok {
+		csi.reset(c)
+		return csi
+	}
 	return newConcreteSeriersIterator(c)
 }
 
@@ -364,6 +368,11 @@ func newConcreteSeriersIterator(series *concreteSeries) chunkenc.Iterator {
 		cur:    -1,
 		series: series,
 	}
+}
+
+func (c *concreteSeriesIterator) reset(series *concreteSeries) {
+	c.cur = -1
+	c.series = series
 }
 
 // Seek implements storage.SeriesIterator.
