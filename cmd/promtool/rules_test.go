@@ -139,7 +139,7 @@ func TestBackfillRuleIntegration(t *testing.T) {
 					} else {
 						require.Equal(t, 3, len(series.Labels()))
 					}
-					it := series.Iterator()
+					it := series.Iterator(nil)
 					for it.Next() == chunkenc.ValFloat {
 						samplesCount++
 						ts, v := it.At()

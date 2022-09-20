@@ -363,7 +363,7 @@ func (ss *StorageSeries) Labels() labels.Labels {
 }
 
 // Iterator returns a new iterator of the data of the series.
-func (ss *StorageSeries) Iterator() chunkenc.Iterator {
+func (ss *StorageSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator {
 	return newStorageSeriesIterator(ss.series)
 }
 

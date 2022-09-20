@@ -838,7 +838,7 @@ func (b *blockSeriesSet) At() storage.Series {
 	currIterFn := b.currIterFn
 	return &storage.SeriesEntry{
 		Lset: b.currLabels,
-		SampleIteratorFn: func() chunkenc.Iterator {
+		SampleIteratorFn: func(chunkenc.Iterator) chunkenc.Iterator {
 			return currIterFn().toSeriesIterator()
 		},
 	}
@@ -872,7 +872,7 @@ func (b *blockChunkSeriesSet) At() storage.ChunkSeries {
 	currIterFn := b.currIterFn
 	return &storage.ChunkSeriesEntry{
 		Lset: b.currLabels,
-		ChunkIteratorFn: func() chunks.Iterator {
+		ChunkIteratorFn: func(chunks.Iterator) chunks.Iterator {
 			return currIterFn().toChunkSeriesIterator()
 		},
 	}

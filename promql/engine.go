@@ -1393,10 +1393,12 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 		enh := &EvalNodeHelper{Out: make(Vector, 0, 1)}
 		// Process all the calls for one time series at a time.
 		it := storage.NewBuffer(selRange)
+		var chkIter chunkenc.Iterator
 		for i, s := range selVS.Series {
 			ev.currentSamples -= len(points)
 			points = points[:0]
-			it.Reset(s.Iterator())
+			chkIter = s.Iterator(chkIter)
+			it.Reset(chkIter)
 			metric := selVS.Series[i].Labels()
 			// The last_over_time function acts like offset; thus, it
 			// should keep the metric name.  For all the other range
@@ -1578,8 +1580,10 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 		}
 		mat := make(Matrix, 0, len(e.Series))
 		it := storage.NewMemoizedEmptyIterator(durationMilliseconds(ev.lookbackDelta))
+		var chkIter chunkenc.Iterator
 		for i, s := range e.Series {
-			it.Reset(s.Iterator())
+			chkIter = s.Iterator(chkIter)
+			it.Reset(chkIter)
 			ss := Series{
 				Metric: e.Series[i].Labels(),
 				Points: getPointSlice(numSteps),
@@ -1723,8 +1727,10 @@ func (ev *evaluator) vectorSelector(node *parser.VectorSelector, ts int64) (Vect
 	}
 	vec := make(Vector, 0, len(node.Series))
 	it := storage.NewMemoizedEmptyIterator(durationMilliseconds(ev.lookbackDelta))
+	var chkIter chunkenc.Iterator
 	for i, s := range node.Series {
-		it.Reset(s.Iterator())
+		chkIter = s.Iterator(chkIter)
+		it.Reset(chkIter)
 
 		t, v, h, ok := ev.vectorSelectorSingle(it, node, ts)
 		if ok {
@@ -1812,12 +1818,14 @@ func (ev *evaluator) matrixSelector(node *parser.MatrixSelector) (Matrix, storag
 		ev.error(errWithWarnings{fmt.Errorf("expanding series: %w", err), ws})
 	}
 
+	var chkIter chunkenc.Iterator
 	series := vs.Series
 	for i, s := range series {
 		if err := contextDone(ev.ctx, "expression evaluation"); err != nil {
 			ev.error(err)
 		}
-		it.Reset(s.Iterator())
+		chkIter = s.Iterator(chkIter)
+		it.Reset(chkIter)
 		ss := Series{
 			Metric: series[i].Labels(),
 		}

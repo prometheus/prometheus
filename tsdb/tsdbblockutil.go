@@ -49,10 +49,11 @@ func CreateBlock(series []storage.Series, dir string, chunkRange int64, logger l
 	const commitAfter = 10000
 	ctx := context.Background()
 	app := w.Appender(ctx)
+	var it chunkenc.Iterator
 
 	for _, s := range series {
 		ref := storage.SeriesRef(0)
-		it := s.Iterator()
+		it = s.Iterator(it)
 		lset := s.Labels()
 		typ := it.Next()
 		lastTyp := typ

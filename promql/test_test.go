@@ -143,7 +143,7 @@ func TestLazyLoader_WithSamplesTill(t *testing.T) {
 					got := Series{
 						Metric: storageSeries.Labels(),
 					}
-					it := storageSeries.Iterator()
+					it := storageSeries.Iterator(nil)
 					for it.Next() == chunkenc.ValFloat {
 						t, v := it.At()
 						got.Points = append(got.Points, Point{T: t, V: v})

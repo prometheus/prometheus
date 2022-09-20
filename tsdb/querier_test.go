@@ -194,8 +194,8 @@ func testBlockQuerier(t *testing.T, c blockQuerierTestCase, ir IndexReader, cr C
 			sres := res.At()
 			require.Equal(t, sexp.Labels(), sres.Labels())
 
-			smplExp, errExp := storage.ExpandSamples(sexp.Iterator(), nil)
-			smplRes, errRes := storage.ExpandSamples(sres.Iterator(), nil)
+			smplExp, errExp := storage.ExpandSamples(sexp.Iterator(nil), nil)
+			smplRes, errRes := storage.ExpandSamples(sres.Iterator(nil), nil)
 
 			require.Equal(t, errExp, errRes)
 			require.Equal(t, smplExp, smplRes)
@@ -230,9 +230,9 @@ func testBlockQuerier(t *testing.T, c blockQuerierTestCase, ir IndexReader, cr C
 
 			require.Equal(t, sexpChks.Labels(), sres.Labels())
 
-			chksExp, errExp := storage.ExpandChunks(sexpChks.Iterator())
+			chksExp, errExp := storage.ExpandChunks(sexpChks.Iterator(nil))
 			rmChunkRefs(chksExp)
-			chksRes, errRes := storage.ExpandChunks(sres.Iterator())
+			chksRes, errRes := storage.ExpandChunks(sres.Iterator(nil))
 			rmChunkRefs(chksRes)
 			require.Equal(t, errExp, errRes)
 			require.Equal(t, chksExp, chksRes)
@@ -1433,9 +1433,10 @@ func BenchmarkQuerySeek(b *testing.B) {
 				b.ResetTimer()
 				b.ReportAllocs()
 
+				var it chunkenc.Iterator
 				ss := sq.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "__name__", ".*"))
 				for ss.Next() {
-					it := ss.At().Iterator()
+					it = ss.At().Iterator(it)
 					for t := mint; t <= maxt; t++ {
 						it.Seek(t)
 					}
@@ -2042,11 +2043,13 @@ func benchQuery(b *testing.B, expExpansions int, q storage.Querier, selectors la
 	for i := 0; i < b.N; i++ {
 		ss := q.Select(false, nil, selectors...)
 		var actualExpansions int
+		var it chunkenc.Iterator
 		for ss.Next() {
 			s := ss.At()
 			s.Labels()
-			it := s.Iterator()
+			it = s.Iterator(it)
 			for it.Next() != chunkenc.ValNone {
+				_, _ = it.At()
 			}
 			actualExpansions++
 		}

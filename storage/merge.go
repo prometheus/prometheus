@@ -425,10 +425,10 @@ func ChainedSeriesMerge(series ...Series) Series {
 	}
 	return &SeriesEntry{
 		Lset: series[0].Labels(),
-		SampleIteratorFn: func() chunkenc.Iterator {
+		SampleIteratorFn: func(chunkenc.Iterator) chunkenc.Iterator {
 			iterators := make([]chunkenc.Iterator, 0, len(series))
 			for _, s := range series {
-				iterators = append(iterators, s.Iterator())
+				iterators = append(iterators, s.Iterator(nil))
 			}
 			return NewChainSampleIterator(iterators)
 		},
@@ -607,10 +607,10 @@ func NewCompactingChunkSeriesMerger(mergeFunc VerticalSeriesMergeFunc) VerticalC
 		}
 		return &ChunkSeriesEntry{
 			Lset: series[0].Labels(),
-			ChunkIteratorFn: func() chunks.Iterator {
+			ChunkIteratorFn: func(chunks.Iterator) chunks.Iterator {
 				iterators := make([]chunks.Iterator, 0, len(series))
 				for _, s := range series {
-					iterators = append(iterators, s.Iterator())
+					iterators = append(iterators, s.Iterator(nil))
 				}
 				return &compactChunkIterator{
 					mergeFunc: mergeFunc,
@@ -693,7 +693,7 @@ func (c *compactChunkIterator) Next() bool {
 	}
 
 	// Add last as it's not yet included in overlap. We operate on same series, so labels does not matter here.
-	iter = NewSeriesToChunkEncoder(c.mergeFunc(append(overlapping, newChunkToSeriesDecoder(nil, c.curr))...)).Iterator()
+	iter = NewSeriesToChunkEncoder(c.mergeFunc(append(overlapping, newChunkToSeriesDecoder(nil, c.curr))...)).Iterator(nil)
 	if !iter.Next() {
 		if c.err = iter.Err(); c.err != nil {
 			return false
@@ -751,10 +751,10 @@ func NewConcatenatingChunkSeriesMerger() VerticalChunkSeriesMergeFunc {
 		}
 		return &ChunkSeriesEntry{
 			Lset: series[0].Labels(),
-			ChunkIteratorFn: func() chunks.Iterator {
+			ChunkIteratorFn: func(chunks.Iterator) chunks.Iterator {
 				iterators := make([]chunks.Iterator, 0, len(series))
 				for _, s := range series {
-					iterators = append(iterators, s.Iterator())
+					iterators = append(iterators, s.Iterator(nil))
 				}
 				return &concatenatingChunkIterator{
 					iterators: iterators,

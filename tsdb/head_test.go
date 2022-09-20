@@ -924,8 +924,8 @@ func TestHeadDeleteSimple(t *testing.T) {
 
 						require.Equal(t, expSeries.Labels(), actSeries.Labels())
 
-						smplExp, errExp := storage.ExpandSamples(expSeries.Iterator(), nil)
-						smplRes, errRes := storage.ExpandSamples(actSeries.Iterator(), nil)
+						smplExp, errExp := storage.ExpandSamples(expSeries.Iterator(nil), nil)
+						smplRes, errRes := storage.ExpandSamples(actSeries.Iterator(nil), nil)
 
 						require.Equal(t, errExp, errRes)
 						require.Equal(t, smplExp, smplRes)
@@ -959,7 +959,7 @@ func TestDeleteUntilCurMax(t *testing.T) {
 	res := q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 	require.True(t, res.Next(), "series is not present")
 	s := res.At()
-	it := s.Iterator()
+	it := s.Iterator(nil)
 	require.Equal(t, chunkenc.ValNone, it.Next(), "expected no samples")
 	for res.Next() {
 	}
@@ -976,7 +976,7 @@ func TestDeleteUntilCurMax(t *testing.T) {
 	res = q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 	require.True(t, res.Next(), "series don't exist")
 	exps := res.At()
-	it = exps.Iterator()
+	it = exps.Iterator(nil)
 	resSamples, err := storage.ExpandSamples(it, newSample)
 	require.NoError(t, err)
 	require.Equal(t, []tsdbutil.Sample{sample{11, 1, nil, nil}}, resSamples)
@@ -1163,7 +1163,7 @@ func TestDelete_e2e(t *testing.T) {
 				eok, rok := expSs.Next(), ss.Next()
 				// Skip a series if iterator is empty.
 				if rok {
-					for ss.At().Iterator().Next() == chunkenc.ValNone {
+					for ss.At().Iterator(nil).Next() == chunkenc.ValNone {
 						rok = ss.Next()
 						if !rok {
 							break
@@ -1177,8 +1177,8 @@ func TestDelete_e2e(t *testing.T) {
 				sexp := expSs.At()
 				sres := ss.At()
 				require.Equal(t, sexp.Labels(), sres.Labels())
-				smplExp, errExp := storage.ExpandSamples(sexp.Iterator(), nil)
-				smplRes, errRes := storage.ExpandSamples(sres.Iterator(), nil)
+				smplExp, errExp := storage.ExpandSamples(sexp.Iterator(nil), nil)
+				smplRes, errRes := storage.ExpandSamples(sres.Iterator(nil), nil)
 				require.Equal(t, errExp, errRes)
 				require.Equal(t, smplExp, smplRes)
 			}
@@ -2635,7 +2635,7 @@ func TestChunkNotFoundHeadGCRace(t *testing.T) {
 	<-time.After(3 * time.Second)
 
 	// Now consume after compaction when it's gone.
-	it := s.Iterator()
+	it := s.Iterator(nil)
 	for it.Next() == chunkenc.ValFloat {
 		_, _ = it.At()
 	}
@@ -2643,7 +2643,7 @@ func TestChunkNotFoundHeadGCRace(t *testing.T) {
 	require.NoError(t, it.Err())
 	for ss.Next() {
 		s = ss.At()
-		it := s.Iterator()
+		it = s.Iterator(it)
 		for it.Next() == chunkenc.ValFloat {
 			_, _ = it.At()
 		}
@@ -2841,7 +2841,7 @@ func TestAppendHistogram(t *testing.T) {
 			s := ss.At()
 			require.False(t, ss.Next())
 
-			it := s.Iterator()
+			it := s.Iterator(nil)
 			actHistograms := make([]timedHistogram, 0, len(expHistograms))
 			for it.Next() == chunkenc.ValHistogram {
 				t, h := it.AtHistogram()
@@ -3304,7 +3304,7 @@ func TestHistogramStaleSample(t *testing.T) {
 		s := ss.At()
 		require.False(t, ss.Next())
 
-		it := s.Iterator()
+		it := s.Iterator(nil)
 		actHistograms := make([]timedHistogram, 0, len(expHistograms))
 		for it.Next() == chunkenc.ValHistogram {
 			t, h := it.AtHistogram()
@@ -3581,7 +3581,7 @@ func TestAppendingDifferentEncodingToSameSeries(t *testing.T) {
 	ss := q.Select(false, nil, labels.MustNewMatcher(labels.MatchEqual, "a", "b"))
 	require.True(t, ss.Next())
 	s := ss.At()
-	it := s.Iterator()
+	it := s.Iterator(nil)
 	expIdx := 0
 loop:
 	for {

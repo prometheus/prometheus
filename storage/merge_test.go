@@ -202,8 +202,8 @@ func TestMergeQuerierWithChainMerger(t *testing.T) {
 				expectedSeries := tc.expected.At()
 				require.Equal(t, expectedSeries.Labels(), actualSeries.Labels())
 
-				expSmpl, expErr := ExpandSamples(expectedSeries.Iterator(), nil)
-				actSmpl, actErr := ExpandSamples(actualSeries.Iterator(), nil)
+				expSmpl, expErr := ExpandSamples(expectedSeries.Iterator(nil), nil)
+				actSmpl, actErr := ExpandSamples(actualSeries.Iterator(nil), nil)
 				require.Equal(t, expErr, actErr)
 				require.Equal(t, expSmpl, actSmpl)
 			}
@@ -370,8 +370,8 @@ func TestMergeChunkQuerierWithNoVerticalChunkSeriesMerger(t *testing.T) {
 				expectedSeries := tc.expected.At()
 				require.Equal(t, expectedSeries.Labels(), actualSeries.Labels())
 
-				expChks, expErr := ExpandChunks(expectedSeries.Iterator())
-				actChks, actErr := ExpandChunks(actualSeries.Iterator())
+				expChks, expErr := ExpandChunks(expectedSeries.Iterator(nil))
+				actChks, actErr := ExpandChunks(actualSeries.Iterator(nil))
 				require.Equal(t, expErr, actErr)
 				require.Equal(t, expChks, actChks)
 
@@ -533,8 +533,8 @@ func TestCompactingChunkSeriesMerger(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			merged := m(tc.input...)
 			require.Equal(t, tc.expected.Labels(), merged.Labels())
-			actChks, actErr := ExpandChunks(merged.Iterator())
-			expChks, expErr := ExpandChunks(tc.expected.Iterator())
+			actChks, actErr := ExpandChunks(merged.Iterator(nil))
+			expChks, expErr := ExpandChunks(tc.expected.Iterator(nil))
 
 			require.Equal(t, expErr, actErr)
 			require.Equal(t, expChks, actChks)
@@ -667,8 +667,8 @@ func TestConcatenatingChunkSeriesMerger(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			merged := m(tc.input...)
 			require.Equal(t, tc.expected.Labels(), merged.Labels())
-			actChks, actErr := ExpandChunks(merged.Iterator())
-			expChks, expErr := ExpandChunks(tc.expected.Iterator())
+			actChks, actErr := ExpandChunks(merged.Iterator(nil))
+			expChks, expErr := ExpandChunks(tc.expected.Iterator(nil))
 
 			require.Equal(t, expErr, actErr)
 			require.Equal(t, expChks, actChks)
@@ -893,10 +893,11 @@ func benchmarkDrain(b *testing.B, makeSeriesSet func() SeriesSet) {
 	var err error
 	var t int64
 	var v float64
+	var iter chunkenc.Iterator
 	for n := 0; n < b.N; n++ {
 		seriesSet := makeSeriesSet()
 		for seriesSet.Next() {
-			iter := seriesSet.At().Iterator()
+			iter = seriesSet.At().Iterator(iter)
 			for iter.Next() == chunkenc.ValFloat {
 				t, v = iter.At()
 			}

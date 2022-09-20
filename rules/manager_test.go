@@ -592,12 +592,13 @@ func TestStaleness(t *testing.T) {
 // Convert a SeriesSet into a form usable with require.Equal.
 func readSeriesSet(ss storage.SeriesSet) (map[string][]promql.Point, error) {
 	result := map[string][]promql.Point{}
+	var it chunkenc.Iterator
 
 	for ss.Next() {
 		series := ss.At()
 
 		points := []promql.Point{}
-		it := series.Iterator()
+		it := series.Iterator(it)
 		for it.Next() == chunkenc.ValFloat {
 			t, v := it.At()
 			points = append(points, promql.Point{T: t, V: v})
