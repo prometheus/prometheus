@@ -21,10 +21,11 @@ import (
 	"os"
 	"testing"
 
+	yaml "gopkg.in/yaml.v2"
+
 	"github.com/go-kit/log"
 	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v2"
 )
 
 func TestOvhCloudVpsRefresh(t *testing.T) {
@@ -72,6 +73,7 @@ consumer_key: %s`, mock.URL, ovhCloudApplicationKeyTest, ovhCloudApplicationSecr
 			"__meta_ovhcloud_vps_offerType":           "ssd",
 			"__meta_ovhcloud_vps_state":               "running",
 			"__meta_ovhcloud_vps_vcore":               "1",
+			"__meta_ovhcloud_vps_model_vcore":         "1",
 			"__meta_ovhcloud_vps_version":             "2019v1",
 			"__meta_ovhcloud_vps_zone":                "zone",
 			"instance":                                "abc",

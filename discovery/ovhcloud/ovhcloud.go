@@ -20,7 +20,6 @@ import (
 
 	"inet.af/netaddr"
 
-	"github.com/fatih/structs"
 	"github.com/go-kit/log"
 	"github.com/grafana/regexp"
 	"github.com/ovh/go-ovh/ovh"
@@ -45,23 +44,6 @@ var (
 	ovhCloudConsumerKeyTest       = "5mBuy6SUQcRw2ZUxg0cG68BoDKpED4KY"
 )
 
-func addFieldsOnLabels(fields []*structs.Field, labels model.LabelSet, prefix string) {
-	for _, f := range fields {
-		labelName := f.Tag("label")
-		if labelName == "-" {
-			// Skip labels with -
-			continue
-		}
-		if labelName == "" {
-			labelName = f.Tag("json")
-		}
-
-		if labelName != "" {
-			labels[model.LabelName(prefix+labelName)] = model.LabelValue(fmt.Sprintf("%+v", f.Value()))
-		}
-	}
-}
-
 type refresher interface {
 	refresh(context.Context) ([]*targetgroup.Group, error)
 }
@@ -83,8 +65,8 @@ type SDConfig struct {
 
 // IPs struct to store IPV4 and IPV6
 type IPs struct {
-	IPV4 string `json:"ipv4" label:"ipv4"`
-	IPV6 string `json:"ipv6" label:"ipv6"`
+	IPV4 string `json:"ipv4"`
+	IPV6 string `json:"ipv6"`
 }
 
 // Name get name

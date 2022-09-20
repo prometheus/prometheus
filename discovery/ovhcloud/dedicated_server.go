@@ -17,8 +17,8 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"strconv"
 
-	"github.com/fatih/structs"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/ovh/go-ovh/ovh"
@@ -33,7 +33,7 @@ const dedicatedServerAPIPath = "/dedicated/server"
 // DedicatedServer struct
 type DedicatedServer struct {
 	State           string `json:"state"`
-	IPs             IPs    `json:"ips" label:"-"`
+	IPs             IPs    `json:"ips"`
 	CommercialRange string `json:"commercialRange"`
 	LinkSpeed       int    `json:"linkSpeed"`
 	Rack            string `json:"rack"`
@@ -129,16 +129,22 @@ func (d *dedicatedServerDiscovery) refresh(ctx context.Context) ([]*targetgroup.
 			defaultIP = server.IPs.IPV6
 		}
 		labels := model.LabelSet{
-			model.AddressLabel:  model.LabelValue(defaultIP),
-			model.InstanceLabel: model.LabelValue(server.Name),
+			model.AddressLabel:                             model.LabelValue(defaultIP),
+			model.InstanceLabel:                            model.LabelValue(server.Name),
+			dedicatedServerLabelPrefix + "state":           model.LabelValue(server.State),
+			dedicatedServerLabelPrefix + "commercialRange": model.LabelValue(server.CommercialRange),
+			dedicatedServerLabelPrefix + "linkSpeed":       model.LabelValue(fmt.Sprintf("%d", server.LinkSpeed)),
+			dedicatedServerLabelPrefix + "rack":            model.LabelValue(server.Rack),
+			dedicatedServerLabelPrefix + "noIntervention":  model.LabelValue(strconv.FormatBool(server.NoIntervention)),
+			dedicatedServerLabelPrefix + "os":              model.LabelValue(server.Os),
+			dedicatedServerLabelPrefix + "supportLevel":    model.LabelValue(server.SupportLevel),
+			dedicatedServerLabelPrefix + "serverId":        model.LabelValue(fmt.Sprintf("%d", server.ServerID)),
+			dedicatedServerLabelPrefix + "reverse":         model.LabelValue(server.Reverse),
+			dedicatedServerLabelPrefix + "datacenter":      model.LabelValue(server.Datacenter),
+			dedicatedServerLabelPrefix + "name":            model.LabelValue(server.Name),
+			dedicatedServerLabelPrefix + "ipv4":            model.LabelValue(server.IPs.IPV4),
+			dedicatedServerLabelPrefix + "ipv6":            model.LabelValue(server.IPs.IPV6),
 		}
-
-		fields := structs.Fields(server)
-		addFieldsOnLabels(fields, labels, dedicatedServerLabelPrefix)
-
-		IPsFields := structs.Fields(server.IPs)
-		addFieldsOnLabels(IPsFields, labels, dedicatedServerLabelPrefix)
-
 		targets = append(targets, labels)
 	}
 

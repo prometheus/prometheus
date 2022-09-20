@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"net/url"
 
-	"github.com/fatih/structs"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/ovh/go-ovh/ovh"
@@ -32,24 +31,24 @@ const vpsAPIPath = "/vps"
 
 // Model struct from API
 type Model struct {
-	MaximumAdditionalIP int      `json:"maximumAdditionnalIp" label:"maximumAdditionalIp"`
+	MaximumAdditionalIP int      `json:"maximumAdditionnalIp"`
 	Offer               string   `json:"offer"`
 	Datacenter          []string `json:"datacenter"`
 	Vcore               int      `json:"vcore"`
 	Version             string   `json:"version"`
-	Name                string   `json:"name" label:"model_name"`
+	Name                string   `json:"name"`
 	Disk                int      `json:"disk"`
 	Memory              int      `json:"memory"`
 }
 
 // Vps struct from API
 type Vps struct {
-	IPs                IPs      `json:"ips" label:"-"`
-	Keymap             []string `json:"keymap" label:"-"`
+	IPs                IPs      `json:"ips"`
+	Keymap             []string `json:"keymap"`
 	Zone               string   `json:"zone"`
-	Model              Model    `json:"model" label:"-"`
+	Model              Model    `json:"model"`
 	DisplayName        string   `json:"displayName"`
-	MonitoringIPBlocks []string `json:"monitoringIpBlocks" label:"-"`
+	MonitoringIPBlocks []string `json:"monitoringIpBlocks"`
 	Cluster            string   `json:"cluster"`
 	State              string   `json:"state"`
 	Name               string   `json:"name"`
@@ -147,18 +146,28 @@ func (d *vpsDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 			defaultIP = server.IPs.IPV6
 		}
 		labels := model.LabelSet{
-			model.AddressLabel:  model.LabelValue(defaultIP),
-			model.InstanceLabel: model.LabelValue(server.Name),
+			model.AddressLabel:                     model.LabelValue(defaultIP),
+			model.InstanceLabel:                    model.LabelValue(server.Name),
+			vpsLabelPrefix + "offer":               model.LabelValue(server.Model.Offer),
+			vpsLabelPrefix + "datacenter":          model.LabelValue(fmt.Sprintf("%+v", server.Model.Datacenter)),
+			vpsLabelPrefix + "model_vcore":         model.LabelValue(fmt.Sprintf("%d", server.Model.Vcore)),
+			vpsLabelPrefix + "maximumAdditionalIp": model.LabelValue(fmt.Sprintf("%d", server.Model.MaximumAdditionalIP)),
+			vpsLabelPrefix + "version":             model.LabelValue(server.Model.Version),
+			vpsLabelPrefix + "model_name":          model.LabelValue(server.Model.Name),
+			vpsLabelPrefix + "disk":                model.LabelValue(fmt.Sprintf("%d", server.Model.Disk)),
+			vpsLabelPrefix + "memory":              model.LabelValue(fmt.Sprintf("%d", server.Model.Memory)),
+			vpsLabelPrefix + "zone":                model.LabelValue(server.Zone),
+			vpsLabelPrefix + "displayName":         model.LabelValue(server.DisplayName),
+			vpsLabelPrefix + "cluster":             model.LabelValue(server.Cluster),
+			vpsLabelPrefix + "state":               model.LabelValue(server.State),
+			vpsLabelPrefix + "name":                model.LabelValue(server.Name),
+			vpsLabelPrefix + "netbootMode":         model.LabelValue(server.NetbootMode),
+			vpsLabelPrefix + "memoryLimit":         model.LabelValue(fmt.Sprintf("%d", server.MemoryLimit)),
+			vpsLabelPrefix + "offerType":           model.LabelValue(server.OfferType),
+			vpsLabelPrefix + "vcore":               model.LabelValue(fmt.Sprintf("%d", server.Vcore)),
+			vpsLabelPrefix + "ipv4":                model.LabelValue(server.IPs.IPV4),
+			vpsLabelPrefix + "ipv6":                model.LabelValue(server.IPs.IPV6),
 		}
-
-		fields := structs.Fields(server)
-		addFieldsOnLabels(fields, labels, vpsLabelPrefix)
-
-		modelFields := structs.Fields(server.Model)
-		addFieldsOnLabels(modelFields, labels, vpsLabelPrefix)
-
-		IPsFields := structs.Fields(server.IPs)
-		addFieldsOnLabels(IPsFields, labels, vpsLabelPrefix)
 
 		targets = append(targets, labels)
 	}
