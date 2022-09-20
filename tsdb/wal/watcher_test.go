@@ -364,7 +364,9 @@ func TestReadCheckpoint(t *testing.T) {
 			err := os.Mkdir(wdir, 0o777)
 			require.NoError(t, err)
 
-			os.Create(SegmentName(wdir, 30))
+			f, err := os.Create(SegmentName(wdir, 30))
+			require.NoError(t, err)
+			require.NoError(t, f.Close())
 
 			enc := record.Encoder{}
 			w, err := NewSize(nil, nil, wdir, 128*pageSize, compress)
@@ -396,8 +398,9 @@ func TestReadCheckpoint(t *testing.T) {
 					require.NoError(t, w.Log(sample))
 				}
 			}
-			Checkpoint(log.NewNopLogger(), w, 30, 31, func(x chunks.HeadSeriesRef) bool { return true }, 0)
-			w.Truncate(32)
+			_, err = Checkpoint(log.NewNopLogger(), w, 30, 31, func(x chunks.HeadSeriesRef) bool { return true }, 0)
+			require.NoError(t, err)
+			require.NoError(t, w.Truncate(32))
 
 			// Start read after checkpoint, no more data written.
 			_, _, err = Segments(w.Dir())
