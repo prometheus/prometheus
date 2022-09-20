@@ -247,7 +247,9 @@ Outer:
 					m = len(samples)
 				}
 				for i := 0; i < n; i++ {
-					shards[i] = processors[i].reuseBuf()
+					if shards[i] == nil {
+						shards[i] = processors[i].reuseBuf()
+					}
 				}
 				for _, sam := range samples[:m] {
 					if sam.T < minValidTime {
@@ -260,7 +262,10 @@ Outer:
 					shards[mod] = append(shards[mod], sam)
 				}
 				for i := 0; i < n; i++ {
-					processors[i].input <- walSubsetProcessorInputItem{samples: shards[i]}
+					if len(shards[i]) > 0 {
+						processors[i].input <- walSubsetProcessorInputItem{samples: shards[i]}
+						shards[i] = nil
+					}
 				}
 				samples = samples[m:]
 			}
