@@ -1178,7 +1178,7 @@ func (db *DB) compactOOO(dest string, oooHead *OOOCompactionHead) (_ []ulid.ULID
 			if err != nil {
 				return ulids, errors.Wrap(err, "read meta")
 			}
-			meta.OutOfOrder = true
+			meta.Compaction.SetOutOfOrder()
 			_, err = writeMetaFile(db.logger, blockDir, meta)
 			if err != nil {
 				return ulids, errors.Wrap(err, "write meta")
@@ -1678,7 +1678,7 @@ func (db *DB) inOrderBlocksMaxTime() (maxt int64, ok bool) {
 	maxt, ok = int64(math.MinInt64), false
 	// If blocks are overlapping, last block might not have the max time. So check all blocks.
 	for _, b := range db.Blocks() {
-		if !b.meta.OutOfOrder && b.meta.MaxTime > maxt {
+		if !b.meta.Compaction.FromOutOfOrder() && b.meta.MaxTime > maxt {
 			ok = true
 			maxt = b.meta.MaxTime
 		}
