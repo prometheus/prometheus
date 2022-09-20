@@ -859,7 +859,8 @@ func TestPopulateWithTombSeriesIterators(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Run("sample", func(t *testing.T) {
 				f, chkMetas := createFakeReaderAndNotPopulatedChunks(tc.chks...)
-				it := newPopulateWithDelGenericSeriesIterator(ulid.ULID{}, f, chkMetas, tc.intervals).toSeriesIterator()
+				it := &populateWithDelSeriesIterator{}
+				it.reset(ulid.ULID{}, f, chkMetas, tc.intervals)
 
 				var r []tsdbutil.Sample
 				if tc.seek != 0 {
@@ -879,7 +880,8 @@ func TestPopulateWithTombSeriesIterators(t *testing.T) {
 			})
 			t.Run("chunk", func(t *testing.T) {
 				f, chkMetas := createFakeReaderAndNotPopulatedChunks(tc.chks...)
-				it := newPopulateWithDelGenericSeriesIterator(ulid.ULID{}, f, chkMetas, tc.intervals).toChunkSeriesIterator()
+				it := &populateWithDelChunkSeriesIterator{}
+				it.reset(ulid.ULID{}, f, chkMetas, tc.intervals)
 
 				if tc.seek != 0 {
 					// Chunk iterator does not have Seek method.
@@ -911,7 +913,8 @@ func TestPopulateWithDelSeriesIterator_DoubleSeek(t *testing.T) {
 		[]tsdbutil.Sample{sample{4, 4, nil, nil}, sample{5, 5, nil, nil}},
 	)
 
-	it := newPopulateWithDelGenericSeriesIterator(ulid.ULID{}, f, chkMetas, nil).toSeriesIterator()
+	it := &populateWithDelSeriesIterator{}
+	it.reset(ulid.ULID{}, f, chkMetas, nil)
 	require.Equal(t, chunkenc.ValFloat, it.Seek(1))
 	require.Equal(t, chunkenc.ValFloat, it.Seek(2))
 	require.Equal(t, chunkenc.ValFloat, it.Seek(2))
@@ -929,7 +932,8 @@ func TestPopulateWithDelSeriesIterator_SeekInCurrentChunk(t *testing.T) {
 		[]tsdbutil.Sample{},
 	)
 
-	it := newPopulateWithDelGenericSeriesIterator(ulid.ULID{}, f, chkMetas, nil).toSeriesIterator()
+	it := &populateWithDelSeriesIterator{}
+	it.reset(ulid.ULID{}, f, chkMetas, nil)
 	require.Equal(t, chunkenc.ValFloat, it.Next())
 	ts, v := it.At()
 	require.Equal(t, int64(1), ts)
@@ -946,7 +950,8 @@ func TestPopulateWithDelSeriesIterator_SeekWithMinTime(t *testing.T) {
 		[]tsdbutil.Sample{sample{1, 6, nil, nil}, sample{5, 6, nil, nil}, sample{6, 8, nil, nil}},
 	)
 
-	it := newPopulateWithDelGenericSeriesIterator(ulid.ULID{}, f, chkMetas, nil).toSeriesIterator()
+	it := &populateWithDelSeriesIterator{}
+	it.reset(ulid.ULID{}, f, chkMetas, nil)
 	require.Equal(t, chunkenc.ValNone, it.Seek(7))
 	require.Equal(t, chunkenc.ValFloat, it.Seek(3))
 }
@@ -958,9 +963,8 @@ func TestPopulateWithDelSeriesIterator_NextWithMinTime(t *testing.T) {
 		[]tsdbutil.Sample{sample{1, 6, nil, nil}, sample{5, 6, nil, nil}, sample{7, 8, nil, nil}},
 	)
 
-	it := newPopulateWithDelGenericSeriesIterator(
-		ulid.ULID{}, f, chkMetas, tombstones.Intervals{{Mint: math.MinInt64, Maxt: 2}}.Add(tombstones.Interval{Mint: 4, Maxt: math.MaxInt64}),
-	).toSeriesIterator()
+	it := &populateWithDelSeriesIterator{}
+	it.reset(ulid.ULID{}, f, chkMetas, tombstones.Intervals{{Mint: math.MinInt64, Maxt: 2}}.Add(tombstones.Interval{Mint: 4, Maxt: math.MaxInt64}))
 	require.Equal(t, chunkenc.ValNone, it.Next())
 }
 
@@ -2225,11 +2229,12 @@ func TestBlockBaseSeriesSet(t *testing.T) {
 
 		i := 0
 		for bcs.Next() {
-			chks := bcs.currIterFn().chks
+			si := populateWithDelGenericSeriesIterator{}
+			si.reset(bcs.blockID, bcs.chunks, bcs.curr.chks, bcs.curr.intervals)
 			idx := tc.expIdxs[i]
 
-			require.Equal(t, tc.series[idx].lset, bcs.currLabels)
-			require.Equal(t, tc.series[idx].chunks, chks)
+			require.Equal(t, tc.series[idx].lset, bcs.curr.labels)
+			require.Equal(t, tc.series[idx].chunks, si.chks)
 
 			i++
 		}
