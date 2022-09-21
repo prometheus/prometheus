@@ -33,25 +33,25 @@
     "lru-cache": "^6.0.0"
   },
   "devDependencies": {
-    "@codemirror/autocomplete": "^6.0.0",
-    "@codemirror/language": "^6.0.0",
+    "@codemirror/autocomplete": "^6.2.0",
+    "@codemirror/language": "^6.2.1",
     "@codemirror/lint": "^6.0.0",
-    "@codemirror/state": "^6.0.0",
-    "@codemirror/view": "^6.0.0",
-    "@lezer/common": "^1.0.0",
-    "@lezer/lr": "^1.0.0",
-    "@lezer/highlight": "^1.0.0",
+    "@codemirror/state": "^6.1.1",
+    "@codemirror/view": "^6.2.4",
+    "@lezer/common": "^1.0.1",
+    "@lezer/lr": "^1.2.3",
+    "@lezer/highlight": "^1.1.0",
     "@types/lru-cache": "^5.1.1",
     "isomorphic-fetch": "^3.0.0",
-    "nock": "^13.2.4"
+    "nock": "^13.2.9"
   },
   "peerDependencies": {
-    "@codemirror/autocomplete": "^6.0.0",
-    "@codemirror/language": "^6.0.0",
+    "@codemirror/autocomplete": "^6.2.0",
+    "@codemirror/language": "^6.2.1",
     "@codemirror/lint": "^6.0.0",
-    "@codemirror/state": "^6.0.0",
-    "@codemirror/view": "^6.0.0",
-    "@lezer/common": "^1.0.0"
+    "@codemirror/state": "^6.1.1",
+    "@codemirror/view": "^6.2.4",
+    "@lezer/common": "^1.0.1"
   },
   "prettier": {
     "singleQuote": true,
