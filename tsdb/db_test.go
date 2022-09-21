@@ -3976,7 +3976,6 @@ func TestOOOCompaction(t *testing.T) {
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 30
 	opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
-	opts.AllowOverlappingQueries = true
 	opts.AllowOverlappingCompaction = true
 
 	db, err := Open(dir, nil, nil, opts, nil)
@@ -4158,7 +4157,6 @@ func TestOOOCompactionWithNormalCompaction(t *testing.T) {
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 30
 	opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
-	opts.AllowOverlappingQueries = true
 	opts.AllowOverlappingCompaction = true
 
 	db, err := Open(dir, nil, nil, opts, nil)
@@ -4255,7 +4253,6 @@ func Test_Querier_OOOQuery(t *testing.T) {
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 30
 	opts.OutOfOrderTimeWindow = 24 * time.Hour.Milliseconds()
-	opts.AllowOverlappingQueries = true
 	opts.AllowOverlappingCompaction = false
 
 	series1 := labels.FromStrings("foo", "bar1")
@@ -4341,7 +4338,6 @@ func Test_ChunkQuerier_OOOQuery(t *testing.T) {
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 30
 	opts.OutOfOrderTimeWindow = 24 * time.Hour.Milliseconds()
-	opts.AllowOverlappingQueries = true
 	opts.AllowOverlappingCompaction = false
 
 	series1 := labels.FromStrings("foo", "bar1")
@@ -4435,7 +4431,6 @@ func TestOOOAppendAndQuery(t *testing.T) {
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 30
 	opts.OutOfOrderTimeWindow = 4 * time.Hour.Milliseconds()
-	opts.AllowOverlappingQueries = true
 
 	db := openTestDB(t, opts, nil)
 	db.DisableCompactions()
@@ -4627,7 +4622,6 @@ func TestWBLAndMmapReplay(t *testing.T) {
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 30
 	opts.OutOfOrderTimeWindow = 4 * time.Hour.Milliseconds()
-	opts.AllowOverlappingQueries = true
 
 	db := openTestDB(t, opts, nil)
 	db.DisableCompactions()
@@ -4815,7 +4809,6 @@ func TestOOOCompactionFailure(t *testing.T) {
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 30
 	opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
-	opts.AllowOverlappingQueries = true
 	opts.AllowOverlappingCompaction = true
 
 	db, err := Open(dir, nil, nil, opts, nil)
@@ -4956,7 +4949,6 @@ func TestWBLCorruption(t *testing.T) {
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 30
 	opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
-	opts.AllowOverlappingQueries = true
 	opts.AllowOverlappingCompaction = true
 
 	db, err := Open(dir, nil, nil, opts, nil)
@@ -5104,7 +5096,6 @@ func TestOOOMmapCorruption(t *testing.T) {
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 10
 	opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
-	opts.AllowOverlappingQueries = true
 	opts.AllowOverlappingCompaction = true
 
 	db, err := Open(dir, nil, nil, opts, nil)
@@ -5563,7 +5554,6 @@ func TestWblReplayAfterOOODisableAndRestart(t *testing.T) {
 
 	opts := DefaultOptions()
 	opts.OutOfOrderTimeWindow = 60 * time.Minute.Milliseconds()
-	opts.AllowOverlappingQueries = true
 	opts.AllowOverlappingCompaction = true
 
 	db, err := Open(dir, nil, nil, opts, nil)
@@ -5624,7 +5614,6 @@ func TestPanicOnApplyConfig(t *testing.T) {
 
 	opts := DefaultOptions()
 	opts.OutOfOrderTimeWindow = 60 * time.Minute.Milliseconds()
-	opts.AllowOverlappingQueries = true
 
 	db, err := Open(dir, nil, nil, opts, nil)
 	require.NoError(t, err)
@@ -5673,7 +5662,6 @@ func TestDiskFillingUpAfterDisablingOOO(t *testing.T) {
 
 	opts := DefaultOptions()
 	opts.OutOfOrderTimeWindow = 60 * time.Minute.Milliseconds()
-	opts.AllowOverlappingQueries = true
 
 	db, err := Open(dir, nil, nil, opts, nil)
 	require.NoError(t, err)

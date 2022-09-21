@@ -315,8 +315,10 @@ func main() {
 	serverOnlyFlag(a, "storage.tsdb.no-lockfile", "Do not create lockfile in data directory.").
 		Default("false").BoolVar(&cfg.tsdb.NoLockfile)
 
-	serverOnlyFlag(a, "storage.tsdb.allow-overlapping-blocks", "Allow overlapping blocks, which in turn enables vertical compaction and vertical query merge.").
-		Default("false").BoolVar(&cfg.tsdb.AllowOverlappingBlocks)
+	// TODO: Remove in Prometheus 3.0.
+	var b bool
+	serverOnlyFlag(a, "storage.tsdb.allow-overlapping-blocks", "[DEPRECATED] This flag has no effect. Overlapping blocks are enabled by default now.").
+		Default("true").Hidden().BoolVar(&b)
 
 	serverOnlyFlag(a, "storage.tsdb.wal-compression", "Compress the tsdb WAL.").
 		Hidden().Default("true").BoolVar(&cfg.tsdb.WALCompression)
@@ -1011,7 +1013,6 @@ func main() {
 					"NoLockfile", cfg.tsdb.NoLockfile,
 					"RetentionDuration", cfg.tsdb.RetentionDuration,
 					"WALSegmentSize", cfg.tsdb.WALSegmentSize,
-					"AllowOverlappingBlocks", cfg.tsdb.AllowOverlappingBlocks,
 					"WALCompression", cfg.tsdb.WALCompression,
 				)
 
@@ -1534,7 +1535,6 @@ type tsdbOptions struct {
 	RetentionDuration              model.Duration
 	MaxBytes                       units.Base2Bytes
 	NoLockfile                     bool
-	AllowOverlappingBlocks         bool
 	WALCompression                 bool
 	HeadChunksWriteQueueSize       int
 	StripeSize                     int
@@ -1553,8 +1553,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		RetentionDuration:              int64(time.Duration(opts.RetentionDuration) / time.Millisecond),
 		MaxBytes:                       int64(opts.MaxBytes),
 		NoLockfile:                     opts.NoLockfile,
-		AllowOverlappingCompaction:     opts.AllowOverlappingBlocks,
-		AllowOverlappingQueries:        opts.AllowOverlappingBlocks,
+		AllowOverlappingCompaction:     true,
 		WALCompression:                 opts.WALCompression,
 		HeadChunksWriteQueueSize:       opts.HeadChunksWriteQueueSize,
 		StripeSize:                     opts.StripeSize,
