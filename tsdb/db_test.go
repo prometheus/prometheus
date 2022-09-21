@@ -3976,7 +3976,6 @@ func TestOOOCompaction(t *testing.T) {
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 30
 	opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
-	opts.AllowOverlappingCompaction = true
 
 	db, err := Open(dir, nil, nil, opts, nil)
 	require.NoError(t, err)
@@ -4157,7 +4156,6 @@ func TestOOOCompactionWithNormalCompaction(t *testing.T) {
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 30
 	opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
-	opts.AllowOverlappingCompaction = true
 
 	db, err := Open(dir, nil, nil, opts, nil)
 	require.NoError(t, err)
@@ -4809,7 +4807,6 @@ func TestOOOCompactionFailure(t *testing.T) {
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 30
 	opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
-	opts.AllowOverlappingCompaction = true
 
 	db, err := Open(dir, nil, nil, opts, nil)
 	require.NoError(t, err)
@@ -4949,7 +4946,6 @@ func TestWBLCorruption(t *testing.T) {
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 30
 	opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
-	opts.AllowOverlappingCompaction = true
 
 	db, err := Open(dir, nil, nil, opts, nil)
 	require.NoError(t, err)
@@ -5096,7 +5092,6 @@ func TestOOOMmapCorruption(t *testing.T) {
 	opts := DefaultOptions()
 	opts.OutOfOrderCapMax = 10
 	opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
-	opts.AllowOverlappingCompaction = true
 
 	db, err := Open(dir, nil, nil, opts, nil)
 	require.NoError(t, err)
@@ -5554,7 +5549,6 @@ func TestWblReplayAfterOOODisableAndRestart(t *testing.T) {
 
 	opts := DefaultOptions()
 	opts.OutOfOrderTimeWindow = 60 * time.Minute.Milliseconds()
-	opts.AllowOverlappingCompaction = true
 
 	db, err := Open(dir, nil, nil, opts, nil)
 	require.NoError(t, err)
