@@ -30,12 +30,12 @@
     "test": "NODE_OPTIONS=--experimental-vm-modules jest"
   },
   "devDependencies": {
-    "@lezer/generator": "^1.0.0",
-    "@lezer/lr": "^1.0.0",
-    "@lezer/highlight": "^1.0.0"
+    "@lezer/generator": "^1.1.1",
+    "@lezer/lr": "^1.2.3",
+    "@lezer/highlight": "^1.1.0"
   },
   "peerDependencies": {
-    "@lezer/lr": "^1.0.0",
-    "@lezer/highlight": "^1.0.0"
+    "@lezer/lr": "^1.2.3",
+    "@lezer/highlight": "^1.1.0"
   }
 }
