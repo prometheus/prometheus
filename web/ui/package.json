@@ -16,7 +16,7 @@
     "npm": ">=7.0.0"
   },
   "devDependencies": {
-    "@types/jest": "^27.5.2",
+    "@types/jest": "^29.0.3",
     "@types/node": "^17.0.45",
     "eslint-config-prettier": "^8.5.0",
     "eslint-config-react-app": "^7.0.1",
