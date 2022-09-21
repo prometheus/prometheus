@@ -10,7 +10,7 @@
     "@codemirror/search": "^6.2.0",
     "@codemirror/state": "^6.1.1",
     "@codemirror/view": "^6.2.4",
-    "@forevolve/bootstrap-dark": "^1.1.0",
+    "@forevolve/bootstrap-dark": "^2.1.1",
     "@fortawesome/fontawesome-svg-core": "6.1.1",
     "@fortawesome/free-solid-svg-icons": "6.1.1",
     "@fortawesome/react-fontawesome": "0.1.17",
