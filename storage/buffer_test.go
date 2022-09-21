@@ -176,7 +176,7 @@ func BenchmarkBufferedSeriesIterator(b *testing.B) {
 	// Simulate a 5 minute rate.
 	it := NewBufferIterator(newFakeSeriesIterator(int64(b.N), 30), 5*60)
 
-	b.SetBytes(int64(b.N * 16))
+	b.SetBytes(16)
 	b.ReportAllocs()
 	b.ResetTimer()
 
