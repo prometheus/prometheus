@@ -868,9 +868,7 @@ func TestChainSampleIteratorSeek(t *testing.T) {
 	}
 }
 
-var result []tsdbutil.Sample
-
-func makeSeriesSet(numSeries, numSamples int) SeriesSet {
+func makeSeries(numSeries, numSamples int) []Series {
 	series := []Series{}
 	for j := 0; j < numSeries; j++ {
 		labels := labels.FromStrings("foo", fmt.Sprintf("bar%d", j))
@@ -880,30 +878,38 @@ func makeSeriesSet(numSeries, numSamples int) SeriesSet {
 		}
 		series = append(series, NewListSeries(labels, samples))
 	}
-	return NewMockSeriesSet(series...)
+	return series
 }
 
-func makeMergeSeriesSet(numSeriesSets, numSeries, numSamples int) SeriesSet {
-	seriesSets := []genericSeriesSet{}
-	for i := 0; i < numSeriesSets; i++ {
-		seriesSets = append(seriesSets, &genericSeriesSetAdapter{makeSeriesSet(numSeries, numSamples)})
+func makeMergeSeriesSet(serieses [][]Series) SeriesSet {
+	seriesSets := make([]genericSeriesSet, len(serieses))
+	for i, s := range serieses {
+		seriesSets[i] = &genericSeriesSetAdapter{NewMockSeriesSet(s...)}
 	}
 	return &seriesSetAdapter{newGenericMergeSeriesSet(seriesSets, (&seriesMergerAdapter{VerticalSeriesMergeFunc: ChainedSeriesMerge}).Merge)}
 }
 
-func benchmarkDrain(seriesSet SeriesSet, b *testing.B) {
+func benchmarkDrain(b *testing.B, makeSeriesSet func() SeriesSet) {
 	var err error
+	var t int64
+	var v float64
 	for n := 0; n < b.N; n++ {
+		seriesSet := makeSeriesSet()
 		for seriesSet.Next() {
-			result, err = ExpandSamples(seriesSet.At().Iterator(), nil)
-			require.NoError(b, err)
+			iter := seriesSet.At().Iterator()
+			for iter.Next() == chunkenc.ValFloat {
+				t, v = iter.At()
+			}
+			err = iter.Err()
 		}
+		require.NoError(b, err)
+		require.NotEqual(b, t, v) // To ensure the inner loop doesn't get optimised away.
 	}
 }
 
 func BenchmarkNoMergeSeriesSet_100_100(b *testing.B) {
-	seriesSet := makeSeriesSet(100, 100)
-	benchmarkDrain(seriesSet, b)
+	series := makeSeries(100, 100)
+	benchmarkDrain(b, func() SeriesSet { return NewMockSeriesSet(series...) })
 }
 
 func BenchmarkMergeSeriesSet(b *testing.B) {
@@ -914,9 +920,12 @@ func BenchmarkMergeSeriesSet(b *testing.B) {
 		{10, 100, 100},
 		{100, 100, 100},
 	} {
-		seriesSet := makeMergeSeriesSet(bm.numSeriesSets, bm.numSeries, bm.numSamples)
+		serieses := [][]Series{}
+		for i := 0; i < bm.numSeriesSets; i++ {
+			serieses = append(serieses, makeSeries(bm.numSeries, bm.numSamples))
+		}
 		b.Run(fmt.Sprintf("%d_%d_%d", bm.numSeriesSets, bm.numSeries, bm.numSamples), func(b *testing.B) {
-			benchmarkDrain(seriesSet, b)
+			benchmarkDrain(b, func() SeriesSet { return makeMergeSeriesSet(serieses) })
 		})
 	}
 }
