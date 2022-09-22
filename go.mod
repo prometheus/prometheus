@@ -7,15 +7,15 @@ require (
 	github.com/Azure/go-autorest/autorest v0.11.28
 	github.com/Azure/go-autorest/autorest/adal v0.9.21
 	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137
-	github.com/aws/aws-sdk-go v1.44.94
+	github.com/aws/aws-sdk-go v1.44.102
 	github.com/cespare/xxhash/v2 v2.1.2
 	github.com/dennwc/varint v1.0.0
 	github.com/dgryski/go-sip13 v0.0.0-20200911182023-62edffca9245
-	github.com/digitalocean/godo v1.83.0
+	github.com/digitalocean/godo v1.84.1
 	github.com/docker/docker v20.10.18+incompatible
 	github.com/edsrzf/mmap-go v1.1.0
 	github.com/envoyproxy/go-control-plane v0.10.3
-	github.com/envoyproxy/protoc-gen-validate v0.6.7
+	github.com/envoyproxy/protoc-gen-validate v0.6.8
 	github.com/fsnotify/fsnotify v1.5.4
 	github.com/go-kit/log v0.2.1
 	github.com/go-logfmt/logfmt v0.5.1
@@ -27,12 +27,12 @@ require (
 	github.com/gophercloud/gophercloud v1.0.0
 	github.com/grafana/regexp v0.0.0-20220304095617-2e8d9baf4ac2
 	github.com/grpc-ecosystem/grpc-gateway v1.16.0
-	github.com/hashicorp/consul/api v1.14.0
-	github.com/hashicorp/nomad/api v0.0.0-20220908000446-cde9f6c594fc
-	github.com/hetznercloud/hcloud-go v1.35.2
+	github.com/hashicorp/consul/api v1.15.2
+	github.com/hashicorp/nomad/api v0.0.0-20220921012004-ddeeb1040edf
+	github.com/hetznercloud/hcloud-go v1.35.3
 	github.com/ionos-cloud/sdk-go/v6 v6.1.3
 	github.com/json-iterator/go v1.1.12
-	github.com/kolo/xmlrpc v0.0.0-20201022064351-38db28db192b
+	github.com/kolo/xmlrpc v0.0.0-20220919000247-3377102c83bd
 	github.com/linode/linodego v1.9.1
 	github.com/miekg/dns v1.1.50
 	github.com/mwitkow/go-conntrack v0.0.0-20190716064945-2f068394615f
@@ -50,32 +50,32 @@ require (
 	github.com/shurcooL/httpfs v0.0.0-20190707220628-8d4bc4ba7749
 	github.com/stretchr/testify v1.8.0
 	github.com/vultr/govultr/v2 v2.17.2
-	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.34.0
-	go.opentelemetry.io/otel v1.9.0
-	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.9.0
-	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.9.0
-	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.9.0
-	go.opentelemetry.io/otel/sdk v1.9.0
-	go.opentelemetry.io/otel/trace v1.9.0
+	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.36.0
+	go.opentelemetry.io/otel v1.10.0
+	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.10.0
+	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.10.0
+	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.10.0
+	go.opentelemetry.io/otel/sdk v1.10.0
+	go.opentelemetry.io/otel/trace v1.10.0
 	go.uber.org/atomic v1.10.0
 	go.uber.org/automaxprocs v1.5.1
 	go.uber.org/goleak v1.2.0
-	golang.org/x/net v0.0.0-20220907135653-1e95f45603a7
-	golang.org/x/oauth2 v0.0.0-20220822191816-0ebed06d0094
+	golang.org/x/net v0.0.0-20220920203100-d0c6ba3f52d9
+	golang.org/x/oauth2 v0.0.0-20220909003341-f21342109be1
 	golang.org/x/sync v0.0.0-20220907140024-f12130a52804
-	golang.org/x/sys v0.0.0-20220907062415-87db552b00fd
-	golang.org/x/time v0.0.0-20220722155302-e5dcc9cfc0b9
+	golang.org/x/sys v0.0.0-20220919091848-fb04ddd9f9c8
+	golang.org/x/time v0.0.0-20220920022843-2ce7c2934d45
 	golang.org/x/tools v0.1.12
-	google.golang.org/api v0.95.0
-	google.golang.org/genproto v0.0.0-20220902135211-223410557253
+	google.golang.org/api v0.96.0
+	google.golang.org/genproto v0.0.0-20220920201722-2b89144ce006
 	google.golang.org/grpc v1.49.0
 	google.golang.org/protobuf v1.28.1
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.1
-	k8s.io/api v0.25.0
-	k8s.io/apimachinery v0.25.0
-	k8s.io/client-go v0.25.0
+	k8s.io/api v0.25.1
+	k8s.io/apimachinery v0.25.1
+	k8s.io/client-go v0.25.1
 	k8s.io/klog v1.0.0
 	k8s.io/klog/v2 v2.80.0
 )
@@ -161,11 +161,11 @@ require (
 	github.com/prometheus/procfs v0.8.0 // indirect
 	github.com/sirupsen/logrus v1.8.1 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
-	go.mongodb.org/mongo-driver v1.10.0 // indirect
+	go.mongodb.org/mongo-driver v1.10.2 // indirect
 	go.opencensus.io v0.23.0 // indirect
-	go.opentelemetry.io/otel/exporters/otlp/internal/retry v1.9.0 // indirect
-	go.opentelemetry.io/otel/metric v0.31.0 // indirect
-	go.opentelemetry.io/proto/otlp v0.18.0 // indirect
+	go.opentelemetry.io/otel/exporters/otlp/internal/retry v1.10.0 // indirect
+	go.opentelemetry.io/otel/metric v0.32.0 // indirect
+	go.opentelemetry.io/proto/otlp v0.19.0 // indirect
 	golang.org/x/crypto v0.0.0-20220722155217-630584e8d5aa // indirect
 	golang.org/x/mod v0.6.0-dev.0.20220419223038-86c51ed26bb4 // indirect
 	golang.org/x/term v0.0.0-20210927222741-03fcf44c2211 // indirect
