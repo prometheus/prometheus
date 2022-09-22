@@ -719,6 +719,7 @@ func (wp *wblSubsetProcessor) reuseBuf() []record.RefSample {
 func (wp *wblSubsetProcessor) processWBLSamples(h *Head) (unknownRefs uint64) {
 	defer close(wp.output)
 
+	oooCapMax := h.opts.OutOfOrderCapMax.Load()
 	// We don't check for minValidTime for ooo samples.
 	mint, maxt := int64(math.MaxInt64), int64(math.MinInt64)
 	for samples := range wp.input {
@@ -729,7 +730,7 @@ func (wp *wblSubsetProcessor) processWBLSamples(h *Head) (unknownRefs uint64) {
 				unknownRefs++
 				continue
 			}
-			ok, chunkCreated, _ := ms.insert(s.T, s.V, h.chunkDiskMapper)
+			ok, chunkCreated, _ := ms.insert(s.T, s.V, h.chunkDiskMapper, oooCapMax)
 			if chunkCreated {
 				h.metrics.chunksCreated.Inc()
 				h.metrics.chunks.Inc()

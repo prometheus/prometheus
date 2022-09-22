@@ -568,6 +568,7 @@ func (a *headAppender) Commit() (err error) {
 		wblSamples      []record.RefSample
 		oooMmapMarkers  map[chunks.HeadSeriesRef]chunks.ChunkDiskMapperRef
 		oooRecords      [][]byte
+		oooCapMax       = a.head.opts.OutOfOrderCapMax.Load()
 		chunkRange      = a.head.chunkRange.Load()
 		series          *memSeries
 		enc             record.Encoder
@@ -636,7 +637,7 @@ func (a *headAppender) Commit() (err error) {
 			// Sample is OOO and OOO handling is enabled
 			// and the delta is within the OOO tolerance.
 			var mmapRef chunks.ChunkDiskMapperRef
-			ok, chunkCreated, mmapRef = series.insert(s.T, s.V, a.head.chunkDiskMapper)
+			ok, chunkCreated, mmapRef = series.insert(s.T, s.V, a.head.chunkDiskMapper, oooCapMax)
 			if chunkCreated {
 				r, ok := oooMmapMarkers[series.ref]
 				if !ok || r != 0 {
@@ -724,9 +725,9 @@ func (a *headAppender) Commit() (err error) {
 }
 
 // insert is like append, except it inserts. Used for OOO samples.
-func (s *memSeries) insert(t int64, v float64, chunkDiskMapper *chunks.ChunkDiskMapper) (inserted, chunkCreated bool, mmapRef chunks.ChunkDiskMapperRef) {
+func (s *memSeries) insert(t int64, v float64, chunkDiskMapper *chunks.ChunkDiskMapper, oooCapMax int64) (inserted, chunkCreated bool, mmapRef chunks.ChunkDiskMapperRef) {
 	c := s.oooHeadChunk
-	if c == nil || c.chunk.NumSamples() == int(s.oooCapMax) {
+	if c == nil || c.chunk.NumSamples() == int(oooCapMax) {
 		// Note: If no new samples come in then we rely on compaction to clean up stale in-memory OOO chunks.
 		c, mmapRef = s.cutNewOOOHeadChunk(t, chunkDiskMapper)
 		chunkCreated = true

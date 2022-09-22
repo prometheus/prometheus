@@ -1489,7 +1489,7 @@ func (h *Head) getOrCreate(hash uint64, lset labels.Labels) (*memSeries, bool, e
 
 func (h *Head) getOrCreateWithID(id chunks.HeadSeriesRef, hash uint64, lset labels.Labels) (*memSeries, bool, error) {
 	s, created, err := h.series.getOrSet(hash, lset, func() *memSeries {
-		return newMemSeries(lset, id, h.opts.OutOfOrderCapMax.Load(), h.opts.IsolationDisabled)
+		return newMemSeries(lset, id, h.opts.IsolationDisabled)
 	})
 	if err != nil {
 		return nil, false, err
@@ -1780,7 +1780,6 @@ type memSeries struct {
 	firstOOOChunkID  chunks.HeadChunkID // HeadOOOChunkID for oooMmappedChunks[0]
 
 	mmMaxTime int64 // Max time of any mmapped chunk, only used during WAL replay.
-	oooCapMax uint8
 
 	nextAt int64 // Timestamp at which to cut the next chunk.
 
@@ -1799,12 +1798,11 @@ type memSeries struct {
 	pendingCommit bool // Whether there are samples waiting to be committed to this series.
 }
 
-func newMemSeries(lset labels.Labels, id chunks.HeadSeriesRef, oooCapMax int64, isolationDisabled bool) *memSeries {
+func newMemSeries(lset labels.Labels, id chunks.HeadSeriesRef, isolationDisabled bool) *memSeries {
 	s := &memSeries{
-		lset:      lset,
-		ref:       id,
-		nextAt:    math.MinInt64,
-		oooCapMax: uint8(oooCapMax),
+		lset:   lset,
+		ref:    id,
+		nextAt: math.MinInt64,
 	}
 	if !isolationDisabled {
 		s.txs = newTxRing(4)
