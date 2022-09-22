@@ -376,7 +376,29 @@ func repairLastChunkFile(files map[int]string) (_ map[int]string, returnErr erro
 	if err != nil {
 		return files, errors.Wrap(err, "file stat during last head chunk file repair")
 	}
-	if info.Size() == 0 {
+
+	remove := info.Size() == 0 // Empty file.
+	if info.Size() >= MagicChunksSize {
+		// Check if magic number is 0.
+		f, err := os.Open(files[lastFile])
+		if err != nil {
+			return files, errors.Wrap(err, "open file during last head chunk file repair")
+		}
+
+		buf := make([]byte, MagicChunksSize)
+		_, err = f.Read(buf)
+		if err != nil {
+			return files, errors.Wrap(err, "read file during last head chunk file repair")
+		}
+
+		remove = binary.BigEndian.Uint32(buf) == 0
+
+		if err := f.Close(); err != nil {
+			return files, errors.Wrap(err, "close file during last head chunk file repair")
+		}
+	}
+
+	if remove {
 		// Corrupt file, hence remove it.
 		if err := os.RemoveAll(files[lastFile]); err != nil {
 			return files, errors.Wrap(err, "delete corrupted, empty head chunk file during last file repair")
