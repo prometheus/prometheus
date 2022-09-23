@@ -1,3 +1,5 @@
+# Copyright 2022 Google LLC
+
 name: Scorecards supply-chain security
 on:
   # Only the default branch is supported.
