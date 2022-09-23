@@ -322,6 +322,9 @@ func validateOptions(opts *Options) *Options {
 	if opts.MaxWALTime <= 0 {
 		opts.MaxWALTime = DefaultMaxWALTime
 	}
+	if opts.MinWALTime > opts.MaxWALTime {
+		opts.MaxWALTime = opts.MinWALTime
+	}
 
 	if t := int64(opts.TruncateFrequency / time.Millisecond); opts.MaxWALTime < t {
 		opts.MaxWALTime = t
