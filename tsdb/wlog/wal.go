@@ -133,7 +133,7 @@ func OpenWriteSegment(logger log.Logger, dir string, k int) (*Segment, error) {
 	// If it was torn mid-record, a full read (which the caller should do anyway
 	// to ensure integrity) will detect it as a corruption by the end.
 	if d := stat.Size() % pageSize; d != 0 {
-		level.Warn(logger).Log("msg", "Last page of the wal is torn, filling it with zeros", "segment", segName)
+		level.Warn(logger).Log("msg", "Last page of the wlog is torn, filling it with zeros", "segment", segName)
 		if _, err := f.Write(make([]byte, pageSize-d)); err != nil {
 			f.Close()
 			return nil, errors.Wrap(err, "zero-pad torn page")
@@ -188,10 +188,10 @@ type WL struct {
 	compress    bool
 	snappyBuf   []byte
 
-	metrics *walMetrics
+	metrics *wlMetrics
 }
 
-type walMetrics struct {
+type wlMetrics struct {
 	fsyncDuration   prometheus.Summary
 	pageFlushes     prometheus.Counter
 	pageCompletions prometheus.Counter
@@ -201,12 +201,12 @@ type walMetrics struct {
 	writesFailed    prometheus.Counter
 }
 
-func newWALMetrics(r prometheus.Registerer) *walMetrics {
-	m := &walMetrics{}
+func newWLMetrics(r prometheus.Registerer) *wlMetrics {
+	m := &wlMetrics{}
 
 	m.fsyncDuration = prometheus.NewSummary(prometheus.SummaryOpts{
 		Name:       "fsync_duration_seconds",
-		Help:       "Duration of WAL fsync.",
+		Help:       "Duration of WL fsync.",
 		Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
 	})
 	m.pageFlushes = prometheus.NewCounter(prometheus.CounterOpts{
@@ -219,19 +219,19 @@ func newWALMetrics(r prometheus.Registerer) *walMetrics {
 	})
 	m.truncateFail = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "truncations_failed_total",
-		Help: "Total number of WAL truncations that failed.",
+		Help: "Total number of WL truncations that failed.",
 	})
 	m.truncateTotal = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "truncations_total",
-		Help: "Total number of WAL truncations attempted.",
+		Help: "Total number of WL truncations attempted.",
 	})
 	m.currentSegment = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "segment_current",
-		Help: "WAL segment index that TSDB is currently writing to.",
+		Help: "WL segment index that TSDB is currently writing to.",
 	})
 	m.writesFailed = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "writes_failed_total",
-		Help: "Total number of WAL writes that failed.",
+		Help: "Total number of WL writes that failed.",
 	})
 
 	if r != nil {
@@ -254,7 +254,7 @@ func New(logger log.Logger, reg prometheus.Registerer, dir string, compress bool
 	return NewSize(logger, reg, dir, DefaultSegmentSize, compress)
 }
 
-// NewSize returns a new WAL over the given directory.
+// NewSize returns a new WL over the given directory.
 // New segments are created with the specified size.
 func NewSize(logger log.Logger, reg prometheus.Registerer, dir string, segmentSize int, compress bool) (*WL, error) {
 	if segmentSize%pageSize != 0 {
@@ -279,7 +279,7 @@ func NewSize(logger log.Logger, reg prometheus.Registerer, dir string, segmentSi
 	if filepath.Base(dir) == WblDirName {
 		prefix = "prometheus_tsdb_out_of_order_wal_"
 	}
-	w.metrics = newWALMetrics(prometheus.WrapRegistererWithPrefix(prefix, reg))
+	w.metrics = newWLMetrics(prometheus.WrapRegistererWithPrefix(prefix, reg))
 
 	_, last, err := Segments(w.Dir())
 	if err != nil {
@@ -484,7 +484,7 @@ func (w *WL) NextSegmentSync() (int, error) {
 // It returns the file number of the new file.
 func (w *WL) nextSegment(async bool) (int, error) {
 	if w.closed {
-		return 0, errors.New("wal is closed")
+		return 0, errors.New("wlog is closed")
 	}
 
 	// Only flush the current page if it actually holds data.
@@ -765,7 +765,7 @@ func (w *WL) fsync(f *Segment) error {
 	return err
 }
 
-// Sync forces a file sync on the current wal segment. This function is meant
+// Sync forces a file sync on the current wl segment. This function is meant
 // to be used only on tests due to different behaviour on Operating Systems
 // like windows and linux
 func (w *WL) Sync() error {
@@ -778,7 +778,7 @@ func (w *WL) Close() (err error) {
 	defer w.mtx.Unlock()
 
 	if w.closed {
-		return errors.New("wal already closed")
+		return errors.New("wlog already closed")
 	}
 
 	if w.segment == nil {
@@ -811,8 +811,8 @@ func (w *WL) Close() (err error) {
 
 // Segments returns the range [first, n] of currently existing segments.
 // If no segments are found, first and n are -1.
-func Segments(walDir string) (first, last int, err error) {
-	refs, err := listSegments(walDir)
+func Segments(wlDir string) (first, last int, err error) {
+	refs, err := listSegments(wlDir)
 	if err != nil {
 		return 0, 0, err
 	}
