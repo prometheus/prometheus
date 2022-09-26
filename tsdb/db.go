@@ -400,7 +400,7 @@ func (db *DBReadOnly) FlushWAL(dir string) (returnErr error) {
 	if err != nil {
 		return err
 	}
-	var wbl *wlog.WAL
+	var wbl *wlog.WL
 	wblDir := filepath.Join(db.dir, wlog.WblDirName)
 	if _, err := os.Stat(wblDir); !os.IsNotExist(err) {
 		wbl, err = wlog.Open(db.logger, wblDir)
@@ -484,7 +484,7 @@ func (db *DBReadOnly) loadDataAsQueryable(maxt int64) (storage.SampleAndChunkQue
 		if err != nil {
 			return nil, err
 		}
-		var wbl *wlog.WAL
+		var wbl *wlog.WL
 		wblDir := filepath.Join(db.dir, wlog.WblDirName)
 		if _, err := os.Stat(wblDir); !os.IsNotExist(err) {
 			wbl, err = wlog.Open(db.logger, wblDir)
@@ -749,7 +749,7 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	}
 	db.compactCancel = cancel
 
-	var wal, wbl *wlog.WAL
+	var wal, wbl *wlog.WL
 	segmentSize := wlog.DefaultSegmentSize
 	// Wal is enabled.
 	if opts.WALSegmentSize >= 0 {
@@ -957,7 +957,7 @@ func (db *DB) ApplyConfig(conf *config.Config) error {
 	}
 
 	// Create WBL if it was not present and if OOO is enabled with WAL enabled.
-	var wblog *wlog.WAL
+	var wblog *wlog.WL
 	var err error
 	if db.head.wbl != nil {
 		// The existing WBL from the disk might have been replayed while OOO was disabled.

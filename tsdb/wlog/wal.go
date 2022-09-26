@@ -164,7 +164,7 @@ func OpenReadSegment(fn string) (*Segment, error) {
 	return &Segment{SegmentFile: f, i: k, dir: filepath.Dir(fn)}, nil
 }
 
-// WAL is a write ahead log that stores records in segment files.
+// WL is a write log that stores records in segment files.
 // It must be read from start to end once before logging new data.
 // If an error occurs during read, the repair procedure must be called
 // before it's safe to do further writes.
@@ -174,7 +174,7 @@ func OpenReadSegment(fn string) (*Segment, error) {
 // Records are never split across segments to allow full segments to be
 // safely truncated. It also ensures that torn writes never corrupt records
 // beyond the most recent segment.
-type WAL struct {
+type WL struct {
 	dir         string
 	logger      log.Logger
 	segmentSize int
@@ -250,13 +250,13 @@ func newWALMetrics(r prometheus.Registerer) *walMetrics {
 }
 
 // New returns a new WAL over the given directory.
-func New(logger log.Logger, reg prometheus.Registerer, dir string, compress bool) (*WAL, error) {
+func New(logger log.Logger, reg prometheus.Registerer, dir string, compress bool) (*WL, error) {
 	return NewSize(logger, reg, dir, DefaultSegmentSize, compress)
 }
 
 // NewSize returns a new WAL over the given directory.
 // New segments are created with the specified size.
-func NewSize(logger log.Logger, reg prometheus.Registerer, dir string, segmentSize int, compress bool) (*WAL, error) {
+func NewSize(logger log.Logger, reg prometheus.Registerer, dir string, segmentSize int, compress bool) (*WL, error) {
 	if segmentSize%pageSize != 0 {
 		return nil, errors.New("invalid segment size")
 	}
@@ -266,7 +266,7 @@ func NewSize(logger log.Logger, reg prometheus.Registerer, dir string, segmentSi
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
-	w := &WAL{
+	w := &WL{
 		dir:         dir,
 		logger:      logger,
 		segmentSize: segmentSize,
@@ -308,11 +308,11 @@ func NewSize(logger log.Logger, reg prometheus.Registerer, dir string, segmentSi
 }
 
 // Open an existing WAL.
-func Open(logger log.Logger, dir string) (*WAL, error) {
+func Open(logger log.Logger, dir string) (*WL, error) {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
-	w := &WAL{
+	w := &WL{
 		dir:    dir,
 		logger: logger,
 	}
@@ -321,16 +321,16 @@ func Open(logger log.Logger, dir string) (*WAL, error) {
 }
 
 // CompressionEnabled returns if compression is enabled on this WAL.
-func (w *WAL) CompressionEnabled() bool {
+func (w *WL) CompressionEnabled() bool {
 	return w.compress
 }
 
 // Dir returns the directory of the WAL.
-func (w *WAL) Dir() string {
+func (w *WL) Dir() string {
 	return w.dir
 }
 
-func (w *WAL) run() {
+func (w *WL) run() {
 Loop:
 	for {
 		select {
@@ -350,7 +350,7 @@ Loop:
 
 // Repair attempts to repair the WAL based on the error.
 // It discards all data after the corruption.
-func (w *WAL) Repair(origErr error) error {
+func (w *WL) Repair(origErr error) error {
 	// We could probably have a mode that only discards torn records right around
 	// the corruption to preserve as data much as possible.
 	// But that's not generally applicable if the records have any kind of causality.
@@ -466,7 +466,7 @@ func SegmentName(dir string, i int) string {
 
 // NextSegment creates the next segment and closes the previous one asynchronously.
 // It returns the file number of the new file.
-func (w *WAL) NextSegment() (int, error) {
+func (w *WL) NextSegment() (int, error) {
 	w.mtx.Lock()
 	defer w.mtx.Unlock()
 	return w.nextSegment(true)
@@ -474,7 +474,7 @@ func (w *WAL) NextSegment() (int, error) {
 
 // NextSegmentSync creates the next segment and closes the previous one in sync.
 // It returns the file number of the new file.
-func (w *WAL) NextSegmentSync() (int, error) {
+func (w *WL) NextSegmentSync() (int, error) {
 	w.mtx.Lock()
 	defer w.mtx.Unlock()
 	return w.nextSegment(false)
@@ -482,7 +482,7 @@ func (w *WAL) NextSegmentSync() (int, error) {
 
 // nextSegment creates the next segment and closes the previous one.
 // It returns the file number of the new file.
-func (w *WAL) nextSegment(async bool) (int, error) {
+func (w *WL) nextSegment(async bool) (int, error) {
 	if w.closed {
 		return 0, errors.New("wal is closed")
 	}
@@ -519,7 +519,7 @@ func (w *WAL) nextSegment(async bool) (int, error) {
 	return next.Index(), nil
 }
 
-func (w *WAL) setSegment(segment *Segment) error {
+func (w *WL) setSegment(segment *Segment) error {
 	w.segment = segment
 
 	// Correctly initialize donePages.
@@ -535,7 +535,7 @@ func (w *WAL) setSegment(segment *Segment) error {
 // flushPage writes the new contents of the page to disk. If no more records will fit into
 // the page, the remaining bytes will be set to zero and a new page will be started.
 // If clear is true, this is enforced regardless of how many bytes are left in the page.
-func (w *WAL) flushPage(clear bool) error {
+func (w *WL) flushPage(clear bool) error {
 	w.metrics.pageFlushes.Inc()
 
 	p := w.page
@@ -601,13 +601,13 @@ func (t recType) String() string {
 	}
 }
 
-func (w *WAL) pagesPerSegment() int {
+func (w *WL) pagesPerSegment() int {
 	return w.segmentSize / pageSize
 }
 
 // Log writes the records into the log.
 // Multiple records can be passed at once to reduce writes and increase throughput.
-func (w *WAL) Log(recs ...[]byte) error {
+func (w *WL) Log(recs ...[]byte) error {
 	w.mtx.Lock()
 	defer w.mtx.Unlock()
 	// Callers could just implement their own list record format but adding
@@ -625,7 +625,7 @@ func (w *WAL) Log(recs ...[]byte) error {
 // - the final record of a batch
 // - the record is bigger than the page size
 // - the current page is full.
-func (w *WAL) log(rec []byte, final bool) error {
+func (w *WL) log(rec []byte, final bool) error {
 	// When the last page flush failed the page will remain full.
 	// When the page is full, need to flush it before trying to add more records to it.
 	if w.page.full() {
@@ -721,7 +721,7 @@ func (w *WAL) log(rec []byte, final bool) error {
 
 // LastSegmentAndOffset returns the last segment number of the WAL
 // and the offset in that file upto which the segment has been filled.
-func (w *WAL) LastSegmentAndOffset() (seg, offset int, err error) {
+func (w *WL) LastSegmentAndOffset() (seg, offset int, err error) {
 	w.mtx.Lock()
 	defer w.mtx.Unlock()
 
@@ -736,7 +736,7 @@ func (w *WAL) LastSegmentAndOffset() (seg, offset int, err error) {
 }
 
 // Truncate drops all segments before i.
-func (w *WAL) Truncate(i int) (err error) {
+func (w *WL) Truncate(i int) (err error) {
 	w.metrics.truncateTotal.Inc()
 	defer func() {
 		if err != nil {
@@ -758,7 +758,7 @@ func (w *WAL) Truncate(i int) (err error) {
 	return nil
 }
 
-func (w *WAL) fsync(f *Segment) error {
+func (w *WL) fsync(f *Segment) error {
 	start := time.Now()
 	err := f.Sync()
 	w.metrics.fsyncDuration.Observe(time.Since(start).Seconds())
@@ -768,12 +768,12 @@ func (w *WAL) fsync(f *Segment) error {
 // Sync forces a file sync on the current wal segment. This function is meant
 // to be used only on tests due to different behaviour on Operating Systems
 // like windows and linux
-func (w *WAL) Sync() error {
+func (w *WL) Sync() error {
 	return w.fsync(w.segment)
 }
 
 // Close flushes all writes and closes active segment.
-func (w *WAL) Close() (err error) {
+func (w *WL) Close() (err error) {
 	w.mtx.Lock()
 	defer w.mtx.Unlock()
 
@@ -981,6 +981,6 @@ func (r *segmentBufReader) Read(b []byte) (n int, err error) {
 
 // Computing size of the WAL.
 // We do this by adding the sizes of all the files under the WAL dir.
-func (w *WAL) Size() (int64, error) {
+func (w *WL) Size() (int64, error) {
 	return fileutil.DirSize(w.Dir())
 }

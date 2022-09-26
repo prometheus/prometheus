@@ -219,7 +219,7 @@ type DB struct {
 	opts   *Options
 	rs     *remote.Storage
 
-	wal    *wlog.WAL
+	wal    *wlog.WL
 	locker *tsdbutil.DirLocker
 
 	appenderPool sync.Pool

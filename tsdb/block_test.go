@@ -485,7 +485,7 @@ func createBlockFromHead(tb testing.TB, dir string, head *Head) string {
 	return filepath.Join(dir, ulid.String())
 }
 
-func createHead(tb testing.TB, w *wlog.WAL, series []storage.Series, chunkDir string) *Head {
+func createHead(tb testing.TB, w *wlog.WL, series []storage.Series, chunkDir string) *Head {
 	opts := DefaultHeadOptions()
 	opts.ChunkDirRoot = chunkDir
 	head, err := NewHead(nil, nil, w, nil, opts, nil)
@@ -507,7 +507,7 @@ func createHead(tb testing.TB, w *wlog.WAL, series []storage.Series, chunkDir st
 	return head
 }
 
-func createHeadWithOOOSamples(tb testing.TB, w *wlog.WAL, series []storage.Series, chunkDir string, oooSampleFrequency int) *Head {
+func createHeadWithOOOSamples(tb testing.TB, w *wlog.WL, series []storage.Series, chunkDir string, oooSampleFrequency int) *Head {
 	opts := DefaultHeadOptions()
 	opts.ChunkDirRoot = chunkDir
 	opts.OutOfOrderTimeWindow.Store(10000000000)

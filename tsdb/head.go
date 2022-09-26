@@ -75,7 +75,7 @@ type Head struct {
 
 	metrics         *headMetrics
 	opts            *HeadOptions
-	wal, wbl        *wlog.WAL
+	wal, wbl        *wlog.WL
 	exemplarMetrics *ExemplarMetrics
 	exemplars       ExemplarStorage
 	logger          log.Logger
@@ -186,7 +186,7 @@ type SeriesLifecycleCallback interface {
 }
 
 // NewHead opens the head block in dir.
-func NewHead(r prometheus.Registerer, l log.Logger, wal, wbl *wlog.WAL, opts *HeadOptions, stats *HeadStats) (*Head, error) {
+func NewHead(r prometheus.Registerer, l log.Logger, wal, wbl *wlog.WL, opts *HeadOptions, stats *HeadStats) (*Head, error) {
 	var err error
 	if l == nil {
 		l = log.NewNopLogger()
@@ -840,7 +840,7 @@ func (h *Head) removeCorruptedMmappedChunks(err error) (map[chunks.HeadSeriesRef
 	return mmappedChunks, oooMmappedChunks, lastRef, nil
 }
 
-func (h *Head) ApplyConfig(cfg *config.Config, wbl *wlog.WAL) {
+func (h *Head) ApplyConfig(cfg *config.Config, wbl *wlog.WL) {
 	oooTimeWindow := int64(0)
 	if cfg.StorageConfig.TSDBConfig != nil {
 		oooTimeWindow = cfg.StorageConfig.TSDBConfig.OutOfOrderTimeWindow
@@ -872,7 +872,7 @@ func (h *Head) ApplyConfig(cfg *config.Config, wbl *wlog.WAL) {
 
 // SetOutOfOrderTimeWindow updates the out of order related parameters.
 // If the Head already has a WBL set, then the wbl will be ignored.
-func (h *Head) SetOutOfOrderTimeWindow(oooTimeWindow int64, wbl *wlog.WAL) {
+func (h *Head) SetOutOfOrderTimeWindow(oooTimeWindow int64, wbl *wlog.WL) {
 	if oooTimeWindow > 0 && h.wbl == nil {
 		h.wbl = wbl
 	}
