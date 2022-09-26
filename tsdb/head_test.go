@@ -51,7 +51,7 @@ import (
 
 func newTestHead(t testing.TB, chunkRange int64, compressWAL, oooEnabled bool) (*Head, *wal.WAL) {
 	dir := t.TempDir()
-	wlog, err := wal.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, compressWAL)
+	wlTEMP, err := wal.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, compressWAL)
 	require.NoError(t, err)
 
 	opts := DefaultHeadOptions()
@@ -63,14 +63,14 @@ func newTestHead(t testing.TB, chunkRange int64, compressWAL, oooEnabled bool) (
 		opts.OutOfOrderTimeWindow.Store(10 * time.Minute.Milliseconds())
 	}
 
-	h, err := NewHead(nil, nil, wlog, nil, opts, nil)
+	h, err := NewHead(nil, nil, wlTEMP, nil, opts, nil)
 	require.NoError(t, err)
 
 	require.NoError(t, h.chunkDiskMapper.IterateAllChunks(func(_ chunks.HeadSeriesRef, _ chunks.ChunkDiskMapperRef, _, _ int64, _ uint16, _ chunkenc.Encoding) error {
 		return nil
 	}))
 
-	return h, wlog
+	return h, wlTEMP
 }
 
 func BenchmarkCreateSeries(b *testing.B) {
@@ -1722,7 +1722,7 @@ func TestHeadReadWriterRepair(t *testing.T) {
 }
 
 func TestNewWalSegmentOnTruncate(t *testing.T) {
-	h, wlog := newTestHead(t, 1000, false, false)
+	h, wlTEMP := newTestHead(t, 1000, false, false)
 	defer func() {
 		require.NoError(t, h.Close())
 	}()
@@ -1734,19 +1734,19 @@ func TestNewWalSegmentOnTruncate(t *testing.T) {
 	}
 
 	add(0)
-	_, last, err := wal.Segments(wlog.Dir())
+	_, last, err := wal.Segments(wlTEMP.Dir())
 	require.NoError(t, err)
 	require.Equal(t, 0, last)
 
 	add(1)
 	require.NoError(t, h.Truncate(1))
-	_, last, err = wal.Segments(wlog.Dir())
+	_, last, err = wal.Segments(wlTEMP.Dir())
 	require.NoError(t, err)
 	require.Equal(t, 1, last)
 
 	add(2)
 	require.NoError(t, h.Truncate(2))
-	_, last, err = wal.Segments(wlog.Dir())
+	_, last, err = wal.Segments(wlTEMP.Dir())
 	require.NoError(t, err)
 	require.Equal(t, 2, last)
 }
@@ -1901,12 +1901,12 @@ func TestMemSeriesIsolation(t *testing.T) {
 	i = addSamples(hb)
 	require.NoError(t, hb.Close())
 
-	wlog, err := wal.NewSize(nil, nil, w.Dir(), 32768, false)
+	wlTEMP, err := wal.NewSize(nil, nil, w.Dir(), 32768, false)
 	require.NoError(t, err)
 	opts := DefaultHeadOptions()
 	opts.ChunkRange = 1000
-	opts.ChunkDirRoot = wlog.Dir()
-	hb, err = NewHead(nil, nil, wlog, nil, opts, nil)
+	opts.ChunkDirRoot = wlTEMP.Dir()
+	hb, err = NewHead(nil, nil, wlTEMP, nil, opts, nil)
 	defer func() { require.NoError(t, hb.Close()) }()
 	require.NoError(t, err)
 	require.NoError(t, hb.Init(0))
@@ -3065,7 +3065,7 @@ func TestSnapshotError(t *testing.T) {
 // Tests https://github.com/prometheus/prometheus/issues/9725.
 func TestChunkSnapshotReplayBug(t *testing.T) {
 	dir := t.TempDir()
-	wlog, err := wal.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, true)
+	wlTEMP, err := wal.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, true)
 	require.NoError(t, err)
 
 	// Write few series records and samples such that the series references are not in order in the WAL
@@ -3092,10 +3092,10 @@ func TestChunkSnapshotReplayBug(t *testing.T) {
 
 		rec := enc.Series([]record.RefSeries{seriesRec}, buf)
 		buf = rec[:0]
-		require.NoError(t, wlog.Log(rec))
+		require.NoError(t, wlTEMP.Log(rec))
 		rec = enc.Samples([]record.RefSample{samplesRec}, buf)
 		buf = rec[:0]
-		require.NoError(t, wlog.Log(rec))
+		require.NoError(t, wlTEMP.Log(rec))
 	}
 
 	// Write a corrupt snapshot to fail the replay on startup.
@@ -3109,7 +3109,7 @@ func TestChunkSnapshotReplayBug(t *testing.T) {
 	opts := DefaultHeadOptions()
 	opts.ChunkDirRoot = dir
 	opts.EnableMemorySnapshotOnShutdown = true
-	head, err := NewHead(nil, nil, wlog, nil, opts, nil)
+	head, err := NewHead(nil, nil, wlTEMP, nil, opts, nil)
 	require.NoError(t, err)
 	require.NoError(t, head.Init(math.MinInt64))
 	defer func() {
@@ -3132,7 +3132,7 @@ func TestChunkSnapshotReplayBug(t *testing.T) {
 
 func TestChunkSnapshotTakenAfterIncompleteSnapshot(t *testing.T) {
 	dir := t.TempDir()
-	wlog, err := wal.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, true)
+	wlTemp, err := wal.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, true)
 	require.NoError(t, err)
 
 	// Write a snapshot with .tmp suffix. This used to fail taking any further snapshots or replay of snapshots.
@@ -3143,7 +3143,7 @@ func TestChunkSnapshotTakenAfterIncompleteSnapshot(t *testing.T) {
 	opts := DefaultHeadOptions()
 	opts.ChunkDirRoot = dir
 	opts.EnableMemorySnapshotOnShutdown = true
-	head, err := NewHead(nil, nil, wlog, nil, opts, nil)
+	head, err := NewHead(nil, nil, wlTemp, nil, opts, nil)
 	require.NoError(t, err)
 	require.NoError(t, head.Init(math.MinInt64))
 
@@ -3170,7 +3170,7 @@ func TestChunkSnapshotTakenAfterIncompleteSnapshot(t *testing.T) {
 // TODO(codesome): Needs test for ooo WAL repair.
 func TestOOOWalReplay(t *testing.T) {
 	dir := t.TempDir()
-	wlog, err := wal.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, true)
+	wlTEMP, err := wal.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, true)
 	require.NoError(t, err)
 	oooWlog, err := wal.NewSize(nil, nil, filepath.Join(dir, wal.WblDirName), 32768, true)
 	require.NoError(t, err)
@@ -3180,7 +3180,7 @@ func TestOOOWalReplay(t *testing.T) {
 	opts.ChunkDirRoot = dir
 	opts.OutOfOrderTimeWindow.Store(30 * time.Minute.Milliseconds())
 
-	h, err := NewHead(nil, nil, wlog, oooWlog, opts, nil)
+	h, err := NewHead(nil, nil, wlTEMP, oooWlog, opts, nil)
 	require.NoError(t, err)
 	require.NoError(t, h.Init(0))
 
@@ -3217,11 +3217,11 @@ func TestOOOWalReplay(t *testing.T) {
 
 	// Restart head.
 	require.NoError(t, h.Close())
-	wlog, err = wal.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, true)
+	wlTEMP, err = wal.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, true)
 	require.NoError(t, err)
 	oooWlog, err = wal.NewSize(nil, nil, filepath.Join(dir, wal.WblDirName), 32768, true)
 	require.NoError(t, err)
-	h, err = NewHead(nil, nil, wlog, oooWlog, opts, nil)
+	h, err = NewHead(nil, nil, wlTEMP, oooWlog, opts, nil)
 	require.NoError(t, err)
 	require.NoError(t, h.Init(0)) // Replay happens here.
 
@@ -3254,7 +3254,7 @@ func TestOOOWalReplay(t *testing.T) {
 // TestOOOMmapReplay checks the replay at a low level.
 func TestOOOMmapReplay(t *testing.T) {
 	dir := t.TempDir()
-	wlog, err := wal.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, true)
+	wlTEMP, err := wal.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, true)
 	require.NoError(t, err)
 	oooWlog, err := wal.NewSize(nil, nil, filepath.Join(dir, wal.WblDirName), 32768, true)
 	require.NoError(t, err)
@@ -3265,7 +3265,7 @@ func TestOOOMmapReplay(t *testing.T) {
 	opts.OutOfOrderCapMax.Store(30)
 	opts.OutOfOrderTimeWindow.Store(1000 * time.Minute.Milliseconds())
 
-	h, err := NewHead(nil, nil, wlog, oooWlog, opts, nil)
+	h, err := NewHead(nil, nil, wlTEMP, oooWlog, opts, nil)
 	require.NoError(t, err)
 	require.NoError(t, h.Init(0))
 
@@ -3305,11 +3305,11 @@ func TestOOOMmapReplay(t *testing.T) {
 	// Restart head.
 	require.NoError(t, h.Close())
 
-	wlog, err = wal.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, true)
+	wlTEMP, err = wal.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, true)
 	require.NoError(t, err)
 	oooWlog, err = wal.NewSize(nil, nil, filepath.Join(dir, wal.WblDirName), 32768, true)
 	require.NoError(t, err)
-	h, err = NewHead(nil, nil, wlog, oooWlog, opts, nil)
+	h, err = NewHead(nil, nil, wlTEMP, oooWlog, opts, nil)
 	require.NoError(t, err)
 	require.NoError(t, h.Init(0)) // Replay happens here.
 
@@ -3379,9 +3379,9 @@ func TestHeadInit_DiscardChunksWithUnsupportedEncoding(t *testing.T) {
 
 	require.NoError(t, h.Close())
 
-	wlog, err := wal.NewSize(nil, nil, filepath.Join(h.opts.ChunkDirRoot, "wal"), 32768, false)
+	wlTEMP, err := wal.NewSize(nil, nil, filepath.Join(h.opts.ChunkDirRoot, "wal"), 32768, false)
 	require.NoError(t, err)
-	h, err = NewHead(nil, nil, wlog, nil, h.opts, nil)
+	h, err = NewHead(nil, nil, wlTEMP, nil, h.opts, nil)
 	require.NoError(t, err)
 	require.NoError(t, h.Init(0))
 
@@ -3414,7 +3414,7 @@ func (c *unsupportedChunk) Encoding() chunkenc.Encoding {
 // Tests https://github.com/prometheus/prometheus/issues/10277.
 func TestMmapPanicAfterMmapReplayCorruption(t *testing.T) {
 	dir := t.TempDir()
-	wlog, err := wal.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, false)
+	wlTEMP, err := wal.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, false)
 	require.NoError(t, err)
 
 	opts := DefaultHeadOptions()
@@ -3423,7 +3423,7 @@ func TestMmapPanicAfterMmapReplayCorruption(t *testing.T) {
 	opts.EnableExemplarStorage = true
 	opts.MaxExemplars.Store(config.DefaultExemplarsConfig.MaxExemplars)
 
-	h, err := NewHead(nil, nil, wlog, nil, opts, nil)
+	h, err := NewHead(nil, nil, wlTEMP, nil, opts, nil)
 	require.NoError(t, err)
 	require.NoError(t, h.Init(0))
 
@@ -3447,7 +3447,7 @@ func TestMmapPanicAfterMmapReplayCorruption(t *testing.T) {
 	addChunks()
 
 	require.NoError(t, h.Close())
-	wlog, err = wal.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, false)
+	wlTEMP, err = wal.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, false)
 	require.NoError(t, err)
 
 	mmapFilePath := filepath.Join(dir, "chunks_head", "000001")
@@ -3457,7 +3457,7 @@ func TestMmapPanicAfterMmapReplayCorruption(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, f.Close())
 
-	h, err = NewHead(nil, nil, wlog, nil, opts, nil)
+	h, err = NewHead(nil, nil, wlTEMP, nil, opts, nil)
 	require.NoError(t, err)
 	require.NoError(t, h.Init(0))
 
@@ -3473,7 +3473,7 @@ func TestReplayAfterMmapReplayError(t *testing.T) {
 	var err error
 
 	openHead := func() {
-		wlog, err := wal.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, false)
+		wlTEMP, err := wal.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, false)
 		require.NoError(t, err)
 
 		opts := DefaultHeadOptions()
@@ -3482,7 +3482,7 @@ func TestReplayAfterMmapReplayError(t *testing.T) {
 		opts.EnableMemorySnapshotOnShutdown = true
 		opts.MaxExemplars.Store(config.DefaultExemplarsConfig.MaxExemplars)
 
-		h, err = NewHead(nil, nil, wlog, nil, opts, nil)
+		h, err = NewHead(nil, nil, wlTEMP, nil, opts, nil)
 		require.NoError(t, err)
 		require.NoError(t, h.Init(0))
 	}
@@ -3547,7 +3547,7 @@ func TestReplayAfterMmapReplayError(t *testing.T) {
 
 func TestOOOAppendWithNoSeries(t *testing.T) {
 	dir := t.TempDir()
-	wlog, err := wal.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, true)
+	wlTEMP, err := wal.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, true)
 	require.NoError(t, err)
 	oooWlog, err := wal.NewSize(nil, nil, filepath.Join(dir, wal.WblDirName), 32768, true)
 	require.NoError(t, err)
@@ -3557,7 +3557,7 @@ func TestOOOAppendWithNoSeries(t *testing.T) {
 	opts.OutOfOrderCapMax.Store(30)
 	opts.OutOfOrderTimeWindow.Store(120 * time.Minute.Milliseconds())
 
-	h, err := NewHead(nil, nil, wlog, oooWlog, opts, nil)
+	h, err := NewHead(nil, nil, wlTEMP, oooWlog, opts, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		require.NoError(t, h.Close())
@@ -3628,7 +3628,7 @@ func TestOOOAppendWithNoSeries(t *testing.T) {
 
 func TestHeadMinOOOTimeUpdate(t *testing.T) {
 	dir := t.TempDir()
-	wlog, err := wal.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, true)
+	wlTEMP, err := wal.NewSize(nil, nil, filepath.Join(dir, "wal"), 32768, true)
 	require.NoError(t, err)
 	oooWlog, err := wal.NewSize(nil, nil, filepath.Join(dir, wal.WblDirName), 32768, true)
 	require.NoError(t, err)
@@ -3637,7 +3637,7 @@ func TestHeadMinOOOTimeUpdate(t *testing.T) {
 	opts.ChunkDirRoot = dir
 	opts.OutOfOrderTimeWindow.Store(10 * time.Minute.Milliseconds())
 
-	h, err := NewHead(nil, nil, wlog, oooWlog, opts, nil)
+	h, err := NewHead(nil, nil, wlTEMP, oooWlog, opts, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		require.NoError(t, h.Close())

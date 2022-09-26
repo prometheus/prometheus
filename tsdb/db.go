@@ -749,7 +749,7 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	}
 	db.compactCancel = cancel
 
-	var wlog, wblog *wal.WAL
+	var wlTEMP, wbl *wal.WAL
 	segmentSize := wal.DefaultSegmentSize
 	// Wal is enabled.
 	if opts.WALSegmentSize >= 0 {
@@ -757,7 +757,7 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 		if opts.WALSegmentSize > 0 {
 			segmentSize = opts.WALSegmentSize
 		}
-		wlog, err = wal.NewSize(l, r, walDir, segmentSize, opts.WALCompression)
+		wlTEMP, err = wal.NewSize(l, r, walDir, segmentSize, opts.WALCompression)
 		if err != nil {
 			return nil, err
 		}
@@ -767,7 +767,7 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 			return nil, err
 		}
 		if opts.OutOfOrderTimeWindow > 0 || wblSize > 0 {
-			wblog, err = wal.NewSize(l, r, wblDir, segmentSize, opts.WALCompression)
+			wbl, err = wal.NewSize(l, r, wblDir, segmentSize, opts.WALCompression)
 			if err != nil {
 				return nil, err
 			}
@@ -791,7 +791,7 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 		// We only override this flag if isolation is disabled at DB level. We use the default otherwise.
 		headOpts.IsolationDisabled = opts.IsolationDisabled
 	}
-	db.head, err = NewHead(r, l, wlog, wblog, headOpts, stats.Head)
+	db.head, err = NewHead(r, l, wlTEMP, wbl, headOpts, stats.Head)
 	if err != nil {
 		return nil, err
 	}
@@ -823,12 +823,12 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 		isOOOErr := isErrLoadOOOWal(initErr)
 		if isOOOErr {
 			level.Warn(db.logger).Log("msg", "Encountered OOO WAL read error, attempting repair", "err", initErr)
-			if err := wblog.Repair(initErr); err != nil {
+			if err := wbl.Repair(initErr); err != nil {
 				return nil, errors.Wrap(err, "repair corrupted OOO WAL")
 			}
 		} else {
 			level.Warn(db.logger).Log("msg", "Encountered WAL read error, attempting repair", "err", initErr)
-			if err := wlog.Repair(initErr); err != nil {
+			if err := wlTEMP.Repair(initErr); err != nil {
 				return nil, errors.Wrap(err, "repair corrupted WAL")
 			}
 		}
