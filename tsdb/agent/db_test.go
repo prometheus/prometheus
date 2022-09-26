@@ -35,7 +35,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
-	"github.com/prometheus/prometheus/tsdb/wal"
+	"github.com/prometheus/prometheus/tsdb/wlog"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -141,7 +141,7 @@ func TestCommit(t *testing.T) {
 	require.NoError(t, app.Commit())
 	require.NoError(t, s.Close())
 
-	sr, err := wal.NewSegmentsReader(s.wal.Dir())
+	sr, err := wlog.NewSegmentsReader(s.wal.Dir())
 	require.NoError(t, err)
 	defer func() {
 		require.NoError(t, sr.Close())
@@ -149,7 +149,7 @@ func TestCommit(t *testing.T) {
 
 	// Read records from WAL and check for expected count of series, samples, and exemplars.
 	var (
-		r   = wal.NewReader(sr)
+		r   = wlog.NewReader(sr)
 		dec record.Decoder
 
 		walSeriesCount, walSamplesCount, walExemplarsCount int
@@ -211,7 +211,7 @@ func TestRollback(t *testing.T) {
 	require.NoError(t, app.Commit())
 	require.NoError(t, s.Close())
 
-	sr, err := wal.NewSegmentsReader(s.wal.Dir())
+	sr, err := wlog.NewSegmentsReader(s.wal.Dir())
 	require.NoError(t, err)
 	defer func() {
 		require.NoError(t, sr.Close())
@@ -219,7 +219,7 @@ func TestRollback(t *testing.T) {
 
 	// Read records from WAL and check for expected count of series and samples.
 	var (
-		r   = wal.NewReader(sr)
+		r   = wlog.NewReader(sr)
 		dec record.Decoder
 
 		walSeriesCount, walSamplesCount, walExemplarsCount int
@@ -515,10 +515,10 @@ func TestStorage_DuplicateExemplarsIgnored(t *testing.T) {
 
 	// Read back what was written to the WAL.
 	var walExemplarsCount int
-	sr, err := wal.NewSegmentsReader(s.wal.Dir())
+	sr, err := wlog.NewSegmentsReader(s.wal.Dir())
 	require.NoError(t, err)
 	defer sr.Close()
-	r := wal.NewReader(sr)
+	r := wlog.NewReader(sr)
 
 	var dec record.Decoder
 	for r.Next() {
