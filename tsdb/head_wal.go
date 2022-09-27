@@ -787,7 +787,7 @@ func (s *memSeries) encodeToSnapshotRecord(b []byte) []byte {
 	buf.PutByte(chunkSnapshotRecordTypeSeries)
 	buf.PutBE64(uint64(s.ref))
 	record.EncodeLabels(&buf, s.lset)
-	buf.PutBE64int64(0) // backwards-compatibility; was chunkRange but now unused
+	buf.PutBE64int64(0) // Backwards-compatibility; was chunkRange but now unused.
 
 	s.Lock()
 	if s.headChunk == nil {
@@ -821,7 +821,7 @@ func decodeSeriesFromChunkSnapshot(d *record.Decoder, b []byte) (csr chunkSnapsh
 	// TODO: figure out why DecodeLabels calls Sort(), and perhaps remove it.
 	csr.lset = d.DecodeLabels(&dec)
 
-	_ = dec.Be64int64() // backwards-compatibility: now unused
+	_ = dec.Be64int64() // Was chunkRange but now unused.
 	if dec.Uvarint() == 0 {
 		return
 	}
