@@ -15,6 +15,7 @@ package remote
 
 import (
 	"compress/gzip"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -538,6 +539,216 @@ func (c *concreteSeriesIterator) Next() chunkenc.ValueType {
 // Err implements chunkenc.Iterator.
 func (c *concreteSeriesIterator) Err() error {
 	return nil
+}
+
+// chunkedSeriesSet implements storage.SeriesSet
+type chunkedSeriesSet struct {
+	chunkedReader *ChunkedReader
+	respBody      io.ReadCloser
+	mint, maxt    int64
+	cancel        context.CancelFunc
+
+	current storage.Series
+	err     error
+}
+
+func NewChunkedSeriesSet(chunkedReader *ChunkedReader, respBody io.ReadCloser, mint, maxt int64, cancel context.CancelFunc) storage.SeriesSet {
+	return &chunkedSeriesSet{
+		chunkedReader: chunkedReader,
+		respBody:      respBody,
+		mint:          mint,
+		maxt:          maxt,
+		cancel:        cancel,
+	}
+}
+
+// Next return true if there is a next series and false otherwise. It will
+// block until the next series is available.
+func (s *chunkedSeriesSet) Next() bool {
+	res := &prompb.ChunkedReadResponse{}
+
+	err := s.chunkedReader.NextProto(res)
+	if err != nil {
+		if err != io.EOF {
+			s.err = err
+			_, _ = io.Copy(io.Discard, s.respBody)
+		}
+
+		_ = s.respBody.Close()
+		s.cancel()
+
+		return false
+	}
+
+	s.current = &chunkedSeries{
+		labels: res.ChunkedSeries[0].Labels,
+		chunks: res.ChunkedSeries[0].Chunks,
+		mint:   s.mint,
+		maxt:   s.maxt,
+	}
+
+	return true
+}
+
+func (s *chunkedSeriesSet) At() storage.Series {
+	return s.current
+}
+
+func (s *chunkedSeriesSet) Err() error {
+	return s.err
+}
+
+func (s *chunkedSeriesSet) Warnings() annotations.Annotations {
+	return nil
+}
+
+// chunkedSeries implements storage.Series
+type chunkedSeries struct {
+	labels     []prompb.Label
+	chunks     []prompb.Chunk
+	mint, maxt int64
+}
+
+func (s *chunkedSeries) Labels() labels.Labels {
+	return labelProtosToLabels(s.labels)
+}
+
+func (s *chunkedSeries) Iterator(it chunkenc.Iterator) chunkenc.Iterator {
+	csIt, ok := it.(*chunkedSeriesIterator)
+	if ok {
+		csIt.reset(s.chunks, s.mint, s.maxt)
+		return csIt
+	}
+	return newChunkedSeriesIterator(s.chunks, s.mint, s.maxt)
+}
+
+// chunkedSeriesIterator implements chunkenc.Iterator
+type chunkedSeriesIterator struct {
+	chunks     []prompb.Chunk
+	idx        int
+	cur        chunkenc.Iterator
+	valType    chunkenc.ValueType
+	mint, maxt int64
+
+	err error
+}
+
+func newChunkedSeriesIterator(chunks []prompb.Chunk, mint, maxt int64) *chunkedSeriesIterator {
+	it := &chunkedSeriesIterator{}
+	it.reset(chunks, mint, maxt)
+	return it
+}
+
+func (it *chunkedSeriesIterator) Next() chunkenc.ValueType {
+	if it.err != nil {
+		return chunkenc.ValNone
+	}
+	if len(it.chunks) == 0 {
+		return chunkenc.ValNone
+	}
+
+	for it.valType = it.cur.Next(); it.valType != chunkenc.ValNone; it.valType = it.cur.Next() {
+		atT := it.AtT()
+		if atT > it.maxt {
+			it.chunks = nil // Exhaust this iterator so follow-up calls to Next or Seek return fast.
+			return chunkenc.ValNone
+		}
+		if atT >= it.mint {
+			return it.valType
+		}
+	}
+
+	if it.idx >= len(it.chunks)-1 {
+		it.valType = chunkenc.ValNone
+	} else {
+		it.idx++
+		it.resetIterator()
+		it.valType = it.Next()
+	}
+
+	return it.valType
+}
+
+func (it *chunkedSeriesIterator) Seek(t int64) chunkenc.ValueType {
+	if it.err != nil {
+		return chunkenc.ValNone
+	}
+	if len(it.chunks) == 0 {
+		return chunkenc.ValNone
+	}
+
+	startIdx := it.idx
+	it.idx += sort.Search(len(it.chunks)-startIdx, func(i int) bool {
+		return it.chunks[startIdx+i].MaxTimeMs >= t
+	})
+	if it.idx > startIdx {
+		it.resetIterator()
+	} else {
+		ts := it.cur.AtT()
+		if ts >= t {
+			return it.valType
+		}
+	}
+
+	for it.valType = it.cur.Next(); it.valType != chunkenc.ValNone; it.valType = it.cur.Next() {
+		ts := it.cur.AtT()
+		if ts > it.maxt {
+			it.chunks = nil // Exhaust this iterator so follow-up calls to Next or Seek return fast.
+			return chunkenc.ValNone
+		}
+		if ts >= t && ts >= it.mint {
+			return it.valType
+		}
+	}
+
+	it.valType = chunkenc.ValNone
+	return it.valType
+}
+
+func (it *chunkedSeriesIterator) resetIterator() {
+	if it.idx < len(it.chunks) {
+		chunk := it.chunks[it.idx]
+
+		decodedChunk, err := chunkenc.FromData(chunkenc.Encoding(chunk.Type), chunk.Data)
+		if err != nil {
+			it.err = err
+			return
+		}
+
+		it.cur = decodedChunk.Iterator(nil)
+	} else {
+		it.cur = chunkenc.NewNopIterator()
+	}
+}
+
+func (it *chunkedSeriesIterator) reset(chunks []prompb.Chunk, mint, maxt int64) {
+	it.chunks = chunks
+	it.mint = mint
+	it.maxt = maxt
+	it.idx = 0
+	if len(chunks) > 0 {
+		it.resetIterator()
+	}
+}
+
+func (it *chunkedSeriesIterator) At() (ts int64, v float64) {
+	return it.cur.At()
+}
+
+func (it *chunkedSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
+	return it.cur.AtHistogram()
+}
+
+func (it *chunkedSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+	return it.cur.AtFloatHistogram()
+}
+
+func (it *chunkedSeriesIterator) AtT() int64 {
+	return it.cur.AtT()
+}
+
+func (it *chunkedSeriesIterator) Err() error {
+	return it.err
 }
 
 // validateLabelsAndMetricName validates the label names/values and metric names returned from remote read,
