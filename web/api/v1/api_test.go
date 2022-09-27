@@ -459,7 +459,6 @@ func (b byLabels) Swap(i, j int)      { b[i], b[j] = b[j], b[i] }
 func (b byLabels) Less(i, j int) bool { return labels.Compare(b[i], b[j]) < 0 }
 
 func TestGetSeries(t *testing.T) {
-
 	// TestEndpoints doesn't have enough label names to test api.labelNames
 	// endpoint properly. Hence we test it separately.
 	suite, err := promql.NewTest(t, `
