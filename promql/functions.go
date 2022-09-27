@@ -31,18 +31,23 @@ import (
 
 // FunctionCall is the type of a PromQL function implementation
 //
-// vals is a list of the evaluated arguments for the function call.
-//    For range vectors it will be a Matrix with one series, instant vectors a
-//    Vector, scalars a Vector with one series whose value is the scalar
-//    value,and nil for strings.
+// vals is a list of the evaluated arguments for the function call. For range
+// vectors it will be a Matrix with one series, instant vectors a Vector,
+// scalars a Vector with one series whose value is the scalar value,and nil for
+// strings.
+//
 // args are the original arguments to the function, where you can access
-//    matrixSelectors, vectorSelectors, and StringLiterals.
-// enh.Out is a pre-allocated empty vector that you may use to accumulate
-//    output before returning it. The vectors in vals should not be returned.a
-// Range vector functions need only return a vector with the right value,
-//     the metric and timestamp are not needed.
+// matrixSelectors, vectorSelectors, and StringLiterals.
+//
+// enh.Out is a pre-allocated empty vector that you may use to accumulate output
+// before returning it. The vectors in vals should not be returned.
+//
+// Range vector functions need only return a vector with the right value, the
+// metric and timestamp are not needed.
+//
 // Instant vector functions need only return a vector with the right values and
-//     metrics, the timestamp are not needed.
+// metrics, the timestamp are not needed.
+//
 // Scalar results should be returned as the value of a sample in a Vector.
 type FunctionCall func(vals []parser.Value, args parser.Expressions, enh *EvalNodeHelper) Vector
 
@@ -159,9 +164,7 @@ func extrapolatedRate(vals []parser.Value, args parser.Expressions, enh *EvalNod
 
 // histogramRate is a helper function for extrapolatedRate. It requires
 // points[0] to be a histogram. It returns nil if any other Point in points is
-// not a histogram. Currently, it also returns nil on mixed schemas or zero
-// thresholds in the histograms, because it cannot handle those schema changes
-// yet.
+// not a histogram.
 func histogramRate(points []Point, isCounter bool) *histogram.FloatHistogram {
 	prev := points[0].H // We already know that this is a histogram.
 	last := points[len(points)-1].H
@@ -204,7 +207,7 @@ func histogramRate(points []Point, isCounter bool) *histogram.FloatHistogram {
 			prev = curr
 		}
 	}
-	return h.Compact(3)
+	return h.Compact(0)
 }
 
 // === delta(Matrix parser.ValueTypeMatrix) Vector ===

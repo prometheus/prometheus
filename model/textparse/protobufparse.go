@@ -132,9 +132,16 @@ func (p *ProtobufParser) Series() ([]byte, *int64, float64) {
 	return p.metricBytes.Bytes(), nil, v
 }
 
-// Histogram returns the bytes of a series with a native histogram as a
-// value, the timestamp if set, and the native histogram in the current
-// sample.
+// Histogram returns the bytes of a series with a native histogram as a value,
+// the timestamp if set, and the native histogram in the current sample.
+//
+// The Compact method is called before returning the Histogram (or FloatHistogram).
+//
+// If the SampleCountFloat or the ZeroCountFloat in the proto message is > 0,
+// the histogram is parsed and returned as a FloatHistogram and nil is returned
+// as the (integer) Histogram return value. Otherwise, it is parsed and returned
+// as an (integer) Histogram and nil is returned as the FloatHistogram return
+// value.
 func (p *ProtobufParser) Histogram() ([]byte, *int64, *histogram.Histogram, *histogram.FloatHistogram) {
 	var (
 		m  = p.mf.GetMetric()[p.metricPos]
@@ -162,6 +169,7 @@ func (p *ProtobufParser) Histogram() ([]byte, *int64, *histogram.Histogram, *his
 			fh.NegativeSpans[i].Offset = span.GetOffset()
 			fh.NegativeSpans[i].Length = span.GetLength()
 		}
+		fh.Compact(0)
 		if ts != 0 {
 			return p.metricBytes.Bytes(), &ts, nil, &fh
 		}
@@ -190,7 +198,7 @@ func (p *ProtobufParser) Histogram() ([]byte, *int64, *histogram.Histogram, *his
 		sh.NegativeSpans[i].Offset = span.GetOffset()
 		sh.NegativeSpans[i].Length = span.GetLength()
 	}
-
+	sh.Compact(0)
 	if ts != 0 {
 		return p.metricBytes.Bytes(), &ts, &sh, nil
 	}

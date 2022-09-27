@@ -3159,8 +3159,8 @@ func TestSparseHistogramRate(t *testing.T) {
 		ZeroCount:       1. / 15.,
 		Count:           4. / 15.,
 		Sum:             1.226666666666667,
-		PositiveSpans:   []histogram.Span{{Offset: 0, Length: 5}},
-		PositiveBuckets: []float64{1. / 15., 1. / 15., 0, 1. / 15., 1. / 15.},
+		PositiveSpans:   []histogram.Span{{Offset: 0, Length: 2}, {Offset: 1, Length: 2}},
+		PositiveBuckets: []float64{1. / 15., 1. / 15., 1. / 15., 1. / 15.},
 	}
 	require.Equal(t, expectedHistogram, actualHistogram)
 }
