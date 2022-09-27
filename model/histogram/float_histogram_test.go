@@ -1578,11 +1578,11 @@ func TestReverseFloatBucketIterator(t *testing.T) {
 	// Assuming that the regular iterator is correct.
 
 	// Positive buckets.
-	var expBuckets, actBuckets []FloatBucket
+	var expBuckets, actBuckets []Bucket[float64]
 	it := h.PositiveBucketIterator()
 	for it.Next() {
 		// Append in reverse to check reversed list.
-		expBuckets = append([]FloatBucket{it.At()}, expBuckets...)
+		expBuckets = append([]Bucket[float64]{it.At()}, expBuckets...)
 	}
 	it = h.PositiveReverseBucketIterator()
 	for it.Next() {
@@ -1598,7 +1598,7 @@ func TestReverseFloatBucketIterator(t *testing.T) {
 	it = h.NegativeBucketIterator()
 	for it.Next() {
 		// Append in reverse to check reversed list.
-		expBuckets = append([]FloatBucket{it.At()}, expBuckets...)
+		expBuckets = append([]Bucket[float64]{it.At()}, expBuckets...)
 	}
 	it = h.NegativeReverseBucketIterator()
 	for it.Next() {
@@ -1793,7 +1793,7 @@ func TestAllFloatBucketIterator(t *testing.T) {
 
 	for i, c := range cases {
 		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
-			var expBuckets, actBuckets []FloatBucket
+			var expBuckets, actBuckets []Bucket[float64]
 
 			if c.includeNeg {
 				it := c.h.NegativeReverseBucketIterator()
@@ -1806,7 +1806,7 @@ func TestAllFloatBucketIterator(t *testing.T) {
 				}
 			}
 			if c.includeZero {
-				expBuckets = append(expBuckets, FloatBucket{
+				expBuckets = append(expBuckets, Bucket[float64]{
 					Lower:          -c.h.ZeroThreshold,
 					Upper:          c.h.ZeroThreshold,
 					LowerInclusive: true,

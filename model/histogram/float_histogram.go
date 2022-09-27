@@ -121,7 +121,7 @@ func (h *FloatHistogram) String() string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "{count:%g, sum:%g", h.Count, h.Sum)
 
-	var nBuckets []FloatBucket
+	var nBuckets []Bucket[float64]
 	for it := h.NegativeBucketIterator(); it.Next(); {
 		bucket := it.At()
 		if bucket.Count != 0 {
@@ -148,8 +148,8 @@ func (h *FloatHistogram) String() string {
 }
 
 // ZeroBucket returns the zero bucket.
-func (h *FloatHistogram) ZeroBucket() FloatBucket {
-	return FloatBucket{
+func (h *FloatHistogram) ZeroBucket() Bucket[float64] {
+	return Bucket[float64]{
 		Lower:          -h.ZeroThreshold,
 		Upper:          h.ZeroThreshold,
 		LowerInclusive: true,
@@ -250,7 +250,7 @@ func (h *FloatHistogram) Sub(other *FloatHistogram) *FloatHistogram {
 // count is added. If not, the bucket is inserted. The updated slices and the
 // coordinates of the inserted or added-to bucket are returned.
 func addBucket(
-	b FloatBucket,
+	b Bucket[float64],
 	spans []Span, buckets []float64,
 	iSpan, iBucket int,
 	iInSpan, index int32,
@@ -435,7 +435,7 @@ func (h *FloatHistogram) DetectReset(previous *FloatHistogram) bool {
 	return detectReset(currIt, prevIt)
 }
 
-func detectReset(currIt, prevIt FloatBucketIterator) bool {
+func detectReset(currIt, prevIt BucketIterator[float64]) bool {
 	if !prevIt.Next() {
 		return false // If no buckets in previous histogram, nothing can be reset.
 	}
@@ -495,40 +495,39 @@ func detectReset(currIt, prevIt FloatBucketIterator) bool {
 	}
 }
 
-// PositiveBucketIterator returns a FloatBucketIterator to iterate over all
-// positive buckets in ascending order (starting next to the zero bucket and
-// going up).
-func (h *FloatHistogram) PositiveBucketIterator() FloatBucketIterator {
+// PositiveBucketIterator returns a BucketIterator to iterate over all positive
+// buckets in ascending order (starting next to the zero bucket and going up).
+func (h *FloatHistogram) PositiveBucketIterator() BucketIterator[float64] {
 	return h.floatBucketIterator(true, 0, h.Schema)
 }
 
-// NegativeBucketIterator returns a FloatBucketIterator to iterate over all
-// negative buckets in descending order (starting next to the zero bucket and
-// going down).
-func (h *FloatHistogram) NegativeBucketIterator() FloatBucketIterator {
+// NegativeBucketIterator returns a BucketIterator to iterate over all negative
+// buckets in descending order (starting next to the zero bucket and going
+// down).
+func (h *FloatHistogram) NegativeBucketIterator() BucketIterator[float64] {
 	return h.floatBucketIterator(false, 0, h.Schema)
 }
 
-// PositiveReverseBucketIterator returns a FloatBucketIterator to iterate over all
-// positive buckets in descending order (starting at the highest bucket and going
-// down towards the zero bucket).
-func (h *FloatHistogram) PositiveReverseBucketIterator() FloatBucketIterator {
+// PositiveReverseBucketIterator returns a BucketIterator to iterate over all
+// positive buckets in descending order (starting at the highest bucket and
+// going down towards the zero bucket).
+func (h *FloatHistogram) PositiveReverseBucketIterator() BucketIterator[float64] {
 	return h.reverseFloatBucketIterator(true)
 }
 
-// NegativeReverseBucketIterator returns a FloatBucketIterator to iterate over all
-// negative buckets in ascending order (starting at the lowest bucket and going up
-// towards the zero bucket).
-func (h *FloatHistogram) NegativeReverseBucketIterator() FloatBucketIterator {
+// NegativeReverseBucketIterator returns a BucketIterator to iterate over all
+// negative buckets in ascending order (starting at the lowest bucket and going
+// up towards the zero bucket).
+func (h *FloatHistogram) NegativeReverseBucketIterator() BucketIterator[float64] {
 	return h.reverseFloatBucketIterator(false)
 }
 
-// AllBucketIterator returns a FloatBucketIterator to iterate over all negative,
+// AllBucketIterator returns a BucketIterator to iterate over all negative,
 // zero, and positive buckets in ascending order (starting at the lowest bucket
 // and going up). If the highest negative bucket or the lowest positive bucket
 // overlap with the zero bucket, their upper or lower boundary, respectively, is
 // set to the zero threshold.
-func (h *FloatHistogram) AllBucketIterator() FloatBucketIterator {
+func (h *FloatHistogram) AllBucketIterator() BucketIterator[float64] {
 	return &allFloatBucketIterator{
 		h:       h,
 		negIter: h.NegativeReverseBucketIterator(),
@@ -537,11 +536,11 @@ func (h *FloatHistogram) AllBucketIterator() FloatBucketIterator {
 	}
 }
 
-// CumulativeBucketIterator returns a FloatBucketIterator to iterate over a
+// CumulativeBucketIterator returns a BucketIterator to iterate over a
 // cumulative view of the buckets. This method currently only supports
 // FloatHistograms without negative buckets and panics if the FloatHistogram has
 // negative buckets. It is currently only used for testing.
-func (h *FloatHistogram) CumulativeBucketIterator() FloatBucketIterator {
+func (h *FloatHistogram) CumulativeBucketIterator() BucketIterator[float64] {
 	if len(h.NegativeBuckets) > 0 {
 		panic("CumulativeBucketIterator called on FloatHistogram with negative buckets")
 	}
@@ -657,52 +656,6 @@ func (h *FloatHistogram) reconcileZeroBuckets(other *FloatHistogram) float64 {
 		}
 	}
 	return otherZeroCount
-}
-
-// FloatBucketIterator iterates over the buckets of a FloatHistogram, returning
-// decoded buckets.
-type FloatBucketIterator interface {
-	// Next advances the iterator by one.
-	Next() bool
-	// At returns the current bucket.
-	At() FloatBucket
-}
-
-// FloatBucket represents a bucket with lower and upper limit and the count of
-// samples in the bucket as a float64. It also specifies if each limit is
-// inclusive or not. (Mathematically, inclusive limits create a closed interval,
-// and non-inclusive limits an open interval.)
-//
-// To represent cumulative buckets, Lower is set to -Inf, and the Count is then
-// cumulative (including the counts of all buckets for smaller values).
-type FloatBucket struct {
-	Lower, Upper                   float64
-	LowerInclusive, UpperInclusive bool
-	Count                          float64
-
-	// Index within schema. To easily compare buckets that share the same
-	// schema and sign (positive or negative). Irrelevant for the zero bucket.
-	Index int32
-}
-
-// String returns a string representation of a FloatBucket, using the usual
-// mathematical notation of '['/']' for inclusive bounds and '('/')' for
-// non-inclusive bounds.
-func (b FloatBucket) String() string {
-	var sb strings.Builder
-	if b.LowerInclusive {
-		sb.WriteRune('[')
-	} else {
-		sb.WriteRune('(')
-	}
-	fmt.Fprintf(&sb, "%g,%g", b.Lower, b.Upper)
-	if b.UpperInclusive {
-		sb.WriteRune(']')
-	} else {
-		sb.WriteRune(')')
-	}
-	fmt.Fprintf(&sb, ":%g", b.Count)
-	return sb.String()
 }
 
 // floatBucketIterator is a low-level constructor for bucket iterators.
@@ -844,8 +797,8 @@ mergeLoop: // Merge together all buckets from the original schema that fall into
 	return true
 }
 
-func (i *floatBucketIterator) At() FloatBucket {
-	b := FloatBucket{
+func (i *floatBucketIterator) At() Bucket[float64] {
+	b := Bucket[float64]{
 		Count: i.currCount,
 		Index: i.currIdx,
 	}
@@ -907,8 +860,8 @@ func (r *reverseFloatBucketIterator) Next() bool {
 	return true
 }
 
-func (r *reverseFloatBucketIterator) At() FloatBucket {
-	b := FloatBucket{
+func (r *reverseFloatBucketIterator) At() Bucket[float64] {
+	b := Bucket[float64]{
 		Count: r.currCount,
 		Index: r.currIdx,
 	}
@@ -926,13 +879,13 @@ func (r *reverseFloatBucketIterator) At() FloatBucket {
 
 type allFloatBucketIterator struct {
 	h                *FloatHistogram
-	negIter, posIter FloatBucketIterator
+	negIter, posIter BucketIterator[float64]
 	// -1 means we are iterating negative buckets.
 	// 0 means it is time for the zero bucket.
 	// 1 means we are iterating positive buckets.
 	// Anything else means iteration is over.
 	state      int8
-	currBucket FloatBucket
+	currBucket Bucket[float64]
 }
 
 func (r *allFloatBucketIterator) Next() bool {
@@ -950,7 +903,7 @@ func (r *allFloatBucketIterator) Next() bool {
 	case 0:
 		r.state = 1
 		if r.h.ZeroCount > 0 {
-			r.currBucket = FloatBucket{
+			r.currBucket = Bucket[float64]{
 				Lower:          -r.h.ZeroThreshold,
 				Upper:          r.h.ZeroThreshold,
 				LowerInclusive: true,
@@ -976,7 +929,7 @@ func (r *allFloatBucketIterator) Next() bool {
 	return false
 }
 
-func (r *allFloatBucketIterator) At() FloatBucket {
+func (r *allFloatBucketIterator) At() Bucket[float64] {
 	return r.currBucket
 }
 
@@ -1049,8 +1002,8 @@ func (c *cumulativeFloatBucketIterator) Next() bool {
 	return true
 }
 
-func (c *cumulativeFloatBucketIterator) At() FloatBucket {
-	return FloatBucket{
+func (c *cumulativeFloatBucketIterator) At() Bucket[float64] {
+	return Bucket[float64]{
 		Upper:          c.currUpper,
 		Lower:          math.Inf(-1),
 		UpperInclusive: true,

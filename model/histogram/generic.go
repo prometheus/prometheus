@@ -13,16 +13,84 @@
 
 package histogram
 
+import (
+	"fmt"
+	"strings"
+)
+
+// BucketCount is a type constraint for the count in a bucket, which can be
+// float64 (for type FloatHistogram) or uint64 (for type Histogram).
+type BucketCount interface {
+	float64 | uint64
+}
+
+// internalBucketCount is used internally by Histogram and FloatHistogram. The
+// difference to the BucketCount above is that Histogram internally uses deltas
+// between buckets rather than absolute counts (while FloatHistogram uses
+// absolute counts directly). Go type parameters don't allow type
+// specialization. Therefore, where special treatment of deltas between buckets
+// vs. absolute counts is important, this information has to be provided as a
+// separate boolean parameter "deltaBuckets"
+type internalBucketCount interface {
+	float64 | int64
+}
+
+// BucketIterator iterates over the buckets of a Histogram, returning decoded
+// buckets.
+type BucketIterator[BC BucketCount] interface {
+	// Next advances the iterator by one.
+	Next() bool
+	// At returns the current bucket.
+	At() Bucket[BC]
+}
+
+// Bucket represents a bucket with lower and upper limit and the absolute count
+// of samples in the bucket. It also specifies if each limit is inclusive or
+// not. (Mathematically, inclusive limits create a closed interval, and
+// non-inclusive limits an open interval.)
+//
+// To represent cumulative buckets, Lower is set to -Inf, and the Count is then
+// cumulative (including the counts of all buckets for smaller values).
+type Bucket[BC BucketCount] struct {
+	Lower, Upper                   float64
+	LowerInclusive, UpperInclusive bool
+	Count                          BC
+
+	// Index within schema. To easily compare buckets that share the same
+	// schema and sign (positive or negative). Irrelevant for the zero bucket.
+	Index int32
+}
+
+// String returns a string representation of a Bucket, using the usual
+// mathematical notation of '['/']' for inclusive bounds and '('/')' for
+// non-inclusive bounds.
+func (b Bucket[BC]) String() string {
+	var sb strings.Builder
+	if b.LowerInclusive {
+		sb.WriteRune('[')
+	} else {
+		sb.WriteRune('(')
+	}
+	fmt.Fprintf(&sb, "%g,%g", b.Lower, b.Upper)
+	if b.UpperInclusive {
+		sb.WriteRune(']')
+	} else {
+		sb.WriteRune(')')
+	}
+	fmt.Fprintf(&sb, ":%v", b.Count)
+	return sb.String()
+}
+
 // compactBuckets is a generic function used by both Histogram.Compact and
 // FloatHistogram.Compact. Set deltaBuckets to true if the provided buckets are
 // deltas. Set it to false if the buckets contain absolute counts.
-func compactBuckets[Bucket float64 | int64](buckets []Bucket, spans []Span, maxEmptyBuckets int, deltaBuckets bool) ([]Bucket, []Span) {
+func compactBuckets[IBC internalBucketCount](buckets []IBC, spans []Span, maxEmptyBuckets int, deltaBuckets bool) ([]IBC, []Span) {
 	// Fast path: If there are no empty buckets AND no offset in any span is
 	// <= maxEmptyBuckets AND no span has length 0, there is nothing to do and we can return
 	// immediately. We check that first because it's cheap and presumably
 	// common.
 	nothingToDo := true
-	var currentBucketAbsolute Bucket
+	var currentBucketAbsolute IBC
 	for _, bucket := range buckets {
 		if deltaBuckets {
 			currentBucketAbsolute += bucket
@@ -204,7 +272,7 @@ func compactBuckets[Bucket float64 | int64](buckets []Bucket, spans []Span, maxE
 		offset := int(spans[iSpan].Offset)
 		spans[iSpan-1].Length += uint32(offset) + spans[iSpan].Length
 		spans = append(spans[:iSpan], spans[iSpan+1:]...)
-		newBuckets := make([]Bucket, len(buckets)+offset)
+		newBuckets := make([]IBC, len(buckets)+offset)
 		copy(newBuckets, buckets[:iBucket])
 		copy(newBuckets[iBucket+offset:], buckets[iBucket:])
 		if deltaBuckets {

@@ -156,7 +156,7 @@ func histogramQuantile(q float64, h *histogram.FloatHistogram) float64 {
 	}
 
 	var (
-		bucket histogram.FloatBucket
+		bucket histogram.Bucket[float64]
 		count  float64
 		it     = h.AllBucketIterator()
 		rank   = q * h.Count

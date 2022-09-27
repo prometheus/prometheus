@@ -95,7 +95,7 @@ func (h *Histogram) String() string {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "{count:%d, sum:%g", h.Count, h.Sum)
 
-	var nBuckets []Bucket
+	var nBuckets []Bucket[uint64]
 	for it := h.NegativeBucketIterator(); it.Next(); {
 		bucket := it.At()
 		if bucket.Count != 0 {
@@ -122,8 +122,8 @@ func (h *Histogram) String() string {
 }
 
 // ZeroBucket returns the zero bucket.
-func (h *Histogram) ZeroBucket() Bucket {
-	return Bucket{
+func (h *Histogram) ZeroBucket() Bucket[uint64] {
+	return Bucket[uint64]{
 		Lower:          -h.ZeroThreshold,
 		Upper:          h.ZeroThreshold,
 		LowerInclusive: true,
@@ -134,13 +134,13 @@ func (h *Histogram) ZeroBucket() Bucket {
 
 // PositiveBucketIterator returns a BucketIterator to iterate over all positive
 // buckets in ascending order (starting next to the zero bucket and going up).
-func (h *Histogram) PositiveBucketIterator() BucketIterator {
+func (h *Histogram) PositiveBucketIterator() BucketIterator[uint64] {
 	return newRegularBucketIterator(h, true)
 }
 
 // NegativeBucketIterator returns a BucketIterator to iterate over all negative
 // buckets in descending order (starting next to the zero bucket and going down).
-func (h *Histogram) NegativeBucketIterator() BucketIterator {
+func (h *Histogram) NegativeBucketIterator() BucketIterator[uint64] {
 	return newRegularBucketIterator(h, false)
 }
 
@@ -148,7 +148,7 @@ func (h *Histogram) NegativeBucketIterator() BucketIterator {
 // cumulative view of the buckets. This method currently only supports
 // Histograms without negative buckets and panics if the Histogram has negative
 // buckets. It is currently only used for testing.
-func (h *Histogram) CumulativeBucketIterator() BucketIterator {
+func (h *Histogram) CumulativeBucketIterator() BucketIterator[uint64] {
 	if len(h.NegativeBuckets) > 0 {
 		panic("CumulativeBucketIterator called on Histogram with negative buckets")
 	}
@@ -319,49 +319,6 @@ func (h *Histogram) ToFloat() *FloatHistogram {
 	}
 }
 
-// BucketIterator iterates over the buckets of a Histogram, returning decoded
-// buckets.
-type BucketIterator interface {
-	// Next advances the iterator by one.
-	Next() bool
-	// At returns the current bucket.
-	At() Bucket
-}
-
-// Bucket represents a bucket with lower and upper limit and the count of
-// samples in the bucket. It also specifies if each limit is inclusive or
-// not. (Mathematically, inclusive limits create a closed interval, and
-// non-inclusive limits an open interval.)
-//
-// To represent cumulative buckets, Lower is set to -Inf, and the Count is then
-// cumulative (including the counts of all buckets for smaller values).
-type Bucket struct {
-	Lower, Upper                   float64
-	LowerInclusive, UpperInclusive bool
-	Count                          uint64
-	Index                          int32 // Index within schema. To easily compare buckets that share the same schema.
-}
-
-// String returns a string representation of a Bucket, using the usual
-// mathematical notation of '['/']' for inclusive bounds and '('/')' for
-// non-inclusive bounds.
-func (b Bucket) String() string {
-	var sb strings.Builder
-	if b.LowerInclusive {
-		sb.WriteRune('[')
-	} else {
-		sb.WriteRune('(')
-	}
-	fmt.Fprintf(&sb, "%g,%g", b.Lower, b.Upper)
-	if b.UpperInclusive {
-		sb.WriteRune(']')
-	} else {
-		sb.WriteRune(')')
-	}
-	fmt.Fprintf(&sb, ":%d", b.Count)
-	return sb.String()
-}
-
 type regularBucketIterator struct {
 	schema  int32
 	spans   []Span
@@ -418,8 +375,8 @@ func (r *regularBucketIterator) Next() bool {
 	return true
 }
 
-func (r *regularBucketIterator) At() Bucket {
-	b := Bucket{
+func (r *regularBucketIterator) At() Bucket[uint64] {
+	b := Bucket[uint64]{
 		Count: uint64(r.currCount),
 		Index: r.currIdx,
 	}
@@ -509,8 +466,8 @@ func (c *cumulativeBucketIterator) Next() bool {
 	return true
 }
 
-func (c *cumulativeBucketIterator) At() Bucket {
-	return Bucket{
+func (c *cumulativeBucketIterator) At() Bucket[uint64] {
+	return Bucket[uint64]{
 		Upper:          c.currUpper,
 		Lower:          math.Inf(-1),
 		UpperInclusive: true,
