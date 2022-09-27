@@ -348,162 +348,32 @@ func addBucket(
 // maxEmptyBuckets. (The actual implementation might do something more efficient
 // but with the same result.)  The compaction happens "in place" in the
 // receiving histogram, but a pointer to it is returned for convenience.
+//
+// The ideal value for maxEmptyBuckets depends on circumstances. The motivation
+// to set maxEmptyBuckets > 0 is the assumption that is is less overhead to
+// represent very few empty buckets explicitly within one span than cutting the
+// one span into two to treat the empty buckets as a gap between the two spans,
+// both in terms of storage requirement as well as in terms of encoding and
+// decoding effort. However, the tradeoffs are subtle. For one, they are
+// different in the exposition format vs. in a TSDB chunk vs. for the in-memory
+// representation as Go types. In the TSDB, as an additional aspects, the span
+// layout is only stored once per chunk, while many histograms with that same
+// chunk layout are then only stored with their buckets (so that even a single
+// empty bucket will be stored many times).
+//
+// For the Go types, an additional Span takes 8 bytes. Similarly, an additional
+// bucket takes 8 bytes. Therefore, with a single separating empty bucket, both
+// options have the same storage requirement, but the single-span solution is
+// easier to iterate through. Still, the safest bet is to use maxEmptyBuckets==0
+// and only use a larger number if you know what you are doing.
 func (h *FloatHistogram) Compact(maxEmptyBuckets int) *FloatHistogram {
 	h.PositiveBuckets, h.PositiveSpans = compactBuckets(
-		h.PositiveBuckets, h.PositiveSpans, maxEmptyBuckets,
+		h.PositiveBuckets, h.PositiveSpans, maxEmptyBuckets, false,
 	)
 	h.NegativeBuckets, h.NegativeSpans = compactBuckets(
-		h.NegativeBuckets, h.NegativeSpans, maxEmptyBuckets,
+		h.NegativeBuckets, h.NegativeSpans, maxEmptyBuckets, false,
 	)
 	return h
-}
-
-func compactBuckets(buckets []float64, spans []Span, maxEmptyBuckets int) ([]float64, []Span) {
-	if len(buckets) == 0 {
-		return buckets, spans
-	}
-
-	var iBucket, iSpan int
-	var posInSpan uint32
-
-	// Helper function.
-	emptyBucketsHere := func() int {
-		i := 0
-		for i+iBucket < len(buckets) &&
-			uint32(i)+posInSpan < spans[iSpan].Length &&
-			buckets[i+iBucket] == 0 {
-			i++
-		}
-		return i
-	}
-
-	// Merge spans with zero-offset to avoid special cases later.
-	if len(spans) > 1 {
-		for i, span := range spans[1:] {
-			if span.Offset == 0 {
-				spans[iSpan].Length += span.Length
-				continue
-			}
-			iSpan++
-			if i+1 != iSpan {
-				spans[iSpan] = span
-			}
-		}
-		spans = spans[:iSpan+1]
-		iSpan = 0
-	}
-
-	// Merge spans with zero-length to avoid special cases later.
-	for i, span := range spans {
-		if span.Length == 0 {
-			if i+1 < len(spans) {
-				spans[i+1].Offset += span.Offset
-			}
-			continue
-		}
-		if i != iSpan {
-			spans[iSpan] = span
-		}
-		iSpan++
-	}
-	spans = spans[:iSpan]
-	iSpan = 0
-
-	// Cut out empty buckets from start and end of spans, no matter
-	// what. Also cut out empty buckets from the middle of a span but only
-	// if there are more than maxEmptyBuckets consecutive empty buckets.
-	for iBucket < len(buckets) {
-		if nEmpty := emptyBucketsHere(); nEmpty > 0 {
-			if posInSpan > 0 &&
-				nEmpty < int(spans[iSpan].Length-posInSpan) &&
-				nEmpty <= maxEmptyBuckets {
-				// The empty buckets are in the middle of a
-				// span, and there are few enough to not bother.
-				// Just fast-forward.
-				iBucket += nEmpty
-				posInSpan += uint32(nEmpty)
-				continue
-			}
-			// In all other cases, we cut out the empty buckets.
-			buckets = append(buckets[:iBucket], buckets[iBucket+nEmpty:]...)
-			if posInSpan == 0 {
-				// Start of span.
-				if nEmpty == int(spans[iSpan].Length) {
-					// The whole span is empty.
-					offset := spans[iSpan].Offset
-					spans = append(spans[:iSpan], spans[iSpan+1:]...)
-					if len(spans) > iSpan {
-						spans[iSpan].Offset += offset + int32(nEmpty)
-					}
-					continue
-				}
-				spans[iSpan].Length -= uint32(nEmpty)
-				spans[iSpan].Offset += int32(nEmpty)
-				continue
-			}
-			// It's in the middle or in the end of the span.
-			// Split the current span.
-			newSpan := Span{
-				Offset: int32(nEmpty),
-				Length: spans[iSpan].Length - posInSpan - uint32(nEmpty),
-			}
-			spans[iSpan].Length = posInSpan
-			// In any case, we have to split to the next span.
-			iSpan++
-			posInSpan = 0
-			if newSpan.Length == 0 {
-				// The span is empty, so we were already at the end of a span.
-				// We don't have to insert the new span, just adjust the next
-				// span's offset, if there is one.
-				if iSpan < len(spans) {
-					spans[iSpan].Offset += int32(nEmpty)
-				}
-				continue
-			}
-			// Insert the new span.
-			spans = append(spans, Span{})
-			if iSpan+1 < len(spans) {
-				copy(spans[iSpan+1:], spans[iSpan:])
-			}
-			spans[iSpan] = newSpan
-			continue
-		}
-		iBucket++
-		posInSpan++
-		if posInSpan >= spans[iSpan].Length {
-			posInSpan = 0
-			iSpan++
-		}
-	}
-	if maxEmptyBuckets == 0 || len(buckets) == 0 {
-		return buckets, spans
-	}
-
-	// Finally, check if any offsets between spans are small enough to merge
-	// the spans.
-	iBucket = int(spans[0].Length)
-	iSpan = 1
-	for iSpan < len(spans) {
-		if int(spans[iSpan].Offset) > maxEmptyBuckets {
-			iBucket += int(spans[iSpan].Length)
-			iSpan++
-			continue
-		}
-		// Merge span with previous one and insert empty buckets.
-		offset := int(spans[iSpan].Offset)
-		spans[iSpan-1].Length += uint32(offset) + spans[iSpan].Length
-		spans = append(spans[:iSpan], spans[iSpan+1:]...)
-		newBuckets := make([]float64, len(buckets)+offset)
-		copy(newBuckets, buckets[:iBucket])
-		copy(newBuckets[iBucket+offset:], buckets[iBucket:])
-		iBucket += offset
-		buckets = newBuckets
-		// Note that with many merges, it would be more efficient to
-		// first record all the chunks of empty buckets to insert and
-		// then do it in one go through all the buckets.
-	}
-
-	return buckets, spans
 }
 
 // DetectReset returns true if the receiving histogram is missing any buckets
@@ -515,21 +385,21 @@ func compactBuckets(buckets []float64, spans []Span, maxEmptyBuckets int) ([]flo
 // Special behavior in case the Schema or the ZeroThreshold are not the same in
 // both histograms:
 //
-// * A decrease of the ZeroThreshold or an increase of the Schema (i.e. an
-//   increase of resolution) can only happen together with a reset. Thus, the
-//   method returns true in either case.
+//   - A decrease of the ZeroThreshold or an increase of the Schema (i.e. an
+//     increase of resolution) can only happen together with a reset. Thus, the
+//     method returns true in either case.
 //
-// * Upon an increase of the ZeroThreshold, the buckets in the previous
-//   histogram that fall within the new ZeroThreshold are added to the ZeroCount
-//   of the previous histogram (without mutating the provided previous
-//   histogram). The scenario that a populated bucket of the previous histogram
-//   is partially within, partially outside of the new ZeroThreshold, can only
-//   happen together with a counter reset and therefore shortcuts to returning
-//   true.
+//   - Upon an increase of the ZeroThreshold, the buckets in the previous
+//     histogram that fall within the new ZeroThreshold are added to the ZeroCount
+//     of the previous histogram (without mutating the provided previous
+//     histogram). The scenario that a populated bucket of the previous histogram
+//     is partially within, partially outside of the new ZeroThreshold, can only
+//     happen together with a counter reset and therefore shortcuts to returning
+//     true.
 //
-// * Upon a decrease of the Schema, the buckets of the previous histogram are
-//   merged so that they match the new, lower-resolution schema (again without
-//   mutating the provided previous histogram).
+//   - Upon a decrease of the Schema, the buckets of the previous histogram are
+//     merged so that they match the new, lower-resolution schema (again without
+//     mutating the provided previous histogram).
 //
 // Note that this kind of reset detection is quite expensive. Ideally, resets
 // are detected at ingest time and stored in the TSDB, so that the reset
@@ -764,7 +634,7 @@ func (h *FloatHistogram) trimBucketsInZeroBucket() {
 	// We are abusing Compact to trim the buckets set to zero
 	// above. Premature compacting could cause additional cost, but this
 	// code path is probably rarely used anyway.
-	h.Compact(3)
+	h.Compact(0)
 }
 
 // reconcileZeroBuckets finds a zero bucket large enough to include the zero

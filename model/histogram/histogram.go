@@ -27,11 +27,11 @@ import (
 // An example for schema 0 (by which each bucket is twice as wide as the
 // previous bucket):
 //
-//   Bucket boundaries →              [-2,-1)  [-1,-0.5) [-0.5,-0.25) ... [-0.001,0.001] ... (0.25,0.5] (0.5,1]  (1,2] ....
-//                                       ↑        ↑           ↑                  ↑                ↑         ↑      ↑
-//   Zero bucket (width e.g. 0.001) →    |        |           |                  ZB               |         |      |
-//   Positive bucket indices →           |        |           |                          ...     -1         0      1    2    3
-//   Negative bucket indices →  3   2    1        0          -1       ...
+//	Bucket boundaries →              [-2,-1)  [-1,-0.5) [-0.5,-0.25) ... [-0.001,0.001] ... (0.25,0.5] (0.5,1]  (1,2] ....
+//	                                    ↑        ↑           ↑                  ↑                ↑         ↑      ↑
+//	Zero bucket (width e.g. 0.001) →    |        |           |                  ZB               |         |      |
+//	Positive bucket indices →           |        |           |                          ...     -1         0      1    2    3
+//	Negative bucket indices →  3   2    1        0          -1       ...
 //
 // Which bucket indices are actually used is determined by the spans.
 type Histogram struct {
@@ -260,6 +260,18 @@ func bucketsMatch(b1, b2 []int64) bool {
 		}
 	}
 	return true
+}
+
+// Compact works like FloatHistogram.Compact. See there for detailed
+// explanations.
+func (h *Histogram) Compact(maxEmptyBuckets int) *Histogram {
+	h.PositiveBuckets, h.PositiveSpans = compactBuckets(
+		h.PositiveBuckets, h.PositiveSpans, maxEmptyBuckets, true,
+	)
+	h.NegativeBuckets, h.NegativeSpans = compactBuckets(
+		h.NegativeBuckets, h.NegativeSpans, maxEmptyBuckets, true,
+	)
+	return h
 }
 
 // ToFloat returns a FloatHistogram representation of the Histogram. It is a
