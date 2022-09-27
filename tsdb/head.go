@@ -1030,6 +1030,13 @@ func (h *Head) WaitForPendingReadersInTimeRange(mint, maxt int64) {
 	}
 }
 
+// WaitForAppendersOverlapping waits for appends overlapping maxt to finish.
+func (h *Head) WaitForAppendersOverlapping(maxt int64) {
+	for maxt >= h.iso.lowestAppendTime() {
+		time.Sleep(500 * time.Millisecond)
+	}
+}
+
 // IsQuerierCollidingWithTruncation returns if the current querier needs to be closed and if a new querier
 // has to be created. In the latter case, the method also returns the new mint to be used for creating the
 // new range head and the new querier. This methods helps preventing races with the truncation of in-memory data.
@@ -1235,6 +1242,8 @@ func (h *Head) Stats(statsByLabelName string) *Stats {
 type RangeHead struct {
 	head       *Head
 	mint, maxt int64
+
+	isolationOff bool
 }
 
 // NewRangeHead returns a *RangeHead.
@@ -1247,12 +1256,23 @@ func NewRangeHead(head *Head, mint, maxt int64) *RangeHead {
 	}
 }
 
+// NewRangeHeadWithIsolationDisabled returns a *RangeHead that does not create an isolationState.
+func NewRangeHeadWithIsolationDisabled(head *Head, mint, maxt int64) *RangeHead {
+	rh := NewRangeHead(head, mint, maxt)
+	rh.isolationOff = true
+	return rh
+}
+
 func (h *RangeHead) Index() (IndexReader, error) {
 	return h.head.indexRange(h.mint, h.maxt), nil
 }
 
 func (h *RangeHead) Chunks() (ChunkReader, error) {
-	return h.head.chunksRange(h.mint, h.maxt, h.head.iso.State(h.mint, h.maxt))
+	var isoState *isolationState
+	if !h.isolationOff {
+		isoState = h.head.iso.State(h.mint, h.maxt)
+	}
+	return h.head.chunksRange(h.mint, h.maxt, isoState)
 }
 
 func (h *RangeHead) Tombstones() (tombstones.Reader, error) {

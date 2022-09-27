@@ -1059,7 +1059,15 @@ func (db *DB) Compact() (returnErr error) {
 		// so in order to make sure that overlaps are evaluated
 		// consistently, we explicitly remove the last value
 		// from the block interval here.
-		if err := db.compactHead(NewRangeHead(db.head, mint, maxt-1)); err != nil {
+		rh := NewRangeHeadWithIsolationDisabled(db.head, mint, maxt-1)
+
+		// Compaction runs with isolation disabled, because head.compactable()
+		// ensures that maxt is more than chunkRange/2 back from now, and
+		// head.appendableMinValidTime() ensures that no new appends can start within the compaction range.
+		// We do need to wait for any overlapping appenders that started previously to finish.
+		db.head.WaitForAppendersOverlapping(rh.MaxTime())
+
+		if err := db.compactHead(rh); err != nil {
 			return errors.Wrap(err, "compact head")
 		}
 		// Consider only successful compactions for WAL truncation.

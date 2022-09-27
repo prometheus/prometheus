@@ -124,7 +124,8 @@ func (h *Head) Appender(_ context.Context) storage.Appender {
 }
 
 func (h *Head) appender() *headAppender {
-	appendID, cleanupAppendIDsBelow := h.iso.newAppendID() // Every appender gets an ID that is cleared upon commit/rollback.
+	minValidTime := h.appendableMinValidTime()
+	appendID, cleanupAppendIDsBelow := h.iso.newAppendID(minValidTime) // Every appender gets an ID that is cleared upon commit/rollback.
 
 	// Allocate the exemplars buffer only if exemplars are enabled.
 	var exemplarsBuf []exemplarWithSeriesRef
@@ -134,7 +135,7 @@ func (h *Head) appender() *headAppender {
 
 	return &headAppender{
 		head:                  h,
-		minValidTime:          h.appendableMinValidTime(),
+		minValidTime:          minValidTime,
 		mint:                  math.MaxInt64,
 		maxt:                  math.MinInt64,
 		headMaxt:              h.MaxTime(),
