@@ -452,7 +452,14 @@ func TestEndpoints(t *testing.T) {
 	})
 }
 
-func TestLabelNames(t *testing.T) {
+type byLabels []labels.Labels
+
+func (b byLabels) Len() int           { return len(b) }
+func (b byLabels) Swap(i, j int)      { b[i], b[j] = b[j], b[i] }
+func (b byLabels) Less(i, j int) bool { return labels.Compare(b[i], b[j]) < 0 }
+
+func TestGetSeries(t *testing.T) {
+
 	// TestEndpoints doesn't have enough label names to test api.labelNames
 	// endpoint properly. Hence we test it separately.
 	suite, err := promql.NewTest(t, `
@@ -466,7 +473,6 @@ func TestLabelNames(t *testing.T) {
 	require.NoError(t, err)
 	defer suite.Close()
 	require.NoError(t, suite.Run())
-
 	api := &API{
 		Queryable: suite.Storage(),
 	}
@@ -487,28 +493,163 @@ func TestLabelNames(t *testing.T) {
 	}
 
 	for _, tc := range []struct {
-		name     string
-		matchers []string
-		expected []string
+		name              string
+		api               *API
+		matchers          []string
+		expected          []labels.Labels
+		expectedErrorType errorType
+	}{
+		{
+			name:              "no matchers",
+			expectedErrorType: errorBadData,
+			api:               api,
+		},
+		{
+			name:     "non empty label matcher",
+			matchers: []string{`{foo=~".+"}`},
+			expected: []labels.Labels{
+				{labels.Label{Name: "__name__", Value: "test_metric2"}, labels.Label{Name: "abc", Value: "qwerty"}, labels.Label{Name: "foo", Value: "baz"}},
+				{labels.Label{Name: "__name__", Value: "test_metric2"}, labels.Label{Name: "foo", Value: "boo"}},
+				{labels.Label{Name: "__name__", Value: "test_metric2"}, labels.Label{Name: "foo", Value: "boo"}, labels.Label{Name: "xyz", Value: "qwerty"}},
+			},
+			api: api,
+		},
+		{
+			name:     "exact label matcher",
+			matchers: []string{`{foo="boo"}`},
+			expected: []labels.Labels{
+				{labels.Label{Name: "__name__", Value: "test_metric2"}, labels.Label{Name: "foo", Value: "boo"}},
+				{labels.Label{Name: "__name__", Value: "test_metric2"}, labels.Label{Name: "foo", Value: "boo"}, labels.Label{Name: "xyz", Value: "qwerty"}},
+			},
+			api: api,
+		},
+		{
+			name:     "two matchers",
+			matchers: []string{`{foo="boo"}`, `{foo="baz"}`},
+			expected: []labels.Labels{
+				{labels.Label{Name: "__name__", Value: "test_metric2"}, labels.Label{Name: "abc", Value: "qwerty"}, labels.Label{Name: "foo", Value: "baz"}},
+				{labels.Label{Name: "__name__", Value: "test_metric2"}, labels.Label{Name: "foo", Value: "boo"}},
+				{labels.Label{Name: "__name__", Value: "test_metric2"}, labels.Label{Name: "foo", Value: "boo"}, labels.Label{Name: "xyz", Value: "qwerty"}},
+			},
+			api: api,
+		},
+		{
+			name:              "exec error type",
+			matchers:          []string{`{foo="boo"}`, `{foo="baz"}`},
+			expectedErrorType: errorExec,
+			api: &API{
+				Queryable: errorTestQueryable{err: fmt.Errorf("generic")},
+			},
+		},
+		{
+			name:              "storage error type",
+			matchers:          []string{`{foo="boo"}`, `{foo="baz"}`},
+			expectedErrorType: errorInternal,
+			api: &API{
+				Queryable: errorTestQueryable{err: promql.ErrStorage{Err: fmt.Errorf("generic")}},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			req, err := request(http.MethodGet, tc.matchers...)
+			require.NoError(t, err)
+			res := tc.api.series(req.WithContext(ctx))
+			assertAPIError(t, res.err, tc.expectedErrorType)
+			if tc.expectedErrorType == errorNone {
+				r := res.data.([]labels.Labels)
+				for _, l := range tc.expected {
+					sort.Sort(l)
+				}
+				for _, l := range r {
+					sort.Sort(l)
+				}
+				sort.Sort(byLabels(tc.expected))
+				sort.Sort(byLabels(r))
+				require.Equal(t, tc.expected, r)
+			}
+		})
+	}
+}
+
+func TestLabelNames(t *testing.T) {
+	// TestEndpoints doesn't have enough label names to test api.labelNames
+	// endpoint properly. Hence we test it separately.
+	suite, err := promql.NewTest(t, `
+		load 1m
+			test_metric1{foo1="bar", baz="abc"} 0+100x100
+			test_metric1{foo2="boo"} 1+0x100
+			test_metric2{foo="boo"} 1+0x100
+			test_metric2{foo="boo", xyz="qwerty"} 1+0x100
+			test_metric2{foo="baz", abc="qwerty"} 1+0x100
+	`)
+	require.NoError(t, err)
+	defer suite.Close()
+	require.NoError(t, suite.Run())
+	api := &API{
+		Queryable: suite.Storage(),
+	}
+	request := func(method string, matchers ...string) (*http.Request, error) {
+		u, err := url.Parse("http://example.com")
+		require.NoError(t, err)
+		q := u.Query()
+		for _, matcher := range matchers {
+			q.Add("match[]", matcher)
+		}
+		u.RawQuery = q.Encode()
+
+		r, err := http.NewRequest(method, u.String(), nil)
+		if method == http.MethodPost {
+			r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		}
+		return r, err
+	}
+
+	for _, tc := range []struct {
+		name              string
+		api               *API
+		matchers          []string
+		expected          []string
+		expectedErrorType errorType
 	}{
 		{
 			name:     "no matchers",
 			expected: []string{"__name__", "abc", "baz", "foo", "foo1", "foo2", "xyz"},
+			api:      api,
 		},
 		{
 			name:     "non empty label matcher",
 			matchers: []string{`{foo=~".+"}`},
 			expected: []string{"__name__", "abc", "foo", "xyz"},
+			api:      api,
 		},
 		{
 			name:     "exact label matcher",
 			matchers: []string{`{foo="boo"}`},
 			expected: []string{"__name__", "foo", "xyz"},
+			api:      api,
 		},
 		{
 			name:     "two matchers",
 			matchers: []string{`{foo="boo"}`, `{foo="baz"}`},
 			expected: []string{"__name__", "abc", "foo", "xyz"},
+			api:      api,
+		},
+		{
+			name:              "exec error type",
+			matchers:          []string{`{foo="boo"}`, `{foo="baz"}`},
+			expectedErrorType: errorExec,
+			api: &API{
+				Queryable: errorTestQueryable{err: fmt.Errorf("generic")},
+			},
+		},
+		{
+			name:              "storage error type",
+			matchers:          []string{`{foo="boo"}`, `{foo="baz"}`},
+			expectedErrorType: errorInternal,
+			api: &API{
+				Queryable: errorTestQueryable{err: promql.ErrStorage{Err: fmt.Errorf("generic")}},
+			},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -516,9 +657,11 @@ func TestLabelNames(t *testing.T) {
 				ctx := context.Background()
 				req, err := request(method, tc.matchers...)
 				require.NoError(t, err)
-				res := api.labelNames(req.WithContext(ctx))
-				assertAPIError(t, res.err, "")
-				assertAPIResponse(t, res.data, tc.expected)
+				res := tc.api.labelNames(req.WithContext(ctx))
+				assertAPIError(t, res.err, tc.expectedErrorType)
+				if tc.expectedErrorType == errorNone {
+					assertAPIResponse(t, res.data, tc.expected)
+				}
 			}
 		})
 	}
