@@ -135,13 +135,13 @@ func (h *Histogram) ZeroBucket() Bucket[uint64] {
 // PositiveBucketIterator returns a BucketIterator to iterate over all positive
 // buckets in ascending order (starting next to the zero bucket and going up).
 func (h *Histogram) PositiveBucketIterator() BucketIterator[uint64] {
-	return newRegularBucketIterator(h, true)
+	return newRegularBucketIterator(h.PositiveSpans, h.PositiveBuckets, h.Schema, true)
 }
 
 // NegativeBucketIterator returns a BucketIterator to iterate over all negative
 // buckets in descending order (starting next to the zero bucket and going down).
 func (h *Histogram) NegativeBucketIterator() BucketIterator[uint64] {
-	return newRegularBucketIterator(h, false)
+	return newRegularBucketIterator(h.NegativeSpans, h.NegativeBuckets, h.Schema, false)
 }
 
 // CumulativeBucketIterator returns a BucketIterator to iterate over a
@@ -320,30 +320,17 @@ func (h *Histogram) ToFloat() *FloatHistogram {
 }
 
 type regularBucketIterator struct {
-	schema  int32
-	spans   []Span
-	buckets []int64
-
-	positive bool // Whether this is for positive buckets.
-
-	spansIdx   int    // Current span within spans slice.
-	idxInSpan  uint32 // Index in the current span. 0 <= idxInSpan < span.Length.
-	bucketsIdx int    // Current bucket within buckets slice.
-
-	currCount int64 // Count in the current bucket.
-	currIdx   int32 // The actual bucket index.
+	baseBucketIterator[uint64, int64]
 }
 
-func newRegularBucketIterator(h *Histogram, positive bool) *regularBucketIterator {
-	r := &regularBucketIterator{schema: h.Schema, positive: positive}
-	if positive {
-		r.spans = h.PositiveSpans
-		r.buckets = h.PositiveBuckets
-	} else {
-		r.spans = h.NegativeSpans
-		r.buckets = h.NegativeBuckets
+func newRegularBucketIterator(spans []Span, buckets []int64, schema int32, positive bool) *regularBucketIterator {
+	i := baseBucketIterator[uint64, int64]{
+		schema:   schema,
+		spans:    spans,
+		buckets:  buckets,
+		positive: positive,
 	}
-	return r
+	return &regularBucketIterator{i}
 }
 
 func (r *regularBucketIterator) Next() bool {
@@ -373,23 +360,6 @@ func (r *regularBucketIterator) Next() bool {
 	r.idxInSpan++
 	r.bucketsIdx++
 	return true
-}
-
-func (r *regularBucketIterator) At() Bucket[uint64] {
-	b := Bucket[uint64]{
-		Count: uint64(r.currCount),
-		Index: r.currIdx,
-	}
-	if r.positive {
-		b.Upper = getBound(r.currIdx, r.schema)
-		b.Lower = getBound(r.currIdx-1, r.schema)
-	} else {
-		b.Lower = -getBound(r.currIdx, r.schema)
-		b.Upper = -getBound(r.currIdx-1, r.schema)
-	}
-	b.LowerInclusive = b.Lower < 0
-	b.UpperInclusive = b.Upper > 0
-	return b
 }
 
 type cumulativeBucketIterator struct {

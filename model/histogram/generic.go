@@ -35,15 +35,6 @@ type internalBucketCount interface {
 	float64 | int64
 }
 
-// BucketIterator iterates over the buckets of a Histogram, returning decoded
-// buckets.
-type BucketIterator[BC BucketCount] interface {
-	// Next advances the iterator by one.
-	Next() bool
-	// At returns the current bucket.
-	At() Bucket[BC]
-}
-
 // Bucket represents a bucket with lower and upper limit and the absolute count
 // of samples in the bucket. It also specifies if each limit is inclusive or
 // not. (Mathematically, inclusive limits create a closed interval, and
@@ -79,6 +70,51 @@ func (b Bucket[BC]) String() string {
 	}
 	fmt.Fprintf(&sb, ":%v", b.Count)
 	return sb.String()
+}
+
+// BucketIterator iterates over the buckets of a Histogram, returning decoded
+// buckets.
+type BucketIterator[BC BucketCount] interface {
+	// Next advances the iterator by one.
+	Next() bool
+	// At returns the current bucket.
+	At() Bucket[BC]
+}
+
+// baseBucketIterator provides a struct that is shared by most BucketIterator
+// implementations, together with an implementation of the At method. This
+// iterator can be embedded in full implementations of BucketIterator to save on
+// code replication.
+type baseBucketIterator[BC BucketCount, IBC internalBucketCount] struct {
+	schema  int32
+	spans   []Span
+	buckets []IBC
+
+	positive bool // Whether this is for positive buckets.
+
+	spansIdx   int    // Current span within spans slice.
+	idxInSpan  uint32 // Index in the current span. 0 <= idxInSpan < span.Length.
+	bucketsIdx int    // Current bucket within buckets slice.
+
+	currCount IBC   // Count in the current bucket.
+	currIdx   int32 // The actual bucket index.
+}
+
+func (b baseBucketIterator[BC, IBC]) At() Bucket[BC] {
+	bucket := Bucket[BC]{
+		Count: BC(b.currCount),
+		Index: b.currIdx,
+	}
+	if b.positive {
+		bucket.Upper = getBound(b.currIdx, b.schema)
+		bucket.Lower = getBound(b.currIdx-1, b.schema)
+	} else {
+		bucket.Lower = -getBound(b.currIdx, b.schema)
+		bucket.Upper = -getBound(b.currIdx-1, b.schema)
+	}
+	bucket.LowerInclusive = bucket.Lower < 0
+	bucket.UpperInclusive = bucket.Upper > 0
+	return bucket
 }
 
 // compactBuckets is a generic function used by both Histogram.Compact and
