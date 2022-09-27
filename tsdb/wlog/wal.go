@@ -277,7 +277,7 @@ func NewSize(logger log.Logger, reg prometheus.Registerer, dir string, segmentSi
 	}
 	prefix := "prometheus_tsdb_wal_"
 	if filepath.Base(dir) == WblDirName {
-		prefix = "prometheus_tsdb_out_of_order_wal_"
+		prefix = "prometheus_tsdb_out_of_order_wbl_"
 	}
 	w.metrics = newWLMetrics(prometheus.WrapRegistererWithPrefix(prefix, reg))
 
