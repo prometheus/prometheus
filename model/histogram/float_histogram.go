@@ -15,7 +15,6 @@ package histogram
 
 import (
 	"fmt"
-	"math"
 	"strings"
 )
 
@@ -536,17 +535,6 @@ func (h *FloatHistogram) AllBucketIterator() BucketIterator[float64] {
 	}
 }
 
-// CumulativeBucketIterator returns a BucketIterator to iterate over a
-// cumulative view of the buckets. This method currently only supports
-// FloatHistograms without negative buckets and panics if the FloatHistogram has
-// negative buckets. It is currently only used for testing.
-func (h *FloatHistogram) CumulativeBucketIterator() BucketIterator[float64] {
-	if len(h.NegativeBuckets) > 0 {
-		panic("CumulativeBucketIterator called on FloatHistogram with negative buckets")
-	}
-	return &cumulativeFloatBucketIterator{h: h, posSpansIdx: -1}
-}
-
 // zeroCountForLargerThreshold returns what the histogram's zero count would be
 // if the ZeroThreshold had the provided larger (or equal) value. If the
 // provided value is less than the histogram's ZeroThreshold, the method panics.
@@ -880,84 +868,4 @@ func (i *allFloatBucketIterator) Next() bool {
 
 func (i *allFloatBucketIterator) At() Bucket[float64] {
 	return i.currBucket
-}
-
-type cumulativeFloatBucketIterator struct {
-	h *FloatHistogram
-
-	posSpansIdx   int    // Index in h.PositiveSpans we are in. -1 means 0 bucket.
-	posBucketsIdx int    // Index in h.PositiveBuckets.
-	idxInSpan     uint32 // Index in the current span. 0 <= idxInSpan < span.Length.
-
-	initialized         bool
-	currIdx             int32   // The actual bucket index after decoding from spans.
-	currUpper           float64 // The upper boundary of the current bucket.
-	currCumulativeCount float64 // Current "cumulative" count for the current bucket.
-
-	// Between 2 spans there could be some empty buckets which
-	// still needs to be counted for cumulative buckets.
-	// When we hit the end of a span, we use this to iterate
-	// through the empty buckets.
-	emptyBucketCount int32
-}
-
-func (c *cumulativeFloatBucketIterator) Next() bool {
-	if c.posSpansIdx == -1 {
-		// Zero bucket.
-		c.posSpansIdx++
-		if c.h.ZeroCount == 0 {
-			return c.Next()
-		}
-
-		c.currUpper = c.h.ZeroThreshold
-		c.currCumulativeCount = c.h.ZeroCount
-		return true
-	}
-
-	if c.posSpansIdx >= len(c.h.PositiveSpans) {
-		return false
-	}
-
-	if c.emptyBucketCount > 0 {
-		// We are traversing through empty buckets at the moment.
-		c.currUpper = getBound(c.currIdx, c.h.Schema)
-		c.currIdx++
-		c.emptyBucketCount--
-		return true
-	}
-
-	span := c.h.PositiveSpans[c.posSpansIdx]
-	if c.posSpansIdx == 0 && !c.initialized {
-		// Initializing.
-		c.currIdx = span.Offset
-		c.initialized = true
-	}
-
-	c.currCumulativeCount += c.h.PositiveBuckets[c.posBucketsIdx]
-	c.currUpper = getBound(c.currIdx, c.h.Schema)
-
-	c.posBucketsIdx++
-	c.idxInSpan++
-	c.currIdx++
-	if c.idxInSpan >= span.Length {
-		// Move to the next span. This one is done.
-		c.posSpansIdx++
-		c.idxInSpan = 0
-		if c.posSpansIdx < len(c.h.PositiveSpans) {
-			c.emptyBucketCount = c.h.PositiveSpans[c.posSpansIdx].Offset
-		}
-	}
-
-	return true
-}
-
-func (c *cumulativeFloatBucketIterator) At() Bucket[float64] {
-	return Bucket[float64]{
-		Upper:          c.currUpper,
-		Lower:          math.Inf(-1),
-		UpperInclusive: true,
-		LowerInclusive: true,
-		Count:          c.currCumulativeCount,
-		Index:          c.currIdx - 1,
-	}
 }
