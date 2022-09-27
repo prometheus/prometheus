@@ -883,9 +883,8 @@ type reverseFloatBucketIterator struct {
 	idxInSpan  int32 // Index in the current span. 0 <= idxInSpan < span.Length.
 	bucketsIdx int   // Current bucket within buckets slice.
 
-	currCount            float64 // Count in the current bucket.
-	currIdx              int32   // The actual bucket index.
-	currLower, currUpper float64 // Limits of the current bucket.
+	currCount float64 // Count in the current bucket.
+	currIdx   int32   // The actual bucket index.
 }
 
 func (r *reverseFloatBucketIterator) Next() bool {
@@ -903,28 +902,26 @@ func (r *reverseFloatBucketIterator) Next() bool {
 	}
 
 	r.currCount = r.buckets[r.bucketsIdx]
-	if r.positive {
-		r.currUpper = getBound(r.currIdx, r.schema)
-		r.currLower = getBound(r.currIdx-1, r.schema)
-	} else {
-		r.currLower = -getBound(r.currIdx, r.schema)
-		r.currUpper = -getBound(r.currIdx-1, r.schema)
-	}
-
 	r.bucketsIdx--
 	r.idxInSpan--
 	return true
 }
 
 func (r *reverseFloatBucketIterator) At() FloatBucket {
-	return FloatBucket{
-		Count:          r.currCount,
-		Lower:          r.currLower,
-		Upper:          r.currUpper,
-		LowerInclusive: r.currLower < 0,
-		UpperInclusive: r.currUpper > 0,
-		Index:          r.currIdx,
+	b := FloatBucket{
+		Count: r.currCount,
+		Index: r.currIdx,
 	}
+	if r.positive {
+		b.Upper = getBound(r.currIdx, r.schema)
+		b.Lower = getBound(r.currIdx-1, r.schema)
+	} else {
+		b.Lower = -getBound(r.currIdx, r.schema)
+		b.Upper = -getBound(r.currIdx-1, r.schema)
+	}
+	b.LowerInclusive = b.Lower < 0
+	b.UpperInclusive = b.Upper > 0
+	return b
 }
 
 type allFloatBucketIterator struct {

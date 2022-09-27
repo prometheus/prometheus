@@ -373,9 +373,8 @@ type regularBucketIterator struct {
 	idxInSpan  uint32 // Index in the current span. 0 <= idxInSpan < span.Length.
 	bucketsIdx int    // Current bucket within buckets slice.
 
-	currCount            int64   // Count in the current bucket.
-	currIdx              int32   // The actual bucket index.
-	currLower, currUpper float64 // Limits of the current bucket.
+	currCount int64 // Count in the current bucket.
+	currIdx   int32 // The actual bucket index.
 }
 
 func newRegularBucketIterator(h *Histogram, positive bool) *regularBucketIterator {
@@ -414,28 +413,26 @@ func (r *regularBucketIterator) Next() bool {
 	}
 
 	r.currCount += r.buckets[r.bucketsIdx]
-	if r.positive {
-		r.currUpper = getBound(r.currIdx, r.schema)
-		r.currLower = getBound(r.currIdx-1, r.schema)
-	} else {
-		r.currLower = -getBound(r.currIdx, r.schema)
-		r.currUpper = -getBound(r.currIdx-1, r.schema)
-	}
-
 	r.idxInSpan++
 	r.bucketsIdx++
 	return true
 }
 
 func (r *regularBucketIterator) At() Bucket {
-	return Bucket{
-		Count:          uint64(r.currCount),
-		Lower:          r.currLower,
-		Upper:          r.currUpper,
-		LowerInclusive: r.currLower < 0,
-		UpperInclusive: r.currUpper > 0,
-		Index:          r.currIdx,
+	b := Bucket{
+		Count: uint64(r.currCount),
+		Index: r.currIdx,
 	}
+	if r.positive {
+		b.Upper = getBound(r.currIdx, r.schema)
+		b.Lower = getBound(r.currIdx-1, r.schema)
+	} else {
+		b.Lower = -getBound(r.currIdx, r.schema)
+		b.Upper = -getBound(r.currIdx-1, r.schema)
+	}
+	b.LowerInclusive = b.Lower < 0
+	b.UpperInclusive = b.Upper > 0
+	return b
 }
 
 type cumulativeBucketIterator struct {
