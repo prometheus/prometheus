@@ -1803,9 +1803,8 @@ type memSeries struct {
 
 	nextAt int64 // Timestamp at which to cut the next chunk.
 
-	// We keep the last 4 samples here (in addition to appending them to the chunk) so we don't need coordination between appender and querier.
-	// Even the most compact encoding of a sample takes 2 bits, so the last byte is not contended.
-	sampleBuf [4]sample
+	// We keep the last value here (in addition to appending it to the chunk) so we can check for duplicates.
+	lastValue float64
 
 	// Current appender for the head chunk. Set when a new head chunk is cut.
 	// It is nil only if headChunk is nil. E.g. if there was an appender that created a new series, but rolled back the commit
