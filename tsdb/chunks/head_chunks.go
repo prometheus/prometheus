@@ -388,7 +388,7 @@ func repairLastChunkFile(files map[int]string) (_ map[int]string, returnErr erro
 		buf := make([]byte, MagicChunksSize)
 		_, err = f.Read(buf)
 		if err != nil {
-			return files, errors.Wrap(err, "read file during last head chunk file repair")
+			return files, errors.Wrap(err, "failed to read magic number during last head chunk file repair")
 		}
 
 		remove = binary.BigEndian.Uint32(buf) == 0
