@@ -472,6 +472,11 @@ func TestHeadReadWriter_ReadRepairOnEmptyLastFile(t *testing.T) {
 	// Removes the 0 filled last file.
 	checkRepair()
 
+	// Write another corrupt file with less than 4 bytes (size of magic number).
+	writeCorruptLastFile([]byte{1, 2})
+	// Removes the partial file.
+	checkRepair()
+
 	// Check that it does not delete a valid last file.
 	checkRepair()
 }
