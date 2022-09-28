@@ -1095,6 +1095,12 @@ var expectedConf = &Config{
 			},
 		},
 	},
+	StorageConfig: StorageConfig{
+		TSDBConfig: &TSDBConfig{
+			OutOfOrderTimeWindow:     30 * time.Minute.Milliseconds(),
+			OutOfOrderTimeWindowFlag: model.Duration(30 * time.Minute),
+		},
+	},
 	TracingConfig: TracingConfig{
 		Endpoint:    "localhost:4317",
 		ClientType:  TracingClientGRPC,

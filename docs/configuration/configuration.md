@@ -99,6 +99,7 @@ remote_read:
 
 # Storage related settings that are runtime reloadable.
 storage:
+  [ tsdb: <tsdb> ]
   [ exemplars: <exemplars> ]
 
 # Configures exporting traces.
@@ -2994,38 +2995,6 @@ relabel_configs:
   [ - <relabel_config> ... ]
 ```
 
-### `<tracing_config>`
-
-`tracing_config` configures exporting traces from Prometheus to a tracing backend via the OTLP protocol. Tracing is currently an **experimental** feature and could change in the future.
-
-```yaml
-# Client used to export the traces. Options are 'http' or 'grpc'.
-[ client_type: <string> | default = grpc ]
-
-# Endpoint to send the traces to. Should be provided in format <host>:<port>.
-[ endpoint: <string> ]
-
-# Sets the probability a given trace will be sampled. Must be a float from 0 through 1.
-[ sampling_fraction: <float> | default = 0 ]
-
-# If disabled, the client will use a secure connection.
-[ insecure: <boolean> | default = false ]
-
-# Key-value pairs to be used as headers associated with gRPC or HTTP requests.
-headers:
-  [ <string>: <string> ... ]
-
-# Compression key for supported compression types. Supported compression: gzip.
-[ compression: <string> ]
-
-# Maximum time the exporter will wait for each batch export.
-[ timeout: <duration> | default = 10s ]
-
-# TLS configuration.
-tls_config:
-  [ <tls_config> ]
-```
-
 ### `<remote_write>`
 
 `write_relabel_configs` is relabeling applied to samples before sending them
@@ -3227,6 +3196,25 @@ There is a list of
 [integrations](https://prometheus.io/docs/operating/integrations/#remote-endpoints-and-storage)
 with this feature.
 
+### `<tsdb>`
+
+`tsdb` lets you config the runtime reloadable configuration of the TSDB.
+
+NOTE: Out of order ingestion is an experimental feature, but you do not need any additional flag to enable it. Setting `out_of_order_time_window` to a positive duration enables it.
+
+```yaml
+# Configures how old an out-of-order/out-of-bounds sample can be w.r.t. the TSDB max time.
+# An out-of-order/out-of-bounds sample is ingested into TSDB as long as the timestamp
+# of the sample is >= TSDB.MaxTime-out_of_order_time_window.
+#
+# When out_of_order_time_window is >0, the errors out-of-order and out-of-bounds are
+# combined into a single error called 'too-old'; a sample is either (a) ingestible
+# into TSDB, i.e. it is an in-order sample or an out-of-order/out-of-bound sample
+# that is within the out-of-order window, or (b) too-old, i.e. not in-order
+# and before the out-of-order window.
+[ out_of_order_time_window: <duration> | default = 0s ]
+```
+
 ### `<exemplars>`
 
 Note that exemplar storage is still considered experimental and must be enabled via `--enable-feature=exemplar-storage`.
@@ -3234,4 +3222,36 @@ Note that exemplar storage is still considered experimental and must be enabled 
 ```yaml
 # Configures the maximum size of the circular buffer used to store exemplars for all series. Resizable during runtime.
 [ max_exemplars: <int> | default = 100000 ]
+```
+
+### `<tracing_config>`
+
+`tracing_config` configures exporting traces from Prometheus to a tracing backend via the OTLP protocol. Tracing is currently an **experimental** feature and could change in the future.
+
+```yaml
+# Client used to export the traces. Options are 'http' or 'grpc'.
+[ client_type: <string> | default = grpc ]
+
+# Endpoint to send the traces to. Should be provided in format <host>:<port>.
+[ endpoint: <string> ]
+
+# Sets the probability a given trace will be sampled. Must be a float from 0 through 1.
+[ sampling_fraction: <float> | default = 0 ]
+
+# If disabled, the client will use a secure connection.
+[ insecure: <boolean> | default = false ]
+
+# Key-value pairs to be used as headers associated with gRPC or HTTP requests.
+headers:
+  [ <string>: <string> ... ]
+
+# Compression key for supported compression types. Supported compression: gzip.
+[ compression: <string> ]
+
+# Maximum time the exporter will wait for each batch export.
+[ timeout: <duration> | default = 10s ]
+
+# TLS configuration.
+tls_config:
+  [ <tls_config> ]
 ```
