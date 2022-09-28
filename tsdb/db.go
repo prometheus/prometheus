@@ -76,8 +76,7 @@ func DefaultOptions() *Options {
 		MinBlockDuration:           DefaultBlockDuration,
 		MaxBlockDuration:           DefaultBlockDuration,
 		NoLockfile:                 false,
-		AllowOverlappingCompaction: false,
-		AllowOverlappingQueries:    false,
+		AllowOverlappingCompaction: true,
 		WALCompression:             false,
 		StripeSize:                 DefaultStripeSize,
 		HeadChunksWriteBufferSize:  chunks.DefaultWriteBufferSize,
@@ -114,18 +113,12 @@ type Options struct {
 	// NoLockfile disables creation and consideration of a lock file.
 	NoLockfile bool
 
-	// Querying on overlapping blocks are allowed if AllowOverlappingQueries is true.
-	// Since querying is a required operation for TSDB, if there are going to be
-	// overlapping blocks, then this should be set to true.
-	// NOTE: Do not use this directly in DB. Use it via DB.AllowOverlappingQueries().
-	AllowOverlappingQueries bool
-
 	// Compaction of overlapping blocks are allowed if AllowOverlappingCompaction is true.
 	// This is an optional flag for overlapping blocks.
 	// The reason why this flag exists is because there are various users of the TSDB
 	// that do not want vertical compaction happening on ingest time. Instead,
 	// they'd rather keep overlapping blocks and let another component do the overlapping compaction later.
-	// For Prometheus, this will always be enabled if overlapping queries is enabled.
+	// For Prometheus, this will always be true.
 	AllowOverlappingCompaction bool
 
 	// WALCompression will turn on Snappy compression for records on the WAL.
@@ -641,9 +634,6 @@ func validateOpts(opts *Options, rngs []int64) (*Options, []int64) {
 	}
 	if opts.MinBlockDuration > opts.MaxBlockDuration {
 		opts.MaxBlockDuration = opts.MinBlockDuration
-	}
-	if opts.OutOfOrderTimeWindow > 0 {
-		opts.AllowOverlappingQueries = true
 	}
 	if opts.OutOfOrderCapMax <= 0 {
 		opts.OutOfOrderCapMax = DefaultOutOfOrderCapMax
@@ -1368,11 +1358,6 @@ func (db *DB) reloadBlocks() (err error) {
 	sort.Slice(toLoad, func(i, j int) bool {
 		return toLoad[i].Meta().MinTime < toLoad[j].Meta().MinTime
 	})
-	if !db.AllowOverlappingQueries() {
-		if err := validateBlockSequence(toLoad); err != nil {
-			return errors.Wrap(err, "invalid block sequence")
-		}
-	}
 
 	// Swap new blocks first for subsequently created readers to be seen.
 	oldBlocks := db.blocks
@@ -1396,10 +1381,6 @@ func (db *DB) reloadBlocks() (err error) {
 		return errors.Wrapf(err, "delete %v blocks", len(deletable))
 	}
 	return nil
-}
-
-func (db *DB) AllowOverlappingQueries() bool {
-	return db.opts.AllowOverlappingQueries || db.oooWasEnabled.Load()
 }
 
 func openBlocks(l log.Logger, dir string, loaded []*Block, chunkPool chunkenc.Pool) (blocks []*Block, corrupted map[ulid.ULID]error, err error) {
@@ -1543,25 +1524,6 @@ func (db *DB) deleteBlocks(blocks map[ulid.ULID]*Block) error {
 			return errors.Wrapf(err, "delete obsolete block %s", ulid)
 		}
 		level.Info(db.logger).Log("msg", "Deleting obsolete block", "block", ulid)
-	}
-
-	return nil
-}
-
-// validateBlockSequence returns error if given block meta files indicate that some blocks overlaps within sequence.
-func validateBlockSequence(bs []*Block) error {
-	if len(bs) <= 1 {
-		return nil
-	}
-
-	var metas []BlockMeta
-	for _, b := range bs {
-		metas = append(metas, b.meta)
-	}
-
-	overlaps := OverlappingBlocks(metas)
-	if len(overlaps) > 0 {
-		return errors.Errorf("block time ranges overlap: %s", overlaps)
 	}
 
 	return nil
