@@ -22,6 +22,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
@@ -45,11 +46,17 @@ type readHandler struct {
 // writes them to the provided queryable.
 func NewReadHandler(logger log.Logger, r prometheus.Registerer, queryable storage.SampleAndChunkQueryable, config func() config.Config, remoteReadSampleLimit, remoteReadConcurrencyLimit, remoteReadMaxBytesInFrame int) http.Handler {
 	h := &readHandler{
-		logger:                    logger,
-		queryable:                 queryable,
-		config:                    config,
-		remoteReadSampleLimit:     remoteReadSampleLimit,
-		remoteReadGate:            gate.New(remoteReadConcurrencyLimit),
+		logger:                logger,
+		queryable:             queryable,
+		config:                config,
+		remoteReadSampleLimit: remoteReadSampleLimit,
+		remoteReadGate: gate.New(remoteReadConcurrencyLimit, promauto.With(r).NewCounter(prometheus.CounterOpts{
+			Namespace:   "prometheus",
+			Subsystem:   "api",
+			Help:        "Total sum of how long was the wait at the gate before query execution",
+			Name:        "gate_total_wait_duration_seconds",
+			ConstLabels: prometheus.Labels{"name": "read_handler"},
+		})),
 		remoteReadMaxBytesInFrame: remoteReadMaxBytesInFrame,
 		marshalPool:               &sync.Pool{},
 
