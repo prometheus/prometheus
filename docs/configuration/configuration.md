@@ -3200,7 +3200,7 @@ with this feature.
 
 `tsdb` lets you config the runtime reloadable configuration of the TSDB.
 
-NOTE: Out of order ingestion is an experimental feature, but you do not need any additional flag to enable it. Setting `out_of_order_time_window` to a positive number enables it.
+NOTE: Out of order ingestion is an experimental feature, but you do not need any additional flag to enable it. Setting `out_of_order_time_window` to a positive duration enables it.
 
 ```yaml
 # Configures how old an out-of-order/out-of-bounds sample can be w.r.t. the TSDB max time.
@@ -3210,9 +3210,9 @@ NOTE: Out of order ingestion is an experimental feature, but you do not need any
 # When out_of_order_time_window is >0, the errors out-of-order and out-of-bounds are
 # combined into a single error called 'too-old'; a sample is either (a) ingestible
 # into TSDB, i.e. it is an in-order sample or an out-of-order/out-of-bound sample
-# that is after TSDB.MaxTime-out_of_order_time_window, or (b) too-old, i.e. not in-order
-# and before TSDB.MaxTime-out_of_order_time_window.
-[ out_of_order_time_window: <duration> | default = 0 ]
+# that is within the out-of-order window, or (b) too-old, i.e. not in-order
+# and before the out-of-order window.
+[ out_of_order_time_window: <duration> | default = 0s ]
 ```
 
 ### `<exemplars>`
