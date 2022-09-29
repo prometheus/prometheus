@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { shallow, ShallowWrapper   } from 'enzyme';
+import { shallow, ShallowWrapper } from 'enzyme';
 import SeriesName from './SeriesName';
 
 describe('SeriesName', () => {
@@ -52,27 +52,27 @@ describe('SeriesName', () => {
         { name: '}', className: 'legend-label-brace' },
       ];
 
-      const testLabelContainerElement = (text:string, expectedText:string, container: ShallowWrapper) => {
+      const testLabelContainerElement = (text: string, expectedText: string, container: ShallowWrapper) => {
         expect(text).toEqual(expectedText);
         expect(container.prop('className')).toEqual('legend-label-container');
         expect(container.childAt(0).prop('className')).toEqual('legend-label-name');
         expect(container.childAt(2).prop('className')).toEqual('legend-label-value');
-      }
+      };
 
       testCases.forEach((tc, i) => {
         const child = seriesName.childAt(i);
         const firstChildElement = child.childAt(0);
-        const firstChildElementClass = firstChildElement.prop('className')
+        const firstChildElementClass = firstChildElement.prop('className');
         const text = child
           .children()
           .map((ch) => ch.text())
           .join('');
         switch (child.children().length) {
           case 1:
-            switch(firstChildElementClass) {
+            switch (firstChildElementClass) {
               case 'legend-label-container':
-                testLabelContainerElement(text, `${tc.name}="${tc.value}"`, firstChildElement)
-                break
+                testLabelContainerElement(text, `${tc.name}="${tc.value}"`, firstChildElement);
+                break;
               default:
                 expect(text).toEqual(tc.name);
                 expect(child.prop('className')).toEqual(tc.className);
@@ -80,7 +80,7 @@ describe('SeriesName', () => {
             break;
           case 2:
             const container = child.childAt(1);
-            testLabelContainerElement(text, `, ${tc.name}="${tc.value}"`, container)
+            testLabelContainerElement(text, `, ${tc.name}="${tc.value}"`, container);
             break;
           default:
             fail('incorrect number of children: ' + child.children().length);
