@@ -52,6 +52,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/util/httputil"
+	"github.com/prometheus/prometheus/util/jsonutil"
 	"github.com/prometheus/prometheus/util/stats"
 )
 
@@ -1659,9 +1660,9 @@ OUTER:
 func marshalPointJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
 	p := *((*promql.Point)(ptr))
 	stream.WriteArrayStart()
-	marshalTimestamp(p.T, stream)
+	jsonutil.MarshalTimestamp(p.T, stream)
 	stream.WriteMore()
-	marshalValue(p.V, stream)
+	jsonutil.MarshalValue(p.V, stream)
 	stream.WriteArrayEnd()
 }
 
@@ -1692,56 +1693,16 @@ func marshalExemplarJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
 	// "value" key.
 	stream.WriteMore()
 	stream.WriteObjectField(`value`)
-	marshalValue(p.Value, stream)
+	jsonutil.MarshalValue(p.Value, stream)
 
 	// "timestamp" key.
 	stream.WriteMore()
 	stream.WriteObjectField(`timestamp`)
-	marshalTimestamp(p.Ts, stream)
-	// marshalTimestamp(p.Ts, stream)
+	jsonutil.MarshalTimestamp(p.Ts, stream)
 
 	stream.WriteObjectEnd()
 }
 
 func marshalExemplarJSONEmpty(ptr unsafe.Pointer) bool {
 	return false
-}
-
-func marshalTimestamp(t int64, stream *jsoniter.Stream) {
-	// Write out the timestamp as a float divided by 1000.
-	// This is ~3x faster than converting to a float.
-	if t < 0 {
-		stream.WriteRaw(`-`)
-		t = -t
-	}
-	stream.WriteInt64(t / 1000)
-	fraction := t % 1000
-	if fraction != 0 {
-		stream.WriteRaw(`.`)
-		if fraction < 100 {
-			stream.WriteRaw(`0`)
-		}
-		if fraction < 10 {
-			stream.WriteRaw(`0`)
-		}
-		stream.WriteInt64(fraction)
-	}
-}
-
-func marshalValue(v float64, stream *jsoniter.Stream) {
-	stream.WriteRaw(`"`)
-	// Taken from https://github.com/json-iterator/go/blob/master/stream_float.go#L71 as a workaround
-	// to https://github.com/json-iterator/go/issues/365 (jsoniter, to follow json standard, doesn't allow inf/nan).
-	buf := stream.Buffer()
-	abs := math.Abs(v)
-	fmt := byte('f')
-	// Note: Must use float32 comparisons for underlying float32 value to get precise cutoffs right.
-	if abs != 0 {
-		if abs < 1e-6 || abs >= 1e21 {
-			fmt = 'e'
-		}
-	}
-	buf = strconv.AppendFloat(buf, v, fmt, -1, 64)
-	stream.SetBuffer(buf)
-	stream.WriteRaw(`"`)
 }
