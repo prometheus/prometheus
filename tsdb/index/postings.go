@@ -91,7 +91,7 @@ func (p *MemPostings) Symbols() StringIter {
 		res = append(res, k)
 	}
 
-	sort.Strings(res)
+	slices.Sort(res)
 	return NewStringListIter(res)
 }
 

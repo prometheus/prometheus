@@ -35,6 +35,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -1243,7 +1244,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 	case *parser.AggregateExpr:
 		// Grouping labels must be sorted (expected both by generateGroupingKey() and aggregation()).
 		sortedGrouping := e.Grouping
-		sort.Strings(sortedGrouping)
+		slices.Sort(sortedGrouping)
 
 		// Prepare a function to initialise series helpers with the grouping key.
 		buf := make([]byte, 0, 1024)
@@ -2059,13 +2060,13 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 
 func signatureFunc(on bool, b []byte, names ...string) func(labels.Labels) string {
 	if on {
-		sort.Strings(names)
+		slices.Sort(names)
 		return func(lset labels.Labels) string {
 			return string(lset.BytesWithLabels(b, names...))
 		}
 	}
 	names = append([]string{labels.MetricName}, names...)
-	sort.Strings(names)
+	slices.Sort(names)
 	return func(lset labels.Labels) string {
 		return string(lset.BytesWithoutLabels(b, names...))
 	}
@@ -2267,7 +2268,7 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 			// operator is less frequently used than other aggregations, we're fine having to
 			// re-compute the grouping key on each step for this case.
 			grouping = append(grouping, valueLabel)
-			sort.Strings(grouping)
+			slices.Sort(grouping)
 			recomputeGroupingKey = true
 		}
 	}

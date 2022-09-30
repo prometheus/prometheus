@@ -21,7 +21,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"sync"
 
@@ -29,6 +28,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/atomic"
+	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
@@ -308,7 +308,7 @@ func (cdm *ChunkDiskMapper) openMMapFiles() (returnErr error) {
 	}
 
 	// Check for gaps in the files.
-	sort.Ints(chkFileIndices)
+	slices.Sort(chkFileIndices)
 	if len(chkFileIndices) == 0 {
 		return nil
 	}
@@ -777,7 +777,7 @@ func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef HeadSeriesRef, chu
 	for seg := range cdm.mmappedChunkFiles {
 		segIDs = append(segIDs, seg)
 	}
-	sort.Ints(segIDs)
+	slices.Sort(segIDs)
 	for _, segID := range segIDs {
 		mmapFile := cdm.mmappedChunkFiles[segID]
 		fileEnd := mmapFile.byteSlice.Len()
@@ -894,7 +894,7 @@ func (cdm *ChunkDiskMapper) Truncate(fileNo uint32) error {
 	for seq := range cdm.mmappedChunkFiles {
 		chkFileIndices = append(chkFileIndices, seq)
 	}
-	sort.Ints(chkFileIndices)
+	slices.Sort(chkFileIndices)
 
 	var removedFiles []int
 	for _, seq := range chkFileIndices {
@@ -934,7 +934,7 @@ func (cdm *ChunkDiskMapper) Truncate(fileNo uint32) error {
 // deleteFiles deletes the given file sequences in order of the sequence.
 // In case of an error, it returns the sorted file sequences that were not deleted from the _disk_.
 func (cdm *ChunkDiskMapper) deleteFiles(removedFiles []int) ([]int, error) {
-	sort.Ints(removedFiles) // To delete them in order.
+	slices.Sort(removedFiles) // To delete them in order.
 	cdm.readPathMtx.Lock()
 	for _, seq := range removedFiles {
 		if err := cdm.closers[seq].Close(); err != nil {

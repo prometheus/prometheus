@@ -23,7 +23,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -37,6 +36,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
+	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/exemplar"
@@ -628,7 +628,7 @@ func (api *API) labelNames(r *http.Request) apiFuncResult {
 		for key := range labelNamesSet {
 			names = append(names, key)
 		}
-		sort.Strings(names)
+		slices.Sort(names)
 	} else {
 		names, warnings, err = q.LabelNames()
 		if err != nil {
@@ -713,7 +713,7 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 		}
 	}
 
-	sort.Strings(vals)
+	slices.Sort(vals)
 
 	return apiFuncResult{vals, nil, warnings, closer}
 }
@@ -908,7 +908,7 @@ func (api *API) targets(r *http.Request) apiFuncResult {
 			keys = append(keys, k)
 			n += len(targets[k])
 		}
-		sort.Strings(keys)
+		slices.Sort(keys)
 		return keys, n
 	}
 
