@@ -20,6 +20,9 @@ inputs:
   quay_io_password:
     type: string
     description: Quay.io password
+  github_token:
+    type: string
+    description: Github Token
 runs:
   using: composite
   steps:
@@ -33,6 +36,8 @@ runs:
       shell: bash
     - run: ~/go/bin/promu release .tarballs
       shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github_token }}
     - uses: ./.github/actions/publish_release_images
       if: inputs.docker_hub_organization != '' && inputs.docker_hub_login != ''
       with:
