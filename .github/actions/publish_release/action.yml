@@ -27,11 +27,11 @@ runs:
       with:
         enable_docker_multibuild: true
     - uses: ./.github/actions/restore_artifacts
-    - run: promu crossbuild tarballs
+    - run: ~/go/bin/promu crossbuild tarballs
       shell: bash
-    - run: promu checksum .tarballs
+    - run: ~/go/bin/promu checksum .tarballs
       shell: bash
-    - run: promu release .tarballs
+    - run: ~/go/bin/promu release .tarballs
       shell: bash
     - uses: ./.github/actions/publish_release_images
       if: inputs.docker_hub_organization != '' && inputs.docker_hub_login != ''
