@@ -198,7 +198,7 @@ func (bm *BlockMetaCompaction) SetOutOfOrder() {
 		return
 	}
 	bm.Hints = append(bm.Hints, CompactionHintFromOutOfOrder)
-	sort.Strings(bm.Hints)
+	slices.Sort(bm.Hints)
 }
 
 func (bm *BlockMetaCompaction) FromOutOfOrder() bool {
