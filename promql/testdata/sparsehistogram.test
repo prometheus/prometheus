@@ -8,13 +8,14 @@
 load 5m
 # buckets contains a list of lists
 # Each set of observations represents a stream of observations:
-# {{ 0 1 1 10 5 2, 14 25 13}}
+# {{ buckets: [0 1 1 10 5 2, 14 25 13]}}
 # This will represent
 # an observation of 0 an 14 at t=0
 # an observation of 1 and 25 at t=1
 # an observation of 1 and 23 at t=2
 # etc.
-	testsparsehistogram_bucket{le="0.1", start="positive"} {{ schema: 0, buckets:[5x10,0+7x10,0+11x10,0+12x10] }}
+	testsparsehistogram{start="positive"} {{ schema: 0, buckets:[5x10,0+7x10,0+11x10,0+12x10] }}
+	#testsparsehistogram{start="positive"} {{ buckets:[5+0x10,0+7x10,0+11x10,0+12x10] }}
 	#testhistogram_bucket{le=".2", start="positive"}
 	#testhistogram_bucket{le="1e0", start="positive"}
 	#testhistogram_bucket{le="+Inf", start="positive"}

@@ -158,7 +158,7 @@ START_METRIC_SELECTOR
 %type <float> number series_value signed_number signed_or_unsigned_number
 %type <node> step_invariant_expr aggregate_expr aggregate_modifier bin_modifier binary_expr bool_modifier expr function_call function_call_args function_call_body group_modifiers label_matchers matrix_selector number_literal offset_expr on_or_ignoring paren_expr string_literal subquery_expr unary_expr vector_selector
 %type <duration> duration maybe_duration
-%type <histogram> histogram_item histogram_values
+%type <histogram> histogram_desc histogram
 %type <buckets> bucket bucket_list buckets
 
 %start start
@@ -619,26 +619,43 @@ label_set_item  : IDENTIFIER EQL STRING
  * Series descriptions (only used by unit tests).
  */
 
-series_description: metric series_values
-                        {
-                        yylex.(*parser).generatedParserResult = &seriesDescription{
-                                labels: $1,
-                                values: $2,
-                        }
-                        }
-                | metric histogram_values
+series_description: metric histogram
                         {
                         yylex.(*parser).generatedParserResult = &seriesDescription{
                                 labels: $1,
                                 histogram: $2,
                         }
                         }
+                    | metric series_values
+                        {
+                        yylex.(*parser).generatedParserResult = &seriesDescription{
+                                labels: $1,
+                                values: $2,
+                        }
+                        }
+                    ;
+/*
+label_set_list  : label_set_list COMMA label_set_item
+                        { $$ = append($1, $3) }
+                | label_set_item
+                        { $$ = []labels.Label{$1} }
+                | label_set_list error
+                        { yylex.(*parser).unexpected("label set", "\",\" or \"}\"", ); $$ = $1 }
+
                 ;
-histogram_values : LEFT_BRACE LEFT_BRACE histogram_item RIGHT_BRACE RIGHT_BRACE
-                 {
-                        $$ = $3
-                 }
-                 | LEFT_BRACE LEFT_BRACE histogram_item COMMA RIGHT_BRACE RIGHT_BRACE
+
+label_set_item  : IDENTIFIER EQL STRING
+                        { $$ = labels.Label{Name: $1.Val, Value: yylex.(*parser).unquoteString($3.Val) } }
+                | IDENTIFIER EQL error
+                        { yylex.(*parser).unexpected("label set", "string"); $$ = labels.Label{}}
+                | IDENTIFIER error
+                        { yylex.(*parser).unexpected("label set", "\"=\""); $$ = labels.Label{}}
+                | error
+                        { yylex.(*parser).unexpected("label set", "identifier or \"}\""); $$ = labels.Label{} }
+                ;
+
+*/
+histogram : LEFT_BRACE LEFT_BRACE histogram_attributes RIGHT_BRACE RIGHT_BRACE
                  {
                         $$ = Histogram{}
                  }
@@ -646,14 +663,19 @@ histogram_values : LEFT_BRACE LEFT_BRACE histogram_item RIGHT_BRACE RIGHT_BRACE
                  {
                  }*/
                 ;
-
-histogram_item  : BUCKETS COLON buckets
+histogram_attributes : histogram_desc
+                     | COMMA histogram_desc
+                     ;
+histogram_desc  : BUCKETS COLON buckets
                 {
-                      $$.Samples =  $3
+                      $$.Samples = $3
                 }
-/*                | SCHEMA COLON signed_or_unsigned_number*/
+                | SCHEMA COLON uint
+                {
+                      $$.Schema = $3
+                }
                 | error
-                        { yylex.(*parser).unexpected("bucket items", ""); }
+                        { yylex.(*parser).unexpected("histogram descriptor", ""); }
 
                 ;
 
@@ -667,10 +689,9 @@ buckets   :  LEFT_BRACKET bucket_list RIGHT_BRACKET
                 }
                 |LEFT_BRACKET RIGHT_BRACKET
               {
-                   $$ = [][]SequenceValue{}
               }
                 | error
-                        { yylex.(*parser).unexpected("series values", ""); $$ = nil }
+                        { yylex.(*parser).unexpected("bucket values", ""); $$ = nil }
                 ;
 
 bucket_list : bucket_list COMMA bucket

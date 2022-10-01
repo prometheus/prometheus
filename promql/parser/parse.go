@@ -205,7 +205,7 @@ type seriesDescription struct {
 }
 
 // ParseSeriesDesc parses the description of a time series.
-func ParseSeriesDesc(input string) (labels labels.Labels, values []SequenceValue, err error) {
+func ParseSeriesDesc(input string) (labels labels.Labels, values []SequenceValue, histogram Histogram, err error) {
 	p := newParser(input)
 	p.lex.seriesDesc = true
 
@@ -218,6 +218,7 @@ func ParseSeriesDesc(input string) (labels labels.Labels, values []SequenceValue
 
 		labels = result.labels
 		values = result.values
+		histogram = result.histogram
 
 	}
 
@@ -225,7 +226,7 @@ func ParseSeriesDesc(input string) (labels labels.Labels, values []SequenceValue
 		err = p.parseErrors
 	}
 
-	return labels, values, err
+	return labels, values, histogram, err
 }
 
 // addParseErrf formats the error and appends it to the list of parsing errors.
