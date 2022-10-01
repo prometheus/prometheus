@@ -35,9 +35,12 @@ import (
     lblList   []labels.Label
     strings   []string
     series    []SequenceValue
+    buckets   [][]SequenceValue
     uint      uint64
+    uints     []uint64
     float     float64
     duration  time.Duration
+    histogram Histogram
 }
 
 
@@ -125,6 +128,14 @@ START
 END
 %token preprocessorEnd
 
+// Histogram Descriptors
+%token histogramDescStart
+%token <item>
+OPEN_HIST
+CLOSE_HIST
+SCHEMA
+BUCKETS
+%token histogramDescEnd
 
 // Start symbols for the generated parser.
 %token	startSymbolsStart
@@ -149,10 +160,13 @@ START_METRIC_SELECTOR
 %type <float> number series_value signed_number signed_or_unsigned_number
 %type <node> step_invariant_expr aggregate_expr aggregate_modifier bin_modifier binary_expr bool_modifier expr function_call function_call_args function_call_body group_modifiers label_matchers matrix_selector number_literal offset_expr on_or_ignoring paren_expr string_literal subquery_expr unary_expr vector_selector
 %type <duration> duration maybe_duration
+%type <histogram> histogram_desc histogram
+%type <buckets> bucket bucket_list buckets
 
 %start start
 
 // Operators are listed with increasing precedence.
+%left LEFT_BRACE
 %left LOR
 %left LAND LUNLESS
 %left EQLC GTE GTR LSS LTE NEQ
@@ -608,14 +622,73 @@ label_set_item  : IDENTIFIER EQL STRING
  * Series descriptions (only used by unit tests).
  */
 
-series_description: metric series_values
+series_description: metric histogram
+                        {
+                        yylex.(*parser).generatedParserResult = &seriesDescription{
+                                labels: $1,
+                                histogram: $2,
+                        }
+                        }
+                    | metric series_values
                         {
                         yylex.(*parser).generatedParserResult = &seriesDescription{
                                 labels: $1,
                                 values: $2,
                         }
                         }
+                    ;
+histogram : OPEN_HIST histogram_attributes CLOSE_HIST
+                 {
+                        $$ = Histogram{}
+                 }
                 ;
+           | SPACE OPEN_HIST histogram_attributes CLOSE_HIST
+                 {
+                        $$ = Histogram{}
+                 }
+                ;
+histogram_attributes : histogram_attributes COMMA
+                | SPACE
+                     | histogram_desc
+                     ;
+histogram_desc  : BUCKETS COLON buckets
+                {
+                      $$.Samples = $3
+                }
+                | SCHEMA COLON uint
+                {
+                      $$.Schema = $3
+                }
+                | error
+                        { yylex.(*parser).unexpected("histogram descriptor", ""); }
+
+                ;
+
+buckets   :  LEFT_BRACKET LEFT_BRACKET bucket_list RIGHT_BRACKET RIGHT_BRACKET
+          {
+              $$ = $3
+          }
+          ;
+
+bucket_list : /* Empty */
+            {  $$ = [][]SequenceValue{} }
+            | bucket_list COMMA bucket
+            {
+                $$ = append($1, $3...)
+            }
+            | bucket COMMA
+            {
+                $$ = $1
+            }
+            | error
+                        { yylex.(*parser).unexpected("bucket values", ""); $$ = nil }
+            ;
+
+/* TODO See if it's possible to remove this as an inbetween*/
+bucket: series_value
+        {
+        }
+        ;
 
 series_values   : /*empty*/
                         { $$ = []SequenceValue{} }
@@ -653,6 +726,7 @@ series_item     : BLANK
                                 $1 += $2
                         }
                         }
+
                 ;
 
 series_value    : IDENTIFIER
@@ -665,6 +739,7 @@ series_value    : IDENTIFIER
                 | number
                 | signed_number
                 ;
+
 
 
 

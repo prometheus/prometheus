@@ -2367,6 +2367,29 @@ var testExpr = []struct {
 		},
 	},
 	{
+		// Test usage of keywords as label names. (But in quotes)
+		input: "sum without(\"and\", \"by\", avg, count, alert, annotations)(some_metric)",
+		expected: &AggregateExpr{
+			Op:      SUM,
+			Without: true,
+			Expr: &VectorSelector{
+				Name: "some_metric",
+				LabelMatchers: []*labels.Matcher{
+					MustLabelMatcher(labels.MatchEqual, model.MetricNameLabel, "some_metric"),
+				},
+				PosRange: PositionRange{
+					Start: 53,
+					End:   64,
+				},
+			},
+			Grouping: []string{"and", "by", "avg", "count", "alert", "annotations"},
+			PosRange: PositionRange{
+				Start: 0,
+				End:   65,
+			},
+		},
+	},
+	{
 		// Test usage of keywords as label names.
 		input: "sum without(and, by, avg, count, alert, annotations)(some_metric)",
 		expected: &AggregateExpr{
@@ -3603,83 +3626,89 @@ var testSeries = []struct {
 }{
 	{
 		input:          `{} 1 2 3`,
-		expectedMetric: labels.EmptyLabels(),
-		expectedValues: newSeq(1, 2, 3),
-	}, {
-		input:          `{a="b"} -1 2 3`,
-		expectedMetric: labels.FromStrings("a", "b"),
-		expectedValues: newSeq(-1, 2, 3),
-	}, {
-		input:          `my_metric 1 2 3`,
-		expectedMetric: labels.FromStrings(labels.MetricName, "my_metric"),
-		expectedValues: newSeq(1, 2, 3),
-	}, {
-		input:          `my_metric{} 1 2 3`,
-		expectedMetric: labels.FromStrings(labels.MetricName, "my_metric"),
-		expectedValues: newSeq(1, 2, 3),
-	}, {
-		input:          `my_metric{a="b"} 1 2 3`,
-		expectedMetric: labels.FromStrings(labels.MetricName, "my_metric", "a", "b"),
-		expectedValues: newSeq(1, 2, 3),
-	}, {
-		input:          `my_metric{a="b"} 1 2 3-10x4`,
-		expectedMetric: labels.FromStrings(labels.MetricName, "my_metric", "a", "b"),
-		expectedValues: newSeq(1, 2, 3, -7, -17, -27, -37),
-	}, {
-		input:          `my_metric{a="b"} 1 2 3-0x4`,
-		expectedMetric: labels.FromStrings(labels.MetricName, "my_metric", "a", "b"),
-		expectedValues: newSeq(1, 2, 3, 3, 3, 3, 3),
-	}, {
-		input:          `my_metric{a="b"} 1 3 _ 5 _x4`,
-		expectedMetric: labels.FromStrings(labels.MetricName, "my_metric", "a", "b"),
-		expectedValues: newSeq(1, 3, none, 5, none, none, none, none),
-	}, {
-		input: `my_metric{a="b"} 1 3 _ 5 _a4`,
-		fail:  true,
-	}, {
-		input:          `my_metric{a="b"} 1 -1`,
-		expectedMetric: labels.FromStrings(labels.MetricName, "my_metric", "a", "b"),
-		expectedValues: newSeq(1, -1),
-	}, {
-		input:          `my_metric{a="b"} 1 +1`,
-		expectedMetric: labels.FromStrings(labels.MetricName, "my_metric", "a", "b"),
-		expectedValues: newSeq(1, 1),
-	}, {
-		input:          `my_metric{a="b"} 1 -1 -3-10x4 7 9 +5`,
-		expectedMetric: labels.FromStrings(labels.MetricName, "my_metric", "a", "b"),
-		expectedValues: newSeq(1, -1, -3, -13, -23, -33, -43, 7, 9, 5),
-	}, {
-		input:          `my_metric{a="b"} 1 +1 +4 -6 -2 8`,
-		expectedMetric: labels.FromStrings(labels.MetricName, "my_metric", "a", "b"),
-		expectedValues: newSeq(1, 1, 4, -6, -2, 8),
-	}, {
-		// Trailing spaces should be correctly handles.
-		input:          `my_metric{a="b"} 1 2 3    `,
-		expectedMetric: labels.FromStrings(labels.MetricName, "my_metric", "a", "b"),
-		expectedValues: newSeq(1, 2, 3),
-	}, {
-		// Handle escaped unicode characters as whole label values.
-		input:          `my_metric{a="\u70ac"} 1 2 3`,
-		expectedMetric: labels.FromStrings(labels.MetricName, "my_metric", "a", `炬`),
-		expectedValues: newSeq(1, 2, 3),
-	}, {
-		// Handle escaped unicode characters as partial label values.
-		input:          `my_metric{a="\u70ac = torch"} 1 2 3`,
-		expectedMetric: labels.FromStrings(labels.MetricName, "my_metric", "a", `炬 = torch`),
-		expectedValues: newSeq(1, 2, 3),
-	}, {
-		input: `my_metric{a="b"} -3-3 -3`,
-		fail:  true,
-	}, {
-		input: `my_metric{a="b"} -3 -3-3`,
-		fail:  true,
-	}, {
-		input: `my_metric{a="b"} -3 _-2`,
-		fail:  true,
-	}, {
-		input: `my_metric{a="b"} -3 3+3x4-4`,
-		fail:  true,
+		expectedmetric: labels.emptylabels(),
+		expectedvalues: newseq(1, 2, 3),
 	},
+	{
+		input:          `{} << buckets:[ 5x10,0+7x10,0+11x10,0+12x10] >>`,
+		expectedmetric: labels.emptylabels(),
+		expectedvalues: newseq(1, 2, 3),
+	}, /*
+		{
+			input:          `{a="b"} -1 2 3`,
+			expectedMetric: labels.FromStrings("a", "b"),
+			expectedValues: newSeq(-1, 2, 3),
+		}, {
+			input:          `my_metric 1 2 3`,
+			expectedMetric: labels.FromStrings(labels.MetricName, "my_metric"),
+			expectedValues: newSeq(1, 2, 3),
+		}, {
+			input:          `my_metric{} 1 2 3`,
+			expectedMetric: labels.FromStrings(labels.MetricName, "my_metric"),
+			expectedValues: newSeq(1, 2, 3),
+		}, {
+			input:          `my_metric{a="b"} 1 2 3`,
+			expectedMetric: labels.FromStrings(labels.MetricName, "my_metric", "a", "b"),
+			expectedValues: newSeq(1, 2, 3),
+		}, {
+			input:          `my_metric{a="b"} 1 2 3-10x4`,
+			expectedMetric: labels.FromStrings(labels.MetricName, "my_metric", "a", "b"),
+			expectedValues: newSeq(1, 2, 3, -7, -17, -27, -37),
+		}, {
+			input:          `my_metric{a="b"} 1 2 3-0x4`,
+			expectedMetric: labels.FromStrings(labels.MetricName, "my_metric", "a", "b"),
+			expectedValues: newSeq(1, 2, 3, 3, 3, 3, 3),
+		}, {
+			input:          `my_metric{a="b"} 1 3 _ 5 _x4`,
+			expectedMetric: labels.FromStrings(labels.MetricName, "my_metric", "a", "b"),
+			expectedValues: newSeq(1, 3, none, 5, none, none, none, none),
+		}, {
+			input: `my_metric{a="b"} 1 3 _ 5 _a4`,
+			fail:  true,
+		}, {
+			input:          `my_metric{a="b"} 1 -1`,
+			expectedMetric: labels.FromStrings(labels.MetricName, "my_metric", "a", "b"),
+			expectedValues: newSeq(1, -1),
+		}, {
+			input:          `my_metric{a="b"} 1 +1`,
+			expectedMetric: labels.FromStrings(labels.MetricName, "my_metric", "a", "b"),
+			expectedValues: newSeq(1, 1),
+		}, {
+			input:          `my_metric{a="b"} 1 -1 -3-10x4 7 9 +5`,
+			expectedMetric: labels.FromStrings(labels.MetricName, "my_metric", "a", "b"),
+			expectedValues: newSeq(1, -1, -3, -13, -23, -33, -43, 7, 9, 5),
+		}, {
+			input:          `my_metric{a="b"} 1 +1 +4 -6 -2 8`,
+			expectedMetric: labels.FromStrings(labels.MetricName, "my_metric", "a", "b"),
+			expectedValues: newSeq(1, 1, 4, -6, -2, 8),
+		}, {
+			// Trailing spaces should be correctly handles.
+			input:          `my_metric{a="b"} 1 2 3    `,
+			expectedMetric: labels.FromStrings(labels.MetricName, "my_metric", "a", "b"),
+			expectedValues: newSeq(1, 2, 3),
+		}, {
+			// Handle escaped unicode characters as whole label values.
+			input:          `my_metric{a="\u70ac"} 1 2 3`,
+			expectedMetric: labels.FromStrings(labels.MetricName, "my_metric", "a", `炬`),
+			expectedValues: newSeq(1, 2, 3),
+		}, {
+			// Handle escaped unicode characters as partial label values.
+			input:          `my_metric{a="\u70ac = torch"} 1 2 3`,
+			expectedMetric: labels.FromStrings(labels.MetricName, "my_metric", "a", `炬 = torch`),
+			expectedValues: newSeq(1, 2, 3),
+		}, {
+			input: `my_metric{a="b"} -3-3 -3`,
+			fail:  true,
+		}, {
+			input: `my_metric{a="b"} -3 -3-3`,
+			fail:  true,
+		}, {
+			input: `my_metric{a="b"} -3 _-2`,
+			fail:  true,
+		}, {
+			input: `my_metric{a="b"} -3 3+3x4-4`,
+			fail:  true,
+		},*/
 }
 
 // For these tests only, we use the smallest float64 to signal an omitted value.
@@ -3697,6 +3726,8 @@ func newSeq(vals ...float64) (res []SequenceValue) {
 }
 
 func TestParseSeries(t *testing.T) {
+	yyDebug = 5
+	yyerrorverbose = true
 	for _, test := range testSeries {
 		metric, vals, err := ParseSeriesDesc(test.input)
 

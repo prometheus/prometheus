@@ -27,7 +27,7 @@ import (
 )
 
 func TestEvaluations(t *testing.T) {
-	files, err := filepath.Glob("testdata/*.test")
+	files, err := filepath.Glob("testdata/sparsehistogram.test")
 	require.NoError(t, err)
 
 	for _, fn := range files {

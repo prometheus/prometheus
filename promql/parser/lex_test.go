@@ -14,6 +14,7 @@
 package parser
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -268,6 +269,9 @@ var tests = []struct {
 				input:    `%`,
 				expected: []Item{{MOD, 0, `%`}},
 			}, {
+				input:    `and`,
+				expected: []Item{{LAND, 0, `and`}},
+			}, {
 				input:    `AND`,
 				expected: []Item{{LAND, 0, `AND`}},
 			}, {
@@ -350,6 +354,14 @@ var tests = []struct {
 			{
 				input:    "atan2",
 				expected: []Item{{ATAN2, 0, "atan2"}},
+			},
+			{
+				input:    "schema",
+				expected: []Item{{SCHEMA, 0, "schema"}},
+			},
+			{
+				input:    "buckets",
+				expected: []Item{{BUCKETS, 0, "buckets"}},
 			},
 		},
 	},
@@ -497,6 +509,42 @@ var tests = []struct {
 	{
 		name: "series descriptions",
 		tests: []testCase{
+			{
+				input: `{} <<buckets:[5]>>`,
+				expected: []Item{
+					{LEFT_BRACE, 0, `{`},
+					{RIGHT_BRACE, 1, `}`},
+					{SPACE, 2, ` `},
+					{OPEN_HIST, 3, `<<`},
+					{BUCKETS, 5, `buckets`},
+					{COLON, 12, `:`},
+					{LEFT_BRACKET, 13, `[`},
+					{NUMBER, 14, `5`},
+					{RIGHT_BRACKET, 15, `]`},
+					{CLOSE_HIST, 16, `>>`},
+				},
+				seriesDesc: true,
+			}, {
+				input: `{} <<buckets: [5x10,7]>>`,
+				expected: []Item{
+					{LEFT_BRACE, 0, `{`},
+					{RIGHT_BRACE, 1, `}`},
+					{SPACE, 2, ` `},
+					{OPEN_HIST, 3, `<<`},
+					{BUCKETS, 5, `buckets`},
+					{COLON, 12, `:`},
+					{SPACE, 13, ` `},
+					{LEFT_BRACKET, 14, `[`},
+					{NUMBER, 15, `5`},
+					{TIMES, 16, `x`},
+					{NUMBER, 17, `10`},
+					{COMMA, 19, `,`},
+					{NUMBER, 20, `7`},
+					{RIGHT_BRACKET, 21, `]`},
+					{CLOSE_HIST, 22, `>>`},
+				},
+				seriesDesc: true,
+			},
 			{
 				input: `{} _ 1 x .3`,
 				expected: []Item{
@@ -754,8 +802,9 @@ func TestLexer(t *testing.T) {
 					continue
 				}
 				if lastItem.Typ == ERROR {
-					t.Logf("%d: input %q", i, test.input)
-					require.Fail(t, "unexpected lexing error at position %d: %s", lastItem.Pos, lastItem)
+					t.Logf("%d: input %s", i, test.input)
+					var pos, _ = json.Marshal(lastItem.Pos)
+					require.Fail(t, "unexpected lexing error at position %s: %s", string(pos), lastItem)
 				}
 
 				eofItem := Item{EOF, Pos(len(test.input)), ""}

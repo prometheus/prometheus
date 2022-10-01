@@ -130,11 +130,17 @@ var key = map[string]ItemType{
 	// Preprocessors.
 	"start": START,
 	"end":   END,
+
+	// Histogram Descriptors
+	"schema":  SCHEMA,
+	"buckets": BUCKETS,
 }
 
 // ItemTypeStr is the default string representations for common Items. It does not
 // imply that those are the only character sequences that can be lexed to such an Item.
 var ItemTypeStr = map[ItemType]string{
+	OPEN_HIST:     "<<",
+	CLOSE_HIST:    ">>",
 	LEFT_PAREN:    "(",
 	RIGHT_PAREN:   ")",
 	LEFT_BRACE:    "{",
@@ -239,6 +245,8 @@ type Lexer struct {
 	bracketOpen bool // Whether a [ is opened.
 	gotColon    bool // Whether we got a ':' after [ was opened.
 	stringOpen  rune // Quote rune of the string currently being read.
+	histOpen    bool // Whether was is being read is a histogram
+	bucketsOpen bool // Whether we're reading buckets TODO Maybe use this?
 
 	// seriesDesc is set when a series description for the testing
 	// language is lexed.
@@ -337,6 +345,7 @@ const lineComment = "#"
 
 // lexStatements is the top-level state for lexing.
 func lexStatements(l *Lexer) stateFn {
+	fmt.Println("Entering lexStatements")
 	if l.braceOpen {
 		return lexInsideBraces
 	}
@@ -385,7 +394,11 @@ func lexStatements(l *Lexer) stateFn {
 			return l.errorf("unexpected character after '!': %q", t)
 		}
 	case r == '<':
-		if t := l.peek(); t == '=' {
+		if t := l.peek(); t == '<' {
+			l.next()
+			l.emit(OPEN_HIST)
+			l.histOpen = true
+		} else if t := l.peek(); t == '=' {
 			l.next()
 			l.emit(LTE)
 		} else {
@@ -460,6 +473,7 @@ func lexStatements(l *Lexer) stateFn {
 // lexInsideBraces scans the inside of a vector selector. Keywords are ignored and
 // scanned as identifiers.
 func lexInsideBraces(l *Lexer) stateFn {
+	fmt.Println("Entering lexInsideBraces")
 	if strings.HasPrefix(l.input[l.pos:], lineComment) {
 		return lexLineComment
 	}
@@ -511,13 +525,43 @@ func lexInsideBraces(l *Lexer) stateFn {
 	}
 	return lexInsideBraces
 }
+func lexHistogram(l *Lexer) stateFn {
+	fmt.Println("Entering lexHistogram")
+	switch r := l.next(); {
+	case isAlpha(r):
+		l.backup()
+		// We might lex invalid Items here but this will be caught by the parser.
+		return lexKeywordOrIdentifier
+	case r == ',':
+		l.emit(COMMA)
+	}
+	return lexStatements
+}
 
 // lexValueSequence scans a value sequence of a series description.
 func lexValueSequence(l *Lexer) stateFn {
+	fmt.Println("Entering lexValueSequence")
 	switch r := l.next(); {
+	case r == '<' && l.peek() == '<':
+		l.next()
+		l.emit(OPEN_HIST)
+		l.histOpen = true
+		return lexStatements
+	case r == '>' && l.histOpen:
+		if l.peek() == '>' {
+			l.next()
+			l.histOpen = false
+			l.emit(CLOSE_HIST)
+		} else {
+			return l.errorf("Missing '>' for closing histogram : %q", r)
+		}
+	case r == ',' && l.histOpen:
+		l.emit(COMMA)
 	case r == eof:
 		return lexStatements
+
 	case isSpace(r):
+
 		l.emit(SPACE)
 		lexSpace(l)
 	case r == '+':
@@ -528,13 +572,18 @@ func lexValueSequence(l *Lexer) stateFn {
 		l.emit(TIMES)
 	case r == '_':
 		l.emit(BLANK)
+	case r == ':' && l.histOpen:
+		l.emit(COLON)
+
 	case isDigit(r) || (r == '.' && isDigit(l.peek())):
 		l.backup()
 		lexNumber(l)
+
 	case isAlpha(r):
 		l.backup()
 		// We might lex invalid Items here but this will be caught by the parser.
 		return lexKeywordOrIdentifier
+
 	default:
 		return l.errorf("unexpected character in series sequence: %q", r)
 	}
@@ -550,6 +599,7 @@ func lexValueSequence(l *Lexer) stateFn {
 // None of the actual escaping/quoting logic was changed in this function - it
 // was only modified to integrate with our lexer.
 func lexEscape(l *Lexer) stateFn {
+	fmt.Println("Entering lexEscape")
 	var n int
 	var base, max uint32
 
@@ -626,6 +676,7 @@ func skipSpaces(l *Lexer) {
 
 // lexString scans a quoted string. The initial quote has already been seen.
 func lexString(l *Lexer) stateFn {
+	fmt.Println("Entering lexString")
 Loop:
 	for {
 		switch l.next() {
@@ -646,6 +697,7 @@ Loop:
 
 // lexRawString scans a raw quoted string. The initial quote has already been seen.
 func lexRawString(l *Lexer) stateFn {
+	fmt.Println("Entering lexRawString")
 Loop:
 	for {
 		switch l.next() {
@@ -665,6 +717,7 @@ Loop:
 
 // lexSpace scans a run of space characters. One space has already been seen.
 func lexSpace(l *Lexer) stateFn {
+	fmt.Println("Entering lexSpace")
 	for isSpace(l.peek()) {
 		l.next()
 	}
@@ -674,6 +727,7 @@ func lexSpace(l *Lexer) stateFn {
 
 // lexLineComment scans a line comment. Left comment marker is known to be present.
 func lexLineComment(l *Lexer) stateFn {
+	fmt.Println("Entering lexLineComment")
 	l.pos += Pos(len(lineComment))
 	for r := l.next(); !isEndOfLine(r) && r != eof; {
 		r = l.next()
@@ -684,6 +738,7 @@ func lexLineComment(l *Lexer) stateFn {
 }
 
 func lexDuration(l *Lexer) stateFn {
+	fmt.Println("Entering lexDuration")
 	if l.scanNumber() {
 		return l.errorf("missing unit character in duration")
 	}
@@ -697,6 +752,7 @@ func lexDuration(l *Lexer) stateFn {
 
 // lexNumber scans a number: decimal, hex, oct or float.
 func lexNumber(l *Lexer) stateFn {
+	fmt.Println("Entering lexNumber")
 	if !l.scanNumber() {
 		return l.errorf("bad number syntax: %q", l.input[l.start:l.pos])
 	}
@@ -706,6 +762,7 @@ func lexNumber(l *Lexer) stateFn {
 
 // lexNumberOrDuration scans a number or a duration Item.
 func lexNumberOrDuration(l *Lexer) stateFn {
+	fmt.Println("Entering lexNumberOrDuration")
 	if l.scanNumber() {
 		l.emit(NUMBER)
 		return lexStatements
@@ -770,6 +827,7 @@ func (l *Lexer) scanNumber() bool {
 // lexIdentifier scans an alphanumeric identifier. The next character
 // is known to be a letter.
 func lexIdentifier(l *Lexer) stateFn {
+	fmt.Println("Entering lexIdentifier")
 	for isAlphaNumeric(l.next()) {
 		// absorb
 	}
@@ -782,16 +840,22 @@ func lexIdentifier(l *Lexer) stateFn {
 // a colon rune. If the identifier is a keyword the respective keyword Item
 // is scanned.
 func lexKeywordOrIdentifier(l *Lexer) stateFn {
+	fmt.Println("Entering lexKeywordOrIdentifier")
 Loop:
 	for {
 		switch r := l.next(); {
-		case isAlphaNumeric(r) || r == ':':
+		case isAlphaNumeric(r) || r == ':' && l.histOpen == false:
 			// absorb.
 		default:
 			l.backup()
 			word := l.input[l.start:l.pos]
+
+			fmt.Printf("Word: '%s'\n", word)
 			if kw, ok := key[strings.ToLower(word)]; ok {
 				l.emit(kw)
+				if kw == BUCKETS {
+					l.bucketsOpen = true
+				}
 			} else if !strings.Contains(word, ":") {
 				l.emit(IDENTIFIER)
 			} else {

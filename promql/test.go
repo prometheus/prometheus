@@ -144,7 +144,7 @@ func parseLoad(lines []string, i int) (int, *loadCmd, error) {
 			i--
 			break
 		}
-		metric, vals, err := parser.ParseSeriesDesc(defLine)
+		metric, vals, hist, err := parser.ParseSeriesDesc(defLine)
 		if err != nil {
 			var perr *parser.ParseErr
 			if errors.As(err, &perr) {
@@ -152,7 +152,12 @@ func parseLoad(lines []string, i int) (int, *loadCmd, error) {
 			}
 			return i, nil, err
 		}
-		cmd.set(metric, vals...)
+		if hist.Samples != nil && len(hist.Samples) > 0 {
+			cmd.setHist(metric, hist)
+		} else {
+			cmd.set(metric, vals...)
+		}
+
 	}
 	return i, cmd, nil
 }
@@ -205,7 +210,7 @@ func (t *Test) parseEval(lines []string, i int) (int, *evalCmd, error) {
 			cmd.expect(0, parser.SequenceValue{Value: f})
 			break
 		}
-		metric, vals, err := parser.ParseSeriesDesc(defLine)
+		metric, vals, _, err := parser.ParseSeriesDesc(defLine)
 		if err != nil {
 			var perr *parser.ParseErr
 			if errors.As(err, &perr) {
@@ -296,6 +301,10 @@ func newLoadCmd(gap time.Duration) *loadCmd {
 
 func (cmd loadCmd) String() string {
 	return "load"
+}
+
+func (cmd *loadCmd) setHist(m labels.Labels, hist parser.Histogram) {
+
 }
 
 // set a sequence of sample values for the given metric.

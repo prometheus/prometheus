@@ -180,6 +180,11 @@ func newParser(input string) *parser {
 	return p
 }
 
+type Histogram struct {
+	Schema  uint64
+	Samples [][]SequenceValue
+}
+
 // SequenceValue is an omittable value in a sequence of time series values.
 type SequenceValue struct {
 	Value   float64
@@ -194,12 +199,13 @@ func (v SequenceValue) String() string {
 }
 
 type seriesDescription struct {
-	labels labels.Labels
-	values []SequenceValue
+	labels    labels.Labels
+	values    []SequenceValue
+	histogram Histogram
 }
 
 // ParseSeriesDesc parses the description of a time series.
-func ParseSeriesDesc(input string) (labels labels.Labels, values []SequenceValue, err error) {
+func ParseSeriesDesc(input string) (labels labels.Labels, values []SequenceValue, histogram Histogram, err error) {
 	p := newParser(input)
 	p.lex.seriesDesc = true
 
@@ -212,6 +218,7 @@ func ParseSeriesDesc(input string) (labels labels.Labels, values []SequenceValue
 
 		labels = result.labels
 		values = result.values
+		histogram = result.histogram
 
 	}
 
@@ -219,7 +226,7 @@ func ParseSeriesDesc(input string) (labels labels.Labels, values []SequenceValue
 		err = p.parseErrors
 	}
 
-	return labels, values, err
+	return labels, values, histogram, err
 }
 
 // addParseErrf formats the error and appends it to the list of parsing errors.
