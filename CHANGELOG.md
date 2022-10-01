@@ -5,8 +5,8 @@
 * [FEATURE] **experimental** TSDB: Add support for ingesting out-of-order samples. This is configured via `out_of_order_time_window` field in the config file; check config file docs for more info. #11075
 * [ENHANCEMENT] API: `/-/healthy` and `/-/ready` API calls now also respond to a `HEAD` request on top of existing `GET` support. #11160
 * [ENHANCEMENT] PuppetDB SD: Add `__meta_puppetdb_query` label. #11238
-* [ENHANCEMENT] AWS EC2 SD SD: Add `__meta_ec2_region` label. #11326
-* [ENHANCEMENT] AWS Lightsail: Add `____meta_lightsail_region` label. #11326
+* [ENHANCEMENT] AWS EC2 SD: Add `__meta_ec2_region` label. #11326
+* [ENHANCEMENT] AWS Lightsail SD: Add `____meta_lightsail_region` label. #11326
 * [ENHANCEMENT] Scrape: Optimise relabeling by re-using memory. #11147
 * [ENHANCEMENT] TSDB: Improve WAL replay timings. #10973 #11307 #11319
 * [ENHANCEMENT] TSDB: Optimise memory by not storing unnecessary data in the memory. #11280 #11288 #11296
