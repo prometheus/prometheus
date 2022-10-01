@@ -1478,8 +1478,8 @@ honnef.co/go/tools v0.0.1-2020.1.3/go.mod h1:X/FiERA/W4tHapMX5mGpAtMSVEeEUOyHaw9
 honnef.co/go/tools v0.0.1-2020.1.4/go.mod h1:X/FiERA/W4tHapMX5mGpAtMSVEeEUOyHaw9vFzvIQ3k=
 k8s.io/api v0.25.1 h1:yL7du50yc93k17nH/Xe9jujAYrcDkI/i5DL1jPz4E3M=
 k8s.io/api v0.25.1/go.mod h1:hh4itDvrWSJsmeUc28rIFNri8MatNAAxJjKcQmhX6TU=
-k8s.io/apimachinery v0.25.1 h1:t0XrnmCEHVgJlR2arwO8Awp9ylluDic706WePaYCBTI=
-k8s.io/apimachinery v0.25.1/go.mod h1:hqqA1X0bsgsxI6dXsJ4HnNTBOmJNxyPp8dw3u2fSHwA=
+k8s.io/apimachinery v0.25.2 h1:WbxfAjCx+AeN8Ilp9joWnyJ6xu9OMeS/fsfjK/5zaQs=
+k8s.io/apimachinery v0.25.2/go.mod h1:hqqA1X0bsgsxI6dXsJ4HnNTBOmJNxyPp8dw3u2fSHwA=
 k8s.io/client-go v0.25.1 h1:uFj4AJKtE1/ckcSKz8IhgAuZTdRXZDKev8g387ndD58=
 k8s.io/client-go v0.25.1/go.mod h1:rdFWTLV/uj2C74zGbQzOsmXPUtMAjSf7ajil4iJUNKo=
 k8s.io/kube-openapi v0.0.0-20220803162953-67bda5d908f1 h1:MQ8BAZPZlWk3S9K4a9NCkIFQtZShWqoha7snGixVgEA=
