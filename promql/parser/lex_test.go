@@ -268,6 +268,9 @@ var tests = []struct {
 				input:    `%`,
 				expected: []Item{{MOD, 0, `%`}},
 			}, {
+				input:    `and`,
+				expected: []Item{{LAND, 0, `and`}},
+			}, {
 				input:    `AND`,
 				expected: []Item{{LAND, 0, `AND`}},
 			}, {

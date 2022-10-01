@@ -34,9 +34,12 @@ import (
     labels    labels.Labels
     strings   []string
     series    []SequenceValue
+    buckets   [][]SequenceValue
     uint      uint64
+    uints     []uint64
     float     float64
     duration  time.Duration
+    histogram Histogram
 }
 
 
@@ -124,6 +127,12 @@ START
 END
 %token preprocessorEnd
 
+// Histogram Descriptors
+%token histogramDescStart
+%token <item>
+SCHEMA
+BUCKETS
+%token histogramDescEnd
 
 // Start symbols for the generated parser.
 %token	startSymbolsStart
@@ -149,6 +158,8 @@ START_METRIC_SELECTOR
 %type <float> number series_value signed_number signed_or_unsigned_number
 %type <node> step_invariant_expr aggregate_expr aggregate_modifier bin_modifier binary_expr bool_modifier expr function_call function_call_args function_call_body group_modifiers label_matchers matrix_selector number_literal offset_expr on_or_ignoring paren_expr string_literal subquery_expr unary_expr vector_selector
 %type <duration> duration maybe_duration
+%type <histogram> histogram_item histogram_values
+%type <buckets> bucket bucket_list buckets
 
 %start start
 
@@ -615,7 +626,68 @@ series_description: metric series_values
                                 values: $2,
                         }
                         }
+                | metric histogram_values
+                        {
+                        yylex.(*parser).generatedParserResult = &seriesDescription{
+                                labels: $1,
+                                histogram: $2,
+                        }
+                        }
                 ;
+histogram_values : LEFT_BRACE LEFT_BRACE histogram_item RIGHT_BRACE RIGHT_BRACE
+                 {
+                        $$ = $3
+                 }
+                 | LEFT_BRACE LEFT_BRACE histogram_item COMMA RIGHT_BRACE RIGHT_BRACE
+                 {
+                        $$ = Histogram{}
+                 }
+/*                 | LEFT_BRACE LEFT_BRACE RIGHT_BRACE RIGHT_BRACE
+                 {
+                 }*/
+                ;
+
+histogram_item  : BUCKETS COLON buckets
+                {
+                      $$.Samples =  $3
+                }
+/*                | SCHEMA COLON signed_or_unsigned_number*/
+                | error
+                        { yylex.(*parser).unexpected("bucket items", ""); }
+
+                ;
+
+buckets   :  LEFT_BRACKET bucket_list RIGHT_BRACKET
+                {
+                   $$ = [][]SequenceValue{}
+                }
+                | LEFT_BRACKET bucket_list COMMA RIGHT_BRACKET
+                {
+                   $$ = [][]SequenceValue{}
+                }
+                |LEFT_BRACKET RIGHT_BRACKET
+              {
+                   $$ = [][]SequenceValue{}
+              }
+                | error
+                        { yylex.(*parser).unexpected("series values", ""); $$ = nil }
+                ;
+
+bucket_list : bucket_list COMMA bucket
+            {
+                $$ = append($1, $3...)
+            }
+            | bucket
+            {
+                $$ = $1
+            }
+            ;
+
+
+bucket: series_value
+        {
+        }
+        ;
 
 series_values   : /*empty*/
                         { $$ = []SequenceValue{} }
@@ -653,6 +725,7 @@ series_item     : BLANK
                                 $1 += $2
                         }
                         }
+
                 ;
 
 series_value    : IDENTIFIER
@@ -665,6 +738,7 @@ series_value    : IDENTIFIER
                 | number
                 | signed_number
                 ;
+
 
 
 

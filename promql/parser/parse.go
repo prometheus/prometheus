@@ -180,6 +180,11 @@ func newParser(input string) *parser {
 	return p
 }
 
+type Histogram struct {
+	Schema  uint64
+	Samples [][]SequenceValue
+}
+
 // SequenceValue is an omittable value in a sequence of time series values.
 type SequenceValue struct {
 	Value   float64
@@ -194,8 +199,9 @@ func (v SequenceValue) String() string {
 }
 
 type seriesDescription struct {
-	labels labels.Labels
-	values []SequenceValue
+	labels    labels.Labels
+	values    []SequenceValue
+	histogram Histogram
 }
 
 // ParseSeriesDesc parses the description of a time series.

@@ -130,6 +130,10 @@ var key = map[string]ItemType{
 	// Preprocessors.
 	"start": START,
 	"end":   END,
+
+	// Histogram Descriptors
+	"schema":  SCHEMA,
+	"buckets": BUCKETS,
 }
 
 // ItemTypeStr is the default string representations for common Items. It does not
