@@ -33,7 +33,7 @@ require (
 	github.com/ionos-cloud/sdk-go/v6 v6.1.3
 	github.com/json-iterator/go v1.1.12
 	github.com/kolo/xmlrpc v0.0.0-20220919000247-3377102c83bd
-	github.com/linode/linodego v1.9.1
+	github.com/linode/linodego v1.9.3
 	github.com/miekg/dns v1.1.50
 	github.com/mwitkow/go-conntrack v0.0.0-20190716064945-2f068394615f
 	github.com/oklog/run v1.1.0
