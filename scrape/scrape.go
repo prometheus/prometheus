@@ -184,6 +184,12 @@ var (
 			Help: "Total number of times scrape pools hit the label limits, during sync or config reload.",
 		},
 	)
+	targetScrapePoolLastScrapeLabels = prometheus.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "prometheus_target_scrape_pool_last_scrape_labels",
+			Help: "Total number of labels found in the last scrape.",
+		},
+	)
 	targetSyncFailed = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "prometheus_target_sync_failed_total",
@@ -215,6 +221,7 @@ func init() {
 		targetMetadataCache,
 		targetScrapeExemplarOutOfOrder,
 		targetScrapePoolExceededLabelLimits,
+		targetScrapePoolLastScrapeLabels,
 		targetSyncFailed,
 	)
 }
@@ -1589,6 +1596,9 @@ loop:
 				targetScrapePoolExceededLabelLimits.Inc()
 				break loop
 			}
+
+			amountLabels := len(lset)
+			targetScrapePoolLastScrapeLabels.Set(float64(amountLabels))
 
 			// Append metadata for new series if they were present.
 			updateMetadata(lset, true)
