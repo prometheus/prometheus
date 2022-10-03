@@ -765,7 +765,7 @@ func (w *WL) fsync(f *Segment) error {
 	return err
 }
 
-// Sync forces a file sync on the current wl segment. This function is meant
+// Sync forces a file sync on the current write log segment. This function is meant
 // to be used only on tests due to different behaviour on Operating Systems
 // like windows and linux
 func (w *WL) Sync() error {
