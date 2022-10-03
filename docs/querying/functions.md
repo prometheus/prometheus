@@ -292,13 +292,13 @@ For each timeseries in `v`, `label_replace(v instant-vector, dst_label string, r
 matches the regular expression `regex` against the value of the label `src_label`. If it
 matches, the value of the label `dst_label` in the returned timeseries will be the expansion
 of `replacement`, together with the original labels in the input. Capturing groups in the
-regular expression can be referenced with `$1`, `$2`, etc. If the regular expression doesn't
-match then the timeseries is returned unchanged.
+regular expression can be referenced with `$1`, `$2`, etc. Named capturing groups in the regular expression can be referenced with `$name` (where `name` is the  capturing group name). If the regular expression doesn't match then the timeseries is returned unchanged.
 
-This example will return timeseries with the values `a:c` at label `service` and `a` at label `foo`:
+These two examples will both return timeseries with the values `a:c` at label `service` and `a` at label `foo`:
 
 ```
 label_replace(up{job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")
+label_replace(up{job="api-server",service="a:c"}, "foo", "$name", "service", "(?P<name>.*):(?P<version>.*)")
 ```
 
 ## `ln()`
