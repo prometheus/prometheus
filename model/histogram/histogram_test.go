@@ -80,7 +80,7 @@ func TestHistogramString(t *testing.T) {
 func TestCumulativeBucketIterator(t *testing.T) {
 	cases := []struct {
 		histogram       Histogram
-		expectedBuckets []Bucket
+		expectedBuckets []Bucket[uint64]
 	}{
 		{
 			histogram: Histogram{
@@ -91,7 +91,7 @@ func TestCumulativeBucketIterator(t *testing.T) {
 				},
 				PositiveBuckets: []int64{1, 1, -1, 0},
 			},
-			expectedBuckets: []Bucket{
+			expectedBuckets: []Bucket[uint64]{
 				{Lower: math.Inf(-1), Upper: 1, Count: 1, LowerInclusive: true, UpperInclusive: true, Index: 0},
 				{Lower: math.Inf(-1), Upper: 2, Count: 3, LowerInclusive: true, UpperInclusive: true, Index: 1},
 
@@ -110,7 +110,7 @@ func TestCumulativeBucketIterator(t *testing.T) {
 				},
 				PositiveBuckets: []int64{1, 2, -2, 1, -1, 0},
 			},
-			expectedBuckets: []Bucket{
+			expectedBuckets: []Bucket[uint64]{
 				{Lower: math.Inf(-1), Upper: 1, Count: 1, LowerInclusive: true, UpperInclusive: true, Index: 0},
 				{Lower: math.Inf(-1), Upper: 2, Count: 4, LowerInclusive: true, UpperInclusive: true, Index: 1},
 				{Lower: math.Inf(-1), Upper: 4, Count: 5, LowerInclusive: true, UpperInclusive: true, Index: 2},
@@ -130,7 +130,7 @@ func TestCumulativeBucketIterator(t *testing.T) {
 				},
 				PositiveBuckets: []int64{1, 2, -2, 1, -1, 0, 0},
 			},
-			expectedBuckets: []Bucket{
+			expectedBuckets: []Bucket[uint64]{
 				{Lower: math.Inf(-1), Upper: 1, Count: 1, LowerInclusive: true, UpperInclusive: true, Index: 0},
 				{Lower: math.Inf(-1), Upper: 2, Count: 4, LowerInclusive: true, UpperInclusive: true, Index: 1},
 				{Lower: math.Inf(-1), Upper: 4, Count: 5, LowerInclusive: true, UpperInclusive: true, Index: 2},
@@ -150,7 +150,7 @@ func TestCumulativeBucketIterator(t *testing.T) {
 				},
 				PositiveBuckets: []int64{1, 2, -2, 1, -1, 0, 3},
 			},
-			expectedBuckets: []Bucket{
+			expectedBuckets: []Bucket[uint64]{
 				{Lower: math.Inf(-1), Upper: 0.6484197773255048, Count: 1, LowerInclusive: true, UpperInclusive: true, Index: -5},
 				{Lower: math.Inf(-1), Upper: 0.7071067811865475, Count: 4, LowerInclusive: true, UpperInclusive: true, Index: -4},
 
@@ -177,7 +177,7 @@ func TestCumulativeBucketIterator(t *testing.T) {
 				},
 				PositiveBuckets: []int64{1, 2, -2, 1, -1, 0},
 			},
-			expectedBuckets: []Bucket{
+			expectedBuckets: []Bucket[uint64]{
 				{Lower: math.Inf(-1), Upper: 0.00390625, Count: 1, LowerInclusive: true, UpperInclusive: true, Index: -2},
 				{Lower: math.Inf(-1), Upper: 0.0625, Count: 4, LowerInclusive: true, UpperInclusive: true, Index: -1},
 				{Lower: math.Inf(-1), Upper: 1, Count: 5, LowerInclusive: true, UpperInclusive: true, Index: 0},
@@ -198,7 +198,7 @@ func TestCumulativeBucketIterator(t *testing.T) {
 				},
 				PositiveBuckets: []int64{1, 2, -2, 1, -1},
 			},
-			expectedBuckets: []Bucket{
+			expectedBuckets: []Bucket[uint64]{
 				{Lower: math.Inf(-1), Upper: 0.0625, Count: 1, LowerInclusive: true, UpperInclusive: true, Index: -2},
 				{Lower: math.Inf(-1), Upper: 0.25, Count: 4, LowerInclusive: true, UpperInclusive: true, Index: -1},
 				{Lower: math.Inf(-1), Upper: 1, Count: 5, LowerInclusive: true, UpperInclusive: true, Index: 0},
@@ -211,7 +211,7 @@ func TestCumulativeBucketIterator(t *testing.T) {
 	for i, c := range cases {
 		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
 			it := c.histogram.CumulativeBucketIterator()
-			actualBuckets := make([]Bucket, 0, len(c.expectedBuckets))
+			actualBuckets := make([]Bucket[uint64], 0, len(c.expectedBuckets))
 			for it.Next() {
 				actualBuckets = append(actualBuckets, it.At())
 			}
@@ -223,15 +223,15 @@ func TestCumulativeBucketIterator(t *testing.T) {
 func TestRegularBucketIterator(t *testing.T) {
 	cases := []struct {
 		histogram               Histogram
-		expectedPositiveBuckets []Bucket
-		expectedNegativeBuckets []Bucket
+		expectedPositiveBuckets []Bucket[uint64]
+		expectedNegativeBuckets []Bucket[uint64]
 	}{
 		{
 			histogram: Histogram{
 				Schema: 0,
 			},
-			expectedPositiveBuckets: []Bucket{},
-			expectedNegativeBuckets: []Bucket{},
+			expectedPositiveBuckets: []Bucket[uint64]{},
+			expectedNegativeBuckets: []Bucket[uint64]{},
 		},
 		{
 			histogram: Histogram{
@@ -242,14 +242,14 @@ func TestRegularBucketIterator(t *testing.T) {
 				},
 				PositiveBuckets: []int64{1, 1, -1, 0},
 			},
-			expectedPositiveBuckets: []Bucket{
+			expectedPositiveBuckets: []Bucket[uint64]{
 				{Lower: 0.5, Upper: 1, Count: 1, LowerInclusive: false, UpperInclusive: true, Index: 0},
 				{Lower: 1, Upper: 2, Count: 2, LowerInclusive: false, UpperInclusive: true, Index: 1},
 
 				{Lower: 4, Upper: 8, Count: 1, LowerInclusive: false, UpperInclusive: true, Index: 3},
 				{Lower: 8, Upper: 16, Count: 1, LowerInclusive: false, UpperInclusive: true, Index: 4},
 			},
-			expectedNegativeBuckets: []Bucket{},
+			expectedNegativeBuckets: []Bucket[uint64]{},
 		},
 		{
 			histogram: Histogram{
@@ -260,8 +260,8 @@ func TestRegularBucketIterator(t *testing.T) {
 				},
 				NegativeBuckets: []int64{1, 2, -2, 1, -1, 0},
 			},
-			expectedPositiveBuckets: []Bucket{},
-			expectedNegativeBuckets: []Bucket{
+			expectedPositiveBuckets: []Bucket[uint64]{},
+			expectedNegativeBuckets: []Bucket[uint64]{
 				{Lower: -1, Upper: -0.5, Count: 1, LowerInclusive: true, UpperInclusive: false, Index: 0},
 				{Lower: -2, Upper: -1, Count: 3, LowerInclusive: true, UpperInclusive: false, Index: 1},
 				{Lower: -4, Upper: -2, Count: 1, LowerInclusive: true, UpperInclusive: false, Index: 2},
@@ -287,7 +287,7 @@ func TestRegularBucketIterator(t *testing.T) {
 				},
 				NegativeBuckets: []int64{1, 2, -2, 1, -1, 0},
 			},
-			expectedPositiveBuckets: []Bucket{
+			expectedPositiveBuckets: []Bucket[uint64]{
 				{Lower: 0.5, Upper: 1, Count: 1, LowerInclusive: false, UpperInclusive: true, Index: 0},
 				{Lower: 1, Upper: 2, Count: 3, LowerInclusive: false, UpperInclusive: true, Index: 1},
 				{Lower: 2, Upper: 4, Count: 1, LowerInclusive: false, UpperInclusive: true, Index: 2},
@@ -296,7 +296,7 @@ func TestRegularBucketIterator(t *testing.T) {
 				{Lower: 16, Upper: 32, Count: 1, LowerInclusive: false, UpperInclusive: true, Index: 5},
 				{Lower: 32, Upper: 64, Count: 1, LowerInclusive: false, UpperInclusive: true, Index: 6},
 			},
-			expectedNegativeBuckets: []Bucket{
+			expectedNegativeBuckets: []Bucket[uint64]{
 				{Lower: -1, Upper: -0.5, Count: 1, LowerInclusive: true, UpperInclusive: false, Index: 0},
 				{Lower: -2, Upper: -1, Count: 3, LowerInclusive: true, UpperInclusive: false, Index: 1},
 				{Lower: -4, Upper: -2, Count: 1, LowerInclusive: true, UpperInclusive: false, Index: 2},
@@ -316,7 +316,7 @@ func TestRegularBucketIterator(t *testing.T) {
 				},
 				PositiveBuckets: []int64{1, 2, -2, 1, -1, 0, 3},
 			},
-			expectedPositiveBuckets: []Bucket{
+			expectedPositiveBuckets: []Bucket[uint64]{
 				{Lower: 0.5946035575013605, Upper: 0.6484197773255048, Count: 1, LowerInclusive: false, UpperInclusive: true, Index: -5},
 				{Lower: 0.6484197773255048, Upper: 0.7071067811865475, Count: 3, LowerInclusive: false, UpperInclusive: true, Index: -4},
 
@@ -327,7 +327,7 @@ func TestRegularBucketIterator(t *testing.T) {
 				{Lower: 1.2968395546510096, Upper: 1.414213562373095, Count: 1, LowerInclusive: false, UpperInclusive: true, Index: 4},
 				{Lower: 1.414213562373095, Upper: 1.5422108254079407, Count: 4, LowerInclusive: false, UpperInclusive: true, Index: 5},
 			},
-			expectedNegativeBuckets: []Bucket{},
+			expectedNegativeBuckets: []Bucket[uint64]{},
 		},
 		{
 			histogram: Histogram{
@@ -338,7 +338,7 @@ func TestRegularBucketIterator(t *testing.T) {
 				},
 				PositiveBuckets: []int64{1, 2, -2, 1, -1, 0},
 			},
-			expectedPositiveBuckets: []Bucket{
+			expectedPositiveBuckets: []Bucket[uint64]{
 				{Lower: 0.000244140625, Upper: 0.00390625, Count: 1, LowerInclusive: false, UpperInclusive: true, Index: -2},
 				{Lower: 0.00390625, Upper: 0.0625, Count: 3, LowerInclusive: false, UpperInclusive: true, Index: -1},
 				{Lower: 0.0625, Upper: 1, Count: 1, LowerInclusive: false, UpperInclusive: true, Index: 0},
@@ -347,7 +347,7 @@ func TestRegularBucketIterator(t *testing.T) {
 				{Lower: 4096, Upper: 65536, Count: 1, LowerInclusive: false, UpperInclusive: true, Index: 4},
 				{Lower: 65536, Upper: 1048576, Count: 1, LowerInclusive: false, UpperInclusive: true, Index: 5},
 			},
-			expectedNegativeBuckets: []Bucket{},
+			expectedNegativeBuckets: []Bucket[uint64]{},
 		},
 		{
 			histogram: Histogram{
@@ -357,27 +357,27 @@ func TestRegularBucketIterator(t *testing.T) {
 				},
 				PositiveBuckets: []int64{1, 2, -2, 1, -1},
 			},
-			expectedPositiveBuckets: []Bucket{
+			expectedPositiveBuckets: []Bucket[uint64]{
 				{Lower: 0.015625, Upper: 0.0625, Count: 1, LowerInclusive: false, UpperInclusive: true, Index: -2},
 				{Lower: 0.0625, Upper: 0.25, Count: 3, LowerInclusive: false, UpperInclusive: true, Index: -1},
 				{Lower: 0.25, Upper: 1, Count: 1, LowerInclusive: false, UpperInclusive: true, Index: 0},
 				{Lower: 1, Upper: 4, Count: 2, LowerInclusive: false, UpperInclusive: true, Index: 1},
 				{Lower: 4, Upper: 16, Count: 1, LowerInclusive: false, UpperInclusive: true, Index: 2},
 			},
-			expectedNegativeBuckets: []Bucket{},
+			expectedNegativeBuckets: []Bucket[uint64]{},
 		},
 	}
 
 	for i, c := range cases {
 		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
 			it := c.histogram.PositiveBucketIterator()
-			actualPositiveBuckets := make([]Bucket, 0, len(c.expectedPositiveBuckets))
+			actualPositiveBuckets := make([]Bucket[uint64], 0, len(c.expectedPositiveBuckets))
 			for it.Next() {
 				actualPositiveBuckets = append(actualPositiveBuckets, it.At())
 			}
 			require.Equal(t, c.expectedPositiveBuckets, actualPositiveBuckets)
 			it = c.histogram.NegativeBucketIterator()
-			actualNegativeBuckets := make([]Bucket, 0, len(c.expectedNegativeBuckets))
+			actualNegativeBuckets := make([]Bucket[uint64], 0, len(c.expectedNegativeBuckets))
 			for it.Next() {
 				actualNegativeBuckets = append(actualNegativeBuckets, it.At())
 			}
