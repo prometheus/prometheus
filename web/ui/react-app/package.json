@@ -36,7 +36,7 @@
     "react-resize-detector": "^6.7.8",
     "react-router-dom": "^5.3.3",
     "react-test-renderer": "^17.0.2",
-    "reactstrap": "^8.10.1",
+    "reactstrap": "^9.1.4",
     "sanitize-html": "^2.7.2",
     "sass": "1.54.9",
     "tempusdominus-bootstrap-4": "^5.39.2",
