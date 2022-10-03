@@ -274,9 +274,9 @@ type headMetrics struct {
 	chunksCreated            prometheus.Counter
 	chunksRemoved            prometheus.Counter
 	gcDuration               prometheus.Summary
-	samplesAppended          prometheus.Counter
-	outOfBoundSamples        prometheus.Counter
-	outOfOrderSamples        prometheus.Counter
+	samplesAppended          *prometheus.CounterVec
+	outOfBoundSamples        *prometheus.CounterVec
+	outOfOrderSamples        *prometheus.CounterVec
 	walTruncateDuration      prometheus.Summary
 	walCorruptionsTotal      prometheus.Counter
 	walTotalReplayDuration   prometheus.Gauge
@@ -288,11 +288,12 @@ type headMetrics struct {
 	checkpointCreationTotal  prometheus.Counter
 	mmapChunkCorruptionTotal prometheus.Counter
 	snapshotReplayErrorTotal prometheus.Counter // Will be either 0 or 1.
-
-	// Sparse histogram metrics for experiments.
-	// TODO: remove these in the final version.
-	histogramSamplesTotal prometheus.Counter
 }
+
+const (
+	sampleMetricTypeFloat     = "float"
+	sampleMetricTypeHistogram = "histogram"
+)
 
 func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 	m := &headMetrics{
@@ -346,18 +347,18 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			Name: "prometheus_tsdb_data_replay_duration_seconds",
 			Help: "Time taken to replay the data on disk.",
 		}),
-		samplesAppended: prometheus.NewCounter(prometheus.CounterOpts{
+		samplesAppended: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_head_samples_appended_total",
 			Help: "Total number of appended samples.",
-		}),
-		outOfBoundSamples: prometheus.NewCounter(prometheus.CounterOpts{
+		}, []string{"type"}),
+		outOfBoundSamples: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_out_of_bound_samples_total",
 			Help: "Total number of out of bound samples ingestion failed attempts.",
-		}),
-		outOfOrderSamples: prometheus.NewCounter(prometheus.CounterOpts{
+		}, []string{"type"}),
+		outOfOrderSamples: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_out_of_order_samples_total",
 			Help: "Total number of out of order samples ingestion failed attempts.",
-		}),
+		}, []string{"type"}),
 		headTruncateFail: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_head_truncations_failed_total",
 			Help: "Total number of head truncations that failed.",
@@ -390,10 +391,6 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			Name: "prometheus_tsdb_snapshot_replay_error_total",
 			Help: "Total number snapshot replays that failed.",
 		}),
-		histogramSamplesTotal: prometheus.NewCounter(prometheus.CounterOpts{
-			Name: "prometheus_tsdb_histogram_samples_total",
-			Help: "Total number of histograms samples added.",
-		}),
 	}
 
 	if r != nil {
@@ -421,7 +418,6 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 			m.checkpointCreationTotal,
 			m.mmapChunkCorruptionTotal,
 			m.snapshotReplayErrorTotal,
-			m.histogramSamplesTotal,
 			// Metrics bound to functions and not needed in tests
 			// can be created and registered on the spot.
 			prometheus.NewGaugeFunc(prometheus.GaugeOpts{

@@ -2131,19 +2131,19 @@ func TestOutOfOrderSamplesMetric(t *testing.T) {
 	require.NoError(t, app.Commit())
 
 	// Test out of order metric.
-	require.Equal(t, 0.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples))
+	require.Equal(t, 0.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat)))
 	app = db.Appender(ctx)
 	_, err = app.Append(0, labels.FromStrings("a", "b"), 2, 99)
 	require.Equal(t, storage.ErrOutOfOrderSample, err)
-	require.Equal(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples))
+	require.Equal(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat)))
 
 	_, err = app.Append(0, labels.FromStrings("a", "b"), 3, 99)
 	require.Equal(t, storage.ErrOutOfOrderSample, err)
-	require.Equal(t, 2.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples))
+	require.Equal(t, 2.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat)))
 
 	_, err = app.Append(0, labels.FromStrings("a", "b"), 4, 99)
 	require.Equal(t, storage.ErrOutOfOrderSample, err)
-	require.Equal(t, 3.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples))
+	require.Equal(t, 3.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat)))
 	require.NoError(t, app.Commit())
 
 	// Compact Head to test out of bound metric.
@@ -2159,11 +2159,11 @@ func TestOutOfOrderSamplesMetric(t *testing.T) {
 	app = db.Appender(ctx)
 	_, err = app.Append(0, labels.FromStrings("a", "b"), db.head.minValidTime.Load()-2, 99)
 	require.Equal(t, storage.ErrOutOfBounds, err)
-	require.Equal(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.outOfBoundSamples))
+	require.Equal(t, 1.0, prom_testutil.ToFloat64(db.head.metrics.outOfBoundSamples.WithLabelValues(sampleMetricTypeFloat)))
 
 	_, err = app.Append(0, labels.FromStrings("a", "b"), db.head.minValidTime.Load()-1, 99)
 	require.Equal(t, storage.ErrOutOfBounds, err)
-	require.Equal(t, 2.0, prom_testutil.ToFloat64(db.head.metrics.outOfBoundSamples))
+	require.Equal(t, 2.0, prom_testutil.ToFloat64(db.head.metrics.outOfBoundSamples.WithLabelValues(sampleMetricTypeFloat)))
 	require.NoError(t, app.Commit())
 
 	// Some more valid samples for out of order.
@@ -2178,15 +2178,15 @@ func TestOutOfOrderSamplesMetric(t *testing.T) {
 	app = db.Appender(ctx)
 	_, err = app.Append(0, labels.FromStrings("a", "b"), db.head.minValidTime.Load()+DefaultBlockDuration+2, 99)
 	require.Equal(t, storage.ErrOutOfOrderSample, err)
-	require.Equal(t, 4.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples))
+	require.Equal(t, 4.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat)))
 
 	_, err = app.Append(0, labels.FromStrings("a", "b"), db.head.minValidTime.Load()+DefaultBlockDuration+3, 99)
 	require.Equal(t, storage.ErrOutOfOrderSample, err)
-	require.Equal(t, 5.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples))
+	require.Equal(t, 5.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat)))
 
 	_, err = app.Append(0, labels.FromStrings("a", "b"), db.head.minValidTime.Load()+DefaultBlockDuration+4, 99)
 	require.Equal(t, storage.ErrOutOfOrderSample, err)
-	require.Equal(t, 6.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples))
+	require.Equal(t, 6.0, prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat)))
 	require.NoError(t, app.Commit())
 }
 
@@ -3267,7 +3267,7 @@ func TestHistogramMetrics(t *testing.T) {
 		}
 	}
 
-	require.Equal(t, float64(expHSamples), prom_testutil.ToFloat64(head.metrics.histogramSamplesTotal))
+	require.Equal(t, float64(expHSamples), prom_testutil.ToFloat64(head.metrics.samplesAppended.WithLabelValues(sampleMetricTypeHistogram)))
 
 	require.NoError(t, head.Close())
 	w, err := wal.NewSize(nil, nil, head.wal.Dir(), 32768, false)
@@ -3276,7 +3276,7 @@ func TestHistogramMetrics(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, head.Init(0))
 
-	require.Equal(t, float64(0), prom_testutil.ToFloat64(head.metrics.histogramSamplesTotal)) // Counter reset.
+	require.Equal(t, float64(0), prom_testutil.ToFloat64(head.metrics.samplesAppended.WithLabelValues(sampleMetricTypeHistogram))) // Counter reset.
 }
 
 func TestHistogramStaleSample(t *testing.T) {
