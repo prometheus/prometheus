@@ -1,6 +1,6 @@
 ---
 name: CI
-on:
+on:  # yamllint disable-line rule:truthy
   pull_request:
   push:
 jobs:
