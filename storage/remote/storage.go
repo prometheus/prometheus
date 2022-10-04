@@ -120,7 +120,7 @@ func (s *Storage) ApplyConfig(conf *config.Config) error {
 
 		externalLabels := conf.GlobalConfig.ExternalLabels
 		if !rrConf.FilterExternalLabels {
-			externalLabels = make(labels.Labels, 0)
+			externalLabels = labels.EmptyLabels()
 		}
 		queryables = append(queryables, NewSampleAndChunkQueryableClient(
 			c,

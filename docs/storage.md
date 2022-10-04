@@ -155,7 +155,7 @@ Backfilling can be used via the Promtool command line. Promtool will write the b
 promtool tsdb create-blocks-from openmetrics <input file> [<output directory>]
 ```
 
-After the creation of the blocks, move it to the data directory of Prometheus. If there is an overlap with the existing blocks in Prometheus, the flag `--storage.tsdb.allow-overlapping-blocks` needs to be set. Note that any backfilled data is subject to the retention configured for your Prometheus server (by time or size).
+After the creation of the blocks, move it to the data directory of Prometheus. If there is an overlap with the existing blocks in Prometheus, the flag `--storage.tsdb.allow-overlapping-blocks` needs to be set for Prometheus versions v2.38 and below. Note that any backfilled data is subject to the retention configured for your Prometheus server (by time or size).
 
 #### Longer Block Durations
 
@@ -189,7 +189,7 @@ $ promtool tsdb create-blocks-from rules \
 
 The recording rule files provided should be a normal [Prometheus rules file](https://prometheus.io/docs/prometheus/latest/configuration/recording_rules/).
 
-The output of `promtool tsdb create-blocks-from rules` command is a directory that contains blocks with the historical rule data for all rules in the recording rule files. By default the output directory is `data/`. In order to make use of this new block data, the blocks must be moved to a running Prometheus instance data dir `storage.tsdb.path` that has the flag `--storage.tsdb.allow-overlapping-blocks` enabled. Once moved, the new blocks will merge with existing blocks when the next compaction runs.
+The output of `promtool tsdb create-blocks-from rules` command is a directory that contains blocks with the historical rule data for all rules in the recording rule files. By default, the output directory is `data/`. In order to make use of this new block data, the blocks must be moved to a running Prometheus instance data dir `storage.tsdb.path` (for Prometheus versions v2.38 and below, the flag `--storage.tsdb.allow-overlapping-blocks` must be enabled). Once moved, the new blocks will merge with existing blocks when the next compaction runs.
 
 ### Limitations
 

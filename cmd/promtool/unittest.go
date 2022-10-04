@@ -27,7 +27,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/prometheus/common/model"
-	yaml "gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"

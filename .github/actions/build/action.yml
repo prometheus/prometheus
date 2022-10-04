@@ -1,0 +1,23 @@
+name: Build
+inputs:
+  thread:
+    type: integer
+    description: Current thread
+    required: true
+    default: 3
+  parallelism:
+    type: integer
+    description: Number of builds to do in parallel
+    default: 3
+  promu_opts:
+    type: string
+    description: Options to pass to promu
+runs:
+  using: composite
+  steps:
+    - uses: ./.github/actions/setup_environment
+    - run: ~/go/bin/promu crossbuild -v --parallelism ${{ inputs.parallelism }} --parallelism-thread ${{ inputs.thread }} ${{ inputs.promu_opts }}
+      shell: bash
+    - uses: ./.github/actions/save_artifacts
+      with:
+        directory: .build

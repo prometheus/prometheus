@@ -189,12 +189,9 @@ func TestConcreteSeriesSet(t *testing.T) {
 }
 
 func TestConcreteSeriesClonesLabels(t *testing.T) {
-	lbls := labels.Labels{
-		labels.Label{Name: "a", Value: "b"},
-		labels.Label{Name: "c", Value: "d"},
-	}
+	lbls := labels.FromStrings("a", "b", "c", "d")
 	cs := concreteSeries{
-		labels: labels.New(lbls...),
+		labels: lbls,
 	}
 
 	gotLabels := cs.Labels()

@@ -87,6 +87,18 @@ func (ref ChunkDiskMapperRef) Unpack() (seq, offset int) {
 	return seq, offset
 }
 
+func (ref ChunkDiskMapperRef) GreaterThanOrEqualTo(r ChunkDiskMapperRef) bool {
+	s1, o1 := ref.Unpack()
+	s2, o2 := r.Unpack()
+	return s1 > s2 || (s1 == s2 && o1 >= o2)
+}
+
+func (ref ChunkDiskMapperRef) GreaterThan(r ChunkDiskMapperRef) bool {
+	s1, o1 := ref.Unpack()
+	s2, o2 := r.Unpack()
+	return s1 > s2 || (s1 == s2 && o1 > o2)
+}
+
 // CorruptionErr is an error that's returned when corruption is encountered.
 type CorruptionErr struct {
 	Dir       string
@@ -360,11 +372,25 @@ func repairLastChunkFile(files map[int]string) (_ map[int]string, returnErr erro
 		return files, nil
 	}
 
-	info, err := os.Stat(files[lastFile])
+	f, err := os.Open(files[lastFile])
 	if err != nil {
-		return files, errors.Wrap(err, "file stat during last head chunk file repair")
+		return files, errors.Wrap(err, "open file during last head chunk file repair")
 	}
-	if info.Size() == 0 {
+
+	buf := make([]byte, MagicChunksSize)
+	size, err := f.Read(buf)
+	if err != nil && err != io.EOF {
+		return files, errors.Wrap(err, "failed to read magic number during last head chunk file repair")
+	}
+	if err := f.Close(); err != nil {
+		return files, errors.Wrap(err, "close file during last head chunk file repair")
+	}
+
+	// We either don't have enough bytes for the magic number or the magic number is 0.
+	// NOTE: we should not check for wrong magic number here because that error
+	// needs to be sent up the function called (already done elsewhere)
+	// for proper repair mechanism to happen in the Head.
+	if size < MagicChunksSize || binary.BigEndian.Uint32(buf) == 0 {
 		// Corrupt file, hence remove it.
 		if err := os.RemoveAll(files[lastFile]); err != nil {
 			return files, errors.Wrap(err, "delete corrupted, empty head chunk file during last file repair")
@@ -736,7 +762,7 @@ func (cdm *ChunkDiskMapper) Chunk(ref ChunkDiskMapperRef) (chunkenc.Chunk, error
 // and runs the provided function with information about each chunk. It returns on the first error encountered.
 // NOTE: This method needs to be called at least once after creating ChunkDiskMapper
 // to set the maxt of all the file.
-func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef HeadSeriesRef, chunkRef ChunkDiskMapperRef, mint, maxt int64, numSamples uint16) error) (err error) {
+func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef HeadSeriesRef, chunkRef ChunkDiskMapperRef, mint, maxt int64, numSamples uint16, encoding chunkenc.Encoding) error) (err error) {
 	cdm.writePathMtx.Lock()
 	defer cdm.writePathMtx.Unlock()
 
@@ -799,7 +825,8 @@ func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef HeadSeriesRef, chu
 				break
 			}
 
-			idx += ChunkEncodingSize // Skip encoding.
+			chkEnc := chunkenc.Encoding(mmapFile.byteSlice.Range(idx, idx+ChunkEncodingSize)[0])
+			idx += ChunkEncodingSize
 			dataLen, n := binary.Uvarint(mmapFile.byteSlice.Range(idx, idx+MaxChunkLengthFieldSize))
 			idx += n
 
@@ -834,7 +861,7 @@ func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef HeadSeriesRef, chu
 				mmapFile.maxt = maxt
 			}
 
-			if err := f(seriesRef, chunkRef, mint, maxt, numSamples); err != nil {
+			if err := f(seriesRef, chunkRef, mint, maxt, numSamples, chkEnc); err != nil {
 				if cerr, ok := err.(*CorruptionErr); ok {
 					cerr.Dir = cdm.dir.Name()
 					cerr.FileIndex = segID
@@ -857,12 +884,8 @@ func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef HeadSeriesRef, chu
 	return nil
 }
 
-// Truncate deletes the head chunk files which are strictly below the mint.
-// mint should be in milliseconds.
-func (cdm *ChunkDiskMapper) Truncate(mint int64) error {
-	if !cdm.fileMaxtSet {
-		return errors.New("maxt of the files are not set")
-	}
+// Truncate deletes the head chunk files whose file number is less than given fileNo.
+func (cdm *ChunkDiskMapper) Truncate(fileNo uint32) error {
 	cdm.readPathMtx.RLock()
 
 	// Sort the file indices, else if files deletion fails in between,
@@ -875,12 +898,10 @@ func (cdm *ChunkDiskMapper) Truncate(mint int64) error {
 
 	var removedFiles []int
 	for _, seq := range chkFileIndices {
-		if seq == cdm.curFileSequence || cdm.mmappedChunkFiles[seq].maxt >= mint {
+		if seq == cdm.curFileSequence || uint32(seq) >= fileNo {
 			break
 		}
-		if cdm.mmappedChunkFiles[seq].maxt < mint {
-			removedFiles = append(removedFiles, seq)
-		}
+		removedFiles = append(removedFiles, seq)
 	}
 	cdm.readPathMtx.RUnlock()
 

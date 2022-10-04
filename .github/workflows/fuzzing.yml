@@ -1,6 +1,6 @@
 name: CIFuzz
 on:
-  pull_request:
+  workflow_call:
 jobs:
   Fuzzing:
     runs-on: ubuntu-latest

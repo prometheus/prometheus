@@ -391,6 +391,10 @@ alerting:
             - "1.2.3.5:9093"
             - "1.2.3.6:9093"
 
+storage:
+  tsdb:
+    out_of_order_time_window: 30m
+
 tracing:
   endpoint: "localhost:4317"
   client_type: "grpc"

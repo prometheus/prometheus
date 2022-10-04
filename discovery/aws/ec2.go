@@ -57,6 +57,7 @@ const (
 	ec2LabelPrivateIP         = ec2Label + "private_ip"
 	ec2LabelPublicDNS         = ec2Label + "public_dns_name"
 	ec2LabelPublicIP          = ec2Label + "public_ip"
+	ec2LabelRegion            = ec2Label + "region"
 	ec2LabelSubnetID          = ec2Label + "subnet_id"
 	ec2LabelTag               = ec2Label + "tag_"
 	ec2LabelVPCID             = ec2Label + "vpc_id"
@@ -242,6 +243,7 @@ func (d *EC2Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 
 				labels := model.LabelSet{
 					ec2LabelInstanceID: model.LabelValue(*inst.InstanceId),
+					ec2LabelRegion:     model.LabelValue(d.cfg.Region),
 				}
 
 				if r.OwnerId != nil {

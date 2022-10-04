@@ -1,4 +1,5 @@
-import React, { FC } from 'react';
+import React, { FC, useContext } from 'react';
+import { useToastContext } from '../../contexts/ToastContext';
 import { metricToSeriesName } from '../../utils';
 
 interface SeriesNameProps {
@@ -7,6 +8,20 @@ interface SeriesNameProps {
 }
 
 const SeriesName: FC<SeriesNameProps> = ({ labels, format }) => {
+  const setClipboardMsg = useToastContext();
+
+  const toClipboard = (e: React.MouseEvent<HTMLSpanElement>) => {
+    let copyText = e.currentTarget.innerText || '';
+    navigator.clipboard
+      .writeText(copyText.trim())
+      .then(() => {
+        setClipboardMsg(copyText);
+      })
+      .catch((reason) => {
+        console.error(`unable to copy text: ${reason}`);
+      });
+  };
+
   const renderFormatted = (): React.ReactElement => {
     const labelNodes: React.ReactElement[] = [];
     let first = true;
@@ -18,7 +33,9 @@ const SeriesName: FC<SeriesNameProps> = ({ labels, format }) => {
       labelNodes.push(
         <span key={label}>
           {!first && ', '}
-          <span className="legend-label-name">{label}</span>=<span className="legend-label-value">"{labels[label]}"</span>
+          <span className="legend-label-container" onClick={toClipboard} title="Click to copy label matcher">
+            <span className="legend-label-name">{label}</span>=<span className="legend-label-value">"{labels[label]}"</span>
+          </span>
         </span>
       );
 

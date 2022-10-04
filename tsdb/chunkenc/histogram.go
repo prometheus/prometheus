@@ -29,10 +29,10 @@ import (
 // delta of the delta to the previous number, xor = what we do for regular
 // sample values):
 //
-//   field →    ts    count zeroCount sum []posbuckets []negbuckets
-//   sample 1   raw   raw   raw       raw []raw        []raw
-//   sample 2   delta delta delta     xor []delta      []delta
-//   sample >2  dod   dod   dod       xor []dod        []dod
+//	field →    ts    count zeroCount sum []posbuckets []negbuckets
+//	sample 1   raw   raw   raw       raw []raw        []raw
+//	sample 2   delta delta delta     xor []delta      []delta
+//	sample >2  dod   dod   dod       xor []dod        []dod
 type HistogramChunk struct {
 	b bstream
 }
