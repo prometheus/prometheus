@@ -25,7 +25,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/common/model"
 	"go.uber.org/atomic"
-	yaml "gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
@@ -226,7 +226,7 @@ func (r *AlertingRule) sample(alert *Alert, ts time.Time) promql.Sample {
 	lb.Set(alertStateLabel, alert.State.String())
 
 	s := promql.Sample{
-		Metric: lb.Labels(),
+		Metric: lb.Labels(nil),
 		Point:  promql.Point{T: timestamp.FromTime(ts), V: 1},
 	}
 	return s
@@ -244,7 +244,7 @@ func (r *AlertingRule) forStateSample(alert *Alert, ts time.Time, v float64) pro
 	lb.Set(labels.AlertName, r.name)
 
 	s := promql.Sample{
-		Metric: lb.Labels(),
+		Metric: lb.Labels(nil),
 		Point:  promql.Point{T: timestamp.FromTime(ts), V: v},
 	}
 	return s
@@ -373,7 +373,7 @@ func (r *AlertingRule) Eval(ctx context.Context, ts time.Time, query QueryFunc, 
 			annotations = append(annotations, labels.Label{Name: a.Name, Value: expand(a.Value)})
 		}
 
-		lbs := lb.Labels()
+		lbs := lb.Labels(nil)
 		h := lbs.Hash()
 		resultFPs[h] = struct{}{}
 

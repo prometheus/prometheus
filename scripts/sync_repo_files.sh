@@ -47,12 +47,6 @@ source_dir="$(pwd)"
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "${tmp_dir}"' EXIT
 
-prometheus_orb_version="$(yq eval '.orbs.prometheus' .circleci/config.yml)"
-if [[ -z "${prometheus_orb_version}" ]]; then
-  echo_red '"ERROR: Unable to get CircleCI orb version'
-  exit 1
-fi
-
 ## Internal functions
 github_api() {
   local url
@@ -105,24 +99,6 @@ check_go() {
   curl -sLf -o /dev/null "https://raw.githubusercontent.com/${org_repo}/${default_branch}/go.mod"
 }
 
-check_circleci_orb() {
-  local org_repo
-  local default_branch
-  org_repo="$1"
-  default_branch="$2"
-  local ci_config_url="https://raw.githubusercontent.com/${org_repo}/${default_branch}/.circleci/config.yml"
-
-  orb_version="$(curl -sL --fail "${ci_config_url}" | yq eval '.orbs.prometheus' -)"
-  if [[ -z "${orb_version}" ]]; then
-    echo_yellow "WARNING: Failed to fetch CirleCI orb version from '${org_repo}'"
-    return 0
-  fi
-
-  if [[ "${orb_version}" != "null" && "${orb_version}" != "${prometheus_orb_version}" ]]; then
-    echo "CircleCI-orb"
-  fi
-}
-
 process_repo() {
   local org_repo
   local default_branch
@@ -168,13 +144,6 @@ process_repo() {
     needs_update+=("${source_file}")
   done
 
-  local circleci
-  circleci="$(check_circleci_orb "${org_repo}" "${default_branch}")"
-  if [[ -n "${circleci}" ]]; then
-    echo "${circleci} needs updating."
-    needs_update+=("${circleci}")
-  fi
-
   if [[ "${#needs_update[@]}" -eq 0 ]] ; then
     echo "No files need sync."
     return
@@ -191,7 +160,6 @@ process_repo() {
   # Update the files in target repo by one from prometheus/prometheus.
   for source_file in "${needs_update[@]}"; do
     case "${source_file}" in
-      CircleCI-orb) yq eval -i ".orbs.prometheus = \"${prometheus_orb_version}\"" .circleci/config.yml ;;
       *) cp -f "${source_dir}/${source_file}" "./${source_file}" ;;
     esac
   done

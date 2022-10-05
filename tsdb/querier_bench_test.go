@@ -34,7 +34,7 @@ func BenchmarkQuerier(b *testing.B) {
 	opts := DefaultHeadOptions()
 	opts.ChunkRange = 1000
 	opts.ChunkDirRoot = chunkDir
-	h, err := NewHead(nil, nil, nil, opts, nil)
+	h, err := NewHead(nil, nil, nil, nil, opts, nil)
 	require.NoError(b, err)
 	defer func() {
 		require.NoError(b, h.Close())
@@ -180,7 +180,7 @@ func BenchmarkQuerierSelect(b *testing.B) {
 	opts := DefaultHeadOptions()
 	opts.ChunkRange = 1000
 	opts.ChunkDirRoot = chunkDir
-	h, err := NewHead(nil, nil, nil, opts, nil)
+	h, err := NewHead(nil, nil, nil, nil, opts, nil)
 	require.NoError(b, err)
 	defer h.Close()
 	app := h.Appender(context.Background())

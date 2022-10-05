@@ -18,7 +18,6 @@ import (
 	"container/heap"
 	"fmt"
 	"math"
-	"sort"
 	"sync"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -26,6 +25,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
+	"golang.org/x/exp/slices"
 )
 
 type mergeGenericQuerier struct {
@@ -241,7 +241,7 @@ func (q *mergeGenericQuerier) LabelNames(matchers ...*labels.Matcher) ([]string,
 	for name := range labelNamesMap {
 		labelNames = append(labelNames, name)
 	}
-	sort.Strings(labelNames)
+	slices.Sort(labelNames)
 	return labelNames, warnings, nil
 }
 
@@ -739,4 +739,57 @@ func (h *chunkIteratorHeap) Pop() interface{} {
 	x := old[n-1]
 	*h = old[0 : n-1]
 	return x
+}
+
+// NewConcatenatingChunkSeriesMerger returns a VerticalChunkSeriesMergeFunc that simply concatenates the
+// chunks from the series. The resultant stream of chunks for a series might be overlapping and unsorted.
+func NewConcatenatingChunkSeriesMerger() VerticalChunkSeriesMergeFunc {
+	return func(series ...ChunkSeries) ChunkSeries {
+		if len(series) == 0 {
+			return nil
+		}
+		return &ChunkSeriesEntry{
+			Lset: series[0].Labels(),
+			ChunkIteratorFn: func() chunks.Iterator {
+				iterators := make([]chunks.Iterator, 0, len(series))
+				for _, s := range series {
+					iterators = append(iterators, s.Iterator())
+				}
+				return &concatenatingChunkIterator{
+					iterators: iterators,
+				}
+			},
+		}
+	}
+}
+
+type concatenatingChunkIterator struct {
+	iterators []chunks.Iterator
+	idx       int
+
+	curr chunks.Meta
+}
+
+func (c *concatenatingChunkIterator) At() chunks.Meta {
+	return c.curr
+}
+
+func (c *concatenatingChunkIterator) Next() bool {
+	if c.idx >= len(c.iterators) {
+		return false
+	}
+	if c.iterators[c.idx].Next() {
+		c.curr = c.iterators[c.idx].At()
+		return true
+	}
+	c.idx++
+	return c.Next()
+}
+
+func (c *concatenatingChunkIterator) Err() error {
+	errs := tsdb_errors.NewMulti()
+	for _, iter := range c.iterators {
+		errs.Add(iter.Err())
+	}
+	return errs.Err()
 }

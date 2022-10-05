@@ -30,7 +30,7 @@ func BenchmarkHeadStripeSeriesCreate(b *testing.B) {
 	opts := DefaultHeadOptions()
 	opts.ChunkRange = 1000
 	opts.ChunkDirRoot = chunkDir
-	h, err := NewHead(nil, nil, nil, opts, nil)
+	h, err := NewHead(nil, nil, nil, nil, opts, nil)
 	require.NoError(b, err)
 	defer h.Close()
 
@@ -45,7 +45,7 @@ func BenchmarkHeadStripeSeriesCreateParallel(b *testing.B) {
 	opts := DefaultHeadOptions()
 	opts.ChunkRange = 1000
 	opts.ChunkDirRoot = chunkDir
-	h, err := NewHead(nil, nil, nil, opts, nil)
+	h, err := NewHead(nil, nil, nil, nil, opts, nil)
 	require.NoError(b, err)
 	defer h.Close()
 
@@ -69,7 +69,7 @@ func BenchmarkHeadStripeSeriesCreate_PreCreationFailure(b *testing.B) {
 	// Mock the PreCreation() callback to fail on each series.
 	opts.SeriesCallback = failingSeriesLifecycleCallback{}
 
-	h, err := NewHead(nil, nil, nil, opts, nil)
+	h, err := NewHead(nil, nil, nil, nil, opts, nil)
 	require.NoError(b, err)
 	defer h.Close()
 

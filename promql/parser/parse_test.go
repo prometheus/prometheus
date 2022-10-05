@@ -3603,7 +3603,7 @@ var testSeries = []struct {
 }{
 	{
 		input:          `{} 1 2 3`,
-		expectedMetric: labels.Labels{},
+		expectedMetric: labels.EmptyLabels(),
 		expectedValues: newSeq(1, 2, 3),
 	}, {
 		input:          `{a="b"} -1 2 3`,

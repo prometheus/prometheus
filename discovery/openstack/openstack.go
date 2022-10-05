@@ -23,7 +23,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/gophercloud/gophercloud"
 	"github.com/gophercloud/gophercloud/openstack"
-	conntrack "github.com/mwitkow/go-conntrack"
+	"github.com/mwitkow/go-conntrack"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 

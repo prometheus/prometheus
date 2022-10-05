@@ -1,6 +1,6 @@
 name: CIFuzz
-on:
-  pull_request:
+on:  # yamllint disable-line rule:truthy
+  workflow_call:
 jobs:
   Fuzzing:
     runs-on: ubuntu-latest

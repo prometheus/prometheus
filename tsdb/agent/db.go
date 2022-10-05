@@ -318,13 +318,16 @@ func validateOptions(opts *Options) *Options {
 		opts.TruncateFrequency = DefaultTruncateFrequency
 	}
 	if opts.MinWALTime <= 0 {
-		opts.MinWALTime = 0
+		opts.MinWALTime = DefaultMinWALTime
 	}
 	if opts.MaxWALTime <= 0 {
 		opts.MaxWALTime = DefaultMaxWALTime
 	}
+	if opts.MinWALTime > opts.MaxWALTime {
+		opts.MaxWALTime = opts.MinWALTime
+	}
 
-	if t := int64(opts.TruncateFrequency * time.Hour / time.Millisecond); opts.MaxWALTime < t {
+	if t := int64(opts.TruncateFrequency / time.Millisecond); opts.MaxWALTime < t {
 		opts.MaxWALTime = t
 	}
 	return opts
@@ -568,8 +571,7 @@ func (db *DB) truncate(mint int64) error {
 
 	// Start a new segment so low ingestion volume instances don't have more WAL
 	// than needed.
-	err = db.wal.NextSegment()
-	if err != nil {
+	if _, err := db.wal.NextSegment(); err != nil {
 		return errors.Wrap(err, "next segment")
 	}
 

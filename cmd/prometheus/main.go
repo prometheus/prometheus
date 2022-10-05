@@ -37,7 +37,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/regexp"
-	conntrack "github.com/mwitkow/go-conntrack"
+	"github.com/mwitkow/go-conntrack"
 	"github.com/oklog/run"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
@@ -48,8 +48,8 @@ import (
 	toolkit_webflag "github.com/prometheus/exporter-toolkit/web/kingpinflag"
 	"go.uber.org/atomic"
 	"go.uber.org/automaxprocs/maxprocs"
-	kingpin "gopkg.in/alecthomas/kingpin.v2"
-	klog "k8s.io/klog"
+	"gopkg.in/alecthomas/kingpin.v2"
+	"k8s.io/klog"
 	klogv2 "k8s.io/klog/v2"
 
 	"github.com/prometheus/prometheus/config"
@@ -316,8 +316,10 @@ func main() {
 	serverOnlyFlag(a, "storage.tsdb.no-lockfile", "Do not create lockfile in data directory.").
 		Default("false").BoolVar(&cfg.tsdb.NoLockfile)
 
-	serverOnlyFlag(a, "storage.tsdb.allow-overlapping-blocks", "Allow overlapping blocks, which in turn enables vertical compaction and vertical query merge.").
-		Default("false").BoolVar(&cfg.tsdb.AllowOverlappingBlocks)
+	// TODO: Remove in Prometheus 3.0.
+	var b bool
+	serverOnlyFlag(a, "storage.tsdb.allow-overlapping-blocks", "[DEPRECATED] This flag has no effect. Overlapping blocks are enabled by default now.").
+		Default("true").Hidden().BoolVar(&b)
 
 	serverOnlyFlag(a, "storage.tsdb.wal-compression", "Compress the tsdb WAL.").
 		Hidden().Default("true").BoolVar(&cfg.tsdb.WALCompression)
@@ -463,6 +465,9 @@ func main() {
 			cfgFile.StorageConfig.ExemplarsConfig = &config.DefaultExemplarsConfig
 		}
 		cfg.tsdb.MaxExemplars = int64(cfgFile.StorageConfig.ExemplarsConfig.MaxExemplars)
+	}
+	if cfgFile.StorageConfig.TSDBConfig != nil {
+		cfg.tsdb.OutOfOrderTimeWindow = cfgFile.StorageConfig.TSDBConfig.OutOfOrderTimeWindow
 	}
 
 	// Now that the validity of the config is established, set the config
@@ -1009,7 +1014,6 @@ func main() {
 					"NoLockfile", cfg.tsdb.NoLockfile,
 					"RetentionDuration", cfg.tsdb.RetentionDuration,
 					"WALSegmentSize", cfg.tsdb.WALSegmentSize,
-					"AllowOverlappingBlocks", cfg.tsdb.AllowOverlappingBlocks,
 					"WALCompression", cfg.tsdb.WALCompression,
 				)
 
@@ -1536,12 +1540,12 @@ type tsdbOptions struct {
 	RetentionDuration              model.Duration
 	MaxBytes                       units.Base2Bytes
 	NoLockfile                     bool
-	AllowOverlappingBlocks         bool
 	WALCompression                 bool
 	HeadChunksWriteQueueSize       int
 	StripeSize                     int
 	MinBlockDuration               model.Duration
 	MaxBlockDuration               model.Duration
+	OutOfOrderTimeWindow           int64
 	EnableExemplarStorage          bool
 	MaxExemplars                   int64
 	EnableMemorySnapshotOnShutdown bool
@@ -1555,7 +1559,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		RetentionDuration:              int64(time.Duration(opts.RetentionDuration) / time.Millisecond),
 		MaxBytes:                       int64(opts.MaxBytes),
 		NoLockfile:                     opts.NoLockfile,
-		AllowOverlappingBlocks:         opts.AllowOverlappingBlocks,
+		AllowOverlappingCompaction:     true,
 		WALCompression:                 opts.WALCompression,
 		HeadChunksWriteQueueSize:       opts.HeadChunksWriteQueueSize,
 		StripeSize:                     opts.StripeSize,
@@ -1565,6 +1569,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		MaxExemplars:                   opts.MaxExemplars,
 		EnableMemorySnapshotOnShutdown: opts.EnableMemorySnapshotOnShutdown,
 		EnableNativeHistograms:         opts.EnableNativeHistograms,
+		OutOfOrderTimeWindow:           opts.OutOfOrderTimeWindow,
 	}
 }
 

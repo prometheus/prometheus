@@ -1,0 +1,17 @@
+# Tar is used because the default actions do not preserve directory structure
+# and file mode.
+name: Save artifacts
+inputs:
+  directory:
+    type: string
+    description: Path of the directory to save
+runs:
+  using: composite
+  steps:
+    - run: |
+        tar cvf artifact.tar ${{ inputs.directory }}
+        mv artifact.tar artifact-$(sha1sum artifact.tar|awk '{ print $1 }').tar
+      shell: bash
+    - uses: actions/upload-artifact@v3
+      with:
+        path: artifact-*.tar

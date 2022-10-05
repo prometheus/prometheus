@@ -153,6 +153,7 @@ const (
 	servicePortNumberLabel         = metaLabelPrefix + "service_port_number"
 	servicePortProtocolLabel       = metaLabelPrefix + "service_port_protocol"
 	serviceClusterIPLabel          = metaLabelPrefix + "service_cluster_ip"
+	serviceLoadBalancerIP          = metaLabelPrefix + "service_loadbalancer_ip"
 	serviceExternalNameLabel       = metaLabelPrefix + "service_external_name"
 	serviceType                    = metaLabelPrefix + "service_type"
 )
@@ -199,6 +200,10 @@ func (s *Service) buildService(svc *apiv1.Service) *targetgroup.Group {
 			labelSet[serviceExternalNameLabel] = lv(svc.Spec.ExternalName)
 		} else {
 			labelSet[serviceClusterIPLabel] = lv(svc.Spec.ClusterIP)
+		}
+
+		if svc.Spec.Type == apiv1.ServiceTypeLoadBalancer {
+			labelSet[serviceLoadBalancerIP] = lv(svc.Spec.LoadBalancerIP)
 		}
 
 		tg.Targets = append(tg.Targets, labelSet)

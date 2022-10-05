@@ -99,6 +99,7 @@ remote_read:
 
 # Storage related settings that are runtime reloadable.
 storage:
+  [ tsdb: <tsdb> ]
   [ exemplars: <exemplars> ]
 
 # Configures exporting traces.
@@ -457,7 +458,7 @@ subscription_id: <string>
 # Optional client secret. Only required with authentication_method OAuth.
 [ client_secret: <secret> ]
 
-# Optional resource group name. Limits discovery to this resource group. 
+# Optional resource group name. Limits discovery to this resource group.
 [ resource_group: <string> ]
 
 # Refresh interval to re-read the instance list.
@@ -1016,6 +1017,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_ec2_private_ip`: the private IP address of the instance, if present
 * `__meta_ec2_public_dns_name`: the public DNS name of the instance, if available
 * `__meta_ec2_public_ip`: the public IP address of the instance, if available
+* `__meta_ec2_region`: the region of the instance
 * `__meta_ec2_subnet_id`: comma separated list of subnets IDs in which the instance is running, if available
 * `__meta_ec2_tag_<tagkey>`: each tag value of the instance
 * `__meta_ec2_vpc_id`: the ID of the VPC in which the instance is running, if available
@@ -1184,6 +1186,7 @@ The resource address is the `certname` of the resource and can be changed during
 
 The following meta labels are available on targets during [relabeling](#relabel_config):
 
+* `__meta_puppetdb_query`: the Puppet Query Language (PQL) query
 * `__meta_puppetdb_certname`: the name of the node associated with the resource
 * `__meta_puppetdb_resource`: a SHA-1 hash of the resource’s type, title, and parameters, for identification
 * `__meta_puppetdb_type`: the resource type
@@ -1502,8 +1505,8 @@ Example response body:
 ```
 
 The endpoint is queried periodically at the specified refresh interval.
-The `prometheus_sd_http_failures_total` counter metric tracks the number of 
-refresh failures. 
+The `prometheus_sd_http_failures_total` counter metric tracks the number of
+refresh failures.
 
 Each target has a meta label `__meta_url` during the
 [relabeling phase](#relabel_config). Its value is set to the
@@ -1565,7 +1568,7 @@ following meta labels are available on all targets during
 [relabeling](#relabel_config):
 
 * `__meta_ionos_server_availability_zone`: the availability zone of the server
-* `__meta_ionos_server_boot_cdrom_id`: the ID of the CD-ROM the server is booted 
+* `__meta_ionos_server_boot_cdrom_id`: the ID of the CD-ROM the server is booted
   from
 * `__meta_ionos_server_boot_image_id`: the ID of the boot image or snapshot the
   server is booted from
@@ -1678,6 +1681,7 @@ Available meta labels:
 * `__meta_kubernetes_service_annotation_<annotationname>`: Each annotation from the service object.
 * `__meta_kubernetes_service_annotationpresent_<annotationname>`: "true" for each annotation of the service object.
 * `__meta_kubernetes_service_cluster_ip`: The cluster IP address of the service. (Does not apply to services of type ExternalName)
+* `__meta_kubernetes_service_loadbalancer_ip`: The IP address of the loadbalancer. (Applies to services of type LoadBalancer)
 * `__meta_kubernetes_service_external_name`: The DNS name of the service. (Applies to services of type ExternalName)
 * `__meta_kubernetes_service_label_<labelname>`: Each label from the service object.
 * `__meta_kubernetes_service_labelpresent_<labelname>`: `true` for each label of the service object.
@@ -1704,6 +1708,7 @@ Available meta labels:
 * `__meta_kubernetes_pod_annotationpresent_<annotationname>`: `true` for each annotation from the pod object.
 * `__meta_kubernetes_pod_container_init`: `true` if the container is an [InitContainer](https://kubernetes.io/docs/concepts/workloads/pods/init-containers/)
 * `__meta_kubernetes_pod_container_name`: Name of the container the target address points to.
+* `__meta_kubernetes_pod_container_image`: The image the container is using.
 * `__meta_kubernetes_pod_container_port_name`: Name of the container port.
 * `__meta_kubernetes_pod_container_port_number`: Number of the container port.
 * `__meta_kubernetes_pod_container_port_protocol`: Protocol of the container port.
@@ -1866,8 +1871,8 @@ namespaces:
 
 # Optional metadata to attach to discovered targets. If omitted, no additional metadata is attached.
 attach_metadata:
-# Attaches node metadata to discovered targets. Valid for roles: pod, endpoints, endpointslice. 
-# When set to true, Prometheus must have permissions to get Nodes. 
+# Attaches node metadata to discovered targets. Valid for roles: pod, endpoints, endpointslice.
+# When set to true, Prometheus must have permissions to get Nodes.
   [ node: <boolean> | default = false ]
 ```
 
@@ -1965,6 +1970,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_lightsail_ipv6_addresses`: comma separated list of IPv6 addresses assigned to the instance's network interfaces, if present
 * `__meta_lightsail_private_ip`: the private IP address of the instance
 * `__meta_lightsail_public_ip`: the public IP address of the instance, if available
+* `__meta_lightsail_region`: the region of the instance
 * `__meta_lightsail_tag_<tagkey>`: each tag value of the instance
 
 See below for the configuration options for Lightsail discovery:
@@ -2989,38 +2995,6 @@ relabel_configs:
   [ - <relabel_config> ... ]
 ```
 
-### `<tracing_config>`
-
-`tracing_config` configures exporting traces from Prometheus to a tracing backend via the OTLP protocol. Tracing is currently an **experimental** feature and could change in the future.
-
-```yaml
-# Client used to export the traces. Options are 'http' or 'grpc'.
-[ client_type: <string> | default = grpc ]
-
-# Endpoint to send the traces to. Should be provided in format <host>:<port>.
-[ endpoint: <string> ]
-
-# Sets the probability a given trace will be sampled. Must be a float from 0 through 1.
-[ sampling_fraction: <float> | default = 0 ]
-
-# If disabled, the client will use a secure connection.
-[ insecure: <boolean> | default = false ]
-
-# Key-value pairs to be used as headers associated with gRPC or HTTP requests.
-headers:
-  [ <string>: <string> ... ]
-
-# Compression key for supported compression types. Supported compression: gzip.
-[ compression: <string> ]
-
-# Maximum time the exporter will wait for each batch export.
-[ timeout: <duration> | default = 10s ]
-
-# TLS configuration.
-tls_config:
-  [ <tls_config> ]
-```
-
 ### `<remote_write>`
 
 `write_relabel_configs` is relabeling applied to samples before sending them
@@ -3225,6 +3199,25 @@ There is a list of
 [integrations](https://prometheus.io/docs/operating/integrations/#remote-endpoints-and-storage)
 with this feature.
 
+### `<tsdb>`
+
+`tsdb` lets you configure the runtime-reloadable configuration settings of the TSDB.
+
+NOTE: Out-of-order ingestion is an experimental feature, but you do not need any additional flag to enable it. Setting `out_of_order_time_window` to a positive duration enables it.
+
+```yaml
+# Configures how old an out-of-order/out-of-bounds sample can be w.r.t. the TSDB max time.
+# An out-of-order/out-of-bounds sample is ingested into the TSDB as long as the timestamp
+# of the sample is >= TSDB.MaxTime-out_of_order_time_window.
+#
+# When out_of_order_time_window is >0, the errors out-of-order and out-of-bounds are
+# combined into a single error called 'too-old'; a sample is either (a) ingestible
+# into the TSDB, i.e. it is an in-order sample or an out-of-order/out-of-bounds sample
+# that is within the out-of-order window, or (b) too-old, i.e. not in-order
+# and before the out-of-order window.
+[ out_of_order_time_window: <duration> | default = 0s ]
+```
+
 ### `<exemplars>`
 
 Note that exemplar storage is still considered experimental and must be enabled via `--enable-feature=exemplar-storage`.
@@ -3232,4 +3225,36 @@ Note that exemplar storage is still considered experimental and must be enabled 
 ```yaml
 # Configures the maximum size of the circular buffer used to store exemplars for all series. Resizable during runtime.
 [ max_exemplars: <int> | default = 100000 ]
+```
+
+### `<tracing_config>`
+
+`tracing_config` configures exporting traces from Prometheus to a tracing backend via the OTLP protocol. Tracing is currently an **experimental** feature and could change in the future.
+
+```yaml
+# Client used to export the traces. Options are 'http' or 'grpc'.
+[ client_type: <string> | default = grpc ]
+
+# Endpoint to send the traces to. Should be provided in format <host>:<port>.
+[ endpoint: <string> ]
+
+# Sets the probability a given trace will be sampled. Must be a float from 0 through 1.
+[ sampling_fraction: <float> | default = 0 ]
+
+# If disabled, the client will use a secure connection.
+[ insecure: <boolean> | default = false ]
+
+# Key-value pairs to be used as headers associated with gRPC or HTTP requests.
+headers:
+  [ <string>: <string> ... ]
+
+# Compression key for supported compression types. Supported compression: gzip.
+[ compression: <string> ]
+
+# Maximum time the exporter will wait for each batch export.
+[ timeout: <duration> | default = 10s ]
+
+# TLS configuration.
+tls_config:
+  [ <tls_config> ]
 ```

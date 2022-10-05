@@ -79,7 +79,7 @@ func TestFilterExternalLabels(t *testing.T) {
 
 	conf := &config.Config{
 		GlobalConfig: config.GlobalConfig{
-			ExternalLabels: labels.Labels{labels.Label{Name: "foo", Value: "bar"}},
+			ExternalLabels: labels.FromStrings("foo", "bar"),
 		},
 	}
 	require.NoError(t, s.ApplyConfig(conf))
@@ -104,7 +104,7 @@ func TestIgnoreExternalLabels(t *testing.T) {
 
 	conf := &config.Config{
 		GlobalConfig: config.GlobalConfig{
-			ExternalLabels: labels.Labels{labels.Label{Name: "foo", Value: "bar"}},
+			ExternalLabels: labels.FromStrings("foo", "bar"),
 		},
 	}
 	require.NoError(t, s.ApplyConfig(conf))

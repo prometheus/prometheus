@@ -23,7 +23,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -37,6 +36,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/route"
+	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/exemplar"
@@ -53,6 +53,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/index"
 	"github.com/prometheus/prometheus/util/httputil"
+	"github.com/prometheus/prometheus/util/jsonutil"
 	"github.com/prometheus/prometheus/util/stats"
 )
 
@@ -630,7 +631,7 @@ func (api *API) labelNames(r *http.Request) apiFuncResult {
 		for key := range labelNamesSet {
 			names = append(names, key)
 		}
-		sort.Strings(names)
+		slices.Sort(names)
 	} else {
 		names, warnings, err = q.LabelNames()
 		if err != nil {
@@ -715,7 +716,7 @@ func (api *API) labelValues(r *http.Request) (result apiFuncResult) {
 		}
 	}
 
-	sort.Strings(vals)
+	slices.Sort(vals)
 
 	return apiFuncResult{vals, nil, warnings, closer}
 }
@@ -771,15 +772,21 @@ func (api *API) series(r *http.Request) (result apiFuncResult) {
 		End:   timestamp.FromTime(end),
 		Func:  "series", // There is no series function, this token is used for lookups that don't need samples.
 	}
+	var set storage.SeriesSet
 
-	var sets []storage.SeriesSet
-	for _, mset := range matcherSets {
-		// We need to sort this select results to merge (deduplicate) the series sets later.
-		s := q.Select(true, hints, mset...)
-		sets = append(sets, s)
+	if len(matcherSets) > 1 {
+		var sets []storage.SeriesSet
+		for _, mset := range matcherSets {
+			// We need to sort this select results to merge (deduplicate) the series sets later.
+			s := q.Select(true, hints, mset...)
+			sets = append(sets, s)
+		}
+		set = storage.NewMergeSeriesSet(sets, storage.ChainedSeriesMerge)
+	} else {
+		// At this point at least one match exists.
+		set = q.Select(false, hints, matcherSets[0]...)
 	}
 
-	set := storage.NewMergeSeriesSet(sets, storage.ChainedSeriesMerge)
 	metrics := []labels.Labels{}
 	for set.Next() {
 		metrics = append(metrics, set.At().Labels())
@@ -904,7 +911,7 @@ func (api *API) targets(r *http.Request) apiFuncResult {
 			keys = append(keys, k)
 			n += len(targets[k])
 		}
-		sort.Strings(keys)
+		slices.Sort(keys)
 		return keys, n
 	}
 
@@ -1654,21 +1661,21 @@ OUTER:
 
 // marshalSeriesJSON writes something like the following:
 //
-//         {
-//            "metric" : {
-//               "__name__" : "up",
-//               "job" : "prometheus",
-//               "instance" : "localhost:9090"
-//            },
-//            "values": [
-//               [ 1435781451.781, "1" ],
-//               < more values>
-//            ],
-//            "histograms": [
-//               [ 1435781451.781, { < histogram, see below > } ],
-//               < more histograms >
-//            ],
-//         },
+//	{
+//	   "metric" : {
+//	      "__name__" : "up",
+//	      "job" : "prometheus",
+//	      "instance" : "localhost:9090"
+//	   },
+//	   "values": [
+//	      [ 1435781451.781, "1" ],
+//	      < more values>
+//	   ],
+//	   "histograms": [
+//	      [ 1435781451.781, { < histogram, see below > } ],
+//	      < more histograms >
+//	   ],
+//	},
 func marshalSeriesJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
 	s := *((*promql.Series)(ptr))
 	stream.WriteObjectStart()
@@ -1726,25 +1733,25 @@ func marshalSeriesJSONIsEmpty(ptr unsafe.Pointer) bool {
 
 // marshalSampleJSON writes something like the following for normal value samples:
 //
-//         {
-//            "metric" : {
-//               "__name__" : "up",
-//               "job" : "prometheus",
-//               "instance" : "localhost:9090"
-//            },
-//            "value": [ 1435781451.781, "1" ]
-//         },
+//	{
+//	   "metric" : {
+//	      "__name__" : "up",
+//	      "job" : "prometheus",
+//	      "instance" : "localhost:9090"
+//	   },
+//	   "value": [ 1435781451.781, "1" ]
+//	},
 //
 // For histogram samples, it writes something like this:
 //
-//         {
-//            "metric" : {
-//               "__name__" : "up",
-//               "job" : "prometheus",
-//               "instance" : "localhost:9090"
-//            },
-//            "histogram": [ 1435781451.781, { < histogram, see below > } ]
-//         },
+//	{
+//	   "metric" : {
+//	      "__name__" : "up",
+//	      "job" : "prometheus",
+//	      "instance" : "localhost:9090"
+//	   },
+//	   "histogram": [ 1435781451.781, { < histogram, see below > } ]
+//	},
 func marshalSampleJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
 	s := *((*promql.Sample)(ptr))
 	stream.WriteObjectStart()
@@ -1773,10 +1780,10 @@ func marshalSampleJSONIsEmpty(ptr unsafe.Pointer) bool {
 func marshalPointJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
 	p := *((*promql.Point)(ptr))
 	stream.WriteArrayStart()
-	marshalTimestamp(p.T, stream)
+	jsonutil.MarshalTimestamp(p.T, stream)
 	stream.WriteMore()
 	if p.H == nil {
-		marshalValue(p.V, stream)
+		jsonutil.MarshalValue(p.V, stream)
 	} else {
 		marshalHistogram(p.H, stream)
 	}
@@ -1789,33 +1796,34 @@ func marshalPointJSONIsEmpty(ptr unsafe.Pointer) bool {
 
 // marshalHistogramJSON writes something like:
 //
-//       {
-//           "count": "42",
-//           "sum": "34593.34",
-//           "buckets": [
-//             [ 3, "-0.25", "0.25", "3"],
-//             [ 0, "0.25", "0.5", "12"],
-//             [ 0, "0.5", "1", "21"],
-//             [ 0, "2", "4", "6"]
-//           ]
-//       }
+//	{
+//	    "count": "42",
+//	    "sum": "34593.34",
+//	    "buckets": [
+//	      [ 3, "-0.25", "0.25", "3"],
+//	      [ 0, "0.25", "0.5", "12"],
+//	      [ 0, "0.5", "1", "21"],
+//	      [ 0, "2", "4", "6"]
+//	    ]
+//	}
 //
 // The 1st element in each bucket array determines if the boundaries are
 // inclusive (AKA closed) or exclusive (AKA open):
-//       0: lower exclusive, upper inclusive
-//       1: lower inclusive, upper exclusive
-//       2: both exclusive
-//       3: both inclusive
+//
+//	0: lower exclusive, upper inclusive
+//	1: lower inclusive, upper exclusive
+//	2: both exclusive
+//	3: both inclusive
 //
 // The 2nd and 3rd elements are the lower and upper boundary. The 4th element is
 // the bucket count.
 func marshalHistogram(h *histogram.FloatHistogram, stream *jsoniter.Stream) {
 	stream.WriteObjectStart()
 	stream.WriteObjectField(`count`)
-	marshalValue(h.Count, stream)
+	jsonutil.MarshalValue(h.Count, stream)
 	stream.WriteMore()
 	stream.WriteObjectField(`sum`)
-	marshalValue(h.Sum, stream)
+	jsonutil.MarshalValue(h.Sum, stream)
 
 	bucketFound := false
 	it := h.AllBucketIterator()
@@ -1845,11 +1853,11 @@ func marshalHistogram(h *histogram.FloatHistogram, stream *jsoniter.Stream) {
 		stream.WriteArrayStart()
 		stream.WriteInt(boundaries)
 		stream.WriteMore()
-		marshalValue(bucket.Lower, stream)
+		jsonutil.MarshalValue(bucket.Lower, stream)
 		stream.WriteMore()
-		marshalValue(bucket.Upper, stream)
+		jsonutil.MarshalValue(bucket.Upper, stream)
 		stream.WriteMore()
-		marshalValue(bucket.Count, stream)
+		jsonutil.MarshalValue(bucket.Count, stream)
 		stream.WriteArrayEnd()
 	}
 	if bucketFound {
@@ -1859,11 +1867,12 @@ func marshalHistogram(h *histogram.FloatHistogram, stream *jsoniter.Stream) {
 }
 
 // marshalExemplarJSON writes.
-// {
-//    labels: <labels>,
-//    value: "<string>",
-//    timestamp: <float>
-// }
+//
+//	{
+//	   labels: <labels>,
+//	   value: "<string>",
+//	   timestamp: <float>
+//	}
 func marshalExemplarJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
 	p := *((*exemplar.Exemplar)(ptr))
 	stream.WriteObjectStart()
@@ -1880,56 +1889,16 @@ func marshalExemplarJSON(ptr unsafe.Pointer, stream *jsoniter.Stream) {
 	// "value" key.
 	stream.WriteMore()
 	stream.WriteObjectField(`value`)
-	marshalValue(p.Value, stream)
+	jsonutil.MarshalValue(p.Value, stream)
 
 	// "timestamp" key.
 	stream.WriteMore()
 	stream.WriteObjectField(`timestamp`)
-	marshalTimestamp(p.Ts, stream)
-	// marshalTimestamp(p.Ts, stream)
+	jsonutil.MarshalTimestamp(p.Ts, stream)
 
 	stream.WriteObjectEnd()
 }
 
 func marshalExemplarJSONEmpty(ptr unsafe.Pointer) bool {
 	return false
-}
-
-func marshalTimestamp(t int64, stream *jsoniter.Stream) {
-	// Write out the timestamp as a float divided by 1000.
-	// This is ~3x faster than converting to a float.
-	if t < 0 {
-		stream.WriteRaw(`-`)
-		t = -t
-	}
-	stream.WriteInt64(t / 1000)
-	fraction := t % 1000
-	if fraction != 0 {
-		stream.WriteRaw(`.`)
-		if fraction < 100 {
-			stream.WriteRaw(`0`)
-		}
-		if fraction < 10 {
-			stream.WriteRaw(`0`)
-		}
-		stream.WriteInt64(fraction)
-	}
-}
-
-func marshalValue(v float64, stream *jsoniter.Stream) {
-	stream.WriteRaw(`"`)
-	// Taken from https://github.com/json-iterator/go/blob/master/stream_float.go#L71 as a workaround
-	// to https://github.com/json-iterator/go/issues/365 (jsoniter, to follow json standard, doesn't allow inf/nan).
-	buf := stream.Buffer()
-	abs := math.Abs(v)
-	fmt := byte('f')
-	// Note: Must use float32 comparisons for underlying float32 value to get precise cutoffs right.
-	if abs != 0 {
-		if abs < 1e-6 || abs >= 1e21 {
-			fmt = 'e'
-		}
-	}
-	buf = strconv.AppendFloat(buf, v, fmt, -1, 64)
-	stream.SetBuffer(buf)
-	stream.WriteRaw(`"`)
 }

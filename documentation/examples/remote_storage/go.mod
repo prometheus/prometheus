@@ -1,13 +1,13 @@
 module github.com/prometheus/prometheus/documentation/examples/remote_storage
 
-go 1.17
+go 1.18
 
 require (
 	github.com/go-kit/log v0.2.1
 	github.com/gogo/protobuf v1.3.2
 	github.com/golang/snappy v0.0.4
-	github.com/influxdata/influxdb v1.9.8
-	github.com/prometheus/client_golang v1.12.2
+	github.com/influxdata/influxdb v1.10.0
+	github.com/prometheus/client_golang v1.13.0
 	github.com/prometheus/common v0.37.0
 	github.com/stretchr/testify v1.8.0
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
@@ -16,7 +16,7 @@ require (
 require (
 	github.com/alecthomas/template v0.0.0-20190718012654-fb15b899a751 // indirect
 	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137 // indirect
-	github.com/aws/aws-sdk-go v1.44.47 // indirect
+	github.com/aws/aws-sdk-go v1.44.72 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.1.2 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
@@ -36,26 +36,26 @@ require (
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/prometheus/client_model v0.2.0 // indirect
 	github.com/prometheus/common/sigv4 v0.1.0 // indirect
-	github.com/prometheus/procfs v0.7.3 // indirect
-	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.32.0 // indirect
-	go.opentelemetry.io/otel v1.7.0 // indirect
-	go.opentelemetry.io/otel/metric v0.30.0 // indirect
-	go.opentelemetry.io/otel/trace v1.7.0 // indirect
+	github.com/prometheus/procfs v0.8.0 // indirect
+	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.34.0 // indirect
+	go.opentelemetry.io/otel v1.9.0 // indirect
+	go.opentelemetry.io/otel/metric v0.31.0 // indirect
+	go.opentelemetry.io/otel/trace v1.9.0 // indirect
 	go.uber.org/atomic v1.9.0 // indirect
 	go.uber.org/goleak v1.1.12 // indirect
-	golang.org/x/net v0.0.0-20220624214902-1bab6f366d9e // indirect
-	golang.org/x/sys v0.0.0-20220627191245-f75cf1eec38b // indirect
+	golang.org/x/net v0.0.0-20220809184613-07c6da5e1ced // indirect
+	golang.org/x/sys v0.0.0-20220808155132-1c4a2a72c664 // indirect
 	golang.org/x/text v0.3.7 // indirect
-	golang.org/x/time v0.0.0-20220609170525-579cf78fd858 // indirect
+	golang.org/x/time v0.0.0-20220722155302-e5dcc9cfc0b9 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
-	google.golang.org/protobuf v1.28.0 // indirect
+	google.golang.org/protobuf v1.28.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
 require (
-	github.com/prometheus/prometheus v0.37.0-rc.0.0.20220714131312-08f3ddb86469
-	golang.org/x/oauth2 v0.0.0-20220630143837-2104d58473e0 // indirect
+	github.com/prometheus/prometheus v0.38.0
+	golang.org/x/oauth2 v0.0.0-20220808172628-8227340efae7 // indirect
 )
 
 exclude (
