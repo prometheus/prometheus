@@ -459,7 +459,7 @@ func (h *Head) resetSeriesWithMMappedChunks(mSeries *memSeries, mmc, oooMmc []*m
 
 	// Any samples replayed till now would already be compacted. Resetting the head chunk.
 	mSeries.nextAt = 0
-	mSeries.headChunk = nil
+	mSeries.headChunks = nil
 	mSeries.app = nil
 	return
 }
@@ -905,14 +905,12 @@ func (s *memSeries) encodeToSnapshotRecord(b []byte) []byte {
 	buf.PutBE64int64(0) // Backwards-compatibility; was chunkRange but now unused.
 
 	s.Lock()
-	if s.headChunk == nil {
-		buf.PutUvarint(0)
-	} else {
+	if head := s.head(); head != nil {
 		buf.PutUvarint(1)
-		buf.PutBE64int64(s.headChunk.minTime)
-		buf.PutBE64int64(s.headChunk.maxTime)
-		buf.PutByte(byte(s.headChunk.chunk.Encoding()))
-		buf.PutUvarintBytes(s.headChunk.chunk.Bytes())
+		buf.PutBE64int64(head.minTime)
+		buf.PutBE64int64(head.maxTime)
+		buf.PutByte(byte(head.chunk.Encoding()))
+		buf.PutUvarintBytes(head.chunk.Bytes())
 		// Backwards compatibility for old sampleBuf which had last 4 samples.
 		for i := 0; i < 3; i++ {
 			buf.PutBE64int64(0)
@@ -920,6 +918,8 @@ func (s *memSeries) encodeToSnapshotRecord(b []byte) []byte {
 		}
 		buf.PutBE64int64(0)
 		buf.PutBEFloat64(s.lastValue)
+	} else {
+		buf.PutUvarint(0)
 	}
 	s.Unlock()
 
@@ -1341,10 +1341,10 @@ func (h *Head) loadChunkSnapshot() (int, int, map[chunks.HeadSeriesRef]*memSerie
 					continue
 				}
 				series.nextAt = csr.mc.maxTime // This will create a new chunk on append.
-				series.headChunk = csr.mc
+				series.headChunks = []*memChunk{csr.mc}
 				series.lastValue = csr.lastValue
 
-				app, err := series.headChunk.chunk.Appender()
+				app, err := series.head().chunk.Appender()
 				if err != nil {
 					errChan <- err
 					return

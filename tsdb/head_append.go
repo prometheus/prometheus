@@ -1043,7 +1043,7 @@ func (s *memSeries) appendHistogram(t int64, h *histogram.Histogram, appendID ui
 	}
 
 	if chunkCreated {
-		hc := s.headChunk.chunk.(*chunkenc.HistogramChunk)
+		hc := s.head().chunk.(*chunkenc.HistogramChunk)
 		header := chunkenc.UnknownCounterReset
 		if counterReset {
 			header = chunkenc.CounterReset
@@ -1146,33 +1146,32 @@ func computeChunkEndTime(start, cur, max int64) int64 {
 func (s *memSeries) cutNewHeadChunk(
 	mint int64, e chunkenc.Encoding, chunkDiskMapper *chunks.ChunkDiskMapper, chunkRange int64,
 ) *memChunk {
-	s.mmapCurrentHeadChunk(chunkDiskMapper)
-
-	s.headChunk = &memChunk{
+	chk := &memChunk{
 		minTime: mint,
 		maxTime: math.MinInt64,
 	}
 
 	if chunkenc.IsValidEncoding(e) {
 		var err error
-		s.headChunk.chunk, err = chunkenc.NewEmptyChunk(e)
+		chk.chunk, err = chunkenc.NewEmptyChunk(e)
 		if err != nil {
 			panic(err) // This should never happen.
 		}
 	} else {
-		s.headChunk.chunk = chunkenc.NewXORChunk()
+		chk.chunk = chunkenc.NewXORChunk()
 	}
+	s.headChunks = append(s.headChunks, chk)
 
 	// Set upper bound on when the next chunk must be started. An earlier timestamp
 	// may be chosen dynamically at a later point.
 	s.nextAt = rangeForTimestamp(mint, chunkRange)
 
-	app, err := s.headChunk.chunk.Appender()
+	app, err := chk.chunk.Appender()
 	if err != nil {
 		panic(err)
 	}
 	s.app = app
-	return s.headChunk
+	return chk
 }
 
 func (s *memSeries) cutNewOOOHeadChunk(mint int64, chunkDiskMapper *chunks.ChunkDiskMapper) (*oooHeadChunk, chunks.ChunkDiskMapperRef) {
@@ -1205,19 +1204,34 @@ func (s *memSeries) mmapCurrentOOOHeadChunk(chunkDiskMapper *chunks.ChunkDiskMap
 	return chunkRef
 }
 
-func (s *memSeries) mmapCurrentHeadChunk(chunkDiskMapper *chunks.ChunkDiskMapper) {
-	if s.headChunk == nil || s.headChunk.chunk.NumSamples() == 0 {
-		// There is no head chunk, so nothing to m-map here.
+func (s *memSeries) mmapHeadChunks(chunkDiskMapper *chunks.ChunkDiskMapper) (mmapped int) {
+	if len(s.headChunks) < 2 {
 		return
 	}
 
-	chunkRef := chunkDiskMapper.WriteChunk(s.ref, s.headChunk.minTime, s.headChunk.maxTime, s.headChunk.chunk, handleChunkWriteError)
-	s.mmappedChunks = append(s.mmappedChunks, &mmappedChunk{
-		ref:        chunkRef,
-		numSamples: uint16(s.headChunk.chunk.NumSamples()),
-		minTime:    s.headChunk.minTime,
-		maxTime:    s.headChunk.maxTime,
-	})
+	head := s.head()
+
+	for i := 0; i < len(s.headChunks)-1; i++ {
+		chk := s.headChunks[i]
+		if chk.chunk.NumSamples() == 0 {
+			continue
+		}
+		chunkRef := chunkDiskMapper.WriteChunk(s.ref, chk.minTime, chk.maxTime, chk.chunk, handleChunkWriteError)
+		s.mmappedChunks = append(s.mmappedChunks, &mmappedChunk{
+			ref:        chunkRef,
+			numSamples: uint16(chk.chunk.NumSamples()),
+			minTime:    chk.minTime,
+			maxTime:    chk.maxTime,
+		})
+		mmapped++
+	}
+
+	s.headChunks = nil
+	if head != nil {
+		s.headChunks = append(s.headChunks, head)
+	}
+
+	return
 }
 
 func handleChunkWriteError(err error) {

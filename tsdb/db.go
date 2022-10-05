@@ -1101,7 +1101,14 @@ func (db *DB) Compact() (returnErr error) {
 		}
 	}
 
-	return db.compactBlocks()
+	if err := db.compactBlocks(); err != nil {
+		return err
+	}
+
+	// At the very end mmap all but last head chunk to save memory
+	db.mmapHead()
+
+	return nil
 }
 
 // CompactHead compacts the given RangeHead.
@@ -1218,6 +1225,7 @@ func (db *DB) compactOOO(dest string, oooHead *OOOCompactionHead) (_ []ulid.ULID
 // compactHead compacts the given RangeHead.
 // The compaction mutex should be held before calling this method.
 func (db *DB) compactHead(head *RangeHead) error {
+	db.mmapHead()
 	uid, err := db.compactor.Write(db.dir, head, head.MinTime(), head.BlockMaxTime(), nil)
 	if err != nil {
 		return errors.Wrap(err, "persist head block")
@@ -1236,6 +1244,14 @@ func (db *DB) compactHead(head *RangeHead) error {
 		return errors.Wrap(err, "head memory truncate")
 	}
 	return nil
+}
+
+func (db *DB) mmapHead() {
+	start := time.Now()
+	mmapped := db.head.series.mmapHeadChunks(db.head.chunkDiskMapper)
+	if mmapped > 0 {
+		level.Info(db.logger).Log("msg", "Finished mmapping head chunks", "chunks", mmapped, "duration", time.Since(start).String())
+	}
 }
 
 // compactBlocks compacts all the eligible on-disk blocks.
@@ -1268,6 +1284,8 @@ func (db *DB) compactBlocks() (err error) {
 			}
 			return errors.Wrap(err, "reloadBlocks blocks")
 		}
+
+		db.mmapHead()
 	}
 
 	return nil

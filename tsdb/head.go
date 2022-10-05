@@ -804,11 +804,11 @@ func (h *Head) loadMmappedChunks(refSeries map[chunks.HeadSeriesRef]*memSeries) 
 			numSamples: numSamples,
 		})
 		h.updateMinMaxTime(mint, maxt)
-		if ms.headChunk != nil && maxt >= ms.headChunk.minTime {
+		if head := ms.head(); head != nil && maxt >= head.minTime {
 			// The head chunk was completed and was m-mapped after taking the snapshot.
 			// Hence remove this chunk.
 			ms.nextAt = 0
-			ms.headChunk = nil
+			ms.headChunks = nil
 			ms.app = nil
 		}
 		return nil
@@ -1490,6 +1490,7 @@ func (h *Head) compactable() bool {
 // Close flushes the WAL and closes the head.
 // It also takes a snapshot of in-memory chunks if enabled.
 func (h *Head) Close() error {
+	h.series.mmapHeadChunks(h.chunkDiskMapper)
 	h.closedMtx.Lock()
 	defer h.closedMtx.Unlock()
 	h.closed = true
@@ -1681,7 +1682,7 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 					}
 				}
 				if len(series.mmappedChunks) > 0 || len(series.oooMmappedChunks) > 0 ||
-					series.headChunk != nil || series.oooHeadChunk != nil || series.pendingCommit {
+					len(series.headChunks) > 0 || series.oooHeadChunk != nil || series.pendingCommit {
 					seriesMint := series.minTime()
 					if seriesMint < actualMint {
 						actualMint = seriesMint
@@ -1725,6 +1726,21 @@ func (s *stripeSeries) gc(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) (
 	}
 
 	return deleted, rmChunks, actualMint, minOOOTime, minMmapFile
+}
+
+func (s *stripeSeries) mmapHeadChunks(chunkDiskMapper *chunks.ChunkDiskMapper) (mmapped int) {
+	for i := 0; i < s.size; i++ {
+		s.locks[i].RLock()
+		for _, all := range s.hashes[i] {
+			for _, series := range all {
+				series.Lock()
+				mmapped += series.mmapHeadChunks(chunkDiskMapper)
+				series.Unlock()
+			}
+		}
+		s.locks[i].RUnlock()
+	}
+	return
 }
 
 func (s *stripeSeries) getByID(id chunks.HeadSeriesRef) *memSeries {
@@ -1835,7 +1851,7 @@ type memSeries struct {
 	//
 	// pN is the pointer to the mmappedChunk referered to by HeadChunkID=N
 	mmappedChunks []*mmappedChunk
-	headChunk     *memChunk          // Most recent chunk in memory that's still being built.
+	headChunks    []*memChunk        // In-memory chunks not yet written & mmapped, including the last chunk that's still being built.
 	firstChunkID  chunks.HeadChunkID // HeadChunkID for mmappedChunks[0]
 
 	oooMmappedChunks []*mmappedChunk    // Immutable chunks on disk containing OOO samples.
@@ -1883,17 +1899,16 @@ func (s *memSeries) minTime() int64 {
 	if len(s.mmappedChunks) > 0 {
 		return s.mmappedChunks[0].minTime
 	}
-	if s.headChunk != nil {
-		return s.headChunk.minTime
+	if len(s.headChunks) > 0 {
+		return s.headChunks[0].minTime
 	}
 	return math.MinInt64
 }
 
 func (s *memSeries) maxTime() int64 {
 	// The highest timestamps will always be in the regular (non-OOO) chunks, even if OOO is enabled.
-	c := s.head()
-	if c != nil {
-		return c.maxTime
+	if head := s.head(); head != nil {
+		return head.maxTime
 	}
 	if len(s.mmappedChunks) > 0 {
 		return s.mmappedChunks[len(s.mmappedChunks)-1].maxTime
@@ -1906,11 +1921,17 @@ func (s *memSeries) maxTime() int64 {
 // Chunk IDs remain unchanged.
 func (s *memSeries) truncateChunksBefore(mint int64, minOOOMmapRef chunks.ChunkDiskMapperRef) int {
 	var removedInOrder int
-	if s.headChunk != nil && s.headChunk.maxTime < mint {
+	for i, c := range s.headChunks {
+		if c.maxTime >= mint {
+			break
+		}
+		removedInOrder = i + 1
+	}
+	if removedInOrder > 0 {
+		s.firstChunkID += chunks.HeadChunkID(removedInOrder + len(s.mmappedChunks))
+		s.headChunks = append(s.headChunks[:0], s.headChunks[removedInOrder:]...)
 		// If head chunk is truncated, we can truncate all mmapped chunks.
-		removedInOrder = 1 + len(s.mmappedChunks)
-		s.firstChunkID += chunks.HeadChunkID(removedInOrder)
-		s.headChunk = nil
+		removedInOrder += len(s.mmappedChunks)
 		s.mmappedChunks = nil
 	}
 	if len(s.mmappedChunks) > 0 {
@@ -1948,7 +1969,10 @@ func (s *memSeries) cleanupAppendIDsBelow(bound uint64) {
 }
 
 func (s *memSeries) head() *memChunk {
-	return s.headChunk
+	if len(s.headChunks) > 0 {
+		return s.headChunks[len(s.headChunks)-1]
+	}
+	return nil
 }
 
 type memChunk struct {

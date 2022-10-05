@@ -234,7 +234,7 @@ func BenchmarkLoadWAL(b *testing.B) {
 							// Create one mmapped chunk per series, with one sample at the given time.
 							s := newMemSeries(labels.Labels{}, chunks.HeadSeriesRef(k)*101, defaultIsolationDisabled)
 							s.append(c.mmappedChunkT, 42, 0, chunkDiskMapper, c.mmappedChunkT)
-							s.mmapCurrentHeadChunk(chunkDiskMapper)
+							s.mmapHeadChunks(chunkDiskMapper)
 						}
 						require.NoError(b, chunkDiskMapper.Close())
 					}
@@ -748,6 +748,7 @@ func TestMemSeries_truncateChunks(t *testing.T) {
 		ok, _ := s.append(int64(i), float64(i), 0, chunkDiskMapper, chunkRange)
 		require.True(t, ok, "sample append failed")
 	}
+	s.mmapHeadChunks(chunkDiskMapper)
 
 	// Check that truncate removes half of the chunks and afterwards
 	// that the ID of the last chunk still gives us the same chunk afterwards.
@@ -1293,11 +1294,12 @@ func TestMemSeries_append(t *testing.T) {
 	require.True(t, ok, "append failed")
 	require.False(t, chunkCreated, "second sample should use same chunk")
 
+	s.mmapHeadChunks(chunkDiskMapper)
 	require.Equal(t, 1, len(s.mmappedChunks), "there should be only 1 mmapped chunk")
 	require.Equal(t, int64(998), s.mmappedChunks[0].minTime, "wrong chunk range")
 	require.Equal(t, int64(999), s.mmappedChunks[0].maxTime, "wrong chunk range")
-	require.Equal(t, int64(1000), s.headChunk.minTime, "wrong chunk range")
-	require.Equal(t, int64(1001), s.headChunk.maxTime, "wrong chunk range")
+	require.Equal(t, int64(1000), s.head().minTime, "wrong chunk range")
+	require.Equal(t, int64(1001), s.head().maxTime, "wrong chunk range")
 
 	// Fill the range [1000,2000) with many samples. Intermediate chunks should be cut
 	// at approximately 120 samples per chunk.
@@ -1305,6 +1307,7 @@ func TestMemSeries_append(t *testing.T) {
 		ok, _ := s.append(1001+int64(i), float64(i), 0, chunkDiskMapper, chunkRange)
 		require.True(t, ok, "append failed")
 	}
+	s.mmapHeadChunks(chunkDiskMapper)
 
 	require.Greater(t, len(s.mmappedChunks)+1, 7, "expected intermediate chunks")
 
@@ -1354,11 +1357,12 @@ func TestMemSeries_appendHistogram(t *testing.T) {
 	require.True(t, ok, "append failed")
 	require.False(t, chunkCreated, "second sample should use same chunk")
 
+	s.mmapHeadChunks(chunkDiskMapper)
 	require.Equal(t, 1, len(s.mmappedChunks), "there should be only 1 mmapped chunk")
 	require.Equal(t, int64(998), s.mmappedChunks[0].minTime, "wrong chunk range")
 	require.Equal(t, int64(999), s.mmappedChunks[0].maxTime, "wrong chunk range")
-	require.Equal(t, int64(1000), s.headChunk.minTime, "wrong chunk range")
-	require.Equal(t, int64(1001), s.headChunk.maxTime, "wrong chunk range")
+	require.Equal(t, int64(1000), s.head().minTime, "wrong chunk range")
+	require.Equal(t, int64(1001), s.head().maxTime, "wrong chunk range")
 
 	ok, chunkCreated = s.appendHistogram(1002, histogramWithOneMoreBucket, 0, chunkDiskMapper, chunkRange)
 	require.True(t, ok, "append failed")
@@ -1367,8 +1371,8 @@ func TestMemSeries_appendHistogram(t *testing.T) {
 	require.Equal(t, 1, len(s.mmappedChunks), "there should be only 1 mmapped chunk")
 	require.Equal(t, int64(998), s.mmappedChunks[0].minTime, "wrong chunk range")
 	require.Equal(t, int64(999), s.mmappedChunks[0].maxTime, "wrong chunk range")
-	require.Equal(t, int64(1000), s.headChunk.minTime, "wrong chunk range")
-	require.Equal(t, int64(1002), s.headChunk.maxTime, "wrong chunk range")
+	require.Equal(t, int64(1000), s.head().minTime, "wrong chunk range")
+	require.Equal(t, int64(1002), s.head().maxTime, "wrong chunk range")
 }
 
 func TestMemSeries_append_atVariableRate(t *testing.T) {
@@ -1408,6 +1412,7 @@ func TestMemSeries_append_atVariableRate(t *testing.T) {
 	require.True(t, ok, "new chunk sample was not appended")
 	require.True(t, chunkCreated, "sample at block duration timestamp should create a new chunk")
 
+	s.mmapHeadChunks(chunkDiskMapper)
 	var totalSamplesInChunks int
 	for i, c := range s.mmappedChunks {
 		totalSamplesInChunks += int(c.numSamples)
@@ -1735,6 +1740,7 @@ func TestHeadReadWriterRepair(t *testing.T) {
 			ok, chunkCreated = s.append(int64(i*chunkRange)+chunkRange-1, float64(i*chunkRange), 0, h.chunkDiskMapper, chunkRange)
 			require.True(t, ok, "series append failed")
 			require.False(t, chunkCreated, "chunk was created")
+			s.mmapHeadChunks(h.chunkDiskMapper)
 			h.chunkDiskMapper.CutNewFile()
 		}
 		require.NoError(t, h.Close())
@@ -2880,6 +2886,7 @@ func TestHistogramInWALAndMmapChunk(t *testing.T) {
 	}
 	require.NoError(t, app.Commit())
 
+	head.series.mmapHeadChunks(head.chunkDiskMapper)
 	// There should be 3 mmap chunks in s1.
 	ms := head.series.getByHash(s1.Hash(), s1)
 	require.Len(t, ms.mmappedChunks, 3)
@@ -2889,7 +2896,7 @@ func TestHistogramInWALAndMmapChunk(t *testing.T) {
 		cpy := *mmap
 		expMmapChunks = append(expMmapChunks, &cpy)
 	}
-	expHeadChunkSamples := ms.headChunk.chunk.NumSamples()
+	expHeadChunkSamples := ms.head().chunk.NumSamples()
 	require.Greater(t, expHeadChunkSamples, 0)
 
 	// Series with mix of histograms and float.
@@ -2935,7 +2942,7 @@ func TestHistogramInWALAndMmapChunk(t *testing.T) {
 	for _, mmap := range ms.mmappedChunks {
 		require.Greater(t, mmap.numSamples, uint16(0))
 	}
-	require.Equal(t, expHeadChunkSamples, ms.headChunk.chunk.NumSamples())
+	require.Equal(t, expHeadChunkSamples, ms.head().chunk.NumSamples())
 
 	q, err := NewBlockQuerier(head, head.MinTime(), head.MaxTime())
 	require.NoError(t, err)
@@ -3364,6 +3371,7 @@ func TestHistogramStaleSample(t *testing.T) {
 	expHistograms = append(expHistograms, timedHistogram{100*int64(len(expHistograms)) + 1, &histogram.Histogram{Sum: math.Float64frombits(value.StaleNaN)}})
 	require.NoError(t, app.Commit())
 
+	head.series.mmapHeadChunks(head.chunkDiskMapper)
 	// Total 2 chunks, 1 m-mapped.
 	s = head.series.getByHash(l.Hash(), l)
 	require.NotNil(t, s)
@@ -3394,6 +3402,7 @@ func TestHistogramCounterResetHeader(t *testing.T) {
 
 		ms, _, err := head.getOrCreate(l.Hash(), l)
 		require.NoError(t, err)
+		head.series.mmapHeadChunks(head.chunkDiskMapper)
 		require.Len(t, ms.mmappedChunks, len(expHeaders)-1) // One is the head chunk.
 
 		for i, mmapChunk := range ms.mmappedChunks {
@@ -3401,7 +3410,7 @@ func TestHistogramCounterResetHeader(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, expHeaders[i], chk.(*chunkenc.HistogramChunk).GetCounterResetHeader())
 		}
-		require.Equal(t, expHeaders[len(expHeaders)-1], ms.headChunk.chunk.(*chunkenc.HistogramChunk).GetCounterResetHeader())
+		require.Equal(t, expHeaders[len(expHeaders)-1], ms.head().chunk.(*chunkenc.HistogramChunk).GetCounterResetHeader())
 	}
 
 	h := GenerateTestHistograms(1)[0]
@@ -3517,6 +3526,7 @@ func TestAppendingDifferentEncodingToSameSeries(t *testing.T) {
 		require.NoError(t, err)
 		require.False(t, created)
 		require.NotNil(t, ms)
+		db.Head().series.mmapHeadChunks(db.Head().chunkDiskMapper)
 		require.Len(t, ms.mmappedChunks, count-1) // One will be the head chunk.
 	}
 
@@ -3922,6 +3932,7 @@ func TestHeadInit_DiscardChunksWithUnsupportedEncoding(t *testing.T) {
 	require.False(t, created, "should already exist")
 	require.NotNil(t, series, "should return the series we created above")
 
+	series.mmapHeadChunks(h.chunkDiskMapper)
 	expChunks := make([]*mmappedChunk, len(series.mmappedChunks))
 	copy(expChunks, series.mmappedChunks)
 
@@ -4079,6 +4090,7 @@ func TestReplayAfterMmapReplayError(t *testing.T) {
 	require.NoError(t, f.Close())
 
 	openHead()
+	h.series.mmapHeadChunks(h.chunkDiskMapper)
 
 	// There should be less m-map files due to corruption.
 	files, err = os.ReadDir(filepath.Join(dir, "chunks_head"))
@@ -4258,7 +4270,7 @@ func TestOOOAppendWithNoSeries(t *testing.T) {
 		require.False(t, created)
 		require.NotNil(t, ms)
 
-		require.Nil(t, ms.headChunk)
+		require.Empty(t, ms.headChunks)
 		require.NotNil(t, ms.oooHeadChunk)
 		require.Equal(t, expSamples, ms.oooHeadChunk.chunk.NumSamples())
 	}
@@ -4270,8 +4282,8 @@ func TestOOOAppendWithNoSeries(t *testing.T) {
 		require.NotNil(t, ms)
 
 		require.Nil(t, ms.oooHeadChunk)
-		require.NotNil(t, ms.headChunk)
-		require.Equal(t, expSamples, ms.headChunk.chunk.NumSamples())
+		require.NotEmpty(t, ms.headChunks)
+		require.Equal(t, expSamples, ms.head().chunk.NumSamples())
 	}
 
 	newLabels := func(idx int) labels.Labels { return labels.FromStrings("foo", fmt.Sprintf("%d", idx)) }
