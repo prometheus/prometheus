@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.39.0-rc.0 / 2022-09-27
+## 2.39.0 / 2022-10-05
 
 * [FEATURE] **experimental** TSDB: Add support for ingesting out-of-order samples. This is configured via `out_of_order_time_window` field in the config file; check config file docs for more info. #11075
 * [ENHANCEMENT] API: `/-/healthy` and `/-/ready` API calls now also respond to a `HEAD` request on top of existing `GET` support. #11160
