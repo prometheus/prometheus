@@ -297,7 +297,7 @@ type headAppender struct {
 
 func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
 	if t < a.minValidTime {
-		a.head.metrics.outOfBoundSamples.Inc()
+		a.head.metrics.outOfBoundSamples.WithLabelValues(sampleMetricTypeFloat).Inc()
 		return 0, storage.ErrOutOfBounds
 	}
 
@@ -335,7 +335,7 @@ func (a *headAppender) Append(ref storage.SeriesRef, lset labels.Labels, t int64
 	if err := s.appendable(t, v); err != nil {
 		s.Unlock()
 		if err == storage.ErrOutOfOrderSample {
-			a.head.metrics.outOfOrderSamples.Inc()
+			a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat).Inc()
 		}
 		return 0, err
 	}
@@ -444,7 +444,7 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 	}
 
 	if t < a.minValidTime {
-		a.head.metrics.outOfBoundSamples.Inc()
+		a.head.metrics.outOfBoundSamples.WithLabelValues(sampleMetricTypeHistogram).Inc()
 		return 0, storage.ErrOutOfBounds
 	}
 
@@ -483,7 +483,7 @@ func (a *headAppender) AppendHistogram(ref storage.SeriesRef, lset labels.Labels
 	if err := s.appendableHistogram(t, h); err != nil {
 		s.Unlock()
 		if err == storage.ErrOutOfOrderSample {
-			a.head.metrics.outOfOrderSamples.Inc()
+			a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeHistogram).Inc()
 		}
 		return 0, err
 	}
@@ -728,7 +728,7 @@ func (a *headAppender) Commit() (err error) {
 
 		if !ok {
 			total--
-			a.head.metrics.outOfOrderSamples.Inc()
+			a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat).Inc()
 		}
 		if chunkCreated {
 			a.head.metrics.chunks.Inc()
@@ -736,7 +736,7 @@ func (a *headAppender) Commit() (err error) {
 		}
 	}
 
-	total += len(a.histograms) // TODO: different metric?
+	histogramsTotal := len(a.histograms)
 	for i, s := range a.histograms {
 		series = a.histogramSeries[i]
 		series.Lock()
@@ -745,11 +745,9 @@ func (a *headAppender) Commit() (err error) {
 		series.pendingCommit = false
 		series.Unlock()
 
-		if ok {
-			a.head.metrics.histogramSamplesTotal.Inc()
-		} else {
-			total--
-			a.head.metrics.outOfOrderSamples.Inc()
+		if !ok {
+			histogramsTotal--
+			a.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeHistogram).Inc()
 		}
 		if chunkCreated {
 			a.head.metrics.chunks.Inc()
@@ -764,7 +762,8 @@ func (a *headAppender) Commit() (err error) {
 		series.Unlock()
 	}
 
-	a.head.metrics.samplesAppended.Add(float64(total))
+	a.head.metrics.samplesAppended.WithLabelValues(sampleMetricTypeFloat).Add(float64(total))
+	a.head.metrics.samplesAppended.WithLabelValues(sampleMetricTypeHistogram).Add(float64(histogramsTotal))
 	a.head.updateMinMaxTime(a.mint, a.maxt)
 
 	return nil
