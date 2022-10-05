@@ -1,5 +1,5 @@
 name: buf.build
-on:
+on:  # yamllint disable-line rule:truthy
   push:
     branches:
       - main

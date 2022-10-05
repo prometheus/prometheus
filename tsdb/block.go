@@ -19,13 +19,13 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"sort"
 	"sync"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/oklog/ulid"
 	"github.com/pkg/errors"
+	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -198,7 +198,7 @@ func (bm *BlockMetaCompaction) SetOutOfOrder() {
 		return
 	}
 	bm.Hints = append(bm.Hints, CompactionHintFromOutOfOrder)
-	sort.Strings(bm.Hints)
+	slices.Sort(bm.Hints)
 }
 
 func (bm *BlockMetaCompaction) FromOutOfOrder() bool {
@@ -463,7 +463,7 @@ func (r blockIndexReader) SortedLabelValues(name string, matchers ...*labels.Mat
 	} else {
 		st, err = r.LabelValues(name, matchers...)
 		if err == nil {
-			sort.Strings(st)
+			slices.Sort(st)
 		}
 	}
 

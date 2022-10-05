@@ -18,7 +18,6 @@ import (
 	"container/heap"
 	"fmt"
 	"math"
-	"sort"
 	"sync"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -26,6 +25,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
+	"golang.org/x/exp/slices"
 )
 
 type mergeGenericQuerier struct {
@@ -241,7 +241,7 @@ func (q *mergeGenericQuerier) LabelNames(matchers ...*labels.Matcher) ([]string,
 	for name := range labelNamesMap {
 		labelNames = append(labelNames, name)
 	}
-	sort.Strings(labelNames)
+	slices.Sort(labelNames)
 	return labelNames, warnings, nil
 }
 

@@ -15,7 +15,6 @@ import { SyntaxNode } from '@lezer/common';
 import {
   AggregateExpr,
   BinaryExpr,
-  Expr,
   FunctionCall,
   MatrixSelector,
   NumberLiteral,
@@ -27,7 +26,6 @@ import {
   UnaryExpr,
   VectorSelector,
 } from '@prometheus-io/lezer-promql';
-import { walkThrough } from './path-finder';
 import { getFunction, ValueType } from '../types';
 
 // Based on https://github.com/prometheus/prometheus/blob/d668a7efe3107dbdcc67bf4e9f12430ed8e2b396/promql/parser/ast.go#L191
@@ -36,8 +34,6 @@ export function getType(node: SyntaxNode | null): ValueType {
     return ValueType.none;
   }
   switch (node.type.id) {
-    case Expr:
-      return getType(node.firstChild);
     case AggregateExpr:
       return ValueType.vector;
     case VectorSelector:
@@ -53,9 +49,9 @@ export function getType(node: SyntaxNode | null): ValueType {
     case SubqueryExpr:
       return ValueType.matrix;
     case ParenExpr:
-      return getType(walkThrough(node, Expr));
+      return getType(node.getChild('Expr'));
     case UnaryExpr:
-      return getType(walkThrough(node, Expr));
+      return getType(node.getChild('Expr'));
     case BinaryExpr:
       const lt = getType(node.firstChild);
       const rt = getType(node.lastChild);
@@ -70,7 +66,7 @@ export function getType(node: SyntaxNode | null): ValueType {
       }
       return getFunction(funcNode.type.id).returnType;
     case StepInvariantExpr:
-      return getType(walkThrough(node, Expr));
+      return getType(node.getChild('Expr'));
     default:
       return ValueType.none;
   }

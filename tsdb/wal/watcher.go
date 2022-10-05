@@ -19,7 +19,6 @@ import (
 	"math"
 	"os"
 	"path"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -28,6 +27,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/tsdb/record"
@@ -320,7 +320,7 @@ func (w *Watcher) segments(dir string) ([]int, error) {
 		}
 		refs = append(refs, k)
 	}
-	sort.Ints(refs)
+	slices.Sort(refs)
 	for i := 0; i < len(refs)-1; i++ {
 		if refs[i]+1 != refs[i+1] {
 			return nil, errors.New("segments are not sequential")

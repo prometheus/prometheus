@@ -11,7 +11,7 @@ const SeriesName: FC<SeriesNameProps> = ({ labels, format }) => {
   const setClipboardMsg = useToastContext();
 
   const toClipboard = (e: React.MouseEvent<HTMLSpanElement>) => {
-    let copyText = e.currentTarget.innerText || '';
+    const copyText = e.currentTarget.innerText || '';
     navigator.clipboard
       .writeText(copyText.trim())
       .then(() => {
