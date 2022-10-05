@@ -88,6 +88,8 @@ func (c *XORChunk) Compact() {
 }
 
 // Appender implements the Chunk interface.
+// It is not valid to call Appender() multiple times concurrently or to use multiple
+// Appenders on the same chunk.
 func (c *XORChunk) Appender() (Appender, error) {
 	it := c.iterator(nil)
 
@@ -115,9 +117,6 @@ func (c *XORChunk) Appender() (Appender, error) {
 }
 
 func (c *XORChunk) iterator(it Iterator) *xorIterator {
-	// Should iterators guarantee to act on a copy of the data so it doesn't lock append?
-	// When using striped locks to guard access to chunks, probably yes.
-	// Could only copy data if the chunk is not completed yet.
 	if xorIter, ok := it.(*xorIterator); ok {
 		xorIter.Reset(c.b.bytes())
 		return xorIter
@@ -132,6 +131,9 @@ func (c *XORChunk) iterator(it Iterator) *xorIterator {
 }
 
 // Iterator implements the Chunk interface.
+// Iterator() must not be called concurrently with any modifications to the chunk,
+// but after it returns you can use an Iterator concurrently with an Appender or
+// other Iterators.
 func (c *XORChunk) Iterator(it Iterator) Iterator {
 	return c.iterator(it)
 }

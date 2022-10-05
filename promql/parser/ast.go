@@ -28,13 +28,12 @@ import (
 // or a chain of function definitions (e.g. String(), PromQLExpr(), etc.) convention is
 // to list them as follows:
 //
-// 	- Statements
-// 	- statement types (alphabetical)
-// 	- ...
-// 	- Expressions
-// 	- expression types (alphabetical)
-// 	- ...
-//
+//   - Statements
+//   - statement types (alphabetical)
+//   - ...
+//   - Expressions
+//   - expression types (alphabetical)
+//   - ...
 type Node interface {
 	// String representation of the node that returns the given node when parsed
 	// as part of a valid query.
@@ -68,6 +67,8 @@ type EvalStmt struct {
 	Start, End time.Time
 	// Time between two evaluated instants for the range [Start:End].
 	Interval time.Duration
+	// Lookback delta to use for this evaluation.
+	LookbackDelta time.Duration
 }
 
 func (*EvalStmt) PromQLStmt() {}

@@ -29,6 +29,7 @@ import (
 	"unsafe"
 
 	"github.com/pkg/errors"
+	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -820,7 +821,7 @@ func (w *Writer) writePostingsToTmpFiles() error {
 	for n := range w.labelNames {
 		names = append(names, n)
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 
 	if err := w.f.Flush(); err != nil {
 		return err
@@ -1488,7 +1489,7 @@ func (r *Reader) SymbolTableSize() uint64 {
 func (r *Reader) SortedLabelValues(name string, matchers ...*labels.Matcher) ([]string, error) {
 	values, err := r.LabelValues(name, matchers...)
 	if err == nil && r.version == FormatV1 {
-		sort.Strings(values)
+		slices.Sort(values)
 	}
 	return values, err
 }
@@ -1590,7 +1591,7 @@ func (r *Reader) LabelNamesFor(ids ...storage.SeriesRef) ([]string, error) {
 		names = append(names, name)
 	}
 
-	sort.Strings(names)
+	slices.Sort(names)
 
 	return names, nil
 }
@@ -1814,7 +1815,7 @@ func (r *Reader) LabelNames(matchers ...*labels.Matcher) ([]string, error) {
 		}
 		labelNames = append(labelNames, name)
 	}
-	sort.Strings(labelNames)
+	slices.Sort(labelNames)
 	return labelNames, nil
 }
 

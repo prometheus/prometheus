@@ -330,56 +330,56 @@ func TestSelectHintsSetCorrectly(t *testing.T) {
 		}, {
 			query: "foo[2m:1s]", start: 300000,
 			expected: []*storage.SelectHints{
-				{Start: 175000, End: 300000},
+				{Start: 175000, End: 300000, Step: 1000},
 			},
 		}, {
 			query: "count_over_time(foo[2m:1s])", start: 300000,
 			expected: []*storage.SelectHints{
-				{Start: 175000, End: 300000, Func: "count_over_time"},
+				{Start: 175000, End: 300000, Func: "count_over_time", Step: 1000},
 			},
 		}, {
 			query: "count_over_time(foo[2m:1s] @ 300)", start: 200000,
 			expected: []*storage.SelectHints{
-				{Start: 175000, End: 300000, Func: "count_over_time"},
+				{Start: 175000, End: 300000, Func: "count_over_time", Step: 1000},
 			},
 		}, {
 			query: "count_over_time(foo[2m:1s] @ 200)", start: 200000,
 			expected: []*storage.SelectHints{
-				{Start: 75000, End: 200000, Func: "count_over_time"},
+				{Start: 75000, End: 200000, Func: "count_over_time", Step: 1000},
 			},
 		}, {
 			query: "count_over_time(foo[2m:1s] @ 100)", start: 200000,
 			expected: []*storage.SelectHints{
-				{Start: -25000, End: 100000, Func: "count_over_time"},
+				{Start: -25000, End: 100000, Func: "count_over_time", Step: 1000},
 			},
 		}, {
 			query: "count_over_time(foo[2m:1s] offset 10s)", start: 300000,
 			expected: []*storage.SelectHints{
-				{Start: 165000, End: 290000, Func: "count_over_time"},
+				{Start: 165000, End: 290000, Func: "count_over_time", Step: 1000},
 			},
 		}, {
 			query: "count_over_time((foo offset 10s)[2m:1s] offset 10s)", start: 300000,
 			expected: []*storage.SelectHints{
-				{Start: 155000, End: 280000, Func: "count_over_time"},
+				{Start: 155000, End: 280000, Func: "count_over_time", Step: 1000},
 			},
 		}, {
 			// When the @ is on the vector selector, the enclosing subquery parameters
 			// don't affect the hint ranges.
 			query: "count_over_time((foo @ 200 offset 10s)[2m:1s] offset 10s)", start: 300000,
 			expected: []*storage.SelectHints{
-				{Start: 185000, End: 190000, Func: "count_over_time"},
+				{Start: 185000, End: 190000, Func: "count_over_time", Step: 1000},
 			},
 		}, {
 			// When the @ is on the vector selector, the enclosing subquery parameters
 			// don't affect the hint ranges.
 			query: "count_over_time((foo @ 200 offset 10s)[2m:1s] @ 100 offset 10s)", start: 300000,
 			expected: []*storage.SelectHints{
-				{Start: 185000, End: 190000, Func: "count_over_time"},
+				{Start: 185000, End: 190000, Func: "count_over_time", Step: 1000},
 			},
 		}, {
 			query: "count_over_time((foo offset 10s)[2m:1s] @ 100 offset 10s)", start: 300000,
 			expected: []*storage.SelectHints{
-				{Start: -45000, End: 80000, Func: "count_over_time"},
+				{Start: -45000, End: 80000, Func: "count_over_time", Step: 1000},
 			},
 		}, {
 			query: "foo", start: 10000, end: 20000,
@@ -498,13 +498,13 @@ func TestSelectHintsSetCorrectly(t *testing.T) {
 		}, {
 			query: "(max by (dim1) (foo))[5s:1s]", start: 10000,
 			expected: []*storage.SelectHints{
-				{Start: 0, End: 10000, Func: "max", By: true, Grouping: []string{"dim1"}},
+				{Start: 0, End: 10000, Func: "max", By: true, Grouping: []string{"dim1"}, Step: 1000},
 			},
 		}, {
 			query: "(sum(http_requests{group=~\"p.*\"})+max(http_requests{group=~\"c.*\"}))[20s:5s]", start: 120000,
 			expected: []*storage.SelectHints{
-				{Start: 95000, End: 120000, Func: "sum", By: true},
-				{Start: 95000, End: 120000, Func: "max", By: true},
+				{Start: 95000, End: 120000, Func: "sum", By: true, Step: 5000},
+				{Start: 95000, End: 120000, Func: "max", By: true, Step: 5000},
 			},
 		}, {
 			query: "foo @ 50 + bar @ 250 + baz @ 900", start: 100000, end: 500000,
@@ -544,12 +544,12 @@ func TestSelectHintsSetCorrectly(t *testing.T) {
 		}, { // Hints are based on the inner most subquery timestamp.
 			query: `sum_over_time(sum_over_time(metric{job="1"}[100s])[100s:25s] @ 50)[3s:1s] @ 3000`, start: 100000,
 			expected: []*storage.SelectHints{
-				{Start: -150000, End: 50000, Range: 100000, Func: "sum_over_time"},
+				{Start: -150000, End: 50000, Range: 100000, Func: "sum_over_time", Step: 25000},
 			},
 		}, { // Hints are based on the inner most subquery timestamp.
 			query: `sum_over_time(sum_over_time(metric{job="1"}[100s])[100s:25s] @ 3000)[3s:1s] @ 50`,
 			expected: []*storage.SelectHints{
-				{Start: 2800000, End: 3000000, Range: 100000, Func: "sum_over_time"},
+				{Start: 2800000, End: 3000000, Range: 100000, Func: "sum_over_time", Step: 25000},
 			},
 		},
 	} {
@@ -1439,7 +1439,7 @@ load 1ms
 	ref, err := app.Append(0, lblsneg, -1000000, 1000)
 	require.NoError(t, err)
 	for ts := int64(-1000000 + 1000); ts <= 0; ts += 1000 {
-		_, err := app.Append(ref, nil, ts, -float64(ts/1000)+1)
+		_, err := app.Append(ref, labels.EmptyLabels(), ts, -float64(ts/1000)+1)
 		require.NoError(t, err)
 	}
 
@@ -1608,7 +1608,7 @@ load 1ms
 						{V: 3600, T: 6 * 60 * 1000},
 						{V: 3600, T: 7 * 60 * 1000},
 					},
-					Metric: labels.Labels{},
+					Metric: labels.EmptyLabels(),
 				},
 			},
 		},
@@ -1641,17 +1641,27 @@ load 1ms
 }
 
 func TestRecoverEvaluatorRuntime(t *testing.T) {
-	ev := &evaluator{logger: log.NewNopLogger()}
+	var output []interface{}
+	logger := log.Logger(log.LoggerFunc(func(keyvals ...interface{}) error {
+		output = append(output, keyvals...)
+		return nil
+	}))
+	ev := &evaluator{logger: logger}
+
+	expr, _ := parser.ParseExpr("sum(up)")
 
 	var err error
-	defer ev.recover(nil, &err)
+
+	defer func() {
+		require.EqualError(t, err, "unexpected error: runtime error: index out of range [123] with length 0")
+		require.Contains(t, output, "sum(up)")
+	}()
+	defer ev.recover(expr, nil, &err)
 
 	// Cause a runtime panic.
 	var a []int
 	//nolint:govet
 	a[123] = 1
-
-	require.EqualError(t, err, "unexpected error")
 }
 
 func TestRecoverEvaluatorError(t *testing.T) {
@@ -1663,7 +1673,7 @@ func TestRecoverEvaluatorError(t *testing.T) {
 	defer func() {
 		require.EqualError(t, err, e.Error())
 	}()
-	defer ev.recover(nil, &err)
+	defer ev.recover(nil, nil, &err)
 
 	panic(e)
 }
@@ -1683,7 +1693,7 @@ func TestRecoverEvaluatorErrorWithWarnings(t *testing.T) {
 		require.EqualError(t, err, e.Error())
 		require.Equal(t, warnings, ws, "wrong warning message")
 	}()
-	defer ev.recover(&ws, &err)
+	defer ev.recover(nil, &ws, &err)
 
 	panic(e)
 }
@@ -1899,7 +1909,7 @@ func TestSubquerySelector(t *testing.T) {
 						Matrix{
 							Series{
 								Points: []Point{{V: 270, T: 90000}, {V: 300, T: 100000}, {V: 330, T: 110000}, {V: 360, T: 120000}},
-								Metric: labels.Labels{},
+								Metric: labels.EmptyLabels(),
 							},
 						},
 						nil,
@@ -1913,7 +1923,7 @@ func TestSubquerySelector(t *testing.T) {
 						Matrix{
 							Series{
 								Points: []Point{{V: 800, T: 80000}, {V: 900, T: 90000}, {V: 1000, T: 100000}, {V: 1100, T: 110000}, {V: 1200, T: 120000}},
-								Metric: labels.Labels{},
+								Metric: labels.EmptyLabels(),
 							},
 						},
 						nil,
@@ -1927,7 +1937,7 @@ func TestSubquerySelector(t *testing.T) {
 						Matrix{
 							Series{
 								Points: []Point{{V: 1000, T: 100000}, {V: 1000, T: 105000}, {V: 1100, T: 110000}, {V: 1100, T: 115000}, {V: 1200, T: 120000}},
-								Metric: labels.Labels{},
+								Metric: labels.EmptyLabels(),
 							},
 						},
 						nil,
@@ -2983,7 +2993,7 @@ func TestRangeQuery(t *testing.T) {
 			Result: Matrix{
 				Series{
 					Points: []Point{{V: 0, T: 0}, {V: 11, T: 60000}, {V: 1100, T: 120000}},
-					Metric: labels.Labels{},
+					Metric: labels.EmptyLabels(),
 				},
 			},
 			Start:    time.Unix(0, 0),
@@ -2998,7 +3008,7 @@ func TestRangeQuery(t *testing.T) {
 			Result: Matrix{
 				Series{
 					Points: []Point{{V: 0, T: 0}, {V: 11, T: 60000}, {V: 1100, T: 120000}},
-					Metric: labels.Labels{},
+					Metric: labels.EmptyLabels(),
 				},
 			},
 			Start:    time.Unix(0, 0),
@@ -3013,7 +3023,7 @@ func TestRangeQuery(t *testing.T) {
 			Result: Matrix{
 				Series{
 					Points: []Point{{V: 0, T: 0}, {V: 11, T: 60000}, {V: 1100, T: 120000}, {V: 110000, T: 180000}, {V: 11000000, T: 240000}},
-					Metric: labels.Labels{},
+					Metric: labels.EmptyLabels(),
 				},
 			},
 			Start:    time.Unix(0, 0),
@@ -3028,7 +3038,7 @@ func TestRangeQuery(t *testing.T) {
 			Result: Matrix{
 				Series{
 					Points: []Point{{V: 5, T: 0}, {V: 59, T: 60000}, {V: 9, T: 120000}, {V: 956, T: 180000}},
-					Metric: labels.Labels{},
+					Metric: labels.EmptyLabels(),
 				},
 			},
 			Start:    time.Unix(0, 0),
@@ -3043,7 +3053,7 @@ func TestRangeQuery(t *testing.T) {
 			Result: Matrix{
 				Series{
 					Points: []Point{{V: 1, T: 0}, {V: 3, T: 60000}, {V: 5, T: 120000}},
-					Metric: labels.Labels{labels.Label{Name: "__name__", Value: "metric"}},
+					Metric: labels.FromStrings("__name__", "metric"),
 				},
 			},
 			Start:    time.Unix(0, 0),
@@ -3058,7 +3068,7 @@ func TestRangeQuery(t *testing.T) {
 			Result: Matrix{
 				Series{
 					Points: []Point{{V: 1, T: 0}, {V: 3, T: 60000}, {V: 5, T: 120000}},
-					Metric: labels.Labels{labels.Label{Name: "__name__", Value: "metric"}},
+					Metric: labels.FromStrings("__name__", "metric"),
 				},
 			},
 			Start:    time.Unix(0, 0),
@@ -3074,17 +3084,17 @@ func TestRangeQuery(t *testing.T) {
 			Result: Matrix{
 				Series{
 					Points: []Point{{V: 1, T: 0}, {V: 3, T: 60000}, {V: 5, T: 120000}},
-					Metric: labels.Labels{
-						labels.Label{Name: "__name__", Value: "bar"},
-						labels.Label{Name: "job", Value: "2"},
-					},
+					Metric: labels.FromStrings(
+						"__name__", "bar",
+						"job", "2",
+					),
 				},
 				Series{
 					Points: []Point{{V: 3, T: 60000}, {V: 5, T: 120000}},
-					Metric: labels.Labels{
-						labels.Label{Name: "__name__", Value: "foo"},
-						labels.Label{Name: "job", Value: "1"},
-					},
+					Metric: labels.FromStrings(
+						"__name__", "foo",
+						"job", "1",
+					),
 				},
 			},
 			Start:    time.Unix(0, 0),
@@ -3133,6 +3143,99 @@ func TestRangeQuery(t *testing.T) {
 			res := qry.Exec(test.Context())
 			require.NoError(t, res.Err)
 			require.Equal(t, c.Result, res.Value)
+		})
+	}
+}
+
+func TestQueryLookbackDelta(t *testing.T) {
+	var (
+		load = `load 5m
+metric 0 1 2
+`
+		query           = "metric"
+		lastDatapointTs = time.Unix(600, 0)
+	)
+
+	cases := []struct {
+		name                          string
+		ts                            time.Time
+		engineLookback, queryLookback time.Duration
+		expectSamples                 bool
+	}{
+		{
+			name:          "default lookback delta",
+			ts:            lastDatapointTs.Add(defaultLookbackDelta),
+			expectSamples: true,
+		},
+		{
+			name:          "outside default lookback delta",
+			ts:            lastDatapointTs.Add(defaultLookbackDelta + time.Millisecond),
+			expectSamples: false,
+		},
+		{
+			name:           "custom engine lookback delta",
+			ts:             lastDatapointTs.Add(10 * time.Minute),
+			engineLookback: 10 * time.Minute,
+			expectSamples:  true,
+		},
+		{
+			name:           "outside custom engine lookback delta",
+			ts:             lastDatapointTs.Add(10*time.Minute + time.Millisecond),
+			engineLookback: 10 * time.Minute,
+			expectSamples:  false,
+		},
+		{
+			name:           "custom query lookback delta",
+			ts:             lastDatapointTs.Add(20 * time.Minute),
+			engineLookback: 10 * time.Minute,
+			queryLookback:  20 * time.Minute,
+			expectSamples:  true,
+		},
+		{
+			name:           "outside custom query lookback delta",
+			ts:             lastDatapointTs.Add(20*time.Minute + time.Millisecond),
+			engineLookback: 10 * time.Minute,
+			queryLookback:  20 * time.Minute,
+			expectSamples:  false,
+		},
+		{
+			name:           "negative custom query lookback delta",
+			ts:             lastDatapointTs.Add(20 * time.Minute),
+			engineLookback: -10 * time.Minute,
+			queryLookback:  20 * time.Minute,
+			expectSamples:  true,
+		},
+	}
+
+	for _, c := range cases {
+		c := c
+		t.Run(c.name, func(t *testing.T) {
+			test, err := NewTest(t, load)
+			require.NoError(t, err)
+			defer test.Close()
+
+			err = test.Run()
+			require.NoError(t, err)
+
+			eng := test.QueryEngine()
+			if c.engineLookback != 0 {
+				eng.lookbackDelta = c.engineLookback
+			}
+			opts := &QueryOpts{
+				LookbackDelta: c.queryLookback,
+			}
+			qry, err := eng.NewInstantQuery(test.Queryable(), opts, query, c.ts)
+			require.NoError(t, err)
+
+			res := qry.Exec(test.Context())
+			require.NoError(t, res.Err)
+			vec, ok := res.Value.(Vector)
+			require.True(t, ok)
+			if c.expectSamples {
+				require.NotEmpty(t, vec)
+			} else {
+				require.Empty(t, vec)
+			}
 		})
 	}
 }

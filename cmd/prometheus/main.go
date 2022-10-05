@@ -37,7 +37,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/regexp"
-	conntrack "github.com/mwitkow/go-conntrack"
+	"github.com/mwitkow/go-conntrack"
 	"github.com/oklog/run"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/common/model"
@@ -48,8 +48,8 @@ import (
 	toolkit_webflag "github.com/prometheus/exporter-toolkit/web/kingpinflag"
 	"go.uber.org/atomic"
 	"go.uber.org/automaxprocs/maxprocs"
-	kingpin "gopkg.in/alecthomas/kingpin.v2"
-	klog "k8s.io/klog"
+	"gopkg.in/alecthomas/kingpin.v2"
+	"k8s.io/klog"
 	klogv2 "k8s.io/klog/v2"
 
 	"github.com/prometheus/prometheus/config"
@@ -58,6 +58,7 @@ import (
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/notifier"
 	_ "github.com/prometheus/prometheus/plugins" // Register plugins.
@@ -178,7 +179,7 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 				level.Info(logger).Log("msg", "Experimental memory snapshot on shutdown enabled")
 			case "extra-scrape-metrics":
 				c.scrape.ExtraMetrics = true
-				level.Info(logger).Log("msg", "Experimental additional scrape metrics")
+				level.Info(logger).Log("msg", "Experimental additional scrape metrics enabled")
 			case "new-service-discovery-manager":
 				c.enableNewSDManager = true
 				level.Info(logger).Log("msg", "Experimental service discovery manager")
@@ -191,6 +192,9 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 			case "auto-gomaxprocs":
 				c.enableAutoGOMAXPROCS = true
 				level.Info(logger).Log("msg", "Automatically set GOMAXPROCS to match Linux container CPU quota")
+			case "no-default-scrape-port":
+				c.scrape.NoDefaultPort = true
+				level.Info(logger).Log("msg", "No default port will be appended to scrape targets' addresses.")
 			case "":
 				continue
 			case "promql-at-modifier", "promql-negative-offset":
@@ -308,8 +312,10 @@ func main() {
 	serverOnlyFlag(a, "storage.tsdb.no-lockfile", "Do not create lockfile in data directory.").
 		Default("false").BoolVar(&cfg.tsdb.NoLockfile)
 
-	serverOnlyFlag(a, "storage.tsdb.allow-overlapping-blocks", "Allow overlapping blocks, which in turn enables vertical compaction and vertical query merge.").
-		Default("false").BoolVar(&cfg.tsdb.AllowOverlappingBlocks)
+	// TODO: Remove in Prometheus 3.0.
+	var b bool
+	serverOnlyFlag(a, "storage.tsdb.allow-overlapping-blocks", "[DEPRECATED] This flag has no effect. Overlapping blocks are enabled by default now.").
+		Default("true").Hidden().BoolVar(&b)
 
 	serverOnlyFlag(a, "storage.tsdb.wal-compression", "Compress the tsdb WAL.").
 		Hidden().Default("true").BoolVar(&cfg.tsdb.WALCompression)
@@ -390,7 +396,7 @@ func main() {
 	a.Flag("scrape.discovery-reload-interval", "Interval used by scrape manager to throttle target groups updates.").
 		Hidden().Default("5s").SetValue(&cfg.scrape.DiscoveryReloadInterval)
 
-	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: agent, exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-at-modifier, promql-negative-offset, promql-per-step-stats, remote-write-receiver (DEPRECATED), extra-scrape-metrics, new-service-discovery-manager, auto-gomaxprocs. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
+	a.Flag("enable-feature", "Comma separated feature names to enable. Valid options: agent, exemplar-storage, expand-external-labels, memory-snapshot-on-shutdown, promql-at-modifier, promql-negative-offset, promql-per-step-stats, remote-write-receiver (DEPRECATED), extra-scrape-metrics, new-service-discovery-manager, auto-gomaxprocs, no-default-scrape-port. See https://prometheus.io/docs/prometheus/latest/feature_flags/ for more details.").
 		Default("").StringsVar(&cfg.featureList)
 
 	promlogflag.AddFlags(a, &cfg.promlogConfig)
@@ -1004,7 +1010,6 @@ func main() {
 					"NoLockfile", cfg.tsdb.NoLockfile,
 					"RetentionDuration", cfg.tsdb.RetentionDuration,
 					"WALSegmentSize", cfg.tsdb.WALSegmentSize,
-					"AllowOverlappingBlocks", cfg.tsdb.AllowOverlappingBlocks,
 					"WALCompression", cfg.tsdb.WALCompression,
 				)
 
@@ -1406,6 +1411,10 @@ func (n notReadyAppender) AppendExemplar(ref storage.SeriesRef, l labels.Labels,
 	return 0, tsdb.ErrNotReady
 }
 
+func (n notReadyAppender) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, m metadata.Metadata) (storage.SeriesRef, error) {
+	return 0, tsdb.ErrNotReady
+}
+
 func (n notReadyAppender) Commit() error { return tsdb.ErrNotReady }
 
 func (n notReadyAppender) Rollback() error { return tsdb.ErrNotReady }
@@ -1523,7 +1532,6 @@ type tsdbOptions struct {
 	RetentionDuration              model.Duration
 	MaxBytes                       units.Base2Bytes
 	NoLockfile                     bool
-	AllowOverlappingBlocks         bool
 	WALCompression                 bool
 	HeadChunksWriteQueueSize       int
 	StripeSize                     int
@@ -1542,8 +1550,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		RetentionDuration:              int64(time.Duration(opts.RetentionDuration) / time.Millisecond),
 		MaxBytes:                       int64(opts.MaxBytes),
 		NoLockfile:                     opts.NoLockfile,
-		AllowOverlappingCompaction:     opts.AllowOverlappingBlocks,
-		AllowOverlappingQueries:        opts.AllowOverlappingBlocks,
+		AllowOverlappingCompaction:     true,
 		WALCompression:                 opts.WALCompression,
 		HeadChunksWriteQueueSize:       opts.HeadChunksWriteQueueSize,
 		StripeSize:                     opts.StripeSize,

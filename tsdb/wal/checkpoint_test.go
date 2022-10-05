@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
@@ -153,6 +154,14 @@ func TestCheckpoint(t *testing.T) {
 						{Ref: 5, Labels: labels.FromStrings("a", "b", "c", "5")},
 					}, nil)
 					require.NoError(t, w.Log(b))
+
+					b = enc.Metadata([]record.RefMetadata{
+						{Ref: 2, Unit: "unit", Help: "help"},
+						{Ref: 3, Unit: "unit", Help: "help"},
+						{Ref: 4, Unit: "unit", Help: "help"},
+						{Ref: 5, Unit: "unit", Help: "help"},
+					}, nil)
+					require.NoError(t, w.Log(b))
 				}
 				// Write samples until the WAL has enough segments.
 				// Make them have drifting timestamps within a record to see that they
@@ -167,6 +176,16 @@ func TestCheckpoint(t *testing.T) {
 
 				b = enc.Exemplars([]record.RefExemplar{
 					{Ref: 1, T: last, V: float64(i), Labels: labels.FromStrings("traceID", fmt.Sprintf("trace-%d", i))},
+				}, nil)
+				require.NoError(t, w.Log(b))
+
+				// Write changing metadata for each series. In the end, only the latest
+				// version should end up in the checkpoint.
+				b = enc.Metadata([]record.RefMetadata{
+					{Ref: 0, Unit: fmt.Sprintf("%d", last), Help: fmt.Sprintf("%d", last)},
+					{Ref: 1, Unit: fmt.Sprintf("%d", last), Help: fmt.Sprintf("%d", last)},
+					{Ref: 2, Unit: fmt.Sprintf("%d", last), Help: fmt.Sprintf("%d", last)},
+					{Ref: 3, Unit: fmt.Sprintf("%d", last), Help: fmt.Sprintf("%d", last)},
 				}, nil)
 				require.NoError(t, w.Log(b))
 
@@ -193,6 +212,7 @@ func TestCheckpoint(t *testing.T) {
 
 			var dec record.Decoder
 			var series []record.RefSeries
+			var metadata []record.RefMetadata
 			r := NewReader(sr)
 
 			for r.Next() {
@@ -214,14 +234,27 @@ func TestCheckpoint(t *testing.T) {
 					for _, e := range exemplars {
 						require.GreaterOrEqual(t, e.T, last/2, "exemplar with wrong timestamp")
 					}
+				case record.Metadata:
+					metadata, err = dec.Metadata(rec, metadata)
+					require.NoError(t, err)
 				}
 			}
 			require.NoError(t, r.Err())
-			require.Equal(t, []record.RefSeries{
+
+			expectedRefSeries := []record.RefSeries{
 				{Ref: 0, Labels: labels.FromStrings("a", "b", "c", "0")},
 				{Ref: 2, Labels: labels.FromStrings("a", "b", "c", "2")},
 				{Ref: 4, Labels: labels.FromStrings("a", "b", "c", "4")},
-			}, series)
+			}
+			require.Equal(t, expectedRefSeries, series)
+
+			expectedRefMetadata := []record.RefMetadata{
+				{Ref: 0, Unit: fmt.Sprintf("%d", last-100), Help: fmt.Sprintf("%d", last-100)},
+				{Ref: 2, Unit: fmt.Sprintf("%d", last-100), Help: fmt.Sprintf("%d", last-100)},
+				{Ref: 4, Unit: "unit", Help: "help"},
+			}
+			sort.Slice(metadata, func(i, j int) bool { return metadata[i].Ref < metadata[j].Ref })
+			require.Equal(t, expectedRefMetadata, metadata)
 		})
 	}
 }

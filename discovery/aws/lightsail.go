@@ -49,6 +49,7 @@ const (
 	lightsailLabelIPv6Addresses       = lightsailLabel + "ipv6_addresses"
 	lightsailLabelPrivateIP           = lightsailLabel + "private_ip"
 	lightsailLabelPublicIP            = lightsailLabel + "public_ip"
+	lightsailLabelRegion              = lightsailLabel + "region"
 	lightsailLabelTag                 = lightsailLabel + "tag_"
 	lightsailLabelSeparator           = ","
 )
@@ -199,6 +200,7 @@ func (d *LightsailDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group,
 			lightsailLabelInstanceState:       model.LabelValue(*inst.State.Name),
 			lightsailLabelInstanceSupportCode: model.LabelValue(*inst.SupportCode),
 			lightsailLabelPrivateIP:           model.LabelValue(*inst.PrivateIpAddress),
+			lightsailLabelRegion:              model.LabelValue(d.cfg.Region),
 		}
 
 		addr := net.JoinHostPort(*inst.PrivateIpAddress, fmt.Sprintf("%d", d.cfg.Port))

@@ -1,6 +1,6 @@
 ## Overview
 The `ui` directory contains static files and templates used in the web UI. For
-easier distribution they are compressend (c.f. Makefile) and statically compiled 
+easier distribution they are compressed (c.f. Makefile) and statically compiled 
 into the Prometheus binary using the embed package.
 
 During development it is more convenient to always use the files on disk to 

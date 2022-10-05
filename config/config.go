@@ -29,7 +29,7 @@ import (
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/sigv4"
-	yaml "gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/model/labels"
@@ -508,8 +508,9 @@ type StorageConfig struct {
 // TSDBConfig configures runtime reloadable configuration options.
 type TSDBConfig struct {
 	// OutOfOrderTimeWindow sets how long back in time an out-of-order sample can be inserted
-	// into the TSDB. This is the one finally used by the TSDB and should be in the same unit
-	// as other timestamps in the TSDB.
+	// into the TSDB. This flag is typically set while unmarshaling the configuration file and translating
+	// OutOfOrderTimeWindowFlag's duration. The unit of this flag is expected to be the same as any
+	// other timestamp in the TSDB.
 	OutOfOrderTimeWindow int64
 
 	// OutOfOrderTimeWindowFlag holds the parsed duration from the config file.

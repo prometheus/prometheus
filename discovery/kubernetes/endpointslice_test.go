@@ -234,7 +234,8 @@ func TestEndpointSliceDiscoveryAdd(t *testing.T) {
 			NodeName: "testnode",
 			Containers: []corev1.Container{
 				{
-					Name: "c1",
+					Name:  "c1",
+					Image: "c1:latest",
 					Ports: []corev1.ContainerPort{
 						{
 							Name:          "mainport",
@@ -244,7 +245,8 @@ func TestEndpointSliceDiscoveryAdd(t *testing.T) {
 					},
 				},
 				{
-					Name: "c2",
+					Name:  "c2",
+					Image: "c2:latest",
 					Ports: []corev1.ContainerPort{
 						{
 							Name:          "sideport",
@@ -307,6 +309,7 @@ func TestEndpointSliceDiscoveryAdd(t *testing.T) {
 						"__meta_kubernetes_endpointslice_port_name":                 "testport",
 						"__meta_kubernetes_endpointslice_port_protocol":             "TCP",
 						"__meta_kubernetes_pod_container_name":                      "c1",
+						"__meta_kubernetes_pod_container_image":                     "c1:latest",
 						"__meta_kubernetes_pod_container_port_name":                 "mainport",
 						"__meta_kubernetes_pod_container_port_number":               "9000",
 						"__meta_kubernetes_pod_container_port_protocol":             "TCP",
@@ -321,6 +324,7 @@ func TestEndpointSliceDiscoveryAdd(t *testing.T) {
 					{
 						"__address__":                                   "1.2.3.4:9001",
 						"__meta_kubernetes_pod_container_name":          "c2",
+						"__meta_kubernetes_pod_container_image":         "c2:latest",
 						"__meta_kubernetes_pod_container_port_name":     "sideport",
 						"__meta_kubernetes_pod_container_port_number":   "9001",
 						"__meta_kubernetes_pod_container_port_protocol": "TCP",
@@ -878,7 +882,8 @@ func TestEndpointSliceDiscoveryNamespaces(t *testing.T) {
 				NodeName: "testnode",
 				Containers: []corev1.Container{
 					{
-						Name: "c1",
+						Name:  "c1",
+						Image: "c1:latest",
 						Ports: []corev1.ContainerPort{
 							{
 								Name:          "mainport",
@@ -953,6 +958,7 @@ func TestEndpointSliceDiscoveryNamespaces(t *testing.T) {
 						"__meta_kubernetes_endpointslice_port_name":           "testport",
 						"__meta_kubernetes_endpointslice_port_protocol":       "TCP",
 						"__meta_kubernetes_pod_container_name":                "c1",
+						"__meta_kubernetes_pod_container_image":               "c1:latest",
 						"__meta_kubernetes_pod_container_port_name":           "mainport",
 						"__meta_kubernetes_pod_container_port_number":         "9000",
 						"__meta_kubernetes_pod_container_port_protocol":       "TCP",
@@ -993,7 +999,8 @@ func TestEndpointSliceDiscoveryOwnNamespace(t *testing.T) {
 			NodeName: "testnode",
 			Containers: []corev1.Container{
 				{
-					Name: "p1",
+					Name:  "p1",
+					Image: "p1:latest",
 					Ports: []corev1.ContainerPort{
 						{
 							Name:          "mainport",

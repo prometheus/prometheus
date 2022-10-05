@@ -16,19 +16,17 @@ import { SyntaxNode } from '@lezer/common';
 import {
   And,
   BinaryExpr,
-  BinModifiers,
-  GroupingLabel,
-  GroupingLabelList,
+  MatchingModifierClause,
+  LabelName,
   GroupingLabels,
   GroupLeft,
   GroupRight,
   On,
-  OnOrIgnoring,
   Or,
   Unless,
 } from '@prometheus-io/lezer-promql';
 import { VectorMatchCardinality, VectorMatching } from '../types';
-import { containsAtLeastOneChild, retrieveAllRecursiveNodes } from './path-finder';
+import { containsAtLeastOneChild } from './path-finder';
 
 export function buildVectorMatching(state: EditorState, binaryNode: SyntaxNode): VectorMatching | null {
   if (!binaryNode || binaryNode.type.id !== BinaryExpr) {
@@ -40,28 +38,24 @@ export function buildVectorMatching(state: EditorState, binaryNode: SyntaxNode):
     on: false,
     include: [],
   };
-  const binModifiers = binaryNode.getChild(BinModifiers);
-  if (binModifiers) {
-    const onOrIgnoring = binModifiers.getChild(OnOrIgnoring);
-    if (onOrIgnoring) {
-      result.on = onOrIgnoring.getChild(On) !== null;
-      const labels = retrieveAllRecursiveNodes(onOrIgnoring.getChild(GroupingLabels), GroupingLabelList, GroupingLabel);
-      if (labels.length > 0) {
-        for (const label of labels) {
-          result.matchingLabels.push(state.sliceDoc(label.from, label.to));
-        }
-      }
+  const modifierClause = binaryNode.getChild(MatchingModifierClause);
+  if (modifierClause) {
+    result.on = modifierClause.getChild(On) !== null;
+    const labelNode = modifierClause.getChild(GroupingLabels);
+    const labels = labelNode ? labelNode.getChildren(LabelName) : [];
+    for (const label of labels) {
+      result.matchingLabels.push(state.sliceDoc(label.from, label.to));
     }
 
-    const groupLeft = binModifiers.getChild(GroupLeft);
-    const groupRight = binModifiers.getChild(GroupRight);
-    if (groupLeft || groupRight) {
+    const groupLeft = modifierClause.getChild(GroupLeft);
+    const groupRight = modifierClause.getChild(GroupRight);
+    const group = groupLeft || groupRight;
+    if (group) {
       result.card = groupLeft ? VectorMatchCardinality.CardManyToOne : VectorMatchCardinality.CardOneToMany;
-      const includeLabels = retrieveAllRecursiveNodes(binModifiers.getChild(GroupingLabels), GroupingLabelList, GroupingLabel);
-      if (includeLabels.length > 0) {
-        for (const label of includeLabels) {
-          result.include.push(state.sliceDoc(label.from, label.to));
-        }
+      const labelNode = group.nextSibling;
+      const labels = labelNode?.getChildren(LabelName) || [];
+      for (const label of labels) {
+        result.include.push(state.sliceDoc(label.from, label.to));
       }
     }
   }

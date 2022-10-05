@@ -361,7 +361,7 @@ func (n *Manager) Send(alerts ...*Alert) {
 			}
 		}
 
-		a.Labels = lb.Labels()
+		a.Labels = lb.Labels(a.Labels)
 	}
 
 	alerts = n.relabelAlerts(alerts)

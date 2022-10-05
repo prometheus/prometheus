@@ -91,6 +91,7 @@ func TestPuppetDBRefresh(t *testing.T) {
 			Targets: []model.LabelSet{
 				{
 					model.AddressLabel:                             model.LabelValue("edinburgh.example.com:80"),
+					model.LabelName("__meta_puppetdb_query"):       model.LabelValue("vhosts"),
 					model.LabelName("__meta_puppetdb_certname"):    model.LabelValue("edinburgh.example.com"),
 					model.LabelName("__meta_puppetdb_environment"): model.LabelValue("prod"),
 					model.LabelName("__meta_puppetdb_exported"):    model.LabelValue("false"),
@@ -131,6 +132,7 @@ func TestPuppetDBRefreshWithParameters(t *testing.T) {
 			Targets: []model.LabelSet{
 				{
 					model.AddressLabel:                                           model.LabelValue("edinburgh.example.com:80"),
+					model.LabelName("__meta_puppetdb_query"):                     model.LabelValue("vhosts"),
 					model.LabelName("__meta_puppetdb_certname"):                  model.LabelValue("edinburgh.example.com"),
 					model.LabelName("__meta_puppetdb_environment"):               model.LabelValue("prod"),
 					model.LabelName("__meta_puppetdb_exported"):                  model.LabelValue("false"),

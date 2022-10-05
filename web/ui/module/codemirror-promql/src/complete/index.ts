@@ -31,16 +31,14 @@ export interface CompleteConfiguration {
   completeStrategy?: CompleteStrategy;
 }
 
-function isPrometheusConfig(remoteConfig: PrometheusConfig | PrometheusClient): remoteConfig is PrometheusConfig {
-  const cfg = remoteConfig as PrometheusConfig;
+export function isPrometheusClient(remoteConfig: PrometheusConfig | PrometheusClient): remoteConfig is PrometheusClient {
+  const client = remoteConfig as PrometheusClient;
   return (
-    cfg.url !== undefined ||
-    cfg.lookbackInterval !== undefined ||
-    cfg.httpErrorHandler !== undefined ||
-    cfg.fetchFn !== undefined ||
-    cfg.cache !== undefined ||
-    cfg.httpMethod !== undefined ||
-    cfg.apiPrefix !== undefined
+    typeof client.labelNames === 'function' &&
+    typeof client.labelValues === 'function' &&
+    typeof client.metricMetadata === 'function' &&
+    typeof client.series === 'function' &&
+    typeof client.metricNames === 'function'
   );
 }
 
@@ -49,7 +47,7 @@ export function newCompleteStrategy(conf?: CompleteConfiguration): CompleteStrat
     return conf.completeStrategy;
   }
   if (conf?.remote) {
-    if (!isPrometheusConfig(conf.remote)) {
+    if (isPrometheusClient(conf.remote)) {
       return new HybridComplete(conf.remote, conf.maxMetricsMetadata);
     }
     return new HybridComplete(new CachedPrometheusClient(new HTTPPrometheusClient(conf.remote), conf.remote.cache), conf.maxMetricsMetadata);

@@ -131,7 +131,7 @@ func TestTailSamples(t *testing.T) {
 				series := enc.Series([]record.RefSeries{
 					{
 						Ref:    chunks.HeadSeriesRef(ref),
-						Labels: labels.Labels{labels.Label{Name: "__name__", Value: fmt.Sprintf("metric_%d", i)}},
+						Labels: labels.FromStrings("__name__", fmt.Sprintf("metric_%d", i)),
 					},
 				}, nil)
 				require.NoError(t, w.Log(series))
@@ -221,7 +221,7 @@ func TestReadToEndNoCheckpoint(t *testing.T) {
 				series := enc.Series([]record.RefSeries{
 					{
 						Ref:    chunks.HeadSeriesRef(i),
-						Labels: labels.Labels{labels.Label{Name: "__name__", Value: fmt.Sprintf("metric_%d", i)}},
+						Labels: labels.FromStrings("__name__", fmt.Sprintf("metric_%d", i)),
 					},
 				}, nil)
 				recs = append(recs, series)
@@ -290,7 +290,7 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 				series := enc.Series([]record.RefSeries{
 					{
 						Ref:    chunks.HeadSeriesRef(ref),
-						Labels: labels.Labels{labels.Label{Name: "__name__", Value: fmt.Sprintf("metric_%d", i)}},
+						Labels: labels.FromStrings("__name__", fmt.Sprintf("metric_%d", i)),
 					},
 				}, nil)
 				require.NoError(t, w.Log(series))
@@ -318,7 +318,7 @@ func TestReadToEndWithCheckpoint(t *testing.T) {
 				series := enc.Series([]record.RefSeries{
 					{
 						Ref:    chunks.HeadSeriesRef(i),
-						Labels: labels.Labels{labels.Label{Name: "__name__", Value: fmt.Sprintf("metric_%d", i)}},
+						Labels: labels.FromStrings("__name__", fmt.Sprintf("metric_%d", i)),
 					},
 				}, nil)
 				require.NoError(t, w.Log(series))
@@ -364,14 +364,16 @@ func TestReadCheckpoint(t *testing.T) {
 			err := os.Mkdir(wdir, 0o777)
 			require.NoError(t, err)
 
-			os.Create(SegmentName(wdir, 30))
+			f, err := os.Create(SegmentName(wdir, 30))
+			require.NoError(t, err)
+			require.NoError(t, f.Close())
 
 			enc := record.Encoder{}
 			w, err := NewSize(nil, nil, wdir, 128*pageSize, compress)
 			require.NoError(t, err)
-			defer func() {
+			t.Cleanup(func() {
 				require.NoError(t, w.Close())
-			}()
+			})
 
 			// Write to the initial segment then checkpoint.
 			for i := 0; i < seriesCount; i++ {
@@ -379,7 +381,7 @@ func TestReadCheckpoint(t *testing.T) {
 				series := enc.Series([]record.RefSeries{
 					{
 						Ref:    chunks.HeadSeriesRef(ref),
-						Labels: labels.Labels{labels.Label{Name: "__name__", Value: fmt.Sprintf("metric_%d", i)}},
+						Labels: labels.FromStrings("__name__", fmt.Sprintf("metric_%d", i)),
 					},
 				}, nil)
 				require.NoError(t, w.Log(series))
@@ -396,8 +398,11 @@ func TestReadCheckpoint(t *testing.T) {
 					require.NoError(t, w.Log(sample))
 				}
 			}
-			Checkpoint(log.NewNopLogger(), w, 30, 31, func(x chunks.HeadSeriesRef) bool { return true }, 0)
-			w.Truncate(32)
+			_, err = w.NextSegmentSync()
+			require.NoError(t, err)
+			_, err = Checkpoint(log.NewNopLogger(), w, 30, 31, func(x chunks.HeadSeriesRef) bool { return true }, 0)
+			require.NoError(t, err)
+			require.NoError(t, w.Truncate(32))
 
 			// Start read after checkpoint, no more data written.
 			_, _, err = Segments(w.Dir())
@@ -443,7 +448,7 @@ func TestReadCheckpointMultipleSegments(t *testing.T) {
 					series := enc.Series([]record.RefSeries{
 						{
 							Ref:    chunks.HeadSeriesRef(ref),
-							Labels: labels.Labels{labels.Label{Name: "__name__", Value: fmt.Sprintf("metric_%d", j)}},
+							Labels: labels.FromStrings("__name__", fmt.Sprintf("metric_%d", i)),
 						},
 					}, nil)
 					require.NoError(t, w.Log(series))
@@ -523,7 +528,7 @@ func TestCheckpointSeriesReset(t *testing.T) {
 				series := enc.Series([]record.RefSeries{
 					{
 						Ref:    chunks.HeadSeriesRef(ref),
-						Labels: labels.Labels{labels.Label{Name: "__name__", Value: fmt.Sprintf("metric_%d", i)}},
+						Labels: labels.FromStrings("__name__", fmt.Sprintf("metric_%d", i)),
 					},
 				}, nil)
 				require.NoError(t, w.Log(series))

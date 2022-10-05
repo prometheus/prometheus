@@ -21,6 +21,7 @@ import (
 	"sync"
 
 	"github.com/pkg/errors"
+	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -90,7 +91,7 @@ func (p *MemPostings) Symbols() StringIter {
 		res = append(res, k)
 	}
 
-	sort.Strings(res)
+	slices.Sort(res)
 	return NewStringListIter(res)
 }
 
@@ -239,11 +240,9 @@ func (p *MemPostings) EnsureOrder() {
 
 	for i := 0; i < n; i++ {
 		go func() {
-			var sortable seriesRefSlice
 			for job := range workc {
 				for _, l := range *job {
-					sortable = l
-					sort.Sort(&sortable)
+					slices.Sort(l)
 				}
 
 				*job = (*job)[:0]

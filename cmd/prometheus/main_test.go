@@ -38,6 +38,8 @@ import (
 	"github.com/prometheus/prometheus/rules"
 )
 
+const startupTime = 10 * time.Second
+
 var (
 	promPath    = os.Args[0]
 	promConfig  = filepath.Join("..", "..", "documentation", "examples", "prometheus.yml")
@@ -145,8 +147,8 @@ func TestSendAlerts(t *testing.T) {
 		{
 			in: []*rules.Alert{
 				{
-					Labels:      []labels.Label{{Name: "l1", Value: "v1"}},
-					Annotations: []labels.Label{{Name: "a2", Value: "v2"}},
+					Labels:      labels.FromStrings("l1", "v1"),
+					Annotations: labels.FromStrings("a2", "v2"),
 					ActiveAt:    time.Unix(1, 0),
 					FiredAt:     time.Unix(2, 0),
 					ValidUntil:  time.Unix(3, 0),
@@ -154,8 +156,8 @@ func TestSendAlerts(t *testing.T) {
 			},
 			exp: []*notifier.Alert{
 				{
-					Labels:       []labels.Label{{Name: "l1", Value: "v1"}},
-					Annotations:  []labels.Label{{Name: "a2", Value: "v2"}},
+					Labels:       labels.FromStrings("l1", "v1"),
+					Annotations:  labels.FromStrings("a2", "v2"),
 					StartsAt:     time.Unix(2, 0),
 					EndsAt:       time.Unix(3, 0),
 					GeneratorURL: "http://localhost:9090/graph?g0.expr=up&g0.tab=1",
@@ -165,8 +167,8 @@ func TestSendAlerts(t *testing.T) {
 		{
 			in: []*rules.Alert{
 				{
-					Labels:      []labels.Label{{Name: "l1", Value: "v1"}},
-					Annotations: []labels.Label{{Name: "a2", Value: "v2"}},
+					Labels:      labels.FromStrings("l1", "v1"),
+					Annotations: labels.FromStrings("a2", "v2"),
 					ActiveAt:    time.Unix(1, 0),
 					FiredAt:     time.Unix(2, 0),
 					ResolvedAt:  time.Unix(4, 0),
@@ -174,8 +176,8 @@ func TestSendAlerts(t *testing.T) {
 			},
 			exp: []*notifier.Alert{
 				{
-					Labels:       []labels.Label{{Name: "l1", Value: "v1"}},
-					Annotations:  []labels.Label{{Name: "a2", Value: "v2"}},
+					Labels:       labels.FromStrings("l1", "v1"),
+					Annotations:  labels.FromStrings("a2", "v2"),
 					StartsAt:     time.Unix(2, 0),
 					EndsAt:       time.Unix(4, 0),
 					GeneratorURL: "http://localhost:9090/graph?g0.expr=up&g0.tab=1",
@@ -226,7 +228,7 @@ func TestWALSegmentSizeBounds(t *testing.T) {
 			select {
 			case err := <-done:
 				t.Errorf("prometheus should be still running: %v", err)
-			case <-time.After(5 * time.Second):
+			case <-time.After(startupTime):
 				prom.Process.Kill()
 				<-done
 			}
@@ -272,7 +274,7 @@ func TestMaxBlockChunkSegmentSizeBounds(t *testing.T) {
 			select {
 			case err := <-done:
 				t.Errorf("prometheus should be still running: %v", err)
-			case <-time.After(5 * time.Second):
+			case <-time.After(startupTime):
 				prom.Process.Kill()
 				<-done
 			}
@@ -366,7 +368,7 @@ func TestAgentSuccessfulStartup(t *testing.T) {
 	case err := <-done:
 		t.Logf("prometheus agent should be still running: %v", err)
 		actualExitStatus = prom.ProcessState.ExitCode()
-	case <-time.After(5 * time.Second):
+	case <-time.After(startupTime):
 		prom.Process.Kill()
 	}
 	require.Equal(t, 0, actualExitStatus)
@@ -387,7 +389,7 @@ func TestAgentFailedStartupWithServerFlag(t *testing.T) {
 	case err := <-done:
 		t.Logf("prometheus agent should not be running: %v", err)
 		actualExitStatus = prom.ProcessState.ExitCode()
-	case <-time.After(5 * time.Second):
+	case <-time.After(startupTime):
 		prom.Process.Kill()
 	}
 
@@ -411,7 +413,7 @@ func TestAgentFailedStartupWithInvalidConfig(t *testing.T) {
 	case err := <-done:
 		t.Logf("prometheus agent should not be running: %v", err)
 		actualExitStatus = prom.ProcessState.ExitCode()
-	case <-time.After(5 * time.Second):
+	case <-time.After(startupTime):
 		prom.Process.Kill()
 	}
 	require.Equal(t, 2, actualExitStatus)
@@ -462,7 +464,7 @@ func TestModeSpecificFlags(t *testing.T) {
 				select {
 				case err := <-done:
 					t.Errorf("prometheus should be still running: %v", err)
-				case <-time.After(5 * time.Second):
+				case <-time.After(startupTime):
 					prom.Process.Kill()
 					<-done
 				}

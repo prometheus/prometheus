@@ -18,8 +18,9 @@ import (
 	"container/heap"
 	"fmt"
 	"math"
-	"sort"
 	"sync"
+
+	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -240,7 +241,7 @@ func (q *mergeGenericQuerier) LabelNames(matchers ...*labels.Matcher) ([]string,
 	for name := range labelNamesMap {
 		labelNames = append(labelNames, name)
 	}
-	sort.Strings(labelNames)
+	slices.Sort(labelNames)
 	return labelNames, warnings, nil
 }
 

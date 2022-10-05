@@ -15,9 +15,9 @@ package tsdb
 
 import (
 	"math"
-	"sort"
 
 	"github.com/pkg/errors"
+	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -266,7 +266,7 @@ func postingsForMatcher(ix IndexPostingsReader, m *labels.Matcher) (index.Postin
 	if m.Type == labels.MatchRegexp {
 		setMatches := m.SetMatches()
 		if len(setMatches) > 0 {
-			sort.Strings(setMatches)
+			slices.Sort(setMatches)
 			return ix.Postings(m.Name, setMatches...)
 		}
 	}
@@ -293,7 +293,7 @@ func postingsForMatcher(ix IndexPostingsReader, m *labels.Matcher) (index.Postin
 	}
 
 	if !isSorted {
-		sort.Strings(res)
+		slices.Sort(res)
 	}
 	return ix.Postings(m.Name, res...)
 }
@@ -318,7 +318,7 @@ func inversePostingsForMatcher(ix IndexPostingsReader, m *labels.Matcher) (index
 	}
 
 	if !isSorted {
-		sort.Strings(res)
+		slices.Sort(res)
 	}
 	return ix.Postings(m.Name, res...)
 }

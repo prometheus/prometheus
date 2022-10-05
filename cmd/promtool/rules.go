@@ -34,7 +34,7 @@ import (
 const maxSamplesInMemory = 5000
 
 type queryRangeAPI interface {
-	QueryRange(ctx context.Context, query string, r v1.Range) (model.Value, v1.Warnings, error)
+	QueryRange(ctx context.Context, query string, r v1.Range, opts ...v1.Option) (model.Value, v1.Warnings, error)
 }
 
 type ruleImporter struct {
@@ -165,7 +165,7 @@ func (importer *ruleImporter) importRule(ctx context.Context, ruleExpr, ruleName
 				lb.Set(labels.MetricName, ruleName)
 
 				for _, value := range sample.Values {
-					if err := app.add(ctx, lb.Labels(), timestamp.FromTime(value.Timestamp.Time()), float64(value.Value)); err != nil {
+					if err := app.add(ctx, lb.Labels(nil), timestamp.FromTime(value.Timestamp.Time()), float64(value.Value)); err != nil {
 						return fmt.Errorf("add: %w", err)
 					}
 				}

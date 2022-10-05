@@ -1,15 +1,21 @@
 #!/bin/bash
 
+set -e
+
+current=$(pwd)
+root_ui_folder=${current}/web/ui
+
 function ncu() {
     target=$1
     npx npm-check-updates -u --target "${target}"
 }
 
-cd web/ui
-for workspace in $(npm ls --production --depth 1 -json | jq -r '.dependencies[].resolved[8:]'); do
+cd "${root_ui_folder}"
+
+for workspace in $(jq -r '.workspaces[]' < package.json); do
   cd "${workspace}"
   ncu "$1"
-  cd ../
+  cd "${root_ui_folder}"
 done
 
 ncu "$1"
