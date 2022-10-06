@@ -19,3 +19,5 @@ body:
       label: Proposal
       description: Use case. Why is this important?
       placeholder: “Nice to have” is not a good use case. :)
+    validations:
+      required: true
