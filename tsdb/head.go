@@ -960,27 +960,6 @@ func (h *Head) updateMinOOOMaxOOOTime(mint, maxt int64) {
 	}
 }
 
-func (h *Head) updateMinOOOMaxOOOTime(mint, maxt int64) {
-	for {
-		lt := h.MinOOOTime()
-		if mint >= lt {
-			break
-		}
-		if h.minOOOTime.CAS(lt, mint) {
-			break
-		}
-	}
-	for {
-		ht := h.MaxOOOTime()
-		if maxt <= ht {
-			break
-		}
-		if h.maxOOOTime.CAS(ht, maxt) {
-			break
-		}
-	}
-}
-
 // SetMinValidTime sets the minimum timestamp the head can ingest.
 func (h *Head) SetMinValidTime(minValidTime int64) {
 	h.minValidTime.Store(minValidTime)

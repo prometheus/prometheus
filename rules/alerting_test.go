@@ -470,7 +470,7 @@ instance: {{ $v.Labels.instance }}, value: {{ printf "%.0f" $v.Value }};
 		close(getDoneCh)
 	}()
 	_, err = ruleWithQueryInTemplate.Eval(
-		suite.Context(), evalTime, slowQueryFunc, nil, 0,
+		suite.Context(), 0, evalTime, slowQueryFunc, nil, 0,
 	)
 	require.NoError(t, err)
 }

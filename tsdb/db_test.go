@@ -3970,7 +3970,6 @@ func TestMetadataAssertInMemoryData(t *testing.T) {
 // TODO(codesome): test more samples incoming once compaction has started. To verify new samples after the start
 //
 //	are not included in this compaction.
->>>>>>> upstream/main
 func TestOOOCompaction(t *testing.T) {
 	dir := t.TempDir()
 

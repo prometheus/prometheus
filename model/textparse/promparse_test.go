@@ -322,7 +322,7 @@ func TestPromNullByteHandling(t *testing.T) {
 		},
 		{
 			input: "a{b\x00=\"hiih\"}	1",
-			err:   "expected equal, got \"INVALID\"",
+			err: "expected equal, got \"INVALID\"",
 		},
 		{
 			input: "a\x00{b=\"ddd\"} 1",

@@ -644,7 +644,7 @@ func (c *safeChunk) Iterator(reuseIter chunkenc.Iterator) chunkenc.Iterator {
 
 // iterator returns a chunk iterator for the requested chunkID, or a NopIterator if the requested ID is out of range.
 // It is unsafe to call this concurrently with s.append(...) without holding the series lock.
-func (s *memSeries) iterator(id chunks.HeadChunkID, isoState *isolationState, chunkDiskMapper *chunks.ChunkDiskMapper, memChunkPool *sync.Pool, it chunkenc.Iterator) chunkenc.Iterator {
+func (s *memSeries) iterator(id chunks.HeadChunkID, isoState *isolationState, chunkDiskMapper chunkDiskMapper, memChunkPool *sync.Pool, it chunkenc.Iterator) chunkenc.Iterator {
 	c, garbageCollect, err := s.chunk(id, chunkDiskMapper, memChunkPool)
 	// TODO(fabxc): Work around! An error will be returns when a querier have retrieved a pointer to a
 	// series's chunk, which got then garbage collected before it got

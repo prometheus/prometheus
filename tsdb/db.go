@@ -1400,10 +1400,6 @@ func (db *DB) reloadBlocks() (err error) {
 	return nil
 }
 
-func (db *DB) AllowOverlappingQueries() bool {
-	return db.opts.AllowOverlappingQueries || db.oooWasEnabled.Load()
-}
-
 func openBlocks(l log.Logger, dir string, loaded []*Block, chunkPool chunkenc.Pool, cache *hashcache.SeriesHashCache) (blocks []*Block, corrupted map[ulid.ULID]error, err error) {
 	bDirs, err := blockDirs(dir)
 	if err != nil {
