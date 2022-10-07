@@ -1,5 +1,5 @@
 <h1 align="center" style="border-bottom: none">
-    <img src="https://user-images.githubusercontent.com/15064823/193996907-91a0387f-f621-47be-ac24-30323c03e5ed.png" width="80" /><br>Prometheus<br>
+    <a href="//prometheus.io"><img alt="Prometheus" src="/web/ui/react-app/src/images/logo-prometheus-orange.png" width="80"></a><br>Prometheus
 </h1>
 
 <p align="center">Visit <a href="https://prometheus.io" blank="_new">prometheus.io</a> for the full documentation,
