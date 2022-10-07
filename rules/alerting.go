@@ -507,6 +507,7 @@ func (r *AlertingRule) sendAlerts(ctx context.Context, ts time.Time, resendDelay
 			}
 			alert.ValidUntil = ts.Add(4 * delta)
 			anew := *alert
+			anew.Labels = alert.Labels.Copy()
 			alerts = append(alerts, &anew)
 		}
 	})
