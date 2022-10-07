@@ -809,6 +809,69 @@ func TestUpdate(t *testing.T) {
 	reloadAndValidate(rgs, t, tmpFile, ruleManager, expected, ogs)
 }
 
+func TestUpdate_AlwaysRestore(t *testing.T) {
+	st := teststorage.New(t)
+	defer st.Close()
+
+	ruleManager := NewManager(&ManagerOptions{
+		Appendable:              st,
+		Queryable:               st,
+		Context:                 context.Background(),
+		Logger:                  log.NewNopLogger(),
+		AlwaysRestoreAlertState: true,
+	})
+	ruleManager.start()
+	defer ruleManager.Stop()
+
+	err := ruleManager.Update(10*time.Second, []string{"fixtures/rules_alerts.yaml"}, nil, "", nil)
+	require.NoError(t, err)
+
+	for _, g := range ruleManager.groups {
+		require.True(t, g.shouldRestore)
+		g.shouldRestore = false // set to false to check if Update will set it to true again
+	}
+
+	// Use different file, so groups haven't changed, therefore, we expect state restoration
+	err = ruleManager.Update(10*time.Second, []string{"fixtures/rules_alerts2.yaml"}, nil, "", nil)
+	for _, g := range ruleManager.groups {
+		require.True(t, g.shouldRestore)
+	}
+
+	require.NoError(t, err)
+}
+
+func TestUpdate_AlwaysRestoreDoesntAffectUnchangedGroups(t *testing.T) {
+	files := []string{"fixtures/rules_alerts.yaml"}
+	st := teststorage.New(t)
+	defer st.Close()
+
+	ruleManager := NewManager(&ManagerOptions{
+		Appendable:              st,
+		Queryable:               st,
+		Context:                 context.Background(),
+		Logger:                  log.NewNopLogger(),
+		AlwaysRestoreAlertState: true,
+	})
+	ruleManager.start()
+	defer ruleManager.Stop()
+
+	err := ruleManager.Update(10*time.Second, files, nil, "", nil)
+	require.NoError(t, err)
+
+	for _, g := range ruleManager.groups {
+		require.True(t, g.shouldRestore)
+		g.shouldRestore = false // set to false to check if Update will set it to true again
+	}
+
+	// Use the same file, so groups haven't changed, therefore, we don't expect state restoration
+	err = ruleManager.Update(10*time.Second, files, nil, "", nil)
+	for _, g := range ruleManager.groups {
+		require.False(t, g.shouldRestore)
+	}
+
+	require.NoError(t, err)
+}
+
 func TestUpdateSetsSourceTenants(t *testing.T) {
 	st := teststorage.New(t)
 	defer st.Close()

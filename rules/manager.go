@@ -962,6 +962,10 @@ type ManagerOptions struct {
 	GroupLoader                GroupLoader
 	DefaultEvaluationDelay     func() time.Duration
 
+	// AlwaysRestoreAlertState forces all new or changed groups in calls to Update to restore.
+	// Useful when you know you will be adding alerting rules after the manager has already started.
+	AlwaysRestoreAlertState bool
+
 	Metrics *Metrics
 }
 
@@ -1116,7 +1120,7 @@ func (m *Manager) LoadGroups(
 ) (map[string]*Group, []error) {
 	groups := make(map[string]*Group)
 
-	shouldRestore := !m.restored
+	shouldRestore := !m.restored || m.opts.AlwaysRestoreAlertState
 
 	for _, fn := range filenames {
 		rgs, errs := m.opts.GroupLoader.Load(fn)
@@ -1146,7 +1150,7 @@ func (m *Manager) LoadGroups(
 						labels.FromMap(r.Annotations),
 						externalLabels,
 						externalURL,
-						m.restored,
+						!shouldRestore,
 						log.With(m.logger, "alert", r.Alert),
 					))
 					continue

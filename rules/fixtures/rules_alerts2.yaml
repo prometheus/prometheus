@@ -1,0 +1,5 @@
+groups:
+  - name: test
+    rules:
+      - alert: test_2
+        expr: sum by (job)(rate(http_requests_total[5m]))
