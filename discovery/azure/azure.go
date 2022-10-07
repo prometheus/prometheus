@@ -23,7 +23,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2018-10-01/compute"
+	"github.com/Azure/azure-sdk-for-go/services/compute/mgmt/2021-12-01/compute"
 	"github.com/Azure/azure-sdk-for-go/services/network/mgmt/2018-10-01/network"
 	"github.com/Azure/go-autorest/autorest"
 	"github.com/Azure/go-autorest/autorest/adal"
@@ -282,6 +282,10 @@ func newAzureResourceFromID(id string, logger log.Logger) (azureResource, error)
 	}, nil
 }
 
+func isFlexibleScaleSet(scaleSet compute.VirtualMachineScaleSet) bool {
+	return scaleSet.VirtualMachineScaleSetProperties.OrchestrationMode == compute.OrchestrationModeFlexible
+}
+
 func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	defer level.Debug(d.logger).Log("msg", "Azure discovery completed")
 
@@ -307,6 +311,13 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	}
 
 	for _, scaleSet := range scaleSets {
+		// The Azure client does not support retrieving VMs from flexible scale sets
+		// and attempting to do so results in an error.  Any such VMs _are_ returned by
+		// client.getVMs, so we can safely ignore any flexible scale sets when
+		// iterating through the scale sets.
+		if isFlexibleScaleSet(scaleSet) {
+			continue;
+		}
 		scaleSetVms, err := client.getScaleSetVMs(ctx, scaleSet)
 		if err != nil {
 			failuresCount.Inc()
@@ -427,9 +438,9 @@ func (client *azureClient) getVMs(ctx context.Context, resourceGroup string) ([]
 	var result compute.VirtualMachineListResultPage
 	var err error
 	if len(resourceGroup) == 0 {
-		result, err = client.vm.ListAll(ctx)
+		result, err = client.vm.ListAll(ctx, "", "")
 	} else {
-		result, err = client.vm.List(ctx, resourceGroup)
+		result, err = client.vm.List(ctx, resourceGroup, "")
 	}
 	if err != nil {
 		return nil, fmt.Errorf("could not list virtual machines: %w", err)

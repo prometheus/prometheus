@@ -237,3 +237,28 @@ func TestNewAzureResourceFromID(t *testing.T) {
 		require.Equal(t, tc.expected, actual)
 	}
 }
+
+func TestIsFlexibleScaleSet(t *testing.T) {
+	for _, tc := range []struct {
+		orchestrationMode compute.OrchestrationMode
+		expected          bool
+	}{
+		{
+			orchestrationMode: compute.OrchestrationModeFlexible,
+			expected:          true,
+		},
+		{
+			orchestrationMode: compute.OrchestrationModeUniform,
+			expected:          false,
+		},
+	}{
+		properties := &compute.VirtualMachineScaleSetProperties {
+			OrchestrationMode: tc.orchestrationMode,
+		}
+		scaleSet := compute.VirtualMachineScaleSet {
+			VirtualMachineScaleSetProperties: properties,
+		}
+		actual := isFlexibleScaleSet(scaleSet)
+		require.Equal(t, tc.expected, actual)
+	}
+}
