@@ -139,6 +139,8 @@ var key = map[string]ItemType{
 // ItemTypeStr is the default string representations for common Items. It does not
 // imply that those are the only character sequences that can be lexed to such an Item.
 var ItemTypeStr = map[ItemType]string{
+	OPEN_HIST:     "{{",
+	CLOSE_HIST:    "{{",
 	LEFT_PAREN:    "(",
 	RIGHT_PAREN:   ")",
 	LEFT_BRACE:    "{",
@@ -243,6 +245,8 @@ type Lexer struct {
 	bracketOpen bool // Whether a [ is opened.
 	gotColon    bool // Whether we got a ':' after [ was opened.
 	stringOpen  rune // Quote rune of the string currently being read.
+	histOpen    bool // Whether was is being read is a histogram
+	bucketsOpen bool // Whether we're reading buckets TODO Maybe use this?
 
 	// seriesDesc is set when a series description for the testing
 	// language is lexed.
@@ -539,6 +543,40 @@ func lexValueSequence(l *Lexer) stateFn {
 		l.backup()
 		// We might lex invalid Items here but this will be caught by the parser.
 		return lexKeywordOrIdentifier
+	case r == '{' && l.peek() == '{':
+		l.next()
+		l.emit(OPEN_HIST)
+		l.histOpen = true
+		return lexStatements
+	case r == '}':
+		if l.peek() == '}' {
+			l.next()
+			l.histOpen = false
+			l.emit(CLOSE_HIST)
+		} else {
+			return l.errorf("Missing '}' for closing histogram : %q", r)
+		}
+	case l.histOpen == true:
+		if r == '[' {
+			if l.bracketOpen {
+				return l.errorf("unexpected left bracket %q", r)
+			}
+			if isSpace(l.peek()) {
+				skipSpaces(l)
+			}
+			l.emit(LEFT_BRACKET)
+			l.bracketOpen = true
+		} else if r == ':' {
+			l.emit(COLON)
+		} else if r == ',' {
+			l.emit(COMMA)
+		} else if r == ']' {
+			if !l.bracketOpen {
+				return l.errorf("unexpected right bracket %q", r)
+			}
+			l.emit(RIGHT_BRACKET)
+			l.bracketOpen = false
+		}
 	default:
 		return l.errorf("unexpected character in series sequence: %q", r)
 	}
@@ -789,7 +827,7 @@ func lexKeywordOrIdentifier(l *Lexer) stateFn {
 Loop:
 	for {
 		switch r := l.next(); {
-		case isAlphaNumeric(r) || r == ':':
+		case isAlphaNumeric(r) || r == ':' && l.histOpen == false:
 			// absorb.
 		default:
 			l.backup()

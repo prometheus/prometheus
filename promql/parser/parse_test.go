@@ -3698,7 +3698,7 @@ func newSeq(vals ...float64) (res []SequenceValue) {
 
 func TestParseSeries(t *testing.T) {
 	for _, test := range testSeries {
-		metric, vals, err := ParseSeriesDesc(test.input)
+		metric, vals, _, err := ParseSeriesDesc(test.input)
 
 		// Unexpected errors are always caused by a bug.
 		require.NotEqual(t, err, errUnexpected, "unexpected error occurred")

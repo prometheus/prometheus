@@ -53,6 +53,8 @@ DURATION
 EOF
 ERROR
 IDENTIFIER
+OPEN_HIST
+CLOSE_HIST
 LEFT_BRACE
 LEFT_BRACKET
 LEFT_PAREN
@@ -634,28 +636,7 @@ series_description: metric histogram
                         }
                         }
                     ;
-/*
-label_set_list  : label_set_list COMMA label_set_item
-                        { $$ = append($1, $3) }
-                | label_set_item
-                        { $$ = []labels.Label{$1} }
-                | label_set_list error
-                        { yylex.(*parser).unexpected("label set", "\",\" or \"}\"", ); $$ = $1 }
-
-                ;
-
-label_set_item  : IDENTIFIER EQL STRING
-                        { $$ = labels.Label{Name: $1.Val, Value: yylex.(*parser).unquoteString($3.Val) } }
-                | IDENTIFIER EQL error
-                        { yylex.(*parser).unexpected("label set", "string"); $$ = labels.Label{}}
-                | IDENTIFIER error
-                        { yylex.(*parser).unexpected("label set", "\"=\""); $$ = labels.Label{}}
-                | error
-                        { yylex.(*parser).unexpected("label set", "identifier or \"}\""); $$ = labels.Label{} }
-                ;
-
-*/
-histogram : LEFT_BRACE LEFT_BRACE histogram_attributes RIGHT_BRACE RIGHT_BRACE
+histogram : OPEN_HIST histogram_attributes CLOSE_HIST
                  {
                         $$ = Histogram{}
                  }
@@ -689,6 +670,7 @@ buckets   :  LEFT_BRACKET bucket_list RIGHT_BRACKET
                 }
                 |LEFT_BRACKET RIGHT_BRACKET
               {
+                   $$ = [][]SequenceValue{}
               }
                 | error
                         { yylex.(*parser).unexpected("bucket values", ""); $$ = nil }
@@ -704,7 +686,7 @@ bucket_list : bucket_list COMMA bucket
             }
             ;
 
-
+/* TODO See if it's possible to remove this as an inbetween*/
 bucket: series_value
         {
         }
