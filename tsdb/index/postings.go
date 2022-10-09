@@ -155,8 +155,7 @@ type PostingsStats struct {
 }
 
 // Stats calculates the cardinality statistics from postings.
-func (p *MemPostings) Stats(label string) *PostingsStats {
-	const maxNumOfRecords = 10
+func (p *MemPostings) Stats(label string, maxNumOfRecords int) *PostingsStats {
 	var size uint64
 
 	p.mtx.RLock()

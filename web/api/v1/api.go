@@ -159,7 +159,7 @@ type TSDBAdminStats interface {
 	CleanTombstones() error
 	Delete(mint, maxt int64, ms ...*labels.Matcher) error
 	Snapshot(dir string, withHead bool) error
-	Stats(statsByLabelName string) (*tsdb.Stats, error)
+	Stats(statsByLabelName string, maxNumOfCardinalityRecords int) (*tsdb.Stats, error)
 	WALReplayStatus() (tsdb.WALReplayStatus, error)
 }
 
@@ -1374,8 +1374,18 @@ func TSDBStatsFromIndexStats(stats []index.Stat) []TSDBStat {
 	return result
 }
 
-func (api *API) serveTSDBStatus(*http.Request) apiFuncResult {
-	s, err := api.db.Stats(labels.MetricName)
+func (api *API) serveTSDBStatus(req *http.Request) apiFuncResult {
+	maxNumOfCardinalityRecords := 10
+	if c := req.FormValue("count"); c != "" {
+		n, err := strconv.ParseInt(count, 10, 64)
+		if err != nil {
+			return apiFuncResult{nil, &apiError{
+				errorBadData, errors.Wrapf(err, "invalid value for \"count\""),
+			}, nil, nil}
+		}
+		maxNumOfCardinalityRecords = int(n)
+	}
+	s, err := api.db.Stats(labels.MetricName, maxNumOfCardinalityRecords)
 	if err != nil {
 		return apiFuncResult{nil, &apiError{errorInternal, err}, nil, nil}
 	}
