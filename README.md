@@ -1,5 +1,5 @@
 <h1 align="center" style="border-bottom: none">
-    <a href="//prometheus.io" target="_blank"><img alt="Prometheus" src="/documentation/images/Prometheus_software_logo.svg"></a><br>Prometheus
+    <a href="//prometheus.io" target="_blank"><img alt="Prometheus" src="/documentation/images/prometheus-logo.svg"></a><br>Prometheus
 </h1>
 
 <p align="center">Visit <a href="//prometheus.io" target="_blank">prometheus.io</a> for the full documentation,
