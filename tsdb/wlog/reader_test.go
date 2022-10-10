@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package wal
+package wlog
 
 import (
 	"bytes"
@@ -240,7 +240,7 @@ func TestReader_Live(t *testing.T) {
 
 const fuzzLen = 500
 
-func generateRandomEntries(w *WAL, records chan []byte) error {
+func generateRandomEntries(w *WL, records chan []byte) error {
 	var recs [][]byte
 	for i := 0; i < fuzzLen; i++ {
 		var sz int64

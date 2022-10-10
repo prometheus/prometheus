@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package wal
+package wlog
 
 import (
 	"fmt"
@@ -260,7 +260,7 @@ func TestCheckpoint(t *testing.T) {
 }
 
 func TestCheckpointNoTmpFolderAfterError(t *testing.T) {
-	// Create a new wal with invalid data.
+	// Create a new wlog with invalid data.
 	dir := t.TempDir()
 	w, err := NewSize(nil, nil, dir, 64*1024, false)
 	require.NoError(t, err)
@@ -277,17 +277,17 @@ func TestCheckpointNoTmpFolderAfterError(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, f.Close())
 
-	// Run the checkpoint and since the wal contains corrupt data this should return an error.
+	// Run the checkpoint and since the wlog contains corrupt data this should return an error.
 	_, err = Checkpoint(log.NewNopLogger(), w, 0, 1, nil, 0)
 	require.Error(t, err)
 
-	// Walk the wal dir to make sure there are no tmp folder left behind after the error.
+	// Walk the wlog dir to make sure there are no tmp folder left behind after the error.
 	err = filepath.Walk(w.Dir(), func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return errors.Wrapf(err, "access err %q: %v", path, err)
 		}
 		if info.IsDir() && strings.HasSuffix(info.Name(), ".tmp") {
-			return fmt.Errorf("wal dir contains temporary folder:%s", info.Name())
+			return fmt.Errorf("wlog dir contains temporary folder:%s", info.Name())
 		}
 		return nil
 	})

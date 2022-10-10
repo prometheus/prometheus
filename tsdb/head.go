@@ -41,7 +41,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
-	"github.com/prometheus/prometheus/tsdb/wal"
+	"github.com/prometheus/prometheus/tsdb/wlog"
 )
 
 var (
@@ -75,7 +75,7 @@ type Head struct {
 
 	metrics         *headMetrics
 	opts            *HeadOptions
-	wal, wbl        *wal.WAL
+	wal, wbl        *wlog.WL
 	exemplarMetrics *ExemplarMetrics
 	exemplars       ExemplarStorage
 	logger          log.Logger
@@ -186,7 +186,7 @@ type SeriesLifecycleCallback interface {
 }
 
 // NewHead opens the head block in dir.
-func NewHead(r prometheus.Registerer, l log.Logger, wal, wbl *wal.WAL, opts *HeadOptions, stats *HeadStats) (*Head, error) {
+func NewHead(r prometheus.Registerer, l log.Logger, wal, wbl *wlog.WL, opts *HeadOptions, stats *HeadStats) (*Head, error) {
 	var err error
 	if l == nil {
 		l = log.NewNopLogger()
@@ -602,13 +602,13 @@ func (h *Head) Init(minValidTime int64) error {
 
 	checkpointReplayStart := time.Now()
 	// Backfill the checkpoint first if it exists.
-	dir, startFrom, err := wal.LastCheckpoint(h.wal.Dir())
+	dir, startFrom, err := wlog.LastCheckpoint(h.wal.Dir())
 	if err != nil && err != record.ErrNotFound {
 		return errors.Wrap(err, "find last checkpoint")
 	}
 
 	// Find the last segment.
-	_, endAt, e := wal.Segments(h.wal.Dir())
+	_, endAt, e := wlog.Segments(h.wal.Dir())
 	if e != nil {
 		return errors.Wrap(e, "finding WAL segments")
 	}
@@ -617,7 +617,7 @@ func (h *Head) Init(minValidTime int64) error {
 
 	multiRef := map[chunks.HeadSeriesRef]chunks.HeadSeriesRef{}
 	if err == nil && startFrom >= snapIdx {
-		sr, err := wal.NewSegmentsReader(dir)
+		sr, err := wlog.NewSegmentsReader(dir)
 		if err != nil {
 			return errors.Wrap(err, "open checkpoint")
 		}
@@ -629,7 +629,7 @@ func (h *Head) Init(minValidTime int64) error {
 
 		// A corrupted checkpoint is a hard error for now and requires user
 		// intervention. There's likely little data that can be recovered anyway.
-		if err := h.loadWAL(wal.NewReader(sr), multiRef, mmappedChunks, oooMmappedChunks); err != nil {
+		if err := h.loadWAL(wlog.NewReader(sr), multiRef, mmappedChunks, oooMmappedChunks); err != nil {
 			return errors.Wrap(err, "backfill checkpoint")
 		}
 		h.updateWALReplayStatusRead(startFrom)
@@ -645,7 +645,7 @@ func (h *Head) Init(minValidTime int64) error {
 	}
 	// Backfill segments from the most recent checkpoint onwards.
 	for i := startFrom; i <= endAt; i++ {
-		s, err := wal.OpenReadSegment(wal.SegmentName(h.wal.Dir(), i))
+		s, err := wlog.OpenReadSegment(wlog.SegmentName(h.wal.Dir(), i))
 		if err != nil {
 			return errors.Wrap(err, fmt.Sprintf("open WAL segment: %d", i))
 		}
@@ -654,7 +654,7 @@ func (h *Head) Init(minValidTime int64) error {
 		if i == snapIdx {
 			offset = snapOffset
 		}
-		sr, err := wal.NewSegmentBufReaderWithOffset(offset, s)
+		sr, err := wlog.NewSegmentBufReaderWithOffset(offset, s)
 		if errors.Cause(err) == io.EOF {
 			// File does not exist.
 			continue
@@ -662,7 +662,7 @@ func (h *Head) Init(minValidTime int64) error {
 		if err != nil {
 			return errors.Wrapf(err, "segment reader (offset=%d)", offset)
 		}
-		err = h.loadWAL(wal.NewReader(sr), multiRef, mmappedChunks, oooMmappedChunks)
+		err = h.loadWAL(wlog.NewReader(sr), multiRef, mmappedChunks, oooMmappedChunks)
 		if err := sr.Close(); err != nil {
 			level.Warn(h.logger).Log("msg", "Error while closing the wal segments reader", "err", err)
 		}
@@ -677,20 +677,20 @@ func (h *Head) Init(minValidTime int64) error {
 	wblReplayStart := time.Now()
 	if h.wbl != nil {
 		// Replay OOO WAL.
-		startFrom, endAt, e = wal.Segments(h.wbl.Dir())
+		startFrom, endAt, e = wlog.Segments(h.wbl.Dir())
 		if e != nil {
 			return errors.Wrap(e, "finding OOO WAL segments")
 		}
 		h.startWALReplayStatus(startFrom, endAt)
 
 		for i := startFrom; i <= endAt; i++ {
-			s, err := wal.OpenReadSegment(wal.SegmentName(h.wbl.Dir(), i))
+			s, err := wlog.OpenReadSegment(wlog.SegmentName(h.wbl.Dir(), i))
 			if err != nil {
 				return errors.Wrap(err, fmt.Sprintf("open WBL segment: %d", i))
 			}
 
-			sr := wal.NewSegmentBufReader(s)
-			err = h.loadWBL(wal.NewReader(sr), multiRef, lastMmapRef)
+			sr := wlog.NewSegmentBufReader(s)
+			err = h.loadWBL(wlog.NewReader(sr), multiRef, lastMmapRef)
 			if err := sr.Close(); err != nil {
 				level.Warn(h.logger).Log("msg", "Error while closing the wbl segments reader", "err", err)
 			}
@@ -840,7 +840,7 @@ func (h *Head) removeCorruptedMmappedChunks(err error) (map[chunks.HeadSeriesRef
 	return mmappedChunks, oooMmappedChunks, lastRef, nil
 }
 
-func (h *Head) ApplyConfig(cfg *config.Config, wbl *wal.WAL) {
+func (h *Head) ApplyConfig(cfg *config.Config, wbl *wlog.WL) {
 	oooTimeWindow := int64(0)
 	if cfg.StorageConfig.TSDBConfig != nil {
 		oooTimeWindow = cfg.StorageConfig.TSDBConfig.OutOfOrderTimeWindow
@@ -872,7 +872,7 @@ func (h *Head) ApplyConfig(cfg *config.Config, wbl *wal.WAL) {
 
 // SetOutOfOrderTimeWindow updates the out of order related parameters.
 // If the Head already has a WBL set, then the wbl will be ignored.
-func (h *Head) SetOutOfOrderTimeWindow(oooTimeWindow int64, wbl *wal.WAL) {
+func (h *Head) SetOutOfOrderTimeWindow(oooTimeWindow int64, wbl *wlog.WL) {
 	if oooTimeWindow > 0 && h.wbl == nil {
 		h.wbl = wbl
 	}
@@ -1095,7 +1095,7 @@ func (h *Head) truncateWAL(mint int64) error {
 	start := time.Now()
 	h.lastWALTruncationTime.Store(mint)
 
-	first, last, err := wal.Segments(h.wal.Dir())
+	first, last, err := wlog.Segments(h.wal.Dir())
 	if err != nil {
 		return errors.Wrap(err, "get segment range")
 	}
@@ -1127,9 +1127,9 @@ func (h *Head) truncateWAL(mint int64) error {
 		return ok
 	}
 	h.metrics.checkpointCreationTotal.Inc()
-	if _, err = wal.Checkpoint(h.logger, h.wal, first, last, keep, mint); err != nil {
+	if _, err = wlog.Checkpoint(h.logger, h.wal, first, last, keep, mint); err != nil {
 		h.metrics.checkpointCreationFail.Inc()
-		if _, ok := errors.Cause(err).(*wal.CorruptionErr); ok {
+		if _, ok := errors.Cause(err).(*wlog.CorruptionErr); ok {
 			h.metrics.walCorruptionsTotal.Inc()
 		}
 		return errors.Wrap(err, "create checkpoint")
@@ -1152,7 +1152,7 @@ func (h *Head) truncateWAL(mint int64) error {
 	h.deletedMtx.Unlock()
 
 	h.metrics.checkpointDeleteTotal.Inc()
-	if err := wal.DeleteCheckpoints(h.wal.Dir(), last); err != nil {
+	if err := wlog.DeleteCheckpoints(h.wal.Dir(), last); err != nil {
 		// Leftover old checkpoints do not cause problems down the line beyond
 		// occupying disk space.
 		// They will just be ignored since a higher checkpoint exists.
@@ -1395,7 +1395,7 @@ func (h *Head) gc() (actualInOrderMint, minOOOTime int64, minMmapFile int) {
 	h.tombstones.TruncateBefore(mint)
 
 	if h.wal != nil {
-		_, last, _ := wal.Segments(h.wal.Dir())
+		_, last, _ := wlog.Segments(h.wal.Dir())
 		h.deletedMtx.Lock()
 		// Keep series records until we're past segment 'last'
 		// because the WAL will still have samples records with
