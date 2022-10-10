@@ -206,7 +206,7 @@ func newWLMetrics(r prometheus.Registerer) *wlMetrics {
 
 	m.fsyncDuration = prometheus.NewSummary(prometheus.SummaryOpts{
 		Name:       "fsync_duration_seconds",
-		Help:       "Duration of WL fsync.",
+		Help:       "Duration of write log fsync.",
 		Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
 	})
 	m.pageFlushes = prometheus.NewCounter(prometheus.CounterOpts{
@@ -219,19 +219,19 @@ func newWLMetrics(r prometheus.Registerer) *wlMetrics {
 	})
 	m.truncateFail = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "truncations_failed_total",
-		Help: "Total number of WL truncations that failed.",
+		Help: "Total number of write log truncations that failed.",
 	})
 	m.truncateTotal = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "truncations_total",
-		Help: "Total number of WL truncations attempted.",
+		Help: "Total number of write log truncations attempted.",
 	})
 	m.currentSegment = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "segment_current",
-		Help: "WL segment index that TSDB is currently writing to.",
+		Help: "Write log segment index that TSDB is currently writing to.",
 	})
 	m.writesFailed = prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "writes_failed_total",
-		Help: "Total number of WL writes that failed.",
+		Help: "Total number of write log writes that failed.",
 	})
 
 	if r != nil {
@@ -254,7 +254,7 @@ func New(logger log.Logger, reg prometheus.Registerer, dir string, compress bool
 	return NewSize(logger, reg, dir, DefaultSegmentSize, compress)
 }
 
-// NewSize returns a new WL over the given directory.
+// NewSize returns a new write log over the given directory.
 // New segments are created with the specified size.
 func NewSize(logger log.Logger, reg prometheus.Registerer, dir string, segmentSize int, compress bool) (*WL, error) {
 	if segmentSize%pageSize != 0 {
@@ -979,7 +979,7 @@ func (r *segmentBufReader) Read(b []byte) (n int, err error) {
 	return n, nil
 }
 
-// Computing size of the WAL.
+// Size computes the size of the write log.
 // We do this by adding the sizes of all the files under the WAL dir.
 func (w *WL) Size() (int64, error) {
 	return fileutil.DirSize(w.Dir())
