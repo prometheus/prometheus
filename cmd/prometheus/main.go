@@ -72,7 +72,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/agent"
 	"github.com/prometheus/prometheus/util/logging"
 	prom_runtime "github.com/prometheus/prometheus/util/runtime"
-	"github.com/prometheus/prometheus/util/strutil"
 	"github.com/prometheus/prometheus/web"
 )
 
@@ -180,9 +179,6 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 			case "extra-scrape-metrics":
 				c.scrape.ExtraMetrics = true
 				level.Info(logger).Log("msg", "Experimental additional scrape metrics enabled")
-			case "metadata-storage":
-				c.scrape.EnableMetadataStorage = true
-				level.Info(logger).Log("msg", "Experimental in-memory metadata storage enabled")
 			case "new-service-discovery-manager":
 				c.enableNewSDManager = true
 				level.Info(logger).Log("msg", "Experimental service discovery manager")
@@ -315,8 +311,10 @@ func main() {
 	serverOnlyFlag(a, "storage.tsdb.no-lockfile", "Do not create lockfile in data directory.").
 		Default("false").BoolVar(&cfg.tsdb.NoLockfile)
 
-	serverOnlyFlag(a, "storage.tsdb.allow-overlapping-blocks", "Allow overlapping blocks, which in turn enables vertical compaction and vertical query merge.").
-		Default("false").BoolVar(&cfg.tsdb.AllowOverlappingBlocks)
+	// TODO: Remove in Prometheus 3.0.
+	var b bool
+	serverOnlyFlag(a, "storage.tsdb.allow-overlapping-blocks", "[DEPRECATED] This flag has no effect. Overlapping blocks are enabled by default now.").
+		Default("true").Hidden().BoolVar(&b)
 
 	serverOnlyFlag(a, "storage.tsdb.wal-compression", "Compress the tsdb WAL.").
 		Hidden().Default("true").BoolVar(&cfg.tsdb.WALCompression)
@@ -620,7 +618,7 @@ func main() {
 			Appendable:      fanoutStorage,
 			Queryable:       localStorage,
 			QueryFunc:       rules.EngineQueryFunc(queryEngine, fanoutStorage),
-			NotifyFunc:      sendAlerts(notifierManager, cfg.web.ExternalURL.String()),
+			NotifyFunc:      rules.SendAlerts(notifierManager, cfg.web.ExternalURL.String()),
 			Context:         ctxRule,
 			ExternalURL:     cfg.web.ExternalURL,
 			Registerer:      prometheus.DefaultRegisterer,
@@ -1011,7 +1009,6 @@ func main() {
 					"NoLockfile", cfg.tsdb.NoLockfile,
 					"RetentionDuration", cfg.tsdb.RetentionDuration,
 					"WALSegmentSize", cfg.tsdb.WALSegmentSize,
-					"AllowOverlappingBlocks", cfg.tsdb.AllowOverlappingBlocks,
 					"WALCompression", cfg.tsdb.WALCompression,
 				)
 
@@ -1272,36 +1269,6 @@ func computeExternalURL(u, listenAddr string) (*url.URL, error) {
 	return eu, nil
 }
 
-type sender interface {
-	Send(alerts ...*notifier.Alert)
-}
-
-// sendAlerts implements the rules.NotifyFunc for a Notifier.
-func sendAlerts(s sender, externalURL string) rules.NotifyFunc {
-	return func(ctx context.Context, expr string, alerts ...*rules.Alert) {
-		var res []*notifier.Alert
-
-		for _, alert := range alerts {
-			a := &notifier.Alert{
-				StartsAt:     alert.FiredAt,
-				Labels:       alert.Labels,
-				Annotations:  alert.Annotations,
-				GeneratorURL: externalURL + strutil.TableLinkForExpression(expr),
-			}
-			if !alert.ResolvedAt.IsZero() {
-				a.EndsAt = alert.ResolvedAt
-			} else {
-				a.EndsAt = alert.ValidUntil
-			}
-			res = append(res, a)
-		}
-
-		if len(alerts) > 0 {
-			s.Send(res...)
-		}
-	}
-}
-
 // readyStorage implements the Storage interface while allowing to set the actual
 // storage at a later point in time.
 type readyStorage struct {
@@ -1534,7 +1501,6 @@ type tsdbOptions struct {
 	RetentionDuration              model.Duration
 	MaxBytes                       units.Base2Bytes
 	NoLockfile                     bool
-	AllowOverlappingBlocks         bool
 	WALCompression                 bool
 	HeadChunksWriteQueueSize       int
 	StripeSize                     int
@@ -1553,8 +1519,7 @@ func (opts tsdbOptions) ToTSDBOptions() tsdb.Options {
 		RetentionDuration:              int64(time.Duration(opts.RetentionDuration) / time.Millisecond),
 		MaxBytes:                       int64(opts.MaxBytes),
 		NoLockfile:                     opts.NoLockfile,
-		AllowOverlappingCompaction:     opts.AllowOverlappingBlocks,
-		AllowOverlappingQueries:        opts.AllowOverlappingBlocks,
+		AllowOverlappingCompaction:     true,
 		WALCompression:                 opts.WALCompression,
 		HeadChunksWriteQueueSize:       opts.HeadChunksWriteQueueSize,
 		StripeSize:                     opts.StripeSize,

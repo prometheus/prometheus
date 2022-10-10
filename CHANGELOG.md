@@ -1,5 +1,26 @@
 # Changelog
 
+## 2.39.1 / 2022-10-07
+
+* [BUGFIX] Rules: Fix notifier relabel changing the labels on active alerts. #11427
+
+## 2.39.0 / 2022-10-05
+
+* [FEATURE] **experimental** TSDB: Add support for ingesting out-of-order samples. This is configured via `out_of_order_time_window` field in the config file; check config file docs for more info. #11075
+* [ENHANCEMENT] API: `/-/healthy` and `/-/ready` API calls now also respond to a `HEAD` request on top of existing `GET` support. #11160
+* [ENHANCEMENT] PuppetDB SD: Add `__meta_puppetdb_query` label. #11238
+* [ENHANCEMENT] AWS EC2 SD: Add `__meta_ec2_region` label. #11326
+* [ENHANCEMENT] AWS Lightsail SD: Add `__meta_lightsail_region` label. #11326
+* [ENHANCEMENT] Scrape: Optimise relabeling by re-using memory. #11147
+* [ENHANCEMENT] TSDB: Improve WAL replay timings. #10973 #11307 #11319
+* [ENHANCEMENT] TSDB: Optimise memory by not storing unnecessary data in the memory. #11280 #11288 #11296
+* [ENHANCEMENT] TSDB: Allow overlapping blocks by default. `--storage.tsdb.allow-overlapping-blocks` now has no effect. #11331
+* [ENHANCEMENT] UI: Click to copy label-value pair from query result to clipboard. #11229
+* [BUGFIX] TSDB: Turn off isolation for Head compaction to fix a memory leak. #11317
+* [BUGFIX] TSDB: Fix 'invalid magic number 0' error on Prometheus startup. #11338
+* [BUGFIX] PromQL: Properly close file descriptor when logging unfinished queries. #11148
+* [BUGFIX] Agent: Fix validation of flag options and prevent WAL from growing more than desired. #9876
+
 ## 2.38.0 / 2022-08-16
 
 * [FEATURE]: Web: Add a `/api/v1/format_query` HTTP API endpoint that allows pretty-formatting PromQL expressions. #11036 #10544 #11005

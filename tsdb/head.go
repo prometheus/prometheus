@@ -1030,6 +1030,13 @@ func (h *Head) WaitForPendingReadersInTimeRange(mint, maxt int64) {
 	}
 }
 
+// WaitForAppendersOverlapping waits for appends overlapping maxt to finish.
+func (h *Head) WaitForAppendersOverlapping(maxt int64) {
+	for maxt >= h.iso.lowestAppendTime() {
+		time.Sleep(500 * time.Millisecond)
+	}
+}
+
 // IsQuerierCollidingWithTruncation returns if the current querier needs to be closed and if a new querier
 // has to be created. In the latter case, the method also returns the new mint to be used for creating the
 // new range head and the new querier. This methods helps preventing races with the truncation of in-memory data.
@@ -1235,6 +1242,8 @@ func (h *Head) Stats(statsByLabelName string) *Stats {
 type RangeHead struct {
 	head       *Head
 	mint, maxt int64
+
+	isolationOff bool
 }
 
 // NewRangeHead returns a *RangeHead.
@@ -1247,12 +1256,23 @@ func NewRangeHead(head *Head, mint, maxt int64) *RangeHead {
 	}
 }
 
+// NewRangeHeadWithIsolationDisabled returns a *RangeHead that does not create an isolationState.
+func NewRangeHeadWithIsolationDisabled(head *Head, mint, maxt int64) *RangeHead {
+	rh := NewRangeHead(head, mint, maxt)
+	rh.isolationOff = true
+	return rh
+}
+
 func (h *RangeHead) Index() (IndexReader, error) {
 	return h.head.indexRange(h.mint, h.maxt), nil
 }
 
 func (h *RangeHead) Chunks() (ChunkReader, error) {
-	return h.head.chunksRange(h.mint, h.maxt, h.head.iso.State(h.mint, h.maxt))
+	var isoState *isolationState
+	if !h.isolationOff {
+		isoState = h.head.iso.State(h.mint, h.maxt)
+	}
+	return h.head.chunksRange(h.mint, h.maxt, isoState)
 }
 
 func (h *RangeHead) Tombstones() (tombstones.Reader, error) {
@@ -1489,7 +1509,7 @@ func (h *Head) getOrCreate(hash uint64, lset labels.Labels) (*memSeries, bool, e
 
 func (h *Head) getOrCreateWithID(id chunks.HeadSeriesRef, hash uint64, lset labels.Labels) (*memSeries, bool, error) {
 	s, created, err := h.series.getOrSet(hash, lset, func() *memSeries {
-		return newMemSeries(lset, id, h.chunkRange.Load(), h.opts.OutOfOrderCapMax.Load(), h.opts.IsolationDisabled)
+		return newMemSeries(lset, id, h.opts.IsolationDisabled)
 	})
 	if err != nil {
 		return nil, false, err
@@ -1779,15 +1799,12 @@ type memSeries struct {
 	oooHeadChunk     *oooHeadChunk      // Most recent chunk for ooo samples in memory that's still being built.
 	firstOOOChunkID  chunks.HeadChunkID // HeadOOOChunkID for oooMmappedChunks[0]
 
-	mmMaxTime  int64 // Max time of any mmapped chunk, only used during WAL replay.
-	chunkRange int64
-	oooCapMax  uint8
+	mmMaxTime int64 // Max time of any mmapped chunk, only used during WAL replay.
 
 	nextAt int64 // Timestamp at which to cut the next chunk.
 
-	// We keep the last 4 samples here (in addition to appending them to the chunk) so we don't need coordination between appender and querier.
-	// Even the most compact encoding of a sample takes 2 bits, so the last byte is not contended.
-	sampleBuf [4]sample
+	// We keep the last value here (in addition to appending it to the chunk) so we can check for duplicates.
+	lastValue float64
 
 	// Current appender for the head chunk. Set when a new head chunk is cut.
 	// It is nil only if headChunk is nil. E.g. if there was an appender that created a new series, but rolled back the commit
@@ -1800,13 +1817,11 @@ type memSeries struct {
 	pendingCommit bool // Whether there are samples waiting to be committed to this series.
 }
 
-func newMemSeries(lset labels.Labels, id chunks.HeadSeriesRef, chunkRange, oooCapMax int64, isolationDisabled bool) *memSeries {
+func newMemSeries(lset labels.Labels, id chunks.HeadSeriesRef, isolationDisabled bool) *memSeries {
 	s := &memSeries{
-		lset:       lset,
-		ref:        id,
-		chunkRange: chunkRange,
-		nextAt:     math.MinInt64,
-		oooCapMax:  uint8(oooCapMax),
+		lset:   lset,
+		ref:    id,
+		nextAt: math.MinInt64,
 	}
 	if !isolationDisabled {
 		s.txs = newTxRing(4)

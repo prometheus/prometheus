@@ -198,7 +198,7 @@ func TestSendAlerts(t *testing.T) {
 				}
 				require.Equal(t, tc.exp, alerts)
 			})
-			sendAlerts(senderFunc, "http://localhost:9090")(context.TODO(), "up", tc.in...)
+			rules.SendAlerts(senderFunc, "http://localhost:9090")(context.TODO(), "up", tc.in...)
 		})
 	}
 }

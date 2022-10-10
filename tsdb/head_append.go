@@ -124,7 +124,8 @@ func (h *Head) Appender(_ context.Context) storage.Appender {
 }
 
 func (h *Head) appender() *headAppender {
-	appendID, cleanupAppendIDsBelow := h.iso.newAppendID() // Every appender gets an ID that is cleared upon commit/rollback.
+	minValidTime := h.appendableMinValidTime()
+	appendID, cleanupAppendIDsBelow := h.iso.newAppendID(minValidTime) // Every appender gets an ID that is cleared upon commit/rollback.
 
 	// Allocate the exemplars buffer only if exemplars are enabled.
 	var exemplarsBuf []exemplarWithSeriesRef
@@ -134,7 +135,7 @@ func (h *Head) appender() *headAppender {
 
 	return &headAppender{
 		head:                  h,
-		minValidTime:          h.appendableMinValidTime(),
+		minValidTime:          minValidTime,
 		mint:                  math.MaxInt64,
 		maxt:                  math.MinInt64,
 		headMaxt:              h.MaxTime(),
@@ -361,7 +362,7 @@ func (s *memSeries) appendable(t int64, v float64, headMaxt, minValidTime, oooTi
 			// like federation and erroring out at that time would be extremely noisy.
 			// This only checks against the latest in-order sample.
 			// The OOO headchunk has its own method to detect these duplicates.
-			if math.Float64bits(s.sampleBuf[3].v) != math.Float64bits(v) {
+			if math.Float64bits(s.lastValue) != math.Float64bits(v) {
 				return false, 0, storage.ErrDuplicateSampleForTimestamp
 			}
 			// Sample is identical (ts + value) with most current (highest ts) sample in sampleBuf.
@@ -568,6 +569,8 @@ func (a *headAppender) Commit() (err error) {
 		wblSamples      []record.RefSample
 		oooMmapMarkers  map[chunks.HeadSeriesRef]chunks.ChunkDiskMapperRef
 		oooRecords      [][]byte
+		oooCapMax       = a.head.opts.OutOfOrderCapMax.Load()
+		chunkRange      = a.head.chunkRange.Load()
 		series          *memSeries
 		enc             record.Encoder
 	)
@@ -635,7 +638,7 @@ func (a *headAppender) Commit() (err error) {
 			// Sample is OOO and OOO handling is enabled
 			// and the delta is within the OOO tolerance.
 			var mmapRef chunks.ChunkDiskMapperRef
-			ok, chunkCreated, mmapRef = series.insert(s.T, s.V, a.head.chunkDiskMapper)
+			ok, chunkCreated, mmapRef = series.insert(s.T, s.V, a.head.chunkDiskMapper, oooCapMax)
 			if chunkCreated {
 				r, ok := oooMmapMarkers[series.ref]
 				if !ok || r != 0 {
@@ -670,7 +673,7 @@ func (a *headAppender) Commit() (err error) {
 				samplesAppended--
 			}
 		} else if err == nil {
-			ok, chunkCreated = series.append(s.T, s.V, a.appendID, a.head.chunkDiskMapper)
+			ok, chunkCreated = series.append(s.T, s.V, a.appendID, a.head.chunkDiskMapper, chunkRange)
 			if ok {
 				if s.T < inOrderMint {
 					inOrderMint = s.T
@@ -723,9 +726,9 @@ func (a *headAppender) Commit() (err error) {
 }
 
 // insert is like append, except it inserts. Used for OOO samples.
-func (s *memSeries) insert(t int64, v float64, chunkDiskMapper *chunks.ChunkDiskMapper) (inserted, chunkCreated bool, mmapRef chunks.ChunkDiskMapperRef) {
+func (s *memSeries) insert(t int64, v float64, chunkDiskMapper *chunks.ChunkDiskMapper, oooCapMax int64) (inserted, chunkCreated bool, mmapRef chunks.ChunkDiskMapperRef) {
 	c := s.oooHeadChunk
-	if c == nil || c.chunk.NumSamples() == int(s.oooCapMax) {
+	if c == nil || c.chunk.NumSamples() == int(oooCapMax) {
 		// Note: If no new samples come in then we rely on compaction to clean up stale in-memory OOO chunks.
 		c, mmapRef = s.cutNewOOOHeadChunk(t, chunkDiskMapper)
 		chunkCreated = true
@@ -747,7 +750,7 @@ func (s *memSeries) insert(t int64, v float64, chunkDiskMapper *chunks.ChunkDisk
 // the appendID for isolation. (The appendID can be zero, which results in no
 // isolation for this append.)
 // It is unsafe to call this concurrently with s.iterator(...) without holding the series lock.
-func (s *memSeries) append(t int64, v float64, appendID uint64, chunkDiskMapper *chunks.ChunkDiskMapper) (sampleInOrder, chunkCreated bool) {
+func (s *memSeries) append(t int64, v float64, appendID uint64, chunkDiskMapper *chunks.ChunkDiskMapper, chunkRange int64) (sampleInOrder, chunkCreated bool) {
 	// Based on Gorilla white papers this offers near-optimal compression ratio
 	// so anything bigger that this has diminishing returns and increases
 	// the time range within which we have to decompress all samples.
@@ -761,7 +764,7 @@ func (s *memSeries) append(t int64, v float64, appendID uint64, chunkDiskMapper 
 			return false, false
 		}
 		// There is no head chunk in this series yet, create the first chunk for the sample.
-		c = s.cutNewHeadChunk(t, chunkDiskMapper)
+		c = s.cutNewHeadChunk(t, chunkDiskMapper, chunkRange)
 		chunkCreated = true
 	}
 
@@ -775,7 +778,7 @@ func (s *memSeries) append(t int64, v float64, appendID uint64, chunkDiskMapper 
 		// It could be the new chunk created after reading the chunk snapshot,
 		// hence we fix the minTime of the chunk here.
 		c.minTime = t
-		s.nextAt = rangeForTimestamp(c.minTime, s.chunkRange)
+		s.nextAt = rangeForTimestamp(c.minTime, chunkRange)
 	}
 
 	// If we reach 25% of a chunk's desired sample count, predict an end time
@@ -791,17 +794,13 @@ func (s *memSeries) append(t int64, v float64, appendID uint64, chunkDiskMapper 
 	// as we expect more chunks to come.
 	// Note that next chunk will have its nextAt recalculated for the new rate.
 	if t >= s.nextAt || numSamples >= samplesPerChunk*2 {
-		c = s.cutNewHeadChunk(t, chunkDiskMapper)
+		c = s.cutNewHeadChunk(t, chunkDiskMapper, chunkRange)
 		chunkCreated = true
 	}
 	s.app.Append(t, v)
 
 	c.maxTime = t
-
-	s.sampleBuf[0] = s.sampleBuf[1]
-	s.sampleBuf[1] = s.sampleBuf[2]
-	s.sampleBuf[2] = s.sampleBuf[3]
-	s.sampleBuf[3] = sample{t: t, v: v}
+	s.lastValue = v
 
 	if appendID > 0 && s.txs != nil {
 		s.txs.add(appendID)
@@ -823,7 +822,7 @@ func computeChunkEndTime(start, cur, max int64) int64 {
 	return start + (max-start)/n
 }
 
-func (s *memSeries) cutNewHeadChunk(mint int64, chunkDiskMapper *chunks.ChunkDiskMapper) *memChunk {
+func (s *memSeries) cutNewHeadChunk(mint int64, chunkDiskMapper *chunks.ChunkDiskMapper, chunkRange int64) *memChunk {
 	s.mmapCurrentHeadChunk(chunkDiskMapper)
 
 	s.headChunk = &memChunk{
@@ -834,7 +833,7 @@ func (s *memSeries) cutNewHeadChunk(mint int64, chunkDiskMapper *chunks.ChunkDis
 
 	// Set upper bound on when the next chunk must be started. An earlier timestamp
 	// may be chosen dynamically at a later point.
-	s.nextAt = rangeForTimestamp(mint, s.chunkRange)
+	s.nextAt = rangeForTimestamp(mint, chunkRange)
 
 	app, err := s.headChunk.chunk.Appender()
 	if err != nil {

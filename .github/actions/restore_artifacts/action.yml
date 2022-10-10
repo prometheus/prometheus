@@ -17,6 +17,3 @@ runs:
         done
         rm -v .artifacts/*.tar
       shell: bash
-    - uses: actions/upload-artifact@v3
-      with:
-        path: artifact-*.tar

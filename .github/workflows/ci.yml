@@ -1,6 +1,6 @@
 ---
 name: CI
-on:
+on:  # yamllint disable-line rule:truthy
   pull_request:
   push:
 jobs:
@@ -175,6 +175,7 @@ jobs:
           docker_hub_password: ${{ secrets.docker_hub_password }}
           quay_io_login: ${{ secrets.quay_io_login }}
           quay_io_password: ${{ secrets.quay_io_password }}
+          github_token: ${{ secrets.PROMBOT_GITHUB_TOKEN }}
   publish_ui_release:
     name: Publish UI on npm Registry
     runs-on: ubuntu-latest
@@ -187,7 +188,7 @@ jobs:
         with:
           node-version-file: "web/ui/.nvmrc"
           registry-url: "https://registry.npmjs.org"
-      - uses: actions/cache@v3.0.8
+      - uses: actions/cache@v3.0.9
         with:
           path: ~/.npm
           key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}

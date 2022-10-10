@@ -21,7 +21,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"sync"
 
@@ -29,6 +28,7 @@ import (
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/atomic"
+	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
@@ -308,7 +308,7 @@ func (cdm *ChunkDiskMapper) openMMapFiles() (returnErr error) {
 	}
 
 	// Check for gaps in the files.
-	sort.Ints(chkFileIndices)
+	slices.Sort(chkFileIndices)
 	if len(chkFileIndices) == 0 {
 		return nil
 	}
@@ -372,11 +372,25 @@ func repairLastChunkFile(files map[int]string) (_ map[int]string, returnErr erro
 		return files, nil
 	}
 
-	info, err := os.Stat(files[lastFile])
+	f, err := os.Open(files[lastFile])
 	if err != nil {
-		return files, errors.Wrap(err, "file stat during last head chunk file repair")
+		return files, errors.Wrap(err, "open file during last head chunk file repair")
 	}
-	if info.Size() == 0 {
+
+	buf := make([]byte, MagicChunksSize)
+	size, err := f.Read(buf)
+	if err != nil && err != io.EOF {
+		return files, errors.Wrap(err, "failed to read magic number during last head chunk file repair")
+	}
+	if err := f.Close(); err != nil {
+		return files, errors.Wrap(err, "close file during last head chunk file repair")
+	}
+
+	// We either don't have enough bytes for the magic number or the magic number is 0.
+	// NOTE: we should not check for wrong magic number here because that error
+	// needs to be sent up the function called (already done elsewhere)
+	// for proper repair mechanism to happen in the Head.
+	if size < MagicChunksSize || binary.BigEndian.Uint32(buf) == 0 {
 		// Corrupt file, hence remove it.
 		if err := os.RemoveAll(files[lastFile]); err != nil {
 			return files, errors.Wrap(err, "delete corrupted, empty head chunk file during last file repair")
@@ -763,7 +777,7 @@ func (cdm *ChunkDiskMapper) IterateAllChunks(f func(seriesRef HeadSeriesRef, chu
 	for seg := range cdm.mmappedChunkFiles {
 		segIDs = append(segIDs, seg)
 	}
-	sort.Ints(segIDs)
+	slices.Sort(segIDs)
 	for _, segID := range segIDs {
 		mmapFile := cdm.mmappedChunkFiles[segID]
 		fileEnd := mmapFile.byteSlice.Len()
@@ -880,7 +894,7 @@ func (cdm *ChunkDiskMapper) Truncate(fileNo uint32) error {
 	for seq := range cdm.mmappedChunkFiles {
 		chkFileIndices = append(chkFileIndices, seq)
 	}
-	sort.Ints(chkFileIndices)
+	slices.Sort(chkFileIndices)
 
 	var removedFiles []int
 	for _, seq := range chkFileIndices {
@@ -920,7 +934,7 @@ func (cdm *ChunkDiskMapper) Truncate(fileNo uint32) error {
 // deleteFiles deletes the given file sequences in order of the sequence.
 // In case of an error, it returns the sorted file sequences that were not deleted from the _disk_.
 func (cdm *ChunkDiskMapper) deleteFiles(removedFiles []int) ([]int, error) {
-	sort.Ints(removedFiles) // To delete them in order.
+	slices.Sort(removedFiles) // To delete them in order.
 	cdm.readPathMtx.Lock()
 	for _, seq := range removedFiles {
 		if err := cdm.closers[seq].Close(); err != nil {

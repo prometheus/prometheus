@@ -439,6 +439,7 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 	defer close(wp.output)
 
 	mint, maxt := int64(math.MaxInt64), int64(math.MinInt64)
+	chunkRange := h.chunkRange.Load()
 
 	for in := range wp.input {
 		if in.existingSeries != nil {
@@ -459,7 +460,7 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 			if s.T <= ms.mmMaxTime {
 				continue
 			}
-			if _, chunkCreated := ms.append(s.T, s.V, 0, h.chunkDiskMapper); chunkCreated {
+			if _, chunkCreated := ms.append(s.T, s.V, 0, h.chunkDiskMapper, chunkRange); chunkCreated {
 				h.metrics.chunksCreated.Inc()
 				h.metrics.chunks.Inc()
 			}
@@ -718,6 +719,7 @@ func (wp *wblSubsetProcessor) reuseBuf() []record.RefSample {
 func (wp *wblSubsetProcessor) processWBLSamples(h *Head) (unknownRefs uint64) {
 	defer close(wp.output)
 
+	oooCapMax := h.opts.OutOfOrderCapMax.Load()
 	// We don't check for minValidTime for ooo samples.
 	mint, maxt := int64(math.MaxInt64), int64(math.MinInt64)
 	for samples := range wp.input {
@@ -728,7 +730,7 @@ func (wp *wblSubsetProcessor) processWBLSamples(h *Head) (unknownRefs uint64) {
 				unknownRefs++
 				continue
 			}
-			ok, chunkCreated, _ := ms.insert(s.T, s.V, h.chunkDiskMapper)
+			ok, chunkCreated, _ := ms.insert(s.T, s.V, h.chunkDiskMapper, oooCapMax)
 			if chunkCreated {
 				h.metrics.chunksCreated.Inc()
 				h.metrics.chunks.Inc()
@@ -773,11 +775,10 @@ const (
 )
 
 type chunkSnapshotRecord struct {
-	ref        chunks.HeadSeriesRef
-	lset       labels.Labels
-	chunkRange int64
-	mc         *memChunk
-	sampleBuf  [4]sample
+	ref       chunks.HeadSeriesRef
+	lset      labels.Labels
+	mc        *memChunk
+	lastValue float64
 }
 
 func (s *memSeries) encodeToSnapshotRecord(b []byte) []byte {
@@ -786,7 +787,7 @@ func (s *memSeries) encodeToSnapshotRecord(b []byte) []byte {
 	buf.PutByte(chunkSnapshotRecordTypeSeries)
 	buf.PutBE64(uint64(s.ref))
 	record.EncodeLabels(&buf, s.lset)
-	buf.PutBE64int64(s.chunkRange)
+	buf.PutBE64int64(0) // Backwards-compatibility; was chunkRange but now unused.
 
 	s.Lock()
 	if s.headChunk == nil {
@@ -797,11 +798,13 @@ func (s *memSeries) encodeToSnapshotRecord(b []byte) []byte {
 		buf.PutBE64int64(s.headChunk.maxTime)
 		buf.PutByte(byte(s.headChunk.chunk.Encoding()))
 		buf.PutUvarintBytes(s.headChunk.chunk.Bytes())
-		// Put the sample buf.
-		for _, smpl := range s.sampleBuf {
-			buf.PutBE64int64(smpl.t)
-			buf.PutBEFloat64(smpl.v)
+		// Backwards compatibility for old sampleBuf which had last 4 samples.
+		for i := 0; i < 3; i++ {
+			buf.PutBE64int64(0)
+			buf.PutBEFloat64(0)
 		}
+		buf.PutBE64int64(0)
+		buf.PutBEFloat64(s.lastValue)
 	}
 	s.Unlock()
 
@@ -820,7 +823,7 @@ func decodeSeriesFromChunkSnapshot(d *record.Decoder, b []byte) (csr chunkSnapsh
 	// TODO: figure out why DecodeLabels calls Sort(), and perhaps remove it.
 	csr.lset = d.DecodeLabels(&dec)
 
-	csr.chunkRange = dec.Be64int64()
+	_ = dec.Be64int64() // Was chunkRange but now unused.
 	if dec.Uvarint() == 0 {
 		return
 	}
@@ -841,10 +844,13 @@ func decodeSeriesFromChunkSnapshot(d *record.Decoder, b []byte) (csr chunkSnapsh
 	}
 	csr.mc.chunk = chk
 
-	for i := range csr.sampleBuf {
-		csr.sampleBuf[i].t = dec.Be64int64()
-		csr.sampleBuf[i].v = dec.Be64Float64()
+	// Backwards-compatibility for old sampleBuf which had last 4 samples.
+	for i := 0; i < 3; i++ {
+		_ = dec.Be64int64()
+		_ = dec.Be64Float64()
 	}
+	_ = dec.Be64int64()
+	csr.lastValue = dec.Be64Float64()
 
 	err = dec.Err()
 	if err != nil && len(dec.B) > 0 {
@@ -1216,16 +1222,12 @@ func (h *Head) loadChunkSnapshot() (int, int, map[chunks.HeadSeriesRef]*memSerie
 					}
 				}
 
-				series.chunkRange = csr.chunkRange
 				if csr.mc == nil {
 					continue
 				}
 				series.nextAt = csr.mc.maxTime // This will create a new chunk on append.
 				series.headChunk = csr.mc
-				for i := range series.sampleBuf {
-					series.sampleBuf[i].t = csr.sampleBuf[i].t
-					series.sampleBuf[i].v = csr.sampleBuf[i].v
-				}
+				series.lastValue = csr.lastValue
 
 				app, err := series.headChunk.chunk.Appender()
 				if err != nil {

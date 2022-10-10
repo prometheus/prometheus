@@ -35,6 +35,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
+	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -823,6 +824,20 @@ func (ng *Engine) getTimeRangesForSelector(s *parser.EvalStmt, n *parser.VectorS
 	return start, end
 }
 
+func (ng *Engine) getLastSubqueryInterval(path []parser.Node) time.Duration {
+	var interval time.Duration
+	for _, node := range path {
+		switch n := node.(type) {
+		case *parser.SubqueryExpr:
+			interval = n.Step
+			if n.Step == 0 {
+				interval = time.Duration(ng.noStepSubqueryIntervalFn(durationMilliseconds(n.Range))) * time.Millisecond
+			}
+		}
+	}
+	return interval
+}
+
 func (ng *Engine) populateSeries(querier storage.Querier, s *parser.EvalStmt) {
 	// Whenever a MatrixSelector is evaluated, evalRange is set to the corresponding range.
 	// The evaluation of the VectorSelector inside then evaluates the given range and unsets
@@ -833,10 +848,14 @@ func (ng *Engine) populateSeries(querier storage.Querier, s *parser.EvalStmt) {
 		switch n := node.(type) {
 		case *parser.VectorSelector:
 			start, end := ng.getTimeRangesForSelector(s, n, path, evalRange)
+			interval := ng.getLastSubqueryInterval(path)
+			if interval == 0 {
+				interval = s.Interval
+			}
 			hints := &storage.SelectHints{
 				Start: start,
 				End:   end,
-				Step:  durationMilliseconds(s.Interval),
+				Step:  durationMilliseconds(interval),
 				Range: durationMilliseconds(evalRange),
 				Func:  extractFuncFromPath(path),
 			}
@@ -1243,7 +1262,7 @@ func (ev *evaluator) eval(expr parser.Expr) (parser.Value, storage.Warnings) {
 	case *parser.AggregateExpr:
 		// Grouping labels must be sorted (expected both by generateGroupingKey() and aggregation()).
 		sortedGrouping := e.Grouping
-		sort.Strings(sortedGrouping)
+		slices.Sort(sortedGrouping)
 
 		// Prepare a function to initialise series helpers with the grouping key.
 		buf := make([]byte, 0, 1024)
@@ -2059,13 +2078,13 @@ func (ev *evaluator) VectorBinop(op parser.ItemType, lhs, rhs Vector, matching *
 
 func signatureFunc(on bool, b []byte, names ...string) func(labels.Labels) string {
 	if on {
-		sort.Strings(names)
+		slices.Sort(names)
 		return func(lset labels.Labels) string {
 			return string(lset.BytesWithLabels(b, names...))
 		}
 	}
 	names = append([]string{labels.MetricName}, names...)
-	sort.Strings(names)
+	slices.Sort(names)
 	return func(lset labels.Labels) string {
 		return string(lset.BytesWithoutLabels(b, names...))
 	}
@@ -2267,7 +2286,7 @@ func (ev *evaluator) aggregation(op parser.ItemType, grouping []string, without 
 			// operator is less frequently used than other aggregations, we're fine having to
 			// re-compute the grouping key on each step for this case.
 			grouping = append(grouping, valueLabel)
-			sort.Strings(grouping)
+			slices.Sort(grouping)
 			recomputeGroupingKey = true
 		}
 	}
