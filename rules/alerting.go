@@ -507,6 +507,8 @@ func (r *AlertingRule) sendAlerts(ctx context.Context, ts time.Time, resendDelay
 			}
 			alert.ValidUntil = ts.Add(4 * delta)
 			anew := *alert
+			// The notifier re-uses the labels slice, hence make a copy.
+			anew.Labels = alert.Labels.Copy()
 			alerts = append(alerts, &anew)
 		}
 	})
