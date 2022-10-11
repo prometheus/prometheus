@@ -129,7 +129,7 @@ func newTestTarget(targetURL string, deadline time.Duration, lbls labels.Labels)
 	lb.Set(model.AddressLabel, strings.TrimPrefix(targetURL, "http://"))
 	lb.Set(model.MetricsPathLabel, "/metrics")
 
-	return &Target{labels: lb.Labels()}
+	return &Target{labels: lb.Labels(nil)}
 }
 
 func TestNewHTTPBearerToken(t *testing.T) {
@@ -375,7 +375,7 @@ func TestTargetsFromGroup(t *testing.T) {
 		ScrapeTimeout:  model.Duration(10 * time.Second),
 		ScrapeInterval: model.Duration(1 * time.Minute),
 	}
-	targets, failures := TargetsFromGroup(&targetgroup.Group{Targets: []model.LabelSet{{}, {model.AddressLabel: "localhost:9090"}}}, &cfg)
+	targets, failures := TargetsFromGroup(&targetgroup.Group{Targets: []model.LabelSet{{}, {model.AddressLabel: "localhost:9090"}}}, &cfg, false)
 	if len(targets) != 1 {
 		t.Fatalf("Expected 1 target, got %v", len(targets))
 	}

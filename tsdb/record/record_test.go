@@ -45,6 +45,30 @@ func TestRecord_EncodeDecode(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, series, decSeries)
 
+	metadata := []RefMetadata{
+		{
+			Ref:  100,
+			Type: uint8(Counter),
+			Unit: "",
+			Help: "some magic counter",
+		},
+		{
+			Ref:  1,
+			Type: uint8(Counter),
+			Unit: "seconds",
+			Help: "CPU time counter",
+		},
+		{
+			Ref:  147741,
+			Type: uint8(Gauge),
+			Unit: "percentage",
+			Help: "current memory usage",
+		},
+	}
+	decMetadata, err := dec.Metadata(enc.Metadata(metadata, nil), nil)
+	require.NoError(t, err)
+	require.Equal(t, metadata, decMetadata)
+
 	samples := []RefSample{
 		{Ref: 0, T: 12423423, V: 1.2345},
 		{Ref: 123, T: -1231, V: -123},
@@ -136,6 +160,16 @@ func TestRecord_Corrupted(t *testing.T) {
 		_, err := dec.Exemplars(corrupted, nil)
 		require.Equal(t, errors.Cause(err), encoding.ErrInvalidSize)
 	})
+
+	t.Run("Test corrupted metadata record", func(t *testing.T) {
+		meta := []RefMetadata{
+			{Ref: 147, Type: uint8(Counter), Unit: "unit", Help: "help"},
+		}
+
+		corrupted := enc.Metadata(meta, nil)[:8]
+		_, err := dec.Metadata(corrupted, nil)
+		require.Equal(t, errors.Cause(err), encoding.ErrInvalidSize)
+	})
 }
 
 func TestRecord_Type(t *testing.T) {
@@ -154,9 +188,80 @@ func TestRecord_Type(t *testing.T) {
 	recordType = dec.Type(enc.Tombstones(tstones, nil))
 	require.Equal(t, Tombstones, recordType)
 
+	metadata := []RefMetadata{{Ref: 147, Type: uint8(Counter), Unit: "unit", Help: "help"}}
+	recordType = dec.Type(enc.Metadata(metadata, nil))
+	require.Equal(t, Metadata, recordType)
+
 	recordType = dec.Type(nil)
 	require.Equal(t, Unknown, recordType)
 
 	recordType = dec.Type([]byte{0})
 	require.Equal(t, Unknown, recordType)
+}
+
+func TestRecord_MetadataDecodeUnknownExtraFields(t *testing.T) {
+	var enc encoding.Encbuf
+	var dec Decoder
+
+	// Write record type.
+	enc.PutByte(byte(Metadata))
+
+	// Write first metadata entry, all known fields.
+	enc.PutUvarint64(101)
+	enc.PutByte(byte(Counter))
+	enc.PutUvarint(2)
+	enc.PutUvarintStr(unitMetaName)
+	enc.PutUvarintStr("")
+	enc.PutUvarintStr(helpMetaName)
+	enc.PutUvarintStr("some magic counter")
+
+	// Write second metadata entry, known fields + unknown fields.
+	enc.PutUvarint64(99)
+	enc.PutByte(byte(Counter))
+	enc.PutUvarint(3)
+	// Known fields.
+	enc.PutUvarintStr(unitMetaName)
+	enc.PutUvarintStr("seconds")
+	enc.PutUvarintStr(helpMetaName)
+	enc.PutUvarintStr("CPU time counter")
+	// Unknown fields.
+	enc.PutUvarintStr("an extra field name to be skipped")
+	enc.PutUvarintStr("with its value")
+
+	// Write third metadata entry, with unknown fields and different order.
+	enc.PutUvarint64(47250)
+	enc.PutByte(byte(Gauge))
+	enc.PutUvarint(4)
+	enc.PutUvarintStr("extra name one")
+	enc.PutUvarintStr("extra value one")
+	enc.PutUvarintStr(helpMetaName)
+	enc.PutUvarintStr("current memory usage")
+	enc.PutUvarintStr("extra name two")
+	enc.PutUvarintStr("extra value two")
+	enc.PutUvarintStr(unitMetaName)
+	enc.PutUvarintStr("percentage")
+
+	// Should yield known fields for all entries and skip over unknown fields.
+	expectedMetadata := []RefMetadata{
+		{
+			Ref:  101,
+			Type: uint8(Counter),
+			Unit: "",
+			Help: "some magic counter",
+		}, {
+			Ref:  99,
+			Type: uint8(Counter),
+			Unit: "seconds",
+			Help: "CPU time counter",
+		}, {
+			Ref:  47250,
+			Type: uint8(Gauge),
+			Unit: "percentage",
+			Help: "current memory usage",
+		},
+	}
+
+	decMetadata, err := dec.Metadata(enc.Get(), nil)
+	require.NoError(t, err)
+	require.Equal(t, expectedMetadata, decMetadata)
 }

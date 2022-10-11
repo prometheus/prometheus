@@ -1,6 +1,47 @@
 # Changelog
 
-## 2.37.0-rc.0 / 2022-07-05
+## 2.39.1 / 2022-10-07
+
+* [BUGFIX] Rules: Fix notifier relabel changing the labels on active alerts. #11427
+
+## 2.39.0 / 2022-10-05
+
+* [FEATURE] **experimental** TSDB: Add support for ingesting out-of-order samples. This is configured via `out_of_order_time_window` field in the config file; check config file docs for more info. #11075
+* [ENHANCEMENT] API: `/-/healthy` and `/-/ready` API calls now also respond to a `HEAD` request on top of existing `GET` support. #11160
+* [ENHANCEMENT] PuppetDB SD: Add `__meta_puppetdb_query` label. #11238
+* [ENHANCEMENT] AWS EC2 SD: Add `__meta_ec2_region` label. #11326
+* [ENHANCEMENT] AWS Lightsail SD: Add `__meta_lightsail_region` label. #11326
+* [ENHANCEMENT] Scrape: Optimise relabeling by re-using memory. #11147
+* [ENHANCEMENT] TSDB: Improve WAL replay timings. #10973 #11307 #11319
+* [ENHANCEMENT] TSDB: Optimise memory by not storing unnecessary data in the memory. #11280 #11288 #11296
+* [ENHANCEMENT] TSDB: Allow overlapping blocks by default. `--storage.tsdb.allow-overlapping-blocks` now has no effect. #11331
+* [ENHANCEMENT] UI: Click to copy label-value pair from query result to clipboard. #11229
+* [BUGFIX] TSDB: Turn off isolation for Head compaction to fix a memory leak. #11317
+* [BUGFIX] TSDB: Fix 'invalid magic number 0' error on Prometheus startup. #11338
+* [BUGFIX] PromQL: Properly close file descriptor when logging unfinished queries. #11148
+* [BUGFIX] Agent: Fix validation of flag options and prevent WAL from growing more than desired. #9876
+
+## 2.38.0 / 2022-08-16
+
+* [FEATURE]: Web: Add a `/api/v1/format_query` HTTP API endpoint that allows pretty-formatting PromQL expressions. #11036 #10544 #11005
+* [FEATURE]: UI: Add support for formatting PromQL expressions in the UI. #11039
+* [FEATURE]: DNS SD: Support MX records for discovering targets. #10099
+* [FEATURE]: Templates: Add `toTime()` template function that allows converting sample timestamps to Go `time.Time` values. #10993
+* [ENHANCEMENT]: Kubernetes SD: Add `__meta_kubernetes_service_port_number` meta label indicating the service port number. #11002 #11053
+* [ENHANCEMENT]: Kubernetes SD: Add `__meta_kubernetes_pod_container_image` meta label indicating the container image. #11034 #11146
+* [ENHANCEMENT]: PromQL: When a query panics, also log the query itself alongside the panic message. #10995
+* [ENHANCEMENT]: UI: Tweak colors in the dark theme to improve the contrast ratio. #11068
+* [ENHANCEMENT]: Web: Speed up calls to `/api/v1/rules` by avoiding locks and using atomic types instead. #10858
+* [ENHANCEMENT]: Scrape: Add a `no-default-scrape-port` feature flag, which omits or removes any default HTTP (`:80`) or HTTPS (`:443`) ports in the target's scrape address. #9523
+* [BUGFIX]: TSDB: In the WAL watcher metrics, expose the `type="exemplar"` label instead of `type="unknown"` for exemplar records. #11008
+* [BUGFIX]: TSDB: Fix race condition around allocating series IDs during chunk snapshot loading. #11099
+
+## 2.37.0 / 2022-07-14
+
+This release is a LTS (Long-Term Support) release of Prometheus and will
+receive security, documentation and bugfix patches for at least 6 months.
+Please read more about our LTS release cycle at
+<https://prometheus.io/docs/introduction/release-cycle/>.
 
 Following data loss by users due to lack of unified buffer cache in OpenBSD, we
 will no longer release Prometheus upstream for OpenBSD until a proper solution is
@@ -11,6 +52,7 @@ found. #8799
 * [ENHANCEMENT] PromQL: Optimise creation of signature with/without labels. #10667
 * [ENHANCEMENT] TSDB: Memory optimizations. #10873 #10874
 * [ENHANCEMENT] TSDB: Reduce sleep time when reading WAL. #10859 #10878
+* [ENHANCEMENT] OAuth2: Add appropriate timeouts and User-Agent header. #11020
 * [BUGFIX] Alerting: Fix Alertmanager targets not being updated when alerts were queued. #10948
 * [BUGFIX] Hetzner SD: Make authentication files relative to Prometheus config file. #10813
 * [BUGFIX] Promtool: Fix `promtool check config` not erroring properly on failures. #10952

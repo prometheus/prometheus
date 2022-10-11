@@ -45,6 +45,8 @@ var (
 		Name: "prometheus_template_text_expansions_total",
 		Help: "The total number of template text expansions.",
 	})
+
+	errNaNOrInf = errors.New("value is NaN or Inf")
 )
 
 func init() {
@@ -315,15 +317,24 @@ func NewTemplateExpander(
 				if err != nil {
 					return "", err
 				}
-				if math.IsNaN(v) || math.IsInf(v, 0) {
+
+				tm, err := floatToTime(v)
+				switch {
+				case errors.Is(err, errNaNOrInf):
 					return fmt.Sprintf("%.4g", v), nil
+				case err != nil:
+					return "", err
 				}
-				timestamp := v * 1e9
-				if timestamp > math.MaxInt64 || timestamp < math.MinInt64 {
-					return "", fmt.Errorf("%v cannot be represented as a nanoseconds timestamp since it overflows int64", v)
+
+				return fmt.Sprint(tm), nil
+			},
+			"toTime": func(i interface{}) (*time.Time, error) {
+				v, err := convertToFloat(i)
+				if err != nil {
+					return nil, err
 				}
-				t := model.TimeFromUnixNano(int64(timestamp)).Time().UTC()
-				return fmt.Sprint(t), nil
+
+				return floatToTime(v)
 			},
 			"pathPrefix": func() string {
 				return externalURL.Path
@@ -445,4 +456,16 @@ func (te Expander) ParseTest() error {
 		return err
 	}
 	return nil
+}
+
+func floatToTime(v float64) (*time.Time, error) {
+	if math.IsNaN(v) || math.IsInf(v, 0) {
+		return nil, errNaNOrInf
+	}
+	timestamp := v * 1e9
+	if timestamp > math.MaxInt64 || timestamp < math.MinInt64 {
+		return nil, fmt.Errorf("%v cannot be represented as a nanoseconds timestamp since it overflows int64", v)
+	}
+	t := model.TimeFromUnixNano(int64(timestamp)).Time().UTC()
+	return &t, nil
 }

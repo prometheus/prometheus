@@ -31,6 +31,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/storage/remote"
@@ -316,13 +317,16 @@ func validateOptions(opts *Options) *Options {
 		opts.TruncateFrequency = DefaultTruncateFrequency
 	}
 	if opts.MinWALTime <= 0 {
-		opts.MinWALTime = 0
+		opts.MinWALTime = DefaultMinWALTime
 	}
 	if opts.MaxWALTime <= 0 {
 		opts.MaxWALTime = DefaultMaxWALTime
 	}
+	if opts.MinWALTime > opts.MaxWALTime {
+		opts.MaxWALTime = opts.MinWALTime
+	}
 
-	if t := int64(opts.TruncateFrequency * time.Hour / time.Millisecond); opts.MaxWALTime < t {
+	if t := int64(opts.TruncateFrequency / time.Millisecond); opts.MaxWALTime < t {
 		opts.MaxWALTime = t
 	}
 	return opts
@@ -566,8 +570,7 @@ func (db *DB) truncate(mint int64) error {
 
 	// Start a new segment so low ingestion volume instances don't have more WAL
 	// than needed.
-	_, err = db.wal.NextSegment()
-	if err != nil {
+	if _, err := db.wal.NextSegment(); err != nil {
 		return errors.Wrap(err, "next segment")
 	}
 
@@ -810,6 +813,11 @@ func (a *appender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exem
 
 	a.metrics.totalAppendedExemplars.Inc()
 	return storage.SeriesRef(s.ref), nil
+}
+
+func (a *appender) UpdateMetadata(ref storage.SeriesRef, l labels.Labels, m metadata.Metadata) (storage.SeriesRef, error) {
+	// TODO: Wire metadata in the Agent's appender.
+	return 0, nil
 }
 
 // Commit submits the collected samples and purges the batch.

@@ -22,6 +22,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
 )
 
@@ -166,6 +167,20 @@ func (f *fanoutAppender) AppendExemplar(ref SeriesRef, l labels.Labels, e exempl
 
 	for _, appender := range f.secondaries {
 		if _, err := appender.AppendExemplar(ref, l, e); err != nil {
+			return 0, err
+		}
+	}
+	return ref, nil
+}
+
+func (f *fanoutAppender) UpdateMetadata(ref SeriesRef, l labels.Labels, m metadata.Metadata) (SeriesRef, error) {
+	ref, err := f.primary.UpdateMetadata(ref, l, m)
+	if err != nil {
+		return ref, err
+	}
+
+	for _, appender := range f.secondaries {
+		if _, err := appender.UpdateMetadata(ref, l, m); err != nil {
 			return 0, err
 		}
 	}

@@ -425,9 +425,6 @@ func TestHeadReadWriter_TruncateAfterFailedIterateChunks(t *testing.T) {
 
 func TestHeadReadWriter_ReadRepairOnEmptyLastFile(t *testing.T) {
 	hrw := createChunkDiskMapper(t, "")
-	defer func() {
-		require.NoError(t, hrw.Close())
-	}()
 
 	timeRange := 0
 	addChunk := func() {
@@ -467,34 +464,59 @@ func TestHeadReadWriter_ReadRepairOnEmptyLastFile(t *testing.T) {
 	dir := hrw.dir.Name()
 	require.NoError(t, hrw.Close())
 
-	// Write an empty last file mimicking an abrupt shutdown on file creation.
-	emptyFileName := segmentFile(dir, lastFile+1)
-	f, err := os.OpenFile(emptyFileName, os.O_WRONLY|os.O_CREATE, 0o666)
-	require.NoError(t, err)
-	require.NoError(t, f.Sync())
-	stat, err := f.Stat()
-	require.NoError(t, err)
-	require.Equal(t, int64(0), stat.Size())
-	require.NoError(t, f.Close())
-
-	// Open chunk disk mapper again, corrupt file should be removed.
-	hrw = createChunkDiskMapper(t, dir)
-
-	// Removed from memory.
-	require.Equal(t, 3, len(hrw.mmappedChunkFiles))
-	for idx := range hrw.mmappedChunkFiles {
-		require.LessOrEqual(t, idx, lastFile, "file index is bigger than previous last file")
-	}
-
-	// Removed even from disk.
-	files, err := os.ReadDir(dir)
-	require.NoError(t, err)
-	require.Equal(t, 3, len(files))
-	for _, fi := range files {
-		seq, err := strconv.ParseUint(fi.Name(), 10, 64)
+	writeCorruptLastFile := func(b []byte) {
+		fname := segmentFile(dir, lastFile+1)
+		f, err := os.OpenFile(fname, os.O_WRONLY|os.O_CREATE, 0o666)
 		require.NoError(t, err)
-		require.LessOrEqual(t, seq, uint64(lastFile), "file index on disk is bigger than previous last file")
+		_, err = f.Write(b)
+		require.NoError(t, err)
+		require.NoError(t, f.Sync())
+		stat, err := f.Stat()
+		require.NoError(t, err)
+		require.Equal(t, int64(len(b)), stat.Size())
+		require.NoError(t, f.Close())
 	}
+
+	checkRepair := func() {
+		// Open chunk disk mapper again, corrupt file should be removed.
+		hrw = createChunkDiskMapper(t, dir)
+
+		// Removed from memory.
+		require.Equal(t, 3, len(hrw.mmappedChunkFiles))
+		for idx := range hrw.mmappedChunkFiles {
+			require.LessOrEqual(t, idx, lastFile, "file index is bigger than previous last file")
+		}
+
+		// Removed even from disk.
+		files, err := os.ReadDir(dir)
+		require.NoError(t, err)
+		require.Equal(t, 3, len(files))
+		for _, fi := range files {
+			seq, err := strconv.ParseUint(fi.Name(), 10, 64)
+			require.NoError(t, err)
+			require.LessOrEqual(t, seq, uint64(lastFile), "file index on disk is bigger than previous last file")
+		}
+
+		require.NoError(t, hrw.Close())
+	}
+
+	// Write an empty last file mimicking an abrupt shutdown on file creation.
+	writeCorruptLastFile(nil)
+	// Removes empty last file.
+	checkRepair()
+
+	// Write another empty last file with 0 bytes.
+	writeCorruptLastFile([]byte{0, 0, 0, 0, 0, 0, 0, 0})
+	// Removes the 0 filled last file.
+	checkRepair()
+
+	// Write another corrupt file with less than 4 bytes (size of magic number).
+	writeCorruptLastFile([]byte{1, 2})
+	// Removes the partial file.
+	checkRepair()
+
+	// Check that it does not delete a valid last file.
+	checkRepair()
 }
 
 func createChunkDiskMapper(t *testing.T, dir string) *ChunkDiskMapper {

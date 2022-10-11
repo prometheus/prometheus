@@ -1,3 +1,16 @@
+// Copyright 2022 The Prometheus Authors
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+// http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package tsdb
 
 import (
@@ -431,25 +444,25 @@ func TestOOOHeadChunkReader_LabelValues(t *testing.T) {
 			oh := NewOOOHeadIndexReader(head, tc.queryMinT, tc.queryMaxT)
 			matchers := []*labels.Matcher{labels.MustNewMatcher(labels.MatchEqual, "foo", "bar1")}
 			values, err := oh.LabelValues("foo", matchers...)
-			require.NoError(t, err)
 			sort.Strings(values)
+			require.NoError(t, err)
 			require.Equal(t, tc.expValues1, values)
 
 			matchers = []*labels.Matcher{labels.MustNewMatcher(labels.MatchNotRegexp, "foo", "^bar.")}
 			values, err = oh.LabelValues("foo", matchers...)
-			require.NoError(t, err)
 			sort.Strings(values)
+			require.NoError(t, err)
 			require.Equal(t, tc.expValues2, values)
 
 			matchers = []*labels.Matcher{labels.MustNewMatcher(labels.MatchRegexp, "foo", "bar.")}
 			values, err = oh.LabelValues("foo", matchers...)
-			require.NoError(t, err)
 			sort.Strings(values)
+			require.NoError(t, err)
 			require.Equal(t, tc.expValues3, values)
 
 			values, err = oh.LabelValues("foo")
-			require.NoError(t, err)
 			sort.Strings(values)
+			require.NoError(t, err)
 			require.Equal(t, tc.expValues4, values)
 		})
 	}
@@ -460,7 +473,6 @@ func TestOOOHeadChunkReader_LabelValues(t *testing.T) {
 // an OOOHeadChunkReader to read chunks from it.
 func TestOOOHeadChunkReader_Chunk(t *testing.T) {
 	opts := DefaultOptions()
-	opts.OutOfOrderCapMin = 1
 	opts.OutOfOrderCapMax = 5
 	opts.OutOfOrderTimeWindow = 120 * time.Minute.Milliseconds()
 
@@ -868,7 +880,6 @@ func TestOOOHeadChunkReader_Chunk(t *testing.T) {
 // - A == B
 func TestOOOHeadChunkReader_Chunk_ConsistentQueryResponseDespiteOfHeadExpanding(t *testing.T) {
 	opts := DefaultOptions()
-	opts.OutOfOrderCapMin = 1
 	opts.OutOfOrderCapMax = 5
 	opts.OutOfOrderTimeWindow = 120 * time.Minute.Milliseconds()
 

@@ -51,23 +51,23 @@ func TestSDCheckResult(t *testing.T) {
 
 	expectedSDCheckResult := []sdCheckResult{
 		{
-			DiscoveredLabels: labels.Labels{
-				labels.Label{Name: "__address__", Value: "localhost:8080"},
-				labels.Label{Name: "__scrape_interval__", Value: "1m"},
-				labels.Label{Name: "__scrape_timeout__", Value: "10s"},
-				labels.Label{Name: "foo", Value: "bar"},
-			},
-			Labels: labels.Labels{
-				labels.Label{Name: "__address__", Value: "localhost:8080"},
-				labels.Label{Name: "__scrape_interval__", Value: "1m"},
-				labels.Label{Name: "__scrape_timeout__", Value: "10s"},
-				labels.Label{Name: "foo", Value: "bar"},
-				labels.Label{Name: "instance", Value: "localhost:8080"},
-				labels.Label{Name: "newfoo", Value: "bar"},
-			},
+			DiscoveredLabels: labels.FromStrings(
+				"__address__", "localhost:8080",
+				"__scrape_interval__", "1m",
+				"__scrape_timeout__", "10s",
+				"foo", "bar",
+			),
+			Labels: labels.FromStrings(
+				"__address__", "localhost:8080",
+				"__scrape_interval__", "1m",
+				"__scrape_timeout__", "10s",
+				"foo", "bar",
+				"instance", "localhost:8080",
+				"newfoo", "bar",
+			),
 			Error: nil,
 		},
 	}
 
-	require.Equal(t, expectedSDCheckResult, getSDCheckResult(targetGroups, scrapeConfig))
+	require.Equal(t, expectedSDCheckResult, getSDCheckResult(targetGroups, scrapeConfig, true))
 }

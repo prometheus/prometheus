@@ -78,15 +78,13 @@ func DefaultOptions() *Options {
 		MinBlockDuration:           DefaultBlockDuration,
 		MaxBlockDuration:           DefaultBlockDuration,
 		NoLockfile:                 false,
-		AllowOverlappingCompaction: false,
-		AllowOverlappingQueries:    false,
+		AllowOverlappingCompaction: true,
 		WALCompression:             false,
 		StripeSize:                 DefaultStripeSize,
 		HeadChunksWriteBufferSize:  chunks.DefaultWriteBufferSize,
 		IsolationDisabled:          defaultIsolationDisabled,
 		HeadChunksEndTimeVariance:  0,
 		HeadChunksWriteQueueSize:   chunks.DefaultWriteQueueSize,
-		OutOfOrderCapMin:           DefaultOutOfOrderCapMin,
 		OutOfOrderCapMax:           DefaultOutOfOrderCapMax,
 	}
 }
@@ -119,14 +117,12 @@ type Options struct {
 	// NoLockfile disables creation and consideration of a lock file.
 	NoLockfile bool
 
-	// Querying on overlapping blocks are allowed if AllowOverlappingQueries is true.
-	// Since querying is a required operation for TSDB, if there are going to be
-	// overlapping blocks, then this should be set to true.
-	// NOTE: Do not use this directly in DB. Use it via DB.AllowOverlappingQueries().
-	AllowOverlappingQueries bool
-
 	// Compaction of overlapping blocks are allowed if AllowOverlappingCompaction is true.
 	// This is an optional flag for overlapping blocks.
+	// The reason why this flag exists is because there are various users of the TSDB
+	// that do not want vertical compaction happening on ingest time. Instead,
+	// they'd rather keep overlapping blocks and let another component do the overlapping compaction later.
+	// For Prometheus, this will always be true.
 	AllowOverlappingCompaction bool
 
 	// WALCompression will turn on Snappy compression for records on the WAL.
@@ -186,10 +182,6 @@ type Options struct {
 	// This can change during run-time, so this value from here should only be used
 	// while initialising.
 	OutOfOrderTimeWindow int64
-
-	// OutOfOrderCapMin minimum capacity for OOO chunks (in samples).
-	// If it is <=0, the default value is assumed.
-	OutOfOrderCapMin int64
 
 	// OutOfOrderCapMax is maximum capacity for OOO chunks (in samples).
 	// If it is <=0, the default value is assumed.
@@ -359,7 +351,7 @@ type DBStats struct {
 }
 
 // NewDBStats returns a new DBStats object initialized using the
-// the new function from each component.
+// new function from each component.
 func NewDBStats() *DBStats {
 	return &DBStats{
 		Head: NewHeadStats(),
@@ -659,17 +651,8 @@ func validateOpts(opts *Options, rngs []int64) (*Options, []int64) {
 	if opts.MinBlockDuration > opts.MaxBlockDuration {
 		opts.MaxBlockDuration = opts.MinBlockDuration
 	}
-	if opts.OutOfOrderTimeWindow > 0 {
-		opts.AllowOverlappingQueries = true
-	}
-	if opts.OutOfOrderCapMin <= 0 {
-		opts.OutOfOrderCapMin = DefaultOutOfOrderCapMin
-	}
 	if opts.OutOfOrderCapMax <= 0 {
 		opts.OutOfOrderCapMax = DefaultOutOfOrderCapMax
-	}
-	if opts.OutOfOrderCapMin > opts.OutOfOrderCapMax {
-		opts.OutOfOrderCapMax = opts.OutOfOrderCapMin
 	}
 	if opts.OutOfOrderTimeWindow < 0 {
 		opts.OutOfOrderTimeWindow = 0
@@ -810,7 +793,6 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	headOpts.MaxExemplars.Store(opts.MaxExemplars)
 	headOpts.EnableMemorySnapshotOnShutdown = opts.EnableMemorySnapshotOnShutdown
 	headOpts.OutOfOrderTimeWindow.Store(opts.OutOfOrderTimeWindow)
-	headOpts.OutOfOrderCapMin.Store(opts.OutOfOrderCapMin)
 	headOpts.OutOfOrderCapMax.Store(opts.OutOfOrderCapMax)
 	if opts.IsolationDisabled {
 		// We only override this flag if isolation is disabled at DB level. We use the default otherwise.
@@ -968,8 +950,8 @@ func (db *DB) Appender(ctx context.Context) storage.Appender {
 //
 // 3) Before: OOO enabled, Now: OOO disabled =>
 //   - Time Window set to 0. So no new OOO samples will be allowed.
-//   - OOO WBL will stay and follow the usual cleanup until a restart.
-//   - OOO Compaction and overlapping queries will remain enabled until a restart.
+//   - OOO WBL will stay and will be eventually cleaned up.
+//   - OOO Compaction and overlapping queries will remain enabled until a restart or until all OOO samples are compacted.
 //
 // 4) Before: OOO disabled, Now: OOO disabled => no-op.
 func (db *DB) ApplyConfig(conf *config.Config) error {
@@ -1084,10 +1066,15 @@ func (db *DB) Compact() (returnErr error) {
 		// so in order to make sure that overlaps are evaluated
 		// consistently, we explicitly remove the last value
 		// from the block interval here.
-		// TODO(jesus.vazquez) Once we have the OOORangeHead we need to update
-		// TODO(jesus.vazquez) this method to accept a second parameter with an OOORangeHead to
-		// TODO(jesus.vazquez) compact the OOO Samples.
-		if err := db.compactHead(NewRangeHead(db.head, mint, maxt-1)); err != nil {
+		rh := NewRangeHeadWithIsolationDisabled(db.head, mint, maxt-1)
+
+		// Compaction runs with isolation disabled, because head.compactable()
+		// ensures that maxt is more than chunkRange/2 back from now, and
+		// head.appendableMinValidTime() ensures that no new appends can start within the compaction range.
+		// We do need to wait for any overlapping appenders that started previously to finish.
+		db.head.WaitForAppendersOverlapping(rh.MaxTime())
+
+		if err := db.compactHead(rh); err != nil {
 			return errors.Wrap(err, "compact head")
 		}
 		// Consider only successful compactions for WAL truncation.
@@ -1151,7 +1138,7 @@ func (db *DB) compactOOOHead() error {
 		return errors.Wrap(err, "get ooo compaction head")
 	}
 
-	ulids, err := db.compactor.CompactOOO(db.dir, oooHead)
+	ulids, err := db.compactOOO(db.dir, oooHead)
 	if err != nil {
 		return errors.Wrap(err, "compact ooo head")
 	}
@@ -1173,6 +1160,61 @@ func (db *DB) compactOOOHead() error {
 	}
 
 	return nil
+}
+
+// compactOOO creates a new block per possible block range in the compactor's directory from the OOO Head given.
+// Each ULID in the result corresponds to a block in a unique time range.
+func (db *DB) compactOOO(dest string, oooHead *OOOCompactionHead) (_ []ulid.ULID, err error) {
+	start := time.Now()
+
+	blockSize := oooHead.ChunkRange()
+	oooHeadMint, oooHeadMaxt := oooHead.MinTime(), oooHead.MaxTime()
+	ulids := make([]ulid.ULID, 0)
+	defer func() {
+		if err != nil {
+			// Best effort removal of created block on any error.
+			for _, uid := range ulids {
+				_ = os.RemoveAll(filepath.Join(db.dir, uid.String()))
+			}
+		}
+	}()
+
+	for t := blockSize * (oooHeadMint / blockSize); t <= oooHeadMaxt; t = t + blockSize {
+		mint, maxt := t, t+blockSize
+		// Block intervals are half-open: [b.MinTime, b.MaxTime). Block intervals are always +1 than the total samples it includes.
+		uid, err := db.compactor.Write(dest, oooHead.CloneForTimeRange(mint, maxt-1), mint, maxt, nil)
+		if err != nil {
+			return nil, err
+		}
+		if uid.Compare(ulid.ULID{}) != 0 {
+			ulids = append(ulids, uid)
+			blockDir := filepath.Join(dest, uid.String())
+			meta, _, err := readMetaFile(blockDir)
+			if err != nil {
+				return ulids, errors.Wrap(err, "read meta")
+			}
+			meta.Compaction.SetOutOfOrder()
+			_, err = writeMetaFile(db.logger, blockDir, meta)
+			if err != nil {
+				return ulids, errors.Wrap(err, "write meta")
+			}
+		}
+	}
+
+	if len(ulids) == 0 {
+		level.Info(db.logger).Log(
+			"msg", "compact ooo head resulted in no blocks",
+			"duration", time.Since(start),
+		)
+		return nil, nil
+	}
+
+	level.Info(db.logger).Log(
+		"msg", "out-of-order compaction completed",
+		"duration", time.Since(start),
+		"ulids", fmt.Sprintf("%v", ulids),
+	)
+	return ulids, nil
 }
 
 // compactHead compacts the given RangeHead.
@@ -1333,11 +1375,6 @@ func (db *DB) reloadBlocks() (err error) {
 	sort.Slice(toLoad, func(i, j int) bool {
 		return toLoad[i].Meta().MinTime < toLoad[j].Meta().MinTime
 	})
-	if !db.AllowOverlappingQueries() {
-		if err := validateBlockSequence(toLoad); err != nil {
-			return errors.Wrap(err, "invalid block sequence")
-		}
-	}
 
 	// Swap new blocks first for subsequently created readers to be seen.
 	oldBlocks := db.blocks
@@ -1361,10 +1398,6 @@ func (db *DB) reloadBlocks() (err error) {
 		return errors.Wrapf(err, "delete %v blocks", len(deletable))
 	}
 	return nil
-}
-
-func (db *DB) AllowOverlappingQueries() bool {
-	return db.opts.AllowOverlappingQueries || db.oooWasEnabled.Load()
 }
 
 func openBlocks(l log.Logger, dir string, loaded []*Block, chunkPool chunkenc.Pool, cache *hashcache.SeriesHashCache) (blocks []*Block, corrupted map[ulid.ULID]error, err error) {
@@ -1518,25 +1551,6 @@ func (db *DB) deleteBlocks(blocks map[ulid.ULID]*Block) error {
 	return nil
 }
 
-// validateBlockSequence returns error if given block meta files indicate that some blocks overlaps within sequence.
-func validateBlockSequence(bs []*Block) error {
-	if len(bs) <= 1 {
-		return nil
-	}
-
-	var metas []BlockMeta
-	for _, b := range bs {
-		metas = append(metas, b.meta)
-	}
-
-	overlaps := OverlappingBlocks(metas)
-	if len(overlaps) > 0 {
-		return errors.Errorf("block time ranges overlap: %s", overlaps)
-	}
-
-	return nil
-}
-
 // TimeRange specifies minTime and maxTime range.
 type TimeRange struct {
 	Min, Max int64
@@ -1653,11 +1667,10 @@ func (db *DB) Blocks() []*Block {
 // out of out-of-order data. If the returned boolean is true, it means there is at least
 // one such block.
 func (db *DB) inOrderBlocksMaxTime() (maxt int64, ok bool) {
-	maxt, ok, hasOOO := int64(math.MinInt64), false, false
+	maxt, ok = int64(math.MinInt64), false
 	// If blocks are overlapping, last block might not have the max time. So check all blocks.
 	for _, b := range db.Blocks() {
-		hasOOO = hasOOO || b.meta.OutOfOrder
-		if !b.meta.OutOfOrder && b.meta.MaxTime > maxt {
+		if !b.meta.OutOfOrder && !b.meta.Compaction.FromOutOfOrder() && b.meta.MaxTime > maxt {
 			ok = true
 			maxt = b.meta.MaxTime
 		}

@@ -24,7 +24,7 @@ import (
 	"time"
 
 	"github.com/prometheus/common/model"
-	yaml "gopkg.in/yaml.v3"
+	"gopkg.in/yaml.v3"
 
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql/parser"

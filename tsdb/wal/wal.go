@@ -201,41 +201,36 @@ type walMetrics struct {
 	writesFailed    prometheus.Counter
 }
 
-func newWALMetrics(r prometheus.Registerer, isOOO bool) *walMetrics {
+func newWALMetrics(r prometheus.Registerer) *walMetrics {
 	m := &walMetrics{}
 
-	prefix := "prometheus_tsdb_wal"
-	if isOOO {
-		prefix = "prometheus_tsdb_out_of_order_wal"
-	}
-
 	m.fsyncDuration = prometheus.NewSummary(prometheus.SummaryOpts{
-		Name:       fmt.Sprintf("%s_fsync_duration_seconds", prefix),
+		Name:       "fsync_duration_seconds",
 		Help:       "Duration of WAL fsync.",
 		Objectives: map[float64]float64{0.5: 0.05, 0.9: 0.01, 0.99: 0.001},
 	})
 	m.pageFlushes = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: fmt.Sprintf("%s_page_flushes_total", prefix),
+		Name: "page_flushes_total",
 		Help: "Total number of page flushes.",
 	})
 	m.pageCompletions = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: fmt.Sprintf("%s_completed_pages_total", prefix),
+		Name: "completed_pages_total",
 		Help: "Total number of completed pages.",
 	})
 	m.truncateFail = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: fmt.Sprintf("%s_truncations_failed_total", prefix),
+		Name: "truncations_failed_total",
 		Help: "Total number of WAL truncations that failed.",
 	})
 	m.truncateTotal = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: fmt.Sprintf("%s_truncations_total", prefix),
+		Name: "truncations_total",
 		Help: "Total number of WAL truncations attempted.",
 	})
 	m.currentSegment = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: fmt.Sprintf("%s_segment_current", prefix),
+		Name: "segment_current",
 		Help: "WAL segment index that TSDB is currently writing to.",
 	})
 	m.writesFailed = prometheus.NewCounter(prometheus.CounterOpts{
-		Name: fmt.Sprintf("%s_writes_failed_total", prefix),
+		Name: "writes_failed_total",
 		Help: "Total number of WAL writes that failed.",
 	})
 
@@ -280,12 +275,11 @@ func NewSize(logger log.Logger, reg prometheus.Registerer, dir string, segmentSi
 		stopc:       make(chan chan struct{}),
 		compress:    compress,
 	}
-	isOOO := false
+	prefix := "prometheus_tsdb_wal_"
 	if filepath.Base(dir) == WblDirName {
-		// TODO(codesome): have a less hacky way to do it.
-		isOOO = true
+		prefix = "prometheus_tsdb_out_of_order_wal_"
 	}
-	w.metrics = newWALMetrics(reg, isOOO)
+	w.metrics = newWALMetrics(prometheus.WrapRegistererWithPrefix(prefix, reg))
 
 	_, last, err := Segments(w.Dir())
 	if err != nil {
@@ -470,17 +464,25 @@ func SegmentName(dir string, i int) string {
 	return filepath.Join(dir, fmt.Sprintf("%08d", i))
 }
 
-// NextSegment creates the next segment and closes the previous one.
+// NextSegment creates the next segment and closes the previous one asynchronously.
 // It returns the file number of the new file.
 func (w *WAL) NextSegment() (int, error) {
 	w.mtx.Lock()
 	defer w.mtx.Unlock()
-	return w.nextSegment()
+	return w.nextSegment(true)
+}
+
+// NextSegmentSync creates the next segment and closes the previous one in sync.
+// It returns the file number of the new file.
+func (w *WAL) NextSegmentSync() (int, error) {
+	w.mtx.Lock()
+	defer w.mtx.Unlock()
+	return w.nextSegment(false)
 }
 
 // nextSegment creates the next segment and closes the previous one.
 // It returns the file number of the new file.
-func (w *WAL) nextSegment() (int, error) {
+func (w *WAL) nextSegment(async bool) (int, error) {
 	if w.closed {
 		return 0, errors.New("wal is closed")
 	}
@@ -501,13 +503,18 @@ func (w *WAL) nextSegment() (int, error) {
 	}
 
 	// Don't block further writes by fsyncing the last segment.
-	w.actorc <- func() {
+	f := func() {
 		if err := w.fsync(prev); err != nil {
 			level.Error(w.logger).Log("msg", "sync previous segment", "err", err)
 		}
 		if err := prev.Close(); err != nil {
 			level.Error(w.logger).Log("msg", "close previous segment", "err", err)
 		}
+	}
+	if async {
+		w.actorc <- f
+	} else {
+		f()
 	}
 	return next.Index(), nil
 }
@@ -651,7 +658,7 @@ func (w *WAL) log(rec []byte, final bool) error {
 	left += (pageSize - recordHeaderSize) * (w.pagesPerSegment() - w.donePages - 1) // Free pages in the active segment.
 
 	if len(rec) > left {
-		if _, err := w.nextSegment(); err != nil {
+		if _, err := w.nextSegment(true); err != nil {
 			return err
 		}
 	}
@@ -756,6 +763,13 @@ func (w *WAL) fsync(f *Segment) error {
 	err := f.Sync()
 	w.metrics.fsyncDuration.Observe(time.Since(start).Seconds())
 	return err
+}
+
+// Sync forces a file sync on the current wal segment. This function is meant
+// to be used only on tests due to different behaviour on Operating Systems
+// like windows and linux
+func (w *WAL) Sync() error {
+	return w.fsync(w.segment)
 }
 
 // Close flushes all writes and closes active segment.

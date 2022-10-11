@@ -177,6 +177,7 @@ const (
 	podNameLabel                  = metaLabelPrefix + "pod_name"
 	podIPLabel                    = metaLabelPrefix + "pod_ip"
 	podContainerNameLabel         = metaLabelPrefix + "pod_container_name"
+	podContainerImageLabel        = metaLabelPrefix + "pod_container_image"
 	podContainerPortNameLabel     = metaLabelPrefix + "pod_container_port_name"
 	podContainerPortNumberLabel   = metaLabelPrefix + "pod_container_port_number"
 	podContainerPortProtocolLabel = metaLabelPrefix + "pod_container_port_protocol"
@@ -266,9 +267,10 @@ func (p *Pod) buildPod(pod *apiv1.Pod) *targetgroup.Group {
 			// We don't have a port so we just set the address label to the pod IP.
 			// The user has to add a port manually.
 			tg.Targets = append(tg.Targets, model.LabelSet{
-				model.AddressLabel:    lv(pod.Status.PodIP),
-				podContainerNameLabel: lv(c.Name),
-				podContainerIsInit:    lv(strconv.FormatBool(isInit)),
+				model.AddressLabel:     lv(pod.Status.PodIP),
+				podContainerNameLabel:  lv(c.Name),
+				podContainerImageLabel: lv(c.Image),
+				podContainerIsInit:     lv(strconv.FormatBool(isInit)),
 			})
 			continue
 		}
@@ -280,6 +282,7 @@ func (p *Pod) buildPod(pod *apiv1.Pod) *targetgroup.Group {
 			tg.Targets = append(tg.Targets, model.LabelSet{
 				model.AddressLabel:            lv(addr),
 				podContainerNameLabel:         lv(c.Name),
+				podContainerImageLabel:        lv(c.Image),
 				podContainerPortNumberLabel:   lv(ports),
 				podContainerPortNameLabel:     lv(port.Name),
 				podContainerPortProtocolLabel: lv(string(port.Protocol)),

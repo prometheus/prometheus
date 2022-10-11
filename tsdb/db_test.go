@@ -42,6 +42,7 @@ import (
 
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -290,7 +291,7 @@ func TestDBAppenderAddRef(t *testing.T) {
 	require.NoError(t, err)
 
 	// Reference should already work before commit.
-	ref2, err := app1.Append(ref1, nil, 124, 1)
+	ref2, err := app1.Append(ref1, labels.EmptyLabels(), 124, 1)
 	require.NoError(t, err)
 	require.Equal(t, ref1, ref2)
 
@@ -300,7 +301,7 @@ func TestDBAppenderAddRef(t *testing.T) {
 	app2 := db.Appender(ctx)
 
 	// first ref should already work in next transaction.
-	ref3, err := app2.Append(ref1, nil, 125, 0)
+	ref3, err := app2.Append(ref1, labels.EmptyLabels(), 125, 0)
 	require.NoError(t, err)
 	require.Equal(t, ref1, ref3)
 
@@ -309,12 +310,12 @@ func TestDBAppenderAddRef(t *testing.T) {
 	require.Equal(t, ref1, ref4)
 
 	// Reference must be valid to add another sample.
-	ref5, err := app2.Append(ref2, nil, 143, 2)
+	ref5, err := app2.Append(ref2, labels.EmptyLabels(), 143, 2)
 	require.NoError(t, err)
 	require.Equal(t, ref1, ref5)
 
 	// Missing labels & invalid refs should fail.
-	_, err = app2.Append(9999999, nil, 1, 1)
+	_, err = app2.Append(9999999, labels.EmptyLabels(), 1, 1)
 	require.Equal(t, ErrInvalidSample, errors.Cause(err))
 
 	require.NoError(t, app2.Commit())
@@ -347,8 +348,8 @@ func TestAppendEmptyLabelsIgnored(t *testing.T) {
 	ref1, err := app1.Append(0, labels.FromStrings("a", "b"), 123, 0)
 	require.NoError(t, err)
 
-	// Construct labels manually so there is an empty label.
-	ref2, err := app1.Append(0, labels.Labels{labels.Label{Name: "a", Value: "b"}, labels.Label{Name: "c", Value: ""}}, 124, 0)
+	// Add with empty label.
+	ref2, err := app1.Append(0, labels.FromStrings("a", "b", "c", ""), 124, 0)
 	require.NoError(t, err)
 
 	// Should be the same series.
@@ -400,7 +401,7 @@ Outer:
 		smpls := make([]float64, numSamples)
 		for i := int64(0); i < numSamples; i++ {
 			smpls[i] = rand.Float64()
-			app.Append(0, labels.Labels{{Name: "a", Value: "b"}}, i, smpls[i])
+			app.Append(0, labels.FromStrings("a", "b"), i, smpls[i])
 		}
 
 		require.NoError(t, app.Commit())
@@ -456,12 +457,12 @@ func TestAmendDatapointCausesError(t *testing.T) {
 
 	ctx := context.Background()
 	app := db.Appender(ctx)
-	_, err := app.Append(0, labels.Labels{{Name: "a", Value: "b"}}, 0, 0)
+	_, err := app.Append(0, labels.FromStrings("a", "b"), 0, 0)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
 	app = db.Appender(ctx)
-	_, err = app.Append(0, labels.Labels{{Name: "a", Value: "b"}}, 0, 1)
+	_, err = app.Append(0, labels.FromStrings("a", "b"), 0, 1)
 	require.Equal(t, storage.ErrDuplicateSampleForTimestamp, err)
 	require.NoError(t, app.Rollback())
 }
@@ -474,12 +475,12 @@ func TestDuplicateNaNDatapointNoAmendError(t *testing.T) {
 
 	ctx := context.Background()
 	app := db.Appender(ctx)
-	_, err := app.Append(0, labels.Labels{{Name: "a", Value: "b"}}, 0, math.NaN())
+	_, err := app.Append(0, labels.FromStrings("a", "b"), 0, math.NaN())
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
 	app = db.Appender(ctx)
-	_, err = app.Append(0, labels.Labels{{Name: "a", Value: "b"}}, 0, math.NaN())
+	_, err = app.Append(0, labels.FromStrings("a", "b"), 0, math.NaN())
 	require.NoError(t, err)
 }
 
@@ -491,12 +492,12 @@ func TestNonDuplicateNaNDatapointsCausesAmendError(t *testing.T) {
 
 	ctx := context.Background()
 	app := db.Appender(ctx)
-	_, err := app.Append(0, labels.Labels{{Name: "a", Value: "b"}}, 0, math.Float64frombits(0x7ff0000000000001))
+	_, err := app.Append(0, labels.FromStrings("a", "b"), 0, math.Float64frombits(0x7ff0000000000001))
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
 	app = db.Appender(ctx)
-	_, err = app.Append(0, labels.Labels{{Name: "a", Value: "b"}}, 0, math.Float64frombits(0x7ff0000000000002))
+	_, err = app.Append(0, labels.FromStrings("a", "b"), 0, math.Float64frombits(0x7ff0000000000002))
 	require.Equal(t, storage.ErrDuplicateSampleForTimestamp, err)
 }
 
@@ -522,9 +523,9 @@ func TestSkippingInvalidValuesInSameTxn(t *testing.T) {
 	// Append AmendedValue.
 	ctx := context.Background()
 	app := db.Appender(ctx)
-	_, err := app.Append(0, labels.Labels{{Name: "a", Value: "b"}}, 0, 1)
+	_, err := app.Append(0, labels.FromStrings("a", "b"), 0, 1)
 	require.NoError(t, err)
-	_, err = app.Append(0, labels.Labels{{Name: "a", Value: "b"}}, 0, 2)
+	_, err = app.Append(0, labels.FromStrings("a", "b"), 0, 2)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
@@ -540,9 +541,9 @@ func TestSkippingInvalidValuesInSameTxn(t *testing.T) {
 
 	// Append Out of Order Value.
 	app = db.Appender(ctx)
-	_, err = app.Append(0, labels.Labels{{Name: "a", Value: "b"}}, 10, 3)
+	_, err = app.Append(0, labels.FromStrings("a", "b"), 10, 3)
 	require.NoError(t, err)
-	_, err = app.Append(0, labels.Labels{{Name: "a", Value: "b"}}, 7, 5)
+	_, err = app.Append(0, labels.FromStrings("a", "b"), 7, 5)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
@@ -661,7 +662,7 @@ func TestDB_SnapshotWithDelete(t *testing.T) {
 	smpls := make([]float64, numSamples)
 	for i := int64(0); i < numSamples; i++ {
 		smpls[i] = rand.Float64()
-		app.Append(0, labels.Labels{{Name: "a", Value: "b"}}, i, smpls[i])
+		app.Append(0, labels.FromStrings("a", "b"), i, smpls[i])
 	}
 
 	require.NoError(t, app.Commit())
@@ -743,7 +744,7 @@ func TestDB_e2e(t *testing.T) {
 		timeInterval  = int64(3)
 	)
 	// Create 8 series with 1000 data-points of different ranges and run queries.
-	lbls := []labels.Labels{
+	lbls := [][]labels.Label{
 		{
 			{Name: "a", Value: "b"},
 			{Name: "instance", Value: "localhost:9090"},
@@ -845,8 +846,9 @@ func TestDB_e2e(t *testing.T) {
 
 	for _, qry := range queries {
 		matched := labels.Slice{}
-		for _, ls := range lbls {
+		for _, l := range lbls {
 			s := labels.Selector(qry.ms)
+			ls := labels.New(l...)
 			if s.Matches(ls) {
 				matched = append(matched, ls)
 			}
@@ -899,7 +901,7 @@ func TestWALFlushedOnDBClose(t *testing.T) {
 
 	dirDb := db.Dir()
 
-	lbls := labels.Labels{labels.Label{Name: "labelname", Value: "labelvalue"}}
+	lbls := labels.FromStrings("labelname", "labelvalue")
 
 	ctx := context.Background()
 	app := db.Appender(ctx)
@@ -981,10 +983,10 @@ func TestWALSegmentSizeOptions(t *testing.T) {
 
 			for i := int64(0); i < 155; i++ {
 				app := db.Appender(context.Background())
-				ref, err := app.Append(0, labels.Labels{labels.Label{Name: "wal" + fmt.Sprintf("%d", i), Value: "size"}}, i, rand.Float64())
+				ref, err := app.Append(0, labels.FromStrings("wal"+fmt.Sprintf("%d", i), "size"), i, rand.Float64())
 				require.NoError(t, err)
 				for j := int64(1); j <= 78; j++ {
-					_, err := app.Append(ref, nil, i+j, rand.Float64())
+					_, err := app.Append(ref, labels.EmptyLabels(), i+j, rand.Float64())
 					require.NoError(t, err)
 				}
 				require.NoError(t, app.Commit())
@@ -1094,7 +1096,7 @@ func TestTombstoneClean(t *testing.T) {
 	smpls := make([]float64, numSamples)
 	for i := int64(0); i < numSamples; i++ {
 		smpls[i] = rand.Float64()
-		app.Append(0, labels.Labels{{Name: "a", Value: "b"}}, i, smpls[i])
+		app.Append(0, labels.FromStrings("a", "b"), i, smpls[i])
 	}
 
 	require.NoError(t, app.Commit())
@@ -1188,7 +1190,7 @@ func TestTombstoneCleanResultEmptyBlock(t *testing.T) {
 	smpls := make([]float64, numSamples)
 	for i := int64(0); i < numSamples; i++ {
 		smpls[i] = rand.Float64()
-		app.Append(0, labels.Labels{{Name: "a", Value: "b"}}, i, smpls[i])
+		app.Append(0, labels.FromStrings("a", "b"), i, smpls[i])
 	}
 
 	require.NoError(t, app.Commit())
@@ -1850,10 +1852,10 @@ func TestQuerierWithBoundaryChunks(t *testing.T) {
 }
 
 // TestInitializeHeadTimestamp ensures that the h.minTime is set properly.
-// 	- no blocks no WAL: set to the time of the first  appended sample
-// 	- no blocks with WAL: set to the smallest sample from the WAL
-//	- with blocks no WAL: set to the last block maxT
-// 	- with blocks with WAL: same as above
+//   - no blocks no WAL: set to the time of the first  appended sample
+//   - no blocks with WAL: set to the smallest sample from the WAL
+//   - with blocks no WAL: set to the last block maxT
+//   - with blocks with WAL: same as above
 func TestInitializeHeadTimestamp(t *testing.T) {
 	t.Run("clean", func(t *testing.T) {
 		dir := t.TempDir()
@@ -2163,8 +2165,9 @@ func TestCorrectNumTombstones(t *testing.T) {
 	}()
 
 	blockRange := db.compactor.(*LeveledCompactor).ranges[0]
-	defaultLabel := labels.FromStrings("foo", "bar")
-	defaultMatcher := labels.MustNewMatcher(labels.MatchEqual, defaultLabel[0].Name, defaultLabel[0].Value)
+	name, value := "foo", "bar"
+	defaultLabel := labels.FromStrings(name, value)
+	defaultMatcher := labels.MustNewMatcher(labels.MatchEqual, name, value)
 
 	ctx := context.Background()
 	app := db.Appender(ctx)
@@ -2195,10 +2198,12 @@ func TestCorrectNumTombstones(t *testing.T) {
 }
 
 // TestBlockRanges checks the following use cases:
-//  - No samples can be added with timestamps lower than the last block maxt.
-//  - The compactor doesn't create overlapping blocks
+//   - No samples can be added with timestamps lower than the last block maxt.
+//   - The compactor doesn't create overlapping blocks
+//
 // even when the last blocks is not within the default boundaries.
-//	- Lower boundary is based on the smallest sample in the head and
+//   - Lower boundary is based on the smallest sample in the head and
+//
 // upper boundary is rounded to the configured block range.
 //
 // This ensures that a snapshot that includes the head and creates a block with a custom time range
@@ -2219,7 +2224,7 @@ func TestBlockRanges(t *testing.T) {
 	rangeToTriggerCompaction := db.compactor.(*LeveledCompactor).ranges[0]/2*3 + 1
 
 	app := db.Appender(ctx)
-	lbl := labels.Labels{{Name: "a", Value: "b"}}
+	lbl := labels.FromStrings("a", "b")
 	_, err = app.Append(0, lbl, firstBlockMaxT-1, rand.Float64())
 	if err == nil {
 		t.Fatalf("appending a sample with a timestamp covered by a previous block shouldn't be possible")
@@ -3069,7 +3074,7 @@ func TestOneCheckpointPerCompactCall(t *testing.T) {
 
 	// Case 1: Lot's of uncompacted data in Head.
 
-	lbls := labels.Labels{labels.Label{Name: "foo_d", Value: "choco_bar"}}
+	lbls := labels.FromStrings("foo_d", "choco_bar")
 	// Append samples spanning 59 block ranges.
 	app := db.Appender(context.Background())
 	for i := int64(0); i < 60; i++ {
@@ -3227,7 +3232,7 @@ func testQuerierShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChunks(t 
 	// Generate the metrics we're going to append.
 	metrics := make([]labels.Labels, 0, numSeries)
 	for i := 0; i < numSeries; i++ {
-		metrics = append(metrics, labels.Labels{{Name: labels.MetricName, Value: fmt.Sprintf("test_%d", i)}})
+		metrics = append(metrics, labels.FromStrings(labels.MetricName, fmt.Sprintf("test_%d", i)))
 	}
 
 	// Push 1 sample every 15s for 2x the block duration period.
@@ -3363,7 +3368,7 @@ func testChunkQuerierShouldNotPanicIfHeadChunkIsTruncatedWhileReadingQueriedChun
 	// Generate the metrics we're going to append.
 	metrics := make([]labels.Labels, 0, numSeries)
 	for i := 0; i < numSeries; i++ {
-		metrics = append(metrics, labels.Labels{{Name: labels.MetricName, Value: fmt.Sprintf("test_%d", i)}})
+		metrics = append(metrics, labels.FromStrings(labels.MetricName, fmt.Sprintf("test_%d", i)))
 	}
 
 	// Push 1 sample every 15s for 2x the block duration period.
@@ -3467,7 +3472,6 @@ func TestOOOWALWrite(t *testing.T) {
 	dir := t.TempDir()
 
 	opts := DefaultOptions()
-	opts.OutOfOrderCapMin = 2
 	opts.OutOfOrderCapMax = 2
 	opts.OutOfOrderTimeWindow = 30 * time.Minute.Milliseconds()
 
@@ -3712,17 +3716,266 @@ func TestDBPanicOnMmappingHeadChunk(t *testing.T) {
 	require.NoError(t, db.Close())
 }
 
+func TestMetadataInWAL(t *testing.T) {
+	updateMetadata := func(t *testing.T, app storage.Appender, s labels.Labels, m metadata.Metadata) {
+		_, err := app.UpdateMetadata(0, s, m)
+		require.NoError(t, err)
+	}
+
+	db := newTestDB(t)
+	ctx := context.Background()
+
+	// Add some series so we can append metadata to them.
+	app := db.Appender(ctx)
+	s1 := labels.FromStrings("a", "b")
+	s2 := labels.FromStrings("c", "d")
+	s3 := labels.FromStrings("e", "f")
+	s4 := labels.FromStrings("g", "h")
+
+	for _, s := range []labels.Labels{s1, s2, s3, s4} {
+		_, err := app.Append(0, s, 0, 0)
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+
+	// Add a first round of metadata to the first three series.
+	// Re-take the Appender, as the previous Commit will have it closed.
+	m1 := metadata.Metadata{Type: "gauge", Unit: "unit_1", Help: "help_1"}
+	m2 := metadata.Metadata{Type: "gauge", Unit: "unit_2", Help: "help_2"}
+	m3 := metadata.Metadata{Type: "gauge", Unit: "unit_3", Help: "help_3"}
+	app = db.Appender(ctx)
+	updateMetadata(t, app, s1, m1)
+	updateMetadata(t, app, s2, m2)
+	updateMetadata(t, app, s3, m3)
+	require.NoError(t, app.Commit())
+
+	// Add a replicated metadata entry to the first series,
+	// a completely new metadata entry for the fourth series,
+	// and a changed metadata entry to the second series.
+	m4 := metadata.Metadata{Type: "counter", Unit: "unit_4", Help: "help_4"}
+	m5 := metadata.Metadata{Type: "counter", Unit: "unit_5", Help: "help_5"}
+	app = db.Appender(ctx)
+	updateMetadata(t, app, s1, m1)
+	updateMetadata(t, app, s4, m4)
+	updateMetadata(t, app, s2, m5)
+	require.NoError(t, app.Commit())
+
+	// Read the WAL to see if the disk storage format is correct.
+	recs := readTestWAL(t, path.Join(db.Dir(), "wal"))
+	var gotMetadataBlocks [][]record.RefMetadata
+	for _, rec := range recs {
+		if mr, ok := rec.([]record.RefMetadata); ok {
+			gotMetadataBlocks = append(gotMetadataBlocks, mr)
+		}
+	}
+
+	expectedMetadata := []record.RefMetadata{
+		{Ref: 1, Type: record.GetMetricType(m1.Type), Unit: m1.Unit, Help: m1.Help},
+		{Ref: 2, Type: record.GetMetricType(m2.Type), Unit: m2.Unit, Help: m2.Help},
+		{Ref: 3, Type: record.GetMetricType(m3.Type), Unit: m3.Unit, Help: m3.Help},
+		{Ref: 4, Type: record.GetMetricType(m4.Type), Unit: m4.Unit, Help: m4.Help},
+		{Ref: 2, Type: record.GetMetricType(m5.Type), Unit: m5.Unit, Help: m5.Help},
+	}
+	require.Len(t, gotMetadataBlocks, 2)
+	require.Equal(t, expectedMetadata[:3], gotMetadataBlocks[0])
+	require.Equal(t, expectedMetadata[3:], gotMetadataBlocks[1])
+}
+
+func TestMetadataCheckpointingOnlyKeepsLatestEntry(t *testing.T) {
+	updateMetadata := func(t *testing.T, app storage.Appender, s labels.Labels, m metadata.Metadata) {
+		_, err := app.UpdateMetadata(0, s, m)
+		require.NoError(t, err)
+	}
+
+	ctx := context.Background()
+	numSamples := 10000
+	hb, w := newTestHead(t, int64(numSamples)*10, false, false)
+
+	// Add some series so we can append metadata to them.
+	app := hb.Appender(ctx)
+	s1 := labels.FromStrings("a", "b")
+	s2 := labels.FromStrings("c", "d")
+	s3 := labels.FromStrings("e", "f")
+	s4 := labels.FromStrings("g", "h")
+
+	for _, s := range []labels.Labels{s1, s2, s3, s4} {
+		_, err := app.Append(0, s, 0, 0)
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+
+	// Add a first round of metadata to the first three series.
+	// Re-take the Appender, as the previous Commit will have it closed.
+	m1 := metadata.Metadata{Type: "gauge", Unit: "unit_1", Help: "help_1"}
+	m2 := metadata.Metadata{Type: "gauge", Unit: "unit_2", Help: "help_2"}
+	m3 := metadata.Metadata{Type: "gauge", Unit: "unit_3", Help: "help_3"}
+	m4 := metadata.Metadata{Type: "gauge", Unit: "unit_4", Help: "help_4"}
+	app = hb.Appender(ctx)
+	updateMetadata(t, app, s1, m1)
+	updateMetadata(t, app, s2, m2)
+	updateMetadata(t, app, s3, m3)
+	updateMetadata(t, app, s4, m4)
+	require.NoError(t, app.Commit())
+
+	// Update metadata for first series.
+	m5 := metadata.Metadata{Type: "counter", Unit: "unit_5", Help: "help_5"}
+	app = hb.Appender(ctx)
+	updateMetadata(t, app, s1, m5)
+	require.NoError(t, app.Commit())
+
+	// Switch back-and-forth metadata for second series.
+	// Since it ended on a new metadata record, we expect a single new entry.
+	m6 := metadata.Metadata{Type: "counter", Unit: "unit_6", Help: "help_6"}
+
+	app = hb.Appender(ctx)
+	updateMetadata(t, app, s2, m6)
+	require.NoError(t, app.Commit())
+
+	app = hb.Appender(ctx)
+	updateMetadata(t, app, s2, m2)
+	require.NoError(t, app.Commit())
+
+	app = hb.Appender(ctx)
+	updateMetadata(t, app, s2, m6)
+	require.NoError(t, app.Commit())
+
+	app = hb.Appender(ctx)
+	updateMetadata(t, app, s2, m2)
+	require.NoError(t, app.Commit())
+
+	app = hb.Appender(ctx)
+	updateMetadata(t, app, s2, m6)
+	require.NoError(t, app.Commit())
+
+	// Let's create a checkpoint.
+	first, last, err := wal.Segments(w.Dir())
+	require.NoError(t, err)
+	keep := func(id chunks.HeadSeriesRef) bool {
+		return id != 3
+	}
+	_, err = wal.Checkpoint(log.NewNopLogger(), w, first, last-1, keep, 0)
+	require.NoError(t, err)
+
+	// Confirm there's been a checkpoint.
+	cdir, _, err := wal.LastCheckpoint(w.Dir())
+	require.NoError(t, err)
+
+	// Read in checkpoint and WAL.
+	recs := readTestWAL(t, cdir)
+	var gotMetadataBlocks [][]record.RefMetadata
+	for _, rec := range recs {
+		if mr, ok := rec.([]record.RefMetadata); ok {
+			gotMetadataBlocks = append(gotMetadataBlocks, mr)
+		}
+	}
+
+	// There should only be 1 metadata block present, with only the latest
+	// metadata kept around.
+	wantMetadata := []record.RefMetadata{
+		{Ref: 1, Type: record.GetMetricType(m5.Type), Unit: m5.Unit, Help: m5.Help},
+		{Ref: 2, Type: record.GetMetricType(m6.Type), Unit: m6.Unit, Help: m6.Help},
+		{Ref: 4, Type: record.GetMetricType(m4.Type), Unit: m4.Unit, Help: m4.Help},
+	}
+	require.Len(t, gotMetadataBlocks, 1)
+	require.Len(t, gotMetadataBlocks[0], 3)
+	gotMetadataBlock := gotMetadataBlocks[0]
+
+	sort.Slice(gotMetadataBlock, func(i, j int) bool { return gotMetadataBlock[i].Ref < gotMetadataBlock[j].Ref })
+	require.Equal(t, wantMetadata, gotMetadataBlock)
+	require.NoError(t, hb.Close())
+}
+
+func TestMetadataAssertInMemoryData(t *testing.T) {
+	updateMetadata := func(t *testing.T, app storage.Appender, s labels.Labels, m metadata.Metadata) {
+		_, err := app.UpdateMetadata(0, s, m)
+		require.NoError(t, err)
+	}
+
+	db := openTestDB(t, nil, nil)
+	ctx := context.Background()
+
+	// Add some series so we can append metadata to them.
+	app := db.Appender(ctx)
+	s1 := labels.FromStrings("a", "b")
+	s2 := labels.FromStrings("c", "d")
+	s3 := labels.FromStrings("e", "f")
+	s4 := labels.FromStrings("g", "h")
+
+	for _, s := range []labels.Labels{s1, s2, s3, s4} {
+		_, err := app.Append(0, s, 0, 0)
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+
+	// Add a first round of metadata to the first three series.
+	// The in-memory data held in the db Head should hold the metadata.
+	m1 := metadata.Metadata{Type: "gauge", Unit: "unit_1", Help: "help_1"}
+	m2 := metadata.Metadata{Type: "gauge", Unit: "unit_2", Help: "help_2"}
+	m3 := metadata.Metadata{Type: "gauge", Unit: "unit_3", Help: "help_3"}
+	app = db.Appender(ctx)
+	updateMetadata(t, app, s1, m1)
+	updateMetadata(t, app, s2, m2)
+	updateMetadata(t, app, s3, m3)
+	require.NoError(t, app.Commit())
+
+	series1 := db.head.series.getByHash(s1.Hash(), s1)
+	series2 := db.head.series.getByHash(s2.Hash(), s2)
+	series3 := db.head.series.getByHash(s3.Hash(), s3)
+	series4 := db.head.series.getByHash(s4.Hash(), s4)
+	require.Equal(t, *series1.meta, m1)
+	require.Equal(t, *series2.meta, m2)
+	require.Equal(t, *series3.meta, m3)
+	require.Nil(t, series4.meta)
+
+	// Add a replicated metadata entry to the first series,
+	// a changed metadata entry to the second series,
+	// and a completely new metadata entry for the fourth series.
+	// The in-memory data held in the db Head should be correctly updated.
+	m4 := metadata.Metadata{Type: "counter", Unit: "unit_4", Help: "help_4"}
+	m5 := metadata.Metadata{Type: "counter", Unit: "unit_5", Help: "help_5"}
+	app = db.Appender(ctx)
+	updateMetadata(t, app, s1, m1)
+	updateMetadata(t, app, s4, m4)
+	updateMetadata(t, app, s2, m5)
+	require.NoError(t, app.Commit())
+
+	series1 = db.head.series.getByHash(s1.Hash(), s1)
+	series2 = db.head.series.getByHash(s2.Hash(), s2)
+	series3 = db.head.series.getByHash(s3.Hash(), s3)
+	series4 = db.head.series.getByHash(s4.Hash(), s4)
+	require.Equal(t, *series1.meta, m1)
+	require.Equal(t, *series2.meta, m5)
+	require.Equal(t, *series3.meta, m3)
+	require.Equal(t, *series4.meta, m4)
+
+	require.NoError(t, db.Close())
+
+	// Reopen the DB, replaying the WAL. The Head must have been replayed
+	// correctly in memory.
+	reopenDB, err := Open(db.Dir(), nil, nil, nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, reopenDB.Close())
+	})
+
+	_, err = reopenDB.head.wal.Size()
+	require.NoError(t, err)
+
+	require.Equal(t, *reopenDB.head.series.getByHash(s1.Hash(), s1).meta, m1)
+	require.Equal(t, *reopenDB.head.series.getByHash(s2.Hash(), s2).meta, m5)
+	require.Equal(t, *reopenDB.head.series.getByHash(s3.Hash(), s3).meta, m3)
+	require.Equal(t, *reopenDB.head.series.getByHash(s4.Hash(), s4).meta, m4)
+}
+
 // TODO(codesome): test more samples incoming once compaction has started. To verify new samples after the start
-//   are not included in this compaction.
+//
+//	are not included in this compaction.
 func TestOOOCompaction(t *testing.T) {
 	dir := t.TempDir()
 
 	opts := DefaultOptions()
-	opts.OutOfOrderCapMin = 2
 	opts.OutOfOrderCapMax = 30
 	opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
-	opts.AllowOverlappingQueries = true
-	opts.AllowOverlappingCompaction = true
 
 	db, err := Open(dir, nil, nil, opts, nil)
 	require.NoError(t, err)
@@ -3807,6 +4060,7 @@ func TestOOOCompaction(t *testing.T) {
 	require.Equal(t, len(db.Blocks()), 0)
 
 	// There is a 0th WBL file.
+	require.NoError(t, db.head.wbl.Sync()) // syncing to make sure wbl is flushed in windows
 	files, err := os.ReadDir(db.head.wbl.Dir())
 	require.NoError(t, err)
 	require.Len(t, files, 1)
@@ -3911,11 +4165,8 @@ func TestOOOCompactionWithNormalCompaction(t *testing.T) {
 	dir := t.TempDir()
 
 	opts := DefaultOptions()
-	opts.OutOfOrderCapMin = 2
 	opts.OutOfOrderCapMax = 30
 	opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
-	opts.AllowOverlappingQueries = true
-	opts.AllowOverlappingCompaction = true
 
 	db, err := Open(dir, nil, nil, opts, nil)
 	require.NoError(t, err)
@@ -4009,10 +4260,8 @@ func TestOOOCompactionWithNormalCompaction(t *testing.T) {
 
 func Test_Querier_OOOQuery(t *testing.T) {
 	opts := DefaultOptions()
-	opts.OutOfOrderCapMin = 2
 	opts.OutOfOrderCapMax = 30
 	opts.OutOfOrderTimeWindow = 24 * time.Hour.Milliseconds()
-	opts.AllowOverlappingQueries = true
 	opts.AllowOverlappingCompaction = false
 
 	series1 := labels.FromStrings("foo", "bar1")
@@ -4096,10 +4345,8 @@ func Test_Querier_OOOQuery(t *testing.T) {
 
 func Test_ChunkQuerier_OOOQuery(t *testing.T) {
 	opts := DefaultOptions()
-	opts.OutOfOrderCapMin = 2
 	opts.OutOfOrderCapMax = 30
 	opts.OutOfOrderTimeWindow = 24 * time.Hour.Milliseconds()
-	opts.AllowOverlappingQueries = true
 	opts.AllowOverlappingCompaction = false
 
 	series1 := labels.FromStrings("foo", "bar1")
@@ -4191,10 +4438,8 @@ func Test_ChunkQuerier_OOOQuery(t *testing.T) {
 
 func TestOOOAppendAndQuery(t *testing.T) {
 	opts := DefaultOptions()
-	opts.OutOfOrderCapMin = 2
 	opts.OutOfOrderCapMax = 30
 	opts.OutOfOrderTimeWindow = 4 * time.Hour.Milliseconds()
-	opts.AllowOverlappingQueries = true
 
 	db := openTestDB(t, opts, nil)
 	db.DisableCompactions()
@@ -4384,10 +4629,8 @@ func TestOOODisabled(t *testing.T) {
 
 func TestWBLAndMmapReplay(t *testing.T) {
 	opts := DefaultOptions()
-	opts.OutOfOrderCapMin = 2
 	opts.OutOfOrderCapMax = 30
 	opts.OutOfOrderTimeWindow = 4 * time.Hour.Milliseconds()
-	opts.AllowOverlappingQueries = true
 
 	db := openTestDB(t, opts, nil)
 	db.DisableCompactions()
@@ -4556,6 +4799,7 @@ func TestWBLAndMmapReplay(t *testing.T) {
 		require.Greater(t, markers, 0)
 		require.Greater(t, addedRecs, 0)
 		require.NoError(t, newWbl.Close())
+		require.NoError(t, sr.Close())
 		require.NoError(t, os.RemoveAll(wblDir))
 		require.NoError(t, os.Rename(newWbl.Dir(), wblDir))
 
@@ -4572,11 +4816,8 @@ func TestOOOCompactionFailure(t *testing.T) {
 	dir := t.TempDir()
 
 	opts := DefaultOptions()
-	opts.OutOfOrderCapMin = 2
 	opts.OutOfOrderCapMax = 30
 	opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
-	opts.AllowOverlappingQueries = true
-	opts.AllowOverlappingCompaction = true
 
 	db, err := Open(dir, nil, nil, opts, nil)
 	require.NoError(t, err)
@@ -4608,6 +4849,7 @@ func TestOOOCompactionFailure(t *testing.T) {
 
 	// There is a 0th WBL file.
 	verifyFirstWBLFileIs0 := func(count int) {
+		require.NoError(t, db.head.wbl.Sync()) // syncing to make sure wbl is flushed in windows
 		files, err := os.ReadDir(db.head.wbl.Dir())
 		require.NoError(t, err)
 		require.Len(t, files, count)
@@ -4722,11 +4964,8 @@ func TestWBLCorruption(t *testing.T) {
 	dir := t.TempDir()
 
 	opts := DefaultOptions()
-	opts.OutOfOrderCapMin = 2
 	opts.OutOfOrderCapMax = 30
 	opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
-	opts.AllowOverlappingQueries = true
-	opts.AllowOverlappingCompaction = true
 
 	db, err := Open(dir, nil, nil, opts, nil)
 	require.NoError(t, err)
@@ -4771,6 +5010,7 @@ func TestWBLCorruption(t *testing.T) {
 	// should be deleted after replay.
 
 	// Checking where we corrupt it.
+	require.NoError(t, db.head.wbl.Sync()) // syncing to make sure wbl is flushed in windows
 	files, err := os.ReadDir(db.head.wbl.Dir())
 	require.NoError(t, err)
 	require.Len(t, files, 2)
@@ -4793,6 +5033,7 @@ func TestWBLCorruption(t *testing.T) {
 	addSamples(310, 320, false)
 
 	// Verifying that we have data after corruption point.
+	require.NoError(t, db.head.wbl.Sync()) // syncing to make sure wbl is flushed in windows
 	files, err = os.ReadDir(db.head.wbl.Dir())
 	require.NoError(t, err)
 	require.Len(t, files, 3)
@@ -4869,11 +5110,8 @@ func TestOOOMmapCorruption(t *testing.T) {
 	dir := t.TempDir()
 
 	opts := DefaultOptions()
-	opts.OutOfOrderCapMin = 2
 	opts.OutOfOrderCapMax = 10
 	opts.OutOfOrderTimeWindow = 300 * time.Minute.Milliseconds()
-	opts.AllowOverlappingQueries = true
-	opts.AllowOverlappingCompaction = true
 
 	db, err := Open(dir, nil, nil, opts, nil)
 	require.NoError(t, err)
@@ -5331,8 +5569,6 @@ func TestWblReplayAfterOOODisableAndRestart(t *testing.T) {
 
 	opts := DefaultOptions()
 	opts.OutOfOrderTimeWindow = 60 * time.Minute.Milliseconds()
-	opts.AllowOverlappingQueries = true
-	opts.AllowOverlappingCompaction = true
 
 	db, err := Open(dir, nil, nil, opts, nil)
 	require.NoError(t, err)
@@ -5392,7 +5628,6 @@ func TestPanicOnApplyConfig(t *testing.T) {
 
 	opts := DefaultOptions()
 	opts.OutOfOrderTimeWindow = 60 * time.Minute.Milliseconds()
-	opts.AllowOverlappingQueries = true
 
 	db, err := Open(dir, nil, nil, opts, nil)
 	require.NoError(t, err)
@@ -5441,7 +5676,6 @@ func TestDiskFillingUpAfterDisablingOOO(t *testing.T) {
 
 	opts := DefaultOptions()
 	opts.OutOfOrderTimeWindow = 60 * time.Minute.Milliseconds()
-	opts.AllowOverlappingQueries = true
 
 	db, err := Open(dir, nil, nil, opts, nil)
 	require.NoError(t, err)

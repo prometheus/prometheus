@@ -27,6 +27,7 @@ import (
 	"github.com/prometheus/prometheus/config"
 	"github.com/prometheus/prometheus/model/exemplar"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/wal"
 )
@@ -265,6 +266,12 @@ func (t *timestampTracker) Append(_ storage.SeriesRef, _ labels.Labels, ts int64
 
 func (t *timestampTracker) AppendExemplar(_ storage.SeriesRef, _ labels.Labels, _ exemplar.Exemplar) (storage.SeriesRef, error) {
 	t.exemplars++
+	return 0, nil
+}
+
+func (t *timestampTracker) UpdateMetadata(_ storage.SeriesRef, _ labels.Labels, _ metadata.Metadata) (storage.SeriesRef, error) {
+	// TODO: Add and increment a `metadata` field when we get around to wiring metadata in remote_write.
+	// UpadteMetadata is no-op for remote write (where timestampTracker is being used) for now.
 	return 0, nil
 }
 

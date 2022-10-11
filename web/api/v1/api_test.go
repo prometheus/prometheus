@@ -931,6 +931,20 @@ func testEndpoints(t *testing.T, api *API, tr *testTargetRetriever, es storage.E
 			errType: errorBadData,
 		},
 		{
+			endpoint: api.formatQuery,
+			query: url.Values{
+				"query": []string{"foo+bar"},
+			},
+			response: "foo + bar",
+		},
+		{
+			endpoint: api.formatQuery,
+			query: url.Values{
+				"query": []string{"invalid_expression/"},
+			},
+			errType: errorBadData,
+		},
+		{
 			endpoint: api.series,
 			query: url.Values{
 				"match[]": []string{`test_metric2`},

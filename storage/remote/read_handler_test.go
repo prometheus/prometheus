@@ -46,12 +46,8 @@ func TestSampledReadEndpoint(t *testing.T) {
 	h := NewReadHandler(nil, nil, suite.Storage(), func() config.Config {
 		return config.Config{
 			GlobalConfig: config.GlobalConfig{
-				ExternalLabels: labels.Labels{
-					// We expect external labels to be added, with the source labels honored.
-					{Name: "b", Value: "c"},
-					{Name: "baz", Value: "a"},
-					{Name: "d", Value: "e"},
-				},
+				// We expect external labels to be added, with the source labels honored.
+				ExternalLabels: labels.FromStrings("b", "c", "baz", "a", "d", "e"),
 			},
 		}
 	}, 1e6, 1, 0)
@@ -130,12 +126,8 @@ func TestStreamReadEndpoint(t *testing.T) {
 	api := NewReadHandler(nil, nil, suite.Storage(), func() config.Config {
 		return config.Config{
 			GlobalConfig: config.GlobalConfig{
-				ExternalLabels: labels.Labels{
-					// We expect external labels to be added, with the source labels honored.
-					{Name: "baz", Value: "a"},
-					{Name: "b", Value: "c"},
-					{Name: "d", Value: "e"},
-				},
+				// We expect external labels to be added, with the source labels honored.
+				ExternalLabels: labels.FromStrings("baz", "a", "b", "c", "d", "e"),
 			},
 		}
 	},

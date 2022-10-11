@@ -20,10 +20,13 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
+	"github.com/prometheus/common/model"
 	"github.com/stretchr/testify/require"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/prometheus/prometheus/model/timestamp"
+	"github.com/prometheus/prometheus/notifier"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
@@ -63,7 +66,7 @@ func TestAlertingRuleState(t *testing.T) {
 	}
 
 	for i, test := range tests {
-		rule := NewAlertingRule(test.name, nil, 0, nil, nil, nil, "", true, nil)
+		rule := NewAlertingRule(test.name, nil, 0, labels.EmptyLabels(), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil)
 		rule.active = test.active
 		got := rule.State()
 		require.Equal(t, test.want, got, "test case %d unexpected AlertState, want:%d got:%d", i, test.want, got)
@@ -91,7 +94,7 @@ func TestAlertingRuleLabelsUpdate(t *testing.T) {
 		// If an alert is going back and forth between two label values it will never fire.
 		// Instead, you should write two alerts with constant labels.
 		labels.FromStrings("severity", "{{ if lt $value 80.0 }}critical{{ else }}warning{{ end }}"),
-		nil, nil, "", true, nil,
+		labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil,
 	)
 
 	results := []promql.Vector{
@@ -190,8 +193,8 @@ func TestAlertingRuleExternalLabelsInTemplate(t *testing.T) {
 		expr,
 		time.Minute,
 		labels.FromStrings("templated_label", "There are {{ len $externalLabels }} external Labels, of which foo is {{ $externalLabels.foo }}."),
-		nil,
-		nil,
+		labels.EmptyLabels(),
+		labels.EmptyLabels(),
 		"",
 		true, log.NewNopLogger(),
 	)
@@ -200,7 +203,7 @@ func TestAlertingRuleExternalLabelsInTemplate(t *testing.T) {
 		expr,
 		time.Minute,
 		labels.FromStrings("templated_label", "There are {{ len $externalLabels }} external Labels, of which foo is {{ $externalLabels.foo }}."),
-		nil,
+		labels.EmptyLabels(),
 		labels.FromStrings("foo", "bar", "dings", "bums"),
 		"",
 		true, log.NewNopLogger(),
@@ -284,8 +287,8 @@ func TestAlertingRuleExternalURLInTemplate(t *testing.T) {
 		expr,
 		time.Minute,
 		labels.FromStrings("templated_label", "The external URL is {{ $externalURL }}."),
-		nil,
-		nil,
+		labels.EmptyLabels(),
+		labels.EmptyLabels(),
 		"",
 		true, log.NewNopLogger(),
 	)
@@ -294,8 +297,8 @@ func TestAlertingRuleExternalURLInTemplate(t *testing.T) {
 		expr,
 		time.Minute,
 		labels.FromStrings("templated_label", "The external URL is {{ $externalURL }}."),
-		nil,
-		nil,
+		labels.EmptyLabels(),
+		labels.EmptyLabels(),
 		"http://localhost:1234",
 		true, log.NewNopLogger(),
 	)
@@ -378,8 +381,8 @@ func TestAlertingRuleEmptyLabelFromTemplate(t *testing.T) {
 		expr,
 		time.Minute,
 		labels.FromStrings("empty_label", ""),
-		nil,
-		nil,
+		labels.EmptyLabels(),
+		labels.EmptyLabels(),
 		"",
 		true, log.NewNopLogger(),
 	)
@@ -416,6 +419,83 @@ func TestAlertingRuleEmptyLabelFromTemplate(t *testing.T) {
 	require.Equal(t, result, filteredRes)
 }
 
+func TestAlertingRuleQueryInTemplate(t *testing.T) {
+	suite, err := promql.NewTest(t, `
+		load 1m
+			http_requests{job="app-server", instance="0"}	70 85 70 70
+	`)
+	require.NoError(t, err)
+	defer suite.Close()
+
+	require.NoError(t, suite.Run())
+
+	expr, err := parser.ParseExpr(`sum(http_requests) < 100`)
+	require.NoError(t, err)
+
+	ruleWithQueryInTemplate := NewAlertingRule(
+		"ruleWithQueryInTemplate",
+		expr,
+		time.Minute,
+		labels.FromStrings("label", "value"),
+		labels.FromStrings("templated_label", `{{- with "sort(sum(http_requests) by (instance))" | query -}}
+{{- range $i,$v := . -}}
+instance: {{ $v.Labels.instance }}, value: {{ printf "%.0f" $v.Value }};
+{{- end -}}
+{{- end -}}
+`),
+		labels.EmptyLabels(),
+		"",
+		true, log.NewNopLogger(),
+	)
+	evalTime := time.Unix(0, 0)
+
+	startQueryCh := make(chan struct{})
+	getDoneCh := make(chan struct{})
+	slowQueryFunc := func(ctx context.Context, q string, ts time.Time) (promql.Vector, error) {
+		if q == "sort(sum(http_requests) by (instance))" {
+			// This is a minimum reproduction of issue 10703, expand template with query.
+			close(startQueryCh)
+			select {
+			case <-getDoneCh:
+			case <-time.After(time.Millisecond * 10):
+				// Assert no blocking when template expanding.
+				require.Fail(t, "unexpected blocking when template expanding.")
+			}
+		}
+		return EngineQueryFunc(suite.QueryEngine(), suite.Storage())(ctx, q, ts)
+	}
+	go func() {
+		<-startQueryCh
+		_ = ruleWithQueryInTemplate.Health()
+		_ = ruleWithQueryInTemplate.LastError()
+		_ = ruleWithQueryInTemplate.GetEvaluationDuration()
+		_ = ruleWithQueryInTemplate.GetEvaluationTimestamp()
+		close(getDoneCh)
+	}()
+	_, err = ruleWithQueryInTemplate.Eval(
+		suite.Context(), 0, evalTime, slowQueryFunc, nil, 0,
+	)
+	require.NoError(t, err)
+}
+
+func BenchmarkAlertingRuleAtomicField(b *testing.B) {
+	b.ReportAllocs()
+	rule := NewAlertingRule("bench", nil, 0, labels.EmptyLabels(), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil)
+	done := make(chan struct{})
+	go func() {
+		for i := 0; i < b.N; i++ {
+			rule.GetEvaluationTimestamp()
+		}
+		close(done)
+	}()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			rule.SetEvaluationTimestamp(time.Now())
+		}
+	})
+	<-done
+}
+
 func TestAlertingRuleDuplicate(t *testing.T) {
 	storage := teststorage.New(t)
 	defer storage.Close()
@@ -439,8 +519,8 @@ func TestAlertingRuleDuplicate(t *testing.T) {
 		expr,
 		time.Minute,
 		labels.FromStrings("test", "test"),
-		nil,
-		nil,
+		labels.EmptyLabels(),
+		labels.EmptyLabels(),
 		"",
 		true, log.NewNopLogger(),
 	)
@@ -485,8 +565,8 @@ func TestAlertingRuleLimit(t *testing.T) {
 		expr,
 		time.Minute,
 		labels.FromStrings("test", "test"),
-		nil,
-		nil,
+		labels.EmptyLabels(),
+		labels.EmptyLabels(),
 		"",
 		true, log.NewNopLogger(),
 	)
@@ -557,13 +637,13 @@ func TestQueryForStateSeries(t *testing.T) {
 			nil,
 			time.Minute,
 			labels.FromStrings("severity", "critical"),
-			nil, nil, "", true, nil,
+			labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil,
 		)
 
 		alert := &Alert{
 			State:       0,
-			Labels:      nil,
-			Annotations: nil,
+			Labels:      labels.EmptyLabels(),
+			Annotations: labels.EmptyLabels(),
 			Value:       0,
 			ActiveAt:    time.Time{},
 			FiredAt:     time.Time{},
@@ -581,4 +661,54 @@ func TestQueryForStateSeries(t *testing.T) {
 	for _, tst := range tests {
 		testFunc(tst)
 	}
+}
+
+// TestSendAlertsDontAffectActiveAlerts tests a fix for https://github.com/prometheus/prometheus/issues/11424.
+func TestSendAlertsDontAffectActiveAlerts(t *testing.T) {
+	rule := NewAlertingRule(
+		"TestRule",
+		nil,
+		time.Minute,
+		labels.FromStrings("severity", "critical"),
+		labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil,
+	)
+
+	// Set an active alert.
+	lbls := labels.FromStrings("a1", "1")
+	h := lbls.Hash()
+	al := &Alert{State: StateFiring, Labels: lbls, ActiveAt: time.Now()}
+	rule.active[h] = al
+
+	expr, err := parser.ParseExpr("foo")
+	require.NoError(t, err)
+	rule.vector = expr
+
+	// The relabel rule reproduced the bug here.
+	opts := notifier.Options{
+		QueueCapacity: 1,
+		RelabelConfigs: []*relabel.Config{
+			{
+				SourceLabels: model.LabelNames{"a1"},
+				Regex:        relabel.MustNewRegexp("(.+)"),
+				TargetLabel:  "a1",
+				Replacement:  "bug",
+				Action:       "replace",
+			},
+		},
+	}
+	nm := notifier.NewManager(&opts, log.NewNopLogger())
+
+	f := SendAlerts(nm, "")
+	notifyFunc := func(ctx context.Context, expr string, alerts ...*Alert) {
+		require.Len(t, alerts, 1)
+		require.Equal(t, al, alerts[0])
+		f(ctx, expr, alerts...)
+	}
+
+	rule.sendAlerts(context.Background(), time.Now(), 0, 0, notifyFunc)
+	nm.Stop()
+
+	// The relabel rule changes a1=1 to a1=bug.
+	// But the labels with the AlertingRule should not be changed.
+	require.Equal(t, labels.FromStrings("a1", "1"), rule.active[h].Labels)
 }

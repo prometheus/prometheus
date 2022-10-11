@@ -77,9 +77,9 @@ func (node *AggregateExpr) getAggOpStr() string {
 
 	switch {
 	case node.Without:
-		aggrString += fmt.Sprintf(" without(%s) ", strings.Join(node.Grouping, ", "))
+		aggrString += fmt.Sprintf(" without (%s) ", strings.Join(node.Grouping, ", "))
 	case len(node.Grouping) > 0:
-		aggrString += fmt.Sprintf(" by(%s) ", strings.Join(node.Grouping, ", "))
+		aggrString += fmt.Sprintf(" by (%s) ", strings.Join(node.Grouping, ", "))
 	}
 
 	return aggrString
@@ -103,14 +103,14 @@ func (node *BinaryExpr) getMatchingStr() string {
 		if vm.On {
 			vmTag = "on"
 		}
-		matching = fmt.Sprintf(" %s(%s)", vmTag, strings.Join(vm.MatchingLabels, ", "))
+		matching = fmt.Sprintf(" %s (%s)", vmTag, strings.Join(vm.MatchingLabels, ", "))
 
 		if vm.Card == CardManyToOne || vm.Card == CardOneToMany {
 			vmCard := "right"
 			if vm.Card == CardManyToOne {
 				vmCard = "left"
 			}
-			matching += fmt.Sprintf(" group_%s(%s)", vmCard, strings.Join(vm.Include, ", "))
+			matching += fmt.Sprintf(" group_%s (%s)", vmCard, strings.Join(vm.Include, ", "))
 		}
 	}
 	return matching
