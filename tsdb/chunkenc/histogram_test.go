@@ -330,3 +330,140 @@ func TestHistoChunkAppendable(t *testing.T) {
 		require.True(t, cr)
 	}
 }
+
+func TestAtFloatHistogram(t *testing.T) {
+	input := []histogram.Histogram{
+		{
+			Schema:        0,
+			Count:         21,
+			Sum:           1234.5,
+			ZeroThreshold: 0.001,
+			ZeroCount:     4,
+			PositiveSpans: []histogram.Span{
+				{Offset: 0, Length: 4},
+				{Offset: 0, Length: 0},
+				{Offset: 0, Length: 3},
+			},
+			PositiveBuckets: []int64{1, 1, -1, 0, 0, 0, 0},
+			NegativeSpans: []histogram.Span{
+				{Offset: 1, Length: 4},
+				{Offset: 2, Length: 0},
+				{Offset: 2, Length: 3},
+			},
+			NegativeBuckets: []int64{1, 1, -1, 1, 0, 0, 0},
+		},
+		{
+			Schema:        0,
+			Count:         36,
+			Sum:           2345.6,
+			ZeroThreshold: 0.001,
+			ZeroCount:     5,
+			PositiveSpans: []histogram.Span{
+				{Offset: 0, Length: 4},
+				{Offset: 0, Length: 0},
+				{Offset: 0, Length: 3},
+			},
+			PositiveBuckets: []int64{1, 2, -2, 1, -1, 0, 0},
+			NegativeSpans: []histogram.Span{
+				{Offset: 1, Length: 4},
+				{Offset: 2, Length: 0},
+				{Offset: 2, Length: 3},
+			},
+			NegativeBuckets: []int64{1, 3, -2, 5, -2, 0, -3},
+		},
+		{
+			Schema:        0,
+			Count:         36,
+			Sum:           1111.1,
+			ZeroThreshold: 0.001,
+			ZeroCount:     5,
+			PositiveSpans: []histogram.Span{
+				{Offset: 0, Length: 4},
+				{Offset: 0, Length: 0},
+				{Offset: 0, Length: 3},
+			},
+			PositiveBuckets: []int64{1, 2, -2, 2, -1, 0, 0},
+			NegativeSpans: []histogram.Span{
+				{Offset: 1, Length: 4},
+				{Offset: 2, Length: 0},
+				{Offset: 2, Length: 3},
+			},
+			NegativeBuckets: []int64{1, 3, -2, 5, -1, 0, -3},
+		},
+	}
+
+	expOutput := []*histogram.FloatHistogram{
+		{
+			Schema:        0,
+			Count:         21,
+			Sum:           1234.5,
+			ZeroThreshold: 0.001,
+			ZeroCount:     4,
+			PositiveSpans: []histogram.Span{
+				{Offset: 0, Length: 4},
+				{Offset: 0, Length: 0},
+				{Offset: 0, Length: 3},
+			},
+			PositiveBuckets: []float64{1, 2, 1, 1, 1, 1, 1},
+			NegativeSpans: []histogram.Span{
+				{Offset: 1, Length: 4},
+				{Offset: 2, Length: 0},
+				{Offset: 2, Length: 3},
+			},
+			NegativeBuckets: []float64{1, 2, 1, 2, 2, 2, 2},
+		},
+		{
+			Schema:        0,
+			Count:         36,
+			Sum:           2345.6,
+			ZeroThreshold: 0.001,
+			ZeroCount:     5,
+			PositiveSpans: []histogram.Span{
+				{Offset: 0, Length: 4},
+				{Offset: 0, Length: 0},
+				{Offset: 0, Length: 3},
+			},
+			PositiveBuckets: []float64{1, 3, 1, 2, 1, 1, 1},
+			NegativeSpans: []histogram.Span{
+				{Offset: 1, Length: 4},
+				{Offset: 2, Length: 0},
+				{Offset: 2, Length: 3},
+			},
+			NegativeBuckets: []float64{1, 4, 2, 7, 5, 5, 2},
+		},
+		{
+			Schema:        0,
+			Count:         36,
+			Sum:           1111.1,
+			ZeroThreshold: 0.001,
+			ZeroCount:     5,
+			PositiveSpans: []histogram.Span{
+				{Offset: 0, Length: 4},
+				{Offset: 0, Length: 0},
+				{Offset: 0, Length: 3},
+			},
+			PositiveBuckets: []float64{1, 3, 1, 3, 2, 2, 2},
+			NegativeSpans: []histogram.Span{
+				{Offset: 1, Length: 4},
+				{Offset: 2, Length: 0},
+				{Offset: 2, Length: 3},
+			},
+			NegativeBuckets: []float64{1, 4, 2, 7, 6, 6, 3},
+		},
+	}
+
+	chk := NewHistogramChunk()
+	app, err := chk.Appender()
+	require.NoError(t, err)
+	for i := range input {
+		app.AppendHistogram(int64(i), &input[i])
+	}
+	it := chk.Iterator(nil)
+	i := int64(0)
+	for it.Next() != ValNone {
+		ts, h := it.AtFloatHistogram()
+		require.Equal(t, i, ts)
+		require.Equal(t, expOutput[i], h, "histogram %d unequal", i)
+		i++
+	}
+}
