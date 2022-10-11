@@ -75,6 +75,7 @@ message Histogram {
   repeated Bucket bucket    = 3; // Ordered in increasing order of upper_bound, +Inf bucket is optional.
 
   // Everything below here is for native histograms (also known as sparse histograms).
+  // Native histograms are an experimental feature without stability guarantees.
 
   // schema defines the bucket schema. Currently, valid numbers are -4 <= n <= 8.
   // They are all for base-2 bucket schemas, where 1 is a bucket boundary in each case, and
