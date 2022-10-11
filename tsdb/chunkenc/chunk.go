@@ -44,15 +44,6 @@ func (e Encoding) String() string {
 	return "<unknown>"
 }
 
-// IsValidEncoding returns true for supported encodings.
-func IsValidEncoding(e Encoding) bool {
-	switch e {
-	case EncXOR, EncHistogram:
-		return true
-	}
-	return false
-}
-
 // Chunk encodings for out-of-order chunks.
 // These encodings must be only used by the Head block for its internal bookkeeping.
 const (
@@ -64,8 +55,9 @@ func IsOutOfOrderChunk(e Encoding) bool {
 	return (e & OutOfOrderMask) != 0
 }
 
+// IsValidEncoding returns true for supported encodings.
 func IsValidEncoding(e Encoding) bool {
-	return e == EncXOR || e == EncOOOXOR
+	return e == EncXOR || e == EncOOOXOR || e == EncHistogram
 }
 
 // Chunk holds a sequence of sample pairs that can be iterated over and appended to.

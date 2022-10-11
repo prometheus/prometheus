@@ -1298,7 +1298,7 @@ func TestDeleteCompactionBlockAfterFailedReload(t *testing.T) {
 }
 
 func TestHeadCompactionWithHistograms(t *testing.T) {
-	head, _ := newTestHead(t, DefaultBlockDuration, false)
+	head, _ := newTestHead(t, DefaultBlockDuration, false, false)
 	require.NoError(t, head.Init(0))
 	t.Cleanup(func() {
 		require.NoError(t, head.Close())
@@ -1462,11 +1462,11 @@ func TestSparseHistogramSpaceSavings(t *testing.T) {
 				c.numBuckets,
 			),
 			func(t *testing.T) {
-				oldHead, _ := newTestHead(t, DefaultBlockDuration, false)
+				oldHead, _ := newTestHead(t, DefaultBlockDuration, false, false)
 				t.Cleanup(func() {
 					require.NoError(t, oldHead.Close())
 				})
-				sparseHead, _ := newTestHead(t, DefaultBlockDuration, false)
+				sparseHead, _ := newTestHead(t, DefaultBlockDuration, false, false)
 				t.Cleanup(func() {
 					require.NoError(t, sparseHead.Close())
 				})

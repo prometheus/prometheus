@@ -81,6 +81,7 @@ func DefaultOptions() *Options {
 		StripeSize:                 DefaultStripeSize,
 		HeadChunksWriteBufferSize:  chunks.DefaultWriteBufferSize,
 		IsolationDisabled:          defaultIsolationDisabled,
+		HeadChunksWriteQueueSize:   chunks.DefaultWriteQueueSize,
 		OutOfOrderCapMax:           DefaultOutOfOrderCapMax,
 	}
 }

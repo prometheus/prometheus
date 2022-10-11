@@ -314,6 +314,7 @@ Outer:
 			exemplarsPool.Put(v)
 		case []record.RefHistogramSample:
 			samples := v
+			minValidTime := h.minValidTime.Load()
 			// We split up the samples into chunks of 5000 samples or less.
 			// With O(300 * #cores) in-flight sample batches, large scrapes could otherwise
 			// cause thousands of very large in flight buffers occupying large amounts
@@ -329,6 +330,9 @@ Outer:
 					}
 				}
 				for _, sam := range samples[:m] {
+					if sam.T < minValidTime {
+						continue // Before minValidTime: discard.
+					}
 					if r, ok := multiRef[sam.Ref]; ok {
 						sam.Ref = r
 					}
@@ -336,7 +340,7 @@ Outer:
 					histogramShards[mod] = append(histogramShards[mod], sam)
 				}
 				for i := 0; i < n; i++ {
-					if len(shards[i]) > 0 {
+					if len(histogramShards[i]) > 0 {
 						processors[i].input <- walSubsetProcessorInputItem{histogramSamples: histogramShards[i]}
 						histogramShards[i] = nil
 					}

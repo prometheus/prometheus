@@ -20,12 +20,13 @@ import (
 	"math"
 	"sync"
 
+	"golang.org/x/exp/slices"
+
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
-	"golang.org/x/exp/slices"
 )
 
 type mergeGenericQuerier struct {

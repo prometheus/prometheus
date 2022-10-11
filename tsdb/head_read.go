@@ -23,7 +23,6 @@ import (
 	"github.com/pkg/errors"
 	"golang.org/x/exp/slices"
 
-	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -487,7 +486,7 @@ func (o mergedOOOChunks) Bytes() []byte {
 		panic(err)
 	}
 	it := o.Iterator(nil)
-	for it.Next() {
+	for it.Next() == chunkenc.ValFloat {
 		t, v := it.At()
 		app.Append(t, v)
 	}
@@ -536,7 +535,7 @@ func (b boundedChunk) Bytes() []byte {
 	xor := chunkenc.NewXORChunk()
 	a, _ := xor.Appender()
 	it := b.Iterator(nil)
-	for it.Next() {
+	for it.Next() == chunkenc.ValFloat {
 		t, v := it.At()
 		a.Append(t, v)
 	}
@@ -565,33 +564,35 @@ type boundedIterator struct {
 // until its able to find a sample within the bounds minT and maxT.
 // If there are samples within bounds it will advance one by one amongst them.
 // If there are no samples within bounds it will return false.
-func (b boundedIterator) Next() bool {
-	for b.Iterator.Next() {
+func (b boundedIterator) Next() chunkenc.ValueType {
+	for b.Iterator.Next() == chunkenc.ValFloat {
 		t, _ := b.Iterator.At()
 		if t < b.minT {
 			continue
 		} else if t > b.maxT {
-			return false
+			return chunkenc.ValNone
 		}
-		return true
+		return chunkenc.ValFloat
 	}
-	return false
+	return chunkenc.ValNone
 }
 
-func (b boundedIterator) Seek(t int64) bool {
+func (b boundedIterator) Seek(t int64) chunkenc.ValueType {
 	if t < b.minT {
 		// We must seek at least up to b.minT if it is asked for something before that.
-		ok := b.Iterator.Seek(b.minT)
-		if !ok {
-			return false
+		val := b.Iterator.Seek(b.minT)
+		if !(val == chunkenc.ValFloat) {
+			return chunkenc.ValNone
 		}
 		t, _ := b.Iterator.At()
-		return t <= b.maxT
+		if t <= b.maxT {
+			return chunkenc.ValFloat
+		}
 	}
 	if t > b.maxT {
 		// We seek anyway so that the subsequent Next() calls will also return false.
 		b.Iterator.Seek(t)
-		return false
+		return chunkenc.ValNone
 	}
 	return b.Iterator.Seek(t)
 }
@@ -683,92 +684,6 @@ func (s *memSeries) iterator(id chunks.HeadChunkID, isoState *isolationState, ch
 		return c.chunk.Iterator(it)
 	}
 	return makeStopIterator(c.chunk, it, stopAfter)
-}
-
-// memSafeIterator returns values from the wrapped stopIterator
-// except the last 4, which come from buf.
-type memSafeIterator struct {
-	stopIterator
-
-	total int
-	buf   [4]sample
-}
-
-func (it *memSafeIterator) Seek(t int64) chunkenc.ValueType {
-	if it.Err() != nil {
-		return chunkenc.ValNone
-	}
-
-	var valueType chunkenc.ValueType
-	var ts int64 = math.MinInt64
-
-	if it.i > -1 {
-		ts = it.AtT()
-	}
-
-	if t <= ts {
-		// We are already at the right sample, but we have to find out
-		// its ValueType.
-		if it.total-it.i > 4 {
-			return it.Iterator.Seek(ts)
-		}
-		return it.buf[4-(it.total-it.i)].Type()
-	}
-
-	for t > ts || it.i == -1 {
-		if valueType = it.Next(); valueType == chunkenc.ValNone {
-			return chunkenc.ValNone
-		}
-		ts = it.AtT()
-	}
-
-	return valueType
-}
-
-func (it *memSafeIterator) Next() chunkenc.ValueType {
-	if it.i+1 >= it.stopAfter {
-		return chunkenc.ValNone
-	}
-	it.i++
-	if it.total-it.i > 4 {
-		return it.Iterator.Next()
-	}
-	return it.buf[4-(it.total-it.i)].Type()
-}
-
-func (it *memSafeIterator) At() (int64, float64) {
-	if it.total-it.i > 4 {
-		return it.Iterator.At()
-	}
-	s := it.buf[4-(it.total-it.i)]
-	return s.t, s.v
-}
-
-func (it *memSafeIterator) AtHistogram() (int64, *histogram.Histogram) {
-	if it.total-it.i > 4 {
-		return it.Iterator.AtHistogram()
-	}
-	s := it.buf[4-(it.total-it.i)]
-	return s.t, s.h
-}
-
-func (it *memSafeIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
-	if it.total-it.i > 4 {
-		return it.Iterator.AtFloatHistogram()
-	}
-	s := it.buf[4-(it.total-it.i)]
-	if s.fh != nil {
-		return s.t, s.fh
-	}
-	return s.t, s.h.ToFloat()
-}
-
-func (it *memSafeIterator) AtT() int64 {
-	if it.total-it.i > 4 {
-		return it.Iterator.AtT()
-	}
-	s := it.buf[4-(it.total-it.i)]
-	return s.t
 }
 
 // stopIterator wraps an Iterator, but only returns the first

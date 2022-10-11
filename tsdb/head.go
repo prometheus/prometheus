@@ -295,31 +295,6 @@ func (h *Head) resetInMemoryState() error {
 }
 
 type headMetrics struct {
-<<<<<<< HEAD
-	activeAppenders          prometheus.Gauge
-	series                   prometheus.GaugeFunc
-	seriesCreated            prometheus.Counter
-	seriesRemoved            prometheus.Counter
-	seriesNotFound           prometheus.Counter
-	chunks                   prometheus.Gauge
-	chunksCreated            prometheus.Counter
-	chunksRemoved            prometheus.Counter
-	gcDuration               prometheus.Summary
-	samplesAppended          *prometheus.CounterVec
-	outOfBoundSamples        *prometheus.CounterVec
-	outOfOrderSamples        *prometheus.CounterVec
-	walTruncateDuration      prometheus.Summary
-	walCorruptionsTotal      prometheus.Counter
-	walTotalReplayDuration   prometheus.Gauge
-	headTruncateFail         prometheus.Counter
-	headTruncateTotal        prometheus.Counter
-	checkpointDeleteFail     prometheus.Counter
-	checkpointDeleteTotal    prometheus.Counter
-	checkpointCreationFail   prometheus.Counter
-	checkpointCreationTotal  prometheus.Counter
-	mmapChunkCorruptionTotal prometheus.Counter
-	snapshotReplayErrorTotal prometheus.Counter // Will be either 0 or 1.
-=======
 	activeAppenders           prometheus.Gauge
 	series                    prometheus.GaugeFunc
 	seriesCreated             prometheus.Counter
@@ -329,11 +304,11 @@ type headMetrics struct {
 	chunksCreated             prometheus.Counter
 	chunksRemoved             prometheus.Counter
 	gcDuration                prometheus.Summary
-	samplesAppended           prometheus.Counter
+	samplesAppended           *prometheus.CounterVec
 	outOfOrderSamplesAppended prometheus.Counter
-	outOfBoundSamples         prometheus.Counter
-	outOfOrderSamples         prometheus.Counter
-	tooOldSamples             prometheus.Counter
+	outOfBoundSamples         *prometheus.CounterVec
+	outOfOrderSamples         *prometheus.CounterVec
+	tooOldSamples             *prometheus.CounterVec
 	walTruncateDuration       prometheus.Summary
 	walCorruptionsTotal       prometheus.Counter
 	dataTotalReplayDuration   prometheus.Gauge
@@ -346,7 +321,6 @@ type headMetrics struct {
 	mmapChunkCorruptionTotal  prometheus.Counter
 	snapshotReplayErrorTotal  prometheus.Counter // Will be either 0 or 1.
 	oooHistogram              prometheus.Histogram
->>>>>>> main
 }
 
 const (
@@ -409,35 +383,23 @@ func newHeadMetrics(h *Head, r prometheus.Registerer) *headMetrics {
 		samplesAppended: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_head_samples_appended_total",
 			Help: "Total number of appended samples.",
-<<<<<<< HEAD
 		}, []string{"type"}),
-		outOfBoundSamples: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "prometheus_tsdb_out_of_bound_samples_total",
-			Help: "Total number of out of bound samples ingestion failed attempts.",
-		}, []string{"type"}),
-		outOfOrderSamples: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Name: "prometheus_tsdb_out_of_order_samples_total",
-			Help: "Total number of out of order samples ingestion failed attempts.",
-		}, []string{"type"}),
-=======
-		}),
 		outOfOrderSamplesAppended: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_head_out_of_order_samples_appended_total",
 			Help: "Total number of appended out of order samples.",
 		}),
-		outOfBoundSamples: prometheus.NewCounter(prometheus.CounterOpts{
+		outOfBoundSamples: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_out_of_bound_samples_total",
 			Help: "Total number of out of bound samples ingestion failed attempts with out of order support disabled.",
-		}),
-		outOfOrderSamples: prometheus.NewCounter(prometheus.CounterOpts{
+		}, []string{"type"}),
+		outOfOrderSamples: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_out_of_order_samples_total",
 			Help: "Total number of out of order samples ingestion failed attempts due to out of order being disabled.",
-		}),
-		tooOldSamples: prometheus.NewCounter(prometheus.CounterOpts{
+		}, []string{"type"}),
+		tooOldSamples: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_too_old_samples_total",
 			Help: "Total number of out of order samples ingestion failed attempts with out of support enabled, but sample outside of time window.",
-		}),
->>>>>>> main
+		}, []string{"type"}),
 		headTruncateFail: prometheus.NewCounter(prometheus.CounterOpts{
 			Name: "prometheus_tsdb_head_truncations_failed_total",
 			Help: "Total number of head truncations that failed.",
@@ -1886,6 +1848,9 @@ type memSeries struct {
 	// We keep the last value here (in addition to appending it to the chunk) so we can check for duplicates.
 	lastValue float64
 
+	// We keep the last histogram value here (in addition to appending it to the chunk) so we can check for duplicates.
+	lastHistogramValue *histogram.Histogram
+
 	// Current appender for the head chunk. Set when a new head chunk is cut.
 	// It is nil only if headChunk is nil. E.g. if there was an appender that created a new series, but rolled back the commit
 	// (the first sample would create a headChunk, hence appender, but rollback skipped it while the Append() call would create a series).
@@ -1894,13 +1859,11 @@ type memSeries struct {
 	// txs is nil if isolation is disabled.
 	txs *txRing
 
-<<<<<<< HEAD
 	// TODO(beorn7): The only reason we track this is to create a staleness
 	// marker as either histogram or float sample. Perhaps there is a better way.
 	isHistogramSeries bool
-=======
+
 	pendingCommit bool // Whether there are samples waiting to be committed to this series.
->>>>>>> main
 }
 
 func newMemSeries(lset labels.Labels, id chunks.HeadSeriesRef, isolationDisabled bool) *memSeries {

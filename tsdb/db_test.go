@@ -4069,8 +4069,8 @@ func TestOOOCompaction(t *testing.T) {
 			fromMins, toMins := r[0], r[1]
 			for min := fromMins; min <= toMins; min++ {
 				ts := min * time.Minute.Milliseconds()
-				series1Samples = append(series1Samples, sample{ts, float64(ts)})
-				series2Samples = append(series2Samples, sample{ts, float64(2 * ts)})
+				series1Samples = append(series1Samples, sample{ts, float64(ts), nil, nil})
+				series2Samples = append(series2Samples, sample{ts, float64(2 * ts), nil, nil})
 			}
 		}
 		expRes := map[string][]tsdbutil.Sample{
@@ -4137,8 +4137,8 @@ func TestOOOCompaction(t *testing.T) {
 		series2Samples := make([]tsdbutil.Sample, 0, toMins-fromMins+1)
 		for min := fromMins; min <= toMins; min++ {
 			ts := min * time.Minute.Milliseconds()
-			series1Samples = append(series1Samples, sample{ts, float64(ts)})
-			series2Samples = append(series2Samples, sample{ts, float64(2 * ts)})
+			series1Samples = append(series1Samples, sample{ts, float64(ts), nil, nil})
+			series2Samples = append(series2Samples, sample{ts, float64(2 * ts), nil, nil})
 		}
 		expRes := map[string][]tsdbutil.Sample{
 			series1.String(): series1Samples,
@@ -4269,8 +4269,8 @@ func TestOOOCompactionWithNormalCompaction(t *testing.T) {
 		series2Samples := make([]tsdbutil.Sample, 0, toMins-fromMins+1)
 		for min := fromMins; min <= toMins; min++ {
 			ts := min * time.Minute.Milliseconds()
-			series1Samples = append(series1Samples, sample{ts, float64(ts)})
-			series2Samples = append(series2Samples, sample{ts, float64(2 * ts)})
+			series1Samples = append(series1Samples, sample{ts, float64(ts), nil, nil})
+			series2Samples = append(series2Samples, sample{ts, float64(2 * ts), nil, nil})
 		}
 		expRes := map[string][]tsdbutil.Sample{
 			series1.String(): series1Samples,
@@ -4457,7 +4457,7 @@ func Test_ChunkQuerier_OOOQuery(t *testing.T) {
 			var gotSamples []tsdbutil.Sample
 			for _, chunk := range chks[series1.String()] {
 				it := chunk.Chunk.Iterator(nil)
-				for it.Next() {
+				for it.Next() == chunkenc.ValFloat {
 					ts, v := it.At()
 					gotSamples = append(gotSamples, sample{t: ts, v: v})
 				}
@@ -4643,7 +4643,7 @@ func TestOOODisabled(t *testing.T) {
 	require.Equal(t, expSamples, seriesSet)
 	require.Equal(t, float64(0), prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamplesAppended), "number of ooo appended samples mismatch")
 	require.Equal(t, float64(failedSamples),
-		prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples)+prom_testutil.ToFloat64(db.head.metrics.outOfBoundSamples),
+		prom_testutil.ToFloat64(db.head.metrics.outOfOrderSamples.WithLabelValues(sampleMetricTypeFloat))+prom_testutil.ToFloat64(db.head.metrics.outOfBoundSamples.WithLabelValues(sampleMetricTypeFloat)),
 		"number of ooo/oob samples mismatch")
 
 	// Verifying that no OOO artifacts were generated.
@@ -4723,7 +4723,7 @@ func TestWBLAndMmapReplay(t *testing.T) {
 		chk, err := db.head.chunkDiskMapper.Chunk(mc.ref)
 		require.NoError(t, err)
 		it := chk.Iterator(nil)
-		for it.Next() {
+		for it.Next() == chunkenc.ValFloat {
 			ts, val := it.At()
 			s1MmapSamples = append(s1MmapSamples, sample{t: ts, v: val})
 		}
@@ -4952,7 +4952,7 @@ func TestOOOCompactionFailure(t *testing.T) {
 		series1Samples := make([]tsdbutil.Sample, 0, toMins-fromMins+1)
 		for min := fromMins; min <= toMins; min++ {
 			ts := min * time.Minute.Milliseconds()
-			series1Samples = append(series1Samples, sample{ts, float64(ts)})
+			series1Samples = append(series1Samples, sample{ts, float64(ts), nil, nil})
 		}
 		expRes := map[string][]tsdbutil.Sample{
 			series1.String(): series1Samples,
@@ -5860,6 +5860,17 @@ func TestHistogramAppendAndQuery(t *testing.T) {
 		})
 
 		t.Run("new buckets incoming", func(t *testing.T) {
+			// In the previous unit test, during the last histogram append, we
+			// changed the schema and  that caused a new chunk creation. Because
+			// of the next append the layout of the last histogram will change
+			// because the chunk will be re-encoded. So this forces us to modify
+			// the last histogram in exp1 so when we query we get the expected
+			// results.
+			lh := exp1[len(exp1)-1].H().Copy()
+			lh.PositiveSpans[1].Length++
+			lh.PositiveBuckets = append(lh.PositiveBuckets, -2) // -2 makes the last bucket 0.
+			exp1[len(exp1)-1] = sample{t: exp1[len(exp1)-1].T(), h: lh}
+
 			// This histogram with new bucket at the end causes the re-encoding of the previous histogram.
 			// Hence the previous histogram is recoded into this new layout.
 			// But the query returns the histogram from the in-memory buffer, hence we don't see the recode here yet.
@@ -5868,6 +5879,21 @@ func TestHistogramAppendAndQuery(t *testing.T) {
 			h.Count += 3
 			appendHistogram(series1, 104, h.Copy(), &exp1)
 			testQuery("foo", "bar1", map[string][]tsdbutil.Sample{series1.String(): exp1})
+
+			// Because of the previous two histograms being on the active chunk,
+			// and the next append is only adding a new bucket, the active chunk
+			// will be re-encoded to the new layout.
+			lh = exp1[len(exp1)-2].H().Copy()
+			lh.PositiveSpans[0].Length++
+			lh.PositiveSpans[1].Offset--
+			lh.PositiveBuckets = []int64{2, 1, -3, 2, 0, -2}
+			exp1[len(exp1)-2] = sample{t: exp1[len(exp1)-2].T(), h: lh}
+
+			lh = exp1[len(exp1)-1].H().Copy()
+			lh.PositiveSpans[0].Length++
+			lh.PositiveSpans[1].Offset--
+			lh.PositiveBuckets = []int64{2, 1, -3, 2, 0, 1}
+			exp1[len(exp1)-1] = sample{t: exp1[len(exp1)-1].T(), h: lh}
 
 			// Now we add the new buckets in between. Empty bucket is again not present for the old histogram.
 			h.PositiveSpans[0].Length++
@@ -5973,7 +5999,7 @@ func TestQueryHistogramFromBlocks(t *testing.T) {
 		t.Helper()
 
 		opts := DefaultOptions()
-		opts.AllowOverlappingBlocks = true
+		opts.AllowOverlappingCompaction = true // TODO(jesus.vazquez) This replaced AllowOverlappingBlocks, make sure that works
 		db := openTestDB(t, opts, nil)
 		t.Cleanup(func() {
 			require.NoError(t, db.Close())

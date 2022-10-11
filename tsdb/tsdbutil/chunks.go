@@ -84,8 +84,10 @@ func ChunkFromSamplesGeneric(s Samples) chunks.Meta {
 }
 
 type sample struct {
-	t int64
-	v float64
+	t  int64
+	v  float64
+	h  *histogram.Histogram
+	fh *histogram.FloatHistogram
 }
 
 func (s sample) T() int64 {
@@ -94,6 +96,25 @@ func (s sample) T() int64 {
 
 func (s sample) V() float64 {
 	return s.v
+}
+
+func (s sample) H() *histogram.Histogram {
+	return s.h
+}
+
+func (s sample) FH() *histogram.FloatHistogram {
+	return s.fh
+}
+
+func (s sample) Type() chunkenc.ValueType {
+	switch {
+	case s.h != nil:
+		return chunkenc.ValHistogram
+	case s.fh != nil:
+		return chunkenc.ValFloatHistogram
+	default:
+		return chunkenc.ValFloat
+	}
 }
 
 // PopulatedChunk creates a chunk populated with samples every second starting at minTime

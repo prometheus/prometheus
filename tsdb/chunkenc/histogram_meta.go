@@ -94,18 +94,18 @@ func readHistogramChunkLayoutSpans(b *bstreamReader) ([]histogram.Span, error) {
 //
 // * If the threshold is 0, store a single zero byte.
 //
-// * If the threshold is a power of 2 between (and including) 2^-243 and 2^10,
-//   take the exponent from the IEEE 754 representation of the threshold, which
-//   covers a range between (and including) -242 and 11. (2^-243 is 0.5*2^-242
-//   in IEEE 754 representation, and 2^10 is 0.5*2^11.) Add 243 to the exponent
-//   and store the result (which will be between 1 and 254) as a single
-//   byte. Note that small powers of two are preferred values for the zero
-//   threshold. The default value for the zero threshold is 2^-128 (or
-//   0.5*2^-127 in IEEE 754 representation) and will therefore be encoded as a
-//   single byte (with value 116).
+//   - If the threshold is a power of 2 between (and including) 2^-243 and 2^10,
+//     take the exponent from the IEEE 754 representation of the threshold, which
+//     covers a range between (and including) -242 and 11. (2^-243 is 0.5*2^-242
+//     in IEEE 754 representation, and 2^10 is 0.5*2^11.) Add 243 to the exponent
+//     and store the result (which will be between 1 and 254) as a single
+//     byte. Note that small powers of two are preferred values for the zero
+//     threshold. The default value for the zero threshold is 2^-128 (or
+//     0.5*2^-127 in IEEE 754 representation) and will therefore be encoded as a
+//     single byte (with value 116).
 //
-// * In all other cases, store 255 as a single byte, followed by the 8 bytes of
-//   the threshold as a float64, i.e. taking 9 bytes in total.
+//   - In all other cases, store 255 as a single byte, followed by the 8 bytes of
+//     the threshold as a float64, i.e. taking 9 bytes in total.
 func putZeroThreshold(b *bstream, threshold float64) {
 	if threshold == 0 {
 		b.writeByte(0)
@@ -199,11 +199,11 @@ type Interjection struct {
 //
 // Let's say the old buckets look like this:
 //
-//   span syntax: [offset, length]
-//   spans      : [ 0 , 2 ]               [2,1]                   [ 3 , 2 ]                     [3,1]       [1,1]
-//   bucket idx : [0]   [1]    2     3    [4]    5     6     7    [8]   [9]    10    11    12   [13]   14   [15]
-//   raw values    6     3                 3                       2     4                       5           1
-//   deltas        6    -3                 0                      -1     2                       1          -4
+//	span syntax: [offset, length]
+//	spans      : [ 0 , 2 ]               [2,1]                   [ 3 , 2 ]                     [3,1]       [1,1]
+//	bucket idx : [0]   [1]    2     3    [4]    5     6     7    [8]   [9]    10    11    12   [13]   14   [15]
+//	raw values    6     3                 3                       2     4                       5           1
+//	deltas        6    -3                 0                      -1     2                       1          -4
 //
 // But now we introduce a new bucket layout. (Carefully chosen example where we
 // have a span appended, one unchanged[*], one prepended, and two merge - in
@@ -213,12 +213,12 @@ type Interjection struct {
 // that, their offset needs to change if "disrupted" by spans changing ahead of
 // them
 //
-//                                         \/ this one is "unchanged"
-//   spans      : [  0  ,  3    ]         [1,1]       [    1    ,   4     ]                     [  3  ,   3    ]
-//   bucket idx : [0]   [1]   [2]    3    [4]    5    [6]   [7]   [8]   [9]    10    11    12   [13]  [14]  [15]
-//   raw values    6     3     0           3           0     0     2     4                       5     0     1
-//   deltas        6    -3    -3           3          -3     0     2     2                       1    -5     1
-//   delta mods:                          / \                     / \                                       / \
+//	                                      \/ this one is "unchanged"
+//	spans      : [  0  ,  3    ]         [1,1]       [    1    ,   4     ]                     [  3  ,   3    ]
+//	bucket idx : [0]   [1]   [2]    3    [4]    5    [6]   [7]   [8]   [9]    10    11    12   [13]  [14]  [15]
+//	raw values    6     3     0           3           0     0     2     4                       5     0     1
+//	deltas        6    -3    -3           3          -3     0     2     2                       1    -5     1
+//	delta mods:                          / \                     / \                                       / \
 //
 // Note that whenever any new buckets are introduced, the subsequent "old"
 // bucket needs to readjust its delta to the new base of 0. Thus, for the caller
