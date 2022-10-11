@@ -185,9 +185,9 @@ func histogramQuantile(q float64, h *histogram.FloatHistogram) float64 {
 		count = h.Count
 	}
 	// We could have hit the highest bucket without even reaching the rank
-	// (observations not counted in any bucket are considered "overflow"
-	// observations above the highest bucket), in which case we simple
-	// return the upper limit of the highest explicit bucket.
+	// (this should only happen if the histogram contains observations of
+	// the value NaN), in which case we simply return the upper limit of the
+	// highest explicit bucket.
 	if count < rank {
 		return bucket.Upper
 	}
