@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.39.1 / 2022-10-07
+
+* [BUGFIX] Rules: Fix notifier relabel changing the labels on active alerts. #11427
+
 ## 2.39.0 / 2022-10-05
 
 * [FEATURE] **experimental** TSDB: Add support for ingesting out-of-order samples. This is configured via `out_of_order_time_window` field in the config file; check config file docs for more info. #11075

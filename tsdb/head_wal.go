@@ -39,10 +39,10 @@ import (
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
-	"github.com/prometheus/prometheus/tsdb/wal"
+	"github.com/prometheus/prometheus/tsdb/wlog"
 )
 
-func (h *Head) loadWAL(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef, mmappedChunks, oooMmappedChunks map[chunks.HeadSeriesRef][]*mmappedChunk) (err error) {
+func (h *Head) loadWAL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef, mmappedChunks, oooMmappedChunks map[chunks.HeadSeriesRef][]*mmappedChunk) (err error) {
 	// Track number of samples that referenced a series we don't know about
 	// for error reporting.
 	var unknownRefs atomic.Uint64
@@ -99,7 +99,7 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 
 	defer func() {
 		// For CorruptionErr ensure to terminate all workers before exiting.
-		_, ok := err.(*wal.CorruptionErr)
+		_, ok := err.(*wlog.CorruptionErr)
 		if ok || seriesCreationErr != nil {
 			for i := 0; i < n; i++ {
 				processors[i].closeAndDrain()
@@ -156,7 +156,7 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 				series := seriesPool.Get().([]record.RefSeries)[:0]
 				series, err = dec.Series(rec, series)
 				if err != nil {
-					decodeErr = &wal.CorruptionErr{
+					decodeErr = &wlog.CorruptionErr{
 						Err:     errors.Wrap(err, "decode series"),
 						Segment: r.Segment(),
 						Offset:  r.Offset(),
@@ -168,7 +168,7 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 				samples := samplesPool.Get().([]record.RefSample)[:0]
 				samples, err = dec.Samples(rec, samples)
 				if err != nil {
-					decodeErr = &wal.CorruptionErr{
+					decodeErr = &wlog.CorruptionErr{
 						Err:     errors.Wrap(err, "decode samples"),
 						Segment: r.Segment(),
 						Offset:  r.Offset(),
@@ -180,7 +180,7 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 				tstones := tstonesPool.Get().([]tombstones.Stone)[:0]
 				tstones, err = dec.Tombstones(rec, tstones)
 				if err != nil {
-					decodeErr = &wal.CorruptionErr{
+					decodeErr = &wlog.CorruptionErr{
 						Err:     errors.Wrap(err, "decode tombstones"),
 						Segment: r.Segment(),
 						Offset:  r.Offset(),
@@ -192,7 +192,7 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 				exemplars := exemplarsPool.Get().([]record.RefExemplar)[:0]
 				exemplars, err = dec.Exemplars(rec, exemplars)
 				if err != nil {
-					decodeErr = &wal.CorruptionErr{
+					decodeErr = &wlog.CorruptionErr{
 						Err:     errors.Wrap(err, "decode exemplars"),
 						Segment: r.Segment(),
 						Offset:  r.Offset(),
@@ -216,7 +216,7 @@ func (h *Head) loadWAL(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 				meta := metadataPool.Get().([]record.RefMetadata)[:0]
 				meta, err := dec.Metadata(rec, meta)
 				if err != nil {
-					decodeErr = &wal.CorruptionErr{
+					decodeErr = &wlog.CorruptionErr{
 						Err:     errors.Wrap(err, "decode metadata"),
 						Segment: r.Segment(),
 						Offset:  r.Offset(),
@@ -596,7 +596,7 @@ func (wp *walSubsetProcessor) processWALSamples(h *Head, mmappedChunks, oooMmapp
 	return unknownRefs, unknownHistogramRefs, mmapOverlappingChunks
 }
 
-func (h *Head) loadWBL(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef, lastMmapRef chunks.ChunkDiskMapperRef) (err error) {
+func (h *Head) loadWBL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.HeadSeriesRef, lastMmapRef chunks.ChunkDiskMapperRef) (err error) {
 	// Track number of samples, m-map markers, that referenced a series we don't know about
 	// for error reporting.
 	var unknownRefs, mmapMarkerUnknownRefs atomic.Uint64
@@ -628,7 +628,7 @@ func (h *Head) loadWBL(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 	defer func() {
 		// For CorruptionErr ensure to terminate all workers before exiting.
 		// We also wrap it to identify OOO WBL corruption.
-		_, ok := err.(*wal.CorruptionErr)
+		_, ok := err.(*wlog.CorruptionErr)
 		if ok {
 			err = &errLoadWbl{err: err}
 			for i := 0; i < n; i++ {
@@ -658,7 +658,7 @@ func (h *Head) loadWBL(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 				samples := samplesPool.Get().([]record.RefSample)[:0]
 				samples, err = dec.Samples(rec, samples)
 				if err != nil {
-					decodeErr = &wal.CorruptionErr{
+					decodeErr = &wlog.CorruptionErr{
 						Err:     errors.Wrap(err, "decode samples"),
 						Segment: r.Segment(),
 						Offset:  r.Offset(),
@@ -670,7 +670,7 @@ func (h *Head) loadWBL(r *wal.Reader, multiRef map[chunks.HeadSeriesRef]chunks.H
 				markers := markersPool.Get().([]record.RefMmapMarker)[:0]
 				markers, err = dec.MmapMarkers(rec, markers)
 				if err != nil {
-					decodeErr = &wal.CorruptionErr{
+					decodeErr = &wlog.CorruptionErr{
 						Err:     errors.Wrap(err, "decode mmap markers"),
 						Segment: r.Segment(),
 						Offset:  r.Offset(),
@@ -1046,7 +1046,7 @@ func (h *Head) ChunkSnapshot() (*ChunkSnapshotStats, error) {
 	if err := os.MkdirAll(cpdirtmp, 0o777); err != nil {
 		return stats, errors.Wrap(err, "create chunk snapshot dir")
 	}
-	cp, err := wal.New(nil, nil, cpdirtmp, h.wal.CompressionEnabled())
+	cp, err := wlog.New(nil, nil, cpdirtmp, h.wal.CompressionEnabled())
 	if err != nil {
 		return stats, errors.Wrap(err, "open chunk snapshot")
 	}
@@ -1285,7 +1285,7 @@ func (h *Head) loadChunkSnapshot() (int, int, map[chunks.HeadSeriesRef]*memSerie
 	}
 
 	start := time.Now()
-	sr, err := wal.NewSegmentsReader(dir)
+	sr, err := wlog.NewSegmentsReader(dir)
 	if err != nil {
 		return snapIdx, snapOffset, nil, errors.Wrap(err, "open chunk snapshot")
 	}
@@ -1356,7 +1356,7 @@ func (h *Head) loadChunkSnapshot() (int, int, map[chunks.HeadSeriesRef]*memSerie
 		}(i, recordChan)
 	}
 
-	r := wal.NewReader(sr)
+	r := wlog.NewReader(sr)
 	var loopErr error
 Outer:
 	for r.Next() {

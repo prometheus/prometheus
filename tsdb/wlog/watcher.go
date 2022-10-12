@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package wal
+package wlog
 
 import (
 	"fmt"
@@ -304,7 +304,7 @@ func (w *Watcher) firstAndLast() (int, int, error) {
 	return refs[0], refs[len(refs)-1], nil
 }
 
-// Copied from tsdb/wal/wal.go so we do not have to open a WAL.
+// Copied from tsdb/wlog/wlog.go so we do not have to open a WAL.
 // Plan is to move WAL watcher to TSDB and dedupe these implementations.
 func (w *Watcher) segments(dir string) ([]int, error) {
 	files, err := os.ReadDir(dir)

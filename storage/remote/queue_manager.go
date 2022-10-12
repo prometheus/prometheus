@@ -39,7 +39,7 @@ import (
 	"github.com/prometheus/prometheus/scrape"
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/record"
-	"github.com/prometheus/prometheus/tsdb/wal"
+	"github.com/prometheus/prometheus/tsdb/wlog"
 )
 
 const (
@@ -400,7 +400,7 @@ type QueueManager struct {
 	relabelConfigs       []*relabel.Config
 	sendExemplars        bool
 	sendNativeHistograms bool
-	watcher              *wal.Watcher
+	watcher              *wlog.Watcher
 	metadataWatcher      *MetadataWatcher
 
 	clientMtx   sync.RWMutex
@@ -433,8 +433,8 @@ type QueueManager struct {
 // the WAL directory will be constructed as <dir>/wal.
 func NewQueueManager(
 	metrics *queueManagerMetrics,
-	watcherMetrics *wal.WatcherMetrics,
-	readerMetrics *wal.LiveReaderMetrics,
+	watcherMetrics *wlog.WatcherMetrics,
+	readerMetrics *wlog.LiveReaderMetrics,
 	logger log.Logger,
 	dir string,
 	samplesIn *ewmaRate,
@@ -484,7 +484,7 @@ func NewQueueManager(
 		highestRecvTimestamp: highestRecvTimestamp,
 	}
 
-	t.watcher = wal.NewWatcher(watcherMetrics, readerMetrics, logger, client.Name(), t, dir, enableExemplarRemoteWrite, enableNativeHistogramRemoteWrite)
+	t.watcher = wlog.NewWatcher(watcherMetrics, readerMetrics, logger, client.Name(), t, dir, enableExemplarRemoteWrite, enableNativeHistogramRemoteWrite)
 	if t.mcfg.Send {
 		t.metadataWatcher = NewMetadataWatcher(logger, sm, client.Name(), t, t.mcfg.SendInterval, flushDeadline)
 	}
