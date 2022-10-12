@@ -204,7 +204,7 @@ func (h *Head) loadWAL(r *wlog.Reader, multiRef map[chunks.HeadSeriesRef]chunks.
 				hists := histogramsPool.Get().([]record.RefHistogramSample)[:0]
 				hists, err = dec.HistogramSamples(rec, hists)
 				if err != nil {
-					decodeErr = &wal.CorruptionErr{
+					decodeErr = &wlog.CorruptionErr{
 						Err:     errors.Wrap(err, "decode histograms"),
 						Segment: r.Segment(),
 						Offset:  r.Offset(),

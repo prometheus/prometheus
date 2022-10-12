@@ -2923,7 +2923,7 @@ func TestHistogramInWALAndMmapChunk(t *testing.T) {
 
 	// Restart head.
 	require.NoError(t, head.Close())
-	w, err := wal.NewSize(nil, nil, head.wal.Dir(), 32768, false)
+	w, err := wlog.NewSize(nil, nil, head.wal.Dir(), 32768, false)
 	require.NoError(t, err)
 	head, err = NewHead(nil, nil, w, nil, head.opts, nil)
 	require.NoError(t, err)
@@ -3267,7 +3267,7 @@ func TestHistogramMetrics(t *testing.T) {
 	require.Equal(t, float64(expHSamples), prom_testutil.ToFloat64(head.metrics.samplesAppended.WithLabelValues(sampleMetricTypeHistogram)))
 
 	require.NoError(t, head.Close())
-	w, err := wal.NewSize(nil, nil, head.wal.Dir(), 32768, false)
+	w, err := wlog.NewSize(nil, nil, head.wal.Dir(), 32768, false)
 	require.NoError(t, err)
 	head, err = NewHead(nil, nil, w, nil, head.opts, nil)
 	require.NoError(t, err)
