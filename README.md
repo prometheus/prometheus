@@ -1,4 +1,11 @@
-# Prometheus
+<h1 align="center" style="border-bottom: none">
+    <a href="//prometheus.io" target="_blank"><img alt="Prometheus" src="/documentation/images/prometheus-logo.svg"></a><br>Prometheus
+</h1>
+
+<p align="center">Visit <a href="//prometheus.io" target="_blank">prometheus.io</a> for the full documentation,
+examples and guides.</p>
+
+<div align="center">
 
 [![CircleCI](https://circleci.com/gh/prometheus/prometheus/tree/main.svg?style=shield)][circleci]
 [![Docker Repository on Quay](https://quay.io/repository/prometheus/prometheus/status)][quay]
@@ -8,8 +15,7 @@
 [![Gitpod ready-to-code](https://img.shields.io/badge/Gitpod-ready--to--code-blue?logo=gitpod)](https://gitpod.io/#https://github.com/prometheus/prometheus)
 [![Fuzzing Status](https://oss-fuzz-build-logs.storage.googleapis.com/badges/prometheus.svg)](https://bugs.chromium.org/p/oss-fuzz/issues/list?sort=-opened&can=1&q=proj:prometheus)
 
-Visit [prometheus.io](https://prometheus.io) for the full documentation,
-examples and guides.
+</div>
 
 Prometheus, a [Cloud Native Computing Foundation](https://cncf.io/) project, is a systems and service monitoring system. It collects metrics
 from configured targets at given intervals, evaluates rule expressions,

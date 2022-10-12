@@ -30,7 +30,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/tsdb/wal"
+	"github.com/prometheus/prometheus/tsdb/wlog"
 )
 
 var (
@@ -60,8 +60,8 @@ type WriteStorage struct {
 	reg    prometheus.Registerer
 	mtx    sync.Mutex
 
-	watcherMetrics    *wal.WatcherMetrics
-	liveReaderMetrics *wal.LiveReaderMetrics
+	watcherMetrics    *wlog.WatcherMetrics
+	liveReaderMetrics *wlog.LiveReaderMetrics
 	externalLabels    labels.Labels
 	dir               string
 	queues            map[string]*QueueManager
@@ -82,8 +82,8 @@ func NewWriteStorage(logger log.Logger, reg prometheus.Registerer, dir string, f
 	}
 	rws := &WriteStorage{
 		queues:            make(map[string]*QueueManager),
-		watcherMetrics:    wal.NewWatcherMetrics(reg),
-		liveReaderMetrics: wal.NewLiveReaderMetrics(reg),
+		watcherMetrics:    wlog.NewWatcherMetrics(reg),
+		liveReaderMetrics: wlog.NewLiveReaderMetrics(reg),
 		logger:            logger,
 		reg:               reg,
 		flushDeadline:     flushDeadline,

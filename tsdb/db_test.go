@@ -52,7 +52,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/record"
 	"github.com/prometheus/prometheus/tsdb/tombstones"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
-	"github.com/prometheus/prometheus/tsdb/wal"
+	"github.com/prometheus/prometheus/tsdb/wlog"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
@@ -244,7 +244,7 @@ func TestNoPanicAfterWALCorruption(t *testing.T) {
 		require.NoError(t, err)
 		f, err := os.OpenFile(path.Join(db.Dir(), "wal", walFiles[0].Name()), os.O_RDWR, 0o666)
 		require.NoError(t, err)
-		r := wal.NewReader(bufio.NewReader(f))
+		r := wlog.NewReader(bufio.NewReader(f))
 		require.True(t, r.Next(), "reading the series record")
 		require.True(t, r.Next(), "reading the first sample record")
 		// Write an invalid record header to corrupt everything after the first wal sample.
@@ -1515,9 +1515,9 @@ func TestSizeRetention(t *testing.T) {
 	require.Equal(t, expSize, actSize, "registered size doesn't match actual disk size")
 
 	// Create a WAL checkpoint, and compare sizes.
-	first, last, err := wal.Segments(db.Head().wal.Dir())
+	first, last, err := wlog.Segments(db.Head().wal.Dir())
 	require.NoError(t, err)
-	_, err = wal.Checkpoint(log.NewNopLogger(), db.Head().wal, first, last-1, func(x chunks.HeadSeriesRef) bool { return false }, 0)
+	_, err = wlog.Checkpoint(log.NewNopLogger(), db.Head().wal, first, last-1, func(x chunks.HeadSeriesRef) bool { return false }, 0)
 	require.NoError(t, err)
 	blockSize = int64(prom_testutil.ToFloat64(db.metrics.blocksBytes)) // Use the actual internal metrics.
 	walSize, err = db.Head().wal.Size()
@@ -1923,7 +1923,7 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 		dir := t.TempDir()
 
 		require.NoError(t, os.MkdirAll(path.Join(dir, "wal"), 0o777))
-		w, err := wal.New(nil, nil, path.Join(dir, "wal"), false)
+		w, err := wlog.New(nil, nil, path.Join(dir, "wal"), false)
 		require.NoError(t, err)
 
 		var enc record.Encoder
@@ -1965,7 +1965,7 @@ func TestInitializeHeadTimestamp(t *testing.T) {
 		createBlock(t, dir, genSeries(1, 1, 1000, 6000))
 
 		require.NoError(t, os.MkdirAll(path.Join(dir, "wal"), 0o777))
-		w, err := wal.New(nil, nil, path.Join(dir, "wal"), false)
+		w, err := wlog.New(nil, nil, path.Join(dir, "wal"), false)
 		require.NoError(t, err)
 
 		var enc record.Encoder
@@ -2365,7 +2365,7 @@ func TestDBReadOnly(t *testing.T) {
 		}
 
 		// Add head to test DBReadOnly WAL reading capabilities.
-		w, err := wal.New(logger, nil, filepath.Join(dbDir, "wal"), true)
+		w, err := wlog.New(logger, nil, filepath.Join(dbDir, "wal"), true)
 		require.NoError(t, err)
 		h := createHead(t, w, genSeries(1, 1, 16, 18), dbDir)
 		require.NoError(t, h.Close())
@@ -3131,7 +3131,7 @@ func TestOneCheckpointPerCompactCall(t *testing.T) {
 	require.NoError(t, app.Commit())
 
 	// Check the existing WAL files.
-	first, last, err := wal.Segments(db.head.wal.Dir())
+	first, last, err := wlog.Segments(db.head.wal.Dir())
 	require.NoError(t, err)
 	require.Equal(t, 0, first)
 	require.Equal(t, 60, last)
@@ -3146,14 +3146,14 @@ func TestOneCheckpointPerCompactCall(t *testing.T) {
 	require.Equal(t, 58.0, prom_testutil.ToFloat64(db.head.metrics.headTruncateTotal))
 
 	// The compaction should have only truncated first 2/3 of WAL (while also rotating the files).
-	first, last, err = wal.Segments(db.head.wal.Dir())
+	first, last, err = wlog.Segments(db.head.wal.Dir())
 	require.NoError(t, err)
 	require.Equal(t, 40, first)
 	require.Equal(t, 61, last)
 
 	// The first checkpoint would be for first 2/3rd of WAL, hence till 39.
 	// That should be the last checkpoint.
-	_, cno, err := wal.LastCheckpoint(db.head.wal.Dir())
+	_, cno, err := wlog.LastCheckpoint(db.head.wal.Dir())
 	require.NoError(t, err)
 	require.Equal(t, 39, cno)
 
@@ -3189,7 +3189,7 @@ func TestOneCheckpointPerCompactCall(t *testing.T) {
 	require.Equal(t, newBlockMaxt, db.head.MinTime())
 
 	// Another WAL file was rotated.
-	first, last, err = wal.Segments(db.head.wal.Dir())
+	first, last, err = wlog.Segments(db.head.wal.Dir())
 	require.NoError(t, err)
 	require.Equal(t, 40, first)
 	require.Equal(t, 62, last)
@@ -3202,14 +3202,14 @@ func TestOneCheckpointPerCompactCall(t *testing.T) {
 	require.Equal(t, 59, len(db.Blocks()))
 
 	// The compaction should have only truncated first 2/3 of WAL (while also rotating the files).
-	first, last, err = wal.Segments(db.head.wal.Dir())
+	first, last, err = wlog.Segments(db.head.wal.Dir())
 	require.NoError(t, err)
 	require.Equal(t, 55, first)
 	require.Equal(t, 63, last)
 
 	// The first checkpoint would be for first 2/3rd of WAL, hence till 54.
 	// That should be the last checkpoint.
-	_, cno, err = wal.LastCheckpoint(db.head.wal.Dir())
+	_, cno, err = wlog.LastCheckpoint(db.head.wal.Dir())
 	require.NoError(t, err)
 	require.Equal(t, 54, cno)
 }
@@ -3657,9 +3657,9 @@ func TestOOOWALWrite(t *testing.T) {
 	}
 
 	getRecords := func(walDir string) []interface{} {
-		sr, err := wal.NewSegmentsReader(walDir)
+		sr, err := wlog.NewSegmentsReader(walDir)
 		require.NoError(t, err)
-		r := wal.NewReader(sr)
+		r := wlog.NewReader(sr)
 		defer func() {
 			require.NoError(t, sr.Close())
 		}()
@@ -3696,7 +3696,7 @@ func TestOOOWALWrite(t *testing.T) {
 	require.Equal(t, inOrderRecords, actRecs)
 
 	// The OOO WAL.
-	actRecs = getRecords(path.Join(dir, wal.WblDirName))
+	actRecs = getRecords(path.Join(dir, wlog.WblDirName))
 	require.Equal(t, oooRecords, actRecs)
 }
 
@@ -3890,16 +3890,16 @@ func TestMetadataCheckpointingOnlyKeepsLatestEntry(t *testing.T) {
 	require.NoError(t, app.Commit())
 
 	// Let's create a checkpoint.
-	first, last, err := wal.Segments(w.Dir())
+	first, last, err := wlog.Segments(w.Dir())
 	require.NoError(t, err)
 	keep := func(id chunks.HeadSeriesRef) bool {
 		return id != 3
 	}
-	_, err = wal.Checkpoint(log.NewNopLogger(), w, first, last-1, keep, 0)
+	_, err = wlog.Checkpoint(log.NewNopLogger(), w, first, last-1, keep, 0)
 	require.NoError(t, err)
 
 	// Confirm there's been a checkpoint.
-	cdir, _, err := wal.LastCheckpoint(w.Dir())
+	cdir, _, err := wlog.LastCheckpoint(w.Dir())
 	require.NoError(t, err)
 
 	// Read in checkpoint and WAL.
@@ -4647,7 +4647,7 @@ func TestOOODisabled(t *testing.T) {
 		"number of ooo/oob samples mismatch")
 
 	// Verifying that no OOO artifacts were generated.
-	_, err = os.ReadDir(path.Join(db.Dir(), wal.WblDirName))
+	_, err = os.ReadDir(path.Join(db.Dir(), wlog.WblDirName))
 	require.True(t, os.IsNotExist(err))
 
 	ms, created, err := db.head.getOrCreate(s1.Hash(), s1)
@@ -4812,12 +4812,12 @@ func TestWBLAndMmapReplay(t *testing.T) {
 		resetMmapToOriginal() // We neet to reset because new duplicate chunks can be written above.
 
 		// Removing m-map markers in WBL by rewriting it.
-		newWbl, err := wal.New(log.NewNopLogger(), nil, filepath.Join(t.TempDir(), "new_wbl"), false)
+		newWbl, err := wlog.New(log.NewNopLogger(), nil, filepath.Join(t.TempDir(), "new_wbl"), false)
 		require.NoError(t, err)
-		sr, err := wal.NewSegmentsReader(originalWblDir)
+		sr, err := wlog.NewSegmentsReader(originalWblDir)
 		require.NoError(t, err)
 		var dec record.Decoder
-		r, markers, addedRecs := wal.NewReader(sr), 0, 0
+		r, markers, addedRecs := wlog.NewReader(sr), 0, 0
 		for r.Next() {
 			rec := r.Record()
 			if dec.Type(rec) == record.MmapMarkers {

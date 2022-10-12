@@ -37,7 +37,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunks"
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
-	"github.com/prometheus/prometheus/tsdb/wal"
+	"github.com/prometheus/prometheus/tsdb/wlog"
 )
 
 // In Prometheus 2.1.0 we had a bug where the meta.json version was falsely bumped
@@ -489,7 +489,7 @@ func createBlockFromHead(tb testing.TB, dir string, head *Head) string {
 	return filepath.Join(dir, ulid.String())
 }
 
-func createHead(tb testing.TB, w *wal.WAL, series []storage.Series, chunkDir string) *Head {
+func createHead(tb testing.TB, w *wlog.WL, series []storage.Series, chunkDir string) *Head {
 	opts := DefaultHeadOptions()
 	opts.ChunkDirRoot = chunkDir
 	head, err := NewHead(nil, nil, w, nil, opts, nil)
@@ -530,7 +530,7 @@ func createHead(tb testing.TB, w *wal.WAL, series []storage.Series, chunkDir str
 	return head
 }
 
-func createHeadWithOOOSamples(tb testing.TB, w *wal.WAL, series []storage.Series, chunkDir string, oooSampleFrequency int) *Head {
+func createHeadWithOOOSamples(tb testing.TB, w *wlog.WL, series []storage.Series, chunkDir string, oooSampleFrequency int) *Head {
 	opts := DefaultHeadOptions()
 	opts.ChunkDirRoot = chunkDir
 	opts.OutOfOrderTimeWindow.Store(10000000000)

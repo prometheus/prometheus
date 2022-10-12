@@ -855,7 +855,7 @@ func BenchmarkSampleSend(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		m.Append(samples)
-		m.UpdateSeriesSegment(series, i+1) // simulate what wal.Watcher.garbageCollectSeries does
+		m.UpdateSeriesSegment(series, i+1) // simulate what wlog.Watcher.garbageCollectSeries does
 		m.SeriesReset(i + 1)
 	}
 	// Do not include shutdown
