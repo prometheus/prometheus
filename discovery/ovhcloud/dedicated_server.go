@@ -28,10 +28,12 @@ import (
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
-const dedicatedServerAPIPath = "/dedicated/server"
+const (
+	dedicatedServerAPIPath     = "/dedicated/server"
+	dedicatedServerLabelPrefix = metaLabelPrefix + "dedicatedServer_"
+)
 
-// DedicatedServer struct
-type DedicatedServer struct {
+type dedicatedServer struct {
 	State           string `json:"state"`
 	IPs             IPs    `json:"ips"`
 	CommercialRange string `json:"commercialRange"`
@@ -45,10 +47,6 @@ type DedicatedServer struct {
 	Datacenter      string `json:"datacenter"`
 	Name            string `json:"name"`
 }
-
-const (
-	dedicatedServerLabelPrefix = metaLabelPrefix + "dedicatedServer_"
-)
 
 type dedicatedServerDiscovery struct {
 	*refresh.Discovery
@@ -70,8 +68,8 @@ func getDedicatedServerList(client *ovh.Client) ([]string, error) {
 	return dedicatedListName, nil
 }
 
-func getDedicatedServerDetails(client *ovh.Client, serverName string) (*DedicatedServer, error) {
-	var dedicatedServerDetails DedicatedServer
+func getDedicatedServerDetails(client *ovh.Client, serverName string) (*dedicatedServer, error) {
+	var dedicatedServerDetails dedicatedServer
 	err := client.Get(fmt.Sprintf("%s/%s", dedicatedServerAPIPath, url.QueryEscape(serverName)), &dedicatedServerDetails)
 	if err != nil {
 		return nil, err
@@ -83,7 +81,7 @@ func getDedicatedServerDetails(client *ovh.Client, serverName string) (*Dedicate
 		return nil, err
 	}
 
-	parsedIPs, err := ParseIPList(ips)
+	parsedIPs, err := parseIPList(ips)
 	if err != nil {
 		return nil, err
 	}
@@ -101,11 +99,11 @@ func (d *dedicatedServerDiscovery) getSource() string {
 }
 
 func (d *dedicatedServerDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
-	client, err := CreateClient(d.config)
+	client, err := createClient(d.config)
 	if err != nil {
 		return nil, err
 	}
-	var dedicatedServerDetailedList []DedicatedServer
+	var dedicatedServerDetailedList []dedicatedServer
 	dedicatedServerList, err := getDedicatedServerList(client)
 	if err != nil {
 		return nil, err

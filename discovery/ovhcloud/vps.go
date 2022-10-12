@@ -27,10 +27,13 @@ import (
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
-const vpsAPIPath = "/vps"
+const (
+	vpsAPIPath     = "/vps"
+	vpsLabelPrefix = metaLabelPrefix + "vps_"
+)
 
-// Model struct from API
-type Model struct {
+// Model struct from API.
+type vpsModel struct {
 	MaximumAdditionalIP int      `json:"maximumAdditionnalIp"`
 	Offer               string   `json:"offer"`
 	Datacenter          []string `json:"datacenter"`
@@ -41,12 +44,12 @@ type Model struct {
 	Memory              int      `json:"memory"`
 }
 
-// Vps struct from API
-type Vps struct {
+// VPS struct from API.
+type virtualPrivateServer struct {
 	IPs                IPs      `json:"ips"`
 	Keymap             []string `json:"keymap"`
 	Zone               string   `json:"zone"`
-	Model              Model    `json:"model"`
+	Model              vpsModel `json:"model"`
 	DisplayName        string   `json:"displayName"`
 	MonitoringIPBlocks []string `json:"monitoringIpBlocks"`
 	Cluster            string   `json:"cluster"`
@@ -58,10 +61,6 @@ type Vps struct {
 	Vcore              int      `json:"vcore"`
 }
 
-const (
-	vpsLabelPrefix = metaLabelPrefix + "vps_"
-)
-
 type vpsDiscovery struct {
 	*refresh.Discovery
 	config *SDConfig
@@ -72,8 +71,8 @@ func newVpsDiscovery(conf *SDConfig, logger log.Logger) *vpsDiscovery {
 	return &vpsDiscovery{config: conf, logger: logger}
 }
 
-func getVpsDetails(client *ovh.Client, vpsName string) (*Vps, error) {
-	var vpsDetails Vps
+func getVpsDetails(client *ovh.Client, vpsName string) (*virtualPrivateServer, error) {
+	var vpsDetails virtualPrivateServer
 	vpsNamePath := fmt.Sprintf("%s/%s", vpsAPIPath, url.QueryEscape(vpsName))
 
 	err := client.Get(vpsNamePath, &vpsDetails)
@@ -87,7 +86,7 @@ func getVpsDetails(client *ovh.Client, vpsName string) (*Vps, error) {
 		return nil, err
 	}
 
-	parsedIPs, err := ParseIPList(ips)
+	parsedIPs, err := parseIPList(ips)
 	if err != nil {
 		return nil, err
 	}
@@ -116,12 +115,12 @@ func (d *vpsDiscovery) getSource() string {
 }
 
 func (d *vpsDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
-	client, err := CreateClient(d.config)
+	client, err := createClient(d.config)
 	if err != nil {
 		return nil, err
 	}
 
-	var vpsDetailedList []Vps
+	var vpsDetailedList []virtualPrivateServer
 	vpsList, err := getVpsList(client)
 	if err != nil {
 		return nil, err

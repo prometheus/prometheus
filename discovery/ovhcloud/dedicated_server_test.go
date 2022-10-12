@@ -38,7 +38,7 @@ service: dedicated_server
 endpoint: %s
 application_key: %s
 application_secret: %s
-consumer_key: %s`, mock.URL, ovhCloudApplicationKeyTest, ovhCloudApplicationSecretTest, ovhCloudConsumerKeyTest)
+consumer_key: %s`, mock.URL, ovhcloudApplicationKeyTest, ovhcloudApplicationSecretTest, ovhcloudConsumerKeyTest)
 
 	require.NoError(t, yaml.UnmarshalStrict([]byte(cfgString), &cfg))
 	d, err := newRefresher(&cfg, log.NewNopLogger())
@@ -79,7 +79,7 @@ consumer_key: %s`, mock.URL, ovhCloudApplicationKeyTest, ovhCloudApplicationSecr
 }
 
 func MockDedicatedAPI(w http.ResponseWriter, r *http.Request) {
-	if r.Header.Get("X-Ovh-Application") != ovhCloudApplicationKeyTest {
+	if r.Header.Get("X-Ovh-Application") != ovhcloudApplicationKeyTest {
 		http.Error(w, "bad application key", http.StatusBadRequest)
 		return
 	}

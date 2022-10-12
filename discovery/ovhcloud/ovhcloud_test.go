@@ -14,20 +14,22 @@
 package ovhcloud
 
 import (
+	"errors"
 	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v2"
 
+	"github.com/prometheus/common/config"
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/util/testutil"
 )
 
 var (
-	testApplicationKey    = "appKeyTest"
-	testApplicationSecret = "appSecretTest"
-	testConsumerKey       = "consumerTest"
+	ovhcloudApplicationKeyTest    = "TDPKJdwZwAQPwKX2"
+	ovhcloudApplicationSecretTest = config.Secret("9ufkBmLaTQ9nz5yMUlg79taH0GNnzDjk")
+	ovhcloudConsumerKeyTest       = config.Secret("5mBuy6SUQcRw2ZUxg0cG68BoDKpED4KY")
 )
 
 const (
@@ -42,7 +44,7 @@ application_secret: %s
 consumer_key: %s
 refresh_interval: 1m
 service: %s
-`, mockURL, testApplicationKey, testApplicationSecret, testConsumerKey, service)
+`, mockURL, ovhcloudApplicationKeyTest, ovhcloudApplicationSecretTest, ovhcloudConsumerKeyTest, service)
 
 	return getMockConfFromString(confString)
 }
@@ -61,44 +63,59 @@ endpoint: %s
 
 	conf, _ := getMockConfFromString(confString)
 
-	_, err := CreateClient(&conf)
+	_, err := createClient(&conf)
 
 	require.ErrorContains(t, err, "missing application key")
 }
 
-func TestParseIPv4Failed(t *testing.T) {
-	_, err := ParseIPList([]string{"A.b"})
-	require.ErrorContains(t, err, "could not parse IP addresses from list")
-}
-
-func TestParseZeroIPFailed(t *testing.T) {
-	_, err := ParseIPList([]string{"0.0.0.0"})
-	require.ErrorContains(t, err, "could not parse IP addresses from list")
-}
-
-func TestParseVoidIPFailed(t *testing.T) {
-	_, err := ParseIPList([]string{""})
-	require.ErrorContains(t, err, "could not parse IP addresses from list")
-}
-
-func TestParseIPv6Ok(t *testing.T) {
-	_, err := ParseIPList([]string{"2001:0db8:0000:0000:0000:0000:0000:0001"})
-	require.NoError(t, err)
-}
-
-func TestParseIPv6Failed(t *testing.T) {
-	_, err := ParseIPList([]string{"bbb:cccc:1111"})
-	require.ErrorContains(t, err, "could not parse IP addresses from list")
-}
-
-func TestParseIPv4BadMask(t *testing.T) {
-	_, err := ParseIPList([]string{"192.0.2.1/23"})
-	require.ErrorContains(t, err, "could not parse IP addresses from list")
-}
-
-func TestParseIPv4MaskOk(t *testing.T) {
-	_, err := ParseIPList([]string{"192.0.2.1/32"})
-	require.NoError(t, err)
+func TestParseIPs(t *testing.T) {
+	testCases := []struct {
+		name  string
+		input []string
+		want  error
+	}{
+		{
+			name:  "Parse IPv4 failed.",
+			input: []string{"A.b"},
+			want:  errors.New("could not parse IP addresses from list"),
+		},
+		{
+			name:  "Parse unspecified failed.",
+			input: []string{"0.0.0.0"},
+			want:  errors.New("could not parse IP addresses from list"),
+		},
+		{
+			name:  "Parse void IP failed.",
+			input: []string{""},
+			want:  errors.New("could not parse IP addresses from list"),
+		},
+		{
+			name:  "Parse IPv6 ok.",
+			input: []string{"2001:0db8:0000:0000:0000:0000:0000:0001"},
+			want:  nil,
+		},
+		{
+			name:  "Parse IPv6 failed.",
+			input: []string{"bbb:cccc:1111"},
+			want:  errors.New("could not parse IP addresses from list"),
+		},
+		{
+			name:  "Parse IPv4 bad mask.",
+			input: []string{"192.0.2.1/23"},
+			want:  errors.New("could not parse IP addresses from list"),
+		},
+		{
+			name:  "Parse IPv4 ok.",
+			input: []string{"192.0.2.1/32"},
+			want:  nil,
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := parseIPList(tc.input)
+			require.Equal(t, tc.want, err)
+		})
+	}
 }
 
 func TestDiscoverer(t *testing.T) {

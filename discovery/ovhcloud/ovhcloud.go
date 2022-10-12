@@ -15,15 +15,14 @@ package ovhcloud
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net/netip"
 	"time"
-
-	"inet.af/netaddr"
 
 	"github.com/go-kit/log"
 	"github.com/grafana/regexp"
 	"github.com/ovh/go-ovh/ovh"
-	"github.com/pkg/errors"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 
@@ -32,17 +31,8 @@ import (
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
-// metaLabelPrefix is the meta prefix used for all meta labels.
-// in this discovery.
-const (
-	metaLabelPrefix = model.MetaLabelPrefix + "ovhcloud_"
-)
-
-var (
-	ovhCloudApplicationKeyTest    = "TDPKJdwZwAQPwKX2"
-	ovhCloudApplicationSecretTest = config.Secret("9ufkBmLaTQ9nz5yMUlg79taH0GNnzDjk")
-	ovhCloudConsumerKeyTest       = "5mBuy6SUQcRw2ZUxg0cG68BoDKpED4KY"
-)
+// metaLabelPrefix is the meta prefix used for all meta labels in this discovery.
+const metaLabelPrefix = model.MetaLabelPrefix + "ovhcloud_"
 
 type refresher interface {
 	refresh(context.Context) ([]*targetgroup.Group, error)
@@ -53,23 +43,23 @@ var DefaultSDConfig = SDConfig{
 	RefreshInterval: model.Duration(60 * time.Second),
 }
 
-// SDConfig sd config
+// SDConfig defines the Service Discovery struct used for configuration.
 type SDConfig struct {
 	Endpoint          string         `yaml:"endpoint"`
 	ApplicationKey    string         `yaml:"application_key"`
 	ApplicationSecret config.Secret  `yaml:"application_secret"`
-	ConsumerKey       string         `yaml:"consumer_key"`
+	ConsumerKey       config.Secret  `yaml:"consumer_key"`
 	RefreshInterval   model.Duration `yaml:"refresh_interval"`
 	Service           string         `yaml:"service"`
 }
 
-// IPs struct to store IPV4 and IPV6
+// IPs struct to store IPV4 and IPV6.
 type IPs struct {
 	IPV4 string `json:"ipv4"`
 	IPV6 string `json:"ipv6"`
 }
 
-// Name get name
+// Name implements the Discoverer interface.
 func (c SDConfig) Name() string {
 	return "ovhcloud"
 }
@@ -99,13 +89,13 @@ func (c *SDConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	case "dedicated_server", "vps":
 		return nil
 	default:
-		return errors.Errorf("unknown service: %v", c.Service)
+		return fmt.Errorf("unknown service: %v", c.Service)
 	}
 }
 
-// CreateClient get client
-func CreateClient(config *SDConfig) (*ovh.Client, error) {
-	return ovh.NewClient(config.Endpoint, config.ApplicationKey, string(config.ApplicationSecret), config.ConsumerKey)
+// CreateClient creates a new ovh client configured with given credentials.
+func createClient(config *SDConfig) (*ovh.Client, error) {
+	return ovh.NewClient(config.Endpoint, config.ApplicationKey, string(config.ApplicationSecret), string(config.ConsumerKey))
 }
 
 // NewDiscoverer new discoverer
@@ -117,15 +107,15 @@ func init() {
 	discovery.RegisterConfig(&SDConfig{})
 }
 
-// ParseIPList Parse ip list to store on IPV4 and IPV6 on IPs type
-func ParseIPList(ipList []string) (*IPs, error) {
+// ParseIPList Parse ip list to store on IPV4 and IPV6 on IPs type.
+func parseIPList(ipList []string) (*IPs, error) {
 	var IPs IPs
 	reg := regexp.MustCompile(`^([0-9a-f\.:]+)(\/(\d+))?$`)
 	for _, ip := range ipList {
 		netmask := reg.ReplaceAllString(ip, "${3}")
 		ip = reg.ReplaceAllString(ip, "${1}")
 
-		netIP, err := netaddr.ParseIP(ip)
+		netIP, err := netip.ParseAddr(ip)
 		if err == nil && !netIP.IsUnspecified() {
 			if netIP.Is4() {
 				if netmask != "" && netmask != "32" {
@@ -157,7 +147,7 @@ func newRefresher(conf *SDConfig, logger log.Logger) (refresher, error) {
 	return nil, fmt.Errorf("unknown OVHcloud discovery service '%s'", conf.Service)
 }
 
-// NewDiscovery ovhcloud creates a discovery with refresher
+// NewDiscovery returns a new Ovhcloud Discoverer which periodically refreshes its targets.
 func NewDiscovery(conf *SDConfig, logger log.Logger) (*refresh.Discovery, error) {
 	r, err := newRefresher(conf, logger)
 	if err != nil {

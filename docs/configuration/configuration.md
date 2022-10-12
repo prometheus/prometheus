@@ -1178,6 +1178,7 @@ tls_config:
 ```
 
 ### `<ovhcloud_sd_config>`
+
 OVHcloud SD configurations allow retrieving scrape targets from OVHcloud's [dedicated servers](https://www.ovhcloud.com/en/bare-metal/) and [VPS](https://www.ovhcloud.com/en/vps/) using
 their [API](https://api.ovh.com/).
 Prometheus will periodically check the REST endpoint and create a target for every discovered server.
@@ -1185,6 +1186,7 @@ The role will try to use the public IPv4 address as default address, if there's 
 For OVHcloud's [public cloud instances](https://www.ovhcloud.com/en/public-cloud/) you can use the [openstack_sd_config](#openstack_sd_config).
 
 #### VPS
+
 * `__meta_ovhcloud_vps_ipv4`: the ipv4 of the server
 * `__meta_ovhcloud_vps_ipv6`: the ipv6 of the server
 * `__meta_ovhcloud_vps_keymap`: the KVM keyboard layout on VPS Cloud
@@ -1208,6 +1210,7 @@ For OVHcloud's [public cloud instances](https://www.ovhcloud.com/en/public-cloud
 * `__meta_ovhcloud_vps_vcore`: the vcore of the server
 
 #### Dedicated servers
+
 * `__meta_ovhcloud_dedicated_server_state`: the state of the server
 * `__meta_ovhcloud_dedicated_server_ipv4`: the ipv4 of the server
 * `__meta_ovhcloud_dedicated_server_ipv6`: the ipv6 of the server
@@ -1226,14 +1229,14 @@ See below for the configuration options for OVHcloud discovery:
 ```yaml
 # Access key to use. https://api.ovh.com
 application_key: <string>
-application_secret: <string>
-consumer_key: <string>
-# API endpoint. https://github.com/ovh/go-ovh#supported-apis
-endpoint: <string>
+application_secret: <secret>
+consumer_key: <secret>
 # Service of the targets to retrieve. Must be `vps` or `dedicated_server`.
 service: <string>
+# API endpoint. https://github.com/ovh/go-ovh#supported-apis
+[ endpoint: <string> | default = "ovh-eu" ]
 # Refresh interval to re-read the resources list.
-refresh_interval: <duration>
+[ refresh_interval: <duration> | default = 60s ]
 ```
 
 ### `<puppetdb_sd_config>`
