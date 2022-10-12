@@ -243,6 +243,8 @@ type scrapePool struct {
 	newLoop func(scrapeLoopOptions) loop
 
 	noDefaultPort bool
+
+	enableProtobufNegotiation bool
 }
 
 type labelLimits struct {
@@ -284,15 +286,16 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed 
 
 	ctx, cancel := context.WithCancel(context.Background())
 	sp := &scrapePool{
-		cancel:        cancel,
-		appendable:    app,
-		config:        cfg,
-		client:        client,
-		activeTargets: map[uint64]*Target{},
-		loops:         map[uint64]loop{},
-		logger:        logger,
-		httpOpts:      options.HTTPClientOptions,
-		noDefaultPort: options.NoDefaultPort,
+		cancel:                    cancel,
+		appendable:                app,
+		config:                    cfg,
+		client:                    client,
+		activeTargets:             map[uint64]*Target{},
+		loops:                     map[uint64]loop{},
+		logger:                    logger,
+		httpOpts:                  options.HTTPClientOptions,
+		noDefaultPort:             options.NoDefaultPort,
+		enableProtobufNegotiation: options.EnableProtobufNegotiation,
 	}
 	sp.newLoop = func(opts scrapeLoopOptions) loop {
 		// Update the targets retrieval function for metadata to a new scrape cache.
@@ -433,8 +436,12 @@ func (sp *scrapePool) reload(cfg *config.ScrapeConfig) error {
 
 		t := sp.activeTargets[fp]
 		interval, timeout, err := t.intervalAndTimeout(interval, timeout)
+		acceptHeader := scrapeAcceptHeader
+		if sp.enableProtobufNegotiation {
+			acceptHeader = scrapeAcceptHeaderWithProtobuf
+		}
 		var (
-			s       = &targetScraper{Target: t, client: sp.client, timeout: timeout, bodySizeLimit: bodySizeLimit}
+			s       = &targetScraper{Target: t, client: sp.client, timeout: timeout, bodySizeLimit: bodySizeLimit, acceptHeader: acceptHeader}
 			newLoop = sp.newLoop(scrapeLoopOptions{
 				target:          t,
 				scraper:         s,
@@ -537,8 +544,11 @@ func (sp *scrapePool) sync(targets []*Target) {
 			// for every target.
 			var err error
 			interval, timeout, err = t.intervalAndTimeout(interval, timeout)
-
-			s := &targetScraper{Target: t, client: sp.client, timeout: timeout, bodySizeLimit: bodySizeLimit}
+			acceptHeader := scrapeAcceptHeader
+			if sp.enableProtobufNegotiation {
+				acceptHeader = scrapeAcceptHeaderWithProtobuf
+			}
+			s := &targetScraper{Target: t, client: sp.client, timeout: timeout, bodySizeLimit: bodySizeLimit, acceptHeader: acceptHeader}
 			l := sp.newLoop(scrapeLoopOptions{
 				target:          t,
 				scraper:         s,
@@ -757,11 +767,15 @@ type targetScraper struct {
 	buf   *bufio.Reader
 
 	bodySizeLimit int64
+	acceptHeader  string
 }
 
 var errBodySizeLimit = errors.New("body size limit exceeded")
 
-const acceptHeader = `application/vnd.google.protobuf; proto=io.prometheus.client.MetricFamily; encoding=delimited,application/openmetrics-text;version=1.0.0;q=0.75,text/plain;version=0.0.4;q=0.5,*/*;q=0.1`
+const (
+	scrapeAcceptHeader             = `encoding=delimited,application/openmetrics-text;version=1.0.0;q=0.75,text/plain;version=0.0.4;q=0.5,*/*;q=0.1`
+	scrapeAcceptHeaderWithProtobuf = `application/vnd.google.protobuf; proto=io.prometheus.client.MetricFamily; encoding=delimited,application/openmetrics-text;version=1.0.0;q=0.75,text/plain;version=0.0.4;q=0.5,*/*;q=0.1`
+)
 
 var UserAgent = fmt.Sprintf("Prometheus/%s", version.Version)
 
@@ -771,7 +785,7 @@ func (s *targetScraper) scrape(ctx context.Context, w io.Writer) (string, error)
 		if err != nil {
 			return "", err
 		}
-		req.Header.Add("Accept", acceptHeader)
+		req.Header.Add("Accept", s.acceptHeader)
 		req.Header.Add("Accept-Encoding", "gzip")
 		req.Header.Set("User-Agent", UserAgent)
 		req.Header.Set("X-Prometheus-Scrape-Timeout-Seconds", strconv.FormatFloat(s.timeout.Seconds(), 'f', -1, 64))
