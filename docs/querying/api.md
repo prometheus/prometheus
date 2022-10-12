@@ -447,6 +447,12 @@ sample values. JSON does not support special float values such as `NaN`, `Inf`,
 and `-Inf`, so sample values are transferred as quoted JSON strings rather than
 raw numbers.
 
+The keys `"histogram"` and `"histograms"` only show up if the experimental
+native histograms are present in the response. Their placeholder `<histogram>`
+is explained in detail in its own section below. Any one object will only have
+the `"value"`/`"values"` key or the `"histogram"`/`"histograms"` key, but not
+both.
+
 ### Range vectors
 
 Range vectors are returned as result type `matrix`. The corresponding
@@ -456,7 +462,8 @@ Range vectors are returned as result type `matrix`. The corresponding
 [
   {
     "metric": { "<label_name>": "<label_value>", ... },
-    "values": [ [ <unix_time>, "<sample_value>" ], ... ]
+    "values": [ [ <unix_time>, "<sample_value>" ], ... ],
+    "histograms": [ [ <unix_time>, <histogram> ], ... ]
   },
   ...
 ]
@@ -471,7 +478,8 @@ Instant vectors are returned as result type `vector`. The corresponding
 [
   {
     "metric": { "<label_name>": "<label_value>", ... },
-    "value": [ <unix_time>, "<sample_value>" ]
+    "value": [ <unix_time>, "<sample_value>" ],
+    "histogram": [ <unix_time>, <histogram> ]
   },
   ...
 ]
@@ -494,6 +502,33 @@ String results are returned as result type `string`. The corresponding
 ```
 [ <unix_time>, "<string_value>" ]
 ```
+
+### Native histograms
+
+The `<histogram>` placeholder used above is formatted as follows.
+
+_Note that native histograms are an experimental feature, and the format below
+might still change._
+
+```
+{
+  "count": "<count_of_observations>",
+  "sum": "<sum_of_observations>",
+  "buckets": [ [ <boundary_rule>, "<left_boundary>", "<right_boundary>", "<count_in_bucket>" ], ... ]
+}
+```
+
+The `<boundary_rule>` placeholder is an integer between 0 and 3 with the
+following meaning:
+
+* 0: “open left” (left boundary is exclusive, right boundary in inclusive)
+* 1: “open right” (left boundary is inclusive, right boundary in exclusive)
+* 2: “open both” (both boundaries are exclusive)
+* 3: “closed both” (both boundaries are inclusive)
+
+Note that with the currently implemented bucket schemas, positive buckets are
+“open left”, negative buckets are “open right”, and the zero bucket (with a
+negative left boundary and a positive right boundary) is “closed both”.
 
 ## Targets
 
