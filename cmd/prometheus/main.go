@@ -198,6 +198,7 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 				level.Info(logger).Log("msg", "No default port will be appended to scrape targets' addresses.")
 			case "native-histograms":
 				c.tsdb.EnableNativeHistograms = true
+				c.scrape.EnableProtobufNegotiation = true
 				level.Info(logger).Log("msg", "Experimental native histogram support enabled.")
 			case "":
 				continue
