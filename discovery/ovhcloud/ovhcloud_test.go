@@ -18,10 +18,10 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/prometheus/common/config"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v2"
 
-	"github.com/prometheus/common/config"
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/util/testutil"
 )
