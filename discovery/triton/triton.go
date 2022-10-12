@@ -25,7 +25,7 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	conntrack "github.com/mwitkow/go-conntrack"
+	"github.com/mwitkow/go-conntrack"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 

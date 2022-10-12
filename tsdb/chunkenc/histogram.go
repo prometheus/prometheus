@@ -29,10 +29,10 @@ import (
 // delta of the delta to the previous number, xor = what we do for regular
 // sample values):
 //
-//   field →    ts    count zeroCount sum []posbuckets []negbuckets
-//   sample 1   raw   raw   raw       raw []raw        []raw
-//   sample 2   delta delta delta     xor []delta      []delta
-//   sample >2  dod   dod   dod       xor []dod        []dod
+//	field →    ts    count zeroCount sum []posbuckets []negbuckets
+//	sample 1   raw   raw   raw       raw []raw        []raw
+//	sample 2   delta delta delta     xor []delta      []delta
+//	sample >2  dod   dod   dod       xor []dod        []dod
 type HistogramChunk struct {
 	b bstream
 }
@@ -738,6 +738,7 @@ func (it *histogramIterator) Next() ValueType {
 		}
 		it.sum = math.Float64frombits(sum)
 
+		var current int64
 		for i := range it.pBuckets {
 			v, err := readVarbitInt(&it.br)
 			if err != nil {
@@ -745,8 +746,10 @@ func (it *histogramIterator) Next() ValueType {
 				return ValNone
 			}
 			it.pBuckets[i] = v
-			it.pFloatBuckets[i] = float64(v)
+			current += it.pBuckets[i]
+			it.pFloatBuckets[i] = float64(current)
 		}
+		current = 0
 		for i := range it.nBuckets {
 			v, err := readVarbitInt(&it.br)
 			if err != nil {
@@ -754,7 +757,8 @@ func (it *histogramIterator) Next() ValueType {
 				return ValNone
 			}
 			it.nBuckets[i] = v
-			it.nFloatBuckets[i] = float64(v)
+			current += it.nBuckets[i]
+			it.nFloatBuckets[i] = float64(current)
 		}
 
 		it.numRead++

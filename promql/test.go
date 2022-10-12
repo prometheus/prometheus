@@ -785,7 +785,7 @@ func (ll *LazyLoader) QueryEngine() *Engine {
 
 // Queryable allows querying the LazyLoader's data.
 // Note: only the samples till the max timestamp used
-//       in `WithSamplesTill` can be queried.
+// in `WithSamplesTill` can be queried.
 func (ll *LazyLoader) Queryable() storage.Queryable {
 	return ll.storage
 }

@@ -1085,7 +1085,7 @@ func BenchmarkCompactionFromHead(b *testing.B) {
 			opts := DefaultHeadOptions()
 			opts.ChunkRange = 1000
 			opts.ChunkDirRoot = chunkDir
-			h, err := NewHead(nil, nil, nil, opts, nil)
+			h, err := NewHead(nil, nil, nil, nil, opts, nil)
 			require.NoError(b, err)
 			for ln := 0; ln < labelNames; ln++ {
 				app := h.Appender(context.Background())
@@ -1298,7 +1298,7 @@ func TestDeleteCompactionBlockAfterFailedReload(t *testing.T) {
 }
 
 func TestHeadCompactionWithHistograms(t *testing.T) {
-	head, _ := newTestHead(t, DefaultBlockDuration, false)
+	head, _ := newTestHead(t, DefaultBlockDuration, false, false)
 	require.NoError(t, head.Init(0))
 	t.Cleanup(func() {
 		require.NoError(t, head.Close())
@@ -1462,11 +1462,11 @@ func TestSparseHistogramSpaceSavings(t *testing.T) {
 				c.numBuckets,
 			),
 			func(t *testing.T) {
-				oldHead, _ := newTestHead(t, DefaultBlockDuration, false)
+				oldHead, _ := newTestHead(t, DefaultBlockDuration, false, false)
 				t.Cleanup(func() {
 					require.NoError(t, oldHead.Close())
 				})
-				sparseHead, _ := newTestHead(t, DefaultBlockDuration, false)
+				sparseHead, _ := newTestHead(t, DefaultBlockDuration, false, false)
 				t.Cleanup(func() {
 					require.NoError(t, sparseHead.Close())
 				})

@@ -542,6 +542,140 @@ func TestCompactingChunkSeriesMerger(t *testing.T) {
 	}
 }
 
+func TestConcatenatingChunkSeriesMerger(t *testing.T) {
+	m := NewConcatenatingChunkSeriesMerger()
+
+	for _, tc := range []struct {
+		name     string
+		input    []ChunkSeries
+		expected ChunkSeries
+	}{
+		{
+			name: "single empty series",
+			input: []ChunkSeries{
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), nil),
+			},
+			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), nil),
+		},
+		{
+			name: "single series",
+			input: []ChunkSeries{
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{1, 1, nil, nil}, sample{2, 2, nil, nil}}, []tsdbutil.Sample{sample{3, 3, nil, nil}}),
+			},
+			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{1, 1, nil, nil}, sample{2, 2, nil, nil}}, []tsdbutil.Sample{sample{3, 3, nil, nil}}),
+		},
+		{
+			name: "two empty series",
+			input: []ChunkSeries{
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), nil),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), nil),
+			},
+			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), nil, nil),
+		},
+		{
+			name: "two non overlapping",
+			input: []ChunkSeries{
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{1, 1, nil, nil}, sample{2, 2, nil, nil}}, []tsdbutil.Sample{sample{3, 3, nil, nil}, sample{5, 5, nil, nil}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{7, 7, nil, nil}, sample{9, 9, nil, nil}}, []tsdbutil.Sample{sample{10, 10, nil, nil}}),
+			},
+			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{1, 1, nil, nil}, sample{2, 2, nil, nil}}, []tsdbutil.Sample{sample{3, 3, nil, nil}, sample{5, 5, nil, nil}}, []tsdbutil.Sample{sample{7, 7, nil, nil}, sample{9, 9, nil, nil}}, []tsdbutil.Sample{sample{10, 10, nil, nil}}),
+		},
+		{
+			name: "two overlapping",
+			input: []ChunkSeries{
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{1, 1, nil, nil}, sample{2, 2, nil, nil}}, []tsdbutil.Sample{sample{3, 3, nil, nil}, sample{8, 8, nil, nil}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{7, 7, nil, nil}, sample{9, 9, nil, nil}}, []tsdbutil.Sample{sample{10, 10, nil, nil}}),
+			},
+			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+				[]tsdbutil.Sample{sample{1, 1, nil, nil}, sample{2, 2, nil, nil}}, []tsdbutil.Sample{sample{3, 3, nil, nil}, sample{8, 8, nil, nil}},
+				[]tsdbutil.Sample{sample{7, 7, nil, nil}, sample{9, 9, nil, nil}}, []tsdbutil.Sample{sample{10, 10, nil, nil}},
+			),
+		},
+		{
+			name: "two duplicated",
+			input: []ChunkSeries{
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{1, 1, nil, nil}, sample{2, 2, nil, nil}, sample{3, 3, nil, nil}, sample{5, 5, nil, nil}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{2, 2, nil, nil}, sample{3, 3, nil, nil}, sample{5, 5, nil, nil}}),
+			},
+			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+				[]tsdbutil.Sample{sample{1, 1, nil, nil}, sample{2, 2, nil, nil}, sample{3, 3, nil, nil}, sample{5, 5, nil, nil}},
+				[]tsdbutil.Sample{sample{2, 2, nil, nil}, sample{3, 3, nil, nil}, sample{5, 5, nil, nil}},
+			),
+		},
+		{
+			name: "three overlapping",
+			input: []ChunkSeries{
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{1, 1, nil, nil}, sample{2, 2, nil, nil}, sample{3, 3, nil, nil}, sample{5, 5, nil, nil}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{2, 2, nil, nil}, sample{3, 3, nil, nil}, sample{6, 6, nil, nil}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{0, 0, nil, nil}, sample{4, 4, nil, nil}}),
+			},
+			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+				[]tsdbutil.Sample{sample{1, 1, nil, nil}, sample{2, 2, nil, nil}, sample{3, 3, nil, nil}, sample{5, 5, nil, nil}},
+				[]tsdbutil.Sample{sample{2, 2, nil, nil}, sample{3, 3, nil, nil}, sample{6, 6, nil, nil}},
+				[]tsdbutil.Sample{sample{0, 0, nil, nil}, sample{4, 4, nil, nil}},
+			),
+		},
+		{
+			name: "three in chained overlap",
+			input: []ChunkSeries{
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{1, 1, nil, nil}, sample{2, 2, nil, nil}, sample{3, 3, nil, nil}, sample{5, 5, nil, nil}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{4, 4, nil, nil}, sample{6, 66, nil, nil}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{6, 6, nil, nil}, sample{10, 10, nil, nil}}),
+			},
+			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+				[]tsdbutil.Sample{sample{1, 1, nil, nil}, sample{2, 2, nil, nil}, sample{3, 3, nil, nil}, sample{5, 5, nil, nil}},
+				[]tsdbutil.Sample{sample{4, 4, nil, nil}, sample{6, 66, nil, nil}},
+				[]tsdbutil.Sample{sample{6, 6, nil, nil}, sample{10, 10, nil, nil}},
+			),
+		},
+		{
+			name: "three in chained overlap complex",
+			input: []ChunkSeries{
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{0, 0, nil, nil}, sample{5, 5, nil, nil}}, []tsdbutil.Sample{sample{10, 10, nil, nil}, sample{15, 15, nil, nil}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{2, 2, nil, nil}, sample{20, 20, nil, nil}}, []tsdbutil.Sample{sample{25, 25, nil, nil}, sample{30, 30, nil, nil}}),
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), []tsdbutil.Sample{sample{18, 18, nil, nil}, sample{26, 26, nil, nil}}, []tsdbutil.Sample{sample{31, 31, nil, nil}, sample{35, 35, nil, nil}}),
+			},
+			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+				[]tsdbutil.Sample{sample{0, 0, nil, nil}, sample{5, 5, nil, nil}}, []tsdbutil.Sample{sample{10, 10, nil, nil}, sample{15, 15, nil, nil}},
+				[]tsdbutil.Sample{sample{2, 2, nil, nil}, sample{20, 20, nil, nil}}, []tsdbutil.Sample{sample{25, 25, nil, nil}, sample{30, 30, nil, nil}},
+				[]tsdbutil.Sample{sample{18, 18, nil, nil}, sample{26, 26, nil, nil}}, []tsdbutil.Sample{sample{31, 31, nil, nil}, sample{35, 35, nil, nil}},
+			),
+		},
+		{
+			name: "110 overlapping",
+			input: []ChunkSeries{
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), tsdbutil.GenerateSamples(0, 110)), // [0 - 110)
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), tsdbutil.GenerateSamples(60, 50)), // [60 - 110)
+			},
+			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+				tsdbutil.GenerateSamples(0, 110),
+				tsdbutil.GenerateSamples(60, 50),
+			),
+		},
+		{
+			name: "150 overlapping samples, simply concatenated and no splits",
+			input: []ChunkSeries{
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), tsdbutil.GenerateSamples(0, 90)),  // [0 - 90)
+				NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"), tsdbutil.GenerateSamples(60, 90)), // [90 - 150)
+			},
+			expected: NewListChunkSeriesFromSamples(labels.FromStrings("bar", "baz"),
+				tsdbutil.GenerateSamples(0, 90),
+				tsdbutil.GenerateSamples(60, 90),
+			),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			merged := m(tc.input...)
+			require.Equal(t, tc.expected.Labels(), merged.Labels())
+			actChks, actErr := ExpandChunks(merged.Iterator())
+			expChks, expErr := ExpandChunks(tc.expected.Iterator())
+
+			require.Equal(t, expErr, actErr)
+			require.Equal(t, expChks, actChks)
+		})
+	}
+}
+
 type mockQuerier struct {
 	LabelQuerier
 
@@ -739,7 +873,7 @@ var result []tsdbutil.Sample
 func makeSeriesSet(numSeries, numSamples int) SeriesSet {
 	series := []Series{}
 	for j := 0; j < numSeries; j++ {
-		labels := labels.Labels{{Name: "foo", Value: fmt.Sprintf("bar%d", j)}}
+		labels := labels.FromStrings("foo", fmt.Sprintf("bar%d", j))
 		samples := []tsdbutil.Sample{}
 		for k := 0; k < numSamples; k++ {
 			samples = append(samples, sample{t: int64(k), v: float64(k)})

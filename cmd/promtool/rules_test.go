@@ -118,7 +118,6 @@ func TestBackfillRuleIntegration(t *testing.T) {
 				}
 
 				opts := tsdb.DefaultOptions()
-				opts.AllowOverlappingBlocks = true
 				db, err := tsdb.Open(tmpDir, nil, nil, opts, nil)
 				require.NoError(t, err)
 
@@ -135,10 +134,7 @@ func TestBackfillRuleIntegration(t *testing.T) {
 					series := selectedSeries.At()
 					if len(series.Labels()) != 3 {
 						require.Equal(t, 2, len(series.Labels()))
-						x := labels.Labels{
-							labels.Label{Name: "__name__", Value: "grp2_rule1"},
-							labels.Label{Name: "name1", Value: "val1"},
-						}
+						x := labels.FromStrings("__name__", "grp2_rule1", "name1", "val1")
 						require.Equal(t, x, series.Labels())
 					} else {
 						require.Equal(t, 3, len(series.Labels()))
@@ -249,7 +245,6 @@ func TestBackfillLabels(t *testing.T) {
 	}
 
 	opts := tsdb.DefaultOptions()
-	opts.AllowOverlappingBlocks = true
 	db, err := tsdb.Open(tmpDir, nil, nil, opts, nil)
 	require.NoError(t, err)
 
@@ -260,10 +255,7 @@ func TestBackfillLabels(t *testing.T) {
 		selectedSeries := q.Select(false, nil, labels.MustNewMatcher(labels.MatchRegexp, "", ".*"))
 		for selectedSeries.Next() {
 			series := selectedSeries.At()
-			expectedLabels := labels.Labels{
-				labels.Label{Name: "__name__", Value: "rulename"},
-				labels.Label{Name: "name1", Value: "value-from-rule"},
-			}
+			expectedLabels := labels.FromStrings("__name__", "rulename", "name1", "value-from-rule")
 			require.Equal(t, expectedLabels, series.Labels())
 		}
 		require.NoError(t, selectedSeries.Err())

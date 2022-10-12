@@ -14,6 +14,7 @@
 package tsdb
 
 import (
+	"math"
 	"sync"
 )
 
@@ -45,6 +46,7 @@ func (i *isolationState) IsolationDisabled() bool {
 
 type isolationAppender struct {
 	appendID uint64
+	minTime  int64
 	prev     *isolationAppender
 	next     *isolationAppender
 }
@@ -116,13 +118,29 @@ func (i *isolation) lowWatermarkLocked() uint64 {
 	return i.appendsOpenList.next.appendID
 }
 
+// lowestAppendTime returns the lowest minTime for any open appender,
+// or math.MaxInt64 if no open appenders.
+func (i *isolation) lowestAppendTime() int64 {
+	var lowest int64 = math.MaxInt64
+	i.appendMtx.RLock()
+	defer i.appendMtx.RUnlock()
+
+	for a := i.appendsOpenList.next; a != i.appendsOpenList; a = a.next {
+		if lowest > a.minTime {
+			lowest = a.minTime
+		}
+	}
+	return lowest
+}
+
 // State returns an object used to control isolation
 // between a query and appends. Must be closed when complete.
 func (i *isolation) State(mint, maxt int64) *isolationState {
 	i.appendMtx.RLock() // Take append mutex before read mutex.
 	defer i.appendMtx.RUnlock()
 
-	// We need to track the reads even when isolation is disabled.
+	// We need to track reads even when isolation is disabled, so that head
+	// truncation can wait till reads overlapping that range have finished.
 	isoState := &isolationState{
 		maxAppendID:       i.appendsOpenList.appendID,
 		lowWatermark:      i.appendsOpenList.next.appendID, // Lowest appendID from appenders, or lastAppendId.
@@ -163,7 +181,7 @@ func (i *isolation) TraverseOpenReads(f func(s *isolationState) bool) {
 // newAppendID increments the transaction counter and returns a new transaction
 // ID. The first ID returned is 1.
 // Also returns the low watermark, to keep lock/unlock operations down.
-func (i *isolation) newAppendID() (uint64, uint64) {
+func (i *isolation) newAppendID(minTime int64) (uint64, uint64) {
 	if i.disabled {
 		return 0, 0
 	}
@@ -176,6 +194,7 @@ func (i *isolation) newAppendID() (uint64, uint64) {
 
 	app := i.appendersPool.Get().(*isolationAppender)
 	app.appendID = i.appendsOpenList.appendID
+	app.minTime = minTime
 	app.prev = i.appendsOpenList.prev
 	app.next = i.appendsOpenList
 

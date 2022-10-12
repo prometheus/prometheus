@@ -28,7 +28,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/atomic"
 	"go.uber.org/goleak"
-	yaml "gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v2"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/rulefmt"
@@ -65,7 +65,7 @@ func TestAlertingRule(t *testing.T) {
 		expr,
 		time.Minute,
 		labels.FromStrings("severity", "{{\"c\"}}ritical"),
-		nil, nil, "", true, nil,
+		labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil,
 	)
 	result := promql.Vector{
 		promql.Sample{
@@ -208,7 +208,7 @@ func TestForStateAddSamples(t *testing.T) {
 		expr,
 		time.Minute,
 		labels.FromStrings("severity", "{{\"c\"}}ritical"),
-		nil, nil, "", true, nil,
+		labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil,
 	)
 	result := promql.Vector{
 		promql.Sample{
@@ -382,7 +382,7 @@ func TestForStateRestore(t *testing.T) {
 		expr,
 		alertForDuration,
 		labels.FromStrings("severity", "critical"),
-		nil, nil, "", true, nil,
+		labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil,
 	)
 
 	group := NewGroup(GroupOptions{
@@ -448,7 +448,7 @@ func TestForStateRestore(t *testing.T) {
 			expr,
 			alertForDuration,
 			labels.FromStrings("severity", "critical"),
-			nil, nil, "", false, nil,
+			labels.EmptyLabels(), labels.EmptyLabels(), "", false, nil,
 		)
 		newGroup := NewGroup(GroupOptions{
 			Name:          "default",
@@ -612,36 +612,36 @@ func readSeriesSet(ss storage.SeriesSet) (map[string][]promql.Point, error) {
 func TestCopyState(t *testing.T) {
 	oldGroup := &Group{
 		rules: []Rule{
-			NewAlertingRule("alert", nil, 0, nil, nil, nil, "", true, nil),
-			NewRecordingRule("rule1", nil, nil),
-			NewRecordingRule("rule2", nil, nil),
-			NewRecordingRule("rule3", nil, labels.Labels{{Name: "l1", Value: "v1"}}),
-			NewRecordingRule("rule3", nil, labels.Labels{{Name: "l1", Value: "v2"}}),
-			NewRecordingRule("rule3", nil, labels.Labels{{Name: "l1", Value: "v3"}}),
-			NewAlertingRule("alert2", nil, 0, labels.Labels{{Name: "l2", Value: "v1"}}, nil, nil, "", true, nil),
+			NewAlertingRule("alert", nil, 0, labels.EmptyLabels(), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil),
+			NewRecordingRule("rule1", nil, labels.EmptyLabels()),
+			NewRecordingRule("rule2", nil, labels.EmptyLabels()),
+			NewRecordingRule("rule3", nil, labels.FromStrings("l1", "v1")),
+			NewRecordingRule("rule3", nil, labels.FromStrings("l1", "v2")),
+			NewRecordingRule("rule3", nil, labels.FromStrings("l1", "v3")),
+			NewAlertingRule("alert2", nil, 0, labels.FromStrings("l2", "v1"), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil),
 		},
 		seriesInPreviousEval: []map[string]labels.Labels{
 			{},
 			{},
 			{},
-			{"r3a": labels.Labels{{Name: "l1", Value: "v1"}}},
-			{"r3b": labels.Labels{{Name: "l1", Value: "v2"}}},
-			{"r3c": labels.Labels{{Name: "l1", Value: "v3"}}},
-			{"a2": labels.Labels{{Name: "l2", Value: "v1"}}},
+			{"r3a": labels.FromStrings("l1", "v1")},
+			{"r3b": labels.FromStrings("l1", "v2")},
+			{"r3c": labels.FromStrings("l1", "v3")},
+			{"a2": labels.FromStrings("l2", "v1")},
 		},
 		evaluationTime: time.Second,
 	}
 	oldGroup.rules[0].(*AlertingRule).active[42] = nil
 	newGroup := &Group{
 		rules: []Rule{
-			NewRecordingRule("rule3", nil, labels.Labels{{Name: "l1", Value: "v0"}}),
-			NewRecordingRule("rule3", nil, labels.Labels{{Name: "l1", Value: "v1"}}),
-			NewRecordingRule("rule3", nil, labels.Labels{{Name: "l1", Value: "v2"}}),
-			NewAlertingRule("alert", nil, 0, nil, nil, nil, "", true, nil),
-			NewRecordingRule("rule1", nil, nil),
-			NewAlertingRule("alert2", nil, 0, labels.Labels{{Name: "l2", Value: "v0"}}, nil, nil, "", true, nil),
-			NewAlertingRule("alert2", nil, 0, labels.Labels{{Name: "l2", Value: "v1"}}, nil, nil, "", true, nil),
-			NewRecordingRule("rule4", nil, nil),
+			NewRecordingRule("rule3", nil, labels.FromStrings("l1", "v0")),
+			NewRecordingRule("rule3", nil, labels.FromStrings("l1", "v1")),
+			NewRecordingRule("rule3", nil, labels.FromStrings("l1", "v2")),
+			NewAlertingRule("alert", nil, 0, labels.EmptyLabels(), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil),
+			NewRecordingRule("rule1", nil, labels.EmptyLabels()),
+			NewAlertingRule("alert2", nil, 0, labels.FromStrings("l2", "v0"), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil),
+			NewAlertingRule("alert2", nil, 0, labels.FromStrings("l2", "v1"), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil),
+			NewRecordingRule("rule4", nil, labels.EmptyLabels()),
 		},
 		seriesInPreviousEval: make([]map[string]labels.Labels, 8),
 	}
@@ -649,19 +649,19 @@ func TestCopyState(t *testing.T) {
 
 	want := []map[string]labels.Labels{
 		nil,
-		{"r3a": labels.Labels{{Name: "l1", Value: "v1"}}},
-		{"r3b": labels.Labels{{Name: "l1", Value: "v2"}}},
+		{"r3a": labels.FromStrings("l1", "v1")},
+		{"r3b": labels.FromStrings("l1", "v2")},
 		{},
 		{},
 		nil,
-		{"a2": labels.Labels{{Name: "l2", Value: "v1"}}},
+		{"a2": labels.FromStrings("l2", "v1")},
 		nil,
 	}
 	require.Equal(t, want, newGroup.seriesInPreviousEval)
 	require.Equal(t, oldGroup.rules[0], newGroup.rules[3])
 	require.Equal(t, oldGroup.evaluationTime, newGroup.evaluationTime)
 	require.Equal(t, oldGroup.lastEvaluation, newGroup.lastEvaluation)
-	require.Equal(t, []labels.Labels{{{Name: "l1", Value: "v3"}}}, newGroup.staleSeries)
+	require.Equal(t, []labels.Labels{labels.FromStrings("l1", "v3")}, newGroup.staleSeries)
 }
 
 func TestDeletedRuleMarkedStale(t *testing.T) {
@@ -669,10 +669,10 @@ func TestDeletedRuleMarkedStale(t *testing.T) {
 	defer st.Close()
 	oldGroup := &Group{
 		rules: []Rule{
-			NewRecordingRule("rule1", nil, labels.Labels{{Name: "l1", Value: "v1"}}),
+			NewRecordingRule("rule1", nil, labels.FromStrings("l1", "v1")),
 		},
 		seriesInPreviousEval: []map[string]labels.Labels{
-			{"r1": labels.Labels{{Name: "l1", Value: "v1"}}},
+			{"r1": labels.FromStrings("l1", "v1")},
 		},
 	}
 	newGroup := &Group{
@@ -728,7 +728,7 @@ func TestUpdate(t *testing.T) {
 	ruleManager.start()
 	defer ruleManager.Stop()
 
-	err := ruleManager.Update(10*time.Second, files, nil, "", nil)
+	err := ruleManager.Update(10*time.Second, files, labels.EmptyLabels(), "", nil)
 	require.NoError(t, err)
 	require.Greater(t, len(ruleManager.groups), 0, "expected non-empty rule groups")
 	ogs := map[string]*Group{}
@@ -739,7 +739,7 @@ func TestUpdate(t *testing.T) {
 		ogs[h] = g
 	}
 
-	err = ruleManager.Update(10*time.Second, files, nil, "", nil)
+	err = ruleManager.Update(10*time.Second, files, labels.EmptyLabels(), "", nil)
 	require.NoError(t, err)
 	for h, g := range ruleManager.groups {
 		for _, actual := range g.seriesInPreviousEval {
@@ -758,7 +758,7 @@ func TestUpdate(t *testing.T) {
 	defer os.Remove(tmpFile.Name())
 	defer tmpFile.Close()
 
-	err = ruleManager.Update(10*time.Second, []string{tmpFile.Name()}, nil, "", nil)
+	err = ruleManager.Update(10*time.Second, []string{tmpFile.Name()}, labels.EmptyLabels(), "", nil)
 	require.NoError(t, err)
 
 	for h, g := range ruleManager.groups {
@@ -836,7 +836,7 @@ func reloadAndValidate(rgs *rulefmt.RuleGroups, t *testing.T, tmpFile *os.File, 
 	tmpFile.Seek(0, 0)
 	_, err = tmpFile.Write(bs)
 	require.NoError(t, err)
-	err = ruleManager.Update(10*time.Second, []string{tmpFile.Name()}, nil, "", nil)
+	err = ruleManager.Update(10*time.Second, []string{tmpFile.Name()}, labels.EmptyLabels(), "", nil)
 	require.NoError(t, err)
 	for h, g := range ruleManager.groups {
 		if ogs[h] == g {
@@ -872,7 +872,7 @@ func TestNotify(t *testing.T) {
 
 	expr, err := parser.ParseExpr("a > 1")
 	require.NoError(t, err)
-	rule := NewAlertingRule("aTooHigh", expr, 0, labels.Labels{}, labels.Labels{}, nil, "", true, log.NewNopLogger())
+	rule := NewAlertingRule("aTooHigh", expr, 0, labels.Labels{}, labels.Labels{}, labels.EmptyLabels(), "", true, log.NewNopLogger())
 	group := NewGroup(GroupOptions{
 		Name:          "alert",
 		Interval:      time.Second,
@@ -981,7 +981,7 @@ func TestMetricsUpdate(t *testing.T) {
 	}
 
 	for i, c := range cases {
-		err := ruleManager.Update(time.Second, c.files, nil, "", nil)
+		err := ruleManager.Update(time.Second, c.files, labels.EmptyLabels(), "", nil)
 		require.NoError(t, err)
 		time.Sleep(2 * time.Second)
 		require.Equal(t, c.metrics, countMetrics(), "test %d: invalid count of metrics", i)
@@ -1055,7 +1055,7 @@ func TestGroupStalenessOnRemoval(t *testing.T) {
 
 	var totalStaleNaN int
 	for i, c := range cases {
-		err := ruleManager.Update(time.Second, c.files, nil, "", nil)
+		err := ruleManager.Update(time.Second, c.files, labels.EmptyLabels(), "", nil)
 		require.NoError(t, err)
 		time.Sleep(3 * time.Second)
 		totalStaleNaN += c.staleNaN
@@ -1097,11 +1097,11 @@ func TestMetricsStalenessOnManagerShutdown(t *testing.T) {
 		}
 	}()
 
-	err := ruleManager.Update(2*time.Second, files, nil, "", nil)
+	err := ruleManager.Update(2*time.Second, files, labels.EmptyLabels(), "", nil)
 	time.Sleep(4 * time.Second)
 	require.NoError(t, err)
 	start := time.Now()
-	err = ruleManager.Update(3*time.Second, files[:0], nil, "", nil)
+	err = ruleManager.Update(3*time.Second, files[:0], labels.EmptyLabels(), "", nil)
 	require.NoError(t, err)
 	ruleManager.Stop()
 	stopped = true
@@ -1144,8 +1144,8 @@ func TestGroupHasAlertingRules(t *testing.T) {
 			group: &Group{
 				name: "HasAlertingRule",
 				rules: []Rule{
-					NewAlertingRule("alert", nil, 0, nil, nil, nil, "", true, nil),
-					NewRecordingRule("record", nil, nil),
+					NewAlertingRule("alert", nil, 0, labels.EmptyLabels(), labels.EmptyLabels(), labels.EmptyLabels(), "", true, nil),
+					NewRecordingRule("record", nil, labels.EmptyLabels()),
 				},
 			},
 			want: true,
@@ -1161,7 +1161,7 @@ func TestGroupHasAlertingRules(t *testing.T) {
 			group: &Group{
 				name: "HasOnlyRecordingRule",
 				rules: []Rule{
-					NewRecordingRule("record", nil, nil),
+					NewRecordingRule("record", nil, labels.EmptyLabels()),
 				},
 			},
 			want: false,
@@ -1296,7 +1296,7 @@ func TestUpdateMissedEvalMetrics(t *testing.T) {
 			vector:              expr,
 			holdDuration:        5 * time.Minute,
 			labels:              labels.FromStrings("severity", "critical"),
-			annotations:         nil,
+			annotations:         labels.EmptyLabels(),
 			externalLabels:      nil,
 			externalURL:         "",
 			active:              m,

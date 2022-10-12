@@ -129,7 +129,7 @@ func newTestTarget(targetURL string, deadline time.Duration, lbls labels.Labels)
 	lb.Set(model.AddressLabel, strings.TrimPrefix(targetURL, "http://"))
 	lb.Set(model.MetricsPathLabel, "/metrics")
 
-	return &Target{labels: lb.Labels()}
+	return &Target{labels: lb.Labels(nil)}
 }
 
 func TestNewHTTPBearerToken(t *testing.T) {

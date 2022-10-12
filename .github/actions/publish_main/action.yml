@@ -1,0 +1,43 @@
+name: Publish image
+inputs:
+  docker_hub_organization:
+    type: string
+    description: DockerHub organization
+    default: prom
+  docker_hub_login:
+    type: string
+    description: DockerHub username
+  docker_hub_password:
+    type: string
+    description: DockerHub password
+  quay_io_organization:
+    type: string
+    description: Quay.io organization
+    default: prometheus
+  quay_io_login:
+    type: string
+    description: Quay.io username
+  quay_io_password:
+    type: string
+    description: Quay.io password
+runs:
+  using: composite
+  steps:
+    - uses: ./.github/actions/setup_environment
+      with:
+        enable_docker_multibuild: true
+    - uses: ./.github/actions/restore_artifacts
+    - uses: ./.github/actions/publish_images
+      if: inputs.docker_hub_organization != '' && inputs.docker_hub_login != ''
+      with:
+        registry: docker.io
+        organization: ${{ inputs.docker_hub_organization }}
+        login: ${{ inputs.docker_hub_login }}
+        password: ${{ inputs.docker_hub_password }}
+    - uses: ./.github/actions/publish_images
+      if: inputs.quay_io_organization != '' && inputs.quay_io_login != ''
+      with:
+        registry: quay.io
+        organization: ${{ inputs.quay_io_organization }}
+        login: ${{ inputs.quay_io_login }}
+        password: ${{ inputs.quay_io_password }}

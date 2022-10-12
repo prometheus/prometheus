@@ -1,25 +1,25 @@
-import React, { FC } from 'react';
-import Navigation from './Navbar';
+import { FC } from 'react';
 import { Container } from 'reactstrap';
+import Navigation from './Navbar';
 
-import { BrowserRouter as Router, Redirect, Switch, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Redirect, Route, Switch } from 'react-router-dom';
+import { PathPrefixContext } from './contexts/PathPrefixContext';
+import { ThemeContext, themeName, themeSetting } from './contexts/ThemeContext';
+import { useLocalStorage } from './hooks/useLocalStorage';
+import useMedia from './hooks/useMedia';
 import {
   AgentPage,
   AlertsPage,
   ConfigPage,
   FlagsPage,
+  PanelListPage,
   RulesPage,
   ServiceDiscoveryPage,
   StatusPage,
   TargetsPage,
   TSDBStatusPage,
-  PanelListPage,
 } from './pages';
-import { PathPrefixContext } from './contexts/PathPrefixContext';
-import { ThemeContext, themeName, themeSetting } from './contexts/ThemeContext';
 import { Theme, themeLocalStorageKey } from './Theme';
-import { useLocalStorage } from './hooks/useLocalStorage';
-import useMedia from './hooks/useMedia';
 
 interface AppProps {
   consolesLink: string | null;

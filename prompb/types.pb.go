@@ -363,6 +363,7 @@ func (m *Exemplar) GetTimestamp() int64 {
 // integer histogram as well as a float histogram.
 type Histogram struct {
 	// Types that are valid to be assigned to Count:
+	//
 	//	*Histogram_CountInt
 	//	*Histogram_CountFloat
 	Count isHistogram_Count `protobuf_oneof:"count"`
@@ -377,6 +378,7 @@ type Histogram struct {
 	Schema        int32   `protobuf:"zigzag32,4,opt,name=schema,proto3" json:"schema,omitempty"`
 	ZeroThreshold float64 `protobuf:"fixed64,5,opt,name=zero_threshold,json=zeroThreshold,proto3" json:"zero_threshold,omitempty"`
 	// Types that are valid to be assigned to ZeroCount:
+	//
 	//	*Histogram_ZeroCountInt
 	//	*Histogram_ZeroCountFloat
 	ZeroCount isHistogram_ZeroCount `protobuf_oneof:"zero_count"`

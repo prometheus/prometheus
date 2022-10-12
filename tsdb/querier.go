@@ -16,11 +16,11 @@ package tsdb
 import (
 	"fmt"
 	"math"
-	"sort"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/pkg/errors"
+	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -319,7 +319,7 @@ func postingsForMatcher(ix IndexReader, m *labels.Matcher) (index.Postings, erro
 	if m.Type == labels.MatchRegexp {
 		setMatches := findSetMatches(m.GetRegexString())
 		if len(setMatches) > 0 {
-			sort.Strings(setMatches)
+			slices.Sort(setMatches)
 			return ix.Postings(m.Name, setMatches...)
 		}
 	}
@@ -346,7 +346,7 @@ func postingsForMatcher(ix IndexReader, m *labels.Matcher) (index.Postings, erro
 	}
 
 	if !isSorted {
-		sort.Strings(res)
+		slices.Sort(res)
 	}
 	return ix.Postings(m.Name, res...)
 }
@@ -371,7 +371,7 @@ func inversePostingsForMatcher(ix IndexReader, m *labels.Matcher) (index.Posting
 	}
 
 	if !isSorted {
-		sort.Strings(res)
+		slices.Sort(res)
 	}
 	return ix.Postings(m.Name, res...)
 }
@@ -575,7 +575,7 @@ func (p *populateWithDelGenericSeriesIterator) next() bool {
 	p.i++
 	p.currChkMeta = p.chks[p.i]
 
-	p.currChkMeta.Chunk, p.err = p.chunks.Chunk(p.currChkMeta.Ref)
+	p.currChkMeta.Chunk, p.err = p.chunks.Chunk(p.currChkMeta)
 	if p.err != nil {
 		p.err = errors.Wrapf(p.err, "cannot populate chunk %d", p.currChkMeta.Ref)
 		return false
@@ -999,7 +999,7 @@ func newNopChunkReader() ChunkReader {
 	}
 }
 
-func (cr nopChunkReader) Chunk(ref chunks.ChunkRef) (chunkenc.Chunk, error) {
+func (cr nopChunkReader) Chunk(meta chunks.Meta) (chunkenc.Chunk, error) {
 	return cr.emptyChunk, nil
 }
 

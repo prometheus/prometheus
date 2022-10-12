@@ -333,56 +333,56 @@ func TestSelectHintsSetCorrectly(t *testing.T) {
 		}, {
 			query: "foo[2m:1s]", start: 300000,
 			expected: []*storage.SelectHints{
-				{Start: 175000, End: 300000},
+				{Start: 175000, End: 300000, Step: 1000},
 			},
 		}, {
 			query: "count_over_time(foo[2m:1s])", start: 300000,
 			expected: []*storage.SelectHints{
-				{Start: 175000, End: 300000, Func: "count_over_time"},
+				{Start: 175000, End: 300000, Func: "count_over_time", Step: 1000},
 			},
 		}, {
 			query: "count_over_time(foo[2m:1s] @ 300)", start: 200000,
 			expected: []*storage.SelectHints{
-				{Start: 175000, End: 300000, Func: "count_over_time"},
+				{Start: 175000, End: 300000, Func: "count_over_time", Step: 1000},
 			},
 		}, {
 			query: "count_over_time(foo[2m:1s] @ 200)", start: 200000,
 			expected: []*storage.SelectHints{
-				{Start: 75000, End: 200000, Func: "count_over_time"},
+				{Start: 75000, End: 200000, Func: "count_over_time", Step: 1000},
 			},
 		}, {
 			query: "count_over_time(foo[2m:1s] @ 100)", start: 200000,
 			expected: []*storage.SelectHints{
-				{Start: -25000, End: 100000, Func: "count_over_time"},
+				{Start: -25000, End: 100000, Func: "count_over_time", Step: 1000},
 			},
 		}, {
 			query: "count_over_time(foo[2m:1s] offset 10s)", start: 300000,
 			expected: []*storage.SelectHints{
-				{Start: 165000, End: 290000, Func: "count_over_time"},
+				{Start: 165000, End: 290000, Func: "count_over_time", Step: 1000},
 			},
 		}, {
 			query: "count_over_time((foo offset 10s)[2m:1s] offset 10s)", start: 300000,
 			expected: []*storage.SelectHints{
-				{Start: 155000, End: 280000, Func: "count_over_time"},
+				{Start: 155000, End: 280000, Func: "count_over_time", Step: 1000},
 			},
 		}, {
 			// When the @ is on the vector selector, the enclosing subquery parameters
 			// don't affect the hint ranges.
 			query: "count_over_time((foo @ 200 offset 10s)[2m:1s] offset 10s)", start: 300000,
 			expected: []*storage.SelectHints{
-				{Start: 185000, End: 190000, Func: "count_over_time"},
+				{Start: 185000, End: 190000, Func: "count_over_time", Step: 1000},
 			},
 		}, {
 			// When the @ is on the vector selector, the enclosing subquery parameters
 			// don't affect the hint ranges.
 			query: "count_over_time((foo @ 200 offset 10s)[2m:1s] @ 100 offset 10s)", start: 300000,
 			expected: []*storage.SelectHints{
-				{Start: 185000, End: 190000, Func: "count_over_time"},
+				{Start: 185000, End: 190000, Func: "count_over_time", Step: 1000},
 			},
 		}, {
 			query: "count_over_time((foo offset 10s)[2m:1s] @ 100 offset 10s)", start: 300000,
 			expected: []*storage.SelectHints{
-				{Start: -45000, End: 80000, Func: "count_over_time"},
+				{Start: -45000, End: 80000, Func: "count_over_time", Step: 1000},
 			},
 		}, {
 			query: "foo", start: 10000, end: 20000,
@@ -501,13 +501,13 @@ func TestSelectHintsSetCorrectly(t *testing.T) {
 		}, {
 			query: "(max by (dim1) (foo))[5s:1s]", start: 10000,
 			expected: []*storage.SelectHints{
-				{Start: 0, End: 10000, Func: "max", By: true, Grouping: []string{"dim1"}},
+				{Start: 0, End: 10000, Func: "max", By: true, Grouping: []string{"dim1"}, Step: 1000},
 			},
 		}, {
 			query: "(sum(http_requests{group=~\"p.*\"})+max(http_requests{group=~\"c.*\"}))[20s:5s]", start: 120000,
 			expected: []*storage.SelectHints{
-				{Start: 95000, End: 120000, Func: "sum", By: true},
-				{Start: 95000, End: 120000, Func: "max", By: true},
+				{Start: 95000, End: 120000, Func: "sum", By: true, Step: 5000},
+				{Start: 95000, End: 120000, Func: "max", By: true, Step: 5000},
 			},
 		}, {
 			query: "foo @ 50 + bar @ 250 + baz @ 900", start: 100000, end: 500000,
@@ -547,12 +547,12 @@ func TestSelectHintsSetCorrectly(t *testing.T) {
 		}, { // Hints are based on the inner most subquery timestamp.
 			query: `sum_over_time(sum_over_time(metric{job="1"}[100s])[100s:25s] @ 50)[3s:1s] @ 3000`, start: 100000,
 			expected: []*storage.SelectHints{
-				{Start: -150000, End: 50000, Range: 100000, Func: "sum_over_time"},
+				{Start: -150000, End: 50000, Range: 100000, Func: "sum_over_time", Step: 25000},
 			},
 		}, { // Hints are based on the inner most subquery timestamp.
 			query: `sum_over_time(sum_over_time(metric{job="1"}[100s])[100s:25s] @ 3000)[3s:1s] @ 50`,
 			expected: []*storage.SelectHints{
-				{Start: 2800000, End: 3000000, Range: 100000, Func: "sum_over_time"},
+				{Start: 2800000, End: 3000000, Range: 100000, Func: "sum_over_time", Step: 25000},
 			},
 		},
 	} {
@@ -1442,7 +1442,7 @@ load 1ms
 	ref, err := app.Append(0, lblsneg, -1000000, 1000)
 	require.NoError(t, err)
 	for ts := int64(-1000000 + 1000); ts <= 0; ts += 1000 {
-		_, err := app.Append(ref, nil, ts, -float64(ts/1000)+1)
+		_, err := app.Append(ref, labels.EmptyLabels(), ts, -float64(ts/1000)+1)
 		require.NoError(t, err)
 	}
 
@@ -1611,7 +1611,7 @@ load 1ms
 						{V: 3600, T: 6 * 60 * 1000},
 						{V: 3600, T: 7 * 60 * 1000},
 					},
-					Metric: labels.Labels{},
+					Metric: labels.EmptyLabels(),
 				},
 			},
 		},
@@ -1912,7 +1912,7 @@ func TestSubquerySelector(t *testing.T) {
 						Matrix{
 							Series{
 								Points: []Point{{V: 270, T: 90000}, {V: 300, T: 100000}, {V: 330, T: 110000}, {V: 360, T: 120000}},
-								Metric: labels.Labels{},
+								Metric: labels.EmptyLabels(),
 							},
 						},
 						nil,
@@ -1926,7 +1926,7 @@ func TestSubquerySelector(t *testing.T) {
 						Matrix{
 							Series{
 								Points: []Point{{V: 800, T: 80000}, {V: 900, T: 90000}, {V: 1000, T: 100000}, {V: 1100, T: 110000}, {V: 1200, T: 120000}},
-								Metric: labels.Labels{},
+								Metric: labels.EmptyLabels(),
 							},
 						},
 						nil,
@@ -1940,7 +1940,7 @@ func TestSubquerySelector(t *testing.T) {
 						Matrix{
 							Series{
 								Points: []Point{{V: 1000, T: 100000}, {V: 1000, T: 105000}, {V: 1100, T: 110000}, {V: 1100, T: 115000}, {V: 1200, T: 120000}},
-								Metric: labels.Labels{},
+								Metric: labels.EmptyLabels(),
 							},
 						},
 						nil,
@@ -2996,7 +2996,7 @@ func TestRangeQuery(t *testing.T) {
 			Result: Matrix{
 				Series{
 					Points: []Point{{V: 0, T: 0}, {V: 11, T: 60000}, {V: 1100, T: 120000}},
-					Metric: labels.Labels{},
+					Metric: labels.EmptyLabels(),
 				},
 			},
 			Start:    time.Unix(0, 0),
@@ -3011,7 +3011,7 @@ func TestRangeQuery(t *testing.T) {
 			Result: Matrix{
 				Series{
 					Points: []Point{{V: 0, T: 0}, {V: 11, T: 60000}, {V: 1100, T: 120000}},
-					Metric: labels.Labels{},
+					Metric: labels.EmptyLabels(),
 				},
 			},
 			Start:    time.Unix(0, 0),
@@ -3026,7 +3026,7 @@ func TestRangeQuery(t *testing.T) {
 			Result: Matrix{
 				Series{
 					Points: []Point{{V: 0, T: 0}, {V: 11, T: 60000}, {V: 1100, T: 120000}, {V: 110000, T: 180000}, {V: 11000000, T: 240000}},
-					Metric: labels.Labels{},
+					Metric: labels.EmptyLabels(),
 				},
 			},
 			Start:    time.Unix(0, 0),
@@ -3041,7 +3041,7 @@ func TestRangeQuery(t *testing.T) {
 			Result: Matrix{
 				Series{
 					Points: []Point{{V: 5, T: 0}, {V: 59, T: 60000}, {V: 9, T: 120000}, {V: 956, T: 180000}},
-					Metric: labels.Labels{},
+					Metric: labels.EmptyLabels(),
 				},
 			},
 			Start:    time.Unix(0, 0),
@@ -3056,7 +3056,7 @@ func TestRangeQuery(t *testing.T) {
 			Result: Matrix{
 				Series{
 					Points: []Point{{V: 1, T: 0}, {V: 3, T: 60000}, {V: 5, T: 120000}},
-					Metric: labels.Labels{labels.Label{Name: "__name__", Value: "metric"}},
+					Metric: labels.FromStrings("__name__", "metric"),
 				},
 			},
 			Start:    time.Unix(0, 0),
@@ -3071,7 +3071,7 @@ func TestRangeQuery(t *testing.T) {
 			Result: Matrix{
 				Series{
 					Points: []Point{{V: 1, T: 0}, {V: 3, T: 60000}, {V: 5, T: 120000}},
-					Metric: labels.Labels{labels.Label{Name: "__name__", Value: "metric"}},
+					Metric: labels.FromStrings("__name__", "metric"),
 				},
 			},
 			Start:    time.Unix(0, 0),
@@ -3087,17 +3087,17 @@ func TestRangeQuery(t *testing.T) {
 			Result: Matrix{
 				Series{
 					Points: []Point{{V: 1, T: 0}, {V: 3, T: 60000}, {V: 5, T: 120000}},
-					Metric: labels.Labels{
-						labels.Label{Name: "__name__", Value: "bar"},
-						labels.Label{Name: "job", Value: "2"},
-					},
+					Metric: labels.FromStrings(
+						"__name__", "bar",
+						"job", "2",
+					),
 				},
 				Series{
 					Points: []Point{{V: 3, T: 60000}, {V: 5, T: 120000}},
-					Metric: labels.Labels{
-						labels.Label{Name: "__name__", Value: "foo"},
-						labels.Label{Name: "job", Value: "1"},
-					},
+					Metric: labels.FromStrings(
+						"__name__", "foo",
+						"job", "1",
+					),
 				},
 			},
 			Start:    time.Unix(0, 0),
