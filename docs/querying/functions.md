@@ -294,11 +294,10 @@ matches, the value of the label `dst_label` in the returned timeseries will be t
 of `replacement`, together with the original labels in the input. Capturing groups in the
 regular expression can be referenced with `$1`, `$2`, etc. Named capturing groups in the regular expression can be referenced with `$name` (where `name` is the  capturing group name). If the regular expression doesn't match then the timeseries is returned unchanged.
 
-These two examples will both return timeseries with the values `a:c` at label `service` and `a` at label `foo`:
+This example will return timeseries with the values `a:c` at label `service` and `a` at label `foo`:
 
 ```
 label_replace(up{job="api-server",service="a:c"}, "foo", "$1", "service", "(.*):.*")
-label_replace(up{job="api-server",service="a:c"}, "foo", "$name", "service", "(?P<name>.*):(?P<version>.*)")
 ```
 
 ## `ln()`
