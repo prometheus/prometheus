@@ -16,7 +16,9 @@ package ovhcloud
 import (
 	"context"
 	"fmt"
+	"net/netip"
 	"net/url"
+	"path"
 	"strconv"
 
 	"github.com/go-kit/log"
@@ -35,7 +37,7 @@ const (
 
 type dedicatedServer struct {
 	State           string `json:"state"`
-	IPs             IPs    `json:"ips"`
+	ips             []netip.Addr
 	CommercialRange string `json:"commercialRange"`
 	LinkSpeed       int    `json:"linkSpeed"`
 	Rack            string `json:"rack"`
@@ -70,13 +72,13 @@ func getDedicatedServerList(client *ovh.Client) ([]string, error) {
 
 func getDedicatedServerDetails(client *ovh.Client, serverName string) (*dedicatedServer, error) {
 	var dedicatedServerDetails dedicatedServer
-	err := client.Get(fmt.Sprintf("%s/%s", dedicatedServerAPIPath, url.QueryEscape(serverName)), &dedicatedServerDetails)
+	err := client.Get(path.Join(dedicatedServerAPIPath, url.QueryEscape(serverName)), &dedicatedServerDetails)
 	if err != nil {
 		return nil, err
 	}
 
 	var ips []string
-	err = client.Get(fmt.Sprintf("%s/%s/ips", dedicatedServerAPIPath, url.QueryEscape(serverName)), &ips)
+	err = client.Get(path.Join(dedicatedServerAPIPath, url.QueryEscape(serverName), "ips"), &ips)
 	if err != nil {
 		return nil, err
 	}
@@ -86,7 +88,7 @@ func getDedicatedServerDetails(client *ovh.Client, serverName string) (*dedicate
 		return nil, err
 	}
 
-	dedicatedServerDetails.IPs = *parsedIPs
+	dedicatedServerDetails.ips = parsedIPs
 	return &dedicatedServerDetails, nil
 }
 
@@ -122,9 +124,18 @@ func (d *dedicatedServerDiscovery) refresh(ctx context.Context) ([]*targetgroup.
 	var targets []model.LabelSet
 
 	for _, server := range dedicatedServerDetailedList {
-		defaultIP := server.IPs.IPV4
+		var ipv4, ipv6 string
+		for _, ip := range server.ips {
+			if ip.Is4() {
+				ipv4 = ip.String()
+			}
+			if ip.Is6() {
+				ipv6 = ip.String()
+			}
+		}
+		defaultIP := ipv4
 		if defaultIP == "" {
-			defaultIP = server.IPs.IPV6
+			defaultIP = ipv6
 		}
 		labels := model.LabelSet{
 			model.AddressLabel:                             model.LabelValue(defaultIP),
@@ -140,8 +151,8 @@ func (d *dedicatedServerDiscovery) refresh(ctx context.Context) ([]*targetgroup.
 			dedicatedServerLabelPrefix + "reverse":         model.LabelValue(server.Reverse),
 			dedicatedServerLabelPrefix + "datacenter":      model.LabelValue(server.Datacenter),
 			dedicatedServerLabelPrefix + "name":            model.LabelValue(server.Name),
-			dedicatedServerLabelPrefix + "ipv4":            model.LabelValue(server.IPs.IPV4),
-			dedicatedServerLabelPrefix + "ipv6":            model.LabelValue(server.IPs.IPV6),
+			dedicatedServerLabelPrefix + "ipv4":            model.LabelValue(ipv4),
+			dedicatedServerLabelPrefix + "ipv6":            model.LabelValue(ipv6),
 		}
 		targets = append(targets, labels)
 	}

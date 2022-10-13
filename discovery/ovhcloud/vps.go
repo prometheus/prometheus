@@ -16,7 +16,9 @@ package ovhcloud
 import (
 	"context"
 	"fmt"
+	"net/netip"
 	"net/url"
+	"path"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -46,7 +48,7 @@ type vpsModel struct {
 
 // VPS struct from API.
 type virtualPrivateServer struct {
-	IPs                IPs      `json:"ips"`
+	ips                []netip.Addr
 	Keymap             []string `json:"keymap"`
 	Zone               string   `json:"zone"`
 	Model              vpsModel `json:"model"`
@@ -73,7 +75,7 @@ func newVpsDiscovery(conf *SDConfig, logger log.Logger) *vpsDiscovery {
 
 func getVpsDetails(client *ovh.Client, vpsName string) (*virtualPrivateServer, error) {
 	var vpsDetails virtualPrivateServer
-	vpsNamePath := fmt.Sprintf("%s/%s", vpsAPIPath, url.QueryEscape(vpsName))
+	vpsNamePath := path.Join(vpsAPIPath, url.QueryEscape(vpsName))
 
 	err := client.Get(vpsNamePath, &vpsDetails)
 	if err != nil {
@@ -81,7 +83,7 @@ func getVpsDetails(client *ovh.Client, vpsName string) (*virtualPrivateServer, e
 	}
 
 	var ips []string
-	err = client.Get(fmt.Sprintf("%s/ips", vpsNamePath), &ips)
+	err = client.Get(path.Join(vpsNamePath, "ips"), &ips)
 	if err != nil {
 		return nil, err
 	}
@@ -90,7 +92,7 @@ func getVpsDetails(client *ovh.Client, vpsName string) (*virtualPrivateServer, e
 	if err != nil {
 		return nil, err
 	}
-	vpsDetails.IPs = *parsedIPs
+	vpsDetails.ips = parsedIPs
 
 	return &vpsDetails, nil
 }
@@ -140,9 +142,18 @@ func (d *vpsDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 
 	var targets []model.LabelSet
 	for _, server := range vpsDetailedList {
-		defaultIP := server.IPs.IPV4
+		var ipv4, ipv6 string
+		for _, ip := range server.ips {
+			if ip.Is4() {
+				ipv4 = ip.String()
+			}
+			if ip.Is6() {
+				ipv6 = ip.String()
+			}
+		}
+		defaultIP := ipv4
 		if defaultIP == "" {
-			defaultIP = server.IPs.IPV6
+			defaultIP = ipv6
 		}
 		labels := model.LabelSet{
 			model.AddressLabel:                     model.LabelValue(defaultIP),
@@ -164,8 +175,8 @@ func (d *vpsDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 			vpsLabelPrefix + "memoryLimit":         model.LabelValue(fmt.Sprintf("%d", server.MemoryLimit)),
 			vpsLabelPrefix + "offerType":           model.LabelValue(server.OfferType),
 			vpsLabelPrefix + "vcore":               model.LabelValue(fmt.Sprintf("%d", server.Vcore)),
-			vpsLabelPrefix + "ipv4":                model.LabelValue(server.IPs.IPV4),
-			vpsLabelPrefix + "ipv6":                model.LabelValue(server.IPs.IPV6),
+			vpsLabelPrefix + "ipv4":                model.LabelValue(ipv4),
+			vpsLabelPrefix + "ipv6":                model.LabelValue(ipv6),
 		}
 
 		targets = append(targets, labels)

@@ -21,7 +21,6 @@ import (
 	"time"
 
 	"github.com/go-kit/log"
-	"github.com/grafana/regexp"
 	"github.com/ovh/go-ovh/ovh"
 	"github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
@@ -51,12 +50,6 @@ type SDConfig struct {
 	ConsumerKey       config.Secret  `yaml:"consumer_key"`
 	RefreshInterval   model.Duration `yaml:"refresh_interval"`
 	Service           string         `yaml:"service"`
-}
-
-// IPs struct to store IPV4 and IPV6.
-type IPs struct {
-	IPV4 string `json:"ipv4"`
-	IPV6 string `json:"ipv6"`
 }
 
 // Name implements the Discoverer interface.
@@ -107,34 +100,33 @@ func init() {
 	discovery.RegisterConfig(&SDConfig{})
 }
 
-// ParseIPList Parse ip list to store on IPV4 and IPV6 on IPs type.
-func parseIPList(ipList []string) (*IPs, error) {
-	var IPs IPs
-	reg := regexp.MustCompile(`^([0-9a-f\.:]+)(\/(\d+))?$`)
+// ParseIPList parses ip list as they can have different formats.
+func parseIPList(ipList []string) ([]netip.Addr, error) {
+	var IPs []netip.Addr
 	for _, ip := range ipList {
-		netmask := reg.ReplaceAllString(ip, "${3}")
-		ip = reg.ReplaceAllString(ip, "${1}")
-
-		netIP, err := netip.ParseAddr(ip)
-		if err == nil && !netIP.IsUnspecified() {
-			if netIP.Is4() {
-				if netmask != "" && netmask != "32" {
-					continue
-				}
-				IPs.IPV4 = ip
-			} else if netIP.Is6() {
-				if netmask != "" && netmask != "128" {
-					continue
-				}
-				IPs.IPV6 = ip
+		ipAddr, err := netip.ParseAddr(ip)
+		if err != nil {
+			ipPrefix, err := netip.ParsePrefix(ip)
+			if err != nil {
+				return nil, errors.New("could not parse IP addresses from list")
 			}
+			if ipPrefix.IsValid() {
+				netmask := ipPrefix.Bits()
+				if netmask != 32 {
+					continue
+				}
+				ipAddr = ipPrefix.Addr()
+			}
+		}
+		if ipAddr.IsValid() && !ipAddr.IsUnspecified() {
+			IPs = append(IPs, ipAddr)
 		}
 	}
 
-	if IPs.IPV4 == "" && IPs.IPV6 == "" {
+	if len(IPs) < 1 {
 		return nil, errors.New("could not parse IP addresses from list")
 	}
-	return &IPs, nil
+	return IPs, nil
 }
 
 func newRefresher(conf *SDConfig, logger log.Logger) (refresher, error) {
