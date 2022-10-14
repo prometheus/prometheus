@@ -272,7 +272,7 @@ calculation.
 
 Example: A histogram metric is called `http_request_duration_seconds` (and
 therefore the metric name for the buckets of a conventional histogram is
-`http_request_duration_bucket`). To calculate the 90th percentile of request
+`http_request_duration_seconds_bucket`). To calculate the 90th percentile of request
 durations over the last 10m, use the following expression in case
 `http_request_duration_seconds` is a conventional histogram:
 
