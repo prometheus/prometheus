@@ -2266,7 +2266,7 @@ tls_config:
 ### `<serverset_sd_config>`
 
 Serverset SD configurations allow retrieving scrape targets from [Serversets]
-(https://github.com/twitter/finagle/tree/master/finagle-serversets) which are
+(https://github.com/twitter/finagle/tree/develop/finagle-serversets) which are
 stored in [Zookeeper](https://zookeeper.apache.org/). Serversets are commonly
 used by [Finagle](https://twitter.github.io/finagle/) and
 [Aurora](https://aurora.apache.org/).
