@@ -3128,6 +3128,7 @@ func TestRangeQuery(t *testing.T) {
 func TestSparseHistogramRate(t *testing.T) {
 	// TODO(beorn7): Integrate histograms into the PromQL testing framework
 	// and write more tests there.
+	// TODO(marctc): Add similar test for float histograms
 	test, err := NewTest(t, "")
 	require.NoError(t, err)
 	defer test.Close()
@@ -3137,7 +3138,7 @@ func TestSparseHistogramRate(t *testing.T) {
 
 	app := test.Storage().Appender(context.TODO())
 	for i, h := range tsdb.GenerateTestHistograms(100) {
-		_, err := app.AppendHistogram(0, lbls, int64(i)*int64(15*time.Second/time.Millisecond), h)
+		_, err := app.AppendHistogram(0, lbls, int64(i)*int64(15*time.Second/time.Millisecond), h, nil)
 		require.NoError(t, err)
 	}
 	require.NoError(t, app.Commit())
@@ -3169,6 +3170,7 @@ func TestSparseHistogramRate(t *testing.T) {
 func TestSparseHistogram_HistogramCountAndSum(t *testing.T) {
 	// TODO(codesome): Integrate histograms into the PromQL testing framework
 	// and write more tests there.
+	// TODO(marctc): Add similar test for float histograms
 	h := &histogram.Histogram{
 		Count:         24,
 		ZeroCount:     4,
@@ -3197,7 +3199,7 @@ func TestSparseHistogram_HistogramCountAndSum(t *testing.T) {
 
 	ts := int64(10 * time.Minute / time.Millisecond)
 	app := test.Storage().Appender(context.TODO())
-	_, err = app.AppendHistogram(0, lbls, ts, h)
+	_, err = app.AppendHistogram(0, lbls, ts, h, nil)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
@@ -3233,6 +3235,7 @@ func TestSparseHistogram_HistogramCountAndSum(t *testing.T) {
 func TestSparseHistogram_HistogramQuantile(t *testing.T) {
 	// TODO(codesome): Integrate histograms into the PromQL testing framework
 	// and write more tests there.
+	// TODO(marctc): Add similar test for float histograms
 	type subCase struct {
 		quantile string
 		value    float64
@@ -3434,7 +3437,7 @@ func TestSparseHistogram_HistogramQuantile(t *testing.T) {
 
 			ts := int64(i+1) * int64(10*time.Minute/time.Millisecond)
 			app := test.Storage().Appender(context.TODO())
-			_, err = app.AppendHistogram(0, lbls, ts, c.h)
+			_, err = app.AppendHistogram(0, lbls, ts, c.h, nil)
 			require.NoError(t, err)
 			require.NoError(t, app.Commit())
 
@@ -3462,6 +3465,7 @@ func TestSparseHistogram_HistogramQuantile(t *testing.T) {
 func TestSparseHistogram_HistogramFraction(t *testing.T) {
 	// TODO(codesome): Integrate histograms into the PromQL testing framework
 	// and write more tests there.
+	// TODO(marctc): Add similar test for float histograms
 	type subCase struct {
 		lower, upper string
 		value        float64
@@ -3858,7 +3862,7 @@ func TestSparseHistogram_HistogramFraction(t *testing.T) {
 
 			ts := int64(i+1) * int64(10*time.Minute/time.Millisecond)
 			app := test.Storage().Appender(context.TODO())
-			_, err = app.AppendHistogram(0, lbls, ts, c.h)
+			_, err = app.AppendHistogram(0, lbls, ts, c.h, nil)
 			require.NoError(t, err)
 			require.NoError(t, app.Commit())
 
@@ -3890,6 +3894,7 @@ func TestSparseHistogram_HistogramFraction(t *testing.T) {
 func TestSparseHistogram_Sum_Count_AddOperator(t *testing.T) {
 	// TODO(codesome): Integrate histograms into the PromQL testing framework
 	// and write more tests there.
+	// TODO(marctc): Add similar test for float histograms
 	cases := []struct {
 		histograms []histogram.Histogram
 		expected   histogram.FloatHistogram
@@ -3988,7 +3993,7 @@ func TestSparseHistogram_Sum_Count_AddOperator(t *testing.T) {
 			for idx, h := range c.histograms {
 				lbls := labels.FromStrings("__name__", seriesName, "idx", fmt.Sprintf("%d", idx))
 				// Since we mutate h later, we need to create a copy here.
-				_, err = app.AppendHistogram(0, lbls, ts, h.Copy())
+				_, err = app.AppendHistogram(0, lbls, ts, h.Copy(), nil)
 				require.NoError(t, err)
 			}
 			require.NoError(t, app.Commit())
