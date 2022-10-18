@@ -30,6 +30,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/util/stats"
 
 	"github.com/go-kit/log"
@@ -46,7 +47,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/model/timestamp"
-	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/rules"
@@ -566,6 +566,129 @@ func TestGetSeries(t *testing.T) {
 				sort.Sort(byLabels(tc.expected))
 				sort.Sort(byLabels(r))
 				require.Equal(t, tc.expected, r)
+			}
+		})
+	}
+}
+
+func TestQueryExemplars(t *testing.T) {
+	start := time.Unix(0, 0)
+	suite, err := promql.NewTest(t, `
+		load 1m
+			test_metric1{foo="bar"} 0+100x100
+			test_metric1{foo="boo"} 1+0x100
+			test_metric2{foo="boo"} 1+0x100
+			test_metric3{foo="bar", dup="1"} 1+0x100
+			test_metric3{foo="boo", dup="1"} 1+0x100
+			test_metric4{foo="bar", dup="1"} 1+0x100
+			test_metric4{foo="boo", dup="1"} 1+0x100
+			test_metric4{foo="boo"} 1+0x100
+	`)
+
+	require.NoError(t, err)
+	defer suite.Close()
+	require.NoError(t, suite.Run())
+
+	api := &API{
+		Queryable:         suite.Storage(),
+		QueryEngine:       suite.QueryEngine(),
+		ExemplarQueryable: suite.ExemplarQueryable(),
+	}
+
+	request := func(method string, qs url.Values) (*http.Request, error) {
+		u, err := url.Parse("http://example.com")
+		require.NoError(t, err)
+		u.RawQuery = qs.Encode()
+		r, err := http.NewRequest(method, u.String(), nil)
+		if method == http.MethodPost {
+			r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		}
+		return r, err
+	}
+
+	for _, tc := range []struct {
+		name              string
+		query             url.Values
+		exemplars         []exemplar.QueryResult
+		api               *API
+		expectedErrorType errorType
+	}{
+		{
+			name: "no error",
+			api:  api,
+			query: url.Values{
+				"query": []string{`test_metric3{foo="boo"} - test_metric4{foo="bar"}`},
+				"start": []string{"0"},
+				"end":   []string{"4"},
+			},
+			exemplars: []exemplar.QueryResult{
+				{
+					SeriesLabels: labels.FromStrings("__name__", "test_metric3", "foo", "boo", "dup", "1"),
+					Exemplars: []exemplar.Exemplar{
+						{
+							Labels: labels.FromStrings("id", "abc"),
+							Value:  10,
+							Ts:     timestamp.FromTime(start.Add(0 * time.Second)),
+						},
+					},
+				},
+				{
+					SeriesLabels: labels.FromStrings("__name__", "test_metric4", "foo", "bar", "dup", "1"),
+					Exemplars: []exemplar.Exemplar{
+						{
+							Labels: labels.FromStrings("id", "lul"),
+							Value:  10,
+							Ts:     timestamp.FromTime(start.Add(3 * time.Second)),
+						},
+					},
+				},
+			},
+		},
+		{
+			name:              "should return errorExec upon genetic error",
+			expectedErrorType: errorExec,
+			api: &API{
+				ExemplarQueryable: errorTestQueryable{err: fmt.Errorf("generic")},
+			},
+			query: url.Values{
+				"query": []string{`test_metric3{foo="boo"} - test_metric4{foo="bar"}`},
+				"start": []string{"0"},
+				"end":   []string{"4"},
+			},
+		},
+		{
+			name:              "should return errorInternal err type is ErrStorage",
+			expectedErrorType: errorInternal,
+			api: &API{
+				ExemplarQueryable: errorTestQueryable{err: promql.ErrStorage{Err: fmt.Errorf("generic")}},
+			},
+			query: url.Values{
+				"query": []string{`test_metric3{foo="boo"} - test_metric4{foo="bar"}`},
+				"start": []string{"0"},
+				"end":   []string{"4"},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			es := suite.ExemplarStorage()
+			ctx := context.Background()
+
+			for _, te := range tc.exemplars {
+				for _, e := range te.Exemplars {
+					_, err := es.AppendExemplar(0, te.SeriesLabels, e)
+					if err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+
+			req, err := request(http.MethodGet, tc.query)
+			require.NoError(t, err)
+			res := tc.api.queryExemplars(req.WithContext(ctx))
+			assertAPIError(t, res.err, tc.expectedErrorType)
+
+			if tc.expectedErrorType == errorNone {
+				assertAPIResponse(t, res.data, tc.exemplars)
 			}
 		})
 	}
