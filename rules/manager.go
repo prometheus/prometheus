@@ -303,13 +303,15 @@ func (m *Manager) LoadGroups(
 					return nil, []error{fmt.Errorf("%s: %w", fn, err)}
 				}
 
+				mLabels := FromMaps(rg.Labels, r.Labels)
+
 				if r.Alert.Value != "" {
 					rules = append(rules, NewAlertingRule(
 						r.Alert.Value,
 						expr,
 						time.Duration(r.For),
 						time.Duration(r.KeepFiringFor),
-						labels.FromMap(r.Labels),
+						mLabels,
 						labels.FromMap(r.Annotations),
 						externalLabels,
 						externalURL,
@@ -321,7 +323,7 @@ func (m *Manager) LoadGroups(
 				rules = append(rules, NewRecordingRule(
 					r.Record.Value,
 					expr,
-					labels.FromMap(r.Labels),
+					mLabels,
 				))
 			}
 
@@ -511,3 +513,16 @@ func (c sequentialRuleEvalController) Allow() bool {
 
 func (c sequentialRuleEvalController) Done()       {}
 func (c sequentialRuleEvalController) Invalidate() {}
+
+// FromMaps returns new sorted Labels from the given maps, overriding each other in order.
+func FromMaps(maps ...map[string]string) labels.Labels {
+	mLables := make(map[string]string)
+
+	for _, m := range maps {
+		for k, v := range m {
+			mLables[k] = v
+		}
+	}
+
+	return labels.FromMap(mLables)
+}

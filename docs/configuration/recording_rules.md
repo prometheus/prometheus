@@ -86,6 +86,11 @@ name: <string>
 # rule can produce. 0 is no limit.
 [ limit: <int> | default = 0 ]
 
+# Labels to add or overwrite before storing the result for its rules.
+# Labels defined in <rule> will override the key if it has a collision.
+labels:
+  [ <labelname>: <labelvalue> ]
+
 rules:
   [ - <rule> ... ]
 ```
