@@ -222,7 +222,38 @@ func bitRange(x int64, nbits uint8) bool {
 }
 
 func (a *xorAppender) writeVDelta(v float64) {
-	a.leading, a.trailing = xorWrite(a.b, v, a.v, a.leading, a.trailing)
+	vDelta := math.Float64bits(v) ^ math.Float64bits(a.v)
+
+	if vDelta == 0 {
+		a.b.writeBit(zero)
+		return
+	}
+	a.b.writeBit(one)
+
+	leading := uint8(bits.LeadingZeros64(vDelta))
+	trailing := uint8(bits.TrailingZeros64(vDelta))
+
+	// Clamp number of leading zeros to avoid overflow when encoding.
+	if leading >= 32 {
+		leading = 31
+	}
+
+	if a.leading != 0xff && leading >= a.leading && trailing >= a.trailing {
+		a.b.writeBit(zero)
+		a.b.writeBits(vDelta>>a.trailing, 64-int(a.leading)-int(a.trailing))
+	} else {
+		a.leading, a.trailing = leading, trailing
+
+		a.b.writeBit(one)
+		a.b.writeBits(uint64(leading), 5)
+
+		// Note that if leading == trailing == 0, then sigbits == 64.  But that value doesn't actually fit into the 6 bits we have.
+		// Luckily, we never need to encode 0 significant bits, since that would put us in the other case (vdelta == 0).
+		// So instead we write out a 0 and adjust it back to 64 on unpacking.
+		sigbits := 64 - leading - trailing
+		a.b.writeBits(uint64(sigbits), 6)
+		a.b.writeBits(vDelta>>trailing, int(sigbits))
+	}
 }
 
 type xorIterator struct {
@@ -386,122 +417,72 @@ func (it *xorIterator) Next() ValueType {
 }
 
 func (it *xorIterator) readValue() ValueType {
-	val, leading, trailing, err := xorRead(&it.br, it.val, it.leading, it.trailing)
+	bit, err := it.br.readBitFast()
+	if err != nil {
+		bit, err = it.br.readBit()
+	}
 	if err != nil {
 		it.err = err
 		return ValNone
 	}
-	it.val, it.leading, it.trailing = val, leading, trailing
+
+	if bit == zero {
+		// it.val = it.val
+	} else {
+		bit, err := it.br.readBitFast()
+		if err != nil {
+			bit, err = it.br.readBit()
+		}
+		if err != nil {
+			it.err = err
+			return ValNone
+		}
+		if bit == zero {
+			// reuse leading/trailing zero bits
+			// it.leading, it.trailing = it.leading, it.trailing
+		} else {
+			bits, err := it.br.readBitsFast(5)
+			if err != nil {
+				bits, err = it.br.readBits(5)
+			}
+			if err != nil {
+				it.err = err
+				return ValNone
+			}
+			it.leading = uint8(bits)
+
+			bits, err = it.br.readBitsFast(6)
+			if err != nil {
+				bits, err = it.br.readBits(6)
+			}
+			if err != nil {
+				it.err = err
+				return ValNone
+			}
+			mbits := uint8(bits)
+			// 0 significant bits here means we overflowed and we actually need 64; see comment in encoder
+			if mbits == 0 {
+				mbits = 64
+			}
+			it.trailing = 64 - it.leading - mbits
+		}
+
+		mbits := 64 - it.leading - it.trailing
+		bits, err := it.br.readBitsFast(mbits)
+		if err != nil {
+			bits, err = it.br.readBits(mbits)
+		}
+		if err != nil {
+			it.err = err
+			return ValNone
+		}
+		vbits := math.Float64bits(it.val)
+		vbits ^= bits << it.trailing
+		it.val = math.Float64frombits(vbits)
+	}
+
 	it.numRead++
 	return ValFloat
-}
-
-func xorWrite(
-	b *bstream,
-	newValue, currentValue float64,
-	currentLeading, currentTrailing uint8,
-) (newLeading, newTrailing uint8) {
-	delta := math.Float64bits(newValue) ^ math.Float64bits(currentValue)
-
-	if delta == 0 {
-		b.writeBit(zero)
-		return currentLeading, currentTrailing
-	}
-	b.writeBit(one)
-
-	newLeading = uint8(bits.LeadingZeros64(delta))
-	newTrailing = uint8(bits.TrailingZeros64(delta))
-
-	// Clamp number of leading zeros to avoid overflow when encoding.
-	if newLeading >= 32 {
-		newLeading = 31
-	}
-
-	if currentLeading != 0xff && newLeading >= currentLeading && newTrailing >= currentTrailing {
-		// In this case, we stick with the current leading/trailing.
-		b.writeBit(zero)
-		b.writeBits(delta>>currentTrailing, 64-int(currentLeading)-int(currentTrailing))
-		return currentLeading, currentTrailing
-	}
-
-	b.writeBit(one)
-	b.writeBits(uint64(newLeading), 5)
-
-	// Note that if newLeading == newTrailing == 0, then sigbits == 64. But
-	// that value doesn't actually fit into the 6 bits we have.  Luckily, we
-	// never need to encode 0 significant bits, since that would put us in
-	// the other case (vdelta == 0).  So instead we write out a 0 and adjust
-	// it back to 64 on unpacking.
-	sigbits := 64 - newLeading - newTrailing
-	b.writeBits(uint64(sigbits), 6)
-	b.writeBits(delta>>newTrailing, int(sigbits))
-	return
-}
-
-func xorRead(
-	br *bstreamReader, currentValue float64, currentLeading, currentTrailing uint8,
-) (newValue float64, newLeading, newTrailing uint8, err error) {
-	var bit bit
-	var bits uint64
-
-	bit, err = br.readBitFast()
-	if err != nil {
-		bit, err = br.readBit()
-	}
-	if err != nil {
-		return
-	}
-	if bit == zero {
-		return currentValue, currentLeading, currentTrailing, nil
-	}
-	bit, err = br.readBitFast()
-	if err != nil {
-		bit, err = br.readBit()
-	}
-	if err != nil {
-		return
-	}
-	if bit == zero {
-		// Reuse leading/trailing zero bits.
-		newLeading, newTrailing = currentLeading, currentTrailing
-	} else {
-		bits, err = br.readBitsFast(5)
-		if err != nil {
-			bits, err = br.readBits(5)
-		}
-		if err != nil {
-			return
-		}
-		newLeading = uint8(bits)
-
-		bits, err = br.readBitsFast(6)
-		if err != nil {
-			bits, err = br.readBits(6)
-		}
-		if err != nil {
-			return
-		}
-		mbits := uint8(bits)
-		// 0 significant bits here means we overflowed and we actually
-		// need 64; see comment in xrWrite.
-		if mbits == 0 {
-			mbits = 64
-		}
-		newTrailing = 64 - newLeading - mbits
-	}
-
-	mbits := 64 - newLeading - newTrailing
-	bits, err = br.readBitsFast(mbits)
-	if err != nil {
-		bits, err = br.readBits(mbits)
-	}
-	if err != nil {
-		return
-	}
-	vbits := math.Float64bits(currentValue)
-	vbits ^= bits << newTrailing
-	newValue = math.Float64frombits(vbits)
-	return
 }
 
 // OOOXORChunk holds a XORChunk and overrides the Encoding() method.
