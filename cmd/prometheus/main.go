@@ -208,6 +208,12 @@ func (c *flagConfig) setFeatureListOptions(logger log.Logger) error {
 			}
 		}
 	}
+
+	if c.tsdb.EnableNativeHistograms && c.tsdb.EnableMemorySnapshotOnShutdown {
+		c.tsdb.EnableMemorySnapshotOnShutdown = false
+		level.Warn(logger).Log("msg", "memory-snapshot-on-shutdown has been disabled automatically because memory-snapshot-on-shutdown and native-histograms cannot be enabled at the same time.")
+	}
+
 	return nil
 }
 
