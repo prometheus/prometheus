@@ -528,7 +528,7 @@ func (a *HistogramAppender) Recode(
 }
 
 func (a *HistogramAppender) writeSumDelta(v float64) {
-	a.leading, a.trailing = xorWrite(a.b, v, a.sum, a.leading, a.trailing)
+	xorWrite(a.b, v, a.sum, &a.leading, &a.trailing)
 }
 
 type histogramIterator struct {
@@ -867,11 +867,10 @@ func (it *histogramIterator) Next() ValueType {
 }
 
 func (it *histogramIterator) readSum() bool {
-	sum, leading, trailing, err := xorRead(&it.br, it.sum, it.leading, it.trailing)
+	err := xorRead(&it.br, &it.sum, &it.leading, &it.trailing)
 	if err != nil {
 		it.err = err
 		return false
 	}
-	it.sum, it.leading, it.trailing = sum, leading, trailing
 	return true
 }

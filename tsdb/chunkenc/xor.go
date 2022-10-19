@@ -222,7 +222,7 @@ func bitRange(x int64, nbits uint8) bool {
 }
 
 func (a *xorAppender) writeVDelta(v float64) {
-	a.leading, a.trailing = xorWrite(a.b, v, a.v, a.leading, a.trailing)
+	xorWrite(a.b, v, a.v, &a.leading, &a.trailing)
 }
 
 type xorIterator struct {
@@ -386,43 +386,41 @@ func (it *xorIterator) Next() ValueType {
 }
 
 func (it *xorIterator) readValue() ValueType {
-	val, leading, trailing, err := xorRead(&it.br, it.val, it.leading, it.trailing)
+	err := xorRead(&it.br, &it.val, &it.leading, &it.trailing)
 	if err != nil {
 		it.err = err
 		return ValNone
 	}
-	it.val, it.leading, it.trailing = val, leading, trailing
 	it.numRead++
 	return ValFloat
 }
 
-func xorWrite(
-	b *bstream,
-	newValue, currentValue float64,
-	currentLeading, currentTrailing uint8,
-) (newLeading, newTrailing uint8) {
+func xorWrite(b *bstream, newValue, currentValue float64, leading, trailing *uint8) {
 	delta := math.Float64bits(newValue) ^ math.Float64bits(currentValue)
 
 	if delta == 0 {
 		b.writeBit(zero)
-		return currentLeading, currentTrailing
+		return
 	}
 	b.writeBit(one)
 
-	newLeading = uint8(bits.LeadingZeros64(delta))
-	newTrailing = uint8(bits.TrailingZeros64(delta))
+	newLeading := uint8(bits.LeadingZeros64(delta))
+	newTrailing := uint8(bits.TrailingZeros64(delta))
 
 	// Clamp number of leading zeros to avoid overflow when encoding.
 	if newLeading >= 32 {
 		newLeading = 31
 	}
 
-	if currentLeading != 0xff && newLeading >= currentLeading && newTrailing >= currentTrailing {
+	if *leading != 0xff && newLeading >= *leading && newTrailing >= *trailing {
 		// In this case, we stick with the current leading/trailing.
 		b.writeBit(zero)
-		b.writeBits(delta>>currentTrailing, 64-int(currentLeading)-int(currentTrailing))
-		return currentLeading, currentTrailing
+		b.writeBits(delta>>*trailing, 64-int(*leading)-int(*trailing))
+		return
 	}
+
+	// Update leading/trailing for the caller.
+	*leading, *trailing = newLeading, newTrailing
 
 	b.writeBit(one)
 	b.writeBits(uint64(newLeading), 5)
@@ -435,42 +433,43 @@ func xorWrite(
 	sigbits := 64 - newLeading - newTrailing
 	b.writeBits(uint64(sigbits), 6)
 	b.writeBits(delta>>newTrailing, int(sigbits))
-	return
 }
 
-func xorRead(
-	br *bstreamReader, currentValue float64, currentLeading, currentTrailing uint8,
-) (newValue float64, newLeading, newTrailing uint8, err error) {
-	var bit bit
-	var bits uint64
-
-	bit, err = br.readBitFast()
+func xorRead(br *bstreamReader, value *float64, leading, trailing *uint8) error {
+	bit, err := br.readBitFast()
 	if err != nil {
 		bit, err = br.readBit()
 	}
 	if err != nil {
-		return
+		return err
 	}
 	if bit == zero {
-		return currentValue, currentLeading, currentTrailing, nil
+		return nil
 	}
 	bit, err = br.readBitFast()
 	if err != nil {
 		bit, err = br.readBit()
 	}
 	if err != nil {
-		return
+		return err
 	}
+
+	var (
+		bits                           uint64
+		newLeading, newTrailing, mbits uint8
+	)
+
 	if bit == zero {
 		// Reuse leading/trailing zero bits.
-		newLeading, newTrailing = currentLeading, currentTrailing
+		newLeading, newTrailing = *leading, *trailing
+		mbits = 64 - newLeading - newTrailing
 	} else {
 		bits, err = br.readBitsFast(5)
 		if err != nil {
 			bits, err = br.readBits(5)
 		}
 		if err != nil {
-			return
+			return err
 		}
 		newLeading = uint8(bits)
 
@@ -479,29 +478,29 @@ func xorRead(
 			bits, err = br.readBits(6)
 		}
 		if err != nil {
-			return
+			return err
 		}
-		mbits := uint8(bits)
+		mbits = uint8(bits)
 		// 0 significant bits here means we overflowed and we actually
 		// need 64; see comment in xrWrite.
 		if mbits == 0 {
 			mbits = 64
 		}
 		newTrailing = 64 - newLeading - mbits
+		// Update leading/trailing zero bits for the caller.
+		*leading, *trailing = newLeading, newTrailing
 	}
-
-	mbits := 64 - newLeading - newTrailing
 	bits, err = br.readBitsFast(mbits)
 	if err != nil {
 		bits, err = br.readBits(mbits)
 	}
 	if err != nil {
-		return
+		return err
 	}
-	vbits := math.Float64bits(currentValue)
+	vbits := math.Float64bits(*value)
 	vbits ^= bits << newTrailing
-	newValue = math.Float64frombits(vbits)
-	return
+	*value = math.Float64frombits(vbits)
+	return nil
 }
 
 // OOOXORChunk holds a XORChunk and overrides the Encoding() method.
