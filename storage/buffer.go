@@ -227,12 +227,14 @@ func (r *sampleRing) reset() {
 func (r *sampleRing) iterator() chunkenc.Iterator {
 	r.it.r = r
 	r.it.i = -1
+	r.it.typ = chunkenc.ValNone
 	return &r.it
 }
 
 type sampleRingIterator struct {
-	r *sampleRing
-	i int
+	r   *sampleRing
+	i   int
+	typ chunkenc.ValueType
 }
 
 func (it *sampleRingIterator) Next() chunkenc.ValueType {
@@ -240,15 +242,19 @@ func (it *sampleRingIterator) Next() chunkenc.ValueType {
 	if it.i >= it.r.l {
 		return chunkenc.ValNone
 	}
+	if it.typ != chunkenc.ValNone {
+		return it.typ
+	}
 	s := it.r.at(it.i)
 	switch {
 	case s.h != nil:
-		return chunkenc.ValHistogram
+		it.typ = chunkenc.ValHistogram
 	case s.fh != nil:
-		return chunkenc.ValFloatHistogram
+		it.typ = chunkenc.ValFloatHistogram
 	default:
-		return chunkenc.ValFloat
+		it.typ = chunkenc.ValFloat
 	}
+	return it.typ
 }
 
 func (it *sampleRingIterator) Seek(int64) chunkenc.ValueType {
