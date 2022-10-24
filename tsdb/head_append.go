@@ -86,9 +86,9 @@ func (h *Head) initTime(t int64) {
 	h.maxTime.CompareAndSwap(math.MinInt64, t)
 }
 
-func (a *initAppender) GetRef(lset labels.Labels) (storage.SeriesRef, labels.Labels) {
+func (a *initAppender) GetRef(lset labels.Labels, hash uint64) (storage.SeriesRef, labels.Labels) {
 	if g, ok := a.app.(storage.GetRef); ok {
-		return g.GetRef(lset)
+		return g.GetRef(lset, hash)
 	}
 	return 0, nil
 }
@@ -455,8 +455,8 @@ func (a *headAppender) UpdateMetadata(ref storage.SeriesRef, lset labels.Labels,
 
 var _ storage.GetRef = &headAppender{}
 
-func (a *headAppender) GetRef(lset labels.Labels) (storage.SeriesRef, labels.Labels) {
-	s := a.head.series.getByHash(lset.Hash(), lset)
+func (a *headAppender) GetRef(lset labels.Labels, hash uint64) (storage.SeriesRef, labels.Labels) {
+	s := a.head.series.getByHash(hash, lset)
 	if s == nil {
 		return 0, nil
 	}
