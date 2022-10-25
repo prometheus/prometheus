@@ -141,8 +141,13 @@ func createPrometheusAPI(q storage.SampleAndChunkQueryable) *route.Router {
 }
 
 type errorTestQueryable struct {
+	storage.ExemplarQueryable
 	q   storage.Querier
 	err error
+}
+
+func (t errorTestQueryable) ExemplarQuerier(ctx context.Context) (storage.ExemplarQuerier, error) {
+	return nil, t.err
 }
 
 func (t errorTestQueryable) ChunkQuerier(ctx context.Context, mint, maxt int64) (storage.ChunkQuerier, error) {
