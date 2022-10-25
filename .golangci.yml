@@ -10,6 +10,7 @@ output:
 linters:
   enable:
     - depguard
+    - gocritic
     - gofumpt
     - goimports
     - revive
@@ -17,6 +18,7 @@ linters:
 
 issues:
   max-same-issues: 0
+  max-issues-per-linter: 0
   exclude-rules:
     - path: _test.go
       linters:
@@ -34,6 +36,9 @@ linters-settings:
       - regexp: "Use github.com/grafana/regexp instead of regexp"
   errcheck:
     exclude: scripts/errcheck_excludes.txt
+  gocritic:
+    enabled-checks:
+      - boolExprSimplify
   goimports:
     local-prefixes: github.com/prometheus/prometheus
   gofumpt:
