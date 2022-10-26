@@ -21,6 +21,7 @@ import (
 	"github.com/go-kit/log"
 
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
 var ErrInvalidTimes = fmt.Errorf("max time is lesser than min time")
@@ -53,13 +54,34 @@ func CreateBlock(series []storage.Series, dir string, chunkRange int64, logger l
 		ref := storage.SeriesRef(0)
 		it := s.Iterator()
 		lset := s.Labels()
-		for it.Next() {
-			t, v := it.At()
-			ref, err = app.Append(ref, lset, t, v)
+		typ := it.Next()
+		lastTyp := typ
+		for ; typ != chunkenc.ValNone; typ = it.Next() {
+			if lastTyp != typ {
+				// The behaviour of appender is undefined if samples of different types
+				// are appended to the same series in a single Commit().
+				if err = app.Commit(); err != nil {
+					return "", err
+				}
+				app = w.Appender(ctx)
+				sampleCount = 0
+			}
+
+			switch typ {
+			case chunkenc.ValFloat:
+				t, v := it.At()
+				ref, err = app.Append(ref, lset, t, v)
+			case chunkenc.ValHistogram:
+				t, h := it.AtHistogram()
+				ref, err = app.AppendHistogram(ref, lset, t, h)
+			default:
+				return "", fmt.Errorf("unknown sample type %s", typ.String())
+			}
 			if err != nil {
 				return "", err
 			}
 			sampleCount++
+			lastTyp = typ
 		}
 		if it.Err() != nil {
 			return "", it.Err()

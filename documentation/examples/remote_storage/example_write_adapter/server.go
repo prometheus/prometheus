@@ -49,6 +49,11 @@ func main() {
 				}
 				fmt.Printf("\tExemplar:  %+v %f %d\n", m, e.Value, e.Timestamp)
 			}
+
+			for _, hp := range ts.Histograms {
+				h := remote.HistogramProtoToHistogram(hp)
+				fmt.Printf("\tHistogram:  %s\n", h.String())
+			}
 		}
 	})
 

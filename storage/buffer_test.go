@@ -18,6 +18,9 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 )
 
 func TestSampleRing(t *testing.T) {
@@ -64,7 +67,7 @@ func TestSampleRing(t *testing.T) {
 		}
 
 		for i, s := range input {
-			r.add(s.t, s.v)
+			r.add(s)
 			buffered := r.samples()
 
 			for _, sold := range input[:i] {
@@ -92,7 +95,7 @@ func TestBufferedSeriesIterator(t *testing.T) {
 	bufferEq := func(exp []sample) {
 		var b []sample
 		bit := it.Buffer()
-		for bit.Next() {
+		for bit.Next() == chunkenc.ValFloat {
 			t, v := bit.At()
 			b = append(b, sample{t: t, v: v})
 		}
@@ -104,7 +107,7 @@ func TestBufferedSeriesIterator(t *testing.T) {
 		require.Equal(t, ev, v, "value mismatch")
 	}
 	prevSampleEq := func(ets int64, ev float64, eok bool) {
-		ts, v, ok := it.PeekBack(1)
+		ts, v, _, ok := it.PeekBack(1)
 		require.Equal(t, eok, ok, "exist mismatch")
 		require.Equal(t, ets, ts, "timestamp mismatch")
 		require.Equal(t, ev, v, "value mismatch")
@@ -121,35 +124,35 @@ func TestBufferedSeriesIterator(t *testing.T) {
 		sample{t: 101, v: 10},
 	}), 2)
 
-	require.True(t, it.Seek(-123), "seek failed")
+	require.Equal(t, chunkenc.ValFloat, it.Seek(-123), "seek failed")
 	sampleEq(1, 2)
 	prevSampleEq(0, 0, false)
 	bufferEq(nil)
 
-	require.True(t, it.Next(), "next failed")
+	require.Equal(t, chunkenc.ValFloat, it.Next(), "next failed")
 	sampleEq(2, 3)
 	prevSampleEq(1, 2, true)
 	bufferEq([]sample{{t: 1, v: 2}})
 
-	require.True(t, it.Next(), "next failed")
-	require.True(t, it.Next(), "next failed")
-	require.True(t, it.Next(), "next failed")
+	require.Equal(t, chunkenc.ValFloat, it.Next(), "next failed")
+	require.Equal(t, chunkenc.ValFloat, it.Next(), "next failed")
+	require.Equal(t, chunkenc.ValFloat, it.Next(), "next failed")
 	sampleEq(5, 6)
 	prevSampleEq(4, 5, true)
 	bufferEq([]sample{{t: 2, v: 3}, {t: 3, v: 4}, {t: 4, v: 5}})
 
-	require.True(t, it.Seek(5), "seek failed")
+	require.Equal(t, chunkenc.ValFloat, it.Seek(5), "seek failed")
 	sampleEq(5, 6)
 	prevSampleEq(4, 5, true)
 	bufferEq([]sample{{t: 2, v: 3}, {t: 3, v: 4}, {t: 4, v: 5}})
 
-	require.True(t, it.Seek(101), "seek failed")
+	require.Equal(t, chunkenc.ValFloat, it.Seek(101), "seek failed")
 	sampleEq(101, 10)
 	prevSampleEq(100, 9, true)
 	bufferEq([]sample{{t: 99, v: 8}, {t: 100, v: 9}})
 
-	require.False(t, it.Next(), "next succeeded unexpectedly")
-	require.False(t, it.Seek(1024), "seek succeeded unexpectedly")
+	require.Equal(t, chunkenc.ValNone, it.Next(), "next succeeded unexpectedly")
+	require.Equal(t, chunkenc.ValNone, it.Seek(1024), "seek succeeded unexpectedly")
 }
 
 // At() should not be called once Next() returns false.
@@ -157,14 +160,19 @@ func TestBufferedSeriesIteratorNoBadAt(t *testing.T) {
 	done := false
 
 	m := &mockSeriesIterator{
-		seek: func(int64) bool { return false },
+		seek: func(int64) chunkenc.ValueType { return chunkenc.ValNone },
 		at: func() (int64, float64) {
 			require.False(t, done, "unexpectedly done")
 			done = true
 			return 0, 0
 		},
-		next: func() bool { return !done },
-		err:  func() error { return nil },
+		next: func() chunkenc.ValueType {
+			if done {
+				return chunkenc.ValNone
+			}
+			return chunkenc.ValFloat
+		},
+		err: func() error { return nil },
 	}
 
 	it := NewBufferIterator(m, 60)
@@ -180,23 +188,35 @@ func BenchmarkBufferedSeriesIterator(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 
-	for it.Next() {
+	for it.Next() != chunkenc.ValNone {
 		// scan everything
 	}
 	require.NoError(b, it.Err())
 }
 
 type mockSeriesIterator struct {
-	seek func(int64) bool
+	seek func(int64) chunkenc.ValueType
 	at   func() (int64, float64)
-	next func() bool
+	next func() chunkenc.ValueType
 	err  func() error
 }
 
-func (m *mockSeriesIterator) Seek(t int64) bool    { return m.seek(t) }
-func (m *mockSeriesIterator) At() (int64, float64) { return m.at() }
-func (m *mockSeriesIterator) Next() bool           { return m.next() }
-func (m *mockSeriesIterator) Err() error           { return m.err() }
+func (m *mockSeriesIterator) Seek(t int64) chunkenc.ValueType { return m.seek(t) }
+func (m *mockSeriesIterator) At() (int64, float64)            { return m.at() }
+func (m *mockSeriesIterator) Next() chunkenc.ValueType        { return m.next() }
+func (m *mockSeriesIterator) Err() error                      { return m.err() }
+
+func (m *mockSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
+	return 0, nil // Not really mocked.
+}
+
+func (m *mockSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+	return 0, nil // Not really mocked.
+}
+
+func (m *mockSeriesIterator) AtT() int64 {
+	return 0 // Not really mocked.
+}
 
 type fakeSeriesIterator struct {
 	nsamples int64
@@ -209,17 +229,35 @@ func newFakeSeriesIterator(nsamples, step int64) *fakeSeriesIterator {
 }
 
 func (it *fakeSeriesIterator) At() (int64, float64) {
-	return it.idx * it.step, 123 // value doesn't matter
+	return it.idx * it.step, 123 // Value doesn't matter.
 }
 
-func (it *fakeSeriesIterator) Next() bool {
+func (it *fakeSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
+	return it.idx * it.step, &histogram.Histogram{} // Value doesn't matter.
+}
+
+func (it *fakeSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+	return it.idx * it.step, &histogram.FloatHistogram{} // Value doesn't matter.
+}
+
+func (it *fakeSeriesIterator) AtT() int64 {
+	return it.idx * it.step
+}
+
+func (it *fakeSeriesIterator) Next() chunkenc.ValueType {
 	it.idx++
-	return it.idx < it.nsamples
+	if it.idx >= it.nsamples {
+		return chunkenc.ValNone
+	}
+	return chunkenc.ValFloat
 }
 
-func (it *fakeSeriesIterator) Seek(t int64) bool {
+func (it *fakeSeriesIterator) Seek(t int64) chunkenc.ValueType {
 	it.idx = t / it.step
-	return it.idx < it.nsamples
+	if it.idx >= it.nsamples {
+		return chunkenc.ValNone
+	}
+	return chunkenc.ValFloat
 }
 
 func (it *fakeSeriesIterator) Err() error { return nil }

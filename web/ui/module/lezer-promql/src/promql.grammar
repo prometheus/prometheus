@@ -132,7 +132,10 @@ FunctionIdentifier {
   Deriv |
   Exp |
   Floor |
+  HistogramCount |
+  HistogramFraction |
   HistogramQuantile |
+  HistogramSum |
   HoltWinters |
   Hour |
   Idelta |
@@ -356,7 +359,10 @@ NumberLiteral  {
   Deriv { condFn<"deriv"> }
   Exp { condFn<"exp"> }
   Floor { condFn<"floor"> }
+  HistogramCount { condFn<"histogram_count"> }
+  HistogramFraction { condFn<"histogram_fraction"> }
   HistogramQuantile { condFn<"histogram_quantile"> }
+  HistogramSum { condFn<"histogram_sum"> }
   HoltWinters { condFn<"holt_winters"> }
   Hour { condFn<"hour"> }
   Idelta { condFn<"idelta"> }

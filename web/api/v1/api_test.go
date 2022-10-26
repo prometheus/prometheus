@@ -30,6 +30,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/util/stats"
 
@@ -3068,6 +3069,33 @@ func TestRespond(t *testing.T) {
 				},
 			},
 			expected: `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"__name__":"foo"},"values":[[1,"1"]]}]}}`,
+		},
+		{
+			response: &queryData{
+				ResultType: parser.ValueTypeMatrix,
+				Result: promql.Matrix{
+					promql.Series{
+						Points: []promql.Point{{H: &histogram.FloatHistogram{
+							Schema:        2,
+							ZeroThreshold: 0.001,
+							ZeroCount:     12,
+							Count:         10,
+							Sum:           20,
+							PositiveSpans: []histogram.Span{
+								{Offset: 3, Length: 2},
+								{Offset: 1, Length: 3},
+							},
+							NegativeSpans: []histogram.Span{
+								{Offset: 2, Length: 2},
+							},
+							PositiveBuckets: []float64{1, 2, 2, 1, 1},
+							NegativeBuckets: []float64{2, 1},
+						}, T: 1000}},
+						Metric: labels.FromStrings("__name__", "foo"),
+					},
+				},
+			},
+			expected: `{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"__name__":"foo"},"histograms":[[1,{"count":"10","sum":"20","buckets":[[1,"-1.6817928305074288","-1.414213562373095","1"],[1,"-1.414213562373095","-1.189207115002721","2"],[3,"-0.001","0.001","12"],[0,"1.414213562373095","1.6817928305074288","1"],[0,"1.6817928305074288","2","2"],[0,"2.378414230005442","2.82842712474619","2"],[0,"2.82842712474619","3.3635856610148576","1"],[0,"3.3635856610148576","4","1"]]}]]}]}}`,
 		},
 		{
 			response: promql.Point{V: 0, T: 0},

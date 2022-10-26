@@ -25,7 +25,7 @@ const testMaxSize int = 32
 func valEven(pos int) int { return pos*2 + 2 } // s[0]=2, s[1]=4, s[2]=6, ..., s[31]=64 - Predictable pre-existing values
 func valOdd(pos int) int  { return pos*2 + 1 } // s[0]=1, s[1]=3, s[2]=5, ..., s[31]=63 - New values will interject at chosen position because they sort before the pre-existing vals.
 
-func samplify(v int) sample { return sample{int64(v), float64(v)} }
+func samplify(v int) sample { return sample{int64(v), float64(v), nil, nil} }
 
 func makeEvenSampleSlice(n int) []sample {
 	s := make([]sample, n)
