@@ -181,6 +181,18 @@ For more information on building, running, and developing on the React-based UI,
 * You will find a CircleCI configuration in [`.circleci/config.yml`](.circleci/config.yml).
 * See the [Community page](https://prometheus.io/community) for how to reach the Prometheus developers and users on various communication channels.
 
+## Who is using Prometheus?
+
+Companies that have adopted prometheus:  
+* [SoundCloud](https://developers.soundcloud.com/blog/prometheus-monitoring-at-soundcloud) 
+* [Uber](https://www.uber.com/blog/virginia/tag/m3/)
+* [Robinhood](https://robinhood.engineering/upgrading-scaling-airflow-at-robinhood-5b625dfaa2ee)
+* [Slack](https://slack.engineering/recommend-api/)
+* ... and many more!
+
+If you'd like to be added, feel free to open a pull-request!
+
+
 ## Contributing
 
 Refer to [CONTRIBUTING.md](https://github.com/prometheus/prometheus/blob/main/CONTRIBUTING.md)
