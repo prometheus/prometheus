@@ -2448,10 +2448,7 @@ func TestHeadShardedPostings(t *testing.T) {
 	// Append some series.
 	app := head.Appender(context.Background())
 	for i := 0; i < 100; i++ {
-		_, err := app.Append(0, labels.Labels{
-			{Name: "unique", Value: fmt.Sprintf("value%d", i)},
-			{Name: "const", Value: "1"},
-		}, 100, 0)
+		_, err := app.Append(0, labels.FromStrings("unique", fmt.Sprintf("value%d", i), "const", "1"), 100, 0)
 		require.NoError(t, err)
 	}
 	require.NoError(t, app.Commit())
