@@ -3114,17 +3114,11 @@ func TestRangeQuery(t *testing.T) {
 			Result: Matrix{
 				Series{
 					Points: []Point{{V: 1, T: 0}, {V: 3, T: 60000}, {V: 5, T: 120000}},
-					Metric: labels.Labels{
-						labels.Label{Name: "__name__", Value: "bar"},
-						labels.Label{Name: "job", Value: "2"},
-					},
+					Metric: labels.FromStrings("__name__", "bar", "job", "2"),
 				},
 				Series{
 					Points: []Point{{V: 3, T: 60000}, {V: 5, T: 120000}},
-					Metric: labels.Labels{
-						labels.Label{Name: "__name__", Value: "foo"},
-						labels.Label{Name: "job", Value: "1"},
-					},
+					Metric: labels.FromStrings("__name__", "foo", "job", "1"),
 				},
 			},
 			Start:    time.Unix(0, 0),
