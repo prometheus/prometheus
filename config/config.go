@@ -301,6 +301,12 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 			}
 		}
 
+		if scfg.BodySizeLimit == 0 {
+			if c.GlobalConfig.BodySizeLimit > 0 {
+				scfg.BodySizeLimit = c.GlobalConfig.BodySizeLimit
+			}
+		}
+
 		if _, ok := jobNames[scfg.JobName]; ok {
 			return fmt.Errorf("found multiple scrape configs with job name %q", scfg.JobName)
 		}
@@ -344,6 +350,10 @@ type GlobalConfig struct {
 	QueryLogFile string `yaml:"query_log_file,omitempty"`
 	// The labels to add to any timeseries that this Prometheus instance scrapes.
 	ExternalLabels labels.Labels `yaml:"external_labels,omitempty"`
+
+	// An uncompressed response body larger than this many bytes will cause the
+	// scrape to fail. 0 means no limit.
+	BodySizeLimit units.Base2Bytes `yaml:"body_size_limit,omitempty"`
 }
 
 // SetDirectory joins any relative file paths with dir.
