@@ -91,7 +91,15 @@ endif
 npm_licenses: ui-install
 	@echo ">> bundling npm licenses"
 	rm -f $(REACT_APP_NPM_LICENSES_TARBALL)
+ifeq ($(shell uname), Darwin)
+	$(eval LICENSE_TMP_DIR := $(shell mktemp -d))
+	LICENSE_TMP_DIR=LICENSE_TMP_DIR/npm_licenses
+	find web/ui/node_modules -iname "license*" -type f -exec rsync -R {} "${LICENSE_TMP_DIR}/npm_licenses" \;
+	tar cfj $(REACT_APP_NPM_LICENSES_TARBALL) -C $(LICENSE_TMP_DIR) .
+	rm -rf $(LICENSE_TMP_DIR)
+else
 	find $(UI_NODE_MODULES_PATH) -iname "license*" | tar cfj $(REACT_APP_NPM_LICENSES_TARBALL) --transform 's/^/npm_licenses\//' --files-from=-
+endif
 
 .PHONY: tarball
 tarball: npm_licenses common-tarball

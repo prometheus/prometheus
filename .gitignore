@@ -4,6 +4,8 @@
 /*.yml
 *.exe
 
+.DS_Store
+
 /prometheus
 /promtool
 benchmark.txt
@@ -28,3 +30,5 @@ npm_licenses.tar.bz2
 /.build
 
 /**/node_modules
+
+.idea
