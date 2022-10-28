@@ -382,5 +382,5 @@ func quantile(q float64, values vectorByValueHeap) float64 {
 	upperIndex := math.Min(n-1, lowerIndex+1)
 
 	weight := rank - math.Floor(rank)
-	return values[int(lowerIndex)].V*(1-weight) + values[int(upperIndex)].V*weight
+	return values[int(lowerIndex)].F*(1-weight) + values[int(upperIndex)].F*weight
 }

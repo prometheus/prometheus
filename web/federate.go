@@ -145,7 +145,9 @@ Loop:
 
 		vec = append(vec, promql.Sample{
 			Metric: s.Labels(),
-			Point:  promql.Point{T: t, V: v, H: fh},
+			T:      t,
+			F:      v,
+			H:      fh,
 		})
 	}
 	if ws := set.Warnings(); len(ws) > 0 {
@@ -262,7 +264,7 @@ Loop:
 		if !isHistogram {
 			lastHistogramWasGauge = false
 			protMetric.Untyped = &dto.Untyped{
-				Value: proto.Float64(s.V),
+				Value: proto.Float64(s.F),
 			}
 		} else {
 			lastHistogramWasGauge = s.H.CounterResetHint == histogram.GaugeType

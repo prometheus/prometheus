@@ -347,7 +347,7 @@ Outer:
 		for _, s := range got {
 			gotSamples = append(gotSamples, parsedSample{
 				Labels: s.Metric.Copy(),
-				Value:  s.V,
+				Value:  s.F,
 			})
 		}
 
@@ -447,7 +447,8 @@ func query(ctx context.Context, qs string, t time.Time, engine *promql.Engine, q
 		return v, nil
 	case promql.Scalar:
 		return promql.Vector{promql.Sample{
-			Point:  promql.Point{T: v.T, V: v.V},
+			T:      v.T,
+			F:      v.V,
 			Metric: labels.Labels{},
 		}}, nil
 	default:

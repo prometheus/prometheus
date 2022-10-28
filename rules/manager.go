@@ -202,7 +202,8 @@ func EngineQueryFunc(engine *promql.Engine, q storage.Queryable) QueryFunc {
 			return v, nil
 		case promql.Scalar:
 			return promql.Vector{promql.Sample{
-				Point:  promql.Point{T: v.T, V: v.V},
+				T:      v.T,
+				F:      v.V,
 				Metric: labels.Labels{},
 			}}, nil
 		default:
@@ -695,7 +696,7 @@ func (g *Group) Eval(ctx context.Context, ts time.Time) {
 				if s.H != nil {
 					_, err = app.AppendHistogram(0, s.Metric, s.T, nil, s.H)
 				} else {
-					_, err = app.Append(0, s.Metric, s.T, s.V)
+					_, err = app.Append(0, s.Metric, s.T, s.F)
 				}
 
 				if err != nil {
