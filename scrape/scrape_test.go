@@ -165,7 +165,7 @@ func (l *testLoop) stop() {
 	l.stopFunc()
 }
 
-func (l *testLoop) getCache() *scrapeCache {
+func (l *testLoop) getCache() *Cache {
 	return nil
 }
 
@@ -914,7 +914,7 @@ func TestScrapeLoopMetadata(t *testing.T) {
 	var (
 		signal  = make(chan struct{})
 		scraper = &testScraper{}
-		cache   = newScrapeCache()
+		cache   = NewScrapeCache()
 	)
 	defer close(signal)
 
