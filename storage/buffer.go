@@ -231,8 +231,12 @@ func (r *sampleRing) iterator() chunkenc.Iterator {
 }
 
 type sampleRingIterator struct {
-	r *sampleRing
-	i int
+	r  *sampleRing
+	i  int
+	t  int64
+	v  float64
+	h  *histogram.Histogram
+	fh *histogram.FloatHistogram
 }
 
 func (it *sampleRingIterator) Next() chunkenc.ValueType {
@@ -241,12 +245,16 @@ func (it *sampleRingIterator) Next() chunkenc.ValueType {
 		return chunkenc.ValNone
 	}
 	s := it.r.at(it.i)
+	it.t = s.t
 	switch {
 	case s.h != nil:
+		it.h = s.h
 		return chunkenc.ValHistogram
 	case s.fh != nil:
+		it.fh = s.fh
 		return chunkenc.ValFloatHistogram
 	default:
+		it.v = s.v
 		return chunkenc.ValFloat
 	}
 }
@@ -260,26 +268,22 @@ func (it *sampleRingIterator) Err() error {
 }
 
 func (it *sampleRingIterator) At() (int64, float64) {
-	s := it.r.at(it.i)
-	return s.t, s.v
+	return it.t, it.v
 }
 
 func (it *sampleRingIterator) AtHistogram() (int64, *histogram.Histogram) {
-	s := it.r.at(it.i)
-	return s.t, s.h
+	return it.t, it.h
 }
 
 func (it *sampleRingIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
-	s := it.r.at(it.i)
-	if s.fh == nil {
-		return s.t, s.h.ToFloat()
+	if it.fh == nil {
+		return it.t, it.h.ToFloat()
 	}
-	return s.t, s.fh
+	return it.t, it.fh
 }
 
 func (it *sampleRingIterator) AtT() int64 {
-	s := it.r.at(it.i)
-	return s.t
+	return it.t
 }
 
 func (r *sampleRing) at(i int) sample {
