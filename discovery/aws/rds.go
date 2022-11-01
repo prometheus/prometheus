@@ -39,6 +39,7 @@ const (
 	rdsLabel              = model.MetaLabelPrefix + "rds_"
 	rdsLabelARN           = rdsLabel + "arn"
 	rdsLabelAZ            = rdsLabel + "availability_zone"
+	rdsLabelCluster       = rdsLabel + "cluster"
 	rdsLabelEndpoint      = rdsLabel + "endpoint"
 	rdsLabelEngine        = rdsLabel + "engine"
 	rdsLabelInstanceID    = rdsLabel + "instance_id"
@@ -214,6 +215,7 @@ func (d *RDSDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, error
 			labels[rdsLabelEngine] = model.LabelValue(*inst.Engine)
 			labels[rdsLabelAZ] = model.LabelValue(*inst.AvailabilityZone)
 			labels[rdsLabelInstanceClass] = model.LabelValue(*inst.DBInstanceClass)
+			labels[rdsLabelCluster] = model.LabelValue(*inst.DBClusterIdentifier)
 
 			if inst.Endpoint != nil {
 				endpoint := inst.Endpoint.String()
