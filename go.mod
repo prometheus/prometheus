@@ -15,7 +15,7 @@ require (
 	github.com/docker/docker v20.10.18+incompatible
 	github.com/edsrzf/mmap-go v1.1.0
 	github.com/envoyproxy/go-control-plane v0.10.3
-	github.com/envoyproxy/protoc-gen-validate v0.6.8
+	github.com/envoyproxy/protoc-gen-validate v0.6.13
 	github.com/fsnotify/fsnotify v1.5.4
 	github.com/go-kit/log v0.2.1
 	github.com/go-logfmt/logfmt v0.5.1
