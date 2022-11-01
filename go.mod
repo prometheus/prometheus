@@ -45,7 +45,7 @@ require (
 	github.com/prometheus/common v0.37.0
 	github.com/prometheus/common/assets v0.2.0
 	github.com/prometheus/common/sigv4 v0.1.0
-	github.com/prometheus/exporter-toolkit v0.7.1
+	github.com/prometheus/exporter-toolkit v0.8.1
 	github.com/scaleway/scaleway-sdk-go v1.0.0-beta.9
 	github.com/shurcooL/httpfs v0.0.0-20190707220628-8d4bc4ba7749
 	github.com/stretchr/testify v1.8.0
@@ -62,7 +62,7 @@ require (
 	go.uber.org/goleak v1.2.0
 	golang.org/x/net v0.0.0-20220921155015-db77216a4ee9
 	golang.org/x/oauth2 v0.0.0-20220909003341-f21342109be1
-	golang.org/x/sync v0.0.0-20220907140024-f12130a52804
+	golang.org/x/sync v0.1.0
 	golang.org/x/sys v0.0.0-20220919091848-fb04ddd9f9c8
 	golang.org/x/time v0.0.0-20220920022843-2ce7c2934d45
 	golang.org/x/tools v0.1.12
@@ -79,6 +79,8 @@ require (
 	k8s.io/klog v1.0.0
 	k8s.io/klog/v2 v2.80.0
 )
+
+require github.com/coreos/go-systemd/v22 v22.4.0 // indirect
 
 require (
 	cloud.google.com/go/compute v1.7.0 // indirect
@@ -167,7 +169,7 @@ require (
 	go.opentelemetry.io/otel/exporters/otlp/internal/retry v1.10.0 // indirect
 	go.opentelemetry.io/otel/metric v0.32.0 // indirect
 	go.opentelemetry.io/proto/otlp v0.19.0 // indirect
-	golang.org/x/crypto v0.0.0-20220722155217-630584e8d5aa // indirect
+	golang.org/x/crypto v0.0.0-20221012134737-56aed061732a // indirect
 	golang.org/x/exp v0.0.0-20220722155223-a9213eeb770e
 	golang.org/x/mod v0.6.0-dev.0.20220419223038-86c51ed26bb4 // indirect
 	golang.org/x/term v0.0.0-20210927222741-03fcf44c2211 // indirect
