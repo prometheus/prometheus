@@ -58,6 +58,7 @@ var (
 		Region:           "global",
 		Server:           "http://localhost:4646",
 		TagSeparator:     ",",
+		Services:         []string{},
 	}
 
 	failuresCount = prometheus.NewCounter(
@@ -80,6 +81,7 @@ type SDConfig struct {
 	RefreshInterval  model.Duration          `yaml:"refresh_interval"`
 	Region           string                  `yaml:"region"`
 	Server           string                  `yaml:"server"`
+	Services         []string                `yaml:"services,omitempty"`
 	TagSeparator     string                  `yaml:"tag_separator,omitempty"`
 }
 
@@ -121,6 +123,7 @@ type Discovery struct {
 	region          string
 	server          string
 	tagSeparator    string
+	watchServices   []string
 }
 
 // NewDiscovery returns a new Discovery which periodically refreshes its targets.
@@ -132,6 +135,7 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 		region:          conf.Region,
 		server:          conf.Server,
 		tagSeparator:    conf.TagSeparator,
+		watchServices:   conf.Services,
 	}
 
 	HTTPClient, err := config.NewClientFromConfig(conf.HTTPClientConfig, "nomad_sd")
@@ -161,6 +165,20 @@ func NewDiscovery(conf *SDConfig, logger log.Logger) (*Discovery, error) {
 	return d, nil
 }
 
+func (d *Discovery) shouldWatchService(serviceName string) bool {
+	// If there's no fixed set of watched services, we watch everything.
+	if len(d.watchServices) == 0 {
+		return true
+	}
+
+	for _, sn := range d.watchServices {
+		if sn == serviceName {
+			return true
+		}
+	}
+	return false
+}
+
 func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	opts := &nomad.QueryOptions{
 		AllowStale: d.allowStale,
@@ -177,6 +195,10 @@ func (d *Discovery) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 
 	for _, stub := range stubs {
 		for _, service := range stub.Services {
+			if !d.shouldWatchService(service.ServiceName) {
+				continue
+			}
+
 			instances, _, err := d.client.Services().Get(service.ServiceName, opts)
 			if err != nil {
 				failuresCount.Inc()

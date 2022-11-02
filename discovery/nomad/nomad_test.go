@@ -44,6 +44,33 @@ func NewSDMock(t *testing.T) *SDMock {
 	}
 }
 
+func TestConfiguredServices(t *testing.T) {
+	conf := &SDConfig{
+		Services: []string{"configuredServiceName"},
+	}
+	nomadDiscovery, err := NewDiscovery(conf, nil)
+	if err != nil {
+		t.Errorf("Unexpected error when initializing discovery %v", err)
+	}
+	if !nomadDiscovery.shouldWatchService("configuredServiceName") {
+		t.Errorf("Expected service %s to be watched", "configuredServiceName")
+	}
+	if nomadDiscovery.shouldWatchService("nonConfiguredServiceName") {
+		t.Errorf("Expected service %s to not be watched", "nonConfiguredServiceName")
+	}
+}
+
+func TestNonConfiguredServices(t *testing.T) {
+	conf := &SDConfig{}
+	nomadDiscovery, err := NewDiscovery(conf, nil)
+	if err != nil {
+		t.Errorf("Unexpected error when initializing discovery %v", err)
+	}
+	if !nomadDiscovery.shouldWatchService("nonConfiguredServiceName") {
+		t.Errorf("Expected service %s to be watched", "nonConfiguredServiceName")
+	}
+}
+
 // Endpoint returns the URI to the mock server.
 func (m *SDMock) Endpoint() string {
 	return m.Server.URL + "/"

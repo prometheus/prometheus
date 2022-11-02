@@ -529,6 +529,7 @@ var expectedConf = &Config{
 					RefreshInterval: model.Duration(60 * time.Second),
 					Region:          "global",
 					Server:          "http://localhost:4646",
+					Services:        []string{},
 					TagSeparator:    ",",
 					HTTPClientConfig: config.HTTPClientConfig{
 						FollowRedirects: true,
