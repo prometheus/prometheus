@@ -6150,7 +6150,6 @@ func TestQueryHistogramFromBlocksWithCompaction(t *testing.T) {
 }
 
 func TestNativeHistogramFlag(t *testing.T) {
-	// TODO(marctc): Add similar test for float histograms
 	dir := t.TempDir()
 	db, err := Open(dir, nil, nil, nil, nil)
 	require.NoError(t, err)
@@ -6170,6 +6169,19 @@ func TestNativeHistogramFlag(t *testing.T) {
 		PositiveBuckets: []int64{1, 1, -1, 0},
 	}
 
+	fh := &histogram.FloatHistogram{
+		Count:         6,
+		ZeroCount:     4,
+		ZeroThreshold: 0.001,
+		Sum:           35.5,
+		Schema:        1,
+		PositiveSpans: []histogram.Span{
+			{Offset: 0, Length: 2},
+			{Offset: 2, Length: 2},
+		},
+		PositiveBuckets: []float64{1, 1, -1, 0},
+	}
+
 	l := labels.FromStrings("foo", "bar")
 
 	app := db.Appender(context.Background())
@@ -6177,14 +6189,21 @@ func TestNativeHistogramFlag(t *testing.T) {
 	// Disabled by default.
 	_, err = app.AppendHistogram(0, l, 100, h, nil)
 	require.Equal(t, storage.ErrNativeHistogramsDisabled, err)
+	_, err = app.AppendHistogram(0, l, 105, nil, fh)
+	require.Equal(t, storage.ErrNativeHistogramsDisabled, err)
 
 	// Enable and append.
 	db.EnableNativeHistograms()
 	_, err = app.AppendHistogram(0, l, 200, h, nil)
 	require.NoError(t, err)
+	_, err = app.AppendHistogram(0, l, 205, nil, fh)
+	require.NoError(t, err)
 
 	db.DisableNativeHistograms()
 	_, err = app.AppendHistogram(0, l, 300, h, nil)
+	require.Equal(t, storage.ErrNativeHistogramsDisabled, err)
+
+	_, err = app.AppendHistogram(0, l, 305, nil, fh)
 	require.Equal(t, storage.ErrNativeHistogramsDisabled, err)
 
 	require.NoError(t, app.Commit())
