@@ -244,6 +244,49 @@ func (h *FloatHistogram) Sub(other *FloatHistogram) *FloatHistogram {
 	return h
 }
 
+// Equals returns true if the given float histogram matches exactly.
+// Exact match is when there are no new buckets (even empty) and no missing buckets,
+// and all the bucket values match. Spans can have different empty length spans in between,
+// but they must represent the same bucket layout to match.
+func (h *FloatHistogram) Equals(h2 *FloatHistogram) bool {
+	if h2 == nil {
+		return false
+	}
+
+	if h.Schema != h2.Schema || h.ZeroThreshold != h2.ZeroThreshold ||
+		h.ZeroCount != h2.ZeroCount || h.Count != h2.Count || h.Sum != h2.Sum {
+		return false
+	}
+
+	if !spansMatch(h.PositiveSpans, h2.PositiveSpans) {
+		return false
+	}
+	if !spansMatch(h.NegativeSpans, h2.NegativeSpans) {
+		return false
+	}
+
+	if !bucketsFloatMatch(h.PositiveBuckets, h2.PositiveBuckets) {
+		return false
+	}
+	if !bucketsFloatMatch(h.NegativeBuckets, h2.NegativeBuckets) {
+		return false
+	}
+
+	return true
+}
+
+func bucketsFloatMatch(b1, b2 []float64) bool {
+	if len(b1) != len(b2) {
+		return false
+	}
+	for i, b := range b1 {
+		if b != b2[i] {
+			return false
+		}
+	}
+	return true
+}
+
 // addBucket takes the "coordinates" of the last bucket that was handled and
 // adds the provided bucket after it. If a corresponding bucket exists, the
 // count is added. If not, the bucket is inserted. The updated slices and the

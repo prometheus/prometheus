@@ -1298,6 +1298,7 @@ func TestDeleteCompactionBlockAfterFailedReload(t *testing.T) {
 }
 
 func TestHeadCompactionWithHistograms(t *testing.T) {
+	// TODO(marctc): Add similar test for float histograms
 	head, _ := newTestHead(t, DefaultBlockDuration, false, false)
 	require.NoError(t, head.Init(0))
 	t.Cleanup(func() {
@@ -1310,7 +1311,7 @@ func TestHeadCompactionWithHistograms(t *testing.T) {
 		t.Helper()
 		app := head.Appender(ctx)
 		for tsMinute := from; tsMinute <= to; tsMinute++ {
-			_, err := app.AppendHistogram(0, lbls, minute(tsMinute), h)
+			_, err := app.AppendHistogram(0, lbls, minute(tsMinute), h, nil)
 			require.NoError(t, err)
 			*exp = append(*exp, sample{t: minute(tsMinute), h: h.Copy()})
 		}
@@ -1403,6 +1404,7 @@ func TestHeadCompactionWithHistograms(t *testing.T) {
 // the test adds all samples to appender before committing instead of
 // buffering the writes to make it run faster.
 func TestSparseHistogramSpaceSavings(t *testing.T) {
+	// TODO(marctc): Add similar test for float histograms
 	t.Skip()
 
 	cases := []struct {
@@ -1511,7 +1513,7 @@ func TestSparseHistogramSpaceSavings(t *testing.T) {
 						)
 						for i := 0; i < numHistograms; i++ {
 							ts := int64(i) * timeStep
-							ref, err = sparseApp.AppendHistogram(ref, ah.baseLabels, ts, ah.hists[i])
+							ref, err = sparseApp.AppendHistogram(ref, ah.baseLabels, ts, ah.hists[i], nil)
 							require.NoError(t, err)
 						}
 					}

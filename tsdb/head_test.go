@@ -2829,9 +2829,20 @@ func TestAppendHistogram(t *testing.T) {
 			}
 			expHistograms := make([]timedHistogram, 0, numHistograms)
 			for i, h := range GenerateTestHistograms(numHistograms) {
-				_, err := app.AppendHistogram(0, l, int64(i), h)
+				_, err := app.AppendHistogram(0, l, int64(i), h, nil)
 				require.NoError(t, err)
 				expHistograms = append(expHistograms, timedHistogram{int64(i), h})
+			}
+
+			type timedFloatHistogram struct {
+				t int64
+				h *histogram.FloatHistogram
+			}
+			expFloatHistograms := make([]timedFloatHistogram, 0, numHistograms)
+			for i, fh := range GenerateTestFloatHistograms(numHistograms) {
+				_, err := app.AppendHistogram(0, l, int64(i), nil, fh)
+				require.NoError(t, err)
+				expFloatHistograms = append(expFloatHistograms, timedFloatHistogram{int64(i), fh})
 			}
 			require.NoError(t, app.Commit())
 
@@ -2849,12 +2860,16 @@ func TestAppendHistogram(t *testing.T) {
 
 			it := s.Iterator(nil)
 			actHistograms := make([]timedHistogram, 0, len(expHistograms))
+			actFloatHistograms := make([]timedFloatHistogram, 0, len(expFloatHistograms))
 			for it.Next() == chunkenc.ValHistogram {
 				t, h := it.AtHistogram()
 				actHistograms = append(actHistograms, timedHistogram{t, h})
+				t, fh := it.AtFloatHistogram()
+				actFloatHistograms = append(actFloatHistograms, timedFloatHistogram{t, fh})
 			}
 
 			require.Equal(t, expHistograms, actHistograms)
+			require.Equal(t, expFloatHistograms, actFloatHistograms)
 		})
 	}
 }
@@ -2876,9 +2891,21 @@ func TestHistogramInWALAndMmapChunk(t *testing.T) {
 		h.Count = h.Count * 2
 		h.NegativeSpans = h.PositiveSpans
 		h.NegativeBuckets = h.PositiveBuckets
-		_, err := app.AppendHistogram(0, s1, int64(i), h)
+		_, err := app.AppendHistogram(0, s1, int64(i), h, nil)
 		require.NoError(t, err)
 		exp[k1] = append(exp[k1], sample{t: int64(i), h: h.Copy()})
+		if i%5 == 0 {
+			require.NoError(t, app.Commit())
+			app = head.Appender(context.Background())
+		}
+	}
+	for i, h := range GenerateTestFloatHistograms(numHistograms) {
+		h.Count = h.Count * 2
+		h.NegativeSpans = h.PositiveSpans
+		h.NegativeBuckets = h.PositiveBuckets
+		_, err := app.AppendHistogram(0, s1, int64(numHistograms+i), nil, h)
+		require.NoError(t, err)
+		exp[k1] = append(exp[k1], sample{t: int64(i), fh: h.Copy()})
 		if i%5 == 0 {
 			require.NoError(t, app.Commit())
 			app = head.Appender(context.Background())
@@ -2908,7 +2935,7 @@ func TestHistogramInWALAndMmapChunk(t *testing.T) {
 		h.Count = h.Count * 2
 		h.NegativeSpans = h.PositiveSpans
 		h.NegativeBuckets = h.PositiveBuckets
-		_, err := app.AppendHistogram(0, s2, int64(ts), h)
+		_, err := app.AppendHistogram(0, s2, int64(ts), h, nil)
 		require.NoError(t, err)
 		exp[k2] = append(exp[k2], sample{t: int64(ts), h: h.Copy()})
 		if ts%20 == 0 {
@@ -3250,6 +3277,7 @@ func TestSnapshotError(t *testing.T) {
 }
 
 func TestHistogramMetrics(t *testing.T) {
+	numHistograms := 10
 	head, _ := newTestHead(t, 1000, false, false)
 	t.Cleanup(func() {
 		require.NoError(t, head.Close())
@@ -3261,13 +3289,21 @@ func TestHistogramMetrics(t *testing.T) {
 	for x := 0; x < 5; x++ {
 		expHSeries++
 		l := labels.FromStrings("a", fmt.Sprintf("b%d", x))
-		for i, h := range GenerateTestHistograms(10) {
+		for i, h := range GenerateTestHistograms(numHistograms) {
 			app := head.Appender(context.Background())
-			_, err := app.AppendHistogram(0, l, int64(i), h)
+			_, err := app.AppendHistogram(0, l, int64(i), h, nil)
 			require.NoError(t, err)
 			require.NoError(t, app.Commit())
 			expHSamples++
 		}
+		for i, fh := range GenerateTestFloatHistograms(numHistograms) {
+			app := head.Appender(context.Background())
+			_, err := app.AppendHistogram(0, l, int64(numHistograms+i), nil, fh)
+			require.NoError(t, err)
+			require.NoError(t, app.Commit())
+			expHSamples++
+		}
+
 	}
 
 	require.Equal(t, float64(expHSamples), prom_testutil.ToFloat64(head.metrics.samplesAppended.WithLabelValues(sampleMetricTypeHistogram)))
@@ -3283,6 +3319,8 @@ func TestHistogramMetrics(t *testing.T) {
 }
 
 func TestHistogramStaleSample(t *testing.T) {
+	// TODO(marctc): Add similar test for float histograms
+
 	l := labels.FromStrings("a", "b")
 	numHistograms := 20
 	head, _ := newTestHead(t, 100000, false, false)
@@ -3338,7 +3376,7 @@ func TestHistogramStaleSample(t *testing.T) {
 	// Adding stale in the same appender.
 	app := head.Appender(context.Background())
 	for _, h := range GenerateTestHistograms(numHistograms) {
-		_, err := app.AppendHistogram(0, l, 100*int64(len(expHistograms)), h)
+		_, err := app.AppendHistogram(0, l, 100*int64(len(expHistograms)), h, nil)
 		require.NoError(t, err)
 		expHistograms = append(expHistograms, timedHistogram{100 * int64(len(expHistograms)), h})
 	}
@@ -3357,7 +3395,7 @@ func TestHistogramStaleSample(t *testing.T) {
 	// Adding stale in different appender and continuing series after a stale sample.
 	app = head.Appender(context.Background())
 	for _, h := range GenerateTestHistograms(2 * numHistograms)[numHistograms:] {
-		_, err := app.AppendHistogram(0, l, 100*int64(len(expHistograms)), h)
+		_, err := app.AppendHistogram(0, l, 100*int64(len(expHistograms)), h, nil)
 		require.NoError(t, err)
 		expHistograms = append(expHistograms, timedHistogram{100 * int64(len(expHistograms)), h})
 	}
@@ -3378,6 +3416,7 @@ func TestHistogramStaleSample(t *testing.T) {
 }
 
 func TestHistogramCounterResetHeader(t *testing.T) {
+	// TODO(marctc): Add similar test for float histograms
 	l := labels.FromStrings("a", "b")
 	head, _ := newTestHead(t, 1000, false, false)
 	t.Cleanup(func() {
@@ -3389,7 +3428,7 @@ func TestHistogramCounterResetHeader(t *testing.T) {
 	appendHistogram := func(h *histogram.Histogram) {
 		ts++
 		app := head.Appender(context.Background())
-		_, err := app.AppendHistogram(0, l, ts, h)
+		_, err := app.AppendHistogram(0, l, ts, h, nil)
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
 	}
@@ -3479,6 +3518,7 @@ func TestHistogramCounterResetHeader(t *testing.T) {
 }
 
 func TestAppendingDifferentEncodingToSameSeries(t *testing.T) {
+	// TODO(marctc): Add similar test for float histograms
 	dir := t.TempDir()
 	opts := DefaultOptions()
 	opts.EnableNativeHistograms = true
@@ -3510,7 +3550,7 @@ func TestAppendingDifferentEncodingToSameSeries(t *testing.T) {
 		})
 	}
 	addHistogramSample := func(app storage.Appender, ts int64, h *histogram.Histogram) {
-		ref, err = app.AppendHistogram(ref, lbls, ts, h)
+		ref, err = app.AppendHistogram(ref, lbls, ts, h, nil)
 		require.NoError(t, err)
 		expResult = append(expResult, result{
 			t:  ts,
@@ -3540,7 +3580,7 @@ func TestAppendingDifferentEncodingToSameSeries(t *testing.T) {
 
 	// Out of order histogram is shown correctly for a float64 chunk. No new chunk.
 	app = db.Appender(context.Background())
-	_, err = app.AppendHistogram(ref, lbls, 1, hists[2])
+	_, err = app.AppendHistogram(ref, lbls, 1, hists[2], nil)
 	require.Equal(t, storage.ErrOutOfOrderSample, err)
 	require.NoError(t, app.Commit())
 
@@ -4102,15 +4142,21 @@ func TestReplayAfterMmapReplayError(t *testing.T) {
 func TestHistogramValidation(t *testing.T) {
 	tests := map[string]struct {
 		h      *histogram.Histogram
+		fh     *histogram.FloatHistogram
 		errMsg string
 	}{
 		"valid histogram": {
-			h: GenerateTestHistograms(1)[0],
+			h:  GenerateTestHistograms(1)[0],
+			fh: GenerateTestFloatHistograms(1)[0],
 		},
 		"rejects histogram who has too few negative buckets": {
 			h: &histogram.Histogram{
 				NegativeSpans:   []histogram.Span{{Offset: 0, Length: 1}},
 				NegativeBuckets: []int64{},
+			},
+			fh: &histogram.FloatHistogram{
+				NegativeSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+				NegativeBuckets: []float64{},
 			},
 			errMsg: `negative side: spans need 1 buckets, have 0 buckets`,
 		},
@@ -4119,12 +4165,20 @@ func TestHistogramValidation(t *testing.T) {
 				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
 				PositiveBuckets: []int64{},
 			},
+			fh: &histogram.FloatHistogram{
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+				PositiveBuckets: []float64{},
+			},
 			errMsg: `positive side: spans need 1 buckets, have 0 buckets`,
 		},
 		"rejects histogram who has too many negative buckets": {
 			h: &histogram.Histogram{
 				NegativeSpans:   []histogram.Span{{Offset: 0, Length: 1}},
 				NegativeBuckets: []int64{1, 2},
+			},
+			fh: &histogram.FloatHistogram{
+				NegativeSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+				NegativeBuckets: []float64{1, 2},
 			},
 			errMsg: `negative side: spans need 1 buckets, have 2 buckets`,
 		},
@@ -4133,12 +4187,20 @@ func TestHistogramValidation(t *testing.T) {
 				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
 				PositiveBuckets: []int64{1, 2},
 			},
+			fh: &histogram.FloatHistogram{
+				PositiveSpans:   []histogram.Span{{Offset: 0, Length: 1}},
+				PositiveBuckets: []float64{1, 2},
+			},
 			errMsg: `positive side: spans need 1 buckets, have 2 buckets`,
 		},
 		"rejects a histogram which has a negative span with a negative offset": {
 			h: &histogram.Histogram{
 				NegativeSpans:   []histogram.Span{{Offset: -1, Length: 1}, {Offset: -1, Length: 1}},
 				NegativeBuckets: []int64{1, 2},
+			},
+			fh: &histogram.FloatHistogram{
+				NegativeSpans:   []histogram.Span{{Offset: -1, Length: 1}, {Offset: -1, Length: 1}},
+				NegativeBuckets: []float64{1, 2},
 			},
 			errMsg: `negative side: span number 2 with offset -1`,
 		},
@@ -4147,6 +4209,10 @@ func TestHistogramValidation(t *testing.T) {
 				PositiveSpans:   []histogram.Span{{Offset: -1, Length: 1}, {Offset: -1, Length: 1}},
 				PositiveBuckets: []int64{1, 2},
 			},
+			fh: &histogram.FloatHistogram{
+				PositiveSpans:   []histogram.Span{{Offset: -1, Length: 1}, {Offset: -1, Length: 1}},
+				PositiveBuckets: []float64{1, 2},
+			},
 			errMsg: `positive side: span number 2 with offset -1`,
 		},
 		"rejects a histogram which has a negative bucket with a negative count": {
@@ -4154,12 +4220,20 @@ func TestHistogramValidation(t *testing.T) {
 				NegativeSpans:   []histogram.Span{{Offset: -1, Length: 1}},
 				NegativeBuckets: []int64{-1},
 			},
+			fh: &histogram.FloatHistogram{
+				NegativeSpans:   []histogram.Span{{Offset: -1, Length: 1}},
+				NegativeBuckets: []float64{-1},
+			},
 			errMsg: `negative side: bucket number 1 has observation count of -1`,
 		},
 		"rejects a histogram which has a positive bucket with a negative count": {
 			h: &histogram.Histogram{
 				PositiveSpans:   []histogram.Span{{Offset: -1, Length: 1}},
 				PositiveBuckets: []int64{-1},
+			},
+			fh: &histogram.FloatHistogram{
+				PositiveSpans:   []histogram.Span{{Offset: -1, Length: 1}},
+				PositiveBuckets: []float64{-1},
 			},
 			errMsg: `positive side: bucket number 1 has observation count of -1`,
 		},
@@ -4170,6 +4244,13 @@ func TestHistogramValidation(t *testing.T) {
 				PositiveSpans:   []histogram.Span{{Offset: -1, Length: 1}},
 				NegativeBuckets: []int64{1},
 				PositiveBuckets: []int64{1},
+			},
+			fh: &histogram.FloatHistogram{
+				Count:           0,
+				NegativeSpans:   []histogram.Span{{Offset: -1, Length: 1}},
+				PositiveSpans:   []histogram.Span{{Offset: -1, Length: 1}},
+				NegativeBuckets: []float64{1},
+				PositiveBuckets: []float64{1},
 			},
 			errMsg: `2 observations found in buckets, but the Count field is 0`,
 		},
@@ -4183,6 +4264,13 @@ func TestHistogramValidation(t *testing.T) {
 			} else {
 				require.NoError(t, err)
 			}
+
+			err = ValidateFloatHistogram(tc.fh)
+			if tc.errMsg != "" {
+				require.ErrorContains(t, err, tc.errMsg)
+			} else {
+				require.NoError(t, err)
+			}
 		})
 	}
 }
@@ -4191,6 +4279,13 @@ func BenchmarkHistogramValidation(b *testing.B) {
 	histograms := generateBigTestHistograms(b.N)
 	for _, h := range histograms {
 		require.NoError(b, ValidateHistogram(h))
+	}
+}
+
+func BenchmarkFloatHistogramValidation(b *testing.B) {
+	floatHistograms := generateBigTestFloatHistograms(b.N)
+	for _, fh := range floatHistograms {
+		require.NoError(b, ValidateFloatHistogram(fh))
 	}
 }
 
@@ -4230,6 +4325,44 @@ func generateBigTestHistograms(n int) []*histogram.Histogram {
 		histograms = append(histograms, h)
 	}
 	return histograms
+}
+
+func generateBigTestFloatHistograms(n int) []*histogram.FloatHistogram {
+	const numBuckets = 500
+	numSpans := numBuckets / 10
+	bucketsPerSide := numBuckets / 2
+	spanLength := uint32(bucketsPerSide / numSpans)
+	// Given all bucket deltas are 1, sum n + 1.
+	observationCount := numBuckets / 2 * (1 + numBuckets)
+
+	var floatHistograms []*histogram.FloatHistogram
+	for i := 0; i < n; i++ {
+		fh := &histogram.FloatHistogram{
+			Count:           float64(i + observationCount),
+			ZeroCount:       float64(i),
+			ZeroThreshold:   1e-128,
+			Sum:             18.4 * float64(i+1),
+			Schema:          2,
+			NegativeSpans:   make([]histogram.Span, numSpans),
+			PositiveSpans:   make([]histogram.Span, numSpans),
+			NegativeBuckets: make([]float64, bucketsPerSide),
+			PositiveBuckets: make([]float64, bucketsPerSide),
+		}
+
+		for j := 0; j < numSpans; j++ {
+			s := histogram.Span{Offset: 1 + int32(i), Length: spanLength}
+			fh.NegativeSpans[j] = s
+			fh.PositiveSpans[j] = s
+		}
+
+		for j := 0; j < bucketsPerSide; j++ {
+			fh.NegativeBuckets[j] = 1
+			fh.PositiveBuckets[j] = 1
+		}
+
+		floatHistograms = append(floatHistograms, fh)
+	}
+	return floatHistograms
 }
 
 func TestOOOAppendWithNoSeries(t *testing.T) {

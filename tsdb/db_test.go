@@ -466,6 +466,7 @@ Outer:
 }
 
 func TestAmendDatapointCausesError(t *testing.T) {
+	// TODO(marctc): Add similar test for float histograms
 	db := openTestDB(t, nil, nil)
 	defer func() {
 		require.NoError(t, db.Close())
@@ -498,15 +499,15 @@ func TestAmendDatapointCausesError(t *testing.T) {
 	}
 
 	app = db.Appender(ctx)
-	_, err = app.AppendHistogram(0, labels.FromStrings("a", "c"), 0, h.Copy())
+	_, err = app.AppendHistogram(0, labels.FromStrings("a", "c"), 0, h.Copy(), nil)
 	require.NoError(t, err)
 	require.NoError(t, app.Commit())
 
 	app = db.Appender(ctx)
-	_, err = app.AppendHistogram(0, labels.FromStrings("a", "c"), 0, h.Copy())
+	_, err = app.AppendHistogram(0, labels.FromStrings("a", "c"), 0, h.Copy(), nil)
 	require.NoError(t, err)
 	h.Schema = 2
-	_, err = app.AppendHistogram(0, labels.FromStrings("a", "c"), 0, h.Copy())
+	_, err = app.AppendHistogram(0, labels.FromStrings("a", "c"), 0, h.Copy(), nil)
 	require.Equal(t, storage.ErrDuplicateSampleForTimestamp, err)
 	require.NoError(t, app.Rollback())
 }
@@ -5805,6 +5806,7 @@ func TestDiskFillingUpAfterDisablingOOO(t *testing.T) {
 }
 
 func TestHistogramAppendAndQuery(t *testing.T) {
+	// TODO(marctc): Add similar test for float histograms
 	db := openTestDB(t, nil, nil)
 	minute := func(m int) int64 { return int64(m) * time.Minute.Milliseconds() }
 	t.Cleanup(func() {
@@ -5815,7 +5817,7 @@ func TestHistogramAppendAndQuery(t *testing.T) {
 	appendHistogram := func(lbls labels.Labels, tsMinute int, h *histogram.Histogram, exp *[]tsdbutil.Sample) {
 		t.Helper()
 		app := db.Appender(ctx)
-		_, err := app.AppendHistogram(0, lbls, minute(tsMinute), h)
+		_, err := app.AppendHistogram(0, lbls, minute(tsMinute), h, nil)
 		require.NoError(t, err)
 		require.NoError(t, app.Commit())
 		*exp = append(*exp, sample{t: minute(tsMinute), h: h.Copy()})
@@ -6148,6 +6150,7 @@ func TestQueryHistogramFromBlocksWithCompaction(t *testing.T) {
 }
 
 func TestNativeHistogramFlag(t *testing.T) {
+	// TODO(marctc): Add similar test for float histograms
 	dir := t.TempDir()
 	db, err := Open(dir, nil, nil, nil, nil)
 	require.NoError(t, err)
@@ -6172,16 +6175,16 @@ func TestNativeHistogramFlag(t *testing.T) {
 	app := db.Appender(context.Background())
 
 	// Disabled by default.
-	_, err = app.AppendHistogram(0, l, 100, h)
+	_, err = app.AppendHistogram(0, l, 100, h, nil)
 	require.Equal(t, storage.ErrNativeHistogramsDisabled, err)
 
 	// Enable and append.
 	db.EnableNativeHistograms()
-	_, err = app.AppendHistogram(0, l, 200, h)
+	_, err = app.AppendHistogram(0, l, 200, h, nil)
 	require.NoError(t, err)
 
 	db.DisableNativeHistograms()
-	_, err = app.AppendHistogram(0, l, 300, h)
+	_, err = app.AppendHistogram(0, l, 300, h, nil)
 	require.Equal(t, storage.ErrNativeHistogramsDisabled, err)
 
 	require.NoError(t, app.Commit())
