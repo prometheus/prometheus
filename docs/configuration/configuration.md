@@ -2226,6 +2226,11 @@ The following meta labels are available on targets during [relabeling](#relabel_
 [ server: <host> ]
 [ tag_separator: <string> | default = ,]
 
+# A list of services for which targets are retrieved. If omitted, all services
+# are scraped.
+services:
+  [ - <string> ]
+
 # Authentication information used to authenticate to the nomad server.
 # Note that `basic_auth`, `authorization` and `oauth2` options are
 # mutually exclusive.
