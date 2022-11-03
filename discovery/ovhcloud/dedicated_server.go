@@ -32,9 +32,11 @@ import (
 
 const (
 	dedicatedServerAPIPath     = "/dedicated/server"
-	dedicatedServerLabelPrefix = metaLabelPrefix + "dedicatedServer_"
+	dedicatedServerLabelPrefix = metaLabelPrefix + "dedicated_server_"
 )
 
+// dedicatedServer struct from API. Also contains IP addresses that are fetched
+// independently.
 type dedicatedServer struct {
 	State           string `json:"state"`
 	ips             []netip.Addr
@@ -138,21 +140,21 @@ func (d *dedicatedServerDiscovery) refresh(ctx context.Context) ([]*targetgroup.
 			defaultIP = ipv6
 		}
 		labels := model.LabelSet{
-			model.AddressLabel:                             model.LabelValue(defaultIP),
-			model.InstanceLabel:                            model.LabelValue(server.Name),
-			dedicatedServerLabelPrefix + "state":           model.LabelValue(server.State),
-			dedicatedServerLabelPrefix + "commercialRange": model.LabelValue(server.CommercialRange),
-			dedicatedServerLabelPrefix + "linkSpeed":       model.LabelValue(fmt.Sprintf("%d", server.LinkSpeed)),
-			dedicatedServerLabelPrefix + "rack":            model.LabelValue(server.Rack),
-			dedicatedServerLabelPrefix + "noIntervention":  model.LabelValue(strconv.FormatBool(server.NoIntervention)),
-			dedicatedServerLabelPrefix + "os":              model.LabelValue(server.Os),
-			dedicatedServerLabelPrefix + "supportLevel":    model.LabelValue(server.SupportLevel),
-			dedicatedServerLabelPrefix + "serverId":        model.LabelValue(fmt.Sprintf("%d", server.ServerID)),
-			dedicatedServerLabelPrefix + "reverse":         model.LabelValue(server.Reverse),
-			dedicatedServerLabelPrefix + "datacenter":      model.LabelValue(server.Datacenter),
-			dedicatedServerLabelPrefix + "name":            model.LabelValue(server.Name),
-			dedicatedServerLabelPrefix + "ipv4":            model.LabelValue(ipv4),
-			dedicatedServerLabelPrefix + "ipv6":            model.LabelValue(ipv6),
+			model.AddressLabel:                              model.LabelValue(defaultIP),
+			model.InstanceLabel:                             model.LabelValue(server.Name),
+			dedicatedServerLabelPrefix + "state":            model.LabelValue(server.State),
+			dedicatedServerLabelPrefix + "commercial_range": model.LabelValue(server.CommercialRange),
+			dedicatedServerLabelPrefix + "link_speed":       model.LabelValue(fmt.Sprintf("%d", server.LinkSpeed)),
+			dedicatedServerLabelPrefix + "rack":             model.LabelValue(server.Rack),
+			dedicatedServerLabelPrefix + "no_intervention":  model.LabelValue(strconv.FormatBool(server.NoIntervention)),
+			dedicatedServerLabelPrefix + "os":               model.LabelValue(server.Os),
+			dedicatedServerLabelPrefix + "support_level":    model.LabelValue(server.SupportLevel),
+			dedicatedServerLabelPrefix + "server_id":        model.LabelValue(fmt.Sprintf("%d", server.ServerID)),
+			dedicatedServerLabelPrefix + "reverse":          model.LabelValue(server.Reverse),
+			dedicatedServerLabelPrefix + "datacenter":       model.LabelValue(server.Datacenter),
+			dedicatedServerLabelPrefix + "name":             model.LabelValue(server.Name),
+			dedicatedServerLabelPrefix + "ipv4":             model.LabelValue(ipv4),
+			dedicatedServerLabelPrefix + "ipv6":             model.LabelValue(ipv6),
 		}
 		targets = append(targets, labels)
 	}

@@ -91,7 +91,7 @@ func createClient(config *SDConfig) (*ovh.Client, error) {
 	return ovh.NewClient(config.Endpoint, config.ApplicationKey, string(config.ApplicationSecret), string(config.ConsumerKey))
 }
 
-// NewDiscoverer new discoverer
+// NewDiscoverer returns a Discoverer for the Config.
 func (c *SDConfig) NewDiscoverer(options discovery.DiscovererOptions) (discovery.Discoverer, error) {
 	return NewDiscovery(c, options.Logger)
 }
@@ -102,7 +102,7 @@ func init() {
 
 // ParseIPList parses ip list as they can have different formats.
 func parseIPList(ipList []string) ([]netip.Addr, error) {
-	var IPs []netip.Addr
+	var ipAddresses []netip.Addr
 	for _, ip := range ipList {
 		ipAddr, err := netip.ParseAddr(ip)
 		if err != nil {
@@ -119,14 +119,14 @@ func parseIPList(ipList []string) ([]netip.Addr, error) {
 			}
 		}
 		if ipAddr.IsValid() && !ipAddr.IsUnspecified() {
-			IPs = append(IPs, ipAddr)
+			ipAddresses = append(ipAddresses, ipAddr)
 		}
 	}
 
-	if len(IPs) < 1 {
+	if len(ipAddresses) == 0 {
 		return nil, errors.New("could not parse IP addresses from list")
 	}
-	return IPs, nil
+	return ipAddresses, nil
 }
 
 func newRefresher(conf *SDConfig, logger log.Logger) (refresher, error) {
@@ -139,7 +139,7 @@ func newRefresher(conf *SDConfig, logger log.Logger) (refresher, error) {
 	return nil, fmt.Errorf("unknown OVHcloud discovery service '%s'", conf.Service)
 }
 
-// NewDiscovery returns a new Ovhcloud Discoverer which periodically refreshes its targets.
+// NewDiscovery returns a new OVHcloud Discoverer which periodically refreshes its targets.
 func NewDiscovery(conf *SDConfig, logger log.Logger) (*refresh.Discovery, error) {
 	r, err := newRefresher(conf, logger)
 	if err != nil {
