@@ -9,6 +9,7 @@ updates:
     schedule:
       interval: "monthly"
   - package-ecosystem: "npm"
+    open-pull-requests-limit: 20
     directory: "/web/ui"
     schedule:
       interval: "monthly"
