@@ -571,6 +571,34 @@ var expectedConf = &Config{
 			},
 		},
 		{
+			JobName: "service-rds",
+
+			HonorTimestamps: true,
+			ScrapeInterval:  model.Duration(15 * time.Second),
+			ScrapeTimeout:   DefaultGlobalConfig.ScrapeTimeout,
+
+			MetricsPath:      DefaultScrapeConfig.MetricsPath,
+			Scheme:           DefaultScrapeConfig.Scheme,
+			HTTPClientConfig: config.DefaultHTTPClientConfig,
+
+			ServiceDiscoveryConfigs: discovery.Configs{
+				&aws.RDSSDConfig{
+					Region:          "us-east-1",
+					AccessKey:       "access",
+					SecretKey:       "mysecret",
+					Profile:         "profile",
+					RefreshInterval: model.Duration(60 * time.Second),
+					Port:            80,
+					Filters: []*aws.RDSFilter{
+						{
+							Name:   "tag:environment",
+							Values: []string{"prod"},
+						},
+					},
+				},
+			},
+		},
+		{
 			JobName: "service-lightsail",
 
 			HonorTimestamps: true,
@@ -1205,7 +1233,7 @@ func TestElideSecrets(t *testing.T) {
 	yamlConfig := string(config)
 
 	matches := secretRe.FindAllStringIndex(yamlConfig, -1)
-	require.Equal(t, 22, len(matches), "wrong number of secret matches found")
+	require.Equal(t, 23, len(matches), "wrong number of secret matches found")
 	require.NotContains(t, yamlConfig, "mysecret",
 		"yaml marshal reveals authentication credentials.")
 }
