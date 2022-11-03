@@ -727,50 +727,111 @@ func TestHead_Truncate(t *testing.T) {
 // Validate various behaviors brought on by firstChunkID accounting for
 // garbage collected chunks.
 func TestMemSeries_truncateChunks(t *testing.T) {
-	dir := t.TempDir()
-	// This is usually taken from the Head, but passing manually here.
-	chunkDiskMapper, err := chunks.NewChunkDiskMapper(nil, dir, chunkenc.NewPool(), chunks.DefaultWriteBufferSize, chunks.DefaultWriteQueueSize)
-	require.NoError(t, err)
-	defer func() {
-		require.NoError(t, chunkDiskMapper.Close())
-	}()
-	const chunkRange = 2000
+	type testCaseT struct {
+		chunkRange     int
+		mmappedSamples int // how many samples to append before mmapping chunks to disk
+		headSamples    int // how many samples to append to headChunks
+		truncateBefore int
+	}
 
-	memChunkPool := sync.Pool{
-		New: func() interface{} {
-			return &memChunk{}
+	testCases := []testCaseT{
+		{
+			chunkRange:     2000,
+			mmappedSamples: 3000,
+			headSamples:    0,
+			truncateBefore: 2000,
+		},
+		{
+			chunkRange:     2000,
+			mmappedSamples: 4000,
+			headSamples:    0,
+			truncateBefore: 2000,
+		},
+		{
+			chunkRange:     2000,
+			mmappedSamples: 4000,
+			headSamples:    6000,
+			truncateBefore: 2000,
+		},
+		{
+			chunkRange:     2000,
+			mmappedSamples: 4000,
+			headSamples:    6000,
+			truncateBefore: 4000,
+		},
+		{
+			chunkRange:     2000,
+			mmappedSamples: 4000,
+			headSamples:    10000,
+			truncateBefore: 8000,
 		},
 	}
 
-	s := newMemSeries(labels.FromStrings("a", "b"), 1, defaultIsolationDisabled)
+	for _, tc := range testCases {
+		t.Run(fmt.Sprintf("range=%d mmappedSamples=%d headSamples=%d truncateBefore=%d", tc.chunkRange, tc.mmappedSamples, tc.headSamples, tc.truncateBefore), func(t *testing.T) {
+			dir := t.TempDir()
+			// This is usually taken from the Head, but passing manually here.
+			chunkDiskMapper, err := chunks.NewChunkDiskMapper(nil, dir, chunkenc.NewPool(), chunks.DefaultWriteBufferSize, chunks.DefaultWriteQueueSize)
+			require.NoError(t, err)
+			defer func() {
+				require.NoError(t, chunkDiskMapper.Close())
+			}()
 
-	for i := 0; i < 4000; i += 5 {
-		ok, _ := s.append(int64(i), float64(i), 0, chunkDiskMapper, chunkRange)
-		require.True(t, ok, "sample append failed")
+			memChunkPool := sync.Pool{
+				New: func() interface{} {
+					return &memChunk{}
+				},
+			}
+
+			s := newMemSeries(labels.FromStrings("a", "b"), 1, defaultIsolationDisabled)
+
+			// append samples that will end up in mmapped chunks
+			if tc.mmappedSamples > 0 {
+				for i := 0; i < tc.mmappedSamples; i += 5 {
+					ok, _ := s.append(int64(i), float64(i), 0, chunkDiskMapper, int64(tc.chunkRange))
+					require.True(t, ok, "sample append failed")
+				}
+				s.mmapHeadChunks(chunkDiskMapper)
+				require.Greater(t, len(s.mmappedChunks), 0)
+			}
+
+			// append samples that will stay in the head
+			if tc.headSamples > 0 {
+				for i := tc.mmappedSamples; i < tc.mmappedSamples+tc.headSamples; i += 5 {
+					ok, _ := s.append(int64(i), float64(i), 0, chunkDiskMapper, int64(tc.chunkRange))
+					require.True(t, ok, "sample append failed")
+				}
+				require.Greater(t, len(s.headChunks), 0)
+			}
+
+			lastID := s.headChunkID(len(s.mmappedChunks) + len(s.headChunks) - 1)
+			lastChunk, _, err := s.chunk(lastID, chunkDiskMapper, &memChunkPool)
+			require.NoError(t, err)
+			require.NotNil(t, lastChunk)
+
+			chk, _, err := s.chunk(0, chunkDiskMapper, &memChunkPool)
+			require.NotNil(t, chk)
+			require.NoError(t, err)
+
+			s.truncateChunksBefore(int64(tc.truncateBefore), 0)
+
+			require.Equal(t, int64(tc.truncateBefore), s.minTime(), "invalid minTime")
+
+			_, _, err = s.chunk(0, chunkDiskMapper, &memChunkPool)
+			require.Equal(t, storage.ErrNotFound, err, "first chunks not gone")
+
+			chk, _, err = s.chunk(lastID, chunkDiskMapper, &memChunkPool)
+			require.NoError(t, err)
+			require.Equal(t, lastChunk, chk)
+
+			// verify that we can read
+			for i := int(s.firstChunkID); i < int(s.firstChunkID)+len(s.mmappedChunks)+len(s.headChunks); i++ {
+				chk, _, err = s.chunk(chunks.HeadChunkID(i), chunkDiskMapper, &memChunkPool)
+				require.NoError(t, err, "cannot get chunk with id=%d", i)
+				require.GreaterOrEqual(t, chk.minTime, int64(tc.truncateBefore), "chunk with id=%d has invalid minTime: %d", i, chk.minTime)
+			}
+		})
 	}
-	s.mmapHeadChunks(chunkDiskMapper)
-
-	// Check that truncate removes half of the chunks and afterwards
-	// that the ID of the last chunk still gives us the same chunk afterwards.
-	countBefore := len(s.mmappedChunks) + 1 // +1 for the head chunk.
-	lastID := s.headChunkID(countBefore - 1)
-	lastChunk, _, err := s.chunk(lastID, chunkDiskMapper, &memChunkPool)
-	require.NoError(t, err)
-	require.NotNil(t, lastChunk)
-
-	chk, _, err := s.chunk(0, chunkDiskMapper, &memChunkPool)
-	require.NotNil(t, chk)
-	require.NoError(t, err)
-
-	s.truncateChunksBefore(2000, 0)
-
-	require.Equal(t, int64(2000), s.mmappedChunks[0].minTime)
-	_, _, err = s.chunk(0, chunkDiskMapper, &memChunkPool)
-	require.Equal(t, storage.ErrNotFound, err, "first chunks not gone")
-	require.Equal(t, countBefore/2, len(s.mmappedChunks)+1) // +1 for the head chunk.
-	chk, _, err = s.chunk(lastID, chunkDiskMapper, &memChunkPool)
-	require.NoError(t, err)
-	require.Equal(t, lastChunk, chk)
 }
 
 func TestHeadDeleteSeriesWithoutSamples(t *testing.T) {
