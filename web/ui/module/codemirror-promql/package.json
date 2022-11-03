@@ -37,7 +37,7 @@
     "@codemirror/language": "^6.2.1",
     "@codemirror/lint": "^6.0.0",
     "@codemirror/state": "^6.1.1",
-    "@codemirror/view": "^6.2.4",
+    "@codemirror/view": "^6.4.0",
     "@lezer/common": "^1.0.1",
     "@lezer/lr": "^1.2.3",
     "@lezer/highlight": "^1.1.0",
@@ -50,7 +50,7 @@
     "@codemirror/language": "^6.2.1",
     "@codemirror/lint": "^6.0.0",
     "@codemirror/state": "^6.1.1",
-    "@codemirror/view": "^6.2.4",
+    "@codemirror/view": "^6.4.0",
     "@lezer/common": "^1.0.1"
   },
   "prettier": {
