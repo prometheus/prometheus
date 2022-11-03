@@ -1190,42 +1190,40 @@ For OVHcloud's [public cloud instances](https://www.ovhcloud.com/en/public-cloud
 
 #### VPS
 
-* `__meta_ovhcloud_vps_ipv4`: the ipv4 of the server
-* `__meta_ovhcloud_vps_ipv6`: the ipv6 of the server
-* `__meta_ovhcloud_vps_keymap`: the KVM keyboard layout on VPS Cloud
-* `__meta_ovhcloud_vps_zone`: the zone of the server
-* `__meta_ovhcloud_vps_maximumAdditionalIp`: the maximumAdditionalIp of the server
-* `__meta_ovhcloud_vps_offer`: the offer of the server
-* `__meta_ovhcloud_vps_datacenter`: the datacenter of the server
-* `__meta_ovhcloud_vps_vcore`: the vcore of the server
-* `__meta_ovhcloud_vps_version`: the version of the server
-* `__meta_ovhcloud_vps_name`: the name of the server
-* `__meta_ovhcloud_vps_disk`: the disk of the server
-* `__meta_ovhcloud_vps_memory`: the memory of the server
-* `__meta_ovhcloud_vps_displayName`: the name displayed in ManagerV6 for your VPS
-* `__meta_ovhcloud_vps_monitoringIpBlocks`: the Ip blocks for OVH monitoring servers
 * `__meta_ovhcloud_vps_cluster`: the cluster of the server
-* `__meta_ovhcloud_vps_state`: the state of the server
+* `__meta_ovhcloud_vps_datacenter`: the datacenter of the server
+* `__meta_ovhcloud_vps_disk`: the disk of the server
+* `__meta_ovhcloud_vps_display_name`: the display name of the server
+* `__meta_ovhcloud_vps_ipv4`: the IPv4 of the server
+* `__meta_ovhcloud_vps_ipv6`: the IPv6 of the server
+* `__meta_ovhcloud_vps_keymap`: the KVM keyboard layout of the server
+* `__meta_ovhcloud_vps_maximum_additional_ip`: the maximum additional IPs of the server
+* `__meta_ovhcloud_vps_memory_limit`: the memory limit of the server
+* `__meta_ovhcloud_vps_memory`: the memory of the server
+* `__meta_ovhcloud_vps_monitoring_ip_blocks`: the monitoring IP blocks of the server
 * `__meta_ovhcloud_vps_name`: the name of the server
-* `__meta_ovhcloud_vps_netbootMode`: the netbootMode of the server
-* `__meta_ovhcloud_vps_memoryLimit`: the memoryLimit of the server
-* `__meta_ovhcloud_vps_offerType`: the offerType of the server
-* `__meta_ovhcloud_vps_vcore`: the vcore of the server
+* `__meta_ovhcloud_vps_netboot_mode`: the netboot mode of the server
+* `__meta_ovhcloud_vps_offer_type`: the offer type of the server
+* `__meta_ovhcloud_vps_offer`: the offer of the server
+* `__meta_ovhcloud_vps_state`: the state of the server
+* `__meta_ovhcloud_vps_vcore`: the number of virtual cores of the server
+* `__meta_ovhcloud_vps_version`: the version of the server
+* `__meta_ovhcloud_vps_zone`: the zone of the server
 
 #### Dedicated servers
 
-* `__meta_ovhcloud_dedicated_server_state`: the state of the server
-* `__meta_ovhcloud_dedicated_server_ipv4`: the ipv4 of the server
-* `__meta_ovhcloud_dedicated_server_ipv6`: the ipv6 of the server
-* `__meta_ovhcloud_dedicated_server_commercialRange`: the dedicated server commercial range
-* `__meta_ovhcloud_dedicated_server_linkSpeed`: the linkSpeed of the server
+* `__meta_ovhcloud_dedicated_server_commercial_range`: the commercial range of the server
+* `__meta_ovhcloud_dedicated_server_datacenter`: the datacenter of the server
+* `__meta_ovhcloud_dedicated_server_ipv4`: the IPv4 of the server
+* `__meta_ovhcloud_dedicated_server_ipv6`: the IPv6 of the server
+* `__meta_ovhcloud_dedicated_server_link_speed`: the link speed of the server
+* `__meta_ovhcloud_dedicated_server_name`: the name of the server
+* `__meta_ovhcloud_dedicated_server_os`: the operating system of the server
 * `__meta_ovhcloud_dedicated_server_rack`: the rack of the server
-* `__meta_ovhcloud_dedicated_server_os`: operating system
-* `__meta_ovhcloud_dedicated_server_supportLevel`: the supportLevel of the server
-* `__meta_ovhcloud_dedicated_server_serverId`: your server id
-* `__meta_ovhcloud_dedicated_server_reverse`: dedicated server reverse
-* `__meta_ovhcloud_dedicated_server_datacenter`: the dedicated datacenter localisation
-* `__meta_ovhcloud_dedicated_server_name`: the dedicated server name
+* `__meta_ovhcloud_dedicated_server_reverse`: the reverse DNS name of the server
+* `__meta_ovhcloud_dedicated_server_server_id`: the ID of the server
+* `__meta_ovhcloud_dedicated_server_state`: the state of the server
+* `__meta_ovhcloud_dedicated_server_support_level`: the support level of the server
 
 See below for the configuration options for OVHcloud discovery:
 
