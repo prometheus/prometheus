@@ -29,6 +29,23 @@ include Makefile.common
 
 DOCKER_IMAGE_NAME       ?= prometheus
 
+docker-tag-latest:
+	@echo Skipping latest
+
+docker-publish:
+ifneq ($(DOCKER_IMAGE_TAG),latest)
+	$(MAKE) common-docker-publish
+else
+	@echo Skipping latest
+endif
+
+docker-manifest:
+ifneq ($(DOCKER_IMAGE_TAG),latest)
+	$(MAKE) common-docker-manifest
+else
+	@echo Skipping latest
+endif
+
 .PHONY: update-npm-deps
 update-npm-deps:
 	@echo ">> updating npm dependencies"

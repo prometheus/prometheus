@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.37.2 / 2022-11-04
+
+* [BUGFIX] TSDB: Fix 'invalid magic number 0' error on Prometheus startup. #11338
+* [BUGFIX] Agent: Fix validation of flag options and prevent WAL from growing more than desired. #9876
+
 ## 2.37.1 / 2022-09-12
 
 * [BUGFIX] Properly close file descriptor when logging unfinished queries. #11148
