@@ -211,11 +211,14 @@ func TestIndexRW_Postings(t *testing.T) {
 
 	// The label indices are no longer used, so test them by hand here.
 	labelIndices := map[string][]string{}
-	require.NoError(t, ReadOffsetTable(ir.b, ir.toc.LabelIndicesTable, func(key []string, off uint64, _ int) error {
-		if len(key) != 1 {
-			return errors.Errorf("unexpected key length for label indices table %d", len(key))
+	reader := func(d *encoding.Decbuf) (string, error) {
+		if keyCount := d.Uvarint(); keyCount != 1 {
+			return "", errors.Errorf("unexpected key length for label indices table %d", keyCount)
 		}
+		return d.UvarintStr(), nil
+	}
 
+	require.NoError(t, ReadOffsetTable(ir.b, ir.toc.LabelIndicesTable, reader, func(key string, off uint64, _ int) error {
 		d := encoding.NewDecbufAt(ir.b, int(off), castagnoliTable)
 		vals := []string{}
 		nc := d.Be32int()
@@ -229,7 +232,7 @@ func TestIndexRW_Postings(t *testing.T) {
 			}
 			vals = append(vals, v)
 		}
-		labelIndices[key[0]] = vals
+		labelIndices[key] = vals
 		return d.Err()
 	}))
 	require.Equal(t, map[string][]string{
