@@ -536,10 +536,17 @@ func (db *DBReadOnly) ChunkQuerier(ctx context.Context, mint, maxt int64) (stora
 
 // Block returns a block reader by given block id.
 func (db *DBReadOnly) Block(logger log.Logger, blockID string) (BlockReader, error) {
+	select {
+	case <-db.closed:
+		return nil, ErrClosed
+	default:
+	}
+
 	block, err := OpenBlock(logger, filepath.Join(db.dir, blockID), nil)
 	if err != nil {
 		return nil, err
 	}
+	db.closers = append(db.closers, block)
 
 	return block, nil
 }
