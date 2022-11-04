@@ -15,7 +15,7 @@
     "@fortawesome/free-solid-svg-icons": "6.1.1",
     "@fortawesome/react-fontawesome": "0.2.0",
     "@lezer/lr": "^1.2.3",
-    "@lezer/highlight": "^1.1.0",
+    "@lezer/highlight": "^1.1.2",
     "@lezer/common": "^1.0.1",
     "@nexucis/fuzzy": "^0.4.1",
     "@nexucis/kvsearch": "^0.8.1",

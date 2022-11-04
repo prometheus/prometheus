@@ -40,7 +40,7 @@
     "@codemirror/view": "^6.4.0",
     "@lezer/common": "^1.0.1",
     "@lezer/lr": "^1.2.3",
-    "@lezer/highlight": "^1.1.0",
+    "@lezer/highlight": "^1.1.2",
     "@types/lru-cache": "^5.1.1",
     "isomorphic-fetch": "^3.0.0",
     "nock": "^13.2.9"
