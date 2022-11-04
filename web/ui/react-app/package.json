@@ -4,7 +4,7 @@
   "private": true,
   "dependencies": {
     "@codemirror/autocomplete": "^6.2.0",
-    "@codemirror/commands": "^6.1.0",
+    "@codemirror/commands": "^6.1.2",
     "@codemirror/language": "^6.2.1",
     "@codemirror/lint": "^6.0.0",
     "@codemirror/search": "^6.2.0",
