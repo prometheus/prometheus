@@ -7,7 +7,7 @@
     "@codemirror/commands": "^6.1.2",
     "@codemirror/language": "^6.2.1",
     "@codemirror/lint": "^6.0.0",
-    "@codemirror/search": "^6.2.0",
+    "@codemirror/search": "^6.2.2",
     "@codemirror/state": "^6.1.1",
     "@codemirror/view": "^6.4.0",
     "@forevolve/bootstrap-dark": "^2.1.1",
