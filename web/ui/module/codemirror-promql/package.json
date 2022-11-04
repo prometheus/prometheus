@@ -34,7 +34,7 @@
   },
   "devDependencies": {
     "@codemirror/autocomplete": "^6.2.0",
-    "@codemirror/language": "^6.2.1",
+    "@codemirror/language": "^6.3.0",
     "@codemirror/lint": "^6.0.0",
     "@codemirror/state": "^6.1.1",
     "@codemirror/view": "^6.4.0",
@@ -47,7 +47,7 @@
   },
   "peerDependencies": {
     "@codemirror/autocomplete": "^6.2.0",
-    "@codemirror/language": "^6.2.1",
+    "@codemirror/language": "^6.3.0",
     "@codemirror/lint": "^6.0.0",
     "@codemirror/state": "^6.1.1",
     "@codemirror/view": "^6.4.0",
