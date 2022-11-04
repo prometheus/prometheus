@@ -74,10 +74,20 @@ func TestSetCompactionFailed(t *testing.T) {
 func TestCreateBlock(t *testing.T) {
 	tmpdir := t.TempDir()
 	b, err := OpenBlock(nil, createBlock(t, tmpdir, genSeries(1, 1, 0, 10)), nil)
-	if err == nil {
-		require.NoError(t, b.Close())
-	}
 	require.NoError(t, err)
+	require.NoError(t, b.Close())
+}
+
+func BenchmarkOpenBlock(b *testing.B) {
+	tmpdir := b.TempDir()
+	blockDir := createBlock(b, tmpdir, genSeries(1e6, 20, 0, 10))
+	b.Run("benchmark", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			block, err := OpenBlock(nil, blockDir, nil)
+			require.NoError(b, err)
+			require.NoError(b, block.Close())
+		}
+	})
 }
 
 func TestCorruptedChunk(t *testing.T) {
