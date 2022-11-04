@@ -11,7 +11,7 @@
     "@codemirror/state": "^6.1.1",
     "@codemirror/view": "^6.4.0",
     "@forevolve/bootstrap-dark": "^2.1.1",
-    "@fortawesome/fontawesome-svg-core": "6.1.1",
+    "@fortawesome/fontawesome-svg-core": "6.2.0",
     "@fortawesome/free-solid-svg-icons": "6.1.1",
     "@fortawesome/react-fontawesome": "0.2.0",
     "@lezer/lr": "^1.2.3",
