@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.40.0-rc.0 / 2022-11-03
+## 2.40.0 / 2022-11-08
 
 This release introduces an experimental, native way of representing and storing histograms.
 
