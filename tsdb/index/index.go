@@ -1164,7 +1164,7 @@ func newReader(b ByteSlice, c io.Closer) (*Reader, error) {
 		// Earlier V1 formats don't have a sorted postings offset table, so
 		// load the whole offset table into memory.
 		r.postingsV1 = map[string]map[string]uint64{}
-		if err := ReadOffsetTable(r.b, r.toc.PostingsTable, PostingTableReader, func(key labels.Label, off uint64, _ int) error {
+		if err := ReadOffsetTable(r.b, r.toc.PostingsTable, PostingsTableReader, func(key labels.Label, off uint64, _ int) error {
 			if _, ok := r.postingsV1[key.Name]; !ok {
 				r.postingsV1[key.Name] = map[string]uint64{}
 				r.postings[key.Name] = nil // Used to get a list of labelnames in places.
@@ -1181,7 +1181,7 @@ func newReader(b ByteSlice, c io.Closer) (*Reader, error) {
 		valueCount := 0
 		// For the postings offset table we keep every label name but only every nth
 		// label value (plus the first and last one), to save memory.
-		if err := ReadOffsetTable(r.b, r.toc.PostingsTable, PostingTableReader, func(key labels.Label, _ uint64, off int) error {
+		if err := ReadOffsetTable(r.b, r.toc.PostingsTable, PostingsTableReader, func(key labels.Label, _ uint64, off int) error {
 			if _, ok := r.postings[key.Name]; !ok {
 				// Next label name.
 				r.postings[key.Name] = []postingOffset{}
@@ -1248,7 +1248,7 @@ type Range struct {
 // for all postings lists.
 func (r *Reader) PostingsRanges() (map[labels.Label]Range, error) {
 	m := map[labels.Label]Range{}
-	if err := ReadOffsetTable(r.b, r.toc.PostingsTable, PostingTableReader, func(key labels.Label, off uint64, _ int) error {
+	if err := ReadOffsetTable(r.b, r.toc.PostingsTable, PostingsTableReader, func(key labels.Label, off uint64, _ int) error {
 		d := encoding.NewDecbufAt(r.b, int(off), castagnoliTable)
 		if d.Err() != nil {
 			return d.Err()
@@ -1432,8 +1432,8 @@ func ReadOffsetTable[T any](bs ByteSlice, off uint64, read func(d *encoding.Decb
 	return d.Err()
 }
 
-// PostingTableReader can be used as read function for ReadOffsetTable to read the posting offset table.
-func PostingTableReader(d *encoding.Decbuf) (labels.Label, error) {
+// PostingsTableReader can be used as read function for ReadOffsetTable to read the postings offset table.
+func PostingsTableReader(d *encoding.Decbuf) (labels.Label, error) {
 	if keyCount := d.Uvarint(); keyCount != 2 {
 		return labels.Label{}, errors.Errorf("unexpected number of keys for postings offset table %d", keyCount)
 	}
