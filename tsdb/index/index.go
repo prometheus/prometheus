@@ -1189,7 +1189,6 @@ func newReader(b ByteSlice, c io.Closer) (*Reader, error) {
 					// Always include last value for each label name.
 					r.postings[lastKey.Name] = append(r.postings[lastKey.Name], postingOffset{value: lastKey.Value, off: lastOff})
 				}
-				lastKey = labels.Label{}
 				valueCount = 0
 			}
 			if valueCount%symbolFactor == 0 {
