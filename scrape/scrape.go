@@ -773,8 +773,8 @@ type targetScraper struct {
 var errBodySizeLimit = errors.New("body size limit exceeded")
 
 const (
-	scrapeAcceptHeader             = `application/openmetrics-text;version=1.0.0;q=0.75,application/openmetrics-text;q=0.6,text/plain;version=0.0.4;q=0.5,*/*;q=0.1`
-	scrapeAcceptHeaderWithProtobuf = `application/vnd.google.protobuf; proto=io.prometheus.client.MetricFamily; encoding=delimited,application/openmetrics-text;version=1.0.0;q=0.75,application/openmetrics-text;q=0.6,text/plain;version=0.0.4;q=0.5,*/*;q=0.1`
+	scrapeAcceptHeader             = `application/openmetrics-text;version=1.0.0,application/openmetrics-text;version=0.0.1;q=0.75,text/plain;version=0.0.4;q=0.5,*/*;q=0.1`
+	scrapeAcceptHeaderWithProtobuf = `application/vnd.google.protobuf;proto=io.prometheus.client.MetricFamily;encoding=delimited,application/openmetrics-text;version=1.0.0;q=0.8,application/openmetrics-text;version=0.0.1;q=0.75,text/plain;version=0.0.4;q=0.5,*/*;q=0.1`
 )
 
 var UserAgent = fmt.Sprintf("Prometheus/%s", version.Version)
