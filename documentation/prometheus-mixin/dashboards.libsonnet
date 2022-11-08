@@ -27,7 +27,7 @@ local template = grafana.template;
             instance: { alias: 'Instance' },
             version: { alias: 'Version' },
             'Value #A': { alias: 'Count', type: 'hidden' },
-            'Value #B': { alias: 'Uptime' },
+            'Value #B': { alias: 'Uptime', type: 'number', unit: 's' },
           })
         )
       )
