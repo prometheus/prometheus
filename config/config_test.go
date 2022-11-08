@@ -1201,7 +1201,6 @@ func TestGlobalAndScrapeConfigLimits(t *testing.T) {
 		require.Equal(t, true, sc.BodySizeLimit == c.GlobalConfig.BodySizeLimit)
 		require.Equal(t, true, sc.SampleLimit == c.GlobalConfig.SampleLimit)
 		require.Equal(t, true, sc.TargetLimit == c.GlobalConfig.TargetLimit)
-		//validate scrape config overrides global config
 		if sc.LabelLimit != 0 && c.GlobalConfig.LabelLimit != 0 {
 			require.Equal(t, true, sc.LabelLimit != c.GlobalConfig.LabelLimit)
 		}
