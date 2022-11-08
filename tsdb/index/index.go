@@ -1435,7 +1435,7 @@ func ReadOffsetTable[T any](bs ByteSlice, off uint64, read func(d *encoding.Decb
 // PostingTableReader can be used as read function for ReadOffsetTable to read the posting offset table.
 func PostingTableReader(d *encoding.Decbuf) (labels.Label, error) {
 	if keyCount := d.Uvarint(); keyCount != 2 {
-		return labels.Label{}, errors.Errorf("unexpected key length for posting table %d", keyCount)
+		return labels.Label{}, errors.Errorf("unexpected number of keys for postings offset table %d", keyCount)
 	}
 	var lbl labels.Label
 	lbl.Name = d.UvarintStr()
