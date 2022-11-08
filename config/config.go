@@ -300,6 +300,24 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 				scfg.ScrapeTimeout = c.GlobalConfig.ScrapeTimeout
 			}
 		}
+		if scfg.BodySizeLimit == 0 {
+			scfg.BodySizeLimit = c.GlobalConfig.BodySizeLimit
+		}
+		if scfg.SampleLimit == 0 {
+			scfg.SampleLimit = c.GlobalConfig.SampleLimit
+		}
+		if scfg.TargetLimit == 0 {
+			scfg.TargetLimit = c.GlobalConfig.TargetLimit
+		}
+		if scfg.LabelLimit == 0 {
+			scfg.LabelLimit = c.GlobalConfig.LabelLimit
+		}
+		if scfg.LabelNameLengthLimit == 0 {
+			scfg.LabelNameLengthLimit = c.GlobalConfig.LabelNameLengthLimit
+		}
+		if scfg.LabelValueLengthLimit == 0 {
+			scfg.LabelValueLengthLimit = c.GlobalConfig.LabelValueLengthLimit
+		}
 
 		if _, ok := jobNames[scfg.JobName]; ok {
 			return fmt.Errorf("found multiple scrape configs with job name %q", scfg.JobName)
@@ -344,6 +362,24 @@ type GlobalConfig struct {
 	QueryLogFile string `yaml:"query_log_file,omitempty"`
 	// The labels to add to any timeseries that this Prometheus instance scrapes.
 	ExternalLabels labels.Labels `yaml:"external_labels,omitempty"`
+	// An uncompressed response body larger than this many bytes will cause the
+	// scrape to fail. 0 means no limit.
+	BodySizeLimit units.Base2Bytes `yaml:"body_size_limit,omitempty"`
+	// More than this many samples post metric-relabeling will cause the scrape to
+	// fail.
+	SampleLimit uint `yaml:"sample_limit,omitempty"`
+	// More than this many targets after the target relabeling will cause the
+	// scrapes to fail.
+	TargetLimit uint `yaml:"target_limit,omitempty"`
+	// More than this many labels post metric-relabeling will cause the scrape to
+	// fail.
+	LabelLimit uint `yaml:"label_limit,omitempty"`
+	// More than this label name length post metric-relabeling will cause the
+	// scrape to fail.
+	LabelNameLengthLimit uint `yaml:"label_name_length_limit,omitempty"`
+	// More than this label value length post metric-relabeling will cause the
+	// scrape to fail.
+	LabelValueLengthLimit uint `yaml:"label_value_length_limit,omitempty"`
 }
 
 // SetDirectory joins any relative file paths with dir.

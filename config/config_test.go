@@ -1193,6 +1193,21 @@ func TestScrapeIntervalLarger(t *testing.T) {
 	}
 }
 
+func TestGlobalAndScrapeConfigLimits(t *testing.T) {
+	c, err := LoadFile("testdata/global_scrape_config_limits.yml", false, false, log.NewNopLogger())
+	require.NoError(t, err)
+
+	for _, sc := range c.ScrapeConfigs {
+		require.Equal(t, true, sc.BodySizeLimit == c.GlobalConfig.BodySizeLimit)
+		require.Equal(t, true, sc.SampleLimit == c.GlobalConfig.SampleLimit)
+		require.Equal(t, true, sc.TargetLimit == c.GlobalConfig.TargetLimit)
+		//validate scrape config overrides global config
+		if sc.LabelLimit != 0 && c.GlobalConfig.LabelLimit != 0 {
+			require.Equal(t, true, sc.LabelLimit != c.GlobalConfig.LabelLimit)
+		}
+	}
+}
+
 // YAML marshaling must not reveal authentication credentials.
 func TestElideSecrets(t *testing.T) {
 	c, err := LoadFile("testdata/conf.good.yml", false, false, log.NewNopLogger())

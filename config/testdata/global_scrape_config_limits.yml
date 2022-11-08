@@ -1,0 +1,10 @@
+global:
+  body_size_limit: 100MB
+  sample_limit: 5000
+  target_limit: 10
+  label_limit: 6
+scrape_configs:
+  - job_name: "prometheus"
+    label_limit: 5
+    label_name_length_limit: 10
+    label_value_length_limit: 10
