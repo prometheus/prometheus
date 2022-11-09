@@ -1,5 +1,27 @@
 # Changelog
 
+## 2.40.1 / 2022-11-09
+
+* [BUGFIX] TSDB: Fix alignment for atomic int64 for 32 bit architecture. #11547
+* [BUGFIX] Scrape: Fix accept headers. #11552
+
+## 2.40.0 / 2022-11-08
+
+This release introduces an experimental, native way of representing and storing histograms.
+
+It can be enabled in Prometheus via `--enable-feature=native-histograms` to accept native histograms.
+Enabling native histograms will also switch the preferred exposition format to protobuf.
+
+To instrument your application with native histograms, use the `main` branch of `client_golang` (this will change for the final release when v1.14.0 of client_golang will be out), and set the `NativeHistogramBucketFactor` in your `HistogramOpts` (`1.1` is a good starting point).
+Your existing histograms won't switch to native histograms until `NativeHistogramBucketFactor` is set.
+
+* [FEATURE] Add **experimental** support for native histograms. Enable with the flag `--enable-feature=native-histograms`. #11447
+* [FEATURE] SD: Add service discovery for OVHcloud. #10802
+* [ENHANCEMENT] Kubernetes SD: Use protobuf encoding. #11353
+* [ENHANCEMENT] TSDB: Use golang.org/x/exp/slices for improved sorting speed. #11054 #11318 #11380
+* [ENHANCEMENT] Consul SD: Add enterprise admin partitions. Adds `__meta_consul_partition` label. Adds `partition` config in `consul_sd_config`. #11482
+* [BUGFIX] API: Fix API error codes for `/api/v1/labels` and `/api/v1/series`. #11356 
+
 ## 2.39.1 / 2022-10-07
 
 * [BUGFIX] Rules: Fix notifier relabel changing the labels on active alerts. #11427
