@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.39.2 / 2022-11-09
+
+* [BUGFIX] TSDB: Fix alignment for atomic int64 for 32 bit architecture. #11547
+
 ## 2.39.1 / 2022-10-07
 
 * [BUGFIX] Rules: Fix notifier relabel changing the labels on active alerts. #11427
