@@ -140,6 +140,8 @@ type Options struct {
 
 	// Optional HTTP client options to use when scraping.
 	HTTPClientOptions []config_util.HTTPClientOption
+	// Prometheus is configured to allow out-of-order ingestion
+	OutOfOrderIngestionEnabled bool
 }
 
 // Manager maintains a set of scrape pools and manages start/stop cycles

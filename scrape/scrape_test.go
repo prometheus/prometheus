@@ -618,6 +618,7 @@ func TestScrapeLoopStopBeforeRun(t *testing.T) {
 		false,
 		nil,
 		false,
+		false,
 	)
 
 	// The scrape pool synchronizes on stopping scrape loops. However, new scrape
@@ -689,6 +690,7 @@ func TestScrapeLoopStop(t *testing.T) {
 		false,
 		false,
 		nil,
+		false,
 		false,
 	)
 
@@ -765,6 +767,7 @@ func TestScrapeLoopRun(t *testing.T) {
 		false,
 		nil,
 		false,
+		false,
 	)
 
 	// The loop must terminate during the initial offset if the context
@@ -819,6 +822,7 @@ func TestScrapeLoopRun(t *testing.T) {
 		false,
 		false,
 		nil,
+		false,
 		false,
 	)
 
@@ -879,6 +883,7 @@ func TestScrapeLoopForcedErr(t *testing.T) {
 		false,
 		nil,
 		false,
+		false,
 	)
 
 	forcedErr := fmt.Errorf("forced err")
@@ -937,6 +942,7 @@ func TestScrapeLoopMetadata(t *testing.T) {
 		false,
 		nil,
 		false,
+		false,
 	)
 	defer cancel()
 
@@ -993,6 +999,7 @@ func simpleTestScrapeLoop(t testing.TB) (context.Context, *scrapeLoop) {
 		false,
 		false,
 		nil,
+		false,
 		false,
 	)
 	t.Cleanup(func() { cancel() })
@@ -1087,6 +1094,7 @@ func TestScrapeLoopRunCreatesStaleMarkersOnFailedScrape(t *testing.T) {
 		false,
 		nil,
 		false,
+		false,
 	)
 	// Succeed once, several failures, then stop.
 	numScrapes := 0
@@ -1149,6 +1157,7 @@ func TestScrapeLoopRunCreatesStaleMarkersOnParseFailure(t *testing.T) {
 		false,
 		nil,
 		false,
+		false,
 	)
 
 	// Succeed once, several failures, then stop.
@@ -1157,6 +1166,133 @@ func TestScrapeLoopRunCreatesStaleMarkersOnParseFailure(t *testing.T) {
 
 		if numScrapes == 1 {
 			w.Write([]byte("metric_a 42\n"))
+			return nil
+		} else if numScrapes == 2 {
+			w.Write([]byte("7&-\n"))
+			return nil
+		} else if numScrapes == 3 {
+			cancel()
+		}
+		return errors.New("scrape failed")
+	}
+
+	go func() {
+		sl.run(nil)
+		signal <- struct{}{}
+	}()
+
+	select {
+	case <-signal:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("Scrape wasn't stopped.")
+	}
+
+	// 1 successfully scraped sample, 1 stale marker after first fail, 5 report samples for
+	// each scrape successful or not.
+	require.Equal(t, 17, len(appender.result), "Appended samples not as expected:\n%s", appender)
+	require.Equal(t, 42.0, appender.result[0].v, "Appended first sample not as expected")
+	require.True(t, value.IsStaleNaN(appender.result[6].v),
+		"Appended second sample not as expected. Wanted: stale NaN Got: %x", math.Float64bits(appender.result[6].v))
+}
+
+func TestScrapeLoopRunCreatesStaleMarkersOnFailedScrapeWithTimesstamps(t *testing.T) {
+	appender := &collectResultAppender{}
+	var (
+		signal  = make(chan struct{}, 1)
+		scraper = &testScraper{}
+		app     = func(ctx context.Context) storage.Appender { return appender }
+	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	sl := newScrapeLoop(ctx,
+		scraper,
+		nil, nil,
+		nopMutator,
+		nopMutator,
+		app,
+		nil,
+		0,
+		true,
+		0,
+		nil,
+		10*time.Millisecond,
+		time.Hour,
+		false,
+		false,
+		nil,
+		false,
+		true,
+	)
+	// Succeed once, several failures, then stop.
+	numScrapes := 0
+
+	scraper.scrapeFunc = func(ctx context.Context, w io.Writer) error {
+		numScrapes++
+
+		if numScrapes == 1 {
+			w.Write([]byte("metric_a 42 1000\n"))
+			return nil
+		} else if numScrapes == 5 {
+			cancel()
+		}
+		return errors.New("scrape failed")
+	}
+
+	go func() {
+		sl.run(nil)
+		signal <- struct{}{}
+	}()
+
+	select {
+	case <-signal:
+	case <-time.After(5 * time.Second):
+		t.Fatalf("Scrape wasn't stopped.")
+	}
+
+	// 1 successfully scraped sample, 1 stale marker after first fail, 5 report samples for
+	// each scrape successful or not.
+	require.Equal(t, 27, len(appender.result), "Appended samples not as expected:\n%s", appender)
+	require.Equal(t, 42.0, appender.result[0].v, "Appended first sample not as expected")
+	require.True(t, value.IsStaleNaN(appender.result[6].v),
+		"Appended second sample not as expected. Wanted: stale NaN Got: %x", math.Float64bits(appender.result[6].v))
+}
+
+func TestScrapeLoopRunCreatesStaleMarkersOnParseFailureWithTimesstamps(t *testing.T) {
+	appender := &collectResultAppender{}
+	var (
+		signal     = make(chan struct{}, 1)
+		scraper    = &testScraper{}
+		app        = func(ctx context.Context) storage.Appender { return appender }
+		numScrapes = 0
+	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	sl := newScrapeLoop(ctx,
+		scraper,
+		nil, nil,
+		nopMutator,
+		nopMutator,
+		app,
+		nil,
+		0,
+		true,
+		0,
+		nil,
+		10*time.Millisecond,
+		time.Hour,
+		false,
+		false,
+		nil,
+		false,
+		true,
+	)
+
+	// Succeed once, several failures, then stop.
+	scraper.scrapeFunc = func(ctx context.Context, w io.Writer) error {
+		numScrapes++
+
+		if numScrapes == 1 {
+			w.Write([]byte("metric_a 42 1000\n"))
 			return nil
 		} else if numScrapes == 2 {
 			w.Write([]byte("7&-\n"))
@@ -1214,6 +1350,7 @@ func TestScrapeLoopCache(t *testing.T) {
 		false,
 		false,
 		nil,
+		false,
 		false,
 	)
 
@@ -1296,6 +1433,7 @@ func TestScrapeLoopCacheMemoryExhaustionProtection(t *testing.T) {
 		false,
 		false,
 		nil,
+		false,
 		false,
 	)
 
@@ -1411,6 +1549,7 @@ func TestScrapeLoopAppend(t *testing.T) {
 			false,
 			nil,
 			false,
+			false,
 		)
 
 		now := time.Now()
@@ -1498,7 +1637,7 @@ func TestScrapeLoopAppendForConflictingPrefixedLabels(t *testing.T) {
 					return mutateSampleLabels(l, &Target{labels: labels.FromStrings(tc.targetLabels...)}, false, nil)
 				},
 				nil,
-				func(ctx context.Context) storage.Appender { return app }, nil, 0, true, 0, nil, 0, 0, false, false, nil, false,
+				func(ctx context.Context) storage.Appender { return app }, nil, 0, true, 0, nil, 0, 0, false, false, nil, false, false,
 			)
 			slApp := sl.appender(context.Background())
 			_, _, _, err := sl.append(slApp, []byte(tc.exposedLabels), "", time.Date(2000, 1, 1, 1, 0, 0, 0, time.UTC))
@@ -1536,6 +1675,7 @@ func TestScrapeLoopAppendCacheEntryButErrNotFound(t *testing.T) {
 		false,
 		false,
 		nil,
+		false,
 		false,
 	)
 
@@ -1594,6 +1734,7 @@ func TestScrapeLoopAppendSampleLimit(t *testing.T) {
 		false,
 		false,
 		nil,
+		false,
 		false,
 	)
 
@@ -1672,6 +1813,7 @@ func TestScrapeLoop_ChangingMetricString(t *testing.T) {
 		false,
 		nil,
 		false,
+		false,
 	)
 
 	now := time.Now()
@@ -1720,6 +1862,7 @@ func TestScrapeLoopAppendStaleness(t *testing.T) {
 		false,
 		nil,
 		false,
+		false,
 	)
 
 	now := time.Now()
@@ -1753,7 +1896,7 @@ func TestScrapeLoopAppendStaleness(t *testing.T) {
 	require.Equal(t, want, app.result, "Appended samples not as expected:\n%s", appender)
 }
 
-func TestScrapeLoopAppendNoStalenessIfTimestamp(t *testing.T) {
+func TestScrapeLoopAppendStalenessWithTimestamp(t *testing.T) {
 	app := &collectResultAppender{}
 	sl := newScrapeLoop(context.Background(),
 		nil, nil, nil,
@@ -1771,6 +1914,7 @@ func TestScrapeLoopAppendNoStalenessIfTimestamp(t *testing.T) {
 		false,
 		nil,
 		false,
+		true,
 	)
 
 	now := time.Now()
@@ -1784,11 +1928,21 @@ func TestScrapeLoopAppendNoStalenessIfTimestamp(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, slApp.Commit())
 
+	ingestedNaN := math.Float64bits(app.result[1].v)
+	require.Equal(t, value.StaleNaN, ingestedNaN, "Appended stale sample wasn't as expected")
+
+	// DeepEqual will report NaNs as being different, so replace with a different value.
+	app.result[1].v = 42
 	want := []sample{
 		{
 			metric: labels.FromStrings(model.MetricNameLabel, "metric_a"),
 			t:      1000,
 			v:      1,
+		},
+		{
+			metric: labels.FromStrings(model.MetricNameLabel, "metric_a"),
+			t:      timestamp.FromTime(now.Add(time.Second)),
+			v:      42,
 		},
 	}
 	require.Equal(t, want, app.result, "Appended samples not as expected:\n%s", appender)
@@ -1882,6 +2036,7 @@ metric_total{n="2"} 2 # {t="2"} 2.0 20000
 				false,
 				nil,
 				false,
+				false,
 			)
 
 			now := time.Now()
@@ -1947,6 +2102,7 @@ func TestScrapeLoopAppendExemplarSeries(t *testing.T) {
 		false,
 		nil,
 		false,
+		false,
 	)
 
 	now := time.Now()
@@ -1999,6 +2155,7 @@ func TestScrapeLoopRunReportsTargetDownOnScrapeError(t *testing.T) {
 		false,
 		nil,
 		false,
+		false,
 	)
 
 	scraper.scrapeFunc = func(ctx context.Context, w io.Writer) error {
@@ -2034,6 +2191,7 @@ func TestScrapeLoopRunReportsTargetDownOnInvalidUTF8(t *testing.T) {
 		false,
 		false,
 		nil,
+		false,
 		false,
 	)
 
@@ -2084,6 +2242,7 @@ func TestScrapeLoopAppendGracefullyIfAmendOrOutOfOrderOrOutOfBounds(t *testing.T
 		false,
 		nil,
 		false,
+		false,
 	)
 
 	now := time.Unix(1, 0)
@@ -2128,6 +2287,7 @@ func TestScrapeLoopOutOfBoundsTimeError(t *testing.T) {
 		false,
 		false,
 		nil,
+		false,
 		false,
 	)
 
@@ -2400,6 +2560,7 @@ func TestScrapeLoop_RespectTimestamps(t *testing.T) {
 		false,
 		nil,
 		false,
+		false,
 	)
 
 	now := time.Now()
@@ -2441,6 +2602,7 @@ func TestScrapeLoop_DiscardTimestamps(t *testing.T) {
 		false,
 		nil,
 		false,
+		false,
 	)
 
 	now := time.Now()
@@ -2480,6 +2642,7 @@ func TestScrapeLoopDiscardDuplicateLabels(t *testing.T) {
 		false,
 		false,
 		nil,
+		false,
 		false,
 	)
 	defer cancel()
@@ -2538,6 +2701,7 @@ func TestScrapeLoopDiscardUnnamedMetrics(t *testing.T) {
 		false,
 		false,
 		nil,
+		false,
 		false,
 	)
 	defer cancel()
@@ -2802,6 +2966,7 @@ func TestScrapeAddFast(t *testing.T) {
 		false,
 		nil,
 		false,
+		false,
 	)
 	defer cancel()
 
@@ -2887,6 +3052,7 @@ func TestScrapeReportSingleAppender(t *testing.T) {
 		false,
 		false,
 		nil,
+		false,
 		false,
 	)
 
@@ -3089,6 +3255,7 @@ func TestScrapeLoopLabelLimit(t *testing.T) {
 			false,
 			false,
 			nil,
+			false,
 			false,
 		)
 

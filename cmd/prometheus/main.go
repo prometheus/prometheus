@@ -476,6 +476,7 @@ func main() {
 	}
 	if cfgFile.StorageConfig.TSDBConfig != nil {
 		cfg.tsdb.OutOfOrderTimeWindow = cfgFile.StorageConfig.TSDBConfig.OutOfOrderTimeWindow
+		cfg.scrape.OutOfOrderIngestionEnabled = cfg.tsdb.OutOfOrderTimeWindow > 0
 	}
 
 	// Now that the validity of the config is established, set the config

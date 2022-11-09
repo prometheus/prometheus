@@ -326,6 +326,7 @@ func newScrapePool(cfg *config.ScrapeConfig, app storage.Appendable, jitterSeed 
 			options.EnableMetadataStorage,
 			opts.target,
 			options.PassMetadataInContext,
+			options.OutOfOrderIngestionEnabled,
 		)
 	}
 
@@ -891,6 +892,8 @@ type scrapeLoop struct {
 
 	reportExtraMetrics  bool
 	appendMetadataToWAL bool
+
+	outOfOrderIngestionEnabled bool
 }
 
 // scrapeCache tracks mappings of exposed metric strings to label sets and
@@ -1160,6 +1163,7 @@ func newScrapeLoop(ctx context.Context,
 	appendMetadataToWAL bool,
 	target *Target,
 	passMetadataInContext bool,
+	outOfOrderIngestionEnabled bool,
 ) *scrapeLoop {
 	if l == nil {
 		l = log.NewNopLogger()
@@ -1183,24 +1187,25 @@ func newScrapeLoop(ctx context.Context,
 	}
 
 	sl := &scrapeLoop{
-		scraper:             sc,
-		buffers:             buffers,
-		cache:               cache,
-		appender:            appender,
-		sampleMutator:       sampleMutator,
-		reportSampleMutator: reportSampleMutator,
-		stopped:             make(chan struct{}),
-		jitterSeed:          jitterSeed,
-		l:                   l,
-		parentCtx:           ctx,
-		appenderCtx:         appenderCtx,
-		honorTimestamps:     honorTimestamps,
-		sampleLimit:         sampleLimit,
-		labelLimits:         labelLimits,
-		interval:            interval,
-		timeout:             timeout,
-		reportExtraMetrics:  reportExtraMetrics,
-		appendMetadataToWAL: appendMetadataToWAL,
+		scraper:                    sc,
+		buffers:                    buffers,
+		cache:                      cache,
+		appender:                   appender,
+		sampleMutator:              sampleMutator,
+		reportSampleMutator:        reportSampleMutator,
+		stopped:                    make(chan struct{}),
+		jitterSeed:                 jitterSeed,
+		l:                          l,
+		parentCtx:                  ctx,
+		appenderCtx:                appenderCtx,
+		honorTimestamps:            honorTimestamps,
+		sampleLimit:                sampleLimit,
+		labelLimits:                labelLimits,
+		interval:                   interval,
+		timeout:                    timeout,
+		reportExtraMetrics:         reportExtraMetrics,
+		appendMetadataToWAL:        appendMetadataToWAL,
+		outOfOrderIngestionEnabled: outOfOrderIngestionEnabled,
 	}
 	sl.ctx, sl.cancel = context.WithCancel(ctx)
 
@@ -1636,7 +1641,7 @@ loop:
 		}
 
 		if !ok {
-			if parsedTimestamp == nil {
+			if sl.outOfOrderIngestionEnabled || parsedTimestamp == nil {
 				// Bypass staleness logic if there is an explicit timestamp.
 				sl.cache.trackStaleness(hash, lset)
 			}
