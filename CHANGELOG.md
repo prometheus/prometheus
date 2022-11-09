@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.40.1 / 2022-11-09
+
+* [BUGFIX] TSDB: Fix alignment for atomic int64 for 32 bit architecture. #11547
+* [BUGFIX] Scrape: Fix accept headers. #11552
+
 ## 2.40.0 / 2022-11-08
 
 This release introduces an experimental, native way of representing and storing histograms.
