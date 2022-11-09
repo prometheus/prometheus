@@ -26,6 +26,7 @@ import (
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/textparse"
 	"github.com/prometheus/prometheus/prompb"
@@ -118,7 +119,8 @@ func ToQueryResult(ss storage.SeriesSet, sampleLimit int) (*prompb.QueryResult, 
 		iter := series.Iterator()
 		samples := []prompb.Sample{}
 
-		for iter.Next() {
+		for iter.Next() == chunkenc.ValFloat {
+			// TODO(beorn7): Add Histogram support.
 			numSamples++
 			if sampleLimit > 0 && numSamples > sampleLimit {
 				return nil, ss.Warnings(), HTTPError{
@@ -355,37 +357,65 @@ func newConcreteSeriersIterator(series *concreteSeries) chunkenc.Iterator {
 }
 
 // Seek implements storage.SeriesIterator.
-func (c *concreteSeriesIterator) Seek(t int64) bool {
+func (c *concreteSeriesIterator) Seek(t int64) chunkenc.ValueType {
 	if c.cur == -1 {
 		c.cur = 0
 	}
 	if c.cur >= len(c.series.samples) {
-		return false
+		return chunkenc.ValNone
 	}
 	// No-op check.
 	if s := c.series.samples[c.cur]; s.Timestamp >= t {
-		return true
+		return chunkenc.ValFloat
 	}
 	// Do binary search between current position and end.
 	c.cur += sort.Search(len(c.series.samples)-c.cur, func(n int) bool {
 		return c.series.samples[n+c.cur].Timestamp >= t
 	})
-	return c.cur < len(c.series.samples)
+	if c.cur < len(c.series.samples) {
+		return chunkenc.ValFloat
+	}
+	return chunkenc.ValNone
+	// TODO(beorn7): Add histogram support.
 }
 
-// At implements storage.SeriesIterator.
+// At implements chunkenc.Iterator.
 func (c *concreteSeriesIterator) At() (t int64, v float64) {
 	s := c.series.samples[c.cur]
 	return s.Timestamp, s.Value
 }
 
-// Next implements storage.SeriesIterator.
-func (c *concreteSeriesIterator) Next() bool {
-	c.cur++
-	return c.cur < len(c.series.samples)
+// AtHistogram always returns (0, nil) because there is no support for histogram
+// values yet.
+// TODO(beorn7): Fix that for histogram support in remote storage.
+func (c *concreteSeriesIterator) AtHistogram() (int64, *histogram.Histogram) {
+	return 0, nil
 }
 
-// Err implements storage.SeriesIterator.
+// AtFloatHistogram always returns (0, nil) because there is no support for histogram
+// values yet.
+// TODO(beorn7): Fix that for histogram support in remote storage.
+func (c *concreteSeriesIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+	return 0, nil
+}
+
+// AtT implements chunkenc.Iterator.
+func (c *concreteSeriesIterator) AtT() int64 {
+	s := c.series.samples[c.cur]
+	return s.Timestamp
+}
+
+// Next implements chunkenc.Iterator.
+func (c *concreteSeriesIterator) Next() chunkenc.ValueType {
+	c.cur++
+	if c.cur < len(c.series.samples) {
+		return chunkenc.ValFloat
+	}
+	return chunkenc.ValNone
+	// TODO(beorn7): Add histogram support.
+}
+
+// Err implements chunkenc.Iterator.
 func (c *concreteSeriesIterator) Err() error {
 	return nil
 }
@@ -470,6 +500,56 @@ func exemplarProtoToExemplar(ep prompb.Exemplar) exemplar.Exemplar {
 		Ts:     timestamp,
 		HasTs:  timestamp != 0,
 	}
+}
+
+// HistogramProtoToHistogram extracts a (normal integer) Histogram from the
+// provided proto message. The caller has to make sure that the proto message
+// represents an interger histogram and not a float histogram.
+func HistogramProtoToHistogram(hp prompb.Histogram) *histogram.Histogram {
+	return &histogram.Histogram{
+		Schema:          hp.Schema,
+		ZeroThreshold:   hp.ZeroThreshold,
+		ZeroCount:       hp.GetZeroCountInt(),
+		Count:           hp.GetCountInt(),
+		Sum:             hp.Sum,
+		PositiveSpans:   spansProtoToSpans(hp.GetPositiveSpans()),
+		PositiveBuckets: hp.GetPositiveDeltas(),
+		NegativeSpans:   spansProtoToSpans(hp.GetNegativeSpans()),
+		NegativeBuckets: hp.GetNegativeDeltas(),
+	}
+}
+
+func spansProtoToSpans(s []*prompb.BucketSpan) []histogram.Span {
+	spans := make([]histogram.Span, len(s))
+	for i := 0; i < len(s); i++ {
+		spans[i] = histogram.Span{Offset: s[i].Offset, Length: s[i].Length}
+	}
+
+	return spans
+}
+
+func HistogramToHistogramProto(timestamp int64, h *histogram.Histogram) prompb.Histogram {
+	return prompb.Histogram{
+		Count:          &prompb.Histogram_CountInt{CountInt: h.Count},
+		Sum:            h.Sum,
+		Schema:         h.Schema,
+		ZeroThreshold:  h.ZeroThreshold,
+		ZeroCount:      &prompb.Histogram_ZeroCountInt{ZeroCountInt: h.ZeroCount},
+		NegativeSpans:  spansToSpansProto(h.NegativeSpans),
+		NegativeDeltas: h.NegativeBuckets,
+		PositiveSpans:  spansToSpansProto(h.PositiveSpans),
+		PositiveDeltas: h.PositiveBuckets,
+		Timestamp:      timestamp,
+	}
+}
+
+func spansToSpansProto(s []histogram.Span) []*prompb.BucketSpan {
+	spans := make([]*prompb.BucketSpan, len(s))
+	for i := 0; i < len(s); i++ {
+		spans[i] = &prompb.BucketSpan{Offset: s[i].Offset, Length: s[i].Length}
+	}
+
+	return spans
 }
 
 // LabelProtosToMetric unpack a []*prompb.Label to a model.Metric

@@ -178,9 +178,10 @@ func NewDecbufRaw(bs ByteSlice, length int) Decbuf {
 	return Decbuf{B: bs.Range(0, length)}
 }
 
-func (d *Decbuf) Uvarint() int     { return int(d.Uvarint64()) }
-func (d *Decbuf) Be32int() int     { return int(d.Be32()) }
-func (d *Decbuf) Be64int64() int64 { return int64(d.Be64()) }
+func (d *Decbuf) Uvarint() int      { return int(d.Uvarint64()) }
+func (d *Decbuf) Uvarint32() uint32 { return uint32(d.Uvarint64()) }
+func (d *Decbuf) Be32int() int      { return int(d.Be32()) }
+func (d *Decbuf) Be64int64() int64  { return int64(d.Be64()) }
 
 // Crc32 returns a CRC32 checksum over the remaining bytes.
 func (d *Decbuf) Crc32(castagnoliTable *crc32.Table) uint32 {

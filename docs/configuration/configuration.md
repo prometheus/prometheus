@@ -294,6 +294,10 @@ nomad_sd_configs:
 openstack_sd_configs:
   [ - <openstack_sd_config> ... ]
 
+# List of OVHcloud service discovery configurations.
+ovhcloud_sd_configs:
+  [ - <ovhcloud_sd_config> ... ]
+
 # List of PuppetDB service discovery configurations.
 puppetdb_sd_configs:
   [ - <puppetdb_sd_config> ... ]
@@ -458,7 +462,7 @@ subscription_id: <string>
 # Optional client secret. Only required with authentication_method OAuth.
 [ client_secret: <secret> ]
 
-# Optional resource group name. Limits discovery to this resource group. 
+# Optional resource group name. Limits discovery to this resource group.
 [ resource_group: <string> ]
 
 # Refresh interval to re-read the instance list.
@@ -518,6 +522,7 @@ The following meta labels are available on targets during [relabeling](#relabel_
 * `__meta_consul_address`: the address of the target
 * `__meta_consul_dc`: the datacenter name for the target
 * `__meta_consul_health`: the health status of the service
+* `__meta_consul_partition`: the admin partition name where the service is registered 
 * `__meta_consul_metadata_<key>`: each node metadata key value of the target
 * `__meta_consul_node`: the node name defined for the target
 * `__meta_consul_service_address`: the service address of the target
@@ -536,6 +541,8 @@ The following meta labels are available on targets during [relabeling](#relabel_
 [ datacenter: <string> ]
 # Namespaces are only supported in Consul Enterprise.
 [ namespace: <string> ]
+# Admin Partitions are only supported in Consul Enterprise.
+[ partition: <string> ]
 [ scheme: <string> | default = "http" ]
 # The username and password fields are deprecated in favor of the basic_auth configuration.
 [ username: <string> ]
@@ -1173,6 +1180,66 @@ tls_config:
   [ <tls_config> ]
 ```
 
+### `<ovhcloud_sd_config>`
+
+OVHcloud SD configurations allow retrieving scrape targets from OVHcloud's [dedicated servers](https://www.ovhcloud.com/en/bare-metal/) and [VPS](https://www.ovhcloud.com/en/vps/) using
+their [API](https://api.ovh.com/).
+Prometheus will periodically check the REST endpoint and create a target for every discovered server.
+The role will try to use the public IPv4 address as default address, if there's none it will try to use the IPv6 one. This may be changed with relabeling.
+For OVHcloud's [public cloud instances](https://www.ovhcloud.com/en/public-cloud/) you can use the [openstack_sd_config](#openstack_sd_config).
+
+#### VPS
+
+* `__meta_ovhcloud_vps_cluster`: the cluster of the server
+* `__meta_ovhcloud_vps_datacenter`: the datacenter of the server
+* `__meta_ovhcloud_vps_disk`: the disk of the server
+* `__meta_ovhcloud_vps_display_name`: the display name of the server
+* `__meta_ovhcloud_vps_ipv4`: the IPv4 of the server
+* `__meta_ovhcloud_vps_ipv6`: the IPv6 of the server
+* `__meta_ovhcloud_vps_keymap`: the KVM keyboard layout of the server
+* `__meta_ovhcloud_vps_maximum_additional_ip`: the maximum additional IPs of the server
+* `__meta_ovhcloud_vps_memory_limit`: the memory limit of the server
+* `__meta_ovhcloud_vps_memory`: the memory of the server
+* `__meta_ovhcloud_vps_monitoring_ip_blocks`: the monitoring IP blocks of the server
+* `__meta_ovhcloud_vps_name`: the name of the server
+* `__meta_ovhcloud_vps_netboot_mode`: the netboot mode of the server
+* `__meta_ovhcloud_vps_offer_type`: the offer type of the server
+* `__meta_ovhcloud_vps_offer`: the offer of the server
+* `__meta_ovhcloud_vps_state`: the state of the server
+* `__meta_ovhcloud_vps_vcore`: the number of virtual cores of the server
+* `__meta_ovhcloud_vps_version`: the version of the server
+* `__meta_ovhcloud_vps_zone`: the zone of the server
+
+#### Dedicated servers
+
+* `__meta_ovhcloud_dedicated_server_commercial_range`: the commercial range of the server
+* `__meta_ovhcloud_dedicated_server_datacenter`: the datacenter of the server
+* `__meta_ovhcloud_dedicated_server_ipv4`: the IPv4 of the server
+* `__meta_ovhcloud_dedicated_server_ipv6`: the IPv6 of the server
+* `__meta_ovhcloud_dedicated_server_link_speed`: the link speed of the server
+* `__meta_ovhcloud_dedicated_server_name`: the name of the server
+* `__meta_ovhcloud_dedicated_server_os`: the operating system of the server
+* `__meta_ovhcloud_dedicated_server_rack`: the rack of the server
+* `__meta_ovhcloud_dedicated_server_reverse`: the reverse DNS name of the server
+* `__meta_ovhcloud_dedicated_server_server_id`: the ID of the server
+* `__meta_ovhcloud_dedicated_server_state`: the state of the server
+* `__meta_ovhcloud_dedicated_server_support_level`: the support level of the server
+
+See below for the configuration options for OVHcloud discovery:
+
+```yaml
+# Access key to use. https://api.ovh.com
+application_key: <string>
+application_secret: <secret>
+consumer_key: <secret>
+# Service of the targets to retrieve. Must be `vps` or `dedicated_server`.
+service: <string>
+# API endpoint. https://github.com/ovh/go-ovh#supported-apis
+[ endpoint: <string> | default = "ovh-eu" ]
+# Refresh interval to re-read the resources list.
+[ refresh_interval: <duration> | default = 60s ]
+```
+
 ### `<puppetdb_sd_config>`
 
 PuppetDB SD configurations allow retrieving scrape targets from
@@ -1505,8 +1572,8 @@ Example response body:
 ```
 
 The endpoint is queried periodically at the specified refresh interval.
-The `prometheus_sd_http_failures_total` counter metric tracks the number of 
-refresh failures. 
+The `prometheus_sd_http_failures_total` counter metric tracks the number of
+refresh failures.
 
 Each target has a meta label `__meta_url` during the
 [relabeling phase](#relabel_config). Its value is set to the
@@ -1568,7 +1635,7 @@ following meta labels are available on all targets during
 [relabeling](#relabel_config):
 
 * `__meta_ionos_server_availability_zone`: the availability zone of the server
-* `__meta_ionos_server_boot_cdrom_id`: the ID of the CD-ROM the server is booted 
+* `__meta_ionos_server_boot_cdrom_id`: the ID of the CD-ROM the server is booted
   from
 * `__meta_ionos_server_boot_image_id`: the ID of the boot image or snapshot the
   server is booted from
@@ -1871,8 +1938,8 @@ namespaces:
 
 # Optional metadata to attach to discovered targets. If omitted, no additional metadata is attached.
 attach_metadata:
-# Attaches node metadata to discovered targets. Valid for roles: pod, endpoints, endpointslice. 
-# When set to true, Prometheus must have permissions to get Nodes. 
+# Attaches node metadata to discovered targets. Valid for roles: pod, endpoints, endpointslice.
+# When set to true, Prometheus must have permissions to get Nodes.
   [ node: <boolean> | default = false ]
 ```
 
@@ -2266,7 +2333,7 @@ tls_config:
 ### `<serverset_sd_config>`
 
 Serverset SD configurations allow retrieving scrape targets from [Serversets]
-(https://github.com/twitter/finagle/tree/master/finagle-serversets) which are
+(https://github.com/twitter/finagle/tree/develop/finagle-serversets) which are
 stored in [Zookeeper](https://zookeeper.apache.org/). Serversets are commonly
 used by [Finagle](https://twitter.github.io/finagle/) and
 [Aurora](https://aurora.apache.org/).
@@ -2962,6 +3029,10 @@ nomad_sd_configs:
 openstack_sd_configs:
   [ - <openstack_sd_config> ... ]
 
+# List of OVHcloud service discovery configurations.
+ovhcloud_sd_configs:
+  [ - <ovhcloud_sd_config> ... ]
+
 # List of PuppetDB service discovery configurations.
 puppetdb_sd_configs:
   [ - <puppetdb_sd_config> ... ]
@@ -3027,6 +3098,9 @@ write_relabel_configs:
 
 # Enables sending of exemplars over remote write. Note that exemplar storage itself must be enabled for exemplars to be scraped in the first place.
 [ send_exemplars: <boolean> | default = false ]
+
+# Enables sending of native histograms, also known as sparse histograms, over remote write.
+[ send_native_histograms: <boolean> | default = false ]
 
 # Sets the `Authorization` header on every remote write request with the
 # configured username and password.
@@ -3198,18 +3272,18 @@ with this feature.
 
 ### `<tsdb>`
 
-`tsdb` lets you config the runtime reloadable configuration of the TSDB.
+`tsdb` lets you configure the runtime-reloadable configuration settings of the TSDB.
 
-NOTE: Out of order ingestion is an experimental feature, but you do not need any additional flag to enable it. Setting `out_of_order_time_window` to a positive duration enables it.
+NOTE: Out-of-order ingestion is an experimental feature, but you do not need any additional flag to enable it. Setting `out_of_order_time_window` to a positive duration enables it.
 
 ```yaml
 # Configures how old an out-of-order/out-of-bounds sample can be w.r.t. the TSDB max time.
-# An out-of-order/out-of-bounds sample is ingested into TSDB as long as the timestamp
+# An out-of-order/out-of-bounds sample is ingested into the TSDB as long as the timestamp
 # of the sample is >= TSDB.MaxTime-out_of_order_time_window.
 #
 # When out_of_order_time_window is >0, the errors out-of-order and out-of-bounds are
 # combined into a single error called 'too-old'; a sample is either (a) ingestible
-# into TSDB, i.e. it is an in-order sample or an out-of-order/out-of-bound sample
+# into the TSDB, i.e. it is an in-order sample or an out-of-order/out-of-bounds sample
 # that is within the out-of-order window, or (b) too-old, i.e. not in-order
 # and before the out-of-order window.
 [ out_of_order_time_window: <duration> | default = 0s ]

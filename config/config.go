@@ -776,12 +776,13 @@ func CheckTargetAddress(address model.LabelValue) error {
 
 // RemoteWriteConfig is the configuration for writing to remote storage.
 type RemoteWriteConfig struct {
-	URL                 *config.URL       `yaml:"url"`
-	RemoteTimeout       model.Duration    `yaml:"remote_timeout,omitempty"`
-	Headers             map[string]string `yaml:"headers,omitempty"`
-	WriteRelabelConfigs []*relabel.Config `yaml:"write_relabel_configs,omitempty"`
-	Name                string            `yaml:"name,omitempty"`
-	SendExemplars       bool              `yaml:"send_exemplars,omitempty"`
+	URL                  *config.URL       `yaml:"url"`
+	RemoteTimeout        model.Duration    `yaml:"remote_timeout,omitempty"`
+	Headers              map[string]string `yaml:"headers,omitempty"`
+	WriteRelabelConfigs  []*relabel.Config `yaml:"write_relabel_configs,omitempty"`
+	Name                 string            `yaml:"name,omitempty"`
+	SendExemplars        bool              `yaml:"send_exemplars,omitempty"`
+	SendNativeHistograms bool              `yaml:"send_native_histograms,omitempty"`
 
 	// We cannot do proper Go type embedding below as the parser will then parse
 	// values arbitrarily into the overflow maps of further-down types.

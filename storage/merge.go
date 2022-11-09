@@ -18,9 +18,11 @@ import (
 	"container/heap"
 	"fmt"
 	"math"
-	"sort"
 	"sync"
 
+	"golang.org/x/exp/slices"
+
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/chunks"
@@ -240,7 +242,7 @@ func (q *mergeGenericQuerier) LabelNames(matchers ...*labels.Matcher) ([]string,
 	for name := range labelNamesMap {
 		labelNames = append(labelNames, name)
 	}
-	sort.Strings(labelNames)
+	slices.Sort(labelNames)
 	return labelNames, warnings, nil
 }
 
@@ -441,7 +443,7 @@ type chainSampleIterator struct {
 	h         samplesIteratorHeap
 
 	curr  chunkenc.Iterator
-	lastt int64
+	lastT int64
 }
 
 // NewChainSampleIterator returns a single iterator that iterates over the samples from the given iterators in a sorted
@@ -451,60 +453,82 @@ func NewChainSampleIterator(iterators []chunkenc.Iterator) chunkenc.Iterator {
 	return &chainSampleIterator{
 		iterators: iterators,
 		h:         nil,
-		lastt:     math.MinInt64,
+		lastT:     math.MinInt64,
 	}
 }
 
-func (c *chainSampleIterator) Seek(t int64) bool {
-	// No-op check
-	if c.curr != nil && c.lastt >= t {
-		return true
+func (c *chainSampleIterator) Seek(t int64) chunkenc.ValueType {
+	// No-op check.
+	if c.curr != nil && c.lastT >= t {
+		return c.curr.Seek(c.lastT)
 	}
-
 	c.h = samplesIteratorHeap{}
 	for _, iter := range c.iterators {
-		if iter.Seek(t) {
+		if iter.Seek(t) != chunkenc.ValNone {
 			heap.Push(&c.h, iter)
 		}
 	}
 	if len(c.h) > 0 {
 		c.curr = heap.Pop(&c.h).(chunkenc.Iterator)
-		c.lastt, _ = c.curr.At()
-		return true
+		c.lastT = c.curr.AtT()
+		return c.curr.Seek(c.lastT)
 	}
 	c.curr = nil
-	return false
+	return chunkenc.ValNone
 }
 
 func (c *chainSampleIterator) At() (t int64, v float64) {
 	if c.curr == nil {
-		panic("chainSampleIterator.At() called before first .Next() or after .Next() returned false.")
+		panic("chainSampleIterator.At called before first .Next or after .Next returned false.")
 	}
 	return c.curr.At()
 }
 
-func (c *chainSampleIterator) Next() bool {
+func (c *chainSampleIterator) AtHistogram() (int64, *histogram.Histogram) {
+	if c.curr == nil {
+		panic("chainSampleIterator.AtHistogram called before first .Next or after .Next returned false.")
+	}
+	return c.curr.AtHistogram()
+}
+
+func (c *chainSampleIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+	if c.curr == nil {
+		panic("chainSampleIterator.AtFloatHistogram called before first .Next or after .Next returned false.")
+	}
+	return c.curr.AtFloatHistogram()
+}
+
+func (c *chainSampleIterator) AtT() int64 {
+	if c.curr == nil {
+		panic("chainSampleIterator.AtT called before first .Next or after .Next returned false.")
+	}
+	return c.curr.AtT()
+}
+
+func (c *chainSampleIterator) Next() chunkenc.ValueType {
 	if c.h == nil {
 		c.h = samplesIteratorHeap{}
 		// We call c.curr.Next() as the first thing below.
 		// So, we don't call Next() on it here.
 		c.curr = c.iterators[0]
 		for _, iter := range c.iterators[1:] {
-			if iter.Next() {
+			if iter.Next() != chunkenc.ValNone {
 				heap.Push(&c.h, iter)
 			}
 		}
 	}
 
 	if c.curr == nil {
-		return false
+		return chunkenc.ValNone
 	}
 
-	var currt int64
+	var currT int64
+	var currValueType chunkenc.ValueType
 	for {
-		if c.curr.Next() {
-			currt, _ = c.curr.At()
-			if currt == c.lastt {
+		currValueType = c.curr.Next()
+		if currValueType != chunkenc.ValNone {
+			currT = c.curr.AtT()
+			if currT == c.lastT {
 				// Ignoring sample for the same timestamp.
 				continue
 			}
@@ -515,7 +539,8 @@ func (c *chainSampleIterator) Next() bool {
 			}
 
 			// Check current iterator with the top of the heap.
-			if nextt, _ := c.h[0].At(); currt < nextt {
+			nextT := c.h[0].AtT()
+			if currT < nextT {
 				// Current iterator has smaller timestamp than the heap.
 				break
 			}
@@ -524,18 +549,19 @@ func (c *chainSampleIterator) Next() bool {
 		} else if len(c.h) == 0 {
 			// No iterator left to iterate.
 			c.curr = nil
-			return false
+			return chunkenc.ValNone
 		}
 
 		c.curr = heap.Pop(&c.h).(chunkenc.Iterator)
-		currt, _ = c.curr.At()
-		if currt != c.lastt {
+		currT = c.curr.AtT()
+		currValueType = c.curr.Seek(currT)
+		if currT != c.lastT {
 			break
 		}
 	}
 
-	c.lastt = currt
-	return true
+	c.lastT = currT
+	return currValueType
 }
 
 func (c *chainSampleIterator) Err() error {
@@ -552,9 +578,7 @@ func (h samplesIteratorHeap) Len() int      { return len(h) }
 func (h samplesIteratorHeap) Swap(i, j int) { h[i], h[j] = h[j], h[i] }
 
 func (h samplesIteratorHeap) Less(i, j int) bool {
-	at, _ := h[i].At()
-	bt, _ := h[j].At()
-	return at < bt
+	return h[i].AtT() < h[j].AtT()
 }
 
 func (h *samplesIteratorHeap) Push(x interface{}) {

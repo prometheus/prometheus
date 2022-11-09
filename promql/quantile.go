@@ -17,6 +17,7 @@ import (
 	"math"
 	"sort"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 )
 
@@ -117,6 +118,176 @@ func bucketQuantile(q float64, buckets buckets) float64 {
 		rank -= buckets[b-1].count
 	}
 	return bucketStart + (bucketEnd-bucketStart)*(rank/count)
+}
+
+// histogramQuantile calculates the quantile 'q' based on the given histogram.
+//
+// The quantile value is interpolated assuming a linear distribution within a
+// bucket.
+// TODO(beorn7): Find an interpolation method that is a better fit for
+// exponential buckets (and think about configurable interpolation).
+//
+// A natural lower bound of 0 is assumed if the histogram has only positive
+// buckets. Likewise, a natural upper bound of 0 is assumed if the histogram has
+// only negative buckets.
+// TODO(beorn7): Come to terms if we want that.
+//
+// There are a number of special cases (once we have a way to report errors
+// happening during evaluations of AST functions, we should report those
+// explicitly):
+//
+// If the histogram has 0 observations, NaN is returned.
+//
+// If q<0, -Inf is returned.
+//
+// If q>1, +Inf is returned.
+//
+// If q is NaN, NaN is returned.
+func histogramQuantile(q float64, h *histogram.FloatHistogram) float64 {
+	if q < 0 {
+		return math.Inf(-1)
+	}
+	if q > 1 {
+		return math.Inf(+1)
+	}
+
+	if h.Count == 0 || math.IsNaN(q) {
+		return math.NaN()
+	}
+
+	var (
+		bucket histogram.Bucket[float64]
+		count  float64
+		it     = h.AllBucketIterator()
+		rank   = q * h.Count
+	)
+	for it.Next() {
+		bucket = it.At()
+		count += bucket.Count
+		if count >= rank {
+			break
+		}
+	}
+	if bucket.Lower < 0 && bucket.Upper > 0 {
+		if len(h.NegativeBuckets) == 0 && len(h.PositiveBuckets) > 0 {
+			// The result is in the zero bucket and the histogram has only
+			// positive buckets. So we consider 0 to be the lower bound.
+			bucket.Lower = 0
+		} else if len(h.PositiveBuckets) == 0 && len(h.NegativeBuckets) > 0 {
+			// The result is in the zero bucket and the histogram has only
+			// negative buckets. So we consider 0 to be the upper bound.
+			bucket.Upper = 0
+		}
+	}
+	// Due to numerical inaccuracies, we could end up with a higher count
+	// than h.Count. Thus, make sure count is never higher than h.Count.
+	if count > h.Count {
+		count = h.Count
+	}
+	// We could have hit the highest bucket without even reaching the rank
+	// (this should only happen if the histogram contains observations of
+	// the value NaN), in which case we simply return the upper limit of the
+	// highest explicit bucket.
+	if count < rank {
+		return bucket.Upper
+	}
+
+	rank -= count - bucket.Count
+	// TODO(codesome): Use a better estimation than linear.
+	return bucket.Lower + (bucket.Upper-bucket.Lower)*(rank/bucket.Count)
+}
+
+// histogramFraction calculates the fraction of observations between the
+// provided lower and upper bounds, based on the provided histogram.
+//
+// histogramFraction is in a certain way the inverse of histogramQuantile.  If
+// histogramQuantile(0.9, h) returns 123.4, then histogramFraction(-Inf, 123.4, h)
+// returns 0.9.
+//
+// The same notes (and TODOs) with regard to interpolation and assumptions about
+// the zero bucket boundaries apply as for histogramQuantile.
+//
+// Whether either boundary is inclusive or exclusive doesn’t actually matter as
+// long as interpolation has to be performed anyway. In the case of a boundary
+// coinciding with a bucket boundary, the inclusive or exclusive nature of the
+// boundary determines the exact behavior of the threshold. With the current
+// implementation, that means that lower is exclusive for positive values and
+// inclusive for negative values, while upper is inclusive for positive values
+// and exclusive for negative values.
+//
+// Special cases:
+//
+// If the histogram has 0 observations, NaN is returned.
+//
+// Use a lower bound of -Inf to get the fraction of all observations below the
+// upper bound.
+//
+// Use an upper bound of +Inf to get the fraction of all observations above the
+// lower bound.
+//
+// If lower or upper is NaN, NaN is returned.
+//
+// If lower >= upper and the histogram has at least 1 observation, zero is returned.
+func histogramFraction(lower, upper float64, h *histogram.FloatHistogram) float64 {
+	if h.Count == 0 || math.IsNaN(lower) || math.IsNaN(upper) {
+		return math.NaN()
+	}
+	if lower >= upper {
+		return 0
+	}
+
+	var (
+		rank, lowerRank, upperRank float64
+		lowerSet, upperSet         bool
+		it                         = h.AllBucketIterator()
+	)
+	for it.Next() {
+		b := it.At()
+		if b.Lower < 0 && b.Upper > 0 {
+			if len(h.NegativeBuckets) == 0 && len(h.PositiveBuckets) > 0 {
+				// This is the zero bucket and the histogram has only
+				// positive buckets. So we consider 0 to be the lower
+				// bound.
+				b.Lower = 0
+			} else if len(h.PositiveBuckets) == 0 && len(h.NegativeBuckets) > 0 {
+				// This is in the zero bucket and the histogram has only
+				// negative buckets. So we consider 0 to be the upper
+				// bound.
+				b.Upper = 0
+			}
+		}
+		if !lowerSet && b.Lower >= lower {
+			lowerRank = rank
+			lowerSet = true
+		}
+		if !upperSet && b.Lower >= upper {
+			upperRank = rank
+			upperSet = true
+		}
+		if lowerSet && upperSet {
+			break
+		}
+		if !lowerSet && b.Lower < lower && b.Upper > lower {
+			lowerRank = rank + b.Count*(lower-b.Lower)/(b.Upper-b.Lower)
+			lowerSet = true
+		}
+		if !upperSet && b.Lower < upper && b.Upper > upper {
+			upperRank = rank + b.Count*(upper-b.Lower)/(b.Upper-b.Lower)
+			upperSet = true
+		}
+		if lowerSet && upperSet {
+			break
+		}
+		rank += b.Count
+	}
+	if !lowerSet || lowerRank > h.Count {
+		lowerRank = h.Count
+	}
+	if !upperSet || upperRank > h.Count {
+		upperRank = h.Count
+	}
+
+	return (upperRank - lowerRank) / h.Count
 }
 
 // coalesceBuckets merges buckets with the same upper bound.

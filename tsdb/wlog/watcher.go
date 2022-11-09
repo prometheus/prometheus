@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package wal
+package wlog
 
 import (
 	"fmt"
@@ -19,7 +19,6 @@ import (
 	"math"
 	"os"
 	"path"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -28,6 +27,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
+	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/tsdb/record"
@@ -49,6 +49,7 @@ type WriteTo interface {
 	// Once returned, the WAL Watcher will not attempt to pass that data again.
 	Append([]record.RefSample) bool
 	AppendExemplars([]record.RefExemplar) bool
+	AppendHistograms([]record.RefHistogramSample) bool
 	StoreSeries([]record.RefSeries, int)
 
 	// Next two methods are intended for garbage-collection: first we call
@@ -74,6 +75,7 @@ type Watcher struct {
 	walDir         string
 	lastCheckpoint string
 	sendExemplars  bool
+	sendHistograms bool
 	metrics        *WatcherMetrics
 	readerMetrics  *LiveReaderMetrics
 
@@ -144,18 +146,19 @@ func NewWatcherMetrics(reg prometheus.Registerer) *WatcherMetrics {
 }
 
 // NewWatcher creates a new WAL watcher for a given WriteTo.
-func NewWatcher(metrics *WatcherMetrics, readerMetrics *LiveReaderMetrics, logger log.Logger, name string, writer WriteTo, dir string, sendExemplars bool) *Watcher {
+func NewWatcher(metrics *WatcherMetrics, readerMetrics *LiveReaderMetrics, logger log.Logger, name string, writer WriteTo, dir string, sendExemplars, sendHistograms bool) *Watcher {
 	if logger == nil {
 		logger = log.NewNopLogger()
 	}
 	return &Watcher{
-		logger:        logger,
-		writer:        writer,
-		metrics:       metrics,
-		readerMetrics: readerMetrics,
-		walDir:        path.Join(dir, "wal"),
-		name:          name,
-		sendExemplars: sendExemplars,
+		logger:         logger,
+		writer:         writer,
+		metrics:        metrics,
+		readerMetrics:  readerMetrics,
+		walDir:         path.Join(dir, "wal"),
+		name:           name,
+		sendExemplars:  sendExemplars,
+		sendHistograms: sendHistograms,
 
 		quit: make(chan struct{}),
 		done: make(chan struct{}),
@@ -301,7 +304,7 @@ func (w *Watcher) firstAndLast() (int, int, error) {
 	return refs[0], refs[len(refs)-1], nil
 }
 
-// Copied from tsdb/wal/wal.go so we do not have to open a WAL.
+// Copied from tsdb/wlog/wlog.go so we do not have to open a WAL.
 // Plan is to move WAL watcher to TSDB and dedupe these implementations.
 func (w *Watcher) segments(dir string) ([]int, error) {
 	files, err := os.ReadDir(dir)
@@ -317,7 +320,7 @@ func (w *Watcher) segments(dir string) ([]int, error) {
 		}
 		refs = append(refs, k)
 	}
-	sort.Ints(refs)
+	slices.Sort(refs)
 	for i := 0; i < len(refs)-1; i++ {
 		if refs[i]+1 != refs[i+1] {
 			return nil, errors.New("segments are not sequential")
@@ -473,11 +476,13 @@ func (w *Watcher) garbageCollectSeries(segmentNum int) error {
 // Also used with readCheckpoint - implements segmentReadFn.
 func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 	var (
-		dec       record.Decoder
-		series    []record.RefSeries
-		samples   []record.RefSample
-		send      []record.RefSample
-		exemplars []record.RefExemplar
+		dec              record.Decoder
+		series           []record.RefSeries
+		samples          []record.RefSample
+		samplesToSend    []record.RefSample
+		exemplars        []record.RefExemplar
+		histograms       []record.RefHistogramSample
+		histogramsToSend []record.RefHistogramSample
 	)
 	for r.Next() && !isClosed(w.quit) {
 		rec := r.Record()
@@ -510,12 +515,12 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 						duration := time.Since(w.startTime)
 						level.Info(w.logger).Log("msg", "Done replaying WAL", "duration", duration)
 					}
-					send = append(send, s)
+					samplesToSend = append(samplesToSend, s)
 				}
 			}
-			if len(send) > 0 {
-				w.writer.Append(send)
-				send = send[:0]
+			if len(samplesToSend) > 0 {
+				w.writer.Append(samplesToSend)
+				samplesToSend = samplesToSend[:0]
 			}
 
 		case record.Exemplars:
@@ -534,6 +539,34 @@ func (w *Watcher) readSegment(r *LiveReader, segmentNum int, tail bool) error {
 				return err
 			}
 			w.writer.AppendExemplars(exemplars)
+
+		case record.HistogramSamples:
+			// Skip if experimental "histograms over remote write" is not enabled.
+			if !w.sendHistograms {
+				break
+			}
+			if !tail {
+				break
+			}
+			histograms, err := dec.HistogramSamples(rec, histograms[:0])
+			if err != nil {
+				w.recordDecodeFailsMetric.Inc()
+				return err
+			}
+			for _, h := range histograms {
+				if h.T > w.startTimestamp {
+					if !w.sendSamples {
+						w.sendSamples = true
+						duration := time.Since(w.startTime)
+						level.Info(w.logger).Log("msg", "Done replaying WAL", "duration", duration)
+					}
+					histogramsToSend = append(histogramsToSend, h)
+				}
+			}
+			if len(histogramsToSend) > 0 {
+				w.writer.AppendHistograms(histogramsToSend)
+				histogramsToSend = histogramsToSend[:0]
+			}
 
 		case record.Tombstones:
 

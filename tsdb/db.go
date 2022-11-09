@@ -45,7 +45,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/fileutil"
 	_ "github.com/prometheus/prometheus/tsdb/goversion" // Load the package into main to make sure minium Go version is met.
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
-	"github.com/prometheus/prometheus/tsdb/wal"
+	"github.com/prometheus/prometheus/tsdb/wlog"
 )
 
 const (
@@ -70,7 +70,7 @@ var ErrNotReady = errors.New("TSDB not ready")
 // millisecond precision timestamps.
 func DefaultOptions() *Options {
 	return &Options{
-		WALSegmentSize:             wal.DefaultSegmentSize,
+		WALSegmentSize:             wlog.DefaultSegmentSize,
 		MaxBlockChunkSegmentSize:   chunks.DefaultChunkSegmentSize,
 		RetentionDuration:          int64(15 * 24 * time.Hour / time.Millisecond),
 		MinBlockDuration:           DefaultBlockDuration,
@@ -81,6 +81,7 @@ func DefaultOptions() *Options {
 		StripeSize:                 DefaultStripeSize,
 		HeadChunksWriteBufferSize:  chunks.DefaultWriteBufferSize,
 		IsolationDisabled:          defaultIsolationDisabled,
+		HeadChunksWriteQueueSize:   chunks.DefaultWriteQueueSize,
 		OutOfOrderCapMax:           DefaultOutOfOrderCapMax,
 	}
 }
@@ -165,6 +166,9 @@ type Options struct {
 
 	// Disables isolation between reads and in-flight appends.
 	IsolationDisabled bool
+
+	// EnableNativeHistograms enables the ingestion of native histograms.
+	EnableNativeHistograms bool
 
 	// OutOfOrderTimeWindow specifies how much out of order is allowed, if any.
 	// This can change during run-time, so this value from here should only be used
@@ -389,14 +393,14 @@ func (db *DBReadOnly) FlushWAL(dir string) (returnErr error) {
 	if len(blockReaders) > 0 {
 		maxBlockTime = blockReaders[len(blockReaders)-1].Meta().MaxTime
 	}
-	w, err := wal.Open(db.logger, filepath.Join(db.dir, "wal"))
+	w, err := wlog.Open(db.logger, filepath.Join(db.dir, "wal"))
 	if err != nil {
 		return err
 	}
-	var wbl *wal.WAL
-	wblDir := filepath.Join(db.dir, wal.WblDirName)
+	var wbl *wlog.WL
+	wblDir := filepath.Join(db.dir, wlog.WblDirName)
 	if _, err := os.Stat(wblDir); !os.IsNotExist(err) {
-		wbl, err = wal.Open(db.logger, wblDir)
+		wbl, err = wlog.Open(db.logger, wblDir)
 		if err != nil {
 			return err
 		}
@@ -473,14 +477,14 @@ func (db *DBReadOnly) loadDataAsQueryable(maxt int64) (storage.SampleAndChunkQue
 		if err := head.Close(); err != nil {
 			return nil, err
 		}
-		w, err := wal.Open(db.logger, filepath.Join(db.dir, "wal"))
+		w, err := wlog.Open(db.logger, filepath.Join(db.dir, "wal"))
 		if err != nil {
 			return nil, err
 		}
-		var wbl *wal.WAL
-		wblDir := filepath.Join(db.dir, wal.WblDirName)
+		var wbl *wlog.WL
+		wblDir := filepath.Join(db.dir, wlog.WblDirName)
 		if _, err := os.Stat(wblDir); !os.IsNotExist(err) {
-			wbl, err = wal.Open(db.logger, wblDir)
+			wbl, err = wlog.Open(db.logger, wblDir)
 			if err != nil {
 				return nil, err
 			}
@@ -677,7 +681,7 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	}
 
 	walDir := filepath.Join(dir, "wal")
-	wblDir := filepath.Join(dir, wal.WblDirName)
+	wblDir := filepath.Join(dir, wlog.WblDirName)
 
 	// Migrate old WAL if one exists.
 	if err := MigrateWAL(l, walDir); err != nil {
@@ -739,15 +743,15 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	}
 	db.compactCancel = cancel
 
-	var wlog, wblog *wal.WAL
-	segmentSize := wal.DefaultSegmentSize
+	var wal, wbl *wlog.WL
+	segmentSize := wlog.DefaultSegmentSize
 	// Wal is enabled.
 	if opts.WALSegmentSize >= 0 {
 		// Wal is set to a custom size.
 		if opts.WALSegmentSize > 0 {
 			segmentSize = opts.WALSegmentSize
 		}
-		wlog, err = wal.NewSize(l, r, walDir, segmentSize, opts.WALCompression)
+		wal, err = wlog.NewSize(l, r, walDir, segmentSize, opts.WALCompression)
 		if err != nil {
 			return nil, err
 		}
@@ -757,7 +761,7 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 			return nil, err
 		}
 		if opts.OutOfOrderTimeWindow > 0 || wblSize > 0 {
-			wblog, err = wal.NewSize(l, r, wblDir, segmentSize, opts.WALCompression)
+			wbl, err = wlog.NewSize(l, r, wblDir, segmentSize, opts.WALCompression)
 			if err != nil {
 				return nil, err
 			}
@@ -775,13 +779,14 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	headOpts.EnableExemplarStorage = opts.EnableExemplarStorage
 	headOpts.MaxExemplars.Store(opts.MaxExemplars)
 	headOpts.EnableMemorySnapshotOnShutdown = opts.EnableMemorySnapshotOnShutdown
+	headOpts.EnableNativeHistograms.Store(opts.EnableNativeHistograms)
 	headOpts.OutOfOrderTimeWindow.Store(opts.OutOfOrderTimeWindow)
 	headOpts.OutOfOrderCapMax.Store(opts.OutOfOrderCapMax)
 	if opts.IsolationDisabled {
 		// We only override this flag if isolation is disabled at DB level. We use the default otherwise.
 		headOpts.IsolationDisabled = opts.IsolationDisabled
 	}
-	db.head, err = NewHead(r, l, wlog, wblog, headOpts, stats.Head)
+	db.head, err = NewHead(r, l, wal, wbl, headOpts, stats.Head)
 	if err != nil {
 		return nil, err
 	}
@@ -813,12 +818,12 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 		isOOOErr := isErrLoadOOOWal(initErr)
 		if isOOOErr {
 			level.Warn(db.logger).Log("msg", "Encountered OOO WAL read error, attempting repair", "err", initErr)
-			if err := wblog.Repair(initErr); err != nil {
+			if err := wbl.Repair(initErr); err != nil {
 				return nil, errors.Wrap(err, "repair corrupted OOO WAL")
 			}
 		} else {
 			level.Warn(db.logger).Log("msg", "Encountered WAL read error, attempting repair", "err", initErr)
-			if err := wlog.Repair(initErr); err != nil {
+			if err := wal.Repair(initErr); err != nil {
 				return nil, errors.Wrap(err, "repair corrupted WAL")
 			}
 		}
@@ -947,19 +952,19 @@ func (db *DB) ApplyConfig(conf *config.Config) error {
 	}
 
 	// Create WBL if it was not present and if OOO is enabled with WAL enabled.
-	var wblog *wal.WAL
+	var wblog *wlog.WL
 	var err error
 	if db.head.wbl != nil {
 		// The existing WBL from the disk might have been replayed while OOO was disabled.
 		wblog = db.head.wbl
 	} else if !db.oooWasEnabled.Load() && oooTimeWindow > 0 && db.opts.WALSegmentSize >= 0 {
-		segmentSize := wal.DefaultSegmentSize
+		segmentSize := wlog.DefaultSegmentSize
 		// Wal is set to a custom size.
 		if db.opts.WALSegmentSize > 0 {
 			segmentSize = db.opts.WALSegmentSize
 		}
-		oooWalDir := filepath.Join(db.dir, wal.WblDirName)
-		wblog, err = wal.NewSize(db.logger, db.registerer, oooWalDir, segmentSize, db.opts.WALCompression)
+		oooWalDir := filepath.Join(db.dir, wlog.WblDirName)
+		wblog, err = wlog.NewSize(db.logger, db.registerer, oooWalDir, segmentSize, db.opts.WALCompression)
 		if err != nil {
 			return err
 		}
@@ -972,6 +977,16 @@ func (db *DB) ApplyConfig(conf *config.Config) error {
 		db.oooWasEnabled.Store(oooTimeWindow > 0)
 	}
 	return nil
+}
+
+// EnableNativeHistograms enables the native histogram feature.
+func (db *DB) EnableNativeHistograms() {
+	db.head.EnableNativeHistograms()
+}
+
+// DisableNativeHistograms disables the native histogram feature.
+func (db *DB) DisableNativeHistograms() {
+	db.head.DisableNativeHistograms()
 }
 
 // dbAppender wraps the DB's head appender and triggers compactions on commit
@@ -1939,7 +1954,9 @@ func (db *DB) CleanTombstones() (err error) {
 	defer db.cmtx.Unlock()
 
 	start := time.Now()
-	defer db.metrics.tombCleanTimer.Observe(time.Since(start).Seconds())
+	defer func() {
+		db.metrics.tombCleanTimer.Observe(time.Since(start).Seconds())
+	}()
 
 	cleanUpCompleted := false
 	// Repeat cleanup until there is no tombstones left.

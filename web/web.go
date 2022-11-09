@@ -611,7 +611,7 @@ func (h *Handler) Run(ctx context.Context, listener net.Listener, webConfig stri
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- toolkit_web.Serve(listener, httpSrv, webConfig, h.logger)
+		errCh <- toolkit_web.Serve(listener, httpSrv, &toolkit_web.FlagConfig{WebConfigFile: &webConfig}, h.logger)
 	}()
 
 	select {

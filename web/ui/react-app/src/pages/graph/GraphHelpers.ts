@@ -189,17 +189,22 @@ export const normalizeData = ({ queryParams, data, exemplars, stacked }: GraphPr
   const deviation = stdDeviation(sum, values);
 
   return {
-    series: data.result.map(({ values, metric }, index) => {
+    series: data.result.map(({ values, histograms, metric }, index) => {
       // Insert nulls for all missing steps.
       const data = [];
-      let pos = 0;
+      let valuePos = 0;
+      let histogramPos = 0;
 
       for (let t = startTime; t <= endTime; t += resolution) {
         // Allow for floating point inaccuracy.
-        const currentValue = values[pos];
-        if (values.length > pos && currentValue[0] < t + resolution / 100) {
+        const currentValue = values && values[valuePos];
+        const currentHistogram = histograms && histograms[histogramPos];
+        if (currentValue && values.length > valuePos && currentValue[0] < t + resolution / 100) {
           data.push([currentValue[0] * 1000, parseValue(currentValue[1])]);
-          pos++;
+          valuePos++;
+        } else if (currentHistogram && histograms.length > histogramPos && currentHistogram[0] < t + resolution / 100) {
+          data.push([currentHistogram[0] * 1000, parseValue(currentHistogram[1].sum)]);
+          histogramPos++;
         } else {
           data.push([t * 1000, null]);
         }

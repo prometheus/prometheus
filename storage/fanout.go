@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/common/model"
 
 	"github.com/prometheus/prometheus/model/exemplar"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/metadata"
 	tsdb_errors "github.com/prometheus/prometheus/tsdb/errors"
@@ -167,6 +168,20 @@ func (f *fanoutAppender) AppendExemplar(ref SeriesRef, l labels.Labels, e exempl
 
 	for _, appender := range f.secondaries {
 		if _, err := appender.AppendExemplar(ref, l, e); err != nil {
+			return 0, err
+		}
+	}
+	return ref, nil
+}
+
+func (f *fanoutAppender) AppendHistogram(ref SeriesRef, l labels.Labels, t int64, h *histogram.Histogram) (SeriesRef, error) {
+	ref, err := f.primary.AppendHistogram(ref, l, t, h)
+	if err != nil {
+		return ref, err
+	}
+
+	for _, appender := range f.secondaries {
+		if _, err := appender.AppendHistogram(ref, l, t, h); err != nil {
 			return 0, err
 		}
 	}

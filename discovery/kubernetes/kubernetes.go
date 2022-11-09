@@ -336,6 +336,7 @@ func New(l log.Logger, conf *SDConfig) (*Discovery, error) {
 	}
 
 	kcfg.UserAgent = userAgent
+	kcfg.ContentType = "application/vnd.kubernetes.protobuf"
 
 	c, err := kubernetes.NewForConfig(kcfg)
 	if err != nil {

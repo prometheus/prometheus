@@ -117,6 +117,20 @@ func (h *writeHandler) write(ctx context.Context, req *prompb.WriteRequest) (err
 				level.Debug(h.logger).Log("msg", "Error while adding exemplar in AddExemplar", "exemplar", fmt.Sprintf("%+v", e), "err", exemplarErr)
 			}
 		}
+
+		for _, hp := range ts.Histograms {
+			hs := HistogramProtoToHistogram(hp)
+			_, err = app.AppendHistogram(0, labels, hp.Timestamp, hs)
+			if err != nil {
+				unwrappedErr := errors.Unwrap(err)
+				// Althogh AppendHistogram does not currently return ErrDuplicateSampleForTimestamp there is
+				// a note indicating its inclusion in the future.
+				if errors.Is(unwrappedErr, storage.ErrOutOfOrderSample) || errors.Is(unwrappedErr, storage.ErrOutOfBounds) || errors.Is(unwrappedErr, storage.ErrDuplicateSampleForTimestamp) {
+					level.Error(h.logger).Log("msg", "Out of order histogram from remote write", "err", err.Error(), "series", labels.String(), "timestamp", hp.Timestamp)
+				}
+				return err
+			}
+		}
 	}
 
 	if outOfOrderExemplarErrs > 0 {

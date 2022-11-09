@@ -7,9 +7,9 @@ require (
 	github.com/gogo/protobuf v1.3.2
 	github.com/golang/snappy v0.0.4
 	github.com/influxdata/influxdb v1.10.0
-	github.com/prometheus/client_golang v1.13.0
+	github.com/prometheus/client_golang v1.13.1
 	github.com/prometheus/common v0.37.0
-	github.com/stretchr/testify v1.8.0
+	github.com/stretchr/testify v1.8.1
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 )
 
@@ -29,8 +29,7 @@ require (
 	github.com/grafana/regexp v0.0.0-20220304095617-2e8d9baf4ac2 // indirect
 	github.com/jmespath/go-jmespath v0.4.0 // indirect
 	github.com/jpillora/backoff v1.0.0 // indirect
-	github.com/kr/pretty v0.2.1 // indirect
-	github.com/kr/text v0.2.0 // indirect
+	github.com/kr/pretty v0.3.0 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.2-0.20181231171920-c182affec369 // indirect
 	github.com/mwitkow/go-conntrack v0.0.0-20190716064945-2f068394615f // indirect
 	github.com/pkg/errors v0.9.1 // indirect
@@ -55,7 +54,7 @@ require (
 )
 
 require (
-	github.com/prometheus/prometheus v0.38.0
+	github.com/prometheus/prometheus v0.37.1-0.20221011120840-430bdc9dd099
 	golang.org/x/oauth2 v0.0.0-20220808172628-8227340efae7 // indirect
 )
 
