@@ -130,14 +130,15 @@ type HeadOptions struct {
 	// https://pkg.go.dev/sync/atomic#pkg-note-BUG
 	MaxExemplars atomic.Int64
 
+	OutOfOrderTimeWindow atomic.Int64
+	OutOfOrderCapMax     atomic.Int64
+
 	ChunkRange int64
 	// ChunkDirRoot is the parent directory of the chunks directory.
 	ChunkDirRoot         string
 	ChunkPool            chunkenc.Pool
 	ChunkWriteBufferSize int
 	ChunkWriteQueueSize  int
-	OutOfOrderTimeWindow atomic.Int64
-	OutOfOrderCapMax     atomic.Int64
 
 	// StripeSize sets the number of entries in the hash map, it must be a power of 2.
 	// A larger StripeSize will allocate more memory up-front, but will increase performance when handling a large number of series.
