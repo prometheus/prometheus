@@ -45,6 +45,10 @@ const (
 	Keep Action = "keep"
 	// Drop drops targets for which the input does match the regex.
 	Drop Action = "drop"
+	// KeepEqual drops targets for which the input does not match the target.
+	KeepEqual Action = "keepequal"
+	// Drop drops targets for which the input does match the target.
+	DropEqual Action = "dropequal"
 	// HashMod sets a label to the modulus of a hash of labels.
 	HashMod Action = "hashmod"
 	// LabelMap copies labels to other labelnames based on a regex.
@@ -66,7 +70,7 @@ func (a *Action) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		return err
 	}
 	switch act := Action(strings.ToLower(s)); act {
-	case Replace, Keep, Drop, HashMod, LabelMap, LabelDrop, LabelKeep, Lowercase, Uppercase:
+	case Replace, Keep, Drop, HashMod, LabelMap, LabelDrop, LabelKeep, Lowercase, Uppercase, KeepEqual, DropEqual:
 		*a = act
 		return nil
 	}
@@ -109,13 +113,13 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if c.Modulus == 0 && c.Action == HashMod {
 		return fmt.Errorf("relabel configuration for hashmod requires non-zero modulus")
 	}
-	if (c.Action == Replace || c.Action == HashMod || c.Action == Lowercase || c.Action == Uppercase) && c.TargetLabel == "" {
+	if (c.Action == Replace || c.Action == HashMod || c.Action == Lowercase || c.Action == Uppercase || c.Action == KeepEqual || c.Action == DropEqual) && c.TargetLabel == "" {
 		return fmt.Errorf("relabel configuration for %s action requires 'target_label' value", c.Action)
 	}
-	if (c.Action == Replace || c.Action == Lowercase || c.Action == Uppercase) && !relabelTarget.MatchString(c.TargetLabel) {
+	if (c.Action == Replace || c.Action == Lowercase || c.Action == Uppercase || c.Action == KeepEqual || c.Action == DropEqual) && !relabelTarget.MatchString(c.TargetLabel) {
 		return fmt.Errorf("%q is invalid 'target_label' for %s action", c.TargetLabel, c.Action)
 	}
-	if (c.Action == Lowercase || c.Action == Uppercase) && c.Replacement != DefaultRelabelConfig.Replacement {
+	if (c.Action == Lowercase || c.Action == Uppercase || c.Action == KeepEqual || c.Action == DropEqual) && c.Replacement != DefaultRelabelConfig.Replacement {
 		return fmt.Errorf("'replacement' can not be set for %s action", c.Action)
 	}
 	if c.Action == LabelMap && !relabelTarget.MatchString(c.Replacement) {
@@ -123,6 +127,15 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}
 	if c.Action == HashMod && !model.LabelName(c.TargetLabel).IsValid() {
 		return fmt.Errorf("%q is invalid 'target_label' for %s action", c.TargetLabel, c.Action)
+	}
+
+	if c.Action == DropEqual || c.Action == KeepEqual {
+		if c.Regex != DefaultRelabelConfig.Regex ||
+			c.Modulus != DefaultRelabelConfig.Modulus ||
+			c.Separator != DefaultRelabelConfig.Separator ||
+			c.Replacement != DefaultRelabelConfig.Replacement {
+			return fmt.Errorf("%s action requires only 'source_labels' and `target_label`, and no other fields", c.Action)
+		}
 	}
 
 	if c.Action == LabelDrop || c.Action == LabelKeep {
@@ -223,6 +236,14 @@ func relabel(lset labels.Labels, cfg *Config, lb *labels.Builder) labels.Labels 
 		}
 	case Keep:
 		if !cfg.Regex.MatchString(val) {
+			return nil
+		}
+	case DropEqual:
+		if lset.Get(cfg.TargetLabel) == val {
+			return nil
+		}
+	case KeepEqual:
+		if lset.Get(cfg.TargetLabel) != val {
 			return nil
 		}
 	case Replace:
