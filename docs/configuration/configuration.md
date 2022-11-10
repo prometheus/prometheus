@@ -1178,6 +1178,11 @@ region: <string>
 # TLS configuration.
 tls_config:
   [ <tls_config> ]
+
+# Microversion to use when connecting to OpenStack Compute API.
+# https://specs.openstack.org/openstack/api-wg/guidelines/microversion_specification.html
+compute_microversion:
+[ compute_microversion: <string> ]
 ```
 
 ### `<ovhcloud_sd_config>`

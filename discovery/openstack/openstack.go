@@ -63,6 +63,7 @@ type SDConfig struct {
 	AllTenants                  bool             `yaml:"all_tenants,omitempty"`
 	TLSConfig                   config.TLSConfig `yaml:"tls_config,omitempty"`
 	Availability                string           `yaml:"availability,omitempty"`
+	ComputeMicroversion         string           `yaml:"compute_microversion"`
 }
 
 // Name returns the name of the Config.
@@ -192,9 +193,9 @@ func newRefresher(conf *SDConfig, l log.Logger) (refresher, error) {
 	availability := gophercloud.Availability(conf.Availability)
 	switch conf.Role {
 	case OpenStackRoleHypervisor:
-		return newHypervisorDiscovery(client, &opts, conf.Port, conf.Region, availability, l), nil
+		return newHypervisorDiscovery(client, &opts, conf.Port, conf.Region, availability, l, conf.ComputeMicroversion), nil
 	case OpenStackRoleInstance:
-		return newInstanceDiscovery(client, &opts, conf.Port, conf.Region, conf.AllTenants, availability, l), nil
+		return newInstanceDiscovery(client, &opts, conf.Port, conf.Region, conf.AllTenants, availability, l, conf.ComputeMicroversion), nil
 	}
 	return nil, errors.New("unknown OpenStack discovery role")
 }

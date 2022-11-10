@@ -54,18 +54,19 @@ type InstanceDiscovery struct {
 	port         int
 	allTenants   bool
 	availability gophercloud.Availability
+	microversion string
 }
 
 // NewInstanceDiscovery returns a new instance discovery.
 func newInstanceDiscovery(provider *gophercloud.ProviderClient, opts *gophercloud.AuthOptions,
-	port int, region string, allTenants bool, availability gophercloud.Availability, l log.Logger,
+	port int, region string, allTenants bool, availability gophercloud.Availability, l log.Logger, microversion string,
 ) *InstanceDiscovery {
 	if l == nil {
 		l = log.NewNopLogger()
 	}
 	return &InstanceDiscovery{
 		provider: provider, authOpts: opts,
-		region: region, port: port, allTenants: allTenants, availability: availability, logger: l,
+		region: region, port: port, allTenants: allTenants, availability: availability, logger: l, microversion: microversion,
 	}
 }
 
@@ -86,6 +87,10 @@ func (i *InstanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 	})
 	if err != nil {
 		return nil, fmt.Errorf("could not create OpenStack compute session: %w", err)
+	}
+
+	if i.microversion != "" {
+		client.Microversion = i.microversion
 	}
 
 	// OpenStack API reference

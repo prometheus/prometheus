@@ -45,15 +45,16 @@ type HypervisorDiscovery struct {
 	logger       log.Logger
 	port         int
 	availability gophercloud.Availability
+	microversion string
 }
 
 // newHypervisorDiscovery returns a new hypervisor discovery.
 func newHypervisorDiscovery(provider *gophercloud.ProviderClient, opts *gophercloud.AuthOptions,
-	port int, region string, availability gophercloud.Availability, l log.Logger,
+	port int, region string, availability gophercloud.Availability, l log.Logger, microversion string,
 ) *HypervisorDiscovery {
 	return &HypervisorDiscovery{
 		provider: provider, authOpts: opts,
-		region: region, port: port, availability: availability, logger: l,
+		region: region, port: port, availability: availability, logger: l, microversion: microversion,
 	}
 }
 
@@ -69,6 +70,10 @@ func (h *HypervisorDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group
 	})
 	if err != nil {
 		return nil, fmt.Errorf("could not create OpenStack compute session: %w", err)
+	}
+
+	if h.microversion != "" {
+		client.Microversion = h.microversion
 	}
 
 	tg := &targetgroup.Group{
