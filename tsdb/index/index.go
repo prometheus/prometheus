@@ -1192,9 +1192,9 @@ func newReader(b ByteSlice, c io.Closer) (*Reader, error) {
 			}
 			if valueCount%symbolFactor == 0 {
 				r.postings[string(name)] = append(r.postings[string(name)], postingOffset{value: string(value), off: off})
-				lastName, lastValue = name, value
-			} else {
 				lastName, lastValue = nil, nil
+			} else {
+				lastName, lastValue = name, value
 				lastOff = off
 			}
 			valueCount++
