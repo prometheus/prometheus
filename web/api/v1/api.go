@@ -29,6 +29,10 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/apache/arrow/go/arrow"
+	"github.com/apache/arrow/go/arrow/array"
+	"github.com/apache/arrow/go/arrow/ipc"
+	"github.com/apache/arrow/go/arrow/memory"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/regexp"
@@ -308,7 +312,7 @@ func (api *API) Register(r *route.Router) {
 			}
 
 			if result.data != nil {
-				api.respond(w, result.data, result.warnings)
+				api.respond(w, r, result.data, result.warnings)
 				return
 			}
 			w.WriteHeader(http.StatusNoContent)
@@ -1446,7 +1450,7 @@ func (api *API) serveWALReplayStatus(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		api.respondError(w, &apiError{errorInternal, err}, nil)
 	}
-	api.respond(w, walReplayStatus{
+	api.respond(w, r, walReplayStatus{
 		Min:     status.Min,
 		Max:     status.Max,
 		Current: status.Current,
@@ -1548,7 +1552,70 @@ func (api *API) cleanTombstones(r *http.Request) apiFuncResult {
 	return apiFuncResult{nil, nil, nil, nil}
 }
 
-func (api *API) respond(w http.ResponseWriter, data interface{}, warnings storage.Warnings) {
+func (api *API) tryArrowResponse(w http.ResponseWriter, r *http.Request, data interface{}, warnings storage.Warnings) error {
+	result, ok := data.(*queryData)
+	if !ok {
+		return fmt.Errorf("invalid result data type: %T", data)
+	}
+
+	if result.ResultType != parser.ValueTypeMatrix {
+		return errors.Errorf("arrow not implemented for %s", result.ResultType)
+	}
+	matrix := result.Result.(promql.Matrix)
+
+	// Currently histograms are not handled with Arrow, just adding a binary
+	// type here halves the performance of Arrow. In the future we could
+	// consider building a custom type in Arrow for histograms.
+	for _, series := range matrix {
+		if len(series.Points) > 0 && series.Points[0].H != nil {
+			return fmt.Errorf("arrow not implemented for native histograms")
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/vnd.apache.arrow.stream")
+	w.WriteHeader(http.StatusOK)
+
+	pool := memory.NewGoAllocator()
+	fields := []arrow.Field{
+		{Name: "t", Type: &arrow.TimestampType{Unit: arrow.Millisecond}},
+		{Name: "v", Type: arrow.PrimitiveTypes.Float64},
+	}
+
+	for _, series := range matrix {
+		metadata := arrow.MetadataFrom(series.Metric.Map())
+		seriesSchema := arrow.NewSchema(fields, &metadata)
+		b := array.NewRecordBuilder(pool, seriesSchema)
+		b.Reserve(len(series.Points))
+
+		writer := ipc.NewWriter(w, ipc.WithAllocator(pool), ipc.WithSchema(seriesSchema))
+
+		for _, point := range series.Points {
+			// Since we reserve enough data for all points above we can use UnsafeAppend.
+			b.Field(0).(*array.TimestampBuilder).UnsafeAppend(arrow.Timestamp(point.T))
+			b.Field(1).(*array.Float64Builder).UnsafeAppend(point.V)
+		}
+		rec := b.NewRecord()
+		if err := writer.Write(rec); err != nil {
+			level.Error(api.logger).Log("msg", "error writing arrow response", "err", err)
+			return nil
+		}
+
+		writer.Close()
+		rec.Release()
+		b.Release()
+	}
+
+	return nil
+}
+
+func (api *API) respond(w http.ResponseWriter, r *http.Request, data interface{}, warnings storage.Warnings) {
+	if r.Header.Get("Accept") == "application/vnd.apache.arrow.stream" {
+		err := api.tryArrowResponse(w, r, data, warnings)
+		if err == nil {
+			return
+		}
+	}
+
 	statusMessage := statusSuccess
 	var warningStrings []string
 	for _, warning := range warnings {

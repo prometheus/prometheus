@@ -34,6 +34,10 @@ import (
 	"github.com/prometheus/prometheus/prompb"
 	"github.com/prometheus/prometheus/util/stats"
 
+	"github.com/apache/arrow/go/arrow"
+	"github.com/apache/arrow/go/arrow/array"
+	"github.com/apache/arrow/go/arrow/ipc"
+	"github.com/apache/arrow/go/arrow/memory"
 	"github.com/go-kit/log"
 	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -2767,7 +2771,7 @@ func TestAdminEndpoints(t *testing.T) {
 func TestRespondSuccess(t *testing.T) {
 	s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		api := API{}
-		api.respond(w, "test", nil)
+		api.respond(w, r, "test", nil)
 	}))
 	defer s.Close()
 
@@ -3183,27 +3187,92 @@ func TestRespond(t *testing.T) {
 		},
 	}
 
-	for _, c := range cases {
-		s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			api := API{}
-			api.respond(w, c.response, nil)
-		}))
-		defer s.Close()
+	for _, useArrow := range []bool{false, true} {
+		t.Run(fmt.Sprintf("useArrow=%t", useArrow), func(t *testing.T) {
+			for _, c := range cases {
+				s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if useArrow {
+						r.Header.Add("Accept", "application/vnd.apache.arrow.stream")
+					}
+					api := API{}
+					api.respond(w, r, c.response, nil)
+				}))
+				defer s.Close()
 
-		resp, err := http.Get(s.URL)
-		if err != nil {
-			t.Fatalf("Error on test request: %s", err)
-		}
-		body, err := io.ReadAll(resp.Body)
-		defer resp.Body.Close()
-		if err != nil {
-			t.Fatalf("Error reading response body: %s", err)
-		}
+				resp, err := http.Get(s.URL)
+				if err != nil {
+					t.Fatalf("Error on test request: %s", err)
+				}
+				var body []byte
+				if resp.Header.Get("Content-Type") == "application/vnd.apache.arrow.stream" {
+					body, err = arrowToJSONResponse(resp.Body)
+				} else {
+					body, err = io.ReadAll(resp.Body)
+				}
+				defer resp.Body.Close()
+				if err != nil {
+					t.Fatalf("Error reading response body: %s", err)
+				}
 
-		if string(body) != c.expected {
-			t.Fatalf("Expected response \n%v\n but got \n%v\n", c.expected, string(body))
-		}
+				if string(body) != c.expected {
+					t.Fatalf("Expected response \n%v\n but got \n%v\n", c.expected, string(body))
+				}
+			}
+		})
 	}
+}
+
+// arrowToJSONResponse reads an arrow response and transforms it back into the
+// JSON response format for ease of assertions.
+func arrowToJSONResponse(reader io.Reader) ([]byte, error) {
+	data := promql.Matrix{}
+	mem := memory.NewGoAllocator()
+	for {
+		r, err := ipc.NewReader(reader, ipc.WithAllocator(mem))
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return nil, err
+		}
+
+		var series promql.Series
+		for r.Next() {
+			schema := r.Schema()
+			if series.Metric == nil {
+				series.Metric = labelsFromArrowMetadata(schema.Metadata())
+			}
+			rec := r.Record()
+			for i := 0; i < int(rec.NumRows()); i++ {
+				t := rec.Column(0).(*array.Timestamp).Value(i)
+				v := rec.Column(1).(*array.Float64).Value(i)
+				series.Points = append(series.Points, promql.Point{
+					T: int64(t),
+					V: v,
+				})
+			}
+		}
+		data = append(data, series)
+	}
+	resp, err := json.Marshal(response{
+		Status: statusSuccess,
+		Data: queryData{
+			ResultType: parser.ValueTypeMatrix,
+			Result:     data,
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func labelsFromArrowMetadata(metadata arrow.Metadata) labels.Labels {
+	strs := []string{}
+	for i, key := range metadata.Keys() {
+		strs = append(strs, key, metadata.Values()[i])
+	}
+	return labels.FromStrings(strs...)
 }
 
 func TestTSDBStatus(t *testing.T) {
@@ -3294,10 +3363,35 @@ func BenchmarkRespond(b *testing.B) {
 			},
 		},
 	}
+	request, _ := http.NewRequest("GET", "http://localhost:9090", nil)
 	b.ResetTimer()
 	api := API{}
 	for n := 0; n < b.N; n++ {
-		api.respond(&testResponseWriter, response, nil)
+		api.respond(&testResponseWriter, request, response, nil)
+	}
+}
+
+func BenchmarkRespondArrow(b *testing.B) {
+	b.ReportAllocs()
+	points := []promql.Point{}
+	for i := 0; i < 10000; i++ {
+		points = append(points, promql.Point{V: float64(i * 1000000), T: int64(i)})
+	}
+	response := &queryData{
+		ResultType: parser.ValueTypeMatrix,
+		Result: promql.Matrix{
+			promql.Series{
+				Points: points,
+				Metric: nil,
+			},
+		},
+	}
+	request, _ := http.NewRequest("GET", "http://localhost:9090", nil)
+	request.Header.Add("Accept", "application/vnd.apache.arrow.stream")
+	b.ResetTimer()
+	api := API{}
+	for n := 0; n < b.N; n++ {
+		api.respond(&testResponseWriter, request, response, nil)
 	}
 }
 

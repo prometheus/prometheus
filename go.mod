@@ -7,6 +7,7 @@ require (
 	github.com/Azure/go-autorest/autorest v0.11.28
 	github.com/Azure/go-autorest/autorest/adal v0.9.21
 	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137
+	github.com/apache/arrow/go/arrow v0.0.0-20211112161151-bc219186db40
 	github.com/aws/aws-sdk-go v1.44.159
 	github.com/cespare/xxhash/v2 v2.2.0
 	github.com/dennwc/varint v1.0.0
@@ -84,6 +85,10 @@ require (
 require (
 	cloud.google.com/go/compute/metadata v0.2.2 // indirect
 	github.com/coreos/go-systemd/v22 v22.4.0 // indirect
+	github.com/google/flatbuffers v2.0.0+incompatible // indirect
+	github.com/klauspost/compress v1.13.6 // indirect
+	github.com/pierrec/lz4/v4 v4.1.8 // indirect
+	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
 )
 
 require (

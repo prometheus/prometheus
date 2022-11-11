@@ -530,6 +530,25 @@ Note that with the currently implemented bucket schemas, positive buckets are
 “open left”, negative buckets are “open right”, and the zero bucket (with a
 negative left boundary and a positive right boundary) is “closed both”.
 
+### Apache Arrow Content Type
+
+Apache Arrow responses are **experimental** and might change in the future.
+
+Result types of `matrix` or `vector` can also be encoded using [Apache
+Arrow](https://arrow.apache.org/) which provides significantly improved
+encoding and decoding performance when querying large amounts of data. Arrow
+responses can be requested by providing the
+`Accept: application/vnd.apache.arrow.stream` header, and will respond with
+`Content-Type: application/vnd.apache.arrow.stream` if the content negotiation
+was successful and Arrow is supported for the data type.
+
+The response type for Arrow is as follows:
+1. A single stream per time series. The series labels are recorded as metadata in the schema.
+2. Each stream will contain one or more record batches for that series.
+3. Each batch of records is a table with two columns:
+   * `t`: Timestamp datatype in millisecond precision.
+   * `v`: Float64 datatype
+
 ## Targets
 
 The following endpoint returns an overview of the current state of the
