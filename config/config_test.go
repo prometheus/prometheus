@@ -217,25 +217,44 @@ var expectedConf = &Config{
 					Regex:        relabel.MustNewRegexp("(.*)some-[regex]"),
 					Replacement:  "foo-${1}",
 					Action:       relabel.Replace,
-				}, {
+				},
+				{
 					SourceLabels: model.LabelNames{"abc"},
 					TargetLabel:  "cde",
 					Separator:    ";",
 					Regex:        relabel.DefaultRelabelConfig.Regex,
 					Replacement:  relabel.DefaultRelabelConfig.Replacement,
 					Action:       relabel.Replace,
-				}, {
+				},
+				{
 					TargetLabel: "abc",
 					Separator:   ";",
 					Regex:       relabel.DefaultRelabelConfig.Regex,
 					Replacement: "static",
 					Action:      relabel.Replace,
-				}, {
+				},
+				{
 					TargetLabel: "abc",
 					Separator:   ";",
 					Regex:       relabel.MustNewRegexp(""),
 					Replacement: "static",
 					Action:      relabel.Replace,
+				},
+				{
+					SourceLabels: model.LabelNames{"foo"},
+					TargetLabel:  "abc",
+					Action:       relabel.KeepEqual,
+					Regex:        relabel.DefaultRelabelConfig.Regex,
+					Replacement:  relabel.DefaultRelabelConfig.Replacement,
+					Separator:    relabel.DefaultRelabelConfig.Separator,
+				},
+				{
+					SourceLabels: model.LabelNames{"foo"},
+					TargetLabel:  "abc",
+					Action:       relabel.DropEqual,
+					Regex:        relabel.DefaultRelabelConfig.Regex,
+					Replacement:  relabel.DefaultRelabelConfig.Replacement,
+					Separator:    relabel.DefaultRelabelConfig.Separator,
 				},
 			},
 		},
@@ -1315,6 +1334,22 @@ var expectedErrors = []struct {
 	{
 		filename: "labeldrop5.bad.yml",
 		errMsg:   "labeldrop action requires only 'regex', and no other fields",
+	},
+	{
+		filename: "dropequal.bad.yml",
+		errMsg:   "relabel configuration for dropequal action requires 'target_label' value",
+	},
+	{
+		filename: "dropequal1.bad.yml",
+		errMsg:   "dropequal action requires only 'source_labels' and `target_label`, and no other fields",
+	},
+	{
+		filename: "keepequal.bad.yml",
+		errMsg:   "relabel configuration for keepequal action requires 'target_label' value",
+	},
+	{
+		filename: "keepequal1.bad.yml",
+		errMsg:   "keepequal action requires only 'source_labels' and `target_label`, and no other fields",
 	},
 	{
 		filename: "labelmap.bad.yml",

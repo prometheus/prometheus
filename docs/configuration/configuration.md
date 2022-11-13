@@ -2857,6 +2857,8 @@ anchored on both ends. To un-anchor the regex, use `.*<regex>.*`.
 * `uppercase`: Maps the concatenated `source_labels` to their upper case.
 * `keep`: Drop targets for which `regex` does not match the concatenated `source_labels`.
 * `drop`: Drop targets for which `regex` matches the concatenated `source_labels`.
+* `keepequal`: Drop targets for which the concatenated `source_labels` do not match `target_label`.
+* `dropequal`: Drop targets for which the concatenated `source_labels` do match `target_label`.
 * `hashmod`: Set `target_label` to the `modulus` of a hash of the concatenated `source_labels`.
 * `labelmap`: Match `regex` against all source label names, not just those specified in `source_labels`. Then
    copy the values of the matching labels  to label names given by `replacement` with match
