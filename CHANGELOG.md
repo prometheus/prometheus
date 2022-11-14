@@ -22,6 +22,10 @@ Your existing histograms won't switch to native histograms until `NativeHistogra
 * [ENHANCEMENT] Consul SD: Add enterprise admin partitions. Adds `__meta_consul_partition` label. Adds `partition` config in `consul_sd_config`. #11482
 * [BUGFIX] API: Fix API error codes for `/api/v1/labels` and `/api/v1/series`. #11356 
 
+## 2.39.2 / 2022-11-09
+
+* [BUGFIX] TSDB: Fix alignment for atomic int64 for 32 bit architecture. #11547
+
 ## 2.39.1 / 2022-10-07
 
 * [BUGFIX] Rules: Fix notifier relabel changing the labels on active alerts. #11427
