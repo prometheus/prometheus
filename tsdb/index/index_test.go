@@ -210,28 +210,31 @@ func TestIndexRW_Postings(t *testing.T) {
 	require.NoError(t, p.Err())
 
 	// The label indices are no longer used, so test them by hand here.
-	labelIndices := map[string][]string{}
-	require.NoError(t, ReadOffsetTable(ir.b, ir.toc.LabelIndicesTable, func(key []string, off uint64, _ int) error {
-		if len(key) != 1 {
-			return errors.Errorf("unexpected key length for label indices table %d", len(key))
-		}
+	labelValuesOffsets := map[string]uint64{}
+	d := encoding.NewDecbufAt(ir.b, int(ir.toc.LabelIndicesTable), castagnoliTable)
+	cnt := d.Be32()
 
+	for d.Err() == nil && d.Len() > 0 && cnt > 0 {
+		require.Equal(t, 1, d.Uvarint(), "Unexpected number of keys for label indices table")
+		lbl := d.UvarintStr()
+		off := d.Uvarint64()
+		labelValuesOffsets[lbl] = off
+		cnt--
+	}
+	require.NoError(t, d.Err())
+
+	labelIndices := map[string][]string{}
+	for lbl, off := range labelValuesOffsets {
 		d := encoding.NewDecbufAt(ir.b, int(off), castagnoliTable)
-		vals := []string{}
-		nc := d.Be32int()
-		if nc != 1 {
-			return errors.Errorf("unexpected number of label indices table names %d", nc)
-		}
-		for i := d.Be32(); i > 0; i-- {
+		require.Equal(t, 1, d.Be32int(), "Unexpected number of label indices table names")
+		for i := d.Be32(); i > 0 && d.Err() == nil; i-- {
 			v, err := ir.lookupSymbol(d.Be32())
-			if err != nil {
-				return err
-			}
-			vals = append(vals, v)
+			require.NoError(t, err)
+			labelIndices[lbl] = append(labelIndices[lbl], v)
 		}
-		labelIndices[key[0]] = vals
-		return d.Err()
-	}))
+		require.NoError(t, d.Err())
+	}
+
 	require.Equal(t, map[string][]string{
 		"a": {"1"},
 		"b": {"1", "2", "3", "4"},
