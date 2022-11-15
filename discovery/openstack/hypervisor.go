@@ -72,9 +72,7 @@ func (h *HypervisorDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group
 		return nil, fmt.Errorf("could not create OpenStack compute session: %w", err)
 	}
 
-	if h.microversion != "" {
-		client.Microversion = h.microversion
-	}
+	client.Microversion = h.microversion
 
 	tg := &targetgroup.Group{
 		Source: fmt.Sprintf("OS_" + h.region),
