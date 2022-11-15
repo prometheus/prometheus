@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/gogo/protobuf/proto"
 	"github.com/golang/snappy"
@@ -193,6 +194,7 @@ func StreamChunkedReadResponses(
 	ss storage.ChunkSeriesSet,
 	sortedExternalLabels []prompb.Label,
 	maxBytesInFrame int,
+	marshalPool *sync.Pool,
 ) (storage.Warnings, error) {
 	var (
 		chks []prompb.Chunk
@@ -234,12 +236,14 @@ func StreamChunkedReadResponses(
 				continue
 			}
 
-			b, err := proto.Marshal(&prompb.ChunkedReadResponse{
+			resp := &prompb.ChunkedReadResponse{
 				ChunkedSeries: []*prompb.ChunkedSeries{
 					{Labels: lbls, Chunks: chks},
 				},
 				QueryIndex: queryIndex,
-			})
+			}
+
+			b, err := resp.PooledMarshal(marshalPool)
 			if err != nil {
 				return ss.Warnings(), fmt.Errorf("marshal ChunkedReadResponse: %w", err)
 			}
@@ -247,6 +251,9 @@ func StreamChunkedReadResponses(
 			if _, err := stream.Write(b); err != nil {
 				return ss.Warnings(), fmt.Errorf("write to stream: %w", err)
 			}
+
+			// We immediately flush the Write() so it is safe to return to the pool.
+			marshalPool.Put(&b)
 			chks = chks[:0]
 		}
 		if err := iter.Err(); err != nil {
