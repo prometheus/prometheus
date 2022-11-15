@@ -89,9 +89,7 @@ func (i *InstanceDiscovery) refresh(ctx context.Context) ([]*targetgroup.Group, 
 		return nil, fmt.Errorf("could not create OpenStack compute session: %w", err)
 	}
 
-	if i.microversion != "" {
-		client.Microversion = i.microversion
-	}
+	client.Microversion = i.microversion
 
 	// OpenStack API reference
 	// https://developer.openstack.org/api-ref/compute/#list-floating-ips
