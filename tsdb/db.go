@@ -204,6 +204,7 @@ type DB struct {
 	compactc chan struct{}
 	donec    chan struct{}
 	stopc    chan struct{}
+	closed   atomic.Bool
 
 	// cmtx ensures that compactions and deletions don't run simultaneously.
 	cmtx sync.Mutex
@@ -943,6 +944,10 @@ func (db *DB) Appender(ctx context.Context) storage.Appender {
 //
 // 4) Before: OOO disabled, Now: OOO disabled => no-op.
 func (db *DB) ApplyConfig(conf *config.Config) error {
+	if db.closed.Load() {
+		return ErrClosed
+	}
+
 	oooTimeWindow := int64(0)
 	if conf.StorageConfig.TSDBConfig != nil {
 		oooTimeWindow = conf.StorageConfig.TSDBConfig.OutOfOrderTimeWindow
@@ -998,6 +1003,13 @@ type dbAppender struct {
 
 var _ storage.GetRef = dbAppender{}
 
+func (a dbAppender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
+	if a.db.closed.Load() {
+		return 0, ErrClosed
+	}
+	return a.Appender.Append(ref, l, t, v)
+}
+
 func (a dbAppender) GetRef(lset labels.Labels, hash uint64) (storage.SeriesRef, labels.Labels) {
 	if g, ok := a.Appender.(storage.GetRef); ok {
 		return g.GetRef(lset, hash)
@@ -1013,6 +1025,7 @@ func (a dbAppender) Commit() error {
 	if a.db.head.compactable() {
 		select {
 		case a.db.compactc <- struct{}{}:
+		case <-a.db.stopc:
 		default:
 		}
 	}
@@ -1106,6 +1119,10 @@ func (db *DB) Compact() (returnErr error) {
 
 // CompactHead compacts the given RangeHead.
 func (db *DB) CompactHead(head *RangeHead) error {
+	if db.closed.Load() {
+		return ErrClosed
+	}
+
 	db.cmtx.Lock()
 	defer db.cmtx.Unlock()
 
@@ -1121,6 +1138,10 @@ func (db *DB) CompactHead(head *RangeHead) error {
 
 // CompactOOOHead compacts the OOO Head.
 func (db *DB) CompactOOOHead() error {
+	if db.closed.Load() {
+		return ErrClosed
+	}
+
 	db.cmtx.Lock()
 	defer db.cmtx.Unlock()
 
@@ -1650,9 +1671,12 @@ func (db *DB) String() string {
 
 // Blocks returns the databases persisted blocks.
 func (db *DB) Blocks() []*Block {
+	if db.closed.Load() {
+		return nil
+	}
+
 	db.mtx.RLock()
 	defer db.mtx.RUnlock()
-
 	return db.blocks
 }
 
@@ -1678,6 +1702,11 @@ func (db *DB) Head() *Head {
 
 // Close the partition.
 func (db *DB) Close() error {
+	if !db.closed.CompareAndSwap(false, true) {
+		<-db.donec
+		return nil
+	}
+
 	close(db.stopc)
 	if db.compactCancel != nil {
 		db.compactCancel()
@@ -1722,6 +1751,10 @@ func (db *DB) EnableCompactions() {
 // Snapshot writes the current data to the directory. If withHead is set to true it
 // will create a new block containing all data that's currently in the memory buffer/WAL.
 func (db *DB) Snapshot(dir string, withHead bool) error {
+	if db.closed.Load() {
+		return ErrClosed
+	}
+
 	if dir == db.dir {
 		return errors.Errorf("cannot snapshot into base directory")
 	}
@@ -1759,6 +1792,10 @@ func (db *DB) Snapshot(dir string, withHead bool) error {
 
 // Querier returns a new querier over the data partition for the given time range.
 func (db *DB) Querier(_ context.Context, mint, maxt int64) (storage.Querier, error) {
+	if db.closed.Load() {
+		return nil, ErrClosed
+	}
+
 	var blocks []BlockReader
 
 	db.mtx.RLock()
@@ -1907,6 +1944,10 @@ func (db *DB) blockChunkQuerierForRange(mint, maxt int64) ([]storage.ChunkQuerie
 
 // ChunkQuerier returns a new chunk querier over the data partition for the given time range.
 func (db *DB) ChunkQuerier(_ context.Context, mint, maxt int64) (storage.ChunkQuerier, error) {
+	if db.closed.Load() {
+		return nil, ErrClosed
+	}
+
 	blockQueriers, err := db.blockChunkQuerierForRange(mint, maxt)
 	if err != nil {
 		return nil, err
@@ -1924,6 +1965,10 @@ func rangeForTimestamp(t, width int64) (maxt int64) {
 
 // Delete implements deletion of metrics. It only has atomicity guarantees on a per-block basis.
 func (db *DB) Delete(mint, maxt int64, ms ...*labels.Matcher) error {
+	if db.closed.Load() {
+		return ErrClosed
+	}
+
 	db.cmtx.Lock()
 	defer db.cmtx.Unlock()
 
@@ -1950,6 +1995,10 @@ func (db *DB) Delete(mint, maxt int64, ms ...*labels.Matcher) error {
 
 // CleanTombstones re-writes any blocks with tombstones.
 func (db *DB) CleanTombstones() (err error) {
+	if db.closed.Load() {
+		return ErrClosed
+	}
+
 	db.cmtx.Lock()
 	defer db.cmtx.Unlock()
 
