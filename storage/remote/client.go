@@ -104,7 +104,7 @@ type ClientConfig struct {
 // ReadClient uses the SAMPLES method of remote read to read series samples from remote server.
 // TODO(bwplotka): Add streamed chunked remote read method as well (https://github.com/prometheus/prometheus/issues/5926).
 type ReadClient interface {
-	Read(ctx context.Context, query *prompb.Query) (*prompb.QueryResult, error)
+	Read(ctx context.Context, queries []*prompb.Query) ([]*prompb.QueryResult, error)
 }
 
 // NewReadClient creates a new client for remote read.
@@ -259,16 +259,12 @@ func (c Client) Endpoint() string {
 }
 
 // Read reads from a remote endpoint.
-func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryResult, error) {
+func (c *Client) Read(ctx context.Context, queries []*prompb.Query) ([]*prompb.QueryResult, error) {
 	c.readQueries.Inc()
 	defer c.readQueries.Dec()
 
 	req := &prompb.ReadRequest{
-		// TODO: Support batching multiple queries into one read request,
-		// as the protobuf interface allows for it.
-		Queries: []*prompb.Query{
-			query,
-		},
+		Queries: queries,
 	}
 	data, err := proto.Marshal(req)
 	if err != nil {
@@ -328,5 +324,5 @@ func (c *Client) Read(ctx context.Context, query *prompb.Query) (*prompb.QueryRe
 		return nil, fmt.Errorf("responses: want %d, got %d", len(req.Queries), len(resp.Results))
 	}
 
-	return resp.Results[0], nil
+	return resp.Results, nil
 }

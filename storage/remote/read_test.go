@@ -192,39 +192,44 @@ func TestSeriesSetFilter(t *testing.T) {
 }
 
 type mockedRemoteClient struct {
-	got   *prompb.Query
+	got   []*prompb.Query
 	store []*prompb.TimeSeries
 }
 
-func (c *mockedRemoteClient) Read(_ context.Context, query *prompb.Query) (*prompb.QueryResult, error) {
+func (c *mockedRemoteClient) Read(_ context.Context, queries []*prompb.Query) ([]*prompb.QueryResult, error) {
 	if c.got != nil {
-		return nil, fmt.Errorf("expected only one call to remote client got: %v", query)
+		return nil, fmt.Errorf("expected only one call to remote client got: %v", queries)
 	}
-	c.got = query
+	c.got = queries
 
-	matchers, err := FromLabelMatchers(query.Matchers)
-	if err != nil {
-		return nil, err
-	}
+	q := make ([]*prompb.QueryResult, len(queries))
+	for i, query := range queries {
+		q[i] = &prompb.QueryResult{}
 
-	q := &prompb.QueryResult{}
-	for _, s := range c.store {
-		l := labelProtosToLabels(s.Labels)
-		var notMatch bool
+		matchers, err := FromLabelMatchers(query.Matchers)
+		if err != nil {
+			return nil, err
+		}
 
-		for _, m := range matchers {
-			if v := l.Get(m.Name); v != "" {
-				if !m.Matches(v) {
-					notMatch = true
-					break
+		for _, s := range c.store {
+			l := labelProtosToLabels(s.Labels)
+			var notMatch bool
+
+			for _, m := range matchers {
+				if v := l.Get(m.Name); v != "" {
+					if !m.Matches(v) {
+						notMatch = true
+						break
+					}
 				}
 			}
-		}
 
-		if !notMatch {
-			q.Timeseries = append(q.Timeseries, &prompb.TimeSeries{Labels: s.Labels})
+			if !notMatch {
+				q[i].Timeseries = append(q[i].Timeseries, &prompb.TimeSeries{Labels: s.Labels})
+			}
 		}
 	}
+
 	return q, nil
 }
 
@@ -252,8 +257,8 @@ func TestSampleAndChunkQueryableClient(t *testing.T) {
 		readRecent       bool
 		callback         startTimeCallback
 
-		expectedQuery  *prompb.Query
-		expectedSeries []labels.Labels
+		expectedQueries []*prompb.Query
+		expectedSeries  []labels.Labels
 	}{
 		{
 			name: "empty",
@@ -263,11 +268,13 @@ func TestSampleAndChunkQueryableClient(t *testing.T) {
 			},
 			readRecent: true,
 
-			expectedQuery: &prompb.Query{
-				StartTimestampMs: 1,
-				EndTimestampMs:   2,
-				Matchers: []*prompb.LabelMatcher{
-					{Type: prompb.LabelMatcher_NEQ, Name: "a", Value: "something"},
+			expectedQueries: []*prompb.Query{
+				{
+					StartTimestampMs: 1,
+					EndTimestampMs:   2,
+					Matchers: []*prompb.LabelMatcher{
+						{Type: prompb.LabelMatcher_NEQ, Name: "a", Value: "something"},
+					},
 				},
 			},
 			expectedSeries: []labels.Labels{
@@ -285,12 +292,14 @@ func TestSampleAndChunkQueryableClient(t *testing.T) {
 			readRecent:     true,
 			externalLabels: labels.FromStrings("region", "europe"),
 
-			expectedQuery: &prompb.Query{
-				StartTimestampMs: 1,
-				EndTimestampMs:   2,
-				Matchers: []*prompb.LabelMatcher{
-					{Type: prompb.LabelMatcher_NEQ, Name: "a", Value: "something"},
-					{Type: prompb.LabelMatcher_EQ, Name: "region", Value: "europe"},
+			expectedQueries: []*prompb.Query{
+				{
+					StartTimestampMs: 1,
+					EndTimestampMs:   2,
+					Matchers: []*prompb.LabelMatcher{
+						{Type: prompb.LabelMatcher_NEQ, Name: "a", Value: "something"},
+						{Type: prompb.LabelMatcher_EQ, Name: "region", Value: "europe"},
+					},
 				},
 			},
 			expectedSeries: []labels.Labels{
@@ -308,12 +317,14 @@ func TestSampleAndChunkQueryableClient(t *testing.T) {
 			readRecent:     true,
 			externalLabels: labels.FromStrings("region", "europe"),
 
-			expectedQuery: &prompb.Query{
-				StartTimestampMs: 1,
-				EndTimestampMs:   2,
-				Matchers: []*prompb.LabelMatcher{
-					{Type: prompb.LabelMatcher_NEQ, Name: "a", Value: "something"},
-					{Type: prompb.LabelMatcher_EQ, Name: "region", Value: "europe"},
+			expectedQueries: []*prompb.Query{
+				{
+					StartTimestampMs: 1,
+					EndTimestampMs:   2,
+					Matchers: []*prompb.LabelMatcher{
+						{Type: prompb.LabelMatcher_NEQ, Name: "a", Value: "something"},
+						{Type: prompb.LabelMatcher_EQ, Name: "region", Value: "europe"},
+					},
 				},
 			},
 			expectedSeries: []labels.Labels{
@@ -331,12 +342,14 @@ func TestSampleAndChunkQueryableClient(t *testing.T) {
 			readRecent:     true,
 			externalLabels: labels.FromStrings("region", "europe"),
 
-			expectedQuery: &prompb.Query{
-				StartTimestampMs: 1,
-				EndTimestampMs:   2,
-				Matchers: []*prompb.LabelMatcher{
-					{Type: prompb.LabelMatcher_NEQ, Name: "a", Value: "something"},
-					{Type: prompb.LabelMatcher_EQ, Name: "region", Value: "us"},
+			expectedQueries: []*prompb.Query{
+				{
+					StartTimestampMs: 1,
+					EndTimestampMs:   2,
+					Matchers: []*prompb.LabelMatcher{
+						{Type: prompb.LabelMatcher_NEQ, Name: "a", Value: "something"},
+						{Type: prompb.LabelMatcher_EQ, Name: "region", Value: "us"},
+					},
 				},
 			},
 			expectedSeries: []labels.Labels{
@@ -350,10 +363,12 @@ func TestSampleAndChunkQueryableClient(t *testing.T) {
 			callback:   func() (i int64, err error) { return 100, nil },
 			readRecent: false,
 
-			expectedQuery: &prompb.Query{
-				StartTimestampMs: 0,
-				EndTimestampMs:   50,
-				Matchers:         []*prompb.LabelMatcher{},
+			expectedQueries: []*prompb.Query{
+				{
+					StartTimestampMs: 0,
+					EndTimestampMs:   50,
+					Matchers:         []*prompb.LabelMatcher{},
+				},
 			},
 			expectedSeries: []labels.Labels{
 				labels.FromStrings("a", "b"),
@@ -367,10 +382,12 @@ func TestSampleAndChunkQueryableClient(t *testing.T) {
 			callback:   func() (i int64, err error) { return 20, nil },
 			readRecent: false,
 
-			expectedQuery: &prompb.Query{
-				StartTimestampMs: 0,
-				EndTimestampMs:   20,
-				Matchers:         []*prompb.LabelMatcher{},
+			expectedQueries: []*prompb.Query{
+				{
+					StartTimestampMs: 0,
+					EndTimestampMs:   20,
+					Matchers:         []*prompb.LabelMatcher{},
+				},
 			},
 			expectedSeries: []labels.Labels{
 				labels.FromStrings("a", "b"),
@@ -384,7 +401,7 @@ func TestSampleAndChunkQueryableClient(t *testing.T) {
 			callback:   func() (i int64, err error) { return 20, nil },
 			readRecent: false,
 
-			expectedQuery:  nil,
+			expectedQueries:  nil,
 			expectedSeries: nil, // Noop should be used.
 		},
 		{
@@ -398,11 +415,13 @@ func TestSampleAndChunkQueryableClient(t *testing.T) {
 				labels.MustNewMatcher(labels.MatchEqual, "a", "b2"),
 			},
 
-			expectedQuery: &prompb.Query{
-				StartTimestampMs: 1,
-				EndTimestampMs:   2,
-				Matchers: []*prompb.LabelMatcher{
-					{Type: prompb.LabelMatcher_EQ, Name: "a", Value: "b2"},
+			expectedQueries: []*prompb.Query{
+				{
+					StartTimestampMs: 1,
+					EndTimestampMs:   2,
+					Matchers: []*prompb.LabelMatcher{
+						{Type: prompb.LabelMatcher_EQ, Name: "a", Value: "b2"},
+					},
 				},
 			},
 			expectedSeries: []labels.Labels{
@@ -420,11 +439,13 @@ func TestSampleAndChunkQueryableClient(t *testing.T) {
 				labels.MustNewMatcher(labels.MatchEqual, "a", "b2"),
 			},
 
-			expectedQuery: &prompb.Query{
-				StartTimestampMs: 1,
-				EndTimestampMs:   2,
-				Matchers: []*prompb.LabelMatcher{
-					{Type: prompb.LabelMatcher_EQ, Name: "a", Value: "b2"},
+			expectedQueries: []*prompb.Query{
+				{
+					StartTimestampMs: 1,
+					EndTimestampMs:   2,
+					Matchers: []*prompb.LabelMatcher{
+						{Type: prompb.LabelMatcher_EQ, Name: "a", Value: "b2"},
+					},
 				},
 			},
 			expectedSeries: []labels.Labels{
@@ -442,7 +463,7 @@ func TestSampleAndChunkQueryableClient(t *testing.T) {
 				labels.MustNewMatcher(labels.MatchEqual, "a", "b2"),
 			},
 
-			expectedQuery:  nil,
+			expectedQueries:  nil,
 			expectedSeries: nil, // Given matchers does not match with required ones, noop expected.
 		},
 		{
@@ -455,7 +476,7 @@ func TestSampleAndChunkQueryableClient(t *testing.T) {
 			requiredMatchers: []*labels.Matcher{
 				labels.MustNewMatcher(labels.MatchEqual, "a", "b2"),
 			},
-			expectedQuery:  nil,
+			expectedQueries:  nil,
 			expectedSeries: nil, // Given matchers does not match with required ones, noop expected.
 		},
 	} {
@@ -477,7 +498,8 @@ func TestSampleAndChunkQueryableClient(t *testing.T) {
 			require.NoError(t, err)
 			require.Equal(t, storage.Warnings(nil), ss.Warnings())
 
-			require.Equal(t, tc.expectedQuery, m.got)
+			require.Len(t, m.got, len(tc.expectedQueries))
+			require.Equal(t, tc.expectedQueries, m.got)
 
 			var got []labels.Labels
 			for ss.Next() {

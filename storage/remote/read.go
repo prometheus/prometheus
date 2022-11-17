@@ -20,6 +20,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/prompb"
 )
 
 type sampleAndChunkQueryableClient struct {
@@ -167,11 +168,11 @@ func (q *querier) Select(sortSeries bool, hints *storage.SelectHints, matchers .
 		return storage.ErrSeriesSet(fmt.Errorf("toQuery: %w", err))
 	}
 
-	res, err := q.client.Read(q.ctx, query)
+	res, err := q.client.Read(q.ctx, []*prompb.Query{query})
 	if err != nil {
 		return storage.ErrSeriesSet(fmt.Errorf("remote_read: %w", err))
 	}
-	return newSeriesSetFilter(FromQueryResult(sortSeries, res), added)
+	return newSeriesSetFilter(FromQueryResult(sortSeries, res[0]), added)
 }
 
 // addExternalLabels adds matchers for each external label. External labels
