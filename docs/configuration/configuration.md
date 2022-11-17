@@ -1476,7 +1476,6 @@ The labels below are only available for targets with `role` set to `hcloud`:
 * `__meta_hetzner_hcloud_image_description`: the description of the server image
 * `__meta_hetzner_hcloud_image_os_flavor`: the OS flavor of the server image
 * `__meta_hetzner_hcloud_image_os_version`: the OS version of the server image
-* `__meta_hetzner_hcloud_image_description`: the description of the server image
 * `__meta_hetzner_hcloud_datacenter_location`: the location of the server
 * `__meta_hetzner_hcloud_datacenter_location_network_zone`: the network zone of the server
 * `__meta_hetzner_hcloud_server_type`: the type of the server
