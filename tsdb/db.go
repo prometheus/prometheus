@@ -658,7 +658,7 @@ func validateOpts(opts *Options, rngs []int64) (*Options, []int64) {
 // open returns a new DB in the given directory.
 // It initializes the lockfile, WAL, compactor, and Head (by replaying the WAL), and runs the database.
 // It is not safe to open more than one DB in the same directory.
-func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs []int64, stats *DBStats) (_ *DB, returnedErr error) {
+func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs []int64, stats *DBStats) (db *DB, returnedErr error) {
 	if err := os.MkdirAll(dir, 0o777); err != nil {
 		return nil, err
 	}
@@ -695,7 +695,7 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 		}
 	}
 
-	db := &DB{
+	db = &DB{
 		dir:            dir,
 		logger:         l,
 		opts:           opts,
@@ -728,11 +728,13 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	var err error
 	db.locker, err = tsdbutil.NewDirLocker(dir, "tsdb", db.logger, r)
 	if err != nil {
-		return nil, err
+		returnedErr = err
+		return
 	}
 	if !opts.NoLockfile {
 		if err := db.locker.Lock(); err != nil {
-			return nil, err
+			returnedErr = err
+			return
 		}
 	}
 
@@ -740,7 +742,8 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	db.compactor, err = NewLeveledCompactorWithChunkSize(ctx, r, l, rngs, db.chunkPool, opts.MaxBlockChunkSegmentSize, nil)
 	if err != nil {
 		cancel()
-		return nil, errors.Wrap(err, "create leveled compactor")
+		returnedErr = errors.Wrap(err, "create leveled compactor")
+		return
 	}
 	db.compactCancel = cancel
 
@@ -754,17 +757,20 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 		}
 		wal, err = wlog.NewSize(l, r, walDir, segmentSize, opts.WALCompression)
 		if err != nil {
-			return nil, err
+			returnedErr = err
+			return
 		}
 		// Check if there is a WBL on disk, in which case we should replay that data.
 		wblSize, err := fileutil.DirSize(wblDir)
 		if err != nil && !os.IsNotExist(err) {
-			return nil, err
+			returnedErr = err
+			return
 		}
 		if opts.OutOfOrderTimeWindow > 0 || wblSize > 0 {
 			wbl, err = wlog.NewSize(l, r, wblDir, segmentSize, opts.WALCompression)
 			if err != nil {
-				return nil, err
+				returnedErr = err
+				return
 			}
 		}
 	}
@@ -789,7 +795,8 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	}
 	db.head, err = NewHead(r, l, wal, wbl, headOpts, stats.Head)
 	if err != nil {
-		return nil, err
+		returnedErr = err
+		return
 	}
 
 	// Register metrics after assigning the head block.
@@ -801,7 +808,8 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 	db.metrics.maxBytes.Set(float64(maxBytes))
 
 	if err := db.reload(); err != nil {
-		return nil, err
+		returnedErr = err
+		return
 	}
 	// Set the min valid time for the ingested samples
 	// to be no lower than the maxt of the last block.
@@ -820,12 +828,14 @@ func open(dir string, l log.Logger, r prometheus.Registerer, opts *Options, rngs
 		if isOOOErr {
 			level.Warn(db.logger).Log("msg", "Encountered OOO WAL read error, attempting repair", "err", initErr)
 			if err := wbl.Repair(initErr); err != nil {
-				return nil, errors.Wrap(err, "repair corrupted OOO WAL")
+				returnedErr = errors.Wrap(err, "repair corrupted OOO WAL")
+				return
 			}
 		} else {
 			level.Warn(db.logger).Log("msg", "Encountered WAL read error, attempting repair", "err", initErr)
 			if err := wal.Repair(initErr); err != nil {
-				return nil, errors.Wrap(err, "repair corrupted WAL")
+				returnedErr = errors.Wrap(err, "repair corrupted WAL")
+				return
 			}
 		}
 	}
