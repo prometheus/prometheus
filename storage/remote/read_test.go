@@ -202,7 +202,7 @@ func (c *mockedRemoteClient) Read(_ context.Context, queries []*prompb.Query) ([
 	}
 	c.got = queries
 
-	q := make ([]*prompb.QueryResult, len(queries))
+	q := make([]*prompb.QueryResult, len(queries))
 	for i, query := range queries {
 		q[i] = &prompb.QueryResult{}
 
@@ -401,8 +401,8 @@ func TestSampleAndChunkQueryableClient(t *testing.T) {
 			callback:   func() (i int64, err error) { return 20, nil },
 			readRecent: false,
 
-			expectedQueries:  nil,
-			expectedSeries: nil, // Noop should be used.
+			expectedQueries: nil,
+			expectedSeries:  nil, // Noop should be used.
 		},
 		{
 			name: "required matcher specified, user also specifies same",
@@ -463,8 +463,8 @@ func TestSampleAndChunkQueryableClient(t *testing.T) {
 				labels.MustNewMatcher(labels.MatchEqual, "a", "b2"),
 			},
 
-			expectedQueries:  nil,
-			expectedSeries: nil, // Given matchers does not match with required ones, noop expected.
+			expectedQueries: nil,
+			expectedSeries:  nil, // Given matchers does not match with required ones, noop expected.
 		},
 		{
 			name: "required matcher specified, given matcher does not match2",
@@ -476,8 +476,8 @@ func TestSampleAndChunkQueryableClient(t *testing.T) {
 			requiredMatchers: []*labels.Matcher{
 				labels.MustNewMatcher(labels.MatchEqual, "a", "b2"),
 			},
-			expectedQueries:  nil,
-			expectedSeries: nil, // Given matchers does not match with required ones, noop expected.
+			expectedQueries: nil,
+			expectedSeries:  nil, // Given matchers does not match with required ones, noop expected.
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
