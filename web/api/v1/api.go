@@ -84,6 +84,8 @@ const (
 
 var LocalhostRepresentations = []string{"127.0.0.1", "localhost", "::1"}
 
+const mimeTypeArrowStream = "application/vnd.apache.arrow.stream"
+
 type apiError struct {
 	typ errorType
 	err error
@@ -1572,7 +1574,7 @@ func (api *API) tryArrowResponse(w http.ResponseWriter, r *http.Request, data in
 		}
 	}
 
-	w.Header().Set("Content-Type", "application/vnd.apache.arrow.stream")
+	w.Header().Set("Content-Type", mimeTypeArrowStream)
 	w.WriteHeader(http.StatusOK)
 
 	pool := memory.NewGoAllocator()
@@ -1609,7 +1611,7 @@ func (api *API) tryArrowResponse(w http.ResponseWriter, r *http.Request, data in
 }
 
 func (api *API) respond(w http.ResponseWriter, r *http.Request, data interface{}, warnings storage.Warnings) {
-	if r.Header.Get("Accept") == "application/vnd.apache.arrow.stream" {
+	if r.Header.Get("Accept") == mimeTypeArrowStream {
 		err := api.tryArrowResponse(w, r, data, warnings)
 		if err == nil {
 			return

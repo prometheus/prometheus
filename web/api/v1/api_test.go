@@ -3192,7 +3192,7 @@ func TestRespond(t *testing.T) {
 			for _, c := range cases {
 				s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					if useArrow {
-						r.Header.Add("Accept", "application/vnd.apache.arrow.stream")
+						r.Header.Add("Accept", mimeTypeArrowStream)
 					}
 					api := API{}
 					api.respond(w, r, c.response, nil)
@@ -3204,7 +3204,7 @@ func TestRespond(t *testing.T) {
 					t.Fatalf("Error on test request: %s", err)
 				}
 				var body []byte
-				if resp.Header.Get("Content-Type") == "application/vnd.apache.arrow.stream" {
+				if resp.Header.Get("Content-Type") == mimeTypeArrowStream {
 					body, err = arrowToJSONResponse(resp.Body)
 				} else {
 					body, err = io.ReadAll(resp.Body)
@@ -3387,7 +3387,7 @@ func BenchmarkRespondArrow(b *testing.B) {
 		},
 	}
 	request, _ := http.NewRequest("GET", "http://localhost:9090", nil)
-	request.Header.Add("Accept", "application/vnd.apache.arrow.stream")
+	request.Header.Add("Accept", mimeTypeArrowStream)
 	b.ResetTimer()
 	api := API{}
 	for n := 0; n < b.N; n++ {
