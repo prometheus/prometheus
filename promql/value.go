@@ -17,8 +17,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
+
+	"github.com/apache/arrow/go/arrow"
+	"github.com/apache/arrow/go/arrow/array"
+	"github.com/apache/arrow/go/arrow/ipc"
+	"github.com/apache/arrow/go/arrow/memory"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -99,6 +105,34 @@ func (s Series) MarshalJSON() ([]byte, error) {
 		series.H = append(series.H, p)
 	}
 	return json.Marshal(series)
+}
+
+func (s Series) writeArrow(w io.Writer, pool memory.Allocator) error {
+	fields := []arrow.Field{
+		{Name: "t", Type: &arrow.TimestampType{Unit: arrow.Millisecond}},
+		{Name: "v", Type: arrow.PrimitiveTypes.Float64},
+	}
+	metadata := arrow.MetadataFrom(s.Metric.Map())
+	schema := arrow.NewSchema(fields, &metadata)
+	b := array.NewRecordBuilder(pool, schema)
+	defer b.Release()
+	b.Reserve(len(s.Points))
+
+	writer := ipc.NewWriter(w, ipc.WithAllocator(pool), ipc.WithSchema(schema))
+	defer writer.Close()
+
+	for _, point := range s.Points {
+		// Since we reserve enough data for all points above we can use UnsafeAppend.
+		b.Field(0).(*array.TimestampBuilder).UnsafeAppend(arrow.Timestamp(point.T))
+		b.Field(1).(*array.Float64Builder).UnsafeAppend(point.V)
+	}
+	rec := b.NewRecord()
+	defer rec.Release()
+	if err := writer.Write(rec); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // Point represents a single data point for a given timestamp.
@@ -287,6 +321,33 @@ func (m Matrix) ContainsSameLabelset() bool {
 		}
 		return false
 	}
+}
+
+func (m Matrix) WriteArrow(w io.Writer) error {
+	pool := memory.DefaultAllocator
+	for _, series := range m {
+		if err := series.writeArrow(w, pool); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ArrowEncodeable determines if a specific matrix can be encoded with Arrow or
+// not.
+//
+// Currently native histograms are not handled with Arrow. Just adding a binary
+// type here halves the performance of Arrow. In the future we could consider
+// building a custom type in Arrow for histograms, or return a different schema
+// for native histograms
+func (m Matrix) ArrowEncodeable() bool {
+	for _, s := range m {
+		if len(s.Points) > 0 && s.Points[0].H != nil {
+			return false
+		}
+	}
+
+	return true
 }
 
 // Result holds the resulting value of an execution or an error
