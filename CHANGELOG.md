@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.40.2 / 2022-11-16
+
+* [BUGFIX] UI: Fix black-on-black metric name color in dark mode. #11572
+
 ## 2.40.1 / 2022-11-09
 
 * [BUGFIX] TSDB: Fix alignment for atomic int64 for 32 bit architecture. #11547
